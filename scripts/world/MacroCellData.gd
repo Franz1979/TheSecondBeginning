@@ -1,0 +1,16 @@
+class_name MacroCellData
+
+var x: int
+var y: int
+
+var terrain_base: GameTypes.TerrainBase
+var water_type: GameTypes.WaterType
+var cover: GameTypes.Cover
+
+func _init(_x: int, _y: int):
+	x = _x
+	y = _y
+
+	terrain_base = GameTypes.TerrainBase.PLAIN
+	water_type = GameTypes.WaterType.NONE
+	cover = GameTypes.Cover.NONE
