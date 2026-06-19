@@ -9,6 +9,7 @@ func _set_all_plain(world: World) -> void:
 	for cell in world.cells:
 		cell.terrain_base = GameTypes.TerrainBase.PLAIN
 		cell.water_type = GameTypes.WaterType.NONE
+		cell.coast_type = GameTypes.CoastType.NONE
 		cell.cover = GameTypes.Cover.GRASSLAND
 
 

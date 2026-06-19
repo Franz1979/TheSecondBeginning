@@ -5,6 +5,7 @@ var y: int
 
 var terrain_base: GameTypes.TerrainBase
 var water_type: GameTypes.WaterType
+var coast_type: GameTypes.CoastType
 var cover: GameTypes.Cover
 
 func _init(_x: int, _y: int):
@@ -13,4 +14,5 @@ func _init(_x: int, _y: int):
 
 	terrain_base = GameTypes.TerrainBase.PLAIN
 	water_type = GameTypes.WaterType.NONE
+	coast_type = GameTypes.CoastType.NONE
 	cover = GameTypes.Cover.NONE

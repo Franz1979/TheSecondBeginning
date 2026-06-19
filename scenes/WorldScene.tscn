@@ -1,0 +1,10 @@
+[gd_scene format=3 uid="uid://cfvbxmvilbibi"]
+
+[ext_resource type="Script" uid="uid://rv4wbedvspyd" path="res://scripts/WorldScene.gd" id="1_u5gcm"]
+[ext_resource type="Script" uid="uid://bo7e46bvucvqn" path="res://scripts/ui/CameraController.gd" id="2_52f1s"]
+
+[node name="WorldScene" type="Node2D" unique_id=367956628]
+script = ExtResource("1_u5gcm")
+
+[node name="Camera2D" type="Camera2D" parent="." unique_id=1346698624]
+script = ExtResource("2_52f1s")

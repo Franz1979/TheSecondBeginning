@@ -22,3 +22,10 @@ enum Cover {
 	SWAMP,
 	FERTILE
 }
+
+enum CoastType {
+	NONE,
+	BEACH,
+	SEMI_CLIFF,
+	CLIFF
+}

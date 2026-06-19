@@ -13,7 +13,20 @@ func generate_empty_world() -> void:
 			var cell := MacroCellData.new(x, y)
 			cells.append(cell)
 
-	var generator := MapGenerator.new()
-	generator.generate(self)
+	print("Tipo mappa selezionato: ", GameSettings.selected_map_type)
+
+	if GameSettings.selected_map_type == "random":
+		var generator := MapGenerator.new()
+		generator.generate(self)
+
+	elif GameSettings.selected_map_type == "island":
+		var generator := PresetMapGenerator.new()
+		generator.generate_island(self)
+
+	elif GameSettings.selected_map_type == "valley":
+		print("Mappa valle non ancora disponibile")
+
+	elif GameSettings.selected_map_type == "mountain":
+		print("Mappa montagna non ancora disponibile")
 
 	print("World generated. Cells: ", cells.size())

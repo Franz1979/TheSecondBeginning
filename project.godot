@@ -11,9 +11,13 @@ config_version=5
 [application]
 
 config/name="TheSecondBeginning"
-run/main_scene="uid://cfvbxmvilbibi"
+run/main_scene="uid://dgt6x4laa4tj7"
 config/features=PackedStringArray("4.6", "Forward Plus")
 config/icon="res://icon.svg"
+
+[autoload]
+
+GameSettings="*uid://cq1lrgfvng22c"
 
 [physics]
 
