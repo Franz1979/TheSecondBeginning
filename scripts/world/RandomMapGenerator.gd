@@ -1,4 +1,4 @@
-class_name MapGenerator
+class_name RandomMapGenerator
 
 func generate(world: World) -> void:
 	_set_all_plain(world)

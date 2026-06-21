@@ -14,6 +14,17 @@ enum WaterType {
 	RIVER
 }
 
+enum RiverShape {
+	NONE,
+	VERTICAL,
+	HORIZONTAL,
+	CORNER_TOP_RIGHT,
+	CORNER_RIGHT_BOTTOM,
+	CORNER_BOTTOM_LEFT,
+	CORNER_LEFT_TOP,
+	FULL
+}
+
 enum Cover {
 	NONE,
 	FOREST,

@@ -16,7 +16,7 @@ func generate_empty_world() -> void:
 	print("Tipo mappa selezionato: ", GameSettings.selected_map_type)
 
 	if GameSettings.selected_map_type == "random":
-		var generator := MapGenerator.new()
+		var generator := RandomMapGenerator.new()
 		generator.generate(self)
 
 	elif GameSettings.selected_map_type == "island":

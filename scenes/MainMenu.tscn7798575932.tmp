@@ -34,21 +34,6 @@ horizontal_alignment = 1
 layout_mode = 2
 text = "Mappa Casuale"
 
-[node name="HBoxContainer" type="HBoxContainer" parent="VBoxContainer" unique_id=1557410593]
-layout_mode = 2
-
-[node name="CreateIslandButton" type="Button" parent="VBoxContainer/HBoxContainer" unique_id=1484714564]
-layout_mode = 2
-text = "Crea Isola Piccola"
-
-[node name="OpenIslandButton" type="Button" parent="VBoxContainer/HBoxContainer" unique_id=1580561636]
-layout_mode = 2
-text = "Apri Isola Piccola"
-
-[node name="PresetValleyButton" type="Button" parent="VBoxContainer" unique_id=2005782433]
-layout_mode = 2
-text = "Valle Fertile"
-
 [node name="PresetMountainButton" type="Button" parent="VBoxContainer" unique_id=718660856]
 layout_mode = 2
 text = "Mondo Montuoso"
@@ -59,3 +44,14 @@ layout_mode = 2
 [node name="ExitButton" type="Button" parent="VBoxContainer" unique_id=1775046654]
 layout_mode = 2
 text = "Esci"
+
+[node name="HBoxContainer" type="HBoxContainer" parent="VBoxContainer" unique_id=1557410593]
+layout_mode = 2
+
+[node name="CreateIslandButton" type="Button" parent="VBoxContainer" unique_id=1484714564]
+layout_mode = 2
+text = "Crea Isola Piccola"
+
+[node name="PresetValleyButton" type="Button" parent="VBoxContainer" unique_id=2005782433]
+layout_mode = 2
+text = "Valle Fertile"
