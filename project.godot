@@ -11,7 +11,7 @@ config_version=5
 [application]
 
 config/name="TheSecondBeginning"
-run/main_scene="uid://dgt6x4laa4tj7"
+run/main_scene="uid://304gskv81v7r"
 config/features=PackedStringArray("4.6", "Forward Plus")
 config/icon="res://icon.svg"
 

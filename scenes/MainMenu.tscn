@@ -1,6 +1,6 @@
-[gd_scene format=3 uid="uid://dgt6x4laa4tj7"]
+[gd_scene format=3 uid="uid://304gskv81v7r"]
 
-[ext_resource type="Script" uid="uid://cpkhttfy1df47" path="res://scripts/ui/main_menu.gd" id="1_yqorp"]
+[ext_resource type="Script" uid="uid://bxxe6cbptf1y5" path="res://scripts/ui/main_menu.gd" id="1_yqorp"]
 
 [node name="MainMenu" type="Control" unique_id=514881481]
 layout_mode = 3
@@ -25,33 +25,25 @@ grow_horizontal = 2
 layout_mode = 2
 text = "The Second Beginning"
 
+[node name="Label4" type="Label" parent="VBoxContainer" unique_id=1511927165]
+layout_mode = 2
+
 [node name="Label2" type="Label" parent="VBoxContainer" unique_id=228109002]
 layout_mode = 2
 text = "Scegli opzione"
 horizontal_alignment = 1
 
-[node name="RandomMapButton" type="Button" parent="VBoxContainer" unique_id=1177323072]
-layout_mode = 2
-text = "Mappa Casuale"
-
-[node name="HBoxContainer" type="HBoxContainer" parent="VBoxContainer" unique_id=1557410593]
+[node name="NewGameButton" type="Button" parent="VBoxContainer" unique_id=1473069719]
 layout_mode = 2
 
-[node name="CreateIslandButton" type="Button" parent="VBoxContainer/HBoxContainer" unique_id=1484714564]
+[node name="LoadGameButton" type="Button" parent="VBoxContainer" unique_id=64267823]
 layout_mode = 2
-text = "Crea Isola Piccola"
 
-[node name="OpenIslandButton" type="Button" parent="VBoxContainer/HBoxContainer" unique_id=1580561636]
+[node name="MapEditorButton" type="Button" parent="VBoxContainer" unique_id=146765015]
 layout_mode = 2
-text = "Apri Isola Piccola"
 
-[node name="PresetValleyButton" type="Button" parent="VBoxContainer" unique_id=2005782433]
+[node name="OptionsButton" type="Button" parent="VBoxContainer" unique_id=324816335]
 layout_mode = 2
-text = "Valle Fertile"
-
-[node name="PresetMountainButton" type="Button" parent="VBoxContainer" unique_id=718660856]
-layout_mode = 2
-text = "Mondo Montuoso"
 
 [node name="Label3" type="Label" parent="VBoxContainer" unique_id=917998636]
 layout_mode = 2

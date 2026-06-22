@@ -1,0 +1,60 @@
+[gd_scene format=3 uid="uid://dqerrurodsaj0"]
+
+[ext_resource type="Script" uid="uid://ii3k1v1imr0s" path="res://scripts/ui/map_editor_menu.gd" id="1_sbi26"]
+
+[node name="MapEditorMenu" type="Control" unique_id=177343073]
+layout_mode = 3
+anchors_preset = 5
+anchor_left = 0.5
+anchor_right = 0.5
+grow_horizontal = 2
+size_flags_horizontal = 4
+script = ExtResource("1_sbi26")
+metadata/_edit_use_anchors_ = true
+
+[node name="CenterContainer" type="CenterContainer" parent="." unique_id=1587534411]
+layout_mode = 1
+anchors_preset = 5
+anchor_left = 0.5
+anchor_right = 0.5
+offset_left = -85.0
+offset_right = 85.0
+offset_bottom = 152.0
+grow_horizontal = 2
+metadata/_edit_use_anchors_ = true
+
+[node name="VBoxContainer" type="VBoxContainer" parent="CenterContainer" unique_id=259425671]
+layout_mode = 2
+metadata/_edit_use_anchors_ = true
+
+[node name="Label" type="Label" parent="CenterContainer/VBoxContainer" unique_id=609577108]
+layout_mode = 2
+text = "The Second Beginning"
+
+[node name="Label4" type="Label" parent="CenterContainer/VBoxContainer" unique_id=1874993603]
+layout_mode = 2
+
+[node name="Label2" type="Label" parent="CenterContainer/VBoxContainer" unique_id=140037443]
+layout_mode = 2
+horizontal_alignment = 1
+
+[node name="ModifyExistingMapButton" type="Button" parent="CenterContainer/VBoxContainer" unique_id=793615857]
+layout_mode = 2
+
+[node name="CreateRandomMapButton" type="Button" parent="CenterContainer/VBoxContainer" unique_id=2053808908]
+layout_mode = 2
+
+[node name="CreateNewMap" type="Button" parent="CenterContainer/VBoxContainer" unique_id=947480753]
+layout_mode = 2
+
+[node name="Label3" type="Label" parent="CenterContainer/VBoxContainer" unique_id=1912982010]
+layout_mode = 2
+
+[node name="BackToMenuButton" type="Button" parent="CenterContainer/VBoxContainer" unique_id=932121390]
+layout_mode = 2
+
+[node name="OpenMapFileDialog" type="FileDialog" parent="." unique_id=299835069]
+title = "Open a File"
+file_mode = 0
+access = 1
+filters = PackedStringArray("*.json ; File JSON")

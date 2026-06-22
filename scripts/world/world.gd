@@ -28,5 +28,8 @@ func generate_empty_world() -> void:
 
 	elif GameSettings.selected_map_type == "mountain":
 		print("Mappa montagna non ancora disponibile")
+		
+	elif GameSettings.selected_map_type == "empty":
+		print("Mappa vuota creata")
 
 	print("World generated. Cells: ", cells.size())

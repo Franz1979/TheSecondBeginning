@@ -1,17 +1,17 @@
 [gd_scene format=3 uid="uid://cfvbxmvilbibi"]
 
-[ext_resource type="Script" uid="uid://rv4wbedvspyd" path="res://scripts/WorldScene.gd" id="1_u5gcm"]
-[ext_resource type="Script" uid="uid://bo7e46bvucvqn" path="res://scripts/ui/CameraController.gd" id="2_52f1s"]
+[ext_resource type="Script" uid="uid://rv4wbedvspyd" path="res://scripts/MapEditorScene.gd" id="1_3st6a"]
+[ext_resource type="Script" uid="uid://bo7e46bvucvqn" path="res://scripts/ui/CameraController.gd" id="2_q5042"]
 
 [sub_resource type="StyleBoxFlat" id="StyleBoxFlat_u5gcm"]
 bg_color = Color(0.54391533, 0.65469354, 0.10991336, 1)
 
-[node name="WorldScene" type="Node2D" unique_id=367956628]
-script = ExtResource("1_u5gcm")
+[node name="MapEditorScene" type="Node2D" unique_id=367956628]
+script = ExtResource("1_3st6a")
 
 [node name="Camera2D" type="Camera2D" parent="." unique_id=1346698624]
 position = Vector2(-36, 0)
-script = ExtResource("2_52f1s")
+script = ExtResource("2_q5042")
 
 [node name="CanvasLayer" type="CanvasLayer" parent="." unique_id=172495002]
 
@@ -41,3 +41,7 @@ text = "Salva Mappa"
 [node name="BackToMenuButton" type="Button" parent="CanvasLayer/PanelContainer/MarginContainer/VBoxContainer" unique_id=1187690520]
 layout_mode = 2
 text = "Torna al Menu"
+
+[node name="SaveMapFileDialog" type="FileDialog" parent="." unique_id=1169225512]
+access = 1
+filters = PackedStringArray("*.json ; File JSON")
