@@ -10,7 +10,7 @@ func _set_all_plain(world: World) -> void:
 		cell.terrain_base = GameTypes.TerrainBase.PLAIN
 		cell.water_type = GameTypes.WaterType.NONE
 		cell.coast_type = GameTypes.CoastType.NONE
-		cell.cover = GameTypes.Cover.GRASSLAND
+		cell.biome = GameTypes.Biome.GRASSLAND
 
 
 func _generate_lakes(world: World) -> void:
@@ -31,4 +31,4 @@ func _generate_lake(world: World) -> void:
 		if distance <= radius:
 			cell.terrain_base = GameTypes.TerrainBase.WATER
 			cell.water_type = GameTypes.WaterType.LAKE
-			cell.cover = GameTypes.Cover.NONE
+			cell.biome = GameTypes.Biome.NONE

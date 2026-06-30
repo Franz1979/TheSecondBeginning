@@ -27,25 +27,25 @@ func _on_modify_existing_map_pressed() -> void:
 	
 func _on_open_map_file_selected(path: String) -> void:
 	GameSettings.selected_save_file = path
-	get_tree().change_scene_to_file("res://scenes/MapEditorScene.tscn")
+	get_tree().change_scene_to_file("res://scenes/editor/MapEditorScene.tscn")
 
 
 func _on_create_random_map_pressed() -> void:
 	GameSettings.selected_map_type = "random"
 	GameSettings.selected_save_file = ""
-	get_tree().change_scene_to_file("res://scenes/MapEditorScene.tscn")
+	get_tree().change_scene_to_file("res://scenes/editor/MapEditorScene.tscn")
 
 
 func _on_create_new_map_pressed() -> void:
 	GameSettings.selected_map_type = "empty"
 	GameSettings.selected_save_file = ""
 	get_tree().change_scene_to_file(
-		"res://scenes/MapEditorScene.tscn"
+		"res://scenes/editor/MapEditorScene.tscn"
 	)
 
 
 func _on_back_to_menu_pressed() -> void:
-	get_tree().change_scene_to_file("res://scenes/MainMenu.tscn")
+	get_tree().change_scene_to_file("res://scenes/menus/MainMenu.tscn")
 
 
 func _show_not_ready_popup() -> void:

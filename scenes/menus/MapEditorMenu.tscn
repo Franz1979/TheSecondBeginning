@@ -1,6 +1,6 @@
 [gd_scene format=3 uid="uid://dqerrurodsaj0"]
 
-[ext_resource type="Script" uid="uid://ii3k1v1imr0s" path="res://scripts/ui/map_editor_menu.gd" id="1_sbi26"]
+[ext_resource type="Script" uid="uid://ii3k1v1imr0s" path="res://scripts/scenes/map_editor_menu.gd" id="1_sbi26"]
 
 [node name="MapEditorMenu" type="Control" unique_id=177343073]
 layout_mode = 3

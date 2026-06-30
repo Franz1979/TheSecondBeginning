@@ -27,7 +27,7 @@ func _on_load_game_pressed() -> void:
 	_show_not_ready_popup()
 	
 func _on_map_editor_pressed() -> void:
-	get_tree().change_scene_to_file("res://scenes/MapEditorMenu.tscn")
+	get_tree().change_scene_to_file("res://scenes/menus/MapEditorMenu.tscn")
 	
 func _on_options_pressed() -> void:
 	_show_not_ready_popup()

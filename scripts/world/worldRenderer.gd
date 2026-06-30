@@ -2,13 +2,14 @@ class_name WorldRenderer
 extends Node2D
 
 const CELL_SIZE: int = 10
-const COLOR_WATER := Color(0.10, 0.30, 0.90)
+const COLOR_SEA := Color(0.10, 0.30, 0.90)
 const COLOR_PLAIN := Color(0.60, 0.90, 0.60)
 const COLOR_HILL := Color(0.82, 0.68, 0.45)
 const COLOR_MOUNTAIN := Color(0.45, 0.25, 0.10)
 const COLOR_BEACH := Color(0.95, 0.85, 0.55)
 const COLOR_SEMI_CLIFF := Color(0.72, 0.72, 0.72)
 const COLOR_CLIFF := Color(0.55, 0.55, 0.55)
+const COLOR_LAKE := Color(0.15, 0.50, 0.95)
 const COLOR_RIVER := Color(0.20, 0.60, 1.00)
 const COLOR_GRID := Color(0, 0, 0, 0.15)
 
@@ -42,22 +43,29 @@ func _draw() -> void:
 
 func get_cell_color(cell: MacroCellData) -> Color:
 
-	if cell.water_type == GameTypes.WaterType.RIVER:
-		return COLOR_RIVER
+	if cell.water_type == GameTypes.WaterType.SEA:
+		match cell.coast_type:
+			GameTypes.CoastType.BEACH:
+				return COLOR_BEACH
 
-	match cell.coast_type:
-		GameTypes.CoastType.BEACH:
-			return COLOR_BEACH
+			GameTypes.CoastType.CLIFF:
+				return COLOR_CLIFF
 
-		GameTypes.CoastType.CLIFF:
-			return COLOR_CLIFF
+			GameTypes.CoastType.SEMI_CLIFF:
+				return COLOR_SEMI_CLIFF
 
-		GameTypes.CoastType.SEMI_CLIFF:
-			return COLOR_SEMI_CLIFF
+		return COLOR_SEA
+
+	match cell.water_type:
+		GameTypes.WaterType.LAKE:
+			return COLOR_LAKE
+
+		GameTypes.WaterType.RIVER:
+			return COLOR_RIVER
 
 	match cell.terrain_base:
 		GameTypes.TerrainBase.WATER:
-			return COLOR_WATER
+			return COLOR_SEA
 
 		GameTypes.TerrainBase.PLAIN:
 			return COLOR_PLAIN
@@ -116,16 +124,16 @@ func _input(event: InputEvent) -> void:
 
 			var cell := _get_cell_at(cell_x, cell_y)
 
-			if cell != null:
-				print(
-					"Cella x=", cell.x,
-					" y=", cell.y,
-					" terrain_base=", cell.terrain_base,
-					" water_type=", cell.water_type,
-					" river_shape=", cell.river_shape,
-					" coast_type=", cell.coast_type,
-					" cover=", cell.cover
-				)
+			#if cell != null:
+				#print(
+				#	"Cella x=", cell.x,
+				#	" y=", cell.y,
+				#	" terrain_base=", cell.terrain_base,
+				#	" water_type=", cell.water_type,
+				#	" river_shape=", cell.river_shape,
+				#	" coast_type=", cell.coast_type,
+				#	" biome=", cell.biome
+				#)
 
 
 func _get_cell_at(x: int, y: int) -> MacroCellData:

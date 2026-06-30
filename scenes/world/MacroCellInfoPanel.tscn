@@ -1,0 +1,51 @@
+[gd_scene format=3 uid="uid://u4tgm2grhilk"]
+
+[ext_resource type="Script" uid="uid://dhh7xkgvhirhf" path="res://scripts/world/MacroCellInfoPanel.gd" id="1_tcup2"]
+
+[node name="MacroCellInfoPanel" type="PanelContainer" unique_id=1882805416]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+script = ExtResource("1_tcup2")
+
+[node name="MarginContainer" type="MarginContainer" parent="." unique_id=1057339642]
+layout_mode = 2
+mouse_filter = 2
+
+[node name="VBoxContainer" type="VBoxContainer" parent="MarginContainer" unique_id=455504592]
+layout_mode = 2
+mouse_filter = 2
+
+[node name="TitleLabel" type="Label" parent="MarginContainer/VBoxContainer" unique_id=1103346870]
+layout_mode = 2
+theme_override_font_sizes/font_size = 14
+
+[node name="CoordsLabel" type="Label" parent="MarginContainer/VBoxContainer" unique_id=234701174]
+layout_mode = 2
+theme_override_font_sizes/font_size = 11
+
+[node name="TerrainLabel" type="Label" parent="MarginContainer/VBoxContainer" unique_id=2097969558]
+layout_mode = 2
+theme_override_font_sizes/font_size = 11
+
+[node name="WaterLabel" type="Label" parent="MarginContainer/VBoxContainer" unique_id=1679750442]
+layout_mode = 2
+theme_override_font_sizes/font_size = 11
+
+[node name="CoastLabel" type="Label" parent="MarginContainer/VBoxContainer" unique_id=721920226]
+layout_mode = 2
+theme_override_font_sizes/font_size = 11
+
+[node name="RiverLabel" type="Label" parent="MarginContainer/VBoxContainer" unique_id=122630511]
+layout_mode = 2
+theme_override_font_sizes/font_size = 11
+
+[node name="BiomeLabel" type="Label" parent="MarginContainer/VBoxContainer" unique_id=1403436985]
+layout_mode = 2
+theme_override_font_sizes/font_size = 11
+
+[node name="ActionsContainer" type="VBoxContainer" parent="MarginContainer/VBoxContainer" unique_id=1311435228]
+layout_mode = 2

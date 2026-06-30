@@ -25,13 +25,14 @@ enum RiverShape {
 	FULL
 }
 
-enum Cover {
+enum Biome {
 	NONE,
 	FOREST,
 	GRASSLAND,
 	DESERT,
 	SWAMP,
-	FERTILE
+	FERTILE,
+	ROCKY
 }
 
 enum CoastType {

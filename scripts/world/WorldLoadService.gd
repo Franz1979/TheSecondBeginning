@@ -30,7 +30,7 @@ func load_world_from_json(file_path: String) -> World:
 		cell.water_type = int(cell_data["water_type"])
 		cell.river_shape = int(cell_data.get("river_shape", GameTypes.RiverShape.NONE))
 		cell.coast_type = int(cell_data["coast_type"])
-		cell.cover = int(cell_data["cover"])
+		cell.biome = int(cell_data["biome"])
 
 		world.cells.append(cell)
 

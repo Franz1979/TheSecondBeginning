@@ -17,7 +17,7 @@ func save_world_to_json(world: World, file_path: String) -> void:
 			"water_type": cell.water_type,
 			"river_shape":cell.river_shape,
 			"coast_type": cell.coast_type,
-			"cover": cell.cover
+			"biome": cell.biome
 		})
 
 	var json_text := JSON.stringify(data, "\t")
