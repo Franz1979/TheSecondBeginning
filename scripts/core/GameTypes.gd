@@ -41,3 +41,10 @@ enum CoastType {
 	SEMI_CLIFF,
 	CLIFF
 }
+
+enum WorldObjectType {
+	NONE,
+
+	ROCK,
+	TREE
+}

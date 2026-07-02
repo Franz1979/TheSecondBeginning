@@ -1,17 +1,26 @@
-class_name WorldSaveService
+class_name GameSaveService
 extends RefCounted
 
 
-func save_world_to_json(world: World, file_path: String) -> void:
+func save_game_to_json(
+	world: World,
+	game_data: GameData,
+	file_path: String
+) -> void:
 	var data := {
-	"file_type": "world_map",
-	"width": World.WIDTH,
-	"height": World.HEIGHT,
-	"cells": []
+	"file_type": "game_save",
+	"game": {
+		"year": game_data.year
+	},
+	"world": {
+		"width": World.WIDTH,
+		"height": World.HEIGHT,
+		"cells": []
+	}
 }
 
 	for cell in world.cells:
-		data["cells"].append({
+		data["world"]["cells"].append({
 			"x": cell.x,
 			"y": cell.y,
 			"terrain_base": cell.terrain_base,
@@ -27,4 +36,4 @@ func save_world_to_json(world: World, file_path: String) -> void:
 	file.store_string(json_text)
 	file.close()
 
-	print("World saved to JSON: ", file_path)
+	print("Game saved to JSON: ", file_path)

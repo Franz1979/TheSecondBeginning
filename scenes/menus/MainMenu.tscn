@@ -51,3 +51,7 @@ layout_mode = 2
 [node name="ExitButton" type="Button" parent="VBoxContainer" unique_id=1775046654]
 layout_mode = 2
 text = "Esci"
+
+[node name="OpenGameFileDialog" type="FileDialog" parent="." unique_id=751729673]
+title = "Open a File"
+file_mode = 0

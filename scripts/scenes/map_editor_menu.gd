@@ -10,12 +10,14 @@ extends Control
 func _ready() -> void:
 	label2.text = tr("map_editor")
 
-
 	modify_existing_map_button.text = tr("modify_existing_map")
 	create_random_map_button.text = tr("create_random_map")
 	create_new_map_button.text = tr("create_new_map")
 	back_to_menu_button.text = tr("back_to_menu")
-
+	
+	open_map_file_dialog.access = FileDialog.ACCESS_USERDATA
+	open_map_file_dialog.current_dir = GameSettings.MAPS_DIR
+	
 	modify_existing_map_button.pressed.connect(_on_modify_existing_map_pressed)
 	create_random_map_button.pressed.connect(_on_create_random_map_pressed)
 	create_new_map_button.pressed.connect(_on_create_new_map_pressed)
@@ -26,19 +28,20 @@ func _on_modify_existing_map_pressed() -> void:
 	open_map_file_dialog.popup_centered()
 	
 func _on_open_map_file_selected(path: String) -> void:
-	GameSettings.selected_save_file = path
+	GameSettings.selected_map_type = "saved"
+	GameSettings.selected_map_file = path
 	get_tree().change_scene_to_file("res://scenes/editor/MapEditorScene.tscn")
 
 
 func _on_create_random_map_pressed() -> void:
 	GameSettings.selected_map_type = "random"
-	GameSettings.selected_save_file = ""
+	GameSettings.selected_map_file = ""
 	get_tree().change_scene_to_file("res://scenes/editor/MapEditorScene.tscn")
 
 
 func _on_create_new_map_pressed() -> void:
 	GameSettings.selected_map_type = "empty"
-	GameSettings.selected_save_file = ""
+	GameSettings.selected_map_file = ""
 	get_tree().change_scene_to_file(
 		"res://scenes/editor/MapEditorScene.tscn"
 	)

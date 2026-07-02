@@ -181,6 +181,10 @@ func _is_near_terrain(
 			if other == null:
 				continue
 
+			if terrain_type == GameTypes.TerrainBase.PLAIN:
+				if other.water_type == GameTypes.WaterType.RIVER:
+					continue
+
 			if other.terrain_base == terrain_type:
 				return true
 

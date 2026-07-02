@@ -1,10 +1,10 @@
-class_name WorldLoadService
+class_name GameLoadService
 extends RefCounted
 
 
-func load_world_from_json(file_path: String) -> World:
+func load_game_from_json(file_path: String) -> LoadedGame:
 	if not FileAccess.file_exists(file_path):
-		print("File JSON non trovato: ", file_path)
+		print("File salvataggio non trovato: ", file_path)
 		return null
 
 	var file := FileAccess.open(file_path, FileAccess.READ)
@@ -17,14 +17,19 @@ func load_world_from_json(file_path: String) -> World:
 		print("Errore nella lettura del JSON: ", file_path)
 		return null
 
-	if not data.has("file_type") or data["file_type"] != "world_map":
-		push_error("Il file selezionato non è una mappa.")
+	if not data.has("file_type") or data["file_type"] != "game_save":
+		push_error("Il file selezionato non è una partita salvata.")
 		return null
+
+	var game_data := GameData.new()
+	game_data.year = int(data["game"]["year"])
+
+	var world_data = data["world"]
 
 	var world := World.new()
 	world.cells.clear()
 
-	for cell_data in data["cells"]:
+	for cell_data in world_data["cells"]:
 		var cell := MacroCellData.new(
 			int(cell_data["x"]),
 			int(cell_data["y"])
@@ -38,5 +43,9 @@ func load_world_from_json(file_path: String) -> World:
 
 		world.cells.append(cell)
 
-	print("World loaded from JSON: ", file_path)
-	return world
+	var loaded_game := LoadedGame.new()
+	loaded_game.world = world
+	loaded_game.game_data = game_data
+
+	print("Game loaded from JSON: ", file_path)
+	return loaded_game
