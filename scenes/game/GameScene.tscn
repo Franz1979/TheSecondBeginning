@@ -7,6 +7,24 @@
 [sub_resource type="StyleBoxFlat" id="StyleBoxFlat_vaave"]
 bg_color = Color(0.54391533, 0.65469354, 0.10991336, 1)
 
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_ldxrm"]
+border_width_left = 3
+border_width_top = 3
+border_width_right = 3
+border_width_bottom = 2
+corner_detail = 13
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_8cups"]
+bg_color = Color(0.5069058, 0.57925045, 0.881728, 1)
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_gs0nk"]
+bg_color = Color(0.8947004, 0.3958708, 0.67028683, 1)
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_b1len"]
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_ks7xl"]
+bg_color = Color(0.12638924, 0.68979824, 0.63155586, 1)
+
 [node name="GameScene" type="Node2D" unique_id=728484967]
 script = ExtResource("1_dsxmn")
 
@@ -53,6 +71,33 @@ offset_left = -120.0
 offset_top = -189.0
 grow_horizontal = 0
 grow_vertical = 0
+
+[node name="YearPanelContainer" type="PanelContainer" parent="CanvasLayer" unique_id=1084646717]
+anchors_preset = 5
+anchor_left = 0.5
+anchor_right = 0.5
+offset_left = 324.0
+offset_right = 342.0
+offset_bottom = 86.0
+grow_horizontal = 2
+size_flags_horizontal = 4
+
+[node name="HBoxContainer" type="HBoxContainer" parent="CanvasLayer/YearPanelContainer" unique_id=2046685166]
+layout_mode = 2
+
+[node name="YearTitleLabel" type="Label" parent="CanvasLayer/YearPanelContainer/HBoxContainer" unique_id=1382560147]
+layout_mode = 2
+
+[node name="YearLabel" type="Label" parent="CanvasLayer/YearPanelContainer/HBoxContainer" unique_id=747362345]
+layout_mode = 2
+
+[node name="AdvanceYearButton" type="Button" parent="CanvasLayer/YearPanelContainer/HBoxContainer" unique_id=1067858972]
+layout_mode = 2
+theme_override_styles/normal = SubResource("StyleBoxFlat_ldxrm")
+theme_override_styles/normal_mirrored = SubResource("StyleBoxFlat_8cups")
+theme_override_styles/pressed = SubResource("StyleBoxFlat_gs0nk")
+theme_override_styles/hover = SubResource("StyleBoxFlat_b1len")
+theme_override_styles/hover_pressed_mirrored = SubResource("StyleBoxFlat_ks7xl")
 
 [node name="SaveGameFileDialog" type="FileDialog" parent="." unique_id=1119865624]
 access = 1

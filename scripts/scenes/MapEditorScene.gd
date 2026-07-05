@@ -341,5 +341,5 @@ func _select_biome(
 	selected_button.button_pressed = true
 	selected_button.text = "▶ " + selected_button.text
 	
-func _on_cell_selected(cell: MacroCellData) -> void:
-	macro_cell_info_panel.show_cell(cell)
+func _on_cell_selected(cell: MacroCellData, state: MacroCellState) -> void:
+	macro_cell_info_panel.show_cell(cell, state)

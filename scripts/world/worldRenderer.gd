@@ -14,68 +14,77 @@ const COLOR_RIVER := Color(0.20, 0.60, 1.00)
 const COLOR_GRID := Color(0, 0, 0, 0.15)
 
 var world: World
+var show_resource_overlay: bool = true
+
 
 func setup(_world: World) -> void:
 	world = _world
 	queue_redraw()
 
+
 func _draw() -> void:
 	if world == null:
 		return
-
 	for cell in world.cells:
 		var color := get_cell_color(cell)
-
 		var rect := Rect2(
 			cell.x * CELL_SIZE,
 			cell.y * CELL_SIZE,
 			CELL_SIZE,
 			CELL_SIZE
 		)
-
 		if cell.water_type == GameTypes.WaterType.RIVER:
 			_draw_river_cell(cell, rect)
 		else:
 			draw_rect(rect, color)
 
+		if show_resource_overlay:
+			_draw_resource_overlay(cell, rect)
+
 		draw_rect(rect, COLOR_GRID, false, 1.0)
 
 
+func _draw_resource_overlay(cell: MacroCellData, rect: Rect2) -> void:
+	var state: MacroCellState = world.get_cell_state_at(cell.x, cell.y)
+	if state == null:
+		return
+	var stone_quantity: int = state.get_resource_quantity(GameTypes.WorldObjectType.ROCK)
+	if stone_quantity <= 0:
+		return
+	var alpha: float = clamp(float(stone_quantity) / 5000.0, 0.0, 0.85)
+	draw_rect(rect, Color(0.3, 0.3, 0.3, alpha))
+
+
 func get_cell_color(cell: MacroCellData) -> Color:
-
-	if cell.water_type == GameTypes.WaterType.SEA:
-		match cell.coast_type:
-			GameTypes.CoastType.BEACH:
-				return COLOR_BEACH
-
-			GameTypes.CoastType.CLIFF:
-				return COLOR_CLIFF
-
-			GameTypes.CoastType.SEMI_CLIFF:
-				return COLOR_SEMI_CLIFF
-
-		return COLOR_SEA
-
 	match cell.water_type:
+		GameTypes.WaterType.SEA:
+			return COLOR_SEA
 		GameTypes.WaterType.LAKE:
 			return COLOR_LAKE
-
 		GameTypes.WaterType.RIVER:
 			return COLOR_RIVER
 
 	match cell.terrain_base:
 		GameTypes.TerrainBase.WATER:
 			return COLOR_SEA
-
 		GameTypes.TerrainBase.PLAIN:
-			return COLOR_PLAIN
-
+			match cell.coast_type:
+				GameTypes.CoastType.BEACH:
+					return COLOR_BEACH
+				_:
+					return COLOR_PLAIN
 		GameTypes.TerrainBase.HILL:
-			return COLOR_HILL
-
+			match cell.coast_type:
+				GameTypes.CoastType.SEMI_CLIFF:
+					return COLOR_SEMI_CLIFF
+				_:
+					return COLOR_HILL
 		GameTypes.TerrainBase.MOUNTAIN:
-			return COLOR_MOUNTAIN
-
+			match cell.coast_type:
+				GameTypes.CoastType.CLIFF:
+					return COLOR_CLIFF
+				_:
+					return COLOR_MOUNTAIN
 		_:
 			return Color.MAGENTA
 func _draw_river_cell(cell: MacroCellData, rect: Rect2) -> void:

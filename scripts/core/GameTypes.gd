@@ -44,7 +44,14 @@ enum CoastType {
 
 enum WorldObjectType {
 	NONE,
-
 	ROCK,
-	TREE
+	TREE,
+	# in futuro: WILD_ANIMAL, FORAGE, ecc.
+}
+
+enum ResourceType {
+	NONE,
+	STONE,
+	WOOD,
+	# in futuro: FOOD, TOOLS, ecc.
 }

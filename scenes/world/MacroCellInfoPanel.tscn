@@ -47,5 +47,21 @@ theme_override_font_sizes/font_size = 11
 layout_mode = 2
 theme_override_font_sizes/font_size = 11
 
+[node name="SpaceLabel" type="Label" parent="MarginContainer/VBoxContainer" unique_id=1162298486]
+layout_mode = 2
+theme_override_font_sizes/font_size = 11
+
+[node name="TreeNumberLabel" type="Label" parent="MarginContainer/VBoxContainer" unique_id=1058781868]
+layout_mode = 2
+theme_override_font_sizes/font_size = 11
+
+[node name="StoneNumberLabel" type="Label" parent="MarginContainer/VBoxContainer" unique_id=71652592]
+layout_mode = 2
+theme_override_font_sizes/font_size = 11
+
+[node name="EmptySpaceLabel" type="Label" parent="MarginContainer/VBoxContainer" unique_id=1928672357]
+layout_mode = 2
+theme_override_font_sizes/font_size = 11
+
 [node name="ActionsContainer" type="VBoxContainer" parent="MarginContainer/VBoxContainer" unique_id=1311435228]
 layout_mode = 2

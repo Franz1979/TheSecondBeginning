@@ -1,0 +1,15 @@
+[gd_resource type="Resource" script_class="ResourceDensityRules" format=3 uid="uid://blgl66ss2nilu"]
+
+[ext_resource type="Script" uid="uid://b5ivfujr7buwk" path="res://scripts/core/ResourceDensityRules.gd" id="1_n1hxv"]
+
+[resource]
+script = ExtResource("1_n1hxv")
+base_density = 10.0
+presence_chance = 0.4
+terrain_multiplier_mountain = 1.1
+terrain_multiplier_water = 0.0
+biome_multiplier_rocky = 1.5
+coast_multiplier_beach = 0.5
+coast_multiplier_semi_cliff = 1.2
+coast_multiplier_cliff = 1.5
+metadata/_custom_type_script = "uid://b5ivfujr7buwk"

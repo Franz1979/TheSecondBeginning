@@ -3,16 +3,23 @@ extends Node2D
 var world: World
 var game_data: GameData
 var renderer: WorldRenderer
-var game_controller: MapEditorController
+var game_controller: CellSelectorController
 
 @onready var back_to_menu_button: Button = $CanvasLayer/ActionPanelContainer/MarginContainer/VBoxContainer/BackToMenuButton
 @onready var save_game_button: Button = $CanvasLayer/ActionPanelContainer/MarginContainer/VBoxContainer/SaveGameButton
 @onready var save_game_file_dialog: FileDialog = $SaveGameFileDialog
 @onready var macro_cell_info_panel: MacroCellInfoPanel = $CanvasLayer/MacroCellInfoPanel
+@onready var year_title_label: Label = $CanvasLayer/YearPanelContainer/HBoxContainer/YearTitleLabel
+@onready var year_label: Label = $CanvasLayer/YearPanelContainer/HBoxContainer/YearLabel
+@onready var advance_year_button: Button = $CanvasLayer/YearPanelContainer/HBoxContainer/AdvanceYearButton
 
 func _ready() -> void:
 	save_game_button.text = tr("save_game")
 	back_to_menu_button.text = tr("back_to_menu")
+	
+	year_title_label.text = tr("current_year")
+	advance_year_button.text = "+1"
+	advance_year_button.pressed.connect(_on_advance_year_pressed)
 	back_to_menu_button.pressed.connect(_on_back_to_menu_pressed)
 	save_game_button.pressed.connect(_on_save_game_pressed)
 	save_game_file_dialog.access = FileDialog.ACCESS_USERDATA
@@ -20,28 +27,25 @@ func _ready() -> void:
 	save_game_file_dialog.file_selected.connect(_on_save_game_file_selected)
 
 	_load_world()
-	game_data = GameData.new()
 	_create_renderer()
-	
-	game_controller = MapEditorController.new()
-	game_controller.setup(world, renderer)
-	game_controller.set_terrain_brush(MapEditorController.TerrainBrush.NONE)
-	game_controller.cell_selected.connect(_on_cell_selected)
+	_update_year_label()
 
+	game_controller = CellSelectorController.new()
+	game_controller.setup(world, renderer)
+	game_controller.cell_selected.connect(_on_cell_selected)
 	macro_cell_info_panel.visible = true
+
 
 func _load_world() -> void:
 	if GameSettings.selected_save_file != "":
 		var load_service := GameLoadService.new()
 		var loaded_game := load_service.load_game_from_json(GameSettings.selected_save_file)
-
 		if loaded_game == null:
 			print("Caricamento partita fallito. Genero mondo vuoto.")
 			game_data = GameData.new()
 			world = World.new()
 			world.generate_empty_world()
 			return
-
 		world = loaded_game.world
 		game_data = loaded_game.game_data
 		return
@@ -49,16 +53,15 @@ func _load_world() -> void:
 	if GameSettings.selected_map_type == "saved" and GameSettings.selected_map_file != "":
 		var load_service := WorldLoadService.new()
 		world = load_service.load_world_from_json(GameSettings.selected_map_file)
-
 		if world == null:
 			print("Caricamento mappa fallito. Genero mondo vuoto.")
 			world = World.new()
 			world.generate_empty_world()
-
+		else:
+			world.ensure_cell_states()
 	elif GameSettings.selected_map_type == "random":
 		world = World.new()
 		world.generate_empty_world()
-
 	else:
 		world = World.new()
 		world.generate_empty_world()
@@ -66,6 +69,8 @@ func _load_world() -> void:
 	if game_data == null:
 		game_data = GameData.new()
 
+	var resource_service := WorldResourceService.new()
+	resource_service.populate_resources(world)
 
 func _create_renderer() -> void:
 	renderer = WorldRenderer.new()
@@ -76,8 +81,8 @@ func _input(event: InputEvent) -> void:
 	if game_controller != null:
 		game_controller.handle_input(event)
 		
-func _on_cell_selected(cell: MacroCellData) -> void:
-	macro_cell_info_panel.show_cell(cell)
+func _on_cell_selected(cell: MacroCellData, state: MacroCellState) -> void:
+	macro_cell_info_panel.show_cell(cell, state)
 	
 func _on_save_game_pressed() -> void:
 	save_game_file_dialog.popup_centered()
@@ -93,3 +98,10 @@ func _on_save_game_file_selected(path: String) -> void:
 	
 func _on_back_to_menu_pressed() -> void:
 	get_tree().change_scene_to_file("res://scenes/menus/NewGameMenu.tscn")
+	
+func _on_advance_year_pressed() -> void:
+	game_data.advance_year()
+	_update_year_label()
+
+func _update_year_label() -> void:
+	year_label.text = str(game_data.year)

@@ -8,6 +8,10 @@ extends PanelContainer
 @onready var coast_label: Label = $MarginContainer/VBoxContainer/CoastLabel
 @onready var river_label: Label = $MarginContainer/VBoxContainer/RiverLabel
 @onready var biome_label: Label = $MarginContainer/VBoxContainer/BiomeLabel
+@onready var space_label: Label = $MarginContainer/VBoxContainer/SpaceLabel
+@onready var tree_number_label: Label = $MarginContainer/VBoxContainer/TreeNumberLabel
+@onready var stone_number_label: Label = $MarginContainer/VBoxContainer/StoneNumberLabel
+@onready var empty_space_label: Label = $MarginContainer/VBoxContainer/EmptySpaceLabel
 @onready var actions_container: VBoxContainer = $MarginContainer/VBoxContainer/ActionsContainer
 
 
@@ -15,19 +19,29 @@ func _ready() -> void:
 	clear()
 
 
-func show_cell(cell: MacroCellData) -> void:
+func show_cell(cell: MacroCellData, state: MacroCellState) -> void:
 	if cell == null:
 		clear()
 		return
-
-	title_label.text = "Macro cell Data:"
+	title_label.text = "Macro Cell Data:"
 	coords_label.text = "Coords: " + str(cell.x) + ", " + str(cell.y)
 	terrain_label.text = "Terrain: " + _terrain_to_text(cell.terrain_base)
 	water_label.text = "Water: " + _water_to_text(cell.water_type)
 	coast_label.text = "Coast: " + _coast_to_text(cell.coast_type)
 	river_label.text = "River: " + _river_to_text(cell.river_shape)
 	biome_label.text = "Biome: " + _biome_to_text(cell.biome)
+	space_label.text = " - - - - - - - - - -"
 
+	if state != null:
+		var stone_quantity := state.get_resource_quantity(GameTypes.WorldObjectType.ROCK)
+		var stone_space := state.get_dedicated_space(GameTypes.WorldObjectType.ROCK)
+		tree_number_label.text = "Trees: " + str(state.get_resource_quantity(GameTypes.WorldObjectType.TREE))
+		stone_number_label.text = "Rock: " + str(stone_quantity) + " (occupied cells: " + str(stone_space) + ")"
+		empty_space_label.text = "Empty space: " + str(state.get_empty_space())
+	else:
+		tree_number_label.text = "Trees: -"
+		stone_number_label.text = "Stone: -"
+		empty_space_label.text = "Empty space: -"
 
 func clear() -> void:
 	title_label.text = "Macro cell"
@@ -37,6 +51,9 @@ func clear() -> void:
 	coast_label.text = "Coast: -"
 	river_label.text = "River: -"
 	biome_label.text = "Biome: -"
+	tree_number_label.text = "Trees: -"
+	stone_number_label.text = "Stone: -"
+	empty_space_label.text = "Empty space: -"
 
 
 func _terrain_to_text(value: GameTypes.TerrainBase) -> String:
