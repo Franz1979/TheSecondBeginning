@@ -69,7 +69,7 @@ func _load_world() -> void:
 	if game_data == null:
 		game_data = GameData.new()
 
-	var resource_service := WorldResourceService.new()
+	var resource_service := InitialResourceSetupService.new()
 	resource_service.populate_resources(world)
 
 func _create_renderer() -> void:
@@ -83,6 +83,7 @@ func _input(event: InputEvent) -> void:
 		
 func _on_cell_selected(cell: MacroCellData, state: MacroCellState) -> void:
 	macro_cell_info_panel.show_cell(cell, state)
+	renderer.set_selected_cell(cell)
 	
 func _on_save_game_pressed() -> void:
 	save_game_file_dialog.popup_centered()
@@ -101,7 +102,14 @@ func _on_back_to_menu_pressed() -> void:
 	
 func _on_advance_year_pressed() -> void:
 	game_data.advance_year()
+	var growth_service := ResourceGrowthService.new()
+	growth_service.grow_resources(world)
 	_update_year_label()
+	renderer.queue_redraw()
+
+	if renderer.selected_cell != null:
+		var state := world.get_cell_state_at(renderer.selected_cell.x, renderer.selected_cell.y)
+		macro_cell_info_panel.show_cell(renderer.selected_cell, state)
 
 func _update_year_label() -> void:
 	year_label.text = str(game_data.year)

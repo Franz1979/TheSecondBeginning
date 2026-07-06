@@ -1,0 +1,9 @@
+[gd_resource type="Resource" script_class="ResourceGrowthRules" format=3 uid="uid://c8pr6giaqqki8"]
+
+[ext_resource type="Script" uid="uid://dm38wig7or77y" path="res://scripts/core/ResourceGrowthRules.gd" id="1_nj652"]
+
+[resource]
+script = ExtResource("1_nj652")
+max_migration_per_year = 50
+succession_level = 2
+metadata/_custom_type_script = "uid://dm38wig7or77y"

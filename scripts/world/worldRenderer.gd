@@ -16,6 +16,11 @@ const COLOR_GRID := Color(0, 0, 0, 0.15)
 var world: World
 var show_resource_overlay: bool = true
 
+var selected_cell: MacroCellData = null
+
+func set_selected_cell(cell: MacroCellData) -> void:
+	selected_cell = cell
+	queue_redraw()
 
 func setup(_world: World) -> void:
 	world = _world
@@ -43,18 +48,89 @@ func _draw() -> void:
 
 		draw_rect(rect, COLOR_GRID, false, 1.0)
 
+		if selected_cell != null and cell.x == selected_cell.x and cell.y == selected_cell.y:
+			draw_rect(rect, Color(1, 0, 0, 1), false, 2.0)
+
+
+const COLOR_STONE_OVERLAY := Color(0.35, 0.35, 0.35, 0.85)
+const COLOR_TREE_OVERLAY := Color(0.10, 0.45, 0.15, 0.85)
+
+const RESOURCE_ROW_TYPES := [
+	GameTypes.WorldObjectType.ROCK,
+	GameTypes.WorldObjectType.TREE,
+]
+
+const RESOURCE_ROW_COLORS := {
+	GameTypes.WorldObjectType.ROCK: COLOR_STONE_OVERLAY,
+	GameTypes.WorldObjectType.TREE: COLOR_TREE_OVERLAY,
+}
+
 
 func _draw_resource_overlay(cell: MacroCellData, rect: Rect2) -> void:
 	var state: MacroCellState = world.get_cell_state_at(cell.x, cell.y)
 	if state == null:
 		return
-	var stone_quantity: int = state.get_resource_quantity(GameTypes.WorldObjectType.ROCK)
-	if stone_quantity <= 0:
+
+	var border: float = 1.0
+	var inner_size: float = rect.size.x - border * 2.0
+	if inner_size <= 0:
 		return
-	var alpha: float = clamp(float(stone_quantity) / 5000.0, 0.0, 0.85)
-	draw_rect(rect, Color(0.3, 0.3, 0.3, alpha))
+
+	var row_height: float = inner_size / RESOURCE_ROW_TYPES.size()
+
+	for i in range(RESOURCE_ROW_TYPES.size()):
+		var resource_type: GameTypes.WorldObjectType = RESOURCE_ROW_TYPES[i]
+		var space: int = state.get_dedicated_space(resource_type)
+		if space <= 0:
+			continue
+
+		var total_occupied: int = state.get_total_dedicated_space()
+		if total_occupied <= 0:
+			continue
+
+		var row_y: float = rect.position.y + border + row_height * i
+		var row_rect := Rect2(rect.position.x + border, row_y, inner_size, row_height)
+
+		_draw_proportional_row(row_rect, state, resource_type, total_occupied)
 
 
+func _draw_proportional_row(
+	row_rect: Rect2,
+	state: MacroCellState,
+	highlight_type: GameTypes.WorldObjectType,
+	total_occupied: int
+) -> void:
+	var remaining_width: float = row_rect.size.x
+	var current_x: float = row_rect.position.x
+
+	for i in range(RESOURCE_ROW_TYPES.size()):
+		var resource_type: GameTypes.WorldObjectType = RESOURCE_ROW_TYPES[i]
+		var space: int = state.get_dedicated_space(resource_type)
+		if space <= 0:
+			continue
+
+		var is_last: bool = (i == RESOURCE_ROW_TYPES.size() - 1) or _is_last_present(state, i)
+		var width: float
+		if is_last:
+			width = remaining_width
+		else:
+			var proportion: float = float(space) / float(total_occupied)
+			width = floor(row_rect.size.x * proportion)
+			remaining_width -= width
+
+		if resource_type == highlight_type:
+			draw_rect(Rect2(current_x, row_rect.position.y, width, row_rect.size.y), RESOURCE_ROW_COLORS[resource_type])
+
+		current_x += width
+
+
+func _is_last_present(state: MacroCellState, from_index: int) -> bool:
+	for i in range(from_index + 1, RESOURCE_ROW_TYPES.size()):
+		var resource_type: GameTypes.WorldObjectType = RESOURCE_ROW_TYPES[i]
+		if state.get_dedicated_space(resource_type) > 0:
+			return false
+	return true
+	
 func get_cell_color(cell: MacroCellData) -> Color:
 	match cell.water_type:
 		GameTypes.WaterType.SEA:

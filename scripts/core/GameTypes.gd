@@ -55,3 +55,10 @@ enum ResourceType {
 	WOOD,
 	# in futuro: FOOD, TOOLS, ecc.
 }
+
+enum SuccessionLevel {
+	FORAGE = 0,
+	SHRUB = 1,
+	TREE = 2,
+	# futuri livelli aggiunti qui, in ordine
+}

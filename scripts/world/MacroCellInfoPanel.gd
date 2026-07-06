@@ -35,14 +35,16 @@ func show_cell(cell: MacroCellData, state: MacroCellState) -> void:
 	if state != null:
 		var stone_quantity := state.get_resource_quantity(GameTypes.WorldObjectType.ROCK)
 		var stone_space := state.get_dedicated_space(GameTypes.WorldObjectType.ROCK)
-		tree_number_label.text = "Trees: " + str(state.get_resource_quantity(GameTypes.WorldObjectType.TREE))
-		stone_number_label.text = "Rock: " + str(stone_quantity) + " (occupied cells: " + str(stone_space) + ")"
+		var tree_quantity := state.get_resource_quantity(GameTypes.WorldObjectType.TREE)
+		var tree_space := state.get_dedicated_space(GameTypes.WorldObjectType.TREE)
+		tree_number_label.text = "Trees: " + str(tree_quantity) + " (occupied cells: " + str(tree_space) + ")"
+		stone_number_label.text = "Stone: " + str(stone_quantity) + " (occupied cells: " + str(stone_space) + ")"
 		empty_space_label.text = "Empty space: " + str(state.get_empty_space())
 	else:
 		tree_number_label.text = "Trees: -"
 		stone_number_label.text = "Stone: -"
 		empty_space_label.text = "Empty space: -"
-
+		
 func clear() -> void:
 	title_label.text = "Macro cell"
 	coords_label.text = "Coords: -"

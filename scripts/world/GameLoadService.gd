@@ -42,12 +42,13 @@ func load_game_from_json(file_path: String) -> LoadedGame:
 				int(state_data["x"]),
 				int(state_data["y"])
 			)
-			var occupied = state_data.get("resource_quantity", {})
-			for key in occupied.keys():
-				state.resource_quantity[int(key)] = int(occupied[key])
+			var quantity_data = state_data.get("resource_quantity", {})
+			for key in quantity_data.keys():
+				state.resource_quantity[int(key)] = int(quantity_data[key])
 			var dedicated = state_data.get("dedicated_space", {})
 			for key in dedicated.keys():
 				state.dedicated_space[int(key)] = int(dedicated[key])
+			state.river_space = int(state_data.get("river_space", 0))
 			world.cell_states.append(state)
 
 	var loaded_game := LoadedGame.new()

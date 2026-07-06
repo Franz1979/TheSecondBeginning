@@ -32,16 +32,23 @@ func generate_empty_world() -> void:
 	print("World generated. Cells: ", cells.size())
 
 func get_cell_at(x: int, y: int) -> MacroCellData:
-	for cell in cells:
-		if cell.x == x and cell.y == y:
-			return cell
-	return null
-	
+	var index := y * WIDTH + x
+	if index < 0 or index >= cells.size():
+		return null
+	var cell := cells[index]
+	if cell.x != x or cell.y != y:
+		return null
+	return cell
+
+
 func get_cell_state_at(x: int, y: int) -> MacroCellState:
-	for state in cell_states:
-		if state.x == x and state.y == y:
-			return state
-	return null
+	var index := y * WIDTH + x
+	if index < 0 or index >= cell_states.size():
+		return null
+	var state := cell_states[index]
+	if state.x != x or state.y != y:
+		return null
+	return state
 
 func ensure_cell_states() -> void:
 	if cell_states.size() == cells.size():

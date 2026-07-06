@@ -8,6 +8,7 @@ var y: int
 var micro_seed: int
 var resource_quantity: Dictionary = {}
 var dedicated_space: Dictionary = {}
+var river_space: int = 0
 
 func _init(_x: int, _y: int) -> void:
 	x = _x
@@ -28,9 +29,15 @@ func get_dedicated_space(object_type: GameTypes.WorldObjectType) -> int:
 
 func set_dedicated_space(object_type: GameTypes.WorldObjectType, amount: int) -> void:
 	dedicated_space[object_type] = max(amount, 0)
+	
+func get_river_space() -> int:
+	return river_space
+
+func set_river_space(amount: int) -> void:
+	river_space = max(amount, 0)
 
 func get_total_dedicated_space() -> int:
-	var total := 0
+	var total := river_space
 	for amount in dedicated_space.values():
 		total += amount
 	return total
