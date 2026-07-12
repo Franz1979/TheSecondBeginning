@@ -104,6 +104,8 @@ func _on_advance_year_pressed() -> void:
 	game_data.advance_year()
 	var growth_service := ResourceGrowthService.new()
 	growth_service.grow_resources(world)
+	var migration_service := ResourceMigrationService.new()
+	migration_service.migrate_resources(world)
 	_update_year_label()
 	renderer.queue_redraw()
 

@@ -167,3 +167,6 @@ static func _get_growth_coast_multiplier(rules: ResourceGrowthRules, coast: Game
 			return rules.coast_multiplier_cliff
 		_:
 			return 1.0
+			
+static func get_growth_rules(resource_type: GameTypes.WorldObjectType) -> ResourceGrowthRules:
+	return _get_growth_rules(resource_type)

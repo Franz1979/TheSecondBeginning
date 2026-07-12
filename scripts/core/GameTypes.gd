@@ -46,6 +46,7 @@ enum WorldObjectType {
 	NONE,
 	ROCK,
 	TREE,
+	GRASS,
 	# in futuro: WILD_ANIMAL, FORAGE, ecc.
 }
 
@@ -53,6 +54,7 @@ enum ResourceType {
 	NONE,
 	STONE,
 	WOOD,
+	HAY,
 	# in futuro: FOOD, TOOLS, ecc.
 }
 

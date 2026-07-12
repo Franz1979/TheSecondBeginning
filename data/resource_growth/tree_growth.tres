@@ -6,4 +6,17 @@
 script = ExtResource("1_nj652")
 max_migration_per_year = 50
 succession_level = 2
+encroachment_rate = 0.03
+terrain_multiplier_plain = 1.2
+terrain_multiplier_mountain = 0.3
+terrain_multiplier_water = 0.0
+biome_multiplier_forest = 2.0
+biome_multiplier_grassland = 0.7
+biome_multiplier_desert = 0.0
+biome_multiplier_swamp = 1.2
+biome_multiplier_fertile = 1.5
+biome_multiplier_rocky = 0.2
+coast_multiplier_beach = 0.4
+coast_multiplier_semi_cliff = 0.6
+coast_multiplier_cliff = 0.3
 metadata/_custom_type_script = "uid://dm38wig7or77y"

@@ -1,0 +1,22 @@
+[gd_resource type="Resource" script_class="ResourceGrowthRules" format=3 uid="uid://d33v26rbaqltk"]
+
+[ext_resource type="Script" uid="uid://dm38wig7or77y" path="res://scripts/core/ResourceGrowthRules.gd" id="1_gr4ss"]
+
+[resource]
+script = ExtResource("1_gr4ss")
+base_growth_rate = 0.4
+migration_chance = 0.5
+migration_success_rate = 0.2
+terrain_multiplier_plain = 1.4
+terrain_multiplier_hill = 0.7
+terrain_multiplier_mountain = 0.1
+terrain_multiplier_water = 0.0
+biome_multiplier_forest = 0.5
+biome_multiplier_grassland = 2.0
+biome_multiplier_desert = 0.1
+biome_multiplier_fertile = 1.6
+biome_multiplier_rocky = 0.3
+coast_multiplier_beach = 0.5
+coast_multiplier_semi_cliff = 0.3
+coast_multiplier_cliff = 0.1
+metadata/_custom_type_script = "uid://dm38wig7or77y"

@@ -59,6 +59,10 @@ theme_override_font_sizes/font_size = 11
 layout_mode = 2
 theme_override_font_sizes/font_size = 11
 
+[node name="GrassNumberLabel" type="Label" parent="MarginContainer/VBoxContainer" unique_id=839201755]
+layout_mode = 2
+theme_override_font_sizes/font_size = 11
+
 [node name="EmptySpaceLabel" type="Label" parent="MarginContainer/VBoxContainer" unique_id=1928672357]
 layout_mode = 2
 theme_override_font_sizes/font_size = 11
