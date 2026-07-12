@@ -4,6 +4,7 @@ extends RefCounted
 const MIGRATABLE_TYPES := [
 	GameTypes.WorldObjectType.GRASS,
 	GameTypes.WorldObjectType.TREE,
+	GameTypes.WorldObjectType.SHRUB,
 ]
 
 const NEIGHBOR_OFFSETS := [
@@ -14,16 +15,17 @@ const NEIGHBOR_OFFSETS := [
 ]
 
 
-func migrate_resources(world: World) -> void:
+func migrate_resources(world: World, leftover_surplus: Dictionary) -> void:
 	var transfers: Array = []
+	var ordered_types := ResourceCalculator.get_types_ordered_by_succession(MIGRATABLE_TYPES)
 
 	for cell in world.cells:
 		var state := world.get_cell_state_at(cell.x, cell.y)
 		if state == null:
 			continue
 
-		for resource_type in MIGRATABLE_TYPES:
-			_compute_transfers_for_cell(world, cell, state, resource_type, transfers)
+		for resource_type in ordered_types:
+			_compute_transfers_for_cell(world, cell, state, resource_type, leftover_surplus, transfers)
 
 	for transfer in transfers:
 		_apply_transfer(world, transfer)
@@ -36,11 +38,22 @@ func _compute_transfers_for_cell(
 	cell: MacroCellData,
 	state: MacroCellState,
 	resource_type: GameTypes.WorldObjectType,
+	leftover_surplus: Dictionary,
 	transfers: Array
 ) -> void:
-	var current_quantity: int = state.get_resource_quantity(resource_type)
-	if current_quantity <= 0:
+	var cell_key := Vector2i(cell.x, cell.y)
+	var surplus_quantity: float = 0.0
+	if leftover_surplus.has(cell_key):
+		surplus_quantity = leftover_surplus[cell_key].get(resource_type, 0.0)
+
+	if cell.x == 50 and cell.y == 50:
+		print("[MIGRATION 50,50] %s: residual_surplus_from_encroachment=%.3f" % [
+			GameTypes.WorldObjectType.keys()[resource_type], surplus_quantity
+		])
+
+	if surplus_quantity <= 0.0:
 		return
+	#print("DEBUG MIGRATION cella (", cell.x, ",", cell.y, ") surplus=", surplus_quantity)
 
 	var growth_rate := ResourceCalculator.get_growth_rate(
 		resource_type,
@@ -50,25 +63,6 @@ func _compute_transfers_for_cell(
 	)
 	if growth_rate <= 0.0:
 		return
-
-	var max_density := ResourceCalculator.get_max_density(
-		resource_type,
-		cell.terrain_base,
-		cell.biome,
-		cell.coast_type
-	)
-	if max_density <= 0.0:
-		return
-
-	var desired_growth_quantity: float = growth_rate * current_quantity
-	var empty_space: int = state.get_empty_space()
-	var local_capacity_quantity: float = float(empty_space) * max_density
-	var local_growth_quantity: float = min(desired_growth_quantity, local_capacity_quantity)
-	var surplus_quantity: float = desired_growth_quantity - local_growth_quantity
-
-	if surplus_quantity <= 0.0:
-		return
-	#print("DEBUG MIGRATION cella (", cell.x, ",", cell.y, ") surplus=", surplus_quantity)
 
 	var growth_rules := ResourceCalculator.get_growth_rules(resource_type)
 	if growth_rules == null:
@@ -102,6 +96,11 @@ func _compute_transfers_for_cell(
 		
 		#print("DEBUG MIGRATION verso (", neighbor_x, ",", neighbor_y, ") destination_factor=", destination_factor, " migrated_quantity=", migrated_quantity)
 		
+		if cell.x == 50 and cell.y == 50:
+			print("[MIGRATION 50,50]   -> (%d,%d) %s: migrated_quantity=%.3f" % [
+				neighbor_x, neighbor_y, GameTypes.WorldObjectType.keys()[resource_type], migrated_quantity
+			])
+
 		if migrated_quantity <= 0.0:
 			continue
 

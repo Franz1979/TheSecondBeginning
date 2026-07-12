@@ -8,6 +8,8 @@ const MIN_TREE_MICROCELLS: int = 50
 const MAX_TREE_MICROCELLS: int = 500
 const MIN_GRASS_MICROCELLS: int = 50
 const MAX_GRASS_MICROCELLS: int = 200
+const MIN_SHRUB_MICROCELLS: int = 50
+const MAX_SHRUB_MICROCELLS: int = 200
 const RIVER_SPACE: int = 3000
 
 
@@ -17,6 +19,7 @@ func populate_resources(world: World) -> void:
 	populate_stone(world, area)
 	populate_trees(world, area)
 	populate_grass(world, area)
+	populate_shrub(world, area)
 
 
 func reserve_river_space(world: World) -> void:
@@ -145,3 +148,39 @@ func populate_grass(world: World, area: Rect2i) -> void:
 	state.set_dedicated_space(GameTypes.WorldObjectType.GRASS, dedicated_microcells)
 
 	print("Grass popolato SOLO in (", test_x, ",", test_y, ") quantity=", quantity, " space=", dedicated_microcells)
+
+
+func populate_shrub(world: World, area: Rect2i) -> void:
+	# TEST TEMPORANEO: solo una cella specifica, forzando la presenza
+	var test_x := 50
+	var test_y := 50
+
+	var cell := world.get_cell_at(test_x, test_y)
+	var state := world.get_cell_state_at(test_x, test_y)
+	if cell == null or state == null:
+		return
+
+	var max_density := ResourceCalculator.get_max_density(
+		GameTypes.WorldObjectType.SHRUB,
+		cell.terrain_base,
+		cell.biome,
+		cell.coast_type
+	)
+	if max_density <= 0.0:
+		print("Shrub non generato in (", test_x, ",", test_y, ") per max_density=0 — terrain=", cell.terrain_base, " biome=", cell.biome)
+		return
+
+	var available_space: int = state.get_empty_space()
+	if available_space <= 0:
+		print("Shrub non generato in (", test_x, ",", test_y, ") per spazio esaurito")
+		return
+
+	var max_possible: int = min(MAX_SHRUB_MICROCELLS, available_space)
+	var min_possible: int = min(MIN_SHRUB_MICROCELLS, max_possible)
+	var dedicated_microcells: int = randi_range(min_possible, max_possible)
+	var quantity: int = int(round(max_density * dedicated_microcells))
+
+	state.set_resource_quantity(GameTypes.WorldObjectType.SHRUB, quantity)
+	state.set_dedicated_space(GameTypes.WorldObjectType.SHRUB, dedicated_microcells)
+
+	print("Shrub popolato SOLO in (", test_x, ",", test_y, ") quantity=", quantity, " space=", dedicated_microcells)

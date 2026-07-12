@@ -4,16 +4,19 @@ extends RefCounted
 const GROWABLE_TYPES := [
 	GameTypes.WorldObjectType.GRASS,
 	GameTypes.WorldObjectType.TREE,
+	GameTypes.WorldObjectType.SHRUB,
 ]
 
 
 func grow_resources(world: World) -> void:
+	var ordered_types := ResourceCalculator.get_types_ordered_by_succession(GROWABLE_TYPES)
+
 	for cell in world.cells:
 		var state := world.get_cell_state_at(cell.x, cell.y)
 		if state == null:
 			continue
 
-		for resource_type in GROWABLE_TYPES:
+		for resource_type in ordered_types:
 			_grow_resource_in_cell(world, cell, state, resource_type)
 
 
@@ -57,6 +60,11 @@ func _grow_resource_in_cell(
 	)
 	var new_quantity: int = int(round(new_space * max_density))
 	#print("DEBUG new_quantity=", new_quantity)
+
+	if cell.x == 50 and cell.y == 50:
+		print("[GROWTH 50,50] %s: space %d -> %d | quantity -> %d" % [
+			GameTypes.WorldObjectType.keys()[resource_type], current_space, new_space, new_quantity
+		])
 
 	state.set_dedicated_space(resource_type, new_space)
 	state.set_resource_quantity(resource_type, new_quantity)

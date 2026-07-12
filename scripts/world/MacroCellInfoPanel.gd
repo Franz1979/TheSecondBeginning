@@ -12,6 +12,7 @@ extends PanelContainer
 @onready var tree_number_label: Label = $MarginContainer/VBoxContainer/TreeNumberLabel
 @onready var stone_number_label: Label = $MarginContainer/VBoxContainer/StoneNumberLabel
 @onready var grass_number_label: Label = $MarginContainer/VBoxContainer/GrassNumberLabel
+@onready var shrub_number_label: Label = $MarginContainer/VBoxContainer/ShrubNumberLabel
 @onready var empty_space_label: Label = $MarginContainer/VBoxContainer/EmptySpaceLabel
 @onready var actions_container: VBoxContainer = $MarginContainer/VBoxContainer/ActionsContainer
 
@@ -40,14 +41,18 @@ func show_cell(cell: MacroCellData, state: MacroCellState) -> void:
 		var tree_space := state.get_dedicated_space(GameTypes.WorldObjectType.TREE)
 		var grass_quantity := state.get_resource_quantity(GameTypes.WorldObjectType.GRASS)
 		var grass_space := state.get_dedicated_space(GameTypes.WorldObjectType.GRASS)
+		var shrub_quantity := state.get_resource_quantity(GameTypes.WorldObjectType.SHRUB)
+		var shrub_space := state.get_dedicated_space(GameTypes.WorldObjectType.SHRUB)
 		tree_number_label.text = "Trees: " + str(tree_quantity) + " (occupied cells: " + str(tree_space) + ")"
 		stone_number_label.text = "Stone: " + str(stone_quantity) + " (occupied cells: " + str(stone_space) + ")"
 		grass_number_label.text = "Grass: " + str(grass_quantity) + " (occupied cells: " + str(grass_space) + ")"
+		shrub_number_label.text = "Shrub: " + str(shrub_quantity) + " (occupied cells: " + str(shrub_space) + ")"
 		empty_space_label.text = "Empty space: " + str(state.get_empty_space())
 	else:
 		tree_number_label.text = "Trees: -"
 		stone_number_label.text = "Stone: -"
 		grass_number_label.text = "Grass: -"
+		shrub_number_label.text = "Shrub: -"
 		empty_space_label.text = "Empty space: -"
 		
 func clear() -> void:
@@ -61,6 +66,7 @@ func clear() -> void:
 	tree_number_label.text = "Trees: -"
 	stone_number_label.text = "Stone: -"
 	grass_number_label.text = "Grass: -"
+	shrub_number_label.text = "Shrub: -"
 	empty_space_label.text = "Empty space: -"
 
 

@@ -14,6 +14,7 @@ extends Resource
 @export_group("Succession")
 @export var succession_level: GameTypes.SuccessionLevel = GameTypes.SuccessionLevel.FORAGE
 @export var encroachment_rate: float = 0.0
+@export var max_encroachment_per_year: int = 100
 
 @export_group("Terrain Multipliers")
 @export var terrain_multiplier_plain: float = 1.0

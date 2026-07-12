@@ -55,17 +55,20 @@ func _draw() -> void:
 const COLOR_STONE_OVERLAY := Color(0.35, 0.35, 0.35, 0.85)
 const COLOR_TREE_OVERLAY := Color(0.10, 0.45, 0.15, 0.85)
 const COLOR_GRASS_OVERLAY := Color(0.85, 0.75, 0.20, 0.85)
+const COLOR_SHRUB_OVERLAY := Color(0.45, 0.60, 0.15, 0.85)
 
 const RESOURCE_ROW_TYPES := [
 	GameTypes.WorldObjectType.ROCK,
 	GameTypes.WorldObjectType.TREE,
 	GameTypes.WorldObjectType.GRASS,
+	GameTypes.WorldObjectType.SHRUB,
 ]
 
 const RESOURCE_ROW_COLORS := {
 	GameTypes.WorldObjectType.ROCK: COLOR_STONE_OVERLAY,
 	GameTypes.WorldObjectType.TREE: COLOR_TREE_OVERLAY,
 	GameTypes.WorldObjectType.GRASS: COLOR_GRASS_OVERLAY,
+	GameTypes.WorldObjectType.SHRUB: COLOR_SHRUB_OVERLAY,
 }
 
 

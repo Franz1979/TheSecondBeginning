@@ -47,6 +47,7 @@ enum WorldObjectType {
 	ROCK,
 	TREE,
 	GRASS,
+	SHRUB,
 	# in futuro: WILD_ANIMAL, FORAGE, ecc.
 }
 

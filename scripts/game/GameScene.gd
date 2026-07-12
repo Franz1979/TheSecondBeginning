@@ -104,8 +104,10 @@ func _on_advance_year_pressed() -> void:
 	game_data.advance_year()
 	var growth_service := ResourceGrowthService.new()
 	growth_service.grow_resources(world)
+	var encroachment_service := ResourceEncroachmentService.new()
+	var leftover_surplus := encroachment_service.encroach_resources(world)
 	var migration_service := ResourceMigrationService.new()
-	migration_service.migrate_resources(world)
+	migration_service.migrate_resources(world, leftover_surplus)
 	_update_year_label()
 	renderer.queue_redraw()
 

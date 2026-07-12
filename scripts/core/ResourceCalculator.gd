@@ -170,3 +170,59 @@ static func _get_growth_coast_multiplier(rules: ResourceGrowthRules, coast: Game
 			
 static func get_growth_rules(resource_type: GameTypes.WorldObjectType) -> ResourceGrowthRules:
 	return _get_growth_rules(resource_type)
+
+
+static func compute_growth_surplus(
+	resource_type: GameTypes.WorldObjectType,
+	cell: MacroCellData,
+	state: MacroCellState
+) -> float:
+	var current_quantity: int = state.get_resource_quantity(resource_type)
+	if current_quantity <= 0:
+		return 0.0
+
+	var growth_rate := get_growth_rate(resource_type, cell.terrain_base, cell.biome, cell.coast_type)
+	if growth_rate <= 0.0:
+		return 0.0
+
+	var max_density := get_max_density(resource_type, cell.terrain_base, cell.biome, cell.coast_type)
+	if max_density <= 0.0:
+		return 0.0
+
+	var desired_growth_quantity: float = growth_rate * current_quantity
+	var empty_space: int = state.get_empty_space()
+	var local_capacity_quantity: float = float(empty_space) * max_density
+	var local_growth_quantity: float = min(desired_growth_quantity, local_capacity_quantity)
+	var surplus_quantity: float = desired_growth_quantity - local_growth_quantity
+
+	return max(surplus_quantity, 0.0)
+
+
+static func get_encroachment_efficiency(
+	own_growth_rules: ResourceGrowthRules,
+	target_succession_level: GameTypes.SuccessionLevel
+) -> float:
+	var gap: int = own_growth_rules.succession_level - target_succession_level
+	if gap <= 0:
+		return 0.0
+	return clamp(own_growth_rules.encroachment_rate * gap, 0.0, 1.0)
+
+
+# Shared processing-order rule for growth/encroachment/migration: lowest succession_level
+# (encroachment number) first. Centralized here so every service that iterates a set of
+# resource types applies the same priority instead of relying on how the types happen to
+# be listed in each service's own const array. Expected to be refined per-service later
+# (e.g. once seasons are introduced), but for now everything follows this single order.
+static func get_types_ordered_by_succession(types: Array) -> Array:
+	var entries: Array = []
+	for resource_type in types:
+		var growth_rules := get_growth_rules(resource_type)
+		var level: int = growth_rules.succession_level if growth_rules != null else 0
+		entries.append({"type": resource_type, "level": level})
+
+	entries.sort_custom(func(a, b): return a["level"] < b["level"])
+
+	var ordered_types: Array = []
+	for entry in entries:
+		ordered_types.append(entry["type"])
+	return ordered_types
