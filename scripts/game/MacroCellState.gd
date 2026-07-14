@@ -9,6 +9,7 @@ var micro_seed: int
 var resource_quantity: Dictionary = {}
 var dedicated_space: Dictionary = {}
 var river_space: int = 0
+var active_growth_bonuses: Dictionary = {} # NaturalEventType -> {multiplier: float, years_remaining: int, total_duration: int}
 
 func _init(_x: int, _y: int) -> void:
 	x = _x
@@ -44,3 +45,24 @@ func get_total_dedicated_space() -> int:
 
 func get_empty_space() -> int:
 	return TOTAL_SPACE - get_total_dedicated_space()
+
+func register_growth_bonus(event_type: GameTypes.NaturalEventType, multiplier: float, years: int) -> void:
+	active_growth_bonuses[event_type] = {"multiplier": multiplier, "years_remaining": years, "total_duration": years}
+
+func get_active_event_bonus(event_type: GameTypes.NaturalEventType) -> Dictionary:
+	return active_growth_bonuses.get(event_type, {})
+
+func get_active_growth_multiplier() -> float:
+	var multiplier := 1.0
+	for bonus in active_growth_bonuses.values():
+		multiplier *= bonus["multiplier"]
+	return multiplier
+
+func tick_growth_bonuses() -> void:
+	var expired: Array = []
+	for event_type in active_growth_bonuses.keys():
+		active_growth_bonuses[event_type]["years_remaining"] -= 1
+		if active_growth_bonuses[event_type]["years_remaining"] <= 0:
+			expired.append(event_type)
+	for event_type in expired:
+		active_growth_bonuses.erase(event_type)

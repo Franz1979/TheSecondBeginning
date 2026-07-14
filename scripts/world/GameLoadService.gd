@@ -49,6 +49,14 @@ func load_game_from_json(file_path: String) -> LoadedGame:
 			for key in dedicated.keys():
 				state.dedicated_space[int(key)] = int(dedicated[key])
 			state.river_space = int(state_data.get("river_space", 0))
+			var bonuses_data = state_data.get("active_growth_bonuses", {})
+			for key in bonuses_data.keys():
+				var bonus_data = bonuses_data[key]
+				state.active_growth_bonuses[int(key)] = {
+					"multiplier": float(bonus_data["multiplier"]),
+					"years_remaining": int(bonus_data["years_remaining"]),
+					"total_duration": int(bonus_data["total_duration"])
+				}
 			world.cell_states.append(state)
 
 	var loaded_game := LoadedGame.new()

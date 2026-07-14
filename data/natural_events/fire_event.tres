@@ -1,0 +1,13 @@
+[gd_resource type="Resource" script_class="FireEventRules" format=3 uid="uid://dekotirxpsf0k"]
+
+[ext_resource type="Script" uid="uid://bueflu32dlthx" path="res://scripts/core/FireEventRules.gd" id="1_fire"]
+
+[resource]
+script = ExtResource("1_fire")
+max_spread_iterations = 8
+event_name = "Tempesta di fulmini"
+base_probability_per_year = 0.35
+intensity_probability_weights = Array[float]([0.35, 0.3, 0.2, 0.1, 0.05])
+radius_by_intensity = Array[int]([1, 2, 3, 5, 8])
+cells_destroyed_by_intensity = Array[int]([300, 1500, 5000, 10000, 40000])
+fragility_weight_by_succession_level = Array[float]([0.1, 0.3, 0.6])

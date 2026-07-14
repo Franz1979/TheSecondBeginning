@@ -108,6 +108,8 @@ func _on_advance_year_pressed() -> void:
 	var leftover_surplus := encroachment_service.encroach_resources(world)
 	var migration_service := ResourceMigrationService.new()
 	migration_service.migrate_resources(world, leftover_surplus)
+	var natural_event_service := NaturalEventService.new()
+	natural_event_service.trigger_events(world, game_data.year)
 	_update_year_label()
 	renderer.queue_redraw()
 

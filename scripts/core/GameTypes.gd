@@ -65,3 +65,9 @@ enum SuccessionLevel {
 	TREE = 2,
 	# futuri livelli aggiunti qui, in ordine
 }
+
+enum NaturalEventType {
+	NONE,
+	FIRE,
+	# in futuro: FLOOD, EARTHQUAKE, ecc.
+}

@@ -12,6 +12,12 @@ const COLOR_CLIFF := Color(0.55, 0.55, 0.55)
 const COLOR_LAKE := Color(0.15, 0.50, 0.95)
 const COLOR_RIVER := Color(0.20, 0.60, 1.00)
 const COLOR_GRID := Color(0, 0, 0, 0.15)
+const COLOR_EVENT_MARKER_FRESH := Color(1.0, 0.0, 0.0, 0.9)        # anno in cui l'evento è avvenuto
+const COLOR_EVENT_MARKER_RECOVERING := Color(1.0, 0.55, 0.0, 0.75) # anni successivi, fino a esaurimento del bonus
+
+const RENDERED_EVENT_TYPES := [
+	GameTypes.NaturalEventType.FIRE,
+]
 
 var world: World
 var show_resource_overlay: bool = true
@@ -45,6 +51,8 @@ func _draw() -> void:
 
 		if show_resource_overlay:
 			_draw_resource_overlay(cell, rect)
+
+		_draw_event_markers(cell, rect)
 
 		draw_rect(rect, COLOR_GRID, false, 1.0)
 
@@ -137,6 +145,32 @@ func _is_last_present(state: MacroCellState, from_index: int) -> bool:
 			return false
 	return true
 	
+func _draw_event_markers(cell: MacroCellData, rect: Rect2) -> void:
+	var state: MacroCellState = world.get_cell_state_at(cell.x, cell.y)
+	if state == null:
+		return
+
+	for event_type in RENDERED_EVENT_TYPES:
+		var bonus := state.get_active_event_bonus(event_type)
+		if bonus.is_empty():
+			continue
+
+		var is_fresh: bool = bonus["years_remaining"] == bonus["total_duration"]
+		var color: Color = COLOR_EVENT_MARKER_FRESH if is_fresh else COLOR_EVENT_MARKER_RECOVERING
+		_draw_x_mark(rect, color)
+
+
+func _draw_x_mark(rect: Rect2, color: Color) -> void:
+	var margin: float = rect.size.x * 0.15
+	var top_left := rect.position + Vector2(margin, margin)
+	var top_right := rect.position + Vector2(rect.size.x - margin, margin)
+	var bottom_left := rect.position + Vector2(margin, rect.size.y - margin)
+	var bottom_right := rect.position + Vector2(rect.size.x - margin, rect.size.y - margin)
+
+	draw_line(top_left, bottom_right, color, 2.0)
+	draw_line(top_right, bottom_left, color, 2.0)
+
+
 func get_cell_color(cell: MacroCellData) -> Color:
 	match cell.water_type:
 		GameTypes.WaterType.SEA:

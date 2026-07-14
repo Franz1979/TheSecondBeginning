@@ -34,7 +34,8 @@ func save_game_to_json(
 			"y": state.y,
 			"resource_quantity": state.resource_quantity,
 			"dedicated_space": state.dedicated_space,
-			"river_space": state.river_space
+			"river_space": state.river_space,
+			"active_growth_bonuses": state.active_growth_bonuses
 		})
 	var json_text := JSON.stringify(data, "\t")
 	var file := FileAccess.open(file_path, FileAccess.WRITE)

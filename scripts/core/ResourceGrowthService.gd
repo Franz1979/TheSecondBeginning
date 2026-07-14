@@ -42,6 +42,8 @@ func _grow_resource_in_cell(
 	if growth_rate <= 0.0:
 		return
 
+	growth_rate *= state.get_active_growth_multiplier()
+
 	var empty_space: int = state.get_empty_space()
 	var max_reachable_space: int = current_space + empty_space
 	#print("DEBUG empty_space=", empty_space, " max_reachable=", max_reachable_space)
