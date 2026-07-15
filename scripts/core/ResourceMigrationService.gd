@@ -15,7 +15,7 @@ const NEIGHBOR_OFFSETS := [
 ]
 
 
-func migrate_resources(world: World, leftover_surplus: Dictionary) -> void:
+func compute_transfers(world: World, leftover_surplus: Dictionary) -> Array:
 	var transfers: Array = []
 	var ordered_types := ResourceCalculator.get_types_ordered_by_succession(MIGRATABLE_TYPES)
 
@@ -27,10 +27,12 @@ func migrate_resources(world: World, leftover_surplus: Dictionary) -> void:
 		for resource_type in ordered_types:
 			_compute_transfers_for_cell(world, cell, state, resource_type, leftover_surplus, transfers)
 
+	return transfers
+
+
+func apply_transfers(world: World, transfers: Array) -> void:
 	for transfer in transfers:
 		_apply_transfer(world, transfer)
-
-	#print("Migrazione completata. Trasferimenti tentati: ", transfers.size())
 
 
 func _compute_transfers_for_cell(

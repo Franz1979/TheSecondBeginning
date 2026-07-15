@@ -7,6 +7,7 @@ script = ExtResource("1_gr4ss")
 base_growth_rate = 0.4
 migration_chance = 0.5
 migration_success_rate = 0.2
+max_migration_per_year = 120
 terrain_multiplier_plain = 1.4
 terrain_multiplier_hill = 0.7
 terrain_multiplier_mountain = 0.1

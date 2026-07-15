@@ -3,13 +3,25 @@ extends RefCounted
 
 const DENSITY_RULES_DIR := "res://data/resource_density/"
 
+# .tres rule files are static designer data loaded from disk; caching avoids
+# re-hitting ResourceLoader.exists()+load() on every call, which dominated
+# per-year simulation cost (thousands of calls/year across 10k cells x 3 types x 5 services).
+static var _density_rules_cache: Dictionary = {}
+static var _growth_rules_cache: Dictionary = {}
+
 
 static func _get_density_rules(resource_type: GameTypes.WorldObjectType) -> ResourceDensityRules:
+	if _density_rules_cache.has(resource_type):
+		return _density_rules_cache[resource_type]
+
 	var type_name: String = GameTypes.WorldObjectType.keys()[resource_type].to_lower()
 	var path := DENSITY_RULES_DIR + type_name + "_density.tres"
-	if not ResourceLoader.exists(path):
-		return null
-	return load(path) as ResourceDensityRules
+	var rules: ResourceDensityRules = null
+	if ResourceLoader.exists(path):
+		rules = load(path) as ResourceDensityRules
+
+	_density_rules_cache[resource_type] = rules
+	return rules
 
 
 static func get_max_density(
@@ -97,11 +109,17 @@ const GROWTH_RULES_DIR := "res://data/resource_growth/"
 
 
 static func _get_growth_rules(resource_type: GameTypes.WorldObjectType) -> ResourceGrowthRules:
+	if _growth_rules_cache.has(resource_type):
+		return _growth_rules_cache[resource_type]
+
 	var type_name: String = GameTypes.WorldObjectType.keys()[resource_type].to_lower()
 	var path := GROWTH_RULES_DIR + type_name + "_growth.tres"
-	if not ResourceLoader.exists(path):
-		return null
-	return load(path) as ResourceGrowthRules
+	var rules: ResourceGrowthRules = null
+	if ResourceLoader.exists(path):
+		rules = load(path) as ResourceGrowthRules
+
+	_growth_rules_cache[resource_type] = rules
+	return rules
 
 
 static func get_growth_rate(

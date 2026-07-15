@@ -86,30 +86,29 @@ func _generate_island_mountains(world: World) -> void:
 			
 func _update_island_coasts(world: World) -> void:
 	for cell in world.cells:
-		if cell.coast_type != GameTypes.CoastType.BEACH:
+		if cell.terrain_base == GameTypes.TerrainBase.MOUNTAIN:
+			if _is_near_sea(world, cell):
+				cell.coast_type = GameTypes.CoastType.CLIFF
+
+		elif cell.terrain_base == GameTypes.TerrainBase.HILL:
+			if _is_near_sea(world, cell):
+				cell.coast_type = GameTypes.CoastType.SEMI_CLIFF
+
+func _is_near_sea(world: World, cell: MacroCellData) -> bool:
+	for other in world.cells:
+		if other.terrain_base != GameTypes.TerrainBase.WATER:
+			continue
+		if other.water_type != GameTypes.WaterType.SEA:
 			continue
 
-		if _is_near_terrain(world, cell, GameTypes.TerrainBase.MOUNTAIN):
-			cell.coast_type = GameTypes.CoastType.CLIFF
-
-		elif _is_near_terrain(world, cell, GameTypes.TerrainBase.HILL):
-			cell.coast_type = GameTypes.CoastType.SEMI_CLIFF
-			
-func _is_near_terrain(
-	world: World,
-	cell: MacroCellData,
-	terrain_type: GameTypes.TerrainBase
-) -> bool:
-	for other in world.cells:
 		var dx: int = abs(other.x - cell.x)
 		var dy: int = abs(other.y - cell.y)
 
-		if dx <= 1 and dy <= 1:
-			if other.terrain_base == terrain_type:
-				return true
+		if dx <= 1 and dy <= 1 and not (dx == 0 and dy == 0):
+			return true
 
 	return false
-	
+
 
 func _generate_island_river(world: World) -> void:
 	var current_x: int = World.WIDTH / 2 - 10

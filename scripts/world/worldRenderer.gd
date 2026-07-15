@@ -68,8 +68,8 @@ const COLOR_SHRUB_OVERLAY := Color(0.45, 0.60, 0.15, 0.85)
 const RESOURCE_ROW_TYPES := [
 	GameTypes.WorldObjectType.ROCK,
 	GameTypes.WorldObjectType.TREE,
-	GameTypes.WorldObjectType.GRASS,
 	GameTypes.WorldObjectType.SHRUB,
+	GameTypes.WorldObjectType.GRASS,
 ]
 
 const RESOURCE_ROW_COLORS := {
@@ -94,57 +94,18 @@ func _draw_resource_overlay(cell: MacroCellData, rect: Rect2) -> void:
 
 	for i in range(RESOURCE_ROW_TYPES.size()):
 		var resource_type: GameTypes.WorldObjectType = RESOURCE_ROW_TYPES[i]
-		var space: int = state.get_dedicated_space(resource_type)
-		if space <= 0:
-			continue
-
-		var total_occupied: int = state.get_total_dedicated_space()
-		if total_occupied <= 0:
-			continue
-
 		var row_y: float = rect.position.y + border + row_height * i
 		var row_rect := Rect2(rect.position.x + border, row_y, inner_size, row_height)
 
-		_draw_proportional_row(row_rect, state, resource_type, total_occupied)
-
-
-func _draw_proportional_row(
-	row_rect: Rect2,
-	state: MacroCellState,
-	highlight_type: GameTypes.WorldObjectType,
-	total_occupied: int
-) -> void:
-	var remaining_width: float = row_rect.size.x
-	var current_x: float = row_rect.position.x
-
-	for i in range(RESOURCE_ROW_TYPES.size()):
-		var resource_type: GameTypes.WorldObjectType = RESOURCE_ROW_TYPES[i]
 		var space: int = state.get_dedicated_space(resource_type)
 		if space <= 0:
 			continue
 
-		var is_last: bool = (i == RESOURCE_ROW_TYPES.size() - 1) or _is_last_present(state, i)
-		var width: float
-		if is_last:
-			width = remaining_width
-		else:
-			var proportion: float = float(space) / float(total_occupied)
-			width = floor(row_rect.size.x * proportion)
-			remaining_width -= width
+		var proportion: float = clamp(float(space) / float(MacroCellState.TOTAL_SPACE), 0.0, 1.0)
+		var width: float = max(1.0, row_rect.size.x * proportion)
 
-		if resource_type == highlight_type:
-			draw_rect(Rect2(current_x, row_rect.position.y, width, row_rect.size.y), RESOURCE_ROW_COLORS[resource_type])
+		draw_rect(Rect2(row_rect.position.x, row_rect.position.y, width, row_rect.size.y), RESOURCE_ROW_COLORS[resource_type])
 
-		current_x += width
-
-
-func _is_last_present(state: MacroCellState, from_index: int) -> bool:
-	for i in range(from_index + 1, RESOURCE_ROW_TYPES.size()):
-		var resource_type: GameTypes.WorldObjectType = RESOURCE_ROW_TYPES[i]
-		if state.get_dedicated_space(resource_type) > 0:
-			return false
-	return true
-	
 func _draw_event_markers(cell: MacroCellData, rect: Rect2) -> void:
 	var state: MacroCellState = world.get_cell_state_at(cell.x, cell.y)
 	if state == null:

@@ -4,10 +4,10 @@
 
 [resource]
 script = ExtResource("1_nj652")
-max_migration_per_year = 50
+max_migration_per_year = 80
 succession_level = 2
 encroachment_rate = 0.03
-max_encroachment_per_year = 30
+max_encroachment_per_year = 90
 terrain_multiplier_plain = 1.2
 terrain_multiplier_mountain = 0.3
 terrain_multiplier_water = 0.0
