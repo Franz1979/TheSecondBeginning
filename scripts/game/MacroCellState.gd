@@ -55,14 +55,19 @@ func get_active_event_bonus(event_type: GameTypes.NaturalEventType) -> Dictionar
 func get_active_growth_multiplier() -> float:
 	var multiplier := 1.0
 	for bonus in active_growth_bonuses.values():
+		if bonus["years_remaining"] <= 0:
+			continue # ultimo anno già consumato: resta visibile un ciclo in più solo per il marker
 		multiplier *= bonus["multiplier"]
 	return multiplier
 
+# years_remaining arriva a 0 nell'anno in cui il bonus è stato usato per l'ultima volta dalla
+# crescita (get_active_growth_multiplier lo ignora già a 0): lo si rimuove un ciclo dopo, così il
+# marker resta visibile esattamente quanto l'effetto è stato attivo (1 fresco + N di recupero).
 func tick_growth_bonuses() -> void:
 	var expired: Array = []
 	for event_type in active_growth_bonuses.keys():
 		active_growth_bonuses[event_type]["years_remaining"] -= 1
-		if active_growth_bonuses[event_type]["years_remaining"] <= 0:
+		if active_growth_bonuses[event_type]["years_remaining"] < 0:
 			expired.append(event_type)
 	for event_type in expired:
 		active_growth_bonuses.erase(event_type)

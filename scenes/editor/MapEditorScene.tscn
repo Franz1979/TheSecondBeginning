@@ -7,9 +7,6 @@
 [sub_resource type="StyleBoxFlat" id="StyleBoxFlat_u5gcm"]
 bg_color = Color(0.54391533, 0.65469354, 0.10991336, 1)
 
-[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_3st6a"]
-bg_color = Color(0.7571897, 0.5486168, 0.40146384, 1)
-
 [node name="MapEditorScene" type="Node2D" unique_id=367956628]
 script = ExtResource("1_q2bch")
 
@@ -19,139 +16,123 @@ script = ExtResource("2_pghkh")
 
 [node name="CanvasLayer" type="CanvasLayer" parent="." unique_id=172495002]
 
-[node name="ActionPanelContainer" type="PanelContainer" parent="CanvasLayer" unique_id=1070210840]
-anchors_preset = 1
+[node name="Sidebar" type="PanelContainer" parent="CanvasLayer"]
 anchor_left = 1.0
+anchor_top = 0.0
 anchor_right = 1.0
-offset_left = -140.0
-offset_bottom = 86.0
+anchor_bottom = 1.0
+offset_left = -220.0
+offset_right = 0.0
+offset_top = 0.0
+offset_bottom = 0.0
 grow_horizontal = 0
 theme_override_styles/panel = SubResource("StyleBoxFlat_u5gcm")
 
-[node name="MarginContainer" type="MarginContainer" parent="CanvasLayer/ActionPanelContainer" unique_id=1147023958]
-layout_direction = 1
+[node name="MarginContainer" type="MarginContainer" parent="CanvasLayer/Sidebar" unique_id=1147023958]
 layout_mode = 2
 theme_override_constants/margin_left = 10
 theme_override_constants/margin_top = 10
 theme_override_constants/margin_right = 10
 theme_override_constants/margin_bottom = 10
 
-[node name="VBoxContainer" type="VBoxContainer" parent="CanvasLayer/ActionPanelContainer/MarginContainer" unique_id=1688224039]
+[node name="ScrollContainer" type="ScrollContainer" parent="CanvasLayer/Sidebar/MarginContainer"]
 layout_mode = 2
+horizontal_scroll_mode = 0
 
-[node name="SaveMapButton" type="Button" parent="CanvasLayer/ActionPanelContainer/MarginContainer/VBoxContainer" unique_id=108741576]
+[node name="VBoxContainer" type="VBoxContainer" parent="CanvasLayer/Sidebar/MarginContainer/ScrollContainer" unique_id=1688224039]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="SaveMapButton" type="Button" parent="CanvasLayer/Sidebar/MarginContainer/ScrollContainer/VBoxContainer" unique_id=108741576]
 layout_mode = 2
 text = "Salva Mappa"
 
-[node name="BackToMenuButton" type="Button" parent="CanvasLayer/ActionPanelContainer/MarginContainer/VBoxContainer" unique_id=1187690520]
+[node name="BackToMenuButton" type="Button" parent="CanvasLayer/Sidebar/MarginContainer/ScrollContainer/VBoxContainer" unique_id=1187690520]
 layout_mode = 2
 text = "Torna al Menu"
 
-[node name="BrushPanelContainer" type="PanelContainer" parent="CanvasLayer" unique_id=1220072000]
-anchors_preset = 3
-anchor_left = 1.0
-anchor_top = 1.0
-anchor_right = 1.0
-anchor_bottom = 1.0
-offset_left = -40.0
-offset_top = -44.0
-grow_horizontal = 0
-grow_vertical = 0
-theme_override_styles/panel = SubResource("StyleBoxFlat_3st6a")
-
-[node name="MarginContainer" type="MarginContainer" parent="CanvasLayer/BrushPanelContainer" unique_id=53129479]
-layout_mode = 2
-theme_override_constants/margin_left = 10
-theme_override_constants/margin_top = 10
-theme_override_constants/margin_right = 10
-theme_override_constants/margin_bottom = 10
-
-[node name="VBoxContainer" type="VBoxContainer" parent="CanvasLayer/BrushPanelContainer/MarginContainer" unique_id=2017581765]
+[node name="HSeparator" type="HSeparator" parent="CanvasLayer/Sidebar/MarginContainer/ScrollContainer/VBoxContainer"]
 layout_mode = 2
 
-[node name="TerrainWaterToolButton" type="Button" parent="CanvasLayer/BrushPanelContainer/MarginContainer/VBoxContainer" unique_id=449690760]
+[node name="TerrainWaterToolButton" type="Button" parent="CanvasLayer/Sidebar/MarginContainer/ScrollContainer/VBoxContainer" unique_id=449690760]
 layout_mode = 2
 toggle_mode = true
 
-[node name="WaterSubmenuMargin" type="MarginContainer" parent="CanvasLayer/BrushPanelContainer/MarginContainer/VBoxContainer" unique_id=1786990436]
+[node name="WaterSubmenuMargin" type="MarginContainer" parent="CanvasLayer/Sidebar/MarginContainer/ScrollContainer/VBoxContainer" unique_id=1786990436]
 layout_mode = 2
 theme_override_constants/margin_left = 25
 
-[node name="WaterSubmenuVBox" type="VBoxContainer" parent="CanvasLayer/BrushPanelContainer/MarginContainer/VBoxContainer/WaterSubmenuMargin" unique_id=220772753]
+[node name="WaterSubmenuVBox" type="VBoxContainer" parent="CanvasLayer/Sidebar/MarginContainer/ScrollContainer/VBoxContainer/WaterSubmenuMargin" unique_id=220772753]
 layout_mode = 2
 
-[node name="WaterOptionsLabel" type="Label" parent="CanvasLayer/BrushPanelContainer/MarginContainer/VBoxContainer/WaterSubmenuMargin/WaterSubmenuVBox" unique_id=1731746579]
+[node name="WaterOptionsLabel" type="Label" parent="CanvasLayer/Sidebar/MarginContainer/ScrollContainer/VBoxContainer/WaterSubmenuMargin/WaterSubmenuVBox" unique_id=1731746579]
 layout_mode = 2
 
-[node name="WaterSeaToolButton" type="Button" parent="CanvasLayer/BrushPanelContainer/MarginContainer/VBoxContainer/WaterSubmenuMargin/WaterSubmenuVBox" unique_id=395897523]
+[node name="WaterSeaToolButton" type="Button" parent="CanvasLayer/Sidebar/MarginContainer/ScrollContainer/VBoxContainer/WaterSubmenuMargin/WaterSubmenuVBox" unique_id=395897523]
 layout_mode = 2
 
-[node name="WaterLakeToolButton" type="Button" parent="CanvasLayer/BrushPanelContainer/MarginContainer/VBoxContainer/WaterSubmenuMargin/WaterSubmenuVBox" unique_id=202631925]
+[node name="WaterLakeToolButton" type="Button" parent="CanvasLayer/Sidebar/MarginContainer/ScrollContainer/VBoxContainer/WaterSubmenuMargin/WaterSubmenuVBox" unique_id=202631925]
 layout_mode = 2
 
-[node name="WaterRiverToolButton" type="Button" parent="CanvasLayer/BrushPanelContainer/MarginContainer/VBoxContainer/WaterSubmenuMargin/WaterSubmenuVBox" unique_id=1455471510]
+[node name="WaterRiverToolButton" type="Button" parent="CanvasLayer/Sidebar/MarginContainer/ScrollContainer/VBoxContainer/WaterSubmenuMargin/WaterSubmenuVBox" unique_id=1455471510]
 layout_mode = 2
 
-[node name="TerrainPlainToolButton" type="Button" parent="CanvasLayer/BrushPanelContainer/MarginContainer/VBoxContainer" unique_id=675691976]
-layout_mode = 2
-toggle_mode = true
-
-[node name="TerrainHillToolButton" type="Button" parent="CanvasLayer/BrushPanelContainer/MarginContainer/VBoxContainer" unique_id=1044085722]
+[node name="TerrainPlainToolButton" type="Button" parent="CanvasLayer/Sidebar/MarginContainer/ScrollContainer/VBoxContainer" unique_id=675691976]
 layout_mode = 2
 toggle_mode = true
 
-[node name="TerrainMountainToolButton" type="Button" parent="CanvasLayer/BrushPanelContainer/MarginContainer/VBoxContainer" unique_id=266303201]
+[node name="TerrainHillToolButton" type="Button" parent="CanvasLayer/Sidebar/MarginContainer/ScrollContainer/VBoxContainer" unique_id=1044085722]
 layout_mode = 2
 toggle_mode = true
 
-[node name="Label" type="Label" parent="CanvasLayer/BrushPanelContainer/MarginContainer/VBoxContainer" unique_id=760415493]
-layout_mode = 2
-
-[node name="TerrainNoneButton" type="Button" parent="CanvasLayer/BrushPanelContainer/MarginContainer/VBoxContainer" unique_id=1246677990]
+[node name="TerrainMountainToolButton" type="Button" parent="CanvasLayer/Sidebar/MarginContainer/ScrollContainer/VBoxContainer" unique_id=266303201]
 layout_mode = 2
 toggle_mode = true
 
-[node name="BiomeSubmenuMargin" type="MarginContainer" parent="CanvasLayer/BrushPanelContainer/MarginContainer/VBoxContainer" unique_id=963531847]
+[node name="Label" type="Label" parent="CanvasLayer/Sidebar/MarginContainer/ScrollContainer/VBoxContainer" unique_id=760415493]
+layout_mode = 2
+
+[node name="TerrainNoneButton" type="Button" parent="CanvasLayer/Sidebar/MarginContainer/ScrollContainer/VBoxContainer" unique_id=1246677990]
+layout_mode = 2
+toggle_mode = true
+
+[node name="BiomeSubmenuMargin" type="MarginContainer" parent="CanvasLayer/Sidebar/MarginContainer/ScrollContainer/VBoxContainer" unique_id=963531847]
 visible = false
 layout_mode = 2
 theme_override_constants/margin_left = 25
 
-[node name="BiomeSubmenuVBox" type="VBoxContainer" parent="CanvasLayer/BrushPanelContainer/MarginContainer/VBoxContainer/BiomeSubmenuMargin" unique_id=137974831]
+[node name="BiomeSubmenuVBox" type="VBoxContainer" parent="CanvasLayer/Sidebar/MarginContainer/ScrollContainer/VBoxContainer/BiomeSubmenuMargin" unique_id=137974831]
 layout_mode = 2
 
-[node name="BiomeLabel" type="Label" parent="CanvasLayer/BrushPanelContainer/MarginContainer/VBoxContainer/BiomeSubmenuMargin/BiomeSubmenuVBox" unique_id=1231501816]
+[node name="BiomeLabel" type="Label" parent="CanvasLayer/Sidebar/MarginContainer/ScrollContainer/VBoxContainer/BiomeSubmenuMargin/BiomeSubmenuVBox" unique_id=1231501816]
 layout_mode = 2
 
-[node name="BiomeNoneToolButton" type="Button" parent="CanvasLayer/BrushPanelContainer/MarginContainer/VBoxContainer/BiomeSubmenuMargin/BiomeSubmenuVBox" unique_id=1208799756]
+[node name="BiomeNoneToolButton" type="Button" parent="CanvasLayer/Sidebar/MarginContainer/ScrollContainer/VBoxContainer/BiomeSubmenuMargin/BiomeSubmenuVBox" unique_id=1208799756]
 layout_mode = 2
 
-[node name="BiomeForestToolButton" type="Button" parent="CanvasLayer/BrushPanelContainer/MarginContainer/VBoxContainer/BiomeSubmenuMargin/BiomeSubmenuVBox" unique_id=1646089364]
+[node name="BiomeForestToolButton" type="Button" parent="CanvasLayer/Sidebar/MarginContainer/ScrollContainer/VBoxContainer/BiomeSubmenuMargin/BiomeSubmenuVBox" unique_id=1646089364]
 layout_mode = 2
 
-[node name="BiomeGrasslandToolButton" type="Button" parent="CanvasLayer/BrushPanelContainer/MarginContainer/VBoxContainer/BiomeSubmenuMargin/BiomeSubmenuVBox" unique_id=796169543]
+[node name="BiomeGrasslandToolButton" type="Button" parent="CanvasLayer/Sidebar/MarginContainer/ScrollContainer/VBoxContainer/BiomeSubmenuMargin/BiomeSubmenuVBox" unique_id=796169543]
 layout_mode = 2
 
-[node name="BiomeFertileToolButton" type="Button" parent="CanvasLayer/BrushPanelContainer/MarginContainer/VBoxContainer/BiomeSubmenuMargin/BiomeSubmenuVBox" unique_id=1436233430]
+[node name="BiomeFertileToolButton" type="Button" parent="CanvasLayer/Sidebar/MarginContainer/ScrollContainer/VBoxContainer/BiomeSubmenuMargin/BiomeSubmenuVBox" unique_id=1436233430]
 layout_mode = 2
 
-[node name="BiomeDesertToolButton" type="Button" parent="CanvasLayer/BrushPanelContainer/MarginContainer/VBoxContainer/BiomeSubmenuMargin/BiomeSubmenuVBox" unique_id=2073000598]
+[node name="BiomeDesertToolButton" type="Button" parent="CanvasLayer/Sidebar/MarginContainer/ScrollContainer/VBoxContainer/BiomeSubmenuMargin/BiomeSubmenuVBox" unique_id=2073000598]
 layout_mode = 2
 
-[node name="BiomeRockyToolButton" type="Button" parent="CanvasLayer/BrushPanelContainer/MarginContainer/VBoxContainer/BiomeSubmenuMargin/BiomeSubmenuVBox" unique_id=903358455]
+[node name="BiomeRockyToolButton" type="Button" parent="CanvasLayer/Sidebar/MarginContainer/ScrollContainer/VBoxContainer/BiomeSubmenuMargin/BiomeSubmenuVBox" unique_id=903358455]
 layout_mode = 2
 
-[node name="BiomeSwampToolButton" type="Button" parent="CanvasLayer/BrushPanelContainer/MarginContainer/VBoxContainer/BiomeSubmenuMargin/BiomeSubmenuVBox" unique_id=602604088]
+[node name="BiomeSwampToolButton" type="Button" parent="CanvasLayer/Sidebar/MarginContainer/ScrollContainer/VBoxContainer/BiomeSubmenuMargin/BiomeSubmenuVBox" unique_id=602604088]
 layout_mode = 2
 
-[node name="MacroCellInfoPanel" parent="CanvasLayer" unique_id=1234849909 instance=ExtResource("3_pghkh")]
-custom_minimum_size = Vector2(120, 100)
-anchors_preset = 2
-anchor_top = 1.0
-anchor_right = 0.0
-offset_top = -189.0
-offset_right = 1.0
-grow_horizontal = 1
-grow_vertical = 0
+[node name="HSeparator2" type="HSeparator" parent="CanvasLayer/Sidebar/MarginContainer/ScrollContainer/VBoxContainer"]
+layout_mode = 2
+
+[node name="MacroCellInfoPanel" parent="CanvasLayer/Sidebar/MarginContainer/ScrollContainer/VBoxContainer" unique_id=1234849909 instance=ExtResource("3_pghkh")]
+layout_mode = 2
 
 [node name="SaveMapFileDialog" type="FileDialog" parent="." unique_id=1169225512]
 access = 1

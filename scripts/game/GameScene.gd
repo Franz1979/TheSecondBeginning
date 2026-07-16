@@ -5,13 +5,13 @@ var game_data: GameData
 var renderer: WorldRenderer
 var game_controller: CellSelectorController
 
-@onready var back_to_menu_button: Button = $CanvasLayer/ActionPanelContainer/MarginContainer/VBoxContainer/BackToMenuButton
-@onready var save_game_button: Button = $CanvasLayer/ActionPanelContainer/MarginContainer/VBoxContainer/SaveGameButton
+@onready var back_to_menu_button: Button = $CanvasLayer/Sidebar/MarginContainer/VBoxContainer/BackToMenuButton
+@onready var save_game_button: Button = $CanvasLayer/Sidebar/MarginContainer/VBoxContainer/SaveGameButton
 @onready var save_game_file_dialog: FileDialog = $SaveGameFileDialog
-@onready var macro_cell_info_panel: MacroCellInfoPanel = $CanvasLayer/MacroCellInfoPanel
-@onready var year_title_label: Label = $CanvasLayer/YearPanelContainer/HBoxContainer/YearTitleLabel
-@onready var year_label: Label = $CanvasLayer/YearPanelContainer/HBoxContainer/YearLabel
-@onready var advance_year_button: Button = $CanvasLayer/YearPanelContainer/HBoxContainer/AdvanceYearButton
+@onready var macro_cell_info_panel: MacroCellInfoPanel = $CanvasLayer/Sidebar/MarginContainer/VBoxContainer/MacroCellInfoPanel
+@onready var year_title_label: Label = $CanvasLayer/Sidebar/MarginContainer/VBoxContainer/HBoxContainer/YearTitleLabel
+@onready var year_label: Label = $CanvasLayer/Sidebar/MarginContainer/VBoxContainer/HBoxContainer/YearLabel
+@onready var advance_year_button: Button = $CanvasLayer/Sidebar/MarginContainer/VBoxContainer/HBoxContainer/AdvanceYearButton
 
 func _ready() -> void:
 	save_game_button.text = tr("save_game")
@@ -77,10 +77,25 @@ func _create_renderer() -> void:
 	add_child(renderer)
 	renderer.setup(world)
 
-func _input(event: InputEvent) -> void:
+func _unhandled_input(event: InputEvent) -> void:
+	if event is InputEventMouseButton and event.pressed and event.double_click and event.button_index == MOUSE_BUTTON_LEFT:
+		_open_macro_cell_scene()
+		return
 	if game_controller != null:
 		game_controller.handle_input(event)
-		
+
+func _open_macro_cell_scene() -> void:
+	var mouse_pos: Vector2 = renderer.get_local_mouse_position()
+	var cell_x := int(mouse_pos.x / WorldRenderer.CELL_SIZE)
+	var cell_y := int(mouse_pos.y / WorldRenderer.CELL_SIZE)
+	var cell := world.get_cell_at(cell_x, cell_y)
+	if cell == null:
+		return
+	GameSettings.selected_macro_cell_x = cell.x
+	GameSettings.selected_macro_cell_y = cell.y
+	get_tree().change_scene_to_file("res://scenes/game/MacroCellScene.tscn")
+
+
 func _on_cell_selected(cell: MacroCellData, state: MacroCellState) -> void:
 	macro_cell_info_panel.show_cell(cell, state)
 	renderer.set_selected_cell(cell)

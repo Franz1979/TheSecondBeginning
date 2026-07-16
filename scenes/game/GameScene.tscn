@@ -34,70 +34,63 @@ script = ExtResource("2_ldxrm")
 
 [node name="CanvasLayer" type="CanvasLayer" parent="." unique_id=277760629]
 
-[node name="ActionPanelContainer" type="PanelContainer" parent="CanvasLayer" unique_id=1478768111]
-anchors_preset = 1
+[node name="Sidebar" type="PanelContainer" parent="CanvasLayer"]
 anchor_left = 1.0
+anchor_top = 0.0
 anchor_right = 1.0
-offset_left = -140.0
-offset_bottom = 86.0
+anchor_bottom = 1.0
+offset_left = -220.0
+offset_right = 0.0
+offset_top = 0.0
+offset_bottom = 0.0
 grow_horizontal = 0
 theme_override_styles/panel = SubResource("StyleBoxFlat_vaave")
 
-[node name="MarginContainer" type="MarginContainer" parent="CanvasLayer/ActionPanelContainer" unique_id=1419144354]
-layout_direction = 1
+[node name="MarginContainer" type="MarginContainer" parent="CanvasLayer/Sidebar" unique_id=1419144354]
 layout_mode = 2
 theme_override_constants/margin_left = 10
 theme_override_constants/margin_top = 10
 theme_override_constants/margin_right = 10
 theme_override_constants/margin_bottom = 10
 
-[node name="VBoxContainer" type="VBoxContainer" parent="CanvasLayer/ActionPanelContainer/MarginContainer" unique_id=1126742494]
+[node name="VBoxContainer" type="VBoxContainer" parent="CanvasLayer/Sidebar/MarginContainer" unique_id=1126742494]
 layout_mode = 2
 
-[node name="SaveGameButton" type="Button" parent="CanvasLayer/ActionPanelContainer/MarginContainer/VBoxContainer" unique_id=1466316368]
+[node name="HBoxContainer" type="HBoxContainer" parent="CanvasLayer/Sidebar/MarginContainer/VBoxContainer" unique_id=2046685166]
 layout_mode = 2
-text = "Salva Mappa"
+alignment = 1
 
-[node name="BackToMenuButton" type="Button" parent="CanvasLayer/ActionPanelContainer/MarginContainer/VBoxContainer" unique_id=1686453538]
-layout_mode = 2
-text = "Torna al Menu"
-
-[node name="MacroCellInfoPanel" parent="CanvasLayer" unique_id=1882805416 instance=ExtResource("3_ldxrm")]
-custom_minimum_size = Vector2(120, 100)
-anchors_preset = 3
-anchor_left = 1.0
-anchor_top = 1.0
-offset_left = -120.0
-offset_top = -189.0
-grow_horizontal = 0
-grow_vertical = 0
-
-[node name="YearPanelContainer" type="PanelContainer" parent="CanvasLayer" unique_id=1084646717]
-anchors_preset = 5
-anchor_left = 0.5
-anchor_right = 0.5
-offset_left = 324.0
-offset_right = 342.0
-offset_bottom = 86.0
-grow_horizontal = 2
-size_flags_horizontal = 4
-
-[node name="HBoxContainer" type="HBoxContainer" parent="CanvasLayer/YearPanelContainer" unique_id=2046685166]
+[node name="YearTitleLabel" type="Label" parent="CanvasLayer/Sidebar/MarginContainer/VBoxContainer/HBoxContainer" unique_id=1382560147]
 layout_mode = 2
 
-[node name="YearTitleLabel" type="Label" parent="CanvasLayer/YearPanelContainer/HBoxContainer" unique_id=1382560147]
+[node name="YearLabel" type="Label" parent="CanvasLayer/Sidebar/MarginContainer/VBoxContainer/HBoxContainer" unique_id=747362345]
 layout_mode = 2
 
-[node name="YearLabel" type="Label" parent="CanvasLayer/YearPanelContainer/HBoxContainer" unique_id=747362345]
-layout_mode = 2
-
-[node name="AdvanceYearButton" type="Button" parent="CanvasLayer/YearPanelContainer/HBoxContainer" unique_id=1067858972]
+[node name="AdvanceYearButton" type="Button" parent="CanvasLayer/Sidebar/MarginContainer/VBoxContainer/HBoxContainer" unique_id=1067858972]
 layout_mode = 2
 theme_override_styles/normal = SubResource("StyleBoxFlat_ldxrm")
 theme_override_styles/normal_mirrored = SubResource("StyleBoxFlat_8cups")
 theme_override_styles/pressed = SubResource("StyleBoxFlat_gs0nk")
 theme_override_styles/hover = SubResource("StyleBoxFlat_b1len")
 theme_override_styles/hover_pressed_mirrored = SubResource("StyleBoxFlat_ks7xl")
+
+[node name="HSeparator2" type="HSeparator" parent="CanvasLayer/Sidebar/MarginContainer/VBoxContainer"]
+layout_mode = 2
+
+[node name="SaveGameButton" type="Button" parent="CanvasLayer/Sidebar/MarginContainer/VBoxContainer" unique_id=1466316368]
+layout_mode = 2
+text = "Salva Mappa"
+
+[node name="BackToMenuButton" type="Button" parent="CanvasLayer/Sidebar/MarginContainer/VBoxContainer" unique_id=1686453538]
+layout_mode = 2
+text = "Torna al Menu"
+
+[node name="HSeparator" type="HSeparator" parent="CanvasLayer/Sidebar/MarginContainer/VBoxContainer"]
+layout_mode = 2
+
+[node name="MacroCellInfoPanel" parent="CanvasLayer/Sidebar/MarginContainer/VBoxContainer" unique_id=1882805416 instance=ExtResource("3_ldxrm")]
+layout_mode = 2
+size_flags_vertical = 3
 
 [node name="SaveGameFileDialog" type="FileDialog" parent="." unique_id=1119865624]
 access = 1

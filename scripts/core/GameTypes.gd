@@ -69,5 +69,7 @@ enum SuccessionLevel {
 enum NaturalEventType {
 	NONE,
 	FIRE,
-	# in futuro: FLOOD, EARTHQUAKE, ecc.
+	DROUGHT,
+	SEA_FLOOD,
+	# in futuro: RIVER_FLOOD, EARTHQUAKE, ecc.
 }

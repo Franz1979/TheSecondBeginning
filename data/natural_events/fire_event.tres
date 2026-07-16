@@ -5,7 +5,7 @@
 [resource]
 script = ExtResource("1_fire")
 max_spread_iterations = 8
-event_name = "Tempesta di fulmini"
+event_name = "event_fire"
 base_probability_per_year = 0.35
 intensity_probability_weights = Array[float]([0.35, 0.3, 0.2, 0.1, 0.05])
 radius_by_intensity = Array[int]([1, 2, 3, 5, 8])

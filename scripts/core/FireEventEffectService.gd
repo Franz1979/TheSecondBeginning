@@ -92,67 +92,14 @@ func _manhattan_distance(a: Vector2i, b: Vector2i) -> int:
 	return abs(a.x - b.x) + abs(a.y - b.y)
 
 
+# ROCK dedicated_space and river_space are never in DESTRUCTIBLE_TYPES/considered here,
+# so they are never touched by fire destruction.
 func _destroy_vegetation(world: World, event: NaturalEventInstance, rules: FireEventRules) -> void:
-	if event.affected_cells.is_empty():
-		return
-
 	var total_budget := 0
 	if event.intensity_index < rules.cells_destroyed_by_intensity.size():
 		total_budget = rules.cells_destroyed_by_intensity[event.intensity_index]
-	if total_budget <= 0:
-		return
 
-	var per_cell_budget := int(round(float(total_budget) / event.affected_cells.size()))
-
-	for cell_pos in event.affected_cells:
-		var cell := world.get_cell_at(cell_pos.x, cell_pos.y)
-		var state := world.get_cell_state_at(cell_pos.x, cell_pos.y)
-		if cell == null or state == null:
-			continue
-		_destroy_in_cell(cell, state, per_cell_budget, rules)
-
-
-# ROCK dedicated_space and river_space are never in DESTRUCTIBLE_TYPES/considered here,
-# so they are never touched by fire destruction.
-func _destroy_in_cell(cell: MacroCellData, state: MacroCellState, cell_budget: int, rules: FireEventRules) -> void:
-	if cell_budget <= 0:
-		return
-
-	var weighted_present: Array = []
-	var total_weight := 0.0
-
-	for resource_type in DESTRUCTIBLE_TYPES:
-		var space: int = state.get_dedicated_space(resource_type)
-		if space <= 0:
-			continue
-
-		var growth_rules := ResourceCalculator.get_growth_rules(resource_type)
-		if growth_rules == null:
-			continue
-
-		var level: int = growth_rules.succession_level
-		var fragility := 0.0
-		if level < rules.fragility_weight_by_succession_level.size():
-			fragility = rules.fragility_weight_by_succession_level[level]
-		if fragility <= 0.0:
-			continue
-
-		var weight: float = fragility * float(space)
-		weighted_present.append({"type": resource_type, "weight": weight, "space": space})
-		total_weight += weight
-
-	if total_weight <= 0.0:
-		return
-
-	for entry in weighted_present:
-		var share: int = int(round(cell_budget * (entry["weight"] / total_weight)))
-		var destroyed: int = min(share, entry["space"])
-		if destroyed <= 0:
-			continue
-
-		var new_space: int = entry["space"] - destroyed
-		var max_density := ResourceCalculator.get_max_density(
-			entry["type"], cell.terrain_base, cell.biome, cell.coast_type
-		)
-		state.set_dedicated_space(entry["type"], new_space)
-		state.set_resource_quantity(entry["type"], int(round(new_space * max_density)))
+	var destruction_service := VegetationDestructionService.new()
+	destruction_service.destroy_in_cells(
+		world, event.affected_cells, total_budget, rules.fragility_weight_by_succession_level
+	)

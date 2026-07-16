@@ -3,7 +3,9 @@ extends RefCounted
 
 const REGISTERED_EVENT_TYPES := [
 	GameTypes.NaturalEventType.FIRE,
-	# in futuro: FLOOD, EARTHQUAKE, ecc.
+	GameTypes.NaturalEventType.DROUGHT,
+	GameTypes.NaturalEventType.SEA_FLOOD,
+	# in futuro: RIVER_FLOOD, EARTHQUAKE, ecc.
 ]
 
 # TEMPORANEO PER TEST: forza il centro di ogni evento su questa cella invece di
@@ -50,11 +52,14 @@ func _create_event_instance(
 	rules: NaturalEventRules,
 	year: int
 ) -> NaturalEventInstance:
-	var center_x := randi_range(0, World.WIDTH - 1)
-	var center_y := randi_range(0, World.HEIGHT - 1)
+	var center := Vector2i(randi_range(0, World.WIDTH - 1), randi_range(0, World.HEIGHT - 1))
+	if rules.requires_coastal_center:
+		center = _pick_random_coastal_cell(world, center)
 	if DEBUG_FORCE_CENTER:
-		center_x = DEBUG_FORCE_CENTER_CELL.x
-		center_y = DEBUG_FORCE_CENTER_CELL.y
+		center = DEBUG_FORCE_CENTER_CELL
+
+	var center_x := center.x
+	var center_y := center.y
 
 	var intensity_index := _roll_intensity(rules.intensity_probability_weights)
 
@@ -63,6 +68,20 @@ func _create_event_instance(
 		radius = rules.radius_by_intensity[intensity_index]
 
 	return NaturalEventInstance.new(event_type, year, center_x, center_y, intensity_index, radius)
+
+
+# Sceglie a caso tra le celle costiere (coast_type != NONE, cioè adiacenti al mare).
+# fallback_center viene restituito se la mappa non ha nessuna cella costiera.
+func _pick_random_coastal_cell(world: World, fallback_center: Vector2i) -> Vector2i:
+	var coastal_cells: Array[Vector2i] = []
+	for cell in world.cells:
+		if cell.coast_type != GameTypes.CoastType.NONE:
+			coastal_cells.append(Vector2i(cell.x, cell.y))
+
+	if coastal_cells.is_empty():
+		return fallback_center
+
+	return coastal_cells[randi_range(0, coastal_cells.size() - 1)]
 
 
 func _roll_intensity(weights: Array[float]) -> int:
@@ -90,5 +109,11 @@ func _apply_event_effects(world: World, event: NaturalEventInstance, rules: Natu
 		GameTypes.NaturalEventType.FIRE:
 			var fire_service := FireEventEffectService.new()
 			fire_service.apply(world, event, rules as FireEventRules)
+		GameTypes.NaturalEventType.DROUGHT:
+			var drought_service := DroughtEventEffectService.new()
+			drought_service.apply(world, event, rules as DroughtEventRules)
+		GameTypes.NaturalEventType.SEA_FLOOD:
+			var sea_flood_service := SeaFloodEventEffectService.new()
+			sea_flood_service.apply(world, event, rules as SeaFloodEventRules)
 		_:
 			pass

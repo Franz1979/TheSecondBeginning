@@ -93,9 +93,10 @@ func _paint_at_mouse_position() -> void:
 	last_painted_y = cell_y
 
 	_apply_terrain_brush_to_cell(cell)
-	
+
 	_update_river_shape_around(cell.x, cell.y)
 	_update_coast_type_around(cell.x, cell.y)
+	renderer.flash_cell(cell.x, cell.y)
 	renderer.queue_redraw()
 
 func _update_river_shape_around(cell_x: int, cell_y: int) -> void:

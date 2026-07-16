@@ -5,6 +5,10 @@ extends Resource
 
 @export_group("Trigger")
 @export var base_probability_per_year: float = 0.1
+# Se true, il centro dell'evento viene scelto solo tra celle con coast_type != NONE
+# (adiacenti al mare) invece che a caso su tutta la mappa. Generico e riusabile da
+# qualunque evento vincolato geograficamente, non solo dalle inondazioni marine.
+@export var requires_coastal_center: bool = false
 
 @export_group("Intensity")
 @export var intensity_probability_weights: Array[float] = []

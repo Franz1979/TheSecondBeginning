@@ -1,0 +1,16 @@
+[gd_resource type="Resource" script_class="SeaFloodEventRules" format=3 uid="uid://befhsdq2csxhv"]
+
+[ext_resource type="Script" uid="uid://bk8hufdayo78a" path="res://scripts/core/SeaFloodEventRules.gd" id="1_sea_flood"]
+
+[resource]
+script = ExtResource("1_sea_flood")
+post_event_growth_duration_by_intensity = Array[int]([2, 3, 5, 7, 10])
+event_name = "event_sea_flood"
+base_probability_per_year = 0.2
+requires_coastal_center = true
+intensity_probability_weights = Array[float]([0.35, 0.3, 0.2, 0.1, 0.05])
+radius_by_intensity = Array[int]([1, 2, 3, 5, 7])
+cells_destroyed_by_intensity = Array[int]([4000, 16000, 50000, 120000, 300000])
+fragility_weight_by_succession_level = Array[float]([0.3, 0.4, 0.5])
+post_event_growth_multiplier = 0.3
+post_event_growth_duration_years = 0
