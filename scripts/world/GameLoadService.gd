@@ -49,6 +49,12 @@ func load_game_from_json(file_path: String) -> LoadedGame:
 			for key in dedicated.keys():
 				state.dedicated_space[int(key)] = int(dedicated[key])
 			state.river_space = int(state_data.get("river_space", 0))
+			if state_data.has("stone_positions"):
+				var stone_positions: Array = []
+				for pos_data in state_data["stone_positions"]:
+					stone_positions.append(Vector2i(int(pos_data["x"]), int(pos_data["y"])))
+				state.stone_positions = stone_positions
+				state.stone_positions_generated = true
 			var bonuses_data = state_data.get("active_growth_bonuses", {})
 			for key in bonuses_data.keys():
 				var bonus_data = bonuses_data[key]

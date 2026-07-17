@@ -10,6 +10,8 @@ var resource_quantity: Dictionary = {}
 var dedicated_space: Dictionary = {}
 var river_space: int = 0
 var active_growth_bonuses: Dictionary = {} # NaturalEventType -> {multiplier: float, years_remaining: int, total_duration: int}
+var stone_positions: Array = [] # Array[Vector2i], posizioni microcella occupate da stone (100x100)
+var stone_positions_generated: bool = false # separato dall'array vuoto: distingue "mai aperta" da "aperta ma senza stone"
 
 func _init(_x: int, _y: int) -> void:
 	x = _x

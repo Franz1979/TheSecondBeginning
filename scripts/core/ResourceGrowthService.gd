@@ -9,7 +9,15 @@ const GROWABLE_TYPES := [
 
 
 func grow_resources(world: World) -> void:
+	# Growth deliberately reverses the shared ascending-succession order (used as-is by
+	# encroachment/migration/mortality): each type's growth is capped by empty_space read
+	# fresh at call time, so whichever type grows first claims the cell's freed space first.
+	# Highest succession (TREE) goes first here so the climax type gets first claim on newly
+	# freed space, matching real succession (mature stands hold ground rather than losing it
+	# back to pioneer species every year). Temporary fix — will need rethinking once growth
+	# moves to day-granularity/seasons.
 	var ordered_types := ResourceCalculator.get_types_ordered_by_succession(GROWABLE_TYPES)
+	ordered_types.reverse()
 
 	for cell in world.cells:
 		var state := world.get_cell_state_at(cell.x, cell.y)

@@ -26,7 +26,13 @@ func _ready() -> void:
 	save_game_file_dialog.current_dir = GameSettings.SAVES_DIR
 	save_game_file_dialog.file_selected.connect(_on_save_game_file_selected)
 
-	_load_world()
+	var returning_from_macro_cell := GameSettings.returning_to_game_scene
+	if returning_from_macro_cell:
+		GameSettings.returning_to_game_scene = false
+		world = GameSettings.active_world
+		game_data = GameSettings.active_game_data
+	else:
+		_load_world()
 	_create_renderer()
 	_update_year_label()
 
@@ -34,6 +40,11 @@ func _ready() -> void:
 	game_controller.setup(world, renderer)
 	game_controller.cell_selected.connect(_on_cell_selected)
 	macro_cell_info_panel.visible = true
+
+	if returning_from_macro_cell:
+		var cell := world.get_cell_at(GameSettings.selected_macro_cell_x, GameSettings.selected_macro_cell_y)
+		if cell != null:
+			_on_cell_selected(cell, world.get_cell_state_at(cell.x, cell.y))
 
 
 func _load_world() -> void:
@@ -93,6 +104,8 @@ func _open_macro_cell_scene() -> void:
 		return
 	GameSettings.selected_macro_cell_x = cell.x
 	GameSettings.selected_macro_cell_y = cell.y
+	GameSettings.active_world = world
+	GameSettings.active_game_data = game_data
 	get_tree().change_scene_to_file("res://scenes/game/MacroCellScene.tscn")
 
 

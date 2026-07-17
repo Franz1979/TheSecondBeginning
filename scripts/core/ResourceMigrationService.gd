@@ -141,10 +141,15 @@ func _apply_transfer(world: World, transfer: Dictionary) -> void:
 	var max_quantity_acceptable: float = float(empty_space) * max_density
 	var quantity_applied: float = min(quantity, max_quantity_acceptable)
 
+	var current_space: int = target_state.get_dedicated_space(resource_type)
 	var current_quantity: int = target_state.get_resource_quantity(resource_type)
 	var new_total_quantity: int = current_quantity + int(round(quantity_applied))
 
-	var new_space: int = int(ceil(float(new_total_quantity) / max_density))
+	# quantity/space possono essere leggermente disallineati per arrotondamenti indipendenti
+	# fatti altrove (es. mortalità): ricalcolare lo spazio da zero con ceil() potrebbe quindi
+	# chiedere più spazio di quanto risultasse davvero libero. Il clamp garantisce che questo
+	# trasferimento non faccia mai sforare il budget totale della cella (TOTAL_SPACE).
+	var new_space: int = min(int(ceil(float(new_total_quantity) / max_density)), current_space + empty_space)
 
 	target_state.set_dedicated_space(resource_type, new_space)
 	target_state.set_resource_quantity(resource_type, new_total_quantity)

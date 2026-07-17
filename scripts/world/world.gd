@@ -31,6 +31,22 @@ func generate_empty_world() -> void:
 		print("Mappa vuota creata")
 	print("World generated. Cells: ", cells.size())
 
+func generate_uniform_terrain(
+	terrain_base: GameTypes.TerrainBase,
+	water_type: GameTypes.WaterType,
+	coast_type: GameTypes.CoastType = GameTypes.CoastType.NONE
+) -> void:
+	cells.clear()
+	cell_states.clear()
+	for y in range(HEIGHT):
+		for x in range(WIDTH):
+			var cell := MacroCellData.new(x, y)
+			cell.terrain_base = terrain_base
+			cell.water_type = water_type
+			cell.coast_type = coast_type
+			cells.append(cell)
+			cell_states.append(MacroCellState.new(x, y))
+
 func get_cell_at(x: int, y: int) -> MacroCellData:
 	var index := y * WIDTH + x
 	if index < 0 or index >= cells.size():

@@ -29,14 +29,22 @@ func save_game_to_json(
 			"biome": cell.biome
 		})
 	for state in world.cell_states:
-		data["world"]["cell_states"].append({
+		var state_data := {
 			"x": state.x,
 			"y": state.y,
 			"resource_quantity": state.resource_quantity,
 			"dedicated_space": state.dedicated_space,
 			"river_space": state.river_space,
 			"active_growth_bonuses": state.active_growth_bonuses
-		})
+		}
+		# Solo le macrocelle già aperte in MacroCellScene hanno posizioni stone generate:
+		# la chiave resta assente per tutte le altre, per non appesantire il salvataggio.
+		if state.stone_positions_generated:
+			var stone_positions_data: Array = []
+			for pos in state.stone_positions:
+				stone_positions_data.append({"x": pos.x, "y": pos.y})
+			state_data["stone_positions"] = stone_positions_data
+		data["world"]["cell_states"].append(state_data)
 	var json_text := JSON.stringify(data, "\t")
 	var file := FileAccess.open(file_path, FileAccess.WRITE)
 	file.store_string(json_text)

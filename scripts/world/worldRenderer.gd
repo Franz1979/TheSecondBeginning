@@ -2,16 +2,6 @@ class_name WorldRenderer
 extends Node2D
 
 const CELL_SIZE: int = 10
-const COLOR_SEA := Color(0.10, 0.30, 0.90)
-const COLOR_PLAIN := Color(0.60, 0.90, 0.60)
-const COLOR_HILL := Color(0.82, 0.68, 0.45)
-const COLOR_MOUNTAIN := Color(0.45, 0.25, 0.10)
-const COLOR_BEACH := Color(0.95, 0.85, 0.55)
-const COLOR_SEMI_CLIFF := Color(0.72, 0.72, 0.72)
-const COLOR_CLIFF := Color(0.55, 0.55, 0.55)
-const COLOR_LAKE := Color(0.15, 0.50, 0.95)
-const COLOR_RIVER := Color(0.20, 0.60, 1.00)
-const COLOR_GRID := Color(0, 0, 0, 0.15)
 const COLOR_EVENT_MARKER_FRESH := Color(1.0, 0.0, 0.0, 0.9)        # anno in cui l'evento è avvenuto
 const COLOR_EVENT_MARKER_RECOVERING := Color(1.0, 0.55, 0.0, 0.75) # anni successivi, fino a esaurimento del bonus
 const COLOR_DROUGHT_MARKER_FRESH := Color(0.55, 0.35, 0.05, 0.9)        # marrone, anno della siccità
@@ -79,7 +69,7 @@ func _draw() -> void:
 
 		_draw_event_markers(cell, rect)
 
-		draw_rect(rect, COLOR_GRID, false, 1.0)
+		draw_rect(rect, TerrainColors.GRID, false, 1.0)
 
 		if selected_cell != null and cell.x == selected_cell.x and cell.y == selected_cell.y:
 			draw_rect(rect, Color(1, 0, 0, 1), false, 2.0)
@@ -185,39 +175,11 @@ func _draw_square_mark(rect: Rect2, color: Color) -> void:
 
 
 func get_cell_color(cell: MacroCellData) -> Color:
-	match cell.water_type:
-		GameTypes.WaterType.SEA:
-			return COLOR_SEA
-		GameTypes.WaterType.LAKE:
-			return COLOR_LAKE
-		GameTypes.WaterType.RIVER:
-			return COLOR_RIVER
+	return TerrainColors.get_cell_color(cell)
 
-	match cell.terrain_base:
-		GameTypes.TerrainBase.WATER:
-			return COLOR_SEA
-		GameTypes.TerrainBase.PLAIN:
-			match cell.coast_type:
-				GameTypes.CoastType.BEACH:
-					return COLOR_BEACH
-				_:
-					return COLOR_PLAIN
-		GameTypes.TerrainBase.HILL:
-			match cell.coast_type:
-				GameTypes.CoastType.SEMI_CLIFF:
-					return COLOR_SEMI_CLIFF
-				_:
-					return COLOR_HILL
-		GameTypes.TerrainBase.MOUNTAIN:
-			match cell.coast_type:
-				GameTypes.CoastType.CLIFF:
-					return COLOR_CLIFF
-				_:
-					return COLOR_MOUNTAIN
-		_:
-			return Color.MAGENTA
+
 func _draw_river_cell(cell: MacroCellData, rect: Rect2) -> void:
-	draw_rect(rect, COLOR_PLAIN)
+	draw_rect(rect, TerrainColors.PLAIN)
 
 	var center_x: float = rect.position.x + rect.size.x / 2.0
 	var center_y: float = rect.position.y + rect.size.y / 2.0
@@ -225,32 +187,32 @@ func _draw_river_cell(cell: MacroCellData, rect: Rect2) -> void:
 
 	match cell.river_shape:
 		GameTypes.RiverShape.VERTICAL:
-			draw_rect(Rect2(center_x - thickness / 2.0, rect.position.y, thickness, rect.size.y), COLOR_RIVER)
+			draw_rect(Rect2(center_x - thickness / 2.0, rect.position.y, thickness, rect.size.y), TerrainColors.RIVER)
 
 		GameTypes.RiverShape.HORIZONTAL:
-			draw_rect(Rect2(rect.position.x, center_y - thickness / 2.0, rect.size.x, thickness), COLOR_RIVER)
+			draw_rect(Rect2(rect.position.x, center_y - thickness / 2.0, rect.size.x, thickness), TerrainColors.RIVER)
 
 		GameTypes.RiverShape.CORNER_TOP_RIGHT:
-			draw_rect(Rect2(center_x - thickness / 2.0, rect.position.y, thickness, rect.size.y / 2.0), COLOR_RIVER)
-			draw_rect(Rect2(center_x, center_y - thickness / 2.0, rect.size.x / 2.0, thickness), COLOR_RIVER)
+			draw_rect(Rect2(center_x - thickness / 2.0, rect.position.y, thickness, rect.size.y / 2.0), TerrainColors.RIVER)
+			draw_rect(Rect2(center_x, center_y - thickness / 2.0, rect.size.x / 2.0, thickness), TerrainColors.RIVER)
 
 		GameTypes.RiverShape.CORNER_RIGHT_BOTTOM:
-			draw_rect(Rect2(center_x, center_y - thickness / 2.0, rect.size.x / 2.0, thickness), COLOR_RIVER)
-			draw_rect(Rect2(center_x - thickness / 2.0, center_y, thickness, rect.size.y / 2.0), COLOR_RIVER)
+			draw_rect(Rect2(center_x, center_y - thickness / 2.0, rect.size.x / 2.0, thickness), TerrainColors.RIVER)
+			draw_rect(Rect2(center_x - thickness / 2.0, center_y, thickness, rect.size.y / 2.0), TerrainColors.RIVER)
 
 		GameTypes.RiverShape.CORNER_BOTTOM_LEFT:
-			draw_rect(Rect2(center_x - thickness / 2.0, center_y, thickness, rect.size.y / 2.0), COLOR_RIVER)
-			draw_rect(Rect2(rect.position.x, center_y - thickness / 2.0, rect.size.x / 2.0, thickness), COLOR_RIVER)
+			draw_rect(Rect2(center_x - thickness / 2.0, center_y, thickness, rect.size.y / 2.0), TerrainColors.RIVER)
+			draw_rect(Rect2(rect.position.x, center_y - thickness / 2.0, rect.size.x / 2.0, thickness), TerrainColors.RIVER)
 
 		GameTypes.RiverShape.CORNER_LEFT_TOP:
-			draw_rect(Rect2(rect.position.x, center_y - thickness / 2.0, rect.size.x / 2.0, thickness), COLOR_RIVER)
-			draw_rect(Rect2(center_x - thickness / 2.0, rect.position.y, thickness, rect.size.y / 2.0), COLOR_RIVER)
+			draw_rect(Rect2(rect.position.x, center_y - thickness / 2.0, rect.size.x / 2.0, thickness), TerrainColors.RIVER)
+			draw_rect(Rect2(center_x - thickness / 2.0, rect.position.y, thickness, rect.size.y / 2.0), TerrainColors.RIVER)
 			
 		GameTypes.RiverShape.FULL:
-			draw_rect(rect, COLOR_RIVER)
+			draw_rect(rect, TerrainColors.RIVER)
 
 		_:
-			draw_rect(rect, COLOR_RIVER)
+			draw_rect(rect, TerrainColors.RIVER)
 			
 func _input(event: InputEvent) -> void:
 	if event is InputEventMouseButton:

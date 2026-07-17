@@ -8,6 +8,9 @@ var selected_map_file: String = ""
 var selected_save_file: String = ""
 var selected_macro_cell_x: int = -1
 var selected_macro_cell_y: int = -1
+var active_world: World = null
+var active_game_data: GameData = null
+var returning_to_game_scene: bool = false
 
 func _ready() -> void:
 	print("GameSettings ready")
