@@ -1,0 +1,23 @@
+[gd_resource type="Resource" script_class="SubtypeRules" format=3 uid="uid://bru00f6fda75g"]
+
+[ext_resource type="Script" uid="uid://dbsydmk5jtcg7" path="res://scripts/core/SubtypeRules.gd" id="1_wood"]
+
+[resource]
+script = ExtResource("1_wood")
+subtype_name = "wood_only"
+initial_ratio_by_biome = {
+0: 1.0,
+1: 0.7,
+2: 0.75,
+3: 1.0,
+4: 0.7,
+5: 0.65,
+6: 1.0
+}
+growth_multiplier_by_biome = {
+1: 1.0,
+2: 1.1,
+4: 0.9,
+5: 0.8,
+6: 1.3
+}

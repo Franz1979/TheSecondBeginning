@@ -110,6 +110,7 @@ func populate_trees(world: World, area: Rect2i) -> void:
 
 	state.set_resource_quantity(GameTypes.WorldObjectType.TREE, quantity)
 	state.set_dedicated_space(GameTypes.WorldObjectType.TREE, dedicated_microcells)
+	_seed_subtype_composition(state, GameTypes.WorldObjectType.TREE, cell.biome, dedicated_microcells)
 
 	print("Trees popolato SOLO in (", test_x, ",", test_y, ") quantity=", quantity, " space=", dedicated_microcells)
 
@@ -182,5 +183,33 @@ func populate_shrub(world: World, area: Rect2i) -> void:
 
 	state.set_resource_quantity(GameTypes.WorldObjectType.SHRUB, quantity)
 	state.set_dedicated_space(GameTypes.WorldObjectType.SHRUB, dedicated_microcells)
+	_seed_subtype_composition(state, GameTypes.WorldObjectType.SHRUB, cell.biome, dedicated_microcells)
 
 	print("Shrub popolato SOLO in (", test_x, ",", test_y, ") quantity=", quantity, " space=", dedicated_microcells)
+
+
+# Semina la composizione iniziale dei sottotipi (se registrati per resource_type) in proporzione
+# a initial_ratio_by_biome del bioma della cella. Se nessun sottotipo ha un rapporto positivo per
+# quel bioma (biome non coperto nei dati), ripiega su pesi uguali per non lasciare
+# sum(subtype_composition) disallineato da dedicated_space appena assegnato sopra.
+func _seed_subtype_composition(
+	state: MacroCellState,
+	resource_type: GameTypes.WorldObjectType,
+	biome: GameTypes.Biome,
+	total_space: int
+) -> void:
+	var subtype_rules := ResourceCalculator.get_subtype_rules(resource_type)
+	if subtype_rules.is_empty() or total_space <= 0:
+		return
+
+	var weights: Dictionary = {}
+	for rule in subtype_rules:
+		var ratio: float = float(rule.initial_ratio_by_biome.get(biome, 0.0))
+		if ratio > 0.0:
+			weights[rule.subtype_name] = ratio
+
+	if weights.is_empty():
+		for rule in subtype_rules:
+			weights[rule.subtype_name] = 1.0
+
+	state.apply_subtype_space_delta(resource_type, total_space, weights)

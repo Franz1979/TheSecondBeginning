@@ -36,3 +36,9 @@ extends Resource
 @export var coast_multiplier_beach: float = 1.0
 @export var coast_multiplier_semi_cliff: float = 1.0
 @export var coast_multiplier_cliff: float = 1.0
+
+@export_group("Subtypes")
+# Array[SubtypeRules]. Vuoto = nessun sottotipo tracciato (comportamento invariato). Popolato
+# oggi solo per SHRUB. Non tipizzato a livello di @export per evitare la sintassi più fragile
+# degli array tipizzati di Resource custom nel formato .tres scritto a mano.
+@export var subtypes: Array = []

@@ -75,5 +75,6 @@ func _destroy_in_cell(
 		var max_density := ResourceCalculator.get_max_density(
 			entry["type"], cell.terrain_base, cell.biome, cell.coast_type
 		)
+		state.apply_subtype_space_delta(entry["type"], -destroyed)
 		state.set_dedicated_space(entry["type"], new_space)
 		state.set_resource_quantity(entry["type"], int(round(new_space * max_density)))

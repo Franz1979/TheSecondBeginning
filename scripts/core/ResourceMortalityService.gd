@@ -87,6 +87,10 @@ func _apply_mortality_in_cell(
 			current_space, new_space, max(new_quantity, 0)
 		])
 
+	var subtype_weights := ResourceCalculator.get_biome_weighted_subtype_composition(
+		resource_type, state, cell.biome, true
+	)
+	state.apply_subtype_space_delta(resource_type, new_space - current_space, subtype_weights)
 	state.set_dedicated_space(resource_type, new_space)
 	state.set_resource_quantity(resource_type, max(new_quantity, 0))
 

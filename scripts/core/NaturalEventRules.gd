@@ -21,3 +21,9 @@ extends Resource
 @export_group("Post-Event Recovery")
 @export var post_event_growth_multiplier: float = 1.5
 @export var post_event_growth_duration_years: int = 3
+
+@export_group("Subtype Overrides")
+# Predisposizione futura: split esplicito dei sottotipi da distruggere per questo evento,
+# al posto della proporzione locale attuale usata di default. Vuoto = non usato (default di
+# oggi); nessun servizio lo legge ancora.
+@export var subtype_destruction_override: Dictionary = {}

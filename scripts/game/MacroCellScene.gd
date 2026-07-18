@@ -13,6 +13,13 @@ var macro_cell: MacroCellData
 var macro_state: MacroCellState
 var game_data: GameData
 var renderer: MicroCellRenderer
+# Posizioni microcella coperte dal fiume (Array[Vector2i], vuoto se la macrocella non ha
+# river). Calcolate una sola volta in _ready(): river_shape/river_space non cambiano mai
+# durante la sessione (nessun service della pipeline annuale li tocca), quindi non serve
+# ricalcolarle a ogni _refresh_resource_visuals(). Escludono grass/shrub/tree (vegetazione
+# terrestre) via `occupied`, ma NON stone — le rocce nel letto/sulle rive del fiume restano
+# plausibili e StonePositionService non riceve questo dizionario.
+var river_positions: Array = []
 
 @onready var save_button: Button = $CanvasLayer/Sidebar/MarginContainer/VBoxContainer/SaveButton
 @onready var back_to_world_button: Button = $CanvasLayer/Sidebar/MarginContainer/VBoxContainer/BackToWorldButton
@@ -65,6 +72,7 @@ func _ready() -> void:
 			if macro_cell.water_type == GameTypes.WaterType.RIVER:
 				var thickness_ratio: float = float(macro_state.get_river_space()) / float(MacroCellState.TOTAL_SPACE)
 				renderer.set_river(macro_cell.river_shape, thickness_ratio)
+				river_positions = RiverMicrocellService.get_river_positions(macro_cell.river_shape, thickness_ratio)
 
 			var stone_service := StonePositionService.new()
 			stone_service.generate_if_needed(macro_state)
@@ -86,11 +94,49 @@ func _refresh_resource_visuals() -> void:
 	var occupied: Dictionary = {}
 	for pos in macro_state.stone_positions:
 		occupied[pos] = true
+	for pos in river_positions:
+		occupied[pos] = true
 
 	var vegetation_service := VegetationPositionService.new()
 	renderer.set_vegetation_positions(vegetation_service.generate_positions(macro_state, occupied))
+	renderer.set_shrub_fruit_ratio(_get_shrub_fruit_ratio())
+	renderer.set_tree_fruit_ratios(_get_tree_subtype_ratio("wild_fruit"), _get_tree_subtype_ratio("domesticable_fruit"))
 
-	macro_cell_info_panel.show_cell(macro_cell, macro_state)
+	macro_cell_info_panel.show_cell(macro_cell, macro_state, true)
+
+# Quota di dedicated_space SHRUB classificata come sottotipo "fruit_bearing" nella macrocella
+# corrente (0 se SHRUB non ha ancora sottotipi tracciati lì, es. cella senza shrub). Il nome
+# stringa deve combaciare con subtype_name in data/resource_subtypes/shrub_fruit_bearing.tres.
+func _get_shrub_fruit_ratio() -> float:
+	var composition := macro_state.get_subtype_composition(GameTypes.WorldObjectType.SHRUB)
+	if composition.is_empty():
+		return 0.0
+
+	var total: int = 0
+	for amount in composition.values():
+		total += int(amount)
+	if total <= 0:
+		return 0.0
+
+	var fruit_count: int = int(composition.get("fruit_bearing", 0))
+	return float(fruit_count) / float(total)
+
+# Quota di dedicated_space TREE classificata come subtype_name nella macrocella corrente (0 se
+# TREE non ha ancora sottotipi tracciati lì, es. cella senza tree). Un'unica funzione parametrica
+# invece di una per sottotipo, dato che MicroCellRenderer ora vuole wild_fruit e
+# domesticable_fruit come due rapporti indipendenti (vedi set_tree_fruit_ratios).
+func _get_tree_subtype_ratio(subtype_name: String) -> float:
+	var composition := macro_state.get_subtype_composition(GameTypes.WorldObjectType.TREE)
+	if composition.is_empty():
+		return 0.0
+
+	var total: int = 0
+	for amount in composition.values():
+		total += int(amount)
+	if total <= 0:
+		return 0.0
+
+	return float(int(composition.get(subtype_name, 0))) / float(total)
 
 func _get_neighbor_cells(macro_cell: MacroCellData) -> Dictionary:
 	var neighbors: Dictionary = {}

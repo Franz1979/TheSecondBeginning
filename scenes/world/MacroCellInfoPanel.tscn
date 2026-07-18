@@ -52,6 +52,11 @@ theme_override_font_sizes/font_size = 11
 layout_mode = 2
 theme_override_font_sizes/font_size = 11
 
+[node name="TreeSubtypeLabel" type="Label" parent="MarginContainer/VBoxContainer" unique_id=384719206]
+layout_mode = 2
+theme_override_font_sizes/font_size = 10
+visible = false
+
 [node name="StoneNumberLabel" type="Label" parent="MarginContainer/VBoxContainer" unique_id=71652592]
 layout_mode = 2
 theme_override_font_sizes/font_size = 11
@@ -63,6 +68,11 @@ theme_override_font_sizes/font_size = 11
 [node name="ShrubNumberLabel" type="Label" parent="MarginContainer/VBoxContainer" unique_id=615823904]
 layout_mode = 2
 theme_override_font_sizes/font_size = 11
+
+[node name="ShrubSubtypeLabel" type="Label" parent="MarginContainer/VBoxContainer" unique_id=384719205]
+layout_mode = 2
+theme_override_font_sizes/font_size = 10
+visible = false
 
 [node name="EmptySpaceLabel" type="Label" parent="MarginContainer/VBoxContainer" unique_id=1928672357]
 layout_mode = 2

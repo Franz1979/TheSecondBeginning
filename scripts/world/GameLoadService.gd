@@ -48,6 +48,12 @@ func load_game_from_json(file_path: String) -> LoadedGame:
 			var dedicated = state_data.get("dedicated_space", {})
 			for key in dedicated.keys():
 				state.dedicated_space[int(key)] = int(dedicated[key])
+			var subtype_data = state_data.get("subtype_composition", {})
+			for type_key in subtype_data.keys():
+				var inner: Dictionary = {}
+				for subtype_name in subtype_data[type_key].keys():
+					inner[subtype_name] = int(subtype_data[type_key][subtype_name])
+				state.subtype_composition[int(type_key)] = inner
 			state.river_space = int(state_data.get("river_space", 0))
 			if state_data.has("stone_positions"):
 				var stone_positions: Array = []

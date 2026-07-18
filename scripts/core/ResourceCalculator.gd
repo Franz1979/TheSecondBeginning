@@ -190,6 +190,58 @@ static func get_growth_rules(resource_type: GameTypes.WorldObjectType) -> Resour
 	return _get_growth_rules(resource_type)
 
 
+static func get_subtype_rules(resource_type: GameTypes.WorldObjectType) -> Array:
+	var rules := _get_growth_rules(resource_type)
+	if rules == null:
+		return []
+	return rules.subtypes
+
+
+# Pesa la composizione locale dei sottotipi di resource_type per il moltiplicatore di idoneità
+# growth_multiplier_by_biome del bioma della cella — usato da growth/encroachment (invert=false,
+# per distribuire le NUOVE unità in proporzione a quanto il bioma locale favorisce ciascun
+# sottotipo) e da mortality (invert=true, così un sottotipo sfavorito dal bioma perde più che
+# proporzionalmente). Se resource_type non ha sottotipi registrati, o non ha ancora
+# composizione locale nella cella, restituisce {}: il chiamante ricade sul comportamento
+# invariato di apply_subtype_space_delta (proporzione locale pura).
+static func get_biome_weighted_subtype_composition(
+	resource_type: GameTypes.WorldObjectType,
+	state: MacroCellState,
+	biome: GameTypes.Biome,
+	invert: bool = false
+) -> Dictionary:
+	var subtype_rules := get_subtype_rules(resource_type)
+	if subtype_rules.is_empty():
+		return {}
+
+	var composition := state.get_subtype_composition(resource_type)
+	if composition.is_empty():
+		return {}
+
+	var rules_by_name: Dictionary = {}
+	for rule in subtype_rules:
+		rules_by_name[rule.subtype_name] = rule
+
+	var weighted: Dictionary = {}
+	for subtype_name in composition.keys():
+		var count: int = int(composition[subtype_name])
+		if count <= 0:
+			continue
+
+		var multiplier: float = 1.0
+		var rule = rules_by_name.get(subtype_name)
+		if rule != null:
+			multiplier = float(rule.growth_multiplier_by_biome.get(biome, 1.0))
+		if multiplier <= 0.0:
+			multiplier = 1.0 # sicurezza: l'esclusione totale è compito di suitable_biomes, non di questo peso
+		if invert:
+			multiplier = 1.0 / multiplier
+
+		weighted[subtype_name] = float(count) * multiplier
+
+	return weighted
+
+
 static func compute_growth_surplus(
 	resource_type: GameTypes.WorldObjectType,
 	cell: MacroCellData,

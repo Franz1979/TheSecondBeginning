@@ -1,6 +1,9 @@
 [gd_resource type="Resource" script_class="ResourceGrowthRules" format=3 uid="uid://c8pr6giaqqki8"]
 
 [ext_resource type="Script" uid="uid://dm38wig7or77y" path="res://scripts/core/ResourceGrowthRules.gd" id="1_nj652"]
+[ext_resource type="Resource" path="res://data/resource_subtypes/tree_wood_only.tres" id="2_wood"]
+[ext_resource type="Resource" path="res://data/resource_subtypes/tree_wild_fruit.tres" id="3_wild"]
+[ext_resource type="Resource" path="res://data/resource_subtypes/tree_domesticable_fruit.tres" id="4_dom"]
 
 [resource]
 script = ExtResource("1_nj652")
@@ -20,4 +23,5 @@ biome_multiplier_rocky = 0.2
 coast_multiplier_beach = 0.4
 coast_multiplier_semi_cliff = 0.6
 coast_multiplier_cliff = 0.3
+subtypes = [ExtResource("2_wood"), ExtResource("3_wild"), ExtResource("4_dom")]
 metadata/_custom_type_script = "uid://dm38wig7or77y"

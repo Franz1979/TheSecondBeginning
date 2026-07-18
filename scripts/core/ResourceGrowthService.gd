@@ -76,5 +76,7 @@ func _grow_resource_in_cell(
 			GameTypes.WorldObjectType.keys()[resource_type], current_space, new_space, new_quantity
 		])
 
+	var subtype_weights := ResourceCalculator.get_biome_weighted_subtype_composition(resource_type, state, cell.biome)
+	state.apply_subtype_space_delta(resource_type, new_space - current_space, subtype_weights)
 	state.set_dedicated_space(resource_type, new_space)
 	state.set_resource_quantity(resource_type, new_quantity)

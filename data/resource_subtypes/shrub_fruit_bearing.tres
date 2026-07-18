@@ -1,0 +1,20 @@
+[gd_resource type="Resource" script_class="SubtypeRules" format=3 uid="uid://cp5kd22k8bh2"]
+
+[ext_resource type="Script" uid="uid://dbsydmk5jtcg7" path="res://scripts/core/SubtypeRules.gd" id="1_fruit"]
+
+[resource]
+script = ExtResource("1_fruit")
+subtype_name = "fruit_bearing"
+initial_ratio_by_biome = {
+1: 0.4,
+2: 0.5,
+4: 0.6,
+5: 0.7
+}
+suitable_biomes = Array[int]([1, 2, 4, 5])
+growth_multiplier_by_biome = {
+1: 1.1,
+2: 0.9,
+4: 1.2,
+5: 1.3
+}

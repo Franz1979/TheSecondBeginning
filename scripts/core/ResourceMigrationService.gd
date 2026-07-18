@@ -72,6 +72,14 @@ func _compute_transfers_for_cell(
 
 	var per_neighbor_raw: float = surplus_quantity / NEIGHBOR_OFFSETS.size()
 
+	# Istantanea della composizione locale al momento del calcolo (prima che la mortalità
+	# dello stesso anno la modifichi) — i sottotipi che migrano portano con sé questa
+	# proporzione di origine (Regola 4), non quella (eventualmente diversa) che la cella di
+	# origine avrà quando i trasferimenti verranno applicati più avanti nella stessa pipeline.
+	var origin_subtype_weights: Dictionary = {}
+	if not ResourceCalculator.get_subtype_rules(resource_type).is_empty():
+		origin_subtype_weights = state.get_subtype_composition(resource_type).duplicate()
+
 	for offset in NEIGHBOR_OFFSETS:
 		var neighbor_x: int = cell.x + offset.x
 		var neighbor_y: int = cell.y + offset.y
@@ -111,6 +119,7 @@ func _compute_transfers_for_cell(
 			"target_y": neighbor_y,
 			"resource_type": resource_type,
 			"quantity": migrated_quantity,
+			"subtype_weights": origin_subtype_weights,
 		})
 
 
@@ -134,6 +143,34 @@ func _apply_transfer(world: World, transfer: Dictionary) -> void:
 	if max_density <= 0.0:
 		return
 
+	# Filtra i sottotipi non idonei a bioma/terrain della cella di destinazione (Regola 4):
+	# le unità corrispondenti vengono scartate dal totale trasferito, non solo dalla
+	# composizione, così l'aggregato applicato sotto resta sempre coerente con la somma dei
+	# sottotipi effettivamente arrivati. Se resource_type non ha sottotipi (subtype_weights
+	# vuoto), il trasferimento procede come oggi, invariato.
+	var subtype_weights: Dictionary = transfer.get("subtype_weights", {})
+	var filtered_weights: Dictionary = {}
+	if not subtype_weights.is_empty():
+		var subtype_rules := ResourceCalculator.get_subtype_rules(resource_type)
+		var original_total := 0.0
+		for amount in subtype_weights.values():
+			original_total += float(amount)
+
+		var filtered_total := 0.0
+		for rule in subtype_rules:
+			var amount: float = float(subtype_weights.get(rule.subtype_name, 0))
+			if amount <= 0.0:
+				continue
+			if not rule.is_suitable_for(target_cell.biome, target_cell.terrain_base):
+				continue
+			filtered_weights[rule.subtype_name] = amount
+			filtered_total += amount
+
+		if filtered_total <= 0.0:
+			return # tutti i sottotipi trasferiti erano non idonei alla cella di destinazione
+		if original_total > 0.0:
+			quantity *= filtered_total / original_total
+
 	var empty_space: int = target_state.get_empty_space()
 	if empty_space <= 0:
 		return
@@ -150,6 +187,9 @@ func _apply_transfer(world: World, transfer: Dictionary) -> void:
 	# chiedere più spazio di quanto risultasse davvero libero. Il clamp garantisce che questo
 	# trasferimento non faccia mai sforare il budget totale della cella (TOTAL_SPACE).
 	var new_space: int = min(int(ceil(float(new_total_quantity) / max_density)), current_space + empty_space)
+
+	if not filtered_weights.is_empty():
+		target_state.apply_subtype_space_delta(resource_type, new_space - current_space, filtered_weights)
 
 	target_state.set_dedicated_space(resource_type, new_space)
 	target_state.set_resource_quantity(resource_type, new_total_quantity)

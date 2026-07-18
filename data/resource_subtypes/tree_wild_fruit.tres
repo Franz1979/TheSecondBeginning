@@ -1,0 +1,21 @@
+[gd_resource type="Resource" script_class="SubtypeRules" format=3 uid="uid://0s4i1v5rivdu"]
+
+[ext_resource type="Script" uid="uid://dbsydmk5jtcg7" path="res://scripts/core/SubtypeRules.gd" id="1_wild"]
+
+[resource]
+script = ExtResource("1_wild")
+subtype_name = "wild_fruit"
+initial_ratio_by_biome = {
+1: 0.2,
+2: 0.25,
+4: 0.25,
+5: 0.2
+}
+suitable_biomes = Array[int]([1, 2, 4, 5])
+suitable_terrains = Array[int]([1, 2, 3])
+growth_multiplier_by_biome = {
+1: 1.1,
+2: 1.0,
+4: 1.1,
+5: 1.2
+}

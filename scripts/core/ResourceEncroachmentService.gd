@@ -129,10 +129,16 @@ func _encroach_resource_in_cell(
 				GameTypes.WorldObjectType.keys()[weak_type], weak_space, efficiency, applied_quantity, space_taken
 			])
 
+		# Lato perdente: proporzione locale pura, invariata. La competizione territoriale
+		# (chi prende spazio a chi) non è un giudizio di idoneità climatica del sottotipo —
+		# solo growth/mortality usano il moltiplicatore di bioma, l'encroachment no.
 		var new_weak_space: int = weak_space - space_taken
+		state.apply_subtype_space_delta(weak_type, -space_taken)
 		state.set_dedicated_space(weak_type, new_weak_space)
 		state.set_resource_quantity(weak_type, int(round(new_weak_space * weak_max_density)))
 
+		var gain_weights := ResourceCalculator.get_biome_weighted_subtype_composition(resource_type, state, cell.biome)
+		state.apply_subtype_space_delta(resource_type, space_taken, gain_weights)
 		state.set_dedicated_space(resource_type, state.get_dedicated_space(resource_type) + space_taken)
 		state.add_resource_quantity(resource_type, int(round(applied_quantity)))
 
