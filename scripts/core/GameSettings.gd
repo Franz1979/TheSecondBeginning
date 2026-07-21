@@ -11,6 +11,10 @@ var selected_macro_cell_y: int = -1
 var active_world: World = null
 var active_game_data: GameData = null
 var returning_to_game_scene: bool = false
+var active_clock_is_playing: bool = false
+var active_clock_speed: int = 0 # GameClockController.Speed.X1 — kept as plain int here to
+# avoid GameSettings (an autoload, parsed before the global script class cache is ready)
+# depending on GameClockController's class_name at parse time.
 
 func _ready() -> void:
 	print("GameSettings ready")

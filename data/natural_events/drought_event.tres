@@ -7,6 +7,7 @@ script = ExtResource("1_drought")
 post_event_growth_duration_by_intensity = Array[int]([2, 3, 4, 5, 6])
 event_name = "event_drought"
 base_probability_per_year = 0.25
+reference_season = 2
 intensity_probability_weights = Array[float]([0.35, 0.3, 0.2, 0.1, 0.05])
 radius_by_intensity = Array[int]([2, 4, 6, 8, 12])
 cells_destroyed_by_intensity = Array[int]([2000, 8000, 24000, 60000, 160000])

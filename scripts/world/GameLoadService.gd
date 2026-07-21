@@ -18,6 +18,7 @@ func load_game_from_json(file_path: String) -> LoadedGame:
 
 	var game_data := GameData.new()
 	game_data.year = int(data["game"]["year"])
+	game_data.current_day = int(data["game"].get("current_day", 0))
 
 	var world_data = data["world"]
 	var world := World.new()
@@ -55,6 +56,9 @@ func load_game_from_json(file_path: String) -> LoadedGame:
 					inner[subtype_name] = int(subtype_data[type_key][subtype_name])
 				state.subtype_composition[int(type_key)] = inner
 			state.river_space = int(state_data.get("river_space", 0))
+			var pending_surplus_data = state_data.get("pending_migration_surplus", {})
+			for key in pending_surplus_data.keys():
+				state.pending_migration_surplus[int(key)] = float(pending_surplus_data[key])
 			if state_data.has("stone_positions"):
 				var stone_positions: Array = []
 				for pos_data in state_data["stone_positions"]:
@@ -66,8 +70,8 @@ func load_game_from_json(file_path: String) -> LoadedGame:
 				var bonus_data = bonuses_data[key]
 				state.active_growth_bonuses[int(key)] = {
 					"multiplier": float(bonus_data["multiplier"]),
-					"years_remaining": int(bonus_data["years_remaining"]),
-					"total_duration": int(bonus_data["total_duration"])
+					"trigger_absolute_day": int(bonus_data["trigger_absolute_day"]),
+					"duration_years": int(bonus_data["duration_years"])
 				}
 			world.cell_states.append(state)
 

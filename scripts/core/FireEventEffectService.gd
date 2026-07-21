@@ -62,7 +62,10 @@ func apply(world: World, event: NaturalEventInstance, rules: FireEventRules) -> 
 		if state == null:
 			continue
 		state.register_growth_bonus(
-			GameTypes.NaturalEventType.FIRE, rules.post_event_growth_multiplier, rules.post_event_growth_duration_years
+			GameTypes.NaturalEventType.FIRE,
+			rules.post_event_growth_multiplier,
+			rules.post_event_growth_duration_years,
+			event.trigger_absolute_day
 		)
 
 	print("[FIRE] anno=%d centro=(%d,%d) intensita=%d raggio=%d celle_bruciate=%d" % [

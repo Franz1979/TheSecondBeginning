@@ -9,7 +9,8 @@ func save_game_to_json(
 	var data := {
 		"file_type": "game_save",
 		"game": {
-			"year": game_data.year
+			"year": game_data.year,
+			"current_day": game_data.current_day
 		},
 		"world": {
 			"width": World.WIDTH,
@@ -36,7 +37,8 @@ func save_game_to_json(
 			"dedicated_space": state.dedicated_space,
 			"subtype_composition": state.subtype_composition,
 			"river_space": state.river_space,
-			"active_growth_bonuses": state.active_growth_bonuses
+			"active_growth_bonuses": state.active_growth_bonuses,
+			"pending_migration_surplus": state.pending_migration_surplus
 		}
 		# Solo le macrocelle già aperte in MacroCellScene hanno posizioni stone generate:
 		# la chiave resta assente per tutte le altre, per non appesantire il salvataggio.

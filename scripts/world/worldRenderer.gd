@@ -18,6 +18,7 @@ const RENDERED_EVENT_TYPES := [
 ]
 
 var world: World
+var game_data: GameData
 var show_resource_overlay: bool = true
 
 var selected_cell: MacroCellData = null
@@ -30,8 +31,11 @@ func set_selected_cell(cell: MacroCellData) -> void:
 func flash_cell(x: int, y: int) -> void:
 	flashing_cells[Vector2i(x, y)] = PAINT_FLASH_DURATION
 
-func setup(_world: World) -> void:
+# game_data is optional: MapEditorScene has no calendar/simulation, so it calls setup(world)
+# and event markers simply never draw there (guarded in _draw_event_markers).
+func setup(_world: World, _game_data: GameData = null) -> void:
 	world = _world
+	game_data = _game_data
 	queue_redraw()
 
 
@@ -128,16 +132,18 @@ func _draw_resource_overlay(cell: MacroCellData, rect: Rect2) -> void:
 		draw_rect(Rect2(row_rect.position.x, row_rect.position.y, width, row_rect.size.y), RESOURCE_ROW_COLORS[resource_type])
 
 func _draw_event_markers(cell: MacroCellData, rect: Rect2) -> void:
+	if game_data == null:
+		return
 	var state: MacroCellState = world.get_cell_state_at(cell.x, cell.y)
 	if state == null:
 		return
 
+	var current_absolute_day := game_data.get_absolute_day()
 	for event_type in RENDERED_EVENT_TYPES:
-		var bonus := state.get_active_event_bonus(event_type)
-		if bonus.is_empty():
+		if not state.is_event_bonus_visible(event_type, current_absolute_day):
 			continue
 
-		var is_fresh: bool = bonus["years_remaining"] == bonus["total_duration"]
+		var is_fresh: bool = state.is_event_bonus_fresh(event_type, current_absolute_day)
 
 		match event_type:
 			GameTypes.NaturalEventType.DROUGHT:

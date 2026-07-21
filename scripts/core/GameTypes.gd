@@ -73,3 +73,10 @@ enum NaturalEventType {
 	SEA_FLOOD,
 	# in futuro: RIVER_FLOOD, EARTHQUAKE, ecc.
 }
+
+enum Season {
+	WINTER,
+	SPRING,
+	SUMMER,
+	AUTUMN,
+}

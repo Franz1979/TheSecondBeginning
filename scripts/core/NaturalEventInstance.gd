@@ -3,6 +3,7 @@ extends RefCounted
 
 var event_type: GameTypes.NaturalEventType
 var year: int
+var trigger_absolute_day: int
 var center_x: int
 var center_y: int
 var intensity_index: int
@@ -12,6 +13,7 @@ var affected_cells: Array[Vector2i] = []
 func _init(
 	_event_type: GameTypes.NaturalEventType,
 	_year: int,
+	_trigger_absolute_day: int,
 	_center_x: int,
 	_center_y: int,
 	_intensity_index: int,
@@ -19,6 +21,7 @@ func _init(
 ) -> void:
 	event_type = _event_type
 	year = _year
+	trigger_absolute_day = _trigger_absolute_day
 	center_x = _center_x
 	center_y = _center_y
 	intensity_index = _intensity_index

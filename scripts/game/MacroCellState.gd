@@ -10,7 +10,11 @@ var resource_quantity: Dictionary = {}
 var dedicated_space: Dictionary = {}
 var subtype_composition: Dictionary = {} # WorldObjectType -> Dictionary[String subtype_name, int space_count]
 var river_space: int = 0
-var active_growth_bonuses: Dictionary = {} # NaturalEventType -> {multiplier: float, years_remaining: int, total_duration: int}
+var active_growth_bonuses: Dictionary = {} # NaturalEventType -> {multiplier: float, trigger_absolute_day: int, duration_years: int}
+# Surplus di crescita non piazzato dall'encroachment a fine primavera, in attesa che il
+# checkpoint di inizio primavera dell'anno successivo lo trasformi in trasferimenti verso le
+# celle vicine (vedi WorldTimeService). WorldObjectType -> quantità di surplus.
+var pending_migration_surplus: Dictionary = {}
 var stone_positions: Array = [] # Array[Vector2i], posizioni microcella occupate da stone (100x100)
 var stone_positions_generated: bool = false # separato dall'array vuoto: distingue "mai aperta" da "aperta ma senza stone"
 
@@ -176,28 +180,46 @@ func get_total_dedicated_space() -> int:
 func get_empty_space() -> int:
 	return TOTAL_SPACE - get_total_dedicated_space()
 
-func register_growth_bonus(event_type: GameTypes.NaturalEventType, multiplier: float, years: int) -> void:
-	active_growth_bonuses[event_type] = {"multiplier": multiplier, "years_remaining": years, "total_duration": years}
+const DAYS_PER_YEAR_FOR_BONUSES: int = 365
+
+func register_growth_bonus(
+	event_type: GameTypes.NaturalEventType, multiplier: float, duration_years: int, trigger_absolute_day: int
+) -> void:
+	active_growth_bonuses[event_type] = {
+		"multiplier": multiplier,
+		"trigger_absolute_day": trigger_absolute_day,
+		"duration_years": duration_years,
+	}
 
 func get_active_event_bonus(event_type: GameTypes.NaturalEventType) -> Dictionary:
 	return active_growth_bonuses.get(event_type, {})
 
-func get_active_growth_multiplier() -> float:
+# Un bonus resta attivo esattamente `duration_years` anni dopo il giorno reale in cui l'evento
+# è scattato (nessun arrotondamento a confine d'anno): current_absolute_day è il giorno assoluto
+# di oggi (vedi GameData.get_absolute_day()).
+func get_active_growth_multiplier(current_absolute_day: int) -> float:
 	var multiplier := 1.0
 	for bonus in active_growth_bonuses.values():
-		if bonus["years_remaining"] <= 0:
-			continue # ultimo anno già consumato: resta visibile un ciclo in più solo per il marker
+		var expiry_day: int = bonus["trigger_absolute_day"] + bonus["duration_years"] * DAYS_PER_YEAR_FOR_BONUSES
+		if current_absolute_day >= expiry_day:
+			continue
 		multiplier *= bonus["multiplier"]
 	return multiplier
 
-# years_remaining arriva a 0 nell'anno in cui il bonus è stato usato per l'ultima volta dalla
-# crescita (get_active_growth_multiplier lo ignora già a 0): lo si rimuove un ciclo dopo, così il
-# marker resta visibile esattamente quanto l'effetto è stato attivo (1 fresco + N di recupero).
-func tick_growth_bonuses() -> void:
-	var expired: Array = []
-	for event_type in active_growth_bonuses.keys():
-		active_growth_bonuses[event_type]["years_remaining"] -= 1
-		if active_growth_bonuses[event_type]["years_remaining"] < 0:
-			expired.append(event_type)
-	for event_type in expired:
-		active_growth_bonuses.erase(event_type)
+# "Fresco" = entro il primo anno dal giorno reale del trigger (usato dal marker in
+# WorldRenderer per distinguere l'anno dell'evento dagli anni di recupero successivi).
+func is_event_bonus_fresh(event_type: GameTypes.NaturalEventType, current_absolute_day: int) -> bool:
+	var bonus := get_active_event_bonus(event_type)
+	if bonus.is_empty():
+		return false
+	return current_absolute_day - int(bonus["trigger_absolute_day"]) < DAYS_PER_YEAR_FOR_BONUSES
+
+# Il marker resta visibile un anno oltre la scadenza effettiva dell'effetto sulla crescita
+# (stesso "un ciclo in più" del vecchio schema a years_remaining), così non sparisce un anno
+# prima che l'effetto sia realmente esaurito agli occhi del giocatore.
+func is_event_bonus_visible(event_type: GameTypes.NaturalEventType, current_absolute_day: int) -> bool:
+	var bonus := get_active_event_bonus(event_type)
+	if bonus.is_empty():
+		return false
+	var visible_until: int = int(bonus["trigger_absolute_day"]) + (int(bonus["duration_years"]) + 1) * DAYS_PER_YEAR_FOR_BONUSES
+	return current_absolute_day < visible_until

@@ -43,7 +43,9 @@ func apply(world: World, event: NaturalEventInstance, rules: SeaFloodEventRules)
 		var state := world.get_cell_state_at(pos.x, pos.y)
 		if state == null:
 			continue
-		state.register_growth_bonus(GameTypes.NaturalEventType.SEA_FLOOD, rules.post_event_growth_multiplier, duration)
+		state.register_growth_bonus(
+			GameTypes.NaturalEventType.SEA_FLOOD, rules.post_event_growth_multiplier, duration, event.trigger_absolute_day
+		)
 
 	print("[INONDAZIONE MARINA] anno=%d centro=(%d,%d) intensita=%d raggio=%d celle_colpite=%d moltiplicatore_crescita=%.2f durata=%d" % [
 		event.year, event.center_x, event.center_y, event.intensity_index, event.radius, affected_cells.size(),

@@ -8,7 +8,7 @@ const GROWABLE_TYPES := [
 ]
 
 
-func grow_resources(world: World) -> void:
+func grow_resources(world: World, game_data: GameData) -> void:
 	# Growth deliberately reverses the shared ascending-succession order (used as-is by
 	# encroachment/migration/mortality): each type's growth is capped by empty_space read
 	# fresh at call time, so whichever type grows first claims the cell's freed space first.
@@ -19,20 +19,22 @@ func grow_resources(world: World) -> void:
 	var ordered_types := ResourceCalculator.get_types_ordered_by_succession(GROWABLE_TYPES)
 	ordered_types.reverse()
 
+	var current_absolute_day := game_data.get_absolute_day()
 	for cell in world.cells:
 		var state := world.get_cell_state_at(cell.x, cell.y)
 		if state == null:
 			continue
 
 		for resource_type in ordered_types:
-			_grow_resource_in_cell(world, cell, state, resource_type)
+			_grow_resource_in_cell(world, cell, state, resource_type, current_absolute_day)
 
 
 func _grow_resource_in_cell(
 	world: World,
 	cell: MacroCellData,
 	state: MacroCellState,
-	resource_type: GameTypes.WorldObjectType
+	resource_type: GameTypes.WorldObjectType,
+	current_absolute_day: int
 ) -> void:
 	var current_space: int = state.get_dedicated_space(resource_type)
 	if current_space <= 0:
@@ -50,7 +52,7 @@ func _grow_resource_in_cell(
 	if growth_rate <= 0.0:
 		return
 
-	growth_rate *= state.get_active_growth_multiplier()
+	growth_rate *= state.get_active_growth_multiplier(current_absolute_day)
 
 	var empty_space: int = state.get_empty_space()
 	var max_reachable_space: int = current_space + empty_space

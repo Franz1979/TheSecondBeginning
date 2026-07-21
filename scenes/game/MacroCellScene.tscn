@@ -3,27 +3,24 @@
 [ext_resource type="Script" path="res://scripts/game/MacroCellScene.gd" id="1_macro"]
 [ext_resource type="Script" uid="uid://bo7e46bvucvqn" path="res://scripts/camera/CameraController.gd" id="2_macro"]
 [ext_resource type="PackedScene" uid="uid://u4tgm2grhilk" path="res://scenes/world/MacroCellInfoPanel.tscn" id="3_macro"]
+[ext_resource type="Script" path="res://scripts/game/SeasonProgressBar.gd" id="4_season"]
 
 [sub_resource type="StyleBoxFlat" id="StyleBoxFlat_macro"]
 bg_color = Color(0.54391533, 0.65469354, 0.10991336, 1)
 
-[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_macro_normal"]
-border_width_left = 3
-border_width_top = 3
-border_width_right = 3
+[sub_resource type="ButtonGroup" id="ButtonGroup_macro_speed"]
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_speed_selected"]
+bg_color = Color(0.95, 0.78, 0.2, 1)
+border_width_left = 2
+border_width_top = 2
+border_width_right = 2
 border_width_bottom = 2
-corner_detail = 13
-
-[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_macro_normal_mirrored"]
-bg_color = Color(0.5069058, 0.57925045, 0.881728, 1)
-
-[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_macro_pressed"]
-bg_color = Color(0.8947004, 0.3958708, 0.67028683, 1)
-
-[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_macro_hover"]
-
-[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_macro_hover_pressed_mirrored"]
-bg_color = Color(0.12638924, 0.68979824, 0.63155586, 1)
+border_color = Color(0.55, 0.4, 0.05, 1)
+corner_radius_top_left = 3
+corner_radius_top_right = 3
+corner_radius_bottom_left = 3
+corner_radius_bottom_right = 3
 
 [node name="MacroCellScene" type="Node2D"]
 script = ExtResource("1_macro")
@@ -56,23 +53,72 @@ theme_override_constants/margin_bottom = 10
 [node name="VBoxContainer" type="VBoxContainer" parent="CanvasLayer/Sidebar/MarginContainer"]
 layout_mode = 2
 
-[node name="HBoxContainer" type="HBoxContainer" parent="CanvasLayer/Sidebar/MarginContainer/VBoxContainer"]
+[node name="YearTitleLabel" type="Label" parent="CanvasLayer/Sidebar/MarginContainer/VBoxContainer"]
+layout_mode = 2
+horizontal_alignment = 1
+
+[node name="YearLabel" type="Label" parent="CanvasLayer/Sidebar/MarginContainer/VBoxContainer"]
+layout_mode = 2
+custom_minimum_size = Vector2(195, 0)
+horizontal_alignment = 0
+
+[node name="ClockControlsContainer" type="HBoxContainer" parent="CanvasLayer/Sidebar/MarginContainer/VBoxContainer"]
 layout_mode = 2
 alignment = 1
 
-[node name="YearTitleLabel" type="Label" parent="CanvasLayer/Sidebar/MarginContainer/VBoxContainer/HBoxContainer"]
+[node name="PlayPauseButton" type="Button" parent="CanvasLayer/Sidebar/MarginContainer/VBoxContainer/ClockControlsContainer"]
+custom_minimum_size = Vector2(70, 0)
 layout_mode = 2
+text = "Play"
 
-[node name="YearLabel" type="Label" parent="CanvasLayer/Sidebar/MarginContainer/VBoxContainer/HBoxContainer"]
+[node name="Speed1xButton" type="Button" parent="CanvasLayer/Sidebar/MarginContainer/VBoxContainer/ClockControlsContainer"]
+custom_minimum_size = Vector2(40, 0)
 layout_mode = 2
+toggle_mode = true
+button_pressed = true
+button_group = SubResource("ButtonGroup_macro_speed")
+theme_override_colors/font_pressed_color = Color(0.15, 0.1, 0.02, 1)
+theme_override_colors/font_hover_pressed_color = Color(0.15, 0.1, 0.02, 1)
+theme_override_styles/pressed = SubResource("StyleBoxFlat_speed_selected")
+theme_override_styles/hover_pressed = SubResource("StyleBoxFlat_speed_selected")
+text = "1x"
 
-[node name="AdvanceYearButton" type="Button" parent="CanvasLayer/Sidebar/MarginContainer/VBoxContainer/HBoxContainer"]
+[node name="Speed2xButton" type="Button" parent="CanvasLayer/Sidebar/MarginContainer/VBoxContainer/ClockControlsContainer"]
+custom_minimum_size = Vector2(40, 0)
 layout_mode = 2
-theme_override_styles/normal = SubResource("StyleBoxFlat_macro_normal")
-theme_override_styles/normal_mirrored = SubResource("StyleBoxFlat_macro_normal_mirrored")
-theme_override_styles/pressed = SubResource("StyleBoxFlat_macro_pressed")
-theme_override_styles/hover = SubResource("StyleBoxFlat_macro_hover")
-theme_override_styles/hover_pressed_mirrored = SubResource("StyleBoxFlat_macro_hover_pressed_mirrored")
+toggle_mode = true
+button_group = SubResource("ButtonGroup_macro_speed")
+theme_override_colors/font_pressed_color = Color(0.15, 0.1, 0.02, 1)
+theme_override_colors/font_hover_pressed_color = Color(0.15, 0.1, 0.02, 1)
+theme_override_styles/pressed = SubResource("StyleBoxFlat_speed_selected")
+theme_override_styles/hover_pressed = SubResource("StyleBoxFlat_speed_selected")
+text = "2x"
+
+[node name="Speed3xButton" type="Button" parent="CanvasLayer/Sidebar/MarginContainer/VBoxContainer/ClockControlsContainer"]
+custom_minimum_size = Vector2(40, 0)
+layout_mode = 2
+toggle_mode = true
+button_group = SubResource("ButtonGroup_macro_speed")
+theme_override_colors/font_pressed_color = Color(0.15, 0.1, 0.02, 1)
+theme_override_colors/font_hover_pressed_color = Color(0.15, 0.1, 0.02, 1)
+theme_override_styles/pressed = SubResource("StyleBoxFlat_speed_selected")
+theme_override_styles/hover_pressed = SubResource("StyleBoxFlat_speed_selected")
+text = "3x"
+
+[node name="Speed4xButton" type="Button" parent="CanvasLayer/Sidebar/MarginContainer/VBoxContainer/ClockControlsContainer"]
+custom_minimum_size = Vector2(40, 0)
+layout_mode = 2
+toggle_mode = true
+button_group = SubResource("ButtonGroup_macro_speed")
+theme_override_colors/font_pressed_color = Color(0.15, 0.1, 0.02, 1)
+theme_override_colors/font_hover_pressed_color = Color(0.15, 0.1, 0.02, 1)
+theme_override_styles/pressed = SubResource("StyleBoxFlat_speed_selected")
+theme_override_styles/hover_pressed = SubResource("StyleBoxFlat_speed_selected")
+text = "4x"
+
+[node name="SeasonProgressBar" type="Control" parent="CanvasLayer/Sidebar/MarginContainer/VBoxContainer"]
+layout_mode = 2
+script = ExtResource("4_season")
 
 [node name="HSeparator2" type="HSeparator" parent="CanvasLayer/Sidebar/MarginContainer/VBoxContainer"]
 layout_mode = 2
@@ -87,6 +133,17 @@ text = "Torna al Mondo"
 
 [node name="HSeparator3" type="HSeparator" parent="CanvasLayer/Sidebar/MarginContainer/VBoxContainer"]
 layout_mode = 2
+
+[node name="DebugControlsContainer" type="HBoxContainer" parent="CanvasLayer/Sidebar/MarginContainer/VBoxContainer"]
+layout_mode = 2
+alignment = 2
+
+[node name="AdvanceYearButton" type="Button" parent="CanvasLayer/Sidebar/MarginContainer/VBoxContainer/DebugControlsContainer"]
+layout_mode = 2
+flat = true
+theme_override_font_sizes/font_size = 10
+text = "+1"
+tooltip_text = "Debug/emergenza: salta alla fine dell'anno corrente"
 
 [node name="MacroCellInfoPanel" parent="CanvasLayer/Sidebar/MarginContainer/VBoxContainer" instance=ExtResource("3_macro")]
 layout_mode = 2

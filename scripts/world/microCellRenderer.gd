@@ -15,6 +15,20 @@ const COLOR_SHRUB_BROWN := Color(0.50, 0.38, 0.20, 0.85) # lobi "legnosi"
 const COLOR_SHRUB_BERRY := Color(0.75, 0.08, 0.10, 0.95) # puntini rossi per gli shrub fruit_bearing
 const COLOR_GRASS_BASE := Color(0.28, 0.58, 0.18, 0.85) # verde più scuro
 const COLOR_GRASS_TIP := Color(0.55, 0.80, 0.30, 0.85)  # verde più chiaro
+# Palette erba per stagione (base=radice/filo scuro, tip=punta): PRIMAVERA/ESTATE riusano
+# COLOR_GRASS_BASE/TIP sopra (verde vivo, invariato), AUTUNNO vira a dorato/paglierino,
+# INVERNO a un verde-grigio spento (vegetazione dormiente). Cambio netto a inizio stagione,
+# non una transizione giorno per giorno — vedi _rebuild_grass_buffers.
+const GRASS_PALETTE_BY_SEASON := {
+	GameTypes.Season.WINTER: {"base": Color(0.42, 0.40, 0.26, 0.80), "tip": Color(0.58, 0.52, 0.34, 0.80)},
+	GameTypes.Season.SPRING: {"base": Color(0.28, 0.58, 0.18, 0.85), "tip": Color(0.55, 0.80, 0.30, 0.85)},
+	GameTypes.Season.SUMMER: {"base": Color(0.28, 0.58, 0.18, 0.85), "tip": Color(0.55, 0.80, 0.30, 0.85)},
+	GameTypes.Season.AUTUMN: {"base": Color(0.55, 0.42, 0.12, 0.85), "tip": Color(0.82, 0.62, 0.18, 0.85)},
+}
+# Finestra di fruttificazione per i marcatori bacche/frutti (tarda estate/autunno): fuori da
+# queste stagioni i marcatori non vengono disegnati, ma la classificazione hash-based delle
+# posizioni (_is_shrub_fruit_bearing, ecc.) resta invariata — è solo un gate a draw-time.
+const FRUITING_SEASONS := [GameTypes.Season.SUMMER, GameTypes.Season.AUTUMN]
 const BOUNDARY_DASH_COLOR := Color(0, 0, 0, 0.6)
 const BOUNDARY_DASH_WIDTH: float = 2.0
 const BOUNDARY_DASH_LENGTH: float = 6.0
@@ -72,6 +86,10 @@ var shrub_fruit_ratio: float = 0.0
 # distinto sulla mappa (vedi COLOR_TREE_FRUIT_WILD/COLOR_TREE_FRUIT_DOMESTICABLE).
 var tree_wild_fruit_ratio: float = 0.0
 var tree_domesticable_fruit_ratio: float = 0.0
+# Stagione corrente (vedi GRASS_PALETTE_BY_SEASON/FRUITING_SEASONS sopra) — arriva già risolta
+# dal chiamante (MacroCellScene, via SeasonCalculator.get_season_for_day), stessa separazione
+# di responsabilità delle altre proprietà "calcolate altrove" del renderer.
+var current_season: GameTypes.Season = GameTypes.Season.WINTER
 
 # DEBUG TEMPORANEO: conta le chiamate di disegno EFFETTIVE (draw_multimesh/draw_multiline_colors)
 # per stone+grass+shrub+tree+bacche in un singolo _draw(), non più le istanze logiche — dopo la
@@ -128,6 +146,16 @@ func set_tree_fruit_ratios(wild_ratio: float, domesticable_ratio: float) -> void
 	tree_domesticable_fruit_ratio = clamp(domesticable_ratio, 0.0, 1.0)
 	# Solo i dot frutto dipendono dai rapporti, ma vivono nello stesso rebuild di trunk/canopy.
 	_rebuild_tree_multimeshes()
+	queue_redraw()
+
+
+# Il colore dell'erba dipende dalla stagione, quindi va ricalcolato qui; la visibilità dei
+# frutti (FRUITING_SEASONS) è invece un gate a draw-time, non richiede nessun rebuild dei loro
+# buffer. La chioma degli alberi resta sempre piena/verde, in ogni stagione — nessun rebuild
+# necessario per loro.
+func set_season(season: GameTypes.Season) -> void:
+	current_season = season
+	_rebuild_grass_buffers()
 	queue_redraw()
 
 
@@ -295,7 +323,9 @@ func _draw_vegetation_positions() -> void:
 		draw_multimesh(_shrub_multimesh, null)
 		_debug_draw_primitive_count += 1
 
-	if _berry_multimesh != null and _berry_multimesh.instance_count > 0:
+	var fruit_in_season: bool = current_season in FRUITING_SEASONS
+
+	if fruit_in_season and _berry_multimesh != null and _berry_multimesh.instance_count > 0:
 		draw_multimesh(_berry_multimesh, null)
 		_debug_draw_primitive_count += 1
 
@@ -307,11 +337,11 @@ func _draw_vegetation_positions() -> void:
 		draw_multimesh(_tree_canopy_multimesh, null)
 		_debug_draw_primitive_count += 1
 
-	if _tree_fruit_wild_multimesh != null and _tree_fruit_wild_multimesh.instance_count > 0:
+	if fruit_in_season and _tree_fruit_wild_multimesh != null and _tree_fruit_wild_multimesh.instance_count > 0:
 		draw_multimesh(_tree_fruit_wild_multimesh, null)
 		_debug_draw_primitive_count += 1
 
-	if _tree_fruit_domesticable_multimesh != null and _tree_fruit_domesticable_multimesh.instance_count > 0:
+	if fruit_in_season and _tree_fruit_domesticable_multimesh != null and _tree_fruit_domesticable_multimesh.instance_count > 0:
 		draw_multimesh(_tree_fruit_domesticable_multimesh, null)
 		_debug_draw_primitive_count += 1
 
@@ -588,6 +618,10 @@ func _rebuild_grass_buffers() -> void:
 	var points := PackedVector2Array()
 	var colors := PackedColorArray()
 
+	var palette: Dictionary = GRASS_PALETTE_BY_SEASON.get(current_season, {"base": COLOR_GRASS_BASE, "tip": COLOR_GRASS_TIP})
+	var grass_base: Color = palette["base"]
+	var grass_tip: Color = palette["tip"]
+
 	var positions: Array = vegetation_positions.get(GameTypes.WorldObjectType.GRASS, [])
 	for pos in positions:
 		var base := Vector2(pos.x * CELL_SIZE, pos.y * CELL_SIZE)
@@ -603,7 +637,7 @@ func _rebuild_grass_buffers() -> void:
 			var angle: float = -PI / 2.0 + angle_variation # verso l'alto, con oscillazione laterale
 			var height: float = lerp(2.5, 4.5, float(hash(pos * (salt + 17) + Vector2i(salt, i)) % 1000) / 1000.0)
 			var hue_t: float = float(hash(pos * (salt + 23) + Vector2i(i, salt + 5)) % 1000) / 1000.0
-			var color: Color = COLOR_GRASS_BASE.lerp(COLOR_GRASS_TIP, hue_t)
+			var color: Color = grass_base.lerp(grass_tip, hue_t)
 
 			var tip: Vector2 = blade_base + Vector2(cos(angle), sin(angle)) * height
 			points.append(blade_base)

@@ -4,20 +4,29 @@ var world: World
 var game_data: GameData
 var renderer: WorldRenderer
 var game_controller: CellSelectorController
+var clock: GameClockController
 
 @onready var back_to_menu_button: Button = $CanvasLayer/Sidebar/MarginContainer/VBoxContainer/BackToMenuButton
 @onready var save_game_button: Button = $CanvasLayer/Sidebar/MarginContainer/VBoxContainer/SaveGameButton
 @onready var save_game_file_dialog: FileDialog = $SaveGameFileDialog
 @onready var macro_cell_info_panel: MacroCellInfoPanel = $CanvasLayer/Sidebar/MarginContainer/VBoxContainer/MacroCellInfoPanel
-@onready var year_title_label: Label = $CanvasLayer/Sidebar/MarginContainer/VBoxContainer/HBoxContainer/YearTitleLabel
-@onready var year_label: Label = $CanvasLayer/Sidebar/MarginContainer/VBoxContainer/HBoxContainer/YearLabel
-@onready var advance_year_button: Button = $CanvasLayer/Sidebar/MarginContainer/VBoxContainer/HBoxContainer/AdvanceYearButton
+@onready var year_title_label: Label = $CanvasLayer/Sidebar/MarginContainer/VBoxContainer/YearTitleLabel
+@onready var year_label: Label = $CanvasLayer/Sidebar/MarginContainer/VBoxContainer/YearLabel
+@onready var play_pause_button: Button = $CanvasLayer/Sidebar/MarginContainer/VBoxContainer/ClockControlsContainer/PlayPauseButton
+@onready var speed_buttons: Dictionary = {
+	GameClockController.Speed.X1: $CanvasLayer/Sidebar/MarginContainer/VBoxContainer/ClockControlsContainer/Speed1xButton,
+	GameClockController.Speed.X2: $CanvasLayer/Sidebar/MarginContainer/VBoxContainer/ClockControlsContainer/Speed2xButton,
+	GameClockController.Speed.X3: $CanvasLayer/Sidebar/MarginContainer/VBoxContainer/ClockControlsContainer/Speed3xButton,
+	GameClockController.Speed.X4: $CanvasLayer/Sidebar/MarginContainer/VBoxContainer/ClockControlsContainer/Speed4xButton,
+}
+@onready var advance_year_button: Button = $CanvasLayer/Sidebar/MarginContainer/VBoxContainer/DebugControlsContainer/AdvanceYearButton
+@onready var season_progress_bar: SeasonProgressBar = $CanvasLayer/Sidebar/MarginContainer/VBoxContainer/SeasonProgressBar
 
 func _ready() -> void:
 	save_game_button.text = tr("save_game")
 	back_to_menu_button.text = tr("back_to_menu")
-	
-	year_title_label.text = tr("current_year")
+
+	year_title_label.text = tr("calendar_label")
 	advance_year_button.text = "+1"
 	advance_year_button.pressed.connect(_on_advance_year_pressed)
 	back_to_menu_button.pressed.connect(_on_back_to_menu_pressed)
@@ -34,7 +43,8 @@ func _ready() -> void:
 	else:
 		_load_world()
 	_create_renderer()
-	_update_year_label()
+	_setup_clock()
+	_update_calendar_display()
 
 	game_controller = CellSelectorController.new()
 	game_controller.setup(world, renderer)
@@ -86,7 +96,20 @@ func _load_world() -> void:
 func _create_renderer() -> void:
 	renderer = WorldRenderer.new()
 	add_child(renderer)
-	renderer.setup(world)
+	renderer.setup(world, game_data)
+
+func _setup_clock() -> void:
+	clock = GameClockController.new()
+	add_child(clock)
+	clock.setup(world, game_data)
+	clock.is_playing = GameSettings.active_clock_is_playing
+	clock.speed = GameSettings.active_clock_speed
+	clock.day_advanced.connect(_on_day_advanced)
+	play_pause_button.pressed.connect(_on_play_pause_pressed)
+	for speed in speed_buttons.keys():
+		speed_buttons[speed].pressed.connect(_on_speed_button_pressed.bind(speed))
+	_update_play_pause_button()
+	speed_buttons[clock.speed].button_pressed = true
 
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventMouseButton and event.pressed and event.double_click and event.button_index == MOUSE_BUTTON_LEFT:
@@ -106,16 +129,18 @@ func _open_macro_cell_scene() -> void:
 	GameSettings.selected_macro_cell_y = cell.y
 	GameSettings.active_world = world
 	GameSettings.active_game_data = game_data
+	GameSettings.active_clock_is_playing = clock.is_playing
+	GameSettings.active_clock_speed = clock.speed
 	get_tree().change_scene_to_file("res://scenes/game/MacroCellScene.tscn")
 
 
 func _on_cell_selected(cell: MacroCellData, state: MacroCellState) -> void:
 	macro_cell_info_panel.show_cell(cell, state)
 	renderer.set_selected_cell(cell)
-	
+
 func _on_save_game_pressed() -> void:
 	save_game_file_dialog.popup_centered()
-	
+
 func _on_save_game_file_selected(path: String) -> void:
 	var save_service := GameSaveService.new()
 
@@ -124,29 +149,32 @@ func _on_save_game_file_selected(path: String) -> void:
 		game_data,
 		path
 	)
-	
+
 func _on_back_to_menu_pressed() -> void:
 	get_tree().change_scene_to_file("res://scenes/menus/NewGameMenu.tscn")
-	
-func _on_advance_year_pressed() -> void:
-	game_data.advance_year()
-	var growth_service := ResourceGrowthService.new()
-	growth_service.grow_resources(world)
-	var encroachment_service := ResourceEncroachmentService.new()
-	var leftover_surplus := encroachment_service.encroach_resources(world)
-	var migration_service := ResourceMigrationService.new()
-	var transfers := migration_service.compute_transfers(world, leftover_surplus)
-	var mortality_service := ResourceMortalityService.new()
-	mortality_service.apply_mortality(world)
-	migration_service.apply_transfers(world, transfers)
-	var natural_event_service := NaturalEventService.new()
-	natural_event_service.trigger_events(world, game_data.year)
-	_update_year_label()
-	renderer.queue_redraw()
 
+func _on_play_pause_pressed() -> void:
+	clock.toggle_play_pause()
+	_update_play_pause_button()
+
+func _on_speed_button_pressed(speed: GameClockController.Speed) -> void:
+	clock.set_speed(speed)
+
+func _update_play_pause_button() -> void:
+	play_pause_button.text = tr("pause") if clock.is_playing else tr("play")
+
+func _on_day_advanced(simulation_ran: bool) -> void:
+	_update_calendar_display()
+	if not simulation_ran:
+		return
+	renderer.queue_redraw()
 	if renderer.selected_cell != null:
 		var state := world.get_cell_state_at(renderer.selected_cell.x, renderer.selected_cell.y)
 		macro_cell_info_panel.show_cell(renderer.selected_cell, state)
 
-func _update_year_label() -> void:
-	year_label.text = str(game_data.year)
+func _on_advance_year_pressed() -> void:
+	clock.force_advance_to_year_end()
+
+func _update_calendar_display() -> void:
+	year_label.text = "Day %d of %d, Year %d" % [game_data.current_day + 1, GameData.DAYS_PER_YEAR, game_data.year]
+	season_progress_bar.set_current_day(game_data.current_day)

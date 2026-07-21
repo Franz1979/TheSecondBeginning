@@ -9,6 +9,10 @@ extends Resource
 # (adiacenti al mare) invece che a caso su tutta la mappa. Generico e riusabile da
 # qualunque evento vincolato geograficamente, non solo dalle inondazioni marine.
 @export var requires_coastal_center: bool = false
+# Stagione in cui questo tipo di evento viene valutato (vincolo assoluto, non un peso
+# probabilistico: fuori da questa stagione l'evento non può scattare). WorldTimeService
+# valuta ogni tipo esattamente una volta l'anno, all'inizio di questa stagione.
+@export var reference_season: GameTypes.Season = GameTypes.Season.SUMMER
 
 @export_group("Intensity")
 @export var intensity_probability_weights: Array[float] = []

@@ -13,6 +13,7 @@ var macro_cell: MacroCellData
 var macro_state: MacroCellState
 var game_data: GameData
 var renderer: MicroCellRenderer
+var clock: GameClockController
 # Posizioni microcella coperte dal fiume (Array[Vector2i], vuoto se la macrocella non ha
 # river). Calcolate una sola volta in _ready(): river_shape/river_space non cambiano mai
 # durante la sessione (nessun service della pipeline annuale li tocca), quindi non serve
@@ -24,15 +25,23 @@ var river_positions: Array = []
 @onready var save_button: Button = $CanvasLayer/Sidebar/MarginContainer/VBoxContainer/SaveButton
 @onready var back_to_world_button: Button = $CanvasLayer/Sidebar/MarginContainer/VBoxContainer/BackToWorldButton
 @onready var save_game_file_dialog: FileDialog = $SaveGameFileDialog
-@onready var year_title_label: Label = $CanvasLayer/Sidebar/MarginContainer/VBoxContainer/HBoxContainer/YearTitleLabel
-@onready var year_label: Label = $CanvasLayer/Sidebar/MarginContainer/VBoxContainer/HBoxContainer/YearLabel
-@onready var advance_year_button: Button = $CanvasLayer/Sidebar/MarginContainer/VBoxContainer/HBoxContainer/AdvanceYearButton
+@onready var year_title_label: Label = $CanvasLayer/Sidebar/MarginContainer/VBoxContainer/YearTitleLabel
+@onready var year_label: Label = $CanvasLayer/Sidebar/MarginContainer/VBoxContainer/YearLabel
+@onready var play_pause_button: Button = $CanvasLayer/Sidebar/MarginContainer/VBoxContainer/ClockControlsContainer/PlayPauseButton
+@onready var speed_buttons: Dictionary = {
+	GameClockController.Speed.X1: $CanvasLayer/Sidebar/MarginContainer/VBoxContainer/ClockControlsContainer/Speed1xButton,
+	GameClockController.Speed.X2: $CanvasLayer/Sidebar/MarginContainer/VBoxContainer/ClockControlsContainer/Speed2xButton,
+	GameClockController.Speed.X3: $CanvasLayer/Sidebar/MarginContainer/VBoxContainer/ClockControlsContainer/Speed3xButton,
+	GameClockController.Speed.X4: $CanvasLayer/Sidebar/MarginContainer/VBoxContainer/ClockControlsContainer/Speed4xButton,
+}
+@onready var advance_year_button: Button = $CanvasLayer/Sidebar/MarginContainer/VBoxContainer/DebugControlsContainer/AdvanceYearButton
+@onready var season_progress_bar: SeasonProgressBar = $CanvasLayer/Sidebar/MarginContainer/VBoxContainer/SeasonProgressBar
 @onready var macro_cell_info_panel: MacroCellInfoPanel = $CanvasLayer/Sidebar/MarginContainer/VBoxContainer/MacroCellInfoPanel
 
 func _ready() -> void:
 	save_button.text = tr("save_game")
 	back_to_world_button.text = tr("back_to_world")
-	year_title_label.text = tr("current_year")
+	year_title_label.text = tr("calendar_label")
 	advance_year_button.text = "+1"
 	save_button.pressed.connect(_on_save_pressed)
 	back_to_world_button.pressed.connect(_on_back_to_world_pressed)
@@ -80,7 +89,8 @@ func _ready() -> void:
 
 			_refresh_resource_visuals()
 
-	_update_year_label()
+	_setup_clock()
+	_update_calendar_display()
 
 # Grass/shrub/tree non sono persistite (a differenza di stone): vanno ricalcolate ogni
 # volta che la loro quantità può essere cambiata, cioè all'apertura della scena e a ogni
@@ -101,6 +111,9 @@ func _refresh_resource_visuals() -> void:
 	renderer.set_vegetation_positions(vegetation_service.generate_positions(macro_state, occupied))
 	renderer.set_shrub_fruit_ratio(_get_shrub_fruit_ratio())
 	renderer.set_tree_fruit_ratios(_get_tree_subtype_ratio("wild_fruit"), _get_tree_subtype_ratio("domesticable_fruit"))
+	# Dopo le posizioni: set_season ricostruisce anche il buffer erba (colore dipende dalla
+	# stagione), così lo fa una volta sola con le posizioni già aggiornate invece di due volte.
+	renderer.set_season(SeasonCalculator.get_season_for_day(game_data.current_day))
 
 	macro_cell_info_panel.show_cell(macro_cell, macro_state, true)
 
@@ -160,29 +173,53 @@ func _on_save_game_file_selected(path: String) -> void:
 	var save_service := GameSaveService.new()
 	save_service.save_game_to_json(macro_world, game_data, path)
 
+func _setup_clock() -> void:
+	clock = GameClockController.new()
+	add_child(clock)
+	if macro_world == null:
+		play_pause_button.disabled = true
+		for speed in speed_buttons.keys():
+			speed_buttons[speed].disabled = true
+		return
+	clock.setup(macro_world, game_data)
+	clock.is_playing = GameSettings.active_clock_is_playing
+	clock.speed = GameSettings.active_clock_speed
+	clock.day_advanced.connect(_on_day_advanced)
+	play_pause_button.pressed.connect(_on_play_pause_pressed)
+	for speed in speed_buttons.keys():
+		speed_buttons[speed].pressed.connect(_on_speed_button_pressed.bind(speed))
+	_update_play_pause_button()
+	speed_buttons[clock.speed].button_pressed = true
+
+func _on_play_pause_pressed() -> void:
+	clock.toggle_play_pause()
+	_update_play_pause_button()
+
+func _on_speed_button_pressed(speed: GameClockController.Speed) -> void:
+	clock.set_speed(speed)
+
+func _update_play_pause_button() -> void:
+	play_pause_button.text = tr("pause") if clock.is_playing else tr("play")
+
+func _on_day_advanced(simulation_ran: bool) -> void:
+	_update_calendar_display()
+	if not simulation_ran:
+		return
+	_refresh_resource_visuals()
+
 func _on_advance_year_pressed() -> void:
 	if macro_world == null:
 		push_warning("Nessun mondo macro condiviso: impossibile avanzare l'anno.")
 		return
+	clock.force_advance_to_year_end()
 
-	game_data.advance_year()
-	var growth_service := ResourceGrowthService.new()
-	growth_service.grow_resources(macro_world)
-	var encroachment_service := ResourceEncroachmentService.new()
-	var leftover_surplus := encroachment_service.encroach_resources(macro_world)
-	var migration_service := ResourceMigrationService.new()
-	var transfers := migration_service.compute_transfers(macro_world, leftover_surplus)
-	var mortality_service := ResourceMortalityService.new()
-	mortality_service.apply_mortality(macro_world)
-	migration_service.apply_transfers(macro_world, transfers)
-	var natural_event_service := NaturalEventService.new()
-	natural_event_service.trigger_events(macro_world, game_data.year)
-	_refresh_resource_visuals()
-	_update_year_label()
-
-func _update_year_label() -> void:
-	year_label.text = str(game_data.year)
+func _update_calendar_display() -> void:
+	year_label.text = "Day %d of %d, Year %d" % [game_data.current_day + 1, GameData.DAYS_PER_YEAR, game_data.year]
+	season_progress_bar.set_current_day(game_data.current_day)
 
 func _on_back_to_world_pressed() -> void:
 	GameSettings.returning_to_game_scene = true
+	if clock != null and macro_world != null:
+		GameSettings.active_clock_is_playing = clock.is_playing
+		GameSettings.active_clock_speed = clock.speed
 	get_tree().change_scene_to_file("res://scenes/game/GameScene.tscn")

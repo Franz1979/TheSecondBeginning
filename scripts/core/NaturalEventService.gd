@@ -15,22 +15,19 @@ const DEBUG_FORCE_CENTER: bool = false
 const DEBUG_FORCE_CENTER_CELL := Vector2i(50, 50)
 
 
-func trigger_events(world: World, year: int) -> Array:
-	for state in world.cell_states:
-		state.tick_growth_bonuses()
-
+func trigger_events(world: World, game_data: GameData, season: GameTypes.Season) -> Array:
 	var triggered_events: Array = []
 	for event_type in REGISTERED_EVENT_TYPES:
 		var rules := NaturalEventCalculator.get_event_rules(event_type)
-		if rules == null:
+		if rules == null or rules.reference_season != season:
 			continue
 
 		var event_count := _roll_event_count(rules.base_probability_per_year)
 		if event_count <= 0:
-			print("[%s] anno=%d: nessun evento" % [GameTypes.NaturalEventType.keys()[event_type], year])
+			print("[%s] anno=%d: nessun evento" % [GameTypes.NaturalEventType.keys()[event_type], game_data.year])
 
 		for i in range(event_count):
-			var event := _create_event_instance(world, event_type, rules, year)
+			var event := _create_event_instance(world, event_type, rules, game_data)
 			_apply_event_effects(world, event, rules)
 			triggered_events.append(event)
 
@@ -50,7 +47,7 @@ func _create_event_instance(
 	world: World,
 	event_type: GameTypes.NaturalEventType,
 	rules: NaturalEventRules,
-	year: int
+	game_data: GameData
 ) -> NaturalEventInstance:
 	var center := Vector2i(randi_range(0, World.WIDTH - 1), randi_range(0, World.HEIGHT - 1))
 	if rules.requires_coastal_center:
@@ -67,7 +64,9 @@ func _create_event_instance(
 	if intensity_index < rules.radius_by_intensity.size():
 		radius = rules.radius_by_intensity[intensity_index]
 
-	return NaturalEventInstance.new(event_type, year, center_x, center_y, intensity_index, radius)
+	return NaturalEventInstance.new(
+		event_type, game_data.year, game_data.get_absolute_day(), center_x, center_y, intensity_index, radius
+	)
 
 
 # Sceglie a caso tra le celle costiere (coast_type != NONE, cioè adiacenti al mare).
