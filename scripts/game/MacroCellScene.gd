@@ -21,6 +21,12 @@ var clock: GameClockController
 # terrestre) via `occupied`, ma NON stone — le rocce nel letto/sulle rive del fiume restano
 # plausibili e StonePositionService non riceve questo dizionario.
 var river_positions: Array = []
+# Inverso di river_positions (Dictionary per lookup O(1)): tutte le posizioni microcella NON
+# fiume, calcolate una sola volta in _ready() insieme a river_positions per lo stesso motivo
+# (river_shape/river_space non cambiano mai durante la sessione). Usato come `occupied` di
+# partenza per FishPositionService su celle RIVER: passandolo (duplicato) al generatore, le
+# uniche posizioni candidate restano quelle dentro river_positions — vedi _refresh_resource_visuals.
+var river_exterior_occupied: Dictionary = {}
 
 @onready var save_button: Button = $CanvasLayer/Sidebar/MarginContainer/VBoxContainer/SaveButton
 @onready var back_to_world_button: Button = $CanvasLayer/Sidebar/MarginContainer/VBoxContainer/BackToWorldButton
@@ -82,6 +88,7 @@ func _ready() -> void:
 				var thickness_ratio: float = float(macro_state.get_river_space()) / float(MacroCellState.TOTAL_SPACE)
 				renderer.set_river(macro_cell.river_shape, thickness_ratio)
 				river_positions = RiverMicrocellService.get_river_positions(macro_cell.river_shape, thickness_ratio)
+				river_exterior_occupied = _compute_river_exterior_occupied(river_positions)
 
 			var stone_service := StonePositionService.new()
 			stone_service.generate_if_needed(macro_state)
@@ -91,6 +98,23 @@ func _ready() -> void:
 
 	_setup_clock()
 	_update_calendar_display()
+
+# "occupied" invertito rispetto al solito uso (qui marca ciò che NON è disponibile per FISH,
+# cioè tutto tranne il fiume): passato a ResourcePositionService, le uniche candidate a
+# superare il filtro restano le posizioni dentro river_positions.
+func _compute_river_exterior_occupied(positions: Array) -> Dictionary:
+	var river_position_set: Dictionary = {}
+	for pos in positions:
+		river_position_set[pos] = true
+
+	var exterior: Dictionary = {}
+	for y in range(World.HEIGHT):
+		for x in range(World.WIDTH):
+			var pos := Vector2i(x, y)
+			if not river_position_set.has(pos):
+				exterior[pos] = true
+	return exterior
+
 
 # Grass/shrub/tree non sono persistite (a differenza di stone): vanno ricalcolate ogni
 # volta che la loro quantità può essere cambiata, cioè all'apertura della scena e a ogni
@@ -109,6 +133,24 @@ func _refresh_resource_visuals() -> void:
 
 	var vegetation_service := VegetationPositionService.new()
 	renderer.set_vegetation_positions(vegetation_service.generate_positions(macro_state, occupied))
+
+	var fish_positions: Array = []
+	var fish_service := FishPositionService.new()
+	if macro_cell.water_type == GameTypes.WaterType.SEA or macro_cell.water_type == GameTypes.WaterType.LAKE:
+		# L'intera macrocella è acqua: nessuna posizione da escludere.
+		fish_positions = fish_service.generate_positions(macro_state)
+	elif macro_cell.water_type == GameTypes.WaterType.RIVER:
+		# Duplicato: generate_positions muta il dizionario passato aggiungendo le posizioni
+		# scelte, e river_exterior_occupied va riusato identico a ogni refresh, non accumulare
+		# i pesci di un anno come "occupati" per quello successivo. Le rocce (stabili per tutta
+		# la sessione, come river_positions) possono già stare dentro il fiume — vanno escluse
+		# così un pesce non finisce disegnato esattamente sopra una roccia.
+		var occupied_for_fish: Dictionary = river_exterior_occupied.duplicate()
+		for pos in macro_state.stone_positions:
+			occupied_for_fish[pos] = true
+		fish_positions = fish_service.generate_positions(macro_state, occupied_for_fish)
+	renderer.set_fish_positions(fish_positions)
+
 	renderer.set_shrub_fruit_ratio(_get_shrub_fruit_ratio())
 	renderer.set_tree_fruit_ratios(_get_tree_subtype_ratio("wild_fruit"), _get_tree_subtype_ratio("domesticable_fruit"))
 	# Dopo le posizioni: set_season ricostruisce anche il buffer erba (colore dipende dalla

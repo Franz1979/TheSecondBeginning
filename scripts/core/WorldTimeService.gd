@@ -35,6 +35,10 @@ func _run_seasonal_checkpoints(world: World, game_data: GameData, year_rolled_ov
 		_run_growth_checkpoint(world, game_data)
 		checkpoint_ran = true
 
+	if day == SeasonCalculator.get_season_end_day(GameTypes.Season.SUMMER):
+		_run_fauna_migration_checkpoint(world)
+		checkpoint_ran = true
+
 	for season in [GameTypes.Season.WINTER, GameTypes.Season.SPRING, GameTypes.Season.SUMMER, GameTypes.Season.AUTUMN]:
 		if day == SeasonCalculator.get_season_day_range(season).x:
 			_run_natural_events_checkpoint(world, game_data, season)
@@ -54,10 +58,28 @@ func _run_growth_checkpoint(world: World, game_data: GameData) -> void:
 	var leftover_surplus := encroachment_service.encroach_resources(world)
 	_store_pending_migration_surplus(world, leftover_surplus)
 
+	# FISH cresce sullo stesso checkpoint di fine primavera della vegetazione, ma su un budget
+	# separato (water_dedicated_space): nessuna interazione con
+	# encroachment/pending_migration_surplus terrestri. Migration e mortality per FISH sono
+	# invece in checkpoint propri (fine estate/fine autunno, vedi sotto) — a differenza della
+	# vegetazione, growth->migration->mortality per FISH restano tre momenti separati dell'anno
+	# invece che un'unica pipeline diretta, per poter osservare l'evoluzione di ciascuna fase.
+	FaunaGrowthService.new().grow_fauna(world)
+
+
+# Fine estate: unico checkpoint per la migrazione FISH, nessuno sfasamento all'anno successivo
+# come lo schema "seed bank" della vegetazione (_run_migration_checkpoint sotto).
+func _run_fauna_migration_checkpoint(world: World) -> void:
+	FaunaMigrationService.new().migrate_fauna(world)
+
 
 func _run_mortality_checkpoint(world: World) -> void:
 	var mortality_service := ResourceMortalityService.new()
 	mortality_service.apply_mortality(world)
+
+	# Stesso checkpoint di fine autunno (year_rolled_over) della mortalità vegetale, su
+	# water_dedicated_space invece che dedicated_space.
+	FaunaMortalityService.new().apply_fauna_mortality(world)
 
 
 func _run_migration_checkpoint(world: World, game_data: GameData) -> void:

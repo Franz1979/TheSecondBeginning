@@ -56,6 +56,9 @@ func load_game_from_json(file_path: String) -> LoadedGame:
 					inner[subtype_name] = int(subtype_data[type_key][subtype_name])
 				state.subtype_composition[int(type_key)] = inner
 			state.river_space = int(state_data.get("river_space", 0))
+			var water_space_data = state_data.get("water_dedicated_space", {})
+			for key in water_space_data.keys():
+				state.water_dedicated_space[int(key)] = int(water_space_data[key])
 			var pending_surplus_data = state_data.get("pending_migration_surplus", {})
 			for key in pending_surplus_data.keys():
 				state.pending_migration_surplus[int(key)] = float(pending_surplus_data[key])

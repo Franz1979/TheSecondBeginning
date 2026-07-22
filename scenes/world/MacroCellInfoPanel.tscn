@@ -78,5 +78,17 @@ visible = false
 layout_mode = 2
 theme_override_font_sizes/font_size = 11
 
+[node name="FishSeparatorLabel" type="Label" parent="MarginContainer/VBoxContainer" unique_id=592837461]
+layout_mode = 2
+theme_override_font_sizes/font_size = 11
+
+[node name="FishNumberLabel" type="Label" parent="MarginContainer/VBoxContainer" unique_id=748213569]
+layout_mode = 2
+theme_override_font_sizes/font_size = 11
+
+[node name="WaterEmptySpaceLabel" type="Label" parent="MarginContainer/VBoxContainer" unique_id=936182745]
+layout_mode = 2
+theme_override_font_sizes/font_size = 11
+
 [node name="ActionsContainer" type="VBoxContainer" parent="MarginContainer/VBoxContainer" unique_id=1311435228]
 layout_mode = 2

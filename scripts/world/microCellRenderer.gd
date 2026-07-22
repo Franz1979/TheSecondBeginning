@@ -15,6 +15,8 @@ const COLOR_SHRUB_BROWN := Color(0.50, 0.38, 0.20, 0.85) # lobi "legnosi"
 const COLOR_SHRUB_BERRY := Color(0.75, 0.08, 0.10, 0.95) # puntini rossi per gli shrub fruit_bearing
 const COLOR_GRASS_BASE := Color(0.28, 0.58, 0.18, 0.85) # verde più scuro
 const COLOR_GRASS_TIP := Color(0.55, 0.80, 0.30, 0.85)  # verde più chiaro
+const COLOR_FISH_BODY := Color(0.45, 0.55, 0.65, 0.85) # grigio-azzurro argentato
+const COLOR_FISH_TAIL := Color(0.35, 0.44, 0.53, 0.85) # leggermente più scuro del corpo
 # Palette erba per stagione (base=radice/filo scuro, tip=punta): PRIMAVERA/ESTATE riusano
 # COLOR_GRASS_BASE/TIP sopra (verde vivo, invariato), AUTUNNO vira a dorato/paglierino,
 # INVERNO a un verde-grigio spento (vegetazione dormiente). Cambio netto a inizio stagione,
@@ -66,6 +68,7 @@ var river_thickness_ratio: float = 0.0 # river_space / MacroCellState.TOTAL_SPAC
 
 var stone_positions: Array = [] # Array[Vector2i]
 var vegetation_positions: Dictionary = {} # WorldObjectType -> Array[Vector2i]
+var fish_positions: Array = [] # Array[Vector2i] — STEP 1: valorizzato solo per macrocelle SEA/LAKE
 
 # STONE_VARIANT_COUNT sagome-base pre-generate una sola volta (stessa formula di jitter
 # per-vertice di sempre, seminata per variante invece che per posizione) e riusate per tutte le
@@ -134,6 +137,12 @@ func set_vegetation_positions(positions: Dictionary) -> void:
 	queue_redraw()
 
 
+func set_fish_positions(positions: Array) -> void:
+	fish_positions = positions
+	_rebuild_fish_multimeshes()
+	queue_redraw()
+
+
 func set_shrub_fruit_ratio(ratio: float) -> void:
 	shrub_fruit_ratio = clamp(ratio, 0.0, 1.0)
 	# Solo le bacche dipendono dal rapporto: niente bisogno di ricalcolare anche tree/grass qui.
@@ -182,6 +191,7 @@ func _draw() -> void:
 
 	_draw_stone_positions()
 	_draw_vegetation_positions()
+	_draw_fish_positions()
 	_draw_neighbor_previews(grid_size)
 	_draw_boundary(grid_size)
 
@@ -648,6 +658,93 @@ func _rebuild_grass_buffers() -> void:
 
 	_grass_points = points
 	_grass_colors = colors
+
+
+# Pesce stilizzato: corpo a ellisse (cerchio unitario scalato in modo anisotropo *nello spazio
+# locale* — scaled_local, non scaled: con scaled() la scala verrebbe applicata nello spazio
+# globale DOPO la rotazione, e un cerchio è invariante per rotazione, quindi l'ellisse
+# risulterebbe sempre allineata agli assi invece che orientata secondo heading — poi ruotato
+# come corpo rigido) + una piccola coda triangolare agganciata dietro, stessa rotazione del
+# corpo. Un solo heading casuale per pesce (da hash(pos)) dà varietà di orientamento senza
+# bisogno di più primitive — stesso principio "poche forme condivise, trasformo per istanza"
+# già usato per stone/tree/shrub.
+const FISH_BODY_LENGTH_RANGE := Vector2(2.0, 3.0) # semiasse lungo (direzione di marcia)
+const FISH_BODY_WIDTH_RANGE := Vector2(0.8, 1.2)  # semiasse corto (fianchi)
+const FISH_TAIL_LENGTH_RATIO: float = 0.6 # relativo a body_length
+const FISH_TAIL_WIDTH_RATIO: float = 1.3  # la coda è più larga della sezione del corpo
+
+var _fish_body_mesh: ArrayMesh
+var _fish_tail_mesh: ArrayMesh
+var _fish_meshes_ready: bool = false
+
+var _fish_body_multimesh: MultiMesh
+var _fish_tail_multimesh: MultiMesh
+
+
+func _ensure_fish_meshes() -> void:
+	if _fish_meshes_ready:
+		return
+	_fish_meshes_ready = true
+
+	_fish_body_mesh = _build_circle_mesh(VEGETATION_CIRCLE_SEGMENTS, COLOR_FISH_BODY)
+	# Triangolo unitario: punta a sinistra (-1, 0), base sul lato destro (0, -1)/(0, 1) — il
+	# lato destro è il punto di aggancio dietro al corpo (vedi tail_local_offset sotto).
+	var tail_points := PackedVector2Array([Vector2(-1, 0), Vector2(0, -1), Vector2(0, 1)])
+	_fish_tail_mesh = _build_fan_mesh(tail_points, COLOR_FISH_TAIL)
+
+
+func _ensure_fish_multimeshes() -> void:
+	if _fish_body_multimesh != null:
+		return
+
+	_fish_body_multimesh = _make_multimesh(_fish_body_mesh, false)
+	_fish_tail_multimesh = _make_multimesh(_fish_tail_mesh, false)
+
+
+func _rebuild_fish_multimeshes() -> void:
+	_ensure_fish_meshes()
+	_ensure_fish_multimeshes()
+
+	var body_transforms: Array = []
+	var tail_transforms: Array = []
+
+	for pos in fish_positions:
+		var base := Vector2(pos.x * CELL_SIZE, pos.y * CELL_SIZE)
+		var half: float = CELL_SIZE / 2.0
+
+		var offset_x: float = lerp(-1.0, 1.0, float(hash(pos * 5 + Vector2i(4, 12)) % 1000) / 1000.0)
+		var offset_y: float = lerp(-1.0, 1.0, float(hash(pos * 5 + Vector2i(12, 4)) % 1000) / 1000.0)
+		var center := base + Vector2(half, half) + Vector2(offset_x, offset_y)
+
+		var heading: float = (float(hash(pos * 7 + Vector2i(31, 53)) % 1000) / 1000.0) * TAU
+		var size_t: float = float(hash(pos) % 1000) / 1000.0
+		var body_length: float = lerp(FISH_BODY_LENGTH_RANGE.x, FISH_BODY_LENGTH_RANGE.y, size_t)
+		var body_width: float = lerp(FISH_BODY_WIDTH_RANGE.x, FISH_BODY_WIDTH_RANGE.y, size_t)
+
+		var body_transform := Transform2D(heading, Vector2.ZERO).scaled_local(Vector2(body_length, body_width))
+		body_transform.origin = center
+		body_transforms.append(body_transform)
+
+		var tail_length: float = body_length * FISH_TAIL_LENGTH_RATIO
+		var tail_width: float = body_width * FISH_TAIL_WIDTH_RATIO
+		# Punto dietro il corpo (bordo posteriore dell'ellisse, local (-body_length, 0) prima
+		# della rotazione), ruotato dello stesso heading: qui la coda viene agganciata.
+		var tail_local_offset: Vector2 = Vector2(-body_length, 0).rotated(heading)
+		var tail_transform := Transform2D(heading, Vector2.ZERO).scaled_local(Vector2(tail_length, tail_width))
+		tail_transform.origin = center + tail_local_offset
+		tail_transforms.append(tail_transform)
+
+	_apply_transforms(_fish_body_multimesh, body_transforms)
+	_apply_transforms(_fish_tail_multimesh, tail_transforms)
+
+
+func _draw_fish_positions() -> void:
+	if _fish_body_multimesh != null and _fish_body_multimesh.instance_count > 0:
+		draw_multimesh(_fish_body_multimesh, null)
+		_debug_draw_primitive_count += 1
+	if _fish_tail_multimesh != null and _fish_tail_multimesh.instance_count > 0:
+		draw_multimesh(_fish_tail_multimesh, null)
+		_debug_draw_primitive_count += 1
 
 
 # Fascia di fiume al centro della cella, orientata secondo river_shape — stessa geometria

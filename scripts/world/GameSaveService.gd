@@ -37,6 +37,7 @@ func save_game_to_json(
 			"dedicated_space": state.dedicated_space,
 			"subtype_composition": state.subtype_composition,
 			"river_space": state.river_space,
+			"water_dedicated_space": state.water_dedicated_space,
 			"active_growth_bonuses": state.active_growth_bonuses,
 			"pending_migration_surplus": state.pending_migration_surplus
 		}

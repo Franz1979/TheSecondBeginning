@@ -1,0 +1,17 @@
+[gd_resource type="Resource" script_class="ResourceGrowthRules" format=3 uid="uid://dji6x7cc8imgb"]
+
+[ext_resource type="Script" uid="uid://dm38wig7or77y" path="res://scripts/core/ResourceGrowthRules.gd" id="1_fish"]
+
+[resource]
+script = ExtResource("1_fish")
+base_growth_rate = 0.2
+terrain_multiplier_plain = 0.0
+terrain_multiplier_hill = 0.0
+terrain_multiplier_mountain = 0.0
+terrain_multiplier_water = 0.0
+water_multiplier_lake = 0.8
+water_multiplier_river = 0.6
+usable_capacity_ratio_sea = 0.4
+usable_capacity_ratio_lake = 0.3
+usable_capacity_ratio_river = 0.3
+metadata/_custom_type_script = "uid://dm38wig7or77y"

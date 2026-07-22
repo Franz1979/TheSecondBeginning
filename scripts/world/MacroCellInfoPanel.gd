@@ -16,6 +16,9 @@ extends PanelContainer
 @onready var shrub_number_label: Label = $MarginContainer/VBoxContainer/ShrubNumberLabel
 @onready var shrub_subtype_label: Label = $MarginContainer/VBoxContainer/ShrubSubtypeLabel
 @onready var empty_space_label: Label = $MarginContainer/VBoxContainer/EmptySpaceLabel
+@onready var fish_separator_label: Label = $MarginContainer/VBoxContainer/FishSeparatorLabel
+@onready var fish_number_label: Label = $MarginContainer/VBoxContainer/FishNumberLabel
+@onready var water_empty_space_label: Label = $MarginContainer/VBoxContainer/WaterEmptySpaceLabel
 @onready var actions_container: VBoxContainer = $MarginContainer/VBoxContainer/ActionsContainer
 
 
@@ -52,7 +55,25 @@ func show_cell(cell: MacroCellData, state: MacroCellState, show_subtype_detail: 
 		stone_number_label.text = "Stone: " + str(stone_quantity) + " (occupied cells: " + str(stone_space) + ")"
 		grass_number_label.text = "Grass: " + str(grass_quantity) + " (occupied cells: " + str(grass_space) + ")"
 		shrub_number_label.text = "Shrub: " + str(shrub_quantity) + " (occupied cells: " + str(shrub_space) + ")"
-		empty_space_label.text = "Empty space: " + str(state.get_empty_space())
+		# Su SEA/LAKE il calcolo "naturale" di get_empty_space() risulterebbe comunque
+		# TOTAL_SPACE (nessuna risorsa terrestre ha mai popolato dedicated_space lì, essendo
+		# la loro densità 0 su terrain WATER): un valore fuorviante da mostrare, dato che quello
+		# spazio non sarà mai disponibile per vegetazione/roccia. Qui lo forziamo esplicitamente
+		# a 0 solo per la visualizzazione; get_empty_space() stesso resta invariato (nessun
+		# chiamante ne ha bisogno diverso: tutti bypassano già la lettura su terrain WATER
+		# tramite i propri controlli su max_density/growth_rate, sempre 0 lì).
+		var empty_ground_space: int = state.get_empty_space()
+		if cell.terrain_base == GameTypes.TerrainBase.WATER:
+			empty_ground_space = 0
+		empty_space_label.text = "Empty ground space: " + str(empty_ground_space)
+
+		var fish_quantity := state.get_resource_quantity(GameTypes.WorldObjectType.FISH)
+		var fish_space := state.get_water_space(GameTypes.WorldObjectType.FISH)
+		var water_capacity := ResourceCalculator.get_water_capacity_space(cell, state)
+		fish_separator_label.text = " - - - - - - - - - -"
+		fish_number_label.text = "Fish: " + str(fish_quantity) + " (occupied cells: " + str(fish_space) + ")"
+		water_empty_space_label.text = "Water empty space: " + str(state.get_empty_water_space(water_capacity))
+
 		_update_shrub_subtype_label(cell, state, show_subtype_detail)
 		_update_tree_subtype_label(cell, state, show_subtype_detail)
 	else:
@@ -62,7 +83,9 @@ func show_cell(cell: MacroCellData, state: MacroCellState, show_subtype_detail: 
 		grass_number_label.text = "Grass: -"
 		shrub_number_label.text = "Shrub: -"
 		shrub_subtype_label.visible = false
-		empty_space_label.text = "Empty space: -"
+		empty_space_label.text = "Empty ground space: -"
+		fish_number_label.text = "Fish: -"
+		water_empty_space_label.text = "Water empty space: -"
 		
 # Seconda riga, indentata, sotto la riga principale di SHRUB: nascosta se show_subtype_detail è
 # false (uso condiviso in GameScene/MapEditorScene) o se la cella non ha ancora una
@@ -127,7 +150,9 @@ func clear() -> void:
 	grass_number_label.text = "Grass: -"
 	shrub_number_label.text = "Shrub: -"
 	shrub_subtype_label.visible = false
-	empty_space_label.text = "Empty space: -"
+	empty_space_label.text = "Empty ground space: -"
+	fish_number_label.text = "Fish: -"
+	water_empty_space_label.text = "Water empty space: -"
 
 
 func _terrain_to_text(value: GameTypes.TerrainBase) -> String:

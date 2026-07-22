@@ -11,15 +11,45 @@ const MAX_GRASS_MICROCELLS: int = 200
 const MIN_SHRUB_MICROCELLS: int = 50
 const MAX_SHRUB_MICROCELLS: int = 200
 const RIVER_SPACE: int = 3000
+const MIN_FISH_CAPACITY_RATIO: float = 0.02
+const MAX_FISH_CAPACITY_RATIO: float = 0.06
 
 
 func populate_resources(world: World) -> void:
 	reserve_river_space(world)
+	populate_fish(world)
 	var area := _get_population_area(world)
 	populate_stone(world, area)
 	populate_trees(world, area)
 	populate_grass(world, area)
 	populate_shrub(world, area)
+
+
+# A differenza di stone/trees/grass/shrub (confinati a _get_population_area, un residuo di
+# test), FISH viene seminato su OGNI cella d'acqua dell'intero mondo: water_dedicated_space è
+# gated dalla capacità fisica della cella (ResourceCalculator.get_water_capacity_space), quindi
+# non richiede un'area di test per restare limitato/controllato.
+func populate_fish(world: World) -> void:
+	for cell in world.cells:
+		var state := world.get_cell_state_at(cell.x, cell.y)
+		if state == null:
+			continue
+
+		var capacity := ResourceCalculator.get_water_capacity_space(cell, state)
+		if capacity <= 0:
+			continue
+
+		var max_density := ResourceCalculator.get_water_max_density(GameTypes.WorldObjectType.FISH, cell.water_type)
+		if max_density <= 0.0:
+			continue
+
+		var dedicated_space: int = int(round(capacity * randf_range(MIN_FISH_CAPACITY_RATIO, MAX_FISH_CAPACITY_RATIO)))
+		if dedicated_space <= 0:
+			continue
+		var quantity: int = int(round(max_density * dedicated_space))
+
+		state.set_water_space(GameTypes.WorldObjectType.FISH, dedicated_space)
+		state.set_resource_quantity(GameTypes.WorldObjectType.FISH, quantity)
 
 
 func reserve_river_space(world: World) -> void:

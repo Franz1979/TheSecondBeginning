@@ -55,6 +55,31 @@ static func _get_coast_multiplier(rules: ResourceDensityRules, coast: GameTypes.
 			return 1.0
 
 
+static func _get_water_multiplier(rules: ResourceDensityRules, water_type: GameTypes.WaterType) -> float:
+	match water_type:
+		GameTypes.WaterType.SEA:
+			return rules.water_multiplier_sea
+		GameTypes.WaterType.LAKE:
+			return rules.water_multiplier_lake
+		GameTypes.WaterType.RIVER:
+			return rules.water_multiplier_river
+		_:
+			return rules.water_multiplier_none
+
+
+# Densità massima per risorse acquatiche (FISH): asse indipendente da Terrain/Biome/Coast — una
+# cella fiume ha terrain_base PLAIN/HILL/MOUNTAIN, non WATER, quindi get_max_density()
+# applicherebbe il moltiplicatore terreno sbagliato. Vedi ResourceDensityRules.water_multiplier_*.
+static func get_water_max_density(
+	resource_type: GameTypes.WorldObjectType,
+	water_type: GameTypes.WaterType
+) -> float:
+	var rules := _get_density_rules(resource_type)
+	if rules == null:
+		return 0.0
+	return rules.base_density * _get_water_multiplier(rules, water_type)
+
+
 static func get_presence_chance(
 	resource_type: GameTypes.WorldObjectType,
 	terrain: GameTypes.TerrainBase,
@@ -190,6 +215,84 @@ static func get_growth_rules(resource_type: GameTypes.WorldObjectType) -> Resour
 	return _get_growth_rules(resource_type)
 
 
+static func _get_growth_water_multiplier(rules: ResourceGrowthRules, water_type: GameTypes.WaterType) -> float:
+	match water_type:
+		GameTypes.WaterType.SEA:
+			return rules.water_multiplier_sea
+		GameTypes.WaterType.LAKE:
+			return rules.water_multiplier_lake
+		GameTypes.WaterType.RIVER:
+			return rules.water_multiplier_river
+		_:
+			return rules.water_multiplier_none
+
+
+# Tasso di crescita per risorse acquatiche (FISH): stesso ragionamento di get_water_max_density,
+# asse WaterType indipendente da Terrain/Biome/Coast.
+static func get_water_growth_rate(
+	resource_type: GameTypes.WorldObjectType,
+	water_type: GameTypes.WaterType
+) -> float:
+	var rules := _get_growth_rules(resource_type)
+	if rules == null:
+		return 0.0
+	return rules.base_growth_rate * _get_growth_water_multiplier(rules, water_type)
+
+
+# Capacità fisica d'acqua di una macrocella, in microcelle — indipendente dal resource_type
+# (proprietà della cella, non della risorsa che la occupa): l'intera cella per SEA/LAKE, solo
+# la porzione fiume (state.river_space, già calcolata a world-gen — vedi
+# InitialResourceSetupService.reserve_river_space) per RIVER, 0 altrove. Vedi CLAUDE.md /
+# analisi FISH per perché non si usa RiverMicrocellService.get_river_positions() qui: sarebbe
+# uno scan O(TOTAL_SPACE) per cella evitabile, dato che river_space è già il numero che serve.
+static func get_water_capacity_space(cell: MacroCellData, state: MacroCellState) -> int:
+	match cell.water_type:
+		GameTypes.WaterType.SEA, GameTypes.WaterType.LAKE:
+			return MacroCellState.TOTAL_SPACE
+		GameTypes.WaterType.RIVER:
+			return state.get_river_space()
+		_:
+			return 0
+
+
+static func _get_usable_capacity_ratio(rules: ResourceGrowthRules, water_type: GameTypes.WaterType) -> float:
+	match water_type:
+		GameTypes.WaterType.SEA:
+			return rules.usable_capacity_ratio_sea
+		GameTypes.WaterType.LAKE:
+			return rules.usable_capacity_ratio_lake
+		GameTypes.WaterType.RIVER:
+			return rules.usable_capacity_ratio_river
+		_:
+			return rules.usable_capacity_ratio_none
+
+
+# Capacità EFFETTIVA/sfruttabile: get_water_capacity_space (fisica) scalata per
+# usable_capacity_ratio_* (ResourceGrowthRules — limiti ecologici oltre alla densità, es.
+# ossigeno/territorio). A differenza della capacità fisica, dipende da resource_type (il
+# rapporto è specifico per risorsa) — è il tetto verso cui punta la crescita
+# (FaunaGrowthService), il surplus (get_water_growth_surplus sotto), il lato destinazione della
+# migrazione (FaunaMigrationService) e il fill_ratio della mortalità (FaunaMortalityService).
+# get_water_capacity_space stessa resta invariata e continua a rappresentare la disponibilità
+# fisica reale mostrata in MacroCellInfoPanel (Water empty space) — questa funzione non la
+# sostituisce, le sta accanto per gli usi "interni" alla formula di crescita.
+static func get_water_usable_capacity_space(
+	resource_type: GameTypes.WorldObjectType,
+	cell: MacroCellData,
+	state: MacroCellState
+) -> int:
+	var physical_capacity := get_water_capacity_space(cell, state)
+	if physical_capacity <= 0:
+		return 0
+
+	var rules := _get_growth_rules(resource_type)
+	if rules == null:
+		return physical_capacity
+
+	var ratio := _get_usable_capacity_ratio(rules, cell.water_type)
+	return int(round(float(physical_capacity) * ratio))
+
+
 static func get_subtype_rules(resource_type: GameTypes.WorldObjectType) -> Array:
 	var rules := _get_growth_rules(resource_type)
 	if rules == null:
@@ -261,6 +364,41 @@ static func compute_growth_surplus(
 
 	var desired_growth_quantity: float = growth_rate * current_quantity
 	var empty_space: int = state.get_empty_space()
+	var local_capacity_quantity: float = float(empty_space) * max_density
+	var local_growth_quantity: float = min(desired_growth_quantity, local_capacity_quantity)
+	var surplus_quantity: float = desired_growth_quantity - local_growth_quantity
+
+	return max(surplus_quantity, 0.0)
+
+
+# Gemella di compute_growth_surplus sopra, sull'asse acqua invece che Terrain/Biome/Coast:
+# quanta della crescita desiderata di resource_type non trova posto nella capacità d'acqua
+# SFRUTTABILE locale (get_water_usable_capacity_space, non quella fisica — lo stesso tetto verso
+# cui punta FaunaGrowthService), usata da FaunaMigrationService per alimentare la migrazione
+# diretta verso le celle d'acqua vicine — nessun encroachment/seed-bank di mezzo.
+static func get_water_growth_surplus(
+	resource_type: GameTypes.WorldObjectType,
+	cell: MacroCellData,
+	state: MacroCellState
+) -> float:
+	var current_quantity: int = state.get_resource_quantity(resource_type)
+	if current_quantity <= 0:
+		return 0.0
+
+	var growth_rate := get_water_growth_rate(resource_type, cell.water_type)
+	if growth_rate <= 0.0:
+		return 0.0
+
+	var max_density := get_water_max_density(resource_type, cell.water_type)
+	if max_density <= 0.0:
+		return 0.0
+
+	# Capacità sfruttabile, non fisica: il surplus deve generarsi avvicinandosi al tetto verso
+	# cui FaunaGrowthService fa effettivamente crescere la popolazione, non a TOTAL_SPACE/
+	# river_space (che growth non raggiunge mai se usable_capacity_ratio < 1.0).
+	var capacity := get_water_usable_capacity_space(resource_type, cell, state)
+	var desired_growth_quantity: float = growth_rate * current_quantity
+	var empty_space: int = state.get_empty_water_space(capacity)
 	var local_capacity_quantity: float = float(empty_space) * max_density
 	var local_growth_quantity: float = min(desired_growth_quantity, local_capacity_quantity)
 	var surplus_quantity: float = desired_growth_quantity - local_growth_quantity

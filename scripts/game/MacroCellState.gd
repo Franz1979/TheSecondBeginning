@@ -10,6 +10,11 @@ var resource_quantity: Dictionary = {}
 var dedicated_space: Dictionary = {}
 var subtype_composition: Dictionary = {} # WorldObjectType -> Dictionary[String subtype_name, int space_count]
 var river_space: int = 0
+# Budget separato per risorse acquatiche (oggi solo FISH), mai sommato in
+# get_total_dedicated_space()/get_empty_space(): l'acqua non compete mai con lo spazio
+# terrestre, esiste solo entro la capacità restituita da
+# ResourceCalculator.get_water_capacity_space() (TOTAL_SPACE per SEA/LAKE, river_space per RIVER).
+var water_dedicated_space: Dictionary = {}
 var active_growth_bonuses: Dictionary = {} # NaturalEventType -> {multiplier: float, trigger_absolute_day: int, duration_years: int}
 # Surplus di crescita non piazzato dall'encroachment a fine primavera, in attesa che il
 # checkpoint di inizio primavera dell'anno successivo lo trasformi in trasferimenti verso le
@@ -170,6 +175,24 @@ func get_river_space() -> int:
 
 func set_river_space(amount: int) -> void:
 	river_space = max(amount, 0)
+
+func get_water_space(object_type: GameTypes.WorldObjectType) -> int:
+	return int(water_dedicated_space.get(object_type, 0))
+
+func set_water_space(object_type: GameTypes.WorldObjectType, amount: int) -> void:
+	water_dedicated_space[object_type] = max(amount, 0)
+
+func get_total_water_dedicated_space() -> int:
+	var total := 0
+	for amount in water_dedicated_space.values():
+		total += amount
+	return total
+
+# capacity è la capacità fisica della cella (ResourceCalculator.get_water_capacity_space),
+# non una costante fissa come TOTAL_SPACE: SEA/LAKE e RIVER hanno capacità diverse, quindi va
+# passata dal chiamante invece di essere ricavata qui.
+func get_empty_water_space(capacity: int) -> int:
+	return capacity - get_total_water_dedicated_space()
 
 func get_total_dedicated_space() -> int:
 	var total := river_space

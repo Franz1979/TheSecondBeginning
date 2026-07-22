@@ -27,3 +27,13 @@ extends Resource
 @export var coast_multiplier_beach: float = 1.0
 @export var coast_multiplier_semi_cliff: float = 1.0
 @export var coast_multiplier_cliff: float = 1.0
+
+@export_group("Water Type Multipliers")
+# Usati solo dal calcolo acquatico (ResourceCalculator.get_water_max_density), non da
+# get_max_density: le risorse terrestri restano guidate da Terrain/Biome/Coast, le risorse
+# acquatiche (FISH) da questo asse indipendente, dato che una cella fiume ha terrain_base
+# PLAIN/HILL/MOUNTAIN (non WATER) e non può quindi passare dal terrain_multiplier_water.
+@export var water_multiplier_none: float = 0.0
+@export var water_multiplier_sea: float = 1.0
+@export var water_multiplier_lake: float = 1.0
+@export var water_multiplier_river: float = 1.0
