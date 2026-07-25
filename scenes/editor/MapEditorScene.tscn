@@ -3,6 +3,9 @@
 [ext_resource type="Script" uid="uid://rv4wbedvspyd" path="res://scripts/scenes/MapEditorScene.gd" id="1_q2bch"]
 [ext_resource type="Script" uid="uid://bo7e46bvucvqn" path="res://scripts/camera/CameraController.gd" id="2_pghkh"]
 [ext_resource type="PackedScene" uid="uid://u4tgm2grhilk" path="res://scenes/world/MacroCellInfoPanel.tscn" id="3_pghkh"]
+[ext_resource type="PackedScene" uid="uid://dm2h8k5w1n3rt" path="res://scenes/ui/IconButtonRow.tscn" id="4_iconrow"]
+[ext_resource type="PackedScene" uid="uid://bk3x7q1m9v2ha" path="res://scenes/ui/SystemMenuDialog.tscn" id="5_sysmenu"]
+[ext_resource type="PackedScene" uid="uid://c5t8k2m4w9r1p" path="res://scenes/ui/SaveConfirmationDialog.tscn" id="6_saveconf"]
 
 [sub_resource type="StyleBoxFlat" id="StyleBoxFlat_u5gcm"]
 bg_color = Color(0.54391533, 0.65469354, 0.10991336, 1)
@@ -42,17 +45,6 @@ horizontal_scroll_mode = 0
 [node name="VBoxContainer" type="VBoxContainer" parent="CanvasLayer/Sidebar/MarginContainer/ScrollContainer" unique_id=1688224039]
 layout_mode = 2
 size_flags_horizontal = 3
-
-[node name="SaveMapButton" type="Button" parent="CanvasLayer/Sidebar/MarginContainer/ScrollContainer/VBoxContainer" unique_id=108741576]
-layout_mode = 2
-text = "Salva Mappa"
-
-[node name="BackToMenuButton" type="Button" parent="CanvasLayer/Sidebar/MarginContainer/ScrollContainer/VBoxContainer" unique_id=1187690520]
-layout_mode = 2
-text = "Torna al Menu"
-
-[node name="HSeparator" type="HSeparator" parent="CanvasLayer/Sidebar/MarginContainer/ScrollContainer/VBoxContainer"]
-layout_mode = 2
 
 [node name="TerrainWaterToolButton" type="Button" parent="CanvasLayer/Sidebar/MarginContainer/ScrollContainer/VBoxContainer" unique_id=449690760]
 layout_mode = 2
@@ -131,9 +123,24 @@ layout_mode = 2
 [node name="HSeparator2" type="HSeparator" parent="CanvasLayer/Sidebar/MarginContainer/ScrollContainer/VBoxContainer"]
 layout_mode = 2
 
+[node name="PrimaryActionsBar" parent="CanvasLayer/Sidebar/MarginContainer/ScrollContainer/VBoxContainer" instance=ExtResource("4_iconrow")]
+layout_mode = 2
+slot_count = 5
+
 [node name="MacroCellInfoPanel" parent="CanvasLayer/Sidebar/MarginContainer/ScrollContainer/VBoxContainer" unique_id=1234849909 instance=ExtResource("3_pghkh")]
 layout_mode = 2
+
+[node name="HSeparator3" type="HSeparator" parent="CanvasLayer/Sidebar/MarginContainer/ScrollContainer/VBoxContainer"]
+layout_mode = 2
+
+[node name="SecondaryActionsBar" parent="CanvasLayer/Sidebar/MarginContainer/ScrollContainer/VBoxContainer" instance=ExtResource("4_iconrow")]
+layout_mode = 2
+slot_count = 4
 
 [node name="SaveMapFileDialog" type="FileDialog" parent="." unique_id=1169225512]
 access = 1
 filters = PackedStringArray("*.json ; File JSON")
+
+[node name="SystemMenuDialog" parent="." instance=ExtResource("5_sysmenu")]
+
+[node name="SaveConfirmationDialog" parent="." instance=ExtResource("6_saveconf")]

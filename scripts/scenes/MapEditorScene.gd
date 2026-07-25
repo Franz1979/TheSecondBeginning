@@ -3,9 +3,12 @@ extends Node2D
 var world: World
 var renderer: WorldRenderer
 var editor_controller: MapEditorController
+var _pending_leave_action: StringName = &""
 
-@onready var back_to_menu_button: Button = $CanvasLayer/Sidebar/MarginContainer/ScrollContainer/VBoxContainer/BackToMenuButton
-@onready var save_map_button: Button = $CanvasLayer/Sidebar/MarginContainer/ScrollContainer/VBoxContainer/SaveMapButton
+@onready var primary_actions_bar: IconButtonRow = $CanvasLayer/Sidebar/MarginContainer/ScrollContainer/VBoxContainer/PrimaryActionsBar
+@onready var secondary_actions_bar: IconButtonRow = $CanvasLayer/Sidebar/MarginContainer/ScrollContainer/VBoxContainer/SecondaryActionsBar
+@onready var system_menu_dialog: SystemMenuDialog = $SystemMenuDialog
+@onready var save_confirmation_dialog: SaveConfirmationDialog = $SaveConfirmationDialog
 @onready var save_map_file_dialog: FileDialog = $SaveMapFileDialog
 @onready var terrain_water_tool_button: Button = $CanvasLayer/Sidebar/MarginContainer/ScrollContainer/VBoxContainer/TerrainWaterToolButton
 @onready var terrain_plain_tool_button: Button = $CanvasLayer/Sidebar/MarginContainer/ScrollContainer/VBoxContainer/TerrainPlainToolButton
@@ -30,8 +33,6 @@ var editor_controller: MapEditorController
 @onready var macro_cell_info_panel: MacroCellInfoPanel = $CanvasLayer/Sidebar/MarginContainer/ScrollContainer/VBoxContainer/MacroCellInfoPanel
 
 func _ready() -> void:
-	save_map_button.text = tr("save_map")
-	back_to_menu_button.text = tr("back_to_menu")
 	terrain_water_tool_button.text = tr("water")
 	water_options_label.text = tr("water_type")
 	water_sea_tool_button.text = tr("sea")
@@ -150,16 +151,53 @@ func _ready() -> void:
 	terrain_none_button
 )
 	
-	back_to_menu_button.pressed.connect(_on_back_to_menu_pressed)
-	save_map_button.pressed.connect(_on_save_map_pressed)
 	save_map_file_dialog.access = FileDialog.ACCESS_USERDATA
 	save_map_file_dialog.current_dir = GameSettings.MAPS_DIR
 	save_map_file_dialog.file_selected.connect(
 	_on_save_map_file_selected
 	)
 
-func _on_back_to_menu_pressed() -> void:
-	get_tree().change_scene_to_file("res://scenes/menus/MapEditorMenu.tscn")
+	secondary_actions_bar.configure_slot(0, "☰", tr("menu"), &"menu")
+	secondary_actions_bar.action_pressed.connect(_on_secondary_action_pressed)
+	system_menu_dialog.add_action(tr("save_map"), &"save")
+	system_menu_dialog.add_action(tr("back_to_menu"), &"back_to_main_menu")
+	system_menu_dialog.add_action(tr("exit"), &"exit_game")
+	system_menu_dialog.action_selected.connect(_on_system_menu_action_selected)
+	save_confirmation_dialog.option_selected.connect(_on_save_confirmation_option_selected)
+
+func _on_secondary_action_pressed(action_id: StringName) -> void:
+	match action_id:
+		&"menu":
+			system_menu_dialog.open_menu()
+
+func _on_system_menu_action_selected(action_id: StringName) -> void:
+	match action_id:
+		&"save":
+			_on_save_map_pressed()
+		&"back_to_main_menu":
+			_pending_leave_action = &"back_to_main_menu"
+			save_confirmation_dialog.open_dialog()
+		&"exit_game":
+			_pending_leave_action = &"exit_game"
+			save_confirmation_dialog.open_dialog()
+
+func _on_save_confirmation_option_selected(option: StringName) -> void:
+	match option:
+		&"save_and_leave":
+			_on_save_map_pressed()
+		&"leave_without_saving":
+			_execute_pending_leave_action()
+		&"cancel":
+			_pending_leave_action = &""
+
+func _execute_pending_leave_action() -> void:
+	var action := _pending_leave_action
+	_pending_leave_action = &""
+	match action:
+		&"back_to_main_menu":
+			get_tree().change_scene_to_file("res://scenes/menus/MainMenu.tscn")
+		&"exit_game":
+			get_tree().quit()
 
 func _on_save_map_pressed() -> void:
 	save_map_file_dialog.popup_centered()
@@ -171,6 +209,9 @@ func _on_save_map_file_selected(path: String) -> void:
 		world,
 		path
 	)
+
+	if _pending_leave_action != &"":
+		_execute_pending_leave_action()
 	
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventKey and event.pressed:
@@ -212,7 +253,7 @@ func _select_terrain_brush(
 	macro_cell_info_panel.visible = brush == MapEditorController.TerrainBrush.NONE
 	
 	if brush == MapEditorController.TerrainBrush.NONE:
-		macro_cell_info_panel.clear()
+		macro_cell_info_panel.clear(false)
 		
 	var is_water := brush == MapEditorController.TerrainBrush.WATER
 	
@@ -342,4 +383,4 @@ func _select_biome(
 	selected_button.text = "▶ " + selected_button.text
 	
 func _on_cell_selected(cell: MacroCellData, state: MacroCellState) -> void:
-	macro_cell_info_panel.show_cell(cell, state)
+	macro_cell_info_panel.show_cell(cell, state, false)

@@ -402,8 +402,14 @@ static func get_water_growth_surplus(
 	var local_capacity_quantity: float = float(empty_space) * max_density
 	var local_growth_quantity: float = min(desired_growth_quantity, local_capacity_quantity)
 	var surplus_quantity: float = desired_growth_quantity - local_growth_quantity
+	surplus_quantity = max(surplus_quantity, 0.0)
 
-	return max(surplus_quantity, 0.0)
+	if DebugLogging.ENABLED and cell.x == 57 and cell.y == 38:
+		print("[FAUNA SURPLUS 57,38] %s: surplus=%.3f" % [
+			GameTypes.WorldObjectType.keys()[resource_type], surplus_quantity
+		])
+
+	return surplus_quantity
 
 
 static func get_encroachment_efficiency(

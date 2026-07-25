@@ -1,6 +1,7 @@
 [gd_scene format=3 uid="uid://u4tgm2grhilk"]
 
 [ext_resource type="Script" uid="uid://dhh7xkgvhirhf" path="res://scripts/world/MacroCellInfoPanel.gd" id="1_tcup2"]
+[ext_resource type="PackedScene" uid="uid://c8g5nq2h6x4xy" path="res://scenes/world/CellGeographyInfo.tscn" id="2_geog"]
 
 [node name="MacroCellInfoPanel" type="PanelContainer" unique_id=1882805416]
 anchors_preset = 15
@@ -24,38 +25,12 @@ theme_override_font_sizes/font_size = 14
 layout_mode = 2
 theme_override_font_sizes/font_size = 11
 
-[node name="TerrainLabel" type="Label" parent="MarginContainer/VBoxContainer" unique_id=2097969558]
+[node name="CellGeographyInfo" parent="MarginContainer/VBoxContainer" instance=ExtResource("2_geog")]
 layout_mode = 2
-theme_override_font_sizes/font_size = 11
-
-[node name="WaterLabel" type="Label" parent="MarginContainer/VBoxContainer" unique_id=1679750442]
-layout_mode = 2
-theme_override_font_sizes/font_size = 11
-
-[node name="CoastLabel" type="Label" parent="MarginContainer/VBoxContainer" unique_id=721920226]
-layout_mode = 2
-theme_override_font_sizes/font_size = 11
-
-[node name="RiverLabel" type="Label" parent="MarginContainer/VBoxContainer" unique_id=122630511]
-layout_mode = 2
-theme_override_font_sizes/font_size = 11
-
-[node name="BiomeLabel" type="Label" parent="MarginContainer/VBoxContainer" unique_id=1403436985]
-layout_mode = 2
-theme_override_font_sizes/font_size = 11
 
 [node name="SpaceLabel" type="Label" parent="MarginContainer/VBoxContainer" unique_id=1162298486]
 layout_mode = 2
 theme_override_font_sizes/font_size = 11
-
-[node name="TreeNumberLabel" type="Label" parent="MarginContainer/VBoxContainer" unique_id=1058781868]
-layout_mode = 2
-theme_override_font_sizes/font_size = 11
-
-[node name="TreeSubtypeLabel" type="Label" parent="MarginContainer/VBoxContainer" unique_id=384719206]
-layout_mode = 2
-theme_override_font_sizes/font_size = 10
-visible = false
 
 [node name="StoneNumberLabel" type="Label" parent="MarginContainer/VBoxContainer" unique_id=71652592]
 layout_mode = 2
@@ -69,24 +44,15 @@ theme_override_font_sizes/font_size = 11
 layout_mode = 2
 theme_override_font_sizes/font_size = 11
 
-[node name="ShrubSubtypeLabel" type="Label" parent="MarginContainer/VBoxContainer" unique_id=384719205]
+[node name="TreeNumberLabel" type="Label" parent="MarginContainer/VBoxContainer" unique_id=1058781868]
 layout_mode = 2
-theme_override_font_sizes/font_size = 10
-visible = false
+theme_override_font_sizes/font_size = 11
+
+[node name="ResourceSeparatorLabel" type="Label" parent="MarginContainer/VBoxContainer"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 11
 
 [node name="EmptySpaceLabel" type="Label" parent="MarginContainer/VBoxContainer" unique_id=1928672357]
-layout_mode = 2
-theme_override_font_sizes/font_size = 11
-
-[node name="FishSeparatorLabel" type="Label" parent="MarginContainer/VBoxContainer" unique_id=592837461]
-layout_mode = 2
-theme_override_font_sizes/font_size = 11
-
-[node name="FishNumberLabel" type="Label" parent="MarginContainer/VBoxContainer" unique_id=748213569]
-layout_mode = 2
-theme_override_font_sizes/font_size = 11
-
-[node name="WaterEmptySpaceLabel" type="Label" parent="MarginContainer/VBoxContainer" unique_id=936182745]
 layout_mode = 2
 theme_override_font_sizes/font_size = 11
 

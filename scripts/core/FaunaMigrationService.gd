@@ -42,8 +42,12 @@ func _migrate_resource_in_cell(
 	if growth_rules == null:
 		return
 
-	var per_neighbor_raw: float = surplus / NEIGHBOR_OFFSETS.size()
-
+	# Il surplus va diviso solo tra i vicini realmente navigabili (acqua con capacità fisica >
+	# 0), non per NEIGHBOR_OFFSETS.size() fisso: altrimenti la quota destinata a un vicino di
+	# terra andrebbe sprecata ogni anno invece di essere ridistribuita tra i vicini d'acqua
+	# realmente disponibili. "Valido" qui è una proprietà geografica (è acqua?), separata dal
+	# roll probabilistico di migration_chance sotto (un evento annuale, non strutturale).
+	var valid_neighbors: Array = []
 	for offset in NEIGHBOR_OFFSETS:
 		var neighbor_x: int = cell.x + offset.x
 		var neighbor_y: int = cell.y + offset.y
@@ -51,18 +55,36 @@ func _migrate_resource_in_cell(
 		var neighbor_state := world.get_cell_state_at(neighbor_x, neighbor_y)
 		if neighbor_cell == null or neighbor_state == null:
 			continue
+		if ResourceCalculator.get_water_capacity_space(neighbor_cell, neighbor_state) <= 0:
+			continue
+		valid_neighbors.append({
+			"x": neighbor_x, "y": neighbor_y, "cell": neighbor_cell, "state": neighbor_state
+		})
 
-		if randf() > growth_rules.migration_chance:
+	if valid_neighbors.is_empty():
+		return
+
+	var per_neighbor_raw: float = surplus / valid_neighbors.size()
+
+	if DebugLogging.ENABLED and cell.x == 57 and cell.y == 38:
+		print("[FAUNA MIGRATION DEBUG 57,38] %s: surplus=%.3f valid_neighbors=%d per_neighbor_raw=%.3f migration_chance=%.3f migration_success_rate=%.3f max_migration_per_year=%d" % [
+			GameTypes.WorldObjectType.keys()[resource_type], surplus, valid_neighbors.size(), per_neighbor_raw,
+			growth_rules.migration_chance, growth_rules.migration_success_rate, growth_rules.max_migration_per_year
+		])
+
+	for neighbor in valid_neighbors:
+		var chance_roll := randf()
+		if chance_roll > growth_rules.migration_chance:
+			if DebugLogging.ENABLED and cell.x == 57 and cell.y == 38:
+				print("[FAUNA MIGRATION DEBUG 57,38]   -> (%d,%d) SKIP: chance_roll=%.3f > migration_chance=%.3f" % [
+					neighbor.x, neighbor.y, chance_roll, growth_rules.migration_chance
+				])
 			continue
 
 		# Nessun "destination_factor" come in ResourceMigrationService (lì confronta il
 		# growth_rate del vicino con quello di origine, un affinamento legato all'encroachment
-		# terrestre): qui l'unico gate è "il vicino è acqua", la capacità del vicino fa già da
-		# freno naturale in _apply_transfer sotto.
-		var neighbor_capacity := ResourceCalculator.get_water_capacity_space(neighbor_cell, neighbor_state)
-		if neighbor_capacity <= 0:
-			continue
-
+		# terrestre): qui l'unico gate strutturale è "il vicino è acqua" (già filtrato sopra), la
+		# capacità sfruttabile del vicino fa già da freno naturale in _apply_transfer sotto.
 		var migrated_quantity: float = min(
 			per_neighbor_raw * growth_rules.migration_success_rate,
 			float(growth_rules.max_migration_per_year)
@@ -70,10 +92,16 @@ func _migrate_resource_in_cell(
 		if migrated_quantity <= 0.0:
 			continue
 
-		_apply_transfer(neighbor_cell, neighbor_state, resource_type, migrated_quantity)
+		if DebugLogging.ENABLED and cell.x == 57 and cell.y == 38:
+			print("[FAUNA MIGRATION OUT 57,38->%d,%d] %s: quantity=%.3f" % [
+				neighbor.x, neighbor.y, GameTypes.WorldObjectType.keys()[resource_type], migrated_quantity
+			])
+
+		_apply_transfer(cell, neighbor.cell, neighbor.state, resource_type, migrated_quantity)
 
 
 func _apply_transfer(
+	origin_cell: MacroCellData,
 	target_cell: MacroCellData,
 	target_state: MacroCellState,
 	resource_type: GameTypes.WorldObjectType,
@@ -94,6 +122,11 @@ func _apply_transfer(
 	var quantity_applied: float = min(quantity, max_quantity_acceptable)
 	if quantity_applied <= 0.0:
 		return
+
+	if DebugLogging.ENABLED and target_cell.x == 57 and target_cell.y == 38:
+		print("[FAUNA MIGRATION IN %d,%d->57,38] %s: quantity=%.3f" % [
+			origin_cell.x, origin_cell.y, GameTypes.WorldObjectType.keys()[resource_type], quantity_applied
+		])
 
 	var current_space: int = target_state.get_water_space(resource_type)
 	var current_quantity: int = target_state.get_resource_quantity(resource_type)

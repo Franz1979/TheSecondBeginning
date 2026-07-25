@@ -4,6 +4,9 @@
 [ext_resource type="Script" uid="uid://bo7e46bvucvqn" path="res://scripts/camera/CameraController.gd" id="2_ldxrm"]
 [ext_resource type="PackedScene" uid="uid://u4tgm2grhilk" path="res://scenes/world/MacroCellInfoPanel.tscn" id="3_ldxrm"]
 [ext_resource type="Script" path="res://scripts/game/SeasonProgressBar.gd" id="4_season"]
+[ext_resource type="PackedScene" uid="uid://dm2h8k5w1n3rt" path="res://scenes/ui/IconButtonRow.tscn" id="5_iconrow"]
+[ext_resource type="PackedScene" uid="uid://bk3x7q1m9v2ha" path="res://scenes/ui/SystemMenuDialog.tscn" id="6_sysmenu"]
+[ext_resource type="PackedScene" uid="uid://c5t8k2m4w9r1p" path="res://scenes/ui/SaveConfirmationDialog.tscn" id="7_saveconf"]
 
 [sub_resource type="StyleBoxFlat" id="StyleBoxFlat_vaave"]
 bg_color = Color(0.54391533, 0.65469354, 0.10991336, 1)
@@ -53,26 +56,37 @@ theme_override_constants/margin_bottom = 10
 [node name="VBoxContainer" type="VBoxContainer" parent="CanvasLayer/Sidebar/MarginContainer" unique_id=1126742494]
 layout_mode = 2
 
-[node name="YearTitleLabel" type="Label" parent="CanvasLayer/Sidebar/MarginContainer/VBoxContainer" unique_id=1382560147]
+[node name="CalendarHeaderContainer" type="HBoxContainer" parent="CanvasLayer/Sidebar/MarginContainer/VBoxContainer"]
 layout_mode = 2
+
+[node name="YearTitleLabel" type="Label" parent="CanvasLayer/Sidebar/MarginContainer/VBoxContainer/CalendarHeaderContainer" unique_id=1382560147]
+layout_mode = 2
+size_flags_horizontal = 3
 horizontal_alignment = 1
+
+[node name="AdvanceYearButton" type="Button" parent="CanvasLayer/Sidebar/MarginContainer/VBoxContainer/CalendarHeaderContainer" unique_id=1067858972]
+custom_minimum_size = Vector2(30, 0)
+layout_mode = 2
+flat = true
+theme_override_font_sizes/font_size = 10
+text = "+1"
 
 [node name="YearLabel" type="Label" parent="CanvasLayer/Sidebar/MarginContainer/VBoxContainer" unique_id=747362345]
 layout_mode = 2
 custom_minimum_size = Vector2(195, 0)
-horizontal_alignment = 0
+horizontal_alignment = 1
 
 [node name="ClockControlsContainer" type="HBoxContainer" parent="CanvasLayer/Sidebar/MarginContainer/VBoxContainer"]
 layout_mode = 2
 alignment = 1
 
 [node name="PlayPauseButton" type="Button" parent="CanvasLayer/Sidebar/MarginContainer/VBoxContainer/ClockControlsContainer"]
-custom_minimum_size = Vector2(70, 0)
+custom_minimum_size = Vector2(32, 0)
 layout_mode = 2
-text = "Play"
+text = "▶"
 
 [node name="Speed1xButton" type="Button" parent="CanvasLayer/Sidebar/MarginContainer/VBoxContainer/ClockControlsContainer"]
-custom_minimum_size = Vector2(40, 0)
+custom_minimum_size = Vector2(36, 0)
 layout_mode = 2
 toggle_mode = true
 button_pressed = true
@@ -84,7 +98,7 @@ theme_override_styles/hover_pressed = SubResource("StyleBoxFlat_speed_selected")
 text = "1x"
 
 [node name="Speed2xButton" type="Button" parent="CanvasLayer/Sidebar/MarginContainer/VBoxContainer/ClockControlsContainer"]
-custom_minimum_size = Vector2(40, 0)
+custom_minimum_size = Vector2(36, 0)
 layout_mode = 2
 toggle_mode = true
 button_group = SubResource("ButtonGroup_speed")
@@ -95,7 +109,7 @@ theme_override_styles/hover_pressed = SubResource("StyleBoxFlat_speed_selected")
 text = "2x"
 
 [node name="Speed3xButton" type="Button" parent="CanvasLayer/Sidebar/MarginContainer/VBoxContainer/ClockControlsContainer"]
-custom_minimum_size = Vector2(40, 0)
+custom_minimum_size = Vector2(36, 0)
 layout_mode = 2
 toggle_mode = true
 button_group = SubResource("ButtonGroup_speed")
@@ -106,7 +120,7 @@ theme_override_styles/hover_pressed = SubResource("StyleBoxFlat_speed_selected")
 text = "3x"
 
 [node name="Speed4xButton" type="Button" parent="CanvasLayer/Sidebar/MarginContainer/VBoxContainer/ClockControlsContainer"]
-custom_minimum_size = Vector2(40, 0)
+custom_minimum_size = Vector2(36, 0)
 layout_mode = 2
 toggle_mode = true
 button_group = SubResource("ButtonGroup_speed")
@@ -123,32 +137,28 @@ script = ExtResource("4_season")
 [node name="HSeparator2" type="HSeparator" parent="CanvasLayer/Sidebar/MarginContainer/VBoxContainer"]
 layout_mode = 2
 
-[node name="SaveGameButton" type="Button" parent="CanvasLayer/Sidebar/MarginContainer/VBoxContainer" unique_id=1466316368]
+[node name="PrimaryActionsBar" parent="CanvasLayer/Sidebar/MarginContainer/VBoxContainer" instance=ExtResource("5_iconrow")]
 layout_mode = 2
-text = "Salva Mappa"
-
-[node name="BackToMenuButton" type="Button" parent="CanvasLayer/Sidebar/MarginContainer/VBoxContainer" unique_id=1686453538]
-layout_mode = 2
-text = "Torna al Menu"
+slot_count = 5
 
 [node name="HSeparator" type="HSeparator" parent="CanvasLayer/Sidebar/MarginContainer/VBoxContainer"]
 layout_mode = 2
-
-[node name="DebugControlsContainer" type="HBoxContainer" parent="CanvasLayer/Sidebar/MarginContainer/VBoxContainer"]
-layout_mode = 2
-alignment = 2
-
-[node name="AdvanceYearButton" type="Button" parent="CanvasLayer/Sidebar/MarginContainer/VBoxContainer/DebugControlsContainer" unique_id=1067858972]
-layout_mode = 2
-flat = true
-theme_override_font_sizes/font_size = 10
-text = "+1"
-tooltip_text = "Debug/emergenza: salta alla fine dell'anno corrente"
 
 [node name="MacroCellInfoPanel" parent="CanvasLayer/Sidebar/MarginContainer/VBoxContainer" unique_id=1882805416 instance=ExtResource("3_ldxrm")]
 layout_mode = 2
 size_flags_vertical = 3
 
+[node name="HSeparator4" type="HSeparator" parent="CanvasLayer/Sidebar/MarginContainer/VBoxContainer"]
+layout_mode = 2
+
+[node name="SecondaryActionsBar" parent="CanvasLayer/Sidebar/MarginContainer/VBoxContainer" instance=ExtResource("5_iconrow")]
+layout_mode = 2
+slot_count = 4
+
 [node name="SaveGameFileDialog" type="FileDialog" parent="." unique_id=1119865624]
 access = 1
 filters = PackedStringArray("*.json ; File JSON")
+
+[node name="SystemMenuDialog" parent="." instance=ExtResource("6_sysmenu")]
+
+[node name="SaveConfirmationDialog" parent="." instance=ExtResource("7_saveconf")]

@@ -103,7 +103,7 @@ func _store_pending_migration_surplus(world: World, leftover_surplus: Dictionary
 		for resource_type in leftover_surplus[cell_key].keys():
 			var surplus_quantity = leftover_surplus[cell_key][resource_type]
 			state.pending_migration_surplus[resource_type] = surplus_quantity
-			if cell_key.x == 50 and cell_key.y == 50:
+			if DebugLogging.ENABLED and cell_key.x == 50 and cell_key.y == 50:
 				print("[SURPLUS SAVED 50,50] %s: %.3f accantonato" % [
 					GameTypes.WorldObjectType.keys()[resource_type], surplus_quantity
 				])
@@ -114,7 +114,7 @@ func _collect_pending_migration_surplus(world: World) -> Dictionary:
 	for state in world.cell_states:
 		if state.pending_migration_surplus.is_empty():
 			continue
-		if state.x == 50 and state.y == 50:
+		if DebugLogging.ENABLED and state.x == 50 and state.y == 50:
 			for resource_type in state.pending_migration_surplus.keys():
 				print("[SURPLUS APPLIED 50,50] %s: %.3f applicato" % [
 					GameTypes.WorldObjectType.keys()[resource_type], state.pending_migration_surplus[resource_type]

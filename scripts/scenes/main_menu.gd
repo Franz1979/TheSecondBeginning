@@ -7,6 +7,7 @@ extends Control
 @onready var options_button: Button = $VBoxContainer/OptionsButton
 @onready var exit_button: Button = $VBoxContainer/ExitButton
 @onready var open_game_file_dialog: FileDialog = $OpenGameFileDialog
+@onready var exit_confirmation_dialog: ExitConfirmationDialog = $ExitConfirmationDialog
 
 func _ready() -> void:
 	label2.text = tr("main_menu")
@@ -45,7 +46,7 @@ func _on_options_pressed() -> void:
 	_show_not_ready_popup()
 	
 func _on_exit_pressed() -> void:
-	get_tree().quit()
+	exit_confirmation_dialog.open_dialog()
 
 
 func _show_not_ready_popup() -> void:

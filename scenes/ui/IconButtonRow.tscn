@@ -1,0 +1,6 @@
+[gd_scene format=3 uid="uid://dm2h8k5w1n3rt"]
+
+[ext_resource type="Script" path="res://scripts/ui/IconButtonRow.gd" id="1_icon"]
+
+[node name="IconButtonRow" type="HBoxContainer"]
+script = ExtResource("1_icon")

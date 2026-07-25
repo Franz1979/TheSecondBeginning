@@ -1,6 +1,7 @@
 [gd_scene format=3 uid="uid://304gskv81v7r"]
 
 [ext_resource type="Script" uid="uid://bxxe6cbptf1y5" path="res://scripts/scenes/main_menu.gd" id="1_yqorp"]
+[ext_resource type="PackedScene" uid="uid://bqf3n8m2h5w7c" path="res://scenes/ui/ExitConfirmationDialog.tscn" id="2_exit"]
 
 [node name="MainMenu" type="Control" unique_id=514881481]
 layout_mode = 3
@@ -55,3 +56,5 @@ text = "Esci"
 [node name="OpenGameFileDialog" type="FileDialog" parent="." unique_id=751729673]
 title = "Open a File"
 file_mode = 0
+
+[node name="ExitConfirmationDialog" parent="." instance=ExtResource("2_exit")]

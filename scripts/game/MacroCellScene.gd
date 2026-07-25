@@ -14,6 +14,9 @@ var macro_state: MacroCellState
 var game_data: GameData
 var renderer: MicroCellRenderer
 var clock: GameClockController
+var _clock_was_playing_before_dialogs: bool = false
+var _open_dialog_count: int = 0
+var _pending_leave_action: StringName = &""
 # Posizioni microcella coperte dal fiume (Array[Vector2i], vuoto se la macrocella non ha
 # river). Calcolate una sola volta in _ready(): river_shape/river_space non cambiano mai
 # durante la sessione (nessun service della pipeline annuale li tocca), quindi non serve
@@ -28,10 +31,12 @@ var river_positions: Array = []
 # uniche posizioni candidate restano quelle dentro river_positions — vedi _refresh_resource_visuals.
 var river_exterior_occupied: Dictionary = {}
 
-@onready var save_button: Button = $CanvasLayer/Sidebar/MarginContainer/VBoxContainer/SaveButton
-@onready var back_to_world_button: Button = $CanvasLayer/Sidebar/MarginContainer/VBoxContainer/BackToWorldButton
+@onready var primary_actions_bar: IconButtonRow = $CanvasLayer/Sidebar/MarginContainer/VBoxContainer/PrimaryActionsBar
+@onready var secondary_actions_bar: IconButtonRow = $CanvasLayer/Sidebar/MarginContainer/VBoxContainer/SecondaryActionsBar
+@onready var system_menu_dialog: SystemMenuDialog = $SystemMenuDialog
+@onready var save_confirmation_dialog: SaveConfirmationDialog = $SaveConfirmationDialog
 @onready var save_game_file_dialog: FileDialog = $SaveGameFileDialog
-@onready var year_title_label: Label = $CanvasLayer/Sidebar/MarginContainer/VBoxContainer/YearTitleLabel
+@onready var year_title_label: Label = $CanvasLayer/Sidebar/MarginContainer/VBoxContainer/CalendarHeaderContainer/YearTitleLabel
 @onready var year_label: Label = $CanvasLayer/Sidebar/MarginContainer/VBoxContainer/YearLabel
 @onready var play_pause_button: Button = $CanvasLayer/Sidebar/MarginContainer/VBoxContainer/ClockControlsContainer/PlayPauseButton
 @onready var speed_buttons: Dictionary = {
@@ -40,21 +45,30 @@ var river_exterior_occupied: Dictionary = {}
 	GameClockController.Speed.X3: $CanvasLayer/Sidebar/MarginContainer/VBoxContainer/ClockControlsContainer/Speed3xButton,
 	GameClockController.Speed.X4: $CanvasLayer/Sidebar/MarginContainer/VBoxContainer/ClockControlsContainer/Speed4xButton,
 }
-@onready var advance_year_button: Button = $CanvasLayer/Sidebar/MarginContainer/VBoxContainer/DebugControlsContainer/AdvanceYearButton
+@onready var advance_year_button: Button = $CanvasLayer/Sidebar/MarginContainer/VBoxContainer/CalendarHeaderContainer/AdvanceYearButton
 @onready var season_progress_bar: SeasonProgressBar = $CanvasLayer/Sidebar/MarginContainer/VBoxContainer/SeasonProgressBar
-@onready var macro_cell_info_panel: MacroCellInfoPanel = $CanvasLayer/Sidebar/MarginContainer/VBoxContainer/MacroCellInfoPanel
+@onready var macro_cell_detail_panel: MacroCellDetailPanel = $CanvasLayer/Sidebar/MarginContainer/VBoxContainer/MacroCellDetailPanel
 
 func _ready() -> void:
-	save_button.text = tr("save_game")
-	back_to_world_button.text = tr("back_to_world")
 	year_title_label.text = tr("calendar_label")
 	advance_year_button.text = "+1"
-	save_button.pressed.connect(_on_save_pressed)
-	back_to_world_button.pressed.connect(_on_back_to_world_pressed)
+	advance_year_button.tooltip_text = tr("advance_year_tooltip")
 	advance_year_button.pressed.connect(_on_advance_year_pressed)
 	save_game_file_dialog.access = FileDialog.ACCESS_USERDATA
 	save_game_file_dialog.current_dir = GameSettings.SAVES_DIR
 	save_game_file_dialog.file_selected.connect(_on_save_game_file_selected)
+
+	primary_actions_bar.configure_slot(0, "🌍", tr("back_to_world"), &"back_to_world")
+	primary_actions_bar.action_pressed.connect(_on_primary_action_pressed)
+	secondary_actions_bar.configure_slot(0, "☰", tr("menu"), &"menu")
+	secondary_actions_bar.action_pressed.connect(_on_secondary_action_pressed)
+	system_menu_dialog.add_action(tr("save_game"), &"save")
+	system_menu_dialog.add_action(tr("back_to_menu"), &"back_to_main_menu")
+	system_menu_dialog.add_action(tr("exit"), &"exit_game")
+	system_menu_dialog.action_selected.connect(_on_system_menu_action_selected)
+	system_menu_dialog.visibility_changed.connect(_on_blocking_dialog_visibility_changed.bind(system_menu_dialog))
+	save_confirmation_dialog.option_selected.connect(_on_save_confirmation_option_selected)
+	save_confirmation_dialog.visibility_changed.connect(_on_blocking_dialog_visibility_changed.bind(save_confirmation_dialog))
 
 	macro_world = GameSettings.active_world
 	game_data = GameSettings.active_game_data
@@ -157,7 +171,7 @@ func _refresh_resource_visuals() -> void:
 	# stagione), così lo fa una volta sola con le posizioni già aggiornate invece di due volte.
 	renderer.set_season(SeasonCalculator.get_season_for_day(game_data.current_day))
 
-	macro_cell_info_panel.show_cell(macro_cell, macro_state, true)
+	macro_cell_detail_panel.show_cell(macro_cell, macro_state, SeasonCalculator.get_season_for_day(game_data.current_day))
 
 # Quota di dedicated_space SHRUB classificata come sottotipo "fruit_bearing" nella macrocella
 # corrente (0 se SHRUB non ha ancora sottotipi tracciati lì, es. cella senza shrub). Il nome
@@ -215,6 +229,62 @@ func _on_save_game_file_selected(path: String) -> void:
 	var save_service := GameSaveService.new()
 	save_service.save_game_to_json(macro_world, game_data, path)
 
+	if _pending_leave_action != &"":
+		_execute_pending_leave_action()
+
+func _on_primary_action_pressed(action_id: StringName) -> void:
+	match action_id:
+		&"back_to_world":
+			_on_back_to_world_pressed()
+
+func _on_secondary_action_pressed(action_id: StringName) -> void:
+	match action_id:
+		&"menu":
+			system_menu_dialog.open_menu()
+
+func _on_blocking_dialog_visibility_changed(dialog: Window) -> void:
+	if dialog.visible:
+		if _open_dialog_count == 0:
+			_clock_was_playing_before_dialogs = clock.is_playing
+			if clock.is_playing:
+				clock.toggle_play_pause()
+				_update_play_pause_button()
+		_open_dialog_count += 1
+	else:
+		_open_dialog_count -= 1
+		if _open_dialog_count == 0 and _clock_was_playing_before_dialogs and not clock.is_playing:
+			clock.toggle_play_pause()
+			_update_play_pause_button()
+
+func _on_system_menu_action_selected(action_id: StringName) -> void:
+	match action_id:
+		&"save":
+			_on_save_pressed()
+		&"back_to_main_menu":
+			_pending_leave_action = &"back_to_main_menu"
+			save_confirmation_dialog.open_dialog()
+		&"exit_game":
+			_pending_leave_action = &"exit_game"
+			save_confirmation_dialog.open_dialog()
+
+func _on_save_confirmation_option_selected(option: StringName) -> void:
+	match option:
+		&"save_and_leave":
+			_on_save_pressed()
+		&"leave_without_saving":
+			_execute_pending_leave_action()
+		&"cancel":
+			_pending_leave_action = &""
+
+func _execute_pending_leave_action() -> void:
+	var action := _pending_leave_action
+	_pending_leave_action = &""
+	match action:
+		&"back_to_main_menu":
+			get_tree().change_scene_to_file("res://scenes/menus/MainMenu.tscn")
+		&"exit_game":
+			get_tree().quit()
+
 func _setup_clock() -> void:
 	clock = GameClockController.new()
 	add_child(clock)
@@ -241,7 +311,12 @@ func _on_speed_button_pressed(speed: GameClockController.Speed) -> void:
 	clock.set_speed(speed)
 
 func _update_play_pause_button() -> void:
-	play_pause_button.text = tr("pause") if clock.is_playing else tr("play")
+	if clock.is_playing:
+		play_pause_button.text = "❚❚"
+		play_pause_button.tooltip_text = tr("pause")
+	else:
+		play_pause_button.text = "▶"
+		play_pause_button.tooltip_text = tr("play")
 
 func _on_day_advanced(simulation_ran: bool) -> void:
 	_update_calendar_display()

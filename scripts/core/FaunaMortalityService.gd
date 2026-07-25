@@ -57,6 +57,12 @@ func _apply_mortality_in_cell(
 
 	var fill_ratio: float = float(state.get_total_water_dedicated_space()) / float(capacity)
 	var multiplier := _get_multiplier(fill_ratio)
+
+	if DebugLogging.ENABLED and cell.x == 57 and cell.y == 38:
+		print("[FAUNA MORTALITY 57,38] %s: fill_ratio=%.3f multiplier=%.2f" % [
+			GameTypes.WorldObjectType.keys()[resource_type], fill_ratio, multiplier
+		])
+
 	if multiplier <= 0.0:
 		return
 
@@ -79,6 +85,11 @@ func _apply_mortality_in_cell(
 
 	var new_space: int = current_space - space_lost
 	var new_quantity: int = current_quantity - int(round(quantity_lost))
+
+	if DebugLogging.ENABLED and cell.x == 57 and cell.y == 38:
+		print("[FAUNA MORTALITY 57,38] %s: quantity_lost=%.3f quantity %d -> %d" % [
+			GameTypes.WorldObjectType.keys()[resource_type], quantity_lost, current_quantity, max(new_quantity, 0)
+		])
 
 	state.set_water_space(resource_type, new_space)
 	state.set_resource_quantity(resource_type, max(new_quantity, 0))

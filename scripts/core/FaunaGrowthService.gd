@@ -37,6 +37,17 @@ func _grow_resource_in_cell(
 		return
 
 	var current_space: int = state.get_water_space(resource_type)
+
+	if DebugLogging.ENABLED and cell.x == 57 and cell.y == 38:
+		var physical_capacity := ResourceCalculator.get_water_capacity_space(cell, state)
+		var fill_ratio: float = 0.0
+		if physical_capacity > 0:
+			fill_ratio = float(current_space) / float(physical_capacity)
+		print("[FAUNA GROWTH 57,38] %s: water_type=%s occupied=%d usable_capacity=%d physical_capacity=%d fill_ratio=%.3f" % [
+			GameTypes.WorldObjectType.keys()[resource_type], GameTypes.WaterType.keys()[cell.water_type],
+			current_space, capacity, physical_capacity, fill_ratio
+		])
+
 	if current_space <= 0:
 		return
 
