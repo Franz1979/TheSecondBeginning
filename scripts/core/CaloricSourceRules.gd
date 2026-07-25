@@ -22,6 +22,12 @@ extends Resource
 # calories_per_unit) — rappresenta quanto è marcito/sepolto/non raggiungibile. Per FORAGE: 0.6
 # in inverno significa che il 40% dell'erba residua non è più foraggiabile, il resto sì.
 @export var seasonal_availability_multiplier: Array[float] = [1.0, 1.0, 1.0, 1.0]
+# Stagione di reset pieno per fonti a stock persistente (consuming_depletes_primary = false):
+# a inizio di questa stagione lo stock si azzera e riparte dal tetto pieno di quella stagione,
+# scartando il residuo del ciclo precedente ("i frutti non si accumulano da un anno all'altro").
+# Ignorato per FORAGE (consuming_depletes_primary = true), che resta stateless — vedi
+# CaloricCalculator.update_secondary_resource_stock.
+@export var cycle_start_season: GameTypes.Season = GameTypes.Season.SPRING
 
 @export_group("Consumption")
 # true = consumare calorie da questa fonte decrementa DIRETTAMENTE la risorsa primaria

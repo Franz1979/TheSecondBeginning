@@ -140,5 +140,41 @@ theme_override_font_sizes/font_size = 10
 layout_mode = 2
 theme_override_font_sizes/font_size = 10
 
+[node name="BerrySeparatorLabel" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/SussistenzaTab"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 10
+
+[node name="BerryUnitsLabel" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/SussistenzaTab"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 10
+
+[node name="BerryCaloriesLabel" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/SussistenzaTab"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 10
+
+[node name="AcornSeparatorLabel" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/SussistenzaTab"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 10
+
+[node name="AcornUnitsLabel" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/SussistenzaTab"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 10
+
+[node name="AcornCaloriesLabel" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/SussistenzaTab"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 10
+
+[node name="FruitSeparatorLabel" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/SussistenzaTab"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 10
+
+[node name="FruitUnitsLabel" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/SussistenzaTab"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 10
+
+[node name="FruitCaloriesLabel" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/SussistenzaTab"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 10
+
 [node name="ActionsContainer" type="VBoxContainer" parent="MarginContainer/VBoxContainer"]
 layout_mode = 2

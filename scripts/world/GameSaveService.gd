@@ -39,7 +39,8 @@ func save_game_to_json(
 			"river_space": state.river_space,
 			"water_dedicated_space": state.water_dedicated_space,
 			"active_growth_bonuses": state.active_growth_bonuses,
-			"pending_migration_surplus": state.pending_migration_surplus
+			"pending_migration_surplus": state.pending_migration_surplus,
+			"secondary_resource_stock": state.secondary_resource_stock
 		}
 		# Solo le macrocelle già aperte in MacroCellScene hanno posizioni stone generate:
 		# la chiave resta assente per tutte le altre, per non appesantire il salvataggio.

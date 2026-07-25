@@ -32,6 +32,15 @@ const TAB_SUSSISTENZA := 3
 @onready var subsistence_title_label: Label = $MarginContainer/VBoxContainer/TabContainer/SussistenzaTab/SectionTitleLabel
 @onready var forage_units_label: Label = $MarginContainer/VBoxContainer/TabContainer/SussistenzaTab/ForageUnitsLabel
 @onready var forage_calories_label: Label = $MarginContainer/VBoxContainer/TabContainer/SussistenzaTab/ForageCaloriesLabel
+@onready var berry_separator_label: Label = $MarginContainer/VBoxContainer/TabContainer/SussistenzaTab/BerrySeparatorLabel
+@onready var berry_units_label: Label = $MarginContainer/VBoxContainer/TabContainer/SussistenzaTab/BerryUnitsLabel
+@onready var berry_calories_label: Label = $MarginContainer/VBoxContainer/TabContainer/SussistenzaTab/BerryCaloriesLabel
+@onready var acorn_separator_label: Label = $MarginContainer/VBoxContainer/TabContainer/SussistenzaTab/AcornSeparatorLabel
+@onready var acorn_units_label: Label = $MarginContainer/VBoxContainer/TabContainer/SussistenzaTab/AcornUnitsLabel
+@onready var acorn_calories_label: Label = $MarginContainer/VBoxContainer/TabContainer/SussistenzaTab/AcornCaloriesLabel
+@onready var fruit_separator_label: Label = $MarginContainer/VBoxContainer/TabContainer/SussistenzaTab/FruitSeparatorLabel
+@onready var fruit_units_label: Label = $MarginContainer/VBoxContainer/TabContainer/SussistenzaTab/FruitUnitsLabel
+@onready var fruit_calories_label: Label = $MarginContainer/VBoxContainer/TabContainer/SussistenzaTab/FruitCaloriesLabel
 @onready var actions_container: VBoxContainer = $MarginContainer/VBoxContainer/ActionsContainer
 
 
@@ -102,7 +111,10 @@ func show_cell(cell: MacroCellData, state: MacroCellState, current_season: GameT
 		fauna_separator_label.text = " - - - - - - - - - -"
 		water_empty_space_label.text = "Water empty space: " + str(state.get_empty_water_space(water_capacity))
 
-		_update_forage_calories_label(state, current_season)
+		_update_forage_calories_label(cell, state, current_season)
+		_update_berry_stock_label(state)
+		_update_acorn_stock_label(state)
+		_update_fruit_stock_label(state)
 	else:
 		stone_number_label.text = "Stone: -"
 		grass_number_label.text = "Grass: -"
@@ -113,19 +125,62 @@ func show_cell(cell: MacroCellData, state: MacroCellState, current_season: GameT
 		empty_space_label.text = "Empty ground space: -"
 		forage_units_label.visible = false
 		forage_calories_label.visible = false
+		berry_units_label.visible = false
+		berry_calories_label.visible = false
+		acorn_units_label.visible = false
+		acorn_calories_label.visible = false
+		fruit_units_label.visible = false
+		fruit_calories_label.visible = false
 		fish_number_label.text = "Fish: -"
 		water_empty_space_label.text = "Water empty space: -"
 
 
 # Due righe di verifica temporanea per il calcolo di FORAGE (erba consumata direttamente, vedi
 # CaloricCalculator): unità disponibili (passo intermedio) e calorie risultanti.
-func _update_forage_calories_label(state: MacroCellState, current_season: GameTypes.Season) -> void:
-	var forage_units := CaloricCalculator.get_forage_available_units(state, current_season)
-	var forage_calories := CaloricCalculator.get_forage_available_calories(state, current_season)
+func _update_forage_calories_label(cell: MacroCellData, state: MacroCellState, current_season: GameTypes.Season) -> void:
+	var forage_units := CaloricCalculator.get_forage_available_units(cell, state, current_season)
+	var forage_calories := CaloricCalculator.get_forage_available_calories(cell, state, current_season)
 	forage_units_label.text = "  - forage units available: " + str(int(round(forage_units)))
 	forage_calories_label.text = "  - forage calories available: " + str(int(round(forage_calories)))
 	forage_units_label.visible = true
 	forage_calories_label.visible = true
+
+
+# A differenza di FORAGE (stateless, ricalcolato ogni volta da _get_base_quantity), BERRY ha
+# uno stock persistente (MacroCellState.secondary_resource_stock) aggiornato dai checkpoint
+# stagionali (CaloricCalculator.update_secondary_resource_stock) — qui lo si legge soltanto,
+# non lo si ricalcola. Stesso pattern riusabile per acorn/fruit quando arriveranno (basta
+# un'altra funzione sorella con resource_name diverso).
+func _update_berry_stock_label(state: MacroCellState) -> void:
+	var berry_units := CaloricCalculator.get_secondary_resource_stock_units(state, "berry")
+	var berry_calories := CaloricCalculator.get_secondary_resource_stock_calories(state, "berry")
+	berry_separator_label.text = " - - - - - - - - - -"
+	berry_units_label.text = "  - berry stock available: " + str(int(round(berry_units)))
+	berry_calories_label.text = "  - berry calories available: " + str(int(round(berry_calories)))
+	berry_units_label.visible = true
+	berry_calories_label.visible = true
+
+
+# Stesso pattern di _update_berry_stock_label sopra, per ACORN (sottotipo wild_fruit di TREE).
+func _update_acorn_stock_label(state: MacroCellState) -> void:
+	var acorn_units := CaloricCalculator.get_secondary_resource_stock_units(state, "acorn")
+	var acorn_calories := CaloricCalculator.get_secondary_resource_stock_calories(state, "acorn")
+	acorn_separator_label.text = " - - - - - - - - - -"
+	acorn_units_label.text = "  - acorn stock available: " + str(int(round(acorn_units)))
+	acorn_calories_label.text = "  - acorn calories available: " + str(int(round(acorn_calories)))
+	acorn_units_label.visible = true
+	acorn_calories_label.visible = true
+
+
+# Stesso pattern di _update_berry_stock_label sopra, per FRUIT (sottotipo domesticable_fruit di TREE).
+func _update_fruit_stock_label(state: MacroCellState) -> void:
+	var fruit_units := CaloricCalculator.get_secondary_resource_stock_units(state, "fruit")
+	var fruit_calories := CaloricCalculator.get_secondary_resource_stock_calories(state, "fruit")
+	fruit_separator_label.text = " - - - - - - - - - -"
+	fruit_units_label.text = "  - fruit stock available: " + str(int(round(fruit_units)))
+	fruit_calories_label.text = "  - fruit calories available: " + str(int(round(fruit_calories)))
+	fruit_units_label.visible = true
+	fruit_calories_label.visible = true
 
 
 # Seconda riga, indentata, sotto la riga principale di SHRUB: nascosta se la cella non ha ancora
@@ -139,11 +194,12 @@ func _update_shrub_subtype_label(cell: MacroCellData, state: MacroCellState) -> 
 		shrub_subtype_container.visible = false
 		return
 
-	var max_density := ResourceCalculator.get_max_density(
-		GameTypes.WorldObjectType.SHRUB, cell.terrain_base, cell.biome, cell.coast_type
+	var wood_quantity := ResourceCalculator.get_subtype_quantity(
+		GameTypes.WorldObjectType.SHRUB, int(composition.get("wood_only", 0)), cell
 	)
-	var wood_quantity: int = int(round(int(composition.get("wood_only", 0)) * max_density))
-	var fruit_quantity: int = int(round(int(composition.get("fruit_bearing", 0)) * max_density))
+	var fruit_quantity := ResourceCalculator.get_subtype_quantity(
+		GameTypes.WorldObjectType.SHRUB, int(composition.get("fruit_bearing", 0)), cell
+	)
 
 	shrub_subtype_wood_label.text = "  - wood_only: " + str(wood_quantity)
 	shrub_subtype_fruit_bearing_label.text = "  - fruit_bearing: " + str(fruit_quantity)
@@ -158,12 +214,15 @@ func _update_tree_subtype_label(cell: MacroCellData, state: MacroCellState) -> v
 		tree_subtype_container.visible = false
 		return
 
-	var max_density := ResourceCalculator.get_max_density(
-		GameTypes.WorldObjectType.TREE, cell.terrain_base, cell.biome, cell.coast_type
+	var wood_quantity := ResourceCalculator.get_subtype_quantity(
+		GameTypes.WorldObjectType.TREE, int(composition.get("wood_only", 0)), cell
 	)
-	var wood_quantity: int = int(round(int(composition.get("wood_only", 0)) * max_density))
-	var wild_fruit_quantity: int = int(round(int(composition.get("wild_fruit", 0)) * max_density))
-	var domesticable_fruit_quantity: int = int(round(int(composition.get("domesticable_fruit", 0)) * max_density))
+	var wild_fruit_quantity := ResourceCalculator.get_subtype_quantity(
+		GameTypes.WorldObjectType.TREE, int(composition.get("wild_fruit", 0)), cell
+	)
+	var domesticable_fruit_quantity := ResourceCalculator.get_subtype_quantity(
+		GameTypes.WorldObjectType.TREE, int(composition.get("domesticable_fruit", 0)), cell
+	)
 
 	tree_subtype_wood_label.text = "  - wood_only: " + str(wood_quantity)
 	tree_subtype_wild_fruit_label.text = "  - wild_fruit: " + str(wild_fruit_quantity)
@@ -184,5 +243,11 @@ func clear() -> void:
 	empty_space_label.text = "Empty ground space: -"
 	forage_units_label.visible = false
 	forage_calories_label.visible = false
+	berry_units_label.visible = false
+	berry_calories_label.visible = false
+	acorn_units_label.visible = false
+	acorn_calories_label.visible = false
+	fruit_units_label.visible = false
+	fruit_calories_label.visible = false
 	fish_number_label.text = "Fish: -"
 	water_empty_space_label.text = "Water empty space: -"

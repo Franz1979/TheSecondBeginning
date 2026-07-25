@@ -1,0 +1,13 @@
+[gd_resource type="Resource" script_class="CaloricSourceRules" format=3]
+
+[ext_resource type="Script" path="res://scripts/core/CaloricSourceRules.gd" id="1_acorn"]
+
+[resource]
+script = ExtResource("1_acorn")
+caloric_source_name = "acorn"
+source_subtype = "wild_fruit"
+yield_ratio = 50.0
+calories_per_unit = 15.0
+seasonal_availability_multiplier = Array[float]([0.3, 0.0, 0.0, 1.0])
+consuming_depletes_primary = false
+cycle_start_season = 3

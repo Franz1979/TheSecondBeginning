@@ -22,6 +22,10 @@ var active_growth_bonuses: Dictionary = {} # NaturalEventType -> {multiplier: fl
 var pending_migration_surplus: Dictionary = {}
 var stone_positions: Array = [] # Array[Vector2i], posizioni microcella occupate da stone (100x100)
 var stone_positions_generated: bool = false # separato dall'array vuoto: distingue "mai aperta" da "aperta ma senza stone"
+# Stock persistente delle fonti caloriche con consuming_depletes_primary = false (es. bacche
+# mature): resource_name (CaloricSourceRules.caloric_source_name) -> quantità (float). Vuoto per
+# le fonti stateless come FORAGE, che non ne hanno bisogno. Vedi CaloricCalculator.update_secondary_resource_stock.
+var secondary_resource_stock: Dictionary = {}
 
 func _init(_x: int, _y: int) -> void:
 	x = _x
@@ -169,6 +173,12 @@ static func _split_by_weight_capped(weights: Dictionary, caps: Dictionary, amoun
 				active_weights.erase(key)
 
 	return shares
+
+func get_secondary_resource_stock(resource_name: String) -> float:
+	return float(secondary_resource_stock.get(resource_name, 0.0))
+
+func set_secondary_resource_stock(resource_name: String, amount: float) -> void:
+	secondary_resource_stock[resource_name] = max(round(amount), 0.0)
 
 func get_river_space() -> int:
 	return river_space

@@ -42,3 +42,10 @@ static func get_season_day_range(season: GameTypes.Season) -> Vector2i:
 static func get_season_end_day(season: GameTypes.Season) -> int:
 	var range := get_season_day_range(season)
 	return range.x + range.y - 1
+
+# Stagione immediatamente precedente a `season` nel ciclo (WINTER->AUTUMN dell'anno prima).
+# Usata dai checkpoint di inizio stagione che devono confrontare il moltiplicatore nuovo con
+# quello della stagione appena conclusa (vedi CaloricCalculator.update_secondary_resource_stock).
+static func get_previous_season(season: GameTypes.Season) -> GameTypes.Season:
+	var index := SEASON_ORDER.find(season)
+	return SEASON_ORDER[(index - 1 + SEASON_ORDER.size()) % SEASON_ORDER.size()]

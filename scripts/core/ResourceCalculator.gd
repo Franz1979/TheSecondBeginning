@@ -41,6 +41,17 @@ static func get_max_density(
 	return rules.base_density * terrain_mult * biome_mult * coast_mult
 
 
+# Converte uno spazio di sottotipo (unità di SPAZIO, es. MacroCellState.subtype_composition)
+# nella quantità equivalente per quella cella, con la stessa densità usata per l'aggregato del
+# resource_type. Condivisa tra la UI (MacroCellDetailPanel) e CaloricCalculator (fonti caloriche
+# legate a un sottotipo).
+static func get_subtype_quantity(
+	resource_type: GameTypes.WorldObjectType, subtype_space: int, cell: MacroCellData
+) -> int:
+	var max_density := get_max_density(resource_type, cell.terrain_base, cell.biome, cell.coast_type)
+	return int(round(float(subtype_space) * max_density))
+
+
 static func _get_coast_multiplier(rules: ResourceDensityRules, coast: GameTypes.CoastType) -> float:
 	match coast:
 		GameTypes.CoastType.NONE:

@@ -62,6 +62,9 @@ func load_game_from_json(file_path: String) -> LoadedGame:
 			var pending_surplus_data = state_data.get("pending_migration_surplus", {})
 			for key in pending_surplus_data.keys():
 				state.pending_migration_surplus[int(key)] = float(pending_surplus_data[key])
+			var secondary_stock_data = state_data.get("secondary_resource_stock", {})
+			for resource_name in secondary_stock_data.keys():
+				state.secondary_resource_stock[resource_name] = float(secondary_stock_data[resource_name])
 			if state_data.has("stone_positions"):
 				var stone_positions: Array = []
 				for pos_data in state_data["stone_positions"]:

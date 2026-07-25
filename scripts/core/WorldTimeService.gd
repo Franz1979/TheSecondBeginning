@@ -41,6 +41,7 @@ func _run_seasonal_checkpoints(world: World, game_data: GameData, year_rolled_ov
 
 	for season in [GameTypes.Season.WINTER, GameTypes.Season.SPRING, GameTypes.Season.SUMMER, GameTypes.Season.AUTUMN]:
 		if day == SeasonCalculator.get_season_day_range(season).x:
+			_run_secondary_resource_stock_debug_checkpoint(world, SeasonCalculator.get_previous_season(season), season)
 			_run_natural_events_checkpoint(world, game_data, season)
 			checkpoint_ran = true
 
@@ -93,6 +94,33 @@ func _run_migration_checkpoint(world: World, game_data: GameData) -> void:
 func _run_natural_events_checkpoint(world: World, game_data: GameData, season: GameTypes.Season) -> void:
 	var natural_event_service := NaturalEventService.new()
 	natural_event_service.trigger_events(world, game_data, season)
+
+
+# TEMPORANEO — nessun vero registro di fonti a stock persistente esiste ancora, solo questo
+# elenco hardcoded delle fonti oggi implementate con la rispettiva risorsa primaria. Non gira
+# in partita normale: richiede DebugLogging.ENABLED.
+const _DEBUG_SECONDARY_SOURCES := [
+	{"resource_name": "berry", "primary_resource_type": GameTypes.WorldObjectType.SHRUB},
+	{"resource_name": "acorn", "primary_resource_type": GameTypes.WorldObjectType.TREE},
+	{"resource_name": "fruit", "primary_resource_type": GameTypes.WorldObjectType.TREE},
+]
+
+func _run_secondary_resource_stock_debug_checkpoint(
+	world: World, previous_season: GameTypes.Season, new_season: GameTypes.Season
+) -> void:
+	if not DebugLogging.ENABLED:
+		return
+	for source in _DEBUG_SECONDARY_SOURCES:
+		var rules := CaloricCalculator.get_caloric_source_rules(source["resource_name"])
+		if rules == null:
+			continue
+		for state in world.cell_states:
+			var cell := world.get_cell_at(state.x, state.y)
+			if cell == null:
+				continue
+			CaloricCalculator.update_secondary_resource_stock(
+				rules, cell, state, source["primary_resource_type"], previous_season, new_season
+			)
 
 
 func _store_pending_migration_surplus(world: World, leftover_surplus: Dictionary) -> void:

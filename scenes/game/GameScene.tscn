@@ -134,6 +134,45 @@ text = "4x"
 layout_mode = 2
 script = ExtResource("4_season")
 
+[node name="DebugSecondaryStockContainer" type="HBoxContainer" parent="CanvasLayer/Sidebar/MarginContainer/VBoxContainer"]
+layout_mode = 2
+
+[node name="DebugConsumeSpinBox" type="SpinBox" parent="CanvasLayer/Sidebar/MarginContainer/VBoxContainer/DebugSecondaryStockContainer"]
+layout_mode = 2
+min_value = 0.0
+max_value = 100000.0
+step = 1.0
+
+[node name="DebugConsumeButton" type="Button" parent="CanvasLayer/Sidebar/MarginContainer/VBoxContainer/DebugSecondaryStockContainer"]
+layout_mode = 2
+text = "Consuma berry (50,50)"
+
+[node name="DebugConsumeAcornContainer" type="HBoxContainer" parent="CanvasLayer/Sidebar/MarginContainer/VBoxContainer"]
+layout_mode = 2
+
+[node name="DebugConsumeAcornSpinBox" type="SpinBox" parent="CanvasLayer/Sidebar/MarginContainer/VBoxContainer/DebugConsumeAcornContainer"]
+layout_mode = 2
+min_value = 0.0
+max_value = 100000.0
+step = 1.0
+
+[node name="DebugConsumeAcornButton" type="Button" parent="CanvasLayer/Sidebar/MarginContainer/VBoxContainer/DebugConsumeAcornContainer"]
+layout_mode = 2
+text = "Consuma acorn (50,50)"
+
+[node name="DebugConsumeFruitContainer" type="HBoxContainer" parent="CanvasLayer/Sidebar/MarginContainer/VBoxContainer"]
+layout_mode = 2
+
+[node name="DebugConsumeFruitSpinBox" type="SpinBox" parent="CanvasLayer/Sidebar/MarginContainer/VBoxContainer/DebugConsumeFruitContainer"]
+layout_mode = 2
+min_value = 0.0
+max_value = 100000.0
+step = 1.0
+
+[node name="DebugConsumeFruitButton" type="Button" parent="CanvasLayer/Sidebar/MarginContainer/VBoxContainer/DebugConsumeFruitContainer"]
+layout_mode = 2
+text = "Consuma fruit (50,50)"
+
 [node name="HSeparator2" type="HSeparator" parent="CanvasLayer/Sidebar/MarginContainer/VBoxContainer"]
 layout_mode = 2
 

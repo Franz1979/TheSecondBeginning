@@ -26,6 +26,15 @@ var _pending_leave_action: StringName = &""
 }
 @onready var advance_year_button: Button = $CanvasLayer/Sidebar/MarginContainer/VBoxContainer/CalendarHeaderContainer/AdvanceYearButton
 @onready var season_progress_bar: SeasonProgressBar = $CanvasLayer/Sidebar/MarginContainer/VBoxContainer/SeasonProgressBar
+@onready var debug_secondary_stock_container: HBoxContainer = $CanvasLayer/Sidebar/MarginContainer/VBoxContainer/DebugSecondaryStockContainer
+@onready var debug_consume_spin_box: SpinBox = $CanvasLayer/Sidebar/MarginContainer/VBoxContainer/DebugSecondaryStockContainer/DebugConsumeSpinBox
+@onready var debug_consume_button: Button = $CanvasLayer/Sidebar/MarginContainer/VBoxContainer/DebugSecondaryStockContainer/DebugConsumeButton
+@onready var debug_consume_acorn_container: HBoxContainer = $CanvasLayer/Sidebar/MarginContainer/VBoxContainer/DebugConsumeAcornContainer
+@onready var debug_consume_acorn_spin_box: SpinBox = $CanvasLayer/Sidebar/MarginContainer/VBoxContainer/DebugConsumeAcornContainer/DebugConsumeAcornSpinBox
+@onready var debug_consume_acorn_button: Button = $CanvasLayer/Sidebar/MarginContainer/VBoxContainer/DebugConsumeAcornContainer/DebugConsumeAcornButton
+@onready var debug_consume_fruit_container: HBoxContainer = $CanvasLayer/Sidebar/MarginContainer/VBoxContainer/DebugConsumeFruitContainer
+@onready var debug_consume_fruit_spin_box: SpinBox = $CanvasLayer/Sidebar/MarginContainer/VBoxContainer/DebugConsumeFruitContainer/DebugConsumeFruitSpinBox
+@onready var debug_consume_fruit_button: Button = $CanvasLayer/Sidebar/MarginContainer/VBoxContainer/DebugConsumeFruitContainer/DebugConsumeFruitButton
 
 func _ready() -> void:
 	year_title_label.text = tr("calendar_label")
@@ -45,6 +54,16 @@ func _ready() -> void:
 	system_menu_dialog.visibility_changed.connect(_on_blocking_dialog_visibility_changed.bind(system_menu_dialog))
 	save_confirmation_dialog.option_selected.connect(_on_save_confirmation_option_selected)
 	save_confirmation_dialog.visibility_changed.connect(_on_blocking_dialog_visibility_changed.bind(save_confirmation_dialog))
+
+	# TEMPORANEO: pannello per testare a mano il consumo/stock di berry/acorn/fruit sulla cella
+	# (50,50) durante il gioco, senza fermarsi nel debugger. Va rimosso quando esisterà un vero
+	# consumatore (fauna) per le fonti caloriche a stock persistente.
+	debug_secondary_stock_container.visible = DebugLogging.ENABLED
+	debug_consume_acorn_container.visible = DebugLogging.ENABLED
+	debug_consume_fruit_container.visible = DebugLogging.ENABLED
+	debug_consume_button.pressed.connect(_on_debug_consume_pressed)
+	debug_consume_acorn_button.pressed.connect(_on_debug_consume_acorn_pressed)
+	debug_consume_fruit_button.pressed.connect(_on_debug_consume_fruit_pressed)
 
 	var returning_from_macro_cell := GameSettings.returning_to_game_scene
 	if returning_from_macro_cell:
@@ -238,6 +257,24 @@ func _on_day_advanced(simulation_ran: bool) -> void:
 
 func _on_advance_year_pressed() -> void:
 	clock.force_advance_to_year_end()
+
+func _on_debug_consume_pressed() -> void:
+	var state := world.get_cell_state_at(50, 50)
+	if state == null:
+		return
+	CaloricCalculator.debug_consume_secondary_resource(state, "berry", debug_consume_spin_box.value)
+
+func _on_debug_consume_acorn_pressed() -> void:
+	var state := world.get_cell_state_at(50, 50)
+	if state == null:
+		return
+	CaloricCalculator.debug_consume_secondary_resource(state, "acorn", debug_consume_acorn_spin_box.value)
+
+func _on_debug_consume_fruit_pressed() -> void:
+	var state := world.get_cell_state_at(50, 50)
+	if state == null:
+		return
+	CaloricCalculator.debug_consume_secondary_resource(state, "fruit", debug_consume_fruit_spin_box.value)
 
 func _update_calendar_display() -> void:
 	year_label.text = "Day %d of %d, Year %d" % [game_data.current_day + 1, GameData.DAYS_PER_YEAR, game_data.year]

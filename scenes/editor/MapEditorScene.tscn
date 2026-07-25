@@ -4,8 +4,8 @@
 [ext_resource type="Script" uid="uid://bo7e46bvucvqn" path="res://scripts/camera/CameraController.gd" id="2_pghkh"]
 [ext_resource type="PackedScene" uid="uid://u4tgm2grhilk" path="res://scenes/world/MacroCellInfoPanel.tscn" id="3_pghkh"]
 [ext_resource type="PackedScene" uid="uid://dm2h8k5w1n3rt" path="res://scenes/ui/IconButtonRow.tscn" id="4_iconrow"]
-[ext_resource type="PackedScene" uid="uid://bk3x7q1m9v2ha" path="res://scenes/ui/SystemMenuDialog.tscn" id="5_sysmenu"]
-[ext_resource type="PackedScene" uid="uid://c5t8k2m4w9r1p" path="res://scenes/ui/SaveConfirmationDialog.tscn" id="6_saveconf"]
+[ext_resource type="PackedScene" uid="uid://bk3x7q1nav2ha" path="res://scenes/ui/SystemMenuDialog.tscn" id="5_sysmenu"]
+[ext_resource type="PackedScene" uid="uid://c5t8k2m4xar1p" path="res://scenes/ui/SaveConfirmationDialog.tscn" id="6_saveconf"]
 
 [sub_resource type="StyleBoxFlat" id="StyleBoxFlat_u5gcm"]
 bg_color = Color(0.54391533, 0.65469354, 0.10991336, 1)
@@ -19,15 +19,12 @@ script = ExtResource("2_pghkh")
 
 [node name="CanvasLayer" type="CanvasLayer" parent="." unique_id=172495002]
 
-[node name="Sidebar" type="PanelContainer" parent="CanvasLayer"]
+[node name="Sidebar" type="PanelContainer" parent="CanvasLayer" unique_id=6491684]
+anchors_preset = 11
 anchor_left = 1.0
-anchor_top = 0.0
 anchor_right = 1.0
 anchor_bottom = 1.0
 offset_left = -220.0
-offset_right = 0.0
-offset_top = 0.0
-offset_bottom = 0.0
 grow_horizontal = 0
 theme_override_styles/panel = SubResource("StyleBoxFlat_u5gcm")
 
@@ -38,7 +35,7 @@ theme_override_constants/margin_top = 10
 theme_override_constants/margin_right = 10
 theme_override_constants/margin_bottom = 10
 
-[node name="ScrollContainer" type="ScrollContainer" parent="CanvasLayer/Sidebar/MarginContainer"]
+[node name="ScrollContainer" type="ScrollContainer" parent="CanvasLayer/Sidebar/MarginContainer" unique_id=2136315058]
 layout_mode = 2
 horizontal_scroll_mode = 0
 
@@ -120,27 +117,26 @@ layout_mode = 2
 [node name="BiomeSwampToolButton" type="Button" parent="CanvasLayer/Sidebar/MarginContainer/ScrollContainer/VBoxContainer/BiomeSubmenuMargin/BiomeSubmenuVBox" unique_id=602604088]
 layout_mode = 2
 
-[node name="HSeparator2" type="HSeparator" parent="CanvasLayer/Sidebar/MarginContainer/ScrollContainer/VBoxContainer"]
+[node name="HSeparator2" type="HSeparator" parent="CanvasLayer/Sidebar/MarginContainer/ScrollContainer/VBoxContainer" unique_id=1227468531]
 layout_mode = 2
 
-[node name="PrimaryActionsBar" parent="CanvasLayer/Sidebar/MarginContainer/ScrollContainer/VBoxContainer" instance=ExtResource("4_iconrow")]
+[node name="PrimaryActionsBar" parent="CanvasLayer/Sidebar/MarginContainer/ScrollContainer/VBoxContainer" unique_id=301089118 instance=ExtResource("4_iconrow")]
 layout_mode = 2
 slot_count = 5
 
 [node name="MacroCellInfoPanel" parent="CanvasLayer/Sidebar/MarginContainer/ScrollContainer/VBoxContainer" unique_id=1234849909 instance=ExtResource("3_pghkh")]
 layout_mode = 2
 
-[node name="HSeparator3" type="HSeparator" parent="CanvasLayer/Sidebar/MarginContainer/ScrollContainer/VBoxContainer"]
+[node name="HSeparator3" type="HSeparator" parent="CanvasLayer/Sidebar/MarginContainer/ScrollContainer/VBoxContainer" unique_id=1980306515]
 layout_mode = 2
 
-[node name="SecondaryActionsBar" parent="CanvasLayer/Sidebar/MarginContainer/ScrollContainer/VBoxContainer" instance=ExtResource("4_iconrow")]
+[node name="SecondaryActionsBar" parent="CanvasLayer/Sidebar/MarginContainer/ScrollContainer/VBoxContainer" unique_id=1797037903 instance=ExtResource("4_iconrow")]
 layout_mode = 2
-slot_count = 4
 
 [node name="SaveMapFileDialog" type="FileDialog" parent="." unique_id=1169225512]
 access = 1
 filters = PackedStringArray("*.json ; File JSON")
 
-[node name="SystemMenuDialog" parent="." instance=ExtResource("5_sysmenu")]
+[node name="SystemMenuDialog" parent="." unique_id=268340921 instance=ExtResource("5_sysmenu")]
 
-[node name="SaveConfirmationDialog" parent="." instance=ExtResource("6_saveconf")]
+[node name="SaveConfirmationDialog" parent="." unique_id=1279147788 instance=ExtResource("6_saveconf")]
