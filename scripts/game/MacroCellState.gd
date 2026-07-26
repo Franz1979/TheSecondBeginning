@@ -26,6 +26,14 @@ var stone_positions_generated: bool = false # separato dall'array vuoto: disting
 # mature): resource_name (CaloricSourceRules.caloric_source_name) -> quantità (float). Vuoto per
 # le fonti stateless come FORAGE, che non ne hanno bisogno. Vedi CaloricCalculator.update_secondary_resource_stock.
 var secondary_resource_stock: Dictionary = {}
+# Popolazione animale per specie in questa cella: species_name (AnimalRules.species_name) ->
+# numero di individui (int). Vuoto = nessun animale. Vedi AnimalConsumptionService.
+var animal_population: Dictionary = {}
+# Debito frazionario di spazio GRASS da rimuovere per consumo animale: il consumo giornaliero
+# convertito in "spazio equivalente" (unità/densità) è quasi sempre < 1 unità intera — invece
+# di arrotondare e perdere la frazione ogni giorno, si accumula qui finché non supera 1.0 (vedi
+# AnimalConsumptionService), momento in cui dedicated_space[GRASS] viene davvero decrementato.
+var pending_grass_space_debt: float = 0.0
 
 func _init(_x: int, _y: int) -> void:
 	x = _x
@@ -179,6 +187,18 @@ func get_secondary_resource_stock(resource_name: String) -> float:
 
 func set_secondary_resource_stock(resource_name: String, amount: float) -> void:
 	secondary_resource_stock[resource_name] = max(round(amount), 0.0)
+
+func get_animal_population(species_name: String) -> int:
+	return int(animal_population.get(species_name, 0))
+
+func set_animal_population(species_name: String, count: int) -> void:
+	animal_population[species_name] = max(count, 0)
+
+func get_pending_grass_space_debt() -> float:
+	return pending_grass_space_debt
+
+func set_pending_grass_space_debt(amount: float) -> void:
+	pending_grass_space_debt = max(amount, 0.0)
 
 func get_river_space() -> int:
 	return river_space

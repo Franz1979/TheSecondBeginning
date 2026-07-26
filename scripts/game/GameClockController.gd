@@ -7,7 +7,7 @@ extends Node
 # day/year bookkeeping and the yearly simulation pipeline live in
 # WorldTimeService/GameData, not here.
 
-signal day_advanced(simulation_ran: bool)
+signal day_advanced(checkpoint_ran: bool, animals_changed: bool)
 
 enum Speed { X1, X2, X3, X4 }
 
@@ -44,8 +44,8 @@ func _process(delta: float) -> void:
 	_day_progress += delta / seconds_per_day
 	while _day_progress >= 1.0:
 		_day_progress -= 1.0
-		var simulation_ran := _time_service.advance_day(_world, _game_data)
-		day_advanced.emit(simulation_ran)
+		var result := _time_service.advance_day(_world, _game_data)
+		day_advanced.emit(result["checkpoint_ran"], result["animals_changed"])
 
 func toggle_play_pause() -> void:
 	is_playing = not is_playing
@@ -56,4 +56,4 @@ func set_speed(new_speed: Speed) -> void:
 func force_advance_to_year_end() -> void:
 	_time_service.force_advance_to_year_end(_world, _game_data)
 	_day_progress = 0.0
-	day_advanced.emit(true)
+	day_advanced.emit(true, false)

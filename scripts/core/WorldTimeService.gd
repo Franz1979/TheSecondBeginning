@@ -2,11 +2,25 @@ class_name WorldTimeService
 extends RefCounted
 
 # Advances the calendar by exactly one day, then runs whichever seasonal simulation
-# checkpoint(s) fall on the resulting day (see _run_seasonal_checkpoints). Returns true if any
-# checkpoint ran, so callers know whether world state actually changed and a redraw is needed.
-func advance_day(world: World, game_data: GameData) -> bool:
+# checkpoint(s) fall on the resulting day (see _run_seasonal_checkpoints), plus the animal
+# consumption pass (see _run_daily_animal_consumption), che a differenza dei checkpoint
+# stagionali gira OGNI giorno, non solo ai confini di stagione. Ritorna le due cause di
+# cambiamento separate (non fuse in un solo bool) così i chiamanti che vogliono trattarle
+# diversamente — vedi MacroCellScene, che ridisegna sempre ai checkpoint stagionali ma
+# l'aggiornamento guidato dal solo consumo animale lo rende opzionale — possono farlo senza
+# dover indovinare quale delle due è effettivamente scattata.
+func advance_day(world: World, game_data: GameData) -> Dictionary:
 	var year_rolled_over := game_data.advance_day()
-	return _run_seasonal_checkpoints(world, game_data, year_rolled_over)
+	var animals_changed := _run_daily_animal_consumption(world, game_data)
+	var checkpoint_ran := _run_seasonal_checkpoints(world, game_data, year_rolled_over)
+	return {"checkpoint_ran": checkpoint_ran, "animals_changed": animals_changed}
+
+
+# Gira ogni giorno (non solo ai checkpoint stagionali): il fabbisogno calorico degli animali
+# non aspetta il cambio di stagione. Vedi AnimalConsumptionService per la formula.
+func _run_daily_animal_consumption(world: World, game_data: GameData) -> bool:
+	var current_season := SeasonCalculator.get_season_for_day(game_data.current_day)
+	return AnimalConsumptionService.new().apply_daily_consumption(world, current_season)
 
 # Debug/emergency fast-forward (the "+1" button): advances a full 365 days one at a time (via
 # advance_day) so every seasonal checkpoint crossed along the way still runs, in chronological

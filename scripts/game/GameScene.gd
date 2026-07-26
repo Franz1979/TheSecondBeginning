@@ -35,6 +35,9 @@ var _pending_leave_action: StringName = &""
 @onready var debug_consume_fruit_container: HBoxContainer = $CanvasLayer/Sidebar/MarginContainer/VBoxContainer/DebugConsumeFruitContainer
 @onready var debug_consume_fruit_spin_box: SpinBox = $CanvasLayer/Sidebar/MarginContainer/VBoxContainer/DebugConsumeFruitContainer/DebugConsumeFruitSpinBox
 @onready var debug_consume_fruit_button: Button = $CanvasLayer/Sidebar/MarginContainer/VBoxContainer/DebugConsumeFruitContainer/DebugConsumeFruitButton
+@onready var debug_rabbit_container: HBoxContainer = $CanvasLayer/Sidebar/MarginContainer/VBoxContainer/DebugRabbitContainer
+@onready var debug_rabbit_spin_box: SpinBox = $CanvasLayer/Sidebar/MarginContainer/VBoxContainer/DebugRabbitContainer/DebugRabbitSpinBox
+@onready var debug_set_rabbit_button: Button = $CanvasLayer/Sidebar/MarginContainer/VBoxContainer/DebugRabbitContainer/DebugSetRabbitButton
 
 func _ready() -> void:
 	year_title_label.text = tr("calendar_label")
@@ -61,9 +64,11 @@ func _ready() -> void:
 	debug_secondary_stock_container.visible = DebugLogging.ENABLED
 	debug_consume_acorn_container.visible = DebugLogging.ENABLED
 	debug_consume_fruit_container.visible = DebugLogging.ENABLED
+	debug_rabbit_container.visible = DebugLogging.ENABLED
 	debug_consume_button.pressed.connect(_on_debug_consume_pressed)
 	debug_consume_acorn_button.pressed.connect(_on_debug_consume_acorn_pressed)
 	debug_consume_fruit_button.pressed.connect(_on_debug_consume_fruit_pressed)
+	debug_set_rabbit_button.pressed.connect(_on_debug_set_rabbit_pressed)
 
 	var returning_from_macro_cell := GameSettings.returning_to_game_scene
 	if returning_from_macro_cell:
@@ -246,9 +251,9 @@ func _update_play_pause_button() -> void:
 		play_pause_button.text = "▶"
 		play_pause_button.tooltip_text = tr("play")
 
-func _on_day_advanced(simulation_ran: bool) -> void:
+func _on_day_advanced(checkpoint_ran: bool, animals_changed: bool) -> void:
 	_update_calendar_display()
-	if not simulation_ran:
+	if not (checkpoint_ran or animals_changed):
 		return
 	renderer.queue_redraw()
 	if renderer.selected_cell != null:
@@ -275,6 +280,14 @@ func _on_debug_consume_fruit_pressed() -> void:
 	if state == null:
 		return
 	CaloricCalculator.debug_consume_secondary_resource(state, "fruit", debug_consume_fruit_spin_box.value)
+
+func _on_debug_set_rabbit_pressed() -> void:
+	var state := world.get_cell_state_at(50, 50)
+	if state == null:
+		return
+	var count := int(debug_rabbit_spin_box.value)
+	state.set_animal_population("rabbit", count)
+	print("[DEBUG] rabbit population (50,50) impostata a %d" % count)
 
 func _update_calendar_display() -> void:
 	year_label.text = "Day %d of %d, Year %d" % [game_data.current_day + 1, GameData.DAYS_PER_YEAR, game_data.year]

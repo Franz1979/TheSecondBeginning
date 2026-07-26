@@ -1,0 +1,13 @@
+[gd_resource type="Resource" script_class="AnimalRules" format=3 uid="uid://bd3sq2r5cvvi5"]
+
+[ext_resource type="Script" uid="uid://b5f2blfpeff0h" path="res://scripts/core/AnimalRules.gd" id="1_rabbit"]
+
+[resource]
+script = ExtResource("1_rabbit")
+species_name = "rabbit"
+daily_caloric_requirement = 2.0
+diet_compatibility = {
+"forage": 1.0
+}
+visual_group_size = 10
+max_individuals_per_cluster = 50

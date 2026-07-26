@@ -13,6 +13,9 @@ var macro_cell: MacroCellData
 var macro_state: MacroCellState
 var game_data: GameData
 var renderer: MicroCellRenderer
+var rabbit_renderer: AnimalGroupRenderer
+var animals_visible: bool = true
+var flora_daily_updates_enabled: bool = true
 var clock: GameClockController
 var _clock_was_playing_before_dialogs: bool = false
 var _open_dialog_count: int = 0
@@ -58,7 +61,17 @@ func _ready() -> void:
 	save_game_file_dialog.current_dir = GameSettings.SAVES_DIR
 	save_game_file_dialog.file_selected.connect(_on_save_game_file_selected)
 
-	primary_actions_bar.configure_slot(0, "🌍", tr("back_to_world"), &"back_to_world")
+	primary_actions_bar.configure_slot(0, "🌍", tr("back_to_world"), &"back_to_world", tr("back_to_world_description"))
+	primary_actions_bar.configure_slot(
+		1, "🐇", tr("toggle_animals_visibility_tooltip"), &"toggle_animals_visibility",
+		tr("toggle_animals_visibility_description")
+	)
+	primary_actions_bar.set_slot_toggled(1, animals_visible)
+	primary_actions_bar.configure_slot(
+		2, "🌱", tr("toggle_flora_updates_tooltip"), &"toggle_flora_updates",
+		tr("toggle_flora_updates_description")
+	)
+	primary_actions_bar.set_slot_toggled(2, flora_daily_updates_enabled)
 	primary_actions_bar.action_pressed.connect(_on_primary_action_pressed)
 	secondary_actions_bar.configure_slot(0, "☰", tr("menu"), &"menu")
 	secondary_actions_bar.action_pressed.connect(_on_secondary_action_pressed)
@@ -93,6 +106,33 @@ func _ready() -> void:
 	renderer = MicroCellRenderer.new()
 	add_child(renderer)
 	renderer.setup(world)
+
+	rabbit_renderer = AnimalGroupRenderer.new()
+	add_child(rabbit_renderer)
+	var rabbit_rules := AnimalCalculator.get_animal_rules("rabbit")
+	rabbit_renderer.configure({
+		"individuals_per_group": rabbit_rules.visual_group_size if rabbit_rules != null else 1,
+		"move_speed": 3.0,
+		"turn_rate": 1.5,
+		"max_individuals_per_cluster": rabbit_rules.max_individuals_per_cluster if rabbit_rules != null else 1,
+		"cluster_comfort_radius": 5.0,
+		"cluster_attraction_strength": 1.5,
+		"hop_speed": rabbit_rules.hop_speed if rabbit_rules != null else 6.0,
+		"movement_phase_duration_min": rabbit_rules.movement_phase_duration_min if rabbit_rules != null else 2.0,
+		"movement_phase_duration_max": rabbit_rules.movement_phase_duration_max if rabbit_rules != null else 5.0,
+		"rest_phase_duration_min": rabbit_rules.rest_phase_duration_min if rabbit_rules != null else 3.0,
+		"rest_phase_duration_max": rabbit_rules.rest_phase_duration_max if rabbit_rules != null else 7.0,
+		"hop_duration_min": rabbit_rules.hop_duration_min if rabbit_rules != null else 0.2,
+		"hop_duration_max": rabbit_rules.hop_duration_max if rabbit_rules != null else 0.4,
+		"hop_pause_min": rabbit_rules.hop_pause_min if rabbit_rules != null else 0.1,
+		"hop_pause_max": rabbit_rules.hop_pause_max if rabbit_rules != null else 0.3,
+		"body_length": 3.0,
+		"body_width": 1.3,
+		"ear_length": 2.7,
+		"ear_width": 0.9,
+		"color": Color(0.93, 0.91, 0.87, 0.95),
+	})
+
 	if macro_cell != null and macro_world != null:
 		renderer.set_neighbors(_get_neighbor_cells(macro_cell), _get_neighbor_states(macro_cell))
 
@@ -111,6 +151,7 @@ func _ready() -> void:
 			_refresh_resource_visuals()
 
 	_setup_clock()
+	rabbit_renderer.clock = clock
 	_update_calendar_display()
 
 # "occupied" invertito rispetto al solito uso (qui marca ciò che NON è disponibile per FISH,
@@ -131,10 +172,12 @@ func _compute_river_exterior_occupied(positions: Array) -> Dictionary:
 
 
 # Grass/shrub/tree non sono persistite (a differenza di stone): vanno ricalcolate ogni
-# volta che la loro quantità può essere cambiata, cioè all'apertura della scena e a ogni
-# avanzamento anno fatto da qui, così la vegetazione "cresce"/cambia a vista mentre si
-# resta dentro MacroCellScene, non solo riaprendola. Lo stesso vale per i numeri nel
-# pannello info, che vanno tenuti aggiornati insieme.
+# volta che la loro quantità può essere cambiata, cioè all'apertura della scena e ai
+# checkpoint stagionali (o ogni giorno, se flora_daily_updates_enabled — vedi _on_day_advanced),
+# così la vegetazione "cresce"/cambia a vista. Aggiorna anche il pannello info in coda (vedi
+# _update_info_panel) — quest'ultimo però va tenuto sincronizzato ogni giorno a prescindere,
+# per questo _on_day_advanced lo richiama anche da solo nei giorni in cui questo rebuild
+# completo viene saltato.
 func _refresh_resource_visuals() -> void:
 	if macro_state == null:
 		return
@@ -165,13 +208,27 @@ func _refresh_resource_visuals() -> void:
 		fish_positions = fish_service.generate_positions(macro_state, occupied_for_fish)
 	renderer.set_fish_positions(fish_positions)
 
+	rabbit_renderer.set_population(macro_state.get_animal_population("rabbit"))
+
 	renderer.set_shrub_fruit_ratio(_get_shrub_fruit_ratio())
 	renderer.set_tree_fruit_ratios(_get_tree_subtype_ratio("wild_fruit"), _get_tree_subtype_ratio("domesticable_fruit"))
 	# Dopo le posizioni: set_season ricostruisce anche il buffer erba (colore dipende dalla
 	# stagione), così lo fa una volta sola con le posizioni già aggiornate invece di due volte.
 	renderer.set_season(SeasonCalculator.get_season_for_day(game_data.current_day))
 
+	_update_info_panel()
+
+
+# I numeri del pannello info leggono macro_state/macro_cell direttamente (nessun rebuild di
+# mesh coinvolto): vanno tenuti aggiornati ogni giorno in cui qualcosa è davvero cambiato,
+# INDIPENDENTEMENTE da flora_daily_updates_enabled — quel toggle riguarda solo quando vale la
+# pena ricostruire la resa grafica (costosa), non se i dati mostrati sono corretti. Per questo
+# è una funzione a sé invece di restare solo in coda a _refresh_resource_visuals.
+func _update_info_panel() -> void:
+	if macro_state == null:
+		return
 	macro_cell_detail_panel.show_cell(macro_cell, macro_state, SeasonCalculator.get_season_for_day(game_data.current_day))
+
 
 # Quota di dedicated_space SHRUB classificata come sottotipo "fruit_bearing" nella macrocella
 # corrente (0 se SHRUB non ha ancora sottotipi tracciati lì, es. cella senza shrub). Il nome
@@ -236,6 +293,13 @@ func _on_primary_action_pressed(action_id: StringName) -> void:
 	match action_id:
 		&"back_to_world":
 			_on_back_to_world_pressed()
+		&"toggle_animals_visibility":
+			animals_visible = not animals_visible
+			rabbit_renderer.set_animals_visible(animals_visible)
+			primary_actions_bar.set_slot_toggled(1, animals_visible)
+		&"toggle_flora_updates":
+			flora_daily_updates_enabled = not flora_daily_updates_enabled
+			primary_actions_bar.set_slot_toggled(2, flora_daily_updates_enabled)
 
 func _on_secondary_action_pressed(action_id: StringName) -> void:
 	match action_id:
@@ -318,11 +382,18 @@ func _update_play_pause_button() -> void:
 		play_pause_button.text = "▶"
 		play_pause_button.tooltip_text = tr("play")
 
-func _on_day_advanced(simulation_ran: bool) -> void:
+func _on_day_advanced(checkpoint_ran: bool, animals_changed: bool) -> void:
 	_update_calendar_display()
-	if not simulation_ran:
+	if not (checkpoint_ran or animals_changed):
 		return
-	_refresh_resource_visuals()
+
+	# _refresh_resource_visuals già chiama _update_info_panel al suo interno: qui va invocata
+	# a parte solo quando quel rebuild completo (costoso) viene saltato, così i dati del
+	# pannello restano sempre aggiornati giorno per giorno anche a rendering "stagionale".
+	if checkpoint_ran or flora_daily_updates_enabled:
+		_refresh_resource_visuals()
+	else:
+		_update_info_panel()
 
 func _on_advance_year_pressed() -> void:
 	if macro_world == null:

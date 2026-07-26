@@ -65,6 +65,10 @@ func load_game_from_json(file_path: String) -> LoadedGame:
 			var secondary_stock_data = state_data.get("secondary_resource_stock", {})
 			for resource_name in secondary_stock_data.keys():
 				state.secondary_resource_stock[resource_name] = float(secondary_stock_data[resource_name])
+			var animal_population_data = state_data.get("animal_population", {})
+			for species_name in animal_population_data.keys():
+				state.animal_population[species_name] = int(animal_population_data[species_name])
+				state.pending_grass_space_debt = float(state_data.get("pending_grass_space_debt", 0.0))
 			if state_data.has("stone_positions"):
 				var stone_positions: Array = []
 				for pos_data in state_data["stone_positions"]:
