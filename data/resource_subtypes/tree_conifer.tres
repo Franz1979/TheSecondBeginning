@@ -1,0 +1,24 @@
+[gd_resource type="Resource" script_class="SubtypeRules" format=3]
+
+[ext_resource type="Script" uid="uid://dbsydmk5jtcg7" path="res://scripts/core/SubtypeRules.gd" id="1_conifer"]
+
+[resource]
+script = ExtResource("1_conifer")
+subtype_name = "conifer"
+is_evergreen = true
+initial_ratio_by_biome = {
+1: 0.35,
+2: 0.1,
+4: 0.15,
+5: 0.05,
+6: 0.45
+}
+suitable_biomes = Array[int]([1, 2, 4, 5, 6])
+suitable_terrains = Array[int]([1, 2, 3])
+growth_multiplier_by_biome = {
+1: 1.1,
+2: 0.8,
+4: 1.0,
+5: 0.8,
+6: 1.4
+}

@@ -212,6 +212,7 @@ func _refresh_resource_visuals() -> void:
 
 	renderer.set_shrub_fruit_ratio(_get_shrub_fruit_ratio())
 	renderer.set_tree_fruit_ratios(_get_tree_subtype_ratio("wild_fruit"), _get_tree_subtype_ratio("domesticable_fruit"))
+	renderer.set_tree_conifer_ratio(_get_tree_subtype_ratio("conifer"))
 	# Dopo le posizioni: set_season ricostruisce anche il buffer erba (colore dipende dalla
 	# stagione), così lo fa una volta sola con le posizioni già aggiornate invece di due volte.
 	renderer.set_season(SeasonCalculator.get_season_for_day(game_data.current_day))

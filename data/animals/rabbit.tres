@@ -7,7 +7,10 @@ script = ExtResource("1_rabbit")
 species_name = "rabbit"
 daily_caloric_requirement = 2.0
 diet_compatibility = {
-"forage": 1.0
+"forage": 1.0,
+"berry": 0.5,
+"acorn": 0.0,
+"fruit": 0.15
 }
 visual_group_size = 10
 max_individuals_per_cluster = 50

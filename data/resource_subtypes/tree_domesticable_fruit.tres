@@ -6,7 +6,7 @@
 script = ExtResource("1_dom")
 subtype_name = "domesticable_fruit"
 initial_ratio_by_biome = {
-1: 0.1,
+1: 0.05,
 4: 0.05,
 5: 0.15
 }

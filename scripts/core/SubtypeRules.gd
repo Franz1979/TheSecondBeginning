@@ -23,6 +23,11 @@ extends Resource
 # compito dell'esclusione totale di suitable_biomes/suitable_terrains.
 @export var growth_multiplier_by_biome: Dictionary = {}
 
+@export_group("Foliage")
+# Puramente descrittivo oggi: nessun servizio legge questo campo. Riservato a un futuro step
+# di stagionalità/rendering (chioma persistente vs caduca).
+@export var is_evergreen: bool = false
+
 
 func is_suitable_for(biome: GameTypes.Biome, terrain: GameTypes.TerrainBase) -> bool:
 	if not suitable_biomes.is_empty() and not suitable_biomes.has(biome):

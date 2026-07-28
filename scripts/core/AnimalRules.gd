@@ -4,9 +4,9 @@ extends Resource
 @export var species_name: String = ""
 @export var daily_caloric_requirement: float = 0.0
 # resource_name (chiave di CaloricSourceRules.caloric_source_name) -> moltiplicatore di
-# edibilità. Oggi conta solo la PRESENZA della chiave (il coniglio mangia solo "forage", con
-# moltiplicatore 1.0 di fatto ignorato): la logica multi-risorsa con moltiplicatori diversi per
-# specie non è ancora implementata, arriverà quando servirà davvero più di una fonte per specie.
+# edibilità, usato da AnimalConsumptionService per ripartire il fabbisogno giornaliero tra le
+# fonti compatibili, pesato per calorie disponibili × questo moltiplicatore. 0 (o chiave
+# assente) esclude la fonte del tutto.
 @export var diet_compatibility: Dictionary = {}
 
 @export_group("Visualization")

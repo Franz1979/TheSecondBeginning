@@ -186,7 +186,7 @@ func get_secondary_resource_stock(resource_name: String) -> float:
 	return float(secondary_resource_stock.get(resource_name, 0.0))
 
 func set_secondary_resource_stock(resource_name: String, amount: float) -> void:
-	secondary_resource_stock[resource_name] = max(round(amount), 0.0)
+	secondary_resource_stock[resource_name] = max(amount, 0.0)
 
 func get_animal_population(species_name: String) -> int:
 	return int(animal_population.get(species_name, 0))

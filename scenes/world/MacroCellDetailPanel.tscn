@@ -96,6 +96,11 @@ layout_mode = 2
 theme_override_font_sizes/font_size = 10
 autowrap_mode = 3
 
+[node name="TreeSubtypeConiferLabel" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/VegetazioneTab/TreeSubtypeContainer"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 10
+autowrap_mode = 3
+
 [node name="ResourceSeparatorLabel" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/VegetazioneTab"]
 layout_mode = 2
 theme_override_font_sizes/font_size = 11

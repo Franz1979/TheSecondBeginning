@@ -27,6 +27,20 @@ const GRASS_PALETTE_BY_SEASON := {
 	GameTypes.Season.SUMMER: {"base": Color(0.28, 0.58, 0.18, 0.85), "tip": Color(0.55, 0.80, 0.30, 0.85)},
 	GameTypes.Season.AUTUMN: {"base": Color(0.55, 0.42, 0.12, 0.85), "tip": Color(0.82, 0.62, 0.18, 0.85)},
 }
+# Colore chioma per stagione, solo per gli alberi NON conifer (is_evergreen=false: wood_only,
+# wild_fruit, domesticable_fruit — non distinti fra loro a livello di rendering, un solo colore
+# "chioma caduca" condiviso). SPRING/SUMMER riusano VEGETATION_COLORS[TREE] (verde normale,
+# invariato), AUTUMN vira a marrone-rossiccio, WINTER scende ad alpha molto bassa su un colore
+# spento grigio-bruno anziché verde ("rami spogli visti da lontano", non del tutto invisibile).
+# Gli alberi conifer non usano questa palette: chioma a forma di abete, sempre piena/verde in
+# ogni stagione — vedi _rebuild_tree_multimeshes/_is_tree_conifer.
+const TREE_CANOPY_PALETTE_BY_SEASON := {
+	GameTypes.Season.WINTER: Color(0.35, 0.30, 0.22, 0.20),
+	GameTypes.Season.SPRING: Color(0.10, 0.45, 0.15, 0.85),
+	GameTypes.Season.SUMMER: Color(0.10, 0.45, 0.15, 0.85),
+	GameTypes.Season.AUTUMN: Color(0.55, 0.28, 0.10, 0.85),
+}
+const COLOR_TREE_CONIFER_CANOPY := Color(0.10, 0.45, 0.15, 0.85) # identico al verde normale odierno
 # Finestra di fruttificazione per i marcatori bacche/frutti (tarda estate/autunno): fuori da
 # queste stagioni i marcatori non vengono disegnati, ma la classificazione hash-based delle
 # posizioni (_is_shrub_fruit_bearing, ecc.) resta invariata — è solo un gate a draw-time.
@@ -89,6 +103,11 @@ var shrub_fruit_ratio: float = 0.0
 # distinto sulla mappa (vedi COLOR_TREE_FRUIT_WILD/COLOR_TREE_FRUIT_DOMESTICABLE).
 var tree_wild_fruit_ratio: float = 0.0
 var tree_domesticable_fruit_ratio: float = 0.0
+# Quota conifer/totale della composizione TREE della macrocella (0..1) — stessa separazione di
+# responsabilità dei ratio sopra. Decide, per-posizione via _is_tree_conifer, quali alberi
+# ricevono la chioma a forma di abete invece del blob tondo, ed esclude quelle posizioni dal
+# test di fruttificazione (conifer non produce mai ghiande/mele, gate esplicito).
+var tree_conifer_ratio: float = 0.0
 # Stagione corrente (vedi GRASS_PALETTE_BY_SEASON/FRUITING_SEASONS sopra) — arriva già risolta
 # dal chiamante (MacroCellScene, via SeasonCalculator.get_season_for_day), stessa separazione
 # di responsabilità delle altre proprietà "calcolate altrove" del renderer.
@@ -158,13 +177,21 @@ func set_tree_fruit_ratios(wild_ratio: float, domesticable_ratio: float) -> void
 	queue_redraw()
 
 
-# Il colore dell'erba dipende dalla stagione, quindi va ricalcolato qui; la visibilità dei
-# frutti (FRUITING_SEASONS) è invece un gate a draw-time, non richiede nessun rebuild dei loro
-# buffer. La chioma degli alberi resta sempre piena/verde, in ogni stagione — nessun rebuild
-# necessario per loro.
+func set_tree_conifer_ratio(ratio: float) -> void:
+	tree_conifer_ratio = clamp(ratio, 0.0, 1.0)
+	_rebuild_tree_multimeshes()
+	queue_redraw()
+
+
+# Il colore dell'erba e quello della chioma degli alberi NON conifer dipendono dalla stagione,
+# quindi entrambi vanno ricalcolati qui; la visibilità dei frutti (FRUITING_SEASONS) è invece un
+# gate a draw-time, non richiede nessun rebuild dei loro buffer. La chioma conifer (a forma di
+# abete) resta sempre piena/verde in ogni stagione, ma il rebuild va comunque rifatto per intero
+# perché lo stesso _rebuild_tree_multimeshes ricostruisce entrambi i gruppi insieme.
 func set_season(season: GameTypes.Season) -> void:
 	current_season = season
 	_rebuild_grass_buffers()
+	_rebuild_tree_multimeshes()
 	queue_redraw()
 
 
@@ -319,8 +346,9 @@ static func _is_valid_polygon_points(points: PackedVector2Array) -> bool:
 
 
 # Ordine di disegno preservato (dal più diffuso al più dominante, così TREE resta sopra):
-# grass (draw_multiline_colors) -> shrub blobs -> bacche -> tree trunk -> tree canopy -> dot
-# frutto wild -> dot frutto domesticable (sopra la chioma, altrimenti invisibili). Ogni
+# grass (draw_multiline_colors) -> shrub blobs -> bacche -> tree trunk -> tree canopy (tonda,
+# non-conifer) -> tree canopy conifer (abete) -> dot frutto wild -> dot frutto domesticable
+# (sopra la chioma, altrimenti invisibili; mai per le posizioni conifer, escluse a monte). Ogni
 # gruppo è oggi al più UNA chiamata di disegno, indipendentemente da quante istanze contiene —
 # i buffer (transform/colore per MultiMesh, punti/colori per grass) sono già pronti, ricalcolati
 # nei setter (_rebuild_*) quando le posizioni cambiano, non qui.
@@ -347,6 +375,10 @@ func _draw_vegetation_positions() -> void:
 		draw_multimesh(_tree_canopy_multimesh, null)
 		_debug_draw_primitive_count += 1
 
+	if _tree_conifer_canopy_multimesh != null and _tree_conifer_canopy_multimesh.instance_count > 0:
+		draw_multimesh(_tree_conifer_canopy_multimesh, null)
+		_debug_draw_primitive_count += 1
+
 	if fruit_in_season and _tree_fruit_wild_multimesh != null and _tree_fruit_wild_multimesh.instance_count > 0:
 		draw_multimesh(_tree_fruit_wild_multimesh, null)
 		_debug_draw_primitive_count += 1
@@ -359,7 +391,8 @@ func _draw_vegetation_positions() -> void:
 const VEGETATION_CIRCLE_SEGMENTS: int = 12
 
 var _tree_trunk_mesh: ArrayMesh
-var _tree_canopy_mesh: ArrayMesh
+var _tree_canopy_mesh: ArrayMesh # bianca: il colore stagionale arriva per-istanza (use_colors)
+var _tree_conifer_canopy_mesh: ArrayMesh # forma ad abete, colore fisso (mai stagionale)
 var _tree_fruit_wild_mesh: ArrayMesh
 var _tree_fruit_domesticable_mesh: ArrayMesh
 var _shrub_blob_mesh: ArrayMesh # bianca: il colore per-lobo arriva per-istanza (use_colors)
@@ -368,6 +401,7 @@ var _vegetation_meshes_ready: bool = false
 
 var _tree_trunk_multimesh: MultiMesh
 var _tree_canopy_multimesh: MultiMesh
+var _tree_conifer_canopy_multimesh: MultiMesh
 var _tree_fruit_wild_multimesh: MultiMesh
 var _tree_fruit_domesticable_multimesh: MultiMesh
 var _shrub_multimesh: MultiMesh
@@ -380,7 +414,8 @@ func _ensure_vegetation_meshes() -> void:
 	_vegetation_meshes_ready = true
 
 	_tree_trunk_mesh = _build_quad_mesh(COLOR_TREE_TRUNK)
-	_tree_canopy_mesh = _build_circle_mesh(VEGETATION_CIRCLE_SEGMENTS, VEGETATION_COLORS[GameTypes.WorldObjectType.TREE])
+	_tree_canopy_mesh = _build_circle_mesh(VEGETATION_CIRCLE_SEGMENTS, Color.WHITE)
+	_tree_conifer_canopy_mesh = _build_conifer_mesh(COLOR_TREE_CONIFER_CANOPY)
 	_tree_fruit_wild_mesh = _build_circle_mesh(VEGETATION_CIRCLE_SEGMENTS, COLOR_TREE_FRUIT_WILD)
 	_tree_fruit_domesticable_mesh = _build_circle_mesh(VEGETATION_CIRCLE_SEGMENTS, COLOR_TREE_FRUIT_DOMESTICABLE)
 	_shrub_blob_mesh = _build_circle_mesh(VEGETATION_CIRCLE_SEGMENTS, Color.WHITE)
@@ -392,7 +427,8 @@ func _ensure_vegetation_multimeshes() -> void:
 		return
 
 	_tree_trunk_multimesh = _make_multimesh(_tree_trunk_mesh, false)
-	_tree_canopy_multimesh = _make_multimesh(_tree_canopy_mesh, false)
+	_tree_canopy_multimesh = _make_multimesh(_tree_canopy_mesh, true)
+	_tree_conifer_canopy_multimesh = _make_multimesh(_tree_conifer_canopy_mesh, false)
 	_tree_fruit_wild_multimesh = _make_multimesh(_tree_fruit_wild_mesh, false)
 	_tree_fruit_domesticable_multimesh = _make_multimesh(_tree_fruit_domesticable_mesh, false)
 	_shrub_multimesh = _make_multimesh(_shrub_blob_mesh, true)
@@ -444,6 +480,20 @@ static func _build_circle_mesh(segments: int, color: Color) -> ArrayMesh:
 	return _build_fan_mesh(points, color)
 
 
+# Sagoma stilizzata ad abete/conifera (triangolo isoscele, apice in alto): più alta e stretta
+# del cerchio unitario (apice a -1.3 invece di -1.0) per leggersi come "sempreverde a punta"
+# anche alla scala minuscola di una singola microcella, distinguendosi a colpo d'occhio dal
+# blob tondo usato per gli altri sottotipi. Origine (0,0) del ventaglio comunque interna al
+# triangolo (centroide ~ (0, 0.17)), quindi la triangolazione di _build_fan_mesh resta piena.
+static func _build_conifer_mesh(color: Color) -> ArrayMesh:
+	var points := PackedVector2Array([
+		Vector2(0.0, -1.3),
+		Vector2(-1.0, 0.9),
+		Vector2(1.0, 0.9),
+	])
+	return _build_fan_mesh(points, color)
+
+
 # Albero stilizzato: tronco (rettangolo) + chioma (cerchio) sopra, con leggera variazione
 # di dimensione/offset orizzontale per albero, derivata deterministicamente dalla sua
 # posizione — stessa formula di sempre, solo scritta in un transform per-istanza invece che
@@ -455,8 +505,12 @@ func _rebuild_tree_multimeshes() -> void:
 	var positions: Array = vegetation_positions.get(GameTypes.WorldObjectType.TREE, [])
 	var trunk_transforms: Array = []
 	var canopy_transforms: Array = []
+	var canopy_colors: Array = []
+	var conifer_canopy_transforms: Array = []
 	var wild_fruit_transforms: Array = []
 	var domesticable_fruit_transforms: Array = []
+
+	var deciduous_canopy_color: Color = TREE_CANOPY_PALETTE_BY_SEASON.get(current_season, VEGETATION_COLORS[GameTypes.WorldObjectType.TREE])
 
 	for pos in positions:
 		var base := Vector2(pos.x * CELL_SIZE, pos.y * CELL_SIZE)
@@ -479,28 +533,59 @@ func _rebuild_tree_multimeshes() -> void:
 		var canopy_center := Vector2(base.x + half + horizontal_offset, trunk_y - canopy_radius * 0.6)
 		var canopy_transform := Transform2D(0, Vector2.ZERO).scaled(Vector2(canopy_radius, canopy_radius))
 		canopy_transform.origin = canopy_center
-		canopy_transforms.append(canopy_transform)
 
-		if _is_tree_fruit_bearing(pos):
-			var dots := _build_tree_fruit_transforms(pos, canopy_center, canopy_radius)
-			if _is_tree_fruit_domesticable(pos):
-				domesticable_fruit_transforms.append_array(dots)
-			else:
-				wild_fruit_transforms.append_array(dots)
+		# Ramo esclusivo: una posizione è O conifer (chioma ad abete, sempre verde piena, MAI
+		# frutti) O uno degli altri tre sottotipi (chioma tonda, colore per stagione, idonea al
+		# test frutta) — a differenza del test frutta stesso, qui l'esclusione è intenzionale ed
+		# esplicita, non solo un'approssimazione indipendente (vedi discussione: conifer non deve
+		# mai comparire con ghiande/mele).
+		if _is_tree_conifer(pos):
+			conifer_canopy_transforms.append(canopy_transform)
+		else:
+			canopy_transforms.append(canopy_transform)
+			canopy_colors.append(deciduous_canopy_color)
+
+			if _is_tree_fruit_bearing(pos):
+				var dots := _build_tree_fruit_transforms(pos, canopy_center, canopy_radius)
+				if _is_tree_fruit_domesticable(pos):
+					domesticable_fruit_transforms.append_array(dots)
+				else:
+					wild_fruit_transforms.append_array(dots)
 
 	_apply_transforms(_tree_trunk_multimesh, trunk_transforms)
 	_apply_transforms(_tree_canopy_multimesh, canopy_transforms)
+	for i in range(canopy_colors.size()):
+		_tree_canopy_multimesh.set_instance_color(i, canopy_colors[i])
+	_apply_transforms(_tree_conifer_canopy_multimesh, conifer_canopy_transforms)
 	_apply_transforms(_tree_fruit_wild_multimesh, wild_fruit_transforms)
 	_apply_transforms(_tree_fruit_domesticable_multimesh, domesticable_fruit_transforms)
+
+
+# Identità "conifer" stabile per posizione, stesso pattern hash-vs-ratio di _is_tree_fruit_bearing
+# sotto ma con salt indipendente. Decide la FORMA/colore della chioma (abete sempreverde vs blob
+# tondo stagionale) E, a differenza degli altri test hash del renderer (indipendenti fra loro per
+# design), esclude esplicitamente la posizione dal test frutta: una posizione conifer non entra
+# mai nel ramo _is_tree_fruit_bearing (vedi ramo esclusivo in _rebuild_tree_multimeshes) — conifer
+# non deve mai comparire con ghiande/mele, per richiesta esplicita.
+func _is_tree_conifer(pos: Vector2i) -> bool:
+	var hash_value: float = float(hash(pos * 11 + Vector2i(131, 17)) % 100000) / 100000.0
+	return hash_value < tree_conifer_ratio
 
 
 # Identità fruttifera stabile per posizione, stesso pattern di _is_shrub_fruit_bearing sotto
 # (hash(pos) puro confrontato con la soglia combinata wild+domesticable) ma con salt diverso
 # per non correlare le due sequenze — un microcella potrebbe altrimenti risultare "fruttifera"
-# per entrambe le risorse sempre insieme o mai, il che non ha basi ecologiche.
+# per entrambe le risorse sempre insieme o mai, il che non ha basi ecologiche. Chiamata solo per
+# posizioni già escluse da _is_tree_conifer (vedi sopra): i ratio sono quote sul TOTALE albero
+# (conifer incluso), quindi la soglia va condizionata su "non conifer" (divisa per 1-conifer_ratio)
+# — altrimenti, testando solo il sottoinsieme non-conifer con la soglia "grezza", il conteggio
+# atteso di alberi fruttiferi risulterebbe sistematicamente più basso di wild_count+domesticable_count.
 func _is_tree_fruit_bearing(pos: Vector2i) -> bool:
+	var non_conifer_share: float = 1.0 - tree_conifer_ratio
+	if non_conifer_share <= 0.0:
+		return false
 	var hash_value: float = float(hash(pos * 3 + Vector2i(211, 149)) % 100000) / 100000.0
-	return hash_value < (tree_wild_fruit_ratio + tree_domesticable_fruit_ratio)
+	return hash_value < ((tree_wild_fruit_ratio + tree_domesticable_fruit_ratio) / non_conifer_share)
 
 
 # Seconda classificazione, indipendente dalla prima (salt diverso): SOLO per le posizioni già

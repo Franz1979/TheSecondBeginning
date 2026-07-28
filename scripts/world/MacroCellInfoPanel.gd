@@ -39,10 +39,10 @@ func show_cell(cell: MacroCellData, state: MacroCellState, show_resources: bool 
 		var shrub_space := state.get_dedicated_space(GameTypes.WorldObjectType.SHRUB)
 		var tree_quantity := state.get_resource_quantity(GameTypes.WorldObjectType.TREE)
 		var tree_space := state.get_dedicated_space(GameTypes.WorldObjectType.TREE)
-		stone_number_label.text = "Stone: " + str(stone_quantity) + " (occupied cells: " + str(stone_space) + ")"
-		grass_number_label.text = "Grass: " + str(grass_quantity) + " (occupied cells: " + str(grass_space) + ")"
-		shrub_number_label.text = "Shrub: " + str(shrub_quantity) + " (occupied cells: " + str(shrub_space) + ")"
-		tree_number_label.text = "Trees: " + str(tree_quantity) + " (occupied cells: " + str(tree_space) + ")"
+		stone_number_label.text = "Stone: " + NumberFormatter.format_int(stone_quantity) + " (occupied cells: " + NumberFormatter.format_int(stone_space) + ")"
+		grass_number_label.text = "Grass: " + NumberFormatter.format_int(grass_quantity) + " (occupied cells: " + NumberFormatter.format_int(grass_space) + ")"
+		shrub_number_label.text = "Shrub: " + NumberFormatter.format_int(shrub_quantity) + " (occupied cells: " + NumberFormatter.format_int(shrub_space) + ")"
+		tree_number_label.text = "Trees: " + NumberFormatter.format_int(tree_quantity) + " (occupied cells: " + NumberFormatter.format_int(tree_space) + ")"
 		resource_separator_label.text = " - - - - - - - - - -"
 		# Su SEA/LAKE il calcolo "naturale" di get_empty_space() risulterebbe comunque
 		# TOTAL_SPACE (nessuna risorsa terrestre ha mai popolato dedicated_space lì, essendo
@@ -54,7 +54,7 @@ func show_cell(cell: MacroCellData, state: MacroCellState, show_resources: bool 
 		var empty_ground_space: int = state.get_empty_space()
 		if cell.terrain_base == GameTypes.TerrainBase.WATER:
 			empty_ground_space = 0
-		empty_space_label.text = "Empty ground space: " + str(empty_ground_space)
+		empty_space_label.text = "Empty ground space: " + NumberFormatter.format_int(empty_ground_space)
 	else:
 		stone_number_label.text = "Stone: -"
 		grass_number_label.text = "Grass: -"
