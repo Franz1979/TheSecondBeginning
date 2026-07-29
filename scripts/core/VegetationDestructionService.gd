@@ -75,6 +75,17 @@ func _destroy_in_cell(
 		var max_density := ResourceCalculator.get_max_density(
 			entry["type"], cell.terrain_base, cell.biome, cell.coast_type
 		)
-		state.apply_subtype_space_delta(entry["type"], -destroyed)
+		var loss_split := state.apply_subtype_space_delta(entry["type"], -destroyed)
+		_apply_age_band_losses(entry["type"], state, loss_split)
 		state.set_dedicated_space(entry["type"], new_space)
 		state.set_resource_quantity(entry["type"], int(round(new_space * max_density)))
+
+
+# Distruzione da evento naturale non è un giudizio di età più di quanto lo sia di bioma: nessun
+# peso esplicito, proporzione locale pura — solo per sottotipi track_age_bands=true.
+func _apply_age_band_losses(resource_type: GameTypes.WorldObjectType, state: MacroCellState, split: Dictionary) -> void:
+	for subtype_name in split.keys():
+		var rule := ResourceCalculator.get_subtype_rule(resource_type, subtype_name)
+		if rule == null or not rule.track_age_bands:
+			continue
+		state.apply_age_band_loss(resource_type, subtype_name, int(split[subtype_name]))

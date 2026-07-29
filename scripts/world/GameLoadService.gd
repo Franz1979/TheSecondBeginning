@@ -55,6 +55,18 @@ func load_game_from_json(file_path: String) -> LoadedGame:
 				for subtype_name in subtype_data[type_key].keys():
 					inner[subtype_name] = int(subtype_data[type_key][subtype_name])
 				state.subtype_composition[int(type_key)] = inner
+			# Stesso pattern di subtype_composition sopra, un livello di nesting in più
+			# (WorldObjectType -> subtype_name -> AgeBand -> int). .get(key, {}) per compatibilità
+			# con save precedenti a questa feature (che non hanno affatto la chiave).
+			var age_data = state_data.get("age_composition", {})
+			for type_key in age_data.keys():
+				var inner_subtypes: Dictionary = {}
+				for subtype_name in age_data[type_key].keys():
+					var inner_ages: Dictionary = {}
+					for age_key in age_data[type_key][subtype_name].keys():
+						inner_ages[int(age_key)] = int(age_data[type_key][subtype_name][age_key])
+					inner_subtypes[subtype_name] = inner_ages
+				state.age_composition[int(type_key)] = inner_subtypes
 			state.river_space = int(state_data.get("river_space", 0))
 			var water_space_data = state_data.get("water_dedicated_space", {})
 			for key in water_space_data.keys():

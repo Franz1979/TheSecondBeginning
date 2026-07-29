@@ -67,6 +67,12 @@ enum SuccessionLevel {
 	# futuri livelli aggiunti qui, in ordine
 }
 
+enum AgeBand {
+	YOUNG,
+	ADULT,
+	OLD
+}
+
 enum NaturalEventType {
 	NONE,
 	FIRE,

@@ -90,9 +90,26 @@ func _apply_mortality_in_cell(
 	var subtype_weights := ResourceCalculator.get_biome_weighted_subtype_composition(
 		resource_type, state, cell.biome, true
 	)
-	state.apply_subtype_space_delta(resource_type, new_space - current_space, subtype_weights)
+	var loss_split := state.apply_subtype_space_delta(resource_type, new_space - current_space, subtype_weights)
+	_apply_age_band_losses(resource_type, state, loss_split)
 	state.set_dedicated_space(resource_type, new_space)
 	state.set_resource_quantity(resource_type, max(new_quantity, 0))
+
+
+# A differenza di encroachment/eventi naturali (proporzione locale pura), qui la perdita è
+# guidata esplicitamente da SubtypeRules.mortality_share_by_age — solo per sottotipi
+# track_age_bands=true.
+func _apply_age_band_losses(resource_type: GameTypes.WorldObjectType, state: MacroCellState, split: Dictionary) -> void:
+	for subtype_name in split.keys():
+		var rule := ResourceCalculator.get_subtype_rule(resource_type, subtype_name)
+		if rule == null or not rule.track_age_bands:
+			continue
+		var shares: Dictionary = {
+			GameTypes.AgeBand.YOUNG: rule.mortality_share_by_age[0],
+			GameTypes.AgeBand.ADULT: rule.mortality_share_by_age[1],
+			GameTypes.AgeBand.OLD: rule.mortality_share_by_age[2],
+		}
+		state.apply_age_band_loss(resource_type, subtype_name, int(split[subtype_name]), shares)
 
 
 func _get_multiplier(fill_ratio: float) -> float:

@@ -9,6 +9,13 @@ var micro_seed: int
 var resource_quantity: Dictionary = {}
 var dedicated_space: Dictionary = {}
 var subtype_composition: Dictionary = {} # WorldObjectType -> Dictionary[String subtype_name, int space_count]
+# WorldObjectType -> Dictionary[String subtype_name, Dictionary[AgeBand, int space_count]].
+# Popolato solo per i sottotipi con SubtypeRules.track_age_bands=true (oggi solo SHRUB); vuoto
+# altrove, stesso idioma "vuoto = non tracciato" di subtype_composition per GRASS. Invariante:
+# sum(age_composition[type][subtype].values()) == subtype_composition[type][subtype] sempre —
+# ogni chiamante che tocca subtype_composition per un sottotipo age-tracked deve aggiornare
+# anche age_composition nella stessa operazione (vedi add_age_band_gain/apply_age_band_loss).
+var age_composition: Dictionary = {}
 var river_space: int = 0
 # Budget separato per risorse acquatiche (oggi solo FISH), mai sommato in
 # get_total_dedicated_space()/get_empty_space(): l'acqua non compete mai con lo spazio
@@ -84,24 +91,25 @@ func get_subtype_total(object_type: GameTypes.WorldObjectType) -> int:
 #   invece della sola proporzione locale grezza.
 # Se object_type non ha sottotipi registrati (nessun SubtypeRules), la funzione non fa nulla:
 # stesso comportamento di oggi per GRASS/TREE finché non verranno anch'essi estesi.
-func apply_subtype_space_delta(object_type: GameTypes.WorldObjectType, delta: int, weights: Dictionary = {}) -> void:
+func apply_subtype_space_delta(object_type: GameTypes.WorldObjectType, delta: int, weights: Dictionary = {}) -> Dictionary:
 	if delta == 0:
-		return
+		return {}
 
 	if delta > 0:
 		var source_weights: Dictionary = weights if not weights.is_empty() else get_subtype_composition(object_type)
 		if source_weights.is_empty():
-			return
+			return {}
 		var split := _split_by_weight(source_weights, delta)
 		for subtype_name in split.keys():
 			set_subtype_count(object_type, subtype_name, get_subtype_count(object_type, subtype_name) + split[subtype_name])
+		return split
 	else:
 		var composition := get_subtype_composition(object_type)
 		if composition.is_empty():
-			return
+			return {}
 		var loss: int = min(-delta, get_subtype_total(object_type))
 		if loss <= 0:
-			return
+			return {}
 		# Un peso esterno (es. inverso del moltiplicatore di bioma) può "chiedere" a un
 		# sottotipo più di quanto possiede davvero, soprattutto quando è già quasi esaurito:
 		# _split_by_weight_capped ridistribuisce l'eccedenza sui sottotipi non ancora saturi
@@ -111,6 +119,7 @@ func apply_subtype_space_delta(object_type: GameTypes.WorldObjectType, delta: in
 		var split := _split_by_weight_capped(source_weights, composition, loss)
 		for subtype_name in split.keys():
 			set_subtype_count(object_type, subtype_name, get_subtype_count(object_type, subtype_name) - split[subtype_name])
+		return split
 
 # Ripartisce amount (intero) tra le chiavi di weights in proporzione al loro peso relativo,
 # con arrotondamento "largest remainder" così la somma delle parti risulta sempre esattamente
@@ -181,6 +190,101 @@ static func _split_by_weight_capped(weights: Dictionary, caps: Dictionary, amoun
 				active_weights.erase(key)
 
 	return shares
+
+func get_age_composition(object_type: GameTypes.WorldObjectType, subtype_name: String) -> Dictionary:
+	if not age_composition.has(object_type):
+		return {}
+	return age_composition[object_type].get(subtype_name, {})
+
+func get_age_count(object_type: GameTypes.WorldObjectType, subtype_name: String, age_band: GameTypes.AgeBand) -> int:
+	return int(get_age_composition(object_type, subtype_name).get(age_band, 0))
+
+func set_age_count(object_type: GameTypes.WorldObjectType, subtype_name: String, age_band: GameTypes.AgeBand, amount: int) -> void:
+	if not age_composition.has(object_type):
+		age_composition[object_type] = {}
+	if not age_composition[object_type].has(subtype_name):
+		age_composition[object_type][subtype_name] = {}
+	age_composition[object_type][subtype_name][age_band] = max(amount, 0)
+
+func get_age_total(object_type: GameTypes.WorldObjectType, subtype_name: String) -> int:
+	var total := 0
+	for amount in get_age_composition(object_type, subtype_name).values():
+		total += int(amount)
+	return total
+
+# Gain sempre e solo in YOUNG: growth/encroachment (lato vincente)/migration non spostano mai
+# individui già adulti, sono tutti fenomeni di nuova crescita/dispersione semi. Il chiamante
+# (i service) decide SE chiamarla, in base a SubtypeRules.track_age_bands — qui nessuna verifica,
+# puro meccanismo.
+func add_age_band_gain(object_type: GameTypes.WorldObjectType, subtype_name: String, amount: int) -> void:
+	if amount <= 0:
+		return
+	set_age_count(object_type, subtype_name, GameTypes.AgeBand.YOUNG,
+		get_age_count(object_type, subtype_name, GameTypes.AgeBand.YOUNG) + amount)
+
+# Usato SOLO dal seeding iniziale (InitialResourceSetupService, SubtypeRules.initial_age_ratio):
+# a differenza del gain corrente in game (sempre YOUNG, sopra), un mondo nuovo può partire con
+# una distribuzione già "stabilita" tra le tre fasce. Riusa lo stesso _split_by_weight generico.
+func seed_age_band_composition(object_type: GameTypes.WorldObjectType, subtype_name: String, amount: int, weights: Dictionary) -> void:
+	if amount <= 0 or weights.is_empty():
+		return
+	var split := _split_by_weight(weights, amount)
+	for age_band in split.keys():
+		set_age_count(object_type, subtype_name, age_band,
+			get_age_count(object_type, subtype_name, age_band) + split[age_band])
+
+# Perdita ripartita tra le fasce: se `shares` è vuoto, usa la composizione età locale come pesi
+# (proporzione pura — stesso default di apply_subtype_space_delta, usato da encroachment lato
+# perdente e distruzione da eventi naturali: non è un giudizio di età, solo territorio/eventi
+# bruti). Se esplicito (es. SubtypeRules.mortality_share_by_age), quei pesi guidano la
+# ripartizione — usato da ResourceMortalityService. _split_by_weight_capped gestisce già il caso
+# in cui una fascia non abbia abbastanza unità per la propria quota, ridistribuendo l'eccedenza
+# (water-filling) sulle fasce non ancora sature: nessun residuo perso, una soluzione esiste
+# sempre perché il chiamante garantisce amount <= totale reale del sottotipo.
+func apply_age_band_loss(object_type: GameTypes.WorldObjectType, subtype_name: String, amount: int, shares: Dictionary = {}) -> void:
+	if amount <= 0:
+		return
+	var composition := get_age_composition(object_type, subtype_name)
+	if composition.is_empty():
+		return
+	var loss: int = min(amount, get_age_total(object_type, subtype_name))
+	if loss <= 0:
+		return
+	var source_weights: Dictionary = shares if not shares.is_empty() else composition
+	var split := _split_by_weight_capped(source_weights, composition, loss)
+	for age_band in split.keys():
+		set_age_count(object_type, subtype_name, age_band,
+			get_age_count(object_type, subtype_name, age_band) - split[age_band])
+
+# Maturazione annuale: young->adult dopo maturation_years, adult->old dopo elder_years.
+# Entrambe le transizioni calcolate sulla composizione di INIZIO checkpoint (non incatenate): un
+# individuo avanza al massimo di una fascia per anno, mai due nello stesso ciclo. Frazione 1/N
+# per anno (residenza media statistica, non un tracking di coorte per anno di nascita — coerente
+# con lo stile aggregato già usato altrove, es. mortalità/crescita a moltiplicatore). Chiamata da
+# ResourceAgeBandService PRIMA di growth/encroachment nello stesso checkpoint di fine primavera,
+# così le nuove nascite di quest'anno (età 0) non vengono mai incluse nella maturazione dello
+# stesso ciclo in cui compaiono.
+func apply_age_band_maturation(object_type: GameTypes.WorldObjectType, subtype_name: String, maturation_years: int, elder_years: int) -> void:
+	var young_count := get_age_count(object_type, subtype_name, GameTypes.AgeBand.YOUNG)
+	var adult_count := get_age_count(object_type, subtype_name, GameTypes.AgeBand.ADULT)
+	if young_count <= 0 and adult_count <= 0:
+		return
+
+	var young_to_adult: int = 0
+	if maturation_years > 0:
+		young_to_adult = min(int(round(float(young_count) / float(maturation_years))), young_count)
+
+	var adult_to_old: int = 0
+	if elder_years > 0:
+		adult_to_old = min(int(round(float(adult_count) / float(elder_years))), adult_count)
+
+	if young_to_adult <= 0 and adult_to_old <= 0:
+		return
+
+	set_age_count(object_type, subtype_name, GameTypes.AgeBand.YOUNG, young_count - young_to_adult)
+	set_age_count(object_type, subtype_name, GameTypes.AgeBand.ADULT, adult_count - adult_to_old + young_to_adult)
+	set_age_count(object_type, subtype_name, GameTypes.AgeBand.OLD,
+		get_age_count(object_type, subtype_name, GameTypes.AgeBand.OLD) + adult_to_old)
 
 func get_secondary_resource_stock(resource_name: String) -> float:
 	return float(secondary_resource_stock.get(resource_name, 0.0))

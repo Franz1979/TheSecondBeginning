@@ -242,4 +242,40 @@ func _seed_subtype_composition(
 		for rule in subtype_rules:
 			weights[rule.subtype_name] = 1.0
 
-	state.apply_subtype_space_delta(resource_type, total_space, weights)
+	var split := state.apply_subtype_space_delta(resource_type, total_space, weights)
+	_seed_age_band_composition(state, resource_type, subtype_rules, split)
+
+
+# Per i sottotipi con track_age_bands=true, semina age_composition secondo
+# SubtypeRules.initial_age_ratio invece che 100% YOUNG (il gain "sempre YOUNG" vale solo per la
+# simulazione a regime — vedi MacroCellState.add_age_band_gain — un mondo nuovo può partire già
+# come un ecosistema stabilito). Ratio assente/tutta a 0 => pesi uguali tra le tre fasce, stesso
+# fallback di initial_ratio_by_biome sopra.
+func _seed_age_band_composition(
+	state: MacroCellState,
+	resource_type: GameTypes.WorldObjectType,
+	subtype_rules: Array,
+	split: Dictionary
+) -> void:
+	var rules_by_name: Dictionary = {}
+	for rule in subtype_rules:
+		rules_by_name[rule.subtype_name] = rule
+
+	for subtype_name in split.keys():
+		var rule: SubtypeRules = rules_by_name.get(subtype_name)
+		if rule == null or not rule.track_age_bands:
+			continue
+		var subtype_space: int = int(split[subtype_name])
+		if subtype_space <= 0:
+			continue
+
+		var age_weights: Dictionary = {}
+		for age_band in [GameTypes.AgeBand.YOUNG, GameTypes.AgeBand.ADULT, GameTypes.AgeBand.OLD]:
+			var ratio: float = float(rule.initial_age_ratio.get(age_band, 0.0))
+			if ratio > 0.0:
+				age_weights[age_band] = ratio
+		if age_weights.is_empty():
+			for age_band in [GameTypes.AgeBand.YOUNG, GameTypes.AgeBand.ADULT, GameTypes.AgeBand.OLD]:
+				age_weights[age_band] = 1.0
+
+		state.seed_age_band_composition(resource_type, subtype_name, subtype_space, age_weights)

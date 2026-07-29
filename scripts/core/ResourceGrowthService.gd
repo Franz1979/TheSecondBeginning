@@ -79,6 +79,18 @@ func _grow_resource_in_cell(
 		])
 
 	var subtype_weights := ResourceCalculator.get_biome_weighted_subtype_composition(resource_type, state, cell.biome)
-	state.apply_subtype_space_delta(resource_type, new_space - current_space, subtype_weights)
+	var gain_split := state.apply_subtype_space_delta(resource_type, new_space - current_space, subtype_weights)
+	_apply_age_band_gains(resource_type, state, gain_split)
 	state.set_dedicated_space(resource_type, new_space)
 	state.set_resource_quantity(resource_type, new_quantity)
+
+
+# Le nuove unità di crescita sono sempre "nate" quest'anno (età 0): finiscono per intero in
+# YOUNG, mai spostando individui già maturi — solo per i sottotipi con track_age_bands=true
+# (oggi solo SHRUB), no-op per gli altri.
+func _apply_age_band_gains(resource_type: GameTypes.WorldObjectType, state: MacroCellState, split: Dictionary) -> void:
+	for subtype_name in split.keys():
+		var rule := ResourceCalculator.get_subtype_rule(resource_type, subtype_name)
+		if rule == null or not rule.track_age_bands:
+			continue
+		state.add_age_band_gain(resource_type, subtype_name, int(split[subtype_name]))

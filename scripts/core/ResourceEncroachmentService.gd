@@ -131,14 +131,18 @@ func _encroach_resource_in_cell(
 
 		# Lato perdente: proporzione locale pura, invariata. La competizione territoriale
 		# (chi prende spazio a chi) non è un giudizio di idoneità climatica del sottotipo —
-		# solo growth/mortality usano il moltiplicatore di bioma, l'encroachment no.
+		# solo growth/mortality usano il moltiplicatore di bioma, l'encroachment no. Stessa
+		# filosofia estesa all'età: nessun peso esplicito (mortality_share_by_age è solo per la
+		# mortalità da fill_ratio), proporzione locale pura anche per le fasce età.
 		var new_weak_space: int = weak_space - space_taken
-		state.apply_subtype_space_delta(weak_type, -space_taken)
+		var weak_loss_split := state.apply_subtype_space_delta(weak_type, -space_taken)
+		_apply_age_band_losses(weak_type, state, weak_loss_split)
 		state.set_dedicated_space(weak_type, new_weak_space)
 		state.set_resource_quantity(weak_type, int(round(new_weak_space * weak_max_density)))
 
 		var gain_weights := ResourceCalculator.get_biome_weighted_subtype_composition(resource_type, state, cell.biome)
-		state.apply_subtype_space_delta(resource_type, space_taken, gain_weights)
+		var gain_split := state.apply_subtype_space_delta(resource_type, space_taken, gain_weights)
+		_apply_age_band_gains(resource_type, state, gain_split)
 		state.set_dedicated_space(resource_type, state.get_dedicated_space(resource_type) + space_taken)
 		state.add_resource_quantity(resource_type, int(round(applied_quantity)))
 
@@ -187,3 +191,23 @@ func _store_leftover(
 	if not leftover_surplus.has(cell_key):
 		leftover_surplus[cell_key] = {}
 	leftover_surplus[cell_key][resource_type] = leftover
+
+
+# Lato vincente: le unità guadagnate per encroachment sono "nuova crescita" quanto quelle di
+# ResourceGrowthService, finiscono sempre in YOUNG — solo per sottotipi track_age_bands=true.
+func _apply_age_band_gains(resource_type: GameTypes.WorldObjectType, state: MacroCellState, split: Dictionary) -> void:
+	for subtype_name in split.keys():
+		var rule := ResourceCalculator.get_subtype_rule(resource_type, subtype_name)
+		if rule == null or not rule.track_age_bands:
+			continue
+		state.add_age_band_gain(resource_type, subtype_name, int(split[subtype_name]))
+
+
+# Lato perdente: nessun peso esplicito (proporzione locale pura, vedi commento al call site) —
+# solo per sottotipi track_age_bands=true.
+func _apply_age_band_losses(resource_type: GameTypes.WorldObjectType, state: MacroCellState, split: Dictionary) -> void:
+	for subtype_name in split.keys():
+		var rule := ResourceCalculator.get_subtype_rule(resource_type, subtype_name)
+		if rule == null or not rule.track_age_bands:
+			continue
+		state.apply_age_band_loss(resource_type, subtype_name, int(split[subtype_name]))

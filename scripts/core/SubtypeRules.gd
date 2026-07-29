@@ -28,6 +28,36 @@ extends Resource
 # di stagionalità/rendering (chioma persistente vs caduca).
 @export var is_evergreen: bool = false
 
+@export_group("Age Bands")
+# Master switch: false (default) = comportamento invariato, nessuna delle logiche sotto viene
+# mai letta per questo sottotipo (stesso idioma "vuoto/false = non tracciato" di is_evergreen/
+# suitable_biomes sopra). true solo per i due sottotipi SHRUB oggi (wood_only, fruit_bearing).
+@export var track_age_bands: bool = false
+# Anni interi (nessuna frazione): quanti cicli di maturazione (fine primavera, vedi
+# ResourceAgeBandService) un individuo attraversa in YOUNG prima di passare ad ADULT, e in
+# ADULT prima di passare a OLD. La transizione è una frazione 1/N per anno (residenza media
+# statistica, non un tracking di coorte per anno di nascita).
+@export var maturation_years: int = 2
+@export var elder_years: int = 6
+# Quota (young, adult, old) del TOTALE morto quest'anno per fill_ratio (ResourceMortalityService)
+# attribuita a ciascuna fascia — convenzionalmente somma a 1.0, ma non validato a runtime (stesso
+# trattamento di initial_ratio_by_biome sopra: _split_by_weight normalizza comunque per la somma
+# dei pesi). Se una fascia non ha abbastanza unità per la propria quota, l'eccedenza si
+# ridistribuisce sulle altre (vedi MacroCellState.apply_age_band_loss/_split_by_weight_capped).
+@export var mortality_share_by_age: Array[float] = [0.34, 0.33, 0.33]
+# Coefficiente di produttività per fascia, usato SOLO dal calcolo delle risorse secondarie a
+# sottotipo (vedi CaloricCalculator._get_base_quantity): YOUNG non produce nulla, ADULT piena
+# produttività, OLD ridotta ma non nulla.
+@export var production_coefficient_young: float = 0.0
+@export var production_coefficient_adult: float = 1.0
+@export var production_coefficient_old: float = 0.65
+# Ripartizione (young, adult, old) usata SOLO al seeding iniziale del mondo
+# (InitialResourceSetupService), MAI durante la simulazione a regime (dove ogni guadagno va
+# sempre e solo in YOUNG, vedi MacroCellState.add_age_band_gain) — permette a un mondo nuovo di
+# partire come un ecosistema già stabilito invece che "appena piantato". Chiavi = GameTypes.
+# AgeBand assenti/tutte a 0 => ripiega su pesi uguali (stesso fallback di initial_ratio_by_biome).
+@export var initial_age_ratio: Dictionary = {}
+
 
 func is_suitable_for(biome: GameTypes.Biome, terrain: GameTypes.TerrainBase) -> bool:
 	if not suitable_biomes.is_empty() and not suitable_biomes.has(biome):

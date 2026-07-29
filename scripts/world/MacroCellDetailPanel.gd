@@ -202,9 +202,38 @@ func _update_shrub_subtype_label(cell: MacroCellData, state: MacroCellState) -> 
 		GameTypes.WorldObjectType.SHRUB, int(composition.get("fruit_bearing", 0)), cell
 	)
 
-	shrub_subtype_wood_label.text = "  - wood_only: " + NumberFormatter.format_int(wood_quantity)
-	shrub_subtype_fruit_bearing_label.text = "  - fruit_bearing: " + NumberFormatter.format_int(fruit_quantity)
+	shrub_subtype_wood_label.text = "  - wood_only: " + NumberFormatter.format_int(wood_quantity) \
+		+ _age_band_suffix(GameTypes.WorldObjectType.SHRUB, "wood_only", cell, state)
+	shrub_subtype_fruit_bearing_label.text = "  - fruit_bearing: " + NumberFormatter.format_int(fruit_quantity) \
+		+ _age_band_suffix(GameTypes.WorldObjectType.SHRUB, "fruit_bearing", cell, state)
 	shrub_subtype_container.visible = true
+
+
+# " (Y:.. - A:.. - O:..)" per i sottotipi con track_age_bands=true, stringa vuota altrimenti
+# (nessun suffisso — comportamento identico a prima per i sottotipi non ancora estesi alle age
+# bands, es. TREE oggi). Ogni fascia convertita da spazio a quantità con la stessa
+# get_subtype_quantity già usata per il totale del sottotipo sopra, mai sul dedicated_space.
+func _age_band_suffix(object_type: GameTypes.WorldObjectType, subtype_name: String, cell: MacroCellData, state: MacroCellState) -> String:
+	var rule := ResourceCalculator.get_subtype_rule(object_type, subtype_name)
+	if rule == null or not rule.track_age_bands:
+		return ""
+
+	var age_counts := state.get_age_composition(object_type, subtype_name)
+	var young_quantity := ResourceCalculator.get_subtype_quantity(
+		object_type, int(age_counts.get(GameTypes.AgeBand.YOUNG, 0)), cell
+	)
+	var adult_quantity := ResourceCalculator.get_subtype_quantity(
+		object_type, int(age_counts.get(GameTypes.AgeBand.ADULT, 0)), cell
+	)
+	var old_quantity := ResourceCalculator.get_subtype_quantity(
+		object_type, int(age_counts.get(GameTypes.AgeBand.OLD, 0)), cell
+	)
+
+	return " (Y:%s - A:%s - O:%s)" % [
+		NumberFormatter.format_int(young_quantity),
+		NumberFormatter.format_int(adult_quantity),
+		NumberFormatter.format_int(old_quantity)
+	]
 
 
 # Stesso formato a due righe di _update_shrub_subtype_label sopra, con le tre chiavi di TREE

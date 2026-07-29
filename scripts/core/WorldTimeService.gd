@@ -67,6 +67,12 @@ func _run_seasonal_checkpoints(world: World, game_data: GameData, year_rolled_ov
 
 
 func _run_growth_checkpoint(world: World, game_data: GameData) -> void:
+	# Maturazione PRIMA di growth/encroachment: opera sulla composizione young/adult/old
+	# ereditata dagli anni precedenti, cosicché le nascite di growth in questo stesso ciclo
+	# (età 0) non vengano mai incluse nella maturazione dello stesso anno in cui compaiono —
+	# vedi ResourceAgeBandService.
+	ResourceAgeBandService.new().mature_age_bands(world)
+
 	var growth_service := ResourceGrowthService.new()
 	growth_service.grow_resources(world, game_data)
 	var encroachment_service := ResourceEncroachmentService.new()

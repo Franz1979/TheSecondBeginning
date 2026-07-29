@@ -39,7 +39,10 @@ static func get_available_calories(
 # sottotipo (es. frutti): per queste ultime subtype_composition è in unità di SPAZIO
 # (microcelle), non resource_quantity — va convertito in quantità con la stessa densità usata
 # per l'aggregato del resource_type, tramite ResourceCalculator.get_subtype_quantity (identica
-# formula già usata da MacroCellDetailPanel per mostrare i sottotipi come quantità).
+# formula già usata da MacroCellDetailPanel per mostrare i sottotipi come quantità). Se il
+# sottotipo ha track_age_bands=true, la quantità non è più un blocco unico ugualmente produttivo:
+# va pesata per fascia d'età (vedi _get_age_weighted_quantity sotto); altrimenti (default, es.
+# FORAGE e ogni sottotipo non ancora esteso alle age bands) resta la formula piatta di sempre.
 static func _get_base_quantity(
 	rules: CaloricSourceRules,
 	cell: MacroCellData,
@@ -48,9 +51,42 @@ static func _get_base_quantity(
 ) -> float:
 	if rules.source_subtype.is_empty():
 		return float(state.get_resource_quantity(primary_resource_type))
+
+	var subtype_rule := ResourceCalculator.get_subtype_rule(primary_resource_type, rules.source_subtype)
+	if subtype_rule != null and subtype_rule.track_age_bands:
+		return _get_age_weighted_quantity(subtype_rule, cell, state, primary_resource_type, rules.source_subtype)
+
 	var composition := state.get_subtype_composition(primary_resource_type)
 	var subtype_space: int = int(composition.get(rules.source_subtype, 0))
 	return float(ResourceCalculator.get_subtype_quantity(primary_resource_type, subtype_space, cell))
+
+
+# Somma pesata per fascia d'età: YOUNG*production_coefficient_young + ADULT*..._adult +
+# OLD*..._old, ciascuna convertita da spazio a quantità separatamente (non su un totale
+# pre-pesato) con la stessa densità/formula di get_subtype_quantity, cosicché il fallback sopra
+# e questo ramo restino coerenti quando i coefficienti sono tutti 1.0.
+static func _get_age_weighted_quantity(
+	subtype_rule: SubtypeRules,
+	cell: MacroCellData,
+	state: MacroCellState,
+	primary_resource_type: GameTypes.WorldObjectType,
+	source_subtype: String
+) -> float:
+	var age_counts := state.get_age_composition(primary_resource_type, source_subtype)
+
+	var young_quantity := ResourceCalculator.get_subtype_quantity(
+		primary_resource_type, int(age_counts.get(GameTypes.AgeBand.YOUNG, 0)), cell
+	)
+	var adult_quantity := ResourceCalculator.get_subtype_quantity(
+		primary_resource_type, int(age_counts.get(GameTypes.AgeBand.ADULT, 0)), cell
+	)
+	var old_quantity := ResourceCalculator.get_subtype_quantity(
+		primary_resource_type, int(age_counts.get(GameTypes.AgeBand.OLD, 0)), cell
+	)
+
+	return young_quantity * subtype_rule.production_coefficient_young \
+		+ adult_quantity * subtype_rule.production_coefficient_adult \
+		+ old_quantity * subtype_rule.production_coefficient_old
 
 
 # Wrapper di comodo per FORAGE (oggi l'unica fonte caricata): risolve regole e risorsa

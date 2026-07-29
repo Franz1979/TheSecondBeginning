@@ -189,7 +189,21 @@ func _apply_transfer(world: World, transfer: Dictionary) -> void:
 	var new_space: int = min(int(ceil(float(new_total_quantity) / max_density)), current_space + empty_space)
 
 	if not filtered_weights.is_empty():
-		target_state.apply_subtype_space_delta(resource_type, new_space - current_space, filtered_weights)
+		var gain_split := target_state.apply_subtype_space_delta(resource_type, new_space - current_space, filtered_weights)
+		_apply_age_band_gains(resource_type, target_state, gain_split)
 
 	target_state.set_dedicated_space(resource_type, new_space)
 	target_state.set_resource_quantity(resource_type, new_total_quantity)
+
+
+# Le unità migrate sono "nuova dispersione di semi" verso la cella di destinazione, non
+# individui adulti in movimento: finiscono sempre in YOUNG lì — solo per sottotipi
+# track_age_bands=true (l'origine da cui sono partite non perde nulla in age_composition: il
+# surplus incamerato qui non era mai stato aggiunto a subtype_composition/age_composition della
+# cella di origine in primo luogo, vedi ResourceEncroachmentService._store_leftover).
+func _apply_age_band_gains(resource_type: GameTypes.WorldObjectType, state: MacroCellState, split: Dictionary) -> void:
+	for subtype_name in split.keys():
+		var rule := ResourceCalculator.get_subtype_rule(resource_type, subtype_name)
+		if rule == null or not rule.track_age_bands:
+			continue
+		state.add_age_band_gain(resource_type, subtype_name, int(split[subtype_name]))
