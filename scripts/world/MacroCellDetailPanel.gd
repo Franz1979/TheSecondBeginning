@@ -11,21 +11,27 @@ const TAB_SUSSISTENZA := 3
 @onready var tab_container: TabContainer = $MarginContainer/VBoxContainer/TabContainer
 @onready var geography_title_label: Label = $MarginContainer/VBoxContainer/TabContainer/GeografiaTab/SectionTitleLabel
 @onready var geography_info: CellGeographyInfo = $MarginContainer/VBoxContainer/TabContainer/GeografiaTab/CellGeographyInfo
-@onready var vegetation_title_label: Label = $MarginContainer/VBoxContainer/TabContainer/VegetazioneTab/SectionTitleLabel
-@onready var stone_number_label: Label = $MarginContainer/VBoxContainer/TabContainer/VegetazioneTab/StoneNumberLabel
-@onready var grass_number_label: Label = $MarginContainer/VBoxContainer/TabContainer/VegetazioneTab/GrassNumberLabel
-@onready var shrub_number_label: Label = $MarginContainer/VBoxContainer/TabContainer/VegetazioneTab/ShrubNumberLabel
-@onready var shrub_subtype_container: VBoxContainer = $MarginContainer/VBoxContainer/TabContainer/VegetazioneTab/ShrubSubtypeContainer
-@onready var shrub_subtype_wood_label: Label = $MarginContainer/VBoxContainer/TabContainer/VegetazioneTab/ShrubSubtypeContainer/ShrubSubtypeWoodLabel
-@onready var shrub_subtype_fruit_bearing_label: Label = $MarginContainer/VBoxContainer/TabContainer/VegetazioneTab/ShrubSubtypeContainer/ShrubSubtypeFruitBearingLabel
-@onready var tree_number_label: Label = $MarginContainer/VBoxContainer/TabContainer/VegetazioneTab/TreeNumberLabel
-@onready var tree_subtype_container: VBoxContainer = $MarginContainer/VBoxContainer/TabContainer/VegetazioneTab/TreeSubtypeContainer
-@onready var tree_subtype_wood_label: Label = $MarginContainer/VBoxContainer/TabContainer/VegetazioneTab/TreeSubtypeContainer/TreeSubtypeWoodLabel
-@onready var tree_subtype_wild_fruit_label: Label = $MarginContainer/VBoxContainer/TabContainer/VegetazioneTab/TreeSubtypeContainer/TreeSubtypeWildFruitLabel
-@onready var tree_subtype_domesticable_fruit_label: Label = $MarginContainer/VBoxContainer/TabContainer/VegetazioneTab/TreeSubtypeContainer/TreeSubtypeDomesticableFruitLabel
-@onready var tree_subtype_conifer_label: Label = $MarginContainer/VBoxContainer/TabContainer/VegetazioneTab/TreeSubtypeContainer/TreeSubtypeConiferLabel
-@onready var resource_separator_label: Label = $MarginContainer/VBoxContainer/TabContainer/VegetazioneTab/ResourceSeparatorLabel
-@onready var empty_space_label: Label = $MarginContainer/VBoxContainer/TabContainer/VegetazioneTab/EmptySpaceLabel
+@onready var vegetation_title_label: Label = $MarginContainer/VBoxContainer/TabContainer/VegetazioneTab/VegetazioneContent/SectionTitleLabel
+@onready var stone_number_label: Label = $MarginContainer/VBoxContainer/TabContainer/VegetazioneTab/VegetazioneContent/StoneNumberLabel
+@onready var grass_number_label: Label = $MarginContainer/VBoxContainer/TabContainer/VegetazioneTab/VegetazioneContent/GrassNumberLabel
+@onready var shrub_number_label: Label = $MarginContainer/VBoxContainer/TabContainer/VegetazioneTab/VegetazioneContent/ShrubNumberLabel
+@onready var shrub_subtype_container: VBoxContainer = $MarginContainer/VBoxContainer/TabContainer/VegetazioneTab/VegetazioneContent/ShrubSubtypeContainer
+@onready var shrub_subtype_wood_label: Label = $MarginContainer/VBoxContainer/TabContainer/VegetazioneTab/VegetazioneContent/ShrubSubtypeContainer/ShrubSubtypeWoodLabel
+@onready var shrub_subtype_wood_age_label: Label = $MarginContainer/VBoxContainer/TabContainer/VegetazioneTab/VegetazioneContent/ShrubSubtypeContainer/ShrubSubtypeWoodAgeLabel
+@onready var shrub_subtype_fruit_bearing_label: Label = $MarginContainer/VBoxContainer/TabContainer/VegetazioneTab/VegetazioneContent/ShrubSubtypeContainer/ShrubSubtypeFruitBearingLabel
+@onready var shrub_subtype_fruit_bearing_age_label: Label = $MarginContainer/VBoxContainer/TabContainer/VegetazioneTab/VegetazioneContent/ShrubSubtypeContainer/ShrubSubtypeFruitBearingAgeLabel
+@onready var tree_number_label: Label = $MarginContainer/VBoxContainer/TabContainer/VegetazioneTab/VegetazioneContent/TreeNumberLabel
+@onready var tree_subtype_container: VBoxContainer = $MarginContainer/VBoxContainer/TabContainer/VegetazioneTab/VegetazioneContent/TreeSubtypeContainer
+@onready var tree_subtype_wood_label: Label = $MarginContainer/VBoxContainer/TabContainer/VegetazioneTab/VegetazioneContent/TreeSubtypeContainer/TreeSubtypeWoodLabel
+@onready var tree_subtype_wood_age_label: Label = $MarginContainer/VBoxContainer/TabContainer/VegetazioneTab/VegetazioneContent/TreeSubtypeContainer/TreeSubtypeWoodAgeLabel
+@onready var tree_subtype_wild_fruit_label: Label = $MarginContainer/VBoxContainer/TabContainer/VegetazioneTab/VegetazioneContent/TreeSubtypeContainer/TreeSubtypeWildFruitLabel
+@onready var tree_subtype_wild_fruit_age_label: Label = $MarginContainer/VBoxContainer/TabContainer/VegetazioneTab/VegetazioneContent/TreeSubtypeContainer/TreeSubtypeWildFruitAgeLabel
+@onready var tree_subtype_domesticable_fruit_label: Label = $MarginContainer/VBoxContainer/TabContainer/VegetazioneTab/VegetazioneContent/TreeSubtypeContainer/TreeSubtypeDomesticableFruitLabel
+@onready var tree_subtype_domesticable_fruit_age_label: Label = $MarginContainer/VBoxContainer/TabContainer/VegetazioneTab/VegetazioneContent/TreeSubtypeContainer/TreeSubtypeDomesticableFruitAgeLabel
+@onready var tree_subtype_conifer_label: Label = $MarginContainer/VBoxContainer/TabContainer/VegetazioneTab/VegetazioneContent/TreeSubtypeContainer/TreeSubtypeConiferLabel
+@onready var tree_subtype_conifer_age_label: Label = $MarginContainer/VBoxContainer/TabContainer/VegetazioneTab/VegetazioneContent/TreeSubtypeContainer/TreeSubtypeConiferAgeLabel
+@onready var resource_separator_label: Label = $MarginContainer/VBoxContainer/TabContainer/VegetazioneTab/VegetazioneContent/ResourceSeparatorLabel
+@onready var empty_space_label: Label = $MarginContainer/VBoxContainer/TabContainer/VegetazioneTab/VegetazioneContent/EmptySpaceLabel
 @onready var fauna_title_label: Label = $MarginContainer/VBoxContainer/TabContainer/FaunaTab/SectionTitleLabel
 @onready var fish_number_label: Label = $MarginContainer/VBoxContainer/TabContainer/FaunaTab/FishNumberLabel
 @onready var fauna_separator_label: Label = $MarginContainer/VBoxContainer/TabContainer/FaunaTab/FaunaSeparatorLabel
@@ -202,21 +208,23 @@ func _update_shrub_subtype_label(cell: MacroCellData, state: MacroCellState) -> 
 		GameTypes.WorldObjectType.SHRUB, int(composition.get("fruit_bearing", 0)), cell
 	)
 
-	shrub_subtype_wood_label.text = "  - wood_only: " + NumberFormatter.format_int(wood_quantity) \
-		+ _age_band_suffix(GameTypes.WorldObjectType.SHRUB, "wood_only", cell, state)
-	shrub_subtype_fruit_bearing_label.text = "  - fruit_bearing: " + NumberFormatter.format_int(fruit_quantity) \
-		+ _age_band_suffix(GameTypes.WorldObjectType.SHRUB, "fruit_bearing", cell, state)
+	shrub_subtype_wood_label.text = "  - wood_only: " + NumberFormatter.format_int(wood_quantity)
+	_set_age_band_line(shrub_subtype_wood_age_label, GameTypes.WorldObjectType.SHRUB, "wood_only", cell, state)
+	shrub_subtype_fruit_bearing_label.text = "  - fruit_bearing: " + NumberFormatter.format_int(fruit_quantity)
+	_set_age_band_line(shrub_subtype_fruit_bearing_age_label, GameTypes.WorldObjectType.SHRUB, "fruit_bearing", cell, state)
 	shrub_subtype_container.visible = true
 
 
-# " (Y:.. - A:.. - O:..)" per i sottotipi con track_age_bands=true, stringa vuota altrimenti
-# (nessun suffisso — comportamento identico a prima per i sottotipi non ancora estesi alle age
-# bands, es. TREE oggi). Ogni fascia convertita da spazio a quantità con la stessa
+# Riga propria (invece che in coda alla riga principale, che altrimenti andava a capo male nella
+# sidebar stretta): "      (Y:.. - A:.. - O:..)" per i sottotipi con track_age_bands=true,
+# nascosta del tutto altrimenti (nessun suffisso — comportamento identico a prima per i sottotipi
+# non ancora estesi alle age bands). Ogni fascia convertita da spazio a quantità con la stessa
 # get_subtype_quantity già usata per il totale del sottotipo sopra, mai sul dedicated_space.
-func _age_band_suffix(object_type: GameTypes.WorldObjectType, subtype_name: String, cell: MacroCellData, state: MacroCellState) -> String:
+func _set_age_band_line(label: Label, object_type: GameTypes.WorldObjectType, subtype_name: String, cell: MacroCellData, state: MacroCellState) -> void:
 	var rule := ResourceCalculator.get_subtype_rule(object_type, subtype_name)
 	if rule == null or not rule.track_age_bands:
-		return ""
+		label.visible = false
+		return
 
 	var age_counts := state.get_age_composition(object_type, subtype_name)
 	var young_quantity := ResourceCalculator.get_subtype_quantity(
@@ -229,11 +237,12 @@ func _age_band_suffix(object_type: GameTypes.WorldObjectType, subtype_name: Stri
 		object_type, int(age_counts.get(GameTypes.AgeBand.OLD, 0)), cell
 	)
 
-	return " (Y:%s - A:%s - O:%s)" % [
+	label.text = "      (Y:%s - A:%s - O:%s)" % [
 		NumberFormatter.format_int(young_quantity),
 		NumberFormatter.format_int(adult_quantity),
 		NumberFormatter.format_int(old_quantity)
 	]
+	label.visible = true
 
 
 # Stesso formato a due righe di _update_shrub_subtype_label sopra, con le tre chiavi di TREE
@@ -258,9 +267,13 @@ func _update_tree_subtype_label(cell: MacroCellData, state: MacroCellState) -> v
 	)
 
 	tree_subtype_wood_label.text = "  - wood_only: " + NumberFormatter.format_int(wood_quantity)
+	_set_age_band_line(tree_subtype_wood_age_label, GameTypes.WorldObjectType.TREE, "wood_only", cell, state)
 	tree_subtype_wild_fruit_label.text = "  - wild_fruit: " + NumberFormatter.format_int(wild_fruit_quantity)
+	_set_age_band_line(tree_subtype_wild_fruit_age_label, GameTypes.WorldObjectType.TREE, "wild_fruit", cell, state)
 	tree_subtype_domesticable_fruit_label.text = "  - domesticable_fruit: " + NumberFormatter.format_int(domesticable_fruit_quantity)
+	_set_age_band_line(tree_subtype_domesticable_fruit_age_label, GameTypes.WorldObjectType.TREE, "domesticable_fruit", cell, state)
 	tree_subtype_conifer_label.text = "  - conifer: " + NumberFormatter.format_int(conifer_quantity)
+	_set_age_band_line(tree_subtype_conifer_age_label, GameTypes.WorldObjectType.TREE, "conifer", cell, state)
 	tree_subtype_container.visible = true
 
 

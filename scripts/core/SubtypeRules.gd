@@ -57,6 +57,12 @@ extends Resource
 # partire come un ecosistema già stabilito invece che "appena piantato". Chiavi = GameTypes.
 # AgeBand assenti/tutte a 0 => ripiega su pesi uguali (stesso fallback di initial_ratio_by_biome).
 @export var initial_age_ratio: Dictionary = {}
+# Fattore di scala aggiuntivo (young, adult, old) applicato alla dimensione visiva di una
+# posizione in MicroCellRenderer, moltiplicato insieme alla variazione random già esistente
+# per-istanza — vedi AgeBandVisualService per come una posizione viene assegnata a una fascia.
+# [1.0, 1.0, 1.0] neutro: default per i sottotipi con track_age_bands=false, dove nessuna
+# fascia viene mai calcolata.
+@export var size_multiplier_by_age: Array[float] = [1.0, 1.0, 1.0]
 
 
 func is_suitable_for(biome: GameTypes.Biome, terrain: GameTypes.TerrainBase) -> bool:

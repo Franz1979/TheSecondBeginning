@@ -211,8 +211,10 @@ func _refresh_resource_visuals() -> void:
 	rabbit_renderer.set_population(macro_state.get_animal_population("rabbit"))
 
 	renderer.set_shrub_fruit_ratio(_get_shrub_fruit_ratio())
+	renderer.set_shrub_age_params(game_data.year, _get_age_params(GameTypes.WorldObjectType.SHRUB))
 	renderer.set_tree_fruit_ratios(_get_tree_subtype_ratio("wild_fruit"), _get_tree_subtype_ratio("domesticable_fruit"))
 	renderer.set_tree_conifer_ratio(_get_tree_subtype_ratio("conifer"))
+	renderer.set_tree_age_params(game_data.year, _get_age_params(GameTypes.WorldObjectType.TREE))
 	# Dopo le posizioni: set_season ricostruisce anche il buffer erba (colore dipende dalla
 	# stagione), così lo fa una volta sola con le posizioni già aggiornate invece di due volte.
 	renderer.set_season(SeasonCalculator.get_season_for_day(game_data.current_day))
@@ -247,6 +249,31 @@ func _get_shrub_fruit_ratio() -> float:
 
 	var fruit_count: int = int(composition.get("fruit_bearing", 0))
 	return float(fruit_count) / float(total)
+
+# Parametri fasce età per ciascun sottotipo di object_type con track_age_bands=true nella
+# macrocella corrente (chiave = subtype_name), passati già risolti a MicroCellRenderer (vedi
+# _refresh_resource_visuals, chiamata per SHRUB e TREE) — stessa separazione di responsabilità di
+# _get_shrub_fruit_ratio: il renderer non conosce ResourceCalculator/MacroCellState, riceve solo
+# dati già pronti. I ratio arrivano da MacroCellState.get_age_composition, non normalizzati qui
+# (AgeBandVisualService normalizza già internamente).
+func _get_age_params(object_type: GameTypes.WorldObjectType) -> Dictionary:
+	var params: Dictionary = {}
+	for rule in ResourceCalculator.get_subtype_rules(object_type):
+		if not rule.track_age_bands:
+			continue
+
+		var composition := macro_state.get_age_composition(object_type, rule.subtype_name)
+		var young: int = int(composition.get(GameTypes.AgeBand.YOUNG, 0))
+		var adult: int = int(composition.get(GameTypes.AgeBand.ADULT, 0))
+		var old: int = int(composition.get(GameTypes.AgeBand.OLD, 0))
+
+		params[rule.subtype_name] = {
+			"maturation_years": rule.maturation_years,
+			"elder_years": rule.elder_years,
+			"size_multiplier_by_age": rule.size_multiplier_by_age,
+			"ratios": [float(young), float(adult), float(old)],
+		}
+	return params
 
 # Quota di dedicated_space TREE classificata come subtype_name nella macrocella corrente (0 se
 # TREE non ha ancora sottotipi tracciati lì, es. cella senza tree). Un'unica funzione parametrica

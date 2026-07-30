@@ -97,6 +97,20 @@ var _stone_multimeshes: Array = [] # MultiMesh, indicizzato per variante — un 
 # conosce subtype_composition: riceve solo questo rapporto già calcolato dal chiamante (stessa
 # separazione di responsabilità di vegetation_positions, che arriva già generato).
 var shrub_fruit_ratio: float = 0.0
+# Parametri fasce età per sottotipo SHRUB, chiave = subtype_name ("wood_only"/"fruit_bearing"),
+# valore = {"maturation_years": int, "elder_years": int, "size_multiplier_by_age": Array[float],
+# "ratios": Array[float]} — tutti già risolti dal chiamante (SubtypeRules + age_composition),
+# stessa separazione di responsabilità di shrub_fruit_ratio sopra: il renderer non legge mai
+# ResourceCalculator/MacroCellState direttamente. Un sottotipo assente da questo dizionario (es.
+# track_age_bands=false) non riceve mai variazione di dimensione (vedi _resolve_age_band_and_size).
+var shrub_age_params: Dictionary = {}
+# Anno di gioco corrente (game_data.year), servito insieme a shrub_age_params perché
+# AgeBandVisualService ne ha bisogno per calcolare gli anni vissuti di ogni posizione.
+var shrub_current_year: int = 0
+# Stessa coppia di shrub_age_params/shrub_current_year sopra, ma per i 4 sottotipi TREE
+# ("wood_only"/"wild_fruit"/"domesticable_fruit"/"conifer") — vedi set_tree_age_params.
+var tree_age_params: Dictionary = {}
+var tree_current_year: int = 0
 # Quota wild_fruit/totale e domesticable_fruit/totale della composizione TREE della macrocella
 # (0..1 ciascuno, indipendenti) — stessa separazione di responsabilità di shrub_fruit_ratio
 # sopra. Due rapporti separati (non uno combinato) perché ora ogni sottotipo ha un colore
@@ -169,6 +183,13 @@ func set_shrub_fruit_ratio(ratio: float) -> void:
 	queue_redraw()
 
 
+func set_shrub_age_params(current_year: int, age_params: Dictionary) -> void:
+	shrub_current_year = current_year
+	shrub_age_params = age_params
+	_rebuild_shrub_multimeshes()
+	queue_redraw()
+
+
 func set_tree_fruit_ratios(wild_ratio: float, domesticable_ratio: float) -> void:
 	tree_wild_fruit_ratio = clamp(wild_ratio, 0.0, 1.0)
 	tree_domesticable_fruit_ratio = clamp(domesticable_ratio, 0.0, 1.0)
@@ -179,6 +200,13 @@ func set_tree_fruit_ratios(wild_ratio: float, domesticable_ratio: float) -> void
 
 func set_tree_conifer_ratio(ratio: float) -> void:
 	tree_conifer_ratio = clamp(ratio, 0.0, 1.0)
+	_rebuild_tree_multimeshes()
+	queue_redraw()
+
+
+func set_tree_age_params(current_year: int, age_params: Dictionary) -> void:
+	tree_current_year = current_year
+	tree_age_params = age_params
 	_rebuild_tree_multimeshes()
 	queue_redraw()
 
@@ -494,6 +522,17 @@ static func _build_conifer_mesh(color: Color) -> ArrayMesh:
 	return _build_fan_mesh(points, color)
 
 
+# Salt indipendente da tutti gli altri test hash di TREE (conifer/fruttiferità/domesticable/dot
+# frutto) per il percentile stabile usato da AgeBandVisualService — stesso ruolo di
+# SHRUB_AGE_SALT sopra, principio di indipendenza identico.
+const TREE_AGE_SALT := Vector2i(179, 97)
+
+# Anno di nascita virtuale per posizione TREE, stessa cache/logica di _shrub_birth_year_cache
+# sopra (vedi _resolve_age_band_and_size) ma tenuta separata: una stessa cella griglia può
+# ospitare SHRUB in un anno e TREE in un altro (successione ecologica), le due cache non vanno
+# mai confuse.
+var _tree_birth_year_cache: Dictionary = {} # Vector2i -> int
+
 # Albero stilizzato: tronco (rettangolo) + chioma (cerchio) sopra, con leggera variazione
 # di dimensione/offset orizzontale per albero, derivata deterministicamente dalla sua
 # posizione — stessa formula di sempre, solo scritta in un transform per-istanza invece che
@@ -512,16 +551,40 @@ func _rebuild_tree_multimeshes() -> void:
 
 	var deciduous_canopy_color: Color = TREE_CANOPY_PALETTE_BY_SEASON.get(current_season, VEGETATION_COLORS[GameTypes.WorldObjectType.TREE])
 
+	var is_first_tree_sight: bool = _prepare_age_cache_pass(positions, _tree_birth_year_cache)
+
 	for pos in positions:
 		var base := Vector2(pos.x * CELL_SIZE, pos.y * CELL_SIZE)
 		var half: float = CELL_SIZE / 2.0
+
+		# Stessa identità di sottotipo esclusiva già usata per colore/forma chioma e ratio
+		# frutta (conifer / wood_only / wild_fruit / domesticable_fruit), qui risolta una sola
+		# volta in un nome per scegliere i parametri fascia età corretti (i 4 sottotipi hanno
+		# maturation_years/elder_years diversi).
+		var is_conifer: bool = _is_tree_conifer(pos)
+		var is_fruit_bearing: bool = not is_conifer and _is_tree_fruit_bearing(pos)
+		var is_domesticable: bool = is_fruit_bearing and _is_tree_fruit_domesticable(pos)
+		var subtype_name: String
+		if is_conifer:
+			subtype_name = "conifer"
+		elif is_fruit_bearing:
+			subtype_name = "domesticable_fruit" if is_domesticable else "wild_fruit"
+		else:
+			subtype_name = "wood_only"
+
+		var resolved := _resolve_age_band_and_size(
+			pos, subtype_name, tree_age_params, _tree_birth_year_cache,
+			TREE_AGE_SALT, tree_current_year, is_first_tree_sight
+		)
+		var age_band: GameTypes.AgeBand = resolved["age_band"]
+		var size_multiplier: float = resolved["size_multiplier"]
 
 		var size_variation: float = float(hash(pos) % 1000) / 1000.0
 		var offset_variation: float = float(hash(pos * 7 + Vector2i(3, 11)) % 1000) / 1000.0
 		var horizontal_offset: float = lerp(-1.0, 1.0, offset_variation)
 
-		var trunk_width: float = 1.6
-		var trunk_height: float = lerp(3.0, 4.0, size_variation)
+		var trunk_width: float = 1.6 * size_multiplier
+		var trunk_height: float = lerp(3.0, 4.0, size_variation) * size_multiplier
 		var trunk_x: float = base.x + half + horizontal_offset - trunk_width / 2.0
 		var trunk_y: float = base.y + CELL_SIZE - trunk_height - 0.5
 
@@ -529,7 +592,7 @@ func _rebuild_tree_multimeshes() -> void:
 		trunk_transform.origin = Vector2(trunk_x, trunk_y)
 		trunk_transforms.append(trunk_transform)
 
-		var canopy_radius: float = lerp(2.8, 3.8, size_variation)
+		var canopy_radius: float = lerp(2.8, 3.8, size_variation) * size_multiplier
 		var canopy_center := Vector2(base.x + half + horizontal_offset, trunk_y - canopy_radius * 0.6)
 		var canopy_transform := Transform2D(0, Vector2.ZERO).scaled(Vector2(canopy_radius, canopy_radius))
 		canopy_transform.origin = canopy_center
@@ -539,15 +602,18 @@ func _rebuild_tree_multimeshes() -> void:
 		# test frutta) — a differenza del test frutta stesso, qui l'esclusione è intenzionale ed
 		# esplicita, non solo un'approssimazione indipendente (vedi discussione: conifer non deve
 		# mai comparire con ghiande/mele).
-		if _is_tree_conifer(pos):
+		if is_conifer:
 			conifer_canopy_transforms.append(canopy_transform)
 		else:
 			canopy_transforms.append(canopy_transform)
 			canopy_colors.append(deciduous_canopy_color)
 
-			if _is_tree_fruit_bearing(pos):
+			# YOUNG non produce mai frutti (production_coefficient_young = 0.0, stesso
+			# coefficiente usato dal calcolo calorico), stesso gate già applicato alle bacche
+			# shrub — irrilevante per wood_only/conifer, che non entrano mai in questo ramo.
+			if is_fruit_bearing and age_band != GameTypes.AgeBand.YOUNG:
 				var dots := _build_tree_fruit_transforms(pos, canopy_center, canopy_radius)
-				if _is_tree_fruit_domesticable(pos):
+				if is_domesticable:
 					domesticable_fruit_transforms.append_array(dots)
 				else:
 					wild_fruit_transforms.append_array(dots)
@@ -642,6 +708,18 @@ const SHRUB_BERRY_SALTS := [
 	Vector2i(7, 37),
 	Vector2i(53, 3),
 ]
+# Salt indipendente da tutti gli altri (blob/bacche/fruttiferità) per il percentile stabile
+# usato da AgeBandVisualService — deve avere una propria sequenza hash, altrimenti la fascia
+# età risulterebbe correlata alla fruttiferità o alla forma dei lobi invece che indipendente.
+const SHRUB_AGE_SALT := Vector2i(163, 71)
+
+# Anno di nascita virtuale per posizione shrub, cache che vive per tutta la sessione di questa
+# MicroCellRenderer (mai persistita su disco — si azzera quando si rientra nella macrocella,
+# stessa non-persistenza di vegetation_positions). Popolata/consultata solo da
+# _resolve_age_band_and_size: vedi il commento lì per la logica "primo sguardo vs crescita nuova".
+# Cache separata da _tree_birth_year_cache (vedi sotto): stessa posizione griglia può ospitare
+# risorse diverse in anni diversi, le due non vanno mai confuse.
+var _shrub_birth_year_cache: Dictionary = {} # Vector2i -> int
 
 func _rebuild_shrub_multimeshes() -> void:
 	_ensure_vegetation_meshes()
@@ -652,17 +730,29 @@ func _rebuild_shrub_multimeshes() -> void:
 	var blob_colors: Array = []
 	var berry_transforms: Array = []
 
+	var is_first_shrub_sight: bool = _prepare_age_cache_pass(positions, _shrub_birth_year_cache)
+
 	for pos in positions:
 		var base := Vector2(pos.x * CELL_SIZE, pos.y * CELL_SIZE)
 		var half: float = CELL_SIZE / 2.0
 		var center := base + Vector2(half, half)
+
+		var is_fruit_bearing: bool = _is_shrub_fruit_bearing(pos)
+		var subtype_name: String = "fruit_bearing" if is_fruit_bearing else "wood_only"
+
+		var resolved := _resolve_age_band_and_size(
+			pos, subtype_name, shrub_age_params, _shrub_birth_year_cache,
+			SHRUB_AGE_SALT, shrub_current_year, is_first_shrub_sight
+		)
+		var age_band: GameTypes.AgeBand = resolved["age_band"]
+		var size_multiplier: float = resolved["size_multiplier"]
 
 		var blob_count: int = 3 + (hash(pos) % 2) # 3 o 4 lobi, variabile per shrub
 		for i in range(blob_count):
 			var salt: Vector2i = SHRUB_BLOB_SALTS[i]
 			var angle: float = (float(hash(pos * salt.x + Vector2i(salt.y, i)) % 1000) / 1000.0) * TAU
 			var distance: float = lerp(0.8, 1.8, float(hash(pos * salt.y + Vector2i(i, salt.x)) % 1000) / 1000.0)
-			var radius: float = lerp(1.4, 2.2, float(hash(pos * (salt.x + salt.y) + Vector2i(i, i)) % 1000) / 1000.0)
+			var radius: float = lerp(1.4, 2.2, float(hash(pos * (salt.x + salt.y) + Vector2i(i, i)) % 1000) / 1000.0) * size_multiplier
 			var hue_t: float = float(hash(pos * (salt.x + salt.y + 41) + Vector2i(i, i + 1)) % 1000) / 1000.0
 			var blob_color: Color = COLOR_SHRUB_GREEN.lerp(COLOR_SHRUB_BROWN, hue_t)
 			var blob_center := center + Vector2(cos(angle), sin(angle)) * distance
@@ -672,7 +762,10 @@ func _rebuild_shrub_multimeshes() -> void:
 			blob_transforms.append(blob_transform)
 			blob_colors.append(blob_color)
 
-		if _is_shrub_fruit_bearing(pos):
+		# YOUNG non produce mai bacche (production_coefficient_young = 0.0, stesso coefficiente
+		# usato dal calcolo calorico): il test di fruttiferità resta indipendente dalla fascia
+		# età, ma qui viene comunque soppresso per le posizioni YOUNG.
+		if is_fruit_bearing and age_band != GameTypes.AgeBand.YOUNG:
 			var berry_count: int = 2 + (hash(pos * 61 + Vector2i(3, 8)) % 2) # 2 o 3 bacche
 			for i in range(berry_count):
 				var berry_salt: Vector2i = SHRUB_BERRY_SALTS[i % SHRUB_BERRY_SALTS.size()]
@@ -689,6 +782,75 @@ func _rebuild_shrub_multimeshes() -> void:
 		_shrub_multimesh.set_instance_color(i, blob_colors[i])
 
 	_apply_transforms(_berry_multimesh, berry_transforms)
+
+
+# Passo di preparazione condiviso da qualunque risorsa con age bands (oggi SHRUB e TREE), da
+# chiamare una volta sola all'inizio del rebuild, PRIMA del loop sulle posizioni:
+# - dimentica dalla cache le posizioni non più occupate (piante morte o migrate), altrimenti la
+#   cache cresce senza limite in una sessione lunga.
+# - calcola "primo sguardo assoluto" (cache ancora vuota) UNA VOLTA per l'intero rebuild, non
+#   posizione per posizione — altrimenti solo la prima posizione processata userebbe la stima a
+#   percentile e tutte le altre nuove verrebbero scambiate per "crescita di quest'anno".
+# birth_year_cache è passata per riferimento (i Dictionary in GDScript lo sono sempre): le
+# erase() qui dentro modificano direttamente il campo del chiamante (_shrub_birth_year_cache o
+# _tree_birth_year_cache).
+func _prepare_age_cache_pass(positions: Array, birth_year_cache: Dictionary) -> bool:
+	var position_set: Dictionary = {}
+	for pos in positions:
+		position_set[pos] = true
+	for cached_pos in birth_year_cache.keys():
+		if not position_set.has(cached_pos):
+			birth_year_cache.erase(cached_pos)
+	return birth_year_cache.is_empty()
+
+
+# Fascia età + moltiplicatore dimensione per una posizione, condiviso da qualunque risorsa con
+# age bands (oggi SHRUB e TREE) — l'anno di nascita virtuale viene risolto UNA SOLA VOLTA e poi
+# tenuto fisso per tutta la sessione (vedi _shrub_birth_year_cache/_tree_birth_year_cache):
+# - posizione già in birth_year_cache (vista in un rebuild precedente) => anno invariato,
+#   invecchia solo perché current_year avanza altrove, mai perché questa stima cambia.
+# - posizione nuova MA is_first_sight (primo rebuild in assoluto con parametri reali per questa
+#   macrocella) => non sappiamo se è vecchia o nuova, la stimiamo dai ratio aggregati correnti
+#   (age_composition) con AgeBandVisualService.compute_virtual_birth_year.
+# - posizione nuova E NON is_first_sight => crescita di quest'anno per costruzione (era assente
+#   l'anno scorso), quindi nasce oggi — coerente con MacroCellState.add_age_band_gain, dove ogni
+#   guadagno va sempre e solo in YOUNG. Questo è il caso che altrimenti mancherebbe: una
+#   posizione potrebbe comparire già "vecchia" per puro hash, senza nessun legame con il fatto
+#   che fosse davvero appena cresciuta.
+# Nessuna entry in params_by_subtype per quel sottotipo (params reali non ancora arrivati, o
+# sottotipo con track_age_bands=false) => resta neutro e NON tocca la cache: scriverci un anno
+# di nascita fittizio la inquinerebbe prima ancora che arrivino i dati veri.
+func _resolve_age_band_and_size(
+	pos: Vector2i,
+	subtype_name: String,
+	params_by_subtype: Dictionary,
+	birth_year_cache: Dictionary,
+	salt: Vector2i,
+	current_year: int,
+	is_first_sight: bool
+) -> Dictionary:
+	var params: Dictionary = params_by_subtype.get(subtype_name, {})
+	if params.is_empty():
+		return {"age_band": GameTypes.AgeBand.ADULT, "size_multiplier": 1.0}
+
+	var birth_year: int
+	if birth_year_cache.has(pos):
+		birth_year = birth_year_cache[pos]
+	else:
+		if is_first_sight:
+			birth_year = AgeBandVisualService.compute_virtual_birth_year(
+				pos, salt, current_year,
+				params["maturation_years"], params["elder_years"], params["ratios"]
+			)
+		else:
+			birth_year = current_year
+		birth_year_cache[pos] = birth_year
+
+	var years_lived: int = current_year - birth_year
+	var age_band: GameTypes.AgeBand = AgeBandVisualService.band_for_age(
+		years_lived, params["maturation_years"], params["elder_years"]
+	)
+	return {"age_band": age_band, "size_multiplier": params["size_multiplier_by_age"][age_band]}
 
 
 # Identità fruttifera stabile per posizione: un valore 0..1 derivato SOLO da pos (nessuna
