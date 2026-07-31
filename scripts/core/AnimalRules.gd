@@ -35,3 +35,54 @@ extends Resource
 # movimento dei gruppi disegnati; move_speed resta usato solo per il vagare continuo dei
 # centri-cluster invisibili (vedi AnimalGroupRenderer).
 @export var hop_speed: float = 6.0
+
+@export_group("Age Bands")
+# Master switch, analogo a SubtypeRules.track_age_bands: false (default) = nessuna delle
+# logiche sotto viene mai letta per questa specie (nessuna specie futura la eredita per
+# sbaglio). true solo per rabbit oggi.
+@export var track_age_bands: bool = false
+# Stagione di fine-checkpoint in cui gira la maturazione annuale delle age band per QUESTA
+# specie (vedi WorldTimeService._run_animal_lifecycle_checkpoint / AnimalAgeBandService) — a
+# differenza della vegetazione, che matura sempre a fine primavera, ogni specie animale ha la
+# propria stagione di "nascita" e quindi il proprio momento di invecchiamento annuale.
+@export var birth_season: GameTypes.Season = GameTypes.Season.SPRING
+# Anni interi: durata PROPRIA di ciascuna fascia, indipendente dalle altre (non soglie
+# cumulative di età dalla nascita) — quanti cicli di maturazione (vedi birth_season sopra) un
+# individuo trascorre in YOUNG prima di passare ad ADULT (youth_duration_years), e quanti in
+# ADULT prima di passare a OLD (adult_duration_years). Transizione frazionaria 1/N per anno,
+# stessa semantica di SubtypeRules.youth_duration_years/adult_duration_years.
+@export var youth_duration_years: int = 2
+@export var adult_duration_years: int = 6
+# Durata PROPRIA della fascia OLD (stesso principio di youth_duration_years/adult_duration_years
+# sopra, non un'età cumulativa dalla nascita): quanti anni un individuo trascorre OLD prima di
+# morire di vecchiaia — vita attesa totale = youth_duration_years + adult_duration_years +
+# old_duration_years. NON ancora usato da nessuna logica (mortalità per vecchiaia è un prompt
+# futuro): solo campo dati per ora. Per le piante questo parametro non serve (la mortalità è
+# già coperta da fill_ratio/competizione spaziale), ma gli animali non hanno un equivalente del
+# fill_ratio, quindi serve un limite di età reale.
+@export var old_duration_years: int = 10
+# Quota (young, adult, old) del totale perso per fame/vecchiaia attribuita a ciascuna fascia —
+# NON ancora usato da nessuna logica (prompt futuro). Stesso schema di
+# SubtypeRules.mortality_share_by_age: convenzionalmente somma a 1.0, non validato a runtime.
+@export var mortality_share_by_age: Array[float] = [0.34, 0.33, 0.33]
+# Moltiplicatore (young, adult, old) applicato a daily_caloric_requirement nel calcolo del
+# fabbisogno totale per cella (vedi AnimalConsumptionService._get_total_daily_requirement):
+# adult=1.0 è il valore di riferimento a cui daily_caloric_requirement è tarato, young
+# tipicamente <1 (cucciolo, mangia meno). Letto SOLO quando track_age_bands=true — altrimenti
+# il fabbisogno resta la vecchia formula flat population × daily_caloric_requirement.
+@export var caloric_multiplier_by_age: Array[float] = [1.0, 1.0, 1.0]
+# Moltiplicatore (young, adult, old) di fertilità per fascia — coefficiente, non un gate
+# binario "solo adult": una fascia a 0.0 semplicemente non contribuisce alle nascite, ma resta
+# configurabile per una fertilità parziale futura (es. young/old parzialmente fertili). Usato
+# da AnimalBirthService insieme a base_birth_rate, stesso schema di caloric_multiplier_by_age.
+@export var fertility_multiplier_by_age: Array[float] = [0.0, 1.0, 0.0]
+# Coefficiente di natalità annuale per la specie: nascite = (young×fert[Y] + adult×fert[A] +
+# old×fert[O]) × base_birth_rate, stesso principio della crescita logistica vegetale (un
+# coefficiente che moltiplica la popolazione di riferimento, nessuna curva/modulazione per
+# ora). Letto SOLO quando track_age_bands=true (vedi AnimalBirthService).
+@export var base_birth_rate: float = 0.0
+# Ripartizione (young, adult, old) usata SOLO dal seeding/reseeding manuale della popolazione
+# (oggi il pulsante debug "set rabbit population" in GameScene.gd, vedi
+# MacroCellState.set_animal_age_composition) — mai durante la simulazione a regime. Assente o
+# tutto a 0 => pesi uguali, stesso fallback di SubtypeRules.initial_age_ratio.
+@export var initial_age_ratio: Dictionary = {}

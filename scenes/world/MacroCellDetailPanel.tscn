@@ -145,25 +145,37 @@ theme_override_font_sizes/font_size = 11
 layout_mode = 2
 theme_override_font_sizes/font_size = 11
 
-[node name="FaunaTab" type="VBoxContainer" parent="MarginContainer/VBoxContainer/TabContainer"]
+[node name="FaunaTab" type="ScrollContainer" parent="MarginContainer/VBoxContainer/TabContainer"]
 visible = false
 layout_mode = 2
+horizontal_scroll_mode = 0
 
-[node name="SectionTitleLabel" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/FaunaTab"]
+[node name="FaunaContent" type="VBoxContainer" parent="MarginContainer/VBoxContainer/TabContainer/FaunaTab"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="SectionTitleLabel" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/FaunaTab/FaunaContent"]
 layout_mode = 2
 theme_override_font_sizes/font_size = 13
 
-[node name="FishNumberLabel" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/FaunaTab"]
+[node name="FishNumberLabel" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/FaunaTab/FaunaContent"]
 layout_mode = 2
 theme_override_font_sizes/font_size = 11
 
-[node name="FaunaSeparatorLabel" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/FaunaTab"]
+[node name="FaunaSeparatorLabel" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/FaunaTab/FaunaContent"]
 layout_mode = 2
 theme_override_font_sizes/font_size = 11
 
-[node name="WaterEmptySpaceLabel" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/FaunaTab"]
+[node name="WaterEmptySpaceLabel" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/FaunaTab/FaunaContent"]
 layout_mode = 2
 theme_override_font_sizes/font_size = 11
+
+[node name="AnimalSeparatorLabel" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/FaunaTab/FaunaContent"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 11
+
+[node name="AnimalPopulationContainer" type="VBoxContainer" parent="MarginContainer/VBoxContainer/TabContainer/FaunaTab/FaunaContent"]
+layout_mode = 2
 
 [node name="SussistenzaTab" type="VBoxContainer" parent="MarginContainer/VBoxContainer/TabContainer"]
 visible = false

@@ -31,6 +31,11 @@ func force_advance_to_year_end(world: World, game_data: GameData) -> void:
 
 # Dispatches to the seasonal pipeline steps whose checkpoint day matches game_data.current_day:
 #   - start of spring: apply last autumn's pending migration surplus (compute + apply transfers)
+#   - end of each season: animal lifecycle (age-band maturation, then births) for whichever
+#     species have that AnimalRules.birth_season (see AnimalAgeBandService/AnimalBirthService)
+#     — always before that day's other sibling checkpoint, and maturation always before births
+#     within the lifecycle checkpoint itself, so this year's newborns never mature the same
+#     cycle they're born in — same principle as vegetation's age-band maturation before growth
 #   - end of spring: growth + encroachment, leftover surplus stored as this year's pending surplus
 #   - start of each season: evaluate natural event types whose reference_season matches
 #   - end of autumn (year rollover): mortality
@@ -45,11 +50,19 @@ func _run_seasonal_checkpoints(world: World, game_data: GameData, year_rolled_ov
 		_run_migration_checkpoint(world, game_data)
 		checkpoint_ran = true
 
+	# Nessun'altra logica gira ancora a fine inverno: blocco dedicato solo alle specie animali
+	# con birth_season == WINTER (nessuna oggi, ma il checkpoint deve esistere comunque).
+	if day == SeasonCalculator.get_season_end_day(GameTypes.Season.WINTER):
+		_run_animal_lifecycle_checkpoint(world, GameTypes.Season.WINTER)
+		checkpoint_ran = true
+
 	if day == SeasonCalculator.get_season_end_day(GameTypes.Season.SPRING):
+		_run_animal_lifecycle_checkpoint(world, GameTypes.Season.SPRING)
 		_run_growth_checkpoint(world, game_data)
 		checkpoint_ran = true
 
 	if day == SeasonCalculator.get_season_end_day(GameTypes.Season.SUMMER):
+		_run_animal_lifecycle_checkpoint(world, GameTypes.Season.SUMMER)
 		_run_fauna_migration_checkpoint(world)
 		checkpoint_ran = true
 
@@ -60,10 +73,27 @@ func _run_seasonal_checkpoints(world: World, game_data: GameData, year_rolled_ov
 			checkpoint_ran = true
 
 	if year_rolled_over:
+		# AUTUMN "end of season" non può essere un confronto sul giorno (current_day è già
+		# tornato a 0 quando year_rolled_over è true, vedi GameData.advance_day) — year_rolled_over
+		# stesso è il segnale di fine autunno, stesso schema già usato da _run_mortality_checkpoint.
+		_run_animal_lifecycle_checkpoint(world, GameTypes.Season.AUTUMN)
 		_run_mortality_checkpoint(world)
 		checkpoint_ran = true
 
 	return checkpoint_ran
+
+
+func _run_animal_lifecycle_checkpoint(world: World, season: GameTypes.Season) -> void:
+	# Ordine fisso: maturazione -> nascite -> morte per vecchiaia. Maturazione PRIMA, nascite
+	# DOPO — così i nuovi nati (sempre aggiunti in YOUNG da AnimalBirthService) non maturano mai
+	# nello stesso ciclo in cui compaiono, garantito strutturalmente dall'ordine di chiamata qui,
+	# non da un controllo a parte. Morte per vecchiaia PER ULTIMA: include anche gli individui
+	# appena entrati in OLD in questo stesso checkpoint (la maturazione adult->old gira prima,
+	# sopra) — nessuno stato "appena arrivato" viene tracciato da nessuna transizione di fascia,
+	# quindi non lo tracciamo neanche per la mortalità (vedi AnimalOldAgeMortalityService).
+	AnimalAgeBandService.new().mature_age_bands(world, season)
+	AnimalBirthService.new().apply_births(world, season)
+	AnimalOldAgeMortalityService.new().apply_old_age_mortality(world, season)
 
 
 func _run_growth_checkpoint(world: World, game_data: GameData) -> void:

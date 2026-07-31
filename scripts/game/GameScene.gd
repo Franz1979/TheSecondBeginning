@@ -287,6 +287,12 @@ func _on_debug_set_rabbit_pressed() -> void:
 		return
 	var count := int(debug_rabbit_spin_box.value)
 	state.set_animal_population("rabbit", count)
+	# Riallinea animal_age_composition al nuovo totale (vedi MacroCellState.
+	# set_animal_age_composition) — senza questo, la maturazione delle age band non avrebbe mai
+	# dati su cui operare finché la natalità (prompt futuro) non esiste ancora.
+	var rabbit_rules := AnimalCalculator.get_animal_rules("rabbit")
+	var age_weights: Dictionary = rabbit_rules.initial_age_ratio if rabbit_rules != null else {}
+	state.set_animal_age_composition("rabbit", count, age_weights)
 	print("[DEBUG] rabbit population (50,50) impostata a %d" % count)
 
 func _update_calendar_display() -> void:

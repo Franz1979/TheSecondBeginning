@@ -43,6 +43,7 @@ func save_game_to_json(
 			"pending_migration_surplus": state.pending_migration_surplus,
 			"secondary_resource_stock": state.secondary_resource_stock,
 			"animal_population": state.animal_population,
+			"animal_age_composition": state.animal_age_composition,
 			"pending_grass_space_debt": state.pending_grass_space_debt
 		}
 		# Solo le macrocelle già aperte in MacroCellScene hanno posizioni stone generate:

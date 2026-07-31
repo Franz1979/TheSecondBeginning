@@ -35,8 +35,8 @@ static func compute_virtual_birth_year(
 	pos: Vector2i,
 	salt: Vector2i,
 	current_year: int,
-	maturation_years: int,
-	elder_years: int,
+	youth_duration_years: int,
+	adult_duration_years: int,
 	ratios: Array
 ) -> int:
 	var young_ratio: float = ratios[0] if ratios.size() > 0 else 1.0 / 3.0
@@ -58,13 +58,13 @@ static func compute_virtual_birth_year(
 	var age: float
 	if percentile < young_ratio:
 		var t: float = percentile / max(young_ratio, _EPS)
-		age = t * float(maturation_years)
+		age = t * float(youth_duration_years)
 	elif percentile < young_ratio + adult_ratio:
 		var t: float = (percentile - young_ratio) / max(adult_ratio, _EPS)
-		age = float(maturation_years) + t * float(elder_years)
+		age = float(youth_duration_years) + t * float(adult_duration_years)
 	else:
 		var t: float = (percentile - young_ratio - adult_ratio) / max(old_ratio, _EPS)
-		age = float(maturation_years) + float(elder_years) + t * OLD_VISUAL_TAIL_YEARS
+		age = float(youth_duration_years) + float(adult_duration_years) + t * OLD_VISUAL_TAIL_YEARS
 
 	return current_year - int(floor(age))
 
@@ -72,10 +72,10 @@ static func compute_virtual_birth_year(
 # Fascia età da anni vissuti, indipendente da come years_lived è stato ottenuto — vedi commento
 # di testa. OLD non ha mai un limite superiore: nessun "tetto" oltre cui una posizione smette di
 # essere OLD, la morte reale è già gestita per intero da ResourceMortalityService.
-static func band_for_age(years_lived: int, maturation_years: int, elder_years: int) -> GameTypes.AgeBand:
-	if years_lived < maturation_years:
+static func band_for_age(years_lived: int, youth_duration_years: int, adult_duration_years: int) -> GameTypes.AgeBand:
+	if years_lived < youth_duration_years:
 		return GameTypes.AgeBand.YOUNG
-	if years_lived < maturation_years + elder_years:
+	if years_lived < youth_duration_years + adult_duration_years:
 		return GameTypes.AgeBand.ADULT
 	return GameTypes.AgeBand.OLD
 

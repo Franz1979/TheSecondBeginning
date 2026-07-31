@@ -23,8 +23,8 @@ growth_multiplier_by_biome = {
 6: 1.4
 }
 track_age_bands = true
-maturation_years = 5
-elder_years = 20
+youth_duration_years = 5
+adult_duration_years = 20
 mortality_share_by_age = Array[float]([0.1, 0.1, 0.8])
 production_coefficient_old = 0.7
 initial_age_ratio = {

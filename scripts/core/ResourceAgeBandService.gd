@@ -27,5 +27,5 @@ func mature_age_bands(world: World) -> void:
 				if not rule.track_age_bands:
 					continue
 				state.apply_age_band_maturation(
-					resource_type, rule.subtype_name, rule.maturation_years, rule.elder_years
+					resource_type, rule.subtype_name, rule.youth_duration_years, rule.adult_duration_years
 				)

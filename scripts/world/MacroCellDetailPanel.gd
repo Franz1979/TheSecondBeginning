@@ -32,10 +32,12 @@ const TAB_SUSSISTENZA := 3
 @onready var tree_subtype_conifer_age_label: Label = $MarginContainer/VBoxContainer/TabContainer/VegetazioneTab/VegetazioneContent/TreeSubtypeContainer/TreeSubtypeConiferAgeLabel
 @onready var resource_separator_label: Label = $MarginContainer/VBoxContainer/TabContainer/VegetazioneTab/VegetazioneContent/ResourceSeparatorLabel
 @onready var empty_space_label: Label = $MarginContainer/VBoxContainer/TabContainer/VegetazioneTab/VegetazioneContent/EmptySpaceLabel
-@onready var fauna_title_label: Label = $MarginContainer/VBoxContainer/TabContainer/FaunaTab/SectionTitleLabel
-@onready var fish_number_label: Label = $MarginContainer/VBoxContainer/TabContainer/FaunaTab/FishNumberLabel
-@onready var fauna_separator_label: Label = $MarginContainer/VBoxContainer/TabContainer/FaunaTab/FaunaSeparatorLabel
-@onready var water_empty_space_label: Label = $MarginContainer/VBoxContainer/TabContainer/FaunaTab/WaterEmptySpaceLabel
+@onready var fauna_title_label: Label = $MarginContainer/VBoxContainer/TabContainer/FaunaTab/FaunaContent/SectionTitleLabel
+@onready var fish_number_label: Label = $MarginContainer/VBoxContainer/TabContainer/FaunaTab/FaunaContent/FishNumberLabel
+@onready var fauna_separator_label: Label = $MarginContainer/VBoxContainer/TabContainer/FaunaTab/FaunaContent/FaunaSeparatorLabel
+@onready var water_empty_space_label: Label = $MarginContainer/VBoxContainer/TabContainer/FaunaTab/FaunaContent/WaterEmptySpaceLabel
+@onready var animal_separator_label: Label = $MarginContainer/VBoxContainer/TabContainer/FaunaTab/FaunaContent/AnimalSeparatorLabel
+@onready var animal_population_container: VBoxContainer = $MarginContainer/VBoxContainer/TabContainer/FaunaTab/FaunaContent/AnimalPopulationContainer
 @onready var subsistence_title_label: Label = $MarginContainer/VBoxContainer/TabContainer/SussistenzaTab/SectionTitleLabel
 @onready var forage_units_label: Label = $MarginContainer/VBoxContainer/TabContainer/SussistenzaTab/ForageUnitsLabel
 @onready var forage_calories_label: Label = $MarginContainer/VBoxContainer/TabContainer/SussistenzaTab/ForageCaloriesLabel
@@ -117,6 +119,8 @@ func show_cell(cell: MacroCellData, state: MacroCellState, current_season: GameT
 		fish_number_label.text = "Fish: " + NumberFormatter.format_int(fish_quantity) + " (occupied cells: " + NumberFormatter.format_int(fish_space) + ")"
 		fauna_separator_label.text = " - - - - - - - - - -"
 		water_empty_space_label.text = "Water empty space: " + NumberFormatter.format_int(state.get_empty_water_space(water_capacity))
+		animal_separator_label.text = " - - - - - - - - - -"
+		_update_animal_population_rows(state)
 
 		_update_forage_calories_label(cell, state, current_season)
 		_update_berry_stock_label(state)
@@ -140,6 +144,50 @@ func show_cell(cell: MacroCellData, state: MacroCellState, current_season: GameT
 		fruit_calories_label.visible = false
 		fish_number_label.text = "Fish: -"
 		water_empty_space_label.text = "Water empty space: -"
+		_clear_animal_population_rows()
+
+
+# Nessun nodo fisso per specie (a differenza dei sottotipi vegetali, che hanno una Label dedicata
+# per ogni sottotipo noto già nel .tscn): la lista delle specie animali presenti in questa cella è
+# aperta (state.animal_population.keys()), quindi le righe sono generate a runtime — stesso
+# precedente già usato da TooltipButton.gd (Label.new() invece di istanziare nodi .tscn fissi).
+# Una riga per specie con population > 0 ("  - <species_name>: <totale>"), più una seconda riga
+# indentata "(Y:.. - A:.. - O:..)" SOLO se AnimalRules.track_age_bands è true — stesso formato
+# testuale di _set_age_band_line (vegetazione), qui su conteggi individui grezzi invece che su
+# spazio convertito in quantità (gli animali non hanno un concetto di densità/spazio dedicato).
+func _update_animal_population_rows(state: MacroCellState) -> void:
+	_clear_animal_population_rows()
+
+	for species_name in state.animal_population.keys():
+		var population := state.get_animal_population(species_name)
+		if population <= 0:
+			continue
+
+		var rules := AnimalCalculator.get_animal_rules(species_name)
+
+		var number_label := Label.new()
+		number_label.add_theme_font_size_override("font_size", 11)
+		number_label.text = "  - %s: %s" % [species_name, NumberFormatter.format_int(population)]
+		animal_population_container.add_child(number_label)
+
+		if rules != null and rules.track_age_bands:
+			var young := state.get_animal_age_count(species_name, GameTypes.AgeBand.YOUNG)
+			var adult := state.get_animal_age_count(species_name, GameTypes.AgeBand.ADULT)
+			var old := state.get_animal_age_count(species_name, GameTypes.AgeBand.OLD)
+
+			var age_label := Label.new()
+			age_label.add_theme_font_size_override("font_size", 10)
+			age_label.text = "      (Y:%s - A:%s - O:%s)" % [
+				NumberFormatter.format_int(young),
+				NumberFormatter.format_int(adult),
+				NumberFormatter.format_int(old)
+			]
+			animal_population_container.add_child(age_label)
+
+
+func _clear_animal_population_rows() -> void:
+	for child in animal_population_container.get_children():
+		child.queue_free()
 
 
 # Due righe di verifica temporanea per il calcolo di FORAGE (erba consumata direttamente, vedi
@@ -298,3 +346,4 @@ func clear() -> void:
 	fruit_calories_label.visible = false
 	fish_number_label.text = "Fish: -"
 	water_empty_space_label.text = "Water empty space: -"
+	_clear_animal_population_rows()

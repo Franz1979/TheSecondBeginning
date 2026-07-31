@@ -33,12 +33,14 @@ extends Resource
 # mai letta per questo sottotipo (stesso idioma "vuoto/false = non tracciato" di is_evergreen/
 # suitable_biomes sopra). true solo per i due sottotipi SHRUB oggi (wood_only, fruit_bearing).
 @export var track_age_bands: bool = false
-# Anni interi (nessuna frazione): quanti cicli di maturazione (fine primavera, vedi
-# ResourceAgeBandService) un individuo attraversa in YOUNG prima di passare ad ADULT, e in
-# ADULT prima di passare a OLD. La transizione è una frazione 1/N per anno (residenza media
-# statistica, non un tracking di coorte per anno di nascita).
-@export var maturation_years: int = 2
-@export var elder_years: int = 6
+# Anni interi (nessuna frazione): durata PROPRIA di ciascuna fascia, indipendente dalle altre
+# (non soglie cumulative di età) — quanti cicli di maturazione (fine primavera, vedi
+# ResourceAgeBandService) un individuo trascorre in YOUNG prima di passare ad ADULT
+# (youth_duration_years), e quanti in ADULT prima di passare a OLD (adult_duration_years). La
+# transizione è una frazione 1/N per anno sulla popolazione corrente della fascia (residenza
+# media statistica, non un tracking di coorte per anno di nascita).
+@export var youth_duration_years: int = 2
+@export var adult_duration_years: int = 6
 # Quota (young, adult, old) del TOTALE morto quest'anno per fill_ratio (ResourceMortalityService)
 # attribuita a ciascuna fascia — convenzionalmente somma a 1.0, ma non validato a runtime (stesso
 # trattamento di initial_ratio_by_biome sopra: _split_by_weight normalizza comunque per la somma

@@ -314,7 +314,7 @@ static func get_subtype_rules(resource_type: GameTypes.WorldObjectType) -> Array
 # Variante singolare di get_subtype_rules sopra: risolve direttamente il SubtypeRules di un
 # sottotipo per nome, null se resource_type non ha sottotipi o subtype_name non esiste tra
 # quelli registrati. Usata dai chiamanti che devono leggere i campi Age Bands
-# (track_age_bands/maturation_years/ecc.) per un sottotipo specifico, invece di scorrere
+# (track_age_bands/youth_duration_years/ecc.) per un sottotipo specifico, invece di scorrere
 # l'array intero ogni volta.
 static func get_subtype_rule(resource_type: GameTypes.WorldObjectType, subtype_name: String) -> SubtypeRules:
 	for rule in get_subtype_rules(resource_type):

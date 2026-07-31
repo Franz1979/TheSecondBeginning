@@ -40,6 +40,30 @@ func apply_daily_consumption(world: World, current_season: GameTypes.Season) -> 
 	return any_consumption_applied
 
 
+# Fabbisogno calorico totale giornaliero per una specie/cella. Per le specie con
+# track_age_bands=true pesa ciascuna fascia con AnimalRules.caloric_multiplier_by_age invece di
+# trattare l'intera popolazione come un blocco uniforme (adult=1.0 è il riferimento a cui
+# daily_caloric_requirement è tarato); per le altre resta la vecchia formula flat. Nessun
+# fallback per una composizione età vuota su una specie track_age_bands=true: se capita, è un
+# bug reale (population e animal_age_composition non allineati) e deve dare fabbisogno 0,
+# visibilmente sbagliato, non essere mascherato.
+func _get_total_daily_requirement(
+	state: MacroCellState, rules: AnimalRules, species_name: String, population: int
+) -> float:
+	if not rules.track_age_bands:
+		return float(population) * rules.daily_caloric_requirement
+
+	var young := state.get_animal_age_count(species_name, GameTypes.AgeBand.YOUNG)
+	var adult := state.get_animal_age_count(species_name, GameTypes.AgeBand.ADULT)
+	var old := state.get_animal_age_count(species_name, GameTypes.AgeBand.OLD)
+	var weighted_count: float = (
+		float(young) * rules.caloric_multiplier_by_age[GameTypes.AgeBand.YOUNG]
+		+ float(adult) * rules.caloric_multiplier_by_age[GameTypes.AgeBand.ADULT]
+		+ float(old) * rules.caloric_multiplier_by_age[GameTypes.AgeBand.OLD]
+	)
+	return weighted_count * rules.daily_caloric_requirement
+
+
 # Costruisce le fonti pesate per una specie/cella e ne ripartisce il fabbisogno. Fonti con
 # diet_compatibility <= 0 vengono escluse SENZA interrogare CaloricCalculator (peso comunque
 # nullo, calcolo sprecato) — vengono solo loggate come escluse. Ritorna true se è stato
@@ -53,7 +77,7 @@ func _consume_species_in_cell(
 	population: int,
 	current_season: GameTypes.Season
 ) -> bool:
-	var total_requirement := float(population) * rules.daily_caloric_requirement
+	var total_requirement := _get_total_daily_requirement(state, rules, species_name, population)
 
 	var weighted_sources: Array[Dictionary] = []
 	var weight_sum := 0.0

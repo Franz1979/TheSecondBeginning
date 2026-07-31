@@ -268,8 +268,8 @@ func _get_age_params(object_type: GameTypes.WorldObjectType) -> Dictionary:
 		var old: int = int(composition.get(GameTypes.AgeBand.OLD, 0))
 
 		params[rule.subtype_name] = {
-			"maturation_years": rule.maturation_years,
-			"elder_years": rule.elder_years,
+			"youth_duration_years": rule.youth_duration_years,
+			"adult_duration_years": rule.adult_duration_years,
 			"size_multiplier_by_age": rule.size_multiplier_by_age,
 			"ratios": [float(young), float(adult), float(old)],
 		}

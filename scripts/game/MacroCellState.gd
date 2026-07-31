@@ -36,6 +36,15 @@ var secondary_resource_stock: Dictionary = {}
 # Popolazione animale per specie in questa cella: species_name (AnimalRules.species_name) ->
 # numero di individui (int). Vuoto = nessun animale. Vedi AnimalConsumptionService.
 var animal_population: Dictionary = {}
+# species_name -> Dictionary[AgeBand, int]. Popolato solo per le specie con
+# AnimalRules.track_age_bands=true (oggi solo rabbit); vuoto altrove, stesso idioma "vuoto =
+# non tracciato" di age_composition per le piante. A differenza di age_composition, qui non
+# c'è un livello WorldObjectType/subtype_name: la specie è già l'unità più fine (AnimalRules è
+# per specie, non un array di sotto-risorse). animal_population[species] resta il totale
+# autorevole (letto da consumo/mortalità/rendering, mai toccato da questa struttura); chi
+# modifica l'uno deve tenere l'altro allineato, stessa disciplina di
+# dedicated_space/subtype_composition.
+var animal_age_composition: Dictionary = {}
 # Debito frazionario di spazio GRASS da rimuovere per consumo animale: il consumo giornaliero
 # convertito in "spazio equivalente" (unità/densità) è quasi sempre < 1 unità intera — invece
 # di arrotondare e perdere la frazione ogni giorno, si accumula qui finché non supera 1.0 (vedi
@@ -256,27 +265,29 @@ func apply_age_band_loss(object_type: GameTypes.WorldObjectType, subtype_name: S
 		set_age_count(object_type, subtype_name, age_band,
 			get_age_count(object_type, subtype_name, age_band) - split[age_band])
 
-# Maturazione annuale: young->adult dopo maturation_years, adult->old dopo elder_years.
-# Entrambe le transizioni calcolate sulla composizione di INIZIO checkpoint (non incatenate): un
-# individuo avanza al massimo di una fascia per anno, mai due nello stesso ciclo. Frazione 1/N
-# per anno (residenza media statistica, non un tracking di coorte per anno di nascita — coerente
-# con lo stile aggregato già usato altrove, es. mortalità/crescita a moltiplicatore). Chiamata da
-# ResourceAgeBandService PRIMA di growth/encroachment nello stesso checkpoint di fine primavera,
-# così le nuove nascite di quest'anno (età 0) non vengono mai incluse nella maturazione dello
-# stesso ciclo in cui compaiono.
-func apply_age_band_maturation(object_type: GameTypes.WorldObjectType, subtype_name: String, maturation_years: int, elder_years: int) -> void:
+# Maturazione annuale: young->adult dopo youth_duration_years, adult->old dopo
+# adult_duration_years — durate PROPRIE di ciascuna fascia, indipendenti tra loro (non soglie
+# cumulative di età dalla nascita). Entrambe le transizioni calcolate sulla composizione di
+# INIZIO checkpoint (non incatenate): un individuo avanza al massimo di una fascia per anno, mai
+# due nello stesso ciclo. Frazione 1/N per anno (residenza media statistica, non un tracking di
+# coorte per anno di nascita — coerente con lo stile aggregato già usato altrove, es.
+# mortalità/crescita a moltiplicatore). Chiamata da ResourceAgeBandService PRIMA di
+# growth/encroachment nello stesso checkpoint di fine primavera, così le nuove nascite di
+# quest'anno (età 0) non vengono mai incluse nella maturazione dello stesso ciclo in cui
+# compaiono.
+func apply_age_band_maturation(object_type: GameTypes.WorldObjectType, subtype_name: String, youth_duration_years: int, adult_duration_years: int) -> void:
 	var young_count := get_age_count(object_type, subtype_name, GameTypes.AgeBand.YOUNG)
 	var adult_count := get_age_count(object_type, subtype_name, GameTypes.AgeBand.ADULT)
 	if young_count <= 0 and adult_count <= 0:
 		return
 
 	var young_to_adult: int = 0
-	if maturation_years > 0:
-		young_to_adult = min(int(round(float(young_count) / float(maturation_years))), young_count)
+	if youth_duration_years > 0:
+		young_to_adult = min(int(round(float(young_count) / float(youth_duration_years))), young_count)
 
 	var adult_to_old: int = 0
-	if elder_years > 0:
-		adult_to_old = min(int(round(float(adult_count) / float(elder_years))), adult_count)
+	if adult_duration_years > 0:
+		adult_to_old = min(int(round(float(adult_count) / float(adult_duration_years))), adult_count)
 
 	if young_to_adult <= 0 and adult_to_old <= 0:
 		return
@@ -297,6 +308,104 @@ func get_animal_population(species_name: String) -> int:
 
 func set_animal_population(species_name: String, count: int) -> void:
 	animal_population[species_name] = max(count, 0)
+
+func get_animal_age_composition(species_name: String) -> Dictionary:
+	return animal_age_composition.get(species_name, {})
+
+func get_animal_age_count(species_name: String, age_band: GameTypes.AgeBand) -> int:
+	return int(get_animal_age_composition(species_name).get(age_band, 0))
+
+func set_animal_age_count(species_name: String, age_band: GameTypes.AgeBand, amount: int) -> void:
+	if not animal_age_composition.has(species_name):
+		animal_age_composition[species_name] = {}
+	animal_age_composition[species_name][age_band] = max(amount, 0)
+
+func get_animal_age_total(species_name: String) -> int:
+	var total := 0
+	for amount in get_animal_age_composition(species_name).values():
+		total += int(amount)
+	return total
+
+# Sovrascrive interamente la composizione età di una specie ripartendo `total` individui secondo
+# `weights` (in genere AnimalRules.initial_age_ratio) — a differenza di
+# seed_age_band_composition (piante, additivo su una composizione che parte sempre da zero),
+# questa è pensata per un chiamante che può risettare il totale più volte sullo stesso stato
+# (oggi solo il pulsante debug "set rabbit population"), quindi resetta prima di ridistribuire
+# invece di sommarsi a quanto già presente. weights vuoto/tutto a 0 => pesi uguali tra le tre
+# fasce, stesso fallback di initial_age_ratio/initial_ratio_by_biome altrove.
+func set_animal_age_composition(species_name: String, total: int, weights: Dictionary) -> void:
+	animal_age_composition[species_name] = {}
+	if total <= 0:
+		return
+	var source_weights := weights
+	if source_weights.is_empty():
+		source_weights = {
+			GameTypes.AgeBand.YOUNG: 1.0,
+			GameTypes.AgeBand.ADULT: 1.0,
+			GameTypes.AgeBand.OLD: 1.0,
+		}
+	var split := _split_by_weight(source_weights, total)
+	for age_band in split.keys():
+		set_animal_age_count(species_name, age_band, split[age_band])
+
+# Maturazione annuale per una specie animale: young->adult dopo youth_duration_years, adult->old
+# dopo adult_duration_years — durate PROPRIE di ciascuna fascia, indipendenti tra loro (non
+# soglie cumulative di età dalla nascita), stessa logica frazionaria di
+# apply_age_band_maturation (piante) — un individuo avanza al massimo di una fascia per anno,
+# mai due nello stesso ciclo. Nessuna modifica al totale: la somma delle tre fasce resta
+# invariata, quindi animal_population[species] non va toccato qui (l'invariante era già
+# garantito da chi ha scritto per ultimo la composizione). Chiamata da AnimalAgeBandService
+# PRIMA delle nascite nello stesso checkpoint stagionale.
+func apply_animal_age_band_maturation(species_name: String, youth_duration_years: int, adult_duration_years: int) -> void:
+	var young_count := get_animal_age_count(species_name, GameTypes.AgeBand.YOUNG)
+	var adult_count := get_animal_age_count(species_name, GameTypes.AgeBand.ADULT)
+	if young_count <= 0 and adult_count <= 0:
+		return
+
+	var young_to_adult: int = 0
+	if youth_duration_years > 0:
+		young_to_adult = min(int(round(float(young_count) / float(youth_duration_years))), young_count)
+
+	var adult_to_old: int = 0
+	if adult_duration_years > 0:
+		adult_to_old = min(int(round(float(adult_count) / float(adult_duration_years))), adult_count)
+
+	if young_to_adult <= 0 and adult_to_old <= 0:
+		return
+
+	set_animal_age_count(species_name, GameTypes.AgeBand.YOUNG, young_count - young_to_adult)
+	set_animal_age_count(species_name, GameTypes.AgeBand.ADULT, adult_count - adult_to_old + young_to_adult)
+	set_animal_age_count(species_name, GameTypes.AgeBand.OLD,
+		get_animal_age_count(species_name, GameTypes.AgeBand.OLD) + adult_to_old)
+
+# Aggiunge `amount` nuovi nati alla fascia YOUNG di una specie, incrementando anche il totale
+# animal_population[species] della stessa quantità — a differenza di
+# apply_animal_age_band_maturation (che sposta soltanto individui tra fasce, mai il totale),
+# qui il totale cresce davvero: le due scritture avvengono insieme così l'invariante "somma
+# delle fasce == animal_population[species]" resta valida sia prima che dopo. Il chiamante
+# (AnimalBirthService) garantisce che questo giri sempre DOPO la maturazione dello stesso
+# checkpoint, così i nuovi nati non maturano mai nello stesso ciclo in cui compaiono.
+func apply_animal_births(species_name: String, amount: int) -> void:
+	if amount <= 0:
+		return
+	set_animal_age_count(species_name, GameTypes.AgeBand.YOUNG,
+		get_animal_age_count(species_name, GameTypes.AgeBand.YOUNG) + amount)
+	set_animal_population(species_name, get_animal_population(species_name) + amount)
+
+# Sottrae `amount` morti per vecchiaia dalla fascia OLD di una specie, decrementando anche il
+# totale animal_population[species] della stessa quantità — gemella di apply_animal_births ma in
+# sottrazione: qui il totale si riduce davvero (a differenza della maturazione, che sposta solo
+# individui tra fasce). Le due scritture avvengono insieme così l'invariante "somma delle fasce
+# == animal_population[species]" resta valida sia prima che dopo. Il chiamante
+# (AnimalOldAgeMortalityService) garantisce che questo giri per ultimo nel checkpoint annuale,
+# dopo maturazione e nascite. set_animal_age_count/set_animal_population clampano già a 0, quindi
+# nessun rischio di andare in negativo anche in caso di arrotondamenti al limite.
+func apply_animal_old_age_mortality(species_name: String, amount: int) -> void:
+	if amount <= 0:
+		return
+	set_animal_age_count(species_name, GameTypes.AgeBand.OLD,
+		get_animal_age_count(species_name, GameTypes.AgeBand.OLD) - amount)
+	set_animal_population(species_name, get_animal_population(species_name) - amount)
 
 func get_pending_grass_space_debt() -> float:
 	return pending_grass_space_debt

@@ -98,8 +98,8 @@ var _stone_multimeshes: Array = [] # MultiMesh, indicizzato per variante — un 
 # separazione di responsabilità di vegetation_positions, che arriva già generato).
 var shrub_fruit_ratio: float = 0.0
 # Parametri fasce età per sottotipo SHRUB, chiave = subtype_name ("wood_only"/"fruit_bearing"),
-# valore = {"maturation_years": int, "elder_years": int, "size_multiplier_by_age": Array[float],
-# "ratios": Array[float]} — tutti già risolti dal chiamante (SubtypeRules + age_composition),
+# valore = {"youth_duration_years": int, "adult_duration_years": int, "size_multiplier_by_age":
+# Array[float], "ratios": Array[float]} — tutti già risolti dal chiamante (SubtypeRules + age_composition),
 # stessa separazione di responsabilità di shrub_fruit_ratio sopra: il renderer non legge mai
 # ResourceCalculator/MacroCellState direttamente. Un sottotipo assente da questo dizionario (es.
 # track_age_bands=false) non riceve mai variazione di dimensione (vedi _resolve_age_band_and_size).
@@ -560,7 +560,7 @@ func _rebuild_tree_multimeshes() -> void:
 		# Stessa identità di sottotipo esclusiva già usata per colore/forma chioma e ratio
 		# frutta (conifer / wood_only / wild_fruit / domesticable_fruit), qui risolta una sola
 		# volta in un nome per scegliere i parametri fascia età corretti (i 4 sottotipi hanno
-		# maturation_years/elder_years diversi).
+		# youth_duration_years/adult_duration_years diversi).
 		var is_conifer: bool = _is_tree_conifer(pos)
 		var is_fruit_bearing: bool = not is_conifer and _is_tree_fruit_bearing(pos)
 		var is_domesticable: bool = is_fruit_bearing and _is_tree_fruit_domesticable(pos)
@@ -840,7 +840,7 @@ func _resolve_age_band_and_size(
 		if is_first_sight:
 			birth_year = AgeBandVisualService.compute_virtual_birth_year(
 				pos, salt, current_year,
-				params["maturation_years"], params["elder_years"], params["ratios"]
+				params["youth_duration_years"], params["adult_duration_years"], params["ratios"]
 			)
 		else:
 			birth_year = current_year
@@ -848,7 +848,7 @@ func _resolve_age_band_and_size(
 
 	var years_lived: int = current_year - birth_year
 	var age_band: GameTypes.AgeBand = AgeBandVisualService.band_for_age(
-		years_lived, params["maturation_years"], params["elder_years"]
+		years_lived, params["youth_duration_years"], params["adult_duration_years"]
 	)
 	return {"age_band": age_band, "size_multiplier": params["size_multiplier_by_age"][age_band]}
 
