@@ -26,18 +26,12 @@ var _pending_leave_action: StringName = &""
 }
 @onready var advance_year_button: Button = $CanvasLayer/Sidebar/MarginContainer/VBoxContainer/CalendarHeaderContainer/AdvanceYearButton
 @onready var season_progress_bar: SeasonProgressBar = $CanvasLayer/Sidebar/MarginContainer/VBoxContainer/SeasonProgressBar
-@onready var debug_secondary_stock_container: HBoxContainer = $CanvasLayer/Sidebar/MarginContainer/VBoxContainer/DebugSecondaryStockContainer
-@onready var debug_consume_spin_box: SpinBox = $CanvasLayer/Sidebar/MarginContainer/VBoxContainer/DebugSecondaryStockContainer/DebugConsumeSpinBox
-@onready var debug_consume_button: Button = $CanvasLayer/Sidebar/MarginContainer/VBoxContainer/DebugSecondaryStockContainer/DebugConsumeButton
-@onready var debug_consume_acorn_container: HBoxContainer = $CanvasLayer/Sidebar/MarginContainer/VBoxContainer/DebugConsumeAcornContainer
-@onready var debug_consume_acorn_spin_box: SpinBox = $CanvasLayer/Sidebar/MarginContainer/VBoxContainer/DebugConsumeAcornContainer/DebugConsumeAcornSpinBox
-@onready var debug_consume_acorn_button: Button = $CanvasLayer/Sidebar/MarginContainer/VBoxContainer/DebugConsumeAcornContainer/DebugConsumeAcornButton
-@onready var debug_consume_fruit_container: HBoxContainer = $CanvasLayer/Sidebar/MarginContainer/VBoxContainer/DebugConsumeFruitContainer
-@onready var debug_consume_fruit_spin_box: SpinBox = $CanvasLayer/Sidebar/MarginContainer/VBoxContainer/DebugConsumeFruitContainer/DebugConsumeFruitSpinBox
-@onready var debug_consume_fruit_button: Button = $CanvasLayer/Sidebar/MarginContainer/VBoxContainer/DebugConsumeFruitContainer/DebugConsumeFruitButton
 @onready var debug_rabbit_container: HBoxContainer = $CanvasLayer/Sidebar/MarginContainer/VBoxContainer/DebugRabbitContainer
 @onready var debug_rabbit_spin_box: SpinBox = $CanvasLayer/Sidebar/MarginContainer/VBoxContainer/DebugRabbitContainer/DebugRabbitSpinBox
 @onready var debug_set_rabbit_button: Button = $CanvasLayer/Sidebar/MarginContainer/VBoxContainer/DebugRabbitContainer/DebugSetRabbitButton
+@onready var debug_deer_container: HBoxContainer = $CanvasLayer/Sidebar/MarginContainer/VBoxContainer/DebugDeerContainer
+@onready var debug_deer_spin_box: SpinBox = $CanvasLayer/Sidebar/MarginContainer/VBoxContainer/DebugDeerContainer/DebugDeerSpinBox
+@onready var debug_set_deer_button: Button = $CanvasLayer/Sidebar/MarginContainer/VBoxContainer/DebugDeerContainer/DebugSetDeerButton
 
 func _ready() -> void:
 	year_title_label.text = tr("calendar_label")
@@ -58,17 +52,10 @@ func _ready() -> void:
 	save_confirmation_dialog.option_selected.connect(_on_save_confirmation_option_selected)
 	save_confirmation_dialog.visibility_changed.connect(_on_blocking_dialog_visibility_changed.bind(save_confirmation_dialog))
 
-	# TEMPORANEO: pannello per testare a mano il consumo/stock di berry/acorn/fruit sulla cella
-	# (50,50) durante il gioco, senza fermarsi nel debugger. Va rimosso quando esisterà un vero
-	# consumatore (fauna) per le fonti caloriche a stock persistente.
-	debug_secondary_stock_container.visible = DebugLogging.ENABLED
-	debug_consume_acorn_container.visible = DebugLogging.ENABLED
-	debug_consume_fruit_container.visible = DebugLogging.ENABLED
 	debug_rabbit_container.visible = DebugLogging.ENABLED
-	debug_consume_button.pressed.connect(_on_debug_consume_pressed)
-	debug_consume_acorn_button.pressed.connect(_on_debug_consume_acorn_pressed)
-	debug_consume_fruit_button.pressed.connect(_on_debug_consume_fruit_pressed)
+	debug_deer_container.visible = DebugLogging.ENABLED
 	debug_set_rabbit_button.pressed.connect(_on_debug_set_rabbit_pressed)
+	debug_set_deer_button.pressed.connect(_on_debug_set_deer_pressed)
 
 	var returning_from_macro_cell := GameSettings.returning_to_game_scene
 	if returning_from_macro_cell:
@@ -170,7 +157,7 @@ func _open_macro_cell_scene() -> void:
 
 
 func _on_cell_selected(cell: MacroCellData, state: MacroCellState) -> void:
-	macro_cell_info_panel.show_cell(cell, state)
+	macro_cell_info_panel.show_cell(cell, state, world)
 	renderer.set_selected_cell(cell)
 
 func _on_save_game_pressed() -> void:
@@ -258,42 +245,41 @@ func _on_day_advanced(checkpoint_ran: bool, animals_changed: bool) -> void:
 	renderer.queue_redraw()
 	if renderer.selected_cell != null:
 		var state := world.get_cell_state_at(renderer.selected_cell.x, renderer.selected_cell.y)
-		macro_cell_info_panel.show_cell(renderer.selected_cell, state)
+		macro_cell_info_panel.show_cell(renderer.selected_cell, state, world)
 
 func _on_advance_year_pressed() -> void:
 	clock.force_advance_to_year_end()
 
-func _on_debug_consume_pressed() -> void:
-	var state := world.get_cell_state_at(50, 50)
-	if state == null:
-		return
-	CaloricCalculator.debug_consume_secondary_resource(state, "berry", debug_consume_spin_box.value)
-
-func _on_debug_consume_acorn_pressed() -> void:
-	var state := world.get_cell_state_at(50, 50)
-	if state == null:
-		return
-	CaloricCalculator.debug_consume_secondary_resource(state, "acorn", debug_consume_acorn_spin_box.value)
-
-func _on_debug_consume_fruit_pressed() -> void:
-	var state := world.get_cell_state_at(50, 50)
-	if state == null:
-		return
-	CaloricCalculator.debug_consume_secondary_resource(state, "fruit", debug_consume_fruit_spin_box.value)
-
 func _on_debug_set_rabbit_pressed() -> void:
-	var state := world.get_cell_state_at(50, 50)
-	if state == null:
-		return
+	var coords := Vector2i(50, 50)
 	var count := int(debug_rabbit_spin_box.value)
-	state.set_animal_population("rabbit", count)
-	# Riallinea animal_age_composition al nuovo totale (vedi MacroCellState.
-	# set_animal_age_composition) — senza questo, la maturazione delle age band non avrebbe mai
-	# dati su cui operare finché la natalità (prompt futuro) non esiste ancora.
+
+	var group := world.find_population_group("rabbit", coords)
+	if group == null:
+		group = PopulationGroup.new("rabbit", Territory.from_single_cell(coords))
+		world.population_groups.append(group)
+	group.set_population(count)
+	# Riallinea age_composition al nuovo totale (vedi PopulationGroup.set_age_composition) —
+	# senza questo, la maturazione delle age band non avrebbe mai dati su cui operare finché la
+	# natalità (prompt futuro) non esiste ancora.
 	var rabbit_rules := AnimalCalculator.get_animal_rules("rabbit")
 	var age_weights: Dictionary = rabbit_rules.initial_age_ratio if rabbit_rules != null else {}
-	state.set_animal_age_composition("rabbit", count, age_weights)
+	group.set_age_composition(count, age_weights)
 	print("[DEBUG] rabbit population (50,50) impostata a %d" % count)
+
+func _on_debug_set_deer_pressed() -> void:
+	var coords := Vector2i(50, 50)
+	var count := int(debug_deer_spin_box.value)
+
+	var group := world.find_population_group("deer", coords)
+	if group == null:
+		group = PopulationGroup.new("deer", Territory.from_single_cell(coords))
+		world.population_groups.append(group)
+	group.set_population(count)
+	var deer_rules := AnimalCalculator.get_animal_rules("deer")
+	var age_weights: Dictionary = deer_rules.initial_age_ratio if deer_rules != null else {}
+	group.set_age_composition(count, age_weights)
+	print("[DEBUG] deer population (50,50) impostata a %d" % count)
 
 func _update_calendar_display() -> void:
 	year_label.text = "Day %d of %d, Year %d" % [game_data.current_day + 1, GameData.DAYS_PER_YEAR, game_data.year]

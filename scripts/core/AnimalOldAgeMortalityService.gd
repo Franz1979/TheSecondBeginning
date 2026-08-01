@@ -4,7 +4,7 @@ extends RefCounted
 # Chiamata da WorldTimeService._run_animal_lifecycle_checkpoint DOPO AnimalBirthService.apply_births
 # nello stesso checkpoint: ultimo passo del ciclo annuale per specie/cella. Stessa logica
 # frazionaria già usata per le transizioni young->adult/adult->old (vedi
-# MacroCellState.apply_animal_age_band_maturation) applicata alla fascia OLD verso la morte
+# PopulationGroup.apply_age_band_maturation) applicata alla fascia OLD verso la morte
 # invece che verso un'altra fascia — 1/old_duration_years della popolazione OLD corrente muore
 # ogni anno, nessun tracking di coorte per anno di nascita. Include anche gli individui appena
 # entrati in OLD in questo stesso checkpoint (la maturazione adult->old gira prima, nello stesso
@@ -14,23 +14,20 @@ extends RefCounted
 # altre sono no-op per costruzione. Nessuna interazione con mortalità da fame o altre cause —
 # questo copre solo la morte per vecchiaia.
 func apply_old_age_mortality(world: World, season: GameTypes.Season) -> void:
-	for state in world.cell_states:
-		if state.animal_population.is_empty():
+	for group in world.population_groups:
+		var rules := AnimalCalculator.get_animal_rules(group.species_name)
+		if rules == null or not rules.track_age_bands:
 			continue
-		for species_name in state.animal_population.keys():
-			var rules := AnimalCalculator.get_animal_rules(species_name)
-			if rules == null or not rules.track_age_bands:
-				continue
-			if rules.birth_season != season:
-				continue
-			if rules.old_duration_years <= 0:
-				continue
+		if rules.birth_season != season:
+			continue
+		if rules.old_duration_years <= 0:
+			continue
 
-			var old_count := state.get_animal_age_count(species_name, GameTypes.AgeBand.OLD)
-			if old_count <= 0:
-				continue
+		var old_count := group.get_age_count(GameTypes.AgeBand.OLD)
+		if old_count <= 0:
+			continue
 
-			var deaths_from_age: int = min(
-				int(round(float(old_count) / float(rules.old_duration_years))), old_count
-			)
-			state.apply_animal_old_age_mortality(species_name, deaths_from_age)
+		var deaths_from_age: int = min(
+			int(round(float(old_count) / float(rules.old_duration_years))), old_count
+		)
+		group.apply_old_age_mortality(deaths_from_age)

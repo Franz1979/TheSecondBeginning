@@ -77,7 +77,7 @@ func _ready() -> void:
 	clear()
 
 
-func show_cell(cell: MacroCellData, state: MacroCellState, current_season: GameTypes.Season) -> void:
+func show_cell(cell: MacroCellData, state: MacroCellState, current_season: GameTypes.Season, world: World) -> void:
 	if cell == null:
 		clear()
 		return
@@ -120,7 +120,7 @@ func show_cell(cell: MacroCellData, state: MacroCellState, current_season: GameT
 		fauna_separator_label.text = " - - - - - - - - - -"
 		water_empty_space_label.text = "Water empty space: " + NumberFormatter.format_int(state.get_empty_water_space(water_capacity))
 		animal_separator_label.text = " - - - - - - - - - -"
-		_update_animal_population_rows(state)
+		_update_animal_population_rows(world, Vector2i(cell.x, cell.y))
 
 		_update_forage_calories_label(cell, state, current_season)
 		_update_berry_stock_label(state)
@@ -149,31 +149,30 @@ func show_cell(cell: MacroCellData, state: MacroCellState, current_season: GameT
 
 # Nessun nodo fisso per specie (a differenza dei sottotipi vegetali, che hanno una Label dedicata
 # per ogni sottotipo noto già nel .tscn): la lista delle specie animali presenti in questa cella è
-# aperta (state.animal_population.keys()), quindi le righe sono generate a runtime — stesso
-# precedente già usato da TooltipButton.gd (Label.new() invece di istanziare nodi .tscn fissi).
-# Una riga per specie con population > 0 ("  - <species_name>: <totale>"), più una seconda riga
-# indentata "(Y:.. - A:.. - O:..)" SOLO se AnimalRules.track_age_bands è true — stesso formato
+# aperta (world.get_population_groups_at(coords)), quindi le righe sono generate a runtime —
+# stesso precedente già usato da TooltipButton.gd (Label.new() invece di istanziare nodi .tscn
+# fissi). Una riga per specie con population > 0 ("  - <species_name>: <totale>"), più una seconda
+# riga indentata "(Y:.. - A:.. - O:..)" SOLO se AnimalRules.track_age_bands è true — stesso formato
 # testuale di _set_age_band_line (vegetazione), qui su conteggi individui grezzi invece che su
 # spazio convertito in quantità (gli animali non hanno un concetto di densità/spazio dedicato).
-func _update_animal_population_rows(state: MacroCellState) -> void:
+func _update_animal_population_rows(world: World, coords: Vector2i) -> void:
 	_clear_animal_population_rows()
 
-	for species_name in state.animal_population.keys():
-		var population := state.get_animal_population(species_name)
-		if population <= 0:
+	for group in world.get_population_groups_at(coords):
+		if group.population <= 0:
 			continue
 
-		var rules := AnimalCalculator.get_animal_rules(species_name)
+		var rules := AnimalCalculator.get_animal_rules(group.species_name)
 
 		var number_label := Label.new()
 		number_label.add_theme_font_size_override("font_size", 11)
-		number_label.text = "  - %s: %s" % [species_name, NumberFormatter.format_int(population)]
+		number_label.text = "  - %s: %s" % [group.species_name, NumberFormatter.format_int(group.population)]
 		animal_population_container.add_child(number_label)
 
 		if rules != null and rules.track_age_bands:
-			var young := state.get_animal_age_count(species_name, GameTypes.AgeBand.YOUNG)
-			var adult := state.get_animal_age_count(species_name, GameTypes.AgeBand.ADULT)
-			var old := state.get_animal_age_count(species_name, GameTypes.AgeBand.OLD)
+			var young := group.get_age_count(GameTypes.AgeBand.YOUNG)
+			var adult := group.get_age_count(GameTypes.AgeBand.ADULT)
+			var old := group.get_age_count(GameTypes.AgeBand.OLD)
 
 			var age_label := Label.new()
 			age_label.add_theme_font_size_override("font_size", 10)

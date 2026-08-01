@@ -5,11 +5,16 @@ const HEIGHT: int = 100
 
 var cells: Array[MacroCellData] = []
 var cell_states: Array[MacroCellState] = []
+# Popolazioni animali "vere" (oggi solo rabbit) — world-level, non più proprietà della singola
+# macrocella (vedi PopulationGroup). Ogni gruppo ha un Territory (vedi Territory.gd) che oggi
+# occupa sempre esattamente una macrocella — nessuna logica di espansione/multi-cella ancora.
+var population_groups: Array[PopulationGroup] = []
 
 
 func generate_empty_world() -> void:
 	cells.clear()
 	cell_states.clear()
+	population_groups.clear()
 	for y in range(HEIGHT):
 		for x in range(WIDTH):
 			var cell := MacroCellData.new(x, y)
@@ -38,6 +43,7 @@ func generate_uniform_terrain(
 ) -> void:
 	cells.clear()
 	cell_states.clear()
+	population_groups.clear()
 	for y in range(HEIGHT):
 		for x in range(WIDTH):
 			var cell := MacroCellData.new(x, y)
@@ -65,6 +71,29 @@ func get_cell_state_at(x: int, y: int) -> MacroCellState:
 	if state.x != x or state.y != y:
 		return null
 	return state
+
+# Stesso ruolo di get_cell_at/get_cell_state_at: fetch sempre tramite questi helper, mai a
+# mano iterando population_groups altrove. null se nessun gruppo di quella specie occupa quella
+# macrocella. territory.contains() (non un confronto diretto sulla singola cella) è già la query
+# semanticamente corretta anche in vista del multi-cella futuro (Step 5+): oggi degenera
+# comunque in un confronto su un solo elemento.
+func find_population_group(species_name: String, coords: Vector2i) -> PopulationGroup:
+	for group in population_groups:
+		if group.species_name == species_name and group.territory.contains(coords):
+			return group
+	return null
+
+
+# Tutti i gruppi (di qualunque specie) il cui Territory include questa cella — usato dalla UI
+# (MacroCellDetailPanel) per elencare la fauna presente, senza dover conoscere in anticipo quali
+# specie cercare.
+func get_population_groups_at(coords: Vector2i) -> Array[PopulationGroup]:
+	var groups: Array[PopulationGroup] = []
+	for group in population_groups:
+		if group.territory.contains(coords):
+			groups.append(group)
+	return groups
+
 
 func ensure_cell_states() -> void:
 	if cell_states.size() == cells.size():

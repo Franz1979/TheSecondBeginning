@@ -18,24 +18,22 @@ const FORAGE_SOURCE_NAME := "forage"
 func apply_daily_consumption(world: World, current_season: GameTypes.Season) -> bool:
 	var any_consumption_applied := false
 
-	for state in world.cell_states:
-		if state.animal_population.is_empty():
-			continue
-		var cell := world.get_cell_at(state.x, state.y)
-		if cell == null:
+	for group in world.population_groups:
+		if group.population <= 0:
 			continue
 
-		for species_name in state.animal_population.keys():
-			var population := state.get_animal_population(species_name)
-			if population <= 0:
-				continue
+		var home_cell := group.territory.get_primary_cell()
+		var cell := world.get_cell_at(home_cell.x, home_cell.y)
+		var state := world.get_cell_state_at(home_cell.x, home_cell.y)
+		if cell == null or state == null:
+			continue
 
-			var rules := AnimalCalculator.get_animal_rules(species_name)
-			if rules == null:
-				continue
+		var rules := AnimalCalculator.get_animal_rules(group.species_name)
+		if rules == null:
+			continue
 
-			if _consume_species_in_cell(cell, state, rules, species_name, population, current_season):
-				any_consumption_applied = true
+		if _consume_species_in_cell(cell, state, rules, group, current_season):
+			any_consumption_applied = true
 
 	return any_consumption_applied
 
@@ -45,17 +43,15 @@ func apply_daily_consumption(world: World, current_season: GameTypes.Season) -> 
 # trattare l'intera popolazione come un blocco uniforme (adult=1.0 è il riferimento a cui
 # daily_caloric_requirement è tarato); per le altre resta la vecchia formula flat. Nessun
 # fallback per una composizione età vuota su una specie track_age_bands=true: se capita, è un
-# bug reale (population e animal_age_composition non allineati) e deve dare fabbisogno 0,
+# bug reale (population e age_composition del gruppo non allineati) e deve dare fabbisogno 0,
 # visibilmente sbagliato, non essere mascherato.
-func _get_total_daily_requirement(
-	state: MacroCellState, rules: AnimalRules, species_name: String, population: int
-) -> float:
+func _get_total_daily_requirement(group: PopulationGroup, rules: AnimalRules) -> float:
 	if not rules.track_age_bands:
-		return float(population) * rules.daily_caloric_requirement
+		return float(group.population) * rules.daily_caloric_requirement
 
-	var young := state.get_animal_age_count(species_name, GameTypes.AgeBand.YOUNG)
-	var adult := state.get_animal_age_count(species_name, GameTypes.AgeBand.ADULT)
-	var old := state.get_animal_age_count(species_name, GameTypes.AgeBand.OLD)
+	var young := group.get_age_count(GameTypes.AgeBand.YOUNG)
+	var adult := group.get_age_count(GameTypes.AgeBand.ADULT)
+	var old := group.get_age_count(GameTypes.AgeBand.OLD)
 	var weighted_count: float = (
 		float(young) * rules.caloric_multiplier_by_age[GameTypes.AgeBand.YOUNG]
 		+ float(adult) * rules.caloric_multiplier_by_age[GameTypes.AgeBand.ADULT]
@@ -73,11 +69,10 @@ func _consume_species_in_cell(
 	cell: MacroCellData,
 	state: MacroCellState,
 	rules: AnimalRules,
-	species_name: String,
-	population: int,
+	group: PopulationGroup,
 	current_season: GameTypes.Season
 ) -> bool:
-	var total_requirement := _get_total_daily_requirement(state, rules, species_name, population)
+	var total_requirement := _get_total_daily_requirement(group, rules)
 
 	var weighted_sources: Array[Dictionary] = []
 	var weight_sum := 0.0
@@ -137,7 +132,7 @@ func _consume_species_in_cell(
 
 	if DebugLogging.ENABLED and state.x == 50 and state.y == 50:
 		print("[ANIMAL CONSUME %s] population=%d fabbisogno=%.1f | %s | pending_debt=%.2f" % [
-			species_name, population, total_requirement, " | ".join(log_lines),
+			group.species_name, group.population, total_requirement, " | ".join(log_lines),
 			state.get_pending_grass_space_debt()
 		])
 

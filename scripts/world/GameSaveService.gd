@@ -16,7 +16,8 @@ func save_game_to_json(
 			"width": World.WIDTH,
 			"height": World.HEIGHT,
 			"cells": [],
-			"cell_states": []
+			"cell_states": [],
+			"population_groups": []
 		}
 	}
 	for cell in world.cells:
@@ -42,8 +43,6 @@ func save_game_to_json(
 			"active_growth_bonuses": state.active_growth_bonuses,
 			"pending_migration_surplus": state.pending_migration_surplus,
 			"secondary_resource_stock": state.secondary_resource_stock,
-			"animal_population": state.animal_population,
-			"animal_age_composition": state.animal_age_composition,
 			"pending_grass_space_debt": state.pending_grass_space_debt
 		}
 		# Solo le macrocelle già aperte in MacroCellScene hanno posizioni stone generate:
@@ -54,6 +53,19 @@ func save_game_to_json(
 				stone_positions_data.append({"x": pos.x, "y": pos.y})
 			state_data["stone_positions"] = stone_positions_data
 		data["world"]["cell_states"].append(state_data)
+	# Popolazioni animali "vere" (oggi solo rabbit) — world-level, non più annidate dentro
+	# cell_states (vedi PopulationGroup/World.population_groups). occupied_macrocells è un array
+	# (oggi sempre con un solo elemento, vedi Territory) invece di una singola coppia x/y.
+	for group in world.population_groups:
+		var occupied_cells_data: Array = []
+		for coords in group.territory.occupied_macrocells:
+			occupied_cells_data.append({"x": coords.x, "y": coords.y})
+		data["world"]["population_groups"].append({
+			"species_name": group.species_name,
+			"population": group.population,
+			"age_composition": group.age_composition,
+			"occupied_macrocells": occupied_cells_data
+		})
 	var json_text := JSON.stringify(data, "\t")
 	var file := FileAccess.open(file_path, FileAccess.WRITE)
 	file.store_string(json_text)

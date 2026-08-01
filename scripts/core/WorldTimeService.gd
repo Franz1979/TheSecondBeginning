@@ -70,6 +70,7 @@ func _run_seasonal_checkpoints(world: World, game_data: GameData, year_rolled_ov
 		if day == SeasonCalculator.get_season_day_range(season).x:
 			_run_secondary_resource_stock_debug_checkpoint(world, SeasonCalculator.get_previous_season(season), season)
 			_run_natural_events_checkpoint(world, game_data, season)
+			_run_animal_birth_mitigation_checkpoint(world, season)
 			checkpoint_ran = true
 
 	if year_rolled_over:
@@ -144,6 +145,15 @@ func _run_migration_checkpoint(world: World, game_data: GameData) -> void:
 func _run_natural_events_checkpoint(world: World, game_data: GameData, season: GameTypes.Season) -> void:
 	var natural_event_service := NaturalEventService.new()
 	natural_event_service.trigger_events(world, game_data, season)
+
+
+# A inizio di ogni stagione (stesso giorno degli altri checkpoint "start of season" sopra):
+# per le specie con birth_season == season, calcola il moltiplicatore di mitigazione della
+# natalità legato alla disponibilità calorica del territorio (vedi AnimalBirthMitigationService),
+# usando lo stato REALE di oggi stesso — nessuno sfasamento su un'altra stagione. Il moltiplicatore
+# resta memorizzato sul gruppo fino al checkpoint di nascita già esistente, a fine birth_season.
+func _run_animal_birth_mitigation_checkpoint(world: World, season: GameTypes.Season) -> void:
+	AnimalBirthMitigationService.new().compute_mitigation(world, season)
 
 
 # TEMPORANEO — nessun vero registro di fonti a stock persistente esiste ancora, solo questo

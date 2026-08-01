@@ -83,6 +83,16 @@ extends Resource
 @export var base_birth_rate: float = 0.0
 # Ripartizione (young, adult, old) usata SOLO dal seeding/reseeding manuale della popolazione
 # (oggi il pulsante debug "set rabbit population" in GameScene.gd, vedi
-# MacroCellState.set_animal_age_composition) — mai durante la simulazione a regime. Assente o
+# PopulationGroup.set_age_composition) — mai durante la simulazione a regime. Assente o
 # tutto a 0 => pesi uguali, stesso fallback di SubtypeRules.initial_age_ratio.
 @export var initial_age_ratio: Dictionary = {}
+
+@export_group("Territory")
+# Home range minimo e massimo di specie, in numero di macrocelle — indipendenti da
+# popolazione/risorse locali (es. rabbit: 1/1, deer: 3/20). Campi DORMIENTI per ora: dichiarati
+# qui e nei .tres di ciascuna specie, ma nessuna logica li legge ancora — verranno usati
+# quando il Territory diventerà multi-cella (Step 5+ del refactoring fauna, espansione/
+# restringimento territorio). Nessun default: ogni specie deve dichiararli esplicitamente nel
+# proprio .tres.
+@export var min_territory_cells: int = 1
+@export var max_territory_cells: int = 1

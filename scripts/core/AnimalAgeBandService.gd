@@ -9,13 +9,10 @@ extends RefCounted
 # altre sono no-op per costruzione (get_animal_rules null, track_age_bands false, o
 # birth_season di un'altra stagione).
 func mature_age_bands(world: World, season: GameTypes.Season) -> void:
-	for state in world.cell_states:
-		if state.animal_population.is_empty():
+	for group in world.population_groups:
+		var rules := AnimalCalculator.get_animal_rules(group.species_name)
+		if rules == null or not rules.track_age_bands:
 			continue
-		for species_name in state.animal_population.keys():
-			var rules := AnimalCalculator.get_animal_rules(species_name)
-			if rules == null or not rules.track_age_bands:
-				continue
-			if rules.birth_season != season:
-				continue
-			state.apply_animal_age_band_maturation(species_name, rules.youth_duration_years, rules.adult_duration_years)
+		if rules.birth_season != season:
+			continue
+		group.apply_age_band_maturation(rules.youth_duration_years, rules.adult_duration_years)

@@ -77,20 +77,7 @@ func load_game_from_json(file_path: String) -> LoadedGame:
 			var secondary_stock_data = state_data.get("secondary_resource_stock", {})
 			for resource_name in secondary_stock_data.keys():
 				state.secondary_resource_stock[resource_name] = float(secondary_stock_data[resource_name])
-			var animal_population_data = state_data.get("animal_population", {})
-			for species_name in animal_population_data.keys():
-				state.animal_population[species_name] = int(animal_population_data[species_name])
 			state.pending_grass_space_debt = float(state_data.get("pending_grass_space_debt", 0.0))
-			# Stesso pattern di subtype_composition, un livello di nesting in meno (species_name ->
-			# AgeBand -> int, nessun livello WorldObjectType/subtype_name intermedio — vedi
-			# MacroCellState.animal_age_composition). .get(key, {}) per compatibilità con save
-			# precedenti a questa feature.
-			var animal_age_data = state_data.get("animal_age_composition", {})
-			for species_name in animal_age_data.keys():
-				var inner_ages: Dictionary = {}
-				for age_key in animal_age_data[species_name].keys():
-					inner_ages[int(age_key)] = int(animal_age_data[species_name][age_key])
-				state.animal_age_composition[species_name] = inner_ages
 			if state_data.has("stone_positions"):
 				var stone_positions: Array = []
 				for pos_data in state_data["stone_positions"]:
@@ -106,6 +93,28 @@ func load_game_from_json(file_path: String) -> LoadedGame:
 					"duration_years": int(bonus_data["duration_years"])
 				}
 			world.cell_states.append(state)
+
+	world.population_groups.clear()
+	if world_data.has("population_groups"):
+		for group_data in world_data["population_groups"]:
+			var occupied_cells: Array[Vector2i] = []
+			for cell_data in group_data.get("occupied_macrocells", []):
+				occupied_cells.append(Vector2i(int(cell_data["x"]), int(cell_data["y"])))
+			# Nessuna retrocompatibilità con il vecchio formato home_macrocell_x/y (pre-Territory):
+			# un save di prima dello Step 4 non ha "occupied_macrocells" e produrrebbe un Territory
+			# vuoto — invalido (Territory.get_primary_cell() richiede almeno una cella) e quindi
+			# scartato qui, invece di propagare un gruppo rotto che crasherebbe al primo utilizzo.
+			if occupied_cells.is_empty():
+				continue
+			var group := PopulationGroup.new(
+				String(group_data["species_name"]),
+				Territory.new(occupied_cells)
+			)
+			group.population = int(group_data["population"])
+			var age_data = group_data.get("age_composition", {})
+			for age_key in age_data.keys():
+				group.age_composition[int(age_key)] = int(age_data[age_key])
+			world.population_groups.append(group)
 
 	var loaded_game := LoadedGame.new()
 	loaded_game.world = world

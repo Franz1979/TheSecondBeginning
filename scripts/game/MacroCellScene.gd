@@ -208,7 +208,8 @@ func _refresh_resource_visuals() -> void:
 		fish_positions = fish_service.generate_positions(macro_state, occupied_for_fish)
 	renderer.set_fish_positions(fish_positions)
 
-	rabbit_renderer.set_population(macro_state.get_animal_population("rabbit"))
+	var rabbit_group := macro_world.find_population_group("rabbit", Vector2i(macro_cell.x, macro_cell.y))
+	rabbit_renderer.set_population(rabbit_group.population if rabbit_group != null else 0)
 
 	renderer.set_shrub_fruit_ratio(_get_shrub_fruit_ratio())
 	renderer.set_shrub_age_params(game_data.year, _get_age_params(GameTypes.WorldObjectType.SHRUB))
@@ -230,7 +231,7 @@ func _refresh_resource_visuals() -> void:
 func _update_info_panel() -> void:
 	if macro_state == null:
 		return
-	macro_cell_detail_panel.show_cell(macro_cell, macro_state, SeasonCalculator.get_season_for_day(game_data.current_day))
+	macro_cell_detail_panel.show_cell(macro_cell, macro_state, SeasonCalculator.get_season_for_day(game_data.current_day), macro_world)
 
 
 # Quota di dedicated_space SHRUB classificata come sottotipo "fruit_bearing" nella macrocella
