@@ -15,4 +15,17 @@ func mature_age_bands(world: World, season: GameTypes.Season) -> void:
 			continue
 		if rules.birth_season != season:
 			continue
+
+		var young_before := group.get_age_count(GameTypes.AgeBand.YOUNG)
+		var adult_before := group.get_age_count(GameTypes.AgeBand.ADULT)
+		var old_before := group.get_age_count(GameTypes.AgeBand.OLD)
+
 		group.apply_age_band_maturation(rules.youth_duration_years, rules.adult_duration_years)
+
+		if DebugLogging.ENABLED:
+			print("[ANIMAL AGING] checkpoint=fine %s | %s: Y %d->%d (youth_duration=%d) | A %d->%d (adult_duration=%d) | O %d->%d" % [
+				GameTypes.Season.keys()[season], group.species_name,
+				young_before, group.get_age_count(GameTypes.AgeBand.YOUNG), rules.youth_duration_years,
+				adult_before, group.get_age_count(GameTypes.AgeBand.ADULT), rules.adult_duration_years,
+				old_before, group.get_age_count(GameTypes.AgeBand.OLD)
+			])

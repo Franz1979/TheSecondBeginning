@@ -22,14 +22,26 @@ var game_data: GameData
 var show_resource_overlay: bool = true
 
 var selected_cell: MacroCellData = null
-var flashing_cells: Dictionary = {} # Vector2i -> secondi rimanenti
+# Vector2i -> {"remaining": float, "duration": float}: "duration" è la durata TOTALE con cui la
+# cella è stata flashata (serve a normalizzare il fade dell'alpha in _draw, vedi flash_time /
+# flash_duration sotto) — non più un unico float fisso (PAINT_FLASH_DURATION), da quando
+# flash_cell/flash_cells accettano una durata esplicita (highlight population più lungo del
+# feedback-pennello del map editor, ma stesso identico meccanismo di fade).
+var flashing_cells: Dictionary = {}
 
 func set_selected_cell(cell: MacroCellData) -> void:
 	selected_cell = cell
 	queue_redraw()
 
-func flash_cell(x: int, y: int) -> void:
-	flashing_cells[Vector2i(x, y)] = PAINT_FLASH_DURATION
+func flash_cell(x: int, y: int, duration: float = PAINT_FLASH_DURATION) -> void:
+	flashing_cells[Vector2i(x, y)] = {"remaining": duration, "duration": duration}
+
+
+# Comodità per evidenziare più celle insieme con la stessa durata (es. tutte le celle del
+# territorio di un PopulationGroup) senza dover far iterare a ogni chiamante flash_cell singola.
+func flash_cells(coords_list: Array, duration: float = PAINT_FLASH_DURATION) -> void:
+	for coords in coords_list:
+		flash_cell(coords.x, coords.y, duration)
 
 # game_data is optional: MapEditorScene has no calendar/simulation, so it calls setup(world)
 # and event markers simply never draw there (guarded in _draw_event_markers).
@@ -44,8 +56,9 @@ func _process(delta: float) -> void:
 		return
 	var expired: Array = []
 	for pos in flashing_cells.keys():
-		flashing_cells[pos] -= delta
-		if flashing_cells[pos] <= 0.0:
+		var entry: Dictionary = flashing_cells[pos]
+		entry["remaining"] -= delta
+		if entry["remaining"] <= 0.0:
 			expired.append(pos)
 	for pos in expired:
 		flashing_cells.erase(pos)
@@ -78,10 +91,11 @@ func _draw() -> void:
 		if selected_cell != null and cell.x == selected_cell.x and cell.y == selected_cell.y:
 			draw_rect(rect, Color(1, 0, 0, 1), false, 2.0)
 
-		var flash_time: float = flashing_cells.get(Vector2i(cell.x, cell.y), -1.0)
+		var flash_entry: Dictionary = flashing_cells.get(Vector2i(cell.x, cell.y), {})
+		var flash_time: float = flash_entry.get("remaining", -1.0)
 		if flash_time > 0.0:
 			var flash_color := COLOR_PAINT_FLASH
-			flash_color.a = clamp(flash_time / PAINT_FLASH_DURATION, 0.0, 1.0)
+			flash_color.a = clamp(flash_time / float(flash_entry["duration"]), 0.0, 1.0)
 			draw_rect(rect, flash_color, false, 3.0)
 
 

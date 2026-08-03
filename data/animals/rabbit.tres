@@ -14,6 +14,7 @@ diet_compatibility = {
 }
 visual_group_size = 10
 max_individuals_per_cluster = 50
+size_multiplier_by_age = Array[float]([0.5, 1.0, 0.9])
 track_age_bands = true
 youth_duration_years = 1
 adult_duration_years = 2
@@ -26,5 +27,4 @@ initial_age_ratio = {
 1: 1.0,
 2: 0.0
 }
-min_territory_cells = 1
-max_territory_cells = 1
+max_density_per_cell = 200

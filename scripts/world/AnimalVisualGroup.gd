@@ -10,6 +10,12 @@ var direction: Vector2
 # Irrilevante quando l'istanza è usata essa stessa come centro-cluster invece che come gruppo
 # disegnato (vedi AnimalGroupRenderer._resync_clusters), assegnato solo esternamente.
 var cluster_index: int = 0
+# Fascia d'età rappresentata da QUESTO gruppo disegnato (assegnata da AnimalGroupRenderer.
+# set_population_by_age, o sempre ADULT per il fallback set_population non age-aware) — determina
+# la scala visiva applicata in _write_instance_transform (AnimalRules.size_multiplier_by_age).
+# Irrilevante quando l'istanza è usata come centro-cluster (mai disegnata, stesso trattamento di
+# cluster_index sopra).
+var age_band: GameTypes.AgeBand = GameTypes.AgeBand.ADULT
 
 # Macchina a stati a due livelli per il movimento a balzi (vedi AnimalGroupRenderer). Rilevante
 # solo per i gruppi disegnati, ignorata quando l'istanza è usata come centro-cluster (stesso

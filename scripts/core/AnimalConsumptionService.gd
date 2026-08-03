@@ -3,11 +3,12 @@ extends RefCounted
 
 const FORAGE_SOURCE_NAME := "forage"
 
-# Consumo calorico giornaliero (non stagionale) per ogni specie animale presente in ciascuna
-# cella, ripartito tra TUTTE le fonti con AnimalRules.diet_compatibility > 0 (FORAGE e le fonti
-# a stock come BERRY/ACORN/FRUIT), pesato per calorie disponibili × compatibilità — vedi
-# _consume_species_in_cell. Il fabbisogno non soddisfatto non ha ancora conseguenze (nessuna
-# mortalità per fame): la popolazione consuma quello che trova e basta. Ritorna true se in
+# Consumo calorico giornaliero (non stagionale) per ogni gruppo animale, ripartito tra le celle
+# del suo territorio (vedi _consume_group) e, dentro ciascuna cella, tra TUTTE le fonti con
+# AnimalRules.diet_compatibility > 0 (FORAGE e le fonti a stock come BERRY/ACORN/FRUIT), pesato
+# per calorie disponibili × compatibilità — vedi _consume_requirement_in_cell. Il fabbisogno non
+# soddisfatto non ha ancora conseguenze (nessuna mortalità per fame): la popolazione consuma
+# quello che trova e basta. Ritorna true se in
 # almeno una cella/specie è stato applicato un consumo da ALMENO UNA fonte (peso totale > 0),
 # non solo quando GRASS perde davvero spazio: dedicated_space[GRASS] cambia solo quando il
 # debito frazionario (pending_grass_space_debt) supera 1.0, un evento raro rispetto al consumo
@@ -22,18 +23,110 @@ func apply_daily_consumption(world: World, current_season: GameTypes.Season) -> 
 		if group.population <= 0:
 			continue
 
-		var home_cell := group.territory.get_primary_cell()
-		var cell := world.get_cell_at(home_cell.x, home_cell.y)
-		var state := world.get_cell_state_at(home_cell.x, home_cell.y)
-		if cell == null or state == null:
-			continue
-
 		var rules := AnimalCalculator.get_animal_rules(group.species_name)
 		if rules == null:
 			continue
 
-		if _consume_species_in_cell(cell, state, rules, group, current_season):
+		if _consume_group(world, group, rules, current_season):
 			any_consumption_applied = true
+
+	return any_consumption_applied
+
+
+# Consumo di un intero gruppo sul suo territorio (Step 5: territori multi-cella). Il fabbisogno
+# calorico TOTALE del gruppo (invariato, stessa _get_total_daily_requirement di sempre) viene
+# ripartito tra le celle occupate in proporzione alla popolazione assegnata a ciascuna
+# (PopulationGroup.get_population_by_cell — ripartizione uniforme oggi, vedi Territory), poi
+# ritentato su ogni cella tramite _consume_requirement_in_cell. Il residuo NON soddisfatto da una
+# cella (risorse locali insufficienti) viene ridistribuito sulle celle che quel turno hanno
+# soddisfatto per intero la propria quota (unico segnale disponibile che potrebbero avere margine
+# residuo) e ritentato — "water-filling" iterativo, converge in al più N round perché l'insieme
+# delle celle candidate a ricevere altro residuo non può che restringersi o azzerare il residuo a
+# ogni round. Il fabbisogno ancora scoperto dopo che nessuna cella ha più margine resta scoperto,
+# nessuna nuova conseguenza (stesso comportamento di sempre — solo mitigazione natalità).
+# Con territorio a una sola cella (sempre il caso di rabbit) degenera esattamente nel vecchio
+# comportamento pre-Step 5: un solo round, nessuna redistribuzione possibile.
+func _consume_group(
+	world: World, group: PopulationGroup, rules: AnimalRules, current_season: GameTypes.Season
+) -> bool:
+	# coords tenuta dentro ogni entry (non solo l'indice nell'array): occupied_macrocells può
+	# contenere coordinate non più valide (caso raro, difensivo), quindi cells_info può avere
+	# MENO elementi di occupied_macrocells — l'indice `i` qui sotto indicizza SEMPRE cells_info,
+	# mai occupied_macrocells direttamente, altrimenti i due andrebbero fuori sincrono.
+	var cells_info: Array[Dictionary] = []
+	for coords in group.territory.occupied_macrocells:
+		var cell := world.get_cell_at(coords.x, coords.y)
+		var state := world.get_cell_state_at(coords.x, coords.y)
+		if cell == null or state == null:
+			continue
+		cells_info.append({"coords": coords, "cell": cell, "state": state})
+	if cells_info.is_empty():
+		return false
+
+	var total_requirement := _get_total_daily_requirement(group, rules)
+	if total_requirement <= 0.0:
+		return false
+
+	var population_by_cell := group.get_population_by_cell()
+	var any_consumption_applied := false
+
+	# indice nell'array cells_info (non le coordinate) per tenere pesi/residui in Dictionary
+	# ordinari con chiavi int, evitando ambiguità su Vector2i come chiave in più punti.
+	var active_indices: Array = range(cells_info.size())
+	var pending_requirement: Dictionary = {}
+	for i in active_indices:
+		var coords: Vector2i = cells_info[i]["coords"]
+		var cell_population: int = int(population_by_cell.get(coords, 0))
+		pending_requirement[i] = total_requirement * (float(cell_population) / float(group.population))
+
+	var max_iterations: int = cells_info.size() + 1
+	for iteration in range(max_iterations):
+		if active_indices.is_empty():
+			break
+
+		var unmet_this_round: Dictionary = {}
+		var round_total_unmet := 0.0
+
+		for i in active_indices:
+			var req: float = pending_requirement.get(i, 0.0)
+			if req <= 0.0001:
+				continue
+			var info: Dictionary = cells_info[i]
+			var result := _consume_requirement_in_cell(info["cell"], info["state"], rules, req, current_season)
+			if result["applied"]:
+				any_consumption_applied = true
+			var unmet: float = result["unmet"]
+			if unmet > 0.0001:
+				unmet_this_round[i] = unmet
+				round_total_unmet += unmet
+
+		if round_total_unmet <= 0.0001:
+			break
+
+		# Solo le celle che questo round hanno soddisfatto per intero la propria quota sono
+		# candidate a ricevere il residuo — unico segnale disponibile che potrebbero avere ancora
+		# margine, senza doverlo indovinare in anticipo.
+		var recipients: Array = []
+		for i in active_indices:
+			if not unmet_this_round.has(i):
+				recipients.append(i)
+		if recipients.is_empty():
+			break
+
+		var recipient_weight_sum := 0.0
+		var recipient_weights: Dictionary = {}
+		for i in recipients:
+			var coords: Vector2i = cells_info[i]["coords"]
+			var weight: float = float(population_by_cell.get(coords, 0))
+			if weight <= 0.0:
+				weight = 1.0
+			recipient_weights[i] = weight
+			recipient_weight_sum += weight
+
+		pending_requirement.clear()
+		for i in recipients:
+			pending_requirement[i] = round_total_unmet * (recipient_weights[i] / recipient_weight_sum)
+		active_indices = recipients
 
 	return any_consumption_applied
 
@@ -60,33 +153,30 @@ func _get_total_daily_requirement(group: PopulationGroup, rules: AnimalRules) ->
 	return weighted_count * rules.daily_caloric_requirement
 
 
-# Costruisce le fonti pesate per una specie/cella e ne ripartisce il fabbisogno. Fonti con
+# Costruisce le fonti pesate per una specie/cella e ripartisce `requirement` (fabbisogno già
+# assegnato a QUESTA cella — la quota del gruppo su multi-cella, vedi _consume_group, oppure il
+# fabbisogno totale invariato quando il territorio ha una sola cella) tra di esse. Fonti con
 # diet_compatibility <= 0 vengono escluse SENZA interrogare CaloricCalculator (peso comunque
-# nullo, calcolo sprecato) — vengono solo loggate come escluse. Ritorna true se è stato
-# applicato un consumo da almeno una fonte (weight_sum > 0), qualunque essa sia — vedi
-# apply_daily_consumption.
-func _consume_species_in_cell(
+# nullo, calcolo sprecato). Ritorna {"applied": bool (almeno una fonte ha fornito qualcosa,
+# weight_sum > 0), "unmet": float (quota di requirement non soddisfatta, usata da _consume_group
+# per la redistribuzione)}.
+func _consume_requirement_in_cell(
 	cell: MacroCellData,
 	state: MacroCellState,
 	rules: AnimalRules,
-	group: PopulationGroup,
+	requirement: float,
 	current_season: GameTypes.Season
-) -> bool:
-	var total_requirement := _get_total_daily_requirement(group, rules)
-
+) -> Dictionary:
 	var weighted_sources: Array[Dictionary] = []
 	var weight_sum := 0.0
-	var log_lines: Array[String] = []
 
 	for source_name in rules.diet_compatibility.keys():
 		var compatibility := float(rules.diet_compatibility[source_name])
 		if compatibility <= 0.0:
-			log_lines.append("%s: peso=0.00 (escluso, compatibility=0)" % source_name)
 			continue
 
 		var source_rules := CaloricCalculator.get_caloric_source_rules(source_name)
 		if source_rules == null or source_rules.calories_per_unit <= 0.0:
-			log_lines.append("%s: peso=0.00 (escluso, regole mancanti)" % source_name)
 			continue
 
 		var available_calories: float
@@ -97,26 +187,32 @@ func _consume_species_in_cell(
 
 		var weight := available_calories * compatibility
 		if weight <= 0.0:
-			log_lines.append("%s: peso=0.00 calorie=%.1f (escluso, nulla disponibile)" % [source_name, available_calories])
 			continue
 
 		weighted_sources.append({
 			"name": source_name,
-			"available_calories": available_calories,
 			"weight": weight,
 			"rules": source_rules,
 		})
 		weight_sum += weight
 
+	var total_consumed_calories := 0.0
 	if weight_sum > 0.0:
 		for source in weighted_sources:
 			var source_name: String = source["name"]
 			var source_weight: float = source["weight"]
-			var source_available_calories: float = source["available_calories"]
 			var source_rules: CaloricSourceRules = source["rules"]
 
-			var share: float = total_requirement * (source_weight / weight_sum)
-			var consumed_calories: float = min(share, source_available_calories)
+			var share: float = requirement * (source_weight / weight_sum)
+			# Tetto = source_weight (= calorie_disponibili × compatibility), NON le calorie
+			# disponibili grezze: compatibility non è solo un peso di ripartizione tra più fonti
+			# simultanee, è anche un tetto reale a quanto di QUESTA fonte è accessibile in un
+			# giorno, indipendentemente da quanto ce n'è fisicamente. Con un'unica fonte disponibile
+			# (weight_sum == source_weight), share collassa sempre su tutto il requirement — capparlo
+			# alla disponibilità grezza avrebbe fatto consumare (e sottrarre dal mondo) più calorie di
+			# quelle davvero accessibili. L'eccedenza non coperta finisce in `unmet`, che alimenta la
+			# redistribuzione sulle altre celle del territorio invece di sparire nel nulla.
+			var consumed_calories: float = min(share, source_weight)
 			var units_consumed: float = consumed_calories / source_rules.calories_per_unit
 
 			if source_name == FORAGE_SOURCE_NAME:
@@ -128,15 +224,10 @@ func _consume_species_in_cell(
 				var before := state.get_secondary_resource_stock(source_name)
 				state.set_secondary_resource_stock(source_name, before - units_consumed)
 
-			log_lines.append("%s: peso=%.1f calorie=%.1f" % [source_name, source_weight, consumed_calories])
+			total_consumed_calories += consumed_calories
 
-	if DebugLogging.ENABLED and state.x == 50 and state.y == 50:
-		print("[ANIMAL CONSUME %s] population=%d fabbisogno=%.1f | %s | pending_debt=%.2f" % [
-			group.species_name, group.population, total_requirement, " | ".join(log_lines),
-			state.get_pending_grass_space_debt()
-		])
-
-	return weight_sum > 0.0
+	var unmet: float = max(requirement - total_consumed_calories, 0.0)
+	return {"applied": weight_sum > 0.0, "unmet": unmet}
 
 
 # Stesso schema di conversione spazio<->quantità usato da growth/mortality: la risorsa primaria

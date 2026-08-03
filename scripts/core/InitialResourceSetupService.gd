@@ -1,7 +1,6 @@
 class_name InitialResourceSetupService
 extends RefCounted
 
-const TEST_AREA_SIZE: int = 10
 const MIN_STONE_MICROCELLS: int = 50
 const MAX_STONE_MICROCELLS: int = 500
 const MIN_TREE_MICROCELLS: int = 50
@@ -18,17 +17,15 @@ const MAX_FISH_CAPACITY_RATIO: float = 0.06
 func populate_resources(world: World) -> void:
 	reserve_river_space(world)
 	populate_fish(world)
-	var area := _get_population_area(world)
-	populate_stone(world, area)
-	populate_trees(world, area)
-	populate_grass(world, area)
-	populate_shrub(world, area)
+	populate_stone(world)
+	populate_trees(world)
+	populate_grass(world)
+	populate_shrub(world)
 
 
-# A differenza di stone/trees/grass/shrub (confinati a _get_population_area, un residuo di
-# test), FISH viene seminato su OGNI cella d'acqua dell'intero mondo: water_dedicated_space è
-# gated dalla capacità fisica della cella (ResourceCalculator.get_water_capacity_space), quindi
-# non richiede un'area di test per restare limitato/controllato.
+# Come stone/trees/grass/shrub sotto, copre l'intera mappa — qui però il tetto è la capacità
+# fisica d'acqua della cella (ResourceCalculator.get_water_capacity_space), non un tiro di
+# get_presence_chance: ogni cella d'acqua idonea riceve sempre FISH, solo la quantità varia.
 func populate_fish(world: World) -> void:
 	for cell in world.cells:
 		var state := world.get_cell_state_at(cell.x, cell.y)
@@ -61,161 +58,146 @@ func reserve_river_space(world: World) -> void:
 			if state != null:
 				state.set_river_space(RIVER_SPACE)
 
-func _get_population_area(world: World) -> Rect2i:
-	var start_x := (World.WIDTH - TEST_AREA_SIZE) / 2
-	var start_y := (World.HEIGHT - TEST_AREA_SIZE) / 2
-	return Rect2i(start_x, start_y, TEST_AREA_SIZE, TEST_AREA_SIZE)
+# Stessa forma per stone/trees/grass/shrub: per ogni cella della mappa, tira get_presence_chance
+# (bioma/terreno/coast-driven, dai .tres di resource_density) e, se supera il tiro, assegna una
+# quantità random in [MIN,MAX]_*_MICROCELLS capata allo spazio libero residuo della cella. Prima di
+# questa versione, trees/grass/shrub seminavano solo la cella hardcoded (50,50) ("TEST
+# TEMPORANEO") mentre stone restava confinato a un riquadro 10x10 di test — entrambi residui di
+# sviluppo iniziale. Ordine di chiamata (stone, poi trees, grass, shrub — vedi populate_resources)
+# invariato: ogni tipo consuma get_empty_space() al momento della propria chiamata, quindi chi
+# gira prima ha priorità sullo spazio libero condiviso della cella, esattamente come già avveniva.
+func populate_stone(world: World) -> void:
+	for cell in world.cells:
+		var state := world.get_cell_state_at(cell.x, cell.y)
+		if state == null:
+			continue
+
+		var chance := ResourceCalculator.get_presence_chance(
+			GameTypes.WorldObjectType.ROCK, cell.terrain_base, cell.biome, cell.coast_type
+		)
+		if randf() > chance:
+			continue
+
+		var max_density := ResourceCalculator.get_max_density(
+			GameTypes.WorldObjectType.ROCK, cell.terrain_base, cell.biome, cell.coast_type
+		)
+		if max_density <= 0.0:
+			continue
+
+		var available_space: int = state.get_empty_space()
+		if available_space <= 0:
+			continue
+
+		var max_possible: int = min(MAX_STONE_MICROCELLS, available_space)
+		var min_possible: int = min(MIN_STONE_MICROCELLS, max_possible)
+		var dedicated_microcells: int = randi_range(min_possible, max_possible)
+		var quantity: int = int(round(max_density * dedicated_microcells))
+
+		state.set_resource_quantity(GameTypes.WorldObjectType.ROCK, quantity)
+		state.set_dedicated_space(GameTypes.WorldObjectType.ROCK, dedicated_microcells)
+
+	print("Stone popolato sull'intera mappa")
 
 
-func populate_stone(world: World, area: Rect2i) -> void:
-	for y in range(area.position.y, area.position.y + area.size.y):
-		for x in range(area.position.x, area.position.x + area.size.x):
-			var cell := world.get_cell_at(x, y)
-			var state := world.get_cell_state_at(x, y)
-			if cell == null or state == null:
-				continue
+func populate_trees(world: World) -> void:
+	for cell in world.cells:
+		var state := world.get_cell_state_at(cell.x, cell.y)
+		if state == null:
+			continue
 
-			var chance := ResourceCalculator.get_presence_chance(
-				GameTypes.WorldObjectType.ROCK,
-				cell.terrain_base,
-				cell.biome,
-				cell.coast_type
-			)
-			if randf() > chance:
-				continue
+		var chance := ResourceCalculator.get_presence_chance(
+			GameTypes.WorldObjectType.TREE, cell.terrain_base, cell.biome, cell.coast_type
+		)
+		if randf() > chance:
+			continue
 
-			var max_density := ResourceCalculator.get_max_density(
-				GameTypes.WorldObjectType.ROCK,
-				cell.terrain_base,
-				cell.biome,
-				cell.coast_type
-			)
-			if max_density <= 0.0:
-				continue
+		var max_density := ResourceCalculator.get_max_density(
+			GameTypes.WorldObjectType.TREE, cell.terrain_base, cell.biome, cell.coast_type
+		)
+		if max_density <= 0.0:
+			continue
 
-			var available_space: int = state.get_empty_space()
-			if available_space <= 0:
-				continue
+		var available_space: int = state.get_empty_space()
+		if available_space <= 0:
+			continue
 
-			var max_possible: int = min(MAX_STONE_MICROCELLS, available_space)
-			var min_possible: int = min(MIN_STONE_MICROCELLS, max_possible)
-			var dedicated_microcells: int = randi_range(min_possible, max_possible)
-			var quantity: int = int(round(max_density * dedicated_microcells))
+		var max_possible: int = min(MAX_TREE_MICROCELLS, available_space)
+		var min_possible: int = min(MIN_TREE_MICROCELLS, max_possible)
+		var dedicated_microcells: int = randi_range(min_possible, max_possible)
+		var quantity: int = int(round(max_density * dedicated_microcells))
 
-			state.set_resource_quantity(GameTypes.WorldObjectType.ROCK, quantity)
-			state.set_dedicated_space(GameTypes.WorldObjectType.ROCK, dedicated_microcells)
+		state.set_resource_quantity(GameTypes.WorldObjectType.TREE, quantity)
+		state.set_dedicated_space(GameTypes.WorldObjectType.TREE, dedicated_microcells)
+		_seed_subtype_composition(state, GameTypes.WorldObjectType.TREE, cell.biome, dedicated_microcells)
 
-	print("Stone popolato nell'area ", area)
+	print("Trees popolato sull'intera mappa")
 
 
-func populate_trees(world: World, area: Rect2i) -> void:
-	# TEST TEMPORANEO: solo una cella specifica, forzando la presenza
-	var test_x := 50
-	var test_y := 50
+func populate_grass(world: World) -> void:
+	for cell in world.cells:
+		var state := world.get_cell_state_at(cell.x, cell.y)
+		if state == null:
+			continue
 
-	var cell := world.get_cell_at(test_x, test_y)
-	var state := world.get_cell_state_at(test_x, test_y)
-	if cell == null or state == null:
-		return
+		var chance := ResourceCalculator.get_presence_chance(
+			GameTypes.WorldObjectType.GRASS, cell.terrain_base, cell.biome, cell.coast_type
+		)
+		if randf() > chance:
+			continue
 
-	var max_density := ResourceCalculator.get_max_density(
-		GameTypes.WorldObjectType.TREE,
-		cell.terrain_base,
-		cell.biome,
-		cell.coast_type
-	)
-	if max_density <= 0.0:
-		print("Trees non generato in (", test_x, ",", test_y, ") per max_density=0 — terrain=", cell.terrain_base, " biome=", cell.biome)
-		return
+		var max_density := ResourceCalculator.get_max_density(
+			GameTypes.WorldObjectType.GRASS, cell.terrain_base, cell.biome, cell.coast_type
+		)
+		if max_density <= 0.0:
+			continue
 
-	var available_space: int = state.get_empty_space()
-	if available_space <= 0:
-		print("Trees non generato in (", test_x, ",", test_y, ") per spazio esaurito")
-		return
+		var available_space: int = state.get_empty_space()
+		if available_space <= 0:
+			continue
 
-	var max_possible: int = min(MAX_TREE_MICROCELLS, available_space)
-	var min_possible: int = min(MIN_TREE_MICROCELLS, max_possible)
-	var dedicated_microcells: int = randi_range(min_possible, max_possible)
-	var quantity: int = int(round(max_density * dedicated_microcells))
+		var max_possible: int = min(MAX_GRASS_MICROCELLS, available_space)
+		var min_possible: int = min(MIN_GRASS_MICROCELLS, max_possible)
+		var dedicated_microcells: int = randi_range(min_possible, max_possible)
+		var quantity: int = int(round(max_density * dedicated_microcells))
 
-	state.set_resource_quantity(GameTypes.WorldObjectType.TREE, quantity)
-	state.set_dedicated_space(GameTypes.WorldObjectType.TREE, dedicated_microcells)
-	_seed_subtype_composition(state, GameTypes.WorldObjectType.TREE, cell.biome, dedicated_microcells)
+		state.set_resource_quantity(GameTypes.WorldObjectType.GRASS, quantity)
+		state.set_dedicated_space(GameTypes.WorldObjectType.GRASS, dedicated_microcells)
 
-	print("Trees popolato SOLO in (", test_x, ",", test_y, ") quantity=", quantity, " space=", dedicated_microcells)
+	print("Grass popolato sull'intera mappa")
 
 
-func populate_grass(world: World, area: Rect2i) -> void:
-	# TEST TEMPORANEO: solo una cella specifica, forzando la presenza
-	var test_x := 50
-	var test_y := 50
+func populate_shrub(world: World) -> void:
+	for cell in world.cells:
+		var state := world.get_cell_state_at(cell.x, cell.y)
+		if state == null:
+			continue
 
-	var cell := world.get_cell_at(test_x, test_y)
-	var state := world.get_cell_state_at(test_x, test_y)
-	if cell == null or state == null:
-		return
+		var chance := ResourceCalculator.get_presence_chance(
+			GameTypes.WorldObjectType.SHRUB, cell.terrain_base, cell.biome, cell.coast_type
+		)
+		if randf() > chance:
+			continue
 
-	var max_density := ResourceCalculator.get_max_density(
-		GameTypes.WorldObjectType.GRASS,
-		cell.terrain_base,
-		cell.biome,
-		cell.coast_type
-	)
-	if max_density <= 0.0:
-		print("Grass non generato in (", test_x, ",", test_y, ") per max_density=0 — terrain=", cell.terrain_base, " biome=", cell.biome)
-		return
+		var max_density := ResourceCalculator.get_max_density(
+			GameTypes.WorldObjectType.SHRUB, cell.terrain_base, cell.biome, cell.coast_type
+		)
+		if max_density <= 0.0:
+			continue
 
-	var available_space: int = state.get_empty_space()
-	if available_space <= 0:
-		print("Grass non generato in (", test_x, ",", test_y, ") per spazio esaurito")
-		return
+		var available_space: int = state.get_empty_space()
+		if available_space <= 0:
+			continue
 
-	var max_possible: int = min(MAX_GRASS_MICROCELLS, available_space)
-	var min_possible: int = min(MIN_GRASS_MICROCELLS, max_possible)
-	var dedicated_microcells: int = randi_range(min_possible, max_possible)
-	var quantity: int = int(round(max_density * dedicated_microcells))
+		var max_possible: int = min(MAX_SHRUB_MICROCELLS, available_space)
+		var min_possible: int = min(MIN_SHRUB_MICROCELLS, max_possible)
+		var dedicated_microcells: int = randi_range(min_possible, max_possible)
+		var quantity: int = int(round(max_density * dedicated_microcells))
 
-	state.set_resource_quantity(GameTypes.WorldObjectType.GRASS, quantity)
-	state.set_dedicated_space(GameTypes.WorldObjectType.GRASS, dedicated_microcells)
+		state.set_resource_quantity(GameTypes.WorldObjectType.SHRUB, quantity)
+		state.set_dedicated_space(GameTypes.WorldObjectType.SHRUB, dedicated_microcells)
+		_seed_subtype_composition(state, GameTypes.WorldObjectType.SHRUB, cell.biome, dedicated_microcells)
 
-	print("Grass popolato SOLO in (", test_x, ",", test_y, ") quantity=", quantity, " space=", dedicated_microcells)
-
-
-func populate_shrub(world: World, area: Rect2i) -> void:
-	# TEST TEMPORANEO: solo una cella specifica, forzando la presenza
-	var test_x := 50
-	var test_y := 50
-
-	var cell := world.get_cell_at(test_x, test_y)
-	var state := world.get_cell_state_at(test_x, test_y)
-	if cell == null or state == null:
-		return
-
-	var max_density := ResourceCalculator.get_max_density(
-		GameTypes.WorldObjectType.SHRUB,
-		cell.terrain_base,
-		cell.biome,
-		cell.coast_type
-	)
-	if max_density <= 0.0:
-		print("Shrub non generato in (", test_x, ",", test_y, ") per max_density=0 — terrain=", cell.terrain_base, " biome=", cell.biome)
-		return
-
-	var available_space: int = state.get_empty_space()
-	if available_space <= 0:
-		print("Shrub non generato in (", test_x, ",", test_y, ") per spazio esaurito")
-		return
-
-	var max_possible: int = min(MAX_SHRUB_MICROCELLS, available_space)
-	var min_possible: int = min(MIN_SHRUB_MICROCELLS, max_possible)
-	var dedicated_microcells: int = randi_range(min_possible, max_possible)
-	var quantity: int = int(round(max_density * dedicated_microcells))
-
-	state.set_resource_quantity(GameTypes.WorldObjectType.SHRUB, quantity)
-	state.set_dedicated_space(GameTypes.WorldObjectType.SHRUB, dedicated_microcells)
-	_seed_subtype_composition(state, GameTypes.WorldObjectType.SHRUB, cell.biome, dedicated_microcells)
-
-	print("Shrub popolato SOLO in (", test_x, ",", test_y, ") quantity=", quantity, " space=", dedicated_microcells)
+	print("Shrub popolato sull'intera mappa")
 
 
 # Semina la composizione iniziale dei sottotipi (se registrati per resource_type) in proporzione
@@ -232,16 +214,7 @@ func _seed_subtype_composition(
 	if subtype_rules.is_empty() or total_space <= 0:
 		return
 
-	var weights: Dictionary = {}
-	for rule in subtype_rules:
-		var ratio: float = float(rule.initial_ratio_by_biome.get(biome, 0.0))
-		if ratio > 0.0:
-			weights[rule.subtype_name] = ratio
-
-	if weights.is_empty():
-		for rule in subtype_rules:
-			weights[rule.subtype_name] = 1.0
-
+	var weights := ResourceCalculator.get_initial_ratio_subtype_weights(resource_type, biome)
 	var split := state.apply_subtype_space_delta(resource_type, total_space, weights)
 	_seed_age_band_composition(state, resource_type, subtype_rules, split)
 

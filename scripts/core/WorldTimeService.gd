@@ -38,6 +38,9 @@ func force_advance_to_year_end(world: World, game_data: GameData) -> void:
 #     cycle they're born in — same principle as vegetation's age-band maturation before growth
 #   - end of spring: growth + encroachment, leftover surplus stored as this year's pending surplus
 #   - start of each season: evaluate natural event types whose reference_season matches
+#   - start of each season: for every multi-cell animal territory (any species, not gated by
+#     birth_season), reshuffle the random per-cell population weights (visual only — see
+#     PopulationTerritoryShuffleService)
 #   - end of autumn (year rollover): mortality
 # Order within a shared day matters only for SPRING's start (migration before any future
 # spring-referenced event type), chosen to mirror the original pipeline's resource-then-events
@@ -70,7 +73,14 @@ func _run_seasonal_checkpoints(world: World, game_data: GameData, year_rolled_ov
 		if day == SeasonCalculator.get_season_day_range(season).x:
 			_run_secondary_resource_stock_debug_checkpoint(world, SeasonCalculator.get_previous_season(season), season)
 			_run_natural_events_checkpoint(world, game_data, season)
-			_run_animal_birth_mitigation_checkpoint(world, season)
+			# Step 8 del refactoring fauna: territorio ed espansione/contrazione girano nello
+			# STESSO checkpoint di inizio birth_season in cui girava già (da solo) il calcolo del
+			# ratio calorico per la mitigazione natalità — i due condividono la stessa identica
+			# definizione di scarsità (vedi TerritoryDynamicsService), quindi la mitigazione non è
+			# più un checkpoint a sé: è orchestrata da TerritoryDynamicsService stesso, DOPO
+			# l'eventuale aggiustamento del territorio, mai prima.
+			_run_territory_dynamics_checkpoint(world, season)
+			_run_animal_territory_shuffle_checkpoint(world, season)
 			checkpoint_ran = true
 
 	if year_rolled_over:
@@ -134,6 +144,16 @@ func _run_mortality_checkpoint(world: World) -> void:
 	FaunaMortalityService.new().apply_fauna_mortality(world)
 
 
+# A inizio di ogni stagione (stesso giorno degli altri checkpoint "start of season" sopra): per
+# le specie con birth_season == season, valuta espansione/contrazione del territorio e poi
+# calcola il moltiplicatore di mitigazione della natalità legato alla disponibilità calorica —
+# in quest'ordine, sullo stesso ratio calorico condiviso (vedi TerritoryDynamicsService). Il
+# moltiplicatore risultante resta memorizzato sul gruppo fino al checkpoint di nascita già
+# esistente, a fine birth_season.
+func _run_territory_dynamics_checkpoint(world: World, season: GameTypes.Season) -> void:
+	TerritoryDynamicsService.new().update_territories_and_mitigation(world, season)
+
+
 func _run_migration_checkpoint(world: World, game_data: GameData) -> void:
 	var migration_service := ResourceMigrationService.new()
 	var leftover_surplus := _collect_pending_migration_surplus(world)
@@ -147,13 +167,13 @@ func _run_natural_events_checkpoint(world: World, game_data: GameData, season: G
 	natural_event_service.trigger_events(world, game_data, season)
 
 
-# A inizio di ogni stagione (stesso giorno degli altri checkpoint "start of season" sopra):
-# per le specie con birth_season == season, calcola il moltiplicatore di mitigazione della
-# natalità legato alla disponibilità calorica del territorio (vedi AnimalBirthMitigationService),
-# usando lo stato REALE di oggi stesso — nessuno sfasamento su un'altra stagione. Il moltiplicatore
-# resta memorizzato sul gruppo fino al checkpoint di nascita già esistente, a fine birth_season.
-func _run_animal_birth_mitigation_checkpoint(world: World, season: GameTypes.Season) -> void:
-	AnimalBirthMitigationService.new().compute_mitigation(world, season)
+# Stesso giorno "inizio stagione" del checkpoint sopra, ma NON filtrato per AnimalRules.
+# birth_season: si applica a ogni gruppo con territorio multi-cella a ogni cambio stagione (4
+# volte/anno), non solo alla propria stagione di nascita — qui la stagione è solo il ritmo del
+# rimescolamento visivo, non legata al ciclo riproduttivo di una specie (vedi
+# PopulationTerritoryShuffleService, Step 6 del refactoring fauna).
+func _run_animal_territory_shuffle_checkpoint(world: World, season: GameTypes.Season) -> void:
+	PopulationTerritoryShuffleService.new().shuffle_distribution(world, season)
 
 
 # TEMPORANEO — nessun vero registro di fonti a stock persistente esiste ancora, solo questo

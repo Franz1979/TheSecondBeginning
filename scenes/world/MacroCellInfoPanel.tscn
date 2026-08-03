@@ -83,27 +83,36 @@ layout_mode = 2
 layout_mode = 2
 theme_override_font_sizes/font_size = 13
 
-[node name="FaunaTab" type="ScrollContainer" parent="MarginContainer/VBoxContainer/TabContainer"]
+[node name="FaunaTab1" type="ScrollContainer" parent="MarginContainer/VBoxContainer/TabContainer"]
 visible = false
 layout_mode = 2
 horizontal_scroll_mode = 0
 
-[node name="FaunaContent" type="VBoxContainer" parent="MarginContainer/VBoxContainer/TabContainer/FaunaTab"]
+[node name="FaunaContent" type="VBoxContainer" parent="MarginContainer/VBoxContainer/TabContainer/FaunaTab1"]
 layout_mode = 2
 size_flags_horizontal = 3
 
-[node name="SectionTitleLabel" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/FaunaTab/FaunaContent"]
+[node name="SectionTitleLabel" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/FaunaTab1/FaunaContent"]
 layout_mode = 2
 theme_override_font_sizes/font_size = 13
 
-[node name="PopulationGroupsContainer" type="VBoxContainer" parent="MarginContainer/VBoxContainer/TabContainer/FaunaTab/FaunaContent"]
+[node name="FishSummaryContainer" type="VBoxContainer" parent="MarginContainer/VBoxContainer/TabContainer/FaunaTab1/FaunaContent"]
 layout_mode = 2
 
-[node name="FaunaSeparatorLabel" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/FaunaTab/FaunaContent"]
+[node name="FaunaTab2" type="ScrollContainer" parent="MarginContainer/VBoxContainer/TabContainer"]
+visible = false
 layout_mode = 2
-theme_override_font_sizes/font_size = 11
+horizontal_scroll_mode = 0
 
-[node name="FishSummaryContainer" type="VBoxContainer" parent="MarginContainer/VBoxContainer/TabContainer/FaunaTab/FaunaContent"]
+[node name="FaunaContent" type="VBoxContainer" parent="MarginContainer/VBoxContainer/TabContainer/FaunaTab2"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="SectionTitleLabel" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/FaunaTab2/FaunaContent"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 13
+
+[node name="PopulationGroupsContainer" type="VBoxContainer" parent="MarginContainer/VBoxContainer/TabContainer/FaunaTab2/FaunaContent"]
 layout_mode = 2
 
 [node name="ActionsContainer" type="VBoxContainer" parent="MarginContainer/VBoxContainer" unique_id=1311435228]

@@ -8,6 +8,13 @@ var y: int
 var micro_seed: int
 var resource_quantity: Dictionary = {}
 var dedicated_space: Dictionary = {}
+# WorldObjectType -> bool. Fatto storico permanente, mai azzerato: true dal primo momento in cui
+# dedicated_space[type] diventa > 0 in questa cella (generazione iniziale, growth, encroachment o
+# migrazione — vedi set_dedicated_space sotto, unico punto di scrittura di dedicated_space).
+# Usato solo dal floor di ricrescita minima (seed-rain) in ResourceGrowthService, per distinguere
+# una cella temporaneamente svuotata (qui il floor si applica) da una radura mai popolata per
+# quella risorsa dal world generator (il floor NON deve mai forzare crescita lì).
+var has_ever_grown: Dictionary = {}
 var subtype_composition: Dictionary = {} # WorldObjectType -> Dictionary[String subtype_name, int space_count]
 # WorldObjectType -> Dictionary[String subtype_name, Dictionary[AgeBand, int space_count]].
 # Popolato solo per i sottotipi con SubtypeRules.track_age_bands=true (oggi solo SHRUB); vuoto
@@ -57,7 +64,13 @@ func get_dedicated_space(object_type: GameTypes.WorldObjectType) -> int:
 	return int(dedicated_space.get(object_type, 0))
 
 func set_dedicated_space(object_type: GameTypes.WorldObjectType, amount: int) -> void:
-	dedicated_space[object_type] = max(amount, 0)
+	var clamped: int = max(amount, 0)
+	dedicated_space[object_type] = clamped
+	if clamped > 0:
+		has_ever_grown[object_type] = true
+
+func has_resource_ever_grown(object_type: GameTypes.WorldObjectType) -> bool:
+	return bool(has_ever_grown.get(object_type, false))
 
 func get_subtype_composition(object_type: GameTypes.WorldObjectType) -> Dictionary:
 	return subtype_composition.get(object_type, {})

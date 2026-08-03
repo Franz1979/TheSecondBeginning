@@ -3,8 +3,13 @@ extends PanelContainer
 
 const TAB_GEOGRAFIA := 0
 const TAB_VEGETAZIONE := 1
-const TAB_FAUNA := 2
-const TAB_SUSSISTENZA := 3
+# Fauna è divisa in due tab (a richiesta dell'utente): FAUNA_1 per la fauna "passiva", che si
+# comporta come vegetazione — cresce/decresce in MacroCellState per densità, nessun comportamento
+# proprio (oggi solo FISH, in futuro BIRDS); FAUNA_2 per la fauna "vera", con comportamento e
+# stato proprio via PopulationGroup (rabbit, deer, ...). Prima dello split erano un'unica tab.
+const TAB_FAUNA_1 := 2
+const TAB_FAUNA_2 := 3
+const TAB_SUSSISTENZA := 4
 
 @onready var title_label: Label = $MarginContainer/VBoxContainer/TitleLabel
 @onready var coords_label: Label = $MarginContainer/VBoxContainer/CoordsLabel
@@ -32,12 +37,12 @@ const TAB_SUSSISTENZA := 3
 @onready var tree_subtype_conifer_age_label: Label = $MarginContainer/VBoxContainer/TabContainer/VegetazioneTab/VegetazioneContent/TreeSubtypeContainer/TreeSubtypeConiferAgeLabel
 @onready var resource_separator_label: Label = $MarginContainer/VBoxContainer/TabContainer/VegetazioneTab/VegetazioneContent/ResourceSeparatorLabel
 @onready var empty_space_label: Label = $MarginContainer/VBoxContainer/TabContainer/VegetazioneTab/VegetazioneContent/EmptySpaceLabel
-@onready var fauna_title_label: Label = $MarginContainer/VBoxContainer/TabContainer/FaunaTab/FaunaContent/SectionTitleLabel
-@onready var fish_number_label: Label = $MarginContainer/VBoxContainer/TabContainer/FaunaTab/FaunaContent/FishNumberLabel
-@onready var fauna_separator_label: Label = $MarginContainer/VBoxContainer/TabContainer/FaunaTab/FaunaContent/FaunaSeparatorLabel
-@onready var water_empty_space_label: Label = $MarginContainer/VBoxContainer/TabContainer/FaunaTab/FaunaContent/WaterEmptySpaceLabel
-@onready var animal_separator_label: Label = $MarginContainer/VBoxContainer/TabContainer/FaunaTab/FaunaContent/AnimalSeparatorLabel
-@onready var animal_population_container: VBoxContainer = $MarginContainer/VBoxContainer/TabContainer/FaunaTab/FaunaContent/AnimalPopulationContainer
+@onready var fauna_1_title_label: Label = $MarginContainer/VBoxContainer/TabContainer/FaunaTab1/FaunaContent/SectionTitleLabel
+@onready var fish_number_label: Label = $MarginContainer/VBoxContainer/TabContainer/FaunaTab1/FaunaContent/FishNumberLabel
+@onready var fauna_separator_label: Label = $MarginContainer/VBoxContainer/TabContainer/FaunaTab1/FaunaContent/FaunaSeparatorLabel
+@onready var water_empty_space_label: Label = $MarginContainer/VBoxContainer/TabContainer/FaunaTab1/FaunaContent/WaterEmptySpaceLabel
+@onready var fauna_2_title_label: Label = $MarginContainer/VBoxContainer/TabContainer/FaunaTab2/FaunaContent/SectionTitleLabel
+@onready var animal_population_container: VBoxContainer = $MarginContainer/VBoxContainer/TabContainer/FaunaTab2/FaunaContent/AnimalPopulationContainer
 @onready var subsistence_title_label: Label = $MarginContainer/VBoxContainer/TabContainer/SussistenzaTab/SectionTitleLabel
 @onready var forage_units_label: Label = $MarginContainer/VBoxContainer/TabContainer/SussistenzaTab/ForageUnitsLabel
 @onready var forage_calories_label: Label = $MarginContainer/VBoxContainer/TabContainer/SussistenzaTab/ForageCaloriesLabel
@@ -60,18 +65,21 @@ const TAB_SUSSISTENZA := 3
 func _ready() -> void:
 	tab_container.set_tab_title(TAB_GEOGRAFIA, "🧭")
 	tab_container.set_tab_title(TAB_VEGETAZIONE, "🌿")
-	tab_container.set_tab_title(TAB_FAUNA, "🐟")
+	tab_container.set_tab_title(TAB_FAUNA_1, "🐟")
+	tab_container.set_tab_title(TAB_FAUNA_2, "🦌")
 	tab_container.set_tab_title(TAB_SUSSISTENZA, "🍽️")
 
 	var tab_bar := tab_container.get_tab_bar()
 	tab_bar.set_tab_tooltip(TAB_GEOGRAFIA, tr("tab_geography"))
 	tab_bar.set_tab_tooltip(TAB_VEGETAZIONE, tr("tab_vegetation"))
-	tab_bar.set_tab_tooltip(TAB_FAUNA, tr("tab_fauna"))
+	tab_bar.set_tab_tooltip(TAB_FAUNA_1, tr("tab_fauna_1"))
+	tab_bar.set_tab_tooltip(TAB_FAUNA_2, tr("tab_fauna_2"))
 	tab_bar.set_tab_tooltip(TAB_SUSSISTENZA, tr("tab_subsistence"))
 
 	geography_title_label.text = tr("tab_geography")
 	vegetation_title_label.text = tr("tab_vegetation")
-	fauna_title_label.text = tr("tab_fauna")
+	fauna_1_title_label.text = tr("tab_fauna_1")
+	fauna_2_title_label.text = tr("tab_fauna_2")
 	subsistence_title_label.text = tr("tab_subsistence")
 
 	clear()
@@ -119,7 +127,6 @@ func show_cell(cell: MacroCellData, state: MacroCellState, current_season: GameT
 		fish_number_label.text = "Fish: " + NumberFormatter.format_int(fish_quantity) + " (occupied cells: " + NumberFormatter.format_int(fish_space) + ")"
 		fauna_separator_label.text = " - - - - - - - - - -"
 		water_empty_space_label.text = "Water empty space: " + NumberFormatter.format_int(state.get_empty_water_space(water_capacity))
-		animal_separator_label.text = " - - - - - - - - - -"
 		_update_animal_population_rows(world, Vector2i(cell.x, cell.y))
 
 		_update_forage_calories_label(cell, state, current_season)
@@ -151,10 +158,17 @@ func show_cell(cell: MacroCellData, state: MacroCellState, current_season: GameT
 # per ogni sottotipo noto già nel .tscn): la lista delle specie animali presenti in questa cella è
 # aperta (world.get_population_groups_at(coords)), quindi le righe sono generate a runtime —
 # stesso precedente già usato da TooltipButton.gd (Label.new() invece di istanziare nodi .tscn
-# fissi). Una riga per specie con population > 0 ("  - <species_name>: <totale>"), più una seconda
-# riga indentata "(Y:.. - A:.. - O:..)" SOLO se AnimalRules.track_age_bands è true — stesso formato
-# testuale di _set_age_band_line (vegetazione), qui su conteggi individui grezzi invece che su
-# spazio convertito in quantità (gli animali non hanno un concetto di densità/spazio dedicato).
+# fissi).
+#
+# Step 5 (territori multi-cella): questo pannello è per-cella, quindi mostra solo la quota di
+# animali EFFETTIVAMENTE presenti in questa macrocella (PopulationGroup.get_population_by_cell —
+# ripartizione uniforme del gruppo sul suo territorio), non il totale dell'intero gruppo, che
+# potrebbe occupare anche altre celle. Con territorio a una sola cella (rabbit, o deer già oggi)
+# la quota coincide col totale e il formato degrada a "  - specie: N" come prima di questo step.
+# Con più celle: "  - specie: N of M (K cells)". La riga età (Y/A/O) sotto è la ripartizione
+# della SOLA quota di questa cella (PopulationGroup.get_age_composition_in_cell) — derivata a
+# scopo di visualizzazione (non esiste age tracking per cella nel modello), coerente per
+# costruzione con la quota mostrata sopra (la somma Y+A+O torna sempre esattamente N).
 func _update_animal_population_rows(world: World, coords: Vector2i) -> void:
 	_clear_animal_population_rows()
 
@@ -163,16 +177,32 @@ func _update_animal_population_rows(world: World, coords: Vector2i) -> void:
 			continue
 
 		var rules := AnimalCalculator.get_animal_rules(group.species_name)
+		var cell_count := group.territory.get_cell_count()
+		var cell_population: int = int(group.get_population_by_cell().get(coords, 0))
+		if cell_population <= 0:
+			continue
 
 		var number_label := Label.new()
 		number_label.add_theme_font_size_override("font_size", 11)
-		number_label.text = "  - %s: %s" % [group.species_name, NumberFormatter.format_int(group.population)]
+		if cell_count > 1:
+			# Testo hardcoded, non tr(): stesso trattamento delle altre parole di raccordo già
+			# usate in questi pannelli (es. "Y:"/"A:"/"O:" sotto) — nessuna CSV di traduzione
+			# esiste ancora (vedi CLAUDE.md), un tr() qui mostrerebbe la chiave grezza a schermo.
+			number_label.text = "  - %s: %s of %s (%d cells)" % [
+				group.species_name,
+				NumberFormatter.format_int(cell_population),
+				NumberFormatter.format_int(group.population),
+				cell_count
+			]
+		else:
+			number_label.text = "  - %s: %s" % [group.species_name, NumberFormatter.format_int(cell_population)]
 		animal_population_container.add_child(number_label)
 
 		if rules != null and rules.track_age_bands:
-			var young := group.get_age_count(GameTypes.AgeBand.YOUNG)
-			var adult := group.get_age_count(GameTypes.AgeBand.ADULT)
-			var old := group.get_age_count(GameTypes.AgeBand.OLD)
+			var cell_age_composition := group.get_age_composition_in_cell(coords)
+			var young := int(cell_age_composition.get(GameTypes.AgeBand.YOUNG, 0))
+			var adult := int(cell_age_composition.get(GameTypes.AgeBand.ADULT, 0))
+			var old := int(cell_age_composition.get(GameTypes.AgeBand.OLD, 0))
 
 			var age_label := Label.new()
 			age_label.add_theme_font_size_override("font_size", 10)

@@ -14,6 +14,7 @@ var macro_state: MacroCellState
 var game_data: GameData
 var renderer: MicroCellRenderer
 var rabbit_renderer: AnimalGroupRenderer
+var deer_renderer: AnimalGroupRenderer
 var animals_visible: bool = true
 var flora_daily_updates_enabled: bool = true
 var clock: GameClockController
@@ -53,6 +54,12 @@ var river_exterior_occupied: Dictionary = {}
 @onready var macro_cell_detail_panel: MacroCellDetailPanel = $CanvasLayer/Sidebar/MarginContainer/VBoxContainer/MacroCellDetailPanel
 
 func _ready() -> void:
+	# Ripristina lo stato dei due toggle dalla sessione precedente (vedi GameSettings): senza
+	# questo, uscendo e rientrando in questa scena i toggle tornerebbero sempre al default "attivo",
+	# perdendo silenziosamente la scelta dell'utente.
+	animals_visible = GameSettings.macro_cell_animals_visible
+	flora_daily_updates_enabled = GameSettings.macro_cell_flora_updates_enabled
+
 	year_title_label.text = tr("calendar_label")
 	advance_year_button.text = "+1"
 	advance_year_button.tooltip_text = tr("advance_year_tooltip")
@@ -126,12 +133,41 @@ func _ready() -> void:
 		"hop_duration_max": rabbit_rules.hop_duration_max if rabbit_rules != null else 0.4,
 		"hop_pause_min": rabbit_rules.hop_pause_min if rabbit_rules != null else 0.1,
 		"hop_pause_max": rabbit_rules.hop_pause_max if rabbit_rules != null else 0.3,
-		"body_length": 3.0,
-		"body_width": 1.3,
-		"ear_length": 2.7,
-		"ear_width": 0.9,
-		"color": Color(0.93, 0.91, 0.87, 0.95),
+		"size_multiplier_by_age": rabbit_rules.size_multiplier_by_age if rabbit_rules != null else [1.0, 1.0, 1.0],
+		"mesh": AnimalGroupRenderer.build_rabbit_mesh(3.0, 1.3, 2.7, 0.9, Color(0.93, 0.91, 0.87, 0.95)),
 	})
+
+	# Cervo: stesso schema del coniglio sopra (parametri comportamentali da AnimalRules/deer.tres,
+	# sagoma dedicata via build_deer_mesh — vedi AnimalGroupRenderer per la motivazione della
+	# separazione). Corpo più grande del coniglio (coerente con la specie: ~1.7-1.8x in lunghezza
+	# e larghezza), colore bruno invece del grigio-chiaro del coniglio.
+	deer_renderer = AnimalGroupRenderer.new()
+	add_child(deer_renderer)
+	var deer_rules := AnimalCalculator.get_animal_rules("deer")
+	deer_renderer.configure({
+		"individuals_per_group": deer_rules.visual_group_size if deer_rules != null else 1,
+		"move_speed": 3.5,
+		"turn_rate": 1.2,
+		"max_individuals_per_cluster": deer_rules.max_individuals_per_cluster if deer_rules != null else 1,
+		"cluster_comfort_radius": 6.0,
+		"cluster_attraction_strength": 1.5,
+		"hop_speed": deer_rules.hop_speed if deer_rules != null else 6.0,
+		"movement_phase_duration_min": deer_rules.movement_phase_duration_min if deer_rules != null else 2.0,
+		"movement_phase_duration_max": deer_rules.movement_phase_duration_max if deer_rules != null else 5.0,
+		"rest_phase_duration_min": deer_rules.rest_phase_duration_min if deer_rules != null else 3.0,
+		"rest_phase_duration_max": deer_rules.rest_phase_duration_max if deer_rules != null else 7.0,
+		"hop_duration_min": deer_rules.hop_duration_min if deer_rules != null else 0.2,
+		"hop_duration_max": deer_rules.hop_duration_max if deer_rules != null else 0.4,
+		"hop_pause_min": deer_rules.hop_pause_min if deer_rules != null else 0.1,
+		"hop_pause_max": deer_rules.hop_pause_max if deer_rules != null else 0.3,
+		"size_multiplier_by_age": deer_rules.size_multiplier_by_age if deer_rules != null else [1.0, 1.0, 1.0],
+		"mesh": AnimalGroupRenderer.build_deer_mesh(5.5, 2.2, 1.4, 0.6, Color(0.55, 0.4, 0.25, 0.95)),
+	})
+
+	# Applica lo stato di visibilità ripristinato sopra (default true dei renderer altrimenti
+	# resterebbe visibile anche se l'utente l'aveva disattivato prima di uscire).
+	rabbit_renderer.set_animals_visible(animals_visible)
+	deer_renderer.set_animals_visible(animals_visible)
 
 	if macro_cell != null and macro_world != null:
 		renderer.set_neighbors(_get_neighbor_cells(macro_cell), _get_neighbor_states(macro_cell))
@@ -152,6 +188,7 @@ func _ready() -> void:
 
 	_setup_clock()
 	rabbit_renderer.clock = clock
+	deer_renderer.clock = clock
 	_update_calendar_display()
 
 # "occupied" invertito rispetto al solito uso (qui marca ciò che NON è disponibile per FISH,
@@ -208,8 +245,11 @@ func _refresh_resource_visuals() -> void:
 		fish_positions = fish_service.generate_positions(macro_state, occupied_for_fish)
 	renderer.set_fish_positions(fish_positions)
 
-	var rabbit_group := macro_world.find_population_group("rabbit", Vector2i(macro_cell.x, macro_cell.y))
-	rabbit_renderer.set_population(rabbit_group.population if rabbit_group != null else 0)
+	var this_cell := Vector2i(macro_cell.x, macro_cell.y)
+	var rabbit_group := macro_world.find_population_group("rabbit", this_cell)
+	_update_animal_renderer_population(rabbit_renderer, rabbit_group, AnimalCalculator.get_animal_rules("rabbit"), this_cell)
+	var deer_group := macro_world.find_population_group("deer", this_cell)
+	_update_animal_renderer_population(deer_renderer, deer_group, AnimalCalculator.get_animal_rules("deer"), this_cell)
 
 	renderer.set_shrub_fruit_ratio(_get_shrub_fruit_ratio())
 	renderer.set_shrub_age_params(game_data.year, _get_age_params(GameTypes.WorldObjectType.SHRUB))
@@ -221,6 +261,36 @@ func _refresh_resource_visuals() -> void:
 	renderer.set_season(SeasonCalculator.get_season_for_day(game_data.current_day))
 
 	_update_info_panel()
+
+
+# Popola un AnimalGroupRenderer con la quota di QUESTA cella (get_population_by_cell — con
+# territori multi-cella, Step 5, group.population è il totale sull'INTERO territorio, non quanti
+# individui sono realmente qui; stessa fonte di verità già usata da MacroCellInfoPanel/
+# MacroCellDetailPanel, per rabbit a 1 sola cella degenera nello stesso valore). Se la specie
+# traccia le age band (track_age_bands), la quota viene ulteriormente ripartita per fascia
+# (get_age_composition_in_cell) così il renderer può disegnare Y/A/O a dimensioni diverse
+# (size_multiplier_by_age) — altrimenti passa la quota totale a set_population, scala fissa 1.0.
+func _update_animal_renderer_population(
+	renderer_node: AnimalGroupRenderer, group: PopulationGroup, rules: AnimalRules, coords: Vector2i
+) -> void:
+	var age_aware := rules != null and rules.track_age_bands
+
+	if group == null:
+		if age_aware:
+			renderer_node.set_population_by_age(0, 0, 0)
+		else:
+			renderer_node.set_population(0)
+		return
+
+	if age_aware:
+		var age_composition := group.get_age_composition_in_cell(coords)
+		renderer_node.set_population_by_age(
+			int(age_composition.get(GameTypes.AgeBand.YOUNG, 0)),
+			int(age_composition.get(GameTypes.AgeBand.ADULT, 0)),
+			int(age_composition.get(GameTypes.AgeBand.OLD, 0))
+		)
+	else:
+		renderer_node.set_population(int(group.get_population_by_cell().get(coords, 0)))
 
 
 # I numeri del pannello info leggono macro_state/macro_cell direttamente (nessun rebuild di
@@ -324,11 +394,17 @@ func _on_primary_action_pressed(action_id: StringName) -> void:
 			_on_back_to_world_pressed()
 		&"toggle_animals_visibility":
 			animals_visible = not animals_visible
+			# Un solo toggle per tutta la fauna (rabbit + deer, non uno per specie): nessun caso
+			# d'uso reale oggi per nasconderle separatamente — se servirà un controllo più fine
+			# in futuro (es. gameplay-specifico), lo si introduce allora.
 			rabbit_renderer.set_animals_visible(animals_visible)
+			deer_renderer.set_animals_visible(animals_visible)
 			primary_actions_bar.set_slot_toggled(1, animals_visible)
+			GameSettings.macro_cell_animals_visible = animals_visible
 		&"toggle_flora_updates":
 			flora_daily_updates_enabled = not flora_daily_updates_enabled
 			primary_actions_bar.set_slot_toggled(2, flora_daily_updates_enabled)
+			GameSettings.macro_cell_flora_updates_enabled = flora_daily_updates_enabled
 
 func _on_secondary_action_pressed(action_id: StringName) -> void:
 	match action_id:

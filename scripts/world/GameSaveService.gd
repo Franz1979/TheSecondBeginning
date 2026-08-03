@@ -36,6 +36,7 @@ func save_game_to_json(
 			"y": state.y,
 			"resource_quantity": state.resource_quantity,
 			"dedicated_space": state.dedicated_space,
+			"has_ever_grown": state.has_ever_grown,
 			"subtype_composition": state.subtype_composition,
 			"age_composition": state.age_composition,
 			"river_space": state.river_space,
@@ -53,9 +54,9 @@ func save_game_to_json(
 				stone_positions_data.append({"x": pos.x, "y": pos.y})
 			state_data["stone_positions"] = stone_positions_data
 		data["world"]["cell_states"].append(state_data)
-	# Popolazioni animali "vere" (oggi solo rabbit) — world-level, non più annidate dentro
+	# Popolazioni animali "vere" (rabbit/deer) — world-level, non più annidate dentro
 	# cell_states (vedi PopulationGroup/World.population_groups). occupied_macrocells è un array
-	# (oggi sempre con un solo elemento, vedi Territory) invece di una singola coppia x/y.
+	# (1+ elementi da Step 5, vedi Territory) invece di una singola coppia x/y.
 	for group in world.population_groups:
 		var occupied_cells_data: Array = []
 		for coords in group.territory.occupied_macrocells:

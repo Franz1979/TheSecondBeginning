@@ -39,7 +39,7 @@ anchor_left = 1.0
 anchor_top = 0.0
 anchor_right = 1.0
 anchor_bottom = 1.0
-offset_left = -220.0
+offset_left = -250.0
 offset_right = 0.0
 offset_top = 0.0
 offset_bottom = 0.0
@@ -138,7 +138,9 @@ script = ExtResource("4_season")
 layout_mode = 2
 
 [node name="DebugRabbitSpinBox" type="SpinBox" parent="CanvasLayer/Sidebar/MarginContainer/VBoxContainer/DebugRabbitContainer"]
+custom_minimum_size = Vector2(55, 0)
 layout_mode = 2
+theme_override_font_sizes/font_size = 10
 min_value = 0.0
 max_value = 10000.0
 step = 1.0
@@ -146,13 +148,18 @@ value = 10.0
 
 [node name="DebugSetRabbitButton" type="Button" parent="CanvasLayer/Sidebar/MarginContainer/VBoxContainer/DebugRabbitContainer"]
 layout_mode = 2
-text = "Imposta rabbit (50,50)"
+size_flags_horizontal = 3
+theme_override_font_sizes/font_size = 10
+text = "Imposta rabbit"
+tooltip_text = "(50,50)"
 
 [node name="DebugDeerContainer" type="HBoxContainer" parent="CanvasLayer/Sidebar/MarginContainer/VBoxContainer"]
 layout_mode = 2
 
 [node name="DebugDeerSpinBox" type="SpinBox" parent="CanvasLayer/Sidebar/MarginContainer/VBoxContainer/DebugDeerContainer"]
+custom_minimum_size = Vector2(55, 0)
 layout_mode = 2
+theme_override_font_sizes/font_size = 10
 min_value = 0.0
 max_value = 10000.0
 step = 1.0
@@ -160,7 +167,10 @@ value = 10.0
 
 [node name="DebugSetDeerButton" type="Button" parent="CanvasLayer/Sidebar/MarginContainer/VBoxContainer/DebugDeerContainer"]
 layout_mode = 2
-text = "Imposta deer (50,50)"
+size_flags_horizontal = 3
+theme_override_font_sizes/font_size = 10
+text = "Imposta deer"
+tooltip_text = "(50,50)"
 
 [node name="HSeparator2" type="HSeparator" parent="CanvasLayer/Sidebar/MarginContainer/VBoxContainer"]
 layout_mode = 2

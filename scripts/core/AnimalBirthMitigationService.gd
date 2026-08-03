@@ -12,47 +12,62 @@ const RATIO_LOW_THRESHOLD := 0.3   # sotto: moltiplicatore ridotto al floor
 const MULTIPLIER_FLOOR := 0.05     # "quasi zero", mai natalità del tutto azzerata da un solo anno scarso
 
 
+# Ratio calorico del territorio ATTUALE del gruppo: stock disponibile (snapshot, non una media —
+# vedi _get_available_stock) diviso il fabbisogno stagionale age-weighted (vedi
+# _get_seasonal_requirement). Formula invariata da quando viveva dentro compute_mitigation (ora
+# rimosso): calcolata esattamente all'inizio di birth_season (stesso giorno reale, stato reale —
+# nessuna proiezione da un'altra stagione). Pubblica e riusata da due chiamanti che devono
+# condividere la STESSA definizione di scarsità — TerritoryDynamicsService (Step 8, che la
+# ricalcola due volte: prima e dopo un'eventuale espansione/contrazione annuale del territorio,
+# nello stesso checkpoint di inizio birth_season) e apply_mitigation_multiplier sotto (che la
+# riceve già calcolata sul territorio DEFINITIVO di quest'anno, non la ricalcola mai da capo).
+# Ritorna anche stock/fabbisogno grezzi (non solo il ratio) così il chiamante può loggarli senza
+# doverli ricalcolare una seconda volta.
+func compute_caloric_ratio(world: World, group: PopulationGroup, rules: AnimalRules, season: GameTypes.Season) -> Dictionary:
+	var available_stock := _get_available_stock(world, group, rules, season)
+	var seasonal_requirement := _get_seasonal_requirement(group, rules)
+	var ratio: float = 0.0
+	if seasonal_requirement > 0.0:
+		ratio = available_stock / seasonal_requirement
+	return {"stock": available_stock, "requirement": seasonal_requirement, "ratio": ratio}
+
+
 # Mitigazione della natalità legata alla disponibilità calorica del territorio: si SOMMA a
 # fertility_multiplier_by_age/base_birth_rate già esistenti (vedi AnimalBirthService), non li
-# sostituisce. Calcolata una volta all'anno, esattamente all'inizio di birth_season (stesso
-# giorno reale, stato reale — nessuna proiezione da un'altra stagione): il moltiplicatore
-# risultante resta memorizzato sul gruppo fino al checkpoint di nascita già esistente, a fine
-# birth_season. Solo le specie con track_age_bands=true hanno un ciclo di nascite a cui
-# applicarlo; le altre sono no-op per costruzione.
-func compute_mitigation(world: World, season: GameTypes.Season) -> void:
-	for group in world.population_groups:
-		var rules := AnimalCalculator.get_animal_rules(group.species_name)
-		if rules == null or not rules.track_age_bands:
-			continue
-		if rules.birth_season != season:
-			continue
+# sostituisce. raw_ratio è già stato calcolato dal chiamante (TerritoryDynamicsService) sul
+# territorio DEFINITIVO di quest'anno — dopo l'eventuale espansione/contrazione dello stesso
+# checkpoint di inizio birth_season, mai su un territorio che sta per essere modificato. Il
+# moltiplicatore risultante resta memorizzato sul gruppo fino al checkpoint di nascita già
+# esistente, a fine birth_season. Ritorna il moltiplicatore così il chiamante (TerritoryDynamicsService)
+# può includerlo nel proprio log invece di richiederlo di nuovo al gruppo.
+#
+# log_enabled di default true (specie a 1 sola cella, es. rabbit: questo è l'unico log disponibile
+# sul loro ratio/moltiplicatore). TerritoryDynamicsService lo passa a false per le specie con
+# min_territory_cells > 1 (es. deer), il cui log dedicato mostra già ratio_finale/stock/fabbisogno
+# — stampare anche qui sarebbe una riga duplicata con la stessa informazione.
+func apply_mitigation_multiplier(group: PopulationGroup, raw_ratio: float, log_enabled: bool = true) -> float:
+	var clamped_ratio: float = min(raw_ratio, 1.0)
+	var multiplier := _get_multiplier(clamped_ratio)
 
-		var available_stock := _get_available_stock(world, group, rules, season)
-		var seasonal_requirement := _get_seasonal_requirement(group, rules)
+	group.set_birth_mitigation_multiplier(multiplier)
 
-		var raw_ratio: float = 0.0
-		if seasonal_requirement > 0.0:
-			raw_ratio = available_stock / seasonal_requirement
-		var clamped_ratio: float = min(raw_ratio, 1.0)
-		var multiplier := _get_multiplier(clamped_ratio)
+	if DebugLogging.ENABLED and log_enabled:
+		print("[BIRTH MITIGATION] %s pop=%d ratio_grezzo=%.3f ratio_clampato=%.3f moltiplicatore=%.3f" % [
+			group.species_name, group.population, raw_ratio, clamped_ratio, multiplier
+		])
 
-		group.set_birth_mitigation_multiplier(multiplier)
-
-		if DebugLogging.ENABLED:
-			print("[BIRTH MITIGATION] %s pop=%d stock=%.1f fabbisogno_stagionale=%.1f ratio_grezzo=%.3f ratio_clampato=%.3f moltiplicatore=%.3f" % [
-				group.species_name, group.population, available_stock, seasonal_requirement,
-				raw_ratio, clamped_ratio, multiplier
-			])
+	return multiplier
 
 
-# Somma, su tutte le celle del territorio (oggi sempre una sola, vedi Territory — iterato in
-# forma generica per essere già pronto al multi-cella futuro), le calorie ottenibili da ogni
-# fonte in diet_compatibility, pesate per compatibilità — stessa formula di peso usata da
-# AnimalConsumptionService._consume_species_in_cell, ma come somma-snapshot invece che
+# Somma, su tutte le celle del territorio (una sola per rabbit, min_territory_cells fino a 20 per
+# deer da Step 5 in poi — vedi Territory, iterato qui in forma generica fin da prima che il
+# multi-cella esistesse, quindi nessuna modifica necessaria in questo step), le calorie ottenibili
+# da ogni fonte in diet_compatibility, pesate per compatibilità — stessa formula di peso usata da
+# AnimalConsumptionService._consume_requirement_in_cell, ma come somma-snapshot invece che
 # distribuita contro un fabbisogno giornaliero. `season` qui è la stagione REALE in cui gira
-# questo checkpoint (== rules.birth_season per costruzione, vedi compute_mitigation) — nessuna
-# proiezione: FORAGE usa lo stesso stato/stagione di oggi, esattamente come farebbe
-# AnimalConsumptionService se girasse in questo stesso giorno.
+# questo checkpoint (== rules.birth_season per costruzione, vedi TerritoryDynamicsService, unico
+# chiamante di compute_caloric_ratio) — nessuna proiezione: FORAGE usa lo stesso stato/stagione di
+# oggi, esattamente come farebbe AnimalConsumptionService se girasse in questo stesso giorno.
 func _get_available_stock(world: World, group: PopulationGroup, rules: AnimalRules, season: GameTypes.Season) -> float:
 	var total := 0.0
 	for coords in group.territory.occupied_macrocells:

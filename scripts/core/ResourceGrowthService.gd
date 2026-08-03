@@ -37,8 +37,6 @@ func _grow_resource_in_cell(
 	current_absolute_day: int
 ) -> void:
 	var current_space: int = state.get_dedicated_space(resource_type)
-	if current_space <= 0:
-		return
 
 	#print("DEBUG growth cella (", cell.x, ",", cell.y, ") current_space=", current_space)
 
@@ -64,6 +62,19 @@ func _grow_resource_in_cell(
 	var new_space: int = int(round(min(new_space_float, max_reachable_space)))
 	#print("DEBUG new_space_float=", new_space_float, " new_space=", new_space)
 
+	# Floor di ricrescita minima ("seed rain"): la logistica pura sopra resta a 0 per sempre una
+	# volta che current_space tocca 0 (proporzionale a se stessa). Banche di semi/radici residue
+	# garantiscono almeno 1 microcella equivalente di ricrescita per checkpoint quando c'è ancora
+	# spazio libero — ma SOLO se questa cella ha già ospitato questa risorsa in passato
+	# (has_ever_grown): una radura mai popolata dal world generator deve poter restare a 0
+	# all'infinito, il floor non deve mai crearla dal nulla. Si applica dopo il gate di idoneità
+	# bioma/terrain sopra (growth_rate <= 0.0 già uscito) e non supera mai lo spazio libero
+	# (max_reachable_space): max(), mai addizione, così non gonfia una crescita già sana.
+	if state.has_resource_ever_grown(resource_type):
+		var floor_space: int = min(1, max_reachable_space - current_space)
+		if floor_space > 0 and (new_space - current_space) < floor_space:
+			new_space = current_space + floor_space
+
 	var max_density := ResourceCalculator.get_max_density(
 		resource_type,
 		cell.terrain_base,
@@ -79,6 +90,14 @@ func _grow_resource_in_cell(
 		])
 
 	var subtype_weights := ResourceCalculator.get_biome_weighted_subtype_composition(resource_type, state, cell.biome)
+	# Composizione locale interamente a zero (tipico di una cella che riparte dal floor sopra,
+	# dopo essere stata svuotata su tutti i sottotipi): nessuna proporzione locale da cui pesare
+	# la ripartizione. Ricade sugli stessi pesi initial_ratio_by_biome usati alla generazione del
+	# mondo, invece di lasciare dedicated_space e subtype_composition disallineati (vedi
+	# ResourceCalculator.get_initial_ratio_subtype_weights). Se resource_type non ha sottotipi
+	# (es. GRASS) get_initial_ratio_subtype_weights torna {} e il comportamento resta invariato.
+	if subtype_weights.is_empty() and new_space > current_space:
+		subtype_weights = ResourceCalculator.get_initial_ratio_subtype_weights(resource_type, cell.biome)
 	var gain_split := state.apply_subtype_space_delta(resource_type, new_space - current_space, subtype_weights)
 	_apply_age_band_gains(resource_type, state, gain_split)
 	state.set_dedicated_space(resource_type, new_space)

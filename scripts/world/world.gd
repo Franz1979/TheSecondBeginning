@@ -5,9 +5,10 @@ const HEIGHT: int = 100
 
 var cells: Array[MacroCellData] = []
 var cell_states: Array[MacroCellState] = []
-# Popolazioni animali "vere" (oggi solo rabbit) — world-level, non più proprietà della singola
-# macrocella (vedi PopulationGroup). Ogni gruppo ha un Territory (vedi Territory.gd) che oggi
-# occupa sempre esattamente una macrocella — nessuna logica di espansione/multi-cella ancora.
+# Popolazioni animali "vere" (rabbit/deer) — world-level, non più proprietà della singola
+# macrocella (vedi PopulationGroup). Ogni gruppo ha un Territory (vedi Territory.gd) di dimensione
+# fissa scelta alla creazione (1 cella per rabbit, min_territory_cells celle via BFS per deer,
+# vedi TerritoryBuilderService) — nessuna espansione/restringimento nel tempo ancora.
 var population_groups: Array[PopulationGroup] = []
 
 
@@ -33,6 +34,13 @@ func generate_empty_world() -> void:
 	elif GameSettings.selected_map_type == "mountain":
 		print("Mappa montagna non ancora disponibile")
 	elif GameSettings.selected_map_type == "empty":
+		# MacroCellData._init lascia biome a NONE di default — GRASSLAND è un punto di partenza
+		# molto più sensato per una mappa vuota da dipingere a mano nel Map Editor (stesso bioma
+		# neutro già usato da RandomMapGenerator), invece di lasciare ogni cella mai ridipinta
+		# bloccata a NONE (vedi MapEditorScene: il reset automatico del bioma ad ogni cambio
+		# pennello rendeva facilissimo dimenticarsi di ridipingerlo altrove).
+		for cell in cells:
+			cell.biome = GameTypes.Biome.GRASSLAND
 		print("Mappa vuota creata")
 	print("World generated. Cells: ", cells.size())
 

@@ -323,6 +323,31 @@ static func get_subtype_rule(resource_type: GameTypes.WorldObjectType, subtype_n
 	return null
 
 
+# Pesi di ripartizione tra sottotipi basati su SubtypeRules.initial_ratio_by_biome del bioma
+# della cella, con fallback a pesi uguali se nessun sottotipo ha un rapporto positivo per quel
+# bioma — stessa logica usata da InitialResourceSetupService per seminare la composizione alla
+# generazione del mondo, condivisa qui per essere riusata anche quando un tipo torna a crescere
+# da spazio E composizione sottotipi entrambi a zero (nessuna proporzione locale da cui pesare).
+static func get_initial_ratio_subtype_weights(
+	resource_type: GameTypes.WorldObjectType, biome: GameTypes.Biome
+) -> Dictionary:
+	var subtype_rules := get_subtype_rules(resource_type)
+	if subtype_rules.is_empty():
+		return {}
+
+	var weights: Dictionary = {}
+	for rule in subtype_rules:
+		var ratio: float = float(rule.initial_ratio_by_biome.get(biome, 0.0))
+		if ratio > 0.0:
+			weights[rule.subtype_name] = ratio
+
+	if weights.is_empty():
+		for rule in subtype_rules:
+			weights[rule.subtype_name] = 1.0
+
+	return weights
+
+
 # Pesa la composizione locale dei sottotipi di resource_type per il moltiplicatore di idoneità
 # growth_multiplier_by_biome del bioma della cella — usato da growth/encroachment (invert=false,
 # per distribuire le NUOVE unità in proporzione a quanto il bioma locale favorisce ciascun

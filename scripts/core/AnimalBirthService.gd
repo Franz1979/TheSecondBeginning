@@ -29,4 +29,12 @@ func apply_births(world: World, season: GameTypes.Season) -> void:
 			+ float(old) * rules.fertility_multiplier_by_age[GameTypes.AgeBand.OLD]
 		)
 		var births := int(round(weighted_count * rules.base_birth_rate * group.birth_mitigation_multiplier))
+		var population_before := group.population
 		group.apply_births(births)
+
+		if DebugLogging.ENABLED:
+			print("[ANIMAL BIRTHS] checkpoint=fine %s | %s: Y=%d A=%d O=%d pesato_fertilita=%.2f base_birth_rate=%.2f mitigazione=%.2f -> nascite=%d pop %d->%d" % [
+				GameTypes.Season.keys()[season], group.species_name,
+				young, adult, old, weighted_count, rules.base_birth_rate, group.birth_mitigation_multiplier,
+				births, population_before, group.population
+			])

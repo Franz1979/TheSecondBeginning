@@ -1,10 +1,22 @@
 class_name MacroCellInfoPanel
 extends PanelContainer
 
+# Emesso quando l'utente clicca la riga di un PopulationGroup nella tab Fauna (2) — il chiamante
+# (GameScene) ascolta per evidenziare sulla mappa le celle del territorio del gruppo (vedi
+# WorldRenderer.flash_cells). cells è un Array[Vector2i] (territory.occupied_macrocells).
+signal population_group_highlight_requested(cells: Array)
+
 const TAB_GEOGRAFIA := 0
 const TAB_VEGETAZIONE := 1
 const TAB_RISORSE := 2
-const TAB_FAUNA := 3
+# Fauna è divisa in due tab (a richiesta dell'utente): FAUNA_1 per la fauna "passiva", che si
+# comporta come vegetazione — cresce/decresce in MacroCellState per densità, nessun comportamento
+# proprio (oggi solo FISH, in futuro BIRDS); FAUNA_2 per la fauna "vera", con comportamento e
+# stato proprio via PopulationGroup (rabbit, deer, ...). Prima dello split erano un'unica tab.
+const TAB_FAUNA_1 := 3
+const TAB_FAUNA_2 := 4
+
+const COLOR_LOCATE_BUTTON := Color(0.2, 0.55, 0.95) # bottone "⌖" evidenzia-sulla-mappa, blu "locate"
 
 @onready var title_label: Label = $MarginContainer/VBoxContainer/TitleLabel
 @onready var coords_label: Label = $MarginContainer/VBoxContainer/CoordsLabel
@@ -20,10 +32,10 @@ const TAB_FAUNA := 3
 @onready var empty_space_label: Label = $MarginContainer/VBoxContainer/TabContainer/GeografiaTab/EmptySpaceLabel
 @onready var vegetation_title_label: Label = $MarginContainer/VBoxContainer/TabContainer/VegetazioneTab/SectionTitleLabel
 @onready var resources_title_label: Label = $MarginContainer/VBoxContainer/TabContainer/RisorseTab/SectionTitleLabel
-@onready var fauna_title_label: Label = $MarginContainer/VBoxContainer/TabContainer/FaunaTab/FaunaContent/SectionTitleLabel
-@onready var population_groups_container: VBoxContainer = $MarginContainer/VBoxContainer/TabContainer/FaunaTab/FaunaContent/PopulationGroupsContainer
-@onready var fauna_separator_label: Label = $MarginContainer/VBoxContainer/TabContainer/FaunaTab/FaunaContent/FaunaSeparatorLabel
-@onready var fish_summary_container: VBoxContainer = $MarginContainer/VBoxContainer/TabContainer/FaunaTab/FaunaContent/FishSummaryContainer
+@onready var fauna_1_title_label: Label = $MarginContainer/VBoxContainer/TabContainer/FaunaTab1/FaunaContent/SectionTitleLabel
+@onready var fish_summary_container: VBoxContainer = $MarginContainer/VBoxContainer/TabContainer/FaunaTab1/FaunaContent/FishSummaryContainer
+@onready var fauna_2_title_label: Label = $MarginContainer/VBoxContainer/TabContainer/FaunaTab2/FaunaContent/SectionTitleLabel
+@onready var population_groups_container: VBoxContainer = $MarginContainer/VBoxContainer/TabContainer/FaunaTab2/FaunaContent/PopulationGroupsContainer
 @onready var actions_container: VBoxContainer = $MarginContainer/VBoxContainer/ActionsContainer
 
 # Riferimento world tenuto solo per rinfrescare il tab Fauna (contenuto world-level, indipendente
@@ -38,19 +50,21 @@ func _ready() -> void:
 	tab_container.set_tab_title(TAB_GEOGRAFIA, "🧭")
 	tab_container.set_tab_title(TAB_VEGETAZIONE, "🌿")
 	tab_container.set_tab_title(TAB_RISORSE, "⛏️")
-	tab_container.set_tab_title(TAB_FAUNA, "🐟")
+	tab_container.set_tab_title(TAB_FAUNA_1, "🐟")
+	tab_container.set_tab_title(TAB_FAUNA_2, "🦌")
 
 	var tab_bar := tab_container.get_tab_bar()
 	tab_bar.set_tab_tooltip(TAB_GEOGRAFIA, tr("tab_geography"))
 	tab_bar.set_tab_tooltip(TAB_VEGETAZIONE, tr("tab_vegetation"))
 	tab_bar.set_tab_tooltip(TAB_RISORSE, tr("tab_resources"))
-	tab_bar.set_tab_tooltip(TAB_FAUNA, tr("tab_fauna"))
+	tab_bar.set_tab_tooltip(TAB_FAUNA_1, tr("tab_fauna_1"))
+	tab_bar.set_tab_tooltip(TAB_FAUNA_2, tr("tab_fauna_2"))
 
 	geography_title_label.text = tr("tab_geography")
 	vegetation_title_label.text = tr("tab_vegetation")
 	resources_title_label.text = tr("tab_resources")
-	fauna_title_label.text = tr("tab_fauna")
-	fauna_separator_label.text = " - - - - - - - - - -"
+	fauna_1_title_label.text = tr("tab_fauna_1")
+	fauna_2_title_label.text = tr("tab_fauna_2")
 
 	tab_container.tab_changed.connect(_on_tab_changed)
 
@@ -101,12 +115,11 @@ func show_cell(cell: MacroCellData, state: MacroCellState, world: World, show_re
 			tree_number_label.text = "Trees: -"
 			empty_space_label.text = "Empty ground space: -"
 
-	# Il tab Fauna mostra dati world-level (population_groups + aggregato FISH), indipendenti
-	# dalla cella selezionata: si rinfresca solo se è già la tab attiva mentre la selezione
-	# cambia (es. un giorno avanza mentre l'utente lo sta guardando), mai ad ogni show_cell a
-	# prescindere — vedi _on_tab_changed per il rinfresco all'apertura del tab stesso.
-	if tab_container.current_tab == TAB_FAUNA:
-		_refresh_fauna_tab()
+	# Le due tab Fauna mostrano dati world-level (aggregato FISH / population_groups),
+	# indipendenti dalla cella selezionata: si rinfrescano solo se una delle due è già quella
+	# attiva mentre la selezione cambia (es. un giorno avanza mentre l'utente la sta guardando),
+	# mai ad ogni show_cell a prescindere — vedi _on_tab_changed per il rinfresco all'apertura.
+	refresh_fauna_tabs_if_active()
 
 
 func clear(show_resources: bool = true) -> void:
@@ -138,20 +151,39 @@ func _set_resources_visible(value: bool) -> void:
 func _set_extra_tabs_hidden(hidden: bool) -> void:
 	tab_container.set_tab_hidden(TAB_VEGETAZIONE, hidden)
 	tab_container.set_tab_hidden(TAB_RISORSE, hidden)
-	tab_container.set_tab_hidden(TAB_FAUNA, hidden)
+	tab_container.set_tab_hidden(TAB_FAUNA_1, hidden)
+	tab_container.set_tab_hidden(TAB_FAUNA_2, hidden)
 
 
-func _on_tab_changed(tab_idx: int) -> void:
-	if tab_idx == TAB_FAUNA:
-		_refresh_fauna_tab()
+func _on_tab_changed(_tab_idx: int) -> void:
+	refresh_fauna_tabs_if_active()
+
+
+# Rinfresca la tab Fauna (1 o 2) attualmente aperta, se una delle due lo è — punto d'ingresso
+# unico usato sia da show_cell/_on_tab_changed (qui sotto) sia dal chiamante esterno
+# (GameScene._on_day_advanced) per il caso in cui il mondo avanza SENZA che l'utente abbia una
+# cella selezionata: le tab Fauna sono dati world-level, indipendenti dalla selezione, quindi non
+# devono aspettare un click su una cella per rinfrescarsi.
+func refresh_fauna_tabs_if_active() -> void:
+	if tab_container.current_tab == TAB_FAUNA_1:
+		_refresh_fauna_1_tab()
+	elif tab_container.current_tab == TAB_FAUNA_2:
+		_refresh_fauna_2_tab()
 
 
 # Contenuto world-level, non legato alla cella selezionata: rinfrescato solo all'apertura del
 # tab (vedi _on_tab_changed) o mentre resta quello attivo (vedi show_cell) — mai ad ogni giorno
 # simulato a prescindere, dato che l'aggregazione FISH sotto itera l'intero world.cells (100x100).
-func _refresh_fauna_tab() -> void:
-	_update_population_groups(_world)
+func _refresh_fauna_1_tab() -> void:
 	_update_fish_summary(_world)
+
+
+func _refresh_fauna_2_tab() -> void:
+	_update_population_groups(_world)
+
+
+func _on_population_group_row_pressed(cells: Array) -> void:
+	population_group_highlight_requested.emit(cells)
 
 
 # Elenco piatto di tutti i PopulationGroup del world (oggi solo rabbit), non filtrato per cella
@@ -170,22 +202,76 @@ func _update_population_groups(world: World) -> void:
 		population_groups_container.add_child(empty_label)
 		return
 
-	for i in range(world.population_groups.size()):
-		var group := world.population_groups[i]
-		# occupied_macrocells ha oggi sempre un solo elemento (vedi Territory): mostriamo solo
-		# quella cella, stesso comportamento visibile di prima.
-		var home_cell := group.territory.get_primary_cell()
+	var displayed_count := 0
+	for group in world.population_groups:
+		if group.population <= 0:
+			continue
+		displayed_count += 1
+
+		# Elenco piatto: sempre "in N cells" (mai le coordinate esatte, nemmeno con 1 sola cella
+		# come rabbit) — coerenza di formato tra tutte le specie voluta esplicitamente dall'utente,
+		# anche se con 1 cella sola si potrebbe mostrare la posizione precisa. "in N cell(s)"
+		# hardcoded, non tr(): stesso trattamento dei connettivi/testo di raccordo già hardcoded
+		# altrove in questo pannello — nessuna CSV di traduzione esiste ancora (vedi CLAUDE.md).
+		var cell_count := group.territory.get_cell_count()
+		var cell_descriptor: String = "in %d cell" % cell_count
+		if cell_count != 1:
+			cell_descriptor += "s"
+
+		# Riga = Label (non cliccabile, testo identico a prima) + piccolo bottone "mirino" a
+		# fianco per evidenziare sulla mappa le celle del territorio (vedi WorldRenderer.
+		# flash_cells) — l'intera riga cliccabile (versione precedente) non comunicava che fosse
+		# interattiva, dato che appariva identica a tutte le altre righe non cliccabili del
+		# pannello; un'icona dedicata è un affordance esplicito.
+		var row_container := HBoxContainer.new()
+		population_groups_container.add_child(row_container)
+
 		var label := Label.new()
 		label.add_theme_font_size_override("font_size", 11)
-		label.text = "#%d - %s: %s - %s (%d,%d)" % [
-			i + 1,
+		label.size_flags_horizontal = SIZE_EXPAND_FILL
+		label.text = "#%d - %s: %s - %s" % [
+			displayed_count,
 			group.species_name,
 			NumberFormatter.format_int(group.population),
-			tr("cell"),
-			home_cell.x,
-			home_cell.y
+			cell_descriptor
 		]
-		population_groups_container.add_child(label)
+		row_container.add_child(label)
+
+		var locate_button := Button.new()
+		locate_button.flat = true
+		locate_button.text = "⌖"
+		locate_button.tooltip_text = "Highlight cells on map"
+		locate_button.custom_minimum_size = Vector2(28, 0)
+		locate_button.add_theme_font_size_override("font_size", 18)
+		locate_button.add_theme_color_override("font_color", COLOR_LOCATE_BUTTON)
+		locate_button.add_theme_color_override("font_hover_color", COLOR_LOCATE_BUTTON.lightened(0.3))
+		locate_button.pressed.connect(_on_population_group_row_pressed.bind(group.territory.occupied_macrocells))
+		row_container.add_child(locate_button)
+
+		# Ripartizione età SOLO se la specie la traccia (AnimalRules.track_age_bands) — stesso
+		# formato testuale già usato da MacroCellDetailPanel, ma qui sui totali dell'INTERO gruppo
+		# (elenco piatto, non per-cella): coerente con "%s" sopra che mostra group.population, non
+		# una quota.
+		var rules := AnimalCalculator.get_animal_rules(group.species_name)
+		if rules != null and rules.track_age_bands:
+			var young := group.get_age_count(GameTypes.AgeBand.YOUNG)
+			var adult := group.get_age_count(GameTypes.AgeBand.ADULT)
+			var old := group.get_age_count(GameTypes.AgeBand.OLD)
+
+			var age_label := Label.new()
+			age_label.add_theme_font_size_override("font_size", 10)
+			age_label.text = "      (Y:%s - A:%s - O:%s)" % [
+				NumberFormatter.format_int(young),
+				NumberFormatter.format_int(adult),
+				NumberFormatter.format_int(old)
+			]
+			population_groups_container.add_child(age_label)
+
+	if displayed_count == 0:
+		var empty_label := Label.new()
+		empty_label.add_theme_font_size_override("font_size", 11)
+		empty_label.text = tr("no_population_groups")
+		population_groups_container.add_child(empty_label)
 
 
 # Tipi di corpo d'acqua su cui FISH può crescere (vedi FaunaGrowthService/FishPositionService):

@@ -35,6 +35,13 @@ extends Resource
 # movimento dei gruppi disegnati; move_speed resta usato solo per il vagare continuo dei
 # centri-cluster invisibili (vedi AnimalGroupRenderer).
 @export var hop_speed: float = 6.0
+# Moltiplicatore di scala visiva (young, adult, old) applicato da AnimalGroupRenderer a ogni
+# icona disegnata — adult=1.0 è il riferimento a cui le dimensioni base (body_length/body_width,
+# passate da chi istanzia il renderer) sono tarate; young tipicamente <1 (cucciolo più piccolo),
+# old libero di essere >1 (un anziano può essere più grande della media, non solo "rimpicciolito").
+# Letto SOLO quando track_age_bands=true (vedi sotto) — per una specie che non traccia età ogni
+# icona è disegnata a scala fissa 1.0 (AnimalGroupRenderer.set_population, non age-aware).
+@export var size_multiplier_by_age: Array[float] = [1.0, 1.0, 1.0]
 
 @export_group("Age Bands")
 # Master switch, analogo a SubtypeRules.track_age_bands: false (default) = nessuna delle
@@ -96,3 +103,11 @@ extends Resource
 # proprio .tres.
 @export var min_territory_cells: int = 1
 @export var max_territory_cells: int = 1
+# Limite etologico/comportamentale di quanti individui della specie possono convivere in una
+# singola macrocella, indipendentemente dalle risorse disponibili — un tetto di densità sociale,
+# non di carrying capacity (quello resta implicito nel fabbisogno calorico/risorse). Campo
+# DORMIENTE per ora (Step 5 del refactoring fauna): dichiarato ma non ancora letto da nessuna
+# logica di distribuzione/espansione territorio. Nessun default: ogni specie deve dichiararlo
+# esplicitamente nel proprio .tres (rabbit=999, di fatto senza vincolo dato il suo territorio
+# sempre a 1 cella; deer=18, un branco realistico).
+@export var max_density_per_cell: int = 999

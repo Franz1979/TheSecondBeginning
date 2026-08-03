@@ -1,5 +1,11 @@
 extends Node2D
 
+# Durata dell'evidenziazione lampeggiante (WorldRenderer.flash_cells) delle celle del territorio
+# di un PopulationGroup, quando l'utente clicca la sua riga nella tab Fauna del pannello — più
+# lunga del feedback-pennello del map editor (WorldRenderer.PAINT_FLASH_DURATION), qui l'utente
+# deve avere il tempo di individuare le celle sulla mappa, non solo confermare un click.
+const POPULATION_HIGHLIGHT_DURATION: float = 2.0
+
 var world: World
 var game_data: GameData
 var renderer: WorldRenderer
@@ -72,6 +78,13 @@ func _ready() -> void:
 	game_controller.setup(world, renderer)
 	game_controller.cell_selected.connect(_on_cell_selected)
 	macro_cell_info_panel.visible = true
+	# Nessuna cella selezionata ancora a inizio scena: senza questo, le tab Fauna (dati
+	# world-level, indipendenti dalla cella) resterebbero vuote finché l'utente non clicca una
+	# cella almeno una volta — show_cell(null, ...) imposta comunque il riferimento world del
+	# pannello prima del controllo "cell == null" interno, lasciando il resto del pannello vuoto
+	# come atteso quando non c'è selezione.
+	macro_cell_info_panel.show_cell(null, null, world)
+	macro_cell_info_panel.population_group_highlight_requested.connect(_on_population_group_highlight_requested)
 
 	if returning_from_macro_cell:
 		var cell := world.get_cell_at(GameSettings.selected_macro_cell_x, GameSettings.selected_macro_cell_y)
@@ -154,6 +167,10 @@ func _open_macro_cell_scene() -> void:
 	GameSettings.active_clock_is_playing = clock.is_playing
 	GameSettings.active_clock_speed = clock.speed
 	get_tree().change_scene_to_file("res://scenes/game/MacroCellScene.tscn")
+
+
+func _on_population_group_highlight_requested(cells: Array) -> void:
+	renderer.flash_cells(cells, POPULATION_HIGHLIGHT_DURATION)
 
 
 func _on_cell_selected(cell: MacroCellData, state: MacroCellState) -> void:
@@ -246,6 +263,12 @@ func _on_day_advanced(checkpoint_ran: bool, animals_changed: bool) -> void:
 	if renderer.selected_cell != null:
 		var state := world.get_cell_state_at(renderer.selected_cell.x, renderer.selected_cell.y)
 		macro_cell_info_panel.show_cell(renderer.selected_cell, state, world)
+	else:
+		# Le tab Fauna sono dati world-level (non legati alla cella selezionata): senza una cella
+		# selezionata, show_cell sopra non viene mai chiamata — vanno comunque rinfrescate qui se
+		# l'utente le ha aperte, altrimenti restano ferme finché non seleziona/deseleziona una
+		# cella (il bug segnalato: "si aggiornano solo entrando e uscendo da una cella").
+		macro_cell_info_panel.refresh_fauna_tabs_if_active()
 
 func _on_advance_year_pressed() -> void:
 	clock.force_advance_to_year_end()
@@ -254,32 +277,44 @@ func _on_debug_set_rabbit_pressed() -> void:
 	var coords := Vector2i(50, 50)
 	var count := int(debug_rabbit_spin_box.value)
 
+	var rabbit_rules := AnimalCalculator.get_animal_rules("rabbit")
 	var group := world.find_population_group("rabbit", coords)
 	if group == null:
-		group = PopulationGroup.new("rabbit", Territory.from_single_cell(coords))
+		group = PopulationGroup.new("rabbit", _build_initial_territory(coords, rabbit_rules))
 		world.population_groups.append(group)
 	group.set_population(count)
 	# Riallinea age_composition al nuovo totale (vedi PopulationGroup.set_age_composition) —
 	# senza questo, la maturazione delle age band non avrebbe mai dati su cui operare finché la
 	# natalità (prompt futuro) non esiste ancora.
-	var rabbit_rules := AnimalCalculator.get_animal_rules("rabbit")
 	var age_weights: Dictionary = rabbit_rules.initial_age_ratio if rabbit_rules != null else {}
 	group.set_age_composition(count, age_weights)
+	macro_cell_info_panel.refresh_fauna_tabs_if_active()
 	print("[DEBUG] rabbit population (50,50) impostata a %d" % count)
 
 func _on_debug_set_deer_pressed() -> void:
 	var coords := Vector2i(50, 50)
 	var count := int(debug_deer_spin_box.value)
 
+	var deer_rules := AnimalCalculator.get_animal_rules("deer")
 	var group := world.find_population_group("deer", coords)
 	if group == null:
-		group = PopulationGroup.new("deer", Territory.from_single_cell(coords))
+		group = PopulationGroup.new("deer", _build_initial_territory(coords, deer_rules))
 		world.population_groups.append(group)
 	group.set_population(count)
-	var deer_rules := AnimalCalculator.get_animal_rules("deer")
 	var age_weights: Dictionary = deer_rules.initial_age_ratio if deer_rules != null else {}
 	group.set_age_composition(count, age_weights)
+	macro_cell_info_panel.refresh_fauna_tabs_if_active()
 	print("[DEBUG] deer population (50,50) impostata a %d" % count)
+
+
+# Territorio iniziale di un gruppo appena creato: una sola cella per specie con
+# min_territory_cells <= 1 (rabbit — comportamento identico a prima di Step 5), altrimenti una
+# BFS di TerritoryBuilderService a partire da coords fino a min_territory_cells celle (deer). La
+# dimensione è fissa da qui in poi: nessuna espansione/restringimento nel tempo (Step 8 futuro).
+func _build_initial_territory(coords: Vector2i, rules: AnimalRules) -> Territory:
+	if rules == null or rules.min_territory_cells <= 1:
+		return Territory.from_single_cell(coords)
+	return TerritoryBuilderService.new().build_territory(world, coords, rules.min_territory_cells)
 
 func _update_calendar_display() -> void:
 	year_label.text = "Day %d of %d, Year %d" % [game_data.current_day + 1, GameData.DAYS_PER_YEAR, game_data.year]

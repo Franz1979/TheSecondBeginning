@@ -5,6 +5,15 @@ const SEA := Color(0.10, 0.30, 0.90)
 const LAKE := Color(0.15, 0.50, 0.95)
 const RIVER := Color(0.20, 0.60, 1.00)
 const PLAIN := Color(0.60, 0.90, 0.60)
+# Varianti di PLAIN per bioma — GRASSLAND/NONE restano sul verde di PLAIN sopra (invariato), gli
+# altri biomi hanno un colore distinto così una cella PLAIN+DESERT non appare identica a una
+# PLAIN+GRASSLAND (vedi get_land_color, _get_plain_color_for_biome sotto). BEACH resta un override
+# a priorità più alta, invariato per qualunque bioma.
+const PLAIN_FOREST := Color(0.20, 0.55, 0.25)
+const PLAIN_DESERT := Color(0.88, 0.78, 0.45)
+const PLAIN_SWAMP := Color(0.45, 0.50, 0.30)
+const PLAIN_FERTILE := Color(0.45, 0.65, 0.25)
+const PLAIN_ROCKY := Color(0.65, 0.60, 0.50)
 const HILL := Color(0.82, 0.68, 0.45)
 const MOUNTAIN := Color(0.45, 0.25, 0.10)
 const BEACH := Color(0.95, 0.85, 0.55)
@@ -41,7 +50,7 @@ static func get_land_color(cell: MacroCellData) -> Color:
 				GameTypes.CoastType.BEACH:
 					return BEACH
 				_:
-					return PLAIN
+					return _get_plain_color_for_biome(cell.biome)
 		GameTypes.TerrainBase.HILL:
 			match cell.coast_type:
 				GameTypes.CoastType.SEMI_CLIFF:
@@ -56,3 +65,19 @@ static func get_land_color(cell: MacroCellData) -> Color:
 					return MOUNTAIN
 		_:
 			return Color.MAGENTA
+
+
+static func _get_plain_color_for_biome(biome: GameTypes.Biome) -> Color:
+	match biome:
+		GameTypes.Biome.FOREST:
+			return PLAIN_FOREST
+		GameTypes.Biome.DESERT:
+			return PLAIN_DESERT
+		GameTypes.Biome.SWAMP:
+			return PLAIN_SWAMP
+		GameTypes.Biome.FERTILE:
+			return PLAIN_FERTILE
+		GameTypes.Biome.ROCKY:
+			return PLAIN_ROCKY
+		_:
+			return PLAIN  # NONE/GRASSLAND

@@ -4,7 +4,7 @@
 
 [resource]
 script = ExtResource("1_gr4ss")
-base_growth_rate = 0.4
+base_growth_rate = 0.5
 migration_chance = 0.5
 migration_success_rate = 0.2
 max_migration_per_year = 120

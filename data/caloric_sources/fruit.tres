@@ -8,6 +8,6 @@ caloric_source_name = "fruit"
 source_subtype = "domesticable_fruit"
 yield_ratio = 30.0
 calories_per_unit = 40.0
-seasonal_availability_multiplier = Array[float]([0.1, 0.0, 0.5, 1.0])
+seasonal_availability_multiplier = Array[float]([0.1, 0.05, 0.5, 1.0])
 cycle_start_season = 2
 consuming_depletes_primary = false

@@ -15,6 +15,13 @@ var active_clock_is_playing: bool = false
 var active_clock_speed: int = 0 # GameClockController.Speed.X1 — kept as plain int here to
 # avoid GameSettings (an autoload, parsed before the global script class cache is ready)
 # depending on GameClockController's class_name at parse time.
+# Stato dei due toggle di visualizzazione di MacroCellScene (visibilità animali, aggiornamenti
+# flora giornalieri) — MacroCellScene è un'istanza NUOVA ogni volta che ci si entra
+# (change_scene_to_file ricrea l'intero albero di nodi), quindi le variabili locali dello script
+# perderebbero lo stato ad ogni uscita/rientro senza salvarlo qui. Persistito solo per la sessione
+# corrente (non nei save su disco), stesso trattamento di active_clock_is_playing sopra.
+var macro_cell_animals_visible: bool = true
+var macro_cell_flora_updates_enabled: bool = true
 
 func _ready() -> void:
 	print("GameSettings ready")

@@ -4,6 +4,12 @@ var world: World
 var renderer: WorldRenderer
 var editor_controller: MapEditorController
 var _pending_leave_action: StringName = &""
+# Ultimo bioma scelto esplicitamente dall'utente (via _select_biome, sia click diretto che
+# ripristino automatico sotto) — persiste tra i cambi di pennello terreno, cosa che PRIMA non
+# succedeva: _select_terrain_brush forzava sempre "none" ad ogni cambio pennello, quindi bastava
+# cambiare pennello senza ri-cliccare esplicitamente un bioma per perderlo silenziosamente. Con
+# mappe grandi questo produceva interi mondi a bioma NONE senza che l'utente se ne accorgesse.
+var _last_selected_biome: GameTypes.Biome = GameTypes.Biome.NONE
 
 @onready var primary_actions_bar: IconButtonRow = $CanvasLayer/Sidebar/MarginContainer/ScrollContainer/VBoxContainer/PrimaryActionsBar
 @onready var secondary_actions_bar: IconButtonRow = $CanvasLayer/Sidebar/MarginContainer/ScrollContainer/VBoxContainer/SecondaryActionsBar
@@ -277,10 +283,14 @@ func _select_terrain_brush(
 	if has_biome:
 		_move_biome_submenu_under_button(selected_button)
 		_update_biome_buttons_for_brush(brush)
-		_select_biome(
-		GameTypes.Biome.NONE,
-		biome_none_tool_button
-	)
+		# Ripristina l'ultimo bioma scelto dall'utente invece di azzerarlo a "none" — se non è più
+		# ammesso col nuovo pennello (vedi _update_biome_buttons_for_brush, es. FERTILE disabilitato
+		# su MOUNTAIN), ripiega su "none" invece di lasciare selezionato un bottone disabilitato.
+		var restored_button := _get_biome_button(_last_selected_biome)
+		var target_biome := _last_selected_biome
+		if restored_button.disabled:
+			target_biome = GameTypes.Biome.NONE
+		_select_biome(target_biome, _get_biome_button(target_biome))
 
 	terrain_none_button.button_pressed = false
 	terrain_water_tool_button.button_pressed = false
@@ -318,7 +328,24 @@ func _update_biome_buttons_for_brush(
 	biome_swamp_tool_button.disabled = brush != MapEditorController.TerrainBrush.PLAIN
 	biome_fertile_tool_button.disabled = brush == MapEditorController.TerrainBrush.MOUNTAIN
 	biome_rocky_tool_button.disabled = brush == MapEditorController.TerrainBrush.PLAIN
-	
+
+func _get_biome_button(biome: GameTypes.Biome) -> Button:
+	match biome:
+		GameTypes.Biome.FOREST:
+			return biome_forest_tool_button
+		GameTypes.Biome.GRASSLAND:
+			return biome_grassland_tool_button
+		GameTypes.Biome.DESERT:
+			return biome_desert_tool_button
+		GameTypes.Biome.SWAMP:
+			return biome_swamp_tool_button
+		GameTypes.Biome.FERTILE:
+			return biome_fertile_tool_button
+		GameTypes.Biome.ROCKY:
+			return biome_rocky_tool_button
+		_:
+			return biome_none_tool_button
+
 func _on_biome_none_pressed() -> void:
 	_select_biome(GameTypes.Biome.NONE, biome_none_tool_button)
 
@@ -361,6 +388,7 @@ func _select_biome(
 	biome: GameTypes.Biome,
 	selected_button: Button
 ) -> void:
+	_last_selected_biome = biome
 	editor_controller.set_biome(biome)
 
 	biome_none_tool_button.button_pressed = false

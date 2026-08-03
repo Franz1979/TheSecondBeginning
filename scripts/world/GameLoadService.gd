@@ -49,6 +49,9 @@ func load_game_from_json(file_path: String) -> LoadedGame:
 			var dedicated = state_data.get("dedicated_space", {})
 			for key in dedicated.keys():
 				state.dedicated_space[int(key)] = int(dedicated[key])
+			var has_ever_grown_data = state_data.get("has_ever_grown", {})
+			for key in has_ever_grown_data.keys():
+				state.has_ever_grown[int(key)] = bool(has_ever_grown_data[key])
 			var subtype_data = state_data.get("subtype_composition", {})
 			for type_key in subtype_data.keys():
 				var inner: Dictionary = {}

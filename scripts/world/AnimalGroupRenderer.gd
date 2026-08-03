@@ -2,35 +2,55 @@ class_name AnimalGroupRenderer
 extends Node2D
 
 # Nodo generico e riusabile: un'istanza per specie animale. Non contiene alcuna logica
-# specifica di una specie — tutti i parametri arrivano via configure(), chiamato una volta dal
-# nodo che lo istanzia (oggi solo MacroCellScene per "rabbit"). Disegna i gruppi tramite un
-# singolo MultiMeshInstance2D (corpo ovale + orecchie unite in un'unica mesh, vedi
-# _build_body_and_ears_mesh) che si aggiorna e ridisegna da solo ogni frame quando cambiano le
-# trasformazioni istanza — a differenza di MicroCellRenderer, qui NON si usa _draw()/
-# queue_redraw(): un redraw manuale a ogni frame rifarebbe inutilmente anche i buffer statici
-# (erba, pietre, alberi) di tutta la cella.
+# specifica di una specie nel movimento — tutti i parametri comportamentali arrivano via
+# configure(), chiamato una volta dal nodo che lo istanzia (oggi MacroCellScene, per "rabbit" e
+# "deer"). La FORMA di ogni specie invece non è parametrica dentro questa classe: il chiamante
+# costruisce la ArrayMesh con la funzione statica dedicata alla specie (build_rabbit_mesh,
+# build_deer_mesh, ...) e la passa già pronta in configure() — vedi commento lì. Disegna i
+# gruppi tramite un singolo MultiMeshInstance2D che si aggiorna e ridisegna da solo ogni frame
+# quando cambiano le trasformazioni istanza — a differenza di MicroCellRenderer, qui NON si usa
+# _draw()/queue_redraw(): un redraw manuale a ogni frame rifarebbe inutilmente anche i buffer
+# statici (erba, pietre, alberi) di tutta la cella.
 const CELL_SIZE: int = 10 # stesso fattore pixel/microcella di MicroCellRenderer
-const BODY_SEGMENTS: int = 16
+const BODY_SEGMENTS: int = 16 # risoluzione del ventaglio del corpo, condivisa da tutte le specie
+const TAIL_SEGMENTS: int = 8  # risoluzione del cerchietto della coda, condivisa da tutte le specie
+
+# --- Sagoma RABBIT (build_rabbit_mesh) ---
 # Il corpo non è un'ellisse simmetrica: il raggio Y viene scalato da un fattore che assottiglia
-# il muso (+X, direzione di marcia) e allarga i fianchi (-X, posteriore) — vedi
-# _build_body_and_ears_mesh — per leggersi come un coniglio affusolato invece di un maialino.
-const BODY_FRONT_WIDTH_RATIO: float = 0.55
-const BODY_REAR_WIDTH_RATIO: float = 1.25
+# il muso (+X, direzione di marcia) e allarga i fianchi (-X, posteriore) — per leggersi come un
+# coniglio affusolato invece di un maialino.
+const RABBIT_BODY_FRONT_WIDTH_RATIO: float = 0.55
+const RABBIT_BODY_REAR_WIDTH_RATIO: float = 1.25
 # Ancorate vicino al muso (+X, direzione di marcia): puntando in avanti-e-leggermente-fuori,
 # le orecchie si estendono oltre la punta del muso in spazio libero (nessuna sagoma del corpo
 # lì), quindi restano nettamente visibili senza bisogno di un ancoraggio laterale estremo —
 # a differenza dei tentativi all'indietro (135°/150°/160° dall'asse di marcia), che finivano
 # per leggersi come alette/ali ai lati o restare sepolti nel fianco largo del corpo.
-const EAR_ANCHOR_RATIO: float = 0.75 # frazione di body_length a cui ancorare le orecchie
-const EAR_ANCHOR_LATERAL_RATIO: float = 0.3 # frazione di body_width per lo scarto laterale: vicine tra loro, non allargate
+const RABBIT_EAR_ANCHOR_RATIO: float = 0.75 # frazione di body_length a cui ancorare le orecchie
+const RABBIT_EAR_ANCHOR_LATERAL_RATIO: float = 0.3 # frazione di body_width per lo scarto laterale: vicine tra loro, non allargate
 # Angolo dall'asse di marcia locale +X, mirrorato ±side: piccolo (10°, era 20°: più dritte,
 # meno divaricate — a 20° con orecchie sottili si leggevano come antenne) così le due orecchie
 # restano quasi parallele all'asse di marcia invece di aprirsi a V.
-const EAR_ANGLE_FROM_HEADING: float = 10.0 * PI / 180.0
+const RABBIT_EAR_ANGLE_FROM_HEADING: float = 10.0 * PI / 180.0
 # Coda: piccolo cerchio sul retro (-X), stesso colore uniforme del resto (vedi color in configure).
-const TAIL_RADIUS: float = 0.85
-const TAIL_ANCHOR_RATIO: float = 0.9 # frazione di body_length: leggermente arretrata rispetto alla punta posteriore, così risulta "attaccata"
-const TAIL_SEGMENTS: int = 8
+const RABBIT_TAIL_RADIUS: float = 0.85
+const RABBIT_TAIL_ANCHOR_RATIO: float = 0.9 # frazione di body_length: leggermente arretrata rispetto alla punta posteriore, così risulta "attaccata"
+
+# --- Sagoma DEER (build_deer_mesh) ---
+# A differenza del coniglio, il corpo del cervo è quasi uniforme (poco affusolato: un animale
+# allungato, non a goccia) — front/rear ratio vicini a 1 invece del forte contrasto 0.55/1.25
+# del coniglio.
+const DEER_BODY_FRONT_WIDTH_RATIO: float = 0.8
+const DEER_BODY_REAR_WIDTH_RATIO: float = 1.05
+# Orecchie piccole "all'erta" sopra la testa, angolate verso l'esterno/alto (~60° dall'asse di
+# marcia) invece che protese in avanti come quelle del coniglio — più larghe tra loro
+# (lateral_ratio maggiore) per leggersi come orecchie ritte, non come corna.
+const DEER_EAR_ANCHOR_RATIO: float = 0.85
+const DEER_EAR_ANCHOR_LATERAL_RATIO: float = 0.6
+const DEER_EAR_ANGLE_FROM_HEADING: float = 60.0 * PI / 180.0
+# Coda più piccola del coniglio (i cervi hanno una coda corta, non un batuffolo prominente).
+const DEER_TAIL_RADIUS: float = 0.6
+const DEER_TAIL_ANCHOR_RATIO: float = 0.92
 
 # Popolazione -> numero di gruppi disegnati: individui rappresentati da ciascuna icona,
 # arriva da AnimalRules.visual_group_size (letto dal chiamante, mai hardcoded qui).
@@ -61,6 +81,12 @@ var hop_duration_max: float = 0.4
 var hop_pause_min: float = 0.1
 var hop_pause_max: float = 0.3
 
+# Scala visiva (young, adult, old) applicata per-istanza in _write_instance_transform, arriva da
+# AnimalRules.size_multiplier_by_age (letto dal chiamante, mai hardcoded qui) — indicizzato da
+# GameTypes.AgeBand. Default [1,1,1]: nessuna scala per specie che non lo passano esplicitamente
+# (compatibilità con set_population, il fallback non age-aware, che tagga tutto ADULT).
+var size_multiplier_by_age: Array = [1.0, 1.0, 1.0]
+
 # Se assegnato (vedi MacroCellScene._ready), i gruppi si muovono solo quando clock.is_playing
 # è true — stesso orologio che governa l'avanzamento giorno/anno, così i conigli si fermano
 # in pausa e durante le finestre di dialogo bloccanti (che già mettono in pausa il clock, vedi
@@ -75,6 +101,11 @@ var _multimesh_instance: MultiMeshInstance2D
 var _configured: bool = false
 
 
+# "mesh" è una ArrayMesh già costruita dal chiamante tramite la funzione statica dedicata alla
+# specie (build_rabbit_mesh/build_deer_mesh/...) — questa classe non sa e non deve sapere come è
+# fatta la sagoma di una specie, riceve solo il risultato finito. Nessun default: un chiamante
+# che non la passa è un bug reale (specie senza sagoma configurata), meglio un errore rumoroso
+# che un coniglio-fallback silenzioso per una specie che non lo è.
 func configure(params: Dictionary) -> void:
 	individuals_per_group = max(int(params.get("individuals_per_group", 1)), 1)
 	move_speed = float(params.get("move_speed", 3.0))
@@ -91,14 +122,9 @@ func configure(params: Dictionary) -> void:
 	hop_duration_max = float(params.get("hop_duration_max", 0.4))
 	hop_pause_min = float(params.get("hop_pause_min", 0.1))
 	hop_pause_max = float(params.get("hop_pause_max", 0.3))
+	size_multiplier_by_age = params.get("size_multiplier_by_age", [1.0, 1.0, 1.0])
 
-	var body_length: float = float(params.get("body_length", 3.0))
-	var body_width: float = float(params.get("body_width", 1.3))
-	var ear_length: float = float(params.get("ear_length", 2.7))
-	var ear_width: float = float(params.get("ear_width", 0.5))
-	var color: Color = params.get("color", Color(0.93, 0.91, 0.87, 0.95))
-
-	var mesh := _build_body_and_ears_mesh(body_length, body_width, ear_length, ear_width, color)
+	var mesh: ArrayMesh = params["mesh"]
 
 	_multimesh = MultiMesh.new()
 	_multimesh.transform_format = MultiMesh.TRANSFORM_2D
@@ -122,7 +148,9 @@ func set_animals_visible(v: bool) -> void:
 
 # Ricalcola quanti gruppi disegnare da una popolazione totale (arrotondato), aggiungendo
 # nuovi gruppi in posizione/direzione casuale o rimuovendo quelli in eccesso dalla fine
-# dell'array — i gruppi già esistenti non vengono mai spostati da questa chiamata.
+# dell'array — i gruppi già esistenti non vengono mai spostati da questa chiamata. Tutti taggati
+# ADULT (age_band di default): fallback per specie che non tracciano age band (track_age_bands
+# false), quindi disegnati a scala fissa size_multiplier_by_age[ADULT] (1.0 se non impostato).
 func set_population(total_population: int) -> void:
 	if not _configured:
 		return
@@ -136,6 +164,51 @@ func set_population(total_population: int) -> void:
 
 	_multimesh.instance_count = _groups.size()
 	_resync_clusters(total_population)
+
+	for i in range(_groups.size()):
+		_write_instance_transform(i, _groups[i])
+
+
+# Come set_population sopra, ma per specie con track_age_bands=true: la popolazione arriva già
+# ripartita per fascia (chiamante: MacroCellScene, via PopulationGroup.get_age_composition_in_cell)
+# così ogni gruppo disegnato viene taggato con la propria age_band e scalato di conseguenza in
+# _write_instance_transform (AnimalRules.size_multiplier_by_age). Ridimensiona ciascuna fascia
+# INDIPENDENTEMENTE dalle altre (stesso pattern add/remove di set_population, applicato tre
+# volte) — _groups resta un unico array misto: il movimento/cluster restano indifferenti alla
+# fascia (vedi _process/_resync_clusters, invariati), solo l'aspetto cambia.
+func set_population_by_age(young: int, adult: int, old: int) -> void:
+	if not _configured:
+		return
+
+	var targets := {
+		GameTypes.AgeBand.YOUNG: int(round(float(max(young, 0)) / individuals_per_group)),
+		GameTypes.AgeBand.ADULT: int(round(float(max(adult, 0)) / individuals_per_group)),
+		GameTypes.AgeBand.OLD: int(round(float(max(old, 0)) / individuals_per_group)),
+	}
+
+	for age_band in targets.keys():
+		var target: int = targets[age_band]
+		var current: int = 0
+		for group in _groups:
+			if group.age_band == age_band:
+				current += 1
+
+		while current < target:
+			_groups.append(_make_random_group(age_band))
+			current += 1
+		while current > target:
+			# Rimuove l'ultima istanza di QUESTA fascia trovata nell'array, non l'ultimo elemento
+			# assoluto (_groups mescola le fasce) — scorre all'indietro così la rimozione è O(1)
+			# ammortizzato nel caso comune (le istanze della stessa fascia tendono ad accumularsi
+			# verso la fine, essendo state aggiunte in blocco dal while sopra in round precedenti).
+			for i in range(_groups.size() - 1, -1, -1):
+				if _groups[i].age_band == age_band:
+					_groups.remove_at(i)
+					break
+			current -= 1
+
+	_multimesh.instance_count = _groups.size()
+	_resync_clusters(young + adult + old)
 
 	for i in range(_groups.size()):
 		_write_instance_transform(i, _groups[i])
@@ -167,10 +240,11 @@ func _resync_clusters(total_population: int) -> void:
 		_groups[i].cluster_index = min(i / groups_per_cluster_cap, num_clusters - 1)
 
 
-func _make_random_group() -> AnimalVisualGroup:
+func _make_random_group(age_band: GameTypes.AgeBand = GameTypes.AgeBand.ADULT) -> AnimalVisualGroup:
 	var position := Vector2(randf_range(0.0, World.WIDTH), randf_range(0.0, World.HEIGHT))
 	var direction := Vector2.RIGHT.rotated(randf_range(0.0, TAU))
 	var group := AnimalVisualGroup.new(position, direction)
+	group.age_band = age_band
 	_randomize_group_phase(group)
 	return group
 
@@ -281,8 +355,18 @@ func _bounce_at_bounds(group: AnimalVisualGroup) -> void:
 		group.direction.y = -abs(group.direction.y)
 
 
+# La scala per age_band (size_multiplier_by_age) è applicata moltiplicando direttamente i
+# vettori di base x/y del transform (assi locali del mesh), MAI tramite Transform2D.scaled() —
+# quel metodo storicamente in Godot ha una semantica ambigua su cosa tocca esattamente
+# (basis e/o origin a seconda della versione); moltiplicare x/y a mano è inequivocabile: scala
+# solo gli assi locali, mai la posizione già scritta in origin.
 func _write_instance_transform(index: int, group: AnimalVisualGroup) -> void:
 	var transform := Transform2D(group.direction.angle(), group.position * CELL_SIZE)
+	var scale: float = 1.0
+	if group.age_band >= 0 and group.age_band < size_multiplier_by_age.size():
+		scale = float(size_multiplier_by_age[group.age_band])
+	transform.x *= scale
+	transform.y *= scale
 	_multimesh.set_instance_transform_2d(index, transform)
 
 
@@ -291,7 +375,9 @@ func _write_instance_transform(index: int, group: AnimalVisualGroup) -> void:
 # accumulati in un'unica sessione SurfaceTool con un UNICO colore uniforme, cosicché ogni
 # specie resti un solo MultiMesh/una sola draw call indipendentemente dal numero di gruppi.
 # Asse locale +X = direzione di marcia (stessa convenzione di FISH in MicroCellRenderer).
-static func _build_body_and_ears_mesh(
+# Chiamata dal nodo che istanzia AnimalGroupRenderer (oggi MacroCellScene), mai da questa
+# classe: il risultato va passato in configure() tramite params["mesh"].
+static func build_rabbit_mesh(
 	body_length: float, body_width: float, ear_length: float, ear_width: float, color: Color
 ) -> ArrayMesh:
 	var st := SurfaceTool.new()
@@ -304,25 +390,65 @@ static func _build_body_and_ears_mesh(
 		# t: 0 sul punto più posteriore (-X), 1 sul punto più anteriore/muso (+X) — modula il
 		# raggio Y così il corpo si legge come una goccia affusolata invece di un'ellisse.
 		var t: float = (cos(angle) + 1.0) / 2.0
-		var width_scale: float = lerp(BODY_REAR_WIDTH_RATIO, BODY_FRONT_WIDTH_RATIO, t)
+		var width_scale: float = lerp(RABBIT_BODY_REAR_WIDTH_RATIO, RABBIT_BODY_FRONT_WIDTH_RATIO, t)
 		body_points.append(Vector2(cos(angle) * body_length, sin(angle) * body_width * width_scale))
 	_append_fan_triangles(st, body_points)
 
-	var anchor_x: float = body_length * EAR_ANCHOR_RATIO
+	var anchor_x: float = body_length * RABBIT_EAR_ANCHOR_RATIO
 	for side in [-1.0, 1.0]:
-		var ear_dir: Vector2 = Vector2.RIGHT.rotated(side * EAR_ANGLE_FROM_HEADING)
-		var anchor := Vector2(anchor_x, side * body_width * EAR_ANCHOR_LATERAL_RATIO)
+		var ear_dir: Vector2 = Vector2.RIGHT.rotated(side * RABBIT_EAR_ANGLE_FROM_HEADING)
+		var anchor := Vector2(anchor_x, side * body_width * RABBIT_EAR_ANCHOR_LATERAL_RATIO)
 		var perpendicular := ear_dir.rotated(PI / 2.0)
 		var base_a := anchor - perpendicular * (ear_width / 2.0)
 		var base_b := anchor + perpendicular * (ear_width / 2.0)
 		var tip := anchor + ear_dir * ear_length
 		_append_triangle(st, base_a, base_b, tip)
 
-	var tail_center := Vector2(-body_length * TAIL_ANCHOR_RATIO, 0.0)
+	var tail_center := Vector2(-body_length * RABBIT_TAIL_ANCHOR_RATIO, 0.0)
 	var tail_points := PackedVector2Array()
 	for i in range(TAIL_SEGMENTS):
 		var angle: float = (float(i) / float(TAIL_SEGMENTS)) * TAU
-		tail_points.append(tail_center + Vector2(cos(angle), sin(angle)) * TAIL_RADIUS)
+		tail_points.append(tail_center + Vector2(cos(angle), sin(angle)) * RABBIT_TAIL_RADIUS)
+	_append_fan_triangles(st, tail_points, tail_center)
+
+	return st.commit()
+
+
+# Sagoma DEER: stesso schema costruttivo di build_rabbit_mesh sopra (corpo a ventaglio + 2
+# orecchie + coda, unico colore, unica SurfaceTool) ma con proporzioni/angoli propri (vedi
+# costanti DEER_* in cima al file) — corpo quasi uniforme invece che a goccia, orecchie corte
+# "all'erta" invece che lunghe e protese in avanti, coda più piccola. Stessa convenzione di
+# asse locale +X = direzione di marcia.
+static func build_deer_mesh(
+	body_length: float, body_width: float, ear_length: float, ear_width: float, color: Color
+) -> ArrayMesh:
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	st.set_color(color)
+
+	var body_points := PackedVector2Array()
+	for i in range(BODY_SEGMENTS):
+		var angle: float = (float(i) / float(BODY_SEGMENTS)) * TAU
+		var t: float = (cos(angle) + 1.0) / 2.0
+		var width_scale: float = lerp(DEER_BODY_REAR_WIDTH_RATIO, DEER_BODY_FRONT_WIDTH_RATIO, t)
+		body_points.append(Vector2(cos(angle) * body_length, sin(angle) * body_width * width_scale))
+	_append_fan_triangles(st, body_points)
+
+	var anchor_x: float = body_length * DEER_EAR_ANCHOR_RATIO
+	for side in [-1.0, 1.0]:
+		var ear_dir: Vector2 = Vector2.RIGHT.rotated(side * DEER_EAR_ANGLE_FROM_HEADING)
+		var anchor := Vector2(anchor_x, side * body_width * DEER_EAR_ANCHOR_LATERAL_RATIO)
+		var perpendicular := ear_dir.rotated(PI / 2.0)
+		var base_a := anchor - perpendicular * (ear_width / 2.0)
+		var base_b := anchor + perpendicular * (ear_width / 2.0)
+		var tip := anchor + ear_dir * ear_length
+		_append_triangle(st, base_a, base_b, tip)
+
+	var tail_center := Vector2(-body_length * DEER_TAIL_ANCHOR_RATIO, 0.0)
+	var tail_points := PackedVector2Array()
+	for i in range(TAIL_SEGMENTS):
+		var angle: float = (float(i) / float(TAIL_SEGMENTS)) * TAU
+		tail_points.append(tail_center + Vector2(cos(angle), sin(angle)) * DEER_TAIL_RADIUS)
 	_append_fan_triangles(st, tail_points, tail_center)
 
 	return st.commit()

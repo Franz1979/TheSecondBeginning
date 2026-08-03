@@ -19,6 +19,17 @@ var territory: Territory = null
 # checkpoint a inizio birth_season), il comportamento resta quello di sempre. Non persistito nei
 # save: si ricalcola comunque al prossimo checkpoint annuale, non vale la pena salvarlo.
 var birth_mitigation_multiplier: float = 1.0
+# Pesi (Vector2i -> float, non normalizzati) usati da get_population_by_cell() per ripartire
+# population tra le celle del territorio — Step 6 del refactoring fauna: sostituisce la
+# ripartizione uniforme fissa con una variazione casuale ricalcolata periodicamente (vedi
+# PopulationTerritoryShuffleService), per dare l'impressione visiva di un branco che si sposta
+# nel proprio areale nel tempo invece di un contatore diviso meccanicamente in parti sempre
+# uguali. Default vuoto: get_population_by_cell() tratta una chiave assente come peso 1.0, quindi
+# un gruppo mai rimescolato (o con territorio a 1 sola cella, mai scritto qui) degrada esattamente
+# alla vecchia ripartizione uniforme, nessun ramo speciale altrove. Non persistito nei save,
+# stesso trattamento di birth_mitigation_multiplier sopra: si ricalcola al prossimo checkpoint
+# stagionale, non vale la pena salvarlo.
+var territory_distribution_weights: Dictionary = {}
 
 func _init(_species_name: String = "", _territory: Territory = null) -> void:
 	species_name = _species_name
@@ -31,6 +42,10 @@ func set_population(count: int) -> void:
 
 func set_birth_mitigation_multiplier(value: float) -> void:
 	birth_mitigation_multiplier = clamp(value, 0.0, 1.0)
+
+
+func set_territory_distribution_weights(weights: Dictionary) -> void:
+	territory_distribution_weights = weights
 
 
 func get_age_count(age_band: GameTypes.AgeBand) -> int:
@@ -118,3 +133,53 @@ func apply_old_age_mortality(amount: int) -> void:
 		return
 	set_age_count(GameTypes.AgeBand.OLD, get_age_count(GameTypes.AgeBand.OLD) - amount)
 	set_population(population - amount)
+
+
+# Ripartisce `population` tra le celle del territorio secondo territory_distribution_weights
+# (Step 6: variazione casuale ricalcolata a ogni checkpoint stagionale da
+# PopulationTerritoryShuffleService — vedi il campo sopra) — una chiave assente in quel
+# dizionario vale peso 1.0, quindi un territorio a 1 sola cella (mai scritto lì, rabbit) o un
+# gruppo appena creato prima del primo rimescolamento degradano automaticamente alla vecchia
+# ripartizione uniforme, senza bisogno di un ramo a parte qui. Split ricalcolato da zero a ogni
+# chiamata (non solo i pesi cambiano raramente, anche `population` stesso può cambiare in
+# qualunque momento — es. i pulsanti debug — quindi il risultato resta sempre coerente col
+# valore CORRENTE di population, mai una quantità congelata al momento del rimescolamento). Riusa
+# lo stesso "largest remainder" (MacroCellState._split_by_weight) già condiviso da subtype/age-band
+# vegetali e dalla composizione età sopra. Unica fonte condivisa da AnimalConsumptionService
+# (ripartizione del fabbisogno) e dai pannelli UI/renderer (quota animali per cella), così non
+# possono mai disallinearsi.
+func get_population_by_cell() -> Dictionary:
+	var result: Dictionary = {}
+	if territory == null or population <= 0:
+		return result
+	var weights: Dictionary = {}
+	for coords in territory.occupied_macrocells:
+		weights[coords] = float(territory_distribution_weights.get(coords, 1.0))
+	return MacroCellState._split_by_weight(weights, population)
+
+
+# Composizione età SOLO per la quota di `coords` (vedi get_population_by_cell) — non stato reale,
+# derivata a scopo di visualizzazione (nessuna age band è tracciata per cella nel modello, solo a
+# livello di gruppo). Ripartisce la quota della cella tra le tre fasce in proporzione alla
+# composizione età corrente del gruppo intero (stesso fallback a pesi uguali se age_composition è
+# vuota, coerente con set_age_composition), così la somma Y+A+O di questa cella torna sempre
+# esattamente uguale alla quota mostrata per la cella.
+func get_age_composition_in_cell(coords: Vector2i) -> Dictionary:
+	var population_by_cell := get_population_by_cell()
+	var cell_population: int = int(population_by_cell.get(coords, 0))
+	if cell_population <= 0:
+		return {}
+
+	var weights: Dictionary = {}
+	for age_band in age_composition.keys():
+		var count: float = float(age_composition[age_band])
+		if count > 0.0:
+			weights[age_band] = count
+	if weights.is_empty():
+		weights = {
+			GameTypes.AgeBand.YOUNG: 1.0,
+			GameTypes.AgeBand.ADULT: 1.0,
+			GameTypes.AgeBand.OLD: 1.0,
+		}
+
+	return MacroCellState._split_by_weight(weights, cell_population)

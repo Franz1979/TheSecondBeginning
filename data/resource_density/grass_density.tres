@@ -4,7 +4,7 @@
 
 [resource]
 script = ExtResource("1_gr4ss")
-base_density = 50.0
+base_density = 100.0
 presence_chance = 0.8
 terrain_multiplier_plain = 1.5
 terrain_multiplier_hill = 0.6

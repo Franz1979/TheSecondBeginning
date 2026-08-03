@@ -1,4 +1,4 @@
-[gd_resource type="Resource" script_class="AnimalRules" format=3]
+[gd_resource type="Resource" script_class="AnimalRules" format=3 uid="uid://bnv1kvwt52sr7"]
 
 [ext_resource type="Script" uid="uid://b5f2blfpeff0h" path="res://scripts/core/AnimalRules.gd" id="1_deer"]
 
@@ -12,7 +12,6 @@ diet_compatibility = {
 "forage": 1.0,
 "fruit": 0.4
 }
-visual_group_size = 3
 max_individuals_per_cluster = 8
 hop_duration_min = 0.5
 hop_duration_max = 0.9
@@ -23,14 +22,12 @@ movement_phase_duration_max = 10.0
 rest_phase_duration_min = 6.0
 rest_phase_duration_max = 12.0
 hop_speed = 3.5
+size_multiplier_by_age = Array[float]([0.6, 1.0, 1.2])
 track_age_bands = true
-birth_season = 1
-youth_duration_years = 2
 adult_duration_years = 8
 old_duration_years = 4
 mortality_share_by_age = Array[float]([0.5, 0.3, 0.2])
 caloric_multiplier_by_age = Array[float]([0.5, 1.0, 1.0])
-fertility_multiplier_by_age = Array[float]([0.0, 1.0, 0.0])
 base_birth_rate = 0.6
 initial_age_ratio = {
 0: 0.0,
@@ -39,3 +36,4 @@ initial_age_ratio = {
 }
 min_territory_cells = 3
 max_territory_cells = 20
+max_density_per_cell = 18

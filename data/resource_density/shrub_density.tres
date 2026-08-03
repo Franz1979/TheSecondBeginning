@@ -4,7 +4,7 @@
 
 [resource]
 script = ExtResource("1_shrub")
-base_density = 20.0
+base_density = 6.0
 presence_chance = 0.55
 terrain_multiplier_plain = 1.2
 terrain_multiplier_mountain = 0.2

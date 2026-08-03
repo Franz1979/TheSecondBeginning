@@ -4,7 +4,7 @@
 
 [resource]
 script = ExtResource("1_f8lov")
-base_density = 10.0
+base_density = 4.0
 presence_chance = 0.6
 terrain_multiplier_plain = 1.2
 terrain_multiplier_mountain = 0.5
