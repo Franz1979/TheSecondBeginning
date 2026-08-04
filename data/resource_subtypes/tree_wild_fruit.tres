@@ -23,7 +23,6 @@ track_age_bands = true
 youth_duration_years = 5
 adult_duration_years = 15
 mortality_share_by_age = Array[float]([0.15, 0.1, 0.75])
-production_coefficient_old = 0.65
 initial_age_ratio = {
 0: 0.3,
 1: 0.7,

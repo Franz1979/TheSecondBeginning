@@ -24,21 +24,21 @@ func encroach_resources(world: World) -> Dictionary:
 		for resource_type in ordered_types:
 			var surplus := ResourceCalculator.compute_growth_surplus(resource_type, cell, state)
 
-			if DebugLogging.ENABLED and cell.x == 50 and cell.y == 50:
-				print("[ENCROACH 50,50] %s: surplus=%.3f dedicated_space=%d empty_space=%d" % [
-					GameTypes.WorldObjectType.keys()[resource_type], surplus,
-					state.get_dedicated_space(resource_type), state.get_empty_space()
-				])
+			#if DebugLogging.ENABLED and cell.x == 50 and cell.y == 50:
+			#	print("[ENCROACH 50,50] %s: surplus=%.3f dedicated_space=%d empty_space=%d" % [
+			#		GameTypes.WorldObjectType.keys()[resource_type], surplus,
+			#		state.get_dedicated_space(resource_type), state.get_empty_space()
+			#	])
 
 			if surplus <= 0.0:
 				continue
 
 			var leftover := _encroach_resource_in_cell(cell, state, resource_type, surplus)
 
-			if DebugLogging.ENABLED and cell.x == 50 and cell.y == 50:
-				print("[ENCROACH 50,50] %s: encroached=%.3f leftover_to_migration=%.3f" % [
-					GameTypes.WorldObjectType.keys()[resource_type], surplus - leftover, leftover
-				])
+			#if DebugLogging.ENABLED and cell.x == 50 and cell.y == 50:
+			#	print("[ENCROACH 50,50] %s: encroached=%.3f leftover_to_migration=%.3f" % [
+			#		GameTypes.WorldObjectType.keys()[resource_type], surplus - leftover, leftover
+			#	])
 
 			if leftover > 0.0:
 				_store_leftover(leftover_surplus, cell, resource_type, leftover)
@@ -62,10 +62,10 @@ func _encroach_resource_in_cell(
 	var weaker_types := _get_weaker_types_present(state, resource_type, growth_rules.succession_level)
 	if weaker_types.is_empty():
 		# Rule 6: no weaker level available, everything goes to migration.
-		if DebugLogging.ENABLED and cell.x == 50 and cell.y == 50:
-			print("[ENCROACH 50,50]   %s has no weaker type present in cell -> skip" % [
-				GameTypes.WorldObjectType.keys()[resource_type]
-			])
+		#if DebugLogging.ENABLED and cell.x == 50 and cell.y == 50:
+		#	print("[ENCROACH 50,50]   %s has no weaker type present in cell -> skip" % [
+		#		GameTypes.WorldObjectType.keys()[resource_type]
+		#	])
 		return surplus
 
 	var own_max_density := ResourceCalculator.get_max_density(
@@ -81,10 +81,10 @@ func _encroach_resource_in_cell(
 	var remaining_budget: float = float(growth_rules.max_encroachment_per_year)
 	var remaining_surplus: float = surplus
 
-	if DebugLogging.ENABLED and cell.x == 50 and cell.y == 50:
-		print("[ENCROACH 50,50]   %s remaining_budget=%.3f own_max_density=%.4f weaker_types=%s" % [
-			GameTypes.WorldObjectType.keys()[resource_type], remaining_budget, own_max_density, str(weaker_types)
-		])
+	#if DebugLogging.ENABLED and cell.x == 50 and cell.y == 50:
+	#	print("[ENCROACH 50,50]   %s remaining_budget=%.3f own_max_density=%.4f weaker_types=%s" % [
+	#		GameTypes.WorldObjectType.keys()[resource_type], remaining_budget, own_max_density, str(weaker_types)
+	#	])
 
 	# Rule 3: consume the farthest (lowest succession level) target fully before moving closer.
 	for weak_type in weaker_types:
@@ -124,10 +124,10 @@ func _encroach_resource_in_cell(
 		# consistent with space * density (same invariant used everywhere else).
 		var applied_quantity: float = space_taken * own_max_density
 
-		if DebugLogging.ENABLED and cell.x == 50 and cell.y == 50:
-			print("[ENCROACH 50,50]   vs %s: weak_space=%d efficiency=%.4f applied_quantity=%.3f space_taken=%d" % [
-				GameTypes.WorldObjectType.keys()[weak_type], weak_space, efficiency, applied_quantity, space_taken
-			])
+		#if DebugLogging.ENABLED and cell.x == 50 and cell.y == 50:
+		#	print("[ENCROACH 50,50]   vs %s: weak_space=%d efficiency=%.4f applied_quantity=%.3f space_taken=%d" % [
+		#		GameTypes.WorldObjectType.keys()[weak_type], weak_space, efficiency, applied_quantity, space_taken
+		#	])
 
 		# Lato perdente: proporzione locale pura, invariata. La competizione territoriale
 		# (chi prende spazio a chi) non è un giudizio di idoneità climatica del sottotipo —

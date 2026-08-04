@@ -22,6 +22,13 @@ var active_clock_speed: int = 0 # GameClockController.Speed.X1 — kept as plain
 # corrente (non nei save su disco), stesso trattamento di active_clock_is_playing sopra.
 var macro_cell_animals_visible: bool = true
 var macro_cell_flora_updates_enabled: bool = true
+# Stesso trattamento del toggle "aggiornamenti flora" sopra, ma per GameScene: WorldRenderer
+# ridisegna l'INTERA griglia 100x100 immediate-mode (terreno + barre risorse + marker eventi) a
+# ogni queue_redraw() — con la fauna che ormai genera animals_changed quasi ogni giorno (consumo/
+# fame giornalieri), farlo incondizionatamente rendeva GameScene molto più lenta di MacroCellScene
+# (che questo redraw costoso lo salta già nei giorni non-checkpoint quando disattivato). Persistito
+# qui per lo stesso motivo: GameScene è un'istanza nuova ogni volta che vi si rientra.
+var game_scene_world_redraw_enabled: bool = true
 
 func _ready() -> void:
 	print("GameSettings ready")

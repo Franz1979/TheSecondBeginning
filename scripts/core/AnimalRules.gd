@@ -94,6 +94,17 @@ extends Resource
 # tutto a 0 => pesi uguali, stesso fallback di SubtypeRules.initial_age_ratio.
 @export var initial_age_ratio: Dictionary = {}
 
+@export_group("Hunger")
+# Soglia di specie (giorni CONSECUTIVI in cui un individuo non riceve fabbisogno calorico
+# sufficiente, vedi AnimalHungerService) oltre la quale l'individuo muore per digiuno prolungato —
+# indipendente da mortality_share_by_age sopra (quello pesa COME distribuire le morti tra le fasce
+# d'età, non SE/QUANDO scattano). Nessun default: ogni specie deve dichiararlo esplicitamente nel
+# proprio .tres, stesso principio di min_territory_cells/max_territory_cells sotto (rabbit=5,
+# metabolismo alto/riserve minime; deer=30, corpo grande/riserve adipose reali — il rapporto 6x
+# non rispecchia il rapporto 15x di daily_caloric_requirement: la tolleranza al digiuno non scala
+# linearmente col fabbisogno calorico).
+@export var max_days_without_food: int = 0
+
 @export_group("Territory")
 # Home range minimo e massimo di specie, in numero di macrocelle — indipendenti da
 # popolazione/risorse locali (es. rabbit: 1/1, deer: 3/20). Campi DORMIENTI per ora: dichiarati

@@ -10,12 +10,25 @@ var cell_states: Array[MacroCellState] = []
 # fissa scelta alla creazione (1 cella per rabbit, min_territory_cells celle via BFS per deer,
 # vedi TerritoryBuilderService) — nessuna espansione/restringimento nel tempo ancora.
 var population_groups: Array[PopulationGroup] = []
+# Prossimo id progressivo da assegnare a un PopulationGroup appena creato (vedi
+# allocate_population_group_id sotto) — permette a più gruppi della stessa specie di coesistere
+# (es. due popolazioni rabbit in celle diverse) restando distinguibili nei log/pannello Fauna
+# tramite un ID stabile per tutta la vita del gruppo, invece di un indice ricalcolato ogni volta
+# che si mostra l'elenco. Persistito nei save solo indirettamente: GameLoadService lo ricalcola
+# da max(id caricati)+1 dopo il caricamento, nessun campo dedicato nel JSON necessario.
+var next_population_group_id: int = 1
+
+func allocate_population_group_id() -> int:
+	var id := next_population_group_id
+	next_population_group_id += 1
+	return id
 
 
 func generate_empty_world() -> void:
 	cells.clear()
 	cell_states.clear()
 	population_groups.clear()
+	next_population_group_id = 1
 	for y in range(HEIGHT):
 		for x in range(WIDTH):
 			var cell := MacroCellData.new(x, y)

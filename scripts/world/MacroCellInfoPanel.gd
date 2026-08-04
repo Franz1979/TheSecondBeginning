@@ -186,11 +186,14 @@ func _on_population_group_row_pressed(cells: Array) -> void:
 	population_group_highlight_requested.emit(cells)
 
 
-# Elenco piatto di tutti i PopulationGroup del world (oggi solo rabbit), non filtrato per cella
-# — a differenza di MacroCellDetailPanel._update_animal_population_rows, che mostra solo i
-# gruppi della cella aperta. Un identificativo progressivo (#1, #2...) invece del nome specie
-# come chiave di riga, dato che in futuro più gruppi della stessa specie potranno coesistere
-# (branchi diversi nella stessa specie, vedi Territory pianificato).
+# Elenco piatto di tutti i PopulationGroup del world (oggi rabbit e deer, più gruppi della stessa
+# specie in celle diverse possono coesistere — vedi GameScene debug buttons), non filtrato per
+# cella — a differenza di MacroCellDetailPanel._update_animal_population_rows, che mostra solo i
+# gruppi della cella aperta. L'identificativo di riga è group.id (assegnato una volta alla
+# creazione, vedi World.allocate_population_group_id), NON un indice ricalcolato qui: resta
+# stabile per tutta la vita del gruppo e coincide con quello usato nei log animali (Animal*Service),
+# così le due fonti sono sempre coerenti. Conseguenza attesa: se un gruppo si estingue, la lista
+# mostra un "buco" nella numerazione invece di rinumerare i successivi.
 func _update_population_groups(world: World) -> void:
 	for child in population_groups_container.get_children():
 		child.queue_free()
@@ -202,11 +205,11 @@ func _update_population_groups(world: World) -> void:
 		population_groups_container.add_child(empty_label)
 		return
 
-	var displayed_count := 0
+	var any_displayed := false
 	for group in world.population_groups:
 		if group.population <= 0:
 			continue
-		displayed_count += 1
+		any_displayed = true
 
 		# Elenco piatto: sempre "in N cells" (mai le coordinate esatte, nemmeno con 1 sola cella
 		# come rabbit) — coerenza di formato tra tutte le specie voluta esplicitamente dall'utente,
@@ -230,7 +233,7 @@ func _update_population_groups(world: World) -> void:
 		label.add_theme_font_size_override("font_size", 11)
 		label.size_flags_horizontal = SIZE_EXPAND_FILL
 		label.text = "#%d - %s: %s - %s" % [
-			displayed_count,
+			group.id,
 			group.species_name,
 			NumberFormatter.format_int(group.population),
 			cell_descriptor
@@ -267,7 +270,7 @@ func _update_population_groups(world: World) -> void:
 			]
 			population_groups_container.add_child(age_label)
 
-	if displayed_count == 0:
+	if not any_displayed:
 		var empty_label := Label.new()
 		empty_label.add_theme_font_size_override("font_size", 11)
 		empty_label.text = tr("no_population_groups")

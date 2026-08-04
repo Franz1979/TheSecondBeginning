@@ -34,7 +34,7 @@ func apply_old_age_mortality(world: World, season: GameTypes.Season) -> void:
 		group.apply_old_age_mortality(deaths_from_age)
 
 		if DebugLogging.ENABLED:
-			print("[ANIMAL OLD AGE DEATHS] checkpoint=fine %s | %s: O=%d old_duration=%d -> morti=%d pop %d->%d" % [
-				GameTypes.Season.keys()[season], group.species_name,
+			print("[ANIMAL OLD AGE DEATHS] checkpoint=fine %s | #%d %s: O=%d old_duration=%d -> morti=%d pop %d->%d" % [
+				GameTypes.Season.keys()[season], group.id, group.species_name,
 				old_count, rules.old_duration_years, deaths_from_age, population_before, group.population
 			])

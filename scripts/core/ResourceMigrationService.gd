@@ -48,10 +48,10 @@ func _compute_transfers_for_cell(
 	if leftover_surplus.has(cell_key):
 		surplus_quantity = leftover_surplus[cell_key].get(resource_type, 0.0)
 
-	if DebugLogging.ENABLED and cell.x == 50 and cell.y == 50:
-		print("[MIGRATION 50,50] %s: residual_surplus_from_encroachment=%.3f" % [
-			GameTypes.WorldObjectType.keys()[resource_type], surplus_quantity
-		])
+	#if DebugLogging.ENABLED and cell.x == 50 and cell.y == 50:
+	#	print("[MIGRATION 50,50] %s: residual_surplus_from_encroachment=%.3f" % [
+	#		GameTypes.WorldObjectType.keys()[resource_type], surplus_quantity
+	#	])
 
 	if surplus_quantity <= 0.0:
 		return
@@ -106,10 +106,10 @@ func _compute_transfers_for_cell(
 		
 		#print("DEBUG MIGRATION verso (", neighbor_x, ",", neighbor_y, ") destination_factor=", destination_factor, " migrated_quantity=", migrated_quantity)
 		
-		if DebugLogging.ENABLED and cell.x == 50 and cell.y == 50:
-			print("[MIGRATION 50,50]   -> (%d,%d) %s: migrated_quantity=%.3f" % [
-				neighbor_x, neighbor_y, GameTypes.WorldObjectType.keys()[resource_type], migrated_quantity
-			])
+		#if DebugLogging.ENABLED and cell.x == 50 and cell.y == 50:
+		#	print("[MIGRATION 50,50]   -> (%d,%d) %s: migrated_quantity=%.3f" % [
+		#		neighbor_x, neighbor_y, GameTypes.WorldObjectType.keys()[resource_type], migrated_quantity
+		#	])
 
 		if migrated_quantity <= 0.0:
 			continue

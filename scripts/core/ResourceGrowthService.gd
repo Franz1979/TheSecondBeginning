@@ -84,10 +84,10 @@ func _grow_resource_in_cell(
 	var new_quantity: int = int(round(new_space * max_density))
 	#print("DEBUG new_quantity=", new_quantity)
 
-	if DebugLogging.ENABLED and cell.x == 50 and cell.y == 50:
-		print("[GROWTH 50,50] %s: space %d -> %d | quantity -> %d" % [
-			GameTypes.WorldObjectType.keys()[resource_type], current_space, new_space, new_quantity
-		])
+	#if DebugLogging.ENABLED and cell.x == 50 and cell.y == 50:
+	#	print("[GROWTH 50,50] %s: space %d -> %d | quantity -> %d" % [
+	#		GameTypes.WorldObjectType.keys()[resource_type], current_space, new_space, new_quantity
+	#	])
 
 	var subtype_weights := ResourceCalculator.get_biome_weighted_subtype_composition(resource_type, state, cell.biome)
 	# Composizione locale interamente a zero (tipico di una cella che riparte dal floor sopra,

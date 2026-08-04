@@ -11,6 +11,10 @@ var game_data: GameData
 var renderer: WorldRenderer
 var game_controller: CellSelectorController
 var clock: GameClockController
+# Gate sul redraw giornaliero costoso di WorldRenderer (griglia 100x100 immediate-mode) — vedi
+# GameSettings.game_scene_world_redraw_enabled per il perché. Default true: comportamento
+# invariato finché l'utente non lo disattiva esplicitamente.
+var world_daily_redraw_enabled: bool = true
 var _clock_was_playing_before_dialogs: bool = false
 var _open_dialog_count: int = 0
 var _pending_leave_action: StringName = &""
@@ -40,6 +44,12 @@ var _pending_leave_action: StringName = &""
 @onready var debug_set_deer_button: Button = $CanvasLayer/Sidebar/MarginContainer/VBoxContainer/DebugDeerContainer/DebugSetDeerButton
 
 func _ready() -> void:
+	# Ripristina lo stato del toggle dalla sessione precedente (vedi GameSettings): senza questo,
+	# uscendo e rientrando in questa scena (es. via MacroCellScene) tornerebbe sempre al default
+	# "attivo", perdendo silenziosamente la scelta dell'utente — stesso principio già usato da
+	# MacroCellScene per i suoi due toggle.
+	world_daily_redraw_enabled = GameSettings.game_scene_world_redraw_enabled
+
 	year_title_label.text = tr("calendar_label")
 	advance_year_button.text = "+1"
 	advance_year_button.tooltip_text = tr("advance_year_tooltip")
@@ -48,6 +58,12 @@ func _ready() -> void:
 	save_game_file_dialog.current_dir = GameSettings.SAVES_DIR
 	save_game_file_dialog.file_selected.connect(_on_save_game_file_selected)
 
+	primary_actions_bar.configure_slot(
+		0, "🗺️", tr("toggle_world_redraw_tooltip"), &"toggle_world_redraw",
+		tr("toggle_world_redraw_description")
+	)
+	primary_actions_bar.set_slot_toggled(0, world_daily_redraw_enabled)
+	primary_actions_bar.action_pressed.connect(_on_primary_action_pressed)
 	secondary_actions_bar.configure_slot(0, "☰", tr("menu"), &"menu")
 	secondary_actions_bar.action_pressed.connect(_on_secondary_action_pressed)
 	system_menu_dialog.add_action(tr("save_game"), &"save")
@@ -192,6 +208,13 @@ func _on_save_game_file_selected(path: String) -> void:
 	if _pending_leave_action != &"":
 		_execute_pending_leave_action()
 
+func _on_primary_action_pressed(action_id: StringName) -> void:
+	match action_id:
+		&"toggle_world_redraw":
+			world_daily_redraw_enabled = not world_daily_redraw_enabled
+			primary_actions_bar.set_slot_toggled(0, world_daily_redraw_enabled)
+			GameSettings.game_scene_world_redraw_enabled = world_daily_redraw_enabled
+
 func _on_secondary_action_pressed(action_id: StringName) -> void:
 	match action_id:
 		&"menu":
@@ -259,7 +282,13 @@ func _on_day_advanced(checkpoint_ran: bool, animals_changed: bool) -> void:
 	_update_calendar_display()
 	if not (checkpoint_ran or animals_changed):
 		return
-	renderer.queue_redraw()
+	# Il redraw completo di WorldRenderer (griglia 100x100 immediate-mode) è costoso e non serve
+	# tutti i giorni: sempre ai veri checkpoint stagionali (variazioni visibili reali), ma nei
+	# giorni con solo animals_changed (ormai quasi ogni giorno, vedi AnimalConsumptionService/
+	# AnimalHungerService) solo se l'utente ha lasciato attivo il toggle — stesso schema già usato
+	# da MacroCellScene per flora_daily_updates_enabled.
+	if checkpoint_ran or world_daily_redraw_enabled:
+		renderer.queue_redraw()
 	if renderer.selected_cell != null:
 		var state := world.get_cell_state_at(renderer.selected_cell.x, renderer.selected_cell.y)
 		macro_cell_info_panel.show_cell(renderer.selected_cell, state, world)
@@ -273,14 +302,26 @@ func _on_day_advanced(checkpoint_ran: bool, animals_changed: bool) -> void:
 func _on_advance_year_pressed() -> void:
 	clock.force_advance_to_year_end()
 
+# Cella bersaglio per i pulsanti debug sotto: quella attualmente selezionata sulla mappa (singolo
+# click, vedi renderer.selected_cell/set_selected_cell) — così l'utente sceglie dove rilasciare la
+# popolazione invece di un fisso (50,50), e può creare più gruppi della stessa specie in celle
+# diverse (world.find_population_group cerca per specie+cella: celle diverse => gruppi diversi,
+# nessuna fusione). Fallback a (50,50) solo se non è ancora stata selezionata nessuna cella (es.
+# subito dopo l'apertura della scena). Nessun blocco se si preme di nuovo sulla STESSA cella già
+# usata: sovrascrive il gruppo lì esistente, comportamento voluto (vedi find_population_group).
+func _debug_target_coords() -> Vector2i:
+	if renderer.selected_cell != null:
+		return Vector2i(renderer.selected_cell.x, renderer.selected_cell.y)
+	return Vector2i(50, 50)
+
 func _on_debug_set_rabbit_pressed() -> void:
-	var coords := Vector2i(50, 50)
+	var coords := _debug_target_coords()
 	var count := int(debug_rabbit_spin_box.value)
 
 	var rabbit_rules := AnimalCalculator.get_animal_rules("rabbit")
 	var group := world.find_population_group("rabbit", coords)
 	if group == null:
-		group = PopulationGroup.new("rabbit", _build_initial_territory(coords, rabbit_rules))
+		group = PopulationGroup.new("rabbit", _build_initial_territory(coords, rabbit_rules), world.allocate_population_group_id())
 		world.population_groups.append(group)
 	group.set_population(count)
 	# Riallinea age_composition al nuovo totale (vedi PopulationGroup.set_age_composition) —
@@ -289,22 +330,22 @@ func _on_debug_set_rabbit_pressed() -> void:
 	var age_weights: Dictionary = rabbit_rules.initial_age_ratio if rabbit_rules != null else {}
 	group.set_age_composition(count, age_weights)
 	macro_cell_info_panel.refresh_fauna_tabs_if_active()
-	print("[DEBUG] rabbit population (50,50) impostata a %d" % count)
+	print("[DEBUG] rabbit population #%d (%d,%d) impostata a %d" % [group.id, coords.x, coords.y, count])
 
 func _on_debug_set_deer_pressed() -> void:
-	var coords := Vector2i(50, 50)
+	var coords := _debug_target_coords()
 	var count := int(debug_deer_spin_box.value)
 
 	var deer_rules := AnimalCalculator.get_animal_rules("deer")
 	var group := world.find_population_group("deer", coords)
 	if group == null:
-		group = PopulationGroup.new("deer", _build_initial_territory(coords, deer_rules))
+		group = PopulationGroup.new("deer", _build_initial_territory(coords, deer_rules), world.allocate_population_group_id())
 		world.population_groups.append(group)
 	group.set_population(count)
 	var age_weights: Dictionary = deer_rules.initial_age_ratio if deer_rules != null else {}
 	group.set_age_composition(count, age_weights)
 	macro_cell_info_panel.refresh_fauna_tabs_if_active()
-	print("[DEBUG] deer population (50,50) impostata a %d" % count)
+	print("[DEBUG] deer population #%d (%d,%d) impostata a %d" % [group.id, coords.x, coords.y, count])
 
 
 # Territorio iniziale di un gruppo appena creato: una sola cella per specie con

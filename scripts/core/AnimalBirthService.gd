@@ -13,6 +13,8 @@ extends RefCounted
 # del territorio — si aggiunge a fertility_multiplier_by_age, non lo sostituisce.
 func apply_births(world: World, season: GameTypes.Season) -> void:
 	for group in world.population_groups:
+		if group.population <= 0:
+			continue
 		var rules := AnimalCalculator.get_animal_rules(group.species_name)
 		if rules == null or not rules.track_age_bands:
 			continue
@@ -33,8 +35,8 @@ func apply_births(world: World, season: GameTypes.Season) -> void:
 		group.apply_births(births)
 
 		if DebugLogging.ENABLED:
-			print("[ANIMAL BIRTHS] checkpoint=fine %s | %s: Y=%d A=%d O=%d pesato_fertilita=%.2f base_birth_rate=%.2f mitigazione=%.2f -> nascite=%d pop %d->%d" % [
-				GameTypes.Season.keys()[season], group.species_name,
+			print("[ANIMAL BIRTHS] checkpoint=fine %s | #%d %s: Y=%d A=%d O=%d pesato_fertilita=%.2f base_birth_rate=%.2f mitigazione=%.2f -> nascite=%d pop %d->%d" % [
+				GameTypes.Season.keys()[season], group.id, group.species_name,
 				young, adult, old, weighted_count, rules.base_birth_rate, group.birth_mitigation_multiplier,
 				births, population_before, group.population
 			])

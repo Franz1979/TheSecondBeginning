@@ -61,11 +61,21 @@ func save_game_to_json(
 		var occupied_cells_data: Array = []
 		for coords in group.territory.occupied_macrocells:
 			occupied_cells_data.append({"x": coords.x, "y": coords.y})
+		# hunger_buckets (giorni consecutivi di digiuno -> individui, vedi
+		# AnimalHungerService/PopulationGroup): a differenza di territory_distribution_weights è
+		# storia accumulata reale e va salvata — perderla al caricamento azzererebbe una crisi di
+		# fame già vicina alla soglia di morte. birth_mitigation_multiplier va salvato per lo
+		# stesso motivo di fondo (bug corretto: viene calcolato a inizio birth_season ma consumato
+		# solo a fine — un salvataggio/caricamento nel mezzo lo perdeva, tornando al default 1.0 e
+		# applicando nascite senza alcuna mitigazione).
 		data["world"]["population_groups"].append({
+			"id": group.id,
 			"species_name": group.species_name,
 			"population": group.population,
 			"age_composition": group.age_composition,
-			"occupied_macrocells": occupied_cells_data
+			"occupied_macrocells": occupied_cells_data,
+			"hunger_buckets": group.hunger_buckets,
+			"birth_mitigation_multiplier": group.birth_mitigation_multiplier
 		})
 	var json_text := JSON.stringify(data, "\t")
 	var file := FileAccess.open(file_path, FileAccess.WRITE)

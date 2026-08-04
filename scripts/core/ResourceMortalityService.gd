@@ -46,10 +46,10 @@ func _apply_mortality_in_cell(
 	var fill_ratio: float = float(state.get_total_dedicated_space()) / float(MacroCellState.TOTAL_SPACE)
 	var multiplier := _get_multiplier(fill_ratio)
 
-	if DebugLogging.ENABLED and cell.x == 50 and cell.y == 50:
-		print("[MORTALITY 50,50] %s: fill_ratio=%.3f multiplier=%.2f dedicated_space=%d quantity=%d" % [
-			GameTypes.WorldObjectType.keys()[resource_type], fill_ratio, multiplier, current_space, current_quantity
-		])
+	#if DebugLogging.ENABLED and cell.x == 50 and cell.y == 50:
+	#	print("[MORTALITY 50,50] %s: fill_ratio=%.3f multiplier=%.2f dedicated_space=%d quantity=%d" % [
+	#		GameTypes.WorldObjectType.keys()[resource_type], fill_ratio, multiplier, current_space, current_quantity
+	#	])
 
 	if multiplier <= 0.0:
 		return
@@ -81,11 +81,11 @@ func _apply_mortality_in_cell(
 	var new_space: int = current_space - space_lost
 	var new_quantity: int = current_quantity - int(round(quantity_lost))
 
-	if DebugLogging.ENABLED and cell.x == 50 and cell.y == 50:
-		print("[MORTALITY 50,50] %s: growth_rate=%.4f mortality_rate=%.4f quantity_lost=%.3f space %d -> %d | quantity -> %d" % [
-			GameTypes.WorldObjectType.keys()[resource_type], growth_rate, mortality_rate, quantity_lost,
-			current_space, new_space, max(new_quantity, 0)
-		])
+	#if DebugLogging.ENABLED and cell.x == 50 and cell.y == 50:
+	#	print("[MORTALITY 50,50] %s: growth_rate=%.4f mortality_rate=%.4f quantity_lost=%.3f space %d -> %d | quantity -> %d" % [
+	#		GameTypes.WorldObjectType.keys()[resource_type], growth_rate, mortality_rate, quantity_lost,
+	#		current_space, new_space, max(new_quantity, 0)
+	#	])
 
 	var subtype_weights := ResourceCalculator.get_biome_weighted_subtype_composition(
 		resource_type, state, cell.biome, true

@@ -13,6 +13,11 @@ func advance_day(world: World, game_data: GameData) -> Dictionary:
 	var year_rolled_over := game_data.advance_day()
 	var animals_changed := _run_daily_animal_consumption(world, game_data)
 	var checkpoint_ran := _run_seasonal_checkpoints(world, game_data, year_rolled_over)
+	# DOPO i checkpoint stagionali (mai prima): se oggi capita anche un checkpoint di fine
+	# birth_season (nascite/morte per vecchiaia), hunger_buckets viene già mantenuto coerente con
+	# population da PopulationGroup.apply_births/apply_old_age_mortality PRIMA che questo servizio
+	# legga population — vedi AnimalHungerService.
+	_run_daily_animal_hunger(world)
 	return {"checkpoint_ran": checkpoint_ran, "animals_changed": animals_changed}
 
 
@@ -21,6 +26,13 @@ func advance_day(world: World, game_data: GameData) -> Dictionary:
 func _run_daily_animal_consumption(world: World, game_data: GameData) -> bool:
 	var current_season := SeasonCalculator.get_season_for_day(game_data.current_day)
 	return AnimalConsumptionService.new().apply_daily_consumption(world, current_season)
+
+
+# Gira ogni giorno, indipendente da birth_season (vedi AnimalHungerService): legge
+# group.daily_caloric_ratio già calcolato sopra da _run_daily_animal_consumption, non lo
+# ricalcola.
+func _run_daily_animal_hunger(world: World) -> void:
+	AnimalHungerService.new().apply_daily_hunger(world)
 
 # Debug/emergency fast-forward (the "+1" button): advances a full 365 days one at a time (via
 # advance_day) so every seasonal checkpoint crossed along the way still runs, in chronological
@@ -211,10 +223,10 @@ func _store_pending_migration_surplus(world: World, leftover_surplus: Dictionary
 		for resource_type in leftover_surplus[cell_key].keys():
 			var surplus_quantity = leftover_surplus[cell_key][resource_type]
 			state.pending_migration_surplus[resource_type] = surplus_quantity
-			if DebugLogging.ENABLED and cell_key.x == 50 and cell_key.y == 50:
-				print("[SURPLUS SAVED 50,50] %s: %.3f accantonato" % [
-					GameTypes.WorldObjectType.keys()[resource_type], surplus_quantity
-				])
+			#if DebugLogging.ENABLED and cell_key.x == 50 and cell_key.y == 50:
+			#	print("[SURPLUS SAVED 50,50] %s: %.3f accantonato" % [
+			#		GameTypes.WorldObjectType.keys()[resource_type], surplus_quantity
+			#	])
 
 
 func _collect_pending_migration_surplus(world: World) -> Dictionary:
@@ -222,11 +234,11 @@ func _collect_pending_migration_surplus(world: World) -> Dictionary:
 	for state in world.cell_states:
 		if state.pending_migration_surplus.is_empty():
 			continue
-		if DebugLogging.ENABLED and state.x == 50 and state.y == 50:
-			for resource_type in state.pending_migration_surplus.keys():
-				print("[SURPLUS APPLIED 50,50] %s: %.3f applicato" % [
-					GameTypes.WorldObjectType.keys()[resource_type], state.pending_migration_surplus[resource_type]
-				])
+		#if DebugLogging.ENABLED and state.x == 50 and state.y == 50:
+		#	for resource_type in state.pending_migration_surplus.keys():
+		#		print("[SURPLUS APPLIED 50,50] %s: %.3f applicato" % [
+		#			GameTypes.WorldObjectType.keys()[resource_type], state.pending_migration_surplus[resource_type]
+		#		])
 		leftover_surplus[Vector2i(state.x, state.y)] = state.pending_migration_surplus.duplicate()
 	return leftover_surplus
 

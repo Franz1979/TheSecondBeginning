@@ -53,6 +53,12 @@ func _consume_group(
 	# contenere coordinate non più valide (caso raro, difensivo), quindi cells_info può avere
 	# MENO elementi di occupied_macrocells — l'indice `i` qui sotto indicizza SEMPRE cells_info,
 	# mai occupied_macrocells direttamente, altrimenti i due andrebbero fuori sincrono.
+	# Calcolato PRIMA di cells_info sotto (non dipende da esso) così è comunque disponibile per
+	# group.set_daily_caloric_consumption anche nel ramo "nessuna cella valida" — il chiamante
+	# (AnimalHungerService, tramite i log) vede sempre required coerente col vero fabbisogno del
+	# gruppo, mai un placeholder.
+	var total_requirement := _get_total_daily_requirement(group, rules)
+
 	var cells_info: Array[Dictionary] = []
 	for coords in group.territory.occupied_macrocells:
 		var cell := world.get_cell_at(coords.x, coords.y)
@@ -61,14 +67,26 @@ func _consume_group(
 			continue
 		cells_info.append({"coords": coords, "cell": cell, "state": state})
 	if cells_info.is_empty():
+		# Nessuna cella valida su cui consumare: 0% del fabbisogno soddisfatto (a meno che
+		# total_requirement stesso sia <= 0, nel qual caso set_daily_caloric_consumption
+		# normalizza comunque il ratio a 1.0 — nessun fabbisogno = nessuna fame possibile).
+		group.set_daily_caloric_consumption(0.0, total_requirement)
 		return false
 
-	var total_requirement := _get_total_daily_requirement(group, rules)
 	if total_requirement <= 0.0:
+		# Nessun fabbisogno = nessuna fame possibile: ratio neutro (gestito da
+		# set_daily_caloric_consumption), stessa semantica di "nessuna penalità" usata altrove
+		# (es. AnimalBirthMitigationService quando seasonal_requirement è 0).
+		group.set_daily_caloric_consumption(0.0, 0.0)
 		return false
 
 	var population_by_cell := group.get_population_by_cell()
 	var any_consumption_applied := false
+	# Consumo TOTALE del gruppo su tutto il territorio, sommato attraverso celle e round di
+	# ridistribuzione — mai un dato per singola cella isolata (vedi conferma utente). Diviso per
+	# total_requirement a fine funzione per ottenere group.daily_caloric_ratio, riusato da
+	# AnimalHungerService senza ricalcolare nulla.
+	var total_consumed := 0.0
 
 	# indice nell'array cells_info (non le coordinate) per tenere pesi/residui in Dictionary
 	# ordinari con chiavi int, evitando ambiguità su Vector2i come chiave in più punti.
@@ -96,6 +114,7 @@ func _consume_group(
 			if result["applied"]:
 				any_consumption_applied = true
 			var unmet: float = result["unmet"]
+			total_consumed += max(req - unmet, 0.0)
 			if unmet > 0.0001:
 				unmet_this_round[i] = unmet
 				round_total_unmet += unmet
@@ -128,6 +147,7 @@ func _consume_group(
 			pending_requirement[i] = round_total_unmet * (recipient_weights[i] / recipient_weight_sum)
 		active_indices = recipients
 
+	group.set_daily_caloric_consumption(total_consumed, total_requirement)
 	return any_consumption_applied
 
 

@@ -111,13 +111,36 @@ func load_game_from_json(file_path: String) -> LoadedGame:
 				continue
 			var group := PopulationGroup.new(
 				String(group_data["species_name"]),
-				Territory.new(occupied_cells)
+				Territory.new(occupied_cells),
+				# .get(key, 0) per compatibilità con save precedenti l'introduzione dell'id: 0 =
+				# mai assegnato — world.next_population_group_id sotto viene comunque ricalcolato
+				# a valle del loop così le prossime allocazioni non collidono con questi gruppi.
+				int(group_data.get("id", 0))
 			)
 			group.population = int(group_data["population"])
 			var age_data = group_data.get("age_composition", {})
 			for age_key in age_data.keys():
 				group.age_composition[int(age_key)] = int(age_data[age_key])
+			# .get(key, {}) per compatibilità con save precedenti l'introduzione della mortalità
+			# da fame, che non hanno affatto questo campo (vedi AnimalHungerService).
+			var hunger_data = group_data.get("hunger_buckets", {})
+			for hunger_key in hunger_data.keys():
+				group.hunger_buckets[int(hunger_key)] = int(hunger_data[hunger_key])
+			# .get(key, 1.0) per compatibilità con save precedenti la correzione del bug
+			# (birth_mitigation_multiplier non veniva salvato) — 1.0 = nessuna penalità, stesso
+			# default della classe, comportamento invariato per quei save. set_ (non assegnazione
+			# diretta) per applicare comunque il clamp a MULTIPLIER_ABUNDANCE_CAP.
+			group.set_birth_mitigation_multiplier(float(group_data.get("birth_mitigation_multiplier", 1.0)))
 			world.population_groups.append(group)
+
+	# Nessun campo dedicato per il contatore nel JSON: ricalcolato da max(id caricati)+1 così le
+	# prossime allocazioni (world.allocate_population_group_id) non collidono mai con quelli
+	# appena caricati, anche se il save è precedente all'introduzione di questo campo (id=0 per
+	# tutti i gruppi -> riparte comunque da 1).
+	var max_loaded_id := 0
+	for group in world.population_groups:
+		max_loaded_id = max(max_loaded_id, group.id)
+	world.next_population_group_id = max_loaded_id + 1
 
 	var loaded_game := LoadedGame.new()
 	loaded_game.world = world

@@ -10,6 +10,8 @@ extends RefCounted
 # birth_season di un'altra stagione).
 func mature_age_bands(world: World, season: GameTypes.Season) -> void:
 	for group in world.population_groups:
+		if group.population <= 0:
+			continue
 		var rules := AnimalCalculator.get_animal_rules(group.species_name)
 		if rules == null or not rules.track_age_bands:
 			continue
@@ -23,8 +25,8 @@ func mature_age_bands(world: World, season: GameTypes.Season) -> void:
 		group.apply_age_band_maturation(rules.youth_duration_years, rules.adult_duration_years)
 
 		if DebugLogging.ENABLED:
-			print("[ANIMAL AGING] checkpoint=fine %s | %s: Y %d->%d (youth_duration=%d) | A %d->%d (adult_duration=%d) | O %d->%d" % [
-				GameTypes.Season.keys()[season], group.species_name,
+			print("[ANIMAL AGING] checkpoint=fine %s | #%d %s: Y %d->%d (youth_duration=%d) | A %d->%d (adult_duration=%d) | O %d->%d" % [
+				GameTypes.Season.keys()[season], group.id, group.species_name,
 				young_before, group.get_age_count(GameTypes.AgeBand.YOUNG), rules.youth_duration_years,
 				adult_before, group.get_age_count(GameTypes.AgeBand.ADULT), rules.adult_duration_years,
 				old_before, group.get_age_count(GameTypes.AgeBand.OLD)

@@ -1,0 +1,203 @@
+class_name AnimalHungerService
+extends RefCounted
+
+# Mortalità da digiuno prolungato (nuovo meccanismo, indipendente dal checkpoint stagionale di
+# birth_season — gira OGNI giorno, come AnimalConsumptionService) applicata alla popolazione
+# ESISTENTE di ogni PopulationGroup, mai ai nascituri (quello resta compito di
+# AnimalBirthMitigationService). Legge group.daily_caloric_ratio, già calcolato oggi da
+# AnimalConsumptionService su TUTTO il territorio del gruppo (mai un dato per singola cella
+# isolata) — nessun ricalcolo qui.
+#
+# Soglia di espansione territoriale DEDICATA e separata da
+# AnimalBirthMitigationService.RATIO_HIGH_THRESHOLD (0.8, tarata per il ratio STAGIONALE della
+# mitigazione natalità — un contesto diverso): qui qualunque deficit giornaliero, per quanto
+# piccolo, deve tentare un'espansione, perché significa che qualcuno nel gruppo sta accumulando
+# giorni di digiuno verso la propria soglia di morte — vogliamo agire il prima possibile, non
+# aspettare che il deficit sia già ampio.
+const DAILY_HUNGER_EXPANSION_THRESHOLD := 1.0
+# Tolleranza MINIMA, solo per il rumore di rappresentazione in virgola mobile (somme/divisioni
+# concatenate su più celle/fonti in AnimalConsumptionService._consume_group possono restituire
+# 0.999999994 invece di esattamente 1.0 anche quando il fabbisogno è coperto per intero) — NON
+# serve a mascherare deficit reali: un vero calo stagionale di FORAGE (vedi
+# CaloricCalculator.seasonal_availability_multiplier, che cambia di scatto al confine tra due
+# stagioni) produce un ratio realmente sotto soglia di ordini di grandezza superiori a questo
+# epsilon, e continua a innescare l'espansione come richiesto ("qualunque deficit, anche
+# piccolo"). Va nel log daily_calories_consumed/daily_calories_required per distinguere i due casi.
+const RATIO_EPSILON := 0.000001
+
+
+func apply_daily_hunger(world: World) -> void:
+	for group in world.population_groups:
+		if group.population <= 0:
+			continue
+
+		var rules := AnimalCalculator.get_animal_rules(group.species_name)
+		if rules == null:
+			continue
+
+		_process_group_hunger(world, group, rules)
+
+
+# Ordine per gruppo: 1) riallinea hunger_buckets a population (rete di sicurezza, vedi
+# _reconcile_bucket_total — l'invariante è già mantenuta per costruzione da
+# PopulationGroup.set_age_composition/apply_births/apply_old_age_mortality, ma un secondo
+# controllo qui costa pochissimo e rende il meccanismo robusto a eventuali futuri punti di
+# mutazione della popolazione non ancora aggiornati); 2) calcola quanti individui non sono stati
+# nutriti oggi dal ratio già calcolato; 3) fa avanzare/retrocedere i bucket, raccogliendo le morti
+# per superamento soglia; 4) applica la mortalità (pesata per età); 5) tenta un'espansione di una
+# cella se il ratio odierno segnala ancora deficit.
+func _process_group_hunger(world: World, group: PopulationGroup, rules: AnimalRules) -> void:
+	_reconcile_bucket_total(group)
+
+	var ratio: float = group.daily_caloric_ratio
+	var population_before := group.population
+	var unfed_target: int = clamp(
+		int(round(float(population_before) * (1.0 - ratio))), 0, population_before
+	)
+
+	var shift_result := _shift_buckets(group, rules, unfed_target)
+	var total_deaths: int = shift_result["total_deaths"]
+	var deaths_by_origin_day: Dictionary = shift_result["deaths_by_origin_day"]
+
+	if total_deaths > 0:
+		group.apply_hunger_mortality(total_deaths, rules)
+
+	var expansion_attempted := false
+	var expansion_succeeded := false
+	if ratio < DAILY_HUNGER_EXPANSION_THRESHOLD - RATIO_EPSILON:
+		expansion_attempted = true
+		expansion_succeeded = _attempt_expansion(world, group, rules)
+
+	if DebugLogging.ENABLED and (unfed_target > 0 or total_deaths > 0 or expansion_attempted):
+		_log_daily_hunger(
+			group, ratio, unfed_target, total_deaths, deaths_by_origin_day,
+			population_before, expansion_attempted, expansion_succeeded
+		)
+
+
+# Rete di sicurezza: se population e somma(hunger_buckets) sono comunque disallineati (es. un
+# punto di mutazione futuro che dimenticasse di aggiornare hunger_buckets), riallinea qui invece
+# di propagare un istogramma inconsistente allo shift giornaliero. Un eccesso di population va nel
+# bucket 0 (nessuno storico noto = trattati come sazi, stesso criterio di set_age_composition);
+# un eccesso di hunger_buckets si toglie proporzionalmente tra i bucket esistenti (stesso
+# "water-filling" capped già usato da apply_old_age_mortality).
+func _reconcile_bucket_total(group: PopulationGroup) -> void:
+	var diff := group.population - group.get_hunger_bucket_total()
+	if diff > 0:
+		group.set_hunger_bucket_count(0, group.get_hunger_bucket_count(0) + diff)
+	elif diff < 0:
+		var loss := -diff
+		var split := MacroCellState._split_by_weight_capped(group.hunger_buckets, group.hunger_buckets, loss)
+		for days in split.keys():
+			group.set_hunger_bucket_count(days, group.get_hunger_bucket_count(days) - split[days])
+
+
+# Assegna i `unfed_target` individui "non nutriti oggi" partendo dai bucket PIÙ ALTI (i già più
+# affamati restano scoperti per primi), poi fa avanzare di un bucket chi non è stato nutrito e
+# retrocedere di un bucket (mai sotto 0) chi lo è stato. Chi supererebbe
+# rules.max_days_without_food muore invece di entrare in un bucket oltre la soglia. Ritorna
+# {"total_deaths": int, "deaths_by_origin_day": Dictionary} — il secondo per il solo logging,
+# chiave = bucket di PARTENZA di chi è morto oggi.
+func _shift_buckets(group: PopulationGroup, rules: AnimalRules, unfed_target: int) -> Dictionary:
+	var days_desc: Array = group.hunger_buckets.keys()
+	days_desc.sort()
+	days_desc.reverse()
+
+	var remaining_unfed := unfed_target
+	var unfed_by_day: Dictionary = {}
+	var fed_by_day: Dictionary = {}
+
+	for day in days_desc:
+		var count: int = group.get_hunger_bucket_count(day)
+		if count <= 0:
+			continue
+		if remaining_unfed <= 0:
+			fed_by_day[day] = count
+		elif remaining_unfed >= count:
+			unfed_by_day[day] = count
+			remaining_unfed -= count
+		else:
+			unfed_by_day[day] = remaining_unfed
+			fed_by_day[day] = count - remaining_unfed
+			remaining_unfed = 0
+
+	var new_buckets: Dictionary = {}
+	var deaths_by_origin_day: Dictionary = {}
+	var total_deaths := 0
+
+	for day in unfed_by_day.keys():
+		var c: int = unfed_by_day[day]
+		if c <= 0:
+			continue
+		var next_day: int = int(day) + 1
+		if next_day > rules.max_days_without_food:
+			deaths_by_origin_day[day] = int(deaths_by_origin_day.get(day, 0)) + c
+			total_deaths += c
+		else:
+			new_buckets[next_day] = int(new_buckets.get(next_day, 0)) + c
+
+	for day in fed_by_day.keys():
+		var c: int = fed_by_day[day]
+		if c <= 0:
+			continue
+		var prev_day: int = max(int(day) - 1, 0)
+		new_buckets[prev_day] = int(new_buckets.get(prev_day, 0)) + c
+
+	group.hunger_buckets = new_buckets
+	return {"total_deaths": total_deaths, "deaths_by_origin_day": deaths_by_origin_day}
+
+
+# Un solo tentativo al giorno, nessuna finestra di attesa: se fallisce oggi (territorio già a
+# max_territory_cells, o BFS satura senza celle libere raggiungibili — vedi
+# TerritoryBuilderService.expand_by_one_cell) si ritenta domani se il deficit persiste, la BFS è
+# economica. rabbit (min=max=1 territorio) fallisce sempre qui per costruzione, mai un'eccezione
+# hardcoded per specie.
+func _attempt_expansion(world: World, group: PopulationGroup, rules: AnimalRules) -> bool:
+	if group.territory == null:
+		return false
+	if group.territory.get_cell_count() >= rules.max_territory_cells:
+		return false
+	return TerritoryBuilderService.new().expand_by_one_cell(world, group.territory)
+
+
+func _log_daily_hunger(
+	group: PopulationGroup, ratio: float, unfed_target: int, total_deaths: int,
+	deaths_by_origin_day: Dictionary, population_before: int,
+	expansion_attempted: bool, expansion_succeeded: bool
+) -> void:
+	# consumate/fabbisogno con 6 decimali (non solo il ratio arrotondato a 3): un ratio stampato
+	# "1.000" può nascondere un vero piccolo deficit (es. 0.997, calo stagionale reale di
+	# seasonal_availability_multiplier su FORAGE) indistinguibile dal rumore in virgola mobile
+	# senza i numeri grezzi.
+	var line := "[ANIMAL HUNGER] #%d %s pop=%d consumato=%.6f fabbisogno=%.6f ratio=%.6f non_nutriti_oggi=%d bucket(giorni:conta)=[%s]" % [
+		group.id, group.species_name, population_before,
+		group.daily_calories_consumed, group.daily_calories_required, ratio,
+		unfed_target, _format_bucket_summary(group.hunger_buckets)
+	]
+
+	if expansion_attempted:
+		line += " espansione=%s" % ("riuscita" if expansion_succeeded else "fallita")
+
+	if total_deaths > 0:
+		line += " MORTI=%d da_bucket(giorni:conta)=[%s] pop %d->%d age(Y=%d,A=%d,O=%d)" % [
+			total_deaths, _format_bucket_summary(deaths_by_origin_day),
+			population_before, group.population,
+			group.get_age_count(GameTypes.AgeBand.YOUNG),
+			group.get_age_count(GameTypes.AgeBand.ADULT),
+			group.get_age_count(GameTypes.AgeBand.OLD),
+		]
+
+	print(line)
+
+
+func _format_bucket_summary(buckets: Dictionary) -> String:
+	var days: Array = []
+	for day in buckets.keys():
+		if int(buckets[day]) > 0:
+			days.append(day)
+	days.sort()
+
+	var parts: Array = []
+	for day in days:
+		parts.append("%d:%d" % [day, int(buckets[day])])
+	return " ".join(parts)

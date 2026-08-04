@@ -7,9 +7,25 @@ const FORAGE_SOURCE_NAME := "forage"
 # SeasonCalculator.SEASON_LENGTHS): qui la precisione non serve.
 const APPROX_SEASON_DURATION_DAYS := 100
 
-const RATIO_HIGH_THRESHOLD := 0.8  # sopra: nessuna penalità, moltiplicatore = 1.0
+const RATIO_HIGH_THRESHOLD := 0.8  # sopra: nessuna penalità, moltiplicatore = 1.0 (o più, vedi sotto)
 const RATIO_LOW_THRESHOLD := 0.3   # sotto: moltiplicatore ridotto al floor
 const MULTIPLIER_FLOOR := 0.05     # "quasi zero", mai natalità del tutto azzerata da un solo anno scarso
+
+# Bonus da abbondanza: sopra RATIO_HIGH_THRESHOLD il moltiplicatore non resta più piatto a 1.0,
+# ma sale ulteriormente fino a MULTIPLIER_ABUNDANCE_CAP quando raw_ratio raggiunge
+# RATIO_ABUNDANCE_CAP_AT — un territorio con surplus calorico reale (non solo "a sufficienza")
+# premia una natalità leggermente più alta del normale, dipendente da un dato reale della
+# simulazione (il ratio calorico) invece di rumore casuale non correlato a nulla. Nato da un
+# problema osservato nei test: la mitigazione da densità (vedi TerritoryDynamicsService) può
+# spingere una specie a crescita lenta (deer) in un pareggio quasi esatto nascite/morti proprio
+# a ridosso della soglia che farebbe scattare l'espansione territoriale — un piccolo surplus
+# calorico aggiuntivo, quando c'è, aiuta a smuovere quel pareggio senza introdurre casualità.
+# Nessun rischio di sfuggire di mano: il moltiplicatore finale resta SEMPRE calorico × densità
+# (vedi apply_mitigation_multiplier), e il fattore densità crolla verso 0 non appena
+# occupazione_ratio supera 1.5 (vedi TerritoryDynamicsService.DENSITY_RATIO_RAMP_END) —
+# qualunque bonus calorico, il freno di densità ha sempre l'ultima parola quando serve davvero.
+const RATIO_ABUNDANCE_CAP_AT := 2.0       # raw_ratio da cui in poi il bonus satura
+const MULTIPLIER_ABUNDANCE_CAP := 1.2     # moltiplicatore massimo raggiungibile per abbondanza
 
 
 # Ratio calorico del territorio ATTUALE del gruppo: stock disponibile (snapshot, non una media —
@@ -36,27 +52,52 @@ func compute_caloric_ratio(world: World, group: PopulationGroup, rules: AnimalRu
 # fertility_multiplier_by_age/base_birth_rate già esistenti (vedi AnimalBirthService), non li
 # sostituisce. raw_ratio è già stato calcolato dal chiamante (TerritoryDynamicsService) sul
 # territorio DEFINITIVO di quest'anno — dopo l'eventuale espansione/contrazione dello stesso
-# checkpoint di inizio birth_season, mai su un territorio che sta per essere modificato. Il
-# moltiplicatore risultante resta memorizzato sul gruppo fino al checkpoint di nascita già
-# esistente, a fine birth_season. Ritorna il moltiplicatore così il chiamante (TerritoryDynamicsService)
-# può includerlo nel proprio log invece di richiederlo di nuovo al gruppo.
+# checkpoint di inizio birth_season, mai su un territorio che sta per essere modificato.
+#
+# density_multiplier/occupancy_ratio: seconda mitigazione, indipendente da quella calorica sopra
+# — legata alla densità ETOLOGICA del territorio (AnimalRules.max_density_per_cell), non alle
+# risorse (TerritoryDynamicsService._get_density_multiplier calcola questi due valori, questa
+# funzione resta l'unico punto che combina+applica+logga il moltiplicatore finale, così non
+# restano sparsi due punti di scrittura su group.birth_mitigation_multiplier). Default 1.0/0.0
+# (nessuna penalità aggiuntiva) per restare no-op se un futuro chiamante non li passa. Il
+# moltiplicatore FINALE (calorico × densità) resta memorizzato sul gruppo fino al checkpoint di
+# nascita già esistente, a fine birth_season. Ritorna un Dictionary (non solo il moltiplicatore
+# finale) con tutti i valori intermedi — clamped_ratio/caloric_multiplier inclusi, non solo
+# final_multiplier — così il chiamante (TerritoryDynamicsService) può metterli nel proprio log
+# invece di ricalcolarli o lasciarli invisibili quando il log di qui sotto è soppresso (vedi
+# log_enabled sotto): senza questo, il log [TERRITORY DYNAMICS] mostrava il moltiplicatore finale
+# ma non la scomposizione calorico/clampato che invece [BIRTH MITIGATION] mostra sempre.
 #
 # log_enabled di default true (specie a 1 sola cella, es. rabbit: questo è l'unico log disponibile
 # sul loro ratio/moltiplicatore). TerritoryDynamicsService lo passa a false per le specie con
 # min_territory_cells > 1 (es. deer), il cui log dedicato mostra già ratio_finale/stock/fabbisogno
 # — stampare anche qui sarebbe una riga duplicata con la stessa informazione.
-func apply_mitigation_multiplier(group: PopulationGroup, raw_ratio: float, log_enabled: bool = true) -> float:
-	var clamped_ratio: float = min(raw_ratio, 1.0)
-	var multiplier := _get_multiplier(clamped_ratio)
+func apply_mitigation_multiplier(
+	group: PopulationGroup, raw_ratio: float,
+	density_multiplier: float = 1.0, occupancy_ratio: float = 0.0,
+	log_enabled: bool = true
+) -> Dictionary:
+	# Clampato a RATIO_ABUNDANCE_CAP_AT (non più a 1.0): un ratio anche enormemente sopra quel
+	# valore (es. deer, spesso 60-100+ in questi test) non deve far salire il moltiplicatore oltre
+	# MULTIPLIER_ABUNDANCE_CAP — il tetto sull'INPUT qui rispecchia il tetto sull'OUTPUT che
+	# _get_multiplier applica comunque, evitando solo di passargli un numero arbitrariamente grande.
+	var clamped_ratio: float = min(raw_ratio, RATIO_ABUNDANCE_CAP_AT)
+	var caloric_multiplier := _get_multiplier(clamped_ratio)
+	var final_multiplier: float = caloric_multiplier * density_multiplier
 
-	group.set_birth_mitigation_multiplier(multiplier)
+	group.set_birth_mitigation_multiplier(final_multiplier)
 
 	if DebugLogging.ENABLED and log_enabled:
-		print("[BIRTH MITIGATION] %s pop=%d ratio_grezzo=%.3f ratio_clampato=%.3f moltiplicatore=%.3f" % [
-			group.species_name, group.population, raw_ratio, clamped_ratio, multiplier
+		print("[BIRTH MITIGATION] #%d %s pop=%d ratio_grezzo=%.3f ratio_clampato=%.3f moltiplicatore_calorico=%.3f occupazione_ratio=%.3f moltiplicatore_densita=%.3f moltiplicatore_finale=%.3f" % [
+			group.id, group.species_name, group.population, raw_ratio, clamped_ratio,
+			caloric_multiplier, occupancy_ratio, density_multiplier, final_multiplier
 		])
 
-	return multiplier
+	return {
+		"clamped_ratio": clamped_ratio,
+		"caloric_multiplier": caloric_multiplier,
+		"final_multiplier": final_multiplier,
+	}
 
 
 # Somma, su tutte le celle del territorio (una sola per rabbit, min_territory_cells fino a 20 per
@@ -113,14 +154,20 @@ func _get_seasonal_requirement(group: PopulationGroup, rules: AnimalRules) -> fl
 	return daily_requirement * APPROX_SEASON_DURATION_DAYS
 
 
-# Sopra RATIO_HIGH_THRESHOLD: nessuna penalità. Sotto RATIO_LOW_THRESHOLD: moltiplicatore al
-# floor (mai esattamente 0, così un anno scarso non azzera del tutto la natalità). In mezzo,
-# rampa lineare tra i due — nessuna soglia a gradini come la mortalità density-dependent
-# (FaunaMortalityService/ResourceMortalityService): qui la richiesta è un decremento progressivo.
+# Sotto RATIO_LOW_THRESHOLD: moltiplicatore al floor (mai esattamente 0, così un anno scarso non
+# azzera del tutto la natalità). Tra le due soglie basse, rampa lineare verso 1.0 — nessuna soglia
+# a gradini come la mortalità density-dependent (FaunaMortalityService/ResourceMortalityService):
+# qui la richiesta è un decremento progressivo. Sopra RATIO_HIGH_THRESHOLD, il moltiplicatore non
+# resta più piatto a 1.0: sale ulteriormente verso MULTIPLIER_ABUNDANCE_CAP man mano che
+# ratio_clamped si avvicina a RATIO_ABUNDANCE_CAP_AT (vedi costanti sopra per il perché), poi
+# resta piatto al cap oltre quel punto.
 func _get_multiplier(ratio_clamped: float) -> float:
-	if ratio_clamped >= RATIO_HIGH_THRESHOLD:
-		return 1.0
 	if ratio_clamped <= RATIO_LOW_THRESHOLD:
 		return MULTIPLIER_FLOOR
-	var t: float = (ratio_clamped - RATIO_LOW_THRESHOLD) / (RATIO_HIGH_THRESHOLD - RATIO_LOW_THRESHOLD)
-	return lerp(MULTIPLIER_FLOOR, 1.0, t)
+	if ratio_clamped < RATIO_HIGH_THRESHOLD:
+		var t: float = (ratio_clamped - RATIO_LOW_THRESHOLD) / (RATIO_HIGH_THRESHOLD - RATIO_LOW_THRESHOLD)
+		return lerp(MULTIPLIER_FLOOR, 1.0, t)
+	if ratio_clamped < RATIO_ABUNDANCE_CAP_AT:
+		var t: float = (ratio_clamped - RATIO_HIGH_THRESHOLD) / (RATIO_ABUNDANCE_CAP_AT - RATIO_HIGH_THRESHOLD)
+		return lerp(1.0, MULTIPLIER_ABUNDANCE_CAP, t)
+	return MULTIPLIER_ABUNDANCE_CAP

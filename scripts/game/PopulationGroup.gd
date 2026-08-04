@@ -9,15 +9,25 @@ extends RefCounted
 # coordinate semplice — oggi un territorio ha sempre esattamente una macrocella
 # (Territory.occupied_macrocells.size() == 1), nessun cambiamento di comportamento osservabile.
 var species_name: String = ""
+# ID progressivo assegnato UNA volta alla creazione (vedi World.allocate_population_group_id),
+# mai ricalcolato — a differenza dell'indice mostrato da MacroCellInfoPanel prima di questo campo,
+# resta stabile per tutta la vita del gruppo indipendentemente da quanti altri gruppi esistono o
+# si estinguono nel frattempo. Permette a più gruppi della stessa specie (es. due popolazioni
+# rabbit in celle diverse) di restare distinguibili nei log e nel pannello Fauna. Persistito nei
+# save; 0 = mai assegnato (solo gruppi creati prima dell'introduzione di questo campo).
+var id: int = 0
 var population: int = 0
 var age_composition: Dictionary = {} # AgeBand -> int
 var territory: Territory = null
-# Moltiplicatore di mitigazione della natalità legato alla disponibilità calorica del territorio
-# (vedi AnimalBirthMitigationService), applicato in AnimalBirthService IN AGGIUNTA a
-# fertility_multiplier_by_age/base_birth_rate — non li sostituisce. Default 1.0 (nessuna
-# penalità): finché non è mai stato calcolato (es. gruppo appena creato prima del primo
-# checkpoint a inizio birth_season), il comportamento resta quello di sempre. Non persistito nei
-# save: si ricalcola comunque al prossimo checkpoint annuale, non vale la pena salvarlo.
+# Moltiplicatore di mitigazione della natalità (calorico × densità, vedi
+# AnimalBirthMitigationService/TerritoryDynamicsService), applicato in AnimalBirthService IN
+# AGGIUNTA a fertility_multiplier_by_age/base_birth_rate — non li sostituisce. Default 1.0
+# (nessuna penalità): finché non è mai stato calcolato (es. gruppo appena creato prima del primo
+# checkpoint a inizio birth_season), il comportamento resta quello di sempre. PERSISTITO nei save
+# (bug corretto: era dichiarato "non vale la pena salvarlo perché si ricalcola al prossimo
+# checkpoint annuale", ma viene CALCOLATO a inizio birth_season e CONSUMATO solo a fine — un
+# salvataggio/caricamento nel mezzo perdeva il valore calcolato, tornando al default 1.0 e
+# applicando nascite senza alcuna mitigazione, osservato in test).
 var birth_mitigation_multiplier: float = 1.0
 # Pesi (Vector2i -> float, non normalizzati) usati da get_population_by_cell() per ripartire
 # population tra le celle del territorio — Step 6 del refactoring fauna: sostituisce la
@@ -26,14 +36,42 @@ var birth_mitigation_multiplier: float = 1.0
 # nel proprio areale nel tempo invece di un contatore diviso meccanicamente in parti sempre
 # uguali. Default vuoto: get_population_by_cell() tratta una chiave assente come peso 1.0, quindi
 # un gruppo mai rimescolato (o con territorio a 1 sola cella, mai scritto qui) degrada esattamente
-# alla vecchia ripartizione uniforme, nessun ramo speciale altrove. Non persistito nei save,
-# stesso trattamento di birth_mitigation_multiplier sopra: si ricalcola al prossimo checkpoint
-# stagionale, non vale la pena salvarlo.
+# alla vecchia ripartizione uniforme, nessun ramo speciale altrove. Non persistito nei save
+# (a differenza di birth_mitigation_multiplier sopra, corretto dopo un bug: questi pesi sono
+# puramente estetici/di rendering — get_population_by_cell li usa solo per ripartire la
+# visualizzazione tra celle, mai per calcoli che restano "in sospeso" tra un checkpoint e
+# l'altro — quindi perderli al caricamento non altera l'esito del gioco): si ricalcola al
+# prossimo checkpoint stagionale, non vale la pena salvarlo.
 var territory_distribution_weights: Dictionary = {}
+# Istogramma di fame (AnimalHungerService): chiave = giorni CONSECUTIVI in cui un individuo non
+# ha ricevuto fabbisogno calorico sufficiente (0 = sazio), valore = quanti individui in quel
+# bucket. La somma di tutti i valori deve sempre restare coerente con population — mantenuta
+# tale dagli stessi punti che già mutano population (set_age_composition/apply_births/
+# apply_old_age_mortality sotto) più lo shift giornaliero interno ad AnimalHungerService, mai
+# ricalcolata da zero altrove. Storia accumulata reale (quanti giorni di fame ha già alle spalle
+# un individuo), va persistita nei save (vedi GameSaveService/GameLoadService), non semplicemente
+# ricalcolata al prossimo checkpoint — stesso principio di birth_mitigation_multiplier sopra.
+var hunger_buckets: Dictionary = {}
+# Ratio calorico GIORNALIERO del gruppo (consumo di oggi / fabbisogno di oggi, aggregato su
+# TUTTO il territorio — vedi AnimalConsumptionService._consume_group), riusato da
+# AnimalHungerService per decidere quanti individui non sono stati nutriti oggi e se tentare
+# un'espansione territoriale. Non persistito nei save: ricalcolato ogni giorno da
+# AnimalConsumptionService prima che AnimalHungerService giri, stesso trattamento di
+# birth_mitigation_multiplier. Default 1.0 = nessuna penalità finché non è mai stato calcolato.
+var daily_caloric_ratio: float = 1.0
+# Numeri grezzi dietro daily_caloric_ratio sopra (calorie consumate oggi / calorie di fabbisogno
+# oggi, stessa aggregazione su tutto il territorio) — esposti separatamente così il log di
+# AnimalHungerService può mostrare i calcoli invece del solo rapporto già arrotondato: un ratio
+# stampato "1.000" a 3 decimali può nascondere un vero piccolo deficit (es. 0.997, dovuto a un
+# calo stagionale reale di seasonal_availability_multiplier su FORAGE, non rumore in virgola
+# mobile) indistinguibile senza i numeri grezzi. Non persistiti, stesso trattamento del ratio.
+var daily_calories_consumed: float = 0.0
+var daily_calories_required: float = 0.0
 
-func _init(_species_name: String = "", _territory: Territory = null) -> void:
+func _init(_species_name: String = "", _territory: Territory = null, _id: int = 0) -> void:
 	species_name = _species_name
 	territory = _territory
+	id = _id
 
 
 func set_population(count: int) -> void:
@@ -41,11 +79,47 @@ func set_population(count: int) -> void:
 
 
 func set_birth_mitigation_multiplier(value: float) -> void:
-	birth_mitigation_multiplier = clamp(value, 0.0, 1.0)
+	# Tetto = AnimalBirthMitigationService.MULTIPLIER_ABUNDANCE_CAP (1.2), non più 1.0 fisso: il
+	# moltiplicatore calorico può ora superare 1.0 in caso di abbondanza reale (vedi
+	# AnimalBirthMitigationService._get_multiplier) — un tetto hardcoded a 1.0 qui troncherebbe
+	# silenziosamente quel bonus ogni volta che il fattore densità non lo comprime già da solo
+	# (bug osservato in test: bonus abbondanza mai visibile finché la densità non era già alta).
+	birth_mitigation_multiplier = clamp(value, 0.0, AnimalBirthMitigationService.MULTIPLIER_ABUNDANCE_CAP)
 
 
 func set_territory_distribution_weights(weights: Dictionary) -> void:
 	territory_distribution_weights = weights
+
+
+func set_daily_caloric_ratio(value: float) -> void:
+	daily_caloric_ratio = clamp(value, 0.0, 1.0)
+
+
+# Punto unico di scrittura per daily_caloric_ratio E i numeri grezzi che lo spiegano (vedi campi
+# sopra) — il chiamante (AnimalConsumptionService._consume_group) passa sempre consumo/fabbisogno
+# grezzi, mai il ratio già calcolato, così l'edge case "nessun fabbisogno" (required <= 0, gruppo
+# senza age_composition pesata o senza celle valide) è gestito in un solo posto: ratio neutro 1.0,
+# stessa semantica di "nessuna penalità" usata altrove, invece di un 0/0 indefinito.
+func set_daily_caloric_consumption(consumed: float, required: float) -> void:
+	daily_calories_consumed = max(consumed, 0.0)
+	daily_calories_required = max(required, 0.0)
+	if daily_calories_required <= 0.0:
+		set_daily_caloric_ratio(1.0)
+	else:
+		set_daily_caloric_ratio(daily_calories_consumed / daily_calories_required)
+
+
+func get_hunger_bucket_count(days: int) -> int:
+	return int(hunger_buckets.get(days, 0))
+
+func set_hunger_bucket_count(days: int, amount: int) -> void:
+	hunger_buckets[days] = max(amount, 0)
+
+func get_hunger_bucket_total() -> int:
+	var total := 0
+	for amount in hunger_buckets.values():
+		total += int(amount)
+	return total
 
 
 func get_age_count(age_band: GameTypes.AgeBand) -> int:
@@ -70,8 +144,14 @@ func get_age_total() -> int:
 # subtype/age-band vegetali, non duplicato qui).
 func set_age_composition(total: int, weights: Dictionary) -> void:
 	age_composition = {}
+	# Reset totale della composizione (chiamato solo dal seeding/reseeding manuale, vedi
+	# AnimalRules.initial_age_ratio sopra): un gruppo appena (ri)creato non ha alle spalle
+	# nessuno storico di digiuno, quindi hunger_buckets riparte da zero individui tutti sazi —
+	# stessa filosofia di reset completo di age_composition qui sopra, non un incremento.
+	hunger_buckets = {}
 	if total <= 0:
 		return
+	set_hunger_bucket_count(0, total)
 	var source_weights := weights
 	if source_weights.is_empty():
 		source_weights = {
@@ -122,6 +202,9 @@ func apply_births(amount: int) -> void:
 		return
 	set_age_count(GameTypes.AgeBand.YOUNG, get_age_count(GameTypes.AgeBand.YOUNG) + amount)
 	set_population(population + amount)
+	# I nuovi nati non hanno mai digiunato: entrano nel bucket 0 (sazi), mantenendo l'invariante
+	# somma(hunger_buckets) == population anche dopo una nascita (vedi hunger_buckets sopra).
+	set_hunger_bucket_count(0, get_hunger_bucket_count(0) + amount)
 
 
 # Sottrae `amount` morti per vecchiaia dalla fascia OLD, decrementando anche population della
@@ -133,6 +216,53 @@ func apply_old_age_mortality(amount: int) -> void:
 		return
 	set_age_count(GameTypes.AgeBand.OLD, get_age_count(GameTypes.AgeBand.OLD) - amount)
 	set_population(population - amount)
+	# hunger_buckets non è stratificato per età: non sappiamo a quale bucket appartenessero gli
+	# individui morti per vecchiaia, quindi la perdita si ripartisce PROPORZIONALMENTE tra i
+	# bucket esistenti (stesso "water-filling" capped già usato per subtype/age-band vegetali),
+	# invece che tutta dal bucket 0 o da uno scelto arbitrariamente — mantiene comunque l'invariante
+	# somma(hunger_buckets) == population.
+	var loss: int = min(amount, get_hunger_bucket_total())
+	if loss > 0:
+		var split := MacroCellState._split_by_weight_capped(hunger_buckets, hunger_buckets, loss)
+		for days in split.keys():
+			set_hunger_bucket_count(days, get_hunger_bucket_count(days) - split[days])
+
+
+# Applica `amount` morti per fame prolungata (AnimalHungerService, individui la cui permanenza
+# in un bucket di hunger_buckets ha superato AnimalRules.max_days_without_food), distribuite tra
+# le fasce d'età in proporzione a AnimalRules.mortality_share_by_age (mai uniformemente) —
+# analogo ad apply_old_age_mortality ma pesato per fascia invece che concentrato su OLD, e senza
+# toccare hunger_buckets: il chiamante ha già rimosso gli individui interessati dai bucket PRIMA
+# di invocare questo metodo (fanno parte dello shift giornaliero, non di un ricalcolo separato),
+# quindi qui si aggiorna solo il lato age_composition/population. Se la specie non traccia le
+# fasce d'età (o la composizione è vuota), population viene comunque decrementata senza toccare
+# age_composition — stesso fallback "population come contatore piatto" usato prima che
+# track_age_bands esistesse. Ritorna il numero di morti effettivamente applicati (mai più di
+# population).
+func apply_hunger_mortality(amount: int, rules: AnimalRules) -> int:
+	if amount <= 0:
+		return 0
+	var loss: int = min(amount, population)
+	if loss <= 0:
+		return 0
+
+	if rules.track_age_bands and get_age_total() > 0:
+		var weights: Dictionary = {
+			GameTypes.AgeBand.YOUNG: rules.mortality_share_by_age[GameTypes.AgeBand.YOUNG],
+			GameTypes.AgeBand.ADULT: rules.mortality_share_by_age[GameTypes.AgeBand.ADULT],
+			GameTypes.AgeBand.OLD: rules.mortality_share_by_age[GameTypes.AgeBand.OLD],
+		}
+		var caps: Dictionary = {
+			GameTypes.AgeBand.YOUNG: get_age_count(GameTypes.AgeBand.YOUNG),
+			GameTypes.AgeBand.ADULT: get_age_count(GameTypes.AgeBand.ADULT),
+			GameTypes.AgeBand.OLD: get_age_count(GameTypes.AgeBand.OLD),
+		}
+		var split := MacroCellState._split_by_weight_capped(weights, caps, loss)
+		for age_band in split.keys():
+			set_age_count(age_band, get_age_count(age_band) - split[age_band])
+
+	set_population(population - loss)
+	return loss
 
 
 # Ripartisce `population` tra le celle del territorio secondo territory_distribution_weights

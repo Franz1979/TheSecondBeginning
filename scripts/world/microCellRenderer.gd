@@ -250,7 +250,7 @@ func _draw() -> void:
 	_draw_neighbor_previews(grid_size)
 	_draw_boundary(grid_size)
 
-	print("[DEBUG RENDER] primitive stone+grass+shrub+tree+bacche in questo _draw(): ", _debug_draw_primitive_count)
+	#print("[DEBUG RENDER] primitive stone+grass+shrub+tree+bacche in questo _draw(): ", _debug_draw_primitive_count)
 
 
 func _draw_stone_positions() -> void:

@@ -146,12 +146,12 @@ static func update_secondary_resource_stock(
 
 	state.set_secondary_resource_stock(rules.caloric_source_name, new_stock)
 
-	if DebugLogging.ENABLED and state.x == 50 and state.y == 50:
-		print("[SECONDARY STOCK %s] %s -> %s: %.2f -> %.2f" % [
-			rules.caloric_source_name,
-			GameTypes.Season.keys()[previous_season], GameTypes.Season.keys()[new_season],
-			before, state.get_secondary_resource_stock(rules.caloric_source_name)
-		])
+	#if DebugLogging.ENABLED and state.x == 50 and state.y == 50:
+	#	print("[SECONDARY STOCK %s] %s -> %s: %.2f -> %.2f" % [
+	#		rules.caloric_source_name,
+	#		GameTypes.Season.keys()[previous_season], GameTypes.Season.keys()[new_season],
+	#		before, state.get_secondary_resource_stock(rules.caloric_source_name)
+	#	])
 
 
 # Per fonti a STOCK persistente (consuming_depletes_primary = false): legge lo stock già
