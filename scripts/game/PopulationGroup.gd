@@ -29,6 +29,32 @@ var territory: Territory = null
 # salvataggio/caricamento nel mezzo perdeva il valore calcolato, tornando al default 1.0 e
 # applicando nascite senza alcuna mitigazione, osservato in test).
 var birth_mitigation_multiplier: float = 1.0
+# Countdown di recovery post-scissione (Step 10 del refactoring fauna, vedi
+# AnimalRules.post_split_recovery_years/PopulationSplitService/TerritoryDynamicsService
+# _get_post_split_multiplier): anni trascorsi dall'ultimo split che QUESTO gruppo ha generato
+# come origine (mai da uno subito — il nuovo gruppo scisso non eredita questo stato). Sentinella
+# -1 = mai scisso (default, incluso ogni gruppo appena creato da uno split): nessuna mitigazione
+# aggiuntiva da calcolare, stesso principio del sentinella "0 = mai assegnato" già usato da id
+# sopra. >= 0 = azzerato a 0 dal gruppo di origine al momento dello split, poi incrementato di 1
+# ogni anno da TerritoryDynamicsService finché non ne scinde uno nuovo (che lo riazzera). PERSISTITO
+# nei save (storia reale, non ricalcolabile da un checkpoint, stesso motivo di
+# birth_mitigation_multiplier sopra).
+var years_since_last_split: int = -1
+# Cooldown (giorni) sul trigger di scissione da FAME QUOTIDIANA (Step 11 del refactoring fauna,
+# vedi AnimalHungerService/PopulationSplitService) — indipendente da years_since_last_split sopra
+# (quello rallenta la natalità dopo QUALUNQUE split, questo blocca esplicitamente solo i tentativi
+# RIPETUTI della via fame, non tocca il trigger stagionale di TerritoryDynamicsService). Motivato
+# da un rischio osservato: un territorio a 1 sola cella (rabbit) può tentare lo split ogni singolo
+# giorno di fame consecutiva, senza freno rischiava di generare decine di micro-gruppi satellite in
+# pochi giorni. 0 = nessun cooldown attivo (default, incluso ogni gruppo appena creato da uno
+# split — nessuno stato ereditato). >0 = giorni ancora da aspettare prima di poter ritentare;
+# decrementato di 1 ogni giorno da AnimalHungerService, impostato a rules.max_days_without_food
+# SOLO quando uno split per fame riesce davvero (un tentativo fallito per mancanza di cella libera
+# non fa scattare il cooldown). Deliberatamente NON sincronizzato con hunger_buckets/la mortalità
+# da fame — quest'ultima non viene mai azzerata dallo split, i due orologi restano indipendenti
+# per design (confermato: nessun collegamento voluto tra i due). PERSISTITO nei save, stesso
+# motivo di birth_mitigation_multiplier/years_since_last_split sopra.
+var hunger_split_cooldown_days: int = 0
 # Pesi (Vector2i -> float, non normalizzati) usati da get_population_by_cell() per ripartire
 # population tra le celle del territorio — Step 6 del refactoring fauna: sostituisce la
 # ripartizione uniforme fissa con una variazione casuale ricalcolata periodicamente (vedi

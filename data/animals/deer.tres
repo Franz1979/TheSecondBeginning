@@ -12,6 +12,7 @@ diet_compatibility = {
 "forage": 1.0,
 "fruit": 0.4
 }
+is_browsing_species = true
 max_individuals_per_cluster = 8
 hop_duration_min = 0.5
 hop_duration_max = 0.9
@@ -34,7 +35,9 @@ initial_age_ratio = {
 1: 1.0,
 2: 0.0
 }
+dispersal_share_by_age = Array[float]([0.6, 0.3, 0.1])
+post_split_recovery_years = 10
 max_days_without_food = 30
 min_territory_cells = 3
 max_territory_cells = 20
-max_density_per_cell = 18
+max_density_per_cell = 12

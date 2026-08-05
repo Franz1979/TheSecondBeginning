@@ -9,6 +9,17 @@ extends Resource
 # assente) esclude la fonte del tutto.
 @export var diet_compatibility: Dictionary = {}
 
+# Master switch per la mitigazione dell'encroachment da brucatura (vedi
+# BrowsingMitigationService): true se la specie, per la sola presenza fisica (calpestio/
+# brucatura di nuovi germogli legnosi SHRUB/TREE), riduce la loro sopravvivenza —
+# indipendentemente dalla disponibilità calorica, già coperta altrove (diet_compatibility sopra
+# per il consumo, fame/mortalità per la scarsità). Deliberatamente indipendente da
+# diet_compatibility: una specie potrebbe avere una dieta caloricamente concentrata su fonti non
+# vegetali e comunque brucare (o viceversa), quindi non va derivato implicitamente da lì. Nessun
+# default implicito "vero" per specie erbivore: ogni specie deve dichiararlo esplicitamente nel
+# proprio .tres (oggi true per rabbit e deer).
+@export var is_browsing_species: bool = false
+
 @export_group("Visualization")
 # Quanti individui rappresenta una singola icona/gruppo nella resa visiva animata (vedi
 # AnimalGroupRenderer). Default 1 = rappresentazione 1:1, per compatibilità con specie che
@@ -93,6 +104,25 @@ extends Resource
 # PopulationGroup.set_age_composition) — mai durante la simulazione a regime. Assente o
 # tutto a 0 => pesi uguali, stesso fallback di SubtypeRules.initial_age_ratio.
 @export var initial_age_ratio: Dictionary = {}
+
+@export_group("Dispersal")
+# Quota (young, adult, old) di chi si stacca in una scissione di gruppo (PopulationSplitService,
+# Step 9 del refactoring fauna) per fondare un nuovo PopulationGroup altrove — stesso schema di
+# mortality_share_by_age sopra (pesi, non un gate binario), usato con
+# MacroCellState._split_by_weight_capped così una fascia senza abbastanza individui per la propria
+# quota non blocca lo split: il mancante si riproporziona sulle fasce con capienza residua. Young
+# tipicamente più propenso a disperdersi (in natura è la fascia che lascia il branco natale in
+# cerca di un proprio territorio), old meno (mobilità/spinta a fondare un nuovo areale minori).
+@export var dispersal_share_by_age: Array[float] = [0.34, 0.33, 0.33]
+# Durata (anni) della rampa di recupero della mitigazione natalità post-scissione applicata al
+# gruppo di ORIGINE di uno split (Step 10 del refactoring fauna, vedi
+# TerritoryDynamicsService._get_post_split_multiplier/PopulationGroup.years_since_last_split) —
+# rampa lineare da 0.5 (anno 0, appena scisso) a 1.0 (neutro, raggiunto a questo numero di anni).
+# Nessun default: ogni specie deve dichiararlo esplicitamente nel proprio .tres, stesso principio
+# di min_territory_cells/max_days_without_food sopra (rabbit=5, deer=10 — recupero
+# proporzionalmente più lento per la specie a riproduzione più lenta, stesso rapporto già usato
+# altrove tra le due specie).
+@export var post_split_recovery_years: int = 0
 
 @export_group("Hunger")
 # Soglia di specie (giorni CONSECUTIVI in cui un individuo non riceve fabbisogno calorico

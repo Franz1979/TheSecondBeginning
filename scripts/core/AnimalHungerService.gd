@@ -49,6 +49,14 @@ func apply_daily_hunger(world: World) -> void:
 func _process_group_hunger(world: World, group: PopulationGroup, rules: AnimalRules) -> void:
 	_reconcile_bucket_total(group)
 
+	# Cooldown sullo split da fame (Step 11, vedi PopulationGroup.hunger_split_cooldown_days) —
+	# decrementato QUI, incondizionatamente, ogni giorno per ogni gruppo processato: deve scendere
+	# anche nei giorni in cui il gruppo non è affamato (ratio >= 1.0, il ramo sotto non gira),
+	# altrimenti il countdown si fermerebbe ogni volta che la pressione si allevia anche solo per
+	# un giorno, invece di scadere a un numero fisso di giorni dallo split come richiesto.
+	if group.hunger_split_cooldown_days > 0:
+		group.hunger_split_cooldown_days -= 1
+
 	var ratio: float = group.daily_caloric_ratio
 	var population_before := group.population
 	var unfed_target: int = clamp(
@@ -64,14 +72,44 @@ func _process_group_hunger(world: World, group: PopulationGroup, rules: AnimalRu
 
 	var expansion_attempted := false
 	var expansion_succeeded := false
+	var split_skipped_cooldown := false
 	if ratio < DAILY_HUNGER_EXPANSION_THRESHOLD - RATIO_EPSILON:
 		expansion_attempted = true
 		expansion_succeeded = _attempt_expansion(world, group, rules)
+		if not expansion_succeeded:
+			if group.hunger_split_cooldown_days > 0:
+				# Cooldown attivo (Step 11): nessun tentativo oggi, il gruppo resta esposto al solo
+				# digiuno prolungato finché il countdown non scade — visibile nel log sotto invece
+				# di sparire silenziosamente.
+				split_skipped_cooldown = true
+			else:
+				# Espansione fallita (territorio già a max_territory_cells o BFS satura, un unico
+				# segnale, non serve distinguere il perché) — prova a staccare una porzione della
+				# popolazione in un nuovo gruppo altrove (Step 9) PRIMA di lasciare che il solo
+				# digiuno prolungato gestisca la situazione nei giorni successivi. unfed_target
+				# (già calcolato sopra, individui non nutriti OGGI) è il surplus naturale per
+				# questo trigger, analogo al surplus di densità/calorico stagionale usato da
+				# TerritoryDynamicsService — stesso floor MIN_DISPERSAL_SHARE_FRACTION condiviso,
+				# non una seconda soglia scoordinata. group.population qui è già post-mortalità di
+				# oggi (vedi apply_hunger_mortality sopra): PopulationSplitService.attempt_split
+				# clampa comunque requested_amount a population - 1, quindi un unfed_target
+				# calcolato su population_before pre-mortalità resta sicuro anche se ora eccede la
+				# popolazione attuale.
+				var split_amount: int = max(
+					unfed_target,
+					int(ceil(float(group.population) * PopulationSplitService.MIN_DISPERSAL_SHARE_FRACTION))
+				)
+				var split_trigger_reason := "fame quotidiana (ratio=%.3f)" % ratio
+				# Cooldown (Step 11) impostato SOLO se lo split riesce davvero — un tentativo
+				# fallito per mancanza di cella libera raggiungibile non ha "consumato" nulla, non
+				# deve bloccare il tentativo di domani.
+				if PopulationSplitService.new().attempt_split(world, group, rules, split_amount, split_trigger_reason):
+					group.hunger_split_cooldown_days = rules.max_days_without_food
 
 	if DebugLogging.ENABLED and (unfed_target > 0 or total_deaths > 0 or expansion_attempted):
 		_log_daily_hunger(
 			group, ratio, unfed_target, total_deaths, deaths_by_origin_day,
-			population_before, expansion_attempted, expansion_succeeded
+			population_before, expansion_attempted, expansion_succeeded, split_skipped_cooldown
 		)
 
 
@@ -157,13 +195,13 @@ func _attempt_expansion(world: World, group: PopulationGroup, rules: AnimalRules
 		return false
 	if group.territory.get_cell_count() >= rules.max_territory_cells:
 		return false
-	return TerritoryBuilderService.new().expand_by_one_cell(world, group.territory)
+	return TerritoryBuilderService.new().expand_by_one_cell(world, group.territory, group.species_name)
 
 
 func _log_daily_hunger(
 	group: PopulationGroup, ratio: float, unfed_target: int, total_deaths: int,
 	deaths_by_origin_day: Dictionary, population_before: int,
-	expansion_attempted: bool, expansion_succeeded: bool
+	expansion_attempted: bool, expansion_succeeded: bool, split_skipped_cooldown: bool
 ) -> void:
 	# consumate/fabbisogno con 6 decimali (non solo il ratio arrotondato a 3): un ratio stampato
 	# "1.000" può nascondere un vero piccolo deficit (es. 0.997, calo stagionale reale di
@@ -177,6 +215,15 @@ func _log_daily_hunger(
 
 	if expansion_attempted:
 		line += " espansione=%s" % ("riuscita" if expansion_succeeded else "fallita")
+		if not expansion_succeeded:
+			# Visibilità sul cooldown (Step 11, PopulationGroup.hunger_split_cooldown_days): se
+			# saltato, quanti giorni mancano ancora; se tentato, il valore ORA (0 se il tentativo è
+			# fallito per mancanza di cella libera — attempt_split non lo arma in quel caso — o
+			# rules.max_days_without_food se è appena stato riarmato da uno split riuscito).
+			if split_skipped_cooldown:
+				line += " split_fame=saltato(cooldown=%dgg residui)" % group.hunger_split_cooldown_days
+			else:
+				line += " split_fame=tentato(cooldown_ora=%dgg)" % group.hunger_split_cooldown_days
 
 	if total_deaths > 0:
 		line += " MORTI=%d da_bucket(giorni:conta)=[%s] pop %d->%d age(Y=%d,A=%d,O=%d)" % [

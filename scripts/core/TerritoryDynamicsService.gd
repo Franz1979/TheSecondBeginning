@@ -61,8 +61,11 @@ const DENSITY_MULTIPLIER_MID_SLOW := 0.25   # base_birth_rate < soglia (oggi: de
 # si autoesclude per pura costruzione matematica — density_cells_needed resta sempre uguale alle
 # celle attuali (già 1) e la contrazione è strutturalmente impossibile quando current_cell_count
 # non supera già min_territory_cells — senza bisogno di alcun controllo esplicito sul nome specie
-# qui sotto. Ogni gruppo è valutato indipendentemente dagli altri — nessuna competizione/
-# sovrapposizione tra territori di gruppi diversi ancora (TerritoryManager futuro).
+# qui sotto. Ogni gruppo è valutato indipendentemente dagli altri per densità/calorie/contrazione;
+# l'unico accoppiamento cross-gruppo è l'esclusione territoriale STESSA SPECIE dentro
+# TerritoryBuilderService.expand_by_one_cell (vedi _collect_species_occupied_cells lì) — specie
+# diverse restano libere di sovrapporsi (competizione per risorse quando coesistono, mai per
+# "diritto territoriale"), nessun TerritoryManager cross-specie ancora.
 func update_territories_and_mitigation(world: World, season: GameTypes.Season) -> void:
 	var mitigation_service := AnimalBirthMitigationService.new()
 
@@ -72,6 +75,18 @@ func update_territories_and_mitigation(world: World, season: GameTypes.Season) -
 		var rules := AnimalCalculator.get_animal_rules(group.species_name)
 		if rules == null or rules.birth_season != season:
 			continue
+
+		# Countdown di recovery post-scissione (Step 10, vedi
+		# PopulationGroup.years_since_last_split/_get_post_split_multiplier sotto): incrementato
+		# QUI, PRIMA dell'eventuale scissione di quest'anno stesso (_update_group_territory sotto,
+		# via PopulationSplitService) — se il gruppo scinde proprio in questo checkpoint, il
+		# gruppo di ORIGINE viene riazzerato a 0 SUBITO DOPO, scartando l'incremento di qui sopra:
+		# il moltiplicatore calcolato più avanti in questo stesso checkpoint riflette quindi
+		# correttamente "anno 0, appena scisso" e non "anno 1". Sentinella -1 = mai scisso (mai
+		# incrementata): nessuna specie/gruppo esclusa esplicitamente, si autoesclude per
+		# costruzione finché non genera un primo split.
+		if group.years_since_last_split >= 0:
+			group.years_since_last_split += 1
 
 		# Il ratio calorico è age-weighted (AnimalBirthMitigationService._get_seasonal_requirement):
 		# per una specie senza track_age_bands, age_composition resta sempre vuota, quindi il
@@ -101,15 +116,21 @@ func update_territories_and_mitigation(world: World, season: GameTypes.Season) -
 		var density_data := _get_density_multiplier(
 			group.population, cell_count_final, rules.max_density_per_cell, rules.base_birth_rate
 		)
+		var post_split_multiplier := _get_post_split_multiplier(group, rules)
 
 		# log_enabled=false qui: per le specie con min_territory_cells > 1 il log dedicato sotto
-		# mostra già ratio_finale/stock/fabbisogno — aggiungere anche il moltiplicatore lì evita
-		# di stampare due righe con la stessa informazione (vedi apply_mitigation_multiplier).
+		# mostra già ratio_finale/stock/fabbisogno (e ora anche moltiplicatore_post_split/
+		# anni_da_split) — aggiungere anche il moltiplicatore lì evita di stampare due righe con
+		# la stessa informazione (vedi apply_mitigation_multiplier).
 		var multiplier_data := mitigation_service.apply_mitigation_multiplier(
-			group, final_ratio, density_data["multiplier"], density_data["ratio"], rules.min_territory_cells <= 1
+			group, final_ratio, density_data["multiplier"], density_data["ratio"],
+			post_split_multiplier, rules.min_territory_cells <= 1
 		)
 
 		if DebugLogging.ENABLED and rules.min_territory_cells > 1 and not territory_result.is_empty():
+			var years_display: String = (
+				"mai scisso" if group.years_since_last_split < 0 else str(group.years_since_last_split)
+			)
 			print(
 				(
 					"[TERRITORY DYNAMICS] #%d %s pop=%d celle=%d->%d "
@@ -118,6 +139,7 @@ func update_territories_and_mitigation(world: World, season: GameTypes.Season) -
 					+ "azione=%s (%s) "
 					+ "ratio_finale=%.3f ratio_clampato=%.3f (stock=%.1f fabbisogno=%.1f) "
 					+ "moltiplicatore_calorico=%.3f occupazione_ratio=%.3f moltiplicatore_densita=%.3f "
+					+ "anni_da_split=%s moltiplicatore_post_split=%.3f "
 					+ "moltiplicatore_finale=%.3f"
 				) % [
 					group.id, group.species_name, group.population,
@@ -129,6 +151,7 @@ func update_territories_and_mitigation(world: World, season: GameTypes.Season) -
 					final_ratio, multiplier_data["clamped_ratio"],
 					final_ratio_data["stock"], final_ratio_data["requirement"],
 					multiplier_data["caloric_multiplier"], density_data["ratio"], density_data["multiplier"],
+					years_display, post_split_multiplier,
 					multiplier_data["final_multiplier"]
 				]
 			)
@@ -173,15 +196,37 @@ func _update_group_territory(
 	var reason := "nessun criterio soddisfatto"
 
 	if needs_expansion_density or needs_expansion_caloric:
+		var expanded := false
 		if current_cell_count >= rules.max_territory_cells:
 			reason = "espansione richiesta ma territorio già a max_territory_cells (%d)" % rules.max_territory_cells
 		else:
-			var added := TerritoryBuilderService.new().expand_by_one_cell(world, group.territory)
-			if added:
+			expanded = TerritoryBuilderService.new().expand_by_one_cell(world, group.territory, group.species_name)
+			if expanded:
 				action = "espande di 1 cella"
 				reason = _expansion_reason(needs_expansion_density, needs_expansion_caloric)
 			else:
 				reason = "espansione richiesta ma nessuna cella libera raggiungibile"
+
+		# Espansione fallita, per qualunque motivo (già a max_territory_cells sopra, o BFS satura
+		# appena sopra) — un unico segnale (false), non serve distinguere il perché: prova a
+		# staccare una porzione della popolazione in un nuovo gruppo altrove (Step 9) PRIMA di
+		# lasciare che la sola pressione calorica/fame gestisca la situazione. Surplus = quanti
+		# individui eccedono la capacità etologica del territorio ATTUALE (invariato, l'espansione
+		# è appena fallita) col floor MIN_DISPERSAL_SHARE_FRACTION già usato anche dal trigger di
+		# fame in AnimalHungerService, stessa costante condivisa per non avere due soglie scoordinate.
+		if not expanded:
+			var surplus: int = max(0, group.population - (current_cell_count * rules.max_density_per_cell))
+			var split_amount: int = max(
+				surplus, int(ceil(float(group.population) * PopulationSplitService.MIN_DISPERSAL_SHARE_FRACTION))
+			)
+			# Stesso criterio (densità/calorico) già determinato sopra per il tentativo di
+			# espansione fallito — riusato qui solo per il log di PopulationSplitService, non
+			# ricalcolato: lo split non ha un "perché" proprio, eredita quello dell'espansione che
+			# lo ha preceduto nello stesso checkpoint.
+			var split_trigger_reason := _expansion_reason(needs_expansion_density, needs_expansion_caloric)
+			if PopulationSplitService.new().attempt_split(world, group, rules, split_amount, split_trigger_reason):
+				action = "scissione di %d individui" % split_amount
+				reason += " -> scissione riuscita"
 	elif needs_contraction:
 		_contract_by_one_cell(group)
 		action = "contrae di 1 cella"
@@ -244,6 +289,24 @@ func _get_density_multiplier(
 		multiplier = 0.0
 
 	return {"ratio": ratio, "multiplier": multiplier}
+
+
+# Terza mitigazione della natalità (Step 10 del refactoring fauna), indipendente da calorico e
+# densità sopra — recovery TEMPORANEO applicato SOLO al gruppo che ha generato uno split come
+# ORIGINE (mai al nuovo gruppo scisso, che parte con years_since_last_split=-1, vedi
+# PopulationGroup), per rallentare le scissioni ravvicinate anno dopo anno: la natalità del
+# gruppo appena alleggerito riparte a metà regime e recupera gradualmente. Rampa LINEARE (non
+# quadratica come la densità sopra: qui la richiesta esplicita è un decremento/recupero costante,
+# non una frenata concentrata) da 0.5 (anno 0, appena scisso) a 1.0 (recovery completo, raggiunto
+# a post_split_recovery_years). Sentinella -1 = mai scisso -> nessuna penalità. Guard su
+# post_split_recovery_years <= 0 (specie che non lo dichiara esplicitamente, o lo dichiara a 0):
+# trattato come recovery istantaneo, mai una divisione per zero.
+func _get_post_split_multiplier(group: PopulationGroup, rules: AnimalRules) -> float:
+	if group.years_since_last_split < 0 or rules.post_split_recovery_years <= 0:
+		return 1.0
+	if group.years_since_last_split >= rules.post_split_recovery_years:
+		return 1.0
+	return 0.5 + (0.5 / float(rules.post_split_recovery_years)) * float(group.years_since_last_split)
 
 
 func _expansion_reason(needs_density: bool, needs_caloric: bool) -> String:

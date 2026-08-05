@@ -131,6 +131,13 @@ func load_game_from_json(file_path: String) -> LoadedGame:
 			# default della classe, comportamento invariato per quei save. set_ (non assegnazione
 			# diretta) per applicare comunque il clamp a MULTIPLIER_ABUNDANCE_CAP.
 			group.set_birth_mitigation_multiplier(float(group_data.get("birth_mitigation_multiplier", 1.0)))
+			# .get(key, -1) per compatibilità con save precedenti l'introduzione dello split
+			# (Step 9/10) — -1 = "mai scisso", stesso default della classe, comportamento
+			# invariato per quei save.
+			group.years_since_last_split = int(group_data.get("years_since_last_split", -1))
+			# .get(key, 0) per compatibilità con save precedenti l'introduzione del cooldown
+			# (Step 11) — 0 = nessun cooldown attivo, stesso default della classe.
+			group.hunger_split_cooldown_days = int(group_data.get("hunger_split_cooldown_days", 0))
 			world.population_groups.append(group)
 
 	# Nessun campo dedicato per il contatore nel JSON: ricalcolato da max(id caricati)+1 così le

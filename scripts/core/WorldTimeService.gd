@@ -18,6 +18,11 @@ func advance_day(world: World, game_data: GameData) -> Dictionary:
 	# population da PopulationGroup.apply_births/apply_old_age_mortality PRIMA che questo servizio
 	# legga population — vedi AnimalHungerService.
 	_run_daily_animal_hunger(world)
+	# ULTIMO passo della giornata, dopo ogni checkpoint che può azzerare population (morte per
+	# vecchiaia sopra, fame prolungata appena sopra) — mai prima, altrimenti un gruppo morto oggi
+	# stesso resterebbe nell'array (e quindi "occupante" la propria cella) fino a domani. Vedi
+	# World.remove_extinct_population_groups per il perché.
+	world.remove_extinct_population_groups()
 	return {"checkpoint_ran": checkpoint_ran, "animals_changed": animals_changed}
 
 
@@ -62,48 +67,64 @@ func _run_seasonal_checkpoints(world: World, game_data: GameData, year_rolled_ov
 	var checkpoint_ran := false
 
 	if day == SeasonCalculator.get_season_day_range(GameTypes.Season.SPRING).x:
-		_run_migration_checkpoint(world, game_data)
+		_run_timed("migration_checkpoint", func(): _run_migration_checkpoint(world, game_data))
 		checkpoint_ran = true
 
 	# Nessun'altra logica gira ancora a fine inverno: blocco dedicato solo alle specie animali
 	# con birth_season == WINTER (nessuna oggi, ma il checkpoint deve esistere comunque).
 	if day == SeasonCalculator.get_season_end_day(GameTypes.Season.WINTER):
-		_run_animal_lifecycle_checkpoint(world, GameTypes.Season.WINTER)
+		_run_timed("animal_lifecycle_checkpoint(WINTER)", func(): _run_animal_lifecycle_checkpoint(world, GameTypes.Season.WINTER))
 		checkpoint_ran = true
 
 	if day == SeasonCalculator.get_season_end_day(GameTypes.Season.SPRING):
-		_run_animal_lifecycle_checkpoint(world, GameTypes.Season.SPRING)
-		_run_growth_checkpoint(world, game_data)
+		_run_timed("animal_lifecycle_checkpoint(SPRING)", func(): _run_animal_lifecycle_checkpoint(world, GameTypes.Season.SPRING))
+		_run_timed("growth_checkpoint", func(): _run_growth_checkpoint(world, game_data))
 		checkpoint_ran = true
 
 	if day == SeasonCalculator.get_season_end_day(GameTypes.Season.SUMMER):
-		_run_animal_lifecycle_checkpoint(world, GameTypes.Season.SUMMER)
-		_run_fauna_migration_checkpoint(world)
+		_run_timed("animal_lifecycle_checkpoint(SUMMER)", func(): _run_animal_lifecycle_checkpoint(world, GameTypes.Season.SUMMER))
+		_run_timed("fauna_migration_checkpoint", func(): _run_fauna_migration_checkpoint(world))
 		checkpoint_ran = true
 
 	for season in [GameTypes.Season.WINTER, GameTypes.Season.SPRING, GameTypes.Season.SUMMER, GameTypes.Season.AUTUMN]:
 		if day == SeasonCalculator.get_season_day_range(season).x:
-			_run_secondary_resource_stock_debug_checkpoint(world, SeasonCalculator.get_previous_season(season), season)
-			_run_natural_events_checkpoint(world, game_data, season)
+			_run_timed(
+				"secondary_resource_stock_debug_checkpoint",
+				func(): _run_secondary_resource_stock_debug_checkpoint(world, SeasonCalculator.get_previous_season(season), season)
+			)
+			_run_timed("natural_events_checkpoint", func(): _run_natural_events_checkpoint(world, game_data, season))
 			# Step 8 del refactoring fauna: territorio ed espansione/contrazione girano nello
 			# STESSO checkpoint di inizio birth_season in cui girava già (da solo) il calcolo del
 			# ratio calorico per la mitigazione natalità — i due condividono la stessa identica
 			# definizione di scarsità (vedi TerritoryDynamicsService), quindi la mitigazione non è
 			# più un checkpoint a sé: è orchestrata da TerritoryDynamicsService stesso, DOPO
 			# l'eventuale aggiustamento del territorio, mai prima.
-			_run_territory_dynamics_checkpoint(world, season)
-			_run_animal_territory_shuffle_checkpoint(world, season)
+			_run_timed("territory_dynamics_checkpoint", func(): _run_territory_dynamics_checkpoint(world, season))
+			_run_timed("animal_territory_shuffle_checkpoint", func(): _run_animal_territory_shuffle_checkpoint(world, season))
 			checkpoint_ran = true
 
 	if year_rolled_over:
 		# AUTUMN "end of season" non può essere un confronto sul giorno (current_day è già
 		# tornato a 0 quando year_rolled_over è true, vedi GameData.advance_day) — year_rolled_over
 		# stesso è il segnale di fine autunno, stesso schema già usato da _run_mortality_checkpoint.
-		_run_animal_lifecycle_checkpoint(world, GameTypes.Season.AUTUMN)
-		_run_mortality_checkpoint(world)
+		_run_timed("animal_lifecycle_checkpoint(AUTUMN)", func(): _run_animal_lifecycle_checkpoint(world, GameTypes.Season.AUTUMN))
+		_run_timed("mortality_checkpoint", func(): _run_mortality_checkpoint(world))
 		checkpoint_ran = true
 
 	return checkpoint_ran
+
+
+# TEMPORANEO — diagnostica per isolare quale funzione del checkpoint stagionale è responsabile
+# del rallentamento segnalato tra giorno 181 e 182 (Step 11): misura e stampa il tempo di ogni
+# passo (Time.get_ticks_usec, non affetto da eventuale vsync/frame limiting). Gated da
+# DebugLogging.ENABLED come il resto della diagnostica — va rimossa una volta individuata la
+# causa. `action` viene sempre eseguita (il gate riguarda solo la stampa del tempo, mai il
+# lavoro reale).
+func _run_timed(label: String, action: Callable) -> void:
+	var start_usec := Time.get_ticks_usec()
+	action.call()
+	if DebugLogging.ENABLED:
+		print("[TIMING] %s: %.2f ms" % [label, (Time.get_ticks_usec() - start_usec) / 1000.0])
 
 
 func _run_animal_lifecycle_checkpoint(world: World, season: GameTypes.Season) -> void:
@@ -114,9 +135,9 @@ func _run_animal_lifecycle_checkpoint(world: World, season: GameTypes.Season) ->
 	# appena entrati in OLD in questo stesso checkpoint (la maturazione adult->old gira prima,
 	# sopra) — nessuno stato "appena arrivato" viene tracciato da nessuna transizione di fascia,
 	# quindi non lo tracciamo neanche per la mortalità (vedi AnimalOldAgeMortalityService).
-	AnimalAgeBandService.new().mature_age_bands(world, season)
-	AnimalBirthService.new().apply_births(world, season)
-	AnimalOldAgeMortalityService.new().apply_old_age_mortality(world, season)
+	_run_timed("  mature_age_bands (animali)", func(): AnimalAgeBandService.new().mature_age_bands(world, season))
+	_run_timed("  apply_births", func(): AnimalBirthService.new().apply_births(world, season))
+	_run_timed("  apply_old_age_mortality", func(): AnimalOldAgeMortalityService.new().apply_old_age_mortality(world, season))
 
 
 func _run_growth_checkpoint(world: World, game_data: GameData) -> void:
@@ -124,12 +145,28 @@ func _run_growth_checkpoint(world: World, game_data: GameData) -> void:
 	# ereditata dagli anni precedenti, cosicché le nascite di growth in questo stesso ciclo
 	# (età 0) non vengano mai incluse nella maturazione dello stesso anno in cui compaiono —
 	# vedi ResourceAgeBandService.
-	ResourceAgeBandService.new().mature_age_bands(world)
+	_run_timed("  mature_age_bands (vegetazione)", func(): ResourceAgeBandService.new().mature_age_bands(world))
 
-	var growth_service := ResourceGrowthService.new()
-	growth_service.grow_resources(world, game_data)
+	_run_timed("  grow_resources", func(): ResourceGrowthService.new().grow_resources(world, game_data))
+
+	# Step 11 Step 4: mitigazione dell'encroachment da presenza fisica di fauna brucante (densità
+	# di riempimento per cella rispetto ad AnimalRules.max_density_per_cell) — vedi
+	# BrowsingMitigationService. Il risultato è ora un INPUT REALE per encroach_resources sotto
+	# (non più solo calcolo/log): gira quindi SEMPRE, non gated da DebugLogging.ENABLED. Il
+	# prototipo calorico precedente (GrazingPressureService, scartato: la scarsità calorica è già
+	# coperta altrove da fame/mortalità) è stato rimosso in una sessione precedente.
+	# Non passata tramite _run_timed: serve il valore di ritorno, misurata quindi a mano — stesso
+	# schema di encroach_resources sotto.
+	var browsing_start_usec := Time.get_ticks_usec()
+	var browsing_mitigation := BrowsingMitigationService.new().compute_browsing_mitigation(world)
+	if DebugLogging.ENABLED:
+		print("[TIMING]   compute_browsing_mitigation: %.2f ms" % [(Time.get_ticks_usec() - browsing_start_usec) / 1000.0])
+
+	var encroach_start_usec := Time.get_ticks_usec()
 	var encroachment_service := ResourceEncroachmentService.new()
-	var leftover_surplus := encroachment_service.encroach_resources(world)
+	var leftover_surplus := encroachment_service.encroach_resources(world, browsing_mitigation)
+	if DebugLogging.ENABLED:
+		print("[TIMING]   encroach_resources: %.2f ms" % [(Time.get_ticks_usec() - encroach_start_usec) / 1000.0])
 	_store_pending_migration_surplus(world, leftover_surplus)
 
 	# FISH cresce sullo stesso checkpoint di fine primavera della vegetazione, ma su un budget
@@ -138,7 +175,7 @@ func _run_growth_checkpoint(world: World, game_data: GameData) -> void:
 	# invece in checkpoint propri (fine estate/fine autunno, vedi sotto) — a differenza della
 	# vegetazione, growth->migration->mortality per FISH restano tre momenti separati dell'anno
 	# invece che un'unica pipeline diretta, per poter osservare l'evoluzione di ciascuna fase.
-	FaunaGrowthService.new().grow_fauna(world)
+	_run_timed("  grow_fauna", func(): FaunaGrowthService.new().grow_fauna(world))
 
 
 # Fine estate: unico checkpoint per la migrazione FISH, nessuno sfasamento all'anno successivo

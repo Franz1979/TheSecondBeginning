@@ -112,6 +112,9 @@ size_flags_horizontal = 3
 layout_mode = 2
 theme_override_font_sizes/font_size = 13
 
+[node name="SpeciesFilterContainer" type="HBoxContainer" parent="MarginContainer/VBoxContainer/TabContainer/FaunaTab2/FaunaContent"]
+layout_mode = 2
+
 [node name="PopulationGroupsContainer" type="VBoxContainer" parent="MarginContainer/VBoxContainer/TabContainer/FaunaTab2/FaunaContent"]
 layout_mode = 2
 

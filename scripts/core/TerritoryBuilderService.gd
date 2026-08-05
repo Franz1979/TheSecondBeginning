@@ -12,18 +12,28 @@ const DIRECTIONS: Array[Vector2i] = [
 ]
 
 
-# Esclude dalla BFS solo le celle il cui terrain_base è interamente WATER (mare/lago) — non le
+# Esclude dalla BFS le celle il cui terrain_base è interamente WATER (mare/lago) — non le
 # celle con un fiume che attraversa un terreno altrimenti normale (water_type == RIVER senza
 # terrain_base == WATER, vedi PresetMapGenerator: il fiume imposta solo water_type, mai
 # terrain_base, sulla cella che attraversa). Stesso criterio già usato ovunque nel codebase per
 # distinguere "questa macrocella è un corpo d'acqua" (DroughtEventEffectService,
 # SeaFloodEventEffectService, WorldProcessors, ResourceCalculator, ...).
-# Se le celle libere adiacenti non bastano a raggiungere cell_count (mappa stretta, mare vicino),
-# nessun errore: si restituisce un Territory con tutte le celle raggiunte, comunque valido.
-func build_territory(world: World, start: Vector2i, cell_count: int) -> Territory:
+# Esclude anche le celle già occupate da un territorio ESISTENTE della STESSA specie
+# (species_name, vedi _collect_species_occupied_cells sotto) — gli areali della stessa specie non
+# si sovrappongono mai; specie diverse invece possono coesistere sulla stessa cella senza alcun
+# vincolo qui (competizione per le risorse, non per "diritto territoriale" — vedi
+# TerritoryDynamicsService).
+# Se le celle libere adiacenti non bastano a raggiungere cell_count (mappa stretta, mare vicino,
+# territorio rivale della stessa specie tutt'intorno), nessun errore: si restituisce un Territory
+# con tutte le celle raggiunte, comunque valido. `start` è sempre inclusa a prescindere (è la
+# cella scelta esplicitamente dal chiamante, vedi sopra) anche se già occupata da un rivale della
+# stessa specie — nessuna validazione su di essa, invariato rispetto a prima di questa modifica.
+func build_territory(world: World, start: Vector2i, cell_count: int, species_name: String) -> Territory:
 	var occupied: Array[Vector2i] = [start]
 	if cell_count <= 1:
 		return Territory.new(occupied)
+
+	var species_occupied := _collect_species_occupied_cells(world, species_name, null)
 
 	var visited: Dictionary = {start: true}
 	var queue: Array[Vector2i] = [start]
@@ -43,6 +53,8 @@ func build_territory(world: World, start: Vector2i, cell_count: int) -> Territor
 			var cell := world.get_cell_at(neighbor.x, neighbor.y)
 			if cell == null or cell.terrain_base == GameTypes.TerrainBase.WATER:
 				continue
+			if species_occupied.has(neighbor):
+				continue
 
 			occupied.append(neighbor)
 			queue.append(neighbor)
@@ -54,19 +66,39 @@ func build_territory(world: World, start: Vector2i, cell_count: int) -> Territor
 # differenza di build_territory sopra (dimensione target nota in anticipo, chiamato solo alla
 # creazione del gruppo), qui si aggiunge SEMPRE e SOLO UNA cella per invocazione — l'espansione
 # procede per tentativi anno dopo anno (vedi TerritoryDynamicsService), non calcola in anticipo
-# quante celle servirebbero davvero. BFS a partire dal baricentro del territorio attuale
-# (Territory.get_centroid, arrotondato alla cella più vicina — un punto puramente esplorativo, non
-# necessariamente una cella occupata o valida), stesso ordine di direzioni ed esclusione acqua di
-# build_territory; le celle già in territory.occupied_macrocells vengono attraversate come tappe
-# di passaggio (per raggiungere il fronte del territorio) ma non contano mai come candidate. Muta
-# territory.occupied_macrocells in place aggiungendo la prima cella libera trovata. Ritorna true se
-# una cella è stata aggiunta, false se la BFS si esaurisce senza trovarne una raggiungibile (mappa
-# satura o mare tutt'intorno) — non un errore, il chiamante lascia il territorio invariato.
-func expand_by_one_cell(world: World, territory: Territory) -> bool:
+# quante celle servirebbero davvero. Thin wrapper su find_nearest_free_cell sotto (Step 9: la
+# stessa ricerca serve anche a PopulationSplitService per trovare dove fondare il nuovo
+# territorio, senza mutare quello del gruppo di origine — da qui l'estrazione). Muta
+# territory.occupied_macrocells in place aggiungendo la cella trovata. Ritorna true se una cella è
+# stata aggiunta, false se la ricerca non ne trova una raggiungibile (mappa satura, mare, o
+# territorio rivale della stessa specie tutt'intorno) — non un errore, il chiamante lascia il
+# territorio invariato.
+func expand_by_one_cell(world: World, territory: Territory, species_name: String) -> bool:
+	var found = find_nearest_free_cell(world, territory, species_name)
+	if found == null:
+		return false
+	territory.occupied_macrocells.append(found)
+	return true
+
+
+# BFS a partire dal baricentro di `territory` (Territory.get_centroid, arrotondato alla cella più
+# vicina — un punto puramente esplorativo, non necessariamente una cella occupata o valida),
+# stesso ordine di direzioni ed esclusione acqua di build_territory; le celle già in
+# territory.occupied_macrocells vengono attraversate come tappe di passaggio (per raggiungere il
+# fronte del territorio) ma non contano mai come candidate. Le celle occupate da un territorio
+# RIVALE della STESSA specie (species_name, vedi _collect_species_occupied_cells sotto) sono
+# invece trattate come l'acqua: né candidate né tappe di passaggio — la BFS non attraversa mai il
+# territorio di un gruppo rivale della stessa specie per raggiungere una cella libera oltre di esso
+# (stesso motivo per cui non si può "passare sopra" il mare). Specie diverse restano invece del
+# tutto ininfluenti qui, invariato. Pura: non muta `territory`. Ritorna la prima cella libera
+# trovata, o null se la BFS si esaurisce senza trovarne una raggiungibile.
+func find_nearest_free_cell(world: World, territory: Territory, species_name: String) -> Variant:
 	var centroid := territory.get_centroid()
 	var occupied_lookup: Dictionary = {}
 	for coords in territory.occupied_macrocells:
 		occupied_lookup[coords] = true
+
+	var species_occupied := _collect_species_occupied_cells(world, species_name, territory)
 
 	var visited: Dictionary = {centroid: true}
 	var queue: Array[Vector2i] = [centroid]
@@ -90,8 +122,29 @@ func expand_by_one_cell(world: World, territory: Territory) -> bool:
 			var cell := world.get_cell_at(neighbor.x, neighbor.y)
 			if cell == null or cell.terrain_base == GameTypes.TerrainBase.WATER:
 				continue
+			if species_occupied.has(neighbor):
+				continue
 
-			territory.occupied_macrocells.append(neighbor)
-			return true
+			return neighbor
 
-	return false
+	return null
+
+
+# Raccoglie in un Dictionary[Vector2i, bool] tutte le occupied_macrocells dei gruppi ESISTENTI
+# della stessa specie (species_name) in world.population_groups, escludendo `exclude_territory`
+# per riferimento di oggetto — il territorio del gruppo stesso che sta espandendo (expand_by_one_
+# cell) non può mai risultare "occupato da un rivale"; null per build_territory, dove il gruppo
+# non esiste ancora e quindi non c'è nulla da autoescludere. Specie diverse da species_name non
+# contribuiscono mai a questo insieme (nessun vincolo cross-specie, per design).
+func _collect_species_occupied_cells(
+	world: World, species_name: String, exclude_territory: Territory
+) -> Dictionary:
+	var occupied: Dictionary = {}
+	for group in world.population_groups:
+		if group.species_name != species_name:
+			continue
+		if group.territory == null or group.territory == exclude_territory:
+			continue
+		for coords in group.territory.occupied_macrocells:
+			occupied[coords] = true
+	return occupied

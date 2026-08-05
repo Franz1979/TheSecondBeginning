@@ -58,6 +58,14 @@ func save_game_to_json(
 	# cell_states (vedi PopulationGroup/World.population_groups). occupied_macrocells è un array
 	# (1+ elementi da Step 5, vedi Territory) invece di una singola coppia x/y.
 	for group in world.population_groups:
+		# Garanzia esplicita AL CONFINE del salvataggio (non solo conseguenza indiretta di
+		# World.remove_extinct_population_groups, che gira a fine di ogni giorno simulato): un
+		# gruppo estinto (population <= 0) non finisce mai nel save, né lui né il suo territorio —
+		# quest'ultimo è scritto solo dentro il record del gruppo (occupied_cells_data sotto), mai
+		# come lista indipendente, quindi saltare il gruppo esclude automaticamente anche le sue
+		# celle occupate.
+		if group.population <= 0:
+			continue
 		var occupied_cells_data: Array = []
 		for coords in group.territory.occupied_macrocells:
 			occupied_cells_data.append({"x": coords.x, "y": coords.y})
@@ -67,7 +75,11 @@ func save_game_to_json(
 		# fame già vicina alla soglia di morte. birth_mitigation_multiplier va salvato per lo
 		# stesso motivo di fondo (bug corretto: viene calcolato a inizio birth_season ma consumato
 		# solo a fine — un salvataggio/caricamento nel mezzo lo perdeva, tornando al default 1.0 e
-		# applicando nascite senza alcuna mitigazione).
+		# applicando nascite senza alcuna mitigazione). years_since_last_split (Step 10) è storia
+		# reale allo stesso modo — non ricalcolabile da un checkpoint, perderla al caricamento
+		# resetterebbe silenziosamente la recovery post-scissione in corso a "mai scisso".
+		# hunger_split_cooldown_days (Step 11) idem: un countdown a metà perso al caricamento
+		# riaprirebbe silenziosamente la porta a un nuovo split da fame prima del previsto.
 		data["world"]["population_groups"].append({
 			"id": group.id,
 			"species_name": group.species_name,
@@ -75,7 +87,9 @@ func save_game_to_json(
 			"age_composition": group.age_composition,
 			"occupied_macrocells": occupied_cells_data,
 			"hunger_buckets": group.hunger_buckets,
-			"birth_mitigation_multiplier": group.birth_mitigation_multiplier
+			"birth_mitigation_multiplier": group.birth_mitigation_multiplier,
+			"years_since_last_split": group.years_since_last_split,
+			"hunger_split_cooldown_days": group.hunger_split_cooldown_days
 		})
 	var json_text := JSON.stringify(data, "\t")
 	var file := FileAccess.open(file_path, FileAccess.WRITE)

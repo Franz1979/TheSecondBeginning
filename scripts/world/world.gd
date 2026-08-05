@@ -116,6 +116,20 @@ func get_population_groups_at(coords: Vector2i) -> Array[PopulationGroup]:
 	return groups
 
 
+# Rimuove dall'array i gruppi estinti (population <= 0, morti per fame prolungata o vecchiaia —
+# vedi AnimalHungerService/AnimalOldAgeMortalityService), così il loro Territory smette di
+# risultare "occupato" per qualunque ricerca futura della stessa specie (TerritoryBuilderService.
+# _collect_species_occupied_cells non ha mai controllato population, un gruppo morto ma ancora
+# nell'array bloccava per sempre le proprie celle a qualunque altro gruppo — vedi anche
+# find_population_group/get_population_groups_at sopra, stesso problema, qui risolto alla radice
+# invece che con un controllo ripetuto in ogni chiamante). Chiamato una sola volta al giorno da
+# WorldTimeService.advance_day, DOPO tutti i checkpoint che possono azzerare population in quel
+# giorno — mai durante un loop su population_groups altrove, per non disallineare gli indici di
+# un'iterazione in corso.
+func remove_extinct_population_groups() -> void:
+	population_groups = population_groups.filter(func(group): return group.population > 0)
+
+
 func ensure_cell_states() -> void:
 	if cell_states.size() == cells.size():
 		return

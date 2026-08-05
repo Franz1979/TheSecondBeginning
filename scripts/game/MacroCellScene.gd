@@ -134,7 +134,11 @@ func _ready() -> void:
 		"hop_pause_min": rabbit_rules.hop_pause_min if rabbit_rules != null else 0.1,
 		"hop_pause_max": rabbit_rules.hop_pause_max if rabbit_rules != null else 0.3,
 		"size_multiplier_by_age": rabbit_rules.size_multiplier_by_age if rabbit_rules != null else [1.0, 1.0, 1.0],
-		"mesh": AnimalGroupRenderer.build_rabbit_mesh(3.0, 1.3, 2.7, 0.9, Color(0.93, 0.91, 0.87, 0.95)),
+		"mesh": AnimalGroupRenderer.build_rabbit_mesh(
+			AnimalGroupRenderer.RABBIT_BODY_LENGTH, AnimalGroupRenderer.RABBIT_BODY_WIDTH,
+			AnimalGroupRenderer.RABBIT_EAR_LENGTH, AnimalGroupRenderer.RABBIT_EAR_WIDTH,
+			AnimalGroupRenderer.RABBIT_COLOR
+		),
 	})
 
 	# Cervo: stesso schema del coniglio sopra (parametri comportamentali da AnimalRules/deer.tres,
@@ -161,7 +165,11 @@ func _ready() -> void:
 		"hop_pause_min": deer_rules.hop_pause_min if deer_rules != null else 0.1,
 		"hop_pause_max": deer_rules.hop_pause_max if deer_rules != null else 0.3,
 		"size_multiplier_by_age": deer_rules.size_multiplier_by_age if deer_rules != null else [1.0, 1.0, 1.0],
-		"mesh": AnimalGroupRenderer.build_deer_mesh(5.5, 2.2, 1.4, 0.6, Color(0.55, 0.4, 0.25, 0.95)),
+		"mesh": AnimalGroupRenderer.build_deer_mesh(
+			AnimalGroupRenderer.DEER_BODY_LENGTH, AnimalGroupRenderer.DEER_BODY_WIDTH,
+			AnimalGroupRenderer.DEER_EAR_LENGTH, AnimalGroupRenderer.DEER_EAR_WIDTH,
+			AnimalGroupRenderer.DEER_COLOR
+		),
 	})
 
 	# Applica lo stato di visibilità ripristinato sopra (default true dei renderer altrimenti

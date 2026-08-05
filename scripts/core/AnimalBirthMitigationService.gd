@@ -60,21 +60,28 @@ func compute_caloric_ratio(world: World, group: PopulationGroup, rules: AnimalRu
 # funzione resta l'unico punto che combina+applica+logga il moltiplicatore finale, così non
 # restano sparsi due punti di scrittura su group.birth_mitigation_multiplier). Default 1.0/0.0
 # (nessuna penalità aggiuntiva) per restare no-op se un futuro chiamante non li passa. Il
-# moltiplicatore FINALE (calorico × densità) resta memorizzato sul gruppo fino al checkpoint di
-# nascita già esistente, a fine birth_season. Ritorna un Dictionary (non solo il moltiplicatore
-# finale) con tutti i valori intermedi — clamped_ratio/caloric_multiplier inclusi, non solo
-# final_multiplier — così il chiamante (TerritoryDynamicsService) può metterli nel proprio log
-# invece di ricalcolarli o lasciarli invisibili quando il log di qui sotto è soppresso (vedi
+# moltiplicatore FINALE (calorico × densità × post-scissione) resta memorizzato sul gruppo fino al
+# checkpoint di nascita già esistente, a fine birth_season. Ritorna un Dictionary (non solo il
+# moltiplicatore finale) con tutti i valori intermedi — clamped_ratio/caloric_multiplier inclusi,
+# non solo final_multiplier — così il chiamante (TerritoryDynamicsService) può metterli nel proprio
+# log invece di ricalcolarli o lasciarli invisibili quando il log di qui sotto è soppresso (vedi
 # log_enabled sotto): senza questo, il log [TERRITORY DYNAMICS] mostrava il moltiplicatore finale
 # ma non la scomposizione calorico/clampato che invece [BIRTH MITIGATION] mostra sempre.
+#
+# post_split_multiplier: terza mitigazione, indipendente dalle prime due — recovery temporaneo
+# della natalità sul gruppo di ORIGINE di una scissione (Step 10 del refactoring fauna, vedi
+# TerritoryDynamicsService._get_post_split_multiplier/PopulationSplitService). Default 1.0
+# (nessuna penalità aggiuntiva), stesso principio no-op di density_multiplier/occupancy_ratio.
 #
 # log_enabled di default true (specie a 1 sola cella, es. rabbit: questo è l'unico log disponibile
 # sul loro ratio/moltiplicatore). TerritoryDynamicsService lo passa a false per le specie con
 # min_territory_cells > 1 (es. deer), il cui log dedicato mostra già ratio_finale/stock/fabbisogno
-# — stampare anche qui sarebbe una riga duplicata con la stessa informazione.
+# (e ora anche moltiplicatore_post_split/anni_da_split, vedi lì) — stampare anche qui sarebbe una
+# riga duplicata con la stessa informazione.
 func apply_mitigation_multiplier(
 	group: PopulationGroup, raw_ratio: float,
 	density_multiplier: float = 1.0, occupancy_ratio: float = 0.0,
+	post_split_multiplier: float = 1.0,
 	log_enabled: bool = true
 ) -> Dictionary:
 	# Clampato a RATIO_ABUNDANCE_CAP_AT (non più a 1.0): un ratio anche enormemente sopra quel
@@ -83,15 +90,25 @@ func apply_mitigation_multiplier(
 	# _get_multiplier applica comunque, evitando solo di passargli un numero arbitrariamente grande.
 	var clamped_ratio: float = min(raw_ratio, RATIO_ABUNDANCE_CAP_AT)
 	var caloric_multiplier := _get_multiplier(clamped_ratio)
-	var final_multiplier: float = caloric_multiplier * density_multiplier
+	var final_multiplier: float = caloric_multiplier * density_multiplier * post_split_multiplier
 
 	group.set_birth_mitigation_multiplier(final_multiplier)
 
 	if DebugLogging.ENABLED and log_enabled:
-		print("[BIRTH MITIGATION] #%d %s pop=%d ratio_grezzo=%.3f ratio_clampato=%.3f moltiplicatore_calorico=%.3f occupazione_ratio=%.3f moltiplicatore_densita=%.3f moltiplicatore_finale=%.3f" % [
-			group.id, group.species_name, group.population, raw_ratio, clamped_ratio,
-			caloric_multiplier, occupancy_ratio, density_multiplier, final_multiplier
-		])
+		var years_display: String = (
+			"mai scisso" if group.years_since_last_split < 0 else str(group.years_since_last_split)
+		)
+		print(
+			(
+				"[BIRTH MITIGATION] #%d %s pop=%d ratio_grezzo=%.3f ratio_clampato=%.3f "
+				+ "moltiplicatore_calorico=%.3f occupazione_ratio=%.3f moltiplicatore_densita=%.3f "
+				+ "anni_da_split=%s moltiplicatore_post_split=%.3f moltiplicatore_finale=%.3f"
+			) % [
+				group.id, group.species_name, group.population, raw_ratio, clamped_ratio,
+				caloric_multiplier, occupancy_ratio, density_multiplier,
+				years_display, post_split_multiplier, final_multiplier
+			]
+		)
 
 	return {
 		"clamped_ratio": clamped_ratio,

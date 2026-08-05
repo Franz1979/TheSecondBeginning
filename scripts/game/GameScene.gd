@@ -101,6 +101,7 @@ func _ready() -> void:
 	# come atteso quando non c'è selezione.
 	macro_cell_info_panel.show_cell(null, null, world)
 	macro_cell_info_panel.population_group_highlight_requested.connect(_on_population_group_highlight_requested)
+	macro_cell_info_panel.population_species_highlight_requested.connect(_on_population_species_highlight_requested)
 
 	if returning_from_macro_cell:
 		var cell := world.get_cell_at(GameSettings.selected_macro_cell_x, GameSettings.selected_macro_cell_y)
@@ -187,6 +188,10 @@ func _open_macro_cell_scene() -> void:
 
 func _on_population_group_highlight_requested(cells: Array) -> void:
 	renderer.flash_cells(cells, POPULATION_HIGHLIGHT_DURATION)
+
+
+func _on_population_species_highlight_requested(entries: Array) -> void:
+	renderer.highlight_group_territories(entries, MacroCellInfoPanel.SPECIES_TERRITORY_HIGHLIGHT_DURATION)
 
 
 func _on_cell_selected(cell: MacroCellData, state: MacroCellState) -> void:
@@ -321,7 +326,7 @@ func _on_debug_set_rabbit_pressed() -> void:
 	var rabbit_rules := AnimalCalculator.get_animal_rules("rabbit")
 	var group := world.find_population_group("rabbit", coords)
 	if group == null:
-		group = PopulationGroup.new("rabbit", _build_initial_territory(coords, rabbit_rules), world.allocate_population_group_id())
+		group = PopulationGroup.new("rabbit", _build_initial_territory(coords, rabbit_rules, "rabbit"), world.allocate_population_group_id())
 		world.population_groups.append(group)
 	group.set_population(count)
 	# Riallinea age_composition al nuovo totale (vedi PopulationGroup.set_age_composition) —
@@ -339,7 +344,7 @@ func _on_debug_set_deer_pressed() -> void:
 	var deer_rules := AnimalCalculator.get_animal_rules("deer")
 	var group := world.find_population_group("deer", coords)
 	if group == null:
-		group = PopulationGroup.new("deer", _build_initial_territory(coords, deer_rules), world.allocate_population_group_id())
+		group = PopulationGroup.new("deer", _build_initial_territory(coords, deer_rules, "deer"), world.allocate_population_group_id())
 		world.population_groups.append(group)
 	group.set_population(count)
 	var age_weights: Dictionary = deer_rules.initial_age_ratio if deer_rules != null else {}
@@ -350,12 +355,14 @@ func _on_debug_set_deer_pressed() -> void:
 
 # Territorio iniziale di un gruppo appena creato: una sola cella per specie con
 # min_territory_cells <= 1 (rabbit — comportamento identico a prima di Step 5), altrimenti una
-# BFS di TerritoryBuilderService a partire da coords fino a min_territory_cells celle (deer). La
-# dimensione è fissa da qui in poi: nessuna espansione/restringimento nel tempo (Step 8 futuro).
-func _build_initial_territory(coords: Vector2i, rules: AnimalRules) -> Territory:
+# BFS di TerritoryBuilderService a partire da coords fino a min_territory_cells celle (deer),
+# escludendo le celle già occupate da un territorio ESISTENTE della stessa specie (species_name —
+# vedi TerritoryBuilderService._collect_species_occupied_cells). La dimensione è fissa da qui in
+# poi: nessuna espansione/restringimento nel tempo (Step 8 futuro).
+func _build_initial_territory(coords: Vector2i, rules: AnimalRules, species_name: String) -> Territory:
 	if rules == null or rules.min_territory_cells <= 1:
 		return Territory.from_single_cell(coords)
-	return TerritoryBuilderService.new().build_territory(world, coords, rules.min_territory_cells)
+	return TerritoryBuilderService.new().build_territory(world, coords, rules.min_territory_cells, species_name)
 
 func _update_calendar_display() -> void:
 	year_label.text = "Day %d of %d, Year %d" % [game_data.current_day + 1, GameData.DAYS_PER_YEAR, game_data.year]

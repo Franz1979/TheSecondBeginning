@@ -52,6 +52,22 @@ const DEER_EAR_ANGLE_FROM_HEADING: float = 60.0 * PI / 180.0
 const DEER_TAIL_RADIUS: float = 0.6
 const DEER_TAIL_ANCHOR_RATIO: float = 0.92
 
+# Dimensioni/colore di riferimento per specie, usati da MacroCellScene per costruire la mesh sul
+# campo (build_rabbit_mesh/build_deer_mesh) E da AnimalSilhouetteIcon per l'icona del filtro Fauna
+# (MacroCellInfoPanel) — un'unica fonte di verità, non due valori duplicati che potrebbero
+# disallinearsi se uno dei due punti venisse tarato di nuovo senza ricordarsi dell'altro.
+const RABBIT_BODY_LENGTH: float = 3.0
+const RABBIT_BODY_WIDTH: float = 1.3
+const RABBIT_EAR_LENGTH: float = 2.7
+const RABBIT_EAR_WIDTH: float = 0.9
+const RABBIT_COLOR: Color = Color(0.93, 0.91, 0.87, 0.95)
+
+const DEER_BODY_LENGTH: float = 5.5
+const DEER_BODY_WIDTH: float = 2.2
+const DEER_EAR_LENGTH: float = 1.4
+const DEER_EAR_WIDTH: float = 0.6
+const DEER_COLOR: Color = Color(0.55, 0.4, 0.25, 0.95)
+
 # Popolazione -> numero di gruppi disegnati: individui rappresentati da ciascuna icona,
 # arriva da AnimalRules.visual_group_size (letto dal chiamante, mai hardcoded qui).
 var individuals_per_group: int = 1
@@ -376,42 +392,16 @@ func _write_instance_transform(index: int, group: AnimalVisualGroup) -> void:
 # specie resti un solo MultiMesh/una sola draw call indipendentemente dal numero di gruppi.
 # Asse locale +X = direzione di marcia (stessa convenzione di FISH in MicroCellRenderer).
 # Chiamata dal nodo che istanzia AnimalGroupRenderer (oggi MacroCellScene), mai da questa
-# classe: il risultato va passato in configure() tramite params["mesh"].
+# classe: il risultato va passato in configure() tramite params["mesh"]. I punti geometrici
+# (get_rabbit_silhouette_geometry sotto) sono condivisi con AnimalSilhouetteIcon (icona del
+# filtro Fauna in MacroCellInfoPanel) — un solo posto definisce "che forma ha un coniglio", non
+# due copie della stessa formula che potrebbero disallinearsi in futuro.
 static func build_rabbit_mesh(
 	body_length: float, body_width: float, ear_length: float, ear_width: float, color: Color
 ) -> ArrayMesh:
-	var st := SurfaceTool.new()
-	st.begin(Mesh.PRIMITIVE_TRIANGLES)
-	st.set_color(color)
-
-	var body_points := PackedVector2Array()
-	for i in range(BODY_SEGMENTS):
-		var angle: float = (float(i) / float(BODY_SEGMENTS)) * TAU
-		# t: 0 sul punto più posteriore (-X), 1 sul punto più anteriore/muso (+X) — modula il
-		# raggio Y così il corpo si legge come una goccia affusolata invece di un'ellisse.
-		var t: float = (cos(angle) + 1.0) / 2.0
-		var width_scale: float = lerp(RABBIT_BODY_REAR_WIDTH_RATIO, RABBIT_BODY_FRONT_WIDTH_RATIO, t)
-		body_points.append(Vector2(cos(angle) * body_length, sin(angle) * body_width * width_scale))
-	_append_fan_triangles(st, body_points)
-
-	var anchor_x: float = body_length * RABBIT_EAR_ANCHOR_RATIO
-	for side in [-1.0, 1.0]:
-		var ear_dir: Vector2 = Vector2.RIGHT.rotated(side * RABBIT_EAR_ANGLE_FROM_HEADING)
-		var anchor := Vector2(anchor_x, side * body_width * RABBIT_EAR_ANCHOR_LATERAL_RATIO)
-		var perpendicular := ear_dir.rotated(PI / 2.0)
-		var base_a := anchor - perpendicular * (ear_width / 2.0)
-		var base_b := anchor + perpendicular * (ear_width / 2.0)
-		var tip := anchor + ear_dir * ear_length
-		_append_triangle(st, base_a, base_b, tip)
-
-	var tail_center := Vector2(-body_length * RABBIT_TAIL_ANCHOR_RATIO, 0.0)
-	var tail_points := PackedVector2Array()
-	for i in range(TAIL_SEGMENTS):
-		var angle: float = (float(i) / float(TAIL_SEGMENTS)) * TAU
-		tail_points.append(tail_center + Vector2(cos(angle), sin(angle)) * RABBIT_TAIL_RADIUS)
-	_append_fan_triangles(st, tail_points, tail_center)
-
-	return st.commit()
+	return _build_mesh_from_geometry(
+		get_rabbit_silhouette_geometry(body_length, body_width, ear_length, ear_width), color
+	)
 
 
 # Sagoma DEER: stesso schema costruttivo di build_rabbit_mesh sopra (corpo a ventaglio + 2
@@ -422,33 +412,87 @@ static func build_rabbit_mesh(
 static func build_deer_mesh(
 	body_length: float, body_width: float, ear_length: float, ear_width: float, color: Color
 ) -> ArrayMesh:
-	var st := SurfaceTool.new()
-	st.begin(Mesh.PRIMITIVE_TRIANGLES)
-	st.set_color(color)
+	return _build_mesh_from_geometry(
+		get_deer_silhouette_geometry(body_length, body_width, ear_length, ear_width), color
+	)
 
+
+# Pubbliche (non prefissate _, a differenza delle altre helper statiche sotto): consumate anche
+# da AnimalSilhouetteIcon, fuori da questa classe. Ritornano i punti 2D grezzi (corpo, le due
+# orecchie come triangoli [base_a, base_b, tip], centro/raggio della coda) SENZA passare per una
+# SurfaceTool — chi li consuma decide come disegnarli (build_*_mesh sotto li accumula in una
+# ArrayMesh per il MultiMesh sul campo; AnimalSilhouetteIcon li disegna direttamente con _draw()).
+static func get_rabbit_silhouette_geometry(
+	body_length: float, body_width: float, ear_length: float, ear_width: float
+) -> Dictionary:
+	return _get_silhouette_geometry(
+		body_length, body_width, ear_length, ear_width,
+		RABBIT_BODY_REAR_WIDTH_RATIO, RABBIT_BODY_FRONT_WIDTH_RATIO,
+		RABBIT_EAR_ANCHOR_RATIO, RABBIT_EAR_ANCHOR_LATERAL_RATIO, RABBIT_EAR_ANGLE_FROM_HEADING,
+		RABBIT_TAIL_ANCHOR_RATIO, RABBIT_TAIL_RADIUS
+	)
+
+
+static func get_deer_silhouette_geometry(
+	body_length: float, body_width: float, ear_length: float, ear_width: float
+) -> Dictionary:
+	return _get_silhouette_geometry(
+		body_length, body_width, ear_length, ear_width,
+		DEER_BODY_REAR_WIDTH_RATIO, DEER_BODY_FRONT_WIDTH_RATIO,
+		DEER_EAR_ANCHOR_RATIO, DEER_EAR_ANCHOR_LATERAL_RATIO, DEER_EAR_ANGLE_FROM_HEADING,
+		DEER_TAIL_ANCHOR_RATIO, DEER_TAIL_RADIUS
+	)
+
+
+static func _get_silhouette_geometry(
+	body_length: float, body_width: float, ear_length: float, ear_width: float,
+	body_rear_width_ratio: float, body_front_width_ratio: float,
+	ear_anchor_ratio: float, ear_anchor_lateral_ratio: float, ear_angle_from_heading: float,
+	tail_anchor_ratio: float, tail_radius: float
+) -> Dictionary:
 	var body_points := PackedVector2Array()
 	for i in range(BODY_SEGMENTS):
 		var angle: float = (float(i) / float(BODY_SEGMENTS)) * TAU
+		# t: 0 sul punto più posteriore (-X), 1 sul punto più anteriore/muso (+X) — modula il
+		# raggio Y così il corpo si legge come una goccia affusolata invece di un'ellisse.
 		var t: float = (cos(angle) + 1.0) / 2.0
-		var width_scale: float = lerp(DEER_BODY_REAR_WIDTH_RATIO, DEER_BODY_FRONT_WIDTH_RATIO, t)
+		var width_scale: float = lerp(body_rear_width_ratio, body_front_width_ratio, t)
 		body_points.append(Vector2(cos(angle) * body_length, sin(angle) * body_width * width_scale))
-	_append_fan_triangles(st, body_points)
 
-	var anchor_x: float = body_length * DEER_EAR_ANCHOR_RATIO
+	var anchor_x: float = body_length * ear_anchor_ratio
+	var ears: Array = []
 	for side in [-1.0, 1.0]:
-		var ear_dir: Vector2 = Vector2.RIGHT.rotated(side * DEER_EAR_ANGLE_FROM_HEADING)
-		var anchor := Vector2(anchor_x, side * body_width * DEER_EAR_ANCHOR_LATERAL_RATIO)
+		var ear_dir: Vector2 = Vector2.RIGHT.rotated(side * ear_angle_from_heading)
+		var anchor := Vector2(anchor_x, side * body_width * ear_anchor_lateral_ratio)
 		var perpendicular := ear_dir.rotated(PI / 2.0)
 		var base_a := anchor - perpendicular * (ear_width / 2.0)
 		var base_b := anchor + perpendicular * (ear_width / 2.0)
 		var tip := anchor + ear_dir * ear_length
-		_append_triangle(st, base_a, base_b, tip)
+		ears.append([base_a, base_b, tip])
 
-	var tail_center := Vector2(-body_length * DEER_TAIL_ANCHOR_RATIO, 0.0)
+	return {
+		"body_points": body_points,
+		"ears": ears,
+		"tail_center": Vector2(-body_length * tail_anchor_ratio, 0.0),
+		"tail_radius": tail_radius,
+	}
+
+
+static func _build_mesh_from_geometry(geometry: Dictionary, color: Color) -> ArrayMesh:
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	st.set_color(color)
+
+	_append_fan_triangles(st, geometry["body_points"])
+	for ear in geometry["ears"]:
+		_append_triangle(st, ear[0], ear[1], ear[2])
+
+	var tail_center: Vector2 = geometry["tail_center"]
+	var tail_radius: float = geometry["tail_radius"]
 	var tail_points := PackedVector2Array()
 	for i in range(TAIL_SEGMENTS):
 		var angle: float = (float(i) / float(TAIL_SEGMENTS)) * TAU
-		tail_points.append(tail_center + Vector2(cos(angle), sin(angle)) * DEER_TAIL_RADIUS)
+		tail_points.append(tail_center + Vector2(cos(angle), sin(angle)) * tail_radius)
 	_append_fan_triangles(st, tail_points, tail_center)
 
 	return st.commit()
