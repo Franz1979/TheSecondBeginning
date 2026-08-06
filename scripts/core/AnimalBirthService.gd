@@ -30,7 +30,9 @@ func apply_births(world: World, season: GameTypes.Season) -> void:
 			+ float(adult) * rules.fertility_multiplier_by_age[GameTypes.AgeBand.ADULT]
 			+ float(old) * rules.fertility_multiplier_by_age[GameTypes.AgeBand.OLD]
 		)
-		var births := int(round(weighted_count * rules.base_birth_rate * group.birth_mitigation_multiplier))
+		# stochastic_round (non round()): stesso bias sistematico di AnimalOldAgeMortalityService a
+		# popolazioni/pesi_fertilità piccoli — vedi SimulationMath.
+		var births := SimulationMath.stochastic_round(weighted_count * rules.base_birth_rate * group.birth_mitigation_multiplier)
 		var population_before := group.population
 		group.apply_births(births)
 

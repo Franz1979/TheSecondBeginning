@@ -2,7 +2,7 @@
 
 [ext_resource type="Script" uid="uid://cwijivoaxgsv5" path="res://scripts/game/GameScene.gd" id="1_dsxmn"]
 [ext_resource type="Script" uid="uid://bo7e46bvucvqn" path="res://scripts/camera/CameraController.gd" id="2_ldxrm"]
-[ext_resource type="PackedScene" uid="uid://u4tgm2grhilk" path="res://scenes/world/MacroCellInfoPanel.tscn" id="3_ldxrm"]
+[ext_resource type="PackedScene" uid="uid://dam4h2yqltfvr" path="res://scenes/world/WorldInfoPanel.tscn" id="3_ldxrm"]
 [ext_resource type="Script" path="res://scripts/game/SeasonProgressBar.gd" id="4_season"]
 [ext_resource type="PackedScene" uid="uid://dm2h8k5w1n3rt" path="res://scenes/ui/IconButtonRow.tscn" id="5_iconrow"]
 [ext_resource type="PackedScene" uid="uid://bk3x7q1m9v2ha" path="res://scenes/ui/SystemMenuDialog.tscn" id="6_sysmenu"]
@@ -134,10 +134,10 @@ text = "4x"
 layout_mode = 2
 script = ExtResource("4_season")
 
-[node name="DebugRabbitContainer" type="HBoxContainer" parent="CanvasLayer/Sidebar/MarginContainer/VBoxContainer"]
+[node name="DebugAnimalContainer" type="HBoxContainer" parent="CanvasLayer/Sidebar/MarginContainer/VBoxContainer"]
 layout_mode = 2
 
-[node name="DebugRabbitSpinBox" type="SpinBox" parent="CanvasLayer/Sidebar/MarginContainer/VBoxContainer/DebugRabbitContainer"]
+[node name="DebugAnimalSpinBox" type="SpinBox" parent="CanvasLayer/Sidebar/MarginContainer/VBoxContainer/DebugAnimalContainer"]
 custom_minimum_size = Vector2(55, 0)
 layout_mode = 2
 theme_override_font_sizes/font_size = 10
@@ -146,30 +146,16 @@ max_value = 10000.0
 step = 1.0
 value = 10.0
 
-[node name="DebugSetRabbitButton" type="Button" parent="CanvasLayer/Sidebar/MarginContainer/VBoxContainer/DebugRabbitContainer"]
+[node name="DebugAnimalSpeciesOption" type="OptionButton" parent="CanvasLayer/Sidebar/MarginContainer/VBoxContainer/DebugAnimalContainer"]
+custom_minimum_size = Vector2(75, 0)
+layout_mode = 2
+theme_override_font_sizes/font_size = 10
+
+[node name="DebugSetAnimalButton" type="Button" parent="CanvasLayer/Sidebar/MarginContainer/VBoxContainer/DebugAnimalContainer"]
 layout_mode = 2
 size_flags_horizontal = 3
 theme_override_font_sizes/font_size = 10
-text = "Imposta rabbit"
-tooltip_text = "(50,50)"
-
-[node name="DebugDeerContainer" type="HBoxContainer" parent="CanvasLayer/Sidebar/MarginContainer/VBoxContainer"]
-layout_mode = 2
-
-[node name="DebugDeerSpinBox" type="SpinBox" parent="CanvasLayer/Sidebar/MarginContainer/VBoxContainer/DebugDeerContainer"]
-custom_minimum_size = Vector2(55, 0)
-layout_mode = 2
-theme_override_font_sizes/font_size = 10
-min_value = 0.0
-max_value = 10000.0
-step = 1.0
-value = 10.0
-
-[node name="DebugSetDeerButton" type="Button" parent="CanvasLayer/Sidebar/MarginContainer/VBoxContainer/DebugDeerContainer"]
-layout_mode = 2
-size_flags_horizontal = 3
-theme_override_font_sizes/font_size = 10
-text = "Imposta deer"
+text = "Imposta"
 tooltip_text = "(50,50)"
 
 [node name="HSeparator2" type="HSeparator" parent="CanvasLayer/Sidebar/MarginContainer/VBoxContainer"]
@@ -182,7 +168,7 @@ slot_count = 5
 [node name="HSeparator" type="HSeparator" parent="CanvasLayer/Sidebar/MarginContainer/VBoxContainer"]
 layout_mode = 2
 
-[node name="MacroCellInfoPanel" parent="CanvasLayer/Sidebar/MarginContainer/VBoxContainer" unique_id=1882805416 instance=ExtResource("3_ldxrm")]
+[node name="WorldInfoPanel" parent="CanvasLayer/Sidebar/MarginContainer/VBoxContainer" unique_id=1882805416 instance=ExtResource("3_ldxrm")]
 layout_mode = 2
 size_flags_vertical = 3
 

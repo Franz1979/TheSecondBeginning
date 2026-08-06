@@ -24,7 +24,7 @@ var _pending_leave_action: StringName = &""
 @onready var system_menu_dialog: SystemMenuDialog = $SystemMenuDialog
 @onready var save_confirmation_dialog: SaveConfirmationDialog = $SaveConfirmationDialog
 @onready var save_game_file_dialog: FileDialog = $SaveGameFileDialog
-@onready var macro_cell_info_panel: MacroCellInfoPanel = $CanvasLayer/Sidebar/MarginContainer/VBoxContainer/MacroCellInfoPanel
+@onready var world_info_panel: WorldInfoPanel = $CanvasLayer/Sidebar/MarginContainer/VBoxContainer/WorldInfoPanel
 @onready var year_title_label: Label = $CanvasLayer/Sidebar/MarginContainer/VBoxContainer/CalendarHeaderContainer/YearTitleLabel
 @onready var year_label: Label = $CanvasLayer/Sidebar/MarginContainer/VBoxContainer/YearLabel
 @onready var play_pause_button: Button = $CanvasLayer/Sidebar/MarginContainer/VBoxContainer/ClockControlsContainer/PlayPauseButton
@@ -36,12 +36,10 @@ var _pending_leave_action: StringName = &""
 }
 @onready var advance_year_button: Button = $CanvasLayer/Sidebar/MarginContainer/VBoxContainer/CalendarHeaderContainer/AdvanceYearButton
 @onready var season_progress_bar: SeasonProgressBar = $CanvasLayer/Sidebar/MarginContainer/VBoxContainer/SeasonProgressBar
-@onready var debug_rabbit_container: HBoxContainer = $CanvasLayer/Sidebar/MarginContainer/VBoxContainer/DebugRabbitContainer
-@onready var debug_rabbit_spin_box: SpinBox = $CanvasLayer/Sidebar/MarginContainer/VBoxContainer/DebugRabbitContainer/DebugRabbitSpinBox
-@onready var debug_set_rabbit_button: Button = $CanvasLayer/Sidebar/MarginContainer/VBoxContainer/DebugRabbitContainer/DebugSetRabbitButton
-@onready var debug_deer_container: HBoxContainer = $CanvasLayer/Sidebar/MarginContainer/VBoxContainer/DebugDeerContainer
-@onready var debug_deer_spin_box: SpinBox = $CanvasLayer/Sidebar/MarginContainer/VBoxContainer/DebugDeerContainer/DebugDeerSpinBox
-@onready var debug_set_deer_button: Button = $CanvasLayer/Sidebar/MarginContainer/VBoxContainer/DebugDeerContainer/DebugSetDeerButton
+@onready var debug_animal_container: HBoxContainer = $CanvasLayer/Sidebar/MarginContainer/VBoxContainer/DebugAnimalContainer
+@onready var debug_animal_spin_box: SpinBox = $CanvasLayer/Sidebar/MarginContainer/VBoxContainer/DebugAnimalContainer/DebugAnimalSpinBox
+@onready var debug_animal_species_option: OptionButton = $CanvasLayer/Sidebar/MarginContainer/VBoxContainer/DebugAnimalContainer/DebugAnimalSpeciesOption
+@onready var debug_set_animal_button: Button = $CanvasLayer/Sidebar/MarginContainer/VBoxContainer/DebugAnimalContainer/DebugSetAnimalButton
 
 func _ready() -> void:
 	# Ripristina lo stato del toggle dalla sessione precedente (vedi GameSettings): senza questo,
@@ -74,10 +72,10 @@ func _ready() -> void:
 	save_confirmation_dialog.option_selected.connect(_on_save_confirmation_option_selected)
 	save_confirmation_dialog.visibility_changed.connect(_on_blocking_dialog_visibility_changed.bind(save_confirmation_dialog))
 
-	debug_rabbit_container.visible = DebugLogging.ENABLED
-	debug_deer_container.visible = DebugLogging.ENABLED
-	debug_set_rabbit_button.pressed.connect(_on_debug_set_rabbit_pressed)
-	debug_set_deer_button.pressed.connect(_on_debug_set_deer_pressed)
+	debug_animal_container.visible = DebugLogging.ENABLED
+	for species_name in AnimalCalculator.list_species_names():
+		debug_animal_species_option.add_item(species_name)
+	debug_set_animal_button.pressed.connect(_on_debug_set_animal_pressed)
 
 	var returning_from_macro_cell := GameSettings.returning_to_game_scene
 	if returning_from_macro_cell:
@@ -93,15 +91,15 @@ func _ready() -> void:
 	game_controller = CellSelectorController.new()
 	game_controller.setup(world, renderer)
 	game_controller.cell_selected.connect(_on_cell_selected)
-	macro_cell_info_panel.visible = true
+	world_info_panel.visible = true
 	# Nessuna cella selezionata ancora a inizio scena: senza questo, le tab Fauna (dati
 	# world-level, indipendenti dalla cella) resterebbero vuote finché l'utente non clicca una
 	# cella almeno una volta — show_cell(null, ...) imposta comunque il riferimento world del
 	# pannello prima del controllo "cell == null" interno, lasciando il resto del pannello vuoto
 	# come atteso quando non c'è selezione.
-	macro_cell_info_panel.show_cell(null, null, world)
-	macro_cell_info_panel.population_group_highlight_requested.connect(_on_population_group_highlight_requested)
-	macro_cell_info_panel.population_species_highlight_requested.connect(_on_population_species_highlight_requested)
+	world_info_panel.show_cell(null, null, world)
+	world_info_panel.population_group_highlight_requested.connect(_on_population_group_highlight_requested)
+	world_info_panel.population_species_highlight_requested.connect(_on_population_species_highlight_requested)
 
 	if returning_from_macro_cell:
 		var cell := world.get_cell_at(GameSettings.selected_macro_cell_x, GameSettings.selected_macro_cell_y)
@@ -191,11 +189,11 @@ func _on_population_group_highlight_requested(cells: Array) -> void:
 
 
 func _on_population_species_highlight_requested(entries: Array) -> void:
-	renderer.highlight_group_territories(entries, MacroCellInfoPanel.SPECIES_TERRITORY_HIGHLIGHT_DURATION)
+	renderer.highlight_group_territories(entries, WorldInfoPanel.SPECIES_TERRITORY_HIGHLIGHT_DURATION)
 
 
 func _on_cell_selected(cell: MacroCellData, state: MacroCellState) -> void:
-	macro_cell_info_panel.show_cell(cell, state, world)
+	world_info_panel.show_cell(cell, state, world)
 	renderer.set_selected_cell(cell)
 
 func _on_save_game_pressed() -> void:
@@ -296,13 +294,13 @@ func _on_day_advanced(checkpoint_ran: bool, animals_changed: bool) -> void:
 		renderer.queue_redraw()
 	if renderer.selected_cell != null:
 		var state := world.get_cell_state_at(renderer.selected_cell.x, renderer.selected_cell.y)
-		macro_cell_info_panel.show_cell(renderer.selected_cell, state, world)
+		world_info_panel.show_cell(renderer.selected_cell, state, world)
 	else:
 		# Le tab Fauna sono dati world-level (non legati alla cella selezionata): senza una cella
 		# selezionata, show_cell sopra non viene mai chiamata — vanno comunque rinfrescate qui se
 		# l'utente le ha aperte, altrimenti restano ferme finché non seleziona/deseleziona una
 		# cella (il bug segnalato: "si aggiornano solo entrando e uscendo da una cella").
-		macro_cell_info_panel.refresh_fauna_tabs_if_active()
+		world_info_panel.refresh_world_tabs_if_active()
 
 func _on_advance_year_pressed() -> void:
 	clock.force_advance_to_year_end()
@@ -319,38 +317,26 @@ func _debug_target_coords() -> Vector2i:
 		return Vector2i(renderer.selected_cell.x, renderer.selected_cell.y)
 	return Vector2i(50, 50)
 
-func _on_debug_set_rabbit_pressed() -> void:
+func _on_debug_set_animal_pressed() -> void:
+	if debug_animal_species_option.item_count == 0:
+		return
+	var species_name := debug_animal_species_option.get_item_text(debug_animal_species_option.selected)
 	var coords := _debug_target_coords()
-	var count := int(debug_rabbit_spin_box.value)
+	var count := int(debug_animal_spin_box.value)
 
-	var rabbit_rules := AnimalCalculator.get_animal_rules("rabbit")
-	var group := world.find_population_group("rabbit", coords)
+	var rules := AnimalCalculator.get_animal_rules(species_name)
+	var group := world.find_population_group(species_name, coords)
 	if group == null:
-		group = PopulationGroup.new("rabbit", _build_initial_territory(coords, rabbit_rules, "rabbit"), world.allocate_population_group_id())
+		group = PopulationGroup.new(species_name, _build_initial_territory(coords, rules, species_name), world.allocate_population_group_id())
 		world.population_groups.append(group)
 	group.set_population(count)
 	# Riallinea age_composition al nuovo totale (vedi PopulationGroup.set_age_composition) —
 	# senza questo, la maturazione delle age band non avrebbe mai dati su cui operare finché la
 	# natalità (prompt futuro) non esiste ancora.
-	var age_weights: Dictionary = rabbit_rules.initial_age_ratio if rabbit_rules != null else {}
+	var age_weights: Dictionary = rules.initial_age_ratio if rules != null else {}
 	group.set_age_composition(count, age_weights)
-	macro_cell_info_panel.refresh_fauna_tabs_if_active()
-	print("[DEBUG] rabbit population #%d (%d,%d) impostata a %d" % [group.id, coords.x, coords.y, count])
-
-func _on_debug_set_deer_pressed() -> void:
-	var coords := _debug_target_coords()
-	var count := int(debug_deer_spin_box.value)
-
-	var deer_rules := AnimalCalculator.get_animal_rules("deer")
-	var group := world.find_population_group("deer", coords)
-	if group == null:
-		group = PopulationGroup.new("deer", _build_initial_territory(coords, deer_rules, "deer"), world.allocate_population_group_id())
-		world.population_groups.append(group)
-	group.set_population(count)
-	var age_weights: Dictionary = deer_rules.initial_age_ratio if deer_rules != null else {}
-	group.set_age_composition(count, age_weights)
-	macro_cell_info_panel.refresh_fauna_tabs_if_active()
-	print("[DEBUG] deer population #%d (%d,%d) impostata a %d" % [group.id, coords.x, coords.y, count])
+	world_info_panel.refresh_world_tabs_if_active()
+	print("[DEBUG] %s population #%d (%d,%d) impostata a %d" % [species_name, group.id, coords.x, coords.y, count])
 
 
 # Territorio iniziale di un gruppo appena creato: una sola cella per specie con

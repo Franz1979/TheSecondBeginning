@@ -41,6 +41,7 @@ func save_game_to_json(
 			"age_composition": state.age_composition,
 			"river_space": state.river_space,
 			"water_dedicated_space": state.water_dedicated_space,
+			"terrestrial_dedicated_space": state.terrestrial_dedicated_space,
 			"active_growth_bonuses": state.active_growth_bonuses,
 			"pending_migration_surplus": state.pending_migration_surplus,
 			"secondary_resource_stock": state.secondary_resource_stock,

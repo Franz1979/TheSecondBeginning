@@ -31,6 +31,13 @@ var macro_cell_flora_updates_enabled: bool = true
 var game_scene_world_redraw_enabled: bool = true
 
 func _ready() -> void:
+	# Senza questa chiamata l'RNG globale di Godot (randf/randi/randi_range, usati da generazione
+	# mappa, populate_*, crescita/migrazione/mortalità/eventi naturali) parte da un seed fisso di
+	# default — stessa identica sequenza "casuale" ad ogni avvio del gioco. randomize() lo reseeda
+	# una volta sola qui, il prima possibile (GameSettings è un autoload). Non tocca in alcun modo
+	# il layout visivo delle risorse (ResourcePositionService/MicroCellRenderer/
+	# AgeBandVisualService), che è deterministico per hash(posizione) apposta, non tramite RNG.
+	randomize()
 	print("GameSettings ready")
 	DirAccess.make_dir_recursive_absolute(MAPS_DIR)
 	DirAccess.make_dir_recursive_absolute(SAVES_DIR)

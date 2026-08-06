@@ -30,14 +30,19 @@ theme_override_font_sizes/font_size = 11
 layout_mode = 2
 size_flags_vertical = 3
 
-[node name="GeografiaTab" type="VBoxContainer" parent="MarginContainer/VBoxContainer/TabContainer"]
+[node name="GeografiaTab" type="ScrollContainer" parent="MarginContainer/VBoxContainer/TabContainer"]
 layout_mode = 2
+horizontal_scroll_mode = 0
 
-[node name="SectionTitleLabel" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/GeografiaTab"]
+[node name="GeografiaContent" type="VBoxContainer" parent="MarginContainer/VBoxContainer/TabContainer/GeografiaTab"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="SectionTitleLabel" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/GeografiaTab/GeografiaContent"]
 layout_mode = 2
 theme_override_font_sizes/font_size = 13
 
-[node name="CellGeographyInfo" parent="MarginContainer/VBoxContainer/TabContainer/GeografiaTab" instance=ExtResource("2_geog")]
+[node name="CellGeographyInfo" parent="MarginContainer/VBoxContainer/TabContainer/GeografiaTab/GeografiaContent" instance=ExtResource("2_geog")]
 layout_mode = 2
 
 [node name="VegetazioneTab" type="ScrollContainer" parent="MarginContainer/VBoxContainer/TabContainer"]
@@ -162,11 +167,19 @@ theme_override_font_sizes/font_size = 13
 layout_mode = 2
 theme_override_font_sizes/font_size = 11
 
-[node name="FaunaSeparatorLabel" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/FaunaTab1/FaunaContent"]
+[node name="WaterEmptySpaceLabel" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/FaunaTab1/FaunaContent"]
 layout_mode = 2
 theme_override_font_sizes/font_size = 11
 
-[node name="WaterEmptySpaceLabel" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/FaunaTab1/FaunaContent"]
+[node name="BirdsSeparatorLabel" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/FaunaTab1/FaunaContent"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 11
+
+[node name="BirdsNumberLabel" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/FaunaTab1/FaunaContent"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 11
+
+[node name="LandEmptySpaceLabel" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/FaunaTab1/FaunaContent"]
 layout_mode = 2
 theme_override_font_sizes/font_size = 11
 
@@ -186,55 +199,72 @@ theme_override_font_sizes/font_size = 13
 [node name="AnimalPopulationContainer" type="VBoxContainer" parent="MarginContainer/VBoxContainer/TabContainer/FaunaTab2/FaunaContent"]
 layout_mode = 2
 
-[node name="SussistenzaTab" type="VBoxContainer" parent="MarginContainer/VBoxContainer/TabContainer"]
+[node name="SussistenzaTab" type="ScrollContainer" parent="MarginContainer/VBoxContainer/TabContainer"]
 visible = false
 layout_mode = 2
+horizontal_scroll_mode = 0
 
-[node name="SectionTitleLabel" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/SussistenzaTab"]
+[node name="SussistenzaContent" type="VBoxContainer" parent="MarginContainer/VBoxContainer/TabContainer/SussistenzaTab"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="SectionTitleLabel" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/SussistenzaTab/SussistenzaContent"]
 layout_mode = 2
 theme_override_font_sizes/font_size = 13
 
-[node name="ForageUnitsLabel" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/SussistenzaTab"]
+[node name="ForageUnitsLabel" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/SussistenzaTab/SussistenzaContent"]
 layout_mode = 2
 theme_override_font_sizes/font_size = 10
 
-[node name="ForageCaloriesLabel" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/SussistenzaTab"]
+[node name="ForageCaloriesLabel" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/SussistenzaTab/SussistenzaContent"]
 layout_mode = 2
 theme_override_font_sizes/font_size = 10
 
-[node name="BerrySeparatorLabel" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/SussistenzaTab"]
+[node name="BerrySeparatorLabel" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/SussistenzaTab/SussistenzaContent"]
 layout_mode = 2
 theme_override_font_sizes/font_size = 10
 
-[node name="BerryUnitsLabel" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/SussistenzaTab"]
+[node name="BerryUnitsLabel" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/SussistenzaTab/SussistenzaContent"]
 layout_mode = 2
 theme_override_font_sizes/font_size = 10
 
-[node name="BerryCaloriesLabel" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/SussistenzaTab"]
+[node name="BerryCaloriesLabel" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/SussistenzaTab/SussistenzaContent"]
 layout_mode = 2
 theme_override_font_sizes/font_size = 10
 
-[node name="AcornSeparatorLabel" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/SussistenzaTab"]
+[node name="AcornSeparatorLabel" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/SussistenzaTab/SussistenzaContent"]
 layout_mode = 2
 theme_override_font_sizes/font_size = 10
 
-[node name="AcornUnitsLabel" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/SussistenzaTab"]
+[node name="AcornUnitsLabel" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/SussistenzaTab/SussistenzaContent"]
 layout_mode = 2
 theme_override_font_sizes/font_size = 10
 
-[node name="AcornCaloriesLabel" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/SussistenzaTab"]
+[node name="AcornCaloriesLabel" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/SussistenzaTab/SussistenzaContent"]
 layout_mode = 2
 theme_override_font_sizes/font_size = 10
 
-[node name="FruitSeparatorLabel" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/SussistenzaTab"]
+[node name="FruitSeparatorLabel" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/SussistenzaTab/SussistenzaContent"]
 layout_mode = 2
 theme_override_font_sizes/font_size = 10
 
-[node name="FruitUnitsLabel" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/SussistenzaTab"]
+[node name="FruitUnitsLabel" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/SussistenzaTab/SussistenzaContent"]
 layout_mode = 2
 theme_override_font_sizes/font_size = 10
 
-[node name="FruitCaloriesLabel" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/SussistenzaTab"]
+[node name="FruitCaloriesLabel" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/SussistenzaTab/SussistenzaContent"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 10
+
+[node name="EggsSeparatorLabel" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/SussistenzaTab/SussistenzaContent"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 10
+
+[node name="EggsUnitsLabel" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/SussistenzaTab/SussistenzaContent"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 10
+
+[node name="EggsCaloriesLabel" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/SussistenzaTab/SussistenzaContent"]
 layout_mode = 2
 theme_override_font_sizes/font_size = 10
 

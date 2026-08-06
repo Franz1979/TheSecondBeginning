@@ -10,7 +10,7 @@ extends RefCounted
 # (Territory.occupied_macrocells.size() == 1), nessun cambiamento di comportamento osservabile.
 var species_name: String = ""
 # ID progressivo assegnato UNA volta alla creazione (vedi World.allocate_population_group_id),
-# mai ricalcolato — a differenza dell'indice mostrato da MacroCellInfoPanel prima di questo campo,
+# mai ricalcolato — a differenza dell'indice mostrato da WorldInfoPanel prima di questo campo,
 # resta stabile per tutta la vita del gruppo indipendentemente da quanti altri gruppi esistono o
 # si estinguono nel frattempo. Permette a più gruppi della stessa specie (es. due popolazioni
 # rabbit in celle diverse) di restare distinguibili nei log e nel pannello Fauna. Persistito nei
@@ -202,13 +202,15 @@ func apply_age_band_maturation(youth_duration_years: int, adult_duration_years: 
 	if young_count <= 0 and adult_count <= 0:
 		return
 
+	# stochastic_round (non round()): stesso bias sistematico di AnimalBirthService/
+	# AnimalOldAgeMortalityService a conteggi piccoli — vedi SimulationMath.
 	var young_to_adult: int = 0
 	if youth_duration_years > 0:
-		young_to_adult = min(int(round(float(young_count) / float(youth_duration_years))), young_count)
+		young_to_adult = min(SimulationMath.stochastic_round(float(young_count) / float(youth_duration_years)), young_count)
 
 	var adult_to_old: int = 0
 	if adult_duration_years > 0:
-		adult_to_old = min(int(round(float(adult_count) / float(adult_duration_years))), adult_count)
+		adult_to_old = min(SimulationMath.stochastic_round(float(adult_count) / float(adult_duration_years)), adult_count)
 
 	if young_to_adult <= 0 and adult_to_old <= 0:
 		return

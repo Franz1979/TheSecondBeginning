@@ -9,6 +9,7 @@ daily_caloric_requirement = 30.0
 diet_compatibility = {
 "acorn": 0.6,
 "berry": 0.2,
+"eggs": 0.0,
 "forage": 1.0,
 "fruit": 0.4
 }
@@ -24,6 +25,9 @@ rest_phase_duration_min = 6.0
 rest_phase_duration_max = 12.0
 hop_speed = 3.5
 size_multiplier_by_age = Array[float]([0.6, 1.0, 1.2])
+move_speed = 3.5
+turn_rate = 1.2
+cluster_comfort_radius = 6.0
 track_age_bands = true
 adult_duration_years = 8
 old_duration_years = 4
@@ -40,4 +44,4 @@ post_split_recovery_years = 10
 max_days_without_food = 30
 min_territory_cells = 3
 max_territory_cells = 20
-max_density_per_cell = 12
+max_density_per_cell = 10

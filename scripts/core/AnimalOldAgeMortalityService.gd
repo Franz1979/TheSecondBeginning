@@ -27,8 +27,11 @@ func apply_old_age_mortality(world: World, season: GameTypes.Season) -> void:
 		if old_count <= 0:
 			continue
 
+		# stochastic_round (non round()): a old_count piccoli round() introduce un bias sistematico
+		# — es. old_count=3, old_duration=5 -> 0.6 morti/anno attesi, ma round(0.6) ne fa morire
+		# SEMPRE esattamente 1 ogni anno invece che nel 60% dei cicli (vedi SimulationMath).
 		var deaths_from_age: int = min(
-			int(round(float(old_count) / float(rules.old_duration_years))), old_count
+			SimulationMath.stochastic_round(float(old_count) / float(rules.old_duration_years)), old_count
 		)
 		var population_before := group.population
 		group.apply_old_age_mortality(deaths_from_age)

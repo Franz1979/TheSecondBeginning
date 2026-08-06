@@ -1,16 +1,17 @@
 class_name AnimalSilhouetteIcon
 extends Control
 
-# Icona vettoriale per il filtro specie del tab Fauna (MacroCellInfoPanel._rebuild_species_filter_
+# Icona vettoriale per il filtro specie del tab Fauna (WorldInfoPanel._rebuild_species_filter_
 # row) — disegna con _draw() la STESSA sagoma (corpo a ventaglio + 2 orecchie + coda) usata dal
 # renderer sul campo (AnimalGroupRenderer.build_rabbit_mesh/build_deer_mesh), riusando la
 # geometria condivisa (AnimalGroupRenderer.get_rabbit_silhouette_geometry/
 # get_deer_silhouette_geometry) invece di duplicarla — nessuna texture/Viewport coinvolti: solo
 # _draw() vettoriale, nitido a qualunque dimensione dell'icona.
 #
-# Specie senza una sagoma dedicata (nessuna oggi oltre rabbit/deer) ricadono su un marker
-# generico (cerchio pieno + iniziale del nome) invece di restare vuote — un pulsante-filtro per
-# una specie futura compare comunque senza bisogno di scrivere prima una sagoma dedicata per lei.
+# Specie senza una sagoma dedicata (nessuna oggi oltre rabbit/deer/boar/tarpan/aurochs/
+# wild_donkey/mouflon/bezoar) ricadono su un marker generico (cerchio pieno + iniziale del nome)
+# invece di restare vuote — un pulsante-filtro per una specie futura compare comunque senza
+# bisogno di scrivere prima una sagoma dedicata per lei.
 const GENERIC_MARKER_TEXT_COLOR := Color.WHITE
 # Frazione del riquadro (size) effettivamente occupata dal contenuto disegnato — un margine
 # uniforme così la sagoma/coda/orecchie non toccano mai il bordo del pulsante.
@@ -22,10 +23,11 @@ var _has_dedicated_shape: bool = false
 var _generic_marker_letter: String = ""
 
 
-# species_name: "rabbit"/"deer" ottengono la sagoma dedicata (stessi parametri di forma del
-# renderer sul campo, vedi AnimalGroupRenderer); qualunque altro valore ricade sul marker
-# generico sopra. color è sempre scelto dal chiamante (MacroCellInfoPanel) — mai hardcoded qui,
-# stesso principio di AnimalGroupRenderer.configure().
+# species_name: "rabbit"/"deer"/"boar"/"tarpan"/"aurochs"/"wild_donkey"/"mouflon"/"bezoar"
+# ottengono la sagoma dedicata (stessi parametri di forma del renderer sul campo, vedi
+# AnimalGroupRenderer); qualunque altro valore ricade sul marker generico sopra. color è sempre
+# scelto dal chiamante (MacroCellInfoPanel) — mai hardcoded qui, stesso principio di
+# AnimalGroupRenderer.configure().
 func configure(species_name: String, color: Color) -> void:
 	_color = color
 	_has_dedicated_shape = true
@@ -39,6 +41,36 @@ func configure(species_name: String, color: Color) -> void:
 			_geometry = AnimalGroupRenderer.get_deer_silhouette_geometry(
 				AnimalGroupRenderer.DEER_BODY_LENGTH, AnimalGroupRenderer.DEER_BODY_WIDTH,
 				AnimalGroupRenderer.DEER_EAR_LENGTH, AnimalGroupRenderer.DEER_EAR_WIDTH
+			)
+		"boar":
+			_geometry = AnimalGroupRenderer.get_boar_silhouette_geometry(
+				AnimalGroupRenderer.BOAR_BODY_LENGTH, AnimalGroupRenderer.BOAR_BODY_WIDTH,
+				AnimalGroupRenderer.BOAR_EAR_LENGTH, AnimalGroupRenderer.BOAR_EAR_WIDTH
+			)
+		"tarpan":
+			_geometry = AnimalGroupRenderer.get_tarpan_silhouette_geometry(
+				AnimalGroupRenderer.TARPAN_BODY_LENGTH, AnimalGroupRenderer.TARPAN_BODY_WIDTH,
+				AnimalGroupRenderer.TARPAN_EAR_LENGTH, AnimalGroupRenderer.TARPAN_EAR_WIDTH
+			)
+		"aurochs":
+			_geometry = AnimalGroupRenderer.get_aurochs_silhouette_geometry(
+				AnimalGroupRenderer.AUROCHS_BODY_LENGTH, AnimalGroupRenderer.AUROCHS_BODY_WIDTH,
+				AnimalGroupRenderer.AUROCHS_EAR_LENGTH, AnimalGroupRenderer.AUROCHS_EAR_WIDTH
+			)
+		"wild_donkey":
+			_geometry = AnimalGroupRenderer.get_wild_donkey_silhouette_geometry(
+				AnimalGroupRenderer.WILD_DONKEY_BODY_LENGTH, AnimalGroupRenderer.WILD_DONKEY_BODY_WIDTH,
+				AnimalGroupRenderer.WILD_DONKEY_EAR_LENGTH, AnimalGroupRenderer.WILD_DONKEY_EAR_WIDTH
+			)
+		"mouflon":
+			_geometry = AnimalGroupRenderer.get_mouflon_silhouette_geometry(
+				AnimalGroupRenderer.MOUFLON_BODY_LENGTH, AnimalGroupRenderer.MOUFLON_BODY_WIDTH,
+				AnimalGroupRenderer.MOUFLON_EAR_LENGTH, AnimalGroupRenderer.MOUFLON_EAR_WIDTH
+			)
+		"bezoar":
+			_geometry = AnimalGroupRenderer.get_bezoar_silhouette_geometry(
+				AnimalGroupRenderer.BEZOAR_BODY_LENGTH, AnimalGroupRenderer.BEZOAR_BODY_WIDTH,
+				AnimalGroupRenderer.BEZOAR_EAR_LENGTH, AnimalGroupRenderer.BEZOAR_EAR_WIDTH
 			)
 		_:
 			_has_dedicated_shape = false
@@ -61,7 +93,8 @@ func _draw_silhouette() -> void:
 	var body_points: PackedVector2Array = _geometry["body_points"]
 	var ears: Array = _geometry["ears"]
 	var tail_center: Vector2 = _geometry["tail_center"]
-	var tail_radius: float = _geometry["tail_radius"]
+	var tail_radius_x: float = _geometry["tail_radius_x"]
+	var tail_radius_y: float = _geometry["tail_radius_y"]
 
 	var min_point := Vector2(INF, INF)
 	var max_point := Vector2(-INF, -INF)
@@ -70,8 +103,8 @@ func _draw_silhouette() -> void:
 		max_point = Vector2(max(max_point.x, p.x), max(max_point.y, p.y))
 	# Coda ed estremità orecchie possono sporgere oltre il corpo: incluse nel bounding box così
 	# non vengono tagliate ai bordi dell'icona.
-	var tail_min := tail_center - Vector2(tail_radius, tail_radius)
-	var tail_max := tail_center + Vector2(tail_radius, tail_radius)
+	var tail_min := tail_center - Vector2(tail_radius_x, tail_radius_y)
+	var tail_max := tail_center + Vector2(tail_radius_x, tail_radius_y)
 	min_point = Vector2(min(min_point.x, tail_min.x), min(min_point.y, tail_min.y))
 	max_point = Vector2(max(max_point.x, tail_max.x), max(max_point.y, tail_max.y))
 	for ear in ears:
@@ -101,7 +134,15 @@ func _draw_silhouette() -> void:
 		])
 		draw_colored_polygon(triangle, _color)
 
-	draw_circle(to_screen.call(tail_center), tail_radius * scale_factor, _color)
+	# Ellisse (non un cerchio, vedi tail_radius_x/tail_radius_y sopra): draw_circle non supporta
+	# raggi non uniformi, quindi la disegnamo come poligono campionato — stessa logica di
+	# AnimalGroupRenderer._build_mesh_from_geometry, qui in coordinate schermo.
+	var screen_tail := PackedVector2Array()
+	for i in range(AnimalGroupRenderer.TAIL_SEGMENTS):
+		var angle: float = (float(i) / float(AnimalGroupRenderer.TAIL_SEGMENTS)) * TAU
+		var p := tail_center + Vector2(cos(angle) * tail_radius_x, sin(angle) * tail_radius_y)
+		screen_tail.append(to_screen.call(p))
+	draw_colored_polygon(screen_tail, _color)
 
 
 func _draw_generic_marker() -> void:

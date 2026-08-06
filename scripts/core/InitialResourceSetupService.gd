@@ -10,22 +10,27 @@ const MAX_GRASS_MICROCELLS: int = 200
 const MIN_SHRUB_MICROCELLS: int = 50
 const MAX_SHRUB_MICROCELLS: int = 200
 const RIVER_SPACE: int = 3000
-const MIN_FISH_CAPACITY_RATIO: float = 0.02
-const MAX_FISH_CAPACITY_RATIO: float = 0.06
+# Range condiviso da ogni risorsa "fauna" (oggi FISH su acqua, BIRDS su terra — vedi
+# populate_fish/populate_birds sotto): una cella che supera il tiro di presence_chance parte
+# comunque popolata solo a questa frazione della propria capacità, mai piena.
+const MIN_FAUNA_SEED_CAPACITY_RATIO: float = 0.02
+const MAX_FAUNA_SEED_CAPACITY_RATIO: float = 0.06
 
 
 func populate_resources(world: World) -> void:
 	reserve_river_space(world)
 	populate_fish(world)
+	populate_birds(world)
 	populate_stone(world)
 	populate_trees(world)
 	populate_grass(world)
 	populate_shrub(world)
 
 
-# Come stone/trees/grass/shrub sotto, copre l'intera mappa — qui però il tetto è la capacità
-# fisica d'acqua della cella (ResourceCalculator.get_water_capacity_space), non un tiro di
-# get_presence_chance: ogni cella d'acqua idonea riceve sempre FISH, solo la quantità varia.
+# Come stone/trees/grass/shrub sotto: tira get_water_presence_chance (asse WaterType, vedi
+# ResourceCalculator) e, se supera il tiro, assegna una quantità. Il tetto resta comunque la
+# capacità fisica d'acqua della cella (ResourceCalculator.get_water_capacity_space) — il tiro di
+# presenza decide SE la cella riceve FISH, la capacità decide QUANTO al massimo.
 func populate_fish(world: World) -> void:
 	for cell in world.cells:
 		var state := world.get_cell_state_at(cell.x, cell.y)
@@ -36,17 +41,56 @@ func populate_fish(world: World) -> void:
 		if capacity <= 0:
 			continue
 
+		var chance := ResourceCalculator.get_water_presence_chance(GameTypes.WorldObjectType.FISH, cell.water_type)
+		if randf() > chance:
+			continue
+
 		var max_density := ResourceCalculator.get_water_max_density(GameTypes.WorldObjectType.FISH, cell.water_type)
 		if max_density <= 0.0:
 			continue
 
-		var dedicated_space: int = int(round(capacity * randf_range(MIN_FISH_CAPACITY_RATIO, MAX_FISH_CAPACITY_RATIO)))
+		var dedicated_space: int = int(round(capacity * randf_range(MIN_FAUNA_SEED_CAPACITY_RATIO, MAX_FAUNA_SEED_CAPACITY_RATIO)))
 		if dedicated_space <= 0:
 			continue
 		var quantity: int = int(round(max_density * dedicated_space))
 
 		state.set_water_space(GameTypes.WorldObjectType.FISH, dedicated_space)
 		state.set_resource_quantity(GameTypes.WorldObjectType.FISH, quantity)
+
+
+# Gemella di populate_fish sopra, sul budget terrestrial_dedicated_space: gate su capacità di
+# terra libera dal fiume (ResourceCalculator.get_land_capacity_space) E su un tiro di
+# get_presence_chance (asse Terrain/Biome/Coast, la stessa già usata da get_max_density — nessuna
+# funzione "water" gemella necessaria qui, a differenza di FISH).
+func populate_birds(world: World) -> void:
+	for cell in world.cells:
+		var state := world.get_cell_state_at(cell.x, cell.y)
+		if state == null:
+			continue
+
+		var capacity := ResourceCalculator.get_land_capacity_space(cell, state)
+		if capacity <= 0:
+			continue
+
+		var chance := ResourceCalculator.get_presence_chance(
+			GameTypes.WorldObjectType.BIRDS, cell.terrain_base, cell.biome, cell.coast_type
+		)
+		if randf() > chance:
+			continue
+
+		var max_density := ResourceCalculator.get_max_density(
+			GameTypes.WorldObjectType.BIRDS, cell.terrain_base, cell.biome, cell.coast_type
+		)
+		if max_density <= 0.0:
+			continue
+
+		var dedicated_space: int = int(round(capacity * randf_range(MIN_FAUNA_SEED_CAPACITY_RATIO, MAX_FAUNA_SEED_CAPACITY_RATIO)))
+		if dedicated_space <= 0:
+			continue
+		var quantity: int = int(round(max_density * dedicated_space))
+
+		state.set_terrestrial_space(GameTypes.WorldObjectType.BIRDS, dedicated_space)
+		state.set_resource_quantity(GameTypes.WorldObjectType.BIRDS, quantity)
 
 
 func reserve_river_space(world: World) -> void:

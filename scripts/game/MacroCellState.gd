@@ -29,6 +29,12 @@ var river_space: int = 0
 # terrestre, esiste solo entro la capacità restituita da
 # ResourceCalculator.get_water_capacity_space() (TOTAL_SPACE per SEA/LAKE, river_space per RIVER).
 var water_dedicated_space: Dictionary = {}
+# Budget separato per fauna terrestre "passiva" (oggi solo BIRDS), stesso principio di
+# water_dedicated_space sopra: mai sommato in get_total_dedicated_space()/get_empty_space(),
+# esiste solo entro la capacità restituita da ResourceCalculator.get_land_capacity_space()
+# (TOTAL_SPACE - river_space per terrain non-WATER) — non compete con TREE/GRASS/SHRUB/ROCK per
+# lo stesso spazio fisico, esattamente come FISH non compete con la vegetazione.
+var terrestrial_dedicated_space: Dictionary = {}
 var active_growth_bonuses: Dictionary = {} # NaturalEventType -> {multiplier: float, trigger_absolute_day: int, duration_years: int}
 # Surplus di crescita non piazzato dall'encroachment a fine primavera, in attesa che il
 # checkpoint di inizio primavera dell'anno successivo lo trasformi in trasferimenti verso le
@@ -333,6 +339,23 @@ func get_total_water_dedicated_space() -> int:
 # passata dal chiamante invece di essere ricavata qui.
 func get_empty_water_space(capacity: int) -> int:
 	return capacity - get_total_water_dedicated_space()
+
+func get_terrestrial_space(object_type: GameTypes.WorldObjectType) -> int:
+	return int(terrestrial_dedicated_space.get(object_type, 0))
+
+func set_terrestrial_space(object_type: GameTypes.WorldObjectType, amount: int) -> void:
+	terrestrial_dedicated_space[object_type] = max(amount, 0)
+
+func get_total_terrestrial_dedicated_space() -> int:
+	var total := 0
+	for amount in terrestrial_dedicated_space.values():
+		total += amount
+	return total
+
+# capacity è la capacità fisica della cella (ResourceCalculator.get_land_capacity_space), non
+# una costante fissa: stesso principio di get_empty_water_space sopra.
+func get_empty_terrestrial_space(capacity: int) -> int:
+	return capacity - get_total_terrestrial_dedicated_space()
 
 func get_total_dedicated_space() -> int:
 	var total := river_space

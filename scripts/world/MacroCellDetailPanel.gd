@@ -14,8 +14,8 @@ const TAB_SUSSISTENZA := 4
 @onready var title_label: Label = $MarginContainer/VBoxContainer/TitleLabel
 @onready var coords_label: Label = $MarginContainer/VBoxContainer/CoordsLabel
 @onready var tab_container: TabContainer = $MarginContainer/VBoxContainer/TabContainer
-@onready var geography_title_label: Label = $MarginContainer/VBoxContainer/TabContainer/GeografiaTab/SectionTitleLabel
-@onready var geography_info: CellGeographyInfo = $MarginContainer/VBoxContainer/TabContainer/GeografiaTab/CellGeographyInfo
+@onready var geography_title_label: Label = $MarginContainer/VBoxContainer/TabContainer/GeografiaTab/GeografiaContent/SectionTitleLabel
+@onready var geography_info: CellGeographyInfo = $MarginContainer/VBoxContainer/TabContainer/GeografiaTab/GeografiaContent/CellGeographyInfo
 @onready var vegetation_title_label: Label = $MarginContainer/VBoxContainer/TabContainer/VegetazioneTab/VegetazioneContent/SectionTitleLabel
 @onready var stone_number_label: Label = $MarginContainer/VBoxContainer/TabContainer/VegetazioneTab/VegetazioneContent/StoneNumberLabel
 @onready var grass_number_label: Label = $MarginContainer/VBoxContainer/TabContainer/VegetazioneTab/VegetazioneContent/GrassNumberLabel
@@ -39,22 +39,27 @@ const TAB_SUSSISTENZA := 4
 @onready var empty_space_label: Label = $MarginContainer/VBoxContainer/TabContainer/VegetazioneTab/VegetazioneContent/EmptySpaceLabel
 @onready var fauna_1_title_label: Label = $MarginContainer/VBoxContainer/TabContainer/FaunaTab1/FaunaContent/SectionTitleLabel
 @onready var fish_number_label: Label = $MarginContainer/VBoxContainer/TabContainer/FaunaTab1/FaunaContent/FishNumberLabel
-@onready var fauna_separator_label: Label = $MarginContainer/VBoxContainer/TabContainer/FaunaTab1/FaunaContent/FaunaSeparatorLabel
 @onready var water_empty_space_label: Label = $MarginContainer/VBoxContainer/TabContainer/FaunaTab1/FaunaContent/WaterEmptySpaceLabel
+@onready var birds_separator_label: Label = $MarginContainer/VBoxContainer/TabContainer/FaunaTab1/FaunaContent/BirdsSeparatorLabel
+@onready var birds_number_label: Label = $MarginContainer/VBoxContainer/TabContainer/FaunaTab1/FaunaContent/BirdsNumberLabel
+@onready var land_empty_space_label: Label = $MarginContainer/VBoxContainer/TabContainer/FaunaTab1/FaunaContent/LandEmptySpaceLabel
 @onready var fauna_2_title_label: Label = $MarginContainer/VBoxContainer/TabContainer/FaunaTab2/FaunaContent/SectionTitleLabel
 @onready var animal_population_container: VBoxContainer = $MarginContainer/VBoxContainer/TabContainer/FaunaTab2/FaunaContent/AnimalPopulationContainer
-@onready var subsistence_title_label: Label = $MarginContainer/VBoxContainer/TabContainer/SussistenzaTab/SectionTitleLabel
-@onready var forage_units_label: Label = $MarginContainer/VBoxContainer/TabContainer/SussistenzaTab/ForageUnitsLabel
-@onready var forage_calories_label: Label = $MarginContainer/VBoxContainer/TabContainer/SussistenzaTab/ForageCaloriesLabel
-@onready var berry_separator_label: Label = $MarginContainer/VBoxContainer/TabContainer/SussistenzaTab/BerrySeparatorLabel
-@onready var berry_units_label: Label = $MarginContainer/VBoxContainer/TabContainer/SussistenzaTab/BerryUnitsLabel
-@onready var berry_calories_label: Label = $MarginContainer/VBoxContainer/TabContainer/SussistenzaTab/BerryCaloriesLabel
-@onready var acorn_separator_label: Label = $MarginContainer/VBoxContainer/TabContainer/SussistenzaTab/AcornSeparatorLabel
-@onready var acorn_units_label: Label = $MarginContainer/VBoxContainer/TabContainer/SussistenzaTab/AcornUnitsLabel
-@onready var acorn_calories_label: Label = $MarginContainer/VBoxContainer/TabContainer/SussistenzaTab/AcornCaloriesLabel
-@onready var fruit_separator_label: Label = $MarginContainer/VBoxContainer/TabContainer/SussistenzaTab/FruitSeparatorLabel
-@onready var fruit_units_label: Label = $MarginContainer/VBoxContainer/TabContainer/SussistenzaTab/FruitUnitsLabel
-@onready var fruit_calories_label: Label = $MarginContainer/VBoxContainer/TabContainer/SussistenzaTab/FruitCaloriesLabel
+@onready var subsistence_title_label: Label = $MarginContainer/VBoxContainer/TabContainer/SussistenzaTab/SussistenzaContent/SectionTitleLabel
+@onready var forage_units_label: Label = $MarginContainer/VBoxContainer/TabContainer/SussistenzaTab/SussistenzaContent/ForageUnitsLabel
+@onready var forage_calories_label: Label = $MarginContainer/VBoxContainer/TabContainer/SussistenzaTab/SussistenzaContent/ForageCaloriesLabel
+@onready var berry_separator_label: Label = $MarginContainer/VBoxContainer/TabContainer/SussistenzaTab/SussistenzaContent/BerrySeparatorLabel
+@onready var berry_units_label: Label = $MarginContainer/VBoxContainer/TabContainer/SussistenzaTab/SussistenzaContent/BerryUnitsLabel
+@onready var berry_calories_label: Label = $MarginContainer/VBoxContainer/TabContainer/SussistenzaTab/SussistenzaContent/BerryCaloriesLabel
+@onready var acorn_separator_label: Label = $MarginContainer/VBoxContainer/TabContainer/SussistenzaTab/SussistenzaContent/AcornSeparatorLabel
+@onready var acorn_units_label: Label = $MarginContainer/VBoxContainer/TabContainer/SussistenzaTab/SussistenzaContent/AcornUnitsLabel
+@onready var acorn_calories_label: Label = $MarginContainer/VBoxContainer/TabContainer/SussistenzaTab/SussistenzaContent/AcornCaloriesLabel
+@onready var fruit_separator_label: Label = $MarginContainer/VBoxContainer/TabContainer/SussistenzaTab/SussistenzaContent/FruitSeparatorLabel
+@onready var fruit_units_label: Label = $MarginContainer/VBoxContainer/TabContainer/SussistenzaTab/SussistenzaContent/FruitUnitsLabel
+@onready var fruit_calories_label: Label = $MarginContainer/VBoxContainer/TabContainer/SussistenzaTab/SussistenzaContent/FruitCaloriesLabel
+@onready var eggs_separator_label: Label = $MarginContainer/VBoxContainer/TabContainer/SussistenzaTab/SussistenzaContent/EggsSeparatorLabel
+@onready var eggs_units_label: Label = $MarginContainer/VBoxContainer/TabContainer/SussistenzaTab/SussistenzaContent/EggsUnitsLabel
+@onready var eggs_calories_label: Label = $MarginContainer/VBoxContainer/TabContainer/SussistenzaTab/SussistenzaContent/EggsCaloriesLabel
 @onready var actions_container: VBoxContainer = $MarginContainer/VBoxContainer/ActionsContainer
 
 
@@ -125,14 +130,22 @@ func show_cell(cell: MacroCellData, state: MacroCellState, current_season: GameT
 		var fish_space := state.get_water_space(GameTypes.WorldObjectType.FISH)
 		var water_capacity := ResourceCalculator.get_water_capacity_space(cell, state)
 		fish_number_label.text = "Fish: " + NumberFormatter.format_int(fish_quantity) + " (occupied cells: " + NumberFormatter.format_int(fish_space) + ")"
-		fauna_separator_label.text = " - - - - - - - - - -"
 		water_empty_space_label.text = "Water empty space: " + NumberFormatter.format_int(state.get_empty_water_space(water_capacity))
+
+		var birds_quantity := state.get_resource_quantity(GameTypes.WorldObjectType.BIRDS)
+		var birds_space := state.get_terrestrial_space(GameTypes.WorldObjectType.BIRDS)
+		var land_capacity := ResourceCalculator.get_land_capacity_space(cell, state)
+		birds_separator_label.text = " - - - - - - - - - -"
+		birds_number_label.text = "Birds: " + NumberFormatter.format_int(birds_quantity) + " (occupied cells: " + NumberFormatter.format_int(birds_space) + ")"
+		land_empty_space_label.text = "Habitat empty space: " + NumberFormatter.format_int(state.get_empty_terrestrial_space(land_capacity))
+
 		_update_animal_population_rows(world, Vector2i(cell.x, cell.y))
 
 		_update_forage_calories_label(cell, state, current_season)
 		_update_berry_stock_label(state)
 		_update_acorn_stock_label(state)
 		_update_fruit_stock_label(state)
+		_update_eggs_stock_label(state)
 	else:
 		stone_number_label.text = "Stone: -"
 		grass_number_label.text = "Grass: -"
@@ -149,8 +162,12 @@ func show_cell(cell: MacroCellData, state: MacroCellState, current_season: GameT
 		acorn_calories_label.visible = false
 		fruit_units_label.visible = false
 		fruit_calories_label.visible = false
+		eggs_units_label.visible = false
+		eggs_calories_label.visible = false
 		fish_number_label.text = "Fish: -"
 		water_empty_space_label.text = "Water empty space: -"
+		birds_number_label.text = "Birds: -"
+		land_empty_space_label.text = "Habitat empty space: -"
 		_clear_animal_population_rows()
 
 
@@ -267,6 +284,19 @@ func _update_fruit_stock_label(state: MacroCellState) -> void:
 	fruit_calories_label.visible = true
 
 
+# Stesso pattern di _update_berry_stock_label sopra, per EGGS (fonte source_subtype vuoto,
+# derivata direttamente dall'aggregato BIRDS — stesso path stateless già usato da FORAGE/GRASS,
+# non un sottotipo come berry/acorn/fruit).
+func _update_eggs_stock_label(state: MacroCellState) -> void:
+	var eggs_units := CaloricCalculator.get_secondary_resource_stock_units(state, "eggs")
+	var eggs_calories := CaloricCalculator.get_secondary_resource_stock_calories(state, "eggs")
+	eggs_separator_label.text = " - - - - - - - - - -"
+	eggs_units_label.text = "  - eggs stock available: " + NumberFormatter.format_int(int(round(eggs_units)))
+	eggs_calories_label.text = "  - eggs calories available: " + NumberFormatter.format_int(int(round(eggs_calories)))
+	eggs_units_label.visible = true
+	eggs_calories_label.visible = true
+
+
 # Seconda riga, indentata, sotto la riga principale di SHRUB: nascosta se la cella non ha ancora
 # una subtype_composition tracciata (nessuno shrub presente). subtype_composition resta ancorata a
 # dedicated_space (unità di spazio, invariato): qui si converte solo il valore mostrato in
@@ -373,6 +403,10 @@ func clear() -> void:
 	acorn_calories_label.visible = false
 	fruit_units_label.visible = false
 	fruit_calories_label.visible = false
+	eggs_units_label.visible = false
+	eggs_calories_label.visible = false
 	fish_number_label.text = "Fish: -"
 	water_empty_space_label.text = "Water empty space: -"
+	birds_number_label.text = "Birds: -"
+	land_empty_space_label.text = "Habitat empty space: -"
 	_clear_animal_population_rows()

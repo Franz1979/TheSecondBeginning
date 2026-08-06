@@ -91,6 +91,21 @@ static func get_water_max_density(
 	return rules.base_density * _get_water_multiplier(rules, water_type)
 
 
+# Gemella di get_presence_chance sotto, sull'asse WaterType invece di Terrain/Biome/Coast —
+# stesso ragionamento di get_water_max_density sopra: fish_density.tres azzera
+# terrain_multiplier_*, quindi get_presence_chance(FISH, cell.terrain_base, ...) darebbe sempre
+# chance 0. Usata da InitialResourceSetupService.populate_fish.
+static func get_water_presence_chance(
+	resource_type: GameTypes.WorldObjectType,
+	water_type: GameTypes.WaterType
+) -> float:
+	var rules := _get_density_rules(resource_type)
+	if rules == null:
+		return 0.0
+	var chance := rules.presence_chance * _get_water_multiplier(rules, water_type)
+	return clamp(chance, 0.0, 1.0)
+
+
 static func get_presence_chance(
 	resource_type: GameTypes.WorldObjectType,
 	terrain: GameTypes.TerrainBase,
@@ -302,6 +317,83 @@ static func get_water_usable_capacity_space(
 
 	var ratio := _get_usable_capacity_ratio(rules, cell.water_type)
 	return int(round(float(physical_capacity) * ratio))
+
+
+# Capacità fisica di terra "libera dal fiume" di una macrocella, in microcelle — mirror
+# terrestre di get_water_capacity_space sopra: TOTAL_SPACE - river_space per terrain non-WATER
+# (stessa sottrazione già usata da MacroCellState.get_empty_space per la vegetazione), 0 su
+# WATER. Indipendente dal resource_type, come la sua controparte acqua.
+static func get_land_capacity_space(cell: MacroCellData, state: MacroCellState) -> int:
+	if cell.terrain_base == GameTypes.TerrainBase.WATER:
+		return 0
+	return MacroCellState.TOTAL_SPACE - state.get_river_space()
+
+
+static func _get_land_usable_capacity_ratio(rules: ResourceGrowthRules, terrain: GameTypes.TerrainBase) -> float:
+	match terrain:
+		GameTypes.TerrainBase.PLAIN:
+			return rules.usable_capacity_ratio_plain
+		GameTypes.TerrainBase.HILL:
+			return rules.usable_capacity_ratio_hill
+		GameTypes.TerrainBase.MOUNTAIN:
+			return rules.usable_capacity_ratio_mountain
+		_:
+			return 0.0
+
+
+# Capacità EFFETTIVA/sfruttabile lato terra: mirror di get_water_usable_capacity_space sopra,
+# sull'asse TerrainBase (ResourceGrowthRules.usable_capacity_ratio_plain/hill/mountain) invece
+# di WaterType. get_land_capacity_space resta invariata e continua a rappresentare la
+# disponibilità fisica reale; questa funzione le sta accanto per gli usi "interni" alla formula
+# di crescita (FaunaGrowthService, il surplus sotto, il lato destinazione della migrazione, il
+# fill_ratio della mortalità).
+static func get_land_usable_capacity_space(
+	resource_type: GameTypes.WorldObjectType,
+	cell: MacroCellData,
+	state: MacroCellState
+) -> int:
+	var physical_capacity := get_land_capacity_space(cell, state)
+	if physical_capacity <= 0:
+		return 0
+
+	var rules := _get_growth_rules(resource_type)
+	if rules == null:
+		return physical_capacity
+
+	var ratio := _get_land_usable_capacity_ratio(rules, cell.terrain_base)
+	return int(round(float(physical_capacity) * ratio))
+
+
+# Gemella di get_water_growth_surplus sopra, sull'asse Terrain/Biome/Coast invece che WaterType
+# (già l'asse usato da get_growth_rate/get_max_density — nessuna funzione "land" indipendente
+# per tasso di crescita/densità, a differenza di FISH): quanta della crescita desiderata di
+# resource_type non trova posto nella capacità terrestre SFRUTTABILE locale, usata da
+# FaunaMigrationService per alimentare la migrazione verso le celle terrestri vicine.
+static func get_land_growth_surplus(
+	resource_type: GameTypes.WorldObjectType,
+	cell: MacroCellData,
+	state: MacroCellState
+) -> float:
+	var current_quantity: int = state.get_resource_quantity(resource_type)
+	if current_quantity <= 0:
+		return 0.0
+
+	var growth_rate := get_growth_rate(resource_type, cell.terrain_base, cell.biome, cell.coast_type)
+	if growth_rate <= 0.0:
+		return 0.0
+
+	var max_density := get_max_density(resource_type, cell.terrain_base, cell.biome, cell.coast_type)
+	if max_density <= 0.0:
+		return 0.0
+
+	var capacity := get_land_usable_capacity_space(resource_type, cell, state)
+	var desired_growth_quantity: float = growth_rate * current_quantity
+	var empty_space: int = state.get_empty_terrestrial_space(capacity)
+	var local_capacity_quantity: float = float(empty_space) * max_density
+	var local_growth_quantity: float = min(desired_growth_quantity, local_capacity_quantity)
+	var surplus_quantity: float = desired_growth_quantity - local_growth_quantity
+
+	return max(surplus_quantity, 0.0)
 
 
 static func get_subtype_rules(resource_type: GameTypes.WorldObjectType) -> Array:

@@ -54,6 +54,22 @@ extends Resource
 # icona è disegnata a scala fissa 1.0 (AnimalGroupRenderer.set_population, non age-aware).
 @export var size_multiplier_by_age: Array[float] = [1.0, 1.0, 1.0]
 
+@export_group("Cluster Movement")
+# Movimento continuo dei centri-cluster invisibili (deriva + rimbalzo ai bordi della mappa, vedi
+# AnimalGroupRenderer._process) — DIVERSO dal movimento a balzi dei gruppi disegnati sopra (quello
+# usa hop_speed): move_speed/turn_rate governano solo il vagare del centro-cluster stesso, i
+# gruppi disegnati non si muovono mai a questa velocità, vengono solo debolmente attratti verso
+# il centro (vedi cluster_comfort_radius/cluster_attraction_strength sotto). Default = valori
+# storici di rabbit (erano hardcoded in MacroCellScene prima di questo refactor).
+@export var move_speed: float = 3.0 # microcelle/secondo
+@export var turn_rate: float = 1.5 # radianti/secondo massimi di deriva casuale della direzione
+# Guinzaglio elastico (AnimalGroupRenderer._apply_cluster_attraction): entro questo raggio
+# (microcelle) dal centro-cluster un gruppo non subisce alcuna trazione; oltre la soglia la sua
+# direzione viene gradualmente reindirizzata verso il centro, con intensità
+# cluster_attraction_strength.
+@export var cluster_comfort_radius: float = 5.0
+@export var cluster_attraction_strength: float = 1.5
+
 @export_group("Age Bands")
 # Master switch, analogo a SubtypeRules.track_age_bands: false (default) = nessuna delle
 # logiche sotto viene mai letta per questa specie (nessuna specie futura la eredita per

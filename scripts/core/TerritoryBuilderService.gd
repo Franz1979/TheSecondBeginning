@@ -83,9 +83,17 @@ func expand_by_one_cell(world: World, territory: Territory, species_name: String
 
 # BFS a partire dal baricentro di `territory` (Territory.get_centroid, arrotondato alla cella più
 # vicina — un punto puramente esplorativo, non necessariamente una cella occupata o valida),
-# stesso ordine di direzioni ed esclusione acqua di build_territory; le celle già in
-# territory.occupied_macrocells vengono attraversate come tappe di passaggio (per raggiungere il
-# fronte del territorio) ma non contano mai come candidate. Le celle occupate da un territorio
+# stessa esclusione acqua di build_territory, ma ORDINE DELLE DIREZIONI RIMESCOLATO A OGNI
+# CHIAMATA (vedi _shuffled_directions sotto) invece del DIRECTIONS fisso di build_territory —
+# usare qui lo stesso ordine N/S/O/E costante produceva un bias sistematico verso nord (prima
+# direzione della costante, quasi sempre libera a inizio partita): ogni scissione/espansione
+# finiva per piazzare la nuova cella a nord della precedente, incatenandosi in una lunga colonna
+# verticale invece di distribuirsi in tutte le direzioni (osservato empiricamente su rabbit,
+# territorio sempre a 1 cella quindi ogni crescita passa da qui). Randomizzazione pura (RNG
+# globale via Array.shuffle), non hash-based: questa chiamata non ha bisogno di riproducibilità
+# deterministica tra run con lo stesso seed, a differenza di ResourcePositionService. Le celle già
+# in territory.occupied_macrocells vengono attraversate come tappe di passaggio (per raggiungere
+# il fronte del territorio) ma non contano mai come candidate. Le celle occupate da un territorio
 # RIVALE della STESSA specie (species_name, vedi _collect_species_occupied_cells sotto) sono
 # invece trattate come l'acqua: né candidate né tappe di passaggio — la BFS non attraversa mai il
 # territorio di un gruppo rivale della stessa specie per raggiungere una cella libera oltre di esso
@@ -107,7 +115,7 @@ func find_nearest_free_cell(world: World, territory: Territory, species_name: St
 	while head < queue.size():
 		var current: Vector2i = queue[head]
 		head += 1
-		for direction in DIRECTIONS:
+		for direction in _shuffled_directions():
 			var neighbor: Vector2i = current + direction
 			if visited.has(neighbor):
 				continue
@@ -128,6 +136,20 @@ func find_nearest_free_cell(world: World, territory: Territory, species_name: St
 			return neighbor
 
 	return null
+
+
+# Copia di DIRECTIONS mescolata con l'RNG globale (Array.shuffle, non hash-based: questa ricerca
+# non richiede riproducibilità deterministica tra run con lo stesso seed, a differenza di
+# ResourcePositionService). Richiamata ad ogni nodo processato dal while loop di
+# find_nearest_free_cell sopra, non una volta sola per chiamata — un solo shuffle per l'intera
+# BFS lascerebbe comunque un ordine di preferenza fisso per tutta la ricerca di UNA singola
+# espansione/scissione (rilevante per i territori multi-cella, dove il fronte libero può essere a
+# più di un livello di distanza dal baricentro); rimescolare a ogni nodo elimina qualunque
+# direzione preferenziale residua, non solo tra una chiamata e l'altra.
+func _shuffled_directions() -> Array[Vector2i]:
+	var directions := DIRECTIONS.duplicate()
+	directions.shuffle()
+	return directions
 
 
 # Raccoglie in un Dictionary[Vector2i, bool] tutte le occupied_macrocells dei gruppi ESISTENTI

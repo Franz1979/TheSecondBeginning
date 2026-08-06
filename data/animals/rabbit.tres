@@ -9,6 +9,7 @@ daily_caloric_requirement = 2.0
 diet_compatibility = {
 "acorn": 0.0,
 "berry": 0.5,
+"eggs": 0.0,
 "forage": 1.0,
 "fruit": 0.15
 }

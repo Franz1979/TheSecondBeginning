@@ -1,0 +1,46 @@
+[gd_resource type="Resource" script_class="AnimalRules" format=3 uid="uid://drx8n3ktqm5fw"]
+
+[ext_resource type="Script" uid="uid://b5f2blfpeff0h" path="res://scripts/core/AnimalRules.gd" id="1_mouflon"]
+
+[resource]
+script = ExtResource("1_mouflon")
+species_name = "mouflon"
+daily_caloric_requirement = 16.0
+diet_compatibility = {
+"acorn": 0.05,
+"berry": 0.2,
+"eggs": 0.0,
+"forage": 1.0,
+"fruit": 0.1
+}
+is_browsing_species = true
+max_individuals_per_cluster = 18
+hop_duration_min = 0.3
+hop_duration_max = 0.6
+hop_pause_max = 0.25
+movement_phase_duration_min = 3.0
+movement_phase_duration_max = 7.0
+rest_phase_duration_min = 4.0
+rest_phase_duration_max = 9.0
+hop_speed = 5.0
+size_multiplier_by_age = Array[float]([0.55, 1.0, 1.0])
+move_speed = 3.2
+turn_rate = 1.6
+cluster_comfort_radius = 4.0
+cluster_attraction_strength = 1.8
+track_age_bands = true
+old_duration_years = 3
+mortality_share_by_age = Array[float]([0.4, 0.2, 0.4])
+caloric_multiplier_by_age = Array[float]([0.5, 1.0, 1.0])
+base_birth_rate = 0.4
+initial_age_ratio = {
+0: 0.0,
+1: 1.0,
+2: 0.0
+}
+dispersal_share_by_age = Array[float]([0.5, 0.35, 0.15])
+post_split_recovery_years = 6
+max_days_without_food = 20
+min_territory_cells = 3
+max_territory_cells = 15
+max_density_per_cell = 10

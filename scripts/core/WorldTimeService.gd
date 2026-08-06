@@ -89,8 +89,8 @@ func _run_seasonal_checkpoints(world: World, game_data: GameData, year_rolled_ov
 	for season in [GameTypes.Season.WINTER, GameTypes.Season.SPRING, GameTypes.Season.SUMMER, GameTypes.Season.AUTUMN]:
 		if day == SeasonCalculator.get_season_day_range(season).x:
 			_run_timed(
-				"secondary_resource_stock_debug_checkpoint",
-				func(): _run_secondary_resource_stock_debug_checkpoint(world, SeasonCalculator.get_previous_season(season), season)
+				"secondary_resource_stock_checkpoint",
+				func(): _run_secondary_resource_stock_checkpoint(world, SeasonCalculator.get_previous_season(season), season)
 			)
 			_run_timed("natural_events_checkpoint", func(): _run_natural_events_checkpoint(world, game_data, season))
 			# Step 8 del refactoring fauna: territorio ed espansione/contrazione girano nello
@@ -124,7 +124,8 @@ func _run_timed(label: String, action: Callable) -> void:
 	var start_usec := Time.get_ticks_usec()
 	action.call()
 	if DebugLogging.ENABLED:
-		print("[TIMING] %s: %.2f ms" % [label, (Time.get_ticks_usec() - start_usec) / 1000.0])
+		pass
+		#print("[TIMING] %s: %.2f ms" % [label, (Time.get_ticks_usec() - start_usec) / 1000.0])
 
 
 func _run_animal_lifecycle_checkpoint(world: World, season: GameTypes.Season) -> void:
@@ -160,13 +161,15 @@ func _run_growth_checkpoint(world: World, game_data: GameData) -> void:
 	var browsing_start_usec := Time.get_ticks_usec()
 	var browsing_mitigation := BrowsingMitigationService.new().compute_browsing_mitigation(world)
 	if DebugLogging.ENABLED:
-		print("[TIMING]   compute_browsing_mitigation: %.2f ms" % [(Time.get_ticks_usec() - browsing_start_usec) / 1000.0])
+		pass
+		#print("[TIMING]   compute_browsing_mitigation: %.2f ms" % [(Time.get_ticks_usec() - browsing_start_usec) / 1000.0])
 
 	var encroach_start_usec := Time.get_ticks_usec()
 	var encroachment_service := ResourceEncroachmentService.new()
 	var leftover_surplus := encroachment_service.encroach_resources(world, browsing_mitigation)
 	if DebugLogging.ENABLED:
-		print("[TIMING]   encroach_resources: %.2f ms" % [(Time.get_ticks_usec() - encroach_start_usec) / 1000.0])
+		pass
+		#print("[TIMING]   encroach_resources: %.2f ms" % [(Time.get_ticks_usec() - encroach_start_usec) / 1000.0])
 	_store_pending_migration_surplus(world, leftover_surplus)
 
 	# FISH cresce sullo stesso checkpoint di fine primavera della vegetazione, ma su un budget
@@ -225,21 +228,21 @@ func _run_animal_territory_shuffle_checkpoint(world: World, season: GameTypes.Se
 	PopulationTerritoryShuffleService.new().shuffle_distribution(world, season)
 
 
-# TEMPORANEO — nessun vero registro di fonti a stock persistente esiste ancora, solo questo
-# elenco hardcoded delle fonti oggi implementate con la rispettiva risorsa primaria. Non gira
-# in partita normale: richiede DebugLogging.ENABLED.
-const _DEBUG_SECONDARY_SOURCES := [
+# Nessun vero registro di fonti a stock persistente esiste ancora (nessuna scansione automatica
+# dei .tres in data/caloric_sources/) — solo questo elenco hardcoded delle fonti oggi
+# implementate con la rispettiva risorsa primaria. Aggiungere una nuova fonte a stock persistente
+# richiede una riga qui, a mano.
+const _SECONDARY_SOURCES := [
 	{"resource_name": "berry", "primary_resource_type": GameTypes.WorldObjectType.SHRUB},
 	{"resource_name": "acorn", "primary_resource_type": GameTypes.WorldObjectType.TREE},
 	{"resource_name": "fruit", "primary_resource_type": GameTypes.WorldObjectType.TREE},
+	{"resource_name": "eggs", "primary_resource_type": GameTypes.WorldObjectType.BIRDS},
 ]
 
-func _run_secondary_resource_stock_debug_checkpoint(
+func _run_secondary_resource_stock_checkpoint(
 	world: World, previous_season: GameTypes.Season, new_season: GameTypes.Season
 ) -> void:
-	if not DebugLogging.ENABLED:
-		return
-	for source in _DEBUG_SECONDARY_SOURCES:
+	for source in _SECONDARY_SOURCES:
 		var rules := CaloricCalculator.get_caloric_source_rules(source["resource_name"])
 		if rules == null:
 			continue

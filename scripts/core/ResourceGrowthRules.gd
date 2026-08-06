@@ -59,6 +59,16 @@ extends Resource
 @export var usable_capacity_ratio_lake: float = 1.0
 @export var usable_capacity_ratio_river: float = 1.0
 
+@export_group("Land Usable Capacity")
+# Mirror terrestre del gruppo "Water Usable Capacity" sopra, ma sull'asse TerrainBase invece di
+# WaterType — usato da ResourceCalculator.get_land_usable_capacity_space (fauna terrestre
+# "passiva", oggi solo BIRDS). A differenza di FISH, BIRDS non ha bisogno di un asse
+# indipendente: vive solo dove terrain_base != WATER, quindi Terrain/Biome/Coast (già usato da
+# get_growth_rate/get_max_density) è già l'asse giusto.
+@export var usable_capacity_ratio_plain: float = 1.0
+@export var usable_capacity_ratio_hill: float = 1.0
+@export var usable_capacity_ratio_mountain: float = 1.0
+
 @export_group("Subtypes")
 # Array[SubtypeRules]. Vuoto = nessun sottotipo tracciato (comportamento invariato). Popolato
 # oggi solo per SHRUB. Non tipizzato a livello di @export per evitare la sintassi più fragile

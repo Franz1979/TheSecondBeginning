@@ -52,9 +52,128 @@ const DEER_EAR_ANGLE_FROM_HEADING: float = 60.0 * PI / 180.0
 const DEER_TAIL_RADIUS: float = 0.6
 const DEER_TAIL_ANCHOR_RATIO: float = 0.92
 
+# --- Sagoma BOAR (build_boar_mesh) ---
+# Rapporto INVERTITO rispetto al coniglio: il cinghiale ha testa/spalle massicce che si
+# assottigliano verso il posteriore (front_width > rear_width), non un corpo a goccia
+# rear-heavy come rabbit — legge come un animale tozzo e squadrato davanti.
+const BOAR_BODY_FRONT_WIDTH_RATIO: float = 1.3
+const BOAR_BODY_REAR_WIDTH_RATIO: float = 0.7
+# Orecchie piccole, ancorate vicino al muso come il coniglio ma molto più corte, angolate a
+# metà strada tra le orecchie protese di rabbit e quelle ritte di deer.
+const BOAR_EAR_ANCHOR_RATIO: float = 0.85
+const BOAR_EAR_ANCHOR_LATERAL_RATIO: float = 0.5
+const BOAR_EAR_ANGLE_FROM_HEADING: float = 45.0 * PI / 180.0
+# Coda corta (più del cervo): un moncherino, non un batuffolo né una coda lunga.
+const BOAR_TAIL_RADIUS: float = 0.45
+const BOAR_TAIL_ANCHOR_RATIO: float = 0.95
+
+# --- Sagoma TARPAN (build_tarpan_mesh) ---
+# Corpo quasi uniforme come deer, leggermente più affusolato verso il muso (collo/testa più
+# stretti del garrese) — front/rear ratio intermedio tra deer (0.8/1.05) e rabbit.
+const TARPAN_BODY_FRONT_WIDTH_RATIO: float = 0.75
+const TARPAN_BODY_REAR_WIDTH_RATIO: float = 1.0
+# Orecchie piccole e ritte, più verticali di quelle "all'erta" di deer (angolo maggiore
+# dall'asse di marcia) — lettura da equide, non da cervide.
+const TARPAN_EAR_ANCHOR_RATIO: float = 0.88
+const TARPAN_EAR_ANCHOR_LATERAL_RATIO: float = 0.55
+const TARPAN_EAR_ANGLE_FROM_HEADING: float = 70.0 * PI / 180.0
+# Coda ellittica allungata lungo l'asse del corpo (X) e stretta sull'asse trasversale (Y) —
+# _get_silhouette_geometry/_build_mesh_from_geometry ora supportano due raggi distinti invece di
+# un cerchio perfetto, usati per la prima volta qui.
+const TARPAN_TAIL_RADIUS_X: float = 1.3
+const TARPAN_TAIL_RADIUS_Y: float = 0.4
+const TARPAN_TAIL_ANCHOR_RATIO: float = 1.0
+
+# --- Sagoma WILD_DONKEY (build_wild_donkey_mesh) ---
+# Stesso schema generale di tarpan (equide, corpo quasi uniforme) ma front/rear più vicini
+# (0.8/1.0 contro 0.75/1.0 di tarpan) per leggersi "leggermente più tozzo" invece che filiforme.
+const WILD_DONKEY_BODY_FRONT_WIDTH_RATIO: float = 0.8
+const WILD_DONKEY_BODY_REAR_WIDTH_RATIO: float = 1.0
+# Tratto distintivo reale dell'asino: orecchie molto più lunghe in proporzione al corpo di
+# quelle di tarpan (vedi WILD_DONKEY_EAR_LENGTH sotto, ~0.35x body_length contro ~0.18x di
+# tarpan) — anchor/lateral simili a tarpan (stessa lettura "equide ritto"), angolo leggermente
+# meno verticale per lasciare più spazio visivo alla lunghezza extra senza leggersi come corna.
+const WILD_DONKEY_EAR_ANCHOR_RATIO: float = 0.85
+const WILD_DONKEY_EAR_ANCHOR_LATERAL_RATIO: float = 0.5
+const WILD_DONKEY_EAR_ANGLE_FROM_HEADING: float = 65.0 * PI / 180.0
+# Coda ellittica come tarpan (stesso meccanismo a due raggi indipendenti), scalata in giù per il
+# corpo più piccolo.
+const WILD_DONKEY_TAIL_RADIUS_X: float = 1.0
+const WILD_DONKEY_TAIL_RADIUS_Y: float = 0.35
+const WILD_DONKEY_TAIL_ANCHOR_RATIO: float = 1.0
+
+# --- Sagoma AUROCHS (build_aurochs_mesh) ---
+# A differenza di boar (front_width > rear_width, spalle larghe/anche strette a goccia), un
+# bovino deve leggersi con larghezza uniforme testa-coda: front/rear ratio UGUALI collassano
+# _get_silhouette_geometry's width_scale (normalmente un lerp tra i due) a un valore costante per
+# ogni angolo, quindi il corpo diventa un'ellisse simmetrica invece che una goccia asimmetrica —
+# il massimo di "squadrato/uniforme" ottenibile in questa pipeline senza una nuova primitiva.
+# Nota strutturale: i vertici a muso (angle=0) e coda (angle=PI) restano comunque punte
+# geometriche vere in QUALUNQUE combinazione di ratio (lì sin(angle)=0 a prescindere) — un corpo
+# davvero tronco a entrambe le estremità richiederebbe una formula diversa (es. capsula/
+# superellisse), non solo questi due parametri.
+const AUROCHS_BODY_FRONT_WIDTH_RATIO: float = 1.0
+const AUROCHS_BODY_REAR_WIDTH_RATIO: float = 1.0
+# Lo slot "orecchie" condiviso da tutte le specie viene qui riusato per le CORNA (nessun nuovo
+# elemento geometrico nella pipeline generica _get_silhouette_geometry/_build_mesh_from_geometry
+# — vedi commento in cima al file): ancorate vicino alla testa (anchor_ratio alto, come tarpan/
+# boar) ma con base molto più ravvicinata (lateral_ratio basso, come rabbit) perché le corna
+# nascono vicine sulla sommità del cranio, non ai lati della testa come vere orecchie. Angolo
+# intermedio tra rabbit (protese in avanti) e boar (aperte a ventaglio) per leggersi come corna
+# che puntano in avanti e leggermente verso l'esterno.
+const AUROCHS_EAR_ANCHOR_RATIO: float = 0.92
+const AUROCHS_EAR_ANCHOR_LATERAL_RATIO: float = 0.35
+const AUROCHS_EAR_ANGLE_FROM_HEADING: float = 35.0 * PI / 180.0
+# Coda corta come boar/deer (non il batuffolo di rabbit né l'ellisse allungata di tarpan).
+const AUROCHS_TAIL_RADIUS: float = 0.55
+const AUROCHS_TAIL_ANCHOR_RATIO: float = 0.95
+
+# --- Sagoma MOUFLON (build_mouflon_mesh) ---
+# Corpo compatto, taper mite (front/rear vicini, come deer, ma leggermente più massiccio in
+# spalla per una lettura da ovino robusto invece che filiforme).
+const MOUFLON_BODY_FRONT_WIDTH_RATIO: float = 0.9
+const MOUFLON_BODY_REAR_WIDTH_RATIO: float = 1.0
+# Come aurochs, lo slot "orecchie" è riusato per le CORNA (nessuna nuova geometria) — ma con
+# angolo MOLTO più ampio dall'asse di marcia (140° contro i 35° di aurochs): un triangolo dritto
+# non può disegnare la spirale reale del corno di muflone, ma angolandolo all'indietro e verso
+# l'esterno invece che in avanti si ottiene una lettura "corno che curva indietro" nettamente
+# distinguibile dalle corna dritte-in-avanti di aurochs, il compromesso più semplice compatibile
+# con la pipeline esistente. Lunghezza proporzionalmente grande rispetto al corpo (vedi
+# MOUFLON_EAR_LENGTH sotto, ~0.37x body_length) perché nel muflone reale le corna sono vistose
+# rispetto alla taglia corporea ridotta. Base ravvicinata (lateral_ratio basso) come aurochs,
+# stesso motivo: nascono vicine sulla sommità del cranio.
+const MOUFLON_EAR_ANCHOR_RATIO: float = 0.9
+const MOUFLON_EAR_ANCHOR_LATERAL_RATIO: float = 0.4
+const MOUFLON_EAR_ANGLE_FROM_HEADING: float = 140.0 * PI / 180.0
+# Coda corta e circolare come deer/boar (nessun bisogno dell'ellisse a due raggi di tarpan/
+# wild_donkey, riservata agli equidi).
+const MOUFLON_TAIL_RADIUS: float = 0.5
+const MOUFLON_TAIL_ANCHOR_RATIO: float = 0.95
+
+# --- Sagoma BEZOAR (build_bezoar_mesh) ---
+# Stesso archetipo corporeo di mouflon (compatto, taper mite front/rear) — le due specie
+# condividono la stessa nicchia ecologica (ungulati montani di taglia simile), quindi la stessa
+# forma di base ha senso; a differenziarle sono soprattutto dimensioni assolute (vedi
+# BEZOAR_BODY_LENGTH/WIDTH sotto) e corna.
+const BEZOAR_BODY_FRONT_WIDTH_RATIO: float = 0.9
+const BEZOAR_BODY_REAR_WIDTH_RATIO: float = 1.0
+# Corna riusando lo slot "orecchie" come già per aurochs/mouflon, ma qui l'angolo è vicino ai 90°
+# (quasi perpendicolare all'asse di marcia) invece che nettamente in avanti (aurochs, 35°) o
+# all'indietro (mouflon, 140°) — la lettura più vicina a "dritto/verticale" ottenibile in una
+# vista dall'alto puramente 2D, dove non esiste un vero asse verticale da inclinare: qui "dritte"
+# si traduce nell'assenza di uno sweep marcato in una direzione o nell'altra, a differenza dello
+# sweep pronunciato delle altre due specie. Più lunghe e più sottili di quelle di mouflon (vedi
+# BEZOAR_EAR_LENGTH/WIDTH sotto) per leggersi come lame a sciabola invece che corna ricurve tozze.
+const BEZOAR_EAR_ANCHOR_RATIO: float = 0.88
+const BEZOAR_EAR_ANCHOR_LATERAL_RATIO: float = 0.38
+const BEZOAR_EAR_ANGLE_FROM_HEADING: float = 95.0 * PI / 180.0
+# Coda corta e circolare come mouflon, leggermente più piccola (corpo leggermente più piccolo).
+const BEZOAR_TAIL_RADIUS: float = 0.45
+const BEZOAR_TAIL_ANCHOR_RATIO: float = 0.95
+
 # Dimensioni/colore di riferimento per specie, usati da MacroCellScene per costruire la mesh sul
 # campo (build_rabbit_mesh/build_deer_mesh) E da AnimalSilhouetteIcon per l'icona del filtro Fauna
-# (MacroCellInfoPanel) — un'unica fonte di verità, non due valori duplicati che potrebbero
+# (WorldInfoPanel) — un'unica fonte di verità, non due valori duplicati che potrebbero
 # disallinearsi se uno dei due punti venisse tarato di nuovo senza ricordarsi dell'altro.
 const RABBIT_BODY_LENGTH: float = 3.0
 const RABBIT_BODY_WIDTH: float = 1.3
@@ -67,6 +186,78 @@ const DEER_BODY_WIDTH: float = 2.2
 const DEER_EAR_LENGTH: float = 1.4
 const DEER_EAR_WIDTH: float = 0.6
 const DEER_COLOR: Color = Color(0.55, 0.4, 0.25, 0.95)
+
+const BOAR_BODY_LENGTH: float = 4.5
+const BOAR_BODY_WIDTH: float = 2.4
+const BOAR_EAR_LENGTH: float = 1.0
+const BOAR_EAR_WIDTH: float = 0.5
+const BOAR_COLOR: Color = Color(0.25, 0.18, 0.12, 0.95)
+
+# Corpo più allungato/snello di tutte le altre specie (rapporto lunghezza:larghezza ~3.25:1,
+# contro il ~2.5:1 di deer) per leggersi come un animale più "rangy"/filiforme — non esiste un
+# concetto di zampe in questa sagoma generica (corpo+2 orecchie+coda, condivisa da ogni specie),
+# quindi "gambe lunghe" è approssimato solo con la snellezza del corpo, non con arti disegnati.
+const TARPAN_BODY_LENGTH: float = 6.5
+const TARPAN_BODY_WIDTH: float = 2.0
+const TARPAN_EAR_LENGTH: float = 1.2
+const TARPAN_EAR_WIDTH: float = 0.5
+# Tonalità "grullo"/topo, richiamo storico al mantello del tarpan — desaturata verso il grigio
+# (a differenza del bruno caldo e saturo di DEER_COLOR) così le due specie restano distinguibili
+# a colpo d'occhio anche a icona piccola.
+const TARPAN_COLOR: Color = Color(0.5, 0.5, 0.47, 0.95)
+
+# Più piccolo di tarpan su entrambi gli assi (5.8x2.1 contro 6.5x2.0) ma rapporto L:W più basso
+# (~2.76:1 contro ~3.25:1) — leggermente più tozzo come da design, non solo "un tarpan rimpicciolito".
+# Orecchie lunghe (vedi WILD_DONKEY_EAR_* sopra) sono il tratto distintivo principale rispetto a
+# tarpan/deer. Colore grigio-brunastro, intermedio tra il grigio neutro di TARPAN_COLOR e il
+# bruno caldo di DEER_COLOR — distinguibile da entrambi a colpo d'occhio.
+const WILD_DONKEY_BODY_LENGTH: float = 5.8
+const WILD_DONKEY_BODY_WIDTH: float = 2.1
+const WILD_DONKEY_EAR_LENGTH: float = 2.0
+const WILD_DONKEY_EAR_WIDTH: float = 0.55
+const WILD_DONKEY_COLOR: Color = Color(0.55, 0.48, 0.4, 0.95)
+
+# La specie più grande finora (corpo massiccio come boar ma di dimensioni maggiori, corna incluse
+# nello slot "orecchie" — vedi costanti AUROCHS_EAR_* sopra). Colore bruno-nerastro pieno, fedele
+# al mantello scuro dell'aurochs storico (i maschi erano quasi neri, le femmine bruno-rossicce) —
+# NON il bianco a macchie nere tipico delle mucche domestiche moderne: il sistema di rendering
+# assegna un unico colore uniforme per specie (vedi _build_mesh_from_geometry, un solo
+# st.set_color() per l'intera sessione SurfaceTool, condiviso da tutte le istanze via MultiMesh),
+# quindi un pattern a macchie sarebbe identico su ogni singolo individuo e illeggibile alla scala
+# di rendering effettiva (icone/gruppi di poche decine di px) — riservato come idea per una futura
+# mucca domestica, non implementato qui.
+const AUROCHS_BODY_LENGTH: float = 7.5
+const AUROCHS_BODY_WIDTH: float = 3.4
+const AUROCHS_EAR_LENGTH: float = 2.5
+const AUROCHS_EAR_WIDTH: float = 0.35
+const AUROCHS_COLOR: Color = Color(0.14, 0.1, 0.08, 0.95)
+
+# Il più piccolo tra i grandi erbivori "veri" (sopra rabbit, sotto boar — vedi confronto body
+# LENGTH×WIDTH nel report di implementazione): 3.8x1.7, contro il 4.5x2.4 di boar e il 3.0x1.3 di
+# rabbit. Rapporto L:W basso (~2.24:1) per leggersi come "compatto" invece che filiforme. Corna
+# nello slot "orecchie" (vedi MOUFLON_EAR_* sopra) proporzionalmente vistose rispetto al corpo
+# ridotto. Colore bruno-grigiastro, intermedio tra il grigio neutro di TARPAN_COLOR e il bruno
+# scuro di BOAR_COLOR — distinguibile da entrambi.
+const MOUFLON_BODY_LENGTH: float = 3.8
+const MOUFLON_BODY_WIDTH: float = 1.7
+const MOUFLON_EAR_LENGTH: float = 1.4
+const MOUFLON_EAR_WIDTH: float = 0.4
+const MOUFLON_COLOR: Color = Color(0.42, 0.35, 0.3, 0.95)
+
+# Taglia comparabile a mouflon (3.7x1.65 contro 3.8x1.7, vedi confronto nel report di
+# implementazione) — leggermente più piccola/snella, stesso rapporto L:W (~2.24:1, stesso
+# archetipo "compatto" di mouflon). Corna (vedi BEZOAR_EAR_* sopra) sensibilmente più lunghe di
+# quelle di mouflon (~0.57x body_length contro ~0.37x) per leggersi come il tratto dominante
+# della sagoma, a lama invece che a corno spesso ricurvo — larghezza aumentata di pari passo
+# (non solo la lunghezza) così restano leggibili come lama anche alla lunghezza maggiore, invece
+# di assottigliarsi fino a somigliare ad antenne. Colore grigio chiaro, nettamente più chiaro del
+# bruno-grigiastro di MOUFLON_COLOR e anche più grigio/meno bruno del WILD_DONKEY_COLOR —
+# distinguibile da entrambi a colpo d'occhio.
+const BEZOAR_BODY_LENGTH: float = 3.7
+const BEZOAR_BODY_WIDTH: float = 1.65
+const BEZOAR_EAR_LENGTH: float = 2.1
+const BEZOAR_EAR_WIDTH: float = 0.35
+const BEZOAR_COLOR: Color = Color(0.58, 0.56, 0.52, 0.95)
 
 # Popolazione -> numero di gruppi disegnati: individui rappresentati da ciascuna icona,
 # arriva da AnimalRules.visual_group_size (letto dal chiamante, mai hardcoded qui).
@@ -394,7 +585,7 @@ func _write_instance_transform(index: int, group: AnimalVisualGroup) -> void:
 # Chiamata dal nodo che istanzia AnimalGroupRenderer (oggi MacroCellScene), mai da questa
 # classe: il risultato va passato in configure() tramite params["mesh"]. I punti geometrici
 # (get_rabbit_silhouette_geometry sotto) sono condivisi con AnimalSilhouetteIcon (icona del
-# filtro Fauna in MacroCellInfoPanel) — un solo posto definisce "che forma ha un coniglio", non
+# filtro Fauna in WorldInfoPanel) — un solo posto definisce "che forma ha un coniglio", non
 # due copie della stessa formula che potrebbero disallinearsi in futuro.
 static func build_rabbit_mesh(
 	body_length: float, body_width: float, ear_length: float, ear_width: float, color: Color
@@ -417,6 +608,74 @@ static func build_deer_mesh(
 	)
 
 
+# Sagoma BOAR: stesso schema costruttivo di build_rabbit_mesh/build_deer_mesh sopra, ma con
+# body_front_width_ratio > body_rear_width_ratio (vedi costanti BOAR_* in cima al file) — l'unica
+# specie oggi con la spalla più larga del muso invece che il contrario.
+static func build_boar_mesh(
+	body_length: float, body_width: float, ear_length: float, ear_width: float, color: Color
+) -> ArrayMesh:
+	return _build_mesh_from_geometry(
+		get_boar_silhouette_geometry(body_length, body_width, ear_length, ear_width), color
+	)
+
+
+# Sagoma TARPAN: stesso schema costruttivo delle altre, corpo più snello/allungato (vedi
+# costanti TARPAN_* in cima al file) — la prima specie erbivora "vera" oltre a deer, distinta da
+# quest'ultima per proporzioni più filiformi e orecchie più verticali.
+static func build_tarpan_mesh(
+	body_length: float, body_width: float, ear_length: float, ear_width: float, color: Color
+) -> ArrayMesh:
+	return _build_mesh_from_geometry(
+		get_tarpan_silhouette_geometry(body_length, body_width, ear_length, ear_width), color
+	)
+
+
+# Sagoma WILD_DONKEY: stesso schema costruttivo di tarpan (equide, coda ellittica a due raggi),
+# proporzioni proprie (vedi costanti WILD_DONKEY_* in cima al file) — corpo più piccolo e tozzo,
+# orecchie molto più lunghe in proporzione.
+static func build_wild_donkey_mesh(
+	body_length: float, body_width: float, ear_length: float, ear_width: float, color: Color
+) -> ArrayMesh:
+	return _build_mesh_from_geometry(
+		get_wild_donkey_silhouette_geometry(body_length, body_width, ear_length, ear_width), color
+	)
+
+
+# Sagoma AUROCHS: stesso schema costruttivo delle altre. Lo slot "orecchie" della pipeline
+# generica è qui riusato per le corna (vedi costanti AUROCHS_EAR_* in cima al file) — nessuna
+# nuova geometria introdotta, solo proporzioni/angoli diversi passati agli stessi parametri.
+static func build_aurochs_mesh(
+	body_length: float, body_width: float, ear_length: float, ear_width: float, color: Color
+) -> ArrayMesh:
+	return _build_mesh_from_geometry(
+		get_aurochs_silhouette_geometry(body_length, body_width, ear_length, ear_width), color
+	)
+
+
+# Sagoma MOUFLON: stesso schema costruttivo delle altre. Lo slot "orecchie" della pipeline
+# generica è qui riusato per le corna, come per aurochs, ma angolate diversamente (vedi
+# costanti MOUFLON_EAR_* in cima al file) per leggersi come corna che curvano all'indietro
+# invece che protese in avanti.
+static func build_mouflon_mesh(
+	body_length: float, body_width: float, ear_length: float, ear_width: float, color: Color
+) -> ArrayMesh:
+	return _build_mesh_from_geometry(
+		get_mouflon_silhouette_geometry(body_length, body_width, ear_length, ear_width), color
+	)
+
+
+# Sagoma BEZOAR: stesso schema costruttivo delle altre. Lo slot "orecchie" della pipeline
+# generica è qui riusato per le corna, come per aurochs/mouflon, ma con angolo vicino ai 90°
+# (vedi costanti BEZOAR_EAR_* in cima al file) per leggersi come corna dritte invece che
+# nettamente sweep in avanti o all'indietro.
+static func build_bezoar_mesh(
+	body_length: float, body_width: float, ear_length: float, ear_width: float, color: Color
+) -> ArrayMesh:
+	return _build_mesh_from_geometry(
+		get_bezoar_silhouette_geometry(body_length, body_width, ear_length, ear_width), color
+	)
+
+
 # Pubbliche (non prefissate _, a differenza delle altre helper statiche sotto): consumate anche
 # da AnimalSilhouetteIcon, fuori da questa classe. Ritornano i punti 2D grezzi (corpo, le due
 # orecchie come triangoli [base_a, base_b, tip], centro/raggio della coda) SENZA passare per una
@@ -429,7 +688,7 @@ static func get_rabbit_silhouette_geometry(
 		body_length, body_width, ear_length, ear_width,
 		RABBIT_BODY_REAR_WIDTH_RATIO, RABBIT_BODY_FRONT_WIDTH_RATIO,
 		RABBIT_EAR_ANCHOR_RATIO, RABBIT_EAR_ANCHOR_LATERAL_RATIO, RABBIT_EAR_ANGLE_FROM_HEADING,
-		RABBIT_TAIL_ANCHOR_RATIO, RABBIT_TAIL_RADIUS
+		RABBIT_TAIL_ANCHOR_RATIO, RABBIT_TAIL_RADIUS, RABBIT_TAIL_RADIUS
 	)
 
 
@@ -440,7 +699,73 @@ static func get_deer_silhouette_geometry(
 		body_length, body_width, ear_length, ear_width,
 		DEER_BODY_REAR_WIDTH_RATIO, DEER_BODY_FRONT_WIDTH_RATIO,
 		DEER_EAR_ANCHOR_RATIO, DEER_EAR_ANCHOR_LATERAL_RATIO, DEER_EAR_ANGLE_FROM_HEADING,
-		DEER_TAIL_ANCHOR_RATIO, DEER_TAIL_RADIUS
+		DEER_TAIL_ANCHOR_RATIO, DEER_TAIL_RADIUS, DEER_TAIL_RADIUS
+	)
+
+
+static func get_boar_silhouette_geometry(
+	body_length: float, body_width: float, ear_length: float, ear_width: float
+) -> Dictionary:
+	return _get_silhouette_geometry(
+		body_length, body_width, ear_length, ear_width,
+		BOAR_BODY_REAR_WIDTH_RATIO, BOAR_BODY_FRONT_WIDTH_RATIO,
+		BOAR_EAR_ANCHOR_RATIO, BOAR_EAR_ANCHOR_LATERAL_RATIO, BOAR_EAR_ANGLE_FROM_HEADING,
+		BOAR_TAIL_ANCHOR_RATIO, BOAR_TAIL_RADIUS, BOAR_TAIL_RADIUS
+	)
+
+
+static func get_tarpan_silhouette_geometry(
+	body_length: float, body_width: float, ear_length: float, ear_width: float
+) -> Dictionary:
+	return _get_silhouette_geometry(
+		body_length, body_width, ear_length, ear_width,
+		TARPAN_BODY_REAR_WIDTH_RATIO, TARPAN_BODY_FRONT_WIDTH_RATIO,
+		TARPAN_EAR_ANCHOR_RATIO, TARPAN_EAR_ANCHOR_LATERAL_RATIO, TARPAN_EAR_ANGLE_FROM_HEADING,
+		TARPAN_TAIL_ANCHOR_RATIO, TARPAN_TAIL_RADIUS_X, TARPAN_TAIL_RADIUS_Y
+	)
+
+
+static func get_wild_donkey_silhouette_geometry(
+	body_length: float, body_width: float, ear_length: float, ear_width: float
+) -> Dictionary:
+	return _get_silhouette_geometry(
+		body_length, body_width, ear_length, ear_width,
+		WILD_DONKEY_BODY_REAR_WIDTH_RATIO, WILD_DONKEY_BODY_FRONT_WIDTH_RATIO,
+		WILD_DONKEY_EAR_ANCHOR_RATIO, WILD_DONKEY_EAR_ANCHOR_LATERAL_RATIO, WILD_DONKEY_EAR_ANGLE_FROM_HEADING,
+		WILD_DONKEY_TAIL_ANCHOR_RATIO, WILD_DONKEY_TAIL_RADIUS_X, WILD_DONKEY_TAIL_RADIUS_Y
+	)
+
+
+static func get_aurochs_silhouette_geometry(
+	body_length: float, body_width: float, ear_length: float, ear_width: float
+) -> Dictionary:
+	return _get_silhouette_geometry(
+		body_length, body_width, ear_length, ear_width,
+		AUROCHS_BODY_REAR_WIDTH_RATIO, AUROCHS_BODY_FRONT_WIDTH_RATIO,
+		AUROCHS_EAR_ANCHOR_RATIO, AUROCHS_EAR_ANCHOR_LATERAL_RATIO, AUROCHS_EAR_ANGLE_FROM_HEADING,
+		AUROCHS_TAIL_ANCHOR_RATIO, AUROCHS_TAIL_RADIUS, AUROCHS_TAIL_RADIUS
+	)
+
+
+static func get_mouflon_silhouette_geometry(
+	body_length: float, body_width: float, ear_length: float, ear_width: float
+) -> Dictionary:
+	return _get_silhouette_geometry(
+		body_length, body_width, ear_length, ear_width,
+		MOUFLON_BODY_REAR_WIDTH_RATIO, MOUFLON_BODY_FRONT_WIDTH_RATIO,
+		MOUFLON_EAR_ANCHOR_RATIO, MOUFLON_EAR_ANCHOR_LATERAL_RATIO, MOUFLON_EAR_ANGLE_FROM_HEADING,
+		MOUFLON_TAIL_ANCHOR_RATIO, MOUFLON_TAIL_RADIUS, MOUFLON_TAIL_RADIUS
+	)
+
+
+static func get_bezoar_silhouette_geometry(
+	body_length: float, body_width: float, ear_length: float, ear_width: float
+) -> Dictionary:
+	return _get_silhouette_geometry(
+		body_length, body_width, ear_length, ear_width,
+		BEZOAR_BODY_REAR_WIDTH_RATIO, BEZOAR_BODY_FRONT_WIDTH_RATIO,
+		BEZOAR_EAR_ANCHOR_RATIO, BEZOAR_EAR_ANCHOR_LATERAL_RATIO, BEZOAR_EAR_ANGLE_FROM_HEADING,
+		BEZOAR_TAIL_ANCHOR_RATIO, BEZOAR_TAIL_RADIUS, BEZOAR_TAIL_RADIUS
 	)
 
 
@@ -448,7 +773,7 @@ static func _get_silhouette_geometry(
 	body_length: float, body_width: float, ear_length: float, ear_width: float,
 	body_rear_width_ratio: float, body_front_width_ratio: float,
 	ear_anchor_ratio: float, ear_anchor_lateral_ratio: float, ear_angle_from_heading: float,
-	tail_anchor_ratio: float, tail_radius: float
+	tail_anchor_ratio: float, tail_radius_x: float, tail_radius_y: float
 ) -> Dictionary:
 	var body_points := PackedVector2Array()
 	for i in range(BODY_SEGMENTS):
@@ -474,7 +799,12 @@ static func _get_silhouette_geometry(
 		"body_points": body_points,
 		"ears": ears,
 		"tail_center": Vector2(-body_length * tail_anchor_ratio, 0.0),
-		"tail_radius": tail_radius,
+		# Due raggi invece di uno: X lungo l'asse del corpo (avanti/indietro), Y trasversale —
+		# stesso principio già usato dal corpo sopra (body_length su X, body_width*width_scale su
+		# Y). Un cerchio perfetto (rabbit/deer/boar) è semplicemente il caso radius_x==radius_y;
+		# solo tarpan oggi li differenzia per una coda allungata invece che un batuffolo tondo.
+		"tail_radius_x": tail_radius_x,
+		"tail_radius_y": tail_radius_y,
 	}
 
 
@@ -488,11 +818,12 @@ static func _build_mesh_from_geometry(geometry: Dictionary, color: Color) -> Arr
 		_append_triangle(st, ear[0], ear[1], ear[2])
 
 	var tail_center: Vector2 = geometry["tail_center"]
-	var tail_radius: float = geometry["tail_radius"]
+	var tail_radius_x: float = geometry["tail_radius_x"]
+	var tail_radius_y: float = geometry["tail_radius_y"]
 	var tail_points := PackedVector2Array()
 	for i in range(TAIL_SEGMENTS):
 		var angle: float = (float(i) / float(TAIL_SEGMENTS)) * TAU
-		tail_points.append(tail_center + Vector2(cos(angle), sin(angle)) * tail_radius)
+		tail_points.append(tail_center + Vector2(cos(angle) * tail_radius_x, sin(angle) * tail_radius_y))
 	_append_fan_triangles(st, tail_points, tail_center)
 
 	return st.commit()
