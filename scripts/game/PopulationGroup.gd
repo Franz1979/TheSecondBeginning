@@ -94,6 +94,46 @@ var daily_caloric_ratio: float = 1.0
 var daily_calories_consumed: float = 0.0
 var daily_calories_required: float = 0.0
 
+# Pattugliamento giornaliero dei branchi predatori (PredatorPatrolService) — sequenza di anchor
+# (vertice top-left di una finestra di caccia quadrata) che copre l'intero territorio seguendone
+# la forma reale. Vuoto per ogni specie non predatrice (mai popolato, mai letto). Ricalcolato per
+# intero da PredatorPatrolService.recompute_route SOLO quando la forma di territory cambia (mai
+# ogni giorno) — puramente derivato da territory + PredatorRules.hunting_window_size, quindi non
+# persistito nei save: dopo un caricamento va semplicemente ricalcolato una volta, stesso principio
+# già usato per territory_distribution_weights sopra (dato ricostruibile, non storia reale).
+var patrol_route: Array[Vector2i] = []
+# Puntatore corrente su patrol_route e verso di avanzamento (+1/-1) — vedi
+# PredatorPatrolService.advance_patrol, che li fa rimbalzare agli estremi dell'array invece di
+# ripartire da 0 una volta raggiunta la fine ("avanti e indietro", non un loop). Riazzerati a 0/+1
+# SOLO quando patrol_route viene ricalcolato (un indice/verso relativi al percorso VECCHIO non
+# avrebbero corrispondenza garantita su un percorso nuovo) — a differenza di patrol_route sopra,
+# questi due NON sono dato ricostruibile dalla sola forma del territorio: rappresentano il
+# progresso del branco nel percorso (quanti giorni ha già camminato, in che verso), storia reale
+# esattamente come hunger_buckets/years_since_last_split/hunger_split_cooldown_days più sotto in
+# questo file — non equivalenti a territory_distribution_weights (quello sì puramente estetico).
+# TODO(Step 7, wolf.tres): quando i predatori esisteranno come specie concreta e potranno comparire
+# in world.population_groups, questi due campi vanno aggiunti a GameSaveService/GameLoadService
+# (stesso blocco che oggi salva hunger_buckets/years_since_last_split/hunger_split_cooldown_days) —
+# non implementato ora perché nessun gruppo predatore può ancora esistere in una partita reale, ma
+# è debito esplicito, non un "non serve": senza, un salvataggio/caricamento farebbe silenziosamente
+# ripartire il pattugliamento da patrol_index=0 ogni volta, comportamento sbagliato (non neutro come
+# lo è invece per una posizione di rendering ricalcolabile).
+var patrol_index: int = 0
+var patrol_direction: int = 1
+
+# Bookkeeping calorico della caccia (PredationService) — debito accumulato (fabbisogno non
+# coperto dei giorni scorsi, riportato in avanti) e surplus riportato da ieri (metà di un'eventuale
+# eccedenza di ieri, l'altra metà persa — vedi PredationService._apply_calorie_bookkeeping). Stesso
+# principio concettuale di hunger_buckets per gli erbivori, ma un ledger scalare invece di un
+# istogramma per giorni: qui non serve sapere DA QUANTO TEMPO manca cibo, solo QUANTO manca oggi.
+# Vuoti/a 0.0 per ogni specie non predatrice (mai popolati, mai letti). Storia reale accumulata,
+# non ricalcolabile da un checkpoint — stessa categoria di patrol_index/patrol_direction sopra, non
+# di territory_distribution_weights. TODO(Step 7, wolf.tres): stesso debito di persistenza già
+# segnalato per patrol_index/patrol_direction — vanno aggiunti a GameSaveService/GameLoadService
+# quando i predatori esisteranno davvero in partita, non implementato ora per lo stesso motivo.
+var predation_calorie_debt: float = 0.0
+var predation_surplus_carryover: float = 0.0
+
 func _init(_species_name: String = "", _territory: Territory = null, _id: int = 0) -> void:
 	species_name = _species_name
 	territory = _territory
@@ -289,6 +329,31 @@ func apply_hunger_mortality(amount: int, rules: AnimalRules) -> int:
 		for age_band in split.keys():
 			set_age_count(age_band, get_age_count(age_band) - split[age_band])
 
+	set_population(population - loss)
+	return loss
+
+
+# Applica `amount` catture di predazione (PredationService) a UNA fascia d'età specifica (quella
+# della vittima già scelta dal chiamante — a differenza di apply_hunger_mortality, qui non c'è una
+# ripartizione pesata tra fasce da fare qui dentro, il chiamante ha già deciso quale). Clampato alla
+# disponibilità reale della fascia, stesso schema di apply_old_age_mortality/apply_hunger_mortality.
+# Non tocca hunger_buckets di QUESTO gruppo (la preda): a differenza della fame, che ha sempre già
+# rimosso gli individui interessati dai bucket PRIMA di chiamare l'equivalente qui, una cattura di
+# predazione arriva dall'ESTERNO senza alcuna nozione di bucket coinvolta — l'eventuale
+# disallineamento tra population e somma(hunger_buckets) che ne risulta è esattamente il caso per
+# cui esiste AnimalHungerService._reconcile_bucket_total (rete di sicurezza già pensata per un
+# "punto di mutazione futuro che dimenticasse di aggiornare hunger_buckets"), che lo risolve la
+# prossima volta che quel service gira sul gruppo preda, stesso giorno se PredationService gira
+# prima di AnimalHungerService nel ciclo giornaliero. Ritorna il numero di catture effettivamente
+# applicate (mai più della disponibilità reale).
+func apply_predation_loss(age_band: GameTypes.AgeBand, amount: int) -> int:
+	if amount <= 0:
+		return 0
+	var available := get_age_count(age_band)
+	var loss: int = min(amount, available)
+	if loss <= 0:
+		return 0
+	set_age_count(age_band, available - loss)
 	set_population(population - loss)
 	return loss
 

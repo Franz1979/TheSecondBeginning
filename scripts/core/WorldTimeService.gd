@@ -12,6 +12,15 @@ extends RefCounted
 func advance_day(world: World, game_data: GameData) -> Dictionary:
 	var year_rolled_over := game_data.advance_day()
 	var animals_changed := _run_daily_animal_consumption(world, game_data)
+	# Caccia dei predatori (Step 3 del piano predatori) — gira OGNI giorno come il consumo
+	# erbivoro sopra, indipendente dai checkpoint stagionali, e PRIMA di questi ultimi: una preda
+	# catturata oggi deve già risultare decrementata quando gli eventuali checkpoint di oggi
+	# (nascite/maturazione/territorio) leggono la sua popolazione, mai lo stato di ieri. Anche
+	# PRIMA di _run_daily_animal_hunger sotto (che gira comunque dopo i checkpoint stagionali,
+	# vedi ordine esistente): PopulationGroup.apply_predation_loss non tocca hunger_buckets della
+	# preda, la riconciliazione con population se ne occupa la prossima volta che
+	# AnimalHungerService gira su quel gruppo — stesso giorno, con questo ordine.
+	_run_daily_predation(world)
 	var checkpoint_ran := _run_seasonal_checkpoints(world, game_data, year_rolled_over)
 	# DOPO i checkpoint stagionali (mai prima): se oggi capita anche un checkpoint di fine
 	# birth_season (nascite/morte per vecchiaia), hunger_buckets viene già mantenuto coerente con
@@ -31,6 +40,15 @@ func advance_day(world: World, game_data: GameData) -> Dictionary:
 func _run_daily_animal_consumption(world: World, game_data: GameData) -> bool:
 	var current_season := SeasonCalculator.get_season_for_day(game_data.current_day)
 	return AnimalConsumptionService.new().apply_daily_consumption(world, current_season)
+
+
+# Gira ogni giorno, indipendente da birth_season, esattamente come _run_daily_animal_consumption
+# sopra — ma per i predatori (vedi PredationService), non per gli erbivori. Nessun gruppo con
+# PredatorRules esiste ancora in una partita reale (wolf.tres arriva allo Step 7): questa chiamata
+# è comunque già cablata, PredationService.apply_daily_predation è un no-op sicuro finché non
+# trova alcun gruppo con PredatorRules in world.population_groups.
+func _run_daily_predation(world: World) -> void:
+	PredationService.new().apply_daily_predation(world)
 
 
 # Gira ogni giorno, indipendente da birth_season (vedi AnimalHungerService): legge

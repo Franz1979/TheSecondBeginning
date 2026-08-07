@@ -20,6 +20,16 @@ extends Resource
 # proprio .tres (oggi true per rabbit e deer).
 @export var is_browsing_species: bool = false
 
+# Calorie fornite da un individuo ADULTO quando catturato da un predatore (vedi il futuro
+# PredationService) — scalate per le altre fasce d'età tramite size_multiplier_by_age (Age Bands
+# sotto: adult=1.0 è il riferimento a cui questo valore è tarato, young tipicamente <1, old libero
+# di essere >1, stesso principio già usato da quel campo per la resa visiva). Proprietà della PREDA
+# in sé — ogni erbivoro può potenzialmente essere cacciato da un futuro predatore — non del
+# predatore, per questo vive qui su AnimalRules e non su PredatorRules. Nessun default: ogni specie
+# lo dichiara esplicitamente nel proprio .tres, stesso principio già seguito da
+# min_territory_cells/max_days_without_food sotto. Nessuna logica lo legge ancora.
+@export var prey_calories: float
+
 @export_group("Visualization")
 # Quanti individui rappresenta una singola icona/gruppo nella resa visiva animata (vedi
 # AnimalGroupRenderer). Default 1 = rappresentazione 1:1, per compatibilità con specie che

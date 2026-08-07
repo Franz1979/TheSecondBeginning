@@ -14,6 +14,7 @@ diet_compatibility = {
 "fruit": 0.1
 }
 is_browsing_species = true
+prey_calories = 60.0
 max_individuals_per_cluster = 18
 hop_duration_min = 0.3
 hop_duration_max = 0.6
