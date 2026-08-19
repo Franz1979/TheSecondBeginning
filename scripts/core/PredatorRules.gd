@@ -7,12 +7,20 @@ extends AnimalRules
 # .tres) senza bisogno di alcuna modifica al loader. I service predatore-specifici faranno il
 # downcast esplicito (rules as PredatorRules), stesso schema di NaturalEventService.
 #
-# AnimalRules.max_density_per_cell resta ereditato ma DORMIENTE per questa sottoclasse: i
-# predatori non hanno un tetto di densità sociale per cella (non "occupano" fisicamente lo spazio
-# come gli erbivori), il vincolo di popolazione è invece max_population sotto. Nessun service
-# predatore-specifico legge mai max_density_per_cell — stesso trattamento già riservato ad altri
-# campi non pertinenti in questo codebase (es. old_duration_years prima che la mortalità per
-# vecchiaia esistesse).
+# AnimalRules.max_density_per_cell resta ereditato ma concettualmente DORMIENTE per questa
+# sottoclasse: i predatori non hanno un tetto di densità sociale per cella (non "occupano"
+# fisicamente lo spazio come gli erbivori), il vincolo di popolazione INTESO è invece
+# max_population sotto. Nessun service PREDATORE-SPECIFICO (PredationService/PredatorPatrolService)
+# legge mai max_density_per_cell — ma TerritoryDynamicsService, generico e condiviso con gli
+# erbivori, SÌ (criterio di espansione/contrazione a densità e moltiplicatore di mitigazione
+# natalità): non è stato escluso per i predatori come invece lo è stato il criterio calorico (vedi
+# TerritoryDynamicsService.update_territories_and_mitigation), perché con territorio statico
+# (min_territory_cells == max_territory_cells, oggi 200 per wolf) quel criterio è strutturalmente
+# no-op — ma il campo VIENE letto, non è puramente "mai letto" come suggerirebbe una lettura troppo
+# larga di questo commento. Va tenuto a mente se in futuro min/max_territory_cells smettessero di
+# coincidere. Stesso trattamento (dormiente per i service specifici, non per quelli generici) già
+# riservato ad altri campi non pertinenti in questo codebase (es. old_duration_years prima che la
+# mortalità per vecchiaia esistesse).
 
 @export_group("Predation")
 # Master switch comportamentale: true = il branco caccia collettivamente (lupo). Dichiarato ora
@@ -42,14 +50,36 @@ extends AnimalRules
 # nel proprio .tres, stesso principio già seguito per min/max_territory_cells.
 @export var max_pack_hunting_efficiency: float
 
-@export_group("Territory")
-# Home range minimo/massimo in macrocelle, stessa semantica di AnimalRules.min_territory_cells/
-# max_territory_cells ma con range atteso molto più ampio (150-300) — il territorio di un branco
-# di lupi copre un'area enormemente maggiore di quella di un branco di erbivori. Nessun default
-# forzato: ogni specie predatrice lo dichiara esplicitamente nel proprio .tres, stesso principio
-# già seguito da AnimalRules per questi due campi.
-@export var min_territory_cells: int
-@export var max_territory_cells: int
+# Divisore usato da PredationService per derivare i tentativi di caccia giornalieri
+# dall'efficacia_branco (attempt_count = round(efficacia_branco / attempts_per_efficiency)) —
+# prima un letterale hardcoded in PredationService, ora dato di specie, stesso refactor già fatto
+# per i parametri di movimento cluster (rabbit/deer). Default 2.0 = valore storico hardcoded,
+# nessun cambio di comportamento.
+@export var attempts_per_efficiency: float = 2.0
+
+# Efficacia minima (moltiplicatore di successo) raggiunta dall'ultimo tentativo di caccia della
+# giornata — la stanchezza decresce linearmente da 1.0 (primo tentativo) a questo valore
+# (ultimo), vedi PredationService._run_hunting_attempts. Default 0.5 = valore storico hardcoded.
+@export var fatigue_floor: float = 0.5
+
+# Moltiplicatore di convenienza applicato (Livello 1 di selezione preda) a una specie già
+# bersagliata da un tentativo, riuscito o fallito, in precedenza nella stessa giornata — scoraggia
+# senza vietare. Default 0.7 = valore storico hardcoded.
+@export var repeat_target_malus: float = 0.7
+
+# min_territory_cells/max_territory_cells sono ereditati da AnimalRules (gruppo "Territory" —
+# vedi lì, non ridichiarabile qui: GDScript non permette lo shadowing di una @export var già
+# presente nella classe padre, parser error "already exists in parent class") — riusati con la
+# stessa semantica ma un range atteso molto più ampio (150-300) — il territorio di un branco di
+# lupi copre un'area enormemente maggiore di quella di un branco di erbivori. Il default ereditato
+# (1) è pensato per gli erbivori: ogni specie predatrice deve comunque sovrascriverlo esplicitamente
+# nel proprio .tres.
+@export_group("Pack Limits")
+# Nome del gruppo deliberatamente diverso da "Territory" (il gruppo ereditato da AnimalRules sopra,
+# min_territory_cells/max_territory_cells/max_density_per_cell): due @export_group con lo STESSO
+# nome in una catena di ereditarietà non si fondono nell'Ispettore Godot, compaiono come due sezioni
+# "Territory" separate e identiche nell'etichetta — confuso, non un problema di dati (i campi restano
+# comunque corretti), solo di leggibilità dell'Ispettore.
 
 # Tetto assoluto di popolazione del branco — sostituisce concettualmente densità×territorio
 # (AnimalRules.max_density_per_cell × celle) come criterio di split per questa sottoclasse: i

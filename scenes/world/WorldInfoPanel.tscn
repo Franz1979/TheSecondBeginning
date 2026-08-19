@@ -117,6 +117,10 @@ theme_override_font_sizes/font_size = 11
 layout_mode = 2
 theme_override_font_sizes/font_size = 11
 
+[node name="EggsNumberLabel" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/VegetazioneTab/VegetazioneContent"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 11
+
 [node name="RisorseTab" type="ScrollContainer" parent="MarginContainer/VBoxContainer/TabContainer"]
 visible = false
 layout_mode = 2
@@ -179,6 +183,22 @@ theme_override_font_sizes/font_size = 13
 layout_mode = 2
 
 [node name="PopulationGroupsContainer" type="VBoxContainer" parent="MarginContainer/VBoxContainer/TabContainer/FaunaTab2/FaunaContent"]
+layout_mode = 2
+
+[node name="FaunaTab3" type="ScrollContainer" parent="MarginContainer/VBoxContainer/TabContainer"]
+visible = false
+layout_mode = 2
+horizontal_scroll_mode = 0
+
+[node name="FaunaContent" type="VBoxContainer" parent="MarginContainer/VBoxContainer/TabContainer/FaunaTab3"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="SectionTitleLabel" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/FaunaTab3/FaunaContent"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 13
+
+[node name="PredatorGroupsContainer" type="VBoxContainer" parent="MarginContainer/VBoxContainer/TabContainer/FaunaTab3/FaunaContent"]
 layout_mode = 2
 
 [node name="ActionsContainer" type="VBoxContainer" parent="MarginContainer/VBoxContainer" unique_id=1311435228]

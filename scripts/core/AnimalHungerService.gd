@@ -27,6 +27,13 @@ const RATIO_EPSILON := 0.000001
 
 
 func apply_daily_hunger(world: World) -> void:
+	# Aggregato giornaliero (vedi log di riepilogo in fondo): quanti gruppi hanno evitato la BFS
+	# costosa oggi grazie a PopulationGroup.blocked_territory_search_version, contro quanti l'hanno
+	# eseguita per davvero — per verificare a colpo d'occhio l'effetto della cache senza dover
+	# contare a mano le righe "ricerca_territorio=saltata" nel log per-gruppo sottostante.
+	var territory_searches_skipped := 0
+	var territory_searches_attempted := 0
+
 	for group in world.population_groups:
 		if group.population <= 0:
 			continue
@@ -34,8 +41,28 @@ func apply_daily_hunger(world: World) -> void:
 		var rules := AnimalCalculator.get_animal_rules(group.species_name)
 		if rules == null:
 			continue
+		# I branchi predatori (PredatorRules) non passano mai da AnimalConsumptionService (vedi
+		# esclusione lì) quindi group.daily_caloric_ratio non viene mai aggiornato per loro —
+		# processarli qui userebbe un ratio residuo/stantio (0.0 di default) e applicherebbe
+		# mortalità da fame scollegata dal reale esito delle cacce di PredationService, che ha già
+		# il proprio bookkeeping calorico (predation_calorie_debt/predation_surplus_carryover) e la
+		# propria logica di conseguenze — nessuna mortalità da fame equivalente ancora implementata
+		# lì, deliberatamente fuori scope di questo fix.
+		if rules is PredatorRules:
+			continue
 
-		_process_group_hunger(world, group, rules)
+		var outcome := _process_group_hunger(world, group, rules)
+		if outcome["territory_search_skipped"]:
+			territory_searches_skipped += 1
+		elif outcome["territory_search_attempted"]:
+			territory_searches_attempted += 1
+
+	if DebugLogging.ENABLED and (territory_searches_skipped > 0 or territory_searches_attempted > 0):
+		print(
+			"[ANIMAL HUNGER SUMMARY] ricerche_territorio_evitate=%d ricerche_territorio_eseguite=%d" % [
+				territory_searches_skipped, territory_searches_attempted
+			]
+		)
 
 
 # Ordine per gruppo: 1) riallinea hunger_buckets a population (rete di sicurezza, vedi
@@ -45,8 +72,10 @@ func apply_daily_hunger(world: World) -> void:
 # mutazione della popolazione non ancora aggiornati); 2) calcola quanti individui non sono stati
 # nutriti oggi dal ratio già calcolato; 3) fa avanzare/retrocedere i bucket, raccogliendo le morti
 # per superamento soglia; 4) applica la mortalità (pesata per età); 5) tenta un'espansione di una
-# cella se il ratio odierno segnala ancora deficit.
-func _process_group_hunger(world: World, group: PopulationGroup, rules: AnimalRules) -> void:
+# cella se il ratio odierno segnala ancora deficit. Ritorna {"territory_search_skipped": bool,
+# "territory_search_attempted": bool} — solo per l'aggregato giornaliero del chiamante
+# (apply_daily_hunger), nessun altro uso.
+func _process_group_hunger(world: World, group: PopulationGroup, rules: AnimalRules) -> Dictionary:
 	_reconcile_bucket_total(group)
 
 	# Cooldown sullo split da fame (Step 11, vedi PopulationGroup.hunger_split_cooldown_days) —
@@ -73,15 +102,34 @@ func _process_group_hunger(world: World, group: PopulationGroup, rules: AnimalRu
 	var expansion_attempted := false
 	var expansion_succeeded := false
 	var split_skipped_cooldown := false
+	var territory_search_skipped := false
 	if ratio < DAILY_HUNGER_EXPANSION_THRESHOLD - RATIO_EPSILON:
-		expansion_attempted = true
-		expansion_succeeded = _attempt_expansion(world, group, rules)
-		if not expansion_succeeded:
-			if group.hunger_split_cooldown_days > 0:
+		# Cache "ero gia bloccato" (PopulationGroup.blocked_territory_search_version): se
+		# l'ultima ricerca di questo gruppo e fallita, e da allora nessun territorio della sua
+		# specie si e liberato in nessun punto della mappa (World.species_territory_release_version
+		# invariato), la ricerca di oggi darebbe con certezza lo stesso esito - sia
+		# expand_by_one_cell che attempt_split chiamano comunque la STESSA BFS
+		# (TerritoryBuilderService.find_nearest_free_cell dallo stesso centroide), quindi saltarle
+		# entrambe qui elimina anche la doppia ricerca ridondante che il codice faceva gia oggi
+		# nello stesso giorno per lo stesso gruppo bloccato.
+		var current_release_version: int = int(
+			world.species_territory_release_version.get(group.species_name, 0)
+		)
+		if group.blocked_territory_search_version == current_release_version:
+			territory_search_skipped = true
+		else:
+			expansion_attempted = true
+			expansion_succeeded = _attempt_expansion(world, group, rules)
+			if expansion_succeeded:
+				group.blocked_territory_search_version = -1
+			elif group.hunger_split_cooldown_days > 0:
 				# Cooldown attivo (Step 11): nessun tentativo oggi, il gruppo resta esposto al solo
 				# digiuno prolungato finché il countdown non scade — visibile nel log sotto invece
-				# di sparire silenziosamente.
+				# di sparire silenziosamente. L'espansione fallita ha comunque già accertato lo
+				# stato reale dello spazio disponibile (stessa BFS che avrebbe usato lo split),
+				# quindi la cache si aggiorna comunque qui.
 				split_skipped_cooldown = true
+				group.blocked_territory_search_version = current_release_version
 			else:
 				# Espansione fallita (territorio già a max_territory_cells o BFS satura, un unico
 				# segnale, non serve distinguere il perché) — prova a staccare una porzione della
@@ -105,12 +153,21 @@ func _process_group_hunger(world: World, group: PopulationGroup, rules: AnimalRu
 				# deve bloccare il tentativo di domani.
 				if PopulationSplitService.new().attempt_split(world, group, rules, split_amount, split_trigger_reason):
 					group.hunger_split_cooldown_days = rules.max_days_without_food
+					group.blocked_territory_search_version = -1
+				else:
+					group.blocked_territory_search_version = current_release_version
 
-	if DebugLogging.ENABLED and (unfed_target > 0 or total_deaths > 0 or expansion_attempted):
+	if DebugLogging.ENABLED and (unfed_target > 0 or total_deaths > 0 or expansion_attempted or territory_search_skipped):
 		_log_daily_hunger(
 			group, ratio, unfed_target, total_deaths, deaths_by_origin_day,
-			population_before, expansion_attempted, expansion_succeeded, split_skipped_cooldown
+			population_before, expansion_attempted, expansion_succeeded, split_skipped_cooldown,
+			territory_search_skipped
 		)
+
+	return {
+		"territory_search_skipped": territory_search_skipped,
+		"territory_search_attempted": expansion_attempted,
+	}
 
 
 # Rete di sicurezza: se population e somma(hunger_buckets) sono comunque disallineati (es. un
@@ -201,7 +258,8 @@ func _attempt_expansion(world: World, group: PopulationGroup, rules: AnimalRules
 func _log_daily_hunger(
 	group: PopulationGroup, ratio: float, unfed_target: int, total_deaths: int,
 	deaths_by_origin_day: Dictionary, population_before: int,
-	expansion_attempted: bool, expansion_succeeded: bool, split_skipped_cooldown: bool
+	expansion_attempted: bool, expansion_succeeded: bool, split_skipped_cooldown: bool,
+	territory_search_skipped: bool
 ) -> void:
 	# consumate/fabbisogno con 6 decimali (non solo il ratio arrotondato a 3): un ratio stampato
 	# "1.000" può nascondere un vero piccolo deficit (es. 0.997, calo stagionale reale di
@@ -224,6 +282,12 @@ func _log_daily_hunger(
 				line += " split_fame=saltato(cooldown=%dgg residui)" % group.hunger_split_cooldown_days
 			else:
 				line += " split_fame=tentato(cooldown_ora=%dgg)" % group.hunger_split_cooldown_days
+	elif territory_search_skipped:
+		# Nessun tentativo oggi: ricerca saltata perché il gruppo era già accertato bloccato e
+		# nessun territorio della sua specie si è liberato da allora (vedi
+		# PopulationGroup.blocked_territory_search_version) — nessuna BFS eseguita, a differenza
+		# di "espansione=fallita" sopra che invece la esegue e basta fallire.
+		line += " ricerca_territorio=saltata (nessun rilascio dal precedente fallimento)"
 
 	if total_deaths > 0:
 		line += " MORTI=%d da_bucket(giorni:conta)=[%s] pop %d->%d age(Y=%d,A=%d,O=%d)" % [

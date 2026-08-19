@@ -14,7 +14,7 @@ diet_compatibility = {
 "fruit": 0.15
 }
 is_browsing_species = true
-prey_calories = 140.0
+prey_calories = 170.0
 max_individuals_per_cluster = 10
 hop_duration_min = 8.0
 hop_duration_max = 12.0
@@ -36,7 +36,7 @@ adult_duration_years = 15
 old_duration_years = 6
 mortality_share_by_age = Array[float]([0.4, 0.2, 0.4])
 caloric_multiplier_by_age = Array[float]([0.5, 1.0, 1.0])
-base_birth_rate = 0.2
+base_birth_rate = 0.25
 initial_age_ratio = {
 0: 0.0,
 1: 1.0,

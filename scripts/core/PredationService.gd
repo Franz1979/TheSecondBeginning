@@ -11,18 +11,11 @@ extends RefCounted
 # PredatorRules, inclusi valori di default/non ancora tarati (vedi guard su
 # max_pack_hunting_efficiency sotto).
 
-# Malus applicato al peso di selezione (Livello 1, vedi _gather_prey_candidates) di una specie già
-# bersaglio di un tentativo — riuscito O fallito — in un tentativo precedente OGGI STESSO: scoraggia
-# senza vietare (una specie molto conveniente può comunque essere ripescata, solo con probabilità
-# ridotta), evita che il branco si concentri sempre sull'unica specie più conveniente ignorando le
-# altre disponibili nella stessa finestra. Percentuale placeholder (-30%), da tarare in gioco.
-const SPECIES_TARGET_MALUS_MULTIPLIER := 0.7
-
-# "prey_calories(specie) × 5" della formula di max_catturabili (punto 4d): un singolo tentativo di
-# caccia non può mai fruttare più di questo multiplo del fabbisogno calorico odierno del branco in
-# individui di una specie — evita catture abnormi quando il fabbisogno residuo è enorme (branco
-# molto affamato) e prey_calories è piccolo (preda minuta). Placeholder, da tarare in gioco.
-const MAX_CATCH_CALORIE_MULTIPLIER := 5.0
+# Malus di selezione preda (repeat_target_malus), soglia di tentativi (attempts_per_efficiency) e
+# stanchezza minima (fatigue_floor) sono tutti campi di PredatorRules (stesso refactor già fatto
+# per i parametri di movimento cluster rabbit/deer) — non più costanti qui, vedi PredatorRules.gd
+# per i default. Il tetto di cattura multipla (vedi _capture_prey) non ha invece un campo dedicato:
+# il suo divisore è attempt_count, già calcolato in questo stesso service, non un dato di specie.
 
 const _AGE_BANDS: Array[GameTypes.AgeBand] = [
 	GameTypes.AgeBand.YOUNG, GameTypes.AgeBand.ADULT, GameTypes.AgeBand.OLD
@@ -35,34 +28,73 @@ const _AGE_BANDS: Array[GameTypes.AgeBand] = [
 # AnimalConsumptionService.apply_daily_consumption. rules is PredatorRules (non solo AnimalRules)
 # distingue i branchi predatori dagli erbivori: il polimorfismo del loader (vedi PredatorRules.gd)
 # garantisce che il downcast sia sempre valido quando il controllo passa.
-func apply_daily_predation(world: World) -> void:
+func apply_daily_predation(world: World, year: int, day: int) -> void:
 	for group in world.population_groups:
 		if group.population <= 0:
 			continue
 		var rules := AnimalCalculator.get_animal_rules(group.species_name)
 		if not (rules is PredatorRules):
 			continue
-		_process_group(world, group, rules as PredatorRules)
+		_process_group(world, group, rules as PredatorRules, year, day)
 
 
 # Orchestrazione giornaliera per UN branco: punto 1 (gate calorico) -> eventuali tentativi di
 # caccia (punti 2-4) -> punto 5 (bookkeeping finale) -> pattugliamento SEMPRE, indipendentemente
 # dall'esito della caccia di oggi (anche se il gate del punto 1 esclude la caccia, o se
 # max_pack_hunting_efficiency/patrol_route non sono ancora popolati — vedi guard sotto).
-func _process_group(world: World, group: PopulationGroup, rules: PredatorRules) -> void:
-	# Punto 1: "Il fabbisogno di oggi per un branco (hunts_in_pack = true) è la somma del
-	# fabbisogno individuale × popolazione totale del gruppo" — flat, NON age-weighted (a
-	# differenza di AnimalConsumptionService._get_total_daily_requirement per gli erbivori): scelta
-	# esplicita della specifica di questo step, non un'omissione. hunts_in_pack stesso resta
-	# dichiarato ma DORMIENTE qui: nessuna variante "caccia solitaria" è specificata in questo step,
-	# quindi non è implementata — stesso trattamento già riservato ad altri campi non ancora
+func _process_group(world: World, group: PopulationGroup, rules: PredatorRules, year: int, day: int) -> void:
+	# Punto 1: fabbisogno di oggi per un branco (hunts_in_pack = true) pesato per età — riusa
+	# AnimalRules.caloric_multiplier_by_age, lo stesso campo/pattern già usato per gli erbivori
+	# (vedi AnimalConsumptionService._get_total_daily_requirement), qui applicato incondizionatamente
+	# (nessun guard su track_age_bands: i branchi predatori tracciano sempre l'età per costruzione,
+	# vedi _compute_pack_efficiency sotto, che legge group.get_age_count senza quel guard). Un
+	# branco con molti giovani costa quindi meno di uno di soli adulti, non più un flat
+	# daily_caloric_requirement × population indipendente dalla composizione. hunts_in_pack stesso
+	# resta dichiarato ma DORMIENTE qui: nessuna variante "caccia solitaria" è specificata in questo
+	# step, quindi non è implementata — stesso trattamento già riservato ad altri campi non ancora
 	# consumati in questo codebase (es. max_density_per_cell per i predatori).
-	var daily_requirement_today: float = rules.daily_caloric_requirement * float(group.population)
+	var daily_requirement_today: float = _compute_daily_requirement(group, rules)
 	var residual_requirement: float = (
 		daily_requirement_today + group.predation_calorie_debt - group.predation_surplus_carryover
 	)
 
+	# Log di apertura giornata (stesso stile/gate di [ANIMAL HUNGER] — vedi AnimalHungerService)
+	# incondizionato (non solo sui giorni "eventful"): a differenza della fame erbivora, qui il
+	# meccanismo è nuovo e ancora da validare in gioco, quindi ogni giorno processato per un
+	# gruppo predatore produce una riga, silenzio compreso.
+	if DebugLogging.ENABLED:
+		# Finestra di caccia di OGGI (group.patrol_route[patrol_index], la stessa che
+		# _run_hunting_attempts leggerà più sotto se la caccia parte) — loggata qui, PRIMA di
+		# PredatorPatrolService.advance_patrol a fine funzione, così riflette sempre dove il branco
+		# sta pattugliando oggi, non dove si sposterà domani. Guard su patrol_route vuoto (branco
+		# appena creato dallo strumento di debug senza territorio, o territorio con BFS esaurita a
+		# 0 celle raggiungibili): nessun anchor da mostrare in quel caso.
+		var window_info := "nessuna (patrol_route vuoto)"
+		if not group.patrol_route.is_empty():
+			var window_anchor: Vector2i = group.patrol_route[group.patrol_index]
+			window_info = "anchor=(%d,%d) size=%dx%d" % [
+				window_anchor.x, window_anchor.y, rules.hunting_window_size, rules.hunting_window_size
+			]
+		print(
+			(
+				"[PREDATION] #%d %s pop=%d fabbisogno_oggi=%.1f debito_pregresso=%.1f surplus_pregresso=%.1f "
+				+ "residuo=%.1f finestra_oggi=%s"
+			) % [
+				group.id, group.species_name, group.population,
+				daily_requirement_today, group.predation_calorie_debt, group.predation_surplus_carryover,
+				residual_requirement, window_info
+			]
+		)
+
 	var calories_obtained_today := 0.0
+	# Catture di oggi per specie (species_name -> {"quantity": int, "calories": float}), popolato
+	# da _capture_prey via _run_hunting_attempts — passato per riferimento (Dictionary in GDScript
+	# è sempre by-reference) così ogni cattura riuscita si accumula direttamente qui senza dover
+	# ricostruire il totale a valle. Resta vuoto se il branco non caccia affatto oggi (gate sotto
+	# non entra, o nessun tentativo va a segno) — _record_hunt_log in fondo lo registra comunque,
+	# anche vuoto: la tab Fauna 3 mostra "nessuna cattura" per quel giorno invece di un buco nella
+	# finestra degli ultimi 5 giorni.
+	var captures_today: Dictionary = {}
 
 	# Guard su max_pack_hunting_efficiency <= 0.0: evita la divisione per zero nel calcolo di
 	# successo al punto 4c per una specie non ancora tarata (default 0.0, "Nessun default forzato"
@@ -72,24 +104,91 @@ func _process_group(world: World, group: PopulationGroup, rules: PredatorRules) 
 	# invece di fare affidamento implicito su quella coincidenza aritmetica.
 	if residual_requirement > 0.0 and rules.max_pack_hunting_efficiency > 0.0 and not group.patrol_route.is_empty():
 		var pack_efficiency := _compute_pack_efficiency(group, rules)
-		# Punto 3: tentativi_totali = round(efficacia_branco / 2) — round() letterale come da
-		# formula (non SimulationMath.stochastic_round: la specifica di questo step usa
-		# esplicitamente round(), scelta rispettata senza sostituzioni silenziose).
-		var attempt_count: int = int(round(pack_efficiency / 2.0))
+		# Punto 3: tentativi_totali = round(efficacia_branco / attempts_per_efficiency) — round()
+		# letterale come da formula (non SimulationMath.stochastic_round: la specifica di questo
+		# step usa esplicitamente round(), scelta rispettata senza sostituzioni silenziose).
+		var attempt_count: int = int(round(pack_efficiency / rules.attempts_per_efficiency))
+		if DebugLogging.ENABLED:
+			print("[PREDATION] #%d efficacia_branco=%.2f tentativi_totali=%d" % [group.id, pack_efficiency, attempt_count])
 		if attempt_count > 0:
 			calories_obtained_today = _run_hunting_attempts(
-				world, group, rules, pack_efficiency, attempt_count, daily_requirement_today
+				world, group, rules, pack_efficiency, attempt_count,
+				daily_requirement_today, residual_requirement, captures_today
 			)
+		elif DebugLogging.ENABLED:
+			print("[PREDATION] #%d branco troppo debole per cacciare oggi (tentativi_totali=0)" % group.id)
 		# Se attempt_count == 0 ("branco troppo debole"): nessuna caccia, calories_obtained_today
 		# resta 0.0 — stessa uscita del gate sopra, il bookkeeping sotto gira comunque.
+	elif DebugLogging.ENABLED:
+		var skip_reason := "residuo già coperto"
+		if residual_requirement > 0.0:
+			skip_reason = (
+				"max_pack_hunting_efficiency non tarato" if rules.max_pack_hunting_efficiency <= 0.0
+				else "patrol_route vuoto (territorio non ancora popolato)"
+			)
+		print("[PREDATION] #%d nessuna caccia oggi (%s)" % [group.id, skip_reason])
 
 	_apply_calorie_bookkeeping(group, daily_requirement_today, calories_obtained_today)
+	_record_hunt_log(group, year, day, captures_today)
+
+	# Consuntivo stagionale per la mitigazione della natalità (vedi PopulationGroup.
+	# predation_season_calories_obtained/_required) — somma grezza ogni giorno processato, azzerata
+	# da TerritoryDynamicsService al checkpoint di birth_season dopo averla letta.
+	group.predation_season_calories_obtained += calories_obtained_today
+	group.predation_season_calories_required += daily_requirement_today
+
+	if DebugLogging.ENABLED:
+		print(
+			"[PREDATION] #%d calorie_ottenute_oggi=%.1f -> debito_nuovo=%.1f surplus_nuovo=%.1f" % [
+				group.id, calories_obtained_today, group.predation_calorie_debt, group.predation_surplus_carryover
+			]
+		)
+
+	_apply_starvation_mortality(group, rules, daily_requirement_today)
 
 	# Il pattugliamento avanza SEMPRE, indipendentemente dall'esito della caccia di oggi — vedi
 	# PredatorPatrolService.advance_patrol. Va DOPO l'uso di group.patrol_route/patrol_index sopra
 	# (la finestra di oggi, letta da _run_hunting_attempts, deve restare quella di OGGI per tutta la
 	# durata dei tentativi odierni; avanzare prima l'avrebbe already spostata a domani).
 	PredatorPatrolService.new().advance_patrol(group)
+
+
+# Registra le catture di OGGI (tab Fauna 3, UI — vedi PopulationGroup.recent_hunt_log/
+# yearly_prey_totals) — chiamata SEMPRE, anche con captures_today vuoto (nessuna caccia o nessun
+# tentativo andato a segno oggi): "gli ultimi 5 giorni" deve restare una vera finestra di 5 giorni
+# CONSECUTIVI, non 5 giorni sparsi in cui è successo qualcosa — un giorno senza catture compare
+# comunque come entry con captures={}, la UI lo mostra come "nessuna cattura".
+func _record_hunt_log(group: PopulationGroup, year: int, day: int, captures_today: Dictionary) -> void:
+	group.recent_hunt_log.append({"year": year, "day": day, "captures": captures_today})
+	while group.recent_hunt_log.size() > PopulationGroup.RECENT_HUNT_LOG_MAX_DAYS:
+		group.recent_hunt_log.pop_front()
+
+	# Totali dell'ANNO DI CALENDARIO corrente (non rolling, vedi PopulationGroup.yearly_prey_totals):
+	# azzerati qui stesso al primo giorno di caccia di un anno nuovo (year != yearly_prey_totals_year),
+	# senza bisogno di un hook dedicato al cambio anno in WorldTimeService — questo service gira
+	# comunque ogni giorno, quindi il confronto qui è sufficiente e sempre aggiornato.
+	if group.yearly_prey_totals_year != year:
+		group.yearly_prey_totals = {}
+		group.yearly_prey_totals_year = year
+
+	for species_name in captures_today.keys():
+		var today_entry: Dictionary = captures_today[species_name]
+		var yearly_entry: Dictionary = group.yearly_prey_totals.get(species_name, {"quantity": 0, "calories": 0.0})
+		yearly_entry["quantity"] = int(yearly_entry["quantity"]) + int(today_entry["quantity"])
+		yearly_entry["calories"] = float(yearly_entry["calories"]) + float(today_entry["calories"])
+		group.yearly_prey_totals[species_name] = yearly_entry
+
+
+# Punto 1: daily_requirement_today = Σ [daily_caloric_requirement × caloric_multiplier_by_age[età]
+# × popolazione(gruppo, età)] per young/adult/old — stesso schema di _compute_pack_efficiency
+# sotto (somma pesata sulle tre fasce d'età del PREDATORE, non della preda). Se il branco non
+# traccia età (age_composition vuota) ogni get_age_count ritorna 0, quindi il fabbisogno risulta 0
+# — nessun ramo speciale necessario, stessa scelta già fatta per _compute_pack_efficiency.
+func _compute_daily_requirement(group: PopulationGroup, rules: PredatorRules) -> float:
+	var weighted_count := 0.0
+	for age_band in _AGE_BANDS:
+		weighted_count += float(rules.caloric_multiplier_by_age[age_band]) * float(group.get_age_count(age_band))
+	return weighted_count * rules.daily_caloric_requirement
 
 
 # Punto 2: efficacia_branco = min(Σ hunting_efficiency_by_age[età] × popolazione(gruppo, età),
@@ -109,31 +208,48 @@ func _compute_pack_efficiency(group: PopulationGroup, rules: PredatorRules) -> f
 # solo ogni giorno per costruzione (mai persistito su group).
 func _run_hunting_attempts(
 	world: World, group: PopulationGroup, rules: PredatorRules, pack_efficiency: float, attempt_count: int,
-	daily_requirement_today: float
+	daily_requirement_today: float, residual_requirement: float, captures_today: Dictionary
 ) -> float:
 	var anchor: Vector2i = group.patrol_route[group.patrol_index]
 	var window_size: int = rules.hunting_window_size
 	var calories_obtained := 0.0
 	var malus_species: Dictionary = {}
 
+	# 4a: candidati raccolti UNA SOLA VOLTA per l'intera giornata (non più ad ogni tentativo) —
+	# _capture_prey aggiorna in place (stesso Dictionary, per riferimento: nessuna copia) age_totals/
+	# convenience del candidato appena colpito dopo una cattura riuscita, così i tentativi
+	# successivi vedono comunque la disponibilità aggiornata senza rifare l'intera scansione di
+	# tutte le specie preda × tutti i loro gruppi × territorio di ciascuno (world.population_groups
+	# nella sua interezza) — prima ripetuta attempt_count volte per branco, e sommata su tutti i
+	# branchi attivi quel giorno.
+	var candidates := _gather_prey_candidates(world, rules, anchor, window_size)
+
 	for attempt_number in range(1, attempt_count + 1):
 		# Punto 4c, moltiplicatore_stanchezza: 1.0 al primo tentativo, decresce linearmente fino a
-		# 0.5 all'ultimo — formula valida solo per attempt_count > 1 (altrimenti divisione per
-		# zero), 1.0 fisso altrimenti come da specifica.
+		# rules.fatigue_floor all'ultimo — formula valida solo per attempt_count > 1 (altrimenti
+		# divisione per zero), 1.0 fisso altrimenti come da specifica.
 		var fatigue_multiplier := 1.0
 		if attempt_count > 1:
-			fatigue_multiplier = 1.0 - 0.5 * float(attempt_number - 1) / float(attempt_count - 1)
+			fatigue_multiplier = 1.0 - (1.0 - rules.fatigue_floor) * float(attempt_number - 1) / float(attempt_count - 1)
 
-		# 4a: candidati ricalcolati AD OGNI TENTATIVO (non una volta sola per giorno) — una cattura
-		# riuscita in un tentativo precedente ha già decrementato la popolazione della preda, quindi
-		# la disponibilità reale per i tentativi successivi è diversa da quella di inizio giornata.
-		var candidates := _gather_prey_candidates(world, rules, anchor, window_size, malus_species)
 		if candidates.is_empty():
+			if DebugLogging.ENABLED:
+				print(
+					"[PREDATION ATTEMPT] #%d tentativo %d/%d: nessuna preda disponibile nella finestra oggi" % [
+						group.id, attempt_number, attempt_count
+					]
+				)
 			continue # "nessuna preda disponibile nella finestra oggi" -> tentativo fallito
 
+		# Peso di selezione ricalcolato qui ad ogni tentativo (non più memorizzato dentro
+		# candidates, vedi _gather_prey_candidates): convenience cambia con le catture di OGGI
+		# (aggiornata in place da _capture_prey), il malus da bersaglio-ripetuto cambia con
+		# malus_species sotto — nessuno dei due richiede una nuova scansione del mondo, solo
+		# S iterazioni (S = specie preda compatibili, tipicamente una manciata).
 		var selection_weights: Array[float] = []
 		for candidate in candidates:
-			selection_weights.append(float(candidate["selection_weight"]))
+			var malus: float = rules.repeat_target_malus if malus_species.has(candidate["species_name"]) else 1.0
+			selection_weights.append(float(candidate["convenience"]) * malus)
 		var species_index := _weighted_random_index(selection_weights)
 		if species_index < 0:
 			continue
@@ -160,11 +276,26 @@ func _run_hunting_attempts(
 			float(chosen["compatibility"]) * (pack_efficiency / rules.max_pack_hunting_efficiency) * fatigue_multiplier,
 			0.0, 1.0
 		)
-		if randf() >= success_probability:
+		var success_roll := randf()
+		if success_roll >= success_probability:
+			if DebugLogging.ENABLED:
+				print(
+					(
+						"[PREDATION ATTEMPT] #%d tentativo %d/%d: bersaglio=%s età=%s stanchezza=%.2f "
+						+ "probabilità=%.2f esito=fallito"
+					) % [
+						group.id, attempt_number, attempt_count, chosen["species_name"],
+						GameTypes.AgeBand.keys()[chosen_age], fatigue_multiplier, success_probability
+					]
+				)
 			continue # 4e: fallimento, nessun decremento, nessuna caloria
 
-		# 4d: successo — cattura effettiva.
-		calories_obtained += _capture_prey(chosen, chosen_age, daily_requirement_today)
+		# 4d: successo — cattura effettiva. Il log dell'esito positivo (quantità/calorie/gruppo
+		# preda reali) vive dentro _capture_prey, l'unico punto che li conosce già calcolati.
+		calories_obtained += _capture_prey(
+			chosen, chosen_age, daily_requirement_today, residual_requirement, attempt_count,
+			group.id, attempt_number, success_probability, captures_today
+		)
 
 	return calories_obtained
 
@@ -197,7 +328,11 @@ func _select_victim_age_band(chosen: Dictionary) -> int:
 # finestra di oggi, la cattura sceglie TRA LORO con selezione random pesata sulla rispettiva
 # popolazione della fascia scelta presente nella finestra — stesso principio probabilistico già
 # usato per specie/età sopra, non un "prendi sempre dal gruppo più numeroso" deterministico.
-func _capture_prey(chosen: Dictionary, chosen_age: int, daily_requirement_today: float) -> float:
+func _capture_prey(
+	chosen: Dictionary, chosen_age: int, daily_requirement_today: float, residual_requirement: float,
+	attempt_count: int, predator_group_id: int, attempt_number: int, success_probability: float,
+	captures_today: Dictionary
+) -> float:
 	var prey_rules: AnimalRules = chosen["prey_rules"]
 
 	var eligible_groups: Array[PopulationGroup] = []
@@ -222,7 +357,41 @@ func _capture_prey(chosen: Dictionary, chosen_age: int, daily_requirement_today:
 	var window_count: int = int(group_weights[group_index])
 
 	var prey_calories: float = prey_rules.prey_calories
-	var max_catturabili: int = max(1, int(floor(daily_requirement_today / (prey_calories * MAX_CATCH_CALORIE_MULTIPLIER))))
+	# max_catturabili = round(base_per_calcolo / (prey_calories × size_multiplier_by_age[chosen_age]
+	# × attempt_count)) — il denominatore usa il valore calorico REALE della fascia d'età già scelta
+	# (chosen_age), non il valore adulto puro: altrimenti il tetto assumerebbe implicitamente che
+	# ogni individuo catturato valga prey_calories pieno, mentre le calorie ottenute (vedi il return
+	# in fondo a questa funzione) sono già scalate per size_multiplier_by_age — un tetto calcolato su
+	# young (multiplier < 1) risulterebbe troppo BASSO rispetto al fabbisogno reale da coprire, uno
+	# calcolato su old (multiplier > 1) troppo ALTO; solo su adult (multiplier = 1.0) i due erano già
+	# coerenti.
+	#
+	# base_per_calcolo = max(daily_requirement_today, residual_requirement) — non più il solo
+	# fabbisogno flat di oggi: residual_requirement (= daily_requirement_today + debito_pregresso -
+	# surplus_pregresso, lo stesso valore già usato dal gate caccia sì/no in _process_group) lascia
+	# a un branco indebitato la possibilità reale di recuperare l'arretrato in un giorno fortunato
+	# ("surplus killing" — un predatore affamato che trova un'occasione buona ne approfitta a
+	# pieno), mentre il max() con daily_requirement_today impedisce al tetto di scendere sotto il
+	# fabbisogno normale quando il branco è già quasi sazio (surplus_pregresso piccolo,
+	# residual_requirement quindi minore di daily_requirement_today) — altrimenti quel branco non
+	# potrebbe mai costruire un surplus più consistente in un giorno buono.
+	#
+	# Divisore attempt_count (non più una costante di specie, vedi PredatorRules.gd): un branco con
+	# più tentativi disponibili ha già più occasioni di catturare, quindi un tetto per-tentativo più
+	# basso; un branco con pochi tentativi ha un tetto più alto per compensare. round() (non più
+	# ceil()): con un numeratore che può già essere generoso di suo grazie al debito, l'arrotondamento
+	# matematico standard (>=0.5 sale, <0.5 scende) è meno sistematicamente ottimista — nessun tetto
+	# massimo assoluto imposto qui, il tetto resta libero di crescere con il debito accumulato finché
+	# non se ne osserva il comportamento in gioco.
+	var age_calories: float = prey_calories * float(prey_rules.size_multiplier_by_age[chosen_age])
+	var base_per_calcolo: float = max(daily_requirement_today, residual_requirement)
+	# Etichetta per il log di successo sotto (base_calc_source): quale dei due termini del max()
+	# ha vinto oggi — "fabbisogno" quando il branco non ha debito/ha già un surplus sufficiente a
+	# tenere residual_requirement sotto il fabbisogno flat, "residuo" quando il debito pregresso
+	# spinge residual_requirement sopra il fabbisogno di oggi. A parità (>=), vince "fabbisogno" —
+	# coerente con max(): a debito zero i due termini coincidono esattamente.
+	var base_calc_source := "fabbisogno" if daily_requirement_today >= residual_requirement else "residuo"
+	var max_catturabili: int = max(1, int(round(base_per_calcolo / (age_calories * float(attempt_count)))))
 	# Distribuzione più semplice da implementare tra quelle possibili, come richiesto: uniforme su
 	# [1, max_catturabili], nessuna ponderazione verso il basso.
 	var quantity: int = randi_range(1, max_catturabili)
@@ -230,18 +399,83 @@ func _capture_prey(chosen: Dictionary, chosen_age: int, daily_requirement_today:
 
 	var removed := target_group.apply_predation_loss(chosen_age, quantity)
 	if removed <= 0:
+		# Difensivo (vedi commento a group_index sopra): non dovrebbe accadere se chosen_age è
+		# stato validato correttamente a monte, ma se capita va comunque in log invece di sparire
+		# silenziosamente come un successo senza calorie.
+		if DebugLogging.ENABLED:
+			print(
+				(
+					"[PREDATION ATTEMPT] #%d tentativo %d/%d: bersaglio=%s età=%s probabilità=%.2f "
+					+ "esito=fallito (nessun individuo rimosso, difensivo)"
+				) % [
+					predator_group_id, attempt_number, attempt_count, chosen["species_name"],
+					GameTypes.AgeBand.keys()[chosen_age], success_probability
+				]
+			)
 		return 0.0
 
-	return float(removed) * prey_calories * float(prey_rules.size_multiplier_by_age[chosen_age])
+	var gained: float = float(removed) * prey_calories * float(prey_rules.size_multiplier_by_age[chosen_age])
+
+	# Aggiorna in place age_totals/convenience del candidato appena colpito (vedi
+	# _run_hunting_attempts: candidates è raccolto una sola volta a inizio giornata, non più ad
+	# ogni tentativo) — chosen e la entry dentro chosen["groups"] sono lo STESSO Dictionary di
+	# candidates[i]/groups_in_window[j] (per riferimento, non copie), quindi questa modifica è
+	# visibile automaticamente al tentativo successivo senza rifare la scansione di
+	# _gather_prey_candidates. convenience ricalcolata da zero (non sottratta incrementalmente)
+	# per restare sempre bit-per-bit coerente con la stessa formula usata lì.
+	chosen["age_totals"][chosen_age] = int(chosen["age_totals"][chosen_age]) - removed
+	for entry in chosen["groups"]:
+		if entry["group"] == target_group:
+			entry["age_totals"][chosen_age] = int(entry["age_totals"][chosen_age]) - removed
+			break
+	var updated_convenience := 0.0
+	for age_band in chosen["age_totals"].keys():
+		updated_convenience += (
+			prey_rules.prey_calories
+			* float(prey_rules.size_multiplier_by_age[age_band])
+			* float(chosen["age_totals"][age_band])
+		)
+	chosen["convenience"] = updated_convenience * float(chosen["compatibility"])
+
+	# Registra la cattura per la tab Fauna 3 (UI) — species_name della PREDA, non del predatore
+	# (chosen["species_name"] è già quello). Un dizionario per specie invece di un semplice totale
+	# perché un branco può colpire più specie diverse nella stessa giornata (fino a attempt_count
+	# tentativi), e la UI deve poterle elencare separatamente ("2 rabbit, 1 bezoar"), non solo un
+	# totale calorico indistinto.
+	var species_name: String = chosen["species_name"]
+	var species_entry: Dictionary = captures_today.get(species_name, {"quantity": 0, "calories": 0.0})
+	species_entry["quantity"] = int(species_entry["quantity"]) + removed
+	species_entry["calories"] = float(species_entry["calories"]) + gained
+	captures_today[species_name] = species_entry
+
+	if DebugLogging.ENABLED:
+		print(
+			(
+				"[PREDATION ATTEMPT] #%d tentativo %d/%d: bersaglio=%s età=%s probabilità=%.2f "
+				+ "esito=successo quantità=%d calorie=%.1f gruppo_preda=#%d base_calc=%.1f (%s) max_catturabili=%d"
+			) % [
+				predator_group_id, attempt_number, attempt_count, chosen["species_name"],
+				GameTypes.AgeBand.keys()[chosen_age], success_probability, removed, gained, target_group.id,
+				base_per_calcolo, base_calc_source, max_catturabili
+			]
+		)
+	return gained
 
 
 # Livello 1 (punto 4a): raccoglie, per ogni specie in prey_compatibility con compatibilità > 0 e
 # ALMENO un individuo presente nella finestra di oggi, la convenienza e i dati necessari ai livelli
-# successivi. Nessun indice spaziale: scan lineare di world.population_groups per ogni specie preda
-# (vedi nota di performance nel report) — accettabile alla scala attuale (poche specie preda per
-# branco, poche decine di gruppi totali, pochi tentativi al giorno).
+# successivi. Chiamata UNA SOLA VOLTA per l'intera giornata di caccia di un branco (vedi
+# _run_hunting_attempts) — non più ad ogni tentativo: _capture_prey aggiorna in place age_totals/
+# convenience del candidato colpito dopo una cattura riuscita, quindi i tentativi successivi
+# leggono candidates senza bisogno di rifare questa scansione. Nessun indice spaziale: scan
+# lineare di world.population_groups per ogni specie preda — accettabile alla scala attuale (poche
+# specie preda per branco, poche decine di gruppi totali), e ora pagato una sola volta al giorno
+# invece che una volta per tentativo. Nessun campo "selection_weight" nel risultato: il peso di
+# selezione (convenience × eventuale malus da bersaglio-ripetuto) è calcolato al momento dell'uso
+# in _run_hunting_attempts, non qui — dipende da malus_species, che è per-tentativo/per-branco, non
+# un dato della singola specie preda.
 func _gather_prey_candidates(
-	world: World, rules: PredatorRules, anchor: Vector2i, window_size: int, malus_species: Dictionary
+	world: World, rules: PredatorRules, anchor: Vector2i, window_size: int
 ) -> Array[Dictionary]:
 	var candidates: Array[Dictionary] = []
 
@@ -289,8 +523,6 @@ func _gather_prey_candidates(
 		if convenience <= 0.0:
 			continue
 
-		var malus: float = SPECIES_TARGET_MALUS_MULTIPLIER if malus_species.has(prey_species_name) else 1.0
-
 		candidates.append({
 			"species_name": prey_species_name,
 			"compatibility": compatibility,
@@ -298,7 +530,6 @@ func _gather_prey_candidates(
 			"age_totals": species_age_totals,
 			"groups": groups_in_window,
 			"convenience": convenience,
-			"selection_weight": convenience * malus,
 		})
 
 	return candidates
@@ -341,14 +572,21 @@ func _cell_in_window(coords: Vector2i, anchor: Vector2i, window_size: int) -> bo
 # carryover+catturato in un colpo solo, dato che qui non c'è alcuna conseguenza diversa legata a
 # QUALE dei due importi viene coperto per primo (nessun interesse, nessuna priorità con effetti
 # collaterali propri) — è solo un'unica sottrazione riorganizzata. net = disponibile - dovuto:
-#   net >= 0 -> debito azzerato, metà di net riportata a domani (l'altra metà persa, come da
-#     specifica "se avanza surplus... metà si riporta, l'altra metà si perde").
+#   net >= 0 -> debito azzerato, il 90% di net riportato a domani (SURPLUS_CARRYOVER_RATIO,
+#     il restante 10% perso). Non più un dimezzamento (50/50): un branco vive davvero di una
+#     cattura grossa fino quasi ad esaurirla prima di ricacciare (comportamento reale dei lupi —
+#     scorta consumata quasi per intero, non un "credito" che decade di metà ogni giorno anche
+#     nei giorni in cui non caccia), la piccola perdita residua modella solo spreco verso
+#     spazzini/decomposizione su catture molto abbondanti che richiedono più giorni per essere
+#     consumate.
 #   net < 0  -> nessun surplus, -net diventa il nuovo debito pregresso per domani ("il residuo non
 #     coperto si accumula come nuovo debito pregresso").
 # Gira SEMPRE, anche con calories_obtained_today == 0.0 (nessuna caccia oggi, per gate al punto 1 o
 # 3): in quel caso il surplus di ieri (predation_surplus_carryover, non ancora "consumato" da
 # nessun'altra scrittura prima di qui) copre da solo quanto può, esattamente come se fosse la sola
 # fonte di calorie disponibili oggi — nessun ramo speciale necessario.
+const SURPLUS_CARRYOVER_RATIO := 0.9
+
 func _apply_calorie_bookkeeping(
 	group: PopulationGroup, daily_requirement_today: float, calories_obtained_today: float
 ) -> void:
@@ -358,10 +596,70 @@ func _apply_calorie_bookkeeping(
 
 	if net >= 0.0:
 		group.predation_calorie_debt = 0.0
-		group.predation_surplus_carryover = net * 0.5
+		group.predation_surplus_carryover = net * SURPLUS_CARRYOVER_RATIO
 	else:
 		group.predation_calorie_debt = -net
 		group.predation_surplus_carryover = 0.0
+
+
+# Mortalità da fame prolungata per i predatori (Step 4, confermato con l'utente) — non il sistema
+# a bucket-per-individuo degli erbivori (AnimalHungerService), concettualmente incompatibile con
+# un branco che caccia a raffiche e vive di una singola cattura per giorni (il modello di
+# debito/surplus sopra esiste apposta per questo): predation_calorie_debt è già un accumulo
+# scalare di fabbisogno non coperto, quindi debito/fabbisogno_di_oggi è già un equivalente "giorni
+# di fame" senza bisogno di un istogramma separato. Soglia = fabbisogno_di_oggi ×
+# rules.max_days_without_food (stesso campo di AnimalRules già usato dagli erbivori, nessun nuovo
+# dato) — non tarato per questa specie (<=0, default AnimalRules) significa meccanismo non ancora
+# configurato, no-op, stesso principio già usato da AnimalOldAgeMortalityService per
+# old_duration_years<=0.
+func _apply_starvation_mortality(group: PopulationGroup, rules: PredatorRules, daily_requirement_today: float) -> void:
+	if rules.max_days_without_food <= 0:
+		return
+	if group.population <= 0 or daily_requirement_today <= 0.0:
+		return
+
+	var threshold: float = daily_requirement_today * float(rules.max_days_without_food)
+	var excess_debt: float = group.predation_calorie_debt - threshold
+	if excess_debt <= 0.0:
+		return
+
+	# Divisore = fabbisogno MEDIO per individuo di oggi (non un valore fisso di specie): l'età
+	# incide sul fabbisogno reale (AnimalRules.caloric_multiplier_by_age), quindi un giovane "vale"
+	# meno di un adulto nel consumare l'eccedenza di debito — quale fascia muoia davvero lo decide
+	# comunque apply_hunger_mortality sotto (pesato per mortality_share_by_age), qui serve solo a
+	# stimare QUANTI individui l'eccedenza rappresenta.
+	var average_requirement_per_individual: float = daily_requirement_today / float(group.population)
+	var deaths: int = min(group.population, int(excess_debt / average_requirement_per_individual))
+	if deaths <= 0:
+		return
+
+	var population_before := group.population
+	var debt_before := group.predation_calorie_debt
+	# Riuso diretto della stessa funzione degli erbivori (PopulationGroup.apply_hunger_mortality):
+	# generica per qualunque AnimalRules, distribuisce le morti tra le fasce d'età pesando per
+	# rules.mortality_share_by_age (già impostato per il lupo) coi tetti reali di disponibilità per
+	# fascia — nessun codice nuovo necessario per decidere CHI muore. Non tocca hunger_buckets
+	# (sempre vuoto per i predatori, mai popolato — vedi AnimalHungerService, che li esclude).
+	var removed := group.apply_hunger_mortality(deaths, rules)
+	if removed <= 0:
+		return
+
+	# Storno del debito: ogni individuo "portava" una quota uguale del debito totale
+	# (debt_before/population_before, non tracciato per singolo individuo) — chi muore se la porta
+	# via, i sopravvissuti mantengono la propria quota proporzionale.
+	group.predation_calorie_debt = debt_before * (float(group.population) / float(population_before))
+
+	if DebugLogging.ENABLED:
+		print(
+			(
+				"[PREDATION STARVATION] #%d %s debito=%.1f soglia=%.1f (fabbisogno_oggi=%.1f x %dgg) "
+				+ "eccedenza=%.1f MORTI=%d pop %d->%d debito_nuovo=%.1f"
+			) % [
+				group.id, group.species_name, debt_before, threshold, daily_requirement_today,
+				rules.max_days_without_food, excess_debt, removed, population_before, group.population,
+				group.predation_calorie_debt
+			]
+		)
 
 
 # Selezione random pesata generica (usata per specie, età, gruppo-istanza — Livelli 1/2 e scelta

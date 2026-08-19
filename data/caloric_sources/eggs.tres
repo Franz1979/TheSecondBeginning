@@ -6,6 +6,6 @@
 script = ExtResource("1_eggs")
 caloric_source_name = "eggs"
 yield_ratio = 1.5
-calories_per_unit = 20.0
+calories_per_unit = 5.0
 seasonal_availability_multiplier = Array[float]([0.0, 1.0, 0.0, 0.0])
 consuming_depletes_primary = false

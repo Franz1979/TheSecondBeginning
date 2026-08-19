@@ -134,6 +134,10 @@ func load_game_from_json(file_path: String) -> LoadedGame:
 			# default della classe, comportamento invariato per quei save. set_ (non assegnazione
 			# diretta) per applicare comunque il clamp a MULTIPLIER_ABUNDANCE_CAP.
 			group.set_birth_mitigation_multiplier(float(group_data.get("birth_mitigation_multiplier", 1.0)))
+			# .get(key, 1.0) per compatibilità con save precedenti l'introduzione di questo campo
+			# (solo per il log, vedi PopulationGroup.birth_mitigation_caloric_ratio) — 1.0 è lo
+			# stesso default della classe.
+			group.birth_mitigation_caloric_ratio = float(group_data.get("birth_mitigation_caloric_ratio", 1.0))
 			# .get(key, -1) per compatibilità con save precedenti l'introduzione dello split
 			# (Step 9/10) — -1 = "mai scisso", stesso default della classe, comportamento
 			# invariato per quei save.
@@ -141,6 +145,62 @@ func load_game_from_json(file_path: String) -> LoadedGame:
 			# .get(key, 0) per compatibilità con save precedenti l'introduzione del cooldown
 			# (Step 11) — 0 = nessun cooldown attivo, stesso default della classe.
 			group.hunger_split_cooldown_days = int(group_data.get("hunger_split_cooldown_days", 0))
+			# .get(key, default) per compatibilità con save precedenti l'introduzione dei predatori
+			# — 0/1/0.0/0.0 sono gli stessi default di PopulationGroup.gd (percorso mai camminato,
+			# nessun debito/surplus). Caricati PRIMA del ricalcolo di patrol_route sotto: quella
+			# chiamata deve trovare patrol_index/patrol_direction già al loro valore reale, non li
+			# tocca comunque (reset_progress=false), ma l'ordine di scrittura resta esplicito per
+			# chiarezza — mai un momento in cui il gruppo ha un indice "vecchio" letto insieme a un
+			# percorso "nuovo" incoerente tra loro (qui coincidono comunque, vedi sotto).
+			group.patrol_index = int(group_data.get("patrol_index", 0))
+			group.patrol_direction = int(group_data.get("patrol_direction", 1))
+			group.predation_calorie_debt = float(group_data.get("predation_calorie_debt", 0.0))
+			group.predation_surplus_carryover = float(group_data.get("predation_surplus_carryover", 0.0))
+			# .get(key, 0.0) per compatibilità con save precedenti l'introduzione della mitigazione
+			# natalità predatori (vedi AnimalBirthMitigationService.compute_predator_caloric_ratio) —
+			# 0.0/0.0 sono gli stessi default di PopulationGroup.gd.
+			group.predation_season_calories_obtained = float(group_data.get("predation_season_calories_obtained", 0.0))
+			group.predation_season_calories_required = float(group_data.get("predation_season_calories_required", 0.0))
+			# recent_hunt_log/yearly_prey_totals (tab Fauna 3, UI) — .get(key, []/{}/{})/-1 per
+			# compatibilità con save precedenti l'introduzione di questi campi. Ogni valore
+			# numerico ri-castato esplicitamente (int/float): JSON non distingue i due tipi allo
+			# stesso modo di GDScript, stesso principio già seguito ovunque in questo file.
+			for hunt_entry_data in group_data.get("recent_hunt_log", []):
+				var captures_data: Dictionary = hunt_entry_data.get("captures", {})
+				var captures: Dictionary = {}
+				for species_name in captures_data.keys():
+					var species_data: Dictionary = captures_data[species_name]
+					captures[species_name] = {
+						"quantity": int(species_data.get("quantity", 0)),
+						"calories": float(species_data.get("calories", 0.0))
+					}
+				group.recent_hunt_log.append({
+					"year": int(hunt_entry_data.get("year", 0)),
+					"day": int(hunt_entry_data.get("day", 0)),
+					"captures": captures
+				})
+			var yearly_totals_data: Dictionary = group_data.get("yearly_prey_totals", {})
+			for species_name in yearly_totals_data.keys():
+				var species_totals: Dictionary = yearly_totals_data[species_name]
+				group.yearly_prey_totals[species_name] = {
+					"quantity": int(species_totals.get("quantity", 0)),
+					"calories": float(species_totals.get("calories", 0.0))
+				}
+			group.yearly_prey_totals_year = int(group_data.get("yearly_prey_totals_year", -1))
+			# patrol_route non è mai salvato (dato derivato, vedi GameSaveService) — per un
+			# gruppo predatore va ricostruito qui, una volta, subito dopo che il territorio è
+			# stato ricreato sopra (Territory.new(occupied_cells)). reset_progress=false: il
+			# territorio non è cambiato rispetto al salvataggio (stesse celle, stesso ordine,
+			# stesso _build_route deterministico => percorso identico bit per bit a quello di
+			# prima del salvataggio), quindi patrol_index/patrol_direction appena caricati sopra
+			# restano validi e NON vanno riazzerati come farebbe una ricostruzione normale
+			# (territorio davvero cambiato, vedi PredatorPatrolService.recompute_route). Specie
+			# senza PredatorRules (tutti gli erbivori): rules is PredatorRules è false, questo
+			# blocco è no-op, patrol_route/patrol_index/patrol_direction restano ai default della
+			# classe (mai letti da nessun service erbivoro-generico).
+			var rules := AnimalCalculator.get_animal_rules(group.species_name)
+			if rules is PredatorRules:
+				PredatorPatrolService.new().recompute_route(group, rules as PredatorRules, false)
 			world.population_groups.append(group)
 
 	# Nessun campo dedicato per il contatore nel JSON: ricalcolato da max(id caricati)+1 così le

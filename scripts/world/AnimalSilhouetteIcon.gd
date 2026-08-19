@@ -9,8 +9,8 @@ extends Control
 # _draw() vettoriale, nitido a qualunque dimensione dell'icona.
 #
 # Specie senza una sagoma dedicata (nessuna oggi oltre rabbit/deer/boar/tarpan/aurochs/
-# wild_donkey/mouflon/bezoar) ricadono su un marker generico (cerchio pieno + iniziale del nome)
-# invece di restare vuote — un pulsante-filtro per una specie futura compare comunque senza
+# wild_donkey/mouflon/bezoar/wolf) ricadono su un marker generico (cerchio pieno + iniziale del
+# nome) invece di restare vuote — un pulsante-filtro per una specie futura compare comunque senza
 # bisogno di scrivere prima una sagoma dedicata per lei.
 const GENERIC_MARKER_TEXT_COLOR := Color.WHITE
 # Frazione del riquadro (size) effettivamente occupata dal contenuto disegnato — un margine
@@ -23,7 +23,7 @@ var _has_dedicated_shape: bool = false
 var _generic_marker_letter: String = ""
 
 
-# species_name: "rabbit"/"deer"/"boar"/"tarpan"/"aurochs"/"wild_donkey"/"mouflon"/"bezoar"
+# species_name: "rabbit"/"deer"/"boar"/"tarpan"/"aurochs"/"wild_donkey"/"mouflon"/"bezoar"/"wolf"
 # ottengono la sagoma dedicata (stessi parametri di forma del renderer sul campo, vedi
 # AnimalGroupRenderer); qualunque altro valore ricade sul marker generico sopra. color è sempre
 # scelto dal chiamante (MacroCellInfoPanel) — mai hardcoded qui, stesso principio di
@@ -71,6 +71,11 @@ func configure(species_name: String, color: Color) -> void:
 			_geometry = AnimalGroupRenderer.get_bezoar_silhouette_geometry(
 				AnimalGroupRenderer.BEZOAR_BODY_LENGTH, AnimalGroupRenderer.BEZOAR_BODY_WIDTH,
 				AnimalGroupRenderer.BEZOAR_EAR_LENGTH, AnimalGroupRenderer.BEZOAR_EAR_WIDTH
+			)
+		"wolf":
+			_geometry = AnimalGroupRenderer.get_wolf_silhouette_geometry(
+				AnimalGroupRenderer.WOLF_BODY_LENGTH, AnimalGroupRenderer.WOLF_BODY_WIDTH,
+				AnimalGroupRenderer.WOLF_EAR_LENGTH, AnimalGroupRenderer.WOLF_EAR_WIDTH
 			)
 		_:
 			_has_dedicated_shape = false

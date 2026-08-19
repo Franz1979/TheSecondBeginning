@@ -329,6 +329,15 @@ func _on_debug_set_animal_pressed() -> void:
 	if group == null:
 		group = PopulationGroup.new(species_name, _build_initial_territory(coords, rules, species_name), world.allocate_population_group_id())
 		world.population_groups.append(group)
+		# Branchi predatori (PredatorRules, es. wolf): patrol_route va calcolato SUBITO dopo la
+		# creazione del territorio, non lasciato vuoto — PredationService._process_group non tenta
+		# mai una caccia se group.patrol_route.is_empty() (guard esplicito lì). Solo alla creazione:
+		# il territorio di un gruppo esistente non cambia più da qui (nessuna logica di espansione/
+		# contrazione per predatori ancora, vedi PredatorRules.gd), quindi non serve ricalcolare se
+		# il bottone viene premuto di nuovo sulla stessa specie/cella (branch group == null sopra
+		# non rientra in quel caso).
+		if rules is PredatorRules:
+			PredatorPatrolService.new().recompute_route(group, rules as PredatorRules)
 	group.set_population(count)
 	# Riallinea age_composition al nuovo totale (vedi PopulationGroup.set_age_composition) —
 	# senza questo, la maturazione delle age band non avrebbe mai dati su cui operare finché la

@@ -18,10 +18,28 @@ var population_groups: Array[PopulationGroup] = []
 # da max(id caricati)+1 dopo il caricamento, nessun campo dedicato nel JSON necessario.
 var next_population_group_id: int = 1
 
+# species_name -> contatore incrementato ogni volta che un territorio DI QUELLA SPECIE si libera
+# davvero (un gruppo si estingue, vedi remove_extinct_population_groups sotto, o si contrae, vedi
+# TerritoryDynamicsService._contract_by_one_cell) — mai su nascite/morti-senza-estinzione/split/
+# espansioni, che non liberano nulla per un rivale della stessa specie in cerca di spazio. Letto da
+# PopulationGroup.blocked_territory_search_version (vedi AnimalHungerService._attempt_expansion/
+# TerritoryDynamicsService._update_group_territory) per evitare di ripetere una BFS costosa
+# (TerritoryBuilderService.find_nearest_free_cell/expand_by_one_cell, più uno scan O(gruppi) su
+# _collect_species_occupied_cells) ogni giorno per un gruppo già accertato bloccato, se nel
+# frattempo nessun territorio della sua specie si è liberato da nessuna parte sulla mappa — non
+# persistito nei save (puro dato di cache/ottimizzazione, mai storia reale: perderlo al
+# caricamento costa al più un nuovo tentativo completo per i gruppi già bloccati al primo
+# checkpoint dopo il load, poi il meccanismo si riallinea da solo).
+var species_territory_release_version: Dictionary = {}
+
 func allocate_population_group_id() -> int:
 	var id := next_population_group_id
 	next_population_group_id += 1
 	return id
+
+
+func release_species_territory(species_name: String) -> void:
+	species_territory_release_version[species_name] = int(species_territory_release_version.get(species_name, 0)) + 1
 
 
 func generate_empty_world() -> void:
@@ -29,6 +47,7 @@ func generate_empty_world() -> void:
 	cell_states.clear()
 	population_groups.clear()
 	next_population_group_id = 1
+	species_territory_release_version.clear()
 	for y in range(HEIGHT):
 		for x in range(WIDTH):
 			var cell := MacroCellData.new(x, y)
@@ -125,8 +144,13 @@ func get_population_groups_at(coords: Vector2i) -> Array[PopulationGroup]:
 # invece che con un controllo ripetuto in ogni chiamante). Chiamato una sola volta al giorno da
 # WorldTimeService.advance_day, DOPO tutti i checkpoint che possono azzerare population in quel
 # giorno — mai durante un loop su population_groups altrove, per non disallineare gli indici di
-# un'iterazione in corso.
+# un'iterazione in corso. Ogni gruppo rimosso qui libera davvero il proprio territorio per un
+# rivale della stessa specie — release_species_territory va chiamata per ciascuno, PRIMA di
+# scartarlo dall'array (mai dopo: non avremmo più modo di sapere quale specie fosse).
 func remove_extinct_population_groups() -> void:
+	for group in population_groups:
+		if group.population <= 0:
+			release_species_territory(group.species_name)
 	population_groups = population_groups.filter(func(group): return group.population > 0)
 
 

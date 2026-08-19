@@ -171,6 +171,29 @@ const BEZOAR_EAR_ANGLE_FROM_HEADING: float = 95.0 * PI / 180.0
 const BEZOAR_TAIL_RADIUS: float = 0.45
 const BEZOAR_TAIL_ANCHOR_RATIO: float = 0.95
 
+# --- Sagoma WOLF (build_wolf_mesh) ---
+# Prima specie PREDATRICE (PredatorRules, non AnimalRules) a ricevere una sagoma dedicata — la
+# pipeline di forma (_get_silhouette_geometry/_build_mesh_from_geometry) è comunque generica
+# rispetto a prede/predatori, nessun adattamento richiesto. Corpo da canide: taper testa/coda più
+# marcato di deer (0.8/1.05) ma meno estremo del muso a goccia di rabbit (0.55/1.25) — un lupo si
+# legge con un muso distintamente più stretto delle spalle/anche, non uniforme come un cervide né
+# a goccia come un leporide.
+const WOLF_BODY_FRONT_WIDTH_RATIO: float = 0.65
+const WOLF_BODY_REAR_WIDTH_RATIO: float = 1.1
+# Orecchie piccole, dritte, "a punta" e leggermente in avanti — più vicine all'assetto "all'erta"
+# di deer (60°) che a quello quasi orizzontale di boar (45°), ma con angolo intermedio (42°) per
+# leggersi più aguzze/dritte-in-avanti di quelle "aperte lateralmente" del cervo.
+const WOLF_EAR_ANCHOR_RATIO: float = 0.87
+const WOLF_EAR_ANCHOR_LATERAL_RATIO: float = 0.45
+const WOLF_EAR_ANGLE_FROM_HEADING: float = 42.0 * PI / 180.0
+# Coda ellittica allungata lungo l'asse del corpo (stesso meccanismo a due raggi di tarpan/
+# wild_donkey), qui per rendere la coda folta e distesa tipica del lupo — non un batuffolo/
+# moncherino come le prede erbivore di taglia comparabile (deer/boar), l'unico tratto di sagoma
+# condiviso con gli equidi pur non essendone uno.
+const WOLF_TAIL_RADIUS_X: float = 0.9
+const WOLF_TAIL_RADIUS_Y: float = 0.35
+const WOLF_TAIL_ANCHOR_RATIO: float = 1.0
+
 # Dimensioni/colore di riferimento per specie, usati da MacroCellScene per costruire la mesh sul
 # campo (build_rabbit_mesh/build_deer_mesh) E da AnimalSilhouetteIcon per l'icona del filtro Fauna
 # (WorldInfoPanel) — un'unica fonte di verità, non due valori duplicati che potrebbero
@@ -258,6 +281,20 @@ const BEZOAR_BODY_WIDTH: float = 1.65
 const BEZOAR_EAR_LENGTH: float = 2.1
 const BEZOAR_EAR_WIDTH: float = 0.35
 const BEZOAR_COLOR: Color = Color(0.58, 0.56, 0.52, 0.95)
+
+# Prima specie predatrice: taglia media, tra boar (4.5x2.4, tozzo) e aurochs (7.5x3.4, massiccio)
+# ma con rapporto L:W più snello di entrambi (~2.63:1 contro ~1.88:1 di boar) — legge come un
+# animale magro e agile, non massiccio. Orecchie compatte (vicine a deer/boar in valore assoluto),
+# coerenti con la sagoma "a punta" definita da WOLF_EAR_* sopra. Colore grigio-brunastro freddo e
+# desaturato: distinto dal grigio quasi neutro/caldo di TARPAN_COLOR (0.5, 0.5, 0.47) per una
+# tonalità più scura e leggermente più fredda, e dal bruno-grigiastro più caldo di MOUFLON_COLOR
+# (0.42, 0.35, 0.3) per essere meno saturo/più grigio — la lettura "mantello da lupo" richiesta,
+# distinguibile da entrambi a colpo d'occhio.
+const WOLF_BODY_LENGTH: float = 5.0
+const WOLF_BODY_WIDTH: float = 1.9
+const WOLF_EAR_LENGTH: float = 1.1
+const WOLF_EAR_WIDTH: float = 0.45
+const WOLF_COLOR: Color = Color(0.38, 0.37, 0.35, 0.95)
 
 # Popolazione -> numero di gruppi disegnati: individui rappresentati da ciascuna icona,
 # arriva da AnimalRules.visual_group_size (letto dal chiamante, mai hardcoded qui).
@@ -676,6 +713,18 @@ static func build_bezoar_mesh(
 	)
 
 
+# Sagoma WOLF: stesso schema costruttivo delle altre (la pipeline non distingue predatori da
+# prede) — corpo da canide con taper marcato (vedi costanti WOLF_* in cima al file), orecchie
+# corte a punta, coda ellittica allungata (unica specie non-equide a riusare quel meccanismo a
+# due raggi, vedi commento su WOLF_TAIL_RADIUS_X/Y).
+static func build_wolf_mesh(
+	body_length: float, body_width: float, ear_length: float, ear_width: float, color: Color
+) -> ArrayMesh:
+	return _build_mesh_from_geometry(
+		get_wolf_silhouette_geometry(body_length, body_width, ear_length, ear_width), color
+	)
+
+
 # Pubbliche (non prefissate _, a differenza delle altre helper statiche sotto): consumate anche
 # da AnimalSilhouetteIcon, fuori da questa classe. Ritornano i punti 2D grezzi (corpo, le due
 # orecchie come triangoli [base_a, base_b, tip], centro/raggio della coda) SENZA passare per una
@@ -766,6 +815,17 @@ static func get_bezoar_silhouette_geometry(
 		BEZOAR_BODY_REAR_WIDTH_RATIO, BEZOAR_BODY_FRONT_WIDTH_RATIO,
 		BEZOAR_EAR_ANCHOR_RATIO, BEZOAR_EAR_ANCHOR_LATERAL_RATIO, BEZOAR_EAR_ANGLE_FROM_HEADING,
 		BEZOAR_TAIL_ANCHOR_RATIO, BEZOAR_TAIL_RADIUS, BEZOAR_TAIL_RADIUS
+	)
+
+
+static func get_wolf_silhouette_geometry(
+	body_length: float, body_width: float, ear_length: float, ear_width: float
+) -> Dictionary:
+	return _get_silhouette_geometry(
+		body_length, body_width, ear_length, ear_width,
+		WOLF_BODY_REAR_WIDTH_RATIO, WOLF_BODY_FRONT_WIDTH_RATIO,
+		WOLF_EAR_ANCHOR_RATIO, WOLF_EAR_ANCHOR_LATERAL_RATIO, WOLF_EAR_ANGLE_FROM_HEADING,
+		WOLF_TAIL_ANCHOR_RATIO, WOLF_TAIL_RADIUS_X, WOLF_TAIL_RADIUS_Y
 	)
 
 

@@ -3,13 +3,17 @@ extends PanelContainer
 
 const TAB_GEOGRAFIA := 0
 const TAB_VEGETAZIONE := 1
-# Fauna è divisa in due tab (a richiesta dell'utente): FAUNA_1 per la fauna "passiva", che si
+# Fauna è divisa in tre tab (a richiesta dell'utente): FAUNA_1 per la fauna "passiva", che si
 # comporta come vegetazione — cresce/decresce in MacroCellState per densità, nessun comportamento
-# proprio (oggi solo FISH, in futuro BIRDS); FAUNA_2 per la fauna "vera", con comportamento e
-# stato proprio via PopulationGroup (rabbit, deer, ...). Prima dello split erano un'unica tab.
+# proprio (oggi solo FISH, in futuro BIRDS); FAUNA_2 per gli erbivori "veri", con comportamento e
+# stato proprio via PopulationGroup (rabbit, deer, ...); FAUNA_3 per i PREDATORI (PredatorRules,
+# oggi wolf) — mostra solo i branchi il cui territorio include QUESTA cella (a differenza di
+# WorldInfoPanel.TAB_FAUNA_3, che è world-level e li mostra tutti). Prima dello split FAUNA_1/2
+# erano un'unica tab.
 const TAB_FAUNA_1 := 2
 const TAB_FAUNA_2 := 3
-const TAB_SUSSISTENZA := 4
+const TAB_FAUNA_3 := 4
+const TAB_SUSSISTENZA := 5
 
 @onready var title_label: Label = $MarginContainer/VBoxContainer/TitleLabel
 @onready var coords_label: Label = $MarginContainer/VBoxContainer/CoordsLabel
@@ -45,6 +49,8 @@ const TAB_SUSSISTENZA := 4
 @onready var land_empty_space_label: Label = $MarginContainer/VBoxContainer/TabContainer/FaunaTab1/FaunaContent/LandEmptySpaceLabel
 @onready var fauna_2_title_label: Label = $MarginContainer/VBoxContainer/TabContainer/FaunaTab2/FaunaContent/SectionTitleLabel
 @onready var animal_population_container: VBoxContainer = $MarginContainer/VBoxContainer/TabContainer/FaunaTab2/FaunaContent/AnimalPopulationContainer
+@onready var fauna_3_title_label: Label = $MarginContainer/VBoxContainer/TabContainer/FaunaTab3/FaunaContent/SectionTitleLabel
+@onready var predator_population_container: VBoxContainer = $MarginContainer/VBoxContainer/TabContainer/FaunaTab3/FaunaContent/PredatorPopulationContainer
 @onready var subsistence_title_label: Label = $MarginContainer/VBoxContainer/TabContainer/SussistenzaTab/SussistenzaContent/SectionTitleLabel
 @onready var forage_units_label: Label = $MarginContainer/VBoxContainer/TabContainer/SussistenzaTab/SussistenzaContent/ForageUnitsLabel
 @onready var forage_calories_label: Label = $MarginContainer/VBoxContainer/TabContainer/SussistenzaTab/SussistenzaContent/ForageCaloriesLabel
@@ -68,23 +74,39 @@ const TAB_SUSSISTENZA := 4
 # in cima al contenuto quando è aperta, entrambi dallo stesso tag tr() così restano coerenti
 # quando arriverà la localizzazione.
 func _ready() -> void:
+	# Font più piccolo sulla barra delle tab (non sul contenuto): con 6 tab invece di 5 il testo di
+	# default farebbe allargare la barra oltre la larghezza fissa del pannello, o farebbe comparire
+	# le freccette di scroll di TabBar — le etichette sono comunque solo emoji singole, restano
+	# perfettamente leggibili anche ridotte. h_separation/side_margin azzerati per non sprecare
+	# pixel tra un'icona e l'altra (col tema di default aggiungono margine visibile ma qui inutile,
+	# le tab sono già distinguibili dallo sfondo/selezione).
+	tab_container.add_theme_font_size_override("font_size", 11)
+	tab_container.add_theme_constant_override("side_margin", 0)
+
 	tab_container.set_tab_title(TAB_GEOGRAFIA, "🧭")
 	tab_container.set_tab_title(TAB_VEGETAZIONE, "🌿")
 	tab_container.set_tab_title(TAB_FAUNA_1, "🐟")
 	tab_container.set_tab_title(TAB_FAUNA_2, "🦌")
-	tab_container.set_tab_title(TAB_SUSSISTENZA, "🍽️")
+	tab_container.set_tab_title(TAB_FAUNA_3, "🐺")
+	# Fork/knife/plate con variation selector (🍽️) è visibilmente più larga delle emoji a singolo
+	# codepoint delle altre tab (il VS16 forza la presentazione "emoji" a piena larghezza in molti
+	# font) — sostituita con 🍴 (forchetta e coltello, singolo codepoint, stesso tema "sussistenza").
+	tab_container.set_tab_title(TAB_SUSSISTENZA, "🍴")
 
 	var tab_bar := tab_container.get_tab_bar()
+	tab_bar.add_theme_constant_override("h_separation", 0)
 	tab_bar.set_tab_tooltip(TAB_GEOGRAFIA, tr("tab_geography"))
 	tab_bar.set_tab_tooltip(TAB_VEGETAZIONE, tr("tab_vegetation"))
 	tab_bar.set_tab_tooltip(TAB_FAUNA_1, tr("tab_fauna_1"))
 	tab_bar.set_tab_tooltip(TAB_FAUNA_2, tr("tab_fauna_2"))
+	tab_bar.set_tab_tooltip(TAB_FAUNA_3, tr("tab_fauna_3"))
 	tab_bar.set_tab_tooltip(TAB_SUSSISTENZA, tr("tab_subsistence"))
 
 	geography_title_label.text = tr("tab_geography")
 	vegetation_title_label.text = tr("tab_vegetation")
 	fauna_1_title_label.text = tr("tab_fauna_1")
 	fauna_2_title_label.text = tr("tab_fauna_2")
+	fauna_3_title_label.text = tr("tab_fauna_3")
 	subsistence_title_label.text = tr("tab_subsistence")
 
 	clear()
@@ -140,6 +162,7 @@ func show_cell(cell: MacroCellData, state: MacroCellState, current_season: GameT
 		land_empty_space_label.text = "Habitat empty space: " + NumberFormatter.format_int(state.get_empty_terrestrial_space(land_capacity))
 
 		_update_animal_population_rows(world, Vector2i(cell.x, cell.y))
+		_update_predator_population_rows(world, Vector2i(cell.x, cell.y))
 
 		_update_forage_calories_label(cell, state, current_season)
 		_update_berry_stock_label(state)
@@ -169,6 +192,7 @@ func show_cell(cell: MacroCellData, state: MacroCellState, current_season: GameT
 		birds_number_label.text = "Birds: -"
 		land_empty_space_label.text = "Habitat empty space: -"
 		_clear_animal_population_rows()
+		_clear_predator_population_rows()
 
 
 # Nessun nodo fisso per specie (a differenza dei sottotipi vegetali, che hanno una Label dedicata
@@ -194,6 +218,10 @@ func _update_animal_population_rows(world: World, coords: Vector2i) -> void:
 			continue
 
 		var rules := AnimalCalculator.get_animal_rules(group.species_name)
+		# I predatori (PredatorRules) hanno la propria tab dedicata (Fauna 3, vedi
+		# _update_predator_population_rows) — esclusi qui per non comparire due volte.
+		if rules is PredatorRules:
+			continue
 		var cell_count := group.territory.get_cell_count()
 		var cell_population: int = int(group.get_population_by_cell().get(coords, 0))
 		if cell_population <= 0:
@@ -234,6 +262,203 @@ func _update_animal_population_rows(world: World, coords: Vector2i) -> void:
 func _clear_animal_population_rows() -> void:
 	for child in animal_population_container.get_children():
 		child.queue_free()
+
+
+# Solo i branchi predatori il cui territorio include QUESTA cella (world.get_population_groups_at,
+# stesso filtro di _update_animal_population_rows sopra) — a differenza di
+# WorldInfoPanel._update_predator_groups, che è world-level e li mostra tutti indipendentemente
+# dalla cella aperta. Finestra di pattugliamento/cronologia caccia/totale annuale restano dati
+# dell'INTERO branco (non esiste un tracking per-cella della caccia), etichettati di conseguenza
+# per non far pensare che siano limitati a questa sola cella.
+func _update_predator_population_rows(world: World, coords: Vector2i) -> void:
+	_clear_predator_population_rows()
+
+	for group in world.get_population_groups_at(coords):
+		if group.population <= 0:
+			continue
+		var rules := AnimalCalculator.get_animal_rules(group.species_name)
+		if not (rules is PredatorRules):
+			continue
+		var cell_population: int = int(group.get_population_by_cell().get(coords, 0))
+		if cell_population <= 0:
+			continue
+		_add_predator_population_block(group, rules as PredatorRules, coords, cell_population)
+
+
+func _clear_predator_population_rows() -> void:
+	for child in predator_population_container.get_children():
+		child.queue_free()
+
+
+# Blocco multi-riga per UN branco presente in questa cella: quota locale (individui in QUESTA
+# cella su popolazione totale del branco, stesso formato "N of M" di _update_animal_population_rows
+# sopra), poi i dati del branco intero (finestra di oggi, bookkeeping calorico, cronologia ultimi
+# giorni, totale anno corrente) — identici a WorldInfoPanel._add_predator_group_block, duplicati
+# qui deliberatamente (stesso principio di non-condivisione già dichiarato in testa al file per
+# CellGeographyInfo/altre parti in comune tra i due pannelli).
+func _add_predator_population_block(
+	group: PopulationGroup, rules: PredatorRules, coords: Vector2i, cell_population: int
+) -> void:
+	var header := Label.new()
+	header.add_theme_font_size_override("font_size", 11)
+	header.text = "  - %s #%d: %s of %s (branco: %d cells totali)" % [
+		group.species_name,
+		group.id,
+		NumberFormatter.format_int(cell_population),
+		NumberFormatter.format_int(group.population),
+		group.territory.get_cell_count()
+	]
+	predator_population_container.add_child(header)
+
+	if rules.track_age_bands:
+		var cell_age_composition := group.get_age_composition_in_cell(coords)
+		var young := int(cell_age_composition.get(GameTypes.AgeBand.YOUNG, 0))
+		var adult := int(cell_age_composition.get(GameTypes.AgeBand.ADULT, 0))
+		var old := int(cell_age_composition.get(GameTypes.AgeBand.OLD, 0))
+
+		var age_label := Label.new()
+		age_label.add_theme_font_size_override("font_size", 10)
+		age_label.text = "      (Y:%s - A:%s - O:%s)" % [
+			NumberFormatter.format_int(young),
+			NumberFormatter.format_int(adult),
+			NumberFormatter.format_int(old)
+		]
+		predator_population_container.add_child(age_label)
+
+	var window_label := Label.new()
+	window_label.add_theme_font_size_override("font_size", 10)
+	if group.patrol_route.is_empty():
+		window_label.text = "      day window (intero branco): nessuna (patrol_route vuoto)"
+	else:
+		var anchor: Vector2i = group.patrol_route[group.patrol_index]
+		window_label.text = "      day window (intero branco): (%d,%d) %dx%d" % [
+			anchor.x, anchor.y, rules.hunting_window_size, rules.hunting_window_size
+		]
+	predator_population_container.add_child(window_label)
+
+	var bookkeeping_label := Label.new()
+	bookkeeping_label.add_theme_font_size_override("font_size", 10)
+	bookkeeping_label.text = "      debt=%s  surplus=%s (intero branco)" % [
+		NumberFormatter.format_int(int(round(group.predation_calorie_debt))),
+		NumberFormatter.format_int(int(round(group.predation_surplus_carryover)))
+	]
+	predator_population_container.add_child(bookkeeping_label)
+
+	# Nessuna intestazione "ultimi N giorni": si capisce comunque dal contesto (vedi
+	# PopulationGroup.RECENT_HUNT_LOG_MAX_DAYS per il numero di entry). Nessun "Anno N": l'anno è
+	# già visibile nel calendario sopra, ripeterlo qui su ogni riga era ridondante. Una riga per
+	# giorno, col primo animale catturato subito accanto al numero di giorno (non più a capo) —
+	# solo eventuali animali AGGIUNTIVI catturati lo stesso giorno vanno a capo, indentati sotto
+	# (vedi _add_day_capture_lines).
+	if group.recent_hunt_log.is_empty():
+		var no_history_label := Label.new()
+		no_history_label.add_theme_font_size_override("font_size", 10)
+		no_history_label.text = "            (nessun dato ancora)"
+		predator_population_container.add_child(no_history_label)
+	else:
+		for i in range(group.recent_hunt_log.size() - 1, -1, -1):
+			var entry: Dictionary = group.recent_hunt_log[i]
+			_add_day_capture_lines(predator_population_container, int(entry["day"]), entry["captures"])
+
+	# "tot current year", non "tot year N": l'anno è già visibile nel calendario sopra, il numero
+	# qui era ridondante (stesso principio delle righe giorno sopra).
+	if group.yearly_prey_totals_year < 0:
+		var yearly_header_label := Label.new()
+		yearly_header_label.add_theme_font_size_override("font_size", 10)
+		yearly_header_label.text = "      tot current year (intero branco): (nessun dato ancora)"
+		predator_population_container.add_child(yearly_header_label)
+	else:
+		var yearly_header_label := Label.new()
+		yearly_header_label.add_theme_font_size_override("font_size", 10)
+		yearly_header_label.text = "      tot current year (intero branco):"
+		predator_population_container.add_child(yearly_header_label)
+		_add_capture_lines(predator_population_container, group.yearly_prey_totals)
+
+	var separator := Label.new()
+	separator.add_theme_font_size_override("font_size", 8)
+	separator.text = " - - - - - - - - - -"
+	predator_population_container.add_child(separator)
+
+
+# Stesso formato di WorldInfoPanel._add_capture_lines, duplicato qui (vedi commento a
+# _add_predator_population_block sopra sul perché). Una Label per SPECIE — "%s x%d (%s cal)",
+# specie in ordine alfabetico — invece di un'unica riga con le specie separate da virgola, che
+# nella larghezza fissa del pannello troncava tutto dopo la prima specie e mezza. Usata solo per il
+# totale annuale (per il log giornaliero vedi _add_day_capture_lines sotto, che accorpa il primo
+# animale sulla riga del giorno). "— no catches —" se non c'è stata alcuna cattura.
+func _add_capture_lines(container: VBoxContainer, captures: Dictionary) -> void:
+	if captures.is_empty():
+		var empty_label := Label.new()
+		empty_label.add_theme_font_size_override("font_size", 10)
+		empty_label.text = "            — no catches —"
+		container.add_child(empty_label)
+		return
+	var species_names: Array = captures.keys()
+	species_names.sort()
+	for species_name in species_names:
+		var entry: Dictionary = captures[species_name]
+		var line_label := Label.new()
+		line_label.add_theme_font_size_override("font_size", 10)
+		line_label.text = "            %s x%d (%s cal)" % [
+			species_name,
+			int(entry["quantity"]),
+			NumberFormatter.format_int(int(round(float(entry["calories"]))))
+		]
+		container.add_child(line_label)
+
+
+# Stesso formato di WorldInfoPanel._add_day_capture_lines, duplicato qui (vedi commento a
+# _add_predator_population_block sopra sul perché). Il primo animale catturato quel giorno sta
+# sulla STESSA riga del numero di giorno; eventuali animali ULTERIORI vanno a capo, allineati in
+# colonna sotto il primo tramite una Label prefisso a larghezza fissa (non spazi di testo: con un
+# font proporzionale un rientro a spazi non allinea mai esattamente sotto un prefisso di lunghezza
+# diversa come "Day 237:" vs "Day 5:"). Colonna più larga della controparte in WorldInfoPanel
+# perché include anche il rientro base "            " di questo blocco (nidificato sotto la riga
+# di quota per-cella, a differenza del blocco world-level). "— no catches —" anch'esso sulla riga
+# del giorno se captures è vuoto.
+const DAY_PREFIX_COLUMN_WIDTH := 98.0
+
+func _add_day_capture_lines(container: VBoxContainer, day: int, captures: Dictionary) -> void:
+	var prefix := "            Day %d:" % day
+	if captures.is_empty():
+		_add_day_capture_row(container, prefix, "— no catches —")
+		return
+	var species_names: Array = captures.keys()
+	species_names.sort()
+	for i in range(species_names.size()):
+		var species_name = species_names[i]
+		var entry: Dictionary = captures[species_name]
+		var species_text := "%s x%d (%s cal)" % [
+			species_name,
+			int(entry["quantity"]),
+			NumberFormatter.format_int(int(round(float(entry["calories"]))))
+		]
+		_add_day_capture_row(container, prefix if i == 0 else "", species_text)
+
+
+# Riga a due colonne: colonna prefisso a larghezza fissa (vuota per le righe di continuazione,
+# così il testo della colonna successiva parte sempre alla stessa X) + colonna contenuto.
+func _add_day_capture_row(container: VBoxContainer, prefix: String, content: String) -> void:
+	var row := HBoxContainer.new()
+	container.add_child(row)
+
+	var prefix_label := Label.new()
+	prefix_label.add_theme_font_size_override("font_size", 10)
+	prefix_label.custom_minimum_size = Vector2(DAY_PREFIX_COLUMN_WIDTH, 0)
+	# clip_text (non solo il floor di custom_minimum_size): senza, un giorno a 3 cifre ("Day
+	# 237:") supererebbe la colonna e sfaserebbe l'allineamento rispetto a un giorno a 1 cifra
+	# ("Day 5:") o rispetto alle righe di continuazione vuote sotto.
+	prefix_label.clip_text = true
+	prefix_label.text = prefix
+	row.add_child(prefix_label)
+
+	var content_label := Label.new()
+	content_label.add_theme_font_size_override("font_size", 10)
+	content_label.size_flags_horizontal = SIZE_EXPAND_FILL
+	content_label.clip_text = true
+	content_label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	content_label.text = content
+	row.add_child(content_label)
 
 
 # Due righe di verifica temporanea per il calcolo di FORAGE (erba consumata direttamente, vedi
@@ -410,3 +635,4 @@ func clear() -> void:
 	birds_number_label.text = "Birds: -"
 	land_empty_space_label.text = "Habitat empty space: -"
 	_clear_animal_population_rows()
+	_clear_predator_population_rows()

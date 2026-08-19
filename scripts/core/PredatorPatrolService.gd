@@ -19,16 +19,27 @@ extends RefCounted
 #   giorno, indipendentemente da Fase A.
 
 
-# Fase A. Ricalcola da zero patrol_route/patrol_index/patrol_direction sul gruppo, riflettendo la
-# forma ATTUALE di group.territory — mai un aggiornamento incrementale del percorso precedente,
-# sempre una ricostruzione completa (economica, vedi _build_route: O(celle territorio), evento raro
-# a cadenza annuale/stagionale). patrol_index/patrol_direction vengono sempre riazzerati a 0/+1:
-# un indice relativo al percorso VECCHIO non avrebbe più senso su un percorso nuovo, i due array
-# non condividono alcuna corrispondenza posizionale garantita.
-func recompute_route(group: PopulationGroup, rules: PredatorRules) -> void:
+# Fase A. Ricalcola da zero patrol_route sul gruppo, riflettendo la forma ATTUALE di
+# group.territory — mai un aggiornamento incrementale del percorso precedente, sempre una
+# ricostruzione completa (economica, vedi _build_route: O(celle territorio), evento raro a
+# cadenza annuale/stagionale o alla creazione del gruppo). reset_progress=true (default):
+# patrol_index/patrol_direction vengono riazzerati a 0/+1 insieme al percorso — un indice
+# relativo al percorso VECCHIO non avrebbe più senso su un percorso nuovo quando la forma del
+# territorio è DAVVERO cambiata (espansione/contrazione, nuovo gruppo scisso, creazione dallo
+# strumento di debug), i due non condividono alcuna corrispondenza posizionale garantita in quel
+# caso. reset_progress=false: usato SOLO da GameLoadService dopo un caricamento — lì il territorio
+# non è cambiato affatto rispetto al momento del salvataggio (stesse celle, stesso ordine, stesso
+# _build_route deterministico => patrol_route ricostruito qui è byte-per-byte identico a quello
+# perso al caricamento, mai persistito per design), quindi patrol_index/patrol_direction
+# CARICATI DAL SAVE (storia reale, persistita separatamente — vedi PopulationGroup.gd) restano
+# validi sul percorso appena ricostruito e non vanno azzerati: il chiamante li scrive già PRIMA di
+# questa chiamata (territorio e i 4 campi persistiti prima, patrol_route ricalcolato dopo, vedi
+# GameLoadService), questo flag esiste solo a garantire che questa funzione non li tocchi affatto.
+func recompute_route(group: PopulationGroup, rules: PredatorRules, reset_progress: bool = true) -> void:
 	group.patrol_route = _build_route(group.territory, rules.hunting_window_size)
-	group.patrol_index = 0
-	group.patrol_direction = 1
+	if reset_progress:
+		group.patrol_index = 0
+		group.patrol_direction = 1
 
 
 # Fase B. Rimbalzo agli estremi dell'array (mai un reset a 0 una volta raggiunta la fine) —

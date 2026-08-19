@@ -20,7 +20,7 @@ func advance_day(world: World, game_data: GameData) -> Dictionary:
 	# vedi ordine esistente): PopulationGroup.apply_predation_loss non tocca hunger_buckets della
 	# preda, la riconciliazione con population se ne occupa la prossima volta che
 	# AnimalHungerService gira su quel gruppo — stesso giorno, con questo ordine.
-	_run_daily_predation(world)
+	_run_daily_predation(world, game_data)
 	var checkpoint_ran := _run_seasonal_checkpoints(world, game_data, year_rolled_over)
 	# DOPO i checkpoint stagionali (mai prima): se oggi capita anche un checkpoint di fine
 	# birth_season (nascite/morte per vecchiaia), hunger_buckets viene già mantenuto coerente con
@@ -43,12 +43,12 @@ func _run_daily_animal_consumption(world: World, game_data: GameData) -> bool:
 
 
 # Gira ogni giorno, indipendente da birth_season, esattamente come _run_daily_animal_consumption
-# sopra — ma per i predatori (vedi PredationService), non per gli erbivori. Nessun gruppo con
-# PredatorRules esiste ancora in una partita reale (wolf.tres arriva allo Step 7): questa chiamata
-# è comunque già cablata, PredationService.apply_daily_predation è un no-op sicuro finché non
-# trova alcun gruppo con PredatorRules in world.population_groups.
-func _run_daily_predation(world: World) -> void:
-	PredationService.new().apply_daily_predation(world)
+# sopra — ma per i predatori (vedi PredationService), non per gli erbivori. year/current_day
+# passati per popolare PopulationGroup.recent_hunt_log/yearly_prey_totals (tab Fauna 3, UI) —
+# letti DOPO game_data.advance_day() già chiamato sopra in questo stesso metodo, quindi riflettono
+# già la data di OGGI, non quella di ieri.
+func _run_daily_predation(world: World, game_data: GameData) -> void:
+	PredationService.new().apply_daily_predation(world, game_data.year, game_data.current_day)
 
 
 # Gira ogni giorno, indipendente da birth_season (vedi AnimalHungerService): legge

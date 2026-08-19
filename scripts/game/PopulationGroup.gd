@@ -29,6 +29,16 @@ var territory: Territory = null
 # salvataggio/caricamento nel mezzo perdeva il valore calcolato, tornando al default 1.0 e
 # applicando nascite senza alcuna mitigazione, osservato in test).
 var birth_mitigation_multiplier: float = 1.0
+
+# Ratio calorico GREZZO (non ancora clampato/moltiplicato per densità o post-scissione) che ha
+# prodotto birth_mitigation_multiplier sopra al checkpoint di birth_season — non serve alla
+# simulazione (birth_mitigation_multiplier è già il valore finale usato da AnimalBirthService),
+# esiste solo per il log: senza questo, per capire "quel moltiplicatore da dove viene" bisognava
+# risalire al checkpoint TERRITORY DYNAMICS di inizio stagione (fino a ~90 giorni prima di quando
+# la nascita viene effettivamente applicata a fine stagione, checkpoint diverso). Persistito per lo
+# stesso motivo di birth_mitigation_multiplier sopra (calcolato a inizio birth_season, consumato/
+# loggato solo a fine — un salvataggio/caricamento nel mezzo non deve perderlo).
+var birth_mitigation_caloric_ratio: float = 1.0
 # Countdown di recovery post-scissione (Step 10 del refactoring fauna, vedi
 # AnimalRules.post_split_recovery_years/PopulationSplitService/TerritoryDynamicsService
 # _get_post_split_multiplier): anni trascorsi dall'ultimo split che QUESTO gruppo ha generato
@@ -55,6 +65,21 @@ var years_since_last_split: int = -1
 # per design (confermato: nessun collegamento voluto tra i due). PERSISTITO nei save, stesso
 # motivo di birth_mitigation_multiplier/years_since_last_split sopra.
 var hunger_split_cooldown_days: int = 0
+# Cache di "ero bloccato l'ultima volta che ho cercato spazio" (AnimalHungerService.
+# _attempt_expansion/TerritoryDynamicsService._update_group_territory), per evitare di rifare ogni
+# giorno una BFS costosa (TerritoryBuilderService.expand_by_one_cell/find_nearest_free_cell, più
+# uno scan O(gruppi) su _collect_species_occupied_cells) quando l'esito sarebbe comunque lo stesso
+# di ieri. Sentinella -1 = "non risulta bloccato" (default, incluso ogni gruppo appena creato):
+# vale sempre la pena tentare. Un valore >= 0 memorizza invece
+# World.species_territory_release_version[species_name] nel momento esatto dell'ultimo fallimento
+# — finché quel contatore per la specie non cambia (un territorio della stessa specie si libera
+# per estinzione o contrazione altrove sulla mappa, vedi World.release_species_territory), il
+# gruppo salta il tentativo, perché nulla può essere cambiato nel frattempo che renderebbe la
+# ricerca diversa da ieri. Non persistito nei save, stesso principio di
+# territory_distribution_weights sotto: puro dato di cache/ottimizzazione, mai storia reale —
+# perderlo al caricamento costa al più un tentativo completo in più al primo checkpoint dopo il
+# load per i gruppi già bloccati, poi il meccanismo si riallinea da solo.
+var blocked_territory_search_version: int = -1
 # Pesi (Vector2i -> float, non normalizzati) usati da get_population_by_cell() per ripartire
 # population tra le celle del territorio — Step 6 del refactoring fauna: sostituisce la
 # ripartizione uniforme fissa con una variazione casuale ricalcolata periodicamente (vedi
@@ -111,13 +136,11 @@ var patrol_route: Array[Vector2i] = []
 # progresso del branco nel percorso (quanti giorni ha già camminato, in che verso), storia reale
 # esattamente come hunger_buckets/years_since_last_split/hunger_split_cooldown_days più sotto in
 # questo file — non equivalenti a territory_distribution_weights (quello sì puramente estetico).
-# TODO(Step 7, wolf.tres): quando i predatori esisteranno come specie concreta e potranno comparire
-# in world.population_groups, questi due campi vanno aggiunti a GameSaveService/GameLoadService
-# (stesso blocco che oggi salva hunger_buckets/years_since_last_split/hunger_split_cooldown_days) —
-# non implementato ora perché nessun gruppo predatore può ancora esistere in una partita reale, ma
-# è debito esplicito, non un "non serve": senza, un salvataggio/caricamento farebbe silenziosamente
-# ripartire il pattugliamento da patrol_index=0 ogni volta, comportamento sbagliato (non neutro come
-# lo è invece per una posizione di rendering ricalcolabile).
+# Persistiti in GameSaveService/GameLoadService (stesso blocco di hunger_buckets/
+# years_since_last_split/hunger_split_cooldown_days) — un caricamento ricostruisce patrol_route da
+# zero (dato derivato, vedi sopra) ma applica questi due dal save SENZA lasciarli riazzerare dal
+# ricalcolo (PredatorPatrolService.recompute_route chiamato con reset_progress=false in
+# GameLoadService), cosicché il branco riprenda esattamente da dove il pattugliamento era rimasto.
 var patrol_index: int = 0
 var patrol_direction: int = 1
 
@@ -128,11 +151,46 @@ var patrol_direction: int = 1
 # istogramma per giorni: qui non serve sapere DA QUANTO TEMPO manca cibo, solo QUANTO manca oggi.
 # Vuoti/a 0.0 per ogni specie non predatrice (mai popolati, mai letti). Storia reale accumulata,
 # non ricalcolabile da un checkpoint — stessa categoria di patrol_index/patrol_direction sopra, non
-# di territory_distribution_weights. TODO(Step 7, wolf.tres): stesso debito di persistenza già
-# segnalato per patrol_index/patrol_direction — vanno aggiunti a GameSaveService/GameLoadService
-# quando i predatori esisteranno davvero in partita, non implementato ora per lo stesso motivo.
+# di territory_distribution_weights. Persistiti in GameSaveService/GameLoadService, stesso blocco.
 var predation_calorie_debt: float = 0.0
 var predation_surplus_carryover: float = 0.0
+
+# Consuntivo calorico "da un checkpoint di birth_season al successivo" (non l'anno di calendario,
+# vedi yearly_prey_totals sotto per quella distinzione) — somma grezza, senza il decadimento/
+# azzeramento del ledger sopra (predation_calorie_debt/predation_surplus_carryover: quello risponde
+# a "il branco può permettersi di non cacciare oggi?", volutamente scontato nel tempo; questo
+# risponde a "com'è andata la stagione riproduttiva nel complesso?", ogni giorno pesato allo stesso
+# modo). Alimenta AnimalBirthMitigationService.compute_predator_caloric_ratio (mitigazione della
+# natalità dei predatori, equivalente al ratio stock/fabbisogno degli erbivori ma su dati di caccia
+# reali) — TerritoryDynamicsService li azzera subito dopo averli letti al checkpoint. Vuoti/a 0.0
+# per ogni specie non predatrice (mai popolati, mai letti). Persistiti in GameSaveService/
+# GameLoadService, stesso blocco di predation_calorie_debt/predation_surplus_carryover sopra.
+var predation_season_calories_obtained: float = 0.0
+var predation_season_calories_required: float = 0.0
+
+# Cronologia di caccia per la tab Fauna 3 (UI, PredationService la popola) — una entry per OGNI
+# giorno processato dal branco (anche i giorni senza catture, "— nessuna cattura —"), non solo i
+# giorni fortunati: così "gli ultimi 5 giorni" è sempre una vera finestra temporale di 5 giorni
+# consecutivi, non 5 giorni sparsi nel tempo. Capped a RECENT_HUNT_LOG_MAX_DAYS entry, FIFO (la più
+# vecchia esce quando arriva una nuova). Ogni entry: {"year": int, "day": int, "captures":
+# Dictionary[String, Dictionary]} dove captures mappa species_name -> {"quantity": int,
+# "calories": float}, dizionario vuoto se nessuna cattura quel giorno. Vuoto per ogni specie non
+# predatrice (mai popolato, mai letto). Storia reale (non ricalcolabile da un checkpoint) — a
+# differenza di patrol_route/blocked_territory_search_version sopra, PERSISTITA nei save: è
+# contenuto informativo mostrato al giocatore, perderlo al caricamento sarebbe una regressione
+# visibile (lista vuota subito dopo un load, anche con anni di caccia alle spalle).
+const RECENT_HUNT_LOG_MAX_DAYS := 5
+var recent_hunt_log: Array[Dictionary] = []
+
+# Totali di caccia dell'ANNO DI CALENDARIO corrente (si azzera al cambio anno, non una finestra
+# rolling — più semplice e coerente col resto del gioco, che già ragiona per anni interi tramite
+# GameData.year) — species_name -> {"quantity": int, "calories": float}. yearly_prey_totals_year
+# tiene traccia di QUALE anno si riferiscono questi totali: PredationService confronta con
+# GameData.year corrente e azzera entrambi i campi al primo giorno di caccia di un anno nuovo,
+# invece di richiedere un hook dedicato al cambio anno altrove. Stessa categoria di
+# recent_hunt_log sopra (storia reale, PERSISTITA nei save), vuoti per ogni specie non predatrice.
+var yearly_prey_totals: Dictionary = {}
+var yearly_prey_totals_year: int = -1
 
 func _init(_species_name: String = "", _territory: Territory = null, _id: int = 0) -> void:
 	species_name = _species_name

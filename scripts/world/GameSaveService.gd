@@ -81,6 +81,19 @@ func save_game_to_json(
 		# resetterebbe silenziosamente la recovery post-scissione in corso a "mai scisso".
 		# hunger_split_cooldown_days (Step 11) idem: un countdown a metà perso al caricamento
 		# riaprirebbe silenziosamente la porta a un nuovo split da fame prima del previsto.
+		# patrol_index/patrol_direction (branchi predatori, PredatorPatrolService) sono storia
+		# reale allo stesso modo di hunger_buckets — quanti giorni di percorso il branco ha già
+		# camminato e in che verso, non ricostruibile dalla sola forma del territorio: perderli al
+		# caricamento farebbe silenziosamente ripartire il pattugliamento da zero (vedi TODO ormai
+		# risolto in PopulationGroup.gd). predation_calorie_debt/predation_surplus_carryover
+		# (PredationService) sono il bookkeeping calorico del branco, stesso principio — un
+		# caricamento a metà debito/surplus non deve azzerarlo silenziosamente. patrol_route NON è
+		# salvato (dato derivato da territory + hunting_window_size, sempre ricalcolabile — vedi
+		# GameLoadService/PredatorPatrolService.recompute_route). recent_hunt_log/
+		# yearly_prey_totals (tab Fauna 3, UI — vedi PopulationGroup) sono contenuto informativo
+		# reale mostrato al giocatore, non una cache di ottimizzazione: perderli al caricamento
+		# sarebbe una regressione visibile (lista "ultimi 5 giorni" vuota anche dopo anni di
+		# caccia), quindi salvati per intero come gli altri campi storici sopra.
 		data["world"]["population_groups"].append({
 			"id": group.id,
 			"species_name": group.species_name,
@@ -89,8 +102,18 @@ func save_game_to_json(
 			"occupied_macrocells": occupied_cells_data,
 			"hunger_buckets": group.hunger_buckets,
 			"birth_mitigation_multiplier": group.birth_mitigation_multiplier,
+			"birth_mitigation_caloric_ratio": group.birth_mitigation_caloric_ratio,
 			"years_since_last_split": group.years_since_last_split,
-			"hunger_split_cooldown_days": group.hunger_split_cooldown_days
+			"hunger_split_cooldown_days": group.hunger_split_cooldown_days,
+			"patrol_index": group.patrol_index,
+			"patrol_direction": group.patrol_direction,
+			"predation_calorie_debt": group.predation_calorie_debt,
+			"predation_surplus_carryover": group.predation_surplus_carryover,
+			"predation_season_calories_obtained": group.predation_season_calories_obtained,
+			"predation_season_calories_required": group.predation_season_calories_required,
+			"recent_hunt_log": group.recent_hunt_log,
+			"yearly_prey_totals": group.yearly_prey_totals,
+			"yearly_prey_totals_year": group.yearly_prey_totals_year
 		})
 	var json_text := JSON.stringify(data, "\t")
 	var file := FileAccess.open(file_path, FileAccess.WRITE)

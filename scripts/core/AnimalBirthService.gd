@@ -36,9 +36,15 @@ func apply_births(world: World, season: GameTypes.Season) -> void:
 		var population_before := group.population
 		group.apply_births(births)
 
-		if DebugLogging.ENABLED:
-			print("[ANIMAL BIRTHS] checkpoint=fine %s | #%d %s: Y=%d A=%d O=%d pesato_fertilita=%.2f base_birth_rate=%.2f mitigazione=%.2f -> nascite=%d pop %d->%d" % [
+		# Filtro erbivori/predatori: vedi DebugLogging.SHOW_HERBIVORE_LIFECYCLE_LOGS.
+		# ratio_calorico (PopulationGroup.birth_mitigation_caloric_ratio) affiancato a mitigazione:
+		# quest'ultima è già il prodotto calorico×densità×post-scissione (vedi
+		# AnimalBirthMitigationService.apply_mitigation_multiplier), il ratio grezzo da solo non
+		# basta a spiegarla — mostrarli insieme evita di dover risalire al checkpoint TERRITORY
+		# DYNAMICS di inizio stagione (fino a ~90 giorni prima) per capire da dove viene il numero.
+		if DebugLogging.ENABLED and (rules is PredatorRules or DebugLogging.SHOW_HERBIVORE_LIFECYCLE_LOGS):
+			print("[ANIMAL BIRTHS] checkpoint=fine %s | #%d %s: Y=%d A=%d O=%d pesato_fertilita=%.2f base_birth_rate=%.2f ratio_calorico=%.3f mitigazione=%.2f -> nascite=%d pop %d->%d" % [
 				GameTypes.Season.keys()[season], group.id, group.species_name,
-				young, adult, old, weighted_count, rules.base_birth_rate, group.birth_mitigation_multiplier,
-				births, population_before, group.population
+				young, adult, old, weighted_count, rules.base_birth_rate, group.birth_mitigation_caloric_ratio,
+				group.birth_mitigation_multiplier, births, population_before, group.population
 			])

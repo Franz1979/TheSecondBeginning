@@ -26,21 +26,22 @@ const DENSITY_RATIO_RAMP_END := 1.5     # da qui in poi: moltiplicatore = 0.0, p
 # file) — sopra o uguale a DENSITY_FAST_GROWTH_BIRTH_RATE_THRESHOLD (1.0) è "veloce" (rabbit,
 # base_birth_rate=1.5) e usa DENSITY_MULTIPLIER_MID_FAST (0.05, severo, già validato nei test:
 # ha fermato un'esplosione da 14000+ individui); sotto è "lenta" (deer, base_birth_rate=0.4) e usa
-# DENSITY_MULTIPLIER_MID_SLOW (0.25 per ora — se i test mostrano che il surplus di nascite resta
-# comunque troppo debole per accumulare pressione in tempi ragionevoli, va alzato verso 0.5, mai
-# oltre: un floor troppo alto vanificherebbe la mitigazione stessa).
+# DENSITY_MULTIPLIER_MID_SLOW (0.3 — alzato da 0.25 dopo osservazione in gioco: il floor
+# precedente lasciava il surplus di nascite troppo debole per accumulare pressione in tempi
+# ragionevoli. Se dovesse ripresentarsi lo stesso problema, si può alzare ulteriormente verso 0.5,
+# mai oltre: un floor troppo alto vanificherebbe la mitigazione stessa).
 #
 # La FORMA della curva è invece IDENTICA per entrambe le categorie, nessuna doppia formula da
 # mantenere: quadratica (t², frenata debole per la maggior parte del tratto, concentrata negli
 # ultimi passi) da 0.7 a 1.0, poi lineare da 1.0 a 1.5 — ciascuna parte scende dal PROPRIO mid
-# (0.05 o 0.25) fino a 0.0 esattamente a ratio=1.5, mai un floor piatto fisso uguale per tutte:
+# (0.05 o 0.3) fino a 0.0 esattamente a ratio=1.5, mai un floor piatto fisso uguale per tutte:
 # un plateau comune a un valore fisso (es. sempre 0.05 tra 1.0 e 1.5 indipendentemente dal mid di
-# partenza) creerebbe una discontinuità a ratio=1.0 per la specie lenta (salto da 0.25 a 0.05) —
+# partenza) creerebbe una discontinuità a ratio=1.0 per la specie lenta (salto da 0.3 a 0.05) —
 # scartato apposta per restare continua in entrambi i punti di rottura, come tutte le altre curve
 # di questo sistema.
 const DENSITY_FAST_GROWTH_BIRTH_RATE_THRESHOLD := 1.0
 const DENSITY_MULTIPLIER_MID_FAST := 0.05   # base_birth_rate >= soglia (oggi: rabbit)
-const DENSITY_MULTIPLIER_MID_SLOW := 0.25   # base_birth_rate < soglia (oggi: deer)
+const DENSITY_MULTIPLIER_MID_SLOW := 0.3   # base_birth_rate < soglia (oggi: deer, aurochs, ecc.)
 
 # Espansione/contrazione del territorio di ogni PopulationGroup (Step 8 del refactoring fauna) —
 # gira nello STESSO checkpoint di inizio birth_season di ciascuna specie in cui gira già
@@ -91,12 +92,32 @@ func update_territories_and_mitigation(world: World, season: GameTypes.Season) -
 		# Il ratio calorico è age-weighted (AnimalBirthMitigationService._get_seasonal_requirement):
 		# per una specie senza track_age_bands, age_composition resta sempre vuota, quindi il
 		# fabbisogno stagionale risulterebbe sempre 0 e il ratio un falso "0.0 = carestia
-		# permanente". Nessuna specie oggi è in questo caso (rabbit e deer hanno entrambe
+		# permanente". Nessuna specie erbivora oggi è in questo caso (tutte hanno
 		# track_age_bands=true): il criterio calorico resta comunque disattivato (ratio neutro 1.0,
 		# nessuna pressione) finché capitasse, il criterio di densità resta invece pienamente
 		# specie-agnostico e valido in ogni caso.
+		#
+		# caloric_criterion_applicable esclude i PredatorRules (wolf) SOLO ai fini del criterio di
+		# espansione/contrazione territoriale sotto (_update_group_territory, tramite initial_ratio):
+		# quel calcolo legge rules.diet_compatibility (AnimalBirthMitigationService.
+		# _get_available_stock), vuoto per design su un predatore puro — non "nessun dato ancora",
+		# ma strutturalmente sempre vuoto. Senza questa esclusione il ratio lì risulterebbe sempre
+		# 0.0 ("carestia permanente"), con needs_expansion_caloric sempre vero che, con
+		# min_territory_cells == max_territory_cells (territorio statico, vedi PredatorRules.gd),
+		# fa fallire l'espansione ogni checkpoint e attiva uno split spurio ogni anno, indipendente
+		# dalla resa di caccia reale. Il criterio di densità (sotto, _get_density_multiplier/
+		# needs_expansion_density) resta invece attivo e specie-agnostico come per gli erbivori —
+		# solo la componente calorica del criterio di ESPANSIONE resta neutralizzata. Placeholder
+		# fino a quando un vero criterio di espansione/contrazione per predatori (legato alla resa
+		# di caccia di PredationService, non ancora progettato) non lo sostituirà.
+		#
+		# La mitigazione della NATALITÀ (final_ratio_data sotto) è invece un calcolo SEPARATO, non
+		# più neutro per i predatori: usa AnimalBirthMitigationService.compute_predator_caloric_ratio
+		# (consuntivo di caccia reale accumulato da PredationService, vedi PopulationGroup.
+		# predation_season_calories_obtained/_required) invece dello stock territoriale stimato.
+		var caloric_criterion_applicable: bool = rules.track_age_bands and not (rules is PredatorRules)
 		var initial_ratio_data: Dictionary = {"stock": 0.0, "requirement": 0.0, "ratio": 1.0}
-		if rules.track_age_bands:
+		if caloric_criterion_applicable:
 			initial_ratio_data = mitigation_service.compute_caloric_ratio(world, group, rules, season)
 		var initial_ratio: float = initial_ratio_data["ratio"]
 
@@ -107,7 +128,16 @@ func update_territories_and_mitigation(world: World, season: GameTypes.Season) -
 		if not rules.track_age_bands:
 			continue
 
-		var final_ratio_data := mitigation_service.compute_caloric_ratio(world, group, rules, season)
+		var final_ratio_data: Dictionary = {"stock": 0.0, "requirement": 0.0, "ratio": 1.0}
+		if rules is PredatorRules:
+			final_ratio_data = mitigation_service.compute_predator_caloric_ratio(group)
+			# Consuntivo letto: azzerato per il ciclo successivo (dal checkpoint di oggi al
+			# prossimo, non l'anno di calendario) — stesso principio di
+			# PopulationGroup.yearly_prey_totals, che si azzera da solo al cambio anno.
+			group.predation_season_calories_obtained = 0.0
+			group.predation_season_calories_required = 0.0
+		elif caloric_criterion_applicable:
+			final_ratio_data = mitigation_service.compute_caloric_ratio(world, group, rules, season)
 		var final_ratio: float = final_ratio_data["ratio"]
 
 		# Densità sul territorio DEFINITIVO di quest'anno (dopo _update_group_territory sopra),
@@ -121,13 +151,19 @@ func update_territories_and_mitigation(world: World, season: GameTypes.Season) -
 		# log_enabled=false qui: per le specie con min_territory_cells > 1 il log dedicato sotto
 		# mostra già ratio_finale/stock/fabbisogno (e ora anche moltiplicatore_post_split/
 		# anni_da_split) — aggiungere anche il moltiplicatore lì evita di stampare due righe con
-		# la stessa informazione (vedi apply_mitigation_multiplier).
+		# la stessa informazione (vedi apply_mitigation_multiplier). Filtro erbivori/predatori:
+		# vedi DebugLogging.SHOW_HERBIVORE_LIFECYCLE_LOGS.
+		var show_lifecycle_log: bool = rules is PredatorRules or DebugLogging.SHOW_HERBIVORE_LIFECYCLE_LOGS
 		var multiplier_data := mitigation_service.apply_mitigation_multiplier(
 			group, final_ratio, density_data["multiplier"], density_data["ratio"],
-			post_split_multiplier, rules.min_territory_cells <= 1
+			post_split_multiplier, rules.min_territory_cells <= 1 and show_lifecycle_log
 		)
+		# Solo per il log di AnimalBirthService a fine stagione (vedi PopulationGroup.
+		# birth_mitigation_caloric_ratio) — final_ratio grezzo, non clamped_ratio: il valore
+		# "come è andata davvero", non quello già tagliato per la curva.
+		group.birth_mitigation_caloric_ratio = final_ratio
 
-		if DebugLogging.ENABLED and rules.min_territory_cells > 1 and not territory_result.is_empty():
+		if DebugLogging.ENABLED and rules.min_territory_cells > 1 and not territory_result.is_empty() and show_lifecycle_log:
 			var years_display: String = (
 				"mai scisso" if group.years_since_last_split < 0 else str(group.years_since_last_split)
 			)
@@ -157,10 +193,12 @@ func update_territories_and_mitigation(world: World, season: GameTypes.Season) -
 			)
 
 
-# Un solo controllo per gruppo: prima l'espansione, altrimenti la contrazione — mutuamente
-# esclusive per costruzione (nessuna condizione può chiedere contemporaneamente più celle E meno
-# celle), quindi if/elif, mai entrambe nello stesso checkpoint per lo stesso gruppo. Ritorna i
-# dettagli della decisione (per il logging del chiamante), mai null/vuoto se raggiunta.
+# Un solo controllo per gruppo: prima l'espansione (in OR tra tre criteri indipendenti — densità
+# etologica, vincolo calorico, territorio sotto il minimo di specie, vedi sotto), altrimenti la
+# contrazione — mutuamente esclusive per costruzione (nessuna condizione può chiedere
+# contemporaneamente più celle E meno celle), quindi if/elif, mai entrambe nello stesso checkpoint
+# per lo stesso gruppo. Ritorna i dettagli della decisione (per il logging del chiamante), mai
+# null/vuoto se raggiunta.
 func _update_group_territory(
 	world: World, group: PopulationGroup, rules: AnimalRules, caloric_ratio: float
 ) -> Dictionary:
@@ -179,6 +217,17 @@ func _update_group_territory(
 	# difficoltà" nello stesso sistema.
 	var needs_expansion_caloric: bool = caloric_ratio < AnimalBirthMitigationService.RATIO_HIGH_THRESHOLD
 
+	# Criterio 3 di espansione: territorio ancora sotto il minimo etologico di specie
+	# (AnimalRules.min_territory_cells), indipendente da densità/calorie — senza questo, un gruppo
+	# nato da scissione (PopulationSplitService.attempt_split, che crea SEMPRE un territorio a 1
+	# sola cella indipendentemente da min_territory_cells, per design) può restare bloccato ben
+	# sotto il minimo della propria specie a tempo indeterminato se cibo e spazio sono già
+	# sufficienti per quella popolazione ridotta — nessuno dei primi due criteri si accorgerebbe
+	# mai del problema. Un gruppo creato da zero (GameScene, via TerritoryBuilderService.
+	# build_territory con min_territory_cells) parte invece già al minimo, quindi per lui questo
+	# criterio è sempre falso fin dal primo checkpoint.
+	var needs_expansion_minimum: bool = current_cell_count < rules.min_territory_cells
+
 	# Contrazione: occupazione media (population/celle attuali) confrontata direttamente con METÀ
 	# del limite etologico — non un denominatore gonfiato (l'ex fattore ×1.5, concettualmente
 	# sbagliato: spostava l'intero limite di riferimento a 27, tollerando densità permanentemente
@@ -195,40 +244,58 @@ func _update_group_territory(
 	var action := "nessun cambiamento"
 	var reason := "nessun criterio soddisfatto"
 
-	if needs_expansion_density or needs_expansion_caloric:
-		var expanded := false
-		if current_cell_count >= rules.max_territory_cells:
-			reason = "espansione richiesta ma territorio già a max_territory_cells (%d)" % rules.max_territory_cells
+	if needs_expansion_density or needs_expansion_caloric or needs_expansion_minimum:
+		# Stessa cache di AnimalHungerService._attempt_expansion (vedi
+		# PopulationGroup.blocked_territory_search_version per la spiegazione completa): se
+		# l'ultima ricerca di questo gruppo è fallita e nessun territorio della sua specie si è
+		# liberato da allora (World.species_territory_release_version invariato), la ricerca di
+		# qui darebbe con certezza lo stesso esito — questo checkpoint gira solo una volta a
+		# stagione (non ogni giorno come l'altro chiamante), ma condivide lo stesso campo di
+		# cache: senza questo gate ignorerebbe silenziosamente lo stato "bloccato" già accertato
+		# nel frattempo dai controlli giornalieri.
+		var current_release_version: int = int(
+			world.species_territory_release_version.get(group.species_name, 0)
+		)
+		if group.blocked_territory_search_version == current_release_version:
+			reason = "ricerca territorio saltata (nessun rilascio dal precedente fallimento)"
 		else:
-			expanded = TerritoryBuilderService.new().expand_by_one_cell(world, group.territory, group.species_name)
-			if expanded:
-				action = "espande di 1 cella"
-				reason = _expansion_reason(needs_expansion_density, needs_expansion_caloric)
+			var expanded := false
+			if current_cell_count >= rules.max_territory_cells:
+				reason = "espansione richiesta ma territorio già a max_territory_cells (%d)" % rules.max_territory_cells
 			else:
-				reason = "espansione richiesta ma nessuna cella libera raggiungibile"
+				expanded = TerritoryBuilderService.new().expand_by_one_cell(world, group.territory, group.species_name)
+				if expanded:
+					action = "espande di 1 cella"
+					reason = _expansion_reason(needs_expansion_density, needs_expansion_caloric, needs_expansion_minimum)
+					group.blocked_territory_search_version = -1
+				else:
+					reason = "espansione richiesta ma nessuna cella libera raggiungibile"
 
-		# Espansione fallita, per qualunque motivo (già a max_territory_cells sopra, o BFS satura
-		# appena sopra) — un unico segnale (false), non serve distinguere il perché: prova a
-		# staccare una porzione della popolazione in un nuovo gruppo altrove (Step 9) PRIMA di
-		# lasciare che la sola pressione calorica/fame gestisca la situazione. Surplus = quanti
-		# individui eccedono la capacità etologica del territorio ATTUALE (invariato, l'espansione
-		# è appena fallita) col floor MIN_DISPERSAL_SHARE_FRACTION già usato anche dal trigger di
-		# fame in AnimalHungerService, stessa costante condivisa per non avere due soglie scoordinate.
-		if not expanded:
-			var surplus: int = max(0, group.population - (current_cell_count * rules.max_density_per_cell))
-			var split_amount: int = max(
-				surplus, int(ceil(float(group.population) * PopulationSplitService.MIN_DISPERSAL_SHARE_FRACTION))
-			)
-			# Stesso criterio (densità/calorico) già determinato sopra per il tentativo di
-			# espansione fallito — riusato qui solo per il log di PopulationSplitService, non
-			# ricalcolato: lo split non ha un "perché" proprio, eredita quello dell'espansione che
-			# lo ha preceduto nello stesso checkpoint.
-			var split_trigger_reason := _expansion_reason(needs_expansion_density, needs_expansion_caloric)
-			if PopulationSplitService.new().attempt_split(world, group, rules, split_amount, split_trigger_reason):
-				action = "scissione di %d individui" % split_amount
-				reason += " -> scissione riuscita"
+			# Espansione fallita, per qualunque motivo (già a max_territory_cells sopra, o BFS satura
+			# appena sopra) — un unico segnale (false), non serve distinguere il perché: prova a
+			# staccare una porzione della popolazione in un nuovo gruppo altrove (Step 9) PRIMA di
+			# lasciare che la sola pressione calorica/fame gestisca la situazione. Surplus = quanti
+			# individui eccedono la capacità etologica del territorio ATTUALE (invariato, l'espansione
+			# è appena fallita) col floor MIN_DISPERSAL_SHARE_FRACTION già usato anche dal trigger di
+			# fame in AnimalHungerService, stessa costante condivisa per non avere due soglie scoordinate.
+			if not expanded:
+				var surplus: int = max(0, group.population - (current_cell_count * rules.max_density_per_cell))
+				var split_amount: int = max(
+					surplus, int(ceil(float(group.population) * PopulationSplitService.MIN_DISPERSAL_SHARE_FRACTION))
+				)
+				# Stesso criterio (densità/calorico/minimo) già determinato sopra per il tentativo di
+				# espansione fallito — riusato qui solo per il log di PopulationSplitService, non
+				# ricalcolato: lo split non ha un "perché" proprio, eredita quello dell'espansione che
+				# lo ha preceduto nello stesso checkpoint.
+				var split_trigger_reason := _expansion_reason(needs_expansion_density, needs_expansion_caloric, needs_expansion_minimum)
+				if PopulationSplitService.new().attempt_split(world, group, rules, split_amount, split_trigger_reason):
+					action = "scissione di %d individui" % split_amount
+					reason += " -> scissione riuscita"
+					group.blocked_territory_search_version = -1
+				else:
+					group.blocked_territory_search_version = current_release_version
 	elif needs_contraction:
-		_contract_by_one_cell(group)
+		_contract_by_one_cell(world, group)
 		action = "contrae di 1 cella"
 		reason = "occupazione media sotto soglia isteresi (%.2f < %.1f)" % [average_occupancy, contraction_threshold]
 
@@ -309,12 +376,19 @@ func _get_post_split_multiplier(group: PopulationGroup, rules: AnimalRules) -> f
 	return 0.5 + (0.5 / float(rules.post_split_recovery_years)) * float(group.years_since_last_split)
 
 
-func _expansion_reason(needs_density: bool, needs_caloric: bool) -> String:
-	if needs_density and needs_caloric:
-		return "densita etologica e vincolo calorico"
+# Generico su un numero qualunque di criteri contemporaneamente veri (prima a due, ora a tre con
+# needs_minimum) — invece di enumerare a mano tutte le combinazioni binarie (che raddoppiavano ad
+# ogni nuovo criterio aggiunto), costruisce l'elenco delle ragioni vere e le unisce con " e ",
+# stesso pattern già usato da AnimalHungerService._format_bucket_summary per unire un Array[String].
+func _expansion_reason(needs_density: bool, needs_caloric: bool, needs_minimum: bool) -> String:
+	var reasons: Array[String] = []
+	if needs_minimum:
+		reasons.append("sotto il territorio minimo di specie")
 	if needs_density:
-		return "densita etologica"
-	return "vincolo calorico (ratio < %.1f)" % AnimalBirthMitigationService.RATIO_HIGH_THRESHOLD
+		reasons.append("densita etologica")
+	if needs_caloric:
+		reasons.append("vincolo calorico (ratio < %.1f)" % AnimalBirthMitigationService.RATIO_HIGH_THRESHOLD)
+	return " e ".join(reasons)
 
 
 # Rilascia UNA sola cella per checkpoint — la più lontana dal baricentro — stesso approccio
@@ -325,8 +399,11 @@ func _expansion_reason(needs_density: bool, needs_caloric: bool) -> String:
 # rilasciata non richiedono pulizia: PopulationGroup.get_population_by_cell() itera solo
 # territory.occupied_macrocells corrente (le chiavi in più vengono semplicemente ignorate), e
 # PopulationTerritoryShuffleService sovrascrive comunque l'intero dizionario al prossimo cambio
-# di stagione.
-func _contract_by_one_cell(group: PopulationGroup) -> void:
+# di stagione. Rilascia davvero una cella per un rivale della stessa specie in cerca di spazio —
+# World.release_species_territory va chiamata qui (non nel chiamante, per non poterla dimenticare
+# in un futuro secondo punto che rilasci celle), così i gruppi bloccati di questa specie sanno che
+# vale la pena riprovare la ricerca (vedi PopulationGroup.blocked_territory_search_version).
+func _contract_by_one_cell(world: World, group: PopulationGroup) -> void:
 	var cells := group.territory.occupied_macrocells
 	if cells.size() <= 1:
 		return
@@ -341,6 +418,7 @@ func _contract_by_one_cell(group: PopulationGroup) -> void:
 			farthest_distance = distance
 
 	cells.erase(farthest)
+	world.release_species_territory(group.species_name)
 
 
 static func _manhattan_distance(a: Vector2i, b: Vector2i) -> int:

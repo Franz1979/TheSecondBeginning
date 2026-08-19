@@ -48,6 +48,31 @@ func compute_caloric_ratio(world: World, group: PopulationGroup, rules: AnimalRu
 	return {"stock": available_stock, "requirement": seasonal_requirement, "ratio": ratio}
 
 
+# Equivalente di compute_caloric_ratio sopra ma per i PREDATORI: non uno stock territoriale
+# stimato (diet_compatibility è strutturalmente vuoto per un PredatorRules puro — vedi
+# TerritoryDynamicsService, che per questo esclude i predatori dal criterio calorico di
+# espansione/contrazione territoriale, un calcolo separato e non toccato da questa funzione), ma
+# un CONSUNTIVO reale: calorie effettivamente ottenute a caccia contro quelle effettivamente
+# necessarie, accumulate giorno per giorno da PredationService dall'ultimo checkpoint di
+# birth_season (PopulationGroup.predation_season_calories_obtained/_required — il chiamante li
+# azzera subito dopo aver letto questo ratio, per il ciclo successivo). Stessa forma
+# {"stock","requirement","ratio"} di compute_caloric_ratio così i chiamanti (apply_mitigation_
+# multiplier/i suoi log) non devono distinguere la provenienza. ratio=1.0 (pareggio) atteso per un
+# branco sano: il sistema di caccia (PredationService) è già omeostatico — caccia solo se
+# residual_requirement>0, tetto di cattura legato al fabbisogno — quindi qui ci si aspetta un
+# range molto più stretto attorno a 1.0 rispetto al ratio erbivoro (stock/fabbisogno stimato, che
+# può arrivare a 60-100+ con un territorio molto ricco e nessun tetto sul consumo).
+func compute_predator_caloric_ratio(group: PopulationGroup) -> Dictionary:
+	var ratio: float = 0.0
+	if group.predation_season_calories_required > 0.0:
+		ratio = group.predation_season_calories_obtained / group.predation_season_calories_required
+	return {
+		"stock": group.predation_season_calories_obtained,
+		"requirement": group.predation_season_calories_required,
+		"ratio": ratio,
+	}
+
+
 # Mitigazione della natalità legata alla disponibilità calorica del territorio: si SOMMA a
 # fertility_multiplier_by_age/base_birth_rate già esistenti (vedi AnimalBirthService), non li
 # sostituisce. raw_ratio è già stato calcolato dal chiamante (TerritoryDynamicsService) sul

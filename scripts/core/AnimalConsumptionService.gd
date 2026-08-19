@@ -26,6 +26,15 @@ func apply_daily_consumption(world: World, current_season: GameTypes.Season) -> 
 		var rules := AnimalCalculator.get_animal_rules(group.species_name)
 		if rules == null:
 			continue
+		# I branchi predatori (PredatorRules, vedi wolf.tres) non consumano vegetazione — il loro
+		# fabbisogno calorico è coperto interamente da PredationService (caccia + bookkeeping
+		# predation_calorie_debt/predation_surplus_carryover, del tutto separato da
+		# daily_caloric_ratio). Processarli qui produrrebbe un ratio 0.0 sempre (diet_compatibility
+		# vuoto per un predatore puro), scollegato dal reale esito delle cacce — stesso downcast
+		# già usato da PredationService.apply_daily_predation, qui invertito per escludere invece
+		# di includere.
+		if rules is PredatorRules:
+			continue
 
 		if _consume_group(world, group, rules, current_season):
 			any_consumption_applied = true
