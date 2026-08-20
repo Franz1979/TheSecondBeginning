@@ -22,7 +22,10 @@ func mature_age_bands(world: World, season: GameTypes.Season) -> void:
 		var adult_before := group.get_age_count(GameTypes.AgeBand.ADULT)
 		var old_before := group.get_age_count(GameTypes.AgeBand.OLD)
 
-		group.apply_age_band_maturation(rules.youth_duration_years, rules.adult_duration_years)
+		group.apply_age_band_maturation(
+			rules.youth_duration_years, rules.adult_duration_years,
+			("AGING #%d %s" % [group.id, group.species_name]) if rules is PredatorRules else ""
+		)
 
 		# Filtro erbivori/predatori: vedi DebugLogging.SHOW_HERBIVORE_LIFECYCLE_LOGS.
 		if DebugLogging.ENABLED and (rules is PredatorRules or DebugLogging.SHOW_HERBIVORE_LIFECYCLE_LOGS):

@@ -294,21 +294,30 @@ func set_age_composition(total: int, weights: Dictionary) -> void:
 # individuo avanza al massimo di una fascia per anno, mai due nello stesso ciclo. Nessuna
 # modifica al totale: population non va toccato qui (il chiamante, AnimalAgeBandService, gira
 # PRIMA delle nascite nello stesso checkpoint stagionale).
-func apply_age_band_maturation(youth_duration_years: int, adult_duration_years: int) -> void:
+func apply_age_band_maturation(youth_duration_years: int, adult_duration_years: int, debug_id: String = "") -> void:
 	var young_count := get_age_count(GameTypes.AgeBand.YOUNG)
 	var adult_count := get_age_count(GameTypes.AgeBand.ADULT)
 	if young_count <= 0 and adult_count <= 0:
 		return
 
 	# stochastic_round (non round()): stesso bias sistematico di AnimalBirthService/
-	# AnimalOldAgeMortalityService a conteggi piccoli — vedi SimulationMath.
+	# AnimalOldAgeMortalityService a conteggi piccoli — vedi SimulationMath. debug_id (Step
+	# diagnostico, solo predatori — vedi AnimalAgeBandService, unico chiamante) valorizza le due
+	# etichette sotto SOLO se non vuoto, altrimenti stringa vuota -> nessun log (vedi
+	# SimulationMath.stochastic_round).
 	var young_to_adult: int = 0
 	if youth_duration_years > 0:
-		young_to_adult = min(SimulationMath.stochastic_round(float(young_count) / float(youth_duration_years)), young_count)
+		young_to_adult = min(SimulationMath.stochastic_round(
+			float(young_count) / float(youth_duration_years),
+			("%s Y->A" % debug_id) if debug_id != "" else ""
+		), young_count)
 
 	var adult_to_old: int = 0
 	if adult_duration_years > 0:
-		adult_to_old = min(SimulationMath.stochastic_round(float(adult_count) / float(adult_duration_years)), adult_count)
+		adult_to_old = min(SimulationMath.stochastic_round(
+			float(adult_count) / float(adult_duration_years),
+			("%s A->O" % debug_id) if debug_id != "" else ""
+		), adult_count)
 
 	if young_to_adult <= 0 and adult_to_old <= 0:
 		return

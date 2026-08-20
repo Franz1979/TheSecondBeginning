@@ -45,4 +45,4 @@ post_split_recovery_years = 6
 max_days_without_food = 22
 min_territory_cells = 3
 max_territory_cells = 15
-max_density_per_cell = 10
+max_density_per_cell = 10.0

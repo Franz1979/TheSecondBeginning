@@ -32,7 +32,10 @@ func apply_births(world: World, season: GameTypes.Season) -> void:
 		)
 		# stochastic_round (non round()): stesso bias sistematico di AnimalOldAgeMortalityService a
 		# popolazioni/pesi_fertilità piccoli — vedi SimulationMath.
-		var births := SimulationMath.stochastic_round(weighted_count * rules.base_birth_rate * group.birth_mitigation_multiplier)
+		var births := SimulationMath.stochastic_round(
+				weighted_count * rules.base_birth_rate * group.birth_mitigation_multiplier,
+				("BIRTHS #%d %s" % [group.id, group.species_name]) if rules is PredatorRules else ""
+			)
 		var population_before := group.population
 		group.apply_births(births)
 
@@ -43,8 +46,13 @@ func apply_births(world: World, season: GameTypes.Season) -> void:
 		# basta a spiegarla — mostrarli insieme evita di dover risalire al checkpoint TERRITORY
 		# DYNAMICS di inizio stagione (fino a ~90 giorni prima) per capire da dove viene il numero.
 		if DebugLogging.ENABLED and (rules is PredatorRules or DebugLogging.SHOW_HERBIVORE_LIFECYCLE_LOGS):
-			print("[ANIMAL BIRTHS] checkpoint=fine %s | #%d %s: Y=%d A=%d O=%d pesato_fertilita=%.2f base_birth_rate=%.2f ratio_calorico=%.3f mitigazione=%.2f -> nascite=%d pop %d->%d" % [
+			# base_birth_rate_effettivo = base_birth_rate × mitigazione (già il prodotto
+			# calorico×densità×post-scissione) — nessun campo nuovo necessario, entrambi i fattori
+			# sono già disponibili qui: risparmia al lettore il calcolo a mano per capire il tasso
+			# di natalità REALMENTE applicato a questo gruppo, non solo il coefficiente di specie.
+			var base_birth_rate_effettivo: float = rules.base_birth_rate * group.birth_mitigation_multiplier
+			print("[ANIMAL BIRTHS] checkpoint=fine %s | #%d %s: Y=%d A=%d O=%d pesato_fertilita=%.2f base_birth_rate=%.2f ratio_calorico=%.3f mitigazione=%.2f base_birth_rate_effettivo=%.3f -> nascite=%d pop %d->%d" % [
 				GameTypes.Season.keys()[season], group.id, group.species_name,
 				young, adult, old, weighted_count, rules.base_birth_rate, group.birth_mitigation_caloric_ratio,
-				group.birth_mitigation_multiplier, births, population_before, group.population
+				group.birth_mitigation_multiplier, base_birth_rate_effettivo, births, population_before, group.population
 			])

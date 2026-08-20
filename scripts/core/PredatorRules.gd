@@ -7,20 +7,23 @@ extends AnimalRules
 # .tres) senza bisogno di alcuna modifica al loader. I service predatore-specifici faranno il
 # downcast esplicito (rules as PredatorRules), stesso schema di NaturalEventService.
 #
-# AnimalRules.max_density_per_cell resta ereditato ma concettualmente DORMIENTE per questa
-# sottoclasse: i predatori non hanno un tetto di densità sociale per cella (non "occupano"
-# fisicamente lo spazio come gli erbivori), il vincolo di popolazione INTESO è invece
-# max_population sotto. Nessun service PREDATORE-SPECIFICO (PredationService/PredatorPatrolService)
-# legge mai max_density_per_cell — ma TerritoryDynamicsService, generico e condiviso con gli
-# erbivori, SÌ (criterio di espansione/contrazione a densità e moltiplicatore di mitigazione
-# natalità): non è stato escluso per i predatori come invece lo è stato il criterio calorico (vedi
-# TerritoryDynamicsService.update_territories_and_mitigation), perché con territorio statico
-# (min_territory_cells == max_territory_cells, oggi 200 per wolf) quel criterio è strutturalmente
-# no-op — ma il campo VIENE letto, non è puramente "mai letto" come suggerirebbe una lettura troppo
-# larga di questo commento. Va tenuto a mente se in futuro min/max_territory_cells smettessero di
-# coincidere. Stesso trattamento (dormiente per i service specifici, non per quelli generici) già
-# riservato ad altri campi non pertinenti in questo codebase (es. old_duration_years prima che la
-# mortalità per vecchiaia esistesse).
+# AnimalRules.max_density_per_cell è, per questa sottoclasse, il criterio di dimensionamento del
+# territorio del branco — non più DORMIENTE (lo era prima di questa modifica: rimosso il vecchio
+# campo max_population, ridondante con esso). Qui non rappresenta una densità sociale per cella
+# come per gli erbivori (i predatori non "occupano" fisicamente lo spazio in quel senso), ma
+# l'inverso di "quante celle vale un individuo del branco" (1/max_density_per_cell — per wolf,
+# max_density_per_cell=0.05 → 20 celle/individuo). Il tetto assoluto di popolazione del branco è
+# quindi ricavabile per via inversa da max_territory_cells × max_density_per_cell (wolf:
+# 300 × 0.05 = 15) invece di essere un secondo dato dichiarato a parte da tenere sincronizzato a
+# mano. Nessun service PREDATORE-SPECIFICO (PredationService/PredatorPatrolService) legge mai
+# max_density_per_cell — resta TerritoryDynamicsService, generico e condiviso con gli erbivori, a
+# leggerlo per il criterio di espansione/contrazione a densità e per il moltiplicatore di
+# mitigazione natalità. A differenza del criterio calorico (escluso per i predatori, vedi
+# TerritoryDynamicsService.update_territories_and_mitigation, in attesa di un criterio legato alla
+# resa di caccia di PredationService non ancora progettato), il criterio di densità è pienamente
+# attivo per i predatori esattamente come per gli erbivori — non più strutturalmente no-op, perché
+# min_territory_cells e max_territory_cells non coincidono più (oggi 150/300 per wolf, non più un
+# territorio a dimensione fissa).
 
 @export_group("Predation")
 # Master switch comportamentale: true = il branco caccia collettivamente (lupo). Dichiarato ora
@@ -80,14 +83,6 @@ extends AnimalRules
 # nome in una catena di ereditarietà non si fondono nell'Ispettore Godot, compaiono come due sezioni
 # "Territory" separate e identiche nell'etichetta — confuso, non un problema di dati (i campi restano
 # comunque corretti), solo di leggibilità dell'Ispettore.
-
-# Tetto assoluto di popolazione del branco — sostituisce concettualmente densità×territorio
-# (AnimalRules.max_density_per_cell × celle) come criterio di split per questa sottoclasse: i
-# predatori non hanno una capacità etologica per cella, solo un limite assoluto di individui.
-# Quando superato scatta lo split esistente (PopulationSplitService), con un trigger diverso da
-# quello a densità degli erbivori (vedi TerritoryDynamicsService) — logica ancora da scrivere,
-# solo il dato è dichiarato qui.
-@export var max_population: int
 
 # Lato (in macrocelle) della finestra quadrata di pattugliamento giornaliero del branco attorno
 # alla propria posizione corrente — es. 5 = finestra 5x5. Dato puro per ora: la logica di

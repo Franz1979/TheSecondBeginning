@@ -14,7 +14,7 @@ diet_compatibility = {
 "fruit": 0.1
 }
 is_browsing_species = true
-prey_calories = 80.0
+prey_calories = 85.0
 max_individuals_per_cluster = 18
 hop_duration_min = 0.3
 hop_duration_max = 0.6
@@ -44,4 +44,4 @@ post_split_recovery_years = 6
 max_days_without_food = 20
 min_territory_cells = 3
 max_territory_cells = 15
-max_density_per_cell = 10
+max_density_per_cell = 10.0

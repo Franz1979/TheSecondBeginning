@@ -11,10 +11,13 @@ extends RefCounted
 # stessa unità di dominio, stesso principio con cui altri service di questo codebase (es.
 # TerritoryDynamicsService) tengono insieme più fasi correlate di uno stesso meccanismo:
 #   Fase A (recompute_route) — O(celle territorio): ricostruisce l'intero percorso da zero.
-#   Invocata SOLO quando la forma di group.territory cambia davvero (espansione/contrazione di una
-#   cella, o creazione del territorio di un nuovo gruppo scisso) — MAI al checkpoint annuale
-#   incondizionatamente, MAI ogni giorno. Il chiamante (il futuro PredatorTerritoryService, Step 5)
-#   ha la responsabilità di invocarla solo in quei momenti.
+#   Invocata SOLO quando la forma di group.territory cambia davvero — MAI al checkpoint annuale
+#   incondizionatamente, MAI ogni giorno. Tre chiamanti (Step 7): GameScene/GameLoadService per
+#   creazione/caricamento di un gruppo (reset_progress rispettivamente true/false, nessuna
+#   posizione precedente da preservare), TerritoryDynamicsService per espansione/contrazione di un
+#   gruppo esistente e PopulationSplitService per il territorio nuovo del gruppo scisso — questi
+#   ultimi due tramite recompute_route_preserving_position (Fase A ter sotto) e recompute_route
+#   rispettivamente.
 #   Fase B (advance_patrol) — O(1): avanza l'indice sul percorso già calcolato. Invocata ogni
 #   giorno, indipendentemente da Fase A.
 
@@ -40,6 +43,43 @@ func recompute_route(group: PopulationGroup, rules: PredatorRules, reset_progres
 	if reset_progress:
 		group.patrol_index = 0
 		group.patrol_direction = 1
+
+
+# Fase A ter. Come recompute_route sopra, ma preserva la CONTINUITÀ del pattugliamento invece di
+# resettare sempre a 0 — usata quando il territorio cambia forma per espansione/contrazione (Step
+# 8b, TerritoryDynamicsService), mai per un territorio del tutto nuovo (lì recompute_route con
+# reset_progress=true resta corretto, nessuna posizione precedente da preservare). Cattura la
+# cella su cui il branco si trovava (vecchio patrol_route[vecchio patrol_index]) PRIMA di
+# sovrascrivere patrol_route, poi cerca nel NUOVO percorso la cella più vicina (distanza
+# Chebyshev, stessa metrica di _chebyshev_distance sotto) e riparte da lì invece che dall'indice
+# 0 — un salto verso la cella più vicina invece di un teletrasporto logico a un punto arbitrario
+# del nuovo percorso. patrol_direction resta sempre +1 dopo un ricalcolo: si autocorregge al primo
+# rimbalzo (advance_patrol), non vale la pena dedurlo dal verso precedente. Nessun percorso
+# precedente (route vuoto, es. gruppo appena creato) o nuovo percorso vuoto: degrada a un reset
+# normale (index 0), stesso comportamento di recompute_route.
+func recompute_route_preserving_position(group: PopulationGroup, rules: PredatorRules) -> void:
+	var previous_anchor: Vector2i = Vector2i.ZERO
+	var has_previous_anchor := false
+	if group.patrol_route.size() > 0:
+		var safe_index: int = clamp(group.patrol_index, 0, group.patrol_route.size() - 1)
+		previous_anchor = group.patrol_route[safe_index]
+		has_previous_anchor = true
+
+	group.patrol_route = _build_route(group.territory, rules.hunting_window_size)
+	group.patrol_direction = 1
+
+	if not has_previous_anchor or group.patrol_route.is_empty():
+		group.patrol_index = 0
+		return
+
+	var closest_index := 0
+	var closest_distance := _chebyshev_distance(previous_anchor, group.patrol_route[0])
+	for i in range(1, group.patrol_route.size()):
+		var distance := _chebyshev_distance(previous_anchor, group.patrol_route[i])
+		if distance < closest_distance:
+			closest_distance = distance
+			closest_index = i
+	group.patrol_index = closest_index
 
 
 # Fase B. Rimbalzo agli estremi dell'array (mai un reset a 0 una volta raggiunta la fine) —

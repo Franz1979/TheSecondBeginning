@@ -57,7 +57,11 @@ func apply_daily_hunger(world: World) -> void:
 		elif outcome["territory_search_attempted"]:
 			territory_searches_attempted += 1
 
-	if DebugLogging.ENABLED and (territory_searches_skipped > 0 or territory_searches_attempted > 0):
+	# SHOW_HERBIVORE_LIFECYCLE_LOGS: questo service processa SOLO erbivori (i predatori sono
+	# saltati sopra, mai raggiungono questo punto), quindi basta il flag da solo, nessun controllo
+	# di specie necessario — stesso flag già usato per silenziare ANIMAL BIRTHS/AGING/OLD AGE
+	# DEATHS/TERRITORY DYNAMICS erbivori mentre si valida la sola natalità/mortalità dei lupi.
+	if DebugLogging.ENABLED and DebugLogging.SHOW_HERBIVORE_LIFECYCLE_LOGS and (territory_searches_skipped > 0 or territory_searches_attempted > 0):
 		print(
 			"[ANIMAL HUNGER SUMMARY] ricerche_territorio_evitate=%d ricerche_territorio_eseguite=%d" % [
 				territory_searches_skipped, territory_searches_attempted
@@ -157,7 +161,10 @@ func _process_group_hunger(world: World, group: PopulationGroup, rules: AnimalRu
 				else:
 					group.blocked_territory_search_version = current_release_version
 
-	if DebugLogging.ENABLED and (unfed_target > 0 or total_deaths > 0 or expansion_attempted or territory_search_skipped):
+	if (
+		DebugLogging.ENABLED and DebugLogging.SHOW_HERBIVORE_LIFECYCLE_LOGS
+		and (unfed_target > 0 or total_deaths > 0 or expansion_attempted or territory_search_skipped)
+	):
 		_log_daily_hunger(
 			group, ratio, unfed_target, total_deaths, deaths_by_origin_day,
 			population_before, expansion_attempted, expansion_succeeded, split_skipped_cooldown,

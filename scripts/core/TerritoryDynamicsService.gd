@@ -40,8 +40,26 @@ const DENSITY_RATIO_RAMP_END := 1.5     # da qui in poi: moltiplicatore = 0.0, p
 # scartato apposta per restare continua in entrambi i punti di rottura, come tutte le altre curve
 # di questo sistema.
 const DENSITY_FAST_GROWTH_BIRTH_RATE_THRESHOLD := 1.0
-const DENSITY_MULTIPLIER_MID_FAST := 0.05   # base_birth_rate >= soglia (oggi: rabbit)
-const DENSITY_MULTIPLIER_MID_SLOW := 0.3   # base_birth_rate < soglia (oggi: deer, aurochs, ecc.)
+const DENSITY_MULTIPLIER_MID_FAST := 0.05   # base_birth_rate >= soglia (oggi: rabbit, boar)
+const DENSITY_MULTIPLIER_MID_SLOW := 0.3   # base_birth_rate < soglia E population > soglia piccola sotto
+
+# Seconda distinzione, SOLO all'interno della categoria "lenta" sopra (mai per quella "veloce": un
+# tasso base già alto si autoprotegge dal problema — vedi sotto) — osservata per la prima volta sul
+# lupo (population piccola per costruzione, max ~15) ma non specifica ai predatori: qualunque
+# popolazione lenta può trovarcisi, es. un gruppo erbivoro appena scisso. Con population piccola,
+# il mid "normale" (0.3) combinato con un base_birth_rate già basso produce nascite attese quasi
+# a zero (verificato: lupo, pesato_fertilita=5 × base_birth_rate=0.4 × mid=0.3 ≈ 0.6/anno,
+# facilmente pareggiato o superato dalla sola mortalità per vecchiaia — osservato in gioco: la
+# popolazione oscilla per molti cicli attorno allo stesso ratio=1.0 senza mai accumulare un
+# surplus stabile) — stesso tipo di equilibrio quasi-permanente già visto per deer con mid=0.25,
+# qui riletto come "il problema non è la specie, è la popolazione piccola in valore assoluto".
+# DENSITY_MULTIPLIER_MID_SLOW_SMALL (0.5) sostituisce SLOW quando population <= soglia. Nessuna
+# distinzione per le specie veloci: un base_birth_rate già alto (rabbit=1.5, boar=1.3) produce
+# comunque un valore atteso sano anche con lo stesso mid severo (0.05) a popolazione piccola (es.
+# 10×1.5×0.05=0.75), quindi non ha lo stesso rischio di stallo — la distinzione lenta/veloce
+# esistente resta il primo filtro, questa si applica solo dopo.
+const DENSITY_SMALL_POPULATION_THRESHOLD := 12   # valore di partenza, da tarare osservando i test
+const DENSITY_MULTIPLIER_MID_SLOW_SMALL := 0.5
 
 # Espansione/contrazione del territorio di ogni PopulationGroup (Step 8 del refactoring fauna) —
 # gira nello STESSO checkpoint di inizio birth_season di ciascuna specie in cui gira già
@@ -262,6 +280,40 @@ func _update_group_territory(
 			var expanded := false
 			if current_cell_count >= rules.max_territory_cells:
 				reason = "espansione richiesta ma territorio già a max_territory_cells (%d)" % rules.max_territory_cells
+			elif rules is PredatorRules:
+				# Predatori (Step 8b): salto diretto alla cella-target del criterio di densità,
+				# invece del passo ±1 annuale degli erbivori — vedi TerritoryBuilderService.
+				# expand_by_n_cells. target_cells incorpora già sia il criterio di densità sia quello
+				# di minimo etologico (clamp inferiore a min_territory_cells); il criterio calorico
+				# resta strutturalmente neutro per i predatori (vedi caloric_criterion_applicable in
+				# update_territories_and_mitigation) quindi non contribuisce qui.
+				var target_cells: int = clamp(density_cells_needed, rules.min_territory_cells, rules.max_territory_cells)
+				var cells_to_add: int = target_cells - current_cell_count
+				var added := TerritoryBuilderService.new().expand_by_n_cells(
+					world, group.territory, group.species_name, cells_to_add
+				)
+				# Territorio DAVVERO cambiato forma (added>0, anche se parziale) -> il patrol_route
+				# esistente riflette la forma VECCHIA e va ricalcolato, preservando la posizione
+				# attuale del branco invece di un reset a 0 (Step 7, vedi
+				# PredatorPatrolService.recompute_route_preserving_position). Nessuna chiamata se
+				# added==0: il territorio non è cambiato, il percorso esistente resta valido.
+				if added > 0:
+					PredatorPatrolService.new().recompute_route_preserving_position(group, rules as PredatorRules)
+				# Successo solo se il salto raggiunge ESATTAMENTE il target di quest'anno — un
+				# risultato parziale (BFS esaurita prima di cells_to_add, rivali/mare tutt'intorno)
+				# cade comunque nel ramo "not expanded" sotto e tenta anche uno split per la
+				# pressione residua, invece di considerarsi "abbastanza". Le celle comunque trovate
+				# restano acquisite (expand_by_n_cells non fa rollback), mai perse.
+				expanded = added == cells_to_add
+				if expanded:
+					action = "espande di %d celle" % added
+					reason = _expansion_reason(needs_expansion_density, needs_expansion_caloric, needs_expansion_minimum)
+					group.blocked_territory_search_version = -1
+				elif added > 0:
+					action = "espande di %d celle (parziale, target %d)" % [added, target_cells]
+					reason = "espansione richiesta ma BFS esaurita prima del target (%d/%d)" % [added, cells_to_add]
+				else:
+					reason = "espansione richiesta ma nessuna cella libera raggiungibile"
 			else:
 				expanded = TerritoryBuilderService.new().expand_by_one_cell(world, group.territory, group.species_name)
 				if expanded:
@@ -275,14 +327,39 @@ func _update_group_territory(
 			# appena sopra) — un unico segnale (false), non serve distinguere il perché: prova a
 			# staccare una porzione della popolazione in un nuovo gruppo altrove (Step 9) PRIMA di
 			# lasciare che la sola pressione calorica/fame gestisca la situazione. Surplus = quanti
-			# individui eccedono la capacità etologica del territorio ATTUALE (invariato, l'espansione
-			# è appena fallita) col floor MIN_DISPERSAL_SHARE_FRACTION già usato anche dal trigger di
-			# fame in AnimalHungerService, stessa costante condivisa per non avere due soglie scoordinate.
+			# individui eccedono la capacità etologica del territorio ATTUALE — letta FRESCA da
+			# group.territory.get_cell_count() qui, non dalla variabile current_cell_count catturata
+			# a inizio funzione: per gli erbivori le due coincidono sempre (espansione fallita lì
+			# significa sempre zero celle aggiunte), ma per i predatori un'espansione PARZIALE
+			# (ramo sopra) ha già fatto crescere il territorio senza far scattare "expanded" — usare
+			# il valore stantio sovrastimerebbe la pressione residua ignorando le celle appena
+			# guadagnate. Floor MIN_DISPERSAL_SHARE_FRACTION già usato anche dal trigger di fame in
+			# AnimalHungerService, stessa costante condivisa per non avere due soglie scoordinate.
 			if not expanded:
-				var surplus: int = max(0, group.population - (current_cell_count * rules.max_density_per_cell))
-				var split_amount: int = max(
-					surplus, int(ceil(float(group.population) * PopulationSplitService.MIN_DISPERSAL_SHARE_FRACTION))
-				)
+				var cell_count_after_expansion_attempt: int = group.territory.get_cell_count()
+				var surplus: int = int(max(
+					0.0,
+					float(group.population) - (float(cell_count_after_expansion_attempt) * rules.max_density_per_cell)
+				))
+				var split_amount: int
+				if rules is PredatorRules:
+					# Predatori: floor al 50% della popolazione invece del 5% (MIN_DISPERSAL_SHARE_
+					# FRACTION) usato dagli erbivori — con popolazioni piccole (branco lupo max ~15) il
+					# 5% vale sempre 1 solo individuo, quasi certamente destinato a morire di fame da
+					# solo (bassa hunting_efficiency_by_age da giovane, nessuna caccia di gruppo
+					# possibile in solitaria) — uno spreco netto per il branco d'origine, non un vero
+					# nuovo branco fondatore. Al 50% entrambe le metà restano gruppi credibili, con una
+					# composizione d'età rappresentativa (dispersal_share_by_age) invece di un singolo
+					# disperso casuale. surplus resta comunque il floor dominante nei casi di
+					# sovraffollamento severo (population molto oltre la capacità del territorio
+					# attuale), dove metà non basterebbe a riportare il gruppo d'origine sotto la
+					# propria capacità — stesso principio "il più esigente dei due criteri vince" già
+					# usato per gli erbivori, solo con una soglia diversa.
+					split_amount = max(surplus, int(group.population / 2))
+				else:
+					split_amount = max(
+						surplus, int(ceil(float(group.population) * PopulationSplitService.MIN_DISPERSAL_SHARE_FRACTION))
+					)
 				# Stesso criterio (densità/calorico/minimo) già determinato sopra per il tentativo di
 				# espansione fallito — riusato qui solo per il log di PopulationSplitService, non
 				# ricalcolato: lo split non ha un "perché" proprio, eredita quello dell'espansione che
@@ -295,8 +372,22 @@ func _update_group_territory(
 				else:
 					group.blocked_territory_search_version = current_release_version
 	elif needs_contraction:
-		_contract_by_one_cell(world, group)
-		action = "contrae di 1 cella"
+		if rules is PredatorRules:
+			# Predatori: stesso principio di salto diretto usato per l'espansione sopra, applicato
+			# in senso inverso — vedi TerritoryBuilderService.contract_by_n_cells.
+			var target_cells: int = clamp(density_cells_needed, rules.min_territory_cells, rules.max_territory_cells)
+			var cells_to_release: int = current_cell_count - target_cells
+			var released := TerritoryBuilderService.new().contract_by_n_cells(
+				world, group.territory, group.species_name, cells_to_release
+			)
+			action = "contrae di %d celle" % released
+			# Stesso motivo del ramo di espansione sopra: territorio cambiato forma -> patrol_route
+			# va ricalcolato preservando la posizione attuale (Step 7).
+			if released > 0:
+				PredatorPatrolService.new().recompute_route_preserving_position(group, rules as PredatorRules)
+		else:
+			_contract_by_one_cell(world, group)
+			action = "contrae di 1 cella"
 		reason = "occupazione media sotto soglia isteresi (%.2f < %.1f)" % [average_occupancy, contraction_threshold]
 
 	return {
@@ -318,8 +409,9 @@ func _update_group_territory(
 # max_density_per_cell) — SEMPRE la capacità dell'INTERO territorio, mai il valore per singola
 # cella isolato: stessa formula identica per un territorio a 1 cella (rabbit) o multi-cella (deer).
 #
-# base_birth_rate sceglie il "mid" (vedi DENSITY_MULTIPLIER_MID_FAST/SLOW sopra per il perché),
-# poi la stessa forma di curva si applica a entrambe le categorie, continua in ogni punto di
+# base_birth_rate sceglie il "mid" (FAST/SLOW), e per le lente population lo raffina ulteriormente
+# (SLOW/SLOW_SMALL) — vedi le costanti sopra per il perché di entrambe le distinzioni. Poi la
+# stessa forma di curva si applica a tutte e tre le categorie, continua in ogni punto di
 # rottura: sotto DENSITY_RATIO_RAMP_START (0.7) nessuna penalità (1.0); da lì a
 # DENSITY_RATIO_FULL_CAPACITY (1.0) scende al mid della specie seguendo un easing QUADRATICO (t²,
 # non lineare) — la frenata resta debole per la maggior parte del tratto (es. per una specie
@@ -331,17 +423,20 @@ func _update_group_territory(
 # a pieno regime anche a densità già assurde (osservato in test: 14000+ individui in una cella con
 # max_density_per_cell=200, prima che fame/espansione avessero modo di intervenire).
 func _get_density_multiplier(
-	population: int, cell_count: int, max_density_per_cell: int, base_birth_rate: float
+	population: int, cell_count: int, max_density_per_cell: float, base_birth_rate: float
 ) -> Dictionary:
-	var capacity: int = cell_count * max_density_per_cell
+	var capacity: float = cell_count * max_density_per_cell
 	if capacity <= 0:
 		return {"ratio": 0.0, "multiplier": 1.0}
 
 	var ratio: float = float(population) / float(capacity)
-	var mid: float = (
-		DENSITY_MULTIPLIER_MID_FAST if base_birth_rate >= DENSITY_FAST_GROWTH_BIRTH_RATE_THRESHOLD
-		else DENSITY_MULTIPLIER_MID_SLOW
-	)
+	var mid: float
+	if base_birth_rate >= DENSITY_FAST_GROWTH_BIRTH_RATE_THRESHOLD:
+		mid = DENSITY_MULTIPLIER_MID_FAST
+	elif population <= DENSITY_SMALL_POPULATION_THRESHOLD:
+		mid = DENSITY_MULTIPLIER_MID_SLOW_SMALL
+	else:
+		mid = DENSITY_MULTIPLIER_MID_SLOW
 	var multiplier: float
 
 	if ratio < DENSITY_RATIO_RAMP_START:

@@ -16,11 +16,22 @@ extends RefCounted
 # simulazione (es. InitialResourceSetupService.randf_range), nessun bisogno di riproducibilità
 # qui — a differenza della generazione del mondo (ResourcePositionService), che usa invece un
 # seed dedicato.
-static func stochastic_round(value: float) -> int:
+# debug_label (Step diagnostico, solo predatori — vedi chiamanti): se non vuoto E
+# DebugLogging.ENABLED, stampa il tiro grezzo di randf() insieme a floor/fractional/risultato —
+# usa lo STESSO randf() già chiamato per la decisione, mai un secondo tiro extra (che
+# perturberebbe la sequenza per tutte le chiamate successive). Vuoto per default e per ogni
+# chiamante erbivoro: nessun log aggiuntivo, nessun cambio di comportamento per loro.
+static func stochastic_round(value: float, debug_label: String = "") -> int:
 	# Tipizzate esplicitamente (non `:=`): floor() confonde l'inferenza di tipo di GDScript qui,
 	# risultando in un errore di parsing su "fractional" nonostante value sia già float.
 	var floor_value: float = floor(value)
 	var fractional: float = value - floor_value
-	if randf() < fractional:
-		return int(floor_value) + 1
-	return int(floor_value)
+	var roll := randf()
+	var result: int = int(floor_value) + (1 if roll < fractional else 0)
+	if debug_label != "" and DebugLogging.ENABLED:
+		print(
+			"[STOCHASTIC ROUND] %s value=%.3f floor=%d fractional=%.3f roll=%.3f -> %d" % [
+				debug_label, value, int(floor_value), fractional, roll, result
+			]
+		)
+	return result

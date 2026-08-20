@@ -612,6 +612,20 @@ func _apply_calorie_bookkeeping(
 # dato) — non tarato per questa specie (<=0, default AnimalRules) significa meccanismo non ancora
 # configurato, no-op, stesso principio già usato da AnimalOldAgeMortalityService per
 # old_duration_years<=0.
+#
+# Due mitigazioni (osservate nei test: un branco di 8 lupi si è estinto in due soli checkpoint
+# consecutivi, il debito non perdonato dopo il primo round di morti lasciava i sopravvissuti
+# fragili quanto prima, e un solo giorno di caccia disastrosa bastava a calcolare più morti degli
+# individui rimasti):
+#   SEVERITY_DIVISOR ammorbidisce quanti individui "vale" l'eccedenza di debito (divisore più alto
+#   = serve più debito accumulato per far morire ciascuno) — la pressione da fame resta reale, solo
+#   meno brusca.
+#   MAX_POPULATION_SHARE è un tetto assoluto indipendente dal divisore sopra: mai più della metà
+#   del branco in UN solo checkpoint, qualunque sia il debito accumulato — rete di sicurezza contro
+#   un'estinzione istantanea anche in scenari più estremi di quello osservato, dove il solo
+#   divisore non basterebbe.
+const STARVATION_MORTALITY_SEVERITY_DIVISOR := 5.0
+const STARVATION_MORTALITY_MAX_POPULATION_SHARE := 0.5
 func _apply_starvation_mortality(group: PopulationGroup, rules: PredatorRules, daily_requirement_today: float) -> void:
 	if rules.max_days_without_food <= 0:
 		return
@@ -627,14 +641,27 @@ func _apply_starvation_mortality(group: PopulationGroup, rules: PredatorRules, d
 	# incide sul fabbisogno reale (AnimalRules.caloric_multiplier_by_age), quindi un giovane "vale"
 	# meno di un adulto nel consumare l'eccedenza di debito — quale fascia muoia davvero lo decide
 	# comunque apply_hunger_mortality sotto (pesato per mortality_share_by_age), qui serve solo a
-	# stimare QUANTI individui l'eccedenza rappresenta.
+	# stimare QUANTI individui l'eccedenza rappresenta. Moltiplicato per SEVERITY_DIVISOR (vedi
+	# sopra) prima di dividere: stessa eccedenza, meno morti calcolati.
 	var average_requirement_per_individual: float = daily_requirement_today / float(group.population)
-	var deaths: int = min(group.population, int(excess_debt / average_requirement_per_individual))
+	var raw_deaths: int = int(excess_debt / (average_requirement_per_individual * STARVATION_MORTALITY_SEVERITY_DIVISOR))
+	var max_deaths_this_checkpoint: int = int(float(group.population) * STARVATION_MORTALITY_MAX_POPULATION_SHARE)
+	var deaths: int = min(raw_deaths, max_deaths_this_checkpoint)
 	if deaths <= 0:
 		return
 
 	var population_before := group.population
 	var debt_before := group.predation_calorie_debt
+	# Composizione PRIMA della mortalità, per fascia — apply_hunger_mortality sotto ritorna solo il
+	# totale rimosso, non la ripartizione per fascia (funzione condivisa con gli erbivori, mai
+	# modificata: nessun bisogno del dettaglio per fascia là). Confrontata con quella DOPO per
+	# ricavare morti_per_fascia, necessaria sotto per il cannibalismo (stesso pattern già usato
+	# altrove nel codebase, es. AnimalAgeBandService, per lo stesso identico problema).
+	var age_before: Dictionary = {
+		GameTypes.AgeBand.YOUNG: group.get_age_count(GameTypes.AgeBand.YOUNG),
+		GameTypes.AgeBand.ADULT: group.get_age_count(GameTypes.AgeBand.ADULT),
+		GameTypes.AgeBand.OLD: group.get_age_count(GameTypes.AgeBand.OLD),
+	}
 	# Riuso diretto della stessa funzione degli erbivori (PopulationGroup.apply_hunger_mortality):
 	# generica per qualunque AnimalRules, distribuisce le morti tra le fasce d'età pesando per
 	# rules.mortality_share_by_age (già impostato per il lupo) coi tetti reali di disponibilità per
@@ -649,15 +676,39 @@ func _apply_starvation_mortality(group: PopulationGroup, rules: PredatorRules, d
 	# via, i sopravvissuti mantengono la propria quota proporzionale.
 	group.predation_calorie_debt = debt_before * (float(group.population) / float(population_before))
 
+	# Cannibalismo (confermato con l'utente): in carestia estrema il branco si nutre dei propri
+	# morti — stessa formula già usata per una cattura di predazione vera (prey_calories ×
+	# size_multiplier_by_age[fascia] × conteggio), qui applicata ai morti di QUESTO evento invece
+	# che a una preda esterna. Gira DOPO lo storno sopra (prima si toglie ai sopravvissuti la quota
+	# di debito dei morti, POI si aggiunge il nutrimento ricavato mangiandoli) — ordine causale, non
+	# arbitrario. Riusa la stessa riconciliazione debito/surplus di _apply_calorie_bookkeeping
+	# (surplus scontato di SURPLUS_CARRYOVER_RATIO, stessa logica di "parte va persa/deperisce"
+	# applicata a qualunque eccedenza calorica in questo service, non solo alla caccia vera).
+	var cannibalism_calories := 0.0
+	for age_band in age_before.keys():
+		var died_this_band: int = int(age_before[age_band]) - group.get_age_count(age_band)
+		if died_this_band > 0:
+			cannibalism_calories += (
+				float(died_this_band) * rules.prey_calories * float(rules.size_multiplier_by_age[age_band])
+			)
+	if cannibalism_calories > 0.0:
+		var net_after_cannibalism: float = cannibalism_calories - group.predation_calorie_debt
+		if net_after_cannibalism >= 0.0:
+			group.predation_calorie_debt = 0.0
+			group.predation_surplus_carryover += net_after_cannibalism * SURPLUS_CARRYOVER_RATIO
+		else:
+			group.predation_calorie_debt = -net_after_cannibalism
+
 	if DebugLogging.ENABLED:
 		print(
 			(
 				"[PREDATION STARVATION] #%d %s debito=%.1f soglia=%.1f (fabbisogno_oggi=%.1f x %dgg) "
-				+ "eccedenza=%.1f MORTI=%d pop %d->%d debito_nuovo=%.1f"
+				+ "eccedenza=%.1f MORTI=%d pop %d->%d calorie_cannibalismo=%.1f "
+				+ "debito_nuovo=%.1f surplus_nuovo=%.1f"
 			) % [
 				group.id, group.species_name, debt_before, threshold, daily_requirement_today,
 				rules.max_days_without_food, excess_debt, removed, population_before, group.population,
-				group.predation_calorie_debt
+				cannibalism_calories, group.predation_calorie_debt, group.predation_surplus_carryover
 			]
 		)
 

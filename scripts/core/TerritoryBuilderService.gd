@@ -81,6 +81,62 @@ func expand_by_one_cell(world: World, territory: Territory, species_name: String
 	return true
 
 
+# Espande il territorio di fino a n celle in un colpo solo (Step 8b, predatori — vedi
+# TerritoryDynamicsService, che sostituisce per loro il passo ±1 annuale degli erbivori con un
+# salto diretto alla cella-target calcolata dal criterio di densità). Riusa find_nearest_free_cell
+# ad ogni iterazione, che ricalcola centroid/occupied_lookup sul territory aggiornato ad ogni
+# chiamata — le celle appena aggiunte in questa stessa invocazione sono quindi già visibili
+# all'iterazione successiva, nessuno stato duplicato da tenere sincronizzato a mano. Si ferma
+# prima di n se la BFS si esaurisce (mappa satura, mare, o territorio rivale della stessa specie
+# tutt'intorno) — non un errore, stessa degradazione graduale di build_territory/
+# expand_by_one_cell. Ritorna il numero di celle EFFETTIVAMENTE aggiunte (può essere < n), così
+# il chiamante sa se il territorio ha raggiunto il target o si è fermato prima.
+func expand_by_n_cells(world: World, territory: Territory, species_name: String, n: int) -> int:
+	var added := 0
+	while added < n:
+		var found = find_nearest_free_cell(world, territory, species_name)
+		if found == null:
+			break
+		territory.occupied_macrocells.append(found)
+		added += 1
+	return added
+
+
+# Contrae il territorio di fino a n celle in un colpo solo (Step 8b, predatori — simmetrico a
+# expand_by_n_cells sopra). Ricalcola il baricentro ad OGNI rilascio (non una volta sola prima del
+# ciclo): rimuovere una cella sposta il baricentro, quindi la cella "più lontana" può cambiare da
+# un'iterazione all'altra — stesso principio di TerritoryDynamicsService._contract_by_one_cell,
+# qui solo ripetuto n volte. Nessuna conoscenza di min_territory_cells qui: si ferma solo per
+# sicurezza quando resta 1 sola cella (mai un territorio vuoto), il rispetto del minimo di specie
+# resta responsabilità del chiamante (calcola n di conseguenza). Chiama
+# world.release_species_territory(species_name) ad ogni cella rilasciata, stesso motivo di
+# _contract_by_one_cell: i gruppi bloccati di questa specie sanno che vale la pena riprovare la
+# ricerca di territorio. Ritorna il numero di celle EFFETTIVAMENTE rilasciate (può essere < n se
+# il territorio arriva a 1 cella prima).
+func contract_by_n_cells(world: World, territory: Territory, species_name: String, n: int) -> int:
+	var cells := territory.occupied_macrocells
+	var released := 0
+	while released < n and cells.size() > 1:
+		var centroid := territory.get_centroid()
+		var farthest: Vector2i = cells[0]
+		var farthest_distance := _manhattan_distance(farthest, centroid)
+		for coords in cells:
+			var distance := _manhattan_distance(coords, centroid)
+			if distance > farthest_distance:
+				farthest = coords
+				farthest_distance = distance
+
+		cells.erase(farthest)
+		world.release_species_territory(species_name)
+		released += 1
+
+	return released
+
+
+static func _manhattan_distance(a: Vector2i, b: Vector2i) -> int:
+	return abs(a.x - b.x) + abs(a.y - b.y)
+
+
 # BFS a partire dal baricentro di `territory` (Territory.get_centroid, arrotondato alla cella più
 # vicina — un punto puramente esplorativo, non necessariamente una cella occupata o valida),
 # stessa esclusione acqua di build_territory, ma ORDINE DELLE DIREZIONI RIMESCOLATO A OGNI

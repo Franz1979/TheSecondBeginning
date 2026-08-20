@@ -177,4 +177,4 @@ extends Resource
 # logica di distribuzione/espansione territorio. Nessun default: ogni specie deve dichiararlo
 # esplicitamente nel proprio .tres (rabbit=999, di fatto senza vincolo dato il suo territorio
 # sempre a 1 cella; deer=18, un branco realistico).
-@export var max_density_per_cell: int = 999
+@export var max_density_per_cell: float = 999.0
