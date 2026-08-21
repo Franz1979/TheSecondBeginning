@@ -1,0 +1,68 @@
+[gd_scene format=3 uid="uid://u4tgm2grhilk"]
+
+[ext_resource type="Script" uid="uid://dhh7xkgvhirhf" path="res://simulation/scripts/world/MacroCellInfoPanel.gd" id="1_tcup2"]
+[ext_resource type="PackedScene" uid="uid://c8g5nq2h6x4xy" path="res://simulation/scenes/world/CellGeographyInfo.tscn" id="2_geog"]
+
+[node name="MacroCellInfoPanel" type="PanelContainer" unique_id=1882805416]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1_tcup2")
+
+[node name="MarginContainer" type="MarginContainer" parent="." unique_id=1057339642]
+layout_mode = 2
+
+[node name="VBoxContainer" type="VBoxContainer" parent="MarginContainer" unique_id=455504592]
+layout_mode = 2
+
+[node name="TitleLabel" type="Label" parent="MarginContainer/VBoxContainer" unique_id=1103346870]
+layout_mode = 2
+theme_override_font_sizes/font_size = 14
+
+[node name="CoordsLabel" type="Label" parent="MarginContainer/VBoxContainer" unique_id=234701174]
+layout_mode = 2
+theme_override_font_sizes/font_size = 11
+
+[node name="GeografiaContent" type="VBoxContainer" parent="MarginContainer/VBoxContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="SectionTitleLabel" type="Label" parent="MarginContainer/VBoxContainer/GeografiaContent"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 13
+
+[node name="CellGeographyInfo" parent="MarginContainer/VBoxContainer/GeografiaContent" instance=ExtResource("2_geog")]
+layout_mode = 2
+
+[node name="SpaceLabel" type="Label" parent="MarginContainer/VBoxContainer/GeografiaContent" unique_id=1162298486]
+layout_mode = 2
+theme_override_font_sizes/font_size = 11
+
+[node name="StoneNumberLabel" type="Label" parent="MarginContainer/VBoxContainer/GeografiaContent" unique_id=71652592]
+layout_mode = 2
+theme_override_font_sizes/font_size = 11
+
+[node name="GrassNumberLabel" type="Label" parent="MarginContainer/VBoxContainer/GeografiaContent" unique_id=839201755]
+layout_mode = 2
+theme_override_font_sizes/font_size = 11
+
+[node name="ShrubNumberLabel" type="Label" parent="MarginContainer/VBoxContainer/GeografiaContent" unique_id=615823904]
+layout_mode = 2
+theme_override_font_sizes/font_size = 11
+
+[node name="TreeNumberLabel" type="Label" parent="MarginContainer/VBoxContainer/GeografiaContent" unique_id=1058781868]
+layout_mode = 2
+theme_override_font_sizes/font_size = 11
+
+[node name="ResourceSeparatorLabel" type="Label" parent="MarginContainer/VBoxContainer/GeografiaContent"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 11
+
+[node name="EmptySpaceLabel" type="Label" parent="MarginContainer/VBoxContainer/GeografiaContent" unique_id=1928672357]
+layout_mode = 2
+theme_override_font_sizes/font_size = 11
+
+[node name="ActionsContainer" type="VBoxContainer" parent="MarginContainer/VBoxContainer" unique_id=1311435228]
+layout_mode = 2

@@ -1,0 +1,288 @@
+[gd_scene format=3 uid="uid://dqf8n4k2m7w1a"]
+
+[ext_resource type="Script" path="res://simulation/scripts/world/MacroCellDetailPanel.gd" id="1_detail"]
+[ext_resource type="PackedScene" uid="uid://c8g5nq2h6x4xy" path="res://simulation/scenes/world/CellGeographyInfo.tscn" id="2_geog"]
+
+[node name="MacroCellDetailPanel" type="PanelContainer"]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1_detail")
+
+[node name="MarginContainer" type="MarginContainer" parent="."]
+layout_mode = 2
+
+[node name="VBoxContainer" type="VBoxContainer" parent="MarginContainer"]
+custom_minimum_size = Vector2(230, 0)
+layout_mode = 2
+
+[node name="TitleLabel" type="Label" parent="MarginContainer/VBoxContainer"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 14
+
+[node name="CoordsLabel" type="Label" parent="MarginContainer/VBoxContainer"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 11
+
+[node name="TabContainer" type="TabContainer" parent="MarginContainer/VBoxContainer"]
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="GeografiaTab" type="ScrollContainer" parent="MarginContainer/VBoxContainer/TabContainer"]
+layout_mode = 2
+horizontal_scroll_mode = 0
+
+[node name="GeografiaContent" type="VBoxContainer" parent="MarginContainer/VBoxContainer/TabContainer/GeografiaTab"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="SectionTitleLabel" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/GeografiaTab/GeografiaContent"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 13
+
+[node name="CellGeographyInfo" parent="MarginContainer/VBoxContainer/TabContainer/GeografiaTab/GeografiaContent" instance=ExtResource("2_geog")]
+layout_mode = 2
+
+[node name="VegetazioneTab" type="ScrollContainer" parent="MarginContainer/VBoxContainer/TabContainer"]
+visible = false
+layout_mode = 2
+horizontal_scroll_mode = 0
+
+[node name="VegetazioneContent" type="VBoxContainer" parent="MarginContainer/VBoxContainer/TabContainer/VegetazioneTab"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="SectionTitleLabel" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/VegetazioneTab/VegetazioneContent"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 13
+
+[node name="StoneNumberLabel" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/VegetazioneTab/VegetazioneContent"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 11
+
+[node name="GrassNumberLabel" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/VegetazioneTab/VegetazioneContent"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 11
+
+[node name="ShrubNumberLabel" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/VegetazioneTab/VegetazioneContent"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 11
+
+[node name="ShrubSubtypeContainer" type="VBoxContainer" parent="MarginContainer/VBoxContainer/TabContainer/VegetazioneTab/VegetazioneContent"]
+layout_mode = 2
+visible = false
+
+[node name="ShrubSubtypeWoodLabel" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/VegetazioneTab/VegetazioneContent/ShrubSubtypeContainer"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 10
+autowrap_mode = 3
+
+[node name="ShrubSubtypeWoodAgeLabel" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/VegetazioneTab/VegetazioneContent/ShrubSubtypeContainer"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 9
+autowrap_mode = 3
+
+[node name="ShrubSubtypeFruitBearingLabel" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/VegetazioneTab/VegetazioneContent/ShrubSubtypeContainer"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 10
+autowrap_mode = 3
+
+[node name="ShrubSubtypeFruitBearingAgeLabel" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/VegetazioneTab/VegetazioneContent/ShrubSubtypeContainer"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 9
+autowrap_mode = 3
+
+[node name="TreeNumberLabel" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/VegetazioneTab/VegetazioneContent"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 11
+
+[node name="TreeSubtypeContainer" type="VBoxContainer" parent="MarginContainer/VBoxContainer/TabContainer/VegetazioneTab/VegetazioneContent"]
+layout_mode = 2
+visible = false
+
+[node name="TreeSubtypeWoodLabel" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/VegetazioneTab/VegetazioneContent/TreeSubtypeContainer"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 10
+autowrap_mode = 3
+
+[node name="TreeSubtypeWoodAgeLabel" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/VegetazioneTab/VegetazioneContent/TreeSubtypeContainer"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 9
+autowrap_mode = 3
+
+[node name="TreeSubtypeWildFruitLabel" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/VegetazioneTab/VegetazioneContent/TreeSubtypeContainer"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 10
+autowrap_mode = 3
+
+[node name="TreeSubtypeWildFruitAgeLabel" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/VegetazioneTab/VegetazioneContent/TreeSubtypeContainer"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 9
+autowrap_mode = 3
+
+[node name="TreeSubtypeDomesticableFruitLabel" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/VegetazioneTab/VegetazioneContent/TreeSubtypeContainer"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 10
+autowrap_mode = 3
+
+[node name="TreeSubtypeDomesticableFruitAgeLabel" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/VegetazioneTab/VegetazioneContent/TreeSubtypeContainer"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 9
+autowrap_mode = 3
+
+[node name="TreeSubtypeConiferLabel" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/VegetazioneTab/VegetazioneContent/TreeSubtypeContainer"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 10
+autowrap_mode = 3
+
+[node name="TreeSubtypeConiferAgeLabel" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/VegetazioneTab/VegetazioneContent/TreeSubtypeContainer"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 9
+autowrap_mode = 3
+
+[node name="ResourceSeparatorLabel" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/VegetazioneTab/VegetazioneContent"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 11
+
+[node name="EmptySpaceLabel" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/VegetazioneTab/VegetazioneContent"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 11
+
+[node name="FaunaTab1" type="ScrollContainer" parent="MarginContainer/VBoxContainer/TabContainer"]
+visible = false
+layout_mode = 2
+horizontal_scroll_mode = 0
+
+[node name="FaunaContent" type="VBoxContainer" parent="MarginContainer/VBoxContainer/TabContainer/FaunaTab1"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="SectionTitleLabel" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/FaunaTab1/FaunaContent"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 13
+
+[node name="FishNumberLabel" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/FaunaTab1/FaunaContent"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 11
+
+[node name="WaterEmptySpaceLabel" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/FaunaTab1/FaunaContent"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 11
+
+[node name="BirdsSeparatorLabel" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/FaunaTab1/FaunaContent"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 11
+
+[node name="BirdsNumberLabel" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/FaunaTab1/FaunaContent"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 11
+
+[node name="LandEmptySpaceLabel" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/FaunaTab1/FaunaContent"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 11
+
+[node name="FaunaTab2" type="ScrollContainer" parent="MarginContainer/VBoxContainer/TabContainer"]
+visible = false
+layout_mode = 2
+horizontal_scroll_mode = 0
+
+[node name="FaunaContent" type="VBoxContainer" parent="MarginContainer/VBoxContainer/TabContainer/FaunaTab2"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="SectionTitleLabel" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/FaunaTab2/FaunaContent"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 13
+
+[node name="AnimalPopulationContainer" type="VBoxContainer" parent="MarginContainer/VBoxContainer/TabContainer/FaunaTab2/FaunaContent"]
+layout_mode = 2
+
+[node name="FaunaTab3" type="ScrollContainer" parent="MarginContainer/VBoxContainer/TabContainer"]
+visible = false
+layout_mode = 2
+horizontal_scroll_mode = 0
+
+[node name="FaunaContent" type="VBoxContainer" parent="MarginContainer/VBoxContainer/TabContainer/FaunaTab3"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="SectionTitleLabel" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/FaunaTab3/FaunaContent"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 13
+
+[node name="PredatorPopulationContainer" type="VBoxContainer" parent="MarginContainer/VBoxContainer/TabContainer/FaunaTab3/FaunaContent"]
+layout_mode = 2
+
+[node name="SussistenzaTab" type="ScrollContainer" parent="MarginContainer/VBoxContainer/TabContainer"]
+visible = false
+layout_mode = 2
+horizontal_scroll_mode = 0
+
+[node name="SussistenzaContent" type="VBoxContainer" parent="MarginContainer/VBoxContainer/TabContainer/SussistenzaTab"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="SectionTitleLabel" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/SussistenzaTab/SussistenzaContent"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 13
+
+[node name="ForageUnitsLabel" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/SussistenzaTab/SussistenzaContent"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 10
+
+[node name="ForageCaloriesLabel" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/SussistenzaTab/SussistenzaContent"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 10
+
+[node name="BerrySeparatorLabel" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/SussistenzaTab/SussistenzaContent"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 10
+
+[node name="BerryUnitsLabel" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/SussistenzaTab/SussistenzaContent"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 10
+
+[node name="BerryCaloriesLabel" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/SussistenzaTab/SussistenzaContent"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 10
+
+[node name="AcornSeparatorLabel" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/SussistenzaTab/SussistenzaContent"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 10
+
+[node name="AcornUnitsLabel" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/SussistenzaTab/SussistenzaContent"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 10
+
+[node name="AcornCaloriesLabel" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/SussistenzaTab/SussistenzaContent"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 10
+
+[node name="FruitSeparatorLabel" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/SussistenzaTab/SussistenzaContent"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 10
+
+[node name="FruitUnitsLabel" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/SussistenzaTab/SussistenzaContent"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 10
+
+[node name="FruitCaloriesLabel" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/SussistenzaTab/SussistenzaContent"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 10
+
+[node name="EggsSeparatorLabel" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/SussistenzaTab/SussistenzaContent"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 10
+
+[node name="EggsUnitsLabel" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/SussistenzaTab/SussistenzaContent"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 10
+
+[node name="EggsCaloriesLabel" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/SussistenzaTab/SussistenzaContent"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 10
+
+[node name="ActionsContainer" type="VBoxContainer" parent="MarginContainer/VBoxContainer"]
+layout_mode = 2

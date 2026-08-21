@@ -1,0 +1,9 @@
+[gd_resource type="Resource" script_class="CaloricSourceRules" format=3 uid="uid://bvtlf5td771mp"]
+
+[ext_resource type="Script" uid="uid://cu4cyua5y4n1m" path="res://simulation/scripts/core/CaloricSourceRules.gd" id="1_forage"]
+
+[resource]
+script = ExtResource("1_forage")
+caloric_source_name = "forage"
+calories_per_unit = 2.0
+seasonal_availability_multiplier = Array[float]([0.6, 1.0, 1.0, 1.0])

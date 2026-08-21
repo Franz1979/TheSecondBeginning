@@ -1,0 +1,6 @@
+[gd_scene format=3 uid="uid://bqf3n8m2h5w7c"]
+
+[ext_resource type="Script" path="res://simulation/scripts/ui/ExitConfirmationDialog.gd" id="1_exit"]
+
+[node name="ExitConfirmationDialog" type="ConfirmationDialog"]
+script = ExtResource("1_exit")
