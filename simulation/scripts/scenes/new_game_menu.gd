@@ -26,7 +26,9 @@ func _on_new_random_world_pressed() -> void:
 	GameSettings.selected_map_file = ""
 	GameSettings.selected_save_file = ""
 
-	get_tree().change_scene_to_file("res://simulation/scenes/game/GameScene.tscn")
+	# Scelta mappa fatta — prima di avviare la partita vera e propria, passa dalla schermata
+	# opzioni (eta' del mondo) invece di andare direttamente a GameScene.
+	get_tree().change_scene_to_file("res://simulation/scenes/menus/NewGameOptionsMenu.tscn")
 
 
 func _on_choose_scenario_pressed() -> void:
@@ -48,4 +50,6 @@ func _on_open_scenario_file_selected(path: String) -> void:
 	GameSettings.selected_map_file = path
 	GameSettings.selected_save_file = ""
 
-	get_tree().change_scene_to_file("res://simulation/scenes/game/GameScene.tscn")
+	# Stesso inoltro di _on_new_random_world_pressed sopra: la mappa e' scelta, manca solo l'eta'
+	# del mondo prima di avviare davvero.
+	get_tree().change_scene_to_file("res://simulation/scenes/menus/NewGameOptionsMenu.tscn")

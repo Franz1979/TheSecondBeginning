@@ -93,6 +93,8 @@ func populate_birds(world: World) -> void:
 		state.set_resource_quantity(GameTypes.WorldObjectType.BIRDS, quantity)
 
 
+# Chiamato anche da ParametricResourceSetupService — non modificare la firma o il comportamento
+# senza verificare quel consumatore.
 func reserve_river_space(world: World) -> void:
 	var river_count := 0
 	for cell in world.cells:
@@ -110,6 +112,11 @@ func reserve_river_space(world: World) -> void:
 # sviluppo iniziale. Ordine di chiamata (stone, poi trees, grass, shrub — vedi populate_resources)
 # invariato: ogni tipo consuma get_empty_space() al momento della propria chiamata, quindi chi
 # gira prima ha priorità sullo spazio libero condiviso della cella, esattamente come già avveniva.
+#
+# Chiamato anche da ParametricResourceSetupService — non modificare la firma o il comportamento
+# senza verificare quel consumatore. (STONE non scala con l'età del mondo per decisione di
+# design: ParametricResourceSetupService lo delega qui invariato in tutti i livelli YOUNG/ADULT/
+# OLD.)
 func populate_stone(world: World) -> void:
 	for cell in world.cells:
 		var state := world.get_cell_state_at(cell.x, cell.y)
@@ -248,6 +255,10 @@ func populate_shrub(world: World) -> void:
 # a initial_ratio_by_biome del bioma della cella. Se nessun sottotipo ha un rapporto positivo per
 # quel bioma (biome non coperto nei dati), ripiega su pesi uguali per non lasciare
 # sum(subtype_composition) disallineato da dedicated_space appena assegnato sopra.
+#
+# Chiamato anche da ParametricResourceSetupService (via istanza, il metodo resta "privato" solo
+# per convenzione) — non modificare la firma o il comportamento senza verificare quel
+# consumatore.
 func _seed_subtype_composition(
 	state: MacroCellState,
 	resource_type: GameTypes.WorldObjectType,
@@ -268,6 +279,10 @@ func _seed_subtype_composition(
 # simulazione a regime — vedi MacroCellState.add_age_band_gain — un mondo nuovo può partire già
 # come un ecosistema stabilito). Ratio assente/tutta a 0 => pesi uguali tra le tre fasce, stesso
 # fallback di initial_ratio_by_biome sopra.
+#
+# Chiamato anche da ParametricResourceSetupService (via istanza, il metodo resta "privato" solo
+# per convenzione) — non modificare la firma o il comportamento senza verificare quel
+# consumatore.
 func _seed_age_band_composition(
 	state: MacroCellState,
 	resource_type: GameTypes.WorldObjectType,

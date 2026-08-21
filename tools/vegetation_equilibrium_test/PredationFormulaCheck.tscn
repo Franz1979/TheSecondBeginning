@@ -1,0 +1,6 @@
+[gd_scene format=3 uid="uid://c7h4nak2n5w8x"]
+
+[ext_resource type="Script" path="res://tools/vegetation_equilibrium_test/PredationFormulaCheck.gd" id="1_check"]
+
+[node name="PredationFormulaCheck" type="Node"]
+script = ExtResource("1_check")

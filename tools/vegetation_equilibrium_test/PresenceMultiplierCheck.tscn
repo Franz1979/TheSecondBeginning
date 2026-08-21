@@ -1,0 +1,6 @@
+[gd_scene format=3 uid="uid://dqx4h8m2wce7n"]
+
+[ext_resource type="Script" path="res://tools/vegetation_equilibrium_test/PresenceMultiplierCheck.gd" id="1_check"]
+
+[node name="PresenceMultiplierCheck" type="Node"]
+script = ExtResource("1_check")

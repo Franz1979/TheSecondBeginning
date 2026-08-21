@@ -1,0 +1,6 @@
+[gd_scene format=3 uid="uid://cq8h3n5w2r7yx"]
+
+[ext_resource type="Script" path="res://tools/vegetation_equilibrium_test/ParametricSeedCheck.gd" id="1_check"]
+
+[node name="ParametricSeedCheck" type="Node"]
+script = ExtResource("1_check")

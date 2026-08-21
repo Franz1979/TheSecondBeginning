@@ -66,6 +66,23 @@ static func _get_coast_multiplier(rules: ResourceDensityRules, coast: GameTypes.
 			return 1.0
 
 
+# Gemella di _get_coast_multiplier sopra, sull'asse dedicato alla sola presenza (vedi
+# ResourceDensityRules.presence_coast_multiplier_* per il perché) — usata solo da
+# get_presence_chance, mai da get_max_density.
+static func _get_presence_coast_multiplier(rules: ResourceDensityRules, coast: GameTypes.CoastType) -> float:
+	match coast:
+		GameTypes.CoastType.NONE:
+			return rules.presence_coast_multiplier_none
+		GameTypes.CoastType.BEACH:
+			return rules.presence_coast_multiplier_beach
+		GameTypes.CoastType.SEMI_CLIFF:
+			return rules.presence_coast_multiplier_semi_cliff
+		GameTypes.CoastType.CLIFF:
+			return rules.presence_coast_multiplier_cliff
+		_:
+			return 1.0
+
+
 static func _get_water_multiplier(rules: ResourceDensityRules, water_type: GameTypes.WaterType) -> float:
 	match water_type:
 		GameTypes.WaterType.SEA:
@@ -76,6 +93,20 @@ static func _get_water_multiplier(rules: ResourceDensityRules, water_type: GameT
 			return rules.water_multiplier_river
 		_:
 			return rules.water_multiplier_none
+
+
+# Gemella di _get_water_multiplier sopra, sull'asse dedicato alla sola presenza — usata solo da
+# get_water_presence_chance, mai da get_water_max_density.
+static func _get_presence_water_multiplier(rules: ResourceDensityRules, water_type: GameTypes.WaterType) -> float:
+	match water_type:
+		GameTypes.WaterType.SEA:
+			return rules.presence_water_multiplier_sea
+		GameTypes.WaterType.LAKE:
+			return rules.presence_water_multiplier_lake
+		GameTypes.WaterType.RIVER:
+			return rules.presence_water_multiplier_river
+		_:
+			return rules.presence_water_multiplier_none
 
 
 # Densità massima per risorse acquatiche (FISH): asse indipendente da Terrain/Biome/Coast — una
@@ -102,7 +133,9 @@ static func get_water_presence_chance(
 	var rules := _get_density_rules(resource_type)
 	if rules == null:
 		return 0.0
-	var chance := rules.presence_chance * _get_water_multiplier(rules, water_type)
+	# Asse dedicato alla presenza (presence_water_multiplier_*), non water_multiplier_* — quello
+	# resta riservato a get_water_max_density. Vedi ResourceDensityRules per il perché.
+	var chance := rules.presence_chance * _get_presence_water_multiplier(rules, water_type)
 	return clamp(chance, 0.0, 1.0)
 
 
@@ -116,9 +149,14 @@ static func get_presence_chance(
 	if rules == null:
 		return 0.0
 
-	var terrain_mult := _get_terrain_multiplier(rules, terrain)
-	var biome_mult := _get_biome_multiplier(rules, biome)
-	var coast_mult := _get_coast_multiplier(rules, coast)
+	# Asse dedicato alla presenza (presence_terrain/biome/coast_multiplier_*), non gli stessi
+	# moltiplicatori usati da get_max_density — vedi ResourceDensityRules per il perché: prima di
+	# questo asse, un terreno/bioma penalizzante per la densità penalizzava allo stesso modo la
+	# probabilità stessa di presenza, anche dove concettualmente la risorsa dovrebbe restare
+	# quasi ubiqua e solo la quantità scalare.
+	var terrain_mult := _get_presence_terrain_multiplier(rules, terrain)
+	var biome_mult := _get_presence_biome_multiplier(rules, biome)
+	var coast_mult := _get_presence_coast_multiplier(rules, coast)
 
 	var chance := rules.presence_chance * terrain_mult * biome_mult * coast_mult
 	return clamp(chance, 0.0, 1.0)
@@ -134,6 +172,22 @@ static func _get_terrain_multiplier(rules: ResourceDensityRules, terrain: GameTy
 			return rules.terrain_multiplier_mountain
 		GameTypes.TerrainBase.WATER:
 			return rules.terrain_multiplier_water
+		_:
+			return 1.0
+
+
+# Gemella di _get_terrain_multiplier sopra, sull'asse dedicato alla sola presenza — usata solo
+# da get_presence_chance, mai da get_max_density.
+static func _get_presence_terrain_multiplier(rules: ResourceDensityRules, terrain: GameTypes.TerrainBase) -> float:
+	match terrain:
+		GameTypes.TerrainBase.PLAIN:
+			return rules.presence_terrain_multiplier_plain
+		GameTypes.TerrainBase.HILL:
+			return rules.presence_terrain_multiplier_hill
+		GameTypes.TerrainBase.MOUNTAIN:
+			return rules.presence_terrain_multiplier_mountain
+		GameTypes.TerrainBase.WATER:
+			return rules.presence_terrain_multiplier_water
 		_:
 			return 1.0
 
@@ -154,6 +208,28 @@ static func _get_biome_multiplier(rules: ResourceDensityRules, biome: GameTypes.
 			return rules.biome_multiplier_fertile
 		GameTypes.Biome.ROCKY:
 			return rules.biome_multiplier_rocky
+		_:
+			return 1.0
+
+
+# Gemella di _get_biome_multiplier sopra, sull'asse dedicato alla sola presenza — usata solo da
+# get_presence_chance, mai da get_max_density.
+static func _get_presence_biome_multiplier(rules: ResourceDensityRules, biome: GameTypes.Biome) -> float:
+	match biome:
+		GameTypes.Biome.NONE:
+			return rules.presence_biome_multiplier_none
+		GameTypes.Biome.FOREST:
+			return rules.presence_biome_multiplier_forest
+		GameTypes.Biome.GRASSLAND:
+			return rules.presence_biome_multiplier_grassland
+		GameTypes.Biome.DESERT:
+			return rules.presence_biome_multiplier_desert
+		GameTypes.Biome.SWAMP:
+			return rules.presence_biome_multiplier_swamp
+		GameTypes.Biome.FERTILE:
+			return rules.presence_biome_multiplier_fertile
+		GameTypes.Biome.ROCKY:
+			return rules.presence_biome_multiplier_rocky
 		_:
 			return 1.0
 const GROWTH_RULES_DIR := "res://simulation/data/resource_growth/"

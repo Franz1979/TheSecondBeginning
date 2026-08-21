@@ -47,7 +47,7 @@ func _process_group(world: World, group: PopulationGroup, rules: PredatorRules, 
 	# AnimalRules.caloric_multiplier_by_age, lo stesso campo/pattern già usato per gli erbivori
 	# (vedi AnimalConsumptionService._get_total_daily_requirement), qui applicato incondizionatamente
 	# (nessun guard su track_age_bands: i branchi predatori tracciano sempre l'età per costruzione,
-	# vedi _compute_pack_efficiency sotto, che legge group.get_age_count senza quel guard). Un
+	# vedi _compute_raw_pack_efficiency sotto, che legge group.get_age_count senza quel guard). Un
 	# branco con molti giovani costa quindi meno di uno di soli adulti, non più un flat
 	# daily_caloric_requirement × population indipendente dalla composizione. hunts_in_pack stesso
 	# resta dichiarato ma DORMIENTE qui: nessuna variante "caccia solitaria" è specificata in questo
@@ -98,18 +98,28 @@ func _process_group(world: World, group: PopulationGroup, rules: PredatorRules, 
 
 	# Guard su max_pack_hunting_efficiency <= 0.0: evita la divisione per zero nel calcolo di
 	# successo al punto 4c per una specie non ancora tarata (default 0.0, "Nessun default forzato"
-	# — vedi PredatorRules.gd). Con efficacia_branco = min(qualcosa, 0.0) = 0.0 in ogni caso normale
-	# (i pesi di hunting_efficiency_by_age sono sempre >= 0), tentativi_totali sarebbe comunque 0 —
-	# questo guard lo rende esplicito e sicuro anche contro un'eventuale configurazione anomala,
-	# invece di fare affidamento implicito su quella coincidenza aritmetica.
+	# — vedi PredatorRules.gd). Con max_pack_hunting_efficiency a 0.0, attempts_efficiency =
+	# min(qualcosa, 0.0) = 0.0 in ogni caso normale (i pesi di hunting_efficiency_by_age sono
+	# sempre >= 0), quindi tentativi_totali sarebbe comunque 0 — questo guard lo rende esplicito e
+	# sicuro anche contro un'eventuale configurazione anomala, invece di fare affidamento implicito
+	# su quella coincidenza aritmetica.
 	if residual_requirement > 0.0 and rules.max_pack_hunting_efficiency > 0.0 and not group.patrol_route.is_empty():
-		var pack_efficiency := _compute_pack_efficiency(group, rules)
-		# Punto 3: tentativi_totali = round(efficacia_branco / attempts_per_efficiency) — round()
-		# letterale come da formula (non SimulationMath.stochastic_round: la specifica di questo
-		# step usa esplicitamente round(), scelta rispettata senza sostituzioni silenziose).
-		var attempt_count: int = int(round(pack_efficiency / rules.attempts_per_efficiency))
+		var pack_efficiency := _compute_raw_pack_efficiency(group, rules)
+		# Punto 3: tentativi_totali = round(min(efficacia_branco_grezza, max_pack_hunting_efficiency)
+		# / attempts_per_efficiency) — il tetto si applica SOLO qui, non più a pack_efficiency stessa
+		# (vedi _compute_raw_pack_efficiency): un branco sopra soglia resta fermo a
+		# max_pack_hunting_efficiency ai fini del NUMERO di tentativi, ma pack_efficiency (grezza)
+		# passata sotto a _run_hunting_attempts continua a scalare per la probabilità di successo.
+		# round() letterale come da formula (non SimulationMath.stochastic_round: la specifica di
+		# questo step usa esplicitamente round(), scelta rispettata senza sostituzioni silenziose).
+		var attempts_efficiency: float = min(pack_efficiency, rules.max_pack_hunting_efficiency)
+		var attempt_count: int = int(round(attempts_efficiency / rules.attempts_per_efficiency))
 		if DebugLogging.ENABLED:
-			print("[PREDATION] #%d efficacia_branco=%.2f tentativi_totali=%d" % [group.id, pack_efficiency, attempt_count])
+			print(
+				"[PREDATION] #%d efficacia_branco_grezza=%.2f efficacia_tentativi(cappata)=%.2f tentativi_totali=%d" % [
+					group.id, pack_efficiency, attempts_efficiency, attempt_count
+				]
+			)
 		if attempt_count > 0:
 			calories_obtained_today = _run_hunting_attempts(
 				world, group, rules, pack_efficiency, attempt_count,
@@ -180,10 +190,10 @@ func _record_hunt_log(group: PopulationGroup, year: int, day: int, captures_toda
 
 
 # Punto 1: daily_requirement_today = Σ [daily_caloric_requirement × caloric_multiplier_by_age[età]
-# × popolazione(gruppo, età)] per young/adult/old — stesso schema di _compute_pack_efficiency
+# × popolazione(gruppo, età)] per young/adult/old — stesso schema di _compute_raw_pack_efficiency
 # sotto (somma pesata sulle tre fasce d'età del PREDATORE, non della preda). Se il branco non
 # traccia età (age_composition vuota) ogni get_age_count ritorna 0, quindi il fabbisogno risulta 0
-# — nessun ramo speciale necessario, stessa scelta già fatta per _compute_pack_efficiency.
+# — nessun ramo speciale necessario, stessa scelta già fatta per _compute_raw_pack_efficiency.
 func _compute_daily_requirement(group: PopulationGroup, rules: PredatorRules) -> float:
 	var weighted_count := 0.0
 	for age_band in _AGE_BANDS:
@@ -191,15 +201,24 @@ func _compute_daily_requirement(group: PopulationGroup, rules: PredatorRules) ->
 	return weighted_count * rules.daily_caloric_requirement
 
 
-# Punto 2: efficacia_branco = min(Σ hunting_efficiency_by_age[età] × popolazione(gruppo, età),
-# max_pack_hunting_efficiency). Popolazione del PREDATORE stesso (non della preda) per fascia d'età
-# — se il branco non traccia età (age_composition vuota) ogni get_age_count ritorna 0, quindi il
-# risultato è 0 e la caccia si disattiva da sola, nessun ramo speciale necessario.
-func _compute_pack_efficiency(group: PopulationGroup, rules: PredatorRules) -> float:
+# Punto 2: efficacia_branco_grezza = Σ hunting_efficiency_by_age[età] × popolazione(gruppo, età).
+# Popolazione del PREDATORE stesso (non della preda) per fascia d'età — se il branco non traccia
+# età (age_composition vuota) ogni get_age_count ritorna 0, quindi il risultato è 0 e la caccia si
+# disattiva da sola, nessun ramo speciale necessario.
+#
+# NON più clampata a max_pack_hunting_efficiency qui (a differenza di prima): quel tetto ora si
+# applica SOLO al calcolo di attempt_count (vedi _process_group), mai al valore usato da
+# success_probability in _run_hunting_attempts — un branco sopra la soglia non guadagna più
+# tentativi (fermi al tetto), ma continua a guadagnare probabilità di successo per tentativo
+# proporzionale alla sua vera taglia, invece di saturare insieme ai tentativi sullo stesso numero.
+# Decisione presa col utente: il fabbisogno calorico (_compute_daily_requirement) non ha mai avuto
+# un tetto e scala con la popolazione vera, quindi anche la capacità di procacciarsi cibo deve poter
+# continuare a scalare oltre la vecchia soglia, non restare bloccata mentre il fabbisogno cresce.
+func _compute_raw_pack_efficiency(group: PopulationGroup, rules: PredatorRules) -> float:
 	var total := 0.0
 	for age_band in _AGE_BANDS:
 		total += float(rules.hunting_efficiency_by_age[age_band]) * float(group.get_age_count(age_band))
-	return min(total, rules.max_pack_hunting_efficiency)
+	return total
 
 
 # Punto 4, l'intero ciclo di tentativi per la finestra di OGGI (group.patrol_route[patrol_index],
@@ -267,11 +286,16 @@ func _run_hunting_attempts(
 		if chosen_age < 0:
 			continue # difensivo: non dovrebbe accadere, "convenience > 0" implica popolazione > 0 in almeno una fascia
 
-		# 4c: successo = prey_compatibility × (efficacia_branco / max_pack_hunting_efficiency) ×
-		# moltiplicatore_stanchezza. Clampato a [0,1] solo per sicurezza contro una compatibilità
-		# > 1 in .tres futuri malconfigurati — non altera il risultato per dati ben tarati, dato che
-		# il rapporto efficacia/max è già <= 1 per costruzione (efficacia_branco è clampata al
-		# punto 2) e fatigue_multiplier <= 1.0 per costruzione.
+		# 4c: successo = prey_compatibility × (efficacia_branco_grezza / max_pack_hunting_efficiency)
+		# × moltiplicatore_stanchezza.
+		# A differenza di prima, il rapporto efficacia/max qui NON e' piu' garantito <= 1 per
+		# costruzione: pack_efficiency e' la versione grezza, mai clampata (vedi
+		# _compute_raw_pack_efficiency) — un branco sopra max_pack_hunting_efficiency ottiene quindi
+		# un rapporto > 1, che si traduce in probabilita' di successo piu' alta a parita' di
+		# compatibilita'/stanchezza (fino al tetto naturale di 1.0×compatibility). Il clamp [0,1]
+		# sotto fa ora lavoro REALE (non piu' solo difensivo contro una compatibilita' > 1
+		# malconfigurata in un .tres futuro): e' lui a impedire probabilita' > 1.0 per branchi molto
+		# sopra soglia.
 		var success_probability: float = clamp(
 			float(chosen["compatibility"]) * (pack_efficiency / rules.max_pack_hunting_efficiency) * fatigue_multiplier,
 			0.0, 1.0

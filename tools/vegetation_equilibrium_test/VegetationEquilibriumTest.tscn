@@ -1,0 +1,6 @@
+[gd_scene load_steps=2 format=3 uid="uid://c8w3jvvn40b1t"]
+
+[ext_resource type="Script" path="res://tools/vegetation_equilibrium_test/VegetationEquilibriumTest.gd" id="1_test"]
+
+[node name="VegetationEquilibriumTest" type="Node"]
+script = ExtResource("1_test")

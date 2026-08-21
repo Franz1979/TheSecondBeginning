@@ -34,3 +34,5 @@ dispersal_share_by_age = Array[float]([0.4, 0.4, 0.2])
 post_split_recovery_years = 5
 max_days_without_food = 10
 max_density_per_cell = 100
+suitable_biomes = Array[int]([1, 2, 5])
+suitable_terrains = Array[int]([1, 2])

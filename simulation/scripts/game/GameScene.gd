@@ -140,8 +140,51 @@ func _load_world() -> void:
 	if game_data == null:
 		game_data = GameData.new()
 
-	var resource_service := InitialResourceSetupService.new()
-	resource_service.populate_resources(world)
+	_populate_new_world(world)
+
+# Dispaccia verso il seminatore scelto in NewGameOptionsMenu (GameSettings.
+# selected_world_age_mode, impostato li' subito prima di raggiungere questa scena — mai
+# persistito nei save, solo un dato di flusso runtime come selected_map_type/selected_map_file).
+# "CLASSIC" e' anche il default difensivo del campo stesso in GameSettings: se per qualunque
+# motivo questa scena venisse raggiunta senza passare dalla schermata opzioni, il comportamento
+# resta quello di sempre (InitialResourceSetupService invariato), non un livello a caso.
+func _populate_new_world(target_world: World) -> void:
+	if GameSettings.selected_world_age_mode == "CLASSIC":
+		InitialResourceSetupService.new().populate_resources(target_world)
+		return
+
+	var age := GameTypes.WorldAge.OLD
+	match GameSettings.selected_world_age_mode:
+		"YOUNG":
+			age = GameTypes.WorldAge.YOUNG
+		"ADULT":
+			age = GameTypes.WorldAge.ADULT
+		"OLD":
+			age = GameTypes.WorldAge.OLD
+	ParametricResourceSetupService.new().populate_resources(target_world, age)
+
+	# Semina automatica animali SOLO per un mondo non-CLASSIC (vedi guard sopra — un ritorno
+	# anticipato per CLASSIC non arriva mai qui). GameSettings.selected_animal_density e'
+	# ignorato del tutto quando CLASSIC e' scelto, esattamente come da richiesta: in quel caso il
+	# mondo resta popolabile solo a mano via pannello debug, invariato.
+	var density := GameTypes.AnimalDensity.MEDIUM
+	match GameSettings.selected_animal_density:
+		"FEW":
+			density = GameTypes.AnimalDensity.FEW
+		"MEDIUM":
+			density = GameTypes.AnimalDensity.MEDIUM
+		"MANY":
+			density = GameTypes.AnimalDensity.MANY
+	var population_size := GameTypes.PopulationSize.NORMAL
+	match GameSettings.selected_population_size:
+		"SPARSE":
+			population_size = GameTypes.PopulationSize.SPARSE
+		"NORMAL":
+			population_size = GameTypes.PopulationSize.NORMAL
+		"DENSE":
+			population_size = GameTypes.PopulationSize.DENSE
+
+	AnimalSeedingService.new().populate_animals(target_world, density, population_size)
 
 func _create_renderer() -> void:
 	renderer = WorldRenderer.new()

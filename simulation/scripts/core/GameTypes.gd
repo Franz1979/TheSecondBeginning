@@ -88,3 +88,32 @@ enum Season {
 	SUMMER,
 	AUTUMN,
 }
+
+# Livello di maturita' del mondo al momento del seeding iniziale (vedi
+# ParametricResourceSetupService) — asse concettualmente distinto da AgeBand sopra (che descrive
+# la fascia d'eta' di una singola coorte di individui/vegetazione dentro una cella, non l'eta'
+# del mondo intero): stessi nomi di membro per leggibilita' del design approvato, ma sono due
+# enum separati (GameTypes.WorldAge.OLD != GameTypes.AgeBand.OLD).
+enum WorldAge {
+	YOUNG,
+	ADULT,
+	OLD
+}
+
+# Livello di densita' del seeding automatico delle popolazioni animali (vedi
+# AnimalSeedingService) — indipendente da WorldAge sopra: controlla quante popolazioni vengono
+# create tra le celle candidate idonee per specie, non lo stato di maturita' del mondo.
+enum AnimalDensity {
+	FEW,
+	MEDIUM,
+	MANY
+}
+
+# Livello di numerosita' di CIASCUNA popolazione creata dal seeding automatico (vedi
+# AnimalSeedingService) — indipendente da AnimalDensity sopra: quello controlla QUANTE
+# popolazioni vengono create, questo controlla QUANTI individui ciascuna ne contiene.
+enum PopulationSize {
+	SPARSE,
+	NORMAL,
+	DENSE
+}

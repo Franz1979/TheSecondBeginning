@@ -1,0 +1,6 @@
+[gd_scene format=3 uid="uid://dw7k2oah4m1qx"]
+
+[ext_resource type="Script" path="res://tools/vegetation_equilibrium_test/SeedCandidateCount.gd" id="1_seed"]
+
+[node name="SeedCandidateCount" type="Node"]
+script = ExtResource("1_seed")

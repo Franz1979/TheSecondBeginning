@@ -178,3 +178,23 @@ extends Resource
 # esplicitamente nel proprio .tres (rabbit=999, di fatto senza vincolo dato il suo territorio
 # sempre a 1 cella; deer=18, un branco realistico).
 @export var max_density_per_cell: float = 999.0
+
+@export_group("Suitability")
+# Stessa forma e stessa semantica di SubtypeRules.suitable_biomes/suitable_terrains (vedi
+# SubtypeRules.gd) — vuoto = nessuna restrizione, altrimenti lista bianca. Campo DORMIENTE per
+# ora: dichiarato qui e (in futuro) nei .tres di ciascuna specie, ma nessuna logica di
+# posizionamento/creazione territorio li legge ancora — TerritoryBuilderService continua a
+# ignorare bioma/terreno (esclude solo l'acqua) finche' questo gate non verra' collegato in un
+# passo successivo separato.
+@export var suitable_biomes: Array[GameTypes.Biome] = []
+@export var suitable_terrains: Array[GameTypes.TerrainBase] = []
+
+
+# Stessa logica di SubtypeRules.is_suitable_for: array vuoto = sempre idoneo su quell'asse,
+# altrimenti richiede l'appartenenza alla lista. Non ancora chiamato da nessun service.
+func is_suitable_for(biome: GameTypes.Biome, terrain: GameTypes.TerrainBase) -> bool:
+	if not suitable_biomes.is_empty() and not suitable_biomes.has(biome):
+		return false
+	if not suitable_terrains.is_empty() and not suitable_terrains.has(terrain):
+		return false
+	return true

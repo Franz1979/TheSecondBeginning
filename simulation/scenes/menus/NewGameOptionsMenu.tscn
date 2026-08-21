@@ -1,0 +1,182 @@
+[gd_scene format=3 uid="uid://cx1n8v4h5nawq"]
+
+[ext_resource type="Script" path="res://simulation/scripts/scenes/new_game_options_menu.gd" id="1_opts"]
+
+[sub_resource type="ButtonGroup" id="ButtonGroup_world_age"]
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_age_selected"]
+bg_color = Color(0.95, 0.78, 0.2, 1)
+border_width_left = 2
+border_width_top = 2
+border_width_right = 2
+border_width_bottom = 2
+border_color = Color(0.55, 0.4, 0.05, 1)
+corner_radius_top_left = 3
+corner_radius_top_right = 3
+corner_radius_bottom_left = 3
+corner_radius_bottom_right = 3
+
+[sub_resource type="ButtonGroup" id="ButtonGroup_animal_density"]
+
+[sub_resource type="ButtonGroup" id="ButtonGroup_population_size"]
+
+[node name="NewGameOptionsMenu" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1_opts")
+
+[node name="VBoxContainer" type="VBoxContainer" parent="."]
+layout_mode = 1
+anchors_preset = 5
+anchor_left = 0.5
+anchor_right = 0.5
+offset_left = -130.0
+offset_right = 130.0
+offset_bottom = 500.0
+grow_horizontal = 2
+theme_override_constants/separation = 12
+
+[node name="TitleLabel" type="Label" parent="VBoxContainer"]
+layout_mode = 2
+horizontal_alignment = 1
+
+[node name="OptionsPanel" type="PanelContainer" parent="VBoxContainer"]
+layout_mode = 2
+
+[node name="MarginContainer" type="MarginContainer" parent="VBoxContainer/OptionsPanel"]
+layout_mode = 2
+theme_override_constants/margin_left = 12
+theme_override_constants/margin_top = 12
+theme_override_constants/margin_right = 12
+theme_override_constants/margin_bottom = 12
+
+[node name="VBoxContainer" type="VBoxContainer" parent="VBoxContainer/OptionsPanel/MarginContainer"]
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="WorldAgeHeaderLabel" type="Label" parent="VBoxContainer/OptionsPanel/MarginContainer/VBoxContainer"]
+layout_mode = 2
+horizontal_alignment = 1
+
+[node name="YoungButton" type="Button" parent="VBoxContainer/OptionsPanel/MarginContainer/VBoxContainer"]
+layout_mode = 2
+toggle_mode = true
+button_group = SubResource("ButtonGroup_world_age")
+theme_override_styles/pressed = SubResource("StyleBoxFlat_age_selected")
+theme_override_styles/hover_pressed = SubResource("StyleBoxFlat_age_selected")
+
+[node name="AdultButton" type="Button" parent="VBoxContainer/OptionsPanel/MarginContainer/VBoxContainer"]
+layout_mode = 2
+toggle_mode = true
+button_group = SubResource("ButtonGroup_world_age")
+theme_override_styles/pressed = SubResource("StyleBoxFlat_age_selected")
+theme_override_styles/hover_pressed = SubResource("StyleBoxFlat_age_selected")
+
+[node name="OldButton" type="Button" parent="VBoxContainer/OptionsPanel/MarginContainer/VBoxContainer"]
+layout_mode = 2
+toggle_mode = true
+button_group = SubResource("ButtonGroup_world_age")
+theme_override_styles/pressed = SubResource("StyleBoxFlat_age_selected")
+theme_override_styles/hover_pressed = SubResource("StyleBoxFlat_age_selected")
+
+[node name="ClassicButton" type="Button" parent="VBoxContainer/OptionsPanel/MarginContainer/VBoxContainer"]
+layout_mode = 2
+toggle_mode = true
+button_pressed = true
+button_group = SubResource("ButtonGroup_world_age")
+theme_override_styles/pressed = SubResource("StyleBoxFlat_age_selected")
+theme_override_styles/hover_pressed = SubResource("StyleBoxFlat_age_selected")
+
+[node name="DebugWarningLabel" type="Label" parent="VBoxContainer/OptionsPanel/MarginContainer/VBoxContainer"]
+layout_mode = 2
+autowrap_mode = 2
+
+[node name="DensityPanel" type="PanelContainer" parent="VBoxContainer"]
+layout_mode = 2
+
+[node name="MarginContainer" type="MarginContainer" parent="VBoxContainer/DensityPanel"]
+layout_mode = 2
+theme_override_constants/margin_left = 12
+theme_override_constants/margin_top = 12
+theme_override_constants/margin_right = 12
+theme_override_constants/margin_bottom = 12
+
+[node name="VBoxContainer" type="VBoxContainer" parent="VBoxContainer/DensityPanel/MarginContainer"]
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="DensityHeaderLabel" type="Label" parent="VBoxContainer/DensityPanel/MarginContainer/VBoxContainer"]
+layout_mode = 2
+horizontal_alignment = 1
+
+[node name="FewButton" type="Button" parent="VBoxContainer/DensityPanel/MarginContainer/VBoxContainer"]
+layout_mode = 2
+toggle_mode = true
+button_group = SubResource("ButtonGroup_animal_density")
+theme_override_styles/pressed = SubResource("StyleBoxFlat_age_selected")
+theme_override_styles/hover_pressed = SubResource("StyleBoxFlat_age_selected")
+
+[node name="MediumButton" type="Button" parent="VBoxContainer/DensityPanel/MarginContainer/VBoxContainer"]
+layout_mode = 2
+toggle_mode = true
+button_pressed = true
+button_group = SubResource("ButtonGroup_animal_density")
+theme_override_styles/pressed = SubResource("StyleBoxFlat_age_selected")
+theme_override_styles/hover_pressed = SubResource("StyleBoxFlat_age_selected")
+
+[node name="ManyButton" type="Button" parent="VBoxContainer/DensityPanel/MarginContainer/VBoxContainer"]
+layout_mode = 2
+toggle_mode = true
+button_group = SubResource("ButtonGroup_animal_density")
+theme_override_styles/pressed = SubResource("StyleBoxFlat_age_selected")
+theme_override_styles/hover_pressed = SubResource("StyleBoxFlat_age_selected")
+
+[node name="PopulationSizePanel" type="PanelContainer" parent="VBoxContainer"]
+layout_mode = 2
+
+[node name="MarginContainer" type="MarginContainer" parent="VBoxContainer/PopulationSizePanel"]
+layout_mode = 2
+theme_override_constants/margin_left = 12
+theme_override_constants/margin_top = 12
+theme_override_constants/margin_right = 12
+theme_override_constants/margin_bottom = 12
+
+[node name="VBoxContainer" type="VBoxContainer" parent="VBoxContainer/PopulationSizePanel/MarginContainer"]
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="PopulationSizeHeaderLabel" type="Label" parent="VBoxContainer/PopulationSizePanel/MarginContainer/VBoxContainer"]
+layout_mode = 2
+horizontal_alignment = 1
+
+[node name="SparseButton" type="Button" parent="VBoxContainer/PopulationSizePanel/MarginContainer/VBoxContainer"]
+layout_mode = 2
+toggle_mode = true
+button_group = SubResource("ButtonGroup_population_size")
+theme_override_styles/pressed = SubResource("StyleBoxFlat_age_selected")
+theme_override_styles/hover_pressed = SubResource("StyleBoxFlat_age_selected")
+
+[node name="NormalButton" type="Button" parent="VBoxContainer/PopulationSizePanel/MarginContainer/VBoxContainer"]
+layout_mode = 2
+toggle_mode = true
+button_pressed = true
+button_group = SubResource("ButtonGroup_population_size")
+theme_override_styles/pressed = SubResource("StyleBoxFlat_age_selected")
+theme_override_styles/hover_pressed = SubResource("StyleBoxFlat_age_selected")
+
+[node name="DenseButton" type="Button" parent="VBoxContainer/PopulationSizePanel/MarginContainer/VBoxContainer"]
+layout_mode = 2
+toggle_mode = true
+button_group = SubResource("ButtonGroup_population_size")
+theme_override_styles/pressed = SubResource("StyleBoxFlat_age_selected")
+theme_override_styles/hover_pressed = SubResource("StyleBoxFlat_age_selected")
+
+[node name="StartButton" type="Button" parent="VBoxContainer"]
+layout_mode = 2
+
+[node name="BackButton" type="Button" parent="VBoxContainer"]
+layout_mode = 2

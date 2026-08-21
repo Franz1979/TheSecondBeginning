@@ -6,6 +6,28 @@ const SAVES_DIR := "user://saves/"
 var selected_map_type: String = ""
 var selected_map_file: String = ""
 var selected_save_file: String = ""
+# Impostato da NewGameOptionsMenu subito prima di raggiungere GameScene (stesso schema di
+# selected_map_type/selected_map_file: dato di flusso runtime, mai scritto nel salvataggio —
+# GameSaveService/GameLoadService non lo leggono ne' lo scrivono). Valori riconosciuti da
+# GameScene._populate_new_world: "YOUNG"/"ADULT"/"OLD" (ParametricResourceSetupService) o
+# "CLASSIC" (InitialResourceSetupService, il seminatore originale). Default "CLASSIC" apposta:
+# se GameScene venisse raggiunta senza passare dalla schermata opzioni, il comportamento resta
+# quello di sempre, non un livello scelto a caso.
+var selected_world_age_mode: String = "CLASSIC"
+# Stesso trattamento di selected_world_age_mode sopra (dato di flusso runtime, mai persistito nel
+# salvataggio). Valori riconosciuti da AnimalSeedingService/GameScene._populate_new_world:
+# "FEW"/"MEDIUM"/"MANY" — stessi nomi di GameTypes.AnimalDensity, non le etichette italiane
+# mostrate in UI ("Pochi"/"Medi"/"Tanti"), stessa scelta gia' fatta per selected_world_age_mode
+# (chiavi = nomi enum, mai il testo mostrato). Ignorato del tutto quando
+# selected_world_age_mode == "CLASSIC" (nessuna semina automatica di animali in quel caso).
+var selected_animal_density: String = "MEDIUM"
+# Stesso trattamento di selected_animal_density sopra (dato di flusso runtime, mai persistito).
+# Valori riconosciuti da AnimalSeedingService/GameScene._populate_new_world: "SPARSE"/"NORMAL"/
+# "DENSE" — stessi nomi di GameTypes.PopulationSize, non le etichette italiane mostrate in UI
+# ("Rada"/"Normale"/"Numerosa"). Controlla QUANTI individui per popolazione (vedi
+# AnimalSeedingService), indipendente da selected_animal_density (che controlla QUANTE
+# popolazioni). Ignorato del tutto quando selected_world_age_mode == "CLASSIC".
+var selected_population_size: String = "NORMAL"
 var selected_macro_cell_x: int = -1
 var selected_macro_cell_y: int = -1
 var active_world: World = null

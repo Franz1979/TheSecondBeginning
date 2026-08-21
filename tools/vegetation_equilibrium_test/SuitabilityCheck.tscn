@@ -1,0 +1,6 @@
+[gd_scene format=3 uid="uid://bqx3n8h5m2wtr"]
+
+[ext_resource type="Script" path="res://tools/vegetation_equilibrium_test/SuitabilityCheck.gd" id="1_check"]
+
+[node name="SuitabilityCheck" type="Node"]
+script = ExtResource("1_check")

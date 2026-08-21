@@ -45,17 +45,27 @@ extends AnimalRules
 # gli adulti sono il pieno potenziale, gli anziani compensano il calo fisico con l'esperienza.
 @export var hunting_efficiency_by_age: Array[float] = [0.2, 1.0, 0.8]
 
-# Tetto assoluto all'efficacia di caccia del branco (somma pesata di
-# hunting_efficiency_by_age × popolazione per fascia, clampata a questo valore).
-# Cattura il rendimento decrescente della caccia di gruppo oltre una certa dimensione:
-# un branco molto numeroso non è proporzionalmente più efficace di uno ben composto ma
-# più piccolo. Nessun default forzato: ogni specie predatrice lo dichiara esplicitamente
-# nel proprio .tres, stesso principio già seguito per min/max_territory_cells.
+# Doppio ruolo in PredationService (vedi li' per la formula esatta):
+# 1. Tetto al NUMERO di tentativi di caccia giornalieri: attempt_count = round(min(efficacia_
+#    branco_grezza, max_pack_hunting_efficiency) / attempts_per_efficiency) — un branco molto
+#    numeroso non tenta proporzionalmente più cacce/giorno oltre questa soglia (limite di
+#    opportunità/organizzazione, non di forza bruta).
+# 2. Denominatore di riferimento per la PROBABILITÀ di successo per tentativo: success_probability
+#    = prey_compatibility × (efficacia_branco_grezza / max_pack_hunting_efficiency) × stanchezza —
+#    qui pero' il numeratore NON e' clampato a questo valore (decisione presa col utente): un
+#    branco sopra soglia continua a guadagnare probabilita' di successo proporzionale alla sua vera
+#    taglia, anche se non guadagna più tentativi. Non e' quindi più, come il nome suggerirebbe, un
+#    tetto assoluto sull'efficacia stessa — l'efficacia grezza (vedi _compute_raw_pack_efficiency)
+#    resta libera di superarlo, solo i DUE USI sopra la trattano diversamente. Nessun default
+#    forzato: ogni specie predatrice lo dichiara esplicitamente nel proprio .tres, stesso principio
+#    già seguito per min/max_territory_cells.
 @export var max_pack_hunting_efficiency: float
 
 # Divisore usato da PredationService per derivare i tentativi di caccia giornalieri
-# dall'efficacia_branco (attempt_count = round(efficacia_branco / attempts_per_efficiency)) —
-# prima un letterale hardcoded in PredationService, ora dato di specie, stesso refactor già fatto
+# dall'efficacia CAPPATA a max_pack_hunting_efficiency (attempt_count = round(min(efficacia_
+# branco_grezza, max_pack_hunting_efficiency) / attempts_per_efficiency)) — non dall'efficacia
+# grezza, quella alimenta solo la probabilità di successo per tentativo (vedi PredationService).
+# Prima un letterale hardcoded in PredationService, ora dato di specie, stesso refactor già fatto
 # per i parametri di movimento cluster (rabbit/deer). Default 2.0 = valore storico hardcoded,
 # nessun cambio di comportamento.
 @export var attempts_per_efficiency: float = 2.0

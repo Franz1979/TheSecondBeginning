@@ -46,3 +46,5 @@ max_days_without_food = 30
 min_territory_cells = 3
 max_territory_cells = 20
 max_density_per_cell = 10
+suitable_biomes = Array[int]([1, 2, 4, 5])
+suitable_terrains = Array[int]([1, 2])

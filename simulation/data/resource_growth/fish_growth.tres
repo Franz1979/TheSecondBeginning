@@ -4,6 +4,7 @@
 
 [resource]
 script = ExtResource("1_fish")
+base_growth_rate = 0.3
 migration_chance = 0.45
 migration_success_rate = 0.2
 max_migration_per_year = 200

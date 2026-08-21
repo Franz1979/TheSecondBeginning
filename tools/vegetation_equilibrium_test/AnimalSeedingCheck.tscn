@@ -1,0 +1,6 @@
+[gd_scene format=3 uid="uid://bqk4iaw2n5m8t"]
+
+[ext_resource type="Script" path="res://tools/vegetation_equilibrium_test/AnimalSeedingCheck.gd" id="1_check"]
+
+[node name="AnimalSeedingCheck" type="Node"]
+script = ExtResource("1_check")
