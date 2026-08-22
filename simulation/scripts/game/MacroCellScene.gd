@@ -106,14 +106,19 @@ func _ready() -> void:
 	if macro_world != null:
 		macro_cell = macro_world.get_cell_at(GameSettings.selected_macro_cell_x, GameSettings.selected_macro_cell_y)
 
-	# Punto di invocazione debug per LODOrchestrator (Parte A, solo classificazione — vedi
-	# LODOrchestrator.gd): la "zona a fuoco" è per ora la sola macrocella appena aperta, la
-	# scelta più semplice per validare la classificazione prima di un eventuale intorno più
-	# ampio. Nessun effetto reale: solo un log, nessuna popolazione cambia comportamento.
+	# Punto di invocazione per LODOrchestrator (Parte A: classificazione + log diagnostico; Parte B
+	# Punto 2: il risultato viene ora anche conservato su macro_world.lod_focus_state — vedi
+	# World.gd). La "zona a fuoco" è per ora la sola macrocella appena aperta, la scelta più
+	# semplice prima di un eventuale intorno più ampio. macro_world.lod_focus_region viene salvata
+	# insieme al risultato: WorldTimeService la userà per ricalcolare periodicamente
+	# lod_focus_state ad ogni checkpoint stagionale (fix del bug "nuovi gruppi da split mai
+	# classificati"), senza dover ripassare la region da qui ogni volta.
 	if macro_world != null and macro_cell != null:
 		var focus_region := Rect2i(macro_cell.x, macro_cell.y, 1, 1)
 		var lod_result := LODOrchestrator.new().set_focus_region(macro_world, focus_region)
 		LODOrchestrator.print_classification_log(lod_result)
+		macro_world.lod_focus_region = focus_region
+		macro_world.lod_focus_state = lod_result
 
 	world = World.new()
 	if macro_cell != null:
@@ -430,6 +435,22 @@ func _ready() -> void:
 	bezoar_renderer.clock = clock
 	partridge_renderer.clock = clock
 	_update_calendar_display()
+
+
+# Azzera lo stato di focus del LOD (Parte B, Punto 2) quando questa scena viene lasciata, per
+# QUALUNQUE via — "Torna al Mondo" (_on_back_to_world_pressed), "Torna al menu principale"
+# (_on_system_menu_action_selected), o una futura terza via non ancora scritta: _exit_tree() è il
+# callback nativo di Godot invocato quando il nodo esce dall'albero (change_scene_to_file lo
+# libera sempre), quindi copre ogni caso senza dover ricordare di richiamare l'azzeramento in ogni
+# singolo gestore di bottone. Riporta lod_focus_state a {} = "nessun focus attivo" (vista mondo),
+# lo stesso stato di partenza prima che questa scena venisse mai aperta — GameScene, che riusa lo
+# stesso macro_world per riferimento, torna quindi a vedere tutti i gruppi allo stesso modo, come
+# oggi.
+func _exit_tree() -> void:
+	if macro_world != null:
+		macro_world.lod_focus_state = {}
+		macro_world.lod_focus_region = Rect2i()
+
 
 # "occupied" invertito rispetto al solito uso (qui marca ciò che NON è disponibile per FISH,
 # cioè tutto tranne il fiume): passato a ResourcePositionService, le uniche candidate a

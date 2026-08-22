@@ -16,10 +16,15 @@ const FORAGE_SOURCE_NAME := "forage"
 # chiamante (MacroCellScene/GameScene) usa questo valore per decidere se il pannello info va
 # rinfrescato oggi — il rebuild costoso delle MultiMesh di vegetazione resta gated
 # separatamente da checkpoint_ran/flora_daily_updates_enabled, indipendente da questo flag.
-func apply_daily_consumption(world: World, current_season: GameTypes.Season) -> bool:
+func apply_daily_consumption(world: World, current_season: GameTypes.Season, groups_override: Array = []) -> bool:
 	var any_consumption_applied := false
 
-	for group in world.population_groups:
+	# groups_override (Parte B del LOD, infrastruttura — vedi LODOrchestrator): vuoto (default) =
+	# comportamento invariato, itera world.population_groups per intero come sempre. Non ancora
+	# collegato da nessun chiamante reale (WorldTimeService continua a non passarlo).
+	var groups_to_process: Array = groups_override if not groups_override.is_empty() else world.population_groups
+
+	for group in groups_to_process:
 		if group.population <= 0:
 			continue
 

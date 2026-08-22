@@ -1,6 +1,15 @@
 class_name WorldTimeService
 extends RefCounted
 
+# Accumulatore del timing diagnostico per il checkpoint stagionale (vedi _run_timed/
+# _run_seasonal_checkpoints/_print_checkpoint_timing_summary sotto) — azzerato a inizio di ogni
+# chiamata a _run_seasonal_checkpoints, così l'instance persistente di WorldTimeService (se il
+# chiamante ne riusa una sola per più giorni) non accumula tra un giorno e l'altro. Non è un
+# duplicato del vecchio log per-passo già presente in _run_timed (quello resta commentato,
+# invariato): qui si raccoglie lo stesso dato per stamparlo in UNA riga compatta a fine
+# checkpoint, invece di una riga sparsa per ciascun componente.
+var _checkpoint_timings_ms: Dictionary = {}
+
 # Advances the calendar by exactly one day, then runs whichever seasonal simulation
 # checkpoint(s) fall on the resulting day (see _run_seasonal_checkpoints), plus the animal
 # consumption pass (see _run_daily_animal_consumption), che a differenza dei checkpoint
@@ -35,11 +44,68 @@ func advance_day(world: World, game_data: GameData) -> Dictionary:
 	return {"checkpoint_ran": checkpoint_ran, "animals_changed": animals_changed}
 
 
+# Parte B del LOD, condivisa da consumo E fame giornalieri (vedi entrambi i chiamanti sotto):
+# calcola quali gruppi vanno processati OGGI da un checkpoint erbivoro giornaliero, escludendo le
+# popolazioni Livello 1 NON predatrici — inizialmente costruita solo per il consumo
+# (AnimalConsumptionAggregateService la sostituisce per loro), ora estesa anche alla fame perché
+# lasciarla "giornaliera per Livello 1" produceva un bug reale: AnimalHungerService legge
+# group.daily_caloric_ratio, che però smette di essere aggiornato per un gruppo escluso dal
+# consumo giornaliero — il ratio restava CONGELATO all'istante esatto dell'esclusione, producendo
+# mortalità da fame arbitraria e scollegata dalla realtà (confermato: pattern di crollo
+# irregolare osservato su rabbit/partridge in una sessione di gioco reale). Fino a quando
+# AnimalHungerAggregateService non esisterà, le popolazioni Livello 1 restano semplicemente SENZA
+# alcun meccanismo di morte diretta per fame — scelta deliberata, preferibile a un dato rotto (gli
+# altri sei freni alla crescita — mitigazione natalità calorica, mitigazione da densità,
+# espansione/contrazione territoriale, split da pressione demografica, recovery post-split,
+# mortalità per vecchiaia — restano comunque attivi e invariati).
+#
+# I predatori restano SEMPRE esclusi dall'esclusione (cioè sempre processati giornalmente,
+# indipendentemente dal loro livello LOD) — decisione presa nel profiling, la predazione pesa
+# troppo poco per giustificare un'aggregazione.
+#
+# Ritorna:
+#   [] (vuoto)      -> nessun filtro, comportamento di default invariato (processa tutti) — o
+#                      perché lod_focus_state è vuoto (vista mondo), o perché non c'è nessuna
+#                      popolazione Livello 1 non predatrice da escludere.
+#   null            -> nessuno da processare oggi (il chiamante deve saltare la chiamata al
+#                      service): caso limite in cui TUTTI i gruppi del mondo risultano Livello 1
+#                      non predatori (nessun Livello 2, nessun predatore) — un array vuoto in
+#                      quel caso verrebbe riletto dal service come "nessun filtro, processa
+#                      tutti" (stesso sentinel "vuoto = default" del parametro groups_override),
+#                      l'opposto di quanto inteso.
+#   Array non vuoto -> processa solo questi gruppi.
+func _get_daily_herbivore_processing_groups(world: World) -> Variant:
+	if world.lod_focus_state.is_empty():
+		return []
+
+	var excluded_ids: Dictionary = {}
+	for group in world.lod_focus_state["level_1_groups"]:
+		var rules := AnimalCalculator.get_animal_rules(group.species_name)
+		if rules != null and not (rules is PredatorRules):
+			excluded_ids[group.id] = true
+
+	if excluded_ids.is_empty():
+		return []
+
+	var groups_to_process: Array = []
+	for group in world.population_groups:
+		if not excluded_ids.has(group.id):
+			groups_to_process.append(group)
+
+	if groups_to_process.is_empty():
+		return null
+
+	return groups_to_process
+
+
 # Gira ogni giorno (non solo ai checkpoint stagionali): il fabbisogno calorico degli animali
 # non aspetta il cambio di stagione. Vedi AnimalConsumptionService per la formula.
 func _run_daily_animal_consumption(world: World, game_data: GameData) -> bool:
 	var current_season := SeasonCalculator.get_season_for_day(game_data.current_day)
-	return AnimalConsumptionService.new().apply_daily_consumption(world, current_season)
+	var groups_to_process = _get_daily_herbivore_processing_groups(world)
+	if groups_to_process == null:
+		return false
+	return AnimalConsumptionService.new().apply_daily_consumption(world, current_season, groups_to_process)
 
 
 # Gira ogni giorno, indipendente da birth_season, esattamente come _run_daily_animal_consumption
@@ -53,9 +119,52 @@ func _run_daily_predation(world: World, game_data: GameData) -> void:
 
 # Gira ogni giorno, indipendente da birth_season (vedi AnimalHungerService): legge
 # group.daily_caloric_ratio già calcolato sopra da _run_daily_animal_consumption, non lo
-# ricalcola.
+# ricalcola. Stessa esclusione Livello 1 del consumo (vedi _get_daily_herbivore_processing_groups
+# sopra per il perché).
 func _run_daily_animal_hunger(world: World) -> void:
-	AnimalHungerService.new().apply_daily_hunger(world)
+	var groups_to_process = _get_daily_herbivore_processing_groups(world)
+	if groups_to_process == null:
+		return
+	AnimalHungerService.new().apply_daily_hunger(world, groups_to_process)
+
+
+# Fix del bug "classificazione LOD congelata": world.lod_focus_state veniva calcolato una sola
+# volta, all'apertura di MacroCellScene, e mai più aggiornato — nuovi PopulationGroup nati da
+# split territoriale durante l'anno (PopulationSplitService, dentro territory_dynamics_checkpoint)
+# non comparivano in nessuna delle due liste (level_1_groups/level_2_groups), restando quindi
+# "non trovati" dalla logica di esclusione in _get_daily_herbivore_processing_groups — trattati
+# per sempre come se dovessero girare ogni giorno, erodendo progressivamente il beneficio del LOD
+# man mano che le scissioni si accumulavano nel tempo (confermato con una sessione di gioco
+# reale: uscire e rientrare dalla macrocella, che rifà set_focus_region da zero, ripristinava la
+# velocità).
+#
+# Richiamato da _run_seasonal_checkpoints SOLO nei giorni in cui è già scattato almeno un
+# checkpoint stagionale (mai ogni giorno — vedi guard su checkpoint_ran nel chiamante): rieseguire
+# set_focus_region con la STESSA region salvata in world.lod_focus_region (mai ripassata da
+# MacroCellScene ad ogni chiamata) riclassifica TUTTI i gruppi correnti, inclusi quelli nati da
+# split in questa stessa stagione — il loro territorio è già stabilizzato a questo punto (lo split
+# succede dentro territory_dynamics_checkpoint, che gira sempre prima di questo checkpoint nello
+# stesso giorno se è un giorno di inizio-stagione), non classificati a metà della propria
+# creazione. No-op se nessun focus è attivo (world.lod_focus_state già vuoto) — stesso sentinel
+# "vuoto = vista mondo" usato ovunque altrove per questo campo.
+func _run_lod_focus_refresh_checkpoint(world: World) -> void:
+	if world.lod_focus_state.is_empty():
+		return
+	world.lod_focus_state = LODOrchestrator.new().set_focus_region(world, world.lod_focus_region)
+
+
+# Parte B del LOD (vedi AnimalConsumptionAggregateService): no-op se nessun focus è attivo — in
+# quel caso non esiste alcun gruppo "Livello 1" da processare qui, tutti i gruppi restano sul
+# percorso giornaliero invariato (_run_daily_animal_consumption sopra). `season` è la stagione che
+# STA INIZIANDO oggi: si passa a valle la stagione PRECEDENTE (SeasonCalculator.get_previous_
+# season), la stessa convenzione già usata da _run_secondary_resource_stock_checkpoint, perché il
+# consumo aggregato rappresenta il pascolo della stagione appena conclusa, non di quella che parte.
+func _run_animal_consumption_aggregate_checkpoint(world: World, season: GameTypes.Season) -> void:
+	if world.lod_focus_state.is_empty():
+		return
+	var level_1_groups: Array = world.lod_focus_state["level_1_groups"]
+	var previous_season := SeasonCalculator.get_previous_season(season)
+	AnimalConsumptionAggregateService.new().apply_seasonal_consumption(world, level_1_groups, previous_season)
 
 # Debug/emergency fast-forward (the "+1" button): advances a full 365 days one at a time (via
 # advance_day) so every seasonal checkpoint crossed along the way still runs, in chronological
@@ -83,6 +192,12 @@ func force_advance_to_year_end(world: World, game_data: GameData) -> void:
 func _run_seasonal_checkpoints(world: World, game_data: GameData, year_rolled_over: bool) -> bool:
 	var day := game_data.current_day
 	var checkpoint_ran := false
+	# Timing diagnostico (vedi _print_checkpoint_timing_summary in fondo alla funzione): azzerato
+	# ad ogni chiamata, non solo ad ogni sessione — un giorno ordinario (nessun checkpoint) non
+	# stampa nulla comunque, ma l'accumulatore va comunque svuotato per non mischiare i tempi di
+	# un giorno con checkpoint con quelli di un giorno successivo senza.
+	_checkpoint_timings_ms.clear()
+	var overall_start_usec := Time.get_ticks_usec()
 
 	if day == SeasonCalculator.get_season_day_range(GameTypes.Season.SPRING).x:
 		_run_timed("migration_checkpoint", func(): _run_migration_checkpoint(world, game_data))
@@ -110,6 +225,19 @@ func _run_seasonal_checkpoints(world: World, game_data: GameData, year_rolled_ov
 				"secondary_resource_stock_checkpoint",
 				func(): _run_secondary_resource_stock_checkpoint(world, SeasonCalculator.get_previous_season(season), season)
 			)
+			# Parte B del LOD: consumo aggregato stagionale SOLO per popolazioni Livello 1 non
+			# predatrici (vedi AnimalConsumptionAggregateService) — DOPO l'aggiornamento delle
+			# scorte a stock sopra (che devono maturare per la nuova stagione prima di poter essere
+			# consumate) e PRIMA di natural_events/territory_dynamics sotto, cosicché
+			# AnimalBirthMitigationService (dentro territory_dynamics_checkpoint) legga
+			# dedicated_space/secondary_resource_stock già decrementati da questo consumo, esattamente
+			# come farebbe con il consumo giornaliero di Livello 2. No-op per costruzione se
+			# World.lod_focus_state è vuoto (vista mondo, nessun focus attivo) — vedi guard nel
+			# metodo sotto. AnimalConsumptionService (Livello 2/debug) resta invariato, mai toccato.
+			_run_timed(
+				"animal_consumption_aggregate_checkpoint",
+				func(): _run_animal_consumption_aggregate_checkpoint(world, season)
+			)
 			_run_timed("natural_events_checkpoint", func(): _run_natural_events_checkpoint(world, game_data, season))
 			# Step 8 del refactoring fauna: territorio ed espansione/contrazione girano nello
 			# STESSO checkpoint di inizio birth_season in cui girava già (da solo) il calcolo del
@@ -129,7 +257,46 @@ func _run_seasonal_checkpoints(world: World, game_data: GameData, year_rolled_ov
 		_run_timed("mortality_checkpoint", func(): _run_mortality_checkpoint(world))
 		checkpoint_ran = true
 
+	# Fix del bug "classificazione LOD congelata": ricalcola lod_focus_state, se un focus è
+	# attivo, ALLA FINE di qualunque giorno in cui sia scattato almeno un checkpoint stagionale
+	# (mai un giorno ordinario — vedi guard su checkpoint_ran, altrimenti si perderebbe tutto il
+	# guadagno di performance del LOD ricalcolando ogni giorno). Copre sia i giorni di fine-
+	# stagione (lifecycle/growth/mortality, che non creano mai nuovi gruppi) sia quelli di inizio-
+	# stagione (territory_dynamics, l'unico punto che ne crea via PopulationSplitService) — vedi
+	# _run_lod_focus_refresh_checkpoint per il dettaglio completo.
+	if checkpoint_ran:
+		_run_timed("lod_focus_refresh_checkpoint", func(): _run_lod_focus_refresh_checkpoint(world))
+
+	# Riepilogo diagnostico compatto (Richiesta: "aggiungi timing... senza toccare i log
+	# esistenti se possibile") — una sola riga a fine checkpoint, indipendente dal log per-passo
+	# già presente in _run_timed (che resta commentato/inattivo, invariato) e dal logging molto
+	# verboso di PredationService (tutt'altro percorso, mai toccato da questo timing). Solo nei
+	# giorni in cui è scattato almeno un checkpoint — un giorno ordinario non stampa nulla.
+	if checkpoint_ran:
+		var overall_ms: float = (Time.get_ticks_usec() - overall_start_usec) / 1000.0
+		_print_checkpoint_timing_summary(day, overall_ms)
+
 	return checkpoint_ran
+
+
+# Stampa un'unica riga compatta col tempo di ciascun componente del checkpoint stagionale di
+# oggi, ordinati per nome (non per durata: un ordine stabile rende più facile confrontare a
+# colpo d'occhio la stessa riga tra giorni diversi). `overall_ms` è misurato con un cronometro
+# INDIPENDENTE che avvolge l'intera _run_seasonal_checkpoints (non la somma dei singoli
+# componenti): alcune etichette sono annidate l'una nell'altra (es. "growth_checkpoint" include
+# già il tempo di "  grow_resources"/"  grow_fauna" al suo interno, essendo la funzione che li
+# chiama) — sommare le etichette darebbe un totale gonfiato da doppio conteggio, mentre il
+# cronometro esterno misura il tempo di parete reale una sola volta.
+func _print_checkpoint_timing_summary(day: int, overall_ms: float) -> void:
+	var season := SeasonCalculator.get_season_for_day(day)
+	var labels: Array = _checkpoint_timings_ms.keys()
+	labels.sort()
+	var parts: Array = []
+	for label in labels:
+		parts.append("%s=%.1fms" % [label.strip_edges(), _checkpoint_timings_ms[label]])
+	print("[LOD TIMING] giorno %d (%s) totale=%.1fms | %s" % [
+		day, GameTypes.Season.keys()[season], overall_ms, ", ".join(parts)
+	])
 
 
 # TEMPORANEO — diagnostica per isolare quale funzione del checkpoint stagionale è responsabile
@@ -141,9 +308,16 @@ func _run_seasonal_checkpoints(world: World, game_data: GameData, year_rolled_ov
 func _run_timed(label: String, action: Callable) -> void:
 	var start_usec := Time.get_ticks_usec()
 	action.call()
+	var elapsed_ms: float = (Time.get_ticks_usec() - start_usec) / 1000.0
+	# Accumula per il riepilogo compatto di fine checkpoint (vedi _print_checkpoint_timing_summary)
+	# — additivo (non un'assegnazione secca) perché lo stesso label può ricorrere più volte nello
+	# stesso giorno (es. animal_lifecycle_checkpoint per stagioni diverse non capita mai lo stesso
+	# giorno, ma label annidate come "  grow_resources" sono comunque unici per giorno oggi;
+	# l'addizione è comunque sicura in caso cambiasse in futuro).
+	_checkpoint_timings_ms[label] = float(_checkpoint_timings_ms.get(label, 0.0)) + elapsed_ms
 	if DebugLogging.ENABLED:
 		pass
-		#print("[TIMING] %s: %.2f ms" % [label, (Time.get_ticks_usec() - start_usec) / 1000.0])
+		#print("[TIMING] %s: %.2f ms" % [label, elapsed_ms])
 
 
 func _run_animal_lifecycle_checkpoint(world: World, season: GameTypes.Season) -> void:
@@ -178,6 +352,10 @@ func _run_growth_checkpoint(world: World, game_data: GameData) -> void:
 	# schema di encroach_resources sotto.
 	var browsing_start_usec := Time.get_ticks_usec()
 	var browsing_mitigation := BrowsingMitigationService.new().compute_browsing_mitigation(world)
+	# Registrato per il riepilogo compatto di fine checkpoint (vedi _print_checkpoint_timing_
+	# summary) accanto al vecchio log per-passo sotto, che resta commentato/invariato — le due
+	# cose sono indipendenti, questa riga non lo sostituisce.
+	_checkpoint_timings_ms["  compute_browsing_mitigation"] = float(_checkpoint_timings_ms.get("  compute_browsing_mitigation", 0.0)) + (Time.get_ticks_usec() - browsing_start_usec) / 1000.0
 	if DebugLogging.ENABLED:
 		pass
 		#print("[TIMING]   compute_browsing_mitigation: %.2f ms" % [(Time.get_ticks_usec() - browsing_start_usec) / 1000.0])
@@ -185,6 +363,7 @@ func _run_growth_checkpoint(world: World, game_data: GameData) -> void:
 	var encroach_start_usec := Time.get_ticks_usec()
 	var encroachment_service := ResourceEncroachmentService.new()
 	var leftover_surplus := encroachment_service.encroach_resources(world, browsing_mitigation)
+	_checkpoint_timings_ms["  encroach_resources"] = float(_checkpoint_timings_ms.get("  encroach_resources", 0.0)) + (Time.get_ticks_usec() - encroach_start_usec) / 1000.0
 	if DebugLogging.ENABLED:
 		pass
 		#print("[TIMING]   encroach_resources: %.2f ms" % [(Time.get_ticks_usec() - encroach_start_usec) / 1000.0])

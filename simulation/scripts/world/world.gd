@@ -32,6 +32,29 @@ var next_population_group_id: int = 1
 # checkpoint dopo il load, poi il meccanismo si riallinea da solo).
 var species_territory_release_version: Dictionary = {}
 
+# Stato di focus del LOD (Parte B, Punto 2 — vedi LODOrchestrator), persistente per la durata
+# della sessione ma MAI salvato: risultato di set_focus_region (le stesse 4 chiavi
+# level_2_groups/level_1_groups/level_2_count_by_species/level_1_count_by_species), impostato da
+# MacroCellScene all'apertura e azzerato alla chiusura (vedi _exit_tree lì). Dictionary VUOTO
+# ({}) = nessun focus attivo (vista mondo, comportamento di oggi: nessuna distinzione di livello)
+# — sentinella sicura perché set_focus_region valorizza sempre le sue 4 chiavi, anche con array
+# vuoti dentro, quindi un {} senza chiavi non è mai confondibile con una classificazione reale.
+# Stessa natura di species_territory_release_version sopra: puro dato di cache/sessione, mai
+# storia di partita, non persistito nei save. Consumato da WorldTimeService (esclusione consumo/
+# fame giornalieri) e ricalcolato periodicamente da WorldTimeService._run_lod_focus_refresh_
+# checkpoint (vedi lod_focus_region sotto per l'input persistito necessario a quel ricalcolo).
+var lod_focus_state: Dictionary = {}
+
+# Region passata l'ultima volta a LODOrchestrator.set_focus_region — impostata da MacroCellScene
+# insieme a lod_focus_state sopra, stessa natura (cache di sessione, mai salvata). Serve perché
+# lod_focus_state non è più un calcolo "usa e getta" fatto una sola volta all'apertura della
+# macrocella: WorldTimeService lo ricalcola periodicamente (ad ogni checkpoint stagionale) per
+# accorgersi di nuovi PopulationGroup nati da split nel frattempo, e per farlo deve rieseguire
+# set_focus_region con la STESSA region di partenza, senza doverla far ripassare ogni volta da
+# MacroCellScene. Valore di default (Rect2i() = tutto zero) mai letto quando lod_focus_state è
+# vuoto — nessuna ambiguità: l'unico sentinel "focus attivo o no" resta lod_focus_state.is_empty().
+var lod_focus_region: Rect2i = Rect2i()
+
 func allocate_population_group_id() -> int:
 	var id := next_population_group_id
 	next_population_group_id += 1

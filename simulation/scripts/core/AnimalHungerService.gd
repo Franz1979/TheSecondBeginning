@@ -26,7 +26,7 @@ const DAILY_HUNGER_EXPANSION_THRESHOLD := 1.0
 const RATIO_EPSILON := 0.000001
 
 
-func apply_daily_hunger(world: World) -> void:
+func apply_daily_hunger(world: World, groups_override: Array = []) -> void:
 	# Aggregato giornaliero (vedi log di riepilogo in fondo): quanti gruppi hanno evitato la BFS
 	# costosa oggi grazie a PopulationGroup.blocked_territory_search_version, contro quanti l'hanno
 	# eseguita per davvero — per verificare a colpo d'occhio l'effetto della cache senza dover
@@ -34,7 +34,12 @@ func apply_daily_hunger(world: World) -> void:
 	var territory_searches_skipped := 0
 	var territory_searches_attempted := 0
 
-	for group in world.population_groups:
+	# groups_override (Parte B del LOD, infrastruttura — vedi LODOrchestrator): vuoto (default) =
+	# comportamento invariato, itera world.population_groups per intero come sempre. Non ancora
+	# collegato da nessun chiamante reale (WorldTimeService continua a non passarlo).
+	var groups_to_process: Array = groups_override if not groups_override.is_empty() else world.population_groups
+
+	for group in groups_to_process:
 		if group.population <= 0:
 			continue
 

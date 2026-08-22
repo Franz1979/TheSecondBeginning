@@ -28,8 +28,15 @@ const _AGE_BANDS: Array[GameTypes.AgeBand] = [
 # AnimalConsumptionService.apply_daily_consumption. rules is PredatorRules (non solo AnimalRules)
 # distingue i branchi predatori dagli erbivori: il polimorfismo del loader (vedi PredatorRules.gd)
 # garantisce che il downcast sia sempre valido quando il controllo passa.
-func apply_daily_predation(world: World, year: int, day: int) -> void:
-	for group in world.population_groups:
+func apply_daily_predation(world: World, year: int, day: int, active_predator_groups_override: Array = []) -> void:
+	# active_predator_groups_override (Parte B del LOD, infrastruttura — vedi LODOrchestrator):
+	# vuoto (default) = comportamento invariato, valuta world.population_groups per intero come
+	# sempre. Filtra SOLO quali branchi predatori agiscono oggi come attori — _gather_prey_
+	# candidates sotto continua a leggere world.population_groups per intero per la visibilità
+	# delle PREDE, mai ristretta da questo parametro (un branco LEVEL_1 non deve alterare quali
+	# prede sono cacciabili). Non ancora collegato da nessun chiamante reale.
+	var groups_to_process: Array = active_predator_groups_override if not active_predator_groups_override.is_empty() else world.population_groups
+	for group in groups_to_process:
 		if group.population <= 0:
 			continue
 		var rules := AnimalCalculator.get_animal_rules(group.species_name)

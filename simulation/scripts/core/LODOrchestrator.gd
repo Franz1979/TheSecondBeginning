@@ -87,3 +87,24 @@ static func print_classification_log(result: Dictionary) -> void:
 	level_1_species_names.sort()
 	for species_name in level_1_species_names:
 		print("  - %s: %d" % [species_name, level_1_by_species[species_name]])
+
+	# Nota informativa (solo quando pertinente, per non appesantire il log nel caso comune senza
+	# predatori fuori fuoco): la classificazione qui sopra è puramente geografica, identica per
+	# ogni specie — nessuna eccezione per i predatori (vedi set_focus_region). Ma un predatore
+	# elencato in LEVEL_1 continua comunque a essere processato ogni giorno da
+	# PredationService.apply_daily_predation, che non consulta mai World.lod_focus_state — la
+	# predazione non è filtrata dal LOD per decisione presa nel profiling (branchi troppo pochi/
+	# economici da giustificare un'aggregazione). Solo un promemoria di lettura: nessuna delle due
+	# logiche cambia comportamento.
+	var has_predator_in_level_1 := false
+	for group in level_1_groups:
+		var rules := AnimalCalculator.get_animal_rules(group.species_name)
+		if rules is PredatorRules:
+			has_predator_in_level_1 = true
+			break
+	if has_predator_in_level_1:
+		print(
+			"[LOD] Nota: i predatori elencati sopra in LEVEL_1 restano comunque processati "
+			+ "giornalmente da PredationService indipendentemente dal livello mostrato "
+			+ "(la predazione non è filtrata dal LOD)."
+		)
