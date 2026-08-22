@@ -1,8 +1,8 @@
 [gd_resource type="Resource" script_class="ResourceGrowthRules" format=3 uid="uid://tuejrmymcahd"]
 
 [ext_resource type="Script" uid="uid://dm38wig7or77y" path="res://simulation/scripts/core/ResourceGrowthRules.gd" id="1_shrub"]
-[ext_resource type="Resource" path="res://simulation/data/resource_subtypes/shrub_wood_only.tres" id="2_wood"]
-[ext_resource type="Resource" path="res://simulation/data/resource_subtypes/shrub_fruit_bearing.tres" id="3_fruit"]
+[ext_resource type="Resource" uid="uid://leua172flxq2" path="res://simulation/data/resource_subtypes/shrub_wood_only.tres" id="2_wood"]
+[ext_resource type="Resource" uid="uid://cp5kd22k8bh2" path="res://simulation/data/resource_subtypes/shrub_fruit_bearing.tres" id="3_fruit"]
 
 [resource]
 script = ExtResource("1_shrub")

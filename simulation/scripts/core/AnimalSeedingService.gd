@@ -36,7 +36,23 @@ const POPULATION_MIN_FLOOR := 4
 func populate_animals(world: World, density: GameTypes.AnimalDensity, population_size: GameTypes.PopulationSize) -> void:
 	var divisor: int = DENSITY_DIVISOR[density]
 
+	# Due passate esplicite (erbivori prima, predatori dopo) invece di affidarsi all'ordine
+	# alfabetico di list_species_names(): il punteggio di disponibilita' prede sotto (vedi
+	# _select_predator_start_cells) assume che TUTTE le popolazioni erbivore esistano gia' quando
+	# un predatore viene seminato — vero oggi solo perche' "wolf" ordina alfabeticamente dopo le
+	# 8 specie erbivore esistenti, non per garanzia strutturale (una futura specie come
+	# "cave_hyena" ordinerebbe PRIMA di "deer"/"mouflon"/"rabbit"/"tarpan"/"wild_donkey",
+	# rompendo l'assunzione in silenzio).
+	var ordered_species: Array[String] = []
+	var predator_species: Array[String] = []
 	for species_name in AnimalCalculator.list_species_names():
+		if AnimalCalculator.get_animal_rules(species_name) is PredatorRules:
+			predator_species.append(species_name)
+		else:
+			ordered_species.append(species_name)
+	ordered_species.append_array(predator_species)
+
+	for species_name in ordered_species:
 		var rules := AnimalCalculator.get_animal_rules(species_name)
 		if rules == null:
 			continue
@@ -49,7 +65,13 @@ func populate_animals(world: World, density: GameTypes.AnimalDensity, population
 		var target: int = maxi(1, int(round(float(candidates.size()) / float(divisor))))
 
 		var chosen: Array[Vector2i] = candidates
-		if target < candidates.size():
+		var predator_scores: Dictionary = {}
+		if rules is PredatorRules:
+			# Ranking deterministico per disponibilita' prede (no soglia, no estrazione pesata —
+			# vedi _select_predator_start_cells): sostituisce l'estrazione casuale uniforme usata
+			# per tutte le altre specie sotto.
+			chosen = _select_predator_start_cells(world, rules as PredatorRules, candidates, target, predator_scores)
+		elif target < candidates.size():
 			chosen = candidates.duplicate()
 			chosen.shuffle()
 			chosen = chosen.slice(0, target)
@@ -75,7 +97,19 @@ func populate_animals(world: World, density: GameTypes.AnimalDensity, population
 		var overlap_note := ""
 		if skipped_overlap > 0:
 			overlap_note = " (%d scartate per sovrapposizione territorio)" % skipped_overlap
-		print("[ANIMAL SEEDING] %s: %d candidati, %d popolazioni create%s" % [species_name, candidates.size(), created, overlap_note])
+
+		if rules is PredatorRules and not chosen.is_empty():
+			var min_score: float = INF
+			var max_score: float = -INF
+			for coords in chosen:
+				var score: float = predator_scores.get(coords, 0.0)
+				min_score = minf(min_score, score)
+				max_score = maxf(max_score, score)
+			print("[ANIMAL SEEDING] %s: %d candidati, %d popolazioni create%s, punteggio prede tra le celle scelte [min=%.1f, max=%.1f]" % [
+				species_name, candidates.size(), created, overlap_note, min_score, max_score
+			])
+		else:
+			print("[ANIMAL SEEDING] %s: %d candidati, %d popolazioni create%s" % [species_name, candidates.size(), created, overlap_note])
 
 
 # Stesso identico pattern di creazione gia' usato dal debug manuale (GameScene.
@@ -208,3 +242,75 @@ func _ring_offsets(radius: int) -> Array[Vector2i]:
 			if maxi(absi(dx), absi(dy)) == radius:
 				offsets.append(Vector2i(dx, dy))
 	return offsets
+
+
+# Ranking deterministico delle candidate SOLO per specie predatrici (rules is PredatorRules),
+# generico per qualunque predatore futuro (nessun riferimento a "wolf": legge solo
+# PredatorRules.prey_compatibility e AnimalRules.prey_calories) — sostituisce l'estrazione
+# casuale uniforme usata per tutte le altre specie. Nessuna soglia minima e nessuna estrazione
+# pesata: una cella a punteggio 0 (nessuna preda compatibile entro prey_radius) resta comunque
+# eleggibile se il target lo richiede, stesso principio "meglio una popolazione a rischio che
+# nessuna" gia' implicito nel comportamento esistente quando le candidate erbivore scarseggiano.
+#
+# prey_radius = ceil(sqrt(min_territory_cells)) — deriva dal territorio MINIMO (dimensione reale
+# con cui il branco nasce, vedi _create_population), non da max_territory_cells (che resta usato
+# solo per lo step di spaziatura griglia in find_candidate_start_cells sopra, scopo diverso: li'
+# serve a distanziare le candidate tra loro, qui a delimitare "cosa conta come raggiungibile" per
+# un branco appena nato). Peso binario, nessun decadimento graduale con la distanza: una preda
+# entro prey_radius dal candidato conta per intero, oltre non conta affatto.
+#
+# out_scores: popolato per OGNI candidata (non solo le scelte), cosi' il chiamante puo' loggare
+# min/max tra le celle EFFETTIVAMENTE scelte senza ricalcolare nulla.
+func _select_predator_start_cells(
+	world: World, rules: PredatorRules, candidates: Array[Vector2i], target: int, out_scores: Dictionary
+) -> Array[Vector2i]:
+	var prey_radius: int = ceili(sqrt(float(rules.min_territory_cells)))
+
+	# Snapshot dei gruppi preda compatibili una sola volta (indipendente dalla cella candidata):
+	# peso di specie = popolazione del gruppo × calorie-preda-adulta della sua specie ×
+	# coefficiente di facilita' di cattura del predatore. group.territory.get_centroid() (funzione
+	# gia' esistente e generica) da' il punto di riferimento del gruppo per la distanza.
+	var prey_groups: Array[Dictionary] = []
+	for group in world.population_groups:
+		if group.population <= 0 or group.territory == null:
+			continue
+		var compatibility: float = float(rules.prey_compatibility.get(group.species_name, 0.0))
+		if compatibility <= 0.0:
+			continue
+		var prey_rules := AnimalCalculator.get_animal_rules(group.species_name)
+		if prey_rules == null:
+			continue
+		prey_groups.append({
+			"centroid": group.territory.get_centroid(),
+			"weight": float(group.population) * prey_rules.prey_calories * compatibility,
+		})
+
+	for coords in candidates:
+		var score := 0.0
+		for prey in prey_groups:
+			if _manhattan_distance(coords, prey["centroid"]) <= prey_radius:
+				score += float(prey["weight"])
+		out_scores[coords] = score
+
+	var ranked := candidates.duplicate()
+	ranked.sort_custom(func(a, b): return out_scores[a] > out_scores[b])
+
+	# Log diagnostico di TUTTE le candidate esaminate (non solo quelle scelte), per poter
+	# verificare a occhio che il punteggio vari in modo sensato tra celle vicine/lontane dalle
+	# prede prima di fidarsi del solo min/max tra le scelte (che con target piccolo puo'
+	# banalmente coincidere se viene scelta una sola cella).
+	print("[ANIMAL SEEDING - PREDATOR SCORES] %s: prey_radius=%d, %d candidati totali, target=%d" % [
+		rules.species_name, prey_radius, ranked.size(), target
+	])
+	for i in range(ranked.size()):
+		var coords: Vector2i = ranked[i]
+		var marker := "SCELTA" if i < target else "scartata"
+		print("  #%02d (%d,%d) punteggio=%.1f [%s]" % [i + 1, coords.x, coords.y, out_scores[coords], marker])
+
+	if target < ranked.size():
+		return ranked.slice(0, target)
+	return ranked
+
+
+func _manhattan_distance(a: Vector2i, b: Vector2i) -> int:
+	return absi(a.x - b.x) + absi(a.y - b.y)

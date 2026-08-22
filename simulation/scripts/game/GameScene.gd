@@ -25,8 +25,7 @@ var _pending_leave_action: StringName = &""
 @onready var save_confirmation_dialog: SaveConfirmationDialog = $SaveConfirmationDialog
 @onready var save_game_file_dialog: FileDialog = $SaveGameFileDialog
 @onready var world_info_panel: WorldInfoPanel = $CanvasLayer/Sidebar/MarginContainer/VBoxContainer/WorldInfoPanel
-@onready var year_title_label: Label = $CanvasLayer/Sidebar/MarginContainer/VBoxContainer/CalendarHeaderContainer/YearTitleLabel
-@onready var year_label: Label = $CanvasLayer/Sidebar/MarginContainer/VBoxContainer/YearLabel
+@onready var year_label: Label = $CanvasLayer/Sidebar/MarginContainer/VBoxContainer/CalendarHeaderContainer/YearLabel
 @onready var play_pause_button: Button = $CanvasLayer/Sidebar/MarginContainer/VBoxContainer/ClockControlsContainer/PlayPauseButton
 @onready var speed_buttons: Dictionary = {
 	GameClockController.Speed.X1: $CanvasLayer/Sidebar/MarginContainer/VBoxContainer/ClockControlsContainer/Speed1xButton,
@@ -48,7 +47,6 @@ func _ready() -> void:
 	# MacroCellScene per i suoi due toggle.
 	world_daily_redraw_enabled = GameSettings.game_scene_world_redraw_enabled
 
-	year_title_label.text = tr("calendar_label")
 	advance_year_button.text = "+1"
 	advance_year_button.tooltip_text = tr("advance_year_tooltip")
 	advance_year_button.pressed.connect(_on_advance_year_pressed)

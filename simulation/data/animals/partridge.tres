@@ -1,0 +1,51 @@
+[gd_resource type="Resource" script_class="AnimalRules" format=3 uid="uid://c8j3p1r7dqvme"]
+
+[ext_resource type="Script" uid="uid://b5f2blfpeff0h" path="res://simulation/scripts/core/AnimalRules.gd" id="1_partridge"]
+
+[resource]
+script = ExtResource("1_partridge")
+species_name = "partridge"
+daily_caloric_requirement = 1.0
+diet_compatibility = {
+"acorn": 0.0,
+"berry": 0.5,
+"eggs": 0.0,
+"forage": 1.0,
+"fruit": 0.15
+}
+is_browsing_species = true
+prey_calories = 8.0
+visual_group_size = 8
+max_individuals_per_cluster = 30
+size_multiplier_by_age = Array[float]([0.55, 1.0, 1.0])
+hop_speed = 8.0
+hop_duration_min = 0.15
+hop_duration_max = 0.3
+hop_pause_min = 0.05
+hop_pause_max = 0.15
+movement_phase_duration_min = 1.5
+movement_phase_duration_max = 3.5
+rest_phase_duration_min = 4.0
+rest_phase_duration_max = 8.0
+move_speed = 2.5
+turn_rate = 1.8
+cluster_comfort_radius = 3.5
+cluster_attraction_strength = 2.0
+track_age_bands = true
+youth_duration_years = 1
+adult_duration_years = 2
+old_duration_years = 1
+mortality_share_by_age = Array[float]([0.5, 0.3, 0.2])
+caloric_multiplier_by_age = Array[float]([0.5, 1.0, 1.0])
+base_birth_rate = 1.8
+initial_age_ratio = {
+0: 0.0,
+1: 1.0,
+2: 0.0
+}
+dispersal_share_by_age = Array[float]([0.4, 0.4, 0.2])
+post_split_recovery_years = 5
+max_days_without_food = 5
+max_density_per_cell = 80
+suitable_biomes = Array[int]([1, 2, 5])
+suitable_terrains = Array[int]([1, 2])

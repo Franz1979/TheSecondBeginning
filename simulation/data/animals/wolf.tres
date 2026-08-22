@@ -10,6 +10,7 @@ prey_compatibility = {
 "boar": 0.5,
 "deer": 0.45,
 "mouflon": 0.6,
+"partridge": 0.55,
 "rabbit": 0.7,
 "tarpan": 0.3,
 "wild_donkey": 0.4
@@ -17,7 +18,6 @@ prey_compatibility = {
 max_pack_hunting_efficiency = 8.0
 species_name = "wolf"
 daily_caloric_requirement = 6.0
-is_browsing_species = false
 prey_calories = 120.0
 max_individuals_per_cluster = 12
 hop_duration_min = 0.35
@@ -45,7 +45,7 @@ initial_age_ratio = {
 2: 0.0
 }
 dispersal_share_by_age = Array[float]([0.2, 0.6, 0.2])
-max_days_without_food = 15
+max_days_without_food = 20
 min_territory_cells = 150
 max_territory_cells = 300
 max_density_per_cell = 0.05

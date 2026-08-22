@@ -21,6 +21,7 @@ var aurochs_renderer: AnimalGroupRenderer
 var wild_donkey_renderer: AnimalGroupRenderer
 var mouflon_renderer: AnimalGroupRenderer
 var bezoar_renderer: AnimalGroupRenderer
+var partridge_renderer: AnimalGroupRenderer
 var animals_visible: bool = true
 var flora_daily_updates_enabled: bool = true
 var clock: GameClockController
@@ -104,6 +105,15 @@ func _ready() -> void:
 
 	if macro_world != null:
 		macro_cell = macro_world.get_cell_at(GameSettings.selected_macro_cell_x, GameSettings.selected_macro_cell_y)
+
+	# Punto di invocazione debug per LODOrchestrator (Parte A, solo classificazione — vedi
+	# LODOrchestrator.gd): la "zona a fuoco" è per ora la sola macrocella appena aperta, la
+	# scelta più semplice per validare la classificazione prima di un eventuale intorno più
+	# ampio. Nessun effetto reale: solo un log, nessuna popolazione cambia comportamento.
+	if macro_world != null and macro_cell != null:
+		var focus_region := Rect2i(macro_cell.x, macro_cell.y, 1, 1)
+		var lod_result := LODOrchestrator.new().set_focus_region(macro_world, focus_region)
+		LODOrchestrator.print_classification_log(lod_result)
 
 	world = World.new()
 	if macro_cell != null:
@@ -349,6 +359,37 @@ func _ready() -> void:
 		),
 	})
 
+	# Partridge: stesso schema di rabbit/deer/boar/tarpan/aurochs/wild_donkey/mouflon/bezoar sopra
+	# — prima specie non-mammifero (sagoma con ali ripiegate invece di orecchie/corna, vedi
+	# AnimalGroupRenderer.build_partridge_mesh), stessa pipeline di configurazione, nessuna
+	# differenza di trattamento qui.
+	partridge_renderer = AnimalGroupRenderer.new()
+	add_child(partridge_renderer)
+	var partridge_rules := AnimalCalculator.get_animal_rules("partridge")
+	partridge_renderer.configure({
+		"individuals_per_group": partridge_rules.visual_group_size if partridge_rules != null else 1,
+		"move_speed": partridge_rules.move_speed if partridge_rules != null else 3.0,
+		"turn_rate": partridge_rules.turn_rate if partridge_rules != null else 1.5,
+		"max_individuals_per_cluster": partridge_rules.max_individuals_per_cluster if partridge_rules != null else 1,
+		"cluster_comfort_radius": partridge_rules.cluster_comfort_radius if partridge_rules != null else 5.0,
+		"cluster_attraction_strength": partridge_rules.cluster_attraction_strength if partridge_rules != null else 1.5,
+		"hop_speed": partridge_rules.hop_speed if partridge_rules != null else 6.0,
+		"movement_phase_duration_min": partridge_rules.movement_phase_duration_min if partridge_rules != null else 2.0,
+		"movement_phase_duration_max": partridge_rules.movement_phase_duration_max if partridge_rules != null else 5.0,
+		"rest_phase_duration_min": partridge_rules.rest_phase_duration_min if partridge_rules != null else 3.0,
+		"rest_phase_duration_max": partridge_rules.rest_phase_duration_max if partridge_rules != null else 7.0,
+		"hop_duration_min": partridge_rules.hop_duration_min if partridge_rules != null else 0.2,
+		"hop_duration_max": partridge_rules.hop_duration_max if partridge_rules != null else 0.4,
+		"hop_pause_min": partridge_rules.hop_pause_min if partridge_rules != null else 0.1,
+		"hop_pause_max": partridge_rules.hop_pause_max if partridge_rules != null else 0.3,
+		"size_multiplier_by_age": partridge_rules.size_multiplier_by_age if partridge_rules != null else [1.0, 1.0, 1.0],
+		"mesh": AnimalGroupRenderer.build_partridge_mesh(
+			AnimalGroupRenderer.PARTRIDGE_BODY_LENGTH, AnimalGroupRenderer.PARTRIDGE_BODY_WIDTH,
+			AnimalGroupRenderer.PARTRIDGE_EAR_LENGTH, AnimalGroupRenderer.PARTRIDGE_EAR_WIDTH,
+			AnimalGroupRenderer.PARTRIDGE_COLOR
+		),
+	})
+
 	# Applica lo stato di visibilità ripristinato sopra (default true dei renderer altrimenti
 	# resterebbe visibile anche se l'utente l'aveva disattivato prima di uscire).
 	rabbit_renderer.set_animals_visible(animals_visible)
@@ -359,6 +400,7 @@ func _ready() -> void:
 	wild_donkey_renderer.set_animals_visible(animals_visible)
 	mouflon_renderer.set_animals_visible(animals_visible)
 	bezoar_renderer.set_animals_visible(animals_visible)
+	partridge_renderer.set_animals_visible(animals_visible)
 
 	if macro_cell != null and macro_world != null:
 		renderer.set_neighbors(_get_neighbor_cells(macro_cell), _get_neighbor_states(macro_cell))
@@ -386,6 +428,7 @@ func _ready() -> void:
 	wild_donkey_renderer.clock = clock
 	mouflon_renderer.clock = clock
 	bezoar_renderer.clock = clock
+	partridge_renderer.clock = clock
 	_update_calendar_display()
 
 # "occupied" invertito rispetto al solito uso (qui marca ciò che NON è disponibile per FISH,
@@ -459,6 +502,8 @@ func _refresh_resource_visuals() -> void:
 	_update_animal_renderer_population(mouflon_renderer, mouflon_group, AnimalCalculator.get_animal_rules("mouflon"), this_cell)
 	var bezoar_group := macro_world.find_population_group("bezoar", this_cell)
 	_update_animal_renderer_population(bezoar_renderer, bezoar_group, AnimalCalculator.get_animal_rules("bezoar"), this_cell)
+	var partridge_group := macro_world.find_population_group("partridge", this_cell)
+	_update_animal_renderer_population(partridge_renderer, partridge_group, AnimalCalculator.get_animal_rules("partridge"), this_cell)
 
 	renderer.set_shrub_fruit_ratio(_get_shrub_fruit_ratio())
 	renderer.set_shrub_age_params(game_data.year, _get_age_params(GameTypes.WorldObjectType.SHRUB))
@@ -604,7 +649,7 @@ func _on_primary_action_pressed(action_id: StringName) -> void:
 		&"toggle_animals_visibility":
 			animals_visible = not animals_visible
 			# Un solo toggle per tutta la fauna (rabbit + deer + boar + tarpan + aurochs +
-			# wild_donkey + mouflon + bezoar, non uno per specie): nessun caso d'uso reale oggi
+			# wild_donkey + mouflon + bezoar + partridge, non uno per specie): nessun caso d'uso reale oggi
 			# per nasconderle separatamente — se servirà un controllo più fine in futuro (es.
 			# gameplay-specifico), lo si introduce allora.
 			rabbit_renderer.set_animals_visible(animals_visible)
@@ -615,6 +660,7 @@ func _on_primary_action_pressed(action_id: StringName) -> void:
 			wild_donkey_renderer.set_animals_visible(animals_visible)
 			mouflon_renderer.set_animals_visible(animals_visible)
 			bezoar_renderer.set_animals_visible(animals_visible)
+			partridge_renderer.set_animals_visible(animals_visible)
 			primary_actions_bar.set_slot_toggled(1, animals_visible)
 			GameSettings.macro_cell_animals_visible = animals_visible
 		&"toggle_flora_updates":

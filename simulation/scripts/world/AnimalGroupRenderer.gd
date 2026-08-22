@@ -194,6 +194,24 @@ const WOLF_TAIL_RADIUS_X: float = 0.9
 const WOLF_TAIL_RADIUS_Y: float = 0.35
 const WOLF_TAIL_ANCHOR_RATIO: float = 1.0
 
+# --- Sagoma PARTRIDGE (build_partridge_mesh) ---
+# Prima specie non-mammifero a ricevere una sagoma: nessuna nuova geometria nella pipeline
+# generica, lo slot "orecchie" viene qui riusato come ALI RIPIEGATE invece che orecchie/corna.
+# Corpo quasi uniforme come deer (front/rear vicini) — un uccello non ha un muso da assottigliare
+# come rabbit, si legge meglio tondeggiante che a goccia.
+const PARTRIDGE_BODY_FRONT_WIDTH_RATIO: float = 0.8
+const PARTRIDGE_BODY_REAR_WIDTH_RATIO: float = 1.05
+# Ali ripiegate: ancorate a META' corpo (anchor_ratio basso, non vicino alla testa come le
+# orecchie di rabbit/deer) e angolate NETTAMENTE all'indietro (155°, il valore più arretrato di
+# tutto il roster, oltre i 140° delle corna di mouflon) così si leggono come ali chiuse contro il
+# fianco puntate verso la coda, non come orecchie/corna dritte o laterali.
+const PARTRIDGE_EAR_ANCHOR_RATIO: float = 0.3
+const PARTRIDGE_EAR_ANCHOR_LATERAL_RATIO: float = 0.95
+const PARTRIDGE_EAR_ANGLE_FROM_HEADING: float = 155.0 * PI / 180.0
+# Coda piccola e compatta (ventaglio di penne), la più piccola del roster insieme a boar.
+const PARTRIDGE_TAIL_RADIUS: float = 0.35
+const PARTRIDGE_TAIL_ANCHOR_RATIO: float = 0.85
+
 # Dimensioni/colore di riferimento per specie, usati da MacroCellScene per costruire la mesh sul
 # campo (build_rabbit_mesh/build_deer_mesh) E da AnimalSilhouetteIcon per l'icona del filtro Fauna
 # (WorldInfoPanel) — un'unica fonte di verità, non due valori duplicati che potrebbero
@@ -295,6 +313,17 @@ const WOLF_BODY_WIDTH: float = 1.9
 const WOLF_EAR_LENGTH: float = 1.1
 const WOLF_EAR_WIDTH: float = 0.45
 const WOLF_COLOR: Color = Color(0.38, 0.37, 0.35, 0.95)
+
+# La sagoma più piccola del roster (1.8x1.1, contro 3.0x1.3 di rabbit, finora la più piccola) —
+# rapporto L:W basso (~1.6:1) per leggersi tondeggiante come un uccello tozzo, non allungato come
+# un mammifero. Colore bruno-rossiccio caldo, richiamo al piumaggio fulvo della starna reale —
+# distinto dal grigio-brunastro freddo di TARPAN_COLOR/WILD_DONKEY_COLOR e dal bruno più
+# scuro/saturo di DEER_COLOR.
+const PARTRIDGE_BODY_LENGTH: float = 1.8
+const PARTRIDGE_BODY_WIDTH: float = 1.1
+const PARTRIDGE_EAR_LENGTH: float = 0.5
+const PARTRIDGE_EAR_WIDTH: float = 0.35
+const PARTRIDGE_COLOR: Color = Color(0.68, 0.5, 0.32, 0.95)
 
 # Popolazione -> numero di gruppi disegnati: individui rappresentati da ciascuna icona,
 # arriva da AnimalRules.visual_group_size (letto dal chiamante, mai hardcoded qui).
@@ -725,6 +754,18 @@ static func build_wolf_mesh(
 	)
 
 
+# Sagoma PARTRIDGE: stesso schema costruttivo delle altre. Lo slot "orecchie" della pipeline
+# generica è qui riusato per le ALI RIPIEGATE (vedi costanti PARTRIDGE_* in cima al file), prima
+# specie non-mammifero della pipeline — nessuna nuova geometria introdotta, solo proporzioni/
+# angoli diversi passati agli stessi parametri, come già per corna/orecchie delle altre specie.
+static func build_partridge_mesh(
+	body_length: float, body_width: float, ear_length: float, ear_width: float, color: Color
+) -> ArrayMesh:
+	return _build_mesh_from_geometry(
+		get_partridge_silhouette_geometry(body_length, body_width, ear_length, ear_width), color
+	)
+
+
 # Pubbliche (non prefissate _, a differenza delle altre helper statiche sotto): consumate anche
 # da AnimalSilhouetteIcon, fuori da questa classe. Ritornano i punti 2D grezzi (corpo, le due
 # orecchie come triangoli [base_a, base_b, tip], centro/raggio della coda) SENZA passare per una
@@ -826,6 +867,17 @@ static func get_wolf_silhouette_geometry(
 		WOLF_BODY_REAR_WIDTH_RATIO, WOLF_BODY_FRONT_WIDTH_RATIO,
 		WOLF_EAR_ANCHOR_RATIO, WOLF_EAR_ANCHOR_LATERAL_RATIO, WOLF_EAR_ANGLE_FROM_HEADING,
 		WOLF_TAIL_ANCHOR_RATIO, WOLF_TAIL_RADIUS_X, WOLF_TAIL_RADIUS_Y
+	)
+
+
+static func get_partridge_silhouette_geometry(
+	body_length: float, body_width: float, ear_length: float, ear_width: float
+) -> Dictionary:
+	return _get_silhouette_geometry(
+		body_length, body_width, ear_length, ear_width,
+		PARTRIDGE_BODY_REAR_WIDTH_RATIO, PARTRIDGE_BODY_FRONT_WIDTH_RATIO,
+		PARTRIDGE_EAR_ANCHOR_RATIO, PARTRIDGE_EAR_ANCHOR_LATERAL_RATIO, PARTRIDGE_EAR_ANGLE_FROM_HEADING,
+		PARTRIDGE_TAIL_ANCHOR_RATIO, PARTRIDGE_TAIL_RADIUS, PARTRIDGE_TAIL_RADIUS
 	)
 
 

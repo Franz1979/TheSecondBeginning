@@ -181,6 +181,8 @@ theme_override_font_sizes/font_size = 13
 
 [node name="SpeciesFilterContainer" type="HFlowContainer" parent="MarginContainer/VBoxContainer/TabContainer/FaunaTab2/FaunaContent"]
 layout_mode = 2
+theme_override_constants/h_separation = 2
+theme_override_constants/v_separation = 2
 
 [node name="PopulationGroupsContainer" type="VBoxContainer" parent="MarginContainer/VBoxContainer/TabContainer/FaunaTab2/FaunaContent"]
 layout_mode = 2

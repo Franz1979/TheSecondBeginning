@@ -77,6 +77,11 @@ func configure(species_name: String, color: Color) -> void:
 				AnimalGroupRenderer.WOLF_BODY_LENGTH, AnimalGroupRenderer.WOLF_BODY_WIDTH,
 				AnimalGroupRenderer.WOLF_EAR_LENGTH, AnimalGroupRenderer.WOLF_EAR_WIDTH
 			)
+		"partridge":
+			_geometry = AnimalGroupRenderer.get_partridge_silhouette_geometry(
+				AnimalGroupRenderer.PARTRIDGE_BODY_LENGTH, AnimalGroupRenderer.PARTRIDGE_BODY_WIDTH,
+				AnimalGroupRenderer.PARTRIDGE_EAR_LENGTH, AnimalGroupRenderer.PARTRIDGE_EAR_WIDTH
+			)
 		_:
 			_has_dedicated_shape = false
 			_generic_marker_letter = species_name.substr(0, 1).to_upper() if species_name.length() > 0 else "?"
