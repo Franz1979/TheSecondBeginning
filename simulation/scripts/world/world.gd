@@ -55,6 +55,17 @@ var lod_focus_state: Dictionary = {}
 # vuoto — nessuna ambiguità: l'unico sentinel "focus attivo o no" resta lod_focus_state.is_empty().
 var lod_focus_region: Rect2i = Rect2i()
 
+# Accumulatore per il riepilogo [TERRITORY DYNAMICS SPLIT SUMMARY] (vedi TerritoryDynamicsService)
+# quando lo spalmamento su più giorni è attivo (TerritoryDynamicsService.STAGGER_LEVEL_1_ENABLED):
+# species_name -> {"total","density","caloric","minimum"}, popolato giorno per giorno dal turno
+# giornaliero di ciascun gruppo Livello 1 durante l'intera finestra stagionale precedente, poi
+# stampato e azzerato al checkpoint stagionale vero (stesso giorno in cui, a spalmamento
+# disattivato, l'intero riepilogo veniva calcolato e stampato in un colpo solo). Puro dato di
+# sessione — mai storia di partita, non persistito nei save, stessa natura di lod_focus_state
+# sopra: perderlo al caricamento costa al più un riepilogo incompleto per l'anno in corso, mai un
+# comportamento di simulazione alterato (il riepilogo è solo un log diagnostico).
+var territory_dynamics_split_counts: Dictionary = {}
+
 func allocate_population_group_id() -> int:
 	var id := next_population_group_id
 	next_population_group_id += 1

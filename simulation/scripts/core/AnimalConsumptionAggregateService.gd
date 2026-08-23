@@ -124,7 +124,11 @@ func apply_seasonal_consumption(world: World, level_1_groups: Array, season: Gam
 		var ratio: float = 1.0 if need_total <= 0.0 else consumed_total / need_total
 		seasonal_ratios[group.id] = ratio
 
-		if DebugLogging.ENABLED:
+		# SHOW_HERBIVORE_LIFECYCLE_LOGS (non il solo ENABLED): una riga per OGNI popolazione
+		# Livello 1 (possono essere migliaia, vedi log LOD) satura l'output della console —
+		# stesso filtro già usato per il dettaglio erbivoro di AnimalHungerService/
+		# AnimalHungerMortalityAggregateService, silenziato di default.
+		if DebugLogging.ENABLED and DebugLogging.SHOW_HERBIVORE_LIFECYCLE_LOGS:
 			print(
 				"[ANIMAL CONSUMPTION AGGREGATE] #%d %s stagione=%s pop=%d fabbisogno=%.1f consumato=%.1f ratio=%.3f" % [
 					group.id, group.species_name, GameTypes.Season.keys()[season],

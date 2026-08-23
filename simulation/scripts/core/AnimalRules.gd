@@ -181,17 +181,21 @@ extends Resource
 
 @export_group("Suitability")
 # Stessa forma e stessa semantica di SubtypeRules.suitable_biomes/suitable_terrains (vedi
-# SubtypeRules.gd) — vuoto = nessuna restrizione, altrimenti lista bianca. Campo DORMIENTE per
-# ora: dichiarato qui e (in futuro) nei .tres di ciascuna specie, ma nessuna logica di
-# posizionamento/creazione territorio li legge ancora — TerritoryBuilderService continua a
-# ignorare bioma/terreno (esclude solo l'acqua) finche' questo gate non verra' collegato in un
-# passo successivo separato.
+# SubtypeRules.gd) — vuoto = nessuna restrizione, altrimenti lista bianca. Letto da
+# AnimalSeedingService._is_suitable_cell (cella di partenza al seeding) e da
+# TerritoryBuilderService.build_territory/find_nearest_free_cell (espansione multi-cella e split,
+# vedi lì) — quest'ultimo collegamento è recente: prima ne restava fuori, e una specie poteva
+# quindi finire con parte (o, per una specie a territorio mono-cella come partridge, la totalità)
+# del proprio territorio in un bioma/terreno non idoneo pur essendo nata in una cella corretta
+# (casi reali osservati: mouflon con 1 cella su 3 in deserto, partridge scisso più volte dentro
+# una sacca di deserto).
 @export var suitable_biomes: Array[GameTypes.Biome] = []
 @export var suitable_terrains: Array[GameTypes.TerrainBase] = []
 
 
 # Stessa logica di SubtypeRules.is_suitable_for: array vuoto = sempre idoneo su quell'asse,
-# altrimenti richiede l'appartenenza alla lista. Non ancora chiamato da nessun service.
+# altrimenti richiede l'appartenenza alla lista. Chiamato da AnimalSeedingService e
+# TerritoryBuilderService (vedi nota sopra).
 func is_suitable_for(biome: GameTypes.Biome, terrain: GameTypes.TerrainBase) -> bool:
 	if not suitable_biomes.is_empty() and not suitable_biomes.has(biome):
 		return false

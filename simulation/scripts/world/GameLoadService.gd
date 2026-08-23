@@ -161,6 +161,10 @@ func load_game_from_json(file_path: String) -> LoadedGame:
 			# 0.0/0.0 sono gli stessi default di PopulationGroup.gd.
 			group.predation_season_calories_obtained = float(group_data.get("predation_season_calories_obtained", 0.0))
 			group.predation_season_calories_required = float(group_data.get("predation_season_calories_required", 0.0))
+			# .get(key, 0.0) per compatibilità con save precedenti l'introduzione della mortalità da
+			# fame aggregata (AnimalHungerMortalityAggregateService) — 0.0 = nessun debito accumulato,
+			# stesso default della classe.
+			group.hunger_debt_days = float(group_data.get("hunger_debt_days", 0.0))
 			# recent_hunt_log/yearly_prey_totals (tab Fauna 3, UI) — .get(key, []/{}/{})/-1 per
 			# compatibilità con save precedenti l'introduzione di questi campi. Ogni valore
 			# numerico ri-castato esplicitamente (int/float): JSON non distingue i due tipi allo

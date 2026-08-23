@@ -23,8 +23,16 @@ const DENSITY_DIVISOR := {
 # massima a territorio minimo) per ottenere la taglia BASE di ciascuna popolazione — STESSA
 # formula per tutte le specie, predatori inclusi (verificato: 150 * 0.05 = 7.5 per wolf, in
 # linea con la dimensione di branco attesa, nessuna eccezione necessaria).
+# DENSE a 1.1 (non 1.0): con divisore esattamente 1.0 il target di partenza coincideva con il
+# 100% della capacita' di densita' per cella, e il jitter +/-10% sotto (POPULATION_JITTER_RATIO)
+# spingeva quindi circa META' delle popolazioni SOPRA la propria capacita' fin dalla nascita —
+# scatenando needs_expansion_density al primissimo checkpoint stagionale per centinaia di gruppi
+# in un colpo solo (osservato: ~860 split su rabbit/partridge al giorno 91 di una partita nuova
+# con Dense+Many, quasi tutti per densita', vedi TerritoryDynamicsService SPLIT SUMMARY). A 1.1,
+# anche nel caso peggiore di jitter (+10%) il target resta sotto il 100% (1.0/1.1 * 1.10 ~= 0.96),
+# eliminando la cascata immediata pur restando nettamente piu' pieno di NORMAL.
 const POPULATION_SIZE_DIVISOR := {
-	GameTypes.PopulationSize.DENSE: 1.0,
+	GameTypes.PopulationSize.DENSE: 1.1,
 	GameTypes.PopulationSize.NORMAL: 2.0,
 	GameTypes.PopulationSize.SPARSE: 3.0,
 }

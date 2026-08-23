@@ -30,6 +30,14 @@ func advance_day(world: World, game_data: GameData) -> Dictionary:
 	# preda, la riconciliazione con population se ne occupa la prossima volta che
 	# AnimalHungerService gira su quel gruppo — stesso giorno, con questo ordine.
 	_run_daily_predation(world, game_data)
+	# Spalmamento Livello 1 di TerritoryDynamicsService (vedi _run_daily_territory_dynamics_stagger
+	# sotto) — gira ogni giorno come consumo/predazione sopra, PRIMA dei checkpoint stagionali:
+	# il giorno di turno di un gruppo (dentro la finestra della stagione PRECEDENTE al suo
+	# birth_season) non coincide mai per costruzione col giorno di inizio della stagione successiva
+	# (dove gira invece il checkpoint stagionale/rete di sicurezza), quindi l'ordine tra i due in
+	# uno stesso giorno non è mai osservabile — nessun gruppo viene mai toccato da entrambi lo
+	# stesso giorno.
+	_run_daily_territory_dynamics_stagger(world, game_data)
 	var checkpoint_ran := _run_seasonal_checkpoints(world, game_data, year_rolled_over)
 	# DOPO i checkpoint stagionali (mai prima): se oggi capita anche un checkpoint di fine
 	# birth_season (nascite/morte per vecchiaia), hunger_buckets viene già mantenuto coerente con
@@ -52,12 +60,14 @@ func advance_day(world: World, game_data: GameData) -> Dictionary:
 # group.daily_caloric_ratio, che però smette di essere aggiornato per un gruppo escluso dal
 # consumo giornaliero — il ratio restava CONGELATO all'istante esatto dell'esclusione, producendo
 # mortalità da fame arbitraria e scollegata dalla realtà (confermato: pattern di crollo
-# irregolare osservato su rabbit/partridge in una sessione di gioco reale). Fino a quando
-# AnimalHungerAggregateService non esisterà, le popolazioni Livello 1 restano semplicemente SENZA
-# alcun meccanismo di morte diretta per fame — scelta deliberata, preferibile a un dato rotto (gli
-# altri sei freni alla crescita — mitigazione natalità calorica, mitigazione da densità,
-# espansione/contrazione territoriale, split da pressione demografica, recovery post-split,
-# mortalità per vecchiaia — restano comunque attivi e invariati).
+# irregolare osservato su rabbit/partridge in una sessione di gioco reale). Le popolazioni
+# Livello 1 restarono per un periodo SENZA alcun meccanismo di morte diretta per fame — scelta
+# deliberata, preferibile a un dato rotto — finché AnimalHungerMortalityAggregateService (vedi
+# _run_animal_consumption_aggregate_checkpoint sotto) non ha aggiunto l'equivalente stagionale,
+# disattivabile via AnimalHungerMortalityAggregateService.ENABLED. Gli altri sei freni alla
+# crescita — mitigazione natalità calorica, mitigazione da densità, espansione/contrazione
+# territoriale, split da pressione demografica, recovery post-split, mortalità per vecchiaia —
+# restano comunque attivi e invariati, indipendenti da questo interruttore.
 #
 # I predatori restano SEMPRE esclusi dall'esclusione (cioè sempre processati giornalmente,
 # indipendentemente dal loro livello LOD) — decisione presa nel profiling, la predazione pesa
@@ -159,12 +169,40 @@ func _run_lod_focus_refresh_checkpoint(world: World) -> void:
 # STA INIZIANDO oggi: si passa a valle la stagione PRECEDENTE (SeasonCalculator.get_previous_
 # season), la stessa convenzione già usata da _run_secondary_resource_stock_checkpoint, perché il
 # consumo aggregato rappresenta il pascolo della stagione appena conclusa, non di quella che parte.
-func _run_animal_consumption_aggregate_checkpoint(world: World, season: GameTypes.Season) -> void:
+# Ritorna un Dictionary vuoto se non c'è nulla da processare (nessun focus attivo), altrimenti
+# {"level_1_groups","previous_season","seasonal_ratios"} — passato a valle a
+# _run_animal_hunger_mortality_aggregate_checkpoint sotto (chiamata separata, per un timing
+# [LOD TIMING] distinto invece di sommarla silenziosamente a questo passo), che riusa lo STESSO
+# Dictionary[group_id -> seasonal_ratio] appena calcolato qui — mai ricalcolato da capo, mai un
+# ratio stock-based diverso.
+func _run_animal_consumption_aggregate_checkpoint(world: World, season: GameTypes.Season) -> Dictionary:
 	if world.lod_focus_state.is_empty():
-		return
+		return {}
 	var level_1_groups: Array = world.lod_focus_state["level_1_groups"]
 	var previous_season := SeasonCalculator.get_previous_season(season)
-	AnimalConsumptionAggregateService.new().apply_seasonal_consumption(world, level_1_groups, previous_season)
+	var seasonal_ratios := AnimalConsumptionAggregateService.new().apply_seasonal_consumption(
+		world, level_1_groups, previous_season
+	)
+	return {
+		"level_1_groups": level_1_groups,
+		"previous_season": previous_season,
+		"seasonal_ratios": seasonal_ratios,
+	}
+
+
+# Passo separato (vedi nota sopra) SOLO per dare a AnimalHungerMortalityAggregateService un
+# proprio timing in [LOD TIMING] — no-op se consumption_result è vuoto (nessun focus attivo, vedi
+# sopra). Disattivabile per intero via AnimalHungerMortalityAggregateService.ENABLED se il
+# meccanismo non convince, senza toccare questa pipeline.
+func _run_animal_hunger_mortality_aggregate_checkpoint(world: World, consumption_result: Dictionary) -> void:
+	if consumption_result.is_empty():
+		return
+	AnimalHungerMortalityAggregateService.new().apply_seasonal_hunger_mortality(
+		world,
+		consumption_result["level_1_groups"],
+		consumption_result["previous_season"],
+		consumption_result["seasonal_ratios"]
+	)
 
 # Debug/emergency fast-forward (the "+1" button): advances a full 365 days one at a time (via
 # advance_day) so every seasonal checkpoint crossed along the way still runs, in chronological
@@ -234,9 +272,15 @@ func _run_seasonal_checkpoints(world: World, game_data: GameData, year_rolled_ov
 			# come farebbe con il consumo giornaliero di Livello 2. No-op per costruzione se
 			# World.lod_focus_state è vuoto (vista mondo, nessun focus attivo) — vedi guard nel
 			# metodo sotto. AnimalConsumptionService (Livello 2/debug) resta invariato, mai toccato.
-			_run_timed(
+			var consumption_result: Dictionary = _run_timed_returning(
 				"animal_consumption_aggregate_checkpoint",
-				func(): _run_animal_consumption_aggregate_checkpoint(world, season)
+				func(): return _run_animal_consumption_aggregate_checkpoint(world, season)
+			)
+			# Mortalità da fame aggregata (AnimalHungerMortalityAggregateService), timing separato
+			# dal consumo sopra — vedi doc comment del metodo per il perché.
+			_run_timed(
+				"animal_hunger_mortality_aggregate_checkpoint",
+				func(): _run_animal_hunger_mortality_aggregate_checkpoint(world, consumption_result)
 			)
 			_run_timed("natural_events_checkpoint", func(): _run_natural_events_checkpoint(world, game_data, season))
 			# Step 8 del refactoring fauna: territorio ed espansione/contrazione girano nello
@@ -245,7 +289,10 @@ func _run_seasonal_checkpoints(world: World, game_data: GameData, year_rolled_ov
 			# definizione di scarsità (vedi TerritoryDynamicsService), quindi la mitigazione non è
 			# più un checkpoint a sé: è orchestrata da TerritoryDynamicsService stesso, DOPO
 			# l'eventuale aggiustamento del territorio, mai prima.
-			_run_timed("territory_dynamics_checkpoint", func(): _run_territory_dynamics_checkpoint(world, season))
+			_run_timed(
+				"territory_dynamics_checkpoint",
+				func(): _run_territory_dynamics_checkpoint(world, season, game_data.year)
+			)
 			_run_timed("animal_territory_shuffle_checkpoint", func(): _run_animal_territory_shuffle_checkpoint(world, season))
 			checkpoint_ran = true
 
@@ -318,6 +365,20 @@ func _run_timed(label: String, action: Callable) -> void:
 	if DebugLogging.ENABLED:
 		pass
 		#print("[TIMING] %s: %.2f ms" % [label, elapsed_ms])
+
+
+# Variante di _run_timed sopra che propaga il valore di ritorno di `action` al chiamante — GDScript
+# cattura le variabili locali dei lambda PER VALORE (un'assegnazione a una variabile esterna
+# dentro un lambda non si propaga fuori), quindi un pattern "func(): outer_var = ..." passato a
+# _run_timed non funzionerebbe per portare un risultato fuori dal timing. Usata da
+# _run_animal_consumption_aggregate_checkpoint sotto, che deve passare il proprio risultato al
+# checkpoint di mortalità da fame successivo mantenendo comunque un timing separato per entrambi.
+func _run_timed_returning(label: String, action: Callable) -> Variant:
+	var start_usec := Time.get_ticks_usec()
+	var result = action.call()
+	var elapsed_ms: float = (Time.get_ticks_usec() - start_usec) / 1000.0
+	_checkpoint_timings_ms[label] = float(_checkpoint_timings_ms.get(label, 0.0)) + elapsed_ms
+	return result
 
 
 func _run_animal_lifecycle_checkpoint(world: World, season: GameTypes.Season) -> void:
@@ -399,8 +460,17 @@ func _run_mortality_checkpoint(world: World) -> void:
 # in quest'ordine, sullo stesso ratio calorico condiviso (vedi TerritoryDynamicsService). Il
 # moltiplicatore risultante resta memorizzato sul gruppo fino al checkpoint di nascita già
 # esistente, a fine birth_season.
-func _run_territory_dynamics_checkpoint(world: World, season: GameTypes.Season) -> void:
-	TerritoryDynamicsService.new().update_territories_and_mitigation(world, season)
+func _run_territory_dynamics_checkpoint(world: World, season: GameTypes.Season, current_year: int) -> void:
+	TerritoryDynamicsService.new().update_territories_and_mitigation(world, season, current_year)
+
+
+# Driver giornaliero dello spalmamento Livello 1 (TerritoryDynamicsService.STAGGER_LEVEL_1_ENABLED
+# — vedi lì per il design completo): gira OGNI giorno, non solo ai confini di stagione, esattamente
+# come _run_daily_animal_consumption/_run_daily_predation/_run_daily_animal_hunger sopra. No-op
+# immediato dentro TerritoryDynamicsService.process_daily_stagger se l'interruttore è a false o se
+# nessun focus LOD è attivo — nessun guard duplicato qui, un solo punto di verità.
+func _run_daily_territory_dynamics_stagger(world: World, game_data: GameData) -> void:
+	TerritoryDynamicsService.new().process_daily_stagger(world, game_data)
 
 
 func _run_migration_checkpoint(world: World, game_data: GameData) -> void:

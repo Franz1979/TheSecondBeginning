@@ -61,6 +61,17 @@ const DENSITY_MULTIPLIER_MID_SLOW := 0.3   # base_birth_rate < soglia E populati
 const DENSITY_SMALL_POPULATION_THRESHOLD := 12   # valore di partenza, da tarare osservando i test
 const DENSITY_MULTIPLIER_MID_SLOW_SMALL := 0.5
 
+# Interruttore DEDICATO (non DebugLogging, che per contratto non deve mai cambiare comportamento
+# di simulazione) per lo spalmamento su più giorni del lavoro Livello 1 (vedi
+# update_territories_and_mitigation/process_daily_stagger sotto). A false: comportamento
+# IDENTICO a prima di questa modifica — un solo checkpoint annuale, tutti i gruppi con
+# rules.birth_season == season elaborati in un colpo solo, process_daily_stagger sempre no-op,
+# nessun marcatore letto (group.territory_dynamics_processed_year resta ignorato anche se
+# valorizzato da un giro precedente con l'interruttore a true). Pensato per essere spento in
+# qualunque momento senza lasciare stato incoerente: la sola differenza col codice pre-modifica è
+# un confronto in più, sempre falso quando qui sotto è false.
+const STAGGER_LEVEL_1_ENABLED := true
+
 # Espansione/contrazione del territorio di ogni PopulationGroup (Step 8 del refactoring fauna) —
 # gira nello STESSO checkpoint di inizio birth_season di ciascuna specie in cui gira già
 # AnimalBirthMitigationService, perché i due condividono la stessa identica definizione di
@@ -85,7 +96,21 @@ const DENSITY_MULTIPLIER_MID_SLOW_SMALL := 0.5
 # TerritoryBuilderService.expand_by_one_cell (vedi _collect_species_occupied_cells lì) — specie
 # diverse restano libere di sovrapporsi (competizione per risorse quando coesistono, mai per
 # "diritto territoriale"), nessun TerritoryManager cross-specie ancora.
-func update_territories_and_mitigation(world: World, season: GameTypes.Season) -> void:
+#
+# SPALMAMENTO (STAGGER_LEVEL_1_ENABLED, vedi costante sopra): questo checkpoint stagionale resta
+# il punto di ingresso principale, ma ora funge anche da RETE DI SICUREZZA — elabora solo i gruppi
+# NON ancora marcati come già processati quest'anno (group.territory_dynamics_processed_year !=
+# current_year). Con lo spalmamento attivo, la maggior parte dei gruppi Livello 1 arriva qui già
+# marcata (elaborata giorno per giorno da process_daily_stagger sotto, durante l'intera finestra
+# stagionale precedente) — questo checkpoint quindi rielabora solo: i gruppi Livello 2 (mai
+# toccati dal driver giornaliero, sempre pochi), i gruppi nati da split con turno-hash già passato
+# nella finestra corrente, e i gruppi che hanno cambiato Livello 1<->2 a metà finestra troppo tardi
+# per essere presi dal driver giornaliero (vedi discussione di design — nessuna delle due
+# situazioni richiede una regola a parte, la rete di sicurezza le copre entrambe per costruzione).
+# Con lo spalmamento disattivato, `current_year` è ignorato (nessun gruppo risulta mai marcato per
+# l'anno in corso da process_daily_stagger, che è sempre no-op) e questo checkpoint elabora TUTTI
+# i gruppi in un colpo solo, esattamente come il codice originale.
+func update_territories_and_mitigation(world: World, season: GameTypes.Season, current_year: int) -> void:
 	var mitigation_service := AnimalBirthMitigationService.new()
 
 	for group in world.population_groups:
@@ -94,122 +119,244 @@ func update_territories_and_mitigation(world: World, season: GameTypes.Season) -
 		var rules := AnimalCalculator.get_animal_rules(group.species_name)
 		if rules == null or rules.birth_season != season:
 			continue
-
-		# Countdown di recovery post-scissione (Step 10, vedi
-		# PopulationGroup.years_since_last_split/_get_post_split_multiplier sotto): incrementato
-		# QUI, PRIMA dell'eventuale scissione di quest'anno stesso (_update_group_territory sotto,
-		# via PopulationSplitService) — se il gruppo scinde proprio in questo checkpoint, il
-		# gruppo di ORIGINE viene riazzerato a 0 SUBITO DOPO, scartando l'incremento di qui sopra:
-		# il moltiplicatore calcolato più avanti in questo stesso checkpoint riflette quindi
-		# correttamente "anno 0, appena scisso" e non "anno 1". Sentinella -1 = mai scisso (mai
-		# incrementata): nessuna specie/gruppo esclusa esplicitamente, si autoesclude per
-		# costruzione finché non genera un primo split.
-		if group.years_since_last_split >= 0:
-			group.years_since_last_split += 1
-
-		# Il ratio calorico è age-weighted (AnimalBirthMitigationService._get_seasonal_requirement):
-		# per una specie senza track_age_bands, age_composition resta sempre vuota, quindi il
-		# fabbisogno stagionale risulterebbe sempre 0 e il ratio un falso "0.0 = carestia
-		# permanente". Nessuna specie erbivora oggi è in questo caso (tutte hanno
-		# track_age_bands=true): il criterio calorico resta comunque disattivato (ratio neutro 1.0,
-		# nessuna pressione) finché capitasse, il criterio di densità resta invece pienamente
-		# specie-agnostico e valido in ogni caso.
-		#
-		# caloric_criterion_applicable esclude i PredatorRules (wolf) SOLO ai fini del criterio di
-		# espansione/contrazione territoriale sotto (_update_group_territory, tramite initial_ratio):
-		# quel calcolo legge rules.diet_compatibility (AnimalBirthMitigationService.
-		# _get_available_stock), vuoto per design su un predatore puro — non "nessun dato ancora",
-		# ma strutturalmente sempre vuoto. Senza questa esclusione il ratio lì risulterebbe sempre
-		# 0.0 ("carestia permanente"), con needs_expansion_caloric sempre vero che, con
-		# min_territory_cells == max_territory_cells (territorio statico, vedi PredatorRules.gd),
-		# fa fallire l'espansione ogni checkpoint e attiva uno split spurio ogni anno, indipendente
-		# dalla resa di caccia reale. Il criterio di densità (sotto, _get_density_multiplier/
-		# needs_expansion_density) resta invece attivo e specie-agnostico come per gli erbivori —
-		# solo la componente calorica del criterio di ESPANSIONE resta neutralizzata. Placeholder
-		# fino a quando un vero criterio di espansione/contrazione per predatori (legato alla resa
-		# di caccia di PredationService, non ancora progettato) non lo sostituirà.
-		#
-		# La mitigazione della NATALITÀ (final_ratio_data sotto) è invece un calcolo SEPARATO, non
-		# più neutro per i predatori: usa AnimalBirthMitigationService.compute_predator_caloric_ratio
-		# (consuntivo di caccia reale accumulato da PredationService, vedi PopulationGroup.
-		# predation_season_calories_obtained/_required) invece dello stock territoriale stimato.
-		var caloric_criterion_applicable: bool = rules.track_age_bands and not (rules is PredatorRules)
-		var initial_ratio_data: Dictionary = {"stock": 0.0, "requirement": 0.0, "ratio": 1.0}
-		if caloric_criterion_applicable:
-			initial_ratio_data = mitigation_service.compute_caloric_ratio(world, group, rules, season)
-		var initial_ratio: float = initial_ratio_data["ratio"]
-
-		var territory_result: Dictionary = {}
-		if group.territory != null:
-			territory_result = _update_group_territory(world, group, rules, initial_ratio)
-
-		if not rules.track_age_bands:
+		if STAGGER_LEVEL_1_ENABLED and group.territory_dynamics_processed_year == current_year:
 			continue
+		_process_group(world, group, rules, season, mitigation_service, current_year)
 
-		var final_ratio_data: Dictionary = {"stock": 0.0, "requirement": 0.0, "ratio": 1.0}
-		if rules is PredatorRules:
-			final_ratio_data = mitigation_service.compute_predator_caloric_ratio(group)
-			# Consuntivo letto: azzerato per il ciclo successivo (dal checkpoint di oggi al
-			# prossimo, non l'anno di calendario) — stesso principio di
-			# PopulationGroup.yearly_prey_totals, che si azzera da solo al cambio anno.
-			group.predation_season_calories_obtained = 0.0
-			group.predation_season_calories_required = 0.0
-		elif caloric_criterion_applicable:
-			final_ratio_data = mitigation_service.compute_caloric_ratio(world, group, rules, season)
-		var final_ratio: float = final_ratio_data["ratio"]
+	_print_and_clear_split_summary(world, season)
 
-		# Densità sul territorio DEFINITIVO di quest'anno (dopo _update_group_territory sopra),
-		# mai su quello pre-aggiustamento — stesso principio già usato per final_ratio.
-		var cell_count_final: int = group.territory.get_cell_count() if group.territory != null else 0
-		var density_data := _get_density_multiplier(
-			group.population, cell_count_final, rules.max_density_per_cell, rules.base_birth_rate
-		)
-		var post_split_multiplier := _get_post_split_multiplier(group, rules)
 
-		# log_enabled=false qui: per le specie con min_territory_cells > 1 il log dedicato sotto
-		# mostra già ratio_finale/stock/fabbisogno (e ora anche moltiplicatore_post_split/
-		# anni_da_split) — aggiungere anche il moltiplicatore lì evita di stampare due righe con
-		# la stessa informazione (vedi apply_mitigation_multiplier). Filtro erbivori/predatori:
-		# vedi DebugLogging.SHOW_HERBIVORE_LIFECYCLE_LOGS.
-		var show_lifecycle_log: bool = rules is PredatorRules or DebugLogging.SHOW_HERBIVORE_LIFECYCLE_LOGS
-		var multiplier_data := mitigation_service.apply_mitigation_multiplier(
-			group, final_ratio, density_data["multiplier"], density_data["ratio"],
-			post_split_multiplier, rules.min_territory_cells <= 1 and show_lifecycle_log
-		)
-		# Solo per il log di AnimalBirthService a fine stagione (vedi PopulationGroup.
-		# birth_mitigation_caloric_ratio) — final_ratio grezzo, non clamped_ratio: il valore
-		# "come è andata davvero", non quello già tagliato per la curva.
-		group.birth_mitigation_caloric_ratio = final_ratio
+# Driver giornaliero (spalmamento Livello 1) — chiamato OGNI giorno da WorldTimeService.
+# advance_day (mai solo ai confini di stagione, a differenza del checkpoint sopra). No-op
+# immediato se STAGGER_LEVEL_1_ENABLED è false (fallback completo, vedi costante) o se nessun
+# focus LOD è attivo (world.lod_focus_state vuoto = vista mondo, nessuna lista Livello 1 da cui
+# pescare — stesso sentinel già usato ovunque per questo campo).
+#
+# Per ogni gruppo Livello 1 (world.lod_focus_state["level_1_groups"]): calcola il proprio
+# "giorno di turno" deterministico (_get_turn_day, hash(id) modulo la finestra della stagione
+# PRECEDENTE al proprio birth_season) e, se oggi è quel giorno e il gruppo non è già marcato come
+# elaborato quest'anno, lo elabora SUBITO (mai in una cache per applicazione differita — stesso
+# principio già stabilito in altre parti della pipeline: applicare quando si decide, non
+# accumulare per dopo). `real_season` è la stagione REALE di oggi (quasi sempre la stagione
+# PRECEDENTE al birth_season del gruppo, es. WINTER per un gruppo con birth_season=SPRING) — mai
+# rules.birth_season: compute_caloric_ratio usa la stagione passata per il moltiplicatore di
+# disponibilità stagionale del foraggio (CaloricCalculator), che deve riflettere la stagione VERA
+# di oggi, non quella target del checkpoint di fine finestra.
+func process_daily_stagger(world: World, game_data: GameData) -> void:
+	if not STAGGER_LEVEL_1_ENABLED:
+		return
+	if world.lod_focus_state.is_empty():
+		return
 
-		if DebugLogging.ENABLED and rules.min_territory_cells > 1 and not territory_result.is_empty() and show_lifecycle_log:
-			var years_display: String = (
-				"mai scisso" if group.years_since_last_split < 0 else str(group.years_since_last_split)
+	var mitigation_service := AnimalBirthMitigationService.new()
+	var real_season := SeasonCalculator.get_season_for_day(game_data.current_day)
+
+	for group in world.lod_focus_state["level_1_groups"]:
+		if group.population <= 0:
+			continue
+		if group.territory_dynamics_processed_year == game_data.year:
+			continue
+		var rules := AnimalCalculator.get_animal_rules(group.species_name)
+		if rules == null:
+			continue
+		if _get_turn_day(group.id, rules) != game_data.current_day:
+			continue
+		_process_group(world, group, rules, real_season, mitigation_service, game_data.year)
+
+
+# Giorno fisso (0-indicizzato, assoluto nell'anno) assegnato a un gruppo all'interno della
+# finestra della stagione PRECEDENTE al proprio birth_season — deterministico e stabile finché
+# group_id non cambia (mai, per costruzione), nessuno stato aggiuntivo da persistere per
+# ricalcolarlo. Caso noto non gestito: una specie con birth_season==WINTER avrebbe una finestra
+# precedente (AUTUMN) che attraversa il cambio di GameData.year — nessuna specie lo dichiara oggi
+# (vedi commento "Nessun'altra logica gira ancora a fine inverno" in WorldTimeService), quindi
+# resta un caso latente, non un bug attivo.
+func _get_turn_day(group_id: int, rules: AnimalRules) -> int:
+	var previous_season := SeasonCalculator.get_previous_season(rules.birth_season)
+	var window := SeasonCalculator.get_season_day_range(previous_season)
+	# absi(): hash() non garantisce un risultato non-negativo, e l'operatore % di GDScript su un
+	# dividendo negativo restituisce un resto negativo (semantica stile C) — senza absi() qui
+	# turn_day potrebbe cadere fuori dall'intervallo [window.x, window.x + window.y).
+	return window.x + (absi(hash(group_id)) % window.y)
+
+
+# Corpo per-gruppo, riusato sia dal checkpoint stagionale (update_territories_and_mitigation)
+# sia dal driver giornaliero (process_daily_stagger) — stessa logica esatta indipendentemente da
+# CHI la chiama e QUANDO, solo `real_season` cambia (vedi process_daily_stagger sopra per il
+# perché). `current_year` marca group.territory_dynamics_processed_year alla fine, solo se lo
+# spalmamento è attivo (nessuno stato meaningful da scrivere quando è disattivato — la rete di
+# sicurezza in quel caso non legge mai questo campo).
+func _process_group(
+	world: World, group: PopulationGroup, rules: AnimalRules, real_season: GameTypes.Season,
+	mitigation_service: AnimalBirthMitigationService, current_year: int
+) -> void:
+	# Countdown di recovery post-scissione (Step 10, vedi
+	# PopulationGroup.years_since_last_split/_get_post_split_multiplier sotto): incrementato
+	# QUI, PRIMA dell'eventuale scissione di quest'anno stesso (_update_group_territory sotto,
+	# via PopulationSplitService) — se il gruppo scinde proprio in questo checkpoint, il
+	# gruppo di ORIGINE viene riazzerato a 0 SUBITO DOPO, scartando l'incremento di qui sopra:
+	# il moltiplicatore calcolato più avanti in questo stesso checkpoint riflette quindi
+	# correttamente "anno 0, appena scisso" e non "anno 1". Sentinella -1 = mai scisso (mai
+	# incrementata): nessuna specie/gruppo esclusa esplicitamente, si autoesclude per
+	# costruzione finché non genera un primo split.
+	if group.years_since_last_split >= 0:
+		group.years_since_last_split += 1
+
+	# Il ratio calorico è age-weighted (AnimalBirthMitigationService._get_seasonal_requirement):
+	# per una specie senza track_age_bands, age_composition resta sempre vuota, quindi il
+	# fabbisogno stagionale risulterebbe sempre 0 e il ratio un falso "0.0 = carestia
+	# permanente". Nessuna specie erbivora oggi è in questo caso (tutte hanno
+	# track_age_bands=true): il criterio calorico resta comunque disattivato (ratio neutro 1.0,
+	# nessuna pressione) finché capitasse, il criterio di densità resta invece pienamente
+	# specie-agnostico e valido in ogni caso.
+	#
+	# caloric_criterion_applicable esclude i PredatorRules (wolf) SOLO ai fini del criterio di
+	# espansione/contrazione territoriale sotto (_update_group_territory, tramite initial_ratio):
+	# quel calcolo legge rules.diet_compatibility (AnimalBirthMitigationService.
+	# _get_available_stock), vuoto per design su un predatore puro — non "nessun dato ancora",
+	# ma strutturalmente sempre vuoto. Senza questa esclusione il ratio lì risulterebbe sempre
+	# 0.0 ("carestia permanente"), con needs_expansion_caloric sempre vero che, con
+	# min_territory_cells == max_territory_cells (territorio statico, vedi PredatorRules.gd),
+	# fa fallire l'espansione ogni checkpoint e attiva uno split spurio ogni anno, indipendente
+	# dalla resa di caccia reale. Il criterio di densità (sotto, _get_density_multiplier/
+	# needs_expansion_density) resta invece attivo e specie-agnostico come per gli erbivori —
+	# solo la componente calorica del criterio di ESPANSIONE resta neutralizzata. Placeholder
+	# fino a quando un vero criterio di espansione/contrazione per predatori (legato alla resa
+	# di caccia di PredationService, non ancora progettato) non lo sostituirà.
+	#
+	# La mitigazione della NATALITÀ (final_ratio_data sotto) è invece un calcolo SEPARATO, non
+	# più neutro per i predatori: usa AnimalBirthMitigationService.compute_predator_caloric_ratio
+	# (consuntivo di caccia reale accumulato da PredationService, vedi PopulationGroup.
+	# predation_season_calories_obtained/_required) invece dello stock territoriale stimato.
+	var caloric_criterion_applicable: bool = rules.track_age_bands and not (rules is PredatorRules)
+	var initial_ratio_data: Dictionary = {"stock": 0.0, "requirement": 0.0, "ratio": 1.0}
+	if caloric_criterion_applicable:
+		initial_ratio_data = mitigation_service.compute_caloric_ratio(world, group, rules, real_season)
+	var initial_ratio: float = initial_ratio_data["ratio"]
+
+	var territory_result: Dictionary = {}
+	if group.territory != null:
+		territory_result = _update_group_territory(world, group, rules, initial_ratio)
+		if territory_result.get("split_happened", false):
+			# Accumulatore su World (non locale): con lo spalmamento attivo questa funzione viene
+			# chiamata su giorni diversi per gruppi diversi della stessa finestra, quindi il
+			# riepilogo per specie deve sopravvivere tra una chiamata e l'altra fino al checkpoint
+			# di fine finestra — vedi World.territory_dynamics_split_counts e
+			# _print_and_clear_split_summary sotto. density/caloric/minimum NON sono mutuamente
+			# esclusivi (_update_group_territory può avere più criteri veri contemporaneamente per
+			# lo stesso split) — la somma dei tre può superare "total" per una specie, non è un
+			# errore di conteggio.
+			var counts: Dictionary = world.territory_dynamics_split_counts.get(
+				group.species_name, {"total": 0, "density": 0, "caloric": 0, "minimum": 0}
 			)
+			counts["total"] = int(counts["total"]) + 1
+			if territory_result["needs_expansion_density"]:
+				counts["density"] = int(counts["density"]) + 1
+			if territory_result["needs_expansion_caloric"]:
+				counts["caloric"] = int(counts["caloric"]) + 1
+			if territory_result["needs_expansion_minimum"]:
+				counts["minimum"] = int(counts["minimum"]) + 1
+			world.territory_dynamics_split_counts[group.species_name] = counts
+
+	if STAGGER_LEVEL_1_ENABLED:
+		group.territory_dynamics_processed_year = current_year
+
+	if not rules.track_age_bands:
+		return
+
+	var final_ratio_data: Dictionary = {"stock": 0.0, "requirement": 0.0, "ratio": 1.0}
+	if rules is PredatorRules:
+		final_ratio_data = mitigation_service.compute_predator_caloric_ratio(group)
+		# Consuntivo letto: azzerato per il ciclo successivo (dal checkpoint di oggi al
+		# prossimo, non l'anno di calendario) — stesso principio di
+		# PopulationGroup.yearly_prey_totals, che si azzera da solo al cambio anno.
+		group.predation_season_calories_obtained = 0.0
+		group.predation_season_calories_required = 0.0
+	elif caloric_criterion_applicable:
+		final_ratio_data = mitigation_service.compute_caloric_ratio(world, group, rules, real_season)
+	var final_ratio: float = final_ratio_data["ratio"]
+
+	# Densità sul territorio DEFINITIVO di quest'anno (dopo _update_group_territory sopra),
+	# mai su quello pre-aggiustamento — stesso principio già usato per final_ratio.
+	var cell_count_final: int = group.territory.get_cell_count() if group.territory != null else 0
+	var density_data := _get_density_multiplier(
+		group.population, cell_count_final, rules.max_density_per_cell, rules.base_birth_rate
+	)
+	var post_split_multiplier := _get_post_split_multiplier(group, rules)
+
+	# log_enabled=false qui: per le specie con min_territory_cells > 1 il log dedicato sotto
+	# mostra già ratio_finale/stock/fabbisogno (e ora anche moltiplicatore_post_split/
+	# anni_da_split) — aggiungere anche il moltiplicatore lì evita di stampare due righe con
+	# la stessa informazione (vedi apply_mitigation_multiplier). Filtro erbivori/predatori:
+	# vedi DebugLogging.SHOW_HERBIVORE_LIFECYCLE_LOGS.
+	var show_lifecycle_log: bool = (
+		DebugLogging.SHOW_PREDATOR_TERRITORY_DYNAMICS_LOGS if rules is PredatorRules
+		else DebugLogging.SHOW_HERBIVORE_LIFECYCLE_LOGS
+	)
+	var multiplier_data := mitigation_service.apply_mitigation_multiplier(
+		group, final_ratio, density_data["multiplier"], density_data["ratio"],
+		post_split_multiplier, rules.min_territory_cells <= 1 and show_lifecycle_log
+	)
+	# Solo per il log di AnimalBirthService a fine stagione (vedi PopulationGroup.
+	# birth_mitigation_caloric_ratio) — final_ratio grezzo, non clamped_ratio: il valore
+	# "come è andata davvero", non quello già tagliato per la curva.
+	group.birth_mitigation_caloric_ratio = final_ratio
+
+	if DebugLogging.ENABLED and rules.min_territory_cells > 1 and not territory_result.is_empty() and show_lifecycle_log:
+		var years_display: String = (
+			"mai scisso" if group.years_since_last_split < 0 else str(group.years_since_last_split)
+		)
+		print(
+			(
+				"[TERRITORY DYNAMICS] #%d %s pop=%d celle=%d->%d "
+				+ "ratio_iniziale=%.3f (stock=%.1f fabbisogno=%.1f) "
+				+ "celle_da_densita=%d occupazione_media=%.2f soglia_contrazione=%.1f "
+				+ "azione=%s (%s) "
+				+ "ratio_finale=%.3f ratio_clampato=%.3f (stock=%.1f fabbisogno=%.1f) "
+				+ "moltiplicatore_calorico=%.3f occupazione_ratio=%.3f moltiplicatore_densita=%.3f "
+				+ "anni_da_split=%s moltiplicatore_post_split=%.3f "
+				+ "moltiplicatore_finale=%.3f"
+			) % [
+				group.id, group.species_name, group.population,
+				territory_result["cells_before"], territory_result["cells_after"],
+				initial_ratio, initial_ratio_data["stock"], initial_ratio_data["requirement"],
+				territory_result["density_cells_needed"],
+				territory_result["average_occupancy"], territory_result["contraction_threshold"],
+				territory_result["action"], territory_result["reason"],
+				final_ratio, multiplier_data["clamped_ratio"],
+				final_ratio_data["stock"], final_ratio_data["requirement"],
+				multiplier_data["caloric_multiplier"], density_data["ratio"], density_data["multiplier"],
+				years_display, post_split_multiplier,
+				multiplier_data["final_multiplier"]
+			]
+		)
+
+
+# Riepilogo split per motivazione — SEMPRE visibile (solo dietro il master switch
+# DebugLogging.ENABLED, non dietro SHOW_HERBIVORE_LIFECYCLE_LOGS come il log per-gruppo sopra,
+# che per le specie a 1 sola cella come rabbit/partridge non stampa MAI): senza questo, un'ondata
+# di centinaia di split per specie a territorio mono-cella resterebbe invisibile per intero.
+# Legge/azzera world.territory_dynamics_split_counts (vedi _process_group sopra) invece di un
+# accumulatore locale: con lo spalmamento attivo i contributi arrivano da chiamate sparse su ~90
+# giorni diversi, quindi l'accumulatore deve sopravvivere tra una chiamata e l'altra di questa
+# funzione — con lo spalmamento disattivato tutti i contributi arrivano comunque da un'unica
+# chiamata a update_territories_and_mitigation, quindi il comportamento osservabile (una riga di
+# riepilogo per specie, stampata una volta a checkpoint) resta identico a prima.
+func _print_and_clear_split_summary(world: World, season: GameTypes.Season) -> void:
+	var split_counts_by_species: Dictionary = world.territory_dynamics_split_counts
+	if DebugLogging.ENABLED and not split_counts_by_species.is_empty():
+		for species_name in split_counts_by_species.keys():
+			var counts: Dictionary = split_counts_by_species[species_name]
 			print(
 				(
-					"[TERRITORY DYNAMICS] #%d %s pop=%d celle=%d->%d "
-					+ "ratio_iniziale=%.3f (stock=%.1f fabbisogno=%.1f) "
-					+ "celle_da_densita=%d occupazione_media=%.2f soglia_contrazione=%.1f "
-					+ "azione=%s (%s) "
-					+ "ratio_finale=%.3f ratio_clampato=%.3f (stock=%.1f fabbisogno=%.1f) "
-					+ "moltiplicatore_calorico=%.3f occupazione_ratio=%.3f moltiplicatore_densita=%.3f "
-					+ "anni_da_split=%s moltiplicatore_post_split=%.3f "
-					+ "moltiplicatore_finale=%.3f"
+					"[TERRITORY DYNAMICS SPLIT SUMMARY] stagione=%s specie=%s split_totali=%d "
+					+ "per_densita=%d per_calorico=%d per_minimo=%d"
 				) % [
-					group.id, group.species_name, group.population,
-					territory_result["cells_before"], territory_result["cells_after"],
-					initial_ratio, initial_ratio_data["stock"], initial_ratio_data["requirement"],
-					territory_result["density_cells_needed"],
-					territory_result["average_occupancy"], territory_result["contraction_threshold"],
-					territory_result["action"], territory_result["reason"],
-					final_ratio, multiplier_data["clamped_ratio"],
-					final_ratio_data["stock"], final_ratio_data["requirement"],
-					multiplier_data["caloric_multiplier"], density_data["ratio"], density_data["multiplier"],
-					years_display, post_split_multiplier,
-					multiplier_data["final_multiplier"]
+					GameTypes.Season.keys()[season], species_name, counts["total"],
+					counts["density"], counts["caloric"], counts["minimum"]
 				]
 			)
-
+	world.territory_dynamics_split_counts = {}
 
 # Un solo controllo per gruppo: prima l'espansione (in OR tra tre criteri indipendenti — densità
 # etologica, vincolo calorico, territorio sotto il minimo di specie, vedi sotto), altrimenti la
@@ -261,6 +408,10 @@ func _update_group_territory(
 
 	var action := "nessun cambiamento"
 	var reason := "nessun criterio soddisfatto"
+	# Per il riepilogo aggregato del chiamante (update_territories_and_mitigation) — vedi il
+	# Dictionary di ritorno in fondo: true SOLO se lo split è stato TENTATO e RIUSCITO in questo
+	# checkpoint (mai per una semplice espansione riuscita, mai per un tentativo fallito).
+	var split_succeeded := false
 
 	if needs_expansion_density or needs_expansion_caloric or needs_expansion_minimum:
 		# Stessa cache di AnimalHungerService._attempt_expansion (vedi
@@ -369,6 +520,7 @@ func _update_group_territory(
 					action = "scissione di %d individui" % split_amount
 					reason += " -> scissione riuscita"
 					group.blocked_territory_search_version = -1
+					split_succeeded = true
 				else:
 					group.blocked_territory_search_version = current_release_version
 	elif needs_contraction:
@@ -398,6 +550,10 @@ func _update_group_territory(
 		"contraction_threshold": contraction_threshold,
 		"action": action,
 		"reason": reason,
+		"split_happened": split_succeeded,
+		"needs_expansion_density": needs_expansion_density,
+		"needs_expansion_caloric": needs_expansion_caloric,
+		"needs_expansion_minimum": needs_expansion_minimum,
 	}
 
 

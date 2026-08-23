@@ -19,21 +19,53 @@ const LAND_GROWABLE_TYPES := [
 
 
 func grow_fauna(world: World) -> void:
+	# Aggregato per resource_type (mai per cella — con centinaia di celle già popolate un log
+	# per-cella ogni anno satura l'output console esattamente come il seeding, vedi
+	# ParametricResourceSetupService): {"count","space_before_sum","space_after_sum",
+	# "quantity_after_sum"}. Nessuna suddivisione per water_type/terreno qui: la distribuzione
+	# geografica è già spiegata dal log di seeding, non serve ripeterla ogni anno.
+	var growth_by_type: Dictionary = {}
+
 	for cell in world.cells:
 		var state := world.get_cell_state_at(cell.x, cell.y)
 		if state == null:
 			continue
 
 		for resource_type in WATER_GROWABLE_TYPES:
-			_grow_water_resource_in_cell(cell, state, resource_type)
+			_grow_water_resource_in_cell(cell, state, resource_type, growth_by_type)
 		for resource_type in LAND_GROWABLE_TYPES:
-			_grow_land_resource_in_cell(cell, state, resource_type)
+			_grow_land_resource_in_cell(cell, state, resource_type, growth_by_type)
+
+	if DebugLogging.ENABLED and DebugLogging.SHOW_FAUNA_DIAGNOSTICS_LOGS:
+		for resource_type in growth_by_type.keys():
+			var g: Dictionary = growth_by_type[resource_type]
+			print(
+				"[FAUNA GROWTH SUMMARY] %s: celle_cresciute=%d spazio_totale %d->%d quantita_totale=%d" % [
+					GameTypes.WorldObjectType.keys()[resource_type], g["count"],
+					g["space_before_sum"], g["space_after_sum"], g["quantity_after_sum"]
+				]
+			)
+
+
+func _accumulate_growth(
+	growth_by_type: Dictionary, resource_type: GameTypes.WorldObjectType,
+	space_before: int, space_after: int, quantity_after: int
+) -> void:
+	var g: Dictionary = growth_by_type.get(
+		resource_type, {"count": 0, "space_before_sum": 0, "space_after_sum": 0, "quantity_after_sum": 0}
+	)
+	g["count"] = int(g["count"]) + 1
+	g["space_before_sum"] = int(g["space_before_sum"]) + space_before
+	g["space_after_sum"] = int(g["space_after_sum"]) + space_after
+	g["quantity_after_sum"] = int(g["quantity_after_sum"]) + quantity_after
+	growth_by_type[resource_type] = g
 
 
 func _grow_water_resource_in_cell(
 	cell: MacroCellData,
 	state: MacroCellState,
-	resource_type: GameTypes.WorldObjectType
+	resource_type: GameTypes.WorldObjectType,
+	growth_by_type: Dictionary
 ) -> void:
 	# Capacità sfruttabile (usable_capacity_ratio_*), non fisica: la crescita satura verso questo
 	# tetto ridotto, non verso TOTAL_SPACE/river_space — vedi
@@ -43,17 +75,6 @@ func _grow_water_resource_in_cell(
 		return
 
 	var current_space: int = state.get_water_space(resource_type)
-
-	if DebugLogging.ENABLED and cell.x == 57 and cell.y == 38:
-		var physical_capacity := ResourceCalculator.get_water_capacity_space(cell, state)
-		var fill_ratio: float = 0.0
-		if physical_capacity > 0:
-			fill_ratio = float(current_space) / float(physical_capacity)
-		print("[FAUNA GROWTH 57,38] %s: water_type=%s occupied=%d usable_capacity=%d physical_capacity=%d fill_ratio=%.3f" % [
-			GameTypes.WorldObjectType.keys()[resource_type], GameTypes.WaterType.keys()[cell.water_type],
-			current_space, capacity, physical_capacity, fill_ratio
-		])
-
 	if current_space <= 0:
 		return
 
@@ -75,6 +96,9 @@ func _grow_water_resource_in_cell(
 	state.set_water_space(resource_type, new_space)
 	state.set_resource_quantity(resource_type, new_quantity)
 
+	if DebugLogging.ENABLED and DebugLogging.SHOW_FAUNA_DIAGNOSTICS_LOGS:
+		_accumulate_growth(growth_by_type, resource_type, current_space, new_space, new_quantity)
+
 
 # Gemella di _grow_water_resource_in_cell sopra, sul budget terrestrial_dedicated_space invece
 # che water_dedicated_space: stessa identica formula di crescita logistica, solo le funzioni/
@@ -84,7 +108,8 @@ func _grow_water_resource_in_cell(
 func _grow_land_resource_in_cell(
 	cell: MacroCellData,
 	state: MacroCellState,
-	resource_type: GameTypes.WorldObjectType
+	resource_type: GameTypes.WorldObjectType,
+	growth_by_type: Dictionary
 ) -> void:
 	var capacity := ResourceCalculator.get_land_usable_capacity_space(resource_type, cell, state)
 	if capacity <= 0:
@@ -111,3 +136,6 @@ func _grow_land_resource_in_cell(
 
 	state.set_terrestrial_space(resource_type, new_space)
 	state.set_resource_quantity(resource_type, new_quantity)
+
+	if DebugLogging.ENABLED and DebugLogging.SHOW_FAUNA_DIAGNOSTICS_LOGS:
+		_accumulate_growth(growth_by_type, resource_type, current_space, new_space, new_quantity)

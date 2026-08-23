@@ -109,6 +109,44 @@ var hunger_buckets: Dictionary = {}
 # un'espansione territoriale. Non persistito nei save: ricalcolato ogni giorno da
 # AnimalConsumptionService prima che AnimalHungerService giri, stesso trattamento di
 # birth_mitigation_multiplier. Default 1.0 = nessuna penalità finché non è mai stato calcolato.
+# Debito di fame AGGREGATO (AnimalHungerMortalityAggregateService) — equivalente stagionale di
+# hunger_buckets sopra per le popolazioni Livello 1: un unico scalare ("giorni-deficit
+# equivalenti" accumulati), non un istogramma per individuo, perché a Livello 1 esiste solo un
+# seasonal_ratio per stagione, non uno storico giorno per giorno. Cresce quando il ratio stagionale
+# di AnimalConsumptionAggregateService è sotto 1.0, scende (mai sotto 0) quando è sopra — stesso
+# principio di accumulo/decadimento già usato per active_growth_bonuses lato vegetazione. Storia
+# reale accumulata, non ricalcolabile da un checkpoint: persistito in GameSaveService/
+# GameLoadService, stesso trattamento di hunger_buckets. Non toccato dal meccanismo giornaliero
+# (AnimalHungerService) — i due orologi restano indipendenti, stesso principio già usato per
+# hunger_split_cooldown_days sopra.
+var hunger_debt_days: float = 0.0
+
+# Marcatore "già elaborato dal checkpoint territoriale in questo ciclo" (TerritoryDynamicsService,
+# spalmamento su più giorni — STAGGER_LEVEL_1_ENABLED). -1 = mai elaborato ancora. Altrimenti
+# memorizza GameData.year nel momento in cui il gruppo è stato elaborato (dal turno giornaliero
+# Livello 1 O dal checkpoint stagionale stesso, entrambi lo impostano) — confrontato con l'anno
+# CORRENTE al checkpoint stagionale per decidere se un gruppo va ancora elaborato o è già stato
+# gestito prima, in un giorno qualunque della finestra precedente, mentre era Livello 1. Risolve
+# per costruzione (non con regole speciali separate) sia il caso "gruppo nato da split con turno-
+# hash già passato nella finestra corrente" sia il caso "gruppo cambia Livello 1<->2 a metà
+# finestra per apertura/chiusura di una macrocella da parte del giocatore" (vedi discussione di
+# design): il checkpoint stagionale, che gira comunque su TUTTI i gruppi con
+# rules.birth_season==season indipendentemente dal loro livello attuale, salta solo chi risulta già
+# marcato per l'anno corrente — chi non lo è (per qualunque motivo: mai stato Livello 1 abbastanza
+# a lungo, appena nato, o classificazione LOD cambiata troppo tardi) viene comunque elaborato lì,
+# esattamente come si comporterebbe il codice con lo spalmamento disattivato. Caso noto non
+# risolto (innocuo oggi): una specie con birth_season==WINTER avrebbe una finestra precedente
+# (AUTUMN) che attraversa il cambio di GameData.year — nessuna specie lo dichiara oggi, vedi
+# TerritoryDynamicsService. Non persistito nei save: se si salva/carica a metà di una finestra
+# spalmata, un gruppo già elaborato dal proprio turno giornaliero PRIMA del salvataggio perde il
+# marcatore al caricamento e rischia una rielaborazione DOPPIA per lo stesso anno al checkpoint
+# stagionale (years_since_last_split incrementato due volte, un secondo tentativo di espansione/
+# split) — mai un gruppo saltato, mai una corruzione di stato, ma nemmeno "senza conseguenze": un
+# compromesso deliberato (stesso principio di blocked_territory_search_version, dato di
+# ottimizzazione non storia reale) accettabile perché il caso — salvataggio proprio a metà di una
+# finestra, su un gruppo proprio già elaborato — è raro e l'effetto si auto-corregge l'anno dopo.
+var territory_dynamics_processed_year: int = -1
+
 var daily_caloric_ratio: float = 1.0
 # Numeri grezzi dietro daily_caloric_ratio sopra (calorie consumate oggi / calorie di fabbisogno
 # oggi, stessa aggregazione su tutto il territorio) — esposti separatamente così il log di

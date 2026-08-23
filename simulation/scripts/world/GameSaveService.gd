@@ -93,7 +93,9 @@ func save_game_to_json(
 		# yearly_prey_totals (tab Fauna 3, UI — vedi PopulationGroup) sono contenuto informativo
 		# reale mostrato al giocatore, non una cache di ottimizzazione: perderli al caricamento
 		# sarebbe una regressione visibile (lista "ultimi 5 giorni" vuota anche dopo anni di
-		# caccia), quindi salvati per intero come gli altri campi storici sopra.
+		# caccia), quindi salvati per intero come gli altri campi storici sopra. hunger_debt_days
+		# (AnimalHungerMortalityAggregateService) è l'equivalente Livello 1 di hunger_buckets,
+		# stesso principio.
 		data["world"]["population_groups"].append({
 			"id": group.id,
 			"species_name": group.species_name,
@@ -111,6 +113,7 @@ func save_game_to_json(
 			"predation_surplus_carryover": group.predation_surplus_carryover,
 			"predation_season_calories_obtained": group.predation_season_calories_obtained,
 			"predation_season_calories_required": group.predation_season_calories_required,
+			"hunger_debt_days": group.hunger_debt_days,
 			"recent_hunt_log": group.recent_hunt_log,
 			"yearly_prey_totals": group.yearly_prey_totals,
 			"yearly_prey_totals_year": group.yearly_prey_totals_year

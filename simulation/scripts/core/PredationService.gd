@@ -69,7 +69,7 @@ func _process_group(world: World, group: PopulationGroup, rules: PredatorRules, 
 	# incondizionato (non solo sui giorni "eventful"): a differenza della fame erbivora, qui il
 	# meccanismo è nuovo e ancora da validare in gioco, quindi ogni giorno processato per un
 	# gruppo predatore produce una riga, silenzio compreso.
-	if DebugLogging.ENABLED:
+	if DebugLogging.ENABLED and DebugLogging.SHOW_PREDATION_DAILY_LOGS:
 		# Finestra di caccia di OGGI (group.patrol_route[patrol_index], la stessa che
 		# _run_hunting_attempts leggerà più sotto se la caccia parte) — loggata qui, PRIMA di
 		# PredatorPatrolService.advance_patrol a fine funzione, così riflette sempre dove il branco
@@ -121,7 +121,7 @@ func _process_group(world: World, group: PopulationGroup, rules: PredatorRules, 
 		# questo step usa esplicitamente round(), scelta rispettata senza sostituzioni silenziose).
 		var attempts_efficiency: float = min(pack_efficiency, rules.max_pack_hunting_efficiency)
 		var attempt_count: int = int(round(attempts_efficiency / rules.attempts_per_efficiency))
-		if DebugLogging.ENABLED:
+		if DebugLogging.ENABLED and DebugLogging.SHOW_PREDATION_DAILY_LOGS:
 			print(
 				"[PREDATION] #%d efficacia_branco_grezza=%.2f efficacia_tentativi(cappata)=%.2f tentativi_totali=%d" % [
 					group.id, pack_efficiency, attempts_efficiency, attempt_count
@@ -132,11 +132,11 @@ func _process_group(world: World, group: PopulationGroup, rules: PredatorRules, 
 				world, group, rules, pack_efficiency, attempt_count,
 				daily_requirement_today, residual_requirement, captures_today
 			)
-		elif DebugLogging.ENABLED:
+		elif DebugLogging.ENABLED and DebugLogging.SHOW_PREDATION_DAILY_LOGS:
 			print("[PREDATION] #%d branco troppo debole per cacciare oggi (tentativi_totali=0)" % group.id)
 		# Se attempt_count == 0 ("branco troppo debole"): nessuna caccia, calories_obtained_today
 		# resta 0.0 — stessa uscita del gate sopra, il bookkeeping sotto gira comunque.
-	elif DebugLogging.ENABLED:
+	elif DebugLogging.ENABLED and DebugLogging.SHOW_PREDATION_DAILY_LOGS:
 		var skip_reason := "residuo già coperto"
 		if residual_requirement > 0.0:
 			skip_reason = (
@@ -154,7 +154,7 @@ func _process_group(world: World, group: PopulationGroup, rules: PredatorRules, 
 	group.predation_season_calories_obtained += calories_obtained_today
 	group.predation_season_calories_required += daily_requirement_today
 
-	if DebugLogging.ENABLED:
+	if DebugLogging.ENABLED and DebugLogging.SHOW_PREDATION_DAILY_LOGS:
 		print(
 			"[PREDATION] #%d calorie_ottenute_oggi=%.1f -> debito_nuovo=%.1f surplus_nuovo=%.1f" % [
 				group.id, calories_obtained_today, group.predation_calorie_debt, group.predation_surplus_carryover
@@ -259,7 +259,7 @@ func _run_hunting_attempts(
 			fatigue_multiplier = 1.0 - (1.0 - rules.fatigue_floor) * float(attempt_number - 1) / float(attempt_count - 1)
 
 		if candidates.is_empty():
-			if DebugLogging.ENABLED:
+			if DebugLogging.ENABLED and DebugLogging.SHOW_PREDATION_DAILY_LOGS:
 				print(
 					"[PREDATION ATTEMPT] #%d tentativo %d/%d: nessuna preda disponibile nella finestra oggi" % [
 						group.id, attempt_number, attempt_count
@@ -309,7 +309,7 @@ func _run_hunting_attempts(
 		)
 		var success_roll := randf()
 		if success_roll >= success_probability:
-			if DebugLogging.ENABLED:
+			if DebugLogging.ENABLED and DebugLogging.SHOW_PREDATION_DAILY_LOGS:
 				print(
 					(
 						"[PREDATION ATTEMPT] #%d tentativo %d/%d: bersaglio=%s età=%s stanchezza=%.2f "
@@ -433,7 +433,7 @@ func _capture_prey(
 		# Difensivo (vedi commento a group_index sopra): non dovrebbe accadere se chosen_age è
 		# stato validato correttamente a monte, ma se capita va comunque in log invece di sparire
 		# silenziosamente come un successo senza calorie.
-		if DebugLogging.ENABLED:
+		if DebugLogging.ENABLED and DebugLogging.SHOW_PREDATION_DAILY_LOGS:
 			print(
 				(
 					"[PREDATION ATTEMPT] #%d tentativo %d/%d: bersaglio=%s età=%s probabilità=%.2f "
@@ -479,7 +479,7 @@ func _capture_prey(
 	species_entry["calories"] = float(species_entry["calories"]) + gained
 	captures_today[species_name] = species_entry
 
-	if DebugLogging.ENABLED:
+	if DebugLogging.ENABLED and DebugLogging.SHOW_PREDATION_DAILY_LOGS:
 		print(
 			(
 				"[PREDATION ATTEMPT] #%d tentativo %d/%d: bersaglio=%s età=%s probabilità=%.2f "
@@ -730,7 +730,7 @@ func _apply_starvation_mortality(group: PopulationGroup, rules: PredatorRules, d
 		else:
 			group.predation_calorie_debt = -net_after_cannibalism
 
-	if DebugLogging.ENABLED:
+	if DebugLogging.ENABLED and DebugLogging.SHOW_PREDATION_DAILY_LOGS:
 		print(
 			(
 				"[PREDATION STARVATION] #%d %s debito=%.1f soglia=%.1f (fabbisogno_oggi=%.1f x %dgg) "

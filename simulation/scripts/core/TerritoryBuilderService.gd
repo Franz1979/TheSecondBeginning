@@ -18,21 +18,32 @@ const DIRECTIONS: Array[Vector2i] = [
 # terrain_base, sulla cella che attraversa). Stesso criterio già usato ovunque nel codebase per
 # distinguere "questa macrocella è un corpo d'acqua" (DroughtEventEffectService,
 # SeaFloodEventEffectService, WorldProcessors, ResourceCalculator, ...).
+# Esclude anche le celle non idonee per la specie (AnimalRules.is_suitable_for — suitable_biomes/
+# suitable_terrains, array vuoto = nessuna restrizione su quell'asse): fino a questa modifica solo
+# la cella di PARTENZA del seeding iniziale rispettava questo vincolo (AnimalSeedingService.
+# _is_suitable_cell), mentre l'espansione di un territorio multi-cella da 1 cella fino a
+# min_territory_cells (proprio questa BFS) lo ignorava del tutto — poteva quindi includere celle
+# non idonee (es. deserto per una specie con suitable_biomes senza DESERT) pur partendo da una
+# cella idonea, condannando quel gruppo a un deficit calorico cronico da subito (caso reale
+# osservato: mouflon con 1 cella su 3 in pieno deserto). rules == null (specie sconosciuta) non
+# blocca nulla, stesso trattamento permissivo già riservato altrove a un lookup fallito.
 # Esclude anche le celle già occupate da un territorio ESISTENTE della STESSA specie
 # (species_name, vedi _collect_species_occupied_cells sotto) — gli areali della stessa specie non
 # si sovrappongono mai; specie diverse invece possono coesistere sulla stessa cella senza alcun
 # vincolo qui (competizione per le risorse, non per "diritto territoriale" — vedi
 # TerritoryDynamicsService).
 # Se le celle libere adiacenti non bastano a raggiungere cell_count (mappa stretta, mare vicino,
-# territorio rivale della stessa specie tutt'intorno), nessun errore: si restituisce un Territory
-# con tutte le celle raggiunte, comunque valido. `start` è sempre inclusa a prescindere (è la
-# cella scelta esplicitamente dal chiamante, vedi sopra) anche se già occupata da un rivale della
-# stessa specie — nessuna validazione su di essa, invariato rispetto a prima di questa modifica.
+# habitat idoneo frammentato, territorio rivale della stessa specie tutt'intorno), nessun errore:
+# si restituisce un Territory con tutte le celle raggiunte, comunque valido. `start` è sempre
+# inclusa a prescindere (è la cella scelta esplicitamente dal chiamante, vedi sopra) anche se già
+# occupata da un rivale della stessa specie o (in teoria mai, essendo già filtrata al seeding) non
+# idonea — nessuna validazione su di essa, invariato rispetto a prima di questa modifica.
 func build_territory(world: World, start: Vector2i, cell_count: int, species_name: String) -> Territory:
 	var occupied: Array[Vector2i] = [start]
 	if cell_count <= 1:
 		return Territory.new(occupied)
 
+	var rules := AnimalCalculator.get_animal_rules(species_name)
 	var species_occupied := _collect_species_occupied_cells(world, species_name, null)
 
 	var visited: Dictionary = {start: true}
@@ -52,6 +63,8 @@ func build_territory(world: World, start: Vector2i, cell_count: int, species_nam
 
 			var cell := world.get_cell_at(neighbor.x, neighbor.y)
 			if cell == null or cell.terrain_base == GameTypes.TerrainBase.WATER:
+				continue
+			if rules != null and not rules.is_suitable_for(cell.biome, cell.terrain_base):
 				continue
 			if species_occupied.has(neighbor):
 				continue
@@ -154,14 +167,23 @@ static func _manhattan_distance(a: Vector2i, b: Vector2i) -> int:
 # invece trattate come l'acqua: né candidate né tappe di passaggio — la BFS non attraversa mai il
 # territorio di un gruppo rivale della stessa specie per raggiungere una cella libera oltre di esso
 # (stesso motivo per cui non si può "passare sopra" il mare). Specie diverse restano invece del
-# tutto ininfluenti qui, invariato. Pura: non muta `territory`. Ritorna la prima cella libera
-# trovata, o null se la BFS si esaurisce senza trovarne una raggiungibile.
+# tutto ininfluenti qui, invariato. Esclude anche le celle non idonee per la specie (AnimalRules.
+# is_suitable_for, stessa nota di build_territory sopra) — questa funzione è condivisa da
+# espansione (expand_by_one_cell/expand_by_n_cells) E da split (PopulationSplitService.
+# attempt_split, che per una specie a territorio mono-cella usa `found_cell` come territorio
+# INTERO del nuovo gruppo): senza questo controllo uno split poteva far nascere un gruppo già
+# condannato in una cella non idonea (caso reale osservato: partridge, territorio a 1 sola cella,
+# scisso più volte dentro una sacca di deserto). rules == null non blocca nulla, stesso
+# trattamento permissivo di build_territory. Pura: non muta `territory`. Ritorna la prima cella
+# libera trovata, o null se la BFS si esaurisce senza trovarne una raggiungibile (mappa satura,
+# mare, habitat idoneo frammentato, o territorio rivale della stessa specie tutt'intorno).
 func find_nearest_free_cell(world: World, territory: Territory, species_name: String) -> Variant:
 	var centroid := territory.get_centroid()
 	var occupied_lookup: Dictionary = {}
 	for coords in territory.occupied_macrocells:
 		occupied_lookup[coords] = true
 
+	var rules := AnimalCalculator.get_animal_rules(species_name)
 	var species_occupied := _collect_species_occupied_cells(world, species_name, territory)
 
 	var visited: Dictionary = {centroid: true}
@@ -185,6 +207,8 @@ func find_nearest_free_cell(world: World, territory: Territory, species_name: St
 
 			var cell := world.get_cell_at(neighbor.x, neighbor.y)
 			if cell == null or cell.terrain_base == GameTypes.TerrainBase.WATER:
+				continue
+			if rules != null and not rules.is_suitable_for(cell.biome, cell.terrain_base):
 				continue
 			if species_occupied.has(neighbor):
 				continue

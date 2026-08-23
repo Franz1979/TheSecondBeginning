@@ -127,6 +127,17 @@ func populate_resources(world: World, age: GameTypes.WorldAge) -> void:
 func populate_fish(world: World, age: GameTypes.WorldAge) -> void:
 	var ratio_range: Vector2 = FAUNA_SEED_RATIO_BY_AGE[age]
 
+	# Contatori diagnostici (SHOW_FAUNA_DIAGNOSTICS_LOGS): quante celle superano ciascun gate in
+	# sequenza, per capire QUALE gate sta escludendo la maggior parte della mappa (tipicamente:
+	# capacità > 0 solo su LAKE/RIVER — il grosso della mappa è terra o mare, mai idoneo a FISH —
+	# poi il roll probabilistico presence_chance sulle poche rimaste).
+	var eligible_count := 0
+	var presence_passed_count := 0
+	# Aggregato per water_type (mai per singola cella — su una mappa con centinaia di celle
+	# idonee il log per-cella satura l'output console, stesso problema già visto con ANIMAL
+	# CONSUMPTION AGGREGATE): "SEA"/"LAKE"/"RIVER" -> {"count","space_sum","quantity_sum"}.
+	var seeded_by_water_type: Dictionary = {}
+
 	for cell in world.cells:
 		var state := world.get_cell_state_at(cell.x, cell.y)
 		if state == null:
@@ -135,10 +146,13 @@ func populate_fish(world: World, age: GameTypes.WorldAge) -> void:
 		var capacity := ResourceCalculator.get_water_usable_capacity_space(GameTypes.WorldObjectType.FISH, cell, state)
 		if capacity <= 0:
 			continue
+		eligible_count += 1
 
 		var chance := ResourceCalculator.get_water_presence_chance(GameTypes.WorldObjectType.FISH, cell.water_type)
-		if randf() > chance:
+		var roll := randf()
+		if roll > chance:
 			continue
+		presence_passed_count += 1
 
 		var max_density := ResourceCalculator.get_water_max_density(GameTypes.WorldObjectType.FISH, cell.water_type)
 		if max_density <= 0.0:
@@ -152,6 +166,30 @@ func populate_fish(world: World, age: GameTypes.WorldAge) -> void:
 		state.set_water_space(GameTypes.WorldObjectType.FISH, dedicated_space)
 		state.set_resource_quantity(GameTypes.WorldObjectType.FISH, quantity)
 
+		var water_type_name: String = GameTypes.WaterType.keys()[cell.water_type]
+		var group: Dictionary = seeded_by_water_type.get(water_type_name, {"count": 0, "space_sum": 0, "quantity_sum": 0})
+		group["count"] = int(group["count"]) + 1
+		group["space_sum"] = int(group["space_sum"]) + dedicated_space
+		group["quantity_sum"] = int(group["quantity_sum"]) + quantity
+		seeded_by_water_type[water_type_name] = group
+
+	if DebugLogging.ENABLED and DebugLogging.SHOW_FAUNA_DIAGNOSTICS_LOGS:
+		var seeded_count := 0
+		for water_type_name in seeded_by_water_type.keys():
+			var group: Dictionary = seeded_by_water_type[water_type_name]
+			var count: int = group["count"]
+			seeded_count += count
+			print(
+				"[FAUNA SEEDING] FISH water_type=%s celle_popolate=%d spazio_medio=%.1f quantita_media=%.1f quantita_totale=%d" % [
+					water_type_name, count, float(group["space_sum"]) / count, float(group["quantity_sum"]) / count, group["quantity_sum"]
+				]
+			)
+		print(
+			"[FAUNA SEEDING SUMMARY] FISH: %d celle idonee (acqua con capacita>0) -> %d superano presence_chance -> %d popolate" % [
+				eligible_count, presence_passed_count, seeded_count
+			]
+		)
+
 	print("Fish popolato (mondo parametrico, age=%s)" % GameTypes.WorldAge.keys()[age])
 
 
@@ -159,6 +197,14 @@ func populate_fish(world: World, age: GameTypes.WorldAge) -> void:
 # differenze (frazione parametrica per eta', capacita' sfruttabile invece che fisica).
 func populate_birds(world: World, age: GameTypes.WorldAge) -> void:
 	var ratio_range: Vector2 = FAUNA_SEED_RATIO_BY_AGE[age]
+
+	# Vedi nota su eligible_count/presence_passed_count/seeded_by_* in populate_fish sopra —
+	# stesso schema diagnostico aggregato, raggruppato per (terreno,bioma) invece che water_type
+	# (la costa non entra nella chiave: è un moltiplicatore fine, raggrupparci sopra esploderebbe
+	# il numero di gruppi senza aggiungere molto).
+	var eligible_count := 0
+	var presence_passed_count := 0
+	var seeded_by_terrain_biome: Dictionary = {}
 
 	for cell in world.cells:
 		var state := world.get_cell_state_at(cell.x, cell.y)
@@ -168,12 +214,15 @@ func populate_birds(world: World, age: GameTypes.WorldAge) -> void:
 		var capacity := ResourceCalculator.get_land_usable_capacity_space(GameTypes.WorldObjectType.BIRDS, cell, state)
 		if capacity <= 0:
 			continue
+		eligible_count += 1
 
 		var chance := ResourceCalculator.get_presence_chance(
 			GameTypes.WorldObjectType.BIRDS, cell.terrain_base, cell.biome, cell.coast_type
 		)
-		if randf() > chance:
+		var roll := randf()
+		if roll > chance:
 			continue
+		presence_passed_count += 1
 
 		var max_density := ResourceCalculator.get_max_density(
 			GameTypes.WorldObjectType.BIRDS, cell.terrain_base, cell.biome, cell.coast_type
@@ -188,6 +237,32 @@ func populate_birds(world: World, age: GameTypes.WorldAge) -> void:
 
 		state.set_terrestrial_space(GameTypes.WorldObjectType.BIRDS, dedicated_space)
 		state.set_resource_quantity(GameTypes.WorldObjectType.BIRDS, quantity)
+
+		var group_key: String = "%s/%s" % [
+			GameTypes.TerrainBase.keys()[cell.terrain_base], GameTypes.Biome.keys()[cell.biome]
+		]
+		var group: Dictionary = seeded_by_terrain_biome.get(group_key, {"count": 0, "space_sum": 0, "quantity_sum": 0})
+		group["count"] = int(group["count"]) + 1
+		group["space_sum"] = int(group["space_sum"]) + dedicated_space
+		group["quantity_sum"] = int(group["quantity_sum"]) + quantity
+		seeded_by_terrain_biome[group_key] = group
+
+	if DebugLogging.ENABLED and DebugLogging.SHOW_FAUNA_DIAGNOSTICS_LOGS:
+		var seeded_count := 0
+		for group_key in seeded_by_terrain_biome.keys():
+			var group: Dictionary = seeded_by_terrain_biome[group_key]
+			var count: int = group["count"]
+			seeded_count += count
+			print(
+				"[FAUNA SEEDING] BIRDS terreno/bioma=%s celle_popolate=%d spazio_medio=%.1f quantita_media=%.1f quantita_totale=%d" % [
+					group_key, count, float(group["space_sum"]) / count, float(group["quantity_sum"]) / count, group["quantity_sum"]
+				]
+			)
+		print(
+			"[FAUNA SEEDING SUMMARY] BIRDS: %d celle idonee (terra con capacita>0) -> %d superano presence_chance -> %d popolate" % [
+				eligible_count, presence_passed_count, seeded_count
+			]
+		)
 
 	print("Birds popolato (mondo parametrico, age=%s)" % GameTypes.WorldAge.keys()[age])
 
