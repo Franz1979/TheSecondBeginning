@@ -2,12 +2,12 @@ class_name MacroCellInfoPanel
 extends PanelContainer
 
 # Pannello info cella per MapEditorScene (unico chiamante: sempre show_cell(..., false), mai
-# fauna/risorse di simulazione). Fino a poco fa condiviso anche con GameScene tramite un
+# fauna/risorse di simulazione). Fino a poco fa condiviso anche con WorldScene tramite un
 # TabContainer con 4 tab aggiuntive (Vegetazione/Risorse/Fauna1/Fauna2) sempre nascoste qui
 # (show_resources=false le nascondeva tutte, lasciando visibile solo Geografia) — le due viste
-# erano ormai troppo divergenti (GameScene continuava ad accumulare feature world-level: filtro
+# erano ormai troppo divergenti (WorldScene continuava ad accumulare feature world-level: filtro
 # specie, evidenziazione territori...) per restare un componente condiviso pilotato da un solo
-# flag. La versione GameScene è ora WorldInfoPanel (scripts/world/WorldInfoPanel.gd), biforcata a
+# flag. La versione WorldScene è ora WorldInfoPanel (scripts/world/WorldInfoPanel.gd), biforcata a
 # parte. Qui è rimasto solo cosa MapEditorScene usa davvero: niente più TabContainer (lo
 # ScrollContainer/TabContainer annidato dentro lo ScrollContainer della sidebar dell'editor
 # comprimeva il contenuto quasi a zero) — il contenuto "Geografia" è ora diretto, sempre visibile.

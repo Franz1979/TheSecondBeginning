@@ -27,7 +27,7 @@ func _on_new_random_world_pressed() -> void:
 	GameSettings.selected_save_file = ""
 
 	# Scelta mappa fatta — prima di avviare la partita vera e propria, passa dalla schermata
-	# opzioni (eta' del mondo) invece di andare direttamente a GameScene.
+	# opzioni (eta' del mondo) invece di andare direttamente a WorldScene.
 	get_tree().change_scene_to_file("res://simulation/scenes/menus/NewGameOptionsMenu.tscn")
 
 

@@ -6,13 +6,19 @@ extends Node2D
 # deve avere il tempo di individuare le celle sulla mappa, non solo confermare un click.
 const POPULATION_HIGHLIGHT_DURATION: float = 2.0
 
+# Vista principale del player su una singola macrocella (res://gameplay/scenes/game/). Ingresso
+# "vero": _redirect_to_game_scene, chiamato da _ready() subito dopo il seeding di una partita
+# nuova (_load_world -> _populate_new_world). Raggiungibile anche manualmente tramite il bottone
+# debug "🧍" (_on_game_view_pressed) e l'equivalente in MacroCellScene.
+const GAME_SCENE_PATH := "res://gameplay/scenes/game/GameScene.tscn"
+
 var world: World
 var game_data: GameData
 var renderer: WorldRenderer
 var game_controller: CellSelectorController
 var clock: GameClockController
 # Gate sul redraw giornaliero costoso di WorldRenderer (griglia 100x100 immediate-mode) — vedi
-# GameSettings.game_scene_world_redraw_enabled per il perché. Default true: comportamento
+# GameSettings.world_scene_redraw_enabled per il perché. Default true: comportamento
 # invariato finché l'utente non lo disattiva esplicitamente.
 var world_daily_redraw_enabled: bool = true
 var _clock_was_playing_before_dialogs: bool = false
@@ -45,7 +51,7 @@ func _ready() -> void:
 	# uscendo e rientrando in questa scena (es. via MacroCellScene) tornerebbe sempre al default
 	# "attivo", perdendo silenziosamente la scelta dell'utente — stesso principio già usato da
 	# MacroCellScene per i suoi due toggle.
-	world_daily_redraw_enabled = GameSettings.game_scene_world_redraw_enabled
+	world_daily_redraw_enabled = GameSettings.world_scene_redraw_enabled
 
 	advance_year_button.text = "+1"
 	advance_year_button.tooltip_text = tr("advance_year_tooltip")
@@ -61,6 +67,10 @@ func _ready() -> void:
 	primary_actions_bar.set_slot_toggled(0, world_daily_redraw_enabled)
 	primary_actions_bar.action_pressed.connect(_on_primary_action_pressed)
 	secondary_actions_bar.configure_slot(0, "☰", tr("menu"), &"menu")
+	# Slot 1 e 2 lasciati vuoti apposta: i bottoni di navigazione stanno tutti accostati al bordo
+	# destro della riga (slot 3), separati dal bottone opzioni a sinistra — vedi MacroCellScene
+	# per lo stesso schema con anche back_to_world.
+	secondary_actions_bar.configure_slot(3, "🧍", tr("game_view"), &"game_view", tr("game_view_description"))
 	secondary_actions_bar.action_pressed.connect(_on_secondary_action_pressed)
 	system_menu_dialog.add_action(tr("save_game"), &"save")
 	system_menu_dialog.add_action(tr("back_to_menu"), &"back_to_main_menu")
@@ -75,13 +85,25 @@ func _ready() -> void:
 		debug_animal_species_option.add_item(species_name)
 	debug_set_animal_button.pressed.connect(_on_debug_set_animal_pressed)
 
-	var returning_from_macro_cell := GameSettings.returning_to_game_scene
+	var returning_from_macro_cell := GameSettings.returning_to_world_scene
+	var is_new_game := false
 	if returning_from_macro_cell:
-		GameSettings.returning_to_game_scene = false
+		GameSettings.returning_to_world_scene = false
 		world = GameSettings.active_world
 		game_data = GameSettings.active_game_data
 	else:
-		_load_world()
+		is_new_game = _load_world()
+
+	# Partita NUOVA appena seminata (vedi _load_world/_populate_new_world sotto): il player deve
+	# aprire subito GameScene (vista sulla propria macrocella), WorldScene non costruisce piu' la
+	# propria vista in questo caso — vedi _redirect_to_game_scene per il perche' del return
+	# anticipato. Un salvataggio ESISTENTE caricato tramite GameSettings.selected_save_file (vedi
+	# _load_world) resta invece qui e mostra WorldScene come sempre: is_new_game e' false in quel
+	# ramo per costruzione (_load_world non arriva mai a _populate_new_world li').
+	if is_new_game:
+		_redirect_to_game_scene()
+		return
+
 	_create_renderer()
 	_setup_clock()
 	_update_calendar_display()
@@ -105,7 +127,14 @@ func _ready() -> void:
 			_on_cell_selected(cell, world.get_cell_state_at(cell.x, cell.y))
 
 
-func _load_world() -> void:
+# Ritorna true SOLO quando arriva davvero a seminare una partita nuova (_populate_new_world in
+# fondo) — false in ogni uscita del ramo "carica salvataggio esistente"
+# (GameSettings.selected_save_file, successo o fallback su mondo vuoto in caso di errore: un
+# fallimento di caricamento non e' una partita nuova, resta comunque "non reindirizzare"). Questo
+# e' il discriminante esplicito richiesto tra il ramo (a) "nuova partita" — che _ready() usa per
+# reindirizzare a GameScene — e il ramo (b) "load partita esistente", che deve continuare a
+# mostrare WorldScene come oggi.
+func _load_world() -> bool:
 	if GameSettings.selected_save_file != "":
 		var load_service := GameLoadService.new()
 		var loaded_game := load_service.load_game_from_json(GameSettings.selected_save_file)
@@ -114,10 +143,10 @@ func _load_world() -> void:
 			game_data = GameData.new()
 			world = World.new()
 			world.generate_empty_world()
-			return
+			return false
 		world = loaded_game.world
 		game_data = loaded_game.game_data
-		return
+		return false
 
 	if GameSettings.selected_map_type == "saved" and GameSettings.selected_map_file != "":
 		var load_service := WorldLoadService.new()
@@ -139,6 +168,7 @@ func _load_world() -> void:
 		game_data = GameData.new()
 
 	_populate_new_world(world)
+	return true
 
 # Dispaccia verso il seminatore scelto in NewGameOptionsMenu (GameSettings.
 # selected_world_age_mode, impostato li' subito prima di raggiungere questa scena — mai
@@ -147,6 +177,30 @@ func _load_world() -> void:
 # motivo questa scena venisse raggiunta senza passare dalla schermata opzioni, il comportamento
 # resta quello di sempre (InitialResourceSetupService invariato), non un livello a caso.
 func _populate_new_world(target_world: World) -> void:
+	# Statistica di difficolta' (vedi GameData) — valorizzata qui, l'unico punto in cui una
+	# partita NUOVA viene davvero creata (mai per una partita caricata, vedi _load_world sopra),
+	# prima di qualunque ramo CLASSIC/non-CLASSIC sotto cosi' viene registrata comunque, anche
+	# per una partita CLASSIC (ratio -1.0 = non applicabile, ma le tre stringhe scelte restano
+	# comunque utili per le statistiche).
+	game_data.starting_world_age_mode = GameSettings.selected_world_age_mode
+	game_data.starting_animal_density = GameSettings.selected_animal_density
+	game_data.starting_population_size = GameSettings.selected_population_size
+	game_data.starting_exclude_hostile_start = GameSettings.selected_exclude_hostile_start
+	game_data.starting_exclude_predator_territories = GameSettings.selected_exclude_predator_territories
+	game_data.starting_resource_richness_preference = GameSettings.selected_resource_richness_preference
+	game_data.starting_group_size_preference = GameSettings.selected_group_size_preference
+	game_data.starting_guarantee_animal_presence = GameSettings.selected_guarantee_animal_presence
+	game_data.starting_difficulty_ratio = DifficultyCalculator.compute_difficulty_ratio(
+		GameSettings.selected_world_age_mode,
+		GameSettings.selected_animal_density,
+		GameSettings.selected_population_size,
+		GameSettings.selected_exclude_hostile_start,
+		GameSettings.selected_exclude_predator_territories,
+		GameSettings.selected_resource_richness_preference,
+		GameSettings.selected_group_size_preference,
+		GameSettings.selected_guarantee_animal_presence
+	)
+
 	if GameSettings.selected_world_age_mode == "CLASSIC":
 		InitialResourceSetupService.new().populate_resources(target_world)
 		return
@@ -183,6 +237,35 @@ func _populate_new_world(target_world: World) -> void:
 			population_size = GameTypes.PopulationSize.DENSE
 
 	AnimalSeedingService.new().populate_animals(target_world, density, population_size)
+
+# Ingresso "vero" per una partita NUOVA appena seminata — chiamato da _ready() subito dopo
+# _load_world() quando is_new_game e' true, PRIMA che WorldScene costruisca la propria vista
+# (_create_renderer/_setup_clock). Stesso canale di handoff gia' in uso per i bottoni debug
+# (GameSettings.active_world/active_game_data), ma NON returning_to_player_view = true: quel
+# flag e' riservato al canale "torno dal debug" (vedi GameScene._ready() ramo 1, che riusa una
+# cella gia' nota). Qui GameData.player_macro_cell_x/y sono ancora -1 (partita appena creata),
+# quindi GameScene deve prendere il proprio ramo 2 e invocare da se'
+# FirstStartMacroCellSelectionService — lasciare returning_to_player_view a false (il suo
+# default) e' cio' che glielo permette.
+#
+# Stato clock azzerato esplicitamente ai default di una partita nuova (pausa, velocita' 1x)
+# invece di derivarlo da un GameClockController che qui non viene mai creato (vedi sotto): senza
+# questo, un residuo di velocita'/play-state lasciato da una sessione precedente nella STESSA
+# run dell'app (es. l'utente aveva premuto play a 3x, e' tornato al menu principale, ha avviato
+# una partita nuova) trapelerebbe silenziosamente nella nuova partita, dato che
+# GameSettings.active_clock_is_playing/active_clock_speed sono campi di sessione, non
+# resettati automaticamente da un semplice cambio di scena.
+#
+# _create_renderer()/_setup_clock() (il resto della vista mondo, WorldRenderer immediate-mode
+# sull'intera griglia 100x100 incluso) vengono deliberatamente SALTATI in questo ramo (vedi il
+# "return" subito dopo la chiamata a questo metodo in _ready()): costruirli solo per lasciare
+# la scena un istante dopo sarebbe lavoro sprecato.
+func _redirect_to_game_scene() -> void:
+	GameSettings.active_world = world
+	GameSettings.active_game_data = game_data
+	GameSettings.active_clock_is_playing = false
+	GameSettings.active_clock_speed = GameClockController.Speed.X1
+	get_tree().change_scene_to_file(GAME_SCENE_PATH)
 
 func _create_renderer() -> void:
 	renderer = WorldRenderer.new()
@@ -257,10 +340,24 @@ func _on_primary_action_pressed(action_id: StringName) -> void:
 		&"toggle_world_redraw":
 			world_daily_redraw_enabled = not world_daily_redraw_enabled
 			primary_actions_bar.set_slot_toggled(0, world_daily_redraw_enabled)
-			GameSettings.game_scene_world_redraw_enabled = world_daily_redraw_enabled
+			GameSettings.world_scene_redraw_enabled = world_daily_redraw_enabled
+
+# Canale "debug": ritorno manuale alla vista player da WorldScene senza essere appena arrivati da
+# una partita nuova (vedi _redirect_to_game_scene per l'ingresso "vero" post-seeding). Stesso
+# schema dell'equivalente in MacroCellScene._on_game_view_pressed.
+func _on_game_view_pressed() -> void:
+	GameSettings.active_world = world
+	GameSettings.active_game_data = game_data
+	GameSettings.returning_to_player_view = true
+	if clock != null:
+		GameSettings.active_clock_is_playing = clock.is_playing
+		GameSettings.active_clock_speed = clock.speed
+	get_tree().change_scene_to_file(GAME_SCENE_PATH)
 
 func _on_secondary_action_pressed(action_id: StringName) -> void:
 	match action_id:
+		&"game_view":
+			_on_game_view_pressed()
 		&"menu":
 			system_menu_dialog.open_menu()
 

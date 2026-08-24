@@ -20,6 +20,10 @@ corner_radius_bottom_right = 3
 
 [sub_resource type="ButtonGroup" id="ButtonGroup_population_size"]
 
+[sub_resource type="ButtonGroup" id="ButtonGroup_resource_richness"]
+
+[sub_resource type="ButtonGroup" id="ButtonGroup_group_size"]
+
 [node name="NewGameOptionsMenu" type="Control"]
 layout_mode = 3
 anchors_preset = 15
@@ -29,154 +33,417 @@ grow_horizontal = 2
 grow_vertical = 2
 script = ExtResource("1_opts")
 
-[node name="VBoxContainer" type="VBoxContainer" parent="."]
+[node name="RootColumn" type="VBoxContainer" parent="."]
 layout_mode = 1
-anchors_preset = 5
 anchor_left = 0.5
 anchor_right = 0.5
-offset_left = -130.0
-offset_right = 130.0
-offset_bottom = 500.0
+anchor_bottom = 1.0
+offset_left = -180.0
+offset_top = 20.0
+offset_right = 180.0
+offset_bottom = -20.0
 grow_horizontal = 2
-theme_override_constants/separation = 12
+grow_vertical = 2
+theme_override_constants/separation = 8
 
-[node name="TitleLabel" type="Label" parent="VBoxContainer"]
+[node name="TitleLabel" type="Label" parent="RootColumn"]
 layout_mode = 2
 horizontal_alignment = 1
 
-[node name="OptionsPanel" type="PanelContainer" parent="VBoxContainer"]
+[node name="MainRow" type="HBoxContainer" parent="RootColumn"]
 layout_mode = 2
+size_flags_vertical = 3
+theme_override_constants/separation = 10
 
-[node name="MarginContainer" type="MarginContainer" parent="VBoxContainer/OptionsPanel"]
+[node name="ScrollContainer" type="ScrollContainer" parent="RootColumn/MainRow"]
 layout_mode = 2
-theme_override_constants/margin_left = 12
-theme_override_constants/margin_top = 12
-theme_override_constants/margin_right = 12
-theme_override_constants/margin_bottom = 12
+size_flags_horizontal = 3
+size_flags_vertical = 3
+horizontal_scroll_mode = 0
 
-[node name="VBoxContainer" type="VBoxContainer" parent="VBoxContainer/OptionsPanel/MarginContainer"]
+[node name="VBoxContainer" type="VBoxContainer" parent="RootColumn/MainRow/ScrollContainer"]
 layout_mode = 2
+size_flags_horizontal = 3
 theme_override_constants/separation = 6
 
-[node name="WorldAgeHeaderLabel" type="Label" parent="VBoxContainer/OptionsPanel/MarginContainer/VBoxContainer"]
+[node name="HostileStartPanel" type="PanelContainer" parent="RootColumn/MainRow/ScrollContainer/VBoxContainer"]
 layout_mode = 2
+
+[node name="MarginContainer" type="MarginContainer" parent="RootColumn/MainRow/ScrollContainer/VBoxContainer/HostileStartPanel"]
+layout_mode = 2
+theme_override_constants/margin_left = 8
+theme_override_constants/margin_top = 6
+theme_override_constants/margin_right = 8
+theme_override_constants/margin_bottom = 6
+
+[node name="HBoxContainer" type="HBoxContainer" parent="RootColumn/MainRow/ScrollContainer/VBoxContainer/HostileStartPanel/MarginContainer"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="HostileStartLabel" type="Label" parent="RootColumn/MainRow/ScrollContainer/VBoxContainer/HostileStartPanel/MarginContainer/HBoxContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_font_sizes/font_size = 13
+vertical_alignment = 1
+
+[node name="HostileStartCheckButton" type="CheckButton" parent="RootColumn/MainRow/ScrollContainer/VBoxContainer/HostileStartPanel/MarginContainer/HBoxContainer"]
+layout_mode = 2
+
+[node name="PredatorExclusionPanel" type="PanelContainer" parent="RootColumn/MainRow/ScrollContainer/VBoxContainer"]
+layout_mode = 2
+
+[node name="MarginContainer" type="MarginContainer" parent="RootColumn/MainRow/ScrollContainer/VBoxContainer/PredatorExclusionPanel"]
+layout_mode = 2
+theme_override_constants/margin_left = 8
+theme_override_constants/margin_top = 6
+theme_override_constants/margin_right = 8
+theme_override_constants/margin_bottom = 6
+
+[node name="HBoxContainer" type="HBoxContainer" parent="RootColumn/MainRow/ScrollContainer/VBoxContainer/PredatorExclusionPanel/MarginContainer"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="PredatorExclusionLabel" type="Label" parent="RootColumn/MainRow/ScrollContainer/VBoxContainer/PredatorExclusionPanel/MarginContainer/HBoxContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_font_sizes/font_size = 13
+vertical_alignment = 1
+
+[node name="PredatorExclusionCheckButton" type="CheckButton" parent="RootColumn/MainRow/ScrollContainer/VBoxContainer/PredatorExclusionPanel/MarginContainer/HBoxContainer"]
+layout_mode = 2
+
+[node name="AnimalPresencePanel" type="PanelContainer" parent="RootColumn/MainRow/ScrollContainer/VBoxContainer"]
+layout_mode = 2
+
+[node name="MarginContainer" type="MarginContainer" parent="RootColumn/MainRow/ScrollContainer/VBoxContainer/AnimalPresencePanel"]
+layout_mode = 2
+theme_override_constants/margin_left = 8
+theme_override_constants/margin_top = 6
+theme_override_constants/margin_right = 8
+theme_override_constants/margin_bottom = 6
+
+[node name="HBoxContainer" type="HBoxContainer" parent="RootColumn/MainRow/ScrollContainer/VBoxContainer/AnimalPresencePanel/MarginContainer"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="AnimalPresenceLabel" type="Label" parent="RootColumn/MainRow/ScrollContainer/VBoxContainer/AnimalPresencePanel/MarginContainer/HBoxContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_font_sizes/font_size = 13
+vertical_alignment = 1
+
+[node name="AnimalPresenceCheckButton" type="CheckButton" parent="RootColumn/MainRow/ScrollContainer/VBoxContainer/AnimalPresencePanel/MarginContainer/HBoxContainer"]
+layout_mode = 2
+
+[node name="ResourceRichnessPanel" type="PanelContainer" parent="RootColumn/MainRow/ScrollContainer/VBoxContainer"]
+layout_mode = 2
+
+[node name="MarginContainer" type="MarginContainer" parent="RootColumn/MainRow/ScrollContainer/VBoxContainer/ResourceRichnessPanel"]
+layout_mode = 2
+theme_override_constants/margin_left = 8
+theme_override_constants/margin_top = 6
+theme_override_constants/margin_right = 8
+theme_override_constants/margin_bottom = 6
+
+[node name="VBoxContainer" type="VBoxContainer" parent="RootColumn/MainRow/ScrollContainer/VBoxContainer/ResourceRichnessPanel/MarginContainer"]
+layout_mode = 2
+theme_override_constants/separation = 3
+
+[node name="ResourceRichnessHeaderLabel" type="Label" parent="RootColumn/MainRow/ScrollContainer/VBoxContainer/ResourceRichnessPanel/MarginContainer/VBoxContainer"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 13
 horizontal_alignment = 1
 
-[node name="YoungButton" type="Button" parent="VBoxContainer/OptionsPanel/MarginContainer/VBoxContainer"]
+[node name="RichButton" type="Button" parent="RootColumn/MainRow/ScrollContainer/VBoxContainer/ResourceRichnessPanel/MarginContainer/VBoxContainer"]
+custom_minimum_size = Vector2(0, 24)
 layout_mode = 2
+theme_override_font_sizes/font_size = 12
 toggle_mode = true
+clip_text = true
+button_group = SubResource("ButtonGroup_resource_richness")
+theme_override_styles/pressed = SubResource("StyleBoxFlat_age_selected")
+theme_override_styles/hover_pressed = SubResource("StyleBoxFlat_age_selected")
+
+[node name="NormalRichnessButton" type="Button" parent="RootColumn/MainRow/ScrollContainer/VBoxContainer/ResourceRichnessPanel/MarginContainer/VBoxContainer"]
+custom_minimum_size = Vector2(0, 24)
+layout_mode = 2
+theme_override_font_sizes/font_size = 12
+toggle_mode = true
+clip_text = true
+button_pressed = true
+button_group = SubResource("ButtonGroup_resource_richness")
+theme_override_styles/pressed = SubResource("StyleBoxFlat_age_selected")
+theme_override_styles/hover_pressed = SubResource("StyleBoxFlat_age_selected")
+
+[node name="PoorButton" type="Button" parent="RootColumn/MainRow/ScrollContainer/VBoxContainer/ResourceRichnessPanel/MarginContainer/VBoxContainer"]
+custom_minimum_size = Vector2(0, 24)
+layout_mode = 2
+theme_override_font_sizes/font_size = 12
+toggle_mode = true
+clip_text = true
+button_group = SubResource("ButtonGroup_resource_richness")
+theme_override_styles/pressed = SubResource("StyleBoxFlat_age_selected")
+theme_override_styles/hover_pressed = SubResource("StyleBoxFlat_age_selected")
+
+[node name="GroupSizePanel" type="PanelContainer" parent="RootColumn/MainRow/ScrollContainer/VBoxContainer"]
+layout_mode = 2
+
+[node name="MarginContainer" type="MarginContainer" parent="RootColumn/MainRow/ScrollContainer/VBoxContainer/GroupSizePanel"]
+layout_mode = 2
+theme_override_constants/margin_left = 8
+theme_override_constants/margin_top = 6
+theme_override_constants/margin_right = 8
+theme_override_constants/margin_bottom = 6
+
+[node name="VBoxContainer" type="VBoxContainer" parent="RootColumn/MainRow/ScrollContainer/VBoxContainer/GroupSizePanel/MarginContainer"]
+layout_mode = 2
+theme_override_constants/separation = 3
+
+[node name="GroupSizeHeaderLabel" type="Label" parent="RootColumn/MainRow/ScrollContainer/VBoxContainer/GroupSizePanel/MarginContainer/VBoxContainer"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 13
+horizontal_alignment = 1
+
+[node name="FamilyButton" type="Button" parent="RootColumn/MainRow/ScrollContainer/VBoxContainer/GroupSizePanel/MarginContainer/VBoxContainer"]
+custom_minimum_size = Vector2(0, 24)
+layout_mode = 2
+theme_override_font_sizes/font_size = 12
+toggle_mode = true
+clip_text = true
+button_group = SubResource("ButtonGroup_group_size")
+theme_override_styles/pressed = SubResource("StyleBoxFlat_age_selected")
+theme_override_styles/hover_pressed = SubResource("StyleBoxFlat_age_selected")
+
+[node name="SmallGroupButton" type="Button" parent="RootColumn/MainRow/ScrollContainer/VBoxContainer/GroupSizePanel/MarginContainer/VBoxContainer"]
+custom_minimum_size = Vector2(0, 24)
+layout_mode = 2
+theme_override_font_sizes/font_size = 12
+toggle_mode = true
+clip_text = true
+button_pressed = true
+button_group = SubResource("ButtonGroup_group_size")
+theme_override_styles/pressed = SubResource("StyleBoxFlat_age_selected")
+theme_override_styles/hover_pressed = SubResource("StyleBoxFlat_age_selected")
+
+[node name="BigGroupButton" type="Button" parent="RootColumn/MainRow/ScrollContainer/VBoxContainer/GroupSizePanel/MarginContainer/VBoxContainer"]
+custom_minimum_size = Vector2(0, 24)
+layout_mode = 2
+theme_override_font_sizes/font_size = 12
+toggle_mode = true
+clip_text = true
+button_group = SubResource("ButtonGroup_group_size")
+theme_override_styles/pressed = SubResource("StyleBoxFlat_age_selected")
+theme_override_styles/hover_pressed = SubResource("StyleBoxFlat_age_selected")
+
+[node name="OptionsPanel" type="PanelContainer" parent="RootColumn/MainRow/ScrollContainer/VBoxContainer"]
+layout_mode = 2
+
+[node name="MarginContainer" type="MarginContainer" parent="RootColumn/MainRow/ScrollContainer/VBoxContainer/OptionsPanel"]
+layout_mode = 2
+theme_override_constants/margin_left = 8
+theme_override_constants/margin_top = 6
+theme_override_constants/margin_right = 8
+theme_override_constants/margin_bottom = 6
+
+[node name="VBoxContainer" type="VBoxContainer" parent="RootColumn/MainRow/ScrollContainer/VBoxContainer/OptionsPanel/MarginContainer"]
+layout_mode = 2
+theme_override_constants/separation = 3
+
+[node name="WorldAgeHeaderLabel" type="Label" parent="RootColumn/MainRow/ScrollContainer/VBoxContainer/OptionsPanel/MarginContainer/VBoxContainer"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 13
+horizontal_alignment = 1
+
+[node name="YoungButton" type="Button" parent="RootColumn/MainRow/ScrollContainer/VBoxContainer/OptionsPanel/MarginContainer/VBoxContainer"]
+custom_minimum_size = Vector2(0, 24)
+layout_mode = 2
+theme_override_font_sizes/font_size = 12
+toggle_mode = true
+clip_text = true
 button_group = SubResource("ButtonGroup_world_age")
 theme_override_styles/pressed = SubResource("StyleBoxFlat_age_selected")
 theme_override_styles/hover_pressed = SubResource("StyleBoxFlat_age_selected")
 
-[node name="AdultButton" type="Button" parent="VBoxContainer/OptionsPanel/MarginContainer/VBoxContainer"]
+[node name="AdultButton" type="Button" parent="RootColumn/MainRow/ScrollContainer/VBoxContainer/OptionsPanel/MarginContainer/VBoxContainer"]
+custom_minimum_size = Vector2(0, 24)
 layout_mode = 2
+theme_override_font_sizes/font_size = 12
 toggle_mode = true
+clip_text = true
 button_group = SubResource("ButtonGroup_world_age")
 theme_override_styles/pressed = SubResource("StyleBoxFlat_age_selected")
 theme_override_styles/hover_pressed = SubResource("StyleBoxFlat_age_selected")
 
-[node name="OldButton" type="Button" parent="VBoxContainer/OptionsPanel/MarginContainer/VBoxContainer"]
+[node name="OldButton" type="Button" parent="RootColumn/MainRow/ScrollContainer/VBoxContainer/OptionsPanel/MarginContainer/VBoxContainer"]
+custom_minimum_size = Vector2(0, 24)
 layout_mode = 2
+theme_override_font_sizes/font_size = 12
 toggle_mode = true
+clip_text = true
 button_group = SubResource("ButtonGroup_world_age")
 theme_override_styles/pressed = SubResource("StyleBoxFlat_age_selected")
 theme_override_styles/hover_pressed = SubResource("StyleBoxFlat_age_selected")
 
-[node name="ClassicButton" type="Button" parent="VBoxContainer/OptionsPanel/MarginContainer/VBoxContainer"]
+[node name="ClassicButton" type="Button" parent="RootColumn/MainRow/ScrollContainer/VBoxContainer/OptionsPanel/MarginContainer/VBoxContainer"]
+custom_minimum_size = Vector2(0, 24)
 layout_mode = 2
+theme_override_font_sizes/font_size = 12
 toggle_mode = true
+clip_text = true
 button_pressed = true
 button_group = SubResource("ButtonGroup_world_age")
 theme_override_styles/pressed = SubResource("StyleBoxFlat_age_selected")
 theme_override_styles/hover_pressed = SubResource("StyleBoxFlat_age_selected")
 
-[node name="DebugWarningLabel" type="Label" parent="VBoxContainer/OptionsPanel/MarginContainer/VBoxContainer"]
+[node name="DebugWarningLabel" type="Label" parent="RootColumn/MainRow/ScrollContainer/VBoxContainer/OptionsPanel/MarginContainer/VBoxContainer"]
 layout_mode = 2
+theme_override_font_sizes/font_size = 11
 autowrap_mode = 2
 
-[node name="DensityPanel" type="PanelContainer" parent="VBoxContainer"]
+[node name="DensityPanel" type="PanelContainer" parent="RootColumn/MainRow/ScrollContainer/VBoxContainer"]
 layout_mode = 2
 
-[node name="MarginContainer" type="MarginContainer" parent="VBoxContainer/DensityPanel"]
+[node name="MarginContainer" type="MarginContainer" parent="RootColumn/MainRow/ScrollContainer/VBoxContainer/DensityPanel"]
 layout_mode = 2
-theme_override_constants/margin_left = 12
-theme_override_constants/margin_top = 12
-theme_override_constants/margin_right = 12
-theme_override_constants/margin_bottom = 12
+theme_override_constants/margin_left = 8
+theme_override_constants/margin_top = 6
+theme_override_constants/margin_right = 8
+theme_override_constants/margin_bottom = 6
 
-[node name="VBoxContainer" type="VBoxContainer" parent="VBoxContainer/DensityPanel/MarginContainer"]
+[node name="VBoxContainer" type="VBoxContainer" parent="RootColumn/MainRow/ScrollContainer/VBoxContainer/DensityPanel/MarginContainer"]
 layout_mode = 2
-theme_override_constants/separation = 6
+theme_override_constants/separation = 3
 
-[node name="DensityHeaderLabel" type="Label" parent="VBoxContainer/DensityPanel/MarginContainer/VBoxContainer"]
+[node name="DensityHeaderLabel" type="Label" parent="RootColumn/MainRow/ScrollContainer/VBoxContainer/DensityPanel/MarginContainer/VBoxContainer"]
 layout_mode = 2
+theme_override_font_sizes/font_size = 13
 horizontal_alignment = 1
 
-[node name="FewButton" type="Button" parent="VBoxContainer/DensityPanel/MarginContainer/VBoxContainer"]
+[node name="FewButton" type="Button" parent="RootColumn/MainRow/ScrollContainer/VBoxContainer/DensityPanel/MarginContainer/VBoxContainer"]
+custom_minimum_size = Vector2(0, 24)
 layout_mode = 2
+theme_override_font_sizes/font_size = 12
 toggle_mode = true
+clip_text = true
 button_group = SubResource("ButtonGroup_animal_density")
 theme_override_styles/pressed = SubResource("StyleBoxFlat_age_selected")
 theme_override_styles/hover_pressed = SubResource("StyleBoxFlat_age_selected")
 
-[node name="MediumButton" type="Button" parent="VBoxContainer/DensityPanel/MarginContainer/VBoxContainer"]
+[node name="MediumButton" type="Button" parent="RootColumn/MainRow/ScrollContainer/VBoxContainer/DensityPanel/MarginContainer/VBoxContainer"]
+custom_minimum_size = Vector2(0, 24)
 layout_mode = 2
+theme_override_font_sizes/font_size = 12
 toggle_mode = true
+clip_text = true
 button_pressed = true
 button_group = SubResource("ButtonGroup_animal_density")
 theme_override_styles/pressed = SubResource("StyleBoxFlat_age_selected")
 theme_override_styles/hover_pressed = SubResource("StyleBoxFlat_age_selected")
 
-[node name="ManyButton" type="Button" parent="VBoxContainer/DensityPanel/MarginContainer/VBoxContainer"]
+[node name="ManyButton" type="Button" parent="RootColumn/MainRow/ScrollContainer/VBoxContainer/DensityPanel/MarginContainer/VBoxContainer"]
+custom_minimum_size = Vector2(0, 24)
 layout_mode = 2
+theme_override_font_sizes/font_size = 12
 toggle_mode = true
+clip_text = true
 button_group = SubResource("ButtonGroup_animal_density")
 theme_override_styles/pressed = SubResource("StyleBoxFlat_age_selected")
 theme_override_styles/hover_pressed = SubResource("StyleBoxFlat_age_selected")
 
-[node name="PopulationSizePanel" type="PanelContainer" parent="VBoxContainer"]
+[node name="PopulationSizePanel" type="PanelContainer" parent="RootColumn/MainRow/ScrollContainer/VBoxContainer"]
 layout_mode = 2
 
-[node name="MarginContainer" type="MarginContainer" parent="VBoxContainer/PopulationSizePanel"]
+[node name="MarginContainer" type="MarginContainer" parent="RootColumn/MainRow/ScrollContainer/VBoxContainer/PopulationSizePanel"]
 layout_mode = 2
-theme_override_constants/margin_left = 12
-theme_override_constants/margin_top = 12
-theme_override_constants/margin_right = 12
-theme_override_constants/margin_bottom = 12
+theme_override_constants/margin_left = 8
+theme_override_constants/margin_top = 6
+theme_override_constants/margin_right = 8
+theme_override_constants/margin_bottom = 6
 
-[node name="VBoxContainer" type="VBoxContainer" parent="VBoxContainer/PopulationSizePanel/MarginContainer"]
+[node name="VBoxContainer" type="VBoxContainer" parent="RootColumn/MainRow/ScrollContainer/VBoxContainer/PopulationSizePanel/MarginContainer"]
 layout_mode = 2
-theme_override_constants/separation = 6
+theme_override_constants/separation = 3
 
-[node name="PopulationSizeHeaderLabel" type="Label" parent="VBoxContainer/PopulationSizePanel/MarginContainer/VBoxContainer"]
+[node name="PopulationSizeHeaderLabel" type="Label" parent="RootColumn/MainRow/ScrollContainer/VBoxContainer/PopulationSizePanel/MarginContainer/VBoxContainer"]
 layout_mode = 2
+theme_override_font_sizes/font_size = 13
 horizontal_alignment = 1
 
-[node name="SparseButton" type="Button" parent="VBoxContainer/PopulationSizePanel/MarginContainer/VBoxContainer"]
+[node name="SparseButton" type="Button" parent="RootColumn/MainRow/ScrollContainer/VBoxContainer/PopulationSizePanel/MarginContainer/VBoxContainer"]
+custom_minimum_size = Vector2(0, 24)
 layout_mode = 2
+theme_override_font_sizes/font_size = 12
 toggle_mode = true
+clip_text = true
 button_group = SubResource("ButtonGroup_population_size")
 theme_override_styles/pressed = SubResource("StyleBoxFlat_age_selected")
 theme_override_styles/hover_pressed = SubResource("StyleBoxFlat_age_selected")
 
-[node name="NormalButton" type="Button" parent="VBoxContainer/PopulationSizePanel/MarginContainer/VBoxContainer"]
+[node name="NormalButton" type="Button" parent="RootColumn/MainRow/ScrollContainer/VBoxContainer/PopulationSizePanel/MarginContainer/VBoxContainer"]
+custom_minimum_size = Vector2(0, 24)
 layout_mode = 2
+theme_override_font_sizes/font_size = 12
 toggle_mode = true
+clip_text = true
 button_pressed = true
 button_group = SubResource("ButtonGroup_population_size")
 theme_override_styles/pressed = SubResource("StyleBoxFlat_age_selected")
 theme_override_styles/hover_pressed = SubResource("StyleBoxFlat_age_selected")
 
-[node name="DenseButton" type="Button" parent="VBoxContainer/PopulationSizePanel/MarginContainer/VBoxContainer"]
+[node name="DenseButton" type="Button" parent="RootColumn/MainRow/ScrollContainer/VBoxContainer/PopulationSizePanel/MarginContainer/VBoxContainer"]
+custom_minimum_size = Vector2(0, 24)
 layout_mode = 2
+theme_override_font_sizes/font_size = 12
 toggle_mode = true
+clip_text = true
 button_group = SubResource("ButtonGroup_population_size")
 theme_override_styles/pressed = SubResource("StyleBoxFlat_age_selected")
 theme_override_styles/hover_pressed = SubResource("StyleBoxFlat_age_selected")
 
-[node name="StartButton" type="Button" parent="VBoxContainer"]
+[node name="ThermometerPanel" type="PanelContainer" parent="RootColumn/MainRow"]
+custom_minimum_size = Vector2(96, 0)
 layout_mode = 2
+size_flags_vertical = 3
 
-[node name="BackButton" type="Button" parent="VBoxContainer"]
+[node name="MarginContainer" type="MarginContainer" parent="RootColumn/MainRow/ThermometerPanel"]
 layout_mode = 2
+theme_override_constants/margin_left = 4
+theme_override_constants/margin_top = 6
+theme_override_constants/margin_right = 4
+theme_override_constants/margin_bottom = 6
+
+[node name="VBoxContainer" type="VBoxContainer" parent="RootColumn/MainRow/ThermometerPanel/MarginContainer"]
+layout_mode = 2
+size_flags_vertical = 3
+theme_override_constants/separation = 6
+
+[node name="DifficultyHeaderLabel" type="Label" parent="RootColumn/MainRow/ThermometerPanel/MarginContainer/VBoxContainer"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 12
+horizontal_alignment = 1
+autowrap_mode = 2
+
+[node name="DifficultyBar" type="ProgressBar" parent="RootColumn/MainRow/ThermometerPanel/MarginContainer/VBoxContainer"]
+custom_minimum_size = Vector2(26, 0)
+layout_mode = 2
+size_flags_horizontal = 4
+size_flags_vertical = 3
+fill_mode = 3
+show_percentage = false
+
+[node name="DifficultyPercentLabel" type="Label" parent="RootColumn/MainRow/ThermometerPanel/MarginContainer/VBoxContainer"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 13
+horizontal_alignment = 1
+
+[node name="StartButton" type="Button" parent="RootColumn/MainRow/ThermometerPanel/MarginContainer/VBoxContainer"]
+custom_minimum_size = Vector2(0, 28)
+layout_mode = 2
+theme_override_font_sizes/font_size = 12
+clip_text = true
+
+[node name="BackButton" type="Button" parent="RootColumn/MainRow/ThermometerPanel/MarginContainer/VBoxContainer"]
+custom_minimum_size = Vector2(0, 28)
+layout_mode = 2
+theme_override_font_sizes/font_size = 12
+clip_text = true

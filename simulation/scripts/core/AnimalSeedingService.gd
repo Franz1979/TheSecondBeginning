@@ -2,9 +2,9 @@ class_name AnimalSeedingService
 extends RefCounted
 
 # Seminatore automatico delle popolazioni animali, parallelo al pannello di debug manuale in
-# GameScene.gd (_on_debug_set_animal_pressed) — non lo sostituisce, il debug resta disponibile
+# WorldScene.gd (_on_debug_set_animal_pressed) — non lo sostituisce, il debug resta disponibile
 # per test/casi puntuali. Chiamato SOLO quando GameSettings.selected_world_age_mode != "CLASSIC"
-# (vedi GameScene._populate_new_world), mai per un mondo "classico".
+# (vedi WorldScene._populate_new_world), mai per un mondo "classico".
 #
 # find_candidate_start_cells() e' la stessa identica logica di scansione a griglia con jitter
 # gia' validata in tools/vegetation_equilibrium_test/SeedCandidateCount.gd — estratta qui come
@@ -120,7 +120,7 @@ func populate_animals(world: World, density: GameTypes.AnimalDensity, population
 			print("[ANIMAL SEEDING] %s: %d candidati, %d popolazioni create%s" % [species_name, candidates.size(), created, overlap_note])
 
 
-# Stesso identico pattern di creazione gia' usato dal debug manuale (GameScene.
+# Stesso identico pattern di creazione gia' usato dal debug manuale (WorldScene.
 # _on_debug_set_animal_pressed/_build_initial_territory): territorio a singola cella per specie
 # con min_territory_cells<=1, altrimenti BFS di TerritoryBuilderService fino a min_territory_cells
 # (mai max — il territorio parte al minimo, invariato rispetto al debug manuale). Eta' distribuita

@@ -39,3 +39,8 @@ extends Resource
 # disponibile (vedi CaloricCalculator.get_available_units) — un consumo di X unità da questa
 # fonte deve scalare 1:1 la risorsa fisica collegata (resource_quantity[GRASS] per FORAGE, lo
 # stock derivato per i frutti), MAI moltiplicando/dividendo di nuovo per questo multiplier.
+# PROMEMORIA esplicito (da NON perdere quando arriverà un vero consumo umano, oggi nessuno
+# esiste ancora): fish_meat e bird_meat sono consuming_depletes_primary = true esattamente come
+# FORAGE, quindi consumare fish_meat DEVE scalare resource_quantity[FISH] e consumare bird_meat
+# DEVE scalare resource_quantity[BIRDS] — non sono risorse secondarie con stock proprio (a
+# differenza di eggs/berry/acorn/fruit), il consumo va sulla risorsa primaria stessa.

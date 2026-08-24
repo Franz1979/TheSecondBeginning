@@ -2,7 +2,7 @@ class_name GameClockController
 extends Node
 
 # Play/pause + speed control for the day-granularity calendar. Owns the only
-# _process-driven accumulator in the calendar system; GameScene/MacroCellScene
+# _process-driven accumulator in the calendar system; WorldScene/MacroCellScene
 # just instantiate this (add_child) and react to its signal — all actual
 # day/year bookkeeping and the yearly simulation pipeline live in
 # WorldTimeService/GameData, not here.

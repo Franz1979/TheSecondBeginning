@@ -1,0 +1,39 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://gameplay/scenes/game/GameInfoPanel.gd" id="1_panel"]
+[ext_resource type="PackedScene" uid="uid://dm2h8k5w1n3rt" path="res://simulation/scenes/ui/IconButtonRow.tscn" id="2_iconrow"]
+
+[node name="GameInfoPanel" type="PanelContainer"]
+script = ExtResource("1_panel")
+
+[node name="MarginContainer" type="MarginContainer" parent="."]
+layout_mode = 2
+
+[node name="VBoxContainer" type="VBoxContainer" parent="MarginContainer"]
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="TitleLabel" type="Label" parent="MarginContainer/VBoxContainer"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 14
+
+[node name="CoordsLabel" type="Label" parent="MarginContainer/VBoxContainer"]
+layout_mode = 2
+
+[node name="PrimaryActionsBar" parent="MarginContainer/VBoxContainer" instance=ExtResource("2_iconrow")]
+layout_mode = 2
+slot_count = 5
+
+[node name="HSeparator" type="HSeparator" parent="MarginContainer/VBoxContainer"]
+layout_mode = 2
+
+[node name="BodyContainer" type="VBoxContainer" parent="MarginContainer/VBoxContainer"]
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="HSeparator2" type="HSeparator" parent="MarginContainer/VBoxContainer"]
+layout_mode = 2
+
+[node name="SecondaryActionsBar" parent="MarginContainer/VBoxContainer" instance=ExtResource("2_iconrow")]
+layout_mode = 2
+slot_count = 4

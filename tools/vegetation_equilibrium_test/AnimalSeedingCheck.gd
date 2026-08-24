@@ -3,7 +3,7 @@ extends Node
 # Verifica una tantum (non un tool permanente): per ciascuno dei 3 livelli di
 # GameTypes.PopulationSize (SPARSE/NORMAL/DENSE), carica marealtodx.json, popola con
 # ParametricResourceSetupService (age=OLD) + AnimalSeedingService (density=MEDIUM) — lo stesso
-# percorso che GameScene._populate_new_world segue per una vera partita — poi stampa capacity/
+# percorso che WorldScene._populate_new_world segue per una vera partita — poi stampa capacity/
 # target/campione di popolazioni create per specie (wolf incluso) e verifica che nessuna coppia
 # di popolazioni della STESSA specie condivida anche una sola cella di territorio. Non tocca il
 # motore: chiama solo l'API pubblica gia' esistente (compute_population_target incluso, cosi' il

@@ -126,7 +126,7 @@ extends Resource
 # ora). Letto SOLO quando track_age_bands=true (vedi AnimalBirthService).
 @export var base_birth_rate: float = 0.0
 # Ripartizione (young, adult, old) usata SOLO dal seeding/reseeding manuale della popolazione
-# (oggi il pulsante debug "set rabbit population" in GameScene.gd, vedi
+# (oggi il pulsante debug "set rabbit population" in WorldScene.gd, vedi
 # PopulationGroup.set_age_composition) — mai durante la simulazione a regime. Assente o
 # tutto a 0 => pesi uguali, stesso fallback di SubtypeRules.initial_age_ratio.
 @export var initial_age_ratio: Dictionary = {}

@@ -51,6 +51,14 @@ var secondary_resource_stock: Dictionary = {}
 # di arrotondare e perdere la frazione ogni giorno, si accumula qui finché non supera 1.0 (vedi
 # AnimalConsumptionService), momento in cui dedicated_space[GRASS] viene davvero decrementato.
 var pending_grass_space_debt: float = 0.0
+# Stesso meccanismo di pending_grass_space_debt sopra, per le altre due fonti a consumo diretto
+# (consuming_depletes_primary = true, nessuno stock proprio — vedi CaloricSourceRules):
+# fish_meat decrementa water_dedicated_space[FISH], bird_meat decrementa
+# terrestrial_dedicated_space[BIRDS]. Campi separati (non un Dictionary unico) per restare
+# coerenti con lo schema già in uso per GRASS — nessun consumatore reale li tocca ancora (vedi
+# AnimalConsumptionService._consume_fish_meat/_consume_bird_meat).
+var pending_fish_space_debt: float = 0.0
+var pending_bird_space_debt: float = 0.0
 
 func _init(_x: int, _y: int) -> void:
 	x = _x
@@ -315,6 +323,18 @@ func get_pending_grass_space_debt() -> float:
 
 func set_pending_grass_space_debt(amount: float) -> void:
 	pending_grass_space_debt = max(amount, 0.0)
+
+func get_pending_fish_space_debt() -> float:
+	return pending_fish_space_debt
+
+func set_pending_fish_space_debt(amount: float) -> void:
+	pending_fish_space_debt = max(amount, 0.0)
+
+func get_pending_bird_space_debt() -> float:
+	return pending_bird_space_debt
+
+func set_pending_bird_space_debt(amount: float) -> void:
+	pending_bird_space_debt = max(amount, 0.0)
 
 func get_river_space() -> int:
 	return river_space

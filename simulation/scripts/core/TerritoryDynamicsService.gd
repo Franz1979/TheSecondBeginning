@@ -388,7 +388,7 @@ func _update_group_territory(
 	# sola cella indipendentemente da min_territory_cells, per design) può restare bloccato ben
 	# sotto il minimo della propria specie a tempo indeterminato se cibo e spazio sono già
 	# sufficienti per quella popolazione ridotta — nessuno dei primi due criteri si accorgerebbe
-	# mai del problema. Un gruppo creato da zero (GameScene, via TerritoryBuilderService.
+	# mai del problema. Un gruppo creato da zero (WorldScene, via TerritoryBuilderService.
 	# build_territory con min_territory_cells) parte invece già al minimo, quindi per lui questo
 	# criterio è sempre falso fin dal primo checkpoint.
 	var needs_expansion_minimum: bool = current_cell_count < rules.min_territory_cells

@@ -1,6 +1,6 @@
 [gd_scene format=3 uid="uid://cyiyn6eh6umg5"]
 
-[ext_resource type="Script" uid="uid://cwijivoaxgsv5" path="res://simulation/scripts/game/GameScene.gd" id="1_dsxmn"]
+[ext_resource type="Script" uid="uid://cwijivoaxgsv5" path="res://simulation/scripts/game/WorldScene.gd" id="1_dsxmn"]
 [ext_resource type="Script" uid="uid://bo7e46bvucvqn" path="res://simulation/scripts/camera/CameraController.gd" id="2_ldxrm"]
 [ext_resource type="PackedScene" uid="uid://dam4h2yqltfvr" path="res://simulation/scenes/world/WorldInfoPanel.tscn" id="3_ldxrm"]
 [ext_resource type="Script" path="res://simulation/scripts/game/SeasonProgressBar.gd" id="4_season"]
@@ -25,7 +25,7 @@ corner_radius_top_right = 3
 corner_radius_bottom_left = 3
 corner_radius_bottom_right = 3
 
-[node name="GameScene" type="Node2D" unique_id=728484967]
+[node name="WorldScene" type="Node2D" unique_id=728484967]
 script = ExtResource("1_dsxmn")
 
 [node name="Camera2D" type="Camera2D" parent="." unique_id=1208854376]

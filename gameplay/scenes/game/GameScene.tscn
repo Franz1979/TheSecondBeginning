@@ -1,0 +1,146 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://gameplay/scenes/game/GameScene.gd" id="1_game"]
+[ext_resource type="Script" uid="uid://bo7e46bvucvqn" path="res://simulation/scripts/camera/CameraController.gd" id="2_game"]
+[ext_resource type="Script" uid="uid://dgyc72o0pwhch" path="res://simulation/scripts/game/SeasonProgressBar.gd" id="3_season"]
+[ext_resource type="PackedScene" path="res://gameplay/scenes/game/GameInfoPanel.tscn" id="4_info"]
+[ext_resource type="PackedScene" uid="uid://bk3x7q1nav2ha" path="res://simulation/scenes/ui/SystemMenuDialog.tscn" id="5_sysmenu"]
+[ext_resource type="PackedScene" uid="uid://c5t8k2m4xar1p" path="res://simulation/scenes/ui/SaveConfirmationDialog.tscn" id="6_saveconf"]
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_game"]
+bg_color = Color(0.19934133, 0.34936652, 0.5477696, 1)
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_speed_selected"]
+bg_color = Color(0.95, 0.78, 0.2, 1)
+border_width_left = 2
+border_width_top = 2
+border_width_right = 2
+border_width_bottom = 2
+border_color = Color(0.55, 0.4, 0.05, 1)
+corner_radius_top_left = 3
+corner_radius_top_right = 3
+corner_radius_bottom_right = 3
+corner_radius_bottom_left = 3
+
+[sub_resource type="ButtonGroup" id="ButtonGroup_game_speed"]
+
+[node name="GameScene" type="Node2D"]
+script = ExtResource("1_game")
+
+[node name="Camera2D" type="Camera2D" parent="."]
+position = Vector2(-36, 0)
+script = ExtResource("2_game")
+
+[node name="CanvasLayer" type="CanvasLayer" parent="."]
+
+[node name="Sidebar" type="PanelContainer" parent="CanvasLayer"]
+anchors_preset = 11
+anchor_left = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = -250.0
+grow_horizontal = 0
+theme_override_styles/panel = SubResource("StyleBoxFlat_game")
+
+[node name="MarginContainer" type="MarginContainer" parent="CanvasLayer/Sidebar"]
+layout_mode = 2
+theme_override_constants/margin_left = 10
+theme_override_constants/margin_top = 10
+theme_override_constants/margin_right = 10
+theme_override_constants/margin_bottom = 10
+
+[node name="VBoxContainer" type="VBoxContainer" parent="CanvasLayer/Sidebar/MarginContainer"]
+layout_mode = 2
+
+[node name="CalendarHeaderContainer" type="HBoxContainer" parent="CanvasLayer/Sidebar/MarginContainer/VBoxContainer"]
+layout_mode = 2
+
+[node name="YearTitleLabel" type="Label" parent="CanvasLayer/Sidebar/MarginContainer/VBoxContainer/CalendarHeaderContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+horizontal_alignment = 1
+
+[node name="AdvanceYearButton" type="Button" parent="CanvasLayer/Sidebar/MarginContainer/VBoxContainer/CalendarHeaderContainer"]
+custom_minimum_size = Vector2(30, 0)
+layout_mode = 2
+theme_override_font_sizes/font_size = 10
+text = "+1"
+flat = true
+
+[node name="YearLabel" type="Label" parent="CanvasLayer/Sidebar/MarginContainer/VBoxContainer"]
+custom_minimum_size = Vector2(195, 0)
+layout_mode = 2
+horizontal_alignment = 1
+
+[node name="ClockControlsContainer" type="HBoxContainer" parent="CanvasLayer/Sidebar/MarginContainer/VBoxContainer"]
+layout_mode = 2
+alignment = 1
+
+[node name="PlayPauseButton" type="Button" parent="CanvasLayer/Sidebar/MarginContainer/VBoxContainer/ClockControlsContainer"]
+custom_minimum_size = Vector2(32, 0)
+layout_mode = 2
+text = "▶"
+
+[node name="Speed1xButton" type="Button" parent="CanvasLayer/Sidebar/MarginContainer/VBoxContainer/ClockControlsContainer"]
+custom_minimum_size = Vector2(36, 0)
+layout_mode = 2
+theme_override_colors/font_pressed_color = Color(0.15, 0.1, 0.02, 1)
+theme_override_colors/font_hover_pressed_color = Color(0.15, 0.1, 0.02, 1)
+theme_override_styles/pressed = SubResource("StyleBoxFlat_speed_selected")
+theme_override_styles/hover_pressed = SubResource("StyleBoxFlat_speed_selected")
+toggle_mode = true
+button_pressed = true
+button_group = SubResource("ButtonGroup_game_speed")
+text = "1x"
+
+[node name="Speed2xButton" type="Button" parent="CanvasLayer/Sidebar/MarginContainer/VBoxContainer/ClockControlsContainer"]
+custom_minimum_size = Vector2(36, 0)
+layout_mode = 2
+theme_override_colors/font_pressed_color = Color(0.15, 0.1, 0.02, 1)
+theme_override_colors/font_hover_pressed_color = Color(0.15, 0.1, 0.02, 1)
+theme_override_styles/pressed = SubResource("StyleBoxFlat_speed_selected")
+theme_override_styles/hover_pressed = SubResource("StyleBoxFlat_speed_selected")
+toggle_mode = true
+button_group = SubResource("ButtonGroup_game_speed")
+text = "2x"
+
+[node name="Speed3xButton" type="Button" parent="CanvasLayer/Sidebar/MarginContainer/VBoxContainer/ClockControlsContainer"]
+custom_minimum_size = Vector2(36, 0)
+layout_mode = 2
+theme_override_colors/font_pressed_color = Color(0.15, 0.1, 0.02, 1)
+theme_override_colors/font_hover_pressed_color = Color(0.15, 0.1, 0.02, 1)
+theme_override_styles/pressed = SubResource("StyleBoxFlat_speed_selected")
+theme_override_styles/hover_pressed = SubResource("StyleBoxFlat_speed_selected")
+toggle_mode = true
+button_group = SubResource("ButtonGroup_game_speed")
+text = "3x"
+
+[node name="Speed4xButton" type="Button" parent="CanvasLayer/Sidebar/MarginContainer/VBoxContainer/ClockControlsContainer"]
+custom_minimum_size = Vector2(36, 0)
+layout_mode = 2
+theme_override_colors/font_pressed_color = Color(0.15, 0.1, 0.02, 1)
+theme_override_colors/font_hover_pressed_color = Color(0.15, 0.1, 0.02, 1)
+theme_override_styles/pressed = SubResource("StyleBoxFlat_speed_selected")
+theme_override_styles/hover_pressed = SubResource("StyleBoxFlat_speed_selected")
+toggle_mode = true
+button_group = SubResource("ButtonGroup_game_speed")
+text = "4x"
+
+[node name="SeasonProgressBar" type="Control" parent="CanvasLayer/Sidebar/MarginContainer/VBoxContainer"]
+layout_mode = 2
+script = ExtResource("3_season")
+
+[node name="HSeparator2" type="HSeparator" parent="CanvasLayer/Sidebar/MarginContainer/VBoxContainer"]
+layout_mode = 2
+
+[node name="GameInfoPanel" parent="CanvasLayer/Sidebar/MarginContainer/VBoxContainer" instance=ExtResource("4_info")]
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="SaveGameFileDialog" type="FileDialog" parent="."]
+access = 1
+filters = PackedStringArray("*.json ; File JSON")
+
+[node name="SystemMenuDialog" parent="." instance=ExtResource("5_sysmenu")]
+
+[node name="SaveConfirmationDialog" parent="." instance=ExtResource("6_saveconf")]

@@ -10,7 +10,21 @@ func save_game_to_json(
 		"file_type": "game_save",
 		"game": {
 			"year": game_data.year,
-			"current_day": game_data.current_day
+			"current_day": game_data.current_day,
+			# Statistica pura (vedi GameData) — mai riletti da nessuna logica di simulazione.
+			"starting_world_age_mode": game_data.starting_world_age_mode,
+			"starting_animal_density": game_data.starting_animal_density,
+			"starting_population_size": game_data.starting_population_size,
+			"starting_exclude_hostile_start": game_data.starting_exclude_hostile_start,
+			"starting_exclude_predator_territories": game_data.starting_exclude_predator_territories,
+			"starting_resource_richness_preference": game_data.starting_resource_richness_preference,
+			"starting_group_size_preference": game_data.starting_group_size_preference,
+			"starting_guarantee_animal_presence": game_data.starting_guarantee_animal_presence,
+			"starting_difficulty_ratio": game_data.starting_difficulty_ratio,
+			# Sede macrocella del player per la futura GameScene (vedi GameData) — deve
+			# sopravvivere a save/load, a differenza dei campi analoghi di GameSettings.
+			"player_macro_cell_x": game_data.player_macro_cell_x,
+			"player_macro_cell_y": game_data.player_macro_cell_y
 		},
 		"world": {
 			"width": World.WIDTH,
@@ -45,7 +59,9 @@ func save_game_to_json(
 			"active_growth_bonuses": state.active_growth_bonuses,
 			"pending_migration_surplus": state.pending_migration_surplus,
 			"secondary_resource_stock": state.secondary_resource_stock,
-			"pending_grass_space_debt": state.pending_grass_space_debt
+			"pending_grass_space_debt": state.pending_grass_space_debt,
+			"pending_fish_space_debt": state.pending_fish_space_debt,
+			"pending_bird_space_debt": state.pending_bird_space_debt
 		}
 		# Solo le macrocelle già aperte in MacroCellScene hanno posizioni stone generate:
 		# la chiave resta assente per tutte le altre, per non appesantire il salvataggio.

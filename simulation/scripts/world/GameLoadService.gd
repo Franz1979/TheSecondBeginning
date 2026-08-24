@@ -19,6 +19,21 @@ func load_game_from_json(file_path: String) -> LoadedGame:
 	var game_data := GameData.new()
 	game_data.year = int(data["game"]["year"])
 	game_data.current_day = int(data["game"].get("current_day", 0))
+	# .get(key, default) per compatibilita' con save precedenti l'introduzione della statistica
+	# di difficolta' (vedi GameData) — stringhe vuote/-1.0 sono gli stessi default della classe.
+	game_data.starting_world_age_mode = String(data["game"].get("starting_world_age_mode", ""))
+	game_data.starting_animal_density = String(data["game"].get("starting_animal_density", ""))
+	game_data.starting_population_size = String(data["game"].get("starting_population_size", ""))
+	game_data.starting_exclude_hostile_start = bool(data["game"].get("starting_exclude_hostile_start", false))
+	game_data.starting_exclude_predator_territories = bool(data["game"].get("starting_exclude_predator_territories", false))
+	game_data.starting_resource_richness_preference = String(data["game"].get("starting_resource_richness_preference", ""))
+	game_data.starting_group_size_preference = String(data["game"].get("starting_group_size_preference", ""))
+	game_data.starting_guarantee_animal_presence = bool(data["game"].get("starting_guarantee_animal_presence", false))
+	game_data.starting_difficulty_ratio = float(data["game"].get("starting_difficulty_ratio", -1.0))
+	# .get(key, -1) per compatibilita' con save precedenti l'introduzione della sede player
+	# (vedi GameData) — -1 è lo stesso default "mai inizializzata" della classe.
+	game_data.player_macro_cell_x = int(data["game"].get("player_macro_cell_x", -1))
+	game_data.player_macro_cell_y = int(data["game"].get("player_macro_cell_y", -1))
 
 	var world_data = data["world"]
 	var world := World.new()
@@ -84,6 +99,8 @@ func load_game_from_json(file_path: String) -> LoadedGame:
 			for resource_name in secondary_stock_data.keys():
 				state.secondary_resource_stock[resource_name] = float(secondary_stock_data[resource_name])
 			state.pending_grass_space_debt = float(state_data.get("pending_grass_space_debt", 0.0))
+			state.pending_fish_space_debt = float(state_data.get("pending_fish_space_debt", 0.0))
+			state.pending_bird_space_debt = float(state_data.get("pending_bird_space_debt", 0.0))
 			if state_data.has("stone_positions"):
 				var stone_positions: Array = []
 				for pos_data in state_data["stone_positions"]:

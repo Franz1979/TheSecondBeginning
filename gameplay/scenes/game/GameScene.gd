@@ -1,5 +1,16 @@
 extends Node2D
 
+# DEBITO TECNICO DELIBERATO: la logica di rendering di questa scena (MicroCellRenderer + i 10
+# AnimalGroupRenderer, il ricalcolo posizioni vegetazione/pesci/pietre, i parametri età/sottotipo
+# passati al renderer) è una DUPLICAZIONE di simulation/scripts/game/MacroCellScene.gd, non una
+# condivisione (nessuna composizione/ereditarietà tra le due scene). Scelta concordata
+# esplicitamente: GameScene (vista player reale) e MacroCellScene (vista debug) potranno
+# divergere nel tempo — GameScene guadagnerà interazione/gameplay che MacroCellScene non avrà
+# mai bisogno di avere, e viceversa MacroCellScene resterà uno strumento di debug/ispezione.
+# Unificare il rendering condiviso (es. un componente comune instanziato da entrambe) è
+# rimandato a quando GameScene sarà stabile — per ora, se una delle due cambia, l'altra va
+# aggiornata a mano se il cambiamento deve valere per entrambe.
+
 const NEIGHBOR_OFFSETS := [
 	Vector2i(0, -1), # nord
 	Vector2i(0, 1),  # sud
@@ -7,17 +18,11 @@ const NEIGHBOR_OFFSETS := [
 	Vector2i(-1, 0), # ovest
 ]
 
-# Vista principale del player su una singola macrocella (res://gameplay/scenes/game/). Oggi
-# raggiungibile solo tramite questo bottone debug e l'equivalente in WorldScene — il vero
-# aggancio dal flusso principale è uno step successivo separato, non ancora fatto (vedi TODO in
-# GameScene.gd._ready()).
-const GAME_SCENE_PATH := "res://gameplay/scenes/game/GameScene.tscn"
-
-var world: World
 var macro_world: World
 var macro_cell: MacroCellData
 var macro_state: MacroCellState
 var game_data: GameData
+var world: World
 var renderer: MicroCellRenderer
 var rabbit_renderer: AnimalGroupRenderer
 var deer_renderer: AnimalGroupRenderer
@@ -29,28 +34,19 @@ var mouflon_renderer: AnimalGroupRenderer
 var bezoar_renderer: AnimalGroupRenderer
 var partridge_renderer: AnimalGroupRenderer
 var wolf_renderer: AnimalGroupRenderer
+# Stesso schema di MacroCellScene: default entrambi ATTIVI, i due toggle nel PrimaryActionsBar
+# di GameInfoPanel servono a DISATTIVARLI (vedi _on_primary_action_pressed), non ad attivarli.
 var animals_visible: bool = true
 var flora_daily_updates_enabled: bool = true
 var clock: GameClockController
 var _clock_was_playing_before_dialogs: bool = false
 var _open_dialog_count: int = 0
 var _pending_leave_action: StringName = &""
-# Posizioni microcella coperte dal fiume (Array[Vector2i], vuoto se la macrocella non ha
-# river). Calcolate una sola volta in _ready(): river_shape/river_space non cambiano mai
-# durante la sessione (nessun service della pipeline annuale li tocca), quindi non serve
-# ricalcolarle a ogni _refresh_resource_visuals(). Escludono grass/shrub/tree (vegetazione
-# terrestre) via `occupied`, ma NON stone — le rocce nel letto/sulle rive del fiume restano
-# plausibili e StonePositionService non riceve questo dizionario.
+# Posizioni microcella coperte dal fiume — stessa natura/motivazione di MacroCellScene.gd.
 var river_positions: Array = []
-# Inverso di river_positions (Dictionary per lookup O(1)): tutte le posizioni microcella NON
-# fiume, calcolate una sola volta in _ready() insieme a river_positions per lo stesso motivo
-# (river_shape/river_space non cambiano mai durante la sessione). Usato come `occupied` di
-# partenza per FishPositionService su celle RIVER: passandolo (duplicato) al generatore, le
-# uniche posizioni candidate restano quelle dentro river_positions — vedi _refresh_resource_visuals.
 var river_exterior_occupied: Dictionary = {}
 
-@onready var primary_actions_bar: IconButtonRow = $CanvasLayer/Sidebar/MarginContainer/VBoxContainer/PrimaryActionsBar
-@onready var secondary_actions_bar: IconButtonRow = $CanvasLayer/Sidebar/MarginContainer/VBoxContainer/SecondaryActionsBar
+@onready var game_info_panel: GameInfoPanel = $CanvasLayer/Sidebar/MarginContainer/VBoxContainer/GameInfoPanel
 @onready var system_menu_dialog: SystemMenuDialog = $SystemMenuDialog
 @onready var save_confirmation_dialog: SaveConfirmationDialog = $SaveConfirmationDialog
 @onready var save_game_file_dialog: FileDialog = $SaveGameFileDialog
@@ -65,14 +61,14 @@ var river_exterior_occupied: Dictionary = {}
 }
 @onready var advance_year_button: Button = $CanvasLayer/Sidebar/MarginContainer/VBoxContainer/CalendarHeaderContainer/AdvanceYearButton
 @onready var season_progress_bar: SeasonProgressBar = $CanvasLayer/Sidebar/MarginContainer/VBoxContainer/SeasonProgressBar
-@onready var macro_cell_detail_panel: MacroCellDetailPanel = $CanvasLayer/Sidebar/MarginContainer/VBoxContainer/MacroCellDetailPanel
 
 func _ready() -> void:
 	# Ripristina lo stato dei due toggle dalla sessione precedente (vedi GameSettings): senza
-	# questo, uscendo e rientrando in questa scena i toggle tornerebbero sempre al default "attivo",
-	# perdendo silenziosamente la scelta dell'utente.
-	animals_visible = GameSettings.macro_cell_animals_visible
-	flora_daily_updates_enabled = GameSettings.macro_cell_flora_updates_enabled
+	# questo, uscendo e rientrando in questa scena tornerebbero sempre al default "attivo",
+	# perdendo silenziosamente la scelta dell'utente — stesso principio già usato da
+	# MacroCellScene per i suoi due toggle (campi GameSettings separati, vedi lì per il perché).
+	animals_visible = GameSettings.game_scene_animals_visible
+	flora_daily_updates_enabled = GameSettings.game_scene_flora_updates_enabled
 
 	year_title_label.text = tr("calendar_label")
 	advance_year_button.text = "+1"
@@ -82,23 +78,10 @@ func _ready() -> void:
 	save_game_file_dialog.current_dir = GameSettings.SAVES_DIR
 	save_game_file_dialog.file_selected.connect(_on_save_game_file_selected)
 
-	primary_actions_bar.configure_slot(
-		0, "🐇", tr("toggle_animals_visibility_tooltip"), &"toggle_animals_visibility",
-		tr("toggle_animals_visibility_description")
-	)
-	primary_actions_bar.set_slot_toggled(0, animals_visible)
-	primary_actions_bar.configure_slot(
-		1, "🌱", tr("toggle_flora_updates_tooltip"), &"toggle_flora_updates",
-		tr("toggle_flora_updates_description")
-	)
-	primary_actions_bar.set_slot_toggled(1, flora_daily_updates_enabled)
-	primary_actions_bar.action_pressed.connect(_on_primary_action_pressed)
-	secondary_actions_bar.configure_slot(0, "☰", tr("menu"), &"menu")
-	# Slot 1 lasciato vuoto apposta: i bottoni di navigazione stanno accostati al bordo destro
-	# della riga (slot 2 e 3), separati dal bottone opzioni a sinistra.
-	secondary_actions_bar.configure_slot(2, "🌍", tr("back_to_world"), &"back_to_world", tr("back_to_world_description"))
-	secondary_actions_bar.configure_slot(3, "🧍", tr("game_view"), &"game_view", tr("game_view_description"))
-	secondary_actions_bar.action_pressed.connect(_on_secondary_action_pressed)
+	game_info_panel.primary_actions_bar.set_slot_toggled(0, animals_visible)
+	game_info_panel.primary_actions_bar.set_slot_toggled(1, flora_daily_updates_enabled)
+	game_info_panel.primary_actions_bar.action_pressed.connect(_on_primary_action_pressed)
+	game_info_panel.secondary_actions_bar.action_pressed.connect(_on_secondary_action_pressed)
 	system_menu_dialog.add_action(tr("save_game"), &"save")
 	system_menu_dialog.add_action(tr("back_to_menu"), &"back_to_main_menu")
 	system_menu_dialog.add_action(tr("exit"), &"exit_game")
@@ -107,22 +90,61 @@ func _ready() -> void:
 	save_confirmation_dialog.option_selected.connect(_on_save_confirmation_option_selected)
 	save_confirmation_dialog.visibility_changed.connect(_on_blocking_dialog_visibility_changed.bind(save_confirmation_dialog))
 
-	macro_world = GameSettings.active_world
-	game_data = GameSettings.active_game_data
+	# --- Logica di ingresso -------------------------------------------------------------------
+	# 1) Ritorno da WorldScene/MacroCellScene via bottone debug "🧍": riusa lo stato condiviso
+	#    esattamente com'era, mai RI-scegliere una cella già nota (GameData.player_macro_cell_x/y)
+	#    — stesso schema del ramo returning_from_macro_cell di WorldScene._ready().
+	var returning := GameSettings.returning_to_player_view
+	if returning:
+		GameSettings.returning_to_player_view = false
+		macro_world = GameSettings.active_world
+		game_data = GameSettings.active_game_data
+	else:
+		# 2) Ingresso "vero": WorldScene._redirect_to_game_scene reindirizza qui, invece che a se
+		# stessa, subito dopo _populate_new_world per una partita nuova (player_macro_cell_x/y
+		# ancora -1 a questo punto) — usa lo stesso canale condiviso di handoff già in uso
+		# ovunque nel progetto (GameSettings.active_world/active_game_data), valorizzato lì
+		# prima del change_scene_to_file.
+		macro_world = GameSettings.active_world
+		game_data = GameSettings.active_game_data
+
 	if game_data == null:
 		push_warning("Nessun game_data condiviso: creo un anno locale di riserva.")
 		game_data = GameData.new()
 
+	# BUGFIX (trovato in sessione reale): i due bottoni debug "🧍" impostano SEMPRE
+	# returning_to_player_view=true, anche al primissimo click in assoluto su una partita appena
+	# creata — in quel caso player_macro_cell_x/y sono ancora -1 nonostante returning=true, e il
+	# ramo 1 sopra non li valorizza mai. Senza questo controllo macro_cell risultava null e la
+	# scena cadeva nel fallback "mondo vuoto di riserva" sotto — silenzioso ma sbagliato (vista
+	# player vuota alla primissima apertura). La guardia sotto (invariata: scatta solo se le
+	# coordinate sono ANCORA -1) copre quindi sia il vero "ingresso 2" sia questo caso limite del
+	# "ritorno 1" — non ricalcola mai una cella già nota, in nessuno dei due rami.
 	if macro_world != null:
-		macro_cell = macro_world.get_cell_at(GameSettings.selected_macro_cell_x, GameSettings.selected_macro_cell_y)
+		if game_data.player_macro_cell_x == -1 or game_data.player_macro_cell_y == -1:
+			# I quattro filtri/preferenza vengono dalle scelte CONGELATE di questa partita
+			# (GameData.starting_*, valorizzate una volta sola in WorldScene._populate_new_world
+			# alla creazione), non da GameSettings.selected_* (dato di flusso runtime,
+			# potenzialmente stale dopo un load in una sessione successiva) — confermato con
+			# l'utente.
+			var chosen := FirstStartMacroCellSelectionService.new().select_starting_cell(
+				macro_world,
+				game_data.starting_exclude_hostile_start,
+				game_data.starting_exclude_predator_territories,
+				game_data.starting_resource_richness_preference,
+				game_data.starting_guarantee_animal_presence
+			)
+			game_data.player_macro_cell_x = chosen.x
+			game_data.player_macro_cell_y = chosen.y
 
-	# Punto di invocazione per LODOrchestrator (Parte A: classificazione + log diagnostico; Parte B
-	# Punto 2: il risultato viene ora anche conservato su macro_world.lod_focus_state — vedi
-	# World.gd). La "zona a fuoco" è per ora la sola macrocella appena aperta, la scelta più
-	# semplice prima di un eventuale intorno più ampio. macro_world.lod_focus_region viene salvata
-	# insieme al risultato: WorldTimeService la userà per ricalcolare periodicamente
-	# lod_focus_state ad ogni checkpoint stagionale (fix del bug "nuovi gruppi da split mai
-	# classificati"), senza dover ripassare la region da qui ogni volta.
+	if macro_world != null:
+		macro_cell = macro_world.get_cell_at(game_data.player_macro_cell_x, game_data.player_macro_cell_y)
+
+	if macro_cell != null:
+		game_info_panel.set_coords(macro_cell.x, macro_cell.y)
+
+	# Punto di invocazione per LODOrchestrator — identico a MacroCellScene (vedi lì per i
+	# dettagli): la "zona a fuoco" è la sola macrocella del player.
 	if macro_world != null and macro_cell != null:
 		var focus_region := Rect2i(macro_cell.x, macro_cell.y, 1, 1)
 		var lod_result := LODOrchestrator.new().set_focus_region(macro_world, focus_region)
@@ -134,12 +156,8 @@ func _ready() -> void:
 	if macro_cell != null:
 		world.generate_uniform_terrain(macro_cell.terrain_base, macro_cell.water_type, macro_cell.coast_type)
 	else:
-		push_warning("Macrocella non trovata: genero un mondo vuoto di riserva.")
+		push_warning("Macrocella del player non trovata: genero un mondo vuoto di riserva.")
 		world.generate_empty_world()
-
-	# Niente InitialResourceSetupService qui: è logica di test pensata per il mondo macro
-	# (stone random al centro, trees/grass/shrub forzati in 50,50) e non ha senso per la
-	# vista microcella finché non esiste un vero modello di risorse per microcella.
 
 	renderer = MicroCellRenderer.new()
 	add_child(renderer)
@@ -172,11 +190,6 @@ func _ready() -> void:
 		),
 	})
 
-
-	# Cervo: stesso schema del coniglio sopra (parametri comportamentali da AnimalRules/deer.tres,
-	# sagoma dedicata via build_deer_mesh — vedi AnimalGroupRenderer per la motivazione della
-	# separazione). Corpo più grande del coniglio (coerente con la specie: ~1.7-1.8x in lunghezza
-	# e larghezza), colore bruno invece del grigio-chiaro del coniglio.
 	deer_renderer = AnimalGroupRenderer.new()
 	add_child(deer_renderer)
 	var deer_rules := AnimalCalculator.get_animal_rules("deer")
@@ -204,9 +217,6 @@ func _ready() -> void:
 		),
 	})
 
-	# Cinghiale: stesso schema di rabbit/deer sopra, inclusi i 4 parametri di Cluster Movement
-	# (data-driven da AnimalRules/boar.tres grazie al refactor che li ha resi generici — nessun
-	# valore hardcoded qui, a differenza di come erano rabbit/deer prima di quel refactor).
 	boar_renderer = AnimalGroupRenderer.new()
 	add_child(boar_renderer)
 	var boar_rules := AnimalCalculator.get_animal_rules("boar")
@@ -234,7 +244,6 @@ func _ready() -> void:
 		),
 	})
 
-	# Tarpan: stesso schema di rabbit/deer/boar sopra.
 	tarpan_renderer = AnimalGroupRenderer.new()
 	add_child(tarpan_renderer)
 	var tarpan_rules := AnimalCalculator.get_animal_rules("tarpan")
@@ -262,7 +271,6 @@ func _ready() -> void:
 		),
 	})
 
-	# Aurochs: stesso schema di rabbit/deer/boar/tarpan sopra.
 	aurochs_renderer = AnimalGroupRenderer.new()
 	add_child(aurochs_renderer)
 	var aurochs_rules := AnimalCalculator.get_animal_rules("aurochs")
@@ -290,7 +298,6 @@ func _ready() -> void:
 		),
 	})
 
-	# Wild donkey: stesso schema di rabbit/deer/boar/tarpan/aurochs sopra.
 	wild_donkey_renderer = AnimalGroupRenderer.new()
 	add_child(wild_donkey_renderer)
 	var wild_donkey_rules := AnimalCalculator.get_animal_rules("wild_donkey")
@@ -318,7 +325,6 @@ func _ready() -> void:
 		),
 	})
 
-	# Mouflon: stesso schema di rabbit/deer/boar/tarpan/aurochs/wild_donkey sopra.
 	mouflon_renderer = AnimalGroupRenderer.new()
 	add_child(mouflon_renderer)
 	var mouflon_rules := AnimalCalculator.get_animal_rules("mouflon")
@@ -346,7 +352,6 @@ func _ready() -> void:
 		),
 	})
 
-	# Bezoar: stesso schema di rabbit/deer/boar/tarpan/aurochs/wild_donkey/mouflon sopra.
 	bezoar_renderer = AnimalGroupRenderer.new()
 	add_child(bezoar_renderer)
 	var bezoar_rules := AnimalCalculator.get_animal_rules("bezoar")
@@ -374,10 +379,6 @@ func _ready() -> void:
 		),
 	})
 
-	# Partridge: stesso schema di rabbit/deer/boar/tarpan/aurochs/wild_donkey/mouflon/bezoar sopra
-	# — prima specie non-mammifero (sagoma con ali ripiegate invece di orecchie/corna, vedi
-	# AnimalGroupRenderer.build_partridge_mesh), stessa pipeline di configurazione, nessuna
-	# differenza di trattamento qui.
 	partridge_renderer = AnimalGroupRenderer.new()
 	add_child(partridge_renderer)
 	var partridge_rules := AnimalCalculator.get_animal_rules("partridge")
@@ -432,8 +433,6 @@ func _ready() -> void:
 		),
 	})
 
-	# Applica lo stato di visibilità ripristinato sopra (default true dei renderer altrimenti
-	# resterebbe visibile anche se l'utente l'aveva disattivato prima di uscire).
 	rabbit_renderer.set_animals_visible(animals_visible)
 	deer_renderer.set_animals_visible(animals_visible)
 	boar_renderer.set_animals_visible(animals_visible)
@@ -476,24 +475,14 @@ func _ready() -> void:
 	_update_calendar_display()
 
 
-# Azzera lo stato di focus del LOD (Parte B, Punto 2) quando questa scena viene lasciata, per
-# QUALUNQUE via — "Torna al Mondo" (_on_back_to_world_pressed), "Torna al menu principale"
-# (_on_system_menu_action_selected), o una futura terza via non ancora scritta: _exit_tree() è il
-# callback nativo di Godot invocato quando il nodo esce dall'albero (change_scene_to_file lo
-# libera sempre), quindi copre ogni caso senza dover ricordare di richiamare l'azzeramento in ogni
-# singolo gestore di bottone. Riporta lod_focus_state a {} = "nessun focus attivo" (vista mondo),
-# lo stesso stato di partenza prima che questa scena venisse mai aperta — WorldScene, che riusa lo
-# stesso macro_world per riferimento, torna quindi a vedere tutti i gruppi allo stesso modo, come
-# oggi.
+# Azzera lo stato di focus del LOD quando questa scena viene lasciata — stessa motivazione di
+# MacroCellScene._exit_tree().
 func _exit_tree() -> void:
 	if macro_world != null:
 		macro_world.lod_focus_state = {}
 		macro_world.lod_focus_region = Rect2i()
 
 
-# "occupied" invertito rispetto al solito uso (qui marca ciò che NON è disponibile per FISH,
-# cioè tutto tranne il fiume): passato a ResourcePositionService, le uniche candidate a
-# superare il filtro restano le posizioni dentro river_positions.
 func _compute_river_exterior_occupied(positions: Array) -> Dictionary:
 	var river_position_set: Dictionary = {}
 	for pos in positions:
@@ -508,13 +497,6 @@ func _compute_river_exterior_occupied(positions: Array) -> Dictionary:
 	return exterior
 
 
-# Grass/shrub/tree non sono persistite (a differenza di stone): vanno ricalcolate ogni
-# volta che la loro quantità può essere cambiata, cioè all'apertura della scena e ai
-# checkpoint stagionali (o ogni giorno, se flora_daily_updates_enabled — vedi _on_day_advanced),
-# così la vegetazione "cresce"/cambia a vista. Aggiorna anche il pannello info in coda (vedi
-# _update_info_panel) — quest'ultimo però va tenuto sincronizzato ogni giorno a prescindere,
-# per questo _on_day_advanced lo richiama anche da solo nei giorni in cui questo rebuild
-# completo viene saltato.
 func _refresh_resource_visuals() -> void:
 	if macro_state == null:
 		return
@@ -531,14 +513,8 @@ func _refresh_resource_visuals() -> void:
 	var fish_positions: Array = []
 	var fish_service := FishPositionService.new()
 	if macro_cell.water_type == GameTypes.WaterType.SEA or macro_cell.water_type == GameTypes.WaterType.LAKE:
-		# L'intera macrocella è acqua: nessuna posizione da escludere.
 		fish_positions = fish_service.generate_positions(macro_state)
 	elif macro_cell.water_type == GameTypes.WaterType.RIVER:
-		# Duplicato: generate_positions muta il dizionario passato aggiungendo le posizioni
-		# scelte, e river_exterior_occupied va riusato identico a ogni refresh, non accumulare
-		# i pesci di un anno come "occupati" per quello successivo. Le rocce (stabili per tutta
-		# la sessione, come river_positions) possono già stare dentro il fiume — vanno escluse
-		# così un pesce non finisce disegnato esattamente sopra una roccia.
 		var occupied_for_fish: Dictionary = river_exterior_occupied.duplicate()
 		for pos in macro_state.stone_positions:
 			occupied_for_fish[pos] = true
@@ -572,20 +548,11 @@ func _refresh_resource_visuals() -> void:
 	renderer.set_tree_fruit_ratios(_get_tree_subtype_ratio("wild_fruit"), _get_tree_subtype_ratio("domesticable_fruit"))
 	renderer.set_tree_conifer_ratio(_get_tree_subtype_ratio("conifer"))
 	renderer.set_tree_age_params(game_data.year, _get_age_params(GameTypes.WorldObjectType.TREE))
-	# Dopo le posizioni: set_season ricostruisce anche il buffer erba (colore dipende dalla
-	# stagione), così lo fa una volta sola con le posizioni già aggiornate invece di due volte.
 	renderer.set_season(SeasonCalculator.get_season_for_day(game_data.current_day))
 
 	_update_info_panel()
 
 
-# Popola un AnimalGroupRenderer con la quota di QUESTA cella (get_population_by_cell — con
-# territori multi-cella, Step 5, group.population è il totale sull'INTERO territorio, non quanti
-# individui sono realmente qui; stessa fonte di verità già usata da WorldInfoPanel/
-# MacroCellDetailPanel, per rabbit a 1 sola cella degenera nello stesso valore). Se la specie
-# traccia le age band (track_age_bands), la quota viene ulteriormente ripartita per fascia
-# (get_age_composition_in_cell) così il renderer può disegnare Y/A/O a dimensioni diverse
-# (size_multiplier_by_age) — altrimenti passa la quota totale a set_population, scala fissa 1.0.
 func _update_animal_renderer_population(
 	renderer_node: AnimalGroupRenderer, group: PopulationGroup, rules: AnimalRules, coords: Vector2i
 ) -> void:
@@ -609,20 +576,15 @@ func _update_animal_renderer_population(
 		renderer_node.set_population(int(group.get_population_by_cell().get(coords, 0)))
 
 
-# I numeri del pannello info leggono macro_state/macro_cell direttamente (nessun rebuild di
-# mesh coinvolto): vanno tenuti aggiornati ogni giorno in cui qualcosa è davvero cambiato,
-# INDIPENDENTEMENTE da flora_daily_updates_enabled — quel toggle riguarda solo quando vale la
-# pena ricostruire la resa grafica (costosa), non se i dati mostrati sono corretti. Per questo
-# è una funzione a sé invece di restare solo in coda a _refresh_resource_visuals.
+# GameInfoPanel non ha ancora un corpo con dati da mostrare (body_container vuoto per ora — vedi
+# GameInfoPanel.gd). Questo resta comunque il punto di aggancio invariato rispetto a
+# MacroCellScene._update_info_panel (chiamato dagli stessi punti: fine di
+# _refresh_resource_visuals e da _on_day_advanced nei giorni in cui quel rebuild viene saltato),
+# cosi' quando GameInfoPanel guadagnera' un corpo reale il collegamento e' gia' pronto.
 func _update_info_panel() -> void:
-	if macro_state == null:
-		return
-	macro_cell_detail_panel.show_cell(macro_cell, macro_state, SeasonCalculator.get_season_for_day(game_data.current_day), macro_world)
+	pass
 
 
-# Quota di dedicated_space SHRUB classificata come sottotipo "fruit_bearing" nella macrocella
-# corrente (0 se SHRUB non ha ancora sottotipi tracciati lì, es. cella senza shrub). Il nome
-# stringa deve combaciare con subtype_name in data/resource_subtypes/shrub_fruit_bearing.tres.
 func _get_shrub_fruit_ratio() -> float:
 	var composition := macro_state.get_subtype_composition(GameTypes.WorldObjectType.SHRUB)
 	if composition.is_empty():
@@ -637,12 +599,7 @@ func _get_shrub_fruit_ratio() -> float:
 	var fruit_count: int = int(composition.get("fruit_bearing", 0))
 	return float(fruit_count) / float(total)
 
-# Parametri fasce età per ciascun sottotipo di object_type con track_age_bands=true nella
-# macrocella corrente (chiave = subtype_name), passati già risolti a MicroCellRenderer (vedi
-# _refresh_resource_visuals, chiamata per SHRUB e TREE) — stessa separazione di responsabilità di
-# _get_shrub_fruit_ratio: il renderer non conosce ResourceCalculator/MacroCellState, riceve solo
-# dati già pronti. I ratio arrivano da MacroCellState.get_age_composition, non normalizzati qui
-# (AgeBandVisualService normalizza già internamente).
+
 func _get_age_params(object_type: GameTypes.WorldObjectType) -> Dictionary:
 	var params: Dictionary = {}
 	for rule in ResourceCalculator.get_subtype_rules(object_type):
@@ -662,10 +619,7 @@ func _get_age_params(object_type: GameTypes.WorldObjectType) -> Dictionary:
 		}
 	return params
 
-# Quota di dedicated_space TREE classificata come subtype_name nella macrocella corrente (0 se
-# TREE non ha ancora sottotipi tracciati lì, es. cella senza tree). Un'unica funzione parametrica
-# invece di una per sottotipo, dato che MicroCellRenderer ora vuole wild_fruit e
-# domesticable_fruit come due rapporti indipendenti (vedi set_tree_fruit_ratios).
+
 func _get_tree_subtype_ratio(subtype_name: String) -> float:
 	var composition := macro_state.get_subtype_composition(GameTypes.WorldObjectType.TREE)
 	if composition.is_empty():
@@ -679,21 +633,21 @@ func _get_tree_subtype_ratio(subtype_name: String) -> float:
 
 	return float(int(composition.get(subtype_name, 0))) / float(total)
 
-func _get_neighbor_cells(macro_cell: MacroCellData) -> Dictionary:
+func _get_neighbor_cells(macro_cell_ref: MacroCellData) -> Dictionary:
 	var neighbors: Dictionary = {}
 	for offset in NEIGHBOR_OFFSETS:
-		neighbors[offset] = macro_world.get_cell_at(macro_cell.x + offset.x, macro_cell.y + offset.y)
+		neighbors[offset] = macro_world.get_cell_at(macro_cell_ref.x + offset.x, macro_cell_ref.y + offset.y)
 	return neighbors
 
-func _get_neighbor_states(macro_cell: MacroCellData) -> Dictionary:
+func _get_neighbor_states(macro_cell_ref: MacroCellData) -> Dictionary:
 	var states: Dictionary = {}
 	for offset in NEIGHBOR_OFFSETS:
-		states[offset] = macro_world.get_cell_state_at(macro_cell.x + offset.x, macro_cell.y + offset.y)
+		states[offset] = macro_world.get_cell_state_at(macro_cell_ref.x + offset.x, macro_cell_ref.y + offset.y)
 	return states
 
 func _on_save_pressed() -> void:
 	if macro_world == null:
-		push_warning("Nessun mondo macro condiviso: impossibile salvare.")
+		push_warning("Nessun mondo condiviso: impossibile salvare.")
 		return
 	save_game_file_dialog.popup_centered()
 
@@ -708,10 +662,7 @@ func _on_primary_action_pressed(action_id: StringName) -> void:
 	match action_id:
 		&"toggle_animals_visibility":
 			animals_visible = not animals_visible
-			# Un solo toggle per tutta la fauna (rabbit + deer + boar + tarpan + aurochs +
-			# wild_donkey + mouflon + bezoar + partridge + wolf, non uno per specie): nessun caso d'uso reale oggi
-			# per nasconderle separatamente — se servirà un controllo più fine in futuro (es.
-			# gameplay-specifico), lo si introduce allora.
+			# Un solo toggle per tutta la fauna, stesso principio di MacroCellScene.
 			rabbit_renderer.set_animals_visible(animals_visible)
 			deer_renderer.set_animals_visible(animals_visible)
 			boar_renderer.set_animals_visible(animals_visible)
@@ -722,21 +673,21 @@ func _on_primary_action_pressed(action_id: StringName) -> void:
 			bezoar_renderer.set_animals_visible(animals_visible)
 			partridge_renderer.set_animals_visible(animals_visible)
 			wolf_renderer.set_animals_visible(animals_visible)
-			primary_actions_bar.set_slot_toggled(0, animals_visible)
-			GameSettings.macro_cell_animals_visible = animals_visible
+			game_info_panel.primary_actions_bar.set_slot_toggled(0, animals_visible)
+			GameSettings.game_scene_animals_visible = animals_visible
 		&"toggle_flora_updates":
 			flora_daily_updates_enabled = not flora_daily_updates_enabled
-			primary_actions_bar.set_slot_toggled(1, flora_daily_updates_enabled)
-			GameSettings.macro_cell_flora_updates_enabled = flora_daily_updates_enabled
+			game_info_panel.primary_actions_bar.set_slot_toggled(1, flora_daily_updates_enabled)
+			GameSettings.game_scene_flora_updates_enabled = flora_daily_updates_enabled
 
 func _on_secondary_action_pressed(action_id: StringName) -> void:
 	match action_id:
-		&"back_to_world":
-			_on_back_to_world_pressed()
-		&"game_view":
-			_on_game_view_pressed()
 		&"menu":
 			system_menu_dialog.open_menu()
+		&"world_debug":
+			_on_world_debug_pressed()
+		&"macro_cell_debug":
+			_on_macro_cell_debug_pressed()
 
 func _on_blocking_dialog_visibility_changed(dialog: Window) -> void:
 	if dialog.visible:
@@ -819,9 +770,6 @@ func _on_day_advanced(checkpoint_ran: bool, animals_changed: bool) -> void:
 	if not (checkpoint_ran or animals_changed):
 		return
 
-	# _refresh_resource_visuals già chiama _update_info_panel al suo interno: qui va invocata
-	# a parte solo quando quel rebuild completo (costoso) viene saltato, così i dati del
-	# pannello restano sempre aggiornati giorno per giorno anche a rendering "stagionale".
 	if checkpoint_ran or flora_daily_updates_enabled:
 		_refresh_resource_visuals()
 	else:
@@ -829,7 +777,7 @@ func _on_day_advanced(checkpoint_ran: bool, animals_changed: bool) -> void:
 
 func _on_advance_year_pressed() -> void:
 	if macro_world == null:
-		push_warning("Nessun mondo macro condiviso: impossibile avanzare l'anno.")
+		push_warning("Nessun mondo condiviso: impossibile avanzare l'anno.")
 		return
 	clock.force_advance_to_year_end()
 
@@ -837,22 +785,32 @@ func _update_calendar_display() -> void:
 	year_label.text = "Day %d of %d, Year %d" % [game_data.current_day + 1, GameData.DAYS_PER_YEAR, game_data.year]
 	season_progress_bar.set_current_day(game_data.current_day)
 
-func _on_back_to_world_pressed() -> void:
+
+# STRUMENTO DI DEBUG (vedi GameInfoPanel.gd): da rimuovere o nascondere dietro un flag prima del
+# player finale — il player non deve poter "teletrasportarsi" alla vista mondo a piacimento.
+# Stesso schema di MacroCellScene._on_back_to_world_pressed: macro_world/game_data sono già gli
+# stessi oggetti letti da GameSettings.active_world/active_game_data all'ingresso (mai
+# riassegnati a qualcos'altro nel frattempo), quindi non serve riscriverli — solo lo stato
+# dell'orologio, che invece cambia durante la sessione.
+func _on_world_debug_pressed() -> void:
 	GameSettings.returning_to_world_scene = true
 	if clock != null and macro_world != null:
 		GameSettings.active_clock_is_playing = clock.is_playing
 		GameSettings.active_clock_speed = clock.speed
 	get_tree().change_scene_to_file("res://simulation/scenes/game/WorldScene.tscn")
 
-# GameScene ora esiste (res://gameplay/scenes/game/GameScene.tscn) — questo bottone è uno dei
-# due canali "debug" da cui è raggiungibile oggi (l'altro è WorldScene._on_game_view_pressed),
-# in attesa che il vero ingresso post-seeding venga agganciato (vedi TODO in
-# GameScene.gd._ready()). Stesso schema di _on_back_to_world_pressed sopra.
-func _on_game_view_pressed() -> void:
+
+# STRUMENTO DI DEBUG (vedi GameInfoPanel.gd): da rimuovere o nascondere dietro un flag prima del
+# player finale. Stesso schema del bottone "🧍" di WorldScene/MacroCellScene (_on_game_view_
+# pressed) ma in direzione opposta: verso MacroCellScene, sulla STESSA cella in cui si trova il
+# player (GameData.player_macro_cell_x/y) — nessun returning_to_* da impostare, MacroCellScene
+# non ha un concetto di "ritorno", legge sempre selected_macro_cell_x/y + active_world fresco.
+func _on_macro_cell_debug_pressed() -> void:
+	GameSettings.selected_macro_cell_x = game_data.player_macro_cell_x
+	GameSettings.selected_macro_cell_y = game_data.player_macro_cell_y
 	GameSettings.active_world = macro_world
 	GameSettings.active_game_data = game_data
-	GameSettings.returning_to_player_view = true
-	if clock != null and macro_world != null:
+	if clock != null:
 		GameSettings.active_clock_is_playing = clock.is_playing
 		GameSettings.active_clock_speed = clock.speed
-	get_tree().change_scene_to_file(GAME_SCENE_PATH)
+	get_tree().change_scene_to_file("res://simulation/scenes/game/MacroCellScene.tscn")

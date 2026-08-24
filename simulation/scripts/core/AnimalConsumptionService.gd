@@ -2,6 +2,14 @@ class_name AnimalConsumptionService
 extends RefCounted
 
 const FORAGE_SOURCE_NAME := "forage"
+# fish_meat/bird_meat: stesso trattamento di FORAGE (consuming_depletes_primary = true, vedi
+# CaloricSourceRules) — decrementano direttamente la risorsa primaria collegata (FISH/BIRDS),
+# mai uno stock proprio. Nessuna specie ha ancora questi due nomi in diet_compatibility (nessun
+# consumo umano implementato), quindi questi rami non sono ancora davvero raggiunti — ma il
+# dispatcher sotto e' gia' corretto per quando lo saranno, invece di trattarli per errore come
+# fonti a stock (unico altro ramo disponibile prima di questa modifica).
+const FISH_MEAT_SOURCE_NAME := "fish_meat"
+const BIRD_MEAT_SOURCE_NAME := "bird_meat"
 
 # Consumo calorico giornaliero (non stagionale) per ogni gruppo animale, ripartito tra le celle
 # del suo territorio (vedi _consume_group) e, dentro ciascuna cella, tra TUTTE le fonti con
@@ -13,7 +21,7 @@ const FORAGE_SOURCE_NAME := "forage"
 # non solo quando GRASS perde davvero spazio: dedicated_space[GRASS] cambia solo quando il
 # debito frazionario (pending_grass_space_debt) supera 1.0, un evento raro rispetto al consumo
 # giornaliero di berry/acorn/fruit (che invece intacca subito lo stock, ogni giorno). Il
-# chiamante (MacroCellScene/GameScene) usa questo valore per decidere se il pannello info va
+# chiamante (MacroCellScene/WorldScene) usa questo valore per decidere se il pannello info va
 # rinfrescato oggi — il rebuild costoso delle MultiMesh di vegetazione resta gated
 # separatamente da checkpoint_ran/flora_daily_updates_enabled, indipendente da questo flag.
 func apply_daily_consumption(world: World, current_season: GameTypes.Season, groups_override: Array = []) -> bool:
@@ -249,14 +257,21 @@ func _consume_requirement_in_cell(
 			var consumed_calories: float = min(share, source_weight)
 			var units_consumed: float = consumed_calories / source_rules.calories_per_unit
 
-			if source_name == FORAGE_SOURCE_NAME:
-				# Il valore di ritorno (spazio GRASS davvero decrementato) non serve più al
-				# chiamante: il segnale "consumo avvenuto" oggi è weight_sum > 0, qualunque sia
-				# la fonte — vedi apply_daily_consumption.
-				_consume_forage(cell, state, units_consumed)
-			else:
-				var before := state.get_secondary_resource_stock(source_name)
-				state.set_secondary_resource_stock(source_name, before - units_consumed)
+			# Il valore di ritorno (spazio davvero decrementato) non serve più al chiamante: il
+			# segnale "consumo avvenuto" oggi è weight_sum > 0, qualunque sia la fonte — vedi
+			# apply_daily_consumption. I tre rami a consumo diretto (consuming_depletes_primary
+			# = true) intaccano la risorsa primaria stessa; ogni altra fonte (stock, es. berry/
+			# acorn/fruit/eggs) intacca il proprio secondary_resource_stock.
+			match source_name:
+				FORAGE_SOURCE_NAME:
+					_consume_forage(cell, state, units_consumed)
+				FISH_MEAT_SOURCE_NAME:
+					_consume_fish_meat(cell, state, units_consumed)
+				BIRD_MEAT_SOURCE_NAME:
+					_consume_bird_meat(cell, state, units_consumed)
+				_:
+					var before := state.get_secondary_resource_stock(source_name)
+					state.set_secondary_resource_stock(source_name, before - units_consumed)
 
 			total_consumed_calories += consumed_calories
 
@@ -265,10 +280,10 @@ func _consume_requirement_in_cell(
 
 
 # Stesso schema di conversione spazio<->quantità usato da growth/mortality: la risorsa primaria
-# (consuming_depletes_primary = true, solo FORAGE/GRASS) viene decrementata tramite
-# dedicated_space, con resource_quantity sempre RICALCOLATO da esso — mai un contatore
-# indipendente, altrimenti il prossimo checkpoint di crescita lo sovrascriverebbe cancellando
-# l'effetto del consumo.
+# (consuming_depletes_primary = true — FORAGE/GRASS qui, fish_meat/FISH e bird_meat/BIRDS nelle
+# due funzioni gemelle sotto) viene decrementata tramite dedicated_space, con resource_quantity
+# sempre RICALCOLATO da esso — mai un contatore indipendente, altrimenti il prossimo checkpoint
+# di crescita lo sovrascriverebbe cancellando l'effetto del consumo.
 #
 # Il consumo giornaliero convertito in spazio (unità/densità) è quasi sempre < 1 unità intera:
 # arrotondare ogni giorno lo azzererebbe sistematicamente, perdendo il consumo per sempre. Si
@@ -299,5 +314,65 @@ func _consume_forage(cell: MacroCellData, state: MacroCellState, units_consumed:
 		)
 		space_debt -= actually_removed
 	state.set_pending_grass_space_debt(space_debt)
+
+	return removed
+
+
+# Gemella di _consume_forage sopra, stesso identico meccanismo di debito frazionario, ma sulla
+# risorsa FISH: water_dedicated_space (get/set_water_space) invece di dedicated_space, densità
+# via get_water_max_density(FISH, water_type) invece di get_max_density (FISH è una risorsa
+# d'acqua, non di terra — stesso asse già usato da InitialResourceSetupService.populate_fish).
+# Nessun chiamante reale ancora (vedi FISH_MEAT_SOURCE_NAME sopra), pronta per quando esisterà.
+func _consume_fish_meat(cell: MacroCellData, state: MacroCellState, units_consumed: float) -> bool:
+	var max_density := ResourceCalculator.get_water_max_density(GameTypes.WorldObjectType.FISH, cell.water_type)
+	if max_density <= 0.0:
+		return false
+
+	var space_debt := state.get_pending_fish_space_debt() + (units_consumed / max_density)
+	var space_to_remove: int = int(floor(space_debt))
+	var removed := false
+	if space_to_remove > 0:
+		var current_space := state.get_water_space(GameTypes.WorldObjectType.FISH)
+		var actually_removed: int = min(space_to_remove, current_space)
+		if actually_removed > 0:
+			removed = true
+		var new_space := current_space - actually_removed
+		state.set_water_space(GameTypes.WorldObjectType.FISH, new_space)
+		state.set_resource_quantity(
+			GameTypes.WorldObjectType.FISH, int(round(new_space * max_density))
+		)
+		space_debt -= actually_removed
+	state.set_pending_fish_space_debt(space_debt)
+
+	return removed
+
+
+# Gemella di _consume_forage sopra, sulla risorsa BIRDS: terrestrial_dedicated_space (get/
+# set_terrestrial_space) invece di dedicated_space, densità via get_max_density(BIRDS, terrain,
+# biome, coast) — BIRDS è una risorsa di terra come GRASS (stesso asse Terrain/Biome/Coast già
+# usato da InitialResourceSetupService.populate_birds), solo con la propria dedicated_space.
+# Nessun chiamante reale ancora (vedi BIRD_MEAT_SOURCE_NAME sopra), pronta per quando esisterà.
+func _consume_bird_meat(cell: MacroCellData, state: MacroCellState, units_consumed: float) -> bool:
+	var max_density := ResourceCalculator.get_max_density(
+		GameTypes.WorldObjectType.BIRDS, cell.terrain_base, cell.biome, cell.coast_type
+	)
+	if max_density <= 0.0:
+		return false
+
+	var space_debt := state.get_pending_bird_space_debt() + (units_consumed / max_density)
+	var space_to_remove: int = int(floor(space_debt))
+	var removed := false
+	if space_to_remove > 0:
+		var current_space := state.get_terrestrial_space(GameTypes.WorldObjectType.BIRDS)
+		var actually_removed: int = min(space_to_remove, current_space)
+		if actually_removed > 0:
+			removed = true
+		var new_space := current_space - actually_removed
+		state.set_terrestrial_space(GameTypes.WorldObjectType.BIRDS, new_space)
+		state.set_resource_quantity(
+			GameTypes.WorldObjectType.BIRDS, int(round(new_space * max_density))
+		)
+		space_debt -= actually_removed
+	state.set_pending_bird_space_debt(space_debt)
 
 	return removed

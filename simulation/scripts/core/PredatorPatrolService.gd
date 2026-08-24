@@ -12,7 +12,7 @@ extends RefCounted
 # TerritoryDynamicsService) tengono insieme più fasi correlate di uno stesso meccanismo:
 #   Fase A (recompute_route) — O(celle territorio): ricostruisce l'intero percorso da zero.
 #   Invocata SOLO quando la forma di group.territory cambia davvero — MAI al checkpoint annuale
-#   incondizionatamente, MAI ogni giorno. Tre chiamanti (Step 7): GameScene/GameLoadService per
+#   incondizionatamente, MAI ogni giorno. Tre chiamanti (Step 7): WorldScene/GameLoadService per
 #   creazione/caricamento di un gruppo (reset_progress rispettivamente true/false, nessuna
 #   posizione precedente da preservare), TerritoryDynamicsService per espansione/contrazione di un
 #   gruppo esistente e PopulationSplitService per il territorio nuovo del gruppo scisso — questi

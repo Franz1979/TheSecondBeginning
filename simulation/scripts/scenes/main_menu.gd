@@ -37,7 +37,7 @@ func _on_open_game_file_selected(path: String) -> void:
 	GameSettings.selected_map_file = ""
 	GameSettings.selected_save_file = path
 
-	get_tree().change_scene_to_file("res://simulation/scenes/game/GameScene.tscn")
+	get_tree().change_scene_to_file("res://simulation/scenes/game/WorldScene.tscn")
 	
 func _on_map_editor_pressed() -> void:
 	get_tree().change_scene_to_file("res://simulation/scenes/menus/MapEditorMenu.tscn")

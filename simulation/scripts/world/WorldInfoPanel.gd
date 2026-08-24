@@ -1,23 +1,23 @@
 class_name WorldInfoPanel
 extends PanelContainer
 
-# Copia di MacroCellInfoPanel (scripts/world/MacroCellInfoPanel.gd), biforcata per GameScene —
+# Copia di MacroCellInfoPanel (scripts/world/MacroCellInfoPanel.gd), biforcata per WorldScene —
 # le due viste sono divergenti da tempo (questa porta filtro specie/evidenziazione territori
 # world-level che MapEditorScene non ha mai usato) e MacroCellInfoPanel.show_resources=false in
 # MapEditorScene nascondeva già di fatto tutto tranne Geografia, quindi il nome "cella macro" non
-# descriveva più bene cosa mostra questo pannello in GameScene (mix dati-cella + dati-mondo).
+# descriveva più bene cosa mostra questo pannello in WorldScene (mix dati-cella + dati-mondo).
 # MacroCellInfoPanel resta il pannello INVARIATO per MapEditorScene (sempre e solo una cella:
 # nessun mix, nome ancora accurato lì). Duplicazione deliberata, non un refactor condiviso:
 # eventuali fix genuinamente comuni (es. nell'integrazione con CellGeographyInfo) vanno applicati
 # in entrambi i file.
 
 # Emesso quando l'utente clicca la riga di un PopulationGroup nella tab Fauna (2) — il chiamante
-# (GameScene) ascolta per evidenziare sulla mappa le celle del territorio del gruppo (vedi
+# (WorldScene) ascolta per evidenziare sulla mappa le celle del territorio del gruppo (vedi
 # WorldRenderer.flash_cells). cells è un Array[Vector2i] (territory.occupied_macrocells).
 signal population_group_highlight_requested(cells: Array)
 
 # Emesso dal pulsante "Mostra tutti" (solo quando il filtro specie è su una specie specifica, vedi
-# _add_species_summary_row) — il chiamante (GameScene) ascolta per evidenziare CONTEMPORANEAMENTE
+# _add_species_summary_row) — il chiamante (WorldScene) ascolta per evidenziare CONTEMPORANEAMENTE
 # sulla mappa i territori di tutti i gruppi di quella specie (vedi WorldRenderer.
 # highlight_group_territories). entries è un Array di Dictionary {"cells": Array[Vector2i],
 # "color": Color, "label_text": String, "label_cell": Vector2i} — forma diversa dal segnale sopra
@@ -49,7 +49,7 @@ const FILTER_BUTTON_SIZE := Vector2(22, 20)
 const FILTER_ICON_SIZE := Vector2(14, 14)
 
 # Vista "Mostra tutti i territori" (solo con filtro specie attivo, vedi _add_species_summary_row/
-# _on_show_all_territories_pressed) — più lunga di GameScene.POPULATION_HIGHLIGHT_DURATION (2.0s,
+# _on_show_all_territories_pressed) — più lunga di WorldScene.POPULATION_HIGHLIGHT_DURATION (2.0s,
 # singolo gruppo): con più territori insieme serve più tempo per osservarli tutti.
 const SPECIES_TERRITORY_HIGHLIGHT_DURATION: float = 3.0
 # Alpha del riempimento colorato di ciascun territorio nella vista "Mostra tutti" — abbastanza
@@ -69,7 +69,7 @@ const GOLDEN_RATIO_CONJUGATE: float = 0.6180339887498949
 @onready var tab_container: TabContainer = $MarginContainer/VBoxContainer/TabContainer
 @onready var geography_title_label: Label = $MarginContainer/VBoxContainer/TabContainer/GeografiaTab/GeografiaContent/SectionTitleLabel
 # Coordinate della cella selezionata, spostate qui (dentro Geografia) invece che in testa al
-# pannello come nel MacroCellInfoPanel originale: in GameScene le tab Fauna 1/2 mostrano dati
+# pannello come nel MacroCellInfoPanel originale: in WorldScene le tab Fauna 1/2 mostrano dati
 # world-level indipendenti dalla cella selezionata (vedi show_cell sotto), quindi delle
 # coordinate sempre visibili in testa risulterebbero fuorvianti quando l'utente è su quelle tab.
 # Restano invece sempre corrette qui, dato che Geografia (insieme ai numeri risorsa sotto,
@@ -280,11 +280,11 @@ func _on_tab_changed(tab_idx: int) -> void:
 
 # Rinfresca la tab world-level attualmente aperta (Vegetazione/Risorse/Fauna1/Fauna2/Fauna3), se
 # una di queste lo è — punto d'ingresso unico usato sia da show_cell/_on_tab_changed (qui sotto) sia
-# dal chiamante esterno (GameScene._on_day_advanced) per il caso in cui il mondo avanza SENZA che
+# dal chiamante esterno (WorldScene._on_day_advanced) per il caso in cui il mondo avanza SENZA che
 # l'utente abbia una cella selezionata: queste tab mostrano dati aggregati sull'intero world,
 # indipendenti dalla selezione, quindi non devono aspettare un click su una cella per rinfrescarsi.
 # Rinominata da refresh_fauna_tabs_if_active (nome non più accurato da quando Vegetazione/Risorse
-# hanno guadagnato contenuto reale, anch'esso world-level) — GameScene.gd aggiornato di conseguenza.
+# hanno guadagnato contenuto reale, anch'esso world-level) — WorldScene.gd aggiornato di conseguenza.
 func refresh_world_tabs_if_active() -> void:
 	if tab_container.current_tab == TAB_VEGETAZIONE:
 		_refresh_vegetazione_tab()
@@ -421,7 +421,7 @@ func _on_population_group_row_pressed(cells: Array) -> void:
 
 
 # Elenco piatto di tutti i PopulationGroup del world (oggi rabbit e deer, più gruppi della stessa
-# specie in celle diverse possono coesistere — vedi GameScene debug buttons), non filtrato per
+# specie in celle diverse possono coesistere — vedi WorldScene debug buttons), non filtrato per
 # cella — a differenza di MacroCellDetailPanel._update_animal_population_rows, che mostra solo i
 # gruppi della cella aperta. L'identificativo di riga è group.id (assegnato una volta alla
 # creazione, vedi World.allocate_population_group_id), NON un indice ricalcolato qui: resta
