@@ -6,6 +6,7 @@
 [ext_resource type="PackedScene" path="res://gameplay/scenes/game/GameInfoPanel.tscn" id="4_info"]
 [ext_resource type="PackedScene" uid="uid://bk3x7q1nav2ha" path="res://simulation/scenes/ui/SystemMenuDialog.tscn" id="5_sysmenu"]
 [ext_resource type="PackedScene" uid="uid://c5t8k2m4xar1p" path="res://simulation/scenes/ui/SaveConfirmationDialog.tscn" id="6_saveconf"]
+[ext_resource type="PackedScene" path="res://gameplay/scenes/game/HelpDialog.tscn" id="7_help"]
 
 [sub_resource type="StyleBoxFlat" id="StyleBoxFlat_game"]
 bg_color = Color(0.19934133, 0.34936652, 0.5477696, 1)
@@ -29,7 +30,10 @@ script = ExtResource("1_game")
 
 [node name="Camera2D" type="Camera2D" parent="."]
 position = Vector2(-36, 0)
+zoom = Vector2(12, 12)
 script = ExtResource("2_game")
+min_zoom = 0.4
+max_zoom = 12.0
 
 [node name="CanvasLayer" type="CanvasLayer" parent="."]
 
@@ -144,3 +148,5 @@ filters = PackedStringArray("*.json ; File JSON")
 [node name="SystemMenuDialog" parent="." instance=ExtResource("5_sysmenu")]
 
 [node name="SaveConfirmationDialog" parent="." instance=ExtResource("6_saveconf")]
+
+[node name="HelpDialog" parent="." instance=ExtResource("7_help")]

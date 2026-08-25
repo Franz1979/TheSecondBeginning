@@ -34,6 +34,13 @@ func load_game_from_json(file_path: String) -> LoadedGame:
 	# (vedi GameData) — -1 è lo stesso default "mai inizializzata" della classe.
 	game_data.player_macro_cell_x = int(data["game"].get("player_macro_cell_x", -1))
 	game_data.player_macro_cell_y = int(data["game"].get("player_macro_cell_y", -1))
+	# .get(key, -1.0) per compatibilità con save precedenti l'introduzione della posizione micro
+	# del player (vedi GameData) — -1.0 è lo stesso default "mai valorizzata" della classe.
+	game_data.player_micro_x = float(data["game"].get("player_micro_x", -1.0))
+	game_data.player_micro_y = float(data["game"].get("player_micro_y", -1.0))
+	# .get(key, -1.0) per compatibilità con save precedenti l'introduzione dello zoom camera
+	# (vedi GameData) — -1.0 è lo stesso default "mai valorizzato" della classe.
+	game_data.camera_zoom = float(data["game"].get("camera_zoom", -1.0))
 
 	var world_data = data["world"]
 	var world := World.new()

@@ -39,6 +39,29 @@ var wolf_renderer: AnimalGroupRenderer
 var animals_visible: bool = true
 var flora_daily_updates_enabled: bool = true
 var clock: GameClockController
+# Individuo controllabile — vedi Individual.gd/IndividualView.gd/IndividualController.gd
+# (gameplay/scripts/entities/) e IndividualMovementService.gd (gameplay/services/). Il
+# movimento gira ogni frame in _process qui sotto, indipendentemente dal clock giorno/anno
+# (confermato con l'utente).
+var individual: Individual
+var individual_view: IndividualView
+var individual_controller: IndividualController
+var individual_movement_service := IndividualMovementService.new()
+var fog_of_war_renderer: FogOfWarRenderer
+# Storage "quali microcelle della macrocella corrente sono già state viste" (Step 1 fog of war)
+# — posseduta qui, non dal renderer (vedi FogOfWarMemory.gd per il perché: un futuro step di
+# persistenza dovrà passarla a GameSaveService/GameLoadService come già fa con game_data/world).
+# Non persistita oggi: sopravvive solo alla sessione corrente, ricreata da zero ad ogni _ready().
+var fog_of_war_memory := FogOfWarMemory.new()
+# Se true, la camera segue individual.position ogni frame (vedi _process sotto), sovrascrivendo
+# di fatto il WASD/edge-pan di CameraController (tecnicamente attivo ma ininfluente: ogni frame
+# il segui-player lo corregge subito). Default FALSE (bugfix): un segui-continuo impediva di
+# allontanare la camera dal player per guardare celle già note/congelate (vedi FogOfWarMemory) —
+# esplorare la mappa senza muovere il player deve restare possibile SEMPRE, non solo dopo un
+# futuro "sgancio". La camera si centra sul player una sola volta, in _ready() (copre sia
+# l'ingresso "vero" sia il ripristino da un salvataggio — vedi fondo di _ready()), poi resta
+# libera: il bottone "🎯"/tasto X restano il modo per ri-centrarla manualmente quando serve.
+var camera_follows_individual: bool = false
 var _clock_was_playing_before_dialogs: bool = false
 var _open_dialog_count: int = 0
 var _pending_leave_action: StringName = &""
@@ -49,7 +72,9 @@ var river_exterior_occupied: Dictionary = {}
 @onready var game_info_panel: GameInfoPanel = $CanvasLayer/Sidebar/MarginContainer/VBoxContainer/GameInfoPanel
 @onready var system_menu_dialog: SystemMenuDialog = $SystemMenuDialog
 @onready var save_confirmation_dialog: SaveConfirmationDialog = $SaveConfirmationDialog
+@onready var help_dialog: HelpDialog = $HelpDialog
 @onready var save_game_file_dialog: FileDialog = $SaveGameFileDialog
+@onready var camera: Camera2D = $Camera2D
 @onready var year_title_label: Label = $CanvasLayer/Sidebar/MarginContainer/VBoxContainer/CalendarHeaderContainer/YearTitleLabel
 @onready var year_label: Label = $CanvasLayer/Sidebar/MarginContainer/VBoxContainer/YearLabel
 @onready var play_pause_button: Button = $CanvasLayer/Sidebar/MarginContainer/VBoxContainer/ClockControlsContainer/PlayPauseButton
@@ -89,6 +114,7 @@ func _ready() -> void:
 	system_menu_dialog.visibility_changed.connect(_on_blocking_dialog_visibility_changed.bind(system_menu_dialog))
 	save_confirmation_dialog.option_selected.connect(_on_save_confirmation_option_selected)
 	save_confirmation_dialog.visibility_changed.connect(_on_blocking_dialog_visibility_changed.bind(save_confirmation_dialog))
+	help_dialog.visibility_changed.connect(_on_blocking_dialog_visibility_changed.bind(help_dialog))
 
 	# --- Logica di ingresso -------------------------------------------------------------------
 	# 1) Ritorno da WorldScene/MacroCellScene via bottone debug "🧍": riusa lo stato condiviso
@@ -162,6 +188,26 @@ func _ready() -> void:
 	renderer = MicroCellRenderer.new()
 	add_child(renderer)
 	renderer.setup(world)
+
+	individual = Individual.new()
+	# Riprende la posizione salvata (GameData.player_micro_x/y, vedi GameSaveService/
+	# GameLoadService) se presente — sentinel -1.0/-1.0 (partita nuova, o save precedente
+	# l'introduzione di questo campo) vuol dire "mai valorizzata": in quel caso resta il default
+	# di sempre, al centro della griglia.
+	if game_data.player_micro_x >= 0.0 and game_data.player_micro_y >= 0.0:
+		individual.position = Vector2(game_data.player_micro_x, game_data.player_micro_y)
+	else:
+		individual.position = Vector2(World.WIDTH / 2.0, World.HEIGHT / 2.0)
+	# Riprende lo zoom salvato (GameData.camera_zoom) se presente — sentinel -1.0 (partita nuova,
+	# o save precedente l'introduzione di questo campo) vuol dire "mai valorizzato": in quel caso
+	# resta lo zoom di default impostato in GameScene.tscn.
+	if game_data.camera_zoom > 0.0:
+		camera.zoom = Vector2(game_data.camera_zoom, game_data.camera_zoom)
+	individual_view = IndividualView.new()
+	add_child(individual_view)
+	individual_view.setup(individual)
+	individual_controller = IndividualController.new()
+	individual_controller.setup(individual, renderer)
 
 	rabbit_renderer = AnimalGroupRenderer.new()
 	add_child(rabbit_renderer)
@@ -444,6 +490,13 @@ func _ready() -> void:
 	partridge_renderer.set_animals_visible(animals_visible)
 	wolf_renderer.set_animals_visible(animals_visible)
 
+	# ULTIMO figlio aggiunto apposta (vedi FogOfWarRenderer.gd): l'ordine dei figli è l'ordine
+	# di disegno in Godot 2D, deve stare sopra renderer/animali/IndividualView per coprire
+	# davvero tutto quello che nasconde.
+	fog_of_war_renderer = FogOfWarRenderer.new()
+	add_child(fog_of_war_renderer)
+	fog_of_war_renderer.setup(individual, fog_of_war_memory)
+
 	if macro_cell != null and macro_world != null:
 		renderer.set_neighbors(_get_neighbor_cells(macro_cell), _get_neighbor_states(macro_cell))
 
@@ -473,6 +526,42 @@ func _ready() -> void:
 	partridge_renderer.clock = clock
 	wolf_renderer.clock = clock
 	_update_calendar_display()
+
+	# Centra la camera sul player UNA SOLA VOLTA all'ingresso in scena — copre sia una partita
+	# nuova (individual al centro griglia) sia un salvataggio ripristinato (individual alla
+	# posizione salvata, vedi player_micro_x/y sopra). Da qui in poi la camera resta libera
+	# (camera_follows_individual default false, vedi sopra), niente segui-continuo.
+	_center_camera_on_individual()
+
+
+# Movimento dell'individuo controllabile: gira ogni frame, indipendentemente da clock.is_playing
+# (il player deve poter esplorare la macrocella anche a simulazione in pausa — confermato con
+# l'utente). Non tocca in alcun modo il pipeline giorno/anno di WorldTimeService.
+func _process(delta: float) -> void:
+	if individual != null:
+		individual_movement_service.advance_movement(individual, delta)
+	if fog_of_war_renderer != null:
+		fog_of_war_renderer.update_visibility(game_data.get_absolute_day())
+	if camera_follows_individual:
+		_center_camera_on_individual()
+
+
+func _unhandled_input(event: InputEvent) -> void:
+	if individual_controller != null:
+		individual_controller.handle_input(event)
+
+	if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_X:
+		_center_camera_on_individual()
+
+
+# Sposta la camera esattamente sulla posizione corrente dell'individuo — stesso spazio pixel di
+# IndividualView (individual.position, in microcelle, moltiplicata per lo stesso CELL_SIZE=10 di
+# MicroCellRenderer/IndividualView). Richiamato sia dal tasto X (_unhandled_input sopra) sia dal
+# bottone "🎯" della PrimaryActionsBar (vedi _on_primary_action_pressed).
+func _center_camera_on_individual() -> void:
+	if individual == null:
+		return
+	camera.position = individual.position * MicroCellRenderer.CELL_SIZE
 
 
 # Azzera lo stato di focus del LOD quando questa scena viene lasciata — stessa motivazione di
@@ -649,6 +738,16 @@ func _on_save_pressed() -> void:
 	if macro_world == null:
 		push_warning("Nessun mondo condiviso: impossibile salvare.")
 		return
+	# Aggiorna GameData con la posizione ATTUALE dell'individuo (vedi Individual.position) prima
+	# di aprire il dialogo — game_data e' la stessa istanza scritta su disco da
+	# _on_save_game_file_selected, quindi basta valorizzarla qui perché il salvataggio la trovi
+	# gia' pronta.
+	if individual != null:
+		game_data.player_micro_x = individual.position.x
+		game_data.player_micro_y = individual.position.y
+	# Stesso principio, solo lo zoom (zoom.x == zoom.y sempre, vedi GameData.camera_zoom) — non
+	# la posizione camera, che oggi segue sempre Individual e non ha stato proprio da salvare.
+	game_data.camera_zoom = camera.zoom.x
 	save_game_file_dialog.popup_centered()
 
 func _on_save_game_file_selected(path: String) -> void:
@@ -679,9 +778,13 @@ func _on_primary_action_pressed(action_id: StringName) -> void:
 			flora_daily_updates_enabled = not flora_daily_updates_enabled
 			game_info_panel.primary_actions_bar.set_slot_toggled(1, flora_daily_updates_enabled)
 			GameSettings.game_scene_flora_updates_enabled = flora_daily_updates_enabled
+		&"center_on_individual":
+			_center_camera_on_individual()
 
 func _on_secondary_action_pressed(action_id: StringName) -> void:
 	match action_id:
+		&"help":
+			help_dialog.open_dialog()
 		&"menu":
 			system_menu_dialog.open_menu()
 		&"world_debug":

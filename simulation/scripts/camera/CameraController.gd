@@ -2,10 +2,14 @@ extends Camera2D
 
 const MOVE_SPEED: float = 500.0
 const ZOOM_STEP: float = 0.1
-const MIN_ZOOM: float = 0.4
-const MAX_ZOOM: float = 3.0
 const EDGE_PAN_MARGIN: float = 24.0
 const EDGE_PAN_MAX_SPEED: float = 500.0
+
+# @export (non const) così ogni scena può stringere/allargare il proprio range di zoom dalla
+# .tscn senza toccare questo script condiviso — es. GameScene usa un min_zoom più basso per
+# poter ispezionare da vicino l'individuo/le microcelle.
+@export var min_zoom: float = 0.4
+@export var max_zoom: float = 3.0
 
 func _ready() -> void:
 	position = Vector2(800, 400)
@@ -70,10 +74,23 @@ func _get_edge_pan_vector() -> Vector2:
 
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventMouseButton:
+		# Rotella avanti (WHEEL_UP) avvicina, rotella indietro (WHEEL_DOWN) allontana — invertito
+		# rispetto al comportamento originale, confermato con l'utente per tutte le viste (script
+		# condiviso).
 		if event.button_index == MOUSE_BUTTON_WHEEL_UP and event.pressed:
-			zoom -= Vector2(ZOOM_STEP, ZOOM_STEP)
-		elif event.button_index == MOUSE_BUTTON_WHEEL_DOWN and event.pressed:
 			zoom += Vector2(ZOOM_STEP, ZOOM_STEP)
+		elif event.button_index == MOUSE_BUTTON_WHEEL_DOWN and event.pressed:
+			zoom -= Vector2(ZOOM_STEP, ZOOM_STEP)
 
-		zoom.x = clamp(zoom.x, MIN_ZOOM, MAX_ZOOM)
-		zoom.y = clamp(zoom.y, MIN_ZOOM, MAX_ZOOM)
+		zoom.x = clamp(zoom.x, min_zoom, max_zoom)
+		zoom.y = clamp(zoom.y, min_zoom, max_zoom)
+
+	# Zoom immediato al massimo/minimo consentito da questa istanza (min_zoom/max_zoom sopra,
+	# quindi per-scena come lo zoom a rotella) — "+" avvicina al massimo, "-" allontana al
+	# minimo, stesso verso della rotella invertita. Condiviso da tutte le viste (script comune),
+	# innocuo dove non c'è nulla su cui inquadrare da vicino.
+	if event is InputEventKey and event.pressed and not event.echo:
+		if event.keycode == KEY_EQUAL or event.keycode == KEY_KP_ADD:
+			zoom = Vector2(max_zoom, max_zoom)
+		elif event.keycode == KEY_MINUS or event.keycode == KEY_KP_SUBTRACT:
+			zoom = Vector2(min_zoom, min_zoom)

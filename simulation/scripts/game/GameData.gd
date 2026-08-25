@@ -42,6 +42,23 @@ var starting_difficulty_ratio: float = -1.0
 var player_macro_cell_x: int = -1
 var player_macro_cell_y: int = -1
 
+# Posizione dell'individuo controllabile DENTRO player_macro_cell_x/y, in coordinate microcella
+# continue (stesso spazio di Individual.position, vedi gameplay/scripts/entities/Individual.gd)
+# — non le coordinate macro sopra. -1.0 = mai valorizzata: GameScene lo interpreta come segnale
+# per posizionare l'individuo al centro della griglia (comportamento di sempre), esattamente come
+# -1 su player_macro_cell_x/y segnala "scegli tu la cella di partenza".
+var player_micro_x: float = -1.0
+var player_micro_y: float = -1.0
+
+# Zoom della Camera2D di GameScene (Camera2D.zoom.x == .y sempre in questo progetto — vedi
+# CameraController, lo scroll/le scorciatoie +/- applicano sempre lo stesso delta a entrambi gli
+# assi — quindi un solo float basta, a differenza di player_micro_x/y che sono davvero 2D). -1.0
+# = mai valorizzato: GameScene lascia lo zoom di default della .tscn (partita nuova, o save
+# precedente l'introduzione di questo campo). Solo lo zoom, non la posizione camera: oggi la
+# camera segue sempre Individual (camera_follows_individual), la cui posizione è già persistita
+# sopra — se in futuro arriverà lo sgancio camera-player, la posizione andrà salvata allora.
+var camera_zoom: float = -1.0
+
 # Monotonic day count since year 0, day 0 — the single source of truth for "how long ago"
 # comparisons (e.g. natural-event growth-bonus expiry) that must not reset/round at a year
 # boundary the way a per-year counter would.

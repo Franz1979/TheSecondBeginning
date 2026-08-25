@@ -41,14 +41,20 @@ func _ready() -> void:
 		1, "🌱", tr("toggle_flora_updates_tooltip"), &"toggle_flora_updates",
 		tr("toggle_flora_updates_description")
 	)
+	primary_actions_bar.configure_slot(
+		2, "🎯", tr("center_on_individual_tooltip"), &"center_on_individual",
+		tr("center_on_individual_description")
+	)
 
 	# I due bottoni di navigazione debug (vedi GameScene._on_world_debug_pressed/
 	# _on_macro_cell_debug_pressed) vivono qui, nella seconda riga insieme al menu — stesso
-	# schema di MacroCellScene (menu/back_to_world/game_view): slot 1 lasciato apposta vuoto,
-	# stesso spaziatore grigio già in uso li' per separare il bottone opzioni dai bottoni di
-	# navigazione, accostati al bordo destro. Strumenti di debug (World/MacroCell): da rimuovere
-	# o nascondere dietro un flag prima del player finale.
+	# schema di MacroCellScene (menu/back_to_world/game_view). Slot 1, ex spaziatore grigio,
+	# ospita ora l'help (bottone permanente, non di debug): GameScene è l'unica scena con
+	# scorciatoie da tastiera proprie (individuo/camera), quindi è l'unica ad avere questo
+	# pulsante. Strumenti di debug (World/MacroCell) restano invariati: da rimuovere o
+	# nascondere dietro un flag prima del player finale.
 	secondary_actions_bar.configure_slot(0, "☰", tr("menu"), &"menu")
+	secondary_actions_bar.configure_slot(1, "❓", tr("help_tooltip"), &"help")
 	secondary_actions_bar.configure_slot(
 		2, "🌍", tr("game_info_world_debug"), &"world_debug", tr("game_info_world_debug_description")
 	)

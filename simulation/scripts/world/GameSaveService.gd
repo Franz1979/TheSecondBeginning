@@ -24,7 +24,14 @@ func save_game_to_json(
 			# Sede macrocella del player per la futura GameScene (vedi GameData) — deve
 			# sopravvivere a save/load, a differenza dei campi analoghi di GameSettings.
 			"player_macro_cell_x": game_data.player_macro_cell_x,
-			"player_macro_cell_y": game_data.player_macro_cell_y
+			"player_macro_cell_y": game_data.player_macro_cell_y,
+			# Posizione dell'individuo controllabile dentro quella macrocella (vedi GameData) —
+			# deve sopravvivere a save/load esattamente come la macrocella stessa.
+			"player_micro_x": game_data.player_micro_x,
+			"player_micro_y": game_data.player_micro_y,
+			# Zoom camera GameScene (vedi GameData) — deve sopravvivere a save/load come la
+			# posizione del player, ma è un solo float (zoom.x == zoom.y sempre).
+			"camera_zoom": game_data.camera_zoom
 		},
 		"world": {
 			"width": World.WIDTH,

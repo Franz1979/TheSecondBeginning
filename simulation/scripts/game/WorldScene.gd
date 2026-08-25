@@ -21,6 +21,12 @@ var clock: GameClockController
 # GameSettings.world_scene_redraw_enabled per il perché. Default true: comportamento
 # invariato finché l'utente non lo disattiva esplicitamente.
 var world_daily_redraw_enabled: bool = true
+# true SOLO quando _load_world() ha appena caricato con successo un salvataggio ESISTENTE
+# (GameSettings.selected_save_file) — false sia per una partita nuova (che ha già il proprio
+# is_new_game) sia per un caricamento fallito (fallback su mondo vuoto, resta in WorldScene per
+# poterlo diagnosticare, invariato). Vedi _ready(): un salvataggio caricato con successo deve
+# riaprire GameScene con la posizione del player esattamente dov'era, non più mostrare WorldScene.
+var _loaded_existing_save: bool = false
 var _clock_was_playing_before_dialogs: bool = false
 var _open_dialog_count: int = 0
 var _pending_leave_action: StringName = &""
@@ -94,13 +100,15 @@ func _ready() -> void:
 	else:
 		is_new_game = _load_world()
 
-	# Partita NUOVA appena seminata (vedi _load_world/_populate_new_world sotto): il player deve
-	# aprire subito GameScene (vista sulla propria macrocella), WorldScene non costruisce piu' la
-	# propria vista in questo caso — vedi _redirect_to_game_scene per il perche' del return
-	# anticipato. Un salvataggio ESISTENTE caricato tramite GameSettings.selected_save_file (vedi
-	# _load_world) resta invece qui e mostra WorldScene come sempre: is_new_game e' false in quel
-	# ramo per costruzione (_load_world non arriva mai a _populate_new_world li').
-	if is_new_game:
+	# Partita NUOVA appena seminata (vedi _load_world/_populate_new_world sotto) O un salvataggio
+	# ESISTENTE appena caricato con successo (vedi _loaded_existing_save sopra): in entrambi i
+	# casi il player deve aprire subito GameScene, non piu' WorldScene — per un salvataggio
+	# esistente, GameData.player_macro_cell_x/y e player_micro_x/y sono gia' valorizzati da
+	# GameLoadService, quindi GameScene riprende esattamente da dove il player aveva lasciato la
+	# partita invece di sceglierne una nuova. Un caricamento FALLITO (fallback su mondo vuoto,
+	# _loaded_existing_save resta false in quel ramo) continua invece a mostrare WorldScene come
+	# prima, per poterlo diagnosticare.
+	if is_new_game or _loaded_existing_save:
 		_redirect_to_game_scene()
 		return
 
@@ -129,11 +137,11 @@ func _ready() -> void:
 
 # Ritorna true SOLO quando arriva davvero a seminare una partita nuova (_populate_new_world in
 # fondo) — false in ogni uscita del ramo "carica salvataggio esistente"
-# (GameSettings.selected_save_file, successo o fallback su mondo vuoto in caso di errore: un
-# fallimento di caricamento non e' una partita nuova, resta comunque "non reindirizzare"). Questo
-# e' il discriminante esplicito richiesto tra il ramo (a) "nuova partita" — che _ready() usa per
-# reindirizzare a GameScene — e il ramo (b) "load partita esistente", che deve continuare a
-# mostrare WorldScene come oggi.
+# (GameSettings.selected_save_file), sia successo (vedi _loaded_existing_save, valorizzato li'
+# sotto) sia fallback su mondo vuoto in caso di errore (un fallimento di caricamento non e' una
+# partita nuova, e _loaded_existing_save resta false: _ready() lo tratta come "non
+# reindirizzare", resta su WorldScene per poterlo diagnosticare). _ready() reindirizza a
+# GameScene sia per is_new_game sia per _loaded_existing_save — vedi li'.
 func _load_world() -> bool:
 	if GameSettings.selected_save_file != "":
 		var load_service := GameLoadService.new()
@@ -146,6 +154,7 @@ func _load_world() -> bool:
 			return false
 		world = loaded_game.world
 		game_data = loaded_game.game_data
+		_loaded_existing_save = true
 		return false
 
 	if GameSettings.selected_map_type == "saved" and GameSettings.selected_map_file != "":
@@ -238,23 +247,28 @@ func _populate_new_world(target_world: World) -> void:
 
 	AnimalSeedingService.new().populate_animals(target_world, density, population_size)
 
-# Ingresso "vero" per una partita NUOVA appena seminata — chiamato da _ready() subito dopo
-# _load_world() quando is_new_game e' true, PRIMA che WorldScene costruisca la propria vista
+# Ingresso "vero" per una partita NUOVA appena seminata O per un salvataggio ESISTENTE appena
+# caricato con successo — chiamato da _ready() subito dopo _load_world() quando is_new_game o
+# _loaded_existing_save e' true, PRIMA che WorldScene costruisca la propria vista
 # (_create_renderer/_setup_clock). Stesso canale di handoff gia' in uso per i bottoni debug
 # (GameSettings.active_world/active_game_data), ma NON returning_to_player_view = true: quel
 # flag e' riservato al canale "torno dal debug" (vedi GameScene._ready() ramo 1, che riusa una
-# cella gia' nota). Qui GameData.player_macro_cell_x/y sono ancora -1 (partita appena creata),
-# quindi GameScene deve prendere il proprio ramo 2 e invocare da se'
-# FirstStartMacroCellSelectionService — lasciare returning_to_player_view a false (il suo
-# default) e' cio' che glielo permette.
+# cella gia' nota). Per una partita nuova, GameData.player_macro_cell_x/y sono ancora -1, quindi
+# GameScene deve prendere il proprio ramo 2 e invocare da se' FirstStartMacroCellSelectionService
+# — lasciare returning_to_player_view a false (il suo default) e' cio' che glielo permette. Per
+# un salvataggio esistente, player_macro_cell_x/y e player_micro_x/y sono gia' valorizzati da
+# GameLoadService: lo stesso ramo 2 di GameScene li trova gia' validi e non invoca la selezione,
+# riprendendo semplicemente da dove il player aveva lasciato la partita.
 #
-# Stato clock azzerato esplicitamente ai default di una partita nuova (pausa, velocita' 1x)
-# invece di derivarlo da un GameClockController che qui non viene mai creato (vedi sotto): senza
-# questo, un residuo di velocita'/play-state lasciato da una sessione precedente nella STESSA
-# run dell'app (es. l'utente aveva premuto play a 3x, e' tornato al menu principale, ha avviato
-# una partita nuova) trapelerebbe silenziosamente nella nuova partita, dato che
-# GameSettings.active_clock_is_playing/active_clock_speed sono campi di sessione, non
-# resettati automaticamente da un semplice cambio di scena.
+# Stato clock azzerato esplicitamente ai default (pausa, velocita' 1x) invece di derivarlo da un
+# GameClockController che qui non viene mai creato (vedi sotto): senza questo, un residuo di
+# velocita'/play-state lasciato da una sessione precedente nella STESSA run dell'app (es.
+# l'utente aveva premuto play a 3x, e' tornato al menu principale, ha avviato/caricato un'altra
+# partita) trapelerebbe silenziosamente in questa, dato che GameSettings.active_clock_is_playing/
+# active_clock_speed sono campi di sessione, non resettati automaticamente da un semplice cambio
+# di scena. Stesso reset ragionevole sia per una partita nuova sia per un salvataggio appena
+# aperto: nessuno dei due persiste play/pausa/velocita' del clock (solo GameData.year/current_day
+# lo fanno), quindi ripartire in pausa a 1x e' il default piu' prevedibile in entrambi i casi.
 #
 # _create_renderer()/_setup_clock() (il resto della vista mondo, WorldRenderer immediate-mode
 # sull'intera griglia 100x100 incluso) vengono deliberatamente SALTATI in questo ramo (vedi il
