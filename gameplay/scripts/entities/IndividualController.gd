@@ -37,10 +37,23 @@ func _try_select(mouse_pos_microcells: Vector2) -> void:
 	individual.is_selected = individual.position.distance_to(mouse_pos_microcells) <= SELECT_RADIUS_MICROCELLS
 
 
+# CROSS_BORDER_MARGIN: margine minimo oltre il bordo [0, WIDTH)/[0, HEIGHT) entro cui è ancora
+# possibile impostare un target — senza questo margine, il clamp coinciderebbe esattamente col
+# bordo e individual.position non potrebbe mai raggiungere <0 o >=WIDTH/HEIGHT (il target verrebbe
+# sempre raggiunto prima di uscire dalla griglia, impedendo per costruzione l'attraversamento). Un
+# margine minimo basta: il controllo di attraversamento gira ogni frame in GameScene._process,
+# quindi scatta a metà tragitto molto prima che il target clampato oltre il bordo venga davvero
+# raggiunto. Il vero bordo di gioco resta sempre 0/WIDTH (GameScene._check_macro_cell_border_
+# crossing) — la cella vicina, ora, è già resa per intero PRIMA che il player la raggiunga (vedi
+# GameScene.live_cells/attivazione per prossimità), quindi non serve più rallentare
+# l'attraversamento con una soglia di commit estesa.
+const CROSS_BORDER_MARGIN: float = 1.0
+
+
 func _try_set_target(mouse_pos_microcells: Vector2) -> void:
 	if not individual.is_selected:
 		return
 	individual.set_target(Vector2(
-		clamp(mouse_pos_microcells.x, 0.0, float(World.WIDTH - 1)),
-		clamp(mouse_pos_microcells.y, 0.0, float(World.HEIGHT - 1))
+		clamp(mouse_pos_microcells.x, -CROSS_BORDER_MARGIN, float(World.WIDTH) + CROSS_BORDER_MARGIN),
+		clamp(mouse_pos_microcells.y, -CROSS_BORDER_MARGIN, float(World.HEIGHT) + CROSS_BORDER_MARGIN)
 	))

@@ -5,10 +5,11 @@ extends RefCounted
 # (fog of war — vedi FogOfWarRenderer.gd per come viene consumato). Nessun tier di dettaglio
 # qui (Step 3): un solo timestamp per posizione, non ancora terreno/risorse/esatto separati.
 #
-# Chiave = coordinate microcella LOCALI alla macrocella corrente (Vector2i) — nessun
-# namespacing multi-macrocella: GameScene mostra sempre una sola macrocella alla volta, quindi
-# non serve prefissare le chiavi con le coordinate macro. Valore = absolute_day
-# (GameData.get_absolute_day()) al momento dell'ultimo avvistamento.
+# Chiave = coordinate microcella LOCALI alla macrocella PROPRIETARIA di questa istanza (Vector2i)
+# — nessun namespacing multi-macrocella qui dentro: ogni macrocella (vedi GameScene.
+# fog_of_war_memories, Dictionary[Vector2i coord_macro, FogOfWarMemory]) ha la propria istanza
+# indipendente, una per cella, mai condivisa. Valore = absolute_day (GameData.get_absolute_day())
+# al momento dell'ultimo avvistamento.
 #
 # UN SOLO timestamp per cella serve oggi a TUTTI E TRE i tier di decadimento (vedi
 # is_terrain_fresh/is_resource_fresh/is_detail_fresh sotto) — "vista" è un evento unico, non
@@ -19,12 +20,14 @@ extends RefCounted
 # (last_seen_terrain_by_position, last_seen_resource_by_position, ecc.) invece di condiviso — non
 # farlo ora, è scope futuro: oggi ogni avvistamento rinfresca sempre tutti e tre i tier insieme.
 #
-# Posseduta da GameScene (non da FogOfWarRenderer): un futuro step di persistenza dovrà passare
-# questo oggetto a GameSaveService/GameLoadService esattamente come già fa con game_data/world —
-# quei due servizi toccano sempre oggetti di livello GameScene, mai lo stato interno di un
-# renderer. Oggi non persistita (sopravvive solo alla sessione corrente): viene ricreata da zero
-# ogni volta che GameScene._ready() gira, stessa non-persistenza già in uso per
-# MicroCellRenderer._shrub_birth_year_cache/_tree_birth_year_cache.
+# Posseduta da GameScene (non da FogOfWarRenderer, che riceve solo un riferimento via setup()),
+# UNA per macrocella dentro GameScene.fog_of_war_memories — sopravvive lì per tutta la sessione
+# anche quando la macrocella esce dal set vivo (streaming multi-cella, vedi LiveMacroCell), e
+# viaggia tra scene tramite GameSettings.active_fog_of_war_memories (stesso canale di handoff già
+# in uso per active_world/active_game_data). Persistita su salvataggio da GameSaveService/
+# GameLoadService (sezione "fog_of_war" del JSON) — legge/scrive direttamente last_seen_by_
+# position, nessun metodo di (de)serializzazione dedicato qui, stesso pattern già in uso per
+# MacroCellState (i due servizi toccano sempre i campi pubblici direttamente).
 var last_seen_by_position: Dictionary = {} # Vector2i -> int (absolute_day)
 
 

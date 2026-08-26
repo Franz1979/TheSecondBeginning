@@ -14,6 +14,13 @@ const GAME_SCENE_PATH := "res://gameplay/scenes/game/GameScene.tscn"
 
 var world: World
 var game_data: GameData
+# Vector2i (coord macro) -> FogOfWarMemory — WorldScene non genera mai fog propria (nessun
+# concetto di visibilità qui), esiste solo per farla transitare intatta attraverso i punti in cui
+# questa scena tocca world/game_data: da un salvataggio appena caricato (_load_world) fino a
+# GameScene (_redirect_to_game_scene/_on_game_view_pressed) o di nuovo su disco se si salva da
+# qui senza mai passare da GameScene (_on_save_game_file_selected) — stessa natura/motivazione di
+# world/game_data sopra.
+var fog_of_war_memories: Dictionary = {}
 var renderer: WorldRenderer
 var game_controller: CellSelectorController
 var clock: GameClockController
@@ -97,6 +104,7 @@ func _ready() -> void:
 		GameSettings.returning_to_world_scene = false
 		world = GameSettings.active_world
 		game_data = GameSettings.active_game_data
+		fog_of_war_memories = GameSettings.active_fog_of_war_memories
 	else:
 		is_new_game = _load_world()
 
@@ -154,6 +162,7 @@ func _load_world() -> bool:
 			return false
 		world = loaded_game.world
 		game_data = loaded_game.game_data
+		fog_of_war_memories = loaded_game.fog_of_war_memories
 		_loaded_existing_save = true
 		return false
 
@@ -277,6 +286,10 @@ func _populate_new_world(target_world: World) -> void:
 func _redirect_to_game_scene() -> void:
 	GameSettings.active_world = world
 	GameSettings.active_game_data = game_data
+	# {} per una partita nuova (fog_of_war_memories mai valorizzato in questo ramo), il contenuto
+	# di un salvataggio appena caricato altrimenti (vedi _load_world) — stesso canale di handoff
+	# di active_world/active_game_data sopra, letto da GameScene._ready() in entrambi i suoi rami.
+	GameSettings.active_fog_of_war_memories = fog_of_war_memories
 	GameSettings.active_clock_is_playing = false
 	GameSettings.active_clock_speed = GameClockController.Speed.X1
 	get_tree().change_scene_to_file(GAME_SCENE_PATH)
@@ -343,7 +356,8 @@ func _on_save_game_file_selected(path: String) -> void:
 	save_service.save_game_to_json(
 		world,
 		game_data,
-		path
+		path,
+		fog_of_war_memories
 	)
 
 	if _pending_leave_action != &"":
@@ -362,6 +376,7 @@ func _on_primary_action_pressed(action_id: StringName) -> void:
 func _on_game_view_pressed() -> void:
 	GameSettings.active_world = world
 	GameSettings.active_game_data = game_data
+	GameSettings.active_fog_of_war_memories = fog_of_war_memories
 	GameSettings.returning_to_player_view = true
 	if clock != null:
 		GameSettings.active_clock_is_playing = clock.is_playing

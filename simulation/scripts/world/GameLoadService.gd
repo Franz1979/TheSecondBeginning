@@ -240,8 +240,22 @@ func load_game_from_json(file_path: String) -> LoadedGame:
 		max_loaded_id = max(max_loaded_id, group.id)
 	world.next_population_group_id = max_loaded_id + 1
 
+	# Fog of war (vedi GameSaveService per il formato) — .get(key, []) per compatibilità con save
+	# precedenti l'introduzione di questa sezione: un dizionario vuoto è lo stesso comportamento
+	# di sempre (GameScene riparte con fog vuota per ogni macrocella, come faceva sempre prima di
+	# questa feature).
+	var fog_of_war_memories: Dictionary = {}
+	for cell_fog_data in data.get("fog_of_war", []):
+		var coords := Vector2i(int(cell_fog_data["macro_x"]), int(cell_fog_data["macro_y"]))
+		var memory := FogOfWarMemory.new()
+		for entry in cell_fog_data.get("last_seen", []):
+			var pos := Vector2i(int(entry["x"]), int(entry["y"]))
+			memory.last_seen_by_position[pos] = int(entry["day"])
+		fog_of_war_memories[coords] = memory
+
 	var loaded_game := LoadedGame.new()
 	loaded_game.world = world
 	loaded_game.game_data = game_data
+	loaded_game.fog_of_war_memories = fog_of_war_memories
 	print("Game loaded from JSON: ", file_path)
 	return loaded_game

@@ -66,6 +66,16 @@ var selected_macro_cell_x: int = -1
 var selected_macro_cell_y: int = -1
 var active_world: World = null
 var active_game_data: GameData = null
+# Canale di handoff per GameScene.fog_of_war_memories (Dictionary[Vector2i, FogOfWarMemory])
+# attraverso un giro andata-ritorno verso WorldScene/MacroCellScene (bottoni debug "🧍") — stesso
+# motivo di active_world/active_game_data sopra: change_scene_to_file distrugge l'intera istanza
+# di GameScene, quel dizionario andrebbe perso senza salvarlo qui. Scritto da GameScene prima di
+# uscire (_on_world_debug_pressed/_on_macro_cell_debug_pressed), riletto SOLO nel ramo
+# returning_to_player_view di GameScene._ready() — mai per un ingresso "vero" (partita nuova),
+# altrimenti una nuova partita erediterebbe la fog di una partita precedente ancora in questo
+# stesso processo. Persistito solo per la sessione corrente (non nei save su disco), stesso
+# trattamento di returning_to_player_view sotto.
+var active_fog_of_war_memories: Dictionary = {}
 var returning_to_world_scene: bool = false
 # Stesso schema di returning_to_world_scene sopra, per il canale MacroCellScene/WorldScene ->
 # GameScene (vista principale player su una singola macrocella): settato a true da chi torna
@@ -86,7 +96,11 @@ var macro_cell_flora_updates_enabled: bool = true
 # (non condivisi con MacroCellScene) per coerenza con la scelta di duplicare, non condividere,
 # il rendering tra le due scene (vedi nota di debito tecnico in GameScene.gd).
 var game_scene_animals_visible: bool = true
-var game_scene_flora_updates_enabled: bool = true
+# Default FALSE (a differenza degli altri tre toggle qui sopra, tutti default true): il rebuild
+# giornaliero di vegetazione/pesci/animali su tutte le celle vive (vedi GameScene._on_day_advanced)
+# rallenta sensibilmente col clock in play — l'utente lo riaccende dal toggle quando serve
+# davvero vedere l'aggiornamento quotidiano, invece di pagarne il costo di default.
+var game_scene_flora_updates_enabled: bool = false
 # Stesso trattamento del toggle "aggiornamenti flora" sopra, ma per WorldScene: WorldRenderer
 # ridisegna l'INTERA griglia 100x100 immediate-mode (terreno + barre risorse + marker eventi) a
 # ogni queue_redraw() — con la fauna che ormai genera animals_changed quasi ogni giorno (consumo/

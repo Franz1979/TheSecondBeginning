@@ -156,6 +156,17 @@ func set_river(shape: GameTypes.RiverShape, thickness_ratio: float) -> void:
 	queue_redraw()
 
 
+# Da chiamare quando la macrocella caricata NON ha un fiume (GameScene._load_macro_cell, riuso
+# della stessa istanza di renderer tra macrocelle diverse) — set_river sopra non ha mai modo di
+# tornare a false una volta impostato a true, quindi senza questa chiamata un fiume disegnato in
+# una macrocella resterebbe visibile anche dopo essere passati a una macrocella senza fiume.
+func clear_river() -> void:
+	is_river = false
+	river_shape = GameTypes.RiverShape.NONE
+	river_thickness_ratio = 0.0
+	queue_redraw()
+
+
 func set_stone_positions(positions: Array) -> void:
 	stone_positions = positions
 	_rebuild_stone_multimeshes()
@@ -532,6 +543,17 @@ const TREE_AGE_SALT := Vector2i(179, 97)
 # ospitare SHRUB in un anno e TREE in un altro (successione ecologica), le due cache non vanno
 # mai confuse.
 var _tree_birth_year_cache: Dictionary = {} # Vector2i -> int
+
+
+# Da chiamare ad ogni cambio macrocella (GameScene._load_macro_cell, riuso della stessa istanza
+# di renderer): _shrub_birth_year_cache/_tree_birth_year_cache sono pensate per restare valide
+# per tutta la vita di UNA SOLA macrocella (vedi commenti sopra) — senza azzerarle, posizioni
+# locali coincidenti in due macrocelle diverse erediterebbero un'età stimata dalla macrocella
+# precedente, e _prepare_age_cache_pass non tratterebbe più la nuova macrocella come "primo
+# sguardo" (is_first_sight), saltando la stima a percentile per le posizioni davvero nuove.
+func reset_age_caches() -> void:
+	_shrub_birth_year_cache.clear()
+	_tree_birth_year_cache.clear()
 
 # Albero stilizzato: tronco (rettangolo) + chioma (cerchio) sopra, con leggera variazione
 # di dimensione/offset orizzontale per albero, derivata deterministicamente dalla sua
@@ -1097,6 +1119,14 @@ func _draw_river_connector(direction: Vector2i, grid_size: int, center: float, t
 	draw_rect(rect, TerrainColors.RIVER)
 
 
+# Riempimento piatto del vicino diagonale in ciascuno dei 4 angoli — stesso pattern di
+# _draw_neighbor_previews ma un quadrato NEIGHBOR_STRIP_DEPTH x NEIGHBOR_STRIP_DEPTH invece di
+# una fascia intera, e sempre get_land_color (mai get_cell_color): un vicino-fiume qui mostra
+# solo il suo terreno di base, senza fascia fluviale — l'angolo è troppo piccolo perché quella
+# fascia sia percepibile/rilevante a questo livello di zoom (a differenza delle fasce cardinali
+# sopra, dove il fiume attraversa l'intero lato ed è quindi sempre visibile). get_land_color
+# resta comunque corretta anche per SEA/LAKE (terrain_base == WATER ci finisce comunque dentro),
+# quindi un angolo davvero tutto-acqua si vede comunque blu.
 # Riga tratteggiata sul perimetro del quadrato 100x100 reale: segna dove finisce la
 # cella "giocabile" e comincia la sola anteprima dei vicini.
 func _draw_boundary(grid_size: int) -> void:

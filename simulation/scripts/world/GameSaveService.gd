@@ -4,7 +4,12 @@ extends RefCounted
 func save_game_to_json(
 	world: World,
 	game_data: GameData,
-	file_path: String
+	file_path: String,
+	# Vector2i (coord macro) -> FogOfWarMemory — default {} per i due chiamanti (WorldScene/
+	# MacroCellScene) che non tengono mai fog viva propria, solo la propagano se l'hanno ricevuta
+	# da un caricamento precedente (vedi WorldScene.fog_of_war_memories). GameScene è l'unico
+	# chiamante che ne ha sempre una reale da passare.
+	fog_of_war_memories: Dictionary = {}
 ) -> void:
 	var data := {
 		"file_type": "game_save",
@@ -141,6 +146,33 @@ func save_game_to_json(
 			"yearly_prey_totals": group.yearly_prey_totals,
 			"yearly_prey_totals_year": group.yearly_prey_totals_year
 		})
+
+	# Fog of war (vedi FogOfWarMemory.gd/GameScene.fog_of_war_memories) — una entry per macrocella
+	# con ALMENO una posizione vista (una macrocella entrata nel set vivo come vicino ma mai
+	# davvero osservata dal player, es. avvicinamento poi allontanamento senza attraversare, ha
+	# last_seen_by_position vuoto: saltata per non appesantire il salvataggio con entry inutili,
+	# stesso principio già usato sopra per stone_positions). Vector2i non è mai una chiave JSON
+	# diretta (JSON vuole chiavi stringa): sia le coordinate macro sia quelle micro sono array di
+	# oggetti {x,y,...}, stesso stile già in uso per stone_positions/occupied_macrocells sopra,
+	# mai un Dictionary con chiave Vector2i serializzato direttamente.
+	data["fog_of_war"] = []
+	for coords in fog_of_war_memories:
+		var memory: FogOfWarMemory = fog_of_war_memories[coords]
+		if memory.last_seen_by_position.is_empty():
+			continue
+		var last_seen_data: Array = []
+		for pos in memory.last_seen_by_position:
+			last_seen_data.append({
+				"x": pos.x,
+				"y": pos.y,
+				"day": memory.last_seen_by_position[pos]
+			})
+		data["fog_of_war"].append({
+			"macro_x": coords.x,
+			"macro_y": coords.y,
+			"last_seen": last_seen_data
+		})
+
 	var json_text := JSON.stringify(data, "\t")
 	var file := FileAccess.open(file_path, FileAccess.WRITE)
 	file.store_string(json_text)
