@@ -33,7 +33,7 @@ position = Vector2(-36, 0)
 zoom = Vector2(12, 12)
 script = ExtResource("2_game")
 min_zoom = 0.4
-max_zoom = 12.0
+max_zoom = 15.0
 
 [node name="CanvasLayer" type="CanvasLayer" parent="."]
 

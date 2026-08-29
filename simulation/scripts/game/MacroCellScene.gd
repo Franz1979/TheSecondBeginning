@@ -526,7 +526,11 @@ func _refresh_resource_visuals() -> void:
 		occupied[pos] = true
 
 	var vegetation_service := VegetationPositionService.new()
-	renderer.set_vegetation_positions(vegetation_service.generate_positions(macro_state, occupied))
+	renderer.set_vegetation_positions(vegetation_service.generate_positions(macro_state, occupied, game_data.year, game_data.current_day))
+	# PRIMA di set_*_subtypes/set_*_age_params sotto — vedi commento gemello in
+	# GameScene._refresh_resource_visuals sul perché l'ordine conta qui.
+	renderer.set_cut_positions(_get_cut_positions())
+	renderer.set_dead_positions(_get_dead_positions())
 
 	var fish_positions: Array = []
 	var fish_service := FishPositionService.new()
@@ -567,11 +571,14 @@ func _refresh_resource_visuals() -> void:
 	var wolf_group := macro_world.find_population_group("wolf", this_cell)
 	_update_animal_renderer_population(wolf_renderer, wolf_group, AnimalCalculator.get_animal_rules("wolf"), this_cell)
 
-	renderer.set_shrub_fruit_ratio(_get_shrub_fruit_ratio())
-	renderer.set_shrub_age_params(game_data.year, _get_age_params(GameTypes.WorldObjectType.SHRUB))
-	renderer.set_tree_fruit_ratios(_get_tree_subtype_ratio("wild_fruit"), _get_tree_subtype_ratio("domesticable_fruit"))
-	renderer.set_tree_conifer_ratio(_get_tree_subtype_ratio("conifer"))
-	renderer.set_tree_age_params(game_data.year, _get_age_params(GameTypes.WorldObjectType.TREE))
+	renderer.set_shrub_subtypes(macro_state.shrub_individual_subtype)
+	renderer.set_shrub_age_params(
+		game_data.year, _get_age_params(GameTypes.WorldObjectType.SHRUB), macro_state.shrub_virtual_birth_year
+	)
+	renderer.set_tree_subtypes(macro_state.tree_individual_subtype)
+	renderer.set_tree_age_params(
+		game_data.year, _get_age_params(GameTypes.WorldObjectType.TREE), macro_state.tree_virtual_birth_year
+	)
 	# Dopo le posizioni: set_season ricostruisce anche il buffer erba (colore dipende dalla
 	# stagione), così lo fa una volta sola con le posizioni già aggiornate invece di due volte.
 	renderer.set_season(SeasonCalculator.get_season_for_day(game_data.current_day))
@@ -620,64 +627,43 @@ func _update_info_panel() -> void:
 	macro_cell_detail_panel.show_cell(macro_cell, macro_state, SeasonCalculator.get_season_for_day(game_data.current_day), macro_world)
 
 
-# Quota di dedicated_space SHRUB classificata come sottotipo "fruit_bearing" nella macrocella
-# corrente (0 se SHRUB non ha ancora sottotipi tracciati lì, es. cella senza shrub). Il nome
-# stringa deve combaciare con subtype_name in data/resource_subtypes/shrub_fruit_bearing.tres.
-func _get_shrub_fruit_ratio() -> float:
-	var composition := macro_state.get_subtype_composition(GameTypes.WorldObjectType.SHRUB)
-	if composition.is_empty():
-		return 0.0
-
-	var total: int = 0
-	for amount in composition.values():
-		total += int(amount)
-	if total <= 0:
-		return 0.0
-
-	var fruit_count: int = int(composition.get("fruit_bearing", 0))
-	return float(fruit_count) / float(total)
-
 # Parametri fasce età per ciascun sottotipo di object_type con track_age_bands=true nella
 # macrocella corrente (chiave = subtype_name), passati già risolti a MicroCellRenderer (vedi
-# _refresh_resource_visuals, chiamata per SHRUB e TREE) — stessa separazione di responsabilità di
-# _get_shrub_fruit_ratio: il renderer non conosce ResourceCalculator/MacroCellState, riceve solo
-# dati già pronti. I ratio arrivano da MacroCellState.get_age_composition, non normalizzati qui
-# (AgeBandVisualService normalizza già internamente).
+# _refresh_resource_visuals, chiamata per SHRUB e TREE) — il renderer non conosce
+# ResourceCalculator/MacroCellState, riceve solo dati già pronti. Il sottotipo/anno di nascita di
+# ogni individuo non si decidono più qui (vedi IndividualVegetationService, chiamato dentro
+# generate_positions prima di arrivare a questo punto) — restano solo i parametri di fascia età
+# (youth/adult duration, size_multiplier_by_age), non più il campo "ratios" (usato solo dalla
+# stima a percentile, ora eseguita direttamente da IndividualVegetationService sui dati di
+# macro_state, non più passata attraverso questo dizionario).
 func _get_age_params(object_type: GameTypes.WorldObjectType) -> Dictionary:
 	var params: Dictionary = {}
 	for rule in ResourceCalculator.get_subtype_rules(object_type):
 		if not rule.track_age_bands:
 			continue
 
-		var composition := macro_state.get_age_composition(object_type, rule.subtype_name)
-		var young: int = int(composition.get(GameTypes.AgeBand.YOUNG, 0))
-		var adult: int = int(composition.get(GameTypes.AgeBand.ADULT, 0))
-		var old: int = int(composition.get(GameTypes.AgeBand.OLD, 0))
-
 		params[rule.subtype_name] = {
 			"youth_duration_years": rule.youth_duration_years,
 			"adult_duration_years": rule.adult_duration_years,
 			"size_multiplier_by_age": rule.size_multiplier_by_age,
-			"ratios": [float(young), float(adult), float(old)],
 		}
 	return params
 
-# Quota di dedicated_space TREE classificata come subtype_name nella macrocella corrente (0 se
-# TREE non ha ancora sottotipi tracciati lì, es. cella senza tree). Un'unica funzione parametrica
-# invece di una per sottotipo, dato che MicroCellRenderer ora vuole wild_fruit e
-# domesticable_fruit come due rapporti indipendenti (vedi set_tree_fruit_ratios).
-func _get_tree_subtype_ratio(subtype_name: String) -> float:
-	var composition := macro_state.get_subtype_composition(GameTypes.WorldObjectType.TREE)
-	if composition.is_empty():
-		return 0.0
 
-	var total: int = 0
-	for amount in composition.values():
-		total += int(amount)
-	if total <= 0:
-		return 0.0
+# Posizioni con blocco di taglio/morte attualmente attivo, raggruppate per WorldObjectType — vedi
+# MicroCellRenderer.set_cut_positions/set_dead_positions.
+func _get_cut_positions() -> Dictionary:
+	return {
+		GameTypes.WorldObjectType.TREE: IndividualVegetationService.get_cut_positions(macro_state, GameTypes.WorldObjectType.TREE, game_data.year),
+		GameTypes.WorldObjectType.SHRUB: IndividualVegetationService.get_cut_positions(macro_state, GameTypes.WorldObjectType.SHRUB, game_data.year),
+	}
 
-	return float(int(composition.get(subtype_name, 0))) / float(total)
+
+func _get_dead_positions() -> Dictionary:
+	return {
+		GameTypes.WorldObjectType.TREE: IndividualVegetationService.get_dead_positions(macro_state, GameTypes.WorldObjectType.TREE),
+		GameTypes.WorldObjectType.SHRUB: IndividualVegetationService.get_dead_positions(macro_state, GameTypes.WorldObjectType.SHRUB),
+	}
 
 func _get_neighbor_cells(macro_cell: MacroCellData) -> Dictionary:
 	var neighbors: Dictionary = {}

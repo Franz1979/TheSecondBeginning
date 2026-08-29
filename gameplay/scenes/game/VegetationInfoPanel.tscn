@@ -1,0 +1,21 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://gameplay/scenes/game/VegetationInfoPanel.gd" id="1_veg"]
+
+[node name="VegetationInfoPanel" type="VBoxContainer"]
+script = ExtResource("1_veg")
+
+[node name="TypeLabel" type="Label" parent="."]
+layout_mode = 2
+theme_override_font_sizes/font_size = 11
+
+[node name="SubtypeLabel" type="Label" parent="."]
+layout_mode = 2
+theme_override_font_sizes/font_size = 11
+
+[node name="AgeLabel" type="Label" parent="."]
+layout_mode = 2
+theme_override_font_sizes/font_size = 11
+
+[node name="CutButton" type="Button" parent="."]
+layout_mode = 2

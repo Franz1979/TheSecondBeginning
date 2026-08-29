@@ -41,6 +41,9 @@ func load_game_from_json(file_path: String) -> LoadedGame:
 	# .get(key, -1.0) per compatibilità con save precedenti l'introduzione dello zoom camera
 	# (vedi GameData) — -1.0 è lo stesso default "mai valorizzato" della classe.
 	game_data.camera_zoom = float(data["game"].get("camera_zoom", -1.0))
+	# .get(key, 0) per compatibilità con save precedenti l'introduzione della pulizia
+	# periodica del fog of war (vedi GameData) — 0 è lo stesso default della classe.
+	game_data.fog_of_war_last_prune_absolute_day = int(data["game"].get("fog_of_war_last_prune_absolute_day", 0))
 
 	var world_data = data["world"]
 	var world := World.new()
@@ -114,6 +117,39 @@ func load_game_from_json(file_path: String) -> LoadedGame:
 					stone_positions.append(Vector2i(int(pos_data["x"]), int(pos_data["y"])))
 				state.stone_positions = stone_positions
 				state.stone_positions_generated = true
+			for pos_data in state_data.get("vegetation_cut_exceptions", []):
+				var cut_key := Vector3i(int(pos_data["x"]), int(pos_data["y"]), int(pos_data["i"]))
+				state.vegetation_cut_exceptions[cut_key] = {
+					"origin_type": int(pos_data["origin_type"]),
+					"cut_year": int(pos_data["cut_year"]),
+					"size_multiplier": float(pos_data.get("size_multiplier", 1.0))
+				}
+			# Vector3i: "i" assente (.get(..., 0)) copre solo le entry già scritte in questa stessa
+			# sessione di sviluppo col vecchio formato bacato (x,y senza indice) — non un requisito
+			# di compatibilità reale, dato lo stadio del progetto.
+			for pos_data in state_data.get("tree_virtual_birth_year", []):
+				var tree_key := Vector3i(int(pos_data["x"]), int(pos_data["y"]), int(pos_data.get("i", 0)))
+				state.tree_virtual_birth_year[tree_key] = int(pos_data["year"])
+			for pos_data in state_data.get("shrub_virtual_birth_year", []):
+				var shrub_key := Vector3i(int(pos_data["x"]), int(pos_data["y"]), int(pos_data.get("i", 0)))
+				state.shrub_virtual_birth_year[shrub_key] = int(pos_data["year"])
+			for pos_data in state_data.get("tree_individual_subtype", []):
+				var tree_subtype_key := Vector3i(int(pos_data["x"]), int(pos_data["y"]), int(pos_data["i"]))
+				state.tree_individual_subtype[tree_subtype_key] = String(pos_data["subtype"])
+			for pos_data in state_data.get("shrub_individual_subtype", []):
+				var shrub_subtype_key := Vector3i(int(pos_data["x"]), int(pos_data["y"]), int(pos_data["i"]))
+				state.shrub_individual_subtype[shrub_subtype_key] = String(pos_data["subtype"])
+			for pos_data in state_data.get("tree_claimed_lots", []):
+				state.tree_claimed_lots[Vector2i(int(pos_data["x"]), int(pos_data["y"]))] = true
+			for pos_data in state_data.get("shrub_claimed_lots", []):
+				state.shrub_claimed_lots[Vector2i(int(pos_data["x"]), int(pos_data["y"]))] = true
+			for pos_data in state_data.get("vegetation_death_exceptions", []):
+				var death_key := Vector3i(int(pos_data["x"]), int(pos_data["y"]), int(pos_data["i"]))
+				state.vegetation_death_exceptions[death_key] = {
+					"origin_type": int(pos_data["origin_type"]),
+					"death_year": int(pos_data["death_year"]),
+					"size_multiplier": float(pos_data.get("size_multiplier", 1.0))
+				}
 			var bonuses_data = state_data.get("active_growth_bonuses", {})
 			for key in bonuses_data.keys():
 				var bonus_data = bonuses_data[key]

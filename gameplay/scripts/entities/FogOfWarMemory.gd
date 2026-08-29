@@ -69,3 +69,21 @@ func _is_within_memory(pos: Vector2i, current_absolute_day: int, memory_duration
 	if not last_seen_by_position.has(pos):
 		return false
 	return current_absolute_day - last_seen_by_position[pos] <= memory_duration_days
+
+
+# Pulizia periodica (non ad ogni _draw() come i getter sopra, che restano puri e senza mutazione)
+# — chiamata da GameScene._maybe_prune_fog_of_war_memories ogni FogOfWarRules.prune_interval_days
+# giorni, mai ogni giorno. max_memory_days arriva sempre dal chiamante (vedi FogOfWarCalculator.
+# get_max_known_memory_days): DEVE essere il massimo ATTUALMENTE conosciuto, mai un tetto teorico
+# futuro più ampio — deciso esplicitamente con l'utente: una soglia di memoria più ampia sbloccata
+# in futuro non deve "resuscitare" posizioni già dimenticate qui (stessa logica di una scheda di
+# memoria più grande comprata oggi, che non ripristina foto già cancellate ieri). Raccoglie prima
+# le chiavi da rimuovere in un array separato invece di cancellare durante l'iterazione stessa del
+# Dictionary — GDScript non garantisce la sicurezza di una mutazione a metà `for pos in dict`.
+func prune_stale(current_absolute_day: int, max_memory_days: int) -> void:
+	var stale_positions: Array = []
+	for pos in last_seen_by_position:
+		if current_absolute_day - last_seen_by_position[pos] > max_memory_days:
+			stale_positions.append(pos)
+	for pos in stale_positions:
+		last_seen_by_position.erase(pos)

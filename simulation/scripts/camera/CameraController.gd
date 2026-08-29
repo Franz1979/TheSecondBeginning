@@ -1,15 +1,27 @@
 extends Camera2D
 
 const MOVE_SPEED: float = 500.0
-const ZOOM_STEP: float = 0.1
+const ZOOM_STEP: float = 0.25
 const EDGE_PAN_MARGIN: float = 24.0
 const EDGE_PAN_MAX_SPEED: float = 500.0
+# Il pan si attiva solo dopo una permanenza CONTINUA nel margine per almeno questo tempo (vedi
+# _edge_pan_hover_time in _process) — non appena il mouse esce dal margine (o smette di essere
+# "candidato" per qualunque motivo, es. entra sulla UI) il timer si azzera. Risolve uno scatto
+# indesiderato della camera quando si attraversa il bordo destro della mappa per raggiungere la
+# Sidebar (l'unico bordo adiacente a della UI reale, non al vuoto dello schermo): senza questa
+# soglia, il solo transito nel margine — anche solo di striscio, in pochi frame — bastava a far
+# scattare il pan prima ancora che gui_get_hovered_control() rilevasse il controllo di
+# destinazione. Un pan intenzionale (mouse fermo/lento vicino al bordo) supera comunque la soglia
+# senza percezione di ritardo; un passaggio veloce verso la UI non la raggiunge mai.
+const EDGE_PAN_ACTIVATION_DELAY: float = 0.3
 
 # @export (non const) così ogni scena può stringere/allargare il proprio range di zoom dalla
 # .tscn senza toccare questo script condiviso — es. GameScene usa un min_zoom più basso per
 # poter ispezionare da vicino l'individuo/le microcelle.
 @export var min_zoom: float = 0.4
 @export var max_zoom: float = 3.0
+
+var _edge_pan_hover_time: float = 0.0
 
 func _ready() -> void:
 	position = Vector2(800, 400)
@@ -30,8 +42,12 @@ func _process(delta: float) -> void:
 		position += direction.normalized() * MOVE_SPEED * delta
 
 	var edge_pan := _get_edge_pan_vector()
-	if edge_pan != Vector2.ZERO:
-		position += edge_pan * EDGE_PAN_MAX_SPEED * delta
+	if edge_pan == Vector2.ZERO:
+		_edge_pan_hover_time = 0.0
+	else:
+		_edge_pan_hover_time += delta
+		if _edge_pan_hover_time >= EDGE_PAN_ACTIVATION_DELAY:
+			position += edge_pan * EDGE_PAN_MAX_SPEED * delta
 
 
 func _get_map_rect() -> Rect2:

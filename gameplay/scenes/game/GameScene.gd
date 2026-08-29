@@ -83,6 +83,16 @@ var individual: Individual
 var individual_view: IndividualView
 var individual_controller: IndividualController
 var individual_movement_service := IndividualMovementService.new()
+# Click-detection su un singolo individuo di vegetazione (TREE/SHRUB) — vedi
+# VegetationSelectorController. selected_vegetation vive qui (non su un oggetto persistente come
+# Individual.is_selected per il player: un individuo vegetale non ha una Resource propria, solo
+# l'identità posizionale Vector3i) — {} = nessuna selezione, altrimenti {"macro_coords": Vector2i,
+# "object_type": GameTypes.WorldObjectType, "individual_key": Vector3i}. Vedi
+# _select_vegetation/_clear_vegetation_selection/_invalidate_selected_vegetation_if_missing.
+const VEGETATION_INFO_PANEL_SCENE := preload("res://gameplay/scenes/game/VegetationInfoPanel.tscn")
+var vegetation_selector_controller := VegetationSelectorController.new()
+var selected_vegetation: Dictionary = {}
+var vegetation_info_panel: VegetationInfoPanel
 # La camera segue individual.position ogni frame SOLO mentre individual.is_moving è true (vedi
 # _process sotto) — durante una camminata questo produce lo scorrimento continuo atteso (la
 # scena "scorre sotto" il player, invece di lasciarlo sparire fuori vista con lo zoom stretto);
@@ -134,6 +144,11 @@ func _ready() -> void:
 	game_info_panel.primary_actions_bar.set_slot_toggled(1, flora_daily_updates_enabled)
 	game_info_panel.primary_actions_bar.action_pressed.connect(_on_primary_action_pressed)
 	game_info_panel.secondary_actions_bar.action_pressed.connect(_on_secondary_action_pressed)
+	# body_container arriva vuoto per design (vedi GameInfoPanel.gd): GameScene, non GameInfoPanel
+	# stesso, istanzia qui il proprio contenuto — GameInfoPanel resta "muto" sulla vegetazione.
+	vegetation_info_panel = VEGETATION_INFO_PANEL_SCENE.instantiate()
+	game_info_panel.body_container.add_child(vegetation_info_panel)
+	vegetation_info_panel.cut_requested.connect(_on_cut_requested)
 	system_menu_dialog.add_action(tr("save_game"), &"save")
 	system_menu_dialog.add_action(tr("back_to_menu"), &"back_to_main_menu")
 	system_menu_dialog.add_action(tr("exit"), &"exit_game")
@@ -280,11 +295,42 @@ func _process(delta: float) -> void:
 
 
 func _unhandled_input(event: InputEvent) -> void:
-	if individual_controller != null:
-		individual_controller.handle_input(event)
+	# Priorità concordata con l'utente: la vegetazione vince entro il proprio raggio di hit-test
+	# (più piccolo/preciso del raggio di selezione del player, vedi VegetationSelectorController);
+	# se non trova nulla, il flusso prosegue esattamente come prima di questo controller. Un click
+	# sinistro "a vuoto" (né vegetazione né player) deseleziona comunque la vegetazione — stesso
+	# principio di individual_controller._try_select, che già deseleziona il player su un click
+	# lontano da lui. ECCEZIONE: se il player è oggettivamente più vicino al click della pianta
+	# candidata (es. il player è fermo proprio accanto a una pianta), vince il player anche se la
+	# pianta ricade comunque nel raggio di click della vegetazione — vedi _is_player_closer_to_click.
+	var vegetation_hit := vegetation_selector_controller.try_select(event, live_cells)
+	if not vegetation_hit.is_empty() and not _is_player_closer_to_click(vegetation_hit["distance"]):
+		_select_vegetation(vegetation_hit)
+	else:
+		if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
+			_clear_vegetation_selection()
+		if individual_controller != null:
+			individual_controller.handle_input(event)
 
 	if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_X:
 		_center_camera_on_individual()
+
+
+# Vero se il player è più vicino al click corrente della miglior candidata vegetale (stesso
+# spazio pixel locale della cella CENTRALE — individual.position è sempre relativo a quella, vedi
+# Individual.gd — usato sia da VegetationSelectorController che qui, così le due distanze sono
+# direttamente confrontabili). Non richiede che il click ricada nel raggio di selezione vero del
+# player (SELECT_RADIUS_MICROCELLS in IndividualController): decide solo chi tenta per primo,
+# individual_controller applica comunque la propria soglia subito dopo.
+func _is_player_closer_to_click(vegetation_distance_px: float) -> bool:
+	if individual == null:
+		return false
+	var center_cell: LiveMacroCell = live_cells.get(center_macro_coords)
+	if center_cell == null or center_cell.renderer == null:
+		return false
+	var mouse_px: Vector2 = center_cell.renderer.get_local_mouse_position()
+	var player_px: Vector2 = individual.position * MicroCellRenderer.CELL_SIZE
+	return mouse_px.distance_to(player_px) < vegetation_distance_px
 
 
 # Sposta la camera esattamente sulla posizione corrente dell'individuo — stesso spazio pixel di
@@ -297,6 +343,141 @@ func _center_camera_on_individual() -> void:
 	if individual == null:
 		return
 	camera.position = individual.position * MicroCellRenderer.CELL_SIZE
+
+
+# ============================================================================================
+# Selezione di un individuo di vegetazione — vedi VegetationSelectorController/selected_vegetation.
+# ============================================================================================
+
+# Applica una selezione risolta da vegetation_selector_controller: aggiorna lo stato locale,
+# l'highlight sul SOLO renderer che possiede l'individuo (ogni cella viva ha la propria istanza di
+# MicroCellRenderer, vedi LiveMacroCell — le altre vanno esplicitamente ripulite, altrimenti un
+# highlight precedente su un'altra cella viva resterebbe visibile) e il pannello. Non tocca in
+# alcun modo individual.is_selected — per decisione confermata con l'utente, un hit sulla
+# vegetazione ha priorità e non influenza la selezione del player.
+func _select_vegetation(hit: Dictionary) -> void:
+	for coords in live_cells:
+		var cell: LiveMacroCell = live_cells[coords]
+		if cell.renderer == null:
+			continue
+		if coords == hit["macro_coords"]:
+			cell.renderer.set_selected_individual(hit["object_type"], hit["individual_key"])
+		else:
+			cell.renderer.clear_selected_individual()
+
+	selected_vegetation = hit
+	_refresh_vegetation_panel()
+
+
+func _clear_vegetation_selection() -> void:
+	if selected_vegetation.is_empty():
+		return
+	selected_vegetation = {}
+	for cell in live_cells.values():
+		if cell.renderer != null:
+			cell.renderer.clear_selected_individual()
+	vegetation_info_panel.clear()
+
+
+# Richiede al renderer proprietario i dati aggiornati e li passa al pannello — RIDERIVA lo stato
+# (vivo vs bloccato) da zero ogni volta tramite has_individual, mai fidandosi di un flag salvato
+# al momento della selezione: un individuo vivo può diventare un ceppo tra una selezione e il
+# refresh successivo (es. tagliato da questa stessa sessione), e il pannello deve sempre riflettere
+# la verità corrente, non quella di quando è stato selezionato. Se la cella non è più viva o
+# l'individuo non c'è più in nessuna delle due forme, la selezione viene invalidata.
+func _refresh_vegetation_panel() -> void:
+	var cell: LiveMacroCell = live_cells.get(selected_vegetation["macro_coords"])
+	if cell == null or cell.renderer == null:
+		_clear_vegetation_selection()
+		return
+	var object_type: GameTypes.WorldObjectType = selected_vegetation["object_type"]
+	var individual_key: Vector3i = selected_vegetation["individual_key"]
+
+	if cell.renderer.has_individual(object_type, individual_key):
+		var info := cell.renderer.get_individual_info(object_type, individual_key)
+		vegetation_info_panel.show_vegetation(object_type, info["subtype_name"], info["age_band"], info["years_lived"])
+		return
+
+	var blocked_info := cell.renderer.get_blocked_marker_info(object_type, individual_key)
+	if blocked_info.is_empty():
+		_clear_vegetation_selection()
+		return
+	vegetation_info_panel.show_cut_marker(object_type, blocked_info["state"], blocked_info["years_ago"])
+
+
+# Da richiamare a fine _refresh_resource_visuals(cell) per QUALUNQUE cella viva (non solo il
+# centro): se l'individuo selezionato è sparito dal nuovo rebuild in ENTRAMBE le forme (né vivo né
+# bloccato — migrato, o finestra di rientro scaduta), la selezione va invalidata esplicitamente —
+# deciso esplicitamente con l'utente: meglio "nessuna selezione" onesto che un pannello con dati
+# stantii. Altrimenti il pannello viene comunque aggiornato (_refresh_vegetation_panel rideriva da
+# sé se è ancora vivo o ormai bloccato).
+func _invalidate_selected_vegetation_if_missing(cell: LiveMacroCell) -> void:
+	if selected_vegetation.is_empty() or selected_vegetation["macro_coords"] != cell.coords():
+		return
+	var object_type: GameTypes.WorldObjectType = selected_vegetation["object_type"]
+	var individual_key: Vector3i = selected_vegetation["individual_key"]
+	if cell.renderer.has_individual(object_type, individual_key) or cell.renderer.has_blocked_marker(object_type, individual_key):
+		_refresh_vegetation_panel()
+	else:
+		_clear_vegetation_selection()
+
+
+# Prima chiamata reale a PlayerHarvestService (vedi lì per gli effetti esatti): l'individuo
+# selezionato smette di essere vivo, un rebuild immediato della SOLA cella coinvolta lo fa
+# sparire dai blob vivi e comparire come ceppo/rovi (cut_positions, vedi _refresh_resource_visuals)
+# — nessuna attesa del prossimo giorno/anno simulato. Guardia esplicita su has_individual: il
+# bottone "Cut" di VegetationInfoPanel è nascosto quando la selezione è già un marker bloccato
+# (vedi show_cut_marker), ma questo controllo resta comunque come rete di sicurezza. La selezione
+# viene comunque azzerata dopo: il ceppo appena creato non è (ancora) ri-selezionabile in questa
+# stessa azione, l'utente può ricliccarlo se vuole vederne le info.
+func _on_cut_requested() -> void:
+	if selected_vegetation.is_empty():
+		return
+	var cell: LiveMacroCell = live_cells.get(selected_vegetation["macro_coords"])
+	if cell == null or cell.renderer == null:
+		_clear_vegetation_selection()
+		return
+	var object_type: GameTypes.WorldObjectType = selected_vegetation["object_type"]
+	var individual_key: Vector3i = selected_vegetation["individual_key"]
+	if not cell.renderer.has_individual(object_type, individual_key):
+		_clear_vegetation_selection()
+		return
+	var info := cell.renderer.get_individual_info(object_type, individual_key)
+	if info.is_empty():
+		_clear_vegetation_selection()
+		return
+
+	PlayerHarvestService.cut_individual(cell.macro_state, object_type, individual_key, info["subtype_name"], info["size_multiplier"], game_data.year)
+	_clear_vegetation_selection()
+	_refresh_resource_visuals(cell)
+
+
+# Prima chiamata reale a NaturalMortalityVisualService (vedi lì per il criterio di scelta) —
+# chiamata da _on_day_advanced PRIMA del rebuild della cella, per ciascuna cella viva, per TREE e
+# SHRUB. select_dying_individuals consuma già last_mortality_loss (lo cancella), quindi è sicuro
+# chiamarla ogni giorno: nei giorni senza mortalità appena applicata è un no-op silenzioso. Per
+# ogni individuo scelto, il size_multiplier va letto dal renderer PRIMA di marcarlo morto (una
+# volta marcato, sottotipo/età sono dimenticati e quel dato non sarebbe più recuperabile) — stesso
+# identico schema di _on_cut_requested sopra.
+func _apply_natural_mortality_visuals(cell: LiveMacroCell) -> void:
+	if cell.macro_state == null or cell.renderer == null or cell.fog_of_war_memory == null:
+		return
+	# is_resource_fresh (non più has_ever_been_seen, vedi NaturalMortalityVisualService — NON
+	# is_terrain_fresh: quel tier copre solo il tipo di terreno/bioma, troppo grezzo per "quali
+	# piante c'erano") ha bisogno del giorno corrente e della soglia — letti una sola volta qui,
+	# non per ogni object_type sotto.
+	var fog_rules := FogOfWarCalculator.get_fog_of_war_rules()
+	var resource_memory_days: int = fog_rules.resource_memory_days if fog_rules != null else 30
+	var current_absolute_day := game_data.get_absolute_day()
+	for object_type in NaturalMortalityVisualService.MORTAL_INDIVIDUAL_TYPES:
+		var dying: Array = NaturalMortalityVisualService.select_dying_individuals(
+			cell.macro_state, cell.fog_of_war_memory, object_type, current_absolute_day, resource_memory_days
+		)
+		for individual_key in dying:
+			var info := cell.renderer.get_individual_info(object_type, individual_key)
+			if info.is_empty():
+				continue
+			NaturalMortalityVisualService.kill_individual(cell.macro_state, object_type, individual_key, info["size_multiplier"], game_data.year)
 
 
 # Azzera lo stato di focus del LOD quando questa scena viene lasciata — stessa motivazione di
@@ -410,6 +591,10 @@ func _deactivate_live_cell(coords: Vector2i) -> void:
 	var cell: LiveMacroCell = live_cells.get(coords)
 	if cell == null:
 		return
+	# L'individuo selezionato (se presente) vive nel renderer che sta per essere distrutto — vedi
+	# _select_vegetation/selected_vegetation.
+	if not selected_vegetation.is_empty() and selected_vegetation["macro_coords"] == coords:
+		_clear_vegetation_selection()
 	cell.container.queue_free()
 	live_cells.erase(coords)
 
@@ -729,7 +914,20 @@ func _refresh_resource_visuals(cell: LiveMacroCell) -> void:
 		occupied[pos] = true
 
 	var vegetation_service := VegetationPositionService.new()
-	cell.renderer.set_vegetation_positions(vegetation_service.generate_positions(cell.macro_state, occupied))
+	var vegetation_positions: Dictionary = vegetation_service.generate_positions(cell.macro_state, occupied, game_data.year, game_data.current_day)
+	cell.renderer.set_vegetation_positions(vegetation_positions)
+	# FogOfWarRenderer disegna la vegetazione "sfocata" (Opzione B, vedi lì) sopra questa stessa
+	# vegetazione VERA — MicroCellRenderer non sa nulla del fog of war, mai più da quando abbiamo
+	# spostato l'Opzione B lì: il ritardo di aggiornamento a checkpoint qui non è un problema (solo
+	# "c'è vegetazione più o meno qui", non l'identità precisa, e le posizioni sono comunque stabili
+	# da un checkpoint all'altro), mentre FogOfWarRenderer resta reattivo giorno per giorno.
+	cell.fog_of_war_renderer.set_vegetation_presence(vegetation_positions)
+	# PRIMA di qualunque altro setter che ricalcola i lotti vivi (set_*_subtypes/set_*_age_params
+	# sotto): quei rebuild leggono cut_positions/dead_positions per calcolare local_count
+	# (vivi+bloccati, vedi MicroCellRenderer._lot_extent_counts) — se arrivassero DOPO, userebbero
+	# ancora i valori dell'anno scorso per quei rebuild intermedi.
+	cell.renderer.set_cut_positions(_get_cut_positions(cell.macro_state))
+	cell.renderer.set_dead_positions(_get_dead_positions(cell.macro_state))
 
 	var fish_positions: Array = []
 	var fish_service := FishPositionService.new()
@@ -747,12 +945,17 @@ func _refresh_resource_visuals(cell: LiveMacroCell) -> void:
 		var group := macro_world.find_population_group(species, this_cell)
 		_update_animal_renderer_population(cell.animal_renderers[species], group, AnimalCalculator.get_animal_rules(species), this_cell)
 
-	cell.renderer.set_shrub_fruit_ratio(_get_shrub_fruit_ratio(cell.macro_state))
-	cell.renderer.set_shrub_age_params(game_data.year, _get_age_params(cell.macro_state, GameTypes.WorldObjectType.SHRUB))
-	cell.renderer.set_tree_fruit_ratios(_get_tree_subtype_ratio(cell.macro_state, "wild_fruit"), _get_tree_subtype_ratio(cell.macro_state, "domesticable_fruit"))
-	cell.renderer.set_tree_conifer_ratio(_get_tree_subtype_ratio(cell.macro_state, "conifer"))
-	cell.renderer.set_tree_age_params(game_data.year, _get_age_params(cell.macro_state, GameTypes.WorldObjectType.TREE))
+	cell.renderer.set_shrub_subtypes(cell.macro_state.shrub_individual_subtype)
+	cell.renderer.set_shrub_age_params(
+		game_data.year, _get_age_params(cell.macro_state, GameTypes.WorldObjectType.SHRUB), cell.macro_state.shrub_virtual_birth_year
+	)
+	cell.renderer.set_tree_subtypes(cell.macro_state.tree_individual_subtype)
+	cell.renderer.set_tree_age_params(
+		game_data.year, _get_age_params(cell.macro_state, GameTypes.WorldObjectType.TREE), cell.macro_state.tree_virtual_birth_year
+	)
 	cell.renderer.set_season(SeasonCalculator.get_season_for_day(game_data.current_day))
+
+	_invalidate_selected_vegetation_if_missing(cell)
 
 	if cell.macro_x == center_macro_coords.x and cell.macro_y == center_macro_coords.y:
 		_update_info_panel()
@@ -791,53 +994,43 @@ func _update_info_panel() -> void:
 	pass
 
 
-func _get_shrub_fruit_ratio(macro_state: MacroCellState) -> float:
-	var composition := macro_state.get_subtype_composition(GameTypes.WorldObjectType.SHRUB)
-	if composition.is_empty():
-		return 0.0
-
-	var total: int = 0
-	for amount in composition.values():
-		total += int(amount)
-	if total <= 0:
-		return 0.0
-
-	var fruit_count: int = int(composition.get("fruit_bearing", 0))
-	return float(fruit_count) / float(total)
-
-
+# Sottotipo/anno di nascita non si decidono più qui (vedi IndividualVegetationService, chiamato
+# dentro generate_positions PRIMA di arrivare a questo punto di _refresh_resource_visuals): questa
+# funzione resta solo per i parametri fascia età (youth/adult duration, size_multiplier_by_age)
+# che _resolve_age_band_and_size del renderer legge per-sottotipo — non più il campo "ratios" (usato
+# solo dalla stima a percentile, ora eseguita direttamente da IndividualVegetationService sui dati
+# di macro_state, non più passata attraverso questo dizionario).
 func _get_age_params(macro_state: MacroCellState, object_type: GameTypes.WorldObjectType) -> Dictionary:
 	var params: Dictionary = {}
 	for rule in ResourceCalculator.get_subtype_rules(object_type):
 		if not rule.track_age_bands:
 			continue
 
-		var composition := macro_state.get_age_composition(object_type, rule.subtype_name)
-		var young: int = int(composition.get(GameTypes.AgeBand.YOUNG, 0))
-		var adult: int = int(composition.get(GameTypes.AgeBand.ADULT, 0))
-		var old: int = int(composition.get(GameTypes.AgeBand.OLD, 0))
-
 		params[rule.subtype_name] = {
 			"youth_duration_years": rule.youth_duration_years,
 			"adult_duration_years": rule.adult_duration_years,
 			"size_multiplier_by_age": rule.size_multiplier_by_age,
-			"ratios": [float(young), float(adult), float(old)],
 		}
 	return params
 
 
-func _get_tree_subtype_ratio(macro_state: MacroCellState, subtype_name: String) -> float:
-	var composition := macro_state.get_subtype_composition(GameTypes.WorldObjectType.TREE)
-	if composition.is_empty():
-		return 0.0
+# Posizioni con blocco di taglio/morte attualmente attivo, raggruppate per WorldObjectType — vedi
+# MicroCellRenderer.set_cut_positions/set_dead_positions (il marker visivo da disegnare sopra lo
+# slot bloccato al posto del blob vivo, che per quello slot non esiste).
+func _get_cut_positions(macro_state: MacroCellState) -> Dictionary:
+	return {
+		GameTypes.WorldObjectType.TREE: IndividualVegetationService.get_cut_positions(macro_state, GameTypes.WorldObjectType.TREE, game_data.year),
+		GameTypes.WorldObjectType.SHRUB: IndividualVegetationService.get_cut_positions(macro_state, GameTypes.WorldObjectType.SHRUB, game_data.year),
+	}
 
-	var total: int = 0
-	for amount in composition.values():
-		total += int(amount)
-	if total <= 0:
-		return 0.0
 
-	return float(int(composition.get(subtype_name, 0))) / float(total)
+func _get_dead_positions(macro_state: MacroCellState) -> Dictionary:
+	return {
+		GameTypes.WorldObjectType.TREE: IndividualVegetationService.get_dead_positions(macro_state, GameTypes.WorldObjectType.TREE),
+		GameTypes.WorldObjectType.SHRUB: IndividualVegetationService.get_dead_positions(macro_state, GameTypes.WorldObjectType.SHRUB),
+	}
+
+
 
 
 # ============================================================================================
@@ -1257,14 +1450,75 @@ func _update_play_pause_button() -> void:
 
 func _on_day_advanced(checkpoint_ran: bool, animals_changed: bool) -> void:
 	_update_calendar_display()
+	# Cadenza propria, scollegata da checkpoint_ran/animals_changed sopra e dal checkpoint
+	# stagionale di WorldTimeService (vedi _maybe_prune_fog_of_war_memories per il perché) — gira
+	# quindi anche nei giorni "vuoti" in cui il resto di questa funzione farebbe early-return sotto.
+	_maybe_prune_fog_of_war_memories()
 	if not (checkpoint_ran or animals_changed):
 		return
 
 	if checkpoint_ran or flora_daily_updates_enabled:
 		for cell in live_cells.values():
+			# PRIMA del rebuild: se ResourceMortalityService ha appena registrato una perdita
+			# aggregata quest'anno (last_mortality_loss, scritto solo al rollover d'anno — vedi
+			# WorldTimeService._run_seasonal_checkpoints), la traduce in marker "morto" specifici
+			# così il rebuild qui sotto li disegna subito, nella stessa chiamata. No-op silenzioso
+			# nei giorni ordinari (il campo è vuoto).
+			_apply_natural_mortality_visuals(cell)
 			_refresh_resource_visuals(cell)
 	else:
 		_update_info_panel()
+
+# Pulizia periodica di TUTTE le FogOfWarMemory mai create in questa partita (fog_of_war_memories
+# — non solo quelle attualmente vive: l'obiettivo è limitare la crescita nel tempo anche per
+# macrocelle uscite dal set vivo da tempo, vedi la discussione con l'utente sul dizionario
+# last_seen_by_position altrimenti non limitato). Cadenza indipendente da WorldTimeService di
+# proposito: quel servizio itera l'intero mondo ad ogni checkpoint stagionale (costoso per
+# design), mentre qui il dominio è già naturalmente piccolo (solo le macrocelle mai visitate dal
+# player) — non c'è motivo di accoppiare le due cose, né di prendere in prestito la cadenza
+# stagionale. game_data.fog_of_war_last_prune_absolute_day persiste su salvataggio (vedi
+# GameData/GameSaveService/GameLoadService) apposta: senza, ogni ricaricamento farebbe ripartire
+# il conteggio da zero, sfasando la cadenza reale rispetto al tempo di gioco davvero trascorso.
+func _maybe_prune_fog_of_war_memories() -> void:
+	var rules := FogOfWarCalculator.get_fog_of_war_rules()
+	var interval_days: int = rules.prune_interval_days if rules != null else 21
+	var current_absolute_day := game_data.get_absolute_day()
+	if current_absolute_day - game_data.fog_of_war_last_prune_absolute_day < interval_days:
+		return
+
+	# Soglia = il massimo ATTUALMENTE conosciuto, mai un tetto teorico futuro (vedi
+	# FogOfWarCalculator.get_max_known_memory_days per il perché) — letto una sola volta per
+	# l'intera passata, non per ogni FogOfWarMemory, dato che è lo stesso per tutta la partita oggi.
+	var max_known_memory_days := FogOfWarCalculator.get_max_known_memory_days()
+	for coords in fog_of_war_memories:
+		var memory: FogOfWarMemory = fog_of_war_memories[coords]
+		# "aveva ancora qualcosa PRIMA di potare, non ha più nulla DOPO" — il segnale preciso che
+		# questa macrocella, nel suo insieme, è appena diventata del tutto dimenticata (non solo
+		# "questa specifica entry era già vuota da prima", che non è un evento, solo uno stato).
+		var had_positions_before: bool = not memory.last_seen_by_position.is_empty()
+		memory.prune_stale(current_absolute_day, max_known_memory_days)
+		if had_positions_before and memory.last_seen_by_position.is_empty():
+			_forget_vegetation_identity(coords)
+
+	game_data.fog_of_war_last_prune_absolute_day = current_absolute_day
+
+
+# Svuota SOLO l'identità "ordinaria" di TREE/SHRUB per (mx,my) — mai le eccezioni di taglio/morte,
+# vedi IndividualVegetationService.forget_known_individuals per il dettaglio completo. Chiamata
+# SOLO quando il FogOfWarMemory di questa macrocella è appena diventato completamente vuoto (vedi
+# sopra): per costruzione questo non può mai capitare per una macrocella attualmente viva — una
+# cella viva ha sempre almeno le posizioni nel raggio di visibilità marcate "viste" in questo
+# stesso giorno (mark_seen scatta ogni frame lì), quindi la sua età è sempre 0, mai oltre
+# max_known_memory_days — nessun controllo esplicito "è viva?" necessario qui.
+func _forget_vegetation_identity(coords: Vector2i) -> void:
+	if macro_world == null:
+		return
+	var state := macro_world.get_cell_state_at(coords.x, coords.y)
+	if state == null:
+		return
+	IndividualVegetationService.forget_known_individuals(state, GameTypes.WorldObjectType.TREE)
+	IndividualVegetationService.forget_known_individuals(state, GameTypes.WorldObjectType.SHRUB)
+
 
 func _on_advance_year_pressed() -> void:
 	if macro_world == null:

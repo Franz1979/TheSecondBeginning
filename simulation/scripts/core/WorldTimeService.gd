@@ -403,6 +403,15 @@ func _run_growth_checkpoint(world: World, game_data: GameData) -> void:
 
 	_run_timed("  grow_resources", func(): ResourceGrowthService.new().grow_resources(world, game_data))
 
+	# Fine della finestra di visibilità dei marker "morto" da mortalità naturale (vedi
+	# SeasonCalculator.is_within_natural_death_visibility_window/IndividualVegetationService): a
+	# differenza del taglio (persistente, azione deliberata del giocatore), la morte naturale è solo
+	# un artificio grafico stagionale — "morto" da fine autunno a qui, poi la ricrescita rioccupa lo
+	# slot. Pulizia GLOBALE (tutto world.cell_states, non solo le celle vive), stessa ampiezza di
+	# ResourceMortalityService/grow_resources sopra: una cella mai visitata deve arrivare comunque
+	# "pulita" al prossimo first-sight, esattamente come una già nota.
+	_run_timed("  clear_natural_death_markers", func(): _clear_natural_death_markers(world))
+
 	# Step 11 Step 4: mitigazione dell'encroachment da presenza fisica di fauna brucante (densità
 	# di riempimento per cella rispetto ad AnimalRules.max_density_per_cell) — vedi
 	# BrowsingMitigationService. Il risultato è ora un INPUT REALE per encroach_resources sotto
@@ -437,6 +446,12 @@ func _run_growth_checkpoint(world: World, game_data: GameData) -> void:
 	# vegetazione, growth->migration->mortality per FISH restano tre momenti separati dell'anno
 	# invece che un'unica pipeline diretta, per poter osservare l'evoluzione di ciascuna fase.
 	_run_timed("  grow_fauna", func(): FaunaGrowthService.new().grow_fauna(world))
+
+
+func _clear_natural_death_markers(world: World) -> void:
+	for state in world.cell_states:
+		if not state.vegetation_death_exceptions.is_empty():
+			state.vegetation_death_exceptions.clear()
 
 
 # Fine estate: unico checkpoint per la migrazione FISH, nessuno sfasamento all'anno successivo

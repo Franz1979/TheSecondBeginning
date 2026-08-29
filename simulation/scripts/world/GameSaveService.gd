@@ -1,4 +1,4 @@
-class_name GameSaveService
+﻿class_name GameSaveService
 extends RefCounted
 
 func save_game_to_json(
@@ -36,7 +36,10 @@ func save_game_to_json(
 			"player_micro_y": game_data.player_micro_y,
 			# Zoom camera GameScene (vedi GameData) — deve sopravvivere a save/load come la
 			# posizione del player, ma è un solo float (zoom.x == zoom.y sempre).
-			"camera_zoom": game_data.camera_zoom
+			"camera_zoom": game_data.camera_zoom,
+			# Ultimo giorno di pulizia periodica del fog of war (vedi GameData) — deve
+			# sopravvivere a save/load per non sfasare la cadenza reale.
+			"fog_of_war_last_prune_absolute_day": game_data.fog_of_war_last_prune_absolute_day
 		},
 		"world": {
 			"width": World.WIDTH,
@@ -82,6 +85,77 @@ func save_game_to_json(
 			for pos in state.stone_positions:
 				stone_positions_data.append({"x": pos.x, "y": pos.y})
 			state_data["stone_positions"] = stone_positions_data
+		# Assente se vuoto (nessun meccanismo di taglio esiste ancora, sempre il caso oggi), stesso
+		# principio di stone_positions sopra — non appesantire il salvataggio per un campo mai
+		# popolato. Chiave Vector3i (x, y lotto + "i" indice individuo): "i" va salvato insieme a
+		# x/y, altrimenti due individui nello stesso lotto collasserebbero sulla stessa entry.
+		# origin_type/cut_year sono i due campi del valore (vedi MacroCellState.
+		# vegetation_cut_exceptions) — origin_type serve solo a scegliere la finestra di rientro
+		# al caricamento, il blocco resta comunque unificato per qualunque tipo.
+		if not state.vegetation_cut_exceptions.is_empty():
+			var cut_exceptions_data: Array = []
+			for key in state.vegetation_cut_exceptions.keys():
+				var entry: Dictionary = state.vegetation_cut_exceptions[key]
+				cut_exceptions_data.append({
+					"x": key.x, "y": key.y, "i": key.z,
+					"origin_type": int(entry["origin_type"]), "cut_year": int(entry["cut_year"]),
+					"size_multiplier": float(entry.get("size_multiplier", 1.0))
+				})
+			state_data["vegetation_cut_exceptions"] = cut_exceptions_data
+		# Stesso principio sopra: assenti se vuote. Popolate solo dopo che MicroCellRenderer ha
+		# disegnato la cella almeno una volta (vedi MacroCellState.tree_virtual_birth_year). Chiave
+		# Vector3i (x, y lotto + "i" indice individuo locale): "i" va salvato insieme a x/y,
+		# altrimenti due individui nello stesso lotto collasserebbero sulla stessa entry salvata e
+		# il caricamento ricostruirebbe una chiave Vector2i che non corrisponderebbe mai a nessuna
+		# Vector3i cercata a runtime — l'età tornerebbe sempre "non ancora vista" ad ogni reload
+		# invece di restare fissa.
+		if not state.tree_virtual_birth_year.is_empty():
+			var tree_birth_year_data: Array = []
+			for key in state.tree_virtual_birth_year.keys():
+				tree_birth_year_data.append({"x": key.x, "y": key.y, "i": key.z, "year": state.tree_virtual_birth_year[key]})
+			state_data["tree_virtual_birth_year"] = tree_birth_year_data
+		if not state.shrub_virtual_birth_year.is_empty():
+			var shrub_birth_year_data: Array = []
+			for key in state.shrub_virtual_birth_year.keys():
+				shrub_birth_year_data.append({"x": key.x, "y": key.y, "i": key.z, "year": state.shrub_virtual_birth_year[key]})
+			state_data["shrub_virtual_birth_year"] = shrub_birth_year_data
+		# Sottotipo congelato per individuo (vedi MacroCellState.tree_individual_subtype/
+		# shrub_individual_subtype) — stessa chiave Vector3i/stesso principio "assente se vuoto" di
+		# tree_virtual_birth_year sopra, un campo String in più oltre a "year".
+		if not state.tree_individual_subtype.is_empty():
+			var tree_subtype_data: Array = []
+			for key in state.tree_individual_subtype.keys():
+				tree_subtype_data.append({"x": key.x, "y": key.y, "i": key.z, "subtype": state.tree_individual_subtype[key]})
+			state_data["tree_individual_subtype"] = tree_subtype_data
+		if not state.shrub_individual_subtype.is_empty():
+			var shrub_subtype_data: Array = []
+			for key in state.shrub_individual_subtype.keys():
+				shrub_subtype_data.append({"x": key.x, "y": key.y, "i": key.z, "subtype": state.shrub_individual_subtype[key]})
+			state_data["shrub_individual_subtype"] = shrub_subtype_data
+		# Lotti rivendicati per sempre da ciascun tipo (vedi MacroCellState.tree_claimed_lots/
+		# shrub_claimed_lots) — Vector2i, stesso stile {x,y} già in uso per stone_positions.
+		if not state.tree_claimed_lots.is_empty():
+			var tree_claimed_lots_data: Array = []
+			for pos in state.tree_claimed_lots.keys():
+				tree_claimed_lots_data.append({"x": pos.x, "y": pos.y})
+			state_data["tree_claimed_lots"] = tree_claimed_lots_data
+		if not state.shrub_claimed_lots.is_empty():
+			var shrub_claimed_lots_data: Array = []
+			for pos in state.shrub_claimed_lots.keys():
+				shrub_claimed_lots_data.append({"x": pos.x, "y": pos.y})
+			state_data["shrub_claimed_lots"] = shrub_claimed_lots_data
+		# Stesso formato/principio di vegetation_cut_exceptions sopra, ma per la mortalità naturale
+		# (vedi MacroCellState.vegetation_death_exceptions) — campo "death_year" invece di "cut_year".
+		if not state.vegetation_death_exceptions.is_empty():
+			var death_exceptions_data: Array = []
+			for key in state.vegetation_death_exceptions.keys():
+				var entry: Dictionary = state.vegetation_death_exceptions[key]
+				death_exceptions_data.append({
+					"x": key.x, "y": key.y, "i": key.z,
+					"origin_type": int(entry["origin_type"]), "death_year": int(entry["death_year"]),
+					"size_multiplier": float(entry.get("size_multiplier", 1.0))
+				})
+			state_data["vegetation_death_exceptions"] = death_exceptions_data
 		data["world"]["cell_states"].append(state_data)
 	# Popolazioni animali "vere" (rabbit/deer) — world-level, non più annidate dentro
 	# cell_states (vedi PopulationGroup/World.population_groups). occupied_macrocells è un array

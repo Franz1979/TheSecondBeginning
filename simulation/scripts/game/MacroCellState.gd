@@ -42,6 +42,84 @@ var active_growth_bonuses: Dictionary = {} # NaturalEventType -> {multiplier: fl
 var pending_migration_surplus: Dictionary = {}
 var stone_positions: Array = [] # Array[Vector2i], posizioni microcella occupate da stone (100x100)
 var stone_positions_generated: bool = false # separato dall'array vuoto: distingue "mai aperta" da "aperta ma senza stone"
+# Vector3i (x, y lotto + indice individuo locale) -> {"origin_type": GameTypes.WorldObjectType,
+# "cut_year": int}. Fatto storico reale (non ricalcolabile), stesso principio di stone_positions:
+# a differenza di GRASS/SHRUB/TREE aggregati (mai persistiti, rigenerati da zero ad ogni apertura/
+# anno), una posizione tagliata deve restare esclusa dalla rigenerazione anche se l'algoritmo di
+# posizionamento (deterministico, stesso seed) la sceglierebbe di nuovo — altrimenti un albero
+# "tagliato" ricomparirebbe identico l'anno successivo come se nulla fosse successo. BLOCCO
+# UNIFICATO (non selettivo per tipo): finché il blocco è attivo, quella posizione-individuo è
+# terreno bloccato per QUALUNQUE tipo di vegetazione, non solo origin_type — decisione esplicita:
+# un taglio è un disturbo del terreno (ceppo/radura), non un "posto libero per un tipo diverso".
+# origin_type serve solo a scegliere la finestra di rientro giusta
+# (IndividualVegetationService.REENTRY_YEARS_BY_TYPE), non limita quali tipi restano bloccati.
+# Consumata da IndividualVegetationService (TREE/SHRUB, a livello di singolo indice) e da
+# VegetationPositionService (GRASS, a livello di intero lotto — GRASS non ha identità
+# individuale, un blocco su un solo indice esclude l'intera microcella per lei, vedi
+# _exclude_blocked_lots). Scaduta viene rimossa immediatamente (nessun costo di realismo, vedi
+# IndividualVegetationService._prune_expired_cut_exceptions), non solo ignorata. Scritte da
+# PlayerHarvestService.cut_individual (unico chiamante che scrive qui, tramite il bottone "Cut" di
+# VegetationInfoPanel in GameScene).
+var vegetation_cut_exceptions: Dictionary = {}
+# Vector3i (x, y lotto + indice individuo locale) -> anno di nascita virtuale. Fatto storico reale
+# una volta fissato (stesso principio di vegetation_cut_exceptions sopra): il congelamento avviene
+# in IndividualVegetationService._freeze_new_individual (nascita dell'individuo — stima con
+# AgeBandVisualService.compute_virtual_birth_year dai ratio young/adult/old correnti se è la prima
+# volta in assoluto che questa cella viene vista, altrimenti anno corrente = crescita di
+# quest'anno), mai più da MicroCellRenderer (che qui si limita a leggere, vedi
+# _resolve_age_band_and_size) — scrittura diretta qui perché il Dictionary passato al renderer via
+# set_tree_age_params/set_shrub_age_params è lo stesso oggetto (i Dictionary in GDScript sono
+# sempre per riferimento), sopravvivendo così a save/load e alla ricreazione dell'istanza renderer
+# nello streaming multi-cella. NESSUNA potatura automatica in questo step (deliberato, vedi
+# IndividualVegetationService): una posizione che smette di esistere (morte/migrazione) resta
+# comunque nota finché non verrà gestita esplicitamente — la mortalità a granularità
+# per-individuo è lavoro futuro, non ancora implementato.
+var tree_virtual_birth_year: Dictionary = {}
+var shrub_virtual_birth_year: Dictionary = {}
+# Sottotipo congelato per individuo (TREE/SHRUB) — vedi IndividualVegetationService: deciso UNA
+# SOLA volta quando l'individuo viene generato per la prima volta, mai più ricalcolato da un
+# rapporto corrente (a differenza del vecchio comportamento, che lo ritestava ad ogni render e
+# poteva "cambiare specie" se le proporzioni della cella si spostavano nel frattempo). Stessa
+# chiave Vector3i e stesso principio "Dictionary per riferimento" di tree_virtual_birth_year sopra
+# (vedi MicroCellRenderer.set_tree_subtypes/set_shrub_subtypes).
+var tree_individual_subtype: Dictionary = {}
+var shrub_individual_subtype: Dictionary = {}
+# Lotti (Vector2i, spazio microcella 0..99) già "rivendicati per sempre" da questo tipo, una volta
+# scelti dal motore procedurale — mai rimossi in questo step (la mortalità/lo sgretolamento del
+# territorio noto restano fuori scope, vedi IndividualVegetationService). Garantisce che un lotto
+# resti lo stesso anche quando il suo unico individuo noto perde temporaneamente identità
+# (tagliato o morto: l'eccezione blocca lo SLOT, non il lotto — vedi
+# IndividualVegetationService._is_blocked), evitando che il lotto torni "libero" e magari
+# riassegnato altrove non appena l'eccezione scade.
+var tree_claimed_lots: Dictionary = {}
+var shrub_claimed_lots: Dictionary = {}
+# Stesso formato di vegetation_cut_exceptions sopra (origin_type/size_multiplier), ma per la
+# mortalità naturale invece del taglio del giocatore — con una finestra di non-ricrescita di natura
+# DIVERSA, per decisione esplicita: il taglio è un'azione deliberata (bloccata per anni, vedi
+# REENTRY_YEARS_BY_TYPE), la morte naturale è solo un artificio grafico stagionale — "morto" da fine
+# autunno (checkpoint di mortalità) a fine primavera (checkpoint di growth), poi azzerata in BLOCCO
+# per l'intero mondo da WorldTimeService._clear_natural_death_markers (mai scaduta entry per entry
+# per anno, vedi SeasonCalculator.is_within_natural_death_visibility_window). Scritte da
+# NaturalMortalityVisualService.kill_individual (mortalità su una cella già nota — vedi
+# last_mortality_loss sotto per come sceglie quali individui) E da IndividualVegetationService.
+# _seed_first_sight_death_markers (prima scoperta di una cella mai vista: anche lì una quota
+# realistica nasce già "morta", dalla stessa fonte last_mortality_loss — la mortalità aggregata gira
+# su ogni cella ogni anno indipendentemente da essere vista o meno).
+var vegetation_death_exceptions: Dictionary = {}
+# WorldObjectType -> int: quanti individui ResourceMortalityService ha TOLTO IN AGGREGATO
+# quest'anno per quel tipo (già applicato a dedicated_space/resource_quantity, vedi
+# _apply_mortality_in_cell) — un valore "da consumare", non un fatto storico. Scritto per OGNI
+# cella del mondo ogni anno, vista o no (ResourceMortalityService itera world.cells per intero), non
+# solo per quelle vive — proprietà sfruttata da entrambi i consumatori: NaturalMortalityVisualService
+# .select_dying_individuals lo legge e lo cancella per decidere quanti (e quali, tra i noti visti dal
+# fog of war) individui di una cella GIÀ NOTA ricevono un marker "morto"; IndividualVegetationService
+# ._seed_first_sight_death_markers lo legge (e cancella) allo stesso modo per una cella MAI vista
+# prima — stesso dato, stessa formula, letto ovunque per la prima volta la cella smette di essere
+# "vuota" di individui noti. Deliberatamente NON persistito su salvataggio: se non viene consumato
+# entro la sessione l'anno successivo lo sovrascrive comunque — stessa inconsistenza già accettata
+# altrove per il territorio non osservato, non un dato la cui perdita comprometta la simulazione
+# aggregata (quella è già applicata a prescindere da questo campo).
+var last_mortality_loss: Dictionary = {}
 # Stock persistente delle fonti caloriche con consuming_depletes_primary = false (es. bacche
 # mature): resource_name (CaloricSourceRules.caloric_source_name) -> quantità (float). Vuoto per
 # le fonti stateless come FORAGE, che non ne hanno bisogno. Vedi CaloricCalculator.update_secondary_resource_stock.

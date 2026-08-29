@@ -1,0 +1,10 @@
+[gd_resource type="Resource" script_class="FogOfWarRules" format=3]
+
+[ext_resource type="Script" path="res://gameplay/scripts/core/FogOfWarRules.gd" id="1_fow"]
+
+[resource]
+script = ExtResource("1_fow")
+detail_memory_days = 20
+resource_memory_days = 60
+terrain_memory_days = 180
+prune_interval_days = 21

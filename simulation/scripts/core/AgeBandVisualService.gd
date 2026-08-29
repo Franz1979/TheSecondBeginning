@@ -34,6 +34,7 @@ const _EPS: float = 0.0001
 static func compute_virtual_birth_year(
 	pos: Vector2i,
 	salt: Vector2i,
+	index: int,
 	current_year: int,
 	youth_duration_years: int,
 	adult_duration_years: int,
@@ -53,7 +54,7 @@ static func compute_virtual_birth_year(
 		adult_ratio /= total
 		old_ratio /= total
 
-	var percentile: float = _stable_percentile(pos, salt)
+	var percentile: float = _stable_percentile(pos, salt, index)
 
 	var age: float
 	if percentile < young_ratio:
@@ -80,8 +81,11 @@ static func band_for_age(years_lived: int, youth_duration_years: int, adult_dura
 	return GameTypes.AgeBand.OLD
 
 
-# Stesso pattern hash-vs-100000 usato in tutto MicroCellRenderer per test hash-based
-# posizionalmente stabili (es. _is_shrub_fruit_bearing), qui isolato perché riusato da
-# compute_virtual_birth_year indipendentemente dal renderer.
-static func _stable_percentile(pos: Vector2i, salt: Vector2i) -> float:
-	return float(hash(pos * salt.x + Vector2i(salt.y, 0)) % 100000) / 100000.0
+# Stesso pattern hash-vs-100000 usato per i test hash-based posizionalmente stabili di
+# IndividualVegetationService (es. _resolve_new_shrub_subtype), qui isolato perché riusato da
+# compute_virtual_birth_year indipendentemente da chi decide il sottotipo. `index` (granularità per-individuo,
+# vedi IndividualVegetationService) è il solo termine che distingue due individui nello stesso
+# lotto/microcella `pos`: senza di esso condividerebbero lo stesso percentile e quindi la stessa
+# età stimata al primo sguardo.
+static func _stable_percentile(pos: Vector2i, salt: Vector2i, index: int) -> float:
+	return float(hash(pos * salt.x + Vector2i(salt.y, index)) % 100000) / 100000.0

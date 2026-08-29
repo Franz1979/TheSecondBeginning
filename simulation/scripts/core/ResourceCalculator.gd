@@ -491,6 +491,25 @@ static func get_subtype_rule(resource_type: GameTypes.WorldObjectType, subtype_n
 	return null
 
 
+# Quota subtype_name/totale della subtype_composition di resource_type in questa cella (0.0 se
+# la composizione è vuota o il sottotipo non vi compare). Generalizza due funzioni un tempo
+# duplicate identiche in GameScene/MacroCellScene (una per TREE, una per SHRUB, stessa formula) —
+# spostata qui perché ora serve anche a IndividualVegetationService per decidere il sottotipo di
+# un individuo NUOVO al momento della generazione (non solo al rendering).
+static func get_subtype_ratio(resource_type: GameTypes.WorldObjectType, state: MacroCellState, subtype_name: String) -> float:
+	var composition := state.get_subtype_composition(resource_type)
+	if composition.is_empty():
+		return 0.0
+
+	var total: int = 0
+	for amount in composition.values():
+		total += int(amount)
+	if total <= 0:
+		return 0.0
+
+	return float(int(composition.get(subtype_name, 0))) / float(total)
+
+
 # Pesi di ripartizione tra sottotipi basati su SubtypeRules.initial_ratio_by_biome del bioma
 # della cella, con fallback a pesi uguali se nessun sottotipo ha un rapporto positivo per quel
 # bioma — stessa logica usata da InitialResourceSetupService per seminare la composizione alla

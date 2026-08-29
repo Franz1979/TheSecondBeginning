@@ -43,6 +43,14 @@ static func get_season_end_day(season: GameTypes.Season) -> int:
 	var range := get_season_day_range(season)
 	return range.x + range.y - 1
 
+# Finestra di visibilità dei marker "morto" da mortalità naturale (vedi IndividualVegetationService/
+# NaturalMortalityVisualService/WorldTimeService._clear_natural_death_markers): dal giorno del
+# checkpoint di mortalità (fine autunno = year rollover, osservato come day 0 del nuovo anno) fino
+# al giorno del checkpoint di growth (fine primavera) incluso — da lì in poi growth rioccupa gli
+# slot e i marker vengono azzerati in blocco. Copre WINTER+SPRING per intero, contigui da day 0.
+static func is_within_natural_death_visibility_window(day: int) -> bool:
+	return day <= get_season_end_day(GameTypes.Season.SPRING)
+
 # Stagione immediatamente precedente a `season` nel ciclo (WINTER->AUTUMN dell'anno prima).
 # Usata dai checkpoint di inizio stagione che devono confrontare il moltiplicatore nuovo con
 # quello della stagione appena conclusa (vedi CaloricCalculator.update_secondary_resource_stock).

@@ -95,6 +95,13 @@ func _apply_mortality_in_cell(
 	state.set_dedicated_space(resource_type, new_space)
 	state.set_resource_quantity(resource_type, max(new_quantity, 0))
 
+	# Quantità REALE persa quest'anno per questo tipo (già applicata sopra) — letta e cancellata da
+	# NaturalMortalityVisualService.select_dying_individuals per scegliere quali individui noti (tra
+	# i visti dal fog of war) ricevono un marker "morto" specifico. Scritta qui, non nel valore di
+	# ritorno di apply_mortality/WorldTimeService, apposta per non toccare la firma di funzioni
+	# condivise tra GameScene e WorldScene (quest'ultima non legge mai questo campo).
+	state.last_mortality_loss[resource_type] = int(round(quantity_lost))
+
 
 # A differenza di encroachment/eventi naturali (proporzione locale pura), qui la perdita è
 # guidata esplicitamente da SubtypeRules.mortality_share_by_age — solo per sottotipi

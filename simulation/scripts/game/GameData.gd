@@ -59,6 +59,15 @@ var player_micro_y: float = -1.0
 # sopra — se in futuro arriverà lo sgancio camera-player, la posizione andrà salvata allora.
 var camera_zoom: float = -1.0
 
+# Ultimo absolute_day (vedi get_absolute_day sotto) in cui GameScene ha eseguito la pulizia
+# periodica di FogOfWarMemory.last_seen_by_position (vedi FogOfWarMemory.prune_stale/
+# GameScene._maybe_prune_fog_of_war_memories) — deve sopravvivere a save/load, altrimenti ogni
+# ricaricamento farebbe ripartire il conteggio da zero, sfasando la cadenza reale rispetto a
+# quanto tempo di gioco è davvero trascorso. Default 0 (non -1 come i sentinel sopra): "mai
+# potato" equivale correttamente a "come se fosse stato potato al giorno 0 di questa partita",
+# nessun caso speciale da gestire nel confronto (current_absolute_day - questo campo >= intervallo).
+var fog_of_war_last_prune_absolute_day: int = 0
+
 # Monotonic day count since year 0, day 0 — the single source of truth for "how long ago"
 # comparisons (e.g. natural-event growth-bonus expiry) that must not reset/round at a year
 # boundary the way a per-year counter would.

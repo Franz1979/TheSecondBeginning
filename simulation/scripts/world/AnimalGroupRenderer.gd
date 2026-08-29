@@ -920,18 +920,28 @@ static func _get_silhouette_geometry(
 	}
 
 
+# Scala applicata SOLO qui, non in _get_silhouette_geometry: quest'ultima è pubblica e condivisa
+# con AnimalSilhouetteIcon (icona specie nel filtro Fauna di WorldInfoPanel), che deve restare
+# leggibile a dimensione fissa nella sidebar — mentre _build_mesh_from_geometry è raggiunta SOLO
+# dai build_*_mesh usati per la mesh sul campo (MacroCellScene/GameScene). Riscalare qui invece
+# che nelle costanti BODY_LENGTH/WIDTH/EAR_LENGTH/WIDTH per specie (fonte di verità condivisa con
+# l'icona, vedi commento lì) evita di dover toccare 11 specie individualmente o i loro call site.
+const WORLD_MESH_SCALE: float = 0.6
+
 static func _build_mesh_from_geometry(geometry: Dictionary, color: Color) -> ArrayMesh:
+	var scaled := _scale_geometry(geometry, WORLD_MESH_SCALE)
+
 	var st := SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
 	st.set_color(color)
 
-	_append_fan_triangles(st, geometry["body_points"])
-	for ear in geometry["ears"]:
+	_append_fan_triangles(st, scaled["body_points"])
+	for ear in scaled["ears"]:
 		_append_triangle(st, ear[0], ear[1], ear[2])
 
-	var tail_center: Vector2 = geometry["tail_center"]
-	var tail_radius_x: float = geometry["tail_radius_x"]
-	var tail_radius_y: float = geometry["tail_radius_y"]
+	var tail_center: Vector2 = scaled["tail_center"]
+	var tail_radius_x: float = scaled["tail_radius_x"]
+	var tail_radius_y: float = scaled["tail_radius_y"]
 	var tail_points := PackedVector2Array()
 	for i in range(TAIL_SEGMENTS):
 		var angle: float = (float(i) / float(TAIL_SEGMENTS)) * TAU
@@ -939,6 +949,27 @@ static func _build_mesh_from_geometry(geometry: Dictionary, color: Color) -> Arr
 	_append_fan_triangles(st, tail_points, tail_center)
 
 	return st.commit()
+
+
+# Scala uniforme di tutta la geometria (corpo, orecchie/corna/ali, coda) di uno stesso fattore,
+# così le proporzioni relative tra le parti di una specie — e tra specie diverse (un aurochs
+# resta più grande di un coniglio) — restano invariate, cambia solo la scala assoluta.
+static func _scale_geometry(geometry: Dictionary, scale: float) -> Dictionary:
+	var scaled_body := PackedVector2Array()
+	for point in geometry["body_points"]:
+		scaled_body.append(point * scale)
+
+	var scaled_ears: Array = []
+	for ear in geometry["ears"]:
+		scaled_ears.append([ear[0] * scale, ear[1] * scale, ear[2] * scale])
+
+	return {
+		"body_points": scaled_body,
+		"ears": scaled_ears,
+		"tail_center": geometry["tail_center"] * scale,
+		"tail_radius_x": geometry["tail_radius_x"] * scale,
+		"tail_radius_y": geometry["tail_radius_y"] * scale,
+	}
 
 
 static func _append_fan_triangles(st: SurfaceTool, points: PackedVector2Array, center: Vector2 = Vector2.ZERO) -> void:

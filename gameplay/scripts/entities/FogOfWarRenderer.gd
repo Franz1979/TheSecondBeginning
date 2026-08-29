@@ -59,6 +59,12 @@ const FROZEN_OVERLAY_COLOR := Color(0, 0, 0, 0.5)
 # ancora freschi — il gradino più vicino alla piena visibilità.
 const LIGHT_OVERLAY_COLOR := Color(0, 0, 0, 0.25)
 
+# Macchie verde-grigio sfocate disegnate SOPRA FROZEN_OVERLAY_COLOR (vedi _draw_stale_vegetation_
+# hint) — non un colore di FogOfWarRules (quella risorsa resta per le sole soglie in giorni, non
+# per costanti di rendering: stessa distinzione già valida per OVERLAY_COLOR/FROZEN_OVERLAY_COLOR/
+# LIGHT_OVERLAY_COLOR sopra, mai spostate lì).
+const STALE_VEGETATION_BLOB_COLOR := Color(0.28, 0.34, 0.2, 0.8)
+
 @export var visibility_radius: float = 6.0 # microcelle
 # Overlay minimo per lo stato "ricordo recente ma non più in vista ora" (fuori dal raggio, ma
 # ancora entro detail_memory_days) — @export separato (non un const come gli altri tre colori
@@ -66,20 +72,34 @@ const LIGHT_OVERLAY_COLOR := Color(0, 0, 0, 0.25)
 # provato in editor.
 @export var recent_overlay_alpha: float = 0.1
 
-# Tre soglie di decadimento, qui e non su FogOfWarMemory per lo stesso motivo di
-# visibility_radius sopra: sono soglie di percezione/gameplay (in futuro modificabili da
-# tech/edifici, Step 4), la memoria resta agnostica sul perché di questi numeri. Ordine
-# crescente per design (detail < resource < terrain — il tipo di terreno si dimentica più
-# lentamente delle risorse, che a loro volta durano più delle posizioni esatte/entità in
-# movimento): valori di partenza, pensati esplicitamente come parametri di bilanciamento da
-# ritarare più avanti, specialmente quando i modificatori tech dello Step 4 allungheranno
-# ulteriormente terrain_memory_days.
-@export var detail_memory_days: int = 10
-@export var resource_memory_days: int = 30
-@export var terrain_memory_days: int = 90
+# Tre soglie di decadimento — non più hardcoded qui: lette da FogOfWarRules (.tres) tramite
+# FogOfWarCalculator dentro setup() sotto, con questi stessi valori come fallback se la risorsa
+# manca. Campi di ISTANZA semplici (non @export: nessuna istanza di questo nodo viene mai creata
+# da una scena con override nell'editor, sempre .new() da GameScene._activate_live_cell, quindi
+# un @export qui non avrebbe mai avuto effetto reale) per lo stesso motivo di visibility_radius
+# sopra: sono soglie di percezione/gameplay (in futuro modificabili da tech/edifici, Step 4), la
+# memoria (FogOfWarMemory) resta agnostica sul perché di questi numeri. Ordine crescente per
+# design (detail < resource < terrain — il tipo di terreno si dimentica più lentamente delle
+# risorse, che a loro volta durano più delle posizioni esatte/entità in movimento): non imposto
+# qui via codice, responsabilità di chi tara FogOfWarRules.
+var detail_memory_days: int = 10
+var resource_memory_days: int = 30
+var terrain_memory_days: int = 90
 
 var individual: Individual
 var fog_of_war_memory: FogOfWarMemory
+
+# Vector2i -> true, SOLO per le microcelle con almeno un individuo TREE/SHRUB — vedi
+# set_vegetation_presence/_draw_stale_vegetation_hint. Aggiornato da GameScene ogni volta che
+# rigenera la vegetazione (attivazione cella o checkpoint stagionale) — sì, quindi con lo stesso
+# ritardo di tutto il resto della vegetazione, ma qui va bene: serve solo "c'è più o meno
+# vegetazione qui", non l'identità precisa di un singolo individuo, e le posizioni sono comunque
+# stabili da un checkpoint all'altro (vedi ResourcePositionService, prefix-stabile). A differenza
+# di "questo individuo preciso è ancora quello che ricordo", che dipende dal movimento del player
+# minuto per minuto — per questo quella domanda NON vive più in MicroCellRenderer (vedi la
+# discussione che ha portato a spostare l'Opzione B qui): qui il decadimento resta guidato dallo
+# stesso ciclo per-frame di tutto il resto di questo renderer, mai dal rebuild a checkpoint.
+var _vegetation_presence: Dictionary = {}
 
 # Sentinel (mai valori validi) per forzare il primo _draw() anche se l'individuo non si è
 # ancora mosso e il giorno non è ancora avanzato — vedi update_visibility().
@@ -94,7 +114,28 @@ var _radius_squared: float = 0.0
 func setup(p_individual: Individual, p_fog_of_war_memory: FogOfWarMemory) -> void:
 	individual = p_individual
 	fog_of_war_memory = p_fog_of_war_memory
+	# Ri-letta ad ogni setup() (non solo alla creazione del nodo): FogOfWarCalculator cachea già il
+	# caricamento, quindi rileggere qui è economico e garantisce che un cambio del .tres a runtime
+	# (o un futuro moltiplicatore da tech, vedi FogOfWarRules) si propaghi al prossimo cambio di
+	# centro (GameScene._rebind_fog_bindings) senza bisogno di un canale di aggiornamento a parte.
+	var rules := FogOfWarCalculator.get_fog_of_war_rules()
+	if rules != null:
+		detail_memory_days = rules.detail_memory_days
+		resource_memory_days = rules.resource_memory_days
+		terrain_memory_days = rules.terrain_memory_days
 	_radius_squared = visibility_radius * visibility_radius
+	queue_redraw()
+
+
+# Chiamato da GameScene._refresh_resource_visuals con le stesse vegetation_positions appena date
+# a MicroCellRenderer.set_vegetation_positions — Vector3i (TREE/SHRUB) ridotto a Vector2i (lotto),
+# GRASS escluso apposta (nessuna identità individuale da nascondere lì, vedi VegetationPositionService).
+func set_vegetation_presence(positions: Dictionary) -> void:
+	_vegetation_presence.clear()
+	for individual_key in positions.get(GameTypes.WorldObjectType.TREE, []):
+		_vegetation_presence[Vector2i(individual_key.x, individual_key.y)] = true
+	for individual_key in positions.get(GameTypes.WorldObjectType.SHRUB, []):
+		_vegetation_presence[Vector2i(individual_key.x, individual_key.y)] = true
 	queue_redraw()
 
 
@@ -159,11 +200,47 @@ func _draw() -> void:
 				continue
 
 			var color := OVERLAY_COLOR
+			# true solo nel tier "risorse scadute ma terreno ancora fresco" (60-180gg con i valori
+			# di default in FogOfWarRules) — vedi _draw_stale_vegetation_hint: è il gradino giusto
+			# per mostrare "c'era vegetazione ma non la ricordo più con precisione", non quello
+			# subito sopra (LIGHT_OVERLAY_COLOR, risorse ANCORA fresche — lì la vegetazione vera
+			# resta visibile per intero sotto un velo leggero, nessuna sfocatura necessaria).
+			var show_stale_vegetation_hint := false
 			if fog_of_war_memory.is_resource_fresh(pos, _current_absolute_day, resource_memory_days):
 				color = LIGHT_OVERLAY_COLOR
 			elif fog_of_war_memory.is_terrain_fresh(pos, _current_absolute_day, terrain_memory_days):
 				color = FROZEN_OVERLAY_COLOR
+				show_stale_vegetation_hint = _vegetation_presence.has(pos)
 			draw_rect(
 				Rect2(x * CELL_SIZE, y * CELL_SIZE, CELL_SIZE, CELL_SIZE),
 				color
 			)
+			if show_stale_vegetation_hint:
+				_draw_stale_vegetation_hint(pos)
+
+
+# Macchia grande e coprente (quasi tutta la cella) + 1-2 accenti più piccoli ai bordi per rompere
+# il contorno perfettamente tondo — deterministico (hash di pos, nessun rng), MAI legato a
+# sottotipo/età/identità reale di un individuo: a differenza di MicroCellRenderer, questo nodo non
+# sa (e non deve sapere) QUALE pianta ci sia, solo che ce n'è "più o meno una", disegnata alla
+# bell'e meglio. Sopra FROZEN_OVERLAY_COLOR, già disegnato dal chiamante prima di questa chiamata.
+func _draw_stale_vegetation_hint(pos: Vector2i) -> void:
+	var center := Vector2(pos.x * CELL_SIZE, pos.y * CELL_SIZE) + Vector2(CELL_SIZE / 2.0, CELL_SIZE / 2.0)
+	var seed: int = hash(pos * 13 + Vector2i(41, 7))
+
+	# Macchia principale: raggio fino a poco più di metà cella, leggermente decentrata — copre la
+	# gran parte del tile invece di un pallino decorativo in mezzo al nulla.
+	var main_offset := Vector2(
+		lerp(-1.5, 1.5, float(hash(seed) % 1000) / 1000.0),
+		lerp(-1.5, 1.5, float(hash(seed * 3 + 1) % 1000) / 1000.0)
+	)
+	var main_radius: float = lerp(4.2, 5.4, float(hash(seed * 7 + 2) % 1000) / 1000.0)
+	draw_circle(center + main_offset, main_radius, STALE_VEGETATION_BLOB_COLOR)
+
+	var accent_count: int = 1 + (seed % 2) # 1 o 2 accenti
+	for i in range(accent_count):
+		var salt: int = seed + i * 97
+		var angle: float = (float(hash(salt) % 1000) / 1000.0) * TAU
+		var distance: float = lerp(2.5, 4.0, float(hash(salt * 5 + 3) % 1000) / 1000.0)
+		var accent_radius: float = lerp(1.8, 2.8, float(hash(salt * 9 + 7) % 1000) / 1000.0)
+		draw_circle(center + Vector2(cos(angle), sin(angle)) * distance, accent_radius, STALE_VEGETATION_BLOB_COLOR)
