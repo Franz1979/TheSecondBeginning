@@ -1274,11 +1274,21 @@ func _debug_print_individual_counts(cell: LiveMacroCell, vegetation_positions: D
 	# _refresh_resource_visuals (quindi questo log) PRIMA di inserire la cella in live_cells alla
 	# fine della propria esecuzione — senza questa correzione, il primissimo refresh di ogni cella
 	# appena attivata la conterebbe come mancante per un istante.
+	var current_coords := Vector2i(cell.macro_x, cell.macro_y)
 	var live_count: int = live_cells.size()
-	if not live_cells.has(Vector2i(cell.macro_x, cell.macro_y)):
+	if not live_cells.has(current_coords):
 		live_count += 1
-	print("[DEBUG INDIVIDUI] macrocella (%d,%d): %d individui (disegnati: %d) | celle vive ora: %d | macrocelle tracciate: %d | totale sessione: %d" % [
-		cell.macro_x, cell.macro_y, count, drawn_count, live_count, _debug_individual_counts_by_macro.size(), total
+	# "totale celle vive" (richiesta utente, 2026-08-30): a differenza di "totale sessione" (somma
+	# su TUTTE le macrocelle tracciate, incluse quelle uscite dal focus ma non ancora dimenticate
+	# dal fog of war, quindi con un conteggio congelato al loro ultimo refresh) questo somma solo
+	# le celle ATTUALMENTE vive — lo stesso +1 di live_count sopra, per lo stesso motivo di ordine
+	# chiamata/inserimento in live_cells.
+	var live_total: int = 0
+	for coords in _debug_individual_counts_by_macro:
+		if live_cells.has(coords) or coords == current_coords:
+			live_total += _debug_individual_counts_by_macro[coords]
+	print("[DEBUG INDIVIDUI] macrocella (%d,%d): %d individui (disegnati: %d) | celle vive ora: %d | macrocelle tracciate: %d | totale sessione: %d | totale celle vive: %d" % [
+		cell.macro_x, cell.macro_y, count, drawn_count, live_count, _debug_individual_counts_by_macro.size(), total, live_total
 	])
 
 
