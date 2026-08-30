@@ -111,6 +111,9 @@ func load_game_from_json(file_path: String) -> LoadedGame:
 			state.pending_grass_space_debt = float(state_data.get("pending_grass_space_debt", 0.0))
 			state.pending_fish_space_debt = float(state_data.get("pending_fish_space_debt", 0.0))
 			state.pending_bird_space_debt = float(state_data.get("pending_bird_space_debt", 0.0))
+			# LOD0: assente = false (mai scoperta), vedi GameSaveService per il perché è condizionale.
+			state.has_ever_been_discovered = bool(state_data.get("has_ever_been_discovered", false))
+			state.vegetation_feeding_active = bool(state_data.get("vegetation_feeding_active", false))
 			if state_data.has("stone_positions"):
 				var stone_positions: Array = []
 				for pos_data in state_data["stone_positions"]:

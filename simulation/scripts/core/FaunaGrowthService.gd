@@ -30,6 +30,11 @@ func grow_fauna(world: World) -> void:
 		var state := world.get_cell_state_at(cell.x, cell.y)
 		if state == null:
 			continue
+		# LOD0 (2026-08-30, richiesta utente: FISH/BIRDS trattati come vegetazione — sono campi
+		# macrocella, non PopulationGroup): macrocella mai scoperta dentro una sessione con focus
+		# attivo — congelata, nessuna crescita finché il player non ci arriva.
+		if LODOrchestrator.is_vegetation_frozen(world, state):
+			continue
 
 		for resource_type in WATER_GROWABLE_TYPES:
 			_grow_water_resource_in_cell(cell, state, resource_type, growth_by_type)

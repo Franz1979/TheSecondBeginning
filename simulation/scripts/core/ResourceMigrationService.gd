@@ -133,6 +133,14 @@ func _apply_transfer(world: World, transfer: Dictionary) -> void:
 	var target_state := world.get_cell_state_at(target_x, target_y)
 	if target_cell == null or target_state == null:
 		return
+	# LOD0 (richiesta utente, 2026-08-30): un trasferimento verso una cella mai scoperta va
+	# PERSO, non accumulato in attesa — la cella di destinazione non fa comunque crescere/
+	# maturare nulla finché resta congelata, quindi applicarci sopra dedicated_space/resource_
+	# quantity produrrebbe uno stato "silenzioso" mai più toccato da alcun checkpoint successivo
+	# (nessuna crescita/età lo farebbe evolvere) finché il player non ci arriva — deliberatamente
+	# scartato invece che lasciato in un limbo.
+	if LODOrchestrator.is_vegetation_frozen(world, target_state):
+		return
 
 	var max_density := ResourceCalculator.get_max_density(
 		resource_type,

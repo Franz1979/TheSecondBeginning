@@ -39,6 +39,11 @@ func apply_fauna_mortality(world: World) -> void:
 		var state := world.get_cell_state_at(cell.x, cell.y)
 		if state == null:
 			continue
+		# LOD0: macrocella mai scoperta dentro una sessione con focus attivo — congelata, nessuna
+		# mortalità FISH/BIRDS finché il player non ci arriva (vedi FaunaGrowthService per il
+		# perché FISH/BIRDS seguono lo stesso trattamento della vegetazione).
+		if LODOrchestrator.is_vegetation_frozen(world, state):
+			continue
 
 		for resource_type in WATER_MORTAL_TYPES:
 			_apply_water_mortality_in_cell(cell, state, resource_type)

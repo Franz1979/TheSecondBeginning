@@ -33,6 +33,13 @@ func migrate_fauna(world: World) -> void:
 		var state := world.get_cell_state_at(cell.x, cell.y)
 		if state == null:
 			continue
+		# LOD0: macrocella di origine mai scoperta — congelata, nessuna migrazione FISH/BIRDS da
+		# lì finché il player non ci arriva (a differenza della vegetazione, qui il surplus è una
+		# proprietà statica di dedicated_space vs capacità, non "consumato" da encroachment — un
+		# cella congelata potrebbe altrimenti generare "surplus" indefinitamente senza mai crescere
+		# davvero).
+		if LODOrchestrator.is_vegetation_frozen(world, state):
+			continue
 
 		for resource_type in WATER_MIGRATABLE_TYPES:
 			_migrate_water_resource_in_cell(world, cell, state, resource_type, migration_by_type)
@@ -88,6 +95,11 @@ func _migrate_water_resource_in_cell(
 		if neighbor_cell == null or neighbor_state == null:
 			continue
 		if ResourceCalculator.get_water_capacity_space(neighbor_cell, neighbor_state) <= 0:
+			continue
+		# LOD0 (richiesta utente, 2026-08-30): un vicino mai scoperto non riceve la migrazione —
+		# la quota a lui destinata va persa, non applicata a una cella che resterà comunque
+		# congelata (nessuna crescita/mortalità la farebbe mai evolvere da lì).
+		if LODOrchestrator.is_vegetation_frozen(world, neighbor_state):
 			continue
 		valid_neighbors.append({
 			"x": neighbor_x, "y": neighbor_y, "cell": neighbor_cell, "state": neighbor_state
@@ -194,6 +206,10 @@ func _migrate_land_resource_in_cell(
 		if neighbor_cell == null or neighbor_state == null:
 			continue
 		if ResourceCalculator.get_land_capacity_space(neighbor_cell, neighbor_state) <= 0:
+			continue
+		# LOD0: stesso principio della variante acqua sopra — un vicino mai scoperto non riceve
+		# la migrazione, la quota va persa.
+		if LODOrchestrator.is_vegetation_frozen(world, neighbor_state):
 			continue
 		valid_neighbors.append({
 			"x": neighbor_x, "y": neighbor_y, "cell": neighbor_cell, "state": neighbor_state

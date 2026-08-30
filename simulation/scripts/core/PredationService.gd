@@ -29,12 +29,14 @@ const _AGE_BANDS: Array[GameTypes.AgeBand] = [
 # distingue i branchi predatori dagli erbivori: il polimorfismo del loader (vedi PredatorRules.gd)
 # garantisce che il downcast sia sempre valido quando il controllo passa.
 func apply_daily_predation(world: World, year: int, day: int, active_predator_groups_override: Array = []) -> void:
-	# active_predator_groups_override (Parte B del LOD, infrastruttura — vedi LODOrchestrator):
-	# vuoto (default) = comportamento invariato, valuta world.population_groups per intero come
-	# sempre. Filtra SOLO quali branchi predatori agiscono oggi come attori — _gather_prey_
-	# candidates sotto continua a leggere world.population_groups per intero per la visibilità
-	# delle PREDE, mai ristretta da questo parametro (un branco LEVEL_1 non deve alterare quali
-	# prede sono cacciabili). Non ancora collegato da nessun chiamante reale.
+	# active_predator_groups_override (Parte B del LOD, LOD0 — vedi LODOrchestrator/
+	# WorldTimeService._get_active_predator_groups, collegato dal 2026-08-30): vuoto (default) =
+	# comportamento invariato, valuta world.population_groups per intero come sempre. Filtra SOLO
+	# quali branchi predatori agiscono oggi come attori — congela un predatore Livello 0 (mai
+	# scoperto) esattamente come ogni altra popolazione, ma solo lui: _gather_prey_candidates sotto
+	# continua a leggere world.population_groups per intero per la visibilità delle PREDE, mai
+	# ristretta da questo parametro (un predatore attivo può cacciare anche prede Livello 0 —
+	# decisione esplicita, nessuna eccezione lato bersaglio, solo lato attore).
 	var groups_to_process: Array = active_predator_groups_override if not active_predator_groups_override.is_empty() else world.population_groups
 	for group in groups_to_process:
 		if group.population <= 0:

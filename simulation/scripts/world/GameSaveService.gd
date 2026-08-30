@@ -79,6 +79,15 @@ func save_game_to_json(
 			"pending_fish_space_debt": state.pending_fish_space_debt,
 			"pending_bird_space_debt": state.pending_bird_space_debt
 		}
+		# LOD0 (vedi MacroCellState.has_ever_been_discovered): assente (= false al caricamento) per
+		# la stragrande maggioranza delle macrocelle di un mondo grande, mai esplorate — stesso
+		# principio "non appesantire il salvataggio" già usato per stone_positions sotto, qui ancora
+		# più rilevante (potenzialmente decine di migliaia di macrocelle false contro una minoranza
+		# vera).
+		if state.has_ever_been_discovered:
+			state_data["has_ever_been_discovered"] = true
+		if state.vegetation_feeding_active:
+			state_data["vegetation_feeding_active"] = true
 		# Solo le macrocelle già aperte in MacroCellScene hanno posizioni stone generate:
 		# la chiave resta assente per tutte le altre, per non appesantire il salvataggio.
 		if state.stone_positions_generated:

@@ -42,6 +42,29 @@ var active_growth_bonuses: Dictionary = {} # NaturalEventType -> {multiplier: fl
 var pending_migration_surplus: Dictionary = {}
 var stone_positions: Array = [] # Array[Vector2i], posizioni microcella occupate da stone (100x100)
 var stone_positions_generated: bool = false # separato dall'array vuoto: distingue "mai aperta" da "aperta ma senza stone"
+# LOD0 (2026-08-30): true dal primo momento in cui questa macrocella entra nel set di celle vive
+# VERE (LODOrchestrator.set_focus_region, vedi world.lod_focus_live_cells) — MAI più rimesso a
+# false, stesso principio "fatto storico permanente" di has_ever_grown sopra. È l'UNICO dato che
+# guida il livello LOD di ogni PopulationGroup il cui territorio include questa cella (LEVEL_0 se
+# NESSUNA cella del territorio ha mai questo flag a true, LEVEL_1 se almeno una ce l'ha ma nessuna
+# è viva ORA, LEVEL_2 se almeno una è viva ORA) — DELIBERATAMENTE mai marcato da altro (vedi
+# vegetation_feeding_active sotto per il perché): se bastasse "una cella qualunque del mio
+# territorio è comunque diventata nota" per salire a LEVEL_1, un gruppo il cui territorio si
+# sovrappone per puro caso a quello di un erbivoro attivo salirebbe a LEVEL_1 senza aver MAI
+# toccato lui stesso una cella viva — un contagio scoperto in sessione (LEVEL_1 deve restare
+# raggiungibile SOLO per retrocessione da LEVEL_2, mai per "prossimità" ad altri).
+var has_ever_been_discovered: bool = false
+# LOD0 (2026-08-30), SEPARATO da has_ever_been_discovered sopra apposta — vedi lì per il perché
+# della separazione. True quando questa cella fa parte del territorio di un erbivoro (mai un
+# predatore: la caccia legge population/get_population_by_cell, mai dedicated_space, non le serve
+# vegetazione attiva) che diventa LEVEL_2 — marca l'INTERO territorio dell'erbivoro (fino a decine
+# di celle, es. aurochs), non solo la cella viva vera, altrimenti le altre celle del suo territorio
+# (dove comunque mangia ogni giorno, vedi AnimalConsumptionService._consume_group che itera tutto
+# occupied_macrocells) resterebbero congelate per sempre — niente ricrescita, fame reale senza
+# scampo. Consultato SOLO da LODOrchestrator.is_vegetation_frozen (mai dalla classificazione
+# popolazioni sopra): governa se la vegetazione può crescere qui, non se qualcuno è "scoperto".
+# MAI più rimesso a false, stesso principio "fatto storico permanente" degli altri due flag.
+var vegetation_feeding_active: bool = false
 # Vector3i (x, y lotto + indice individuo locale) -> {"origin_type": GameTypes.WorldObjectType,
 # "cut_year": int}. Fatto storico reale (non ricalcolabile), stesso principio di stone_positions:
 # a differenza di GRASS/SHRUB/TREE aggregati (mai persistiti, rigenerati da zero ad ogni apertura/

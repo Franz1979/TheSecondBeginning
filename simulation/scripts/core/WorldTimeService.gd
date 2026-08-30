@@ -74,10 +74,11 @@ func advance_day(world: World, game_data: GameData) -> Dictionary:
 
 
 # Parte B del LOD, condivisa da consumo E fame giornalieri (vedi entrambi i chiamanti sotto):
-# calcola quali gruppi vanno processati OGGI da un checkpoint erbivoro giornaliero, escludendo le
-# popolazioni Livello 1 NON predatrici — inizialmente costruita solo per il consumo
-# (AnimalConsumptionAggregateService la sostituisce per loro), ora estesa anche alla fame perché
-# lasciarla "giornaliera per Livello 1" produceva un bug reale: AnimalHungerService legge
+# calcola quali gruppi vanno processati OGGI da un checkpoint erbivoro giornaliero. INCLUDE (non
+# più esclude, da quando LOD0 ha portato i livelli a 3 — vedi sotto) solo i gruppi Livello 2 più i
+# predatori di qualunque livello — inizialmente costruita solo per il consumo
+# (AnimalConsumptionAggregateService la sostituisce per Livello 1), ora estesa anche alla fame
+# perché lasciarla "giornaliera per Livello 1" produceva un bug reale: AnimalHungerService legge
 # group.daily_caloric_ratio, che però smette di essere aggiornato per un gruppo escluso dal
 # consumo giornaliero — il ratio restava CONGELATO all'istante esatto dell'esclusione, producendo
 # mortalità da fame arbitraria e scollegata dalla realtà (confermato: pattern di crollo
@@ -88,39 +89,45 @@ func advance_day(world: World, game_data: GameData) -> Dictionary:
 # disattivabile via AnimalHungerMortalityAggregateService.ENABLED. Gli altri sei freni alla
 # crescita — mitigazione natalità calorica, mitigazione da densità, espansione/contrazione
 # territoriale, split da pressione demografica, recovery post-split, mortalità per vecchiaia —
-# restano comunque attivi e invariati, indipendenti da questo interruttore.
+# restano comunque attivi e invariati per Livello 1 (ma NON per Livello 0, congelato anche lì —
+# vedi LODOrchestrator.is_animal_frozen), indipendenti da questo interruttore.
 #
-# I predatori restano SEMPRE esclusi dall'esclusione (cioè sempre processati giornalmente,
-# indipendentemente dal loro livello LOD) — decisione presa nel profiling, la predazione pesa
-# troppo poco per giustificare un'aggregazione.
+# I predatori restano SEMPRE inclusi (cioè sempre processati giornalmente) indipendentemente dal
+# loro livello LOD — decisione presa nel profiling, la predazione pesa troppo poco per
+# giustificare un'aggregazione. FIX 2026-08-30 (LOD0): con 3 livelli, la vecchia logica a
+# ESCLUSIONE ("escludi level_1_groups") avrebbe lasciato filtrare per errore i gruppi Livello 0
+# nel calcolo giornaliero (non essendo più in level_1_groups, non sarebbero stati esclusi da
+# nulla) — invertita a INCLUSIONE ("includi solo level_2_groups + predatori"), corretta a
+# prescindere da quanti livelli sotto esistono, oggi o in futuro.
 #
 # Ritorna:
 #   [] (vuoto)      -> nessun filtro, comportamento di default invariato (processa tutti) — o
-#                      perché lod_focus_state è vuoto (vista mondo), o perché non c'è nessuna
-#                      popolazione Livello 1 non predatrice da escludere.
+#                      perché lod_focus_state è vuoto (vista mondo), o perché non c'è nessun
+#                      gruppo Livello 0/1 da escludere (tutti già Livello 2 o predatori).
 #   null            -> nessuno da processare oggi (il chiamante deve saltare la chiamata al
-#                      service): caso limite in cui TUTTI i gruppi del mondo risultano Livello 1
-#                      non predatori (nessun Livello 2, nessun predatore) — un array vuoto in
-#                      quel caso verrebbe riletto dal service come "nessun filtro, processa
-#                      tutti" (stesso sentinel "vuoto = default" del parametro groups_override),
-#                      l'opposto di quanto inteso.
+#                      service): caso limite in cui NESSUN gruppo del mondo è Livello 2 né
+#                      predatore — un array vuoto in quel caso verrebbe riletto dal service come
+#                      "nessun filtro, processa tutti" (stesso sentinel "vuoto = default" del
+#                      parametro groups_override), l'opposto di quanto inteso.
 #   Array non vuoto -> processa solo questi gruppi.
 func _get_daily_herbivore_processing_groups(world: World) -> Variant:
 	if world.lod_focus_state.is_empty():
 		return []
 
-	var excluded_ids: Dictionary = {}
-	for group in world.lod_focus_state["level_1_groups"]:
+	var included_ids: Dictionary = {}
+	for group in world.lod_focus_state["level_2_groups"]:
+		included_ids[group.id] = true
+	for group in world.population_groups:
 		var rules := AnimalCalculator.get_animal_rules(group.species_name)
-		if rules != null and not (rules is PredatorRules):
-			excluded_ids[group.id] = true
+		if rules is PredatorRules:
+			included_ids[group.id] = true
 
-	if excluded_ids.is_empty():
+	if included_ids.size() >= world.population_groups.size():
 		return []
 
 	var groups_to_process: Array = []
 	for group in world.population_groups:
-		if not excluded_ids.has(group.id):
+		if included_ids.has(group.id):
 			groups_to_process.append(group)
 
 	if groups_to_process.is_empty():
@@ -145,7 +152,52 @@ func _run_daily_animal_consumption(world: World, game_data: GameData) -> bool:
 # letti DOPO game_data.advance_day() già chiamato sopra in questo stesso metodo, quindi riflettono
 # già la data di OGGI, non quella di ieri.
 func _run_daily_predation(world: World, game_data: GameData) -> void:
-	PredationService.new().apply_daily_predation(world, game_data.year, game_data.current_day)
+	# LOD0 (2026-08-30): a differenza degli erbivori, i predatori NON hanno mai avuto
+	# un'aggregazione stagionale (predazione mai filtrata da Livello 1 vs 2, decisione presa nel
+	# profiling) — ma un predatore Livello 0 (mai scoperto) va comunque congelato come tutto il
+	# resto (deciso esplicitamente con l'utente, nessuna eccezione neanche per i predatori). Vedi
+	# _get_active_predator_groups sotto — PredationService.apply_daily_predation aveva già il
+	# parametro active_predator_groups_override pronto (infrastruttura Parte B del LOD mai
+	# collegata da nessun chiamante), lo colleghiamo qui.
+	var active_predator_groups = _get_active_predator_groups(world)
+	if active_predator_groups == null:
+		return
+	PredationService.new().apply_daily_predation(world, game_data.year, game_data.current_day, active_predator_groups)
+
+
+# LOD0, lato predatori: quali branchi predatori cacciano OGGI — tutti tranne quelli Livello 0
+# (mai scoperti, vedi LODOrchestrator.is_animal_frozen). A differenza di _get_daily_herbivore_
+# processing_groups sopra, qui non conta il livello oltre "congelato o no": un predatore Livello 1
+# caccia esattamente come uno Livello 2 (nessuna aggregazione stagionale esiste per la predazione).
+# Le prede restano SEMPRE cacciabili a prescindere dal proprio livello — PredationService._gather_
+# prey_candidates continua a leggere world.population_groups per intero, mai filtrato qui: solo
+# l'ATTORE (il predatore) può essere congelato, mai il bersaglio (deciso esplicitamente: la
+# predazione su prede Livello 0 resta un decremento reale, nessuna eccezione).
+#
+# Stesso sentinel [] (nessun filtro)/null (nessuno da processare) di _get_daily_herbivore_
+# processing_groups sopra — vedi lì per il significato esatto.
+func _get_active_predator_groups(world: World) -> Variant:
+	if world.lod_focus_state.is_empty():
+		return []
+
+	var groups_to_process: Array = []
+	var any_frozen_predator := false
+	for group in world.population_groups:
+		var rules := AnimalCalculator.get_animal_rules(group.species_name)
+		if not (rules is PredatorRules):
+			continue
+		if LODOrchestrator.is_animal_frozen(world, group):
+			any_frozen_predator = true
+			continue
+		groups_to_process.append(group)
+
+	if not any_frozen_predator:
+		return []
+
+	if groups_to_process.is_empty():
+		return null
+
+	return groups_to_process
 
 
 # Gira ogni giorno, indipendente da birth_season (vedi AnimalHungerService): legge

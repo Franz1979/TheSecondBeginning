@@ -24,6 +24,10 @@ func grow_resources(world: World, game_data: GameData) -> void:
 		var state := world.get_cell_state_at(cell.x, cell.y)
 		if state == null:
 			continue
+		# LOD0: macrocella mai scoperta dentro una sessione con focus attivo — congelata, nessuna
+		# crescita finché il player non ci arriva (vedi LODOrchestrator.is_vegetation_frozen).
+		if LODOrchestrator.is_vegetation_frozen(world, state):
+			continue
 
 		for resource_type in ordered_types:
 			_grow_resource_in_cell(world, cell, state, resource_type, current_absolute_day)

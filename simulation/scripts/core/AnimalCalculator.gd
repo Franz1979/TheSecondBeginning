@@ -3,12 +3,25 @@ extends RefCounted
 
 const ANIMALS_DIR := "res://simulation/data/animals/"
 
+# Cache in-memory (2026-08-30, diagnosticato in sessione: get_animal_rules era chiamata migliaia
+# di volte al giorno/checkpoint per sole ~10 specie distinte, ognuna rifacendo ResourceLoader.
+# exists()+load() da disco — misurato come causa concreta di lentezza, poi aggravato da LOD0 che
+# la chiama anche in _mark_feeding_ground_if_herbivore). species_name -> AnimalRules (o null se
+# irrisolvibile, per non ritentare ResourceLoader.exists ad ogni chiamata con un nome sbagliato).
+# static: RefCounted senza istanza persistente, un Dictionary di classe è l'unico modo di cachare
+# tra chiamate — sicuro perché i file .tres non cambiano a runtime in una sessione di gioco.
+static var _rules_cache: Dictionary = {}
+
 
 static func get_animal_rules(species_name: String) -> AnimalRules:
+	if _rules_cache.has(species_name):
+		return _rules_cache[species_name]
 	var path := ANIMALS_DIR + species_name + ".tres"
-	if not ResourceLoader.exists(path):
-		return null
-	return load(path) as AnimalRules
+	var rules: AnimalRules = null
+	if ResourceLoader.exists(path):
+		rules = load(path) as AnimalRules
+	_rules_cache[species_name] = rules
+	return rules
 
 
 # Elenco per convenzione (un nome per ogni {species_name}.tres in ANIMALS_DIR), stesso principio

@@ -15,6 +15,10 @@ func apply_births(world: World, season: GameTypes.Season) -> void:
 	for group in world.population_groups:
 		if group.population <= 0:
 			continue
+		# LOD0: gruppo mai scoperto dentro una sessione con focus attivo — congelato, nessuna
+		# nascita finché il player non ci arriva (vedi LODOrchestrator.is_animal_frozen).
+		if LODOrchestrator.is_animal_frozen(world, group):
+			continue
 		var rules := AnimalCalculator.get_animal_rules(group.species_name)
 		if rules == null or not rules.track_age_bands:
 			continue

@@ -23,6 +23,10 @@ func apply_mortality(world: World) -> void:
 		var state := world.get_cell_state_at(cell.x, cell.y)
 		if state == null:
 			continue
+		# LOD0: macrocella mai scoperta dentro una sessione con focus attivo — congelata, nessuna
+		# mortalità finché il player non ci arriva (vedi LODOrchestrator.is_vegetation_frozen).
+		if LODOrchestrator.is_vegetation_frozen(world, state):
+			continue
 
 		for resource_type in ordered_types:
 			_apply_mortality_in_cell(cell, state, resource_type)
