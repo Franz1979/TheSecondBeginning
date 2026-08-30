@@ -516,7 +516,17 @@ func _update_group_territory(
 				# ricalcolato: lo split non ha un "perché" proprio, eredita quello dell'espansione che
 				# lo ha preceduto nello stesso checkpoint.
 				var split_trigger_reason := _expansion_reason(needs_expansion_density, needs_expansion_caloric, needs_expansion_minimum)
-				if PopulationSplitService.new().attempt_split(world, group, rules, split_amount, split_trigger_reason):
+				var new_group := PopulationSplitService.new().attempt_split(world, group, rules, split_amount, split_trigger_reason)
+				if new_group != null:
+					# FIX classificazione LOD per split da spalmamento giornaliero (vedi
+					# LODOrchestrator.register_new_group per il perché): questa stessa funzione è
+					# chiamata sia dal checkpoint stagionale (dove _run_lod_focus_refresh_checkpoint
+					# ricalcolerà comunque tutto subito dopo — questa chiamata è lì ridondante ma
+					# innocua) sia da process_daily_stagger (dove PRIMA di questo fix il nuovo
+					# gruppo restava fuori da entrambe le liste fino al checkpoint successivo,
+					# trattato per default come Livello 2 — calcolo individuale ogni giorno invece
+					# che aggregato stagionale).
+					LODOrchestrator.register_new_group(world, new_group)
 					action = "scissione di %d individui" % split_amount
 					reason += " -> scissione riuscita"
 					group.blocked_territory_search_version = -1

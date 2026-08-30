@@ -276,6 +276,39 @@ func load_game_from_json(file_path: String) -> LoadedGame:
 		max_loaded_id = max(max_loaded_id, group.id)
 	world.next_population_group_id = max_loaded_id + 1
 
+	# Edifici piazzati (vedi GameSaveService per il formato) — .get(key, []) per compatibilità con
+	# save precedenti l'introduzione del sistema di building: nessuna chiave "buildings" -> array
+	# vuoto, stesso comportamento di un mondo appena creato senza edifici. Un building_type_name
+	# non più risolvibile in BuildingCalculator (rules == null, es. .tres rimosso/rinominato) viene
+	# scartato invece di propagare un Building con rules nulla che crasherebbe al primo utilizzo.
+	world.buildings.clear()
+	if world_data.has("buildings"):
+		for building_data in world_data["buildings"]:
+			var building_type_name := String(building_data.get("building_type_name", ""))
+			var building_rules := BuildingCalculator.get_building_rules(building_type_name)
+			if building_rules == null:
+				continue
+			var building := Building.new(
+				building_rules,
+				int(building_data["macro_x"]),
+				int(building_data["macro_y"]),
+				building_type_name
+			)
+			building.id = int(building_data.get("id", 0))
+			building.micro_x = int(building_data.get("micro_x", 0))
+			building.micro_y = int(building_data.get("micro_y", 0))
+			building.construction_started_day = int(building_data.get("construction_started_day", -1))
+			building.is_complete = bool(building_data.get("is_complete", false))
+			building.current_durability = int(building_data.get("current_durability", 0))
+			building.built_year = int(building_data.get("built_year", -1))
+			building.stored_resources = building_data.get("stored_resources", {})
+			world.buildings.append(building)
+
+	var max_loaded_building_id := 0
+	for building in world.buildings:
+		max_loaded_building_id = max(max_loaded_building_id, building.id)
+	world.next_building_id = max_loaded_building_id + 1
+
 	# Fog of war (vedi GameSaveService per il formato) — .get(key, []) per compatibilità con save
 	# precedenti l'introduzione di questa sezione: un dizionario vuoto è lo stesso comportamento
 	# di sempre (GameScene riparte con fog vuota per ogni macrocella, come faceva sempre prima di

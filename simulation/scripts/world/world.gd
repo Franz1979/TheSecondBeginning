@@ -42,18 +42,23 @@ var species_territory_release_version: Dictionary = {}
 # Stessa natura di species_territory_release_version sopra: puro dato di cache/sessione, mai
 # storia di partita, non persistito nei save. Consumato da WorldTimeService (esclusione consumo/
 # fame giornalieri) e ricalcolato periodicamente da WorldTimeService._run_lod_focus_refresh_
-# checkpoint (vedi lod_focus_region sotto per l'input persistito necessario a quel ricalcolo).
+# checkpoint (vedi lod_focus_live_cells sotto per l'input persistito necessario a quel ricalcolo).
 var lod_focus_state: Dictionary = {}
 
-# Region passata l'ultima volta a LODOrchestrator.set_focus_region — impostata da MacroCellScene
-# insieme a lod_focus_state sopra, stessa natura (cache di sessione, mai salvata). Serve perché
-# lod_focus_state non è più un calcolo "usa e getta" fatto una sola volta all'apertura della
-# macrocella: WorldTimeService lo ricalcola periodicamente (ad ogni checkpoint stagionale) per
-# accorgersi di nuovi PopulationGroup nati da split nel frattempo, e per farlo deve rieseguire
-# set_focus_region con la STESSA region di partenza, senza doverla far ripassare ogni volta da
-# MacroCellScene. Valore di default (Rect2i() = tutto zero) mai letto quando lod_focus_state è
-# vuoto — nessuna ambiguità: l'unico sentinel "focus attivo o no" resta lod_focus_state.is_empty().
-var lod_focus_region: Rect2i = Rect2i()
+# Coordinate macro (Vector2i -> true) delle celle vive passate l'ultima volta a LODOrchestrator.
+# set_focus_region — impostate da GameScene/MacroCellScene insieme a lod_focus_state sopra, stessa
+# natura (cache di sessione, mai salvata). Serve perché lod_focus_state non è più un calcolo "usa
+# e getta" fatto una sola volta all'apertura della macrocella: WorldTimeService lo ricalcola
+# periodicamente (ad ogni checkpoint stagionale) per accorgersi di nuovi PopulationGroup nati da
+# split nel frattempo, e per farlo deve rieseguire set_focus_region con lo STESSO insieme di celle
+# vive, senza doverlo far ripassare ogni volta dal chiamante. Un Dictionary di coordinate SINGOLE
+# (non un Rect2i che ne fa il bounding box) — deliberato: con lo streaming multi-cella le celle
+# vive possono essere anche molto distanti tra loro (edifici lontani dal player, vedi
+# GameScene._activate_all_building_cells), e un bounding box le tratterebbe come se tutto lo
+# spazio in mezzo fosse ugualmente "a fuoco", promuovendo a torto popolazioni che non toccano
+# nessuna cella viva reale. Vuoto ({}) mai letto quando lod_focus_state è vuoto — nessuna
+# ambiguità: l'unico sentinel "focus attivo o no" resta lod_focus_state.is_empty().
+var lod_focus_live_cells: Dictionary = {}
 
 # Accumulatore per il riepilogo [TERRITORY DYNAMICS SPLIT SUMMARY] (vedi TerritoryDynamicsService)
 # quando lo spalmamento su più giorni è attivo (TerritoryDynamicsService.STAGGER_LEVEL_1_ENABLED):
@@ -69,6 +74,19 @@ var territory_dynamics_split_counts: Dictionary = {}
 func allocate_population_group_id() -> int:
 	var id := next_population_group_id
 	next_population_group_id += 1
+	return id
+
+
+# Edifici piazzati — world-level, stesso schema di population_groups sopra (Array + contatore id
+# dedicato). Persistito nei save (GameSaveService/GameLoadService, sezione "buildings") — oggi
+# esiste solo per il piazzamento di debug da GameScene, vedi BuildingVerificationService/
+# Building.gd per il perché manca ancora un vero flusso di costruzione (materiali/tech/tempo).
+var buildings: Array[Building] = []
+var next_building_id: int = 1
+
+func allocate_building_id() -> int:
+	var id := next_building_id
+	next_building_id += 1
 	return id
 
 

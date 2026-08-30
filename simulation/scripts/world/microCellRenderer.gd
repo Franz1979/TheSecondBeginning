@@ -84,6 +84,19 @@ const BOUNDARY_DASH_COLOR := Color(0, 0, 0, 0.6)
 const BOUNDARY_DASH_WIDTH: float = 2.0
 const BOUNDARY_DASH_LENGTH: float = 6.0
 
+# Edifici piazzati (vedi World.buildings/GameScene._place_building_at) — stessa convenzione di
+# verticalità (pareti+tetto) già usata da BuildingGhost per l'anteprima, ma OPACA e senza la
+# variante rossa "non edificabile" (un edificio già piazzato è sempre valido). Pochi edifici per
+# macrocella attesi: disegnati immediate-mode come il fiume/i confini, nessun MultiMesh.
+const BUILDING_WALL_COLOR := Color(0.55, 0.42, 0.28, 1.0)
+const BUILDING_WALL_OUTLINE_COLOR := Color(0.3, 0.22, 0.12, 1.0)
+const BUILDING_ROOF_COLOR := Color(0.45, 0.28, 0.12, 1.0)
+const BUILDING_ROOF_OUTLINE_COLOR := Color(0.25, 0.15, 0.06, 1.0)
+const BUILDING_WALL_WIDTH: float = 6.0
+const BUILDING_WALL_HEIGHT: float = 4.0
+const BUILDING_ROOF_WIDTH: float = 8.0
+const BUILDING_ROOF_HEIGHT: float = 4.5
+
 const DIRECTIONS := [
 	Vector2i(0, -1), # nord
 	Vector2i(0, 1),  # sud
@@ -116,6 +129,10 @@ var river_shape: GameTypes.RiverShape = GameTypes.RiverShape.NONE
 var river_thickness_ratio: float = 0.0 # river_space / MacroCellState.TOTAL_SPACE
 
 var stone_positions: Array = [] # Array[Vector2i]
+# Posizioni microcella (Vector2i) degli edifici già piazzati in QUESTA macrocella — vedi
+# GameScene._refresh_building_visuals, che filtra World.buildings per macro_x/macro_y prima di
+# passarli qui: questo renderer non conosce World, solo "dove disegnare".
+var building_positions: Array = [] # Array[Vector2i]
 var vegetation_positions: Dictionary = {} # WorldObjectType -> Array[Vector3i] per TREE/SHRUB (lotto x,y + indice individuo), Array[Vector2i] per GRASS (nessuna identità individuale)
 var fish_positions: Array = [] # Array[Vector2i] — STEP 1: valorizzato solo per macrocelle SEA/LAKE
 # Posizioni (Vector3i, per TREE/SHRUB) con un blocco di taglio/morte attualmente attivo — vedi
@@ -207,6 +224,11 @@ func clear_river() -> void:
 func set_stone_positions(positions: Array) -> void:
 	stone_positions = positions
 	_rebuild_stone_multimeshes()
+	queue_redraw()
+
+
+func set_building_positions(positions: Array) -> void:
+	building_positions = positions
 	queue_redraw()
 
 
@@ -477,10 +499,38 @@ func _draw() -> void:
 	_draw_vegetation_positions()
 	_draw_selected_individual_highlight()
 	_draw_fish_positions()
+	_draw_buildings()
 	_draw_neighbor_previews(grid_size)
 	_draw_boundary(grid_size)
 
 	#print("[DEBUG RENDER] primitive stone+grass+shrub+tree+bacche in questo _draw(): ", _debug_draw_primitive_count)
+
+
+# Stessa geometria di BuildingGhost._draw() (pareti+tetto, ancorati al "terreno" del centro
+# cella), ma opaca: un edificio piazzato non è più un'anteprima. Ancoraggio al centro della
+# microcella (base+half), nessun jitter/dispersione come per la vegetazione — un edificio occupa
+# una posizione precisa, non un lotto condiviso da più individui.
+func _draw_buildings() -> void:
+	var half: float = CELL_SIZE / 2.0
+	for pos in building_positions:
+		var ground := Vector2(pos.x * CELL_SIZE + half, pos.y * CELL_SIZE + half)
+		var wall_rect := Rect2(
+			ground.x - BUILDING_WALL_WIDTH / 2.0,
+			ground.y - BUILDING_WALL_HEIGHT,
+			BUILDING_WALL_WIDTH,
+			BUILDING_WALL_HEIGHT
+		)
+		draw_rect(wall_rect, BUILDING_WALL_COLOR)
+		draw_rect(wall_rect, BUILDING_WALL_OUTLINE_COLOR, false, 1.0)
+
+		var roof_base_y: float = ground.y - BUILDING_WALL_HEIGHT
+		var roof_points := PackedVector2Array([
+			Vector2(ground.x - BUILDING_ROOF_WIDTH / 2.0, roof_base_y),
+			Vector2(ground.x + BUILDING_ROOF_WIDTH / 2.0, roof_base_y),
+			Vector2(ground.x, roof_base_y - BUILDING_ROOF_HEIGHT),
+		])
+		draw_colored_polygon(roof_points, BUILDING_ROOF_COLOR)
+		draw_polyline(PackedVector2Array([roof_points[0], roof_points[2], roof_points[1]]), BUILDING_ROOF_OUTLINE_COLOR, 1.2)
 
 
 func _draw_stone_positions() -> void:

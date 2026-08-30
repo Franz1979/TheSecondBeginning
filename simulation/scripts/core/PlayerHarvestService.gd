@@ -21,10 +21,14 @@ extends RefCounted
 #    sparire per effetto di questo decremento, qualunque valore assuma.
 # 4. Sposta 1 unità di SPAZIO dal sottotipo tagliato (subtype_composition, mai da altri sottotipi)
 #    a "vuoto", scalando dedicated_space[object_type] della stessa quantità EFFETTIVAMENTE rimossa
-#    — approssimazione dichiarata: subtype_composition è tracciato in spazio (microcelle-lotto),
-#    un taglio è un evento a granularità individuo; 1 unità di spazio è la conversione più semplice
-#    difendibile, non pretende una precisione che il modello a spazio non ha mai avuto. Tenere
-#    dedicated_space in sincrono con la sottrazione REALE (mai un valore fisso) rispetta
+#    — ma SOLO se questo era l'ultimo individuo vivo di questo tipo in questo lotto (vedi
+#    other_individuals_remain sotto): dedicated_space conta LOTTI (microcelle), non individui — un
+#    lotto può ospitarne più di uno per densità, e resta territorio di questo tipo finché ne resta
+#    anche solo uno, indipendentemente da quanti se ne tagliano. Quando invece è davvero l'ultimo,
+#    resta l'approssimazione già dichiarata: subtype_composition è tracciato in spazio (microcelle-
+#    lotto), un taglio è un evento a granularità individuo; 1 unità di spazio è la conversione più
+#    semplice difendibile, non pretende una precisione che il modello a spazio non ha mai avuto.
+#    Tenere dedicated_space in sincrono con la sottrazione REALE (mai un valore fisso) rispetta
 #    l'invariante "subtype_composition somma sempre a dedicated_space" già in uso ovunque nel
 #    progetto. Conseguenza diretta e voluta: la crescita futura pesa le nuove unità sulla
 #    composizione CORRENTE (vedi ResourceGrowthService/ResourceCalculator.
@@ -49,6 +53,18 @@ static func cut_individual(
 
 	var birth_year_store: Dictionary = macro_state.tree_virtual_birth_year if object_type == GameTypes.WorldObjectType.TREE else macro_state.shrub_virtual_birth_year
 	var subtype_store: Dictionary = macro_state.tree_individual_subtype if object_type == GameTypes.WorldObjectType.TREE else macro_state.shrub_individual_subtype
+
+	# Controllato PRIMA di cancellare subtype_store[individual_key] sotto, altrimenti l'individuo
+	# appena tagliato non comparirebbe comunque tra le chiavi da esaminare qui — cerchiamo altre
+	# chiavi con lo STESSO lotto (x,y), indice diverso, ancora presenti in subtype_store (quindi
+	# ancora vive: un individuo già tagliato/morto è già stato cancellato da qui in precedenza).
+	var lot_pos := Vector2i(individual_key.x, individual_key.y)
+	var other_individuals_remain: bool = false
+	for key in subtype_store.keys():
+		if key != individual_key and key.x == lot_pos.x and key.y == lot_pos.y:
+			other_individuals_remain = true
+			break
+
 	birth_year_store.erase(individual_key)
 	subtype_store.erase(individual_key)
 
@@ -56,10 +72,12 @@ static func cut_individual(
 	macro_state.add_resource_quantity(object_type, -1)
 
 	var space_before: int = macro_state.get_dedicated_space(object_type)
-	var removed_by_subtype: Dictionary = macro_state.apply_subtype_space_delta(object_type, -1, {subtype_name: 1.0})
-	var space_removed: int = int(removed_by_subtype.get(subtype_name, 0))
-	if space_removed > 0:
-		macro_state.set_dedicated_space(object_type, space_before - space_removed)
+	var space_removed: int = 0
+	if not other_individuals_remain:
+		var removed_by_subtype: Dictionary = macro_state.apply_subtype_space_delta(object_type, -1, {subtype_name: 1.0})
+		space_removed = int(removed_by_subtype.get(subtype_name, 0))
+		if space_removed > 0:
+			macro_state.set_dedicated_space(object_type, space_before - space_removed)
 
 	print("[PLAYER HARVEST] tagliato %s/%s in (%d,%d,%d): resource_quantity %d->%d, dedicated_space %d->%d (spazio rimosso dal sottotipo: %d)" % [
 		GameTypes.WorldObjectType.keys()[object_type], subtype_name,

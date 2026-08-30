@@ -46,7 +46,8 @@ func save_game_to_json(
 			"height": World.HEIGHT,
 			"cells": [],
 			"cell_states": [],
-			"population_groups": []
+			"population_groups": [],
+			"buildings": []
 		}
 	}
 	for cell in world.cells:
@@ -219,6 +220,26 @@ func save_game_to_json(
 			"recent_hunt_log": group.recent_hunt_log,
 			"yearly_prey_totals": group.yearly_prey_totals,
 			"yearly_prey_totals_year": group.yearly_prey_totals_year
+		})
+
+	# Edifici piazzati (vedi Building.gd/World.buildings) — stesso principio di population_groups
+	# sopra: rules stesso non è mai serializzato (dato statico di tipo), solo building_type_name
+	# per ricaricarlo via BuildingCalculator al load. stored_resources salvato per intero anche se
+	# oggi è sempre vuoto (nessun inventario ancora) — stesso trattamento "storia reale" già usato
+	# per i campi di PopulationGroup, pronto per quando smetterà di essere sempre {}.
+	for building in world.buildings:
+		data["world"]["buildings"].append({
+			"id": building.id,
+			"building_type_name": building.building_type_name,
+			"macro_x": building.macro_x,
+			"macro_y": building.macro_y,
+			"micro_x": building.micro_x,
+			"micro_y": building.micro_y,
+			"construction_started_day": building.construction_started_day,
+			"is_complete": building.is_complete,
+			"current_durability": building.current_durability,
+			"built_year": building.built_year,
+			"stored_resources": building.stored_resources
 		})
 
 	# Fog of war (vedi FogOfWarMemory.gd/GameScene.fog_of_war_memories) — una entry per macrocella

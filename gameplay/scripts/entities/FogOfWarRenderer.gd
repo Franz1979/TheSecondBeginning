@@ -101,6 +101,17 @@ var fog_of_war_memory: FogOfWarMemory
 # stesso ciclo per-frame di tutto il resto di questo renderer, mai dal rebuild a checkpoint.
 var _vegetation_presence: Dictionary = {}
 
+# Vector2i -> true: microcelle entro rules.visibility_radius di un edificio presente in QUESTA
+# macrocella (vedi GameScene._building_visible_positions_for_cell) — trattate esattamente come il
+# raggio del player (vedi in_radius sotto): nessun overlay, mark_seen aggiornato ogni volta che
+# questo renderer ridisegna. Permanente finché l'edificio esiste (World.buildings resta la fonte
+# di verità, questo set è solo una cache di sessione ricalcolata da GameScene ad ogni cambio),
+# indipendente dalla posizione del player — è esattamente ciò che permette a un edificio lontano
+# di restare "conosciuto" anche quando il player è altrove, e impedisce a FogOfWarMemory di
+# svuotarsi del tutto e far scattare IndividualVegetationService.forget_known_individuals per una
+# macrocella che in realtà è ancora viva (vedi GameScene._forget_vegetation_identity).
+var _building_visible_positions: Dictionary = {}
+
 # Sentinel (mai valori validi) per forzare il primo _draw() anche se l'individuo non si è
 # ancora mosso e il giorno non è ancora avanzato — vedi update_visibility().
 var _last_drawn_center: Vector2 = Vector2(INF, INF)
@@ -139,6 +150,11 @@ func set_vegetation_presence(positions: Dictionary) -> void:
 	queue_redraw()
 
 
+func set_building_visible_positions(positions: Dictionary) -> void:
+	_building_visible_positions = positions
+	queue_redraw()
+
+
 # Da chiamare ogni frame da GameScene._process, DOPO che il movimento dell'individuo è stato
 # applicato (stessa posizione fresca che vedrà anche IndividualView questo frame). Early-out se
 # né la posizione né il giorno sono cambiati dall'ultimo redraw — il caso comune "player fermo,
@@ -173,7 +189,10 @@ func _draw() -> void:
 		for x in range(World.WIDTH):
 			var pos := Vector2i(x, y)
 			var cell_center := Vector2(x + 0.5, y + 0.5)
-			var in_radius := cell_center.distance_squared_to(center) <= _radius_squared
+			# "live" ora include anche le microcelle coperte dal raggio di un edificio (vedi
+			# _building_visible_positions sopra) — stesso identico trattamento del raggio del
+			# player, indipendente da dove si trovi il player in questo momento.
+			var in_radius := cell_center.distance_squared_to(center) <= _radius_squared or _building_visible_positions.has(pos)
 
 			if fog_of_war_memory == null:
 				# Nessuna memoria configurata (difensivo, non dovrebbe succedere in pratica):
@@ -184,11 +203,12 @@ func _draw() -> void:
 				continue
 
 			if in_radius:
-				# Dentro il raggio ORA: "live", nessun overlay — controllo ESPLICITO, non più
-				# dedotto da is_detail_fresh (vedi FIX in testa al file). La vista aggiorna la
-				# memoria nello stesso passaggio in cui poi valutiamo i tier per le altre celle —
-				# singolo loop sulla griglia invece di due, stesso principio "calcola e aggiorna
-				# la cache in un solo giro" già usato da MicroCellRenderer._rebuild_tree_multimeshes.
+				# Dentro il raggio ORA (player o edificio): "live", nessun overlay — controllo
+				# ESPLICITO, non più dedotto da is_detail_fresh (vedi FIX in testa al file). La
+				# vista aggiorna la memoria nello stesso passaggio in cui poi valutiamo i tier per
+				# le altre celle — singolo loop sulla griglia invece di due, stesso principio
+				# "calcola e aggiorna la cache in un solo giro" già usato da MicroCellRenderer.
+				# _rebuild_tree_multimeshes.
 				fog_of_war_memory.mark_seen(pos, _current_absolute_day)
 				continue # nessun overlay
 

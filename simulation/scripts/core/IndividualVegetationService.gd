@@ -59,7 +59,8 @@ static func generate_positions(
 	frequency: float,
 	threshold: float,
 	current_year: int,
-	current_day: int
+	current_day: int,
+	building_positions: Dictionary = {}
 ) -> Array:
 	# Pulizia delle eccezioni di taglio scadute: nessun costo di realismo, una volta passata la
 	# finestra di rientro l'entry non serve più a nessuno — vedi _prune_expired_cut_exceptions.
@@ -98,7 +99,7 @@ static func generate_positions(
 
 	return _distribute_individuals(
 		macro_state, object_type, all_lots, noise_seed, current_year, current_day,
-		birth_year_store, subtype_store, is_first_sight
+		birth_year_store, subtype_store, is_first_sight, building_positions
 	)
 
 
@@ -118,7 +119,8 @@ static func _distribute_individuals(
 	current_day: int,
 	birth_year_store: Dictionary,
 	subtype_store: Dictionary,
-	is_first_sight: bool
+	is_first_sight: bool,
+	building_positions: Dictionary = {}
 ) -> Array:
 	var dedicated_space: int = lot_positions.size()
 	if dedicated_space <= 0:
@@ -154,7 +156,7 @@ static func _distribute_individuals(
 	for slot in planned_slots:
 		var lot_pos: Vector2i = slot["lot_pos"]
 		var index: int = slot["index"]
-		if _is_blocked(macro_state, lot_pos, index, current_year):
+		if _is_blocked(macro_state, lot_pos, index, current_year, building_positions):
 			continue
 		var key := Vector3i(lot_pos.x, lot_pos.y, index)
 		# "or", non "and": i due dati sono indipendenti (un salvataggio precedente
@@ -365,7 +367,14 @@ static func forget_known_individuals(macro_state: MacroCellState, object_type: G
 # interrogando — "questo slot ha un blocco attivo?", non "è escluso PER IL MIO TIPO?". Le due cause
 # usano però test di attività diversi (vedi commento in testa al file): il taglio scade per anni
 # trascorsi, la morte naturale è attiva per pura presenza (azzerata altrove in blocco).
-static func _is_blocked(macro_state: MacroCellState, lot_pos: Vector2i, index: int, current_year: int) -> bool:
+# building_positions (Vector2i -> true, vedi GameScene._building_positions_for_cell) blocca
+# l'INTERO lotto, non un singolo indice — un edificio occupa la microcella, non uno slot
+# individuo — e non scade mai: resta bloccato finché quella posizione compare in World.buildings,
+# nessun countdown come il taglio (vedi BuildingSiteClearingService, che deliberatamente non
+# scrive alcuna eccezione qui: la fonte di verità è World.buildings stesso).
+static func _is_blocked(macro_state: MacroCellState, lot_pos: Vector2i, index: int, current_year: int, building_positions: Dictionary = {}) -> bool:
+	if building_positions.has(lot_pos):
+		return true
 	var key := Vector3i(lot_pos.x, lot_pos.y, index)
 	if _is_cut_entry_active(macro_state.vegetation_cut_exceptions.get(key), current_year):
 		return true

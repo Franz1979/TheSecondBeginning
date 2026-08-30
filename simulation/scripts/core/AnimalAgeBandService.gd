@@ -24,11 +24,15 @@ func mature_age_bands(world: World, season: GameTypes.Season) -> void:
 
 		group.apply_age_band_maturation(
 			rules.youth_duration_years, rules.adult_duration_years,
-			("AGING #%d %s" % [group.id, group.species_name]) if rules is PredatorRules else ""
+			("AGING #%d %s" % [group.id, group.species_name]) if (rules is PredatorRules and DebugLogging.SHOW_PREDATOR_LIFECYCLE_LOGS) else ""
 		)
 
-		# Filtro erbivori/predatori: vedi DebugLogging.SHOW_HERBIVORE_LIFECYCLE_LOGS.
-		if DebugLogging.ENABLED and (rules is PredatorRules or DebugLogging.SHOW_HERBIVORE_LIFECYCLE_LOGS):
+		# Filtro erbivori/predatori: vedi DebugLogging.SHOW_HERBIVORE_LIFECYCLE_LOGS/
+		# SHOW_PREDATOR_LIFECYCLE_LOGS — ciascun lato ora ha il proprio interruttore indipendente.
+		if DebugLogging.ENABLED and (
+			(rules is PredatorRules and DebugLogging.SHOW_PREDATOR_LIFECYCLE_LOGS)
+			or (not (rules is PredatorRules) and DebugLogging.SHOW_HERBIVORE_LIFECYCLE_LOGS)
+		):
 			print("[ANIMAL AGING] checkpoint=fine %s | #%d %s: Y %d->%d (youth_duration=%d) | A %d->%d (adult_duration=%d) | O %d->%d" % [
 				GameTypes.Season.keys()[season], group.id, group.species_name,
 				young_before, group.get_age_count(GameTypes.AgeBand.YOUNG), rules.youth_duration_years,

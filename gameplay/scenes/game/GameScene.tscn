@@ -7,6 +7,7 @@
 [ext_resource type="PackedScene" uid="uid://bk3x7q1nav2ha" path="res://simulation/scenes/ui/SystemMenuDialog.tscn" id="5_sysmenu"]
 [ext_resource type="PackedScene" uid="uid://c5t8k2m4xar1p" path="res://simulation/scenes/ui/SaveConfirmationDialog.tscn" id="6_saveconf"]
 [ext_resource type="PackedScene" path="res://gameplay/scenes/game/HelpDialog.tscn" id="7_help"]
+[ext_resource type="PackedScene" path="res://gameplay/scenes/game/BuildBar.tscn" id="8_buildbar"]
 
 [sub_resource type="StyleBoxFlat" id="StyleBoxFlat_game"]
 bg_color = Color(0.19934133, 0.34936652, 0.5477696, 1)
@@ -36,6 +37,8 @@ min_zoom = 0.4
 max_zoom = 15.0
 
 [node name="CanvasLayer" type="CanvasLayer" parent="."]
+
+[node name="BuildBar" parent="CanvasLayer" instance=ExtResource("8_buildbar")]
 
 [node name="Sidebar" type="PanelContainer" parent="CanvasLayer"]
 anchors_preset = 11

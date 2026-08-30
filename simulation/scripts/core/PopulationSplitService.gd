@@ -35,9 +35,9 @@ const MIN_DISPERSAL_SHARE_FRACTION := 0.05
 # gruppo di origine resta invariato, stesso trattamento del fallimento di expand_by_one_cell).
 func attempt_split(
 	world: World, group: PopulationGroup, rules: AnimalRules, requested_amount: int, trigger_reason: String
-) -> bool:
+) -> PopulationGroup:
 	if group.population <= 1:
-		return false
+		return null
 
 	var amount: int = clamp(requested_amount, 1, group.population - 1)
 
@@ -54,7 +54,7 @@ func attempt_split(
 					group.id, group.species_name, group.population, trigger_reason
 				]
 			)
-		return false
+		return null
 
 	# Predatori: il nuovo branco NON nasce a 1 sola cella come gli erbivori — senza
 	# AnimalHungerService (che per i predatori è escluso, vedi AnimalHungerService.apply_daily_hunger)
@@ -86,7 +86,7 @@ func attempt_split(
 						new_territory.get_cell_count(), target_cells
 					]
 				)
-			return false
+			return null
 	else:
 		new_territory = Territory.from_single_cell(found_cell)
 
@@ -154,7 +154,7 @@ func attempt_split(
 			]
 		)
 
-	return true
+	return new_group
 
 
 # Ripartisce `amount` tra le fasce d'età secondo AnimalRules.dispersal_share_by_age, riproporzionando

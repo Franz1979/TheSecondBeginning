@@ -66,6 +66,13 @@ var _active_neighbor_coords_set: Dictionary = {}
 # pulizia — entrambi rimandati a un prossimo step dedicato una volta validata questa forma dati.
 var fog_of_war_memories: Dictionary = {}
 
+# DEBUG TEMPORANEO — misura quanti individui TREE/SHRUB stiamo trattando come tali, per macrocella
+# mai per costruzione più delle celle vive/appena uscite dal set vivo (max 4) con questo sistema —
+# serve da baseline prima del redesign "individui solo dove il fog è fresco" (vedi discussione con
+# l'utente sul rischio di 200 macrocelle sempre calcolate per individuo con edifici che alimentano
+# il fog permanentemente). Da rimuovere una volta completata la misurazione.
+var _debug_individual_counts_by_macro: Dictionary = {}
+
 # Stesso schema di MacroCellScene per animals_visible (default ATTIVO, il toggle nel
 # PrimaryActionsBar di GameInfoPanel serve a DISATTIVARLO — vedi _on_primary_action_pressed).
 # flora_daily_updates_enabled invece default SPENTO (vedi GameSettings.game_scene_flora_updates_
@@ -93,6 +100,24 @@ const VEGETATION_INFO_PANEL_SCENE := preload("res://gameplay/scenes/game/Vegetat
 var vegetation_selector_controller := VegetationSelectorController.new()
 var selected_vegetation: Dictionary = {}
 var vegetation_info_panel: VegetationInfoPanel
+
+# Anteprima "fantasma" della capanna (vedi BuildBar/BuildingGhost) — attivata dal tasto 🛖 nel
+# sottomenu costruzione, segue il mouse ogni frame finché attiva. Click sinistro piazza DAVVERO
+# una Building su macro_world.buildings (vedi _place_building_at) — istantanea e completa, nessuna
+# verifica di edificabilità (BuildingVerificationService resta dormiente, vedi discussione con
+# l'utente: mancano ancora materiali/tech/spazio libero/altri ostacoli, per ora serve solo poter
+# costruire per misurare l'effetto sul conteggio individui). Click destro esce dal modo
+# piazzamento (vedi _clear_building_ghost). null = nessuna anteprima attiva, creata/distrutta
+# on/off dal toggle invece di restare sempre presente e solo nascosta — un solo Node2D usa e
+# getta, costo trascurabile ricrearlo alla prossima attivazione. Il fantasma resta attivo DOPO un
+# piazzamento riuscito, apposta: permette di piazzarne molte in fila senza riaprire il sottomenu
+# ogni volta.
+var _building_ghost: BuildingGhost = null
+# Tipo di edificio selezionato nel sottomenu (vedi _building_type_name_for_action) — "" quando
+# nessun fantasma è attivo. Solo "hut" esiste oggi, ma tenerlo come dato invece di un valore
+# hardcoded in _place_building_at evita di dover toccare quel metodo quando arriverà un secondo
+# tipo di edificio.
+var _selected_building_type_name: String = ""
 # La camera segue individual.position ogni frame SOLO mentre individual.is_moving è true (vedi
 # _process sotto) — durante una camminata questo produce lo scorrimento continuo atteso (la
 # scena "scorre sotto" il player, invece di lasciarlo sparire fuori vista con lo zoom stretto);
@@ -107,6 +132,7 @@ var _open_dialog_count: int = 0
 var _pending_leave_action: StringName = &""
 
 @onready var game_info_panel: GameInfoPanel = $CanvasLayer/Sidebar/MarginContainer/VBoxContainer/GameInfoPanel
+@onready var build_bar: BuildBar = $CanvasLayer/BuildBar
 @onready var system_menu_dialog: SystemMenuDialog = $SystemMenuDialog
 @onready var save_confirmation_dialog: SaveConfirmationDialog = $SaveConfirmationDialog
 @onready var help_dialog: HelpDialog = $HelpDialog
@@ -144,6 +170,7 @@ func _ready() -> void:
 	game_info_panel.primary_actions_bar.set_slot_toggled(1, flora_daily_updates_enabled)
 	game_info_panel.primary_actions_bar.action_pressed.connect(_on_primary_action_pressed)
 	game_info_panel.secondary_actions_bar.action_pressed.connect(_on_secondary_action_pressed)
+	build_bar.submenu_row.action_pressed.connect(_on_build_submenu_action_pressed)
 	# body_container arriva vuoto per design (vedi GameInfoPanel.gd): GameScene, non GameInfoPanel
 	# stesso, istanzia qui il proprio contenuto — GameInfoPanel resta "muto" sulla vegetazione.
 	vegetation_info_panel = VEGETATION_INFO_PANEL_SCENE.instantiate()
@@ -246,6 +273,7 @@ func _ready() -> void:
 	# _activate_live_cell non decide da sé "sono il centro" — è solo orchestrazione qui.
 	center_macro_coords = Vector2i(game_data.player_macro_cell_x, game_data.player_macro_cell_y)
 	_activate_live_cell(center_macro_coords.x, center_macro_coords.y)
+	_activate_all_building_cells()
 	_reposition_live_cells()
 	_rebind_fog_bindings()
 	if macro_world != null:
@@ -293,8 +321,28 @@ func _process(delta: float) -> void:
 	if camera_follows_individual and individual != null and individual.is_moving:
 		_center_camera_on_individual()
 
+	if _building_ghost != null:
+		_building_ghost.global_position = _building_ghost.get_global_mouse_position()
+		# Verifica edificabilità DISATTIVATA di proposito per ora (vedi BuildingVerificationService
+		# per il perché e dove riattivarla quando servirà un controllo più accurato — edifici già
+		# esistenti, altri ostacoli): il fantasma resta sempre nel suo aspetto "edificabile" di
+		# default finché _building_ghost.is_buildable non viene più impostato da nessuno.
+
 
 func _unhandled_input(event: InputEvent) -> void:
+	# Mentre l'anteprima capanna è attiva, il click prende priorità assoluta su tutto il resto
+	# (vegetazione/player) — altrimenti click sinistro finirebbe per selezionare/deselezionare
+	# vegetazione invece di piazzare, e l'unico modo per uscire dal "modo piazzamento" sarebbe
+	# ricliccare esattamente 🛖. Destro = annulla, sinistro = piazza (il fantasma RESTA attivo dopo,
+	# vedi _building_ghost/_place_building_at, per piazzarne molte in fila).
+	if _building_ghost != null and event is InputEventMouseButton and event.pressed:
+		if event.button_index == MOUSE_BUTTON_RIGHT:
+			_clear_building_ghost()
+			return
+		if event.button_index == MOUSE_BUTTON_LEFT:
+			_place_building_at(_building_ghost.global_position)
+			return
+
 	# Priorità concordata con l'utente: la vegetazione vince entro il proprio raggio di hit-test
 	# (più piccolo/preciso del raggio di selezione del player, vedi VegetationSelectorController);
 	# se non trova nulla, il flusso prosegue esattamente come prima di questo controller. Un click
@@ -485,7 +533,7 @@ func _apply_natural_mortality_visuals(cell: LiveMacroCell) -> void:
 func _exit_tree() -> void:
 	if macro_world != null:
 		macro_world.lod_focus_state = {}
-		macro_world.lod_focus_region = Rect2i()
+		macro_world.lod_focus_live_cells = {}
 
 
 # ============================================================================================
@@ -582,9 +630,46 @@ func _activate_live_cell(mx: int, my: int) -> LiveMacroCell:
 			cell.renderer.set_stone_positions(cell.macro_state.stone_positions)
 
 			_refresh_resource_visuals(cell)
+			_refresh_building_visuals(cell)
 
 	live_cells[Vector2i(mx, my)] = cell
 	return cell
+
+
+# ESPERIMENTO (2026-08-30, deciso con l'utente): ogni macrocella con almeno un edificio resta
+# viva a prescindere dalla prossimità del player — vegetazione a individui, FoW, animali, tutto
+# il pacchetto di LiveMacroCell, indefinitamente, finché quell'edificio esiste. Deliberatamente
+# SENZA tetto sul numero di macrocelle così attivate: è esattamente la misura che questo sistema
+# di debug doveva produrre (vedi Building.gd — "misurare il rischio di esplosione di individui da
+# visibilità permanente da edifici" prima di ridisegnare l'architettura). Il rischio collaterale
+# scoperto inizialmente (LODOrchestrator.set_focus_region riceveva un Rect2i bounding-box di
+# TUTTE le celle vive, quindi un edificio lontano ingrossava il rettangolo inglobando ogni
+# popolazione animale sul percorso player<->edificio, non solo quelle vicine a una cella VERA) è
+# stato risolto lo stesso giorno: ora si passa l'insieme delle singole coordinate vive, vedi
+# _refresh_lod_focus_region/World.lod_focus_live_cells. Il costo che resta da osservare con questo
+# esperimento è quindi di nuovo solo quello reale: vegetazione a individui per ogni macrocella-
+# edificio, e popolazioni animali davvero adiacenti a una di esse.
+func _activate_all_building_cells() -> void:
+	if macro_world == null:
+		return
+	var building_macro_coords: Dictionary = {}
+	for building in macro_world.buildings:
+		building_macro_coords[Vector2i(building.macro_x, building.macro_y)] = true
+	for coords in building_macro_coords:
+		if not live_cells.has(coords):
+			_activate_live_cell(coords.x, coords.y)
+
+
+# Scansione lineare di macro_world.buildings — accettabile con pochi edifici (tool di debug),
+# vedi discussione con l'utente su un eventuale indice Dictionary[Vector2i, Array[Building]] se
+# il numero crescesse abbastanza da farlo pesare.
+func _macro_cell_has_buildings(coords: Vector2i) -> bool:
+	if macro_world == null:
+		return false
+	for building in macro_world.buildings:
+		if building.macro_x == coords.x and building.macro_y == coords.y:
+			return true
+	return false
 
 
 func _deactivate_live_cell(coords: Vector2i) -> void:
@@ -610,27 +695,26 @@ func _reposition_live_cells() -> void:
 		cell.container.position = Vector2(coords.x - center_macro_coords.x, coords.y - center_macro_coords.y) * MACRO_CELL_PIXELS
 
 
-# Ricalcola la focus region LOD (LODOrchestrator) coprendo TUTTE le celle vive attuali, non solo
-# il centro — un vicino vivo è visivamente presente quanto il centro, quindi le sue popolazioni
+# Ricalcola il focus LOD (LODOrchestrator) coprendo TUTTE le celle vive attuali, non solo il
+# centro — un vicino vivo è visivamente presente quanto il centro, quindi le sue popolazioni
 # animali restano Livello 2 (simulazione piena) esattamente come oggi fa il centro da solo,
 # nessuna nuova categoria di LOD necessaria: set_focus_region riclassifica sempre TUTTE le
 # popolazioni del mondo da zero, quindi una cella che esce dal set vivo torna candidata a
-# Livello 1 automaticamente. Identico schema di MacroCellScene per l'invocazione di
-# LODOrchestrator, solo la region ora può coprire più di una cella.
+# Livello 1 automaticamente. Passa l'insieme delle SINGOLE coordinate vive (mai un Rect2i che ne
+# faccia il bounding box, vedi World.lod_focus_live_cells) — fix 2026-08-30: con
+# _activate_all_building_cells le celle vive possono essere anche molto distanti tra loro, e un
+# bounding box avrebbe trattato come "a fuoco" pure tutto lo spazio vuoto in mezzo.
 func _refresh_lod_focus_region() -> void:
 	if macro_world == null or live_cells.is_empty():
 		return
 
-	var min_coords := center_macro_coords
-	var max_coords := center_macro_coords
+	var focus_live_cells: Dictionary = {}
 	for coords in live_cells:
-		min_coords = Vector2i(min(min_coords.x, coords.x), min(min_coords.y, coords.y))
-		max_coords = Vector2i(max(max_coords.x, coords.x), max(max_coords.y, coords.y))
+		focus_live_cells[coords] = true
 
-	var focus_region := Rect2i(min_coords, max_coords - min_coords + Vector2i.ONE)
-	var lod_result := LODOrchestrator.new().set_focus_region(macro_world, focus_region)
+	var lod_result := LODOrchestrator.new().set_focus_region(macro_world, focus_live_cells)
 	LODOrchestrator.print_classification_log(lod_result)
-	macro_world.lod_focus_region = focus_region
+	macro_world.lod_focus_live_cells = focus_live_cells
 	macro_world.lod_focus_state = lod_result
 
 
@@ -731,6 +815,13 @@ func _update_live_neighbor() -> void:
 			_active_neighbor_coords_set.erase(coords)
 			continue
 		if not relevant_coords_set.has(coords):
+			# Un vicino che ospita un edificio non va MAI disattivato per allontanamento del
+			# player — vedi _activate_all_building_cells: resta vivo indefinitamente finché
+			# l'edificio esiste, smette solo di essere tracciato come "vicino di prossimità"
+			# (nessun cambiamento reale a live_cells, quindi changed resta false qui).
+			if _macro_cell_has_buildings(coords):
+				_active_neighbor_coords_set.erase(coords)
+				continue
 			_deactivate_live_cell(coords)
 			_active_neighbor_coords_set.erase(coords)
 			changed = true
@@ -738,12 +829,18 @@ func _update_live_neighbor() -> void:
 	for coords in relevant_coords_set:
 		if _active_neighbor_coords_set.has(coords):
 			continue
+		# changed scatta SOLO se questa cella non era già viva (es. resa viva da un edificio, vedi
+		# _activate_all_building_cells): iniziare a tracciarla anche come "vicino di prossimità"
+		# non cambia live_cells né le posizioni dei container, quindi non giustifica da solo un
+		# nuovo _reposition_live_cells()/_refresh_lod_focus_region() — senza questa distinzione il
+		# log di classificazione LOD veniva stampato due volte identico ogni volta che un vicino di
+		# prossimità coincideva con una cella già viva per un edificio.
 		if not live_cells.has(coords):
 			if macro_world.get_cell_at(coords.x, coords.y) == null:
 				continue # bordo del mondo: nessuna cella da attivare in questa direzione
 			_activate_live_cell(coords.x, coords.y)
+			changed = true
 		_active_neighbor_coords_set[coords] = true
-		changed = true
 
 	if not changed:
 		return
@@ -907,15 +1004,47 @@ func _refresh_resource_visuals(cell: LiveMacroCell) -> void:
 	if cell.macro_state == null:
 		return
 
+	# TEMPORANEO (diagnostica Proposta 2, vedi DebugLogging.SHOW_VEGETATION_REFRESH_TIMING_LOGS) —
+	# cronometri separati per capire se il costo dell'8.9s/8 celle osservato al checkpoint
+	# stagionale è nella GENERAZIONE posizioni (VegetationPositionService, indipendente dal FoW,
+	# non beneficerebbe di un filtro per visibilità) o nel REBUILD MultiMesh
+	# (MicroCellRenderer.set_vegetation_positions/set_*_subtypes/set_*_age_params, che invece
+	# potrebbe saltare le posizioni coperte da nero pieno). Include anche il costo di
+	# _update_animal_renderer_population (find_population_group è O(popolazioni totali) per
+	# specie per cella — non c'entra col FoW, ma vale la pena isolarlo comunque visto che vive
+	# nella stessa funzione).
+	var _veg_timings_ms: Dictionary = {}
+	var _veg_refresh_start_usec := Time.get_ticks_usec()
+
 	var occupied: Dictionary = {}
 	for pos in cell.macro_state.stone_positions:
 		occupied[pos] = true
 	for pos in cell.river_positions:
 		occupied[pos] = true
+	# Le microcelle edificate vanno escluse esattamente come stone/river — GRASS si affida solo a
+	# `occupied` (nessuna memoria persistita, vedi VegetationPositionService), mentre per TREE/SHRUB
+	# questo copre solo i lotti MAI ancora rivendicati (un lotto già noto va bloccato a parte, vedi
+	# building_positions sotto — `occupied` da solo non lo fermerebbe, vedi commento in
+	# VegetationPositionService.generate_positions).
+	var building_positions: Dictionary = {}
+	for pos in _building_positions_for_cell(cell):
+		occupied[pos] = true
+		building_positions[pos] = true
 
+	var _step_start_usec := Time.get_ticks_usec()
 	var vegetation_service := VegetationPositionService.new()
-	var vegetation_positions: Dictionary = vegetation_service.generate_positions(cell.macro_state, occupied, game_data.year, game_data.current_day)
+	var vegetation_positions: Dictionary = vegetation_service.generate_positions(cell.macro_state, occupied, game_data.year, game_data.current_day, building_positions)
+	_veg_timings_ms["1_position_generation"] = (Time.get_ticks_usec() - _step_start_usec) / 1000.0
+
+	_step_start_usec = Time.get_ticks_usec()
 	cell.renderer.set_vegetation_positions(vegetation_positions)
+	_veg_timings_ms["2_multimesh_rebuild"] = (Time.get_ticks_usec() - _step_start_usec) / 1000.0
+
+	# Ripristinato (richiesta utente, 2026-08-30): serve di nuovo per misurare l'esperimento
+	# "ogni macrocella con edifici resta viva" (vedi _activate_all_building_cells) — quanto
+	# esplode il conteggio individui al crescere delle celle-edificio sempre vive.
+	_debug_print_individual_counts(cell, vegetation_positions)
+	_debug_print_dedicated_space(cell)
 	# FogOfWarRenderer disegna la vegetazione "sfocata" (Opzione B, vedi lì) sopra questa stessa
 	# vegetazione VERA — MicroCellRenderer non sa nulla del fog of war, mai più da quando abbiamo
 	# spostato l'Opzione B lì: il ritardo di aggiornamento a checkpoint qui non è un problema (solo
@@ -929,6 +1058,7 @@ func _refresh_resource_visuals(cell: LiveMacroCell) -> void:
 	cell.renderer.set_cut_positions(_get_cut_positions(cell.macro_state))
 	cell.renderer.set_dead_positions(_get_dead_positions(cell.macro_state))
 
+	_step_start_usec = Time.get_ticks_usec()
 	var fish_positions: Array = []
 	var fish_service := FishPositionService.new()
 	if cell.macro_cell.water_type == GameTypes.WaterType.SEA or cell.macro_cell.water_type == GameTypes.WaterType.LAKE:
@@ -939,12 +1069,16 @@ func _refresh_resource_visuals(cell: LiveMacroCell) -> void:
 			occupied_for_fish[pos] = true
 		fish_positions = fish_service.generate_positions(cell.macro_state, occupied_for_fish)
 	cell.renderer.set_fish_positions(fish_positions)
+	_veg_timings_ms["3_fish_positions"] = (Time.get_ticks_usec() - _step_start_usec) / 1000.0
 
+	_step_start_usec = Time.get_ticks_usec()
 	var this_cell := Vector2i(cell.macro_cell.x, cell.macro_cell.y)
 	for species in cell.animal_renderers:
 		var group := macro_world.find_population_group(species, this_cell)
 		_update_animal_renderer_population(cell.animal_renderers[species], group, AnimalCalculator.get_animal_rules(species), this_cell)
+	_veg_timings_ms["4_animal_renderer_population"] = (Time.get_ticks_usec() - _step_start_usec) / 1000.0
 
+	_step_start_usec = Time.get_ticks_usec()
 	cell.renderer.set_shrub_subtypes(cell.macro_state.shrub_individual_subtype)
 	cell.renderer.set_shrub_age_params(
 		game_data.year, _get_age_params(cell.macro_state, GameTypes.WorldObjectType.SHRUB), cell.macro_state.shrub_virtual_birth_year
@@ -954,11 +1088,78 @@ func _refresh_resource_visuals(cell: LiveMacroCell) -> void:
 		game_data.year, _get_age_params(cell.macro_state, GameTypes.WorldObjectType.TREE), cell.macro_state.tree_virtual_birth_year
 	)
 	cell.renderer.set_season(SeasonCalculator.get_season_for_day(game_data.current_day))
+	_veg_timings_ms["5_subtype_age_params"] = (Time.get_ticks_usec() - _step_start_usec) / 1000.0
 
 	_invalidate_selected_vegetation_if_missing(cell)
 
 	if cell.macro_x == center_macro_coords.x and cell.macro_y == center_macro_coords.y:
 		_update_info_panel()
+
+	if DebugLogging.SHOW_VEGETATION_REFRESH_TIMING_LOGS:
+		var total_ms: float = (Time.get_ticks_usec() - _veg_refresh_start_usec) / 1000.0
+		var labels: Array = _veg_timings_ms.keys()
+		labels.sort()
+		var parts: Array = []
+		for label in labels:
+			parts.append("%s=%.1fms" % [label.substr(2), _veg_timings_ms[label]])
+		print("[VEG REFRESH TIMING] macrocella (%d,%d) totale=%.1fms | %s" % [
+			cell.macro_x, cell.macro_y, total_ms, ", ".join(parts)
+		])
+
+
+# DEBUG TEMPORANEO — vedi _debug_individual_counts_by_macro. GRASS escluso apposta (nessuna
+# identità individuale, vedi VegetationPositionService). "totale sessione" resta la somma su TUTTE
+# le macrocelle mai rinfrescate in questa sessione (anche quelle non più vive ora, se mai
+# esistesse un modo per disattivarle) — "celle vive ora" (live_cells.size(), aggiunto 2026-08-30
+# per l'esperimento _activate_all_building_cells) è invece il numero da guardare per capire quante
+# macrocelle stanno pagando il costo pieno DI QUESTO momento, dato che con gli edifici sempre vivi
+# il numero non è più limitato a ≤2 (centro + un vicino) come prima.
+func _debug_print_individual_counts(cell: LiveMacroCell, vegetation_positions: Dictionary) -> void:
+	var count: int = (
+		vegetation_positions.get(GameTypes.WorldObjectType.TREE, []).size()
+		+ vegetation_positions.get(GameTypes.WorldObjectType.SHRUB, []).size()
+	)
+	_debug_individual_counts_by_macro[Vector2i(cell.macro_x, cell.macro_y)] = count
+
+	var total: int = 0
+	for c in _debug_individual_counts_by_macro.values():
+		total += c
+	# +1 se questa stessa cella non è ancora in live_cells: _activate_live_cell chiama
+	# _refresh_resource_visuals (quindi questo log) PRIMA di inserire la cella in live_cells alla
+	# fine della propria esecuzione — senza questa correzione, il primissimo refresh di ogni cella
+	# appena attivata la conterebbe come mancante per un istante.
+	var live_count: int = live_cells.size()
+	if not live_cells.has(Vector2i(cell.macro_x, cell.macro_y)):
+		live_count += 1
+	print("[DEBUG INDIVIDUI] macrocella (%d,%d): %d individui | celle vive ora: %d | macrocelle tracciate: %d | totale sessione: %d" % [
+		cell.macro_x, cell.macro_y, count, live_count, _debug_individual_counts_by_macro.size(), total
+	])
+
+
+# DEBUG TEMPORANEO — segue il lavoro su edifici/spazio (BuildingSiteClearingService/
+# SpaceReconciliationService): dedicated_space per tipo (river_space incluso separatamente,
+# stesso trattamento di MacroCellState.get_total_dedicated_space) più il totale, per verificare a
+# vista che uno scambio libera-poi-occupa non faccia salire la somma oltre MacroCellState.
+# TOTAL_SPACE (o quanto ci si avvicina/supera nel raro caso di overshoot discusso).
+const _DEBUG_SPACE_TYPES := [
+	GameTypes.WorldObjectType.TREE,
+	GameTypes.WorldObjectType.SHRUB,
+	GameTypes.WorldObjectType.GRASS,
+	GameTypes.WorldObjectType.ROCK,
+	GameTypes.WorldObjectType.BUILDING,
+]
+
+func _debug_print_dedicated_space(cell: LiveMacroCell) -> void:
+	if cell.macro_state == null:
+		return
+	var parts: Array = []
+	for object_type in _DEBUG_SPACE_TYPES:
+		parts.append("%s=%d" % [GameTypes.WorldObjectType.keys()[object_type], cell.macro_state.get_dedicated_space(object_type)])
+	parts.append("river=%d" % cell.macro_state.get_river_space())
+	print("[DEBUG SPAZIO] macrocella (%d,%d): %s | totale=%d/%d | vuoto=%d" % [
+		cell.macro_x, cell.macro_y, ", ".join(parts),
+		cell.macro_state.get_total_dedicated_space(), MacroCellState.TOTAL_SPACE, cell.macro_state.get_empty_space()
+	])
 
 
 func _update_animal_renderer_population(
@@ -1361,6 +1562,170 @@ func _on_primary_action_pressed(action_id: StringName) -> void:
 		&"center_on_individual":
 			_center_camera_on_individual()
 
+
+# Tasto 🛖 nel sottomenu costruzione di BuildBar — per ora SOLO l'anteprima visiva (vedi
+# BuildingGhost/_building_ghost), toggle on/off allo stesso click: nessun piazzamento reale,
+# nessuna verifica materiali/tech/spazio (quei sistemi non esistono ancora). Creata/distrutta ad
+# ogni toggle invece di restare sempre presente e solo nascosta — un Node2D usa e getta, costo
+# trascurabile.
+func _on_build_submenu_action_pressed(action_id: StringName) -> void:
+	var building_type_name := _building_type_name_for_action(action_id)
+	if building_type_name == "":
+		return
+	if _building_ghost != null:
+		_clear_building_ghost()
+		return
+	_selected_building_type_name = building_type_name
+	_building_ghost = BuildingGhost.new()
+	add_child(_building_ghost)
+
+
+# Unica mappatura action_id -> nome tipo edificio (per BuildingCalculator.get_building_rules) —
+# solo "hut" esiste oggi, ma tenerla come funzione dedicata invece di un valore hardcoded dentro
+# _place_building_at evita di dover toccare quel metodo quando arriverà un secondo tipo.
+func _building_type_name_for_action(action_id: StringName) -> String:
+	match action_id:
+		&"build_hut":
+			return "hut"
+		_:
+			return ""
+
+
+func _clear_building_ghost() -> void:
+	if _building_ghost == null:
+		return
+	_building_ghost.queue_free()
+	_building_ghost = null
+	_selected_building_type_name = ""
+
+
+# Piazzamento REALE (debug, vedi discussione con l'utente sul perché è così semplice): nessuna
+# verifica di edificabilità (BuildingVerificationService resta dormiente), completo
+# immediatamente — is_complete=true da subito, current_durability già a rules.max_durability,
+# niente construction_days/materiali/tech (quei sistemi non esistono ancora — in futuro il taglio
+# e la costruzione diventeranno processi distribuiti su più giorni, non più istantanei come oggi).
+# Il fantasma NON viene rimosso da qui: resta al chiamante (_unhandled_input) l'aver deciso di
+# continuare il modo piazzamento dopo un piazzamento riuscito.
+#
+# Sequenza "libera-poi-occupa": PRIMA si libera dal budget vegetazione esattamente quello che
+# occupa già la microcella (BuildingSiteClearingService — TREE/SHRUB realmente presenti, se
+# entrambi coesistono per via di MIX_TREE_AND_SHRUB vengono rimossi entrambi indipendentemente;
+# GRASS se il renderer la mostra lì in questo momento), POI si aggiunge lo spazio dell'edificio.
+# In questo ordine il totale dedicated_space+river_space non supera mai TOTAL_SPACE (era già
+# ≤ TOTAL_SPACE prima, resta tale dopo — uno scambio, mai un'aggiunta a bilancio aperto), quindi
+# MacroCellState.get_empty_space() non può mai andare sotto zero per colpa di un edificio.
+func _place_building_at(world_position: Vector2) -> void:
+	if macro_world == null:
+		return
+	var placement := _live_cell_and_micro_position_at(world_position)
+	if placement.is_empty():
+		return
+	var target_cell: LiveMacroCell = placement["cell"]
+	var micro_pos: Vector2i = placement["micro_pos"]
+	var rules := BuildingCalculator.get_building_rules(_selected_building_type_name)
+	if rules == null:
+		return
+	var state := macro_world.get_cell_state_at(target_cell.macro_x, target_cell.macro_y)
+	if state == null:
+		return
+
+	var current_grass_positions: Array = target_cell.renderer.vegetation_positions.get(GameTypes.WorldObjectType.GRASS, [])
+	BuildingSiteClearingService.clear_microcell(state, micro_pos, current_grass_positions.has(micro_pos))
+
+	var building := Building.new(rules, target_cell.macro_x, target_cell.macro_y, _selected_building_type_name)
+	building.id = macro_world.allocate_building_id()
+	building.micro_x = micro_pos.x
+	building.micro_y = micro_pos.y
+	building.is_complete = true
+	building.current_durability = rules.max_durability
+	building.built_year = game_data.year
+	macro_world.buildings.append(building)
+
+	# Sottrae lo spazio dell'edificio dal budget vegetazione della macrocella — stesso meccanismo
+	# generico già usato per ROCK (MacroCellState.dedicated_space), mai un campo dedicato a parte
+	# come river_space: get_empty_space()/get_land_growth_surplus() lo vedono automaticamente al
+	# prossimo controllo, nessun ricalcolo stagionale da aggiungere qui. Sommato (non sovrascritto)
+	# al valore già presente, per supportare più edifici nella stessa macrocella.
+	var current_building_space := state.get_dedicated_space(GameTypes.WorldObjectType.BUILDING)
+	state.set_dedicated_space(GameTypes.WorldObjectType.BUILDING, current_building_space + rules.required_space)
+
+	_refresh_building_visuals(target_cell)
+	# Ricalcola SUBITO la vegetazione (non solo al prossimo avanzamento giorno/anno): senza questa
+	# chiamata, il taglio/decremento appena applicato ai dati resterebbe corretto ma invisibile a
+	# schermo fino al prossimo trigger naturale — vedi _building_positions_for_cell, ora incluso
+	# nell'occupied/building_positions passati a VegetationPositionService, che blocca in modo
+	# permanente la rigenerazione su questa stessa microcella.
+	_refresh_resource_visuals(target_cell)
+
+	print("[BUILDING] %s #%d piazzata in (%d,%d) — totale edifici: %d" % [
+		_selected_building_type_name, building.id, target_cell.macro_x, target_cell.macro_y, macro_world.buildings.size()
+	])
+
+
+# LiveMacroCell + posizione MICRO (coordinate di griglia, non pixel) sotto world_position, o {} se
+# nessuna cella viva la copre (fuori dall'area caricata) — stessa logica di traduzione (to_local +
+# range check) già usata da BuildingVerificationService.is_position_buildable, qui estesa a
+# restituire anche la posizione micro esatta (serve per l'ancoraggio del disegno, vedi
+# MicroCellRenderer._draw_buildings), non solo "quale cella".
+func _live_cell_and_micro_position_at(world_position: Vector2) -> Dictionary:
+	for cell in live_cells.values():
+		var local_pos: Vector2 = cell.container.to_local(world_position)
+		if local_pos.x < 0 or local_pos.y < 0 or local_pos.x >= MACRO_CELL_PIXELS or local_pos.y >= MACRO_CELL_PIXELS:
+			continue
+		var micro_pos := Vector2i(int(local_pos.x / MicroCellRenderer.CELL_SIZE), int(local_pos.y / MicroCellRenderer.CELL_SIZE))
+		return {"cell": cell, "micro_pos": micro_pos}
+	return {}
+
+
+# Posizioni MICRO (Array[Vector2i]) degli edifici già piazzati in QUESTA macrocella — filtra
+# World.buildings per macro_x/macro_y, unica fonte di verità (nessuna copia mantenuta altrove).
+# Usata sia per il disegno (_refresh_building_visuals) sia per escludere quelle stesse microcelle
+# dalla rigenerazione di vegetazione (_refresh_resource_visuals) — un solo punto che le calcola,
+# mai due elenchi che potrebbero disallinearsi.
+func _building_positions_for_cell(cell: LiveMacroCell) -> Array:
+	var positions: Array = []
+	if macro_world == null:
+		return positions
+	for building in macro_world.buildings:
+		if building.macro_x == cell.macro_x and building.macro_y == cell.macro_y:
+			positions.append(Vector2i(building.micro_x, building.micro_y))
+	return positions
+
+
+# Microcelle entro rules.visibility_radius di ciascun edificio di QUESTA macrocella (distanza di
+# Chebyshev/quadrata, coerente col design originale "0 = solo la propria, 1 = le 8 intorno, 2 =
+# un altro anello") — passate a FogOfWarRenderer, che le tratta come il raggio del player
+# (nessun overlay, mark_seen sempre aggiornato). Dictionary (non Array) perché il consumatore fa
+# solo test di appartenenza per singola posizione, mai un'iterazione ordinata.
+func _building_visible_positions_for_cell(cell: LiveMacroCell) -> Dictionary:
+	var positions: Dictionary = {}
+	if macro_world == null:
+		return positions
+	for building in macro_world.buildings:
+		if building.macro_x != cell.macro_x or building.macro_y != cell.macro_y:
+			continue
+		var radius: int = building.rules.visibility_radius if building.rules != null else 0
+		for dx in range(-radius, radius + 1):
+			for dy in range(-radius, radius + 1):
+				var pos := Vector2i(building.micro_x + dx, building.micro_y + dy)
+				if pos.x < 0 or pos.x >= World.WIDTH or pos.y < 0 or pos.y >= World.HEIGHT:
+					continue
+				positions[pos] = true
+	return positions
+
+
+# Ricostruisce l'elenco di posizioni edificio da disegnare per QUESTA cella viva, e le posizioni
+# rese permanentemente visibili in FoW dal loro raggio — chiamata sia dopo un piazzamento riuscito
+# sia all'attivazione di una cella viva (_activate_live_cell), così gli edifici già presenti in un
+# save caricato o in una cella rivisitata vengono ridisegnati e la loro FoW resta corretta subito,
+# senza dover aspettare che il player vi transiti fisicamente.
+func _refresh_building_visuals(cell: LiveMacroCell) -> void:
+	if macro_world == null:
+		return
+	cell.renderer.set_building_positions(_building_positions_for_cell(cell))
+	if cell.fog_of_war_renderer != null:
+		cell.fog_of_war_renderer.set_building_visible_positions(_building_visible_positions_for_cell(cell))
+
 func _on_secondary_action_pressed(action_id: StringName) -> void:
 	match action_id:
 		&"help":
@@ -1449,15 +1814,28 @@ func _update_play_pause_button() -> void:
 		play_pause_button.tooltip_text = tr("play")
 
 func _on_day_advanced(checkpoint_ran: bool, animals_changed: bool) -> void:
+	# TEMPORANEO (diagnostica lentezza, vedi GameClockController._process/[DAY TOTAL]) — questo
+	# intero handler gira SINCRONO dentro day_advanced.emit(), quindi dentro il cronometro di
+	# [DAY TOTAL]: il ramo sotto (rebuild vegetazione per cella viva, "come individui" — posizioni/
+	# MultiMesh, non "come aggregati" — quello è dedicated_space/quantity, già misurato da
+	# [LOD TIMING] growth_checkpoint dentro WorldTimeService) è il costo GameScene-side mai visto
+	# da WorldTimeService, sospettato responsabile della differenza tra [DAY TOTAL] e la somma di
+	# [DAY TIMING].
+	var _debug_day_advanced_start_usec := Time.get_ticks_usec()
+
 	_update_calendar_display()
 	# Cadenza propria, scollegata da checkpoint_ran/animals_changed sopra e dal checkpoint
 	# stagionale di WorldTimeService (vedi _maybe_prune_fog_of_war_memories per il perché) — gira
 	# quindi anche nei giorni "vuoti" in cui il resto di questa funzione farebbe early-return sotto.
 	_maybe_prune_fog_of_war_memories()
 	if not (checkpoint_ran or animals_changed):
+		if DebugLogging.SHOW_DAILY_TIMING_LOGS:
+			var elapsed_ms: float = (Time.get_ticks_usec() - _debug_day_advanced_start_usec) / 1000.0
+			print("[GAMESCENE DAY] _on_day_advanced (nessun rebuild vegetazione: checkpoint_ran=no, animals_changed=no) = %.1fms" % elapsed_ms)
 		return
 
 	if checkpoint_ran or flora_daily_updates_enabled:
+		var vegetation_refresh_start_usec := Time.get_ticks_usec()
 		for cell in live_cells.values():
 			# PRIMA del rebuild: se ResourceMortalityService ha appena registrato una perdita
 			# aggregata quest'anno (last_mortality_loss, scritto solo al rollover d'anno — vedi
@@ -1466,8 +1844,17 @@ func _on_day_advanced(checkpoint_ran: bool, animals_changed: bool) -> void:
 			# nei giorni ordinari (il campo è vuoto).
 			_apply_natural_mortality_visuals(cell)
 			_refresh_resource_visuals(cell)
+		if DebugLogging.SHOW_DAILY_TIMING_LOGS:
+			var vegetation_refresh_ms: float = (Time.get_ticks_usec() - vegetation_refresh_start_usec) / 1000.0
+			print("[GAMESCENE DAY] rebuild vegetazione (%d celle vive, checkpoint_ran=%s flora_daily_updates_enabled=%s) = %.1fms" % [
+				live_cells.size(), "si" if checkpoint_ran else "no", "si" if flora_daily_updates_enabled else "no", vegetation_refresh_ms
+			])
 	else:
 		_update_info_panel()
+
+	if DebugLogging.SHOW_DAILY_TIMING_LOGS:
+		var elapsed_ms: float = (Time.get_ticks_usec() - _debug_day_advanced_start_usec) / 1000.0
+		print("[GAMESCENE DAY] _on_day_advanced totale = %.1fms" % elapsed_ms)
 
 # Pulizia periodica di TUTTE le FogOfWarMemory mai create in questa partita (fog_of_war_memories
 # — non solo quelle attualmente vive: l'obiettivo è limitare la crescita nel tempo anche per
@@ -1518,6 +1905,19 @@ func _forget_vegetation_identity(coords: Vector2i) -> void:
 		return
 	IndividualVegetationService.forget_known_individuals(state, GameTypes.WorldObjectType.TREE)
 	IndividualVegetationService.forget_known_individuals(state, GameTypes.WorldObjectType.SHRUB)
+
+	# DEBUG TEMPORANEO — vedi _debug_individual_counts_by_macro: senza questo il contatore di
+	# debug non saprebbe mai che questa macrocella è stata svuotata (si aggiorna solo quando la
+	# cella torna viva e viene rinfrescata, mai su un evento di pulizia) — resterebbe fermo al
+	# vecchio conteggio per sempre, facendo sembrare che la pulizia non stia facendo nulla.
+	if _debug_individual_counts_by_macro.has(coords):
+		_debug_individual_counts_by_macro.erase(coords)
+		var total: int = 0
+		for c in _debug_individual_counts_by_macro.values():
+			total += c
+		print("[DEBUG INDIVIDUI] macrocella (%d,%d) dimenticata dal fog -> rimossa dal conteggio | totale sessione: %d" % [
+			coords.x, coords.y, total
+		])
 
 
 func _on_advance_year_pressed() -> void:

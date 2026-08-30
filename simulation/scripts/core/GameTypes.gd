@@ -50,6 +50,13 @@ enum WorldObjectType {
 	SHRUB,
 	FISH,
 	BIRDS,
+	# BUILDING: stesso trattamento di ROCK ai fini dello spazio (MacroCellState.dedicated_space) —
+	# un edificio occupa spazio fisico esattamente come una pietra, senza growth/succession_level
+	# propri, mai incluso nelle liste esplicite [TREE,SHRUB,GRASS] processate da crescita/
+	# encroachment/mortalità/migrazione (verificato: nessun punto del codebase itera l'intero
+	# enum alla cieca, sempre liste esplicite — sicuro aggiungere qui). Vedi Building.gd/
+	# BuildingRules.gd/GameScene._place_building_at.
+	BUILDING,
 	# in futuro: WILD_ANIMAL, FORAGE, ecc.
 }
 

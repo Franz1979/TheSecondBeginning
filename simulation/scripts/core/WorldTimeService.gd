@@ -10,6 +10,16 @@ extends RefCounted
 # checkpoint, invece di una riga sparsa per ciascun componente.
 var _checkpoint_timings_ms: Dictionary = {}
 
+# Stesso principio di _checkpoint_timings_ms sopra, ma per i passi che girano OGNI giorno
+# (_run_daily_animal_consumption/_run_daily_predation/_run_daily_territory_dynamics_stagger/
+# _run_daily_animal_hunger/remove_extinct_population_groups dentro advance_day) — MAI coperti dal
+# riepilogo [LOD TIMING] esistente, che misura solo _run_seasonal_checkpoints e stampa solo nei
+# giorni con checkpoint. Dizionario separato apposta: azzerato a inizio di ogni advance_day, mai
+# mescolato con _checkpoint_timings_ms (che ha la propria vita solo dentro _run_seasonal_
+# checkpoints), così un giorno senza checkpoint stampa comunque il proprio riepilogo giornaliero
+# senza numeri di un altro giorno mischiati dentro.
+var _daily_timings_ms: Dictionary = {}
+
 # Advances the calendar by exactly one day, then runs whichever seasonal simulation
 # checkpoint(s) fall on the resulting day (see _run_seasonal_checkpoints), plus the animal
 # consumption pass (see _run_daily_animal_consumption), che a differenza dei checkpoint
@@ -19,8 +29,14 @@ var _checkpoint_timings_ms: Dictionary = {}
 # l'aggiornamento guidato dal solo consumo animale lo rende opzionale — possono farlo senza
 # dover indovinare quale delle due è effettivamente scattata.
 func advance_day(world: World, game_data: GameData) -> Dictionary:
+	# Timing diagnostico dei soli passi GIORNALIERI (vedi _daily_timings_ms/_print_daily_timing_
+	# summary) — azzerato qui, non dentro _run_seasonal_checkpoints (quello resta indipendente,
+	# vedi _checkpoint_timings_ms).
+	_daily_timings_ms.clear()
+	var day_overall_start_usec := Time.get_ticks_usec()
+
 	var year_rolled_over := game_data.advance_day()
-	var animals_changed := _run_daily_animal_consumption(world, game_data)
+	var animals_changed: bool = _run_timed_daily_returning("animal_consumption", func(): return _run_daily_animal_consumption(world, game_data))
 	# Caccia dei predatori (Step 3 del piano predatori) — gira OGNI giorno come il consumo
 	# erbivoro sopra, indipendente dai checkpoint stagionali, e PRIMA di questi ultimi: una preda
 	# catturata oggi deve già risultare decrementata quando gli eventuali checkpoint di oggi
@@ -29,7 +45,7 @@ func advance_day(world: World, game_data: GameData) -> Dictionary:
 	# vedi ordine esistente): PopulationGroup.apply_predation_loss non tocca hunger_buckets della
 	# preda, la riconciliazione con population se ne occupa la prossima volta che
 	# AnimalHungerService gira su quel gruppo — stesso giorno, con questo ordine.
-	_run_daily_predation(world, game_data)
+	_run_timed_daily("predation", func(): _run_daily_predation(world, game_data))
 	# Spalmamento Livello 1 di TerritoryDynamicsService (vedi _run_daily_territory_dynamics_stagger
 	# sotto) — gira ogni giorno come consumo/predazione sopra, PRIMA dei checkpoint stagionali:
 	# il giorno di turno di un gruppo (dentro la finestra della stagione PRECEDENTE al suo
@@ -37,18 +53,23 @@ func advance_day(world: World, game_data: GameData) -> Dictionary:
 	# (dove gira invece il checkpoint stagionale/rete di sicurezza), quindi l'ordine tra i due in
 	# uno stesso giorno non è mai osservabile — nessun gruppo viene mai toccato da entrambi lo
 	# stesso giorno.
-	_run_daily_territory_dynamics_stagger(world, game_data)
+	_run_timed_daily("territory_dynamics_stagger", func(): _run_daily_territory_dynamics_stagger(world, game_data))
 	var checkpoint_ran := _run_seasonal_checkpoints(world, game_data, year_rolled_over)
 	# DOPO i checkpoint stagionali (mai prima): se oggi capita anche un checkpoint di fine
 	# birth_season (nascite/morte per vecchiaia), hunger_buckets viene già mantenuto coerente con
 	# population da PopulationGroup.apply_births/apply_old_age_mortality PRIMA che questo servizio
 	# legga population — vedi AnimalHungerService.
-	_run_daily_animal_hunger(world)
+	_run_timed_daily("animal_hunger", func(): _run_daily_animal_hunger(world))
 	# ULTIMO passo della giornata, dopo ogni checkpoint che può azzerare population (morte per
 	# vecchiaia sopra, fame prolungata appena sopra) — mai prima, altrimenti un gruppo morto oggi
 	# stesso resterebbe nell'array (e quindi "occupante" la propria cella) fino a domani. Vedi
 	# World.remove_extinct_population_groups per il perché.
-	world.remove_extinct_population_groups()
+	_run_timed_daily("remove_extinct_population_groups", func(): world.remove_extinct_population_groups())
+
+	if DebugLogging.SHOW_DAILY_TIMING_LOGS:
+		var day_overall_ms: float = (Time.get_ticks_usec() - day_overall_start_usec) / 1000.0
+		_print_daily_timing_summary(game_data.current_day, day_overall_ms, checkpoint_ran)
+
 	return {"checkpoint_ran": checkpoint_ran, "animals_changed": animals_changed}
 
 
@@ -150,17 +171,17 @@ func _run_daily_animal_hunger(world: World) -> void:
 #
 # Richiamato da _run_seasonal_checkpoints SOLO nei giorni in cui è già scattato almeno un
 # checkpoint stagionale (mai ogni giorno — vedi guard su checkpoint_ran nel chiamante): rieseguire
-# set_focus_region con la STESSA region salvata in world.lod_focus_region (mai ripassata da
-# MacroCellScene ad ogni chiamata) riclassifica TUTTI i gruppi correnti, inclusi quelli nati da
-# split in questa stessa stagione — il loro territorio è già stabilizzato a questo punto (lo split
-# succede dentro territory_dynamics_checkpoint, che gira sempre prima di questo checkpoint nello
-# stesso giorno se è un giorno di inizio-stagione), non classificati a metà della propria
-# creazione. No-op se nessun focus è attivo (world.lod_focus_state già vuoto) — stesso sentinel
-# "vuoto = vista mondo" usato ovunque altrove per questo campo.
+# set_focus_region con lo STESSO insieme di celle vive salvato in world.lod_focus_live_cells (mai
+# ripassato da GameScene/MacroCellScene ad ogni chiamata) riclassifica TUTTI i gruppi correnti,
+# inclusi quelli nati da split in questa stessa stagione — il loro territorio è già stabilizzato a
+# questo punto (lo split succede dentro territory_dynamics_checkpoint, che gira sempre prima di
+# questo checkpoint nello stesso giorno se è un giorno di inizio-stagione), non classificati a
+# metà della propria creazione. No-op se nessun focus è attivo (world.lod_focus_state già vuoto) —
+# stesso sentinel "vuoto = vista mondo" usato ovunque altrove per questo campo.
 func _run_lod_focus_refresh_checkpoint(world: World) -> void:
 	if world.lod_focus_state.is_empty():
 		return
-	world.lod_focus_state = LODOrchestrator.new().set_focus_region(world, world.lod_focus_region)
+	world.lod_focus_state = LODOrchestrator.new().set_focus_region(world, world.lod_focus_live_cells)
 
 
 # Parte B del LOD (vedi AnimalConsumptionAggregateService): no-op se nessun focus è attivo — in
@@ -381,6 +402,42 @@ func _run_timed_returning(label: String, action: Callable) -> Variant:
 	return result
 
 
+# Stesse due varianti di _run_timed/_run_timed_returning sopra, ma per i passi GIORNALIERI di
+# advance_day (accumulano in _daily_timings_ms, mai in _checkpoint_timings_ms — vedi il commento
+# su quel campo per il perché restano separati).
+func _run_timed_daily(label: String, action: Callable) -> void:
+	var start_usec := Time.get_ticks_usec()
+	action.call()
+	var elapsed_ms: float = (Time.get_ticks_usec() - start_usec) / 1000.0
+	_daily_timings_ms[label] = float(_daily_timings_ms.get(label, 0.0)) + elapsed_ms
+
+
+func _run_timed_daily_returning(label: String, action: Callable) -> Variant:
+	var start_usec := Time.get_ticks_usec()
+	var result = action.call()
+	var elapsed_ms: float = (Time.get_ticks_usec() - start_usec) / 1000.0
+	_daily_timings_ms[label] = float(_daily_timings_ms.get(label, 0.0)) + elapsed_ms
+	return result
+
+
+# Riepilogo compatto di TUTTI i giorni (a differenza di _print_checkpoint_timing_summary, che
+# stampa solo nei giorni con almeno un checkpoint stagionale) — serve proprio a distinguere se la
+# lentezza percepita viene dai passi giornalieri qui sotto o da altrove (es. rendering/streaming
+# celle vive in GameScene, mai misurato da WorldTimeService). `overall_ms` include anche l'eventuale
+# _run_seasonal_checkpoints di oggi (misurato per conto proprio, vedi [LOD TIMING] accanto a
+# questa riga nei giorni in cui compare) — sottraendo la somma delle etichette qui sotto a
+# overall_ms si ottiene il costo del solo checkpoint stagionale, se presente.
+func _print_daily_timing_summary(day: int, overall_ms: float, checkpoint_ran: bool) -> void:
+	var labels: Array = _daily_timings_ms.keys()
+	labels.sort()
+	var parts: Array = []
+	for label in labels:
+		parts.append("%s=%.1fms" % [label, _daily_timings_ms[label]])
+	print("[DAY TIMING] giorno %d totale=%.1fms (checkpoint_stagionale=%s) | %s" % [
+		day, overall_ms, "si" if checkpoint_ran else "no", ", ".join(parts)
+	])
+
+
 func _run_animal_lifecycle_checkpoint(world: World, season: GameTypes.Season) -> void:
 	# Ordine fisso: maturazione -> nascite -> morte per vecchiaia. Maturazione PRIMA, nascite
 	# DOPO — così i nuovi nati (sempre aggiunti in YOUNG da AnimalBirthService) non maturano mai
@@ -463,6 +520,15 @@ func _run_fauna_migration_checkpoint(world: World) -> void:
 func _run_mortality_checkpoint(world: World) -> void:
 	var mortality_service := ResourceMortalityService.new()
 	mortality_service.apply_mortality(world)
+
+	# Rete di sicurezza annuale contro il raro overshoot di dedicated_space introdotto da
+	# BuildingSiteClearingService (vedi SpaceReconciliationService) — subito dopo la mortalità
+	# perché è il momento in cui dedicated_space[TREE/SHRUB/GRASS] è già stato ridotto in base a
+	# chi è morto davvero: nella maggior parte dei casi la somma è già tornata sotto TOTAL_SPACE da
+	# sola, questo passaggio interviene solo sul residuo. GLOBALE (tutto world.cell_states, non
+	# solo le celle vive), stessa ampiezza di apply_mortality sopra.
+	for state in world.cell_states:
+		SpaceReconciliationService.reconcile(state)
 
 	# Stesso checkpoint di fine autunno (year_rolled_over) della mortalità vegetale, su
 	# water_dedicated_space invece che dedicated_space.

@@ -1,0 +1,53 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://gameplay/scenes/game/BuildBar.gd" id="1_buildbar"]
+[ext_resource type="PackedScene" uid="uid://dm2h8k5w1n3rt" path="res://simulation/scenes/ui/IconButtonRow.tscn" id="2_iconrow"]
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_buildbar"]
+bg_color = Color(0.19934133, 0.34936652, 0.5477696, 1)
+
+[node name="BuildBar" type="CenterContainer"]
+anchors_preset = 12
+anchor_left = 0.0
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_top = -70.0
+offset_bottom = 0.0
+grow_horizontal = 2
+grow_vertical = 0
+mouse_filter = 2
+script = ExtResource("1_buildbar")
+
+[node name="Panel" type="PanelContainer" parent="."]
+layout_mode = 2
+theme_override_styles/panel = SubResource("StyleBoxFlat_buildbar")
+
+[node name="MarginContainer" type="MarginContainer" parent="Panel"]
+layout_mode = 2
+theme_override_constants/margin_left = 8
+theme_override_constants/margin_top = 8
+theme_override_constants/margin_right = 8
+theme_override_constants/margin_bottom = 8
+
+[node name="HBoxContainer" type="HBoxContainer" parent="Panel/MarginContainer"]
+layout_mode = 2
+
+[node name="ControlButton" type="Button" parent="Panel/MarginContainer/HBoxContainer"]
+custom_minimum_size = Vector2(24, 32)
+layout_mode = 2
+text = "▼"
+
+[node name="VSeparator" type="VSeparator" parent="Panel/MarginContainer/HBoxContainer"]
+layout_mode = 2
+
+[node name="ContentContainer" type="HBoxContainer" parent="Panel/MarginContainer/HBoxContainer"]
+layout_mode = 2
+
+[node name="MainRow" parent="Panel/MarginContainer/HBoxContainer/ContentContainer" instance=ExtResource("2_iconrow")]
+layout_mode = 2
+slot_count = 4
+
+[node name="SubmenuRow" parent="Panel/MarginContainer/HBoxContainer/ContentContainer" instance=ExtResource("2_iconrow")]
+layout_mode = 2
+slot_count = 4

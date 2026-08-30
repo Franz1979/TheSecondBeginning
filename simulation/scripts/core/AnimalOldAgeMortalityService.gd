@@ -33,14 +33,18 @@ func apply_old_age_mortality(world: World, season: GameTypes.Season) -> void:
 		var deaths_from_age: int = min(
 			SimulationMath.stochastic_round(
 				float(old_count) / float(rules.old_duration_years),
-				("OLD AGE DEATHS #%d %s" % [group.id, group.species_name]) if rules is PredatorRules else ""
+				("OLD AGE DEATHS #%d %s" % [group.id, group.species_name]) if (rules is PredatorRules and DebugLogging.SHOW_PREDATOR_LIFECYCLE_LOGS) else ""
 			), old_count
 		)
 		var population_before := group.population
 		group.apply_old_age_mortality(deaths_from_age)
 
-		# Filtro erbivori/predatori: vedi DebugLogging.SHOW_HERBIVORE_LIFECYCLE_LOGS.
-		if DebugLogging.ENABLED and (rules is PredatorRules or DebugLogging.SHOW_HERBIVORE_LIFECYCLE_LOGS):
+		# Filtro erbivori/predatori: vedi DebugLogging.SHOW_HERBIVORE_LIFECYCLE_LOGS/
+		# SHOW_PREDATOR_LIFECYCLE_LOGS — ciascun lato ora ha il proprio interruttore indipendente.
+		if DebugLogging.ENABLED and (
+			(rules is PredatorRules and DebugLogging.SHOW_PREDATOR_LIFECYCLE_LOGS)
+			or (not (rules is PredatorRules) and DebugLogging.SHOW_HERBIVORE_LIFECYCLE_LOGS)
+		):
 			print("[ANIMAL OLD AGE DEATHS] checkpoint=fine %s | #%d %s: O=%d old_duration=%d -> morti=%d pop %d->%d" % [
 				GameTypes.Season.keys()[season], group.id, group.species_name,
 				old_count, rules.old_duration_years, deaths_from_age, population_before, group.population

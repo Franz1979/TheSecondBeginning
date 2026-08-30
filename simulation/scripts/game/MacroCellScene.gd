@@ -119,15 +119,15 @@ func _ready() -> void:
 	# Punto di invocazione per LODOrchestrator (Parte A: classificazione + log diagnostico; Parte B
 	# Punto 2: il risultato viene ora anche conservato su macro_world.lod_focus_state — vedi
 	# World.gd). La "zona a fuoco" è per ora la sola macrocella appena aperta, la scelta più
-	# semplice prima di un eventuale intorno più ampio. macro_world.lod_focus_region viene salvata
-	# insieme al risultato: WorldTimeService la userà per ricalcolare periodicamente
+	# semplice prima di un eventuale intorno più ampio. macro_world.lod_focus_live_cells viene
+	# salvata insieme al risultato: WorldTimeService la userà per ricalcolare periodicamente
 	# lod_focus_state ad ogni checkpoint stagionale (fix del bug "nuovi gruppi da split mai
-	# classificati"), senza dover ripassare la region da qui ogni volta.
+	# classificati"), senza dover ripassarla da qui ogni volta.
 	if macro_world != null and macro_cell != null:
-		var focus_region := Rect2i(macro_cell.x, macro_cell.y, 1, 1)
-		var lod_result := LODOrchestrator.new().set_focus_region(macro_world, focus_region)
+		var focus_live_cells: Dictionary = {Vector2i(macro_cell.x, macro_cell.y): true}
+		var lod_result := LODOrchestrator.new().set_focus_region(macro_world, focus_live_cells)
 		LODOrchestrator.print_classification_log(lod_result)
-		macro_world.lod_focus_region = focus_region
+		macro_world.lod_focus_live_cells = focus_live_cells
 		macro_world.lod_focus_state = lod_result
 
 	world = World.new()
@@ -488,7 +488,7 @@ func _ready() -> void:
 func _exit_tree() -> void:
 	if macro_world != null:
 		macro_world.lod_focus_state = {}
-		macro_world.lod_focus_region = Rect2i()
+		macro_world.lod_focus_live_cells = {}
 
 
 # "occupied" invertito rispetto al solito uso (qui marca ciò che NON è disponibile per FISH,

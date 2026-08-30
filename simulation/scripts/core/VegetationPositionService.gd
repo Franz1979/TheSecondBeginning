@@ -46,38 +46,45 @@ const MIX_TREE_AND_SHRUB: bool = true
 # Array[Vector3i] (x, y del lotto + indice individuo locale, granularità per-individuo — vedi
 # IndividualVegetationService), result[GRASS] resta Array[Vector2i] (un lotto = un'unica entità
 # renderizzata, nessuna suddivisione in individui).
-func generate_positions(macro_state: MacroCellState, occupied: Dictionary = {}, current_year: int = 0, current_day: int = 0) -> Dictionary:
+# building_positions (Vector2i -> true, vedi GameScene._building_positions_for_cell) blocca in modo
+# PERMANENTE i lotti TREE/SHRUB già rivendicati che ricadono su un edificio, propagato fino a
+# IndividualVegetationService._is_blocked — `occupied` da solo non basterebbe: un lotto già in
+# tree_claimed_lots/shrub_claimed_lots viene rigenerato a prescindere da `occupied` (vedi commento
+# lì). Il chiamante deve comunque unire building_positions ANCHE a `occupied` per GRASS (che non ha
+# memoria persistita, si affida solo a `occupied`) e per impedire che un lotto TREE/SHRUB mai
+# ancora rivendicato scelga in futuro proprio una cella con un edificio.
+func generate_positions(macro_state: MacroCellState, occupied: Dictionary = {}, current_year: int = 0, current_day: int = 0, building_positions: Dictionary = {}) -> Dictionary:
 	if MIX_TREE_AND_SHRUB:
-		return _generate_positions_mixed(macro_state, occupied, current_year, current_day)
-	return _generate_positions_sequential(macro_state, occupied, current_year, current_day)
+		return _generate_positions_mixed(macro_state, occupied, current_year, current_day, building_positions)
+	return _generate_positions_sequential(macro_state, occupied, current_year, current_day, building_positions)
 
 
 # Comportamento originale: un solo occupied condiviso lungo CLAIM_ORDER.
-func _generate_positions_sequential(macro_state: MacroCellState, occupied: Dictionary, current_year: int, current_day: int) -> Dictionary:
+func _generate_positions_sequential(macro_state: MacroCellState, occupied: Dictionary, current_year: int, current_day: int, building_positions: Dictionary) -> Dictionary:
 	var result: Dictionary = {}
 	for resource_type in CLAIM_ORDER:
-		result[resource_type] = _generate_for_type(macro_state, resource_type, occupied, current_year, current_day)
+		result[resource_type] = _generate_for_type(macro_state, resource_type, occupied, current_year, current_day, building_positions)
 	return result
 
 
 # TREE e SHRUB scelgono ciascuno contro un proprio scratch, seminato SOLO dagli ostacoli fisici
 # del chiamante — non si vedono a vicenda, possono condividere lo stesso lotto. GRASS resta
 # invariato rispetto a entrambi: esclude la loro unione, come nel comportamento sequenziale.
-func _generate_positions_mixed(macro_state: MacroCellState, occupied: Dictionary, current_year: int, current_day: int) -> Dictionary:
+func _generate_positions_mixed(macro_state: MacroCellState, occupied: Dictionary, current_year: int, current_day: int, building_positions: Dictionary) -> Dictionary:
 	var result: Dictionary = {}
 
 	var tree_occupied: Dictionary = occupied.duplicate()
-	result[GameTypes.WorldObjectType.TREE] = _generate_for_type(macro_state, GameTypes.WorldObjectType.TREE, tree_occupied, current_year, current_day)
+	result[GameTypes.WorldObjectType.TREE] = _generate_for_type(macro_state, GameTypes.WorldObjectType.TREE, tree_occupied, current_year, current_day, building_positions)
 
 	var shrub_occupied: Dictionary = occupied.duplicate()
-	result[GameTypes.WorldObjectType.SHRUB] = _generate_for_type(macro_state, GameTypes.WorldObjectType.SHRUB, shrub_occupied, current_year, current_day)
+	result[GameTypes.WorldObjectType.SHRUB] = _generate_for_type(macro_state, GameTypes.WorldObjectType.SHRUB, shrub_occupied, current_year, current_day, building_positions)
 
 	var grass_occupied: Dictionary = occupied.duplicate()
 	for pos in tree_occupied.keys():
 		grass_occupied[pos] = true
 	for pos in shrub_occupied.keys():
 		grass_occupied[pos] = true
-	result[GameTypes.WorldObjectType.GRASS] = _generate_for_type(macro_state, GameTypes.WorldObjectType.GRASS, grass_occupied, current_year, current_day)
+	result[GameTypes.WorldObjectType.GRASS] = _generate_for_type(macro_state, GameTypes.WorldObjectType.GRASS, grass_occupied, current_year, current_day, building_positions)
 
 	# Stesso contratto pubblico del ramo sequenziale: `occupied` del chiamante riceve comunque
 	# l'unione di tutto ciò che la vegetazione ha preso, non solo gli ostacoli fisici di partenza.
@@ -91,12 +98,12 @@ func _generate_positions_mixed(macro_state: MacroCellState, occupied: Dictionary
 	return result
 
 
-func _generate_for_type(macro_state: MacroCellState, resource_type: GameTypes.WorldObjectType, occupied: Dictionary, current_year: int, current_day: int) -> Array:
+func _generate_for_type(macro_state: MacroCellState, resource_type: GameTypes.WorldObjectType, occupied: Dictionary, current_year: int, current_day: int, building_positions: Dictionary) -> Array:
 	var params: Dictionary = NOISE_PARAMS[resource_type]
 
 	if resource_type == GameTypes.WorldObjectType.TREE or resource_type == GameTypes.WorldObjectType.SHRUB:
 		return IndividualVegetationService.generate_positions(
-			macro_state, resource_type, occupied, params["frequency"], params["threshold"], current_year, current_day
+			macro_state, resource_type, occupied, params["frequency"], params["threshold"], current_year, current_day, building_positions
 		)
 
 	# GRASS non ha identità individuale (genera a livello di intero lotto, non di singolo

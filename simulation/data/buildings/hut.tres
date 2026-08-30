@@ -1,0 +1,21 @@
+[gd_resource type="Resource" script_class="BuildingRules" format=3]
+
+[ext_resource type="Script" path="res://simulation/scripts/core/BuildingRules.gd" id="1_hut"]
+
+[resource]
+script = ExtResource("1_hut")
+building_name = "building_hut"
+tech_level_required = 0
+construction_days = 5
+lifespan_years = -1
+storage_capacity = 20
+required_materials = {
+"wood": 20,
+"stick": 10
+}
+max_durability = 50
+required_space = 1
+visibility_radius = 2
+political_radius = 0
+cultural_radius = 0
+religious_radius = 0

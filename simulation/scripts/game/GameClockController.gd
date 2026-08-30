@@ -44,8 +44,20 @@ func _process(delta: float) -> void:
 	_day_progress += delta / seconds_per_day
 	while _day_progress >= 1.0:
 		_day_progress -= 1.0
+		# TEMPORANEO (diagnostica lentezza) — a differenza di [DAY TIMING] (WorldTimeService, misura
+		# SOLO i 4 passi animali dentro advance_day), questo cronometro avvolge advance_day() E
+		# day_advanced.emit(): emit() esegue in modo SINCRONO tutti gli slot connessi nello stesso
+		# frame (es. GameScene._on_day_advanced, che ai giorni con checkpoint_ran o con
+		# flora_daily_updates_enabled attivo rigenera vegetazione/MultiMesh per OGNI cella viva —
+		# costo mai visto da WorldTimeService, che non sa nulla di GameScene). Confronta questo
+		# numero con la somma delle etichette in [DAY TIMING]: la differenza è il costo di
+		# GameScene/MacroCellScene reagendo al segnale, non di WorldTimeService.
+		var day_wall_clock_start_usec := Time.get_ticks_usec()
 		var result := _time_service.advance_day(_world, _game_data)
 		day_advanced.emit(result["checkpoint_ran"], result["animals_changed"])
+		if DebugLogging.SHOW_DAILY_TIMING_LOGS:
+			var day_wall_clock_ms: float = (Time.get_ticks_usec() - day_wall_clock_start_usec) / 1000.0
+			print("[DAY TOTAL] tempo reale completo (advance_day + tutti gli handler di day_advanced, es. refresh vegetazione in GameScene) = %.1fms" % day_wall_clock_ms)
 
 func toggle_play_pause() -> void:
 	is_playing = not is_playing

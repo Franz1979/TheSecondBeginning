@@ -34,18 +34,22 @@ func apply_births(world: World, season: GameTypes.Season) -> void:
 		# popolazioni/pesi_fertilità piccoli — vedi SimulationMath.
 		var births := SimulationMath.stochastic_round(
 				weighted_count * rules.base_birth_rate * group.birth_mitigation_multiplier,
-				("BIRTHS #%d %s" % [group.id, group.species_name]) if rules is PredatorRules else ""
+				("BIRTHS #%d %s" % [group.id, group.species_name]) if (rules is PredatorRules and DebugLogging.SHOW_PREDATOR_LIFECYCLE_LOGS) else ""
 			)
 		var population_before := group.population
 		group.apply_births(births)
 
-		# Filtro erbivori/predatori: vedi DebugLogging.SHOW_HERBIVORE_LIFECYCLE_LOGS.
+		# Filtro erbivori/predatori: vedi DebugLogging.SHOW_HERBIVORE_LIFECYCLE_LOGS/
+		# SHOW_PREDATOR_LIFECYCLE_LOGS — ciascun lato ora ha il proprio interruttore indipendente.
 		# ratio_calorico (PopulationGroup.birth_mitigation_caloric_ratio) affiancato a mitigazione:
 		# quest'ultima è già il prodotto calorico×densità×post-scissione (vedi
 		# AnimalBirthMitigationService.apply_mitigation_multiplier), il ratio grezzo da solo non
 		# basta a spiegarla — mostrarli insieme evita di dover risalire al checkpoint TERRITORY
 		# DYNAMICS di inizio stagione (fino a ~90 giorni prima) per capire da dove viene il numero.
-		if DebugLogging.ENABLED and (rules is PredatorRules or DebugLogging.SHOW_HERBIVORE_LIFECYCLE_LOGS):
+		if DebugLogging.ENABLED and (
+			(rules is PredatorRules and DebugLogging.SHOW_PREDATOR_LIFECYCLE_LOGS)
+			or (not (rules is PredatorRules) and DebugLogging.SHOW_HERBIVORE_LIFECYCLE_LOGS)
+		):
 			# base_birth_rate_effettivo = base_birth_rate × mitigazione (già il prodotto
 			# calorico×densità×post-scissione) — nessun campo nuovo necessario, entrambi i fattori
 			# sono già disponibili qui: risparmia al lettore il calcolo a mano per capire il tasso
