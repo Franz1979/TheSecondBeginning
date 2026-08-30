@@ -180,6 +180,43 @@ func update_visibility(current_absolute_day: int) -> void:
 	queue_redraw()
 
 
+# Proposta 2: insieme delle posizioni (Vector2i) in cui un individuo di vegetazione sarebbe
+# comunque disegnato IN DETTAGLIO da _draw() — usato da GameScene._refresh_resource_visuals per
+# filtrare cosa passare al rebuild MultiMesh, invece di costruire un'istanza per OGNI posizione
+# anche quando il FoW la coprirebbe comunque. Una posizione FUORI da questo insieme finisce in uno
+# dei due tier che nascondono per intero il blob vero, qualunque cosa ci sia sotto:
+# FROZEN_OVERLAY_COLOR + hint sintetico (risorse scadute, terreno ancora fresco) o OVERLAY_COLOR
+# pieno (anche terreno scaduto) — costruire il vero blob lì è lavoro sprecato. Replica ESATTAMENTE
+# la stessa soglia di _draw() (in_radius O risorse fresche — mai bisogno di controllare anche
+# "dettaglio fresco" a parte: stesso timestamp, soglia più corta, quindi già incluso quando risorse
+# è fresco, vedi FogOfWarMemory._is_within_memory) — un'unica definizione di "visibile in
+# dettaglio", mai una seconda copia della logica.
+#
+# ATTENZIONE ORDINE (bug reale trovato in sessione, "tutto verde alla partita nuova"): `individual`
+# deve essere già il vero Individual del player (via setup(), vedi GameScene._rebind_fog_bindings),
+# non il fog_proxy_individual di default con cui ogni cella viva viene inizialmente legata in
+# _activate_live_cell — chiamare questo metodo PRIMA di _rebind_fog_bindings() per la cella
+# centrale calcolerebbe "visibile" attorno a una posizione placeholder (Vector2.ZERO), nascondendo
+# tutto vicino alla vera posizione di spawn del player. Vedi GameScene._ready(), dove la cella
+# centrale viene ri-rinfrescata subito DOPO _rebind_fog_bindings() apposta per questo.
+func compute_visible_positions(current_absolute_day: int) -> Dictionary:
+	var visible: Dictionary = {}
+	if individual == null:
+		return visible
+	var center := individual.position
+	for y in range(World.HEIGHT):
+		for x in range(World.WIDTH):
+			var pos := Vector2i(x, y)
+			var cell_center := Vector2(x + 0.5, y + 0.5)
+			var in_radius := cell_center.distance_squared_to(center) <= _radius_squared or _building_visible_positions.has(pos)
+			if in_radius:
+				visible[pos] = true
+				continue
+			if fog_of_war_memory != null and fog_of_war_memory.is_resource_fresh(pos, current_absolute_day, resource_memory_days):
+				visible[pos] = true
+	return visible
+
+
 func _draw() -> void:
 	if individual == null:
 		return

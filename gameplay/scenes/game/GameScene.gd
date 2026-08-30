@@ -33,6 +33,15 @@ const BORDER_CLAMP_EPSILON: float = 0.01
 # il container di ogni cella viva rispetto al centro (vedi _reposition_live_cells).
 const MACRO_CELL_PIXELS: int = World.WIDTH * MicroCellRenderer.CELL_SIZE
 
+# Proposta 2 (mitigazione "pop-in"): distanza minima (microcelle) percorsa dal player dall'ultimo
+# refresh vegetazione della cella centrale prima di richiederne un altro — vedi _process sotto e
+# _refresh_resource_visuals (che aggiorna _last_vegetation_refresh_position ad ogni chiamata,
+# qualunque sia la causa: checkpoint, taglio, edificio, o questo trigger da movimento). Metà del
+# visibility_radius di default di FogOfWarRenderer (6.0): abbastanza piccolo da tenere il ritardo
+# di reveal contenuto mentre cammini, abbastanza grande da non rifare il rebuild ad ogni singolo
+# frame di movimento (costerebbe carissimo, vedi [VEG REFRESH TIMING]).
+const VEGETATION_REFRESH_MOVE_THRESHOLD: float = 3.0
+
 # Margini (in microcelle, dal bordo condiviso) per attivare/disattivare un vicino vivo — due
 # soglie diverse (isteresi) per evitare di attivare/disattivare di continuo quando il player
 # oscilla vicino alla soglia: si attiva solo entro il margine stretto, ma una volta attivo resta
@@ -72,6 +81,15 @@ var fog_of_war_memories: Dictionary = {}
 # l'utente sul rischio di 200 macrocelle sempre calcolate per individuo con edifici che alimentano
 # il fog permanentemente). Da rimuovere una volta completata la misurazione.
 var _debug_individual_counts_by_macro: Dictionary = {}
+
+# Posizione (spazio locale della cella centrale, stesse unità di individual.position) all'ultimo
+# refresh vegetazione della cella centrale — vedi VEGETATION_REFRESH_MOVE_THRESHOLD/_process.
+# Sentinel Vector2(INF, INF): forza il primo controllo in _process a considerare "spostato
+# abbastanza" vero, anche se di fatto il primo refresh vero lo fa già _ready() esplicitamente
+# (vedi lì) — qui serve solo a non lasciare un valore arbitrario prima del primo aggiornamento
+# reale (fatto da _refresh_resource_visuals stessa, per QUALUNQUE causa di refresh, non solo
+# questo trigger da movimento).
+var _last_vegetation_refresh_position: Vector2 = Vector2(INF, INF)
 
 # Stesso schema di MacroCellScene per animals_visible (default ATTIVO, il toggle nel
 # PrimaryActionsBar di GameInfoPanel serve a DISATTIVARLO — vedi _on_primary_action_pressed).
@@ -276,6 +294,17 @@ func _ready() -> void:
 	_activate_all_building_cells()
 	_reposition_live_cells()
 	_rebind_fog_bindings()
+	# BUGFIX (Proposta 2, filtro FoW): _activate_live_cell sopra ha già chiamato _refresh_resource_
+	# visuals per la cella centrale, ma in quel momento il suo FogOfWarRenderer era ancora legato al
+	# fog_proxy_individual placeholder (posizione di default), non al vero Individual del player —
+	# _rebind_fog_bindings() lo corregge solo QUI. Senza un secondo refresh, il filtro per
+	# visibilità calcolato durante quel primo giro resterebbe centrato sulla posizione sbagliata,
+	# nascondendo la vegetazione vicino al vero punto di spawn per tutta la partita fino al primo
+	# checkpoint (bug reale osservato: "tutto verde alla partita nuova"). Rinfrescare di nuovo SOLO
+	# la cella centrale (le altre celle vive, se presenti per via di edifici lontani, non dipendono
+	# dalla posizione del player ma dal proprio raggio edificio — vedi _building_visible_positions,
+	# indipendente da questo bug) risolve senza toccare le altre.
+	_refresh_resource_visuals(live_cells[center_macro_coords])
 	if macro_world != null:
 		_refresh_lod_focus_region()
 	_update_center_info_panel()
@@ -317,6 +346,20 @@ func _process(delta: float) -> void:
 			var offset := Vector2i(cell.macro_x, cell.macro_y) - center_macro_coords
 			cell.fog_proxy_individual.position = individual.position - Vector2(offset.x * World.WIDTH, offset.y * World.HEIGHT)
 		cell.fog_of_war_renderer.update_visibility(game_data.get_absolute_day())
+
+	# Proposta 2 (mitigazione "pop-in", diagnostica lentezza) — rinfresca la vegetazione della cella
+	# centrale quando il player si è spostato abbastanza da poter aver scoperto area non coperta
+	# dall'ultimo rebuild (VEGETATION_REFRESH_MOVE_THRESHOLD), invece di aspettare il prossimo
+	# checkpoint stagionale. Solo la cella CENTRALE: è l'unica dove individual.position cambia
+	# davvero frame per frame (le celle vicine, se vive per via di edifici lontani, dipendono dal
+	# proprio raggio edificio — vedi _building_visible_positions — non dalla posizione del player).
+	if individual != null and live_cells.has(center_macro_coords):
+		if individual.position.distance_to(_last_vegetation_refresh_position) >= VEGETATION_REFRESH_MOVE_THRESHOLD:
+			if DebugLogging.SHOW_VEGETATION_REFRESH_TIMING_LOGS:
+				print("[VEG REFRESH TRIGGER] movimento: cella (%d,%d), spostamento=%.1f microcelle da ultimo refresh" % [
+					center_macro_coords.x, center_macro_coords.y, individual.position.distance_to(_last_vegetation_refresh_position)
+				])
+			_refresh_resource_visuals(live_cells[center_macro_coords])
 
 	if camera_follows_individual and individual != null and individual.is_moving:
 		_center_camera_on_individual()
@@ -497,6 +540,10 @@ func _on_cut_requested() -> void:
 
 	PlayerHarvestService.cut_individual(cell.macro_state, object_type, individual_key, info["subtype_name"], info["size_multiplier"], game_data.year)
 	_clear_vegetation_selection()
+	# Il taglio cambia dedicated_space/vegetation_cut_exceptions per QUESTA cella — invalida la
+	# cache posizioni (vedi LiveMacroCell.needs_full_vegetation_recompute), altrimenti il refresh
+	# sotto riuserebbe la lista di ieri e il ceppo appena creato non comparirebbe.
+	cell.needs_full_vegetation_recompute = true
 	_refresh_resource_visuals(cell)
 
 
@@ -629,8 +676,15 @@ func _activate_live_cell(mx: int, my: int) -> LiveMacroCell:
 			stone_service.generate_if_needed(cell.macro_state)
 			cell.renderer.set_stone_positions(cell.macro_state.stone_positions)
 
-			_refresh_resource_visuals(cell)
+			# _refresh_building_visuals PRIMA di _refresh_resource_visuals (ordine invertito rispetto
+			# a prima, 2026-08-30/Proposta 2): quest'ultima ora filtra cosa costruire nel renderer in
+			# base a FogOfWarRenderer.compute_visible_positions, che legge anche _building_visible_
+			# positions — se girasse prima di _refresh_building_visuals, alla primissima attivazione di
+			# una cella-edificio quell'insieme sarebbe ancora vuoto e le posizioni vicino all'edificio
+			# verrebbero scartate dal primo rebuild (si autocorregge al refresh successivo, ma
+			# nessun motivo di lasciare quella finestra scorretta quando basta invertire due righe).
 			_refresh_building_visuals(cell)
+			_refresh_resource_visuals(cell)
 
 	live_cells[Vector2i(mx, my)] = cell
 	return cell
@@ -670,6 +724,24 @@ func _macro_cell_has_buildings(coords: Vector2i) -> bool:
 		if building.macro_x == coords.x and building.macro_y == coords.y:
 			return true
 	return false
+
+
+# Celle vive che il player sta EFFETTIVAMENTE esplorando in questo momento — il centro più gli
+# eventuali vicini attivi di prossimità (_active_neighbor_coords_set, max ~4 per come è
+# progettato lo streaming multi-cella, vedi _compute_relevant_neighbor_offsets). Deliberatamente
+# esclude le celle vive SOLO per un edificio lontano (_activate_all_building_cells) — usata da
+# _on_day_advanced per limitare il ridisegno vegetazione costoso al checkpoint stagionale a ciò
+# che qualcuno sta davvero guardando, vedi lì per il perché è sicuro farlo.
+func _player_proximity_live_cells() -> Array:
+	var cells: Array = []
+	if live_cells.has(center_macro_coords):
+		cells.append(live_cells[center_macro_coords])
+	for coords in _active_neighbor_coords_set:
+		if coords == center_macro_coords:
+			continue
+		if live_cells.has(coords):
+			cells.append(live_cells[coords])
+	return cells
 
 
 func _deactivate_live_cell(coords: Vector2i) -> void:
@@ -1031,19 +1103,51 @@ func _refresh_resource_visuals(cell: LiveMacroCell) -> void:
 		occupied[pos] = true
 		building_positions[pos] = true
 
+	# Cache (vedi LiveMacroCell.needs_full_vegetation_recompute/cached_vegetation_positions):
+	# generate_positions è deterministica, il suo output cambia SOLO se dedicated_space/anno/
+	# eccezioni taglio-morte/edifici sono davvero cambiati — mai per il solo spostamento del
+	# player. Un refresh da movimento (nessuno di questi eventi) trova il flag già a false (chi
+	# ha causato l'ultimo VERO cambiamento lo rimette a true esplicitamente) e riusa la lista già
+	# calcolata, saltando del tutto il ricalcolo (~90-190ms/cella misurati).
 	var _step_start_usec := Time.get_ticks_usec()
-	var vegetation_service := VegetationPositionService.new()
-	var vegetation_positions: Dictionary = vegetation_service.generate_positions(cell.macro_state, occupied, game_data.year, game_data.current_day, building_positions)
+	if cell.needs_full_vegetation_recompute:
+		var vegetation_service := VegetationPositionService.new()
+		cell.cached_vegetation_positions = vegetation_service.generate_positions(cell.macro_state, occupied, game_data.year, game_data.current_day, building_positions)
+		cell.needs_full_vegetation_recompute = false
+	var vegetation_positions: Dictionary = cell.cached_vegetation_positions
 	_veg_timings_ms["1_position_generation"] = (Time.get_ticks_usec() - _step_start_usec) / 1000.0
 
+	# Proposta 2 (filtro FoW): il renderer riceve solo le posizioni che il FoW mostrerebbe comunque
+	# in dettaglio (vedi FogOfWarRenderer.compute_visible_positions) — una posizione coperta da
+	# FROZEN_OVERLAY_COLOR+hint o da nero pieno non mostra MAI il vero blob, quindi costruirgli
+	# comunque un'istanza MultiMesh è lavoro sprecato. `vegetation_positions` (NON filtrato) resta
+	# la fonte di verità passata a set_vegetation_presence sotto (serve l'insieme completo per
+	# l'hint sintetico) e a _debug_print_individual_counts (conteggio reale di quanti individui
+	# esistono, non solo quanti ne disegniamo). Il "pop-in" (zone appena esplorate che restano vuote
+	# fino al prossimo refresh) resta un limite noto e accettato — vedi GameScene._ready(), che fa
+	# un refresh extra della cella centrale subito dopo _rebind_fog_bindings() apposta per coprire
+	# almeno l'ingresso in partita/scena.
 	_step_start_usec = Time.get_ticks_usec()
-	cell.renderer.set_vegetation_positions(vegetation_positions)
-	_veg_timings_ms["2_multimesh_rebuild"] = (Time.get_ticks_usec() - _step_start_usec) / 1000.0
+	var render_vegetation_positions := _filter_vegetation_positions_by_visibility(cell, vegetation_positions)
+	_veg_timings_ms["1b_fog_visibility_filter"] = (Time.get_ticks_usec() - _step_start_usec) / 1000.0
+
+	# begin_vegetation_batch()/end_vegetation_batch() (vedi MicroCellRenderer.gd): senza batching, i
+	# 6 setter chiamati in questa funzione (qui + set_shrub_subtypes/set_shrub_age_params/
+	# set_tree_subtypes/set_tree_age_params/set_season sotto) ricostruivano TREE fino a 4 volte,
+	# SHRUB fino a 3, GRASS fino a 2 — stesso lavoro ripetuto sugli stessi individui, misurato come
+	# il grosso del costo di un checkpoint stagionale con più celle vive. Dentro la finestra di
+	# batch i setter si limitano a segnare "sporco"; end_vegetation_batch() (sotto, cronometrato a
+	# parte in "6_batched_rebuild") fa il rebuild vero una sola volta per tipo.
+	cell.renderer.begin_vegetation_batch()
+
+	_step_start_usec = Time.get_ticks_usec()
+	cell.renderer.set_vegetation_positions(render_vegetation_positions)
+	_veg_timings_ms["2_multimesh_positions_set"] = (Time.get_ticks_usec() - _step_start_usec) / 1000.0
 
 	# Ripristinato (richiesta utente, 2026-08-30): serve di nuovo per misurare l'esperimento
 	# "ogni macrocella con edifici resta viva" (vedi _activate_all_building_cells) — quanto
 	# esplode il conteggio individui al crescere delle celle-edificio sempre vive.
-	_debug_print_individual_counts(cell, vegetation_positions)
+	_debug_print_individual_counts(cell, vegetation_positions, render_vegetation_positions)
 	_debug_print_dedicated_space(cell)
 	# FogOfWarRenderer disegna la vegetazione "sfocata" (Opzione B, vedi lì) sopra questa stessa
 	# vegetazione VERA — MicroCellRenderer non sa nulla del fog of war, mai più da quando abbiamo
@@ -1088,12 +1192,21 @@ func _refresh_resource_visuals(cell: LiveMacroCell) -> void:
 		game_data.year, _get_age_params(cell.macro_state, GameTypes.WorldObjectType.TREE), cell.macro_state.tree_virtual_birth_year
 	)
 	cell.renderer.set_season(SeasonCalculator.get_season_for_day(game_data.current_day))
-	_veg_timings_ms["5_subtype_age_params"] = (Time.get_ticks_usec() - _step_start_usec) / 1000.0
+	_veg_timings_ms["5_subtype_age_params_set"] = (Time.get_ticks_usec() - _step_start_usec) / 1000.0
+
+	_step_start_usec = Time.get_ticks_usec()
+	cell.renderer.end_vegetation_batch()
+	_veg_timings_ms["6_batched_rebuild"] = (Time.get_ticks_usec() - _step_start_usec) / 1000.0
 
 	_invalidate_selected_vegetation_if_missing(cell)
 
 	if cell.macro_x == center_macro_coords.x and cell.macro_y == center_macro_coords.y:
 		_update_info_panel()
+		# Qualunque sia la causa di QUESTO refresh (checkpoint, taglio, edificio, o il trigger da
+		# movimento in _process) — vedi VEGETATION_REFRESH_MOVE_THRESHOLD sopra: azzera la distanza
+		# percorsa da qui, altrimenti un refresh arrivato da un'altra causa non "conterebbe" ai fini
+		# del trigger da movimento, che ritriggererebbe subito dopo inutilmente.
+		_last_vegetation_refresh_position = individual.position if individual != null else _last_vegetation_refresh_position
 
 	if DebugLogging.SHOW_VEGETATION_REFRESH_TIMING_LOGS:
 		var total_ms: float = (Time.get_ticks_usec() - _veg_refresh_start_usec) / 1000.0
@@ -1101,10 +1214,34 @@ func _refresh_resource_visuals(cell: LiveMacroCell) -> void:
 		labels.sort()
 		var parts: Array = []
 		for label in labels:
-			parts.append("%s=%.1fms" % [label.substr(2), _veg_timings_ms[label]])
+			# Prefisso di ordinamento variabile in lunghezza ("1_"/"1b_"/"2_"...) — trova il primo
+			# "_" invece di un substr a indice fisso, così l'etichetta stampata resta pulita
+			# qualunque sia la lunghezza del prefisso.
+			parts.append("%s=%.1fms" % [label.substr(label.find("_") + 1), _veg_timings_ms[label]])
 		print("[VEG REFRESH TIMING] macrocella (%d,%d) totale=%.1fms | %s" % [
 			cell.macro_x, cell.macro_y, total_ms, ", ".join(parts)
 		])
+
+
+# Proposta 2 — filtra `positions` (stesso formato di VegetationPositionService.generate_positions:
+# WorldObjectType -> Array[Vector3i] per TREE/SHRUB lotto x,y+indice, Array[Vector2i] per GRASS)
+# tenendo solo le voci la cui (x,y) è nell'insieme "visibile in dettaglio" di FogOfWarRenderer.
+# compute_visible_positions — Vector3i e Vector2i condividono i campi x/y, letti genericamente
+# senza bisogno di conoscere il tipo esatto per voce. Ritorna `positions` invariato (nessun filtro)
+# se la cella non ha un FogOfWarRenderer valido — difensivo, non dovrebbe succedere in pratica per
+# una cella viva reale.
+func _filter_vegetation_positions_by_visibility(cell: LiveMacroCell, positions: Dictionary) -> Dictionary:
+	if cell.fog_of_war_renderer == null:
+		return positions
+	var visible := cell.fog_of_war_renderer.compute_visible_positions(game_data.get_absolute_day())
+	var filtered: Dictionary = {}
+	for object_type in positions:
+		var kept: Array = []
+		for entry in positions[object_type]:
+			if visible.has(Vector2i(entry.x, entry.y)):
+				kept.append(entry)
+		filtered[object_type] = kept
+	return filtered
 
 
 # DEBUG TEMPORANEO — vedi _debug_individual_counts_by_macro. GRASS escluso apposta (nessuna
@@ -1114,10 +1251,19 @@ func _refresh_resource_visuals(cell: LiveMacroCell) -> void:
 # per l'esperimento _activate_all_building_cells) è invece il numero da guardare per capire quante
 # macrocelle stanno pagando il costo pieno DI QUESTO momento, dato che con gli edifici sempre vivi
 # il numero non è più limitato a ≤2 (centro + un vicino) come prima.
-func _debug_print_individual_counts(cell: LiveMacroCell, vegetation_positions: Dictionary) -> void:
+func _debug_print_individual_counts(cell: LiveMacroCell, vegetation_positions: Dictionary, render_vegetation_positions: Dictionary) -> void:
 	var count: int = (
 		vegetation_positions.get(GameTypes.WorldObjectType.TREE, []).size()
 		+ vegetation_positions.get(GameTypes.WorldObjectType.SHRUB, []).size()
+	)
+	# "disegnati" (richiesta utente, 2026-08-30): conteggio SEPARATO su render_vegetation_positions
+	# (il sottoinsieme filtrato da _filter_vegetation_positions_by_visibility, quello che finisce
+	# davvero nel MultiMesh) — mai sommato in _debug_individual_counts_by_macro/"totale sessione",
+	# che restano legati a `count` (individui REALI, indipendenti dal FoW): due metriche diverse,
+	# una misura la simulazione, l'altra il costo di rendering di QUESTO refresh.
+	var drawn_count: int = (
+		render_vegetation_positions.get(GameTypes.WorldObjectType.TREE, []).size()
+		+ render_vegetation_positions.get(GameTypes.WorldObjectType.SHRUB, []).size()
 	)
 	_debug_individual_counts_by_macro[Vector2i(cell.macro_x, cell.macro_y)] = count
 
@@ -1131,8 +1277,8 @@ func _debug_print_individual_counts(cell: LiveMacroCell, vegetation_positions: D
 	var live_count: int = live_cells.size()
 	if not live_cells.has(Vector2i(cell.macro_x, cell.macro_y)):
 		live_count += 1
-	print("[DEBUG INDIVIDUI] macrocella (%d,%d): %d individui | celle vive ora: %d | macrocelle tracciate: %d | totale sessione: %d" % [
-		cell.macro_x, cell.macro_y, count, live_count, _debug_individual_counts_by_macro.size(), total
+	print("[DEBUG INDIVIDUI] macrocella (%d,%d): %d individui (disegnati: %d) | celle vive ora: %d | macrocelle tracciate: %d | totale sessione: %d" % [
+		cell.macro_x, cell.macro_y, count, drawn_count, live_count, _debug_individual_counts_by_macro.size(), total
 	])
 
 
@@ -1654,7 +1800,10 @@ func _place_building_at(world_position: Vector2) -> void:
 	# chiamata, il taglio/decremento appena applicato ai dati resterebbe corretto ma invisibile a
 	# schermo fino al prossimo trigger naturale — vedi _building_positions_for_cell, ora incluso
 	# nell'occupied/building_positions passati a VegetationPositionService, che blocca in modo
-	# permanente la rigenerazione su questa stessa microcella.
+	# permanente la rigenerazione su questa stessa microcella. dedicated_space[BUILDING] e i lotti
+	# liberati da BuildingSiteClearingService sono cambiati per QUESTA cella — invalida la cache
+	# posizioni (vedi LiveMacroCell.needs_full_vegetation_recompute).
+	target_cell.needs_full_vegetation_recompute = true
 	_refresh_resource_visuals(target_cell)
 
 	print("[BUILDING] %s #%d piazzata in (%d,%d) — totale edifici: %d" % [
@@ -1835,8 +1984,28 @@ func _on_day_advanced(checkpoint_ran: bool, animals_changed: bool) -> void:
 		return
 
 	if checkpoint_ran or flora_daily_updates_enabled:
+		if checkpoint_ran:
+			# Crescita/mortalità/encroachment (WorldTimeService) hanno appena potuto cambiare
+			# dedicated_space per QUALUNQUE macrocella del mondo, comprese le celle vive SOLO per
+			# via di un edificio lontano (mai realmente rinfrescate qui sotto, vedi _player_
+			# proximity_live_cells) — la loro cache posizioni va comunque invalidata ORA, anche se
+			# il ricalcolo vero verrà rimandato a quando il player ci arriverà davvero (trigger da
+			# movimento in _process, o riattivazione al cambio di centro). Senza questo, quelle
+			# celle mostrerebbero per sempre lo stato di dedicated_space del momento in cui sono
+			# diventate vive, anche dopo anni di crescita/mortalità mai riflessi.
+			for cell in live_cells.values():
+				cell.needs_full_vegetation_recompute = true
+
+		# Proposta "prossimità" (2026-08-30, idea utente): il ridisegno vero (posizioni+MultiMesh,
+		# costoso) si limita alle celle che il player sta EFFETTIVAMENTE esplorando — il centro più
+		# gli eventuali vicini attivi di prossimità (max ~4, vedi _active_neighbor_coords_set) — mai
+		# le celle vive SOLO per un edificio lontano: nessuno le sta guardando, quindi un ridisegno
+		# lì sarebbe invisibile e sprecato. I dati restano comunque corretti (vedi sopra): quando il
+		# player ci arriverà davvero, needs_full_vegetation_recompute è ancora true e quella cella
+		# verrà rinfrescata con lo stato vero e aggiornato, non quello del momento dell'attivazione.
+		var proximity_cells := _player_proximity_live_cells()
 		var vegetation_refresh_start_usec := Time.get_ticks_usec()
-		for cell in live_cells.values():
+		for cell in proximity_cells:
 			# PRIMA del rebuild: se ResourceMortalityService ha appena registrato una perdita
 			# aggregata quest'anno (last_mortality_loss, scritto solo al rollover d'anno — vedi
 			# WorldTimeService._run_seasonal_checkpoints), la traduce in marker "morto" specifici
@@ -1846,8 +2015,8 @@ func _on_day_advanced(checkpoint_ran: bool, animals_changed: bool) -> void:
 			_refresh_resource_visuals(cell)
 		if DebugLogging.SHOW_DAILY_TIMING_LOGS:
 			var vegetation_refresh_ms: float = (Time.get_ticks_usec() - vegetation_refresh_start_usec) / 1000.0
-			print("[GAMESCENE DAY] rebuild vegetazione (%d celle vive, checkpoint_ran=%s flora_daily_updates_enabled=%s) = %.1fms" % [
-				live_cells.size(), "si" if checkpoint_ran else "no", "si" if flora_daily_updates_enabled else "no", vegetation_refresh_ms
+			print("[GAMESCENE DAY] rebuild vegetazione (%d/%d celle vive rinfrescate — solo prossimità, checkpoint_ran=%s flora_daily_updates_enabled=%s) = %.1fms" % [
+				proximity_cells.size(), live_cells.size(), "si" if checkpoint_ran else "no", "si" if flora_daily_updates_enabled else "no", vegetation_refresh_ms
 			])
 	else:
 		_update_info_panel()

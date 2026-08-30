@@ -34,6 +34,20 @@ var fog_proxy_individual: Individual
 var river_positions: Array = []
 var river_exterior_occupied: Dictionary = {}
 
+# Cache del risultato di VegetationPositionService.generate_positions (diagnostica lentezza,
+# 2026-08-30) — quella chiamata è deterministica e COSTOSA (~90-190ms/cella): il suo output
+# cambia SOLO quando dedicated_space/anno/eccezioni taglio-morte/edifici cambiano DAVVERO, mai per
+# il solo spostamento del player. needs_full_vegetation_recompute parte true (forza il primo
+# calcolo vero) e viene rimesso a true SOLO da chi sa che uno di questi eventi è successo — vedi
+# GameScene._refresh_resource_visuals (consumatore + unico scrittore di cached_vegetation_
+# positions), GameScene._on_day_advanced (checkpoint stagionale: crescita/mortalità/encroachment
+# possono aver cambiato QUALUNQUE cella viva, anche quelle lontane mai rinfrescate per davvero —
+# vedi il flag "prossimità" lì), _on_cut_requested/_place_building_at (evento puntuale su QUESTA
+# cella). Un refresh da movimento (nessuno di questi eventi) trova il flag false e riusa
+# cached_vegetation_positions senza richiamare generate_positions.
+var needs_full_vegetation_recompute: bool = true
+var cached_vegetation_positions: Dictionary = {}
+
 
 func coords() -> Vector2i:
 	return Vector2i(macro_x, macro_y)

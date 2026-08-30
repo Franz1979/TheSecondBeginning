@@ -525,6 +525,11 @@ func _refresh_resource_visuals() -> void:
 	for pos in river_positions:
 		occupied[pos] = true
 
+	# begin_vegetation_batch()/end_vegetation_batch() (vedi MicroCellRenderer.gd e il commento
+	# gemello in GameScene._refresh_resource_visuals): senza batching i 6 setter chiamati qui sotto
+	# ricostruivano TREE/SHRUB/GRASS più volte ciascuno sugli stessi individui.
+	renderer.begin_vegetation_batch()
+
 	var vegetation_service := VegetationPositionService.new()
 	renderer.set_vegetation_positions(vegetation_service.generate_positions(macro_state, occupied, game_data.year, game_data.current_day))
 	# PRIMA di set_*_subtypes/set_*_age_params sotto — vedi commento gemello in
@@ -582,6 +587,8 @@ func _refresh_resource_visuals() -> void:
 	# Dopo le posizioni: set_season ricostruisce anche il buffer erba (colore dipende dalla
 	# stagione), così lo fa una volta sola con le posizioni già aggiornate invece di due volte.
 	renderer.set_season(SeasonCalculator.get_season_for_day(game_data.current_day))
+
+	renderer.end_vegetation_batch()
 
 	_update_info_panel()
 

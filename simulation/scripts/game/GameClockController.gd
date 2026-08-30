@@ -42,6 +42,22 @@ func _process(delta: float) -> void:
 		return
 	var seconds_per_day: float = SECONDS_PER_DAY_BY_SPEED[speed]
 	_day_progress += delta / seconds_per_day
+	# Anti-"spirale della morte" (bug reale trovato in sessione: il log avanzava ma lo schermo
+	# restava bloccato su un giorno vecchio) — `delta` è il tempo reale trascorso dall'ultimo
+	# frame. Se advance_day() sotto costa più del budget di un giorno (un checkpoint stagionale
+	# con più celle vive misurato fino a 13+ secondi, ben oltre l'1s di budget a 1x), QUESTA
+	# chiamata a _process non torna mai a Godot per presentare un frame — quindi il `delta` del
+	# PROSSIMO frame include anche quel tempo perso, spingendo _day_progress ancora più su e
+	# facendo elaborare ancora più giorni in un colpo solo, il cui tempo speso allunga ancora il
+	# prossimo delta: un ciclo che si autoalimenta e non si ferma mai da solo finché la
+	# simulazione non torna sotto al budget di un frame (mai, se un checkpoint stagionale costa
+	# sempre più di un secondo). Il tetto sotto impedisce l'accumulo: al massimo UN giorno viene
+	# elaborato per chiamata, qualunque sia il delta — il calendario resta onestamente "indietro"
+	# rispetto al tempo reale quando un giorno costa più del previsto (rallentamento visibile,
+	# recuperabile), invece di tentare di recuperare tutto in un colpo e restare bloccato
+	# indefinitamente. L'eventuale progresso in eccesso oltre un giorno viene scartato, non
+	# accumulato per il frame successivo.
+	_day_progress = min(_day_progress, 1.999)
 	while _day_progress >= 1.0:
 		_day_progress -= 1.0
 		# TEMPORANEO (diagnostica lentezza) — a differenza di [DAY TIMING] (WorldTimeService, misura

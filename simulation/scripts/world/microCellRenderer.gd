@@ -134,6 +134,66 @@ var stone_positions: Array = [] # Array[Vector2i]
 # passarli qui: questo renderer non conosce World, solo "dove disegnare".
 var building_positions: Array = [] # Array[Vector2i]
 var vegetation_positions: Dictionary = {} # WorldObjectType -> Array[Vector3i] per TREE/SHRUB (lotto x,y + indice individuo), Array[Vector2i] per GRASS (nessuna identità individuale)
+
+# Batching dei rebuild MultiMesh vegetazione (diagnostica 2026-08-30: GameScene._refresh_resource_
+# visuals chiama in sequenza set_vegetation_positions/set_shrub_subtypes/set_shrub_age_params/
+# set_tree_subtypes/set_tree_age_params/set_season — SEI setter che, senza batching, ricostruiscono
+# TREE fino a 4 volte, SHRUB fino a 3 volte, GRASS fino a 2 volte per un SOLO refresh, tutti sugli
+# stessi individui: lavoro ridondante misurato come il grosso del costo di un checkpoint stagionale
+# con più celle vive. Con begin_vegetation_batch()/end_vegetation_batch() i setter dentro la
+# finestra si limitano a segnare "sporco" (_vegetation_batch_dirty), il rebuild vero avviene UNA
+# SOLA volta per tipo dentro end_vegetation_batch(). Fuori da una finestra di batch (_vegetation_
+# batch_active=false, default) ogni setter si comporta ESATTAMENTE come prima — nessun cambiamento
+# per un eventuale futuro chiamante che invochi un setter da solo.
+var _vegetation_batch_active: bool = false
+var _vegetation_batch_dirty: Dictionary = {} # "tree"/"shrub"/"grass" -> true
+
+
+func begin_vegetation_batch() -> void:
+	_vegetation_batch_active = true
+	_vegetation_batch_dirty.clear()
+
+
+# Esegue UNA SOLA VOLTA per tipo ciascun rebuild segnato "sporco" durante la finestra di batch,
+# nell'ordine originale (tree/shrub/grass) — irrilevante ai fini del risultato (ogni rebuild legge
+# solo il proprio stato già aggiornato dai setter, mai lo stato di un altro tipo), tenuto solo per
+# leggibilità del log. Un solo queue_redraw() finale, non uno per setter.
+func end_vegetation_batch() -> void:
+	_vegetation_batch_active = false
+	if _vegetation_batch_dirty.get("tree", false):
+		_rebuild_tree_multimeshes()
+	if _vegetation_batch_dirty.get("shrub", false):
+		_rebuild_shrub_multimeshes()
+	if _vegetation_batch_dirty.get("grass", false):
+		_rebuild_grass_buffers()
+	_vegetation_batch_dirty.clear()
+	queue_redraw()
+
+
+# Usati dai setter sotto al posto della chiamata diretta a _rebuild_*_multimeshes/_rebuild_grass_
+# buffers: dentro una finestra di batch rimandano il rebuild vero a end_vegetation_batch(), fuori
+# (comportamento di sempre) rebuildano subito.
+func _defer_or_rebuild_tree() -> void:
+	if _vegetation_batch_active:
+		_vegetation_batch_dirty["tree"] = true
+	else:
+		_rebuild_tree_multimeshes()
+
+
+func _defer_or_rebuild_shrub() -> void:
+	if _vegetation_batch_active:
+		_vegetation_batch_dirty["shrub"] = true
+	else:
+		_rebuild_shrub_multimeshes()
+
+
+func _defer_or_rebuild_grass() -> void:
+	if _vegetation_batch_active:
+		_vegetation_batch_dirty["grass"] = true
+	else:
+		_rebuild_grass_buffers()
+
+
 var fish_positions: Array = [] # Array[Vector2i] — STEP 1: valorizzato solo per macrocelle SEA/LAKE
 # Posizioni (Vector3i, per TREE/SHRUB) con un blocco di taglio/morte attualmente attivo — vedi
 # IndividualVegetationService.get_cut_positions/get_dead_positions. Disegnate con un marker
@@ -234,9 +294,9 @@ func set_building_positions(positions: Array) -> void:
 
 func set_vegetation_positions(positions: Dictionary) -> void:
 	vegetation_positions = positions
-	_rebuild_tree_multimeshes()
-	_rebuild_shrub_multimeshes()
-	_rebuild_grass_buffers()
+	_defer_or_rebuild_tree()
+	_defer_or_rebuild_shrub()
+	_defer_or_rebuild_grass()
 	queue_redraw()
 
 
@@ -422,7 +482,7 @@ func set_fish_positions(positions: Array) -> void:
 
 func set_shrub_subtypes(subtype_store: Dictionary) -> void:
 	shrub_individual_subtype = subtype_store
-	_rebuild_shrub_multimeshes()
+	_defer_or_rebuild_shrub()
 	queue_redraw()
 
 
@@ -430,13 +490,13 @@ func set_shrub_age_params(current_year: int, age_params: Dictionary, birth_year_
 	shrub_current_year = current_year
 	shrub_age_params = age_params
 	shrub_birth_year_store = birth_year_store
-	_rebuild_shrub_multimeshes()
+	_defer_or_rebuild_shrub()
 	queue_redraw()
 
 
 func set_tree_subtypes(subtype_store: Dictionary) -> void:
 	tree_individual_subtype = subtype_store
-	_rebuild_tree_multimeshes()
+	_defer_or_rebuild_tree()
 	queue_redraw()
 
 
@@ -444,7 +504,7 @@ func set_tree_age_params(current_year: int, age_params: Dictionary, birth_year_s
 	tree_current_year = current_year
 	tree_age_params = age_params
 	tree_birth_year_store = birth_year_store
-	_rebuild_tree_multimeshes()
+	_defer_or_rebuild_tree()
 	queue_redraw()
 
 
@@ -469,8 +529,8 @@ func set_dead_positions(positions: Dictionary) -> void:
 # perché lo stesso _rebuild_tree_multimeshes ricostruisce entrambi i gruppi insieme.
 func set_season(season: GameTypes.Season) -> void:
 	current_season = season
-	_rebuild_grass_buffers()
-	_rebuild_tree_multimeshes()
+	_defer_or_rebuild_grass()
+	_defer_or_rebuild_tree()
 	queue_redraw()
 
 
