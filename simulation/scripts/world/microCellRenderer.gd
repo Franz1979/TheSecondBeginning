@@ -84,18 +84,38 @@ const BOUNDARY_DASH_COLOR := Color(0, 0, 0, 0.6)
 const BOUNDARY_DASH_WIDTH: float = 2.0
 const BOUNDARY_DASH_LENGTH: float = 6.0
 
-# Edifici piazzati (vedi World.buildings/GameScene._place_building_at) — stessa convenzione di
-# verticalità (pareti+tetto) già usata da BuildingGhost per l'anteprima, ma OPACA e senza la
-# variante rossa "non edificabile" (un edificio già piazzato è sempre valido). Pochi edifici per
-# macrocella attesi: disegnati immediate-mode come il fiume/i confini, nessun MultiMesh.
-const BUILDING_WALL_COLOR := Color(0.55, 0.42, 0.28, 1.0)
-const BUILDING_WALL_OUTLINE_COLOR := Color(0.3, 0.22, 0.12, 1.0)
-const BUILDING_ROOF_COLOR := Color(0.45, 0.28, 0.12, 1.0)
-const BUILDING_ROOF_OUTLINE_COLOR := Color(0.25, 0.15, 0.06, 1.0)
-const BUILDING_WALL_WIDTH: float = 6.0
-const BUILDING_WALL_HEIGHT: float = 4.0
-const BUILDING_ROOF_WIDTH: float = 8.0
-const BUILDING_ROOF_HEIGHT: float = 4.5
+# Edifici piazzati (vedi World.buildings/GameScene._place_building_at) — vista dall'ALTO (non più
+# pareti+tetto di profilo come il primo tentativo, vedi discussione con l'utente 2026-08-30: serve
+# a mostrare l'orientamento della porta, che di profilo non si potrebbe leggere), stessa
+# convenzione/costanti di BuildingGhost per l'anteprima, ma OPACA e senza la variante rossa "non
+# edificabile" (un edificio già piazzato è sempre valido). Pochi edifici per macrocella attesi:
+# disegnati immediate-mode come il fiume/i confini, nessun MultiMesh.
+#
+# Capanna TONDA dentro un recinto TONDO — "una o dentro una O" (richiesta utente, 2026-08-30,
+# coerente con la discussione precedente sulla capanna preistorica: un diametro di 10m/microcella
+# era spropositato) — due cerchi concentrici, il cerchio interno della capanna vera
+# (BUILDING_HUT_RADIUS) più piccolo del cerchio esterno del recinto (BUILDING_FENCE_RADIUS,
+# linea continua e più sottile del bordo della capanna, vedi _draw_building_fence sotto — non
+# tratteggiato, non un quadrato: entrambi tentativi precedenti scartati), con una vera apertura
+# sul recinto in corrispondenza della porta (stesso spicchio mancante della capanna) e una
+# lineetta verso l'esterno a simulare il cancello aperto sul cardine. Nessun cambiamento alla
+# logica di occupazione spazio/edificabilità, resta comunque tutta la microcella (vedi
+# discussione: la capanna occupa un intero "lotto", non solo la propria impronta). La porta è un
+# RITAGLIO a V nel cerchio, riempito col colore del bordo (non lasciato trasparente sul terreno
+# sotto, leggeva come una sagoma "stile Batman") — vedi _building_hut_polygon: il poligono della
+# capanna segue il cerchio tranne nel punto della porta, dove rientra fino all'apice invece di
+# seguire l'arco; il triangolo risultante viene poi riempito a parte col colore del bordo).
+const BUILDING_COLOR := Color(0.55, 0.42, 0.28, 1.0)
+const BUILDING_OUTLINE_COLOR := Color(0.3, 0.22, 0.12, 1.0)
+const BUILDING_OUTLINE_WIDTH: float = 0.6
+const BUILDING_FENCE_COLOR := Color(0.45, 0.35, 0.2, 0.9)
+const BUILDING_FENCE_WIDTH: float = 0.4
+const BUILDING_HUT_RADIUS: float = 2.5
+const BUILDING_FENCE_RADIUS: float = 4.0
+const BUILDING_GATE_LENGTH: float = 1.5
+const BUILDING_DOOR_NOTCH_HALF_WIDTH: float = 1.0
+const BUILDING_DOOR_NOTCH_DEPTH: float = 1.3
+const BUILDING_CIRCLE_SEGMENTS: int = 24
 
 const DIRECTIONS := [
 	Vector2i(0, -1), # nord
@@ -129,10 +149,11 @@ var river_shape: GameTypes.RiverShape = GameTypes.RiverShape.NONE
 var river_thickness_ratio: float = 0.0 # river_space / MacroCellState.TOTAL_SPACE
 
 var stone_positions: Array = [] # Array[Vector2i]
-# Posizioni microcella (Vector2i) degli edifici già piazzati in QUESTA macrocella — vedi
-# GameScene._refresh_building_visuals, che filtra World.buildings per macro_x/macro_y prima di
-# passarli qui: questo renderer non conosce World, solo "dove disegnare".
-var building_positions: Array = [] # Array[Vector2i]
+# Edifici già piazzati in QUESTA macrocella — Array[Dictionary], ciascuna {"position": Vector2i,
+# "rotation": GameTypes.Direction} — vedi GameScene._refresh_building_visuals, che filtra
+# World.buildings per macro_x/macro_y prima di passarli qui: questo renderer non conosce World,
+# solo "dove e come disegnare".
+var buildings: Array = []
 var vegetation_positions: Dictionary = {} # WorldObjectType -> Array[Vector3i] per TREE/SHRUB (lotto x,y + indice individuo), Array[Vector2i] per GRASS (nessuna identità individuale)
 
 # Batching dei rebuild MultiMesh vegetazione (diagnostica 2026-08-30: GameScene._refresh_resource_
@@ -287,8 +308,8 @@ func set_stone_positions(positions: Array) -> void:
 	queue_redraw()
 
 
-func set_building_positions(positions: Array) -> void:
-	building_positions = positions
+func set_buildings(buildings_data: Array) -> void:
+	buildings = buildings_data
 	queue_redraw()
 
 
@@ -566,31 +587,87 @@ func _draw() -> void:
 	#print("[DEBUG RENDER] primitive stone+grass+shrub+tree+bacche in questo _draw(): ", _debug_draw_primitive_count)
 
 
-# Stessa geometria di BuildingGhost._draw() (pareti+tetto, ancorati al "terreno" del centro
-# cella), ma opaca: un edificio piazzato non è più un'anteprima. Ancoraggio al centro della
-# microcella (base+half), nessun jitter/dispersione come per la vegetazione — un edificio occupa
-# una posizione precisa, non un lotto condiviso da più individui.
+# Stessa geometria di BuildingGhost._draw() (recinto a linea continua + capanna tonda con porta a V,
+# ancorati al centro della microcella), ma opaca: un edificio piazzato non è più un'anteprima.
+# Ancoraggio al centro della microcella (base+half), nessun jitter/dispersione come per la
+# vegetazione — un edificio occupa una posizione precisa, non un lotto condiviso da più individui.
 func _draw_buildings() -> void:
 	var half: float = CELL_SIZE / 2.0
-	for pos in building_positions:
+	for entry in buildings:
+		var pos: Vector2i = entry["position"]
+		var direction: GameTypes.Direction = entry["rotation"]
 		var ground := Vector2(pos.x * CELL_SIZE + half, pos.y * CELL_SIZE + half)
-		var wall_rect := Rect2(
-			ground.x - BUILDING_WALL_WIDTH / 2.0,
-			ground.y - BUILDING_WALL_HEIGHT,
-			BUILDING_WALL_WIDTH,
-			BUILDING_WALL_HEIGHT
+		_draw_building_fence(ground, direction)
+		var hut_points := _building_hut_polygon(ground, direction)
+		draw_colored_polygon(hut_points, BUILDING_COLOR)
+		# Riempie il ritaglio della porta col colore del bordo invece di lasciarlo trasparente
+		# (richiesta utente, 2026-08-30: aperto sul terreno sotto leggeva come una sagoma a V
+		# "stile Batman", non come una porta) — stessi tre punti già calcolati per hut_points:
+		# la spalla iniziale (indice 0), l'apice (ultimo punto) e la spalla finale (penultimo).
+		draw_colored_polygon(
+			PackedVector2Array([hut_points[0], hut_points[hut_points.size() - 1], hut_points[hut_points.size() - 2]]),
+			BUILDING_OUTLINE_COLOR
 		)
-		draw_rect(wall_rect, BUILDING_WALL_COLOR)
-		draw_rect(wall_rect, BUILDING_WALL_OUTLINE_COLOR, false, 1.0)
+		var outline_points := hut_points.duplicate()
+		outline_points.append(hut_points[0])
+		draw_polyline(outline_points, BUILDING_OUTLINE_COLOR, BUILDING_OUTLINE_WIDTH)
 
-		var roof_base_y: float = ground.y - BUILDING_WALL_HEIGHT
-		var roof_points := PackedVector2Array([
-			Vector2(ground.x - BUILDING_ROOF_WIDTH / 2.0, roof_base_y),
-			Vector2(ground.x + BUILDING_ROOF_WIDTH / 2.0, roof_base_y),
-			Vector2(ground.x, roof_base_y - BUILDING_ROOF_HEIGHT),
-		])
-		draw_colored_polygon(roof_points, BUILDING_ROOF_COLOR)
-		draw_polyline(PackedVector2Array([roof_points[0], roof_points[2], roof_points[1]]), BUILDING_ROOF_OUTLINE_COLOR, 1.2)
+
+# Recinto: linea circolare CONTINUA attorno alla capanna (BUILDING_FENCE_RADIUS, "O" attorno alla
+# "o" della capanna vera, più sottile del bordo della capanna — BUILDING_FENCE_WIDTH <
+# BUILDING_OUTLINE_WIDTH), interrotta SOLO in corrispondenza della porta — stesso spicchio
+# mancante (stesso angolo/stessa direction) di _building_hut_polygon, così l'apertura del recinto
+# è sempre allineata alla porta. All'imbocco dell'apertura, una linea corta verso l'esterno
+# (BUILDING_GATE_LENGTH) simula il cancello aperto sul cardine — niente tratteggio (richiesta
+# utente, 2026-08-30: leggeva come sfumature indistinte vicino alla capanna, non come un recinto).
+# Stessa funzione (duplicata apposta, vedi commento su _draw_buildings) in
+# BuildingGhost._draw_fence.
+func _draw_building_fence(ground: Vector2, direction: GameTypes.Direction) -> void:
+	var dir_vector := _direction_vector(direction)
+	var gate_center_angle: float = dir_vector.angle()
+	var gate_half_angle: float = BUILDING_DOOR_NOTCH_HALF_WIDTH / BUILDING_FENCE_RADIUS
+	var start_angle: float = gate_center_angle + gate_half_angle
+	var end_angle: float = gate_center_angle - gate_half_angle + TAU
+	draw_arc(ground, BUILDING_FENCE_RADIUS, start_angle, end_angle, BUILDING_CIRCLE_SEGMENTS, BUILDING_FENCE_COLOR, BUILDING_FENCE_WIDTH, true)
+
+	var hinge_dir := Vector2(cos(start_angle), sin(start_angle))
+	var hinge: Vector2 = ground + hinge_dir * BUILDING_FENCE_RADIUS
+	draw_line(hinge, hinge + hinge_dir * BUILDING_GATE_LENGTH, BUILDING_FENCE_COLOR, BUILDING_FENCE_WIDTH)
+
+
+# Poligono della capanna: segue il cerchio di raggio BUILDING_HUT_RADIUS per quasi tutto il giro,
+# tranne nello spicchio della porta (centrato sull'angolo di `direction`, ampiezza 2×half_angle),
+# dove al posto dell'arco rientra fino a un apice più vicino al centro (BUILDING_DOOR_NOTCH_DEPTH)
+# — lo spicchio mancante viene poi riempito a parte col colore del bordo (vedi _draw_buildings),
+# non lasciato trasparente. half_angle è un'approssimazione ad angolo piccolo (corda/raggio),
+# accettabile per una porta stretta rispetto al raggio della capanna. Stessa funzione (duplicata
+# apposta, vedi commento su _draw_buildings) in BuildingGhost._hut_polygon, così l'anteprima
+# durante il piazzamento e l'edificio finito mostrano la porta esattamente nello stesso punto.
+func _building_hut_polygon(ground: Vector2, direction: GameTypes.Direction) -> PackedVector2Array:
+	var dir_vector := _direction_vector(direction)
+	var door_center_angle: float = dir_vector.angle()
+	var half_angle: float = BUILDING_DOOR_NOTCH_HALF_WIDTH / BUILDING_HUT_RADIUS
+	var start_angle: float = door_center_angle + half_angle
+	var sweep: float = TAU - half_angle * 2.0
+	var points := PackedVector2Array()
+	for i in range(BUILDING_CIRCLE_SEGMENTS + 1):
+		var t: float = float(i) / float(BUILDING_CIRCLE_SEGMENTS)
+		var angle: float = start_angle + sweep * t
+		points.append(ground + Vector2(cos(angle), sin(angle)) * BUILDING_HUT_RADIUS)
+	points.append(ground + dir_vector * (BUILDING_HUT_RADIUS - BUILDING_DOOR_NOTCH_DEPTH))
+	return points
+
+
+func _direction_vector(direction: GameTypes.Direction) -> Vector2:
+	match direction:
+		GameTypes.Direction.NORTH:
+			return Vector2(0, -1)
+		GameTypes.Direction.EAST:
+			return Vector2(1, 0)
+		GameTypes.Direction.WEST:
+			return Vector2(-1, 0)
+		_: # SOUTH, anche default
+			return Vector2(0, 1)
 
 
 func _draw_stone_positions() -> void:

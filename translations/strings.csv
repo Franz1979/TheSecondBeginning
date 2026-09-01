@@ -1,0 +1,22 @@
+keys,it
+help_dialog_title,Aiuto
+close,Chiudi
+back,Indietro
+help_shortcuts_menu_link,Scorciatoie da tastiera
+help_shortcuts_title,Scorciatoie da tastiera
+help_arrow_keys,frecce
+help_pan_camera,sposta la visuale
+help_center_camera,centra la visuale sul player
+help_zoom_max,zoom massimo
+help_zoom_min,zoom minimo
+help_rotate_building,ruota la porta della capanna durante il piazzamento
+help_fog_of_war_menu_link,Nebbia di guerra
+help_fog_of_war_title,Nebbia di guerra
+help_fog_of_war_intro,"Le zone del mondo che non hai mai esplorato restano nascoste sulla mappa. Quando ti sposti ed esplori una macrocella, questa diventa visibile e ne impari il contenuto (terreno, risorse, chi ci si trova)."
+help_fog_of_war_memory_intro,"Se poi ti allontani e non ci torni per un po', il ricordo di quella zona non sparisce di colpo, ma sfuma gradualmente su tre livelli, ciascuno con la propria durata di memoria (più lunga per le cose che cambiano più lentamente):"
+help_fog_of_war_tier_detail,"Dettaglio (posizione esatta di animali e persone): il primo a svanire, perché è l'informazione più effimera."
+help_fog_of_war_tier_resources,"Risorse (piante, pietre, quantità disponibili): dura più a lungo del dettaglio."
+help_fog_of_war_tier_terrain,"Terreno (tipo di suolo, biomi, fiumi, montagne): il più lento a essere dimenticato, perché cambia raramente."
+help_fog_of_war_full_forget,"Se resti lontano abbastanza da superare anche l'ultima soglia, la cella torna completamente sconosciuta come se non l'avessi mai vista."
+help_fog_of_war_persistence,"Questo comportamento è persistente: viene salvato e ricaricato correttamente con le partite salvate, quindi il tuo ricordo del mondo non si azzera riaprendo il gioco."
+help_fog_of_war_per_macrocell,"È gestito per macrocella (non per singola microcella al suo interno): l'unità minima di quanto ricordi è sempre l'intera macrocella che hai visitato."

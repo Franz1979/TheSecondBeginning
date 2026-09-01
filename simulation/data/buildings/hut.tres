@@ -6,7 +6,8 @@
 script = ExtResource("1_hut")
 building_name = "building_hut"
 tech_level_required = 0
-construction_days = 5
+min_construction_days = 5
+required_labor = 500
 lifespan_years = -1
 storage_capacity = 20
 required_materials = {
@@ -15,6 +16,10 @@ required_materials = {
 }
 max_durability = 50
 required_space = 1
+buildable_on_water = false
+buildable_on_river = false
+buildable_on_stone = false
+has_door = true
 visibility_radius = 2
 political_radius = 0
 cultural_radius = 0

@@ -48,6 +48,12 @@ var built_year: int = -1
 # prelevare/depositare.
 var stored_resources: Dictionary = {}
 
+# Orientamento (dove guarda la porta) — scelto dal player durante il piazzamento (vedi
+# BuildingGhost.rotation/GameScene, tasto R per ruotare), fissato al momento del piazzamento
+# stesso (nessun modo per ruotare un edificio già costruito, per ora). Default SOUTH = porta
+# verso il basso/il player.
+var rotation: GameTypes.Direction = GameTypes.Direction.SOUTH
+
 
 func _init(_rules: BuildingRules = null, _macro_x: int = 0, _macro_y: int = 0, _building_type_name: String = "") -> void:
 	rules = _rules

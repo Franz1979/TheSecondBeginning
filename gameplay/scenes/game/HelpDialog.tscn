@@ -4,7 +4,7 @@
 
 [node name="HelpDialog" type="Window"]
 visible = false
-size = Vector2i(340, 240)
+size = Vector2i(420, 400)
 script = ExtResource("1_help")
 
 [node name="MarginContainer" type="MarginContainer" parent="."]
@@ -23,7 +23,11 @@ layout_mode = 2
 layout_mode = 2
 size_flags_vertical = 3
 bbcode_enabled = true
-fit_content = true
+scroll_active = true
+
+[node name="BackButton" type="Button" parent="MarginContainer/VBoxContainer"]
+visible = false
+layout_mode = 2
 
 [node name="HSeparator" type="HSeparator" parent="MarginContainer/VBoxContainer"]
 layout_mode = 2

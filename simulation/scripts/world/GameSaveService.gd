@@ -248,7 +248,8 @@ func save_game_to_json(
 			"is_complete": building.is_complete,
 			"current_durability": building.current_durability,
 			"built_year": building.built_year,
-			"stored_resources": building.stored_resources
+			"stored_resources": building.stored_resources,
+			"rotation": building.rotation
 		})
 
 	# Fog of war (vedi FogOfWarMemory.gd/GameScene.fog_of_war_memories) — una entry per macrocella

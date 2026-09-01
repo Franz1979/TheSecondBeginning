@@ -305,6 +305,7 @@ func load_game_from_json(file_path: String) -> LoadedGame:
 			building.current_durability = int(building_data.get("current_durability", 0))
 			building.built_year = int(building_data.get("built_year", -1))
 			building.stored_resources = building_data.get("stored_resources", {})
+			building.rotation = int(building_data.get("rotation", GameTypes.Direction.SOUTH))
 			world.buildings.append(building)
 
 	var max_loaded_building_id := 0

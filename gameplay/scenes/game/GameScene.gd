@@ -119,13 +119,15 @@ var vegetation_selector_controller := VegetationSelectorController.new()
 var selected_vegetation: Dictionary = {}
 var vegetation_info_panel: VegetationInfoPanel
 
+const MINIMAP_PANEL_SCENE := preload("res://gameplay/scenes/game/MiniMapPanel.tscn")
+var minimap_panel: MiniMapPanel
+
 # Anteprima "fantasma" della capanna (vedi BuildBar/BuildingGhost) — attivata dal tasto 🛖 nel
 # sottomenu costruzione, segue il mouse ogni frame finché attiva. Click sinistro piazza DAVVERO
-# una Building su macro_world.buildings (vedi _place_building_at) — istantanea e completa, nessuna
-# verifica di edificabilità (BuildingVerificationService resta dormiente, vedi discussione con
-# l'utente: mancano ancora materiali/tech/spazio libero/altri ostacoli, per ora serve solo poter
-# costruire per misurare l'effetto sul conteggio individui). Click destro esce dal modo
-# piazzamento (vedi _clear_building_ghost). null = nessuna anteprima attiva, creata/distrutta
+# una Building su macro_world.buildings (vedi _place_building_at) — istantanea e completa, ma
+# solo se BuildingVerificationService.is_position_buildable lo consente (ricollegato 2026-08-30,
+# criteri ricostruiti da zero passo per passo — mancano ancora materiali/tech/spazio libero).
+# Click destro esce dal modo piazzamento (vedi _clear_building_ghost). null = nessuna anteprima attiva, creata/distrutta
 # on/off dal toggle invece di restare sempre presente e solo nascosta — un solo Node2D usa e
 # getta, costo trascurabile ricrearlo alla prossima attivazione. Il fantasma resta attivo DOPO un
 # piazzamento riuscito, apposta: permette di piazzarne molte in fila senza riaprire il sottomenu
@@ -194,6 +196,15 @@ func _ready() -> void:
 	vegetation_info_panel = VEGETATION_INFO_PANEL_SCENE.instantiate()
 	game_info_panel.body_container.add_child(vegetation_info_panel)
 	vegetation_info_panel.cut_requested.connect(_on_cut_requested)
+	# Spacer elastico: spinge la minimappa in fondo a body_container (che si espande a riempire
+	# lo spazio tra le due HSeparator di GameInfoPanel) invece di lasciarla subito sotto
+	# vegetation_info_panel con vuoto residuo sotto — richiesta utente, 2026-08-30.
+	var minimap_spacer := Control.new()
+	minimap_spacer.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	game_info_panel.body_container.add_child(minimap_spacer)
+	minimap_panel = MINIMAP_PANEL_SCENE.instantiate()
+	game_info_panel.body_container.add_child(minimap_panel)
+	minimap_panel.cell_clicked.connect(_on_minimap_cell_clicked)
 	system_menu_dialog.add_action(tr("save_game"), &"save")
 	system_menu_dialog.add_action(tr("back_to_menu"), &"back_to_main_menu")
 	system_menu_dialog.add_action(tr("exit"), &"exit_game")
@@ -234,6 +245,9 @@ func _ready() -> void:
 	if game_data == null:
 		push_warning("Nessun game_data condiviso: creo un anno locale di riserva.")
 		game_data = GameData.new()
+
+	if macro_world != null:
+		minimap_panel.setup(macro_world)
 
 	# BUGFIX (trovato in sessione reale): i due bottoni debug "🧍" impostano SEMPRE
 	# returning_to_player_view=true, anche al primissimo click in assoluto su una partita appena
@@ -366,24 +380,40 @@ func _process(delta: float) -> void:
 
 	if _building_ghost != null:
 		_building_ghost.global_position = _building_ghost.get_global_mouse_position()
-		# Verifica edificabilità DISATTIVATA di proposito per ora (vedi BuildingVerificationService
-		# per il perché e dove riattivarla quando servirà un controllo più accurato — edifici già
-		# esistenti, altri ostacoli): il fantasma resta sempre nel suo aspetto "edificabile" di
-		# default finché _building_ghost.is_buildable non viene più impostato da nessuno.
+		# Ricollegato (2026-08-30, vedi BuildingVerificationService per la cronologia): aggiorna
+		# l'aspetto del fantasma ogni frame in base ai criteri di edificabilità via
+		# set_buildable_appearance (verde/rosso, invariato) — ricostruiti da zero passo per passo,
+		# vedi il service per lo stato attuale dei criteri. `rules` risolte qui (non passate da
+		# _on_build_submenu_action_pressed) perché il tipo selezionato non cambia mai mentre il
+		# fantasma è attivo — coerente con come _place_building_at le risolve al momento del click.
+		var ghost_rules := BuildingCalculator.get_building_rules(_selected_building_type_name)
+		BuildingVerificationService.set_buildable_appearance(
+			_building_ghost,
+			ghost_rules != null and BuildingVerificationService.is_position_buildable(
+				live_cells, MACRO_CELL_PIXELS, MicroCellRenderer.CELL_SIZE, _building_ghost.global_position,
+				game_data.get_absolute_day(), macro_world, _building_ghost.rotation_dir, ghost_rules
+			)
+		)
 
 
 func _unhandled_input(event: InputEvent) -> void:
-	# Mentre l'anteprima capanna è attiva, il click prende priorità assoluta su tutto il resto
-	# (vegetazione/player) — altrimenti click sinistro finirebbe per selezionare/deselezionare
-	# vegetazione invece di piazzare, e l'unico modo per uscire dal "modo piazzamento" sarebbe
-	# ricliccare esattamente 🛖. Destro = annulla, sinistro = piazza (il fantasma RESTA attivo dopo,
-	# vedi _building_ghost/_place_building_at, per piazzarne molte in fila).
-	if _building_ghost != null and event is InputEventMouseButton and event.pressed:
-		if event.button_index == MOUSE_BUTTON_RIGHT:
-			_clear_building_ghost()
-			return
-		if event.button_index == MOUSE_BUTTON_LEFT:
-			_place_building_at(_building_ghost.global_position)
+	# Mentre l'anteprima capanna è attiva, il click e il tasto R prendono priorità assoluta su
+	# tutto il resto (vegetazione/player) — altrimenti click sinistro finirebbe per selezionare/
+	# deselezionare vegetazione invece di piazzare, e l'unico modo per uscire dal "modo
+	# piazzamento" sarebbe ricliccare esattamente 🛖. Destro = annulla, sinistro = piazza (il
+	# fantasma RESTA attivo dopo, vedi _building_ghost/_place_building_at, per piazzarne molte in
+	# fila), R = ruota la porta di 90° (BuildingGhost.rotate_clockwise) senza uscire dal modo
+	# piazzamento.
+	if _building_ghost != null:
+		if event is InputEventMouseButton and event.pressed:
+			if event.button_index == MOUSE_BUTTON_RIGHT:
+				_clear_building_ghost()
+				return
+			if event.button_index == MOUSE_BUTTON_LEFT:
+				_place_building_at(_building_ghost.global_position)
+				return
+		if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_R:
+			_building_ghost.rotate_clockwise()
 			return
 
 	# Priorità concordata con l'utente: la vegetazione vince entro il proprio raggio di hit-test
@@ -434,6 +464,19 @@ func _center_camera_on_individual() -> void:
 	if individual == null:
 		return
 	camera.position = individual.position * MicroCellRenderer.CELL_SIZE
+
+
+# Click sulla minimappa (MiniMapPanel.cell_clicked) — sposta SOLO la camera, mai il player né
+# attiva la cella cliccata (scelta esplicita confermata con l'utente, 2026-08-30): se la
+# macrocella non è tra le live_cells non c'è alcun container lì, quindi la vista mostra il vuoto
+# del canvas, non un errore. Stessa formula di _reposition_live_cells (posizione del container di
+# una cella viva rispetto al centro), più mezzo MACRO_CELL_PIXELS per puntare al CENTRO della
+# macrocella invece che al suo angolo in alto a sinistra.
+func _on_minimap_cell_clicked(macro_coords: Vector2i) -> void:
+	camera.position = (
+		Vector2(macro_coords.x - center_macro_coords.x, macro_coords.y - center_macro_coords.y) * MACRO_CELL_PIXELS
+		+ Vector2(MACRO_CELL_PIXELS, MACRO_CELL_PIXELS) / 2.0
+	)
 
 
 # ============================================================================================
@@ -788,6 +831,7 @@ func _refresh_lod_focus_region() -> void:
 	LODOrchestrator.print_classification_log(lod_result)
 	macro_world.lod_focus_live_cells = focus_live_cells
 	macro_world.lod_focus_state = lod_result
+	minimap_panel.update_visibility(focus_live_cells, center_macro_coords)
 
 
 func _update_center_info_panel() -> void:
@@ -1755,11 +1799,13 @@ func _clear_building_ghost() -> void:
 	_selected_building_type_name = ""
 
 
-# Piazzamento REALE (debug, vedi discussione con l'utente sul perché è così semplice): nessuna
-# verifica di edificabilità (BuildingVerificationService resta dormiente), completo
+# Piazzamento REALE (debug, vedi discussione con l'utente sul perché è così semplice): completo
 # immediatamente — is_complete=true da subito, current_durability già a rules.max_durability,
-# niente construction_days/materiali/tech (quei sistemi non esistono ancora — in futuro il taglio
-# e la costruzione diventeranno processi distribuiti su più giorni, non più istantanei come oggi).
+# niente min_construction_days/required_labor/materiali/tech (quei sistemi non esistono ancora —
+# in futuro il taglio e la costruzione diventeranno processi distribuiti su più giorni, non più
+# istantanei come oggi). Verifica di edificabilità (BuildingVerificationService) ricollegata
+# 2026-08-30, ricostruita da zero passo per passo — vedi il service per lo stato attuale dei
+# criteri.
 # Il fantasma NON viene rimosso da qui: resta al chiamante (_unhandled_input) l'aver deciso di
 # continuare il modo piazzamento dopo un piazzamento riuscito.
 #
@@ -1773,14 +1819,19 @@ func _clear_building_ghost() -> void:
 func _place_building_at(world_position: Vector2) -> void:
 	if macro_world == null:
 		return
+	var rules := BuildingCalculator.get_building_rules(_selected_building_type_name)
+	if rules == null:
+		return
+	if not BuildingVerificationService.is_position_buildable(
+		live_cells, MACRO_CELL_PIXELS, MicroCellRenderer.CELL_SIZE, world_position,
+		game_data.get_absolute_day(), macro_world, _building_ghost.rotation_dir, rules
+	):
+		return
 	var placement := _live_cell_and_micro_position_at(world_position)
 	if placement.is_empty():
 		return
 	var target_cell: LiveMacroCell = placement["cell"]
 	var micro_pos: Vector2i = placement["micro_pos"]
-	var rules := BuildingCalculator.get_building_rules(_selected_building_type_name)
-	if rules == null:
-		return
 	var state := macro_world.get_cell_state_at(target_cell.macro_x, target_cell.macro_y)
 	if state == null:
 		return
@@ -1795,6 +1846,7 @@ func _place_building_at(world_position: Vector2) -> void:
 	building.is_complete = true
 	building.current_durability = rules.max_durability
 	building.built_year = game_data.year
+	building.rotation = _building_ghost.rotation_dir
 	macro_world.buildings.append(building)
 
 	# Sottrae lo spazio dell'edificio dal budget vegetazione della macrocella — stesso meccanismo
@@ -1851,6 +1903,23 @@ func _building_positions_for_cell(cell: LiveMacroCell) -> Array:
 	return positions
 
 
+# Stessa fonte/filtro di _building_positions_for_cell sopra, ma con l'orientamento incluso — vedi
+# MicroCellRenderer.set_buildings/buildings (Array[Dictionary], {"position","rotation"}), l'unico
+# consumatore. Funzione separata invece di arricchire quella sopra: _building_positions_for_cell
+# resta usata anche per l'esclusione vegetazione, dove la rotazione non serve a nessuno.
+func _buildings_for_cell(cell: LiveMacroCell) -> Array:
+	var result: Array = []
+	if macro_world == null:
+		return result
+	for building in macro_world.buildings:
+		if building.macro_x == cell.macro_x and building.macro_y == cell.macro_y:
+			result.append({
+				"position": Vector2i(building.micro_x, building.micro_y),
+				"rotation": building.rotation,
+			})
+	return result
+
+
 # Microcelle entro rules.visibility_radius di ciascun edificio di QUESTA macrocella (distanza di
 # Chebyshev/quadrata, coerente col design originale "0 = solo la propria, 1 = le 8 intorno, 2 =
 # un altro anello") — passate a FogOfWarRenderer, che le tratta come il raggio del player
@@ -1881,7 +1950,7 @@ func _building_visible_positions_for_cell(cell: LiveMacroCell) -> Dictionary:
 func _refresh_building_visuals(cell: LiveMacroCell) -> void:
 	if macro_world == null:
 		return
-	cell.renderer.set_building_positions(_building_positions_for_cell(cell))
+	cell.renderer.set_buildings(_buildings_for_cell(cell))
 	if cell.fog_of_war_renderer != null:
 		cell.fog_of_war_renderer.set_building_visible_positions(_building_visible_positions_for_cell(cell))
 

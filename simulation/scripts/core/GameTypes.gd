@@ -124,3 +124,13 @@ enum PopulationSize {
 	NORMAL,
 	DENSE
 }
+
+# Orientamento di un edificio piazzato (oggi solo la porta della capanna, vedi Building.rotation) —
+# ciclabile dal player durante il piazzamento (vedi BuildingGhost/GameScene, tasto R). Ordine
+# orario a partire da NORTH, così la prossima rotazione è sempre (rotation + 1) % 4.
+enum Direction {
+	NORTH,
+	EAST,
+	SOUTH,
+	WEST,
+}
