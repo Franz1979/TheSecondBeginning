@@ -1,0 +1,7 @@
+[gd_resource type="Resource" script_class="EraRules" format=3]
+
+[ext_resource type="Script" path="res://human/scripts/core/EraRules.gd" id="1_paleolithic"]
+
+[resource]
+script = ExtResource("1_paleolithic")
+longevity_multiplier = 0.6

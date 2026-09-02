@@ -13,13 +13,6 @@ layout_mode = 2
 layout_mode = 2
 size_flags_vertical = 3
 
-[node name="TitleLabel" type="Label" parent="MarginContainer/VBoxContainer"]
-layout_mode = 2
-theme_override_font_sizes/font_size = 14
-
-[node name="CoordsLabel" type="Label" parent="MarginContainer/VBoxContainer"]
-layout_mode = 2
-
 [node name="PrimaryActionsBar" parent="MarginContainer/VBoxContainer" instance=ExtResource("2_iconrow")]
 layout_mode = 2
 slot_count = 5
@@ -27,9 +20,18 @@ slot_count = 5
 [node name="HSeparator" type="HSeparator" parent="MarginContainer/VBoxContainer"]
 layout_mode = 2
 
-[node name="BodyContainer" type="VBoxContainer" parent="MarginContainer/VBoxContainer"]
+[node name="BodyScrollContainer" type="ScrollContainer" parent="MarginContainer/VBoxContainer"]
 layout_mode = 2
 size_flags_vertical = 3
+horizontal_scroll_mode = 0
+
+[node name="BodyContainer" type="VBoxContainer" parent="MarginContainer/VBoxContainer/BodyScrollContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="MinimapSlot" type="MarginContainer" parent="MarginContainer/VBoxContainer"]
+layout_mode = 2
+theme_override_constants/margin_top = 4
 
 [node name="HSeparator2" type="HSeparator" parent="MarginContainer/VBoxContainer"]
 layout_mode = 2

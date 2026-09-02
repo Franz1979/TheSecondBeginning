@@ -25,7 +25,7 @@ extends Resource
 # "daily" che verrà aggiunto alla futura classe Uomo (es. capanna=500, un uomo con daily=50 ci
 # mette 10 giorni da solo, dieci uomini un giorno solo — ma vedi min_construction_days sopra per
 # il floor che comunque si applica). Presuppone una popolazione di lavoratori assegnabile che oggi
-# non esiste ancora (solo l'Individual del player, nessuna popolazione NPC umana) — per ora è solo
+# non esiste ancora (solo l'HumanIndividual del player, nessuna popolazione NPC umana) — per ora è solo
 # il dato, non consultato da nessuna logica, stesso principio degli altri campi "futuri" qui sotto.
 @export var required_labor: int = 0
 

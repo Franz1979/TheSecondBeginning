@@ -9,7 +9,17 @@ func save_game_to_json(
 	# MacroCellScene) che non tengono mai fog viva propria, solo la propagano se l'hanno ricevuta
 	# da un caricamento precedente (vedi WorldScene.fog_of_war_memories). GameScene è l'unico
 	# chiamante che ne ha sempre una reale da passare.
-	fog_of_war_memories: Dictionary = {}
+	fog_of_war_memories: Dictionary = {},
+	# Folk/HumanPopulationGroup/HumanIndividual (richiesta utente, 2026-09-02 — persistenza umana)
+	# — default null/[] per lo stesso motivo di fog_of_war_memories sopra: WorldScene/MacroCellScene
+	# non generano mai popolazione umana propria, solo la propagano se ricevuta da GameScene tramite
+	# GameSettings.active_human_* (vedi WorldScene.human_folk/human_population_group/
+	# human_individuals). human_folk/human_population_group possono restare null (nessuna sezione
+	# "human" scritta in quel caso, vedi sotto) se il salvataggio avviene prima che una partita
+	# abbia mai seminato un popolo — non dovrebbe succedere in pratica ma resta difensivo.
+	human_folk: Folk = null,
+	human_population_group: HumanPopulationGroup = null,
+	human_individuals: Array[HumanIndividual] = []
 ) -> void:
 	var data := {
 		"file_type": "game_save",
@@ -26,17 +36,21 @@ func save_game_to_json(
 			"starting_group_size_preference": game_data.starting_group_size_preference,
 			"starting_guarantee_animal_presence": game_data.starting_guarantee_animal_presence,
 			"starting_difficulty_ratio": game_data.starting_difficulty_ratio,
-			# Sede macrocella del player per la futura GameScene (vedi GameData) — deve
-			# sopravvivere a save/load, a differenza dei campi analoghi di GameSettings.
+			# Sede macrocella del player per GameScene (vedi GameData) — deve sopravvivere a
+			# save/load, a differenza dei campi analoghi di GameSettings.
 			"player_macro_cell_x": game_data.player_macro_cell_x,
 			"player_macro_cell_y": game_data.player_macro_cell_y,
-			# Posizione dell'individuo controllabile dentro quella macrocella (vedi GameData) —
-			# deve sopravvivere a save/load esattamente come la macrocella stessa.
-			"player_micro_x": game_data.player_micro_x,
-			"player_micro_y": game_data.player_micro_y,
+			# Id dell'HumanIndividual bersaglio corrente (vedi GameData — sostituisce player_micro_x/y,
+			# rimossi: la posizione viaggia ora dentro human.individuals sotto, per ogni individuo).
+			"player_individual_id": game_data.player_individual_id,
 			# Zoom camera GameScene (vedi GameData) — deve sopravvivere a save/load come la
 			# posizione del player, ma è un solo float (zoom.x == zoom.y sempre).
 			"camera_zoom": game_data.camera_zoom,
+			# Posizione camera GameScene (vedi GameData — Step 3, 2026-09-02: la camera non segue
+			# più nessun individuo, la sua posizione va salvata per conto proprio).
+			"camera_x": game_data.camera_x,
+			"camera_y": game_data.camera_y,
+			"camera_position_saved": game_data.camera_position_saved,
 			# Ultimo giorno di pulizia periodica del fog of war (vedi GameData) — deve
 			# sopravvivere a save/load per non sfasare la cadenza reale.
 			"fog_of_war_last_prune_absolute_day": game_data.fog_of_war_last_prune_absolute_day
@@ -277,6 +291,45 @@ func save_game_to_json(
 			"macro_y": coords.y,
 			"last_seen": last_seen_data
 		})
+
+	# Popolo umano del player (Folk/HumanPopulationGroup/HumanIndividual, richiesta utente,
+	# 2026-09-02) — sezione assente (nessuna chiave "human") se human_folk è null, stesso principio
+	# "non appesantire/non scrivere dati inesistenti" già usato altrove in questo file. human_rules_ref
+	# (Folk)/folk_ref (HumanPopulationGroup)/source_group_ref (HumanIndividual) non sono mai
+	# serializzati: sono ricollegati da GameLoadService dopo la ricostruzione (un solo Folk/gruppo
+	# esiste oggi, human_rules_ref si ricarica dal path fisso come fa già GameScene al seeding).
+	# is_moving/target_position/path di ogni individuo NON sono persistiti (richiesta utente,
+	# confermato 2026-09-02): un movimento in corso al salvataggio viene scartato, l'individuo
+	# riparte fermo al caricamento — stesso principio per is_selected (mai scritto qui, derivato al
+	# caricamento da game_data.player_individual_id, non serve un campo ridondante per individuo).
+	if human_folk != null:
+		data["human"] = {
+			"folk": {
+				"id": human_folk.id,
+				"name": human_folk.name
+			},
+			"group": {
+				"id": human_population_group.id,
+				"home_macro_x": human_population_group.home_macro_coords.x,
+				"home_macro_y": human_population_group.home_macro_coords.y,
+				"total_count": human_population_group.total_count
+			},
+			"individuals": []
+		}
+		for individual in human_individuals:
+			data["human"]["individuals"].append({
+				"id": individual.id,
+				"sex": individual.sex,
+				"birth_year_virtual": individual.birth_year_virtual,
+				"mother_id": individual.mother_id,
+				"father_id": individual.father_id,
+				"partner_id": individual.partner_id,
+				"name": individual.name,
+				"position_x": individual.position.x,
+				"position_y": individual.position.y,
+				"home_macro_x": individual.home_macro_coords.x,
+				"home_macro_y": individual.home_macro_coords.y
+			})
 
 	var json_text := JSON.stringify(data, "\t")
 	var file := FileAccess.open(file_path, FileAccess.WRITE)

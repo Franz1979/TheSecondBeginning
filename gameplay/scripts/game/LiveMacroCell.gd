@@ -21,16 +21,6 @@ var renderer: MicroCellRenderer
 var animal_renderers: Dictionary = {} # species_name (String) -> AnimalGroupRenderer
 var fog_of_war_renderer: FogOfWarRenderer
 var fog_of_war_memory: FogOfWarMemory
-# FogOfWarRenderer legge SEMPRE individual.position direttamente (setup() ne tiene un riferimento,
-# mai una posizione passata a parte) — corretto per la cella CENTRALE, dove quello spazio locale
-# è esattamente lo spazio di individual.position per definizione. Per una cella vicina viva, quella
-# stessa posizione andrebbe tradotta nel suo spazio locale (sottraendo l'offset macro) — dato che
-# FogOfWarRenderer/Individual non vanno toccati, questo "individuo ombra" (solo `.position`
-# aggiornato ogni frame da GameScene, mai selezionato/mosso/letto da nessun altro) è il modo per
-# darglielo senza cambiare la classe. Creato per OGNI cella (anche il centro, dove resta
-# inutilizzato) per semplicità — vedi GameScene._rebind_fog_bindings per quale individuo (vero o
-# ombra) viene davvero legato a fog_of_war_renderer, e GameScene._process per l'aggiornamento.
-var fog_proxy_individual: Individual
 var river_positions: Array = []
 var river_exterior_occupied: Dictionary = {}
 

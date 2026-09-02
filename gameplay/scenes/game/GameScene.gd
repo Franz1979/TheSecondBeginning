@@ -29,7 +29,7 @@ extends Node2D
 const BORDER_CLAMP_EPSILON: float = 0.01
 
 # Pixel per macrocella nello spazio condiviso di GameScene (stesso CELL_SIZE=10 di
-# MicroCellRenderer/IndividualView, World.WIDTH=100 microcelle per lato) — usato per posizionare
+# MicroCellRenderer/HumanIndividualView, World.WIDTH=100 microcelle per lato) — usato per posizionare
 # il container di ogni cella viva rispetto al centro (vedi _reposition_live_cells).
 const MACRO_CELL_PIXELS: int = World.WIDTH * MicroCellRenderer.CELL_SIZE
 
@@ -56,7 +56,7 @@ var game_data: GameData
 # in questo step: center_macro_coords sempre presente, più al più un vicino cardinale vivo.
 var live_cells: Dictionary = {}
 # Coordinate macro della cella "centro" — quella in cui si trova fisicamente l'individuo
-# (Individual.position è sempre relativo a QUESTA cella). Aggiornata solo da un vero
+# (HumanIndividual.position è sempre relativo a QUESTA cella). Aggiornata solo da un vero
 # attraversamento bordo (_attempt_macro_cell_transition), mai dall'attivazione/disattivazione
 # del vicino (quella non cambia mai il centro, solo cosa altro è vivo intorno).
 var center_macro_coords: Vector2i = Vector2i(-1, -1)
@@ -100,17 +100,47 @@ var _last_vegetation_refresh_position: Vector2 = Vector2(INF, INF)
 var animals_visible: bool = true
 var flora_daily_updates_enabled: bool = false
 var clock: GameClockController
-# Individuo controllabile — vedi Individual.gd/IndividualView.gd/IndividualController.gd
-# (gameplay/scripts/entities/) e IndividualMovementService.gd (gameplay/services/). Il
+# "individual" è ora il BERSAGLIO CORRENTE di movimento/streaming (Step 2 del piano movimento
+# indipendente, 2026-09-02 — non più un "leader" fisso: coincide con human_individuals[0] solo come
+# valore INIZIALE assegnato in _ready(), vedi lì). Cambia ogni volta che la selezione cambia su un
+# individuo diverso (vedi _set_movement_target, richiamato da _unhandled_input dopo un hit di
+# human_individual_selector_controller) — mai su una deselezione (click a vuoto): senza un bersaglio
+# nuovo esplicito, movimento/streaming restano ancorati all'ultimo individuo che li deteneva
+# (richiesta utente, 2026-09-02, punto 3). individual_controller/individual_movement_service sotto
+# sono entrambi stateless rispetto all'identità (vedi HumanIndividualController/
+# HumanIndividualMovementService) — un solo controller/service condiviso, ri-agganciato via
+# individual_controller.setup() ad ogni cambio di bersaglio, mai un'istanza per individuo. Il
 # movimento gira ogni frame in _process qui sotto, indipendentemente dal clock giorno/anno
-# (confermato con l'utente).
-var individual: Individual
-var individual_view: IndividualView
-var individual_controller: IndividualController
-var individual_movement_service := IndividualMovementService.new()
+# (confermato con l'utente). Nessun supporto a movimento simultaneo multiplo in questo step: un solo
+# bersaglio alla volta, mai più di un individuo in movimento nello stesso momento.
+var individual: HumanIndividual
+var individual_controller: HumanIndividualController
+var individual_movement_service := HumanIndividualMovementService.new()
+# Hit-test di selezione per QUALSIASI individuo umano visibile — vedi HumanIndividualSelectorController.gd.
+# Sostituisce, per il click sinistro, quello che prima faceva HumanIndividualController._try_select
+# (ora rimossa da lì, richiesta utente 2026-09-02: "click su un individuo qualsiasi tra quelli
+# visibili", non solo human_individuals[0]). individual_controller sopra resta per il SOLO movimento
+# (click destro) — ma non più fisso su un singolo individuo, vedi _set_movement_target.
+var human_individual_selector_controller := HumanIndividualSelectorController.new()
+# Popolo/insediamento/gruppo del player, seminati da HumanSeedingService in _ready() (vedi li').
+# human_individuals contiene TUTTI gli individui generati (coppie fondatrici + figli), tutti
+# ugualmente selezionabili/muovibili: nessuno ha più uno status speciale (Step 2, 2026-09-02 —
+# completa lo smontaggio del concetto di "leader" iniziato allo Step 1 rimuovendo la formazione
+# rigida). "individual" sopra è solo il bersaglio CORRENTE, non un ruolo fisso su un membro
+# specifico — vedi il commento su quel campo. human_individual_views è parallelo per indice a
+# human_individuals (UNA sola collezione, non più individual_view+extra_individual_views separati
+# — unificati nel bugfix del 2026-09-02, vedi Bug 2: la riparentazione sotto il container giusto,
+# vedi sotto, richiede di trovare la view di UN individuo qualsiasi per indice, la vecchia
+# distinzione "indice 0 a parte" era solo un residuo del vecchio concetto di leader e rendeva quel
+# lookup inutilmente speciale).
+const PLAYER_HUMAN_RULES_PATH := "res://human/data/human_rules/player_human_rules.tres"
+var human_folk: Folk
+var human_population_group: HumanPopulationGroup
+var human_individuals: Array[HumanIndividual] = []
+var human_individual_views: Array[HumanIndividualView] = []
 # Click-detection su un singolo individuo di vegetazione (TREE/SHRUB) — vedi
 # VegetationSelectorController. selected_vegetation vive qui (non su un oggetto persistente come
-# Individual.is_selected per il player: un individuo vegetale non ha una Resource propria, solo
+# HumanIndividual.is_selected per il player: un individuo vegetale non ha una Resource propria, solo
 # l'identità posizionale Vector3i) — {} = nessuna selezione, altrimenti {"macro_coords": Vector2i,
 # "object_type": GameTypes.WorldObjectType, "individual_key": Vector3i}. Vedi
 # _select_vegetation/_clear_vegetation_selection/_invalidate_selected_vegetation_if_missing.
@@ -121,6 +151,26 @@ var vegetation_info_panel: VegetationInfoPanel
 
 const MINIMAP_PANEL_SCENE := preload("res://gameplay/scenes/game/MiniMapPanel.tscn")
 var minimap_panel: MiniMapPanel
+# Controllo a schede dentro body_container (richiesta utente, 2026-09-01) — vedi GameInfoTabs.gd
+# per il perché sostituisce lo spacer elastico + minimap_panel diretto di prima. Campo vero (non
+# solo locale a _ready()): _select_vegetation/_clear_vegetation_selection lo richiamano per
+# mostrare/nascondere la scheda "selezione corrente" (vedi lì).
+const GAME_INFO_TABS_SCENE := preload("res://gameplay/scenes/game/GameInfoTabs.tscn")
+var game_info_tabs: GameInfoTabs
+# Dettaglio dell'individuo umano selezionato nella scheda selezione (richiesta utente,
+# 2026-09-01, Passo 1 — esteso 2026-09-02 a un individuo QUALSIASI del gruppo, non più solo
+# human_individuals[0], via HumanIndividualSelectorController). Stesso principio di
+# vegetation_info_panel: componente proprio, GameScene decide quando mostrarlo/nasconderlo (vedi
+# _select_individual/_clear_individual_selection), mai l'individuo stesso o un controller.
+const HUMAN_INDIVIDUAL_INFO_PANEL_SCENE := preload("res://gameplay/scenes/game/HumanIndividualInfoPanel.tscn")
+var human_individual_info_panel: HumanIndividualInfoPanel
+# Riepilogo + elenco del gruppo umano nella scheda 🧍 (richiesta utente, 2026-09-01) — popolato
+# UNA VOLTA in _ready() subito dopo il seeding (vedi HumanPopulationInfoPanel.show_population),
+# nessun refresh dinamico ancora: nessuna simulazione umana cambia population/individui nel tempo
+# oggi. Elemento UI distinto da human_individual_info_panel/SelectionTab — nessuna sovrapposizione,
+# vive nella propria tab (PopulationTab) sempre visibile, non legata a nessuna selezione.
+const HUMAN_POPULATION_INFO_PANEL_SCENE := preload("res://gameplay/scenes/game/HumanPopulationInfoPanel.tscn")
+var human_population_info_panel: HumanPopulationInfoPanel
 
 # Anteprima "fantasma" della capanna (vedi BuildBar/BuildingGhost) — attivata dal tasto 🛖 nel
 # sottomenu costruzione, segue il mouse ogni frame finché attiva. Click sinistro piazza DAVVERO
@@ -138,21 +188,25 @@ var _building_ghost: BuildingGhost = null
 # hardcoded in _place_building_at evita di dover toccare quel metodo quando arriverà un secondo
 # tipo di edificio.
 var _selected_building_type_name: String = ""
-# La camera segue individual.position ogni frame SOLO mentre individual.is_moving è true (vedi
-# _process sotto) — durante una camminata questo produce lo scorrimento continuo atteso (la
-# scena "scorre sotto" il player, invece di lasciarlo sparire fuori vista con lo zoom stretto);
-# non appena l'individuo si ferma il segui si disattiva da solo e la camera torna libera
-# (WASD/edge-pan di CameraController tornano pienamente efficaci), permettendo di allontanarsi
-# per guardare celle già note/congelate (vedi FogOfWarMemory) senza che nulla la ricorregga.
-# Nessun bisogno di uno "sgancio" esplicito: lo sgancio è già implicito nel fermarsi. Il bottone
-# "🎯"/tasto X restano comunque il modo per ri-centrarla manualmente da ferma.
-var camera_follows_individual: bool = true
+# Camera LIBERA (Step 3 del piano movimento indipendente, 2026-09-02 — RIMUOVE il follow
+# automatico che prima seguiva individual.position ogni frame mentre individual.is_moving era
+# vero): nessun individuo viene più inseguito, mai — WASD/edge-pan/drag-to-pan (vedi
+# CameraController) restano sempre pienamente liberi, indipendentemente da chi si muove. Il
+# bottone "🎯"/tasto X restano l'UNICO modo per centrare la camera sulla selezione corrente, ora
+# animato (vedi _center_camera_on_individual/_center_camera_tween sotto) invece che a scatto —
+# stesso motivo per cui _attempt_macro_cell_transition non forza più un ricentraggio dopo un
+# attraversamento bordo: quel forcing esisteva solo per compensare il follow automatico appena
+# rimosso, tenerlo da solo avrebbe reintrodotto un caso isolato di "la camera insegue comunque",
+# in contraddizione con l'obiettivo di questo step (nessuna eccezione).
+var _center_camera_tween: Tween
+const CENTER_CAMERA_TWEEN_DURATION: float = 0.3 # secondi — spostamento "centra" animato, non a scatto
 var _clock_was_playing_before_dialogs: bool = false
 var _open_dialog_count: int = 0
 var _pending_leave_action: StringName = &""
 
 @onready var game_info_panel: GameInfoPanel = $CanvasLayer/Sidebar/MarginContainer/VBoxContainer/GameInfoPanel
 @onready var build_bar: BuildBar = $CanvasLayer/BuildBar
+@onready var debug_bar: DebugBar = $CanvasLayer/DebugBar
 @onready var system_menu_dialog: SystemMenuDialog = $SystemMenuDialog
 @onready var save_confirmation_dialog: SaveConfirmationDialog = $SaveConfirmationDialog
 @onready var help_dialog: HelpDialog = $HelpDialog
@@ -167,7 +221,6 @@ var _pending_leave_action: StringName = &""
 	GameClockController.Speed.X3: $CanvasLayer/Sidebar/MarginContainer/VBoxContainer/ClockControlsContainer/Speed3xButton,
 	GameClockController.Speed.X4: $CanvasLayer/Sidebar/MarginContainer/VBoxContainer/ClockControlsContainer/Speed4xButton,
 }
-@onready var advance_year_button: Button = $CanvasLayer/Sidebar/MarginContainer/VBoxContainer/CalendarHeaderContainer/AdvanceYearButton
 @onready var season_progress_bar: SeasonProgressBar = $CanvasLayer/Sidebar/MarginContainer/VBoxContainer/SeasonProgressBar
 
 func _ready() -> void:
@@ -179,31 +232,60 @@ func _ready() -> void:
 	flora_daily_updates_enabled = GameSettings.game_scene_flora_updates_enabled
 
 	year_title_label.text = tr("calendar_label")
-	advance_year_button.text = "+1"
-	advance_year_button.tooltip_text = tr("advance_year_tooltip")
-	advance_year_button.pressed.connect(_on_advance_year_pressed)
+	# +1 spostato dentro DebugBar (richiesta utente, 2026-09-01) — vedi _on_debug_action_pressed
+	# per il case &"advance_year", niente più bottone/wiring qui.
 	save_game_file_dialog.access = FileDialog.ACCESS_USERDATA
 	save_game_file_dialog.current_dir = GameSettings.SAVES_DIR
 	save_game_file_dialog.file_selected.connect(_on_save_game_file_selected)
 
-	game_info_panel.primary_actions_bar.set_slot_toggled(0, animals_visible)
-	game_info_panel.primary_actions_bar.set_slot_toggled(1, flora_daily_updates_enabled)
+	# Slot 0=flora, 1=animali su DebugBar (vedi DebugBar.gd) — stesso stato iniziale di sempre,
+	# solo il pannello che lo mostra e' cambiato.
+	debug_bar.set_slot_toggled(0, flora_daily_updates_enabled)
+	debug_bar.set_slot_toggled(1, animals_visible)
+	debug_bar.action_pressed.connect(_on_debug_action_pressed)
 	game_info_panel.primary_actions_bar.action_pressed.connect(_on_primary_action_pressed)
 	game_info_panel.secondary_actions_bar.action_pressed.connect(_on_secondary_action_pressed)
 	build_bar.submenu_row.action_pressed.connect(_on_build_submenu_action_pressed)
-	# body_container arriva vuoto per design (vedi GameInfoPanel.gd): GameScene, non GameInfoPanel
-	# stesso, istanzia qui il proprio contenuto — GameInfoPanel resta "muto" sulla vegetazione.
-	vegetation_info_panel = VEGETATION_INFO_PANEL_SCENE.instantiate()
-	game_info_panel.body_container.add_child(vegetation_info_panel)
-	vegetation_info_panel.cut_requested.connect(_on_cut_requested)
-	# Spacer elastico: spinge la minimappa in fondo a body_container (che si espande a riempire
-	# lo spazio tra le due HSeparator di GameInfoPanel) invece di lasciarla subito sotto
-	# vegetation_info_panel con vuoto residuo sotto — richiesta utente, 2026-08-30.
-	var minimap_spacer := Control.new()
-	minimap_spacer.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	game_info_panel.body_container.add_child(minimap_spacer)
+	# Controllo a schede (richiesta utente, 2026-09-01, sostituisce lo spacer elastico +
+	# minimap_panel/vegetation_info_panel diretti usati prima — vedi GameInfoTabs.gd) — unico
+	# figlio diretto di body_container: size_flags_vertical=3 (impostato nel suo stesso .tscn) gli
+	# fa occupare tutto lo spazio verticale che BodyScrollContainer riceve. body_container arriva
+	# altrimenti vuoto per design (vedi GameInfoPanel.gd): GameScene, non GameInfoPanel stesso,
+	# istanzia qui il proprio contenuto — GameInfoPanel resta "muto" su
+	# vegetazione/minimappa/selezione.
+	game_info_tabs = GAME_INFO_TABS_SCENE.instantiate()
+	game_info_panel.body_container.add_child(game_info_tabs)
+	# minimap_panel (richiesta utente, 2026-09-02: schermo ingrandito, la minimappa deve restare
+	# SEMPRE visibile in basso, ANCORATA — non deve più salire/scendere a seconda di quale scheda
+	# è aperta, come succedeva quando viveva dentro body_container insieme a game_info_tabs, la
+	# cui altezza varia da scheda a scheda). Vive in game_info_panel.minimap_slot, un sibling FISSO
+	# di BodyScrollContainer nella VBoxContainer esterna di GameInfoPanel — vedi GameInfoPanel.gd
+	# per il perché quella posizione resta sempre stabile. Dimensionamento/comportamento di
+	# minimap_panel stesso INVARIATI (si autodimensiona ancora quadrata sulla larghezza
+	# disponibile, vedi MiniMapPanel._on_panel_resized) — cambia solo DOVE vive nell'albero, non
+	# come si calcola la propria taglia.
 	minimap_panel = MINIMAP_PANEL_SCENE.instantiate()
-	game_info_panel.body_container.add_child(minimap_panel)
+	game_info_panel.minimap_slot.add_child(minimap_panel)
+	# vegetation_info_panel vive dentro SelectionTab, sempre presente in barra (la tab stessa non
+	# si nasconde più — solo il suo contenuto, gestito da GameInfoTabs.empty_selection_label, vedi
+	# _select_vegetation/_clear_vegetation_selection più sotto) invece che sempre visibile sopra
+	# le tab come prima — componente stesso INVARIATO (nessuna logica di tab al suo interno),
+	# così resta facilmente spostabile in futuro (es. un popup sulla mappa) senza toccarlo:
+	# basterebbe cambiare QUI dove viene parcheggiato e come viene mostrato/nascosto, non lui.
+	vegetation_info_panel = VEGETATION_INFO_PANEL_SCENE.instantiate()
+	game_info_tabs.selection_tab.add_child(vegetation_info_panel)
+	vegetation_info_panel.cut_requested.connect(_on_cut_requested)
+	# human_individual_info_panel vive nella STESSA SelectionTab, sibling di vegetation_info_panel
+	# ed empty_selection_label — mai visibile insieme a vegetation_info_panel per costruzione
+	# (selezione reciprocamente esclusiva, vedi _select_vegetation/individual.is_selected=false),
+	# stesso principio "componente muto, GameScene decide" di vegetation_info_panel.
+	human_individual_info_panel = HUMAN_INDIVIDUAL_INFO_PANEL_SCENE.instantiate()
+	game_info_tabs.selection_tab.add_child(human_individual_info_panel)
+	# human_population_info_panel vive in PopulationTab — instanziato qui insieme al resto (stesso
+	# principio "componente muto"), ma popolato (show_population) solo più sotto, DOPO il seeding
+	# umano: human_individuals/human_folk non esistono ancora a questo punto di _ready().
+	human_population_info_panel = HUMAN_POPULATION_INFO_PANEL_SCENE.instantiate()
+	game_info_tabs.population_tab.add_child(human_population_info_panel)
 	minimap_panel.cell_clicked.connect(_on_minimap_cell_clicked)
 	system_menu_dialog.add_action(tr("save_game"), &"save")
 	system_menu_dialog.add_action(tr("back_to_menu"), &"back_to_main_menu")
@@ -274,67 +356,147 @@ func _ready() -> void:
 			game_data.player_macro_cell_x = chosen.x
 			game_data.player_macro_cell_y = chosen.y
 
-	individual = Individual.new()
-	# Riprende la posizione salvata (GameData.player_micro_x/y, vedi GameSaveService/
-	# GameLoadService) se presente — sentinel -1.0/-1.0 (partita nuova, o save precedente
-	# l'introduzione di questo campo) vuol dire "mai valorizzata": in quel caso resta il default
-	# di sempre, al centro della griglia.
-	if game_data.player_micro_x >= 0.0 and game_data.player_micro_y >= 0.0:
-		individual.position = Vector2(game_data.player_micro_x, game_data.player_micro_y)
+	# Semina Folk + HumanPopulationGroup + HumanIndividual (coppie fondatrici + figli) — vedi
+	# HumanSeedingService per l'algoritmo di composizione/eta'/nomi — OPPURE ricostruisce un popolo
+	# già persistito (richiesta utente, 2026-09-02): GameSettings.active_human_individuals non
+	# vuoto significa che esiste già un popolo, sia perché si ritorna da un giro debug verso
+	# WorldScene/MacroCellScene sia perché questo è un salvataggio appena caricato (in entrambi i
+	# casi WorldScene/GameScene stesso lo hanno già propagato lì — vedi GameSettings.active_human_*)
+	# — in quel caso NON si semina nulla, si riusano gli STESSI oggetti (stessi id, stesse
+	# posizioni, stessa storia), mai una copia. human_rules caricato qui via load() diretto in
+	# ENTRAMBI i rami (nessun HumanCalculator-per-convenzione ancora, un solo Folk esiste per ora):
+	# un domani con piu' Folk questo path fisso andra' sostituito da una vera risoluzione per Folk.
+	var human_rules := load(PLAYER_HUMAN_RULES_PATH) as HumanRules
+	var start_macro_coords := Vector2i(game_data.player_macro_cell_x, game_data.player_macro_cell_y)
+	if not GameSettings.active_human_individuals.is_empty():
+		human_folk = GameSettings.active_human_folk
+		human_population_group = GameSettings.active_human_population_group
+		human_individuals = GameSettings.active_human_individuals
+		# human_rules_ref (Resource) non è mai serializzato/propagato dentro il popolo stesso —
+		# path fisso di competenza di GameScene, vedi sopra — va ri-assegnato qui ad ogni
+		# ricostruzione, stesso motivo per cui HumanSeedingService non lo tocca da sé nel ramo
+		# seeding sotto.
+		human_folk.human_rules_ref = human_rules
+		# Bersaglio corrente ripristinato sullo STESSO individuo che lo era all'uscita/salvataggio
+		# (game_data.player_individual_id, vedi GameData) — mai più sempre human_individuals[0].
+		# Scansione lineare accettabile (pochi individui, stesso principio già discusso per
+		# _macro_cell_has_individuals). null trovato (non dovrebbe succedere per dati coerenti, rete
+		# di sicurezza) ripiega sul primo membro invece di lasciare `individual` null.
+		individual = null
+		for member in human_individuals:
+			if member.id == game_data.player_individual_id:
+				individual = member
+				break
+		if individual == null:
+			individual = human_individuals[0]
 	else:
-		individual.position = Vector2(World.WIDTH / 2.0, World.HEIGHT / 2.0)
-	# Riprende lo zoom salvato (GameData.camera_zoom) se presente — sentinel -1.0 (partita nuova,
-	# o save precedente l'introduzione di questo campo) vuol dire "mai valorizzato": in quel caso
-	# resta lo zoom di default impostato in GameScene.tscn.
-	if game_data.camera_zoom > 0.0:
-		camera.zoom = Vector2(game_data.camera_zoom, game_data.camera_zoom)
-	individual_view = IndividualView.new()
-	add_child(individual_view)
-	individual_view.setup(individual)
-	# z_index invece di affidarsi all'ordine dei figli (che con lo streaming multi-cella non è più
-	# un unico elenco piatto sotto GameScene, ma un container Node2D per cella viva, creato/
-	# distrutto dinamicamente da _activate_live_cell/_deactivate_live_cell): senza questo,
-	# individual_view finiva sotto il terreno della cella centrale (aggiunta DOPO di lui in
-	# _ready()) e il pallino spariva. z_index=1 lo tiene sempre sopra terreno/animali (z_index=0
-	# di default in ogni container) qualunque sia l'ordine reale di creazione dei container — vedi
-	# anche fog_of_war_renderer.z_index=2 in _activate_live_cell, che deve restare sopra ANCHE a
-	# individual_view.
-	individual_view.z_index = 1
+		var seeding_result := HumanSeedingService.new().seed_player_start(
+			start_macro_coords, game_data.starting_group_size_preference, human_rules, "Player Folk", game_data.year
+		)
+		human_folk = seeding_result.folk
+		human_population_group = seeding_result.group
+		human_individuals = seeding_result.individuals
+		# Tutto il gruppo nasce nella stessa macrocella (vedi HumanIndividual.home_macro_coords) —
+		# valorizzato qui, prima di qualunque view (vedi sotto, dopo l'attivazione della cella
+		# centrale): è il dato che dice a GameScene sotto quale LiveMacroCell.container parentare
+		# la view di ciascuno. Posizioni già assolute (HumanSeedingService._grid_spawn_position è
+		# già centrata su World.WIDTH/HEIGHT/2.0) — nessun ricentraggio da fare qui, a differenza di
+		# prima: quella danza esisteva solo per ripristinare GameData.player_micro_x/y (RIMOSSO,
+		# vedi GameData — ogni salvataggio/ritorno passa ora dal ramo sopra, mai più da qui).
+		for member in human_individuals:
+			member.home_macro_coords = start_macro_coords
+		# Solo valore INIZIALE del bersaglio di movimento/streaming (Step 2, 2026-09-02) —
+		# human_individuals[0] non ha altro status speciale da qui in poi, vedi il commento sul
+		# campo "individual" sopra: il giocatore può spostare il bersaglio su un membro qualsiasi
+		# selezionandolo (_set_movement_target).
+		individual = human_individuals[0]
+
+	# Popola la scheda 🧍 (richiesta utente, 2026-09-01) — human_individuals/human_folk sono
+	# finalizzati solo qui (posizioni di spawn comprese), stesso motivo per cui l'istanza del
+	# pannello (sopra) e la sua popolazione dati sono separate in due punti diversi di _ready().
+	human_population_info_panel.show_population(
+		human_population_group.total_count, human_individuals, game_data.year, human_folk.human_rules_ref,
+		human_folk.id, human_population_group.id
+	)
 
 	# Prima cella viva: il centro. center_macro_coords va fissato PRIMA di attivarla, perché
 	# _activate_live_cell non decide da sé "sono il centro" — è solo orchestrazione qui.
 	center_macro_coords = Vector2i(game_data.player_macro_cell_x, game_data.player_macro_cell_y)
 	_activate_live_cell(center_macro_coords.x, center_macro_coords.y)
+
+	# Una HumanIndividualView a testa, TUTTE parentate sotto il container della LiveMacroCell in
+	# cui l'individuo si trova fisicamente (member.home_macro_coords, valorizzato sopra) — bugfix
+	# Bug 2, 2026-09-02: PRIMA ogni view era figlia diretta di GameScene, con la propria position
+	# scritta come coordinate locali "nude" (individual.position * CELL_SIZE, vedi
+	# HumanIndividualView._process) senza sommare alcun offset di macrocella — funzionava solo
+	# perché ogni HumanIndividual coincideva SEMPRE con la cella centrale (il leader la definiva, gli
+	# extra la seguivano in formazione rigida ogni frame). Rotto da Step 1 (formazione rimossa) +
+	# Step 2 (il centro può spostarsi lasciando indietro chi non è il bersaglio): un individuo
+	# fermo in una macrocella che smette di essere il centro veniva comunque disegnato come se
+	# fosse ancora lì. Fix: STESSO pattern già usato da MicroCellRenderer/AnimalGroupRenderer/
+	# FogOfWarRenderer (vedi _activate_live_cell) — figlio del container giusto, cosi' Godot compone
+	# la trasformazione (offset di macrocella) gratis, HumanIndividualView.gd stesso resta identico,
+	# nessun calcolo di offset esplicito da aggiungere lì. Va dopo _activate_live_cell sopra: il
+	# container della cella centrale deve esistere prima di potervi parentare qualcosa (prima
+	# viveva PRIMA dell'attivazione, quindi doveva per forza essere figlia di GameScene).
+	# _activate_all_building_cells()/_activate_all_individual_cells() PRIMA del loop view sotto
+	# (bugfix, 2026-09-02): un individuo ricostruito da un salvataggio può avere home_macro_coords
+	# diversa dal centro (lasciato indietro prima di salvare) — la sua cella deve essere già viva
+	# prima che il loop sotto tenti live_cells[member.home_macro_coords], altrimenti quella chiave
+	# non esiste ancora in live_cells. Per una partita nuova (tutti nascono nel centro, già attivo
+	# sopra) questo riordino è un no-op.
 	_activate_all_building_cells()
+	_activate_all_individual_cells()
+
+	human_individual_views.clear()
+	for member in human_individuals:
+		var view := HumanIndividualView.new()
+		live_cells[member.home_macro_coords].container.add_child(view)
+		view.setup(member)
+		# z_index invariato (era già necessario prima, per lo stesso motivo — vedi
+		# fog_of_war_renderer.z_index=2 in _activate_live_cell, che deve restare sopra ANCHE alle
+		# view individuo): tiene la view sopra terreno/animali (z_index=0 di default) del container
+		# di cui ora è figlia, sotto la fog of war di quello stesso container.
+		view.z_index = 1
+		human_individual_views.append(view)
+
 	_reposition_live_cells()
-	_rebind_fog_bindings()
-	# BUGFIX (Proposta 2, filtro FoW): _activate_live_cell sopra ha già chiamato _refresh_resource_
-	# visuals per la cella centrale, ma in quel momento il suo FogOfWarRenderer era ancora legato al
-	# fog_proxy_individual placeholder (posizione di default), non al vero Individual del player —
-	# _rebind_fog_bindings() lo corregge solo QUI. Senza un secondo refresh, il filtro per
-	# visibilità calcolato durante quel primo giro resterebbe centrato sulla posizione sbagliata,
-	# nascondendo la vegetazione vicino al vero punto di spawn per tutta la partita fino al primo
-	# checkpoint (bug reale osservato: "tutto verde alla partita nuova"). Rinfrescare di nuovo SOLO
-	# la cella centrale (le altre celle vive, se presenti per via di edifici lontani, non dipendono
-	# dalla posizione del player ma dal proprio raggio edificio — vedi _building_visible_positions,
-	# indipendente da questo bug) risolve senza toccare le altre.
-	_refresh_resource_visuals(live_cells[center_macro_coords])
+	# Niente _rebind_fog_bindings()/secondo refresh qui (RIMOSSI, Step 4 FoW multi-sorgente,
+	# 2026-09-02): quel meccanismo esisteva solo per correggere un binding fog inizialmente legato
+	# a un placeholder (fog_proxy_individual) — con source_positions (vedi FogOfWarRenderer.gd),
+	# _activate_live_cell chiama update_visibility() con le posizioni VERE prima del proprio primo
+	# refresh interno, quindi quel refresh è già corretto al primo giro, nessuna correzione
+	# successiva necessaria (bug "tutto verde alla partita nuova" strutturalmente non più possibile,
+	# non solo corretto).
 	if macro_world != null:
 		_refresh_lod_focus_region()
 	_update_center_info_panel()
 
-	individual_controller = IndividualController.new()
+	individual_controller = HumanIndividualController.new()
 	individual_controller.setup(individual, live_cells[center_macro_coords].renderer)
 
 	_setup_clock()
 	_assign_clock_to_all_live_cells()
 	_update_calendar_display()
 
-	# Centra la camera sul player UNA SOLA VOLTA all'ingresso in scena — copre sia una partita
-	# nuova (individual al centro griglia) sia un salvataggio ripristinato (individual alla
-	# posizione salvata, vedi player_micro_x/y sopra). Da qui in poi la camera resta libera
-	# (camera_follows_individual segue solo mentre l'individuo si muove, vedi sopra).
-	_center_camera_on_individual()
+	# Posiziona la camera UNA SOLA VOLTA all'ingresso in scena, poi resta libera per tutta la
+	# sessione (Step 3, 2026-09-02 — vedi il commento su _center_camera_tween sopra). Se un
+	# salvataggio porta con sé una posizione camera propria (game_data.camera_position_saved, vedi
+	# GameData — sentinella booleana, non -1.0: a differenza di player_macro_cell_x/y, camera_x/y
+	# non hanno un intervallo valido limitato, CameraController non ha alcun limite di pan), la
+	# ripristina ESATTAMENTE lì com'era stata lasciata, istantanea (nessuno spostamento visibile
+	# da animare in questo frame, la scena non è ancora mai stata mostrata). Altrimenti (partita
+	# nuova, o save precedente l'introduzione di questo campo) resta il comportamento di sempre:
+	# centrata sull'individuo iniziale, anch'essa istantanea per lo stesso motivo (animated=false).
+	if game_data.camera_position_saved:
+		camera.position = Vector2(game_data.camera_x, game_data.camera_y)
+	else:
+		_center_camera_on_individual(false)
+	# camera_zoom (vedi GameData) era già salvato ma MAI riapplicato al caricamento — bug dormiente
+	# trovato durante la ricognizione di questo piano, corretto qui insieme al resto dello stato
+	# camera persistito (stesso punto naturale, nessun altro posto lo applicava prima).
+	if game_data.camera_zoom > 0.0:
+		camera.zoom = Vector2(game_data.camera_zoom, game_data.camera_zoom)
 
 
 # Movimento dell'individuo controllabile: gira ogni frame, indipendentemente da clock.is_playing
@@ -346,20 +508,17 @@ func _process(delta: float) -> void:
 		_check_macro_cell_border_crossing()
 		_update_live_neighbor()
 
+	# Step 4 FoW multi-sorgente, 2026-09-02 — SOSTITUISCE il vecchio meccanismo a proxy (un solo
+	# "individuo ombra" per cella vicina, sincronizzato sul bersaglio corrente): ogni cella viva
+	# riceve ora, ogni frame, la lista di posizioni di TUTTI gli human_individuals rilevanti per lei
+	# (vedi _relevant_source_positions_for_cell — home_macro_coords entro 1 cella di distanza,
+	# tradotta nello spazio locale di QUELLA cella), non solo del bersaglio corrente. Nessun binding
+	# persistente da mantenere/correggere: ogni chiamata è autosufficiente, quindi indipendente da
+	# chi sia il bersaglio o da quando è cambiato l'ultima volta.
 	for cell in live_cells.values():
 		if cell.fog_of_war_renderer == null:
 			continue
-		# FogOfWarRenderer legge sempre individual.position direttamente dall'oggetto a cui è
-		# stato legato in setup() (vedi _rebind_fog_bindings, richiamata solo quando center_
-		# macro_coords cambia, non ogni frame): per il centro è già legato all'Individual vero
-		# (stesso spazio locale per definizione, non serve toccare nulla qui), per un vicino
-		# vivo è legato al suo individuo "ombra" (fog_proxy_individual) — questo qui sotto tiene
-		# SOLO quella posizione ombra sincronizzata ogni frame, traducendo la posizione reale
-		# nello spazio locale di QUELLA cella (offset macro * WIDTH/HEIGHT).
-		if cell.fog_proxy_individual != null and (cell.macro_x != center_macro_coords.x or cell.macro_y != center_macro_coords.y):
-			var offset := Vector2i(cell.macro_x, cell.macro_y) - center_macro_coords
-			cell.fog_proxy_individual.position = individual.position - Vector2(offset.x * World.WIDTH, offset.y * World.HEIGHT)
-		cell.fog_of_war_renderer.update_visibility(game_data.get_absolute_day())
+		cell.fog_of_war_renderer.update_visibility(game_data.get_absolute_day(), _relevant_source_positions_for_cell(cell))
 
 	# Proposta 2 (mitigazione "pop-in", diagnostica lentezza) — rinfresca la vegetazione della cella
 	# centrale quando il player si è spostato abbastanza da poter aver scoperto area non coperta
@@ -374,9 +533,6 @@ func _process(delta: float) -> void:
 					center_macro_coords.x, center_macro_coords.y, individual.position.distance_to(_last_vegetation_refresh_position)
 				])
 			_refresh_resource_visuals(live_cells[center_macro_coords])
-
-	if camera_follows_individual and individual != null and individual.is_moving:
-		_center_camera_on_individual()
 
 	if _building_ghost != null:
 		_building_ghost.global_position = _building_ghost.get_global_mouse_position()
@@ -419,17 +575,40 @@ func _unhandled_input(event: InputEvent) -> void:
 	# Priorità concordata con l'utente: la vegetazione vince entro il proprio raggio di hit-test
 	# (più piccolo/preciso del raggio di selezione del player, vedi VegetationSelectorController);
 	# se non trova nulla, il flusso prosegue esattamente come prima di questo controller. Un click
-	# sinistro "a vuoto" (né vegetazione né player) deseleziona comunque la vegetazione — stesso
-	# principio di individual_controller._try_select, che già deseleziona il player su un click
-	# lontano da lui. ECCEZIONE: se il player è oggettivamente più vicino al click della pianta
-	# candidata (es. il player è fermo proprio accanto a una pianta), vince il player anche se la
-	# pianta ricade comunque nel raggio di click della vegetazione — vedi _is_player_closer_to_click.
+	# sinistro "a vuoto" (né vegetazione né un individuo umano) deseleziona comunque la vegetazione
+	# — stesso principio di _deselect_all_human_individuals, che già deseleziona ogni individuo
+	# umano su un click lontano da tutti loro. ECCEZIONE: se il bersaglio corrente (individual, vedi
+	# il commento sul campo) è oggettivamente più vicino al click della pianta candidata (es. è
+	# fermo proprio accanto a una pianta), vince lui anche se la pianta ricade comunque nel raggio
+	# di click della vegetazione — vedi _is_player_closer_to_click (confronta sempre e solo il
+	# bersaglio corrente, non l'intero human_individuals: la priorità vegetazione/individuo non è
+	# stata estesa a tutti i membri del gruppo in questo step).
 	var vegetation_hit := vegetation_selector_controller.try_select(event, live_cells)
 	if not vegetation_hit.is_empty() and not _is_player_closer_to_click(vegetation_hit["distance"]):
 		_select_vegetation(vegetation_hit)
 	else:
 		if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
 			_clear_vegetation_selection()
+			# Selezione di un individuo umano QUALSIASI (richiesta utente, 2026-09-02) — hit-test
+			# puro via HumanIndividualSelectorController (non tocca mai is_selected da sé), mutua
+			# esclusione applicata qui: al più un individuo selezionato alla volta in tutto
+			# human_individuals. Un hit sposta ANCHE il bersaglio di movimento/streaming su di lui
+			# (_set_movement_target, Step 2 del piano movimento indipendente) — un click a vuoto
+			# invece deseleziona senza toccare il bersaglio, che resta ancorato all'ultimo individuo
+			# selezionato (richiesta utente, 2026-09-02, punto 3).
+			var hit_individual: HumanIndividual = human_individual_selector_controller.try_select(
+				event, live_cells[center_macro_coords].renderer, human_individuals, center_macro_coords
+			)
+			_deselect_all_human_individuals()
+			if hit_individual != null:
+				hit_individual.is_selected = true
+				_select_individual(hit_individual)
+				_set_movement_target(hit_individual)
+			else:
+				_clear_individual_selection()
+		# Solo movimento ora (click destro, gated su individual.is_selected) — vedi
+		# HumanIndividualController per il perché la selezione è stata rimossa da lì. Opera sempre
+		# sul bersaglio CORRENTE (vedi _set_movement_target sopra), non più su un individuo fisso.
 		if individual_controller != null:
 			individual_controller.handle_input(event)
 
@@ -439,10 +618,10 @@ func _unhandled_input(event: InputEvent) -> void:
 
 # Vero se il player è più vicino al click corrente della miglior candidata vegetale (stesso
 # spazio pixel locale della cella CENTRALE — individual.position è sempre relativo a quella, vedi
-# Individual.gd — usato sia da VegetationSelectorController che qui, così le due distanze sono
+# HumanIndividual.gd — usato sia da VegetationSelectorController che qui, così le due distanze sono
 # direttamente confrontabili). Non richiede che il click ricada nel raggio di selezione vero del
-# player (SELECT_RADIUS_MICROCELLS in IndividualController): decide solo chi tenta per primo,
-# individual_controller applica comunque la propria soglia subito dopo.
+# player (SELECT_RADIUS_MICROCELLS in HumanIndividualSelectorController): decide solo chi tenta
+# per primo, human_individual_selector_controller applica comunque la propria soglia subito dopo.
 func _is_player_closer_to_click(vegetation_distance_px: float) -> bool:
 	if individual == null:
 		return false
@@ -455,15 +634,35 @@ func _is_player_closer_to_click(vegetation_distance_px: float) -> bool:
 
 
 # Sposta la camera esattamente sulla posizione corrente dell'individuo — stesso spazio pixel di
-# IndividualView (individual.position, in microcelle, moltiplicata per lo stesso CELL_SIZE=10 di
-# MicroCellRenderer/IndividualView). Sempre lo spazio della cella CENTRALE, che è sempre
+# HumanIndividualView (individual.position, in microcelle, moltiplicata per lo stesso CELL_SIZE=10 di
+# MicroCellRenderer/HumanIndividualView). Sempre lo spazio della cella CENTRALE, che è sempre
 # posizionata a offset zero (vedi _reposition_live_cells) — nessuna traduzione necessaria.
 # Richiamato sia dal tasto X (_unhandled_input sopra) sia dal bottone "🎯" della
-# PrimaryActionsBar (vedi _on_primary_action_pressed).
-func _center_camera_on_individual() -> void:
+# PrimaryActionsBar (vedi _on_primary_action_pressed) — questa È già "il tasto centra": nessun
+# service dedicato separato, la funzione è già piccola/isolata/riusata uniformemente da entrambi i
+# trigger (richiesta utente, 2026-09-02 — un'eventuale estrazione in un CameraFocusService resta
+# il punto naturale per estendere il "centra" ad altri tipi di selezione in futuro — edifici,
+# piante — ma prematura finché esiste un solo tipo di bersaglio da centrare).
+#
+# animated=true di default (requisito utente, 2026-09-02: uno spostamento a scatto non è più
+# accettabile ora che è l'UNICO modo di muovere la camera sulla selezione, vedi il commento su
+# _center_camera_tween) — un breve tween invece di un assegnamento diretto. animated=false resta
+# per l'UNICO caso in cui uno scatto è corretto: il posizionamento iniziale in _ready(), prima che
+# la scena sia mai stata mostrata (nessuno spostamento visibile da animare). _center_camera_tween
+# viene killata prima di ripartire, in entrambi i rami: preme "centra" due volte di fila (o mentre
+# un tween precedente sta ancora animando) non deve far litigare due tween sulla stessa proprietà.
+func _center_camera_on_individual(animated: bool = true) -> void:
 	if individual == null:
 		return
-	camera.position = individual.position * MicroCellRenderer.CELL_SIZE
+	var target_position := individual.position * MicroCellRenderer.CELL_SIZE
+	if _center_camera_tween != null:
+		_center_camera_tween.kill()
+	if not animated:
+		camera.position = target_position
+		return
+	_center_camera_tween = create_tween()
+	_center_camera_tween.set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+	_center_camera_tween.tween_property(camera, "position", target_position, CENTER_CAMERA_TWEEN_DURATION)
 
 
 # Click sulla minimappa (MiniMapPanel.cell_clicked) — sposta SOLO la camera, mai il player né
@@ -486,9 +685,25 @@ func _on_minimap_cell_clicked(macro_coords: Vector2i) -> void:
 # Applica una selezione risolta da vegetation_selector_controller: aggiorna lo stato locale,
 # l'highlight sul SOLO renderer che possiede l'individuo (ogni cella viva ha la propria istanza di
 # MicroCellRenderer, vedi LiveMacroCell — le altre vanno esplicitamente ripulite, altrimenti un
-# highlight precedente su un'altra cella viva resterebbe visibile) e il pannello. Non tocca in
-# alcun modo individual.is_selected — per decisione confermata con l'utente, un hit sulla
-# vegetazione ha priorità e non influenza la selezione del player.
+# highlight precedente su un'altra cella viva resterebbe visibile) e il pannello.
+#
+# _deselect_all_human_individuals() qui sotto (bugfix, 2026-09-01 — CORREGGE la decisione
+# precedente "un hit sulla vegetazione ha priorità e non influenza la selezione del player",
+# rivelatasi un'asimmetria indesiderata: selezionare una pianta mentre il player era già
+# selezionato lasciava ENTRAMBI selezionati, col tasto destro che continuava a muovere il player
+# mentre il pannello mostrava la pianta — mai possibile il contrario, dato che
+# individual_controller.handle_input, l'unico altro punto che scrive is_selected per il leader,
+# gira solo nel ramo "vince il player" di _unhandled_input, mai in questo. Esteso 2026-09-02 a
+# TUTTI gli individui umani, non solo il leader — vedi _deselect_all_human_individuals): Selezione
+# ORA reciprocamente esclusiva, come nella maggior parte dei giochi — un'eventuale autorità di
+# selezione unica (invece di due stati separati, questo campo sull'entità + selected_vegetation
+# qui) è rimandata a quando arriverà davvero un terzo tipo selezionabile o la selezione multipla,
+# non prima.
+#
+# human_individual_info_panel.clear() qui sotto (bugfix, 2026-09-01, Passo 1 individuo): il
+# fix sopra azzera SOLO il flag is_selected, non nasconde il pannello che lo mostrava — senza
+# questa riga il pannello individuo restava visibile, sovrapposto a vegetation_info_panel appena
+# mostrato da _refresh_vegetation_panel (testo scritto uno sopra l'altro, bug osservato).
 func _select_vegetation(hit: Dictionary) -> void:
 	for coords in live_cells:
 		var cell: LiveMacroCell = live_cells[coords]
@@ -499,8 +714,11 @@ func _select_vegetation(hit: Dictionary) -> void:
 		else:
 			cell.renderer.clear_selected_individual()
 
+	_deselect_all_human_individuals()
+	human_individual_info_panel.clear()
 	selected_vegetation = hit
 	_refresh_vegetation_panel()
+	game_info_tabs.show_selection_tab()
 
 
 func _clear_vegetation_selection() -> void:
@@ -511,6 +729,109 @@ func _clear_vegetation_selection() -> void:
 		if cell.renderer != null:
 			cell.renderer.clear_selected_individual()
 	vegetation_info_panel.clear()
+	game_info_tabs.hide_selection_tab()
+
+
+# Deseleziona TUTTI gli individui umani — mutua esclusione esplicita: al più un individuo umano
+# selezionato alla volta nell'intero human_individuals, indipendentemente da chi fosse selezionato
+# prima (richiesta utente, 2026-09-02). Usato sia quando un altro tipo di selezione vince
+# (vegetazione, sopra) sia su un click che non colpisce nessun individuo (vedi _unhandled_input).
+# Non tocca pannello/tab (il chiamante decide se e come nasconderli) né il bersaglio di movimento/
+# streaming (vedi _set_movement_target: quello cambia SOLO su un nuovo hit, mai su una
+# deselezione).
+func _deselect_all_human_individuals() -> void:
+	for other in human_individuals:
+		other.is_selected = false
+
+
+# Mostra i dati dell'individuo umano cliccato nella scheda selezione — QUALSIASI individuo del
+# gruppo, non più solo il leader (richiesta utente, 2026-09-02, esteso da human_individuals[0] a
+# tutti; popup INVARIATO, stessa show_individual/HumanCalculator.get_age_band di prima, solo
+# parametrizzato sull'individuo cliccato invece del campo fisso `individual`). Chiamata da
+# _unhandled_input subito dopo che human_individual_selector_controller ha trovato un hit e
+# _deselect_all_human_individuals + target.is_selected=true hanno aggiornato la mutua esclusione.
+# Età ricalcolata al volo da HumanCalculator (mai salvata su HumanIndividual, stesso principio già
+# usato da HumanSeedingService in fase di generazione) — human_folk.human_rules_ref è lo stesso
+# HumanRules usato lì. strength resta fuori, non ancora richiesto.
+func _select_individual(target: HumanIndividual) -> void:
+	var age: int = game_data.year - target.birth_year_virtual
+	var age_band := HumanCalculator.get_age_band(human_folk.human_rules_ref, target.sex, float(age))
+	human_individual_info_panel.show_individual(target, age, age_band)
+	game_info_tabs.show_selection_tab()
+
+
+# Sposta il bersaglio di movimento/streaming (il campo "individual", vedi il commento lì) su
+# `target` — Step 2 del piano movimento indipendente, 2026-09-02. individual_controller/
+# individual_movement_service restano gli stessi, stateless rispetto all'identità (vedi
+# HumanIndividualController): basta ri-agganciare il controller esistente al nuovo bersaglio,
+# esattamente come fa già _attempt_macro_cell_transition quando cambia il renderer di riferimento.
+# Chiamata SOLO su un hit di selezione riuscito, mai su una deselezione (vedi _unhandled_input): il
+# bersaglio resta quello precedente finché non ne viene scelto uno nuovo.
+#
+# Bugfix 2026-09-02 (due sintomi distinti trovati testando un bersaglio non co-locato col centro —
+# entrambi dovuti a questa funzione, che faceva un handoff PARZIALE al nuovo bersaglio):
+#
+# Sintomo 2 (movimento residuo) — target.stop() sotto scarta is_moving/path lasciati da un
+# PRECEDENTE turno di `target` come bersaglio: nessun altro punto del codice pulisce questo stato
+# per un individuo che STA PER diventare bersaglio (solo per quello che lo è già, vedi
+# HumanIndividualMovementService.advance_movement/_attempt_macro_cell_transition/
+# _block_border_crossing, i soli tre punti che chiamano .stop()) — senza questo, un individuo
+# selezionato, spostato, poi abbandonato per un altro bersaglio PRIMA di arrivare, riprendeva a
+# camminare da solo verso il vecchio target_position stantio non appena ri-selezionato. Gated su
+# `target != individual`: se target è GIA' il bersaglio corrente, un suo eventuale is_moving è
+# stato ATTUALE (avanzato ogni frame proprio ora), non residuo — fermarlo qui interromperebbe una
+# camminata in corso voluta dal giocatore solo perché ha ri-cliccato la stessa selezione (es. per
+# rivedere il popup), un effetto collaterale non voluto e diverso dal caso che questo fix corregge.
+#
+# Sintomo 1 (streaming non ri-ancorato) — PRIMA questa funzione agganciava incondizionatamente
+# individual_controller al nuovo bersaglio assumendo fosse già nella cella centrale — falso per un
+# individuo lasciato indietro in una cella diventata neighbor (vedi HumanIndividual.
+# home_macro_coords): il risultato era la vecchia cella disattivata a torto dal frame successivo
+# (_update_live_neighbor interpreta individual.position come "distanza dal bordo del centro",
+# sempre grande se quella posizione non è davvero locale al centro). NOTA (Step 4 FoW
+# multi-sorgente, 2026-09-02): la parte del bug che riguardava un cerchio FoW disegnato nel posto
+# sbagliato non esiste più per costruzione — FogOfWarRenderer non è più "legato" a nessun bersaglio,
+# riceve ogni frame le posizioni vere di tutti gli individui rilevanti (vedi
+# _relevant_source_positions_for_cell), indipendentemente da chi sia il bersaglio corrente — quindi
+# non serve più correggere nulla lì (_rebind_fog_bindings è stata rimossa insieme al meccanismo che
+# la richiedeva). Resta valida la parte su _update_live_neighbor: se target non è co-locato col
+# centro corrente, RI-ANCORARE l'intero streaming su di lui prima di agganciare
+# individual_controller — stesso schema già validato per Bug 1 (attraversamento bordo): il delta di
+# ri-basamento va applicato alla camera PRIMA di riassegnare center_macro_coords (serve ancora il
+# valore vecchio per calcolarlo), un eventuale tween "centra" in corso va killato per lo stesso
+# motivo di Bug 1. Delta VETTORIALE pieno (non un solo asse come in un attraversamento bordo): una
+# selezione può "saltare" più di una cella su entrambi gli assi in un colpo solo. Nessuna
+# riattivazione di celle necessaria: un individuo cliccabile è per costruzione già visibile, quindi
+# la sua home_macro_coords è già in live_cells. _update_live_neighbor si auto-corregge da sé al
+# frame successivo (stesso principio già usato da _attempt_macro_cell_transition, che non lo
+# richiama esplicitamente): con center_macro_coords ora aggiornato, individual.position torna a
+# essere letto nel riferimento giusto.
+func _set_movement_target(target: HumanIndividual) -> void:
+	if target != individual:
+		target.stop()
+
+	if target.home_macro_coords != center_macro_coords:
+		if _center_camera_tween != null:
+			_center_camera_tween.kill()
+		camera.position -= Vector2(target.home_macro_coords - center_macro_coords) * MACRO_CELL_PIXELS
+		center_macro_coords = target.home_macro_coords
+		_reposition_live_cells()
+		_refresh_lod_focus_region()
+		_update_center_info_panel()
+
+	individual = target
+	individual_controller.setup(individual, live_cells[center_macro_coords].renderer)
+
+
+# Simmetrico a _clear_vegetation_selection: no-op se il pannello non era già mostrato, per non
+# forzare un ritorno indesiderato alla scheda precedente su ogni click "vuoto" (richiamare
+# GameInfoTabs.hide_selection_tab quando non c'era nulla da nascondere strapperebbe l'utente da
+# una scheda su cui si fosse nel frattempo spostato manualmente).
+func _clear_individual_selection() -> void:
+	if not human_individual_info_panel.visible:
+		return
+	human_individual_info_panel.clear()
+	game_info_tabs.hide_selection_tab()
 
 
 # Richiede al renderer proprietario i dati aggiornati e li passa al pannello — RIDERIVA lo stato
@@ -634,8 +955,8 @@ func _exit_tree() -> void:
 # _load_macro_cell per L'UNICA cella, ora parametrizzato: risoluzione cella/stato, rigenerazione
 # del micro-mondo uniforme, vicini per il renderer, fiume, pietre, vegetazione/pesci/fauna (via
 # _refresh_resource_visuals). NON tocca la focus region LOD (vedi _refresh_lod_focus_region,
-# chiamata separatamente dal chiamante) né game_info_panel (vedi _update_center_info_panel, solo
-# per il centro). Non ritorna mai null: se macro_world è null o la cella non esiste (bordo del
+# chiamata separatamente dal chiamante) né le coordinate mostrate in DebugBar (vedi
+# _update_center_info_panel, solo per il centro). Non ritorna mai null: se macro_world è null o la cella non esiste (bordo del
 # mondo/coordinate invalide), crea comunque container/renderer con un mondo vuoto di riserva —
 # stesso fallback che aveva _load_macro_cell. È compito del CHIAMANTE decidere se vale la pena
 # attivare una cella (es. _update_live_neighbor non chiama questo metodo affatto se il vicino è
@@ -676,25 +997,24 @@ func _activate_live_cell(mx: int, my: int) -> LiveMacroCell:
 	if not fog_of_war_memories.has(coords):
 		fog_of_war_memories[coords] = FogOfWarMemory.new()
 	cell.fog_of_war_memory = fog_of_war_memories[coords]
-	# Individuo "ombra" per il fog: usato ogni volta che questa cella NON è il centro (vedi
-	# _process/_rebind_fog_bindings) — crearlo comunque qui, anche per il centro dove resta
-	# inutilizzato finché non smette di esserlo, evita un ramo separato.
-	cell.fog_proxy_individual = Individual.new()
 	cell.fog_of_war_renderer = FogOfWarRenderer.new()
 	# ULTIMO figlio del container aggiunto apposta (vedi FogOfWarRenderer.gd): l'ordine dei figli
 	# è l'ordine di disegno in Godot 2D, deve stare sopra renderer/animali per coprire davvero
 	# tutto quello che nasconde ALL'INTERNO di questa cella. z_index=2 in più (non basterebbe da
-	# solo l'essere ultimo figlio DEL CONTAINER): deve restare sopra anche a individual_view, che
-	# è un fratello del container stesso, non un suo discendente — vedi z_index=1 su
-	# individual_view in _ready() per il motivo per cui qui serve un valore ESPLICITO più alto,
-	# non ci si può affidare all'ordine dei figli tra sotto-alberi diversi.
+	# solo l'essere ultimo figlio del container): deve restare sopra anche alle HumanIndividualView
+	# di questa cella (vedi _ready(), aggiunte a QUESTO STESSO container DOPO — z_index=1 lì — un
+	# tempo erano fratelli del container invece che suoi figli, non più dal bugfix Bug 2,
+	# 2026-09-02, ma lo z_index esplicito resta comunque necessario: essendo aggiunte dopo questo
+	# fog_of_war_renderer, il solo ordine dei figli le metterebbe sopra di lui, sbagliato).
 	cell.container.add_child(cell.fog_of_war_renderer)
 	cell.fog_of_war_renderer.z_index = 2
-	# Legato di default all'individuo ombra (mai quello vero qui): se questa cella è proprio la
-	# cella centrale che si sta attivando, spetta al chiamante richiamare _rebind_fog_bindings()
-	# subito dopo per ri-legarla all'Individual vero — _activate_live_cell non sa da sé se sta
-	# attivando il centro o un vicino (vedi commento in testa alla funzione).
-	cell.fog_of_war_renderer.setup(cell.fog_proxy_individual, cell.fog_of_war_memory)
+	cell.fog_of_war_renderer.setup(cell.fog_of_war_memory)
+	# Popola subito source_positions con le posizioni VERE (Step 4 FoW multi-sorgente, 2026-09-02
+	# — RIMPIAZZA il vecchio binding a un placeholder + correzione successiva via
+	# _rebind_fog_bindings): questa cella, centro o vicino che sia, non ha mai bisogno di essere
+	# "corretta" più tardi — update_visibility() riceve già le posizioni giuste al primo giro,
+	# quindi il _refresh_resource_visuals sotto (se questa cella ne fa uno) parte già corretto.
+	cell.fog_of_war_renderer.update_visibility(game_data.get_absolute_day(), _relevant_source_positions_for_cell(cell))
 
 	if cell.macro_cell != null and macro_world != null:
 		# NIENTE cell.renderer.set_neighbors qui (a differenza di MacroCellScene, che la chiama
@@ -769,12 +1089,66 @@ func _macro_cell_has_buildings(coords: Vector2i) -> bool:
 	return false
 
 
+# Mirror di _activate_all_building_cells sopra, per human_individuals invece che macro_world.
+# buildings (richiesta utente, 2026-09-02 — "ogni cella con un individuo della popolazione del
+# player deve essere considerata viva come per gli edifici"). OGGI è un no-op garantito: ogni
+# individuo nasce co-locato con center_macro_coords (mai persistito per identità tra sessioni,
+# vedi HumanIndividual/HumanSeedingService — si riseminano sempre dal centro), quindi la sua
+# home_macro_coords è già viva quando questa gira in _ready(). Aggiunta comunque ORA (non
+# rimandata) perché il prossimo passo pianificato è la persistenza degli individui — a quel punto
+# smetterà di essere un no-op (un individuo ricaricato potrebbe trovarsi in una cella mai vissuta
+# in questa sessione, esattamente il motivo per cui esiste il pass equivalente per gli edifici) e
+# non vogliamo doverci ricordare di aggiungerla in un secondo momento.
+func _activate_all_individual_cells() -> void:
+	if macro_world == null:
+		return
+	var individual_macro_coords: Dictionary = {}
+	for member in human_individuals:
+		individual_macro_coords[member.home_macro_coords] = true
+	for coords in individual_macro_coords:
+		if not live_cells.has(coords):
+			_activate_live_cell(coords.x, coords.y)
+
+
+# Mirror di _macro_cell_has_buildings sopra, stessa scansione lineare accettabile con pochi
+# individui (5-20 oggi) — stessa nota sull'eventuale indice Dictionary[Vector2i, Array[
+# HumanIndividual]] se il numero crescesse (es. con la persistenza/nascite future) abbastanza da
+# farlo pesare.
+func _macro_cell_has_individuals(coords: Vector2i) -> bool:
+	for member in human_individuals:
+		if member.home_macro_coords == coords:
+			return true
+	return false
+
+
+# Step 4 FoW multi-sorgente, 2026-09-02 — per la cella `cell`, la lista delle posizioni (Vector2)
+# di ogni human_individuals GIÀ TRADOTTA nello spazio locale di QUELLA cella, pronta per
+# FogOfWarRenderer.update_visibility(). Stessa formula di offset già stabilita per Bug 2/
+# HumanIndividualSelectorController (individual.position + (home_macro_coords - target_coords) *
+# World.WIDTH) — qui generalizzata da "sempre verso il centro" a "verso QUALUNQUE cella vivente".
+# Filtro economico (richiesta utente, 2026-09-02): un individuo la cui home_macro_coords è a 2+
+# celle di distanza (Chebyshev — qualunque asse) da `cell` non può MAI rientrare nel raggio di
+# visibilità (visibility_radius, poche microcelle, contro celle larghe World.WIDTH=100 microcelle),
+# quindi viene scartato prima ancora di calcolare la traduzione — evita di costruire posizioni
+# inutili per individui lontani, specialmente quando la popolazione crescerà.
+func _relevant_source_positions_for_cell(cell: LiveMacroCell) -> Array[Vector2]:
+	var positions: Array[Vector2] = []
+	var cell_coords := Vector2i(cell.macro_x, cell.macro_y)
+	for member in human_individuals:
+		var delta := member.home_macro_coords - cell_coords
+		if abs(delta.x) >= 2 or abs(delta.y) >= 2:
+			continue
+		positions.append(member.position + Vector2(delta) * World.WIDTH)
+	return positions
+
+
 # Celle vive che il player sta EFFETTIVAMENTE esplorando in questo momento — il centro più gli
 # eventuali vicini attivi di prossimità (_active_neighbor_coords_set, max ~4 per come è
 # progettato lo streaming multi-cella, vedi _compute_relevant_neighbor_offsets). Deliberatamente
-# esclude le celle vive SOLO per un edificio lontano (_activate_all_building_cells) — usata da
-# _on_day_advanced per limitare il ridisegno vegetazione costoso al checkpoint stagionale a ciò
-# che qualcuno sta davvero guardando, vedi lì per il perché è sicuro farlo.
+# esclude le celle vive SOLO per un edificio lontano (_activate_all_building_cells) o per un
+# individuo del player rimasto indietro (_activate_all_individual_cells, stesso principio) —
+# usata da _on_day_advanced per limitare il ridisegno vegetazione costoso al checkpoint stagionale
+# a ciò che qualcuno sta davvero guardando, vedi lì per il perché è sicuro farlo.
 func _player_proximity_live_cells() -> Array:
 	var cells: Array = []
 	if live_cells.has(center_macro_coords):
@@ -837,25 +1211,7 @@ func _refresh_lod_focus_region() -> void:
 func _update_center_info_panel() -> void:
 	var center: LiveMacroCell = live_cells.get(center_macro_coords)
 	if center != null and center.macro_cell != null:
-		game_info_panel.set_coords(center.macro_cell.x, center.macro_cell.y)
-
-
-# Ri-lega ogni FogOfWarRenderer vivo all'individuo giusto in base a chi è ORA il centro:
-# l'Individual vero per la cella centrale, il proprio individuo ombra per chiunque altro (vedi
-# LiveMacroCell.fog_proxy_individual e il commento in _process). Richiamata SOLO quando center_
-# macro_coords cambia (prima attivazione in _ready(), commit di attraversamento) — mai ogni
-# frame: setup() forza un queue_redraw(), richiamarlo ogni frame vanificherebbe l'early-out di
-# FogOfWarRenderer.update_visibility. L'attivazione/disattivazione del solo vicino (_update_live_
-# neighbor) non cambia mai chi è il centro, quindi non ha mai bisogno di richiamare questo.
-func _rebind_fog_bindings() -> void:
-	for coords in live_cells:
-		var cell: LiveMacroCell = live_cells[coords]
-		if cell.fog_of_war_renderer == null:
-			continue
-		if coords == center_macro_coords:
-			cell.fog_of_war_renderer.setup(individual, cell.fog_of_war_memory)
-		else:
-			cell.fog_of_war_renderer.setup(cell.fog_proxy_individual, cell.fog_of_war_memory)
+		debug_bar.set_coords(center.macro_cell.x, center.macro_cell.y)
 
 
 # ============================================================================================
@@ -931,11 +1287,14 @@ func _update_live_neighbor() -> void:
 			_active_neighbor_coords_set.erase(coords)
 			continue
 		if not relevant_coords_set.has(coords):
-			# Un vicino che ospita un edificio non va MAI disattivato per allontanamento del
-			# player — vedi _activate_all_building_cells: resta vivo indefinitamente finché
-			# l'edificio esiste, smette solo di essere tracciato come "vicino di prossimità"
-			# (nessun cambiamento reale a live_cells, quindi changed resta false qui).
-			if _macro_cell_has_buildings(coords):
+			# Un vicino che ospita un edificio O un individuo del player non va MAI disattivato
+			# per allontanamento del bersaglio (richiesta utente, 2026-09-02, estende alla stessa
+			# regola già in uso per gli edifici — vedi _activate_all_building_cells/
+			# _activate_all_individual_cells): resta vivo indefinitamente finché l'edificio esiste
+			# o finché ci sono individui del player fisicamente lì (home_macro_coords), smette
+			# solo di essere tracciato come "vicino di prossimità" (nessun cambiamento reale a
+			# live_cells, quindi changed resta false qui).
+			if _macro_cell_has_buildings(coords) or _macro_cell_has_individuals(coords):
 				_active_neighbor_coords_set.erase(coords)
 				continue
 			_deactivate_live_cell(coords)
@@ -1047,17 +1406,40 @@ func _attempt_macro_cell_transition(dx: int, dy: int) -> void:
 		_activate_live_cell(target_x, target_y)
 
 	individual.position = entry_position
+	# Bugfix Bug 2 (2026-09-02): il bersaglio è l'UNICO individuo la cui macrocella fisica cambia
+	# davvero (chiunque altro resta dov'era, mai mosso da nulla) — aggiorna home_macro_coords e
+	# riparenta la sua HumanIndividualView sotto il nuovo container, esattamente come farebbe
+	# _activate_live_cell per un renderer qualsiasi. reparent() invece di remove_child+add_child
+	# manuali: nessuna differenza pratica qui (HumanIndividualView._process sovrascrive comunque
+	# position da zero subito dopo, ad ogni frame), ma è l'API dedicata di Godot per lo scopo.
+	individual.home_macro_coords = center_macro_coords
+	var target_view_index := human_individuals.find(individual)
+	if target_view_index != -1:
+		human_individual_views[target_view_index].reparent(live_cells[center_macro_coords].container)
 	individual_controller.setup(individual, live_cells[center_macro_coords].renderer)
 	_reposition_live_cells()
-	_rebind_fog_bindings()
+	# Bugfix (Passo 1 del piano bug camera/extra, 2026-09-02 — CORREGGE una rimozione sbagliata
+	# nello Step 3: qui NON viveva solo una compensazione per il follow automatico, ma anche una
+	# correzione di una discontinuità strutturale del sistema di coordinate ri-basate per
+	# macrocella, indipendente dal follow — rimuovendo tutto insieme avevo tolto anche questa
+	# seconda cosa). _reposition_live_cells() appena sopra ha spostato OGNI container di
+	# -Vector2(dx,dy)*MACRO_CELL_PIXELS (ri-basamento su center_macro_coords, vedi quella funzione):
+	# camera.position vive nello stesso spazio canvas ma non è dentro nessun container, quindi senza
+	# questa riga resterebbe fermo al vecchio valore assoluto mentre l'intero mondo si è appena
+	# ri-basato sotto di lui — visivamente indistinguibile da "la camera è saltata". Traslare
+	# camera.position dello STESSO delta (mai ricentrare sul bersaglio, che reintrodurrebbe un
+	# follow mascherato) mantiene la camera puntata sullo stesso punto fisico del mondo: se era già
+	# centrata sul bersaglio, resta centrata su di lui (anche lui trasla della stessa quantità, per
+	# definizione sempre al centro); se era altrove, resta su quell'altrove esatto. Un eventuale
+	# tween "centra" ancora in corso (vedi _center_camera_tween) va killato PRIMA di toccare
+	# camera.position qui — altrimenti al frame successivo il tween continuerebbe a interpolare
+	# verso il proprio target salvato nel vecchio spazio di coordinate, vanificando/confliggendo
+	# con questa correzione.
+	if _center_camera_tween != null:
+		_center_camera_tween.kill()
+	camera.position -= Vector2(dx, dy) * MACRO_CELL_PIXELS
 	_refresh_lod_focus_region()
 	_update_center_info_panel()
-	# individual.stop() sopra ha già disattivato is_moving, quindi il segui-camera in _process
-	# (gated su is_moving, vedi camera_follows_individual) non ricentrerebbe più da solo in
-	# questo stesso frame — senza questa chiamata esplicita la camera resterebbe ferma al bordo
-	# vecchio mentre la posizione dell'individuo è appena saltata di un'intera macrocella
-	# (avvolgimento), facendolo sparire dalla vista.
-	_center_camera_on_individual()
 
 
 # Ferma l'individuo esattamente al bordo della macrocella ATTUALE (mai un'intera microcella
@@ -1114,8 +1496,8 @@ func _compute_river_exterior_occupied(positions: Array) -> Dictionary:
 
 # Rigenera vegetazione/pesci/popolazioni animali/parametri età-frutta-stagione per UNA cella
 # viva — stesso lavoro che prima faceva _refresh_resource_visuals sull'unica cella, ora
-# parametrizzato. game_info_panel viene aggiornato solo se `cell` è il centro (vedi
-# _update_center_info_panel): il pannello mostra dove si trova il player, non i vicini.
+# parametrizzato. Le coordinate in DebugBar vengono aggiornate solo se `cell` è il centro (vedi
+# _update_center_info_panel): mostrano dove si trova il player, non i vicini.
 func _refresh_resource_visuals(cell: LiveMacroCell) -> void:
 	if cell.macro_state == null:
 		return
@@ -1168,9 +1550,8 @@ func _refresh_resource_visuals(cell: LiveMacroCell) -> void:
 	# la fonte di verità passata a set_vegetation_presence sotto (serve l'insieme completo per
 	# l'hint sintetico) e a _debug_print_individual_counts (conteggio reale di quanti individui
 	# esistono, non solo quanti ne disegniamo). Il "pop-in" (zone appena esplorate che restano vuote
-	# fino al prossimo refresh) resta un limite noto e accettato — vedi GameScene._ready(), che fa
-	# un refresh extra della cella centrale subito dopo _rebind_fog_bindings() apposta per coprire
-	# almeno l'ingresso in partita/scena.
+	# fino al prossimo refresh) resta un limite noto e accettato — mitigato da VEGETATION_REFRESH_
+	# MOVE_THRESHOLD in _process, non risolto del tutto.
 	_step_start_usec = Time.get_ticks_usec()
 	var render_vegetation_positions := _filter_vegetation_positions_by_visibility(cell, vegetation_positions)
 	_veg_timings_ms["1b_fog_visibility_filter"] = (Time.get_ticks_usec() - _step_start_usec) / 1000.0
@@ -1190,9 +1571,15 @@ func _refresh_resource_visuals(cell: LiveMacroCell) -> void:
 
 	# Ripristinato (richiesta utente, 2026-08-30): serve di nuovo per misurare l'esperimento
 	# "ogni macrocella con edifici resta viva" (vedi _activate_all_building_cells) — quanto
-	# esplode il conteggio individui al crescere delle celle-edificio sempre vive.
-	_debug_print_individual_counts(cell, vegetation_positions, render_vegetation_positions)
-	_debug_print_dedicated_space(cell)
+	# esplode il conteggio individui al crescere delle celle-edificio sempre vive. Gated dietro
+	# SHOW_VEGETATION_REFRESH_TIMING_LOGS (richiesta utente, 2026-09-02 — prima incondizionati,
+	# quindi la voce più rumorosa del log: stampavano ad OGNI refresh innescato dal movimento,
+	# ~ogni 3 microcelle mentre si cammina): stesso flag già usato dai log gemelli [VEG REFRESH
+	# TRIGGER]/[VEG REFRESH TIMING] per lo stesso evento, così un solo interruttore silenzia o
+	# riattiva l'intero gruppo insieme.
+	if DebugLogging.SHOW_VEGETATION_REFRESH_TIMING_LOGS:
+		_debug_print_individual_counts(cell, vegetation_positions, render_vegetation_positions)
+		_debug_print_dedicated_space(cell)
 	# FogOfWarRenderer disegna la vegetazione "sfocata" (Opzione B, vedi lì) sopra questa stessa
 	# vegetazione VERA — MicroCellRenderer non sa nulla del fog of war, mai più da quando abbiamo
 	# spostato l'Opzione B lì: il ritardo di aggiornamento a checkpoint qui non è un problema (solo
@@ -1334,6 +1721,15 @@ func _debug_print_individual_counts(cell: LiveMacroCell, vegetation_positions: D
 	print("[DEBUG INDIVIDUI] macrocella (%d,%d): %d individui (disegnati: %d) | celle vive ora: %d | macrocelle tracciate: %d | totale sessione: %d | totale celle vive: %d" % [
 		cell.macro_x, cell.macro_y, count, drawn_count, live_count, _debug_individual_counts_by_macro.size(), total, live_total
 	])
+	# DEBUG TEMPORANEO (richiesta utente, 2026-09-02): elenco ESPLICITO delle coordinate vive in
+	# questo momento — "celle vive ora" sopra è solo un conteggio, non dice QUALI. Stessa
+	# correzione di live_count sopra (current_coords potrebbe non essere ancora in live_cells alla
+	# primissima chiamata per una cella appena attivata), per restare coerente con quel numero.
+	var live_coords: Array = live_cells.keys()
+	if not live_cells.has(current_coords):
+		live_coords.append(current_coords)
+	live_coords.sort()
+	print("[DEBUG CELLE VIVE] %s" % [live_coords])
 
 
 # DEBUG TEMPORANEO — segue il lavoro su edifici/spazio (BuildingSiteClearingService/
@@ -1710,7 +2106,7 @@ func _assign_clock_to_all_live_cells() -> void:
 			r.clock = clock
 
 
-# Aggiorna GameData con la posizione ATTUALE dell'individuo/zoom camera (vedi Individual.position/
+# Aggiorna GameData con la posizione ATTUALE dell'individuo/zoom camera (vedi HumanIndividual.position/
 # Camera2D.zoom) — game_data è la stessa istanza scritta su disco da _on_save_game_file_selected
 # E la stessa istanza riletta da _ready() al rientro in GameScene (returning_to_player_view),
 # quindi basta valorizzarla qui perché sia il salvataggio vero sia un giro andata-ritorno per
@@ -1723,10 +2119,26 @@ func _assign_clock_to_all_live_cells() -> void:
 # salvataggio.
 func _sync_individual_state_to_game_data() -> void:
 	if individual != null:
-		game_data.player_micro_x = individual.position.x
-		game_data.player_micro_y = individual.position.y
-	# La posizione camera non ha stato proprio da salvare (segue sempre Individual mentre si
-	# muove, vedi camera_follows_individual), solo lo zoom (zoom.x == zoom.y sempre).
+		# player_individual_id (richiesta utente, 2026-09-02 — persistenza umana): quale membro
+		# del gruppo era il bersaglio corrente, per ripristinare `individual` sullo STESSO
+		# individuo invece che sempre human_individuals[0] (vedi _ready()). player_macro_cell_x/y
+		# DERIVATO da individual.home_macro_coords (mai più mantenuto incrementalmente sparso tra
+		# _attempt_macro_cell_transition e altri punti — quel campo serve anche a chi non è
+		# individual/GameScene, es. FirstStartMacroCellSelectionService/il salto debug verso
+		# MacroCellScene, quindi va tenuto comunque aggiornato, ma derivarlo qui una volta sola al
+		# momento del sync è più robusto che fidarsi di ogni singolo punto che sposta il bersaglio
+		# per ricordarsi di aggiornarlo a mano).
+		game_data.player_individual_id = individual.id
+		game_data.player_macro_cell_x = individual.home_macro_coords.x
+		game_data.player_macro_cell_y = individual.home_macro_coords.y
+	# Posizione camera (Step 3, 2026-09-02 — PRIMA non aveva stato proprio da salvare: seguiva
+	# sempre l'individuo, la cui posizione era già persistita sopra. Ora che la camera è libera,
+	# non è più derivabile da nient'altro, va salvata per conto suo). camera_position_saved=true
+	# marca il campo come valorizzato — vedi GameData per il perché un booleano esplicito invece
+	# del sentinel -1.0 usato altrove in questo stesso metodo.
+	game_data.camera_x = camera.position.x
+	game_data.camera_y = camera.position.y
+	game_data.camera_position_saved = true
 	game_data.camera_zoom = camera.zoom.x
 
 
@@ -1739,12 +2151,24 @@ func _on_save_pressed() -> void:
 
 func _on_save_game_file_selected(path: String) -> void:
 	var save_service := GameSaveService.new()
-	save_service.save_game_to_json(macro_world, game_data, path, fog_of_war_memories)
+	save_service.save_game_to_json(
+		macro_world, game_data, path, fog_of_war_memories, human_folk, human_population_group, human_individuals
+	)
 
 	if _pending_leave_action != &"":
 		_execute_pending_leave_action()
 
 func _on_primary_action_pressed(action_id: StringName) -> void:
+	match action_id:
+		&"center_on_individual":
+			_center_camera_on_individual()
+
+
+# toggle_animals_visibility/toggle_flora_updates/world_debug/macro_cell_debug — vissuti prima
+# dentro _on_primary_action_pressed/_on_secondary_action_pressed, spostati qui insieme allo
+# spostamento dei relativi bottoni da GameInfoPanel a DebugBar (vedi DebugBar.gd): stesso
+# comportamento di sempre, solo il pannello sorgente del segnale action_pressed e' cambiato.
+func _on_debug_action_pressed(action_id: StringName) -> void:
 	match action_id:
 		&"toggle_animals_visibility":
 			animals_visible = not animals_visible
@@ -1753,14 +2177,18 @@ func _on_primary_action_pressed(action_id: StringName) -> void:
 			for cell in live_cells.values():
 				for r in cell.animal_renderers.values():
 					r.set_animals_visible(animals_visible)
-			game_info_panel.primary_actions_bar.set_slot_toggled(0, animals_visible)
+			debug_bar.set_slot_toggled(1, animals_visible)
 			GameSettings.game_scene_animals_visible = animals_visible
 		&"toggle_flora_updates":
 			flora_daily_updates_enabled = not flora_daily_updates_enabled
-			game_info_panel.primary_actions_bar.set_slot_toggled(1, flora_daily_updates_enabled)
+			debug_bar.set_slot_toggled(0, flora_daily_updates_enabled)
 			GameSettings.game_scene_flora_updates_enabled = flora_daily_updates_enabled
-		&"center_on_individual":
-			_center_camera_on_individual()
+		&"world_debug":
+			_on_world_debug_pressed()
+		&"macro_cell_debug":
+			_on_macro_cell_debug_pressed()
+		&"advance_year":
+			_on_advance_year_pressed()
 
 
 # Tasto 🛖 nel sottomenu costruzione di BuildBar — per ora SOLO l'anteprima visiva (vedi
@@ -1960,10 +2388,6 @@ func _on_secondary_action_pressed(action_id: StringName) -> void:
 			help_dialog.open_dialog()
 		&"menu":
 			system_menu_dialog.open_menu()
-		&"world_debug":
-			_on_world_debug_pressed()
-		&"macro_cell_debug":
-			_on_macro_cell_debug_pressed()
 
 func _on_blocking_dialog_visibility_changed(dialog: Window) -> void:
 	if dialog.visible:
@@ -2179,8 +2603,8 @@ func _update_calendar_display() -> void:
 	season_progress_bar.set_current_day(game_data.current_day)
 
 
-# STRUMENTO DI DEBUG (vedi GameInfoPanel.gd): da rimuovere o nascondere dietro un flag prima del
-# player finale — il player non deve poter "teletrasportarsi" alla vista mondo a piacimento.
+# STRUMENTO DI DEBUG (vedi DebugBar.gd): da rimuovere prima del player finale — il player non
+# deve poter "teletrasportarsi" alla vista mondo a piacimento.
 # Stesso schema di MacroCellScene._on_back_to_world_pressed: macro_world/game_data sono già gli
 # stessi oggetti letti da GameSettings.active_world/active_game_data all'ingresso (mai
 # riassegnati a qualcos'altro nel frattempo), quindi non serve riscriverli — solo lo stato
@@ -2188,6 +2612,9 @@ func _update_calendar_display() -> void:
 func _on_world_debug_pressed() -> void:
 	_sync_individual_state_to_game_data()
 	GameSettings.active_fog_of_war_memories = fog_of_war_memories
+	GameSettings.active_human_folk = human_folk
+	GameSettings.active_human_population_group = human_population_group
+	GameSettings.active_human_individuals = human_individuals
 	GameSettings.returning_to_world_scene = true
 	if clock != null and macro_world != null:
 		GameSettings.active_clock_is_playing = clock.is_playing
@@ -2195,14 +2622,17 @@ func _on_world_debug_pressed() -> void:
 	get_tree().change_scene_to_file("res://simulation/scenes/game/WorldScene.tscn")
 
 
-# STRUMENTO DI DEBUG (vedi GameInfoPanel.gd): da rimuovere o nascondere dietro un flag prima del
-# player finale. Stesso schema del bottone "🧍" di WorldScene/MacroCellScene (_on_game_view_
+# STRUMENTO DI DEBUG (vedi DebugBar.gd): da rimuovere prima del player finale. Stesso schema del
+# bottone "🧍" di WorldScene/MacroCellScene (_on_game_view_
 # pressed) ma in direzione opposta: verso MacroCellScene, sulla STESSA cella in cui si trova il
 # player (GameData.player_macro_cell_x/y) — nessun returning_to_* da impostare, MacroCellScene
 # non ha un concetto di "ritorno", legge sempre selected_macro_cell_x/y + active_world fresco.
 func _on_macro_cell_debug_pressed() -> void:
 	_sync_individual_state_to_game_data()
 	GameSettings.active_fog_of_war_memories = fog_of_war_memories
+	GameSettings.active_human_folk = human_folk
+	GameSettings.active_human_population_group = human_population_group
+	GameSettings.active_human_individuals = human_individuals
 	GameSettings.selected_macro_cell_x = game_data.player_macro_cell_x
 	GameSettings.selected_macro_cell_y = game_data.player_macro_cell_y
 	GameSettings.active_world = macro_world

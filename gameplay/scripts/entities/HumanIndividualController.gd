@@ -1,20 +1,24 @@
-class_name IndividualController
+class_name HumanIndividualController
 extends RefCounted
 
-# Input handling per l'individuo controllabile — stesso pattern di CellSelectorController
-# (RefCounted, converte mouse->coordinate tramite CELL_SIZE, GameScene resta il chiamante che
-# lo istanzia e gli inoltra gli eventi da _unhandled_input, questo controller non decide altro
-# che selezione/target). Schema confermato con l'utente: click sinistro seleziona/deseleziona,
-# click destro (solo con un individuo selezionato) imposta il target di movimento.
+# Input handling di MOVIMENTO per il bersaglio corrente (GameScene.individual — non più fisso sul
+# leader/human_individuals[0], vedi Step 2 del piano movimento indipendente, 2026-09-02) — stesso
+# pattern di CellSelectorController (RefCounted, converte mouse->coordinate tramite CELL_SIZE,
+# GameScene resta il chiamante che lo istanzia e gli inoltra gli eventi da _unhandled_input). Click
+# destro (solo con l'individuo agganciato selezionato) imposta il target di movimento — SOLO
+# movimento: la selezione (click sinistro, su un individuo QUALSIASI) vive in
+# HumanIndividualSelectorController. Separare i due concern evita di dover istanziare un controller
+# per individuo: UN SOLO controller esiste in GameScene, ri-agganciato (setup()) all'individuo
+# selezionato ogni volta che cambia (vedi GameScene._set_movement_target) — mai più di un individuo
+# in movimento contemporaneamente in questo step (scope concordato, 2026-09-02).
 
-const CELL_SIZE: int = 10 # stesso fattore pixel/microcella di MicroCellRenderer/IndividualView
-const SELECT_RADIUS_MICROCELLS: float = 2.0 # tolleranza di click attorno alla posizione dell'individuo
+const CELL_SIZE: int = 10 # stesso fattore pixel/microcella di MicroCellRenderer/HumanIndividualView
 
-var individual: Individual
+var individual: HumanIndividual
 var reference_node: Node2D # nodo il cui spazio locale coincide con la griglia microcella (renderer)
 
 
-func setup(p_individual: Individual, p_reference_node: Node2D) -> void:
+func setup(p_individual: HumanIndividual, p_reference_node: Node2D) -> void:
 	individual = p_individual
 	reference_node = p_reference_node
 
@@ -22,19 +26,11 @@ func setup(p_individual: Individual, p_reference_node: Node2D) -> void:
 func handle_input(event: InputEvent) -> void:
 	if individual == null or reference_node == null:
 		return
-	if not (event is InputEventMouseButton) or not event.pressed:
+	if not (event is InputEventMouseButton) or not event.pressed or event.button_index != MOUSE_BUTTON_RIGHT:
 		return
 
 	var mouse_pos_microcells: Vector2 = reference_node.get_local_mouse_position() / CELL_SIZE
-
-	if event.button_index == MOUSE_BUTTON_LEFT:
-		_try_select(mouse_pos_microcells)
-	elif event.button_index == MOUSE_BUTTON_RIGHT:
-		_try_set_target(mouse_pos_microcells)
-
-
-func _try_select(mouse_pos_microcells: Vector2) -> void:
-	individual.is_selected = individual.position.distance_to(mouse_pos_microcells) <= SELECT_RADIUS_MICROCELLS
+	_try_set_target(mouse_pos_microcells)
 
 
 # CROSS_BORDER_MARGIN: margine minimo oltre il bordo [0, WIDTH)/[0, HEIGHT) entro cui è ancora

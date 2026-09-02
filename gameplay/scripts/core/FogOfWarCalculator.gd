@@ -6,8 +6,9 @@ const FOG_OF_WAR_RULES_PATH := "res://gameplay/data/fog_of_war/fog_of_war_rules.
 # Cache statica come ResourceCalculator._density_rules_cache/_growth_rules_cache: qui non serve
 # un Dictionary keyed per tipo (FogOfWarRules è una singola istanza globale, stesso schema di
 # DifficultyRules/DifficultyCalculator), ma il caricamento va comunque cacheato — get_fog_of_war_
-# rules() viene chiamato da FogOfWarRenderer.setup(), rieseguito ogni volta che una cella viva
-# cambia centro (vedi GameScene._rebind_fog_bindings), non solo una volta per sessione.
+# rules() viene chiamato da FogOfWarRenderer.setup(), una volta per ogni cella viva attivata (vedi
+# GameScene._activate_live_cell — con lo streaming multi-cella possono essercene diverse vive
+# contemporaneamente), non solo una volta per sessione.
 # _rules_loaded distingue "non ancora tentato" da "tentato, risorsa assente" (in quel caso
 # _rules_cache resta null legittimamente, non va ritentato il load ad ogni chiamata).
 static var _rules_cache: FogOfWarRules = null

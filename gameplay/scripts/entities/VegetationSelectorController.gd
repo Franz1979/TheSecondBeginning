@@ -2,12 +2,12 @@ class_name VegetationSelectorController
 extends RefCounted
 
 # Hit-test per il click su un singolo individuo di vegetazione (TREE/SHRUB) — analogo a
-# IndividualController per il player, ma multi-cella: itera OGNI LiveMacroCell viva (centro +
+# HumanIndividualController per il player, ma multi-cella: itera OGNI LiveMacroCell viva (centro +
 # vicini attivi dello streaming, vedi GameScene.live_cells) invece di un solo reference_node,
 # perché la vegetazione cliccabile non è mai limitata alla sola cella centrale.
 #
 # Solo click SINISTRO: il destro resta esclusivamente il movimento del player (vedi
-# IndividualController._try_set_target) — un click destro non viene mai considerato un tentativo
+# HumanIndividualController._try_set_target) — un click destro non viene mai considerato un tentativo
 # di selezione vegetale. Priorità concordata esplicitamente con l'utente: la vegetazione vince
 # entro il proprio raggio di hit-test (più piccolo/preciso del raggio di selezione del player) —
 # ma SOLO se è davvero il bersaglio più vicino al click: la distanza del candidato migliore viene
@@ -18,7 +18,7 @@ extends RefCounted
 # esattamente come prima dell'introduzione di questo controller — nessuna modifica al flusso
 # player quando non si clicca vicino a una pianta.
 
-const CELL_SIZE: int = 10 # stesso fattore pixel/microcella di MicroCellRenderer/IndividualView
+const CELL_SIZE: int = 10 # stesso fattore pixel/microcella di MicroCellRenderer/HumanIndividualView
 const CLICK_RADIUS_PX: float = 4.5 # tolleranza attorno al punto-schermo risolto di un individuo
 const CANDIDATE_TYPES: Array[GameTypes.WorldObjectType] = [
 	GameTypes.WorldObjectType.TREE, GameTypes.WorldObjectType.SHRUB,
@@ -44,7 +44,7 @@ func try_select(event: InputEvent, live_cells: Dictionary) -> Dictionary:
 
 		# Spazio locale DI QUESTA cella (il container ha il proprio offset nello streaming multi-
 		# cella, vedi GameScene._reposition_live_cells) — stesso principio già usato da
-		# IndividualController.handle_input con reference_node.get_local_mouse_position().
+		# HumanIndividualController.handle_input con reference_node.get_local_mouse_position().
 		var local_mouse: Vector2 = cell.renderer.get_local_mouse_position()
 		var click_lot := Vector2i(int(floor(local_mouse.x / CELL_SIZE)), int(floor(local_mouse.y / CELL_SIZE)))
 

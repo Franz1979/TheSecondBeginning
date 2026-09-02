@@ -5,29 +5,52 @@
 [node name="MiniMapPanel" type="VBoxContainer"]
 script = ExtResource("1_minimap")
 
-[node name="ZoomControls" type="HBoxContainer" parent="."]
+[node name="MapArea" type="Control" parent="."]
 layout_mode = 2
-alignment = 2
+custom_minimum_size = Vector2(150, 150)
 
-[node name="ZoomOutButton" type="Button" parent="ZoomControls"]
+[node name="MapViewport" type="Control" parent="MapArea"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+clip_contents = true
+custom_minimum_size = Vector2(150, 150)
+
+[node name="MapTextureRect" type="TextureRect" parent="MapArea/MapViewport"]
+layout_mode = 0
+offset_right = 150.0
+offset_bottom = 150.0
+texture_filter = 1
+
+[node name="PlayerMarker" type="Panel" parent="MapArea/MapViewport/MapTextureRect"]
+visible = false
+mouse_filter = 2
+
+[node name="ButtonRow" type="HBoxContainer" parent="MapArea"]
+layout_mode = 1
+anchors_preset = 1
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -92.0
+offset_top = 2.0
+offset_right = 0.0
+offset_bottom = 34.0
+grow_horizontal = 0
+
+[node name="FocusButton" type="Button" parent="MapArea/ButtonRow"]
+custom_minimum_size = Vector2(28, 0)
+layout_mode = 2
+text = "🎯"
+
+[node name="ZoomOutButton" type="Button" parent="MapArea/ButtonRow"]
 custom_minimum_size = Vector2(28, 0)
 layout_mode = 2
 text = "-"
 
-[node name="ZoomInButton" type="Button" parent="ZoomControls"]
+[node name="ZoomInButton" type="Button" parent="MapArea/ButtonRow"]
 custom_minimum_size = Vector2(28, 0)
 layout_mode = 2
 text = "+"
-
-[node name="ScrollContainer" type="ScrollContainer" parent="."]
-custom_minimum_size = Vector2(220, 220)
-layout_mode = 2
-
-[node name="MapTextureRect" type="TextureRect" parent="ScrollContainer"]
-custom_minimum_size = Vector2(220, 220)
-layout_mode = 2
-texture_filter = 1
-
-[node name="PlayerMarker" type="Panel" parent="ScrollContainer/MapTextureRect"]
-visible = false
-mouse_filter = 2

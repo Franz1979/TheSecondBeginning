@@ -34,13 +34,18 @@ func load_game_from_json(file_path: String) -> LoadedGame:
 	# (vedi GameData) — -1 è lo stesso default "mai inizializzata" della classe.
 	game_data.player_macro_cell_x = int(data["game"].get("player_macro_cell_x", -1))
 	game_data.player_macro_cell_y = int(data["game"].get("player_macro_cell_y", -1))
-	# .get(key, -1.0) per compatibilità con save precedenti l'introduzione della posizione micro
-	# del player (vedi GameData) — -1.0 è lo stesso default "mai valorizzata" della classe.
-	game_data.player_micro_x = float(data["game"].get("player_micro_x", -1.0))
-	game_data.player_micro_y = float(data["game"].get("player_micro_y", -1.0))
+	# .get(key, -1) — -1 è lo stesso default "nessun bersaglio persistito" della classe (vedi
+	# GameData — sostituisce player_micro_x/y, rimossi: la posizione viaggia ora dentro la sezione
+	# "human" sotto, per ogni individuo).
+	game_data.player_individual_id = int(data["game"].get("player_individual_id", -1))
 	# .get(key, -1.0) per compatibilità con save precedenti l'introduzione dello zoom camera
 	# (vedi GameData) — -1.0 è lo stesso default "mai valorizzato" della classe.
 	game_data.camera_zoom = float(data["game"].get("camera_zoom", -1.0))
+	# .get(key, 0.0/0.0/false) per compatibilità con save precedenti l'introduzione della posizione
+	# camera (vedi GameData) — stessi default "mai valorizzata" della classe.
+	game_data.camera_x = float(data["game"].get("camera_x", 0.0))
+	game_data.camera_y = float(data["game"].get("camera_y", 0.0))
+	game_data.camera_position_saved = bool(data["game"].get("camera_position_saved", false))
 	# .get(key, 0) per compatibilità con save precedenti l'introduzione della pulizia
 	# periodica del fog of war (vedi GameData) — 0 è lo stesso default della classe.
 	game_data.fog_of_war_last_prune_absolute_day = int(data["game"].get("fog_of_war_last_prune_absolute_day", 0))
@@ -326,9 +331,54 @@ func load_game_from_json(file_path: String) -> LoadedGame:
 			memory.last_seen_by_position[pos] = int(entry["day"])
 		fog_of_war_memories[coords] = memory
 
+	# Popolo umano del player (vedi GameSaveService per il formato) — assente (nessuna chiave
+	# "human") per un salvataggio precedente questa feature o mai passato da una partita con
+	# popolo seminato: in quel caso i tre campi restano ai default di LoadedGame (null/null/[]) e
+	# GameScene prende il ramo "semina fresco", esattamente come farebbe senza alcuna sezione
+	# "human" scritta. human_rules_ref (Folk) NON è valorizzato qui — path fisso di competenza di
+	# GameScene (stesso motivo per cui HumanSeedingService non lo carica da sé, vedi lì: "un domani
+	# con piu' Folk questo path fisso andra' sostituito da una vera risoluzione per Folk", non
+	# ancora il caso), il chiamante lo assegna dopo aver ricevuto questo Folk esattamente come fa
+	# già per un Folk appena seminato.
+	var human_folk: Folk = null
+	var human_population_group: HumanPopulationGroup = null
+	var human_individuals: Array[HumanIndividual] = []
+	if data.has("human"):
+		var human_data: Dictionary = data["human"]
+		human_folk = Folk.new()
+		human_folk.id = int(human_data["folk"]["id"])
+		human_folk.name = String(human_data["folk"]["name"])
+
+		human_population_group = HumanPopulationGroup.new()
+		human_population_group.id = int(human_data["group"]["id"])
+		human_population_group.folk_ref = human_folk
+		human_population_group.home_macro_coords = Vector2i(
+			int(human_data["group"]["home_macro_x"]), int(human_data["group"]["home_macro_y"])
+		)
+		human_population_group.total_count = int(human_data["group"]["total_count"])
+
+		for individual_data in human_data["individuals"]:
+			var individual := HumanIndividual.new()
+			individual.id = int(individual_data["id"])
+			individual.sex = int(individual_data["sex"])
+			individual.birth_year_virtual = int(individual_data["birth_year_virtual"])
+			individual.mother_id = int(individual_data["mother_id"])
+			individual.father_id = int(individual_data["father_id"])
+			individual.partner_id = int(individual_data["partner_id"])
+			individual.name = String(individual_data["name"])
+			individual.position = Vector2(float(individual_data["position_x"]), float(individual_data["position_y"]))
+			individual.home_macro_coords = Vector2i(
+				int(individual_data["home_macro_x"]), int(individual_data["home_macro_y"])
+			)
+			individual.source_group_ref = human_population_group
+			human_individuals.append(individual)
+
 	var loaded_game := LoadedGame.new()
 	loaded_game.world = world
 	loaded_game.game_data = game_data
 	loaded_game.fog_of_war_memories = fog_of_war_memories
+	loaded_game.human_folk = human_folk
+	loaded_game.human_population_group = human_population_group
+	loaded_game.human_individuals = human_individuals
 	print("Game loaded from JSON: ", file_path)
 	return loaded_game

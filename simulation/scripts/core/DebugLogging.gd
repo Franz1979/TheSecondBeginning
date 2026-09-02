@@ -69,11 +69,23 @@ const SHOW_FAUNA_DIAGNOSTICS_LOGS := false
 # GameScene). A false: nessun comportamento di simulazione cambia, solo il print viene soppresso.
 const SHOW_DAILY_TIMING_LOGS := true
 
-# Filtro dedicato per [VEG REFRESH TIMING] (GameScene._refresh_resource_visuals) — diagnostica per
-# la Proposta 2 (evitare di costruire MultiMesh per individui coperti da FoW pieno): serve a capire
-# se il costo dell'8.9s osservato al checkpoint stagionale (8 celle vive) è nella generazione
-# posizioni (VegetationPositionService, indipendente dal FoW) o nel rebuild MultiMesh
-# (MicroCellRenderer.set_vegetation_positions e affini) — solo il secondo beneficerebbe di un
-# filtro per visibilità. A false: nessun comportamento di simulazione cambia, solo il print viene
-# soppresso.
-const SHOW_VEGETATION_REFRESH_TIMING_LOGS := true
+# Filtro dedicato per [VEG REFRESH TIMING]/[VEG REFRESH TRIGGER]/[DEBUG INDIVIDUI]/[DEBUG SPAZIO]/
+# [DEBUG CELLE VIVE] (GameScene._refresh_resource_visuals e affini) — diagnostica per la Proposta 2
+# (evitare di costruire MultiMesh per individui coperti da FoW pieno): serve a capire se il costo
+# dell'8.9s osservato al checkpoint stagionale (8 celle vive) è nella generazione posizioni
+# (VegetationPositionService, indipendente dal FoW) o nel rebuild MultiMesh (MicroCellRenderer.
+# set_vegetation_positions e affini) — solo il secondo beneficerebbe di un filtro per visibilità.
+# A false (richiesta utente, 2026-09-02 — troppo rumoroso durante l'esplorazione normale, un
+# blocco intero ad ogni ~3 microcelle di movimento): nessun comportamento di simulazione cambia,
+# solo il print viene soppresso. Rimetti a true per riavere tutto il gruppo come prima.
+const SHOW_VEGETATION_REFRESH_TIMING_LOGS := false
+
+# Filtro dedicato per [FOW REDRAW TIMING] (FogOfWarRenderer._draw) — diagnostica per lo Step 4 FoW
+# multi-sorgente (2026-09-02): misura il costo reale del ciclo da 10.000 celle ora che il test di
+# distanza è a N vie (una per sorgente rilevante, vedi GameScene._relevant_source_positions_for_cell)
+# invece che a una sola — serve a capire se quell'aggiunta pesa abbastanza da giustificare uno
+# "splat" pre-calcolato per-sorgente (rimandato finché non misurato, vedi discussione con l'utente).
+# A true di default: è la diagnostica appena richiesta per il primo test in game di questo step,
+# a differenza di SHOW_VEGETATION_REFRESH_TIMING_LOGS sopra che è già stata silenziata dopo essere
+# stata usata. A false: nessun comportamento di simulazione cambia, solo il print viene soppresso.
+const SHOW_FOW_REDRAW_TIMING_LOGS := true

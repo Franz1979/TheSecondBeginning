@@ -76,6 +76,18 @@ var active_game_data: GameData = null
 # stesso processo. Persistito solo per la sessione corrente (non nei save su disco), stesso
 # trattamento di returning_to_player_view sotto.
 var active_fog_of_war_memories: Dictionary = {}
+# Canale di handoff per il popolo umano del player (Folk/HumanPopulationGroup/HumanIndividual,
+# richiesta utente, 2026-09-02 — persistenza) — STESSO identico schema/motivo/momenti di lettura-
+# scrittura di active_fog_of_war_memories sopra (letto SOLO nel ramo returning_to_player_view di
+# GameScene._ready(), MAI per un ingresso "vero" da partita nuova — WorldScene._redirect_to_game_
+# scene lo svuota esplicitamente in quel caso, stesso motivo: non ereditare il popolo di una
+# partita precedente ancora viva in questo processo). Nessun campo separato per "quale individuo
+# era il bersaglio": quello vive su GameData.player_individual_id, che viaggia già attraverso
+# active_game_data sopra (stesso oggetto, mai ricreato lungo il giro andata-ritorno) — un secondo
+# canale qui sarebbe stato ridondante.
+var active_human_folk: Folk = null
+var active_human_population_group: HumanPopulationGroup = null
+var active_human_individuals: Array[HumanIndividual] = []
 var returning_to_world_scene: bool = false
 # Stesso schema di returning_to_world_scene sopra, per il canale MacroCellScene/WorldScene ->
 # GameScene (vista principale player su una singola macrocella): settato a true da chi torna

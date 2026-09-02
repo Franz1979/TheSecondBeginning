@@ -1,0 +1,34 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://gameplay/scenes/game/HumanIndividualInfoPanel.gd" id="1_hind"]
+
+[node name="HumanIndividualInfoPanel" type="VBoxContainer"]
+script = ExtResource("1_hind")
+
+[node name="NameLabel" type="Label" parent="."]
+layout_mode = 2
+theme_override_font_sizes/font_size = 11
+
+[node name="SexLabel" type="Label" parent="."]
+layout_mode = 2
+theme_override_font_sizes/font_size = 11
+
+[node name="AgeLabel" type="Label" parent="."]
+layout_mode = 2
+theme_override_font_sizes/font_size = 11
+
+[node name="IdLabel" type="Label" parent="."]
+layout_mode = 2
+theme_override_font_sizes/font_size = 10
+
+[node name="MotherLabel" type="Label" parent="."]
+layout_mode = 2
+theme_override_font_sizes/font_size = 10
+
+[node name="FatherLabel" type="Label" parent="."]
+layout_mode = 2
+theme_override_font_sizes/font_size = 10
+
+[node name="PartnerLabel" type="Label" parent="."]
+layout_mode = 2
+theme_override_font_sizes/font_size = 10

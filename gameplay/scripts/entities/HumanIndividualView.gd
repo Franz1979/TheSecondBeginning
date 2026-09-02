@@ -1,8 +1,8 @@
-class_name IndividualView
+class_name HumanIndividualView
 extends Node2D
 
 # Resa visiva PLACEHOLDER dell'individuo controllabile — sarà sostituita in blocco al passaggio
-# al 3D senza toccare Individual (legge solo il suo stato via setup(), non lo modifica mai).
+# al 3D senza toccare HumanIndividual (legge solo il suo stato via setup(), non lo modifica mai).
 # Un semplice cerchio disegnato immediate-mode, stesso approccio minimale già usato altrove per
 # i placeholder di questo modulo.
 
@@ -16,10 +16,10 @@ const SELECTION_COLOR := Color(1.0, 1.0, 1.0, 0.9)
 const SELECTION_RADIUS: float = RADIUS + 0.3
 const SELECTION_WIDTH: float = 0.6
 
-var individual: Individual
+var individual: HumanIndividual
 
 
-func setup(p_individual: Individual) -> void:
+func setup(p_individual: HumanIndividual) -> void:
 	individual = p_individual
 
 

@@ -89,6 +89,16 @@ func _get_edge_pan_vector() -> Vector2:
 
 
 func _unhandled_input(event: InputEvent) -> void:
+	# Drag-to-pan col tasto CENTRALE (richiesta utente, 2026-09-02 — mancava, unica modalità di
+	# movimento manuale della camera non ancora coperta da WASD/edge-pan; il tasto destro resta
+	# escluso apposta, già impegnato per gli ordini di movimento in GameScene). event.relative è
+	# già in pixel-schermo per questo frame di InputEventMouseMotion — diviso per zoom (non
+	# moltiplicato: zoom > 1 = più vicino = un pixel-schermo copre MENO mondo) così il trascinamento
+	# segue il cursore 1:1 in world-space qualunque sia il livello di zoom corrente, esattamente
+	# come ci si aspetta da un pan.
+	if event is InputEventMouseMotion and event.button_mask & MOUSE_BUTTON_MASK_MIDDLE:
+		position -= event.relative / zoom
+
 	if event is InputEventMouseButton:
 		# Rotella avanti (WHEEL_UP) avvicina, rotella indietro (WHEEL_DOWN) allontana — invertito
 		# rispetto al comportamento originale, confermato con l'utente per tutte le viste (script

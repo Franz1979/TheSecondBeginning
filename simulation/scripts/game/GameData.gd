@@ -42,22 +42,34 @@ var starting_difficulty_ratio: float = -1.0
 var player_macro_cell_x: int = -1
 var player_macro_cell_y: int = -1
 
-# Posizione dell'individuo controllabile DENTRO player_macro_cell_x/y, in coordinate microcella
-# continue (stesso spazio di Individual.position, vedi gameplay/scripts/entities/Individual.gd)
-# — non le coordinate macro sopra. -1.0 = mai valorizzata: GameScene lo interpreta come segnale
-# per posizionare l'individuo al centro della griglia (comportamento di sempre), esattamente come
-# -1 su player_macro_cell_x/y segnala "scegli tu la cella di partenza".
-var player_micro_x: float = -1.0
-var player_micro_y: float = -1.0
+# Id dell'HumanIndividual che era il bersaglio di movimento/streaming corrente (GameScene.
+# individual) al momento del salvataggio/cambio-scena — richiesta utente, 2026-09-02 (persistenza
+# Folk/HumanPopulationGroup/HumanIndividual). Sostituisce player_micro_x/y (RIMOSSI, ridondanti
+# ora: la posizione di OGNI individuo, bersaglio incluso, viaggia già dentro l'array persistito di
+# HumanIndividual — vedi GameSaveService/GameLoadService, sezione "human"). -1 = nessun individuo
+# umano persistito in questa partita (mai il caso oggi che il player esista, ma sentinella comunque
+# coerente con la convenzione già in uso nel file). GameScene lo usa per ripristinare `individual`
+# sul MEDESIMO membro del gruppo invece che sempre sul primo dell'array.
+var player_individual_id: int = -1
 
 # Zoom della Camera2D di GameScene (Camera2D.zoom.x == .y sempre in questo progetto — vedi
 # CameraController, lo scroll/le scorciatoie +/- applicano sempre lo stesso delta a entrambi gli
-# assi — quindi un solo float basta, a differenza di player_micro_x/y che sono davvero 2D). -1.0
+# assi — quindi un solo float basta, a differenza di camera_x/y sotto che sono davvero 2D). -1.0
 # = mai valorizzato: GameScene lascia lo zoom di default della .tscn (partita nuova, o save
-# precedente l'introduzione di questo campo). Solo lo zoom, non la posizione camera: oggi la
-# camera segue sempre Individual (camera_follows_individual), la cui posizione è già persistita
-# sopra — se in futuro arriverà lo sgancio camera-player, la posizione andrà salvata allora.
+# precedente l'introduzione di questo campo).
 var camera_zoom: float = -1.0
+
+# Posizione della Camera2D di GameScene, in pixel — lo "sgancio camera-player" anticipato nel
+# commento sopra (Step 3 del piano movimento indipendente, 2026-09-02: la camera non segue più
+# nessun individuo, quindi la sua posizione non è più derivabile da quella di chi la seguiva e va
+# persistita per conto proprio). camera_position_saved (booleano esplicito, non il sentinel -1.0
+# usato altrove in questo file) segnala "mai valorizzato" — a differenza di player_macro_cell_x/y,
+# che vivono in un intervallo stretto e sempre non negativo, CameraController non ha alcun limite
+# di pan (vedi la nota "Camera bounds deferred" — memoria di progetto): camera_x/y possono quindi
+# legittimamente essere negativi o qualunque valore, rendendo -1.0 un sentinel ambiguo qui.
+var camera_x: float = 0.0
+var camera_y: float = 0.0
+var camera_position_saved: bool = false
 
 # Ultimo absolute_day (vedi get_absolute_day sotto) in cui GameScene ha eseguito la pulizia
 # periodica di FogOfWarMemory.last_seen_by_position (vedi FogOfWarMemory.prune_stale/

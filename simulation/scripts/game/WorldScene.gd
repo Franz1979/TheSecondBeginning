@@ -21,6 +21,14 @@ var game_data: GameData
 # qui senza mai passare da GameScene (_on_save_game_file_selected) — stessa natura/motivazione di
 # world/game_data sopra.
 var fog_of_war_memories: Dictionary = {}
+# Popolo umano del player (richiesta utente, 2026-09-02 — persistenza) — stessa natura/motivazione
+# di fog_of_war_memories sopra: WorldScene non semina mai un popolo proprio, esiste solo per farlo
+# transitare intatto attraverso gli stessi punti (da un salvataggio caricato fino a GameScene, o
+# di nuovo su disco se si salva da qui). null/null/[] finché resta una partita nuova mai passata
+# da GameScene — stesso default "mai valorizzato" del resto.
+var human_folk: Folk = null
+var human_population_group: HumanPopulationGroup = null
+var human_individuals: Array[HumanIndividual] = []
 var renderer: WorldRenderer
 var game_controller: CellSelectorController
 var clock: GameClockController
@@ -105,13 +113,17 @@ func _ready() -> void:
 		world = GameSettings.active_world
 		game_data = GameSettings.active_game_data
 		fog_of_war_memories = GameSettings.active_fog_of_war_memories
+		human_folk = GameSettings.active_human_folk
+		human_population_group = GameSettings.active_human_population_group
+		human_individuals = GameSettings.active_human_individuals
 	else:
 		is_new_game = _load_world()
 
 	# Partita NUOVA appena seminata (vedi _load_world/_populate_new_world sotto) O un salvataggio
 	# ESISTENTE appena caricato con successo (vedi _loaded_existing_save sopra): in entrambi i
 	# casi il player deve aprire subito GameScene, non piu' WorldScene — per un salvataggio
-	# esistente, GameData.player_macro_cell_x/y e player_micro_x/y sono gia' valorizzati da
+	# esistente, GameData.player_macro_cell_x/y e il popolo umano persistito (human_folk/
+	# human_population_group/human_individuals, propagato sotto) sono gia' valorizzati da
 	# GameLoadService, quindi GameScene riprende esattamente da dove il player aveva lasciato la
 	# partita invece di sceglierne una nuova. Un caricamento FALLITO (fallback su mondo vuoto,
 	# _loaded_existing_save resta false in quel ramo) continua invece a mostrare WorldScene come
@@ -163,6 +175,9 @@ func _load_world() -> bool:
 		world = loaded_game.world
 		game_data = loaded_game.game_data
 		fog_of_war_memories = loaded_game.fog_of_war_memories
+		human_folk = loaded_game.human_folk
+		human_population_group = loaded_game.human_population_group
+		human_individuals = loaded_game.human_individuals
 		_loaded_existing_save = true
 		return false
 
@@ -265,9 +280,9 @@ func _populate_new_world(target_world: World) -> void:
 # cella gia' nota). Per una partita nuova, GameData.player_macro_cell_x/y sono ancora -1, quindi
 # GameScene deve prendere il proprio ramo 2 e invocare da se' FirstStartMacroCellSelectionService
 # — lasciare returning_to_player_view a false (il suo default) e' cio' che glielo permette. Per
-# un salvataggio esistente, player_macro_cell_x/y e player_micro_x/y sono gia' valorizzati da
-# GameLoadService: lo stesso ramo 2 di GameScene li trova gia' validi e non invoca la selezione,
-# riprendendo semplicemente da dove il player aveva lasciato la partita.
+# un salvataggio esistente, player_macro_cell_x/y e il popolo umano persistito sono gia'
+# valorizzati da GameLoadService: lo stesso ramo 2 di GameScene li trova gia' validi e non invoca
+# la selezione, riprendendo semplicemente da dove il player aveva lasciato la partita.
 #
 # Stato clock azzerato esplicitamente ai default (pausa, velocita' 1x) invece di derivarlo da un
 # GameClockController che qui non viene mai creato (vedi sotto): senza questo, un residuo di
@@ -290,6 +305,13 @@ func _redirect_to_game_scene() -> void:
 	# di un salvataggio appena caricato altrimenti (vedi _load_world) — stesso canale di handoff
 	# di active_world/active_game_data sopra, letto da GameScene._ready() in entrambi i suoi rami.
 	GameSettings.active_fog_of_war_memories = fog_of_war_memories
+	# Stesso identico principio di active_fog_of_war_memories sopra, per il popolo umano (richiesta
+	# utente, 2026-09-02) — null/null/[] per una partita nuova (human_folk mai valorizzato in
+	# questo ramo, GameScene semina fresco), il contenuto di un salvataggio appena caricato
+	# altrimenti.
+	GameSettings.active_human_folk = human_folk
+	GameSettings.active_human_population_group = human_population_group
+	GameSettings.active_human_individuals = human_individuals
 	GameSettings.active_clock_is_playing = false
 	GameSettings.active_clock_speed = GameClockController.Speed.X1
 	get_tree().change_scene_to_file(GAME_SCENE_PATH)
@@ -357,7 +379,10 @@ func _on_save_game_file_selected(path: String) -> void:
 		world,
 		game_data,
 		path,
-		fog_of_war_memories
+		fog_of_war_memories,
+		human_folk,
+		human_population_group,
+		human_individuals
 	)
 
 	if _pending_leave_action != &"":
@@ -377,6 +402,9 @@ func _on_game_view_pressed() -> void:
 	GameSettings.active_world = world
 	GameSettings.active_game_data = game_data
 	GameSettings.active_fog_of_war_memories = fog_of_war_memories
+	GameSettings.active_human_folk = human_folk
+	GameSettings.active_human_population_group = human_population_group
+	GameSettings.active_human_individuals = human_individuals
 	GameSettings.returning_to_player_view = true
 	if clock != null:
 		GameSettings.active_clock_is_playing = clock.is_playing

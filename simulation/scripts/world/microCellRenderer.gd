@@ -399,7 +399,7 @@ const SHRUB_BLOB_MAX_DISTANCE_RATIO: float = 1.8
 const SHRUB_BLOB_MAX_RADIUS_RATIO: float = 2.2
 
 
-# Individuo attualmente selezionato per l'ispezione — analogo a Individual.is_selected per il
+# Individuo attualmente selezionato per l'ispezione — analogo a HumanIndividual.is_selected per il
 # player, ma vive qui (non su un oggetto persistente: un individuo vegetale non ha una Resource
 # propria, solo l'identità posizionale Vector3i) e solo sul renderer della cella che lo possiede
 # davvero (ogni LiveMacroCell ha la propria istanza — vedi GameScene._select_vegetation, che pulisce

@@ -1,0 +1,50 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://gameplay/scenes/game/DebugBar.gd" id="1_debugbar"]
+[ext_resource type="PackedScene" uid="uid://dm2h8k5w1n3rt" path="res://simulation/scenes/ui/IconButtonRow.tscn" id="2_iconrow"]
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_debugbar"]
+bg_color = Color(0.4, 0.22, 0.5, 1)
+
+[node name="DebugBar" type="PanelContainer"]
+anchors_preset = 0
+offset_left = 10.0
+offset_top = 10.0
+offset_right = 260.0
+offset_bottom = 58.0
+theme_override_styles/panel = SubResource("StyleBoxFlat_debugbar")
+script = ExtResource("1_debugbar")
+
+[node name="MarginContainer" type="MarginContainer" parent="."]
+layout_mode = 2
+theme_override_constants/margin_left = 8
+theme_override_constants/margin_top = 8
+theme_override_constants/margin_right = 8
+theme_override_constants/margin_bottom = 8
+
+[node name="HBoxContainer" type="HBoxContainer" parent="MarginContainer"]
+layout_mode = 2
+
+[node name="ControlButton" type="Button" parent="MarginContainer/HBoxContainer"]
+custom_minimum_size = Vector2(24, 32)
+layout_mode = 2
+text = "◀"
+
+[node name="VSeparator" type="VSeparator" parent="MarginContainer/HBoxContainer"]
+layout_mode = 2
+
+[node name="ContentGroup" type="HBoxContainer" parent="MarginContainer/HBoxContainer"]
+layout_mode = 2
+
+[node name="ContentRow" parent="MarginContainer/HBoxContainer/ContentGroup" instance=ExtResource("2_iconrow")]
+layout_mode = 2
+slot_count = 5
+
+[node name="VSeparator2" type="VSeparator" parent="MarginContainer/HBoxContainer/ContentGroup"]
+layout_mode = 2
+
+[node name="CoordsLabel" type="Label" parent="MarginContainer/HBoxContainer/ContentGroup"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 11
+vertical_alignment = 1
+text = "Coords: -"
