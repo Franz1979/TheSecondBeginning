@@ -73,7 +73,16 @@ func _ready() -> void:
 # affiancargli); seconda riga "Group %s: total %d" insieme a ♂/♀ e al bottone +/- (GroupLabel,
 # stessa riga di prima, solo rinominata da TotalLabel — il totale/le indicazioni di genere/il
 # bottone d'espansione restano tutti insieme, il totale si è solo spostato da "Folk" a "Group").
-func show_population(total_count: int, individuals: Array[HumanIndividual], current_year: int, human_rules: HumanRules, folk_id: int, group_id: int) -> void:
+#
+# era_effective_age_band_durations_male/female (bugfix, richiesta utente 2026-09-04 — sostituisce
+# il precedente parametro human_rules: HumanRules, usato SOLO per HumanCalculator.get_age_band, che
+# leggeva le durate age-band grezze ignorando l'Era corrente): durate GIA' scalate per l'Era,
+# tipicamente game_data.era_effective_age_band_durations_male/female — vedi GameScene.
+func show_population(
+	total_count: int, individuals: Array[HumanIndividual], current_year: int,
+	era_effective_age_band_durations_male: Array[float], era_effective_age_band_durations_female: Array[float],
+	folk_id: int, group_id: int
+) -> void:
 	var male_count := 0
 	var female_count := 0
 	for member in individuals:
@@ -90,7 +99,9 @@ func show_population(total_count: int, individuals: Array[HumanIndividual], curr
 		child.queue_free()
 	for member in individuals:
 		var age: int = current_year - member.birth_year_virtual
-		var age_band := HumanCalculator.get_age_band(human_rules, member.sex, float(age))
+		var age_band := HumanCalculator.get_age_band(
+			era_effective_age_band_durations_male, era_effective_age_band_durations_female, member.sex, float(age)
+		)
 		# Riga = HBoxContainer (era un Label nudo) — richiesta utente 2026-09-04: bottone
 		# "centra e seleziona" per riga, vedi individual_center_requested sopra. label.
 		# size_flags_horizontal EXPAND_FILL così il bottone resta compatto a destra invece di

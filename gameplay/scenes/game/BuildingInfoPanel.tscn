@@ -1,0 +1,27 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://gameplay/scenes/game/BuildingInfoPanel.gd" id="1_bld"]
+
+[node name="BuildingInfoPanel" type="VBoxContainer"]
+script = ExtResource("1_bld")
+
+[node name="StatusLabel" type="Label" parent="."]
+layout_mode = 2
+theme_override_font_sizes/font_size = 11
+
+[node name="DurabilityLabel" type="Label" parent="."]
+layout_mode = 2
+theme_override_font_sizes/font_size = 10
+
+[node name="BuiltYearLabel" type="Label" parent="."]
+layout_mode = 2
+theme_override_font_sizes/font_size = 10
+
+[node name="StoredResourcesLabel" type="Label" parent="."]
+layout_mode = 2
+theme_override_font_sizes/font_size = 10
+autowrap_mode = 2
+
+[node name="IdLabel" type="Label" parent="."]
+layout_mode = 2
+theme_override_font_sizes/font_size = 10

@@ -15,10 +15,11 @@ extends Resource
 # quelle, non un booleano come la coppia hostile/predator sotto), POOR = 1.0 (piu' difficile,
 # coerente col principio della classe).
 @export var resource_richness_multiplier: Dictionary = {}
-# "FAMILY"/"SMALL_GROUP"/"BIG_GROUP" — con quanti individui il player sceglie di partire (nessuna
-# ripercussione pratica finche' il modulo player non esiste, vedi GameData.
-# starting_group_size_preference): FAMILY (5 individui) = 1.0, piu' difficile, meno persone per
-# lavorare/difendersi; BIG_GROUP (20) = 0.6, piu' facile.
+# "COUPLE"/"FAMILY"/"GROUP" — con quanti individui il player sceglie di partire (rinominato da
+# FAMILY/SMALL_GROUP/BIG_GROUP, BIG_GROUP a 20 individui eliminato — richiesta utente, 2026-09-04;
+# vedi HumanSeedingService.GROUP_SIZE_COMPOSITIONS per le composizioni esatte): COUPLE (2
+# individui) = 1.0, piu' difficile, meno persone per lavorare/difendersi; FAMILY (5) = 0.9; GROUP
+# (10) = 0.6, piu' facile.
 @export var group_size_multiplier: Dictionary = {}
 
 # Flag booleano fisso (non un gruppo di opzioni che puo' crescere come i tre Dictionary sopra),

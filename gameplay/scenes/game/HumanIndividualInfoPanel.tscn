@@ -2,12 +2,22 @@
 
 [ext_resource type="Script" path="res://gameplay/scenes/game/HumanIndividualInfoPanel.gd" id="1_hind"]
 
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_wf_bg"]
+bg_color = Color(0.35, 0.35, 0.35, 1)
+corner_radius_top_left = 4
+corner_radius_top_right = 4
+corner_radius_bottom_right = 4
+corner_radius_bottom_left = 4
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_wf_fill"]
+bg_color = Color(0.25, 0.5, 0.85, 1)
+corner_radius_top_left = 4
+corner_radius_top_right = 4
+corner_radius_bottom_right = 4
+corner_radius_bottom_left = 4
+
 [node name="HumanIndividualInfoPanel" type="VBoxContainer"]
 script = ExtResource("1_hind")
-
-[node name="NameLabel" type="Label" parent="."]
-layout_mode = 2
-theme_override_font_sizes/font_size = 11
 
 [node name="SexLabel" type="Label" parent="."]
 layout_mode = 2
@@ -16,6 +26,22 @@ theme_override_font_sizes/font_size = 11
 [node name="AgeLabel" type="Label" parent="."]
 layout_mode = 2
 theme_override_font_sizes/font_size = 11
+
+[node name="WorkforceLabel" type="Label" parent="."]
+layout_mode = 2
+theme_override_font_sizes/font_size = 10
+
+[node name="WorkforceBarMargin" type="MarginContainer" parent="."]
+layout_mode = 2
+theme_override_constants/margin_left = 4
+theme_override_constants/margin_right = 4
+
+[node name="WorkforceBar" type="ProgressBar" parent="WorkforceBarMargin"]
+layout_mode = 2
+custom_minimum_size = Vector2(0, 14)
+theme_override_styles/background = SubResource("StyleBoxFlat_wf_bg")
+theme_override_styles/fill = SubResource("StyleBoxFlat_wf_fill")
+show_percentage = false
 
 [node name="IdLabel" type="Label" parent="."]
 layout_mode = 2

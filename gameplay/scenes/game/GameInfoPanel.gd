@@ -49,11 +49,19 @@ func _ready() -> void:
 	# (world_debug/macro_cell_debug) sono stati spostati fuori da questo pannello, dentro
 	# DebugBar (gameplay/scenes/game/DebugBar.gd/.tscn) — quella barra, non questa, resta
 	# "muta" sullo stato reale (animals_visible/flora_daily_updates_enabled), GameScene decide
-	# ancora tutto. Qui resta solo 🎯, unico slot configurato di primary_actions_bar (mai un
-	# debug tool, va tenuto nella UI definitiva).
+	# ancora tutto.
+	#
+	# 🎯 (era qui, slot 0) spostato dentro HumanIndividualInfoPanel/SelectionTab (richiesta
+	# utente, 2026-09-04): concettualmente centriamo sempre sull'individuo mostrato in quella tab
+	# (quello selezionato/sottolineato), quindi il bottone appartiene lì, non a una barra generica
+	# sopra le tab — vedi HumanIndividualInfoPanel.center_requested/GameScene._ready.
+	#
+	# Slot 0 diventa un placeholder "statistiche" (richiesta utente, 2026-09-04) — enabled=false:
+	# icona/tooltip visibili ma disabilitato/dim, nessuna azione ancora implementata (icona 📊
+	# provvisoria, da rivedere). Un futuro passo che implementa davvero la scheda statistiche
+	# richiamerà questo stesso configure_slot con enabled=true.
 	primary_actions_bar.configure_slot(
-		0, "🎯", tr("center_on_individual_tooltip"), &"center_on_individual",
-		tr("center_on_individual_description")
+		0, "📊", tr("statistics_tooltip"), &"statistics", tr("statistics_description"), false
 	)
 
 	# ☰/❓ restano qui (mai strumenti di debug): il menu di sistema e l'help sono UI definitiva.

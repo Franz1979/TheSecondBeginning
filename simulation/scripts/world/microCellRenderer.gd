@@ -150,9 +150,11 @@ var river_thickness_ratio: float = 0.0 # river_space / MacroCellState.TOTAL_SPAC
 
 var stone_positions: Array = [] # Array[Vector2i]
 # Edifici già piazzati in QUESTA macrocella — Array[Dictionary], ciascuna {"position": Vector2i,
-# "rotation": GameTypes.Direction} — vedi GameScene._refresh_building_visuals, che filtra
-# World.buildings per macro_x/macro_y prima di passarli qui: questo renderer non conosce World,
-# solo "dove e come disegnare".
+# "rotation": GameTypes.Direction, "id": int} ("id" aggiunto Step 4, richiesta utente 2026-09-04 —
+# vedi set_selected_building/get_building_screen_position sotto) — vedi GameScene.
+# _refresh_building_visuals, che filtra World.buildings per macro_x/macro_y prima di passarli qui:
+# questo renderer non conosce World/Building, solo "dove e come disegnare" (e, ora, quale id tra
+# questi risulta selezionato).
 var buildings: Array = []
 var vegetation_positions: Dictionary = {} # WorldObjectType -> Array[Vector3i] per TREE/SHRUB (lotto x,y + indice individuo), Array[Vector2i] per GRASS (nessuna identità individuale)
 
@@ -495,6 +497,53 @@ func _draw_conifer_selection_outline(canopy_center: Vector2, canopy_radius: floa
 	draw_polyline(points, SELECTION_HIGHLIGHT_COLOR, SELECTION_HIGHLIGHT_WIDTH)
 
 
+# Edificio attualmente selezionato per l'ispezione — Step 4 (richiesta utente, 2026-09-04), stesso
+# principio di _selected_individual_type/_key sopra (vive qui, non su Building: coerenza di design
+# anche se un Building ha già un id stabile a differenza della vegetazione — nessun motivo per
+# trattarlo diversamente solo perché potrebbe). -1 = nessuna selezione.
+var _selected_building_id: int = -1
+
+
+func set_selected_building(building_id: int) -> void:
+	_selected_building_id = building_id
+	queue_redraw()
+
+
+func clear_selected_building() -> void:
+	if _selected_building_id == -1:
+		return
+	_selected_building_id = -1
+	queue_redraw()
+
+
+# Posizione a schermo (spazio locale di questo renderer) del centro dell'edificio selezionato —
+# stesso ancoraggio di _draw_buildings ("ground"), esposta per GameScene._center_camera_on_selection
+# (stesso ruolo di get_individual_screen_position per la vegetazione). Vector2(-1,-1) sentinel se
+# l'edificio non è (più) tra quelli di questa cella.
+func get_building_screen_position(building_id: int) -> Vector2:
+	var half: float = CELL_SIZE / 2.0
+	for entry in buildings:
+		if entry.get("id", -1) == building_id:
+			var pos: Vector2i = entry["position"]
+			return Vector2(pos.x * CELL_SIZE + half, pos.y * CELL_SIZE + half)
+	return Vector2(-1, -1)
+
+
+# Stesso colore/spessore del contorno vegetazione (SELECTION_HIGHLIGHT_COLOR/WIDTH sopra) — coerenza
+# visiva "questo è selezionato" in tutto il progetto. Anello attorno al recinto (BUILDING_FENCE_
+# RADIUS, stesso margine SELECTION_OUTLINE_PADDING_RATIO della vegetazione). Nessun disegno se
+# l'edificio selezionato non è (più) tra quelli di questa cella — stesso principio difensivo già
+# usato per la vegetazione (has_individual).
+func _draw_selected_building_highlight() -> void:
+	if _selected_building_id == -1:
+		return
+	var center := get_building_screen_position(_selected_building_id)
+	if center == Vector2(-1, -1):
+		return
+	var radius: float = BUILDING_FENCE_RADIUS * SELECTION_OUTLINE_PADDING_RATIO
+	draw_arc(center, radius, 0, TAU, 24, SELECTION_HIGHLIGHT_COLOR, SELECTION_HIGHLIGHT_WIDTH)
+
+
 func set_fish_positions(positions: Array) -> void:
 	fish_positions = positions
 	_rebuild_fish_multimeshes()
@@ -581,6 +630,7 @@ func _draw() -> void:
 	_draw_selected_individual_highlight()
 	_draw_fish_positions()
 	_draw_buildings()
+	_draw_selected_building_highlight()
 	_draw_neighbor_previews(grid_size)
 	_draw_boundary(grid_size)
 

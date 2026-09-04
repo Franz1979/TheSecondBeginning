@@ -76,9 +76,9 @@ const DISABLED_PANEL_ALPHA := 0.4
 
 @onready var group_size_panel: PanelContainer = $RootColumn/MainRow/ScrollContainer/VBoxContainer/GroupSizePanel
 @onready var group_size_header_label: Label = $RootColumn/MainRow/ScrollContainer/VBoxContainer/GroupSizePanel/MarginContainer/VBoxContainer/GroupSizeHeaderLabel
+@onready var couple_button: Button = $RootColumn/MainRow/ScrollContainer/VBoxContainer/GroupSizePanel/MarginContainer/VBoxContainer/CoupleButton
 @onready var family_button: Button = $RootColumn/MainRow/ScrollContainer/VBoxContainer/GroupSizePanel/MarginContainer/VBoxContainer/FamilyButton
-@onready var small_group_button: Button = $RootColumn/MainRow/ScrollContainer/VBoxContainer/GroupSizePanel/MarginContainer/VBoxContainer/SmallGroupButton
-@onready var big_group_button: Button = $RootColumn/MainRow/ScrollContainer/VBoxContainer/GroupSizePanel/MarginContainer/VBoxContainer/BigGroupButton
+@onready var group_button: Button = $RootColumn/MainRow/ScrollContainer/VBoxContainer/GroupSizePanel/MarginContainer/VBoxContainer/GroupButton
 
 @onready var thermometer_panel: PanelContainer = $RootColumn/MainRow/ThermometerPanel
 @onready var difficulty_header_label: Label = $RootColumn/MainRow/ThermometerPanel/MarginContainer/VBoxContainer/DifficultyHeaderLabel
@@ -120,7 +120,7 @@ var _selected_population_size: String = "NORMAL"
 var _selected_exclude_hostile_start: bool = false
 var _selected_exclude_predator_territories: bool = false
 var _selected_resource_richness_preference: String = "NORMAL"
-var _selected_group_size_preference: String = "SMALL_GROUP"
+var _selected_group_size_preference: String = "GROUP"
 var _selected_guarantee_animal_presence: bool = false
 
 
@@ -165,9 +165,9 @@ func _ready() -> void:
 	poor_button.text = tr("resource_richness_poor")
 
 	group_size_header_label.text = tr("group_size_label")
+	couple_button.text = tr("group_size_couple")
 	family_button.text = tr("group_size_family")
-	small_group_button.text = tr("group_size_small_group")
-	big_group_button.text = tr("group_size_big_group")
+	group_button.text = tr("group_size_group")
 
 	difficulty_header_label.text = tr("difficulty_label")
 	difficulty_bar.min_value = 0.0
@@ -186,8 +186,8 @@ func _ready() -> void:
 	_on_population_size_button_toggled(true, "NORMAL")
 	normal_richness_button.button_pressed = true
 	_on_resource_richness_button_toggled(true, "NORMAL")
-	small_group_button.button_pressed = true
-	_on_group_size_button_toggled(true, "SMALL_GROUP")
+	group_button.button_pressed = true
+	_on_group_size_button_toggled(true, "GROUP")
 
 	young_button.toggled.connect(_on_age_button_toggled.bind("YOUNG"))
 	adult_button.toggled.connect(_on_age_button_toggled.bind("ADULT"))
@@ -210,9 +210,9 @@ func _ready() -> void:
 	normal_richness_button.toggled.connect(_on_resource_richness_button_toggled.bind("NORMAL"))
 	poor_button.toggled.connect(_on_resource_richness_button_toggled.bind("POOR"))
 
+	couple_button.toggled.connect(_on_group_size_button_toggled.bind("COUPLE"))
 	family_button.toggled.connect(_on_group_size_button_toggled.bind("FAMILY"))
-	small_group_button.toggled.connect(_on_group_size_button_toggled.bind("SMALL_GROUP"))
-	big_group_button.toggled.connect(_on_group_size_button_toggled.bind("BIG_GROUP"))
+	group_button.toggled.connect(_on_group_size_button_toggled.bind("GROUP"))
 
 	start_button.pressed.connect(_on_start_pressed)
 	back_button.pressed.connect(_on_back_pressed)
@@ -316,9 +316,9 @@ func _update_dependent_panels_enabled() -> void:
 	poor_button.disabled = is_classic
 
 	group_size_panel.modulate.a = alpha
+	couple_button.disabled = is_classic
 	family_button.disabled = is_classic
-	small_group_button.disabled = is_classic
-	big_group_button.disabled = is_classic
+	group_button.disabled = is_classic
 
 	thermometer_panel.modulate.a = alpha
 

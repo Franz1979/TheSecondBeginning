@@ -20,3 +20,13 @@ help_fog_of_war_tier_terrain,"Terreno (tipo di suolo, biomi, fiumi, montagne): i
 help_fog_of_war_full_forget,"Se resti lontano abbastanza da superare anche l'ultima soglia, la cella torna completamente sconosciuta come se non l'avessi mai vista."
 help_fog_of_war_persistence,"Questo comportamento è persistente: viene salvato e ricaricato correttamente con le partite salvate, quindi il tuo ricordo del mondo non si azzera riaprendo il gioco."
 help_fog_of_war_per_macrocell,"È gestito per macrocella (non per singola microcella al suo interno): l'unità minima di quanto ricordi è sempre l'intera macrocella che hai visitato."
+help_era_advancement_menu_link,Avanzamento Era
+help_era_advancement_title,Avanzamento Era
+help_era_advancement_intro,"Il tuo popolo attraversa Ere successive (periodi geologici e tecnologici, come il Paleolitico) man mano che la partita procede. Ogni Era ha le proprie condizioni di vita, che influenzano quanto a lungo vivono in media le persone del tuo popolo."
+help_era_advancement_longevity,"Cambiare Era allunga o accorcia la durata delle fasce di età adulta e anziana: un'Era con condizioni di vita migliori porta a vite adulte più lunghe, una più dura le accorcia."
+help_era_advancement_bands_unaffected,"Infanzia, adolescenza ed età fertile restano invece invariate da un'Era all'altra: sono le fasi più vecchie della vita a essere modulate dall'Era corrente, non quelle giovanili."
+help_era_advancement_not_yet_active,"Questa meccanica è ancora in sviluppo: al momento non esiste ancora un modo per far avanzare il tuo popolo a un'Era successiva."
+statistics_tooltip,Statistiche
+statistics_description,Non ancora disponibile
+center_on_selection_tooltip,Centra la camera sulla selezione corrente
+building_hut,Capanna

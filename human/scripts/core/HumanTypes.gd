@@ -8,14 +8,17 @@ enum Sex {
 	FEMALE,
 }
 
-# Quattro fasce (non tre come GameTypes.AgeBand, tarato sugli animali): CHILD (infanzia,
-# pre-riproduttiva), FERTILE_ADULT (età riproduttiva), MATURE_ADULT (adulto ma tipicamente non
-# più fertile, soprattutto per le donne — da qui la necessità di durate differenziate per sesso,
-# vedi HumanRules.age_band_durations_male/female), OLD. Nomi di membro deliberatamente diversi da
-# GameTypes.AgeBand (YOUNG/ADULT/OLD): qui la fascia adulta è divisa in due per riflettere la
-# fertilità, un asse che l'animale non modella a questo livello di dettaglio.
+# Cinque fasce (non tre come GameTypes.AgeBand, tarato sugli animali): CHILD (infanzia,
+# pre-riproduttiva), TEENAGER (adolescenza, ancora non fertile, workforce ridotta — aggiunta
+# 2026-09-04, richiesta utente), FERTILE_ADULT (età riproduttiva), MATURE_ADULT (adulto ma
+# tipicamente non più fertile, soprattutto per le donne — da qui la necessità di durate
+# differenziate per sesso, vedi HumanRules.age_band_durations_male/female), OLD. Nomi di membro
+# deliberatamente diversi da GameTypes.AgeBand (YOUNG/ADULT/OLD): qui la fascia adulta è divisa in
+# due per riflettere la fertilità, un asse che l'animale non modella a questo livello di dettaglio.
+# L'età 0-1 (immobilità) resta un'eccezione booleana gestita a parte, non una fascia propria.
 enum AgeBand {
 	CHILD,
+	TEENAGER,
 	FERTILE_ADULT,
 	MATURE_ADULT,
 	OLD,

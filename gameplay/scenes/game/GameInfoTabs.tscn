@@ -22,7 +22,27 @@ theme_override_constants/margin_top = 4
 theme_override_constants/margin_right = 4
 theme_override_constants/margin_bottom = 4
 
-[node name="EmptySelectionLabel" type="Label" parent="SelectionTab"]
+[node name="SelectionTabBody" type="VBoxContainer" parent="SelectionTab"]
+layout_mode = 2
+
+[node name="SelectionHeader" type="HBoxContainer" parent="SelectionTab/SelectionTabBody"]
+layout_mode = 2
+
+[node name="TitleLabel" type="Label" parent="SelectionTab/SelectionTabBody/SelectionHeader"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_font_sizes/font_size = 11
+vertical_alignment = 1
+
+[node name="CenterButton" type="Button" parent="SelectionTab/SelectionTabBody/SelectionHeader"]
+layout_mode = 2
+text = "🎯"
+
+[node name="SelectionContent" type="MarginContainer" parent="SelectionTab/SelectionTabBody"]
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="EmptySelectionLabel" type="Label" parent="SelectionTab/SelectionTabBody/SelectionContent"]
 layout_mode = 2
 horizontal_alignment = 1
 vertical_alignment = 1

@@ -26,6 +26,12 @@ func save_game_to_json(
 		"game": {
 			"year": game_data.year,
 			"current_day": game_data.current_day,
+			# Era corrente + cache delle durate effettive delle age band (vedi GameData) — la cache
+			# è persistita insieme al nome invece di essere ricalcolata al caricamento, stesso
+			# principio "non ricalcolare ciò che è già stato cachato" del resto di GameData.
+			"current_era_name": game_data.current_era_name,
+			"era_effective_age_band_durations_male": game_data.era_effective_age_band_durations_male,
+			"era_effective_age_band_durations_female": game_data.era_effective_age_band_durations_female,
 			# Statistica pura (vedi GameData) — mai riletti da nessuna logica di simulazione.
 			"starting_world_age_mode": game_data.starting_world_age_mode,
 			"starting_animal_density": game_data.starting_animal_density,

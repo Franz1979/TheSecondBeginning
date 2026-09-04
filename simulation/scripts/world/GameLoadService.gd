@@ -19,6 +19,16 @@ func load_game_from_json(file_path: String) -> LoadedGame:
 	var game_data := GameData.new()
 	game_data.year = int(data["game"]["year"])
 	game_data.current_day = int(data["game"].get("current_day", 0))
+	# .get(key, default) per compatibilità con save precedenti l'introduzione dell'Era (vedi
+	# GameData) — "paleolithic"/[] sono gli stessi default della classe (cache vuota finché nessuno
+	# ha mai chiamato set_current_era, esattamente come una partita nuova oggi).
+	game_data.current_era_name = String(data["game"].get("current_era_name", "paleolithic"))
+	game_data.era_effective_age_band_durations_male = _float_array_from_json(
+		data["game"].get("era_effective_age_band_durations_male", [])
+	)
+	game_data.era_effective_age_band_durations_female = _float_array_from_json(
+		data["game"].get("era_effective_age_band_durations_female", [])
+	)
 	# .get(key, default) per compatibilita' con save precedenti l'introduzione della statistica
 	# di difficolta' (vedi GameData) — stringhe vuote/-1.0 sono gli stessi default della classe.
 	game_data.starting_world_age_mode = String(data["game"].get("starting_world_age_mode", ""))
@@ -387,3 +397,14 @@ func load_game_from_json(file_path: String) -> LoadedGame:
 	loaded_game.human_individuals = human_individuals
 	print("Game loaded from JSON: ", file_path)
 	return loaded_game
+
+
+# JSON.parse_string ritorna un Array untyped (Variant per elemento) — serve una conversione
+# esplicita elemento per elemento verso Array[float], nessun costruttore diretto usato altrove nel
+# progetto per farlo da un save JSON (vedi GameData.era_effective_age_band_durations_male/female,
+# unico consumatore oggi).
+func _float_array_from_json(raw: Array) -> Array[float]:
+	var result: Array[float] = []
+	for value in raw:
+		result.append(float(value))
+	return result

@@ -11,9 +11,13 @@ extends VBoxContainer
 # default (nessuna selezione all'apertura della scena) — il bottone dentro eredita
 # automaticamente la non-interagibilità di un nodo nascosto, nessuno stato enabled/disabled
 # separato da gestire per "cliccabile solo se selezionato qualcosa".
+#
+# TypeLabel (Step 6, richiesta utente 2026-09-04): rimossa da qui, sollevata dentro GameInfoTabs.
+# title_label — sulla STESSA riga del bottone "🎯" invece che come prima riga di questo pannello.
+# GameScene la imposta (game_info_tabs.set_selection_title) subito insieme a show_vegetation/
+# show_cut_marker, con la stessa identica stringa che sarebbe finita qui in entrambi i casi.
 signal cut_requested
 
-@onready var type_label: Label = $TypeLabel
 @onready var subtype_label: Label = $SubtypeLabel
 @onready var age_label: Label = $AgeLabel
 @onready var cut_button: Button = $CutButton
@@ -27,7 +31,6 @@ func _ready() -> void:
 
 func show_vegetation(object_type: GameTypes.WorldObjectType, subtype_name: String, age_band: GameTypes.AgeBand, years_lived: int) -> void:
 	visible = true
-	type_label.text = "Type: " + GameTypes.WorldObjectType.keys()[object_type].capitalize()
 	subtype_label.text = "Subtype: " + subtype_name
 	age_label.text = "Age: " + GameTypes.AgeBand.keys()[age_band].capitalize() + " (" + NumberFormatter.format_int(years_lived) + " years)"
 	cut_button.visible = true
@@ -43,7 +46,6 @@ func show_vegetation(object_type: GameTypes.WorldObjectType, subtype_name: Strin
 # avrebbe alcun significato da mostrare.
 func show_cut_marker(object_type: GameTypes.WorldObjectType, state: String, years_ago: int) -> void:
 	visible = true
-	type_label.text = "Type: " + GameTypes.WorldObjectType.keys()[object_type].capitalize()
 	if state == "cut":
 		subtype_label.text = "Cut " + NumberFormatter.format_int(years_ago) + " years ago"
 	else:

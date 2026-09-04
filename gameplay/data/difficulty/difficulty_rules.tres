@@ -29,9 +29,9 @@ resource_richness_multiplier = {
 "POOR": 1.0
 }
 group_size_multiplier = {
-"FAMILY": 1.0,
-"SMALL_GROUP": 0.8,
-"BIG_GROUP": 0.6
+"COUPLE": 1.0,
+"FAMILY": 0.9,
+"GROUP": 0.6
 }
 animal_presence_guaranteed_multiplier = 0.8
 animal_presence_not_guaranteed_multiplier = 1.0

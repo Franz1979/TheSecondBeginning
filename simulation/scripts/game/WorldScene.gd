@@ -57,8 +57,10 @@ var _pending_leave_action: StringName = &""
 @onready var speed_buttons: Dictionary = {
 	GameClockController.Speed.X1: $CanvasLayer/Sidebar/MarginContainer/VBoxContainer/ClockControlsContainer/Speed1xButton,
 	GameClockController.Speed.X2: $CanvasLayer/Sidebar/MarginContainer/VBoxContainer/ClockControlsContainer/Speed2xButton,
-	GameClockController.Speed.X3: $CanvasLayer/Sidebar/MarginContainer/VBoxContainer/ClockControlsContainer/Speed3xButton,
 	GameClockController.Speed.X4: $CanvasLayer/Sidebar/MarginContainer/VBoxContainer/ClockControlsContainer/Speed4xButton,
+	# Visibile solo a DebugLogging.ENABLED (vedi _setup_clock) — stesso meccanismo già in uso per
+	# debug_animal_container sopra.
+	GameClockController.Speed.DEBUG: $CanvasLayer/Sidebar/MarginContainer/VBoxContainer/ClockControlsContainer/SpeedDebugButton,
 }
 @onready var advance_year_button: Button = $CanvasLayer/Sidebar/MarginContainer/VBoxContainer/CalendarHeaderContainer/AdvanceYearButton
 @onready var season_progress_bar: SeasonProgressBar = $CanvasLayer/Sidebar/MarginContainer/VBoxContainer/SeasonProgressBar
@@ -326,11 +328,20 @@ func _setup_clock() -> void:
 	add_child(clock)
 	clock.setup(world, game_data)
 	clock.is_playing = GameSettings.active_clock_is_playing
-	clock.speed = GameSettings.active_clock_speed
+	# Retrocompatibilità (richiesta utente, 2026-09-04 — rimozione di Speed.X3): GameSettings.
+	# active_clock_speed è un plain int di sessione (mai un vero enum, vedi il commento lì), quindi
+	# un valore stantio che non corrisponde più a nessuna chiave di speed_buttons (es. il vecchio
+	# X3, o un futuro membro rimosso) ripiegherebbe silenziosamente su una velocità sbagliata invece
+	# di rompere il caricamento — qui viene invece ricondotto a X1.
+	var restored_speed: int = GameSettings.active_clock_speed
+	clock.speed = restored_speed if speed_buttons.has(restored_speed) else GameClockController.Speed.X1
 	clock.day_advanced.connect(_on_day_advanced)
 	play_pause_button.pressed.connect(_on_play_pause_pressed)
 	for speed in speed_buttons.keys():
 		speed_buttons[speed].pressed.connect(_on_speed_button_pressed.bind(speed))
+	# Pulsante "velocità debug" (richiesta utente, 2026-09-04): stesso flag già usato sopra per
+	# debug_animal_container, nessun meccanismo di debug-mode nuovo introdotto.
+	speed_buttons[GameClockController.Speed.DEBUG].visible = DebugLogging.ENABLED
 	_update_play_pause_button()
 	speed_buttons[clock.speed].button_pressed = true
 

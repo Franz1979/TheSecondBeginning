@@ -21,6 +21,7 @@ extends Window
 const PAGE_MAIN := "main"
 const PAGE_SHORTCUTS := "shortcuts"
 const PAGE_FOG_OF_WAR := "fog_of_war"
+const PAGE_ERA_ADVANCEMENT := "era_advancement"
 
 var _current_page: String = PAGE_MAIN
 
@@ -59,6 +60,8 @@ func _show_page(page: String) -> void:
 			content_label.text = _build_shortcuts_text()
 		PAGE_FOG_OF_WAR:
 			content_label.text = _build_fog_of_war_text()
+		PAGE_ERA_ADVANCEMENT:
+			content_label.text = _build_era_advancement_text()
 		_:
 			content_label.text = _build_main_menu_text()
 
@@ -69,6 +72,7 @@ func _build_main_menu_text() -> String:
 		"",
 		"[url=%s]%s[/url]" % [PAGE_SHORTCUTS, tr("help_shortcuts_menu_link")],
 		"[url=%s]%s[/url]" % [PAGE_FOG_OF_WAR, tr("help_fog_of_war_menu_link")],
+		"[url=%s]%s[/url]" % [PAGE_ERA_ADVANCEMENT, tr("help_era_advancement_menu_link")],
 	]
 	return "\n".join(lines)
 
@@ -93,6 +97,21 @@ func _build_fog_of_war_text() -> String:
 		tr("help_fog_of_war_persistence"),
 		"",
 		tr("help_fog_of_war_per_macrocell"),
+	]
+	return "\n".join(lines)
+
+
+func _build_era_advancement_text() -> String:
+	var lines: Array[String] = [
+		"[b]%s[/b]" % tr("help_era_advancement_title"),
+		"",
+		tr("help_era_advancement_intro"),
+		"",
+		tr("help_era_advancement_longevity"),
+		"",
+		tr("help_era_advancement_bands_unaffected"),
+		"",
+		tr("help_era_advancement_not_yet_active"),
 	]
 	return "\n".join(lines)
 

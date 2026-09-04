@@ -259,7 +259,11 @@ func _process(delta: float) -> void:
 	# piccoli", non varianza individuale).
 	if human_rules != null and game_data != null:
 		var age := float(game_data.year - individual.birth_year_virtual)
-		_current_age_band = HumanCalculator.get_age_band(human_rules, individual.sex, age)
+		# durations GIA' scalate per l'Era corrente (bugfix, richiesta utente 2026-09-04 — PRIMA
+		# passava human_rules qui, ignorando l'Era: vedi HumanCalculator.get_age_band).
+		_current_age_band = HumanCalculator.get_age_band(
+			game_data.era_effective_age_band_durations_male, game_data.era_effective_age_band_durations_female, individual.sex, age
+		)
 		var age_multiplier: float = human_rules.size_multiplier_by_age[_current_age_band]
 		var sex_multiplier: float = human_rules.size_multiplier_by_sex[individual.sex]
 		scale = Vector2.ONE * age_multiplier * sex_multiplier
@@ -401,9 +405,10 @@ func _limb_swing_offset(signed_phase: float, forward_amplitude: float, backward_
 
 
 # Ellisse piena come poligono a ventaglio (draw_circle non supporta assi diversi) — segments basso
-# apposta (12): a raggi ~1px non serve più risoluzione, e sono fino a 20 individui × 5 forme
-# (busto + 2 gambe + 2 braccia) a frame (vedi ricognizione: SMALL_GROUP=10 di default, BIG_GROUP=20
-# il caso peggiore oggi). Riutilizzata per busto/gambe/braccia, non solo per il busto.
+# apposta (12): a raggi ~1px non serve più risoluzione, e sono fino a 10 individui × 5 forme
+# (busto + 2 gambe + 2 braccia) a frame (vedi ricognizione: GROUP=10 il caso peggiore oggi, da
+# quando BIG_GROUP/20 individui è stato eliminato — richiesta utente, 2026-09-04). Riutilizzata per
+# busto/gambe/braccia, non solo per il busto.
 const ELLIPSE_SEGMENTS: int = 12
 
 func _draw_ellipse(center: Vector2, radius_x: float, radius_y: float, color: Color) -> void:

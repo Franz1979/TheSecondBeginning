@@ -8,8 +8,8 @@ extends Resource
 # @export tematici), stesso principio già seguito da AnimalRules.
 
 @export_group("Demographics")
-# Durata (anni) di ciascuna fascia di HumanTypes.AgeBand, indici allineati (0=CHILD,
-# 1=FERTILE_ADULT, 2=MATURE_ADULT, 3=OLD) — DUE array paralleli invece di un
+# Durata (anni) di ciascuna fascia di HumanTypes.AgeBand, indici allineati (0=CHILD, 1=TEENAGER,
+# 2=FERTILE_ADULT, 3=MATURE_ADULT, 4=OLD) — DUE array paralleli invece di un
 # Dictionary[HumanTypes.Sex, Array[float]] annidato: stesso idioma già usato da AnimalRules per
 # ogni dato "per fascia" (fertility_multiplier_by_age, mortality_share_by_age,
 # caloric_multiplier_by_age, dispersal_share_by_age — tutti Array[float] indicizzati
@@ -20,8 +20,8 @@ extends Resource
 # più semplici da leggere/editare. Le durate divergono tra i due sessi solo dove serve
 # biologicamente (in particolare FERTILE_ADULT/MATURE_ADULT, vedi HumanTypes.AgeBand); nessuna
 # logica li legge ancora in questo passo.
-@export var age_band_durations_male: Array[float] = [0.0, 0.0, 0.0, 0.0]
-@export var age_band_durations_female: Array[float] = [0.0, 0.0, 0.0, 0.0]
+@export var age_band_durations_male: Array[float] = [0.0, 0.0, 0.0, 0.0, 0.0]
+@export var age_band_durations_female: Array[float] = [0.0, 0.0, 0.0, 0.0, 0.0]
 # Coefficiente di natalità annuale di GRUPPO (non per sesso — un individuo non ha una propria
 # natalità, solo il gruppo/insediamento nel suo complesso), stesso principio di
 # AnimalRules.base_birth_rate. Non ancora letto da nessuna logica.
@@ -46,9 +46,9 @@ extends Resource
 # (età E sesso, applicati insieme per moltiplicazione) invece di un unico array come fa
 # AnimalRules — necessario perché qui, a differenza degli animali tracciati oggi, la
 # dimorfia di sesso è un asse a sé che si combina con quella d'età, non un'alternativa ad essa.
-# by_age indicizzato come age_band_durations_male/female sopra (0=CHILD..3=OLD), by_sex
+# by_age indicizzato come age_band_durations_male/female sopra (0=CHILD..4=OLD), by_sex
 # indicizzato su HumanTypes.Sex (0=MALE, 1=FEMALE). Nessuna logica li legge ancora.
-@export var size_multiplier_by_age: Array[float] = [0.0, 0.0, 0.0, 0.0]
+@export var size_multiplier_by_age: Array[float] = [0.0, 0.0, 0.0, 0.0, 0.0]
 @export var size_multiplier_by_sex: Array[float] = [0.0, 0.0]
 @export var size_variance: float = 0.0
 
@@ -59,5 +59,25 @@ extends Resource
 # scalare allo stesso modo o divergere. Nessun caloric_variance separato: quando servirà una
 # varianza per il fabbisogno calorico si riuserà size_variance sopra, non se ne aggiunge una
 # seconda equivalente.
-@export var caloric_multiplier_by_age: Array[float] = [0.0, 0.0, 0.0, 0.0]
+@export var caloric_multiplier_by_age: Array[float] = [0.0, 0.0, 0.0, 0.0, 0.0]
 @export var caloric_multiplier_by_sex: Array[float] = [0.0, 0.0]
+
+@export_group("Workforce")
+# Capacità lavorativa giornaliera di riferimento per un adulto pieno (FERTILE_ADULT/MATURE_ADULT,
+# moltiplicatore 1.0 sotto) — valore unico, non per-età: l'asse età è tutto in
+# workforce_multiplier_by_age, stesso principio di size_multiplier_by_age/caloric_multiplier_by_age
+# sopra. Unità arbitraria (nessun significato fisico ancora deciso — "punti lavoro/giorno" o
+# simile), da tarare quando un consumatore reale esisterà. DECOUPLED dalle age band di
+# aging/riproduzione: workforce_multiplier_by_age riusa lo stesso enum/array solo per comodità di
+# storage (stesso idioma "per fascia" del progetto), non introduce alcun legame concettuale nuovo
+# tra capacità lavorativa e fertilità/invecchiamento.
+@export var base_daily_workforce: float = 500.0
+# Indicizzato come size_multiplier_by_age/caloric_multiplier_by_age sopra (0=CHILD, 1=TEENAGER,
+# 2=FERTILE_ADULT, 3=MATURE_ADULT, 4=OLD). CHILD=0.0 (nessuna workforce), TEENAGER/OLD ridotti
+# (placeholder, da rivedere), FERTILE_ADULT/MATURE_ADULT=1.0 (riferimento). Nessuna logica li legge
+# ancora oltre a HumanCalculator.get_base_workforce (solo base × moltiplicatore, senza
+# stanchezza/wellness — quelli arriveranno in un passo successivo).
+@export var workforce_multiplier_by_age: Array[float] = [0.0, 0.4, 1.0, 1.0, 0.5]
+# Indicizzato su HumanTypes.Sex (0=MALE, 1=FEMALE), stessa convenzione di size_multiplier_by_sex/
+# caloric_multiplier_by_sex sopra. Placeholder, da rivedere.
+@export var workforce_multiplier_by_sex: Array[float] = [1.0, 0.85]

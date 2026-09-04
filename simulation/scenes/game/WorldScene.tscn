@@ -25,6 +25,9 @@ corner_radius_top_right = 3
 corner_radius_bottom_left = 3
 corner_radius_bottom_right = 3
 
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_speed_debug"]
+bg_color = Color(0.4, 0.22, 0.5, 1)
+
 [node name="WorldScene" type="Node2D" unique_id=728484967]
 script = ExtResource("1_dsxmn")
 
@@ -104,17 +107,6 @@ theme_override_styles/pressed = SubResource("StyleBoxFlat_speed_selected")
 theme_override_styles/hover_pressed = SubResource("StyleBoxFlat_speed_selected")
 text = "2x"
 
-[node name="Speed3xButton" type="Button" parent="CanvasLayer/Sidebar/MarginContainer/VBoxContainer/ClockControlsContainer"]
-custom_minimum_size = Vector2(36, 0)
-layout_mode = 2
-toggle_mode = true
-button_group = SubResource("ButtonGroup_speed")
-theme_override_colors/font_pressed_color = Color(0.15, 0.1, 0.02, 1)
-theme_override_colors/font_hover_pressed_color = Color(0.15, 0.1, 0.02, 1)
-theme_override_styles/pressed = SubResource("StyleBoxFlat_speed_selected")
-theme_override_styles/hover_pressed = SubResource("StyleBoxFlat_speed_selected")
-text = "3x"
-
 [node name="Speed4xButton" type="Button" parent="CanvasLayer/Sidebar/MarginContainer/VBoxContainer/ClockControlsContainer"]
 custom_minimum_size = Vector2(36, 0)
 layout_mode = 2
@@ -125,6 +117,20 @@ theme_override_colors/font_hover_pressed_color = Color(0.15, 0.1, 0.02, 1)
 theme_override_styles/pressed = SubResource("StyleBoxFlat_speed_selected")
 theme_override_styles/hover_pressed = SubResource("StyleBoxFlat_speed_selected")
 text = "4x"
+
+[node name="SpeedDebugButton" type="Button" parent="CanvasLayer/Sidebar/MarginContainer/VBoxContainer/ClockControlsContainer"]
+custom_minimum_size = Vector2(36, 0)
+layout_mode = 2
+toggle_mode = true
+button_group = SubResource("ButtonGroup_speed")
+theme_override_colors/font_pressed_color = Color(0.15, 0.1, 0.02, 1)
+theme_override_colors/font_hover_pressed_color = Color(0.15, 0.1, 0.02, 1)
+theme_override_styles/normal = SubResource("StyleBoxFlat_speed_debug")
+theme_override_styles/hover = SubResource("StyleBoxFlat_speed_debug")
+theme_override_styles/pressed = SubResource("StyleBoxFlat_speed_selected")
+theme_override_styles/hover_pressed = SubResource("StyleBoxFlat_speed_selected")
+text = "DBG"
+tooltip_text = "Debug speed"
 
 [node name="SeasonProgressBar" type="Control" parent="CanvasLayer/Sidebar/MarginContainer/VBoxContainer"]
 layout_mode = 2

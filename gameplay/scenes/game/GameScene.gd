@@ -100,6 +100,11 @@ var _last_vegetation_refresh_position: Vector2 = Vector2(INF, INF)
 var animals_visible: bool = true
 var flora_daily_updates_enabled: bool = false
 var clock: GameClockController
+# Primo consumatore gameplay-side dei checkpoint temporali classificati (richiesta utente,
+# 2026-09-05) — vedi GameTimeService per il perché va tenuto in un campo (RefCounted, ma non
+# usa-e-getta come gli altri *Service: deve restare vivo quanto clock perché le sue connessioni ai
+# segnali di clock sopravvivano).
+var game_time_service: GameTimeService
 # "individual" è ora il BERSAGLIO CORRENTE di movimento/streaming (Step 2 del piano movimento
 # indipendente, 2026-09-02 — non più un "leader" fisso: coincide con human_individuals[0] solo come
 # valore INIZIALE assegnato in _ready(), vedi lì). Cambia ogni volta che la selezione cambia su un
@@ -138,15 +143,47 @@ var human_folk: Folk
 var human_population_group: HumanPopulationGroup
 var human_individuals: Array[HumanIndividual] = []
 var human_individual_views: Array[HumanIndividualView] = []
+# Autorità di selezione unica — Step 1 (richiesta utente, 2026-09-04) del piano "centra
+# generalizzato + selezione edifici" discusso con l'utente: PRIMA esistevano due meccanismi
+# paralleli e indipendenti (HumanIndividual.is_selected sull'entità + selected_vegetation sotto),
+# ciascuno ripulito manualmente dal chiamante ogni volta che l'altro tipo vinceva la selezione
+# (vedi es. _select_vegetation, che chiamava _deselect_all_human_individuals() a mano) — esattamente
+# il punto anticipato dal vecchio commento "un'autorità di selezione unica è rimandata a quando
+# arriverà davvero un terzo tipo selezionabile" (edifici, Step 4/5 del piano). _selection_kind è
+# QUEL punto unico da interrogare per sapere "cosa è selezionato ORA", indipendentemente dal tipo —
+# consumato dagli step successivi (centra generico, dispatch pannello). Deliberatamente NON
+# sostituisce ancora le variabili esistenti (individual/selected_vegetation/is_selected) né
+# ristruttura la coreografia mostra/nascondi tab (che ha sottigliezze delicate sul flicker, vedi
+# _select_vegetation/_clear_individual_selection) — Step 1 è un'aggiunta di bookkeeping a
+# comportamento INVARIATO, mantenuta manualmente in sync agli stessi identici punti di prima.
+# NOTA: quando kind==INDIVIDUAL, l'individuo selezionato è semplicemente `individual` (il bersaglio
+# di movimento/camera, sempre aggiornato in coppia con la selezione, vedi _set_movement_target) —
+# nessun campo duplicato serve per questo caso. BUILDING aggiunto allo Step 4 (richiesta utente,
+# 2026-09-04) — il terzo tipo selezionabile già anticipato sopra, vedi selected_building sotto.
+enum SelectionKind { NONE, INDIVIDUAL, VEGETATION, BUILDING }
+var _selection_kind: SelectionKind = SelectionKind.NONE
+
 # Click-detection su un singolo individuo di vegetazione (TREE/SHRUB) — vedi
 # VegetationSelectorController. selected_vegetation vive qui (non su un oggetto persistente come
 # HumanIndividual.is_selected per il player: un individuo vegetale non ha una Resource propria, solo
 # l'identità posizionale Vector3i) — {} = nessuna selezione, altrimenti {"macro_coords": Vector2i,
-# "object_type": GameTypes.WorldObjectType, "individual_key": Vector3i}. Vedi
+# "object_type": GameTypes.WorldObjectType, "individual_key": Vector3i}. Significativo solo quando
+# _selection_kind == VEGETATION (vedi sopra). Vedi
 # _select_vegetation/_clear_vegetation_selection/_invalidate_selected_vegetation_if_missing.
 const VEGETATION_INFO_PANEL_SCENE := preload("res://gameplay/scenes/game/VegetationInfoPanel.tscn")
 var vegetation_selector_controller := VegetationSelectorController.new()
 var selected_vegetation: Dictionary = {}
+
+# Click-detection su un edificio esistente — Step 4 (richiesta utente, 2026-09-04), stesso
+# principio di selected_vegetation sopra ma più semplice: un edificio ha un id stabile (Building.
+# id), quindi {} = nessuna selezione, altrimenti {"macro_coords": Vector2i, "building_id": int}.
+# Significativo solo quando _selection_kind == BUILDING. BuildingInfoPanel (Step 5, stessa
+# richiesta utente) vive nella STESSA SelectionTab di vegetation_info_panel/human_individual_info_
+# panel, stesso principio "componente muto" — vedi _select_building/_clear_building_selection.
+const BUILDING_INFO_PANEL_SCENE := preload("res://gameplay/scenes/game/BuildingInfoPanel.tscn")
+var building_selector_controller := BuildingSelectorController.new()
+var selected_building: Dictionary = {}
+var building_info_panel: BuildingInfoPanel
 var vegetation_info_panel: VegetationInfoPanel
 
 const MINIMAP_PANEL_SCENE := preload("res://gameplay/scenes/game/MiniMapPanel.tscn")
@@ -199,7 +236,7 @@ var _selected_building_type_name: String = ""
 # rimosso, tenerlo da solo avrebbe reintrodotto un caso isolato di "la camera insegue comunque",
 # in contraddizione con l'obiettivo di questo step (nessuna eccezione).
 var _center_camera_tween: Tween
-const CENTER_CAMERA_TWEEN_DURATION: float = 0.3 # secondi — spostamento "centra" animato, non a scatto
+const CENTER_CAMERA_TWEEN_DURATION: float = 0.45 # secondi — spostamento "centra" animato, non a scatto
 var _clock_was_playing_before_dialogs: bool = false
 var _open_dialog_count: int = 0
 var _pending_leave_action: StringName = &""
@@ -218,8 +255,10 @@ var _pending_leave_action: StringName = &""
 @onready var speed_buttons: Dictionary = {
 	GameClockController.Speed.X1: $CanvasLayer/Sidebar/MarginContainer/VBoxContainer/ClockControlsContainer/Speed1xButton,
 	GameClockController.Speed.X2: $CanvasLayer/Sidebar/MarginContainer/VBoxContainer/ClockControlsContainer/Speed2xButton,
-	GameClockController.Speed.X3: $CanvasLayer/Sidebar/MarginContainer/VBoxContainer/ClockControlsContainer/Speed3xButton,
 	GameClockController.Speed.X4: $CanvasLayer/Sidebar/MarginContainer/VBoxContainer/ClockControlsContainer/Speed4xButton,
+	# Visibile solo a DebugLogging.ENABLED (vedi _setup_clock) — stesso meccanismo già in uso per
+	# debug_bar/debug_animal_container.
+	GameClockController.Speed.DEBUG: $CanvasLayer/Sidebar/MarginContainer/VBoxContainer/ClockControlsContainer/SpeedDebugButton,
 }
 @onready var season_progress_bar: SeasonProgressBar = $CanvasLayer/Sidebar/MarginContainer/VBoxContainer/SeasonProgressBar
 
@@ -231,7 +270,9 @@ func _ready() -> void:
 	animals_visible = GameSettings.game_scene_animals_visible
 	flora_daily_updates_enabled = GameSettings.game_scene_flora_updates_enabled
 
-	year_title_label.text = tr("calendar_label")
+	# year_title_label.text non più impostato qui (richiesta utente, 2026-09-04): ora mostra l'Era
+	# corrente invece della label statica "calendar_label", aggiornata da _update_calendar_display
+	# così resta viva anche quando un futuro trigger tech→era chiamerà GameData.set_current_era.
 	# +1 spostato dentro DebugBar (richiesta utente, 2026-09-01) — vedi _on_debug_action_pressed
 	# per il case &"advance_year", niente più bottone/wiring qui.
 	save_game_file_dialog.access = FileDialog.ACCESS_USERDATA
@@ -273,14 +314,24 @@ func _ready() -> void:
 	# così resta facilmente spostabile in futuro (es. un popup sulla mappa) senza toccarlo:
 	# basterebbe cambiare QUI dove viene parcheggiato e come viene mostrato/nascosto, non lui.
 	vegetation_info_panel = VEGETATION_INFO_PANEL_SCENE.instantiate()
-	game_info_tabs.selection_tab.add_child(vegetation_info_panel)
+	game_info_tabs.selection_content.add_child(vegetation_info_panel)
 	vegetation_info_panel.cut_requested.connect(_on_cut_requested)
 	# human_individual_info_panel vive nella STESSA SelectionTab, sibling di vegetation_info_panel
 	# ed empty_selection_label — mai visibile insieme a vegetation_info_panel per costruzione
 	# (selezione reciprocamente esclusiva, vedi _select_vegetation/individual.is_selected=false),
 	# stesso principio "componente muto, GameScene decide" di vegetation_info_panel.
 	human_individual_info_panel = HUMAN_INDIVIDUAL_INFO_PANEL_SCENE.instantiate()
-	game_info_tabs.selection_tab.add_child(human_individual_info_panel)
+	game_info_tabs.selection_content.add_child(human_individual_info_panel)
+	# building_info_panel (Step 5, richiesta utente 2026-09-04) — terzo sibling nella STESSA
+	# SelectionTab, stesso identico principio "componente muto" di vegetation_info_panel/
+	# human_individual_info_panel; zero modifiche a GameInfoTabs per aggiungerlo (già agnostica).
+	building_info_panel = BUILDING_INFO_PANEL_SCENE.instantiate()
+	game_info_tabs.selection_content.add_child(building_info_panel)
+	# "🎯 centra" (Step 3, richiesta utente 2026-09-04): non più un bottone per-pannello (era dentro
+	# human_individual_info_panel, funzionava solo per individui) — un solo bottone condiviso
+	# nell'header di GameInfoTabs.SelectionTab, sopra a qualunque pannello selection_content stia
+	# mostrando ora. _center_camera_on_selection risolve la posizione in base a _selection_kind.
+	game_info_tabs.center_requested.connect(_center_camera_on_selection)
 	# human_population_info_panel vive in PopulationTab — instanziato qui insieme al resto (stesso
 	# principio "componente muto"), ma popolato (show_population) solo più sotto, DOPO il seeding
 	# umano: human_individuals/human_folk non esistono ancora a questo punto di _ready().
@@ -393,8 +444,17 @@ func _ready() -> void:
 		if individual == null:
 			individual = human_individuals[0]
 	else:
+		# set_current_era (richiesta utente, 2026-09-04 — bugfix): PRIMO punto reale in cui viene
+		# chiamato — prima esisteva solo come infrastruttura mai collegata (nessun trigger tech→era
+		# ancora implementato, vedi GameData), quindi game_data.era_effective_age_band_durations_
+		# male/female restava sempre vuoto e la semina leggeva le durate BASE di HumanRules, mai
+		# scalate per l'Era (game_data.current_era_name di default = "paleolithic"). Questo non è
+		# un trigger di avanzamento — è il bootstrap iniziale, chiamato una sola volta qui, per
+		# l'Era di partenza della partita.
+		game_data.set_current_era(game_data.current_era_name, human_rules)
 		var seeding_result := HumanSeedingService.new().seed_player_start(
-			start_macro_coords, game_data.starting_group_size_preference, human_rules, "Player Folk", game_data.year
+			start_macro_coords, game_data.starting_group_size_preference, human_rules, "Player Folk", game_data.year,
+			game_data.era_effective_age_band_durations_male, game_data.era_effective_age_band_durations_female
 		)
 		human_folk = seeding_result.folk
 		human_population_group = seeding_result.group
@@ -417,10 +477,10 @@ func _ready() -> void:
 	# Popola la scheda 🧍 (richiesta utente, 2026-09-01) — human_individuals/human_folk sono
 	# finalizzati solo qui (posizioni di spawn comprese), stesso motivo per cui l'istanza del
 	# pannello (sopra) e la sua popolazione dati sono separate in due punti diversi di _ready().
-	human_population_info_panel.show_population(
-		human_population_group.total_count, human_individuals, game_data.year, human_folk.human_rules_ref,
-		human_folk.id, human_population_group.id
-	)
+	# Estratta in _refresh_population_panel (richiesta utente, 2026-09-05 — bugfix "pannello mai
+	# aggiornato dopo il primo popolamento"): stessa identica chiamata di prima, ora riusabile anche
+	# dal rollover d'anno.
+	_refresh_population_panel()
 
 	# Prima cella viva: il centro. center_macro_coords va fissato PRIMA di attivarla, perché
 	# _activate_live_cell non decide da sé "sono il centro" — è solo orchestrazione qui.
@@ -480,7 +540,7 @@ func _ready() -> void:
 	_update_center_info_panel()
 
 	individual_controller = HumanIndividualController.new()
-	individual_controller.setup(individual, live_cells[center_macro_coords].renderer)
+	individual_controller.setup(individual, live_cells[center_macro_coords].renderer, game_data)
 
 	_setup_clock()
 	_assign_clock_to_all_live_cells()
@@ -579,23 +639,42 @@ func _unhandled_input(event: InputEvent) -> void:
 			_building_ghost.rotate_clockwise()
 			return
 
-	# Priorità concordata con l'utente: la vegetazione vince entro il proprio raggio di hit-test
-	# (più piccolo/preciso del raggio di selezione del player, vedi VegetationSelectorController);
-	# se non trova nulla, il flusso prosegue esattamente come prima di questo controller. Un click
-	# sinistro "a vuoto" (né vegetazione né un individuo umano) deseleziona comunque la vegetazione
-	# — stesso principio di _deselect_all_human_individuals, che già deseleziona ogni individuo
-	# umano su un click lontano da tutti loro. ECCEZIONE: se il bersaglio corrente (individual, vedi
-	# il commento sul campo) è oggettivamente più vicino al click della pianta candidata (es. è
-	# fermo proprio accanto a una pianta), vince lui anche se la pianta ricade comunque nel raggio
-	# di click della vegetazione — vedi _is_player_closer_to_click (confronta sempre e solo il
-	# bersaglio corrente, non l'intero human_individuals: la priorità vegetazione/individuo non è
-	# stata estesa a tutti i membri del gruppo in questo step).
+	# Priorità concordata con l'utente: vegetazione/edifici vincono entro il proprio raggio di
+	# hit-test (più piccolo/preciso del raggio di selezione del player, vedi VegetationSelectorController/
+	# BuildingSelectorController) — Step 4 (richiesta utente, 2026-09-04): generalizzato da "solo
+	# vegetazione" al MIGLIOR candidato tra i tipi selezionabili sulla mappa (chi ha la distanza più
+	# piccola vince tra loro, vedi map_hit sotto), non più un solo tipo con priorità fissa. Se
+	# nessuno dei due trova nulla, il flusso prosegue esattamente come prima di questi controller.
+	# Un click sinistro "a vuoto" (nessun tipo mappa trovato) deseleziona comunque vegetazione ED
+	# edificio — stesso principio di _deselect_all_human_individuals, che già deseleziona ogni
+	# individuo umano su un click lontano da tutti loro. ECCEZIONE: se il bersaglio corrente
+	# (individual, vedi il commento sul campo) è oggettivamente più vicino al click del miglior
+	# candidato mappa (es. è fermo proprio accanto a una pianta/edificio), vince lui anche se il
+	# candidato ricade comunque nel proprio raggio di click — vedi _is_player_closer_to_click
+	# (confronta sempre e solo il bersaglio corrente, non l'intero human_individuals: la priorità
+	# non è stata estesa a tutti i membri del gruppo in questo step).
 	var vegetation_hit := vegetation_selector_controller.try_select(event, live_cells)
-	if not vegetation_hit.is_empty() and not _is_player_closer_to_click(vegetation_hit["distance"]):
-		_select_vegetation(vegetation_hit)
+	var building_hit := building_selector_controller.try_select(
+		event, live_cells, macro_world.buildings if macro_world != null else []
+	)
+	var map_hit: Dictionary = {}
+	var map_hit_kind := SelectionKind.NONE
+	if not vegetation_hit.is_empty() and (building_hit.is_empty() or vegetation_hit["distance"] <= building_hit["distance"]):
+		map_hit = vegetation_hit
+		map_hit_kind = SelectionKind.VEGETATION
+	elif not building_hit.is_empty():
+		map_hit = building_hit
+		map_hit_kind = SelectionKind.BUILDING
+
+	if not map_hit.is_empty() and not _is_player_closer_to_click(map_hit["distance"]):
+		if map_hit_kind == SelectionKind.VEGETATION:
+			_select_vegetation(map_hit)
+		else:
+			_select_building(map_hit)
 	else:
 		if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
 			_clear_vegetation_selection()
+			_clear_building_selection()
 			# Selezione di un individuo umano QUALSIASI (richiesta utente, 2026-09-02) — hit-test
 			# puro via HumanIndividualSelectorController (non tocca mai is_selected da sé), mutua
 			# esclusione applicata qui: al più un individuo selezionato alla volta in tutto
@@ -609,6 +688,7 @@ func _unhandled_input(event: InputEvent) -> void:
 			_deselect_all_human_individuals()
 			if hit_individual != null:
 				hit_individual.is_selected = true
+				_selection_kind = SelectionKind.INDIVIDUAL
 				_select_individual(hit_individual)
 				_set_movement_target(hit_individual)
 			else:
@@ -623,11 +703,11 @@ func _unhandled_input(event: InputEvent) -> void:
 		_center_camera_on_individual()
 
 
-# Vero se un individuo umano QUALSIASI è più vicino al click corrente della miglior candidata
-# vegetale (stesso spazio pixel locale della cella CENTRALE — usato sia da
-# VegetationSelectorController che qui, così le due distanze sono direttamente confrontabili). Non
-# richiede che il click ricada nel raggio di selezione vero del player (SELECT_RADIUS_MICROCELLS
-# in HumanIndividualSelectorController): decide solo chi tenta per primo,
+# Vero se un individuo umano QUALSIASI è più vicino al click corrente del miglior candidato mappa
+# (vegetazione O edificio, Step 4 — stesso spazio pixel locale della cella CENTRALE, usato sia da
+# VegetationSelectorController/BuildingSelectorController che qui, così le distanze sono
+# direttamente confrontabili). Non richiede che il click ricada nel raggio di selezione vero del
+# player (SELECT_RADIUS_MICROCELLS in HumanIndividualSelectorController): decide solo chi tenta per primo,
 # human_individual_selector_controller applica comunque la propria soglia subito dopo.
 #
 # BUGFIX (2026-09-03, trovato testando una New Game vera per la prima volta da tempo — non
@@ -643,11 +723,11 @@ func _unhandled_input(event: InputEvent) -> void:
 # human_individuals (mai solo il bersaglio corrente) — stessa formula di offset di
 # HumanIndividualSelectorController.try_select, replicata qui perché quella classe ritorna
 # l'individuo selezionato (filtrato dalla propria soglia SELECT_RADIUS_MICROCELLS), non una
-# distanza grezza confrontabile con vegetation_distance_px. Quando il bersaglio corrente è anche
+# distanza grezza confrontabile con map_object_distance_px. Quando il bersaglio corrente è anche
 # il candidato più vicino il risultato coincide con la vecchia logica (home_macro_coords ==
 # center_macro_coords per costruzione mentre è bersaglio, vedi _set_movement_target — offset
 # sempre Vector2i.ZERO in quel caso).
-func _is_player_closer_to_click(vegetation_distance_px: float) -> bool:
+func _is_player_closer_to_click(map_object_distance_px: float) -> bool:
 	var center_cell: LiveMacroCell = live_cells.get(center_macro_coords)
 	if center_cell == null or center_cell.renderer == null:
 		return false
@@ -658,31 +738,90 @@ func _is_player_closer_to_click(vegetation_distance_px: float) -> bool:
 		var offset := Vector2(candidate.home_macro_coords - center_macro_coords) * World.WIDTH
 		var candidate_px: Vector2 = (candidate.position + offset) * MicroCellRenderer.CELL_SIZE
 		best_distance_px = minf(best_distance_px, mouse_px.distance_to(candidate_px))
-	return best_distance_px < vegetation_distance_px
+	return best_distance_px < map_object_distance_px
 
 
 # Sposta la camera esattamente sulla posizione corrente dell'individuo — stesso spazio pixel di
 # HumanIndividualView (individual.position, in microcelle, moltiplicata per lo stesso CELL_SIZE=10 di
 # MicroCellRenderer/HumanIndividualView). Sempre lo spazio della cella CENTRALE, che è sempre
 # posizionata a offset zero (vedi _reposition_live_cells) — nessuna traduzione necessaria.
-# Richiamato sia dal tasto X (_unhandled_input sopra) sia dal bottone "🎯" della
-# PrimaryActionsBar (vedi _on_primary_action_pressed) — questa È già "il tasto centra": nessun
-# service dedicato separato, la funzione è già piccola/isolata/riusata uniformemente da entrambi i
-# trigger (richiesta utente, 2026-09-02 — un'eventuale estrazione in un CameraFocusService resta
-# il punto naturale per estendere il "centra" ad altri tipi di selezione in futuro — edifici,
-# piante — ma prematura finché esiste un solo tipo di bersaglio da centrare).
+# Richiamata dal tasto X (_unhandled_input sopra): "torna sul player", un comando dedicato che
+# riporta la vista sul bersaglio di movimento/camera INDIPENDENTEMENTE da cosa sia selezionato ora
+# (funziona anche con vegetazione selezionata o nessuna selezione) — deliberatamente NON unificata
+# con _center_camera_on_selection sotto (Step 2, richiesta utente 2026-09-04): sono due intenti
+# diversi che solo prima di quello step coincidevano sempre (esisteva un solo tipo di bersaglio).
+# Riusata comunque DA _center_camera_on_selection per il ramo INDIVIDUAL, invece di duplicare la
+# logica — vedi sotto.
 #
 # animated=true di default (requisito utente, 2026-09-02: uno spostamento a scatto non è più
 # accettabile ora che è l'UNICO modo di muovere la camera sulla selezione, vedi il commento su
 # _center_camera_tween) — un breve tween invece di un assegnamento diretto. animated=false resta
 # per l'UNICO caso in cui uno scatto è corretto: il posizionamento iniziale in _ready(), prima che
-# la scena sia mai stata mostrata (nessuno spostamento visibile da animare). _center_camera_tween
-# viene killata prima di ripartire, in entrambi i rami: preme "centra" due volte di fila (o mentre
-# un tween precedente sta ancora animando) non deve far litigare due tween sulla stessa proprietà.
+# la scena sia mai stata mostrata (nessuno spostamento visibile da animare).
 func _center_camera_on_individual(animated: bool = true) -> void:
 	if individual == null:
 		return
-	var target_position := individual.position * MicroCellRenderer.CELL_SIZE
+	_animate_camera_to(individual.position * MicroCellRenderer.CELL_SIZE, animated)
+
+
+# Step 2 del piano "centra generalizzato" (richiesta utente, 2026-09-04) — a differenza di
+# _center_camera_on_individual sopra (dedicata al tasto X, sempre e solo sul bersaglio di
+# movimento/camera), questa centra su QUALUNQUE cosa sia OGGI selezionata, secondo _selection_kind
+# (l'autorità di selezione unica introdotta allo Step 1) — è la funzione dietro ai trigger "🎯"
+# espliciti dell'utente (bottone nella lista popolazione, e il futuro bottone unico nella
+# SelectionTab, Step 3). Un piccolo branch per tipo qui, non altrove — CameraFocusService separato
+# rimandato finché non servirà davvero (oggi tre rami, tutti piccoli):
+#   - INDIVIDUAL: delega a _center_camera_on_individual sopra (stesso risultato per costruzione,
+#     dato che quando kind==INDIVIDUAL il selezionato È sempre `individual`, vedi il commento su
+#     _selection_kind).
+#   - VEGETATION: a differenza dell'individuo, una pianta selezionata NON ri-centra il mondo (può
+#     restare in QUALSIASI cella viva, non solo quella centrale) — serve quindi la stessa
+#     traduzione cross-macrocella già usata da _reposition_live_cells/_on_minimap_cell_clicked:
+#     posizione locale al renderer proprietario (MicroCellRenderer.get_individual_screen_position,
+#     già nello stesso spazio pixel di CELL_SIZE) PIÙ l'offset della sua macrocella rispetto al
+#     centro. Se la cella non è più viva o l'individuo non c'è più (selezione stantia), no-op
+#     silenzioso — stesso principio difensivo già in uso altrove per selected_vegetation.
+#   - BUILDING (Step 4, richiesta utente 2026-09-04): stessa identica traduzione cross-macrocella
+#     di VEGETATION sopra (un edificio può anch'esso stare in qualsiasi cella viva) — vedi
+#     MicroCellRenderer.get_building_screen_position, l'equivalente per gli edifici.
+func _center_camera_on_selection(animated: bool = true) -> void:
+	match _selection_kind:
+		SelectionKind.INDIVIDUAL:
+			_center_camera_on_individual(animated)
+		SelectionKind.VEGETATION:
+			var macro_coords: Vector2i = selected_vegetation["macro_coords"]
+			var cell: LiveMacroCell = live_cells.get(macro_coords)
+			if cell == null or cell.renderer == null:
+				return
+			var local_position: Vector2 = cell.renderer.get_individual_screen_position(
+				selected_vegetation["object_type"], selected_vegetation["individual_key"]
+			)
+			var macro_offset := Vector2(macro_coords - center_macro_coords) * MACRO_CELL_PIXELS
+			_animate_camera_to(local_position + macro_offset, animated)
+		SelectionKind.BUILDING:
+			# Stessa identica traduzione cross-macrocella del ramo VEGETATION sopra — un edificio,
+			# come una pianta, può stare in qualsiasi cella viva, non solo quella centrale (Step 4,
+			# richiesta utente 2026-09-04). get_building_screen_position è l'equivalente di
+			# get_individual_screen_position per gli edifici (vedi MicroCellRenderer).
+			var building_macro_coords: Vector2i = selected_building["macro_coords"]
+			var building_cell: LiveMacroCell = live_cells.get(building_macro_coords)
+			if building_cell == null or building_cell.renderer == null:
+				return
+			var building_local_position: Vector2 = building_cell.renderer.get_building_screen_position(
+				selected_building["building_id"]
+			)
+			var building_macro_offset := Vector2(building_macro_coords - center_macro_coords) * MACRO_CELL_PIXELS
+			_animate_camera_to(building_local_position + building_macro_offset, animated)
+		_:
+			pass
+
+
+# Estratta da _center_camera_on_individual (Step 2, richiesta utente 2026-09-04) — solo il
+# meccanismo di animazione/scatto, condiviso ora da entrambe le funzioni "centra" sopra invece di
+# essere duplicato. _center_camera_tween viene killata prima di ripartire, in entrambi i rami:
+# premere "centra" due volte di fila (o mentre un tween precedente sta ancora animando) non deve
+# far litigare due tween sulla stessa proprietà.
+func _animate_camera_to(target_position: Vector2, animated: bool) -> void:
 	if _center_camera_tween != null:
 		_center_camera_tween.kill()
 	if not animated:
@@ -711,14 +850,24 @@ func _on_minimap_cell_clicked(macro_coords: Vector2i) -> void:
 # sequenza select+movimento di un click diretto sull'individuo in _unhandled_input (deselect-tutti
 # → seleziona → _select_individual per il popup → _set_movement_target, che ri-ancora anche lo
 # streaming/center_macro_coords se target non è co-locato col centro — vedi lì), PIÙ
-# _center_camera_on_individual() esplicito alla fine: un click su un bottone UI non è un click nel
-# mondo, non sposta la camera da sé come farebbe un click diretto sul personaggio già visibile.
+# _center_camera_on_selection() esplicito alla fine (Step 2, richiesta utente 2026-09-04 — era
+# _center_camera_on_individual, stesso risultato per costruzione dato che kind è appena stato
+# impostato a INDIVIDUAL qui sopra): un click su un bottone UI non è un click nel mondo, non sposta
+# la camera da sé come farebbe un click diretto sul personaggio già visibile.
 func _on_population_individual_center_requested(target: HumanIndividual) -> void:
+	# _clear_vegetation_selection/_clear_building_selection (bugfix, richiesta utente 2026-09-04,
+	# scoperto mentre si aggiungeva la selezione edifici): PRIMA mancavano qui — selezionare un
+	# individuo da questa lista mentre vegetazione/edificio erano già selezionati lasciava ENTRAMBI
+	# selezionati (evidenziazione a schermo compresa), esattamente il difetto che la mutua
+	# esclusione a 3 vie altrove (_unhandled_input, _select_vegetation, _select_building) evita già.
+	_clear_vegetation_selection()
+	_clear_building_selection()
 	_deselect_all_human_individuals()
 	target.is_selected = true
+	_selection_kind = SelectionKind.INDIVIDUAL
 	_select_individual(target)
 	_set_movement_target(target)
-	_center_camera_on_individual()
+	_center_camera_on_selection()
 
 
 # ============================================================================================
@@ -759,7 +908,9 @@ func _select_vegetation(hit: Dictionary) -> void:
 
 	_deselect_all_human_individuals()
 	human_individual_info_panel.clear()
+	_clear_building_selection() # mutua esclusione a 3 vie (Step 4, richiesta utente 2026-09-04)
 	selected_vegetation = hit
+	_selection_kind = SelectionKind.VEGETATION
 	_refresh_vegetation_panel()
 	game_info_tabs.show_selection_tab()
 
@@ -768,11 +919,79 @@ func _clear_vegetation_selection() -> void:
 	if selected_vegetation.is_empty():
 		return
 	selected_vegetation = {}
+	_selection_kind = SelectionKind.NONE
 	for cell in live_cells.values():
 		if cell.renderer != null:
 			cell.renderer.clear_selected_individual()
 	vegetation_info_panel.clear()
 	game_info_tabs.hide_selection_tab()
+
+
+# ============================================================================================
+# Selezione di un edificio — Step 4/5 (richiesta utente, 2026-09-04). Struttura gemella di
+# _select_vegetation/_clear_vegetation_selection sopra: BuildingInfoPanel (Step 5) mostra
+# type/status/durability/anno di costruzione/risorse immagazzinate/id, risolti dal vero oggetto
+# Building via _find_building_by_id — questo pannello, come gli altri due, riceve solo dati già
+# risolti (l'intero Building, stesso schema di HumanIndividualInfoPanel.show_individual).
+# ============================================================================================
+
+func _select_building(hit: Dictionary) -> void:
+	for coords in live_cells:
+		var cell: LiveMacroCell = live_cells[coords]
+		if cell.renderer == null:
+			continue
+		if coords == hit["macro_coords"]:
+			cell.renderer.set_selected_building(hit["building_id"])
+		else:
+			cell.renderer.clear_selected_building()
+
+	_deselect_all_human_individuals()
+	human_individual_info_panel.clear()
+	_clear_vegetation_selection()
+	selected_building = hit
+	_selection_kind = SelectionKind.BUILDING
+	_refresh_building_panel()
+	game_info_tabs.show_selection_tab()
+
+
+func _clear_building_selection() -> void:
+	if selected_building.is_empty():
+		return
+	selected_building = {}
+	_selection_kind = SelectionKind.NONE
+	for cell in live_cells.values():
+		if cell.renderer != null:
+			cell.renderer.clear_selected_building()
+	building_info_panel.clear()
+	game_info_tabs.hide_selection_tab()
+
+
+# Risolve selected_building["building_id"] sul vero oggetto Building (scansione lineare di
+# macro_world.buildings — stesso costo già accettato altrove nel progetto per lo stesso array, vedi
+# _macro_cell_has_buildings) e popola building_info_panel. A differenza di _refresh_vegetation_
+# panel, nessuna gestione "marker bloccato": un edificio non ha ancora un modo di sparire una volta
+# piazzato (nessuna demolizione implementata) — l'unica via di invalidazione oggi resta lo
+# scaricamento della sua macrocella, già gestita da _deactivate_live_cell. Guardia comunque
+# presente (building non trovato -> deseleziona) per onestà difensiva, stesso principio già seguito
+# ovunque nel progetto per selezioni potenzialmente stantie.
+func _refresh_building_panel() -> void:
+	var building := _find_building_by_id(selected_building.get("building_id", -1))
+	if building == null:
+		_clear_building_selection()
+		return
+	building_info_panel.show_building(building)
+	# Titolo (Step 6, richiesta utente 2026-09-04) — stessa formula già in BuildingInfoPanel.
+	var type_name: String = tr(building.rules.building_name) if building.rules != null else building.building_type_name
+	game_info_tabs.set_selection_title("Type: " + type_name)
+
+
+func _find_building_by_id(building_id: int) -> Building:
+	if macro_world == null:
+		return null
+	for building in macro_world.buildings:
+		if building.id == building_id:
+			return building
+	return null
 
 
 # Deseleziona TUTTI gli individui umani — mutua esclusione esplicita: al più un individuo umano
@@ -796,11 +1015,52 @@ func _deselect_all_human_individuals() -> void:
 # Età ricalcolata al volo da HumanCalculator (mai salvata su HumanIndividual, stesso principio già
 # usato da HumanSeedingService in fase di generazione) — human_folk.human_rules_ref è lo stesso
 # HumanRules usato lì. strength resta fuori, non ancora richiesto.
+# max_workforce/residual_workforce (2026-09-04): nessun consumo reale ancora esistente (nessuna
+# classe Action), quindi residual coincide sempre col max — l'UNICA riga da sostituire quando
+# arriverà HumanIndividual.residual_workforce è quella subito sotto (residual_workforce =
+# max_workforce), il pannello non va toccato.
 func _select_individual(target: HumanIndividual) -> void:
 	var age: int = game_data.year - target.birth_year_virtual
-	var age_band := HumanCalculator.get_age_band(human_folk.human_rules_ref, target.sex, float(age))
-	human_individual_info_panel.show_individual(target, age, age_band)
+	var age_band := HumanCalculator.get_age_band(
+		game_data.era_effective_age_band_durations_male, game_data.era_effective_age_band_durations_female, target.sex, float(age)
+	)
+	var max_workforce := HumanCalculator.get_base_workforce(human_folk.human_rules_ref, age_band, target.sex)
+	var residual_workforce := max_workforce # TODO: sostituire con target.residual_workforce quando esisterà
+	human_individual_info_panel.show_individual(target, age, age_band, max_workforce, residual_workforce)
+	game_info_tabs.set_selection_title("Name: " + target.name)
 	game_info_tabs.show_selection_tab()
+
+
+# Ripopola la scheda 👨‍👩‍👧 con i dati correnti — stessa identica chiamata di _ready() (vedi lì),
+# estratta per essere riusabile anche da _on_year_rolled_over sotto.
+func _refresh_population_panel() -> void:
+	human_population_info_panel.show_population(
+		human_population_group.total_count, human_individuals, game_data.year,
+		game_data.era_effective_age_band_durations_male, game_data.era_effective_age_band_durations_female,
+		human_folk.id, human_population_group.id
+	)
+
+
+# Ripopola la scheda selezione SOLO se un individuo è davvero selezionato ora (_selection_kind ==
+# INDIVIDUAL) — scansione lineare su human_individuals per trovare chi ha is_selected=true, stesso
+# costo già accettato altrove nel progetto per array analoghi (es. _find_building_by_id). No-op se
+# non è un individuo ad essere selezionato (vegetazione/edificio/nessuna selezione: non è compito
+# di questo handler, quei pannelli non mostrano età).
+func _refresh_selected_individual_panel() -> void:
+	if _selection_kind != SelectionKind.INDIVIDUAL:
+		return
+	for member in human_individuals:
+		if member.is_selected:
+			_select_individual(member)
+			return
+
+
+# Bugfix (richiesta utente, 2026-09-05 — vedi commento alla connessione in _setup_clock): tiene
+# sincronizzati i due pannelli umani col passare degli anni, non solo su un nuovo popolamento/una
+# nuova selezione manuale.
+func _on_year_rolled_over() -> void:
+	_refresh_population_panel()
+	_refresh_selected_individual_panel()
 
 
 # Sposta il bersaglio di movimento/streaming (il campo "individual", vedi il commento lì) su
@@ -874,7 +1134,7 @@ func _set_movement_target(target: HumanIndividual) -> void:
 		_update_center_info_panel()
 
 	individual = target
-	individual_controller.setup(individual, live_cells[center_macro_coords].renderer)
+	individual_controller.setup(individual, live_cells[center_macro_coords].renderer, game_data)
 
 
 # Simmetrico a _clear_vegetation_selection: no-op se il pannello non era già mostrato, per non
@@ -886,6 +1146,7 @@ func _clear_individual_selection() -> void:
 		return
 	human_individual_info_panel.clear()
 	game_info_tabs.hide_selection_tab()
+	_selection_kind = SelectionKind.NONE
 
 
 # Richiede al renderer proprietario i dati aggiornati e li passa al pannello — RIDERIVA lo stato
@@ -901,6 +1162,9 @@ func _refresh_vegetation_panel() -> void:
 		return
 	var object_type: GameTypes.WorldObjectType = selected_vegetation["object_type"]
 	var individual_key: Vector3i = selected_vegetation["individual_key"]
+	# Titolo (Step 6, richiesta utente 2026-09-04): identico nei due rami sotto (vivo/bloccato,
+	# dipende solo da object_type) — impostato qui una volta sola invece che duplicato in entrambi.
+	game_info_tabs.set_selection_title("Type: " + GameTypes.WorldObjectType.keys()[object_type].capitalize())
 
 	if cell.renderer.has_individual(object_type, individual_key):
 		var info := cell.renderer.get_individual_info(object_type, individual_key)
@@ -936,9 +1200,20 @@ func _invalidate_selected_vegetation_if_missing(cell: LiveMacroCell) -> void:
 # sparire dai blob vivi e comparire come ceppo/rovi (cut_positions, vedi _refresh_resource_visuals)
 # — nessuna attesa del prossimo giorno/anno simulato. Guardia esplicita su has_individual: il
 # bottone "Cut" di VegetationInfoPanel è nascosto quando la selezione è già un marker bloccato
-# (vedi show_cut_marker), ma questo controllo resta comunque come rete di sicurezza. La selezione
-# viene comunque azzerata dopo: il ceppo appena creato non è (ancora) ri-selezionabile in questa
-# stessa azione, l'utente può ricliccarlo se vuole vederne le info.
+# (vedi show_cut_marker), ma questo controllo resta comunque come rete di sicurezza.
+#
+# La selezione (selected_vegetation) NON viene più azzerata dopo il taglio (bugfix, richiesta
+# utente 2026-09-04 — prima lo era: "il ceppo appena creato non è ri-selezionabile in questa
+# stessa azione", una scelta deliberata ma percepita come un difetto ora che _center_camera_on_
+# selection/il salto di tab la rendono più visibile — tagliare buttava l'utente fuori dalla
+# SelectionTab, su PopulationTab). object_type/individual_key restano IDENTICI prima e dopo il
+# taglio (vedi PlayerHarvestService: vegetation_cut_exceptions è chiavato sulla stessa Vector3i
+# lotto+indice, mai riassegnata) — la chiamata sotto a _refresh_resource_visuals(cell) invoca già
+# _invalidate_selected_vegetation_if_missing(cell) al proprio interno, che rileva has_blocked_
+# marker()==true per questa stessa chiave e richiama _refresh_vegetation_panel() da sé: il
+# passaggio pianta-viva → ceppo/rovi avviene quindi automaticamente, stesso identico meccanismo già
+# usato per invalidare una selezione stantia altrove, qui riusato per farla invece SOPRAVVIVERE al
+# cambio di stato. Nessuna chiamata esplicita in più necessaria qui.
 func _on_cut_requested() -> void:
 	if selected_vegetation.is_empty():
 		return
@@ -957,7 +1232,6 @@ func _on_cut_requested() -> void:
 		return
 
 	PlayerHarvestService.cut_individual(cell.macro_state, object_type, individual_key, info["subtype_name"], info["size_multiplier"], game_data.year)
-	_clear_vegetation_selection()
 	# Il taglio cambia dedicated_space/vegetation_cut_exceptions per QUESTA cella — invalida la
 	# cache posizioni (vedi LiveMacroCell.needs_full_vegetation_recompute), altrimenti il refresh
 	# sotto riuserebbe la lista di ieri e il ceppo appena creato non comparirebbe.
@@ -1219,10 +1493,12 @@ func _deactivate_live_cell(coords: Vector2i) -> void:
 	var cell: LiveMacroCell = live_cells.get(coords)
 	if cell == null:
 		return
-	# L'individuo selezionato (se presente) vive nel renderer che sta per essere distrutto — vedi
-	# _select_vegetation/selected_vegetation.
+	# L'individuo/edificio selezionato (se presente) vive nel renderer che sta per essere distrutto
+	# — vedi _select_vegetation/selected_vegetation e _select_building/selected_building (Step 4).
 	if not selected_vegetation.is_empty() and selected_vegetation["macro_coords"] == coords:
 		_clear_vegetation_selection()
+	if not selected_building.is_empty() and selected_building["macro_coords"] == coords:
+		_clear_building_selection()
 	cell.container.queue_free()
 	live_cells.erase(coords)
 
@@ -1470,7 +1746,7 @@ func _attempt_macro_cell_transition(dx: int, dy: int) -> void:
 	var target_view_index := human_individuals.find(individual)
 	if target_view_index != -1:
 		human_individual_views[target_view_index].reparent(live_cells[center_macro_coords].container)
-	individual_controller.setup(individual, live_cells[center_macro_coords].renderer)
+	individual_controller.setup(individual, live_cells[center_macro_coords].renderer, game_data)
 	_reposition_live_cells()
 	# Bugfix (Passo 1 del piano bug camera/extra, 2026-09-02 — CORREGGE una rimozione sbagliata
 	# nello Step 3: qui NON viveva solo una compensazione per il follow automatico, ma anche una
@@ -2212,10 +2488,15 @@ func _on_save_game_file_selected(path: String) -> void:
 	if _pending_leave_action != &"":
 		_execute_pending_leave_action()
 
+# &"center_on_individual" (era l'unico case qui) rimosso insieme allo spostamento del bottone "🎯"
+# fuori da PrimaryActionsBar — vive ora nell'header di GameInfoTabs.SelectionTab (Step 3, richiesta
+# utente 2026-09-04 — vedi game_info_tabs.center_requested in _ready). Slot 0 di primary_actions_bar
+# è oggi il placeholder "statistiche" (&"statistics", disabled — vedi GameInfoPanel._ready): nessun
+# case qui finché resta disabilitato, un futuro passo che lo implementa ne aggiungerà uno.
 func _on_primary_action_pressed(action_id: StringName) -> void:
 	match action_id:
-		&"center_on_individual":
-			_center_camera_on_individual()
+		_:
+			pass
 
 
 # toggle_animals_visibility/toggle_flora_updates/world_debug/macro_cell_debug — vissuti prima
@@ -2385,10 +2666,14 @@ func _building_positions_for_cell(cell: LiveMacroCell) -> Array:
 	return positions
 
 
-# Stessa fonte/filtro di _building_positions_for_cell sopra, ma con l'orientamento incluso — vedi
-# MicroCellRenderer.set_buildings/buildings (Array[Dictionary], {"position","rotation"}), l'unico
-# consumatore. Funzione separata invece di arricchire quella sopra: _building_positions_for_cell
-# resta usata anche per l'esclusione vegetazione, dove la rotazione non serve a nessuno.
+# Stessa fonte/filtro di _building_positions_for_cell sopra, ma con l'orientamento (e, da Step 4,
+# l'id) inclusi — vedi MicroCellRenderer.set_buildings/buildings (Array[Dictionary], {"position",
+# "rotation","id"}). Funzione separata invece di arricchire quella sopra: _building_positions_for_
+# cell resta usata anche per l'esclusione vegetazione, dove rotazione/id non servono a nessuno.
+# "id" (Step 4, richiesta utente 2026-09-04): permette al renderer di ritrovare l'edificio
+# selezionato tra i propri (set_selected_building/get_building_screen_position) senza dover
+# conoscere Building stesso — stesso principio "il renderer conosce solo le forme, mai gli oggetti
+# di gioco" già seguito per la vegetazione (individual_key, mai un riferimento a MacroCellState).
 func _buildings_for_cell(cell: LiveMacroCell) -> Array:
 	var result: Array = []
 	if macro_world == null:
@@ -2398,6 +2683,7 @@ func _buildings_for_cell(cell: LiveMacroCell) -> Array:
 			result.append({
 				"position": Vector2i(building.micro_x, building.micro_y),
 				"rotation": building.rotation,
+				"id": building.id,
 			})
 	return result
 
@@ -2496,11 +2782,33 @@ func _setup_clock() -> void:
 		return
 	clock.setup(macro_world, game_data)
 	clock.is_playing = GameSettings.active_clock_is_playing
-	clock.speed = GameSettings.active_clock_speed
+	# Retrocompatibilità (richiesta utente, 2026-09-04 — rimozione di Speed.X3): GameSettings.
+	# active_clock_speed è un plain int di sessione (mai un vero enum, vedi il commento lì), quindi
+	# un valore stantio che non corrisponde più a nessuna chiave di speed_buttons (es. il vecchio
+	# X3, o un futuro membro rimosso) ripiegherebbe silenziosamente su una velocità sbagliata invece
+	# di rompere il caricamento — qui viene invece ricondotto a X1.
+	var restored_speed: int = GameSettings.active_clock_speed
+	clock.speed = restored_speed if speed_buttons.has(restored_speed) else GameClockController.Speed.X1
 	clock.day_advanced.connect(_on_day_advanced)
+	# Bugfix (richiesta utente, 2026-09-05): human_population_info_panel/human_individual_info_panel
+	# mostravano età/age_band ricalcolate al volo (mai salvate, vedi HumanCalculator.get_age_band)
+	# ma solo al MOMENTO in cui venivano popolati (rispettivamente: una volta sola in _ready, o ad
+	# ogni nuova selezione) — mai più aggiornati col passare degli anni, disallineando la vista
+	# individuale (si aggiornava solo cambiando selezione) da quella aggregata (mai aggiornata
+	# affatto). L'età cambia SOLO al rollover d'anno (mai infragiornaliero), quindi basta
+	# agganciarsi al nuovo clock.year_rolled_over (vedi GameClockController) invece che a
+	# day_advanced (che scatterebbe inutilmente ogni giorno).
+	clock.year_rolled_over.connect(_on_year_rolled_over)
+	# Primo aggancio gameplay-side ai checkpoint classificati (richiesta utente, 2026-09-05) — vedi
+	# GameTimeService per il perché l'istanza va tenuta in un campo, non usa-e-getta.
+	game_time_service = GameTimeService.new()
+	game_time_service.connect_to_clock(clock, game_data)
 	play_pause_button.pressed.connect(_on_play_pause_pressed)
 	for speed in speed_buttons.keys():
 		speed_buttons[speed].pressed.connect(_on_speed_button_pressed.bind(speed))
+	# Pulsante "velocità debug" (richiesta utente, 2026-09-04): stesso flag già usato altrove
+	# (debug_bar/debug_animal_container), nessun meccanismo di debug-mode nuovo introdotto.
+	speed_buttons[GameClockController.Speed.DEBUG].visible = DebugLogging.ENABLED
 	_update_play_pause_button()
 	speed_buttons[clock.speed].button_pressed = true
 
@@ -2664,6 +2972,7 @@ func _on_advance_year_pressed() -> void:
 	clock.force_advance_to_year_end()
 
 func _update_calendar_display() -> void:
+	year_title_label.text = game_data.current_era_name.capitalize()
 	year_label.text = "Day %d of %d, Year %d" % [game_data.current_day + 1, GameData.DAYS_PER_YEAR, game_data.year]
 	season_progress_bar.set_current_day(game_data.current_day)
 

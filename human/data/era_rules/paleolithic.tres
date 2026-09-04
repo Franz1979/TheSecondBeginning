@@ -4,4 +4,4 @@
 
 [resource]
 script = ExtResource("1_paleolithic")
-longevity_multiplier = 0.6
+longevity_multiplier_by_age = Array[float]([1.0, 1.0, 0.6, 0.6, 0.6])

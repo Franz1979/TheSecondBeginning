@@ -54,7 +54,8 @@ func advance_day(world: World, game_data: GameData) -> Dictionary:
 	# uno stesso giorno non è mai osservabile — nessun gruppo viene mai toccato da entrambi lo
 	# stesso giorno.
 	_run_timed_daily("territory_dynamics_stagger", func(): _run_daily_territory_dynamics_stagger(world, game_data))
-	var checkpoint_ran := _run_seasonal_checkpoints(world, game_data, year_rolled_over)
+	var checkpoint_result := _run_seasonal_checkpoints(world, game_data, year_rolled_over)
+	var checkpoint_ran: bool = checkpoint_result["checkpoint_ran"]
 	# DOPO i checkpoint stagionali (mai prima): se oggi capita anche un checkpoint di fine
 	# birth_season (nascite/morte per vecchiaia), hunger_buckets viene già mantenuto coerente con
 	# population da PopulationGroup.apply_births/apply_old_age_mortality PRIMA che questo servizio
@@ -70,7 +71,19 @@ func advance_day(world: World, game_data: GameData) -> Dictionary:
 		var day_overall_ms: float = (Time.get_ticks_usec() - day_overall_start_usec) / 1000.0
 		_print_daily_timing_summary(game_data.current_day, day_overall_ms, checkpoint_ran)
 
-	return {"checkpoint_ran": checkpoint_ran, "animals_changed": animals_changed}
+	# year_rolled_over/season_ended (richiesta utente, 2026-09-05 — Opzione A dalla ricognizione
+	# GameClockController<->WorldTimeService): dati GIA' calcolati sopra/dentro
+	# _run_seasonal_checkpoints (year_rolled_over da GameData.advance_day(), season_ended dagli
+	# stessi confronti su SeasonCalculator che decidono quale blocco eseguire) — semplicemente
+	# propagati qui invece di essere scartati, nessuna soglia calendariale nuova calcolata da
+	# questo metodo. GameClockController li spacchetta in due segnali distinti (season_ended/
+	# year_rolled_over) accanto al day_advanced esistente.
+	return {
+		"checkpoint_ran": checkpoint_ran,
+		"animals_changed": animals_changed,
+		"year_rolled_over": year_rolled_over,
+		"season_ended": checkpoint_result["season_ended"],
+	}
 
 
 # Parte B del LOD, condivisa da consumo E fame giornalieri (vedi entrambi i chiamanti sotto):
@@ -300,9 +313,19 @@ func force_advance_to_year_end(world: World, game_data: GameData) -> void:
 # Order within a shared day matters only for SPRING's start (migration before any future
 # spring-referenced event type), chosen to mirror the original pipeline's resource-then-events
 # ordering.
-func _run_seasonal_checkpoints(world: World, game_data: GameData, year_rolled_over: bool) -> bool:
+func _run_seasonal_checkpoints(world: World, game_data: GameData, year_rolled_over: bool) -> Dictionary:
 	var day := game_data.current_day
 	var checkpoint_ran := false
+	# season_ended (richiesta utente, 2026-09-05): quale stagione è terminata OGGI, letta dagli
+	# stessi confronti su SeasonCalculator già presenti sotto per decidere quale blocco di
+	# checkpoint eseguire — non un secondo calcolo. Sentinel -1 (stessa convenzione "-1 = non
+	# applicabile" già in uso ovunque nel progetto, es. GameData.player_macro_cell_x) invece di
+	# GameTypes.Season perché nessuna stagione termina nella maggioranza dei giorni: un int
+	# generico evita di dover forzare -1 dentro un tipo enum. Al massimo una stagione può
+	# terminare in un dato giorno (i tre confronti "end of season" sotto e il ramo year_rolled_over
+	# sono su giorni sempre distinti per costruzione, mai sovrapposti), quindi una singola
+	# variabile basta, nessun array.
+	var season_ended: int = -1
 	# Timing diagnostico (vedi _print_checkpoint_timing_summary in fondo alla funzione): azzerato
 	# ad ogni chiamata, non solo ad ogni sessione — un giorno ordinario (nessun checkpoint) non
 	# stampa nulla comunque, ma l'accumulatore va comunque svuotato per non mischiare i tempi di
@@ -319,16 +342,19 @@ func _run_seasonal_checkpoints(world: World, game_data: GameData, year_rolled_ov
 	if day == SeasonCalculator.get_season_end_day(GameTypes.Season.WINTER):
 		_run_timed("animal_lifecycle_checkpoint(WINTER)", func(): _run_animal_lifecycle_checkpoint(world, GameTypes.Season.WINTER))
 		checkpoint_ran = true
+		season_ended = GameTypes.Season.WINTER
 
 	if day == SeasonCalculator.get_season_end_day(GameTypes.Season.SPRING):
 		_run_timed("animal_lifecycle_checkpoint(SPRING)", func(): _run_animal_lifecycle_checkpoint(world, GameTypes.Season.SPRING))
 		_run_timed("growth_checkpoint", func(): _run_growth_checkpoint(world, game_data))
 		checkpoint_ran = true
+		season_ended = GameTypes.Season.SPRING
 
 	if day == SeasonCalculator.get_season_end_day(GameTypes.Season.SUMMER):
 		_run_timed("animal_lifecycle_checkpoint(SUMMER)", func(): _run_animal_lifecycle_checkpoint(world, GameTypes.Season.SUMMER))
 		_run_timed("fauna_migration_checkpoint", func(): _run_fauna_migration_checkpoint(world))
 		checkpoint_ran = true
+		season_ended = GameTypes.Season.SUMMER
 
 	for season in [GameTypes.Season.WINTER, GameTypes.Season.SPRING, GameTypes.Season.SUMMER, GameTypes.Season.AUTUMN]:
 		if day == SeasonCalculator.get_season_day_range(season).x:
@@ -376,6 +402,7 @@ func _run_seasonal_checkpoints(world: World, game_data: GameData, year_rolled_ov
 		_run_timed("animal_lifecycle_checkpoint(AUTUMN)", func(): _run_animal_lifecycle_checkpoint(world, GameTypes.Season.AUTUMN))
 		_run_timed("mortality_checkpoint", func(): _run_mortality_checkpoint(world))
 		checkpoint_ran = true
+		season_ended = GameTypes.Season.AUTUMN
 
 	# Fix del bug "classificazione LOD congelata": ricalcola lod_focus_state, se un focus è
 	# attivo, ALLA FINE di qualunque giorno in cui sia scattato almeno un checkpoint stagionale
@@ -396,7 +423,7 @@ func _run_seasonal_checkpoints(world: World, game_data: GameData, year_rolled_ov
 		var overall_ms: float = (Time.get_ticks_usec() - overall_start_usec) / 1000.0
 		_print_checkpoint_timing_summary(day, overall_ms)
 
-	return checkpoint_ran
+	return {"checkpoint_ran": checkpoint_ran, "season_ended": season_ended}
 
 
 # Stampa un'unica riga compatta col tempo di ciascun componente del checkpoint stagionale di

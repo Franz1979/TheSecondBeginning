@@ -6,6 +6,27 @@ const DAYS_PER_YEAR := 365
 var year: int = 0
 var current_day: int = 0 # 0..DAYS_PER_YEAR-1
 
+# Era geologico/tecnologica corrente (richiesta utente, 2026-09-04) — GLOBALE alla partita per
+# ora (un solo current_era_name per l'intera GameData, non uno per Folk), coerentemente col fatto
+# che oggi esiste un solo Folk simulato (il player). Potrà diventare per-Folk (spostato su Folk
+# stesso, chiave di un Dictionary, o simile) quando servirà far progredire fazioni indipendenti a
+# ritmi diversi — non prima, nessuna astrazione anticipata qui. Scritto SOLO dal default per ora:
+# nessun trigger di avanzamento tech→era esiste ancora (vedi set_current_era sotto, il punto
+# d'ingresso pronto per quella futura logica, non ancora chiamato da nessuno).
+var current_era_name: String = "paleolithic"
+
+# Cache delle durate effettive delle age band (HumanRules.age_band_durations_male/female ×
+# EraRules.longevity_multiplier_by_age dell'Era corrente, vedi EraCalculator.
+# compute_effective_age_band_durations) — persistita insieme a current_era_name invece di essere
+# ricalcolata ogni anno: il calcolo stesso è banale, ma tenerlo cachato invece che inline evita che
+# ogni chiamante debba conoscere sia HumanRules CHE EraRules solo per leggere una durata — gli
+# basta questa cache già risolta. Consumata da HumanSeedingService (semina) e HumanCalculator.
+# get_age_band (display/aging — collegato 2026-09-04, richiesta utente: PRIMA restava sempre vuoto,
+# nessuno chiamava mai set_current_era, vedi lì). Stessa indicizzazione posizionale di HumanRules.
+# age_band_durations_male/female (0=CHILD..4=OLD).
+var era_effective_age_band_durations_male: Array[float] = []
+var era_effective_age_band_durations_female: Array[float] = []
+
 # Opzioni scelte in NewGameOptionsMenu e difficolta' risultante, valorizzate UNA SOLA VOLTA in
 # WorldScene._populate_new_world al momento della creazione di QUESTA partita — mai piu'
 # modificate dopo. Non alimentano nessuna logica di simulazione: solo statistica (poter vedere a
@@ -96,3 +117,27 @@ func advance_day() -> bool:
 		year += 1
 		return true
 	return false
+
+
+# Punto d'ingresso pronto per un futuro "on_era_changed" (richiesta utente, 2026-09-04) — ancora
+# NESSUN trigger tech→era implementato (vedi current_era_name sopra), ma dal 2026-09-04 questo
+# metodo viene comunque chiamato UNA volta, come bootstrap, da GameScene subito prima della semina
+# (per l'Era di partenza "paleolithic" — non è un vero cambio Era, solo l'inizializzazione iniziale
+# della cache sotto, prima sempre vuota perché nessuno lo chiamava affatto). Deliberatamente NON
+# agganciato a nessun tick periodico (advance_day/anno): un cambio Era è un evento raro e discreto,
+# non qualcosa da ricontrollare ogni giorno — quando la logica di progressione arriverà, chiamerà
+# semplicemente questo metodo nel momento esatto in cui scatta, qualunque punto dell'anno sia.
+# human_rules è quello del Folk la cui Era sta cambiando (oggi: sempre quello del player, l'unico
+# Folk esistente) — passato esplicitamente invece che letto da un campo di questa classe perché
+# GameData non possiede/referenzia alcun Folk/HumanRules (li tiene solo GameSaveService/
+# GameLoadService/GameSettings.active_human_folk, vedi loro) e non è questo il posto per aggiungere
+# quel collegamento solo per questo calcolo.
+func set_current_era(era_name: String, human_rules: HumanRules) -> void:
+	var era_rules := EraCalculator.get_era_rules(era_name)
+	if era_rules == null:
+		push_error("Era sconosciuta o .tres mancante: " + era_name + " — current_era_name/cache invariati.")
+		return
+	current_era_name = era_name
+	var effective_durations := EraCalculator.compute_effective_age_band_durations(human_rules, era_rules)
+	era_effective_age_band_durations_male = effective_durations["male"]
+	era_effective_age_band_durations_female = effective_durations["female"]

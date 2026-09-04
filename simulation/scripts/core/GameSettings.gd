@@ -56,12 +56,12 @@ var selected_guarantee_animal_presence: bool = false
 # Default "NORMAL", coerente col default degli altri gruppi a 3 vie (selected_animal_density,
 # selected_population_size). Ignorato del tutto quando selected_world_age_mode == "CLASSIC".
 var selected_resource_richness_preference: String = "NORMAL"
-# Stesso trattamento dei selected_* sopra. "FAMILY"/"SMALL_GROUP"/"BIG_GROUP" — con quanti
-# individui il player sceglie di iniziare la partita. Nessun consumatore reale ancora (il modulo
-# player non esiste), oggi alimenta solo DifficultyCalculator — predisposto per quando esistera'
-# davvero un punto che deve sapere quanti individui piazzare. Default "SMALL_GROUP" (valore
-# centrale dei tre), coerente col default degli altri gruppi a 3 vie.
-var selected_group_size_preference: String = "SMALL_GROUP"
+# Stesso trattamento dei selected_* sopra. "COUPLE"/"FAMILY"/"GROUP" (rinominato da FAMILY/
+# SMALL_GROUP/BIG_GROUP, BIG_GROUP eliminato — richiesta utente, 2026-09-04) — con quanti individui
+# il player sceglie di iniziare la partita. Consumato da HumanSeedingService (vedi
+# GROUP_SIZE_COMPOSITIONS) oltre che da DifficultyCalculator. Default "GROUP" (valore centrale dei
+# tre), coerente col default degli altri gruppi a 3 vie.
+var selected_group_size_preference: String = "GROUP"
 var selected_macro_cell_x: int = -1
 var selected_macro_cell_y: int = -1
 var active_world: World = null

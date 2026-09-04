@@ -10,8 +10,10 @@ extends TabContainer
 # minimappa deve restare sempre visibile in basso invece di essere una scheda tra le altre — vedi
 # GameScene per l'ordine di aggiunta a body_container, che determina l'impilamento verticale
 # tabs-sopra/minimappa-fissa-sotto). Muto come gli altri componenti di questa famiglia: non
-# conosce World/GameData, si limita a esporre population_tab/selection_tab (pubblici) perché
-# GameScene ci aggiunga i propri contenuti.
+# conosce World/GameData, si limita a esporre population_tab/selection_content (pubblici) perché
+# GameScene ci aggiunga i propri contenuti — più center_requested/set_selection_title (Step 3/6,
+# 2026-09-04): l'unico bottone "🎯" condiviso da qualunque cosa selection_content stia mostrando, e
+# la riga titolo che gli sta accanto, vedi lì sotto.
 #
 # PopulationTab ospita HumanPopulationInfoPanel (aggiunto da GameScene, richiesta utente,
 # 2026-09-01 — stesso schema "componente muto, GameScene lo istanzia/popola" di vegetation_info_
@@ -39,9 +41,34 @@ const TAB_POPULATION := 0
 const TAB_SELECTION := 1
 const TAB_PLACEHOLDER := 2
 
+# Segnale "🎯 centra" (Step 3, richiesta utente 2026-09-04) — sostituisce il bottone che prima
+# viveva dentro HumanIndividualInfoPanel (funzionava solo per individui): un solo bottone qui,
+# nell'header della SelectionTab, sopra a QUALUNQUE cosa selection_content stia mostrando in quel
+# momento (individuo, vegetazione, in futuro edifici) — GameScene lo ascolta e decide cosa fare
+# (_center_camera_on_selection, che risolve la posizione in base a GameScene._selection_kind).
+# Stesso principio "muto" del resto di questa classe: emette solo il segnale, non sa nulla di COSA
+# sta centrando.
+signal center_requested
+
 @onready var population_tab: Control = $PopulationTab
 @onready var selection_tab: Control = $SelectionTab
-@onready var empty_selection_label: Label = $SelectionTab/EmptySelectionLabel
+# Contenitore in cui GameScene aggiunge/rimuove i pannelli di dettaglio (VegetationInfoPanel/
+# HumanIndividualInfoPanel, in futuro BuildingInfoPanel) — SEPARATO da selection_tab stesso da
+# quando è stato introdotto SelectionHeader (Step 3): selection_tab non può più ospitarli
+# direttamente come figli sovrapposti, altrimenti si sovrapporrebbero anche all'header invece di
+# starci sotto. GameScene usa questo, non più selection_tab, come parent per add_child.
+@onready var selection_content: Control = $SelectionTab/SelectionTabBody/SelectionContent
+@onready var selection_header: Control = $SelectionTab/SelectionTabBody/SelectionHeader
+# Prima riga di identità della selezione corrente ("Name: X"/"Type: X" — richiesta utente,
+# 2026-09-04): vive QUI, sulla stessa riga del bottone "🎯", invece che come prima riga di
+# ciascun pannello sotto — l'utente voleva il bottone allineato con "l'inizio" delle info, cosa
+# impossibile in senso stretto (il bottone vive un livello sopra rispetto ai singoli pannelli),
+# quindi la soluzione concordata è spostare QUELLA riga qui invece. Restiamo "muti" comunque: set_
+# selection_title riceve una stringa già pronta dal chiamante (GameScene), non decide mai da sé
+# cosa scrivere — stesso principio di empty_selection_label/center_requested sopra.
+@onready var title_label: Label = $SelectionTab/SelectionTabBody/SelectionHeader/TitleLabel
+@onready var center_button: Button = $SelectionTab/SelectionTabBody/SelectionHeader/CenterButton
+@onready var empty_selection_label: Label = $SelectionTab/SelectionTabBody/SelectionContent/EmptySelectionLabel
 
 # Scheda su cui si era prima di saltare su SelectionTab — ripristinata da hide_selection_tab().
 # Aggiornato da show_selection_tab() SOLO quando non si è già su SelectionTab (vedi lì): così una
@@ -71,6 +98,9 @@ func _ready() -> void:
 
 	empty_selection_label.text = tr("game_info_selection_empty")
 
+	center_button.tooltip_text = tr("center_on_selection_tooltip")
+	center_button.pressed.connect(func() -> void: center_requested.emit())
+
 
 # Chiamata da GameScene quando qualcosa viene selezionato sulla mappa (oggi vegetazione/individuo
 # controllabile). Ripetibile: selezionare qualcos'altro mentre si è già su questa tab non fa altro
@@ -80,6 +110,7 @@ func show_selection_tab() -> void:
 	if current_tab != TAB_SELECTION:
 		_tab_before_selection = current_tab
 	empty_selection_label.visible = false
+	selection_header.visible = true
 	current_tab = TAB_SELECTION
 
 
@@ -88,4 +119,12 @@ func show_selection_tab() -> void:
 # "nessuna selezione" per la prossima volta che si apre questa tab senza nulla selezionato.
 func hide_selection_tab() -> void:
 	empty_selection_label.visible = true
+	selection_header.visible = false
 	current_tab = _tab_before_selection
+
+
+# Testo della riga identità (vedi title_label sopra) — GameScene la chiama subito prima/dopo aver
+# popolato il pannello vero (show_individual/show_vegetation/show_building), con la stessa stringa
+# che quel pannello avrebbe mostrato in prima riga se questa non fosse stata sollevata qui.
+func set_selection_title(text: String) -> void:
+	title_label.text = text
