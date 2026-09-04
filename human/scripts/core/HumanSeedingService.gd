@@ -245,6 +245,10 @@ func _create_adult(human_rules: HumanRules, current_year: int, sex: HumanTypes.S
 	individual.birth_year_virtual = current_year - int(round(age))
 
 	individual.assign_random_name()
+	# Fondatore, nessun genitore simulato — assign_hair_color() senza argomenti ripiega su random
+	# puro (vedi HumanIndividual.gd).
+	individual.assign_hair_color()
+	individual.assign_random_clothing()
 	return individual
 
 
@@ -265,6 +269,9 @@ func _create_family_couple(
 	var mother_age := _random_age_in_band(human_rules, HumanTypes.Sex.FEMALE, HumanTypes.AgeBand.FERTILE_ADULT)
 	mother.birth_year_virtual = current_year - int(round(mother_age))
 	mother.assign_random_name(used_names)
+	# Fondatrice, nessun genitore simulato — random puro (vedi assign_hair_color in HumanIndividual.gd).
+	mother.assign_hair_color()
+	mother.assign_random_clothing()
 	used_names.append(mother.name)
 
 	var father := HumanIndividual.new()
@@ -282,6 +289,9 @@ func _create_family_couple(
 	)
 	father.birth_year_virtual = current_year - int(round(father_age))
 	father.assign_random_name(used_names)
+	# Fondatore, nessun genitore simulato — random puro (vedi assign_hair_color in HumanIndividual.gd).
+	father.assign_hair_color()
+	father.assign_random_clothing()
 	used_names.append(father.name)
 
 	return [mother, father]
@@ -341,6 +351,10 @@ func _create_child(
 	individual.birth_year_virtual = current_year - int(round(age))
 
 	individual.assign_random_name(used_names)
+	# Unico punto di creazione con genitori VERI disponibili — 40/40/20 madre/padre/random (vedi
+	# HumanIndividual.assign_hair_color per i pesi).
+	individual.assign_hair_color(mother, father)
+	individual.assign_random_clothing()
 	used_names.append(individual.name)
 	return individual
 

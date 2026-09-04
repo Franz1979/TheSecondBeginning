@@ -328,7 +328,18 @@ func save_game_to_json(
 				"position_x": individual.position.x,
 				"position_y": individual.position.y,
 				"home_macro_x": individual.home_macro_coords.x,
-				"home_macro_y": individual.home_macro_coords.y
+				"home_macro_y": individual.home_macro_coords.y,
+				# Tratti d'aspetto (2026-09-04, richiesta utente) — vedi HumanIndividual.gd per il
+				# perché sono persistiti. Nessuna retrocompatibilità richiesta con i save
+				# precedenti a questi campi (confermato con l'utente) — vale anche per
+				# facing_direction sotto.
+				"hair_color": individual.hair_color,
+				"clothing_color": individual.clothing_color,
+				# Orientamento (2026-09-04, richiesta utente: "possibile aggiungere anche
+				# l'orientamento al salvataggio?") — prima viveva solo in HumanIndividualView
+				# (mai salvato), spostato su HumanIndividual apposta per questo.
+				"facing_direction_x": individual.facing_direction.x,
+				"facing_direction_y": individual.facing_direction.y
 			})
 
 	var json_text := JSON.stringify(data, "\t")

@@ -8,11 +8,16 @@ extends VBoxContainer
 #
 # Contenuto base (totale + maschi/femmine + bottone +/-, tutti sulla stessa riga — richiesta
 # utente, 2026-09-02) sempre visibile aprendo la scheda — elenco completo dietro il bottone "+"/
-# "-" (richiesta utente, 2026-09-01), nessuna interazione riga per riga (solo consultazione),
-# nessuno scroll/paginazione (5/10/20 individui ci stanno comodamente in una lista semplice — da
-# rivedere solo quando servirà davvero gestire numeri più grandi). Maschi/femmine mostrati come
-# simbolo ♂/♀ colorato (blu/rosa, richiesta utente, 2026-09-02) invece del testo "Males:"/
-# "Females:" — più compatto sulla stessa riga del totale.
+# "-" (richiesta utente, 2026-09-01), nessuno scroll/paginazione (5/10/20 individui ci stanno
+# comodamente in una lista semplice — da rivedere solo quando servirà davvero gestire numeri più
+# grandi). Maschi/femmine mostrati come simbolo ♂/♀ colorato (blu/rosa, richiesta utente,
+# 2026-09-02) invece del testo "Males:"/"Females:" — più compatto sulla stessa riga del totale.
+#
+# Interazione riga per riga (richiesta utente, 2026-09-04): un bottone "🎯" per riga (vedi
+# individual_center_requested/_on_center_button_pressed sotto) — prima "nessuna interazione riga
+# per riga, solo consultazione", ora sì, ma nella stessa forma "muta" del resto del pannello: la
+# riga emette solo un segnale, non decide mai da sé selezione/camera (vedi il segnale per il
+# perché).
 #
 # Popolato UNA VOLTA da GameScene subito dopo il seeding (show_population), non richiesto ancora un
 # refresh dinamico: oggi nessuna simulazione umana cambia population/individui nel tempo (nessuna
@@ -21,6 +26,20 @@ extends VBoxContainer
 
 const COLOR_MALE := Color(0.25, 0.55, 0.95)
 const COLOR_FEMALE := Color(0.95, 0.4, 0.65)
+
+# Bottone per-riga "centra e seleziona" (richiesta utente, 2026-09-04: "un piccolo button a fianco
+# di ognuno... al clic mi centri su di loro e mi selezioni il cliccato" — a differenza del
+# generico "🎯" della PrimaryActionsBar, che centra solo sull'ULTIMO selezionato, questo permette
+# di saltare direttamente a un individuo specifico dalla lista). Stessa icona del bottone
+# generale (vedi GameScene._center_camera_on_individual/PrimaryActionsBar) per coerenza visiva —
+# stesso concetto, non un'icona nuova da imparare.
+const CENTER_BUTTON_TEXT := "🎯"
+
+# Rompe il principio "componente muto" dichiarato in testa al file SOLO per il minimo indispensabile
+# (stesso schema già in uso per MinimapPanel.cell_clicked): questo pannello non decide MAI da sé
+# selezione/camera, si limita a segnalare "l'utente ha chiesto questo individuo" — GameScene resta
+# l'unica a decidere cosa fare col click (stesso schema di _on_minimap_cell_clicked).
+signal individual_center_requested(individual: HumanIndividual)
 
 @onready var folk_label: Label = $FolkLabel
 @onready var group_label: Label = $SummaryRow/GroupLabel
@@ -72,15 +91,31 @@ func show_population(total_count: int, individuals: Array[HumanIndividual], curr
 	for member in individuals:
 		var age: int = current_year - member.birth_year_virtual
 		var age_band := HumanCalculator.get_age_band(human_rules, member.sex, float(age))
-		var row := Label.new()
-		row.add_theme_font_size_override("font_size", 10)
-		row.text = "%s — %s, age %d (%s)" % [
+		# Riga = HBoxContainer (era un Label nudo) — richiesta utente 2026-09-04: bottone
+		# "centra e seleziona" per riga, vedi individual_center_requested sopra. label.
+		# size_flags_horizontal EXPAND_FILL così il bottone resta compatto a destra invece di
+		# essere spinto fuori dalla larghezza del testo.
+		var row := HBoxContainer.new()
+		var label := Label.new()
+		label.add_theme_font_size_override("font_size", 10)
+		label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		label.text = "%s — %s, age %d (%s)" % [
 			member.name,
 			"Female" if member.sex == HumanTypes.Sex.FEMALE else "Male",
 			age,
 			HumanTypes.AgeBand.keys()[age_band].capitalize(),
 		]
+		row.add_child(label)
+		var center_button := Button.new()
+		center_button.text = CENTER_BUTTON_TEXT
+		center_button.tooltip_text = "Centra e seleziona"
+		center_button.pressed.connect(_on_center_button_pressed.bind(member))
+		row.add_child(center_button)
 		list_container.add_child(row)
+
+
+func _on_center_button_pressed(member: HumanIndividual) -> void:
+	individual_center_requested.emit(member)
 
 
 func _on_expand_pressed() -> void:

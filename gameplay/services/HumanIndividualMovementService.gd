@@ -15,6 +15,15 @@ func advance_movement(individual: HumanIndividual, delta: float) -> void:
 	var distance := to_target.length()
 	var step := individual.move_speed * delta
 
+	# Aggiorna facing_direction PRIMA di muovere position (2026-09-04, richiesta utente: persistere
+	# l'orientamento) — soglia minima invece di un confronto diretto con zero: a un passo
+	# dall'arrivo to_target può essere quasi nullo ma non esattamente, normalized() su un vettore
+	# ~zero produce un risultato instabile/rumoroso (stessa soglia già in uso prima in
+	# HumanIndividualView, spostata qui insieme al campo). Se distance è già sotto soglia,
+	# facing_direction resta quella di prima — mai azzerata.
+	if distance > 0.01:
+		individual.facing_direction = to_target.normalized()
+
 	if step >= distance:
 		individual.position = individual.target_position
 		individual.stop()

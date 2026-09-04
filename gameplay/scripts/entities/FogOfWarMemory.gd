@@ -80,10 +80,16 @@ func _is_within_memory(pos: Vector2i, current_absolute_day: int, memory_duration
 # memoria più grande comprata oggi, che non ripristina foto già cancellate ieri). Raccoglie prima
 # le chiavi da rimuovere in un array separato invece di cancellare durante l'iterazione stessa del
 # Dictionary — GDScript non garantisce la sicurezza di una mutazione a metà `for pos in dict`.
-func prune_stale(current_absolute_day: int, max_memory_days: int) -> void:
-	var stale_positions: Array = []
+#
+# Restituisce le posizioni potate (Step 3.3, 2026-09-03) — GameScene._maybe_prune_fog_of_war_
+# memories le inoltra a FogOfWarRenderer.mark_positions_dirty per la macrocella corrispondente,
+# se attualmente viva: la texture persistente del renderer non ha modo di sapere altrimenti che
+# queste posizioni sono cambiate, vedi FogOfWarRenderer.gd per il perché.
+func prune_stale(current_absolute_day: int, max_memory_days: int) -> Array[Vector2i]:
+	var stale_positions: Array[Vector2i] = []
 	for pos in last_seen_by_position:
 		if current_absolute_day - last_seen_by_position[pos] > max_memory_days:
 			stale_positions.append(pos)
 	for pos in stale_positions:
 		last_seen_by_position.erase(pos)
+	return stale_positions

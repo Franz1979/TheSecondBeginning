@@ -89,3 +89,17 @@ const SHOW_VEGETATION_REFRESH_TIMING_LOGS := false
 # a differenza di SHOW_VEGETATION_REFRESH_TIMING_LOGS sopra che è già stata silenziata dopo essere
 # stata usata. A false: nessun comportamento di simulazione cambia, solo il print viene soppresso.
 const SHOW_FOW_REDRAW_TIMING_LOGS := true
+
+# Filtro dedicato per [HUMAN VIEW TIMING] (HumanIndividualView._process/_draw) — richiesta utente,
+# 2026-09-04: verificare col numero reale (non a occhio dal log FoW, che non misura affatto questo
+# nodo — sono CanvasItem separati) se disegnare/animare i pipottini (busto/gambe/braccia/capelli
+# via _draw() immediate-mode, fino a ~20 individui contemporanei — vedi ricognizione) pesa in modo
+# misurabile. Accumulatori STATIC (non per-istanza: HumanIndividualView ha fino a 20 istanze
+# contemporanee, un log per istanza per frame sarebbe troppo rumoroso) sommati su TUTTE le view in
+# una finestra di un secondo, stesso principio già usato per [FOW REDRAW COUNT]. A false: nessun
+# comportamento di simulazione cambia, solo il print viene soppresso.
+# A false (richiesta utente, 2026-09-04 — dato già raccolto: ~0.4-0.45ms per redraw di un singolo
+# individuo, confermato col fix dell'early-out in HumanIndividualView). Non rimosso: tornerà utile
+# quando più di un individuo potrà muoversi contemporaneamente (oggi limite esplicito a uno solo),
+# per rimisurare il costo aggregato in quello scenario.
+const SHOW_HUMAN_VIEW_TIMING_LOGS := false

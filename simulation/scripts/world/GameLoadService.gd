@@ -370,6 +370,11 @@ func load_game_from_json(file_path: String) -> LoadedGame:
 			individual.home_macro_coords = Vector2i(
 				int(individual_data["home_macro_x"]), int(individual_data["home_macro_y"])
 			)
+			individual.hair_color = int(individual_data["hair_color"])
+			individual.clothing_color = int(individual_data["clothing_color"])
+			individual.facing_direction = Vector2(
+				float(individual_data["facing_direction_x"]), float(individual_data["facing_direction_y"])
+			)
 			individual.source_group_ref = human_population_group
 			human_individuals.append(individual)
 

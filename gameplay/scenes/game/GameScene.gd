@@ -286,6 +286,9 @@ func _ready() -> void:
 	# umano: human_individuals/human_folk non esistono ancora a questo punto di _ready().
 	human_population_info_panel = HUMAN_POPULATION_INFO_PANEL_SCENE.instantiate()
 	game_info_tabs.population_tab.add_child(human_population_info_panel)
+	# Bottone "🎯" per riga (richiesta utente, 2026-09-04) — stesso schema di minimap_panel.
+	# cell_clicked subito sotto: il pannello segnala solo "questo individuo", GameScene decide.
+	human_population_info_panel.individual_center_requested.connect(_on_population_individual_center_requested)
 	minimap_panel.cell_clicked.connect(_on_minimap_cell_clicked)
 	system_menu_dialog.add_action(tr("save_game"), &"save")
 	system_menu_dialog.add_action(tr("back_to_menu"), &"back_to_main_menu")
@@ -452,7 +455,11 @@ func _ready() -> void:
 	for member in human_individuals:
 		var view := HumanIndividualView.new()
 		live_cells[member.home_macro_coords].container.add_child(view)
-		view.setup(member)
+		# game_data/human_folk.human_rules_ref passati per il ridimensionamento per età/sesso
+		# (richiesta utente, 2026-09-04 — vedi HumanIndividualView.gd per il dettaglio): entrambi
+		# già valorizzati a questo punto di _ready() (vedi sopra), stesso principio di
+		# fog_of_war_renderer.setup(cell.fog_of_war_memory) — le dipendenze arrivano dal chiamante.
+		view.setup(member, game_data, human_folk.human_rules_ref if human_folk != null else null)
 		# z_index invariato (era già necessario prima, per lo stesso motivo — vedi
 		# fog_of_war_renderer.z_index=2 in _activate_live_cell, che deve restare sopra ANCHE alle
 		# view individuo): tiene la view sopra terreno/animali (z_index=0 di default) del container
@@ -616,21 +623,42 @@ func _unhandled_input(event: InputEvent) -> void:
 		_center_camera_on_individual()
 
 
-# Vero se il player è più vicino al click corrente della miglior candidata vegetale (stesso
-# spazio pixel locale della cella CENTRALE — individual.position è sempre relativo a quella, vedi
-# HumanIndividual.gd — usato sia da VegetationSelectorController che qui, così le due distanze sono
-# direttamente confrontabili). Non richiede che il click ricada nel raggio di selezione vero del
-# player (SELECT_RADIUS_MICROCELLS in HumanIndividualSelectorController): decide solo chi tenta
-# per primo, human_individual_selector_controller applica comunque la propria soglia subito dopo.
+# Vero se un individuo umano QUALSIASI è più vicino al click corrente della miglior candidata
+# vegetale (stesso spazio pixel locale della cella CENTRALE — usato sia da
+# VegetationSelectorController che qui, così le due distanze sono direttamente confrontabili). Non
+# richiede che il click ricada nel raggio di selezione vero del player (SELECT_RADIUS_MICROCELLS
+# in HumanIndividualSelectorController): decide solo chi tenta per primo,
+# human_individual_selector_controller applica comunque la propria soglia subito dopo.
+#
+# BUGFIX (2026-09-03, trovato testando una New Game vera per la prima volta da tempo — non
+# correlato al lavoro sul FoW di questa sessione). Prima c'erano DUE difetti in cascata qui:
+#   1. `individual == null` ritornava sempre false (vero SOLO prima della primissima selezione di
+#      una partita nuova — `individual` arriva già valorizzato da un salvataggio caricato), che
+#      rendeva impossibile selezionare chiunque se il punto di spawn aveva vegetazione vicina.
+#   2. Anche con un bersaglio corrente già impostato, il confronto guardava SOLO la posizione di
+#      `individual` (il bersaglio corrente), non quella dell'individuo che si sta effettivamente
+#      cercando di cliccare — quindi selezionare un individuo DIVERSO dal bersaglio corrente, se
+#      sopra vegetazione, falliva comunque (bug segnalato dopo il fix del punto 1).
+# Fix per entrambi: confronta sempre contro il candidato più vicino tra TUTTI gli
+# human_individuals (mai solo il bersaglio corrente) — stessa formula di offset di
+# HumanIndividualSelectorController.try_select, replicata qui perché quella classe ritorna
+# l'individuo selezionato (filtrato dalla propria soglia SELECT_RADIUS_MICROCELLS), non una
+# distanza grezza confrontabile con vegetation_distance_px. Quando il bersaglio corrente è anche
+# il candidato più vicino il risultato coincide con la vecchia logica (home_macro_coords ==
+# center_macro_coords per costruzione mentre è bersaglio, vedi _set_movement_target — offset
+# sempre Vector2i.ZERO in quel caso).
 func _is_player_closer_to_click(vegetation_distance_px: float) -> bool:
-	if individual == null:
-		return false
 	var center_cell: LiveMacroCell = live_cells.get(center_macro_coords)
 	if center_cell == null or center_cell.renderer == null:
 		return false
 	var mouse_px: Vector2 = center_cell.renderer.get_local_mouse_position()
-	var player_px: Vector2 = individual.position * MicroCellRenderer.CELL_SIZE
-	return mouse_px.distance_to(player_px) < vegetation_distance_px
+
+	var best_distance_px := INF
+	for candidate in human_individuals:
+		var offset := Vector2(candidate.home_macro_coords - center_macro_coords) * World.WIDTH
+		var candidate_px: Vector2 = (candidate.position + offset) * MicroCellRenderer.CELL_SIZE
+		best_distance_px = minf(best_distance_px, mouse_px.distance_to(candidate_px))
+	return best_distance_px < vegetation_distance_px
 
 
 # Sposta la camera esattamente sulla posizione corrente dell'individuo — stesso spazio pixel di
@@ -676,6 +704,21 @@ func _on_minimap_cell_clicked(macro_coords: Vector2i) -> void:
 		Vector2(macro_coords.x - center_macro_coords.x, macro_coords.y - center_macro_coords.y) * MACRO_CELL_PIXELS
 		+ Vector2(MACRO_CELL_PIXELS, MACRO_CELL_PIXELS) / 2.0
 	)
+
+
+# Bottone "🎯" per riga nel pannello popolazione (richiesta utente, 2026-09-04: "un piccolo button
+# a fianco di ognuno... al clic mi centri su di loro e mi selezioni il cliccato") — stessa
+# sequenza select+movimento di un click diretto sull'individuo in _unhandled_input (deselect-tutti
+# → seleziona → _select_individual per il popup → _set_movement_target, che ri-ancora anche lo
+# streaming/center_macro_coords se target non è co-locato col centro — vedi lì), PIÙ
+# _center_camera_on_individual() esplicito alla fine: un click su un bottone UI non è un click nel
+# mondo, non sposta la camera da sé come farebbe un click diretto sul personaggio già visibile.
+func _on_population_individual_center_requested(target: HumanIndividual) -> void:
+	_deselect_all_human_individuals()
+	target.is_selected = true
+	_select_individual(target)
+	_set_movement_target(target)
+	_center_camera_on_individual()
 
 
 # ============================================================================================
@@ -809,6 +852,17 @@ func _select_individual(target: HumanIndividual) -> void:
 func _set_movement_target(target: HumanIndividual) -> void:
 	if target != individual:
 		target.stop()
+		# BUGFIX (2026-09-04, richiesta utente, non correlato al lavoro sul FoW): il VECCHIO
+		# bersaglio (quello abbandonato dal cambio di selezione) deve fermarsi per intero, non solo
+		# smettere di essere avanzato. GameScene._process chiama individual_movement_service.
+		# advance_movement SOLO sul bersaglio CORRENTE, quindi il vecchio smette correttamente di
+		# muoversi in posizione — ma senza questa chiamata il suo is_moving restava true per
+		# sempre (nessuno lo azzerava più), e HumanIndividualView anima gambe/braccia in base a
+		# QUEL flag, non alla posizione reale: risultato, un personaggio fermo con gambe/braccia
+		# che continuavano a camminare all'infinito. individual (il vecchio bersaglio) può essere
+		# null alla primissima selezione di una partita nuova — guardia esplicita.
+		if individual != null:
+			individual.stop()
 
 	if target.home_macro_coords != center_macro_coords:
 		if _center_camera_tween != null:
@@ -2555,7 +2609,18 @@ func _maybe_prune_fog_of_war_memories() -> void:
 		# questa macrocella, nel suo insieme, è appena diventata del tutto dimenticata (non solo
 		# "questa specifica entry era già vuota da prima", che non è un evento, solo uno stato).
 		var had_positions_before: bool = not memory.last_seen_by_position.is_empty()
-		memory.prune_stale(current_absolute_day, max_known_memory_days)
+		# Step 3.3 (2026-09-03, quarto trigger del dirty-tracking, discrepanza 1 discussa con
+		# l'utente): prune_stale ora RESTITUISCE le posizioni potate invece di scartarle — sono
+		# l'UNICO altro punto (oltre ai tre già noti in FogOfWarRenderer: mark_seen, cambio
+		# giorno, refresh vegetazione) che tocca last_seen_by_position, quindi la texture
+		# persistente di FogOfWarRenderer deve saperlo esplicitamente, non affidarsi
+		# all'invariante "terrain_memory_days è sempre il tier più lungo" (vera oggi, non
+		# imposta dal codice). Solo per macrocelle ATTUALMENTE vive: quelle senza renderer non
+		# hanno né cache né texture da invalidare, verranno ricostruite da zero quando
+		# ridiventeranno vive.
+		var pruned_positions := memory.prune_stale(current_absolute_day, max_known_memory_days)
+		if not pruned_positions.is_empty() and live_cells.has(coords):
+			live_cells[coords].fog_of_war_renderer.mark_positions_dirty(pruned_positions)
 		if had_positions_before and memory.last_seen_by_position.is_empty():
 			_forget_vegetation_identity(coords)
 

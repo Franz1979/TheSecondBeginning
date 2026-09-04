@@ -17,6 +17,16 @@ extends RefCounted
 var position: Vector2 = Vector2.ZERO
 var target_position: Vector2 = Vector2.ZERO
 var is_moving: bool = false
+# Verso cui l'individuo è rivolto ORA (2026-09-04, richiesta utente: persistere l'orientamento nel
+# salvataggio) — PRIMA viveva solo su HumanIndividualView (resa, mai salvata: le view sono
+# ricreate da zero ad ogni caricamento, ripartendo da un default fisso). Spostato qui perché la
+# persistenza passa SOLO da HumanIndividual (GameSaveService/GameLoadService non toccano mai le
+# view) — non è più un puro dettaglio di resa: è "verso dove guarda" un individuo, un dato di
+# stato legittimo (utile in futuro anche per meccaniche non visive, es. un cono di visione).
+# Aggiornato da HumanIndividualMovementService.advance_movement (l'unico scrittore di position,
+# stesso principio) — CONGELATO all'ultimo valore quando fermo, mai azzerato: HumanIndividualView
+# lo legge direttamente per `rotation`, non ne mantiene più una copia propria.
+var facing_direction: Vector2 = Vector2.RIGHT
 # Coordinate macro ASSOLUTE della macrocella a cui `position` è locale (bugfix, 2026-09-02 — PRIMA
 # implicito/assunto sempre "la cella centrale corrente", assunzione vera finché ogni individuo si
 # spostava rigidamente col leader; rotta da Step 1/2 del piano movimento indipendente: un individuo
@@ -32,7 +42,14 @@ var home_macro_coords: Vector2i = Vector2i(-1, -1)
 # Waypoint intermedi per un futuro pathfinding — vuoto oggi: HumanIndividualMovementService muove
 # sempre in linea retta verso target_position finché questo campo non verrà popolato altrove.
 var path: Array[Vector2] = []
-var move_speed: float = 4.5 # microcelle/secondo — in linea con AnimalRules.hop_speed (boar/mouflon)
+# microcelle/secondo — ridotto da 4.5 a 2.0 (richiesta utente, 2026-09-04: troppo veloce per
+# leggere l'animazione delle gambe appena aggiunta a HumanIndividualView), poi ulteriormente a 1.2
+# (richiesta utente, 2026-09-04: ancora troppo veloce, indipendentemente dal ritmo delle gambe —
+# vedi HumanIndividualView.WALK_PHASE_SPEED, parametro deliberatamente NON accoppiato a questo).
+# NON più allineato ad AnimalRules.hop_speed (boar/mouflon) come prima: se in futuro serve
+# ripristinare quel confronto come riferimento di bilanciamento, va ridiscusso esplicitamente, non
+# è più valido as-is.
+var move_speed: float = 1.2
 var is_selected: bool = false
 
 # --- Dati anagrafici — solo campi per ora, nessuna logica di riproduzione/formazione coppie ---
@@ -58,6 +75,16 @@ var name: String = ""
 # potrebbe in teoria esistere senza un gruppo, es. durante la costruzione incrementale di questo
 # sistema), valorizzato dal chiamante che crea l'individuo, mai da questa classe stessa.
 var source_group_ref: HumanPopulationGroup = null
+
+# Tratti d'aspetto (2026-09-04, richiesta utente) — vedi HumanTypes.HairColor/ClothingColor per il
+# perché sono enum e non Color diretti qui. Assegnati UNA volta alla creazione (vedi
+# assign_hair_color/assign_random_clothing sotto, stesso momento di assign_random_name) e mai più
+# ricalcolati: stato che persiste per tutta la vita dell'individuo, salvato/caricato come
+# sex/birth_year_virtual (vedi GameSaveService/GameLoadService). La mappatura enum->Color vera
+# resta in HumanIndividualView (l'aspetto): questa classe resta puro stato, come sempre in questo
+# file.
+var hair_color: HumanTypes.HairColor = HumanTypes.HairColor.BROWN
+var clothing_color: HumanTypes.ClothingColor = HumanTypes.ClothingColor.TAN
 
 
 # Liste nomi come semplice testo (un nome per riga), non .tres — pensate per crescere a
@@ -90,6 +117,51 @@ func assign_random_name(excluded_names: Array[String] = []) -> void:
 	if available.is_empty():
 		available = pool
 	name = available[randi() % available.size()]
+
+
+# Probabilità di ereditarietà del colore capelli (2026-09-04, richiesta utente) — vedi
+# assign_hair_color sotto. Discusso esplicitamente con l'utente: nessuna base biologica "corretta"
+# da rispettare (l'ereditarietà reale è poligenica/ricombinante, non un sorteggio a percentuale fissa
+# tra il fenotipo di un genitore o dell'altro) — 40/40 resta comunque una scelta di game-feel
+# ragionevole (80% di somiglianza a un genitore, alta ereditabilità plausibile per questo tratto),
+# il restante 20% pesca dal pool intero (vedi sotto) per evitare famiglie clonate all'infinito. Il
+# terzo caso ("colore a caso") NON è escluso dai due genitori — può ripescare per coincidenza lo
+# stesso colore di uno di loro, esattamente come richiesto ("un colore a caso, quindi compreso
+# anche madre e padre").
+const HAIR_INHERITANCE_MOTHER_CHANCE: float = 0.4
+const HAIR_INHERITANCE_FATHER_CHANCE: float = 0.4
+
+
+# hair_color GENETICO (2026-09-04, richiesta utente) — a differenza di assign_random_clothing
+# sotto (sempre puro random, i vestiti non si ereditano), questo pesca dal colore di un genitore
+# con le probabilità sopra SE ENTRAMBI sono passati, altrimenti ripiega sul pool intero come prima
+# (caso dei fondatori senza genitori: adulti indipendenti di HumanSeedingService._create_adult, o
+# le due metà di una coppia fondatrice in _create_family_couple — nessuno dei due ha genitori
+# simulati). Un solo metodo con parametri opzionali invece di due metodi separati
+# (genetico/fondatore): stesso principio "un solo posto per la logica", il chiamante non deve
+# nemmeno sapere se sta creando un fondatore o un figlio, passa semplicemente quello che ha.
+func assign_hair_color(mother: HumanIndividual = null, father: HumanIndividual = null) -> void:
+	if mother == null or father == null:
+		var pool := HumanTypes.HairColor.values()
+		hair_color = pool[randi() % pool.size()]
+		return
+	var roll := randf()
+	if roll < HAIR_INHERITANCE_MOTHER_CHANCE:
+		hair_color = mother.hair_color
+	elif roll < HAIR_INHERITANCE_MOTHER_CHANCE + HAIR_INHERITANCE_FATHER_CHANCE:
+		hair_color = father.hair_color
+	else:
+		var pool := HumanTypes.HairColor.values()
+		hair_color = pool[randi() % pool.size()]
+
+
+# clothing_color resta SEMPRE puro random (i vestiti non sono un tratto genetico) — separato da
+# assign_hair_color sopra (richiesta utente, 2026-09-04: distinguere i tratti genetici da quelli
+# sempre-casuali, in vista di altri tratti genetici futuri). .values() apposta (non un
+# range/conteggio hardcoded), stesso motivo di sempre: si estende da sé se l'enum guadagna voci.
+func assign_random_clothing() -> void:
+	var clothing_colors := HumanTypes.ClothingColor.values()
+	clothing_color = clothing_colors[randi() % clothing_colors.size()]
 
 
 func _load_name_pool(path: String) -> Array[String]:
