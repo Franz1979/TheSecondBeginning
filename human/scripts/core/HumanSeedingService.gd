@@ -56,6 +56,15 @@ const MIN_PARENT_CHILD_AGE_GAP_YEARS := 14
 # _create_unpaired_fertile_group, che riusa questa stessa costante) — età fertile "adeguata"
 # all'Era corrente, non ai bordi teorici della fascia grezza.
 const FERTILE_EDGE_MARGIN_YEARS: float = 3.0
+
+# DEBUG (richiesta utente, 2026-09-05, per testare la mortalità senza aspettare decenni di gioco
+# reale): a true, i fondatori nascono tutti in MATURE_ADULT invece che FERTILE_ADULT, sparsi su
+# TUTTA la fascia (bordo a bordo, niente FERTILE_EDGE_MARGIN_YEARS — qui vogliamo apposta anche
+# individui vicini all'inizio di OLD, non solo "età adeguata" a metà fascia) — vedi
+# _create_unpaired_fertile_group/_create_coordinated_couple, gli unici due punti che lo
+# consultano. RIMETTI A FALSE per tornare alla semina normale (FERTILE_ADULT, invariata) — nessun
+# altro codice va toccato per il rollback, un solo flag.
+const DEBUG_SEED_FOUNDERS_AS_MATURE_ADULT := true
 # Eta' massima dei figli di una FAMILY (invece del massimo teorico "tutta la fascia CHILD") —
 # risultato voluto: una famiglia giovane con figli piccoli, eta' distribuite tra 0 e questo
 # valore invece che sempre 0 (bug precedente) o sparse fino al limite della fascia CHILD.
@@ -327,9 +336,10 @@ func _create_unpaired_fertile_group(
 			individual.mother_id = -(100 + next_id)
 			individual.father_id = -(200 + next_id)
 
-			var fertile_range := _age_band_year_range(durations_male, durations_female, sex, HumanTypes.AgeBand.FERTILE_ADULT)
-			var min_age: float = fertile_range.x + FERTILE_EDGE_MARGIN_YEARS
-			var max_age: float = fertile_range.y - FERTILE_EDGE_MARGIN_YEARS
+			var seed_age_band := HumanTypes.AgeBand.MATURE_ADULT if DEBUG_SEED_FOUNDERS_AS_MATURE_ADULT else HumanTypes.AgeBand.FERTILE_ADULT
+			var fertile_range := _age_band_year_range(durations_male, durations_female, sex, seed_age_band)
+			var min_age: float = fertile_range.x if DEBUG_SEED_FOUNDERS_AS_MATURE_ADULT else fertile_range.x + FERTILE_EDGE_MARGIN_YEARS
+			var max_age: float = fertile_range.y if DEBUG_SEED_FOUNDERS_AS_MATURE_ADULT else fertile_range.y - FERTILE_EDGE_MARGIN_YEARS
 			var age: float = randf_range(min_age, max_age) if max_age > min_age else fertile_range.x
 			individual.birth_year_virtual = current_year - int(round(age))
 
@@ -362,9 +372,10 @@ func _create_coordinated_couple(
 	var father := HumanIndividual.new()
 	father.id = next_id
 	father.sex = HumanTypes.Sex.MALE
-	var father_range := _age_band_year_range(durations_male, durations_female, HumanTypes.Sex.MALE, HumanTypes.AgeBand.FERTILE_ADULT)
-	var father_min: float = father_range.x + FERTILE_EDGE_MARGIN_YEARS
-	var father_max: float = father_range.y - FERTILE_EDGE_MARGIN_YEARS
+	var seed_age_band := HumanTypes.AgeBand.MATURE_ADULT if DEBUG_SEED_FOUNDERS_AS_MATURE_ADULT else HumanTypes.AgeBand.FERTILE_ADULT
+	var father_range := _age_band_year_range(durations_male, durations_female, HumanTypes.Sex.MALE, seed_age_band)
+	var father_min: float = father_range.x if DEBUG_SEED_FOUNDERS_AS_MATURE_ADULT else father_range.x + FERTILE_EDGE_MARGIN_YEARS
+	var father_max: float = father_range.y if DEBUG_SEED_FOUNDERS_AS_MATURE_ADULT else father_range.y - FERTILE_EDGE_MARGIN_YEARS
 	var father_age: float = randf_range(father_min, father_max) if father_max > father_min else father_range.x
 	father.birth_year_virtual = current_year - int(round(father_age))
 	father.assign_random_name(used_names)
@@ -376,9 +387,9 @@ func _create_coordinated_couple(
 	var mother := HumanIndividual.new()
 	mother.id = next_id + 1
 	mother.sex = HumanTypes.Sex.FEMALE
-	var mother_range := _age_band_year_range(durations_male, durations_female, HumanTypes.Sex.FEMALE, HumanTypes.AgeBand.FERTILE_ADULT)
-	var mother_min: float = mother_range.x + FERTILE_EDGE_MARGIN_YEARS
-	var mother_band_max: float = mother_range.y - FERTILE_EDGE_MARGIN_YEARS
+	var mother_range := _age_band_year_range(durations_male, durations_female, HumanTypes.Sex.FEMALE, seed_age_band)
+	var mother_min: float = mother_range.x if DEBUG_SEED_FOUNDERS_AS_MATURE_ADULT else mother_range.x + FERTILE_EDGE_MARGIN_YEARS
+	var mother_band_max: float = mother_range.y if DEBUG_SEED_FOUNDERS_AS_MATURE_ADULT else mother_range.y - FERTILE_EDGE_MARGIN_YEARS
 	# Tetto = età del padre, ma MAI sotto mother_min: se il padre risultasse più giovane del minimo
 	# ristretto della madre (non capita con i dati attuali, dove i due minimi coincidono a 18 anni
 	# nel Paleolitico — vedi ricognizione — ma resta un limite teorico possibile con dati futuri

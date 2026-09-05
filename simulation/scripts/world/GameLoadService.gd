@@ -59,6 +59,9 @@ func load_game_from_json(file_path: String) -> LoadedGame:
 	# .get(key, 0) per compatibilità con save precedenti l'introduzione della pulizia
 	# periodica del fog of war (vedi GameData) — 0 è lo stesso default della classe.
 	game_data.fog_of_war_last_prune_absolute_day = int(data["game"].get("fog_of_war_last_prune_absolute_day", 0))
+	# .get(key, []) per compatibilità con save precedenti l'introduzione del log morti (Step 8,
+	# vedi GameData.death_events) — [] è lo stesso default della classe.
+	game_data.death_events = _dictionary_array_from_json(data["game"].get("death_events", []))
 
 	var world_data = data["world"]
 	var world := World.new()
@@ -129,6 +132,7 @@ func load_game_from_json(file_path: String) -> LoadedGame:
 			# LOD0: assente = false (mai scoperta), vedi GameSaveService per il perché è condizionale.
 			state.has_ever_been_discovered = bool(state_data.get("has_ever_been_discovered", false))
 			state.vegetation_feeding_active = bool(state_data.get("vegetation_feeding_active", false))
+			state.grass_seed_baseline = int(state_data.get("grass_seed_baseline", -1))
 			if state_data.has("stone_positions"):
 				var stone_positions: Array = []
 				for pos_data in state_data["stone_positions"]:
@@ -385,6 +389,10 @@ func load_game_from_json(file_path: String) -> LoadedGame:
 			individual.facing_direction = Vector2(
 				float(individual_data["facing_direction_x"]), float(individual_data["facing_direction_y"])
 			)
+			# Step 4 piano mortalità (2026-09-05) — .get() con default -1 (a differenza dei campi
+			# sopra, qui serve compatibilità coi save precedenti a questo campo, mai confermata
+			# come non necessaria).
+			individual.scheduled_death_day = int(individual_data.get("scheduled_death_day", -1))
 			individual.source_group_ref = human_population_group
 			human_individuals.append(individual)
 
@@ -407,4 +415,11 @@ func _float_array_from_json(raw: Array) -> Array[float]:
 	var result: Array[float] = []
 	for value in raw:
 		result.append(float(value))
+	return result
+
+
+func _dictionary_array_from_json(raw: Array) -> Array[Dictionary]:
+	var result: Array[Dictionary] = []
+	for value in raw:
+		result.append(value as Dictionary)
 	return result

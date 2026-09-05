@@ -65,6 +65,19 @@ var has_ever_been_discovered: bool = false
 # popolazioni sopra): governa se la vegetazione può crescere qui, non se qualcuno è "scoperto".
 # MAI più rimesso a false, stesso principio "fatto storico permanente" degli altri due flag.
 var vegetation_feeding_active: bool = false
+# LOD0/consumo (2026-09-05, richiesta utente): "fotografia" di dedicated_space[GRASS] catturata la
+# PRIMA volta che questa cella, pur congelata (is_vegetation_frozen), entra a far parte del
+# territorio di una popolazione erbivora Livello 1/2 attiva — vedi WorldTimeService (checkpoint di
+# inizio stagione, PRIMA del consumo aggregato: in quel momento il valore coincide sempre con
+# quello di semina, perché il consumo Livello 1 è solo a checkpoint, mai giornaliero, quindi nulla
+# può averlo eroso prima). -1 = mai catturato (sentinella, stesso idioma di altri campi "non ancora
+# valorizzato" nel progetto). Serve a "far ricrescere" il grass una volta l'anno (checkpoint di
+# crescita, fine primavera) SENZA calcolare la vera crescita nella cella (resta congelata per
+# quello): il consumo stagionale continua a intaccare dedicated_space[GRASS] per davvero (fame/
+# mortalità/split restano sensibili alla scarsità reale), ma ogni anno la cella torna a questo
+# valore invece di restare erosa per sempre — altrimenti forage diventerebbe un pareggio
+# indefinito verso zero senza mai recuperare, dato che qui la vera crescita non gira.
+var grass_seed_baseline: int = -1
 # Vector3i (x, y lotto + indice individuo locale) -> {"origin_type": GameTypes.WorldObjectType,
 # "cut_year": int}. Fatto storico reale (non ricalcolabile), stesso principio di stone_positions:
 # a differenza di GRASS/SHRUB/TREE aggregati (mai persistiti, rigenerati da zero ad ogni apertura/

@@ -54,9 +54,6 @@ theme_override_constants/margin_left = 25
 [node name="WaterSubmenuVBox" type="VBoxContainer" parent="CanvasLayer/Sidebar/MarginContainer/ScrollContainer/VBoxContainer/WaterSubmenuMargin" unique_id=220772753]
 layout_mode = 2
 
-[node name="WaterOptionsLabel" type="Label" parent="CanvasLayer/Sidebar/MarginContainer/ScrollContainer/VBoxContainer/WaterSubmenuMargin/WaterSubmenuVBox" unique_id=1731746579]
-layout_mode = 2
-
 [node name="WaterSeaToolButton" type="Button" parent="CanvasLayer/Sidebar/MarginContainer/ScrollContainer/VBoxContainer/WaterSubmenuMargin/WaterSubmenuVBox" unique_id=395897523]
 layout_mode = 2
 

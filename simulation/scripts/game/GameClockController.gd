@@ -98,7 +98,10 @@ func _process(delta: float) -> void:
 			season_ended.emit(result["season_ended"])
 		if result["year_rolled_over"]:
 			year_rolled_over.emit()
-		if DebugLogging.SHOW_DAILY_TIMING_LOGS:
+		# Filtrato ai soli dintorni di un checkpoint stagionale (richiesta utente, 2026-09-05 —
+		# stesso motivo/helper di WorldTimeService.advance_day: un log per ogni giorno era
+		# troppo rumoroso).
+		if DebugLogging.SHOW_DAILY_TIMING_LOGS and SeasonCalculator.is_near_seasonal_checkpoint(_game_data.current_day):
 			var day_wall_clock_ms: float = (Time.get_ticks_usec() - day_wall_clock_start_usec) / 1000.0
 			print("[DAY TOTAL] tempo reale completo (advance_day + tutti gli handler di day_advanced, es. refresh vegetazione in GameScene) = %.1fms" % day_wall_clock_ms)
 

@@ -8,14 +8,10 @@ extends Control
 @onready var exit_button: Button = $VBoxContainer/ExitButton
 @onready var open_game_file_dialog: FileDialog = $OpenGameFileDialog
 @onready var exit_confirmation_dialog: ExitConfirmationDialog = $ExitConfirmationDialog
+@onready var options_menu: OptionsMenu = $OptionsMenu
 
 func _ready() -> void:
-	label2.text = tr("main_menu")
-	new_game_button.text = tr("new_game")
-	load_game_button.text = tr("load_game")
-	map_editor_button.text = tr("map_editor")
-	options_button.text = tr("options")
-	exit_button.text = tr("exit")
+	_refresh_texts()
 	new_game_button.pressed.connect(_on_new_game_pressed)
 	load_game_button.pressed.connect(_on_load_game_pressed)
 	map_editor_button.pressed.connect(_on_map_editor_pressed)
@@ -25,6 +21,26 @@ func _ready() -> void:
 	open_game_file_dialog.current_dir = GameSettings.SAVES_DIR
 
 	open_game_file_dialog.file_selected.connect(_on_open_game_file_selected)
+	# Debug lingua (vedi UserOptions.apply_language, TEMPORANEO): OptionsMenu si aggiorna da solo
+	# alla chiusura, ma questa scena "sotto" no — nessun sistema di retranslation live esiste,
+	# quindi ci riaggiorniamo a mano quando il menu Opzioni si chiude, non solo alla riapertura
+	# della scena. Da rimuovere insieme al resto del debug lingua a fine debug.
+	options_menu.visibility_changed.connect(_on_options_menu_visibility_changed)
+
+
+# Estratta da _ready() per poter essere richiamata anche alla chiusura di OptionsMenu (vedi sopra).
+func _refresh_texts() -> void:
+	label2.text = tr("main_menu")
+	new_game_button.text = tr("new_game")
+	load_game_button.text = tr("load_game")
+	map_editor_button.text = tr("map_editor")
+	options_button.text = tr("options")
+	exit_button.text = tr("exit_to_desktop")
+
+
+func _on_options_menu_visibility_changed() -> void:
+	if not options_menu.visible:
+		_refresh_texts()
 	
 func _on_new_game_pressed() -> void:
 	get_tree().change_scene_to_file("res://simulation/scenes/menus/NewGameMenu.tscn")
@@ -43,15 +59,7 @@ func _on_map_editor_pressed() -> void:
 	get_tree().change_scene_to_file("res://simulation/scenes/menus/MapEditorMenu.tscn")
 	
 func _on_options_pressed() -> void:
-	_show_not_ready_popup()
-	
+	options_menu.open_menu()
+
 func _on_exit_pressed() -> void:
 	exit_confirmation_dialog.open_dialog()
-
-
-func _show_not_ready_popup() -> void:
-	var dialog := AcceptDialog.new()
-	dialog.title = "Mondo non disponibile"
-	dialog.dialog_text = "Questo mondo predefinito non è ancora pronto."
-	add_child(dialog)
-	dialog.popup_centered()

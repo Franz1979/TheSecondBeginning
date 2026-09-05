@@ -1,6 +1,17 @@
 keys,it
 help_dialog_title,Aiuto
-close,Chiudi
+close_menu,Chiudi menu
+exit_to_desktop,Esci dal gioco
+close_and_save,Salva e chiudi
+options,Opzioni
+options_show_notification_popups,Mostra notifiche popup
+options_language,Lingua
+language_none,Predefinita (sistema)
+language_italian,Italiano
+language_english,Inglese
+language_german,Tedesco
+language_french,Francese
+language_spanish,Spagnolo
 back,Indietro
 help_shortcuts_menu_link,Scorciatoie da tastiera
 help_shortcuts_title,Scorciatoie da tastiera
@@ -12,21 +23,23 @@ help_zoom_min,zoom minimo
 help_rotate_building,ruota la porta della capanna durante il piazzamento
 help_fog_of_war_menu_link,Nebbia di guerra
 help_fog_of_war_title,Nebbia di guerra
-help_fog_of_war_intro,"Le zone del mondo che non hai mai esplorato restano nascoste sulla mappa. Quando ti sposti ed esplori una macrocella, questa diventa visibile e ne impari il contenuto (terreno, risorse, chi ci si trova)."
-help_fog_of_war_memory_intro,"Se poi ti allontani e non ci torni per un po', il ricordo di quella zona non sparisce di colpo, ma sfuma gradualmente su tre livelli, ciascuno con la propria durata di memoria (più lunga per le cose che cambiano più lentamente):"
-help_fog_of_war_tier_detail,"Dettaglio (posizione esatta di animali e persone): il primo a svanire, perché è l'informazione più effimera."
-help_fog_of_war_tier_resources,"Risorse (piante, pietre, quantità disponibili): dura più a lungo del dettaglio."
-help_fog_of_war_tier_terrain,"Terreno (tipo di suolo, biomi, fiumi, montagne): il più lento a essere dimenticato, perché cambia raramente."
-help_fog_of_war_full_forget,"Se resti lontano abbastanza da superare anche l'ultima soglia, la cella torna completamente sconosciuta come se non l'avessi mai vista."
-help_fog_of_war_persistence,"Questo comportamento è persistente: viene salvato e ricaricato correttamente con le partite salvate, quindi il tuo ricordo del mondo non si azzera riaprendo il gioco."
-help_fog_of_war_per_macrocell,"È gestito per macrocella (non per singola microcella al suo interno): l'unità minima di quanto ricordi è sempre l'intera macrocella che hai visitato."
+"help_fog_of_war_intro,""Le zone del mondo che non hai mai esplorato restano nascoste sulla mappa. Quando ti sposti ed esplori una macrocella, questa diventa visibile e ne impari il contenuto (terreno, risorse, chi ci si trova)."""
+"help_fog_of_war_memory_intro,""Se poi ti allontani e non ci torni per un po', il ricordo di quella zona non sparisce di colpo, ma sfuma gradualmente su tre livelli, ciascuno con la propria durata di memoria (più lunga per le cose che cambiano più lentamente):"""
+"help_fog_of_war_tier_detail,""Dettaglio (posizione esatta di animali e persone): il primo a svanire, perché è l'informazione più effimera."""
+"help_fog_of_war_tier_resources,""Risorse (piante, pietre, quantità disponibili): dura più a lungo del dettaglio."""
+"help_fog_of_war_tier_terrain,""Terreno (tipo di suolo, biomi, fiumi, montagne): il più lento a essere dimenticato, perché cambia raramente."""
+"help_fog_of_war_full_forget,""Se resti lontano abbastanza da superare anche l'ultima soglia, la cella torna completamente sconosciuta come se non l'avessi mai vista."""
+"help_fog_of_war_persistence,""Questo comportamento è persistente: viene salvato e ricaricato correttamente con le partite salvate, quindi il tuo ricordo del mondo non si azzera riaprendo il gioco."""
+"help_fog_of_war_per_macrocell,""È gestito per macrocella (non per singola microcella al suo interno): l'unità minima di quanto ricordi è sempre l'intera macrocella che hai visitato."""
 help_era_advancement_menu_link,Avanzamento Era
 help_era_advancement_title,Avanzamento Era
-help_era_advancement_intro,"Il tuo popolo attraversa Ere successive (periodi geologici e tecnologici, come il Paleolitico) man mano che la partita procede. Ogni Era ha le proprie condizioni di vita, che influenzano quanto a lungo vivono in media le persone del tuo popolo."
-help_era_advancement_longevity,"Cambiare Era allunga o accorcia la durata delle fasce di età adulta e anziana: un'Era con condizioni di vita migliori porta a vite adulte più lunghe, una più dura le accorcia."
-help_era_advancement_bands_unaffected,"Infanzia, adolescenza ed età fertile restano invece invariate da un'Era all'altra: sono le fasi più vecchie della vita a essere modulate dall'Era corrente, non quelle giovanili."
-help_era_advancement_not_yet_active,"Questa meccanica è ancora in sviluppo: al momento non esiste ancora un modo per far avanzare il tuo popolo a un'Era successiva."
+"help_era_advancement_intro,""Il tuo popolo attraversa Ere successive (periodi geologici e tecnologici, come il Paleolitico) man mano che la partita procede. Ogni Era ha le proprie condizioni di vita, che influenzano quanto a lungo vivono in media le persone del tuo popolo."""
+"help_era_advancement_longevity,""Cambiare Era allunga o accorcia la durata delle fasce di età adulta e anziana: un'Era con condizioni di vita migliori porta a vite adulte più lunghe, una più dura le accorcia."""
+"help_era_advancement_bands_unaffected,""Infanzia, adolescenza ed età fertile restano invece invariate da un'Era all'altra: sono le fasi più vecchie della vita a essere modulate dall'Era corrente, non quelle giovanili."""
+"help_era_advancement_not_yet_active,""Questa meccanica è ancora in sviluppo: al momento non esiste ancora un modo per far avanzare il tuo popolo a un'Era successiva."""
 statistics_tooltip,Statistiche
-statistics_description,Non ancora disponibile
+statistics_tab_mortality,Mortalità
 center_on_selection_tooltip,Centra la camera sulla selezione corrente
 building_hut,Capanna
+notification_death,{name} è morto/a per {cause} (età {age}, giorno {day})
+death_cause_old_age,vecchiaia

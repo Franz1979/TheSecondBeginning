@@ -62,6 +62,16 @@ var sex: HumanTypes.Sex = HumanTypes.Sex.MALE
 # anno_corrente - birth_year_virtual, mai salvata come campo separato (evita un secondo dato da
 # tenere sincronizzato ad ogni avanzamento anno).
 var birth_year_virtual: int = 0
+# Giorno (0..GameData.DAYS_PER_YEAR-1) in cui questo individuo morirà quest'anno, se
+# HumanMortalityIndividualService.check_mortality l'ha marcato — Step 4 del piano mortalità.
+# Sentinella -1 = nessuna morte programmata quest'anno (default, e valore di TUTTI gli individui
+# non marcati: check_mortality non tocca mai questo campo per loro). A differenza di età/age_band
+# (mai persistiti, sempre ricalcolati al volo da birth_year_virtual) questo VA persistito: è
+# un'estrazione singola non ricalcolabile — ritirare il dado una seconda volta darebbe un giorno
+# diverso, quindi il valore va salvato non appena estratto. Azzerato a -1 al rollover d'anno
+# (nessun individuo può "morire" per un giorno dell'anno scorso) — non ancora implementato in
+# questo step, arriverà insieme all'aggancio al tick giornaliero (Step 6).
+var scheduled_death_day: int = -1
 # Sentinella -1 = genitore/partner sconosciuto o non applicabile (es. un fondatore senza
 # genitori nella partita, o nessun partner ancora assegnato) — stesso principio del sentinella -1
 # già usato altrove nel progetto (es. PopulationGroup.years_since_last_split,

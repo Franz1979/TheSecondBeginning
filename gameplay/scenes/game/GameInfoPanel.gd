@@ -56,13 +56,11 @@ func _ready() -> void:
 	# (quello selezionato/sottolineato), quindi il bottone appartiene lì, non a una barra generica
 	# sopra le tab — vedi HumanIndividualInfoPanel.center_requested/GameScene._ready.
 	#
-	# Slot 0 diventa un placeholder "statistiche" (richiesta utente, 2026-09-04) — enabled=false:
-	# icona/tooltip visibili ma disabilitato/dim, nessuna azione ancora implementata (icona 📊
-	# provvisoria, da rivedere). Un futuro passo che implementa davvero la scheda statistiche
-	# richiamerà questo stesso configure_slot con enabled=true.
-	primary_actions_bar.configure_slot(
-		0, "📊", tr("statistics_tooltip"), &"statistics", tr("statistics_description"), false
-	)
+	# Slot 0 era un placeholder "statistiche" disabilitato (richiesta utente, 2026-09-04) — attivato
+	# (Step A del piano statistiche, 2026-09-05): enabled=true (default), nessuna description (la
+	# seconda riga del tooltip aveva senso solo per spiegare perché fosse disabilitato, non più
+	# pertinente ora che apre davvero StatisticsPanel — vedi GameScene._on_primary_action_pressed).
+	primary_actions_bar.configure_slot(0, "📊", tr("statistics_tooltip"), &"statistics")
 
 	# ☰/❓ restano qui (mai strumenti di debug): il menu di sistema e l'help sono UI definitiva.
 	secondary_actions_bar.configure_slot(0, "☰", tr("menu"), &"menu")

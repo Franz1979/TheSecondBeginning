@@ -167,7 +167,7 @@ func _ready() -> void:
 	secondary_actions_bar.action_pressed.connect(_on_secondary_action_pressed)
 	system_menu_dialog.add_action(tr("save_map"), &"save")
 	system_menu_dialog.add_action(tr("back_to_menu"), &"back_to_main_menu")
-	system_menu_dialog.add_action(tr("exit"), &"exit_game")
+	system_menu_dialog.add_action(tr("exit_to_desktop"), &"exit_game")
 	system_menu_dialog.action_selected.connect(_on_system_menu_action_selected)
 	save_confirmation_dialog.option_selected.connect(_on_save_confirmation_option_selected)
 

@@ -67,7 +67,10 @@ func advance_day(world: World, game_data: GameData) -> Dictionary:
 	# World.remove_extinct_population_groups per il perché.
 	_run_timed_daily("remove_extinct_population_groups", func(): world.remove_extinct_population_groups())
 
-	if DebugLogging.SHOW_DAILY_TIMING_LOGS:
+	# Filtrato ai soli dintorni di un checkpoint stagionale (richiesta utente, 2026-09-05 — un log
+	# per OGNI giorno, checkpoint o no, era troppo rumoroso): vedi SeasonCalculator.
+	# is_near_seasonal_checkpoint per cosa conta come "dintorni".
+	if DebugLogging.SHOW_DAILY_TIMING_LOGS and SeasonCalculator.is_near_seasonal_checkpoint(game_data.current_day):
 		var day_overall_ms: float = (Time.get_ticks_usec() - day_overall_start_usec) / 1000.0
 		_print_daily_timing_summary(game_data.current_day, day_overall_ms, checkpoint_ran)
 
@@ -243,10 +246,11 @@ func _run_daily_animal_hunger(world: World) -> void:
 # questo checkpoint nello stesso giorno se è un giorno di inizio-stagione), non classificati a
 # metà della propria creazione. No-op se nessun focus è attivo (world.lod_focus_state già vuoto) —
 # stesso sentinel "vuoto = vista mondo" usato ovunque altrove per questo campo.
-func _run_lod_focus_refresh_checkpoint(world: World) -> void:
+func _run_lod_focus_refresh_checkpoint(world: World, game_data: GameData) -> void:
 	if world.lod_focus_state.is_empty():
 		return
-	world.lod_focus_state = LODOrchestrator.new().set_focus_region(world, world.lod_focus_live_cells)
+	var season := SeasonCalculator.get_season_for_day(game_data.current_day)
+	world.lod_focus_state = LODOrchestrator.new().set_focus_region(world, world.lod_focus_live_cells, season)
 
 
 # Parte B del LOD (vedi AnimalConsumptionAggregateService): no-op se nessun focus è attivo — in
@@ -362,6 +366,10 @@ func _run_seasonal_checkpoints(world: World, game_data: GameData, year_rolled_ov
 				"secondary_resource_stock_checkpoint",
 				func(): _run_secondary_resource_stock_checkpoint(world, SeasonCalculator.get_previous_season(season), season)
 			)
+			# Cattura grass_seed_baseline (richiesta utente, 2026-09-05) — DEVE girare PRIMA del
+			# consumo appena sotto, vedi doc comment di _run_grass_baseline_capture_checkpoint per
+			# il perché dell'ordine.
+			_run_timed("grass_baseline_capture_checkpoint", func(): _run_grass_baseline_capture_checkpoint(world))
 			# Parte B del LOD: consumo aggregato stagionale SOLO per popolazioni Livello 1 non
 			# predatrici (vedi AnimalConsumptionAggregateService) — DOPO l'aggiornamento delle
 			# scorte a stock sopra (che devono maturare per la nuova stagione prima di poter essere
@@ -412,14 +420,14 @@ func _run_seasonal_checkpoints(world: World, game_data: GameData, year_rolled_ov
 	# stagione (territory_dynamics, l'unico punto che ne crea via PopulationSplitService) — vedi
 	# _run_lod_focus_refresh_checkpoint per il dettaglio completo.
 	if checkpoint_ran:
-		_run_timed("lod_focus_refresh_checkpoint", func(): _run_lod_focus_refresh_checkpoint(world))
+		_run_timed("lod_focus_refresh_checkpoint", func(): _run_lod_focus_refresh_checkpoint(world, game_data))
 
 	# Riepilogo diagnostico compatto (Richiesta: "aggiungi timing... senza toccare i log
 	# esistenti se possibile") — una sola riga a fine checkpoint, indipendente dal log per-passo
 	# già presente in _run_timed (che resta commentato/inattivo, invariato) e dal logging molto
 	# verboso di PredationService (tutt'altro percorso, mai toccato da questo timing). Solo nei
 	# giorni in cui è scattato almeno un checkpoint — un giorno ordinario non stampa nulla.
-	if checkpoint_ran:
+	if checkpoint_ran and DebugLogging.SHOW_DAILY_TIMING_LOGS:
 		var overall_ms: float = (Time.get_ticks_usec() - overall_start_usec) / 1000.0
 		_print_checkpoint_timing_summary(day, overall_ms)
 
@@ -583,6 +591,47 @@ func _run_growth_checkpoint(world: World, game_data: GameData) -> void:
 	# invece che un'unica pipeline diretta, per poter osservare l'evoluzione di ciascuna fase.
 	_run_timed("  grow_fauna", func(): FaunaGrowthService.new().grow_fauna(world))
 
+	# Ripristino annuale del grass "congelato ma consumato" (richiesta utente, 2026-09-05): SOLO
+	# le celle con un grass_seed_baseline catturato (vedi _run_grass_baseline_capture_checkpoint)
+	# tornano al valore di semina, invece di restare erose per sempre dal consumo Livello 1 —
+	# senza far girare qui la vera crescita (che resta bloccata, is_vegetation_frozen invariato).
+	_run_timed("  grass_baseline_restore", func(): _restore_frozen_grass_to_baseline(world))
+
+
+# Contro-parte del ripristino sopra: cattura grass_seed_baseline (una tantum, mai sovrascritto)
+# per ogni cella congelata che entra a far parte del territorio di una popolazione erbivora
+# Livello 1/2 attiva — DEVE girare PRIMA di animal_consumption_aggregate_checkpoint nello stesso
+# checkpoint di inizio stagione (vedi chiamata sotto), altrimenti rischierebbe di fotografare un
+# valore già eroso dal consumo di quella stessa stagione invece del vero valore di semina. Sicuro
+# catturare qui indipendentemente da quale giorno della stagione precedente il territorio abbia
+# davvero guadagnato la cella (spalmamento giornaliero, TerritoryDynamicsService.
+# process_daily_stagger): il consumo Livello 1 è SOLO a checkpoint, mai giornaliero, quindi nulla
+# può aver eroso dedicated_space(GRASS) tra l'ingresso nel territorio e questo momento.
+func _run_grass_baseline_capture_checkpoint(world: World) -> void:
+	for coords in LODOrchestrator.get_active_herbivore_territory_cells(world):
+		var state := world.get_cell_state_at(coords.x, coords.y)
+		if state == null or state.grass_seed_baseline != -1:
+			continue
+		if not LODOrchestrator.is_vegetation_frozen(world, state):
+			continue
+		state.grass_seed_baseline = state.get_dedicated_space(GameTypes.WorldObjectType.GRASS)
+
+
+func _restore_frozen_grass_to_baseline(world: World) -> void:
+	for state in world.cell_states:
+		if state.grass_seed_baseline == -1 or not LODOrchestrator.is_vegetation_frozen(world, state):
+			continue
+		state.set_dedicated_space(GameTypes.WorldObjectType.GRASS, state.grass_seed_baseline)
+		var cell := world.get_cell_at(state.x, state.y)
+		if cell == null:
+			continue
+		var max_density := ResourceCalculator.get_max_density(
+			GameTypes.WorldObjectType.GRASS, cell.terrain_base, cell.biome, cell.coast_type
+		)
+		state.set_resource_quantity(
+			GameTypes.WorldObjectType.GRASS, int(round(state.grass_seed_baseline * max_density))
+		)
+
 
 func _clear_natural_death_markers(world: World) -> void:
 	for state in world.cell_states:
@@ -655,31 +704,70 @@ func _run_animal_territory_shuffle_checkpoint(world: World, season: GameTypes.Se
 	PopulationTerritoryShuffleService.new().shuffle_distribution(world, season)
 
 
-# Nessun vero registro di fonti a stock persistente esiste ancora (nessuna scansione automatica
-# dei .tres in data/caloric_sources/) — solo questo elenco hardcoded delle fonti oggi
-# implementate con la rispettiva risorsa primaria. Aggiungere una nuova fonte a stock persistente
-# richiede una riga qui, a mano.
-const _SECONDARY_SOURCES := [
-	{"resource_name": "berry", "primary_resource_type": GameTypes.WorldObjectType.SHRUB},
-	{"resource_name": "acorn", "primary_resource_type": GameTypes.WorldObjectType.TREE},
-	{"resource_name": "fruit", "primary_resource_type": GameTypes.WorldObjectType.TREE},
-	{"resource_name": "eggs", "primary_resource_type": GameTypes.WorldObjectType.BIRDS},
-]
-
 func _run_secondary_resource_stock_checkpoint(
 	world: World, previous_season: GameTypes.Season, new_season: GameTypes.Season
 ) -> void:
-	for source in _SECONDARY_SOURCES:
+	# Skip a monte, DUE condizioni indipendenti (richiesta utente, 2026-09-05):
+	# - Opzione 1: CaloricCalculator.has_secondary_resource_potential legge solo dati grezzi già in
+	#   RAM (nessuna densità/regola sottotipo) — sicuro saltare quando sia il potenziale ATTUALE sia
+	#   lo stock già presente sono 0, non c'è nulla che possa cambiare.
+	# - Opzione 2 (LOD0): una cella CONGELATA (LODOrchestrator.is_vegetation_frozen — mai scoperta,
+	#   nessun erbivoro Livello 2 ci pascola) può comunque essere saltata SOLO se in più non
+	#   appartiene al territorio di nessuna popolazione erbivora Livello 1/2 attiva
+	#   (get_active_herbivore_territory_cells) — altrimenti quella popolazione si troverebbe questa
+	#   fonte congelata a zero per sempre in gran parte del proprio territorio (stesso rischio già
+	#   verificato e corretto per il grass). Le due condizioni si sommano (OR), mai in conflitto:
+	#   nessuna delle due salta mai una cella che serva davvero a qualcuno.
+	# Log diagnostico di quante celle (su world.cell_states.size(), tipicamente 10.000) sono state
+	# effettivamente saltate per ciascuna fonte, per misurare il beneficio reale di entrambe insieme.
+	#
+	# MIGLIORAMENTO FUTURO possibile (misurato in sessione, 2026-09-05 — non implementato): anche a
+	# skip ~100%, il checkpoint resta a ~150-180ms (contro le migliaia di ms di prima, ma non i
+	# "pochi ms" sperati) perché il ciclo sotto continua comunque a VISITARE tutte le 40.000
+	# combinazioni fonte×cella per decidere di saltarle — l'overhead di chiamata GDScript ripetuto
+	# 40.000 volte è ormai il costo dominante, non il calcolo vero. Per scendere oltre servirebbe
+	# smettere di scorrere world.cell_states per intero: mantenere un insieme esplicito e già
+	# aggiornato di "celle potenzialmente rilevanti" (scoperte + territori attivi, tipicamente
+	# minuscolo) e iterare SOLO quello — richiede un indice che oggi non esiste da nessuna parte
+	# (has_ever_been_discovered è un flag per-cella, non una lista consultabile), quindi un cambio
+	# più strutturale, rimandato.
+	var active_herbivore_territory_cells := LODOrchestrator.get_active_herbivore_territory_cells(world)
+	var skip_summary: Array[String] = []
+	var total_skipped := 0
+	var total_checked := 0
+	for source in CaloricCalculator.SECONDARY_SOURCES:
 		var rules := CaloricCalculator.get_caloric_source_rules(source["resource_name"])
 		if rules == null:
 			continue
+		var skipped := 0
 		for state in world.cell_states:
 			var cell := world.get_cell_at(state.x, state.y)
 			if cell == null:
 				continue
+			total_checked += 1
+			if (
+				not CaloricCalculator.has_secondary_resource_potential(rules, state, source["primary_resource_type"])
+				and state.get_secondary_resource_stock(source["resource_name"]) == 0.0
+			):
+				skipped += 1
+				continue
+			if (
+				LODOrchestrator.is_vegetation_frozen(world, state)
+				and not active_herbivore_territory_cells.has(Vector2i(state.x, state.y))
+			):
+				skipped += 1
+				continue
 			CaloricCalculator.update_secondary_resource_stock(
 				rules, cell, state, source["primary_resource_type"], previous_season, new_season
 			)
+		skip_summary.append("%s=%d/%d" % [source["resource_name"], skipped, world.cell_states.size()])
+		total_skipped += skipped
+
+	if DebugLogging.SHOW_DAILY_TIMING_LOGS:
+		print("[SECONDARY STOCK SKIP] %s | totale=%d/%d (%.1f%%)" % [
+			", ".join(skip_summary), total_skipped, total_checked,
+			100.0 * total_skipped / total_checked if total_checked > 0 else 0.0
+		])
 
 
 func _store_pending_migration_surplus(world: World, leftover_surplus: Dictionary) -> void:

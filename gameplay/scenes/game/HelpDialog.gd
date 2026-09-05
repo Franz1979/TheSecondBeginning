@@ -28,9 +28,14 @@ var _current_page: String = PAGE_MAIN
 
 func _ready() -> void:
 	title = tr("help_dialog_title")
-	close_button.text = tr("close")
+	close_button.text = tr("close_menu")
 	close_button.pressed.connect(hide)
-	close_requested.connect(hide)
+	# close_requested NON collegato a hide() + X nascosta (richiesta utente, 2026-09-05, stesso
+	# motivo/meccanismo di SystemMenuDialog._hide_native_close_button): si chiude solo dal
+	# CloseButton esplicito.
+	var transparent := ImageTexture.create_from_image(Image.create(1, 1, false, Image.FORMAT_RGBA8))
+	add_theme_icon_override("close", transparent)
+	add_theme_icon_override("close_pressed", transparent)
 	back_button.text = tr("back")
 	back_button.pressed.connect(_show_page.bind(PAGE_MAIN))
 

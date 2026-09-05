@@ -59,7 +59,10 @@ func save_game_to_json(
 			"camera_position_saved": game_data.camera_position_saved,
 			# Ultimo giorno di pulizia periodica del fog of war (vedi GameData) — deve
 			# sopravvivere a save/load per non sfasare la cadenza reale.
-			"fog_of_war_last_prune_absolute_day": game_data.fog_of_war_last_prune_absolute_day
+			"fog_of_war_last_prune_absolute_day": game_data.fog_of_war_last_prune_absolute_day,
+			# Log grezzo eventi morte (Step 8, vedi GameData) — Array[Dictionary] di soli tipi
+			# JSON-nativi, nessuna conversione necessaria qui a differenza di altri campi sopra.
+			"death_events": game_data.death_events
 		},
 		"world": {
 			"width": World.WIDTH,
@@ -108,6 +111,12 @@ func save_game_to_json(
 			state_data["has_ever_been_discovered"] = true
 		if state.vegetation_feeding_active:
 			state_data["vegetation_feeding_active"] = true
+			# Stesso principio "assente = sentinella di default" delle due sopra — grass_seed_baseline
+			# resta -1 (mai catturato) per la stragrande maggioranza delle celle, solo quelle
+			# congelate entrate in un territorio erbivoro attivo ne hanno uno vero (vedi
+			# MacroCellState.grass_seed_baseline).
+			if state.grass_seed_baseline != -1:
+				state_data["grass_seed_baseline"] = state.grass_seed_baseline
 		# Solo le macrocelle già aperte in MacroCellScene hanno posizioni stone generate:
 		# la chiave resta assente per tutte le altre, per non appesantire il salvataggio.
 		if state.stone_positions_generated:
@@ -345,7 +354,10 @@ func save_game_to_json(
 				# l'orientamento al salvataggio?") — prima viveva solo in HumanIndividualView
 				# (mai salvato), spostato su HumanIndividual apposta per questo.
 				"facing_direction_x": individual.facing_direction.x,
-				"facing_direction_y": individual.facing_direction.y
+				"facing_direction_y": individual.facing_direction.y,
+				# Step 4 piano mortalità (2026-09-05) — estrazione singola non ricalcolabile,
+				# vedi HumanIndividual.scheduled_death_day per il perché va persistita.
+				"scheduled_death_day": individual.scheduled_death_day
 			})
 
 	var json_text := JSON.stringify(data, "\t")

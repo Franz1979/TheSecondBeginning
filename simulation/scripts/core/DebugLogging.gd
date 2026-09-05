@@ -63,11 +63,13 @@ const SHOW_FAUNA_DIAGNOSTICS_LOGS := false
 
 # Filtro dedicato per [DAY TIMING] (WorldTimeService.advance_day) — tempo dei 4 passi che girano
 # OGNI giorno indipendentemente dai checkpoint stagionali (consumo/predazione/stagger territorio/
-# fame), mai coperti dal riepilogo [LOD TIMING] esistente (quello misura solo _run_seasonal_
-# checkpoints). Aggiunto per capire se la lentezza percepita "anche nei giorni senza checkpoint"
-# viene da uno di questi passi giornalieri o da altrove (rendering/streaming celle vive in
-# GameScene). A false: nessun comportamento di simulazione cambia, solo il print viene soppresso.
-const SHOW_DAILY_TIMING_LOGS := true
+# fame). Esteso (richiesta utente, 2026-09-05 — "nascondi i log timing, rendono illeggibile
+# l'evento mortality") a coprire anche [LOD TIMING]/[GAMESCENE DAY]/[DAY TOTAL]/[SECONDARY STOCK
+# SKIP], prima sparsi tra questo flag e DebugLogging.ENABLED — tutti diagnostici di
+# performance/timing, stesso interruttore unico. A false: nessun comportamento di simulazione
+# cambia, solo il print viene soppresso — rimetti a true per riavere tutto il gruppo com'era
+# (utile quando si torna a misurare i checkpoint stagionali).
+const SHOW_DAILY_TIMING_LOGS := false
 
 # Filtro dedicato per [VEG REFRESH TIMING]/[VEG REFRESH TRIGGER]/[DEBUG INDIVIDUI]/[DEBUG SPAZIO]/
 # [DEBUG CELLE VIVE] (GameScene._refresh_resource_visuals e affini) — diagnostica per la Proposta 2

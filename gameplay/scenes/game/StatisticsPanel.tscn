@@ -1,0 +1,58 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://gameplay/scenes/game/StatisticsPanel.gd" id="1_stats"]
+
+[node name="StatisticsPanel" type="Window"]
+visible = false
+size = Vector2i(320, 220)
+script = ExtResource("1_stats")
+
+[node name="MarginContainer" type="MarginContainer" parent="."]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+theme_override_constants/margin_left = 10
+theme_override_constants/margin_top = 10
+theme_override_constants/margin_right = 10
+theme_override_constants/margin_bottom = 10
+
+[node name="VBoxContainer" type="VBoxContainer" parent="MarginContainer"]
+layout_mode = 2
+
+[node name="TabContainer" type="TabContainer" parent="MarginContainer/VBoxContainer"]
+custom_minimum_size = Vector2(320, 260)
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="MortalityTab" type="VBoxContainer" parent="MarginContainer/VBoxContainer/TabContainer"]
+layout_mode = 2
+
+[node name="TotalLabel" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/MortalityTab"]
+layout_mode = 2
+
+[node name="AverageAgeLabel" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/MortalityTab"]
+layout_mode = 2
+
+[node name="CauseDistributionLabel" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/MortalityTab"]
+layout_mode = 2
+
+[node name="DeathsPerYearLabel" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/MortalityTab"]
+layout_mode = 2
+
+[node name="HSeparator2" type="HSeparator" parent="MarginContainer/VBoxContainer/TabContainer/MortalityTab"]
+layout_mode = 2
+
+[node name="DeathListScroll" type="ScrollContainer" parent="MarginContainer/VBoxContainer/TabContainer/MortalityTab"]
+custom_minimum_size = Vector2(0, 120)
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="DeathListContainer" type="VBoxContainer" parent="MarginContainer/VBoxContainer/TabContainer/MortalityTab/DeathListScroll"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="HSeparator" type="HSeparator" parent="MarginContainer/VBoxContainer"]
+layout_mode = 2
+
+[node name="CloseButton" type="Button" parent="MarginContainer/VBoxContainer"]
+layout_mode = 2

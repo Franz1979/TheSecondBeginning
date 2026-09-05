@@ -101,6 +101,17 @@ var camera_position_saved: bool = false
 # nessun caso speciale da gestire nel confronto (current_absolute_day - questo campo >= intervallo).
 var fog_of_war_last_prune_absolute_day: int = 0
 
+# Log grezzo di ogni morte umana (Step 8 del piano mortalità, 2026-09-05) — un Dictionary per
+# evento (individual_id, name, sex, age_at_death, cause: DeathTypes.DeathCause, year, day,
+# spouse_id), scritto da GameTimeService._apply_scheduled_human_deaths. NESSUNA statistica
+# aggregata calcolata o salvata qui (life expectancy, distribuzione cause, ecc.): quella arriverà
+# solo con un futuro pannello statistiche, calcolata al volo da questo array grezzo. Dictionary
+# (non una classe DeathEvent dedicata) per coerenza con lo stile già in uso altrove nel progetto
+# per record analoghi destinati al salvataggio (es. la sezione "human"."individuals" di
+# GameSaveService) — ogni campo è un tipo JSON-nativo (int/String), nessuna conversione necessaria
+# al salvataggio.
+var death_events: Array[Dictionary] = []
+
 # Monotonic day count since year 0, day 0 — the single source of truth for "how long ago"
 # comparisons (e.g. natural-event growth-bonus expiry) that must not reset/round at a year
 # boundary the way a per-year counter would.

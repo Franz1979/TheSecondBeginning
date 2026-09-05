@@ -3,6 +3,20 @@ extends RefCounted
 
 const CALORIC_SOURCES_DIR := "res://simulation/data/caloric_sources/"
 
+# Nessun vero registro di fonti a stock persistente esiste ancora (nessuna scansione automatica
+# dei .tres in data/caloric_sources/) — solo questo elenco hardcoded delle fonti oggi implementate
+# con la rispettiva risorsa primaria. Aggiungere una nuova fonte a stock persistente richiede una
+# riga qui, a mano. Spostato qui da WorldTimeService (2026-09-05): ora ha un secondo consumatore
+# (LODOrchestrator.set_focus_region, per il catch-up alla prima scoperta di una cella — vedi
+# seed_secondary_resource_stock_now sotto) e un solo elenco condiviso evita due copie da tenere
+# sincronizzate manualmente.
+const SECONDARY_SOURCES := [
+	{"resource_name": "berry", "primary_resource_type": GameTypes.WorldObjectType.SHRUB},
+	{"resource_name": "acorn", "primary_resource_type": GameTypes.WorldObjectType.TREE},
+	{"resource_name": "fruit", "primary_resource_type": GameTypes.WorldObjectType.TREE},
+	{"resource_name": "eggs", "primary_resource_type": GameTypes.WorldObjectType.BIRDS},
+]
+
 
 static func get_caloric_source_rules(resource_name: String) -> CaloricSourceRules:
 	var path := CALORIC_SOURCES_DIR + resource_name + ".tres"
@@ -107,6 +121,25 @@ static func get_forage_available_calories(cell: MacroCellData, state: MacroCellS
 	return get_available_calories(rules, cell, state, GameTypes.WorldObjectType.GRASS, season)
 
 
+# Presenza ECONOMICA (nessuna risoluzione di densità/regole sottotipo, solo dati grezzi già in
+# RAM) — usata da WorldTimeService._run_secondary_resource_stock_checkpoint per saltare a monte le
+# celle dove questa fonte non può avere nulla da aggiornare, invece di richiamare
+# update_secondary_resource_stock (che risolve densità/sottotipi anche solo per scoprire poi che
+# il risultato è 0). Stessa distinzione subtype vuoto/pieno di _get_base_quantity sopra, ma qui si
+# legge solo il grezzo: resource_quantity per una fonte senza sottotipo (es. eggs, che deriva
+# direttamente da BIRDS), subtype_composition per le altre (berry/acorn/fruit) — MAI densità. Il
+# salto è sempre sicuro: subtype_composition somma sempre a dedicated_space (vedi MacroCellState,
+# "sum(age_composition...) == subtype_composition... sempre"), quindi se il grezzo è già 0 anche
+# _get_base_quantity darebbe 0 (0 spazio × qualunque densità resta 0), sottotipo con age band
+# tracciate incluso.
+static func has_secondary_resource_potential(
+	rules: CaloricSourceRules, state: MacroCellState, primary_resource_type: GameTypes.WorldObjectType
+) -> bool:
+	if rules.source_subtype.is_empty():
+		return state.get_resource_quantity(primary_resource_type) > 0
+	return state.get_subtype_count(primary_resource_type, rules.source_subtype) > 0
+
+
 # Applica la transizione stagionale dello stock persistente (MacroCellState.secondary_resource_stock)
 # per fonti con consuming_depletes_primary = false (es. bacche mature) — no-op per FORAGE, che
 # resta stateless. Ad ogni cambio di stagione:
@@ -152,6 +185,31 @@ static func update_secondary_resource_stock(
 	#		GameTypes.Season.keys()[previous_season], GameTypes.Season.keys()[new_season],
 	#		before, state.get_secondary_resource_stock(rules.caloric_source_name)
 	#	])
+
+
+# Catch-up FUORI dal normale ciclo stagionale (richiesta utente, 2026-09-05 — verificato con una
+# partita nuova: senza questo, una cella mai scoperta arrivava con secondary_resource_stock
+# esattamente a 0.0 fino al PROSSIMO checkpoint di inizio stagione, anche con vegetazione
+# fruttifera vera già presente — vedi LODOrchestrator.set_focus_region, l'unico chiamante).
+# Stesso identico calcolo del ramo cycle_start_season sopra (reset pieno al tetto della stagione
+# CORRENTE, scartando qualunque residuo) — nessuna nuova formula: qui lo applichiamo solo in un
+# momento diverso (alla scoperta, non a inizio ciclo). Risultato: la frutta arriva coerente con la
+# stagione in corso "come se fosse appena germogliata ora" (livello del giorno di semina, non
+# retroattivo) — la pianta stessa (TREE/SHRUB) può restare congelata, è solo lo stock derivato a
+# doversi allineare subito.
+static func seed_secondary_resource_stock_now(
+	rules: CaloricSourceRules,
+	cell: MacroCellData,
+	state: MacroCellState,
+	primary_resource_type: GameTypes.WorldObjectType,
+	season: GameTypes.Season
+) -> void:
+	if rules.consuming_depletes_primary:
+		return
+	var base_quantity := _get_base_quantity(rules, cell, state, primary_resource_type)
+	state.set_secondary_resource_stock(
+		rules.caloric_source_name, base_quantity * rules.yield_ratio * rules.seasonal_availability_multiplier[season]
+	)
 
 
 # Per fonti a STOCK persistente (consuming_depletes_primary = false): legge lo stock già

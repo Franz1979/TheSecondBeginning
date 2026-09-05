@@ -50,10 +50,20 @@ enum Level { LEVEL_0, LEVEL_1, LEVEL_2 }
 # consumo programmatico (WorldTimeService):
 #   "level_2_groups"/"level_1_groups"/"level_0_groups": Array[PopulationGroup]
 #   "level_2_count_by_species"/"level_1_count_by_species"/"level_0_count_by_species": Dictionary[String, int]
-func set_focus_region(world: World, live_cell_coords: Dictionary) -> Dictionary:
+#
+# `season` (aggiunto 2026-09-05, richiesta utente): serve SOLO per il catch-up di
+# secondary_resource_stock alla prima scoperta di una cella (vedi _catch_up_secondary_resource_
+# stock sotto) — verificato con una partita nuova che senza questo lo stock restava a 0.0 fino al
+# prossimo checkpoint stagionale, anche con vegetazione fruttifera vera già presente. Nessun altro
+# uso della stagione in questa funzione.
+func set_focus_region(world: World, live_cell_coords: Dictionary, season: GameTypes.Season) -> Dictionary:
 	for coords in live_cell_coords:
 		var state := world.get_cell_state_at(coords.x, coords.y)
 		if state != null:
+			if not state.has_ever_been_discovered:
+				_catch_up_secondary_resource_stock(world, coords, state, season)
+				if DebugLogging.ENABLED:
+					_print_new_discovery_secondary_stock(coords, state)
 			state.has_ever_been_discovered = true
 
 	var level_2_groups: Array = []
@@ -83,6 +93,47 @@ func set_focus_region(world: World, live_cell_coords: Dictionary) -> Dictionary:
 		"level_1_count_by_species": level_1_count_by_species,
 		"level_0_count_by_species": level_0_count_by_species,
 	}
+
+
+# Catch-up alla PRIMA scoperta di una cella (richiesta utente, 2026-09-05 — vedi set_focus_region
+# sopra per il perché): calcola subito, per le 4 fonti a stock persistente (CaloricCalculator.
+# SECONDARY_SOURCES), un reset pieno alla stagione CORRENTE — stesso identico calcolo che
+# update_secondary_resource_stock fa una volta l'anno a cycle_start_season, isolato in
+# CaloricCalculator.seed_secondary_resource_stock_now per essere richiamabile anche qui, fuori dal
+# normale ciclo stagionale. Nessuna modifica alla pianta stessa (TREE/SHRUB/BIRDS, che può restare
+# congelata) — solo lo stock derivato si allinea subito.
+static func _catch_up_secondary_resource_stock(world: World, coords: Vector2i, state: MacroCellState, season: GameTypes.Season) -> void:
+	var cell := world.get_cell_at(coords.x, coords.y)
+	if cell == null:
+		return
+	for source in CaloricCalculator.SECONDARY_SOURCES:
+		var rules := CaloricCalculator.get_caloric_source_rules(source["resource_name"])
+		if rules == null:
+			continue
+		CaloricCalculator.seed_secondary_resource_stock_now(rules, cell, state, source["primary_resource_type"], season)
+
+
+# DIAGNOSTICO TEMPORANEO (vedi set_focus_region sopra) — stampa lo stock calorico REALE
+# (MacroCellState.secondary_resource_stock, quello che mangiano gli animali) delle 4 fonti a
+# stock persistente per la cella appena scoperta, a fianco della composizione VISIVA dei
+# sottotipi (subtype_composition, quella che pilota i puntini-frutto disegnati da
+# MicroCellRenderer) — le due cose sono indipendenti: un valore di composizione > 0 NON implica
+# uno stock > 0, ed è proprio questo che vogliamo distinguere prima di decidere se serve un
+# catch-up dedicato al momento della scoperta.
+static func _print_new_discovery_secondary_stock(coords: Vector2i, state: MacroCellState) -> void:
+	var stock_parts: Array[String] = []
+	for source_name in ["berry", "acorn", "fruit", "eggs"]:
+		stock_parts.append("%s=%.2f" % [source_name, state.get_secondary_resource_stock(source_name)])
+	var composition_parts: Array[String] = []
+	for entry in [
+		{"label": "shrub.fruit_bearing", "type": GameTypes.WorldObjectType.SHRUB, "subtype": "fruit_bearing"},
+		{"label": "tree.wild_fruit", "type": GameTypes.WorldObjectType.TREE, "subtype": "wild_fruit"},
+		{"label": "tree.domesticable_fruit", "type": GameTypes.WorldObjectType.TREE, "subtype": "domesticable_fruit"},
+	]:
+		composition_parts.append("%s=%d" % [entry["label"], state.get_subtype_count(entry["type"], entry["subtype"])])
+	print("[CELL DISCOVERED] (%d,%d) secondary_resource_stock (REALE, quello che mangiano gli animali): %s | subtype_composition (COSMETICO, solo disegno): %s" % [
+		coords.x, coords.y, ", ".join(stock_parts), ", ".join(composition_parts)
+	])
 
 
 # LOD0: marca vegetation_feeding_active=true su TUTTE le celle del territorio di `group` — SOLO
@@ -148,6 +199,31 @@ static func is_vegetation_frozen(world: World, state: MacroCellState) -> bool:
 	if world.lod_focus_state.is_empty():
 		return false
 	return not (state.has_ever_been_discovered or state.vegetation_feeding_active)
+
+
+# Insieme (Dictionary[Vector2i, bool], stesso idioma di live_cell_coords) di TUTTE le celle
+# occupate dal territorio di una popolazione ERBIVORA (mai predatore — la caccia non legge mai
+# secondary_resource_stock/dedicated_space(GRASS), vedi AnimalConsumptionService: "i predatori non
+# consumano vegetazione") Livello 1 O Livello 2, cioè ogni cella dove una consumazione REALE può
+# ancora avvenire (giornaliera per Livello 2, aggregata stagionale per Livello 1) anche se la
+# cella stessa non è mai stata scoperta individualmente. Usata da WorldTimeService per due scopi
+# indipendenti (richiesta utente, 2026-09-05): esentare queste celle dal salto del checkpoint
+# frutta (secondary_resource_stock, per non congelare per sempre lo stock di popolazioni Livello 1
+# multicella) e catturare/ripristinare grass_seed_baseline (per non far sparire il grass per
+# sempre in celle congelate dove si consuma davvero). No-op (Dictionary vuoto) se
+# world.lod_focus_state è vuoto (vista mondo, nessun focus attivo) — stesso sentinel di
+# is_vegetation_frozen sopra.
+static func get_active_herbivore_territory_cells(world: World) -> Dictionary:
+	var cells: Dictionary = {}
+	if world.lod_focus_state.is_empty():
+		return cells
+	for group in world.lod_focus_state["level_1_groups"] + world.lod_focus_state["level_2_groups"]:
+		var rules := AnimalCalculator.get_animal_rules(group.species_name)
+		if rules == null or rules is PredatorRules or group.territory == null:
+			continue
+		for coords in group.territory.occupied_macrocells:
+			cells[coords] = true
+	return cells
 
 
 # LOD0, lato fauna: vero se QUESTO gruppo va saltato da OGNI checkpoint animale (nascite/morte per

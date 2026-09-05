@@ -105,11 +105,14 @@ func _ready() -> void:
 	secondary_actions_bar.action_pressed.connect(_on_secondary_action_pressed)
 	system_menu_dialog.add_action(tr("save_game"), &"save")
 	system_menu_dialog.add_action(tr("back_to_menu"), &"back_to_main_menu")
-	system_menu_dialog.add_action(tr("exit"), &"exit_game")
+	system_menu_dialog.add_action(tr("exit_to_desktop"), &"exit_game")
 	system_menu_dialog.action_selected.connect(_on_system_menu_action_selected)
 	system_menu_dialog.visibility_changed.connect(_on_blocking_dialog_visibility_changed.bind(system_menu_dialog))
 	save_confirmation_dialog.option_selected.connect(_on_save_confirmation_option_selected)
 	save_confirmation_dialog.visibility_changed.connect(_on_blocking_dialog_visibility_changed.bind(save_confirmation_dialog))
+	# Bugfix, richiesta utente 2026-09-05 (stesso di GameScene.gd): senza questa riga il clock
+	# ripartiva nell'istante tra la chiusura del menu di sistema e l'apertura di questo file dialog.
+	save_game_file_dialog.visibility_changed.connect(_on_blocking_dialog_visibility_changed.bind(save_game_file_dialog))
 
 	macro_world = GameSettings.active_world
 	game_data = GameSettings.active_game_data
@@ -129,7 +132,9 @@ func _ready() -> void:
 	# classificati"), senza dover ripassarla da qui ogni volta.
 	if macro_world != null and macro_cell != null:
 		var focus_live_cells: Dictionary = {Vector2i(macro_cell.x, macro_cell.y): true}
-		var lod_result := LODOrchestrator.new().set_focus_region(macro_world, focus_live_cells)
+		var lod_result := LODOrchestrator.new().set_focus_region(
+			macro_world, focus_live_cells, SeasonCalculator.get_season_for_day(game_data.current_day)
+		)
 		LODOrchestrator.print_classification_log(lod_result)
 		macro_world.lod_focus_live_cells = focus_live_cells
 		macro_world.lod_focus_state = lod_result

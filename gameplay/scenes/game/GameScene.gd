@@ -105,6 +105,10 @@ var clock: GameClockController
 # usa-e-getta come gli altri *Service: deve restare vivo quanto clock perché le sue connessioni ai
 # segnali di clock sopravvivano).
 var game_time_service: GameTimeService
+# Sistema minimo di popup di notifica (richiesta utente, 2026-09-05) — istanziato via codice in
+# _setup_clock (nessun .tscn, stesso pattern di HumanIndividualView), aggiunto sotto CanvasLayer
+# così resta in overlay sopra il resto della UI di gioco.
+var notification_popup: NotificationPopup
 # "individual" è ora il BERSAGLIO CORRENTE di movimento/streaming (Step 2 del piano movimento
 # indipendente, 2026-09-02 — non più un "leader" fisso: coincide con human_individuals[0] solo come
 # valore INIZIALE assegnato in _ready(), vedi lì). Cambia ogni volta che la selezione cambia su un
@@ -247,6 +251,8 @@ var _pending_leave_action: StringName = &""
 @onready var system_menu_dialog: SystemMenuDialog = $SystemMenuDialog
 @onready var save_confirmation_dialog: SaveConfirmationDialog = $SaveConfirmationDialog
 @onready var help_dialog: HelpDialog = $HelpDialog
+@onready var options_menu: OptionsMenu = $OptionsMenu
+@onready var statistics_panel: StatisticsPanel = $StatisticsPanel
 @onready var save_game_file_dialog: FileDialog = $SaveGameFileDialog
 @onready var camera: Camera2D = $Camera2D
 @onready var year_title_label: Label = $CanvasLayer/Sidebar/MarginContainer/VBoxContainer/CalendarHeaderContainer/YearTitleLabel
@@ -343,12 +349,21 @@ func _ready() -> void:
 	minimap_panel.cell_clicked.connect(_on_minimap_cell_clicked)
 	system_menu_dialog.add_action(tr("save_game"), &"save")
 	system_menu_dialog.add_action(tr("back_to_menu"), &"back_to_main_menu")
-	system_menu_dialog.add_action(tr("exit"), &"exit_game")
+	system_menu_dialog.add_action(tr("options"), &"options")
+	system_menu_dialog.add_action(tr("exit_to_desktop"), &"exit_game")
 	system_menu_dialog.action_selected.connect(_on_system_menu_action_selected)
 	system_menu_dialog.visibility_changed.connect(_on_blocking_dialog_visibility_changed.bind(system_menu_dialog))
 	save_confirmation_dialog.option_selected.connect(_on_save_confirmation_option_selected)
 	save_confirmation_dialog.visibility_changed.connect(_on_blocking_dialog_visibility_changed.bind(save_confirmation_dialog))
 	help_dialog.visibility_changed.connect(_on_blocking_dialog_visibility_changed.bind(help_dialog))
+	options_menu.visibility_changed.connect(_on_blocking_dialog_visibility_changed.bind(options_menu))
+	statistics_panel.visibility_changed.connect(_on_blocking_dialog_visibility_changed.bind(statistics_panel))
+	# Mancava (bugfix, richiesta utente 2026-09-05): system_menu_dialog si nasconde PRIMA che
+	# save_game_file_dialog si apra (_on_save_pressed gira dopo l'hide() del bottone "Salva" nel
+	# menu di sistema — vedi SystemMenuDialog.add_action), quindi senza questa riga _open_dialog_count
+	# scendeva a 0 e il clock ripartiva nell'istante tra i due popup invece di restare in pausa
+	# finché anche save_game_file_dialog non si chiude.
+	save_game_file_dialog.visibility_changed.connect(_on_blocking_dialog_visibility_changed.bind(save_game_file_dialog))
 
 	# --- Logica di ingresso -------------------------------------------------------------------
 	# 1) Ritorno da WorldScene/MacroCellScene via bottone debug "🧍": riusa lo stato condiviso
@@ -1020,6 +1035,17 @@ func _deselect_all_human_individuals() -> void:
 # arriverà HumanIndividual.residual_workforce è quella subito sotto (residual_workforce =
 # max_workforce), il pannello non va toccato.
 func _select_individual(target: HumanIndividual) -> void:
+	_update_individual_panel_content(target)
+	game_info_tabs.show_selection_tab()
+
+
+# Contenuto del pannello individuo (età/age_band/workforce), SEPARATO dal salto alla tab
+# selezione sopra (bugfix, richiesta utente, 2026-09-05): _refresh_selected_individual_panel
+# sotto lo chiama al rollover d'anno per aggiornare l'età SENZA rubare la tab attiva
+# all'utente — prima riusava _select_individual per intero, che include SEMPRE
+# game_info_tabs.show_selection_tab(), facendo saltare la UI sulla scheda 🔍 ad ogni cambio
+# d'anno anche se l'utente stava guardando tutt'altra scheda (es. 🧍 Popolazione).
+func _update_individual_panel_content(target: HumanIndividual) -> void:
 	var age: int = game_data.year - target.birth_year_virtual
 	var age_band := HumanCalculator.get_age_band(
 		game_data.era_effective_age_band_durations_male, game_data.era_effective_age_band_durations_female, target.sex, float(age)
@@ -1028,7 +1054,6 @@ func _select_individual(target: HumanIndividual) -> void:
 	var residual_workforce := max_workforce # TODO: sostituire con target.residual_workforce quando esisterà
 	human_individual_info_panel.show_individual(target, age, age_band, max_workforce, residual_workforce)
 	game_info_tabs.set_selection_title("Name: " + target.name)
-	game_info_tabs.show_selection_tab()
 
 
 # Ripopola la scheda 👨‍👩‍👧 con i dati correnti — stessa identica chiamata di _ready() (vedi lì),
@@ -1051,8 +1076,59 @@ func _refresh_selected_individual_panel() -> void:
 		return
 	for member in human_individuals:
 		if member.is_selected:
-			_select_individual(member)
+			_update_individual_panel_content(member)
 			return
+
+
+# Step 6 piano mortalità (2026-09-05): rimuove/libera la HumanIndividualView corrispondente
+# all'individuo appena morto, ALLO STESSO indice che aveva in human_individuals nel momento in
+# cui GameTimeService ha emesso il segnale (vedi commento alla connessione in _setup_clock) —
+# human_individual_views è parallelo per indice a human_individuals, quindi va tenuto allineato
+# qui, un solo punto, ogni volta che quest'ultimo perde un elemento.
+#
+# Se il morto era anche l'individuo selezionato (bugfix, richiesta utente, 2026-09-05: cliccare
+# il suo nome ancora elencato nel pannello riportava su un posto vuoto E mostrava ancora i suoi
+# dati/età come se fosse vivo), chiudiamo subito la selezione — stessa sequenza già usata da
+# _clear_individual_selection altrove, no-op se il pannello non era comunque visibile. NOTO ma
+# non affrontato: se era il bersaglio di movimento/streaming corrente (var individual, un ruolo
+# indipendente dalla selezione), quel riferimento resta stantio — rimandato a un prossimo passo
+# se si rivela un problema reale in gioco.
+#
+# Sistema notifiche (2026-09-05): accoda un popup DEATH se UserOptions.show_notification_popups —
+# opzione utente/installazione (2026-09-05, non più di partita: vedi UserOptions, spostata da
+# GameData dopo discussione con l'utente — nessuno vuole i popup attivi in un save e disattivi in
+# un altro). Il flag riguarda SOLO questa riga, il log console [HUMAN DEATH] (in GameTimeService)
+# resta sempre attivo indipendentemente, come richiesto. age_at_death/partner_freed arrivano già
+# calcolati dal segnale (vedi GameTimeService, che non sa nulla di UI/popup).
+func _on_human_individual_died(individual: HumanIndividual, index: int, age_at_death: int, partner_freed: bool) -> void:
+	if index < 0 or index >= human_individual_views.size():
+		return
+	var view := human_individual_views[index]
+	human_individual_views.remove_at(index)
+	if view != null and is_instance_valid(view):
+		view.queue_free()
+	if individual.is_selected:
+		_clear_individual_selection()
+	if UserOptions.show_notification_popups:
+		notification_popup.enqueue(
+			NotificationTypes.NotificationPopupType.DEATH,
+			tr("notification_death").format({
+				"name": individual.name,
+				"cause": tr("death_cause_old_age"),
+				"age": age_at_death,
+				"day": individual.scheduled_death_day
+			})
+		)
+
+
+# Step 6 piano mortalità (2026-09-05): rinfresca la scheda 👨‍👩‍👧 DOPO che tutte le rimozioni/
+# total_count del giorno sono già stati applicati (vedi GameTimeService.human_population_changed
+# per il perché non basta agganciarsi a individual_died sopra: quel segnale scatta PRIMA della
+# rimozione vera, mostrerebbe ancora dati vecchi). Bugfix, richiesta utente, 2026-09-05: la view
+# spariva subito ma il pannello popolazione restava coi dati vecchi fino al prossimo rollover
+# d'anno, l'unico altro punto che lo richiamava.
+func _on_human_population_changed() -> void:
+	_refresh_population_panel()
 
 
 # Bugfix (richiesta utente, 2026-09-05 — vedi commento alla connessione in _setup_clock): tiene
@@ -1531,7 +1607,9 @@ func _refresh_lod_focus_region() -> void:
 	for coords in live_cells:
 		focus_live_cells[coords] = true
 
-	var lod_result := LODOrchestrator.new().set_focus_region(macro_world, focus_live_cells)
+	var lod_result := LODOrchestrator.new().set_focus_region(
+		macro_world, focus_live_cells, SeasonCalculator.get_season_for_day(game_data.current_day)
+	)
 	LODOrchestrator.print_classification_log(lod_result)
 	macro_world.lod_focus_live_cells = focus_live_cells
 	macro_world.lod_focus_state = lod_result
@@ -2491,12 +2569,12 @@ func _on_save_game_file_selected(path: String) -> void:
 # &"center_on_individual" (era l'unico case qui) rimosso insieme allo spostamento del bottone "🎯"
 # fuori da PrimaryActionsBar — vive ora nell'header di GameInfoTabs.SelectionTab (Step 3, richiesta
 # utente 2026-09-04 — vedi game_info_tabs.center_requested in _ready). Slot 0 di primary_actions_bar
-# è oggi il placeholder "statistiche" (&"statistics", disabled — vedi GameInfoPanel._ready): nessun
-# case qui finché resta disabilitato, un futuro passo che lo implementa ne aggiungerà uno.
+# era il placeholder "statistiche" disabilitato — attivato (Step A del piano statistiche,
+# 2026-09-05): apre StatisticsPanel, ancora vuoto (solo struttura tab, nessun contenuto).
 func _on_primary_action_pressed(action_id: StringName) -> void:
 	match action_id:
-		_:
-			pass
+		&"statistics":
+			statistics_panel.open_dialog(game_data)
 
 
 # toggle_animals_visibility/toggle_flora_updates/world_debug/macro_cell_debug — vissuti prima
@@ -2750,6 +2828,10 @@ func _on_system_menu_action_selected(action_id: StringName) -> void:
 		&"back_to_main_menu":
 			_pending_leave_action = &"back_to_main_menu"
 			save_confirmation_dialog.open_dialog()
+		&"options":
+			# false = niente scelta lingua qui (richiesta utente, 2026-09-05) — solo il toggle
+			# notifiche, unico campo pertinente a partita in corso. Vedi OptionsMenu.open_menu.
+			options_menu.open_menu(false)
 		&"exit_game":
 			_pending_leave_action = &"exit_game"
 			save_confirmation_dialog.open_dialog()
@@ -2775,6 +2857,11 @@ func _execute_pending_leave_action() -> void:
 func _setup_clock() -> void:
 	clock = GameClockController.new()
 	add_child(clock)
+	# Sistema notifiche (2026-09-05) — istanziato qui indipendentemente dal ramo macro_world==null
+	# sotto (nessuna dipendenza dal mondo, un componente UI puro), sotto CanvasLayer per restare in
+	# overlay sopra il resto della UI.
+	notification_popup = NotificationPopup.new()
+	$CanvasLayer.add_child(notification_popup)
 	if macro_world == null:
 		play_pause_button.disabled = true
 		for speed in speed_buttons.keys():
@@ -2801,8 +2888,19 @@ func _setup_clock() -> void:
 	clock.year_rolled_over.connect(_on_year_rolled_over)
 	# Primo aggancio gameplay-side ai checkpoint classificati (richiesta utente, 2026-09-05) — vedi
 	# GameTimeService per il perché l'istanza va tenuta in un campo, non usa-e-getta.
+	# human_individuals/human_folk/human_population_group passati per riferimento (Step 5/6 piano
+	# mortalità, 2026-09-05): GameTimeService li usa per agganciare HumanMortalityIndividualService.
+	# check_mortality a year_rolled_over e la rimozione reale a day_advanced — sempre gli STESSI
+	# oggetti di GameScene, mai una copia.
 	game_time_service = GameTimeService.new()
-	game_time_service.connect_to_clock(clock, game_data)
+	game_time_service.connect_to_clock(clock, game_data, human_individuals, human_folk, human_population_group)
+	# Step 6 piano mortalità (2026-09-05): GameTimeService rimuove l'individuo morto da
+	# human_individuals (stesso array, per riferimento) ma non sa nulla di human_individual_views
+	# (rendering, di competenza esclusiva di GameScene) — questo segnale, emesso PRIMA della
+	# rimozione con l'indice ancora valido, è il punto in cui liberiamo/rimuoviamo la view
+	# corrispondente ALLO STESSO indice, per non sfasare le due collezioni parallele.
+	game_time_service.individual_died.connect(_on_human_individual_died)
+	game_time_service.human_population_changed.connect(_on_human_population_changed)
 	play_pause_button.pressed.connect(_on_play_pause_pressed)
 	for speed in speed_buttons.keys():
 		speed_buttons[speed].pressed.connect(_on_speed_button_pressed.bind(speed))
@@ -2843,7 +2941,10 @@ func _on_day_advanced(checkpoint_ran: bool, animals_changed: bool) -> void:
 	# quindi anche nei giorni "vuoti" in cui il resto di questa funzione farebbe early-return sotto.
 	_maybe_prune_fog_of_war_memories()
 	if not (checkpoint_ran or animals_changed):
-		if DebugLogging.SHOW_DAILY_TIMING_LOGS:
+		# Filtrato ai soli dintorni di un checkpoint stagionale (richiesta utente, 2026-09-05 —
+		# stesso motivo/helper di WorldTimeService.advance_day/GameClockController._process: un log
+		# per ogni giorno era troppo rumoroso).
+		if DebugLogging.SHOW_DAILY_TIMING_LOGS and SeasonCalculator.is_near_seasonal_checkpoint(game_data.current_day):
 			var elapsed_ms: float = (Time.get_ticks_usec() - _debug_day_advanced_start_usec) / 1000.0
 			print("[GAMESCENE DAY] _on_day_advanced (nessun rebuild vegetazione: checkpoint_ran=no, animals_changed=no) = %.1fms" % elapsed_ms)
 		return
@@ -2878,7 +2979,9 @@ func _on_day_advanced(checkpoint_ran: bool, animals_changed: bool) -> void:
 			# nei giorni ordinari (il campo è vuoto).
 			_apply_natural_mortality_visuals(cell)
 			_refresh_resource_visuals(cell)
-		if DebugLogging.SHOW_DAILY_TIMING_LOGS:
+		# Filtrato ai soli dintorni di un checkpoint stagionale, stesso motivo/helper dei due
+		# blocchi sopra/sotto (richiesta utente, 2026-09-05).
+		if DebugLogging.SHOW_DAILY_TIMING_LOGS and SeasonCalculator.is_near_seasonal_checkpoint(game_data.current_day):
 			var vegetation_refresh_ms: float = (Time.get_ticks_usec() - vegetation_refresh_start_usec) / 1000.0
 			print("[GAMESCENE DAY] rebuild vegetazione (%d/%d celle vive rinfrescate — solo prossimità, checkpoint_ran=%s flora_daily_updates_enabled=%s) = %.1fms" % [
 				proximity_cells.size(), live_cells.size(), "si" if checkpoint_ran else "no", "si" if flora_daily_updates_enabled else "no", vegetation_refresh_ms
@@ -2886,7 +2989,7 @@ func _on_day_advanced(checkpoint_ran: bool, animals_changed: bool) -> void:
 	else:
 		_update_info_panel()
 
-	if DebugLogging.SHOW_DAILY_TIMING_LOGS:
+	if DebugLogging.SHOW_DAILY_TIMING_LOGS and SeasonCalculator.is_near_seasonal_checkpoint(game_data.current_day):
 		var elapsed_ms: float = (Time.get_ticks_usec() - _debug_day_advanced_start_usec) / 1000.0
 		print("[GAMESCENE DAY] _on_day_advanced totale = %.1fms" % elapsed_ms)
 

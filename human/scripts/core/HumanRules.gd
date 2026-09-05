@@ -62,6 +62,15 @@ extends Resource
 @export var caloric_multiplier_by_age: Array[float] = [0.0, 0.0, 0.0, 0.0, 0.0]
 @export var caloric_multiplier_by_sex: Array[float] = [0.0, 0.0]
 
+@export_group("Mortality")
+# Curva di mortalità età-dipendente: due estremi scalari (non per-fascia come gli array sopra,
+# perché descrivono una curva continua che attraversa MATURE_ADULT e OLD, non un valore fisso per
+# singola fascia) più un tetto assoluto d'età. Nessuna logica li legge ancora in questo passo — la
+# funzione di interpolazione arriva in uno step successivo.
+@export var mortality_prob_at_mature_start: float = 0.001
+@export var mortality_prob_at_old_end: float = 0.65
+@export var absolute_max_age: int = 100
+
 @export_group("Workforce")
 # Capacità lavorativa giornaliera di riferimento per un adulto pieno (FERTILE_ADULT/MATURE_ADULT,
 # moltiplicatore 1.0 sotto) — valore unico, non per-età: l'asse età è tutto in

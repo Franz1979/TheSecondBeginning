@@ -2,6 +2,7 @@
 
 [ext_resource type="Script" uid="uid://bxxe6cbptf1y5" path="res://simulation/scripts/scenes/main_menu.gd" id="1_yqorp"]
 [ext_resource type="PackedScene" uid="uid://bqf3n8m2h5w7c" path="res://simulation/scenes/ui/ExitConfirmationDialog.tscn" id="2_exit"]
+[ext_resource type="PackedScene" path="res://gameplay/scenes/menus/OptionsMenu.tscn" id="3_options"]
 
 [node name="MainMenu" type="Control" unique_id=514881481]
 layout_mode = 3
@@ -58,3 +59,5 @@ title = "Open a File"
 file_mode = 0
 
 [node name="ExitConfirmationDialog" parent="." instance=ExtResource("2_exit")]
+
+[node name="OptionsMenu" parent="." instance=ExtResource("3_options")]

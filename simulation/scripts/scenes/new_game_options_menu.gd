@@ -142,10 +142,15 @@ func _ready() -> void:
 	medium_button.text = tr("animal_density_medium")
 	many_button.text = tr("animal_density_many")
 
-	population_size_header_label.text = tr("population_size_label")
-	sparse_button.text = tr("population_size_sparse")
-	normal_button.text = tr("population_size_normal")
-	dense_button.text = tr("population_size_dense")
+	# Rinominato da "population_size_*" (richiesta utente, 2026-09-05): con l'introduzione delle
+	# popolazioni umane (group_size_label sotto, COUPLE/FAMILY/GROUP) la vecchia chiave era
+	# ambigua — nessuna traduzione CSV esiste ancora per nessuna delle due, quindi la chiave
+	# stessa è ciò che il giocatore vede in game. Stesso prefisso "animal_" già usato da
+	# animal_density_label sopra, per coerenza tra le due impostazioni animali di questo menu.
+	population_size_header_label.text = tr("animal_population_size_label")
+	sparse_button.text = tr("animal_population_size_sparse")
+	normal_button.text = tr("animal_population_size_normal")
+	dense_button.text = tr("animal_population_size_dense")
 
 	hostile_start_label.text = tr("hostile_start_label")
 	hostile_start_check_button.button_pressed = false
