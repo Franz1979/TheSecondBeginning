@@ -72,6 +72,13 @@ var birth_year_virtual: int = 0
 # (nessun individuo può "morire" per un giorno dell'anno scorso) — non ancora implementato in
 # questo step, arriverà insieme all'aggancio al tick giornaliero (Step 6).
 var scheduled_death_day: int = -1
+# Causa della morte programmata sopra — irrilevante finché scheduled_death_day resta -1 (nessuna
+# morte in corso). Step 9 del piano mortalità (2026-09-05): scheduled_death_day da solo non diceva
+# PERCHÉ un individuo stava morendo, serviva per distinguere OLD_AGE (HumanMortalityIndividualService)
+# da MURDER (bottone di debug "Kill" — vedi GameTimeService.kill_individual_now, che non passa MAI
+# da scheduled_death_day/scheduled_death_cause, uccide immediatamente). Default OLD_AGE puramente
+# come placeholder innocuo (mai letto finché scheduled_death_day è -1).
+var scheduled_death_cause: DeathTypes.DeathCause = DeathTypes.DeathCause.OLD_AGE
 # Sentinella -1 = genitore/partner sconosciuto o non applicabile (es. un fondatore senza
 # genitori nella partita, o nessun partner ancora assegnato) — stesso principio del sentinella -1
 # già usato altrove nel progetto (es. PopulationGroup.years_since_last_split,
@@ -80,6 +87,39 @@ var mother_id: int = -1
 var father_id: int = -1
 # Nessuna logica di formazione coppie qui: solo il campo, valorizzato da un futuro service.
 var partner_id: int = -1
+# Step 3 del piano riproduzione (2026-09-06): valorizzato da HumanConceptionIndividualService al giorno 110,
+# nessun'altra logica lo tocca in questo passo — il parto (che lo riazzererà) è un task separato,
+# non ancora scritto. Default false, come ogni HumanIndividual appena creato (fondatore o figlio).
+var is_pregnant: bool = false
+# Tratti/padre del figlio in arrivo, PRECALCOLATI da HumanConceptionIndividualService nello stesso
+# istante in cui is_pregnant diventa true (padre = partner ATTUALE della donna in quel momento,
+# sicuramente vivo — zero ambiguità) — Step 2 del piano riproduzione (2026-09-06). Il motivo:
+# capelli/carnagione sono ereditari (HumanIndividual.roll_inherited_hair_color/
+# roll_inherited_skin_color) e richiedono i DUE genitori nel momento in cui il tiro avviene; al
+# day 20 (nascita, HumanBirthIndividualService), il padre potrebbe essere morto nel frattempo — ma
+# il tiro è già cristallizzato qui, quindi lo stato del padre a quel punto (vivo o morto) non ha
+# alcuna importanza. Default = valore enum zero/placeholder innocuo, mai letto finché is_pregnant
+# è false (stesso principio di HumanIndividual.scheduled_death_cause).
+var pending_child_hair_color: HumanTypes.HairColor = HumanTypes.HairColor.BLONDE
+var pending_child_skin_color: HumanTypes.SkinColor = HumanTypes.SkinColor.LIGHT
+# -1 = nessuna gravidanza in corso (stessa convenzione -1 di mother_id/father_id/partner_id sopra)
+# — mai letto finché is_pregnant è false. HumanBirthIndividualService lo usa come father_id del
+# neonato, MAI woman.partner_id (che potrebbe essere già stato azzerato da _free_partner_if_any
+# se il padre è morto tra il concepimento e la nascita).
+var pending_child_father_id: int = -1
+# Id del figlio da trasportare finché non cammina da solo (richiesta utente, 2026-09-06, piano
+# "trasporto neonati") — valorizzato UNA VOLTA alla nascita (HumanBirthIndividualService, stesso
+# momento in cui il neonato riceve mother_id = questo individuo), MAI più scritto altrove per
+# tutta la vita del figlio TRANNE dal consumatore stesso (GameScene._sync_dependent_child_position,
+# chiamato ad ogni frame in cui questo individuo è il bersaglio di movimento corrente), che lo
+# riporta a -1 in due casi: il figlio non si trova più (morto) o ha superato la soglia d'età
+# (era_rules.min_birth_spacing_years). Deliberatamente NIENT'ALTRO scrive mai -1 qui (né la morte
+# del figlio né il compleanno hanno un proprio hook dedicato) — la query di consumo si "auto-
+# manutiene" da sola nell'unico punto in cui il campo viene letto, invece di richiedere due
+# invalidazioni sincronizzate sparse nel codice (rischio di stato stantio se una delle due venisse
+# dimenticata in futuro). -1 = nessun figlio da trasportare, stessa convenzione già in uso per
+# mother_id/father_id/partner_id/pending_child_father_id sopra.
+var dependent_child_id: int = -1
 var name: String = ""
 # Collegamento inverso al gruppo/insediamento di appartenenza — nullable (un HumanIndividual
 # potrebbe in teoria esistere senza un gruppo, es. durante la costruzione incrementale di questo
@@ -95,6 +135,10 @@ var source_group_ref: HumanPopulationGroup = null
 # file.
 var hair_color: HumanTypes.HairColor = HumanTypes.HairColor.BROWN
 var clothing_color: HumanTypes.ClothingColor = HumanTypes.ClothingColor.TAN
+# Carnagione (2026-09-06) — stesso trattamento genetico di hair_color (vedi assign_skin_color
+# sotto), un solo valore possibile oggi (HumanTypes.SkinColor.LIGHT) ma già persistito/ereditato
+# come se non lo fosse, pronto per quando arriveranno altri valori.
+var skin_color: HumanTypes.SkinColor = HumanTypes.SkinColor.LIGHT
 
 
 # Liste nomi come semplice testo (un nome per riga), non .tres — pensate per crescere a
@@ -151,18 +195,61 @@ const HAIR_INHERITANCE_FATHER_CHANCE: float = 0.4
 # (genetico/fondatore): stesso principio "un solo posto per la logica", il chiamante non deve
 # nemmeno sapere se sta creando un fondatore o un figlio, passa semplicemente quello che ha.
 func assign_hair_color(mother: HumanIndividual = null, father: HumanIndividual = null) -> void:
+	hair_color = roll_inherited_hair_color(mother, father)
+
+
+# Versione PURA di assign_hair_color sopra (2026-09-06, richiesta utente) — serve al momento del
+# CONCEPIMENTO (HumanConceptionIndividualService), quando il figlio non esiste ancora come
+# oggetto: lavora solo sui due genitori e ritorna il valore da salvare per dopo
+# (HumanIndividual.pending_child_hair_color), invece di scrivere su un ricevente già istanziato.
+# Stessa identica logica/percentuali di assign_hair_color, che ora la richiama internamente (zero
+# duplicazione, comportamento esterno invariato per tutti i chiamanti esistenti in
+# HumanSeedingService). mother/father senza default: a differenza di assign_hair_color, che deve
+# restare chiamabile senza argomenti per i fondatori, qui i chiamanti (solo il concepimento, oggi)
+# passano sempre entrambi — ma la funzione gestisce comunque null per sicurezza, visto che
+# assign_hair_color sopra le delega ANCHE le proprie chiamate senza argomenti.
+static func roll_inherited_hair_color(mother: HumanIndividual, father: HumanIndividual) -> HumanTypes.HairColor:
 	if mother == null or father == null:
 		var pool := HumanTypes.HairColor.values()
-		hair_color = pool[randi() % pool.size()]
-		return
+		return pool[randi() % pool.size()]
 	var roll := randf()
 	if roll < HAIR_INHERITANCE_MOTHER_CHANCE:
-		hair_color = mother.hair_color
+		return mother.hair_color
 	elif roll < HAIR_INHERITANCE_MOTHER_CHANCE + HAIR_INHERITANCE_FATHER_CHANCE:
-		hair_color = father.hair_color
-	else:
-		var pool := HumanTypes.HairColor.values()
-		hair_color = pool[randi() % pool.size()]
+		return father.hair_color
+	var pool := HumanTypes.HairColor.values()
+	return pool[randi() % pool.size()]
+
+
+# Stessa distribuzione 40/40/20 di HAIR_INHERITANCE_MOTHER_CHANCE/FATHER_CHANCE sopra, costanti
+# dedicate (non condivise) così le due potranno essere ritarate indipendentemente in futuro senza
+# toccarsi a vicenda — oggi hanno comunque lo stesso valore.
+const SKIN_INHERITANCE_MOTHER_CHANCE: float = 0.4
+const SKIN_INHERITANCE_FATHER_CHANCE: float = 0.4
+
+
+# skin_color GENETICO — stessa identica struttura/logica di assign_hair_color sopra (un solo
+# metodo con parametri opzionali, pool.values() invece di un conteggio hardcoded), applicata a
+# HumanTypes.SkinColor invece che HairColor. Con un solo valore possibile oggi (LIGHT) il
+# risultato è sempre lo stesso qualunque ramo venga preso — il meccanismo è comunque corretto e
+# pronto per quando SkinColor guadagnerà altri membri.
+func assign_skin_color(mother: HumanIndividual = null, father: HumanIndividual = null) -> void:
+	skin_color = roll_inherited_skin_color(mother, father)
+
+
+# Versione PURA di assign_skin_color sopra — stesso identico motivo/schema di
+# roll_inherited_hair_color sopra, per HumanTypes.SkinColor invece che HairColor.
+static func roll_inherited_skin_color(mother: HumanIndividual, father: HumanIndividual) -> HumanTypes.SkinColor:
+	if mother == null or father == null:
+		var pool := HumanTypes.SkinColor.values()
+		return pool[randi() % pool.size()]
+	var roll := randf()
+	if roll < SKIN_INHERITANCE_MOTHER_CHANCE:
+		return mother.skin_color
+	elif roll < SKIN_INHERITANCE_MOTHER_CHANCE + SKIN_INHERITANCE_FATHER_CHANCE:
+		return father.skin_color
+	var pool := HumanTypes.SkinColor.values()
+	return pool[randi() % pool.size()]
 
 
 # clothing_color resta SEMPRE puro random (i vestiti non sono un tratto genetico) — separato da

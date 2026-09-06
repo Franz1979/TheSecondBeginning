@@ -39,7 +39,48 @@ help_era_advancement_title,Avanzamento Era
 "help_era_advancement_not_yet_active,""Questa meccanica è ancora in sviluppo: al momento non esiste ancora un modo per far avanzare il tuo popolo a un'Era successiva."""
 statistics_tooltip,Statistiche
 statistics_tab_mortality,Mortalità
+statistics_tab_births,Nascite
+statistics_tab_population,Popolazione
+fertile_women_list,Donne fertili
+death_list,Elenco morti
 center_on_selection_tooltip,Centra la camera sulla selezione corrente
 building_hut,Capanna
 notification_death,{name} è morto/a per {cause} (età {age}, giorno {day})
 death_cause_old_age,vecchiaia
+death_cause_murder,omicidio
+death_cause_childbirth,parto
+notification_birth,{name} è {birth_verb}, {offspring_word} di {mother}
+notification_stillbirth,{mother} ha perso il bambino durante il parto
+birth_verb_male,nato
+birth_verb_female,nata
+offspring_word_male,figlio
+offspring_word_female,figlia
+sex_label,Sesso: {sex}
+sex_female,Femmina
+sex_male,Maschio
+vegetation_cut_button,Taglia
+vegetation_subtype_label,Sottotipo: {subtype}
+vegetation_age_label,Età: {age_band} ({years} anni)
+vegetation_cut_years_ago,Tagliato {years} anni fa
+vegetation_dead_plant,Pianta morta
+dead_body_age_label,Età alla morte: {age}
+dead_body_cause_label,Causa: {cause}
+dead_body_decomposes_label,Si decompone tra {days} giorni
+individual_kill_debug_button,Uccidi (debug)
+individual_age_label,Età: {age} ({band})
+pregnant,Incinta
+individual_workforce_label,Forza lavoro:
+individual_id_label,ID: {id} (Folk {folk}, Gruppo {group})
+individual_mother_id_label,ID Madre: {id}
+individual_father_id_label,ID Padre: {id}
+individual_partner_id_label,ID Partner: {id}
+selection_title_name,Nome: {name}
+selection_title_type,Tipo: {type}
+building_status_label,Stato: {status}
+building_status_complete,Completo
+building_status_under_construction,In costruzione
+building_durability_label,Durabilità: {current}/{max}
+building_built_year_label,Costruito: anno {year}
+building_not_yet_built,Non ancora costruito
+building_stored_label,Immagazzinato: {entries}
+building_id_label,ID: {id}

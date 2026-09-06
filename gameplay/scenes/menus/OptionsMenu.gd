@@ -24,6 +24,16 @@ extends Window
 @onready var language_label: Label = $MarginContainer/VBoxContainer/LanguageRow/Label
 @onready var close_button: Button = $MarginContainer/VBoxContainer/CloseButton
 
+# Bugfix (richiesta utente, 2026-09-06): _resize_to_content() prima si limitava a INSEGUIRE il
+# contenuto corrente (size = get_contents_minimum_size() ogni volta) — passando a una lingua col
+# testo reale più corto (es. Italiano, una volta caricata la traduzione) la finestra si RIMPICCIOLIVA
+# fin sotto lo spazio che la dropdown/testo servono davvero, tagliandoli. Osservazione dell'utente:
+# lo stato di default (NONE, prima di scegliere una lingua — chiavi tr() grezze, tipicamente le
+# stringhe più lunghe di tutte) è già la dimensione "massima" che serve. Invece di ricalcolare da
+# zero ogni volta, si tiene il PIÙ GRANDE mai visto (mai ridotto), partendo naturalmente da quello
+# stato NONE alla primissima apertura.
+var _max_content_size := Vector2i.ZERO
+
 # Ordine di visualizzazione nella dropdown = ordinale di SettingsTypes.Language (indice
 # OptionButton == valore enum), nessuna mappa separata necessaria.
 const LANGUAGE_LABEL_KEYS := [
@@ -93,8 +103,14 @@ func _on_language_selected(index: int) -> void:
 # size = get_contents_minimum_size() ESPLICITO (popup_centered() da solo non ridimensiona) —
 # richiamata sia all'apertura sia dopo ogni cambio lingua (vedi sopra), non solo alla creazione:
 # la lunghezza del testo cambia in entrambi i casi. +20px di margine per respiro visivo.
+#
+# MAI ridotta sotto la più grande già vista (vedi _max_content_size sopra per il perché) — solo
+# cresce se il contenuto corrente richiede più spazio, non si restringe mai per un contenuto più
+# corto (es. dopo aver scelto una lingua con testo reale più breve delle chiavi grezze di NONE).
 func _resize_to_content() -> void:
-	size = Vector2i(get_contents_minimum_size()) + Vector2i(0, 20)
+	var content_size := Vector2i(get_contents_minimum_size()) + Vector2i(0, 20)
+	_max_content_size = _max_content_size.max(content_size)
+	size = _max_content_size
 
 
 # Estratta da _ready() per poter essere richiamata anche dopo un cambio lingua (vedi sopra) senza

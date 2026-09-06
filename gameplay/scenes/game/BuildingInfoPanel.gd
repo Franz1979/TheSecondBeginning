@@ -5,12 +5,13 @@ extends VBoxContainer
 # generalizzato + selezione edifici" (richiesta utente, 2026-09-04), stesso principio "muto" di
 # VegetationInfoPanel/HumanIndividualInfoPanel: istanziato dinamicamente da GameScene, riceve solo
 # l'oggetto Building già risolto (stesso schema di HumanIndividualInfoPanel.show_individual, che
-# prende l'HumanIndividual intero) — non conosce GameScene/selezione/BuildingCalculator. Nessun
-# tr() per le etichette strutturali (stesso trattamento hardcoded degli altri pannelli di
-# ispezione), TRANNE building.rules.building_name: quel campo è esplicitamente documentato come
-# chiave tr() in BuildingRules stessa. Nascosto di default (nessuna selezione all'apertura della
-# scena). Solo consultazione, nessuna interazione (a differenza di VegetationInfoPanel.
-# cut_requested) — non esiste ancora alcuna azione giocatore su un edificio già piazzato.
+# prende l'HumanIndividual intero) — non conosce GameScene/selezione/BuildingCalculator. Label
+# tr()-wrapped (richiesta utente 2026-09-06, insieme a VegetationInfoPanel/HumanIndividualInfoPanel/
+# DeadBodyInfoPanel): solo le chiavi, nessuna riga aggiunta ancora a strings.csv/
+# strings.it.translation. building.rules.building_name già tr()-wrapped da prima (documentato in
+# BuildingRules stessa). Nascosto di default (nessuna selezione all'apertura della scena). Solo
+# consultazione, nessuna interazione (a differenza di VegetationInfoPanel.cut_requested) — non
+# esiste ancora alcuna azione giocatore su un edificio già piazzato.
 #
 # TypeLabel (Step 6, richiesta utente 2026-09-04): mai esistita qui come nodo separato dall'inizio
 # — sollevata direttamente dentro GameInfoTabs.title_label, sulla STESSA riga del bottone "🎯".
@@ -30,12 +31,17 @@ func _ready() -> void:
 
 func show_building(building: Building) -> void:
 	visible = true
-	status_label.text = "Status: " + ("Complete" if building.is_complete else "Under construction")
+	status_label.text = tr("building_status_label").format({
+		"status": tr("building_status_complete") if building.is_complete else tr("building_status_under_construction")
+	})
 
 	var max_durability: int = building.rules.max_durability if building.rules != null else 0
-	durability_label.text = "Durability: %d/%d" % [building.current_durability, max_durability]
+	durability_label.text = tr("building_durability_label").format({"current": building.current_durability, "max": max_durability})
 
-	built_year_label.text = "Built: year %d" % building.built_year if building.built_year >= 0 else "Not yet built"
+	built_year_label.text = (
+		tr("building_built_year_label").format({"year": building.built_year}) if building.built_year >= 0
+		else tr("building_not_yet_built")
+	)
 
 	if building.stored_resources.is_empty():
 		stored_resources_label.visible = false
@@ -44,9 +50,9 @@ func show_building(building: Building) -> void:
 		var entries: Array[String] = []
 		for resource_name in building.stored_resources:
 			entries.append("%s %d" % [resource_name, building.stored_resources[resource_name]])
-		stored_resources_label.text = "Stored: " + ", ".join(entries)
+		stored_resources_label.text = tr("building_stored_label").format({"entries": ", ".join(entries)})
 
-	id_label.text = "ID: %d" % building.id
+	id_label.text = tr("building_id_label").format({"id": building.id})
 
 
 func clear() -> void:

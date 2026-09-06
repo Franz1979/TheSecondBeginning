@@ -92,6 +92,29 @@ const TORSO_RADIUS_SIDE: float = 1.15 # lungo Y locale (spalle)
 # del busto, mai a sporgere.
 const HEAD_RADIUS: float = 0.6
 
+# Corporatura femminile leggermente più sottile (richiesta utente, 2026-09-06) — applicato SOLO al
+# busto (gambe/braccia/testa restano identiche tra i sessi), un unico moltiplicatore invece di una
+# seconda serie di costanti TORSO_RADIUS_*_FEMALE duplicate. Indipendente dal ridimensionamento
+# età/sesso già esistente in _process() (human_rules.size_multiplier_by_sex, che scala l'INTERO
+# individuo) — questo è puro dettaglio di forma del busto, sempre applicato in aggiunta a quello.
+const FEMALE_TORSO_SCALE: float = 0.9
+
+# Pancia da gravidanza (richiesta utente, 2026-09-06) — rigonfiamento aggiuntivo disegnato DAVANTI
+# al busto (stesso lato +X locale di faccia/naso), visibile SOLO se individual.sex == FEMALE e
+# individual.is_pregnant. clothing_color come il busto (è comunque coperta dai vestiti, non pelle
+# nuda) — vedi _draw(): disegnata SUBITO dopo il busto, PRIMA di capelli/spalle/testa, stesso
+# principio "bump visibile sul bordo" già usato per le spalle.
+#
+# INGRANDITA (richiesta utente, 2026-09-06 — "un po' più visibile"): raggi aumentati e offset
+# spinto più avanti, cosi il bordo esterno risultante (OFFSET + RADIUS_FORWARD = 1.05) sporge
+# chiaramente oltre il vecchio raggio busto unisex (0.9), non solo lo sfiora come prima (0.9
+# esatto) — un rigonfiamento che si nota a colpo d'occhio invece di un accenno. Indipendente dal
+# moltiplicatore FEMALE_TORSO_SCALE sopra (che riduce il busto sotto, non tocca questi valori
+# assoluti).
+const PREGNANT_BELLY_RADIUS_FORWARD: float = 0.45
+const PREGNANT_BELLY_RADIUS_SIDE: float = 0.55
+const PREGNANT_BELLY_OFFSET_FORWARD: float = 0.6
+
 # Faccia + naso (2026-09-04, richiesta utente): unico segnale di direzione visibile ANCHE da fermo
 # — a differenza di gambe/spalle, che a riposo restano rispettivamente nascoste o centrate, un
 # piccolo cerchio color pelle spostato in avanti sulla testa (la parte "non coperta dai capelli",
@@ -222,6 +245,13 @@ var _has_drawn_once: bool = false
 var _last_drawn_walk_phase: float = 0.0
 var _last_drawn_is_selected: bool = false
 var _last_drawn_age_band: HumanTypes.AgeBand = HumanTypes.AgeBand.FERTILE_ADULT
+# Pancia da gravidanza (2026-09-06) — is_pregnant cambia il CONTENUTO di _draw() (vedi
+# PREGNANT_BELLY_* sopra) esattamente come walk_phase/is_selected/age_band, quindi va tracciato
+# nello stesso early-out: senza, una donna che rimane ferma/non selezionata/nella stessa age_band
+# al momento del concepimento o del parto non verrebbe ridisegnata, e la pancia apparirebbe/
+# sparirebbe solo alla prossima ridisegnatura innescata per un altro motivo (es. iniziare a
+# muoversi), non subito.
+var _last_drawn_is_pregnant: bool = false
 
 # Diagnostica timing (richiesta utente, 2026-09-04 — vedi DebugLogging.SHOW_HUMAN_VIEW_TIMING_LOGS
 # per il perché) — `static var` (Godot 4, condivisa da TUTTE le istanze di questa classe, stesso
@@ -283,12 +313,14 @@ func _process(delta: float) -> void:
 	var needs_redraw := not _has_drawn_once \
 		or walk_phase != _last_drawn_walk_phase \
 		or individual.is_selected != _last_drawn_is_selected \
-		or _current_age_band != _last_drawn_age_band
+		or _current_age_band != _last_drawn_age_band \
+		or individual.is_pregnant != _last_drawn_is_pregnant
 	_process_usec_accum += Time.get_ticks_usec() - _process_start_usec
 	if needs_redraw:
 		_last_drawn_walk_phase = walk_phase
 		_last_drawn_is_selected = individual.is_selected
 		_last_drawn_age_band = _current_age_band
+		_last_drawn_is_pregnant = individual.is_pregnant
 		_has_drawn_once = true
 		queue_redraw()
 	_maybe_print_timing_window()
@@ -349,7 +381,19 @@ func _draw() -> void:
 	var phase := sin(walk_phase)
 	_draw_ellipse(Vector2(LEG_BASE_FORWARD + _limb_swing_offset(phase, LEG_SWING_FORWARD_AMPLITUDE, LEG_SWING_BACKWARD_AMPLITUDE), -LEG_SIDE_OFFSET), LEG_RADIUS_FORWARD, LEG_RADIUS_SIDE, SKIN_COLOR)
 	_draw_ellipse(Vector2(LEG_BASE_FORWARD + _limb_swing_offset(-phase, LEG_SWING_FORWARD_AMPLITUDE, LEG_SWING_BACKWARD_AMPLITUDE), LEG_SIDE_OFFSET), LEG_RADIUS_FORWARD, LEG_RADIUS_SIDE, SKIN_COLOR)
-	_draw_ellipse(Vector2.ZERO, TORSO_RADIUS_FORWARD, TORSO_RADIUS_SIDE, clothing_color)
+	# Busto: femmine leggermente piu' sottili (vedi FEMALE_TORSO_SCALE sopra) -- un solo
+	# moltiplicatore applicato ai due raggi, mai una seconda coppia di costanti duplicate.
+	var torso_radius_forward := TORSO_RADIUS_FORWARD
+	var torso_radius_side := TORSO_RADIUS_SIDE
+	if individual.sex == HumanTypes.Sex.FEMALE:
+		torso_radius_forward *= FEMALE_TORSO_SCALE
+		torso_radius_side *= FEMALE_TORSO_SCALE
+	_draw_ellipse(Vector2.ZERO, torso_radius_forward, torso_radius_side, clothing_color)
+	# Pancia da gravidanza (vedi PREGNANT_BELLY_* sopra) -- SUBITO dopo il busto (stesso
+	# clothing_color, si legge come un rigonfiamento dello stesso capo), PRIMA di capelli/
+	# spalle/testa.
+	if individual.sex == HumanTypes.Sex.FEMALE and individual.is_pregnant:
+		_draw_ellipse(Vector2(PREGNANT_BELLY_OFFSET_FORWARD, 0.0), PREGNANT_BELLY_RADIUS_FORWARD, PREGNANT_BELLY_RADIUS_SIDE, clothing_color)
 	# Capelli lunghi DOPO il busto ma PRIMA delle spalle/testa (vedi HAIR_LONG_* sopra) — SOLO
 	# femmine, gli uomini restano coperti solo dalla testa come prima.
 	if individual.sex == HumanTypes.Sex.FEMALE:

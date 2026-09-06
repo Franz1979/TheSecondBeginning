@@ -68,5 +68,9 @@ static func check_mortality(
 			# 0..DAYS_PER_YEAR-1 (0..364), non 0..365: stesso range di GameData.current_day — 365
 			# non è mai un giorno valido (GameData.advance_day avvolge a 0 prima di raggiungerlo).
 			individual.scheduled_death_day = randi() % GameData.DAYS_PER_YEAR
+			# Step 9 (2026-09-05): unica causa che questo service possa mai assegnare — è la
+			# mortalità età-dipendente, per costruzione sempre OLD_AGE (MURDER arriva solo da
+			# GameTimeService.kill_individual_now, che non passa da qui).
+			individual.scheduled_death_cause = DeathTypes.DeathCause.OLD_AGE
 			marked_for_death.append(individual)
 	return marked_for_death

@@ -117,9 +117,17 @@ func show_population(
 			HumanTypes.AgeBand.keys()[age_band].capitalize(),
 		]
 		row.add_child(label)
+		# Rimpicciolito (richiesta utente, 2026-09-06): il Button di default (padding/stylebox
+		# pieno) era troppo alto rispetto alla label a fianco, allargando visibilmente ogni riga
+		# della lista — flat=true toglie lo stylebox normale (niente più padding verticale extra),
+		# font_size ridotto allo stesso valore della label, custom_minimum_size stringe la
+		# larghezza al minimo utile per l'emoji invece di lasciarla al default del tema.
 		var center_button := Button.new()
 		center_button.text = CENTER_BUTTON_TEXT
 		center_button.tooltip_text = "Centra e seleziona"
+		center_button.flat = true
+		center_button.add_theme_font_size_override("font_size", 10)
+		center_button.custom_minimum_size = Vector2(20, 0)
 		center_button.pressed.connect(_on_center_button_pressed.bind(member))
 		row.add_child(center_button)
 		list_container.add_child(row)

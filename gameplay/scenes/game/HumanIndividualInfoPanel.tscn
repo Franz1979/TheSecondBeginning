@@ -58,3 +58,6 @@ theme_override_font_sizes/font_size = 10
 [node name="PartnerLabel" type="Label" parent="."]
 layout_mode = 2
 theme_override_font_sizes/font_size = 10
+
+[node name="KillButton" type="Button" parent="."]
+layout_mode = 2

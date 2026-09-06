@@ -48,6 +48,16 @@ enum HairColor {
 	BLACK,
 }
 
+# Carnagione (2026-09-06) — stesso pattern/motivazione di HairColor sopra: enum "estensibile"
+# apposta (non un Color diretto), oggi un solo valore perché l'intera popolazione simulata è
+# chiara, pensato per crescere quando il gioco introdurrà Folk/popolazioni con carnagioni diverse.
+# GENETICO come hair_color (HumanIndividual.assign_skin_color, stessa distribuzione 40/40/20
+# madre/padre/random) — con un solo valore possibile oggi il risultato è sempre LIGHT, ma il
+# meccanismo è già corretto per quando arriveranno altri valori.
+enum SkinColor {
+	LIGHT,
+}
+
 enum ClothingColor {
 	TAN,
 	DARK_BROWN,

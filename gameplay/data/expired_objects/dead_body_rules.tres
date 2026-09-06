@@ -1,0 +1,8 @@
+[gd_resource type="Resource" script_class="ExpiredObjectRules" format=3 uid="uid://cl4ksmi0xxvea"]
+
+[ext_resource type="Script" uid="uid://c2o7hskspx7gi" path="res://gameplay/scripts/core/ExpiredObjectRules.gd" id="1_dead_body"]
+
+[resource]
+script = ExtResource("1_dead_body")
+days_to_expire = 182
+workforce_cost_to_remove = 50.0

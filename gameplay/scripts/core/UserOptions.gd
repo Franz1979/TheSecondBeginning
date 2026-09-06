@@ -19,6 +19,10 @@ extends Node
 const OPTIONS_FILE_PATH := "user://options.cfg"
 const SECTION := "options"
 const IT_TRANSLATION_PATH := "res://translations/strings.it.translation"
+# Aggiunto insieme a translations/strings.en.csv (richiesta utente, 2026-09-06) — prima ENGLISH
+# era un placeholder puro (vedi apply_language sotto), caricava silenziosamente l'IT come tutte le
+# altre lingue non ancora reali.
+const EN_TRANSLATION_PATH := "res://translations/strings.en.translation"
 
 var show_notification_popups: bool = true
 # SettingsTypes.Language — NONE (default, richiesta utente 2026-09-05: NON forzare ITALIAN come
@@ -60,17 +64,21 @@ func save_to_disk() -> void:
 
 # TEMPORANEO/DEBUG (richiesta utente, 2026-09-05, esplicitamente da rimuovere a fine debug): con
 # NONE, svuota tutte le traduzioni caricate (TranslationServer.clear()) così tr() ritorna la CHIAVE
-# grezza invece del testo italiano — un modo visivo per distinguere "nessuna lingua scelta" da
-# "italiano applicato", visto che oggi coincidono per via del fallback di progetto
-# (locale/fallback="it", vedi project.godot). Con qualunque altra lingua (solo ITALIAN ha davvero
-# contenuto oggi — ENGLISH/GERMAN/FRENCH/SPANISH restano segnaposto, vedi SettingsTypes.gd),
-# ricarica la traduzione IT. NON è il futuro sistema di cambio lingua reale (quello dovrà caricare
-# un file per lingua, non solo IT) — solo un aiuto di debug per verificare il flusso NONE, va
-# ripulito quando arriverà una vera gestione multi-lingua.
+# grezza invece del testo tradotto — un modo visivo per distinguere "nessuna lingua scelta" da
+# "lingua applicata", visto che oggi coincidono per via del fallback di progetto (locale/
+# fallback="it", vedi project.godot). ENGLISH ora ha contenuto reale anch'essa (strings.en.csv,
+# 2026-09-06) — GERMAN/FRENCH/SPANISH restano segnaposto (nessun file dedicato ancora, vedi
+# SettingsTypes.gd) e ricadono sull'IT come le altre lingue non ancora reali facevano tutte prima
+# di questo cambio. NON è il futuro sistema di cambio lingua reale (quello dovrà coprire tutte le
+# lingue, non solo IT/EN) — solo un aiuto di debug per verificare il flusso NONE, va ripulito
+# quando arriverà una vera gestione multi-lingua.
 func apply_language() -> void:
 	TranslationServer.clear()
 	if language == SettingsTypes.Language.NONE:
 		return
-	var it_translation: Translation = load(IT_TRANSLATION_PATH)
-	if it_translation != null:
-		TranslationServer.add_translation(it_translation)
+	var translation_path := (
+		EN_TRANSLATION_PATH if language == SettingsTypes.Language.ENGLISH else IT_TRANSLATION_PATH
+	)
+	var translation: Translation = load(translation_path)
+	if translation != null:
+		TranslationServer.add_translation(translation)

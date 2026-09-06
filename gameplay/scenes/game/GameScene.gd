@@ -164,7 +164,7 @@ var human_individual_views: Array[HumanIndividualView] = []
 # di movimento/camera, sempre aggiornato in coppia con la selezione, vedi _set_movement_target) —
 # nessun campo duplicato serve per questo caso. BUILDING aggiunto allo Step 4 (richiesta utente,
 # 2026-09-04) — il terzo tipo selezionabile già anticipato sopra, vedi selected_building sotto.
-enum SelectionKind { NONE, INDIVIDUAL, VEGETATION, BUILDING }
+enum SelectionKind { NONE, INDIVIDUAL, VEGETATION, BUILDING, DEAD_BODY }
 var _selection_kind: SelectionKind = SelectionKind.NONE
 
 # Click-detection su un singolo individuo di vegetazione (TREE/SHRUB) — vedi
@@ -189,6 +189,23 @@ var building_selector_controller := BuildingSelectorController.new()
 var selected_building: Dictionary = {}
 var building_info_panel: BuildingInfoPanel
 var vegetation_info_panel: VegetationInfoPanel
+
+# Click-detection su un corpo morto esistente — Step 6 del sistema oggetti-scaduti (2026-09-05),
+# struttura gemella di selected_building sopra: un corpo ha un id stabile (individual_id, mai
+# riderivato — un individuo muore una volta sola), quindi -1 = nessuna selezione invece di un
+# Dictionary vuoto (stesso sentinel già usato ovunque nel progetto per "non applicabile", es.
+# HumanIndividual.mother_id). Significativo solo quando _selection_kind == DEAD_BODY.
+const DEAD_BODY_INFO_PANEL_SCENE := preload("res://gameplay/scenes/game/DeadBodyInfoPanel.tscn")
+var dead_body_selector_controller := DeadBodySelectorController.new()
+var selected_dead_body_individual_id: int = -1
+var dead_body_info_panel: DeadBodyInfoPanel
+# individual_id -> DeadBodyView (bugfix, 2026-09-05: serve per accendere/spegnere il cerchiolino
+# di selezione sulla view giusta — vedi _select_dead_body/_clear_dead_body_selection). Popolato in
+# _on_human_individual_died quando la view viene creata. Voci possono restare stantie se la view
+# si autodistrugge per scadenza (Step 5) — mai ripulite esplicitamente, ogni lettore controlla
+# is_instance_valid() prima di usarle, stesso principio difensivo già in uso altrove nel progetto
+# per riferimenti a nodi potenzialmente liberati (es. human_individual_views).
+var dead_body_views: Dictionary = {}
 
 const MINIMAP_PANEL_SCENE := preload("res://gameplay/scenes/game/MiniMapPanel.tscn")
 var minimap_panel: MiniMapPanel
@@ -328,11 +345,17 @@ func _ready() -> void:
 	# stesso principio "componente muto, GameScene decide" di vegetation_info_panel.
 	human_individual_info_panel = HUMAN_INDIVIDUAL_INFO_PANEL_SCENE.instantiate()
 	game_info_tabs.selection_content.add_child(human_individual_info_panel)
+	# Step 9d piano mortalità (2026-09-05) — vedi _on_kill_requested.
+	human_individual_info_panel.kill_requested.connect(_on_kill_requested)
 	# building_info_panel (Step 5, richiesta utente 2026-09-04) — terzo sibling nella STESSA
 	# SelectionTab, stesso identico principio "componente muto" di vegetation_info_panel/
 	# human_individual_info_panel; zero modifiche a GameInfoTabs per aggiungerlo (già agnostica).
 	building_info_panel = BUILDING_INFO_PANEL_SCENE.instantiate()
 	game_info_tabs.selection_content.add_child(building_info_panel)
+	# dead_body_info_panel (Step 6 del sistema oggetti-scaduti, 2026-09-05) — quarto sibling nella
+	# STESSA SelectionTab, stesso identico principio "componente muto" degli altri tre.
+	dead_body_info_panel = DEAD_BODY_INFO_PANEL_SCENE.instantiate()
+	game_info_tabs.selection_content.add_child(dead_body_info_panel)
 	# "🎯 centra" (Step 3, richiesta utente 2026-09-04): non più un bottone per-pannello (era dentro
 	# human_individual_info_panel, funzionava solo per individui) — un solo bottone condiviso
 	# nell'header di GameInfoTabs.SelectionTab, sopra a qualunque pannello selection_content stia
@@ -469,7 +492,7 @@ func _ready() -> void:
 		game_data.set_current_era(game_data.current_era_name, human_rules)
 		var seeding_result := HumanSeedingService.new().seed_player_start(
 			start_macro_coords, game_data.starting_group_size_preference, human_rules, "Player Folk", game_data.year,
-			game_data.era_effective_age_band_durations_male, game_data.era_effective_age_band_durations_female
+			game_data.era_effective_age_band_durations_male, game_data.era_effective_age_band_durations_female, game_data
 		)
 		human_folk = seeding_result.folk
 		human_population_group = seeding_result.group
@@ -488,6 +511,14 @@ func _ready() -> void:
 		# campo "individual" sopra: il giocatore può spostare il bersaglio su un membro qualsiasi
 		# selezionandolo (_set_movement_target).
 		individual = human_individuals[0]
+		# Snapshot popolazione all'anno 0 (Step 3 piano statistiche, richiesta utente 2026-09-06) —
+		# GameTimeService._on_year_rolled_over registra uno snapshot ad ogni cambio anno, ma l'anno
+		# 0 non "rotola" mai (è l'anno di partenza, non un rollover) — senza questa riga il grafico
+		# popolazione/anno partirebbe dall'anno 1, saltando il conteggio dei fondatori (2/5/10 a
+		# seconda di COUPLE/FAMILY/GROUP). Qui, non in GameTimeService: questo ramo è IL bootstrap
+		# di una partita nuova (mai eseguito per una partita caricata/ripristinata, vedi il ramo
+		# `if` sopra), stesso principio già seguito per set_current_era poco più in alto.
+		game_data.population_snapshots[0] = human_individuals.size()
 
 	# Popola la scheda 🧍 (richiesta utente, 2026-09-01) — human_individuals/human_folk sono
 	# finalizzati solo qui (posizioni di spawn comprese), stesso motivo per cui l'istanza del
@@ -588,6 +619,12 @@ func _process(delta: float) -> void:
 	if individual != null:
 		individual_movement_service.advance_movement(individual, delta)
 		_check_macro_cell_border_crossing()
+		# Piano "trasporto neonati" (2026-09-06) — DOPO _check_macro_cell_border_crossing sopra,
+		# mai prima: se il bersaglio ha appena attraversato un bordo, individual.home_macro_coords/
+		# position sono già quelli nuovi a questo punto, così il figlio trasportato (se c'è) viene
+		# ri-parentato/riposizionato nella STESSA cella vera della madre nello stesso frame, senza
+		# un frame di ritardo visibile.
+		_sync_dependent_child_position(individual)
 		_update_live_neighbor()
 
 	# Step 4 FoW multi-sorgente, 2026-09-02 — SOSTITUISCE il vecchio meccanismo a proxy (un solo
@@ -672,24 +709,59 @@ func _unhandled_input(event: InputEvent) -> void:
 	var building_hit := building_selector_controller.try_select(
 		event, live_cells, macro_world.buildings if macro_world != null else []
 	)
+	# Corpo morto (bugfix, 2026-09-06, richiesta utente: un corpo morto in una cella densa di
+	# vegetazione — es. morto in una foresta — non era mai raggiungibile dal click, perché prima
+	# veniva provato SOLO come ultima risorsa, dopo che vegetazione/edifici avevano già "vinto" a
+	# prescindere dalla reale distanza dal click). Ora compete alla PARI con vegetazione/edificio
+	# nello stesso confronto "chi e' oggettivamente piu' vicino al click" sotto (map_hit) invece di
+	# un gradino di priorità fisso e più basso. Unica differenza: la sua "distance" è in
+	# MICROCELLE (DeadBodySelectorController, stessa unità di HumanIndividualSelectorController),
+	# non in PIXEL come vegetation_hit/building_hit (VegetationSelectorController/
+	# BuildingSelectorController) — convertita qui una volta sola per un confronto diretto.
+	# .has() guard (bugfix, 2026-09-06): questa chiamata è ora valutata ad OGNI evento (spostata
+	# fuori dal ramo "click sinistro premuto" per competere alla pari con vegetation_hit/
+	# building_hit sopra, che sono anch'essi valutati ad ogni evento ma non indicizzano live_cells
+	# direttamente) — un accesso diretto `live_cells[center_macro_coords]` qui rischierebbe un
+	# errore su QUALUNQUE evento (non solo i click) se center_macro_coords non fosse ancora una
+	# chiave valida (es. durante il primissimo frame prima che la cella focus sia attiva).
+	var dead_body_hit: Dictionary = {}
+	if live_cells.has(center_macro_coords):
+		dead_body_hit = dead_body_selector_controller.try_select(
+			event, live_cells[center_macro_coords].renderer, _get_dead_body_records(), center_macro_coords
+		)
+	var dead_body_distance_px: float = (
+		dead_body_hit["distance"] * MicroCellRenderer.CELL_SIZE if not dead_body_hit.is_empty() else INF
+	)
+
 	var map_hit: Dictionary = {}
 	var map_hit_kind := SelectionKind.NONE
-	if not vegetation_hit.is_empty() and (building_hit.is_empty() or vegetation_hit["distance"] <= building_hit["distance"]):
+	var best_map_distance_px := INF
+	if not vegetation_hit.is_empty():
 		map_hit = vegetation_hit
 		map_hit_kind = SelectionKind.VEGETATION
-	elif not building_hit.is_empty():
+		best_map_distance_px = vegetation_hit["distance"]
+	if not building_hit.is_empty() and building_hit["distance"] < best_map_distance_px:
 		map_hit = building_hit
 		map_hit_kind = SelectionKind.BUILDING
+		best_map_distance_px = building_hit["distance"]
+	if not dead_body_hit.is_empty() and dead_body_distance_px < best_map_distance_px:
+		map_hit = dead_body_hit
+		map_hit_kind = SelectionKind.DEAD_BODY
+		best_map_distance_px = dead_body_distance_px
 
-	if not map_hit.is_empty() and not _is_player_closer_to_click(map_hit["distance"]):
-		if map_hit_kind == SelectionKind.VEGETATION:
-			_select_vegetation(map_hit)
-		else:
-			_select_building(map_hit)
+	if not map_hit.is_empty() and not _is_player_closer_to_click(best_map_distance_px):
+		match map_hit_kind:
+			SelectionKind.VEGETATION:
+				_select_vegetation(map_hit)
+			SelectionKind.BUILDING:
+				_select_building(map_hit)
+			SelectionKind.DEAD_BODY:
+				_select_dead_body(map_hit)
 	else:
 		if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
 			_clear_vegetation_selection()
 			_clear_building_selection()
+			_clear_dead_body_selection()
 			# Selezione di un individuo umano QUALSIASI (richiesta utente, 2026-09-02) — hit-test
 			# puro via HumanIndividualSelectorController (non tocca mai is_selected da sé), mutua
 			# esclusione applicata qui: al più un individuo selezionato alla volta in tutto
@@ -827,6 +899,20 @@ func _center_camera_on_selection(animated: bool = true) -> void:
 			)
 			var building_macro_offset := Vector2(building_macro_coords - center_macro_coords) * MACRO_CELL_PIXELS
 			_animate_camera_to(building_local_position + building_macro_offset, animated)
+		SelectionKind.DEAD_BODY:
+			# Bugfix (richiesta utente, 2026-09-05): mancava, "centra" non faceva nulla per un
+			# corpo selezionato (cadeva nel caso _: pass sotto). Stessa identica traduzione
+			# cross-macrocella dei rami sopra — un corpo non ha un renderer proprio (non è disegnato
+			# da MicroCellRenderer come vegetazione/edifici, vedi DeadBodyView), quindi la posizione
+			# locale si ricava direttamente dal record (già in microcelle, stessa conversione *
+			# CELL_SIZE già usata da DeadBodyView.setup_dead_body per piazzare il nodo).
+			var dead_body_record := _find_dead_body_record(selected_dead_body_individual_id)
+			if dead_body_record.is_empty():
+				return
+			var dead_body_macro_coords: Vector2i = dead_body_record["home_macro_coords"]
+			var dead_body_local_position: Vector2 = dead_body_record["position"] * MicroCellRenderer.CELL_SIZE
+			var dead_body_macro_offset := Vector2(dead_body_macro_coords - center_macro_coords) * MACRO_CELL_PIXELS
+			_animate_camera_to(dead_body_local_position + dead_body_macro_offset, animated)
 		_:
 			pass
 
@@ -923,7 +1009,8 @@ func _select_vegetation(hit: Dictionary) -> void:
 
 	_deselect_all_human_individuals()
 	human_individual_info_panel.clear()
-	_clear_building_selection() # mutua esclusione a 3 vie (Step 4, richiesta utente 2026-09-04)
+	_clear_building_selection() # mutua esclusione a 4 vie (Step 6, prima "a 3 vie")
+	_clear_dead_body_selection()
 	selected_vegetation = hit
 	_selection_kind = SelectionKind.VEGETATION
 	_refresh_vegetation_panel()
@@ -963,6 +1050,7 @@ func _select_building(hit: Dictionary) -> void:
 	_deselect_all_human_individuals()
 	human_individual_info_panel.clear()
 	_clear_vegetation_selection()
+	_clear_dead_body_selection() # mutua esclusione a 4 vie (Step 6)
 	selected_building = hit
 	_selection_kind = SelectionKind.BUILDING
 	_refresh_building_panel()
@@ -997,7 +1085,93 @@ func _refresh_building_panel() -> void:
 	building_info_panel.show_building(building)
 	# Titolo (Step 6, richiesta utente 2026-09-04) — stessa formula già in BuildingInfoPanel.
 	var type_name: String = tr(building.rules.building_name) if building.rules != null else building.building_type_name
-	game_info_tabs.set_selection_title("Type: " + type_name)
+	game_info_tabs.set_selection_title(tr("selection_title_type").format({"type": type_name}))
+
+
+# ============================================================================================
+# Selezione di un corpo morto — Step 6 del sistema oggetti-scaduti (2026-09-05). Struttura gemella
+# di _select_building/_clear_building_selection sopra: DeadBodyInfoPanel mostra sesso/età alla
+# morte/causa/giorni rimanenti, risolti dal vero record in game_data.expired_objects via
+# _find_dead_body_record — questo pannello, come gli altri tre, riceve solo dati già risolti.
+# ============================================================================================
+
+func _select_dead_body(hit: Dictionary) -> void:
+	_deselect_all_human_individuals()
+	human_individual_info_panel.clear()
+	_clear_vegetation_selection()
+	_clear_building_selection()
+
+	selected_dead_body_individual_id = hit["individual_id"]
+	_set_dead_body_view_selected(selected_dead_body_individual_id, true)
+	_selection_kind = SelectionKind.DEAD_BODY
+	_refresh_dead_body_panel()
+	game_info_tabs.show_selection_tab()
+
+
+func _clear_dead_body_selection() -> void:
+	if selected_dead_body_individual_id == -1:
+		return
+	_set_dead_body_view_selected(selected_dead_body_individual_id, false)
+	selected_dead_body_individual_id = -1
+	_selection_kind = SelectionKind.NONE
+	dead_body_info_panel.clear()
+	game_info_tabs.hide_selection_tab()
+
+
+# Accende/spegne il cerchiolino di selezione sulla DeadBodyView giusta (bugfix, 2026-09-05,
+# richiesta utente: mancava rispetto a individui/edifici) — is_instance_valid() perché la view può
+# essersi autodistrutta per scadenza (Step 5) nel frattempo, vedi dead_body_views. queue_redraw()
+# esplicito: questa view non ha il meccanismo di early-out per-frame della classe base che lo
+# farebbe scattare da solo per un cambio di is_selected.
+func _set_dead_body_view_selected(individual_id: int, selected: bool) -> void:
+	var view: DeadBodyView = dead_body_views.get(individual_id)
+	if view != null and is_instance_valid(view):
+		view.is_selected = selected
+		view.queue_redraw()
+
+
+# Risolve selected_dead_body_individual_id sul vero record in game_data.expired_objects (scansione
+# lineare — stesso costo già accettato altrove nel progetto, vedi _find_building_by_id) e popola
+# dead_body_info_panel. Guardia "record non trovato -> deseleziona" (stesso principio difensivo di
+# _refresh_building_panel): il record può sparire da sotto la selezione corrente in qualunque
+# momento per via della pulizia annuale (Step 4) — nessun aggancio automatico a quell'evento in
+# questo step (non richiesto), solo questa guardia quando il pannello viene ri-popolato.
+func _refresh_dead_body_panel() -> void:
+	var record := _find_dead_body_record(selected_dead_body_individual_id)
+	if record.is_empty():
+		_clear_dead_body_selection()
+		return
+	var data: Dictionary = record["type_specific_data"]
+	var rules := ExpiredObjectCalculator.get_object_rules(ExpiredObjectTypes.ExpiredObjectType.DEAD_BODY)
+	var days_remaining := 0
+	if rules != null:
+		days_remaining = ExpiredObjectCalculator.get_days_remaining(record, rules, game_data.year, game_data.current_day)
+	dead_body_info_panel.show_dead_body(int(data["sex"]), int(data["age_at_death"]), int(data["cause"]), days_remaining)
+	# Titolo (stessa convenzione di individui/edifici sopra) — nome NON duplicato dentro il pannello.
+	game_info_tabs.set_selection_title(tr("selection_title_name").format({"name": String(data["name"])}))
+
+
+func _find_dead_body_record(individual_id: int) -> Dictionary:
+	for record in game_data.expired_objects:
+		if (
+			record["object_type"] == ExpiredObjectTypes.ExpiredObjectType.DEAD_BODY
+			and record["individual_id"] == individual_id
+		):
+			return record
+	return {}
+
+
+# Filtra game_data.expired_objects per object_type == DEAD_BODY — candidati da passare a
+# dead_body_selector_controller.try_select (vedi _unhandled_input). Scansione lineare ricostruita
+# ad ogni click (stesso costo già accettato altrove nel progetto per array analoghi), nessuna
+# cache: il numero di corpi vivi contemporaneamente resta piccolo per costruzione (la pulizia
+# annuale, Step 4, li rimuove entro pochi anni).
+func _get_dead_body_records() -> Array[Dictionary]:
+	var result: Array[Dictionary] = []
+	for record in game_data.expired_objects:
+		if record["object_type"] == ExpiredObjectTypes.ExpiredObjectType.DEAD_BODY:
+			result.append(record)
+	return result
 
 
 func _find_building_by_id(building_id: int) -> Building:
@@ -1006,6 +1180,19 @@ func _find_building_by_id(building_id: int) -> Building:
 	for building in macro_world.buildings:
 		if building.id == building_id:
 			return building
+	return null
+
+
+# Effetto nato-morto, popup nascita (2026-09-06) — serve solo per risolvere il NOME della madre da
+# mostrare nel testo del popup (vedi _on_human_individual_born sotto): il resto del progetto oggi
+# mostra sempre e solo l'id grezzo per mother_id/father_id (vedi HumanIndividualInfoPanel), questa
+# è la prima volta che serve il nome vero. Scansione lineare su human_individuals: popolazioni di
+# questa scala (decine di individui) rendono il costo trascurabile, stesso principio già accettato
+# altrove nel progetto per liste di questa dimensione (es. _find_building_by_id sopra).
+func _find_human_individual_by_id(individual_id: int) -> HumanIndividual:
+	for individual in human_individuals:
+		if individual.id == individual_id:
+			return individual
 	return null
 
 
@@ -1050,10 +1237,18 @@ func _update_individual_panel_content(target: HumanIndividual) -> void:
 	var age_band := HumanCalculator.get_age_band(
 		game_data.era_effective_age_band_durations_male, game_data.era_effective_age_band_durations_female, target.sex, float(age)
 	)
-	var max_workforce := HumanCalculator.get_base_workforce(human_folk.human_rules_ref, age_band, target.sex)
+	# Moltiplicatori gravidanza/figlio a carico (2026-09-06) — SOLO display, migliorano
+	# l'accuratezza del numero mostrato, nessun sistema di consumo workforce reale esiste ancora.
+	# Stessa estrazione di valori primitivi dall'individuo già fatta sopra per sesso/età: la
+	# funzione pura non riceve mai l'oggetto HumanIndividual intero.
+	var era_rules := EraCalculator.get_era_rules(game_data.current_era_name)
+	var max_workforce := HumanCalculator.get_base_workforce(
+		human_folk.human_rules_ref, age_band, target.sex,
+		target.is_pregnant, target.dependent_child_id != -1, era_rules
+	)
 	var residual_workforce := max_workforce # TODO: sostituire con target.residual_workforce quando esisterà
 	human_individual_info_panel.show_individual(target, age, age_band, max_workforce, residual_workforce)
-	game_info_tabs.set_selection_title("Name: " + target.name)
+	game_info_tabs.set_selection_title(tr("selection_title_name").format({"name": target.name}))
 
 
 # Ripopola la scheda 👨‍👩‍👧 con i dati correnti — stessa identica chiamata di _ready() (vedi lì),
@@ -1098,9 +1293,20 @@ func _refresh_selected_individual_panel() -> void:
 # opzione utente/installazione (2026-09-05, non più di partita: vedi UserOptions, spostata da
 # GameData dopo discussione con l'utente — nessuno vuole i popup attivi in un save e disattivi in
 # un altro). Il flag riguarda SOLO questa riga, il log console [HUMAN DEATH] (in GameTimeService)
-# resta sempre attivo indipendentemente, come richiesto. age_at_death/partner_freed arrivano già
-# calcolati dal segnale (vedi GameTimeService, che non sa nulla di UI/popup).
-func _on_human_individual_died(individual: HumanIndividual, index: int, age_at_death: int, partner_freed: bool) -> void:
+# resta sempre attivo indipendentemente, come richiesto. age_at_death/partner_freed/cause/day
+# arrivano già calcolati dal segnale (vedi GameTimeService, che non sa nulla di UI/popup).
+#
+# cause/day (Step 9, 2026-09-05): parametri nuovi sulla firma del segnale — day sostituisce la
+# lettura diretta di individual.scheduled_death_day di prima (che per una morte immediata di
+# debug, causa MURDER, sarebbe rimasto -1, mai passando da quel campo). cause (Step 9e) ora
+# costruisce la chiave di traduzione "death_cause_{nome_enum_minuscolo}" invece del fisso
+# "death_cause_old_age" di prima — funziona per qualunque causa futura senza toccare questo file,
+# a patto che esista la chiave tr() corrispondente (vedi strings.csv: death_cause_old_age/
+# death_cause_murder).
+func _on_human_individual_died(
+	individual: HumanIndividual, index: int, age_at_death: int, partner_freed: bool,
+	cause: DeathTypes.DeathCause, day: int
+) -> void:
 	if index < 0 or index >= human_individual_views.size():
 		return
 	var view := human_individual_views[index]
@@ -1109,16 +1315,90 @@ func _on_human_individual_died(individual: HumanIndividual, index: int, age_at_d
 		view.queue_free()
 	if individual.is_selected:
 		_clear_individual_selection()
+	# Step 5 del sistema oggetti-scaduti (2026-09-05): comparsa della DeadBodyView nello STESSO
+	# punto/segnale già usato per la comparsa del record expired_objects (Step 3, dentro
+	# GameTimeService._kill_individual, appena prima che questo stesso segnale scattasse) — non
+	# dentro GameTimeService stesso (dichiaratamente agnostico su UI/rendering, vedi il commento sul
+	# segnale). Letto direttamente da `individual` (l'oggetto resta valido finché qualcuno lo
+	# referenzia, anche se già rimosso da human_individuals) invece che da
+	# game_data.expired_objects[-1]: stessi identici dati, senza dipendere da un indice fragile
+	# nell'array. Nessuna view se home_macro_coords non è (più) una cella viva — stesso principio
+	# del resto del progetto, niente si disegna fuori dal focus LOD.
+	if live_cells.has(individual.home_macro_coords):
+		var dead_body_view := DeadBodyView.new()
+		live_cells[individual.home_macro_coords].container.add_child(dead_body_view)
+		dead_body_view.setup_dead_body(
+			individual.position, individual.sex, age_at_death, individual.hair_color, individual.clothing_color,
+			game_data.year, day, human_folk.human_rules_ref if human_folk != null else null, game_data
+		)
+		dead_body_view.z_index = 1
+		# Bugfix, 2026-09-05: serve per accendere il cerchiolino di selezione sulla view giusta se
+		# questo corpo viene selezionato in seguito — vedi dead_body_views/_select_dead_body.
+		dead_body_views[individual.id] = dead_body_view
 	if UserOptions.show_notification_popups:
+		var cause_key := "death_cause_%s" % String(DeathTypes.DeathCause.keys()[cause]).to_lower()
 		notification_popup.enqueue(
 			NotificationTypes.NotificationPopupType.DEATH,
 			tr("notification_death").format({
 				"name": individual.name,
-				"cause": tr("death_cause_old_age"),
+				"cause": tr(cause_key),
 				"age": age_at_death,
-				"day": individual.scheduled_death_day
+				"day": day
 			})
 		)
+
+
+# Step 4 del piano riproduzione (2026-09-06) — schema simmetrico di _on_human_individual_died
+# sopra: HumanBirthIndividualService aggiunge SEMPRE in coda a human_individuals (stesso array per
+# riferimento di GameTimeService._human_individuals, mai a metà array), un append per volta, PRIMA
+# di emettere individual_born una volta per ciascun neonato (anche con più nascite nello stesso
+# giorno) — quindi human_individual_views.append(view) qui, chiamato una volta per segnale nello
+# stesso ordine, mantiene il parallelismo per indice tra le due collezioni una volta processati
+# tutti i segnali di questo giorno, nessun indice esplicito da gestire come per la rimozione.
+# Stesso identico pattern di
+# creazione view già usato in _ready() per il seeding iniziale (HumanIndividualView.new() ->
+# parenta sotto il container della cella giusta -> setup() -> z_index -> append). Nessuna view se
+# home_macro_coords non è (più) una cella viva — stesso principio già applicato a DeadBodyView in
+# _on_human_individual_died: niente si disegna fuori dal focus LOD.
+func _on_human_individual_born(individual: HumanIndividual) -> void:
+	if not live_cells.has(individual.home_macro_coords):
+		return
+	var view := HumanIndividualView.new()
+	live_cells[individual.home_macro_coords].container.add_child(view)
+	view.setup(individual, game_data, human_folk.human_rules_ref if human_folk != null else null)
+	view.z_index = 1
+	human_individual_views.append(view)
+	# Sistema notifiche, effetto nato-morto (2026-09-06) — stesso gate/schema di
+	# _on_human_individual_died per la morte: UserOptions.show_notification_popups è
+	# un'impostazione utente/installazione, non di partita. birth_verb/offspring_word dipendono dal
+	# sesso tirato sul neonato (mai un fisso "nato/a" — a differenza di notification_death, qui il
+	# sesso è già noto per certo, non serve una forma ambigua). mother_name risolto via
+	# _find_human_individual_by_id sopra: la madre esiste di sicuro in questo istante (lo stesso
+	# HumanBirthIndividualService l'ha appena processata), "?" resta solo un fallback difensivo.
+	if UserOptions.show_notification_popups:
+		var is_male := individual.sex == HumanTypes.Sex.MALE
+		var mother := _find_human_individual_by_id(individual.mother_id)
+		notification_popup.enqueue(
+			NotificationTypes.NotificationPopupType.BIRTH,
+			tr("notification_birth").format({
+				"name": individual.name,
+				"birth_verb": tr("birth_verb_male" if is_male else "birth_verb_female"),
+				"offspring_word": tr("offspring_word_male" if is_male else "offspring_word_female"),
+				"mother": mother.name if mother != null else "?",
+			})
+		)
+
+
+# Effetto nato-morto (2026-09-06) — simmetrico a _on_human_individual_born sopra ma senza nessuna
+# view da creare (nessun HumanIndividual è mai esistito, vedi GameTimeService.human_stillbirth):
+# solo il popup di notifica, stesso gate UserOptions.show_notification_popups.
+func _on_human_stillbirth(mother: HumanIndividual) -> void:
+	if not UserOptions.show_notification_popups:
+		return
+	notification_popup.enqueue(
+		NotificationTypes.NotificationPopupType.BIRTH,
+		tr("notification_stillbirth").format({"mother": mother.name})
+	)
 
 
 # Step 6 piano mortalità (2026-09-05): rinfresca la scheda 👨‍👩‍👧 DOPO che tutte le rimozioni/
@@ -1126,7 +1406,8 @@ func _on_human_individual_died(individual: HumanIndividual, index: int, age_at_d
 # per il perché non basta agganciarsi a individual_died sopra: quel segnale scatta PRIMA della
 # rimozione vera, mostrerebbe ancora dati vecchi). Bugfix, richiesta utente, 2026-09-05: la view
 # spariva subito ma il pannello popolazione restava coi dati vecchi fino al prossimo rollover
-# d'anno, l'unico altro punto che lo richiamava.
+# d'anno, l'unico altro punto che lo richiamava. Stesso motivo copre ora anche le nascite (vedi
+# GameTimeService._run_annual_human_births, che emette lo stesso segnale).
 func _on_human_population_changed() -> void:
 	_refresh_population_panel()
 
@@ -1240,7 +1521,7 @@ func _refresh_vegetation_panel() -> void:
 	var individual_key: Vector3i = selected_vegetation["individual_key"]
 	# Titolo (Step 6, richiesta utente 2026-09-04): identico nei due rami sotto (vivo/bloccato,
 	# dipende solo da object_type) — impostato qui una volta sola invece che duplicato in entrambi.
-	game_info_tabs.set_selection_title("Type: " + GameTypes.WorldObjectType.keys()[object_type].capitalize())
+	game_info_tabs.set_selection_title(tr("selection_title_type").format({"type": GameTypes.WorldObjectType.keys()[object_type].capitalize()}))
 
 	if cell.renderer.has_individual(object_type, individual_key):
 		var info := cell.renderer.get_individual_info(object_type, individual_key)
@@ -1290,6 +1571,19 @@ func _invalidate_selected_vegetation_if_missing(cell: LiveMacroCell) -> void:
 # passaggio pianta-viva → ceppo/rovi avviene quindi automaticamente, stesso identico meccanismo già
 # usato per invalidare una selezione stantia altrove, qui riusato per farla invece SOPRAVVIVERE al
 # cambio di stato. Nessuna chiamata esplicita in più necessaria qui.
+# Step 9d piano mortalità (2026-09-05): bottone "Kill (debug)" di HumanIndividualInfoPanel —
+# individual arriva già risolto nel segnale (vedi HumanIndividualInfoPanel._current_individual),
+# nessuna riscansione di human_individuals qui. null possibile solo se il segnale scattasse a
+# pannello già svuotato (non dovrebbe: il bottone non è raggiungibile da un pannello nascosto) —
+# guardia difensiva comunque, stesso principio del resto del file. La rimozione vera/il log/il
+# DeathEvent/il popup passano tutti dal normale percorso individual_died già esistente
+# (GameTimeService.kill_individual_now -> _kill_individual, vedi lì).
+func _on_kill_requested(individual: HumanIndividual) -> void:
+	if individual == null:
+		return
+	game_time_service.kill_individual_now(individual)
+
+
 func _on_cut_requested() -> void:
 	if selected_vegetation.is_empty():
 		return
@@ -1848,6 +2142,55 @@ func _attempt_macro_cell_transition(dx: int, dy: int) -> void:
 	camera.position -= Vector2(dx, dy) * MACRO_CELL_PIXELS
 	_refresh_lod_focus_region()
 	_update_center_info_panel()
+
+
+# Piano "trasporto neonati" (2026-09-06) — sincronizza la posizione (e, se serve, la macrocella/
+# view) del figlio a carico di `mother` (il bersaglio di movimento corrente), se ce n'è uno. Vedi
+# HumanIndividual.dependent_child_id per il ciclo di vita completo del campo: questa QUERY fa da
+# sola la propria manutenzione (lo riporta a -1 quando il figlio non si trova più — morto — o ha
+# superato la soglia d'età), nessun altro punto del codice lo tocca mai in scrittura a parte
+# HumanBirthIndividualService (che lo valorizza una volta alla nascita). Chiamata ogni frame sul
+# bersaglio corrente DOPO _check_macro_cell_border_crossing (vedi _process) — costo O(1) nel caso
+# comune (dependent_child_id == -1, la stragrande maggioranza delle madri in ogni momento), una
+# ricerca lineare mirata SOLO quando c'è davvero un figlio da trasportare (mai una scansione
+# generale "chi ha un figlio piccolo" ad ogni frame — è esattamente il costo che volevamo evitare).
+func _sync_dependent_child_position(mother: HumanIndividual) -> void:
+	if mother.dependent_child_id == -1:
+		return
+	var child: HumanIndividual = null
+	for candidate in human_individuals:
+		if candidate.id == mother.dependent_child_id:
+			child = candidate
+			break
+	if child == null:
+		# Non trovato (morto) — auto-manutenzione: pulisce il riferimento, mai più cercato nei
+		# prossimi frame finché questa madre non avrà un nuovo figlio a carico.
+		mother.dependent_child_id = -1
+		return
+	var child_age := float(game_data.year - child.birth_year_virtual)
+	if child_age >= individual_controller.min_movement_age_years():
+		# Cresciuto abbastanza — auto-manutenzione: pulisce il riferimento e smette di muoverlo;
+		# resta semplicemente fermo dov'era, come chiunque altro non sia il bersaglio corrente,
+		# finché non diventa lui stesso il bersaglio (a quel punto risponde ai comandi come tutti).
+		mother.dependent_child_id = -1
+		return
+	# "Sempre a lato" (richiesta utente) — perpendicolare a facing_direction, STESSA identica
+	# formula usata alla nascita (vedi HumanBirthIndividualService.DEPENDENT_CHILD_SIDE_OFFSET):
+	# nessun "salto" percettibile la prima volta che la madre si muove dopo il parto.
+	child.position = mother.position + mother.facing_direction.orthogonal() * HumanBirthIndividualService.DEPENDENT_CHILD_SIDE_OFFSET
+	if child.home_macro_coords != mother.home_macro_coords:
+		# La madre ha appena attraversato un bordo (_check_macro_cell_border_crossing è già girato
+		# questo stesso frame, PRIMA di questa chiamata — vedi _process) — il figlio la segue nella
+		# stessa nuova macrocella: stesso trattamento già applicato a lei in
+		# _attempt_macro_cell_transition (home_macro_coords + riparentaggio della view), qui
+		# ripetuto per lui. Guardie difensive (indice valido, cella viva): una nascita avvenuta
+		# fuori da qualunque cella viva non avrebbe mai ricevuto una view (stesso principio "niente
+		# si disegna fuori dal focus LOD" di DeadBodyView) — qui semplicemente non c'è nulla da
+		# riparentare in quel caso, non un errore.
+		child.home_macro_coords = mother.home_macro_coords
+		var child_view_index := human_individuals.find(child)
+		if child_view_index != -1 and child_view_index < human_individual_views.size() and live_cells.has(mother.home_macro_coords):
+			human_individual_views[child_view_index].reparent(live_cells[mother.home_macro_coords].container)
 
 
 # Ferma l'individuo esattamente al bordo della macrocella ATTUALE (mai un'intera microcella
@@ -2574,7 +2917,7 @@ func _on_save_game_file_selected(path: String) -> void:
 func _on_primary_action_pressed(action_id: StringName) -> void:
 	match action_id:
 		&"statistics":
-			statistics_panel.open_dialog(game_data)
+			statistics_panel.open_dialog(game_data, human_individuals)
 
 
 # toggle_animals_visibility/toggle_flora_updates/world_debug/macro_cell_debug — vissuti prima
@@ -2900,6 +3243,15 @@ func _setup_clock() -> void:
 	# rimozione con l'indice ancora valido, è il punto in cui liberiamo/rimuoviamo la view
 	# corrispondente ALLO STESSO indice, per non sfasare le due collezioni parallele.
 	game_time_service.individual_died.connect(_on_human_individual_died)
+	# Step 4 del piano riproduzione (2026-09-06) — schema simmetrico di individual_died sopra:
+	# GameTimeService/HumanBirthIndividualService aggiungono già il neonato a human_individuals
+	# (stesso array, per riferimento) ma non sanno nulla di human_individual_views — questo
+	# segnale, emesso DOPO l'aggiunta, è il punto in cui creiamo la view corrispondente, tenendo
+	# le due collezioni parallele per indice (il neonato è sempre l'ULTIMO elemento di
+	# human_individuals in questo momento, mai inserito a metà array).
+	game_time_service.individual_born.connect(_on_human_individual_born)
+	# Effetto nato-morto (2026-09-06) — simmetrico a individual_born sopra, stesso schema.
+	game_time_service.human_stillbirth.connect(_on_human_stillbirth)
 	game_time_service.human_population_changed.connect(_on_human_population_changed)
 	play_pause_button.pressed.connect(_on_play_pause_pressed)
 	for speed in speed_buttons.keys():

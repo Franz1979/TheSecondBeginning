@@ -1,0 +1,37 @@
+Giorno,Fase,Servizio,Descrizione
+Ogni giorno (0-364),Passo giornaliero 1,GameData.advance_day(),Incrementa il calendario e rileva il rollover d'anno
+Ogni giorno (0-364),Passo giornaliero 2,AnimalConsumptionService.apply_daily_consumption,Consumo calorico erbivori (solo gruppi Livello 2 + predatori se un focus LOD e' attivo)
+Ogni giorno (0-364),Passo giornaliero 3,PredationService.apply_daily_predation,Caccia dei predatori (tutti i branchi non congelati Livello 0)
+Ogni giorno (0-364),Passo giornaliero 4,TerritoryDynamicsService.process_daily_stagger,Spalmamento giornaliero Livello 1 (no-op se lo switch e' off o nessun focus LOD attivo)
+Ogni giorno (0-364),Passo giornaliero 5 (dopo eventuali checkpoint di oggi),AnimalHungerService.apply_daily_hunger,Fame erbivori (stessa selezione gruppi del consumo)
+Ogni giorno (0-364),Passo giornaliero 6 (ultimo),World.remove_extinct_population_groups(),Rimozione branchi estinti
+Ogni giorno (0-364),Passo giornaliero 7 (GameTimeService),_apply_scheduled_human_deaths (interno),Applica le morti umane programmate per oggi (vecchiaia/kill debug)
+Giorno 10,Fisso annuale,_cleanup_expired_objects (interno),Rimuove corpi/oggetti scaduti da game_data.expired_objects
+Giorno 15,Fisso annuale,HumanCouplingIndividualService.form_couples,Formazione coppie FERTILE_ADULT senza partner
+Giorno 110,Fisso annuale,HumanConceptionIndividualService.run_conception,Concepimento FERTILE_ADULT + FERTILE_ADULT sotto soglia figli
+Giorno 20,Fisso annuale,HumanBirthIndividualService.run_births,"Risoluzione gravidanze in corso (Step 1: solo reset is_pregnant, nessun tiro/neonato ancora)"
+"Giorno 0, 91, 182, 273 (inizio stagione)",Checkpoint stagionale,_run_secondary_resource_stock_checkpoint (interno),Aggiorna le scorte di risorse secondarie (es. frutti)
+"Giorno 0, 91, 182, 273 (inizio stagione)",Checkpoint stagionale,_run_grass_baseline_capture_checkpoint (interno),Cattura la baseline grass per le celle congelate LOD
+"Giorno 0, 91, 182, 273 (inizio stagione)",Checkpoint stagionale,AnimalConsumptionAggregateService.apply_seasonal_consumption,Consumo aggregato Livello 1 (no-op se nessun focus LOD attivo)
+"Giorno 0, 91, 182, 273 (inizio stagione)",Checkpoint stagionale,AnimalHungerMortalityAggregateService.apply_seasonal_hunger_mortality,Mortalita' da fame aggregata Livello 1 (disattivabile via .ENABLED)
+"Giorno 0, 91, 182, 273 (inizio stagione)",Checkpoint stagionale,NaturalEventService.trigger_events,Eventi naturali (fuoco/siccita'/alluvione) per la stagione che inizia
+"Giorno 0, 91, 182, 273 (inizio stagione)",Checkpoint stagionale,TerritoryDynamicsService.update_territories_and_mitigation,Espansione/contrazione territorio + mitigazione natalita' (specie con birth_season == season)
+"Giorno 0, 91, 182, 273 (inizio stagione)",Checkpoint stagionale,PopulationTerritoryShuffleService.shuffle_distribution,Rimescolamento visivo distribuzione territorio multi-cella (ogni specie)
+Giorno 91 (solo inizio SPRING),Checkpoint speciale,"ResourceMigrationService.compute_transfers + apply_transfers","Applica il surplus di migrazione vegetazione accantonato l'autunno scorso"
+Giorno 90 (fine WINTER),Checkpoint fine stagione,"AnimalAgeBandService.mature_age_bands -> AnimalBirthService.apply_births -> AnimalOldAgeMortalityService.apply_old_age_mortality","Lifecycle animale per specie con birth_season == WINTER (nessuna oggi)"
+Giorno 181 (fine SPRING),Checkpoint fine stagione,Trio lifecycle animale (birth_season == SPRING),Maturazione -> nascite -> morte per vecchiaia
+Giorno 181 (fine SPRING),Checkpoint fine stagione,ResourceAgeBandService.mature_age_bands,Maturazione fasce d'eta' vegetazione
+Giorno 181 (fine SPRING),Checkpoint fine stagione,ResourceGrowthService.grow_resources,Crescita logistica vegetazione
+Giorno 181 (fine SPRING),Checkpoint fine stagione,_clear_natural_death_markers (interno),Pulizia marker "morto" da mortalita' naturale
+Giorno 181 (fine SPRING),Checkpoint fine stagione,BrowsingMitigationService.compute_browsing_mitigation,Mitigazione encroachment da presenza fauna brucante
+Giorno 181 (fine SPRING),Checkpoint fine stagione,ResourceEncroachmentService.encroach_resources,Encroachment tra tipi di risorsa (succession level)
+Giorno 181 (fine SPRING),Checkpoint fine stagione,FaunaGrowthService.grow_fauna,Crescita FISH
+Giorno 181 (fine SPRING),Checkpoint fine stagione,_restore_frozen_grass_to_baseline (interno),Ripristino annuale grass congelato ma consumato
+Giorno 272 (fine SUMMER),Checkpoint fine stagione,Trio lifecycle animale (birth_season == SUMMER),Maturazione -> nascite -> morte per vecchiaia
+Giorno 272 (fine SUMMER),Checkpoint fine stagione,FaunaMigrationService.migrate_fauna,Migrazione FISH
+Rollover anno (giorno 364 -> 0),year_rolled_over,Trio lifecycle animale (birth_season == AUTUMN),Maturazione -> nascite -> morte per vecchiaia
+Rollover anno (giorno 364 -> 0),year_rolled_over,ResourceMortalityService.apply_mortality,Mortalita' densita'-dipendente vegetazione
+Rollover anno (giorno 364 -> 0),year_rolled_over,SpaceReconciliationService.reconcile (per ogni cella),Rete di sicurezza overshoot dedicated_space
+Rollover anno (giorno 364 -> 0),year_rolled_over,FaunaMortalityService.apply_fauna_mortality,Mortalita' FISH
+Rollover anno (giorno 364 -> 0),year_rolled_over (GameTimeService),HumanMortalityIndividualService.check_mortality,Determina/programma le morti umane per vecchiaia dell'anno
+Qualunque giorno con almeno un checkpoint sopra,Post-checkpoint,LODOrchestrator.set_focus_region (via _run_lod_focus_refresh_checkpoint),Ricalcola i livelli LOD 0/1/2 (solo se un focus e' attivo)

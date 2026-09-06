@@ -14,13 +14,24 @@ extends RefCounted
 
 const CELL_SIZE: int = 10 # stesso fattore pixel/microcella di MicroCellRenderer/HumanIndividualView
 
-# Soglia d'immobilità (anni) — richiesta utente, 2026-09-04: un individuo con età < 1 anno non può
-# ricevere un ordine di movimento. Eccezione booleana indipendente da HumanTypes.AgeBand (NON una
-# fascia a sé, vedi HumanTypes.gd) — un semplice confronto contro birth_year_virtual/game_data.year,
-# stesso identico calcolo di "età" già usato altrove (es. GameScene._select_individual), solo qui
-# ripetuto invece di richiamare un getter perché HumanIndividual non ne espone uno (l'età non è mai
-# un campo salvato, sempre ricalcolata al volo — vedi HumanIndividual.birth_year_virtual).
-const MIN_MOVEMENT_AGE_YEARS: float = 1.0
+# Soglia d'immobilità (anni) — richiesta utente, 2026-09-04: un individuo troppo giovane non può
+# ricevere un ordine di movimento. NON più una costante fissa (era 1.0 hardcoded) — aggiornata
+# 2026-09-06 (piano "trasporto neonati"): riusa DELIBERATAMENTE era_rules.min_birth_spacing_years,
+# lo stesso campo che già determina per quanti anni un figlio "blocca" una nuova gravidanza della
+# madre (HumanConceptionIndividualService) — stessa soglia concettuale, "il figlio è ancora troppo
+# piccolo per contare come indipendente", solo applicata a un secondo consumo (qui: non cammina da
+# solo; là: la madre non può riconcepire). Confermato con l'utente: un ritocco futuro di quel
+# valore sposta ENTRAMBI i comportamenti insieme, deliberatamente, non per coincidenza. Risolto
+# fresco ad ogni chiamata (EraCalculator.get_era_rules fa un load() cachato da Godot, costo
+# trascurabile) invece che passato/cachato qui — coerente con GameTimeService, che lo rilegge ogni
+# volta serve. Fallback 0.0 (nessun blocco) se l'Era risultasse sconosciuta — caso difensivo, non
+# dovrebbe capitare con current_era_name sempre valorizzato. PUBBLICA (non _prefissata) perché
+# GameScene._sync_dependent_child_position la riusa per la STESSA identica soglia (quando un
+# figlio trasportato smette di esserlo) — un solo posto di verità, mai due soglie che potrebbero
+# disallinearsi.
+func min_movement_age_years() -> float:
+	var era_rules := EraCalculator.get_era_rules(game_data.current_era_name)
+	return float(era_rules.min_birth_spacing_years) if era_rules != null else 0.0
 
 var individual: HumanIndividual
 var reference_node: Node2D # nodo il cui spazio locale coincide con la griglia microcella (renderer)
@@ -59,19 +70,16 @@ func handle_input(event: InputEvent) -> void:
 const CROSS_BORDER_MARGIN: float = 1.0
 
 
-# Reietta silenziosamente un click-to-move su un individuo troppo giovane (< MIN_MOVEMENT_AGE_
-# YEARS) — stesso identico pattern del controllo is_selected subito sopra (return silenzioso,
+# Reietta silenziosamente un click-to-move su un individuo troppo giovane (< _min_movement_age_
+# years()) — stesso identico pattern del controllo is_selected subito sopra (return silenzioso,
 # nessun log/segnale: qui il comando semplicemente non è disponibile, non è un errore da segnalare
-# all'utente). NON TESTATO end-to-end (nota utente, 2026-09-04): oggi nessun individuo in gioco ha
-# età < 1 anno (il seeding parte sempre da fasce più vecchie, vedi HumanSeedingService), quindi
-# questo ramo non è mai stato effettivamente esercitato — nessun modo di forzare l'età di un
-# individuo esiste ancora (né in game né da debug bar). Verificare quando arriverà un modo di
-# generare/osservare un neonato (es. un vero HumanBirthService).
+# all'utente). Esercitato per la prima volta col piano "trasporto neonati" (2026-09-06, vedi
+# HumanBirthIndividualService) — prima nessun individuo in gioco aveva mai età sotto soglia.
 func _try_set_target(mouse_pos_microcells: Vector2) -> void:
 	if not individual.is_selected:
 		return
 	var age: float = float(game_data.year - individual.birth_year_virtual)
-	if age < MIN_MOVEMENT_AGE_YEARS:
+	if age < min_movement_age_years():
 		return
 	individual.set_target(Vector2(
 		clamp(mouse_pos_microcells.x, -CROSS_BORDER_MARGIN, float(World.WIDTH) + CROSS_BORDER_MARGIN),

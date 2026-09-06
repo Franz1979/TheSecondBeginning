@@ -1,0 +1,19 @@
+[remap]
+
+importer="csv_translation"
+type="Translation"
+uid="uid://qopemm4hu6ql"
+
+[deps]
+
+files=["res://docs/simulation_daily_services.Fase.translation", "res://docs/simulation_daily_services.Servizio.translation", "res://docs/simulation_daily_services.Descrizione.translation"]
+
+source_file="res://docs/simulation_daily_services.csv"
+dest_files=["res://docs/simulation_daily_services.Fase.translation", "res://docs/simulation_daily_services.Servizio.translation", "res://docs/simulation_daily_services.Descrizione.translation"]
+
+[params]
+
+compress=1
+delimiter=0
+unescape_keys=false
+unescape_translations=true

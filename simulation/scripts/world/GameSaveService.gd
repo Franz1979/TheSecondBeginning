@@ -62,7 +62,23 @@ func save_game_to_json(
 			"fog_of_war_last_prune_absolute_day": game_data.fog_of_war_last_prune_absolute_day,
 			# Log grezzo eventi morte (Step 8, vedi GameData) — Array[Dictionary] di soli tipi
 			# JSON-nativi, nessuna conversione necessaria qui a differenza di altri campi sopra.
-			"death_events": game_data.death_events
+			"death_events": game_data.death_events,
+			# Log grezzo eventi nascita (Step 2 piano statistiche, 2026-09-06, vedi GameData) —
+			# stesso trattamento di death_events sopra, soli tipi JSON-nativi.
+			"birth_events": game_data.birth_events,
+			# Snapshot popolazione/anno (Step 3 piano statistiche, 2026-09-06, vedi GameData.
+			# population_snapshots) — scritto COSÌ COM'È: JSON.stringify converte da solo le
+			# chiavi int in stringhe, GameLoadService le riconverte al caricamento (vedi lì).
+			"population_snapshots": game_data.population_snapshots,
+			# Istanze oggetti-scaduti (Step 2, vedi GameData.expired_objects) — A DIFFERENZA di
+			# death_events sopra, "position" è un Vector2 (non JSON-nativo): _expired_objects_to_json
+			# appiattisce ogni record in position_x/position_y, stessa convenzione già usata per
+			# HumanIndividual.position poco sotto.
+			"expired_objects": _expired_objects_to_json(game_data.expired_objects),
+			# Allocatore id HumanIndividual (vedi GameData.next_human_id) — salvato COSÌ COM'È, mai
+			# ricalcolato al caricamento (a differenza di World.next_population_group_id/
+			# next_building_id): vedi il commento sul campo per il perché.
+			"next_human_id": game_data.next_human_id
 		},
 		"world": {
 			"width": World.WIDTH,
@@ -350,6 +366,9 @@ func save_game_to_json(
 				# facing_direction sotto.
 				"hair_color": individual.hair_color,
 				"clothing_color": individual.clothing_color,
+				# Carnagione (2026-09-06) — stesso trattamento di hair_color/clothing_color sopra,
+				# nessuna retrocompatibilità richiesta.
+				"skin_color": individual.skin_color,
 				# Orientamento (2026-09-04, richiesta utente: "possibile aggiungere anche
 				# l'orientamento al salvataggio?") — prima viveva solo in HumanIndividualView
 				# (mai salvato), spostato su HumanIndividual apposta per questo.
@@ -357,7 +376,26 @@ func save_game_to_json(
 				"facing_direction_y": individual.facing_direction.y,
 				# Step 4 piano mortalità (2026-09-05) — estrazione singola non ricalcolabile,
 				# vedi HumanIndividual.scheduled_death_day per il perché va persistita.
-				"scheduled_death_day": individual.scheduled_death_day
+				"scheduled_death_day": individual.scheduled_death_day,
+				# Step 9 piano mortalità (2026-09-05) — nessuna retrocompatibilità richiesta
+				# (confermato con l'utente), stesso trattamento di hair_color/clothing_color/
+				# facing_direction sopra.
+				"scheduled_death_cause": individual.scheduled_death_cause,
+				# Step 3 piano riproduzione (2026-09-06) — estrazione di stato non ricalcolabile al
+				# volo (a differenza di età/age_band), stesso motivo di scheduled_death_day sopra:
+				# va persistita o una gravidanza in corso sparirebbe silenziosamente al reload.
+				"is_pregnant": individual.is_pregnant,
+				# Step 2 piano riproduzione (2026-09-06) — precalcolati al concepimento, vanno
+				# persistiti con la stessa urgenza di is_pregnant sopra: senza, un reload a metà
+				# gravidanza perderebbe il padre/i tratti già tirati per il figlio in arrivo,
+				# nessuna retrocompatibilità richiesta (stesso trattamento di is_pregnant).
+				"pending_child_hair_color": individual.pending_child_hair_color,
+				"pending_child_skin_color": individual.pending_child_skin_color,
+				"pending_child_father_id": individual.pending_child_father_id,
+				# Piano "trasporto neonati" (2026-09-06) — va persistito o un reload perderebbe il
+				# legame "sto trasportando questo figlio" (nessuna retrocompatibilità richiesta,
+				# stesso trattamento dei campi pending_child_* sopra).
+				"dependent_child_id": individual.dependent_child_id
 			})
 
 	var json_text := JSON.stringify(data, "\t")
@@ -365,3 +403,34 @@ func save_game_to_json(
 	file.store_string(json_text)
 	file.close()
 	print("Game saved to JSON: ", file_path)
+
+
+# Appiattisce ogni record di GameData.expired_objects in un Dictionary di soli tipi JSON-nativi —
+# serve perché "position" a runtime è un Vector2 vero (vedi GameData), non serializzabile
+# direttamente come death_events. Stessa convenzione già in uso per HumanIndividual.position
+# (position_x/position_y separati) poco sopra, solo applicata a un Array intero invece che un
+# singolo oggetto.
+func _expired_objects_to_json(expired_objects: Array[Dictionary]) -> Array:
+	var result: Array = []
+	for record in expired_objects:
+		var position: Vector2 = record["position"]
+		var home_macro_coords: Vector2i = record["home_macro_coords"]
+		result.append({
+			"object_type": record["object_type"],
+			"individual_id": record["individual_id"],
+			"position_x": position.x,
+			"position_y": position.y,
+			# Step 6 (2026-09-05) — necessario per il hit-test di selezione, stessa convenzione di
+			# home_macro_x/y già usata per HumanIndividual poco sotto.
+			"home_macro_x": home_macro_coords.x,
+			"home_macro_y": home_macro_coords.y,
+			"appeared_at_year": record["appeared_at_year"],
+			"appeared_at_day": record["appeared_at_day"],
+			# Step 5 (2026-09-05) — Dictionary annidato di soli int/enum (già JSON-nativi, vedi
+			# GameData.expired_objects), passato COSÌ COM'È: il suo contenuto è specifico del
+			# object_type (oggi solo DEAD_BODY: sex/age_at_death/hair_color/clothing_color) e a
+			# questo livello generico non deve saperlo — un futuro BUILDING_RUIN metterebbe altri
+			# campi qui dentro senza mai toccare questa funzione.
+			"type_specific_data": record["type_specific_data"],
+		})
+	return result

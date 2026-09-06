@@ -1,10 +1,12 @@
-[gd_scene load_steps=2 format=3]
+[gd_scene load_steps=4 format=3]
 
 [ext_resource type="Script" path="res://gameplay/scenes/game/StatisticsPanel.gd" id="1_stats"]
+[ext_resource type="Script" path="res://gameplay/scenes/game/LineChart.gd" id="2_chart"]
+[ext_resource type="Script" path="res://gameplay/scenes/game/PieChart.gd" id="3_pie"]
 
 [node name="StatisticsPanel" type="Window"]
 visible = false
-size = Vector2i(320, 220)
+size = Vector2i(340, 600)
 script = ExtResource("1_stats")
 
 [node name="MarginContainer" type="MarginContainer" parent="."]
@@ -20,36 +22,126 @@ theme_override_constants/margin_bottom = 10
 layout_mode = 2
 
 [node name="TabContainer" type="TabContainer" parent="MarginContainer/VBoxContainer"]
-custom_minimum_size = Vector2(320, 260)
+custom_minimum_size = Vector2(340, 540)
 layout_mode = 2
 size_flags_vertical = 3
 
-[node name="MortalityTab" type="VBoxContainer" parent="MarginContainer/VBoxContainer/TabContainer"]
+[node name="MortalityTab" type="ScrollContainer" parent="MarginContainer/VBoxContainer/TabContainer"]
 layout_mode = 2
 
-[node name="TotalLabel" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/MortalityTab"]
+[node name="MortalityContent" type="VBoxContainer" parent="MarginContainer/VBoxContainer/TabContainer/MortalityTab"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="TotalLabel" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/MortalityTab/MortalityContent"]
 layout_mode = 2
 
-[node name="AverageAgeLabel" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/MortalityTab"]
+[node name="AverageAgeLabel" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/MortalityTab/MortalityContent"]
 layout_mode = 2
 
-[node name="CauseDistributionLabel" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/MortalityTab"]
+[node name="CauseDistributionCaption" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/MortalityTab/MortalityContent"]
+layout_mode = 2
+text = "Distribuzione per causa"
+
+[node name="CauseDistributionChart" type="Control" parent="MarginContainer/VBoxContainer/TabContainer/MortalityTab/MortalityContent"]
+layout_mode = 2
+script = ExtResource("3_pie")
+
+[node name="DeathsPerYearCaption" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/MortalityTab/MortalityContent"]
+layout_mode = 2
+text = "Morti per anno"
+
+[node name="DeathsPerYearChart" type="Control" parent="MarginContainer/VBoxContainer/TabContainer/MortalityTab/MortalityContent"]
+layout_mode = 2
+script = ExtResource("2_chart")
+
+[node name="HSeparator2" type="HSeparator" parent="MarginContainer/VBoxContainer/TabContainer/MortalityTab/MortalityContent"]
 layout_mode = 2
 
-[node name="DeathsPerYearLabel" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/MortalityTab"]
+[node name="DeathListCaption" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/MortalityTab/MortalityContent"]
 layout_mode = 2
 
-[node name="HSeparator2" type="HSeparator" parent="MarginContainer/VBoxContainer/TabContainer/MortalityTab"]
-layout_mode = 2
-
-[node name="DeathListScroll" type="ScrollContainer" parent="MarginContainer/VBoxContainer/TabContainer/MortalityTab"]
+[node name="DeathListScroll" type="ScrollContainer" parent="MarginContainer/VBoxContainer/TabContainer/MortalityTab/MortalityContent"]
 custom_minimum_size = Vector2(0, 120)
 layout_mode = 2
 size_flags_vertical = 3
 
-[node name="DeathListContainer" type="VBoxContainer" parent="MarginContainer/VBoxContainer/TabContainer/MortalityTab/DeathListScroll"]
+[node name="DeathListContainer" type="VBoxContainer" parent="MarginContainer/VBoxContainer/TabContainer/MortalityTab/MortalityContent/DeathListScroll"]
 layout_mode = 2
 size_flags_horizontal = 3
+
+[node name="BirthsTab" type="ScrollContainer" parent="MarginContainer/VBoxContainer/TabContainer"]
+visible = false
+layout_mode = 2
+
+[node name="BirthsContent" type="VBoxContainer" parent="MarginContainer/VBoxContainer/TabContainer/BirthsTab"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="TotalBirthsLabel" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/BirthsTab/BirthsContent"]
+layout_mode = 2
+
+[node name="BirthsBreakdownLabel" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/BirthsTab/BirthsContent"]
+layout_mode = 2
+
+[node name="BirthsPerYearCaption" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/BirthsTab/BirthsContent"]
+layout_mode = 2
+text = "Nascite per anno"
+
+[node name="BirthsPerYearChart" type="Control" parent="MarginContainer/VBoxContainer/TabContainer/BirthsTab/BirthsContent"]
+layout_mode = 2
+script = ExtResource("2_chart")
+
+[node name="AverageChildrenLabel" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/BirthsTab/BirthsContent"]
+layout_mode = 2
+
+[node name="HSeparator3" type="HSeparator" parent="MarginContainer/VBoxContainer/TabContainer/BirthsTab/BirthsContent"]
+layout_mode = 2
+
+[node name="FertileWomenListCaption" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/BirthsTab/BirthsContent"]
+layout_mode = 2
+
+[node name="FertileWomenListScroll" type="ScrollContainer" parent="MarginContainer/VBoxContainer/TabContainer/BirthsTab/BirthsContent"]
+custom_minimum_size = Vector2(0, 120)
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="FertileWomenListContainer" type="VBoxContainer" parent="MarginContainer/VBoxContainer/TabContainer/BirthsTab/BirthsContent/FertileWomenListScroll"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="PopulationTab" type="ScrollContainer" parent="MarginContainer/VBoxContainer/TabContainer"]
+visible = false
+layout_mode = 2
+
+[node name="PopulationContent" type="VBoxContainer" parent="MarginContainer/VBoxContainer/TabContainer/PopulationTab"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="TotalPopulationLabel" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/PopulationTab/PopulationContent"]
+layout_mode = 2
+
+[node name="MaleCountLabel" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/PopulationTab/PopulationContent"]
+layout_mode = 2
+
+[node name="FemaleCountLabel" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/PopulationTab/PopulationContent"]
+layout_mode = 2
+
+[node name="AgeBandDistributionCaption" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/PopulationTab/PopulationContent"]
+layout_mode = 2
+text = "Distribuzione per fascia d'età"
+
+[node name="AgeBandDistributionChart" type="Control" parent="MarginContainer/VBoxContainer/TabContainer/PopulationTab/PopulationContent"]
+layout_mode = 2
+script = ExtResource("3_pie")
+
+[node name="PopulationPerYearCaption" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/PopulationTab/PopulationContent"]
+layout_mode = 2
+text = "Popolazione per anno"
+
+[node name="PopulationPerYearChart" type="Control" parent="MarginContainer/VBoxContainer/TabContainer/PopulationTab/PopulationContent"]
+layout_mode = 2
+script = ExtResource("2_chart")
 
 [node name="HSeparator" type="HSeparator" parent="MarginContainer/VBoxContainer"]
 layout_mode = 2

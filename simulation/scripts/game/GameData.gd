@@ -112,6 +112,68 @@ var fog_of_war_last_prune_absolute_day: int = 0
 # al salvataggio.
 var death_events: Array[Dictionary] = []
 
+# Log grezzo di ogni nascita (Step 2 piano statistiche, 2026-09-06) — stesso ruolo/stile/schema di
+# death_events sopra: un Dictionary per evento (individual_id, mother_id, father_id, sex, year,
+# day, child_survived, mother_survived), scritto da HumanBirthIndividualService._create_newborn
+# (l'unico punto che crea davvero un neonato). child_survived/mother_survived SEMPRE true per ora
+# (placeholder — non esiste ancora il tiro di sopravvivenza figlio/madre, arriverà in uno step
+# successivo). Sostituiva un precedente total_births_recorded: int (contatore semplice, rimosso —
+# birth_events.size() basta, stesso principio già seguito per le morti, che non hanno mai avuto un
+# contatore separato oltre a death_events.size()).
+var birth_events: Array[Dictionary] = []
+
+# Snapshot annuale della popolazione umana totale (Step 3 piano statistiche, 2026-09-06) — year
+# (int) -> conteggio individui vivi in quell'anno, un punto per anno, scritto da
+# GameTimeService._on_year_rolled_over (SEMPRE, non condizionato) per ogni anno che ROTOLA
+# (1, 2, 3...) — l'anno 0 non rotola mai (è l'anno di partenza, non un rollover), quindi quel primo
+# punto (il conteggio dei fondatori) è scritto UNA volta a parte da GameScene, nel bootstrap di una
+# partita nuova (mai per una partita caricata/ripristinata). Due soli scrittori, entrambi "una
+# tantum per quell'anno specifico", mai un terzo punto che li aggiorni. NON ricavabile in modo
+# affidabile dai soli death_events/birth_events
+# sopra (dipenderebbe dal numero di fondatori iniziali restare sempre corretto, fragile con
+# un'eventuale futura immigrazione) — da qui un log dedicato invece di un calcolo derivato.
+# Dictionary (chiave int), non Array[Dictionary] come death_events/birth_events sopra: qui la
+# chiave stessa (l'anno) è il dato identificante, un Array di {"year":.., "count":..} sarebbe solo
+# più verboso per lo stesso contenuto. ATTENZIONE persistenza: JSON non supporta chiavi non-
+# stringa — GameSaveService.stringify converte le chiavi int in stringhe automaticamente,
+# GameLoadService deve invece riconvertirle esplicitamente in int al caricamento (mai un
+# .get(chiave_int, ...) diretto su un Dictionary appena fatto il parsing di un JSON, le sue chiavi
+# sono sempre String finché qualcuno non le converte).
+var population_snapshots: Dictionary = {}
+
+# Istanze runtime del futuro sistema oggetti-scaduti (Step 2, 2026-09-05, res://gameplay/scripts/
+# core/ExpiredObjectRules.gd — oggi solo DEAD_BODY) — un Dictionary per istanza nel mondo:
+# object_type (ExpiredObjectTypes.ExpiredObjectType), individual_id (int, -1 = non applicabile;
+# valorizzato per DEAD_BODY, riferimento all'individuo deceduto), position (Vector2),
+# appeared_at_year/appeared_at_day (int). A differenza di death_events sopra, "position" NON è un
+# tipo JSON-nativo — GameSaveService/GameLoadService lo appiattiscono in position_x/position_y per
+# il salvataggio (stessa convenzione già usata per HumanIndividual.position), il campo qui a
+# runtime resta un Vector2 vero, come richiesto.
+#
+# Nessuna comparsa reale/rimozione/visual in questo step — solo la struttura dati e
+# ExpiredObjectCalculator.is_expired (query pura, nessuna scrittura qui dentro).
+var expired_objects: Array[Dictionary] = []
+
+# Prossimo id progressivo da assegnare a un HumanIndividual appena creato (fondatore o, in
+# futuro, neonato di un BirthService) — vedi allocate_human_id sotto. A differenza di
+# World.next_population_group_id/next_building_id (mai salvati come campo a sé, ricalcolati da
+# GameLoadService come max(id ancora presenti nel save)+1), questo campo va salvato e ricaricato
+# COSÌ COM'È (GameSaveService/GameLoadService, stesso trattamento di is_pregnant): un
+# HumanIndividual morto sparisce dal roster vivo ma il suo id resta referenziato altrove
+# (death_events, expired_objects, mother_id/father_id/partner_id dei superstiti) — ricalcolare
+# "max(id ancora vivi)+1" dopo un caricamento potrebbe quindi riassegnare l'id di un morto a un
+# neonato, violando la garanzia di unicità (confermato con l'utente, 2026-09-06).
+# HumanSeedingService.seed_player_start chiama allocate_human_id() per OGNI individuo che crea
+# (fondatori inclusi, un solo canale condiviso tra i tre percorsi GROUP/FAMILY/COUPLE) invece di
+# generare id locali 1..N per conto proprio come faceva prima — un futuro BirthService chiamerà
+# lo stesso allocatore per ogni neonato, mai un "max id + 1" calcolato al volo.
+var next_human_id: int = 1
+
+func allocate_human_id() -> int:
+	var id := next_human_id
+	next_human_id += 1
+	return id
+
 # Monotonic day count since year 0, day 0 — the single source of truth for "how long ago"
 # comparisons (e.g. natural-event growth-bonus expiry) that must not reset/round at a year
 # boundary the way a per-year counter would.

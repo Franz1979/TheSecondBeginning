@@ -6,8 +6,9 @@ extends VBoxContainer
 # (non pre-cablato nel .tscn di GameInfoPanel), stesso principio "muto" di CellGeographyInfo:
 # questo componente non conosce MicroCellRenderer/GameScene/selezione, riceve solo dati già
 # risolti — nemmeno il taglio vero e proprio (PlayerHarvestService): emette solo cut_requested,
-# GameScene decide se/come agire. Nessun tr(): stesso trattamento hardcoded degli altri pannelli
-# di ispezione (vedi MacroCellDetailPanel), nessuna CSV di traduzione esiste ancora. Nascosto di
+# GameScene decide se/come agire. Label tr()-wrapped (richiesta utente 2026-09-06, insieme a
+# HumanIndividualInfoPanel/DeadBodyInfoPanel): solo le chiavi, nessuna riga aggiunta ancora a
+# strings.csv/strings.it.translation — pronte per quando le traduzioni arriveranno. Nascosto di
 # default (nessuna selezione all'apertura della scena) — il bottone dentro eredita
 # automaticamente la non-interagibilità di un nodo nascosto, nessuno stato enabled/disabled
 # separato da gestire per "cliccabile solo se selezionato qualcosa".
@@ -24,15 +25,18 @@ signal cut_requested
 
 
 func _ready() -> void:
-	cut_button.text = "Cut"
+	cut_button.text = tr("vegetation_cut_button")
 	cut_button.pressed.connect(func(): cut_requested.emit())
 	clear()
 
 
 func show_vegetation(object_type: GameTypes.WorldObjectType, subtype_name: String, age_band: GameTypes.AgeBand, years_lived: int) -> void:
 	visible = true
-	subtype_label.text = "Subtype: " + subtype_name
-	age_label.text = "Age: " + GameTypes.AgeBand.keys()[age_band].capitalize() + " (" + NumberFormatter.format_int(years_lived) + " years)"
+	subtype_label.text = tr("vegetation_subtype_label").format({"subtype": subtype_name})
+	age_label.text = tr("vegetation_age_label").format({
+		"age_band": GameTypes.AgeBand.keys()[age_band].capitalize(),
+		"years": NumberFormatter.format_int(years_lived),
+	})
 	cut_button.visible = true
 
 
@@ -47,9 +51,9 @@ func show_vegetation(object_type: GameTypes.WorldObjectType, subtype_name: Strin
 func show_cut_marker(object_type: GameTypes.WorldObjectType, state: String, years_ago: int) -> void:
 	visible = true
 	if state == "cut":
-		subtype_label.text = "Cut " + NumberFormatter.format_int(years_ago) + " years ago"
+		subtype_label.text = tr("vegetation_cut_years_ago").format({"years": NumberFormatter.format_int(years_ago)})
 	else:
-		subtype_label.text = "Dead plant"
+		subtype_label.text = tr("vegetation_dead_plant")
 	age_label.text = ""
 	cut_button.visible = false
 

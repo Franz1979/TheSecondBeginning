@@ -71,6 +71,23 @@ extends Resource
 @export var mortality_prob_at_old_end: float = 0.65
 @export var absolute_max_age: int = 100
 
+@export_group("Reproduction")
+# Probabilità di concepimento annuale di BASE per una coppia idonea (FERTILE_ADULT/FERTILE_ADULT,
+# senza figlio sotto soglia — vedi HumanConceptionIndividualService) — scalata per Era da
+# EraRules.conception_probability_multiplier, stesso principio "base in HumanRules × moltiplicatore
+# in EraRules" già seguito da age_band_durations_male/female/longevity_multiplier_by_age.
+# PLACEHOLDER (richiesta utente, 2026-09-06): valore plausibile, da affinare quando esisterà un
+# consumatore reale con cui bilanciare.
+@export var conception_base_probability: float = 0.4
+# Probabilità di sopravvivenza al parto, rispettivamente per il neonato e per la madre — due campi
+# distinti perché i due rischi sono indipendenti (un parto può perdere l'uno, l'altra, entrambi o
+# nessuno). Scalate per Era dai due moltiplicatori paralleli sotto in EraRules, stesso schema di
+# conception_base_probability sopra. Nessuna logica li legge ancora in questo passo (solo dati,
+# vedi Step 1 del piano riproduzione) — il parto vero e proprio è un task separato.
+# PLACEHOLDER (richiesta utente, 2026-09-06): valori plausibili, da affinare in seguito.
+@export var childbirth_survival_child_base_probability: float = 0.9
+@export var childbirth_survival_mother_base_probability: float = 0.92
+
 @export_group("Workforce")
 # Capacità lavorativa giornaliera di riferimento per un adulto pieno (FERTILE_ADULT/MATURE_ADULT,
 # moltiplicatore 1.0 sotto) — valore unico, non per-età: l'asse età è tutto in

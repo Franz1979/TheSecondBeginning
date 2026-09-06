@@ -1,0 +1,41 @@
+keys,en
+sex_label,Sex: {sex}
+sex_female,Female
+sex_male,Male
+vegetation_cut_button,Cut
+vegetation_subtype_label,Subtype: {subtype}
+vegetation_age_label,Age: {age_band} ({years} years)
+vegetation_cut_years_ago,Cut {years} years ago
+vegetation_dead_plant,Dead plant
+dead_body_age_label,Age at death: {age}
+dead_body_cause_label,Cause: {cause}
+dead_body_decomposes_label,Decomposes in {days} days
+individual_kill_debug_button,Kill (debug)
+individual_age_label,Age: {age} ({band})
+pregnant,Pregnant
+individual_workforce_label,Workforce:
+individual_id_label,ID: {id} (Folk {folk}, Group {group})
+individual_mother_id_label,Mother ID: {id}
+individual_father_id_label,Father ID: {id}
+individual_partner_id_label,Partner ID: {id}
+selection_title_name,Name: {name}
+selection_title_type,Type: {type}
+building_status_label,Status: {status}
+building_status_complete,Complete
+building_status_under_construction,Under construction
+building_durability_label,Durability: {current}/{max}
+building_built_year_label,Built: year {year}
+building_not_yet_built,Not yet built
+building_stored_label,Stored: {entries}
+building_id_label,ID: {id}
+statistics_tab_births,Births
+statistics_tab_population,Population
+fertile_women_list,Fertile women
+death_list,Death list
+notification_birth,{name} was born, {mother}'s {offspring_word}
+notification_stillbirth,{mother} lost the child during childbirth
+death_cause_childbirth,childbirth
+birth_verb_male,born
+birth_verb_female,born
+offspring_word_male,son
+offspring_word_female,daughter

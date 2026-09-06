@@ -8,4 +8,9 @@ class_name NotificationTypes
 # naturali rilevanti), senza dover toccare NotificationPopup stesso.
 enum NotificationPopupType {
 	DEATH,
+	# Effetto nato-morto (2026-09-06) — riusato SIA per una nascita riuscita SIA per un nato-morto
+	# (testi diversi, stesso tipo/stile di popup): non serve un terzo valore, il tipo qui distingue
+	# la CATEGORIA dell'evento (nascita, in senso lato) per un futuro uso stilistico (icona/colore
+	# diverso da DEATH), non l'esito interno alla categoria.
+	BIRTH,
 }

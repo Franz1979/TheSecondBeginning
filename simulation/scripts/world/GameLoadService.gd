@@ -62,6 +62,24 @@ func load_game_from_json(file_path: String) -> LoadedGame:
 	# .get(key, []) per compatibilità con save precedenti l'introduzione del log morti (Step 8,
 	# vedi GameData.death_events) — [] è lo stesso default della classe.
 	game_data.death_events = _dictionary_array_from_json(data["game"].get("death_events", []))
+	# .get(key, []) per compatibilità con save precedenti l'introduzione del log nascite (Step 2
+	# piano statistiche, 2026-09-06, vedi GameData.birth_events) — [] è lo stesso default della
+	# classe, stesso trattamento di death_events sopra.
+	game_data.birth_events = _dictionary_array_from_json(data["game"].get("birth_events", []))
+	# .get(key, {}) per compatibilità con save precedenti l'introduzione dello snapshot
+	# popolazione (Step 3 piano statistiche, 2026-09-06, vedi GameData.population_snapshots) — {}
+	# è lo stesso default della classe. _population_snapshots_from_json riconverte le chiavi da
+	# String (sempre così dopo JSON.parse_string, JSON non ha chiavi non-stringa) a int.
+	game_data.population_snapshots = _population_snapshots_from_json(data["game"].get("population_snapshots", {}))
+	# .get(key, []) per compatibilità con save precedenti l'introduzione degli oggetti-scaduti
+	# (Step 2, vedi GameData.expired_objects) — [] è lo stesso default della classe.
+	game_data.expired_objects = _expired_objects_from_json(data["game"].get("expired_objects", []))
+	# .get(key, 1) per compatibilità con save precedenti l'introduzione dell'allocatore id
+	# HumanIndividual (vedi GameData.next_human_id) — 1 è lo stesso default della classe. Letto
+	# diretto dal JSON, MAI ricalcolato da max(id caricati)+1: vedi il commento sul campo per il
+	# perché quel pattern (usato invece per next_population_group_id/next_building_id sotto)
+	# sarebbe sbagliato qui.
+	game_data.next_human_id = int(data["game"].get("next_human_id", 1))
 
 	var world_data = data["world"]
 	var world := World.new()
@@ -386,6 +404,9 @@ func load_game_from_json(file_path: String) -> LoadedGame:
 			)
 			individual.hair_color = int(individual_data["hair_color"])
 			individual.clothing_color = int(individual_data["clothing_color"])
+			# Carnagione (2026-09-06) — accesso diretto, stesso trattamento di hair_color/
+			# clothing_color sopra, nessuna retrocompatibilità richiesta.
+			individual.skin_color = int(individual_data["skin_color"])
 			individual.facing_direction = Vector2(
 				float(individual_data["facing_direction_x"]), float(individual_data["facing_direction_y"])
 			)
@@ -393,6 +414,21 @@ func load_game_from_json(file_path: String) -> LoadedGame:
 			# sopra, qui serve compatibilità coi save precedenti a questo campo, mai confermata
 			# come non necessaria).
 			individual.scheduled_death_day = int(individual_data.get("scheduled_death_day", -1))
+			# Step 9 piano mortalità (2026-09-05) — accesso diretto, non .get(): nessuna
+			# retrocompatibilità richiesta (confermato con l'utente), stesso trattamento di
+			# hair_color/clothing_color/facing_direction sopra.
+			individual.scheduled_death_cause = int(individual_data["scheduled_death_cause"])
+			# Step 3 piano riproduzione (2026-09-06) — .get() con default false, stesso trattamento
+			# di scheduled_death_day sopra: compatibilità coi save precedenti a questo campo.
+			individual.is_pregnant = bool(individual_data.get("is_pregnant", false))
+			# Step 2 piano riproduzione (2026-09-06) — accesso diretto, stesso trattamento di
+			# scheduled_death_cause sopra: nessuna retrocompatibilità richiesta.
+			individual.pending_child_hair_color = int(individual_data["pending_child_hair_color"])
+			individual.pending_child_skin_color = int(individual_data["pending_child_skin_color"])
+			individual.pending_child_father_id = int(individual_data["pending_child_father_id"])
+			# Piano "trasporto neonati" (2026-09-06) — accesso diretto, nessuna retrocompatibilità
+			# richiesta, stesso trattamento dei campi pending_child_* sopra.
+			individual.dependent_child_id = int(individual_data["dependent_child_id"])
 			individual.source_group_ref = human_population_group
 			human_individuals.append(individual)
 
@@ -422,4 +458,41 @@ func _dictionary_array_from_json(raw: Array) -> Array[Dictionary]:
 	var result: Array[Dictionary] = []
 	for value in raw:
 		result.append(value as Dictionary)
+	return result
+
+
+# Controparte di GameSaveService (population_snapshots) — JSON.parse_string ritorna SEMPRE
+# Dictionary con chiavi String (JSON non supporta chiavi non-stringa, vedi GameData.
+# population_snapshots per il perché va riconvertito esplicitamente), qui riportate a int così
+# come sono scritte a runtime (GameTimeService._on_year_rolled_over le usa come year: int).
+func _population_snapshots_from_json(raw: Dictionary) -> Dictionary:
+	var result: Dictionary = {}
+	for year_key in raw.keys():
+		result[int(year_key)] = int(raw[year_key])
+	return result
+
+
+# Controparte di GameSaveService._expired_objects_to_json — ricostruisce position come Vector2
+# vero (era appiattito in position_x/position_y solo per il salvataggio, vedi GameData.
+# expired_objects per il perché).
+func _expired_objects_from_json(raw: Array) -> Array[Dictionary]:
+	var result: Array[Dictionary] = []
+	for value in raw:
+		var entry: Dictionary = value as Dictionary
+		result.append({
+			"object_type": int(entry["object_type"]),
+			"individual_id": int(entry["individual_id"]),
+			"position": Vector2(float(entry["position_x"]), float(entry["position_y"])),
+			# Step 6 (2026-09-05) — necessario per il hit-test di selezione, stessa convenzione di
+			# HumanIndividual.home_macro_coords poco sotto.
+			"home_macro_coords": Vector2i(int(entry["home_macro_x"]), int(entry["home_macro_y"])),
+			"appeared_at_year": int(entry["appeared_at_year"]),
+			"appeared_at_day": int(entry["appeared_at_day"]),
+			# Step 5 (2026-09-05) — Dictionary annidato passato COSÌ COM'È (vedi
+			# GameSaveService._expired_objects_to_json): il contenuto è specifico del object_type,
+			# questo livello generico non lo interpreta mai. .get(key, {}) perché è dato
+			# type-specific/opzionale per costruzione (non tutti gli ExpiredObjectType futuri
+			# potrebbero averne bisogno), oltre a coprire i save precedenti a questo campo.
+			"type_specific_data": entry.get("type_specific_data", {}) as Dictionary,
+		})
 	return result
