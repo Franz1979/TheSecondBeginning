@@ -41,10 +41,20 @@ statistics_tooltip,Statistiche
 statistics_tab_mortality,Mortalità
 statistics_tab_births,Nascite
 statistics_tab_population,Popolazione
+tech_tree_tooltip,Albero delle tecnologie
+tech_tree_title,Albero delle tecnologie
+tech_tree_completed_caption,Idee completate
+tech_tree_active_idea_label,Ricerca in corso: {idea}
+tech_tree_no_active_idea,Nessuna ricerca in corso
+tech_tree_debug_add_thought,+1 Thought
+idea_paleolithic_constructions,Costruzioni Paleolitiche
 fertile_women_list,Donne fertili
 death_list,Elenco morti
 center_on_selection_tooltip,Centra la camera sulla selezione corrente
 building_hut,Capanna
+building_stone_circle,Cerchio di pietre
+build_bar_stone_circle_disabled_tooltip,Non costruibile: esiste già un centro villaggio
+build_bar_requires_idea_tooltip,Richiede: {idea}
 notification_death,{name} è morto/a per {cause} (età {age}, giorno {day})
 death_cause_old_age,vecchiaia
 death_cause_murder,omicidio
@@ -55,6 +65,7 @@ birth_verb_male,nato
 birth_verb_female,nata
 offspring_word_male,figlio
 offspring_word_female,figlia
+notification_idea_completed,Nuova idea completata: {idea}
 sex_label,Sesso: {sex}
 sex_female,Femmina
 sex_male,Maschio
@@ -68,8 +79,15 @@ dead_body_cause_label,Causa: {cause}
 dead_body_decomposes_label,Si decompone tra {days} giorni
 individual_kill_debug_button,Uccidi (debug)
 individual_age_label,Età: {age} ({band})
+task_activity_idle,A riposo
+task_daydream_name,Sognare a occhi aperti
+task_daydream_step_wander,Vagando nei dintorni
+task_daydream_step_think,Riflettendo
+task_daydream_step_return,Tornando al centro del villaggio
+task_daydream_step_deposit,Condividendo un'idea
+task_daydream_step_leave,Allontanandosi dal centro villaggio
 pregnant,Incinta
-individual_workforce_label,Forza lavoro:
+individual_stamina_label,Forza lavoro:
 individual_id_label,ID: {id} (Folk {folk}, Gruppo {group})
 individual_mother_id_label,ID Madre: {id}
 individual_father_id_label,ID Padre: {id}

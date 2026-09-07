@@ -13,13 +13,14 @@ extends VBoxContainer
 # id (richiesta utente, 2026-09-02 — solo consultazione, nessuna interazione). strength resta
 # fuori, non ancora richiesto.
 #
-# workforce_bar (2026-09-04): display-only, nessun consumo reale ancora esistente (nessuna
-# classe Action) — max/residual arrivano già risolti dal chiamante (GameScene, stesso principio
-# di age/age_band sopra: questo pannello non conosce HumanRules/HumanCalculator). residual oggi
-# coincide sempre col max (nessun campo HumanIndividual.residual_workforce ancora esistente); il
-# chiamante è già strutturato in modo che, quando quel campo arriverà, sostituire quell'UNICA
-# lettura in GameScene basti — questo pannello resta invariato, prende solo i due float già
-# risolti.
+# stamina_bar (2026-09-04, rinominato da workforce_bar il 2026-09-06 — rename completo Workforce->
+# Stamina, richiesta utente, nessuna modifica di comportamento): display-only, nessun consumo
+# reale ancora esistente (nessuna classe Action) — max/current arrivano già risolti dal chiamante
+# (GameScene, stesso principio di age/age_band sopra: questo pannello non conosce HumanRules/
+# HumanCalculator). current oggi coincide sempre col max (nessun campo HumanIndividual.
+# current_stamina ancora esistente); il chiamante è già strutturato in modo che, quando quel campo
+# arriverà, sostituire quell'UNICA lettura in GameScene basti — questo pannello resta invariato,
+# prende solo i due float già risolti.
 #
 # Il "🎯 centra" è vissuto qui brevemente (2026-09-04) ma si è spostato di nuovo, stavolta
 # nell'header di GameInfoTabs.SelectionTab (Step 3 del piano "centra generalizzato", stessa
@@ -43,8 +44,9 @@ signal kill_requested(individual: HumanIndividual)
 
 @onready var sex_label: Label = $SexLabel
 @onready var age_label: Label = $AgeLabel
-@onready var workforce_label: Label = $WorkforceLabel
-@onready var workforce_bar: ProgressBar = $WorkforceBarMargin/WorkforceBar
+@onready var activity_label: Label = $ActivityLabel
+@onready var stamina_label: Label = $StaminaLabel
+@onready var stamina_bar: ProgressBar = $StaminaBarMargin/StaminaBar
 @onready var id_label: Label = $IdLabel
 @onready var mother_label: Label = $MotherLabel
 @onready var father_label: Label = $FatherLabel
@@ -63,12 +65,17 @@ func _ready() -> void:
 # Prende l'HumanIndividual intero (non piu' i soli name/sex, richiesta utente 2026-09-02: servono
 # anche id/mother_id/father_id/partner_id/source_group_ref, tutti gia' sull'oggetto) — age/
 # age_band restano calcolati dal chiamante (richiedono current_year/HumanRules, che questo
-# pannello non conosce, stesso principio di prima). max_workforce/residual_workforce stesso
-# principio: gia' risolti dal chiamante (HumanCalculator.get_base_workforce), vedi commento
-# workforce_bar sopra.
+# pannello non conosce, stesso principio di prima). max_stamina/current_stamina stesso
+# principio: gia' risolti dal chiamante (HumanCalculator.get_max_stamina), vedi commento
+# stamina_bar sopra.
+#
+# activity_text (2026-09-07, richiesta utente — "cosa sta facendo questo individuo") già risolto e
+# tr()-ato dal chiamante (GameScene, via HumanIndividual.current_task.get_activity_description() o
+# la stringa "a riposo" se current_task è null) — stesso identico principio "questo pannello riceve
+# solo dati già pronti" di ogni altro parametro qui.
 func show_individual(
 	individual: HumanIndividual, age: int, age_band: HumanTypes.AgeBand,
-	max_workforce: float, residual_workforce: float
+	max_stamina: float, current_stamina: float, activity_text: String
 ) -> void:
 	visible = true
 	_current_individual = individual
@@ -79,11 +86,12 @@ func show_individual(
 	if individual.is_pregnant:
 		band_text += ", " + tr("pregnant")
 	age_label.text = tr("individual_age_label").format({"age": age, "band": band_text})
+	activity_label.text = activity_text
 
-	workforce_label.text = tr("individual_workforce_label")
-	workforce_bar.max_value = max_workforce
-	workforce_bar.value = residual_workforce
-	workforce_bar.tooltip_text = "%d/%d" % [int(residual_workforce), int(max_workforce)]
+	stamina_label.text = tr("individual_stamina_label")
+	stamina_bar.max_value = max_stamina
+	stamina_bar.value = current_stamina
+	stamina_bar.tooltip_text = "%d/%d" % [int(current_stamina), int(max_stamina)]
 
 	var group := individual.source_group_ref
 	var folk_id: int = group.folk_ref.id if group != null and group.folk_ref != null else -1

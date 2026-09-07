@@ -1,6 +1,6 @@
-[gd_resource type="Resource" script_class="EraRules" format=3]
+[gd_resource type="Resource" script_class="EraRules" format=3 uid="uid://cehwku8qwmgv3"]
 
-[ext_resource type="Script" path="res://human/scripts/core/EraRules.gd" id="1_paleolithic"]
+[ext_resource type="Script" uid="uid://dqj0pp84sdke4" path="res://human/scripts/core/EraRules.gd" id="1_paleolithic"]
 
 [resource]
 script = ExtResource("1_paleolithic")
@@ -8,5 +8,5 @@ longevity_multiplier_by_age = Array[float]([1.0, 1.0, 0.6, 0.6, 0.6])
 conception_probability_multiplier = 1.4
 childbirth_survival_child_multiplier = 0.7538
 childbirth_survival_mother_multiplier = 0.9501
-min_birth_spacing_years = 1
-dependent_child_workforce_multiplier = 0.7
+dependent_child_stamina_multiplier = 0.7
+think_duration_multiplier = 1.0

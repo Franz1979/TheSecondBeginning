@@ -1,0 +1,10 @@
+[gd_resource type="Resource" script_class="Idea" format=3 uid="uid://bl5p6m54ti8u7"]
+
+[ext_resource type="Script" uid="uid://cqx38hirrk3s1" path="res://human/scripts/core/Idea.gd" id="1_costruzioni_paleolitiche"]
+
+[resource]
+script = ExtResource("1_costruzioni_paleolitiche")
+id = "costruzioni_paleolitiche"
+display_name = "idea_costruzioni_paleolitiche"
+thoughts_cost = 10
+era = "paleolithic"

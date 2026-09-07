@@ -13,4 +13,8 @@ enum NotificationPopupType {
 	# la CATEGORIA dell'evento (nascita, in senso lato) per un futuro uso stilistico (icona/colore
 	# diverso da DEATH), non l'esito interno alla categoria.
 	BIRTH,
+	# Sblocco Idea (2026-09-07, richiesta utente) — riusa lo STESSO NotificationPopup/gate
+	# UserOptions.show_notification_popups di morte/nascita (vedi GameScene._on_idea_completed),
+	# non un sistema di avvisi separato: si disattiva insieme agli altri da Opzioni.
+	IDEA_COMPLETED,
 }

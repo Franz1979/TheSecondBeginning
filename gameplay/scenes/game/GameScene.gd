@@ -125,6 +125,11 @@ var notification_popup: NotificationPopup
 var individual: HumanIndividual
 var individual_controller: HumanIndividualController
 var individual_movement_service := HumanIndividualMovementService.new()
+# Cablaggio Walk/Action/Task (2026-09-06/07, richiesta utente) — stesso identico pattern di
+# individual_movement_service sopra: stateless rispetto all'identità, un solo service condiviso,
+# mai un'istanza per individuo (l'unico stato per-azione vive su HumanIndividual.current_task,
+# non qui). Girato ogni frame in _process, DOPO individual_movement_service.advance_movement.
+var individual_action_service := HumanIndividualActionService.new()
 # Hit-test di selezione per QUALSIASI individuo umano visibile — vedi HumanIndividualSelectorController.gd.
 # Sostituisce, per il click sinistro, quello che prima faceva HumanIndividualController._try_select
 # (ora rimossa da lì, richiesta utente 2026-09-02: "click su un individuo qualsiasi tra quelli
@@ -270,6 +275,7 @@ var _pending_leave_action: StringName = &""
 @onready var help_dialog: HelpDialog = $HelpDialog
 @onready var options_menu: OptionsMenu = $OptionsMenu
 @onready var statistics_panel: StatisticsPanel = $StatisticsPanel
+@onready var tech_tree_panel: TechTreePanel = $TechTreePanel
 @onready var save_game_file_dialog: FileDialog = $SaveGameFileDialog
 @onready var camera: Camera2D = $Camera2D
 @onready var year_title_label: Label = $CanvasLayer/Sidebar/MarginContainer/VBoxContainer/CalendarHeaderContainer/YearTitleLabel
@@ -381,6 +387,21 @@ func _ready() -> void:
 	help_dialog.visibility_changed.connect(_on_blocking_dialog_visibility_changed.bind(help_dialog))
 	options_menu.visibility_changed.connect(_on_blocking_dialog_visibility_changed.bind(options_menu))
 	statistics_panel.visibility_changed.connect(_on_blocking_dialog_visibility_changed.bind(statistics_panel))
+	tech_tree_panel.visibility_changed.connect(_on_blocking_dialog_visibility_changed.bind(tech_tree_panel))
+	# idea_completed(idea_id) (2026-09-07, richiesta utente) — DUE ascoltatori separati, non uno
+	# solo con più responsabilità: _refresh_building_slots_buildable per lo sblocco edifici (stesso
+	# punto di aggancio già predisposto per un futuro Think/DepositThoughtAction), e
+	# _on_idea_completed per il popup di notifica (stesso NotificationPopup/UserOptions.
+	# show_notification_popups di morte/nascita, vedi lì). TechTreePanel non conosce nessuno dei
+	# due, si limita a segnalare "l'Idea con questo id è stata completata".
+	# BUGFIX 2026-09-07 (diagnosticato con l'utente, log alla mano): _refresh_building_slots_
+	# buildable NON riceveva mai la chiamata — connect() diretto di un metodo a ZERO parametri su
+	# un segnale che ne emette UNO (idea_id: String) non scarta l'argomento in eccesso come
+	# presunto, fallisce silenziosamente. _on_idea_completed(idea_id: String) non ne soffriva
+	# perché la sua firma combacia esattamente (un parametro String) — ecco perché il popup
+	# funzionava sempre ma la BuildBar mai. Wrapper esplicito a un argomento per l'altro caso.
+	tech_tree_panel.idea_completed.connect(func(_idea_id: String) -> void: _refresh_building_slots_buildable())
+	tech_tree_panel.idea_completed.connect(_on_idea_completed)
 	# Mancava (bugfix, richiesta utente 2026-09-05): system_menu_dialog si nasconde PRIMA che
 	# save_game_file_dialog si apra (_on_save_pressed gira dopo l'hide() del bottone "Salva" nel
 	# menu di sistema — vedi SystemMenuDialog.add_action), quindi senza questa riga _open_dialog_count
@@ -520,6 +541,27 @@ func _ready() -> void:
 		# `if` sopra), stesso principio già seguito per set_current_era poco più in alto.
 		game_data.population_snapshots[0] = human_individuals.size()
 
+	# Bugfix (richiesta utente, 2026-09-07): current_stamina/max_stamina di OGNI individuo restavano
+	# al fallback HumanIndividual.FALLBACK_MAX_STAMINA (5000.0 — coincide col default di HumanRules.
+	# base_max_stamina, quindi per un FERTILE_ADULT maschio il numero sembra "giusto per caso": il
+	# sintomo reale, riportato dall'utente, era current_stamina bloccata a 5000 mentre il pannello
+	# mostrava il max_stamina corretto — vedi _update_individual_panel_content, che lo ricalcola
+	# sempre al volo, MAI dal campo) fino al primo ricalcolo giornaliero (HumanStaminaIndividualService,
+	# agganciato a GameTimeService._on_day_advanced). Causa: HumanIndividual._init() (che chiama
+	# _resolve_initial_max_stamina) gira SEMPRE prima che source_group_ref sia assegnato — sia in
+	# HumanSeedingService (nuova partita) sia in GameLoadService (caricamento salvataggio), per
+	# costruzione (l'oggetto va creato prima di poter puntare al gruppo che lo contiene) — quindi la
+	# catena source_group_ref->folk_ref->human_rules_ref non è mai risolvibile a quel punto, e
+	# individual.max_stamina/current_stamina restano al fallback fino a quando non passa un giorno
+	# di gioco intero. Corretto qui in UN SOLO passaggio, sulla STESSA funzione già usata dal
+	# ricalcolo giornaliero (nessuna logica duplicata): a questo punto human_individuals è già
+	# finalizzato ED ha già source_group_ref valorizzato in ENTRAMBI i rami sopra (seeding nuovo o
+	# ripristino/caricamento), quindi copre entrambi i casi in un colpo solo, subito all'ingresso in
+	# scena invece che al primo avanzamento giorno.
+	var era_rules := EraCalculator.get_era_rules(game_data.current_era_name)
+	for member in human_individuals:
+		HumanStaminaIndividualService.recalculate_max_stamina(member, game_data, era_rules)
+
 	# Popola la scheda 🧍 (richiesta utente, 2026-09-01) — human_individuals/human_folk sono
 	# finalizzati solo qui (posizioni di spawn comprese), stesso motivo per cui l'istanza del
 	# pannello (sopra) e la sua popolazione dati sono separate in due punti diversi di _ready().
@@ -566,6 +608,7 @@ func _ready() -> void:
 		# già valorizzati a questo punto di _ready() (vedi sopra), stesso principio di
 		# fog_of_war_renderer.setup(cell.fog_of_war_memory) — le dipendenze arrivano dal chiamante.
 		view.setup(member, game_data, human_folk.human_rules_ref if human_folk != null else null)
+		view.clock = clock # può essere null qui (view creata prima di _setup_clock in _ready()); vedi _assign_clock_to_all_live_cells
 		# z_index invariato (era già necessario prima, per lo stesso motivo — vedi
 		# fog_of_war_renderer.z_index=2 in _activate_live_cell, che deve restare sopra ANCHE alle
 		# view individuo): tiene la view sopra terreno/animali (z_index=0 di default) del container
@@ -591,6 +634,10 @@ func _ready() -> void:
 	_setup_clock()
 	_assign_clock_to_all_live_cells()
 	_update_calendar_display()
+	# Stato iniziale slot BuildBar (2026-09-07, richiesta utente) — copre sia un salvataggio con un
+	# village center già esistente sia (da questo passo) idee già completate/mancanti: senza questa
+	# chiamata i bottoni risulterebbero tutti abilitati finché il player non piazza qualcosa.
+	_refresh_building_slots_buildable()
 
 	# Posiziona la camera UNA SOLA VOLTA all'ingresso in scena, poi resta libera per tutta la
 	# sessione (Step 3, 2026-09-02 — vedi il commento su _center_camera_tween sopra). Se un
@@ -617,7 +664,19 @@ func _ready() -> void:
 # l'utente). Non tocca in alcun modo il pipeline giorno/anno di WorldTimeService.
 func _process(delta: float) -> void:
 	if individual != null:
-		individual_movement_service.advance_movement(individual, delta)
+		# Aggancio al tempo di gioco (2026-09-07, richiesta utente) — movimento e azioni ora scalano
+		# con la velocità 1x/2x/4x/X8/DEBUG e si fermano in pausa, invece di girare a tempo reale
+		# grezzo: game_delta è una FRAZIONE DI GIORNO (stesso calcolo di GameClockController._process,
+		# vedi get_game_day_delta lì), non più un delta in secondi. move_speed, STAMINA_DRAIN_PER_
+		# MICROCELL e RestAction.STAMINA_REGEN_PER_DAY sono già stati ritarati (2026-09-07) per questa
+		# nuova unità. 0.0 quando clock.is_playing è false, propagato di conseguenza a valle.
+		var game_delta := clock.get_game_day_delta(delta)
+		individual_movement_service.advance_movement(individual, game_delta)
+		# Cablaggio Walk/Action (2026-09-06, richiesta utente) — SUBITO dopo advance_movement,
+		# MAI prima: WalkAction.get_stamina_delta calcola la distanza percorsa confrontando
+		# individual.position con l'ultima posizione nota alla chiamata precedente, quindi deve
+		# leggere la position GIÀ aggiornata da advance_movement in questo stesso frame.
+		individual_action_service.apply_action(individual, game_delta)
 		_check_macro_cell_border_crossing()
 		# Piano "trasporto neonati" (2026-09-06) — DOPO _check_macro_cell_border_crossing sopra,
 		# mai prima: se il bersaglio ha appena attraversato un bordo, individual.home_macro_coords/
@@ -789,6 +848,20 @@ func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_X:
 		_center_camera_on_individual()
 
+	# TEST TEMPORANEO Task (2026-09-07, richiesta utente) — vedi _debug_test_two_walk_task sotto per
+	# cosa fa e perché è qui. Tasto T, gated da DebugLogging.ENABLED (stesso flag che nasconde
+	# SpeedDebugButton — mai visibile/attivo in una build "pulita"). DA RIMUOVERE (o spostare sotto
+	# un vero pannello/bottone debug) quando si passa oltre questo step del refactor Stamina/Task.
+	if DebugLogging.ENABLED and event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_T:
+		_debug_test_two_walk_task()
+
+	# TEST TEMPORANEO end-to-end "Daydream" (2026-09-07, richiesta utente) — vedi
+	# _debug_test_daydream_task sotto per cosa fa e perché è qui. Tasto Y, stesso gate/stesso
+	# principio "usa e getta" del tasto T sopra: DA RIMUOVERE (o spostare sotto un vero pannello/
+	# bottone debug) quando esisterà una vera TaskDefinition "Daydream".
+	if DebugLogging.ENABLED and event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_Y:
+		_debug_test_daydream_task()
+
 
 # Vero se un individuo umano QUALSIASI è più vicino al click corrente del miglior candidato mappa
 # (vegetazione O edificio, Step 4 — stesso spazio pixel locale della cella CENTRALE, usato sia da
@@ -849,6 +922,185 @@ func _center_camera_on_individual(animated: bool = true) -> void:
 	if individual == null:
 		return
 	_animate_camera_to(individual.position * MicroCellRenderer.CELL_SIZE, animated)
+
+
+# TEST TEMPORANEO (2026-09-07, richiesta utente) — verifica che una Task a PIÙ step avanzi da sola
+# da un WalkAction al successivo, senza un nuovo comando del player. Coordinate arbitrarie ma
+# ragionevoli rispetto a individual.position (stesso spazio [0, World.WIDTH) x [0, World.HEIGHT),
+# WIDTH=HEIGHT=100 — vedi HumanIndividualController._try_set_target): due punti vicino al centro,
+# diagonalmente opposti, abbastanza distanti (~28 microcelle a tratta) da rendere ben visibile la
+# transizione tra i due step. Agisce sul bersaglio attualmente controllabile (individual, vedi il
+# commento sul campo) — nessuna selezione richiesta.
+#
+# DA RIMUOVERE (o spostare sotto un vero pannello/bottone debug, es. DebugBar) quando si passa
+# oltre questo step del refactor Stamina/Task — non è pensato per sopravvivere nella build finale.
+const _DEBUG_TASK_TEST_TARGET_A := Vector2(40.0, 40.0)
+const _DEBUG_TASK_TEST_TARGET_B := Vector2(60.0, 60.0)
+
+func _debug_test_two_walk_task() -> void:
+	if individual == null:
+		return
+	# stop() prima di tutto: azzera un'eventuale Task/movimento in corso, così il test parte sempre
+	# da uno stato pulito indipendentemente da cosa stesse facendo l'individuo (stesso principio già
+	# seguito da _set_movement_target per il vecchio bersaglio abbandonato).
+	individual.stop()
+	var walk_a := WalkAction.new(_DEBUG_TASK_TEST_TARGET_A)
+	var walk_b := WalkAction.new(_DEBUG_TASK_TEST_TARGET_B)
+	individual.current_task = Task.new([walk_a, walk_b])
+	# Attiva il PRIMO step a mano (stesso identico passo che HumanIndividual.set_target fa per un
+	# comando normale a un solo step) — il secondo verrà attivato da solo da
+	# HumanIndividualActionService.apply_action quando il primo risulterà is_complete().
+	walk_a.activate(individual)
+	print("[TASK TEST] Task a 2 step assegnata a #%d %s: %s -> %s" % [
+		individual.id, individual.name, _DEBUG_TASK_TEST_TARGET_A, _DEBUG_TASK_TEST_TARGET_B
+	])
+
+
+# TEST TEMPORANEO end-to-end "Daydream" (2026-09-07, richiesta utente) — verifica l'intera sequenza
+# Walk -> Think -> Walk -> Deposit PRIMA che esista una vera TaskDefinition "Daydream": cammina
+# verso un punto arbitrario vicino ("around" — nessun realismo richiesto, solo un punto raggiungibile
+# per il test), pensa per la durata prevista, cammina fino allo Stone Circle già piazzato, deposita
+# il pensiero (ThinkAction.pending_thought -> DepositAction -> IdeaProgressService.add_thoughts).
+# Richiede uno Stone Circle GIÀ costruito in questa sessione (BuildingRules.is_village_center) — se
+# non esiste ancora, logga un errore chiaro e NON avvia il test (nessuno stato parziale/a metà:
+# meglio niente Task che una Task che cammina verso un bersaglio inesistente).
+#
+# DA RIMUOVERE (o spostare sotto un vero pannello/bottone debug) quando esisterà una vera
+# TaskDefinition "Daydream" — stesso principio "usa e getta" di _debug_test_two_walk_task sopra.
+# Distanza del primo Walk ("around") — DIREZIONE casuale ad ogni chiamata (2026-09-07, richiesta
+# utente: "non tutti i movimenti vadano nella stessa direzione", prima un offset FISSO Vector2(10,
+# 10), sempre diagonale basso/destra) calcolata sotto con Vector2.from_angle(randf() * TAU), questa
+# costante resta solo la DISTANZA (invariata, ~14.1 = lunghezza del vecchio Vector2(10,10)).
+const _DEBUG_DAYDREAM_AROUND_DISTANCE: float = 14.1
+# Durata BASE (giorni di gioco) prima del moltiplicatore Era — valore di partenza ARBITRARIO
+# (2.0, richiesta utente), stesso trattamento "facilmente ritarabile" di ogni altra costante di
+# questo sistema (STAMINA_DRAIN_PER_MICROCELL, STAMINA_REGEN_PER_DAY, ecc.).
+const _DEBUG_DAYDREAM_THINK_BASE_DURATION: float = 2.0
+# Distanza dell'ultimo Walk, quello che allontana l'individuo dallo Stone Circle DOPO il deposito
+# (2026-09-07, richiesta utente: "così non si accumulano pipottini uno sopra l'altro") — direzione
+# casuale come "around" sopra, distanza ARBITRARIA ("bastano anche 4 o 5 microcelle").
+const _DEBUG_DAYDREAM_LEAVE_DISTANCE: float = 5.0
+
+func _debug_test_daydream_task() -> void:
+	if individual == null:
+		return
+
+	# Village center: stessa query "esiste un Building con rules.is_village_center" già discussa
+	# per il vincolo di unicità in BuildBar (GameScene._refresh_building_slots_buildable) — qui però
+	# serve l'ISTANZA (per macro_x/macro_y/micro_x/micro_y), non solo il booleano "esiste".
+	var village_center: Building = null
+	if macro_world != null:
+		for building in macro_world.buildings:
+			if building.rules != null and building.rules.is_village_center:
+				village_center = building
+				break
+	if village_center == null:
+		push_error("[DAYDREAM TEST] Nessuno Stone Circle piazzato in questa partita — costruiscine uno (BuildBar) prima di premere Y.")
+		return
+
+	var around_position: Vector2 = individual.position + Vector2.from_angle(randf() * TAU) * _DEBUG_DAYDREAM_AROUND_DISTANCE
+	# Traduzione macrocella->macrocella (stessa formula già in uso in _relevant_source_positions_
+	# for_cell: posizione_locale_A + (macro_coords_A - macro_coords_B) * World.WIDTH converte una
+	# posizione locale alla macrocella A nello spazio locale della macrocella B) — necessaria perché
+	# village_center.micro_x/y sono locali alla macrocella DELLO STONE CIRCLE, non necessariamente
+	# quella corrente dell'individuo (offset zero, no-op, se invece coincidono).
+	var macro_offset: Vector2 = Vector2(Vector2i(village_center.macro_x, village_center.macro_y) - individual.home_macro_coords) * World.WIDTH
+	var village_center_position: Vector2 = Vector2(village_center.micro_x, village_center.micro_y) + macro_offset
+	# Posizione di allontanamento, DOPO il deposito (2026-09-07, richiesta utente) — direzione
+	# casuale come "around" sopra, stavolta centrata sullo Stone Circle stesso: nessuna traduzione
+	# macrocella->macrocella ulteriore necessaria, village_center_position è già nello spazio
+	# locale giusto (quello dell'individuo), un piccolo offset non attraversa un bordo di macrocella.
+	var leave_position: Vector2 = village_center_position + Vector2.from_angle(randf() * TAU) * _DEBUG_DAYDREAM_LEAVE_DISTANCE
+
+	# Durata risolta = base × EraRules.think_duration_multiplier (stessa risoluzione era_rules già
+	# in uso altrove nel file, es. _update_individual_panel_content) — null-safe: un'Era senza
+	# .tres risolvibile lascia la durata BASE invariata (moltiplicatore neutro 1.0), mai un crash.
+	var era_rules := EraCalculator.get_era_rules(game_data.current_era_name)
+	var think_duration: float = _DEBUG_DAYDREAM_THINK_BASE_DURATION * (era_rules.think_duration_multiplier if era_rules != null else 1.0)
+
+	# stop() prima di tutto — stesso principio già seguito da _debug_test_two_walk_task sopra: il
+	# test parte sempre da uno stato pulito indipendentemente da cosa stesse facendo l'individuo.
+	individual.stop()
+	var walk_to_around := WalkAction.new(around_position)
+	var think := ThinkAction.new(think_duration)
+	var walk_to_village_center := WalkAction.new(village_center_position)
+	var deposit := DepositAction.new()
+	# Quinto step, DOPO il deposito (2026-09-07, richiesta utente) — un ultimo Walk che allontana
+	# l'individuo dallo Stone Circle: senza questo, ogni Daydream finirebbe fermo esattamente sulla
+	# stessa microcella del centro villaggio, accumulando pipottini uno sopra l'altro con più
+	# individui/più cicli.
+	var walk_away := WalkAction.new(leave_position)
+	# Collegato PRIMA di assegnare la Task (richiesta esplicita utente) — stesso identico principio
+	# di disaccoppiamento di TechTreePanel.idea_completed: DepositAction non conosce BuildBar/
+	# TechTreePanel/NotificationPopup, chi la crea (qui, il test — in futuro chi costruirà la Task
+	# "Daydream" vera) decide come reagire. TRE listener, non due (BUGFIX 2026-09-07, richiesta
+	# utente — "non ho visto il popup di notification": mancava il collegamento a _on_idea_completed,
+	# per questo lo sblocco funzionava ma il popup non compariva mai per questo percorso di test —
+	# stessi TRE ascoltatori che GameScene._ready() collega a tech_tree_panel.idea_completed, qui
+	# replicati per deposit.idea_completed). BUGFIX 2026-09-07 (diagnosticato con l'utente, log
+	# alla mano): _refresh_building_slots_buildable collegato DIRETTAMENTE (metodo a zero
+	# parametri) su un segnale a un argomento non veniva mai invocato — nessuno scarto automatico
+	# dell'argomento in eccesso come presunto, fallisce silenziosamente. Wrapper esplicito.
+	deposit.idea_completed.connect(func(_idea_id: String) -> void: _refresh_building_slots_buildable())
+	deposit.idea_completed.connect(_on_idea_completed)
+	deposit.idea_completed.connect(func(_idea_id: String) -> void:
+		if tech_tree_panel.visible:
+			tech_tree_panel.refresh_content()
+	)
+	# Effetto visivo "lampadina" (richiesta utente 2026-09-07) — ad OGNI deposito riuscito, non solo
+	# quando completa un'Idea (per questo thought_deposited, non idea_completed): individual è già
+	# catturato per bind, DepositAction non conosce l'individuo come tipo concreto (vedi commento sul
+	# segnale in deposit_action.gd).
+	deposit.thought_deposited.connect(_spawn_idea_deposit_effect.bind(individual))
+	individual.current_task = Task.new([walk_to_around, think, walk_to_village_center, deposit, walk_away])
+	# task_name/step_descriptions (2026-09-07, richiesta utente — info panel "cosa sta facendo") —
+	# questa Task è costruita a mano (nessuna TaskDefinition "Daydream" ancora, vedi discussione con
+	# l'utente), quindi le valorizzo qui direttamente invece che tramite TaskFactory: STESSO
+	# trattamento (chiavi tr() grezze, mai testo già tradotto — vedi Task.get_activity_description,
+	# l'unico consumatore) che avrebbe un domani un vero Daydream.tres tramite TaskStepDefinition.
+	# step_description. Quando quella TaskDefinition esisterà davvero, queste due righe spariranno
+	# da qui e i valori arriveranno dal .tres invece che hardcoded.
+	individual.current_task.task_name = "task_daydream_name"
+	individual.current_task.step_descriptions = [
+		"task_daydream_step_wander", "task_daydream_step_think",
+		"task_daydream_step_return", "task_daydream_step_deposit", "task_daydream_step_leave",
+	]
+	walk_to_around.activate(individual)
+	print("[DAYDREAM TEST] Task a 5 step assegnata a #%d %s: around=%s, think=%.2fgg, village_center=%s, leave=%s" % [
+		individual.id, individual.name, around_position, think_duration, village_center_position, leave_position
+	])
+
+
+# Effetto "usa e getta" (richiesta utente 2026-09-07 — "una piccola lampadina che parte dal
+# pipottino e scompare verso l'alto") — puro codice, nessun .tscn, stesso principio già seguito da
+# BuildingGhost/NotificationPopup per gli elementi transitori di questa scena. Guardia su
+# live_cells.has(...) identica a _on_human_individual_born/_on_human_individual_died: nessun
+# effetto se la macrocella dell'individuo non è (più) una cella viva del focus LOD.
+func _spawn_idea_deposit_effect(individual: HumanIndividual) -> void:
+	if not live_cells.has(individual.home_macro_coords):
+		return
+	var label := Label.new()
+	label.text = "💡"
+	label.z_index = 2
+	# Font ridotto (richiesta utente 2026-09-07, poi ulteriormente rimpicciolito su feedback
+	# successivo: "un po' piu' piccola ancora") — il default del tema è pensato per UI a schermo
+	# intero, qui va scalata alla taglia del pipottino stesso (poche microcelle, vedi CELL_SIZE=10px).
+	label.add_theme_font_size_override("font_size", 6)
+	# Offset verticale iniziale (sopra la testa del pipottino, non sui suoi piedi) — stessa
+	# conversione microcelle->pixel locali già in uso ovunque nel file (es.
+	# _center_camera_on_individual).
+	label.position = individual.position * MicroCellRenderer.CELL_SIZE + Vector2(-3, -12)
+	live_cells[individual.home_macro_coords].container.add_child(label)
+
+	# Salita più alta e dissolvenza più lenta (richiesta utente 2026-09-07, secondo giro di
+	# ritocchi) — due durate separate invece di una sola condivisa: la salita resta rapida (0.9s,
+	# "parte" visibilmente), la dissolvenza si allunga (2.0s) cosi' resta visibile più a lungo prima
+	# di sparire del tutto.
+	var tween := create_tween()
+	tween.set_parallel(true)
+	tween.tween_property(label, "position:y", label.position.y - 40.0, 0.9)
+	tween.tween_property(label, "modulate:a", 0.0, 3.0)
+	tween.chain().tween_callback(label.queue_free)
 
 
 # Step 2 del piano "centra generalizzato" (richiesta utente, 2026-09-04) — a differenza di
@@ -1123,11 +1375,25 @@ func _clear_dead_body_selection() -> void:
 # essersi autodistrutta per scadenza (Step 5) nel frattempo, vedi dead_body_views. queue_redraw()
 # esplicito: questa view non ha il meccanismo di early-out per-frame della classe base che lo
 # farebbe scattare da solo per un cambio di is_selected.
+#
+# BUGFIX (2026-09-06, crash reale in game: "Trying to assign invalid previously freed instance")
+# — `view` NON è più tipizzato DeadBodyView sulla riga di assegnazione: farlo (versione precedente)
+# fa scattare il controllo di tipo di Godot SULL'ASSEGNAZIONE stessa, prima ancora che
+# is_instance_valid() sotto potesse girare — se la view si era già autodistrutta (decomposizione
+# scaduta), l'assegnazione tipizzata crashava invece di essere gestita dal controllo che il
+# commento sopra descrive. is_instance_valid() lavora su un riferimento generico (mai un problema),
+# solo l'USO (is_selected/queue_redraw) richiede il tipo vero — mai raggiunto se non valido. Pulizia
+# della entry stantia (dead_body_views.erase) quando trovata invalida: evita di ripetere lo stesso
+# controllo fallito ad ogni futura selezione/deselezione dello stesso individual_id.
 func _set_dead_body_view_selected(individual_id: int, selected: bool) -> void:
-	var view: DeadBodyView = dead_body_views.get(individual_id)
-	if view != null and is_instance_valid(view):
-		view.is_selected = selected
-		view.queue_redraw()
+	var view = dead_body_views.get(individual_id)
+	if view == null:
+		return
+	if not is_instance_valid(view):
+		dead_body_views.erase(individual_id)
+		return
+	view.is_selected = selected
+	view.queue_redraw()
 
 
 # Risolve selected_dead_body_individual_id sul vero record in game_data.expired_objects (scansione
@@ -1217,16 +1483,20 @@ func _deselect_all_human_individuals() -> void:
 # Età ricalcolata al volo da HumanCalculator (mai salvata su HumanIndividual, stesso principio già
 # usato da HumanSeedingService in fase di generazione) — human_folk.human_rules_ref è lo stesso
 # HumanRules usato lì. strength resta fuori, non ancora richiesto.
-# max_workforce/residual_workforce (2026-09-04): nessun consumo reale ancora esistente (nessuna
-# classe Action), quindi residual coincide sempre col max — l'UNICA riga da sostituire quando
-# arriverà HumanIndividual.residual_workforce è quella subito sotto (residual_workforce =
-# max_workforce), il pannello non va toccato.
+# max_stamina/current_stamina (2026-09-04, rinominati da max_workforce/residual_workforce il
+# 2026-09-06 — rename completo Workforce->Stamina, richiesta utente, nessuna modifica di
+# comportamento): letti ENTRAMBI da target (campi reali su HumanIndividual, richiesta utente
+# 2026-09-06) — max_stamina è ricalcolato ogni giorno (HumanStaminaIndividualService), current_
+# stamina invece resta fermo al valore di creazione (nessun sistema di consumo/reset esiste
+# ancora), quindi oggi i due numeri coincidono solo per chi non ha ancora un ricalcolo diverso da
+# quello iniziale — non più una spia sempre-vera "corrente == massimo" come prima di questo
+# passo, solo una coincidenza attuale.
 func _select_individual(target: HumanIndividual) -> void:
 	_update_individual_panel_content(target)
 	game_info_tabs.show_selection_tab()
 
 
-# Contenuto del pannello individuo (età/age_band/workforce), SEPARATO dal salto alla tab
+# Contenuto del pannello individuo (età/age_band/stamina), SEPARATO dal salto alla tab
 # selezione sopra (bugfix, richiesta utente, 2026-09-05): _refresh_selected_individual_panel
 # sotto lo chiama al rollover d'anno per aggiornare l'età SENZA rubare la tab attiva
 # all'utente — prima riusava _select_individual per intero, che include SEMPRE
@@ -1238,16 +1508,21 @@ func _update_individual_panel_content(target: HumanIndividual) -> void:
 		game_data.era_effective_age_band_durations_male, game_data.era_effective_age_band_durations_female, target.sex, float(age)
 	)
 	# Moltiplicatori gravidanza/figlio a carico (2026-09-06) — SOLO display, migliorano
-	# l'accuratezza del numero mostrato, nessun sistema di consumo workforce reale esiste ancora.
+	# l'accuratezza del numero mostrato, nessun sistema di consumo stamina reale esiste ancora.
 	# Stessa estrazione di valori primitivi dall'individuo già fatta sopra per sesso/età: la
 	# funzione pura non riceve mai l'oggetto HumanIndividual intero.
 	var era_rules := EraCalculator.get_era_rules(game_data.current_era_name)
-	var max_workforce := HumanCalculator.get_base_workforce(
+	var max_stamina := HumanCalculator.get_max_stamina(
 		human_folk.human_rules_ref, age_band, target.sex,
 		target.is_pregnant, target.dependent_child_id != -1, era_rules
 	)
-	var residual_workforce := max_workforce # TODO: sostituire con target.residual_workforce quando esisterà
-	human_individual_info_panel.show_individual(target, age, age_band, max_workforce, residual_workforce)
+	var current_stamina := target.current_stamina
+	# "Cosa sta facendo" (2026-09-07, richiesta utente) — Task.get_activity_description() risolve
+	# testo+tr() da current_task (vedi Task.gd); null = nessuna Task in corso, cioè Rest implicito
+	# (vedi HumanIndividualActionService.apply_action), reso qui come stringa esplicita invece che
+	# un pannello vuoto/ambiguo.
+	var activity_text: String = target.current_task.get_activity_description() if target.current_task != null else tr("task_activity_idle")
+	human_individual_info_panel.show_individual(target, age, age_band, max_stamina, current_stamina, activity_text)
 	game_info_tabs.set_selection_title(tr("selection_title_name").format({"name": target.name}))
 
 
@@ -1366,6 +1641,7 @@ func _on_human_individual_born(individual: HumanIndividual) -> void:
 	var view := HumanIndividualView.new()
 	live_cells[individual.home_macro_coords].container.add_child(view)
 	view.setup(individual, game_data, human_folk.human_rules_ref if human_folk != null else null)
+	view.clock = clock
 	view.z_index = 1
 	human_individual_views.append(view)
 	# Sistema notifiche, effetto nato-morto (2026-09-06) — stesso gate/schema di
@@ -1398,6 +1674,22 @@ func _on_human_stillbirth(mother: HumanIndividual) -> void:
 	notification_popup.enqueue(
 		NotificationTypes.NotificationPopupType.BIRTH,
 		tr("notification_stillbirth").format({"mother": mother.name})
+	)
+
+
+# Sblocco Idea (2026-09-07, richiesta utente) — collegato a TechTreePanel.idea_completed: stesso
+# identico NotificationPopup/stesso gate UserOptions.show_notification_popups di morte/nascita
+# sopra (un'impostazione utente/installazione, non di partita — si disattiva insieme alle altre da
+# Opzioni, richiesta esplicita). display_name è una chiave tr() (vedi Idea.gd), mai testo diretto —
+# stesso trattamento già corretto in _refresh_building_slots_buildable/TechTreePanel.
+func _on_idea_completed(idea_id: String) -> void:
+	if not UserOptions.show_notification_popups:
+		return
+	var completed_idea := IdeaCalculator.get_idea(idea_id)
+	var display_name: String = tr(completed_idea.display_name) if completed_idea != null else idea_id
+	notification_popup.enqueue(
+		NotificationTypes.NotificationPopupType.IDEA_COMPLETED,
+		tr("notification_idea_completed").format({"idea": display_name})
 	)
 
 
@@ -1468,7 +1760,6 @@ func _on_year_rolled_over() -> void:
 # essere letto nel riferimento giusto.
 func _set_movement_target(target: HumanIndividual) -> void:
 	if target != individual:
-		target.stop()
 		# BUGFIX (2026-09-04, richiesta utente, non correlato al lavoro sul FoW): il VECCHIO
 		# bersaglio (quello abbandonato dal cambio di selezione) deve fermarsi per intero, non solo
 		# smettere di essere avanzato. GameScene._process chiama individual_movement_service.
@@ -1478,6 +1769,15 @@ func _set_movement_target(target: HumanIndividual) -> void:
 		# QUEL flag, non alla posizione reale: risultato, un personaggio fermo con gambe/braccia
 		# che continuavano a camminare all'infinito. individual (il vecchio bersaglio) può essere
 		# null alla primissima selezione di una partita nuova — guardia esplicita.
+		#
+		# BUGFIX (2026-09-07, richiesta utente — "se clicco due volte su uno che sta facendo
+		# un'azione la interrompo"): qui c'era ANCHE un `target.stop()` (sul NUOVO bersaglio, non
+		# sul vecchio) — corretto quando esisteva solo un semplice movimento da azzerare, diventato
+		# distruttivo ora che stop() svuota anche current_task: selezionare un individuo occupato
+		# (Task in corso) la interrompeva subito, prima ancora di poterne vedere lo stato nel
+		# pannello. Rimosso: il nuovo bersaglio sta per diventare `individual`, quindi da questo
+		# stesso frame in poi GameScene._process riprende a chiamare apply_action su di lui — la
+		# sua Task prosegue senza interruzioni, esattamente come se non fosse mai stato deselezionato.
 		if individual != null:
 			individual.stop()
 
@@ -2855,6 +3155,11 @@ func _assign_clock_to_all_live_cells() -> void:
 	for cell in live_cells.values():
 		for r in cell.animal_renderers.values():
 			r.clock = clock
+	# Human_individual_views (2026-09-07, stesso bugfix di animal_renderers sopra): create durante
+	# il seeding iniziale in _ready(), PRIMA che questa funzione giri, quindi il loro view.clock =
+	# clock fatto lì è ancora null — corretto qui una volta che clock esiste davvero.
+	for view in human_individual_views:
+		view.clock = clock
 
 
 # Aggiorna GameData con la posizione ATTUALE dell'individuo/zoom camera (vedi HumanIndividual.position/
@@ -2918,6 +3223,9 @@ func _on_primary_action_pressed(action_id: StringName) -> void:
 	match action_id:
 		&"statistics":
 			statistics_panel.open_dialog(game_data, human_individuals)
+		# Slot 1, accanto alle statistiche (2026-09-07, richiesta utente) — 💡, apre TechTreePanel.
+		&"tech_tree":
+			tech_tree_panel.open_dialog(human_folk)
 
 
 # toggle_animals_visibility/toggle_flora_updates/world_debug/macro_cell_debug — vissuti prima
@@ -2961,16 +3269,22 @@ func _on_build_submenu_action_pressed(action_id: StringName) -> void:
 		return
 	_selected_building_type_name = building_type_name
 	_building_ghost = BuildingGhost.new()
+	# Quale sagoma disegnare durante l'anteprima (2026-09-07, richiesta utente, Stone Circle) — vedi
+	# BuildingGhost.building_type_name: prima di questo passo l'unico tipo esistente (hut) rendeva
+	# superfluo dirglielo esplicitamente.
+	_building_ghost.building_type_name = building_type_name
 	add_child(_building_ghost)
 
 
-# Unica mappatura action_id -> nome tipo edificio (per BuildingCalculator.get_building_rules) —
-# solo "hut" esiste oggi, ma tenerla come funzione dedicata invece di un valore hardcoded dentro
-# _place_building_at evita di dover toccare quel metodo quando arriverà un secondo tipo.
+# Mappatura action_id -> nome tipo edificio (per BuildingCalculator.get_building_rules) — tenuta
+# come funzione dedicata invece di un valore hardcoded dentro _place_building_at, esattamente
+# perché arrivasse un secondo tipo senza dover toccare quel metodo (Stone Circle, 2026-09-07).
 func _building_type_name_for_action(action_id: StringName) -> String:
 	match action_id:
 		&"build_hut":
 			return "hut"
+		&"build_stone_circle":
+			return "stone_circle"
 		_:
 			return ""
 
@@ -2983,6 +3297,64 @@ func _clear_building_ghost() -> void:
 	_selected_building_type_name = ""
 
 
+# Vincoli di disponibilità PER TIPO in BuildBar (2026-09-07, richiesta utente — GENERALIZZATA da
+# _refresh_stone_circle_buildable, che copriva solo is_village_center) — vive QUI, non in
+# BuildingVerificationService.is_position_buildable (che deve restare legata solo a
+# terreno/spazio/sovrapposizioni di UNA posizione, mai a "questo tipo è disponibile ovunque nel
+# mondo/per questo Folk": un vincolo concettualmente diverso, di disponibilità del TIPO, non di
+# validità della POSIZIONE). GameScene fa il controllo vero (l'unico punto che già possiede
+# macro_world/human_folk), BuildBar.set_building_buildable si limita a riflettere il risultato sullo
+# slot corrispondente — build_bar resta muta su World/Building/Folk, come da principio dichiarato
+# in BuildBar.gd. Itera BuildingCalculator.list_building_type_names() (stesso elenco-per-convenzione
+# già usato altrove) invece di un elenco hardcoded: un futuro terzo tipo con is_village_center o
+# required_idea_id viene coperto da solo, senza toccare questa funzione.
+#
+# PUNTO DI AGGANCIO per un futuro completamento Idea (richiesta utente, 2026-09-07): quando esisterà
+# una vera logica che aggiunge un id a human_folk.completed_ideas, quel punto dovrà richiamare
+# QUESTA STESSA funzione per aggiornare subito gli slot che diventano disponibili — nessun secondo
+# meccanismo da costruire, il ricalcolo qui è già completo/idempotente (rilegge lo stato attuale di
+# completed_ideas ad ogni chiamata, non un delta). Non ancora collegato a nulla in questo passo.
+func _refresh_building_slots_buildable() -> void:
+	for building_type_name in BuildingCalculator.list_building_type_names():
+		var rules := BuildingCalculator.get_building_rules(building_type_name)
+		if rules == null:
+			continue
+		var availability := _building_type_availability(rules)
+		build_bar.set_building_buildable(building_type_name, availability["is_buildable"], availability["disabled_tooltip"])
+
+
+# Estratta da _refresh_building_slots_buildable (2026-09-07, richiesta utente — bugfix incoerenza
+# Stone Circle: un fantasma già APERTO prima che un vincolo di tipo scattasse continuava a piazzare
+# all'infinito, perché solo l'APERTURA di una nuova selezione in BuildBar veniva controllata, mai il
+# singolo PIAZZAMENTO dentro una selezione già in corso) — stessa identica logica, ora riusabile sia
+# qui (per riflettere lo stato sulla BuildBar) sia da _place_building_at (per un ricontrollo al
+# momento del piazzamento vero e proprio, indipendente da quando il fantasma è stato aperto).
+# Ritorna {"is_buildable": bool, "disabled_tooltip": String} — la tooltip è calcolata comunque
+# anche quando il chiamante (_place_building_at) non la userà mai, per non duplicare la logica in
+# due posti.
+func _building_type_availability(rules: BuildingRules) -> Dictionary:
+	if rules.is_village_center:
+		var village_center_exists := false
+		if macro_world != null:
+			for building in macro_world.buildings:
+				if building.rules != null and building.rules.is_village_center:
+					village_center_exists = true
+					break
+		if village_center_exists:
+			return {"is_buildable": false, "disabled_tooltip": tr("build_bar_stone_circle_disabled_tooltip")}
+	if rules.required_idea_id != "" and (human_folk == null or not human_folk.completed_ideas.has(rules.required_idea_id)):
+		var required_idea := IdeaCalculator.get_idea(rules.required_idea_id)
+		# tr() su display_name (2026-09-07, bugfix — vedi Idea.gd/TechTreePanel per gli altri due
+		# punti che devono fare lo stesso): non è più testo diretto, è una chiave tr() come
+		# BuildingRules.building_name.
+		var required_idea_display_name: String = tr(required_idea.display_name) if required_idea != null else rules.required_idea_id
+		return {
+			"is_buildable": false,
+			"disabled_tooltip": tr("build_bar_requires_idea_tooltip").format({"idea": required_idea_display_name}),
+		}
+	return {"is_buildable": true, "disabled_tooltip": ""}
+
+
 # Piazzamento REALE (debug, vedi discussione con l'utente sul perché è così semplice): completo
 # immediatamente — is_complete=true da subito, current_durability già a rules.max_durability,
 # niente min_construction_days/required_labor/materiali/tech (quei sistemi non esistono ancora —
@@ -2990,8 +3362,12 @@ func _clear_building_ghost() -> void:
 # istantanei come oggi). Verifica di edificabilità (BuildingVerificationService) ricollegata
 # 2026-08-30, ricostruita da zero passo per passo — vedi il service per lo stato attuale dei
 # criteri.
-# Il fantasma NON viene rimosso da qui: resta al chiamante (_unhandled_input) l'aver deciso di
-# continuare il modo piazzamento dopo un piazzamento riuscito.
+# Il fantasma di norma NON viene rimosso da qui: resta al chiamante (_unhandled_input) l'aver
+# deciso di continuare il modo piazzamento dopo un piazzamento riuscito — ECCEZIONE per i tipi
+# is_village_center (2026-09-07, richiesta utente, punto 2 del bugfix Stone Circle): quel fantasma
+# si chiude DA SOLO subito dopo un piazzamento riuscito, invece di restare aperto come per la
+# capanna — non avrebbe senso invitare a "piazzarne un altro in fila" per un tipo che diventa
+# indisponibile dopo il primo (vedi la chiamata a _clear_building_ghost in fondo alla funzione).
 #
 # Sequenza "libera-poi-occupa": PRIMA si libera dal budget vegetazione esattamente quello che
 # occupa già la microcella (BuildingSiteClearingService — TREE/SHRUB realmente presenti, se
@@ -3005,6 +3381,16 @@ func _place_building_at(world_position: Vector2) -> void:
 		return
 	var rules := BuildingCalculator.get_building_rules(_selected_building_type_name)
 	if rules == null:
+		return
+	# Ricontrollo al momento del piazzamento (2026-09-07, richiesta utente, punto 1 del bugfix
+	# Stone Circle) — NON basta che BuildBar avesse disabilitato lo slot: quel controllo scatta solo
+	# quando si APRE una nuova selezione, mai dentro una selezione/fantasma già aperto PRIMA che il
+	# vincolo diventasse vero (es. fantasma Stone Circle aperto quando non ne esisteva ancora uno,
+	# poi il player continuava a piazzarne altri nella stessa sessione di click). Stessa identica
+	# logica già usata per la BuildBar (_building_type_availability), qui riapplicata al singolo
+	# tipo che si sta effettivamente piazzando ORA — non in BuildingVerificationService.
+	# is_position_buildable, che resta legata solo a terreno/spazio/sovrapposizioni di una posizione.
+	if not _building_type_availability(rules)["is_buildable"]:
 		return
 	if not BuildingVerificationService.is_position_buildable(
 		live_cells, MACRO_CELL_PIXELS, MicroCellRenderer.CELL_SIZE, world_position,
@@ -3056,6 +3442,20 @@ func _place_building_at(world_position: Vector2) -> void:
 		_selected_building_type_name, building.id, target_cell.macro_x, target_cell.macro_y, macro_world.buildings.size()
 	])
 
+	# Aggiorna SUBITO la disponibilità di TUTTI gli slot BuildBar (2026-09-07, richiesta utente) —
+	# non solo se questo piazzamento era esso stesso uno Stone Circle: chiamata incondizionata,
+	# costo trascurabile con pochi edifici/tipi (vedi _refresh_building_slots_buildable), niente da
+	# guadagnare filtrando prima per tipo.
+	_refresh_building_slots_buildable()
+
+	# Chiusura automatica del fantasma per i tipi is_village_center (2026-09-07, richiesta utente,
+	# punto 2 del bugfix Stone Circle — vedi il commento in testa alla funzione) — DOPO il refresh
+	# sopra, non prima: _clear_building_ghost azzera _selected_building_type_name, che
+	# _refresh_building_slots_buildable non usa comunque, ma l'ordine "aggiorna stato, poi chiudi UI"
+	# resta il più naturale dei due.
+	if rules.is_village_center:
+		_clear_building_ghost()
+
 
 # LiveMacroCell + posizione MICRO (coordinate di griglia, non pixel) sotto world_position, o {} se
 # nessuna cella viva la copre (fuori dall'area caricata) — stessa logica di traduzione (to_local +
@@ -3088,9 +3488,10 @@ func _building_positions_for_cell(cell: LiveMacroCell) -> Array:
 
 
 # Stessa fonte/filtro di _building_positions_for_cell sopra, ma con l'orientamento (e, da Step 4,
-# l'id) inclusi — vedi MicroCellRenderer.set_buildings/buildings (Array[Dictionary], {"position",
-# "rotation","id"}). Funzione separata invece di arricchire quella sopra: _building_positions_for_
-# cell resta usata anche per l'esclusione vegetazione, dove rotazione/id non servono a nessuno.
+# l'id, e da Stone Circle 2026-09-07 il tipo) inclusi — vedi MicroCellRenderer.set_buildings/
+# buildings (Array[Dictionary], {"position","rotation","id","building_type_name"}). Funzione
+# separata invece di arricchire quella sopra: _building_positions_for_cell resta usata anche per
+# l'esclusione vegetazione, dove rotazione/id/tipo non servono a nessuno.
 # "id" (Step 4, richiesta utente 2026-09-04): permette al renderer di ritrovare l'edificio
 # selezionato tra i propri (set_selected_building/get_building_screen_position) senza dover
 # conoscere Building stesso — stesso principio "il renderer conosce solo le forme, mai gli oggetti
@@ -3105,6 +3506,10 @@ func _buildings_for_cell(cell: LiveMacroCell) -> Array:
 				"position": Vector2i(building.micro_x, building.micro_y),
 				"rotation": building.rotation,
 				"id": building.id,
+				# "building_type_name" (2026-09-07, richiesta utente, Stone Circle) — prima di
+				# questo passo tutti gli edifici erano capanne, quindi MicroCellRenderer._draw_
+				# buildings non aveva bisogno di distinguere: ora sì, vedi lì.
+				"building_type_name": building.building_type_name,
 			})
 	return result
 
@@ -3292,6 +3697,21 @@ func _on_day_advanced(checkpoint_ran: bool, animals_changed: bool) -> void:
 	# stagionale di WorldTimeService (vedi _maybe_prune_fog_of_war_memories per il perché) — gira
 	# quindi anche nei giorni "vuoti" in cui il resto di questa funzione farebbe early-return sotto.
 	_maybe_prune_fog_of_war_memories()
+	# Refresh giornaliero del pannello individuo selezionato (2026-09-06, richiesta utente) — PRIMA
+	# dell'early-return sotto, stesso motivo di _maybe_prune_fog_of_war_memories sopra: deve girare
+	# anche nei giorni "vuoti" (nessun checkpoint/animali cambiati), non solo quando il resto della
+	# funzione prosegue. Stesso canale già esistente usato per il refresh ANNUALE (GameScene.
+	# _on_year_rolled_over, connesso direttamente a clock.year_rolled_over) — MAI attraverso
+	# GameTimeService, che non ha né deve avere un riferimento a GameScene (resta agnostico rispetto
+	# a UI/pannelli, per design). Costo misurato con un dato reale (non assunto trascurabile) —
+	# stesso stile/convenzione di HumanStaminaIndividualService/DebugLogging.SHOW_STAMINA_RECALC_LOGS.
+	var _debug_panel_refresh_start_usec := Time.get_ticks_usec()
+	_refresh_selected_individual_panel()
+	if DebugLogging.ENABLED and DebugLogging.SHOW_SELECTED_PANEL_REFRESH_LOGS:
+		var panel_refresh_elapsed_ms := (Time.get_ticks_usec() - _debug_panel_refresh_start_usec) / 1000.0
+		print("[SELECTED PANEL REFRESH] anno=%d giorno=%d: %.3f ms" % [
+			game_data.year, game_data.current_day, panel_refresh_elapsed_ms
+		])
 	if not (checkpoint_ran or animals_changed):
 		# Filtrato ai soli dintorni di un checkpoint stagionale (richiesta utente, 2026-09-05 —
 		# stesso motivo/helper di WorldTimeService.advance_day/GameClockController._process: un log

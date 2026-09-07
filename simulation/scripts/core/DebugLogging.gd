@@ -106,3 +106,27 @@ const SHOW_FOW_REDRAW_TIMING_LOGS := false
 # quando più di un individuo potrà muoversi contemporaneamente (oggi limite esplicito a uno solo),
 # per rimisurare il costo aggregato in quello scenario.
 const SHOW_HUMAN_VIEW_TIMING_LOGS := false
+
+# Filtro dedicato per [HUMAN STAMINA RECALC] (HumanStaminaIndividualService, agganciato a
+# GameTimeService._on_day_advanced) — riga diretta (non un accumulatore come SHOW_HUMAN_VIEW_
+# TIMING_LOGS sopra: gira una volta al GIORNO, non ad alta frequenza per-frame, quindi una riga per
+# ricalcolo resta leggibile) col tempo impiegato a ricalcolare HumanIndividual.max_stamina per
+# l'intera popolazione. A false: nessun comportamento di simulazione cambia (il ricalcolo gira
+# comunque ogni giorno), solo il print viene soppresso.
+const SHOW_STAMINA_RECALC_LOGS := false
+
+# Filtro dedicato per [SELECTED PANEL REFRESH] (GameScene._on_day_advanced, refresh giornaliero del
+# pannello individuo selezionato) — riga diretta (stesso stile di SHOW_STAMINA_RECALC_LOGS sopra:
+# gira una volta al giorno, costo atteso trascurabile — 0 o 1 individuo selezionato, mai un ciclo
+# sulla popolazione intera — ma misurato con un dato reale invece che assunto). A false: nessun
+# comportamento di simulazione cambia (il refresh gira comunque ogni giorno), solo il print viene
+# soppresso.
+const SHOW_SELECTED_PANEL_REFRESH_LOGS := false
+
+# Filtro dedicato per [TASK COST] (Task.print_cost_summary, richiamato da HumanIndividualActionService.
+# apply_action) — un log UNA TANTUM quando una Task si conclude (tutti gli step completati), col
+# costo in stamina/giorni scomposto per step + un totale finale; mai un log per step o per frame.
+# A false: nessun comportamento di simulazione cambia, solo il print viene soppresso. Default true
+# (a differenza della maggior parte dei flag sopra, tutti a false): funzionalità appena introdotta,
+# non ancora verificata con un run reale — riportalo a false una volta confermato il formato.
+const SHOW_TASK_TOTAL_COST_LOGS := true

@@ -16,7 +16,7 @@ extends Resource
 @export_group("Longevity")
 # Moltiplicatore applicato (in una sessione futura) a HumanRules.age_band_durations_male/female —
 # stessa indicizzazione per age band di size_multiplier_by_age/caloric_multiplier_by_age/
-# workforce_multiplier_by_age in HumanRules (0=CHILD, 1=TEENAGER, 2=FERTILE_ADULT, 3=MATURE_ADULT,
+# stamina_multiplier_by_age in HumanRules (0=CHILD, 1=TEENAGER, 2=FERTILE_ADULT, 3=MATURE_ADULT,
 # 4=OLD). 1.0 = durata invariata rispetto al dato base di HumanRules, <1.0 = fascia accorciata.
 @export var longevity_multiplier_by_age: Array[float] = [1.0, 1.0, 1.0, 1.0, 1.0]
 
@@ -40,14 +40,27 @@ extends Resource
 # lasciato al default implicito.
 @export var min_birth_spacing_years: int = 1
 
-@export_group("Workforce")
-# Moltiplicatore applicato a HumanCalculator.get_base_workforce quando l'individuo ha un figlio a
+@export_group("Stamina")
+# Moltiplicatore applicato a HumanCalculator.get_max_stamina quando l'individuo ha un figlio a
 # carico (dependent_child_id != -1) — SOLO display ancora (2026-09-06, nessun sistema di consumo
-# workforce reale esiste), migliora l'accuratezza del numero mostrato nel pannello individuo.
+# stamina reale esiste), migliora l'accuratezza del numero mostrato nel pannello individuo.
 # Legato all'Era (non a HumanRules) per lo stesso motivo di min_birth_spacing_years sopra: la
 # fatica di portare un figlio dipende dalle condizioni di vita dell'Era, non dal Folk. Il
-# moltiplicatore GRAVIDANZA invece è hardcoded (0.5, vedi HumanCalculator.get_base_workforce) —
+# moltiplicatore GRAVIDANZA invece è hardcoded (0.5, vedi HumanCalculator.get_max_stamina) —
 # scelta deliberata dell'utente, non un dato di configurazione: i due stati sono comunque mutuamente
 # esclusivi per costruzione (mai applicati insieme), quindi non serve nessuna logica di
 # combinazione tra i due moltiplicatori.
-@export var dependent_child_workforce_multiplier: float = 1.0
+#
+# Rinominato da dependent_child_workforce_multiplier (2026-09-06, richiesta utente, rename completo
+# Workforce->Stamina) — solo rename, nessuna modifica di valore/logica.
+@export var dependent_child_stamina_multiplier: float = 1.0
+
+@export_group("Think")
+# Moltiplicatore applicato alla durata BASE di ThinkAction (2026-09-07, richiesta utente, primo
+# passo del futuro Daydream) — stesso principio "base altrove × moltiplicatore qui" già seguito da
+# conception_probability_multiplier/dependent_child_stamina_multiplier sopra: il chiamante che crea
+# ThinkAction (mai ThinkAction stessa, vedi Action.gd/ThinkAction.gd per il perché nessuna Action
+# conosce EraRules/Folk) risolve base × questo moltiplicatore e passa il risultato già calcolato al
+# costruttore. 1.0 = nessun effetto rispetto alla durata base, <1.0 = pensare più rapido in questa
+# Era, >1.0 più lento.
+@export var think_duration_multiplier: float = 1.0

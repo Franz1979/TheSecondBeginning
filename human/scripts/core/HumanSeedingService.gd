@@ -123,7 +123,7 @@ const SPAWN_GRID_SPACING: float = 1.2
 # aver chiamato GameData.set_current_era) e le passa qui — questo servizio resta stateless, non
 # tocca mai GameData/EraCalculator da sé (stesso principio di current_year sopra). human_rules
 # resta comunque un parametro a sé: serve ancora per Folk.human_rules_ref (altri campi come
-# workforce, mai le durate età, che ora passano SOLO dagli array qui sotto). NESSUN fallback
+# stamina, mai le durate età, che ora passano SOLO dagli array qui sotto). NESSUN fallback
 # difensivo se il chiamante passa array vuoti/troppo corti (il chiamante DEVE aver già risolto
 # l'Era, vedi GameScene) — stesso principio "non validare scenari che non possono accadere" già
 # seguito nel resto del progetto: _age_band_* sotto indicizzano durations[age_band] confidando

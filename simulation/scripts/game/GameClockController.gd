@@ -25,17 +25,26 @@ signal year_rolled_over()
 # a DebugLogging.ENABLED (vedi *Scene._setup_clock), che scorre il tempo molto più rapidamente delle
 # altre tre — stesso sec/day che X4 aveva PRIMA di questo passo (0.25, vedi sotto), recuperato prima
 # di sovrascrivere X4 con la nuova mappatura.
-enum Speed { X1, X2, X4, DEBUG }
+# X8 aggiunto (richiesta utente, 2026-09-07) TRA X4 e DEBUG (non in coda dopo DEBUG): mantiene la
+# progressione numerica leggibile (X1<X2<X4<X8) e lascia comunque DEBUG per ultimo come "quarto
+# membro fuori scala" originale. Nessun consumatore nel progetto dipende dal valore ORDINALE intero
+# di Speed.DEBUG restando stabile tra una sessione e l'altra (GameSettings.active_clock_speed è un
+# plain int di sola sessione, mai persistito su disco — vedi commento lì — e il fallback a X1 in
+# *Scene._setup_clock già gestisce un valore stantio/sconosciuto), quindi il suo slittamento da 3 a
+# 4 è innocuo. NESSUN pulsante UI aggiunto per X8 in questo passo (richiesta esplicita utente): i
+# tre script *Scene.gd (GameScene/WorldScene/MacroCellScene) e le rispettive .tscn non sono stati
+# toccati, quindi X8 esiste nel sistema ma non è ancora selezionabile da UI.
+enum Speed { X1, X2, X4, X8, DEBUG }
 
 # seconds_per_day: quanti secondi REALI durano per avanzare di un giorno di gioco — NON più 1.0/N
-# (formula abbandonata insieme a X3, richiesta utente 2026-09-04): X1/X2/X4 sono ora tarati a
-# 4/2/1 secondi/giorno (dimezza ad ogni step, ma parte da una base più lenta di prima). DEBUG=0.25
-# è il vecchio valore di X4 pre-modifica, recuperato per il nuovo pulsante "velocità debug" invece
-# di andare perso.
+# (formula abbandonata insieme a X3, richiesta utente 2026-09-04). Ritarati (richiesta utente,
+# 2026-09-07, in coppia con l'aggiunta di X8): X1/X2/X4/X8 ora dimezzano da 8.0 a 1.0 secondi/giorno
+# (X8 = X1 diviso 8, coerente col nome). DEBUG=0.25 invariato (non menzionato dalla richiesta).
 const SECONDS_PER_DAY_BY_SPEED := {
-	Speed.X1: 4.0,
-	Speed.X2: 2.0,
-	Speed.X4: 1.0,
+	Speed.X1: 8.0,
+	Speed.X2: 4.0,
+	Speed.X4: 2.0,
+	Speed.X8: 1.0,
 	Speed.DEBUG: 0.25,
 }
 
@@ -56,6 +65,19 @@ var _day_progress: float = 0.0
 func setup(world: World, game_data: GameData) -> void:
 	_world = world
 	_game_data = game_data
+
+# Secondo punto d'accesso allo stesso calcolo già fatto internamente da _process sotto (2026-09-07,
+# richiesta utente) — per chi sta FUORI da questo nodo e ha bisogno di convertire un delta reale in
+# un "delta di tempo di gioco" che scali con is_playing/speed (es. GameScene._process per
+# agganciarci Walk/Rest/azioni future). Stessa logica di _process, non un calcolo diverso: ritorna
+# 0.0 se in pausa (stesso comportamento del return immediato lì), altrimenti real_delta diviso per
+# gli stessi secondi/giorno della velocità corrente. _process stesso NON chiama questo metodo —
+# resta un calcolo duplicato apposta, per non introdurre qui una dipendenza a un side-effect (il
+# calcolo di _process avanza anche _day_progress, cosa che questo metodo deliberatamente non fa).
+func get_game_day_delta(real_delta: float) -> float:
+	if not is_playing:
+		return 0.0
+	return real_delta / SECONDS_PER_DAY_BY_SPEED[speed]
 
 func _process(delta: float) -> void:
 	if not is_playing:

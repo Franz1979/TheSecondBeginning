@@ -197,6 +197,19 @@ const ARM_SWING_BACKWARD_AMPLITUDE: float = 0.3
 
 var individual: HumanIndividual
 
+# Se assegnato (vedi GameScene._assign_clock_to_all_live_cells/_on_human_individual_born), l'
+# animazione gambe/braccia avanza SOLO quando clock.is_playing è true — stesso orologio che
+# governa l'avanzamento giorno/anno, e stesso pattern già usato da AnimalGroupRenderer.clock per lo
+# stesso identico bug (bugfix, richiesta utente, 2026-09-07: prima l'animazione era gated solo su
+# individual.is_moving, che resta true durante una pausa a metà tragitto — dato che advance_movement
+# riceve un game_delta pari a 0.0 in pausa, la position smette di avanzare ma is_moving no, quindi
+# walk_phase continuava ad avanzare a tempo reale, "gambe che continuano a camminare da fermo").
+# Assegnato DOPO setup() (non un suo parametro): all'istante in cui GameScene crea le prime view in
+# _ready(), clock è ancora null (GameScene._setup_clock() gira dopo, stesso ordine già presente per
+# animal_renderers — vedi il commento "può essere null qui" in _activate_live_cell). Se null (nessun
+# clock assegnato), il comportamento resta quello di sempre — invariato per contesti senza clock.
+var clock: GameClockController = null
+
 # Riferimenti per il ridimensionamento per età/sesso (richiesta utente, 2026-09-04) — passati da
 # GameScene a setup() sotto, mai risolti da questa classe (stesso principio già seguito per
 # fog_of_war_memory in FogOfWarRenderer: le dipendenze arrivano dal chiamante, mai cercate/
@@ -298,7 +311,14 @@ func _process(delta: float) -> void:
 		var sex_multiplier: float = human_rules.size_multiplier_by_sex[individual.sex]
 		scale = Vector2.ONE * age_multiplier * sex_multiplier
 	if individual.is_moving:
-		walk_phase += delta * WALK_PHASE_SPEED
+		# Bugfix (richiesta utente, 2026-09-07): in pausa (clock.is_playing == false) walk_phase
+		# resta CONGELATA al valore corrente — nessun avanzamento, ma nemmeno un azzeramento, che
+		# farebbe scattare le gambe a riposo per poi risaltare al punto giusto del passo alla
+		# ripresa. is_moving resta true durante la pausa (l'individuo non è ancora arrivato a
+		# destinazione), quindi il ramo `else` sotto (azzeramento) resta riservato al SOLO arrivo
+		# reale/stop esplicito, mai alla pausa.
+		if clock == null or clock.is_playing:
+			walk_phase += delta * WALK_PHASE_SPEED
 	else:
 		walk_phase = 0.0
 	# facing_direction (2026-09-04): non più calcolata/congelata qui — HumanIndividualMovementService.

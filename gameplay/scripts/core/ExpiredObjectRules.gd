@@ -19,6 +19,10 @@ extends Resource
 # campo è già nell'unità che il calcolo userà davvero, nessuna conversione anno->giorno necessaria
 # altrove.
 @export var days_to_expire: int
-@export var workforce_cost_to_remove: float
+# Rinominato da workforce_cost_to_remove (2026-09-06, richiesta utente) — solo rename, nessuna
+# modifica di valore/logica. Resta concettualmente separato dal sistema Stamina (HumanCalculator/
+# HumanRules/EraRules): questo è "lavoro richiesto dal target" per essere rimosso, non "capacità
+# dell'agente" — nessun collegamento tra i due, deliberatamente.
+@export var required_work_to_remove: float
 @export var material_recovery_percentage: float
 @export var action_needed_to_remove: ExpiredObjectTypes.RemovalActionType

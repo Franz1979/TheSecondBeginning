@@ -61,6 +61,9 @@ func _ready() -> void:
 	# seconda riga del tooltip aveva senso solo per spiegare perché fosse disabilitato, non più
 	# pertinente ora che apre davvero StatisticsPanel — vedi GameScene._on_primary_action_pressed).
 	primary_actions_bar.configure_slot(0, "📊", tr("statistics_tooltip"), &"statistics")
+	# Slot 1, accanto alle statistiche (2026-09-07, richiesta utente) — apre TechTreePanel, stesso
+	# slot placeholder disabilitato di prima (slot_count=5 in .tscn, mai nessuna .tscn da toccare).
+	primary_actions_bar.configure_slot(1, "💡", tr("tech_tree_tooltip"), &"tech_tree")
 
 	# ☰/❓ restano qui (mai strumenti di debug): il menu di sistema e l'help sono UI definitiva.
 	secondary_actions_bar.configure_slot(0, "☰", tr("menu"), &"menu")

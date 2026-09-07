@@ -49,7 +49,13 @@ var path: Array[Vector2] = []
 # NON più allineato ad AnimalRules.hop_speed (boar/mouflon) come prima: se in futuro serve
 # ripristinare quel confronto come riferimento di bilanciamento, va ridiscusso esplicitamente, non
 # è più valido as-is.
-var move_speed: float = 1.2
+# 10.0 (richiesta utente, 2026-09-07, ritarato dal precedente 4.8 in coppia con la ritaratura di
+# SECONDS_PER_DAY_BY_SPEED — vedi GameClockController): con game_delta espresso come frazione di
+# giorno di gioco, questo valore rappresenta ora DIRETTAMENTE le microcelle percorse in un giorno
+# intero di cammino continuo, qualunque sia la velocità di gioco (delta=1.0 giorno → move_speed
+# microcelle), non più un tarocco derivato da un microcelle/secondo reale. Scala linearmente con la
+# velocità di gioco (2x=doppio, 4x=quadruplo) per costruzione.
+var move_speed: float = 10.0
 var is_selected: bool = false
 
 # --- Dati anagrafici — solo campi per ora, nessuna logica di riproduzione/formazione coppie ---
@@ -139,6 +145,78 @@ var clothing_color: HumanTypes.ClothingColor = HumanTypes.ClothingColor.TAN
 # sotto), un solo valore possibile oggi (HumanTypes.SkinColor.LIGHT) ma già persistito/ereditato
 # come se non lo fosse, pronto per quando arriveranno altri valori.
 var skin_color: HumanTypes.SkinColor = HumanTypes.SkinColor.LIGHT
+
+
+# --- Sistema Stamina/Action/Task (2026-09-06/07, refactor Stamina, richiesta utente) ---
+
+# Task correntemente in corso — nullable, default null (nessuna task, individuo implicitamente a
+# Rest, vedi HumanIndividualActionService.apply_action). RINOMINATO da current_action: Action
+# (2026-09-07, richiesta utente) — SOSTITUISCE del tutto il vecchio campo, mai affiancato: un
+# individuo ora esegue sempre una SEQUENZA di step (Task, anche a un solo step, vedi set_target
+# sotto), mai una singola Action isolata. Valorizzato da set_target sotto (comando esplicito del
+# player) e da HumanIndividualActionService.apply_action (avanzamento automatico/completamento);
+# azzerato da stop() sotto.
+var current_task: Task = null
+
+# Impostato a true da ThinkAction.on_complete quando un ciclo di riflessione si conclude
+# (2026-09-07, richiesta utente, primo passo del futuro Daydream) — un flag "in sospeso", non un
+# contatore: NESSUNA logica lo consuma/azzera ancora in questo passo (arriverà con la futura
+# DepositThoughtAction, che leggerà questo flag per sapere se c'è un pensiero da depositare e lo
+# rimetterà a false). Default false, mai toccato da Walk/Rest.
+var pending_thought: bool = false
+
+# Fallback usato da _resolve_initial_max_stamina sotto quando la catena source_group_ref->
+# folk_ref->human_rules_ref non è ancora risolvibile — stesso valore del nuovo default di
+# HumanRules.base_max_stamina, deliberatamente (un fallback "onesto": nessun consumatore reale
+# esiste ancora, quindi qualunque numero coerente col resto del sistema va bene).
+const FALLBACK_MAX_STAMINA: float = 5000.0
+
+# Stamina attuale e massima — entrambe inizializzate SUBITO alla creazione, allo STESSO valore
+# (vedi _init/_resolve_initial_max_stamina sotto), chiamando HumanCalculator.get_max_stamina() con
+# i dati anagrafici già noti su self (sex/is_pregnant/dependent_child_id) e gli HumanRules risolti
+# tramite source_group_ref.folk_ref.human_rules_ref. Nessun sistema di consumo/reset reale esiste
+# ancora per current_stamina (arriverà con Walk/Rest collegati a un service esterno, step
+# successivo) — questo campo parte semplicemente già pieno. max_stamina invece (2026-09-06,
+# richiesta utente) viene già RICALCOLATO ogni giorno da HumanStaminaIndividualService (vedi
+# human/scripts/core/HumanStaminaIndividualService.gd, agganciato a GameTimeService._on_day_
+# advanced) — soluzione temporanea, vedi commento lì per il perché.
+#
+# TODO (limite noto, non risolto in questo passo): source_group_ref/sex/birth_year_virtual — come
+# OGNI altro campo anagrafico di questa classe — vengono sempre valorizzati dal CHIAMANTE DOPO
+# HumanIndividual.new() (vedi HumanSeedingService/HumanBirthIndividualService, mai passati a un
+# costruttore), quindi _init() qui sotto vede quasi sempre la catena ancora null e ricade sul
+# fallback sopra, per ENTRAMBI i campi. Per max_stamina questo è innocuo (il ricalcolo giornaliero
+# lo corregge entro al più un giorno di gioco); current_stamina invece resta al fallback finché
+# nessun sistema di consumo/reset lo tocca — non ancora un problema reale, nessun consumatore
+# esiste.
+var current_stamina: float = 0.0
+var max_stamina: float = 0.0
+
+
+func _init() -> void:
+	var initial_stamina := _resolve_initial_max_stamina()
+	current_stamina = initial_stamina
+	max_stamina = initial_stamina
+
+
+# Vedi il TODO sul campo current_stamina sopra per i limiti di questa risoluzione "al volo".
+# age_band: nessun riferimento a GameData esiste su questa classe (per design — vedi commento di
+# testa al file, "stato puro"), quindi l'età vera (che richiede current_year) non è calcolabile da
+# qui in nessun momento, non solo ora — FERTILE_ADULT è usato come default deliberato (non un
+# valore a caso): è la fascia "di riferimento" con moltiplicatore 1.0 sia per età che per sesso
+# nella maggior parte dei HumanRules, lo stesso principio già dichiarato per
+# HumanRules.stamina_multiplier_by_age. era_rules passato null: rilevante solo per il ramo
+# has_dependent_child di get_max_stamina, che quindi qui non applica mai quel moltiplicatore
+# (comunque quasi sempre false a questo punto, vedi TODO sopra).
+func _resolve_initial_max_stamina() -> float:
+	var human_rules: HumanRules = null
+	if source_group_ref != null and source_group_ref.folk_ref != null:
+		human_rules = source_group_ref.folk_ref.human_rules_ref
+	if human_rules == null:
+		return FALLBACK_MAX_STAMINA
+	return HumanCalculator.get_max_stamina(
+		human_rules, HumanTypes.AgeBand.FERTILE_ADULT, sex, is_pregnant, dependent_child_id != -1, null
+	)
 
 
 # Liste nomi come semplice testo (un nome per riga), non .tres — pensate per crescere a
@@ -275,11 +353,27 @@ func _load_name_pool(path: String) -> Array[String]:
 
 
 func set_target(target: Vector2) -> void:
-	target_position = target
-	is_moving = true
 	path.clear()
+	# Cablaggio Walk/Task (2026-09-06/07, richiesta utente) — un comando di movimento esplicito
+	# crea SEMPRE una Task NUOVA a un solo step (mai riusata tra due comandi diversi, anche se la
+	# precedente non era ancora conclusa — un nuovo target la sostituisce di netto): coerente col
+	# design di WalkAction._last_position, pensata per vivere per la durata di UNA sola camminata.
+	# target_position/is_moving NON più assegnati qui direttamente (2026-09-07) — spostati dentro
+	# WalkAction.activate(), chiamata subito sotto: stesso identico effetto visibile (un click, un
+	# movimento), ma ora è lo step stesso a sapere come prepararsi, unica fonte di verità riusata
+	# anche quando una Task futura avanza da sola a uno step successivo (vedi
+	# HumanIndividualActionService.apply_action).
+	var walk := WalkAction.new(target)
+	current_task = Task.new([walk])
+	walk.activate(self)
 
 
 func stop() -> void:
 	is_moving = false
 	path.clear()
+	# Cablaggio Walk/Task (2026-09-06/07, richiesta utente) — la task associata va ripulita ogni
+	# volta che il movimento finisce, sia per arrivo naturale (HumanIndividualActionService.
+	# apply_action chiama stop() quando la Task risulta conclusa dopo l'ultimo step, NON più
+	# HumanIndividualMovementService.advance_movement — vedi lì per il perché) sia per qualunque
+	# futura interruzione che passi da qui (stesso punto unico, mai duplicato altrove).
+	current_task = null

@@ -5,4 +5,4 @@
 [resource]
 script = ExtResource("1_dead_body")
 days_to_expire = 182
-workforce_cost_to_remove = 50.0
+required_work_to_remove = 50.0

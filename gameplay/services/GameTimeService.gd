@@ -109,6 +109,7 @@ func connect_to_clock(
 # ignorati.
 func _on_day_advanced(_checkpoint_ran: bool, _animals_changed: bool) -> void:
 	_apply_scheduled_human_deaths()
+	_recalculate_daily_max_stamina()
 	# Step 4 del sistema oggetti-scaduti (2026-09-05): giorno 10 fisso, non year_rolled_over (per
 	# non sommarsi alle altre operazioni che già girano lì, richiesta utente) — nessun nuovo
 	# contatore/segnale, solo una condizione sul giorno corrente già disponibile in questo tick.
@@ -138,6 +139,43 @@ func _on_day_advanced(_checkpoint_ran: bool, _animals_changed: bool) -> void:
 	# concepimento del day 110 dell'ANNO PRECEDENTE (110 -> fine anno -> 20 del nuovo anno).
 	if _game_data.current_day == 20:
 		_run_annual_human_births()
+
+
+# Ricalcolo giornaliero di HumanIndividual.max_stamina per l'INTERA popolazione (2026-09-06,
+# richiesta utente) — INCONDIZIONATO, nessun `if _game_data.current_day == X` (a differenza dei
+# blocchi annuali sotto/sopra): stesso stile di _apply_scheduled_human_deaths in cima a questo
+# handler, che gira ogni giorno senza condizioni.
+#
+# SOLUZIONE TEMPORANEA (richiesta utente, 2026-09-06) — periodica (una volta al giorno, per OGNI
+# individuo) invece che event-driven (solo quando qualcosa che influenza max_stamina cambia
+# davvero: inizio/fine gravidanza, figlio a carico assegnato/rimosso, cambio age_band). Vedi il
+# commento di testa a HumanStaminaIndividualService.recalculate_max_stamina per il perché: il
+# progetto non ha oggi nessun meccanismo generale per rilevare questi cambi di stato. Da rivedere
+# quando servirà un sistema più granulare (evento-driven invece che periodico) — questo passo si
+# limita a garantire che max_stamina non resti mai stantio più di un giorno di gioco.
+#
+# era_rules risolto UNA VOLTA qui (non per ogni individuo dentro il ciclo) — stesso principio già
+# seguito da _run_annual_human_conception/_run_annual_human_births: non cambia da un individuo
+# all'altro nello stesso giorno, ricalcolarlo N volte sarebbe lavoro ripetuto inutile (anche se
+# EraCalculator.get_era_rules è già cachato da Godot via load(), quindi il costo reale sarebbe
+# comunque basso — resta comunque il pattern corretto per coerenza col resto del file).
+#
+# Log diretto (non un accumulatore come HumanIndividualView._process): gira una volta al giorno,
+# non ad alta frequenza per-frame, quindi una riga per ricalcolo resta leggibile senza necessità di
+# sommare su una finestra di tempo.
+func _recalculate_daily_max_stamina() -> void:
+	if _human_individuals.is_empty():
+		return
+	var era_rules := EraCalculator.get_era_rules(_game_data.current_era_name)
+	var start_usec := Time.get_ticks_usec()
+	for individual in _human_individuals:
+		HumanStaminaIndividualService.recalculate_max_stamina(individual, _game_data, era_rules)
+	if not DebugLogging.ENABLED or not DebugLogging.SHOW_STAMINA_RECALC_LOGS:
+		return
+	var elapsed_ms := (Time.get_ticks_usec() - start_usec) / 1000.0
+	print("[HUMAN STAMINA RECALC] anno=%d giorno=%d: %d individui ricalcolati in %.3f ms" % [
+		_game_data.year, _game_data.current_day, _human_individuals.size(), elapsed_ms
+	])
 
 
 # Step 4 del sistema oggetti-scaduti (2026-09-05): rimuove da game_data.expired_objects i record

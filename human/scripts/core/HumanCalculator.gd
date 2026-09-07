@@ -83,40 +83,46 @@ static func get_annual_death_probability(
 
 # Moltiplicatore gravidanza (2026-09-06) — HARDCODED, deliberatamente NON in HumanRules/EraRules:
 # scelta esplicita dell'utente, non un dato di configurazione (a differenza di
-# EraRules.dependent_child_workforce_multiplier sotto, che invece vive in un .tres). SOLO display,
-# nessun sistema di consumo workforce reale esiste ancora.
-const PREGNANCY_WORKFORCE_MULTIPLIER: float = 0.5
+# EraRules.dependent_child_stamina_multiplier sotto, che invece vive in un .tres). SOLO display,
+# nessun sistema di consumo stamina reale esiste ancora.
+#
+# Rinominata da PREGNANCY_WORKFORCE_MULTIPLIER (2026-09-06, richiesta utente) — solo rename,
+# nessuna modifica di valore/logica.
+const PREGNANCY_STAMINA_MULTIPLIER: float = 0.5
 
 
-# Workforce di BASE per fascia d'età + sesso — solo HumanRules.base_daily_workforce ×
-# workforce_multiplier_by_age[age_band] × workforce_multiplier_by_sex[sex], nessuna stanchezza/
-# wellness (quelle arriveranno in un passo successivo insieme a un vero
-# available_workforce_per_day). Non chiama get_age_band: il chiamante passa già l'age_band
-# risolto, stesso schema di size_multiplier_by_age/caloric_multiplier_by_age altrove nel progetto.
+# Stamina MASSIMA per fascia d'età + sesso — solo HumanRules.base_max_stamina ×
+# stamina_multiplier_by_age[age_band] × stamina_multiplier_by_sex[sex], nessuna stanchezza/
+# wellness (quelle arriveranno in un passo successivo insieme a un vero current_stamina). Non
+# chiama get_age_band: il chiamante passa già l'age_band risolto, stesso schema di
+# size_multiplier_by_age/caloric_multiplier_by_age altrove nel progetto.
 # TODO (quando esisterà la classe Action): alcune azioni potrebbero voler ignorare la differenza
-# di sesso nella workforce (es. compiti dove la dimorfia non ha senso di modellazione) — servirà
-# un campo booleano su Action per decidere se applicare workforce_multiplier_by_sex o no. Non
+# di sesso nella stamina (es. compiti dove la dimorfia non ha senso di modellazione) — servirà
+# un campo booleano su Action per decidere se applicare stamina_multiplier_by_sex o no. Non
 # implementato qui.
 #
 # is_pregnant/has_dependent_child (2026-09-06, entrambi default false — SOLO display, migliora
-# l'accuratezza del numero mostrato nel pannello individuo, nessun sistema di consumo workforce
+# l'accuratezza del numero mostrato nel pannello individuo, nessun sistema di consumo stamina
 # reale esiste ancora): mutuamente esclusivi per costruzione — una donna incinta non può avere
 # contemporaneamente un figlio a carico (lo stesso vincolo min_birth_spacing_years che blocca il
 # concepimento copre l'intera finestra di dipendenza del figlio, verificato in ricognizione), quindi
 # un semplice if/elif basta — nessuna gestione del caso "entrambi true" (richiesta esplicita
 # dell'utente: non può accadere, non va inventata una regola di combinazione per un caso che il
 # sistema riproduzione già esclude strutturalmente).
-static func get_base_workforce(
+#
+# Rinominata da get_base_workforce (2026-09-06, richiesta utente, rename completo Workforce->
+# Stamina) — corpo/comportamento invariati, solo nomi (funzione + campi HumanRules/EraRules letti).
+static func get_max_stamina(
 	human_rules: HumanRules, age_band: HumanTypes.AgeBand, sex: HumanTypes.Sex,
 	is_pregnant: bool = false, has_dependent_child: bool = false, era_rules: EraRules = null
 ) -> float:
-	var workforce := (
-		human_rules.base_daily_workforce
-		* human_rules.workforce_multiplier_by_age[age_band]
-		* human_rules.workforce_multiplier_by_sex[sex]
+	var stamina := (
+		human_rules.base_max_stamina
+		* human_rules.stamina_multiplier_by_age[age_band]
+		* human_rules.stamina_multiplier_by_sex[sex]
 	)
 	if is_pregnant:
-		workforce *= PREGNANCY_WORKFORCE_MULTIPLIER
+		stamina *= PREGNANCY_STAMINA_MULTIPLIER
 	elif has_dependent_child and era_rules != null:
-		workforce *= era_rules.dependent_child_workforce_multiplier
-	return workforce
+		stamina *= era_rules.dependent_child_stamina_multiplier
+	return stamina

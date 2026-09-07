@@ -1,0 +1,16 @@
+[remap]
+
+importer="csv_translation"
+type="Translation"
+uid="uid://vh34qhqmdy8d"
+
+[deps]
+
+source_file="res://docs/bilanciamento_azioni_game_clock.csv"
+
+[params]
+
+compress=1
+delimiter=0
+unescape_keys=false
+unescape_translations=true

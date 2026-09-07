@@ -88,22 +88,26 @@ extends Resource
 @export var childbirth_survival_child_base_probability: float = 0.9
 @export var childbirth_survival_mother_base_probability: float = 0.92
 
-@export_group("Workforce")
+@export_group("Stamina")
 # Capacità lavorativa giornaliera di riferimento per un adulto pieno (FERTILE_ADULT/MATURE_ADULT,
 # moltiplicatore 1.0 sotto) — valore unico, non per-età: l'asse età è tutto in
-# workforce_multiplier_by_age, stesso principio di size_multiplier_by_age/caloric_multiplier_by_age
+# stamina_multiplier_by_age, stesso principio di size_multiplier_by_age/caloric_multiplier_by_age
 # sopra. Unità arbitraria (nessun significato fisico ancora deciso — "punti lavoro/giorno" o
 # simile), da tarare quando un consumatore reale esisterà. DECOUPLED dalle age band di
-# aging/riproduzione: workforce_multiplier_by_age riusa lo stesso enum/array solo per comodità di
+# aging/riproduzione: stamina_multiplier_by_age riusa lo stesso enum/array solo per comodità di
 # storage (stesso idioma "per fascia" del progetto), non introduce alcun legame concettuale nuovo
 # tra capacità lavorativa e fertilità/invecchiamento.
-@export var base_daily_workforce: float = 500.0
+#
+# Rinominato da Workforce a Stamina (2026-09-06, richiesta utente) — solo rename, nessuna modifica
+# di valori/logica: base_daily_workforce->base_max_stamina, workforce_multiplier_by_age/sex->
+# stamina_multiplier_by_age/sex, gruppo export "Workforce"->"Stamina".
+@export var base_max_stamina: float = 5000.0
 # Indicizzato come size_multiplier_by_age/caloric_multiplier_by_age sopra (0=CHILD, 1=TEENAGER,
-# 2=FERTILE_ADULT, 3=MATURE_ADULT, 4=OLD). CHILD=0.0 (nessuna workforce), TEENAGER/OLD ridotti
+# 2=FERTILE_ADULT, 3=MATURE_ADULT, 4=OLD). CHILD=0.0 (nessuna stamina), TEENAGER/OLD ridotti
 # (placeholder, da rivedere), FERTILE_ADULT/MATURE_ADULT=1.0 (riferimento). Nessuna logica li legge
-# ancora oltre a HumanCalculator.get_base_workforce (solo base × moltiplicatore, senza
+# ancora oltre a HumanCalculator.get_max_stamina (solo base × moltiplicatore, senza
 # stanchezza/wellness — quelli arriveranno in un passo successivo).
-@export var workforce_multiplier_by_age: Array[float] = [0.0, 0.4, 1.0, 1.0, 0.5]
+@export var stamina_multiplier_by_age: Array[float] = [0.0, 0.4, 1.0, 1.0, 0.5]
 # Indicizzato su HumanTypes.Sex (0=MALE, 1=FEMALE), stessa convenzione di size_multiplier_by_sex/
 # caloric_multiplier_by_sex sopra. Placeholder, da rivedere.
-@export var workforce_multiplier_by_sex: Array[float] = [1.0, 0.85]
+@export var stamina_multiplier_by_sex: Array[float] = [1.0, 0.85]

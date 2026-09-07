@@ -11,6 +11,7 @@
 [ext_resource type="PackedScene" path="res://gameplay/scenes/game/DebugBar.tscn" id="9_debugbar"]
 [ext_resource type="PackedScene" path="res://gameplay/scenes/menus/OptionsMenu.tscn" id="10_options"]
 [ext_resource type="PackedScene" path="res://gameplay/scenes/game/StatisticsPanel.tscn" id="11_stats"]
+[ext_resource type="PackedScene" path="res://gameplay/scenes/game/TechTreePanel.tscn" id="12_techtree"]
 
 [sub_resource type="StyleBoxFlat" id="StyleBoxFlat_game"]
 bg_color = Color(0.19934133, 0.34936652, 0.5477696, 1)
@@ -161,3 +162,5 @@ filters = PackedStringArray("*.json ; File JSON")
 [node name="OptionsMenu" parent="." instance=ExtResource("10_options")]
 
 [node name="StatisticsPanel" parent="." instance=ExtResource("11_stats")]
+
+[node name="TechTreePanel" parent="." instance=ExtResource("12_techtree")]

@@ -117,6 +117,31 @@ const BUILDING_DOOR_NOTCH_HALF_WIDTH: float = 1.0
 const BUILDING_DOOR_NOTCH_DEPTH: float = 1.3
 const BUILDING_CIRCLE_SEGMENTS: int = 24
 
+# Stone Circle (2026-09-07, richiesta utente) — "centro villaggio" paleolitico, is_village_center
+# nelle sue BuildingRules (vincolo di unicità globale verificato da GameScene/BuildBar, non da
+# questo renderer: qui si sa solo disegnare). Nessuna porta (has_door=false in stone_circle.tres),
+# quindi nessun rientro a V come la capanna — un anello di massi grezzi attorno al centro. Palette
+# grigia per distinguerlo a colpo d'occhio dal marrone della capanna.
+#
+# RIVISTO (2026-09-07, richiesta utente, dopo il primo giro di test: "le pietre sono tutte uguali e
+# sembrano sfocate") — non più cerchi perfetti (draw_circle/draw_arc, tutti identici, bordo sottile
+# a basso contrasto che a piccola scala legge come una macchia sfumata): ogni masso è ora un
+# poligono IRREGOLARE (vedi _stone_blob_polygon), stesso principio già in uso per le pietre naturali
+# (MultiMesh con STONE_VARIANT_COUNT mesh pre-generate jittered, vedi _rebuild_stone_multimeshes) ma
+# qui immediate-mode, coerente con lo stile "usa e getta" della capanna: solo STONE_CIRCLE_STONE_
+# COUNT massi per l'unico Stone Circle possibile in partita, nessun bisogno di MultiMesh. Seed
+# deterministico = indice del masso (0..STONE_CIRCLE_STONE_COUNT-1), non la posizione: essendo
+# l'edificio unico per costruzione (vedi vincolo di unicità), non c'è rischio che due Stone Circle
+# nel mondo condividano lo stesso seed e sembrino stampati dallo stesso timbro. Bordo scuro più
+# spesso per un contorno netto invece che sfumato.
+const STONE_CIRCLE_COLOR := Color(0.60, 0.58, 0.54, 1.0)
+const STONE_CIRCLE_OUTLINE_COLOR := Color(0.24, 0.22, 0.19, 1.0)
+const STONE_CIRCLE_OUTLINE_WIDTH: float = 0.5
+const STONE_CIRCLE_RING_RADIUS: float = 4.0
+const STONE_CIRCLE_STONE_RADIUS: float = 0.75
+const STONE_CIRCLE_STONE_COUNT: int = 8
+const STONE_CIRCLE_BLOB_VERTEX_COUNT: int = 8
+
 const DIRECTIONS := [
 	Vector2i(0, -1), # nord
 	Vector2i(0, 1),  # sud
@@ -150,8 +175,9 @@ var river_thickness_ratio: float = 0.0 # river_space / MacroCellState.TOTAL_SPAC
 
 var stone_positions: Array = [] # Array[Vector2i]
 # Edifici già piazzati in QUESTA macrocella — Array[Dictionary], ciascuna {"position": Vector2i,
-# "rotation": GameTypes.Direction, "id": int} ("id" aggiunto Step 4, richiesta utente 2026-09-04 —
-# vedi set_selected_building/get_building_screen_position sotto) — vedi GameScene.
+# "rotation": GameTypes.Direction, "id": int, "building_type_name": String} ("id" aggiunto Step 4,
+# richiesta utente 2026-09-04 — vedi set_selected_building/get_building_screen_position sotto;
+# "building_type_name" aggiunto 2026-09-07 per lo Stone Circle, vedi _draw_buildings) — vedi GameScene.
 # _refresh_building_visuals, che filtra World.buildings per macro_x/macro_y prima di passarli qui:
 # questo renderer non conosce World/Building, solo "dove e come disegnare" (e, ora, quale id tra
 # questi risulta selezionato).
@@ -645,8 +671,15 @@ func _draw_buildings() -> void:
 	var half: float = CELL_SIZE / 2.0
 	for entry in buildings:
 		var pos: Vector2i = entry["position"]
-		var direction: GameTypes.Direction = entry["rotation"]
 		var ground := Vector2(pos.x * CELL_SIZE + half, pos.y * CELL_SIZE + half)
+		# Smistamento per tipo (2026-09-07, richiesta utente, Stone Circle) — .get() con default
+		# "hut" per compatibilità con entry costruite prima che "building_type_name" esistesse
+		# (nessuna in pratica, buildings è ricostruito ad ogni attivazione cella, mai persistito qui
+		# — ma stesso principio difensivo già usato altrove nel progetto per Dictionary in evoluzione).
+		if entry.get("building_type_name", "hut") == "stone_circle":
+			_draw_stone_circle(ground)
+			continue
+		var direction: GameTypes.Direction = entry["rotation"]
 		_draw_building_fence(ground, direction)
 		var hut_points := _building_hut_polygon(ground, direction)
 		draw_colored_polygon(hut_points, BUILDING_COLOR)
@@ -661,6 +694,43 @@ func _draw_buildings() -> void:
 		var outline_points := hut_points.duplicate()
 		outline_points.append(hut_points[0])
 		draw_polyline(outline_points, BUILDING_OUTLINE_COLOR, BUILDING_OUTLINE_WIDTH)
+
+
+# Anello di massi grezzi attorno al centro della microcella — nessuna porta/rotazione da rispettare
+# (has_door=false per questo tipo), quindi geometria fissa: STONE_CIRCLE_STONE_COUNT massi
+# equidistanti sul cerchio di raggio STONE_CIRCLE_RING_RADIUS, ciascuno un poligono irregolare (vedi
+# _stone_blob_polygon) invece di un cerchio perfetto. Stessa funzione (duplicata apposta, stesso
+# principio già in uso tra MicroCellRenderer/BuildingGhost per la geometria della capanna) in
+# BuildingGhost._draw_stone_circle.
+func _draw_stone_circle(ground: Vector2) -> void:
+	for i in range(STONE_CIRCLE_STONE_COUNT):
+		var angle: float = TAU * float(i) / float(STONE_CIRCLE_STONE_COUNT)
+		var stone_center: Vector2 = ground + Vector2(cos(angle), sin(angle)) * STONE_CIRCLE_RING_RADIUS
+		var blob := _stone_blob_polygon(stone_center, i)
+		draw_colored_polygon(blob, STONE_CIRCLE_COLOR)
+		var outline := blob.duplicate()
+		outline.append(blob[0])
+		draw_polyline(outline, STONE_CIRCLE_OUTLINE_COLOR, STONE_CIRCLE_OUTLINE_WIDTH)
+
+
+# Poligono a STONE_CIRCLE_BLOB_VERTEX_COUNT lati con raggio-per-vertice jittered attorno a `center`
+# — stesso principio delle mesh "jittered-blob" già usate per le pietre naturali (vedi
+# _rebuild_stone_multimeshes), qui immediate-mode e molto più leggero (un solo masso alla volta, non
+# migliaia). `seed_index` (0..STONE_CIRCLE_STONE_COUNT-1, l'indice del masso nell'anello, non la sua
+# posizione) rende ogni masso diverso dagli altri 7 ma STABILE tra un _draw() e il successivo — una
+# RandomNumberGenerator locale seedata, non randf() globale, altrimenti la sagoma "tremolerebbe" ad
+# ogni ridisegno. Anche la dimensione complessiva varia leggermente da masso a masso (non solo il
+# contorno), per un anello che legga come pietre vere e diverse tra loro, non stampi dello stesso timbro.
+func _stone_blob_polygon(center: Vector2, seed_index: int) -> PackedVector2Array:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = seed_index
+	var stone_radius: float = STONE_CIRCLE_STONE_RADIUS * rng.randf_range(0.8, 1.2)
+	var points := PackedVector2Array()
+	for v in range(STONE_CIRCLE_BLOB_VERTEX_COUNT):
+		var vertex_angle: float = TAU * float(v) / float(STONE_CIRCLE_BLOB_VERTEX_COUNT)
+		var vertex_radius: float = stone_radius * rng.randf_range(0.75, 1.15)
+		points.append(center + Vector2(cos(vertex_angle), sin(vertex_angle)) * vertex_radius)
+	return points
 
 
 # Recinto: linea circolare CONTINUA attorno alla capanna (BUILDING_FENCE_RADIUS, "O" attorno alla

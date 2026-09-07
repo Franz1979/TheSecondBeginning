@@ -380,6 +380,16 @@ func load_game_from_json(file_path: String) -> LoadedGame:
 		human_folk = Folk.new()
 		human_folk.id = int(human_data["folk"]["id"])
 		human_folk.name = String(human_data["folk"]["name"])
+		# .get() con un default per ciascuno (2026-09-07, richiesta utente) — a differenza di
+		# id/name sopra, questi campi sono più recenti dei salvataggi esistenti: compatibilità coi
+		# save precedenti, stesso principio già usato altrove nel file per campi opzionali. Dictionary/
+		# Array assegnati diretti (stesso trattamento di Building.stored_resources sopra), nessun
+		# ciclo di conversione per-valore necessario.
+		human_folk.thoughts_count = int(human_data["folk"].get("thoughts_count", 0))
+		human_folk.active_idea_id = String(human_data["folk"].get("active_idea_id", ""))
+		human_folk.thoughts_invested = human_data["folk"].get("thoughts_invested", {})
+		var completed_ideas: Array = human_data["folk"].get("completed_ideas", [])
+		human_folk.completed_ideas.assign(completed_ideas)
 
 		human_population_group = HumanPopulationGroup.new()
 		human_population_group.id = int(human_data["group"]["id"])

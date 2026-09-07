@@ -1,4 +1,7 @@
 keys,en
+build_bar_stone_circle_disabled_tooltip,Not buildable: a village center already exists
+build_bar_requires_idea_tooltip,Requires: {idea}
+idea_paleolithic_constructions,Paleolithic Constructions
 sex_label,Sex: {sex}
 sex_female,Female
 sex_male,Male
@@ -12,8 +15,15 @@ dead_body_cause_label,Cause: {cause}
 dead_body_decomposes_label,Decomposes in {days} days
 individual_kill_debug_button,Kill (debug)
 individual_age_label,Age: {age} ({band})
+task_activity_idle,Resting
+task_daydream_name,Daydreaming
+task_daydream_step_wander,Wandering around
+task_daydream_step_think,Thinking
+task_daydream_step_return,Walking back to the village center
+task_daydream_step_deposit,Sharing an idea
+task_daydream_step_leave,Walking away from the village center
 pregnant,Pregnant
-individual_workforce_label,Workforce:
+individual_stamina_label,Workforce:
 individual_id_label,ID: {id} (Folk {folk}, Group {group})
 individual_mother_id_label,Mother ID: {id}
 individual_father_id_label,Father ID: {id}
@@ -30,10 +40,17 @@ building_stored_label,Stored: {entries}
 building_id_label,ID: {id}
 statistics_tab_births,Births
 statistics_tab_population,Population
+tech_tree_tooltip,Tech tree
+tech_tree_title,Tech tree
+tech_tree_completed_caption,Completed ideas
+tech_tree_active_idea_label,Researching: {idea}
+tech_tree_no_active_idea,No research in progress
+tech_tree_debug_add_thought,+1 Thought
 fertile_women_list,Fertile women
 death_list,Death list
 notification_birth,{name} was born, {mother}'s {offspring_word}
 notification_stillbirth,{mother} lost the child during childbirth
+notification_idea_completed,New idea completed: {idea}
 death_cause_childbirth,childbirth
 birth_verb_male,born
 birth_verb_female,born

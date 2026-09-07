@@ -337,7 +337,18 @@ func save_game_to_json(
 		data["human"] = {
 			"folk": {
 				"id": human_folk.id,
-				"name": human_folk.name
+				"name": human_folk.name,
+				# thoughts_count/active_idea_id/thoughts_invested/completed_ideas (2026-09-07,
+				# richiesta utente — modello dati albero tecnologie) — stesso trattamento diretto di
+				# id/name sopra, nessuna retrocompatibilità da questo lato (il caricamento usa .get()
+				# con un default per ciascuno, per i salvataggi precedenti a questi campi, vedi
+				# GameLoadService). Dictionary/Array di soli String/int, serializzabili da JSON.
+				# stringify() così come sono, nessun ciclo di conversione manuale necessario (a
+				# differenza di fog_of_war/individuals sopra, che contengono oggetti custom).
+				"thoughts_count": human_folk.thoughts_count,
+				"active_idea_id": human_folk.active_idea_id,
+				"thoughts_invested": human_folk.thoughts_invested,
+				"completed_ideas": human_folk.completed_ideas
 			},
 			"group": {
 				"id": human_population_group.id,

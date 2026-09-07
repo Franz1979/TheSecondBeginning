@@ -25,7 +25,16 @@ func advance_movement(individual: HumanIndividual, delta: float) -> void:
 		individual.facing_direction = to_target.normalized()
 
 	if step >= distance:
+		# NON più individual.stop() qui (2026-09-07, richiesta utente — bugfix necessario per Task a
+		# più step): stop() ora azzera current_task (vedi HumanIndividual.gd), e advance_movement
+		# gira SEMPRE prima di HumanIndividualActionService.apply_action nello stesso frame (vedi
+		# GameScene._process) — chiamarlo qui distruggerebbe la Task PRIMA che apply_action possa
+		# vedere che il WalkAction attivo è completo e far avanzare allo step successivo, impedendo
+		# per costruzione qualunque sequenza multi-step di funzionare mai. La decisione "fermarsi per
+		# davvero" spetta ora SOLO a apply_action, quando la Task risulta conclusa dopo l'ultimo step
+		# (vedi lì): fino ad allora is_moving resta true anche se position == target_position, senza
+		# effetti collaterali (i frame successivi ricalcolano to_target/distance a zero, un no-op,
+		# finché apply_action non decide se proseguire con lo step successivo o fermare per intero).
 		individual.position = individual.target_position
-		individual.stop()
 	else:
 		individual.position += to_target.normalized() * step

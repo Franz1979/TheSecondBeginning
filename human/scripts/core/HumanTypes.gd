@@ -9,7 +9,7 @@ enum Sex {
 }
 
 # Cinque fasce (non tre come GameTypes.AgeBand, tarato sugli animali): CHILD (infanzia,
-# pre-riproduttiva), TEENAGER (adolescenza, ancora non fertile, workforce ridotta — aggiunta
+# pre-riproduttiva), TEENAGER (adolescenza, ancora non fertile, stamina ridotta — aggiunta
 # 2026-09-04, richiesta utente), FERTILE_ADULT (età riproduttiva), MATURE_ADULT (adulto ma
 # tipicamente non più fertile, soprattutto per le donne — da qui la necessità di durate
 # differenziate per sesso, vedi HumanRules.age_band_durations_male/female), OLD. Nomi di membro
