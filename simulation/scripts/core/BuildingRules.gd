@@ -53,6 +53,28 @@ extends Resource
 @export var storage_slot_count: int = 0
 @export var storage_space_per_slot: int = 0
 
+# Categorie stoccabili in questo edificio (2026-09-09, richiesta utente, BuildingStorageService
+# Step 1) — vuoto = accetta qualunque categoria (SecondaryResourceTypes.Category), stesso
+# principio "array vuoto = nessuna restrizione" già seguito da AnimalRules.suitable_biomes/
+# SubtypeRules.suitable_biomes. deposit_site/hut valorizzati entrambi vuoti per ora (nessun
+# edificio specializzato ancora) — un futuro edificio specializzato (es. un granaio solo FOOD)
+# lo restringerà esplicitamente nel proprio .tres.
+@export var accepted_categories: Array[SecondaryResourceTypes.Category] = []
+
+# Moltiplicatore di durabilità PER CATEGORIA DI RISORSA (2026-09-09, richiesta utente) — indice =
+# SecondaryResourceTypes.Category (0=FOOD, 1=RAW_MATERIAL), stesso principio "array indicizzato per
+# enum" già in uso per HumanRules/AnimalRules (es. caloric_multiplier_by_age). Consultato da
+# ResourceDecayService.advance_building_decay: l'incremento giornaliero di decay_fraction diventa
+# 1/(day_durability × moltiplicatore) invece di 1/day_durability puro — >1.0 rallenta il
+# decadimento (l'edificio "conserva meglio" quella categoria), <1.0 lo accelera, 1.0 = invariato.
+# Default [1.0, 1.0] per OGNI tipo esistente (deposit_site/hut non lo sovrascrivono ancora) —
+# comportamento identico a prima dell'introduzione di questo campo finché non lo si valorizza
+# esplicitamente in un .tres. Indicizzazione diretta (mai .get(), un Array non un Dictionary): un
+# accesso fuori range (una futura categoria aggiunta senza aggiornare questo array) va trattato dal
+# chiamante come "nessun moltiplicatore" (1.0), non un crash — vedi ResourceDecayService per la
+# guardia.
+@export var durability_multiplier_by_category: Array[float] = [1.0, 1.0]
+
 # Nome risorsa (stringa libera per ora, es. "wood"/"stick"/"stone"/"iron" — nessun enum dedicato
 # finché non esiste un vero inventario/economia) -> quantità richiesta per completare la
 # costruzione.

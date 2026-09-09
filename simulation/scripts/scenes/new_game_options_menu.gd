@@ -12,7 +12,10 @@ extends Control
 # tocca, si limita ad aggiungere GameSettings.selected_world_age_mode/selected_animal_density/
 # selected_population_size/selected_exclude_hostile_start/
 # selected_exclude_predator_territories/selected_resource_richness_preference/
-# selected_group_size_preference e a inoltrare verso WorldScene.
+# selected_group_size_preference/selected_guarantee_animal_presence/
+# selected_guarantee_stone_presence (2026-09-08, richiesta utente — "Presenza sicura roccia": la
+# roccia e' una risorsa preziosa e oggi non c'e' nessun modo di sapere se una macrocella l'avra'
+# prima di scoprirla) e a inoltrare verso WorldScene.
 #
 # Tutte le label passano da tr("chiave"), come ovunque nel resto del progetto — nessun CSV di
 # traduzione e' ancora collegato (nessuna sezione [internationalization] in project.godot),
@@ -68,6 +71,13 @@ const DISABLED_PANEL_ALPHA := 0.4
 @onready var animal_presence_label: Label = $RootColumn/MainRow/ScrollContainer/VBoxContainer/AnimalPresencePanel/MarginContainer/HBoxContainer/AnimalPresenceLabel
 @onready var animal_presence_check_button: CheckButton = $RootColumn/MainRow/ScrollContainer/VBoxContainer/AnimalPresencePanel/MarginContainer/HBoxContainer/AnimalPresenceCheckButton
 
+# Presenza sicura roccia (2026-09-08, richiesta utente) — stesso identico pattern/schema di
+# animal_presence_panel/label/check_button sopra, solo un secondo asse indipendente (roccia
+# invece di fauna erbivora).
+@onready var stone_presence_panel: PanelContainer = $RootColumn/MainRow/ScrollContainer/VBoxContainer/StonePresencePanel
+@onready var stone_presence_label: Label = $RootColumn/MainRow/ScrollContainer/VBoxContainer/StonePresencePanel/MarginContainer/HBoxContainer/StonePresenceLabel
+@onready var stone_presence_check_button: CheckButton = $RootColumn/MainRow/ScrollContainer/VBoxContainer/StonePresencePanel/MarginContainer/HBoxContainer/StonePresenceCheckButton
+
 @onready var resource_richness_panel: PanelContainer = $RootColumn/MainRow/ScrollContainer/VBoxContainer/ResourceRichnessPanel
 @onready var resource_richness_header_label: Label = $RootColumn/MainRow/ScrollContainer/VBoxContainer/ResourceRichnessPanel/MarginContainer/VBoxContainer/ResourceRichnessHeaderLabel
 @onready var rich_button: Button = $RootColumn/MainRow/ScrollContainer/VBoxContainer/ResourceRichnessPanel/MarginContainer/VBoxContainer/RichButton
@@ -122,6 +132,7 @@ var _selected_exclude_predator_territories: bool = false
 var _selected_resource_richness_preference: String = "NORMAL"
 var _selected_group_size_preference: String = "GROUP"
 var _selected_guarantee_animal_presence: bool = false
+var _selected_guarantee_stone_presence: bool = false
 
 
 func _ready() -> void:
@@ -163,6 +174,10 @@ func _ready() -> void:
 	animal_presence_label.text = tr("animal_presence_label")
 	animal_presence_check_button.button_pressed = false
 	_update_toggle_color(animal_presence_check_button, false)
+
+	stone_presence_label.text = tr("stone_presence_label")
+	stone_presence_check_button.button_pressed = false
+	_update_toggle_color(stone_presence_check_button, false)
 
 	resource_richness_header_label.text = tr("resource_richness_label")
 	rich_button.text = tr("resource_richness_rich")
@@ -210,6 +225,7 @@ func _ready() -> void:
 	hostile_start_check_button.toggled.connect(_on_hostile_start_toggled)
 	predator_exclusion_check_button.toggled.connect(_on_predator_exclusion_toggled)
 	animal_presence_check_button.toggled.connect(_on_animal_presence_toggled)
+	stone_presence_check_button.toggled.connect(_on_stone_presence_toggled)
 
 	rich_button.toggled.connect(_on_resource_richness_button_toggled.bind("RICH"))
 	normal_richness_button.toggled.connect(_on_resource_richness_button_toggled.bind("NORMAL"))
@@ -281,15 +297,22 @@ func _on_animal_presence_toggled(pressed: bool) -> void:
 	_update_difficulty_display()
 
 
+func _on_stone_presence_toggled(pressed: bool) -> void:
+	_selected_guarantee_stone_presence = pressed
+	_update_toggle_color(stone_presence_check_button, pressed)
+	_update_difficulty_display()
+
+
 func _update_toggle_color(check_button: CheckButton, pressed: bool) -> void:
 	check_button.self_modulate = TOGGLE_ON_COLOR if pressed else TOGGLE_OFF_COLOR
 
 
 # Atenua/disabilita i gruppi "Densita' animali"/"Numerosita' popolazioni"/"Escludi partenza in
-# zone ostili"/"Escludi partenza vicino ai predatori"/"Ricchezza cella di partenza"/"Numerosita'
-# gruppo di partenza" quando "Classic (debug)" e' selezionato — tutte e sei le scelte sarebbero
-# comunque ignorate da WorldScene, questo e' solo un segnale visivo per non far credere che
-# stiano avendo effetto. La barra di difficolta' segue lo stesso trattamento (vedi
+# zone ostili"/"Escludi partenza vicino ai predatori"/"Presenza sicura animali"/"Presenza sicura
+# roccia"/"Ricchezza cella di partenza"/"Numerosita' gruppo di partenza" quando "Classic (debug)"
+# e' selezionato — tutte le scelte sarebbero comunque ignorate da WorldScene, questo e' solo un
+# segnale visivo per non far credere che stiano avendo effetto. La barra di difficolta' segue lo
+# stesso trattamento (vedi
 # _update_difficulty_display, che gestisce anche il testo "N/D" per quel caso) — dimmata qui
 # insieme alle altre per coerenza visiva.
 func _update_dependent_panels_enabled() -> void:
@@ -315,6 +338,9 @@ func _update_dependent_panels_enabled() -> void:
 	animal_presence_panel.modulate.a = alpha
 	animal_presence_check_button.disabled = is_classic
 
+	stone_presence_panel.modulate.a = alpha
+	stone_presence_check_button.disabled = is_classic
+
 	resource_richness_panel.modulate.a = alpha
 	rich_button.disabled = is_classic
 	normal_richness_button.disabled = is_classic
@@ -329,11 +355,12 @@ func _update_dependent_panels_enabled() -> void:
 
 
 # Ricalcola e mostra la difficolta' per la combinazione attualmente selezionata — chiamata da
-# tutti e sette gli handler di toggle (eta'/densita'/numerosita'/zone ostili/predatori/ricchezza/
-# gruppo di partenza), mai una volta sola: qualunque cambio a uno qualunque dei sette gruppi puo'
-# cambiare il risultato. "Classic (debug)" non ha una difficolta' applicabile (DifficultyCalculator.
-# compute_difficulty_ratio ritorna -1.0 in quel caso, gli altri sei parametri sono comunque
-# ignorati da WorldScene) — barra a 0, testo "N/D" invece di una percentuale falsa. Arrotondamento
+# TUTTI gli handler di toggle (eta'/densita'/numerosita'/zone ostili/predatori/presenza animali/
+# presenza roccia (2026-09-08)/ricchezza/gruppo di partenza), mai una volta sola: qualunque cambio
+# a uno qualunque dei gruppi puo' cambiare il risultato. "Classic (debug)" non ha una difficolta'
+# applicabile (DifficultyCalculator.compute_difficulty_ratio ritorna -1.0 in quel caso, gli altri
+# parametri sono comunque ignorati da WorldScene) — barra a 0, testo "N/D" invece di una
+# percentuale falsa. Arrotondamento
 # all'unita' percentuale SOLO qui, in visualizzazione: il valore salvato in GameData/nel file di
 # partita resta sempre il prodotto grezzo non arrotondato (vedi DifficultyCalculator/GameData).
 func _update_difficulty_display() -> void:
@@ -345,7 +372,8 @@ func _update_difficulty_display() -> void:
 		_selected_exclude_predator_territories,
 		_selected_resource_richness_preference,
 		_selected_group_size_preference,
-		_selected_guarantee_animal_presence
+		_selected_guarantee_animal_presence,
+		_selected_guarantee_stone_presence
 	)
 
 	if ratio < 0.0:
@@ -391,6 +419,7 @@ func _on_start_pressed() -> void:
 	GameSettings.selected_resource_richness_preference = _selected_resource_richness_preference
 	GameSettings.selected_group_size_preference = _selected_group_size_preference
 	GameSettings.selected_guarantee_animal_presence = _selected_guarantee_animal_presence
+	GameSettings.selected_guarantee_stone_presence = _selected_guarantee_stone_presence
 	get_tree().change_scene_to_file("res://simulation/scenes/game/WorldScene.tscn")
 
 

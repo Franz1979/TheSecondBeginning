@@ -17,4 +17,9 @@ enum NotificationPopupType {
 	# UserOptions.show_notification_popups di morte/nascita (vedi GameScene._on_idea_completed),
 	# non un sistema di avvisi separato: si disattiva insieme agli altri da Opzioni.
 	IDEA_COMPLETED,
+	# Decadimento risorsa (2026-09-09, richiesta utente, Step 3 decadimento) — una risorsa
+	# trasportata/stoccata ha raggiunto decay_fraction >= 1.0 ed è stata rimossa (zaino individuo o
+	# storage edificio, vedi ResourceDecayService) — stesso gate/stesso meccanismo di morte/nascita/
+	# idea, riusato per il quarto caso d'uso invece di un sistema di avvisi a parte.
+	RESOURCE_DECAYED,
 }

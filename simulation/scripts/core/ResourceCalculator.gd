@@ -24,6 +24,17 @@ static func _get_density_rules(resource_type: GameTypes.WorldObjectType) -> Reso
 	return rules
 
 
+# Espone base_density di una risorsa senza dover ricaricare/ricachare la .tres da capo —
+# _get_density_rules sopra resta privata (dettaglio di cache), questa è la superficie pubblica
+# minima per chi ha bisogno del solo base_density grezzo (2026-09-08, richiesta utente — vedi
+# StonePositionService, che lo usa per normalizzare get_max_density(ROCK,...) a un fattore
+# relativo puro per PEBBLE). 1.0 se non esiste alcuna ResourceDensityRules per quel tipo, stesso
+# fallback "neutro" già usato implicitamente altrove in questo file quando rules è null.
+static func get_base_density(resource_type: GameTypes.WorldObjectType) -> float:
+	var rules := _get_density_rules(resource_type)
+	return rules.base_density if rules != null else 1.0
+
+
 static func get_max_density(
 	resource_type: GameTypes.WorldObjectType,
 	terrain: GameTypes.TerrainBase,

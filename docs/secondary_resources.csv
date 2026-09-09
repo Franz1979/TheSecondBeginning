@@ -1,0 +1,12 @@
+Elenco risorse secondarie (SecondaryResourceRules) - aggiornare questo file ogni volta che si aggiunge/modifica una .tres in simulation/data/secondary_resources/,,,,,,,,,,
+Generato 2026-09-08 - richiesta utente - solo documentazione, non e' letto da alcun codice del progetto,,,,,,,,,,
+ATTENZIONE: la colonna Risorsa primaria NON e' un campo di SecondaryResourceRules - e' hardcoded separatamente in CaloricCalculator.SECONDARY_SOURCES e in CellRichnessCalculator._SOURCE_PRIMARY_TYPE. Aggiungendo una nuova risorsa secondaria a stock (consuming_depletes_primary=false) ricordarsi di aggiornare anche quelle due liste in codice, non solo la .tres,,,,,,,,,,
+,,,,,,,,,,
+Nome (secondary_resource_name),File .tres,Risorsa primaria,Sottotipo di origine (source_subtype),Stock proprio (consuming_depletes_primary=false),Categoria,Materiale da costruzione,Durata dopo raccolta (day_durability),Spazio per unita (space_per_unit),Calorie per unita,Note
+forage,forage.tres,GRASS,(nessuno - deriva da GRASS stessa),No (consuming_depletes_primary=true),FOOD (default),No,-1 (default = infinita),1.0 (default),2.0,Stateless - nessuno stock persistente; unica fonte con wrapper dedicato (get_forage_available_calories)
+berry,berry.tres,SHRUB,fruit_bearing,Si,FOOD (default),No,20,1.0 (default),4.0,
+acorn,acorn.tres,TREE,wild_fruit,Si,FOOD,No,300,1.0 (default),15.0,
+fruit,fruit.tres,TREE,domesticable_fruit,Si,FOOD (default),Si,30,2.0,40.0,
+eggs,eggs.tres,BIRDS,(nessuno - deriva da BIRDS stessa),Si,FOOD,No,30,3.0,5.0,
+fish_meat,fish_meat.tres,FISH,(nessuno - deriva da FISH stessa),No (consuming_depletes_primary=true),FOOD (default),No,10,5.0,6.0,Nessuna specie ha ancora questo nome in diet_compatibility - non consumata oggi (vedi AnimalConsumptionService). Usata solo da CellRichnessCalculator per il punteggio ricchezza cella di partenza
+bird_meat,bird_meat.tres,BIRDS,(nessuno - deriva da BIRDS stessa),No (consuming_depletes_primary=true),FOOD (default),No,10,5.0,10.0,Nessuna specie ha ancora questo nome in diet_compatibility - non consumata oggi (vedi AnimalConsumptionService). Usata solo da CellRichnessCalculator per il punteggio ricchezza cella di partenza

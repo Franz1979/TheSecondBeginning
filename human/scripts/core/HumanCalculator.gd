@@ -126,3 +126,39 @@ static func get_max_stamina(
 	elif has_dependent_child and era_rules != null:
 		stamina *= era_rules.dependent_child_stamina_multiplier
 	return stamina
+
+
+# Capacità di trasporto MASSIMA per fascia d'età + sesso (2026-09-08, richiesta utente) — stesso
+# identico schema di get_max_stamina sopra: HumanRules.base_carry_capacity ×
+# size_multiplier_by_age[age_band] × size_multiplier_by_sex[sex], NESSUN nuovo array dedicato
+# (riusa gli stessi due già usati per la taglia fisica, verificato che siano leggibili da qui
+# esattamente come stamina_multiplier_by_age/by_sex). Non chiama get_age_band: stesso principio di
+# get_max_stamina, il chiamante passa già l'age_band risolto.
+#
+# equipment_multiplier: HOOK per una futura capacità aggiuntiva da strumenti/contenitori (es. un
+# cesto di vimini) — richiesta esplicita dell'utente di lasciare la struttura aperta SENZA
+# costruire quella feature ora. Default 1.0 (nessun effetto): nessun chiamante oggi passa un
+# valore diverso, nessuna Rules/logica di equipaggiamento esiste ancora. Applicato SOLO al termine
+# scalato per taglia (age/sex), MAI al bonus slot tool sotto — quel bonus è deliberatamente FLAT,
+# fuori da qualunque moltiplicatore (vedi il campo su HumanRules per il perché).
+#
+# equipped_tool_count (2026-09-08, richiesta utente — slot tool, SOLO spazio/bonus, nessun uso
+# funzionale ancora): bonus FLAT di HumanRules.carry_bonus_per_empty_tool_slot per ogni slot
+# VUOTO, aggiunto DOPO il termine scalato per taglia, non dentro (richiesta esplicita — un
+# individuo piccolo e uno grande con lo stesso zaino vuoto ottengono lo stesso bonus assoluto, non
+# uno scalato con la taglia). max(..., 0) difensivo: equipped_tool_count è sempre 0 oggi (nessun
+# sistema di equip), ma se in futuro superasse tool_slot_count per qualche motivo il bonus non deve
+# diventare negativo.
+static func get_max_carry_capacity(
+	human_rules: HumanRules, age_band: HumanTypes.AgeBand, sex: HumanTypes.Sex,
+	equipped_tool_count: int = 0, equipment_multiplier: float = 1.0
+) -> float:
+	var size_scaled_capacity := (
+		human_rules.base_carry_capacity
+		* human_rules.size_multiplier_by_age[age_band]
+		* human_rules.size_multiplier_by_sex[sex]
+		* equipment_multiplier
+	)
+	var empty_tool_slots: int = max(human_rules.tool_slot_count - equipped_tool_count, 0)
+	var tool_slot_bonus: float = float(empty_tool_slots) * human_rules.carry_bonus_per_empty_tool_slot
+	return size_scaled_capacity + tool_slot_bonus

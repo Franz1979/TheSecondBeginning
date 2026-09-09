@@ -130,5 +130,15 @@ func _build_shortcuts_text() -> String:
 		"[b]+[/b] — %s" % tr("help_zoom_max"),
 		"[b]-[/b] — %s" % tr("help_zoom_min"),
 		"[b]R[/b] — %s" % tr("help_rotate_building"),
+		"[b]H[/b] — %s" % tr("help_stop_task"),
 	]
+	# Voci DEBUG (2026-09-09, richiesta utente — "aggiungi anche z, s [H] nell'help"): mostrate
+	# solo quando i debug hook stessi sono attivi (DebugLogging.ENABLED, stesso interruttore che li
+	# abilita in GameScene._unhandled_input) — coerente col fatto che in una build "pulita" quei
+	# tasti non fanno letteralmente nulla, elencarli comunque confonderebbe il player. T/Y (test
+	# temporanei "usa e getta", da rimuovere) restano deliberatamente FUORI da questa lista anche a
+	# debug attivo: non richiesti, e pensati per sparire a breve — a differenza di Z, un'utility di
+	# debug più duratura.
+	if DebugLogging.ENABLED:
+		lines.append("[b]Z[/b] — %s" % tr("help_debug_clear_backpack"))
 	return "\n".join(lines)

@@ -21,6 +21,8 @@ help_center_camera,centra la visuale sul player
 help_zoom_max,zoom massimo
 help_zoom_min,zoom minimo
 help_rotate_building,ruota la porta della capanna durante il piazzamento
+help_stop_task,annulla il comando corrente dell'individuo selezionato (torna a riposo)
+help_debug_clear_backpack,(debug) svuota lo zaino dell'individuo selezionato
 help_fog_of_war_menu_link,Nebbia di guerra
 help_fog_of_war_title,Nebbia di guerra
 "help_fog_of_war_intro,""Le zone del mondo che non hai mai esplorato restano nascoste sulla mappa. Quando ti sposti ed esplori una macrocella, questa diventa visibile e ne impari il contenuto (terreno, risorse, chi ci si trova)."""
@@ -53,7 +55,9 @@ death_list,Elenco morti
 center_on_selection_tooltip,Centra la camera sulla selezione corrente
 building_hut,Capanna
 building_stone_circle,Cerchio di pietre
+building_deposit_site,Sito di deposito
 build_bar_stone_circle_disabled_tooltip,Non costruibile: esiste già un centro villaggio
+build_bar_deposit_site_tooltip,Sito di deposito
 build_bar_requires_idea_tooltip,Richiede: {idea}
 notification_death,{name} è morto/a per {cause} (età {age}, giorno {day})
 death_cause_old_age,vecchiaia
@@ -66,12 +70,20 @@ birth_verb_female,nata
 offspring_word_male,figlio
 offspring_word_female,figlia
 notification_idea_completed,Nuova idea completata: {idea}
+notification_resource_decayed_individual,{name} ha perso {quantity} {resource} (deperiti)
+notification_resource_decayed_building,{quantity} {resource} deperiti in {building} (#{id})
 sex_label,Sesso: {sex}
 sex_female,Femmina
 sex_male,Maschio
 vegetation_cut_button,Taglia
 vegetation_subtype_label,Sottotipo: {subtype}
 vegetation_age_label,Età: {age_band} ({years} anni)
+stone_pebble_here_label,Sassi qui: {quantity}
+stone_zone_aggregate_label,Pietra nella zona: {quantity}
+stone_selection_title,Roccia
+stick_lot_available_here_label,Bastoni qui: {quantity}
+stick_lot_wood_label,Legno: non ancora disponibile
+stick_lot_selection_title,Terreno boschivo
 vegetation_cut_years_ago,Tagliato {years} anni fa
 vegetation_dead_plant,Pianta morta
 dead_body_age_label,Età alla morte: {age}
@@ -86,8 +98,17 @@ task_daydream_step_think,Riflettendo
 task_daydream_step_return,Tornando al centro del villaggio
 task_daydream_step_deposit,Condividendo un'idea
 task_daydream_step_leave,Allontanandosi dal centro villaggio
+task_unload_resource_name,Scaricare risorsa
+task_unload_resource_step_walk,Andando a scaricare
+task_unload_resource_step_unload,Scaricando
+task_haul_resource_name,Trasportare risorsa al magazzino
+task_haul_resource_step_walk,Andando a raccogliere
+task_haul_resource_step_pickup,Raccogliendo
+carried_resource_tooltip_pebble,Ghiaia
+carried_resource_tooltip_stick,Rametti
 pregnant,Incinta
 individual_stamina_label,Forza lavoro:
+individual_carry_label,Capacità di trasporto:
 individual_id_label,ID: {id} (Folk {folk}, Gruppo {group})
 individual_mother_id_label,ID Madre: {id}
 individual_father_id_label,ID Padre: {id}
@@ -102,3 +123,8 @@ building_built_year_label,Costruito: anno {year}
 building_not_yet_built,Non ancora costruito
 building_stored_label,Immagazzinato: {entries}
 building_id_label,ID: {id}
+building_settings_caption,Impostazioni
+building_settings_accepted_categories_caption,Categorie accettate
+building_settings_empty_all_button,Svuota tutto
+category_name_food,Cibo
+category_name_raw_material,Materiali grezzi

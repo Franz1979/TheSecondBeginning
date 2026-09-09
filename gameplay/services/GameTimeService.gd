@@ -62,6 +62,12 @@ signal individual_born(individual: HumanIndividual)
 # GameScene). Nessun parametro aggiuntivo (father_id/year) aggiunto in anticipo: nessun consumatore
 # ne ha bisogno oggi.
 signal human_stillbirth(mother: HumanIndividual)
+# Decadimento zaino (2026-09-09, richiesta utente, Step 3 decadimento) — emesso da
+# _advance_daily_individual_resource_decay sotto quando ResourceDecayService.advance_individual_
+# decay riporta una perdita (decay_fraction >= 1.0, risorsa rimossa). Stesso identico principio di
+# disaccoppiamento di individual_died/individual_born sopra: questa classe non sa nulla di popup/
+# UI, si limita a segnalare il FATTO, GameScene decide come mostrarlo.
+signal individual_resource_decayed(individual: HumanIndividual, resource_name: String, quantity: int)
 
 var _game_data: GameData
 # Riferimenti (non copie) allo STESSO Array/Folk/HumanPopulationGroup che GameScene possiede —
@@ -110,6 +116,8 @@ func connect_to_clock(
 func _on_day_advanced(_checkpoint_ran: bool, _animals_changed: bool) -> void:
 	_apply_scheduled_human_deaths()
 	_recalculate_daily_max_stamina()
+	_recalculate_daily_carry_capacity()
+	_advance_daily_individual_resource_decay()
 	# Step 4 del sistema oggetti-scaduti (2026-09-05): giorno 10 fisso, non year_rolled_over (per
 	# non sommarsi alle altre operazioni che già girano lì, richiesta utente) — nessun nuovo
 	# contatore/segnale, solo una condizione sul giorno corrente già disponibile in questo tick.
@@ -176,6 +184,42 @@ func _recalculate_daily_max_stamina() -> void:
 	print("[HUMAN STAMINA RECALC] anno=%d giorno=%d: %d individui ricalcolati in %.3f ms" % [
 		_game_data.year, _game_data.current_day, _human_individuals.size(), elapsed_ms
 	])
+
+
+# Ricalcolo giornaliero di HumanIndividual.max_carry_capacity per l'INTERA popolazione (2026-09-08,
+# richiesta utente) — stesso identico pattern/motivazione di _recalculate_daily_max_stamina sopra
+# (INCONDIZIONATO, periodico non event-driven, log diretto una riga per ricalcolo): vedi quel
+# commento per il perché. Nessun era_rules qui (a differenza di _recalculate_daily_max_stamina):
+# HumanCarryCapacityIndividualService.recalculate_max_carry_capacity non ne ha bisogno, la
+# capacità di trasporto non ha un ramo gravidanza/figlio-a-carico come la stamina.
+func _recalculate_daily_carry_capacity() -> void:
+	if _human_individuals.is_empty():
+		return
+	var start_usec := Time.get_ticks_usec()
+	for individual in _human_individuals:
+		HumanCarryCapacityIndividualService.recalculate_max_carry_capacity(individual, _game_data)
+	if not DebugLogging.ENABLED or not DebugLogging.SHOW_CARRY_CAPACITY_RECALC_LOGS:
+		return
+	var elapsed_ms := (Time.get_ticks_usec() - start_usec) / 1000.0
+	print("[HUMAN CARRY CAPACITY RECALC] anno=%d giorno=%d: %d individui ricalcolati in %.3f ms" % [
+		_game_data.year, _game_data.current_day, _human_individuals.size(), elapsed_ms
+	])
+
+
+# Avanzamento giornaliero di HumanIndividual.carried_decay_fraction per l'INTERA popolazione
+# (2026-09-09, richiesta utente, Step 3 decadimento) — stesso identico pattern/motivazione di
+# _recalculate_daily_max_stamina/_recalculate_daily_carry_capacity sopra (INCONDIZIONATO, periodico,
+# stessa cadenza giornaliera): ResourceDecayService.advance_individual_decay stessa già no-op per
+# zaino vuoto/risorsa non deperibile, nessun filtro aggiuntivo necessario qui. Emette
+# individual_resource_decayed SOLO quando il Dictionary di ritorno non è vuoto (una perdita reale
+# oggi) — il caso comune (nulla deperisce quel giorno) non emette mai nulla.
+func _advance_daily_individual_resource_decay() -> void:
+	if _human_individuals.is_empty():
+		return
+	for individual in _human_individuals:
+		var lost := ResourceDecayService.advance_individual_decay(individual)
+		if not lost.is_empty():
+			individual_resource_decayed.emit(individual, lost["resource_name"], lost["quantity"])
 
 
 # Step 4 del sistema oggetti-scaduti (2026-09-05): rimuove da game_data.expired_objects i record

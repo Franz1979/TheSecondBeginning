@@ -14,7 +14,7 @@ extends PanelContainer
 # basta uno scheduling semplice") — un popup alla volta, il successivo parte quando il Timer del
 # precedente scade, mai in sovrapposizione.
 
-const DISPLAY_SECONDS := 5.0
+const DISPLAY_SECONDS := 3.0 # ridotto da 5.0 a 3.0 (2026-09-09, richiesta utente)
 const TOP_MARGIN := 24.0
 
 var _label: Label

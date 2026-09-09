@@ -115,6 +115,13 @@ const SHOW_HUMAN_VIEW_TIMING_LOGS := false
 # comunque ogni giorno), solo il print viene soppresso.
 const SHOW_STAMINA_RECALC_LOGS := false
 
+# Filtro dedicato per [HUMAN CARRY CAPACITY RECALC] (HumanCarryCapacityIndividualService,
+# agganciato a GameTimeService._on_day_advanced) — stesso identico trattamento di
+# SHOW_STAMINA_RECALC_LOGS sopra (riga diretta, una volta al giorno) per il ricalcolo di
+# HumanIndividual.max_carry_capacity. A false: nessun comportamento di simulazione cambia (il
+# ricalcolo gira comunque ogni giorno), solo il print viene soppresso.
+const SHOW_CARRY_CAPACITY_RECALC_LOGS := false
+
 # Filtro dedicato per [SELECTED PANEL REFRESH] (GameScene._on_day_advanced, refresh giornaliero del
 # pannello individuo selezionato) — riga diretta (stesso stile di SHOW_STAMINA_RECALC_LOGS sopra:
 # gira una volta al giorno, costo atteso trascurabile — 0 o 1 individuo selezionato, mai un ciclo

@@ -42,6 +42,14 @@ var active_growth_bonuses: Dictionary = {} # NaturalEventType -> {multiplier: fl
 var pending_migration_surplus: Dictionary = {}
 var stone_positions: Array = [] # Array[Vector2i], posizioni microcella occupate da stone (100x100)
 var stone_positions_generated: bool = false # separato dall'array vuoto: distingue "mai aperta" da "aperta ma senza stone"
+# PEBBLE/sassi (2026-09-08, richiesta utente) — Dictionary[Vector2i, int], posizione -> quantità
+# sassi rimasti in quella posizione. Nasce/vive insieme a stone_positions: popolato UNA SOLA volta
+# da StonePositionService.generate_if_needed, nello STESSO istante e sotto la STESSA guardia
+# one-shot (stone_positions_generated) — mai un flag "generated" separato, l'invariante è che
+# quando stone_positions_generated è true questo Dictionary ha esattamente una entry per ogni
+# posizione in stone_positions. Consumato (decrementato, clampato a 0, entry mai rimossa) da
+# TerrainScatteredResourceService.consume — PickUpAction.on_complete è l'unico chiamante oggi.
+var pebble_quantities: Dictionary = {}
 # LOD0 (2026-08-30): true dal primo momento in cui questa macrocella entra nel set di celle vive
 # VERE (LODOrchestrator.set_focus_region, vedi world.lod_focus_live_cells) — MAI più rimesso a
 # false, stesso principio "fatto storico permanente" di has_ever_grown sopra. È l'UNICO dato che
@@ -129,6 +137,15 @@ var shrub_individual_subtype: Dictionary = {}
 # riassegnato altrove non appena l'eccezione scade.
 var tree_claimed_lots: Dictionary = {}
 var shrub_claimed_lots: Dictionary = {}
+# Pool di bastoni per lotto TREE (2026-09-08, richiesta utente) — Vector2i (lotto, = una singola
+# microcella) -> {"checkpoint_day": int, "capacity": int, "harvested": int}. Popolato/aggiornato
+# pigramente da StickPoolService.refresh_macrocell (mai qui direttamente) — vedi quel file per il
+# design completo (capacità congelata fino al prossimo checkpoint growth, azzerata non cumulata
+# ad ogni nuovo checkpoint). "harvested" incrementato da TerrainScatteredResourceService.consume
+# (2026-09-09, unico scrittore — PickUpAction.on_complete passa da lì), clampato a non superare
+# "capacity"; lettura/validità di freschezza lotto invece in
+# TerrainScatteredResourceService.get_available.
+var stick_quantities: Dictionary = {}
 # Stesso formato di vegetation_cut_exceptions sopra (origin_type/size_multiplier), ma per la
 # mortalità naturale invece del taglio del giocatore — con una finestra di non-ricrescita di natura
 # DIVERSA, per decisione esplicita: il taglio è un'azione deliberata (bloccata per anni, vedi
@@ -157,8 +174,9 @@ var vegetation_death_exceptions: Dictionary = {}
 # aggregata (quella è già applicata a prescindere da questo campo).
 var last_mortality_loss: Dictionary = {}
 # Stock persistente delle fonti caloriche con consuming_depletes_primary = false (es. bacche
-# mature): resource_name (CaloricSourceRules.caloric_source_name) -> quantità (float). Vuoto per
-# le fonti stateless come FORAGE, che non ne hanno bisogno. Vedi CaloricCalculator.update_secondary_resource_stock.
+# mature): resource_name (SecondaryResourceRules.secondary_resource_name) -> quantità (float).
+# Vuoto per le fonti stateless come FORAGE, che non ne hanno bisogno. Vedi
+# CaloricCalculator.update_secondary_resource_stock.
 var secondary_resource_stock: Dictionary = {}
 # Debito frazionario di spazio GRASS da rimuovere per consumo animale: il consumo giornaliero
 # convertito in "spazio equivalente" (unità/densità) è quasi sempre < 1 unità intera — invece
@@ -166,7 +184,7 @@ var secondary_resource_stock: Dictionary = {}
 # AnimalConsumptionService), momento in cui dedicated_space[GRASS] viene davvero decrementato.
 var pending_grass_space_debt: float = 0.0
 # Stesso meccanismo di pending_grass_space_debt sopra, per le altre due fonti a consumo diretto
-# (consuming_depletes_primary = true, nessuno stock proprio — vedi CaloricSourceRules):
+# (consuming_depletes_primary = true, nessuno stock proprio — vedi SecondaryResourceRules):
 # fish_meat decrementa water_dedicated_space[FISH], bird_meat decrementa
 # terrestrial_dedicated_space[BIRDS]. Campi separati (non un Dictionary unico) per restare
 # coerenti con lo schema già in uso per GRASS — nessun consumatore reale li tocca ancora (vedi

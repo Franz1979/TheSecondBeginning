@@ -1,10 +1,12 @@
 class_name CaloricCalculator
 extends RefCounted
 
-const CALORIC_SOURCES_DIR := "res://simulation/data/caloric_sources/"
+# Rinominata da CALORIC_SOURCES_DIR insieme alla cartella dati (2026-09-08, richiesta utente —
+# vedi SecondaryResourceRules, rinominata da CaloricSourceRules).
+const SECONDARY_RESOURCES_DIR := "res://simulation/data/secondary_resources/"
 
 # Nessun vero registro di fonti a stock persistente esiste ancora (nessuna scansione automatica
-# dei .tres in data/caloric_sources/) — solo questo elenco hardcoded delle fonti oggi implementate
+# dei .tres in data/secondary_resources/) — solo questo elenco hardcoded delle fonti oggi implementate
 # con la rispettiva risorsa primaria. Aggiungere una nuova fonte a stock persistente richiede una
 # riga qui, a mano. Spostato qui da WorldTimeService (2026-09-05): ora ha un secondo consumatore
 # (LODOrchestrator.set_focus_region, per il catch-up alla prima scoperta di una cella — vedi
@@ -18,18 +20,18 @@ const SECONDARY_SOURCES := [
 ]
 
 
-static func get_caloric_source_rules(resource_name: String) -> CaloricSourceRules:
-	var path := CALORIC_SOURCES_DIR + resource_name + ".tres"
+static func get_caloric_source_rules(resource_name: String) -> SecondaryResourceRules:
+	var path := SECONDARY_RESOURCES_DIR + resource_name + ".tres"
 	if not ResourceLoader.exists(path):
 		return null
-	return load(path) as CaloricSourceRules
+	return load(path) as SecondaryResourceRules
 
 
 # Formula generica condivisa da qualsiasi fonte calorica, presente o futura: quantità_base ×
 # yield_ratio × seasonal_availability_multiplier[stagione]. Nessuno stock persistente: pura
 # funzione della risorsa primaria/sottotipo collegata al momento della chiamata.
 static func get_available_units(
-	rules: CaloricSourceRules,
+	rules: SecondaryResourceRules,
 	cell: MacroCellData,
 	state: MacroCellState,
 	primary_resource_type: GameTypes.WorldObjectType,
@@ -40,7 +42,7 @@ static func get_available_units(
 
 
 static func get_available_calories(
-	rules: CaloricSourceRules,
+	rules: SecondaryResourceRules,
 	cell: MacroCellData,
 	state: MacroCellState,
 	primary_resource_type: GameTypes.WorldObjectType,
@@ -58,7 +60,7 @@ static func get_available_calories(
 # va pesata per fascia d'età (vedi _get_age_weighted_quantity sotto); altrimenti (default, es.
 # FORAGE e ogni sottotipo non ancora esteso alle age bands) resta la formula piatta di sempre.
 static func _get_base_quantity(
-	rules: CaloricSourceRules,
+	rules: SecondaryResourceRules,
 	cell: MacroCellData,
 	state: MacroCellState,
 	primary_resource_type: GameTypes.WorldObjectType
@@ -133,7 +135,7 @@ static func get_forage_available_calories(cell: MacroCellData, state: MacroCellS
 # _get_base_quantity darebbe 0 (0 spazio × qualunque densità resta 0), sottotipo con age band
 # tracciate incluso.
 static func has_secondary_resource_potential(
-	rules: CaloricSourceRules, state: MacroCellState, primary_resource_type: GameTypes.WorldObjectType
+	rules: SecondaryResourceRules, state: MacroCellState, primary_resource_type: GameTypes.WorldObjectType
 ) -> bool:
 	if rules.source_subtype.is_empty():
 		return state.get_resource_quantity(primary_resource_type) > 0
@@ -151,7 +153,7 @@ static func has_secondary_resource_potential(
 #  - se il tetto scende: lo stock decade in proporzione al rapporto tra i moltiplicatori (non tra
 #    i tetti, per restare corretto anche quando base_quantity è 0).
 static func update_secondary_resource_stock(
-	rules: CaloricSourceRules,
+	rules: SecondaryResourceRules,
 	cell: MacroCellData,
 	state: MacroCellState,
 	primary_resource_type: GameTypes.WorldObjectType,
@@ -161,7 +163,7 @@ static func update_secondary_resource_stock(
 	if rules.consuming_depletes_primary:
 		return
 
-	var before := state.get_secondary_resource_stock(rules.caloric_source_name)
+	var before := state.get_secondary_resource_stock(rules.secondary_resource_name)
 	var base_quantity := _get_base_quantity(rules, cell, state, primary_resource_type)
 	var new_ceiling := base_quantity * rules.yield_ratio * rules.seasonal_availability_multiplier[new_season]
 	var new_stock: float
@@ -177,13 +179,13 @@ static func update_secondary_resource_stock(
 			var new_multiplier: float = rules.seasonal_availability_multiplier[new_season]
 			new_stock = before * (new_multiplier / old_multiplier) if old_multiplier > 0.0 else 0.0
 
-	state.set_secondary_resource_stock(rules.caloric_source_name, new_stock)
+	state.set_secondary_resource_stock(rules.secondary_resource_name, new_stock)
 
 	#if DebugLogging.ENABLED and state.x == 50 and state.y == 50:
 	#	print("[SECONDARY STOCK %s] %s -> %s: %.2f -> %.2f" % [
-	#		rules.caloric_source_name,
+	#		rules.secondary_resource_name,
 	#		GameTypes.Season.keys()[previous_season], GameTypes.Season.keys()[new_season],
-	#		before, state.get_secondary_resource_stock(rules.caloric_source_name)
+	#		before, state.get_secondary_resource_stock(rules.secondary_resource_name)
 	#	])
 
 
@@ -198,7 +200,7 @@ static func update_secondary_resource_stock(
 # retroattivo) — la pianta stessa (TREE/SHRUB) può restare congelata, è solo lo stock derivato a
 # doversi allineare subito.
 static func seed_secondary_resource_stock_now(
-	rules: CaloricSourceRules,
+	rules: SecondaryResourceRules,
 	cell: MacroCellData,
 	state: MacroCellState,
 	primary_resource_type: GameTypes.WorldObjectType,
@@ -208,7 +210,7 @@ static func seed_secondary_resource_stock_now(
 		return
 	var base_quantity := _get_base_quantity(rules, cell, state, primary_resource_type)
 	state.set_secondary_resource_stock(
-		rules.caloric_source_name, base_quantity * rules.yield_ratio * rules.seasonal_availability_multiplier[season]
+		rules.secondary_resource_name, base_quantity * rules.yield_ratio * rules.seasonal_availability_multiplier[season]
 	)
 
 

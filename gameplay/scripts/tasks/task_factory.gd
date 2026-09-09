@@ -11,7 +11,7 @@ class_name TaskFactory
 # Supporta WALK e REST in questo passo (le uniche due Action esistenti, vedi TaskTypes.ActionType)
 # — REST non richiede una chiave di contesto (RestAction non ha un target, vedi RestAction.gd),
 # quindi context_key viene semplicemente ignorata per quello step. Aggiungere qui un nuovo case
-# per ogni futuro ActionType quando arriverà la sua Action concreta (HARVEST/PICK_UP/DEPOSIT/
+# per ogni futuro ActionType quando arriverà la sua Action concreta (HARVEST/PICK_UP/UNLOAD/
 # BUILD, ...) — non prima, per non gestire azioni che non esistono ancora.
 static func build_task(definition: TaskDefinition, context: Dictionary) -> Task:
 	var steps: Array[Action] = []

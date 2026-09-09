@@ -49,6 +49,14 @@ var selected_exclude_predator_territories: bool = false
 # animali, quindi anche pesi equi vengono quasi sempre "battuti" dal vegetale, denso ovunque).
 # Ignorato del tutto quando selected_world_age_mode == "CLASSIC".
 var selected_guarantee_animal_presence: bool = false
+# Stesso trattamento di selected_guarantee_animal_presence sopra (2026-09-08, richiesta utente —
+# "Presenza sicura roccia": oggi non c'e' alcun modo di sapere se una macrocella avra' roccia
+# prima di scoprirla, e la roccia e' una risorsa preziosa). "si'" filtra i candidati di partenza a
+# sole celle dove ROCK e' gia' stato seminato (MacroCellState.get_dedicated_space(ROCK) > 0, vedi
+# FirstStartMacroCellSelectionService._collect_stone_present_cells); "no" non filtra affatto — la
+# roccia puo' comunque esserci per puro caso. Ignorato del tutto quando selected_world_age_mode ==
+# "CLASSIC".
+var selected_guarantee_stone_presence: bool = false
 # Stesso trattamento dei selected_* sopra. "RICH"/"NORMAL"/"POOR" — stessi nomi di
 # DifficultyRules.resource_richness_multiplier, letto dalla futura GameScene/
 # FirstStartMacroCellSelectionService per scegliere in quale fascia di ricchezza (vedi

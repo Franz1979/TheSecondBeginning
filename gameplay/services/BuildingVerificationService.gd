@@ -64,9 +64,12 @@ extends RefCounted
 # micro_x/micro_y (stesso attraversamento di bordo del Criterio 7, qui in coordinate invece che in
 # pixel — vedi _door_target_macro_micro sotto): non richiede che la macrocella dell'edificio
 # esistente sia viva, l'edificio è comunque un dato reale in macro_world.buildings. UNIVERSALE
-# (SEMPRE attivo, anche se il NUOVO edificio non ha porta propria — has_door riguarda solo se
-# l'edificio che si sta piazzando ha una porta da tenere sgombra, non se può bloccare quella di un
-# altro).
+# rispetto al NUOVO edificio (SEMPRE attivo, anche se il NUOVO edificio non ha porta propria —
+# has_door riguarda solo se l'edificio che si sta piazzando ha una porta da tenere sgombra, non se
+# può bloccare quella di un altro) — ma NON rispetto all'edificio ESISTENTE: se quello non ha porta
+# (rules.has_door = false, es. Stone Circle/Deposit Site) non c'è nulla da proteggere, va saltato
+# (BUGFIX 2026-09-08, richiesta utente: un Deposit Site bloccava la costruzione sul lato sud, la sua
+# `rotation` di default/SOUTH veniva letta come se fosse una porta vera anche con has_door=false).
 
 static func is_position_buildable(
 	live_cells: Dictionary, macro_cell_pixels: int, cell_size: int, world_position: Vector2,
@@ -150,14 +153,19 @@ static func _is_position_clear(cell: LiveMacroCell, microcell: Vector2i, current
 	return true
 
 
-# Criterio 8 (vedi commento in testa al file): true se un edificio esistente ha la porta rivolta
-# esattamente su (target_macro_x, target_macro_y, target_microcell).
+# Criterio 8 (vedi commento in testa al file): true se un edificio esistente CON PORTA ha la porta
+# rivolta esattamente su (target_macro_x, target_macro_y, target_microcell). Edifici senza porta
+# (rules.has_door = false) sono saltati — non hanno una porta da proteggere, la loro `rotation`
+# esiste solo come dato residuo (default SOUTH) e non rappresenta un orientamento reale mostrato a
+# schermo (vedi BuildingGhost/MicroCellRenderer, che ignorano rotation_dir per questi tipi).
 static func _blocks_existing_building_door(
 	target_macro_x: int, target_macro_y: int, target_microcell: Vector2i, macro_world: World
 ) -> bool:
 	if macro_world == null:
 		return false
 	for building in macro_world.buildings:
+		if building.rules == null or not building.rules.has_door:
+			continue
 		var door := _door_target_macro_micro(building.macro_x, building.macro_y, building.micro_x, building.micro_y, building.rotation)
 		if door["macro"] == Vector2i(target_macro_x, target_macro_y) and door["micro"] == target_microcell:
 			return true

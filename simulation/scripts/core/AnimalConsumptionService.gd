@@ -3,7 +3,7 @@ extends RefCounted
 
 const FORAGE_SOURCE_NAME := "forage"
 # fish_meat/bird_meat: stesso trattamento di FORAGE (consuming_depletes_primary = true, vedi
-# CaloricSourceRules) — decrementano direttamente la risorsa primaria collegata (FISH/BIRDS),
+# SecondaryResourceRules) — decrementano direttamente la risorsa primaria collegata (FISH/BIRDS),
 # mai uno stock proprio. Nessuna specie ha ancora questi due nomi in diet_compatibility (nessun
 # consumo umano implementato), quindi questi rami non sono ancora davvero raggiunti — ma il
 # dispatcher sotto e' gia' corretto per quando lo saranno, invece di trattarli per errore come
@@ -243,7 +243,7 @@ func _consume_requirement_in_cell(
 		for source in weighted_sources:
 			var source_name: String = source["name"]
 			var source_weight: float = source["weight"]
-			var source_rules: CaloricSourceRules = source["rules"]
+			var source_rules: SecondaryResourceRules = source["rules"]
 
 			var share: float = requirement * (source_weight / weight_sum)
 			# Tetto = source_weight (= calorie_disponibili × compatibility), NON le calorie

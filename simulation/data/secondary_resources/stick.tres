@@ -1,0 +1,13 @@
+[gd_resource type="Resource" script_class="SecondaryResourceRules" format=3 uid="uid://bpwciahma2ifg"]
+
+[ext_resource type="Script" uid="uid://cu4cyua5y4n1m" path="res://simulation/scripts/core/SecondaryResourceRules.gd" id="1_stick"]
+
+[resource]
+script = ExtResource("1_stick")
+secondary_resource_name = "stick"
+calories_per_unit = 0.0
+is_construction_material = true
+category = 1
+generation_source = 1
+day_durability = 300
+space_per_unit = 10.0

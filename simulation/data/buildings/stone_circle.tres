@@ -8,8 +8,6 @@ building_name = "building_stone_circle"
 category = 1
 min_construction_days = 3
 required_labor = 300
-storage_slot_count = 10
-storage_space_per_slot = 20
 required_materials = {
 "stone": 40
 }

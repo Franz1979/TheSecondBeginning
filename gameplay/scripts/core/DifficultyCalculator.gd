@@ -10,15 +10,16 @@ static func get_difficulty_rules() -> DifficultyRules:
 	return load(DIFFICULTY_RULES_PATH) as DifficultyRules
 
 
-# Prodotto degli otto moltiplicatori — 1.0 = combinazione piu' difficile possibile con le regole
+# Prodotto dei NOVE moltiplicatori (guarantee_stone_presence aggiunto 2026-09-08, richiesta
+# utente — "Presenza sicura roccia") — 1.0 = combinazione piu' difficile possibile con le regole
 # attuali, mai normalizzato/riscalato (vedi DifficultyRules per il perche': un valore gia'
 # salvato deve restare confrontabile anche se in futuro cambiano i parametri o se ne aggiungono
 # altri). -1.0 = sentinella "non applicabile": world_age_mode "CLASSIC" ignora del tutto
 # animal_density/population_size/exclude_hostile_start/exclude_predator_territories/
-# resource_richness_preference/group_size_preference/guarantee_animal_presence (vedi
-# WorldScene._populate_new_world), assegnare comunque un numero sarebbe fuorviante. Chiave
-# assente nel Dictionary (specie/opzione futura non ancora tarata) -> moltiplicatore neutro 1.0,
-# mai un errore.
+# resource_richness_preference/group_size_preference/guarantee_animal_presence/
+# guarantee_stone_presence (vedi WorldScene._populate_new_world), assegnare comunque un numero
+# sarebbe fuorviante. Chiave assente nel Dictionary (specie/opzione futura non ancora tarata) ->
+# moltiplicatore neutro 1.0, mai un errore.
 static func compute_difficulty_ratio(
 	world_age_mode: String,
 	animal_density: String,
@@ -27,7 +28,8 @@ static func compute_difficulty_ratio(
 	exclude_predator_territories: bool,
 	resource_richness_preference: String,
 	group_size_preference: String,
-	guarantee_animal_presence: bool
+	guarantee_animal_presence: bool,
+	guarantee_stone_presence: bool = false
 ) -> float:
 	if world_age_mode == "CLASSIC":
 		return -1.0
@@ -50,8 +52,11 @@ static func compute_difficulty_ratio(
 	var animal_presence_mult: float = (
 		rules.animal_presence_guaranteed_multiplier if guarantee_animal_presence else rules.animal_presence_not_guaranteed_multiplier
 	)
+	var stone_presence_mult: float = (
+		rules.stone_presence_guaranteed_multiplier if guarantee_stone_presence else rules.stone_presence_not_guaranteed_multiplier
+	)
 
 	return (
 		world_age_mult * density_mult * population_mult * hostile_mult
-		* predator_mult * richness_mult * group_size_mult * animal_presence_mult
+		* predator_mult * richness_mult * group_size_mult * animal_presence_mult * stone_presence_mult
 	)

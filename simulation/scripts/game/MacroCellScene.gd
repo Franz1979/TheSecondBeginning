@@ -466,8 +466,11 @@ func _ready() -> void:
 				river_exterior_occupied = _compute_river_exterior_occupied(river_positions)
 
 			var stone_service := StonePositionService.new()
-			stone_service.generate_if_needed(macro_state)
+			stone_service.generate_if_needed(macro_state, macro_cell)
 			renderer.set_stone_positions(macro_state.stone_positions)
+			# Pebble (2026-09-08, richiesta utente) — stessa fonte/stesso momento delle posizioni
+			# stone appena sopra.
+			renderer.set_pebble_quantities(macro_state.pebble_quantities)
 
 			_refresh_resource_visuals()
 
@@ -527,6 +530,11 @@ func _compute_river_exterior_occupied(positions: Array) -> Dictionary:
 func _refresh_resource_visuals() -> void:
 	if macro_state == null:
 		return
+
+	# Pool bastoni (2026-09-08, richiesta utente) — stesso aggancio di GameScene._refresh_resource_
+	# visuals, vedi StickPoolService per il design completo.
+	StickPoolService.refresh_macrocell(macro_state, game_data)
+	renderer.set_stick_quantities(macro_state.stick_quantities)
 
 	var occupied: Dictionary = {}
 	for pos in macro_state.stone_positions:

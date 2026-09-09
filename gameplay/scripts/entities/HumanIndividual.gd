@@ -192,11 +192,55 @@ const FALLBACK_MAX_STAMINA: float = 5000.0
 var current_stamina: float = 0.0
 var max_stamina: float = 0.0
 
+# --- Capacità di trasporto (2026-09-08, richiesta utente) ---
+#
+# Stesso fallback/schema di FALLBACK_MAX_STAMINA sopra — usato da _resolve_initial_max_carry_
+# capacity sotto quando la catena source_group_ref->folk_ref->human_rules_ref non è ancora
+# risolvibile alla creazione. Stesso valore del nuovo default di HumanRules.base_carry_capacity,
+# deliberatamente (un fallback "onesto", stesso principio di FALLBACK_MAX_STAMINA).
+const FALLBACK_MAX_CARRY_CAPACITY: float = 30.0
+
+# Ricalcolato ogni giorno da HumanCarryCapacityIndividualService (agganciato a GameTimeService.
+# _on_day_advanced) — stesso identico pattern di max_stamina sopra, vedi quel commento per il
+# perché è un ricalcolo periodico e non event-driven.
+var max_carry_capacity: float = 0.0
+
+# Nome della risorsa secondaria attualmente trasportata (SecondaryResourceRules.
+# secondary_resource_name) — "" = non sta trasportando nulla. Un individuo trasporta UN SOLO tipo
+# di risorsa alla volta (nessun inventario multi-risorsa) — verificato che nessun sistema
+# Task/Action esistente assuma diversamente: non esiste ancora alcuna Action di raccolta/trasporto
+# (TaskTypes.ActionType ha solo WALK/REST oggi), quindi nessun consumatore da rispettare/rompere.
+# Nessuna logica di raccolta/deposito la valorizza ancora in questo passo — solo il dato.
+var carried_resource_name: String = ""
+# Quantità della risorsa in carried_resource_name — 0 quando carried_resource_name è "" (nessuna
+# logica impone ancora questo invariante, dato che nulla scrive questi due campi insieme oggi, ma
+# è la lettura corretta per un futuro consumatore). Spazio occupato = carried_quantity ×
+# SecondaryResourceRules.space_per_unit della risorsa trasportata — calcolato al volo dal
+# chiamante (mai cachato qui, vedi GameScene._update_individual_panel_content), MAI un terzo campo
+# ridondante su questa classe.
+var carried_quantity: int = 0
+
+# Frazione di decadimento 0.0->1.0 della risorsa in carried_resource_name (2026-09-09, richiesta
+# utente — Step 3 decadimento a lotto unico) — avanzata di 1/day_durability al giorno da
+# ResourceDecayService.advance_individual_decay, azzerata insieme a carried_resource_name/
+# carried_quantity quando lo zaino si svuota (per qualunque via: raggiunge 1.0 e deperisce del
+# tutto, oppure viene scaricato per intero in un edificio, vedi UnloadAction.on_complete) — mai
+# un valore residuo "orfano" associato a uno zaino vuoto. 0.0 di default = mai deperito, coerente
+# col significato "zaino vuoto" quando accoppiato a carried_resource_name == "".
+var carried_decay_fraction: float = 0.0
+
+# Slot tool (2026-09-08, richiesta utente) — SOLO spazio/bonus per ora (vedi HumanRules.
+# tool_slot_count/carry_bonus_per_empty_tool_slot), NESSUN uso funzionale: nessun sistema di equip
+# esiste ancora, quindi questo resta SEMPRE 0 finché non arriverà. Letto da HumanCalculator.
+# get_max_carry_capacity (bonus flat per slot VUOTO = tool_slot_count - questo campo).
+var equipped_tool_count: int = 0
+
 
 func _init() -> void:
 	var initial_stamina := _resolve_initial_max_stamina()
 	current_stamina = initial_stamina
 	max_stamina = initial_stamina
+	max_carry_capacity = _resolve_initial_max_carry_capacity()
 
 
 # Vedi il TODO sul campo current_stamina sopra per i limiti di questa risoluzione "al volo".
@@ -217,6 +261,18 @@ func _resolve_initial_max_stamina() -> float:
 	return HumanCalculator.get_max_stamina(
 		human_rules, HumanTypes.AgeBand.FERTILE_ADULT, sex, is_pregnant, dependent_child_id != -1, null
 	)
+
+
+# Stessa risoluzione "al volo" di _resolve_initial_max_stamina sopra, stessi identici limiti/
+# motivazione (vedi il TODO su current_stamina sopra) — FERTILE_ADULT come default per lo stesso
+# motivo (fascia di riferimento, moltiplicatore 1.0 sia per età che per sesso).
+func _resolve_initial_max_carry_capacity() -> float:
+	var human_rules: HumanRules = null
+	if source_group_ref != null and source_group_ref.folk_ref != null:
+		human_rules = source_group_ref.folk_ref.human_rules_ref
+	if human_rules == null:
+		return FALLBACK_MAX_CARRY_CAPACITY
+	return HumanCalculator.get_max_carry_capacity(human_rules, HumanTypes.AgeBand.FERTILE_ADULT, sex, equipped_tool_count)
 
 
 # Liste nomi come semplice testo (un nome per riga), non .tres — pensate per crescere a
@@ -352,20 +408,38 @@ func _load_name_pool(path: String) -> Array[String]:
 	return pool
 
 
+# Assegnazione GENERICA di una Task (2026-09-09, richiesta utente, Step 4 del piano raccolta/
+# trasporto) — generalizza quanto set_target sotto faceva SOLO per il caso singolo-step Walk:
+# sostituisce current_task e attiva il primo step, stesso comportamento che finora ogni chiamante
+# (set_target, il debug hook tasto T in GameScene) replicava a mano con `current_task = Task.new(
+# [...]); step.activate(self)`. UNICO punto ora responsabile di questa coppia di operazioni — un
+# futuro TaskFactory/assegnazione da click passerà da qui, non da un terzo percorso equivalente.
+#
+# get_current_action() può tornare null (Task vuota, nessuno step — vedi Task.gd) — a differenza
+# del vecchio set_target, che assumeva sempre un WalkAction concreto e non aveva bisogno di questa
+# guardia, un chiamante generico può in teoria passare una Task senza step: stesso principio
+# difensivo già richiesto da Task.get_current_action() stessa ("il chiamante non deve mai assumere
+# un'Action non-null senza aver controllato prima").
+func assign_task(task: Task) -> void:
+	current_task = task
+	var current_action := task.get_current_action()
+	if current_action != null:
+		current_action.activate(self, task.context)
+
+
+# Riscritta in termini di assign_task sopra (2026-09-09, richiesta utente — evitare due percorsi
+# paralleli che fanno la stessa cosa in modo leggermente diverso). path.clear() resta QUI, non
+# dentro assign_task: è specifico del movimento (waypoint di un futuro pathfinding, vedi il campo
+# `path` sopra), non ha senso azzerarlo per una Task generica che magari non contiene nemmeno un
+# WalkAction (es. una futura Task che inizia con un Rest/Think) — nessuna ragione per spostarlo nel
+# metodo generico.
 func set_target(target: Vector2) -> void:
 	path.clear()
 	# Cablaggio Walk/Task (2026-09-06/07, richiesta utente) — un comando di movimento esplicito
 	# crea SEMPRE una Task NUOVA a un solo step (mai riusata tra due comandi diversi, anche se la
 	# precedente non era ancora conclusa — un nuovo target la sostituisce di netto): coerente col
 	# design di WalkAction._last_position, pensata per vivere per la durata di UNA sola camminata.
-	# target_position/is_moving NON più assegnati qui direttamente (2026-09-07) — spostati dentro
-	# WalkAction.activate(), chiamata subito sotto: stesso identico effetto visibile (un click, un
-	# movimento), ma ora è lo step stesso a sapere come prepararsi, unica fonte di verità riusata
-	# anche quando una Task futura avanza da sola a uno step successivo (vedi
-	# HumanIndividualActionService.apply_action).
-	var walk := WalkAction.new(target)
-	current_task = Task.new([walk])
-	walk.activate(self)
+	assign_task(Task.new([WalkAction.new(target)]))
 
 
 func stop() -> void:

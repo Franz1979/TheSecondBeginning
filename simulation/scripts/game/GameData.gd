@@ -51,6 +51,10 @@ var starting_group_size_preference: String = ""
 # starting_exclude_hostile_start/starting_exclude_predator_territories/
 # starting_resource_richness_preference — non e' solo una statistica.
 var starting_guarantee_animal_presence: bool = false
+# Stesso trattamento di starting_guarantee_animal_presence sopra (2026-09-08, richiesta utente) —
+# alimenta DAVVERO FirstStartMacroCellSelectionService (vedi GameScene._ready()), non e' solo una
+# statistica.
+var starting_guarantee_stone_presence: bool = false
 var starting_difficulty_ratio: float = -1.0
 
 # Coordinate della macrocella "sede" del player nella futura vista GameScene (vista principale

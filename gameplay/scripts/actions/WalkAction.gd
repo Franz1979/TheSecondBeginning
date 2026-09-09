@@ -28,7 +28,14 @@ extends Action
 # codebase.
 # Ritarato da 2.0 a 5.0 (richiesta utente, 2026-09-07, in coppia con la ritaratura di
 # HumanIndividual.move_speed e SECONDS_PER_DAY_BY_SPEED per l'aggancio al game clock).
-const STAMINA_DRAIN_PER_MICROCELL: float = 5.0
+# Base FISSA del costo/microcella (richiesta utente, 2026-09-08) — non più l'intero costo: ora solo
+# il termine indipendente dal carico, sommato a used_carry_space/tool sotto in get_stamina_delta.
+# Con carried_resource_name vuoto ed equipped_tool_count 0 il costo totale resta esattamente questo
+# valore (nessun carico), invariato rispetto a prima di questa modifica.
+const STAMINA_DRAIN_PER_MICROCELL_BASE: float = 5.0
+# Costo aggiuntivo/microcella per ogni utensile in equipaggiamento (richiesta utente, 2026-09-08) —
+# valore ARBITRARIO di partenza, stesso principio "da bilanciare" già dichiarato sopra per la base.
+const STAMINA_DRAIN_PER_TOOL: float = 3.0
 
 
 func _init(p_target: Vector2) -> void:
@@ -43,8 +50,8 @@ func _init(p_target: Vector2) -> void:
 # super() PRIMA (bugfix 2026-09-07, vedi Action.activate) poi is_moving = true SUBITO DOPO: unica
 # sottoclasse che ribalta il default a false della classe base — è l'unica azione che comporta
 # movimento reale.
-func activate(individual: Variant) -> void:
-	super(individual)
+func activate(individual: Variant, context: Dictionary) -> void:
+	super(individual, context)
 	individual.target_position = target
 	individual.is_moving = true
 
@@ -72,7 +79,7 @@ var _last_position: Variant = null
 # resta comunque tipizzato correttamente a runtime (dispatch dinamico su Variant, stesso principio
 # già usato altrove nel progetto per valori letti da Dictionary/Array generici) — nessuna perdita
 # di correttezza, solo niente controllo statico a compile-time su questo singolo parametro.
-func get_stamina_delta(individual: Variant, delta: float) -> float:
+func get_stamina_delta(individual: Variant, context: Dictionary, delta: float) -> float:
 	if _last_position == null:
 		_last_position = individual.position
 		return 0.0
@@ -82,7 +89,19 @@ func get_stamina_delta(individual: Variant, delta: float) -> float:
 	# accetta comunque la conversione a runtime (il valore reale è sempre un float).
 	var distance: float = individual.position.distance_to(_last_position)
 	_last_position = individual.position
-	return -distance * STAMINA_DRAIN_PER_MICROCELL
+
+	# Costo/microcella = base + spazio REALMENTE occupato dal carico + costo per utensile
+	# (richiesta utente, 2026-09-08) — stesso identico lookup/stessa identica formula di
+	# used_carry_space già usata da GameScene._update_individual_panel_content per il pannello
+	# individuo (mai cachato: il carico può cambiare tra una chiamata e l'altra).
+	var used_carry_space := 0.0
+	if individual.carried_resource_name != "":
+		var carried_resource_rules := CaloricCalculator.get_caloric_source_rules(individual.carried_resource_name)
+		if carried_resource_rules != null:
+			used_carry_space = float(individual.carried_quantity) * carried_resource_rules.space_per_unit
+
+	var cost_per_microcell: float = STAMINA_DRAIN_PER_MICROCELL_BASE + used_carry_space + STAMINA_DRAIN_PER_TOOL * float(individual.equipped_tool_count)
+	return -distance * cost_per_microcell
 
 
 # Completa quando la posizione ha raggiunto la destinazione DI QUESTO STEP — confronto contro
@@ -92,5 +111,5 @@ func get_stamina_delta(individual: Variant, delta: float) -> float:
 # ma non più l'unica fonte da cui questa classe deve dipendere). Stesso criterio di sempre —
 # uguaglianza esatta, coerente con l'assegnazione diretta `position = target_position` che
 # HumanIndividualMovementService fa all'arrivo, mai un margine di tolleranza.
-func is_complete(individual: Variant) -> bool:
+func is_complete(individual: Variant, context: Dictionary) -> bool:
 	return individual.position == target

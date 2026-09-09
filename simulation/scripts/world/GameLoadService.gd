@@ -39,6 +39,7 @@ func load_game_from_json(file_path: String) -> LoadedGame:
 	game_data.starting_resource_richness_preference = String(data["game"].get("starting_resource_richness_preference", ""))
 	game_data.starting_group_size_preference = String(data["game"].get("starting_group_size_preference", ""))
 	game_data.starting_guarantee_animal_presence = bool(data["game"].get("starting_guarantee_animal_presence", false))
+	game_data.starting_guarantee_stone_presence = bool(data["game"].get("starting_guarantee_stone_presence", false))
 	game_data.starting_difficulty_ratio = float(data["game"].get("starting_difficulty_ratio", -1.0))
 	# .get(key, -1) per compatibilita' con save precedenti l'introduzione della sede player
 	# (vedi GameData) — -1 è lo stesso default "mai inizializzata" della classe.
@@ -157,6 +158,14 @@ func load_game_from_json(file_path: String) -> LoadedGame:
 					stone_positions.append(Vector2i(int(pos_data["x"]), int(pos_data["y"])))
 				state.stone_positions = stone_positions
 				state.stone_positions_generated = true
+				# PEBBLE (2026-09-08, richiesta utente) — stesso blocco/stessa guardia di
+				# stone_positions sopra (nascono/vivono insieme, vedi GameSaveService). .get() con
+				# default [] per compatibilità coi save precedenti a questo campo: una macrocella
+				# già aperta prima di questo passo ha stone_positions ma non ancora
+				# pebble_quantities.
+				for pos_data in state_data.get("pebble_quantities", []):
+					var pebble_pos := Vector2i(int(pos_data["x"]), int(pos_data["y"]))
+					state.pebble_quantities[pebble_pos] = int(pos_data["q"])
 			for pos_data in state_data.get("vegetation_cut_exceptions", []):
 				var cut_key := Vector3i(int(pos_data["x"]), int(pos_data["y"]), int(pos_data["i"]))
 				state.vegetation_cut_exceptions[cut_key] = {
@@ -183,6 +192,16 @@ func load_game_from_json(file_path: String) -> LoadedGame:
 				state.tree_claimed_lots[Vector2i(int(pos_data["x"]), int(pos_data["y"]))] = true
 			for pos_data in state_data.get("shrub_claimed_lots", []):
 				state.shrub_claimed_lots[Vector2i(int(pos_data["x"]), int(pos_data["y"]))] = true
+			# Pool bastoni per lotto (2026-09-08, richiesta utente) — stesso trattamento di
+			# pebble_quantities: .get() con default [] per compatibilità coi save precedenti a
+			# questo campo.
+			for pos_data in state_data.get("stick_quantities", []):
+				var stick_pos := Vector2i(int(pos_data["x"]), int(pos_data["y"]))
+				state.stick_quantities[stick_pos] = {
+					"checkpoint_day": int(pos_data["checkpoint_day"]),
+					"capacity": int(pos_data["capacity"]),
+					"harvested": int(pos_data["harvested"]),
+				}
 			for pos_data in state_data.get("vegetation_death_exceptions", []):
 				var death_key := Vector3i(int(pos_data["x"]), int(pos_data["y"]), int(pos_data["i"]))
 				state.vegetation_death_exceptions[death_key] = {
@@ -341,7 +360,26 @@ func load_game_from_json(file_path: String) -> LoadedGame:
 			building.is_complete = bool(building_data.get("is_complete", false))
 			building.current_durability = int(building_data.get("current_durability", 0))
 			building.built_year = int(building_data.get("built_year", -1))
-			building.stored_resources = building_data.get("stored_resources", {})
+			# stored_resources (2026-09-09, richiesta utente, Step 3 decadimento) — formato cambiato
+			# da resource_name -> int diretto a resource_name -> {"quantity","decay_fraction"} (vedi
+			# BuildingStorageService/Building.gd). _parse_stored_resources sotto gestisce ENTRAMBI i
+			# formati per voce, cosi' un save salvato PRIMA di questo passo (dove stored_resources
+			# era comunque sempre vuoto in pratica, ma la retrocompatibilità resta corretta anche se
+			# non lo fosse stato) continua a caricare senza perdere dati — un intero vecchio letto
+			# come {"quantity": vecchio_intero, "decay_fraction": 0.0}, mai un breaking change.
+			building.stored_resources = _parse_stored_resources(building_data.get("stored_resources", {}))
+			# enabled_categories (2026-09-09, richiesta utente) — .get(key, []) per compatibilità
+			# con save precedenti l'introduzione del campo, stesso principio già usato per ogni
+			# altro campo opzionale in questo file. int() esplicito per voce (non un .assign()
+			# diretto): JSON non distingue int/float, ogni numero torna dal parsing come float
+			# (stesso motivo per cui tree_claimed_lots sopra fa int(pos_data["x"]) invece di un
+			# cast di massa) — un float lasciato dentro un Array[SecondaryResourceTypes.Category]
+			# (Array tipizzato int-backed) sarebbe un dato incoerente rispetto a come questo stesso
+			# campo viene scritto altrove (sempre veri int).
+			var enabled_categories: Array[SecondaryResourceTypes.Category] = []
+			for category_value in building_data.get("enabled_categories", []):
+				enabled_categories.append(int(category_value))
+			building.enabled_categories = enabled_categories
 			building.rotation = int(building_data.get("rotation", GameTypes.Direction.SOUTH))
 			world.buildings.append(building)
 
@@ -440,6 +478,49 @@ func load_game_from_json(file_path: String) -> LoadedGame:
 			# richiesta, stesso trattamento dei campi pending_child_* sopra.
 			individual.dependent_child_id = int(individual_data["dependent_child_id"])
 			individual.source_group_ref = human_population_group
+			# Stamina (2026-09-08, richiesta utente) — .get() con i vecchi fallback di classe come
+			# default (FALLBACK_MAX_STAMINA per entrambi, stesso valore usato da _init/
+			# HumanStaminaIndividualService quando la catena Rules non è risolvibile): un save
+			# precedente a questo campo non aveva alcuno stato reale da perdere (nessun consumo
+			# esisteva ancora), quindi il fallback resta un valore onesto anche qui.
+			individual.current_stamina = float(individual_data.get("current_stamina", HumanIndividual.FALLBACK_MAX_STAMINA))
+			individual.max_stamina = float(individual_data.get("max_stamina", HumanIndividual.FALLBACK_MAX_STAMINA))
+			# Capacità di trasporto (2026-09-08, richiesta utente) — .get() con default "non sta
+			# trasportando nulla": un save precedente a questo campo non può avere mai avuto un
+			# individuo in trasporto (nessun PickUp esiste ancora), quindi il default è sempre
+			# corretto, non solo un ripiego.
+			individual.carried_resource_name = String(individual_data.get("carried_resource_name", ""))
+			individual.carried_quantity = int(individual_data.get("carried_quantity", 0))
+			# carried_decay_fraction (2026-09-09, richiesta utente, Step 3 decadimento) — .get() con
+			# default 0.0 per compatibilità con save precedenti l'introduzione del campo (stesso
+			# principio già richiesto per ogni campo opzionale in questo file).
+			individual.carried_decay_fraction = float(individual_data.get("carried_decay_fraction", 0.0))
+			# Task/Action in corso (2026-09-08, richiesta utente) — "current_task" assente (save
+			# precedente a questo campo) o esplicitamente null (individuo a Rest implicito al
+			# momento del salvataggio) lasciano individual.current_task al default null, nessuna
+			# Task ricostruita. Quando presente, TaskPersistenceService.deserialize_task ricostruisce
+			# l'intera sequenza di step; activate() sullo step corrente RIPRISTINA gli effetti
+			# collaterali che un Task vivo avrebbe già applicato (es. WalkAction.activate scrive
+			# individual.target_position/is_moving, MAI persistiti a parte — si ricavano SOLO da
+			# qui) — senza, un individuo a metà camminata ricomparirebbe fermo, con una Task "Walk"
+			# assegnata ma nessun movimento visibile finché non arriva un nuovo comando.
+			var current_task_data: Variant = individual_data.get("current_task")
+			if current_task_data is Dictionary:
+				# macro_state della cella HOME dell'individuo (2026-09-09, richiesta utente,
+				# persistenza PickUpAction) — risolto qui perché deserialize_task non può raggiungere
+				# World da sé (JSON non trasporta riferimenti a oggetti vivi, vedi TaskPersistenceService
+				# per il perché). null se home_macro_coords non è (ancora) valido — get_cell_state_at
+				# valida le coordinate da sé, PickUpAction tratta un macro_state null in modo difensivo.
+				# `world` passato anche per intero (2026-09-09, persistenza UnloadAction ramo fisico) —
+				# world.buildings è già popolato a questo punto (caricato prima degli individui, vedi
+				# sopra), TaskPersistenceService._find_building_by_id lo scansiona per risolvere
+				# target_building_id.
+				var task_macro_state: MacroCellState = world.get_cell_state_at(
+					individual.home_macro_coords.x, individual.home_macro_coords.y
+				)
+				individual.current_task = TaskPersistenceService.deserialize_task(current_task_data, task_macro_state, world)
+				if not individual.current_task.is_finished():
+					individual.current_task.get_current_action().activate(individual, individual.current_task.context)
 			human_individuals.append(individual)
 
 	var loaded_game := LoadedGame.new()
@@ -505,4 +586,27 @@ func _expired_objects_from_json(raw: Array) -> Array[Dictionary]:
 			# potrebbero averne bisogno), oltre a coprire i save precedenti a questo campo.
 			"type_specific_data": entry.get("type_specific_data", {}) as Dictionary,
 		})
+	return result
+
+
+# Controparte di Building.stored_resources (2026-09-09, richiesta utente, Step 3 decadimento) —
+# RETROCOMPATIBILITÀ ESPLICITA col formato precedente (resource_name -> int diretto, PRIMA che
+# esistesse decay_fraction): ogni voce viene ispezionata singolarmente, non un unico controllo sul
+# Dictionary intero, perché in teoria un save potrebbe (non nella pratica attuale, dove stored_
+# resources è comunque sempre vuoto, ma la funzione resta corretta a prescindere) mescolare voci
+# vecchie e nuove se modificato a mano. Un valore che risponde a `is Dictionary` è già nel formato
+# nuovo (letto con .get() per i due campi, comunque difensivo); qualunque altro tipo (il vecchio
+# int, o un float — JSON non distingue i due) viene reinterpretato come "vecchio formato":
+# {"quantity": quel numero, "decay_fraction": 0.0} — mai un breaking change per un save preesistente.
+func _parse_stored_resources(raw: Dictionary) -> Dictionary:
+	var result: Dictionary = {}
+	for resource_name in raw.keys():
+		var value = raw[resource_name]
+		if value is Dictionary:
+			result[resource_name] = {
+				"quantity": int(value.get("quantity", 0)),
+				"decay_fraction": float(value.get("decay_fraction", 0.0)),
+			}
+		else:
+			result[resource_name] = {"quantity": int(value), "decay_fraction": 0.0}
 	return result

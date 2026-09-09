@@ -23,13 +23,32 @@ extends RefCounted
 # senza bersaglio (es. un futuro Rest, che agisce solo sull'individuo stesso).
 var target: Variant = null
 
+# Categorie di tool richiesti da questa Action (2026-09-08, richiesta utente) — SOLO struttura
+# dati, NESSUNA logica di verifica/possesso qui: nessun controllo che l'individuo abbia il tool,
+# nessun auto-accodamento di un futuro PickUp, nessuna conseguenza se l'array non è vuoto. Vuoto
+# di default = nessun tool richiesto, comportamento invariato per ogni Action esistente (WalkAction/
+# RestAction/ThinkAction/UnloadAction, nessuna delle quali lo sovrascrive). Vedi TaskTypes.
+# ToolCategory per l'enum — quando arriverà il vero sistema tool (equip/verifica), leggerà questo
+# campo da qui, non da un nuovo posto.
+var required_tool_categories: Array[TaskTypes.ToolCategory] = []
+
 
 # Variazione di stamina per questo istante/frame — negativa per un drain (es. Walk/Cut consumano),
 # positiva per un recharge (es. Rest recupera). `individual`/`delta` generici (Variant/float) così
 # un futuro service esterno può chiamarlo senza che questa classe dipenda da HumanIndividual.
 # Implementazione di base neutra (nessun effetto): ogni sottoclasse concreta la sovrascriverà con
 # la propria formula di costo/recupero.
-func get_stamina_delta(individual: Variant, delta: float) -> float:
+#
+# `context` (2026-09-09, richiesta utente — prerequisito per il futuro SearchAction) — il
+# Task.context CONDIVISO della Task che possiede questo step (Dictionary libero, vedi Task.gd),
+# passato così un'Action può in futuro leggere un risultato scritto da uno step precedente della
+# stessa Task (es. SearchAction scrive qui cosa ha trovato, PickUpAction/HuntAction lo leggono).
+# SOLO IL CANALE per ora: questa classe base non lo usa (nessun comportamento di default), e
+# nessuna sottoclasse esistente lo legge/scrive ancora — vedi le sottoclassi concrete per la stessa
+# nota. Posizionato subito dopo `individual` in ogni firma di questo file (stesso ordine in
+# is_complete/activate/on_complete sotto): individual+context sono la coppia di riferimenti sempre
+# passati dal chiamante, gli altri parametri (delta, ...) variano per metodo.
+func get_stamina_delta(individual: Variant, context: Dictionary, delta: float) -> float:
 	return 0.0
 
 
@@ -39,8 +58,8 @@ func get_stamina_delta(individual: Variant, delta: float) -> float:
 # get_stamina_delta, impediva a una sottoclassa di verificare il completamento in base allo stato
 # dell'individuo). Implementazione di base neutra: l'azione base non termina mai da sola (nessuno
 # stato interno di progresso esiste qui) — ogni sottoclassa concreta la sovrascrive con il proprio
-# criterio.
-func is_complete(individual: Variant) -> bool:
+# criterio. `context` — vedi get_stamina_delta sopra, stesso canale, ancora inutilizzato qui.
+func is_complete(individual: Variant, context: Dictionary) -> bool:
 	return false
 
 
@@ -62,7 +81,8 @@ func is_complete(individual: Variant) -> bool:
 # sottoclasse stazionaria, cosi' ogni futura azione immobile (Cut/Build/...) lo ottiene gratis
 # semplicemente non sovrascrivendo activate(); WalkAction resta l'UNICA sottoclasse che lo
 # riporta a true, subito dopo aver chiamato questa implementazione base (vedi WalkAction.activate).
-func activate(individual: Variant) -> void:
+# `context` — vedi get_stamina_delta sopra, stesso canale, ancora inutilizzato qui.
+func activate(individual: Variant, context: Dictionary) -> void:
 	individual.is_moving = false
 
 
@@ -78,6 +98,26 @@ func activate(individual: Variant) -> void:
 # HumanIndividualActionService.apply_action subito dopo aver verificato is_complete(), prima di
 # avanzare l'indice della Task. `individual` generico (Variant), stesso principio di get_stamina_
 # delta/is_complete/activate sopra. Implementazione di base neutra: un'azione senza nulla da
-# lasciare sull'individuo al termine (es. WalkAction/RestAction) non la sovrascrive.
-func on_complete(individual: Variant) -> void:
+# lasciare sull'individuo al termine (es. WalkAction/RestAction) non la sovrascrive. `context` —
+# vedi get_stamina_delta sopra, stesso canale, ancora inutilizzato qui.
+func on_complete(individual: Variant, context: Dictionary) -> void:
+	pass
+
+
+# Stato interno di progresso di QUESTO step da persistere, oltre a quanto TaskPersistenceService
+# già copre genericamente da solo (action_type via dispatch sul tipo concreto, `target` se è un
+# Vector2 — vedi Action.target sopra) — 2026-09-08, richiesta utente (persistenza Task/Action).
+# Dictionary vuoto di default: nessuno stato interno da salvare (WalkAction oltre a `target` ha
+# solo _last_position, un aiuto per calcolare il delta di UN frame — ripartire da null dopo un
+# load è innocuo, un solo frame senza drain, MAI persistito qui; RestAction/UnloadAction non hanno
+# proprio stato interno). Sottoclassi con un vero accumulatore di progresso (es. ThinkAction.
+# _elapsed) sovrascrivono. Simmetrico a load_save_data sotto.
+func get_save_data() -> Dictionary:
+	return {}
+
+
+# Applica i dati extra da get_save_data() sopra DOPO che TaskPersistenceService.deserialize_task ha
+# già costruito l'istanza (con `target`/altri argomenti di _init risolti dal proprio step_data) —
+# no-op di default, coerente con get_save_data() sopra.
+func load_save_data(data: Dictionary) -> void:
 	pass

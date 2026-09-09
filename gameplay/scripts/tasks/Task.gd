@@ -71,6 +71,32 @@ func _init(p_steps: Array[Action] = []) -> void:
 	step_descriptions.fill("")
 
 
+# Aggiunge nuovi step in coda a una Task GIÀ in corso (richiesta utente, 2026-09-09, re-routing
+# UnloadAction su magazzino pieno) — a differenza di _init() sopra, qui steps/current_step_index
+# possono già contenere progresso accumulato: NON si può usare .fill() sugli array paralleli
+# esistenti (cancellerebbe i costi già registrati degli step passati). Le tre array temporanee
+# sotto sono invece fresche/vuote, quindi resize()+fill() su di LORO è sicuro, poi si accodano
+# agli array reali con append_array — stesso effetto di _init() ma solo sulla porzione nuova.
+func append_steps(new_steps: Array[Action]) -> void:
+	steps.append_array(new_steps)
+	var added_count := new_steps.size()
+
+	var new_stamina_costs: Array[float] = []
+	new_stamina_costs.resize(added_count)
+	new_stamina_costs.fill(0.0)
+	step_stamina_cost.append_array(new_stamina_costs)
+
+	var new_days_elapsed: Array[float] = []
+	new_days_elapsed.resize(added_count)
+	new_days_elapsed.fill(0.0)
+	step_days_elapsed.append_array(new_days_elapsed)
+
+	var new_descriptions: Array[String] = []
+	new_descriptions.resize(added_count)
+	new_descriptions.fill("")
+	step_descriptions.append_array(new_descriptions)
+
+
 # Azione attiva (quella all'indice corrente) — null se la lista è vuota o l'indice è già oltre
 # l'ultimo step (Task conclusa). Il chiamante NON deve mai assumere un'Action non-null senza aver
 # controllato prima is_finished()/il valore di ritorno qui (stesso pattern già in uso da

@@ -1,5 +1,6 @@
 keys,en
 build_bar_stone_circle_disabled_tooltip,Not buildable: a village center already exists
+build_bar_deposit_site_tooltip,Deposit Site
 build_bar_requires_idea_tooltip,Requires: {idea}
 idea_paleolithic_constructions,Paleolithic Constructions
 sex_label,Sex: {sex}

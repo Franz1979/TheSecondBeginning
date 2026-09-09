@@ -37,8 +37,8 @@ const VEGETAL_SOURCES: Array[String] = ["acorn", "fruit", "berry"]
 # secondaria gestibile dal giocatore) + eggs (gia' definita, quella si' a stock).
 const HYBRID_SOURCES: Array[String] = ["fish_meat", "bird_meat", "eggs"]
 
-# Risorsa primaria da cui ciascuna fonte calorica deriva — CaloricSourceRules non lo dichiara da
-# sola (lo sa solo il chiamante, stesso schema gia' in uso in WorldTimeService._SECONDARY_SOURCES
+# Risorsa primaria da cui ciascuna fonte calorica deriva — SecondaryResourceRules non lo dichiara
+# da sola (lo sa solo il chiamante, stesso schema gia' in uso in WorldTimeService._SECONDARY_SOURCES
 # per il checkpoint stagionale), quindi la mappatura e' ripetuta qui.
 const _SOURCE_PRIMARY_TYPE := {
 	"acorn": GameTypes.WorldObjectType.TREE,
@@ -52,7 +52,7 @@ const _SOURCE_PRIMARY_TYPE := {
 
 # Valuta un intero gruppo di celle in un colpo solo (invece di una evaluate_richness(world, pos)
 # per cella): sia la componente animale (territori) sia le regole delle fonti caloriche
-# (CaloricSourceRules, altrimenti ricaricate ad ogni singola cella x stagione — su ~10.000
+# (SecondaryResourceRules, altrimenti ricaricate ad ogni singola cella x stagione — su ~10.000
 # candidate diventa rapidamente il collo di bottiglia dominante) vengono preparate UNA volta sola
 # per l'intero batch, non ripetute per ogni candidata — stesso principio gia' seguito da
 # FirstStartMacroCellSelectionService._collect_predator_territory_cells.
@@ -101,7 +101,7 @@ func evaluate_richness_batch(world: World, positions: Array[Vector2i]) -> Dictio
 	return scores
 
 
-# source_name -> CaloricSourceRules gia' risolta, per evitare che get_caloric_source_rules
+# source_name -> SecondaryResourceRules gia' risolta, per evitare che get_caloric_source_rules
 # (ResourceLoader.exists + load ad ogni chiamata) venga rifatto per ogni singola combinazione
 # cella x stagione — con centinaia/migliaia di candidate sarebbe altrimenti l'operazione
 # dominante dell'intero calcolo.
@@ -123,7 +123,7 @@ func _load_source_rules(source_names: Array[String]) -> Dictionary:
 func _sum_max_seasonal_calories(rules_by_source: Dictionary, cell: MacroCellData, state: MacroCellState) -> float:
 	var total := 0.0
 	for source_name in rules_by_source:
-		var rules: CaloricSourceRules = rules_by_source[source_name]
+		var rules: SecondaryResourceRules = rules_by_source[source_name]
 		var primary_type: GameTypes.WorldObjectType = _SOURCE_PRIMARY_TYPE[source_name]
 		if state.get_resource_quantity(primary_type) <= 0:
 			continue

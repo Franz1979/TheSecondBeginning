@@ -1,0 +1,16 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://gameplay/scenes/game/StickLotInfoPanel.gd" id="1_stick_lot"]
+
+[node name="StickLotInfoPanel" type="VBoxContainer"]
+script = ExtResource("1_stick_lot")
+
+[node name="StickLabel" type="Label" parent="."]
+layout_mode = 2
+theme_override_font_sizes/font_size = 11
+autowrap_mode = 2
+
+[node name="WoodLabel" type="Label" parent="."]
+layout_mode = 2
+theme_override_font_sizes/font_size = 11
+autowrap_mode = 2

@@ -12,7 +12,7 @@ extends Resource
 # di Folk.gd/IdeaProgressService.gd, non più accanto a BuildingRules (che invece resta in
 # simulation/, vedi la ricognizione dedicata sul perché).
 
-# Identificatore stabile (es. "costruzioni_paleolitiche") — usato come chiave in Folk.
+# Identificatore stabile (es. "paleolithic_constructions") — usato come chiave in Folk.
 # thoughts_invested/completed_ideas e in prerequisites sotto, MAI il nome del file .tres
 # (BuildingRules.required_idea_id fa lo stesso confronto per id, non per percorso file — stesso
 # principio già seguito da Building.building_type_name vs BuildingRules.building_name).

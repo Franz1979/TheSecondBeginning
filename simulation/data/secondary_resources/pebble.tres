@@ -1,0 +1,12 @@
+[gd_resource type="Resource" script_class="SecondaryResourceRules" format=3 uid="uid://pl7jsibxe424"]
+
+[ext_resource type="Script" uid="uid://cu4cyua5y4n1m" path="res://simulation/scripts/core/SecondaryResourceRules.gd" id="1_pebble"]
+
+[resource]
+script = ExtResource("1_pebble")
+secondary_resource_name = "pebble"
+calories_per_unit = 0.0
+consuming_depletes_primary = false
+is_construction_material = true
+category = 1
+generation_source = 1

@@ -18,6 +18,13 @@ signal day_advanced(checkpoint_ran: bool, animals_changed: bool)
 # giorno.
 signal season_ended(season: GameTypes.Season)
 signal year_rolled_over()
+# Decadimento risorse edifici (2026-09-09, richiesta utente, Step 3 decadimento) — stesso principio
+# additivo di season_ended/year_rolled_over sopra: smistato dallo stesso Dictionary di ritorno di
+# WorldTimeService.advance_day (chiave "decayed_building_resources"), emesso SOLO quando non vuoto
+# (il caso comune, nessun edificio perde nulla quel giorno, non emette mai questo segnale). Ogni
+# elemento di `events` è {"building","resource_name","quantity"} — vedi WorldTimeService.
+# _run_daily_building_resource_decay per la forma esatta.
+signal building_resources_decayed(events: Array)
 
 # X3 rimosso (richiesta utente, 2026-09-04) — X1/X2/X4 restano gli UNICI tre step "normali" nella
 # barra velocità. DEBUG è un quarto membro AGGIUNTO in coda (mai reinserito al posto di X3, per non
@@ -120,6 +127,12 @@ func _process(delta: float) -> void:
 			season_ended.emit(result["season_ended"])
 		if result["year_rolled_over"]:
 			year_rolled_over.emit()
+		# building_resources_decayed (2026-09-09, richiesta utente) — stesso smistamento additivo di
+		# sopra, .get() con default [] per compatibilità (questa chiave non esisteva prima di questo
+		# passo, stesso principio già richiesto ovunque per campi opzionali).
+		var decayed_building_resources: Array = result.get("decayed_building_resources", [])
+		if not decayed_building_resources.is_empty():
+			building_resources_decayed.emit(decayed_building_resources)
 		# Filtrato ai soli dintorni di un checkpoint stagionale (richiesta utente, 2026-09-05 —
 		# stesso motivo/helper di WorldTimeService.advance_day: un log per ogni giorno era
 		# troppo rumoroso).

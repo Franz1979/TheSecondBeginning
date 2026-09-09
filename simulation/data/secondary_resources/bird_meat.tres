@@ -1,0 +1,10 @@
+[gd_resource type="Resource" script_class="SecondaryResourceRules" format=3 uid="uid://b1f841mxodk2v"]
+
+[ext_resource type="Script" uid="uid://cu4cyua5y4n1m" path="res://simulation/scripts/core/SecondaryResourceRules.gd" id="1_bird_meat"]
+
+[resource]
+script = ExtResource("1_bird_meat")
+secondary_resource_name = "bird_meat"
+calories_per_unit = 10.0
+day_durability = 10
+space_per_unit = 5.0

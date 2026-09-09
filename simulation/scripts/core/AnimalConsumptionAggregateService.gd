@@ -201,7 +201,7 @@ func _consume_in_cell(
 		for source in weighted_sources:
 			var source_name: String = source["name"]
 			var source_weight: float = source["weight"]
-			var source_rules: CaloricSourceRules = source["rules"]
+			var source_rules: SecondaryResourceRules = source["rules"]
 
 			var share: float = need * (source_weight / weight_sum)
 			var consumed_calories: float = min(share, source_weight)

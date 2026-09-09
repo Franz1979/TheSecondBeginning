@@ -42,12 +42,12 @@ func _init(p_duration: float) -> void:
 	target = null
 
 
-func get_stamina_delta(individual: Variant, delta: float) -> float:
+func get_stamina_delta(individual: Variant, context: Dictionary, delta: float) -> float:
 	_elapsed += delta
 	return -STAMINA_DRAIN_PER_DAY * delta
 
 
-func is_complete(individual: Variant) -> bool:
+func is_complete(individual: Variant, context: Dictionary) -> bool:
 	return _elapsed >= duration
 
 
@@ -55,5 +55,17 @@ func is_complete(individual: Variant) -> bool:
 # (2026-09-07) — vedi Action.on_complete per il contratto generale/perché non è dentro is_complete()
 # stessa, e HumanIndividual.pending_thought per cosa succede dopo (nulla, ancora: nessuna
 # DepositThoughtAction esiste in questo passo).
-func on_complete(individual: Variant) -> void:
+func on_complete(individual: Variant, context: Dictionary) -> void:
 	individual.pending_thought = true
+
+
+# duration/_elapsed persistiti (2026-09-08, richiesta utente) — duration non è coperto dal
+# `target` generico di TaskPersistenceService (resta null per questa Action, vedi _init sopra),
+# quindi va nel proprio get_save_data(); _elapsed è il vero motivo di questo override: senza,
+# un save a metà riflessione perderebbe il progresso e ricomincerebbe da 0 al reload.
+func get_save_data() -> Dictionary:
+	return {"duration": duration, "elapsed": _elapsed}
+
+
+func load_save_data(data: Dictionary) -> void:
+	_elapsed = float(data.get("elapsed", 0.0))

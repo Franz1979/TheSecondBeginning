@@ -32,7 +32,7 @@ func _init() -> void:
 # tetto massimo. Altrimenti il recupero è clampato in uscita (min(regen_calcolato, spazio
 # rimanente)) così il chiamante può sempre sommarlo direttamente a current_stamina senza bisogno
 # di un clamp separato lì.
-func get_stamina_delta(individual: Variant, delta: float) -> float:
+func get_stamina_delta(individual: Variant, context: Dictionary, delta: float) -> float:
 	if individual.current_stamina >= individual.max_stamina:
 		return 0.0
 	var regen: float = STAMINA_REGEN_PER_DAY * delta

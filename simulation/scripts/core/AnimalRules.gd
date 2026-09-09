@@ -3,7 +3,7 @@ extends Resource
 
 @export var species_name: String = ""
 @export var daily_caloric_requirement: float = 0.0
-# resource_name (chiave di CaloricSourceRules.caloric_source_name) -> moltiplicatore di
+# resource_name (chiave di SecondaryResourceRules.secondary_resource_name) -> moltiplicatore di
 # edibilità, usato da AnimalConsumptionService per ripartire il fabbisogno giornaliero tra le
 # fonti compatibili, pesato per calorie disponibili × questo moltiplicatore. 0 (o chiave
 # assente) esclude la fonte del tutto.

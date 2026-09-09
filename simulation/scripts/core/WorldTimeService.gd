@@ -66,6 +66,18 @@ func advance_day(world: World, game_data: GameData) -> Dictionary:
 	# stesso resterebbe nell'array (e quindi "occupante" la propria cella) fino a domani. Vedi
 	# World.remove_extinct_population_groups per il perché.
 	_run_timed_daily("remove_extinct_population_groups", func(): world.remove_extinct_population_groups())
+	# Decadimento giornaliero storage edifici (2026-09-09, richiesta utente, Step 3) — nessuna
+	# dipendenza d'ordine con nulla sopra (buildings è indipendente da vegetazione/animali/
+	# popolazione), messo qui in fondo perché è l'aggiunta più recente, stesso principio "pochi
+	# edifici" già assunto ovunque nel progetto per world.buildings (nessun filtro "solo edifici con
+	# storage non vuoto": ResourceDecayService.advance_building_decay è già no-op immediato per un
+	# Dictionary stored_resources vuoto, iterare comunque tutti gli edifici resta trascurabile a
+	# questa scala). _returning (non il semplice _run_timed_daily usato sopra): serve il risultato,
+	# non solo il timing — GameClockController lo smista in un segnale dedicato (vedi sotto), stesso
+	# principio già in uso per animals_changed/season_ended/year_rolled_over.
+	var decayed_building_resources: Array = _run_timed_daily_returning(
+		"building_resource_decay", func(): return _run_daily_building_resource_decay(world)
+	)
 
 	# Filtrato ai soli dintorni di un checkpoint stagionale (richiesta utente, 2026-09-05 — un log
 	# per OGNI giorno, checkpoint o no, era troppo rumoroso): vedi SeasonCalculator.
@@ -86,6 +98,12 @@ func advance_day(world: World, game_data: GameData) -> Dictionary:
 		"animals_changed": animals_changed,
 		"year_rolled_over": year_rolled_over,
 		"season_ended": checkpoint_result["season_ended"],
+		# decayed_building_resources (2026-09-09, richiesta utente, Step 3) — Array di {"building",
+		# "resource_name","quantity"} per ogni risorsa deperita OGGI in un edificio (vuoto nel caso
+		# comune, nulla deperito) — GameClockController lo smista in building_resources_decayed,
+		# stesso principio additivo già seguito per season_ended/year_rolled_over: nessuna chiave
+		# esistente toccata, questo Dictionary non ha altri consumatori oltre GameClockController.
+		"decayed_building_resources": decayed_building_resources,
 	}
 
 
@@ -680,6 +698,27 @@ func _run_territory_dynamics_checkpoint(world: World, season: GameTypes.Season, 
 # nessun focus LOD è attivo — nessun guard duplicato qui, un solo punto di verità.
 func _run_daily_territory_dynamics_stagger(world: World, game_data: GameData) -> void:
 	TerritoryDynamicsService.new().process_daily_stagger(world, game_data)
+
+
+# Decadimento giornaliero di Building.stored_resources per OGNI edificio del mondo (2026-09-09,
+# richiesta utente, Step 3) — stesso identico principio "pochi edifici, scansione lineare
+# accettabile" già assunto ovunque nel progetto per world.buildings (vedi BuildingSelectorController/
+# GameScene._macro_cell_has_buildings). Nessun filtro LOD/visibilità: a differenza di vegetazione/
+# animali, un edificio non ha un concetto di "congelato perché fuori scoperta" — il suo storage
+# decade sempre, ovunque si trovi.
+#
+# Ritorna un Array di {"building","resource_name","quantity"} — un elemento per OGNI risorsa
+# deperita oggi in un edificio (building incluso per riferimento diretto, non solo id: il chiamante
+# finale, GameScene, ne ha bisogno per comporre il testo del popup — building_type_name/posizione —
+# stesso principio già seguito da individual_died/individual_born, che passano l'HumanIndividual
+# intero, mai solo un id). Vuoto nel caso comune (nessun edificio perde nulla quel giorno).
+func _run_daily_building_resource_decay(world: World) -> Array:
+	var events: Array = []
+	for building in world.buildings:
+		var lost := ResourceDecayService.advance_building_decay(building)
+		for loss in lost:
+			events.append({"building": building, "resource_name": loss["resource_name"], "quantity": loss["quantity"]})
+	return events
 
 
 func _run_migration_checkpoint(world: World, game_data: GameData) -> void:

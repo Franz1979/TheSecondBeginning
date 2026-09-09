@@ -6,8 +6,14 @@ extends RefCounted
 # semplice: un edificio ha un'unica posizione precisa per microcella (ancoraggio al CENTRO, stesso
 # esatto punto disegnato da MicroCellRenderer._draw_buildings — "ground" lì), nessun lotto/densità/
 # stato bloccato, e un id stabile (Building.id, mai riderivato — a differenza di Vector3i per la
-# vegetazione, che invece si rigenera ad ogni refresh). Solo click SINISTRO, stesso principio di
-# VegetationSelectorController (il destro resta esclusivamente movimento del player).
+# vegetazione, che invece si rigenera ad ogni refresh).
+#
+# `required_button` (2026-09-09, richiesta utente — comando "vai e scarica" su un edificio di
+# stoccaggio) — DEFAULT LEFT invariato (selezione/BuildingInfoPanel, comportamento esistente),
+# stesso pattern già in uso da StoneSelectorController/StickLotSelectorController: il chiamante per
+# il comando destro (GameScene._try_assign_unload_command_on_right_click) lo passa esplicitamente
+# a MOUSE_BUTTON_RIGHT. Prima di questo passo il filtro era hardcoded a MOUSE_BUTTON_LEFT — un
+# click destro su un edificio non produceva mai un hit qui, cadeva sempre nel movimento semplice.
 
 const CELL_SIZE: int = 10 # stesso fattore pixel/microcella di MicroCellRenderer/HumanIndividualView
 # Stesso raggio del recinto disegnato (MicroCellRenderer.BUILDING_FENCE_RADIUS) — cliccare dentro
@@ -21,8 +27,8 @@ const CLICK_RADIUS_PX: float = MicroCellRenderer.BUILDING_FENCE_RADIUS
 # celle vive, {} altrimenti. Il chiamante (GameScene) risolve building_id sul vero oggetto Building
 # (macro_world.buildings, scansione lineare — stesso costo già accettato altrove nel progetto per
 # lo stesso array) e decide cosa farne — questo controller non tocca mai selected_building.
-func try_select(event: InputEvent, live_cells: Dictionary, buildings: Array) -> Dictionary:
-	if not (event is InputEventMouseButton) or not event.pressed or event.button_index != MOUSE_BUTTON_LEFT:
+func try_select(event: InputEvent, live_cells: Dictionary, buildings: Array, required_button: int = MOUSE_BUTTON_LEFT) -> Dictionary:
+	if not (event is InputEventMouseButton) or not event.pressed or event.button_index != required_button:
 		return {}
 
 	var best: Dictionary = {}

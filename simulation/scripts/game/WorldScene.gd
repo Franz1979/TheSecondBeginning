@@ -228,6 +228,7 @@ func _populate_new_world(target_world: World) -> void:
 	game_data.starting_resource_richness_preference = GameSettings.selected_resource_richness_preference
 	game_data.starting_group_size_preference = GameSettings.selected_group_size_preference
 	game_data.starting_guarantee_animal_presence = GameSettings.selected_guarantee_animal_presence
+	game_data.starting_guarantee_stone_presence = GameSettings.selected_guarantee_stone_presence
 	game_data.starting_difficulty_ratio = DifficultyCalculator.compute_difficulty_ratio(
 		GameSettings.selected_world_age_mode,
 		GameSettings.selected_animal_density,
@@ -236,7 +237,8 @@ func _populate_new_world(target_world: World) -> void:
 		GameSettings.selected_exclude_predator_territories,
 		GameSettings.selected_resource_richness_preference,
 		GameSettings.selected_group_size_preference,
-		GameSettings.selected_guarantee_animal_presence
+		GameSettings.selected_guarantee_animal_presence,
+		GameSettings.selected_guarantee_stone_presence
 	)
 
 	if GameSettings.selected_world_age_mode == "CLASSIC":

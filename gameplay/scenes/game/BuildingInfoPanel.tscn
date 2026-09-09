@@ -17,11 +17,30 @@ theme_override_font_sizes/font_size = 10
 layout_mode = 2
 theme_override_font_sizes/font_size = 10
 
-[node name="StoredResourcesLabel" type="Label" parent="."]
+[node name="StorageGrid" type="GridContainer" parent="."]
 layout_mode = 2
-theme_override_font_sizes/font_size = 10
-autowrap_mode = 2
+theme_override_constants/h_separation = 4
+theme_override_constants/v_separation = 4
+columns = 3
 
 [node name="IdLabel" type="Label" parent="."]
 layout_mode = 2
 theme_override_font_sizes/font_size = 10
+
+[node name="SettingsSeparator" type="HSeparator" parent="."]
+layout_mode = 2
+
+[node name="SettingsCaption" type="Label" parent="."]
+layout_mode = 2
+theme_override_font_sizes/font_size = 11
+
+[node name="AcceptedCategoriesCaption" type="Label" parent="."]
+layout_mode = 2
+theme_override_font_sizes/font_size = 10
+
+[node name="CategoryTogglesContainer" type="VBoxContainer" parent="."]
+layout_mode = 2
+
+[node name="EmptyAllButton" type="Button" parent="."]
+layout_mode = 2
+disabled = true

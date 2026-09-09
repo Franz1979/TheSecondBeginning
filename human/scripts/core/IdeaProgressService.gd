@@ -46,7 +46,7 @@ static func add_thoughts(folk: Folk, amount: int) -> bool:
 # i cui prerequisites sono TUTTI già in folk.completed_ideas — "" se nessuna qualifica (tutte
 # completate, o tutte bloccate da prerequisiti mancanti). Nessuna logica di scelta tra più opzioni
 # equivalenti richiesta ora (richiesta esplicita utente): la prima trovata vince, sempre — con
-# una sola Idea esistente oggi (costruzioni_paleolitiche, prerequisites=[]) è sempre lei finché non
+# una sola Idea esistente oggi (paleolithic_constructions, prerequisites=[]) è sempre lei finché non
 # viene completata.
 static func _pick_next_idea_id(folk: Folk) -> String:
 	for idea_id in IdeaCalculator.list_idea_ids():

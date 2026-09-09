@@ -169,7 +169,7 @@ var human_individual_views: Array[HumanIndividualView] = []
 # di movimento/camera, sempre aggiornato in coppia con la selezione, vedi _set_movement_target) —
 # nessun campo duplicato serve per questo caso. BUILDING aggiunto allo Step 4 (richiesta utente,
 # 2026-09-04) — il terzo tipo selezionabile già anticipato sopra, vedi selected_building sotto.
-enum SelectionKind { NONE, INDIVIDUAL, VEGETATION, BUILDING, DEAD_BODY }
+enum SelectionKind { NONE, INDIVIDUAL, VEGETATION, BUILDING, DEAD_BODY, STONE, STICK_LOT }
 var _selection_kind: SelectionKind = SelectionKind.NONE
 
 # Click-detection su un singolo individuo di vegetazione (TREE/SHRUB) — vedi
@@ -211,6 +211,31 @@ var dead_body_info_panel: DeadBodyInfoPanel
 # is_instance_valid() prima di usarle, stesso principio difensivo già in uso altrove nel progetto
 # per riferimenti a nodi potenzialmente liberati (es. human_individual_views).
 var dead_body_views: Dictionary = {}
+
+# Click-detection su una singola posizione STONE (microcella, 2026-09-08, richiesta utente) —
+# stesso principio di selected_vegetation, ma ancora più semplice: una posizione STONE non ha
+# nemmeno un individual_key composito (lotto+indice), solo la posizione stessa (Vector2i, una
+# pietra = una posizione, vedi StoneSelectorController). {} = nessuna selezione, altrimenti
+# {"macro_coords": Vector2i, "position": Vector2i}. Significativo solo quando _selection_kind ==
+# STONE. Nessun highlight visivo sulla mappa (a differenza di vegetazione/edifici, che accendono un
+# cerchiolino via set_selected_individual/set_selected_building) — fuori scope per questo passo,
+# solo il pannello informativo.
+const STONE_INFO_PANEL_SCENE := preload("res://gameplay/scenes/game/StoneInfoPanel.tscn")
+var stone_selector_controller := StoneSelectorController.new()
+var selected_stone: Dictionary = {}
+var stone_info_panel: StoneInfoPanel
+
+# Click-detection sul "terreno" di una microcella TREE (2026-09-08, richiesta utente) — a
+# differenza di selected_vegetation (un individuo preciso) qui l'intero LOTTO è il bersaglio, vedi
+# StickLotSelectorController. {} = nessuna selezione, altrimenti {"macro_coords": Vector2i, "lot":
+# Vector2i}. Significativo solo quando _selection_kind == STICK_LOT. Deliberatamente l'ULTIMA
+# risorsa provata in _unhandled_input (dopo vegetazione/edificio/corpo morto/stone/individuo umano):
+# l'utente ha chiesto questo click come alternativa al click preciso sulla pianta già esistente, non
+# come sostituto — non compete quindi nella lista a priorità per distanza degli altri tipi mappa.
+const STICK_LOT_INFO_PANEL_SCENE := preload("res://gameplay/scenes/game/StickLotInfoPanel.tscn")
+var stick_lot_selector_controller := StickLotSelectorController.new()
+var selected_stick_lot: Dictionary = {}
+var stick_lot_info_panel: StickLotInfoPanel
 
 const MINIMAP_PANEL_SCENE := preload("res://gameplay/scenes/game/MiniMapPanel.tscn")
 var minimap_panel: MiniMapPanel
@@ -362,6 +387,14 @@ func _ready() -> void:
 	# STESSA SelectionTab, stesso identico principio "componente muto" degli altri tre.
 	dead_body_info_panel = DEAD_BODY_INFO_PANEL_SCENE.instantiate()
 	game_info_tabs.selection_content.add_child(dead_body_info_panel)
+	# stone_info_panel (2026-09-08, richiesta utente) — quinto sibling nella STESSA SelectionTab,
+	# stesso identico principio "componente muto" degli altri quattro.
+	stone_info_panel = STONE_INFO_PANEL_SCENE.instantiate()
+	game_info_tabs.selection_content.add_child(stone_info_panel)
+	# stick_lot_info_panel (2026-09-08, richiesta utente) — sesto sibling nella STESSA SelectionTab,
+	# stesso identico principio "componente muto" degli altri cinque.
+	stick_lot_info_panel = STICK_LOT_INFO_PANEL_SCENE.instantiate()
+	game_info_tabs.selection_content.add_child(stick_lot_info_panel)
 	# "🎯 centra" (Step 3, richiesta utente 2026-09-04): non più un bottone per-pannello (era dentro
 	# human_individual_info_panel, funzionava solo per individui) — un solo bottone condiviso
 	# nell'header di GameInfoTabs.SelectionTab, sopra a qualunque pannello selection_content stia
@@ -454,7 +487,7 @@ func _ready() -> void:
 	# una cella già nota, in nessuno dei due rami.
 	if macro_world != null:
 		if game_data.player_macro_cell_x == -1 or game_data.player_macro_cell_y == -1:
-			# I quattro filtri/preferenza vengono dalle scelte CONGELATE di questa partita
+			# I cinque filtri/preferenza vengono dalle scelte CONGELATE di questa partita
 			# (GameData.starting_*, valorizzate una volta sola in WorldScene._populate_new_world
 			# alla creazione), non da GameSettings.selected_* (dato di flusso runtime,
 			# potenzialmente stale dopo un load in una sessione successiva) — confermato con
@@ -464,7 +497,8 @@ func _ready() -> void:
 				game_data.starting_exclude_hostile_start,
 				game_data.starting_exclude_predator_territories,
 				game_data.starting_resource_richness_preference,
-				game_data.starting_guarantee_animal_presence
+				game_data.starting_guarantee_animal_presence,
+				game_data.starting_guarantee_stone_presence
 			)
 			game_data.player_macro_cell_x = chosen.x
 			game_data.player_macro_cell_y = chosen.y
@@ -561,6 +595,12 @@ func _ready() -> void:
 	var era_rules := EraCalculator.get_era_rules(game_data.current_era_name)
 	for member in human_individuals:
 		HumanStaminaIndividualService.recalculate_max_stamina(member, game_data, era_rules)
+		# Stesso identico bug/fix di max_stamina sopra, stessa causa (source_group_ref non ancora
+		# assegnato quando HumanIndividual._init() chiama _resolve_initial_max_carry_capacity) —
+		# richiesta utente 2026-09-08, riscontrato dopo l'introduzione della capacità di trasporto:
+		# la barra "Capacità di trasporto" restava al fallback (30.0, HumanIndividual.
+		# FALLBACK_MAX_CARRY_CAPACITY) fino al primo avanzamento giorno. Mancava questa stessa riga.
+		HumanCarryCapacityIndividualService.recalculate_max_carry_capacity(member, game_data)
 
 	# Popola la scheda 🧍 (richiesta utente, 2026-09-01) — human_individuals/human_folk sono
 	# finalizzati solo qui (posizioni di spawn comprese), stesso motivo per cui l'istanza del
@@ -676,7 +716,10 @@ func _process(delta: float) -> void:
 		# MAI prima: WalkAction.get_stamina_delta calcola la distanza percorsa confrontando
 		# individual.position con l'ultima posizione nota alla chiamata precedente, quindi deve
 		# leggere la position GIÀ aggiornata da advance_movement in questo stesso frame.
-		individual_action_service.apply_action(individual, game_delta)
+		# macro_world (2026-09-09, richiesta utente — re-routing UnloadAction su magazzino pieno) —
+		# apply_action ne ha bisogno per WarehouseSelectionService.find_best (world.buildings), vedi
+		# HumanIndividualActionService.apply_action.
+		individual_action_service.apply_action(individual, game_delta, macro_world)
 		_check_macro_cell_border_crossing()
 		# Piano "trasporto neonati" (2026-09-06) — DOPO _check_macro_cell_border_crossing sopra,
 		# mai prima: se il bersaglio ha appena attraversato un bordo, individual.home_macro_coords/
@@ -768,6 +811,10 @@ func _unhandled_input(event: InputEvent) -> void:
 	var building_hit := building_selector_controller.try_select(
 		event, live_cells, macro_world.buildings if macro_world != null else []
 	)
+	# STONE (2026-09-08, richiesta utente) — stessa unità/stesso schema di vegetation_hit/
+	# building_hit (distanza in PIXEL, spazio locale della cella del match), compete alla pari nel
+	# confronto map_hit sotto, nessun trattamento speciale.
+	var stone_hit := stone_selector_controller.try_select(event, live_cells)
 	# Corpo morto (bugfix, 2026-09-06, richiesta utente: un corpo morto in una cella densa di
 	# vegetazione — es. morto in una foresta — non era mai raggiungibile dal click, perché prima
 	# veniva provato SOLO come ultima risorsa, dopo che vegetazione/edifici avevano già "vinto" a
@@ -807,6 +854,10 @@ func _unhandled_input(event: InputEvent) -> void:
 		map_hit = dead_body_hit
 		map_hit_kind = SelectionKind.DEAD_BODY
 		best_map_distance_px = dead_body_distance_px
+	if not stone_hit.is_empty() and stone_hit["distance"] < best_map_distance_px:
+		map_hit = stone_hit
+		map_hit_kind = SelectionKind.STONE
+		best_map_distance_px = stone_hit["distance"]
 
 	if not map_hit.is_empty() and not _is_player_closer_to_click(best_map_distance_px):
 		match map_hit_kind:
@@ -816,11 +867,15 @@ func _unhandled_input(event: InputEvent) -> void:
 				_select_building(map_hit)
 			SelectionKind.DEAD_BODY:
 				_select_dead_body(map_hit)
+			SelectionKind.STONE:
+				_select_stone(map_hit)
 	else:
 		if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
 			_clear_vegetation_selection()
 			_clear_building_selection()
 			_clear_dead_body_selection()
+			_clear_stone_selection()
+			_clear_stick_lot_selection()
 			# Selezione di un individuo umano QUALSIASI (richiesta utente, 2026-09-02) — hit-test
 			# puro via HumanIndividualSelectorController (non tocca mai is_selected da sé), mutua
 			# esclusione applicata qui: al più un individuo selezionato alla volta in tutto
@@ -839,14 +894,53 @@ func _unhandled_input(event: InputEvent) -> void:
 				_set_movement_target(hit_individual)
 			else:
 				_clear_individual_selection()
-		# Solo movimento ora (click destro, gated su individual.is_selected) — vedi
-		# HumanIndividualController per il perché la selezione è stata rimossa da lì. Opera sempre
-		# sul bersaglio CORRENTE (vedi _set_movement_target sopra), non più su un individuo fisso.
+				# Click sul "terreno" di una microcella TREE (2026-09-08, richiesta utente) — ultima
+				# risorsa, provata SOLO quando nient'altro ha reclamato il click (nessun oggetto
+				# preciso, nessun individuo umano): vedi StickLotSelectorController per il perché non
+				# compete nella lista a priorità per distanza sopra.
+				var stick_lot_hit: Dictionary = stick_lot_selector_controller.try_select(
+					event, live_cells, MOUSE_BUTTON_LEFT, macro_world.buildings if macro_world != null else []
+				)
+				if not stick_lot_hit.is_empty():
+					_select_stick_lot(stick_lot_hit)
+		# Comando "vai e raccogli" (2026-09-09, richiesta utente — sostituisce l'attivazione via
+		# click SINISTRO di Step 5/6, che risultava spesso "rubata" dalla vegetazione: un lotto stick
+		# COINCIDE con la microcella dell'albero stesso, quindi quasi ogni click nel suo raggio
+		# ricadeva nel raggio di hit-test dell'albero — vedi VegetationSelectorController, che vince
+		# la priorità sopra — rendendo il lotto quasi impossibile da colpire quando "attivo". Il
+		# DESTRO invece è già il tasto di comando dedicato in questo gioco (movimento) e NON compete
+		# mai con la vegetazione (nessun *SelectorController diverso da Stone/StickLot hit-testa
+		# eventi non-sinistri) — stesso identico problema risolto per costruzione, non serve più
+		# nessuna disambiguazione spaziale. _try_assign_pickup_command_on_right_click sotto prova
+		# STONE poi STICK_LOT (stesso ordine di priorità già in uso per il sinistro) PRIMA del
+		# movimento normale: se trova un bersaglio raccoglibile assegna la Task Walk->PickUp e
+		# consuma l'evento (il movimento normale sotto va saltato, altrimenti sovrascriverebbe subito
+		# la Task appena assegnata — assign_task/set_target condividono lo stesso current_task, vedi
+		# HumanIndividual.set_target); altrimenti (click destro altrove, o nessun individuo
+		# selezionato) il comportamento resta l'invariato movimento puro verso il punto cliccato.
+		#
+		# _try_assign_unload_command_on_right_click (2026-09-09, richiesta utente) — stesso principio,
+		# provato SUBITO DOPO pickup (nessuna sovrapposizione possibile: un edificio e una posizione
+		# stone/lotto stick non condividono mai la stessa microcella, vedi BuildingVerificationService
+		# Criterio 6): se il destro colpisce un edificio di stoccaggio con zaino non vuoto e categoria
+		# compatibile, assegna Walk->Unload e consuma l'evento, altrimenti il movimento normale
+		# prosegue invariato.
 		if individual_controller != null:
-			individual_controller.handle_input(event)
+			if not _try_assign_pickup_command_on_right_click(event) and not _try_assign_unload_command_on_right_click(event):
+				individual_controller.handle_input(event)
 
 	if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_X:
 		_center_camera_on_individual()
+
+	# Stop (2026-09-09, richiesta utente) — vedi _stop_selected_individual_task sotto per cosa fa.
+	# Tasto H (mnemonico "Halt"), NON S ("Stop" — richiesta originale dell'utente): S è già
+	# assegnato al pan camera (CameraController, WASD/frecce, Input.is_key_pressed continuo — vedi
+	# help_pan_camera nell'help). Usare S qui avrebbe fermato la Task dell'individuo selezionato
+	# OGNI VOLTA che il player preme S per spostare la visuale verso il basso, un'interruzione
+	# accidentale e silenziosa della propria stessa Task ad ogni pan — sostituito con H. Comando
+	# VERO (non debug, nessun gate DebugLogging.ENABLED), stesso trattamento del tasto X sopra.
+	if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_H:
+		_stop_selected_individual_task()
 
 	# TEST TEMPORANEO Task (2026-09-07, richiesta utente) — vedi _debug_test_two_walk_task sotto per
 	# cosa fa e perché è qui. Tasto T, gated da DebugLogging.ENABLED (stesso flag che nasconde
@@ -861,6 +955,21 @@ func _unhandled_input(event: InputEvent) -> void:
 	# bottone debug) quando esisterà una vera TaskDefinition "Daydream".
 	if DebugLogging.ENABLED and event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_Y:
 		_debug_test_daydream_task()
+
+	# Svuota zaino (debug, 2026-09-09, richiesta utente) — vedi _debug_clear_selected_individual_
+	# backpack sotto per cosa fa e perché è qui. Tasto Z (mnemonico "Zaino"), stesso gate/stesso
+	# principio "usa e getta" di T/Y sopra: DA RIMUOVERE (o spostare sotto un vero pannello/bottone
+	# debug) quando non servirà più a velocizzare i test manuali di PickUp su risorse diverse.
+	if DebugLogging.ENABLED and event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_Z:
+		_debug_clear_selected_individual_backpack()
+
+	# TEST TEMPORANEO end-to-end "haul_resource" (2026-09-09, richiesta utente) — vedi
+	# _debug_test_haul_resource_task sotto per cosa fa e perché è qui. Tasto U (mnemonico "haUl",
+	# H già preso da Stop/"Halt"), stesso gate/stesso principio "usa e getta" di T/Y/Z sopra: DA
+	# RIMUOVERE (o spostare sotto un vero pannello/bottone debug) quando esisterà una vera
+	# TaskDefinition "haul_resource".
+	if DebugLogging.ENABLED and event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_U:
+		_debug_test_haul_resource_task()
 
 
 # Vero se un individuo umano QUALSIASI è più vicino al click corrente del miglior candidato mappa
@@ -924,35 +1033,84 @@ func _center_camera_on_individual(animated: bool = true) -> void:
 	_animate_camera_to(individual.position * MicroCellRenderer.CELL_SIZE, animated)
 
 
+# Comando "Stop" (2026-09-09, richiesta utente, tasto H — vedi il commento in _unhandled_input per
+# perché non S) — annulla la Task corrente dell'individuo SELEZIONATO (individual.is_selected,
+# stesso gate già in uso per il comando destro-click di raccolta e per il debug hook Z: nessun
+# individuo selezionato -> no-op silenzioso, mai un crash).
+#
+# individual.stop() (HumanIndividual.gd) è già il punto unico di pulizia Task/movimento riusato da
+# ogni interruzione (vedi il suo commento: "la task associata va ripulita ogni volta che il
+# movimento finisce... o per qualunque futura interruzione che passi da qui, stesso punto unico, mai
+# duplicato altrove") — non serve nuova logica qui, solo richiamarlo: azzera current_task (il
+# prossimo _process legge current_task == null e ricade nel Rest di default, già gestito da
+# HumanIndividualActionService.apply_action) e is_moving/path, fermando un WalkAction a metà
+# IMMEDIATAMENTE (nessun completamento del tragitto). Se lo step corrente era invece un
+# PickUpAction, nessuna pulizia aggiuntiva necessaria (richiesta esplicita, verificata): consume()
+# scatta solo dentro on_complete(), mai chiamato qui, quindi non c'è alcun effetto già applicato da
+# annullare — la sola quantità "prenotata" (_quantity_to_collect) resta nell'istanza scartata,
+# innocua.
+func _stop_selected_individual_task() -> void:
+	if individual == null or not individual.is_selected:
+		return
+	individual.stop()
+
+
 # TEST TEMPORANEO (2026-09-07, richiesta utente) — verifica che una Task a PIÙ step avanzi da sola
-# da un WalkAction al successivo, senza un nuovo comando del player. Coordinate arbitrarie ma
-# ragionevoli rispetto a individual.position (stesso spazio [0, World.WIDTH) x [0, World.HEIGHT),
-# WIDTH=HEIGHT=100 — vedi HumanIndividualController._try_set_target): due punti vicino al centro,
-# diagonalmente opposti, abbastanza distanti (~28 microcelle a tratta) da rendere ben visibile la
-# transizione tra i due step. Agisce sul bersaglio attualmente controllabile (individual, vedi il
-# commento sul campo) — nessuna selezione richiesta.
+# da uno step al successivo, senza un nuovo comando del player. Agisce sul bersaglio attualmente
+# controllabile (individual, vedi il commento sul campo) — nessuna selezione richiesta.
+#
+# RIPROPOSTA (2026-09-08, richiesta utente, Step 2 piano raccolta/trasporto) — costruiva
+# originariamente due WalkAction verso coordinate fisse; ora costruisce [WalkAction, PickUpAction]
+# verso la posizione pebble più vicina all'individuo nella SUA macrocella corrente (individual.
+# home_macro_coords), per verificare in-game decremento MacroCellState.pebble_quantities e
+# assegnazione carico (carried_resource_name/carried_quantity) prima di passare a click/
+# persistenza/UI nei prossimi step. Nessuna integrazione con TaskFactory/TaskPersistenceService qui
+# (esplicitamente fuori scope di questo passo) — Task costruita a mano, stesso principio già seguito
+# da questa stessa funzione e da _debug_test_daydream_task sotto.
 #
 # DA RIMUOVERE (o spostare sotto un vero pannello/bottone debug, es. DebugBar) quando si passa
 # oltre questo step del refactor Stamina/Task — non è pensato per sopravvivere nella build finale.
-const _DEBUG_TASK_TEST_TARGET_A := Vector2(40.0, 40.0)
-const _DEBUG_TASK_TEST_TARGET_B := Vector2(60.0, 60.0)
 
 func _debug_test_two_walk_task() -> void:
 	if individual == null:
 		return
+	var cell: LiveMacroCell = live_cells.get(individual.home_macro_coords)
+	if cell == null or cell.macro_state == null:
+		push_error("[PICKUP TEST] Nessuna cella viva per la macrocella dell'individuo — impossibile trovare una posizione pebble.")
+		return
+
+	# Posizione stone con pebble disponibili più vicina all'individuo — stesso spazio locale di
+	# individual.position (Vector2 continuo) e cell.macro_state.stone_positions (Vector2i, vedi
+	# StonePositionService), nessuna conversione necessaria.
+	var target_position := Vector2i(-1, -1)
+	var best_distance := INF
+	for pos in cell.macro_state.stone_positions:
+		if int(cell.macro_state.pebble_quantities.get(pos, 0)) <= 0:
+			continue
+		var distance: float = individual.position.distance_to(Vector2(pos))
+		if distance < best_distance:
+			best_distance = distance
+			target_position = pos
+	if target_position == Vector2i(-1, -1):
+		push_error("[PICKUP TEST] Nessuna posizione con pebble disponibili nella macrocella corrente.")
+		return
+
 	# stop() prima di tutto: azzera un'eventuale Task/movimento in corso, così il test parte sempre
 	# da uno stato pulito indipendentemente da cosa stesse facendo l'individuo (stesso principio già
 	# seguito da _set_movement_target per il vecchio bersaglio abbandonato).
 	individual.stop()
-	var walk_a := WalkAction.new(_DEBUG_TASK_TEST_TARGET_A)
-	var walk_b := WalkAction.new(_DEBUG_TASK_TEST_TARGET_B)
-	individual.current_task = Task.new([walk_a, walk_b])
-	# Attiva il PRIMO step a mano (stesso identico passo che HumanIndividual.set_target fa per un
-	# comando normale a un solo step) — il secondo verrà attivato da solo da
-	# HumanIndividualActionService.apply_action quando il primo risulterà is_complete().
-	walk_a.activate(individual)
-	print("[TASK TEST] Task a 2 step assegnata a #%d %s: %s -> %s" % [
-		individual.id, individual.name, _DEBUG_TASK_TEST_TARGET_A, _DEBUG_TASK_TEST_TARGET_B
+	var walk := WalkAction.new(Vector2(target_position))
+	var pickup := PickUpAction.new(target_position, cell.macro_state)
+	# Stesso refresh pebble/stick di _assign_pickup_task (2026-09-09) — vedi quel commento gemello.
+	pickup.resource_collected.connect(func(_res: String, _pos: Vector2i, _qty: int) -> void:
+		_refresh_resource_visuals(cell)
+	)
+	# assign_task (2026-09-09, richiesta utente, Step 4) — sostituisce l'assegnazione manuale
+	# (current_task = Task.new([...]); walk.activate(individual)) diretta di prima: questo hook ora
+	# valida lo stesso percorso generico che un futuro click/UI userà, non uno scavalcato a parte.
+	individual.assign_task(Task.new([walk, pickup]))
+	print("[PICKUP TEST] Task Walk+PickUp assegnata a #%d %s verso %s (pebble disponibili: %d)" % [
+		individual.id, individual.name, target_position, int(cell.macro_state.pebble_quantities.get(target_position, 0))
 	])
 
 
@@ -960,7 +1118,7 @@ func _debug_test_two_walk_task() -> void:
 # Walk -> Think -> Walk -> Deposit PRIMA che esista una vera TaskDefinition "Daydream": cammina
 # verso un punto arbitrario vicino ("around" — nessun realismo richiesto, solo un punto raggiungibile
 # per il test), pensa per la durata prevista, cammina fino allo Stone Circle già piazzato, deposita
-# il pensiero (ThinkAction.pending_thought -> DepositAction -> IdeaProgressService.add_thoughts).
+# il pensiero (ThinkAction.pending_thought -> UnloadAction -> IdeaProgressService.add_thoughts).
 # Richiede uno Stone Circle GIÀ costruito in questa sessione (BuildingRules.is_village_center) — se
 # non esiste ancora, logga un errore chiaro e NON avvia il test (nessuno stato parziale/a metà:
 # meglio niente Task che una Task che cammina verso un bersaglio inesistente).
@@ -1024,14 +1182,16 @@ func _debug_test_daydream_task() -> void:
 	var walk_to_around := WalkAction.new(around_position)
 	var think := ThinkAction.new(think_duration)
 	var walk_to_village_center := WalkAction.new(village_center_position)
-	var deposit := DepositAction.new()
+	# UnloadAction.new() senza argomenti = ramo pensiero (target_building resta null, default),
+	# comportamento invariato dal rename DepositAction->UnloadAction (2026-09-09).
+	var deposit := UnloadAction.new()
 	# Quinto step, DOPO il deposito (2026-09-07, richiesta utente) — un ultimo Walk che allontana
 	# l'individuo dallo Stone Circle: senza questo, ogni Daydream finirebbe fermo esattamente sulla
 	# stessa microcella del centro villaggio, accumulando pipottini uno sopra l'altro con più
 	# individui/più cicli.
 	var walk_away := WalkAction.new(leave_position)
 	# Collegato PRIMA di assegnare la Task (richiesta esplicita utente) — stesso identico principio
-	# di disaccoppiamento di TechTreePanel.idea_completed: DepositAction non conosce BuildBar/
+	# di disaccoppiamento di TechTreePanel.idea_completed: UnloadAction non conosce BuildBar/
 	# TechTreePanel/NotificationPopup, chi la crea (qui, il test — in futuro chi costruirà la Task
 	# "Daydream" vera) decide come reagire. TRE listener, non due (BUGFIX 2026-09-07, richiesta
 	# utente — "non ho visto il popup di notification": mancava il collegamento a _on_idea_completed,
@@ -1049,8 +1209,8 @@ func _debug_test_daydream_task() -> void:
 	)
 	# Effetto visivo "lampadina" (richiesta utente 2026-09-07) — ad OGNI deposito riuscito, non solo
 	# quando completa un'Idea (per questo thought_deposited, non idea_completed): individual è già
-	# catturato per bind, DepositAction non conosce l'individuo come tipo concreto (vedi commento sul
-	# segnale in deposit_action.gd).
+	# catturato per bind, UnloadAction non conosce l'individuo come tipo concreto (vedi commento sul
+	# segnale in unload_action.gd).
 	deposit.thought_deposited.connect(_spawn_idea_deposit_effect.bind(individual))
 	individual.current_task = Task.new([walk_to_around, think, walk_to_village_center, deposit, walk_away])
 	# task_name/step_descriptions (2026-09-07, richiesta utente — info panel "cosa sta facendo") —
@@ -1065,9 +1225,89 @@ func _debug_test_daydream_task() -> void:
 		"task_daydream_step_wander", "task_daydream_step_think",
 		"task_daydream_step_return", "task_daydream_step_deposit", "task_daydream_step_leave",
 	]
-	walk_to_around.activate(individual)
+	walk_to_around.activate(individual, individual.current_task.context)
 	print("[DAYDREAM TEST] Task a 5 step assegnata a #%d %s: around=%s, think=%.2fgg, village_center=%s, leave=%s" % [
 		individual.id, individual.name, around_position, think_duration, village_center_position, leave_position
+	])
+
+
+# DEBUG "usa e getta" (2026-09-09, richiesta utente) — svuota lo zaino dell'individuo SELEZIONATO
+# (individual.is_selected, non solo il bersaglio `individual` — a differenza di _debug_test_
+# two_walk_task/_debug_test_daydream_task sopra, che agiscono sempre sul bersaglio corrente a
+# prescindere dalla selezione, qui la richiesta esplicita è "individuo selezionato": nessuna
+# selezione -> no-op silenzioso, mai un crash) per velocizzare test consecutivi di PickUp su
+# risorse diverse senza dover riavviare la partita. Gli item vengono semplicemente PERSI (nessun
+# ripristino nel mondo/pool di origine, richiesta esplicita) — stesso trattamento "usa e getta" di
+# T/Y sopra: DA RIMUOVERE (o spostare sotto un vero pannello/bottone debug) quando non servirà più.
+func _debug_clear_selected_individual_backpack() -> void:
+	if individual == null or not individual.is_selected:
+		return
+	individual.carried_resource_name = ""
+	individual.carried_quantity = 0
+	print("[DEBUG] Zaino svuotato per #%d %s" % [individual.id, individual.name])
+
+
+# DEBUG "usa e getta" (2026-09-09, richiesta utente) — verifica la Task haul_resource end-to-end:
+# a differenza di _debug_test_two_walk_task sopra (Walk+PickUp fisso su pebble, mai oltre), qui basta
+# costruire i primi DUE step (Walk verso il bersaglio più vicino, PickUp) — il resto della sequenza
+# (ricerca magazzino, Walk verso di esso, Unload, "cammina via") si costruisce DA SÉ durante
+# l'esecuzione tramite Task.append_steps, chiamato da HumanIndividualActionService quando
+# PickUpAction/UnloadAction scrivono le rispettive richieste in context (vedi
+# _handle_pending_warehouse_search/_handle_pending_walk_away lì) — nessuna Task pre-costruita più
+# lunga di due step necessaria qui.
+#
+# Bersaglio: la posizione pebble O stick lot disponibile più VICINA all'individuo, qualunque delle
+# due risulti più vicina (stesso ordine di ricerca "posizione stone" di _debug_test_two_walk_task
+# sopra, esteso anche a tree_claimed_lots/stick — nessuna priorità fissa fra i due tipi, a differenza
+# di _try_assign_pickup_command_on_right_click che prova sempre PRIMA stone: qui la scelta "chi è più
+# vicino" esercita entrambe le risorse a seconda di cosa capita nella macrocella di test).
+func _debug_test_haul_resource_task() -> void:
+	if individual == null:
+		return
+	var cell: LiveMacroCell = live_cells.get(individual.home_macro_coords)
+	if cell == null or cell.macro_state == null:
+		push_error("[HAUL TEST] Nessuna cella viva per la macrocella dell'individuo — impossibile trovare un bersaglio.")
+		return
+
+	var target_position := Vector2i(-1, -1)
+	var target_resource_name := ""
+	var best_distance := INF
+	for pos in cell.macro_state.stone_positions:
+		if int(cell.macro_state.pebble_quantities.get(pos, 0)) <= 0:
+			continue
+		var distance: float = individual.position.distance_to(Vector2(pos))
+		if distance < best_distance:
+			best_distance = distance
+			target_position = pos
+			target_resource_name = "pebble"
+	for lot in cell.macro_state.tree_claimed_lots.keys():
+		if TerrainScatteredResourceService.get_available(cell.macro_state, "stick", lot) <= 0:
+			continue
+		var distance: float = individual.position.distance_to(Vector2(lot))
+		if distance < best_distance:
+			best_distance = distance
+			target_position = lot
+			target_resource_name = "stick"
+
+	if target_position == Vector2i(-1, -1):
+		push_error("[HAUL TEST] Nessuna posizione pebble/stick disponibile nella macrocella corrente.")
+		return
+
+	# stop() prima di tutto — stesso principio già seguito da _debug_test_two_walk_task/_debug_test_
+	# daydream_task sopra: il test parte sempre da uno stato pulito.
+	individual.stop()
+	var walk := WalkAction.new(Vector2(target_position))
+	var pickup := PickUpAction.new(target_position, cell.macro_state, target_resource_name)
+	# Stesso refresh pebble/stick di _assign_pickup_task (2026-09-09) — vedi quel commento gemello.
+	pickup.resource_collected.connect(func(_res: String, _pos: Vector2i, _qty: int) -> void:
+		_refresh_resource_visuals(cell)
+	)
+	var task := Task.new([walk, pickup])
+	task.task_name = "task_haul_resource_name"
+	task.step_descriptions = ["task_haul_resource_step_walk", "task_haul_resource_step_pickup"]
+	individual.assign_task(task)
+	print("[HAUL TEST] Task haul_resource (2 step iniziali) assegnata a #%d %s verso %s risorsa='%s' — il resto (ricerca magazzino/unload/allontanamento) si costruisce da sé durante l'esecuzione." % [
+		individual.id, individual.name, target_position, target_resource_name
 	])
 
 
@@ -1165,6 +1405,30 @@ func _center_camera_on_selection(animated: bool = true) -> void:
 			var dead_body_local_position: Vector2 = dead_body_record["position"] * MicroCellRenderer.CELL_SIZE
 			var dead_body_macro_offset := Vector2(dead_body_macro_coords - center_macro_coords) * MACRO_CELL_PIXELS
 			_animate_camera_to(dead_body_local_position + dead_body_macro_offset, animated)
+		SelectionKind.STONE:
+			# Stessa identica traduzione cross-macrocella dei rami sopra (2026-09-08, richiesta
+			# utente) — get_stone_screen_position è l'equivalente per STONE di
+			# get_individual_screen_position/get_building_screen_position.
+			var stone_macro_coords: Vector2i = selected_stone["macro_coords"]
+			var stone_cell: LiveMacroCell = live_cells.get(stone_macro_coords)
+			if stone_cell == null or stone_cell.renderer == null:
+				return
+			var stone_local_position: Vector2 = stone_cell.renderer.get_stone_screen_position(selected_stone["position"])
+			var stone_macro_offset := Vector2(stone_macro_coords - center_macro_coords) * MACRO_CELL_PIXELS
+			_animate_camera_to(stone_local_position + stone_macro_offset, animated)
+		SelectionKind.STICK_LOT:
+			# Nessun get_*_screen_position dedicato (2026-09-08, richiesta utente): il bersaglio è il
+			# CENTRO del lotto stesso, non un oggetto puntiforme — stessa conversione lotto*CELL_SIZE
+			# + metà cella già usata da _rebuild_stick_multimesh in MicroCellRenderer.
+			var stick_lot_macro_coords: Vector2i = selected_stick_lot["macro_coords"]
+			var stick_lot_cell: LiveMacroCell = live_cells.get(stick_lot_macro_coords)
+			if stick_lot_cell == null or stick_lot_cell.renderer == null:
+				return
+			var lot: Vector2i = selected_stick_lot["lot"]
+			var half: float = MicroCellRenderer.CELL_SIZE / 2.0
+			var stick_lot_local_position := Vector2(lot.x * MicroCellRenderer.CELL_SIZE + half, lot.y * MicroCellRenderer.CELL_SIZE + half)
+			var stick_lot_macro_offset := Vector2(stick_lot_macro_coords - center_macro_coords) * MACRO_CELL_PIXELS
+			_animate_camera_to(stick_lot_local_position + stick_lot_macro_offset, animated)
 		_:
 			pass
 
@@ -1261,8 +1525,10 @@ func _select_vegetation(hit: Dictionary) -> void:
 
 	_deselect_all_human_individuals()
 	human_individual_info_panel.clear()
-	_clear_building_selection() # mutua esclusione a 4 vie (Step 6, prima "a 3 vie")
+	_clear_building_selection() # mutua esclusione a 6 vie (2026-09-08, prima "a 5 vie")
 	_clear_dead_body_selection()
+	_clear_stone_selection()
+	_clear_stick_lot_selection()
 	selected_vegetation = hit
 	_selection_kind = SelectionKind.VEGETATION
 	_refresh_vegetation_panel()
@@ -1302,7 +1568,9 @@ func _select_building(hit: Dictionary) -> void:
 	_deselect_all_human_individuals()
 	human_individual_info_panel.clear()
 	_clear_vegetation_selection()
-	_clear_dead_body_selection() # mutua esclusione a 4 vie (Step 6)
+	_clear_dead_body_selection() # mutua esclusione a 6 vie (2026-09-08, prima "a 5 vie")
+	_clear_stone_selection()
+	_clear_stick_lot_selection()
 	selected_building = hit
 	_selection_kind = SelectionKind.BUILDING
 	_refresh_building_panel()
@@ -1341,6 +1609,357 @@ func _refresh_building_panel() -> void:
 
 
 # ============================================================================================
+# Selezione di una posizione STONE — 2026-09-08, richiesta utente. Struttura gemella di
+# _select_building/_clear_building_selection/_refresh_building_panel sopra: StoneInfoPanel mostra
+# la quantità pebble esatta di quella posizione + lo stone aggregato della macrocella come
+# contesto, risolti direttamente da MacroCellState (nessun oggetto "Stone" a sé, a differenza di
+# Building — solo una posizione + due lookup) — questo pannello, come gli altri quattro, riceve
+# solo dati già risolti.
+# ============================================================================================
+
+func _select_stone(hit: Dictionary) -> void:
+	# Evidenziazione sulla mappa (2026-09-08, richiesta utente — mancava, a differenza di
+	# vegetazione/edifici) — stesso schema del ciclo in _select_building: accende il contorno solo
+	# sul renderer della cella del match, lo spegne su ogni altra cella viva.
+	for coords in live_cells:
+		var cell: LiveMacroCell = live_cells[coords]
+		if cell.renderer == null:
+			continue
+		if coords == hit["macro_coords"]:
+			cell.renderer.set_selected_stone(hit["position"])
+		else:
+			cell.renderer.clear_selected_stone()
+
+	_deselect_all_human_individuals()
+	human_individual_info_panel.clear()
+	_clear_vegetation_selection()
+	_clear_building_selection()
+	_clear_dead_body_selection() # mutua esclusione a 6 vie (2026-09-08, prima "a 5 vie")
+	_clear_stick_lot_selection()
+
+	selected_stone = hit
+	_selection_kind = SelectionKind.STONE
+	_refresh_stone_panel()
+	game_info_tabs.show_selection_tab()
+
+
+func _clear_stone_selection() -> void:
+	if selected_stone.is_empty():
+		return
+	selected_stone = {}
+	_selection_kind = SelectionKind.NONE
+	for cell in live_cells.values():
+		if cell.renderer != null:
+			cell.renderer.clear_selected_stone()
+	stone_info_panel.clear()
+	game_info_tabs.hide_selection_tab()
+
+
+# Legge macro_state.pebble_quantities (posizione ESATTA cliccata) e resource_quantity[ROCK]
+# (aggregato dell'INTERA macrocella, mostrato come contesto — vedi StoneInfoPanel per
+# l'etichettatura distinta tra le due granularità). Nessuna gestione "marker bloccato": STONE non
+# ha ancora un modo di sparire (nessun consumo implementato), stesso principio già dichiarato per
+# gli edifici in _refresh_building_panel — l'unica via di invalidazione oggi resta lo scaricamento
+# della macrocella, guardia difensiva sotto.
+func _refresh_stone_panel() -> void:
+	var cell: LiveMacroCell = live_cells.get(selected_stone["macro_coords"])
+	if cell == null or cell.macro_state == null:
+		_clear_stone_selection()
+		return
+	var pos: Vector2i = selected_stone["position"]
+	var pebble_quantity: int = int(cell.macro_state.pebble_quantities.get(pos, 0))
+	var zone_stone_quantity: int = cell.macro_state.get_resource_quantity(GameTypes.WorldObjectType.ROCK)
+	stone_info_panel.show_stone(pebble_quantity, zone_stone_quantity)
+	game_info_tabs.set_selection_title(tr("selection_title_type").format({"type": tr("stone_selection_title")}))
+
+
+# Assegna a `individual` (il bersaglio correntemente selezionato) una Task Walk->PickUp verso una
+# posizione raccoglibile (2026-09-09, richiesta utente, Step 5/6 piano raccolta/trasporto — dal
+# 2026-09-09 richiamata dal comando destro-click, vedi _try_assign_pickup_command_on_right_click
+# sotto, non più da un'attivazione sinistro-click). Generalizzata su
+# macro_coords/target_position/resource_name espliciti invece di un `hit: Dictionary` grezzo:
+# StoneSelectorController.try_select e StickLotSelectorController.try_select tornano forme diverse
+# ({"position"} vs {"lot"} per la stessa idea di "dove"), quindi ogni chiamante estrae il proprio
+# campo e passa qui solo i tre valori già risolti — nessuna conoscenza della forma dell'hit
+# necessaria in questa funzione, nessun secondo hit-test.
+#
+# macro_state: risolto da live_cells[macro_coords].macro_state — stesso identico riferimento che
+# _refresh_stone_panel/_refresh_stick_lot_panel sopra usano per leggere pebble_quantities/
+# stick_quantities, sempre disponibile a questo punto perché né stone_hit né stick_lot_hit possono
+# vincere senza una cella viva con macro_state valido (vedi StoneSelectorController/
+# StickLotSelectorController.try_select, che scartano ogni cella con macro_state == null).
+#
+# Nessun controllo sulla quantità disponibile alla posizione/lotto cliccato (richiesta esplicita
+# utente, valida per entrambe le risorse): PickUpAction gestisce già il caso quantità 0
+# (completamento immediato senza effetto, Step 2) — assegnare comunque la Task su una posizione già
+# svuotata (una roccia già raccolta, un lotto senza alberi maturi) è un comportamento valido, il
+# player semplicemente non ottiene nulla, nessuna logica aggiuntiva necessaria qui per intercettarlo
+# prima.
+func _assign_pickup_task(macro_coords: Vector2i, target_position: Vector2i, resource_name: String) -> void:
+	var cell: LiveMacroCell = live_cells.get(macro_coords)
+	if cell == null or cell.macro_state == null:
+		return
+	var walk := WalkAction.new(Vector2(target_position))
+	var pickup := PickUpAction.new(target_position, cell.macro_state, resource_name)
+	# Rinfresca pebble/stick di QUESTA cella non appena la raccolta è davvero avvenuta (2026-09-09,
+	# richiesta utente, bugfix "restano disegnati dopo la raccolta") — stesso principio già in uso
+	# per UnloadAction.idea_completed/thought_deposited: PickUpAction non conosce il renderer, si
+	# limita a segnalare l'evento, chi ha creato la Task (qui) decide come reagire. Rebuild
+	# dell'intera macrocella (non solo la posizione raccolta — _refresh_resource_visuals non supporta
+	# un aggiornamento per singola posizione), ma economico: poche decine di posizioni pebble/stick
+	# per macrocella, stesso principio già accettato per il rebuild vegetazione (VegetationPosition
+	# Service), solo su un numero di individui molto più piccolo.
+	pickup.resource_collected.connect(func(_res: String, _pos: Vector2i, _qty: int) -> void:
+		_refresh_resource_visuals(cell)
+	)
+	var task := Task.new([walk, pickup])
+	# task_name/step_descriptions (2026-09-09) — stesso trattamento hardcoded già in uso per la Task
+	# "Daydream" di debug (_debug_test_daydream_task): nessuna TaskDefinition "bring_resource"/
+	# "haul_resource" esiste ancora (TaskFactory non supporta PICKUP, vedi task_factory.gd), quindi
+	# valorizzati qui direttamente — chiavi tr() grezze, mai testo già tradotto (vedi Task.
+	# get_activity_description, l'unico consumatore). Quando una vera TaskDefinition esisterà, queste
+	# due righe spariranno da qui e i valori arriveranno dal .tres invece che hardcoded.
+	#
+	# "task_haul_resource_name" (2026-09-09, richiesta utente — RINOMINATO da "task_bring_resource_
+	# name": da quando PickUpAction.on_complete scrive incondizionatamente context["pending_
+	# warehouse_search"] su ogni raccolta riuscita — vedi PickUpAction.gd/HumanIndividualActionService.
+	# _handle_pending_warehouse_search — questa Task, costruita qui come solo Walk+PickUp, continua DA
+	# SÉ (append_steps) fino a Walk+Unload+"cammina via" quando trova un magazzino: la vecchia
+	# etichetta "Trasportare risorsa" era ormai imprecisa, la Task fa l'intero giro fino al deposito,
+	# non solo il trasporto verso il punto di raccolta. Stesse chiavi già usate dal tasto U di debug
+	# (_debug_test_haul_resource_task) — le due Task sono ormai funzionalmente identiche (vedi lì).
+	task.task_name = "task_haul_resource_name"
+	task.step_descriptions = ["task_haul_resource_step_walk", "task_haul_resource_step_pickup"]
+	individual.assign_task(task)
+	_spawn_pickup_command_effect(cell, target_position)
+
+
+# Numero di lampeggi e durata di ciascuna metà-ciclo (buio->chiaro o chiaro->buio) dell'effetto
+# "manina" sotto — BLINK_COUNT × BLINK_HALF_DURATION × 2 = durata totale visibile (2026-09-09,
+# richiesta utente "lasciala lampeggiare un paio di secondi"): 5 × 0.2s × 2 = 2.0s esatti.
+const PICKUP_COMMAND_EFFECT_BLINK_COUNT: int = 5
+const PICKUP_COMMAND_EFFECT_BLINK_HALF_DURATION: float = 0.2
+
+
+# Effetto "usa e getta" (2026-09-09, richiesta utente — "una piccola manina che raccoglie sulla
+# cella per far capire che faccio pick up lì") — stesso principio di _spawn_idea_deposit_effect
+# sopra (puro codice, nessun .tscn, nessuno stato persistito), ma qui SUL BERSAGLIO cliccato (dove
+# l'individuo raccoglierà DOPO aver camminato fin lì, vedi WalkAction in _assign_pickup_task), non
+# sull'individuo stesso: il feedback deve comparire "una volta che il comando è partito" — cioè
+# SUBITO al click destro, non quando l'individuo arriva — così il player capisce da dove è partita
+# la Task anche mentre il pipottino sta ancora camminando verso quel punto.
+#
+# ✋ (mano aperta) — sostituita a 🤏 (pinching hand, primo tentativo) su feedback utente 2026-09-09:
+# "non che punta" — il pizzico leggeva come un gesto che indica/punta a quella scala di font,
+# invece di un gesto di presa/raccolta chiaramente leggibile.
+#
+# NIENTE modulate colorato (bugfix 2026-09-09, richiesta utente — "non sembra nemmeno più una
+# mano": un tentativo precedente tingeva il glifo d'azzurro via modulate, ma le emoji sono bitmap
+# a colori propri — moltiplicare quei pixel per un blu ne rovinava la sagoma fino a renderla
+# irriconoscibile. Colori nativi dell'emoji, nessun modulate custom).
+#
+# DENTRO la cella bersaglio, non sopra di essa (bugfix 2026-09-09, richiesta utente — "quando dico
+# sopra intendo all'interno, sopra nella vista dall'alto": il tentativo precedente, un'intera
+# CELL_SIZE più in alto del bordo superiore, finiva visivamente FUORI dal riquadro 10×10 della
+# microcella, non solo "sopra" in senso di vista dall'alto). Riquadro allineato esattamente sulla
+# cella (size/position = target_position × CELL_SIZE, nessun offset di riquadro), centrato sia
+# orizzontalmente che verticalmente al suo interno via horizontal_alignment/vertical_alignment.
+#
+# clip_contents = true (secondo bugfix 2026-09-09, richiesta utente — "ancora leggermente fuori in
+# basso a destra": il primo tentativo si affidava solo a un piccolo offset di compensazione per
+# correggere la metrica asimmetrica del font emoji, insufficiente) — GARANZIA STRUTTURALE che il
+# glifo non venga MAI disegnato fuori dal riquadro 10×10, qualunque sia la metrica reale del font
+# (Control.clip_contents ritaglia il disegno di questo nodo al proprio rect, non solo quello di
+# eventuali figli) — non dipende più dall'azzeccare esattamente l'offset per restare "dentro".
+# PICKUP_COMMAND_EFFECT_VISUAL_OFFSET sotto resta comunque per la centratura VISIVA fine — terzo
+# giro di ritocco (richiesta utente, 2026-09-09: "ancora in basso a destra" dopo -1.5,-1.5, portato
+# a -4,-5) — valore ARBITRARIO, stesso trattamento "da bilanciare" di ogni altra costante visiva di
+# questo sistema — ritoccare ulteriormente qui se il glifo appare ancora visibilmente decentrato
+# (ma non più fuori dal riquadro, garantito dal clip).
+#
+# Lampeggio via Tween.set_loops (alterna alpha 1.0<->0.15, PICKUP_COMMAND_EFFECT_BLINK_COUNT volte)
+# invece di una singola dissolvenza lineare come _spawn_idea_deposit_effect: qui la richiesta
+# esplicita è "lampeggiare", non "svanire" — un segnale intermittente più simile a un marker
+# temporaneo che a un effetto di particelle. chain().tween_callback(free) al termine, stesso
+# principio di pulizia automatica già in uso sopra.
+const PICKUP_COMMAND_EFFECT_VISUAL_OFFSET: Vector2 = Vector2(-4.0, -5.0)
+
+func _spawn_pickup_command_effect(cell: LiveMacroCell, target_position: Vector2i) -> void:
+	var label := Label.new()
+	label.text = "✋"
+	label.z_index = 2
+	label.clip_contents = true
+	label.add_theme_font_size_override("font_size", 6)
+	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	label.size = Vector2(MicroCellRenderer.CELL_SIZE, MicroCellRenderer.CELL_SIZE)
+	label.position = Vector2(target_position) * MicroCellRenderer.CELL_SIZE + PICKUP_COMMAND_EFFECT_VISUAL_OFFSET
+	cell.container.add_child(label)
+
+	var tween := create_tween()
+	tween.set_loops(PICKUP_COMMAND_EFFECT_BLINK_COUNT)
+	tween.tween_property(label, "modulate:a", 0.15, PICKUP_COMMAND_EFFECT_BLINK_HALF_DURATION)
+	tween.tween_property(label, "modulate:a", 1.0, PICKUP_COMMAND_EFFECT_BLINK_HALF_DURATION)
+	tween.chain().tween_callback(label.queue_free)
+
+
+# Comando "vai e raccogli" via DESTRO (2026-09-09, richiesta utente — sostituisce l'attivazione via
+# SINISTRO di Step 5/6: quel percorso condivideva il tasto con la selezione — click su un lotto già
+# selezionato che diventava improvvisamente un comando in base a uno stato nascosto, `individual.
+# is_selected` — ed era per di più spesso "rubato" dalla vegetazione, dato che un lotto stick
+# coincide fisicamente con la microcella dell'albero). Richiamata da _unhandled_input PRIMA di
+# individual_controller.handle_input (il movimento normale), il cui esito booleano decide se il
+# movimento normale va saltato per QUESTO evento (true = comando consumato) o eseguito come sempre
+# (false = nessun bersaglio raccoglibile qui, o nessun individuo selezionato).
+#
+# STONE prima di STICK_LOT (stesso ordine di priorità già in uso nel match map_hit_kind sopra per
+# il sinistro) — required_button=MOUSE_BUTTON_RIGHT passato esplicitamente a entrambi i
+# *SelectorController (default LEFT, per il loro chiamante di selezione esistente, invariato).
+# Stesso gate `individual.is_selected` già usato da HumanIndividualController._try_set_target per
+# il movimento normale: nessun individuo selezionato -> nessun comando possibile, comportamento
+# coerente col resto del destro-click.
+func _try_assign_pickup_command_on_right_click(event: InputEvent) -> bool:
+	if individual == null or not individual.is_selected:
+		return false
+
+	var stone_hit := stone_selector_controller.try_select(event, live_cells, MOUSE_BUTTON_RIGHT)
+	if not stone_hit.is_empty():
+		_assign_pickup_task(stone_hit["macro_coords"], stone_hit["position"], "pebble")
+		return true
+
+	var stick_lot_hit := stick_lot_selector_controller.try_select(
+		event, live_cells, MOUSE_BUTTON_RIGHT, macro_world.buildings if macro_world != null else []
+	)
+	if not stick_lot_hit.is_empty():
+		_assign_pickup_task(stick_lot_hit["macro_coords"], stick_lot_hit["lot"], "stick")
+		return true
+
+	return false
+
+
+# Comando "vai e scarica" via DESTRO su un edificio di stoccaggio (2026-09-09, richiesta utente) —
+# stesso identico principio/stessa posizione nella catena di _try_assign_pickup_command_on_right_
+# click sopra (provato subito dopo, mai in competizione spaziale: un edificio non condivide mai la
+# propria microcella con una posizione stone/lotto stick, vedi BuildingVerificationService
+# Criterio 6). `individual.is_selected` — stesso gate di sopra: nessun individuo selezionato,
+# nessun comando.
+#
+# required_button=MOUSE_BUTTON_RIGHT passato esplicitamente a BuildingSelectorController.try_select
+# (default LEFT, per il suo chiamante di selezione esistente in _unhandled_input sopra, invariato).
+#
+# Tre condizioni, in quest'ordine, TUTTE necessarie perché il comando scatti (altrimenti false,
+# fallback al movimento normale — MAI un comando "parziale"/un errore silenzioso):
+#   1. l'edificio colpito è di categoria STORAGE (rules.category — un hit su hut/stone_circle
+#      colpiti col destro resta movimento semplice, non un errore, semplicemente non è un target
+#      valido per Unload);
+#   2. lo zaino non è vuoto (carried_quantity > 0 — zaino vuoto non ha nulla da scaricare, stesso
+#      principio "niente da fare" già seguito da PickUpAction quando _quantity_to_collect è 0);
+#   3. BuildingStorageService.can_accept è vero per carried_resource_name (categoria della risorsa
+#      trasportata compatibile con building.rules.accepted_categories — vedi BuildingStorageService.
+#      gd). Nessun feedback "categoria rifiutata" in questo passo (nessuna UI per l'inventario
+#      edificio ancora, richiesta esplicita) — semplicemente nessun comando, movimento normale.
+#
+# Posizione target tradotta nello spazio locale dell'INDIVIDUO (non dell'edificio) — stessa formula
+# già in uso in _debug_test_daydream_task per lo Stone Circle: building.micro_x/y sono locali alla
+# macrocella DELL'EDIFICIO, non necessariamente quella corrente dell'individuo (offset zero, no-op,
+# se invece coincidono).
+func _try_assign_unload_command_on_right_click(event: InputEvent) -> bool:
+	if individual == null or not individual.is_selected:
+		return false
+	if individual.carried_quantity <= 0:
+		return false
+
+	var building_hit := building_selector_controller.try_select(
+		event, live_cells, macro_world.buildings if macro_world != null else [], MOUSE_BUTTON_RIGHT
+	)
+	if building_hit.is_empty():
+		return false
+
+	var building := _find_building_by_id(building_hit["building_id"])
+	if building == null or building.rules == null or building.rules.category != BuildingTypes.Category.STORAGE:
+		return false
+	if not BuildingStorageService.can_accept(building, individual.carried_resource_name):
+		return false
+
+	var macro_offset: Vector2 = Vector2(Vector2i(building.macro_x, building.macro_y) - individual.home_macro_coords) * World.WIDTH
+	var building_position: Vector2 = Vector2(building.micro_x, building.micro_y) + macro_offset
+
+	var walk := WalkAction.new(building_position)
+	var unload := UnloadAction.new(building)
+	var task := Task.new([walk, unload])
+	# task_name/step_descriptions (2026-09-09) — stesso trattamento hardcoded già in uso per
+	# "task_haul_resource" (_assign_pickup_task sopra): nessuna TaskDefinition "unload_resource"
+	# esiste ancora (TaskFactory non supporta UNLOAD, vedi task_factory.gd).
+	task.task_name = "task_unload_resource_name"
+	task.step_descriptions = ["task_unload_resource_step_walk", "task_unload_resource_step_unload"]
+	individual.assign_task(task)
+	return true
+
+
+# ============================================================================================
+# Selezione del "terreno" di una microcella TREE — click sul lotto invece che su un individuo
+# preciso (2026-09-08, richiesta utente: "forse si puo' fare il clic sul terreno della microcella
+# che mi dà le info della microcella aggregata"). Struttura gemella di _select_stone/
+# _clear_stone_selection sopra, ma il bersaglio è l'intero lotto (StickLotSelectorController), non
+# una posizione puntiforme — evidenziazione con un contorno QUADRATO (set_selected_stick_lot,
+# perimetro della microcella) invece del cerchio usato per un oggetto singolo.
+# ============================================================================================
+
+func _select_stick_lot(hit: Dictionary) -> void:
+	for coords in live_cells:
+		var cell: LiveMacroCell = live_cells[coords]
+		if cell.renderer == null:
+			continue
+		if coords == hit["macro_coords"]:
+			cell.renderer.set_selected_stick_lot(hit["lot"])
+		else:
+			cell.renderer.clear_selected_stick_lot()
+
+	_deselect_all_human_individuals()
+	human_individual_info_panel.clear()
+	_clear_vegetation_selection()
+	_clear_building_selection()
+	_clear_dead_body_selection()
+	_clear_stone_selection() # mutua esclusione a 6 vie (2026-09-08)
+
+	selected_stick_lot = hit
+	_selection_kind = SelectionKind.STICK_LOT
+	_refresh_stick_lot_panel()
+	game_info_tabs.show_selection_tab()
+
+
+func _clear_stick_lot_selection() -> void:
+	if selected_stick_lot.is_empty():
+		return
+	selected_stick_lot = {}
+	_selection_kind = SelectionKind.NONE
+	for cell in live_cells.values():
+		if cell.renderer != null:
+			cell.renderer.clear_selected_stick_lot()
+	stick_lot_info_panel.clear()
+	game_info_tabs.hide_selection_tab()
+
+
+# Legge macro_state.stick_quantities (disponibilità ESATTA del lotto cliccato: capacity - harvested,
+# vedi StickPoolService). NON più resource_quantity[TREE] (2026-09-09, richiesta utente — rimosso:
+# quel valore è l'aggregato dell'INTERA macrocella, non ha alcun legame col lotto singolo cliccato,
+# leggeva come "legno di questo lotto" mentre non lo era — vedi StickLotInfoPanel per il rimpiazzo,
+# un'etichetta "wood" puramente statica finché non esisterà un vero dato per lotto). Nessuna
+# gestione "marker bloccato": stesso principio già dichiarato per stone — l'unica via di
+# invalidazione oggi resta lo scaricamento della macrocella.
+func _refresh_stick_lot_panel() -> void:
+	var cell: LiveMacroCell = live_cells.get(selected_stick_lot["macro_coords"])
+	if cell == null or cell.macro_state == null:
+		_clear_stick_lot_selection()
+		return
+	var lot: Vector2i = selected_stick_lot["lot"]
+	var stick_entry: Dictionary = cell.macro_state.stick_quantities.get(lot, {})
+	var available_sticks: int = int(stick_entry.get("capacity", 0)) - int(stick_entry.get("harvested", 0))
+	stick_lot_info_panel.show_stick_lot(available_sticks)
+	game_info_tabs.set_selection_title(tr("selection_title_type").format({"type": tr("stick_lot_selection_title")}))
+
+
+# ============================================================================================
 # Selezione di un corpo morto — Step 6 del sistema oggetti-scaduti (2026-09-05). Struttura gemella
 # di _select_building/_clear_building_selection sopra: DeadBodyInfoPanel mostra sesso/età alla
 # morte/causa/giorni rimanenti, risolti dal vero record in game_data.expired_objects via
@@ -1352,6 +1971,8 @@ func _select_dead_body(hit: Dictionary) -> void:
 	human_individual_info_panel.clear()
 	_clear_vegetation_selection()
 	_clear_building_selection()
+	_clear_stone_selection() # mutua esclusione a 6 vie (2026-09-08, prima "a 5 vie")
+	_clear_stick_lot_selection()
 
 	selected_dead_body_individual_id = hit["individual_id"]
 	_set_dead_body_view_selected(selected_dead_body_individual_id, true)
@@ -1522,7 +2143,26 @@ func _update_individual_panel_content(target: HumanIndividual) -> void:
 	# (vedi HumanIndividualActionService.apply_action), reso qui come stringa esplicita invece che
 	# un pannello vuoto/ambiguo.
 	var activity_text: String = target.current_task.get_activity_description() if target.current_task != null else tr("task_activity_idle")
-	human_individual_info_panel.show_individual(target, age, age_band, max_stamina, current_stamina, activity_text)
+
+	# Capacità di trasporto (2026-09-08, richiesta utente) — a differenza di max_stamina sopra
+	# (ricalcolato fresco qui ad ogni refresh pannello), max_carry_capacity è letto DIRETTAMENTE
+	# da target: nessun secondo calcolo ridondante, il campo è già mantenuto aggiornato una volta
+	# al giorno da HumanCarryCapacityIndividualService (vedi GameTimeService._on_day_advanced).
+	# Spazio occupato = carried_quantity × SecondaryResourceRules.space_per_unit della risorsa
+	# trasportata, lookup dal .tres corrispondente CALCOLATO AL VOLO qui (mai cachato) — nessuna
+	# risorsa trasportata (carried_resource_name vuoto) o .tres non risolvibile => spazio occupato
+	# 0, tutta la capacità risulta libera.
+	var used_carry_space := 0.0
+	if target.carried_resource_name != "":
+		var carried_resource_rules := CaloricCalculator.get_caloric_source_rules(target.carried_resource_name)
+		if carried_resource_rules != null:
+			used_carry_space = float(target.carried_quantity) * carried_resource_rules.space_per_unit
+	var free_carry_capacity: float = max(target.max_carry_capacity - used_carry_space, 0.0)
+
+	human_individual_info_panel.show_individual(
+		target, age, age_band, max_stamina, current_stamina, activity_text,
+		target.max_carry_capacity, free_carry_capacity
+	)
 	game_info_tabs.set_selection_title(tr("selection_title_name").format({"name": target.name}))
 
 
@@ -1548,6 +2188,17 @@ func _refresh_selected_individual_panel() -> void:
 		if member.is_selected:
 			_update_individual_panel_content(member)
 			return
+
+
+# Gemella di _refresh_selected_individual_panel sopra, per SelectionKind.BUILDING (2026-09-09,
+# richiesta utente) — _refresh_building_panel() già ri-risolve building_id dal roster vero
+# (_find_building_by_id) e richiama building_info_panel.show_building(building), quindi riflette
+# SEMPRE lo stato attuale di stored_resources: nessuna logica nuova da scrivere qui, solo il
+# gancio giornaliero mancante (prima si aggiornava solo cambiando selezione).
+func _refresh_selected_building_panel() -> void:
+	if _selection_kind != SelectionKind.BUILDING:
+		return
+	_refresh_building_panel()
 
 
 # Step 6 piano mortalità (2026-09-05): rimuove/libera la HumanIndividualView corrispondente
@@ -1691,6 +2342,52 @@ func _on_idea_completed(idea_id: String) -> void:
 		NotificationTypes.NotificationPopupType.IDEA_COMPLETED,
 		tr("notification_idea_completed").format({"idea": display_name})
 	)
+
+
+# Decadimento zaino (2026-09-09, richiesta utente, Step 3 decadimento) — stesso gate/stesso
+# NotificationPopup di morte/nascita/idea sopra. resource_name/quantity arrivano già risolti dal
+# segnale (GameTimeService.individual_resource_decayed non sa nulla di UI) — IconRegistry.
+# get_resource_display_name per un nome leggibile invece del resource_name grezzo, stessa fonte già
+# usata dal riquadro zaino/griglia storage magazzino (coerenza tra ogni punto che mostra il nome di
+# una risorsa).
+func _on_individual_resource_decayed(individual: HumanIndividual, resource_name: String, quantity: int) -> void:
+	if not UserOptions.show_notification_popups:
+		return
+	notification_popup.enqueue(
+		NotificationTypes.NotificationPopupType.RESOURCE_DECAYED,
+		tr("notification_resource_decayed_individual").format({
+			"name": individual.name,
+			"quantity": NumberFormatter.format_int(quantity),
+			"resource": IconRegistry.get_resource_display_name(resource_name),
+		})
+	)
+
+
+# Gemella della funzione sopra, per il decadimento storage edifici (2026-09-09) — collegata a
+# clock.building_resources_decayed (WorldTimeService, non GameTimeService: gli edifici decadono
+# nel tick di scala mondo, vedi WorldTimeService._run_daily_building_resource_decay). Un ENQUEUE
+# PER EVENTO (mai un unico popup aggregato per tutti gli eventi del giorno) — stesso principio "un
+# enqueue per fatto" già seguito da morte/nascita, NotificationPopup accoda da sé senza sovrapporsi.
+# building.rules null solo per dati incoerenti (mai in pratica, ogni Building vivo ha sempre rules
+# risolte da BuildingCalculator) — fallback su building_type_name grezzo, stesso trattamento già in
+# uso altrove nel progetto per lo stesso caso limite (es. GameScene._select_building).
+func _on_building_resources_decayed(events: Array) -> void:
+	if not UserOptions.show_notification_popups:
+		return
+	for event in events:
+		var building: Building = event["building"]
+		var building_display_name: String = (
+			tr(building.rules.building_name) if building.rules != null else building.building_type_name
+		)
+		notification_popup.enqueue(
+			NotificationTypes.NotificationPopupType.RESOURCE_DECAYED,
+			tr("notification_resource_decayed_building").format({
+				"quantity": NumberFormatter.format_int(int(event["quantity"])),
+				"resource": IconRegistry.get_resource_display_name(String(event["resource_name"])),
+				"building": building_display_name,
+				"id": building.id,
+			})
+		)
 
 
 # Step 6 piano mortalità (2026-09-05): rinfresca la scheda 👨‍👩‍👧 DOPO che tutte le rimozioni/
@@ -2034,8 +2731,15 @@ func _activate_live_cell(mx: int, my: int) -> LiveMacroCell:
 				cell.river_exterior_occupied = _compute_river_exterior_occupied(cell.river_positions)
 
 			var stone_service := StonePositionService.new()
-			stone_service.generate_if_needed(cell.macro_state)
+			stone_service.generate_if_needed(cell.macro_state, cell.macro_cell)
 			cell.renderer.set_stone_positions(cell.macro_state.stone_positions)
+			# Pebble (2026-09-08, richiesta utente) — NON più sincronizzato qui a parte (2026-09-09,
+			# richiesta utente, bugfix "pebble/stick restano disegnati dopo la raccolta"): la prima
+			# sincronizzazione avviene già dentro _refresh_resource_visuals sotto (chiamata poche righe
+			# più giù), insieme a stick e con lo stesso filtro FoW — un'unica fonte di verità per
+			# QUANDO risincronizzare pebble/stick, invece di due percorsi paralleli (uno qui, uno lì)
+			# facili da disallineare in futuro. MacroCellState.pebble_quantities è comunque già
+			# popolato da generate_if_needed insieme a stone_positions, pronto per quella chiamata.
 
 			# _refresh_building_visuals PRIMA di _refresh_resource_visuals (ordine invertito rispetto
 			# a prima, 2026-08-30/Proposta 2): quest'ultima ora filtra cosa costruire nel renderer in
@@ -2169,6 +2873,14 @@ func _deactivate_live_cell(coords: Vector2i) -> void:
 		_clear_vegetation_selection()
 	if not selected_building.is_empty() and selected_building["macro_coords"] == coords:
 		_clear_building_selection()
+	# Stessa cura di vegetazione/edifici sopra (2026-09-08, richiesta utente — evidenziazione STONE
+	# appena aggiunta): il renderer che sta per essere distrutto è quello che possiede il contorno.
+	if not selected_stone.is_empty() and selected_stone["macro_coords"] == coords:
+		_clear_stone_selection()
+	# Stessa cura di stone sopra (2026-09-08, richiesta utente — click sul terreno TREE): il
+	# renderer che sta per essere distrutto è quello che possiede il contorno quadrato del lotto.
+	if not selected_stick_lot.is_empty() and selected_stick_lot["macro_coords"] == coords:
+		_clear_stick_lot_selection()
 	cell.container.queue_free()
 	live_cells.erase(coords)
 
@@ -2553,6 +3265,25 @@ func _refresh_resource_visuals(cell: LiveMacroCell) -> void:
 	if cell.macro_state == null:
 		return
 
+	# Pool bastoni (2026-09-08, richiesta utente) — pigro, agganciato qui perché è esattamente il
+	# punto "questa macrocella viene effettivamente ridisegnata" (stesso principio di StonePositionService/
+	# VegetationPositionService): no-op immediato per ogni lotto già fresco rispetto all'ultimo
+	# checkpoint growth, vedi StickPoolService per il design completo.
+	#
+	# Filtro FoW su stick/pebble (2026-09-09, richiesta utente) — stesso filtro già in uso per la
+	# vegetazione (_filter_vegetation_positions_by_visibility sotto): prima d'ora pebble/stick
+	# disegnavano OGNI posizione incondizionatamente, anche sotto FROZEN_OVERLAY_COLOR/nero pieno,
+	# dove la vegetazione viene già nascosta — risultato: bastoncini/sassi a piena definizione in
+	# zone dove l'albero/cespuglio sorgente non è nemmeno disegnato (segnalato dall'utente).
+	# `set_pebble_quantities` spostato QUI (non più un rebuild una tantum all'attivazione della
+	# macrocella, vedi il vecchio commento in _activate_cell) — stessa cadenza/stesso trigger di
+	# stick (checkpoint/movimento/taglio/edificio/pickup, vedi PickUpAction.resource_collected
+	# sotto), non due percorsi di refresh paralleli per due risorse che condividono lo stesso bisogno.
+	StickPoolService.refresh_macrocell(cell.macro_state, game_data)
+	if cell.renderer != null:
+		cell.renderer.set_stick_quantities(_filter_positions_by_visibility(cell, cell.macro_state.stick_quantities))
+		cell.renderer.set_pebble_quantities(_filter_positions_by_visibility(cell, cell.macro_state.pebble_quantities))
+
 	# TEMPORANEO (diagnostica Proposta 2, vedi DebugLogging.SHOW_VEGETATION_REFRESH_TIMING_LOGS) —
 	# cronometri separati per capire se il costo dell'8.9s/8 celle osservato al checkpoint
 	# stagionale è nella GENERAZIONE posizioni (VegetationPositionService, indipendente dal FoW,
@@ -2723,6 +3454,26 @@ func _filter_vegetation_positions_by_visibility(cell: LiveMacroCell, positions: 
 			if visible.has(Vector2i(entry.x, entry.y)):
 				kept.append(entry)
 		filtered[object_type] = kept
+	return filtered
+
+
+# Gemella di _filter_vegetation_positions_by_visibility sopra, ma per un Dictionary FLAT
+# posizione->valore (MacroCellState.pebble_quantities: Vector2i -> int; stick_quantities:
+# Vector2i -> Dictionary) invece che nested per WorldObjectType — 2026-09-09, richiesta utente:
+# pebble/stick non avevano ALCUN filtro FoW prima d'ora (disegnavano ogni posizione
+# incondizionatamente, anche sotto FROZEN_OVERLAY_COLOR/nero pieno), a differenza della
+# vegetazione. Stessa fonte/stesso principio di sopra — chiamata separatamente (non condivide il
+# `visible` già calcolato per la vegetazione in questa stessa _refresh_resource_visuals): tenerla
+# autonoma, come l'altra, invece di introdurre uno stato condiviso tra le due per un risparmio
+# marginale (compute_visible_positions è limitato al raggio di visibilità, non all'intera griglia).
+func _filter_positions_by_visibility(cell: LiveMacroCell, positions: Dictionary) -> Dictionary:
+	if cell.fog_of_war_renderer == null:
+		return positions
+	var visible := cell.fog_of_war_renderer.compute_visible_positions(game_data.get_absolute_day())
+	var filtered: Dictionary = {}
+	for pos in positions:
+		if visible.has(Vector2i(pos.x, pos.y)):
+			filtered[pos] = positions[pos]
 	return filtered
 
 
@@ -3285,6 +4036,8 @@ func _building_type_name_for_action(action_id: StringName) -> String:
 			return "hut"
 		&"build_stone_circle":
 			return "stone_circle"
+		&"build_deposit_site":
+			return "deposit_site"
 		_:
 			return ""
 
@@ -3658,6 +4411,13 @@ func _setup_clock() -> void:
 	# Effetto nato-morto (2026-09-06) — simmetrico a individual_born sopra, stesso schema.
 	game_time_service.human_stillbirth.connect(_on_human_stillbirth)
 	game_time_service.human_population_changed.connect(_on_human_population_changed)
+	# Decadimento zaino/storage edificio (2026-09-09, richiesta utente, Step 3 decadimento) — stesso
+	# gate UserOptions.show_notification_popups/stesso NotificationPopup di morte/nascita/idea sopra.
+	# individual_resource_decayed vive su game_time_service (stesso canale di individual_died/born
+	# sopra); building_resources_decayed vive invece su clock (WorldTimeService, non GameTimeService,
+	# gestisce il decadimento edifici — vedi WorldTimeService._run_daily_building_resource_decay).
+	game_time_service.individual_resource_decayed.connect(_on_individual_resource_decayed)
+	clock.building_resources_decayed.connect(_on_building_resources_decayed)
 	play_pause_button.pressed.connect(_on_play_pause_pressed)
 	for speed in speed_buttons.keys():
 		speed_buttons[speed].pressed.connect(_on_speed_button_pressed.bind(speed))
@@ -3707,6 +4467,13 @@ func _on_day_advanced(checkpoint_ran: bool, animals_changed: bool) -> void:
 	# stesso stile/convenzione di HumanStaminaIndividualService/DebugLogging.SHOW_STAMINA_RECALC_LOGS.
 	var _debug_panel_refresh_start_usec := Time.get_ticks_usec()
 	_refresh_selected_individual_panel()
+	# Refresh giornaliero del pannello edificio selezionato (2026-09-09, richiesta utente — "il
+	# pannello non si aggiorna quando sparisce qualcosa, devo cambiare click e tornare lì") — stesso
+	# identico principio/stessa posizione di _refresh_selected_individual_panel appena sopra: prima
+	# dell'early-return sotto, gira anche nei giorni "vuoti". BuildingStorageService.get_slot_
+	# breakdown è già economico (al più storage_slot_count slot), nessun costo misurato qui a
+	# differenza del pannello individuo.
+	_refresh_selected_building_panel()
 	if DebugLogging.ENABLED and DebugLogging.SHOW_SELECTED_PANEL_REFRESH_LOGS:
 		var panel_refresh_elapsed_ms := (Time.get_ticks_usec() - _debug_panel_refresh_start_usec) / 1000.0
 		print("[SELECTED PANEL REFRESH] anno=%d giorno=%d: %.3f ms" % [

@@ -52,6 +52,28 @@ extends Resource
 @export var size_multiplier_by_sex: Array[float] = [0.0, 0.0]
 @export var size_variance: float = 0.0
 
+# Capacità di trasporto di riferimento per un adulto pieno (2026-09-08, richiesta utente) —
+# stessa unità astratta di SecondaryResourceRules.space_per_unit (nessun kg/microcelle, "spazio"
+# generico, vedi quel campo per la verifica fatta sul resto del progetto), scalata dagli STESSI
+# due assi già usati per la taglia fisica (size_multiplier_by_age/size_multiplier_by_sex sopra),
+# MAI un nuovo array dedicato al trasporto — verificato: sono @export su questa stessa classe,
+# quindi già accessibili ovunque HumanRules lo è, incluso HumanCalculator.get_max_stamina (stesso
+# punto dove verrà calcolata la capacità di trasporto effettiva, vedi HumanCalculator.
+# get_max_carry_capacity). Nessuna logica la legge ancora oltre a quel calcolo.
+@export var base_carry_capacity: float = 30.0
+
+# Slot tool (2026-09-08, richiesta utente) — SOLO spazio/bonus per ora, NESSUN uso funzionale dei
+# tool (non equipaggiabili ancora, vedi HumanIndividual.equipped_tool_count). tool_slot_count è il
+# numero totale di slot che un individuo ha a disposizione; ogni slot VUOTO (non occupato da un
+# tool equipaggiato) dà un bonus FLAT alla capacità di trasporto effettiva — un tool, quando il
+# sistema di equip esisterà, presumibilmente offrirà il proprio bonus specifico al posto di questo
+# generico "slot vuoto" (motivo per cui il bonus è per slot LIBERO, non per slot totale: un tool
+# equipaggiato toglie il bonus generico ma non ne aggiunge ancora uno proprio, coerente col fatto
+# che nessun tool esiste ancora). Vedi HumanCalculator.get_max_carry_capacity per la formula
+# completa (bonus applicato DOPO il moltiplicatore di taglia, non dentro).
+@export var tool_slot_count: int = 4
+@export var carry_bonus_per_empty_tool_slot: float = 3.0
+
 # Moltiplicatori calorici (fabbisogno per età/sesso, stessi due assi di size_multiplier_by_age/
 # by_sex sopra) — nel .tres di prova valorizzati con GLI STESSI numeri di size_multiplier_by_age/
 # by_sex, deliberatamente: nessuna logica di derivazione scritta qui, solo dati duplicati fino a

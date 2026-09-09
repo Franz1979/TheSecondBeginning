@@ -4,6 +4,10 @@ extends Node2D
 const CELL_SIZE: int = 10
 const NEIGHBOR_STRIP_DEPTH: int = 40 # px, solo un'anteprima, non è territorio giocabile
 const COLOR_STONE := Color(0.45, 0.45, 0.45, 0.6) # alpha bassa: i cerchi sovrapposti si fondono per densità
+# Sassi/pebble (2026-09-08, richiesta utente: "colore un po' più simile a stone, magari un po'
+# più scuri") — stesso grigio di base di COLOR_STONE ma un filo più scuro, invece del tono
+# bruno-chiaro precedente.
+const COLOR_PEBBLE := Color(0.35, 0.35, 0.34, 0.85)
 const VEGETATION_COLORS := {
 	GameTypes.WorldObjectType.TREE: Color(0.10, 0.45, 0.15, 0.85),
 }
@@ -142,6 +146,21 @@ const STONE_CIRCLE_STONE_RADIUS: float = 0.75
 const STONE_CIRCLE_STONE_COUNT: int = 8
 const STONE_CIRCLE_BLOB_VERTEX_COUNT: int = 8
 
+# Deposit Site (2026-09-08, richiesta utente) — "sito di deposito", a disegno una chiazza di terra
+# battuta SQUADRATA (2026-09-08, revisione: "molto più squadrato", non un quadrato perfetto però):
+# nessuna porta/recinto/rotazione (has_door=false in deposit_site.tres). Stessa geometria (duplicata
+# apposta, stesso principio già in uso tra MicroCellRenderer/BuildingGhost) di
+# BuildingGhost._draw_deposit_site/_deposit_site_polygon, così l'anteprima e l'edificio finito
+# coincidono esattamente.
+const DEPOSIT_SITE_COLOR := Color(0.42, 0.34, 0.24, 1.0)
+const DEPOSIT_SITE_OUTLINE_COLOR := Color(0.24, 0.18, 0.12, 1.0)
+const DEPOSIT_SITE_OUTLINE_WIDTH: float = 0.5
+# 4.5 (2026-09-08, richiesta utente: "allarga ancora di più, quasi ad occupare tutta la microcella")
+# — la microcella è larga CELL_SIZE=10, quindi mezza cella = 5: 4.5 lascia un margine minimo prima
+# del bordo anche col jitter massimo (vedi _deposit_site_polygon, fino a ×1.08).
+const DEPOSIT_SITE_HALF_SIDE: float = 4.5
+const DEPOSIT_SITE_VERTEX_COUNT: int = 8
+
 const DIRECTIONS := [
 	Vector2i(0, -1), # nord
 	Vector2i(0, 1),  # sud
@@ -261,6 +280,29 @@ var dead_positions: Dictionary = {} # WorldObjectType -> Array[Vector3i]
 # "identica": solo la sagoma di base è condivisa fra gruppi di ~1/12 delle pietre.
 var _stone_variant_meshes: Array = [] # ArrayMesh, indicizzato per variante — costruito una volta sola
 var _stone_multimeshes: Array = [] # MultiMesh, indicizzato per variante — un draw_multimesh ciascuno
+
+# Sassi/pebble (2026-09-08, richiesta utente) — Vector2i -> int, stessa Dictionary di
+# MacroCellState.pebble_quantities (sincronizzata da set_pebble_quantities), MAI ricalcolata qui:
+# il renderer si limita a leggerla per decidere QUANTI puntini-sasso disegnare attorno a ciascuna
+# posizione stone, a 3 livelli (vedi PEBBLE_TIER_*/_pebble_tier_count) — 0 = nessun puntino
+# disegnato, così quando in futuro un consumo reale porterà una posizione a 0 basterà richiamare
+# set_pebble_quantities con i valori aggiornati perché i puntini spariscano da soli (nessuna logica
+# di rimozione dedicata: il rebuild riparte sempre da zero, stesso principio già in uso per
+# _rebuild_stone_multimeshes).
+var pebble_quantities: Dictionary = {}
+var _pebble_variant_meshes: Array = []
+var _pebble_multimeshes: Array = []
+
+# Bastoni/stick (2026-09-08, richiesta utente) — Vector2i (lotto TREE) -> {"checkpoint_day",
+# "capacity", "harvested"}, stessa Dictionary di MacroCellState.stick_quantities (sincronizzata da
+# set_stick_quantities), MAI ricalcolata qui — vedi StickPoolService per il calcolo vero. Disegnati
+# a terra attorno al "ground" del lotto (non della singola pianta: un lotto può avere più
+# individui), a 3 livelli come i pebble (vedi STICK_TIER_*/_stick_tier_count). Un solo mesh
+# condiviso (non varianti multiple come stone/pebble): un bastone è solo un rettangolo sottile,
+# rotazione+scala per-istanza bastano per la varietà visiva.
+var stick_quantities: Dictionary = {}
+var _stick_mesh: ArrayMesh = null
+var _stick_multimesh: MultiMesh = null
 # Sottotipo congelato per individuo — Vector3i -> String ("wood_only"/"fruit_bearing" per SHRUB,
 # "wood_only"/"wild_fruit"/"domesticable_fruit"/"conifer" per TREE), stesso oggetto di
 # MacroCellState.tree_individual_subtype/shrub_individual_subtype (Dictionary per riferimento,
@@ -333,6 +375,31 @@ func clear_river() -> void:
 func set_stone_positions(positions: Array) -> void:
 	stone_positions = positions
 	_rebuild_stone_multimeshes()
+	# I pebble sono ancorati alle STESSE posizioni (2026-09-08) — ricalcolati anche qui, non solo
+	# da set_pebble_quantities sotto: copre l'ordine di chiamata "prima le posizioni, poi le
+	# quantità" E il caso in cui stone_positions cambi da sola (pebble_quantities già valorizzato).
+	_rebuild_pebble_multimeshes()
+	queue_redraw()
+
+
+# Sassi/pebble (2026-09-08, richiesta utente) — chiamato da GameScene/MacroCellScene subito dopo
+# set_stone_positions, stesso momento/stessa fonte dati (MacroCellState.pebble_quantities). Rebuild
+# anche qui (non solo da set_stone_positions sopra): copre il caso in cui le quantità cambino da
+# sole a parità di posizioni (es. un futuro consumo).
+func set_pebble_quantities(quantities: Dictionary) -> void:
+	pebble_quantities = quantities
+	_rebuild_pebble_multimeshes()
+	queue_redraw()
+
+
+# Bastoni/stick (2026-09-08, richiesta utente) — chiamato da GameScene/MacroCellScene subito dopo
+# StickPoolService.refresh_macrocell, stessa fonte dati (MacroCellState.stick_quantities). A
+# differenza di stone/pebble non dipende da un "set_positions" separato: i lotti sono già le
+# chiavi del Dictionary stesso (MacroCellState.tree_claimed_lots concettualmente, qui letto
+# indirettamente dalle chiavi di stick_quantities).
+func set_stick_quantities(quantities: Dictionary) -> void:
+	stick_quantities = quantities
+	_rebuild_stick_multimesh()
 	queue_redraw()
 
 
@@ -372,6 +439,21 @@ func get_individual_screen_position(object_type: GameTypes.WorldObjectType, indi
 			return _compute_shrub_visual(individual_key, _lot_extent_counts(GameTypes.WorldObjectType.SHRUB))["center"]
 		_:
 			return Vector2.ZERO
+
+
+# Posizione a schermo del centro visivo di UNA pietra in `pos` — stessa formula di jitter (2026-09-08,
+# richiesta utente, click su STONE) già usata da _rebuild_stone_multimeshes per posizionare il
+# blob: estratta qui in modo che StoneSelectorController possa confrontare il click con l'esatto
+# punto disegnato, invece di una tolleranza scollegata come già avviene per TREE/SHRUB via
+# get_individual_screen_position sopra. Nessun controllo che `pos` sia davvero in stone_positions —
+# stesso principio "il renderer sa solo disegnare" già dichiarato altrove, il chiamante (StoneSelectorController)
+# itera solo posizioni reali.
+func get_stone_screen_position(pos: Vector2i) -> Vector2:
+	var half: float = CELL_SIZE / 2.0
+	var offset_x: float = lerp(-0.8, 0.8, float(hash(pos * 5 + Vector2i(2, 9)) % 1000) / 1000.0)
+	var offset_y: float = lerp(-0.8, 0.8, float(hash(pos * 5 + Vector2i(9, 2)) % 1000) / 1000.0)
+	var base := Vector2(pos.x * CELL_SIZE, pos.y * CELL_SIZE)
+	return base + Vector2(half, half) + Vector2(offset_x, offset_y)
 
 
 # Dati per il pannello informativo (sottotipo/fascia età/anni vissuti) di un individuo VIVO già
@@ -570,6 +652,69 @@ func _draw_selected_building_highlight() -> void:
 	draw_arc(center, radius, 0, TAU, 24, SELECTION_HIGHLIGHT_COLOR, SELECTION_HIGHLIGHT_WIDTH)
 
 
+# Posizione STONE attualmente selezionata per l'ispezione (2026-09-08, richiesta utente) — stesso
+# principio di _selected_building_id sopra: Vector2i(-1,-1) = nessuna selezione (sentinel fuori
+# range, ogni posizione valida è 0..World.WIDTH/HEIGHT-1).
+var _selected_stone_position := Vector2i(-1, -1)
+
+
+func set_selected_stone(pos: Vector2i) -> void:
+	_selected_stone_position = pos
+	queue_redraw()
+
+
+func clear_selected_stone() -> void:
+	if _selected_stone_position == Vector2i(-1, -1):
+		return
+	_selected_stone_position = Vector2i(-1, -1)
+	queue_redraw()
+
+
+# Stesso colore/spessore/margine del contorno vegetazione/edifici (SELECTION_HIGHLIGHT_COLOR/WIDTH/
+# SELECTION_OUTLINE_PADDING_RATIO, già dichiarati sopra per _draw_selected_individual_highlight) —
+# coerenza visiva "questo è selezionato" in tutto il progetto. Raggio = quello massimo del blob
+# stone disegnato (STONE_RADIUS_MAX del lerp 6.5-7.5 in _build_stone_variant_mesh, qui hardcoded a
+# 7.5 per non dipendere da una costante locale a quella funzione), così il contorno racchiude
+# sempre l'intero masso indipendentemente da quale variante è toccata a questa posizione. Nessun
+# disegno se la posizione selezionata non è (più) tra le stone_positions di questa cella — stesso
+# principio difensivo di has_individual/get_building_screen_position sopra.
+func _draw_selected_stone_highlight() -> void:
+	if _selected_stone_position == Vector2i(-1, -1):
+		return
+	if not stone_positions.has(_selected_stone_position):
+		return
+	var center := get_stone_screen_position(_selected_stone_position)
+	var radius: float = 7.5 * SELECTION_OUTLINE_PADDING_RATIO
+	draw_arc(center, radius, 0, TAU, 24, SELECTION_HIGHLIGHT_COLOR, SELECTION_HIGHLIGHT_WIDTH)
+
+
+# Lotto (microcella) attualmente selezionato per l'ispezione "terreno" bastoni/legno (2026-09-08,
+# richiesta utente) — a differenza di _selected_stone_position (un oggetto puntiforme) qui è
+# selezionato l'intero lotto, quindi il contorno è un QUADRATO (il perimetro della microcella
+# stessa), non un cerchio attorno a un singolo oggetto — distingue visivamente "ho selezionato
+# questo tile" da "ho selezionato quell'oggetto preciso".
+var _selected_stick_lot := Vector2i(-1, -1)
+
+
+func set_selected_stick_lot(lot: Vector2i) -> void:
+	_selected_stick_lot = lot
+	queue_redraw()
+
+
+func clear_selected_stick_lot() -> void:
+	if _selected_stick_lot == Vector2i(-1, -1):
+		return
+	_selected_stick_lot = Vector2i(-1, -1)
+	queue_redraw()
+
+
+func _draw_selected_stick_lot_highlight() -> void:
+	if _selected_stick_lot == Vector2i(-1, -1):
+		return
+	var rect := Rect2(_selected_stick_lot.x * CELL_SIZE, _selected_stick_lot.y * CELL_SIZE, CELL_SIZE, CELL_SIZE)
+	draw_rect(rect, SELECTION_HIGHLIGHT_COLOR, false, SELECTION_HIGHLIGHT_WIDTH)
+
+
 func set_fish_positions(positions: Array) -> void:
 	fish_positions = positions
 	_rebuild_fish_multimeshes()
@@ -652,6 +797,10 @@ func _draw() -> void:
 		_draw_river(grid_size)
 
 	_draw_stone_positions()
+	_draw_pebble_positions()
+	_draw_selected_stone_highlight()
+	_draw_stick_positions()
+	_draw_selected_stick_lot_highlight()
 	_draw_vegetation_positions()
 	_draw_selected_individual_highlight()
 	_draw_fish_positions()
@@ -676,8 +825,12 @@ func _draw_buildings() -> void:
 		# "hut" per compatibilità con entry costruite prima che "building_type_name" esistesse
 		# (nessuna in pratica, buildings è ricostruito ad ogni attivazione cella, mai persistito qui
 		# — ma stesso principio difensivo già usato altrove nel progetto per Dictionary in evoluzione).
-		if entry.get("building_type_name", "hut") == "stone_circle":
+		var building_type_name: String = entry.get("building_type_name", "hut")
+		if building_type_name == "stone_circle":
 			_draw_stone_circle(ground)
+			continue
+		if building_type_name == "deposit_site":
+			_draw_deposit_site(ground)
 			continue
 		var direction: GameTypes.Direction = entry["rotation"]
 		_draw_building_fence(ground, direction)
@@ -778,6 +931,36 @@ func _building_hut_polygon(ground: Vector2, direction: GameTypes.Direction) -> P
 	return points
 
 
+# Chiazza di terra battuta attorno al centro della microcella — nessuna porta/rotazione da
+# rispettare (has_door=false per questo tipo), geometria fissa (stesso seed di
+# BuildingGhost._deposit_site_polygon). Stessa funzione (duplicata apposta, stesso principio già in
+# uso tra MicroCellRenderer/BuildingGhost) di BuildingGhost._draw_deposit_site.
+func _draw_deposit_site(ground: Vector2) -> void:
+	var blob := _deposit_site_polygon(ground)
+	draw_colored_polygon(blob, DEPOSIT_SITE_COLOR)
+	var outline := blob.duplicate()
+	outline.append(blob[0])
+	draw_polyline(outline, DEPOSIT_SITE_OUTLINE_COLOR, DEPOSIT_SITE_OUTLINE_WIDTH)
+
+
+# Poligono a DEPOSIT_SITE_VERTEX_COUNT lati (8, raggio in "norma del massimo" invece che
+# circolare — vedi il commento esteso su BuildingGhost._deposit_site_polygon per la derivazione)
+# attorno a `ground`, con jitter per-vertice così non legge come una piastrella geometrica. Stesso
+# principio di _stone_blob_polygon sopra, seed fisso (0): stessa sagoma per ogni Deposit Site
+# piazzato, stesso comportamento già accettato per la sagoma della capanna.
+func _deposit_site_polygon(ground: Vector2) -> PackedVector2Array:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 0
+	var points := PackedVector2Array()
+	for v in range(DEPOSIT_SITE_VERTEX_COUNT):
+		var base_angle: float = TAU * float(v) / float(DEPOSIT_SITE_VERTEX_COUNT)
+		var jittered_angle: float = base_angle + rng.randf_range(-0.05, 0.05)
+		var square_radius: float = DEPOSIT_SITE_HALF_SIDE / maxf(absf(cos(base_angle)), absf(sin(base_angle)))
+		var vertex_radius: float = square_radius * rng.randf_range(0.9, 1.08)
+		points.append(ground + Vector2(cos(jittered_angle), sin(jittered_angle)) * vertex_radius)
+	return points
+
+
 func _direction_vector(direction: GameTypes.Direction) -> Vector2:
 	match direction:
 		GameTypes.Direction.NORTH:
@@ -848,14 +1031,13 @@ func _rebuild_stone_multimeshes() -> void:
 	for i in range(STONE_VARIANT_COUNT):
 		buckets.append([]) # Array[Transform2D]
 
-	var half: float = CELL_SIZE / 2.0
 	for pos in stone_positions:
 		var variant: int = posmod(hash(pos), STONE_VARIANT_COUNT)
 
-		var offset_x: float = lerp(-0.8, 0.8, float(hash(pos * 5 + Vector2i(2, 9)) % 1000) / 1000.0)
-		var offset_y: float = lerp(-0.8, 0.8, float(hash(pos * 5 + Vector2i(9, 2)) % 1000) / 1000.0)
-		var base := Vector2(pos.x * CELL_SIZE, pos.y * CELL_SIZE)
-		var center := base + Vector2(half, half) + Vector2(offset_x, offset_y)
+		# Stesso identico centro-con-jitter di get_stone_screen_position (2026-09-08, estratta lì
+		# per essere riusata anche da StoneSelectorController) — mai due formule che potrebbero
+		# disallinearsi tra disegno e hit-test.
+		var center := get_stone_screen_position(pos)
 
 		# Rotazione + lieve variazione di scala per-istanza: disguisano la ripetizione tra le
 		# STONE_VARIANT_COUNT sagome condivise, oltre alla posizione già unica per pietra.
@@ -873,6 +1055,220 @@ func _rebuild_stone_multimeshes() -> void:
 		mm.instance_count = transforms.size()
 		for i in range(transforms.size()):
 			mm.set_instance_transform_2d(i, transforms[i])
+
+
+# Sassi/pebble (2026-09-08, richiesta utente) — puntini più piccoli sparsi ATTORNO a ciascuna
+# posizione stone (non sovrapposti al masso principale), il cui NUMERO dipende dalla quantità
+# pebble di quella posizione a 3 livelli: >PEBBLE_TIER_MANY_THRESHOLD "molti"
+# (PEBBLE_COUNT_MANY), tra PEBBLE_TIER_NORMAL_THRESHOLD e la soglia sopra "quantità normale"
+# (PEBBLE_COUNT_NORMAL), sotto "pochi" (PEBBLE_COUNT_FEW), 0 = nessun puntino disegnato. Stesso
+# principio MultiMesh-con-varianti-condivise di stone sopra (PEBBLE_VARIANT_COUNT sagome
+# pre-generate, mai una per puntino) — qui però un solo blob-base è comune anche a stone/pebble
+# concettualmente diversi solo per dimensione, quindi una seconda mesh più piccola invece di
+# riusare quella di stone.
+const PEBBLE_TIER_MANY_THRESHOLD: int = 100
+const PEBBLE_TIER_NORMAL_THRESHOLD: int = 50
+# Rivisti (2026-09-08, richiesta utente: "un po' più numerosi... un po' più piccoli") — conteggi
+# più alti, raggio ridotto (vedi PEBBLE_RADIUS_MIN/MAX sotto), stessi 3 scaglioni.
+const PEBBLE_COUNT_FEW: int = 4
+const PEBBLE_COUNT_NORMAL: int = 8
+const PEBBLE_COUNT_MANY: int = 14
+const PEBBLE_BLOB_VERTEX_COUNT: int = 7
+const PEBBLE_BLOB_VERTEX_JITTER: float = 0.2
+const PEBBLE_RADIUS_MIN: float = 0.6
+const PEBBLE_RADIUS_MAX: float = 1.0
+const PEBBLE_VARIANT_COUNT: int = 6
+# Anello (non un disco pieno da 0) verso il BORDO della microcella (2026-09-08, richiesta utente:
+# "verso il lato della microcella") — half-cell = CELL_SIZE/2 = 5, quindi 4.0-4.8 resta appena
+# dentro il bordo: i puntini si leggono come sparsi attorno al masso principale (che da solo ha
+# raggio 6.5-7.5, quindi sconfina già oltre la propria microcella) invece che ammassati/nascosti
+# sotto di esso al centro.
+const PEBBLE_SCATTER_MIN_RADIUS: float = 4.0
+const PEBBLE_SCATTER_MAX_RADIUS: float = 4.8
+
+
+# >0 = "pochi"/"quantità normale"/"molti" secondo le soglie sopra, 0 = quantity<=0 (nessun sasso
+# raccoglibile in quella posizione, nessun puntino da disegnare).
+func _pebble_tier_count(quantity: int) -> int:
+	if quantity <= 0:
+		return 0
+	if quantity > PEBBLE_TIER_MANY_THRESHOLD:
+		return PEBBLE_COUNT_MANY
+	if quantity >= PEBBLE_TIER_NORMAL_THRESHOLD:
+		return PEBBLE_COUNT_NORMAL
+	return PEBBLE_COUNT_FEW
+
+
+func _ensure_pebble_multimeshes() -> void:
+	if not _pebble_multimeshes.is_empty():
+		return
+
+	for variant in range(PEBBLE_VARIANT_COUNT):
+		_pebble_variant_meshes.append(_build_pebble_variant_mesh(variant))
+
+		var mm := MultiMesh.new()
+		mm.transform_format = MultiMesh.TRANSFORM_2D
+		mm.mesh = _pebble_variant_meshes[variant]
+		mm.instance_count = 0
+		_pebble_multimeshes.append(mm)
+
+
+# Stessa identica tecnica di _build_stone_variant_mesh (poligono a raggio irregolare, jitter
+# seminato per variante), solo raggio più piccolo (PEBBLE_RADIUS_MIN/MAX contro 6.5-7.5 di STONE)
+# e seed diverso (moltiplicatori diversi nell'hash) così le due sagome-base non risultano
+# identiche a parità di indice variante.
+func _build_pebble_variant_mesh(variant: int) -> ArrayMesh:
+	var radius_variation: float = float(hash(Vector2i(variant, 419)) % 1000) / 1000.0
+	var radius: float = lerp(PEBBLE_RADIUS_MIN, PEBBLE_RADIUS_MAX, radius_variation)
+
+	var points := PackedVector2Array()
+	for i in range(PEBBLE_BLOB_VERTEX_COUNT):
+		var angle: float = (float(i) / float(PEBBLE_BLOB_VERTEX_COUNT)) * TAU
+		var vertex_t: float = float(hash(Vector2i(variant, i) * 29 + Vector2i(i * 7 + 11, 5)) % 1000) / 1000.0
+		var vertex_jitter: float = lerp(-PEBBLE_BLOB_VERTEX_JITTER, PEBBLE_BLOB_VERTEX_JITTER, vertex_t)
+		var vertex_radius: float = radius * (1.0 + vertex_jitter)
+		points.append(Vector2(cos(angle), sin(angle)) * vertex_radius)
+
+	return _build_fan_mesh(points, COLOR_PEBBLE)
+
+
+# Ricalcola i buffer istanza dei pebble — chiamato da set_stone_positions/set_pebble_quantities
+# (2026-09-08). Per ogni posizione stone con tier>0, sparge `tier` puntini attorno al centro
+# (get_stone_screen_position, STESSO ancoraggio del masso principale) con angolo/distanza/
+# rotazione/scala deterministici per (posizione, indice puntino) — stabili tra un redraw e il
+# successivo, stesso principio hash-based già in uso per stone/vegetazione ovunque nel progetto.
+func _rebuild_pebble_multimeshes() -> void:
+	_ensure_pebble_multimeshes()
+
+	var buckets: Array = []
+	for i in range(PEBBLE_VARIANT_COUNT):
+		buckets.append([]) # Array[Transform2D]
+
+	for pos in stone_positions:
+		var quantity: int = int(pebble_quantities.get(pos, 0))
+		var tier_count := _pebble_tier_count(quantity)
+		if tier_count <= 0:
+			continue
+
+		var center := get_stone_screen_position(pos)
+		for i in range(tier_count):
+			# Tipo esplicito (Vector2i), non := — stone_positions è un Array non tipizzato (Variant
+			# per elemento, stesso motivo già commentato altrove nel file per questo campo), quindi
+			# l'inferenza su un'espressione aritmetica a partire da `pos` non può dedurre un tipo a
+			# compile-time pur essendo sempre un Vector2i a runtime.
+			var seed_base: Vector2i = pos * 23 + Vector2i(i * 7 + 1, i * 13 + 4)
+			var variant: int = posmod(hash(seed_base), PEBBLE_VARIANT_COUNT)
+
+			var angle: float = (float(hash(seed_base + Vector2i(3, 9)) % 1000) / 1000.0) * TAU
+			var dist: float = lerp(PEBBLE_SCATTER_MIN_RADIUS, PEBBLE_SCATTER_MAX_RADIUS, float(hash(seed_base + Vector2i(9, 3)) % 1000) / 1000.0)
+			var offset := Vector2(cos(angle), sin(angle)) * dist
+
+			var rotation: float = (float(hash(seed_base + Vector2i(5, 17)) % 1000) / 1000.0) * TAU
+			var scale_variation: float = lerp(0.85, 1.15, float(hash(seed_base + Vector2i(17, 5)) % 1000) / 1000.0)
+
+			var transform := Transform2D(rotation, Vector2.ZERO).scaled(Vector2(scale_variation, scale_variation))
+			transform.origin = center + offset
+
+			buckets[variant].append(transform)
+
+	for variant in range(PEBBLE_VARIANT_COUNT):
+		var transforms: Array = buckets[variant]
+		var mm: MultiMesh = _pebble_multimeshes[variant]
+		mm.instance_count = transforms.size()
+		for i in range(transforms.size()):
+			mm.set_instance_transform_2d(i, transforms[i])
+
+
+func _draw_pebble_positions() -> void:
+	for mm in _pebble_multimeshes:
+		if mm.instance_count <= 0:
+			continue
+		draw_multimesh(mm, null)
+		_debug_draw_primitive_count += 1
+
+
+# Bastoni/stick a terra (2026-09-08, richiesta utente) — 3 livelli di densità per lotto, stessa
+# idea dei pebble ma sulla quantità DISPONIBILE (capacity - harvested) invece che sulla quantità
+# grezza, così un lotto già raccolto smette di mostrare bastoni anche se capacity resta alta fino
+# al prossimo checkpoint. Nessuna variante multipla di mesh (a differenza di stone/pebble): un
+# bastone è solo un rettangolo sottile, rotazione + scala-lunghezza per-istanza bastano per la
+# varietà visiva, un'unica mesh condivisa è sufficiente.
+const STICK_TIER_MANY_THRESHOLD: int = 10
+const STICK_TIER_NORMAL_THRESHOLD: int = 5
+const STICK_COUNT_FEW: int = 2
+const STICK_COUNT_NORMAL: int = 4
+const STICK_COUNT_MANY: int = 6
+const COLOR_STICK := Color(0.42, 0.30, 0.16, 0.95)
+const STICK_HALF_LENGTH: float = 1.1
+const STICK_HALF_WIDTH: float = 0.16
+const STICK_LENGTH_VARIATION_MIN: float = 0.75
+const STICK_LENGTH_VARIATION_MAX: float = 1.3
+const STICK_SCATTER_RADIUS: float = 4.0
+
+
+func _stick_tier_count(available_quantity: int) -> int:
+	if available_quantity <= 0:
+		return 0
+	if available_quantity > STICK_TIER_MANY_THRESHOLD:
+		return STICK_COUNT_MANY
+	if available_quantity > STICK_TIER_NORMAL_THRESHOLD:
+		return STICK_COUNT_NORMAL
+	return STICK_COUNT_FEW
+
+
+func _ensure_stick_mesh() -> void:
+	if _stick_mesh != null:
+		return
+	var points := PackedVector2Array([
+		Vector2(-STICK_HALF_LENGTH, -STICK_HALF_WIDTH), Vector2(STICK_HALF_LENGTH, -STICK_HALF_WIDTH),
+		Vector2(STICK_HALF_LENGTH, STICK_HALF_WIDTH), Vector2(-STICK_HALF_LENGTH, STICK_HALF_WIDTH),
+	])
+	_stick_mesh = _build_fan_mesh(points, COLOR_STICK)
+	_stick_multimesh = MultiMesh.new()
+	_stick_multimesh.transform_format = MultiMesh.TRANSFORM_2D
+	_stick_multimesh.mesh = _stick_mesh
+	_stick_multimesh.instance_count = 0
+
+
+# Ricostruita da set_stick_quantities ogni volta che StickPoolService aggiorna il Dictionary
+# (macrocella ridisegnata) — mai qui in modo autonomo. Ogni lotto con quantità disponibile > 0
+# genera N bastoni (N = _stick_tier_count) sparpagliati con hash deterministico attorno al centro
+# del lotto, stesso principio dei pebble attorno alla stone (jitter stabile tra un redraw e
+# l'altro finché la quantità non cambia). Vector2i tipizzato esplicitamente (non :=) perché `lot`
+# proviene da un ciclo su Dictionary.keys() non tipizzato — stesso errore di inferenza già
+# incontrato con pebble_quantities.
+func _rebuild_stick_multimesh() -> void:
+	_ensure_stick_mesh()
+	var half: float = CELL_SIZE / 2.0
+	var transforms: Array = []
+	for lot in stick_quantities.keys():
+		var entry: Dictionary = stick_quantities[lot]
+		var available: int = int(entry.get("capacity", 0)) - int(entry.get("harvested", 0))
+		var count := _stick_tier_count(available)
+		if count <= 0:
+			continue
+		var lot_pos: Vector2i = lot
+		var ground: Vector2 = Vector2(lot_pos.x * CELL_SIZE + half, lot_pos.y * CELL_SIZE + half)
+		for i in range(count):
+			var seed_base: Vector2i = lot_pos * 31 + Vector2i(i * 9 + 2, i * 17 + 5)
+			var angle: float = (float(hash(seed_base + Vector2i(7, 3)) % 1000) / 1000.0) * TAU
+			var dist: float = STICK_SCATTER_RADIUS * (float(hash(seed_base + Vector2i(3, 7)) % 1000) / 1000.0)
+			var offset: Vector2 = Vector2(cos(angle), sin(angle)) * dist
+			var stick_rotation: float = (float(hash(seed_base + Vector2i(11, 13)) % 1000) / 1000.0) * TAU
+			var length_scale: float = lerp(STICK_LENGTH_VARIATION_MIN, STICK_LENGTH_VARIATION_MAX, float(hash(seed_base + Vector2i(13, 11)) % 1000) / 1000.0)
+			var stick_transform := Transform2D(stick_rotation, Vector2.ZERO).scaled(Vector2(length_scale, 1.0))
+			stick_transform.origin = ground + offset
+			transforms.append(stick_transform)
+	_stick_multimesh.instance_count = transforms.size()
+	for i in range(transforms.size()):
+		_stick_multimesh.set_instance_transform_2d(i, transforms[i])
+
+
+func _draw_stick_positions() -> void:
+	if _stick_multimesh == null or _stick_multimesh.instance_count <= 0:
+		return
+	draw_multimesh(_stick_multimesh, null)
+	_debug_draw_primitive_count += 1
 
 
 # Triangola a ventaglio (dal centro locale 0,0) un poligono convesso/quasi-convesso come quello

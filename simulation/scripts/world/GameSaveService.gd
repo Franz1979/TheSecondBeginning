@@ -41,6 +41,7 @@ func save_game_to_json(
 			"starting_resource_richness_preference": game_data.starting_resource_richness_preference,
 			"starting_group_size_preference": game_data.starting_group_size_preference,
 			"starting_guarantee_animal_presence": game_data.starting_guarantee_animal_presence,
+			"starting_guarantee_stone_presence": game_data.starting_guarantee_stone_presence,
 			"starting_difficulty_ratio": game_data.starting_difficulty_ratio,
 			# Sede macrocella del player per GameScene (vedi GameData) — deve sopravvivere a
 			# save/load, a differenza dei campi analoghi di GameSettings.
@@ -140,6 +141,15 @@ func save_game_to_json(
 			for pos in state.stone_positions:
 				stone_positions_data.append({"x": pos.x, "y": pos.y})
 			state_data["stone_positions"] = stone_positions_data
+			# PEBBLE (2026-09-08, richiesta utente) — nasce/vive insieme a stone_positions (stessa
+			# guardia one-shot in StonePositionService.generate_if_needed), persistito nella STESSA
+			# sezione: quando stone_positions_generated è true, pebble_quantities ha sempre
+			# esattamente una entry per ogni posizione in stone_positions. "q" = quantità sassi
+			# rimasti in quella posizione.
+			var pebble_quantities_data: Array = []
+			for pos in state.pebble_quantities.keys():
+				pebble_quantities_data.append({"x": pos.x, "y": pos.y, "q": state.pebble_quantities[pos]})
+			state_data["pebble_quantities"] = pebble_quantities_data
 		# Assente se vuoto (nessun meccanismo di taglio esiste ancora, sempre il caso oggi), stesso
 		# principio di stone_positions sopra — non appesantire il salvataggio per un campo mai
 		# popolato. Chiave Vector3i (x, y lotto + "i" indice individuo): "i" va salvato insieme a
@@ -199,6 +209,20 @@ func save_game_to_json(
 			for pos in state.shrub_claimed_lots.keys():
 				shrub_claimed_lots_data.append({"x": pos.x, "y": pos.y})
 			state_data["shrub_claimed_lots"] = shrub_claimed_lots_data
+			# Pool bastoni per lotto (2026-09-08, richiesta utente — vedi MacroCellState.
+			# stick_quantities/StickPoolService) — stesso trattamento di pebble_quantities: scrittura
+			# condizionale (assente se mai calcolato per questa macrocella), nessuna pulizia/GC attiva.
+			if not state.stick_quantities.is_empty():
+				var stick_quantities_data: Array = []
+				for pos in state.stick_quantities.keys():
+					var stick_entry: Dictionary = state.stick_quantities[pos]
+					stick_quantities_data.append({
+						"x": pos.x, "y": pos.y,
+						"checkpoint_day": int(stick_entry["checkpoint_day"]),
+						"capacity": int(stick_entry["capacity"]),
+						"harvested": int(stick_entry["harvested"]),
+					})
+				state_data["stick_quantities"] = stick_quantities_data
 		# Stesso formato/principio di vegetation_cut_exceptions sopra, ma per la mortalità naturale
 		# (vedi MacroCellState.vegetation_death_exceptions) — campo "death_year" invece di "cut_year".
 		if not state.vegetation_death_exceptions.is_empty():
@@ -278,9 +302,11 @@ func save_game_to_json(
 
 	# Edifici piazzati (vedi Building.gd/World.buildings) — stesso principio di population_groups
 	# sopra: rules stesso non è mai serializzato (dato statico di tipo), solo building_type_name
-	# per ricaricarlo via BuildingCalculator al load. stored_resources salvato per intero anche se
-	# oggi è sempre vuoto (nessun inventario ancora) — stesso trattamento "storia reale" già usato
-	# per i campi di PopulationGroup, pronto per quando smetterà di essere sempre {}.
+	# per ricaricarlo via BuildingCalculator al load. stored_resources (2026-09-09: ora resource_name
+	# -> {"quantity","decay_fraction"}, vedi Building.gd — GameLoadService._parse_stored_resources
+	# gestisce la retrocompatibilità col vecchio formato int diretto) salvato COSÌ COM'È, il
+	# Dictionary annidato passa senza trasformazioni: JSON rappresenta nativamente sia interi che
+	# Dictionary innestati, nessuna conversione necessaria qui a differenza del load.
 	for building in world.buildings:
 		data["world"]["buildings"].append({
 			"id": building.id,
@@ -294,6 +320,12 @@ func save_game_to_json(
 			"current_durability": building.current_durability,
 			"built_year": building.built_year,
 			"stored_resources": building.stored_resources,
+			# enabled_categories (2026-09-09, richiesta utente) — filtro categorie PER-ISTANZA (vedi
+			# Building.gd), Array[SecondaryResourceTypes.Category] serializzato come Array[int]
+			# grezzo (JSON non ha un concetto di array tipizzato Godot, gli enum sono int sotto il
+			# cofano) — vuoto per ogni edificio che il player non ha ancora ristretto, stesso
+			# trattamento "storia reale" già usato per stored_resources sopra.
+			"enabled_categories": building.enabled_categories,
 			"rotation": building.rotation
 		})
 
@@ -406,7 +438,37 @@ func save_game_to_json(
 				# Piano "trasporto neonati" (2026-09-06) — va persistito o un reload perderebbe il
 				# legame "sto trasportando questo figlio" (nessuna retrocompatibilità richiesta,
 				# stesso trattamento dei campi pending_child_* sopra).
-				"dependent_child_id": individual.dependent_child_id
+				"dependent_child_id": individual.dependent_child_id,
+				# Stamina (2026-09-08, richiesta utente) — PRIMA non persistita (max_stamina veniva
+				# comunque ricalcolato ogni giorno da HumanStaminaIndividualService, current_stamina
+				# non aveva ancora un consumatore reale): ora che Rest/Walk la fanno davvero
+				# variare, un reload che la azzerasse/reimpostasse al fallback perderebbe stato di
+				# gioco reale, stesso motivo di is_pregnant/dependent_child_id sopra.
+				"current_stamina": individual.current_stamina,
+				"max_stamina": individual.max_stamina,
+				# Capacità di trasporto (2026-09-08, richiesta utente) — carried_resource_name/
+				# carried_quantity sono l'unico stato "posseduto" da un individuo che sparirebbe
+				# silenziosamente al reload senza persistenza (stesso principio di dependent_child_id
+				# sopra: un possesso, non un dato ricalcolabile al volo). max_carry_capacity
+				# DELIBERATAMENTE non persistito: ricalcolato ogni giorno da
+				# HumanCarryCapacityIndividualService, stesso trattamento che max_stamina aveva PRIMA
+				# di questo passo.
+				"carried_resource_name": individual.carried_resource_name,
+				"carried_quantity": individual.carried_quantity,
+				# carried_decay_fraction (2026-09-09, richiesta utente, Step 3 decadimento) — stesso
+				# trattamento/stesso motivo di carried_quantity sopra: un possesso che sparirebbe
+				# silenziosamente al reload senza persistenza.
+				"carried_decay_fraction": individual.carried_decay_fraction,
+				# Task/Action in corso (2026-09-08, richiesta utente — "salva anche lo stato della
+				# sua action") — null se l'individuo non ha una Task attiva (Rest implicito, vedi
+				# HumanIndividualActionService.apply_action), altrimenti l'intera sequenza di step
+				# con progresso (vedi TaskPersistenceService.serialize_task): senza, un reload
+				# perderebbe qualunque comando Walk/Think/Deposit in corso, tornando tutti gli
+				# individui a Rest.
+				"current_task": (
+					TaskPersistenceService.serialize_task(individual.current_task)
+					if individual.current_task != null else null
+				)
 			})
 
 	var json_text := JSON.stringify(data, "\t")

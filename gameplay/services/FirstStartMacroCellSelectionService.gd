@@ -24,16 +24,20 @@ const TIER_MIN_CANDIDATES_FOR_FIXED_SIZE := TIER_SAMPLE_SIZE * 3
 # terrain_base resta PLAIN/HILL) NON viene esclusa, e' un candidato valido come qualunque
 # altra cella di terra.
 #
-# exclude_hostile_zones/exclude_predator_territories/guarantee_animal_presence (opzioni
-# "Escludi partenza in zone ostili"/"Escludi partenza vicino ai predatori"/"Presenza sicura
-# animali" di NewGameOptionsMenu, vedi GameSettings/DifficultyCalculator per i moltiplicatori di
-# difficolta' collegati): quando attivi, scartano ANCHE le celle "ostili" (vedi _is_hostile), e/o
-# quelle occupate dal territorio (TUTTE le celle, non solo il centro della BFS — vedi
-# _collect_predator_territory_cells) di un branco predatore gia' seminato, e/o quelle SENZA
-# presenza erbivora reale (population>0, non solo territorio — vedi
-# _collect_animal_present_cells), dai candidati primari. Con guarantee_animal_presence=false
-# nessun filtro viene applicato su questo asse: gli animali possono comunque esserci per puro
-# caso, semplicemente non e' garantito (confermato con l'utente). Se l'insieme dei filtri attivi
+# exclude_hostile_zones/exclude_predator_territories/guarantee_animal_presence/
+# guarantee_stone_presence (opzioni "Escludi partenza in zone ostili"/"Escludi partenza vicino ai
+# predatori"/"Presenza sicura animali"/"Presenza sicura roccia" di NewGameOptionsMenu, vedi
+# GameSettings/DifficultyCalculator per i moltiplicatori di difficolta' collegati): quando attivi,
+# scartano ANCHE le celle "ostili" (vedi _is_hostile), e/o quelle occupate dal territorio (TUTTE le
+# celle, non solo il centro della BFS — vedi _collect_predator_territory_cells) di un branco
+# predatore gia' seminato, e/o quelle SENZA presenza erbivora reale (population>0, non solo
+# territorio — vedi _collect_animal_present_cells), e/o quelle SENZA roccia gia' seminata
+# (MacroCellState.get_dedicated_space(ROCK) > 0 — vedi _collect_stone_present_cells; roccia e'
+# generata a livello di macrocella da InitialResourceSetupService/ParametricResourceSetupService
+# ben prima che questo servizio giri, quindi il dato e' gia' disponibile qui), dai candidati
+# primari. Con un filtro spento nessun vincolo viene applicato su quell'asse: quel dato puo'
+# comunque esserci per puro caso, semplicemente non e' garantito (confermato con l'utente per
+# guarantee_animal_presence, stesso principio qui). Se l'insieme dei filtri attivi
 # non lascia candidati, la cascata di fallback sotto ripiega direttamente su "qualunque cella di
 # terra" (ignora TUTTI i filtri insieme, non uno alla volta — semplificazione confermata con
 # l'utente: il caso e' comunque raro/limite), poi su una cella qualunque — confermato con
@@ -43,13 +47,17 @@ func select_starting_cell(
 	exclude_hostile_zones: bool = false,
 	exclude_predator_territories: bool = false,
 	resource_richness_preference: String = "NORMAL",
-	guarantee_animal_presence: bool = false
+	guarantee_animal_presence: bool = false,
+	guarantee_stone_presence: bool = false
 ) -> Vector2i:
 	var predator_cells := (
 		_collect_predator_territory_cells(world) if exclude_predator_territories else {}
 	)
 	var animal_present_cells := (
 		_collect_animal_present_cells(world) if guarantee_animal_presence else {}
+	)
+	var stone_present_cells := (
+		_collect_stone_present_cells(world) if guarantee_stone_presence else {}
 	)
 
 	var land_candidates: Array[Vector2i] = []
@@ -66,10 +74,14 @@ func select_starting_cell(
 			continue
 		if guarantee_animal_presence and not animal_present_cells.has(pos):
 			continue
+		if guarantee_stone_presence and not stone_present_cells.has(pos):
+			continue
 		filtered_candidates.append(pos)
 
 	var chosen: Vector2i
-	var any_filter_active := exclude_hostile_zones or exclude_predator_territories or guarantee_animal_presence
+	var any_filter_active := (
+		exclude_hostile_zones or exclude_predator_territories or guarantee_animal_presence or guarantee_stone_presence
+	)
 	var candidates := filtered_candidates if any_filter_active else land_candidates
 	if not candidates.is_empty():
 		chosen = _pick_cell_by_richness_tier(world, candidates, resource_richness_preference)
@@ -77,10 +89,11 @@ func select_starting_cell(
 			(
 				"FirstStartMacroCellSelectionService: cella di partenza scelta (%d, %d) — "
 				+ "exclude_hostile_zones=%s exclude_predator_territories=%s "
-				+ "resource_richness_preference=%s guarantee_animal_presence=%s"
+				+ "resource_richness_preference=%s guarantee_animal_presence=%s "
+				+ "guarantee_stone_presence=%s"
 			) % [
 				chosen.x, chosen.y, exclude_hostile_zones, exclude_predator_territories,
-				resource_richness_preference, guarantee_animal_presence
+				resource_richness_preference, guarantee_animal_presence, guarantee_stone_presence
 			]
 		)
 		return chosen
@@ -89,8 +102,8 @@ func select_starting_cell(
 		chosen = land_candidates[randi_range(0, land_candidates.size() - 1)]
 		push_warning(
 			"FirstStartMacroCellSelectionService: nessuna macrocella soddisfa i filtri attivi "
-			+ "(zone ostili/territori predatori/presenza animali), fallback su una cella di terra "
-			+ "qualunque: (%d, %d)" % [chosen.x, chosen.y]
+			+ "(zone ostili/territori predatori/presenza animali/presenza roccia), fallback su una "
+			+ "cella di terra qualunque: (%d, %d)" % [chosen.x, chosen.y]
 		)
 		return chosen
 
@@ -156,6 +169,28 @@ func _collect_animal_present_cells(world: World) -> Dictionary:
 		for coords in population_by_cell.keys():
 			if int(population_by_cell[coords]) > 0:
 				cells[coords] = true
+	return cells
+
+
+# Tutte le celle dove ROCK e' gia' stato seminato (2026-09-08, richiesta utente — "Presenza
+# sicura roccia": la roccia e' una risorsa preziosa e oggi non c'e' nessun modo di sapere se una
+# macrocella l'avra' prima di scoprirla). MacroCellState.get_dedicated_space(ROCK) > 0, non
+# resource_quantity: dedicated_space e' il valore scritto direttamente da InitialResourceSetupService.
+# populate_stone/ParametricResourceSetupService (vedi li') al momento della semina — resource_quantity
+# ne e' solo la conversione derivata via densita', stessa fonte di verita' gia' usata da
+# StonePositionService.generate_if_needed per contare quante posizioni generare. Nessuna posizione
+# puntuale coinvolta qui (StonePositionService non ha ancora girato per la maggior parte delle
+# macrocelle a questo punto, vedi la sua lazy-generation): un aggregato per macrocella basta,
+# stesso identico livello di granularita' di _collect_predator_territory_cells/
+# _collect_animal_present_cells sopra.
+func _collect_stone_present_cells(world: World) -> Dictionary:
+	var cells: Dictionary = {}
+	for cell in world.cells:
+		var state := world.get_cell_state_at(cell.x, cell.y)
+		if state == null:
+			continue
+		if state.get_dedicated_space(GameTypes.WorldObjectType.ROCK) > 0:
+			cells[Vector2i(cell.x, cell.y)] = true
 	return cells
 
 

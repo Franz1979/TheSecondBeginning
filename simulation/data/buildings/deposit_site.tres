@@ -1,0 +1,17 @@
+[gd_resource type="Resource" script_class="BuildingRules" format=3 uid="uid://c1wa0yp18ot2q"]
+
+[ext_resource type="Script" uid="uid://b8pl3yflicmtn" path="res://simulation/scripts/core/BuildingRules.gd" id="1_deposit_site"]
+
+[resource]
+script = ExtResource("1_deposit_site")
+building_name = "building_deposit_site"
+category = 2
+min_construction_days = 4
+required_labor = 100
+storage_slot_count = 9
+storage_space_per_slot = 100
+durability_multiplier_by_category = Array[float]([1.0, 1.1])
+max_durability = 60
+required_space = 1
+has_door = false
+visibility_radius = 1

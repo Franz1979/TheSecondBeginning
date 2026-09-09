@@ -1,37 +1,31 @@
-[gd_resource type="Resource" script_class="DifficultyRules" format=3]
+[gd_resource type="Resource" script_class="DifficultyRules" format=3 uid="uid://bdy4ljwb0m4hr"]
 
-[ext_resource type="Script" path="res://gameplay/scripts/core/DifficultyRules.gd" id="1_difficulty"]
+[ext_resource type="Script" uid="uid://dqs6rhgfrc5ft" path="res://gameplay/scripts/core/DifficultyRules.gd" id="1_difficulty"]
 
 [resource]
 script = ExtResource("1_difficulty")
 world_age_multiplier = {
-"YOUNG": 1.0,
 "ADULT": 0.9,
-"OLD": 0.8
+"OLD": 0.8,
+"YOUNG": 1.0
 }
 animal_density_multiplier = {
 "FEW": 1.0,
-"MEDIUM": 0.85,
-"MANY": 0.7
+"MANY": 0.7,
+"MEDIUM": 0.85
 }
 population_size_multiplier = {
-"SPARSE": 1.0,
+"DENSE": 0.9,
 "NORMAL": 0.95,
-"DENSE": 0.9
+"SPARSE": 1.0
 }
-hostile_start_excluded_multiplier = 0.9
-hostile_start_included_multiplier = 1.0
-predator_territory_excluded_multiplier = 0.9
-predator_territory_included_multiplier = 1.0
 resource_richness_multiplier = {
-"RICH": 0.7,
 "NORMAL": 0.85,
-"POOR": 1.0
+"POOR": 1.0,
+"RICH": 0.7
 }
 group_size_multiplier = {
 "COUPLE": 1.0,
 "FAMILY": 0.9,
 "GROUP": 0.6
 }
-animal_presence_guaranteed_multiplier = 0.8
-animal_presence_not_guaranteed_multiplier = 1.0

@@ -33,7 +33,8 @@ const OPEN_BUILD_MENU_ACTION := &"open_build_menu"
 # disallinearsi silenziosamente da configure_slot(...) in _ready() se uno slot si spostasse.
 const BUILDING_SLOT_INDEX_BY_TYPE := {
 	"stone_circle": 0,
-	"hut": 1,
+	"deposit_site": 1,
+	"hut": 2,
 }
 
 enum _ViewState { MINIMIZED, LEVEL_1, LEVEL_2 }
@@ -58,10 +59,24 @@ func _ready() -> void:
 	# di default come ogni slot configurato, GameScene lo disabilita chiamando
 	# set_building_buildable(...) quando rileva che un Building con rules.is_village_center esiste
 	# già, o che manca l'Idea richiesta (vedi quel metodo sotto).
+	# Icona letta da IconRegistry.get_building_icon_node (2026-09-09, richiesta utente — stessa
+	# migrazione già fatta per pebble/stick: "quel commento [stone_circle assente apposta] è
+	# obsoleto... farei come facciamo sia per sticks icon che per pebble icon, che passano
+	# nell'icon registry") — non più StoneCircleIcon.new() istanziata direttamente qui.
 	submenu_row.configure_slot(
-		0, "", tr("build_bar_stone_circle_tooltip"), &"build_stone_circle", "", true, StoneCircleIcon.new()
+		0, "", tr("build_bar_stone_circle_tooltip"), &"build_stone_circle", "", true,
+		IconRegistry.get_building_icon_node("stone_circle")
 	)
-	submenu_row.configure_slot(1, "🛖", tr("build_bar_hut_tooltip"), &"build_hut")
+	# Deposit Site, appena a destra dello Stone Circle (2026-09-08, richiesta utente) — sempre
+	# abilitato di default come ogni slot configurato (nessun vincolo is_village_center/
+	# required_idea_id in deposit_site.tres), _refresh_building_slots_buildable lo conferma sempre
+	# disponibile senza bisogno di un caso speciale qui.
+	# Icone lette da IconRegistry (2026-09-09, richiesta utente — prima "🟫"/"🛖" inline qui, uniche
+	# fonti di verità: nessun altro punto del progetto poteva riusare la stessa icona capanna senza
+	# riscriverla a mano) — chiavi = building_type_name, stessa convenzione di
+	# BUILDING_SLOT_INDEX_BY_TYPE sopra.
+	submenu_row.configure_slot(1, IconRegistry.get_building_icon("deposit_site"), tr("build_bar_deposit_site_tooltip"), &"build_deposit_site")
+	submenu_row.configure_slot(2, IconRegistry.get_building_icon("hut"), tr("build_bar_hut_tooltip"), &"build_hut")
 	main_row.action_pressed.connect(_on_main_row_action_pressed)
 	control_button.pressed.connect(_on_control_button_pressed)
 	_apply_state()

@@ -135,6 +135,29 @@ vertical_alignment = 1
 [node name="AnimalPresenceCheckButton" type="CheckButton" parent="RootColumn/MainRow/ScrollContainer/VBoxContainer/AnimalPresencePanel/MarginContainer/HBoxContainer"]
 layout_mode = 2
 
+[node name="StonePresencePanel" type="PanelContainer" parent="RootColumn/MainRow/ScrollContainer/VBoxContainer"]
+layout_mode = 2
+
+[node name="MarginContainer" type="MarginContainer" parent="RootColumn/MainRow/ScrollContainer/VBoxContainer/StonePresencePanel"]
+layout_mode = 2
+theme_override_constants/margin_left = 8
+theme_override_constants/margin_top = 6
+theme_override_constants/margin_right = 8
+theme_override_constants/margin_bottom = 6
+
+[node name="HBoxContainer" type="HBoxContainer" parent="RootColumn/MainRow/ScrollContainer/VBoxContainer/StonePresencePanel/MarginContainer"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="StonePresenceLabel" type="Label" parent="RootColumn/MainRow/ScrollContainer/VBoxContainer/StonePresencePanel/MarginContainer/HBoxContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_font_sizes/font_size = 13
+vertical_alignment = 1
+
+[node name="StonePresenceCheckButton" type="CheckButton" parent="RootColumn/MainRow/ScrollContainer/VBoxContainer/StonePresencePanel/MarginContainer/HBoxContainer"]
+layout_mode = 2
+
 [node name="ResourceRichnessPanel" type="PanelContainer" parent="RootColumn/MainRow/ScrollContainer/VBoxContainer"]
 layout_mode = 2
 
