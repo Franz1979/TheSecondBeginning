@@ -28,6 +28,17 @@ extends RefCounted
 # building.is_complete NON filtrato qui (fuori dallo scope letterale della richiesta) — un edificio
 # ancora in costruzione che risultasse comunque idoneo per errore è un caso preesistente/non
 # introdotto da questo service, non affrontato qui.
+#
+# REFACTOR (2026-09-10, richiesta utente — generalizzazione a SpatialSelectionService): questa
+# funzione non contiene più l'algoritmo "candidato più vicino ammissibile" — estratto in
+# SpatialSelectionService.find_nearest (generico, non conosce Building) perché lo stesso identico
+# algoritmo serve anche per futuri candidati non-Building (es. aree di lavoro). Questo service resta
+# come thin wrapper: costruisce il predicate "capacità residua sufficiente" (l'unica logica
+# specifica-magazzino rimasta) e delega la ricerca. Comportamento invariato: stesso ordine di filtri
+# (esclusi prima del predicate), stesso criterio di tie-break (primo trovato a parità di distanza),
+# stessa formula di distanza — tutto spostato in SpatialSelectionService senza modifiche. Firma e
+# comportamento visibile di find_best invariati: nessun call site (HumanIndividualActionService.
+# _handle_pending_warehouse_search) tocca.
 static func find_best(
 	world: World,
 	origin_position: Vector2,
@@ -39,24 +50,9 @@ static func find_best(
 	if world == null or quantity_needed <= 0:
 		return null
 
-	var best: Building = null
-	var best_distance_squared := INF
-	for building in world.buildings:
-		if excluded_building_ids.has(building.id):
-			continue
-		if BuildingStorageService.get_max_depositable(building, resource_name) < quantity_needed:
-			continue
-		var building_position := _building_position_relative_to(building, origin_macro_coords)
-		var distance_squared := origin_position.distance_squared_to(building_position)
-		if distance_squared < best_distance_squared:
-			best_distance_squared = distance_squared
-			best = building
+	var predicate := func(building: Building) -> bool:
+		return BuildingStorageService.get_max_depositable(building, resource_name) >= quantity_needed
 
-	return best
-
-
-# Stessa formula di conversione cross-macrocella già in uso in GameScene (vedi commento sopra),
-# ripetuta qui perché nessun helper condiviso la espone oggi — non un calcolo nuovo/diverso.
-static func _building_position_relative_to(building: Building, origin_macro_coords: Vector2i) -> Vector2:
-	var macro_offset: Vector2 = Vector2(Vector2i(building.macro_x, building.macro_y) - origin_macro_coords) * World.WIDTH
-	return Vector2(building.micro_x, building.micro_y) + macro_offset
+	return SpatialSelectionService.find_nearest(
+		world.buildings, origin_position, origin_macro_coords, predicate, excluded_building_ids
+	) as Building
