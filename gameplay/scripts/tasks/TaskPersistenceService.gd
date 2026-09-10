@@ -41,9 +41,14 @@ extends RefCounted
 # per riferimento (JSON non trasporta oggetti vivi), quindi get_save_data() salva solo
 # `target_building_id` (vedi unload_action.gd) e qui lo si risolve contro World.buildings, che
 # GameLoadService ha già in scope. null è un valore legittimo (building_id non più esistente, es.
-# distrutto nel frattempo — non dovrebbe succedere in pratica ma resta una guardia difensiva):
-# UnloadAction con target_building null si comporta come il ramo pensiero, mai un crash qui — un
+# distrutto nel frattempo — non dovrebbe succedere in pratica ma resta una guardia difensiva) — un
 # building_id salvato ma non risolvibile è un caso limite accettato, non un errore da segnalare.
+# DEVIAZIONE (2026-09-10, richiesta utente — scollegare il ramo di UnloadAction dalla nullità di
+# target_building): un target_building_id non risolvibile NON implica più automaticamente il ramo
+# pensiero come prima di questo passo — il ramo è deciso da `deposit_kind` (salvato/ricostruito a
+# parte, vedi _build_step sotto), un target_building_id sopravvissuto ma non risolvibile con
+# deposit_kind RESOURCE lascia semplicemente target_building null nel ramo fisico (guardia difensiva
+# in UnloadAction.on_complete, mai un crash — vedi lì).
 
 
 static func serialize_task(task: Task) -> Dictionary:
@@ -139,7 +144,14 @@ static func _build_step(action_type: int, step_data: Dictionary, macro_state: Ma
 			var target_building: Building = null
 			if step_data.has("target_building_id"):
 				target_building = _find_building_by_id(world, int(step_data["target_building_id"]))
-			step = UnloadAction.new(target_building)
+			# deposit_kind letto qui PRIMA della costruzione, stesso trattamento di
+			# target_building_id sopra (2026-09-10, richiesta utente — scollegare il ramo di
+			# UnloadAction dalla nullità di target_building: il discriminatore va ora persistito e
+			# ricostruito esplicitamente, non più deducibile dalla presenza di target_building_id —
+			# vedi UnloadAction.get_save_data). Default THOUGHT per compatibilità con save più vecchi
+			# salvati prima di questo campo.
+			var deposit_kind: UnloadAction.DepositKind = int(step_data.get("deposit_kind", UnloadAction.DepositKind.THOUGHT))
+			step = UnloadAction.new(target_building, deposit_kind)
 		TaskTypes.ActionType.PICKUP:
 			var pickup_target := Vector2i(
 				int(step_data.get("target_position_x", 0)), int(step_data.get("target_position_y", 0))
