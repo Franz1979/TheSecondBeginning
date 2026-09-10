@@ -76,6 +76,7 @@ func apply_action(individual: HumanIndividual, delta: float, world: World = null
 		# NON riuscito/ricerca iniziale, pending_walk_away_position solo un deposito RIUSCITO — mai
 		# entrambe nello stesso passaggio, vedi unload_action.gd).
 		_handle_pending_warehouse_search(individual, task, world)
+		_handle_pending_thought_target_search(individual, task, world)
 		_handle_pending_walk_away(task)
 		task.advance_to_next_step()
 		if task.is_finished():
@@ -169,6 +170,66 @@ func _handle_pending_warehouse_search(individual: HumanIndividual, task: Task, w
 		print("[WAREHOUSE SEARCH] nessun magazzino trovato per resource_name='%s' quantity=%d — l'individuo resta con la merce in spalla (nessun edificio da abbandonare in questo caso)." % [
 			resource_name, quantity
 		])
+
+
+# Consuma task.context["pending_thought_target_search"] (2026-09-10, richiesta utente — handler di
+# ricerca per i pensieri, PARALLELO a _handle_pending_warehouse_search sopra ma per il ramo PENSIERO
+# di UnloadAction: stesso canale generico/stesso momento di consumo — DOPO on_complete(), PRIMA di
+# advance_to_next_step(), vedi apply_action) — usa ThoughtTargetSelectionService invece di
+# WarehouseSelectionService come unica differenza di dominio. No-op immediato se la chiave non è
+# presente, stesso motivo/stessa economicità di _handle_pending_warehouse_search: questa funzione è
+# chiamata ad OGNI step completato di OGNI Task.
+#
+# Struttura del Dictionary DELIBERATAMENTE più piccola di pending_warehouse_search — SOLO
+# excluded_building_ids (nessun resource_name/quantity, che non hanno senso per un pensiero: nessuna
+# categoria/capacità residua da verificare, vedi ThoughtTargetSelectionService.find_best) e nessun
+# discard_on_failure: quel campo esiste sull'altro canale per distinguere re-routing (perdita
+# TEMPORANEA della merce) da ricerca iniziale (nessuna perdita) — qui non esiste ancora uno scenario
+# di re-routing (nessun chiamante reale scrive ancora questa chiave, vedi nota in testa al file), e
+# comunque non c'è alcun side-effect distruttivo equivalente a carried_* da poter scartare: un
+# pensiero non depositato semplicemente resta pending sull'individuo (vedi ramo "nessun candidato"
+# sotto), stesso trattamento "nessuna perdita" già riservato alla ricerca INIZIALE del magazzino.
+# `excluded_building_ids` viene comunque letto/passato per permettere a un futuro chiamante di
+# escludere edifici già provati (es. un secondo tentativo dopo un fallimento), stesso principio
+# dell'omonimo campo sull'altro canale — semplicemente non c'è ancora nessuno che lo faccia crescere.
+func _handle_pending_thought_target_search(individual: HumanIndividual, task: Task, world: World) -> void:
+	if not task.context.has("pending_thought_target_search"):
+		return
+	var search: Dictionary = task.context["pending_thought_target_search"]
+	task.context.erase("pending_thought_target_search")
+
+	# Costruita manualmente (int(id) per elemento), non Array[int](search.get(...)) — stesso motivo
+	# di _handle_pending_warehouse_search sopra: gestisce anche un context deserializzato da JSON
+	# (numeri sempre float, mai int).
+	var excluded_building_ids: Array[int] = []
+	for raw_id in search.get("excluded_building_ids", []):
+		excluded_building_ids.append(int(raw_id))
+
+	var candidate := ThoughtTargetSelectionService.find_best(
+		world, individual.position, individual.home_macro_coords, excluded_building_ids
+	)
+	if candidate != null:
+		var macro_offset: Vector2 = Vector2(Vector2i(candidate.macro_x, candidate.macro_y) - individual.home_macro_coords) * World.WIDTH
+		var candidate_position: Vector2 = Vector2(candidate.micro_x, candidate.micro_y) + macro_offset
+		# DepositKind.THOUGHT passato esplicitamente (stesso principio di DepositKind.RESOURCE in
+		# _handle_pending_warehouse_search sopra) — `candidate` qui è sempre un Building risolto
+		# (vedi guardia `if candidate != null`), coerente con target_building ora indipendente da
+		# deposit_kind (vedi nota in testa a unload_action.gd).
+		var new_steps: Array[Action] = [WalkAction.new(candidate_position), UnloadAction.new(candidate, UnloadAction.DepositKind.THOUGHT)]
+		task.append_steps(new_steps)
+		if DebugLogging.ENABLED:
+			print("[THOUGHT TARGET SEARCH] edificio trovato: id=%d — Walk+Unload(THOUGHT) accodati alla Task corrente (esclusi finora: %s)." % [
+				candidate.id, str(excluded_building_ids)
+			])
+		return
+
+	# Nessun edificio con accepts_thoughts trovato — nessun side-effect equivalente a carried_* da
+	# ripulire (vedi nota in testa alla funzione): il pensiero resta semplicemente pending
+	# sull'individuo (individual.pending_thought, se già true, non viene toccato qui), la Task
+	# prosegue/termina senza aver depositato. Nessuna perdita, non un fallimento distruttivo —
+	# stesso trattamento "nessun candidato" già riservato alla ricerca INIZIALE del magazzino sopra.
+	if DebugLogging.ENABLED:
+		print("[THOUGHT TARGET SEARCH] nessun edificio con accepts_thoughts trovato — nessun deposito, la Task prosegue/termina senza aver depositato il pensiero.")
 
 
 # Consuma task.context["pending_walk_away_position"] scritto da UnloadAction.on_complete() (vedi lì)
