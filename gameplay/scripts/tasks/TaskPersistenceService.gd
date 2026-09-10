@@ -83,15 +83,42 @@ static func serialize_task(task: Task) -> Dictionary:
 # `macro_state`/`world` — vedi i commenti in testa al file: propagati a _build_step, `macro_state`
 # consultato per il solo caso PICKUP e `world` per il solo caso UNLOAD, ignorati per ogni altro
 # action_type.
+#
+# BUGFIX (2026-09-10, richiesta utente — una Task salvata a metà del PRIMO step si "ferma"
+# silenziosamente quando raggiunge il secondo, es. Walk→PickUp salvata durante il Walk): PRIMA di
+# questo passo, load_save_data() veniva chiamato incondizionatamente su OGNI step ricostruito
+# (dentro _build_step, vedi lì), inclusi gli step con indice DIVERSO da current_step_index — sia
+# quelli già completati (innocuo, mai più riattivati) sia, soprattutto, quelli FUTURI mai ancora
+# attivati nella sessione originale. Per Action con un guard `_restored_from_save` (PickUpAction/
+# UnloadAction: activate() ricalcola quantità/durata dinamicamente e salta il ricalcolo se "già
+# ripristinato da un save"), questo marcava incorrettamente uno step mai eseguito come "già in
+# corso con progresso reale a zero" — quando la Task lo raggiungeva naturalmente più tardi, il suo
+# PRIMO vero activate() veniva silenziosamente saltato, lasciandolo bloccato a durata/quantità zero
+# (si "completa" istantaneamente senza fare nulla). Ora load_save_data() è chiamato SOLO per lo
+# step all'indice current_step_index (l'unico per cui può esistere un progresso reale da
+# preservare) — gli step precedenti e successivi restano nel loro stato di default appena
+# costruito (_restored_from_save resta false su PickUpAction/UnloadAction), così il loro primo vero
+# activate() — quando/se la Task li raggiunge — calcola tutto da zero come dovrebbe. Nessuna
+# modifica a PickUpAction/UnloadAction/_build_step: il fix è interamente qui.
 static func deserialize_task(data: Dictionary, macro_state: MacroCellState, world: World) -> Task:
 	var steps: Array[Action] = []
 	var step_descriptions: Array[String] = []
 	var step_stamina_cost: Array[float] = []
 	var step_days_elapsed: Array[float] = []
-	for step_data in data.get("steps", []):
+	var current_step_index := int(data.get("current_step_index", 0))
+	var raw_steps_data: Array = data.get("steps", [])
+	for i in range(raw_steps_data.size()):
+		var step_data: Dictionary = raw_steps_data[i]
 		var step := _build_step(int(step_data.get("action_type", -1)), step_data, macro_state, world)
 		if step == null:
 			continue
+		# Solo lo step CORRENTE riceve load_save_data() — vedi BUGFIX sopra. `i` è l'indice
+		# nell'array grezzo salvato (data["steps"]), che coincide con l'indice in task.steps al
+		# momento del salvataggio (serialize_task itera task.steps con lo stesso indice) — lo skip
+		# di uno step null qui sotto non altera questa corrispondenza, dato che action_type
+		# sconosciuto/-1 non è un caso reale (push_error in _build_step, non un ramo normale).
+		if i == current_step_index:
+			step.load_save_data(step_data)
 		steps.append(step)
 		step_descriptions.append(String(step_data.get("step_description", "")))
 		step_stamina_cost.append(float(step_data.get("stamina_cost", 0.0)))
@@ -99,7 +126,7 @@ static func deserialize_task(data: Dictionary, macro_state: MacroCellState, worl
 
 	var task := Task.new(steps)
 	task.task_name = String(data.get("task_name", ""))
-	task.current_step_index = int(data.get("current_step_index", 0))
+	task.current_step_index = current_step_index
 	task.context = data.get("context", {})
 	task.step_descriptions = step_descriptions
 	task.step_stamina_cost = step_stamina_cost
@@ -128,9 +155,14 @@ static func _action_type_for_step(step: Action) -> int:
 
 
 # enum->class, stesso principio di TaskFactory.build_task ma senza context_key (qui il target
-# arriva già risolto dentro step_data, non da un Dictionary di contesto esterno). load_save_data
-# chiamato SEMPRE (no-op per le sottoclassi che non lo sovrascrivono, vedi Action.gd) — più
-# semplice che un ramo dedicato solo per THINK/PICKUP.
+# arriva già risolto dentro step_data, non da un Dictionary di contesto esterno). load_save_data()
+# NON è più chiamato qui (2026-09-10, BUGFIX — vedi il commento su deserialize_task, l'unico
+# chiamante): questa funzione ora si limita a COSTRUIRE lo step con i dati che servono al
+# costruttore (target_position/macro_state/resource_name per PICKUP, target_building/deposit_kind
+# per UNLOAD, ecc. — questi restano risolti QUI, invariato, perché servono comunque a costruire uno
+# step "identico" indipendentemente dal suo indice), mentre load_save_data() — che ripristina
+# SOLO il progresso runtime (_elapsed/_duration/...) — è ora responsabilità del chiamante,
+# condizionata all'indice dello step.
 static func _build_step(action_type: int, step_data: Dictionary, macro_state: MacroCellState, world: World) -> Action:
 	var step: Action = null
 	match action_type:
@@ -160,7 +192,6 @@ static func _build_step(action_type: int, step_data: Dictionary, macro_state: Ma
 		_:
 			push_error("TaskPersistenceService._build_step: action_type %d non supportato." % action_type)
 			return null
-	step.load_save_data(step_data)
 	return step
 
 
