@@ -133,7 +133,11 @@ func _handle_pending_warehouse_search(individual: HumanIndividual, task: Task, w
 	if candidate != null:
 		var macro_offset: Vector2 = Vector2(Vector2i(candidate.macro_x, candidate.macro_y) - individual.home_macro_coords) * World.WIDTH
 		var candidate_position: Vector2 = Vector2(candidate.micro_x, candidate.micro_y) + macro_offset
-		var new_steps: Array[Action] = [WalkAction.new(candidate_position), UnloadAction.new(candidate)]
+		# DepositKind.RESOURCE passato esplicitamente (2026-09-10, richiesta utente — scollegare il
+		# ramo di UnloadAction dalla nullità di target_building): `candidate` qui è sempre un Building
+		# risolto (vedi guardia `if candidate != null` sopra), stesso comportamento di ramo fisico di
+		# prima di questo passo, ora reso esplicito invece che dedotto dalla non-nullità dell'argomento.
+		var new_steps: Array[Action] = [WalkAction.new(candidate_position), UnloadAction.new(candidate, UnloadAction.DepositKind.RESOURCE)]
 		task.append_steps(new_steps)
 		if DebugLogging.ENABLED:
 			print("[WAREHOUSE SEARCH] magazzino trovato: id=%d — Walk+Unload accodati alla Task corrente (esclusi finora: %s)." % [

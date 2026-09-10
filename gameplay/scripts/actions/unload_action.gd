@@ -3,13 +3,25 @@ extends Action
 
 # Rinominata da DepositAction (2026-09-09, richiesta utente, BuildingStorageService Step 1) — il
 # nome generico "Deposit" era ambiguo col deposito FISICO in un edificio, che oggi diventa reale:
-# "Unload" resta l'azione GENERICA di scarico, con due rami distinti secondo `target_building`
-# (vedi _init/on_complete sotto), non più solo un TODO per il ramo fisico. Nessun altro cambio di
-# comportamento per il ramo pensiero (Folk.thoughts_invested via IdeaProgressService) rispetto a
-# prima del rename. Nessun target di posizione (stesso pattern di RestAction/ThinkAction — vedi
-# _init sotto): il posizionamento (davanti al Folk per il pensiero, o davanti all'edificio per il
-# ramo fisico) è già garantito dal WalkAction precedente nella stessa Task, questa classe non
+# "Unload" resta l'azione GENERICA di scarico, con due rami distinti secondo `deposit_kind` (vedi
+# enum DepositKind/_init/on_complete sotto), non più solo un TODO per il ramo fisico. Nessun altro
+# cambio di comportamento per il ramo pensiero (Folk.thoughts_invested via IdeaProgressService)
+# rispetto a prima del rename. Nessun target di posizione (stesso pattern di RestAction/ThinkAction
+# — vedi _init sotto): il posizionamento (davanti al Folk per il pensiero, o davanti all'edificio
+# per il ramo fisico) è già garantito dal WalkAction precedente nella stessa Task, questa classe non
 # verifica/richiede nulla sulla posizione.
+#
+# DISCRIMINATORE ESPLICITO deposit_kind, non più la nullità di target_building (2026-09-10,
+# richiesta utente — scollegare la scelta di ramo da target_building, in vista di una futura
+# ricerca con predicate "accepts_thoughts" che potrebbe risolvere un Building anche per il ramo
+# PENSIERO). PRIMA di questo passo il discriminatore era implicito: target_building != null →
+# fisico, target_building == null → pensiero — questo impediva di passare un Building risolto
+# dinamicamente al ramo pensiero, perché sarebbe caduto per errore nel ramo fisico. Ora
+# target_building è un parametro indipendente (può essere valorizzato o meno indipendentemente dal
+# tipo di deposito, vedi DepositKind sotto) — comportamento di haul_resource INVARIATO: ogni call
+# site che oggi passa un building lo accoppia esplicitamente a DepositKind.RESOURCE, ogni call site
+# che oggi non passa nulla usa DepositKind.THOUGHT (anche il default del parametro, per coerenza col
+# comportamento implicito di prima per qualunque chiamante non ancora aggiornato).
 #
 # NON PIÙ sempre istantanea (2026-09-10, richiesta utente — "lo metterei come unload, sia come
 # costo che come tempo") — il ramo FISICO ora ha un vero costo/durata, STESSO schema a
@@ -41,12 +53,30 @@ signal idea_completed(idea_id: String)
 # Emesso SOLO dal ramo pensiero, stesso motivo di idea_completed sopra.
 signal thought_deposited()
 
-# Bersaglio del ramo FISICO (2026-09-09) — null (default) = ramo pensiero, comportamento invariato
-# rispetto a prima del rename; valorizzato = ramo fisico (deposita individual.carried_resource_
-# name/carried_quantity in questo Building via BuildingStorageService, vedi on_complete sotto).
-# Iniettato dal costruttore, mai risolto da questa classe (nessuna ricerca automatica di edificio,
-# nessun fallback multi-edificio — chi costruisce la Task decide già QUALE edificio, oggi solo un
-# debug hook o un futuro click, stesso principio già seguito da PickUpAction.macro_state).
+# Discriminatore ESPLICITO di ramo (2026-09-10, vedi nota in testa al file) — RESOURCE = ramo
+# FISICO (deposita individual.carried_resource_name/carried_quantity in target_building via
+# BuildingStorageService), THOUGHT = ramo PENSIERO (IdeaProgressService.add_thoughts). Sostituisce
+# la deduzione implicita da `target_building != null` usata prima di questo passo — activate()/
+# on_complete() sotto controllano SEMPRE questo campo, mai più la nullità di target_building.
+enum DepositKind { RESOURCE, THOUGHT }
+
+# THOUGHT di default (2026-09-10) — stesso comportamento implicito di prima di questo passo per
+# qualunque chiamante che costruisca UnloadAction senza specificare nulla (equivalente al vecchio
+# "target_building resta null di default = ramo pensiero"); ogni call site reale in questo progetto
+# lo passa comunque esplicitamente (vedi call site aggiornati), il default è solo una rete di
+# sicurezza coerente col comportamento pre-refactor.
+var deposit_kind: DepositKind = DepositKind.THOUGHT
+
+# Bersaglio opzionale, indipendente da deposit_kind (2026-09-10, DEVIAZIONE dal comportamento
+# pre-refactor: PRIMA la nullità di questo campo era essa stessa il discriminatore di ramo, vedi
+# deposit_kind sopra) — oggi usato attivamente SOLO dal ramo FISICO (deposita individual.carried_
+# resource_name/carried_quantity in questo Building via BuildingStorageService, vedi on_complete
+# sotto); un ramo PENSIERO con target_building valorizzato è ora strutturalmente possibile (es. un
+# futuro Building trovato con predicate "accepts_thoughts") ma questa classe non lo consuma ancora
+# per quel ramo — arriverà con un handler successivo, fuori scope qui. Iniettato dal costruttore,
+# mai risolto da questa classe (nessuna ricerca automatica di edificio, nessun fallback
+# multi-edificio — chi costruisce la Task decide già QUALE edificio, oggi solo un debug hook o un
+# click, stesso principio già seguito da PickUpAction.macro_state).
 var target_building: Building = null
 
 # Esito della riverifica spazio fatta in activate() sotto (2026-09-09, richiesta utente —
@@ -74,7 +104,7 @@ const WALK_AWAY_DISTANCE: float = 5.0
 # Costo/durata del deposito FISICO (2026-09-10, richiesta utente — "lo metterei come unload, sia
 # come costo che come tempo", stesso schema esatto di PickUpAction.get_stamina_delta/is_complete:
 # un accumulatore _elapsed confrontato con _duration, tasso = _total_stamina_cost/_duration).
-# SOLO il ramo FISICO (target_building != null) li valorizza (vedi activate() sotto) — il ramo
+# SOLO il ramo FISICO (deposit_kind == RESOURCE) li valorizza (vedi activate() sotto) — il ramo
 # PENSIERO (Daydream, un'idea non occupa spazio) li lascia SEMPRE a 0.0, quindi resta a costo zero
 # per costruzione (get_stamina_delta ritorna 0.0 quando _duration<=0, vedi sotto): nessun ramo
 # separato necessario, la stessa formula generica dà "zero" al pensiero semplicemente perché non ha
@@ -102,17 +132,18 @@ var _elapsed: float = 0.0
 var _restored_from_save: bool = false
 
 
-func _init(p_target_building: Building = null) -> void:
+func _init(p_target_building: Building = null, p_deposit_kind: DepositKind = DepositKind.THOUGHT) -> void:
 	target = null
 	target_building = p_target_building
+	deposit_kind = p_deposit_kind
 
 
 # Nessun override prima d'ora (ereditava Action.activate — solo individual.is_moving = false,
 # invariato: super() chiamato PRIMA di ogni log, stesso ordine di WalkAction/PickUpAction.activate)
 # — aggiunto SOLO per diagnostica (2026-09-09, richiesta utente: "perché il carico non diminuisce
-# dopo l'arrivo al magazzino"). Logga esattamente lo stato con cui questo step PARTE: target_
-# building risolto (id/posizione) — null qui significherebbe che il ramo fisico non scatterà mai in
-# on_complete() (route silenziosa verso il ramo pensiero) — categorie accettate, e zaino
+# dopo l'arrivo al magazzino"). Logga esattamente lo stato con cui questo step PARTE: deposit_kind
+# (2026-09-10 — il vero discriminatore di ramo, non più la nullità di target_building, vedi nota in
+# testa al file), target_building risolto (id/posizione) se presente, categorie accettate, e zaino
 # dell'individuo AL MOMENTO dell'attivazione (prima di qualunque decremento).
 #
 # RIVERIFICA SPAZIO (2026-09-09, richiesta utente — re-routing, poi GENERALIZZATO nello stesso
@@ -144,8 +175,8 @@ func _init(p_target_building: Building = null) -> void:
 # legge/accresce quando scopre un magazzino pieno — così un secondo/terzo tentativo fallito continua
 # a escludere anche i precedenti, evitando un loop sullo stesso magazzino pieno.
 #
-# Nessun effetto se target_building è null (ramo pensiero, non riguardato da questo meccanismo) o se
-# lo zaino è già vuoto (nulla da ricollocare).
+# Nessun effetto se deposit_kind != RESOURCE (ramo pensiero, non riguardato da questo meccanismo) o
+# se lo zaino è già vuoto (nulla da ricollocare).
 #
 # COSTO/DURATA (2026-09-10, richiesta utente) — risolti QUI, stesso momento/stesso principio di
 # PickUpAction.activate: SOLO quando il deposito avverrà davvero (still_fits true sotto, quantità
@@ -162,7 +193,7 @@ func activate(individual: Variant, context: Dictionary) -> void:
 	_duration = 0.0
 	_total_stamina_cost = 0.0
 	_elapsed = 0.0
-	if target_building != null and individual.carried_quantity > 0:
+	if deposit_kind == DepositKind.RESOURCE and target_building != null and individual.carried_quantity > 0:
 		var max_depositable := BuildingStorageService.get_max_depositable(target_building, individual.carried_resource_name)
 		var still_fits: bool = max_depositable >= individual.carried_quantity
 		if not still_fits:
@@ -205,9 +236,9 @@ func activate(individual: Variant, context: Dictionary) -> void:
 				])
 	if not DebugLogging.ENABLED:
 		return
-	if target_building == null:
-		print("[UNLOAD] activate: target_building=null (ramo PENSIERO) | carried_resource_name='%s' carried_quantity=%d" % [
-			individual.carried_resource_name, individual.carried_quantity
+	if deposit_kind != DepositKind.RESOURCE:
+		print("[UNLOAD] activate: deposit_kind=THOUGHT (ramo PENSIERO) | target_building=%s | carried_resource_name='%s' carried_quantity=%d" % [
+			(str(target_building.id) if target_building != null else "null"), individual.carried_resource_name, individual.carried_quantity
 		])
 		return
 	var accepted_categories: String = "QUALUNQUE (array vuoto)" if target_building.rules != null and target_building.rules.accepted_categories.is_empty() else str(target_building.rules.accepted_categories if target_building.rules != null else "rules=null")
@@ -235,10 +266,10 @@ func get_stamina_delta(individual: Variant, context: Dictionary, delta: float) -
 # NON PIÙ sempre true (2026-09-10, richiesta utente — costo/durata reali per il deposito fisico) —
 # ora confronta _elapsed con _duration, STESSO schema esatto di PickUpAction/ThinkAction.is_complete.
 # Resta "istantanea" (0.0 >= 0.0, vero da subito) per QUALUNQUE caso in cui activate() ha lasciato
-# _duration a 0.0: ramo pensiero (Daydream), zaino vuoto, target_building null, o re-routing appena
-# scattato — tutti e quattro invariati rispetto a prima di questo passo, nessuno di loro acquisisce
-# una durata artificiale. Il ramo FISICO con un deposito davvero in corso è l'UNICO che ora impiega
-# più di un frame/giorno per completarsi.
+# _duration a 0.0: ramo pensiero (Daydream, deposit_kind != RESOURCE), zaino vuoto, target_building
+# null, o re-routing appena scattato — tutti e quattro invariati rispetto a prima di questo passo,
+# nessuno di loro acquisisce una durata artificiale. Il ramo FISICO con un deposito davvero in corso
+# è l'UNICO che ora impiega più di un frame/giorno per completarsi.
 func is_complete(individual: Variant, context: Dictionary) -> bool:
 	if DebugLogging.ENABLED and _elapsed < _duration:
 		print("[UNLOAD] is_complete: false (in corso) — elapsed=%.3f/%.3fgg, target_building=%s" % [
@@ -247,29 +278,35 @@ func is_complete(individual: Variant, context: Dictionary) -> bool:
 	return _elapsed >= _duration
 
 
-# Due rami MUTUAMENTE ESCLUSIVI secondo target_building (2026-09-09, richiesta utente) — mai
-# entrambi nella stessa istanza: chi costruisce l'azione decide già quale ramo vuole tramite il
-# costruttore, non un caso ambiguo da risolvere qui dentro.
+# Due rami MUTUAMENTE ESCLUSIVI secondo deposit_kind (2026-09-10, DEVIAZIONE dal discriminatore
+# `target_building != null` usato prima di questo passo, vedi nota in testa al file) — mai entrambi
+# nella stessa istanza: chi costruisce l'azione decide già quale ramo vuole tramite il costruttore,
+# non un caso ambiguo da risolvere qui dentro.
 #
-# Ramo FISICO (target_building != null, Step 1 BuildingStorageService) — legge lo zaino
+# Ramo FISICO (deposit_kind == RESOURCE, Step 1 BuildingStorageService) — legge lo zaino
 # dell'individuo (carried_resource_name/carried_quantity), tenta di depositarlo per intero in
 # target_building via BuildingStorageService.store (che clampa da sé allo spazio libero/categoria
 # accettata), poi decrementa lo zaino di SOLO quanto è stato effettivamente depositato: se lo
 # spazio non basta (o la categoria non è accettata), il resto resta trasportato, MAI perso. Nessun
 # effetto se lo zaino è già vuoto (carried_resource_name == "" o carried_quantity <= 0) — niente da
 # scaricare, coerente col "no-op istantaneo senza effetti" già seguito da PickUpAction.on_complete
-# quando _quantity_to_collect è 0.
+# quando _quantity_to_collect è 0. target_building == null qui è un caso limite difensivo (nessun
+# call site reale lo produce oggi, vedi call site aggiornati) — return anticipato, mai un crash.
 #
-# Ramo PENSIERO (target_building == null, invariato dal rename) — risolve Folk dalla stessa catena
-# già in uso altrove (individual.source_group_ref.folk_ref, vedi HumanStaminaIndividualService per
-# il precedente), poi IdeaProgressService.add_thoughts(folk, 1). Guardie difensive su
-# source_group_ref/folk_ref null (stesso trattamento già visto altrove per questa catena, es.
-# HumanStaminaIndividualService.recalculate_max_stamina) — non dovrebbero mai essere null con dati
-# coerenti, ma questa azione non deve fallire rumorosamente se lo sono.
+# Ramo PENSIERO (deposit_kind == THOUGHT, invariato nella logica dal rename DepositAction->
+# UnloadAction) — risolve Folk dalla stessa catena già in uso altrove (individual.source_group_ref.
+# folk_ref, vedi HumanStaminaIndividualService per il precedente), poi IdeaProgressService.
+# add_thoughts(folk, 1). Guardie difensive su source_group_ref/folk_ref null (stesso trattamento già
+# visto altrove per questa catena, es. HumanStaminaIndividualService.recalculate_max_stamina) — non
+# dovrebbero mai essere null con dati coerenti, ma questa azione non deve fallire rumorosamente se
+# lo sono. target_building può essere valorizzato anche qui (vedi nota sul campo, in testa al file)
+# ma non è ancora consumato da questo ramo — nessun comportamento nuovo introdotto in questo passo.
 func on_complete(individual: Variant, context: Dictionary) -> void:
-	if target_building != null:
+	if deposit_kind == DepositKind.RESOURCE:
 		if DebugLogging.ENABLED:
-			print("[UNLOAD] on_complete: ramo FISICO (target_building id=%d)" % target_building.id)
+			print("[UNLOAD] on_complete: ramo FISICO (target_building id=%s)" % (str(target_building.id) if target_building != null else "null"))
+		if target_building == null:
+			return
 		# _needs_warehouse_search (2026-09-09, richiesta utente — re-routing, generalizzato) — deciso
 		# da activate() sopra: nessun deposito qui, HumanIndividualActionService.apply_action gestisce
 		# la ricerca leggendo context DOPO questa chiamata (vedi commento in testa al file).
@@ -349,7 +386,7 @@ func on_complete(individual: Variant, context: Dictionary) -> void:
 		return
 
 	if DebugLogging.ENABLED:
-		print("[UNLOAD] on_complete: ramo PENSIERO (target_building=null) — pending_thought=%s" % individual.pending_thought)
+		print("[UNLOAD] on_complete: ramo PENSIERO (deposit_kind=THOUGHT) — pending_thought=%s" % individual.pending_thought)
 	if not individual.pending_thought:
 		return
 	if individual.source_group_ref == null or individual.source_group_ref.folk_ref == null:
@@ -361,31 +398,48 @@ func on_complete(individual: Variant, context: Dictionary) -> void:
 		idea_completed.emit(folk.completed_ideas[-1])
 
 
-# Persistenza (2026-09-09, richiesta utente; ESTESA 2026-09-10 per costo/durata) — target_building
-# via building.id (l'unico identificatore stabile/serializzabile, stesso principio di
-# PopulationGroup.id: Building stesso non è mai serializzato per riferimento diretto, JSON non
-# trasporta riferimenti a oggetti vivi) PIÙ duration/elapsed/total_stamina_cost (2026-09-10, stesso
-# motivo di PickUpAction/ThinkAction: senza, un salvataggio a metà deposito fisico perderebbe
+# Persistenza (2026-09-09, richiesta utente; ESTESA 2026-09-10 per costo/durata E per deposit_kind)
+# — target_building via building.id (l'unico identificatore stabile/serializzabile, stesso
+# principio di PopulationGroup.id: Building stesso non è mai serializzato per riferimento diretto,
+# JSON non trasporta riferimenti a oggetti vivi) PIÙ duration/elapsed/total_stamina_cost (2026-09-10,
+# stesso motivo di PickUpAction/ThinkAction: senza, un salvataggio a metà deposito fisico perderebbe
 # silenziosamente il progresso già maturato, ripartendo da 0 al reload — vedi _restored_from_save).
 # total_stamina_cost persistito ESPLICITAMENTE (a differenza di PickUpAction, che non lo fa — la
 # sua get_stamina_delta si affiderebbe a un _total_stamina_cost rimasto a 0.0 dopo un reload,
 # azzerando silenziosamente il drain residuo: un gap preesistente non toccato qui, ma non replicato
 # in questa classe) — così get_stamina_delta() resta corretta anche dopo un reload a metà scarico.
+#
+# deposit_kind persistito ESPLICITAMENTE (2026-09-10, richiesta utente — scollegare il ramo dalla
+# nullità di target_building) — NECESSARIO ora che non è più deducibile dalla presenza/assenza di
+# "target_building_id": prima di questo passo un salvataggio a metà scarico FISICO si ricostruiva
+# correttamente per pura coincidenza (target_building_id presente → target_building risolto non-null
+# → ramo fisico dedotto), ma quella coincidenza non regge più con un discriminatore esplicito — senza
+# questa chiave, un reload userebbe sempre il default DepositKind.THOUGHT, rompendo silenziosamente
+# qualunque UnloadAction fisica ricaricata a metà. Stesso int-sotto-un-enum già salvato/ricaricato
+# altrove nel progetto per altri campi enum (es. GameLoadService.terrain_base).
+#
 # `target` resta sempre null per questa Action (vedi _init sopra) quindi non è mai coperto dal
 # trattamento GENERICO di TaskPersistenceService.serialize_task.
 func get_save_data() -> Dictionary:
-	var data := {"duration": _duration, "elapsed": _elapsed, "total_stamina_cost": _total_stamina_cost}
+	var data := {
+		"duration": _duration,
+		"elapsed": _elapsed,
+		"total_stamina_cost": _total_stamina_cost,
+		"deposit_kind": deposit_kind,
+	}
 	if target_building != null:
 		data["target_building_id"] = target_building.id
 	return data
 
 
-# Il building vero viene risolto e iniettato da TaskPersistenceService._build_step (che ha
-# accesso a World.buildings, questa classe non ce l'ha — stesso principio già seguito da
-# PickUpAction/macro_state) PRIMA di chiamare questo metodo: la chiave "target_building_id" è letta
-# direttamente da _build_step, non da qui. duration/elapsed/total_stamina_cost (2026-09-10) invece
-# SÌ da qui — stesso schema esatto di PickUpAction.load_save_data: marca _restored_from_save così
-# la ripetizione di activate() che GameLoadService invoca subito dopo (per ripristinare gli effetti
+# Il building vero E deposit_kind vengono risolti e iniettati da TaskPersistenceService._build_step
+# PRIMA di chiamare questo metodo (building: ha accesso a World.buildings, questa classe non ce
+# l'ha, stesso principio già seguito da PickUpAction/macro_state; deposit_kind: per coerenza con
+# target_building, così entrambi i parametri "di identità" del ramo arrivano insieme dal costruttore
+# — vedi nota in testa al file) — le chiavi "target_building_id"/"deposit_kind" sono lette
+# direttamente da _build_step, non da qui. duration/elapsed/total_stamina_cost (2026-09-10) invece SÌ
+# da qui — stesso schema esatto di PickUpAction.load_save_data: marca _restored_from_save così la
+# ripetizione di activate() che GameLoadService invoca subito dopo (per ripristinare gli effetti
 # collaterali non persistiti delle altre Action, es. WalkAction) non sovrascriva questo progresso
 # appena ripristinato ricalcolandolo da zero.
 func load_save_data(data: Dictionary) -> void:

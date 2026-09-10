@@ -1182,9 +1182,11 @@ func _debug_test_daydream_task() -> void:
 	var walk_to_around := WalkAction.new(around_position)
 	var think := ThinkAction.new(think_duration)
 	var walk_to_village_center := WalkAction.new(village_center_position)
-	# UnloadAction.new() senza argomenti = ramo pensiero (target_building resta null, default),
-	# comportamento invariato dal rename DepositAction->UnloadAction (2026-09-09).
-	var deposit := UnloadAction.new()
+	# UnloadAction.new(null, THOUGHT) = ramo pensiero, nessun target_building (2026-09-10, richiesta
+	# utente — discriminatore esplicito deposit_kind al posto della nullità di target_building,
+	# comportamento invariato: prima di questo passo era UnloadAction.new() senza argomenti, stesso
+	# risultato — vedi unload_action.gd).
+	var deposit := UnloadAction.new(null, UnloadAction.DepositKind.THOUGHT)
 	# Quinto step, DOPO il deposito (2026-09-07, richiesta utente) — un ultimo Walk che allontana
 	# l'individuo dallo Stone Circle: senza questo, ogni Daydream finirebbe fermo esattamente sulla
 	# stessa microcella del centro villaggio, accumulando pipottini uno sopra l'altro con più
@@ -1885,7 +1887,10 @@ func _try_assign_unload_command_on_right_click(event: InputEvent) -> bool:
 	var building_position: Vector2 = Vector2(building.micro_x, building.micro_y) + macro_offset
 
 	var walk := WalkAction.new(building_position)
-	var unload := UnloadAction.new(building)
+	# DepositKind.RESOURCE esplicito (2026-09-10, richiesta utente — scollegare il ramo di
+	# UnloadAction dalla nullità di target_building): `building` qui è già garantito non-null dalla
+	# guardia sopra, stesso comportamento di ramo fisico di prima di questo passo.
+	var unload := UnloadAction.new(building, UnloadAction.DepositKind.RESOURCE)
 	var task := Task.new([walk, unload])
 	# task_name/step_descriptions (2026-09-09) — stesso trattamento hardcoded già in uso per
 	# "task_haul_resource" (_assign_pickup_task sopra): nessuna TaskDefinition "unload_resource"
