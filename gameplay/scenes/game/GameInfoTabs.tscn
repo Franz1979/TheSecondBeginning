@@ -14,6 +14,14 @@ theme_override_constants/margin_top = 4
 theme_override_constants/margin_right = 4
 theme_override_constants/margin_bottom = 4
 
+[node name="BuildingsTab" type="MarginContainer" parent="."]
+visible = false
+layout_mode = 2
+theme_override_constants/margin_left = 4
+theme_override_constants/margin_top = 4
+theme_override_constants/margin_right = 4
+theme_override_constants/margin_bottom = 4
+
 [node name="SelectionTab" type="MarginContainer" parent="."]
 visible = false
 layout_mode = 2
@@ -51,3 +59,11 @@ autowrap_mode = 2
 [node name="PlaceholderTab" type="Control" parent="."]
 visible = false
 layout_mode = 2
+
+[node name="DebugTab" type="MarginContainer" parent="."]
+visible = false
+layout_mode = 2
+theme_override_constants/margin_left = 4
+theme_override_constants/margin_top = 4
+theme_override_constants/margin_right = 4
+theme_override_constants/margin_bottom = 4

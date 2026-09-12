@@ -93,6 +93,11 @@ var mother_id: int = -1
 var father_id: int = -1
 # Nessuna logica di formazione coppie qui: solo il campo, valorizzato da un futuro service.
 var partner_id: int = -1
+# Id della Building (hut) assegnata come casa di questo individuo (2026-09-12, richiesta utente —
+# campo base per la Rest Task esplicita, non ancora letto/scritto da nessuna logica: nessun
+# AssignHouseService esiste ancora, questo giro aggiunge solo il campo). -1 = nessuna casa
+# assegnata, stessa convenzione -1 già in uso per mother_id/father_id/partner_id sopra.
+var house_id: int = -1
 # Step 3 del piano riproduzione (2026-09-06): valorizzato da HumanConceptionIndividualService al giorno 110,
 # nessun'altra logica lo tocca in questo passo — il parto (che lo riazzererà) è un task separato,
 # non ancora scritto. Default false, come ogni HumanIndividual appena creato (fondatore o figlio).
@@ -421,7 +426,22 @@ func _load_name_pool(path: String) -> Array[String]:
 # difensivo già richiesto da Task.get_current_action() stessa ("il chiamante non deve mai assumere
 # un'Action non-null senza aver controllato prima").
 func assign_task(task: Task) -> void:
+	# TaskDebugRegistry (2026-09-12, richiesta utente — tab di debug 🐞) — chiude l'entry della
+	# Task PRECEDENTE (se ce n'era una in corso, mai chiusa perché sostituita direttamente qui
+	# senza passare da stop()) PRIMA di sovrascriverla, poi registra la NUOVA. Vedi TaskDebugRegistry.
+	# gd per il perché questi due punti (qui e stop() sotto) bastano a coprire ogni Task mai
+	# assegnata.
+	TaskDebugRegistry.on_task_closed(current_task)
+	# Scenario A — interruzione manuale con zaino pieno (2026-09-12, richiesta utente, fix
+	# unificato "scarico a terra" — vedi discard_carried_resource sotto per il criterio/perché
+	# questo controllo, generico e non legato a QUALE Task viene sostituita, basta a coprire
+	# esattamente e solo il caso "haul_resource interrotta a metà": carried_quantity diventa > 0
+	# solo dopo un PickUpAction riuscito, nessun altro percorso lo valorizza oggi). STESSO
+	# principio di TaskDebugRegistry.on_task_closed sopra — chiuso PRIMA di sovrascrivere
+	# current_task, così lo zaino non sopravvive silenziosamente alla nuova Task.
+	discard_carried_resource()
 	current_task = task
+	TaskDebugRegistry.on_task_assigned(self, task)
 	var current_action := task.get_current_action()
 	if current_action != null:
 		current_action.activate(self, task.context)
@@ -445,9 +465,73 @@ func set_target(target: Vector2) -> void:
 func stop() -> void:
 	is_moving = false
 	path.clear()
+	# TaskDebugRegistry (2026-09-12, richiesta utente — tab di debug 🐞) — chiude l'entry PRIMA di
+	# azzerare current_task sotto: se apply_action ha già verificato is_finished()==true (arrivo
+	# naturale), viene marcata "completata"; se stop() è invece chiamata a Task ancora incompleta
+	# (tasto H, o qualunque futura interruzione che passi da qui), "interrotta". Vedi TaskDebugRegistry.
+	# gd per il criterio esatto.
+	TaskDebugRegistry.on_task_closed(current_task)
+	# Scenario A — interruzione manuale con zaino pieno (2026-09-12, richiesta utente, fix
+	# unificato "scarico a terra") — stesso principio di assign_task() sopra: copre sia lo stop
+	# volontario (tasto H) sia l'arrivo naturale a fine Task con QUALCOSA ancora in spalla
+	# (Scenario B1, "ricerca iniziale fallita" — quel percorso scarta già esplicitamente PRIMA di
+	# arrivare qui, vedi HumanIndividualActionService._handle_pending_warehouse_search, quindi
+	# questa chiamata vi trova già carried_quantity a 0 e non fa nulla: rete di sicurezza, non
+	# duplicazione). Guard interno a discard_carried_resource(), nessun controllo esplicito qui.
+	discard_carried_resource()
 	# Cablaggio Walk/Task (2026-09-06/07, richiesta utente) — la task associata va ripulita ogni
 	# volta che il movimento finisce, sia per arrivo naturale (HumanIndividualActionService.
 	# apply_action chiama stop() quando la Task risulta conclusa dopo l'ultimo step, NON più
 	# HumanIndividualMovementService.advance_movement — vedi lì per il perché) sia per qualunque
 	# futura interruzione che passi da qui (stesso punto unico, mai duplicato altrove).
 	current_task = null
+
+
+# Funzione CONDIVISA "scarico a terra" (2026-09-12, richiesta utente, fix unificato per i tre
+# scenari in cui un individuo può restare con merce in spalla senza consegnarla durante
+# haul_resource — interruzione manuale con zaino pieno, ricerca iniziale fallita, re-routing
+# fallito) — UN solo punto invece di tre azzeramenti duplicati di carried_resource_name/
+# carried_quantity/carried_decay_fraction, chiamato da: assign_task()/stop() sopra (Scenario A),
+# HumanIndividualActionService._handle_pending_warehouse_search (Scenario B1 — nessun magazzino
+# trovato affatto dopo PickUp, E Scenario B2 — magazzino pieno all'arrivo, re-routing fallito;
+# quest'ultimo prima duplicava questo stesso azzeramento inline senza log/commento).
+#
+# Guard interno (non un controllo lato chiamante): no-op silenzioso se lo zaino è già vuoto, così
+# ogni chiamante può richiamarla incondizionatamente (stesso principio "rete di sicurezza, mai
+# doppio effetto" già seguito per TaskDebugRegistry.on_task_closed).
+#
+# La risorsa SPARISCE (stesso comportamento già esistente nel ramo di re-routing prima di questo
+# passo) — NESSUNO spostamento dell'individuo prima dello scarto. VALUTATO esplicitamente (richiesta
+# utente) un piccolo Walk casuale (2-3 microcelle, stesso raggio di REST_TASK_NO_HOUSE_WANDER_RADIUS
+# in GameScene.gd) prima di scartare, per evitare che lo scarto si accumuli visivamente sempre sotto
+# lo stesso magazzino pieno — SCARTATO per questo giro, motivazione: il punto di chiamata più
+# rilevante (assign_task() sopra, Scenario A) è chiamato da OGNI *_assign_*_task in GameScene con
+# l'aspettativa che la Task passata diventi current_task e parta SUBITO, in modo sincrono — questo è
+# il contratto su cui si basa OGNI chiamante esistente nel progetto. Anteporre un Walk-poi-scarta
+# richiederebbe posticipare l'attivazione della Task appena richiesta dall'utente (Rest/Wander/Build/
+# qualunque altra) finché quel Walk non finisce, cambiando quel contratto per TUTTI i chiamanti solo
+# per questo caso — o, in alternativa, costruire una piccola Action/Task "usa e getta" dedicata da
+# incastrare silenziosamente prima, una complicazione architetturale sproporzionata per un
+# comportamento che comunque sparirà non appena esisterà il vero sistema di ground-drop (vedi TODO
+# sotto) — quel sistema, quando arriverà, avrà comunque bisogno di una propria Action/step dedicato
+# (il "lotto" andrà piazzato/animato in un punto preciso), e SOLO a quel punto un piccolo Walk potrà
+# diventare naturalmente il primo step di QUELLA sequenza, invece di un'aggiunta isolata qui.
+#
+# TODO: quando esisterà un sistema di "ground drop" generico (lotto raccoglibile a terra per
+# qualunque tipo di risorsa, non solo stick/pebble) e la relativa azione di raccolta, questo scarto
+# dovrà materializzare un lotto raccoglibile nella posizione dell'individuo invece di far sparire
+# la risorsa. Quel lotto, essendo all'aperto, dovrebbe avere velocità di decay DOPPIA rispetto allo
+# standard (oggi non esiste un concetto di decay "outdoor" — vedi indagine precedente su
+# ResourceDecayService, che dichiara esplicitamente "materiale abbandonato a terra: FUORI SCOPE").
+# Vedi TaskFactory/HumanIndividual per l'inventario attuale (carried_resource_name/carried_quantity/
+# carried_decay_fraction, gli stessi tre campi azzerati qui sotto).
+func discard_carried_resource() -> void:
+	if carried_quantity <= 0:
+		return
+	if DebugLogging.ENABLED:
+		print("[HAUL DISCARD] Individuo #%d ha scartato %d %s (nessuna destinazione disponibile)" % [
+			id, carried_quantity, carried_resource_name
+		])
+	carried_resource_name = ""
+	carried_quantity = 0
+	carried_decay_fraction = 0.0

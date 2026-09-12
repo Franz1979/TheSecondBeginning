@@ -15,15 +15,6 @@ extends RefCounted
 # scendere sotto zero senza conseguenze — l'auto-interrupt quando la stamina si esaurisce arriverà
 # in uno step successivo.
 
-# Rest è lo stato IMPLICITO di un individuo senza current_task attiva (2026-09-07, richiesta
-# utente — "senza current_action" nel commento originale, aggiornato per Task) — istanza condivisa
-# unica, creata una sola volta qui come costante statica del servizio, non una nuova istanza per
-# frame per ogni individuo idle: RestAction non ha bisogno di stato proprio (nessun target, nessun
-# _last_position come in WalkAction), quindi una sola istanza può servire tutti gli individui idle
-# contemporaneamente senza rischio di stato incrociato.
-static var _idle_rest_action := RestAction.new()
-
-
 # `world` (2026-09-09, richiesta utente — nato per il re-routing UnloadAction su magazzino pieno,
 # poi GENERALIZZATO alla ricerca magazzino post-PickUp, vedi _handle_pending_warehouse_search
 # sotto) — DEVIAZIONE rispetto alla firma precedente (solo individual/delta): necessario per passare
@@ -34,11 +25,16 @@ static var _idle_rest_action := RestAction.new()
 # magazzino trovato", vedi lì), mai un crash. UNICO call site oggi: GameScene._process, che passa
 # macro_world.
 func apply_action(individual: HumanIndividual, delta: float, world: World = null) -> void:
+	# Fallback di rest implicito RIMOSSO (2026-09-12, richiesta utente — "un individuo senza
+	# current_task valida deve semplicemente non fare nulla qui: nessun recupero automatico, nessun
+	# consumo automatico"). Un individuo con current_task null/conclusa resta a stamina invariata
+	# indefinitamente finché non gli viene assegnata manualmente una nuova Task — il vero recupero
+	# stamina tornerà a breve dentro una Rest Task esplicita (Walk verso casa + RestAction), non
+	# più come fallback implicito di questa funzione. Verificato (indagine dedicata, giro
+	# precedente): ogni lettore di current_task/current_action nel codebase è già null-safe, e
+	# questo era l'UNICO punto dell'intero progetto che rigenerava current_stamina — rimuoverlo
+	# senza sostituto è quindi una regressione di gameplay attesa/temporanea, non un bug.
 	if individual.current_task == null or individual.current_task.is_finished():
-		# Rest implicito: non scrive individual.current_task (resta null/conclusa) — non "occupa"
-		# lo slot della task corrente, che resta libero per essere sovrascritto immediatamente da
-		# un comando esplicito come Walk.
-		individual.current_stamina += _idle_rest_action.get_stamina_delta(individual, {}, delta)
 		return
 	# Avanzamento automatico Task (2026-09-07, richiesta utente, introdotto insieme a Task) —
 	# applica lo step ATTIVO (mai la Task intera: Task non sa nulla di stamina, vedi Task.gd), poi
@@ -104,12 +100,15 @@ func apply_action(individual: HumanIndividual, delta: float, world: World = null
 # invece non viene mai toccato qui: è UnloadAction.activate, non questa funzione, a farlo crescere
 # quando scopre un nuovo magazzino pieno.
 #
-# discard_on_failure (dentro il Dictionary) distingue i DUE esiti "nessun candidato" richiesti
-# esplicitamente dall'utente per i due casi: true (scritto solo da UnloadAction.activate, re-routing
-# — un edificio già raggiunto è risultato pieno) fa perdere la merce "per strada", TEMPORANEO, nessun
-# sistema di scarico a terra esiste ancora; false/assente (PickUpAction.on_complete, ricerca
-# iniziale — nessun edificio "vicino da abbandonare" in questo caso) lascia semplicemente l'individuo
-# con la merce in spalla, nessuna perdita — non un fallimento distruttivo.
+# discard_on_failure (dentro il Dictionary) distingueva in origine DUE esiti diversi per "nessun
+# candidato" (true = re-routing, perdita; false/assente = ricerca iniziale, nessuna perdita) — dal
+# fix unificato "scarico a terra" (2026-09-12, richiesta utente) i DUE esiti ora CONVERGONO sullo
+# stesso risultato pratico (HumanIndividual.discard_carried_resource, vedi lì per il log/il TODO sul
+# futuro sistema di scarico a terra): true = re-routing fallito (Scenario B2, un edificio già
+# raggiunto è risultato pieno), false/assente = ricerca iniziale fallita (Scenario B1, nessun
+# edificio da abbandonare, ma comunque nessuna destinazione disponibile). Il campo resta comunque
+# utile per distinguere i due CONTESTI nel log stampato subito prima di ciascuna chiamata, anche se
+# l'esito finale (scarto) è oggi identico.
 func _handle_pending_warehouse_search(individual: HumanIndividual, task: Task, world: World) -> void:
 	if not task.context.has("pending_warehouse_search"):
 		return
@@ -147,29 +146,36 @@ func _handle_pending_warehouse_search(individual: HumanIndividual, task: Task, w
 		return
 
 	if bool(search.get("discard_on_failure", false)):
-		# TEMPORANEO (2026-09-09, richiesta utente, nota esplicita in fase di indagine — "nota di
-		# contesto per l'implementazione successiva"): nessun magazzino alternativo trovato dopo un
-		# re-routing. Non esiste ANCORA un vero sistema di scarico a terra (drop pile/lotto
-		# persistente sulla mappa) — la merce viene quindi semplicemente PERSA qui ("scaricata per
-		# strada"), invece di restare bloccata nello zaino dell'individuo all'infinito. DA SOSTITUIRE
-		# quando quel sistema esisterà: questo ramo dovrà allora creare davvero un lotto a terra
-		# invece di azzerare lo zaino.
+		# Scenario B2 — re-routing fallito (2026-09-09, richiesta utente iniziale — nota di
+		# contesto in fase di indagine; UNIFICATO 2026-09-12 sotto discard_carried_resource, che
+		# prima duplicava qui lo stesso azzeramento inline senza log/commento dedicato): nessun
+		# magazzino alternativo trovato dopo che il target originale è risultato pieno all'arrivo.
+		# Vedi HumanIndividual.discard_carried_resource per il log/il TODO sul futuro sistema di
+		# scarico a terra — questo print resta qui SOLO per il contesto SPECIFICO del re-routing
+		# (perché la ricerca è scattata: magazzino pieno), non duplicato dal log generico della
+		# funzione condivisa.
 		if DebugLogging.ENABLED:
-			print("[WAREHOUSE SEARCH] nessun magazzino alternativo trovato per resource_name='%s' quantity=%d — merce persa 'per strada' (comportamento TEMPORANEO, nessun sistema di scarico a terra esiste ancora)." % [
+			print("[WAREHOUSE SEARCH] nessun magazzino alternativo trovato per resource_name='%s' quantity=%d dopo re-routing (magazzino originale pieno all'arrivo)." % [
 				resource_name, quantity
 			])
-		individual.carried_quantity = 0
-		individual.carried_resource_name = ""
-		individual.carried_decay_fraction = 0.0
+		individual.discard_carried_resource()
 		return
 
-	# Ricerca INIZIALE (PickUpAction) senza candidato — nessun edificio "vicino da abbandonare" in
-	# questo caso: l'individuo resta semplicemente con la merce in spalla, la Task prosegue/termina
-	# su quello che ha. Nessuna perdita, non un fallimento distruttivo (richiesta esplicita utente).
+	# Scenario B1 — ricerca INIZIALE (PickUpAction) senza candidato (2026-09-12, richiesta utente
+	# — fix unificato "scarico a terra": DECISIONE CAMBIATA rispetto al comportamento precedente,
+	# che qui lasciava l'individuo "con la merce in spalla, nessuna perdita" — ora invece scarta
+	# anche questo caso, stessa funzione condivisa di B2/Scenario A) — nessun edificio "vicino da
+	# abbandonare" in questo caso (a differenza di B2, qui non c'è mai stato un target da cui
+	# ripartire), ma il risultato pratico è lo stesso: la Task (solo [Walk, PickUp] per
+	# haul_resource) termina qui SENZA aver mai raggiunto un Unload — individual.stop() poco dopo,
+	# in apply_action, chiuderebbe comunque lo zaino via il proprio hook di sicurezza (vedi
+	# HumanIndividual.stop()), ma scartare QUI, PRIMA della terminazione, è più diretto e
+	# corrisponde esattamente al punto richiesto ("prima o durante la terminazione della Task").
 	if DebugLogging.ENABLED:
-		print("[WAREHOUSE SEARCH] nessun magazzino trovato per resource_name='%s' quantity=%d — l'individuo resta con la merce in spalla (nessun edificio da abbandonare in questo caso)." % [
+		print("[WAREHOUSE SEARCH] nessun magazzino trovato per resource_name='%s' quantity=%d — nessun edificio da abbandonare in questo caso, ma nessuna destinazione disponibile." % [
 			resource_name, quantity
 		])
+	individual.discard_carried_resource()
 
 
 # Consuma task.context["pending_thought_target_search"] (2026-09-10, richiesta utente — handler di

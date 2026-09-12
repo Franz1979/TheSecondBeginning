@@ -1,0 +1,9 @@
+[gd_resource type="Resource" script_class="TaskStepDefinition" format=3 uid="uid://c5kav2h4x8pq0"]
+
+[ext_resource type="Script" uid="uid://d3sri3tos2u4f" path="res://gameplay/scripts/tasks/task_step_definition.gd" id="1_pickup"]
+
+[resource]
+script = ExtResource("1_pickup")
+action_type = 4
+context_keys = Array[String](["pickup_position", "macro_state", "resource_name"])
+step_description = "task_haul_resource_step_pickup"

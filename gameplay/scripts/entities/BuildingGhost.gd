@@ -83,6 +83,33 @@ const DEPOSIT_SITE_OUTLINE_WIDTH: float = 0.5
 const DEPOSIT_SITE_HALF_SIDE: float = 4.5
 const DEPOSIT_SITE_VERTEX_COUNT: int = 8
 
+# Stick Tent (2026-09-12, richiesta utente — collegamento UI/rendering: il .tres/BuildingRules
+# esistevano già da un giro precedente, ma non era ancora disegnabile né come ghost né come
+# edificio piazzato) — placeholder semplice: cerchio pieno color paglia/marrone chiaro, PIÙ PICCOLO
+# del corpo della capanna (HUT_RADIUS=2.5, qui 2.0), SENZA recinto (nessun recinto in stick_tent.
+# tres) — "distinguibile da Hut, coerente con tier inferiore" (richiesta utente): forma più
+# semplice/più piccola, nessun dettaglio (recinto, ritaglio porta vero) che la capanna invece ha.
+# has_door RESTA vero (default di BuildingRules, mai impostato a false in stick_tent.tres — a
+# differenza di stone_circle/deposit_site, che lo mettono esplicitamente a false): la rotazione
+# (tasto R) è quindi significativa anche per questo tipo. BUGFIX (2026-09-12, richiesta utente —
+# "has_door è vero ma non si vede la porta"): PRIMA di questo passo il ramo stick_tent ignorava del
+# tutto `rotation_dir`, disegnando sempre lo stesso cerchio simmetrico indipendentemente
+# dall'orientamento — corretto sotto con un piccolo TRIANGOLO (non un vero ritaglio come la
+# capanna, coerente con la semplicità del resto della forma) sul bordo del cerchio, nel verso della
+# porta.
+const STICK_TENT_COLOR := Color(0.78, 0.62, 0.32, 0.75)
+const STICK_TENT_OUTLINE_COLOR := Color(0.45, 0.32, 0.15, 0.85)
+const STICK_TENT_INVALID_COLOR := Color(0.75, 0.15, 0.15, 0.75)
+const STICK_TENT_INVALID_OUTLINE_COLOR := Color(0.4, 0.05, 0.05, 0.85)
+const STICK_TENT_OUTLINE_WIDTH: float = 0.4
+const STICK_TENT_RADIUS: float = 2.0
+# Triangolino "porta" (2026-09-12) — base sul bordo del cerchio, apice verso l'esterno nel verso di
+# `direction`, colore scuro (STICK_TENT_DOOR_MARKER_COLOR, non semitrasparente come il corpo del
+# cerchio: deve restare ben leggibile anche sopra il ramo "non edificabile" rosso).
+const STICK_TENT_DOOR_MARKER_COLOR := Color(0.25, 0.15, 0.06, 1.0)
+const STICK_TENT_DOOR_MARKER_HALF_WIDTH: float = 0.7
+const STICK_TENT_DOOR_MARKER_HEIGHT: float = 1.1
+
 # Quale sagoma disegnare — valorizzato da GameScene._on_build_submenu_action_pressed subito dopo
 # la creazione (2026-09-07, richiesta utente, Stone Circle): prima di questo passo l'unico tipo
 # esistente (hut) rendeva superfluo dirlo esplicitamente a questo nodo. Default "hut" per lo stesso
@@ -126,6 +153,10 @@ func _draw() -> void:
 	if building_type_name == "deposit_site":
 		_draw_deposit_site(DEPOSIT_SITE_COLOR if is_buildable else DEPOSIT_SITE_INVALID_COLOR,
 			DEPOSIT_SITE_OUTLINE_COLOR if is_buildable else DEPOSIT_SITE_INVALID_OUTLINE_COLOR)
+		return
+	if building_type_name == "stick_tent":
+		_draw_stick_tent(STICK_TENT_COLOR if is_buildable else STICK_TENT_INVALID_COLOR,
+			STICK_TENT_OUTLINE_COLOR if is_buildable else STICK_TENT_INVALID_OUTLINE_COLOR, rotation_dir)
 		return
 
 	var color := COLOR if is_buildable else INVALID_COLOR
@@ -247,6 +278,30 @@ func _deposit_site_polygon() -> PackedVector2Array:
 		var vertex_radius: float = square_radius * rng.randf_range(0.9, 1.08)
 		points.append(Vector2(cos(jittered_angle), sin(jittered_angle)) * vertex_radius)
 	return points
+
+
+# Cerchio pieno attorno al punto di ancoraggio (0,0) più un piccolo TRIANGOLO sul bordo, nel verso
+# di `direction` — has_door resta vero per questo tipo (vedi commento su STICK_TENT_COLOR sopra),
+# quindi la rotazione (tasto R) è significativa e va mostrata, anche se non con un vero ritaglio
+# come la capanna (coerente con la forma più semplice di questo placeholder). Stessa funzione
+# (duplicata apposta, vedi commento in testa al file) di MicroCellRenderer._draw_stick_tent, così
+# l'anteprima e l'edificio finito coincidono esattamente.
+func _draw_stick_tent(color: Color, outline_color: Color, direction: GameTypes.Direction) -> void:
+	draw_circle(Vector2.ZERO, STICK_TENT_RADIUS, color)
+	draw_arc(Vector2.ZERO, STICK_TENT_RADIUS, 0.0, TAU, CIRCLE_SEGMENTS, outline_color, STICK_TENT_OUTLINE_WIDTH, true)
+
+	var dir_vector := _direction_vector(direction)
+	var perpendicular := Vector2(-dir_vector.y, dir_vector.x)
+	var base_center: Vector2 = dir_vector * STICK_TENT_RADIUS
+	var apex: Vector2 = dir_vector * (STICK_TENT_RADIUS + STICK_TENT_DOOR_MARKER_HEIGHT)
+	draw_colored_polygon(
+		PackedVector2Array([
+			base_center + perpendicular * STICK_TENT_DOOR_MARKER_HALF_WIDTH,
+			base_center - perpendicular * STICK_TENT_DOOR_MARKER_HALF_WIDTH,
+			apex,
+		]),
+		STICK_TENT_DOOR_MARKER_COLOR
+	)
 
 
 func _direction_vector(direction: GameTypes.Direction) -> Vector2:

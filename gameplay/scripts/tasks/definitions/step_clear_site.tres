@@ -1,0 +1,9 @@
+[gd_resource type="Resource" script_class="TaskStepDefinition" format=3]
+
+[ext_resource type="Script" uid="uid://d3sri3tos2u4f" path="res://gameplay/scripts/tasks/task_step_definition.gd" id="1_clear_site"]
+
+[resource]
+script = ExtResource("1_clear_site")
+action_type = 6
+context_keys = Array[String](["target_building", "macro_state", "is_currently_grass"])
+step_description = "task_build_step_clear_site"

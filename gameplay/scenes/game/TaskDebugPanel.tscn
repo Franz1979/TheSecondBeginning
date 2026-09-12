@@ -1,0 +1,32 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://gameplay/scenes/game/TaskDebugPanel.gd" id="1_taskdbg"]
+
+[node name="TaskDebugPanel" type="VBoxContainer"]
+script = ExtResource("1_taskdbg")
+
+[node name="HeaderRow" type="HBoxContainer" parent="."]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="HeaderLabel" type="Label" parent="HeaderRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_font_sizes/font_size = 11
+
+[node name="RefreshButton" type="Button" parent="HeaderRow"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 10
+
+[node name="ClearButton" type="Button" parent="HeaderRow"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 10
+
+[node name="ScrollContainer" type="ScrollContainer" parent="."]
+custom_minimum_size = Vector2(0, 220)
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="ListContainer" type="VBoxContainer" parent="ScrollContainer"]
+layout_mode = 2
+size_flags_horizontal = 3

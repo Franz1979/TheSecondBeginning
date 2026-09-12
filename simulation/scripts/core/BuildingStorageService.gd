@@ -133,6 +133,16 @@ static func get_free_slots(building: Building) -> int:
 static func can_accept(building: Building, resource_name: String) -> bool:
 	if building == null or building.rules == null:
 		return false
+	# Guard is_complete (2026-09-11, richiesta utente — un cantiere non ancora finito non deve poter
+	# ricevere depositi da NESSUN percorso, non solo da quello automatico di WarehouseSelectionService:
+	# questa funzione è già il gate consultato sia da store() sotto sia dal comando manuale a destro-
+	# click, GameScene._try_assign_unload_command_on_right_click — un solo punto, copre entrambi senza
+	# doverlo ripetere altrove. Prima di questo fix un cantiere STORAGE era già utilizzabile come
+	# magazzino PRIMA di essere completo, sia via ricerca automatica sia via deposito manuale (vedi la
+	# nota "DA SEGNALARE" lasciata in GameScene._start_building_task_at quando la Build Task fu
+	# introdotta, il 2026-09-10).
+	if not building.is_complete:
+		return false
 	var resource_rules := CaloricCalculator.get_caloric_source_rules(resource_name)
 	if resource_rules == null:
 		return false
@@ -236,6 +246,16 @@ static func store(building: Building, resource_name: String, quantity: int, deca
 # funzione, il rifiuto sta SOLO in can_accept.
 static func get_max_depositable(building: Building, resource_name: String) -> int:
 	if building == null or building.rules == null:
+		return 0
+	# Guard is_complete (2026-09-11, richiesta utente) — STESSO motivo/STESSO commento esteso di
+	# can_accept sopra: questa funzione è chiamata anche DIRETTAMENTE (non tramite can_accept, vedi il
+	# commento in testa a questa funzione — "can_accept NON è ripetuto qui dentro") da
+	# WarehouseSelectionService.find_best (has_capacity) e da UnloadAction.activate (riverifica
+	# still_fits) — senza questo guard ANCHE qui, un cantiere incompleto sarebbe stato escluso da
+	# store() (bloccato da can_accept) ma NON dalla selezione automatica del magazzino più vicino: un
+	# individuo avrebbe potuto camminare fin lì e scoprire solo all'arrivo che il deposito fallisce
+	# (deposited=0), un viaggio sprecato invece di scartare subito il candidato.
+	if not building.is_complete:
 		return 0
 	var resource_rules := CaloricCalculator.get_caloric_source_rules(resource_name)
 	if resource_rules == null:

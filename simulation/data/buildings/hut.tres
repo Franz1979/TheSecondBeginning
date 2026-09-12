@@ -6,13 +6,15 @@
 script = ExtResource("1_hut")
 building_name = "building_hut"
 required_idea_id = "paleolithic_constructions"
-required_labor = 500
+required_labor = 1500
 storage_slot_count = 4
 storage_space_per_slot = 50
-accepted_categories = Array[int]([])
 required_materials = {
 "stick": 10,
 "wood": 20
 }
 required_space = 1
 visibility_radius = 2
+rest_multiplier = 1.4
+max_residents = 5
+residency_assignment_tier = 2

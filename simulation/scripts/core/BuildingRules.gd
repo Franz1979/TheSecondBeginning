@@ -125,3 +125,55 @@ extends Resource
 # BuildingRules stessa resta solo il dato di TIPO. Default false — nessun tipo esistente (hut) è
 # toccato.
 @export var is_village_center: bool = false
+
+# Flag per un futuro service generico "trova l'edificio più vicino che accetta X" (2026-09-10,
+# richiesta utente — SOLO il dato in questo passo, nessuna logica di ricerca qui né altrove:
+# quel service arriverà in un giro successivo, oggi la ricerca magazzino resta quella specifica
+# di WarehouseSelectionService, non ancora generalizzata). Vero per lo Stone Circle (vedi
+# stone_circle.tres) — è già la destinazione del ramo "pensiero" di UnloadAction (Daydream, vedi
+# unload_action.gd), questo campo si limita a rendere quel fatto un dato consultabile su
+# BuildingRules invece che implicito nel codice. Stesso stile di is_village_center sopra (dato di
+# TIPO, non di istanza — nessuna logica ancora lo legge). Default false — nessun tipo esistente
+# (hut/deposit_site) è toccato.
+@export var accepts_thoughts: bool = false
+
+# Numero massimo di individui che possono lavorare CONTEMPORANEAMENTE alla costruzione di questo
+# edificio (2026-09-10, richiesta utente — preparazione Build Task, Step 1: SOLO il dato, nessuna
+# logica di condivisione lavoro/assegnazione multipla ancora — arriverà con un giro successivo).
+# Stesso stile/stessa posizione di accepts_thoughts sopra (campo semplice di TIPO, non di istanza).
+# Default 1 = comportamento invariato per OGNI tipo esistente (hut/deposit_site/stone_circle):
+# nessun .tres da aggiornare, dato che il default vale già per tutti finché non lo si valorizza
+# esplicitamente per un tipo che dovrà davvero ammettere più lavoratori in parallelo.
+@export var max_builders: int = 1
+
+# Moltiplicatore del recupero stamina per giorno quando un RestAction avviene in questo edificio
+# (2026-09-12, richiesta utente — campo base per la Rest Task esplicita: SOLO il dato in questo
+# passo, nessuna logica ancora lo legge — RestAction accetta già un parametro rest_multiplier
+# moltiplicabile, ma niente qui/altrove risolve ancora questo campo da una Building concreta).
+# Default 1.0 = neutro/nessun effetto, comportamento invariato per ogni tipo esistente finché non
+# valorizzato esplicitamente (vedi hut.tres, 1.4 — unico .tres toccato in questo passo).
+@export var rest_multiplier: float = 1.0
+
+# Capacità residenziale (2026-09-12, richiesta utente — nuovo edificio Stick Tent + AssignHouse
+# Service): quanti HumanIndividual.house_id possono puntare a UN'istanza di questo tipo
+# contemporaneamente. 0 = non residenziale (default), il comportamento invariato per ogni edificio
+# che non lo valorizza esplicitamente (stone_circle/deposit_site restano a 0 — mai edifici dove
+# vivere). Valorizzato su hut.tres (5) e stick_tent.tres (4) — vedi AssignHouseService.
+# assign_pending_residents, l'unico consumatore oggi (conta gli occupanti scandendo human_
+# individuals con house_id == building.id, confronta con questo tetto).
+@export var max_residents: int = 0
+
+# Tier del criterio di assegnazione residenziale (2026-09-12, richiesta utente) — SOLO
+# PREDISPOSIZIONE per ora: AssignHouseService.assign_pending_residents usa OGGI un unico criterio
+# per QUALUNQUE edificio residenziale, indipendentemente da questo valore (anzianità decrescente,
+# i più anziani hanno priorità — vedi lì, questo campo non viene nemmeno letto in quel file ancora).
+# L'idea è che tier PIÙ ALTI possano in futuro usare un criterio diverso (es. "famiglia/nucleo"
+# invece di anzianità pura per una casa "di pregio") — nessuna logica differenziata per tier
+# esiste ancora, questo è solo il dato pronto per quando servirà davvero. Int semplice (non enum,
+# a differenza di es. BuildingTypes.Category) — DECISIONE: un enum richiederebbe già nominare i
+# tier futuri (es. TIER_ANZIANITA/TIER_FAMIGLIA), una semantica non ancora decisa; un int libero
+# non presuppone nulla, stesso principio "non un caso ipotetico anticipato" già seguito altrove nel
+# progetto per campi di TIPO ancora privi di consumatori differenziati. Default 1 = valore neutro di
+# partenza. Valorizzato su stick_tent.tres (1) e hut.tres (2) — solo per marcare una futura gerarchia
+# di qualità, NESSUN effetto di gioco oggi.
+@export var residency_assignment_tier: int = 1

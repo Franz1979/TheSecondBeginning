@@ -53,10 +53,25 @@ func is_complete(individual: Variant, context: Dictionary) -> bool:
 
 # Lascia un pensiero "in sospeso" sull'individuo quando il ciclo di riflessione si conclude
 # (2026-09-07) — vedi Action.on_complete per il contratto generale/perché non è dentro is_complete()
-# stessa, e HumanIndividual.pending_thought per cosa succede dopo (nulla, ancora: nessuna
-# DepositThoughtAction esiste in questo passo).
+# stessa, e HumanIndividual.pending_thought per cosa succede dopo.
+#
+# pending_thought_target_search (2026-09-10, richiesta utente — Step 1 del refactor Daydream via
+# TaskFactory, preparazione del meccanismo, non ancora collegato/testabile in-game: arriva col
+# secondo prompt) — STESSO canale generico già in uso per pending_warehouse_search (scritto da
+# PickUpAction.on_complete/UnloadAction.activate, consumato da HumanIndividualActionService.
+# _handle_pending_warehouse_search) ma per il ramo PENSIERO: scritto qui, consumato da
+# _handle_pending_thought_target_search (già costruito, 2c) DOPO questa chiamata, nello stesso
+# passaggio di apply_action (vedi HumanIndividualActionService.apply_action per l'ordine esatto).
+# Struttura MINIMA già decisa (vedi 2c) — solo "excluded_building_ids": [] (nessun resource_name/
+# quantity, non pertinenti a un pensiero, stesso motivo già documentato su
+# _handle_pending_thought_target_search). Scritto INCONDIZIONATAMENTE ad ogni Think completato —
+# stesso principio di individual.pending_thought sotto: questa Action non sa (e non deve sapere) se
+# esiste già un edificio idoneo nel mondo, quella verifica vive altrove (vedi
+# ThoughtTargetSelectionService.has_thought_accepting_building, usata a monte per decidere se
+# assegnare l'intera Task Daydream, non qui).
 func on_complete(individual: Variant, context: Dictionary) -> void:
 	individual.pending_thought = true
+	context["pending_thought_target_search"] = {"excluded_building_ids": []}
 
 
 # duration/_elapsed persistiti (2026-09-08, richiesta utente) — duration non è coperto dal

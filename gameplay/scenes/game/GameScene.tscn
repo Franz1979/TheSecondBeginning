@@ -12,6 +12,7 @@
 [ext_resource type="PackedScene" path="res://gameplay/scenes/menus/OptionsMenu.tscn" id="10_options"]
 [ext_resource type="PackedScene" path="res://gameplay/scenes/game/StatisticsPanel.tscn" id="11_stats"]
 [ext_resource type="PackedScene" path="res://gameplay/scenes/game/TechTreePanel.tscn" id="12_techtree"]
+[ext_resource type="PackedScene" path="res://gameplay/scenes/game/DemolishConfirmationDialog.tscn" id="13_demolish"]
 
 [sub_resource type="StyleBoxFlat" id="StyleBoxFlat_game"]
 bg_color = Color(0.19934133, 0.34936652, 0.5477696, 1)
@@ -164,3 +165,5 @@ filters = PackedStringArray("*.json ; File JSON")
 [node name="StatisticsPanel" parent="." instance=ExtResource("11_stats")]
 
 [node name="TechTreePanel" parent="." instance=ExtResource("12_techtree")]
+
+[node name="DemolishConfirmationDialog" parent="." instance=ExtResource("13_demolish")]

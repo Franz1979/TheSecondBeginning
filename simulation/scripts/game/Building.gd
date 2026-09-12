@@ -36,6 +36,26 @@ var micro_y: int = 0
 var construction_started_day: int = -1
 var is_complete: bool = false
 
+# true dal momento in cui SetupSiteAction completa per questo edificio (vedi GameScene.
+# _spawn_build_site_placeholders, che lo valorizza sul segnale SetupSiteAction.site_setup_completed)
+# — DIVERSO da is_complete: un cantiere allestito non è ancora un edificio finito (ClearAction, terzo
+# step, rimuove la vegetazione e riserva lo spazio ma non tocca is_complete; BuildAction, quarto e
+# ultimo step arrivato il 2026-09-11, è quella che davvero lo valorizza a true — vedi BuildAction.
+# on_complete), ma non è più "in attesa che qualcuno ci arrivi". MicroCellRenderer._draw_buildings
+# lo usa per decidere COSA disegnare sulla microcella finché is_complete resta false (2026-09-11,
+# richiesta utente — RIVISTO nello stesso giorno: PRIMA tentativo era rendere l'edificio in bianco e
+# nero, scartato non appena visto in-game — la sagoma dell'edificio torna colorata insieme ai
+# bastoncini, comportamento indesiderato): false = cartello "work in progress" sopra la microcella
+# (vegetazione/altro contenuto resta visibile sotto); true = nessun cartello, solo i bastoncini
+# spawnati da _spawn_build_site_placeholders (rimossi da GameScene._on_building_construction_
+# completed quando BuildAction completa davvero) — in NESSUno dei due casi la sagoma vera
+# dell'edificio (capanna/Stone Circle/Deposit Site) viene disegnata: quella resta riservata a
+# is_complete=true. Sempre true per gli edifici piazzati istantaneamente da GameScene.
+# _place_building_at (nessuna fase "in attesa" per quel percorso, sagoma vera visibile da subito) e
+# per quelli caricati da un save che non conosce ancora questo campo (vedi GameLoadService, fallback
+# su is_complete).
+var site_setup_complete: bool = false
+
 # Valorizzata al completamento (= rules.max_durability), mai prima — scende per attacchi (futuro,
 # non ancora implementato) e/o degrado da rules.lifespan_years (anch'esso non ancora applicato).
 var current_durability: int = 0
@@ -54,6 +74,40 @@ var built_year: int = -1
 # raggiunge 1.0 (risorsa deperita). Vuoto finché non esiste un vero inventario da cui prelevare/
 # depositare.
 var stored_resources: Dictionary = {}
+
+# Progresso di costruzione (2026-09-10, richiesta utente — preparazione Build Task, Step 1: SOLO il
+# campo; PRIMO vero consumatore arrivato il 2026-09-11 con BuildAction, poi ESTESO lo stesso giorno
+# a SetupSiteAction/ClearAction). Untyped oltre Dictionary (stesso principio di stored_resources
+# sopra: contenuto eterogeneo/annidato, un Dictionary tipizzato non lo rappresenterebbe comunque
+# meglio). Contenuto REALE oggi:
+#   {"site_setup_days_done": float, "clear_days_done": float, "labor_accumulated": float,
+#    "space_reserved": bool}
+# — le prime tre scritte in modo incrementale ad ogni get_stamina_delta() del rispettivo step
+# (SetupSiteAction/ClearAction/BuildAction), MAI cachate su un campo interno dell'Action: questa è
+# la ragione per cui il progresso sopravvive a un'interruzione (una nuova Task assegnata allo stesso
+# individuo a metà step, che scarta l'istanza Action corrente SENZA passare da
+# TaskPersistenceService — quel percorso esiste solo per salvataggio/reload, non per una
+# riassegnazione in-sessione) — una nuova istanza dello stesso tipo di step, per lo stesso Building,
+# legge il valore già presente qui e riparte da lì, per costruzione, senza bisogno di alcun
+# ripristino esplicito. Vedi le tre classi per la formula/soglia di ciascuna chiave (SetupSiteAction.
+# DURATION_DAYS fissa; ClearAction._duration calcolata da grass/tree/shrub della microcella;
+# BuildAction.rules.required_labor). "space_reserved" (2026-09-12, richiesta utente — bugfix
+# idempotenza) è un caso A PARTE, non una soglia progressiva come le altre tre: un booleano scritto
+# UNA SOLA VOLTA da ClearAction.on_complete (mai da get_stamina_delta), marca che dedicated_space
+# [BUILDING] è già stato incrementato per questo edificio — DISTINTO da "clear_days_done >=
+# _duration" (che dice solo che il tempo è maturato): serve a evitare che una ClearAction
+# ricostruita da zero per un edificio già "clear" (auto-skip immediato) rieseguisca la riserva di
+# spazio una seconda volta, vedi ClearAction._get_space_reserved/on_complete. "materials_delivered"
+# (previsto nella convenzione originale di
+# questo campo, mai imposto da alcun codice) resta FUORI SCOPE per ora — richiesta esplicita utente:
+# nessun consumo/verifica di rules.required_materials in questo giro, arriverà con una futura Bring
+# Task dedicata, che allora scriverà qui una chiave "materials_delivered": {resource_name: quantity,
+# ...} pensata per rispecchiare le stesse chiavi di BuildingRules.required_materials (confronto
+# "consegnato ≥ richiesto" campo per campo diretto). Vuoto finché nessuna Build Task esiste (edifici
+# piazzati istantaneamente da GameScene._place_building_at restano con questo campo vuoto per
+# sempre, coerentemente con is_complete=true assegnato subito — vedi quella funzione, non toccata
+# qui). Non tocca construction_started_day: resta come oggi, nessun consumatore ancora.
+var construction_progress: Dictionary = {}
 
 # Restrizione PER-ISTANZA delle categorie accettate (2026-09-09, richiesta utente) — DIVERSO da
 # BuildingRules.accepted_categories: quello è per TIPO (condiviso — vedi BuildingCalculator.
@@ -85,3 +139,43 @@ func _init(_rules: BuildingRules = null, _macro_x: int = 0, _macro_y: int = 0, _
 	macro_x = _macro_x
 	macro_y = _macro_y
 	building_type_name = _building_type_name
+
+
+# Interfaccia "target riassegnabile" (2026-09-12, richiesta utente — sostituzione di
+# _pending_build_tasks con un percorso generico di riassegnazione Task). Duck-typed, non un'
+# interfaccia/classe base formale — stessa convenzione già in uso da SpatialSelectionService.
+# find_nearest (assume solo che il candidato esponga certi campi/metodi, nessun contratto GDScript
+# esplicito): un futuro secondo tipo di target (non-Building) può implementare questi stessi tre
+# metodi senza ereditare da qui. Building.gd resta nel layer di simulazione (simulation/scripts/
+# game/) e non può dipendere da concetti di gameplay/rendering (LiveMacroCell/MicroCellRenderer/
+# GameScene) — per questo get_resumable_task_context sotto NON risolve is_currently_grass (serve il
+# renderer live): quel dato resta responsabilità del chiamante (vedi TaskReassignmentService/
+# GameScene._try_assign_build_command_on_right_click, extra_context).
+
+# true finché esiste ancora lavoro di costruzione da fare per questo edificio — è la condizione che
+# decide se il click destro su di esso deve (ri)avviare/riprendere una Build Task invece di essere
+# ignorato (un edificio già completo non è mai un target riassegnabile).
+func has_resumable_task() -> bool:
+	return not is_complete
+
+
+# Path del TaskDefinition da ricostruire da zero per riprendere il lavoro su questo edificio. Vive
+# QUI (non su GameScene, dove stava prima come BUILD_TASK_DEFINITION_PATH) perché è un dato di TIPO
+# di target riassegnabile, non un dettaglio del chiamante — un futuro secondo tipo di target
+# riassegnabile fornirà il proprio path allo stesso modo.
+func get_resumable_task_definition_path() -> String:
+	return "res://gameplay/scripts/tasks/definitions/build.tres"
+
+
+# Contesto minimo per TaskFactory.build_task — SOLO "target_position"/"target_building", le due
+# chiavi che Building può risolvere da sé (stesse chiavi/stessa formula Vector2(micro_pos) già usate
+# da _start_building_task_at). "macro_state"/"is_currently_grass" (le altre due chiavi lette da
+# build.tres, vedi TaskFactory/ClearAction) restano FUORI: la prima serve MacroCellState (World non
+# è raggiungibile da qui, layer di simulazione — vedi nota sopra), la seconda il renderer live
+# (layer di gameplay/rendering) — entrambe responsabilità del chiamante, fuse come extra_context da
+# TaskReassignmentService.reassign_task.
+func get_resumable_task_context() -> Dictionary:
+	return {
+		"target_position": Vector2(micro_x, micro_y),
+		"target_building": self,
+	}

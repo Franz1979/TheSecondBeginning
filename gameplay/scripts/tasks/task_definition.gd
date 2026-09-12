@@ -14,6 +14,18 @@ extends Resource
 # letto da alcuna logica di gioco.
 @export var task_name: String = ""
 
+# Numero massimo di individui assegnabili contemporaneamente a una Task nata da questa ricetta
+# (2026-09-10, richiesta utente — preparazione Build Task, Step 1: SOLO il dato, TaskFactory.
+# build_task NON lo legge/copia ancora in questo passo, vedi task_factory.gd — un futuro giro lo
+# collegherà, stesso schema con cui task_name viene già copiato oggi su Task.task_name). Vive QUI
+# (non solo come default fisso su Task, vedi Task.max_workers) perché è un dato di TIPO di Task —
+# "quanti lavoratori ammette questa ricetta", non uno stato di un'istanza runtime — stesso principio
+# per cui task_name/step_description vivono su TaskDefinition/TaskStepDefinition e non vengono
+# inventati ad ogni Task costruita a mano. Default 1 = comportamento invariato per haul_resource.
+# tres/daydreaming.tres (nessuno dei due lo valorizza ancora), coerente col default 1 di Task.
+# max_workers.
+@export var max_workers: int = 1
+
 # Step astratti, in ordine — untyped Array (non Array[TaskStepDefinition]): stessa scelta
 # deliberata già fatta da ResourceGrowthRules.subtypes (Array di SubtypeRules, vedi CLAUDE.md,
 # Resource simulation) — un array TIPIZZATO di Resource custom è più fragile da scrivere a mano in

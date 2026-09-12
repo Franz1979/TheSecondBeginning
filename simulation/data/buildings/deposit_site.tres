@@ -6,8 +6,8 @@
 script = ExtResource("1_deposit_site")
 building_name = "building_deposit_site"
 category = 2
-min_construction_days = 4
-required_labor = 100
+min_construction_days = 3
+required_labor = 1000
 storage_slot_count = 9
 storage_space_per_slot = 100
 durability_multiplier_by_category = Array[float]([1.0, 1.1])

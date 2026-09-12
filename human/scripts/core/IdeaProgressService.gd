@@ -16,13 +16,28 @@ extends RefCounted
 # non la conclude) — il chiamante lo usa per sapere quando propagare il cambiamento altrove (es.
 # BuildBar), senza dover ricontrollare da sé completed_ideas prima/dopo.
 static func add_thoughts(folk: Folk, amount: int) -> bool:
+	# Contatore aggregato (2026-09-10, richiesta utente — "toglilo [il limite], fai che il counter
+	# ne accumula ancora anche se non fa scattare nulla": col vecchio comportamento, una volta
+	# esaurite tutte le Idee disponibili, ogni pensiero depositato dopo quel punto veniva perso
+	# silenziosamente, "return false" sotto usciva PRIMA di scrivere qualunque cosa — un Folk che
+	# aveva già completato tutte le idee raggiungibili smetteva di fatto di accumulare qualunque
+	# progresso visibile, anche se il giocatore continuava a far pensare i propri individui).
+	# folk.thoughts_count è ESATTAMENTE il campo lasciato pronto per questo (vedi Folk.gd: "Nessuna
+	# logica lo incrementa ancora in questo passo: solo il campo dichiarato, pronto per essere
+	# scritto da un futuro DepositThoughtAction") — incrementato qui SEMPRE, incondizionatamente,
+	# prima di qualunque `return false` sotto: un pensiero depositato conta sempre per il totale
+	# aggregato, che ci sia o meno un'Idea attiva pronta a consumarlo. Già persistito in save/load
+	# (GameSaveService/GameLoadService, invariati — il campo esisteva già), nessuna modifica lì
+	# necessaria.
+	folk.thoughts_count += amount
 	if folk.active_idea_id == "":
 		folk.active_idea_id = _pick_next_idea_id(folk)
 	if folk.active_idea_id == "":
 		# Nessuna Idea disponibile — tutte già completate, o le rimanenti hanno prerequisiti non
-		# ancora soddisfatti. Nessun errore: uno stato legittimo, i pensieri vanno semplicemente
-		# persi finché non si libera un'Idea (nessun accumulo "in sospeso" da nessuna parte, per
-		# design — non richiesto, non introdotto).
+		# ancora soddisfatti. Nessun errore: uno stato legittimo, thoughts_invested/completed_ideas
+		# restano invariati (nessuna Idea su cui investire), ma folk.thoughts_count sopra è già
+		# stato incrementato — il pensiero non è più perso, solo "non ha nulla su cui applicarsi
+		# oggi". Nessun completamento scatta, comportamento invariato per il resto della funzione.
 		return false
 
 	var active_idea := IdeaCalculator.get_idea(folk.active_idea_id)

@@ -45,8 +45,46 @@ extends VBoxContainer
 # = nessun limite di tipo) — richiesta esplicita utente: l'istanza può solo restringere, mai
 # scegliere tra categorie che il tipo comunque rifiuterebbe.
 
+# Emesso quando il player preme EmptyAllButton (2026-09-11, richiesta utente — "abilita il button
+# empty all con il comando che davvero azzera tutto il materiale... per ora non pensiamo a dove
+# vada, lo fai solo sparire dal gioco e dal deposito") — stesso principio "muto" di
+# VegetationInfoPanel.cut_requested: questo pannello non tocca mai Building.stored_resources da sé,
+# si limita a segnalare l'intenzione, GameScene decide se/come agire (qui: svuota per davvero + le
+# necessarie chiamate di refresh alla mappa, che questo pannello non ha modo di raggiungere). A
+# DIFFERENZA di cut_requested (nessun payload, GameScene tiene la propria selezione a parte), qui
+# building è passato ESPLICITO nel segnale: più diretto che far ri-risolvere a GameScene lo stesso
+# _current_building che questo pannello ha già in mano.
+signal empty_all_requested(building: Building)
+
+# Emesso al click su un'icona OCCUPATA della griglia residenti (2026-09-12, richiesta utente —
+# "puoi fare che la icona delle persone nella vista edificio funzioni come un centra su di loro?")
+# — stesso principio "muto" di empty_all_requested sopra: questo pannello non sa cosa significhi
+# "centrare la camera"/selezionare un individuo (nessun riferimento a GameScene/human_individuals
+# oltre ai Dictionary già risolti che gli arrivano), si limita a segnalare QUALE individuo (per id,
+# l'unico dato stabile che ha in mano — mai un riferimento HumanIndividual vivo, che questo
+# pannello non possiede). GameScene risolve l'id sul vero oggetto e riusa la STESSA funzione già
+# dietro al bottone "🎯" per-riga del pannello popolazione (_on_population_individual_center_
+# requested) — stesso comportamento "seleziona+centra" ovunque nel progetto, non una variante
+# diversa solo per questo pannello.
+signal resident_center_requested(individual_id: int)
+
 const STORAGE_SLOT_SIZE: float = 32.0
 const EMPTY_STORAGE_SLOT_COLOR := Color(0.3, 0.3, 0.3, 0.4)
+
+# Griglia residenti (2026-09-12, richiesta utente — "quadrati simili a quelli dello storage per
+# rappresentare individui residenti") — STESSA dimensione/STESSO colore slot-vuoto di StorageGrid
+# sopra, costanti DUPLICATE apposta (non condivise) invece di riusare STORAGE_SLOT_SIZE/
+# EMPTY_STORAGE_SLOT_COLOR direttamente: stesso principio già in uso altrove nel progetto per due
+# concetti visivamente simili ma concettualmente indipendenti (es. BuildingGhost/MicroCellRenderer
+# duplicano la stessa geometria invece di condividerla) — un domani le due griglie potrebbero
+# divergere (dimensione slot diversa, ecc.) senza che l'una trascini l'altra.
+const RESIDENT_SLOT_SIZE: float = 32.0
+const EMPTY_RESIDENT_SLOT_COLOR := Color(0.3, 0.3, 0.3, 0.4)
+# Sfondo neutro/caldo per uno slot OCCUPATO (a differenza degli slot storage, che usano
+# IconRegistry.get_resource_color per tipo di risorsa — qui non esiste un "tipo" di persona da
+# colorare diversamente, un solo colore neutro per ogni residente, l'icona sopra fa la
+# distinzione uomo/donna/bimbo/bimba).
+const OCCUPIED_RESIDENT_SLOT_COLOR := Color(0.72, 0.62, 0.48, 1.0)
 
 # "Serbatoietto" di riempimento slot (2026-09-10, richiesta utente — "se vogliamo esagerare
 # potremmo provare a mettere sull'icona una specie di serbatoietto") — striscia verticale sul bordo
@@ -63,6 +101,9 @@ const STORAGE_SLOT_FILL_BAR_FILL_COLOR := Color(1.0, 1.0, 1.0, 0.85)
 @onready var status_label: Label = $StatusLabel
 @onready var durability_label: Label = $DurabilityLabel
 @onready var built_year_label: Label = $BuiltYearLabel
+@onready var residents_caption: Label = $ResidentsCaption
+@onready var residents_grid: GridContainer = $ResidentsGrid
+@onready var storage_caption: Label = $StorageCaption
 @onready var storage_grid: GridContainer = $StorageGrid
 @onready var id_label: Label = $IdLabel
 @onready var settings_separator: HSeparator = $SettingsSeparator
@@ -83,12 +124,28 @@ var _current_building: Building = null
 
 func _ready() -> void:
 	clear()
+	residents_caption.text = tr("building_residents_caption")
+	storage_caption.text = tr("building_storage_caption")
 	settings_caption.text = tr("building_settings_caption")
 	accepted_categories_caption.text = tr("building_settings_accepted_categories_caption")
 	empty_all_button.text = tr("building_settings_empty_all_button")
+	# BUGFIX (2026-09-11, richiesta utente) — il bottone esisteva già (testo/visibilità gestiti da
+	# _refresh_settings_section) ma non era MAI stato collegato a nulla: un puro decoro che non
+	# faceva niente alla pressione. `_current_building` letto FRESCO dentro la lambda (non bindato
+	# ora, che sarebbe sempre null: questo _ready() gira una volta sola all'avvio della scena, ben
+	# prima che qualunque edificio venga selezionato) — stesso principio di VegetationInfoPanel.
+	# cut_requested, un solo collegamento in _ready() che resta valido per tutta la vita del
+	# pannello, indipendentemente da quale edificio sia mostrato in un dato momento.
+	empty_all_button.pressed.connect(func(): empty_all_requested.emit(_current_building))
 
 
-func show_building(building: Building) -> void:
+# residents_display_data (2026-09-12, richiesta utente — griglia residenti): Array di Dictionary
+# {"id","name","age","sex","is_child"}, GIÀ RISOLTI dal chiamante (GameScene._resolve_building_
+# residents_display_data) — questo pannello resta "muto" su human_individuals/game_data/
+# HumanCalculator, stesso principio dichiarato in testa al file. Default [] così ogni chiamante che
+# non lo passa ancora (nessuno oggi, ma comportamento difensivo) mostra semplicemente una griglia
+# residenti vuota invece di un errore.
+func show_building(building: Building, residents_display_data: Array[Dictionary] = []) -> void:
 	visible = true
 	_current_building = building
 	status_label.text = tr("building_status_label").format({
@@ -103,6 +160,7 @@ func show_building(building: Building) -> void:
 		else tr("building_not_yet_built")
 	)
 
+	_refresh_residents_grid(building, residents_display_data)
 	_refresh_storage_grid(building)
 	_refresh_settings_section(building)
 
@@ -126,9 +184,11 @@ func _refresh_storage_grid(building: Building) -> void:
 
 	var slot_count: int = building.rules.storage_slot_count if building.rules != null else 0
 	if slot_count <= 0:
+		storage_caption.visible = false
 		storage_grid.visible = false
 		return
 
+	storage_caption.visible = true
 	storage_grid.visible = true
 	# Colonne = ceil(sqrt(slot_count)) — 3x3 per 9 (deposit_site), 2x2 per 4 (hut), un default
 	# ragionevole/generico per qualunque futuro slot_count senza doverlo configurare a mano per tipo.
@@ -247,6 +307,98 @@ func _build_storage_slot(slot_data: Dictionary) -> Control:
 	box.add_child(fill_bar_fill)
 
 	return box
+
+
+# Griglia residenti (2026-09-12, richiesta utente — "quadrati simili a quelli dello storage per
+# rappresentare individui residenti") — STESSO principio/STESSA struttura di _refresh_storage_grid
+# sopra: un riquadro per SLOT (building.rules.max_residents, non per residente effettivo — uno
+# slot senza residente resta vuoto/grigio, stesso trattamento di uno slot storage libero), colonne
+# = ceil(sqrt(max_residents)). Nascosta del tutto per un edificio non residenziale
+# (max_residents<=0, es. Stone Circle/Deposit Site) — stesso principio "nessuna griglia vuota
+# fuorviante" già seguito da StorageGrid. Piazzata SOPRA StorageGrid nell'ordine dei nodi (vedi
+# BuildingInfoPanel.tscn) — richiesta esplicita utente: "se residential, sopra quello dei
+# residenti" — un edificio come Hut, che ha ENTRAMBE le griglie (storage_slot_count E
+# max_residents valorizzati), le mostra impilate con un caption ciascuna per restare leggibili.
+func _refresh_residents_grid(building: Building, residents_display_data: Array[Dictionary]) -> void:
+	for child in residents_grid.get_children():
+		child.queue_free()
+
+	var max_residents: int = building.rules.max_residents if building.rules != null else 0
+	if max_residents <= 0:
+		residents_caption.visible = false
+		residents_grid.visible = false
+		return
+
+	residents_caption.visible = true
+	residents_grid.visible = true
+	residents_grid.columns = max(int(ceil(sqrt(float(max_residents)))), 1)
+
+	for i in range(max_residents):
+		var resident_data: Dictionary = residents_display_data[i] if i < residents_display_data.size() else {}
+		residents_grid.add_child(_build_resident_slot(resident_data))
+
+
+# resident_data vuoto ({}) = slot libero — riquadro grigio spento, nessuna icona/tooltip, stesso
+# trattamento di uno slot storage libero. Slot occupato ({"id","name","age","sex","is_child"}, vedi
+# GameScene._resolve_building_residents_display_data): sfondo neutro/caldo (OCCUPIED_RESIDENT_
+# SLOT_COLOR, nessuna distinzione di colore per tipo — a differenza degli slot storage, qui la
+# distinzione visiva è tutta nell'icona), icona uomo/donna/bimbo/bimba (vedi _resident_icon sotto)
+# ed hover-tooltip "{nome} ({età})" (richiesta esplicita utente: "facendo hover sull'icona
+# pipottino tooltip con nome ed età").
+func _build_resident_slot(resident_data: Dictionary) -> Control:
+	var box := ColorRect.new()
+	box.custom_minimum_size = Vector2(RESIDENT_SLOT_SIZE, RESIDENT_SLOT_SIZE)
+
+	if resident_data.is_empty():
+		box.color = EMPTY_RESIDENT_SLOT_COLOR
+		return box
+
+	box.color = OCCUPIED_RESIDENT_SLOT_COLOR
+	box.tooltip_text = tr("building_resident_tooltip").format({
+		"name": String(resident_data.get("name", "")),
+		"age": int(resident_data.get("age", 0)),
+	})
+
+	# Click -> resident_center_requested (2026-09-12, richiesta utente) — gui_input invece di un
+	# vero Button (che avrebbe portato con sé lo stile/padding di default del tema, da annullare
+	# apposta per un semplice quadrato colorato): stesso principio "Control puro + gui_input" già
+	# accettato altrove nel progetto per un'area cliccabile senza i decori di un Button. Cursore a
+	# manina (CURSOR_POINTING_HAND) per segnalare che è cliccabile, dato che visivamente è identico
+	# a un riquadro storage (mai cliccabile) se non per questo indizio.
+	box.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+	# STOP esplicito (non l'eventuale default ereditato) — gui_input sotto non scatterebbe con
+	# MOUSE_FILTER_IGNORE, servirebbe a nulla collegarlo senza questa riga.
+	box.mouse_filter = Control.MOUSE_FILTER_STOP
+	var individual_id: int = int(resident_data.get("id", -1))
+	box.gui_input.connect(func(event: InputEvent) -> void:
+		if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
+			resident_center_requested.emit(individual_id)
+	)
+
+	var icon_label := Label.new()
+	icon_label.text = _resident_icon(int(resident_data.get("sex", HumanTypes.Sex.MALE)), bool(resident_data.get("is_child", false)))
+	icon_label.add_theme_font_size_override("font_size", 20)
+	icon_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	icon_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	icon_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	icon_label.anchor_right = 1.0
+	icon_label.anchor_bottom = 1.0
+	box.add_child(icon_label)
+
+	return box
+
+
+# Emoji uomo/donna/bimbo/bimba (2026-09-12, richiesta utente: "proponi icona per donna/uomo,
+# bimbo/bimba, usa donna/uomo per tutte le età superiori a child, bimbo/bimba per le età di
+# child") — stesso principio "emoji quando già leggibile da sé" di IconRegistry.BUILDING_ICONS
+# ["stick_tent"]="⛺": nessuna icona disegnata a mano necessaria qui, questi quattro emoji sono già
+# ampiamente distinguibili. is_child = (age_band == HumanTypes.AgeBand.CHILD), risolto dal
+# chiamante — TEENAGER/FERTILE_ADULT/MATURE_ADULT/OLD sono TUTTE "adulto" qui, nessuna ulteriore
+# distinzione (richiesta esplicita).
+func _resident_icon(sex: int, is_child: bool) -> String:
+	if is_child:
+		return "👧" if sex == HumanTypes.Sex.FEMALE else "👦"
+	return "👩" if sex == HumanTypes.Sex.FEMALE else "👨"
 
 
 # Punto di estensione GENERICO per contenuto condizionale-al-tipo (2026-09-09, richiesta utente —

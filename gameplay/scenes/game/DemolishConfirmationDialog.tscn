@@ -1,0 +1,6 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://gameplay/scenes/game/DemolishConfirmationDialog.gd" id="1_demolish"]
+
+[node name="DemolishConfirmationDialog" type="ConfirmationDialog"]
+script = ExtResource("1_demolish")

@@ -317,9 +317,26 @@ func save_game_to_json(
 			"micro_y": building.micro_y,
 			"construction_started_day": building.construction_started_day,
 			"is_complete": building.is_complete,
+			# site_setup_complete (2026-09-11, richiesta utente — cartello "work in progress" sul
+			# cantiere non ancora allestito, vedi Building.gd) — persistito così un save a metà
+			# "cantiere in attesa" (Building già in world.buildings, SetupSiteAction non ancora
+			# completata) continua a mostrare il cartello dopo un reload, invece di saltare
+			# direttamente alla fase "solo bastoncini" per default.
+			"site_setup_complete": building.site_setup_complete,
 			"current_durability": building.current_durability,
 			"built_year": building.built_year,
 			"stored_resources": building.stored_resources,
+			# construction_progress (2026-09-10, richiesta utente — preparazione Build Task; primi
+			# consumatori arrivati il 2026-09-11 con BuildAction/SetupSiteAction/ClearAction) — stesso
+			# trattamento di stored_resources sopra: Dictionary annidato salvato così com'è, nessuna
+			# trasformazione (JSON rappresenta nativamente interi/Dictionary innestati/float). Contiene
+			# oggi {"site_setup_days_done", "clear_days_done", "labor_accumulated"} (tutti float) per
+			# un edificio con una Build Task in corso — persiste "gratis" grazie a questo salvataggio
+			# wholesale, nessuna delle tre Action implementa get_save_data/load_save_data per il
+			# proprio progresso proprio per questo (solo dati "di identità" del costruttore, vedi quei
+			# file). Vuoto per ogni edificio piazzato istantaneamente da _place_building_at (percorso
+			# che non passa mai da queste tre Action).
+			"construction_progress": building.construction_progress,
 			# enabled_categories (2026-09-09, richiesta utente) — filtro categorie PER-ISTANZA (vedi
 			# Building.gd), Array[SecondaryResourceTypes.Category] serializzato come Array[int]
 			# grezzo (JSON non ha un concetto di array tipizzato Godot, gli enum sono int sotto il
@@ -398,6 +415,9 @@ func save_game_to_json(
 				"mother_id": individual.mother_id,
 				"father_id": individual.father_id,
 				"partner_id": individual.partner_id,
+				# Campo base Rest Task esplicita (2026-09-12, richiesta utente) — vedi HumanIndividual.
+				# house_id per il commento esteso, -1 = nessuna casa assegnata.
+				"house_id": individual.house_id,
 				"name": individual.name,
 				"position_x": individual.position.x,
 				"position_y": individual.position.y,

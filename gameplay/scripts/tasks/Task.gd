@@ -18,9 +18,21 @@ extends RefCounted
 # task_definition.gd/task_factory.gd). Nessun impatto sui riferimenti esistenti: `class_name Task`
 # resta globale in GDScript, nessun preload/percorso hardcoded referenziava questo file altrove.
 
-# Step ordinati — assegnati una volta al costruttore, mai mutati dopo (nessun metodo per
-# aggiungere/rimuovere step a runtime in questo passo: "un solo current_task alla volta", nessuna
-# coda di più Task, richiesta esplicita).
+# Emesso una volta PER OGNI step aggiunto da append_steps() sotto (2026-09-10, richiesta utente —
+# Step 2 del refactor Daydream via TaskFactory, preparazione del meccanismo: serve a un futuro
+# chiamante — es. GameScene, per ricollegare i signal idea_completed/thought_deposited a un
+# UnloadAction costruito dinamicamente da _handle_pending_thought_target_search, 2c — per sapere
+# QUANDO un nuovo step è stato accodato a runtime, dato che append_steps può scattare in un frame
+# imprevedibile rispetto a quando la Task originale è stata assegnata). Deliberatamente UN emit per
+# step, non un singolo emit con l'intero Array[Action] appena accodato: un listener che vuole
+# reagire solo a un tipo concreto (es. `if action is UnloadAction`) filtra su un singolo valore per
+# chiamata, senza dover iterare da sé un array ad ogni notifica. Nessun altro cambio di
+# comportamento ad append_steps() — il signal è un'aggiunta puramente osservativa.
+signal step_appended(action: Action)
+
+# Step ordinati — assegnati una volta al costruttore, mai mutati dopo l'_init (append_steps() sotto
+# è l'UNICA eccezione, per Task già in corso — "un solo current_task alla volta", nessuna coda di
+# più Task, richiesta esplicita invariata).
 var steps: Array[Action] = []
 
 # Indice dello step attualmente attivo — 0-based, parte dal primo step. Un valore >= steps.size()
@@ -44,6 +56,28 @@ var context: Dictionary = {}
 # ricetta (vedi task_factory.gd) — mai letto da nessuna logica di simulazione, solo dal log.
 var task_name: String = ""
 
+# Id univoco per-Task (2026-09-12, richiesta utente — "le task hanno un id univoco?": NO prima di
+# questo campo, introdotto apposta per la nuova tab di debug 🐞 in TaskDebugPanel/TaskDebugRegistry,
+# che elenca tutte le Task assegnate in questa sessione) — contatore STATIC condiviso da OGNI
+# istanza (mai per-individuo/per-tipo), incrementato ad ogni _init(), mai riusato nemmeno dopo che
+# una Task viene scartata/sostituita. SOLO diagnostico — nessuna logica di simulazione legge mai
+# questo campo, stesso principio di task_name sopra. NON persistito (TaskPersistenceService non lo
+# scrive/legge): una Task ricostruita da un reload riceve un id NUOVO (il prossimo disponibile),
+# mai lo stesso che aveva prima del salvataggio — coerente con TaskDebugRegistry, che è anch'esso
+# solo in-memoria per la sessione corrente, mai persistito.
+static var _next_id: int = 1
+var id: int = 0
+
+# Numero massimo di individui assegnabili CONTEMPORANEAMENTE a questa Task (2026-09-10, richiesta
+# utente — preparazione Build Task, Step 1: SOLO il campo, nessuna logica di condivisione lavoro
+# ancora — arriverà con un giro successivo, insieme al vero trigger). Default 1 = comportamento
+# invariato per ogni Task esistente (haul_resource/daydreaming, entrambe implicitamente a un solo
+# lavoratore, mai più di un individuo alla volta oggi — vedi CLAUDE.md, "un solo current_task alla
+# volta"). Stesso trattamento di task_name sopra: TaskFactory.build_task NON lo copia ancora da
+# TaskDefinition.max_workers (vedi task_definition.gd) in questo passo — resta al default fisso 1
+# per qualunque Task costruita da TaskFactory finché quel collegamento non verrà scritto.
+var max_workers: int = 1
+
 # Costo in stamina e giorni di gioco accumulati PER STEP (2026-09-07, richiesta utente) — array
 # paralleli a `steps` (stesso indice), aggiornati da record_step_cost sotto ad ogni
 # HumanIndividualActionService.apply_action mentre quello step è quello attivo. Vive qui (non su
@@ -62,6 +96,8 @@ var step_descriptions: Array[String] = []
 
 
 func _init(p_steps: Array[Action] = []) -> void:
+	id = _next_id
+	_next_id += 1
 	steps = p_steps
 	step_stamina_cost.resize(steps.size())
 	step_stamina_cost.fill(0.0)
@@ -95,6 +131,13 @@ func append_steps(new_steps: Array[Action]) -> void:
 	new_descriptions.resize(added_count)
 	new_descriptions.fill("")
 	step_descriptions.append_array(new_descriptions)
+
+	# step_appended (2026-09-10) — DOPO che tutti gli array paralleli sopra sono già coerenti con
+	# `steps` (un listener che reagisse leggendo task.steps/step_stamina_cost/ecc. dentro il proprio
+	# callback trova quindi sempre uno stato interno già allineato, mai a metà aggiornamento). Un
+	# emit per step, nello stesso ordine di new_steps — vedi il commento sul signal per il perché.
+	for appended_action in new_steps:
+		step_appended.emit(appended_action)
 
 
 # Azione attiva (quella all'indice corrente) — null se la lista è vuota o l'indice è già oltre

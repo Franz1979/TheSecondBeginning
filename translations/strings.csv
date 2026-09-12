@@ -56,9 +56,16 @@ center_on_selection_tooltip,Centra la camera sulla selezione corrente
 building_hut,Capanna
 building_stone_circle,Cerchio di pietre
 building_deposit_site,Sito di deposito
+building_stick_tent,Tenda di rami
 build_bar_stone_circle_disabled_tooltip,Non costruibile: esiste già un centro villaggio
 build_bar_deposit_site_tooltip,Sito di deposito
+build_bar_stick_tent_tooltip,Tenda di rami
 build_bar_requires_idea_tooltip,Richiede: {idea}
+build_bar_demolish_tooltip,Demolisci
+demolish_confirmation_title,Demolisci edificio
+demolish_confirmation_text,Demolire {building} #{id}? L'operazione è immediata e non può essere annullata.
+demolish_confirmation_confirm,Demolisci
+demolish_confirmation_cancel,Annulla
 notification_death,{name} è morto/a per {cause} (età {age}, giorno {day})
 death_cause_old_age,vecchiaia
 death_cause_murder,omicidio
@@ -113,8 +120,17 @@ individual_id_label,ID: {id} (Folk {folk}, Gruppo {group})
 individual_mother_id_label,ID Madre: {id}
 individual_father_id_label,ID Padre: {id}
 individual_partner_id_label,ID Partner: {id}
+individual_house_id_label,ID Casa: {id}
 selection_title_name,Nome: {name}
 selection_title_type,Tipo: {type}
+game_info_tab_buildings,Edifici
+buildings_panel_summary_label,Edifici: {total} ({complete} completi, {under_construction} in costruzione)
+buildings_panel_center_button_tooltip,Centra e seleziona
+game_info_tab_debug,Debug: Task
+task_debug_panel_header,Debug: Task
+task_debug_panel_clear_button,Svuota
+task_debug_panel_refresh_button_tooltip,Aggiorna elenco
+task_debug_panel_unnamed_task,(senza nome)
 building_status_label,Stato: {status}
 building_status_complete,Completo
 building_status_under_construction,In costruzione
@@ -122,6 +138,9 @@ building_durability_label,Durabilità: {current}/{max}
 building_built_year_label,Costruito: anno {year}
 building_not_yet_built,Non ancora costruito
 building_stored_label,Immagazzinato: {entries}
+building_residents_caption,Residenti
+building_resident_tooltip,{name} (età {age})
+building_storage_caption,Magazzino
 building_id_label,ID: {id}
 building_settings_caption,Impostazioni
 building_settings_accepted_categories_caption,Categorie accettate

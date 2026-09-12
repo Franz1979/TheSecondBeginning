@@ -152,7 +152,11 @@ const STONE_CIRCLE_BLOB_VERTEX_COUNT: int = 8
 # apposta, stesso principio già in uso tra MicroCellRenderer/BuildingGhost) di
 # BuildingGhost._draw_deposit_site/_deposit_site_polygon, così l'anteprima e l'edificio finito
 # coincidono esattamente.
-const DEPOSIT_SITE_COLOR := Color(0.42, 0.34, 0.24, 1.0)
+# Riempimento schiarito (2026-09-12, richiesta utente: "leggermente più chiaro, lascia il bordo di
+# questo colore", poi "ancora un po' più chiaro") — DEPOSIT_SITE_COLOR alzato in due passi (era
+# 0.42/0.34/0.24, poi 0.50/0.41/0.29), DEPOSIT_SITE_OUTLINE_COLOR INVARIATO apposta in entrambi, come
+# richiesto.
+const DEPOSIT_SITE_COLOR := Color(0.58, 0.48, 0.34, 1.0)
 const DEPOSIT_SITE_OUTLINE_COLOR := Color(0.24, 0.18, 0.12, 1.0)
 const DEPOSIT_SITE_OUTLINE_WIDTH: float = 0.5
 # 4.5 (2026-09-08, richiesta utente: "allarga ancora di più, quasi ad occupare tutta la microcella")
@@ -160,6 +164,75 @@ const DEPOSIT_SITE_OUTLINE_WIDTH: float = 0.5
 # del bordo anche col jitter massimo (vedi _deposit_site_polygon, fino a ×1.08).
 const DEPOSIT_SITE_HALF_SIDE: float = 4.5
 const DEPOSIT_SITE_VERTEX_COUNT: int = 8
+
+# Stick Tent (2026-09-12, richiesta utente — collegamento UI/rendering: il .tres/BuildingRules
+# esistevano già da un giro precedente, ma non era ancora disegnabile) — placeholder semplice:
+# cerchio pieno color paglia/marrone chiaro, PIÙ PICCOLO del corpo della capanna (BUILDING_HUT_
+# RADIUS=2.5, qui 2.0), SENZA recinto (nessun recinto in stick_tent.tres) — "distinguibile da Hut,
+# coerente con tier inferiore" (richiesta utente). has_door RESTA vero (default di BuildingRules,
+# mai impostato a false in stick_tent.tres) — BUGFIX (2026-09-12, richiesta utente — "has_door è
+# vero ma non si vede la porta"): aggiunto un piccolo TRIANGOLO sul bordo nel verso della porta
+# (vedi STICK_TENT_DOOR_MARKER_* sotto), non un vero ritaglio come la capanna. Stessa geometria
+# (duplicata apposta, stesso principio già in uso tra MicroCellRenderer/BuildingGhost) di
+# BuildingGhost._draw_stick_tent, così l'anteprima e l'edificio finito coincidono esattamente.
+const STICK_TENT_COLOR := Color(0.78, 0.62, 0.32, 1.0)
+const STICK_TENT_OUTLINE_COLOR := Color(0.45, 0.32, 0.15, 1.0)
+const STICK_TENT_OUTLINE_WIDTH: float = 0.4
+const STICK_TENT_RADIUS: float = 2.0
+const STICK_TENT_DOOR_MARKER_COLOR := Color(0.25, 0.15, 0.06, 1.0)
+const STICK_TENT_DOOR_MARKER_HALF_WIDTH: float = 0.7
+const STICK_TENT_DOOR_MARKER_HEIGHT: float = 1.1
+
+# Griglia di stoccaggio (2026-09-11, richiesta utente iniziale; REVISIONATA 2026-09-12 dopo
+# feedback esplicito: "il modo con cui rappresenti bastoni e pietre è proprio l'opposto di quello
+# che ti avevo detto, disegni un cerchio con lo sfondo della rispettiva icona. io voglio un
+# quadrato (circa 1/9 del deposito), che rimetta la icona ma senza sfondo della icona... se non
+# vuoi complicare troppo con lo sfondo trasparente, usa lo stratagemma di fare lo stesso disegno
+# con lo sfondo stesso colore del deposit site" — QUESTA è quella versione, la precedente (cerchio
+# pieno nel colore della risorsa) è stata sostituita, non affiancata) — un marker per SLOT occupato
+# (non per tipo di risorsa: 2 slot di stick + 1 di pietra = 3 marker, stesso modello "slot
+# univoci" già usato da BuildingInfoPanel.StorageGrid, vedi BuildingStorageService.
+# get_slot_breakdown), disposti su una griglia 3×3 (9 = deposit_site.storage_slot_count) centrata su
+# `ground`. Ogni marker è ora un QUADRATO (non un cerchio) riempito con DEPOSIT_SITE_COLOR — lo
+# "stratagemma sfondo-uguale-al-deposito" indicato dall'utente al posto della trasparenza vera
+# (immediate-mode Node2D _draw() non supporta facilmente un blend "vedi sotto" per un rettangolo
+# pieno) — sopra il quale viene ridisegnata la VERA icona pebble/stick (geometria replicata da
+# PebbleIcon.gd/StickIcon.gd, vedi _draw_deposit_storage_pebble_icon/_draw_deposit_storage_stick_
+# icon sotto: non riusabili direttamente, quelle sono Control._draw(), qui serve immediate-mode
+# Node2D in world-space) SENZA alcuno sfondo proprio — il risultato visivo voluto dall'utente:
+# "si devono vedere solo i bastoncini sopra il terreno del deposito... o solo i sassolini". Nessuna
+# dimensione proporzionale alla quantità (richiesta esplicita, invariata) — un semplice "c'è/non
+# c'è" questo tipo di risorsa in questo slot.
+const DEPOSIT_SITE_STORAGE_GRID_COLUMNS: int = 3
+const DEPOSIT_SITE_STORAGE_GRID_CELL_SPACING: float = 2.4
+# "circa 1/9 del deposito" (richiesta utente) — DEPOSIT_SITE_HALF_SIDE=4.5 sopra, quindi il
+# deposito pieno è ~9×9: un nono lineare sarebbe 3.0, qui leggermente più stretto (2.2) del passo
+# griglia (2.4) apposta, per lasciare un piccolo margine visivo tra un quadrato e il successivo
+# invece di un mosaico perfettamente contiguo.
+const DEPOSIT_SITE_STORAGE_SQUARE_SIDE: float = 2.2
+
+# Cartello "work in progress" (2026-09-11, richiesta utente, revisione della resa "cantiere in
+# attesa" — SOSTITUISCE il primo tentativo, grayscale dell'edificio, scartato non appena visto
+# in-game: la sagoma tornava colorata insieme ai bastoncini, effetto non voluto) — disegnato al
+# posto della sagoma vera dell'edificio (capanna/Stone Circle/Deposit Site, MAI insieme, vedi
+# _draw_buildings) finché Building.site_setup_complete resta false. Un piccolo cartello triangolare
+# giallo/nero su un palo sottile, stile segnale di cantiere — deliberatamente MODESTO in dimensione
+# (WIP_SIGN_PLATE_RADIUS ben sotto BUILDING_HUT_RADIUS) e disegnato per ultimo in _draw() (vedi
+# l'ordine lì: _draw_buildings gira DOPO _draw_vegetation_positions), quindi appare SOPRA la
+# vegetazione già presente sulla microcella senza sostituirla — esattamente la richiesta "lasci
+# vedere cmq le piante". Nessuna icona da asset/tema (questo progetto non ha texture per gli
+# edifici, tutto è disegnato a primitive — stesso principio "usa e getta"/procedurale già seguito
+# per capanna/Stone Circle/Deposit Site, coerenza stilistica preferita a un'icona editor-only che
+# non sarebbe comunque disponibile in una build esportata).
+const WIP_SIGN_POST_COLOR := Color(0.35, 0.25, 0.15, 1.0)
+const WIP_SIGN_POST_WIDTH: float = 0.3
+const WIP_SIGN_POST_HEIGHT: float = 2.0
+const WIP_SIGN_PLATE_COLOR := Color(0.95, 0.75, 0.1, 1.0)
+const WIP_SIGN_PLATE_OUTLINE_COLOR := Color(0.15, 0.1, 0.05, 1.0)
+const WIP_SIGN_PLATE_OUTLINE_WIDTH: float = 0.25
+const WIP_SIGN_PLATE_RADIUS: float = 1.4
+const WIP_SIGN_MARK_COLOR := Color(0.15, 0.1, 0.05, 1.0)
+const WIP_SIGN_MARK_WIDTH: float = 0.35
 
 const DIRECTIONS := [
 	Vector2i(0, -1), # nord
@@ -821,6 +894,21 @@ func _draw_buildings() -> void:
 	for entry in buildings:
 		var pos: Vector2i = entry["position"]
 		var ground := Vector2(pos.x * CELL_SIZE + half, pos.y * CELL_SIZE + half)
+		# "Cantiere in attesa" (2026-09-11, richiesta utente, REVISIONATA lo stesso giorno — primo
+		# tentativo era una variante grayscale della sagoma vera, scartato appena visto in-game) —
+		# finché Building.is_complete resta false, la sagoma vera dell'edificio (capanna/Stone
+		# Circle/Deposit Site) NON viene disegnata affatto: solo un cartello "work in progress" (se
+		# site_setup_complete è ancora false, vedi _draw_construction_wip_marker) oppure nulla (una
+		# volta che site_setup_complete diventa true — i bastoncini spawnati da GameScene.
+		# _spawn_build_site_placeholders restano nodi separati, non gestiti qui). Default true per
+		# compatibilità con entry che non passano ancora questi campi (nessuna in pratica oggi,
+		# GameScene._buildings_for_cell li valorizza sempre — stesso principio difensivo già seguito
+		# per "building_type_name" sotto).
+		var is_complete: bool = entry.get("is_complete", true)
+		if not is_complete:
+			if not entry.get("site_setup_complete", false):
+				_draw_construction_wip_marker(ground)
+			continue
 		# Smistamento per tipo (2026-09-07, richiesta utente, Stone Circle) — .get() con default
 		# "hut" per compatibilità con entry costruite prima che "building_type_name" esistesse
 		# (nessuna in pratica, buildings è ricostruito ad ogni attivazione cella, mai persistito qui
@@ -831,8 +919,19 @@ func _draw_buildings() -> void:
 			continue
 		if building_type_name == "deposit_site":
 			_draw_deposit_site(ground)
+			# Griglia di stoccaggio (2026-09-11, richiesta utente — "sul deposit site... disegna gli
+			# oggetti che ci sono, tipo mucchietti... solo un alert visivo, non mi interessa
+			# proporzionalità alla quantità") — SOLO per deposit_site, vedi GameScene.
+			# _buildings_for_cell per dove "slot_breakdown" viene calcolato/allegato a questa entry.
+			# .get() con default [] per compatibilità con entry che non lo passano (nessuna in
+			# pratica oggi, GameScene lo valorizza sempre per questo tipo — stesso principio
+			# difensivo già seguito sopra per "building_type_name").
+			_draw_deposit_site_storage_grid(ground, entry.get("slot_breakdown", []))
 			continue
 		var direction: GameTypes.Direction = entry["rotation"]
+		if building_type_name == "stick_tent":
+			_draw_stick_tent(ground, direction)
+			continue
 		_draw_building_fence(ground, direction)
 		var hut_points := _building_hut_polygon(ground, direction)
 		draw_colored_polygon(hut_points, BUILDING_COLOR)
@@ -849,12 +948,42 @@ func _draw_buildings() -> void:
 		draw_polyline(outline_points, BUILDING_OUTLINE_COLOR, BUILDING_OUTLINE_WIDTH)
 
 
+# Cartello "work in progress" — vedi il commento esteso su WIP_SIGN_POST_COLOR sopra per il perché.
+# Palo sottile verticale + cartello triangolare giallo/nero con punto esclamativo, ancorato al
+# centro della microcella (stesso ancoraggio `ground` di ogni altra sagoma edificio qui).
+func _draw_construction_wip_marker(ground: Vector2) -> void:
+	var post_top: Vector2 = ground + Vector2(0, -WIP_SIGN_POST_HEIGHT)
+	draw_line(ground, post_top, WIP_SIGN_POST_COLOR, WIP_SIGN_POST_WIDTH)
+
+	var plate_center: Vector2 = post_top + Vector2(0, -WIP_SIGN_PLATE_RADIUS * 0.3)
+	var triangle := PackedVector2Array([
+		plate_center + Vector2(0.0, -WIP_SIGN_PLATE_RADIUS),
+		plate_center + Vector2(WIP_SIGN_PLATE_RADIUS * 0.9, WIP_SIGN_PLATE_RADIUS * 0.75),
+		plate_center + Vector2(-WIP_SIGN_PLATE_RADIUS * 0.9, WIP_SIGN_PLATE_RADIUS * 0.75),
+	])
+	draw_colored_polygon(triangle, WIP_SIGN_PLATE_COLOR)
+	var outline := triangle.duplicate()
+	outline.append(triangle[0])
+	draw_polyline(outline, WIP_SIGN_PLATE_OUTLINE_COLOR, WIP_SIGN_PLATE_OUTLINE_WIDTH)
+
+	# Punto esclamativo: un trattino verticale + un puntino, entrambi centrati nel triangolo.
+	draw_line(
+		plate_center + Vector2(0.0, -WIP_SIGN_PLATE_RADIUS * 0.45),
+		plate_center + Vector2(0.0, WIP_SIGN_PLATE_RADIUS * 0.15),
+		WIP_SIGN_MARK_COLOR, WIP_SIGN_MARK_WIDTH
+	)
+	draw_circle(plate_center + Vector2(0.0, WIP_SIGN_PLATE_RADIUS * 0.4), WIP_SIGN_MARK_WIDTH * 0.5, WIP_SIGN_MARK_COLOR)
+
+
 # Anello di massi grezzi attorno al centro della microcella — nessuna porta/rotazione da rispettare
 # (has_door=false per questo tipo), quindi geometria fissa: STONE_CIRCLE_STONE_COUNT massi
 # equidistanti sul cerchio di raggio STONE_CIRCLE_RING_RADIUS, ciascuno un poligono irregolare (vedi
 # _stone_blob_polygon) invece di un cerchio perfetto. Stessa funzione (duplicata apposta, stesso
 # principio già in uso tra MicroCellRenderer/BuildingGhost per la geometria della capanna) in
-# BuildingGhost._draw_stone_circle.
+# BuildingGhost._draw_stone_circle. Chiamata SOLO a edificio completo (vedi _draw_buildings): il
+# breve esperimento di una variante colore/parametro per il "cantiere in attesa" (2026-09-11) è
+# stato scartato lo stesso giorno a favore del cartello WIP, che sostituisce del tutto questa
+# sagoma finché is_complete resta false — nessun parametro colore più necessario qui.
 func _draw_stone_circle(ground: Vector2) -> void:
 	for i in range(STONE_CIRCLE_STONE_COUNT):
 		var angle: float = TAU * float(i) / float(STONE_CIRCLE_STONE_COUNT)
@@ -894,7 +1023,8 @@ func _stone_blob_polygon(center: Vector2, seed_index: int) -> PackedVector2Array
 # (BUILDING_GATE_LENGTH) simula il cancello aperto sul cardine — niente tratteggio (richiesta
 # utente, 2026-08-30: leggeva come sfumature indistinte vicino alla capanna, non come un recinto).
 # Stessa funzione (duplicata apposta, vedi commento su _draw_buildings) in
-# BuildingGhost._draw_fence.
+# BuildingGhost._draw_fence. Chiamata SOLO a edificio completo (vedi commento su _draw_stone_circle
+# sopra) — nessun parametro colore più necessario.
 func _draw_building_fence(ground: Vector2, direction: GameTypes.Direction) -> void:
 	var dir_vector := _direction_vector(direction)
 	var gate_center_angle: float = dir_vector.angle()
@@ -934,13 +1064,129 @@ func _building_hut_polygon(ground: Vector2, direction: GameTypes.Direction) -> P
 # Chiazza di terra battuta attorno al centro della microcella — nessuna porta/rotazione da
 # rispettare (has_door=false per questo tipo), geometria fissa (stesso seed di
 # BuildingGhost._deposit_site_polygon). Stessa funzione (duplicata apposta, stesso principio già in
-# uso tra MicroCellRenderer/BuildingGhost) di BuildingGhost._draw_deposit_site.
+# uso tra MicroCellRenderer/BuildingGhost) di BuildingGhost._draw_deposit_site. Chiamata SOLO a
+# edificio completo (vedi commento su _draw_stone_circle sopra) — nessun parametro colore più
+# necessario.
 func _draw_deposit_site(ground: Vector2) -> void:
 	var blob := _deposit_site_polygon(ground)
 	draw_colored_polygon(blob, DEPOSIT_SITE_COLOR)
 	var outline := blob.duplicate()
 	outline.append(blob[0])
 	draw_polyline(outline, DEPOSIT_SITE_OUTLINE_COLOR, DEPOSIT_SITE_OUTLINE_WIDTH)
+
+
+# Cerchio pieno attorno al centro della microcella più un piccolo TRIANGOLO sul bordo, nel verso
+# di `direction` — has_door resta vero per questo tipo (vedi commento su STICK_TENT_COLOR sopra),
+# quindi la rotazione va mostrata anche se non con un vero ritaglio come la capanna. Stessa funzione
+# (duplicata apposta, vedi commento su STICK_TENT_COLOR sopra) di BuildingGhost._draw_stick_tent.
+# Chiamata SOLO a edificio completo (vedi commento su _draw_stone_circle sopra) — nessun parametro
+# colore più necessario, solo `direction`.
+func _draw_stick_tent(ground: Vector2, direction: GameTypes.Direction) -> void:
+	draw_circle(ground, STICK_TENT_RADIUS, STICK_TENT_COLOR)
+	draw_arc(ground, STICK_TENT_RADIUS, 0.0, TAU, BUILDING_CIRCLE_SEGMENTS, STICK_TENT_OUTLINE_COLOR, STICK_TENT_OUTLINE_WIDTH, true)
+
+	var dir_vector := _direction_vector(direction)
+	var perpendicular := Vector2(-dir_vector.y, dir_vector.x)
+	var base_center: Vector2 = ground + dir_vector * STICK_TENT_RADIUS
+	var apex: Vector2 = ground + dir_vector * (STICK_TENT_RADIUS + STICK_TENT_DOOR_MARKER_HEIGHT)
+	draw_colored_polygon(
+		PackedVector2Array([
+			base_center + perpendicular * STICK_TENT_DOOR_MARKER_HALF_WIDTH,
+			base_center - perpendicular * STICK_TENT_DOOR_MARKER_HALF_WIDTH,
+			apex,
+		]),
+		STICK_TENT_DOOR_MARKER_COLOR
+	)
+
+
+# Un mucchietto per SLOT occupato di `slot_breakdown` (Array di {"resource_name","quantity",
+# "space_used","space_capacity"}, vedi BuildingStorageService.get_slot_breakdown) — vedi il
+# commento esteso su DEPOSIT_SITE_STORAGE_GRID_COLUMNS sopra per il principio. Griglia 3×3 in
+# ordine RIGA per riga (indice i -> row=i/3, col=i%3), centrata su `ground`: offset colonna/riga in
+# {-1,0,1} × DEPOSIT_SITE_STORAGE_GRID_CELL_SPACING, così il mucchietto centrale (i=4) cade
+# esattamente su `ground`. `i >= 9` (mai raggiungibile oggi: get_slot_breakdown non supera mai
+# storage_slot_count=9 per deposit_site, ma questo file non deve assumerlo silenziosamente)
+# interrompe il ciclo invece di continuare a disegnare fuori dalla chiazza del deposito.
+func _draw_deposit_site_storage_grid(ground: Vector2, slot_breakdown: Array) -> void:
+	for i in range(slot_breakdown.size()):
+		if i >= DEPOSIT_SITE_STORAGE_GRID_COLUMNS * DEPOSIT_SITE_STORAGE_GRID_COLUMNS:
+			break
+		var slot_data: Dictionary = slot_breakdown[i]
+		var resource_name: String = String(slot_data.get("resource_name", ""))
+		if resource_name == "":
+			continue
+		var row: int = i / DEPOSIT_SITE_STORAGE_GRID_COLUMNS
+		var col: int = i % DEPOSIT_SITE_STORAGE_GRID_COLUMNS
+		var offset := Vector2(
+			(float(col) - 1.0) * DEPOSIT_SITE_STORAGE_GRID_CELL_SPACING,
+			(float(row) - 1.0) * DEPOSIT_SITE_STORAGE_GRID_CELL_SPACING
+		)
+		var marker_center: Vector2 = ground + offset
+		var top_left: Vector2 = marker_center - Vector2(DEPOSIT_SITE_STORAGE_SQUARE_SIDE, DEPOSIT_SITE_STORAGE_SQUARE_SIDE) * 0.5
+		# Sfondo quadrato nello STESSO colore del deposito (lo "stratagemma" chiesto dall'utente al
+		# posto della trasparenza vera) — disegnato SEMPRE, anche per una risorsa senza replica
+		# dedicata sotto (fallback), così il quadrato resta comunque coerente con lo sfondo.
+		draw_rect(Rect2(top_left, Vector2(DEPOSIT_SITE_STORAGE_SQUARE_SIDE, DEPOSIT_SITE_STORAGE_SQUARE_SIDE)), DEPOSIT_SITE_COLOR)
+		match resource_name:
+			"pebble":
+				_draw_deposit_storage_pebble_icon(top_left, DEPOSIT_SITE_STORAGE_SQUARE_SIDE)
+			"stick":
+				_draw_deposit_storage_stick_icon(top_left, DEPOSIT_SITE_STORAGE_SQUARE_SIDE)
+			_:
+				# Fallback per un'eventuale risorsa futura senza geometria replicata qui — un
+				# semplice pallino nel colore della risorsa (IconRegistry.get_resource_color, stessa
+				# fonte già in uso altrove), niente sfondo proprio oltre al quadrato sopra.
+				draw_circle(marker_center, DEPOSIT_SITE_STORAGE_SQUARE_SIDE * 0.25, IconRegistry.get_resource_color(resource_name))
+
+
+# Replica in world-space (immediate-mode Node2D, NON riusabile da PebbleIcon.gd che è Control._draw
+# — stesso principio "duplicata apposta" già seguito altrove in questo file, es. _draw_deposit_site
+# vs BuildingGhost) della geometria/colori di PebbleIcon.gd: stessi punti/raggi frazionari (0..1),
+# qui scalati per `side` invece che per size.x/size.y di un Control, e traslati su `top_left`
+# (angolo in alto a sinistra del quadrato di sfondo, non il centro — stessa convenzione di
+# PebbleIcon, dove i punti sono frazioni dell'intero rettangolo, non del centro).
+const DEPOSIT_STORAGE_PEBBLE_COLOR := Color(0.58, 0.57, 0.54, 1.0)
+const DEPOSIT_STORAGE_PEBBLE_OUTLINE_COLOR := Color(0.32, 0.31, 0.29, 1.0)
+const DEPOSIT_STORAGE_PEBBLES := [
+	Vector3(0.22, 0.28, 0.12), Vector3(0.55, 0.18, 0.10), Vector3(0.78, 0.35, 0.13),
+	Vector3(0.35, 0.55, 0.11), Vector3(0.65, 0.60, 0.09), Vector3(0.85, 0.72, 0.10),
+	Vector3(0.15, 0.75, 0.09), Vector3(0.48, 0.82, 0.08),
+]
+
+func _draw_deposit_storage_pebble_icon(top_left: Vector2, side: float) -> void:
+	for pebble in DEPOSIT_STORAGE_PEBBLES:
+		var center: Vector2 = top_left + Vector2(pebble.x * side, pebble.y * side)
+		var radius: float = pebble.z * side
+		draw_circle(center, radius, DEPOSIT_STORAGE_PEBBLE_COLOR)
+		draw_arc(center, radius, 0.0, TAU, 8, DEPOSIT_STORAGE_PEBBLE_OUTLINE_COLOR, side * 0.04, true)
+
+
+# Replica world-space di StickIcon.gd (stesso principio del blocco pebble sopra) — 3 "rametti"
+# (linee spezzate a due segmenti, non rette) in tre bruni diversi, stessi punti frazionari/stessi
+# spessori relativi (h*0.09/0.07/0.06 in StickIcon, qui side al posto di h: icona sempre quadrata
+# quindi w=h=side, nessuna distinzione necessaria).
+const DEPOSIT_STORAGE_STICK_COLOR_MAIN := Color(0.42, 0.30, 0.16, 1.0)
+const DEPOSIT_STORAGE_STICK_COLOR_LIGHT := Color(0.55, 0.40, 0.22, 1.0)
+const DEPOSIT_STORAGE_STICK_COLOR_DARK := Color(0.32, 0.22, 0.11, 1.0)
+
+func _draw_deposit_storage_stick_icon(top_left: Vector2, side: float) -> void:
+	_draw_deposit_storage_twig(
+		top_left + Vector2(side * 0.18, side * 0.78), top_left + Vector2(side * 0.52, side * 0.42),
+		top_left + Vector2(side * 0.82, side * 0.20), DEPOSIT_STORAGE_STICK_COLOR_MAIN, side * 0.09
+	)
+	_draw_deposit_storage_twig(
+		top_left + Vector2(side * 0.15, side * 0.30), top_left + Vector2(side * 0.48, side * 0.58),
+		top_left + Vector2(side * 0.85, side * 0.75), DEPOSIT_STORAGE_STICK_COLOR_LIGHT, side * 0.07
+	)
+	_draw_deposit_storage_twig(
+		top_left + Vector2(side * 0.35, side * 0.85), top_left + Vector2(side * 0.55, side * 0.50),
+		top_left + Vector2(side * 0.68, side * 0.15), DEPOSIT_STORAGE_STICK_COLOR_DARK, side * 0.06
+	)
+
+
+func _draw_deposit_storage_twig(from: Vector2, mid: Vector2, to: Vector2, color: Color, width: float) -> void:
+	draw_line(from, mid, color, width, true)
+	draw_line(mid, to, color, width, true)
 
 
 # Poligono a DEPOSIT_SITE_VERTEX_COUNT lati (8, raggio in "norma del massimo" invece che

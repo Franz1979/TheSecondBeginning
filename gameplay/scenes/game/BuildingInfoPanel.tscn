@@ -17,6 +17,20 @@ theme_override_font_sizes/font_size = 10
 layout_mode = 2
 theme_override_font_sizes/font_size = 10
 
+[node name="ResidentsCaption" type="Label" parent="."]
+layout_mode = 2
+theme_override_font_sizes/font_size = 10
+
+[node name="ResidentsGrid" type="GridContainer" parent="."]
+layout_mode = 2
+theme_override_constants/h_separation = 4
+theme_override_constants/v_separation = 4
+columns = 3
+
+[node name="StorageCaption" type="Label" parent="."]
+layout_mode = 2
+theme_override_font_sizes/font_size = 10
+
 [node name="StorageGrid" type="GridContainer" parent="."]
 layout_mode = 2
 theme_override_constants/h_separation = 4
@@ -43,4 +57,3 @@ layout_mode = 2
 
 [node name="EmptyAllButton" type="Button" parent="."]
 layout_mode = 2
-disabled = true

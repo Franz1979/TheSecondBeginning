@@ -28,6 +28,24 @@ enum ActionType {
 	THINK,
 	UNLOAD,
 	PICKUP,
+	# SETUP_SITE (2026-09-10, richiesta utente — prima porzione della Build Task: trigger di
+	# piazzamento + SetupSiteAction) — AGGIUNTO IN CODA, mai inserito in mezzo: gli enum precedenti
+	# sono già persistiti come interi grezzi nei save esistenti (vedi TaskPersistenceService), un
+	# inserimento a metà lista sposterebbe i valori di UNLOAD/PICKUP rompendo quei salvataggi. Vedi
+	# gameplay/scripts/actions/SetupSiteAction.gd.
+	SETUP_SITE,
+	# CLEAR (2026-09-11, richiesta utente — terzo step della Build Task: rimozione vegetazione +
+	# riserva spazio edificio, dopo Walk→SetupSite) — STESSO principio di SETUP_SITE sopra, AGGIUNTO
+	# IN CODA. Vedi gameplay/scripts/actions/ClearAction.gd.
+	CLEAR,
+	# BUILD (2026-09-11, richiesta utente — quarto e ultimo step della Build Task: accumulo lavoro
+	# giornaliero fino a required_labor, dopo Walk→SetupSite→Clear) — STESSO principio di SETUP_SITE/
+	# CLEAR sopra, AGGIUNTO IN CODA. Vedi gameplay/scripts/actions/BuildAction.gd.
+	BUILD,
+	# LOOK_AROUND (2026-09-12, richiesta utente — Wander Task: Walk→LookAround→Walk→LookAround→Walk)
+	# — STESSO principio di SETUP_SITE/CLEAR/BUILD sopra, AGGIUNTO IN CODA. Vedi
+	# gameplay/scripts/actions/LookAroundAction.gd.
+	LOOK_AROUND,
 }
 
 # Categorie di tool richiedibili da un'Action (2026-09-08, richiesta utente — SOLO struttura dati,

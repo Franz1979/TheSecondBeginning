@@ -137,3 +137,13 @@ const SHOW_SELECTED_PANEL_REFRESH_LOGS := false
 # (a differenza della maggior parte dei flag sopra, tutti a false): funzionalità appena introdotta,
 # non ancora verificata con un run reale — riportalo a false una volta confermato il formato.
 const SHOW_TASK_TOTAL_COST_LOGS := true
+
+# Filtro dedicato per [UNLOAD] is_complete (UnloadAction.is_complete) - 2026-09-10, richiesta
+# utente: quel print era gated SOLO da ENABLED sopra, quindi stampava una riga AD OGNI CHIAMATA
+# (~60/s, agganciata al framerate - vedi HumanIndividualActionService.apply_action) per l'intera
+# durata del ramo FISICO in corso, decine di righe per un singolo Unload. Stesso principio degli
+# altri filtri dedicati sopra: a false nessun comportamento di simulazione cambia, solo il print
+# viene soppresso. Default false (a differenza di SHOW_TASK_TOTAL_COST_LOGS sopra): questo log e'
+# rumoroso per costruzione (per-frame, non per-evento), quindi resta disattivato finche' non lo si
+# riattiva esplicitamente per diagnosticare qualcosa sul ramo fisico di UnloadAction.
+const SHOW_UNLOAD_COMPLETION_LOGS := false

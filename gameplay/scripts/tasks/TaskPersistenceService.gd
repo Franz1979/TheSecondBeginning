@@ -150,11 +150,31 @@ static func _action_type_for_step(step: Action) -> int:
 		return TaskTypes.ActionType.UNLOAD
 	if step is PickUpAction:
 		return TaskTypes.ActionType.PICKUP
+	# SETUP_SITE/CLEAR (2026-09-11, richiesta utente — chiude un gap mai colmato: SETUP_SITE fu
+	# aggiunta a TaskTypes.ActionType il 2026-09-10 insieme a SetupSiteAction, ma questa funzione
+	# non fu MAI estesa per riconoscerla — un salvataggio a metà SetupSiteAction cadeva nel
+	# push_error/-1 sotto, quindi serialize_task scriveva action_type=-1 per quello step e
+	# _build_step lo scartava silenziosamente al reload (nessun crash, nessun log visibile — lo
+	# step spariva e basta). Aggiunte insieme, stesso schema, ora che CLEAR (ClearAction) arriva a
+	# introdurre lo stesso identico bisogno per un secondo tipo.
+	if step is SetupSiteAction:
+		return TaskTypes.ActionType.SETUP_SITE
+	if step is ClearAction:
+		return TaskTypes.ActionType.CLEAR
+	# BUILD (2026-09-11, richiesta utente — quarto e ultimo step della Build Task, aggiunta insieme
+	# al proprio case in _build_step sotto, stesso schema di SETUP_SITE/CLEAR: mai lasciata
+	# "temporaneamente" scoperta come accadde per SETUP_SITE al suo debutto).
+	if step is BuildAction:
+		return TaskTypes.ActionType.BUILD
+	# LOOK_AROUND (2026-09-12, richiesta utente — Wander Task, aggiunta insieme al proprio case in
+	# _build_step sotto, stesso schema di BUILD sopra: mai lasciata "temporaneamente" scoperta).
+	if step is LookAroundAction:
+		return TaskTypes.ActionType.LOOK_AROUND
 	push_error("TaskPersistenceService._action_type_for_step: tipo Action sconosciuto (%s)." % step.get_script().get_global_name())
 	return -1
 
 
-# enum->class, stesso principio di TaskFactory.build_task ma senza context_key (qui il target
+# enum->class, stesso principio di TaskFactory.build_task ma senza context_keys (qui il target
 # arriva già risolto dentro step_data, non da un Dictionary di contesto esterno). load_save_data()
 # NON è più chiamato qui (2026-09-10, BUGFIX — vedi il commento su deserialize_task, l'unico
 # chiamante): questa funzione ora si limita a COSTRUIRE lo step con i dati che servono al
@@ -169,7 +189,10 @@ static func _build_step(action_type: int, step_data: Dictionary, macro_state: Ma
 		TaskTypes.ActionType.WALK:
 			step = WalkAction.new(Vector2(float(step_data.get("target_x", 0.0)), float(step_data.get("target_y", 0.0))))
 		TaskTypes.ActionType.REST:
-			step = RestAction.new()
+			# rest_multiplier (2026-09-12, richiesta utente, Rest Task esplicita) — letto da
+			# RestAction.get_save_data (vedi lì), default 1.0 per compatibilità con save precedenti
+			# a questo campo, stesso trattamento di skill_multiplier/tool_multiplier per BUILD sotto.
+			step = RestAction.new(float(step_data.get("rest_multiplier", 1.0)))
 		TaskTypes.ActionType.THINK:
 			step = ThinkAction.new(float(step_data.get("duration", 0.0)))
 		TaskTypes.ActionType.UNLOAD:
@@ -189,6 +212,56 @@ static func _build_step(action_type: int, step_data: Dictionary, macro_state: Ma
 				int(step_data.get("target_position_x", 0)), int(step_data.get("target_position_y", 0))
 			)
 			step = PickUpAction.new(pickup_target, macro_state, String(step_data.get("resource_name", "pebble")))
+		TaskTypes.ActionType.SETUP_SITE:
+			# 1 argomento (target_building: Building), stesso schema di UNLOAD sopra per risolvere il
+			# riferimento — GAP CHIUSO (2026-09-11, vedi nota su _action_type_for_step): prima d'ora
+			# questo case non esisteva affatto, quindi SETUP_SITE non arrivava mai qui (scartato prima,
+			# in _action_type_for_step). SetupSiteAction.get_save_data() scrive già "target_building_id"
+			# da quando fu introdotta (2026-09-10) — era pronta per questo, semplicemente mai collegata.
+			var setup_site_building: Building = null
+			if step_data.has("target_building_id"):
+				setup_site_building = _find_building_by_id(world, int(step_data["target_building_id"]))
+			step = SetupSiteAction.new(setup_site_building)
+		TaskTypes.ActionType.CLEAR:
+			# 3 argomenti, stesso ordine di ClearAction._init(target_building, macro_state,
+			# is_currently_grass) — DEVIAZIONE rispetto a PICKUP sopra: qui NON si riusa il parametro
+			# `macro_state` di questa funzione (quello è la macrocella HOME dell'individuo, risolto da
+			# GameLoadService — vedi commento in testa al file), perché la macrocella rilevante per
+			# ClearAction è quella OSPITANTE il cantiere (target_building.macro_x/macro_y), che
+			# potrebbe in teoria non coincidere (stesso limite architetturale noto di
+			# GameScene._start_building_task_at — oggi coincidono sempre in pratica, ma questa
+			# ricostruzione resta corretta anche se smettessero di farlo). Risolta contro World.
+			# get_cell_state_at, `world` già disponibile qui (stesso `world` usato da UNLOAD sopra per
+			# _find_building_by_id).
+			var clear_target_building: Building = null
+			if step_data.has("target_building_id"):
+				clear_target_building = _find_building_by_id(world, int(step_data["target_building_id"]))
+			var clear_macro_state: MacroCellState = null
+			if clear_target_building != null and world != null:
+				clear_macro_state = world.get_cell_state_at(clear_target_building.macro_x, clear_target_building.macro_y)
+			step = ClearAction.new(
+				clear_target_building, clear_macro_state, bool(step_data.get("is_currently_grass", false))
+			)
+		TaskTypes.ActionType.BUILD:
+			# 3 argomenti (target_building, skill_multiplier, tool_multiplier), stesso schema di
+			# SETUP_SITE sopra per il riferimento + BuildAction.get_save_data per i due moltiplicatori
+			# (2026-09-11, quarto e ultimo step della Build Task). Nessun progresso da ripristinare
+			# qui (labor_accumulated vive su Building.construction_progress, già ricostruito per
+			# intero da GameLoadService — vedi BuildAction.gd, non richiede load_save_data()).
+			var build_target_building: Building = null
+			if step_data.has("target_building_id"):
+				build_target_building = _find_building_by_id(world, int(step_data["target_building_id"]))
+			step = BuildAction.new(
+				build_target_building,
+				float(step_data.get("skill_multiplier", 1.0)),
+				float(step_data.get("tool_multiplier", 1.0))
+			)
+		TaskTypes.ActionType.LOOK_AROUND:
+			# Nessun argomento — LookAroundAction._init non prende parametri (2026-09-12, richiesta
+			# utente, Wander Task). elapsed/i due flag di cambio direzione arrivano da load_save_data
+			# (chiamato dal chiamante SOLO se questo è lo step corrente, vedi deserialize_task sopra),
+			# non da qui.
+			step = LookAroundAction.new()
 		_:
 			push_error("TaskPersistenceService._build_step: action_type %d non supportato." % action_type)
 			return null

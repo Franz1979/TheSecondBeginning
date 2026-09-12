@@ -99,6 +99,7 @@ var _carried_resource_icon_node: Control = null
 @onready var mother_label: Label = $MotherLabel
 @onready var father_label: Label = $FatherLabel
 @onready var partner_label: Label = $PartnerLabel
+@onready var house_label: Label = $HouseLabel
 @onready var kill_button: Button = $KillButton
 
 var _current_individual: HumanIndividual
@@ -171,6 +172,9 @@ func show_individual(
 	mother_label.text = tr("individual_mother_id_label").format({"id": _format_id(individual.mother_id)})
 	father_label.text = tr("individual_father_id_label").format({"id": _format_id(individual.father_id)})
 	partner_label.text = tr("individual_partner_id_label").format({"id": _format_id(individual.partner_id)})
+	# house_id (2026-09-12, richiesta utente: "metti id house nell'info panel di individual") —
+	# STESSO trattamento/STESSA sentinella -1 -> "—" di mother/father/partner sopra (_format_id).
+	house_label.text = tr("individual_house_id_label").format({"id": _format_id(individual.house_id)})
 
 
 func clear() -> void:

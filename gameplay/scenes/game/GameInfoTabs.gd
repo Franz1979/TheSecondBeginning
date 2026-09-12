@@ -38,8 +38,21 @@ extends TabContainer
 # alcun bisogno di cambiare.
 
 const TAB_POPULATION := 0
-const TAB_SELECTION := 1
-const TAB_PLACEHOLDER := 2
+# BuildingsTab (2026-09-12, richiesta utente — pannello edifici "concettualmente simile a quella
+# population", con etichetta "tra population e la lente di ingrandimento") — inserita in mezzo
+# nell'ordine dei nodi (vedi GameInfoTabs.tscn), TAB_SELECTION/TAB_PLACEHOLDER spostati avanti di
+# uno di conseguenza. PlaceholderTab NON rimossa (resta comunque "pronta per una futura sezione",
+# solo un indice più in là).
+const TAB_BUILDINGS := 1
+const TAB_SELECTION := 2
+const TAB_PLACEHOLDER := 3
+# DebugTab (2026-09-12, richiesta utente — "una tab di debug (colore etichetta del debug) nell'info
+# panel" per TaskDebugPanel, elenco di tutte le Task assegnate in sessione) — AGGIUNTA IN CODA
+# (dopo Placeholder, non prima: nessuna posizione specifica richiesta per questa, a differenza di
+# BuildingsTab). Nascosta con set_tab_hidden quando DebugLogging.ENABLED è false (vedi _ready sotto)
+# — stesso principio "mai visibile in una build pulita" già seguito da ogni altro elemento debug
+# del progetto (tasti T/Y/Z/U, SpeedDebugButton).
+const TAB_DEBUG := 4
 
 # Segnale "🎯 centra" (Step 3, richiesta utente 2026-09-04) — sostituisce il bottone che prima
 # viveva dentro HumanIndividualInfoPanel (funzionava solo per individui): un solo bottone qui,
@@ -51,7 +64,9 @@ const TAB_PLACEHOLDER := 2
 signal center_requested
 
 @onready var population_tab: Control = $PopulationTab
+@onready var buildings_tab: Control = $BuildingsTab
 @onready var selection_tab: Control = $SelectionTab
+@onready var debug_tab: Control = $DebugTab
 # Contenitore in cui GameScene aggiunge/rimuove i pannelli di dettaglio (VegetationInfoPanel/
 # HumanIndividualInfoPanel, in futuro BuildingInfoPanel) — SEPARATO da selection_tab stesso da
 # quando è stato introdotto SelectionHeader (Step 3): selection_tab non può più ospitarli
@@ -87,14 +102,28 @@ func _ready() -> void:
 	add_theme_constant_override("side_margin", 0)
 
 	set_tab_title(TAB_POPULATION, "🧍")
+	set_tab_title(TAB_BUILDINGS, "🏠")
 	set_tab_title(TAB_SELECTION, "🔍")
 	set_tab_title(TAB_PLACEHOLDER, "❔")
+	# 🐞 (2026-09-12, richiesta utente) — icona GIÀ di per sé "colorata/riconoscibile come debug"
+	# (nessuna infrastruttura di per-tab font color in TabBar/TabContainer da costruire apposta per
+	# un'unica scheda) — l'etichetta "DEBUG" vera e propria, in un colore acceso, vive DENTRO il
+	# pannello (vedi TaskDebugPanel.tscn), dove uno stile per-Label è banale da applicare.
+	set_tab_title(TAB_DEBUG, "🐞")
 
 	var tab_bar := get_tab_bar()
 	tab_bar.add_theme_constant_override("h_separation", 0)
 	tab_bar.set_tab_tooltip(TAB_POPULATION, tr("game_info_tab_population"))
+	tab_bar.set_tab_tooltip(TAB_BUILDINGS, tr("game_info_tab_buildings"))
 	tab_bar.set_tab_tooltip(TAB_SELECTION, tr("game_info_tab_selection"))
 	tab_bar.set_tab_tooltip(TAB_PLACEHOLDER, tr("game_info_tab_placeholder"))
+	tab_bar.set_tab_tooltip(TAB_DEBUG, tr("game_info_tab_debug"))
+
+	# Nascosta fuori da DebugLogging.ENABLED (2026-09-12, richiesta utente — implicito, stesso
+	# principio "mai visibile in una build pulita" di ogni altro elemento debug del progetto) —
+	# set_tab_hidden, non .visible sul nodo (che TabContainer sovrascrive comunque, vedi CLAUDE.md/
+	# MacroCellDetailPanel per lo stesso avvertimento).
+	set_tab_hidden(TAB_DEBUG, not DebugLogging.ENABLED)
 
 	empty_selection_label.text = tr("game_info_selection_empty")
 

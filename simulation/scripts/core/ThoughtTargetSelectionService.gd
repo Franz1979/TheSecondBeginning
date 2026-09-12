@@ -28,3 +28,24 @@ static func find_best(
 	return SpatialSelectionService.find_nearest(
 		world.buildings, origin_position, origin_macro_coords, predicate, excluded_building_ids
 	) as Building
+
+
+# Gate booleano riusabile (2026-09-10, richiesta utente — Step 3 del refactor Daydream via
+# TaskFactory, preparazione del meccanismo) — "esiste ALMENO UN edificio che accetta pensieri nel
+# mondo?", non "qual è il più vicino": nessuna nozione di origine/distanza qui, quindi nessuna
+# delega a SpatialSelectionService.find_nearest (quel motore risolve sempre un CANDIDATO più vicino
+# a una posizione, calcolo sprecato/concettualmente sbagliato per una semplice domanda di esistenza
+# — un controllo diretto su world.buildings basta, stesso costo asintotico, zero dipendenze in più).
+# Vive qui (non su GameScene) perché è lo stesso criterio (`rules.accepts_thoughts`) già incapsulato
+# da find_best sopra — un solo posto per "cosa significa essere un edificio che accetta pensieri",
+# non duplicato altrove. Pensata per essere chiamata sia dal tasto debug Y oggi (secondo prompt, non
+# in questo) sia da una futura logica di generazione automatica della Task Daydream (pool), come
+# gate PRIMA di assegnare l'intera Task — evita di far camminare/pensare un individuo per poi non
+# trovare nessun edificio idoneo al momento del deposito (vedi la ricognizione dedicata).
+static func has_thought_accepting_building(world: World) -> bool:
+	if world == null:
+		return false
+	for building in world.buildings:
+		if building.rules != null and building.rules.accepts_thoughts:
+			return true
+	return false

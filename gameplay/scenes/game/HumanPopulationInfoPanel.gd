@@ -35,6 +35,12 @@ const COLOR_FEMALE := Color(0.95, 0.4, 0.65)
 # stesso concetto, non un'icona nuova da imparare.
 const CENTER_BUTTON_TEXT := "🎯"
 
+# Simbolo "ha una casa" per riga (2026-09-12, richiesta utente) — stessa icona già in uso per la
+# scheda 🏠/BuildingsInfoPanel, coerenza visiva: lo stesso glifo identifica "casa" ovunque nel
+# progetto, non un'icona nuova da imparare. Mostrato SOLO se member.house_id != -1 (stessa
+# sentinella "nessuna casa" già in uso ovunque per questo campo).
+const HOUSE_ICON_TEXT := "🏠"
+
 # Rompe il principio "componente muto" dichiarato in testa al file SOLO per il minimo indispensabile
 # (stesso schema già in uso per MinimapPanel.cell_clicked): questo pannello non decide MAI da sé
 # selezione/camera, si limita a segnalare "l'utente ha chiesto questo individuo" — GameScene resta
@@ -104,19 +110,12 @@ func show_population(
 		)
 		# Riga = HBoxContainer (era un Label nudo) — richiesta utente 2026-09-04: bottone
 		# "centra e seleziona" per riga, vedi individual_center_requested sopra. label.
-		# size_flags_horizontal EXPAND_FILL così il bottone resta compatto a destra invece di
-		# essere spinto fuori dalla larghezza del testo.
+		# size_flags_horizontal EXPAND_FILL così il bottone/simbolo casa restano compatti invece di
+		# essere spinti fuori dalla larghezza del testo. Ordine RIVISTO (2026-09-12, richiesta
+		# utente): centra a SINISTRA del nome (era a destra), simbolo casa a destra — "F"/"M" al
+		# posto di "Female"/"Male" e "age %d" ridotto al solo numero, per guadagnare spazio
+		# orizzontale sulla riga (stessa richiesta).
 		var row := HBoxContainer.new()
-		var label := Label.new()
-		label.add_theme_font_size_override("font_size", 10)
-		label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		label.text = "%s — %s, age %d (%s)" % [
-			member.name,
-			"Female" if member.sex == HumanTypes.Sex.FEMALE else "Male",
-			age,
-			HumanTypes.AgeBand.keys()[age_band].capitalize(),
-		]
-		row.add_child(label)
 		# Rimpicciolito (richiesta utente, 2026-09-06): il Button di default (padding/stylebox
 		# pieno) era troppo alto rispetto alla label a fianco, allargando visibilmente ogni riga
 		# della lista — flat=true toglie lo stylebox normale (niente più padding verticale extra),
@@ -130,6 +129,28 @@ func show_population(
 		center_button.custom_minimum_size = Vector2(20, 0)
 		center_button.pressed.connect(_on_center_button_pressed.bind(member))
 		row.add_child(center_button)
+
+		var label := Label.new()
+		label.add_theme_font_size_override("font_size", 10)
+		label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		label.text = "%s — %s, %d (%s)" % [
+			member.name,
+			"F" if member.sex == HumanTypes.Sex.FEMALE else "M",
+			age,
+			HumanTypes.AgeBand.keys()[age_band].capitalize(),
+		]
+		row.add_child(label)
+
+		# Simbolo casa (2026-09-12, richiesta utente) — SOLO se ha una casa assegnata, nessun
+		# placeholder/spazio vuoto per chi non ce l'ha (stesso principio "assente = niente" già
+		# seguito altrove, es. is_pregnant sulla stessa riga dell'age_band in HumanIndividualInfoPanel).
+		if member.house_id != -1:
+			var house_icon := Label.new()
+			house_icon.text = HOUSE_ICON_TEXT
+			house_icon.add_theme_font_size_override("font_size", 10)
+			house_icon.tooltip_text = "ID Casa: %d" % member.house_id
+			row.add_child(house_icon)
+
 		list_container.add_child(row)
 
 

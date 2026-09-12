@@ -69,6 +69,10 @@ const RESOURCE_ICON_NODES := {
 const BUILDING_ICONS := {
 	"deposit_site": "🟫",
 	"hut": "🛖",
+	# Stick Tent (2026-09-12, richiesta utente — collegamento UI/rendering) — "⛺" rende già bene da
+	# sé "tenda", nessun problema di leggibilità come per stone_circle sopra: non serve un'icona
+	# disegnata a mano.
+	"stick_tent": "⛺",
 }
 
 
@@ -79,6 +83,34 @@ const BUILDING_ICONS := {
 # ora (vedi commento su BUILDING_ICONS sopra per il perché non ha un'icona emoji).
 const BUILDING_ICON_NODES := {
 	"stone_circle": preload("res://simulation/scripts/ui/StoneCircleIcon.gd"),
+}
+
+
+# Icone-EMOJI per l'effetto "lampeggio comando" (2026-09-11, richiesta utente — generalizzazione di
+# GameScene._spawn_pickup_command_effect, prima solo per PickUpAction/"✋" hardcoded: "fai comparire
+# un'icona lampeggiante quando parte l'azione... dovremmo avere un file dove indichiamo tutte le
+# icone e le pesca da lì" — questo file esiste già per risorse/edifici, stesso principio esteso qui
+# a un terzo dominio). Chiave = stringa libera scelta DAL CHIAMANTE che spawna l'effetto (oggi
+# sempre GameScene, al momento in cui un comando viene impartito — vedi sotto), NON da un campo su
+# Action: un primo tentativo (stesso giorno) legava l'icona ad Action.command_icon_key/un segnale
+# `activated` emesso quando lo STEP DI LAVORO diventava attivo (cioè dopo il Walk, quando l'individuo
+# arrivava) — SCARTATO su feedback utente: "il martello deve comparire quando parte la task, non
+# quando arriva il pipottino dopo il walk... anche per haul service la manina appare subito... credo
+# serva coerenza". Rimossi Action.command_icon_key/activated (Action.gd, SetupSiteAction.gd/
+# ClearAction.gd/BuildAction.gd tornati al comportamento base) — il lampeggio ora scatta SEMPRE nello
+# STESSO istante per ogni comando, "pickup" e "build" incluso: subito quando il comando viene dato
+# (right-click di assegnazione), mai quando l'individuo arriva a destinazione.
+#
+# "🔨" per "build" — STESSO glifo già in uso in BuildBar.main_row per l'azione UI "apri il menu
+# costruzione" (vedi la nota su BUILDING_ICONS sopra: quello è un dominio diverso, un glifo di
+# azione UI non un tipo di edificio — qui invece è proprio il dominio giusto, nessuna duplicazione
+# concettuale). UNA sola chiave per l'intera Build Task (non una per step, come nel tentativo
+# scartato): il lampeggio spara una volta sola all'assegnazione, non differenzia più i quattro step
+# interni (Walk/SetupSite/Clear/Build) — coerente con "pickup" sotto, che lampeggia una volta sola
+# per l'intera haul_resource.
+const COMMAND_ICONS := {
+	"pickup": "✋",
+	"build": "🔨",
 }
 
 
@@ -113,6 +145,13 @@ static func get_building_icon_node(building_type_name: String) -> Control:
 	if not BUILDING_ICON_NODES.has(building_type_name):
 		return null
 	return BUILDING_ICON_NODES[building_type_name].new()
+
+
+# "" se command_icon_key non ha un'icona registrata — il chiamante (GameScene._spawn_command_blink_
+# effect) tratta "" come "nessun effetto", mai un fallback testuale come per le altre due famiglie
+# sopra.
+static func get_command_icon(command_icon_key: String) -> String:
+	return COMMAND_ICONS.get(command_icon_key, "")
 
 
 # Nome leggibile per resource_name — chiave tr() "carried_resource_tooltip_<resource_name>" (2026-

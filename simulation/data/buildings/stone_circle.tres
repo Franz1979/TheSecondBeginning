@@ -7,7 +7,7 @@ script = ExtResource("1_stone_circle")
 building_name = "building_stone_circle"
 category = 1
 min_construction_days = 3
-required_labor = 300
+required_labor = 1200
 required_materials = {
 "stone": 40
 }
@@ -18,3 +18,4 @@ visibility_radius = 4
 political_radius = 4
 cultural_radius = 2
 is_village_center = true
+accepts_thoughts = true

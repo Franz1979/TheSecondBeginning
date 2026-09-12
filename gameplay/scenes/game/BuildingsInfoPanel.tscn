@@ -1,0 +1,23 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://gameplay/scenes/game/BuildingsInfoPanel.gd" id="1_bldp"]
+
+[node name="BuildingsInfoPanel" type="VBoxContainer"]
+script = ExtResource("1_bldp")
+
+[node name="SummaryRow" type="HBoxContainer" parent="."]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="SummaryLabel" type="Label" parent="SummaryRow"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 11
+size_flags_horizontal = 3
+
+[node name="ExpandButton" type="Button" parent="SummaryRow"]
+custom_minimum_size = Vector2(28, 0)
+layout_mode = 2
+theme_override_font_sizes/font_size = 11
+
+[node name="ListContainer" type="VBoxContainer" parent="."]
+layout_mode = 2

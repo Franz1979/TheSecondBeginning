@@ -53,6 +53,17 @@ signal idea_completed(idea_id: String)
 # Emesso SOLO dal ramo pensiero, stesso motivo di idea_completed sopra.
 signal thought_deposited()
 
+# Emesso OGNI VOLTA che questo deposito esegue DAVVERO il ramo FISICO (2026-09-12, richiesta
+# utente — bugfix "il mucchietto non si aggiorna in automatico quando viene fatto il deposito"):
+# STESSO principio di thought_deposited sopra (un evento per deposito riuscito, non un fallimento
+# distruttivo se nessuno ascolta), ma per il ramo opposto — deposited > 0, vedi on_complete sotto.
+# UnloadAction non conosce GameScene/MicroCellRenderer, si limita a segnalare "ho depositato
+# DAVVERO in `building`", chi ascolta decide se/come rinfrescare il disegno (vedi GameScene.
+# _on_resource_deposited, che richiama _refresh_building_visuals — necessario perché la griglia di
+# stoccaggio sulla mappa, vedi MicroCellRenderer._draw_deposit_site_storage_grid, legge da una COPIA
+# di Building.stored_resources presa al momento dell'ultimo refresh, non dall'oggetto live).
+signal resource_deposited(building: Building)
+
 # Discriminatore ESPLICITO di ramo (2026-09-10, vedi nota in testa al file) — RESOURCE = ramo
 # FISICO (deposita individual.carried_resource_name/carried_quantity in target_building via
 # BuildingStorageService), THOUGHT = ramo PENSIERO (IdeaProgressService.add_thoughts). Sostituisce
@@ -271,7 +282,12 @@ func get_stamina_delta(individual: Variant, context: Dictionary, delta: float) -
 # nessuno di loro acquisisce una durata artificiale. Il ramo FISICO con un deposito davvero in corso
 # è l'UNICO che ora impiega più di un frame/giorno per completarsi.
 func is_complete(individual: Variant, context: Dictionary) -> bool:
-	if DebugLogging.ENABLED and _elapsed < _duration:
+	# Gated dal flag dedicato SHOW_UNLOAD_COMPLETION_LOGS (2026-09-10, richiesta utente), non più
+	# dal solo master switch ENABLED — questo print gira ad ogni chiamata (~60/s, una per frame)
+	# per l'intera durata del ramo FISICO in corso: col solo ENABLED (default true) produceva
+	# decine di righe per un singolo Unload. Default false: chi vuole vederlo lo riattiva
+	# esplicitamente, stesso principio degli altri filtri dedicati in DebugLogging.gd.
+	if DebugLogging.ENABLED and DebugLogging.SHOW_UNLOAD_COMPLETION_LOGS and _elapsed < _duration:
 		print("[UNLOAD] is_complete: false (in corso) — elapsed=%.3f/%.3fgg, target_building=%s" % [
 			_elapsed, _duration, str(target_building.id) if target_building != null else "null"
 		])
@@ -343,6 +359,11 @@ func on_complete(individual: Variant, context: Dictionary) -> void:
 			if DebugLogging.ENABLED:
 				print("[UNLOAD] on_complete: deposited<=0 — nessun decremento zaino, return anticipato. carried_quantity resta %d" % individual.carried_quantity)
 			return
+		# resource_deposited (2026-09-12) — emesso QUI, appena garantito deposited > 0 dal guard
+		# sopra: chi ascolta (GameScene._on_resource_deposited) deve rinfrescare la mappa anche se il
+		# deposito è stato solo PARZIALE (deposited < carried_before_deposit, il resto resta nello
+		# zaino) — la griglia di stoccaggio del deposit site è comunque cambiata.
+		resource_deposited.emit(target_building)
 		individual.carried_quantity -= deposited
 		if individual.carried_quantity <= 0:
 			individual.carried_quantity = 0
@@ -396,6 +417,27 @@ func on_complete(individual: Variant, context: Dictionary) -> void:
 	thought_deposited.emit()
 	if IdeaProgressService.add_thoughts(folk, 1):
 		idea_completed.emit(folk.completed_ideas[-1])
+
+	# "Cammina via" (2026-09-10, richiesta utente — Step 1b del refactor Daydream via TaskFactory,
+	# preparazione del meccanismo, non ancora collegato/testabile in-game: arriva col secondo
+	# prompt) — STESSA identica formula/STESSO canale generico del ramo FISICO sopra (target_building.
+	# position + Vector2.from_angle(randf() * TAU) * WALK_AWAY_DISTANCE, consumato da
+	# HumanIndividualActionService._handle_pending_walk_away, già generico/riusabile senza modifiche),
+	# ora possibile qui perché target_building non è più legato al solo ramo RESOURCE (2026-09-10,
+	# refactor 2b — discriminatore esplicito deposit_kind, target_building indipendente): un ramo
+	# PENSIERO risolto dinamicamente da _handle_pending_thought_target_search (2c) passa un Building
+	# reale (lo Stone Circle o equivalente) anche qui.
+	#
+	# Guardia target_building != null (a differenza del ramo FISICO sopra, dove un target_building
+	# null è già un caso limite difensivo mai prodotto da un call site reale) — QUI invece è ancora
+	# il caso NORMALE di oggi: _debug_test_daydream_task (non toccata in questo prompt, arriva col
+	# secondo) costruisce ancora UnloadAction.new(null, DepositKind.THOUGHT), quindi questo ramo deve
+	# restare un no-op silenzioso finché quel chiamante non passa a risolvere target_building
+	# dinamicamente via 2c — nessun comportamento nuovo visibile in-game da questo prompt.
+	if target_building != null:
+		var thought_macro_offset: Vector2 = Vector2(Vector2i(target_building.macro_x, target_building.macro_y) - individual.home_macro_coords) * World.WIDTH
+		var thought_building_position: Vector2 = Vector2(target_building.micro_x, target_building.micro_y) + thought_macro_offset
+		context["pending_walk_away_position"] = thought_building_position + Vector2.from_angle(randf() * TAU) * WALK_AWAY_DISTANCE
 
 
 # Persistenza (2026-09-09, richiesta utente; ESTESA 2026-09-10 per costo/durata E per deposit_kind)

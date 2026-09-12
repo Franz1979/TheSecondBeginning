@@ -358,6 +358,15 @@ func load_game_from_json(file_path: String) -> LoadedGame:
 			building.micro_y = int(building_data.get("micro_y", 0))
 			building.construction_started_day = int(building_data.get("construction_started_day", -1))
 			building.is_complete = bool(building_data.get("is_complete", false))
+			# site_setup_complete (2026-09-11, richiesta utente) — .get(key, building.is_complete),
+			# non un semplice `false`, per compatibilità con save salvati PRIMA che questo campo
+			# esistesse: quei save non conoscevano la fase "cantiere in attesa" e ogni edificio lì
+			# presente era già completo (is_complete=true — MicroCellRenderer non usa comunque
+			# site_setup_complete quando is_complete è true, vedi _draw_buildings) — usare is_complete
+			# come fallback evita comportamenti diversi tra un edificio pre-esistente e uno nuovo, pur
+			# senza che sia mai osservabile oggi (nessun save pre-esistente ha davvero is_complete=
+			# false, la Build Task è arrivata dopo).
+			building.site_setup_complete = bool(building_data.get("site_setup_complete", building.is_complete))
 			building.current_durability = int(building_data.get("current_durability", 0))
 			building.built_year = int(building_data.get("built_year", -1))
 			# stored_resources (2026-09-09, richiesta utente, Step 3 decadimento) — formato cambiato
@@ -368,6 +377,17 @@ func load_game_from_json(file_path: String) -> LoadedGame:
 			# non lo fosse stato) continua a caricare senza perdere dati — un intero vecchio letto
 			# come {"quantity": vecchio_intero, "decay_fraction": 0.0}, mai un breaking change.
 			building.stored_resources = _parse_stored_resources(building_data.get("stored_resources", {}))
+			# construction_progress (2026-09-10, richiesta utente — preparazione Build Task; primi
+			# consumatori arrivati il 2026-09-11 con BuildAction/SetupSiteAction/ClearAction) —
+			# .get(key, {}) per compatibilità con save precedenti l'introduzione del campo, stesso
+			# pattern già usato per ogni altro campo opzionale in questo file. Nessun parsing dedicato
+			# come _parse_stored_resources sopra: il contenuto ("site_setup_days_done"/
+			# "clear_days_done"/"labor_accumulated", tutti float) passa così com'è — CONFERMATO
+			# (2026-09-11) che basta per tutte e tre: ognuna delle tre Action legge sempre con
+			# float(...get(key, 0.0)), quindi tollera sia un float che un intero tornato dal parsing
+			# JSON (che non distingue int/float, ogni numero torna come float), nessun cast/
+			# retrocompatibilità aggiuntiva necessaria qui.
+			building.construction_progress = building_data.get("construction_progress", {})
 			# enabled_categories (2026-09-09, richiesta utente) — .get(key, []) per compatibilità
 			# con save precedenti l'introduzione del campo, stesso principio già usato per ogni
 			# altro campo opzionale in questo file. int() esplicito per voce (non un .assign()
@@ -445,6 +465,10 @@ func load_game_from_json(file_path: String) -> LoadedGame:
 			individual.mother_id = int(individual_data["mother_id"])
 			individual.father_id = int(individual_data["father_id"])
 			individual.partner_id = int(individual_data["partner_id"])
+			# Campo base Rest Task esplicita (2026-09-12, richiesta utente) — .get() con default -1,
+			# stesso trattamento di scheduled_death_day/is_pregnant sopra: compatibilità coi save
+			# precedenti a questo campo.
+			individual.house_id = int(individual_data.get("house_id", -1))
 			individual.name = String(individual_data["name"])
 			individual.position = Vector2(float(individual_data["position_x"]), float(individual_data["position_y"]))
 			individual.home_macro_coords = Vector2i(
@@ -519,6 +543,12 @@ func load_game_from_json(file_path: String) -> LoadedGame:
 					individual.home_macro_coords.x, individual.home_macro_coords.y
 				)
 				individual.current_task = TaskPersistenceService.deserialize_task(current_task_data, task_macro_state, world)
+				# TaskDebugRegistry (2026-09-12, richiesta utente — tab di debug 🐞) — questo percorso
+				# scrive current_task DIRETTAMENTE (non passa da HumanIndividual.assign_task, l'unico
+				# altro punto che registra — vedi TaskDebugRegistry.gd), quindi va registrato qui a
+				# parte perché una Task in corso al momento del salvataggio compaia comunque nella tab
+				# dopo un reload, invece di restare invisibile finché non viene chiusa.
+				TaskDebugRegistry.on_task_assigned(individual, individual.current_task)
 				if not individual.current_task.is_finished():
 					individual.current_task.get_current_action().activate(individual, individual.current_task.context)
 			human_individuals.append(individual)
