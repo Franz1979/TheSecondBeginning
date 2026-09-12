@@ -27,6 +27,12 @@ extends VBoxContainer
 const COLOR_MALE := Color(0.25, 0.55, 0.95)
 const COLOR_FEMALE := Color(0.95, 0.4, 0.65)
 
+# Alert visivo per housing_label (2026-09-12, richiesta utente) — rosso quando i pipottini vivi
+# superano i posti letto disponibili (vedi show_population), stesso principio "colore acceso solo
+# per segnalare un problema" già in uso altrove nel progetto (es. DEBUG_LABEL_COLOR in
+# TaskDebugPanel, anche se per un motivo diverso).
+const COLOR_HOUSING_ALERT := Color(0.9, 0.3, 0.3)
+
 # Bottone per-riga "centra e seleziona" (richiesta utente, 2026-09-04: "un piccolo button a fianco
 # di ognuno... al clic mi centri su di loro e mi selezioni il cliccato" — a differenza del
 # generico "🎯" della PrimaryActionsBar, che centra solo sull'ULTIMO selezionato, questo permette
@@ -51,6 +57,7 @@ signal individual_center_requested(individual: HumanIndividual)
 @onready var group_label: Label = $SummaryRow/GroupLabel
 @onready var male_label: Label = $SummaryRow/MaleLabel
 @onready var female_label: Label = $SummaryRow/FemaleLabel
+@onready var housing_label: Label = $SummaryRow/HousingLabel
 @onready var expand_button: Button = $SummaryRow/ExpandButton
 @onready var list_container: VBoxContainer = $ListContainer
 
@@ -84,10 +91,17 @@ func _ready() -> void:
 # il precedente parametro human_rules: HumanRules, usato SOLO per HumanCalculator.get_age_band, che
 # leggeva le durate age-band grezze ignorando l'Era corrente): durate GIA' scalate per l'Era,
 # tipicamente game_data.era_effective_age_band_durations_male/female — vedi GameScene.
+# housing_capacity (2026-09-12, richiesta utente — "quanto spazio abitativo esiste") — già
+# risolto dal chiamante (GameScene, somma di rules.max_residents sui soli edifici RESIDENTIAL
+# COMPLETI, vedi _refresh_population_panel): questo pannello resta "muto" come dichiarato in testa
+# al file, non conosce Building/BuildingRules, riceve solo l'intero già pronto. Messo QUI (non nel
+# pannello Edifici) perché "quanti pipottini vivi contro quanti posti letto esistono" è per natura
+# un dato sulla POPOLAZIONE, non sugli edifici in generale (che includono anche political/storage,
+# mai rilevanti per questo conteggio) — vedi housing_label sotto per il formato scelto.
 func show_population(
 	total_count: int, individuals: Array[HumanIndividual], current_year: int,
 	era_effective_age_band_durations_male: Array[float], era_effective_age_band_durations_female: Array[float],
-	folk_id: int, group_id: int
+	folk_id: int, group_id: int, housing_capacity: int
 ) -> void:
 	var male_count := 0
 	var female_count := 0
@@ -100,6 +114,23 @@ func show_population(
 	group_label.text = "Group %s: total %d" % [_format_id(group_id), total_count]
 	male_label.text = "♂ " + str(male_count)
 	female_label.text = "♀ " + str(female_count)
+	# "🏠 10/4" = 10 pipottini vivi in totale contro 4 posti letto disponibili (somma rules.
+	# max_residents sui residenziali completi) — richiesta utente 2026-09-12, REVISIONATA rispetto
+	# alla versione precedente (che mostrava "con casa/capacità", non "vivi/capacità": chi non ha
+	# ancora una casa assegnata — vedi AssignHouseService, in attesa di un posto libero — va comunque
+	# contato qui, altrimenti il numero sottostimerebbe quanti posti letto servirebbero DAVVERO).
+	# ROSSO quando total_count > housing_capacity (richiesta utente, confermato esplicitamente: 10
+	# pipottini/4 posti è il caso ALLARME, non il contrario) — nessun posto per tutti, alert
+	# visivo immediato; altrimenti colore di default del tema (posti sufficienti o in eccesso).
+	housing_label.text = "🏠 %d/%d" % [total_count, housing_capacity]
+	if total_count > housing_capacity:
+		housing_label.add_theme_color_override("font_color", COLOR_HOUSING_ALERT)
+	else:
+		housing_label.remove_theme_color_override("font_color")
+	housing_label.tooltip_text = "%d pipottini vivi su %d posti letto totali (edifici residenziali completi)%s" % [
+		total_count, housing_capacity,
+		" — non bastano per tutti!" if total_count > housing_capacity else ""
+	]
 
 	for child in list_container.get_children():
 		child.queue_free()

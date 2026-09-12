@@ -9,17 +9,31 @@ class_name TaskFactory
 # action_type, passandole gli argomenti letti da context tramite context_keys, nell'ordine
 # dichiarato lì (vedi task_step_definition.gd).
 
-# Supporta WALK, REST, THINK, PICKUP, SETUP_SITE, CLEAR, BUILD, LOOK_AROUND in questo passo (2026-09-10,
-# richiesta utente — estensione per haul_resource: aggiunti THINK/PICKUP allo schema WALK/REST
-# preesistente, poi SETUP_SITE per la prima porzione della Build Task, poi CLEAR (2026-09-11) per
-# il terzo step, poi BUILD (2026-09-11, stesso giorno) per il quarto e ultimo — stesso principio di
-# dispatch eterogeneo per-tipo già usato da TaskPersistenceService._build_step, sorgente diversa —
-# lì un Dictionary a chiavi fisse per tipo, qui context_keys+context). UNLOAD resta FUORI SCOPE
-# (non aggiunto qui): haul_resource costruita da questa factory produce solo i primi due step
-# [Walk, PickUp] — il resto della catena (ricerca magazzino/Unload/cammina-via) continua a crescere
-# a runtime via Task.append_steps, invariato (vedi HumanIndividualActionService); build.tres invece
-# produce oggi la Build Task COMPLETA [Walk, SetupSite, Clear, Build] — nessuno step residuo fuori
-# scope per questa Task. REST non richiede un target (RestAction non ne ha uno, vedi RestAction.gd)
+# Supporta WALK, REST, THINK, PICKUP, SETUP_SITE, CLEAR, BUILD, LOOK_AROUND, RETRIEVE, UNLOAD in
+# questo passo (2026-09-10, richiesta utente — estensione per haul_resource: aggiunti THINK/PICKUP
+# allo schema WALK/REST preesistente, poi SETUP_SITE per la prima porzione della Build Task, poi
+# CLEAR (2026-09-11) per il terzo step, poi BUILD (2026-09-11, stesso giorno) per il quarto e
+# ultimo, poi RETRIEVE/UNLOAD (2026-09-12, Transport Task) — stesso principio di dispatch
+# eterogeneo per-tipo già usato da TaskPersistenceService._build_step, sorgente diversa — lì un
+# Dictionary a chiavi fisse per tipo, qui context_keys+context). haul_resource costruita da questa
+# factory produce solo i primi due step [Walk, PickUp] — il resto della catena (ricerca magazzino/
+# Unload/cammina-via) continua a crescere a runtime via Task.append_steps, invariato (vedi
+# HumanIndividualActionService); build.tres invece produce oggi la Build Task COMPLETA [Walk,
+# SetupSite, Clear, Build], transport.tres la Transport Task COMPLETA [Walk, Retrieve, Walk,
+# Unload] — nessuno step residuo fuori scope per queste due Task.
+#
+# UNLOAD GAP CHIUSO (2026-09-12, richiesta utente, Transport Task) — PRIMA di questo passo il case
+# UNLOAD non esisteva affatto qui ("UNLOAD resta FUORI SCOPE", commento storico): ogni UnloadAction
+# nasceva SOLO a runtime (accodata dinamicamente via Task.append_steps, vedi
+# HumanIndividualActionService._handle_pending_warehouse_search/_handle_pending_thought_target_
+# search) o costruita a mano nei debug hook/comandi diretti di GameScene, mai tramite una vera
+# TaskDefinition. Il case sotto fissa SEMPRE deposit_kind a RESOURCE (mai letto da un secondo
+# context_keys): l'unico caso in cui una TaskDefinition.tres ha senso di dichiarare esplicitamente
+# uno step UNLOAD è il deposito FISICO di una risorsa già in spalla (es. Transport Task) — il ramo
+# PENSIERO (THOUGHT) resta sempre e solo costruito dinamicamente a runtime, nessuna TaskDefinition
+# ne ha bisogno oggi (daydreaming.tres si ferma a [Walk, Think], il resto cresce a runtime).
+#
+# REST non richiede un target (RestAction non ne ha uno, vedi RestAction.gd)
 # ma accetta un rest_multiplier OPZIONALE da context_keys[0] (2026-09-12, richiesta utente — Rest
 # Task esplicita, rest.tres: [Walk, Rest con moltiplicatore] — vedi il case REST sotto). Aggiungere qui un nuovo case
 # per ogni futuro ActionType quando arriverà la sua Action concreta — non prima, per non gestire
@@ -155,6 +169,37 @@ static func build_task(definition: TaskDefinition, context: Dictionary) -> Task:
 				# nessun target). Vedi step_look_around.tres/wander.tres per l'unico consumatore oggi
 				# (2026-09-12, richiesta utente, Wander Task).
 				steps.append(LookAroundAction.new())
+				step_descriptions.append(step_definition.step_description)
+			TaskTypes.ActionType.RETRIEVE:
+				# 3 argomenti eterogenei, nell'ordine atteso da RetrieveAction._init(target_building,
+				# resource_name, quantity_requested) — stesso schema di PICKUP/CLEAR sopra. Nessuna
+				# TaskDefinition la usa ancora oggi (2026-09-12, richiesta utente — solo l'Action e il
+				# collegamento a TaskFactory/persistenza in questo giro, nessuna Task di trasporto
+				# materiale completa ancora costruita).
+				if step_definition.context_keys.size() < 3:
+					push_error("TaskFactory.build_task: context_keys insufficienti (servono 3: target_building, resource_name, quantity_requested) per step RETRIEVE di TaskDefinition '%s'." % definition.task_name)
+					continue
+				var retrieve_building_key: String = step_definition.context_keys[0]
+				var retrieve_resource_name_key: String = step_definition.context_keys[1]
+				var retrieve_quantity_key: String = step_definition.context_keys[2]
+				if not context.has(retrieve_building_key) or not context.has(retrieve_resource_name_key) or not context.has(retrieve_quantity_key):
+					push_error("TaskFactory.build_task: una o più chiavi di contesto mancanti ('%s'/'%s'/'%s') per step RETRIEVE di TaskDefinition '%s'." % [
+						retrieve_building_key, retrieve_resource_name_key, retrieve_quantity_key, definition.task_name
+					])
+					continue
+				steps.append(RetrieveAction.new(
+					context[retrieve_building_key], context[retrieve_resource_name_key], int(context[retrieve_quantity_key])
+				))
+				step_descriptions.append(step_definition.step_description)
+			TaskTypes.ActionType.UNLOAD:
+				# 1 argomento (target_building: Building) — stesso schema di SETUP_SITE/BUILD sopra.
+				# deposit_kind SEMPRE RESOURCE (vedi nota in testa al file per il perché) — mai letto da
+				# un secondo context_keys, UnloadAction.new(target_building, DepositKind.RESOURCE)
+				# esplicito. Vedi step_unload_transport.tres/transport.tres per l'unico consumatore oggi.
+				if step_definition.context_keys.is_empty() or not context.has(step_definition.context_keys[0]):
+					push_error("TaskFactory.build_task: context_keys[0] mancante/non risolvibile per step UNLOAD di TaskDefinition '%s'." % definition.task_name)
+					continue
+				steps.append(UnloadAction.new(context[step_definition.context_keys[0]], UnloadAction.DepositKind.RESOURCE))
 				step_descriptions.append(step_definition.step_description)
 			_:
 				push_error("TaskFactory.build_task: ActionType %d non supportato (TaskDefinition '%s')." % [

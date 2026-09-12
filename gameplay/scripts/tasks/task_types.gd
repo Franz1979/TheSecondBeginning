@@ -46,6 +46,13 @@ enum ActionType {
 	# — STESSO principio di SETUP_SITE/CLEAR/BUILD sopra, AGGIUNTO IN CODA. Vedi
 	# gameplay/scripts/actions/LookAroundAction.gd.
 	LOOK_AROUND,
+	# RETRIEVE (2026-09-12, richiesta utente — RetrieveAction: prelievo di una quantità di risorsa da
+	# un edificio, operazione simmetrica di UNLOAD ramo RESOURCE ma in prelievo) — STESSO principio di
+	# SETUP_SITE/CLEAR/BUILD/LOOK_AROUND sopra, AGGIUNTO IN CODA. TaskFactory.build_task e
+	# TaskPersistenceService la supportano già entrambi da questo stesso passo — nessuna
+	# TaskDefinition la usa ancora (nessun trigger/Task di trasporto materiale completa esiste ancora,
+	# arriverà in un giro successivo). Vedi gameplay/scripts/actions/RetrieveAction.gd.
+	RETRIEVE,
 }
 
 # Categorie di tool richiedibili da un'Action (2026-09-08, richiesta utente — SOLO struttura dati,

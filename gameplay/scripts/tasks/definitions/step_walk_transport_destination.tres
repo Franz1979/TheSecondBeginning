@@ -1,0 +1,9 @@
+[gd_resource type="Resource" script_class="TaskStepDefinition" format=3]
+
+[ext_resource type="Script" uid="uid://d3sri3tos2u4f" path="res://gameplay/scripts/tasks/task_step_definition.gd" id="1_walk_transport_destination"]
+
+[resource]
+script = ExtResource("1_walk_transport_destination")
+action_type = 0
+context_keys = Array[String](["transport_destination_position"])
+step_description = "task_transport_step_walk_to_destination"

@@ -54,7 +54,7 @@ extends RefCounted
 #            vicino avrebbe avuto posto.
 #   Tier 2 — BuildingTypes.Category.RESIDENTIAL (es. hut): SOLO se il tier 1 non ha trovato nulla
 #            (nessuno storage con posto). Stessa logica, categoria diversa.
-#   Tier 3 — qualunque ALTRA categoria (oggi solo POLITICAL, es. stone_circle — che però non ha
+#   Tier 3 — qualunque ALTRA categoria (oggi solo POLITICAL, es. pebble_circle — che però non ha
 #            storage_slot_count valorizzato, quindi in pratica non risulterà mai idoneo finché resta
 #            così): SOLO se anche il tier 2 fallisce. STORAGE è esplicitamente escluso da questo
 #            tier — se siamo arrivati qui, nessun edificio STORAGE aveva posto (già verificato al

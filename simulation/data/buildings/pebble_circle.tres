@@ -1,15 +1,15 @@
 [gd_resource type="Resource" script_class="BuildingRules" format=3 uid="uid://d3x4yd88bgjqc"]
 
-[ext_resource type="Script" uid="uid://b8pl3yflicmtn" path="res://simulation/scripts/core/BuildingRules.gd" id="1_stone_circle"]
+[ext_resource type="Script" uid="uid://b8pl3yflicmtn" path="res://simulation/scripts/core/BuildingRules.gd" id="1_pebble_circle"]
 
 [resource]
-script = ExtResource("1_stone_circle")
-building_name = "building_stone_circle"
+script = ExtResource("1_pebble_circle")
+building_name = "building_pebble_circle"
 category = 1
 min_construction_days = 3
 required_labor = 1200
 required_materials = {
-"stone": 40
+"pebble": 0
 }
 max_durability = 200
 required_space = 1

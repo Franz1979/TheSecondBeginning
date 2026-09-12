@@ -71,6 +71,10 @@ func save_game_to_json(
 			# population_snapshots) — scritto COSÌ COM'È: JSON.stringify converte da solo le
 			# chiavi int in stringhe, GameLoadService le riconverte al caricamento (vedi lì).
 			"population_snapshots": game_data.population_snapshots,
+			# Snapshot numero edifici/anno (2026-09-12, richiesta utente — tab Statistiche/Edifici,
+			# vedi GameData.building_snapshots) — STESSO trattamento di population_snapshots appena
+			# sopra: scritto così com'è, JSON.stringify converte da solo le chiavi int in stringhe.
+			"building_snapshots": game_data.building_snapshots,
 			# Istanze oggetti-scaduti (Step 2, vedi GameData.expired_objects) — A DIFFERENZA di
 			# death_events sopra, "position" è un Vector2 (non JSON-nativo): _expired_objects_to_json
 			# appiattisce ogni record in position_x/position_y, stessa convenzione già usata per

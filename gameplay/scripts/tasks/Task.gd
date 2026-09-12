@@ -68,6 +68,20 @@ var task_name: String = ""
 static var _next_id: int = 1
 var id: int = 0
 
+# Chiave stabile del target per il tracking di TaskDebugRegistry (2026-09-12, richiesta utente —
+# fix righe duplicate/fantasma nel pannello 🐞 quando una Build Task viene ricostruita per lo stesso
+# target) — "" (default) = nessun target persistente, il registro traccia questa Task per singola
+# ISTANZA come sempre (Walk/Wander/Rest/Daydream/haul_resource: mai ricostruite da un target esterno,
+# comportamento invariato). Valorizzata SOLO da TaskReassignmentService.reassign_task subito dopo
+# TaskFactory.build_task, PRIMA di individual.assign_task(task), da target.get_debug_target_key()
+# (es. "building:%d" % id per una Building — vedi Building.gd) — permette a TaskDebugRegistry.
+# on_task_assigned di riconoscere "questa nuova Task riguarda lo STESSO target di una riga già
+# aperta" anche quando l'istanza Task precedente (e magari l'individuo assegnato) sono diversi, cosa
+# che l'id per-istanza sopra non può esprimere da solo. SOLO diagnostico, stesso trattamento di id/
+# task_name sopra — nessuna logica di simulazione lo legge, NON persistito (TaskPersistenceService
+# non lo scrive/legge).
+var debug_target_key: String = ""
+
 # Numero massimo di individui assegnabili CONTEMPORANEAMENTE a questa Task (2026-09-10, richiesta
 # utente — preparazione Build Task, Step 1: SOLO il campo, nessuna logica di condivisione lavoro
 # ancora — arriverà con un giro successivo, insieme al vero trigger). Default 1 = comportamento

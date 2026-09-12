@@ -245,6 +245,19 @@ func activate(individual: Variant, context: Dictionary) -> void:
 				print("[UNLOAD] activate: deposito previsto di carried_quantity=%d — duration=%.3fgg, total_stamina_cost=%.1f" % [
 					individual.carried_quantity, _duration, _total_stamina_cost
 				])
+	# Riverifica ramo PENSIERO (2026-09-12, richiesta utente — bugfix "deposito nel vuoto") — STESSO
+	# principio/STESSO momento della riverifica ramo RESOURCE appena sopra (activate(), quando
+	# l'individuo arriva davvero): un pensiero non ha un concetto di "capacità residua" da
+	# riverificare (nessuna BuildingStorageService coinvolta per questo ramo), quindi il solo
+	# controllo sensato è "questo edificio esiste ancora?" — Building.is_demolished (vedi lì per il
+	# perché il riferimento resta valido anche a edificio demolito). pending_thought riportato a
+	# false QUI, non in on_complete(): quel metodo ha già un guard `if not individual.pending_thought:
+	# return` in testa, quindi azzerarlo qui basta a farlo restare un no-op silenzioso più avanti,
+	# senza duplicare la condizione in due posti.
+	elif deposit_kind == DepositKind.THOUGHT and target_building != null and target_building.is_demolished:
+		individual.pending_thought = false
+		if DebugLogging.ENABLED:
+			print("[UNLOAD] activate: target_building id=%d demolito nel frattempo — pending_thought azzerato, pensiero perso." % target_building.id)
 	if not DebugLogging.ENABLED:
 		return
 	if deposit_kind != DepositKind.RESOURCE:
@@ -426,7 +439,7 @@ func on_complete(individual: Variant, context: Dictionary) -> void:
 	# ora possibile qui perché target_building non è più legato al solo ramo RESOURCE (2026-09-10,
 	# refactor 2b — discriminatore esplicito deposit_kind, target_building indipendente): un ramo
 	# PENSIERO risolto dinamicamente da _handle_pending_thought_target_search (2c) passa un Building
-	# reale (lo Stone Circle o equivalente) anche qui.
+	# reale (lo Pebble Circle o equivalente) anche qui.
 	#
 	# Guardia target_building != null (a differenza del ramo FISICO sopra, dove un target_building
 	# null è già un caso limite difensivo mai prodotto da un call site reale) — QUI invece è ancora

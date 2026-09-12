@@ -40,7 +40,7 @@ extends Action
 # seguito" di ogni altra costante di questo sistema, scelto nello stesso ordine di grandezza di
 # SetupSiteAction/ClearAction (100.0/200.0 al momento di scrivere questo file, entrambe alzate
 # rispetto al valore originale 10.0 per rendere i test più rapidi) così un required_labor di test
-# (1000-1500, vedi hut/stone_circle/deposit_site.tres) resta completabile in pochi giorni di gioco.
+# (1000-1500, vedi hut/pebble_circle/deposit_site.tres) resta completabile in pochi giorni di gioco.
 const STAMINA_DRAIN_PER_DAY: float = 200.0
 
 var target_building: Building = null

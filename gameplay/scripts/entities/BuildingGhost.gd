@@ -21,10 +21,10 @@ extends Node2D
 # "come disegnarsi". `rotation_dir` invece è impostato dal chiamante solo al tasto R (vedi
 # GameScene._unhandled_input), non ogni frame.
 #
-# Secondo tipo, Stone Circle (2026-09-07, richiesta utente) — building_type_name (sotto) dice quale
+# Secondo tipo, Pebble Circle (2026-09-07, richiesta utente) — building_type_name (sotto) dice quale
 # sagoma disegnare: "hut" (default, comportamento invariato) resta la capanna descritta sopra,
-# "stone_circle" disegna invece un anello di massi grezzi senza porta/rotazione (vedi
-# _draw_stone_circle). Stesso nodo/stesso ciclo di vita per entrambi, nessun sottotipo di classe.
+# "pebble_circle" disegna invece un anello di massi grezzi senza porta/rotazione (vedi
+# _draw_pebble_circle). Stesso nodo/stesso ciclo di vita per entrambi, nessun sottotipo di classe.
 
 const COLOR := Color(0.55, 0.42, 0.28, 0.75)
 const OUTLINE_COLOR := Color(0.3, 0.22, 0.12, 0.85)
@@ -46,31 +46,33 @@ const DOOR_NOTCH_HALF_WIDTH: float = 1.0
 const DOOR_NOTCH_DEPTH: float = 1.3
 const CIRCLE_SEGMENTS: int = 24
 
-# Stone Circle — stessa palette/geometria di MicroCellRenderer._draw_stone_circle (duplicata
+# Pebble Circle — stessa palette/geometria di MicroCellRenderer._draw_pebble_circle (duplicata
 # apposta, stesso principio già in uso per la capanna), qui però anche con la variante rossa "non
-# edificabile" (STONE_CIRCLE_INVALID_COLOR), che l'edificio già piazzato non ha bisogno di avere.
+# edificabile" (PEBBLE_CIRCLE_INVALID_COLOR), che l'edificio già piazzato non ha bisogno di avere.
 # RIVISTA (2026-09-07, richiesta utente: "le pietre sono tutte uguali e sembrano sfocate") — non
-# più cerchi perfetti ma poligoni irregolari (vedi _draw_stone_circle/_stone_blob_polygon sotto),
+# più cerchi perfetti ma poligoni irregolari (vedi _draw_pebble_circle/_pebble_blob_polygon sotto),
 # stessa identica logica di MicroCellRenderer (duplicata, non condivisa: vedi commento in testa al
-# file) così l'anteprima e l'edificio finito mostrano esattamente la stessa sagoma per masso.
-const STONE_CIRCLE_COLOR := Color(0.60, 0.58, 0.54, 0.75)
-const STONE_CIRCLE_OUTLINE_COLOR := Color(0.24, 0.22, 0.19, 0.85)
-const STONE_CIRCLE_INVALID_COLOR := Color(0.75, 0.15, 0.15, 0.75)
-const STONE_CIRCLE_INVALID_OUTLINE_COLOR := Color(0.4, 0.05, 0.05, 0.85)
-const STONE_CIRCLE_OUTLINE_WIDTH: float = 0.5
-const STONE_CIRCLE_RING_RADIUS: float = 4.0
-const STONE_CIRCLE_STONE_RADIUS: float = 0.75
-const STONE_CIRCLE_STONE_COUNT: int = 8
-const STONE_CIRCLE_BLOB_VERTEX_COUNT: int = 8
+# file) così l'anteprima e l'edificio finito mostrano esattamente la stessa sagoma per sassolino.
+# RITARATA 2026-09-12 (rename Stone Circle -> Pebble Circle, richiesta utente — sassolini più
+# piccoli e più numerosi) — STESSI valori di MicroCellRenderer, mai lasciati disallineare.
+const PEBBLE_CIRCLE_COLOR := Color(0.60, 0.58, 0.54, 0.75)
+const PEBBLE_CIRCLE_OUTLINE_COLOR := Color(0.24, 0.22, 0.19, 0.85)
+const PEBBLE_CIRCLE_INVALID_COLOR := Color(0.75, 0.15, 0.15, 0.75)
+const PEBBLE_CIRCLE_INVALID_OUTLINE_COLOR := Color(0.4, 0.05, 0.05, 0.85)
+const PEBBLE_CIRCLE_OUTLINE_WIDTH: float = 0.5
+const PEBBLE_CIRCLE_RING_RADIUS: float = 4.0
+const PEBBLE_CIRCLE_PEBBLE_RADIUS: float = 0.45
+const PEBBLE_CIRCLE_PEBBLE_COUNT: int = 14
+const PEBBLE_CIRCLE_BLOB_VERTEX_COUNT: int = 8
 
 # Deposit Site (2026-09-08, richiesta utente) — "sito di deposito", a disegno una chiazza di terra
 # battuta SQUADRATA (2026-09-08, revisione richiesta utente: "molto più squadrato", non un quadrato
-# perfetto però): nessuna porta/recinto/rotazione (has_door=false, come lo Stone Circle). Un solo
+# perfetto però): nessuna porta/recinto/rotazione (has_door=false, come lo Pebble Circle). Un solo
 # poligono a raggio-per-vertice in "norma del massimo" (vedi _deposit_site_polygon: r(angolo) =
 # metà-lato / max(|cos|,|sin|), che traccia esattamente un quadrato quando il jitter è 1) più un
-# lieve jitter per vertice — stesso principio "blob" già in uso per i massi dello Stone Circle, ma
+# lieve jitter per vertice — stesso principio "blob" già in uso per i sassolini dello Pebble Circle, ma
 # qui la funzione radiale di base è quadrata invece che circolare. Seed fisso: a differenza dello
-# Stone Circle questo tipo non è unico, ma la forma identica tra istanze è lo stesso comportamento
+# Pebble Circle questo tipo non è unico, ma la forma identica tra istanze è lo stesso comportamento
 # già accettato per la capanna, sempre identica a se stessa.
 const DEPOSIT_SITE_COLOR := Color(0.42, 0.34, 0.24, 0.75)
 const DEPOSIT_SITE_OUTLINE_COLOR := Color(0.24, 0.18, 0.12, 0.85)
@@ -90,7 +92,7 @@ const DEPOSIT_SITE_VERTEX_COUNT: int = 8
 # tres) — "distinguibile da Hut, coerente con tier inferiore" (richiesta utente): forma più
 # semplice/più piccola, nessun dettaglio (recinto, ritaglio porta vero) che la capanna invece ha.
 # has_door RESTA vero (default di BuildingRules, mai impostato a false in stick_tent.tres — a
-# differenza di stone_circle/deposit_site, che lo mettono esplicitamente a false): la rotazione
+# differenza di pebble_circle/deposit_site, che lo mettono esplicitamente a false): la rotazione
 # (tasto R) è quindi significativa anche per questo tipo. BUGFIX (2026-09-12, richiesta utente —
 # "has_door è vero ma non si vede la porta"): PRIMA di questo passo il ramo stick_tent ignorava del
 # tutto `rotation_dir`, disegnando sempre lo stesso cerchio simmetrico indipendentemente
@@ -111,7 +113,7 @@ const STICK_TENT_DOOR_MARKER_HALF_WIDTH: float = 0.7
 const STICK_TENT_DOOR_MARKER_HEIGHT: float = 1.1
 
 # Quale sagoma disegnare — valorizzato da GameScene._on_build_submenu_action_pressed subito dopo
-# la creazione (2026-09-07, richiesta utente, Stone Circle): prima di questo passo l'unico tipo
+# la creazione (2026-09-07, richiesta utente, Pebble Circle): prima di questo passo l'unico tipo
 # esistente (hut) rendeva superfluo dirlo esplicitamente a questo nodo. Default "hut" per lo stesso
 # motivo (comportamento invariato se mai lasciato non impostato).
 var building_type_name: String = "hut"
@@ -143,12 +145,12 @@ func rotate_clockwise() -> void:
 
 
 func _draw() -> void:
-	# Smistamento per tipo (2026-09-07, richiesta utente, Stone Circle) — nessuna porta/rotazione
+	# Smistamento per tipo (2026-09-07, richiesta utente, Pebble Circle) — nessuna porta/rotazione
 	# da mostrare per questo tipo (has_door=false), quindi un ramo completamente separato invece di
 	# infilare un altro if dentro la geometria della capanna sotto.
-	if building_type_name == "stone_circle":
-		_draw_stone_circle(STONE_CIRCLE_COLOR if is_buildable else STONE_CIRCLE_INVALID_COLOR,
-			STONE_CIRCLE_OUTLINE_COLOR if is_buildable else STONE_CIRCLE_INVALID_OUTLINE_COLOR)
+	if building_type_name == "pebble_circle":
+		_draw_pebble_circle(PEBBLE_CIRCLE_COLOR if is_buildable else PEBBLE_CIRCLE_INVALID_COLOR,
+			PEBBLE_CIRCLE_OUTLINE_COLOR if is_buildable else PEBBLE_CIRCLE_INVALID_OUTLINE_COLOR)
 		return
 	if building_type_name == "deposit_site":
 		_draw_deposit_site(DEPOSIT_SITE_COLOR if is_buildable else DEPOSIT_SITE_INVALID_COLOR,
@@ -216,31 +218,31 @@ func _hut_polygon(direction: GameTypes.Direction) -> PackedVector2Array:
 	return points
 
 
-# Anello di massi grezzi attorno al punto di ancoraggio (0,0) — nessuna porta/rotazione da
+# Anello di sassolini attorno al punto di ancoraggio (0,0) — nessuna porta/rotazione da
 # rispettare (has_door=false per questo tipo). Stessa funzione (duplicata apposta, stesso principio
-# già in uso per la capanna) di MicroCellRenderer._draw_stone_circle, così l'anteprima e l'edificio
+# già in uso per la capanna) di MicroCellRenderer._draw_pebble_circle, così l'anteprima e l'edificio
 # finito coincidono esattamente.
-func _draw_stone_circle(color: Color, outline_color: Color) -> void:
-	for i in range(STONE_CIRCLE_STONE_COUNT):
-		var angle: float = TAU * float(i) / float(STONE_CIRCLE_STONE_COUNT)
-		var stone_center := Vector2(cos(angle), sin(angle)) * STONE_CIRCLE_RING_RADIUS
-		var blob := _stone_blob_polygon(stone_center, i)
+func _draw_pebble_circle(color: Color, outline_color: Color) -> void:
+	for i in range(PEBBLE_CIRCLE_PEBBLE_COUNT):
+		var angle: float = TAU * float(i) / float(PEBBLE_CIRCLE_PEBBLE_COUNT)
+		var pebble_center := Vector2(cos(angle), sin(angle)) * PEBBLE_CIRCLE_RING_RADIUS
+		var blob := _pebble_blob_polygon(pebble_center, i)
 		draw_colored_polygon(blob, color)
 		var outline := blob.duplicate()
 		outline.append(blob[0])
-		draw_polyline(outline, outline_color, STONE_CIRCLE_OUTLINE_WIDTH)
+		draw_polyline(outline, outline_color, PEBBLE_CIRCLE_OUTLINE_WIDTH)
 
 
-# Stessa identica logica (duplicata apposta) di MicroCellRenderer._stone_blob_polygon — vedi lì per
+# Stessa identica logica (duplicata apposta) di MicroCellRenderer._pebble_blob_polygon — vedi lì per
 # il perché del seed deterministico per indice invece che per posizione/randf() globale.
-func _stone_blob_polygon(center: Vector2, seed_index: int) -> PackedVector2Array:
+func _pebble_blob_polygon(center: Vector2, seed_index: int) -> PackedVector2Array:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = seed_index
-	var stone_radius: float = STONE_CIRCLE_STONE_RADIUS * rng.randf_range(0.8, 1.2)
+	var pebble_radius: float = PEBBLE_CIRCLE_PEBBLE_RADIUS * rng.randf_range(0.8, 1.2)
 	var points := PackedVector2Array()
-	for v in range(STONE_CIRCLE_BLOB_VERTEX_COUNT):
-		var vertex_angle: float = TAU * float(v) / float(STONE_CIRCLE_BLOB_VERTEX_COUNT)
-		var vertex_radius: float = stone_radius * rng.randf_range(0.75, 1.15)
+	for v in range(PEBBLE_CIRCLE_BLOB_VERTEX_COUNT):
+		var vertex_angle: float = TAU * float(v) / float(PEBBLE_CIRCLE_BLOB_VERTEX_COUNT)
+		var vertex_radius: float = pebble_radius * rng.randf_range(0.75, 1.15)
 		points.append(center + Vector2(cos(vertex_angle), sin(vertex_angle)) * vertex_radius)
 	return points
 

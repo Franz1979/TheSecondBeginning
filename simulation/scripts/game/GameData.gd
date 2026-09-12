@@ -145,6 +145,17 @@ var birth_events: Array[Dictionary] = []
 # sono sempre String finché qualcuno non le converte).
 var population_snapshots: Dictionary = {}
 
+# Anno (int) -> numero totale di edifici esistenti in quell'anno, un punto per anno (2026-09-12,
+# richiesta utente — tab Statistiche/Edifici, grafico "numero di edifici nel tempo") — STESSO
+# identico schema/STESSA identica ragione di population_snapshots sopra (Dictionary chiave int, non
+# Array[Dictionary]: la chiave stessa è il dato identificante). Due soli scrittori: GameScene.
+# _on_year_rolled_over scrive un punto per ogni anno che ROTOLA (mai GameTimeService, che non
+# possiede macro_world.buildings — vedi lì), GameScene scrive anche il punto anno 0 nel bootstrap
+# di una partita nuova (0 edifici, coerente con population_snapshots[0] = fondatori scritto nello
+# stesso punto). ATTENZIONE persistenza — stessa nota di population_snapshots: chiavi int
+# convertite a String da JSON.stringify al salvataggio, riconvertite esplicitamente al caricamento.
+var building_snapshots: Dictionary = {}
+
 # Istanze runtime del futuro sistema oggetti-scaduti (Step 2, 2026-09-05, res://gameplay/scripts/
 # core/ExpiredObjectRules.gd — oggi solo DEAD_BODY) — un Dictionary per istanza nel mondo:
 # object_type (ExpiredObjectTypes.ExpiredObjectType), individual_id (int, -1 = non applicabile;

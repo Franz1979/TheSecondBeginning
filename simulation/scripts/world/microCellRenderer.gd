@@ -121,30 +121,34 @@ const BUILDING_DOOR_NOTCH_HALF_WIDTH: float = 1.0
 const BUILDING_DOOR_NOTCH_DEPTH: float = 1.3
 const BUILDING_CIRCLE_SEGMENTS: int = 24
 
-# Stone Circle (2026-09-07, richiesta utente) — "centro villaggio" paleolitico, is_village_center
+# Pebble Circle (2026-09-07, richiesta utente) — "centro villaggio" paleolitico, is_village_center
 # nelle sue BuildingRules (vincolo di unicità globale verificato da GameScene/BuildBar, non da
-# questo renderer: qui si sa solo disegnare). Nessuna porta (has_door=false in stone_circle.tres),
-# quindi nessun rientro a V come la capanna — un anello di massi grezzi attorno al centro. Palette
+# questo renderer: qui si sa solo disegnare). Nessuna porta (has_door=false in pebble_circle.tres),
+# quindi nessun rientro a V come la capanna — un anello di sassolini attorno al centro. Palette
 # grigia per distinguerlo a colpo d'occhio dal marrone della capanna.
 #
 # RIVISTO (2026-09-07, richiesta utente, dopo il primo giro di test: "le pietre sono tutte uguali e
 # sembrano sfocate") — non più cerchi perfetti (draw_circle/draw_arc, tutti identici, bordo sottile
-# a basso contrasto che a piccola scala legge come una macchia sfumata): ogni masso è ora un
-# poligono IRREGOLARE (vedi _stone_blob_polygon), stesso principio già in uso per le pietre naturali
+# a basso contrasto che a piccola scala legge come una macchia sfumata): ogni sassolino è ora un
+# poligono IRREGOLARE (vedi _pebble_blob_polygon), stesso principio già in uso per le pietre naturali
 # (MultiMesh con STONE_VARIANT_COUNT mesh pre-generate jittered, vedi _rebuild_stone_multimeshes) ma
-# qui immediate-mode, coerente con lo stile "usa e getta" della capanna: solo STONE_CIRCLE_STONE_
-# COUNT massi per l'unico Stone Circle possibile in partita, nessun bisogno di MultiMesh. Seed
-# deterministico = indice del masso (0..STONE_CIRCLE_STONE_COUNT-1), non la posizione: essendo
-# l'edificio unico per costruzione (vedi vincolo di unicità), non c'è rischio che due Stone Circle
+# qui immediate-mode, coerente con lo stile "usa e getta" della capanna: solo PEBBLE_CIRCLE_PEBBLE_
+# COUNT sassolini per l'unico Pebble Circle possibile in partita, nessun bisogno di MultiMesh. Seed
+# deterministico = indice del sassolino (0..PEBBLE_CIRCLE_PEBBLE_COUNT-1), non la posizione: essendo
+# l'edificio unico per costruzione (vedi vincolo di unicità), non c'è rischio che due Pebble Circle
 # nel mondo condividano lo stesso seed e sembrino stampati dallo stesso timbro. Bordo scuro più
 # spesso per un contorno netto invece che sfumato.
-const STONE_CIRCLE_COLOR := Color(0.60, 0.58, 0.54, 1.0)
-const STONE_CIRCLE_OUTLINE_COLOR := Color(0.24, 0.22, 0.19, 1.0)
-const STONE_CIRCLE_OUTLINE_WIDTH: float = 0.5
-const STONE_CIRCLE_RING_RADIUS: float = 4.0
-const STONE_CIRCLE_STONE_RADIUS: float = 0.75
-const STONE_CIRCLE_STONE_COUNT: int = 8
-const STONE_CIRCLE_BLOB_VERTEX_COUNT: int = 8
+#
+# RITARATO 2026-09-12 (richiesta utente — rename Stone Circle -> Pebble Circle, "sassolini più
+# piccoli in cerchio e un po' più numerosi"): raggio 0.75->0.45, conteggio 8->14, anello invariato
+# (PEBBLE_CIRCLE_RING_RADIUS) — più sassolini più fitti sullo stesso anello, non un anello più largo.
+const PEBBLE_CIRCLE_COLOR := Color(0.60, 0.58, 0.54, 1.0)
+const PEBBLE_CIRCLE_OUTLINE_COLOR := Color(0.24, 0.22, 0.19, 1.0)
+const PEBBLE_CIRCLE_OUTLINE_WIDTH: float = 0.5
+const PEBBLE_CIRCLE_RING_RADIUS: float = 4.0
+const PEBBLE_CIRCLE_PEBBLE_RADIUS: float = 0.45
+const PEBBLE_CIRCLE_PEBBLE_COUNT: int = 14
+const PEBBLE_CIRCLE_BLOB_VERTEX_COUNT: int = 8
 
 # Deposit Site (2026-09-08, richiesta utente) — "sito di deposito", a disegno una chiazza di terra
 # battuta SQUADRATA (2026-09-08, revisione: "molto più squadrato", non un quadrato perfetto però):
@@ -214,7 +218,7 @@ const DEPOSIT_SITE_STORAGE_SQUARE_SIDE: float = 2.2
 # Cartello "work in progress" (2026-09-11, richiesta utente, revisione della resa "cantiere in
 # attesa" — SOSTITUISCE il primo tentativo, grayscale dell'edificio, scartato non appena visto
 # in-game: la sagoma tornava colorata insieme ai bastoncini, effetto non voluto) — disegnato al
-# posto della sagoma vera dell'edificio (capanna/Stone Circle/Deposit Site, MAI insieme, vedi
+# posto della sagoma vera dell'edificio (capanna/Pebble Circle/Deposit Site, MAI insieme, vedi
 # _draw_buildings) finché Building.site_setup_complete resta false. Un piccolo cartello triangolare
 # giallo/nero su un palo sottile, stile segnale di cantiere — deliberatamente MODESTO in dimensione
 # (WIP_SIGN_PLATE_RADIUS ben sotto BUILDING_HUT_RADIUS) e disegnato per ultimo in _draw() (vedi
@@ -222,7 +226,7 @@ const DEPOSIT_SITE_STORAGE_SQUARE_SIDE: float = 2.2
 # vegetazione già presente sulla microcella senza sostituirla — esattamente la richiesta "lasci
 # vedere cmq le piante". Nessuna icona da asset/tema (questo progetto non ha texture per gli
 # edifici, tutto è disegnato a primitive — stesso principio "usa e getta"/procedurale già seguito
-# per capanna/Stone Circle/Deposit Site, coerenza stilistica preferita a un'icona editor-only che
+# per capanna/Pebble Circle/Deposit Site, coerenza stilistica preferita a un'icona editor-only che
 # non sarebbe comunque disponibile in una build esportata).
 const WIP_SIGN_POST_COLOR := Color(0.35, 0.25, 0.15, 1.0)
 const WIP_SIGN_POST_WIDTH: float = 0.3
@@ -269,7 +273,7 @@ var stone_positions: Array = [] # Array[Vector2i]
 # Edifici già piazzati in QUESTA macrocella — Array[Dictionary], ciascuna {"position": Vector2i,
 # "rotation": GameTypes.Direction, "id": int, "building_type_name": String} ("id" aggiunto Step 4,
 # richiesta utente 2026-09-04 — vedi set_selected_building/get_building_screen_position sotto;
-# "building_type_name" aggiunto 2026-09-07 per lo Stone Circle, vedi _draw_buildings) — vedi GameScene.
+# "building_type_name" aggiunto 2026-09-07 per lo Pebble Circle, vedi _draw_buildings) — vedi GameScene.
 # _refresh_building_visuals, che filtra World.buildings per macro_x/macro_y prima di passarli qui:
 # questo renderer non conosce World/Building, solo "dove e come disegnare" (e, ora, quale id tra
 # questi risulta selezionato).
@@ -909,13 +913,13 @@ func _draw_buildings() -> void:
 			if not entry.get("site_setup_complete", false):
 				_draw_construction_wip_marker(ground)
 			continue
-		# Smistamento per tipo (2026-09-07, richiesta utente, Stone Circle) — .get() con default
+		# Smistamento per tipo (2026-09-07, richiesta utente, Pebble Circle) — .get() con default
 		# "hut" per compatibilità con entry costruite prima che "building_type_name" esistesse
 		# (nessuna in pratica, buildings è ricostruito ad ogni attivazione cella, mai persistito qui
 		# — ma stesso principio difensivo già usato altrove nel progetto per Dictionary in evoluzione).
 		var building_type_name: String = entry.get("building_type_name", "hut")
-		if building_type_name == "stone_circle":
-			_draw_stone_circle(ground)
+		if building_type_name == "pebble_circle":
+			_draw_pebble_circle(ground)
 			continue
 		if building_type_name == "deposit_site":
 			_draw_deposit_site(ground)
@@ -975,42 +979,43 @@ func _draw_construction_wip_marker(ground: Vector2) -> void:
 	draw_circle(plate_center + Vector2(0.0, WIP_SIGN_PLATE_RADIUS * 0.4), WIP_SIGN_MARK_WIDTH * 0.5, WIP_SIGN_MARK_COLOR)
 
 
-# Anello di massi grezzi attorno al centro della microcella — nessuna porta/rotazione da rispettare
-# (has_door=false per questo tipo), quindi geometria fissa: STONE_CIRCLE_STONE_COUNT massi
-# equidistanti sul cerchio di raggio STONE_CIRCLE_RING_RADIUS, ciascuno un poligono irregolare (vedi
-# _stone_blob_polygon) invece di un cerchio perfetto. Stessa funzione (duplicata apposta, stesso
+# Anello di sassolini attorno al centro della microcella — nessuna porta/rotazione da rispettare
+# (has_door=false per questo tipo), quindi geometria fissa: PEBBLE_CIRCLE_PEBBLE_COUNT sassolini
+# equidistanti sul cerchio di raggio PEBBLE_CIRCLE_RING_RADIUS, ciascuno un poligono irregolare (vedi
+# _pebble_blob_polygon) invece di un cerchio perfetto. Stessa funzione (duplicata apposta, stesso
 # principio già in uso tra MicroCellRenderer/BuildingGhost per la geometria della capanna) in
-# BuildingGhost._draw_stone_circle. Chiamata SOLO a edificio completo (vedi _draw_buildings): il
+# BuildingGhost._draw_pebble_circle. Chiamata SOLO a edificio completo (vedi _draw_buildings): il
 # breve esperimento di una variante colore/parametro per il "cantiere in attesa" (2026-09-11) è
 # stato scartato lo stesso giorno a favore del cartello WIP, che sostituisce del tutto questa
 # sagoma finché is_complete resta false — nessun parametro colore più necessario qui.
-func _draw_stone_circle(ground: Vector2) -> void:
-	for i in range(STONE_CIRCLE_STONE_COUNT):
-		var angle: float = TAU * float(i) / float(STONE_CIRCLE_STONE_COUNT)
-		var stone_center: Vector2 = ground + Vector2(cos(angle), sin(angle)) * STONE_CIRCLE_RING_RADIUS
-		var blob := _stone_blob_polygon(stone_center, i)
-		draw_colored_polygon(blob, STONE_CIRCLE_COLOR)
+func _draw_pebble_circle(ground: Vector2) -> void:
+	for i in range(PEBBLE_CIRCLE_PEBBLE_COUNT):
+		var angle: float = TAU * float(i) / float(PEBBLE_CIRCLE_PEBBLE_COUNT)
+		var pebble_center: Vector2 = ground + Vector2(cos(angle), sin(angle)) * PEBBLE_CIRCLE_RING_RADIUS
+		var blob := _pebble_blob_polygon(pebble_center, i)
+		draw_colored_polygon(blob, PEBBLE_CIRCLE_COLOR)
 		var outline := blob.duplicate()
 		outline.append(blob[0])
-		draw_polyline(outline, STONE_CIRCLE_OUTLINE_COLOR, STONE_CIRCLE_OUTLINE_WIDTH)
+		draw_polyline(outline, PEBBLE_CIRCLE_OUTLINE_COLOR, PEBBLE_CIRCLE_OUTLINE_WIDTH)
 
 
-# Poligono a STONE_CIRCLE_BLOB_VERTEX_COUNT lati con raggio-per-vertice jittered attorno a `center`
+# Poligono a PEBBLE_CIRCLE_BLOB_VERTEX_COUNT lati con raggio-per-vertice jittered attorno a `center`
 # — stesso principio delle mesh "jittered-blob" già usate per le pietre naturali (vedi
-# _rebuild_stone_multimeshes), qui immediate-mode e molto più leggero (un solo masso alla volta, non
-# migliaia). `seed_index` (0..STONE_CIRCLE_STONE_COUNT-1, l'indice del masso nell'anello, non la sua
-# posizione) rende ogni masso diverso dagli altri 7 ma STABILE tra un _draw() e il successivo — una
-# RandomNumberGenerator locale seedata, non randf() globale, altrimenti la sagoma "tremolerebbe" ad
-# ogni ridisegno. Anche la dimensione complessiva varia leggermente da masso a masso (non solo il
-# contorno), per un anello che legga come pietre vere e diverse tra loro, non stampi dello stesso timbro.
-func _stone_blob_polygon(center: Vector2, seed_index: int) -> PackedVector2Array:
+# _rebuild_stone_multimeshes), qui immediate-mode e molto più leggero (un solo sassolino alla volta,
+# non migliaia). `seed_index` (0..PEBBLE_CIRCLE_PEBBLE_COUNT-1, l'indice del sassolino nell'anello,
+# non la sua posizione) rende ogni sassolino diverso dagli altri ma STABILE tra un _draw() e il
+# successivo — una RandomNumberGenerator locale seedata, non randf() globale, altrimenti la sagoma
+# "tremolerebbe" ad ogni ridisegno. Anche la dimensione complessiva varia leggermente da sassolino a
+# sassolino (non solo il contorno), per un anello che legga come sassolini veri e diversi tra loro,
+# non stampati dallo stesso timbro.
+func _pebble_blob_polygon(center: Vector2, seed_index: int) -> PackedVector2Array:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = seed_index
-	var stone_radius: float = STONE_CIRCLE_STONE_RADIUS * rng.randf_range(0.8, 1.2)
+	var pebble_radius: float = PEBBLE_CIRCLE_PEBBLE_RADIUS * rng.randf_range(0.8, 1.2)
 	var points := PackedVector2Array()
-	for v in range(STONE_CIRCLE_BLOB_VERTEX_COUNT):
-		var vertex_angle: float = TAU * float(v) / float(STONE_CIRCLE_BLOB_VERTEX_COUNT)
-		var vertex_radius: float = stone_radius * rng.randf_range(0.75, 1.15)
+	for v in range(PEBBLE_CIRCLE_BLOB_VERTEX_COUNT):
+		var vertex_angle: float = TAU * float(v) / float(PEBBLE_CIRCLE_BLOB_VERTEX_COUNT)
+		var vertex_radius: float = pebble_radius * rng.randf_range(0.75, 1.15)
 		points.append(center + Vector2(cos(vertex_angle), sin(vertex_angle)) * vertex_radius)
 	return points
 
@@ -1023,7 +1028,7 @@ func _stone_blob_polygon(center: Vector2, seed_index: int) -> PackedVector2Array
 # (BUILDING_GATE_LENGTH) simula il cancello aperto sul cardine — niente tratteggio (richiesta
 # utente, 2026-08-30: leggeva come sfumature indistinte vicino alla capanna, non come un recinto).
 # Stessa funzione (duplicata apposta, vedi commento su _draw_buildings) in
-# BuildingGhost._draw_fence. Chiamata SOLO a edificio completo (vedi commento su _draw_stone_circle
+# BuildingGhost._draw_fence. Chiamata SOLO a edificio completo (vedi commento su _draw_pebble_circle
 # sopra) — nessun parametro colore più necessario.
 func _draw_building_fence(ground: Vector2, direction: GameTypes.Direction) -> void:
 	var dir_vector := _direction_vector(direction)
@@ -1065,7 +1070,7 @@ func _building_hut_polygon(ground: Vector2, direction: GameTypes.Direction) -> P
 # rispettare (has_door=false per questo tipo), geometria fissa (stesso seed di
 # BuildingGhost._deposit_site_polygon). Stessa funzione (duplicata apposta, stesso principio già in
 # uso tra MicroCellRenderer/BuildingGhost) di BuildingGhost._draw_deposit_site. Chiamata SOLO a
-# edificio completo (vedi commento su _draw_stone_circle sopra) — nessun parametro colore più
+# edificio completo (vedi commento su _draw_pebble_circle sopra) — nessun parametro colore più
 # necessario.
 func _draw_deposit_site(ground: Vector2) -> void:
 	var blob := _deposit_site_polygon(ground)
@@ -1079,7 +1084,7 @@ func _draw_deposit_site(ground: Vector2) -> void:
 # di `direction` — has_door resta vero per questo tipo (vedi commento su STICK_TENT_COLOR sopra),
 # quindi la rotazione va mostrata anche se non con un vero ritaglio come la capanna. Stessa funzione
 # (duplicata apposta, vedi commento su STICK_TENT_COLOR sopra) di BuildingGhost._draw_stick_tent.
-# Chiamata SOLO a edificio completo (vedi commento su _draw_stone_circle sopra) — nessun parametro
+# Chiamata SOLO a edificio completo (vedi commento su _draw_pebble_circle sopra) — nessun parametro
 # colore più necessario, solo `direction`.
 func _draw_stick_tent(ground: Vector2, direction: GameTypes.Direction) -> void:
 	draw_circle(ground, STICK_TENT_RADIUS, STICK_TENT_COLOR)

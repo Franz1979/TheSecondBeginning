@@ -6,7 +6,7 @@ extends Control
 # tavola/utensile lavorato, 🪵 riservato a un futuro "wood" [materiale da costruzione DISTINTO,
 # ancora senza .tres proprio, vedi hut.tres.required_materials] non a "stick" raccolto a terra.
 # Nessun emoji Unicode rende bene "rametti sparsi", quindi disegnata a mano — stesso principio già
-# seguito per StoneCircleIcon, vedi lì). Control minimale, solo _draw(): riempie il proprio Rect2
+# seguito per PebbleCircleIcon, vedi lì). Control minimale, solo _draw(): riempie il proprio Rect2
 # (vedi IconRegistry.get_resource_icon_node, il consumatore, che lo ancora PRESET_FULL_RECT dentro
 # lo slot che lo ospita), scala automaticamente con qualunque dimensione senza valori hardcoded.
 #
@@ -22,7 +22,7 @@ const STICK_COLOR_DARK := Color(0.32, 0.22, 0.11, 1.0)
 
 
 func _ready() -> void:
-	# IGNORE (stesso principio di StoneCircleIcon): puro disegno, mai un bersaglio di input — il
+	# IGNORE (stesso principio di PebbleCircleIcon): puro disegno, mai un bersaglio di input — il
 	# tooltip sul riquadro trasportato vive sul CONTENITORE (carried_resource_box), non su questa
 	# icona, vedi HumanIndividualInfoPanel._update_carried_resource_box.
 	mouse_filter = Control.MOUSE_FILTER_IGNORE

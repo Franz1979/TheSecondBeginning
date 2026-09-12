@@ -16,6 +16,17 @@ func load_game_from_json(file_path: String) -> LoadedGame:
 		push_error("Il file selezionato non è una partita salvata.")
 		return null
 
+	# TaskDebugRegistry (2026-09-12, richiesta utente — fix righe duplicate/fantasma nel pannello di
+	# debug 🐞) — registro STATIC (vita di processo), mai svuotato automaticamente tra due
+	# caricamenti nella stessa sessione di Godot: senza questo clear(), un individuo con una Task
+	# ancora "in corso" al momento del salvataggio manterrebbe qui la sua vecchia riga aperta (mai
+	# chiusa, dato che un salvataggio non passa da stop()/assign_task), e la riga NUOVA registrata
+	# poco sotto per la Task ricostruita da questo stesso reload si affiancherebbe ad essa invece di
+	# continuarla — due righe "in corso" per lo stesso individuo. clear() qui rende vero quanto già
+	# documentato in TaskDebugRegistry.gd ("un reload parte con la lista vuota"), PRIMA che
+	# individui/Task vengano ricostruiti sotto.
+	TaskDebugRegistry.clear()
+
 	var game_data := GameData.new()
 	game_data.year = int(data["game"]["year"])
 	game_data.current_day = int(data["game"].get("current_day", 0))
@@ -72,6 +83,11 @@ func load_game_from_json(file_path: String) -> LoadedGame:
 	# è lo stesso default della classe. _population_snapshots_from_json riconverte le chiavi da
 	# String (sempre così dopo JSON.parse_string, JSON non ha chiavi non-stringa) a int.
 	game_data.population_snapshots = _population_snapshots_from_json(data["game"].get("population_snapshots", {}))
+	# .get(key, {}) per compatibilità con save precedenti l'introduzione dello snapshot edifici
+	# (2026-09-12, tab Statistiche/Edifici, vedi GameData.building_snapshots) — {} è lo stesso
+	# default della classe. Riusa _population_snapshots_from_json (stesso identico schema chiave
+	# int -> valore int, nessuna seconda funzione identica da mantenere in parallelo).
+	game_data.building_snapshots = _population_snapshots_from_json(data["game"].get("building_snapshots", {}))
 	# .get(key, []) per compatibilità con save precedenti l'introduzione degli oggetti-scaduti
 	# (Step 2, vedi GameData.expired_objects) — [] è lo stesso default della classe.
 	game_data.expired_objects = _expired_objects_from_json(data["game"].get("expired_objects", []))

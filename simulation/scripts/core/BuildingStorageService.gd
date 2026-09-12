@@ -133,19 +133,33 @@ static func get_free_slots(building: Building) -> int:
 static func can_accept(building: Building, resource_name: String) -> bool:
 	if building == null or building.rules == null:
 		return false
-	# Guard is_complete (2026-09-11, richiesta utente — un cantiere non ancora finito non deve poter
-	# ricevere depositi da NESSUN percorso, non solo da quello automatico di WarehouseSelectionService:
-	# questa funzione è già il gate consultato sia da store() sotto sia dal comando manuale a destro-
-	# click, GameScene._try_assign_unload_command_on_right_click — un solo punto, copre entrambi senza
-	# doverlo ripetere altrove. Prima di questo fix un cantiere STORAGE era già utilizzabile come
-	# magazzino PRIMA di essere completo, sia via ricerca automatica sia via deposito manuale (vedi la
-	# nota "DA SEGNALARE" lasciata in GameScene._start_building_task_at quando la Build Task fu
-	# introdotta, il 2026-09-10).
-	if not building.is_complete:
+	# Guard is_demolished (2026-09-12, richiesta utente — bugfix "deposito nel vuoto") — SEMPRE
+	# valutato per primo, indipendentemente da is_complete sotto: un edificio demolito (completo o
+	# meno) non deve mai accettare nulla da nessun percorso. Un individuo con una Task già in corso
+	# verso questo edificio (Walk+Unload) tiene un riferimento diretto che resta valido anche dopo la
+	# demolizione (vedi Building.is_demolished per il perché).
+	if building.is_demolished:
 		return false
 	var resource_rules := CaloricCalculator.get_caloric_source_rules(resource_name)
 	if resource_rules == null:
 		return false
+	# Guard is_complete SOSTITUITO (2026-09-12, richiesta utente) — PRIMA (2026-09-11) rifiutava
+	# INCONDIZIONATAMENTE qualunque deposito su un cantiere non finito ("un cantiere non ancora finito
+	# non deve poter ricevere depositi da NESSUN percorso"), impedendo per costruzione anche il
+	# trasporto dei materiali richiesti per costruirlo — un problema reale ora che la Build Task dovrà
+	# poter consegnare quei materiali. Nuova condizione più fine: un cantiere può accettare SOLO le
+	# risorse elencate nei suoi rules.required_materials, e SOLO fino al tetto esatto richiesto — mai
+	# altre risorse (continua a comportarsi come un magazzino generico per QUALUNQUE altra risorsa,
+	# esattamente come impediva il guard precedente), mai oltre quel tetto (evita che un cantiere
+	# accumuli scorte in eccesso come se fosse un vero magazzino). Un edificio COMPLETO non passa mai
+	# da questo ramo — comportamento sotto INVARIATO per lui.
+	if not building.is_complete:
+		if not building.rules.required_materials.has(resource_name):
+			return false
+		var stored_entry: Dictionary = building.stored_resources.get(resource_name, {})
+		var stored_quantity: int = int(stored_entry.get("quantity", 0))
+		var required_quantity: int = int(building.rules.required_materials[resource_name])
+		return stored_quantity < required_quantity
 	if not building.rules.accepted_categories.is_empty() and not building.rules.accepted_categories.has(resource_rules.category):
 		return false
 	if not building.enabled_categories.is_empty() and not building.enabled_categories.has(resource_rules.category):
@@ -247,15 +261,12 @@ static func store(building: Building, resource_name: String, quantity: int, deca
 static func get_max_depositable(building: Building, resource_name: String) -> int:
 	if building == null or building.rules == null:
 		return 0
-	# Guard is_complete (2026-09-11, richiesta utente) — STESSO motivo/STESSO commento esteso di
-	# can_accept sopra: questa funzione è chiamata anche DIRETTAMENTE (non tramite can_accept, vedi il
-	# commento in testa a questa funzione — "can_accept NON è ripetuto qui dentro") da
-	# WarehouseSelectionService.find_best (has_capacity) e da UnloadAction.activate (riverifica
-	# still_fits) — senza questo guard ANCHE qui, un cantiere incompleto sarebbe stato escluso da
-	# store() (bloccato da can_accept) ma NON dalla selezione automatica del magazzino più vicino: un
-	# individuo avrebbe potuto camminare fin lì e scoprire solo all'arrivo che il deposito fallisce
-	# (deposited=0), un viaggio sprecato invece di scartare subito il candidato.
-	if not building.is_complete:
+	# Guard is_demolished (2026-09-12, richiesta utente — bugfix "deposito nel vuoto") — SEMPRE
+	# valutato per primo, indipendentemente da is_complete sotto: STESSO motivo/STESSA posizione di
+	# can_accept sopra (chiamata anche DIRETTAMENTE da WarehouseSelectionService.find_best/
+	# UnloadAction.activate, vedi lì) — un edificio demolito deve risultare "senza posto" da
+	# QUALUNQUE punto lo interroghi.
+	if building.is_demolished:
 		return 0
 	var resource_rules := CaloricCalculator.get_caloric_source_rules(resource_name)
 	if resource_rules == null:
@@ -267,9 +278,71 @@ static func get_max_depositable(building: Building, resource_name: String) -> in
 	var existing_entry: Dictionary = building.stored_resources.get(resource_name, {})
 	var current_quantity: int = int(existing_entry.get("quantity", 0))
 
+	# Capacità "come se fosse un edificio completo" — STESSA identica formula di prima (slot totali
+	# meno quelli occupati da altre risorse, moltiplicati per le unità che entrano in uno slot), ora
+	# calcolata SEMPRE (non più dietro un `if not building.is_complete: return 0` incondizionato):
+	# per un edificio COMPLETO resta l'UNICO vincolo (return sotto, invariato); per un cantiere
+	# diventa uno dei DUE vincoli da rispettare insieme al tetto dei materiali richiesti (vedi sotto).
 	var slots_used_by_this_resource: int = _slots_for_quantity(current_quantity, units_per_slot)
 	var slots_used_by_others: int = get_slots_used(building) - slots_used_by_this_resource
 	var max_slots_for_this_resource: int = max(building.rules.storage_slot_count - slots_used_by_others, 0)
 	var max_units_reachable: int = max_slots_for_this_resource * units_per_slot
+	var space_based_max: int = max(max_units_reachable - current_quantity, 0)
 
-	return max(max_units_reachable - current_quantity, 0)
+	# Guard is_complete SOSTITUITO (2026-09-12, richiesta utente) — STESSO principio/STESSA
+	# motivazione di can_accept sopra: un cantiere può accettare SOLO le risorse richieste per
+	# costruirlo, fino al tetto esatto. Qui il tetto residuo (required_quantity - current_quantity)
+	# viene combinato con space_based_max sopra — MAI oltre nessuno dei due limiti: se il cantiere non
+	# ha spazio fisico configurato (rules.storage_slot_count/storage_space_per_slot ancora a 0, il
+	# default per molti tipi non-STORAGE — es. Pebble Circle) space_based_max resta 0 e vince comunque
+	# lui, coerente con "quanto altrimenti concederebbe un edificio completo" richiesto esplicitamente
+	# — nessuna eccezione speciale inventata qui per bypassarlo.
+	if not building.is_complete:
+		if not building.rules.required_materials.has(resource_name):
+			return 0
+		var required_quantity: int = int(building.rules.required_materials[resource_name])
+		var remaining_needed: int = max(required_quantity - current_quantity, 0)
+		return min(remaining_needed, space_based_max)
+
+	return space_based_max
+
+
+# Preleva fino a `quantity_requested` unità di resource_name da questo edificio (2026-09-12,
+# richiesta utente — RetrieveAction, operazione simmetrica di store() sopra ma in prelievo invece
+# che in deposito). NESSUNA interazione con is_complete/is_demolished — a differenza di can_accept/
+# get_max_depositable/store (che restano gate SOLO per il deposito), il prelievo funziona su
+# QUALUNQUE building con stored_resources, completo o in costruzione: il caso "recupero materiale
+# da un cantiere abortito" richiede esplicitamente che funzioni anche con is_complete == false.
+# (Nessun guard esplicito is_demolished nemmeno qui: un edificio demolito ha già stored_resources
+# svuotato da GameScene._demolish_building — punto 3 — quindi current_quantity sotto risulta
+# comunque 0 per costruzione, stesso risultato di un guard esplicito senza doverne scrivere uno.)
+#
+# Preleva quel che c'è anche se MENO di quanto richiesto (mai un fallimento, nessuna quantità
+# minima) — il chiamante (RetrieveAction) decide cosa fare della differenza, stesso principio
+# "quanto è stato EFFETTIVAMENTE fatto" già seguito da store() sopra. Ritorna la quantità
+# EFFETTIVAMENTE prelevata.
+#
+# decay_fraction della quantità RIMASTA lasciata INVARIATA (stesso principio "lotto unico" di
+# store(): è una media pesata sull'INTERO stock, non cambia prelevandone una PARTE — chi preleva
+# porta con sé la stessa identica media, che il chiamante legge a parte PRIMA di questa chiamata,
+# mai calcolata qui dentro, vedi RetrieveAction.on_complete). Entry rimossa dal Dictionary quando la
+# quantità residua arriva a 0 — stesso trattamento già riservato altrove a stored_resources quando
+# una risorsa si esaurisce (es. ResourceDecayService.advance_building_decay a decadimento completo).
+static func withdraw(building: Building, resource_name: String, quantity_requested: int) -> int:
+	if building == null or quantity_requested <= 0:
+		return 0
+	var existing_entry: Dictionary = building.stored_resources.get(resource_name, {})
+	var current_quantity: int = int(existing_entry.get("quantity", 0))
+	if current_quantity <= 0:
+		return 0
+
+	var withdrawn: int = min(quantity_requested, current_quantity)
+	var remaining_quantity: int = current_quantity - withdrawn
+	if remaining_quantity <= 0:
+		building.stored_resources.erase(resource_name)
+	else:
+		building.stored_resources[resource_name] = {
+			"quantity": remaining_quantity,
+			"decay_fraction": float(existing_entry.get("decay_fraction", 0.0)),
+		}
+	return withdrawn

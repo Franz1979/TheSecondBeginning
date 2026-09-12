@@ -6,7 +6,7 @@
 
 [node name="StatisticsPanel" type="Window"]
 visible = false
-size = Vector2i(340, 600)
+size = Vector2i(480, 600)
 script = ExtResource("1_stats")
 
 [node name="MarginContainer" type="MarginContainer" parent="."]
@@ -22,7 +22,7 @@ theme_override_constants/margin_bottom = 10
 layout_mode = 2
 
 [node name="TabContainer" type="TabContainer" parent="MarginContainer/VBoxContainer"]
-custom_minimum_size = Vector2(340, 540)
+custom_minimum_size = Vector2(460, 540)
 layout_mode = 2
 size_flags_vertical = 3
 
@@ -142,6 +142,33 @@ text = "Popolazione per anno"
 [node name="PopulationPerYearChart" type="Control" parent="MarginContainer/VBoxContainer/TabContainer/PopulationTab/PopulationContent"]
 layout_mode = 2
 script = ExtResource("2_chart")
+
+[node name="BuildingsTab" type="ScrollContainer" parent="MarginContainer/VBoxContainer/TabContainer"]
+visible = false
+layout_mode = 2
+
+[node name="BuildingsContent" type="VBoxContainer" parent="MarginContainer/VBoxContainer/TabContainer/BuildingsTab"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="TotalBuildingsLabel" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/BuildingsTab/BuildingsContent"]
+layout_mode = 2
+
+[node name="BuildingsPerYearCaption" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/BuildingsTab/BuildingsContent"]
+layout_mode = 2
+text = "Edifici per anno"
+
+[node name="BuildingsPerYearChart" type="Control" parent="MarginContainer/VBoxContainer/TabContainer/BuildingsTab/BuildingsContent"]
+layout_mode = 2
+script = ExtResource("2_chart")
+
+[node name="BuildingTypeDistributionCaption" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/BuildingsTab/BuildingsContent"]
+layout_mode = 2
+text = "Distribuzione per tipo"
+
+[node name="BuildingTypeDistributionChart" type="Control" parent="MarginContainer/VBoxContainer/TabContainer/BuildingsTab/BuildingsContent"]
+layout_mode = 2
+script = ExtResource("3_pie")
 
 [node name="HSeparator" type="HSeparator" parent="MarginContainer/VBoxContainer"]
 layout_mode = 2

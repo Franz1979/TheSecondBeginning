@@ -36,6 +36,18 @@ var micro_y: int = 0
 var construction_started_day: int = -1
 var is_complete: bool = false
 
+# true dal momento in cui GameScene._demolish_building rimuove questo edificio da world.buildings
+# (2026-09-12, richiesta utente — bugfix "deposito nel vuoto": un individuo con una Task già in
+# corso verso questo edificio — Walk+Unload, ramo risorsa o pensiero — tiene un riferimento diretto
+# a QUESTA istanza (UnloadAction.target_building), che resta viva in memoria anche dopo la
+# demolizione (Building è RefCounted: sparisce dalla LISTA world.buildings, non dalla memoria,
+# finché qualcosa la referenzia ancora). Questo flag è l'unico modo per quel riferimento residuo di
+# scoprire "nel frattempo sono stato demolito" — UnloadAction.activate() lo consulta per riverificare
+# la validità del deposito nello stesso istante in cui l'individuo arriva (vedi lì e
+# BuildingStorageService.can_accept/get_max_depositable). Mai riportato a false: un Building
+# demolito non torna mai in vita, nessun bisogno di un percorso di "ripristino".
+var is_demolished: bool = false
+
 # true dal momento in cui SetupSiteAction completa per questo edificio (vedi GameScene.
 # _spawn_build_site_placeholders, che lo valorizza sul segnale SetupSiteAction.site_setup_completed)
 # — DIVERSO da is_complete: un cantiere allestito non è ancora un edificio finito (ClearAction, terzo
@@ -49,7 +61,7 @@ var is_complete: bool = false
 # (vegetazione/altro contenuto resta visibile sotto); true = nessun cartello, solo i bastoncini
 # spawnati da _spawn_build_site_placeholders (rimossi da GameScene._on_building_construction_
 # completed quando BuildAction completa davvero) — in NESSUno dei due casi la sagoma vera
-# dell'edificio (capanna/Stone Circle/Deposit Site) viene disegnata: quella resta riservata a
+# dell'edificio (capanna/Pebble Circle/Deposit Site) viene disegnata: quella resta riservata a
 # is_complete=true. Sempre true per gli edifici piazzati istantaneamente da GameScene.
 # _place_building_at (nessuna fase "in attesa" per quel percorso, sagoma vera visibile da subito) e
 # per quelli caricati da un save che non conosce ancora questo campo (vedi GameLoadService, fallback
@@ -179,3 +191,15 @@ func get_resumable_task_context() -> Dictionary:
 		"target_position": Vector2(micro_x, micro_y),
 		"target_building": self,
 	}
+
+
+# Quarto metodo dell'interfaccia "target riassegnabile" sopra (2026-09-12, richiesta utente — fix
+# righe duplicate/fantasma nel pannello di debug 🐞 Task quando una Build Task viene ricostruita per
+# lo stesso edificio, magari da/per un individuo diverso da quello che la stava già lavorando):
+# chiave stabile e leggibile, indipendente da quale Task/individuo la sta lavorando in un dato
+# momento — a differenza di Task.id (nuovo ad ogni ricostruzione, vedi TaskReassignmentService.
+# reassign_task) o HumanIndividual.id (può cambiare tra una ricostruzione e l'altra), `id` sopra
+# resta lo stesso per tutta la vita di QUESTO edificio. Consumata SOLO da TaskDebugRegistry (via
+# TaskReassignmentService, che la scrive su Task.debug_target_key) — nessuna logica di simulazione.
+func get_debug_target_key() -> String:
+	return "building:%d" % id

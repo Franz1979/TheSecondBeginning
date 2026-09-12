@@ -8,7 +8,7 @@ extends Action
 # accumulatore _elapsed confrontato con _duration, stesso schema esatto — vedi
 # get_stamina_delta/is_complete sotto), ma con `target_position` che identifica DOVE raccogliere
 # (non un movimento: l'individuo deve già essere lì, garantito dal WalkAction precedente nella
-# stessa Task, stesso principio già seguito da UnloadAction per lo Stone Circle).
+# stessa Task, stesso principio già seguito da UnloadAction per lo Pebble Circle).
 #
 # `macro_state` (2026-09-08) — DEVIAZIONE dalla firma richiesta (solo target_position/resource_
 # name): necessario per leggere/scrivere il pool della risorsa scattered, che Action non può

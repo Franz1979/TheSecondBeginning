@@ -29,12 +29,12 @@ extends CenterContainer
 const OPEN_BUILD_MENU_ACTION := &"open_build_menu"
 
 # Indice slot in submenu_row per ogni tipo edificio (2026-09-07, richiesta utente — GENERALIZZATO
-# da STONE_CIRCLE_SLOT_INDEX: un solo indice bastava finché il controllo di disponibilità
-# riguardava solo lo Stone Circle, ora serve una mappa per qualunque tipo). Usata da
+# da PEBBLE_CIRCLE_SLOT_INDEX: un solo indice bastava finché il controllo di disponibilità
+# riguardava solo lo Pebble Circle, ora serve una mappa per qualunque tipo). Usata da
 # set_building_buildable sotto — tenuta qui invece di ripetere l'indice in giro, per non
 # disallinearsi silenziosamente da configure_slot(...) in _ready() se uno slot si spostasse.
 const BUILDING_SLOT_INDEX_BY_TYPE := {
-	"stone_circle": 0,
+	"pebble_circle": 0,
 	"deposit_site": 1,
 	# Stick Tent PRIMA della capanna (2026-09-12, richiesta utente — "inverti la tenda con hut nei
 	# bottoni sotto": Stick Tent era stata aggiunta in coda come quarto slot, ora scambiata di
@@ -70,26 +70,26 @@ func _ready() -> void:
 	# vedi IconButtonRow._ready) — pronti per le prossime categorie/tipi di edificio, nessuno
 	# configurato ancora.
 	#
-	# Stone Circle PRIMA della capanna (2026-09-07, richiesta utente: "il più a sinistra deve
-	# essere Stone Circle") — solo ordine visivo/slot, nessun significato di priorità/categoria
+	# Pebble Circle PRIMA della capanna (2026-09-07, richiesta utente: "il più a sinistra deve
+	# essere Pebble Circle") — solo ordine visivo/slot, nessun significato di priorità/categoria
 	# dietro (vedi BUILDING_SLOT_INDEX_BY_TYPE sopra, aggiornata di conseguenza). Icona DISEGNATA
-	# (StoneCircleIcon), non un emoji (richiesta utente, dopo due giri di feedback: 🗿 leggeva come
+	# (PebbleCircleIcon), non un emoji (richiesta utente, dopo due giri di feedback: 🗿 leggeva come
 	# una testa dell'Isola di Pasqua, 🪨 come un mucchio di sassi — nessun emoji Unicode rende bene
-	# "cerchio di pietre") — vedi IconButtonRow.configure_slot per come icon_node sostituisce
+	# "cerchio di sassolini") — vedi IconButtonRow.configure_slot per come icon_node sostituisce
 	# icon_text. Il vincolo di unicità/idea richiesta NON è verificato qui dentro (questo pannello
 	# resta muto su World/Building/Folk, come da principio dichiarato in testa al file): abilitato
 	# di default come ogni slot configurato, GameScene lo disabilita chiamando
 	# set_building_buildable(...) quando rileva che un Building con rules.is_village_center esiste
 	# già, o che manca l'Idea richiesta (vedi quel metodo sotto).
 	# Icona letta da IconRegistry.get_building_icon_node (2026-09-09, richiesta utente — stessa
-	# migrazione già fatta per pebble/stick: "quel commento [stone_circle assente apposta] è
+	# migrazione già fatta per pebble/stick: "quel commento [pebble_circle assente apposta] è
 	# obsoleto... farei come facciamo sia per sticks icon che per pebble icon, che passano
-	# nell'icon registry") — non più StoneCircleIcon.new() istanziata direttamente qui.
+	# nell'icon registry") — non più PebbleCircleIcon.new() istanziata direttamente qui.
 	submenu_row.configure_slot(
-		0, "", tr("build_bar_stone_circle_tooltip"), &"build_stone_circle", "", true,
-		IconRegistry.get_building_icon_node("stone_circle")
+		0, "", tr("build_bar_pebble_circle_tooltip"), &"build_pebble_circle", "", true,
+		IconRegistry.get_building_icon_node("pebble_circle")
 	)
-	# Deposit Site, appena a destra dello Stone Circle (2026-09-08, richiesta utente) — sempre
+	# Deposit Site, appena a destra dello Pebble Circle (2026-09-08, richiesta utente) — sempre
 	# abilitato di default come ogni slot configurato (nessun vincolo is_village_center/
 	# required_idea_id in deposit_site.tres), _refresh_building_slots_buildable lo conferma sempre
 	# disponibile senza bisogno di un caso speciale qui.
@@ -114,8 +114,8 @@ func _ready() -> void:
 	_apply_state()
 
 
-# Chiamato da GameScene (2026-09-07, richiesta utente — GENERALIZZATO da set_stone_circle_buildable,
-# che copriva solo lo Stone Circle/is_village_center: ora copre qualunque tipo edificio e qualunque
+# Chiamato da GameScene (2026-09-07, richiesta utente — GENERALIZZATO da set_pebble_circle_buildable,
+# che copriva solo lo Pebble Circle/is_village_center: ora copre qualunque tipo edificio e qualunque
 # motivo di indisponibilità, es. anche BuildingRules.required_idea_id mancante da Folk.
 # completed_ideas) ogni volta che la disponibilità di un tipo può essere cambiata — avvio scena
 # (copre anche un salvataggio caricato con stato già avanzato) e subito dopo un piazzamento

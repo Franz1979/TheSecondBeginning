@@ -170,6 +170,11 @@ static func _action_type_for_step(step: Action) -> int:
 	# _build_step sotto, stesso schema di BUILD sopra: mai lasciata "temporaneamente" scoperta).
 	if step is LookAroundAction:
 		return TaskTypes.ActionType.LOOK_AROUND
+	# RETRIEVE (2026-09-12, richiesta utente — RetrieveAction, aggiunta insieme al proprio case in
+	# _build_step sotto, stesso schema di LOOK_AROUND sopra: mai lasciata "temporaneamente" scoperta
+	# come accadde storicamente per SETUP_SITE al suo debutto).
+	if step is RetrieveAction:
+		return TaskTypes.ActionType.RETRIEVE
 	push_error("TaskPersistenceService._action_type_for_step: tipo Action sconosciuto (%s)." % step.get_script().get_global_name())
 	return -1
 
@@ -262,6 +267,20 @@ static func _build_step(action_type: int, step_data: Dictionary, macro_state: Ma
 			# (chiamato dal chiamante SOLO se questo è lo step corrente, vedi deserialize_task sopra),
 			# non da qui.
 			step = LookAroundAction.new()
+		TaskTypes.ActionType.RETRIEVE:
+			# 3 argomenti (target_building, resource_name, quantity_requested), stesso schema di
+			# UNLOAD/SETUP_SITE sopra per risolvere il riferimento all'edificio (2026-09-12, richiesta
+			# utente, RetrieveAction). Nessun progresso da ripristinare qui oltre quantity_to_retrieve/
+			# duration/elapsed/total_stamina_cost (arrivano da load_save_data, chiamato dal chiamante
+			# SOLO se questo è lo step corrente, vedi deserialize_task sopra).
+			var retrieve_target_building: Building = null
+			if step_data.has("target_building_id"):
+				retrieve_target_building = _find_building_by_id(world, int(step_data["target_building_id"]))
+			step = RetrieveAction.new(
+				retrieve_target_building,
+				String(step_data.get("resource_name", "")),
+				int(step_data.get("quantity_requested", 0))
+			)
 		_:
 			push_error("TaskPersistenceService._build_step: action_type %d non supportato." % action_type)
 			return null
@@ -269,7 +288,7 @@ static func _build_step(action_type: int, step_data: Dictionary, macro_state: Ma
 
 
 # Scansione lineare di World.buildings (stesso pattern già in uso in GameScene._debug_test_daydream_
-# task per trovare lo Stone Circle) — nessun indice per id costruito apposta: il numero di edifici
+# task per trovare lo Pebble Circle) — nessun indice per id costruito apposta: il numero di edifici
 # resta piccolo per ora, non vale la complessità di un Dictionary id->Building mantenuto a parte.
 # null se non trovato (world null, o building_id di un edificio non più esistente) — UnloadAction
 # tratta target_building null come ramo pensiero, mai un crash qui.

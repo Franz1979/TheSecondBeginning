@@ -11,12 +11,13 @@ extends Window
 # considerava solo il tab ATTIVO in quel momento, tagliando fuori CloseButton per i tab più alti
 # di quello con cui la finestra era stata dimensionata l'ultima volta.
 #
-# TabContainer con tre tab, Mortalità/Nascite/Popolazione (Step A/B: mortalità, 2026-09-05; Step
-# 5/6 piano statistiche: nascite/popolazione, 2026-09-06) — struttura pensata per tab future senza
-# dover ristrutturare il contenitore, stesso principio già seguito da MacroCellDetailPanel (TAB_* +
-# set_tab_title, mai toggle di .visible sui figli). Ogni tab è una ScrollContainer (non una
-# VBoxContainer diretta, stesso pattern di MacroCellDetailPanel) — se il contenuto di un tab non
-# entra nella finestra fissa, scorre per conto suo invece di far traboccare l'intero pannello.
+# TabContainer con quattro tab, Mortalità/Nascite/Popolazione/Edifici (Step A/B: mortalità,
+# 2026-09-05; Step 5/6 piano statistiche: nascite/popolazione, 2026-09-06; Edifici, 2026-09-12) —
+# struttura pensata per tab future senza dover ristrutturare il contenitore, stesso principio già
+# seguito da MacroCellDetailPanel (TAB_* + set_tab_title, mai toggle di .visible sui figli). Ogni
+# tab è una ScrollContainer (non una VBoxContainer diretta, stesso pattern di MacroCellDetailPanel)
+# — se il contenuto di un tab non entra nella finestra fissa, scorre per conto suo invece di far
+# traboccare l'intero pannello.
 #
 # Tutto ricalcolato AL VOLO ad ogni chiamata a open_dialog() — nessuna cache, nessun aggregato
 # salvato, coerente con GameData.death_events/birth_events restando puri log grezzi. Nessuna
@@ -31,6 +32,8 @@ const TAB_MORTALITY := 0
 # nodo figlio nel TabContainer, mai .visible toggled da codice).
 const TAB_BIRTHS := 1
 const TAB_POPULATION := 2
+# Quarto tab (2026-09-12, richiesta utente) — stessa identica convenzione dei tre sopra.
+const TAB_BUILDINGS := 3
 
 @onready var tab_container: TabContainer = $MarginContainer/VBoxContainer/TabContainer
 @onready var close_button: Button = $MarginContainer/VBoxContainer/CloseButton
@@ -54,12 +57,17 @@ const TAB_POPULATION := 2
 @onready var age_band_distribution_chart: PieChart = $MarginContainer/VBoxContainer/TabContainer/PopulationTab/PopulationContent/AgeBandDistributionChart
 @onready var population_per_year_chart: LineChart = $MarginContainer/VBoxContainer/TabContainer/PopulationTab/PopulationContent/PopulationPerYearChart
 
+@onready var total_buildings_label: Label = $MarginContainer/VBoxContainer/TabContainer/BuildingsTab/BuildingsContent/TotalBuildingsLabel
+@onready var buildings_per_year_chart: LineChart = $MarginContainer/VBoxContainer/TabContainer/BuildingsTab/BuildingsContent/BuildingsPerYearChart
+@onready var building_type_distribution_chart: PieChart = $MarginContainer/VBoxContainer/TabContainer/BuildingsTab/BuildingsContent/BuildingTypeDistributionChart
+
 
 func _ready() -> void:
 	title = tr("statistics_tooltip")
 	tab_container.set_tab_title(TAB_MORTALITY, tr("statistics_tab_mortality"))
 	tab_container.set_tab_title(TAB_BIRTHS, tr("statistics_tab_births"))
 	tab_container.set_tab_title(TAB_POPULATION, tr("statistics_tab_population"))
+	tab_container.set_tab_title(TAB_BUILDINGS, tr("statistics_tab_buildings"))
 	# Titoli lista donne fertili/lista morti (richiesta utente, 2026-09-06) — tr(), non hardcoded
 	# come il resto del CONTENUTO dati di questo pannello: sono più simili alla "chrome" strutturale
 	# (titolo di una sezione, come i tab) che a un dato calcolato, stessa eccezione esplicitamente
@@ -80,7 +88,11 @@ func _ready() -> void:
 # GameData non possiede (vive solo su GameScene/GameTimeService, stesso principio già noto per
 # _human_individuals — vedi ricognizione). Passato per riferimento dal chiamante, mai copiato né
 # modificato qui (pannello di sola lettura/presentazione, come dichiarato in testa al file).
-func open_dialog(game_data: GameData, human_individuals: Array[HumanIndividual]) -> void:
+#
+# buildings (2026-09-12, richiesta utente — quarto tab Edifici) — NUOVO parametro, stesso
+# principio di human_individuals sopra: Array[Building] già risolto dal chiamante (GameScene ha
+# macro_world.buildings a portata di mano), questo pannello resta di sola lettura/presentazione.
+func open_dialog(game_data: GameData, human_individuals: Array[HumanIndividual], buildings: Array[Building]) -> void:
 	_refresh_mortality_tab(game_data.death_events)
 	_refresh_births_tab(
 		game_data.birth_events, human_individuals, game_data.year,
@@ -90,6 +102,7 @@ func open_dialog(game_data: GameData, human_individuals: Array[HumanIndividual])
 		human_individuals, game_data.population_snapshots, game_data.year,
 		game_data.era_effective_age_band_durations_male, game_data.era_effective_age_band_durations_female
 	)
+	_refresh_buildings_tab(buildings, game_data.building_snapshots)
 	# Bugfix (richiesta utente, 2026-09-06 — "solo la tab Nascite ha il tasto chiudi"): NON più
 	# size = get_contents_minimum_size() (calcolato una volta sola sul tab ATTIVO in quel momento —
 	# passare a un tab più alto travolgeva la finestra già dimensionata, spingendo CloseButton fuori
@@ -268,6 +281,37 @@ func _refresh_population_tab(
 	# necessario: uno snapshot viene registrato OGNI anno per costruzione (GameTimeService.
 	# _on_year_rolled_over), mai un buco da riempire.
 	population_per_year_chart.set_data(population_snapshots)
+
+
+# Quarto tab Edifici (2026-09-12, richiesta utente) — stesso principio degli altri tre: tutto
+# ricalcolato al volo ad ogni apertura, nessuna cache. Distribuzione per CATEGORIA (BuildingTypes.
+# Category: RESIDENTIAL/POLITICAL/STORAGE), non per singolo tipo di edificio (hut/pebble_circle/
+# deposit_site) — richiesta esplicita dell'utente. building_snapshots passato già risolto dal
+# chiamante (game_data.building_snapshots) — NON serve _fill_missing_years qui, stesso motivo di
+# population_snapshots in _refresh_population_tab sopra: uno snapshot viene registrato OGNI anno
+# per costruzione (GameScene._on_year_rolled_over), mai un buco da riempire.
+func _refresh_buildings_tab(buildings: Array[Building], building_snapshots: Dictionary) -> void:
+	total_buildings_label.text = "Edifici totali: %d" % buildings.size()
+
+	# Itera l'ENUM intero (non solo le categorie osservate) — stesso principio già seguito sopra per
+	# cause di morte/fasce d'età: una categoria senza edifici compare comunque a 0, invece di
+	# sparire silenziosamente dalla torta/legenda.
+	var category_counts := {}
+	for category_name in BuildingTypes.Category.keys():
+		category_counts[String(category_name).capitalize()] = 0
+	for building in buildings:
+		if building.rules == null:
+			continue
+		var category_name := String(BuildingTypes.Category.keys()[building.rules.category]).capitalize()
+		category_counts[category_name] += 1
+	building_type_distribution_chart.set_data(category_counts)
+
+	# set_axis_labels (2026-09-12) — "Year"/"People" di default (vedi LineChart.gd) non hanno senso
+	# per un conteggio edifici, a differenza degli altri tre usi (morti/nascite/popolazione, tutti
+	# "persone nel tempo") — primo consumatore reale di questo metodo, esisteva già pronto per
+	# "un futuro consumatore con semantica diversa" (vedi LineChart.gd).
+	buildings_per_year_chart.set_axis_labels("Anno", "Edifici")
+	buildings_per_year_chart.set_data(building_snapshots)
 
 
 # Riempie con 0 ogni anno mancante nell'intervallo [0, massimo osservato] tra le chiavi di

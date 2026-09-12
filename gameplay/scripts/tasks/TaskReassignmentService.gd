@@ -6,12 +6,12 @@ extends RefCounted
 # STESSO principio "istanzia con .new() e chiama un solo metodo" già in uso da
 # SpatialSelectionService/WarehouseSelectionService/ecc — nessuno stato interno, nessun campo.
 #
-# `target` è duck-typed (Variant, non un tipo/interfaccia formale) — deve solo esporre i tre metodi
-# usati sotto (has_resumable_task/get_resumable_task_definition_path/get_resumable_task_context),
-# stessa convenzione già seguita da SpatialSelectionService.find_nearest per i suoi candidati. Oggi
-# l'UNICO tipo che li implementa è Building (vedi simulation/scripts/game/Building.gd), ma nessun
-# codice qui sotto assume quel tipo specifico: un futuro secondo target riassegnabile (non-Building)
-# passerebbe da qui senza modifiche.
+# `target` è duck-typed (Variant, non un tipo/interfaccia formale) — deve solo esporre i quattro
+# metodi usati sotto (has_resumable_task/get_resumable_task_definition_path/
+# get_resumable_task_context/get_debug_target_key), stessa convenzione già seguita da
+# SpatialSelectionService.find_nearest per i suoi candidati. Oggi l'UNICO tipo che li implementa è
+# Building (vedi simulation/scripts/game/Building.gd), ma nessun codice qui sotto assume quel tipo
+# specifico: un futuro secondo target riassegnabile (non-Building) passerebbe da qui senza modifiche.
 #
 # NESSUNA distinzione tra "prima assegnazione" e "riassegnazione dopo interruzione" (richiesta
 # esplicita utente, punto 2) — è lo stesso identico percorso in entrambi i casi: la Task viene
@@ -37,5 +37,12 @@ static func reassign_task(target: Variant, individual: HumanIndividual, extra_co
 	context.merge(extra_context, true)
 
 	var task := TaskFactory.build_task(definition, context)
+	# TaskDebugRegistry (2026-09-12, richiesta utente — fix righe duplicate/fantasma) — valorizzato
+	# PRIMA di assign_task sotto, che è quanto scatena TaskDebugRegistry.on_task_assigned: quel punto
+	# usa debug_target_key per chiudere un'eventuale riga "in corso" già aperta per questo STESSO
+	# target (es. lasciata da un'interruzione precedente, magari di un individuo diverso da quello
+	# assegnato qui) prima di aprirne una nuova. Vedi Task.debug_target_key/Building.
+	# get_debug_target_key per il dettaglio.
+	task.debug_target_key = target.get_debug_target_key()
 	individual.assign_task(task)
 	return task

@@ -210,7 +210,7 @@ const EMPTY_CARRIED_RESOURCE_COLOR := Color(0.3, 0.3, 0.3, 0.4)
 # Icona vera (2026-09-09, richiesta utente) — TRE livelli di fallback, in ordine: (1)
 # IconRegistry.get_resource_icon_node(resource_name), un Control disegnato a mano (oggi "pebble"/
 # "stick", vedi PebbleIcon/StickIcon) — se presente sostituisce ANCHE la label testuale, non solo
-# l'iniziale, perché occupa l'intero riquadro come StoneCircleIcon dentro un IconButtonRow; (2)
+# l'iniziale, perché occupa l'intero riquadro come PebbleCircleIcon dentro un IconButtonRow; (2)
 # IconRegistry.get_resource_icon(resource_name), un emoji semplice (nessuna risorsa oggi, tenuto
 # per una futura risorsa che un emoji rappresenta già bene); (3) l'iniziale maiuscola del nome,
 # come prima. Il colore di sfondo resta comunque quello deterministico in ogni caso (nessuna
@@ -244,7 +244,7 @@ func _update_carried_resource_box(resource_name: String, quantity: int) -> void:
 		_carried_resource_icon_node = icon_node
 		carried_resource_box.add_child(icon_node)
 		# PRESET_FULL_RECT via ancore+offset DIRETTI (stesso bugfix già documentato in
-		# IconButtonRow.configure_slot per StoneCircleIcon: il preset di default userebbe la
+		# IconButtonRow.configure_slot per PebbleCircleIcon: il preset di default userebbe la
 		# minimum size del figlio, zero per un Control senza testo/figli come queste icone).
 		icon_node.anchor_left = 0.0
 		icon_node.anchor_top = 0.0

@@ -117,7 +117,7 @@ extends Resource
 
 # Vincolo GLOBALE di unicità (2026-09-07, richiesta utente) — al più UN edificio con questo flag
 # true può esistere in tutta la partita, indipendentemente da dove/quante volte si provi a
-# piazzarlo (oggi solo lo Stone Circle, il "centro villaggio" paleolitico). Controllato da
+# piazzarlo (oggi solo lo Pebble Circle, il "centro villaggio" paleolitico). Controllato da
 # GameScene._refresh_building_slots_buildable, che disabilita lo slot corrispondente in BuildBar
 # quando un Building con questo flag esiste già — DELIBERATAMENTE non in
 # BuildingVerificationService.is_position_buildable (quella resta legata solo a terreno/spazio/
@@ -129,8 +129,8 @@ extends Resource
 # Flag per un futuro service generico "trova l'edificio più vicino che accetta X" (2026-09-10,
 # richiesta utente — SOLO il dato in questo passo, nessuna logica di ricerca qui né altrove:
 # quel service arriverà in un giro successivo, oggi la ricerca magazzino resta quella specifica
-# di WarehouseSelectionService, non ancora generalizzata). Vero per lo Stone Circle (vedi
-# stone_circle.tres) — è già la destinazione del ramo "pensiero" di UnloadAction (Daydream, vedi
+# di WarehouseSelectionService, non ancora generalizzata). Vero per lo Pebble Circle (vedi
+# pebble_circle.tres) — è già la destinazione del ramo "pensiero" di UnloadAction (Daydream, vedi
 # unload_action.gd), questo campo si limita a rendere quel fatto un dato consultabile su
 # BuildingRules invece che implicito nel codice. Stesso stile di is_village_center sopra (dato di
 # TIPO, non di istanza — nessuna logica ancora lo legge). Default false — nessun tipo esistente
@@ -141,7 +141,7 @@ extends Resource
 # edificio (2026-09-10, richiesta utente — preparazione Build Task, Step 1: SOLO il dato, nessuna
 # logica di condivisione lavoro/assegnazione multipla ancora — arriverà con un giro successivo).
 # Stesso stile/stessa posizione di accepts_thoughts sopra (campo semplice di TIPO, non di istanza).
-# Default 1 = comportamento invariato per OGNI tipo esistente (hut/deposit_site/stone_circle):
+# Default 1 = comportamento invariato per OGNI tipo esistente (hut/deposit_site/pebble_circle):
 # nessun .tres da aggiornare, dato che il default vale già per tutti finché non lo si valorizza
 # esplicitamente per un tipo che dovrà davvero ammettere più lavoratori in parallelo.
 @export var max_builders: int = 1
@@ -157,7 +157,7 @@ extends Resource
 # Capacità residenziale (2026-09-12, richiesta utente — nuovo edificio Stick Tent + AssignHouse
 # Service): quanti HumanIndividual.house_id possono puntare a UN'istanza di questo tipo
 # contemporaneamente. 0 = non residenziale (default), il comportamento invariato per ogni edificio
-# che non lo valorizza esplicitamente (stone_circle/deposit_site restano a 0 — mai edifici dove
+# che non lo valorizza esplicitamente (pebble_circle/deposit_site restano a 0 — mai edifici dove
 # vivere). Valorizzato su hut.tres (5) e stick_tent.tres (4) — vedi AssignHouseService.
 # assign_pending_residents, l'unico consumatore oggi (conta gli occupanti scandendo human_
 # individuals con house_id == building.id, confronta con questo tetto).

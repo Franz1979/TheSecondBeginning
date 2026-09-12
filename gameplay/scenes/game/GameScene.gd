@@ -175,6 +175,14 @@ const REST_TASK_DEFINITION_PATH := "res://gameplay/scripts/tasks/definitions/res
 # sono risolti PRIMA della costruzione da _resolve_wander_targets (vedi sotto), stesso schema già
 # in uso per Rest.
 const WANDER_TASK_DEFINITION_PATH := "res://gameplay/scripts/tasks/definitions/wander.tres"
+# TaskDefinition "transport" (2026-09-12, richiesta utente — Transport Task: Walk->source→Retrieve→
+# Walk->destination→Unload) — SEMPRE 4 step fissi (vedi transport.tres): nessuna logica
+# condizionale sul numero di step qui, source/destination/resource_name/quantity sono risolti PRIMA
+# della costruzione da _resolve_transport_context (vedi sotto), stesso schema già in uso per Rest/
+# Wander. source_building/destination_building arrivano dal trigger a due click destri
+# (_debug_try_assign_transport_command_on_right_click, vedi sotto); resource_name/quantity dalla
+# scelta del player nel TransportSourceDialog aperto dallo stesso trigger.
+const TRANSPORT_TASK_DEFINITION_PATH := "res://gameplay/scripts/tasks/definitions/transport.tres"
 # _pending_build_tasks (Dictionary building.id -> Task orfana in attesa di assegnazione manuale) È
 # STATO RIMOSSO (2026-09-12, richiesta utente — sostituzione con un percorso generico di
 # riassegnazione Task): il path del TaskDefinition "build" ora vive su Building.
@@ -363,6 +371,7 @@ var _pending_leave_action: StringName = &""
 @onready var statistics_panel: StatisticsPanel = $StatisticsPanel
 @onready var tech_tree_panel: TechTreePanel = $TechTreePanel
 @onready var demolish_confirmation_dialog: DemolishConfirmationDialog = $DemolishConfirmationDialog
+@onready var transport_source_dialog: TransportSourceDialog = $TransportSourceDialog
 @onready var save_game_file_dialog: FileDialog = $SaveGameFileDialog
 @onready var camera: Camera2D = $Camera2D
 @onready var year_title_label: Label = $CanvasLayer/Sidebar/MarginContainer/VBoxContainer/CalendarHeaderContainer/YearTitleLabel
@@ -505,6 +514,8 @@ func _ready() -> void:
 	tech_tree_panel.visibility_changed.connect(_on_blocking_dialog_visibility_changed.bind(tech_tree_panel))
 	demolish_confirmation_dialog.demolish_confirmed.connect(_on_demolish_confirmed)
 	demolish_confirmation_dialog.visibility_changed.connect(_on_blocking_dialog_visibility_changed.bind(demolish_confirmation_dialog))
+	transport_source_dialog.resource_chosen.connect(_on_transport_source_resource_chosen)
+	transport_source_dialog.visibility_changed.connect(_on_blocking_dialog_visibility_changed.bind(transport_source_dialog))
 	# Demolisci (2026-09-12, richiesta utente) — main_row.action_pressed, NON submenu_row (quello
 	# resta per i tipi edificio, ascoltato sopra da _on_build_submenu_action_pressed): BuildBar._on_
 	# main_row_action_pressed ignora già qualunque action_id diverso da OPEN_BUILD_MENU_ACTION (vedi
@@ -675,6 +686,11 @@ func _ready() -> void:
 		# di una partita nuova (mai eseguito per una partita caricata/ripristinata, vedi il ramo
 		# `if` sopra), stesso principio già seguito per set_current_era poco più in alto.
 		game_data.population_snapshots[0] = human_individuals.size()
+		# Snapshot edifici all'anno 0 (2026-09-12, richiesta utente — tab Statistiche/Edifici) —
+		# stesso identico principio della riga sopra: una partita nuova parte sempre con 0 edifici
+		# (nessuno piazzato prima che il player possa farlo), scritto qui esplicitamente per lo
+		# stesso motivo (_on_year_rolled_over non gira mai per l'anno 0, che non "rotola").
+		game_data.building_snapshots[0] = 0
 
 	# Bugfix (richiesta utente, 2026-09-07): current_stamina/max_stamina di OGNI individuo restavano
 	# al fallback HumanIndividual.FALLBACK_MAX_STAMINA (5000.0 — coincide col default di HumanRules.
@@ -808,54 +824,69 @@ func _ready() -> void:
 # (il player deve poter esplorare la macrocella anche a simulazione in pausa — confermato con
 # l'utente). Non tocca in alcun modo il pipeline giorno/anno di WorldTimeService.
 func _process(delta: float) -> void:
-	if individual != null:
-		# Aggancio al tempo di gioco (2026-09-07, richiesta utente) — movimento e azioni ora scalano
-		# con la velocità 1x/2x/4x/X8/DEBUG e si fermano in pausa, invece di girare a tempo reale
-		# grezzo: game_delta è una FRAZIONE DI GIORNO (stesso calcolo di GameClockController._process,
-		# vedi get_game_day_delta lì), non più un delta in secondi. move_speed, STAMINA_DRAIN_PER_
-		# MICROCELL e RestAction.STAMINA_REGEN_PER_DAY sono già stati ritarati (2026-09-07) per questa
-		# nuova unità. 0.0 quando clock.is_playing è false, propagato di conseguenza a valle.
-		var game_delta := clock.get_game_day_delta(delta)
-		individual_movement_service.advance_movement(individual, game_delta)
-		# Cablaggio Walk/Action (2026-09-06, richiesta utente) — SUBITO dopo advance_movement,
-		# MAI prima: WalkAction.get_stamina_delta calcola la distanza percorsa confrontando
-		# individual.position con l'ultima posizione nota alla chiamata precedente, quindi deve
-		# leggere la position GIÀ aggiornata da advance_movement in questo stesso frame.
+	# Aggancio al tempo di gioco (2026-09-07, richiesta utente) — movimento e azioni ora scalano
+	# con la velocità 1x/2x/4x/X8/DEBUG e si fermano in pausa, invece di girare a tempo reale
+	# grezzo: game_delta è una FRAZIONE DI GIORNO (stesso calcolo di GameClockController._process,
+	# vedi get_game_day_delta lì), non più un delta in secondi. move_speed, STAMINA_DRAIN_PER_
+	# MICROCELL e RestAction.STAMINA_REGEN_PER_DAY sono già stati ritarati (2026-09-07) per questa
+	# nuova unità. 0.0 quando clock.is_playing è false, propagato di conseguenza a valle.
+	#
+	# CALCOLATO FUORI da `if individual != null` (2026-09-12, richiesta utente — piano
+	# multi-individuo, Step 2/3): prima viveva dentro quel gate, quindi se il player deselezionava
+	# tutti (nessun individuo selezionato) l'intero blocco sotto — quindi la Task di OGNI individuo,
+	# non solo del selezionato — smetteva di avanzare. game_delta serve ora al ciclo su
+	# active_individuals sotto, che deve girare indipendentemente da chi (se qualcuno) è selezionato.
+	var game_delta := clock.get_game_day_delta(delta)
+
+	# Ciclo su TUTTI gli individui con una Task attiva (2026-09-12, richiesta utente — piano
+	# multi-individuo, Step 2: GENERALIZZA il refactor "loop-readiness" del 2026-09-10 — quello
+	# costruiva già questa stessa Array[HumanIndividual] tipizzata con l'idiom append-esplicito
+	# invece di un ternario (che a runtime produceva un Array generico, non Array[HumanIndividual] —
+	# vedi commit 2026-09-10), ma la popolava sempre e solo con l'unico `individual` selezionato/
+	# controllato dal player, mai con altri membri di human_individuals: stesso identico
+	# comportamento visibile di prima, in attesa di questo passo). "Task attiva" = current_task non
+	# nullo e non concluso — STESSO filtro che HumanIndividualActionService.apply_action applica già
+	# da sé in testa (current_task == null or is_finished() -> no-op immediato, CONFERMATO leggendo
+	# quel file: già sicuro se chiamato per un individuo senza Task valida), quindi filtrare qui è
+	# solo un'ottimizzazione (evita N chiamate a vuoto ogni frame), mai un requisito di correttezza.
+	# Un individuo entra/esce da questa lista da solo, frame per frame, in base al proprio
+	# current_task — nessuna gestione esplicita di aggiunta/rimozione necessaria qui.
+	#
+	# ATTENZIONE (invariata dal 2026-09-10, ora concreta) — questo ciclo resta agganciato a
+	# _process (framerate di rendering, ~60 chiamate/s indipendentemente da quanto serva davvero),
+	# non a un tick di simulazione indipendente: con la popolazione odierna (poche decine) il costo
+	# resta trascurabile, ma se la popolazione crescerà molto oltre andrà rivalutato (scala come
+	# FPS × N, non più O(1) come quando un solo individuo poteva mai essere in questa lista).
+	var active_individuals: Array[HumanIndividual] = []
+	for member in human_individuals:
+		if member.current_task != null and not member.current_task.is_finished():
+			active_individuals.append(member)
+
+	for active_individual in active_individuals:
+		# advance_movement PRIMA di apply_action, per QUESTO individuo (2026-09-12, Step 3 — prima
+		# advance_movement viveva FUORI da questo ciclo, chiamata una sola volta sul solo
+		# `individual` selezionato) — stesso ordine/stesso motivo di sempre (invariato dal
+		# 2026-09-06): WalkAction.get_stamina_delta calcola la distanza confrontando position con
+		# l'ultima nota, quindi deve leggere la position GIÀ aggiornata da advance_movement in
+		# questo stesso frame, per QUESTO individuo specifico.
+		individual_movement_service.advance_movement(active_individual, game_delta)
 		# macro_world (2026-09-09, richiesta utente — re-routing UnloadAction su magazzino pieno) —
 		# apply_action ne ha bisogno per WarehouseSelectionService.find_best (world.buildings), vedi
 		# HumanIndividualActionService.apply_action.
-		#
-		# Ciclo su una collezione (2026-09-10, richiesta utente — refactor di FORMA per Step 5 del
-		# piano Task/pool, NESSUN comportamento nuovo: active_individuals contiene oggi SEMPRE E
-		# SOLO l'unico `individual` selezionato/controllato dal player, mai popolata da altri
-		# individui del mondo — stesso identico comportamento visibile di prima, stesso momento nel
-		# frame, un solo apply_action chiamato). Costruita con append esplicito, non un ternario
-		# `[individual] if ... else []` (BUGFIX 2026-09-10, stesso giorno: quella forma produce un
-		# Array GENERICO a runtime, non Array[HumanIndividual] — l'assegnazione a questa var tipizzata
-		# falliva con "Trying to assign an array of type Array to a variable of type
-		# Array[HumanIndividual]" appena _process girava con un individual non-null) — stesso idiom
-		# già in uso altrove nel progetto per costruire array tipizzati da dati opzionali (es.
-		# UnloadAction.activate, excluded_building_ids).
-		#
-		# ATTENZIONE — quando questo ciclo processerà DAVVERO più individui contemporaneamente
-		# (Step 5), va rivalutato se apply_action debba restare agganciato a _process (legato al
-		# framerate di rendering, ~60 chiamate/s indipendentemente da quanto serva davvero — vedi
-		# ricognizione 2026-09-10) o essere spostato su un tick di simulazione indipendente: con un
-		# solo individuo come oggi il costo è irrilevante (1 chiamata/frame), ma con N individui
-		# scalerebbe come FPS × N invece che come un tick controllato — un problema di CPU reale
-		# solo a quel punto, non oggi.
-		var active_individuals: Array[HumanIndividual] = []
-		if individual != null:
-			active_individuals.append(individual)
-		for active_individual in active_individuals:
-			individual_action_service.apply_action(active_individual, game_delta, macro_world)
-		_check_macro_cell_border_crossing()
-		# Piano "trasporto neonati" (2026-09-06) — DOPO _check_macro_cell_border_crossing sopra,
-		# mai prima: se il bersaglio ha appena attraversato un bordo, individual.home_macro_coords/
-		# position sono già quelli nuovi a questo punto, così il figlio trasportato (se c'è) viene
-		# ri-parentato/riposizionato nella STESSA cella vera della madre nello stesso frame, senza
-		# un frame di ritardo visibile.
-		_sync_dependent_child_position(individual)
+		individual_action_service.apply_action(active_individual, game_delta, macro_world)
+		# Attraversamento bordo/figlio a carico generalizzati (2026-09-12, Step 4/6 — prima
+		# operavano solo su `individual`) — vedi _check_macro_cell_border_crossing/
+		# _sync_dependent_child_position per il dettaglio: senza questo, un individuo non
+		# selezionato che cammina oltre il bordo della propria macrocella (es. Task haul_resource/
+		# Build con un target in una macrocella adiacente) non verrebbe mai rilevato, lasciando
+		# home_macro_coords/posizione disallineate. DOPO apply_action/prima di
+		# _sync_dependent_child_position, stesso ordine di sempre: se QUESTO individuo ha appena
+		# attraversato un bordo, la sua home_macro_coords/position sono già quelle nuove quando si
+		# sincronizza un suo eventuale figlio a carico, nello stesso frame.
+		_check_macro_cell_border_crossing(active_individual)
+		_sync_dependent_child_position(active_individual)
+
+	if individual != null:
 		_update_live_neighbor()
 
 	# Step 4 FoW multi-sorgente, 2026-09-02 — SOSTITUISCE il vecchio meccanismo a proxy (un solo
@@ -1087,7 +1118,10 @@ func _unhandled_input(event: InputEvent) -> void:
 		# compatibile, assegna Walk->Unload e consuma l'evento, altrimenti il movimento normale
 		# prosegue invariato.
 		if individual_controller != null:
-			if not _try_assign_pickup_command_on_right_click(event) and not _try_assign_unload_command_on_right_click(event) and not _try_assign_build_command_on_right_click(event):
+			# _debug_try_assign_transport_command_on_right_click (2026-09-12, richiesta utente — test
+			# Transport Task) — provato per ULTIMO, dopo pickup/unload/build: gated da
+			# DebugLogging.ENABLED al proprio interno, vedi lì per il perché di questa posizione.
+			if not _try_assign_pickup_command_on_right_click(event) and not _try_assign_unload_command_on_right_click(event) and not _try_assign_build_command_on_right_click(event) and not _debug_try_assign_transport_command_on_right_click(event):
 				individual_controller.handle_input(event)
 
 	if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_X:
@@ -1344,8 +1378,13 @@ func _debug_test_daydream_task() -> void:
 	# garanzia strutturale). Funzione autonoma e riusabile (vive su ThoughtTargetSelectionService, non
 	# qui): pronta per essere richiamata anche da una futura generazione automatica della Task
 	# Daydream, non solo da questo tasto debug.
+	#
+	# BUGFIX (2026-09-12, richiesta utente) — has_thought_accepting_building ora richiede ANCHE
+	# building.is_complete (vedi quel file): un Pebble Circle ancora in costruzione non fa più
+	# superare questo gate. Messaggio d'errore aggiornato di conseguenza ("completo", non solo
+	# "piazzato").
 	if not ThoughtTargetSelectionService.has_thought_accepting_building(macro_world):
-		push_error("[DAYDREAM TEST] Nessun edificio che accetta pensieri piazzato in questa partita — costruisci uno Stone Circle (BuildBar) prima di premere Y.")
+		push_error("[DAYDREAM TEST] Nessun edificio COMPLETO che accetta pensieri in questa partita — costruisci (e completa) uno Pebble Circle (BuildBar) prima di premere Y.")
 		return
 
 	var around_position: Vector2 = individual.position + Vector2.from_angle(randf() * TAU) * _DEBUG_DAYDREAM_AROUND_DISTANCE
@@ -1579,6 +1618,195 @@ func _assign_wander_task() -> void:
 	individual.assign_task(task)
 	print("[WANDER] Task assegnata a #%d %s: %s -> %s -> %s" % [
 		individual.id, individual.name, target_data["target_1"], target_data["target_2"], target_data["target_3"]
+	])
+
+
+# Risoluzione del context della Transport Task, PRIMA della costruzione (2026-09-12, richiesta
+# utente — "stesso pattern già usato per _resolve_rest_target/_resolve_wander_targets") — ritorna
+# SEMPRE un Dictionary con le sei chiavi lette da TaskFactory.build_task per i 4 step fissi
+# [Walk->source, Retrieve, Walk->destination, Unload] (vedi transport.tres), mai null.
+# source_building/destination_building/resource_name/quantity arrivano GIÀ RISOLTI dal chiamante
+# (source/destination dal trigger a due click destri, resource_name/quantity dalla scelta del
+# player nel TransportSourceDialog — vedi _debug_try_assign_transport_command_on_right_click/
+# _on_transport_source_resource_chosen sotto): questa funzione si limita a tradurre le posizioni dei
+# due edifici nello spazio locale di `target_individual` e a impacchettare tutto nelle chiavi che
+# transport.tres si aspetta.
+#
+# Posizioni tradotte con la STESSA formula cross-macrocella già in uso ovunque nel progetto per
+# questo scopo (es. _resolve_rest_target/_try_assign_unload_command_on_right_click/
+# _debug_test_daydream_task): building.macro_x/y sono locali alla macrocella OSPITANTE l'edificio,
+# non necessariamente quella HOME dell'individuo (offset zero, no-op, se coincidono).
+func _resolve_transport_context(
+	target_individual: HumanIndividual, source_building: Building, destination_building: Building,
+	resource_name: String, quantity: int
+) -> Dictionary:
+	var source_macro_offset: Vector2 = Vector2(
+		Vector2i(source_building.macro_x, source_building.macro_y) - target_individual.home_macro_coords
+	) * World.WIDTH
+	var source_position: Vector2 = Vector2(source_building.micro_x, source_building.micro_y) + source_macro_offset
+
+	var destination_macro_offset: Vector2 = Vector2(
+		Vector2i(destination_building.macro_x, destination_building.macro_y) - target_individual.home_macro_coords
+	) * World.WIDTH
+	var destination_position: Vector2 = Vector2(destination_building.micro_x, destination_building.micro_y) + destination_macro_offset
+
+	return {
+		"transport_source_position": source_position,
+		"transport_source_building": source_building,
+		"transport_resource_name": resource_name,
+		"transport_quantity": quantity,
+		"transport_destination_position": destination_position,
+		"transport_destination_building": destination_building,
+	}
+
+
+# Costruisce ed assegna la Transport Task completa [Walk, Retrieve, Walk, Unload] all'individuo
+# selezionato (2026-09-12, richiesta utente) — chiamata SOLO dal trigger a due click destri sotto,
+# mai da _unhandled_input direttamente (stesso principio di _assign_rest_task/_assign_wander_task,
+# separazione risoluzione/assegnazione). resource_name/quantity arrivano GIÀ SCELTI dal player nel
+# TransportSourceDialog (vedi _on_transport_source_resource_chosen sotto), non più fissati nel
+# codice. individual.stop() PRIMA della costruzione — stesso principio "la Task parte sempre da uno
+# stato pulito" già seguito da OGNI altro assign/debug hook di Task in questo file.
+#
+# Segnali ricollegati SUBITO dopo la costruzione (2026-09-12) — STESSO principio già seguito da
+# _try_assign_unload_command_on_right_click per il proprio UnloadAction costruito a mano: senza
+# questo, il deposito/prelievo fisico muterebbe comunque stored_resources correttamente (la
+# mutazione vera vive in BuildingStorageService, non nel segnale), ma la UI (griglia di stoccaggio
+# del pannello edificio, se aperto) non si aggiornerebbe da sola. resource_retrieved (nuovo segnale
+# di RetrieveAction) riusa lo stesso identico handler di resource_deposited (_on_resource_deposited
+# si limita a rinfrescare la macrocella dell'edificio passato, generico per qualunque building) —
+# nessun nuovo handler dedicato necessario.
+#
+# Lampeggio SULLA DESTINAZIONE (2026-09-12, richiesta utente — "sul magazzino destinazione, fai un
+# lampeggio come accade per la build, e per la pick up task") — STESSO trigger/STESSO principio di
+# _try_assign_pickup_command_on_right_click/_try_assign_build_command_on_right_click: subito
+# all'assegnazione, non all'arrivo. Icona "transport" (IconRegistry.COMMAND_ICONS), diversa da
+# "pickup"/"build" — vedi IconRegistry.gd per la scelta dell'emoji (nessuna carriola in Unicode
+# standard).
+func _debug_assign_transport_task(
+	source_building: Building, destination_building: Building, resource_name: String, quantity: int
+) -> void:
+	if individual == null or not individual.is_selected:
+		return
+	individual.stop()
+	var context: Dictionary = _resolve_transport_context(
+		individual, source_building, destination_building, resource_name, quantity
+	)
+	var transport_definition := load(TRANSPORT_TASK_DEFINITION_PATH) as TaskDefinition
+	var task := TaskFactory.build_task(transport_definition, context)
+	for step in task.steps:
+		if step is UnloadAction:
+			_reconnect_unload_action_signals(step as UnloadAction, individual)
+		elif step is RetrieveAction:
+			(step as RetrieveAction).resource_retrieved.connect(
+				func(_res_name: String, building: Building, _qty: int) -> void: _on_resource_deposited(building)
+			)
+	individual.assign_task(task)
+
+	var destination_macro_coords := Vector2i(destination_building.macro_x, destination_building.macro_y)
+	if live_cells.has(destination_macro_coords):
+		_spawn_command_blink_effect(
+			live_cells[destination_macro_coords],
+			Vector2i(destination_building.micro_x, destination_building.micro_y),
+			IconRegistry.get_command_icon("transport")
+		)
+
+	print("[TRANSPORT] Task assegnata a #%d %s: %s #%d -> %s #%d, risorsa='%s' quantità=%d" % [
+		individual.id, individual.name,
+		source_building.building_type_name, source_building.id,
+		destination_building.building_type_name, destination_building.id,
+		resource_name, quantity,
+	])
+
+
+# Stato del trigger a due click (2026-09-12, richiesta utente) — `_debug_transport_source_building`
+# è null finché il player non conferma il TransportSourceDialog: il PRIMO click destro su un
+# edificio con risorse NON lo imposta subito come sorgente, apre invece il dialog e tiene
+# l'edificio "in sospeso" in `_debug_transport_pending_source_building` finché il player non
+# conferma (sorgente impostata + resource_name/quantity salvati) o annulla (niente viene impostato,
+# come se non avesse cliccato nulla — richiesta esplicita utente). Campi vivi per l'intera sessione
+# di gioco (mai resettati altrove), stesso principio "usa e getta" degli altri campi di stato dei
+# debug hook di questo file.
+var _debug_transport_source_building: Building = null
+var _debug_transport_pending_source_building: Building = null
+var _debug_transport_resource_name: String = ""
+var _debug_transport_quantity: int = 0
+
+
+# Trigger "Transport" a due click DESTRI consecutivi su edifici DIVERSI (2026-09-12, richiesta
+# utente — sostituisce il precedente trigger di test a valori fissi): il primo apre il
+# TransportSourceDialog sulle risorse REALMENTE presenti in quell'edificio (building.
+# stored_resources, "pannello muto" — nessuna query fatta dal dialog stesso, vedi TransportSource
+# Dialog.gd), il secondo (dopo conferma del dialog, su un edificio diverso) costruisce ed assegna
+# la Transport Task con risorsa/quantità scelte dal player.
+#
+# STESSO schema/STESSA posizione nella catena di _try_assign_pickup_command_on_right_click/
+# _try_assign_unload_command_on_right_click/_try_assign_build_command_on_right_click sopra (provato
+# per ULTIMO, dopo tutti e tre: un edificio già intercettato da uno di quelli — es. uno storage con
+# zaino pieno per Unload, o un cantiere incompleto per Build — non arriva mai qui, nessuna
+# competizione reale). Gated da DebugLogging.ENABLED, stesso principio "usa e getta" di T/Y/Z/U — DA
+# RIMUOVERE (o spostare sotto un vero pannello/bottone debug) quando questo comando avrà una vera
+# UI permanente (es. un bottone dedicato nella BuildBar).
+func _debug_try_assign_transport_command_on_right_click(event: InputEvent) -> bool:
+	if not DebugLogging.ENABLED:
+		return false
+	if not (event is InputEventMouseButton) or not event.pressed or event.button_index != MOUSE_BUTTON_RIGHT:
+		return false
+	if individual == null or not individual.is_selected:
+		return false
+
+	var building_hit := building_selector_controller.try_select(
+		event, live_cells, macro_world.buildings if macro_world != null else [], MOUSE_BUTTON_RIGHT
+	)
+	if building_hit.is_empty():
+		return false
+	var hit_building := _find_building_by_id(building_hit["building_id"])
+	if hit_building == null:
+		return false
+
+	if _debug_transport_source_building == null:
+		# available_quantities: Dictionary[String, int] — appiattito da stored_resources (Dictionary
+		# [String, Dictionary{"quantity":int,"decay_fraction":float}]), stesso "spacchettamento" già
+		# fatto da RetrieveAction.activate()/BuildingStorageService.withdraw per la stessa struttura.
+		var available_quantities: Dictionary = {}
+		for resource_name: String in hit_building.stored_resources.keys():
+			var entry: Dictionary = hit_building.stored_resources[resource_name]
+			var quantity: int = int(entry.get("quantity", 0))
+			if quantity > 0:
+				available_quantities[resource_name] = quantity
+
+		if available_quantities.is_empty():
+			print("[TRANSPORT] %s #%d non ha risorse da prelevare." % [hit_building.building_type_name, hit_building.id])
+			return true
+
+		_debug_transport_pending_source_building = hit_building
+		var display_name: String = tr(hit_building.rules.building_name) if hit_building.rules != null else hit_building.building_type_name
+		transport_source_dialog.open_dialog(display_name, available_quantities)
+		return true
+
+	if hit_building == _debug_transport_source_building:
+		print("[TRANSPORT] destinazione uguale alla sorgente (#%d) — ignorato, clicca un edificio diverso." % hit_building.id)
+		return true
+
+	var source_building := _debug_transport_source_building
+	_debug_transport_source_building = null
+	_debug_assign_transport_task(source_building, hit_building, _debug_transport_resource_name, _debug_transport_quantity)
+	return true
+
+
+# Handler di conferma del TransportSourceDialog (2026-09-12, richiesta utente) — finalizza la
+# sorgente "in sospeso" SOLO ora (mai al primo click, vedi commento sopra): da qui in poi il gioco
+# resta in attesa del click destro sulla destinazione, stesso comportamento "sorgente impostata,
+# aspetto destinazione" già esistente prima del dialog.
+func _on_transport_source_resource_chosen(resource_name: String, quantity: int) -> void:
+	if _debug_transport_pending_source_building == null:
+		return
+	_debug_transport_source_building = _debug_transport_pending_source_building
+	_debug_transport_pending_source_building = null
+	_debug_transport_resource_name = resource_name
+	_debug_transport_quantity = quantity
+	print("[TRANSPORT] sorgente impostata: %s #%d, risorsa='%s' quantità=%d. Ora click destro sull'edificio destinazione." % [
+		_debug_transport_source_building.building_type_name, _debug_transport_source_building.id, resource_name, quantity
 	])
 
 
@@ -2449,7 +2677,7 @@ func _try_assign_pickup_command_on_right_click(event: InputEvent) -> bool:
 #
 # Tre condizioni, in quest'ordine, TUTTE necessarie perché il comando scatti (altrimenti false,
 # fallback al movimento normale — MAI un comando "parziale"/un errore silenzioso):
-#   1. l'edificio colpito è di categoria STORAGE (rules.category — un hit su hut/stone_circle
+#   1. l'edificio colpito è di categoria STORAGE (rules.category — un hit su hut/pebble_circle
 #      colpiti col destro resta movimento semplice, non un errore, semplicemente non è un target
 #      valido per Unload);
 #   2. lo zaino non è vuoto (carried_quantity > 0 — zaino vuoto non ha nulla da scaricare, stesso
@@ -2460,7 +2688,7 @@ func _try_assign_pickup_command_on_right_click(event: InputEvent) -> bool:
 #      edificio ancora, richiesta esplicita) — semplicemente nessun comando, movimento normale.
 #
 # Posizione target tradotta nello spazio locale dell'INDIVIDUO (non dell'edificio) — stessa formula
-# già in uso in _debug_test_daydream_task per lo Stone Circle: building.micro_x/y sono locali alla
+# già in uso in _debug_test_daydream_task per lo Pebble Circle: building.micro_x/y sono locali alla
 # macrocella DELL'EDIFICIO, non necessariamente quella corrente dell'individuo (offset zero, no-op,
 # se invece coincidono).
 func _try_assign_unload_command_on_right_click(event: InputEvent) -> bool:
@@ -2868,8 +3096,28 @@ func _refresh_population_panel() -> void:
 	human_population_info_panel.show_population(
 		human_population_group.total_count, human_individuals, game_data.year,
 		game_data.era_effective_age_band_durations_male, game_data.era_effective_age_band_durations_female,
-		human_folk.id, human_population_group.id
+		human_folk.id, human_population_group.id, _compute_housing_capacity()
 	)
+
+
+# Somma di rules.max_residents sui soli edifici COMPLETI con max_residents > 0 (2026-09-12,
+# richiesta utente — "quanto spazio abitativo esiste", per HumanPopulationInfoPanel.show_population)
+# — STESSO identico criterio già usato da AssignHouseService.assign_pending_residents per decidere
+# quali edifici hanno posti letto assegnabili (nessuna lettura esplicita di building.rules.category
+# == RESIDENTIAL: quel service non lo fa, quindi nemmeno questo conteggio, per restare coerenti —
+# un ipotetico futuro edificio non-RESIDENTIAL con max_residents > 0 conterebbe comunque qui,
+# esattamente come conterebbe per l'assegnazione vera).
+func _compute_housing_capacity() -> int:
+	if macro_world == null:
+		return 0
+	var capacity := 0
+	for building in macro_world.buildings:
+		if building.rules == null or building.rules.max_residents <= 0:
+			continue
+		if not building.is_complete:
+			continue
+		capacity += building.rules.max_residents
+	return capacity
 
 
 # Gemella di _refresh_population_panel sopra, per la scheda 🏠 (2026-09-12, richiesta utente) —
@@ -3153,6 +3401,12 @@ func _on_year_rolled_over() -> void:
 	# Rete di sicurezza periodica per la scheda 🏠 (2026-09-12, richiesta utente) — stesso principio
 	# di _refresh_population_panel sopra.
 	_refresh_buildings_panel()
+	# Snapshot edifici/anno (2026-09-12, richiesta utente — tab Statistiche/Edifici, vedi GameData.
+	# building_snapshots) — STESSO schema di GameTimeService._on_year_rolled_over per
+	# population_snapshots, ma scritto QUI (non lì): GameTimeService non possiede macro_world/
+	# buildings (vedi i suoi campi, solo human_individuals/folk/population_group), mentre GameScene
+	# li ha già a portata di mano per _refresh_buildings_panel appena sopra.
+	game_data.building_snapshots[game_data.year] = macro_world.buildings.size() if macro_world != null else 0
 
 
 # Sposta il bersaglio di movimento/streaming (il campo "individual", vedi il commento lì) su
@@ -3166,17 +3420,23 @@ func _on_year_rolled_over() -> void:
 # Bugfix 2026-09-02 (due sintomi distinti trovati testando un bersaglio non co-locato col centro —
 # entrambi dovuti a questa funzione, che faceva un handoff PARZIALE al nuovo bersaglio):
 #
-# Sintomo 2 (movimento residuo) — target.stop() sotto scarta is_moving/path lasciati da un
-# PRECEDENTE turno di `target` come bersaglio: nessun altro punto del codice pulisce questo stato
-# per un individuo che STA PER diventare bersaglio (solo per quello che lo è già, vedi
-# HumanIndividualMovementService.advance_movement/_attempt_macro_cell_transition/
-# _block_border_crossing, i soli tre punti che chiamano .stop()) — senza questo, un individuo
-# selezionato, spostato, poi abbandonato per un altro bersaglio PRIMA di arrivare, riprendeva a
-# camminare da solo verso il vecchio target_position stantio non appena ri-selezionato. Gated su
-# `target != individual`: se target è GIA' il bersaglio corrente, un suo eventuale is_moving è
-# stato ATTUALE (avanzato ogni frame proprio ora), non residuo — fermarlo qui interromperebbe una
-# camminata in corso voluta dal giocatore solo perché ha ri-cliccato la stessa selezione (es. per
-# rivedere il popup), un effetto collaterale non voluto e diverso dal caso che questo fix corregge.
+# Sintomo 2 (movimento residuo) — STORICO, RISOLTO IN MODO DIVERSO (2026-09-02 -> 2026-09-12): a
+# quell'epoca, sia `target.stop()` (sul NUOVO bersaglio, rimosso dal bugfix 2026-09-07 sotto) sia
+# poi `individual.is_moving = false; individual.path.clear()` (sul VECCHIO bersaglio, bugfix
+# 2026-09-12) tentavano di "ripulire" un residuo di movimento al cambio di selezione. ENTRAMBI
+# gli approcci sono stati infine RIMOSSI del tutto (2026-09-12, richiesta utente — bug reale
+# confermato con test in-game: due individui con haul_resource attiva in parallelo, selezionarne
+# uno secondo congelava per sempre il WalkAction del primo, perché is_moving=false su un individuo
+# con una Task DAVVERO in corso non viene mai più rimesso a true da nessun altro punto del codice —
+# WalkAction.is_complete() confronta position/target, mai più vero se position smette di avanzare):
+# il motivo originale del 2026-09-02 (evitare un'animazione di cammino "congelata" quando
+# l'individuo smetteva di essere PROCESSATO) non esiste più da quando GameScene._process avanza
+# TUTTI gli individui con una Task attiva ad ogni frame, indipendentemente dalla selezione — non
+# c'è quindi più nulla da "fermare" quando la selezione cambia: is_moving/path del vecchio bersaglio
+# restano quello che erano, e continuano ad evolvere per conto proprio nel ciclo di _process
+# esattamente come per qualunque altro individuo non selezionato. Cambiare selezione oggi non
+# esegue PIÙ alcuna azione sul vecchio bersaglio — zero effetti collaterali sul suo stato di
+# movimento/Task, per costruzione.
 #
 # Sintomo 1 (streaming non ri-ancorato) — PRIMA questa funzione agganciava incondizionatamente
 # individual_controller al nuovo bersaglio assumendo fosse già nella cella centrale — falso per un
@@ -3202,28 +3462,11 @@ func _on_year_rolled_over() -> void:
 # richiama esplicitamente): con center_macro_coords ora aggiornato, individual.position torna a
 # essere letto nel riferimento giusto.
 func _set_movement_target(target: HumanIndividual) -> void:
-	if target != individual:
-		# BUGFIX (2026-09-04, richiesta utente, non correlato al lavoro sul FoW): il VECCHIO
-		# bersaglio (quello abbandonato dal cambio di selezione) deve fermarsi per intero, non solo
-		# smettere di essere avanzato. GameScene._process chiama individual_movement_service.
-		# advance_movement SOLO sul bersaglio CORRENTE, quindi il vecchio smette correttamente di
-		# muoversi in posizione — ma senza questa chiamata il suo is_moving restava true per
-		# sempre (nessuno lo azzerava più), e HumanIndividualView anima gambe/braccia in base a
-		# QUEL flag, non alla posizione reale: risultato, un personaggio fermo con gambe/braccia
-		# che continuavano a camminare all'infinito. individual (il vecchio bersaglio) può essere
-		# null alla primissima selezione di una partita nuova — guardia esplicita.
-		#
-		# BUGFIX (2026-09-07, richiesta utente — "se clicco due volte su uno che sta facendo
-		# un'azione la interrompo"): qui c'era ANCHE un `target.stop()` (sul NUOVO bersaglio, non
-		# sul vecchio) — corretto quando esisteva solo un semplice movimento da azzerare, diventato
-		# distruttivo ora che stop() svuota anche current_task: selezionare un individuo occupato
-		# (Task in corso) la interrompeva subito, prima ancora di poterne vedere lo stato nel
-		# pannello. Rimosso: il nuovo bersaglio sta per diventare `individual`, quindi da questo
-		# stesso frame in poi GameScene._process riprende a chiamare apply_action su di lui — la
-		# sua Task prosegue senza interruzioni, esattamente come se non fosse mai stato deselezionato.
-		if individual != null:
-			individual.stop()
-
+	# NESSUNA azione sul vecchio bersaglio (`individual`, prima di essere sovrascritto sotto) — vedi
+	# il commento di testa alla funzione, "Sintomo 2", per la storia completa di cosa viveva qui e
+	# perché è stato rimosso del tutto (non solo "svuotato", proprio eliminato — nessun `if target !=
+	# individual` residuo): cambiare selezione non deve avere ALCUN effetto collaterale sullo stato
+	# di movimento/Task di chi si sta deselezionando, ora che _process lo avanza comunque.
 	_recenter_live_cells_on(target.home_macro_coords)
 
 	individual = target
@@ -3819,49 +4062,67 @@ func _update_live_neighbor() -> void:
 # ============================================================================================
 
 # Punto di intercettazione dell'uscita dal bordo della griglia micro — richiamato ogni frame da
-# _process, subito dopo il movimento. Un controllo per asse, non un unico controllo combinato:
+# _process per OGNI individuo attivo (2026-09-12, richiesta utente — piano multi-individuo, Step 4:
+# PRIMA operava solo sul singolo `individual` selezionato/controllato dal player, letto da un campo
+# di GameScene invece che da un parametro — senza questa generalizzazione un individuo non
+# selezionato che cammina fuori dal bordo della propria macrocella, es. una Task haul_resource/Build
+# con un target in una macrocella adiacente, non verrebbe mai rilevato: home_macro_coords/posizione
+# resterebbero disallineate per sempre). Un controllo per asse, non un unico controllo combinato:
 # in caso di uscita diagonale (entrambi gli assi fuori range nello stesso frame) i due controlli
 # vengono comunque eseguiti in sequenza nella stessa chiamata, gestendo il caso come due
 # attraversamenti 4-connessi consecutivi (es. prima verso est, poi verso nord) invece di
 # richiedere un vicino diagonale non previsto (sempre e solo N/S/E/O).
-func _check_macro_cell_border_crossing() -> void:
-	if individual == null or macro_world == null:
+func _check_macro_cell_border_crossing(target_individual: HumanIndividual) -> void:
+	if macro_world == null:
 		return
 
-	if individual.position.x < 0.0:
-		_attempt_macro_cell_transition(-1, 0)
-	elif individual.position.x >= float(World.WIDTH):
-		_attempt_macro_cell_transition(1, 0)
+	if target_individual.position.x < 0.0:
+		_attempt_macro_cell_transition(target_individual, -1, 0)
+	elif target_individual.position.x >= float(World.WIDTH):
+		_attempt_macro_cell_transition(target_individual, 1, 0)
 
-	if individual == null:
-		return
-
-	if individual.position.y < 0.0:
-		_attempt_macro_cell_transition(0, -1)
-	elif individual.position.y >= float(World.HEIGHT):
-		_attempt_macro_cell_transition(0, 1)
+	if target_individual.position.y < 0.0:
+		_attempt_macro_cell_transition(target_individual, 0, -1)
+	elif target_individual.position.y >= float(World.HEIGHT):
+		_attempt_macro_cell_transition(target_individual, 0, 1)
 
 
-# Gestisce un tentativo di uscita in direzione (dx, dy) — sempre un solo asse alla volta, l'altro
-# è sempre 0 (vedi _check_macro_cell_border_crossing sopra). Se la macrocella adiacente non
-# esiste (bordo del mondo) o la microcella di ingresso è acqua, l'individuo resta all'ultima
-# posizione valida (_block_border_crossing, nessun attraversamento). Altrimenti conferma subito
-# il cambio macrocella riusando lo stesso percorso di caricamento di _ready() (_activate_live_
-# cell, di norma già eseguito in anticipo da _update_live_neighbor — vedi la rete di sicurezza
-# sotto per il caso raro in cui non lo sia ancora).
-func _attempt_macro_cell_transition(dx: int, dy: int) -> void:
-	var target_x := center_macro_coords.x + dx
-	var target_y := center_macro_coords.y + dy
+# Gestisce un tentativo di uscita in direzione (dx, dy) per `target_individual` — sempre un solo
+# asse alla volta, l'altro è sempre 0 (vedi _check_macro_cell_border_crossing sopra). Se la
+# macrocella adiacente non esiste (bordo del mondo) o la microcella di ingresso è acqua,
+# l'individuo resta all'ultima posizione valida (_block_border_crossing, nessun attraversamento).
+# Altrimenti conferma subito il cambio macrocella riusando lo stesso percorso di caricamento di
+# _ready() (_activate_live_cell, di norma già eseguito in anticipo da _update_live_neighbor SOLO
+# per il bersaglio della camera — vedi la rete di sicurezza sotto per il caso raro/per chiunque
+# altro in cui non lo sia ancora).
+#
+# GENERALIZZATA (2026-09-12, richiesta utente — piano multi-individuo, Step 4) — origin_macro_coords
+# ora letta da `target_individual.home_macro_coords` (PRIMA: da `center_macro_coords`, che coincide
+# con la macrocella del bersaglio SOLO perché prima esisteva un solo bersaglio possibile, quello
+# della camera): usare ancora center_macro_coords qui per un individuo qualunque avrebbe calcolato
+# la macrocella di destinazione partendo dal posto SBAGLIATO ogni volta che target_individual non è
+# quello selezionato. Il resto della funzione si divide ora in due parti — vedi `is_camera_focus`
+# sotto: (1) aggiornamento posizione/home_macro_coords/view, SEMPRE eseguito per QUALUNQUE
+# individuo (serve al modello di simulazione, indipendente da chi è selezionato); (2) ri-ancoraggio
+# di camera/streaming/LOD (center_macro_coords, camera.position, _reposition_live_cells,
+# _refresh_lod_focus_region, _update_center_info_panel, individual_controller.setup),
+# ESEGUITO SOLO quando target_individual è il bersaglio della camera — quella macchina esiste UNA
+# volta sola per l'intera scena (una sola camera), non ha senso ri-ancorarla su un individuo che il
+# player non sta nemmeno guardando.
+func _attempt_macro_cell_transition(target_individual: HumanIndividual, dx: int, dy: int) -> void:
+	var origin_macro_coords := target_individual.home_macro_coords
+	var target_x := origin_macro_coords.x + dx
+	var target_y := origin_macro_coords.y + dy
 	var target_cell := macro_world.get_cell_at(target_x, target_y)
 
 	if target_cell == null:
-		_block_border_crossing(dx, dy)
+		_block_border_crossing(target_individual, dx, dy)
 		return
 
 	# Posizione di ingresso nella macrocella adiacente: la posizione "avvolge" dal lato opposto,
 	# preservando la parte frazionaria per continuità visiva (uscire a x=100.3 verso est entra a
 	# x=0.3 nella macrocella a est, non uno snap secco a 0.0). Solo l'asse attraversato cambia.
-	var entry_position := individual.position
+	var entry_position := target_individual.position
 	if dx == 1:
 		entry_position.x -= float(World.WIDTH)
 	elif dx == -1:
@@ -3872,36 +4133,98 @@ func _attempt_macro_cell_transition(dx: int, dy: int) -> void:
 		entry_position.y += float(World.HEIGHT)
 
 	if _is_entry_microcell_water(target_cell, entry_position):
-		_block_border_crossing(dx, dy)
+		_block_border_crossing(target_individual, dx, dy)
 		return
 
-	# Ferma il movimento in corso invece di lasciarlo proseguire nella nuova macrocella: il
-	# target_position originale è in coordinate della VECCHIA macrocella, senza più significato
-	# qui (e potrebbe ricadere di nuovo oltre il bordo, ritriggerando un altro attraversamento a
-	# catena). Il giocatore imposta un nuovo target esplicitamente dopo l'arrivo.
-	individual.stop()
-	game_data.player_macro_cell_x = target_x
-	game_data.player_macro_cell_y = target_y
-	center_macro_coords = Vector2i(target_x, target_y)
+	# Ribasamento del WalkAction attivo, NON un semplice arresto (2026-09-12, richiesta utente —
+	# CORREZIONE di un bug gemello a quello risolto in _set_movement_target: qui viveva prima
+	# `target_individual.is_moving = false` e basta — corretto per NON azzerare più current_task/
+	# TaskDebugRegistry come il vecchio `.stop()` pieno, ma comunque distruttivo in un modo più
+	# sottile: un WalkAction realmente in corso lasciato con is_moving=false non riparte mai da
+	# solo, perché nessun altro punto del codice lo rimette a true per QUESTO stesso step — la Task
+	# risultava "in corso" per sempre senza mai avanzare, stesso identico sintomo del bug in
+	# _set_movement_target, innescato però da un attraversamento di bordo invece che da un cambio di
+	# selezione). A differenza del caso _set_movement_target — dove rimuovere l'azione basta, perché
+	# lì non cambia nulla nel riferimento spaziale dell'individuo — QUI il motivo per cui il vecchio
+	# codice toccava lo stato di movimento resta legittimo: `target` di una WalkAction è un Vector2
+	# scritto UNA SOLA VOLTA al costruttore (vedi WalkAction.gd, _init) e mai più aggiornato da
+	# nessun altro punto del codice — dopo un attraversamento bordo, position viene ri-basata sulla
+	# NUOVA macrocella (entry_position sopra) ma `target` resterebbe espresso nel riferimento della
+	# VECCHIA, rendendo WalkAction.is_complete() (position == target) non più vero per costruzione:
+	# la destinazione ASSOLUTA non è cambiata, solo il sistema di riferimento locale in cui va
+	# espressa — quindi la correzione giusta è ribasare `target` con lo STESSO offset appena
+	# applicato a position (non azzerare nulla), poi far ripartire lo step con activate() più sotto,
+	# una volta che home_macro_coords/position sono già quelli nuovi.
+	#
+	# `frame_offset` è lo stesso spostamento già usato per entry_position sopra, ricavato per
+	# differenza (position non è ancora stata sovrascritta a questo punto della funzione) invece di
+	# ricalcolarlo una seconda volta. `current_action is WalkAction` come guardia (non un controllo
+	# su is_moving) — è l'UNICA Action che porta mai is_moving a true (vedi Action.gd/WalkAction.gd),
+	# quindi se questo ramo è stato raggiunto (position uscita dal range, possibile solo per un
+	# movimento reale) lo step attivo è per costruzione sempre una WalkAction; difensivo comunque —
+	# nessun effetto se non lo fosse.
+	var frame_offset := entry_position - target_individual.position
+	var current_action: Action = null
+	if target_individual.current_task != null:
+		current_action = target_individual.current_task.get_current_action()
+	if current_action is WalkAction:
+		(current_action as WalkAction).target += frame_offset
 
-	# Rete di sicurezza: non dovrebbe capitare quasi mai dato il pre-caricamento per prossimità
-	# (_update_live_neighbor gira ogni frame, ben prima che l'individuo raggiunga davvero il
-	# bordo vero, vedi LIVE_NEIGHBOR_ACTIVATE_MARGIN), ma un movimento molto rapido o un salvataggio
-	# ripristinato già a ridosso del bordo potrebbe in teoria saltarlo.
-	if not live_cells.has(center_macro_coords):
+	var target_macro_coords := Vector2i(target_x, target_y)
+	# is_camera_focus (2026-09-12) — vedi commento di testa alla funzione: separa l'aggiornamento
+	# di simulazione (sempre) dal ri-ancoraggio di camera/streaming/LOD (solo per il bersaglio della
+	# camera, che oggi coincide sempre con `individual`, il campo selezionato/controllato).
+	var is_camera_focus := target_individual == individual
+
+	if is_camera_focus:
+		game_data.player_macro_cell_x = target_x
+		game_data.player_macro_cell_y = target_y
+		center_macro_coords = target_macro_coords
+
+	# Rete di sicurezza — SEMPRE valutata, non solo per il bersaglio della camera (2026-09-12): non
+	# dovrebbe capitare quasi mai per il bersaglio della camera stesso, dato il pre-caricamento per
+	# prossimità (_update_live_neighbor gira ogni frame, ben prima che raggiunga davvero il bordo
+	# vero, vedi LIVE_NEIGHBOR_ACTIVATE_MARGIN — ma quel pre-caricamento resta legato SOLO a lui);
+	# per chiunque altro non c'è alcun pre-caricamento equivalente in corsa (_activate_all_
+	# individual_cells gira una sola volta, in _ready() — vedi commento lì), quindi questa è
+	# l'unica rete che garantisce che la cella di destinazione esista prima di riparentarvi la view.
+	if not live_cells.has(target_macro_coords):
 		_activate_live_cell(target_x, target_y)
 
-	individual.position = entry_position
-	# Bugfix Bug 2 (2026-09-02): il bersaglio è l'UNICO individuo la cui macrocella fisica cambia
-	# davvero (chiunque altro resta dov'era, mai mosso da nulla) — aggiorna home_macro_coords e
-	# riparenta la sua HumanIndividualView sotto il nuovo container, esattamente come farebbe
-	# _activate_live_cell per un renderer qualsiasi. reparent() invece di remove_child+add_child
-	# manuali: nessuna differenza pratica qui (HumanIndividualView._process sovrascrive comunque
-	# position da zero subito dopo, ad ogni frame), ma è l'API dedicata di Godot per lo scopo.
-	individual.home_macro_coords = center_macro_coords
-	var target_view_index := human_individuals.find(individual)
+	target_individual.position = entry_position
+	# Aggiorna home_macro_coords e riparenta la HumanIndividualView sotto il nuovo container,
+	# esattamente come farebbe _activate_live_cell per un renderer qualsiasi — GENERALIZZATO
+	# (2026-09-12): PRIMA questo commento diceva "il bersaglio è l'UNICO individuo la cui macrocella
+	# fisica cambia davvero (chiunque altro resta dov'era, mai mosso da nulla)", vero SOLO perché
+	# prima nessun altro individuo veniva mai avanzato in autonomia — ora qualunque individuo attivo
+	# può attraversare un bordo, quindi questo aggiornamento vale per `target_individual` chiunque
+	# esso sia, non più solo per il bersaglio della camera. reparent() invece di
+	# remove_child+add_child manuali: nessuna differenza pratica qui (HumanIndividualView._process
+	# sovrascrive comunque position da zero subito dopo, ad ogni frame), ma è l'API dedicata di
+	# Godot per lo scopo.
+	target_individual.home_macro_coords = target_macro_coords
+	var target_view_index := human_individuals.find(target_individual)
 	if target_view_index != -1:
-		human_individual_views[target_view_index].reparent(live_cells[center_macro_coords].container)
+		human_individual_views[target_view_index].reparent(live_cells[target_macro_coords].container)
+
+	# Fa RIPARTIRE lo step (2026-09-12) — ORA che position/home_macro_coords sono già quelli nuovi:
+	# activate() su WalkAction (vedi WalkAction.gd) scrive target_position dal `target` GIÀ ribasato
+	# sopra e rimette is_moving a true, quindi il movimento prosegue nello stesso frame verso la
+	# STESSA destinazione assoluta di prima, solo espressa nel riferimento locale corretto — nessun
+	# frame "fermo" in mezzo, stesso principio già seguito da HumanIndividualActionService.
+	# apply_action quando una Task avanza da uno step al successivo. Sempre eseguito (non solo per
+	# il bersaglio della camera): il movimento di simulazione di un individuo non dipende da chi il
+	# player sta guardando.
+	if current_action is WalkAction:
+		current_action.activate(target_individual, target_individual.current_task.context)
+
+	if not is_camera_focus:
+		# Nessun ri-ancoraggio di camera/streaming/LOD per un individuo che il player non sta
+		# guardando (vedi commento di testa alla funzione) — la sua cella è comunque già viva
+		# (attivata sopra se mancante), quindi la sua HumanIndividualView continua a disegnarsi
+		# correttamente senza che nulla della "vista" cambi.
+		return
+
 	individual_controller.setup(individual, live_cells[center_macro_coords].renderer, game_data)
 	_reposition_live_cells()
 	# Bugfix (Passo 1 del piano bug camera/extra, 2026-09-02 — CORREGGE una rimozione sbagliata
@@ -3929,15 +4252,21 @@ func _attempt_macro_cell_transition(dx: int, dy: int) -> void:
 
 
 # Piano "trasporto neonati" (2026-09-06) — sincronizza la posizione (e, se serve, la macrocella/
-# view) del figlio a carico di `mother` (il bersaglio di movimento corrente), se ce n'è uno. Vedi
-# HumanIndividual.dependent_child_id per il ciclo di vita completo del campo: questa QUERY fa da
-# sola la propria manutenzione (lo riporta a -1 quando il figlio non si trova più — morto — o ha
-# superato la soglia d'età), nessun altro punto del codice lo tocca mai in scrittura a parte
-# HumanBirthIndividualService (che lo valorizza una volta alla nascita). Chiamata ogni frame sul
-# bersaglio corrente DOPO _check_macro_cell_border_crossing (vedi _process) — costo O(1) nel caso
-# comune (dependent_child_id == -1, la stragrande maggioranza delle madri in ogni momento), una
-# ricerca lineare mirata SOLO quando c'è davvero un figlio da trasportare (mai una scansione
-# generale "chi ha un figlio piccolo" ad ogni frame — è esattamente il costo che volevamo evitare).
+# view) del figlio a carico di `mother`, se ce n'è uno. Vedi HumanIndividual.dependent_child_id per
+# il ciclo di vita completo del campo: questa QUERY fa da sola la propria manutenzione (lo riporta a
+# -1 quando il figlio non si trova più — morto — o ha superato la soglia d'età), nessun altro punto
+# del codice lo tocca mai in scrittura a parte HumanBirthIndividualService (che lo valorizza una
+# volta alla nascita). Funzione già generica fin dall'origine (prende `mother` come parametro, non
+# legge mai `individual`/`center_macro_coords` di GameScene) — GENERALIZZATO IL CHIAMANTE (2026-09-12,
+# richiesta utente, piano multi-individuo, Step 6): PRIMA veniva invocata una sola volta per frame,
+# solo sul bersaglio selezionato/controllato dal player; ora _process la chiama per OGNI individuo
+# attivo (con una Task in corso, vedi active_individuals lì), DOPO _check_macro_cell_border_crossing
+# per QUELLO STESSO individuo (stesso ordine di sempre — se ha appena attraversato un bordo,
+# home_macro_coords/position sono già quelli nuovi quando si sincronizza un suo eventuale figlio a
+# carico, nello stesso frame). Costo O(1) nel caso comune (dependent_child_id == -1, la stragrande
+# maggioranza delle madri in ogni momento), una ricerca lineare mirata SOLO quando c'è davvero un
+# figlio da trasportare (mai una scansione generale "chi ha un figlio piccolo" ad ogni frame — è
+# esattamente il costo che volevamo evitare).
 func _sync_dependent_child_position(mother: HumanIndividual) -> void:
 	if mother.dependent_child_id == -1:
 		return
@@ -3977,19 +4306,41 @@ func _sync_dependent_child_position(mother: HumanIndividual) -> void:
 			human_individual_views[child_view_index].reparent(live_cells[mother.home_macro_coords].container)
 
 
-# Ferma l'individuo esattamente al bordo della macrocella ATTUALE (mai un'intera microcella
+# Ferma `target_individual` esattamente al bordo della macrocella ATTUALE (mai un'intera microcella
 # indietro) sull'asse (dx, dy) che ha tentato l'uscita — usato sia per il bordo del mondo
 # (nessuna macrocella adiacente) sia per un'acqua di destinazione (_is_entry_microcell_water).
-func _block_border_crossing(dx: int, dy: int) -> void:
+# GENERALIZZATA (2026-09-12, richiesta utente — piano multi-individuo, Step 4): parametro esplicito
+# invece del campo `individual` di GameScene, stesso motivo di _attempt_macro_cell_transition sopra.
+# `individual.stop()` (pieno) SOSTITUITO con is_moving/path (stesso bugfix/stesso principio di
+# _attempt_macro_cell_transition sopra — vedi quel commento per il dettaglio): un blocco al bordo
+# non deve cancellare la Task di `target_individual`, solo il tragitto che l'ha portato lì.
+#
+# CASO DIVERSO da _attempt_macro_cell_transition (verificato esplicitamente, richiesta utente,
+# 2026-09-12) — lì "far ripartire lo step" era possibile perché la destinazione ASSOLUTA restava
+# raggiungibile, solo espressa nel riferimento sbagliato (ribasata con successo, vedi quella
+# funzione). QUI non c'è alcuna macrocella nuova in cui ribasare `target`: il motivo per cui questa
+# funzione viene chiamata è proprio che non esiste una macrocella adiacente (bordo del mondo) o che
+# la destinazione è acqua — la destinazione del WalkAction è quindi GENUINAMENTE irraggiungibile in
+# questa direzione, non solo espressa nel riferimento sbagliato. `is_moving = false` qui resta
+# quindi legittimo (l'individuo non può proseguire, punto), ma la Task ATTIVA in questo caso
+# specifico non riparte da sola (nessun altro punto la fa avanzare/interrompere quando il target
+# resta semplicemente irraggiungibile) — GAP NOTO, non risolto in questo passo (fuori scope: servirebbe
+# un meccanismo di "fallimento Task"/target irraggiungibile che oggi non esiste per nessuna Action,
+# non solo per Walk), segnalato qui per quando servirà davvero risolverlo. Caso raro in pratica: un
+# target di Task calcolato oltre il bordo del mondo o dentro l'acqua (es. WarehouseSelectionService/
+# ThoughtTargetSelectionService già filtrano per edifici validi, ma un futuro target non filtrato
+# allo stesso modo potrebbe incapparci).
+func _block_border_crossing(target_individual: HumanIndividual, dx: int, dy: int) -> void:
 	if dx == 1:
-		individual.position.x = float(World.WIDTH) - BORDER_CLAMP_EPSILON
+		target_individual.position.x = float(World.WIDTH) - BORDER_CLAMP_EPSILON
 	elif dx == -1:
-		individual.position.x = 0.0
+		target_individual.position.x = 0.0
 	if dy == 1:
-		individual.position.y = float(World.HEIGHT) - BORDER_CLAMP_EPSILON
+		target_individual.position.y = float(World.HEIGHT) - BORDER_CLAMP_EPSILON
 	elif dy == -1:
-		individual.position.y = 0.0
-	individual.stop()
+		target_individual.position.y = 0.0
+	target_individual.is_moving = false
+	target_individual.path.clear()
 
 
 # Il micro-livello di ogni macrocella è terreno UNIFORME (vedi World.generate_uniform_terrain,
@@ -4745,7 +5096,11 @@ func _on_save_game_file_selected(path: String) -> void:
 func _on_primary_action_pressed(action_id: StringName) -> void:
 	match action_id:
 		&"statistics":
-			statistics_panel.open_dialog(game_data, human_individuals)
+			# buildings (2026-09-12, richiesta utente — tab Statistiche/Edifici) — macro_world.buildings
+			# già Array[Building], stesso principio "dati già pronti" di _refresh_buildings_panel.
+			statistics_panel.open_dialog(
+				game_data, human_individuals, macro_world.buildings if macro_world != null else []
+			)
 		# Slot 1, accanto alle statistiche (2026-09-07, richiesta utente) — 💡, apre TechTreePanel.
 		&"tech_tree":
 			tech_tree_panel.open_dialog(human_folk)
@@ -4792,7 +5147,7 @@ func _on_build_submenu_action_pressed(action_id: StringName) -> void:
 		return
 	_selected_building_type_name = building_type_name
 	_building_ghost = BuildingGhost.new()
-	# Quale sagoma disegnare durante l'anteprima (2026-09-07, richiesta utente, Stone Circle) — vedi
+	# Quale sagoma disegnare durante l'anteprima (2026-09-07, richiesta utente, Pebble Circle) — vedi
 	# BuildingGhost.building_type_name: prima di questo passo l'unico tipo esistente (hut) rendeva
 	# superfluo dirglielo esplicitamente.
 	_building_ghost.building_type_name = building_type_name
@@ -4801,13 +5156,13 @@ func _on_build_submenu_action_pressed(action_id: StringName) -> void:
 
 # Mappatura action_id -> nome tipo edificio (per BuildingCalculator.get_building_rules) — tenuta
 # come funzione dedicata invece di un valore hardcoded dentro _place_building_at, esattamente
-# perché arrivasse un secondo tipo senza dover toccare quel metodo (Stone Circle, 2026-09-07).
+# perché arrivasse un secondo tipo senza dover toccare quel metodo (Pebble Circle, 2026-09-07).
 func _building_type_name_for_action(action_id: StringName) -> String:
 	match action_id:
 		&"build_hut":
 			return "hut"
-		&"build_stone_circle":
-			return "stone_circle"
+		&"build_pebble_circle":
+			return "pebble_circle"
 		&"build_deposit_site":
 			return "deposit_site"
 		# Stick Tent (2026-09-12, richiesta utente — collegamento UI/rendering) — stesso schema
@@ -4942,6 +5297,12 @@ func _demolish_building(building: Building) -> void:
 	# 6) Rimozione vera dall'unica fonte di verità (macro_world.buildings) — DOPO aver letto/mutato
 	# tutto ciò che sopra dipende ancora dall'oggetto vivo (rules/construction_progress/macro_x/
 	# macro_y), PRIMA dei refresh sotto (che rileggono macro_world.buildings da zero).
+	#
+	# is_demolished = true (2026-09-12, richiesta utente — bugfix "deposito nel vuoto") — SUBITO
+	# PRIMA dell'erase, sullo stesso oggetto: vedi Building.is_demolished per il perché questo flag
+	# serve (un individuo con una Task già in corso verso questo edificio tiene un riferimento
+	# diretto che resta valido anche dopo che l'edificio sparisce da questa lista).
+	building.is_demolished = true
 	macro_world.buildings.erase(building)
 
 	# Chiudi il pannello se era proprio questo l'edificio selezionato (stesso principio già seguito
@@ -4957,7 +5318,7 @@ func _demolish_building(building: Building) -> void:
 	if live_cells.has(macro_coords):
 		_refresh_building_visuals(live_cells[macro_coords])
 	_refresh_buildings_panel()
-	# Un edificio is_village_center appena demolito può riaprire lo slot Stone Circle nella BuildBar
+	# Un edificio is_village_center appena demolito può riaprire lo slot Pebble Circle nella BuildBar
 	# (vedi _building_type_availability) — stesso ricalcolo completo/idempotente già usato altrove,
 	# non un caso speciale scritto qui.
 	_refresh_building_slots_buildable()
@@ -4977,7 +5338,7 @@ func _demolish_building(building: Building) -> void:
 
 
 # Vincoli di disponibilità PER TIPO in BuildBar (2026-09-07, richiesta utente — GENERALIZZATA da
-# _refresh_stone_circle_buildable, che copriva solo is_village_center) — vive QUI, non in
+# _refresh_pebble_circle_buildable, che copriva solo is_village_center) — vive QUI, non in
 # BuildingVerificationService.is_position_buildable (che deve restare legata solo a
 # terreno/spazio/sovrapposizioni di UNA posizione, mai a "questo tipo è disponibile ovunque nel
 # mondo/per questo Folk": un vincolo concettualmente diverso, di disponibilità del TIPO, non di
@@ -5003,7 +5364,7 @@ func _refresh_building_slots_buildable() -> void:
 
 
 # Estratta da _refresh_building_slots_buildable (2026-09-07, richiesta utente — bugfix incoerenza
-# Stone Circle: un fantasma già APERTO prima che un vincolo di tipo scattasse continuava a piazzare
+# Pebble Circle: un fantasma già APERTO prima che un vincolo di tipo scattasse continuava a piazzare
 # all'infinito, perché solo l'APERTURA di una nuova selezione in BuildBar veniva controllata, mai il
 # singolo PIAZZAMENTO dentro una selezione già in corso) — stessa identica logica, ora riusabile sia
 # qui (per riflettere lo stato sulla BuildBar) sia da _place_building_at (per un ricontrollo al
@@ -5020,7 +5381,7 @@ func _building_type_availability(rules: BuildingRules) -> Dictionary:
 					village_center_exists = true
 					break
 		if village_center_exists:
-			return {"is_buildable": false, "disabled_tooltip": tr("build_bar_stone_circle_disabled_tooltip")}
+			return {"is_buildable": false, "disabled_tooltip": tr("build_bar_pebble_circle_disabled_tooltip")}
 	if rules.required_idea_id != "" and (human_folk == null or not human_folk.completed_ideas.has(rules.required_idea_id)):
 		var required_idea := IdeaCalculator.get_idea(rules.required_idea_id)
 		# tr() su display_name (2026-09-07, bugfix — vedi Idea.gd/TechTreePanel per gli altri due
@@ -5044,7 +5405,7 @@ func _building_type_availability(rules: BuildingRules) -> Dictionary:
 # il service per lo stato attuale dei criteri.
 # Il fantasma di norma NON viene rimosso da qui: resta al chiamante (_unhandled_input) l'aver
 # deciso di continuare il modo piazzamento dopo un piazzamento riuscito — ECCEZIONE per i tipi
-# is_village_center (2026-09-07, richiesta utente, punto 2 del bugfix Stone Circle): quel fantasma
+# is_village_center (2026-09-07, richiesta utente, punto 2 del bugfix Pebble Circle): quel fantasma
 # si chiude DA SOLO subito dopo un piazzamento riuscito, invece di restare aperto come per la
 # capanna — non avrebbe senso invitare a "piazzarne un altro in fila" per un tipo che diventa
 # indisponibile dopo il primo (vedi la chiamata a _clear_building_ghost in fondo alla funzione).
@@ -5063,9 +5424,9 @@ func _place_building_at(world_position: Vector2) -> void:
 	if rules == null:
 		return
 	# Ricontrollo al momento del piazzamento (2026-09-07, richiesta utente, punto 1 del bugfix
-	# Stone Circle) — NON basta che BuildBar avesse disabilitato lo slot: quel controllo scatta solo
+	# Pebble Circle) — NON basta che BuildBar avesse disabilitato lo slot: quel controllo scatta solo
 	# quando si APRE una nuova selezione, mai dentro una selezione/fantasma già aperto PRIMA che il
-	# vincolo diventasse vero (es. fantasma Stone Circle aperto quando non ne esisteva ancora uno,
+	# vincolo diventasse vero (es. fantasma Pebble Circle aperto quando non ne esisteva ancora uno,
 	# poi il player continuava a piazzarne altri nella stessa sessione di click). Stessa identica
 	# logica già usata per la BuildBar (_building_type_availability), qui riapplicata al singolo
 	# tipo che si sta effettivamente piazzando ORA — non in BuildingVerificationService.
@@ -5129,13 +5490,13 @@ func _place_building_at(world_position: Vector2) -> void:
 	])
 
 	# Aggiorna SUBITO la disponibilità di TUTTI gli slot BuildBar (2026-09-07, richiesta utente) —
-	# non solo se questo piazzamento era esso stesso uno Stone Circle: chiamata incondizionata,
+	# non solo se questo piazzamento era esso stesso uno Pebble Circle: chiamata incondizionata,
 	# costo trascurabile con pochi edifici/tipi (vedi _refresh_building_slots_buildable), niente da
 	# guadagnare filtrando prima per tipo.
 	_refresh_building_slots_buildable()
 
 	# Chiusura automatica del fantasma per i tipi is_village_center (2026-09-07, richiesta utente,
-	# punto 2 del bugfix Stone Circle — vedi il commento in testa alla funzione) — DOPO il refresh
+	# punto 2 del bugfix Pebble Circle — vedi il commento in testa alla funzione) — DOPO il refresh
 	# sopra, non prima: _clear_building_ghost azzera _selected_building_type_name, che
 	# _refresh_building_slots_buildable non usa comunque, ma l'ordine "aggiorna stato, poi chiudi UI"
 	# resta il più naturale dei due.
@@ -5184,7 +5545,7 @@ func _place_building_at(world_position: Vector2) -> void:
 #     magazzino più vicino e il comando manuale a destro-click, senza ripetere il controllo in
 #     ciascuno — vedi BuildingStorageService.gd.
 #   - ThoughtTargetSelectionService.find_best/has_thought_accepting_building (stesso discorso per
-#     accepts_thoughts — un cantiere Stone Circle accetterebbe già pensieri prima di essere finito)
+#     accepts_thoughts — un cantiere Pebble Circle accetterebbe già pensieri prima di essere finito)
 #     — ANCORA APERTO, dominio diverso (pensieri, non risorse fisiche), non toccato in questo passo.
 # AGGIORNATO 2026-09-11 — a differenza di quanto valeva quando questa nota fu scritta,
 # MicroCellRenderer._draw_buildings NON disegna più lo sprite completo a prescindere da is_complete
@@ -5329,7 +5690,7 @@ func _spawn_build_site_placeholders(building: Building) -> void:
 	cell.container.add_child(placeholder_group)
 	for i in range(corner_offsets.size()):
 		# RNG locale seedata per istanza (building.id, indice angolo) — stesso principio già seguito
-		# altrove nel progetto (es. MicroCellRenderer._stone_blob_polygon) per una forma "diversa ma
+		# altrove nel progetto (es. MicroCellRenderer._pebble_blob_polygon) per una forma "diversa ma
 		# stabile" invece di randf_range() globale: qui non è strettamente necessario (il nodo, una
 		# volta creato, non viene mai ricalcolato), ma tiene questo codice coerente con lo stile del
 		# resto del renderer.
@@ -5352,7 +5713,7 @@ func _spawn_build_site_placeholders(building: Building) -> void:
 # per un profilo "storto" invece di un segmento perfettamente dritto — un esagono a 6 vertici (3 per
 # lato: base, metà, punta), non una vera "stroke" con normali per segmento: sufficiente per una
 # forma così piccola/sottile, nessun bisogno della complessità di un vero offset perpendicolare.
-# `rng` passata dal chiamante (stesso principio di _stone_blob_polygon) per variare altezza/
+# `rng` passata dal chiamante (stesso principio di _pebble_blob_polygon) per variare altezza/
 # piegamento per istanza restando deterministica rispetto al seed.
 func _twig_polygon(rng: RandomNumberGenerator) -> PackedVector2Array:
 	var height: float = _BUILD_SITE_PLACEHOLDER_HEIGHT * rng.randf_range(0.8, 1.2)
@@ -5580,7 +5941,7 @@ func _on_building_construction_completed(building: Building) -> void:
 	_refresh_buildings_panel()
 	# AssignHouseService (2026-09-12, richiesta utente — trigger 4a: "quando un edificio
 	# residenziale completa la costruzione") — SOLO se max_residents > 0 (un edificio non
-	# residenziale, es. Stone Circle/Deposit Site, non ha senso farlo passare da qui: nessun posto
+	# residenziale, es. Pebble Circle/Deposit Site, non ha senso farlo passare da qui: nessun posto
 	# da riempire, la funzione stessa sarebbe comunque un no-op per quell'edificio dato che nessun
 	# building con max_residents<=0 viene mai considerato candidato lì dentro, ma il controllo qui
 	# evita il giro a vuoto). Chiamata PRIMA del guard "cella viva" sotto — l'assegnazione non ha
@@ -5665,7 +6026,7 @@ func _building_positions_for_cell(cell: LiveMacroCell) -> Array:
 
 
 # Stessa fonte/filtro di _building_positions_for_cell sopra, ma con l'orientamento (e, da Step 4,
-# l'id, e da Stone Circle 2026-09-07 il tipo, e da Build Task 2026-09-11 lo stato di completamento,
+# l'id, e da Pebble Circle 2026-09-07 il tipo, e da Build Task 2026-09-11 lo stato di completamento,
 # e da Storage Grid 2026-09-11 lo slot_breakdown per il solo deposit_site) inclusi — vedi
 # MicroCellRenderer.set_buildings/buildings (Array[Dictionary], {"position","rotation","id",
 # "building_type_name","is_complete","site_setup_complete","slot_breakdown"}). Funzione separata
@@ -5685,7 +6046,7 @@ func _buildings_for_cell(cell: LiveMacroCell) -> Array:
 				"position": Vector2i(building.micro_x, building.micro_y),
 				"rotation": building.rotation,
 				"id": building.id,
-				# "building_type_name" (2026-09-07, richiesta utente, Stone Circle) — prima di
+				# "building_type_name" (2026-09-07, richiesta utente, Pebble Circle) — prima di
 				# questo passo tutti gli edifici erano capanne, quindi MicroCellRenderer._draw_
 				# buildings non aveva bisogno di distinguere: ora sì, vedi lì.
 				"building_type_name": building.building_type_name,

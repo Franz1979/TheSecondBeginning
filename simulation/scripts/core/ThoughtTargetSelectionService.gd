@@ -42,10 +42,18 @@ static func find_best(
 # in questo) sia da una futura logica di generazione automatica della Task Daydream (pool), come
 # gate PRIMA di assegnare l'intera Task — evita di far camminare/pensare un individuo per poi non
 # trovare nessun edificio idoneo al momento del deposito (vedi la ricognizione dedicata).
+#
+# BUGFIX (2026-09-12, richiesta utente — "la Task Daydream comincia anche se non esiste nessun
+# edificio che accetta pensieri, mentre dovrebbe esserci"): mancava `building.is_complete` nel
+# controllo — un Pebble Circle ancora IN COSTRUZIONE (accepts_thoughts è un flag di TIPO, vero fin
+# da subito indipendentemente dallo stato del cantiere) faceva superare questo gate anche se nessun
+# edificio era davvero pronto a ricevere il deposito. Aggiunto qui, stesso principio già in uso da
+# BuildingStorageService.can_accept/get_max_depositable per il ramo risorse ("un cantiere non ancora
+# finito non deve poter [essere usato] da NESSUN percorso").
 static func has_thought_accepting_building(world: World) -> bool:
 	if world == null:
 		return false
 	for building in world.buildings:
-		if building.rules != null and building.rules.accepts_thoughts:
+		if building.rules != null and building.rules.accepts_thoughts and building.is_complete:
 			return true
 	return false

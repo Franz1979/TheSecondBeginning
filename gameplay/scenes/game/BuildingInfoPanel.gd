@@ -176,7 +176,7 @@ func clear() -> void:
 # ovunque nel progetto per contenuto derivato, es. MicroCellRenderer._rebuild_pebble_multimeshes) —
 # nessuna logica di aggiornamento incrementale slot-per-slot, il costo è trascurabile (al più
 # storage_slot_count nodi, oggi 4-9). Nascosta del tutto per un edificio senza storage
-# (storage_slot_count <= 0, es. Stone Circle) — nessuna griglia vuota fuorviante per un edificio
+# (storage_slot_count <= 0, es. Pebble Circle) — nessuna griglia vuota fuorviante per un edificio
 # che non può mai stoccare nulla.
 func _refresh_storage_grid(building: Building) -> void:
 	for child in storage_grid.get_children():
@@ -314,7 +314,7 @@ func _build_storage_slot(slot_data: Dictionary) -> Control:
 # sopra: un riquadro per SLOT (building.rules.max_residents, non per residente effettivo — uno
 # slot senza residente resta vuoto/grigio, stesso trattamento di uno slot storage libero), colonne
 # = ceil(sqrt(max_residents)). Nascosta del tutto per un edificio non residenziale
-# (max_residents<=0, es. Stone Circle/Deposit Site) — stesso principio "nessuna griglia vuota
+# (max_residents<=0, es. Pebble Circle/Deposit Site) — stesso principio "nessuna griglia vuota
 # fuorviante" già seguito da StorageGrid. Piazzata SOPRA StorageGrid nell'ordine dei nodi (vedi
 # BuildingInfoPanel.tscn) — richiesta esplicita utente: "se residential, sopra quello dei
 # residenti" — un edificio come Hut, che ha ENTRAMBE le griglie (storage_slot_count E

@@ -1,0 +1,12 @@
+[gd_resource type="Resource" script_class="TaskDefinition" format=3]
+
+[ext_resource type="Script" uid="uid://1t46mu8mn6hq" path="res://gameplay/scripts/tasks/task_definition.gd" id="1_def"]
+[ext_resource type="Resource" path="res://gameplay/scripts/tasks/definitions/step_walk_transport_source.tres" id="2_walk_source"]
+[ext_resource type="Resource" path="res://gameplay/scripts/tasks/definitions/step_retrieve.tres" id="3_retrieve"]
+[ext_resource type="Resource" path="res://gameplay/scripts/tasks/definitions/step_walk_transport_destination.tres" id="4_walk_destination"]
+[ext_resource type="Resource" path="res://gameplay/scripts/tasks/definitions/step_unload_transport.tres" id="5_unload"]
+
+[resource]
+script = ExtResource("1_def")
+task_name = "task_transport_name"
+steps = [ExtResource("2_walk_source"), ExtResource("3_retrieve"), ExtResource("4_walk_destination"), ExtResource("5_unload")]

@@ -1,5 +1,6 @@
 keys,en
-build_bar_stone_circle_disabled_tooltip,Not buildable: a village center already exists
+build_bar_pebble_circle_tooltip,Pebble Circle
+build_bar_pebble_circle_disabled_tooltip,Not buildable: a village center already exists
 build_bar_deposit_site_tooltip,Deposit Site
 build_bar_stick_tent_tooltip,Stick Tent
 build_bar_requires_idea_tooltip,Requires: {idea}
@@ -39,7 +40,7 @@ individual_house_id_label,House ID: {id}
 selection_title_name,Name: {name}
 selection_title_type,Type: {type}
 game_info_tab_buildings,Buildings
-buildings_panel_summary_label,Buildings: {total} ({complete} complete, {under_construction} under construction)
+buildings_panel_summary_label,"Buildings: {total} ({complete} complete, {under_construction} under construction)"
 buildings_panel_center_button_tooltip,Center and select
 game_info_tab_debug,Debug: Tasks
 task_debug_panel_header,Debug: Tasks
@@ -59,6 +60,7 @@ building_storage_caption,Storage
 building_id_label,ID: {id}
 statistics_tab_births,Births
 statistics_tab_population,Population
+statistics_tab_buildings,Buildings
 tech_tree_tooltip,Tech tree
 tech_tree_title,Tech tree
 tech_tree_completed_caption,Completed ideas

@@ -31,13 +31,13 @@ func _ready() -> void:
 # implementa davvero l'azione richiamerà questo stesso metodo con enabled=true (default, comporta-
 # mento invariato per tutti i chiamanti esistenti).
 #
-# icon_node (opzionale, 2026-09-07, richiesta utente — Stone Circle: nessun emoji Unicode rendeva
-# bene "cerchio di pietre", vedi StoneCircleIcon) — un Control disegnato a mano al posto del testo-
+# icon_node (opzionale, 2026-09-07, richiesta utente — Pebble Circle: nessun emoji Unicode rendeva
+# bene "cerchio di sassolini", vedi PebbleCircleIcon) — un Control disegnato a mano al posto del testo-
 # emoji, per gli slot dove nessun singolo carattere basta. Se fornito, sostituisce icon_text
 # (svuotato) ed è aggiunto come figlio dello slot, con ancore+offset impostati DIRETTAMENTE (non
 # via set_anchors_preset — BUGFIX 2026-09-07, richiesta utente: "il bottone sembra vuoto" — il
 # preset di default usa resize_mode=PRESET_MODE_MINSIZE, che dimensiona il figlio sulla sua PROPRIA
-# minimum size, zero per un Control senza testo/figli come StoneCircleIcon, invece di farlo
+# minimum size, zero per un Control senza testo/figli come PebbleCircleIcon, invece di farlo
 # combaciare col rect del bottone) così riempie sempre l'intero bottone qualunque sia la sua
 # dimensione, senza ambiguità di resize_mode. Default null: comportamento invariato (testo/emoji)
 # per tutti i chiamanti esistenti.
@@ -77,7 +77,7 @@ func set_slot_toggled(index: int, is_active: bool) -> void:
 
 
 # Disabilita/riabilita uno slot GIÀ configurato, sostituendone anche il tooltip (2026-09-07,
-# richiesta utente — Stone Circle: un tipo di edificio disponibile solo finché non ne esiste già
+# richiesta utente — Pebble Circle: un tipo di edificio disponibile solo finché non ne esiste già
 # uno nel mondo). A differenza di set_slot_toggled sopra (che cambia SOLO la tinta, per bottoni
 # ancora cliccabili — es. i toggle mostra/nascondi), questo rende il bottone davvero non
 # cliccabile: `pressed` non scatta più su un Button con disabled=true, nessuna disconnessione del

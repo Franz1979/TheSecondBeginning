@@ -5,7 +5,7 @@ extends RefCounted
 # generica... in cui potremo mettere tutte le icone che ci servono"). Nessuno stato (RefCounted,
 # solo costanti/funzioni statiche, mai istanziato) — stesso principio "fabbrica statica" già usato
 # da TaskFactory/CaloricCalculator. Vive in simulation/scripts/ui/ insieme a IconButtonRow/
-# StoneCircleIcon/AnimalSilhouetteIcon: stessa cartella già stabilita per componenti/dati di
+# PebbleCircleIcon/AnimalSilhouetteIcon: stessa cartella già stabilita per componenti/dati di
 # presentazione puramente visivi, indipendentemente dal fatto che il game state che rappresentano
 # viva in simulation/ o gameplay/ (vedi CLAUDE.md, confine Building/simulation — qui non si applica:
 # non c'è stato, solo lookup).
@@ -25,19 +25,19 @@ extends RefCounted
 # (materiale da costruzione DISTINTO, vedi hut.tres.required_materials, ancora senza .tres/icona
 # propria — 🪵/🪨 restano liberi per quando "wood"/"stone" diventeranno vere risorse). Nessun emoji
 # Unicode rende bene "rametti sparsi"/"ghiaia", stesso identico problema già risolto a mano per
-# StoneCircleIcon (vedi sotto). Questo Dictionary resta comunque il punto d'ingresso per una futura
+# PebbleCircleIcon (vedi sotto). Questo Dictionary resta comunque il punto d'ingresso per una futura
 # risorsa che un emoji SEMPLICE rappresenta già bene (es. un domani "egg" -> 🥚).
 const RESOURCE_ICONS := {}
 
 
 # Icone DISEGNATE A MANO (Control, non emoji) per SecondaryResourceRules.secondary_resource_name
-# (2026-09-09, richiesta utente) — stesso principio già in uso per BuildingRules "stone_circle"
-# (StoneCircleIcon sotto): quando nessun emoji Unicode rende bene il concetto, un piccolo Control
+# (2026-09-09, richiesta utente) — stesso principio già in uso per BuildingRules "pebble_circle"
+# (PebbleCircleIcon sotto): quando nessun emoji Unicode rende bene il concetto, un piccolo Control
 # con solo _draw() lo sostituisce. "pebble" -> PebbleIcon (sassolini piccoli sparsi, non un macigno
 # singolo), "stick" -> StickIcon (rametti spezzati, non bacchette/tronco). Ogni chiamata a
 # get_resource_icon_node ritorna una ISTANZA NUOVA (.new(), mai condivisa): un Control non può
 # avere più di un parent contemporaneamente, stesso principio già seguito da BuildBar per
-# StoneCircleIcon.new(). Il chiamante (HumanIndividualInfoPanel) decide dove/come inserirla.
+# PebbleCircleIcon.new(). Il chiamante (HumanIndividualInfoPanel) decide dove/come inserirla.
 #
 # preload(), non il nome classe nudo (bugfix: "Assigned value for constant... isn't a constant
 # expression" — un riferimento diretto a class_name dentro un Dictionary letterale non è una
@@ -55,11 +55,11 @@ const RESOURCE_ICON_NODES := {
 # di BuildBar.BUILDING_SLOT_INDEX_BY_TYPE, non un enum chiuso: coerente col resto del progetto,
 # dove building_type_name è sempre la chiave di confronto (mai il nome del file .tres).
 #
-# "stone_circle" ASSENTE apposta da QUESTO Dictionary (emoji): non ha un'icona emoji, nessun emoji
-# Unicode rende bene "cerchio di pietre" (due giri di feedback: 🗿 leggeva come una testa dell'Isola
+# "pebble_circle" ASSENTE apposta da QUESTO Dictionary (emoji): non ha un'icona emoji, nessun emoji
+# Unicode rende bene "cerchio di sassolini" (due giri di feedback: 🗿 leggeva come una testa dell'Isola
 # di Pasqua, 🪨 come un mucchio di sassi). Ha invece un Control disegnato a mano — vedi
 # BUILDING_ICON_NODES/get_building_icon_node sotto, STESSO principio già in uso per "pebble"/"stick"
-# in RESOURCE_ICON_NODES sopra (BUGFIX 2026-09-09: prima StoneCircleIcon.new() era istanziata
+# in RESOURCE_ICON_NODES sopra (BUGFIX 2026-09-09: prima PebbleCircleIcon.new() era istanziata
 # direttamente e solo in BuildBar.gd, l'unica icona disegnata rimasta fuori da questo registro
 # centrale — commento qui obsoleto di conseguenza, corretto).
 #
@@ -70,7 +70,7 @@ const BUILDING_ICONS := {
 	"deposit_site": "🟫",
 	"hut": "🛖",
 	# Stick Tent (2026-09-12, richiesta utente — collegamento UI/rendering) — "⛺" rende già bene da
-	# sé "tenda", nessun problema di leggibilità come per stone_circle sopra: non serve un'icona
+	# sé "tenda", nessun problema di leggibilità come per pebble_circle sopra: non serve un'icona
 	# disegnata a mano.
 	"stick_tent": "⛺",
 }
@@ -79,10 +79,10 @@ const BUILDING_ICONS := {
 # Icone DISEGNATE A MANO per BuildingRules.building_name/Building.building_type_name (2026-09-09,
 # richiesta utente — "quel commento è obsoleto... farei come facciamo sia per sticks icon che per
 # pebble icon, che passano nell'icon registry"): stesso identico principio/stessa struttura di
-# RESOURCE_ICON_NODES sopra, dominio edifici invece che risorse. "stone_circle" è l'unica entry per
+# RESOURCE_ICON_NODES sopra, dominio edifici invece che risorse. "pebble_circle" è l'unica entry per
 # ora (vedi commento su BUILDING_ICONS sopra per il perché non ha un'icona emoji).
 const BUILDING_ICON_NODES := {
-	"stone_circle": preload("res://simulation/scripts/ui/StoneCircleIcon.gd"),
+	"pebble_circle": preload("res://simulation/scripts/ui/PebbleCircleIcon.gd"),
 }
 
 
@@ -108,9 +108,17 @@ const BUILDING_ICON_NODES := {
 # scartato): il lampeggio spara una volta sola all'assegnazione, non differenzia più i quattro step
 # interni (Walk/SetupSite/Clear/Build) — coerente con "pickup" sotto, che lampeggia una volta sola
 # per l'intera haul_resource.
+
+# "transport" (2026-09-12, richiesta utente — lampeggio sulla destinazione della Transport Task,
+# "come accade per la build, e per la pick up task... metti un altro simbolo di scarico, non so se
+# una carriola sia possibile") — nessuna carriola in Unicode standard (🛒/🧺 leggono come
+# spesa/bucato, non trasporto merci; 🚚 è un veicolo, sproporzionato per un individuo a piedi): "📦"
+# (pacco) scelto perché legge chiaramente come "consegna/scarico merce" restando coerente in scala
+# con ✋/🔨 sopra, senza somigliare a nessuno dei due.
 const COMMAND_ICONS := {
 	"pickup": "✋",
 	"build": "🔨",
+	"transport": "📦",
 }
 
 
@@ -131,7 +139,7 @@ static func get_resource_icon_node(resource_name: String) -> Control:
 	return RESOURCE_ICON_NODES[resource_name].new()
 
 
-# "" se building_type_name non ha ancora un'icona emoji qui (es. "stone_circle", che ne ha una
+# "" se building_type_name non ha ancora un'icona emoji qui (es. "pebble_circle", che ne ha una
 # DISEGNATA invece — vedi get_building_icon_node sotto, chiamante che deve provare entrambe segue
 # lo stesso ordine "icona vera poi emoji" già descritto sopra per get_resource_icon_node/
 # get_resource_icon) — il chiamante decide il fallback, questa funzione non lo impone.
@@ -216,7 +224,7 @@ static func _find_icon_texture_path(name: String) -> String:
 # script, l'opposto della convenzione "aggiungi un file quando vuoi" voluta qui. Istanza NUOVA ad
 # ogni chiamata (stesso principio di get_resource_icon_node), STRETCH_MODE keep_aspect_centered
 # per non deformare l'immagine qualunque sia la sua proporzione originale, mouse_filter=IGNORE
-# stesso motivo di StoneCircleIcon/PebbleIcon/StickIcon (i click devono raggiungere il Button sotto).
+# stesso motivo di PebbleCircleIcon/PebbleIcon/StickIcon (i click devono raggiungere il Button sotto).
 static func get_icon_texture_node(name: String) -> Control:
 	var path := _find_icon_texture_path(name)
 	if path == "":

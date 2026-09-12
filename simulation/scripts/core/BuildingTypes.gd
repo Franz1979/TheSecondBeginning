@@ -8,7 +8,7 @@ class_name BuildingTypes
 # `extends` (stesso stile di HumanTypes.gd/ExpiredObjectTypes.gd) — puro contenitore di enum, mai
 # istanziato.
 
-# RESIDENTIAL (hut), POLITICAL (stone_circle), STORAGE (deposit_site, 2026-09-08) — nessun caso
+# RESIDENTIAL (hut), POLITICAL (pebble_circle), STORAGE (deposit_site, 2026-09-08) — nessun caso
 # ipotetico anticipato, stesso principio già seguito da ExpiredObjectType/NotificationPopupType:
 # altre categorie si aggiungono qui quando serviranno davvero. Non ancora consultato da BuildBar/
 # altra UI in questo passo — solo il dato, pronto per i futuri sottomenu per categoria (quando i

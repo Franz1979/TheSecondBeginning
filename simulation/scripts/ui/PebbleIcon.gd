@@ -5,13 +5,13 @@ extends Control
 # richiesta utente — dopo feedback: l'emoji 🪨 [un macigno singolo] non rende "tanti sassolini
 # piccoli", nessun emoji Unicode rende bene "ghiaia sparsa" nemmeno cercando alternative (castagna/
 # pietra da curling/pallino, tutte scartate). Disegnata a mano, stesso principio di StickIcon/
-# StoneCircleIcon. 🪨 stesso liberato per un futuro "stone" [materiale da costruzione DISTINTO,
-# vedi stone_circle.tres.required_materials, ancora senza .tres/icona propria] — vedi IconRegistry.
+# PebbleCircleIcon. 🪨 stesso liberato per un futuro "stone" [materiale da costruzione DISTINTO,
+# vedi pebble_circle.tres.required_materials, ancora senza .tres/icona propria] — vedi IconRegistry.
 #
-# A differenza di StoneCircleIcon (6 massi GRANDI disposti in un cerchio PERFETTO — leggibile come
+# A differenza di PebbleCircleIcon (sassolini disposti in un cerchio PERFETTO — leggibile come
 # "struttura", voluto lì), qui le posizioni sono uno sparpagliamento IRREGOLARE (mai un pattern
 # geometrico riconoscibile) di pallini PICCOLI e di dimensione variabile — è proprio questa
-# irregolarità/piccolezza a leggere come "ghiaia" invece che "cerchio di pietre" o "un macigno
+# irregolarità a leggere come "ghiaia sparsa" invece che "cerchio di sassolini" o "un macigno
 # solo". Offset FISSI (mai randf(): icona statica, nessun bisogno di variare tra un redraw e
 # l'altro, stesso principio "nessun unseeded randf()" già seguito altrove nel progetto).
 
@@ -33,7 +33,7 @@ const PEBBLES := [
 
 
 func _ready() -> void:
-	# IGNORE (stesso principio di StoneCircleIcon/StickIcon): puro disegno, mai un bersaglio di
+	# IGNORE (stesso principio di PebbleCircleIcon/StickIcon): puro disegno, mai un bersaglio di
 	# input — il tooltip sul riquadro trasportato vive sul CONTENITORE (carried_resource_box), non
 	# su questa icona, vedi HumanIndividualInfoPanel._update_carried_resource_box.
 	mouse_filter = Control.MOUSE_FILTER_IGNORE

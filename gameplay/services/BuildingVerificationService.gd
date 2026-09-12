@@ -67,7 +67,7 @@ extends RefCounted
 # rispetto al NUOVO edificio (SEMPRE attivo, anche se il NUOVO edificio non ha porta propria —
 # has_door riguarda solo se l'edificio che si sta piazzando ha una porta da tenere sgombra, non se
 # può bloccare quella di un altro) — ma NON rispetto all'edificio ESISTENTE: se quello non ha porta
-# (rules.has_door = false, es. Stone Circle/Deposit Site) non c'è nulla da proteggere, va saltato
+# (rules.has_door = false, es. Pebble Circle/Deposit Site) non c'è nulla da proteggere, va saltato
 # (BUGFIX 2026-09-08, richiesta utente: un Deposit Site bloccava la costruzione sul lato sud, la sua
 # `rotation` di default/SOUTH veniva letta come se fosse una porta vera anche con has_door=false).
 

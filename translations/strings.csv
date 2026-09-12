@@ -43,6 +43,7 @@ statistics_tooltip,Statistiche
 statistics_tab_mortality,Mortalità
 statistics_tab_births,Nascite
 statistics_tab_population,Popolazione
+statistics_tab_buildings,Edifici
 tech_tree_tooltip,Albero delle tecnologie
 tech_tree_title,Albero delle tecnologie
 tech_tree_completed_caption,Idee completate
@@ -54,10 +55,11 @@ fertile_women_list,Donne fertili
 death_list,Elenco morti
 center_on_selection_tooltip,Centra la camera sulla selezione corrente
 building_hut,Capanna
-building_stone_circle,Cerchio di pietre
+building_pebble_circle,Cerchio di sassolini
 building_deposit_site,Sito di deposito
 building_stick_tent,Tenda di rami
-build_bar_stone_circle_disabled_tooltip,Non costruibile: esiste già un centro villaggio
+build_bar_pebble_circle_tooltip,Cerchio di sassolini
+build_bar_pebble_circle_disabled_tooltip,Non costruibile: esiste già un centro villaggio
 build_bar_deposit_site_tooltip,Sito di deposito
 build_bar_stick_tent_tooltip,Tenda di rami
 build_bar_requires_idea_tooltip,Richiede: {idea}
@@ -111,7 +113,17 @@ task_unload_resource_step_unload,Scaricando
 task_haul_resource_name,Trasportare risorsa al magazzino
 task_haul_resource_step_walk,Andando a raccogliere
 task_haul_resource_step_pickup,Raccogliendo
-carried_resource_tooltip_pebble,Ghiaia
+task_transport_name,Trasportare materiale
+task_transport_step_walk_to_source,Andando a prelevare
+task_transport_step_retrieve,Prelevando
+task_transport_step_walk_to_destination,Andando a consegnare
+task_transport_step_unload,Consegnando
+transport_dialog_title,Trasporta risorsa
+transport_dialog_message,Scegli cosa prelevare da {building}:
+transport_dialog_quantity_label,Quantità:
+transport_dialog_confirm,Conferma
+transport_dialog_cancel,Annulla
+carried_resource_tooltip_pebble,Sassi
 carried_resource_tooltip_stick,Rametti
 pregnant,Incinta
 individual_stamina_label,Forza lavoro:
@@ -124,7 +136,7 @@ individual_house_id_label,ID Casa: {id}
 selection_title_name,Nome: {name}
 selection_title_type,Tipo: {type}
 game_info_tab_buildings,Edifici
-buildings_panel_summary_label,Edifici: {total} ({complete} completi, {under_construction} in costruzione)
+buildings_panel_summary_label,"Edifici: {total} ({complete} completi, {under_construction} in costruzione)"
 buildings_panel_center_button_tooltip,Centra e seleziona
 game_info_tab_debug,Debug: Task
 task_debug_panel_header,Debug: Task

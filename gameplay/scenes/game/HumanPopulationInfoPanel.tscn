@@ -26,6 +26,10 @@ theme_override_font_sizes/font_size = 11
 layout_mode = 2
 theme_override_font_sizes/font_size = 11
 
+[node name="HousingLabel" type="Label" parent="SummaryRow"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 11
+
 [node name="ExpandButton" type="Button" parent="SummaryRow"]
 custom_minimum_size = Vector2(28, 0)
 layout_mode = 2
