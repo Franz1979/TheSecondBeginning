@@ -8,15 +8,28 @@ enum Sex {
 	FEMALE,
 }
 
-# Cinque fasce (non tre come GameTypes.AgeBand, tarato sugli animali): CHILD (infanzia,
+# Sei fasce (non tre come GameTypes.AgeBand, tarato sugli animali): INFANT (0-1 anno circa,
+# dipendenza dalla madre/immobilità — PROMOSSA a fascia vera e propria 2026-09-12, richiesta utente:
+# prima era un'eccezione booleana separata, gestita fuori da questo enum tramite HumanIndividual
+# Controller.min_movement_age_years/GameScene._sync_dependent_child_position — decisione
+# esplicitamente ribaltata per renderla dinamica per Era come le altre fasce; quella funzione è
+# stata RIMOSSA nello stesso passo in cui INFANT è stata collegata al gameplay vero, sostituita da
+# un confronto diretto su age_band == INFANT nei suoi stessi due consumatori), CHILD (infanzia,
 # pre-riproduttiva), TEENAGER (adolescenza, ancora non fertile, stamina ridotta — aggiunta
 # 2026-09-04, richiesta utente), FERTILE_ADULT (età riproduttiva), MATURE_ADULT (adulto ma
 # tipicamente non più fertile, soprattutto per le donne — da qui la necessità di durate
 # differenziate per sesso, vedi HumanRules.age_band_durations_male/female), OLD. Nomi di membro
 # deliberatamente diversi da GameTypes.AgeBand (YOUNG/ADULT/OLD): qui la fascia adulta è divisa in
 # due per riflettere la fertilità, un asse che l'animale non modella a questo livello di dettaglio.
-# L'età 0-1 (immobilità) resta un'eccezione booleana gestita a parte, non una fascia propria.
+#
+# INFANT DELIBERATAMENTE in TESTA (indice 0, prima di CHILD): è cronologicamente la prima fascia
+# della vita — ogni indice successivo (CHILD, TEENAGER, ecc.) si sposta di conseguenza rispetto a
+# prima, automaticamente, per chiunque referenzi questi valori per NOME (mai un letterale numerico
+# in tutto il progetto, verificato). Collegamento al gameplay (movimento/aggancio alla madre,
+# Action.disallowed_age_bands + HumanIndividual.assign_task) FATTO 2026-09-12 — vedi HumanIndividual
+# Controller.gd/GameScene.gd/Action.gd per i punti reali.
 enum AgeBand {
+	INFANT,
 	CHILD,
 	TEENAGER,
 	FERTILE_ADULT,

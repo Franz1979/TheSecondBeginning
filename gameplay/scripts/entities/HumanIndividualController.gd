@@ -14,24 +14,13 @@ extends RefCounted
 
 const CELL_SIZE: int = 10 # stesso fattore pixel/microcella di MicroCellRenderer/HumanIndividualView
 
-# Soglia d'immobilità (anni) — richiesta utente, 2026-09-04: un individuo troppo giovane non può
-# ricevere un ordine di movimento. NON più una costante fissa (era 1.0 hardcoded) — aggiornata
-# 2026-09-06 (piano "trasporto neonati"): riusa DELIBERATAMENTE era_rules.min_birth_spacing_years,
-# lo stesso campo che già determina per quanti anni un figlio "blocca" una nuova gravidanza della
-# madre (HumanConceptionIndividualService) — stessa soglia concettuale, "il figlio è ancora troppo
-# piccolo per contare come indipendente", solo applicata a un secondo consumo (qui: non cammina da
-# solo; là: la madre non può riconcepire). Confermato con l'utente: un ritocco futuro di quel
-# valore sposta ENTRAMBI i comportamenti insieme, deliberatamente, non per coincidenza. Risolto
-# fresco ad ogni chiamata (EraCalculator.get_era_rules fa un load() cachato da Godot, costo
-# trascurabile) invece che passato/cachato qui — coerente con GameTimeService, che lo rilegge ogni
-# volta serve. Fallback 0.0 (nessun blocco) se l'Era risultasse sconosciuta — caso difensivo, non
-# dovrebbe capitare con current_era_name sempre valorizzato. PUBBLICA (non _prefissata) perché
-# GameScene._sync_dependent_child_position la riusa per la STESSA identica soglia (quando un
-# figlio trasportato smette di esserlo) — un solo posto di verità, mai due soglie che potrebbero
-# disallinearsi.
-func min_movement_age_years() -> float:
-	var era_rules := EraCalculator.get_era_rules(game_data.current_era_name)
-	return float(era_rules.min_birth_spacing_years) if era_rules != null else 0.0
+# min_movement_age_years() RIMOSSA (2026-09-12, richiesta utente — collegamento di HumanTypes.
+# AgeBand.INFANT al gameplay): l'eccezione booleana numerica basata su era_rules.min_birth_spacing_
+# years è sostituita da un vero age_band (age_band == HumanTypes.AgeBand.INFANT, vedi _try_set_
+# target sotto), coerente con l'introduzione della fascia INFANT come fascia a pieno titolo
+# (HumanTypes.gd). Nessun altro punto del progetto la referenziava (verificato — solo _try_set_
+# target qui e GameScene._sync_dependent_child_position, entrambi aggiornati in questo stesso
+# passo), quindi rimossa per intero invece di lasciata come funzione morta.
 
 var individual: HumanIndividual
 var reference_node: Node2D # nodo il cui spazio locale coincide con la griglia microcella (renderer)
@@ -70,18 +59,34 @@ func handle_input(event: InputEvent) -> void:
 const CROSS_BORDER_MARGIN: float = 1.0
 
 
-# Reietta silenziosamente un click-to-move su un individuo troppo giovane (< _min_movement_age_
-# years()) — stesso identico pattern del controllo is_selected subito sopra (return silenzioso,
-# nessun log/segnale: qui il comando semplicemente non è disponibile, non è un errore da segnalare
-# all'utente). Esercitato per la prima volta col piano "trasporto neonati" (2026-09-06, vedi
-# HumanBirthIndividualService) — prima nessun individuo in gioco aveva mai età sotto soglia.
+# Reietta silenziosamente un click-to-move su un individuo INFANT — stesso identico pattern del
+# controllo is_selected subito sopra (return silenzioso, nessun log/segnale: qui il comando
+# semplicemente non è disponibile, non è un errore da segnalare all'utente). Esercitato per la
+# prima volta col piano "trasporto neonati" (2026-09-06, vedi HumanBirthIndividualService) — prima
+# nessun individuo in gioco aveva mai età sotto soglia.
+#
+# age_band == INFANT (2026-09-12, richiesta utente — collegamento di HumanTypes.AgeBand.INFANT al
+# gameplay) SOSTITUISCE il precedente confronto numerico "age < min_movement_age_years()" (funzione
+# rimossa, vedi sopra) — stessa identica formula già in uso ovunque nel progetto per risolvere
+# l'age_band corrente di un individuo (HumanCalculator.get_age_band + game_data.era_effective_
+# age_band_durations_male/female, mai le durate BASE di HumanRules). Risolto QUI, non delegato a
+# GameScene: questo controller ha già game_data (vedi sopra), nessuna nuova dipendenza necessaria.
+# Anche PASSATO a individual.set_target sotto (ora obbligatorio, vedi HumanIndividual.assign_task)
+# così il guard generico "questo individuo può eseguire questa Task?" lo riverifica una seconda
+# volta a valle — nessuna contraddizione: qui il rifiuto è silenzioso e mirato (niente Task
+# costruita affatto), il guard generico è il backstop per ogni ALTRO percorso di assegnazione che
+# non ha un proprio controllo dedicato come questo.
 func _try_set_target(mouse_pos_microcells: Vector2) -> void:
 	if not individual.is_selected:
 		return
-	var age: float = float(game_data.year - individual.birth_year_virtual)
-	if age < min_movement_age_years():
+	var age := float(game_data.year - individual.birth_year_virtual)
+	var age_band := HumanCalculator.get_age_band(
+		game_data.era_effective_age_band_durations_male, game_data.era_effective_age_band_durations_female,
+		individual.sex, age
+	)
+	if age_band == HumanTypes.AgeBand.INFANT:
 		return
 	individual.set_target(Vector2(
 		clamp(mouse_pos_microcells.x, -CROSS_BORDER_MARGIN, float(World.WIDTH) + CROSS_BORDER_MARGIN),
 		clamp(mouse_pos_microcells.y, -CROSS_BORDER_MARGIN, float(World.HEIGHT) + CROSS_BORDER_MARGIN)
-	))
+	), age_band)

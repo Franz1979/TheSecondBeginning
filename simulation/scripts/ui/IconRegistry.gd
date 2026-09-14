@@ -115,10 +115,17 @@ const BUILDING_ICON_NODES := {
 # spesa/bucato, non trasporto merci; 🚚 è un veicolo, sproporzionato per un individuo a piedi): "📦"
 # (pacco) scelto perché legge chiaramente come "consegna/scarico merce" restando coerente in scala
 # con ✋/🔨 sopra, senza somigliare a nessuno dei due.
+# "task_rejected" (2026-09-13, richiesta utente — bugfix: l'icona di comando compariva comunque
+# anche quando HumanIndividual.assign_task rifiutava l'assegnazione, es. INFANT/vincolo di Task —
+# il player vedeva "manina"/"martelletto" per una Task che non sarebbe mai partita) — "❌" ha già un
+# colore nativo rosso nella maggior parte dei font emoji, nessun modulate custom necessario, stesso
+# principio "colori nativi dell'emoji" già dichiarato per pickup/build/transport in
+# GameScene._spawn_command_blink_effect.
 const COMMAND_ICONS := {
 	"pickup": "✋",
 	"build": "🔨",
 	"transport": "📦",
+	"task_rejected": "❌",
 }
 
 

@@ -2,6 +2,16 @@
 
 [ext_resource type="Script" path="res://gameplay/scenes/game/HumanIndividualInfoPanel.gd" id="1_hind"]
 
+[sub_resource type="FontVariation" id="FontVariation_queued_tasks_italic"]
+variation_transform = Transform2D(1, 0, 0.2, 1, 0, 0)
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_section_box"]
+bg_color = Color(0.28, 0.42, 0.6, 1)
+corner_radius_top_left = 4
+corner_radius_top_right = 4
+corner_radius_bottom_right = 4
+corner_radius_bottom_left = 4
+
 [sub_resource type="StyleBoxFlat" id="StyleBoxFlat_stamina_bg"]
 bg_color = Color(0.35, 0.35, 0.35, 1)
 corner_radius_top_left = 4
@@ -23,6 +33,90 @@ corner_radius_top_right = 4
 corner_radius_bottom_right = 4
 corner_radius_bottom_left = 4
 
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_hunger_fill"]
+bg_color = Color(0.9, 0.55, 0.15, 1)
+corner_radius_top_left = 4
+corner_radius_top_right = 4
+corner_radius_bottom_right = 4
+corner_radius_bottom_left = 4
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_thirst_fill"]
+bg_color = Color(0.2, 0.7, 0.9, 1)
+corner_radius_top_left = 4
+corner_radius_top_right = 4
+corner_radius_bottom_right = 4
+corner_radius_bottom_left = 4
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_health_fill"]
+bg_color = Color(0.3, 0.75, 0.35, 1)
+corner_radius_top_left = 4
+corner_radius_top_right = 4
+corner_radius_bottom_right = 4
+corner_radius_bottom_left = 4
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_happiness_fill"]
+bg_color = Color(0.95, 0.85, 0.2, 1)
+corner_radius_top_left = 4
+corner_radius_top_right = 4
+corner_radius_bottom_right = 4
+corner_radius_bottom_left = 4
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_loyalty_fill"]
+bg_color = Color(0.6, 0.35, 0.75, 1)
+corner_radius_top_left = 4
+corner_radius_top_right = 4
+corner_radius_bottom_right = 4
+corner_radius_bottom_left = 4
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_leadership_fill"]
+bg_color = Color(0.85, 0.2, 0.2, 1)
+corner_radius_top_left = 4
+corner_radius_top_right = 4
+corner_radius_bottom_right = 4
+corner_radius_bottom_left = 4
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_builder_fill"]
+bg_color = Color(0.15, 0.55, 0.5, 1)
+corner_radius_top_left = 4
+corner_radius_top_right = 4
+corner_radius_bottom_right = 4
+corner_radius_bottom_left = 4
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_management_fill"]
+bg_color = Color(0.3, 0.25, 0.75, 1)
+corner_radius_top_left = 4
+corner_radius_top_right = 4
+corner_radius_bottom_right = 4
+corner_radius_bottom_left = 4
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_transporter_fill"]
+bg_color = Color(0.85, 0.3, 0.6, 1)
+corner_radius_top_left = 4
+corner_radius_top_right = 4
+corner_radius_bottom_right = 4
+corner_radius_bottom_left = 4
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_gathering_fill"]
+bg_color = Color(0.55, 0.65, 0.15, 1)
+corner_radius_top_left = 4
+corner_radius_top_right = 4
+corner_radius_bottom_right = 4
+corner_radius_bottom_left = 4
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_cognition_fill"]
+bg_color = Color(0.75, 0.75, 0.85, 1)
+corner_radius_top_left = 4
+corner_radius_top_right = 4
+corner_radius_bottom_right = 4
+corner_radius_bottom_left = 4
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_hunting_fill"]
+bg_color = Color(0.2, 0.45, 0.25, 1)
+corner_radius_top_left = 4
+corner_radius_top_right = 4
+corner_radius_bottom_right = 4
+corner_radius_bottom_left = 4
+
 [sub_resource type="StyleBoxFlat" id="StyleBoxFlat_tool_slot"]
 bg_color = Color(0.25, 0.25, 0.25, 0.35)
 border_width_left = 1
@@ -38,69 +132,369 @@ corner_radius_bottom_left = 3
 [node name="HumanIndividualInfoPanel" type="VBoxContainer"]
 script = ExtResource("1_hind")
 
-[node name="SexLabel" type="Label" parent="."]
-layout_mode = 2
-theme_override_font_sizes/font_size = 11
-
-[node name="AgeLabel" type="Label" parent="."]
-layout_mode = 2
-theme_override_font_sizes/font_size = 11
-
 [node name="ActivityLabel" type="Label" parent="."]
 layout_mode = 2
 theme_override_font_sizes/font_size = 11
 autowrap_mode = 2
 
-[node name="StaminaLabel" type="Label" parent="."]
+[node name="QueuedTasksLabel" type="Label" parent="."]
+layout_mode = 2
+visible = false
+theme_override_colors/font_color = Color(1, 1, 1, 0.65)
+theme_override_fonts/font = SubResource("FontVariation_queued_tasks_italic")
+theme_override_font_sizes/font_size = 10
+autowrap_mode = 2
+
+[node name="VitalsBox" type="PanelContainer" parent="."]
+layout_mode = 2
+theme_override_styles/panel = SubResource("StyleBoxFlat_section_box")
+
+[node name="VitalsBoxMargin" type="MarginContainer" parent="VitalsBox"]
+layout_mode = 2
+theme_override_constants/margin_left = 6
+theme_override_constants/margin_top = 6
+theme_override_constants/margin_right = 6
+theme_override_constants/margin_bottom = 6
+
+[node name="VitalsBoxContent" type="VBoxContainer" parent="VitalsBox/VitalsBoxMargin"]
+layout_mode = 2
+
+[node name="VitalsSectionLabel" type="Label" parent="VitalsBox/VitalsBoxMargin/VitalsBoxContent"]
 layout_mode = 2
 theme_override_font_sizes/font_size = 10
 
-[node name="StaminaBarMargin" type="MarginContainer" parent="."]
+[node name="StaminaLabel" type="Label" parent="VitalsBox/VitalsBoxMargin/VitalsBoxContent"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 10
+
+[node name="StaminaBarMargin" type="MarginContainer" parent="VitalsBox/VitalsBoxMargin/VitalsBoxContent"]
 layout_mode = 2
 theme_override_constants/margin_left = 4
 theme_override_constants/margin_right = 4
 
-[node name="StaminaBar" type="ProgressBar" parent="StaminaBarMargin"]
+[node name="StaminaBar" type="ProgressBar" parent="VitalsBox/VitalsBoxMargin/VitalsBoxContent/StaminaBarMargin"]
 layout_mode = 2
 custom_minimum_size = Vector2(0, 14)
 theme_override_styles/background = SubResource("StyleBoxFlat_stamina_bg")
 theme_override_styles/fill = SubResource("StyleBoxFlat_stamina_fill")
 show_percentage = false
 
+[node name="HungerLabel" type="Label" parent="VitalsBox/VitalsBoxMargin/VitalsBoxContent"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 10
+
+[node name="HungerBarMargin" type="MarginContainer" parent="VitalsBox/VitalsBoxMargin/VitalsBoxContent"]
+layout_mode = 2
+theme_override_constants/margin_left = 4
+theme_override_constants/margin_right = 4
+
+[node name="HungerBar" type="ProgressBar" parent="VitalsBox/VitalsBoxMargin/VitalsBoxContent/HungerBarMargin"]
+layout_mode = 2
+custom_minimum_size = Vector2(0, 14)
+theme_override_styles/background = SubResource("StyleBoxFlat_stamina_bg")
+theme_override_styles/fill = SubResource("StyleBoxFlat_hunger_fill")
+show_percentage = false
+
+[node name="ThirstLabel" type="Label" parent="VitalsBox/VitalsBoxMargin/VitalsBoxContent"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 10
+
+[node name="ThirstBarMargin" type="MarginContainer" parent="VitalsBox/VitalsBoxMargin/VitalsBoxContent"]
+layout_mode = 2
+theme_override_constants/margin_left = 4
+theme_override_constants/margin_right = 4
+
+[node name="ThirstBar" type="ProgressBar" parent="VitalsBox/VitalsBoxMargin/VitalsBoxContent/ThirstBarMargin"]
+layout_mode = 2
+custom_minimum_size = Vector2(0, 14)
+theme_override_styles/background = SubResource("StyleBoxFlat_stamina_bg")
+theme_override_styles/fill = SubResource("StyleBoxFlat_thirst_fill")
+show_percentage = false
+
+[node name="HealthLabel" type="Label" parent="VitalsBox/VitalsBoxMargin/VitalsBoxContent"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 10
+
+[node name="HealthBarMargin" type="MarginContainer" parent="VitalsBox/VitalsBoxMargin/VitalsBoxContent"]
+layout_mode = 2
+theme_override_constants/margin_left = 4
+theme_override_constants/margin_right = 4
+
+[node name="HealthBar" type="ProgressBar" parent="VitalsBox/VitalsBoxMargin/VitalsBoxContent/HealthBarMargin"]
+layout_mode = 2
+custom_minimum_size = Vector2(0, 14)
+theme_override_styles/background = SubResource("StyleBoxFlat_stamina_bg")
+theme_override_styles/fill = SubResource("StyleBoxFlat_health_fill")
+show_percentage = false
+
+[node name="HappinessLabel" type="Label" parent="VitalsBox/VitalsBoxMargin/VitalsBoxContent"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 10
+
+[node name="HappinessBarMargin" type="MarginContainer" parent="VitalsBox/VitalsBoxMargin/VitalsBoxContent"]
+layout_mode = 2
+theme_override_constants/margin_left = 4
+theme_override_constants/margin_right = 4
+
+[node name="HappinessBar" type="ProgressBar" parent="VitalsBox/VitalsBoxMargin/VitalsBoxContent/HappinessBarMargin"]
+layout_mode = 2
+custom_minimum_size = Vector2(0, 14)
+theme_override_styles/background = SubResource("StyleBoxFlat_stamina_bg")
+theme_override_styles/fill = SubResource("StyleBoxFlat_happiness_fill")
+show_percentage = false
+
+[node name="LoyaltyLabel" type="Label" parent="VitalsBox/VitalsBoxMargin/VitalsBoxContent"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 10
+
+[node name="LoyaltyBarMargin" type="MarginContainer" parent="VitalsBox/VitalsBoxMargin/VitalsBoxContent"]
+layout_mode = 2
+theme_override_constants/margin_left = 4
+theme_override_constants/margin_right = 4
+
+[node name="LoyaltyBar" type="ProgressBar" parent="VitalsBox/VitalsBoxMargin/VitalsBoxContent/LoyaltyBarMargin"]
+layout_mode = 2
+custom_minimum_size = Vector2(0, 14)
+theme_override_styles/background = SubResource("StyleBoxFlat_stamina_bg")
+theme_override_styles/fill = SubResource("StyleBoxFlat_loyalty_fill")
+show_percentage = false
+
+[node name="SkillsBox" type="PanelContainer" parent="."]
+layout_mode = 2
+theme_override_styles/panel = SubResource("StyleBoxFlat_section_box")
+
+[node name="SkillsBoxMargin" type="MarginContainer" parent="SkillsBox"]
+layout_mode = 2
+theme_override_constants/margin_left = 6
+theme_override_constants/margin_top = 6
+theme_override_constants/margin_right = 6
+theme_override_constants/margin_bottom = 6
+
+[node name="SkillsBoxContent" type="VBoxContainer" parent="SkillsBox/SkillsBoxMargin"]
+layout_mode = 2
+
+[node name="SkillsSectionLabel" type="Label" parent="SkillsBox/SkillsBoxMargin/SkillsBoxContent"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 10
+
+[node name="SkillsRowMargin" type="MarginContainer" parent="SkillsBox/SkillsBoxMargin/SkillsBoxContent"]
+layout_mode = 2
+theme_override_constants/margin_top = 2
+
+[node name="SkillsRow" type="HBoxContainer" parent="SkillsBox/SkillsBoxMargin/SkillsBoxContent/SkillsRowMargin"]
+layout_mode = 2
+theme_override_constants/separation = 8
+alignment = 1
+
+[node name="LeadershipColumn" type="VBoxContainer" parent="SkillsBox/SkillsBoxMargin/SkillsBoxContent/SkillsRowMargin/SkillsRow"]
+layout_mode = 2
+
+[node name="LeadershipBar" type="ProgressBar" parent="SkillsBox/SkillsBoxMargin/SkillsBoxContent/SkillsRowMargin/SkillsRow/LeadershipColumn"]
+layout_mode = 2
+custom_minimum_size = Vector2(20, 70)
+fill_mode = 3
+theme_override_styles/background = SubResource("StyleBoxFlat_stamina_bg")
+theme_override_styles/fill = SubResource("StyleBoxFlat_leadership_fill")
+show_percentage = false
+
+[node name="LeadershipCaptionWrapper" type="Control" parent="SkillsBox/SkillsBoxMargin/SkillsBoxContent/SkillsRowMargin/SkillsRow/LeadershipColumn"]
+layout_mode = 2
+custom_minimum_size = Vector2(22, 88)
+
+[node name="LeadershipCaption" type="Label" parent="SkillsBox/SkillsBoxMargin/SkillsBoxContent/SkillsRowMargin/SkillsRow/LeadershipColumn/LeadershipCaptionWrapper"]
+layout_mode = 0
+offset_left = -29.0
+offset_top = 34.0
+offset_right = 51.0
+offset_bottom = 54.0
+pivot_offset = Vector2(40, 10)
+rotation_degrees = -90.0
+theme_override_font_sizes/font_size = 9
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="ManagementColumn" type="VBoxContainer" parent="SkillsBox/SkillsBoxMargin/SkillsBoxContent/SkillsRowMargin/SkillsRow"]
+layout_mode = 2
+
+[node name="ManagementBar" type="ProgressBar" parent="SkillsBox/SkillsBoxMargin/SkillsBoxContent/SkillsRowMargin/SkillsRow/ManagementColumn"]
+layout_mode = 2
+custom_minimum_size = Vector2(20, 70)
+fill_mode = 3
+theme_override_styles/background = SubResource("StyleBoxFlat_stamina_bg")
+theme_override_styles/fill = SubResource("StyleBoxFlat_management_fill")
+show_percentage = false
+
+[node name="ManagementCaptionWrapper" type="Control" parent="SkillsBox/SkillsBoxMargin/SkillsBoxContent/SkillsRowMargin/SkillsRow/ManagementColumn"]
+layout_mode = 2
+custom_minimum_size = Vector2(22, 88)
+
+[node name="ManagementCaption" type="Label" parent="SkillsBox/SkillsBoxMargin/SkillsBoxContent/SkillsRowMargin/SkillsRow/ManagementColumn/ManagementCaptionWrapper"]
+layout_mode = 0
+offset_left = -29.0
+offset_top = 34.0
+offset_right = 51.0
+offset_bottom = 54.0
+pivot_offset = Vector2(40, 10)
+rotation_degrees = -90.0
+theme_override_font_sizes/font_size = 9
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="BuilderColumn" type="VBoxContainer" parent="SkillsBox/SkillsBoxMargin/SkillsBoxContent/SkillsRowMargin/SkillsRow"]
+layout_mode = 2
+
+[node name="BuilderBar" type="ProgressBar" parent="SkillsBox/SkillsBoxMargin/SkillsBoxContent/SkillsRowMargin/SkillsRow/BuilderColumn"]
+layout_mode = 2
+custom_minimum_size = Vector2(20, 70)
+fill_mode = 3
+theme_override_styles/background = SubResource("StyleBoxFlat_stamina_bg")
+theme_override_styles/fill = SubResource("StyleBoxFlat_builder_fill")
+show_percentage = false
+
+[node name="BuilderCaptionWrapper" type="Control" parent="SkillsBox/SkillsBoxMargin/SkillsBoxContent/SkillsRowMargin/SkillsRow/BuilderColumn"]
+layout_mode = 2
+custom_minimum_size = Vector2(22, 88)
+
+[node name="BuilderCaption" type="Label" parent="SkillsBox/SkillsBoxMargin/SkillsBoxContent/SkillsRowMargin/SkillsRow/BuilderColumn/BuilderCaptionWrapper"]
+layout_mode = 0
+offset_left = -29.0
+offset_top = 34.0
+offset_right = 51.0
+offset_bottom = 54.0
+pivot_offset = Vector2(40, 10)
+rotation_degrees = -90.0
+theme_override_font_sizes/font_size = 9
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="TransporterColumn" type="VBoxContainer" parent="SkillsBox/SkillsBoxMargin/SkillsBoxContent/SkillsRowMargin/SkillsRow"]
+layout_mode = 2
+
+[node name="TransporterBar" type="ProgressBar" parent="SkillsBox/SkillsBoxMargin/SkillsBoxContent/SkillsRowMargin/SkillsRow/TransporterColumn"]
+layout_mode = 2
+custom_minimum_size = Vector2(20, 70)
+fill_mode = 3
+theme_override_styles/background = SubResource("StyleBoxFlat_stamina_bg")
+theme_override_styles/fill = SubResource("StyleBoxFlat_transporter_fill")
+show_percentage = false
+
+[node name="TransporterCaptionWrapper" type="Control" parent="SkillsBox/SkillsBoxMargin/SkillsBoxContent/SkillsRowMargin/SkillsRow/TransporterColumn"]
+layout_mode = 2
+custom_minimum_size = Vector2(22, 88)
+
+[node name="TransporterCaption" type="Label" parent="SkillsBox/SkillsBoxMargin/SkillsBoxContent/SkillsRowMargin/SkillsRow/TransporterColumn/TransporterCaptionWrapper"]
+layout_mode = 0
+offset_left = -29.0
+offset_top = 34.0
+offset_right = 51.0
+offset_bottom = 54.0
+pivot_offset = Vector2(40, 10)
+rotation_degrees = -90.0
+theme_override_font_sizes/font_size = 9
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="GatheringColumn" type="VBoxContainer" parent="SkillsBox/SkillsBoxMargin/SkillsBoxContent/SkillsRowMargin/SkillsRow"]
+layout_mode = 2
+
+[node name="GatheringBar" type="ProgressBar" parent="SkillsBox/SkillsBoxMargin/SkillsBoxContent/SkillsRowMargin/SkillsRow/GatheringColumn"]
+layout_mode = 2
+custom_minimum_size = Vector2(20, 70)
+fill_mode = 3
+theme_override_styles/background = SubResource("StyleBoxFlat_stamina_bg")
+theme_override_styles/fill = SubResource("StyleBoxFlat_gathering_fill")
+show_percentage = false
+
+[node name="GatheringCaptionWrapper" type="Control" parent="SkillsBox/SkillsBoxMargin/SkillsBoxContent/SkillsRowMargin/SkillsRow/GatheringColumn"]
+layout_mode = 2
+custom_minimum_size = Vector2(22, 88)
+
+[node name="GatheringCaption" type="Label" parent="SkillsBox/SkillsBoxMargin/SkillsBoxContent/SkillsRowMargin/SkillsRow/GatheringColumn/GatheringCaptionWrapper"]
+layout_mode = 0
+offset_left = -29.0
+offset_top = 34.0
+offset_right = 51.0
+offset_bottom = 54.0
+pivot_offset = Vector2(40, 10)
+rotation_degrees = -90.0
+theme_override_font_sizes/font_size = 9
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="CognitionColumn" type="VBoxContainer" parent="SkillsBox/SkillsBoxMargin/SkillsBoxContent/SkillsRowMargin/SkillsRow"]
+layout_mode = 2
+
+[node name="CognitionBar" type="ProgressBar" parent="SkillsBox/SkillsBoxMargin/SkillsBoxContent/SkillsRowMargin/SkillsRow/CognitionColumn"]
+layout_mode = 2
+custom_minimum_size = Vector2(20, 70)
+fill_mode = 3
+theme_override_styles/background = SubResource("StyleBoxFlat_stamina_bg")
+theme_override_styles/fill = SubResource("StyleBoxFlat_cognition_fill")
+show_percentage = false
+
+[node name="CognitionCaptionWrapper" type="Control" parent="SkillsBox/SkillsBoxMargin/SkillsBoxContent/SkillsRowMargin/SkillsRow/CognitionColumn"]
+layout_mode = 2
+custom_minimum_size = Vector2(22, 88)
+
+[node name="CognitionCaption" type="Label" parent="SkillsBox/SkillsBoxMargin/SkillsBoxContent/SkillsRowMargin/SkillsRow/CognitionColumn/CognitionCaptionWrapper"]
+layout_mode = 0
+offset_left = -29.0
+offset_top = 34.0
+offset_right = 51.0
+offset_bottom = 54.0
+pivot_offset = Vector2(40, 10)
+rotation_degrees = -90.0
+theme_override_font_sizes/font_size = 9
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="HuntingColumn" type="VBoxContainer" parent="SkillsBox/SkillsBoxMargin/SkillsBoxContent/SkillsRowMargin/SkillsRow"]
+layout_mode = 2
+
+[node name="HuntingBar" type="ProgressBar" parent="SkillsBox/SkillsBoxMargin/SkillsBoxContent/SkillsRowMargin/SkillsRow/HuntingColumn"]
+layout_mode = 2
+custom_minimum_size = Vector2(20, 70)
+fill_mode = 3
+theme_override_styles/background = SubResource("StyleBoxFlat_stamina_bg")
+theme_override_styles/fill = SubResource("StyleBoxFlat_hunting_fill")
+show_percentage = false
+
+[node name="HuntingCaptionWrapper" type="Control" parent="SkillsBox/SkillsBoxMargin/SkillsBoxContent/SkillsRowMargin/SkillsRow/HuntingColumn"]
+layout_mode = 2
+custom_minimum_size = Vector2(22, 88)
+
+[node name="HuntingCaption" type="Label" parent="SkillsBox/SkillsBoxMargin/SkillsBoxContent/SkillsRowMargin/SkillsRow/HuntingColumn/HuntingCaptionWrapper"]
+layout_mode = 0
+offset_left = -29.0
+offset_top = 34.0
+offset_right = 51.0
+offset_bottom = 54.0
+pivot_offset = Vector2(40, 10)
+rotation_degrees = -90.0
+theme_override_font_sizes/font_size = 9
+horizontal_alignment = 1
+vertical_alignment = 1
+
 [node name="CarryLabel" type="Label" parent="."]
 layout_mode = 2
 theme_override_font_sizes/font_size = 10
 
-[node name="CarryBarMargin" type="MarginContainer" parent="."]
+[node name="CarryRowMargin" type="MarginContainer" parent="."]
 layout_mode = 2
 theme_override_constants/margin_left = 4
 theme_override_constants/margin_right = 4
 
-[node name="CarryBar" type="ProgressBar" parent="CarryBarMargin"]
+[node name="CarryRow" type="HBoxContainer" parent="CarryRowMargin"]
 layout_mode = 2
-custom_minimum_size = Vector2(0, 14)
-theme_override_styles/background = SubResource("StyleBoxFlat_stamina_bg")
-theme_override_styles/fill = SubResource("StyleBoxFlat_carry_fill")
-show_percentage = false
+theme_override_constants/separation = 6
 
-[node name="CarryAndToolsRowMargin" type="MarginContainer" parent="."]
+[node name="CarriedResourceBox" type="ColorRect" parent="CarryRowMargin/CarryRow"]
 layout_mode = 2
-theme_override_constants/margin_left = 4
-theme_override_constants/margin_right = 4
-theme_override_constants/margin_top = 2
-
-[node name="CarryAndToolsRow" type="Control" parent="CarryAndToolsRowMargin"]
-layout_mode = 2
-size_flags_horizontal = 3
-custom_minimum_size = Vector2(0, 36)
-
-[node name="CarriedResourceBox" type="ColorRect" parent="CarryAndToolsRowMargin/CarryAndToolsRow"]
-layout_mode = 0
-offset_right = 36.0
-offset_bottom = 36.0
+size_flags_vertical = 4
+custom_minimum_size = Vector2(36, 36)
 color = Color(0.3, 0.3, 0.3, 0.4)
 
-[node name="InitialLabel" type="Label" parent="CarryAndToolsRowMargin/CarryAndToolsRow/CarriedResourceBox"]
+[node name="InitialLabel" type="Label" parent="CarryRowMargin/CarryRow/CarriedResourceBox"]
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
@@ -109,7 +503,7 @@ theme_override_font_sizes/font_size = 18
 horizontal_alignment = 1
 vertical_alignment = 1
 
-[node name="QuantityLabel" type="Label" parent="CarryAndToolsRowMargin/CarryAndToolsRow/CarriedResourceBox"]
+[node name="QuantityLabel" type="Label" parent="CarryRowMargin/CarryRow/CarriedResourceBox"]
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
@@ -122,14 +516,33 @@ theme_override_constants/shadow_offset_y = 1
 horizontal_alignment = 2
 vertical_alignment = 2
 
-[node name="ToolSlot0" type="Panel" parent="CarryAndToolsRowMargin/CarryAndToolsRow"]
+[node name="CarryBar" type="ProgressBar" parent="CarryRowMargin/CarryRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 4
+custom_minimum_size = Vector2(0, 14)
+theme_override_styles/background = SubResource("StyleBoxFlat_stamina_bg")
+theme_override_styles/fill = SubResource("StyleBoxFlat_carry_fill")
+show_percentage = false
+
+[node name="ToolsRowMargin" type="MarginContainer" parent="."]
+layout_mode = 2
+theme_override_constants/margin_left = 4
+theme_override_constants/margin_right = 4
+theme_override_constants/margin_top = 2
+
+[node name="ToolsRow" type="Control" parent="ToolsRowMargin"]
+layout_mode = 2
+size_flags_horizontal = 3
+custom_minimum_size = Vector2(0, 28)
+
+[node name="ToolSlot0" type="Panel" parent="ToolsRowMargin/ToolsRow"]
 layout_mode = 0
-offset_left = 44.0
-offset_right = 72.0
+offset_right = 28.0
 offset_bottom = 28.0
 theme_override_styles/panel = SubResource("StyleBoxFlat_tool_slot")
 
-[node name="Label" type="Label" parent="CarryAndToolsRowMargin/CarryAndToolsRow/ToolSlot0"]
+[node name="Label" type="Label" parent="ToolsRowMargin/ToolsRow/ToolSlot0"]
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
@@ -140,14 +553,14 @@ horizontal_alignment = 1
 vertical_alignment = 1
 text = "T"
 
-[node name="ToolSlot1" type="Panel" parent="CarryAndToolsRowMargin/CarryAndToolsRow"]
+[node name="ToolSlot1" type="Panel" parent="ToolsRowMargin/ToolsRow"]
 layout_mode = 0
-offset_left = 76.0
-offset_right = 104.0
+offset_left = 34.0
+offset_right = 62.0
 offset_bottom = 28.0
 theme_override_styles/panel = SubResource("StyleBoxFlat_tool_slot")
 
-[node name="Label" type="Label" parent="CarryAndToolsRowMargin/CarryAndToolsRow/ToolSlot1"]
+[node name="Label" type="Label" parent="ToolsRowMargin/ToolsRow/ToolSlot1"]
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
@@ -158,14 +571,14 @@ horizontal_alignment = 1
 vertical_alignment = 1
 text = "T"
 
-[node name="ToolSlot2" type="Panel" parent="CarryAndToolsRowMargin/CarryAndToolsRow"]
+[node name="ToolSlot2" type="Panel" parent="ToolsRowMargin/ToolsRow"]
 layout_mode = 0
-offset_left = 108.0
-offset_right = 136.0
+offset_left = 68.0
+offset_right = 96.0
 offset_bottom = 28.0
 theme_override_styles/panel = SubResource("StyleBoxFlat_tool_slot")
 
-[node name="Label" type="Label" parent="CarryAndToolsRowMargin/CarryAndToolsRow/ToolSlot2"]
+[node name="Label" type="Label" parent="ToolsRowMargin/ToolsRow/ToolSlot2"]
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
@@ -176,14 +589,14 @@ horizontal_alignment = 1
 vertical_alignment = 1
 text = "T"
 
-[node name="ToolSlot3" type="Panel" parent="CarryAndToolsRowMargin/CarryAndToolsRow"]
+[node name="ToolSlot3" type="Panel" parent="ToolsRowMargin/ToolsRow"]
 layout_mode = 0
-offset_left = 140.0
-offset_right = 168.0
+offset_left = 102.0
+offset_right = 130.0
 offset_bottom = 28.0
 theme_override_styles/panel = SubResource("StyleBoxFlat_tool_slot")
 
-[node name="Label" type="Label" parent="CarryAndToolsRowMargin/CarryAndToolsRow/ToolSlot3"]
+[node name="Label" type="Label" parent="ToolsRowMargin/ToolsRow/ToolSlot3"]
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0

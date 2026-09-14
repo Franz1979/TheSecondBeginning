@@ -48,6 +48,17 @@ var is_complete: bool = false
 # demolito non torna mai in vita, nessun bisogno di un percorso di "ripristino".
 var is_demolished: bool = false
 
+# true quando questo cantiere (SetupSiteAction) è bloccato perché nessuna sorgente ha materiale da
+# costruzione disponibile (2026-09-14, richiesta utente — segnalazione player) — valorizzato/
+# azzerato ESCLUSIVAMENTE da HumanIndividualActionService._resolve_material_shortage: true alla
+# transizione (nessuna sorgente trovata, emesso anche building_material_blocked UNA volta sola per
+# quella transizione), false non appena il fabbisogno è risolto (bonus di partenza applicato, o una
+# Transport Task viene assegnata — non serve attendere che consegni davvero, vedi quel file per il
+# perché). Consultato da GameScene.BuildingInfoPanel per mostrare la riga "In attesa di materiale"
+# finché resta true. Default false — comportamento invariato per ogni edificio che non passa mai da
+# questo stato (edifici già completi, o senza required_materials valorizzato).
+var is_awaiting_material: bool = false
+
 # true dal momento in cui SetupSiteAction completa per questo edificio (vedi GameScene.
 # _spawn_build_site_placeholders, che lo valorizza sul segnale SetupSiteAction.site_setup_completed)
 # — DIVERSO da is_complete: un cantiere allestito non è ancora un edificio finito (ClearAction, terzo

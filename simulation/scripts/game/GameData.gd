@@ -23,7 +23,7 @@ var current_era_name: String = "paleolithic"
 # basta questa cache già risolta. Consumata da HumanSeedingService (semina) e HumanCalculator.
 # get_age_band (display/aging — collegato 2026-09-04, richiesta utente: PRIMA restava sempre vuoto,
 # nessuno chiamava mai set_current_era, vedi lì). Stessa indicizzazione posizionale di HumanRules.
-# age_band_durations_male/female (0=CHILD..4=OLD).
+# age_band_durations_male/female (0=INFANT..5=OLD, ESTESO 2026-09-12 per INFANT).
 var era_effective_age_band_durations_male: Array[float] = []
 var era_effective_age_band_durations_female: Array[float] = []
 

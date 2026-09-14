@@ -25,14 +25,18 @@ extends RefCounted
 # quantity_needed sempre > 0, controllato sotto) lo esclude già implicitamente in ogni caso pratico
 # — un edificio con categoria non accettata non ha comunque slot dedicati a quella risorsa.
 #
-# building.is_complete — GAP CHIUSO (2026-09-11, richiesta utente): non filtrato ESPLICITAMENTE
-# qui, ma `has_capacity` sotto chiama BuildingStorageService.get_max_depositable, che ora rifiuta
-# (ritorna 0) qualunque building con is_complete=false — un cantiere non ancora finito risulta quindi
-# già escluso da tutti e tre i tier per costruzione, senza bisogno di un controllo dedicato in questo
-# file. Guard messo lì (non qui) perché get_max_depositable è il punto consultato anche da
-# UnloadAction.activate (riverifica still_fits) e implicitamente da store() via can_accept — un solo
-# punto copre ogni percorso di deposito, automatico o manuale, invece di ripetere il controllo in
-# ognuno.
+# building.is_complete — RIAPERTO E RICHIUSO (2026-09-11 poi 2026-09-14, richiesta utente): la
+# versione 2026-09-11 di questo commento dava per assodato che get_max_depositable rifiutasse
+# QUALUNQUE building con is_complete=false, escludendo quindi i cantieri "gratis" — FALSO, e
+# CONFERMATO BUG REALE con l'utente: da quando esiste un fabbisogno materiale di SetupSite
+# (BuildingRules.setup_site_material_name/setup_site_material_per_cell), get_max_depositable per un
+# edificio incompleto ritorna quanto materiale di CANTIERE gli manca ancora — un numero che può
+# benissimo essere >= quantity_needed, facendo apparire un hut/stick_tent ancora in costruzione come
+# se avesse "posto libero" da magazzino, quando in realtà sta solo segnalando il proprio fabbisogno
+# di allestimento. Guard ESPLICITO ora in `has_capacity` sotto (`building.is_complete and ...`): un
+# candidato di find_best deve essere DAVVERO finito, mai un cantiere — la consegna DELIBERATA di
+# materiale a un cantiere resta possibile SOLO tramite un target scelto a mano dal player (comando
+# Transport/Unload manuale in GameScene), mai tramite questa ricerca automatica.
 #
 # REFACTOR (2026-09-10, richiesta utente — generalizzazione a SpatialSelectionService): questa
 # funzione non contiene più l'algoritmo "candidato più vicino ammissibile" — estratto in
@@ -85,8 +89,19 @@ static func find_best(
 	if world == null or quantity_needed <= 0:
 		return null
 
+	# is_complete (2026-09-14, richiesta utente — bugfix "il re-routing finisce in un cantiere
+	# incompleto che non è affatto un magazzino"): get_max_depositable, per un edificio NON completo,
+	# ritorna quanto materiale di SETUP SITE gli manca ancora (vedi BuildingStorageService.gd) — un
+	# numero che per COSTRUZIONE può risultare >= quantity_needed anche se quell'edificio non è mai
+	# stato un vero magazzino, semplicemente perché il proprio fabbisogno di cantiere combacia per
+	# caso con la quantità da ricollocare. find_best cerca SEMPRE una vera destinazione di deposito
+	# generica (mai il fabbisogno specifico di un cantiere, che ha il proprio percorso dedicato via
+	# consegna MANUALE — vedi GameScene, mai tramite questa ricerca automatica), quindi un candidato
+	# deve essere COMPLETO prima ancora di guardare la capacità: uno storage/residenziale vero
+	# accetta merce solo da completo (vedi BuildingStorageService.get_max_depositable, ramo
+	# "edificio COMPLETO"), mai mentre è ancora un cantiere.
 	var has_capacity := func(building: Building) -> bool:
-		return BuildingStorageService.get_max_depositable(building, resource_name) >= quantity_needed
+		return building.is_complete and BuildingStorageService.get_max_depositable(building, resource_name) >= quantity_needed
 
 	var storage_predicate := func(building: Building) -> bool:
 		return building.rules != null and building.rules.category == BuildingTypes.Category.STORAGE and has_capacity.call(building)
@@ -108,4 +123,43 @@ static func find_best(
 		return building.rules != null and building.rules.category != BuildingTypes.Category.STORAGE and has_capacity.call(building)
 	return SpatialSelectionService.find_nearest(
 		world.buildings, origin_position, origin_macro_coords, other_predicate, excluded_building_ids
+	) as Building
+
+
+# Sceglie il magazzino più vicino che ha ALMENO UNA unità di resource_name da CEDERE (2026-09-13,
+# richiesta utente — Build Task collegata a un vero fabbisogno di materiale: un cantiere a corto di
+# materiale deve trovare una SORGENTE da cui prelevare, operazione OPPOSTA a find_best sopra, che
+# invece cerca una DESTINAZIONE con capacità residua per un deposito). Nessuna priorità per
+# categoria (a differenza di find_best — STORAGE/RESIDENTIAL/altro): la richiesta non la prevede
+# ("un magazzino sorgente con stick disponibili", nessuna gerarchia), quindi un'unica ricerca
+# tramite SpatialSelectionService.find_nearest, stesso principio "thin wrapper" già seguito da
+# find_best per il proprio algoritmo.
+#
+# Soglia ">0" (non ">= quantity_needed" come has_capacity sopra in find_best): RetrieveAction
+# preleva già "quanto riesce" (min tra richiesta/capacità individuo/disponibilità, vedi
+# RetrieveAction.activate) — un magazzino con SOLO 1 unità disponibile resta comunque un candidato
+# valido (porterà solo 1 unità questo viaggio, il chiamante dovrà eventualmente generare un
+# secondo viaggio per il resto, stesso principio "porta quello che riesci" già confermato per
+# haul_resource/transport). Filtro categoria/is_complete/is_demolished DELIBERATAMENTE assente
+# qui (a differenza di find_best, che passa da get_max_depositable — con tutti quei guard):
+# RetrieveAction stessa non ha mai richiesto nulla del genere per il PRELIEVO (vedi la nota in
+# testa a RetrieveAction.gd — "funziona su QUALUNQUE building con stored_resources, completo o in
+# costruzione"), quindi questa ricerca resta coerente con quello che l'Action che la userà può
+# davvero fare.
+static func find_source_for_retrieval(
+	world: World,
+	origin_position: Vector2,
+	origin_macro_coords: Vector2i,
+	resource_name: String,
+	excluded_building_ids: Array[int] = []
+) -> Building:
+	if world == null:
+		return null
+
+	var has_stock := func(building: Building) -> bool:
+		var stored_entry: Dictionary = building.stored_resources.get(resource_name, {})
+		return int(stored_entry.get("quantity", 0)) > 0
+
+	return SpatialSelectionService.find_nearest(
+		world.buildings, origin_position, origin_macro_coords, has_stock, excluded_building_ids
 	) as Building

@@ -9,3 +9,4 @@
 script = ExtResource("1_def")
 task_name = "task_rest_name"
 steps = [ExtResource("2_walk"), ExtResource("3_rest"), ExtResource("4_walk_away")]
+interrupt_priority = 2

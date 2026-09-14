@@ -63,8 +63,16 @@ const TAB_DEBUG := 4
 # sta centrando.
 signal center_requested
 
-@onready var population_tab: Control = $PopulationTab
-@onready var buildings_tab: Control = $BuildingsTab
+# population_tab/buildings_tab puntano allo ScrollContainer INTERNO di ciascuna tab (Population
+# Scroll/BuildingsScroll — bugfix 2026-09-13, richiesta utente: "la scrollbar fa scorrere in alto
+# anche le tab"), non più al MarginContainer della tab stessa — GameScene continua a fare
+# .add_child(...) su questi due campi esattamente come prima, ignaro del cambio: uno ScrollContainer
+# accetta comunque un solo figlio, stesso contratto implicito di prima. La barra schede di questo
+# TabContainer (nativa, mai dentro l'area che scorre) resta così SEMPRE fissa in alto qualunque sia
+# l'altezza del contenuto aggiunto qui dentro — vedi GameInfoTabs.tscn per la struttura
+# MarginContainer > ScrollContainer aggiunta in questo stesso passo.
+@onready var population_tab: Control = $PopulationTab/PopulationScroll
+@onready var buildings_tab: Control = $BuildingsTab/BuildingsScroll
 @onready var selection_tab: Control = $SelectionTab
 @onready var debug_tab: Control = $DebugTab
 # Contenitore in cui GameScene aggiunge/rimuove i pannelli di dettaglio (VegetationInfoPanel/
@@ -72,7 +80,12 @@ signal center_requested
 # quando è stato introdotto SelectionHeader (Step 3): selection_tab non può più ospitarli
 # direttamente come figli sovrapposti, altrimenti si sovrapporrebbero anche all'header invece di
 # starci sotto. GameScene usa questo, non più selection_tab, come parent per add_child.
-@onready var selection_content: Control = $SelectionTab/SelectionTabBody/SelectionContent
+#
+# ORA dentro SelectionScroll (bugfix 2026-09-13, stesso motivo di population_tab/buildings_tab
+# sopra) — SelectionHeader (titolo + bottone 🎯) resta un sibling FISSO di SelectionScroll dentro
+# SelectionTabBody, mai dentro l'area che scorre: un pannello di selezione lungo (es. un individuo
+# con molte righe di stato) ora scorre SOTTO l'header, senza mai portarselo via.
+@onready var selection_content: Control = $SelectionTab/SelectionTabBody/SelectionScroll/SelectionContent
 @onready var selection_header: Control = $SelectionTab/SelectionTabBody/SelectionHeader
 # Prima riga di identità della selezione corrente ("Name: X"/"Type: X" — richiesta utente,
 # 2026-09-04): vive QUI, sulla stessa riga del bottone "🎯", invece che come prima riga di
@@ -83,7 +96,7 @@ signal center_requested
 # cosa scrivere — stesso principio di empty_selection_label/center_requested sopra.
 @onready var title_label: Label = $SelectionTab/SelectionTabBody/SelectionHeader/TitleLabel
 @onready var center_button: Button = $SelectionTab/SelectionTabBody/SelectionHeader/CenterButton
-@onready var empty_selection_label: Label = $SelectionTab/SelectionTabBody/SelectionContent/EmptySelectionLabel
+@onready var empty_selection_label: Label = $SelectionTab/SelectionTabBody/SelectionScroll/SelectionContent/EmptySelectionLabel
 
 # Scheda su cui si era prima di saltare su SelectionTab — ripristinata da hide_selection_tab().
 # Aggiornato da show_selection_tab() SOLO quando non si è già su SelectionTab (vedi lì): così una

@@ -122,6 +122,24 @@ const SHOW_STAMINA_RECALC_LOGS := false
 # ricalcolo gira comunque ogni giorno), solo il print viene soppresso.
 const SHOW_CARRY_CAPACITY_RECALC_LOGS := false
 
+# Filtro dedicato per [HUMAN VITALS RECALC] (HumanVitalsIndividualService, agganciato a
+# GameTimeService._on_day_advanced) — 2026-09-13, richiesta utente, 5 nuovi parametri vitali
+# hunger/thirst/health/happiness/loyalty: stesso identico trattamento di SHOW_STAMINA_RECALC_LOGS/
+# SHOW_CARRY_CAPACITY_RECALC_LOGS sopra (riga diretta SOLO quando un clamp scatta davvero, non un
+# accumulatore). A false: nessun comportamento di simulazione cambia (il ricalcolo gira comunque
+# ogni giorno), solo il print viene soppresso.
+const SHOW_VITALS_RECALC_LOGS := false
+
+# Filtro dedicato per [VITALS INTERACTION] (HumanVitalsInteractionService, agganciato a
+# GameTimeService._on_day_advanced, SUBITO DOPO HumanVitalsIndividualService.recalculate_vitals)
+# — 2026-09-13, richiesta utente: le due regole giornaliere stamina->happiness/happiness->loyalty.
+# Riga diretta SOLO per gli individui toccati (stesso principio "non ogni ricalcolo, solo l'evento
+# reale" di SHOW_VITALS_RECALC_LOGS sopra — qui però OGNI individuo è sempre "toccato", una delle
+# due regole scatta comunque in un verso o nell'altro, quindi la riga è sempre stampata per ognuno,
+# non solo quando cambia qualcosa). A false: nessun comportamento di simulazione cambia, solo il
+# print viene soppresso.
+const SHOW_VITALS_INTERACTION_LOGS := false
+
 # Filtro dedicato per [SELECTED PANEL REFRESH] (GameScene._on_day_advanced, refresh giornaliero del
 # pannello individuo selezionato) — riga diretta (stesso stile di SHOW_STAMINA_RECALC_LOGS sopra:
 # gira una volta al giorno, costo atteso trascurabile — 0 o 1 individuo selezionato, mai un ciclo
@@ -147,3 +165,12 @@ const SHOW_TASK_TOTAL_COST_LOGS := true
 # rumoroso per costruzione (per-frame, non per-evento), quindi resta disattivato finche' non lo si
 # riattiva esplicitamente per diagnosticare qualcosa sul ramo fisico di UnloadAction.
 const SHOW_UNLOAD_COMPLETION_LOGS := false
+
+# Filtro dedicato per [SKILL GROWTH] (HumanIndividualActionService._apply_task_completion_skill_
+# growth, richiamato da apply_action SOLO quando una Task termina con successo) — 2026-09-13,
+# richiesta utente: +1.0 su una skill quando la Task INTERA (non il singolo step) si conclude.
+# Riga diretta (stesso stile di SHOW_STAMINA_RECALC_LOGS: un evento raro, una Task alla volta, non
+# per-frame). Default true (a differenza della maggior parte dei flag sopra), stesso principio di
+# SHOW_TASK_TOTAL_COST_LOGS: funzionalità appena introdotta, non ancora verificata con un run
+# reale — riportalo a false una volta confermato il formato.
+const SHOW_SKILL_GROWTH_LOGS := true

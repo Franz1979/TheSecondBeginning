@@ -9,8 +9,9 @@ required_idea_id = "paleolithic_constructions"
 required_labor = 1500
 storage_slot_count = 4
 storage_space_per_slot = 50
+durability_multiplier_by_category = Array[float]([1.1, 1.1])
 required_materials = {
-"stick": 0,
+"stick": 4,
 "wood": 0
 }
 required_space = 1

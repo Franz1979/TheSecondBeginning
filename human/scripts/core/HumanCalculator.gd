@@ -6,7 +6,7 @@ extends RefCounted
 
 # Fascia d'età corrispondente a `age` (anni) per il sesso dato, camminando cumulativamente
 # durations_male/female fino a trovare quella che la contiene — stesso ordine di HumanTypes.AgeBand
-# (0=CHILD..4=OLD). Età oltre l'ultima fascia (durate tutte esaurite, es. durations non ancora
+# (0=INFANT..5=OLD, ESTESO 2026-09-12 per INFANT). Età oltre l'ultima fascia (durate tutte esaurite, es. durations non ancora
 # tarate/zero) ricade su OLD, l'ultima fascia esistente, invece di andare fuori range: nessun
 # individuo può risultare "senza fascia".
 #
@@ -162,3 +162,55 @@ static func get_max_carry_capacity(
 	var empty_tool_slots: int = max(human_rules.tool_slot_count - equipped_tool_count, 0)
 	var tool_slot_bonus: float = float(empty_tool_slots) * human_rules.carry_bonus_per_empty_tool_slot
 	return size_scaled_capacity + tool_slot_bonus
+
+
+# 5 nuovi parametri vitali (2026-09-13, richiesta utente) — hunger/thirst/health/happiness/
+# loyalty, STESSO identico schema di get_max_stamina sopra (base × multiplier_by_age[age_band] ×
+# multiplier_by_sex[sex]), ma firma SEMPLIFICATA a soli 3 parametri (human_rules, age_band, sex):
+# i due modificatori aggiuntivi di get_max_stamina (is_pregnant/has_dependent_child, con
+# PREGNANCY_STAMINA_MULTIPLIER/era_rules.dependent_child_stamina_multiplier) sono specifici del
+# dominio riproduttivo/capacità lavorativa, non generalizzati qui — richiesta esplicita, nessun
+# consumatore reale ancora per questi 5 parametri (arriverà in un giro successivo, insieme alla
+# decisione se/quali di questi modificatori li riguardino anche loro). Nessuna chiamata a
+# get_age_band qui, stesso principio di get_max_stamina/get_max_carry_capacity: il chiamante passa
+# già l'age_band risolto.
+static func get_max_hunger(human_rules: HumanRules, age_band: HumanTypes.AgeBand, sex: HumanTypes.Sex) -> float:
+	return (
+		human_rules.base_max_hunger
+		* human_rules.hunger_multiplier_by_age[age_band]
+		* human_rules.hunger_multiplier_by_sex[sex]
+	)
+
+
+static func get_max_thirst(human_rules: HumanRules, age_band: HumanTypes.AgeBand, sex: HumanTypes.Sex) -> float:
+	return (
+		human_rules.base_max_thirst
+		* human_rules.thirst_multiplier_by_age[age_band]
+		* human_rules.thirst_multiplier_by_sex[sex]
+	)
+
+
+static func get_max_health(human_rules: HumanRules, age_band: HumanTypes.AgeBand, sex: HumanTypes.Sex) -> float:
+	return (
+		human_rules.base_max_health
+		* human_rules.health_multiplier_by_age[age_band]
+		* human_rules.health_multiplier_by_sex[sex]
+	)
+
+
+static func get_max_happiness(human_rules: HumanRules, age_band: HumanTypes.AgeBand, sex: HumanTypes.Sex) -> float:
+	return (
+		human_rules.base_max_happiness
+		* human_rules.happiness_multiplier_by_age[age_band]
+		* human_rules.happiness_multiplier_by_sex[sex]
+	)
+
+
+# Loyalty verso chi/cosa non è ancora definito concettualmente — vedi HumanRules.base_max_loyalty
+# per lo stesso avvertimento.
+static func get_max_loyalty(human_rules: HumanRules, age_band: HumanTypes.AgeBand, sex: HumanTypes.Sex) -> float:
+	return (
+		human_rules.base_max_loyalty
+		* human_rules.loyalty_multiplier_by_age[age_band]
+		* human_rules.loyalty_multiplier_by_sex[sex]
+	)

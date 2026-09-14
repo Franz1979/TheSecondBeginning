@@ -90,20 +90,6 @@ var deposit_kind: DepositKind = DepositKind.THOUGHT
 # click, stesso principio già seguito da PickUpAction.macro_state).
 var target_building: Building = null
 
-# Esito della riverifica spazio fatta in activate() sotto (2026-09-09, richiesta utente —
-# re-routing su magazzino pieno, poi GENERALIZZATO nello stesso canale usato per la ricerca
-# magazzino iniziale post-PickUp, vedi context["pending_warehouse_search"] sotto): true se, al
-# momento di attivare questo step, target_building NON ha più posto per l'INTERA carried_quantity —
-# scoperto tipicamente perché qualcun altro ha riempito il magazzino nel frattempo (il WalkAction
-# precedente in questa stessa Task può aver richiesto diversi giorni di gioco). Quando true,
-# on_complete() sotto salta ESPLICITAMENTE il deposito fisico (nessuna chiamata a store()): la
-# richiesta di ricerca è già stata scritta in context da activate(), e HumanIndividualActionService.
-# apply_action la consuma DOPO on_complete() (vedi lì, _handle_pending_warehouse_search) — questo
-# flag esiste solo per far sì che on_complete() sappia di dover stare fermo, non duplica la logica
-# di ricerca vera e propria. Rinominato da _needs_reroute (2026-09-09) per lo stesso motivo di
-# generalizzazione — nessun cambio di comportamento, solo nome.
-var _needs_warehouse_search: bool = false
-
 # Distanza dell'ultimo "cammina via" dopo un deposito fisico riuscito (2026-09-09, richiesta utente
 # — haul_resource, "stesso schema di walk_away in Daydream") — STESSO valore di GameScene._DEBUG_
 # DAYDREAM_LEAVE_DISTANCE (5.0), stesso motivo lì dichiarato: evita che più individui si accumulino
@@ -130,6 +116,12 @@ const WALK_AWAY_DISTANCE: float = 5.0
 # stesso principio già seguito ovunque in questo progetto (nessuna costante condivisa tra Action).
 const STAMINA_COST_PER_SPACE_UNIT: float = 2.0
 
+# Costo di HAPPINESS al GIORNO (2026-09-13, richiesta utente: "-10.0/day") — tasso fisso, non
+# proporzionale allo spazio depositato (a differenza del costo stamina sopra) — STESSO valore di
+# PickUpAction/RetrieveAction.HAPPINESS_DRAIN_PER_DAY, costante separata, stesso principio "nessuna
+# costante condivisa tra Action" già dichiarato sopra per STAMINA_COST_PER_SPACE_UNIT.
+const HAPPINESS_DRAIN_PER_DAY: float = 10.0
+
 var _duration: float = 0.0
 var _total_stamina_cost: float = 0.0
 var _elapsed: float = 0.0
@@ -147,6 +139,10 @@ func _init(p_target_building: Building = null, p_deposit_kind: DepositKind = Dep
 	target = null
 	target_building = p_target_building
 	deposit_kind = p_deposit_kind
+	# INFANT non può eseguire questa Action (2026-09-12, richiesta utente — collegamento AgeBand.
+	# INFANT al gameplay, vedi Action.disallowed_age_bands). CHILD aggiunto 2026-09-13 (richiesta
+	# utente).
+	disallowed_age_bands = [HumanTypes.AgeBand.INFANT, HumanTypes.AgeBand.CHILD]
 
 
 # Nessun override prima d'ora (ereditava Action.activate — solo individual.is_moving = false,
@@ -157,94 +153,60 @@ func _init(p_target_building: Building = null, p_deposit_kind: DepositKind = Dep
 # testa al file), target_building risolto (id/posizione) se presente, categorie accettate, e zaino
 # dell'individuo AL MOMENTO dell'attivazione (prima di qualunque decremento).
 #
-# RIVERIFICA SPAZIO (2026-09-09, richiesta utente — re-routing, poi GENERALIZZATO nello stesso
-# canale di ricerca magazzino usato da PickUpAction.on_complete per la ricerca iniziale, vedi
-# HumanIndividualActionService._handle_pending_warehouse_search) — aggiunta qui, PRIMA di ogni log:
-# il momento in cui questo step diventa attivo è l'ultima occasione per scoprire che target_building
-# si è riempito nel frattempo (tra quando la Task è stata creata — magari con WalkAction ancora da
-# percorrere — e ora). Se non c'è più posto per l'INTERA carried_quantity, questa Action non deposita
-# affatto in questo passaggio: scrive invece context["pending_warehouse_search"] = {"resource_name",
-# "quantity", "excluded_building_ids", "discard_on_failure": true} — STESSA forma generica che
-# PickUpAction.on_complete scrive per la ricerca iniziale (vedi lì), così un solo handler in
-# HumanIndividualActionService serve entrambi i casi, invece di due flag paralleli (reroute_pending/
-# reroute_excluded_building_ids, come prima di questa generalizzazione).
+# DEPOSITO PARZIALE (2026-09-14, richiesta utente — bugfix "porto più/diverso materiale di quanto
+# serve, oggi va tutto perso invece di depositare quel che entra"; RICALIBRATO rispetto alla vecchia
+# logica "still_fits" — vedi cronologia sotto) — costo/durata risolti QUI su quanto verrà DAVVERO
+# depositato in QUESTO passaggio (min(carried_quantity, max_depositable), MAI più l'intera
+# carried_quantity a prescindere): se il posto residuo è meno di quanto trasportato, l'individuo
+# scarica solo quella parte (tempo/stamina proporzionali a quella sola quantità, coerente col
+# principio "il costo riflette il lavoro davvero svolto") — il deposito VERO E PROPRIO (store(),
+# decremento zaino, eventuale re-routing del residuo) resta in on_complete() sotto, che rilegge
+# get_max_depositable DAL VIVO (può essere cambiato nel frattempo, vedi sotto) invece di fidarsi di
+# questo valore ormai "vecchio" se la durata calcolata qui non è stata 0.0 (più giorni di gioco
+# trascorsi in mezzo).
 #
-# "discard_on_failure": true SOLO qui (non nella scrittura di PickUpAction) — DEVIAZIONE aggiuntiva
-# rispetto alla forma letterale del Dictionary richiesta (che elencava solo resource_name/quantity/
-# excluded_building_ids): necessaria perché i DUE casi hanno un esito diverso quando la ricerca non
-# trova nulla (richiesta esplicita utente per entrambi, punti distinti dello stesso prompt) — qui
-# (re-routing, un edificio già raggiunto è risultato pieno) nessun sistema di scarico a terra esiste
-# ancora, quindi "nessun candidato" comporta la perdita TEMPORANEA della merce; per PickUpAction
-# invece "nessun candidato" lascia semplicemente l'individuo con la merce in spalla, nessuna perdita
-# (vedi _handle_pending_warehouse_search per come il campo pilota questa scelta). Un solo campo
-# booleano in più nello stesso Dictionary, non un secondo segnale.
-#
-# warehouse_search_excluded_building_ids (2026-09-09) — persistente in context per l'intera durata
-# della Task (mai azzerato qui, cresce ad ogni tentativo fallito), generalizzazione dell'ex
-# reroute_excluded_building_ids: PickUpAction.on_complete NON lo tocca (la sua ricerca iniziale parte
-# sempre con excluded_building_ids=[] indipendentemente da questo), solo UnloadAction.activate lo
-# legge/accresce quando scopre un magazzino pieno — così un secondo/terzo tentativo fallito continua
-# a escludere anche i precedenti, evitando un loop sullo stesso magazzino pieno.
+# CRONOLOGIA (perché non c'è più un ramo "still_fits") — PRIMA (2026-09-09/13) un controllo
+# `max_depositable >= carried_quantity` decideva TUTTO O NIENTE: se l'intero carico non entrava,
+# zero deposito qui, l'INTERA quantità andava in re-routing (context["pending_warehouse_search"],
+# vedi sotto) — comportamento CONFERMATO SBAGLIATO con l'utente: portare 4 stick a un cantiere che
+# ne aspetta ancora 2 faceva perdere il viaggio per intero (0 depositati), invece dei 2 che
+# sarebbero comunque entrati. Zero fits (max_depositable<=0, es. risorsa sbagliata o cantiere già
+# rifornito) resta l'UNICO caso in cui NON si deposita nulla qui — un `min()` con 0 dà comunque 0,
+# nessun ramo speciale necessario.
 #
 # Nessun effetto se deposit_kind != RESOURCE (ramo pensiero, non riguardato da questo meccanismo) o
-# se lo zaino è già vuoto (nulla da ricollocare).
-#
-# COSTO/DURATA (2026-09-10, richiesta utente) — risolti QUI, stesso momento/stesso principio di
-# PickUpAction.activate: SOLO quando il deposito avverrà davvero (still_fits true sotto, quantità
-# intera già garantita depositabile) — se invece scatta il re-routing (still_fits false) o lo zaino è
-# vuoto o target_building è null (ramo pensiero), _duration/_total_stamina_cost restano a 0.0 (resettati
-# incondizionatamente qui sotto prima di ogni ramo), quindi is_complete()/get_stamina_delta() sotto
-# restano "istantanei, costo zero" per tutti quei casi — esattamente come oggi per il pensiero,
-# invariato.
+# se lo zaino è già vuoto (nulla da ricollocare) — _duration/_total_stamina_cost restano a 0.0
+# (resettati incondizionatamente qui sotto prima di ogni ramo), quindi is_complete()/get_stamina_
+# delta() sotto restano "istantanei, costo zero" per quei casi, esattamente come per il pensiero.
 func activate(individual: Variant, context: Dictionary) -> void:
 	super(individual, context)
 	if _restored_from_save:
 		return
-	_needs_warehouse_search = false
 	_duration = 0.0
 	_total_stamina_cost = 0.0
 	_elapsed = 0.0
 	if deposit_kind == DepositKind.RESOURCE and target_building != null and individual.carried_quantity > 0:
 		var max_depositable := BuildingStorageService.get_max_depositable(target_building, individual.carried_resource_name)
-		var still_fits: bool = max_depositable >= individual.carried_quantity
-		if not still_fits:
-			_needs_warehouse_search = true
-			# Costruita manualmente (int(id) per elemento), non Array[int](context.get(...)) —
-			# quel costrutto tipizzato non è comunque necessario qui e questo loop gestisce anche
-			# il caso in cui la lista arrivi da un context deserializzato da JSON (numeri sempre
-			# float, mai int — stesso principio già richiesto altrove nel progetto per i save).
-			var excluded: Array[int] = []
-			for raw_id in context.get("warehouse_search_excluded_building_ids", []):
-				excluded.append(int(raw_id))
-			if not excluded.has(target_building.id):
-				excluded.append(target_building.id)
-			context["warehouse_search_excluded_building_ids"] = excluded
-			context["pending_warehouse_search"] = {
-				"resource_name": individual.carried_resource_name,
-				"quantity": individual.carried_quantity,
-				"excluded_building_ids": excluded,
-				"discard_on_failure": true,
-			}
-			if DebugLogging.ENABLED:
-				print("[UNLOAD] activate: target_building id=%d non ha più posto per carried_quantity=%d — pending_warehouse_search scritto, esclusi finora=%s" % [
-					target_building.id, individual.carried_quantity, str(excluded)
-				])
-		else:
-			# Il deposito avverrà davvero questo passaggio (nessun re-routing) — costo/durata
-			# risolti sull'INTERA carried_quantity (still_fits sopra garantisce che ci entri tutta),
-			# stessa formula di PickUpAction.activate: durata proporzionale allo spazio occupato
-			# rispetto alla capacità di carico TOTALE dell'individuo (stesso "metro" usato per la
-			# raccolta, coerente da entrambi i lati del trasporto), costo proporzionale allo spazio.
+		var quantity_to_deposit_now: int = min(max_depositable, individual.carried_quantity)
+		if quantity_to_deposit_now > 0:
+			# Costo/durata SOLO su quantity_to_deposit_now (2026-09-14) — non più sull'intera
+			# carried_quantity: stessa formula di PickUpAction.activate, durata proporzionale allo
+			# spazio occupato rispetto alla capacità di carico TOTALE dell'individuo, costo
+			# proporzionale allo spazio, ma calcolati solo su ciò che entrerà davvero questo giro.
 			var resource_rules := CaloricCalculator.get_caloric_source_rules(individual.carried_resource_name)
 			var space_per_unit: float = resource_rules.space_per_unit if resource_rules != null else 0.0
-			var space_to_deposit: float = float(individual.carried_quantity) * space_per_unit
+			var space_to_deposit: float = float(quantity_to_deposit_now) * space_per_unit
 			if space_to_deposit > 0.0 and individual.max_carry_capacity > 0.0:
 				_duration = space_to_deposit / individual.max_carry_capacity
 				_total_stamina_cost = STAMINA_COST_PER_SPACE_UNIT * space_to_deposit
 			if DebugLogging.ENABLED:
-				print("[UNLOAD] activate: deposito previsto di carried_quantity=%d — duration=%.3fgg, total_stamina_cost=%.1f" % [
-					individual.carried_quantity, _duration, _total_stamina_cost
+				print("[UNLOAD] activate: deposito previsto di %d/%d (residuo restante gestito da on_complete) — duration=%.3fgg, total_stamina_cost=%.1f" % [
+					quantity_to_deposit_now, individual.carried_quantity, _duration, _total_stamina_cost
 				])
+		elif DebugLogging.ENABLED:
+			print("[UNLOAD] activate: target_building id=%d non ha ALCUN posto per '%s' (max_depositable=0) — deposito istantaneo nullo, on_complete gestirà il re-routing dell'intero carico." % [
+				target_building.id, individual.carried_resource_name
+			])
 	# Riverifica ramo PENSIERO (2026-09-12, richiesta utente — bugfix "deposito nel vuoto") — STESSO
 	# principio/STESSO momento della riverifica ramo RESOURCE appena sopra (activate(), quando
 	# l'individuo arriva davvero): un pensiero non ha un concetto di "capacità residua" da
@@ -287,6 +249,15 @@ func get_stamina_delta(individual: Variant, context: Dictionary, delta: float) -
 	return -(_total_stamina_cost / _duration) * delta
 
 
+# STESSA guardia _duration<=0.0 di get_stamina_delta sopra (copre anche il ramo PENSIERO, sempre a
+# costo zero — stessa logica "nessuna quantità da timerare" già dichiarata in testa al file) — MA
+# non incrementa _elapsed, già avanzato da get_stamina_delta nello stesso frame. Tasso fisso.
+func get_happiness_delta(individual: Variant, context: Dictionary, delta: float) -> float:
+	if _duration <= 0.0:
+		return 0.0
+	return -HAPPINESS_DRAIN_PER_DAY * delta
+
+
 # NON PIÙ sempre true (2026-09-10, richiesta utente — costo/durata reali per il deposito fisico) —
 # ora confronta _elapsed con _duration, STESSO schema esatto di PickUpAction/ThinkAction.is_complete.
 # Resta "istantanea" (0.0 >= 0.0, vero da subito) per QUALUNQUE caso in cui activate() ha lasciato
@@ -305,6 +276,20 @@ func is_complete(individual: Variant, context: Dictionary) -> bool:
 			_elapsed, _duration, str(target_building.id) if target_building != null else "null"
 		])
 	return _elapsed >= _duration
+
+
+# get_required_position (2026-09-13, richiesta utente — fix "Walk di ritorno alla ripresa", vedi
+# Action.get_required_position) — SOLO ramo FISICO (deposit_kind == RESOURCE): il ramo PENSIERO
+# non ha alcun vincolo di posizione reale (deposita su un Folk via source_group_ref, non su una
+# cella — vedi on_complete sotto), quindi ritorna sempre null per quel ramo, indipendentemente da
+# target_building (che per il pensiero può essere valorizzato ma non è consumato come posizione,
+# vedi la nota in testa al file). Stessa formula/stesso commento esteso di RetrieveAction.
+# get_required_position per il ramo fisico.
+func get_required_position(individual: Variant, context: Dictionary) -> Variant:
+	if deposit_kind != DepositKind.RESOURCE or target_building == null:
+		return null
+	var macro_offset: Vector2 = Vector2(Vector2i(target_building.macro_x, target_building.macro_y) - individual.home_macro_coords) * World.WIDTH
+	return Vector2(target_building.micro_x, target_building.micro_y) + macro_offset
 
 
 # Due rami MUTUAMENTE ESCLUSIVI secondo deposit_kind (2026-09-10, DEVIAZIONE dal discriminatore
@@ -336,13 +321,6 @@ func on_complete(individual: Variant, context: Dictionary) -> void:
 			print("[UNLOAD] on_complete: ramo FISICO (target_building id=%s)" % (str(target_building.id) if target_building != null else "null"))
 		if target_building == null:
 			return
-		# _needs_warehouse_search (2026-09-09, richiesta utente — re-routing, generalizzato) — deciso
-		# da activate() sopra: nessun deposito qui, HumanIndividualActionService.apply_action gestisce
-		# la ricerca leggendo context DOPO questa chiamata (vedi commento in testa al file).
-		if _needs_warehouse_search:
-			if DebugLogging.ENABLED:
-				print("[UNLOAD] on_complete: _needs_warehouse_search=true — nessun deposito, delego la ricerca magazzino ad apply_action.")
-			return
 		if individual.carried_resource_name == "" or individual.carried_quantity <= 0:
 			if DebugLogging.ENABLED:
 				print("[UNLOAD] on_complete: zaino vuoto (carried_resource_name='%s' carried_quantity=%d) — nessun deposito, return anticipato." % [
@@ -360,63 +338,101 @@ func on_complete(individual: Variant, context: Dictionary) -> void:
 				individual.carried_quantity,
 			])
 		var carried_before_deposit: int = individual.carried_quantity
+		var resource_name_before_deposit: String = individual.carried_resource_name
 		# carried_decay_fraction (2026-09-09, richiesta utente — Step 3 decadimento) — passato a
 		# store() così la frazione dello zaino si fonde (media pesata) con quella già presente nel
 		# magazzino per lo stesso resource_name, invece di andare persa/azzerata al deposito.
+		# store() clampa DA SÉ a min(carried_quantity, get_max_depositable(...)) — può quindi
+		# depositare MENO del richiesto (deposito PARZIALE) o 0 (nessun posto/risorsa sbagliata),
+		# MAI un errore: i due rami sotto (deposited>0 / deposited<=0) confluiscono nella STESSA
+		# gestione del residuo (2026-09-14, richiesta utente — vedi cronologia in testa ad activate()).
 		var deposited: int = BuildingStorageService.store(
 			target_building, individual.carried_resource_name, individual.carried_quantity, individual.carried_decay_fraction
 		)
 		if DebugLogging.ENABLED:
 			print("[UNLOAD] on_complete: store() ha depositato %d unità (su %d richieste)" % [deposited, carried_before_deposit])
-		if deposited <= 0:
-			if DebugLogging.ENABLED:
-				print("[UNLOAD] on_complete: deposited<=0 — nessun decremento zaino, return anticipato. carried_quantity resta %d" % individual.carried_quantity)
-			return
-		# resource_deposited (2026-09-12) — emesso QUI, appena garantito deposited > 0 dal guard
-		# sopra: chi ascolta (GameScene._on_resource_deposited) deve rinfrescare la mappa anche se il
-		# deposito è stato solo PARZIALE (deposited < carried_before_deposit, il resto resta nello
-		# zaino) — la griglia di stoccaggio del deposit site è comunque cambiata.
-		resource_deposited.emit(target_building)
-		individual.carried_quantity -= deposited
+		if deposited > 0:
+			# resource_deposited (2026-09-12) — emesso SOLO se deposited>0: chi ascolta
+			# (GameScene._on_resource_deposited) deve rinfrescare la mappa anche se il deposito è
+			# stato solo PARZIALE (deposited < carried_before_deposit, il resto gestito sotto) — la
+			# griglia di stoccaggio del deposit site è comunque cambiata.
+			resource_deposited.emit(target_building)
+			individual.carried_quantity -= deposited
+		if DebugLogging.ENABLED:
+			print("[UNLOAD] on_complete: carried_quantity PRIMA=%d -> DOPO=%d" % [carried_before_deposit, individual.carried_quantity])
 		if individual.carried_quantity <= 0:
 			individual.carried_quantity = 0
 			individual.carried_resource_name = ""
 			# carried_decay_fraction azzerata insieme a resource_name/quantity (2026-09-09) — stesso
 			# principio già dichiarato su HumanIndividual.carried_decay_fraction: mai un valore
-			# "orfano" associato a uno zaino vuoto. Il resto NON scaricato (deposited < carried_
-			# before_deposit, quantity ancora > 0 sotto) mantiene invece la propria decay_fraction
-			# INVARIATA — è ancora fisicamente nello zaino, nessuna ragione di toccarla.
+			# "orfano" associato a uno zaino vuoto.
 			individual.carried_decay_fraction = 0.0
-		if DebugLogging.ENABLED:
-			print("[UNLOAD] on_complete: carried_quantity PRIMA=%d -> DOPO=%d (carried_resource_name DOPO='%s')" % [
-				carried_before_deposit, individual.carried_quantity, individual.carried_resource_name
-			])
-		# "Cammina via" (2026-09-09, richiesta utente — haul_resource, stesso schema di walk_away in
-		# Daydream: target_building.position + Vector2.from_angle(randf() * TAU) * 5.0) — SOLO qui,
-		# deposito FISICO riuscito (deposited > 0, già garantito da questo punto in poi: il ramo
-		# pensiero sotto non passa mai di qui), mai per il ramo pensiero (richiesta esplicita utente:
-		# "quando UnloadAction.on_complete() deposita fisicamente con successo (non il ramo
-		# pensiero)"). Questa Action non ha accesso alla Task (solo individual/context, vedi Action.
-		# gd) quindi non può accodare direttamente un nuovo WalkAction: scrive la posizione target in
-		# context, HumanIndividualActionService.apply_action la consuma SUBITO dopo on_complete()
-		# (stesso identico canale/stesso momento già usato per pending_warehouse_search sopra) e fa
-		# lei l'append_steps vero.
+			# "Cammina via" (2026-09-09, richiesta utente — haul_resource, stesso schema di walk_away
+			# in Daydream: target_building.position + Vector2.from_angle(randf() * TAU) * 5.0) — SOLO
+			# quando lo zaino si è svuotato DEL TUTTO qui (deposito completo, nessun residuo da
+			# reinstradare sotto): mai per il ramo pensiero (richiesta esplicita utente: "quando
+			# UnloadAction.on_complete() deposita fisicamente con successo"). Questa Action non ha
+			# accesso alla Task (solo individual/context, vedi Action.gd) quindi non può accodare
+			# direttamente un nuovo WalkAction: scrive la posizione target in context,
+			# HumanIndividualActionService.apply_action la consuma SUBITO dopo on_complete() (stesso
+			# canale/momento già usato per pending_warehouse_search sotto) e fa lei l'append_steps
+			# vero.
+			#
+			# Conversione cross-macrocella verificata (richiesta utente, 2026-09-09) — NON omessa per
+			# "sappiamo già che è sempre zero": individual.home_macro_coords può SOLO essere diverso
+			# da (target_building.macro_x, target_building.macro_y) se l'individuo avesse
+			# attraversato un bordo di macrocella camminando fin qui, ma GameScene.
+			# _attempt_macro_cell_transition chiama individual.stop() (azzera current_task) ad OGNI
+			# attraversamento — quindi una Task il cui WalkAction precedente avrebbe dovuto
+			# attraversare un bordo per raggiungere target_building verrebbe interrotta PRIMA di
+			# arrivare, e questo on_complete() fisico non verrebbe mai raggiunto per quel caso. In
+			# pratica l'offset qui sotto risulta quindi sempre (0,0) con lo stato attuale del
+			# movimento — ma la formula resta quella GENERALE (stessa già in uso in _try_assign_
+			# unload_command_on_right_click/_debug_test_daydream_task), per coerenza e nel caso quella
+			# limitazione sui bordi venga rimossa in futuro senza che nessuno si ricordi di
+			# aggiornare anche questo punto.
+			var macro_offset: Vector2 = Vector2(Vector2i(target_building.macro_x, target_building.macro_y) - individual.home_macro_coords) * World.WIDTH
+			var building_position: Vector2 = Vector2(target_building.micro_x, target_building.micro_y) + macro_offset
+			context["pending_walk_away_position"] = building_position + Vector2.from_angle(randf() * TAU) * WALK_AWAY_DISTANCE
+			return
+		# RESIDUO (2026-09-14, richiesta utente — deposito parziale, punto 1 del piano concordato:
+		# "deposito ok seguito da rerouting SOLO del residuo") — copre ENTRAMBI i casi che lasciano
+		# carried_quantity > 0 qui: deposited=0 (nulla è entrato, es. risorsa sbagliata o cantiere già
+		# rifornito — l'INTERO carico è "residuo") e 0<deposited<carried_before_deposit (deposito
+		# parziale, solo l'eccedenza è "residuo"). STESSA forma/STESSO canale generico già usato da
+		# PickUpAction.on_complete per la ricerca iniziale (context["pending_warehouse_search"],
+		# consumato da HumanIndividualActionService._handle_pending_warehouse_search DOPO
+		# on_complete()) — SPOSTATA QUI da activate() (che PRIMA scriveva questa stessa richiesta
+		# PRIMA ancora di tentare il deposito, tutto-o-niente): ora la richiesta riflette SEMPRE la
+		# quantità VERAMENTE rimasta in spalla dopo il tentativo, mai l'intero carico originale a
+		# prescindere da quanto sia effettivamente entrato.
 		#
-		# Conversione cross-macrocella verificata (richiesta utente, 2026-09-09) — NON omessa per
-		# "sappiamo già che è sempre zero": individual.home_macro_coords può SOLO essere diverso da
-		# (target_building.macro_x, target_building.macro_y) se l'individuo avesse attraversato un
-		# bordo di macrocella camminando fin qui, ma GameScene._attempt_macro_cell_transition chiama
-		# individual.stop() (azzera current_task) ad OGNI attraversamento — quindi una Task il cui
-		# WalkAction precedente avrebbe dovuto attraversare un bordo per raggiungere target_building
-		# verrebbe interrotta PRIMA di arrivare, e questo on_complete() fisico non verrebbe mai
-		# raggiunto per quel caso. In pratica l'offset qui sotto risulta quindi sempre (0,0) con lo
-		# stato attuale del movimento — ma la formula resta quella GENERALE (stessa già in uso in
-		# _try_assign_unload_command_on_right_click/_debug_test_daydream_task), per coerenza e nel
-		# caso quella limitazione sui bordi venga rimossa in futuro senza che nessuno si ricordi di
-		# aggiornare anche questo punto.
-		var macro_offset: Vector2 = Vector2(Vector2i(target_building.macro_x, target_building.macro_y) - individual.home_macro_coords) * World.WIDTH
-		var building_position: Vector2 = Vector2(target_building.micro_x, target_building.micro_y) + macro_offset
-		context["pending_walk_away_position"] = building_position + Vector2.from_angle(randf() * TAU) * WALK_AWAY_DISTANCE
+		# discard_on_failure: true (invariato) — se find_best non trova nemmeno un vero magazzino per
+		# il residuo, individual.discard_carried_resource() lo scarta (vedi
+		# _handle_pending_warehouse_search) — stesso comportamento di prima per il caso "nessun
+		# candidato", solo applicato ora alla quantità corretta.
+		#
+		# target_building.id escluso (2026-09-14) — STESSO principio di prima (un edificio appena
+		# rifiutato/riempito non va riproposto identico): dopo un fix A (WarehouseSelectionService.
+		# find_best ora richiede is_complete), un cantiere in costruzione non passerebbe comunque il
+		# filtro, ma l'esclusione esplicita resta comunque corretta e innocua per un target_building
+		# che fosse invece un vero magazzino già pieno.
+		var excluded: Array[int] = []
+		for raw_id in context.get("warehouse_search_excluded_building_ids", []):
+			excluded.append(int(raw_id))
+		if not excluded.has(target_building.id):
+			excluded.append(target_building.id)
+		context["warehouse_search_excluded_building_ids"] = excluded
+		context["pending_warehouse_search"] = {
+			"resource_name": resource_name_before_deposit,
+			"quantity": individual.carried_quantity,
+			"excluded_building_ids": excluded,
+			"discard_on_failure": true,
+		}
+		if DebugLogging.ENABLED:
+			print("[UNLOAD] on_complete: residuo di %d '%s' dopo deposito parziale/nullo in target_building id=%d — pending_warehouse_search scritto, esclusi finora=%s" % [
+				individual.carried_quantity, resource_name_before_deposit, target_building.id, str(excluded)
+			])
 		return
 
 	if DebugLogging.ENABLED:

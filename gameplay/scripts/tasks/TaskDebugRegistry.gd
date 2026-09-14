@@ -47,10 +47,26 @@ const STATUS_INTERRUPTED := "interrotta"
 # nessuna Task "importante" da preservare per forza, è un log diagnostico, non un archivio.
 const MAX_ENTRIES: int = 200
 
+# Scadenza temporale (2026-09-13, richiesta utente: "le interrotte o completate cancellale dopo
+# 2gg") — un'entry COMPLETED/INTERRUPTED chiusa da almeno questo numero di giorni di gioco viene
+# rimossa dal registro alla prossima on_day_advanced sotto. STATUS_IN_PROGRESS non scade MAI qui
+# (nessun closed_at_absolute_day valorizzato finché resta in corso, vedi sotto).
+const EXPIRY_DAYS: int = 2
+
+# Giorno assoluto corrente NOTO a questo registro (2026-09-13) — aggiornato una volta al giorno da
+# on_day_advanced sotto (chiamato da GameTimeService._on_day_advanced/GameLoadService, mai da
+# questa classe stessa). Necessario per stampare closed_at_absolute_day quando un'entry si chiude
+# (on_task_closed/on_task_assigned sotto) SENZA violare il principio "registro stato puro, nessun
+# riferimento a oggetti vivi" (vedi doc di testa al file) — un intero copiato, non un GameData vivo.
+static var _current_absolute_day: int = 0
+
 # Un Dictionary per entry: {"id","task_name","individual_id","individual_name","status",
-# "target_key"} — Array semplice, non Dictionary[id]->entry: l'ordine di inserimento (più recente in
-# testa, vedi on_task_assigned sotto) è il dato che serve al pannello, un Dictionary lo perderebbe
-# senza un campo ordine separato.
+# "target_key","closed_at_absolute_day"} — Array semplice, non Dictionary[id]->entry: l'ordine di
+# inserimento (più recente in testa, vedi on_task_assigned sotto) è il dato che serve al pannello,
+# un Dictionary lo perderebbe senza un campo ordine separato. closed_at_absolute_day (2026-09-13) =
+# -1 finché la entry resta STATUS_IN_PROGRESS (mai scaduta), valorizzato al giorno assoluto corrente
+# nel momento esatto in cui la entry passa a COMPLETED/INTERRUPTED (vedi on_task_closed/
+# on_task_assigned sotto) — è la data di riferimento per il calcolo di scadenza in on_day_advanced.
 static var _entries: Array[Dictionary] = []
 
 
@@ -79,6 +95,10 @@ static func on_task_assigned(individual: HumanIndividual, task: Task) -> void:
 		for entry in _entries:
 			if entry["target_key"] == task.debug_target_key and entry["status"] == STATUS_IN_PROGRESS:
 				entry["status"] = STATUS_INTERRUPTED
+				# closed_at_absolute_day (2026-09-13) — stessa stampa temporale di on_task_closed
+				# sotto: questa chiusura "per target" è concettualmente la stessa chiusura, solo
+				# attraverso un percorso diverso (nessun task.id corrispondente da cercare qui).
+				entry["closed_at_absolute_day"] = _current_absolute_day
 	_entries.push_front({
 		"id": task.id,
 		"task_name": task.task_name,
@@ -86,6 +106,7 @@ static func on_task_assigned(individual: HumanIndividual, task: Task) -> void:
 		"individual_name": individual.name,
 		"status": STATUS_IN_PROGRESS,
 		"target_key": task.debug_target_key,
+		"closed_at_absolute_day": -1,
 	})
 	if _entries.size() > MAX_ENTRIES:
 		_entries.resize(MAX_ENTRIES)
@@ -105,6 +126,9 @@ static func on_task_closed(task: Task) -> void:
 		if entry["id"] == task.id:
 			if entry["status"] == STATUS_IN_PROGRESS:
 				entry["status"] = STATUS_COMPLETED if task.is_finished() else STATUS_INTERRUPTED
+				# closed_at_absolute_day (2026-09-13) — timbro temporale usato da on_day_advanced
+				# sotto per decidere quando questa entry è "abbastanza vecchia" da essere rimossa.
+				entry["closed_at_absolute_day"] = _current_absolute_day
 			return
 
 
@@ -116,3 +140,26 @@ static func get_entries() -> Array[Dictionary]:
 
 static func clear() -> void:
 	_entries.clear()
+
+
+# Chiamata UNA VOLTA al giorno (2026-09-13, richiesta utente — filtro pannello + pulizia
+# temporale): da GameTimeService._on_day_advanced (partita in corso) e da GameLoadService subito
+# dopo il caricamento (per sincronizzare _current_absolute_day al giorno VERO appena caricato,
+# evitando che un valore stantio residuo di una sessione precedente faccia scadere per errore
+# un'entry chiusa nella finestra tra clear() e il prossimo avanzamento giorno reale).
+#
+# Aggiorna PRIMA _current_absolute_day (così on_task_closed/on_task_assigned di OGGI stampano il
+# giorno giusto), POI rimuove ogni entry STATUS_COMPLETED/STATUS_INTERRUPTED chiusa da almeno
+# EXPIRY_DAYS giorni — STATUS_IN_PROGRESS non viene mai considerata (closed_at_absolute_day resta
+# -1 finché non si chiude, la condizione sotto la esclude per costruzione). Iterazione ALL'INDIETRO
+# con remove_at, stesso idioma già in uso altrove nel progetto per rimozioni in-place da un Array
+# scorso linearmente (es. GameTimeService._cleanup_expired_objects).
+static func on_day_advanced(current_absolute_day: int) -> void:
+	_current_absolute_day = current_absolute_day
+	var i := _entries.size() - 1
+	while i >= 0:
+		var entry: Dictionary = _entries[i]
+		var closed_at: int = entry.get("closed_at_absolute_day", -1)
+		if closed_at >= 0 and current_absolute_day - closed_at >= EXPIRY_DAYS:
+			_entries.remove_at(i)
+		i -= 1

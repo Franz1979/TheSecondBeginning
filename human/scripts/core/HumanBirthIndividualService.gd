@@ -108,7 +108,7 @@ static func _run_births_in_group(
 		var roll := _roll_childbirth_survival(human_rules, era_rules)
 		var newborn: HumanIndividual = null
 		if roll["child_survived_roll"]:
-			newborn = _create_newborn(woman, game_data)
+			newborn = _create_newborn(woman, game_data, all_individuals)
 			newborns.append(newborn)
 		else:
 			_record_stillbirth_event(woman, game_data)
@@ -151,7 +151,15 @@ static func _roll_childbirth_survival(human_rules: HumanRules, era_rules: EraRul
 # home_macro_coords, in quest'ordine (sex PRIMA di assign_random_name: quella funzione legge
 # self.sex per scegliere la lista nomi maschile/femminile, stesso ordine già usato da
 # HumanSeedingService._create_family_children/_create_child).
-static func _create_newborn(mother: HumanIndividual, game_data: GameData) -> HumanIndividual:
+#
+# all_individuals (2026-09-13, richiesta utente — eredità skill) — necessario SOLO per risolvere
+# il padre per OGGETTO (mother.pending_child_father_id è solo un id): scansione lineare per id,
+# stesso identico costo/stesso identico idioma già accettato altrove nel progetto per array
+# analoghi (es. GameTimeService._transfer_or_orphan_dependent_child/_free_partner_if_any). Se il
+# padre non è (più) nel roster — può essere morto tra concepimento e nascita, vedi doc di testa al
+# file — le sue skill sono trattate come 0.0 per tutte (fallback onesto, stesso principio già in
+# uso per FALLBACK_MAX_VITAL/FALLBACK_MAX_STAMINA: nessun crash, nessuna skill "inventata").
+static func _create_newborn(mother: HumanIndividual, game_data: GameData, all_individuals: Array[HumanIndividual]) -> HumanIndividual:
 	var newborn := HumanIndividual.new()
 	newborn.id = game_data.allocate_human_id()
 	newborn.mother_id = mother.id
@@ -193,6 +201,40 @@ static func _create_newborn(mother: HumanIndividual, game_data: GameData) -> Hum
 		"child_survived": true,
 		"mother_survived": true,
 	})
+
+	# Eredità skill (2026-09-13, richiesta utente) — per OGNI skill esistente (HumanIndividual.
+	# get_skill_property_names(), MAI un conteggio scritto a mano — un'ottava skill futura viene
+	# ereditata automaticamente senza toccare questo codice): (skill_madre + skill_padre) / 10.0,
+	# STESSA formula per tutte. father risolto per oggetto (vedi doc sopra), 0.0 su tutte le skill
+	# se non trovato/morto.
+	var father: HumanIndividual = null
+	for candidate in all_individuals:
+		if candidate.id == newborn.father_id:
+			father = candidate
+			break
+	for skill_name in newborn.get_skill_property_names():
+		var mother_skill: float = mother.get(skill_name)
+		var father_skill: float = father.get(skill_name) if father != null else 0.0
+		newborn.set(skill_name, (mother_skill + father_skill) / 10.0)
+
+	# Bugfix (2026-09-13, richiesta utente) — STESSA causa/STESSO principio del fix gemello in
+	# GameScene._ready() (seeding/caricamento): un neonato nasce con current_task == null (mai
+	# valorizzato sopra) e, senza questa chiamata, non riceverebbe MAI il controllo bisogno/coda/
+	# fallback perditempo finché qualcosa non gli assegnasse manualmente una prima Task — restando
+	# fermo indefinitamente anche a stamina piena. age_band hardcoded a INFANT (non risolto via
+	# HumanCalculator.get_age_band): un neonato ha per costruzione età 0 in questo stesso istante,
+	# sempre e comunque INFANT — nessuna ambiguità da risolvere, nessun bisogno delle durate
+	# effettive per età qui. `world` null: nessuna Task-bisogno/perditempo di oggi ne ha davvero
+	# bisogno per un neonato (house_id resta -1 di default, mai assegnato a un neonato — vedi
+	# NeedTaskAssignmentService.resolve_rest_target, ramo "nessuna casa"). In pratica, oggi, questa
+	# chiamata è un no-op silenzioso: OGNI Task-bisogno/perditempo/Action coinvolta disallowed
+	# INFANT (vedi Action.disallowed_age_bands su WalkAction/RestAction/LookAroundAction/ecc.),
+	# quindi resolve_idle_individual ricade sul suo ultimo fallback (individual.stop(), no-op su
+	# current_task già null) — resta comunque corretto collegarla ORA: il giorno in cui un futuro
+	# bisogno/Task perditempo ammetterà INFANT, funzionerà da sé, senza dover ricordarsi di
+	# aggiungere questa chiamata a posteriori.
+	HumanIndividualActionService.resolve_idle_individual(newborn, HumanTypes.AgeBand.INFANT, null)
+
 	return newborn
 
 

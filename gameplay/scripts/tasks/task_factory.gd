@@ -201,6 +201,22 @@ static func build_task(definition: TaskDefinition, context: Dictionary) -> Task:
 					continue
 				steps.append(UnloadAction.new(context[step_definition.context_keys[0]], UnloadAction.DepositKind.RESOURCE))
 				step_descriptions.append(step_definition.step_description)
+			TaskTypes.ActionType.RUN:
+				# 1 argomento (target: Vector2) — stesso schema di WALK sopra, RunAction.new(target).
+				# Nessuna TaskDefinition la usa ancora oggi (2026-09-13, richiesta utente — solo l'Action
+				# e il collegamento a TaskFactory/persistenza in questo giro, in preparazione della
+				# futura Task Play).
+				if step_definition.context_keys.is_empty() or not context.has(step_definition.context_keys[0]):
+					push_error("TaskFactory.build_task: context_keys[0] mancante/non risolvibile per step RUN di TaskDefinition '%s'." % definition.task_name)
+					continue
+				steps.append(RunAction.new(context[step_definition.context_keys[0]]))
+				step_descriptions.append(step_definition.step_description)
+			TaskTypes.ActionType.JUMP:
+				# Nessun argomento — JumpAction._init non prende parametri (durata/numero di salti
+				# tirati a caso internamente, nessun target). Vedi JumpAction.gd. Nessuna TaskDefinition
+				# la usa ancora oggi (2026-09-13, richiesta utente — stesso discorso di RUN sopra).
+				steps.append(JumpAction.new())
+				step_descriptions.append(step_definition.step_description)
 			_:
 				push_error("TaskFactory.build_task: ActionType %d non supportato (TaskDefinition '%s')." % [
 					step_definition.action_type, definition.task_name
@@ -219,4 +235,13 @@ static func build_task(definition: TaskDefinition, context: Dictionary) -> Task:
 	# consumatori.
 	task.task_name = definition.task_name
 	task.step_descriptions = step_descriptions
+	# allowed_age_bands (2026-09-13, richiesta utente, Play Task CHILD-only) — copiato da
+	# TaskDefinition, stesso schema di task_name/step_descriptions sopra. Vedi Task.allowed_
+	# age_bands/HumanIndividual.assign_task per il consumatore.
+	task.allowed_age_bands = definition.allowed_age_bands
+	# interrupt_priority/is_suspendable (2026-09-13, richiesta utente, in preparazione al sistema di
+	# interrupt da stamina critica) — copiati da TaskDefinition, stesso schema di allowed_age_bands
+	# sopra. Nessun collegamento a logica di interrupt ancora: solo il dato copiato.
+	task.interrupt_priority = definition.interrupt_priority
+	task.is_suspendable = definition.is_suspendable
 	return task

@@ -43,6 +43,12 @@ extends Action
 # (1000-1500, vedi hut/pebble_circle/deposit_site.tres) resta completabile in pochi giorni di gioco.
 const STAMINA_DRAIN_PER_DAY: float = 200.0
 
+# Costo di HAPPINESS al GIORNO (2026-09-13, richiesta utente: "-5.0/day") — tasso fisso, NON
+# scalato da skill_multiplier/tool_multiplier (a differenza del costo stamina sopra, che li usa per
+# calcolare il lavoro effettivo — qui è solo l'umore di chi lavora, indipendente da quanto lavoro
+# utile produce quella giornata).
+const HAPPINESS_DRAIN_PER_DAY: float = 5.0
+
 var target_building: Building = null
 var skill_multiplier: float = 1.0
 var tool_multiplier: float = 1.0
@@ -66,6 +72,10 @@ func _init(
 	target_building = p_target_building
 	skill_multiplier = p_skill_multiplier
 	tool_multiplier = p_tool_multiplier
+	# INFANT non può eseguire questa Action (2026-09-12, richiesta utente — collegamento AgeBand.
+	# INFANT al gameplay, vedi Action.disallowed_age_bands). CHILD aggiunto 2026-09-13 (richiesta
+	# utente).
+	disallowed_age_bands = [HumanTypes.AgeBand.INFANT, HumanTypes.AgeBand.CHILD]
 
 
 # Lettura pura di Building.construction_progress["labor_accumulated"] — 0.0 se target_building è
@@ -113,6 +123,16 @@ func get_stamina_delta(individual: Variant, context: Dictionary, delta: float) -
 	return -stamina_spent_this_day
 
 
+# STESSE guardie di get_stamina_delta sopra, MAI scrittura di labor_accumulated (già incrementato
+# da get_stamina_delta nello stesso frame). Tasso fisso, non scalato da skill/tool_multiplier.
+func get_happiness_delta(individual: Variant, context: Dictionary, delta: float) -> float:
+	if target_building == null or target_building.rules == null:
+		return 0.0
+	if _get_labor_accumulated() >= float(target_building.rules.required_labor):
+		return 0.0
+	return -HAPPINESS_DRAIN_PER_DAY * delta
+
+
 # false (mai "vero da subito") se target_building/rules non risolvibili — difensivo: nessun dato
 # valido da cui decidere, meglio non completare mai un'Action mal costruita che fingere un
 # completamento istantaneo che salterebbe on_complete con dati a metà.
@@ -120,6 +140,19 @@ func is_complete(individual: Variant, context: Dictionary) -> bool:
 	if target_building == null or target_building.rules == null:
 		return false
 	return _get_labor_accumulated() >= float(target_building.rules.required_labor)
+
+
+# get_required_position (2026-09-13, richiesta utente — fix "Walk di ritorno alla ripresa", vedi
+# Action.get_required_position e RetrieveAction.get_required_position per la stessa identica
+# formula/stesso commento esteso, duplicata qui apposta — nessuna costante/funzione condivisa tra
+# Action diverse, stesso principio già seguito ovunque in questo sistema). Rilevante ora che
+# build.tres è sospendibile (is_suspendable = true, 2026-09-13): un individuo che lascia il
+# cantiere a metà BuildAction per un bisogno di stamina deve tornare esattamente lì alla ripresa.
+func get_required_position(individual: Variant, context: Dictionary) -> Variant:
+	if target_building == null:
+		return null
+	var macro_offset: Vector2 = Vector2(Vector2i(target_building.macro_x, target_building.macro_y) - individual.home_macro_coords) * World.WIDTH
+	return Vector2(target_building.micro_x, target_building.micro_y) + macro_offset
 
 
 # is_complete/current_durability risolti QUI (nessun dato esterno necessario, solo target_building.

@@ -37,9 +37,20 @@ const STAMINA_DRAIN_PER_MICROCELL_BASE: float = 5.0
 # valore ARBITRARIO di partenza, stesso principio "da bilanciare" già dichiarato sopra per la base.
 const STAMINA_DRAIN_PER_TOOL: float = 3.0
 
+# Costo di HAPPINESS per microcella percorsa (2026-09-13, richiesta utente) — camminare stanca
+# anche l'umore, non solo il corpo, ma con un tasso FISSO (richiesta esplicita: "-5.0 per
+# microcella percorsa"), a differenza di STAMINA_DRAIN_PER_MICROCELL_BASE sopra: nessun termine
+# aggiuntivo per carico trasportato/utensili equipaggiati, un unico numero. Riferita direttamente
+# da RunAction.get_happiness_delta (stesso principio già in uso per STAMINA_DRAIN_PER_MICROCELL_
+# BASE/STAMINA_DRAIN_PER_TOOL: Run non duplica la costante, la richiama).
+const HAPPINESS_DRAIN_PER_MICROCELL: float = 5.0
+
 
 func _init(p_target: Vector2) -> void:
 	target = p_target
+	# INFANT non può camminare da solo (2026-09-12, richiesta utente — collegamento AgeBand.INFANT
+	# al gameplay, vedi Action.disallowed_age_bands).
+	disallowed_age_bands = [HumanTypes.AgeBand.INFANT]
 
 
 # Punto in cui questo step prepara l'individuo a camminare (2026-09-07) — vedi Action.activate per
@@ -102,6 +113,26 @@ func get_stamina_delta(individual: Variant, context: Dictionary, delta: float) -
 
 	var cost_per_microcell: float = STAMINA_DRAIN_PER_MICROCELL_BASE + used_carry_space + STAMINA_DRAIN_PER_TOOL * float(individual.equipped_tool_count)
 	return -distance * cost_per_microcell
+
+
+# Tracciamento distanza INDIPENDENTE da _last_position sopra (2026-09-13, richiesta utente) —
+# necessario perché HumanIndividualActionService.apply_action chiama get_stamina_delta PRIMA nello
+# stesso frame, che aggiorna già _last_position alla posizione corrente: se questo metodo leggesse
+# la STESSA variabile, la distanza risulterebbe sempre 0 (già "consumata" dalla chiamata stamina).
+# Stesso identico pattern (sentinella null al primo frame, mai Vector2.ZERO — vedi il commento su
+# _last_position sopra per il perché), solo un campo separato e indipendente.
+var _last_happiness_position: Variant = null
+
+
+# Costo happiness = distanza × HAPPINESS_DRAIN_PER_MICROCELL, nessun termine di carico/utensili (a
+# differenza di get_stamina_delta sopra) — tasso fisso richiesto esplicitamente.
+func get_happiness_delta(individual: Variant, context: Dictionary, delta: float) -> float:
+	if _last_happiness_position == null:
+		_last_happiness_position = individual.position
+		return 0.0
+	var distance: float = individual.position.distance_to(_last_happiness_position)
+	_last_happiness_position = individual.position
+	return -distance * HAPPINESS_DRAIN_PER_MICROCELL
 
 
 # Completa quando la posizione ha raggiunto la destinazione DI QUESTO STEP — confronto contro

@@ -163,18 +163,26 @@ const HAUL_RESOURCE_TASK_DEFINITION_PATH := "res://gameplay/scripts/tasks/defini
 # guidato da context["pending_thought_target_search"]/["pending_walk_away_position"] scritti da
 # ThinkAction.on_complete/UnloadAction.on_complete (ramo THOUGHT) — vedi _debug_test_daydream_task.
 const DAYDREAM_TASK_DEFINITION_PATH := "res://gameplay/scripts/tasks/definitions/daydreaming.tres"
-# TaskDefinition "rest" (2026-09-12, richiesta utente — Rest Task esplicita, in sostituzione del
-# fallback implicito di HumanIndividualActionService.apply_action rimosso in un giro precedente) —
-# SEMPRE 2 step fissi [Walk, Rest] (vedi rest.tres): nessuna logica condizionale sul NUMERO di step
-# qui, il target/rest_multiplier sono risolti PRIMA della costruzione da _resolve_rest_target (vedi
-# sotto), stesso schema già in uso per il target di Daydream/haul_resource.
-const REST_TASK_DEFINITION_PATH := "res://gameplay/scripts/tasks/definitions/rest.tres"
+# TaskDefinition "rest" — Path/risoluzione target/costruzione+assegnazione SPOSTATI su
+# NeedTaskAssignmentService (2026-09-13, richiesta utente — sistema di interrupt/coda da stamina
+# critica: HumanIndividualActionService, il nuovo chiamante automatico, non può dipendere da un
+# metodo privato di questo Node) — vedi NeedTaskAssignmentService.assign_rest_task/
+# resolve_rest_target. _assign_rest_task sotto (trigger manuale tasto R) ora delega lì.
 # TaskDefinition "wander" (2026-09-12, richiesta utente — Wander Task esplicita: Walk→LookAround→
 # Walk→LookAround→Walk) — stesso trattamento di REST_TASK_DEFINITION_PATH sopra, SEMPRE 5 step
 # fissi (vedi wander.tres): nessuna logica condizionale sul numero di step qui, i tre target Walk
-# sono risolti PRIMA della costruzione da _resolve_wander_targets (vedi sotto), stesso schema già
-# in uso per Rest.
+# sono risolti PRIMA della costruzione da IdleTaskAssignmentService.resolve_wander_targets (2026-09-13,
+# spostata lì — vedi quel file), stesso schema già in uso per Rest.
 const WANDER_TASK_DEFINITION_PATH := "res://gameplay/scripts/tasks/definitions/wander.tres"
+# TaskDefinition "play" (2026-09-13, richiesta utente — Play Task esplicita, CHILD-only:
+# Run→Jump→Run→Jump) — stesso trattamento di REST_TASK_DEFINITION_PATH/WANDER_TASK_DEFINITION_PATH
+# sopra, SEMPRE 4 step fissi (vedi play.tres): nessuna logica condizionale sul numero di step qui, i
+# due target Run sono risolti PRIMA della costruzione da IdleTaskAssignmentService.
+# resolve_play_targets (2026-09-13, spostata lì — vedi quel file), stesso schema già in uso per
+# Wander. Il vincolo CHILD-only vive su play.tres.allowed_age_bands (Task,
+# vedi Task.allowed_age_bands), non su RunAction/JumpAction (restano generiche per età, vedi
+# RunAction.gd/JumpAction.gd) — verificato da HumanIndividual.assign_task().
+const PLAY_TASK_DEFINITION_PATH := "res://gameplay/scripts/tasks/definitions/play.tres"
 # TaskDefinition "transport" (2026-09-12, richiesta utente — Transport Task: Walk->source→Retrieve→
 # Walk->destination→Unload) — SEMPRE 4 step fissi (vedi transport.tres): nessuna logica
 # condizionale sul numero di step qui, source/destination/resource_name/quantity sono risolti PRIMA
@@ -183,6 +191,12 @@ const WANDER_TASK_DEFINITION_PATH := "res://gameplay/scripts/tasks/definitions/w
 # (_debug_try_assign_transport_command_on_right_click, vedi sotto); resource_name/quantity dalla
 # scelta del player nel TransportSourceDialog aperto dallo stesso trigger.
 const TRANSPORT_TASK_DEFINITION_PATH := "res://gameplay/scripts/tasks/definitions/transport.tres"
+# TaskDefinition "emergency_rest" — stesso trattamento di "rest" sopra: path/risoluzione target/
+# costruzione+assegnazione SPOSTATI su NeedTaskAssignmentService (2026-09-13, richiesta utente,
+# sistema di interrupt/coda da stamina critica — ORA collegato: soglia 5%/20% dentro
+# HumanIndividualActionService.apply_action, vedi lì) — vedi NeedTaskAssignmentService.
+# assign_emergency_rest_task/resolve_emergency_rest_target. _assign_emergency_rest_task sotto
+# (trigger manuale tasto E) ora delega lì.
 # _pending_build_tasks (Dictionary building.id -> Task orfana in attesa di assegnazione manuale) È
 # STATO RIMOSSO (2026-09-12, richiesta utente — sostituzione con un percorso generico di
 # riassegnazione Task): il path del TaskDefinition "build" ora vive su Building.
@@ -415,8 +429,12 @@ func _ready() -> void:
 	# Controllo a schede (richiesta utente, 2026-09-01, sostituisce lo spacer elastico +
 	# minimap_panel/vegetation_info_panel diretti usati prima — vedi GameInfoTabs.gd) — unico
 	# figlio diretto di body_container: size_flags_vertical=3 (impostato nel suo stesso .tscn) gli
-	# fa occupare tutto lo spazio verticale che BodyScrollContainer riceve. body_container arriva
-	# altrimenti vuoto per design (vedi GameInfoPanel.gd): GameScene, non GameInfoPanel stesso,
+	# fa occupare tutto lo spazio verticale che body_container riceve (BodyScrollContainer, che un
+	# tempo avvolgeva body_container dall'esterno, è stato RIMOSSO il 2026-09-13 — bugfix "la
+	# scrollbar fa scorrere in alto anche le tab", vedi GameInfoPanel.gd/GameInfoTabs.gd: lo scroll
+	# vive ora DENTRO ciascuna tab di GameInfoTabs, non più attorno all'intero TabContainer).
+	# body_container arriva altrimenti vuoto per design (vedi GameInfoPanel.gd): GameScene, non
+	# GameInfoPanel stesso,
 	# istanzia qui il proprio contenuto — GameInfoPanel resta "muto" su
 	# vegetazione/minimappa/selezione.
 	game_info_tabs = GAME_INFO_TABS_SCENE.instantiate()
@@ -425,7 +443,7 @@ func _ready() -> void:
 	# SEMPRE visibile in basso, ANCORATA — non deve più salire/scendere a seconda di quale scheda
 	# è aperta, come succedeva quando viveva dentro body_container insieme a game_info_tabs, la
 	# cui altezza varia da scheda a scheda). Vive in game_info_panel.minimap_slot, un sibling FISSO
-	# di BodyScrollContainer nella VBoxContainer esterna di GameInfoPanel — vedi GameInfoPanel.gd
+	# di body_container nella VBoxContainer esterna di GameInfoPanel — vedi GameInfoPanel.gd
 	# per il perché quella posizione resta sempre stabile. Dimensionamento/comportamento di
 	# minimap_panel stesso INVARIATI (si autodimensiona ancora quadrata sulla larghezza
 	# disponibile, vedi MiniMapPanel._on_panel_resized) — cambia solo DOVE vive nell'albero, non
@@ -616,6 +634,23 @@ func _ready() -> void:
 	var human_rules := load(PLAYER_HUMAN_RULES_PATH) as HumanRules
 	var start_macro_coords := Vector2i(game_data.player_macro_cell_x, game_data.player_macro_cell_y)
 	if not GameSettings.active_human_individuals.is_empty():
+		# FIX CRITICO DI PERSISTENZA (2026-09-12, richiesta utente, contestuale all'introduzione di
+		# HumanTypes.AgeBand.INFANT) — set_current_era() PRIMA di qualunque lettura di game_data.
+		# era_effective_age_band_durations_male/female in questo ramo (ricostruzione popolo esistente:
+		# sia "salvataggio appena caricato" sia "ritorno da WorldScene/MacroCellScene"), non solo nel
+		# ramo di semina qui sotto. Motivo: quei due array SONO persistiti in JSON (GameSaveService/
+		# GameLoadService) ma erano ricalcolati via set_current_era SOLO al bootstrap di una partita
+		# nuova (vedi sotto) — un salvataggio scritto PRIMA di un cambio nel numero/ordine delle fasce
+		# di HumanTypes.AgeBand (es. questa stessa introduzione di INFANT) verrebbe altrimenti riletto
+		# con l'array VECCHIO (lunghezza/ordine pre-cambio) fidandosi ciecamente del JSON, classificando
+		# silenziosamente ogni individuo in una fascia d'età sbagliata finché non fosse scattato un
+		# cambio Era vero. Ricalcolo SEMPRE fresco da HumanRules/EraRules invece di fidarsi del dato
+		# persistito — idempotente (set_current_era non ha guardie su "già impostata", ricalcola e
+		# basta), quindi innocuo anche nel ramo "ritorno" dove il valore era già corretto in questa
+		# stessa sessione. L'array persistito in JSON resta scritto (nessuna modifica a GameSaveService/
+		# GameLoadService: restano lì per compatibilità/debug) ma non viene più letto come fonte di
+		# verità in nessun punto di ingresso.
+		game_data.set_current_era(game_data.current_era_name, human_rules)
 		human_folk = GameSettings.active_human_folk
 		human_population_group = GameSettings.active_human_population_group
 		human_individuals = GameSettings.active_human_individuals
@@ -654,7 +689,9 @@ func _ready() -> void:
 		# ancora implementato, vedi GameData), quindi game_data.era_effective_age_band_durations_
 		# male/female restava sempre vuoto e la semina leggeva le durate BASE di HumanRules, mai
 		# scalate per l'Era (game_data.current_era_name di default = "paleolithic"). Questo non è
-		# un trigger di avanzamento — è il bootstrap iniziale, chiamato una sola volta qui, per
+		# un trigger di avanzamento — è il bootstrap iniziale per una partita NUOVA, chiamato una
+		# sola volta qui (2026-09-12: NON più l'unico punto di chiamata — vedi la stessa chiamata
+		# nel ramo `if` sopra, per popolo già esistente/caricato/di ritorno), per
 		# l'Era di partenza della partita.
 		game_data.set_current_era(game_data.current_era_name, human_rules)
 		var seeding_result := HumanSeedingService.new().seed_player_start(
@@ -718,6 +755,30 @@ func _ready() -> void:
 		# la barra "Capacità di trasporto" restava al fallback (30.0, HumanIndividual.
 		# FALLBACK_MAX_CARRY_CAPACITY) fino al primo avanzamento giorno. Mancava questa stessa riga.
 		HumanCarryCapacityIndividualService.recalculate_max_carry_capacity(member, game_data)
+		# Stesso identico bug/fix di max_stamina/max_carry_capacity sopra, stessa causa — 2026-09-13,
+		# richiesta utente, 5 nuovi parametri vitali (hunger/thirst/health/happiness/loyalty): senza
+		# questa riga resterebbero tutti al fallback HumanIndividual.FALLBACK_MAX_VITAL fino al primo
+		# avanzamento giorno, esattamente come stamina/carry capacity prima di questo fix.
+		HumanVitalsIndividualService.recalculate_vitals(member, game_data)
+		# Bugfix (2026-09-13, richiesta utente) — STESSO principio/STESSA causa dei tre fix sopra:
+		# un individuo con current_task == null a questo punto (fondatore appena seminato, MAI
+		# passato da apply_action — oppure un individuo caricato da salvataggio che era già libero
+		# al momento del salvataggio) non riceveva MAI il controllo bisogno/coda/fallback
+		# perditempo, perché quella logica viveva SOLO dentro HumanIndividualActionService.
+		# _handle_task_completion_need_and_queue, raggiungibile solo al completamento naturale di
+		# una Task PREESISTENTE — mai per chi una Task non l'ha mai avuta. Risolta qui, non dentro
+		# HumanSeedingService (position/home_macro_coords NON sono ancora finalizzati quando gli
+		# individui vengono creati lì — la griglia di spawn e il ricentraggio sul fondatore reale
+		# girano DOPO, vedi seed_player_start/il codice sopra in questo stesso _ready — un Wander/
+		# Rest calcolato in quel momento userebbe una posizione sbagliata, subito superata):
+		# esattamente come i tre ricalcoli sopra, questo punto copre in un colpo solo SIA il
+		# seeding di una partita nuova SIA il caricamento di un salvataggio (stesso commento di
+		# testa al blocco: "a questo punto human_individuals è già finalizzato... posizioni di
+		# spawn comprese"), senza dover duplicare la chiamata in due punti diversi. Un individuo
+		# caricato con una current_task già in corso non viene toccato (guardia esplicita sotto) —
+		# resolve_idle_individual presume un individuo LIBERO, mai chiamata altrimenti.
+		if member.current_task == null:
+			HumanIndividualActionService.resolve_idle_individual(member, _resolve_age_band(member), macro_world)
 
 	# Popola la scheda 🧍 (richiesta utente, 2026-09-01) — human_individuals/human_folk sono
 	# finalizzati solo qui (posizioni di spawn comprese), stesso motivo per cui l'istanza del
@@ -872,8 +933,12 @@ func _process(delta: float) -> void:
 		individual_movement_service.advance_movement(active_individual, game_delta)
 		# macro_world (2026-09-09, richiesta utente — re-routing UnloadAction su magazzino pieno) —
 		# apply_action ne ha bisogno per WarehouseSelectionService.find_best (world.buildings), vedi
-		# HumanIndividualActionService.apply_action.
-		individual_action_service.apply_action(active_individual, game_delta, macro_world)
+		# HumanIndividualActionService.apply_action. game_data (2026-09-13, richiesta utente —
+		# sistema di interrupt/coda da stamina critica) — apply_action ne ha bisogno per risolvere
+		# l'age_band dell'individuo quando assegna da sé una Task-bisogno (stesso identico bisogno
+		# di _resolve_age_band qui sotto, duplicato lì perché quel service non ha accesso a questo
+		# Node — vedi HumanIndividualActionService._resolve_age_band).
+		individual_action_service.apply_action(active_individual, game_delta, macro_world, game_data)
 		# Attraversamento bordo/figlio a carico generalizzati (2026-09-12, Step 4/6 — prima
 		# operavano solo su `individual`) — vedi _check_macro_cell_border_crossing/
 		# _sync_dependent_child_position per il dettaglio: senza questo, un individuo non
@@ -1118,10 +1183,25 @@ func _unhandled_input(event: InputEvent) -> void:
 		# compatibile, assegna Walk->Unload e consuma l'evento, altrimenti il movimento normale
 		# prosegue invariato.
 		if individual_controller != null:
+			# Selezione Transport a metà (2026-09-14, richiesta utente — "il click destro successivo
+			# vale SOLO per la destinazione Transport", niente competizione con altri comandi) —
+			# CONTROLLATO PER PRIMO: se _debug_transport_source_building è già impostata (sorgente
+			# scelta, in attesa del click di destinazione), pickup/unload/build vengono SALTATI DEL
+			# TUTTO per questo evento — mai anche solo provati, non solo ignorato il loro esito. Prima
+			# di questo fix _try_assign_build_command_on_right_click (provato PRIMA nella catena
+			# sotto) intercettava sempre un click destro su un cantiere incompleto, il caso D'USO PIÙ
+			# COMUNE come destinazione Transport (portare materiale a un cantiere), "rubando" il click
+			# prima che _debug_try_assign_transport_command_on_right_click venisse mai raggiunta —
+			# BUG CONFERMATO con l'utente. Nessun problema simmetrico con pickup/unload (mai
+			# verificato un caso reale), ma bypassati comunque per coerenza: mentre una selezione
+			# Transport è aperta, il destro è un canale "riservato" a quella sola interazione.
+			if _debug_transport_source_building != null:
+				if not _debug_try_assign_transport_command_on_right_click(event):
+					individual_controller.handle_input(event)
 			# _debug_try_assign_transport_command_on_right_click (2026-09-12, richiesta utente — test
 			# Transport Task) — provato per ULTIMO, dopo pickup/unload/build: gated da
 			# DebugLogging.ENABLED al proprio interno, vedi lì per il perché di questa posizione.
-			if not _try_assign_pickup_command_on_right_click(event) and not _try_assign_unload_command_on_right_click(event) and not _try_assign_build_command_on_right_click(event) and not _debug_try_assign_transport_command_on_right_click(event):
+			elif not _try_assign_pickup_command_on_right_click(event) and not _try_assign_unload_command_on_right_click(event) and not _try_assign_build_command_on_right_click(event) and not _debug_try_assign_transport_command_on_right_click(event):
 				individual_controller.handle_input(event)
 
 	if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_X:
@@ -1163,6 +1243,30 @@ func _unhandled_input(event: InputEvent) -> void:
 	# già in corso.
 	if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_G:
 		_assign_wander_task()
+
+	# Play Task esplicita (2026-09-13, richiesta utente) — tasto P, mnemonico "Play", verificato
+	# libero (nessun conflitto: W/A/S/D + frecce sono il pan camera continuo, +/- lo zoom, B/R
+	# vivono dentro il ramo `if _building_ghost != null: ... return` quindi mai raggiunti quando
+	# nessun fantasma è attivo, X/H/G sono gli altri comandi diretti già assegnati, T/Y/Z/U i debug
+	# hook sotto — stesso identico controllo di conflitto già fatto per R/G). Stesso trattamento di
+	# H/R/G: comando VERO, nessun gate DebugLogging.ENABLED, nessun guard su una Task già in corso
+	# (assign_task sostituisce sempre). CHILD-only applicato DENTRO _assign_play_task tramite il
+	# guard generico di HumanIndividual.assign_task (Task.allowed_age_bands, vedi play.tres) — un
+	# individuo selezionato non-CHILD viene rifiutato silenziosamente con lo stesso log [TASK GUARD]
+	# già visto per INFANT, nessun controllo duplicato qui.
+	if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_P:
+		_assign_play_task()
+
+	# Emergency Rest Task — trigger di TEST MANUALE (2026-09-13, richiesta utente, in preparazione
+	# al sistema di interrupt da stamina critica) — tasto E, mnemonico "Emergency", verificato
+	# libero (nessuna occorrenza di KEY_E in tutto il progetto, stesso controllo di conflitto già
+	# fatto per R/G/P: W/A/S/D+frecce pan, +/- zoom, B/R dentro il ramo fantasma edificio, X/H/G/P
+	# gli altri comandi diretti, T/Y/Z/U i debug hook sotto). Stesso trattamento di H/R/G/P: comando
+	# VERO, nessun gate DebugLogging.ENABLED, nessun guard su una Task già in corso — DA RIMUOVERE
+	# (o spostare sotto un vero pannello/bottone debug) quando arriverà il vero trigger automatico
+	# (soglia 5% stamina + coda), un prompt successivo.
+	if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_E:
+		_assign_emergency_rest_task()
 
 	# TEST TEMPORANEO Task (2026-09-07, richiesta utente) — vedi _debug_test_two_walk_task sotto per
 	# cosa fa e perché è qui. Tasto T, gated da DebugLogging.ENABLED (stesso flag che nasconde
@@ -1274,7 +1378,37 @@ func _center_camera_on_individual(animated: bool = true) -> void:
 func _stop_selected_individual_task() -> void:
 	if individual == null or not individual.is_selected:
 		return
+	# Annulla selezione Transport a metà (2026-09-14, richiesta utente — "H cancella una task se in
+	# corso completa, oppure se è in selezione a metà [tipo il transport], cancella quella") — DA
+	# CONTROLLARE PER PRIMO, PRIMA di individual.stop() sotto: _debug_transport_source_building/
+	# _debug_transport_pending_source_building sono stato del comando debug a due click (vedi
+	# _debug_try_assign_transport_command_on_right_click), COMPLETAMENTE INDIPENDENTE da
+	# individual.current_task — nessuna Transport Task esiste ancora finché la destinazione non
+	# viene confermata, quindi non c'è nulla da "fermare" su individual, solo questo stato interno
+	# di GameScene da azzerare. PRIMA di questo fix non esisteva NESSUN modo di uscire da questo
+	# stato se non completando la selezione (anche per sbaglio, cliccando destro su un edificio
+	# qualunque) — vedi l'indagine con l'utente. Ritorna qui SENZA toccare individual.stop()/
+	# resolve_idle_individual: l'individuo può avere una Task in corso indipendente da questa
+	# selezione (i due stati sono ortogonali, possono coesistere), quella Task NON viene toccata da
+	# un annullo della sola selezione — un H successivo, a selezione ormai annullata, la fermerà
+	# normalmente se il player lo preme di nuovo.
+	if _debug_transport_source_building != null or _debug_transport_pending_source_building != null:
+		if DebugLogging.ENABLED:
+			print("[TRANSPORT] Selezione sorgente/destinazione annullata (tasto H).")
+		_debug_transport_source_building = null
+		_debug_transport_pending_source_building = null
+		_debug_transport_resource_name = ""
+		_debug_transport_quantity = 0
+		return
 	individual.stop()
+	# Bugfix (2026-09-14, richiesta utente) — individual.stop() da solo azzera SOLO current_task,
+	# senza mai toccare task_queue né richiamare resolve_idle_individual: un individuo con una o più
+	# Task sospese in coda (es. interrotto prima da un bisogno stamina) restava bloccato per sempre
+	# con current_task null e la coda intatta, perché resolve_idle_individual (bisogno -> riprendi
+	# dalla coda -> fallback perditempo -> stop, vedi HumanIndividualActionService.gd) non era mai
+	# raggiunta da questo comando — solo da completamento naturale/seeding/nascita/load. STESSA
+	# chiamata già usata per quei tre casi (es. riga ~781 sopra).
+	HumanIndividualActionService.resolve_idle_individual(individual, _resolve_age_band(individual), macro_world)
 
 
 # TEST TEMPORANEO (2026-09-07, richiesta utente) — verifica che una Task a PIÙ step avanzi da sola
@@ -1317,12 +1451,16 @@ func _debug_test_two_walk_task() -> void:
 		push_error("[PICKUP TEST] Nessuna posizione con pebble disponibili nella macrocella corrente.")
 		return
 
-	# stop() prima di tutto: azzera un'eventuale Task/movimento in corso, così il test parte sempre
-	# da uno stato pulito indipendentemente da cosa stesse facendo l'individuo (stesso principio già
-	# seguito da _set_movement_target per il vecchio bersaglio abbandonato).
-	individual.stop()
 	var walk := WalkAction.new(Vector2(target_position))
 	var pickup := PickUpAction.new(target_position, cell.macro_state)
+	var test_task := Task.new([walk, pickup])
+	# individual.stop() SOLO DOPO can_assign_task() (2026-09-13, richiesta utente, bugfix — stesso
+	# principio di _assign_play_task/_debug_test_daydream_task: nessun effetto collaterale se il
+	# guard rifiuta, es. individuo INFANT/CHILD selezionato con Task precedente in corso).
+	var age_band := _resolve_age_band(individual)
+	if not individual.can_assign_task(test_task, age_band):
+		return
+	individual.stop()
 	# Stesso refresh pebble/stick di _assign_pickup_task (2026-09-09) — vedi quel commento gemello.
 	pickup.resource_collected.connect(func(_res: String, _pos: Vector2i, _qty: int) -> void:
 		_refresh_resource_visuals(cell)
@@ -1330,7 +1468,8 @@ func _debug_test_two_walk_task() -> void:
 	# assign_task (2026-09-09, richiesta utente, Step 4) — sostituisce l'assegnazione manuale
 	# (current_task = Task.new([...]); walk.activate(individual)) diretta di prima: questo hook ora
 	# valida lo stesso percorso generico che un futuro click/UI userà, non uno scavalcato a parte.
-	individual.assign_task(Task.new([walk, pickup]))
+	# Il guard è già stato verificato sopra, quindi questa chiamata è garantita riuscire.
+	individual.assign_task(test_task, age_band)
 	print("[PICKUP TEST] Task Walk+PickUp assegnata a #%d %s verso %s (pebble disponibili: %d)" % [
 		individual.id, individual.name, target_position, int(cell.macro_state.pebble_quantities.get(target_position, 0))
 	])
@@ -1398,10 +1537,6 @@ func _debug_test_daydream_task() -> void:
 	var era_rules := EraCalculator.get_era_rules(game_data.current_era_name)
 	var think_duration: float = _DEBUG_DAYDREAM_THINK_BASE_DURATION * (era_rules.think_duration_multiplier if era_rules != null else 1.0)
 
-	# stop() prima di tutto — invariato, stesso principio già seguito da _debug_test_two_walk_task/
-	# _debug_test_haul_resource_task: il test parte sempre da uno stato pulito.
-	individual.stop()
-
 	# TaskFactory.build_task (2026-09-10, STEP 5b) — SOSTITUISCE la costruzione manuale a 5 step di
 	# prima: "target_position" (Vector2, letto da WALK — stesso step_walk_to_position.tres già usato
 	# da haul_resource, RIUSATO qui as-is, context_keys=["target_position"] combacia) e
@@ -1435,179 +1570,111 @@ func _debug_test_daydream_task() -> void:
 			_reconnect_unload_action_signals(action as UnloadAction, individual)
 	)
 
+	# Guard di età PRIMA di stop() (2026-09-13, richiesta utente, bugfix — bug osservato: un
+	# FERTILE_ADULT con haul_resource in corso e zaino pieno, a cui viene assegnata Daydream via
+	# questo tasto di test, è bloccato da ThinkAction.disallowed_age_bands — PRIMA di questo fix
+	# stop() scattava comunque, scaricando l'inventario/azzerando l'haul_resource in corso anche se
+	# Daydream non veniva mai davvero assegnata) — individual.can_assign_task verifica il guard
+	# SENZA alcun side-effect; solo se passa si procede con stop()+assign_task, altrimenti return
+	# immediato, nessun effetto collaterale, l'haul_resource in corso prosegue indisturbata.
+	var age_band := _resolve_age_band(individual)
+	if not individual.can_assign_task(task, age_band):
+		return
+
+	# stop() SOLO ORA, dopo il guard: il test parte sempre da uno stato pulito, ma solo quando sa
+	# già che la nuova Task verrà davvero assegnata.
+	individual.stop()
+
 	# individual.assign_task (2026-09-10) — SOSTITUISCE l'assegnazione manuale `individual.
 	# current_task = Task.new([...])` di prima: task_name/step_descriptions arrivano già valorizzati
 	# da TaskFactory.build_task (da daydreaming.tres/step_think.tres), nessuna riga separata
 	# necessaria qui per impostarli. assign_task attiva da sé il primo step (WalkAction verso
-	# around_position) — sostituisce la chiamata manuale walk_to_around.activate(...) di prima.
-	individual.assign_task(task)
+	# around_position) — sostituisce la chiamata manuale walk_to_around.activate(...) di prima. Il
+	# guard è già stato verificato sopra, quindi questa chiamata è garantita riuscire.
+	individual.assign_task(task, age_band)
 	print("[DAYDREAM TEST] Task Walk+Think assegnata a #%d %s: around=%s, think=%.2fgg — il resto (ricerca edificio-pensieri/deposito/allontanamento) si costruisce da sé durante l'esecuzione." % [
 		individual.id, individual.name, around_position, think_duration
 	])
 
 
-# Raggio massimo del walk-around casuale quando l'individuo NON ha una casa assegnata (house_id ==
-# -1) — "valore ragionevole, es. 3-5 microcelle" (richiesta utente, 2026-09-12): 4.0 scelto come
-# via di mezzo. La distanza REALE è un randf_range(1.0, questo raggio) in _resolve_rest_target
-# sotto (mai zero fisso — un target coincidente con la posizione attuale renderebbe il primo step
-# Walk un no-op immediato), stesso principio di _DEBUG_DAYDREAM_AROUND_DISTANCE sopra ma un RAGGIO
-# variabile invece di una distanza fissa, come richiesto esplicitamente qui ("entro" un raggio, non
-# "a" una distanza fissa).
-const REST_TASK_NO_HOUSE_WANDER_RADIUS: float = 4.0
-
-
-# Risoluzione del target/rest_multiplier/walk_away_target della Rest Task, PRIMA della costruzione
-# (2026-09-12, richiesta utente — "stesso schema già usato per daydreaming: risoluzione del
-# target/context PRIMA di chiamare TaskFactory.build_task, nessuna logica condizionale sul numero
-# di step") — ritorna SEMPRE un Dictionary con le TRE chiavi {"target_position": Vector2,
-# "rest_multiplier": float, "walk_away_target_position": Vector2}, mai null: _assign_rest_task
-# sotto le passa direttamente al context della Task, sempre [Walk, Rest, Walk away] a 3 step fissi
-# indipendentemente da quale ramo viene preso qui.
-#
-# Ramo "ha casa" (house_id != -1): risolve la Building via _find_building_by_id (stessa scansione
-# lineare già in uso altrove in questo file, vedi lì) e ne calcola la posizione locale con la STESSA
-# formula già in uso in _try_assign_unload_command_on_right_click/_debug_test_daydream_task per
-# tradurre le coordinate micro di un edificio (locali alla SUA macrocella) nello spazio locale
-# DELL'INDIVIDUO (offset zero, no-op, se coincidono) — building.micro_x/y + macro_offset.
-# rest_multiplier letto da building.rules.rest_multiplier (BuildingRules, campo aggiunto nel giro
-# precedente) — building.rules non dovrebbe mai essere null per un edificio piazzato, ma il
-# controllo resta comunque una guardia difensiva economica, stesso stile già in uso altrove (es.
-# _try_assign_unload_command_on_right_click).
-#
-# Building non più risolvibile (house_id valorizzato ma l'edificio è stato distrutto nel frattempo,
-# caso limite) ripiega SILENZIOSAMENTE sul ramo "nessuna casa" sotto — stesso trattamento già
-# accettato altrove nel progetto per un building_id sopravvissuto ma non più valido (vedi
-# TaskPersistenceService._build_step, target_building null).
-#
-# Ramo "nessuna casa" (house_id == -1, o casa non risolvibile): walk-around minimo, angolo casuale
-# e raggio casuale entro REST_TASK_NO_HOUSE_WANDER_RADIUS sopra, stessa formula Vector2.from_angle
-# di _debug_test_daydream_task — rest_multiplier resta 1.0 (default, nessuna casa = nessun bonus).
-#
-# walk_away_target_position (2026-09-12, richiesta utente — terzo step "walk away" dopo Rest) —
-# STESSA identica logica del ramo "nessuna casa" sopra (punto casuale entro
-# REST_TASK_NO_HOUSE_WANDER_RADIUS dalla posizione attuale), riusata anche quando l'individuo HA
-# una casa: un secondo/indipendente randf()/randf_range(), non lo stesso valore di wander_position
-# sopra (due target concettualmente distinti anche se stessa formula). Risolta QUI, al momento della
-# creazione della Task — richiesta esplicita, "non dinamicamente a runtime" — quindi calcolata
-# rispetto a `target_individual.position` COM'È ORA (prima ancora di camminare verso casa/riposare),
-# non rispetto a dove l'individuo si troverà dopo il Rest: stessa semplificazione già accettata per
-# around_position in _debug_test_daydream_task (mai ricalcolata durante l'esecuzione della Task).
-#
-# Nessuna validazione di bounds/ostacoli qui (richiesta esplicita: "non serve una nuova validazione
-# elaborata, giusto non produrre coordinate assurde") — un raggio piccolo (3-5 microcelle) per il
-# walk-around basta da solo a restare in coordinate ragionevoli, stesso principio già accettato per
-# _DEBUG_DAYDREAM_AROUND_DISTANCE (mai clampato contro i limiti macrocella); la posizione di una
-# casa è per costruzione già una Building piazzata validamente, nessun controllo aggiuntivo serve.
-func _resolve_rest_target(target_individual: HumanIndividual) -> Dictionary:
-	var walk_away_distance: float = randf_range(1.0, REST_TASK_NO_HOUSE_WANDER_RADIUS)
-	var walk_away_position: Vector2 = target_individual.position + Vector2.from_angle(randf() * TAU) * walk_away_distance
-	if target_individual.house_id != -1:
-		var house := _find_building_by_id(target_individual.house_id)
-		if house != null:
-			var macro_offset: Vector2 = Vector2(
-				Vector2i(house.macro_x, house.macro_y) - target_individual.home_macro_coords
-			) * World.WIDTH
-			var house_position: Vector2 = Vector2(house.micro_x, house.micro_y) + macro_offset
-			var house_rest_multiplier: float = 1.0
-			if house.rules != null:
-				house_rest_multiplier = house.rules.rest_multiplier
-			return {
-				"target_position": house_position,
-				"rest_multiplier": house_rest_multiplier,
-				"walk_away_target_position": walk_away_position,
-			}
-		# house_id valorizzato ma Building non più risolvibile — ripiega sul walk-around sotto,
-		# stesso comportamento di house_id == -1 (vedi commento esteso sopra).
-	var wander_distance: float = randf_range(1.0, REST_TASK_NO_HOUSE_WANDER_RADIUS)
-	var wander_position: Vector2 = target_individual.position + Vector2.from_angle(randf() * TAU) * wander_distance
-	return {
-		"target_position": wander_position,
-		"rest_multiplier": 1.0,
-		"walk_away_target_position": walk_away_position,
-	}
+# _resolve_rest_target SPOSTATA su NeedTaskAssignmentService.resolve_rest_target (2026-09-13,
+# richiesta utente, sistema di interrupt/coda da stamina critica) — stessa identica logica, vedi
+# quel file. REST_TASK_NO_HOUSE_WANDER_RADIUS l'ha seguita lì.
 
 
 # Trigger tasto R (2026-09-12, richiesta utente) — costruisce ed assegna SEMPRE la Rest Task
 # completa [Walk, Rest, Walk away] all'individuo selezionato, sostituendo qualunque Task in corso
-# (nessun guard, decisione esplicita: "nessuna protezione da progresso perso"). individual.stop()
-# PRIMA della costruzione — stesso principio già in uso in _debug_test_daydream_task/_debug_test_
-# two_walk_task ("la Task parte sempre da uno stato pulito"), qui in più necessario per azzerare
-# `path` (waypoint di un eventuale WalkAction interrotto a metà) prima che assign_task attivi il
-# nuovo primo step. Terzo step "walk away" (2026-09-12) — vedi step_walk_away.tres: chiave di
-# contesto SEPARATA ("walk_away_target_position", non "target_position") perché TaskFactory legge
-# context[step_definition.context_keys[0]] per OGNI step WALK della stessa Task — due Walk con la
-# stessa chiave si sovrascriverebbero a vicenda nello stesso Dictionary `context` (nessuna modifica
-# a TaskFactory.build_task necessaria: il case WALK è già generico, gli basta una chiave diversa per
-# step diverso, stesso principio già in uso per "target_position" vs "pickup_position" in
-# _assign_pickup_task).
+# (nessun guard "una Task in corso protegge dal cambio" — decisione esplicita: "nessuna protezione
+# da progresso perso"; c'è invece il guard di ETÀ, vedi sotto). Thin wrapper (2026-09-13,
+# richiesta utente) — risoluzione target/costruzione/assegnazione/stop() ORA TUTTE dentro
+# NeedTaskAssignmentService.assign_rest_task, condivisa con il nuovo interrupt automatico dentro
+# HumanIndividualActionService.apply_action: STESSO comportamento esterno di prima di questo
+# spostamento per il player che preme R.
+#
+# individual.stop() NON più chiamato QUI (2026-09-13, richiesta utente, bugfix) — spostato dentro
+# NeedTaskAssignmentService.assign_rest_task, DOPO il guard di età (individual.can_assign_task):
+# prima di questo fix, stop() scattava incondizionatamente PRIMA di sapere se il guard avrebbe
+# rifiutato la nuova Task, scaricando l'inventario/azzerando la Task PRECEDENTE anche quando
+# l'assegnazione non sarebbe mai avvenuta (bug osservato con un individuo INFANT selezionato).
 func _assign_rest_task() -> void:
 	if individual == null or not individual.is_selected:
 		return
-	individual.stop()
-	var target_data: Dictionary = _resolve_rest_target(individual)
-	var rest_definition := load(REST_TASK_DEFINITION_PATH) as TaskDefinition
-	var context: Dictionary = {
-		"target_position": target_data["target_position"],
-		"rest_multiplier": target_data["rest_multiplier"],
-		"walk_away_target_position": target_data["walk_away_target_position"],
-	}
-	var task := TaskFactory.build_task(rest_definition, context)
-	individual.assign_task(task)
-	print("[REST] Task Walk+Rest assegnata a #%d %s: target=%s, rest_multiplier=%.2f" % [
-		individual.id, individual.name, target_data["target_position"], target_data["rest_multiplier"]
-	])
+	NeedTaskAssignmentService.assign_rest_task(individual, macro_world, _resolve_age_band(individual))
 
 
-# Lunghezza minima/massima (in microcelle) di ciascuno dei due tratti CASUALI della Wander Task
-# (2026-09-12, richiesta utente: "lunghezza... 4-8 microcelle") — il terzo tratto (ritorno) non è
-# casuale: è sempre e solo la posizione di partenza originale, vedi _resolve_wander_targets sotto.
-const WANDER_LEG_MIN_LENGTH: float = 4.0
-const WANDER_LEG_MAX_LENGTH: float = 8.0
+# _resolve_emergency_rest_target SPOSTATA su NeedTaskAssignmentService.resolve_emergency_rest_target
+# (2026-09-13, richiesta utente, sistema di interrupt/coda da stamina critica) — stessa identica
+# logica, vedi quel file. EMERGENCY_REST_STEP_LENGTH l'ha seguita lì.
 
 
-# Risoluzione dei tre target Walk della Wander Task, PRIMA della costruzione (2026-09-12, richiesta
-# utente — "stesso pattern già usato per _resolve_rest_target") — ritorna SEMPRE un Dictionary con
-# le tre chiavi {"target_1": Vector2, "target_2": Vector2, "target_3": Vector2}, mai null:
-# _assign_wander_task sotto le passa direttamente al context della Task, sempre [Walk, LookAround,
-# Walk, LookAround, Walk] a 5 step fissi.
+# Trigger tasto E (2026-09-13, richiesta utente, mnemonico "Emergency" — tasto verificato libero,
+# stesso controllo di conflitto già fatto per R/G/P: nessuna occorrenza di KEY_E in tutto il
+# progetto) — TRIGGER DI TEST MANUALE, ORA AFFIANCATO dal vero trigger automatico (soglia 5%/20%
+# stamina dentro HumanIndividualActionService.apply_action) — resta comunque disponibile come
+# comando diretto indipendente, richiesta esplicita. Thin wrapper (2026-09-13) — risoluzione
+# target/costruzione/assegnazione/stop() ORA TUTTE in NeedTaskAssignmentService.
+# assign_emergency_rest_task, condivisa con l'interrupt automatico: STESSO comportamento esterno
+# di prima di questo spostamento.
 #
-# Primo tratto: angolo casuale (0..2π) + lunghezza casuale (WANDER_LEG_MIN_LENGTH..MAX_LENGTH),
-# target_1 = posizione attuale + vettore(angolo, lunghezza) — stessa formula Vector2.from_angle già
-# in uso per il walk-around di Rest ( REST_TASK_NO_HOUSE_WANDER_RADIUS/_resolve_rest_target sopra).
-# Secondo tratto: STESSA formula, angolo/lunghezza SECONDI e INDIPENDENTI dal primo tiro — target_2
-# = target_1 + vettore(angolo2, lunghezza2), NON dalla posizione attuale: una spezzata a due
-# segmenti, non due tratti dalla stessa origine.
-# Terzo target: la posizione di PARTENZA originale, salvata PRIMA dei due tiri sopra — "calcolabile
-# dai primi due, nessun tiro necessario" (richiesta utente): tecnicamente derivabile anche per
-# sottrazione vettoriale inversa da target_2, ma semplicemente RICORDARE la posizione di partenza è
-# equivalente e più diretto, nessun calcolo di ritorno necessario.
-#
-# Nessuna validazione di bounds/ostacoli qui (richiesta esplicita: "se cade fuori mappa o su un
-# ostacolo, non serve gestirlo ora") — stesso principio già accettato per Rest/Daydream.
-func _resolve_wander_targets(target_individual: HumanIndividual) -> Dictionary:
-	var starting_position: Vector2 = target_individual.position
-	var first_leg_length: float = randf_range(WANDER_LEG_MIN_LENGTH, WANDER_LEG_MAX_LENGTH)
-	var target_1: Vector2 = starting_position + Vector2.from_angle(randf() * TAU) * first_leg_length
-	var second_leg_length: float = randf_range(WANDER_LEG_MIN_LENGTH, WANDER_LEG_MAX_LENGTH)
-	var target_2: Vector2 = target_1 + Vector2.from_angle(randf() * TAU) * second_leg_length
-	return {"target_1": target_1, "target_2": target_2, "target_3": starting_position}
+# individual.stop() NON più chiamato QUI (2026-09-13, richiesta utente, bugfix) — stesso motivo
+# identico di _assign_rest_task sopra: ora dentro il service, DOPO il guard di età.
+func _assign_emergency_rest_task() -> void:
+	if individual == null or not individual.is_selected:
+		return
+	NeedTaskAssignmentService.assign_emergency_rest_task(individual, _resolve_age_band(individual))
+
+
+# _resolve_wander_targets SPOSTATA su IdleTaskAssignmentService.resolve_wander_targets (2026-09-13,
+# richiesta utente, fallback "perditempo" per individui liberi) — stessa identica logica, vedi
+# quel file. WANDER_LEG_MIN_LENGTH/MAX_LENGTH l'hanno seguita lì (riusate anche da Play sotto).
 
 
 # Trigger tasto G (2026-09-12, richiesta utente — vedi il commento esteso su KEY_G in
 # _unhandled_input per il perché non W) — costruisce ed assegna SEMPRE la Wander Task completa
 # [Walk, LookAround, Walk, LookAround, Walk] all'individuo selezionato, sostituendo qualunque Task
-# in corso (nessun guard, stessa decisione esplicita già presa per Rest: "nessuna protezione da
-# progresso perso"). individual.stop() PRIMA della costruzione — stesso principio di
-# _assign_rest_task sopra. One-shot per costruzione (richiesta esplicita, punto 5): nessun loop/
-# riassegnazione automatica qui né altrove — quando i 5 step finiscono, Task.is_finished() diventa
-# vero tramite il meccanismo generico già esistente (nessuna logica speciale da scrivere), e
-# l'individuo resta senza Task finché non gliene si assegna un'altra manualmente, coerente con la
-# rimozione del fallback implicito di Rest fatta in un giro precedente.
+# in corso (nessun guard "una Task in corso protegge dal cambio" — stessa decisione esplicita già
+# presa per Rest: "nessuna protezione da progresso perso"; c'è invece il guard di ETÀ, vedi sotto).
+# One-shot per costruzione (richiesta esplicita, punto 5): nessun loop/riassegnazione automatica
+# qui né altrove — quando i 5 step finiscono, Task.is_finished() diventa vero tramite il
+# meccanismo generico già esistente (nessuna logica speciale da scrivere), e l'individuo resta
+# senza Task finché non gliene si assegna un'altra manualmente, coerente con la rimozione del
+# fallback implicito di Rest fatta in un giro precedente.
+#
+# individual.stop() RIMOSSO (2026-09-14, richiesta utente — bugfix "una Task sospendibile in corso
+# — es. Build — spariva invece di sospendersi in coda quando il player premeva G/P/il comando
+# Transport su un individuo occupato"): stop() azzerava SEMPRE current_task incondizionatamente,
+# MAI passando dalla logica is_suspendable di assign_task() sotto (quella che decide se sospendere
+# in coda o scartare) — bypassandola del tutto. RIMOSSO qui (non sostituito con nulla): assign_task
+# già fa tutto da sé quando lo si lascia fare — sospende la Task precedente se is_suspendable,
+# altrimenti la scarta, E chiama comunque .activate() sul primo step della nuova Task (che azzera
+# is_moving da sé, via Action.activate() di base) — nessun "reset di stato pulito" perso. STESSO
+# pattern già corretto di _assign_pickup_task (mai chiamato stop()), STESSO principio già applicato
+# altrove per un bug simile (vedi _block_border_crossing: "individual.stop() (pieno) SOSTITUITO con
+# is_moving/path").
 func _assign_wander_task() -> void:
 	if individual == null or not individual.is_selected:
 		return
-	individual.stop()
-	var target_data: Dictionary = _resolve_wander_targets(individual)
+	var target_data: Dictionary = IdleTaskAssignmentService.resolve_wander_targets(individual)
 	var wander_definition := load(WANDER_TASK_DEFINITION_PATH) as TaskDefinition
 	var context: Dictionary = {
 		"wander_target_1": target_data["target_1"],
@@ -1615,9 +1682,66 @@ func _assign_wander_task() -> void:
 		"wander_target_3": target_data["target_3"],
 	}
 	var task := TaskFactory.build_task(wander_definition, context)
-	individual.assign_task(task)
+	var age_band := _resolve_age_band(individual)
+	if not individual.can_assign_task(task, age_band):
+		return
+	individual.assign_task(task, age_band)
 	print("[WANDER] Task assegnata a #%d %s: %s -> %s -> %s" % [
 		individual.id, individual.name, target_data["target_1"], target_data["target_2"], target_data["target_3"]
+	])
+
+
+# _resolve_play_targets SPOSTATA su IdleTaskAssignmentService.resolve_play_targets (2026-09-13,
+# richiesta utente, fallback "perditempo" per individui liberi) — stessa identica logica, vedi
+# quel file.
+
+
+# Trigger tasto P (2026-09-13, richiesta utente, mnemonico "Play" — tasto verificato libero: non in
+# conflitto con WASD/frecce di pan camera, +/- di zoom, B/R del fantasma edificio, X/H/G dei comandi
+# diretti Camera/Stop/Wander, T/Y/Z/U dei debug hook, vedi _unhandled_input) — costruisce ed
+# assegna SEMPRE la Play Task completa [Run, Jump, Run, Jump] all'individuo selezionato, sostituendo
+# qualunque Task in corso (nessun guard "una Task in corso protegge dal cambio" — stessa decisione
+# esplicita già presa per Rest/Wander: "nessuna protezione da progresso perso"; c'è invece il
+# guard di ETÀ, vedi sotto).
+#
+# CHILD-only (richiesta esplicita utente) — vincolo di TASK (play.tres.allowed_age_bands), non delle
+# Action (RunAction/JumpAction restano generiche per età): se l'individuo selezionato NON è CHILD,
+# il guard rifiuta silenziosamente (log [TASK GUARD] se DebugLogging.ENABLED, stesso comportamento
+# già visto per INFANT).
+#
+# individual.stop() RIMOSSO (2026-09-14, richiesta utente — STESSO bugfix di _assign_wander_task,
+# vedi quel commento esteso: stop() azzerava SEMPRE current_task incondizionatamente, bypassando la
+# logica is_suspendable di assign_task() — una Build/haul_resource/Transport in corso spariva
+# invece di sospendersi in coda quando il player premeva P su un individuo occupato). RIMOSSO qui,
+# non sostituito con nulla: assign_task sotto già sospende/scarta/attiva da sé, guard CHILD-only già
+# verificato sopra (can_assign_task) — se rifiuta, nessun effetto collaterale di alcun tipo, la Task
+# precedente prosegue indisturbata (invariato rispetto a prima di questo fix).
+func _assign_play_task() -> void:
+	if individual == null or not individual.is_selected:
+		return
+	var target_data: Dictionary = IdleTaskAssignmentService.resolve_play_targets(individual)
+	var play_definition := load(PLAY_TASK_DEFINITION_PATH) as TaskDefinition
+	var context: Dictionary = {
+		"play_target_1": target_data["target_1"],
+		"play_target_2": target_data["target_2"],
+	}
+	var task := TaskFactory.build_task(play_definition, context)
+	var age_band := _resolve_age_band(individual)
+	if not individual.can_assign_task(task, age_band):
+		return
+	# Collegamento signal JumpAction.jumped (2026-09-13, richiesta utente, feedback visivo minimo) —
+	# STESSO principio/STESSA posizione di _try_pick_demolish_target/TaskReassignmentService (vedi
+	# _reconnect_build_task_signals: "un solo punto, i due chiamanti — creazione in-sessione e reload
+	# — non possono disallinearsi", qui il gemello per Play è _reconnect_loaded_task_signals sotto).
+	# Il guard CHILD-only è già stato verificato sopra (can_assign_task), quindi assign_task sotto
+	# è garantita riuscire — questo collegamento non rischia più di restare "orfano" su una Task mai
+	# attivata.
+	for step in task.steps:
+		if step is JumpAction:
+			_reconnect_jump_action_signals(step as JumpAction, individual)
+	individual.assign_task(task, age_band)
+	print("[PLAY] Task assegnata a #%d %s: %s -> %s" % [
+		individual.id, individual.name, target_data["target_1"], target_data["target_2"]
 	])
 
 
@@ -1665,8 +1789,15 @@ func _resolve_transport_context(
 # mai da _unhandled_input direttamente (stesso principio di _assign_rest_task/_assign_wander_task,
 # separazione risoluzione/assegnazione). resource_name/quantity arrivano GIÀ SCELTI dal player nel
 # TransportSourceDialog (vedi _on_transport_source_resource_chosen sotto), non più fissati nel
-# codice. individual.stop() PRIMA della costruzione — stesso principio "la Task parte sempre da uno
-# stato pulito" già seguito da OGNI altro assign/debug hook di Task in questo file.
+# codice.
+#
+# individual.stop() RIMOSSO (2026-09-14, richiesta utente — bugfix confermato con log: una Build
+# Task sospendibile in corso spariva invece di sospendersi in coda quando il player assegnava
+# Transport a quello stesso individuo — nessun [TASK SUSPEND] in log, a differenza dell'identica
+# sequenza per Pickup/haul_resource, che invece sospende correttamente). STESSO fix di
+# _assign_wander_task/_assign_play_task, vedi quei commenti estesi: RIMOSSO, non sostituito con
+# nulla — assign_task() sotto già sospende/scarta/attiva da sé la Task precedente, nessun "reset di
+# stato pulito" perso (Action.activate() sul primo step della Transport azzera già is_moving).
 #
 # Segnali ricollegati SUBITO dopo la costruzione (2026-09-12) — STESSO principio già seguito da
 # _try_assign_unload_command_on_right_click per il proprio UnloadAction costruito a mano: senza
@@ -1688,12 +1819,19 @@ func _debug_assign_transport_task(
 ) -> void:
 	if individual == null or not individual.is_selected:
 		return
-	individual.stop()
 	var context: Dictionary = _resolve_transport_context(
 		individual, source_building, destination_building, resource_name, quantity
 	)
 	var transport_definition := load(TRANSPORT_TASK_DEFINITION_PATH) as TaskDefinition
 	var task := TaskFactory.build_task(transport_definition, context)
+	# Guard PRIMA di costruire i collegamenti signal sotto (2026-09-13, richiesta utente — un guard
+	# rifiutato, oggi solo INFANT/CHILD selezionati, non deve lasciare segnali orfani collegati a una
+	# Task mai attivata). individual.stop() NON PIÙ chiamato qui (2026-09-14 — vedi il commento esteso
+	# in testa alla funzione): assign_task() sotto gestisce da sé sospensione/scarto della Task
+	# precedente.
+	var age_band := _resolve_age_band(individual)
+	if not individual.can_assign_task(task, age_band):
+		return
 	for step in task.steps:
 		if step is UnloadAction:
 			_reconnect_unload_action_signals(step as UnloadAction, individual)
@@ -1701,14 +1839,18 @@ func _debug_assign_transport_task(
 			(step as RetrieveAction).resource_retrieved.connect(
 				func(_res_name: String, building: Building, _qty: int) -> void: _on_resource_deposited(building)
 			)
-	individual.assign_task(task)
+	# Il guard è già stato verificato sopra (can_assign_task), quindi questa chiamata è garantita
+	# riuscire — "❌" non scatta più da qui (nessun rifiuto possibile a questo punto), resta solo
+	# come icona di comando "transport" riuscito.
+	var assigned := individual.assign_task(task, age_band)
+	var command_icon_key := "transport" if assigned else "task_rejected"
 
 	var destination_macro_coords := Vector2i(destination_building.macro_x, destination_building.macro_y)
 	if live_cells.has(destination_macro_coords):
 		_spawn_command_blink_effect(
 			live_cells[destination_macro_coords],
 			Vector2i(destination_building.micro_x, destination_building.micro_y),
-			IconRegistry.get_command_icon("transport")
+			IconRegistry.get_command_icon(command_icon_key)
 		)
 
 	print("[TRANSPORT] Task assegnata a #%d %s: %s #%d -> %s #%d, risorsa='%s' quantità=%d" % [
@@ -1872,19 +2014,22 @@ func _debug_test_haul_resource_task() -> void:
 		push_error("[HAUL TEST] Nessuna posizione pebble/stick disponibile nella macrocella corrente.")
 		return
 
-	# stop() prima di tutto — stesso principio già seguito da _debug_test_two_walk_task/_debug_test_
-	# daydream_task sopra: il test parte sempre da uno stato pulito.
-	individual.stop()
 	var walk := WalkAction.new(Vector2(target_position))
 	var pickup := PickUpAction.new(target_position, cell.macro_state, target_resource_name)
+	var task := Task.new([walk, pickup])
+	task.task_name = "task_haul_resource_name"
+	task.step_descriptions = ["task_haul_resource_step_walk", "task_haul_resource_step_pickup"]
+	# individual.stop() SOLO DOPO can_assign_task() (2026-09-13, richiesta utente, bugfix — stesso
+	# principio degli altri assign/debug hook di questo file).
+	var age_band := _resolve_age_band(individual)
+	if not individual.can_assign_task(task, age_band):
+		return
+	individual.stop()
 	# Stesso refresh pebble/stick di _assign_pickup_task (2026-09-09) — vedi quel commento gemello.
 	pickup.resource_collected.connect(func(_res: String, _pos: Vector2i, _qty: int) -> void:
 		_refresh_resource_visuals(cell)
 	)
-	var task := Task.new([walk, pickup])
-	task.task_name = "task_haul_resource_name"
-	task.step_descriptions = ["task_haul_resource_step_walk", "task_haul_resource_step_pickup"]
-	individual.assign_task(task)
+	individual.assign_task(task, age_band)
 	print("[HAUL TEST] Task haul_resource (2 step iniziali) assegnata a #%d %s verso %s risorsa='%s' — il resto (ricerca magazzino/unload/allontanamento) si costruisce da sé durante l'esecuzione." % [
 		individual.id, individual.name, target_position, target_resource_name
 	])
@@ -1915,6 +2060,31 @@ func _spawn_idea_deposit_effect(individual: HumanIndividual) -> void:
 	# ritocchi) — due durate separate invece di una sola condivisa: la salita resta rapida (0.9s,
 	# "parte" visibilmente), la dissolvenza si allunga (2.0s) cosi' resta visibile più a lungo prima
 	# di sparire del tutto.
+	var tween := create_tween()
+	tween.set_parallel(true)
+	tween.tween_property(label, "position:y", label.position.y - 40.0, 0.9)
+	tween.tween_property(label, "modulate:a", 0.0, 3.0)
+	tween.chain().tween_callback(label.queue_free)
+
+
+# Effetto "usa e getta" per un carico scartato (2026-09-14, richiesta utente — step C del piano
+# "rerouting": "il terzo caso [nessun magazzino trovato] fa discard, rendiamolo esplicito con un
+# simbolo sulla mappa che scompare dopo qualche secondo") — STESSO schema/STESSA posizione/STESSA
+# guardia live_cells.has(...) di _spawn_idea_deposit_effect sopra (nessun effetto se la macrocella
+# dell'individuo non è più una cella viva del focus LOD), icona fissa "🗑️" (non l'icona della
+# risorsa scartata via IconRegistry: qui il messaggio è "qualcosa è andato perso qui", non "questa
+# risorsa è disponibile qui" — le due cose andrebbero confuse visivamente con la stessa icona già
+# usata per i mucchietti di stone/vegetazione sulla mappa).
+func _spawn_carried_resource_discarded_effect(individual: HumanIndividual) -> void:
+	if not live_cells.has(individual.home_macro_coords):
+		return
+	var label := Label.new()
+	label.text = "🗑️"
+	label.z_index = 2
+	label.add_theme_font_size_override("font_size", 6)
+	label.position = individual.position * MicroCellRenderer.CELL_SIZE + Vector2(-3, -12)
+	live_cells[individual.home_macro_coords].container.add_child(label)
+
 	var tween := create_tween()
 	tween.set_parallel(true)
 	tween.tween_property(label, "position:y", label.position.y - 40.0, 0.9)
@@ -2214,12 +2384,14 @@ func _refresh_building_panel() -> void:
 # richiamare HumanCalculator/game_data da sé. age_band calcolato con la STESSA formula già in uso
 # ovunque nel progetto per età/fascia (vedi _update_individual_panel_content sopra) —
 # game_data.era_effective_age_band_durations_male/female, mai le durate BASE di HumanRules
-# direttamente. "is_child" = (age_band == HumanTypes.AgeBand.CHILD), la sola distinzione che serve
-# qui (richiesta esplicita: "usa donna/uomo per tutte le età superiori a child, bimbo/bimba per le
-# età di child" — TEENAGER/FERTILE_ADULT/MATURE_ADULT/OLD trattate tutte uguali, nessuna
-# distinzione oltre child/non-child). Array vuoto se l'edificio non è residenziale
-# (max_residents<=0) — BuildingInfoPanel._refresh_residents_grid nasconde la griglia in quel caso,
-# stesso principio già seguito per storage_slot_count<=0.
+# direttamente (vedi _resolve_age_band sopra, ora usata anche qui). "is_child" = (age_band == CHILD
+# OR age_band == INFANT) — ESTESO 2026-09-12, richiesta utente, collegamento di HumanTypes.AgeBand.
+# INFANT al gameplay: un neonato deve continuare a mostrare l'icona/trattamento "bimbo/bimba" già
+# usato per CHILD, non regredire a "adulto" solo perché ha una fascia propria oggi. TEENAGER/
+# FERTILE_ADULT/MATURE_ADULT/OLD restano trattate tutte uguali, nessuna distinzione oltre
+# child-o-infant/non-child. Array vuoto se l'edificio non è residenziale (max_residents<=0) —
+# BuildingInfoPanel._refresh_residents_grid nasconde la griglia in quel caso, stesso principio già
+# seguito per storage_slot_count<=0.
 func _resolve_building_residents_display_data(building: Building) -> Array[Dictionary]:
 	var residents_display_data: Array[Dictionary] = []
 	if building.rules == null or building.rules.max_residents <= 0:
@@ -2228,16 +2400,13 @@ func _resolve_building_residents_display_data(building: Building) -> Array[Dicti
 		if individual.house_id != building.id:
 			continue
 		var age: int = game_data.year - individual.birth_year_virtual
-		var age_band := HumanCalculator.get_age_band(
-			game_data.era_effective_age_band_durations_male, game_data.era_effective_age_band_durations_female,
-			individual.sex, float(age)
-		)
+		var age_band := _resolve_age_band(individual)
 		residents_display_data.append({
 			"id": individual.id,
 			"name": individual.name,
 			"age": age,
 			"sex": individual.sex,
-			"is_child": age_band == HumanTypes.AgeBand.CHILD,
+			"is_child": age_band == HumanTypes.AgeBand.CHILD or age_band == HumanTypes.AgeBand.INFANT,
 		})
 	return residents_display_data
 
@@ -2522,13 +2691,18 @@ func _assign_pickup_task(macro_coords: Vector2i, target_position: Vector2i, reso
 			_reconnect_pickup_action_signals(step as PickUpAction)
 			break
 
-	individual.assign_task(task)
 	# Icona letta da IconRegistry (2026-09-11, richiesta utente — generalizzazione del meccanismo di
 	# lampeggio: prima "✋" era hardcoded dentro _spawn_pickup_command_effect, ora vive nel registro
 	# centrale insieme a tutte le altre icone, vedi IconRegistry.COMMAND_ICONS) — TRIGGER invariato:
 	# ancora SUBITO al click destro (non a PickUpAction.activate()), stesso motivo di sempre — il
 	# player deve vedere da dove è partita la Task anche mentre l'individuo sta ancora camminando.
-	_spawn_command_blink_effect(cell, target_position, IconRegistry.get_command_icon("pickup"))
+	#
+	# "❌" se il guard di assign_task rifiuta (2026-09-13, richiesta utente — bugfix: prima la
+	# "manina" appariva comunque anche quando la Task non partiva mai, es. INFANT) — assign_task ora
+	# ritorna bool, catturato qui per scegliere l'icona giusta invece di assumere sempre successo.
+	var assigned := individual.assign_task(task, _resolve_age_band(individual))
+	var command_icon_key := "pickup" if assigned else "task_rejected"
+	_spawn_command_blink_effect(cell, target_position, IconRegistry.get_command_icon(command_icon_key))
 
 
 # Numero di lampeggi e durata di ciascuna metà-ciclo (buio->chiaro o chiaro->buio) dell'effetto
@@ -2644,21 +2818,35 @@ func _try_assign_pickup_command_on_right_click(event: InputEvent) -> bool:
 			print("[PICKUP CMD DEBUG] _try_assign_pickup_command_on_right_click: ritorna false (individual null o non selezionato).")
 		return false
 
+	# Fog of War (2026-09-13, richiesta utente — bugfix: un hit valido sui dati grezzi non basta più,
+	# la microcella deve anche essere visibile con DETTAGLIO sufficiente — stesso tier is_detail_
+	# fresh usato da FogOfWarRenderer per decidere se disegnare la risorsa affatto, mai consultato
+	# finora da questo comando) — un hit che fallisce questo controllo viene trattato ESATTAMENTE
+	# come "nessun hit trovato qui" (nessun return anticipato, si prosegue al candidato successivo/
+	# al fallback finale), mai un errore o un comportamento diverso dal caso "niente sotto il click".
+	var current_absolute_day := game_data.get_absolute_day()
+
 	var stone_hit := stone_selector_controller.try_select(event, live_cells, MOUSE_BUTTON_RIGHT)
 	if not stone_hit.is_empty():
+		if FogOfWarVerificationService.is_detail_visible(live_cells, stone_hit["macro_coords"], stone_hit["position"], current_absolute_day):
+			if DebugLogging.ENABLED:
+				print("[PICKUP CMD DEBUG] _try_assign_pickup_command_on_right_click: ritorna TRUE — stone_hit=%s" % str(stone_hit))
+			_assign_pickup_task(stone_hit["macro_coords"], stone_hit["position"], "pebble")
+			return true
 		if DebugLogging.ENABLED:
-			print("[PICKUP CMD DEBUG] _try_assign_pickup_command_on_right_click: ritorna TRUE — stone_hit=%s" % str(stone_hit))
-		_assign_pickup_task(stone_hit["macro_coords"], stone_hit["position"], "pebble")
-		return true
+			print("[PICKUP CMD DEBUG] _try_assign_pickup_command_on_right_click: stone_hit=%s trovato ma cella non visibile con dettaglio, ignorato." % str(stone_hit))
 
 	var stick_lot_hit := stick_lot_selector_controller.try_select(
 		event, live_cells, MOUSE_BUTTON_RIGHT, macro_world.buildings if macro_world != null else []
 	)
 	if not stick_lot_hit.is_empty():
+		if FogOfWarVerificationService.is_detail_visible(live_cells, stick_lot_hit["macro_coords"], stick_lot_hit["lot"], current_absolute_day):
+			if DebugLogging.ENABLED:
+				print("[PICKUP CMD DEBUG] _try_assign_pickup_command_on_right_click: ritorna TRUE — stick_lot_hit=%s" % str(stick_lot_hit))
+			_assign_pickup_task(stick_lot_hit["macro_coords"], stick_lot_hit["lot"], "stick")
+			return true
 		if DebugLogging.ENABLED:
-			print("[PICKUP CMD DEBUG] _try_assign_pickup_command_on_right_click: ritorna TRUE — stick_lot_hit=%s" % str(stick_lot_hit))
-		_assign_pickup_task(stick_lot_hit["macro_coords"], stick_lot_hit["lot"], "stick")
-		return true
+			print("[PICKUP CMD DEBUG] _try_assign_pickup_command_on_right_click: stick_lot_hit=%s trovato ma cella non visibile con dettaglio, ignorato." % str(stick_lot_hit))
 
 	if DebugLogging.ENABLED:
 		print("[PICKUP CMD DEBUG] _try_assign_pickup_command_on_right_click: ritorna false (nessun stone/stick lot al click).")
@@ -2737,8 +2925,55 @@ func _try_assign_unload_command_on_right_click(event: InputEvent) -> bool:
 	# esiste ancora (TaskFactory non supporta UNLOAD, vedi task_factory.gd).
 	task.task_name = "task_unload_resource_name"
 	task.step_descriptions = ["task_unload_resource_step_walk", "task_unload_resource_step_unload"]
-	individual.assign_task(task)
+	individual.assign_task(task, _resolve_age_band(individual))
 	return true
+
+
+# Guard max_builders (2026-09-14, richiesta utente — bugfix "più builder sullo stesso cantiere si
+# intrappolano a vicenda": la VERA gestione multi-builder resta da progettare, questo è solo un
+# guard temporaneo per impedire il caso rotto finché non c'è) — conta quanti ALTRI individui
+# (esclude `excluding_individual`, che può sempre riprendere il PROPRIO cantiere) hanno già un
+# "claim" sulla Build Task di `target_building`, sia come current_task ATTIVA sia come Task
+# SOSPESA nella propria task_queue: un builder mandato temporaneamente a fare un'altra commissione
+# deve continuare a "occupare" il proprio posto, altrimenti nella finestra in cui è sospeso un
+# secondo individuo potrebbe intrufolarsi, ricreando lo stesso problema. Identificazione del target
+# via _task_claims_building sotto (BUGFIX 2026-09-14: NON tramite task.context, ripulito da
+# TaskFactory.build_task subito dopo la costruzione — letta invece dagli step stessi, che la
+# portano come campo proprio dell'istanza). Scansione lineare di
+# human_individuals (+ le poche voci di ciascuna task_queue, max TaskQueueService.MAX_QUEUE_SIZE) —
+# stesso principio "O(N) accettabile finché N resta piccolo" già assunto ovunque in questo progetto.
+func _count_other_individuals_claiming_build(target_building: Building, excluding_individual: HumanIndividual) -> int:
+	var count := 0
+	for other in human_individuals:
+		if other == excluding_individual:
+			continue
+		if _task_claims_building(other.current_task, target_building):
+			count += 1
+			continue
+		for queued_task in other.task_queue:
+			if _task_claims_building(queued_task, target_building):
+				count += 1
+				break
+	return count
+
+
+# BUGFIX (2026-09-14, richiesta utente — guard max_builders confermato non funzionante: "ne lascia
+# assegnare ancora un sacco") — PRIMA leggeva task.context.get("target_building"), SEMPRE null:
+# TaskFactory.build_task (righe 224-230) ripulisce SEMPRE context dalle chiavi consumate per
+# costruire gli step, "target_building" incluso — la chiave viene letta per costruire SetupSiteAction/
+# ClearAction/BuildAction, poi CANCELLATA da context prima che diventi task.context. Letto ora
+# invece direttamente dagli step (SetupSiteAction/ClearAction/BuildAction espongono target_building
+# come campo proprio dell'istanza, MAI cancellato — sopravvive alla pulizia del context, e resta
+# leggibile indipendentemente da quale step sia quello CORRENTE: scandisco tutti i 4 step della
+# Task, non solo quello attivo). "target_building" in step (duck typing, non `is` per tipo — WalkAction
+# non ha questo campo, la esclude naturalmente senza bisogno di elencare i tre tipi che ce l'hanno).
+func _task_claims_building(task: Task, target_building: Building) -> bool:
+	if task == null or task.task_name != "task_build_name":
+		return false
+	for step in task.steps:
+		if "target_building" in step and step.target_building == target_building:
+			return true
+	return false
 
 
 # Comando "vai e costruisci" via DESTRO su un edificio non ancora completo (2026-09-10, richiesta
@@ -2751,13 +2986,16 @@ func _try_assign_unload_command_on_right_click(event: InputEvent) -> bool:
 # _find_building_by_id.
 #
 # NESSUNA distinzione tra prima assegnazione e riassegnazione dopo interruzione (richiesta esplicita
-# utente, punto 2/3): building.has_resumable_task() (== not is_complete) è l'UNICA condizione — sia
-# al primissimo click su un cantiere appena piazzato (construction_progress ancora vuoto) sia a un
-# click successivo dopo che un primo individuo è stato interrotto (construction_progress con
-# progresso parziale), questa funzione ricostruisce la Task da zero via TaskReassignmentService.
-# reassign_task, che a sua volta chiama TaskFactory.build_task — sono i quattro step stessi
-# (SetupSiteAction/ClearAction/BuildAction, get_stamina_delta) a fare da soli l'auto-skip quando
-# construction_progress mostra lavoro già fatto, nessuna soglia/percentuale letta o confrontata qui.
+# utente, punto 2/3): building.has_resumable_task() (== not is_complete) resta la condizione di
+# BASE — sia al primissimo click su un cantiere appena piazzato (construction_progress ancora
+# vuoto) sia a un click successivo dopo che un primo individuo è stato interrotto (construction_
+# progress con progresso parziale), questa funzione ricostruisce la Task da zero via
+# TaskReassignmentService.reassign_task, che a sua volta chiama TaskFactory.build_task — sono i
+# quattro step stessi (SetupSiteAction/ClearAction/BuildAction, get_stamina_delta) a fare da soli
+# l'auto-skip quando construction_progress mostra lavoro già fatto, nessuna soglia/percentuale letta
+# o confrontata qui. AGGIUNTO 2026-09-14 — il guard max_builders sopra si applica PRIMA di
+# ricostruire qualunque cosa: un cantiere con has_resumable_task()==true può comunque rifiutare
+# l'assegnazione se già al tetto di builder.
 #
 # extra_context fornisce le due chiavi che Building non può risolvere da sé (vedi Building.
 # get_resumable_task_context): "macro_state" (World, irraggiungibile da un layer di simulazione) e
@@ -2782,6 +3020,33 @@ func _try_assign_build_command_on_right_click(event: InputEvent) -> bool:
 		return false
 
 	var build_macro_coords := Vector2i(hit_building.macro_x, hit_building.macro_y)
+
+	# Guard max_builders (2026-09-14, richiesta utente) — vedi _count_other_individuals_claiming_
+	# build sopra per cosa conta come "claim". Rifiuto ESPLICITO qui, PRIMA di costruire qualunque
+	# Task: stessa X (_spawn_command_blink_effect) già usata sotto per un rifiuto di assign_task,
+	# più un alert giallo dedicato — STESSO canale/STESSO stile "alert" di MATERIAL_NEEDED (vedi
+	# NotificationPopup, "quello giallo", richiesta utente) — a differenza del rifiuto sotto
+	# (silenzioso lato notifica, solo la X), qui l'utente ha chiesto ESPLICITAMENTE anche un avviso
+	# testuale con {current}/{max}.
+	var max_builders: int = hit_building.rules.max_builders if hit_building.rules != null else 1
+	var other_builders_count := _count_other_individuals_claiming_build(hit_building, individual)
+	if other_builders_count >= max_builders:
+		if live_cells.has(build_macro_coords):
+			_spawn_command_blink_effect(
+				live_cells[build_macro_coords],
+				Vector2i(hit_building.micro_x, hit_building.micro_y),
+				IconRegistry.get_command_icon("task_rejected")
+			)
+		if UserOptions.show_notification_popups:
+			notification_popup.enqueue(
+				NotificationTypes.NotificationPopupType.MATERIAL_NEEDED,
+				tr("notification_build_capacity_full").format({
+					"current": other_builders_count,
+					"max": max_builders,
+				})
+			)
+		return true
+
 	var macro_state := macro_world.get_cell_state_at(hit_building.macro_x, hit_building.macro_y) if macro_world != null else null
 	var is_currently_grass := false
 	if live_cells.has(build_macro_coords):
@@ -2791,9 +3056,35 @@ func _try_assign_build_command_on_right_click(event: InputEvent) -> bool:
 		"macro_state": macro_state,
 		"is_currently_grass": is_currently_grass,
 	}
-	var task := TaskReassignmentService.reassign_task(hit_building, individual, extra_context)
+	var task := TaskReassignmentService.reassign_task(hit_building, individual, _resolve_age_band(individual), extra_context)
 	if task == null:
 		return false
+
+	# Guard di assign_task rifiutato (2026-09-13, richiesta utente — bugfix: il "martelletto"
+	# compariva comunque anche quando la Task non veniva mai davvero assegnata) — reassign_task
+	# chiama individual.assign_task internamente e ritorna SEMPRE `task` non-null se è riuscita a
+	# COSTRUIRLA, indipendentemente dall'esito del guard age_band (quel `null` sopra copre solo
+	# "nessun target valido"/"nessuna TaskDefinition risolvibile", casi in cui non c'è nulla da
+	# segnalare — restano silenziosi, invariati). Per distinguere "costruita ma rifiutata" da
+	# "assegnata davvero" senza cambiare la firma di reassign_task (usata da un solo chiamante,
+	# ma il suo contratto pubblico -> Task resta comunque più chiaro così) uso la stessa garanzia
+	# già documentata su HumanIndividual.assign_task: se il guard scatta, individual.current_task
+	# resta ESATTAMENTE quello di prima, quindi diverso per riferimento dal `task` appena costruito.
+	#
+	# task_queue.has(task) (2026-09-13, richiesta utente — bugfix "manina vs X": stesso motivo del
+	# ramo "zaino occupato" appena introdotto in HumanIndividual.assign_task) — un individuo con lo
+	# zaino occupato che riceve una Build Task NON la rifiuta: la accoda (current_task resta quello
+	# di prima, per costruzione, IDENTICO a un vero rifiuto per il solo confronto per riferimento
+	# sopra) e partirà da sola quando si libera. Senza questo controllo aggiuntivo, "accodata"
+	# risulterebbe indistinguibile da "rifiutata dal guard età" — qui invece è un comando riuscito.
+	if individual.current_task != task and not individual.task_queue.has(task):
+		if live_cells.has(build_macro_coords):
+			_spawn_command_blink_effect(
+				live_cells[build_macro_coords],
+				Vector2i(hit_building.micro_x, hit_building.micro_y),
+				IconRegistry.get_command_icon("task_rejected")
+			)
+		return true
 
 	# Collegamento signal SetupSiteAction.site_setup_completed / ClearAction.site_cleared (vedi
 	# _reconnect_build_task_signals) — STESSO principio già in uso da _start_building_task_at prima
@@ -3041,6 +3332,24 @@ func _select_individual(target: HumanIndividual) -> void:
 	game_info_tabs.show_selection_tab()
 
 
+# Fascia d'età CORRENTE di un individuo, risolta al volo (2026-09-12, richiesta utente —
+# collegamento di HumanTypes.AgeBand.INFANT al gameplay, Step 4: assign_task ora RICHIEDE questo
+# dato dal chiamante, mai calcolato da sé — vedi il commento su HumanIndividual.assign_task per il
+# perché) — STESSA identica formula già duplicata inline in questo file (_update_individual_panel_
+# content sotto, _resolve_building_residents_display_data) e altrove nel progetto
+# (HumanStaminaIndividualService, HumanCarryCapacityIndividualService, ecc.): centralizzata qui
+# come UNICO punto di calcolo per i chiamanti di questo file, così un domani non possano
+# disallinearsi tra loro. Mai persistita (stesso principio "sempre ricalcolata" di HumanIndividual.
+# birth_year_virtual) — HumanCalculator.get_age_band resta la fonte di verità, questa funzione si
+# limita a raccogliere i tre argomenti che richiede (durate EFFETTIVE per l'Era corrente, mai le
+# durate BASE di HumanRules, stesso bugfix storico già fissato ovunque nel progetto).
+func _resolve_age_band(target: HumanIndividual) -> HumanTypes.AgeBand:
+	var age := float(game_data.year - target.birth_year_virtual)
+	return HumanCalculator.get_age_band(
+		game_data.era_effective_age_band_durations_male, game_data.era_effective_age_band_durations_female, target.sex, age
+	)
+
+
 # Contenuto del pannello individuo (età/age_band/stamina), SEPARATO dal salto alla tab
 # selezione sopra (bugfix, richiesta utente, 2026-09-05): _refresh_selected_individual_panel
 # sotto lo chiama al rollover d'anno per aggiornare l'età SENZA rubare la tab attiva
@@ -3049,9 +3358,7 @@ func _select_individual(target: HumanIndividual) -> void:
 # d'anno anche se l'utente stava guardando tutt'altra scheda (es. 🧍 Popolazione).
 func _update_individual_panel_content(target: HumanIndividual) -> void:
 	var age: int = game_data.year - target.birth_year_virtual
-	var age_band := HumanCalculator.get_age_band(
-		game_data.era_effective_age_band_durations_male, game_data.era_effective_age_band_durations_female, target.sex, float(age)
-	)
+	var age_band := _resolve_age_band(target)
 	# Moltiplicatori gravidanza/figlio a carico (2026-09-06) — SOLO display, migliorano
 	# l'accuratezza del numero mostrato, nessun sistema di consumo stamina reale esiste ancora.
 	# Stessa estrazione di valori primitivi dall'individuo già fatta sopra per sesso/età: la
@@ -3083,11 +3390,55 @@ func _update_individual_panel_content(target: HumanIndividual) -> void:
 			used_carry_space = float(target.carried_quantity) * carried_resource_rules.space_per_unit
 	var free_carry_capacity: float = max(target.max_carry_capacity - used_carry_space, 0.0)
 
+	# 5 nuovi parametri vitali (2026-09-13, richiesta utente) — stesso trattamento di
+	# max_carry_capacity sopra: letti DIRETTAMENTE da target, nessun ricalcolo live (a differenza di
+	# max_stamina, nessuno dei 5 ha modificatori volatili tipo gravidanza/figlio-a-carico) — i campi
+	# sono già mantenuti aggiornati una volta al giorno da HumanVitalsIndividualService (vedi
+	# GameTimeService._on_day_advanced).
+	#
+	# 6 nuove skill (2026-09-13, richiesta utente) — stesso identico trattamento: lette DIRETTAMENTE
+	# da target, nessun ricalcolo (nessuna crescita esiste ancora, restano sempre 0.0 finché un
+	# futuro sistema non le farà variare).
+	#
+	# Azioni in coda (2026-09-13, richiesta utente) — descrizioni già risolte qui (tr() applicato
+	# ORA, stesso principio di get_activity_description sopra), pannello resta muto. Ordine
+	# INVERTITO rispetto a task_queue (che è LIFO, vedi TaskQueueService.pop_suspended_task — l'ultima
+	# spinta è la prossima a riprendere): reverse-iterando si mostra per prima "quella che riprenderà
+	# subito dopo l'attività corrente", il che è l'informazione più utile per il player.
+	var queued_task_descriptions: Array[String] = []
+	for i in range(target.task_queue.size() - 1, -1, -1):
+		var queued_task: Task = target.task_queue[i]
+		queued_task_descriptions.append(
+			tr(queued_task.task_name) if queued_task.task_name != "" else tr("task_debug_panel_unnamed_task")
+		)
 	human_individual_info_panel.show_individual(
-		target, age, age_band, max_stamina, current_stamina, activity_text,
-		target.max_carry_capacity, free_carry_capacity
+		target, max_stamina, current_stamina, activity_text,
+		target.max_carry_capacity, free_carry_capacity,
+		target.max_hunger, target.current_hunger,
+		target.max_thirst, target.current_thirst,
+		target.max_health, target.current_health,
+		target.max_happiness, target.current_happiness,
+		target.max_loyalty, target.current_loyalty,
+		target.skill_leadership, target.skill_builder, target.skill_management,
+		target.skill_transporter, target.skill_gathering, target.skill_cognition,
+		target.skill_hunting,
+		queued_task_descriptions
 	)
-	game_info_tabs.set_selection_title(tr("selection_title_name").format({"name": target.name}))
+	# Titolo header consolidato (2026-09-13, richiesta utente — "perché la riga del center è
+	# vuota, mettici nome/sesso/età/fascia") — sostituisce sia il vecchio "Nome: {name}" sia la
+	# IdentityLabel del corpo pannello (rimossa: sarebbe stata una seconda copia della STESSA
+	# informazione su due righe diverse). Sesso ABBREVIATO (sex_male_short/sex_female_short —
+	# "M"/"F") per stare compatti sulla stessa riga del bottone 🎯, stessa scelta già fatta per la
+	# ex-IdentityLabel. Calcolato qui (non nel pannello, che resta "muto"): GameScene è l'unico
+	# punto che decide il testo di questo header per OGNI tipo di selezione (vedi gli altri call
+	# site di set_selection_title per edifici/vegetazione/ecc.).
+	var identity_sex_text: String = tr("sex_female_short") if target.sex == HumanTypes.Sex.FEMALE else tr("sex_male_short")
+	var identity_band_text: String = HumanTypes.AgeBand.keys()[age_band].capitalize()
+	if target.is_pregnant:
+		identity_band_text += ", " + tr("pregnant")
+	game_info_tabs.set_selection_title(tr("individual_identity_line").format({
+		"name": target.name, "sex": identity_sex_text, "age": age, "band": identity_band_text
+	}))
 
 
 # Ripopola la scheda 👨‍👩‍👧 con i dati correnti — stessa identica chiamata di _ready() (vedi lì),
@@ -3379,6 +3730,37 @@ func _on_building_resources_decayed(events: Array) -> void:
 				"id": building.id,
 			})
 		)
+
+
+# Cantiere bloccato per mancanza di materiale (2026-09-14, richiesta utente) — collegata a
+# individual_action_service.building_material_blocked (vedi _setup_clock), emesso SOLO alla
+# transizione false->true di Building.is_awaiting_material (mai ripetuto finché il blocco persiste
+# — la garanzia "una volta sola" vive già in HumanIndividualActionService._resolve_material_shortage,
+# questo handler si limita a mostrare il popup, stesso principio "componente muto" di ogni altro
+# handler notifica qui). Testo GENERICO (richiesta esplicita punto 2: "non specifica su quantità/
+# materiale") — stesso fallback building_display_name di _on_building_resources_decayed sopra.
+func _on_building_material_blocked(building: Building) -> void:
+	if not UserOptions.show_notification_popups:
+		return
+	var building_display_name: String = (
+		tr(building.rules.building_name) if building.rules != null else building.building_type_name
+	)
+	notification_popup.enqueue(
+		NotificationTypes.NotificationPopupType.MATERIAL_NEEDED,
+		tr("notification_building_material_needed").format({"building": building_display_name})
+	)
+
+
+# Discard esplicito sulla mappa (2026-09-14, richiesta utente — collegata a
+# individual_action_service.carried_resource_discarded, vedi _setup_clock/il commento sul segnale
+# stesso) — SOLO l'effetto visivo (_spawn_carried_resource_discarded_effect, vedi sopra): nessun
+# popup NotificationPopup per questo evento (richiesta esplicita, "un simbolo sulla mappa", non una
+# notifica testuale — a differenza di _on_building_material_blocked sopra, che invece è un vero
+# popup). resource_name/quantity ricevuti ma non ancora usati nell'effetto visivo stesso (solo
+# nel log DebugLogging già stampato da _handle_pending_warehouse_search) — tenuti in firma per
+# coerenza col segnale/per un futuro tooltip, senza dover cambiare la firma quando servirà davvero.
+func _on_carried_resource_discarded(individual: HumanIndividual, resource_name: String, quantity: int) -> void:
+	_spawn_carried_resource_discarded_effect(individual)
 
 
 # Step 6 piano mortalità (2026-09-05): rinfresca la scheda 👨‍👩‍👧 DOPO che tutte le rimozioni/
@@ -4280,8 +4662,12 @@ func _sync_dependent_child_position(mother: HumanIndividual) -> void:
 		# prossimi frame finché questa madre non avrà un nuovo figlio a carico.
 		mother.dependent_child_id = -1
 		return
-	var child_age := float(game_data.year - child.birth_year_virtual)
-	if child_age >= individual_controller.min_movement_age_years():
+	# age_band != INFANT (2026-09-12, richiesta utente — collegamento di HumanTypes.AgeBand.INFANT
+	# al gameplay) SOSTITUISCE il precedente confronto numerico "child_age >= individual_controller.
+	# min_movement_age_years()" (funzione rimossa, vedi HumanIndividualController.gd) — stessa
+	# identica formula già in uso ovunque nel progetto, qui via _resolve_age_band.
+	var child_age_band := _resolve_age_band(child)
+	if child_age_band != HumanTypes.AgeBand.INFANT:
 		# Cresciuto abbastanza — auto-manutenzione: pulisce il riferimento e smette di muoverlo;
 		# resta semplicemente fermo dov'era, come chiunque altro non sia il bersaglio corrente,
 		# finché non diventa lui stesso il bersaglio (a quel punto risponde ai comandi come tutti).
@@ -5251,9 +5637,11 @@ func _demolish_building(building: Building) -> void:
 	# stessa Task fin dalla creazione via TaskFactory.build_task — vedi Task.context). Nessun
 	# riferimento diretto building->individuo esiste oggi (vedi il report): scansione lineare di
 	# human_individuals, stesso costo già accettato altrove nel progetto per questo stesso array
-	# (es. AssignHouseService sopra). individual.stop() — STESSO metodo già usato da
-	# _stop_selected_individual_task (tasto H) — lascia l'individuo senza Task, nessun fallback
-	# automatico, coerente con quanto già deciso per quel comando.
+	# (es. AssignHouseService sopra). other.stop() qui SENZA il resolve_idle_individual aggiunto a
+	# _stop_selected_individual_task (tasto H, 2026-09-14 bugfix) — deliberato, non un'omissione:
+	# demolire l'edificio target invalida la Task, ma un eventuale resume dalla coda/fallback
+	# perditempo per un individuo NON selezionato qui è fuori scope di questo fix (limitato al tasto
+	# H su richiesta utente); resta il comportamento "nessun fallback automatico" di prima.
 	for other in human_individuals:
 		var other_task: Task = other.current_task
 		if other_task != null and other_task.context.get("target_building") == building:
@@ -5793,6 +6181,11 @@ func _reconnect_loaded_task_signals() -> void:
 		var unload_count := 0
 		var pickup_count := 0
 		var build_count := 0
+		# jump_count (2026-09-13, richiesta utente, feedback visivo minimo Play Task) — STESSO
+		# identico gap gemello: un JumpAction ricostruito da TaskPersistenceService.deserialize_task
+		# dopo un reload è un'istanza NUOVA, il cui `jumped` non è mai stato collegato da nessuno —
+		# stessa causa/stessa soluzione già chiusa qui per SetupSite/Clear/Unload/PickUp/Build.
+		var jump_count := 0
 		for step in member.current_task.steps:
 			_reconnect_build_task_signals(step)
 			if step is SetupSiteAction:
@@ -5807,10 +6200,13 @@ func _reconnect_loaded_task_signals() -> void:
 				pickup_count += 1
 			elif step is BuildAction:
 				build_count += 1
-		var reconnected_total := setup_site_count + clear_count + unload_count + pickup_count + build_count
+			elif step is JumpAction:
+				_reconnect_jump_action_signals(step as JumpAction, member)
+				jump_count += 1
+		var reconnected_total := setup_site_count + clear_count + unload_count + pickup_count + build_count + jump_count
 		if reconnected_total > 0 and DebugLogging.ENABLED:
-			print("[RECONNECT DEBUG] Individuo #%d: ricollegati %d signal (tipi: SetupSite=%d, Clear=%d, Unload=%d, PickUp=%d, Build=%d) dopo reload" % [
-				member.id, reconnected_total, setup_site_count, clear_count, unload_count, pickup_count, build_count
+			print("[RECONNECT DEBUG] Individuo #%d: ricollegati %d signal (tipi: SetupSite=%d, Clear=%d, Unload=%d, PickUp=%d, Build=%d, Jump=%d) dopo reload" % [
+				member.id, reconnected_total, setup_site_count, clear_count, unload_count, pickup_count, build_count, jump_count
 			])
 
 
@@ -5874,6 +6270,28 @@ func _reconnect_pickup_action_signals(step: PickUpAction) -> void:
 				_refresh_resource_visuals(cell)
 				break
 	)
+
+
+# Collega JumpAction.jumped (2026-09-13, richiesta utente, feedback visivo minimo per la Play
+# Task) — STESSO principio di _reconnect_pickup_action_signals/_reconnect_unload_action_signals
+# sopra (bind dell'individuo proprietario, un handler dedicato invece di passare da
+# _reconnect_build_task_signals — quella resta per i signal "senza bind aggiuntivo" di SetupSite/
+# Clear/Build, vedi quel commento): riusata TALE E QUALE sia da _assign_play_task (creazione
+# in-sessione) sia da _reconnect_loaded_task_signals (reload da salvataggio) sotto.
+func _reconnect_jump_action_signals(step: JumpAction, individual_ref: HumanIndividual) -> void:
+	step.jumped.connect(_on_individual_jumped.bind(individual_ref))
+
+
+# Reazione a JumpAction.jumped — risolve la HumanIndividualView dell'individuo (stessa ricerca
+# per-indice parallela human_individuals/human_individual_views già in uso altrove, es.
+# _sync_dependent_child_position) e le chiede il piccolo scatto verticale, vedi
+# HumanIndividualView.trigger_jump_bounce. No-op silenzioso se la view non è (più) risolvibile
+# (individuo morto/rimosso tra l'emissione del segnale e la sua ricezione — non dovrebbe succedere
+# nello stesso frame, ma resta una guardia difensiva economica coerente con lo stile del progetto).
+func _on_individual_jumped(individual_ref: HumanIndividual) -> void:
+	var view_index := human_individuals.find(individual_ref)
+	if view_index != -1 and view_index < human_individual_views.size():
+		human_individual_views[view_index].trigger_jump_bounce()
 
 
 # Reazione a ClearAction.site_cleared (2026-09-11, richiesta utente, terzo step della Build Task)
@@ -6197,7 +6615,7 @@ func _setup_clock() -> void:
 	# check_mortality a year_rolled_over e la rimozione reale a day_advanced — sempre gli STESSI
 	# oggetti di GameScene, mai una copia.
 	game_time_service = GameTimeService.new()
-	game_time_service.connect_to_clock(clock, game_data, human_individuals, human_folk, human_population_group)
+	game_time_service.connect_to_clock(clock, game_data, human_individuals, human_folk, human_population_group, macro_world, individual_action_service)
 	# Step 6 piano mortalità (2026-09-05): GameTimeService rimuove l'individuo morto da
 	# human_individuals (stesso array, per riferimento) ma non sa nulla di human_individual_views
 	# (rendering, di competenza esclusiva di GameScene) — questo segnale, emesso PRIMA della
@@ -6221,6 +6639,20 @@ func _setup_clock() -> void:
 	# gestisce il decadimento edifici — vedi WorldTimeService._run_daily_building_resource_decay).
 	game_time_service.individual_resource_decayed.connect(_on_individual_resource_decayed)
 	clock.building_resources_decayed.connect(_on_building_resources_decayed)
+	# Cantiere bloccato per mancanza di materiale (2026-09-14, richiesta utente) — vive su
+	# individual_action_service (già un campo di GameScene, la STESSA istanza che guida apply_action
+	# ogni frame), non su game_time_service: la rilevazione avviene dentro HumanIndividualActionService.
+	# _resolve_material_shortage, chiamata sia dal ciclo per-frame sia dal ritentativo giornaliero.
+	# Stesso gate UserOptions.show_notification_popups/stesso NotificationPopup di ogni altro evento
+	# sopra — vedi _on_building_material_blocked.
+	individual_action_service.building_material_blocked.connect(_on_building_material_blocked)
+	# Discard esplicito sulla mappa (2026-09-14, richiesta utente — step C del piano "rerouting":
+	# "rendiamo esplicito il discard con un simbolo sulla mappa che scompare dopo qualche secondo")
+	# — stesso principio/stessa posizione della connessione sopra, effetto puramente visivo (nessun
+	# gate su UserOptions.show_notification_popups, quello vale per i popup di NotificationPopup,
+	# non per un effetto sulla mappa come _spawn_idea_deposit_effect — vedi _on_carried_resource_
+	# discarded).
+	individual_action_service.carried_resource_discarded.connect(_on_carried_resource_discarded)
 	play_pause_button.pressed.connect(_on_play_pause_pressed)
 	for speed in speed_buttons.keys():
 		speed_buttons[speed].pressed.connect(_on_speed_button_pressed.bind(speed))

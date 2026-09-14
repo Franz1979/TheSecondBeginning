@@ -77,8 +77,33 @@ extends Resource
 
 # Nome risorsa (stringa libera per ora, es. "wood"/"stick"/"stone"/"iron" — nessun enum dedicato
 # finché non esiste un vero inventario/economia) -> quantità richiesta per completare la
-# costruzione.
+# costruzione VERA E PROPRIA (BuildAction, non ancora scritta — vedi setup_site_material_name/
+# setup_site_material_per_cell sotto per il fabbisogno materiale della fase PRECEDENTE, SetupSite).
 @export var required_materials: Dictionary = {}
+
+# Fabbisogno materiale della fase SetupSite (2026-09-14, richiesta utente — bugfix/chiarimento:
+# SetupSiteAction leggeva required_materials["stick"] sopra, confondendo il fabbisogno del CANTIERE
+# ("allestire il cantiere consuma legnetti") con quello della COSTRUZIONE vera e propria (il
+# campo sopra, riservato a BuildAction) — DUE fasi/DUE fabbisogni distinti, mai lo stesso numero
+# per costruzione: un futuro edificio potrà richiedere 4 stick per allestire il cantiere E un
+# secondo materiale diverso (via required_materials) per costruirlo davvero.
+#
+# Regola (2026-09-14, richiesta utente): SEMPRE 4 stick per MICROCELLA occupata dall'edificio in
+# fase di setup — quantità totale = setup_site_material_per_cell × required_space sotto (oggi
+# required_space=1 per ogni tipo esistente, quindi sempre 4 totali). Default 4/"stick" su QUESTA
+# classe (non sui singoli .tres) apposta: vale per OGNI tipo esistente/futuro senza dover editare
+# ciascun .tres uno per uno — un futuro tipo che vorrà un materiale/quantità diversi lo
+# sovrascriverà esplicitamente nel proprio .tres, esattamente come rest_multiplier/durability_
+# multiplier_by_category sopra.
+#
+# UNICA FONTE DI VERITÀ per QUESTO fabbisogno, letta sia da SetupSiteAction.get_missing_material_
+# quantity (gameplay/) sia da BuildingStorageService.can_accept/get_max_depositable (simulation/,
+# ramo edificio incompleto) — deliberatamente su BuildingRules (simulation/) e non su una costante
+# di SetupSiteAction (gameplay/): questo progetto non fa mai riferimenti simulation/ -> gameplay/
+# (verificato in ricognizione, 2026-09-14), quindi il dato condiviso da servizi di ENTRAMBI i
+# livelli deve vivere qui, mai su una classe Action.
+@export var setup_site_material_name: String = "stick"
+@export var setup_site_material_per_cell: int = 4
 
 @export var max_durability: int = 50
 

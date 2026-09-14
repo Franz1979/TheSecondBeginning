@@ -1,0 +1,9 @@
+[gd_resource type="Resource" script_class="TaskStepDefinition" format=3]
+
+[ext_resource type="Script" uid="uid://d3sri3tos2u4f" path="res://gameplay/scripts/tasks/task_step_definition.gd" id="1_run_2"]
+
+[resource]
+script = ExtResource("1_run_2")
+action_type = 10
+context_keys = Array[String](["play_target_2"])
+step_description = "task_play_step_run"

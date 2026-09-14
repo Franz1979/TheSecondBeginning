@@ -27,6 +27,12 @@ extends Action
 # condivisa tra Action diverse.
 const STAMINA_COST_PER_SPACE_UNIT: float = 2.0
 
+# Costo di HAPPINESS al GIORNO (2026-09-13, richiesta utente: "-10.0/day") — STESSO valore di
+# PickUpAction.HAPPINESS_DRAIN_PER_DAY, costante SEPARATA (stesso principio "nessuna costante
+# condivisa tra Action diverse" già dichiarato sopra per STAMINA_COST_PER_SPACE_UNIT). Tasso fisso,
+# non proporzionale allo spazio prelevato.
+const HAPPINESS_DRAIN_PER_DAY: float = 10.0
+
 # Emesso da on_complete() SOLO quando un prelievo reale è avvenuto (_quantity_to_retrieve > 0 E
 # BuildingStorageService.withdraw ha davvero restituito qualcosa) — stesso principio di
 # disaccoppiamento di PickUpAction.resource_collected/UnloadAction.resource_deposited: questa classe
@@ -69,6 +75,10 @@ func _init(p_target_building: Building, p_resource_name: String, p_quantity_requ
 	resource_name = p_resource_name
 	quantity_requested = p_quantity_requested
 	target = null
+	# INFANT non può eseguire questa Action (2026-09-12, richiesta utente — collegamento AgeBand.
+	# INFANT al gameplay, vedi Action.disallowed_age_bands). CHILD aggiunto 2026-09-13 (richiesta
+	# utente).
+	disallowed_age_bands = [HumanTypes.AgeBand.INFANT, HumanTypes.AgeBand.CHILD]
 
 
 # Risolve UNA VOLTA (mai più ricalcolato dopo, stesso principio di PickUpAction.activate) quanto
@@ -127,8 +137,31 @@ func get_stamina_delta(individual: Variant, context: Dictionary, delta: float) -
 	return -(_total_stamina_cost / _duration) * delta
 
 
+# STESSA guardia/STESSO trattamento di PickUpAction.get_happiness_delta (nessun incremento di
+# _elapsed, già avanzato da get_stamina_delta nello stesso frame). Tasso fisso.
+func get_happiness_delta(individual: Variant, context: Dictionary, delta: float) -> float:
+	if _duration <= 0.0:
+		return 0.0
+	return -HAPPINESS_DRAIN_PER_DAY * delta
+
+
 func is_complete(individual: Variant, context: Dictionary) -> bool:
 	return _elapsed >= _duration
+
+
+# get_required_position (2026-09-13, richiesta utente — fix "Walk di ritorno alla ripresa", vedi
+# Action.get_required_position) — null se target_building non risolvibile (nessuna posizione da
+# imporre, stesso trattamento difensivo già seguito da on_complete sopra). Altrimenti converte la
+# posizione LOCALE dell'edificio (target_building.micro_x/y, relativa alla SUA macrocella
+# OSPITANTE) nel sistema di coordinate GLOBALE di individual.position — STESSA identica formula
+# già in uso in UnloadAction.on_complete (ramo fisico) per "cammina via dopo il deposito",
+# duplicata qui apposta (nessuna costante/funzione condivisa tra Action diverse, stesso principio
+# già seguito ovunque in questo sistema).
+func get_required_position(individual: Variant, context: Dictionary) -> Variant:
+	if target_building == null:
+		return null
+	var macro_offset: Vector2 = Vector2(Vector2i(target_building.macro_x, target_building.macro_y) - individual.home_macro_coords) * World.WIDTH
+	return Vector2(target_building.micro_x, target_building.micro_y) + macro_offset
 
 
 # Preleva DAVVERO tramite BuildingStorageService.withdraw() — no-op se _quantity_to_retrieve è 0 o

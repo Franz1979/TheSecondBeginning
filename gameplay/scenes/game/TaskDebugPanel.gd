@@ -36,7 +36,6 @@ extends VBoxContainer
 const REFRESH_BUTTON_TEXT := "🔄"
 
 const STATUS_COLOR_IN_PROGRESS := Color(0.95, 0.85, 0.3)
-const STATUS_COLOR_COMPLETED := Color(0.4, 0.9, 0.4)
 const STATUS_COLOR_INTERRUPTED := Color(0.9, 0.35, 0.35)
 # Colore acceso per l'etichetta "DEBUG" (2026-09-12, richiesta utente: "colore etichetta del
 # debug") — vive QUI, non sulla tab stessa (GameInfoTabs.set_tab_title usa solo un'icona 🐞, nessuna
@@ -71,7 +70,13 @@ func refresh() -> void:
 	for child in list_container.get_children():
 		list_container.remove_child(child)
 		child.queue_free()
+	# Filtro (2026-09-13, richiesta utente: "lascia solo quelle in corso e interrotte") — le
+	# COMPLETED non vengono più mostrate affatto (restano comunque nel registro fino alla loro
+	# scadenza temporale, vedi TaskDebugRegistry.on_day_advanced/EXPIRY_DAYS — questo pannello si
+	# limita a non disegnarle, non le cancella da sé).
 	for entry in TaskDebugRegistry.get_entries():
+		if String(entry.get("status", "")) == TaskDebugRegistry.STATUS_COMPLETED:
+			continue
 		list_container.add_child(_build_row(entry))
 
 
@@ -94,9 +99,9 @@ func _build_row(entry: Dictionary) -> Control:
 
 
 func _status_color(status: String) -> Color:
+	# STATUS_COMPLETED non compare più qui (2026-09-13) — refresh() sopra filtra quelle entry
+	# prima ancora di chiamare _build_row/questa funzione, mai raggiunta con quello stato.
 	match status:
-		TaskDebugRegistry.STATUS_COMPLETED:
-			return STATUS_COLOR_COMPLETED
 		TaskDebugRegistry.STATUS_INTERRUPTED:
 			return STATUS_COLOR_INTERRUPTED
 		_:

@@ -99,6 +99,19 @@ const FAMILY_PARENT_CHILD_GAP_MARGIN_YEARS: float = 5.0
 # sia per una partita nuova sia per una caricata.
 const SPAWN_GRID_SPACING: float = 1.2
 
+# Distribuzione INIZIALE delle 7+ skill (2026-09-13, richiesta utente) — SEED_SKILL_POINTS_TOTAL
+# punti ripartiti su TUTTE le skill esistenti di ciascun individuo creato da questo service
+# (fondatori E figli iniziali di FAMILY: "per ciascun individuo", nessuna eccezione). Peso casuale
+# indipendente per skill (randf_range(RANDOM_WEIGHT_MIN, 1.0) — mai puro randf(), che potrebbe
+# restituire esattamente 0.0 e azzerare quella skill invece di darle "solo poco"), poi
+# NORMALIZZATO dividendo ciascun peso per la SOMMA di tutti i pesi generati: la somma finale è
+# sempre esattamente SEED_SKILL_POINTS_TOTAL, qualunque sia il numero di skill, perché la
+# normalizzazione usa weights.size() (la lunghezza reale dell'array generato da
+# HumanIndividual.get_skill_property_names(), MAI un conteggio scritto a mano) — un'ottava skill
+# futura entra automaticamente in questa distribuzione senza toccare questo codice.
+const SEED_SKILL_POINTS_TOTAL: float = 1000.0
+const RANDOM_WEIGHT_MIN: float = 0.01
+
 
 # Semina Folk + HumanPopulationGroup + HumanIndividual per il popolo del player, in UNA cella gia'
 # scelta altrove (macro_coords, tipicamente il risultato di FirstStartMacroCellSelectionService —
@@ -127,7 +140,7 @@ const SPAWN_GRID_SPACING: float = 1.2
 # difensivo se il chiamante passa array vuoti/troppo corti (il chiamante DEVE aver già risolto
 # l'Era, vedi GameScene) — stesso principio "non validare scenari che non possono accadere" già
 # seguito nel resto del progetto: _age_band_* sotto indicizzano durations[age_band] confidando
-# che l'array copra tutte le 5 fasce di HumanTypes.AgeBand.
+# che l'array copra tutte le 6 fasce di HumanTypes.AgeBand (ESTESO 2026-09-12 per INFANT).
 #
 # Tre modelli di generazione DIVERSI e interamente separati a seconda della preferenza risolta
 # (richiesta utente, 2026-09-04): GROUP usa _create_unpaired_fertile_group (10 adulti fertili
@@ -313,6 +326,7 @@ func _create_adult(
 	individual.assign_hair_color()
 	individual.assign_skin_color()
 	individual.assign_random_clothing()
+	_seed_random_skills(individual)
 	return individual
 
 
@@ -375,6 +389,7 @@ func _create_unpaired_fertile_group(
 			individual.assign_hair_color()
 			individual.assign_skin_color()
 			individual.assign_random_clothing()
+			_seed_random_skills(individual)
 			individuals.append(individual)
 			local_index += 1
 	return individuals
@@ -413,6 +428,7 @@ func _create_coordinated_couple(
 	father.assign_hair_color()
 	father.assign_skin_color()
 	father.assign_random_clothing()
+	_seed_random_skills(father)
 	used_names.append(father.name)
 
 	var mother := HumanIndividual.new()
@@ -434,6 +450,7 @@ func _create_coordinated_couple(
 	mother.assign_hair_color()
 	mother.assign_skin_color()
 	mother.assign_random_clothing()
+	_seed_random_skills(mother)
 	used_names.append(mother.name)
 
 	return [mother, father]
@@ -501,6 +518,7 @@ func _create_family_children(
 		child.assign_hair_color(mother, father)
 		child.assign_skin_color(mother, father)
 		child.assign_random_clothing()
+		_seed_random_skills(child)
 		used_names.append(child.name)
 		children.append(child)
 	return children
@@ -563,14 +581,15 @@ func _create_child(
 	individual.assign_hair_color(mother, father)
 	individual.assign_skin_color(mother, father)
 	individual.assign_random_clothing()
+	_seed_random_skills(individual)
 	used_names.append(individual.name)
 	return individual
 
 
 # Intervallo [inizio, fine) in anni di age_band per il sesso dato, ricavato sommando
 # cumulativamente durations_male/female fino alla fascia richiesta — stesso ordine di
-# HumanTypes.AgeBand (0=CHILD..4=OLD), indicizzato posizionalmente come il resto dei campi "per
-# fascia" di HumanRules. durations_male/female sono le durate GIA' scalate per l'Era corrente
+# HumanTypes.AgeBand (0=INFANT..5=OLD, ESTESO 2026-09-12), indicizzato posizionalmente come il
+# resto dei campi "per fascia" di HumanRules. durations_male/female sono le durate GIA' scalate per l'Era corrente
 # (vedi il commento su effective_age_band_durations_male/female in seed_player_start) — MAI
 # HumanRules.age_band_durations_male/female letto direttamente da qui, a differenza di prima
 # (bugfix, richiesta utente 2026-09-04).
@@ -590,3 +609,21 @@ func _age_band_duration(durations_male: Array[float], durations_female: Array[fl
 func _random_age_in_band(durations_male: Array[float], durations_female: Array[float], sex: HumanTypes.Sex, age_band: HumanTypes.AgeBand) -> float:
 	var year_range := _age_band_year_range(durations_male, durations_female, sex, age_band)
 	return randf_range(year_range.x, year_range.y)
+
+
+# Assegna la distribuzione iniziale di skill a `individual` — vedi il commento su
+# SEED_SKILL_POINTS_TOTAL/RANDOM_WEIGHT_MIN sopra per l'algoritmo. Chiamata da OGNI punto di
+# creazione individuo di questo service (fondatori GROUP/COUPLE/FAMILY, figli iniziali FAMILY),
+# mai duplicata inline: un solo posto dove l'algoritmo di distribuzione vive.
+func _seed_random_skills(individual: HumanIndividual) -> void:
+	var skill_names := individual.get_skill_property_names()
+	if skill_names.is_empty():
+		return
+	var weights: Array[float] = []
+	var weight_sum := 0.0
+	for _skill_name in skill_names:
+		var weight := randf_range(RANDOM_WEIGHT_MIN, 1.0)
+		weights.append(weight)
+		weight_sum += weight
+	for i in range(skill_names.size()):
+		individual.set(skill_names[i], (weights[i] / weight_sum) * SEED_SKILL_POINTS_TOTAL)

@@ -28,6 +28,10 @@ extends Action
 # sforzo fisico, senza azzerare comunque il recupero passivo di un'eventuale Task successiva di Rest.
 const STAMINA_DRAIN_PER_DAY: float = 10.0
 
+# Recupero di HAPPINESS al giorno (2026-09-13, richiesta utente: "+5.0/day") — riflettere/sognare a
+# occhi aperti è piacevole, tasso fisso incondizionato.
+const HAPPINESS_REGEN_PER_DAY: float = 5.0
+
 var duration: float = 0.0
 
 # Tempo trascorso in QUESTO step, in frazioni di giorno di gioco — parte da 0.0 (a differenza di
@@ -40,11 +44,25 @@ var _elapsed: float = 0.0
 func _init(p_duration: float) -> void:
 	duration = p_duration
 	target = null
+	# INFANT non può eseguire questa Action (2026-09-12, richiesta utente — collegamento AgeBand.
+	# INFANT al gameplay, vedi Action.disallowed_age_bands). CHILD/TEENAGER/FERTILE_ADULT aggiunti
+	# 2026-09-13 (richiesta utente): pensare è riservato agli adulti anziani/maturi.
+	disallowed_age_bands = [
+		HumanTypes.AgeBand.INFANT, HumanTypes.AgeBand.CHILD,
+		HumanTypes.AgeBand.TEENAGER, HumanTypes.AgeBand.FERTILE_ADULT,
+	]
 
 
 func get_stamina_delta(individual: Variant, context: Dictionary, delta: float) -> float:
 	_elapsed += delta
 	return -STAMINA_DRAIN_PER_DAY * delta
+
+
+# NON incrementa _elapsed (2026-09-13) — già avanzato da get_stamina_delta sopra nello stesso
+# frame, stesso motivo di LookAroundAction/JumpAction.get_happiness_delta. Tasso fisso
+# incondizionato.
+func get_happiness_delta(individual: Variant, context: Dictionary, delta: float) -> float:
+	return HAPPINESS_REGEN_PER_DAY * delta
 
 
 func is_complete(individual: Variant, context: Dictionary) -> bool:

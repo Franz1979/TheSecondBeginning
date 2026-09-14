@@ -22,4 +22,10 @@ enum NotificationPopupType {
 	# storage edificio, vedi ResourceDecayService) — stesso gate/stesso meccanismo di morte/nascita/
 	# idea, riusato per il quarto caso d'uso invece di un sistema di avvisi a parte.
 	RESOURCE_DECAYED,
+	# Cantiere bloccato per mancanza di materiale da costruzione (2026-09-14, richiesta utente) —
+	# PRIMO tipo con uno STILE VISIVO DIVERSO dagli altri (sfondo giallo/triangolo invece del
+	# pannello scuro di default — vedi NotificationPopup._show_next), non solo una categoria per un
+	# futuro uso stilistico mai arrivato come per BIRTH sopra: un avviso di blocco deve leggersi
+	# come "attenzione", non come un evento normale della simulazione.
+	MATERIAL_NEEDED,
 }

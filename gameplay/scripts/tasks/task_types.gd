@@ -53,6 +53,13 @@ enum ActionType {
 	# TaskDefinition la usa ancora (nessun trigger/Task di trasporto materiale completa esiste ancora,
 	# arriverà in un giro successivo). Vedi gameplay/scripts/actions/RetrieveAction.gd.
 	RETRIEVE,
+	# RUN/JUMP (2026-09-13, richiesta utente — preparazione della futura Task Play, non ancora
+	# costruita in questo passo) — STESSO principio di SETUP_SITE/CLEAR/BUILD/LOOK_AROUND/RETRIEVE
+	# sopra, AGGIUNTI IN CODA. TaskFactory.build_task e TaskPersistenceService li supportano già
+	# entrambi da questo stesso passo — nessuna TaskDefinition li usa ancora (nessun trigger esiste
+	# ancora). Vedi gameplay/scripts/actions/RunAction.gd/JumpAction.gd.
+	RUN,
+	JUMP,
 }
 
 # Categorie di tool richiedibili da un'Action (2026-09-08, richiesta utente — SOLO struttura dati,

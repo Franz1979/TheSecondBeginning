@@ -20,14 +20,10 @@ slot_count = 5
 [node name="HSeparator" type="HSeparator" parent="MarginContainer/VBoxContainer"]
 layout_mode = 2
 
-[node name="BodyScrollContainer" type="ScrollContainer" parent="MarginContainer/VBoxContainer"]
-layout_mode = 2
-size_flags_vertical = 3
-horizontal_scroll_mode = 0
-
-[node name="BodyContainer" type="VBoxContainer" parent="MarginContainer/VBoxContainer/BodyScrollContainer"]
+[node name="BodyContainer" type="VBoxContainer" parent="MarginContainer/VBoxContainer"]
 layout_mode = 2
 size_flags_horizontal = 3
+size_flags_vertical = 3
 
 [node name="MinimapSlot" type="MarginContainer" parent="MarginContainer/VBoxContainer"]
 layout_mode = 2

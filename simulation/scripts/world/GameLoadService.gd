@@ -30,6 +30,13 @@ func load_game_from_json(file_path: String) -> LoadedGame:
 	var game_data := GameData.new()
 	game_data.year = int(data["game"]["year"])
 	game_data.current_day = int(data["game"].get("current_day", 0))
+	# Sincronizza SUBITO il giorno assoluto noto a TaskDebugRegistry (2026-09-13, richiesta utente,
+	# pulizia temporale del pannello debug 🐞) — senza questa riga, _current_absolute_day
+	# resterebbe al valore stantio di una sessione precedente (o 0, mai avanzato in questa sessione
+	# di Godot) fino al prossimo vero avanzamento giorno, rischiando di stampare un
+	# closed_at_absolute_day sbagliato su un'entry chiusa PRIMA di quel prossimo tick (es. un
+	# individuo che finisce/interrompe la propria Task ricostruita nello stesso frame del reload).
+	TaskDebugRegistry.on_day_advanced(game_data.get_absolute_day())
 	# .get(key, default) per compatibilità con save precedenti l'introduzione dell'Era (vedi
 	# GameData) — "paleolithic"/[] sono gli stessi default della classe (cache vuota finché nessuno
 	# ha mai chiamato set_current_era, esattamente come una partita nuova oggi).
@@ -417,6 +424,12 @@ func load_game_from_json(file_path: String) -> LoadedGame:
 				enabled_categories.append(int(category_value))
 			building.enabled_categories = enabled_categories
 			building.rotation = int(building_data.get("rotation", GameTypes.Direction.SOUTH))
+			# is_awaiting_material (2026-09-14, richiesta utente) — .get(key, false) per compatibilità
+			# con save precedenti l'introduzione del campo, stesso principio di enabled_categories
+			# sopra: un cantiere di un save vecchio riparte semplicemente "non in attesa" (il prossimo
+			# controllo giornaliero/attivazione di SetupSiteAction lo ricalcola comunque da zero se
+			# necessario, vedi Building.gd).
+			building.is_awaiting_material = bool(building_data.get("is_awaiting_material", false))
 			world.buildings.append(building)
 
 	var max_loaded_building_id := 0
@@ -525,6 +538,32 @@ func load_game_from_json(file_path: String) -> LoadedGame:
 			# esisteva ancora), quindi il fallback resta un valore onesto anche qui.
 			individual.current_stamina = float(individual_data.get("current_stamina", HumanIndividual.FALLBACK_MAX_STAMINA))
 			individual.max_stamina = float(individual_data.get("max_stamina", HumanIndividual.FALLBACK_MAX_STAMINA))
+			# 5 nuovi parametri vitali (2026-09-13, richiesta utente) — .get() con FALLBACK_MAX_VITAL
+			# come default (stesso valore usato da _init/HumanVitalsIndividualService quando la
+			# catena Rules non è risolvibile), stesso trattamento di current_stamina/max_stamina
+			# sopra: un save precedente a questi campi non aveva alcuno stato reale da perdere
+			# (nessun consumo esisteva ancora), quindi il fallback resta un valore onesto anche qui.
+			individual.current_hunger = float(individual_data.get("current_hunger", HumanIndividual.FALLBACK_MAX_VITAL))
+			individual.max_hunger = float(individual_data.get("max_hunger", HumanIndividual.FALLBACK_MAX_VITAL))
+			individual.current_thirst = float(individual_data.get("current_thirst", HumanIndividual.FALLBACK_MAX_VITAL))
+			individual.max_thirst = float(individual_data.get("max_thirst", HumanIndividual.FALLBACK_MAX_VITAL))
+			individual.current_health = float(individual_data.get("current_health", HumanIndividual.FALLBACK_MAX_VITAL))
+			individual.max_health = float(individual_data.get("max_health", HumanIndividual.FALLBACK_MAX_VITAL))
+			individual.current_happiness = float(individual_data.get("current_happiness", HumanIndividual.FALLBACK_MAX_VITAL))
+			individual.max_happiness = float(individual_data.get("max_happiness", HumanIndividual.FALLBACK_MAX_VITAL))
+			individual.current_loyalty = float(individual_data.get("current_loyalty", HumanIndividual.FALLBACK_MAX_VITAL))
+			individual.max_loyalty = float(individual_data.get("max_loyalty", HumanIndividual.FALLBACK_MAX_VITAL))
+			# 6 nuove skill (2026-09-13, richiesta utente) — .get() con default 0.0: un save precedente
+			# a questi campi non può avere mai avuto una skill diversa da 0.0 (nessuna crescita esiste
+			# ancora), quindi il default è sempre corretto, non solo un ripiego onesto (stesso
+			# trattamento di carried_resource_name/carried_quantity sotto).
+			individual.skill_leadership = float(individual_data.get("skill_leadership", 0.0))
+			individual.skill_builder = float(individual_data.get("skill_builder", 0.0))
+			individual.skill_management = float(individual_data.get("skill_management", 0.0))
+			individual.skill_transporter = float(individual_data.get("skill_transporter", 0.0))
+			individual.skill_gathering = float(individual_data.get("skill_gathering", 0.0))
+			individual.skill_cognition = float(individual_data.get("skill_cognition", 0.0))
+			individual.skill_hunting = float(individual_data.get("skill_hunting", 0.0))
 			# Capacità di trasporto (2026-09-08, richiesta utente) — .get() con default "non sta
 			# trasportando nulla": un save precedente a questo campo non può avere mai avuto un
 			# individuo in trasporto (nessun PickUp esiste ancora), quindi il default è sempre
@@ -544,20 +583,21 @@ func load_game_from_json(file_path: String) -> LoadedGame:
 			# individual.target_position/is_moving, MAI persistiti a parte — si ricavano SOLO da
 			# qui) — senza, un individuo a metà camminata ricomparirebbe fermo, con una Task "Walk"
 			# assegnata ma nessun movimento visibile finché non arriva un nuovo comando.
+			# macro_state della cella HOME dell'individuo (2026-09-09, richiesta utente, persistenza
+			# PickUpAction) — risolto QUI, incondizionatamente (spostato fuori dal ramo current_task
+			# 2026-09-13: serve anche alla deserializzazione di task_queue sotto, stesso identico
+			# bisogno) perché deserialize_task non può raggiungere World da sé (JSON non trasporta
+			# riferimenti a oggetti vivi, vedi TaskPersistenceService per il perché). null se
+			# home_macro_coords non è (ancora) valido — get_cell_state_at valida le coordinate da sé,
+			# PickUpAction tratta un macro_state null in modo difensivo. `world` passato anche per
+			# intero (2026-09-09, persistenza UnloadAction ramo fisico) — world.buildings è già
+			# popolato a questo punto (caricato prima degli individui, vedi sopra), TaskPersistenceService.
+			# _find_building_by_id lo scansiona per risolvere target_building_id.
+			var task_macro_state: MacroCellState = world.get_cell_state_at(
+				individual.home_macro_coords.x, individual.home_macro_coords.y
+			)
 			var current_task_data: Variant = individual_data.get("current_task")
 			if current_task_data is Dictionary:
-				# macro_state della cella HOME dell'individuo (2026-09-09, richiesta utente,
-				# persistenza PickUpAction) — risolto qui perché deserialize_task non può raggiungere
-				# World da sé (JSON non trasporta riferimenti a oggetti vivi, vedi TaskPersistenceService
-				# per il perché). null se home_macro_coords non è (ancora) valido — get_cell_state_at
-				# valida le coordinate da sé, PickUpAction tratta un macro_state null in modo difensivo.
-				# `world` passato anche per intero (2026-09-09, persistenza UnloadAction ramo fisico) —
-				# world.buildings è già popolato a questo punto (caricato prima degli individui, vedi
-				# sopra), TaskPersistenceService._find_building_by_id lo scansiona per risolvere
-				# target_building_id.
-				var task_macro_state: MacroCellState = world.get_cell_state_at(
-					individual.home_macro_coords.x, individual.home_macro_coords.y
-				)
 				individual.current_task = TaskPersistenceService.deserialize_task(current_task_data, task_macro_state, world)
 				# TaskDebugRegistry (2026-09-12, richiesta utente — tab di debug 🐞) — questo percorso
 				# scrive current_task DIRETTAMENTE (non passa da HumanIndividual.assign_task, l'unico
@@ -567,6 +607,22 @@ func load_game_from_json(file_path: String) -> LoadedGame:
 				TaskDebugRegistry.on_task_assigned(individual, individual.current_task)
 				if not individual.current_task.is_finished():
 					individual.current_task.get_current_action().activate(individual, individual.current_task.context)
+			# Coda personale di Task sospese (2026-09-13, richiesta utente) — "task_queue" assente
+			# (save precedente a questo campo) o vuoto lasciano individual.task_queue al default []
+			# (.get() con default [], stesso principio di ogni campo opzionale in questo file).
+			# STESSO meccanismo di current_task sopra (TaskPersistenceService.deserialize_task,
+			# stesso macro_state/world), ma NESSUN activate()/TaskDebugRegistry qui: queste Task
+			# sono SOSPESE, non in esecuzione — activate() riapplicherebbe erroneamente gli effetti
+			# collaterali (es. WalkAction.activate scrive is_moving/target_position) di uno step che
+			# non deve muovere l'individuo finché non viene ripresa da TaskQueueService.
+			# pop_suspended_task (logica di ripresa non ancora scritta, arriverà insieme al vero
+			# trigger di interrupt).
+			var raw_task_queue: Array = individual_data.get("task_queue", [])
+			for queued_task_data in raw_task_queue:
+				if queued_task_data is Dictionary:
+					individual.task_queue.append(
+						TaskPersistenceService.deserialize_task(queued_task_data, task_macro_state, world)
+					)
 			human_individuals.append(individual)
 
 	var loaded_game := LoadedGame.new()

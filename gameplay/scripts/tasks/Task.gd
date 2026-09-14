@@ -99,6 +99,11 @@ var max_workers: int = 1
 # la applica — stesso principio "chi possiede il dato lo tiene" già seguito per current_step_index.
 var step_stamina_cost: Array[float] = []
 var step_days_elapsed: Array[float] = []
+# Costo in happiness accumulato PER STEP (2026-09-13, richiesta utente) — TERZO array parallelo,
+# STESSO schema esatto di step_stamina_cost sopra: stesso indice di `steps`, aggiornato da
+# record_step_cost nello stesso momento/nella stessa chiamata di apply_action, mai un accumulatore
+# separato con un proprio ciclo di vita.
+var step_happiness_cost: Array[float] = []
 
 # Descrizione di ogni step per l'info panel individuo (2026-09-07, richiesta utente) — array
 # PARALLELO a `steps` (stesso indice), chiavi tr() (mai testo già tradotto, vedi TaskStepDefinition.
@@ -107,6 +112,44 @@ var step_days_elapsed: Array[float] = []
 # TaskStepDefinition quando una Task nasce da una vera ricetta; una Task costruita a mano (es. i
 # test di debug in GameScene) può valorizzarlo direttamente, stesso principio di task_name sopra.
 var step_descriptions: Array[String] = []
+
+# Fasce d'età (valori ordinali di HumanTypes.AgeBand, Array[int] non Array[HumanTypes.AgeBand] —
+# stesso motivo di TaskDefinition.allowed_age_bands, vedi lì) a cui è CONSENTITO eseguire QUESTA
+# Task (2026-09-13, richiesta utente, Play Task CHILD-only) — vuoto di default = nessun vincolo
+# aggiuntivo (comportamento invariato per ogni Task esistente/costruita a mano: Rest/Wander/
+# Daydream/haul_resource/build/transport, nessuna delle quali lo valorizza). A differenza di
+# Action.disallowed_age_bands (una fascia in lista = VIETATA, aggregato su TUTTI gli step), qui una
+# lista NON vuota significa "SOLO queste fasce ammesse" — le due liste sono indipendenti ed
+# ENTRAMBE devono passare in HumanIndividual.assign_task(): un'Action generica può restare ammessa
+# a qualunque età mentre la Task che la usa resta comunque riservata a una fascia specifica.
+# Copiato da TaskDefinition.allowed_age_bands da TaskFactory.build_task, stesso schema di task_name/
+# step_descriptions sopra. NON persistito da TaskPersistenceService (stesso trattamento di id/
+# debug_target_key sopra, "SOLO diagnostico/di costruzione"): consultato SOLO al momento di
+# assign_task(), mai più dopo — una Task già in corso ricostruita da un reload ha già superato quel
+# controllo prima di essere salvata, nessun bisogno di riverificarlo.
+var allowed_age_bands: Array[int] = []
+
+# Priorità di interrupt (2026-09-13, richiesta utente, in preparazione al sistema di interrupt da
+# stamina critica — SOLO la struttura dati in questo passo, NESSUN collegamento al trigger ancora)
+# — numero più BASSO = più urgente. -1 (default) = "non è una Task-bisogno, la priorità non si
+# applica a lei" — valore invariato per ogni Task esistente tranne le due Task-bisogno esplicite
+# (emergency_rest.tres=1, rest.tres=2, vedi quei file). Copiato da TaskDefinition.interrupt_
+# priority da TaskFactory.build_task, stesso schema di allowed_age_bands sopra. PERSISTITO da
+# TaskPersistenceService (a differenza di allowed_age_bands sopra): questo campo va ricontrollato
+# CONTINUAMENTE durante l'esecuzione (ogni volta che un nuovo interrupt scatta, non solo al momento
+# di assign_task()), quindi un current_task/task in coda ricostruiti da un reload devono conservare
+# il valore originale, non ripartire dal default -1.
+var interrupt_priority: int = -1
+
+# Sospendibilità (2026-09-13, richiesta utente, stesso contesto di interrupt_priority sopra) — vero
+# SOLO per le Task di lavoro che possono essere messe in pausa e riprese più tardi (oggi
+# haul_resource.tres/transport.tres, vedi quei file) quando un interrupt la interrompe. Default
+# false = comportamento invariato per ogni altra Task (incluse le due Task-bisogno sopra, mai
+# sospendibili a loro volta). Copiato da TaskDefinition.is_suspendable da TaskFactory.build_task,
+# stesso schema di interrupt_priority sopra. PERSISTITO, stesso motivo identico di interrupt_
+# priority: va ricontrollato continuamente durante l'esecuzione, non solo al momento di
+# assign_task().
+var is_suspendable: bool = false
 
 
 func _init(p_steps: Array[Action] = []) -> void:
@@ -117,6 +160,8 @@ func _init(p_steps: Array[Action] = []) -> void:
 	step_stamina_cost.fill(0.0)
 	step_days_elapsed.resize(steps.size())
 	step_days_elapsed.fill(0.0)
+	step_happiness_cost.resize(steps.size())
+	step_happiness_cost.fill(0.0)
 	step_descriptions.resize(steps.size())
 	step_descriptions.fill("")
 
@@ -141,6 +186,11 @@ func append_steps(new_steps: Array[Action]) -> void:
 	new_days_elapsed.fill(0.0)
 	step_days_elapsed.append_array(new_days_elapsed)
 
+	var new_happiness_costs: Array[float] = []
+	new_happiness_costs.resize(added_count)
+	new_happiness_costs.fill(0.0)
+	step_happiness_cost.append_array(new_happiness_costs)
+
 	var new_descriptions: Array[String] = []
 	new_descriptions.resize(added_count)
 	new_descriptions.fill("")
@@ -152,6 +202,34 @@ func append_steps(new_steps: Array[Action]) -> void:
 	# emit per step, nello stesso ordine di new_steps — vedi il commento sul signal per il perché.
 	for appended_action in new_steps:
 		step_appended.emit(appended_action)
+
+
+# Inserisce un nuovo step ALL'INDICE current_step_index, non in fondo (2026-09-13, richiesta
+# utente — "Walk di ritorno alla ripresa" per una Task sospesa in task_queue il cui step era
+# fermo su un'Action stazionaria: vedi HumanIndividualActionService.resolve_idle_individual) —
+# DEVIAZIONE deliberata da append_steps() sopra (quella accoda in FONDO, pensata per step
+# dinamici di una Task ancora IN CORSO, es. il re-routing di UnloadAction): qui invece un nuovo
+# step deve diventare il PROSSIMO da eseguire, con lo step originariamente attivo (quello per cui
+# current_step_index puntava già) spostato di una posizione, raggiunto naturalmente al
+# completamento di questo nuovo step. Array.insert(idx, v) sposta da sé tutto ciò che sta a idx e
+# oltre di una posizione a destra — current_step_index NON va incrementato qui: il suo valore
+# resta corretto per costruzione, ora punta al nuovo step appena inserito invece che al vecchio
+# (che si è spostato a current_step_index + 1).
+#
+# Stessi 4 array paralleli di append_steps() sopra, stesso principio (nessun costo/progresso già
+# maturato da preservare per un elemento che non esisteva fino a un attimo fa) — un solo elemento
+# ciascuno stavolta (append_steps ne accoda N in blocco, qui sempre esattamente 1), quindi niente
+# resize()/fill() su array temporanei: un `insert()` diretto per array basta.
+func insert_step_before_current(new_action: Action, description: String = "") -> void:
+	steps.insert(current_step_index, new_action)
+	step_stamina_cost.insert(current_step_index, 0.0)
+	step_days_elapsed.insert(current_step_index, 0.0)
+	step_happiness_cost.insert(current_step_index, 0.0)
+	step_descriptions.insert(current_step_index, description)
+	# step_appended (2026-09-10, vedi il commento sul signal in testa al file) — STESSO segnale di
+	# append_steps(), stesso principio "un emit per step aggiunto a runtime": un listener non deve
+	# distinguere se il nuovo step è arrivato in fondo o nel mezzo, solo che ne è arrivato uno.
+	step_appended.emit(new_action)
 
 
 # Azione attiva (quella all'indice corrente) — null se la lista è vuota o l'indice è già oltre
@@ -178,15 +256,22 @@ func is_finished() -> bool:
 
 
 # Accumula il costo di QUESTO istante nello step attualmente attivo (2026-09-07, richiesta utente)
-# — chiamata da HumanIndividualActionService.apply_action subito dopo get_stamina_delta, con lo
-# stesso valore già sommato a individual.current_stamina e lo stesso `delta` (giorni di gioco)
-# ricevuto quel frame. No-op se l'indice è fuori range (Task già conclusa) — non dovrebbe succedere
-# nell'ordine in cui apply_action la chiama oggi, ma resta una guardia difensiva coerente con
-# get_current_action sopra.
-func record_step_cost(stamina_delta: float, days_delta: float) -> void:
+# — chiamata da HumanIndividualActionService.apply_action subito dopo get_stamina_delta/get_
+# happiness_delta, con gli stessi valori già sommati a individual.current_stamina/current_happiness
+# e lo stesso `delta` (giorni di gioco) ricevuto quel frame. No-op se l'indice è fuori range (Task
+# già conclusa) — non dovrebbe succedere nell'ordine in cui apply_action la chiama oggi, ma resta
+# una guardia difensiva coerente con get_current_action sopra.
+#
+# happiness_delta (2026-09-13, richiesta utente) — TERZO parametro, stesso schema esatto di
+# stamina_delta: un solo punto di scrittura per tutti e tre gli array paralleli, mai una seconda
+# funzione dedicata solo a happiness (eviterebbe il rischio dei due accumulatori che si
+# disallineano nel tempo, stesso principio già dichiarato per birth_results in
+# HumanBirthIndividualService).
+func record_step_cost(stamina_delta: float, happiness_delta: float, days_delta: float) -> void:
 	if current_step_index < 0 or current_step_index >= steps.size():
 		return
 	step_stamina_cost[current_step_index] += stamina_delta
+	step_happiness_cost[current_step_index] += happiness_delta
 	step_days_elapsed[current_step_index] += days_delta
 
 
@@ -202,13 +287,19 @@ func print_cost_summary(individual: Variant) -> void:
 	var label: String = task_name if task_name != "" else "Task di %s" % individual.name
 	print("[TASK COST] %s:" % label)
 	var total_stamina := 0.0
+	var total_happiness := 0.0
 	var total_days := 0.0
 	for i in range(steps.size()):
 		var step_name: String = steps[i].get_script().get_global_name()
-		print("  - %s: %.1f stamina (%.1f giorni)" % [step_name, step_stamina_cost[i], step_days_elapsed[i]])
+		# happiness aggiunta accanto a stamina sulla STESSA riga (2026-09-13, richiesta utente) —
+		# stesso formato "%.1f" già in uso per stamina/giorni, nessun nuovo stile.
+		print("  - %s: %.1f stamina, %.1f happiness (%.1f giorni)" % [
+			step_name, step_stamina_cost[i], step_happiness_cost[i], step_days_elapsed[i]
+		])
 		total_stamina += step_stamina_cost[i]
+		total_happiness += step_happiness_cost[i]
 		total_days += step_days_elapsed[i]
-	print("  TOTALE: %.1f stamina, %.1f giorni" % [total_stamina, total_days])
+	print("  TOTALE: %.1f stamina, %.1f happiness, %.1f giorni" % [total_stamina, total_happiness, total_days])
 
 
 # Testo per l'info panel individuo — "cosa sta facendo ORA" (2026-09-07, richiesta utente): es.

@@ -78,6 +78,22 @@ var _game_data: GameData
 # ad ogni anno invece di cachearlo resta corretto in entrambi i casi.
 var _human_individuals: Array[HumanIndividual]
 var _human_folk: Folk
+# Riferimento al World condiviso (2026-09-14, richiesta utente — controllo giornaliero di
+# ritentativo per un individuo bloccato su SetupSiteAction, vedi HumanIndividualActionService.
+# retry_blocked_material_shortages) — STESSO oggetto di GameScene.macro_world, per riferimento
+# (World è una classe, non un Resource value-type), mai una copia. Nessun altro consumatore in
+# questo file lo usa ancora: aggiunto ORA perché questo è il primo ricalcolo giornaliero che deve
+# conoscere World.buildings (i precedenti — stamina/carry capacity/vitali/decadimento — operano
+# solo su HumanIndividual, mai su Building).
+var _world: World
+# Istanza CONDIVISA di HumanIndividualActionService (2026-09-14, richiesta utente/bugfix parser —
+# STESSA istanza di GameScene.individual_action_service, quella che guida apply_action ogni frame):
+# retry_blocked_material_shortages/_resolve_material_shortage sono metodi D'ISTANZA (mai stati
+# static — _resolve_material_shortage in particolare deve poter emettere il segnale building_
+# material_blocked, e i segnali in GDScript vivono solo su un'istanza), quindi questa classe non
+# può più richiamarli per nome di classe: deve girare sulla STESSA istanza a cui GameScene è già
+# collegato per quel segnale.
+var _individual_action_service: HumanIndividualActionService
 # Serve SOLO per tenere total_count allineato a _human_individuals.size() dopo una rimozione
 # (Step 6) — HumanPopulationInfoPanel.show_population riceve i due dati separatamente, mai
 # ricalcolato da _human_individuals.size() al volo.
@@ -97,12 +113,16 @@ func connect_to_clock(
 	game_data: GameData,
 	human_individuals: Array[HumanIndividual],
 	human_folk: Folk,
-	human_population_group: HumanPopulationGroup
+	human_population_group: HumanPopulationGroup,
+	world: World,
+	individual_action_service: HumanIndividualActionService
 ) -> void:
 	_game_data = game_data
 	_human_individuals = human_individuals
 	_human_folk = human_folk
 	_human_population_group = human_population_group
+	_world = world
+	_individual_action_service = individual_action_service
 	clock.day_advanced.connect(_on_day_advanced)
 	clock.year_rolled_over.connect(_on_year_rolled_over)
 	clock.season_ended.connect(_on_season_ended)
@@ -117,7 +137,19 @@ func _on_day_advanced(_checkpoint_ran: bool, _animals_changed: bool) -> void:
 	_apply_scheduled_human_deaths()
 	_recalculate_daily_max_stamina()
 	_recalculate_daily_carry_capacity()
+	_recalculate_daily_vitals()
+	_apply_daily_vitals_interaction()
 	_advance_daily_individual_resource_decay()
+	# Ritentativo giornaliero fabbisogno materiale (2026-09-14, richiesta utente) — INCONDIZIONATO,
+	# stesso principio "periodico" di ogni _recalculate_daily_*/_advance_daily_* sopra. Vedi
+	# HumanIndividualActionService.retry_blocked_material_shortages per il dettaglio/il perché.
+	_individual_action_service.retry_blocked_material_shortages(_world, _human_individuals, _game_data)
+	# Pulizia temporale del registro debug 🐞 (2026-09-13, richiesta utente: "le interrotte o
+	# completate cancellale dopo 2gg") — INCONDIZIONATO, stesso principio delle altre
+	# _recalculate_daily_*/_advance_daily_* sopra: TaskDebugRegistry.on_day_advanced aggiorna il
+	# giorno assoluto noto al registro (per stampare correttamente closed_at_absolute_day sulle
+	# entry che si chiuderanno OGGI) e rimuove le entry COMPLETED/INTERRUPTED già scadute.
+	TaskDebugRegistry.on_day_advanced(_game_data.get_absolute_day())
 	# Step 4 del sistema oggetti-scaduti (2026-09-05): giorno 10 fisso, non year_rolled_over (per
 	# non sommarsi alle altre operazioni che già girano lì, richiesta utente) — nessun nuovo
 	# contatore/segnale, solo una condizione sul giorno corrente già disponibile in questo tick.
@@ -204,6 +236,42 @@ func _recalculate_daily_carry_capacity() -> void:
 	print("[HUMAN CARRY CAPACITY RECALC] anno=%d giorno=%d: %d individui ricalcolati in %.3f ms" % [
 		_game_data.year, _game_data.current_day, _human_individuals.size(), elapsed_ms
 	])
+
+
+# Ricalcolo giornaliero dei 5 nuovi parametri vitali (hunger/thirst/health/happiness/loyalty) per
+# l'INTERA popolazione (2026-09-13, richiesta utente) — stesso identico pattern/motivazione di
+# _recalculate_daily_max_stamina/_recalculate_daily_carry_capacity sopra (INCONDIZIONATO,
+# periodico non event-driven, log diretto una riga per ricalcolo): vedi quel commento per il
+# perché. UN SOLO service consolidato per tutti e 5 (HumanVitalsIndividualService.recalculate_
+# vitals, non 5 service separati) — vedi quel file per il perché. Nessun era_rules qui, stesso
+# motivo di _recalculate_daily_carry_capacity: nessuno dei 5 nuovi get_max_* ha un ramo
+# gravidanza/figlio-a-carico.
+func _recalculate_daily_vitals() -> void:
+	if _human_individuals.is_empty():
+		return
+	var start_usec := Time.get_ticks_usec()
+	for individual in _human_individuals:
+		HumanVitalsIndividualService.recalculate_vitals(individual, _game_data)
+	if not DebugLogging.ENABLED or not DebugLogging.SHOW_VITALS_RECALC_LOGS:
+		return
+	var elapsed_ms := (Time.get_ticks_usec() - start_usec) / 1000.0
+	print("[HUMAN VITALS RECALC] anno=%d giorno=%d: %d individui ricalcolati in %.3f ms" % [
+		_game_data.year, _game_data.current_day, _human_individuals.size(), elapsed_ms
+	])
+
+
+# Interazione GIORNALIERA fra i 5 parametri vitali per l'INTERA popolazione (2026-09-13, richiesta
+# utente) — SUBITO DOPO _recalculate_daily_vitals sopra nello stesso tick (ordine esplicito
+# richiesto: 1° max/clamp esistente, 2° questa interazione), così le due regole di
+# HumanVitalsInteractionService.apply_daily_interaction leggono max_stamina/max_happiness e
+# current_happiness/current_loyalty già coerenti con l'era/age_band e già clampati per OGGI, non
+# dati stantii di ieri. Stesso pattern INCONDIZIONATO/periodico/log diretto delle altre
+# _recalculate_daily_* sopra.
+func _apply_daily_vitals_interaction() -> void:
+	if _human_individuals.is_empty():
+		return
+	for individual in _human_individuals:
+		HumanVitalsInteractionService.apply_daily_interaction(individual)
 
 
 # Avanzamento giornaliero di HumanIndividual.carried_decay_fraction per l'INTERA popolazione

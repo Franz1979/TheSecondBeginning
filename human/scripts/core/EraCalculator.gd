@@ -18,7 +18,7 @@ static func get_era_rules(era_name: String) -> EraRules:
 
 # Durate effettive delle age band = durata base di HumanRules (per sesso) × EraRules.
 # longevity_multiplier_by_age, fascia per fascia — stessa indicizzazione posizionale di entrambi
-# gli array sorgente (0=CHILD..4=OLD, vedi HumanTypes.AgeBand). Un solo longevity_multiplier_by_age
+# gli array sorgente (0=INFANT..5=OLD, ESTESO 2026-09-12, vedi HumanTypes.AgeBand). Un solo longevity_multiplier_by_age
 # (non diviso per sesso, a differenza di age_band_durations_male/female) si applica identico a
 # entrambe le durate base: l'asse sesso resta di competenza esclusiva di HumanRules, l'Era modula
 # solo l'asse età. Ritorna {"male": Array[float], "female": Array[float]} — stesso idioma "piccolo

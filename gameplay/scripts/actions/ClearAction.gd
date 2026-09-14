@@ -43,6 +43,10 @@ extends Action
 # condivisa tra Action diverse.
 const STAMINA_DRAIN_PER_DAY: float = 200.0
 
+# Costo di HAPPINESS al GIORNO (2026-09-13, richiesta utente: "-10.0/day") — costante separata,
+# stesso principio "nessuna costante condivisa tra Action" già dichiarato sopra.
+const HAPPINESS_DRAIN_PER_DAY: float = 10.0
+
 var target_building: Building = null
 var _macro_state: MacroCellState = null
 var _is_currently_grass: bool = false
@@ -83,10 +87,26 @@ func _init(
 ) -> void:
 	target = null
 	target_building = p_target_building
+	# INFANT non può eseguire questa Action (2026-09-12, richiesta utente — collegamento AgeBand.
+	# INFANT al gameplay, vedi Action.disallowed_age_bands). CHILD aggiunto 2026-09-13 (richiesta
+	# utente).
+	disallowed_age_bands = [HumanTypes.AgeBand.INFANT, HumanTypes.AgeBand.CHILD]
 	_macro_state = p_macro_state
 	_is_currently_grass = p_is_currently_grass
 	_position = Vector2i(p_target_building.micro_x, p_target_building.micro_y) if p_target_building != null else Vector2i.ZERO
 	_duration = _compute_duration()
+	# Persistita su Building.construction_progress["clear_duration_days"] (2026-09-14, richiesta
+	# utente — barra di avanzamento nel pannello edificio) — a differenza di clear_days_done
+	# (progresso, sempre scritto dal vivo su Building), _duration è la SOGLIA target: PRIMA viveva
+	# SOLO su questa istanza, mai leggibile da chi non ha un'istanza ClearAction viva (es.
+	# BuildingInfoPanel, che riceve solo il Building). Scritta UNA SOLA VOLTA (mai sovrascritta da
+	# una ricostruzione successiva per lo stesso edificio): _compute_duration() è deterministica
+	# sulla composizione della microcella al momento in cui il cantiere è stato piazzato/la
+	# vegetazione non cambia finché ClearAction non completa (on_complete la rimuove), quindi ogni
+	# ricostruzione produrrebbe comunque lo stesso valore — il guard "solo se assente" evita solo una
+	# scrittura ridondante, non un valore diverso.
+	if target_building != null and not target_building.construction_progress.has("clear_duration_days"):
+		target_building.construction_progress["clear_duration_days"] = _duration
 
 
 # Lettura pura di Building.construction_progress["clear_days_done"] — 0.0 se target_building è
@@ -155,8 +175,33 @@ func get_stamina_delta(individual: Variant, context: Dictionary, delta: float) -
 	return -STAMINA_DRAIN_PER_DAY * delta
 
 
+# STESSE guardie di get_stamina_delta sopra, MAI scrittura di clear_days_done (già incrementato da
+# get_stamina_delta nello stesso frame). Tasso fisso.
+func get_happiness_delta(individual: Variant, context: Dictionary, delta: float) -> float:
+	if _duration <= 0.0 or target_building == null:
+		return 0.0
+	if _get_clear_days_done() >= _duration:
+		return 0.0
+	return -HAPPINESS_DRAIN_PER_DAY * delta
+
+
 func is_complete(individual: Variant, context: Dictionary) -> bool:
 	return _get_clear_days_done() >= _duration
+
+
+# get_required_position (2026-09-13, richiesta utente — fix "Walk di ritorno alla ripresa", vedi
+# Action.get_required_position e RetrieveAction.get_required_position per la stessa identica
+# formula/stesso commento esteso) — DELIBERATAMENTE non riusa `_position` (il campo privato già
+# presente sopra): quello è nel sistema di coordinate LOCALE della macrocella OSPITANTE il
+# cantiere (_macro_state, non necessariamente quella HOME dell'individuo, vedi il commento in
+# testa al file), qui invece serve la posizione GLOBALE comparabile a individual.position — stessa
+# conversione cross-macrocella delle altre 4 Action basate su target_building, duplicata qui
+# apposta (nessuna costante/funzione condivisa tra Action diverse).
+func get_required_position(individual: Variant, context: Dictionary) -> Variant:
+	if target_building == null:
+		return null
+	var macro_offset: Vector2 = Vector2(Vector2i(target_building.macro_x, target_building.macro_y) - individual.home_macro_coords) * World.WIDTH
+	return Vector2(target_building.micro_x, target_building.micro_y) + macro_offset
 
 
 # LOG DEBUG VERIFICA SPAZIO OCCUPATO (2026-09-11, richiesta utente — validare che la microcella del

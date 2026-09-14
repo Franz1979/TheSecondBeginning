@@ -10,3 +10,4 @@
 script = ExtResource("1_def")
 task_name = "task_build_name"
 steps = [ExtResource("2_walk"), ExtResource("3_setup_site"), ExtResource("4_clear_site"), ExtResource("5_build")]
+is_suspendable = true

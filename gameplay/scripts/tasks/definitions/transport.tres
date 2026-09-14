@@ -10,3 +10,4 @@
 script = ExtResource("1_def")
 task_name = "task_transport_name"
 steps = [ExtResource("2_walk_source"), ExtResource("3_retrieve"), ExtResource("4_walk_destination"), ExtResource("5_unload")]
+is_suspendable = true

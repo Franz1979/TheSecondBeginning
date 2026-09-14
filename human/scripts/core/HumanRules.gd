@@ -8,30 +8,27 @@ extends Resource
 # @export tematici), stesso principio già seguito da AnimalRules.
 
 @export_group("Demographics")
-# Durata (anni) di ciascuna fascia di HumanTypes.AgeBand, indici allineati (0=CHILD, 1=TEENAGER,
-# 2=FERTILE_ADULT, 3=MATURE_ADULT, 4=OLD) — DUE array paralleli invece di un
-# Dictionary[HumanTypes.Sex, Array[float]] annidato: stesso idioma già usato da AnimalRules per
-# ogni dato "per fascia" (fertility_multiplier_by_age, mortality_share_by_age,
-# caloric_multiplier_by_age, dispersal_share_by_age — tutti Array[float] indicizzati
-# posizionalmente dall'enum, mai un Dictionary a chiave enum). Un Dictionary annidato sarebbe
-# meno tipizzato (i valori interni restano Variant, nessuna validazione di lunghezza/tipo) e
+# Durata (anni) di ciascuna fascia di HumanTypes.AgeBand, indici allineati (0=INFANT, 1=CHILD,
+# 2=TEENAGER, 3=FERTILE_ADULT, 4=MATURE_ADULT, 5=OLD — ESTESO a 6 elementi 2026-09-12, richiesta
+# utente, per la nuova fascia INFANT in testa: i valori CHILD/TEENAGER/ecc. preesistenti in ogni
+# .tres sono stati spostati di UNA posizione in avanti, non re-inseriti da zero, vedi player_human_
+# rules.tres) — DUE array paralleli invece di un Dictionary[HumanTypes.Sex, Array[float]] annidato:
+# stesso idioma già usato da AnimalRules per ogni dato "per fascia" (fertility_multiplier_by_age,
+# mortality_share_by_age, caloric_multiplier_by_age, dispersal_share_by_age — tutti Array[float]
+# indicizzati posizionalmente dall'enum, mai un Dictionary a chiave enum). Un Dictionary annidato
+# sarebbe meno tipizzato (i valori interni restano Variant, nessuna validazione di lunghezza/tipo) e
 # nell'Inspector di Godot si presenta come editor generico invece che come lista a lunghezza
 # fissa — due Array[float] paralleli restano coerenti con l'idioma già validato nel progetto e
 # più semplici da leggere/editare. Le durate divergono tra i due sessi solo dove serve
 # biologicamente (in particolare FERTILE_ADULT/MATURE_ADULT, vedi HumanTypes.AgeBand); nessuna
-# logica li legge ancora in questo passo.
-@export var age_band_durations_male: Array[float] = [0.0, 0.0, 0.0, 0.0, 0.0]
-@export var age_band_durations_female: Array[float] = [0.0, 0.0, 0.0, 0.0, 0.0]
+# logica li legge ancora in questo passo (INFANT incluso — collegamento al gameplay non ancora
+# fatto, vedi EraRules.min_birth_spacing_years per il concetto imparentato ma indipendente).
+@export var age_band_durations_male: Array[float] = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+@export var age_band_durations_female: Array[float] = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
 # Coefficiente di natalità annuale di GRUPPO (non per sesso — un individuo non ha una propria
 # natalità, solo il gruppo/insediamento nel suo complesso), stesso principio di
 # AnimalRules.base_birth_rate. Non ancora letto da nessuna logica.
 @export var base_birth_rate: float = 0.0
-
-@export_group("Hunger")
-# Stesso principio di AnimalRules.daily_caloric_requirement/max_days_without_food — nessuna
-# logica li legge ancora (nessun CaloricCalculator/service umano scritto in questo passo).
-@export var daily_caloric_requirement: float = 0.0
-@export var max_days_without_food: int = 0
 
 @export_group("Physical")
 # Forza di riferimento per un HumanIndividual materializzato appena creato e relativa varianza
@@ -46,9 +43,10 @@ extends Resource
 # (età E sesso, applicati insieme per moltiplicazione) invece di un unico array come fa
 # AnimalRules — necessario perché qui, a differenza degli animali tracciati oggi, la
 # dimorfia di sesso è un asse a sé che si combina con quella d'età, non un'alternativa ad essa.
-# by_age indicizzato come age_band_durations_male/female sopra (0=CHILD..4=OLD), by_sex
-# indicizzato su HumanTypes.Sex (0=MALE, 1=FEMALE). Nessuna logica li legge ancora.
-@export var size_multiplier_by_age: Array[float] = [0.0, 0.0, 0.0, 0.0, 0.0]
+# by_age indicizzato come age_band_durations_male/female sopra (0=INFANT..5=OLD, ESTESO
+# 2026-09-12, stesso motivo), by_sex indicizzato su HumanTypes.Sex (0=MALE, 1=FEMALE). Nessuna
+# logica li legge ancora.
+@export var size_multiplier_by_age: Array[float] = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
 @export var size_multiplier_by_sex: Array[float] = [0.0, 0.0]
 @export var size_variance: float = 0.0
 
@@ -81,7 +79,8 @@ extends Resource
 # scalare allo stesso modo o divergere. Nessun caloric_variance separato: quando servirà una
 # varianza per il fabbisogno calorico si riuserà size_variance sopra, non se ne aggiunge una
 # seconda equivalente.
-@export var caloric_multiplier_by_age: Array[float] = [0.0, 0.0, 0.0, 0.0, 0.0]
+# Indicizzato come size_multiplier_by_age sopra (0=INFANT..5=OLD, ESTESO 2026-09-12).
+@export var caloric_multiplier_by_age: Array[float] = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
 @export var caloric_multiplier_by_sex: Array[float] = [0.0, 0.0]
 
 @export_group("Mortality")
@@ -110,7 +109,19 @@ extends Resource
 @export var childbirth_survival_child_base_probability: float = 0.9
 @export var childbirth_survival_mother_base_probability: float = 0.92
 
-@export_group("Stamina")
+@export_group("Vital Parameters")
+# 6 parametri vitali — stamina (il primo introdotto) + i 5 aggiunti dopo (hunger/thirst/health/
+# happiness/loyalty) — STESSO identico schema per tutti (base_max_<nome> × <nome>_multiplier_by_age
+# [age_band] × <nome>_multiplier_by_sex[sex], calcolato da HumanCalculator.get_max_<nome>, mai
+# dentro questa classe), tre campi ciascuno. stamina SPOSTATA QUI (2026-09-13, richiesta utente) dal
+# proprio @export_group("Stamina") precedente, RIMOSSO — puro riordino per coerenza visiva
+# nell'Inspector (stamina è concettualmente un parametro vitale come gli altri 5, semplicemente il
+# primo esistito): nessun cambio di nome/valore/logica su base_max_stamina/stamina_multiplier_by_
+# age/stamina_multiplier_by_sex, solo la posizione nel file e nel gruppo Inspector. L'ordine dei
+# campi in un .gd/.tres è puramente posizionale per l'Inspector — ogni lettura nel codebase avviene
+# per NOME (human_rules.base_max_stamina, mai per indice), quindi il riordino non ha alcun effetto
+# funzionale, verificato.
+#
 # Capacità lavorativa giornaliera di riferimento per un adulto pieno (FERTILE_ADULT/MATURE_ADULT,
 # moltiplicatore 1.0 sotto) — valore unico, non per-età: l'asse età è tutto in
 # stamina_multiplier_by_age, stesso principio di size_multiplier_by_age/caloric_multiplier_by_age
@@ -122,14 +133,57 @@ extends Resource
 #
 # Rinominato da Workforce a Stamina (2026-09-06, richiesta utente) — solo rename, nessuna modifica
 # di valori/logica: base_daily_workforce->base_max_stamina, workforce_multiplier_by_age/sex->
-# stamina_multiplier_by_age/sex, gruppo export "Workforce"->"Stamina".
+# stamina_multiplier_by_age/sex, gruppo export "Workforce"->"Stamina" (poi confluito in "Vital
+# Parameters" il 2026-09-13, vedi sopra).
 @export var base_max_stamina: float = 5000.0
-# Indicizzato come size_multiplier_by_age/caloric_multiplier_by_age sopra (0=CHILD, 1=TEENAGER,
-# 2=FERTILE_ADULT, 3=MATURE_ADULT, 4=OLD). CHILD=0.0 (nessuna stamina), TEENAGER/OLD ridotti
-# (placeholder, da rivedere), FERTILE_ADULT/MATURE_ADULT=1.0 (riferimento). Nessuna logica li legge
-# ancora oltre a HumanCalculator.get_max_stamina (solo base × moltiplicatore, senza
-# stanchezza/wellness — quelli arriveranno in un passo successivo).
-@export var stamina_multiplier_by_age: Array[float] = [0.0, 0.4, 1.0, 1.0, 0.5]
+# Indicizzato come size_multiplier_by_age/caloric_multiplier_by_age sopra (0=INFANT, 1=CHILD,
+# 2=TEENAGER, 3=FERTILE_ADULT, 4=MATURE_ADULT, 5=OLD — ESTESO 2026-09-12 per la nuova fascia
+# INFANT, valore 0.0 di default come CHILD, coerente: nessuna stamina). CHILD=0.0 (nessuna
+# stamina), TEENAGER/OLD ridotti (placeholder, da rivedere), FERTILE_ADULT/MATURE_ADULT=1.0
+# (riferimento). Nessuna logica li legge ancora oltre a HumanCalculator.get_max_stamina (solo base
+# × moltiplicatore, senza stanchezza/wellness — quelli arriveranno in un passo successivo).
+@export var stamina_multiplier_by_age: Array[float] = [0.0, 0.0, 0.4, 1.0, 1.0, 0.5]
 # Indicizzato su HumanTypes.Sex (0=MALE, 1=FEMALE), stessa convenzione di size_multiplier_by_sex/
 # caloric_multiplier_by_sex sopra. Placeholder, da rivedere.
 @export var stamina_multiplier_by_sex: Array[float] = [1.0, 0.85]
+
+# 5 nuovi parametri vitali (2026-09-13, richiesta utente) — hunger/thirst/health/happiness/
+# loyalty, STESSO identico schema di stamina sopra. Multiplier di default TUTTI NEUTRI (1.0, non i
+# valori placeholder "a mano" di stamina sopra — es. CHILD=0.0 lì): questi 5 parametri sono
+# dichiarazione pura in questo passo, nessun consumatore reale/Task/Action li legge ancora
+# (arriverà in un giro successivo, quando si decideranno i moltiplicatori specifici) — un default
+# neutro evita di inventare una curva per-età/sesso plausibile ora per poi doverla rifare da capo.
+# base_max_<nome> = 5000.0 per ciascuno, STESSO valore di base_max_stamina sopra, stessa
+# motivazione ("un numero coerente col resto del sistema", nessun significato fisico ancora deciso).
+#
+# hunger/thirst (fabbisogni fisiologici) — SOSTITUISCONO concettualmente il precedente gruppo
+# @export_group("Hunger") (daily_caloric_requirement/max_days_without_food, RIMOSSO in un passo
+# precedente: verificato con un grep esaustivo che nessuna logica del progetto lo consultava
+# mai, a differenza dell'omonimo AnimalRules.daily_caloric_requirement/max_days_without_food,
+# quello sì usato ovunque nel dominio animale — i due erano campi distinti su classi distinte, mai
+# collegati tra loro). hunger/thirst qui sono invece un parametro vitale 0..max stile stamina
+# (consumato/recuperato da un futuro sistema di Task/Action), non più "giorni di digiuno prima
+# della morte": stesso spostamento concettuale già maturato per stamina rispetto alla vecchia
+# Workforce.
+@export var base_max_hunger: float = 5000.0
+@export var hunger_multiplier_by_age: Array[float] = [1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
+@export var hunger_multiplier_by_sex: Array[float] = [1.0, 1.0]
+
+@export var base_max_thirst: float = 5000.0
+@export var thirst_multiplier_by_age: Array[float] = [1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
+@export var thirst_multiplier_by_sex: Array[float] = [1.0, 1.0]
+
+@export var base_max_health: float = 5000.0
+@export var health_multiplier_by_age: Array[float] = [1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
+@export var health_multiplier_by_sex: Array[float] = [1.0, 1.0]
+
+@export var base_max_happiness: float = 5000.0
+@export var happiness_multiplier_by_age: Array[float] = [1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
+@export var happiness_multiplier_by_sex: Array[float] = [1.0, 1.0]
+
+# Loyalty verso chi/cosa non è ancora definito concettualmente — il parametro esiste già in
+# previsione di un futuro sistema (fazioni? famiglia? leader?), ma senza ancora un bersaglio
+# semantico.
+@export var base_max_loyalty: float = 5000.0
+@export var loyalty_multiplier_by_age: Array[float] = [1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
+@export var loyalty_multiplier_by_sex: Array[float] = [1.0, 1.0]

@@ -56,6 +56,17 @@ var path: Array[Vector2] = []
 # microcelle), non più un tarocco derivato da un microcelle/secondo reale. Scala linearmente con la
 # velocità di gioco (2x=doppio, 4x=quadruplo) per costruzione.
 var move_speed: float = 10.0
+# Moltiplicatore di velocità dell'Action di movimento ATTUALMENTE attiva (2026-09-13, richiesta
+# utente, bugfix RunAction) — letto da HumanIndividualMovementService.advance_movement insieme a
+# move_speed sopra, MAI persistito (stesso trattamento di is_moving/target_position/path, vedi
+# GameSaveService: un campo derivato dall'Action attiva, mai uno stato proprio dell'individuo).
+# Scritto SOLO da Action.activate()/sottoclassi — default 1.0 nella classe base (ogni Action
+# stazionaria o WalkAction lo ottiene gratis, stesso principio già seguito per is_moving=false),
+# RunAction.activate() lo sovrascrive a RunAction.RUN_INTENSITY_MULTIPLIER: prima di questo campo
+# advance_movement leggeva SOLO move_speed, quindi RunAction — pur costando 2x stamina/microcella —
+# si muoveva alla IDENTICA velocità di WalkAction (bug concettuale: "correre" doveva anche accorciare
+# il tempo di arrivo, non solo costare di più per la stessa andatura).
+var move_speed_multiplier: float = 1.0
 var is_selected: bool = false
 
 # --- Dati anagrafici — solo campi per ora, nessuna logica di riproduzione/formazione coppie ---
@@ -163,6 +174,22 @@ var skin_color: HumanTypes.SkinColor = HumanTypes.SkinColor.LIGHT
 # azzerato da stop() sotto.
 var current_task: Task = null
 
+# Coda personale di Task SOSPESE (2026-09-13, richiesta utente, in preparazione al sistema di
+# interrupt da stamina critica). Contiene SOLO Task con is_suspendable == true (oggi
+# haul_resource/transport, vedi task_definition.gd) — una Task-bisogno (Rest/Emergency Rest,
+# interrupt_priority >= 0) non finisce mai qui: sostituisce semplicemente current_task, la Task di
+# lavoro interrotta va spinta in coda PRIMA di quella sostituzione (logica non ancora scritta).
+# Semantica LIFO (nessun timestamp: non serve per una coda LIFO semplice) — l'ultima Task sospesa
+# è la prima a riprendere quando la coda si svuota verso current_task.
+#
+# Solo il DATO vive qui (2026-09-13, richiesta utente, refactoring di posizione) — le due funzioni
+# meccaniche che lo manipolano (push/pop) sono state spostate su TaskQueueService
+# (gameplay/services/TaskQueueService.gd), stesso principio "individuo come stato puro, la logica
+# vive nei service" già seguito da HumanCalculator/HumanStaminaIndividualService: mai chiamate
+# direttamente qui, sempre TaskQueueService.push_suspended_task(individual, ...)/
+# pop_suspended_task(individual).
+var task_queue: Array[Task] = []
+
 # Impostato a true da ThinkAction.on_complete quando un ciclo di riflessione si conclude
 # (2026-09-07, richiesta utente, primo passo del futuro Daydream) — un flag "in sospeso", non un
 # contatore: NESSUNA logica lo consuma/azzera ancora in questo passo (arriverà con la futura
@@ -196,6 +223,38 @@ const FALLBACK_MAX_STAMINA: float = 5000.0
 # esiste.
 var current_stamina: float = 0.0
 var max_stamina: float = 0.0
+
+# --- Parametri vitali (2026-09-13, richiesta utente) ---
+#
+# hunger/thirst/health/happiness/loyalty — STESSO identico schema/STESSO identico trattamento di
+# current_stamina/max_stamina sopra: inizializzati SUBITO in _init() allo stesso valore (il max
+# risolto), ricalcolati ogni giorno da un nuovo service dedicato (HumanVitalsIndividualService, vedi
+# human/scripts/core/HumanVitalsIndividualService.gd — stessa cartella di HumanStaminaIndividual
+# Service/HumanCarryCapacityIndividualService, agganciato a GameTimeService._on_day_advanced insieme
+# a loro), NESSUN sistema di consumo/
+# recupero reale ancora per i 5 campi current_* (arriverà con un giro successivo di Task/Action,
+# quando si decideranno i moltiplicatori/le formule di drain specifiche per ciascuno — stesso
+# principio "dichiarazione pura per ora" già seguito da HumanRules.gd per questi 5 parametri).
+#
+# Un UNICO fallback generico (FALLBACK_MAX_VITAL sotto) per tutti e 5, non 5 costanti separate
+# come FALLBACK_MAX_STAMINA/FALLBACK_MAX_CARRY_CAPACITY sopra: quei due fallback avevano valori
+# DIVERSI perché i due default HumanRules corrispondenti (base_max_stamina=5000.0 vs
+# base_carry_capacity=30.0) erano diversi fin dall'origine — qui invece tutti e 5 i nuovi
+# base_max_<nome> condividono lo STESSO default (5000.0, vedi HumanRules.gd), quindi una singola
+# costante basta, senza perdere il principio "fallback onesto = stesso valore del default
+# HumanRules corrispondente" già stabilito per stamina/carry capacity.
+const FALLBACK_MAX_VITAL: float = 5000.0
+
+var current_hunger: float = 0.0
+var max_hunger: float = 0.0
+var current_thirst: float = 0.0
+var max_thirst: float = 0.0
+var current_health: float = 0.0
+var max_health: float = 0.0
+var current_happiness: float = 0.0
+var max_happiness: float = 0.0
+var current_loyalty: float = 0.0
+var max_loyalty: float = 0.0
 
 # --- Capacità di trasporto (2026-09-08, richiesta utente) ---
 #
@@ -240,12 +299,68 @@ var carried_decay_fraction: float = 0.0
 # get_max_carry_capacity (bonus flat per slot VUOTO = tool_slot_count - questo campo).
 var equipped_tool_count: int = 0
 
+# --- Skill (2026-09-13, richiesta utente) ---
+#
+# leadership/builder/management/transporter/gathering/cognition — 6 valori 0.0 di default, range
+# CONCETTUALE 0-1000 (nessun clamp scritto qui: nessuna crescita/uso esiste ancora, quindi non c'è
+# oggi alcun modo di superare 1000 da rispettare). A differenza dei parametri vitali sopra (stamina/
+# hunger/thirst/health/happiness/loyalty), NESSUNA formula base×moltiplicatore/HumanRules dietro
+# questi campi — non esiste un "massimo" da risolvere alla creazione, quindi nessun _resolve_
+# initial_skill_* e nessuna riga aggiunta a _init() sotto: il default di dichiarazione (0.0) basta
+# da solo, sia per la semina iniziale (HumanSeedingService) sia per un neonato
+# (HumanBirthIndividualService) — nessuna distinzione fra i due casi, nessuna ereditarietà dai
+# genitori (arriverà in un giro successivo). Solo il dato dichiarato/persistito in questo passo:
+# nessuna crescita da Task completate, nessuna influenza sull'efficacia delle azioni.
+var skill_leadership: float = 0.0
+var skill_builder: float = 0.0
+var skill_management: float = 0.0
+var skill_transporter: float = 0.0
+var skill_gathering: float = 0.0
+var skill_cognition: float = 0.0
+# hunting (2026-09-13, richiesta utente — 7ma skill, aggiunta dopo le prime 6) — STESSO identico
+# trattamento/STESSO default 0.0 delle altre 6 sopra, nessuna eccezione.
+var skill_hunting: float = 0.0
+
+
+# Nomi di TUTTE le property skill_* dell'istanza, raccolti via reflection (2026-09-13, richiesta
+# utente — seeding/nascita NON devono hardcodare il conteggio/i nomi delle skill: un'ottava skill
+# futura viene inclusa automaticamente da qui, senza dover toccare HumanSeedingService/
+# HumanBirthIndividualService). get_property_list() è lo strumento nativo di Godot per
+# l'introspezione delle property di uno script; PROPERTY_USAGE_SCRIPT_VARIABLE seleziona solo le
+# `var` dichiarate in GDScript (esclude eventuali property native ereditate da Object/RefCounted
+# che iniziassero per caso con lo stesso prefisso — nessuna oggi, ma la guardia resta corretta a
+# prescindere). Usato insieme a Object.get(name)/Object.set(name, value) dai due chiamanti, mai
+# un dizionario/array cachato qui: la lista va ricalcolata ad ogni uso perché è la stessa identica
+# introspezione ad "auto-aggiornarsi" quando un domani si aggiungerà un ottavo campo skill_*.
+func get_skill_property_names() -> Array[String]:
+	var names: Array[String] = []
+	for property in get_property_list():
+		var property_name: String = property["name"]
+		if property_name.begins_with("skill_") and property["usage"] & PROPERTY_USAGE_SCRIPT_VARIABLE:
+			names.append(property_name)
+	return names
+
 
 func _init() -> void:
 	var initial_stamina := _resolve_initial_max_stamina()
 	current_stamina = initial_stamina
 	max_stamina = initial_stamina
 	max_carry_capacity = _resolve_initial_max_carry_capacity()
+	var initial_hunger := _resolve_initial_max_hunger()
+	current_hunger = initial_hunger
+	max_hunger = initial_hunger
+	var initial_thirst := _resolve_initial_max_thirst()
+	current_thirst = initial_thirst
+	max_thirst = initial_thirst
+	var initial_health := _resolve_initial_max_health()
+	current_health = initial_health
+	max_health = initial_health
+	var initial_happiness := _resolve_initial_max_happiness()
+	current_happiness = initial_happiness
+	max_happiness = initial_happiness
+	var initial_loyalty := _resolve_initial_max_loyalty()
+	current_loyalty = initial_loyalty
+	max_loyalty = initial_loyalty
 
 
 # Vedi il TODO sul campo current_stamina sopra per i limiti di questa risoluzione "al volo".
@@ -278,6 +393,60 @@ func _resolve_initial_max_carry_capacity() -> float:
 	if human_rules == null:
 		return FALLBACK_MAX_CARRY_CAPACITY
 	return HumanCalculator.get_max_carry_capacity(human_rules, HumanTypes.AgeBand.FERTILE_ADULT, sex, equipped_tool_count)
+
+
+# 5 risoluzioni "al volo" per i nuovi parametri vitali (2026-09-13) — STESSO identico
+# pattern/STESSI identici limiti di _resolve_initial_max_stamina/_resolve_initial_max_carry_
+# capacity sopra (vedi quei commenti per il TODO su source_group_ref quasi sempre null a questo
+# punto): FERTILE_ADULT come default deliberato (fascia di riferimento, moltiplicatore 1.0 per
+# ogni asse su tutti e 5 i nuovi parametri, vedi HumanRules.gd). Cinque funzioni separate, non una
+# generica parametrizzata su un Callable — stessa scelta stilistica già fatta qui per stamina/carry
+# capacity (mai unificate in un helper condiviso), nessun nuovo pattern di indirizione introdotto.
+func _resolve_initial_max_hunger() -> float:
+	var human_rules: HumanRules = null
+	if source_group_ref != null and source_group_ref.folk_ref != null:
+		human_rules = source_group_ref.folk_ref.human_rules_ref
+	if human_rules == null:
+		return FALLBACK_MAX_VITAL
+	return HumanCalculator.get_max_hunger(human_rules, HumanTypes.AgeBand.FERTILE_ADULT, sex)
+
+
+func _resolve_initial_max_thirst() -> float:
+	var human_rules: HumanRules = null
+	if source_group_ref != null and source_group_ref.folk_ref != null:
+		human_rules = source_group_ref.folk_ref.human_rules_ref
+	if human_rules == null:
+		return FALLBACK_MAX_VITAL
+	return HumanCalculator.get_max_thirst(human_rules, HumanTypes.AgeBand.FERTILE_ADULT, sex)
+
+
+func _resolve_initial_max_health() -> float:
+	var human_rules: HumanRules = null
+	if source_group_ref != null and source_group_ref.folk_ref != null:
+		human_rules = source_group_ref.folk_ref.human_rules_ref
+	if human_rules == null:
+		return FALLBACK_MAX_VITAL
+	return HumanCalculator.get_max_health(human_rules, HumanTypes.AgeBand.FERTILE_ADULT, sex)
+
+
+func _resolve_initial_max_happiness() -> float:
+	var human_rules: HumanRules = null
+	if source_group_ref != null and source_group_ref.folk_ref != null:
+		human_rules = source_group_ref.folk_ref.human_rules_ref
+	if human_rules == null:
+		return FALLBACK_MAX_VITAL
+	return HumanCalculator.get_max_happiness(human_rules, HumanTypes.AgeBand.FERTILE_ADULT, sex)
+
+
+# Loyalty verso chi/cosa non è ancora definito concettualmente — vedi HumanRules.base_max_loyalty
+# per lo stesso avvertimento.
+func _resolve_initial_max_loyalty() -> float:
+	var human_rules: HumanRules = null
+	if source_group_ref != null and source_group_ref.folk_ref != null:
+		human_rules = source_group_ref.folk_ref.human_rules_ref
+	if human_rules == null:
+		return FALLBACK_MAX_VITAL
+	return HumanCalculator.get_max_loyalty(human_rules, HumanTypes.AgeBand.FERTILE_ADULT, sex)
 
 
 # Liste nomi come semplice testo (un nome per riga), non .tres — pensate per crescere a
@@ -425,26 +594,160 @@ func _load_name_pool(path: String) -> Array[String]:
 # guardia, un chiamante generico può in teoria passare una Task senza step: stesso principio
 # difensivo già richiesto da Task.get_current_action() stessa ("il chiamante non deve mai assumere
 # un'Action non-null senza aver controllato prima").
-func assign_task(task: Task) -> void:
+#
+# age_band (2026-09-12, richiesta utente — collegamento di HumanTypes.AgeBand.INFANT al gameplay)
+# — parametro OBBLIGATORIO, non un default "nessun vincolo": questa classe resta deliberatamente
+# "stato puro" (nessun riferimento a GameData, vedi il commento su birth_year_virtual più sopra —
+# "età/age_band mai persistiti, sempre ricalcolati al volo"), quindi non può calcolarsi da sola
+# l'età corrente. Il CHIAMANTE risolve già age_band con la stessa identica formula usata ovunque
+# nel progetto (HumanCalculator.get_age_band + game_data.era_effective_age_band_durations_male/
+# female), stesso principio "pannello muto"/dati già risolti già seguito altrove — vedi
+# HumanIndividualController._try_set_target/GameScene._resolve_age_band per i punti di calcolo.
+# Un default "permissivo" qui sarebbe stato più comodo per i vecchi chiamanti ma avrebbe reso il
+# guard sotto silenziosamente aggirabile da qualunque punto che si dimenticasse di passare il dato
+# vero — deliberatamente evitato.
+#
+# GUARD (2026-09-12, richiesta utente, Step 4) — rifiuta l'intera assegnazione se age_band compare
+# in disallowed_age_bands di ALMENO UNO degli step della Task (unione dei vincoli su tutti gli step,
+# non solo il primo): un INFANT non deve poter accodarsi a metà di una Task che diventerebbe valida
+# solo più avanti. Verificato PRIMA di toccare current_task/TaskDebugRegistry/discard_carried_
+# resource — se il guard scatta, l'individuo resta ESATTAMENTE come era (nessuna Task toccata,
+# nessuno zaino scaricato), come se assign_task non fosse mai stata chiamata. Log SOLO se
+# DebugLogging.ENABLED (stesso principio di discard_carried_resource sotto) — non un errore
+# dell'utente, un comando semplicemente rifiutato, coerente con l'idioma "return silenzioso" già
+# usato da _try_set_target per lo stesso genere di rifiuto.
+#
+# Ritorna bool (2026-09-13, richiesta utente — bugfix: il chiamante non aveva modo di sapere se
+# l'assegnazione fosse davvero riuscita, quindi mostrava sempre l'icona di comando "manina"/
+# "martelletto" anche quando il guard rifiutava tutto — vedi GameScene._assign_pickup_task/
+# _try_assign_build_command_on_right_click) — PRIMA era void: `false` per ENTRAMBI i rami di rifiuto
+# sotto, `true` solo se l'assegnazione è davvero avvenuta. Chi non ha bisogno del risultato può
+# continuare a chiamarla come istruzione singola, nessun chiamante esistente si rompe.
+# is_interrupt_transition (2026-09-13, richiesta utente — bugfix: il meccanismo di interrupt/coda
+# da stamina critica assegnava una Task-bisogno tramite QUESTA stessa funzione, che scartava
+# incondizionatamente l'inventario anche quando la Task sostituita veniva solo SOSPESA — non
+# abbandonata — vedi il commento su discard_carried_resource() sotto) — default false, invariato
+# per OGNI chiamante esistente (nessun call site da aggiornare): un comando manuale del player
+# (qualunque tasto/click che assegna una nuova Task) continua a svuotare lo zaino come prima. true
+# SOLO per le due chiamate che HumanIndividualActionService/NeedTaskAssignmentService fanno per
+# assegnare automaticamente una Task-bisogno a seguito di un interrupt rilevato — mai per i trigger
+# manuali E/R, che passano sempre il default false.
+# Guard PURO (2026-09-13, richiesta utente, bugfix — vedi assign_task sotto) — STESSA identica
+# logica/STESSO log [TASK GUARD] che viveva inline in testa ad assign_task, estratta qui perché un
+# CHIAMANTE che oggi esegue side-effect distruttivi PRIMA di provare assign_task (tipicamente
+# individual.stop(), per "far ripartire la Task da uno stato pulito" — vedi ogni _assign_*_task/
+# _debug_test_*_task in GameScene) ha bisogno di sapere se l'assegnazione andrà a buon fine PRIMA
+# di chiamare stop(): senza questo, un rifiuto del guard arriva TROPPO TARDI, quando stop() ha già
+# scartato l'inventario/azzerato current_task della Task PRECEDENTE — bug osservato, 2026-09-13
+# (daydreaming rifiutata per un FERTILE_ADULT, ma l'haul_resource in corso perdeva comunque lo
+# zaino). NESSUN side-effect qui dentro — nessuna chiamata a stop()/discard_carried_resource() da
+# questa funzione, solo lettura di task.steps/task.allowed_age_bands.
+func can_assign_task(task: Task, age_band: HumanTypes.AgeBand) -> bool:
+	for step in task.steps:
+		if step.disallowed_age_bands.has(age_band):
+			if DebugLogging.ENABLED:
+				print("[TASK GUARD] Individuo #%d (age_band=%s) NON può eseguire %s — assegnazione rifiutata." % [
+					id, HumanTypes.AgeBand.keys()[age_band], step.get_script().get_global_name()
+				])
+			return false
+	# allowed_age_bands (2026-09-13, richiesta utente, Play Task CHILD-only) — vincolo di TASK,
+	# indipendente dal loop sopra (vedi Task.allowed_age_bands per il perché): vuoto = nessun
+	# vincolo aggiuntivo, non vuoto = SOLO quelle fasce ammesse, tutte le altre rifiutate.
+	if not task.allowed_age_bands.is_empty() and not task.allowed_age_bands.has(age_band):
+		if DebugLogging.ENABLED:
+			print("[TASK GUARD] Individuo #%d (age_band=%s) NON può eseguire la Task '%s' — riservata a %s — assegnazione rifiutata." % [
+				id, HumanTypes.AgeBand.keys()[age_band], task.task_name,
+				str(task.allowed_age_bands.map(func(b: int) -> String: return HumanTypes.AgeBand.keys()[b]))
+			])
+		return false
+	return true
+
+
+func assign_task(task: Task, age_band: HumanTypes.AgeBand, is_interrupt_transition: bool = false) -> bool:
+	# PRIMISSIMO controllo (2026-09-13, richiesta utente, bugfix) — can_assign_task sopra, PRIMA di
+	# QUALUNQUE side-effect (TaskDebugRegistry.on_task_closed/discard_carried_resource/sostituzione
+	# di current_task sotto): se rifiuta, return immediato — nessun effetto collaterale di alcun
+	# tipo, l'individuo resta ESATTAMENTE come era. Il log [TASK GUARD] (dentro can_assign_task)
+	# scatta quindi sempre PRIMA di qualunque log [HAUL DISCARD]/altro side-effect, mai dopo.
+	if not can_assign_task(task, age_band):
+		return false
+
+	# Zaino occupato + Task NON-bisogno (2026-09-13, richiesta utente — fix "PickUp/Retrieve
+	# fallirebbe silenziosamente a zero se lo zaino è già occupato": verificato in un'indagine
+	# dedicata che una seconda PickUpAction con carried_resource_name già valorizzato colleziona
+	# SEMPRE 0, senza log, la Task nuova si concludeva "vuota" e la Task precedente riprendeva
+	# comunque dalla coda — nessun danno ai dati, ma la Task nuova andava sprecata invece di
+	# semplicemente aspettare il proprio turno) — SOLO per task.interrupt_priority == -1 (comando
+	# manuale o Task auto-generata come la Transport di Build, MAI per una Task-bisogno: vedi sotto,
+	# quel ramo resta invariato e vince sempre). Quando lo zaino è occupato, la nuova Task NON
+	# diventa current_task: entra direttamente in coda TRAMITE LO STESSO MECCANISMO già usato per
+	# sospendere una Task IN CORSO (TaskQueueService.push_suspended_task) — ma qui applicato a una
+	# Task MAI attivata (current_step_index resta 0, il default di Task._init, mai toccato): quando
+	# pop_suspended_task la riprenderà più tardi (individuo libero, zaino di nuovo vuoto),
+	# resolve_idle_individual la troverà a current_step_index=0 e la farà partire dal proprio primo
+	# step esattamente come una Task assegnata per la prima volta oggi — nessuna modifica necessaria
+	# a quel meccanismo, già generico rispetto a "da dove riparte" una Task in coda.
+	#
+	# current_task NON toccato in questo ramo — resta esattamente quello che era (nessun
+	# TaskDebugRegistry.on_task_closed/on_task_assigned per lui, nessuna sospensione/scarto, nessuna
+	# chiamata ad activate() sulla nuova Task): prosegue indisturbato fino al proprio completamento
+	# naturale, ignaro che una seconda Task è stata messa in attesa.
+	#
+	# Ritorna true (2026-09-13, CORRETTO — richiesta utente: "l'assegnazione è corretta ma ha solo
+	# fatto coda, dovrebbe mostrare la manina, non la X") — DEVIAZIONE dalla prima versione di
+	# questo ramo, che ritornava false equiparando "accodata" a "rifiutata dal guard età" sopra: i
+	# due esiti sono semanticamente diversi (un rifiuto del guard non ha ALCUN effetto collaterale,
+	# l'individuo resta esattamente come era; questo ramo invece PRODUCE un effetto reale — la Task
+	# è stata accettata e messa in coda, partirà da sola non appena l'individuo si libera) — un
+	# chiamante UI che usa il valore di ritorno per scegliere l'icona di comando (✋/🔨/📦 vs ❌,
+	# vedi GameScene._debug_assign_transport_task/_try_assign_pickup_command_on_right_click) deve
+	# vedere "comando accettato" qui, non "comando rifiutato".
+	if task.interrupt_priority == -1 and carried_quantity > 0:
+		TaskQueueService.push_suspended_task(self, task)
+		if DebugLogging.ENABLED:
+			print("[TASK QUEUED - ZAINO OCCUPATO] Individuo #%d %s: '%s' rimandata in coda (zaino occupato: %d %s) — Task in corso '%s' prosegue indisturbata." % [
+				id, name, task.task_name, carried_quantity, carried_resource_name,
+				current_task.task_name if current_task != null else "(nessuna)"
+			])
+		return true
+
 	# TaskDebugRegistry (2026-09-12, richiesta utente — tab di debug 🐞) — chiude l'entry della
 	# Task PRECEDENTE (se ce n'era una in corso, mai chiusa perché sostituita direttamente qui
 	# senza passare da stop()) PRIMA di sovrascriverla, poi registra la NUOVA. Vedi TaskDebugRegistry.
 	# gd per il perché questi due punti (qui e stop() sotto) bastano a coprire ogni Task mai
 	# assegnata.
 	TaskDebugRegistry.on_task_closed(current_task)
-	# Scenario A — interruzione manuale con zaino pieno (2026-09-12, richiesta utente, fix
-	# unificato "scarico a terra" — vedi discard_carried_resource sotto per il criterio/perché
-	# questo controllo, generico e non legato a QUALE Task viene sostituita, basta a coprire
-	# esattamente e solo il caso "haul_resource interrotta a metà": carried_quantity diventa > 0
-	# solo dopo un PickUpAction riuscito, nessun altro percorso lo valorizza oggi). STESSO
-	# principio di TaskDebugRegistry.on_task_closed sopra — chiuso PRIMA di sovrascrivere
-	# current_task, così lo zaino non sopravvive silenziosamente alla nuova Task.
-	discard_carried_resource()
+	# Disposizione della Task PRECEDENTE, sospendibile o no (2026-09-13, richiesta utente — CAMBIO
+	# COMPORTAMENTO: la sospendibilità ora conta SEMPRE, indipendentemente da CHI causa la
+	# sostituzione — comando manuale del player (tasti R/G/P/Y, click destro Build, ecc.) O
+	# interrupt automatico da bisogno, un solo punto invece di due copie della stessa logica).
+	#
+	# current_task.is_suspendable == true (haul_resource/transport oggi) — SOSPESA in task_queue
+	# invece di scartata, qualunque sia la causa della sostituzione: TaskQueueService.
+	# push_suspended_task(self, current_task) PRIMA di sovrascriverla, così pop_suspended_task la
+	# ritrova più tardi esattamente come lasciata. discard_carried_resource() NON scatta in questo
+	# ramo (mai, nemmeno per un comando manuale) — l'inventario non è perso, solo in pausa insieme
+	# alla Task che lo sta trasportando.
+	#
+	# current_task non sospendibile (build/daydream/wander/play/rest/emergency_rest) —
+	# comportamento INVARIATO rispetto a prima di questo passo: discard_carried_resource() scatta
+	# SEMPRE, TRANNE quando is_interrupt_transition == true (2026-09-13, bugfix precedente — un
+	# comando manuale del player resta una perdita vera; un'assegnazione AUTOMATICA di una
+	# Task-bisogno non deve mai scartare nulla, anche se la Task sostituita non era sospendibile).
+	if current_task != null and current_task.is_suspendable:
+		TaskQueueService.push_suspended_task(self, current_task)
+		if DebugLogging.ENABLED:
+			print("[TASK SUSPEND] Individuo #%d %s: Task '%s' sospesa e messa in coda (sostituita da '%s')." % [
+				id, name, current_task.task_name, task.task_name
+			])
+	elif not is_interrupt_transition:
+		discard_carried_resource()
 	current_task = task
 	TaskDebugRegistry.on_task_assigned(self, task)
 	var current_action := task.get_current_action()
 	if current_action != null:
 		current_action.activate(self, task.context)
+	return true
 
 
 # Riscritta in termini di assign_task sopra (2026-09-09, richiesta utente — evitare due percorsi
@@ -453,13 +756,17 @@ func assign_task(task: Task) -> void:
 # `path` sopra), non ha senso azzerarlo per una Task generica che magari non contiene nemmeno un
 # WalkAction (es. una futura Task che inizia con un Rest/Think) — nessuna ragione per spostarlo nel
 # metodo generico.
-func set_target(target: Vector2) -> void:
+# age_band — stesso parametro OBBLIGATORIO/stesso motivo di assign_task sopra, semplicemente
+# inoltrato (vedi lì): questa classe non può calcolarselo da sola. UNICO chiamante oggi,
+# HumanIndividualController._try_set_target, lo risolve già per il proprio guard "INFANT non può
+# ricevere un comando di movimento" (vedi lì) prima ancora di arrivare qui.
+func set_target(target: Vector2, age_band: HumanTypes.AgeBand) -> void:
 	path.clear()
 	# Cablaggio Walk/Task (2026-09-06/07, richiesta utente) — un comando di movimento esplicito
 	# crea SEMPRE una Task NUOVA a un solo step (mai riusata tra due comandi diversi, anche se la
 	# precedente non era ancora conclusa — un nuovo target la sostituisce di netto): coerente col
 	# design di WalkAction._last_position, pensata per vivere per la durata di UNA sola camminata.
-	assign_task(Task.new([WalkAction.new(target)]))
+	assign_task(Task.new([WalkAction.new(target)]), age_band)
 
 
 func stop() -> void:

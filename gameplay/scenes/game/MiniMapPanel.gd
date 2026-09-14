@@ -177,8 +177,8 @@ func _clamp_pan_offset() -> void:
 
 
 # Ricalcola _square_size dalla larghezza REALE che questo pannello ha ricevuto (self.size.x —
-# MiniMapPanel è un VBoxContainer, quindi la sua larghezza è quella che body_container/
-# BodyScrollContainer/Sidebar gli concedono, qualunque essa sia). Guardia is_equal_approx per
+# MiniMapPanel è un VBoxContainer, quindi la sua larghezza è quella che body_container/Sidebar gli
+# concedono, qualunque essa sia). Guardia is_equal_approx per
 # evitare loop: cambiare map_area/map_viewport.custom_minimum_size cambia anche l'altezza
 # minima riportata da QUESTO nodo (essendo un VBoxContainer con un solo figlio MapArea), il che
 # fa scattare un nuovo resized — ma con la larghezza invariata, quindi la guardia lo ignora senza

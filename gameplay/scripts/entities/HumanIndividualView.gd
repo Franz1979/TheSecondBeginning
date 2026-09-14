@@ -280,6 +280,19 @@ static var _draw_usec_accum: int = 0
 static var _window_start_msec: int = 0
 static var _window_view_count: int = 0
 
+# Feedback visivo MINIMO per JumpAction (2026-09-13, richiesta utente) — un piccolo scatto
+# verticale temporaneo, NON un vero sistema di animazione: un singolo timer in secondi REALI (non
+# frazioni di giorno di gioco, stesso trattamento di WALK_PHASE_SPEED — pura cosmesi, indipendente
+# dalla velocità di simulazione), decrementato in _process() finché > 0, che pilota un offset su
+# `position.y` calcolato al volo con un singolo seno (0 all'inizio e alla fine, picco a metà corsa
+# — un "su e giù" morbido senza tenere alcuna curva/keyframe). trigger_jump_bounce() (sotto) lo
+# riavvia da capo — chiamato da GameScene quando riceve JumpAction.jumped (vedi
+# GameScene._on_individual_jumped/_reconnect_jump_action_signals), questa view resta comunque
+# ignara di Action/Task, si limita a esporre questo singolo metodo pubblico.
+const JUMP_BOUNCE_DURATION: float = 0.25
+const JUMP_BOUNCE_HEIGHT_PX: float = 4.0
+var _jump_bounce_time_left: float = 0.0
+
 
 func setup(p_individual: HumanIndividual, p_game_data: GameData, p_human_rules: HumanRules) -> void:
 	individual = p_individual
@@ -287,11 +300,29 @@ func setup(p_individual: HumanIndividual, p_game_data: GameData, p_human_rules: 
 	human_rules = p_human_rules
 
 
+# Riavvia lo scatto verticale da capo (vedi _jump_bounce_time_left sopra) — se un secondo salto
+# scattasse prima che il precedente scatto sia terminato (possibile solo con una durata di salto
+# reale del motore insolitamente lunga rispetto a JUMP_BOUNCE_DURATION, mai osservato in pratica
+# alle soglie di JumpAction), semplicemente lo ricomincia, nessuna coda/accumulo: resta un
+# feedback "minimo", non un sistema di animazione che debba gestire sovrapposizioni con cura.
+func trigger_jump_bounce() -> void:
+	_jump_bounce_time_left = JUMP_BOUNCE_DURATION
+
+
 func _process(delta: float) -> void:
 	if individual == null:
 		return
 	var _process_start_usec := Time.get_ticks_usec()
 	position = individual.position * CELL_SIZE
+	# Scatto verticale JumpAction (vedi _jump_bounce_time_left/JUMP_BOUNCE_DURATION/HEIGHT_PX sopra)
+	# — offset PURAMENTE VISIVO su `position.y` (mai su individual.position, lo stato di simulazione
+	# vero): sin(PI * progress) è 0 a progress=0 e progress=1, picco a progress=0.5, quindi lo scatto
+	# parte da 0, sale, e torna ESATTAMENTE a 0 da solo, nessun azzeramento esplicito necessario a
+	# fine corsa. Y NEGATIVO = verso l'alto (convenzione 2D standard, Y cresce verso il basso).
+	if _jump_bounce_time_left > 0.0:
+		_jump_bounce_time_left = maxf(_jump_bounce_time_left - delta, 0.0)
+		var bounce_progress := 1.0 - (_jump_bounce_time_left / JUMP_BOUNCE_DURATION)
+		position.y -= JUMP_BOUNCE_HEIGHT_PX * sin(PI * bounce_progress)
 	# Ridimensionamento per età/sesso (vedi campi human_rules/game_data sopra) — età/sesso combinati
 	# per MOLTIPLICAZIONE (stesso principio dichiarato in HumanRules.size_multiplier_by_age),
 	# applicato uniformemente su entrambi gli assi via `scale` del nodo: nessuna forma in _draw()

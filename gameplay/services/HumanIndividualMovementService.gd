@@ -13,7 +13,12 @@ func advance_movement(individual: HumanIndividual, delta: float) -> void:
 
 	var to_target := individual.target_position - individual.position
 	var distance := to_target.length()
-	var step := individual.move_speed * delta
+	# move_speed_multiplier (2026-09-13, bugfix RunAction) — 1.0 per default/WalkAction, raddoppiato
+	# da RunAction.activate() finché quello step resta attivo (vedi HumanIndividual.gd per il campo
+	# e il perché): questo service resta comunque agnostico su QUALE Action sia attiva, legge solo i
+	# due campi che qualunque Action di movimento scrive, stesso principio già in uso per is_moving/
+	# target_position.
+	var step := individual.move_speed * individual.move_speed_multiplier * delta
 
 	# Aggiorna facing_direction PRIMA di muovere position (2026-09-04, richiesta utente: persistere
 	# l'orientamento) — soglia minima invece di un confronto diretto con zero: a un passo

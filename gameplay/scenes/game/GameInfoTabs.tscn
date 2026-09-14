@@ -14,6 +14,11 @@ theme_override_constants/margin_top = 4
 theme_override_constants/margin_right = 4
 theme_override_constants/margin_bottom = 4
 
+[node name="PopulationScroll" type="ScrollContainer" parent="PopulationTab"]
+layout_mode = 2
+size_flags_vertical = 3
+horizontal_scroll_mode = 0
+
 [node name="BuildingsTab" type="MarginContainer" parent="."]
 visible = false
 layout_mode = 2
@@ -21,6 +26,11 @@ theme_override_constants/margin_left = 4
 theme_override_constants/margin_top = 4
 theme_override_constants/margin_right = 4
 theme_override_constants/margin_bottom = 4
+
+[node name="BuildingsScroll" type="ScrollContainer" parent="BuildingsTab"]
+layout_mode = 2
+size_flags_vertical = 3
+horizontal_scroll_mode = 0
 
 [node name="SelectionTab" type="MarginContainer" parent="."]
 visible = false
@@ -46,11 +56,16 @@ vertical_alignment = 1
 layout_mode = 2
 text = "🎯"
 
-[node name="SelectionContent" type="MarginContainer" parent="SelectionTab/SelectionTabBody"]
+[node name="SelectionScroll" type="ScrollContainer" parent="SelectionTab/SelectionTabBody"]
 layout_mode = 2
 size_flags_vertical = 3
+horizontal_scroll_mode = 0
 
-[node name="EmptySelectionLabel" type="Label" parent="SelectionTab/SelectionTabBody/SelectionContent"]
+[node name="SelectionContent" type="MarginContainer" parent="SelectionTab/SelectionTabBody/SelectionScroll"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="EmptySelectionLabel" type="Label" parent="SelectionTab/SelectionTabBody/SelectionScroll/SelectionContent"]
 layout_mode = 2
 horizontal_alignment = 1
 vertical_alignment = 1

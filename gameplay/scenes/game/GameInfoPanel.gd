@@ -17,29 +17,36 @@ extends PanelContainer
 # decorativo). body_container ospita oggi UN SOLO figlio statico, GameInfoTabs (istanziato da
 # GameScene._ready(), non qui — vedi commento in testa al file) — vegetation_info_panel/
 # human_individual_info_panel vivono ANNIDATI dentro una delle sue tab (selection_tab), non
-# sibling diretti qui. body_container vive dentro un BodyScrollContainer (bugfix, 2026-09-01: il
-# minimo fisso di MiniMapPanel.ScrollContainer (originariamente 220x220, poi ridotto a 150x150
-# nello stesso bugfix — vedi MiniMapPanel.BASE_SIZE) sommato al resto del contenuto poteva
-# superare l'altezza reale della Sidebar su schermi/finestre meno alte, spingendo
-# SecondaryActionsBar — l'ultima riga, con menu/help — fuori dall'area visibile invece di scorrere)
-# — questo ScrollContainer resta comunque come rete di sicurezza generale, per qualunque contenuto
-# futuro di body_container che tornasse a non starci. size_flags_vertical=3 solo sullo
-# ScrollContainer (mai su BodyContainer stesso, che dentro uno ScrollContainer deve riportare la
-# propria dimensione reale per far comparire la scrollbar quando serve, non richiedere tutto lo
-# spazio disponibile).
+# sibling diretti qui.
+#
+# BodyScrollContainer RIMOSSO (2026-09-13, richiesta utente — bugfix: "la scrollbar fa scorrere in
+# alto anche le tab", nascondendole) — introdotto il 2026-09-01 come rete di sicurezza generale
+# attorno a body_container (vedi git history), ma con GameInfoTabs (un TabContainer, la cui barra
+# schede è fissa SOLO se non è essa stessa dentro un contenitore che scorre) come suo unico figlio,
+# avvolgerlo in uno ScrollContainer esterno faceva scorrere la barra schede insieme al contenuto
+# invece di lasciarla ancorata in alto. Lo scroll è stato spostato DENTRO ciascuna tab di
+# GameInfoTabs (PopulationScroll/BuildingsScroll/SelectionScroll, vedi GameInfoTabs.tscn/.gd) —
+# così solo il contenuto SOTTO la barra schede (fissa, gestita nativamente da TabContainer) scorre,
+# mai la barra stessa. Effetto collaterale positivo sul motivo originale del 2026-09-01 (MiniMapPanel
+# + contenuto che spingeva SecondaryActionsBar fuori schermo): uno ScrollContainer riporta un
+# minimo quasi nullo come proprio, quindi GameInfoTabs (size_flags_vertical=3 sotto) ora si limita
+# a riempire lo spazio verticale disponibile tra MinimapSlot/SecondaryActionsBar e a scorrere
+# internamente per QUALUNQUE tab, invece di dipendere da una rete di sicurezza esterna.
+# size_flags_vertical=3 ora su BodyContainer stesso (prima solo sul BodyScrollContainer rimosso):
+# nessuno ScrollContainer intermedio più a cui delegare l'espansione.
 #
 # minimap_panel NON vive più dentro body_container (bugfix, 2026-09-02: l'altezza di body_
 # container/GameInfoTabs varia da scheda a scheda — TabContainer riporta come minimo solo quello
 # della tab CORRENTE, non il massimo tra tutte — quindi la minimappa, come secondo figlio dentro
 # quello stesso spazio a dimensione variabile, saliva/scendeva ad ogni cambio scheda). Vive invece
-# in minimap_slot, un sibling FISSO di BodyScrollContainer/HSeparator2 nella VBoxContainer
-# esterna — l'unico elemento con size_flags_vertical=EXPAND lì è BodyScrollContainer, quindi
+# in minimap_slot, un sibling FISSO di body_container/HSeparator2 nella VBoxContainer esterna —
+# l'unico elemento con size_flags_vertical=EXPAND lì è body_container, quindi
 # minimap_slot mantiene sempre la stessa altezza/posizione (appena sopra HSeparator2/
 # SecondaryActionsBar) qualunque sia il contenuto delle tab sopra di lui, davvero "ancorato in
 # basso" come richiesto.
 
 @onready var primary_actions_bar: IconButtonRow = $MarginContainer/VBoxContainer/PrimaryActionsBar
-@onready var body_container: VBoxContainer = $MarginContainer/VBoxContainer/BodyScrollContainer/BodyContainer
+@onready var body_container: VBoxContainer = $MarginContainer/VBoxContainer/BodyContainer
 @onready var minimap_slot: Control = $MarginContainer/VBoxContainer/MinimapSlot
 @onready var secondary_actions_bar: IconButtonRow = $MarginContainer/VBoxContainer/SecondaryActionsBar
 

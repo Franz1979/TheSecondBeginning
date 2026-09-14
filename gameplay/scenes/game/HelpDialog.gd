@@ -22,6 +22,7 @@ const PAGE_MAIN := "main"
 const PAGE_SHORTCUTS := "shortcuts"
 const PAGE_FOG_OF_WAR := "fog_of_war"
 const PAGE_ERA_ADVANCEMENT := "era_advancement"
+const PAGE_BUILDING_MATERIALS := "building_materials"
 
 var _current_page: String = PAGE_MAIN
 
@@ -67,6 +68,8 @@ func _show_page(page: String) -> void:
 			content_label.text = _build_fog_of_war_text()
 		PAGE_ERA_ADVANCEMENT:
 			content_label.text = _build_era_advancement_text()
+		PAGE_BUILDING_MATERIALS:
+			content_label.text = _build_building_materials_text()
 		_:
 			content_label.text = _build_main_menu_text()
 
@@ -78,6 +81,7 @@ func _build_main_menu_text() -> String:
 		"[url=%s]%s[/url]" % [PAGE_SHORTCUTS, tr("help_shortcuts_menu_link")],
 		"[url=%s]%s[/url]" % [PAGE_FOG_OF_WAR, tr("help_fog_of_war_menu_link")],
 		"[url=%s]%s[/url]" % [PAGE_ERA_ADVANCEMENT, tr("help_era_advancement_menu_link")],
+		"[url=%s]%s[/url]" % [PAGE_BUILDING_MATERIALS, tr("help_building_materials_menu_link")],
 	]
 	return "\n".join(lines)
 
@@ -121,7 +125,32 @@ func _build_era_advancement_text() -> String:
 	return "\n".join(lines)
 
 
+# Pagina "Costruzioni e materiali" (2026-09-14, richiesta utente — spiegare al player il fabbisogno
+# materiale in due fasi della Build Task, ora che la Transport automatica è stata rimossa: SOLO
+# documentazione, nessuna logica). Stesso schema delle altre pagine foglia (titolo in grassetto,
+# paragrafi separati da una riga vuota).
+func _build_building_materials_text() -> String:
+	var lines: Array[String] = [
+		"[b]%s[/b]" % tr("help_building_materials_title"),
+		"",
+		tr("help_building_materials_setup_vs_construction"),
+		"",
+		tr("help_building_materials_manual"),
+		"",
+		tr("help_building_materials_deposit_bonus"),
+		"",
+		tr("help_building_materials_future"),
+	]
+	return "\n".join(lines)
+
+
 func _build_shortcuts_text() -> String:
+	# Aggiornata 2026-09-13 (richiesta utente — "ultimamente ne sono stati aggiunti un bel po' ma
+	# non è stata aggiornata la lista"): mancavano B (piazzamento istantaneo), il secondo significato
+	# di R (Rest Task, mutuamente esclusivo col piazzamento edificio — vedi GameScene._unhandled_
+	# input), G (Wander Task) e P (Play Task, aggiunta nello stesso giro di questo aggiornamento).
+	# Verificato contro OGNI KEY_* di GameScene._unhandled_input non gated da DebugLogging.ENABLED —
+	# T/Y/U restano deliberatamente FUORI (vedi nota sotto per il perché, invariata).
 	var lines: Array[String] = [
 		"[b]%s[/b]" % tr("help_shortcuts_title"),
 		"",
@@ -129,16 +158,20 @@ func _build_shortcuts_text() -> String:
 		"[b]X[/b] — %s" % tr("help_center_camera"),
 		"[b]+[/b] — %s" % tr("help_zoom_max"),
 		"[b]-[/b] — %s" % tr("help_zoom_min"),
-		"[b]R[/b] — %s" % tr("help_rotate_building"),
+		"[b]B[/b] — %s" % tr("help_instant_build"),
+		"[b]R[/b] — %s" % tr("help_rotate_or_rest"),
+		"[b]G[/b] — %s" % tr("help_wander_task"),
+		"[b]P[/b] — %s" % tr("help_play_task"),
 		"[b]H[/b] — %s" % tr("help_stop_task"),
 	]
 	# Voci DEBUG (2026-09-09, richiesta utente — "aggiungi anche z, s [H] nell'help"): mostrate
 	# solo quando i debug hook stessi sono attivi (DebugLogging.ENABLED, stesso interruttore che li
 	# abilita in GameScene._unhandled_input) — coerente col fatto che in una build "pulita" quei
-	# tasti non fanno letteralmente nulla, elencarli comunque confonderebbe il player. T/Y (test
-	# temporanei "usa e getta", da rimuovere) restano deliberatamente FUORI da questa lista anche a
-	# debug attivo: non richiesti, e pensati per sparire a breve — a differenza di Z, un'utility di
-	# debug più duratura.
+	# tasti non fanno letteralmente nulla, elencarli comunque confonderebbe il player. T/Y/U (test
+	# temporanei "usa e getta", da rimuovere — vedi i rispettivi commenti "TEST TEMPORANEO... DA
+	# RIMUOVERE" in GameScene.gd) restano deliberatamente FUORI da questa lista anche a debug attivo:
+	# non richiesti, e pensati per sparire a breve — a differenza di Z, un'utility di debug più
+	# duratura.
 	if DebugLogging.ENABLED:
 		lines.append("[b]Z[/b] — %s" % tr("help_debug_clear_backpack"))
 	return "\n".join(lines)

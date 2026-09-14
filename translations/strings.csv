@@ -20,7 +20,10 @@ help_pan_camera,sposta la visuale
 help_center_camera,centra la visuale sul player
 help_zoom_max,zoom massimo
 help_zoom_min,zoom minimo
-help_rotate_building,ruota la porta della capanna durante il piazzamento
+help_instant_build,tenuto premuto durante il piazzamento: costruisce l'edificio istantaneamente invece di assegnare una Task
+help_rotate_or_rest,ruota la porta della capanna durante il piazzamento; se nessuna anteprima è attiva assegna la Task Riposo all'individuo selezionato
+help_wander_task,assegna la Task Vagabondare (Walk-Guarda in giro-Walk-Guarda in giro-Walk) all'individuo selezionato
+help_play_task,assegna la Task Gioco (Corri-Salta-Corri-Salta, solo bambini) all'individuo selezionato
 help_stop_task,annulla il comando corrente dell'individuo selezionato (torna a riposo)
 help_debug_clear_backpack,(debug) svuota lo zaino dell'individuo selezionato
 help_fog_of_war_menu_link,Nebbia di guerra
@@ -81,9 +84,12 @@ offspring_word_female,figlia
 notification_idea_completed,Nuova idea completata: {idea}
 notification_resource_decayed_individual,{name} ha perso {quantity} {resource} (deperiti)
 notification_resource_decayed_building,{quantity} {resource} deperiti in {building} (#{id})
+notification_building_material_needed,Serve materiale per avviare la costruzione di {building}
 sex_label,Sesso: {sex}
 sex_female,Femmina
 sex_male,Maschio
+sex_female_short,F
+sex_male_short,M
 vegetation_cut_button,Taglia
 vegetation_subtype_label,Sottotipo: {subtype}
 vegetation_age_label,Età: {age_band} ({years} anni)
@@ -126,8 +132,23 @@ transport_dialog_cancel,Annulla
 carried_resource_tooltip_pebble,Sassi
 carried_resource_tooltip_stick,Rametti
 pregnant,Incinta
+individual_vitals_section_label,Parametri vitali:
+individual_identity_line,{name} - {sex} - {age} - {band}
 individual_stamina_label,Forza lavoro:
 individual_carry_label,Capacità di trasporto:
+individual_hunger_label,Fame:
+individual_thirst_label,Sete:
+individual_health_label,Salute:
+individual_happiness_label,Felicità:
+individual_loyalty_label,Lealtà:
+individual_skills_section_label,Skills:
+skill_leadership_label,Leadership
+skill_builder_label,Costruttore
+skill_management_label,Gestione
+skill_transporter_label,Trasportatore
+skill_gathering_label,Raccolta
+skill_cognition_label,Cognizione
+skill_hunting_label,Caccia
 individual_id_label,ID: {id} (Folk {folk}, Gruppo {group})
 individual_mother_id_label,ID Madre: {id}
 individual_father_id_label,ID Padre: {id}
@@ -143,9 +164,11 @@ task_debug_panel_header,Debug: Task
 task_debug_panel_clear_button,Svuota
 task_debug_panel_refresh_button_tooltip,Aggiorna elenco
 task_debug_panel_unnamed_task,(senza nome)
+individual_queued_tasks_label,Azioni in coda:
 building_status_label,Stato: {status}
 building_status_complete,Completo
 building_status_under_construction,In costruzione
+building_awaiting_material_label,Per allestire il cantiere servono ancora {quantity} {material}
 building_durability_label,Durabilità: {current}/{max}
 building_built_year_label,Costruito: anno {year}
 building_not_yet_built,Non ancora costruito
@@ -159,3 +182,10 @@ building_settings_accepted_categories_caption,Categorie accettate
 building_settings_empty_all_button,Svuota tutto
 category_name_food,Cibo
 category_name_raw_material,Materiali grezzi
+help_building_materials_menu_link,Costruzioni e materiali
+help_building_materials_title,Costruzioni e materiali
+help_building_materials_setup_vs_construction,"Costruire un edificio richiede materiale in due fasi distinte: prima l'allestimento del cantiere (una quantità fissa di legnetti per ogni microcella occupata dall'edificio), poi la costruzione vera e propria, che in futuro richiederà i propri materiali."
+help_building_materials_manual,"Oggi il gioco non genera da sé nessuna Task per procurare questo materiale: se manca, il cantiere resta semplicemente in attesa. Sei tu a doverlo portare sul posto, comandando a mano un individuo (raccogli il materiale e depositalo sul cantiere)."
+help_building_materials_deposit_bonus,"Unica eccezione: il primissimo Deposito che costruisci, quando nel villaggio non esiste ancora nessun altro edificio con vero spazio di stoccaggio, riceve il proprio materiale di allestimento gratuitamente, così puoi sempre iniziare anche senza scorte."
+help_building_materials_future,"Questa fornitura manuale sarà necessaria finché non scoprirai i futuri sistemi di gestione delle Task e dei magazzini: da quel momento in poi il gioco potrà occuparsene in autonomia."
+notification_build_capacity_full,"Questo edificio è già in costruzione da {current} individui su un massimo di {max}."

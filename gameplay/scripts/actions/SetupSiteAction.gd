@@ -46,6 +46,10 @@ signal site_setup_completed(building: Building)
 # tra Action diverse.
 const STAMINA_DRAIN_PER_DAY: float = 100.0
 
+# Costo di HAPPINESS al GIORNO (2026-09-13, richiesta utente: "-10.0/day") — costante separata,
+# stesso principio "nessuna costante condivisa tra Action" già dichiarato sopra.
+const HAPPINESS_DRAIN_PER_DAY: float = 10.0
+
 # Durata FISSA — 1 giorno di gioco, edifici monocella (2026-09-10, richiesta esplicita utente: "per
 # ora, edifici monocella"). Non un parametro di costruttore come ThinkAction.duration: finché ogni
 # edificio occupa una sola microcella non c'è alcuna variazione da esprimere — un futuro edificio
@@ -54,12 +58,25 @@ const STAMINA_DRAIN_PER_DAY: float = 100.0
 # ThinkAction.duration.
 const DURATION_DAYS: float = 1.0
 
+# Fabbisogno materiale (2026-09-13, richiesta utente — Build Task collegata a un vero fabbisogno
+# di materiale, SOLO per questo step, BuildAction resta bypassata; RICALIBRATO 2026-09-14, richiesta
+# utente — la quantità NON va confusa con required_materials, che descrive il fabbisogno della
+# COSTRUZIONE vera e propria: SEMPRE 4 stick per microcella occupata dal cantiere durante la fase
+# SetupSite, un fabbisogno concettualmente distinto) — nome/quantità letti da
+# BuildingRules.setup_site_material_name/setup_site_material_per_cell (vedi quel file per il
+# perché il dato vive lì, non qui: BuildingStorageService.can_accept/get_max_depositable, in
+# simulation/, legge la STESSA fonte per il proprio tetto di deposito su un cantiere non finito —
+# un'unica fonte di verità su una classe che entrambi i livelli possono leggere).
 var target_building: Building = null
 
 
 func _init(p_target_building: Building = null) -> void:
 	target_building = p_target_building
 	target = null
+	# INFANT non può eseguire questa Action (2026-09-12, richiesta utente — collegamento AgeBand.
+	# INFANT al gameplay, vedi Action.disallowed_age_bands). CHILD aggiunto 2026-09-13 (richiesta
+	# utente).
+	disallowed_age_bands = [HumanTypes.AgeBand.INFANT, HumanTypes.AgeBand.CHILD]
 
 
 # Lettura pura di Building.construction_progress["site_setup_days_done"] — 0.0 se target_building è
@@ -71,11 +88,55 @@ func _get_site_setup_days_done() -> float:
 	return float(target_building.construction_progress.get("site_setup_days_done", 0.0))
 
 
-# LOG DEBUG VERIFICA PROGRESSO (2026-09-11, richiesta utente — "verificare se un'Action riparte da
-# zero o da un progresso preesistente") — override SOLO per questo log, super() invariato (Action.
-# activate: individual.is_moving = false).
+# Quantità del materiale di setup site (BuildingRules.setup_site_material_name) ancora mancante
+# rispetto al tetto richiesto (setup_site_material_per_cell × required_space) — 0 se target_building/
+# rules non risolvibili, o se ne è già stoccato a sufficienza. STESSO dato/STESSA chiave già letti
+# da BuildingStorageService.can_accept/get_max_depositable per il proprio gate di deposito (vedi
+# il commento esteso su BuildingRules.setup_site_material_name/setup_site_material_per_cell) —
+# lettura pura, mai una scrittura, coerente col resto di questa classe (site_setup_days_done sopra
+# è l'unico stato mutato da questa Action).
+#
+# PUBBLICA, non più "_"-prefissata (2026-09-14, richiesta utente — controllo giornaliero di
+# ritentativo per un individuo bloccato): HumanIndividualActionService.retry_blocked_material_
+# shortages deve poterla chiamare dall'esterno per scoprire "questo SetupSiteAction è ancora
+# bloccato?" senza duplicare la formula required-meno-stored — stesso principio "unica fonte di
+# verità" già dichiarato sopra, esteso ora anche al confronto stesso.
+func get_missing_material_quantity() -> int:
+	if target_building == null or target_building.rules == null:
+		return 0
+	var required: int = target_building.rules.setup_site_material_per_cell * target_building.rules.required_space
+	if required <= 0:
+		return 0
+	var stored_entry: Dictionary = target_building.stored_resources.get(target_building.rules.setup_site_material_name, {})
+	var stored: int = int(stored_entry.get("quantity", 0))
+	return max(required - stored, 0)
+
+
+# Fabbisogno materiale (2026-09-13, richiesta utente) — controllato ad OGNI attivazione di questo
+# step: sia la primissima volta che diventa lo step corrente, sia OGNI ripresa dalla coda personale
+# dopo una Transport Task consegnata (parziale o meno) — mai una verifica "una tantum". Se manca
+# ancora materiale, questa Action NON procede affatto questo giro: nessun log di progresso (return
+# anticipato, il vecchio log "[BUILD PROGRESS DEBUG]" sotto non viene raggiunto), si limita a
+# scrivere la richiesta in context — STESSO canale/STESSO principio già usato da PickUpAction.
+# on_complete/UnloadAction.activate per pending_warehouse_search (un Dictionary "di richiesta",
+# consumato da un chiamante esterno che sa risolvere Building/World/WarehouseSelectionService, mai
+# da questa classe — vedi HumanIndividualActionService._handle_pending_material_shortage). Il
+# "blocco" vero e proprio (zero costo, mai completa) è comunque garantito ANCHE da get_stamina_
+# delta/get_happiness_delta/is_complete sotto, indipendentemente da questo flag: quello che scrive
+# qui serve solo a FAR PARTIRE la Transport Task il prima possibile, non a impedire da solo
+# l'avanzamento (il vero gate vive nei tre metodi sotto, così anche il caso limite "nessun
+# magazzino sorgente trovato" — fuori scope in questo giro, vedi quel service — resta comunque
+# bloccato invece di procedere per sbaglio).
 func activate(individual: Variant, context: Dictionary) -> void:
 	super(individual, context)
+	var missing := get_missing_material_quantity()
+	if missing > 0:
+		context["pending_material_shortage"] = {
+			"resource_name": target_building.rules.setup_site_material_name,
+			"quantity_needed": missing,
+			"target_building_id": target_building.id,
+		}
+		return
 	if DebugLogging.ENABLED and target_building != null:
 		print("[BUILD PROGRESS DEBUG] SetupSiteAction attivata per building #%d: riparte da site_setup_days_done=%.2f (era 0.0 se prima volta)" % [
 			target_building.id, _get_site_setup_days_done()
@@ -85,9 +146,14 @@ func activate(individual: Variant, context: Dictionary) -> void:
 # Scrive l'avanzamento INCREMENTALE direttamente su Building.construction_progress ad ogni drain
 # (2026-09-11) — STESSO pattern di BuildAction.get_stamina_delta: nessun accumulatore interno,
 # lettura+scrittura sempre dal vivo, così il progresso resta sempre coerente con Building anche se
-# questa istanza viene distrutta a metà (interruzione) o ricostruita (reload).
+# questa istanza viene distrutta a metà (interruzione) o ricostruita (reload). Guardia materiale
+# (2026-09-13) AGGIUNTA in testa, PRIMA di quella su site_setup_days_done: mentre manca materiale
+# questo step non deve MAI accumulare progresso, indipendentemente da chi/quando consumi il
+# pending_material_shortage scritto da activate() sopra (vedi quel commento esteso).
 func get_stamina_delta(individual: Variant, context: Dictionary, delta: float) -> float:
 	if target_building == null:
+		return 0.0
+	if get_missing_material_quantity() > 0:
 		return 0.0
 	if _get_site_setup_days_done() >= DURATION_DAYS:
 		return 0.0
@@ -95,11 +161,51 @@ func get_stamina_delta(individual: Variant, context: Dictionary, delta: float) -
 	return -STAMINA_DRAIN_PER_DAY * delta
 
 
+# STESSE guardie di get_stamina_delta sopra (lettura, mai scrittura di site_setup_days_done: già
+# incrementato da get_stamina_delta nello stesso frame — vedi la nota in Action.get_happiness_
+# delta). Tasso fisso.
+func get_happiness_delta(individual: Variant, context: Dictionary, delta: float) -> float:
+	if target_building == null:
+		return 0.0
+	if get_missing_material_quantity() > 0:
+		return 0.0
+	if _get_site_setup_days_done() >= DURATION_DAYS:
+		return 0.0
+	return -HAPPINESS_DRAIN_PER_DAY * delta
+
+
+# Guardia materiale (2026-09-13) AGGIUNTA — mai completa mentre manca materiale, indipendentemente
+# da site_setup_days_done (che può anche essere già a target da un tentativo precedente, se mai
+# possibile): il completamento resta subordinato a ENTRAMBE le condizioni.
 func is_complete(individual: Variant, context: Dictionary) -> bool:
+	if get_missing_material_quantity() > 0:
+		return false
 	return _get_site_setup_days_done() >= DURATION_DAYS
 
 
+# get_required_position (2026-09-13, richiesta utente — fix "Walk di ritorno alla ripresa", vedi
+# Action.get_required_position e RetrieveAction.get_required_position per la stessa identica
+# formula/stesso commento esteso, duplicata qui apposta — nessuna costante/funzione condivisa tra
+# Action diverse, stesso principio già seguito ovunque in questo sistema).
+func get_required_position(individual: Variant, context: Dictionary) -> Variant:
+	if target_building == null:
+		return null
+	var macro_offset: Vector2 = Vector2(Vector2i(target_building.macro_x, target_building.macro_y) - individual.home_macro_coords) * World.WIDTH
+	return Vector2(target_building.micro_x, target_building.micro_y) + macro_offset
+
+
+# Consumo del materiale di setup site (2026-09-14, richiesta utente — BUG CONFERMATO: nessun punto
+# del codice rimuoveva mai target_building.stored_resources[setup_site_material_name] dopo il
+# completamento di questo step — i 4 stick depositati per allestire il cantiere restavano lì per
+# sempre, occupando uno slot di storage vero e proprio per il resto della vita dell'edificio anche
+# a costruzione COMPLETA, es. su un deposit_site/hut che hanno storage_slot_count>0). Rimossi QUI
+# (non da BuildAction.on_complete, il passo successivo): il materiale ha esaurito il proprio scopo
+# nell'ISTANTE in cui il cantiere è allestito, indipendentemente da quanto dureranno ancora
+# Clear/Build — erase() intero (non un decremento quantità), coerente con "consumato", non "ancora
+# in giacenza parziale".
 func on_complete(individual: Variant, context: Dictionary) -> void:
+	if target_building != null and target_building.rules != null:
+		target_building.stored_resources.erase(target_building.rules.setup_site_material_name)
 	site_setup_completed.emit(target_building)
 
 

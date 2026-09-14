@@ -30,6 +30,12 @@ extends Action
 # PER_DAY).
 const STAMINA_COST_PER_SPACE_UNIT: float = 2.0
 
+# Costo di HAPPINESS al GIORNO (2026-09-13, richiesta utente: "-10.0/day") — a differenza del costo
+# stamina sopra (proporzionale allo spazio raccolto), qui un tasso FISSO indipendente dalla
+# quantità: raccogliere è una scocciatura di durata variabile, non uno sforzo che scala con la
+# quantità come lo spazio occupato in spalla.
+const HAPPINESS_DRAIN_PER_DAY: float = 10.0
+
 # Emesso da on_complete() SOLO quando una raccolta reale è avvenuta (_quantity_to_collect > 0,
 # 2026-09-09, richiesta utente — bug "pebble/stick restano disegnati dopo la raccolta") — stesso
 # principio di disaccoppiamento già seguito da UnloadAction.idea_completed/thought_deposited:
@@ -75,6 +81,10 @@ func _init(p_target_position: Vector2i, p_macro_state: MacroCellState, p_resourc
 	macro_state = p_macro_state
 	resource_name = p_resource_name
 	target = null
+	# INFANT non può eseguire questa Action (2026-09-12, richiesta utente — collegamento AgeBand.
+	# INFANT al gameplay, vedi Action.disallowed_age_bands). CHILD aggiunto 2026-09-13 (richiesta
+	# utente).
+	disallowed_age_bands = [HumanTypes.AgeBand.INFANT, HumanTypes.AgeBand.CHILD]
 
 
 # Risolve UNA VOLTA (mai più ricalcolato dopo, stesso principio di WalkAction.target/ThinkAction.
@@ -137,8 +147,30 @@ func get_stamina_delta(individual: Variant, context: Dictionary, delta: float) -
 	return -(_total_stamina_cost / _duration) * delta
 
 
+# STESSA guardia _duration<=0.0 di get_stamina_delta sopra (azione immediatamente completa, nessun
+# costo) — MA non incrementa _elapsed, già avanzato da get_stamina_delta nello stesso frame (vedi
+# la nota in Action.get_happiness_delta). Tasso fisso -10.0/giorno, non proporzionale allo spazio
+# raccolto come il costo stamina.
+func get_happiness_delta(individual: Variant, context: Dictionary, delta: float) -> float:
+	if _duration <= 0.0:
+		return 0.0
+	return -HAPPINESS_DRAIN_PER_DAY * delta
+
+
 func is_complete(individual: Variant, context: Dictionary) -> bool:
 	return _elapsed >= _duration
+
+
+# get_required_position (2026-09-13, richiesta utente — fix "Walk di ritorno alla ripresa", vedi
+# Action.get_required_position) — SEMPLICE tra le 6 sovrascritture: target_position è già un
+# campo diretto (Vector2i), nessuna conversione cross-macrocella necessaria (a differenza delle
+# altre 5, basate su target_building — vedi quelle classi) perché è già nello stesso sistema di
+# coordinate LOCALE di individual.position (entrambi relativi alla macrocella HOME
+# dell'individuo, mai un target_position su una macrocella diversa: PickUpAction non ha mai
+# rappresentato una risorsa fuori dalla cella viva corrente). `individual`/`context` inutilizzati
+# qui, stessa firma di ogni altro override.
+func get_required_position(individual: Variant, context: Dictionary) -> Variant:
+	return Vector2(target_position)
 
 
 # Consuma _quantity_to_collect dal pool di resource_name tramite TerrainScatteredResourceService

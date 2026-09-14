@@ -7,8 +7,9 @@ extends RefCounted
 # stato RUNTIME di una Task già in corso, non si "confeziona" una ricetta). Nessuno stato proprio
 # (RefCounted, .new() mai chiamato — solo funzioni statiche, stesso pattern di TaskFactory).
 #
-# task_name/current_step_index/context/step_descriptions/step_stamina_cost/step_days_elapsed sono
-# tutti Dictionary/Array/String/int/float già JSON-safe, copiati diretti. Ogni step invece richiede
+# task_name/current_step_index/context/step_descriptions/step_stamina_cost/step_days_elapsed/
+# step_happiness_cost (2026-09-13, richiesta utente) sono tutti Dictionary/Array/String/int/float
+# già JSON-safe, copiati diretti. Ogni step invece richiede
 # di sapere QUALE sottoclasse concreta di Action ricostruire — TaskTypes.ActionType (esteso con
 # THINK/UNLOAD apposta per questo, vedi task_types.gd — UNLOAD rinominato da DEPOSIT il 2026-09-09,
 # stesso valore intero: nessun save esistente rotto, vedi _action_type_for_step/_build_step) fa da
@@ -60,6 +61,10 @@ static func serialize_task(task: Task) -> Dictionary:
 			"step_description": task.step_descriptions[i] if i < task.step_descriptions.size() else "",
 			"stamina_cost": task.step_stamina_cost[i] if i < task.step_stamina_cost.size() else 0.0,
 			"days_elapsed": task.step_days_elapsed[i] if i < task.step_days_elapsed.size() else 0.0,
+			# happiness_cost (2026-09-13, richiesta utente) — STESSO trattamento di stamina_cost
+			# sopra: senza persisterlo, un reload a metà Task azzererebbe silenziosamente il
+			# contributo happiness già maturato dagli step precedenti nel futuro log [TASK COST].
+			"happiness_cost": task.step_happiness_cost[i] if i < task.step_happiness_cost.size() else 0.0,
 		}
 		if step.target is Vector2:
 			step_data["target_x"] = step.target.x
@@ -71,6 +76,15 @@ static func serialize_task(task: Task) -> Dictionary:
 		"current_step_index": task.current_step_index,
 		"context": task.context,
 		"steps": steps_data,
+		# interrupt_priority/is_suspendable (2026-09-13, richiesta utente — struttura dati coda
+		# personale, in preparazione al sistema di interrupt da stamina critica) — a DIFFERENZA di
+		# allowed_age_bands (mai persistito: consultato SOLO al momento di assign_task(), vedi
+		# Task.gd), questi due vanno riconsultati CONTINUAMENTE durante l'esecuzione (un interrupt
+		# può scattare in qualunque istante, anche dopo un reload) — persistiti qui per non perdere
+		# silenziosamente "questa Task di lavoro è sospendibile"/"questa è una Task-bisogno di
+		# priorità X" ad ogni salvataggio.
+		"interrupt_priority": task.interrupt_priority,
+		"is_suspendable": task.is_suspendable,
 	}
 
 
@@ -105,6 +119,7 @@ static func deserialize_task(data: Dictionary, macro_state: MacroCellState, worl
 	var step_descriptions: Array[String] = []
 	var step_stamina_cost: Array[float] = []
 	var step_days_elapsed: Array[float] = []
+	var step_happiness_cost: Array[float] = []
 	var current_step_index := int(data.get("current_step_index", 0))
 	var raw_steps_data: Array = data.get("steps", [])
 	for i in range(raw_steps_data.size()):
@@ -123,6 +138,7 @@ static func deserialize_task(data: Dictionary, macro_state: MacroCellState, worl
 		step_descriptions.append(String(step_data.get("step_description", "")))
 		step_stamina_cost.append(float(step_data.get("stamina_cost", 0.0)))
 		step_days_elapsed.append(float(step_data.get("days_elapsed", 0.0)))
+		step_happiness_cost.append(float(step_data.get("happiness_cost", 0.0)))
 
 	var task := Task.new(steps)
 	task.task_name = String(data.get("task_name", ""))
@@ -131,6 +147,12 @@ static func deserialize_task(data: Dictionary, macro_state: MacroCellState, worl
 	task.step_descriptions = step_descriptions
 	task.step_stamina_cost = step_stamina_cost
 	task.step_days_elapsed = step_days_elapsed
+	task.step_happiness_cost = step_happiness_cost
+	# interrupt_priority/is_suspendable — .get() con i default di classe (-1/false, "non è una
+	# Task-bisogno"/"non sospendibile"), stesso trattamento di ogni altro campo opzionale in questo
+	# file: un save precedente a questi due campi non li conteneva mai, il default resta corretto.
+	task.interrupt_priority = int(data.get("interrupt_priority", -1))
+	task.is_suspendable = bool(data.get("is_suspendable", false))
 	return task
 
 
@@ -175,6 +197,13 @@ static func _action_type_for_step(step: Action) -> int:
 	# come accadde storicamente per SETUP_SITE al suo debutto).
 	if step is RetrieveAction:
 		return TaskTypes.ActionType.RETRIEVE
+	# RUN/JUMP (2026-09-13, richiesta utente, aggiunte insieme ai propri case in _build_step sotto,
+	# stesso schema di RETRIEVE sopra: mai lasciate "temporaneamente" scoperte come accadde
+	# storicamente per SETUP_SITE al suo debutto).
+	if step is RunAction:
+		return TaskTypes.ActionType.RUN
+	if step is JumpAction:
+		return TaskTypes.ActionType.JUMP
 	push_error("TaskPersistenceService._action_type_for_step: tipo Action sconosciuto (%s)." % step.get_script().get_global_name())
 	return -1
 
@@ -281,6 +310,17 @@ static func _build_step(action_type: int, step_data: Dictionary, macro_state: Ma
 				String(step_data.get("resource_name", "")),
 				int(step_data.get("quantity_requested", 0))
 			)
+		TaskTypes.ActionType.RUN:
+			# 1 argomento (target: Vector2), stesso schema di WALK sopra (target_x/target_y già
+			# coperti genericamente da serialize_task, vedi la nota in testa al file).
+			step = RunAction.new(Vector2(float(step_data.get("target_x", 0.0)), float(step_data.get("target_y", 0.0))))
+		TaskTypes.ActionType.JUMP:
+			# Nessun argomento — JumpAction._init non prende parametri (2026-09-13, richiesta
+			# utente). _duration/_jump_count/elapsed/jumps_triggered arrivano da load_save_data
+			# (chiamato dal chiamante SOLO se questo è lo step corrente, vedi deserialize_task sopra) —
+			# senza quella chiamata l'istanza fresca qui tiene i valori appena tirati a caso dal
+			# proprio _init, corretto per uno step non ancora raggiunto.
+			step = JumpAction.new()
 		_:
 			push_error("TaskPersistenceService._build_step: action_type %d non supportato." % action_type)
 			return null

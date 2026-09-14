@@ -25,7 +25,12 @@ extends RefCounted
 # layer di gameplay/rendering) — vedi Building.get_resumable_task_context per il dettaglio. Fuso
 # con overwrite=true: extra_context vince in caso di chiave duplicata, ma nella pratica di oggi le
 # chiavi non si sovrappongono mai (target ne fornisce due, extra_context le altre due).
-static func reassign_task(target: Variant, individual: HumanIndividual, extra_context: Dictionary = {}) -> Task:
+#
+# age_band (2026-09-12, richiesta utente — collegamento di HumanTypes.AgeBand.INFANT al gameplay) —
+# semplicemente inoltrato a individual.assign_task sotto, che lo richiede (vedi il commento su
+# HumanIndividual.assign_task per il perché è obbligatorio, non calcolabile da questa classe
+# stateless). Il chiamante lo risolve già (GameScene._resolve_age_band).
+static func reassign_task(target: Variant, individual: HumanIndividual, age_band: HumanTypes.AgeBand, extra_context: Dictionary = {}) -> Task:
 	if target == null or individual == null or not target.has_resumable_task():
 		return null
 
@@ -44,5 +49,5 @@ static func reassign_task(target: Variant, individual: HumanIndividual, extra_co
 	# assegnato qui) prima di aprirne una nuova. Vedi Task.debug_target_key/Building.
 	# get_debug_target_key per il dettaglio.
 	task.debug_target_key = target.get_debug_target_key()
-	individual.assign_task(task)
+	individual.assign_task(task, age_band)
 	return task

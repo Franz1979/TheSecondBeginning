@@ -347,7 +347,13 @@ func save_game_to_json(
 			# cofano) — vuoto per ogni edificio che il player non ha ancora ristretto, stesso
 			# trattamento "storia reale" già usato per stored_resources sopra.
 			"enabled_categories": building.enabled_categories,
-			"rotation": building.rotation
+			"rotation": building.rotation,
+			# is_awaiting_material (2026-09-14, richiesta utente — segnalazione player per un cantiere
+			# bloccato per mancanza di materiale, vedi Building.gd) — persistito così il pannello
+			# edificio mostra subito lo stato corretto dopo un reload, senza dover aspettare il
+			# prossimo controllo giornaliero (HumanIndividualActionService.
+			# retry_blocked_material_shortages) per ricalcolarlo da zero.
+			"is_awaiting_material": building.is_awaiting_material
 		})
 
 	# Fog of war (vedi FogOfWarMemory.gd/GameScene.fog_of_war_memories) — una entry per macrocella
@@ -412,6 +418,14 @@ func save_game_to_json(
 			"individuals": []
 		}
 		for individual in human_individuals:
+			# Coda personale di Task sospese (2026-09-13, richiesta utente) — stesso identico
+			# meccanismo di current_task (TaskPersistenceService.serialize_task), un elemento per
+			# ciascuna Task in task_queue, STESSO ordine (mai riordinato: TaskQueueService.
+			# pop_suspended_task legge dalla fine). Array vuoto (caso di oggi, nessun trigger la
+			# popola ancora) si serializza semplicemente come [] — nessun caso speciale.
+			var task_queue_data: Array = []
+			for queued_task in individual.task_queue:
+				task_queue_data.append(TaskPersistenceService.serialize_task(queued_task))
 			data["human"]["individuals"].append({
 				"id": individual.id,
 				"sex": individual.sex,
@@ -470,6 +484,35 @@ func save_game_to_json(
 				# gioco reale, stesso motivo di is_pregnant/dependent_child_id sopra.
 				"current_stamina": individual.current_stamina,
 				"max_stamina": individual.max_stamina,
+				# 5 nuovi parametri vitali (2026-09-13, richiesta utente) — STESSO trattamento di
+				# current_stamina/max_stamina sopra (persistiti entrambi, non solo il max come
+				# max_carry_capacity sotto): oggi nessuna Action li consuma ancora (current_* resta
+				# sempre uguale al max appena calcolato), ma la persistenza è predisposta ORA insieme
+				# alla dichiarazione dei campi, non rimandata a quando arriverà un vero consumatore —
+				# stessa richiesta esplicita già fatta per questo giro. Quando un futuro Action/evento
+				# farà davvero variare i current_*, un reload non li perderà silenziosamente.
+				"current_hunger": individual.current_hunger,
+				"max_hunger": individual.max_hunger,
+				"current_thirst": individual.current_thirst,
+				"max_thirst": individual.max_thirst,
+				"current_health": individual.current_health,
+				"max_health": individual.max_health,
+				"current_happiness": individual.current_happiness,
+				"max_happiness": individual.max_happiness,
+				"current_loyalty": individual.current_loyalty,
+				"max_loyalty": individual.max_loyalty,
+				# 6 nuove skill (2026-09-13, richiesta utente) — nessuna formula base/moltiplicatore
+				# dietro (a differenza dei 5 parametri vitali sopra), ma stesso principio "persisti ORA
+				# insieme alla dichiarazione, non quando arriverà un consumatore": oggi valgono sempre
+				# 0.0 per ogni individuo, ma un futuro reload dopo che una crescita reale le avrà fatte
+				# variare non deve perdere silenziosamente quello stato.
+				"skill_leadership": individual.skill_leadership,
+				"skill_builder": individual.skill_builder,
+				"skill_management": individual.skill_management,
+				"skill_transporter": individual.skill_transporter,
+				"skill_gathering": individual.skill_gathering,
+				"skill_cognition": individual.skill_cognition,
+				"skill_hunting": individual.skill_hunting,
 				# Capacità di trasporto (2026-09-08, richiesta utente) — carried_resource_name/
 				# carried_quantity sono l'unico stato "posseduto" da un individuo che sparirebbe
 				# silenziosamente al reload senza persistenza (stesso principio di dependent_child_id
@@ -492,7 +535,14 @@ func save_game_to_json(
 				"current_task": (
 					TaskPersistenceService.serialize_task(individual.current_task)
 					if individual.current_task != null else null
-				)
+				),
+				# Coda personale di Task sospese (2026-09-13, richiesta utente, struttura dati in
+				# preparazione al sistema di interrupt da stamina critica — nessun trigger la popola
+				# ancora, quindi oggi è sempre vuota: un Array vuoto si serializza/deserializza
+				# comunque correttamente, nessun caso speciale necessario) — STESSO meccanismo di
+				# current_task sopra, un elemento serializzato per ciascuna Task in coda, stesso
+				# ordine (task_queue.pop_back() legge dalla fine, l'ordine dell'array va preservato).
+				"task_queue": task_queue_data,
 			})
 
 	var json_text := JSON.stringify(data, "\t")

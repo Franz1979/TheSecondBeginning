@@ -33,6 +33,31 @@ extends RefCounted
 # PickUpAction/HumanIndividual.max_carry_capacity per lo zaino individuale) — un edificio non ha
 # un'unità di misura propria diversa, stesso "spazio" astratto su entrambi i lati.
 
+# Vero se esiste ALMENO UN Building COMPLETO con vera capacità di storage (2026-09-13/14, richiesta
+# utente — "bonus di partenza" per il fabbisogno stick di SetupSiteAction: NON legato a "questo è il
+# primo edificio della partita" — legato a "esiste GIÀ ALTROVE nel villaggio spazio di storage
+# utilizzabile", indipendentemente da quanti edifici sono già stati costruiti prima o dopo: se
+# l'unico storage esistente venisse in futuro demolito, il prossimo cantiere torna a ricevere il
+# bonus automaticamente, nessuna logica "solo se è il primo in assoluto"). Scansione lineare di
+# world.buildings, stesso principio "costo accettabile finché il numero di edifici resta piccolo"
+# già assunto altrove nel progetto (es. TaskPersistenceService._find_building_by_id,
+# HumanIndividualActionService._find_building_by_id). `get_capacity(building) > 0` (2026-09-14,
+# richiesta utente — FIX: prima controllava solo storage_slot_count > 0, ignorando
+# storage_space_per_slot: "storage slot e storage space", ENTRAMBI devono dare capacità reale >0,
+# stessa formula già usata da get_capacity sotto — un tipo con uno dei due a 0, es. Stick Tent/
+# Pebble Circle, storage_slot_count=storage_space_per_slot=0, non conta come "storage reale" anche
+# se completo). `is_complete` obbligatorio: un cantiere che ha ricevuto il proprio bonus di
+# partenza e non è ancora finito non deve "sbloccare" il ciclo normale per il PROSSIMO cantiere —
+# solo uno storage DAVVERO utilizzabile lo fa. Richiamata ad OGNI attivazione di SetupSiteAction
+# (mai cachata).
+static func world_has_any_storage_building(world: World) -> bool:
+	if world == null:
+		return false
+	for building in world.buildings:
+		if building.is_complete and get_capacity(building) > 0:
+			return true
+	return false
+
 
 static func get_capacity(building: Building) -> int:
 	if building == null or building.rules == null:
@@ -147,18 +172,33 @@ static func can_accept(building: Building, resource_name: String) -> bool:
 	# INCONDIZIONATAMENTE qualunque deposito su un cantiere non finito ("un cantiere non ancora finito
 	# non deve poter ricevere depositi da NESSUN percorso"), impedendo per costruzione anche il
 	# trasporto dei materiali richiesti per costruirlo — un problema reale ora che la Build Task dovrà
-	# poter consegnare quei materiali. Nuova condizione più fine: un cantiere può accettare SOLO le
-	# risorse elencate nei suoi rules.required_materials, e SOLO fino al tetto esatto richiesto — mai
-	# altre risorse (continua a comportarsi come un magazzino generico per QUALUNQUE altra risorsa,
-	# esattamente come impediva il guard precedente), mai oltre quel tetto (evita che un cantiere
-	# accumuli scorte in eccesso come se fosse un vero magazzino). Un edificio COMPLETO non passa mai
-	# da questo ramo — comportamento sotto INVARIATO per lui.
+	# poter consegnare quei materiali. Nuova condizione più fine: un cantiere può accettare SOLO la
+	# risorsa del proprio fabbisogno di SETUP SITE (BuildingRules.setup_site_material_name — RICALIBRATO
+	# 2026-09-14, richiesta utente: NON più rules.required_materials, che resta riservato al fabbisogno
+	# della costruzione vera e propria, futura BuildAction, un fabbisogno concettualmente distinto — vedi
+	# quel campo su BuildingRules.gd), e SOLO fino al tetto esatto richiesto (setup_site_material_per_cell
+	# × required_space) — mai altre risorse (continua a comportarsi come un magazzino generico per
+	# QUALUNQUE altra risorsa, esattamente come impediva il guard precedente), mai oltre quel tetto
+	# (evita che un cantiere accumuli scorte in eccesso come se fosse un vero magazzino). Un edificio
+	# COMPLETO non passa mai da questo ramo — comportamento sotto INVARIATO per lui.
 	if not building.is_complete:
-		if not building.rules.required_materials.has(resource_name):
+		# `building.site_setup_complete` (2026-09-14, richiesta utente — bugfix "il materiale non
+		# spariva mai": SetupSiteAction.on_complete ora CONSUMA il materiale, vedi quel file — ma
+		# senza questo guard un deposito MANUALE tardivo, durante Clear/Build dopo che il setup è
+		# già concluso, potrebbe ricrearlo da capo, restando poi lì per sempre esattamente come il
+		# bug originale) — return false ESPLICITO, non un fall-through alle regole "edificio
+		# completo" sotto: un cantiere in Clear/Build NON è comunque un vero magazzino, il setup
+		# concluso significa solo "nessun ulteriore deposito ha senso", mai "accetta come se fosse
+		# finito".
+		if building.site_setup_complete:
+			return false
+		if resource_name != building.rules.setup_site_material_name:
+			return false
+		var required_quantity: int = building.rules.setup_site_material_per_cell * building.rules.required_space
+		if required_quantity <= 0:
 			return false
 		var stored_entry: Dictionary = building.stored_resources.get(resource_name, {})
 		var stored_quantity: int = int(stored_entry.get("quantity", 0))
-		var required_quantity: int = int(building.rules.required_materials[resource_name])
 		return stored_quantity < required_quantity
 	if not building.rules.accepted_categories.is_empty() and not building.rules.accepted_categories.has(resource_rules.category):
 		return false
@@ -271,40 +311,46 @@ static func get_max_depositable(building: Building, resource_name: String) -> in
 	var resource_rules := CaloricCalculator.get_caloric_source_rules(resource_name)
 	if resource_rules == null:
 		return 0
-	var units_per_slot := _units_per_slot(building, resource_rules.space_per_unit)
-	if units_per_slot <= 0:
-		return 0
 
 	var existing_entry: Dictionary = building.stored_resources.get(resource_name, {})
 	var current_quantity: int = int(existing_entry.get("quantity", 0))
 
-	# Capacità "come se fosse un edificio completo" — STESSA identica formula di prima (slot totali
-	# meno quelli occupati da altre risorse, moltiplicati per le unità che entrano in uno slot), ora
-	# calcolata SEMPRE (non più dietro un `if not building.is_complete: return 0` incondizionato):
-	# per un edificio COMPLETO resta l'UNICO vincolo (return sotto, invariato); per un cantiere
-	# diventa uno dei DUE vincoli da rispettare insieme al tetto dei materiali richiesti (vedi sotto).
+	# Ramo CANTIERE (2026-09-13, richiesta utente — fix corretto per il vincolo di spazio durante
+	# la costruzione, Parte B: DERIVATO dal fabbisogno reale, nessun campo statico per-edificio da
+	# configurare) — SOSTITUISCE l'approccio precedente (spazio fisico calcolato via storage_slot_
+	# count/storage_space_per_slot, poi combinato con min() al tetto di required_materials): quei
+	# due campi restano il vero magazzino, valido SOLO a edificio completo (vedi sotto), MAI
+	# consultati qui. RICALIBRATO 2026-09-14 (richiesta utente) — durante la costruzione il vincolo
+	# LOGICO (quanto serve) e quello FISICO (quanto entra) sono ORA setup_site_material_per_cell ×
+	# required_space per resource_name == setup_site_material_name (BuildingRules.gd), NON più
+	# rules.required_materials[resource_name]: quel Dictionary resta riservato al fabbisogno della
+	# costruzione vera e propria (futura BuildAction), un fabbisogno concettualmente DIVERSO da
+	# quello del cantiere (vedi il commento esteso su BuildingRules.setup_site_material_name/
+	# setup_site_material_per_cell per il perché della separazione). Qualunque altro resource_name
+	# → 0: un cantiere non deve mai accettare altro che il materiale di cui ha bisogno per il
+	# proprio allestimento. `building.site_setup_complete` (2026-09-14, richiesta utente — STESSO
+	# guard/STESSO motivo di can_accept sopra): una volta concluso il setup, zero posto residuo per
+	# il proprio materiale, indipendentemente da is_complete (Clear/Build possono durare ancora
+	# a lungo dopo).
+	if not building.is_complete:
+		if building.site_setup_complete:
+			return 0
+		if resource_name != building.rules.setup_site_material_name:
+			return 0
+		var required_quantity: int = building.rules.setup_site_material_per_cell * building.rules.required_space
+		return max(required_quantity - current_quantity, 0)
+
+	# Ramo edificio COMPLETO — comportamento ESATTAMENTE INVARIATO rispetto a sempre: storage_slot_
+	# count/storage_space_per_slot come UNICO vincolo (mai required_materials qui, un edificio finito
+	# può stoccare qualunque categoria accettata, non solo i propri ex-materiali da costruzione).
+	var units_per_slot := _units_per_slot(building, resource_rules.space_per_unit)
+	if units_per_slot <= 0:
+		return 0
 	var slots_used_by_this_resource: int = _slots_for_quantity(current_quantity, units_per_slot)
 	var slots_used_by_others: int = get_slots_used(building) - slots_used_by_this_resource
 	var max_slots_for_this_resource: int = max(building.rules.storage_slot_count - slots_used_by_others, 0)
 	var max_units_reachable: int = max_slots_for_this_resource * units_per_slot
-	var space_based_max: int = max(max_units_reachable - current_quantity, 0)
-
-	# Guard is_complete SOSTITUITO (2026-09-12, richiesta utente) — STESSO principio/STESSA
-	# motivazione di can_accept sopra: un cantiere può accettare SOLO le risorse richieste per
-	# costruirlo, fino al tetto esatto. Qui il tetto residuo (required_quantity - current_quantity)
-	# viene combinato con space_based_max sopra — MAI oltre nessuno dei due limiti: se il cantiere non
-	# ha spazio fisico configurato (rules.storage_slot_count/storage_space_per_slot ancora a 0, il
-	# default per molti tipi non-STORAGE — es. Pebble Circle) space_based_max resta 0 e vince comunque
-	# lui, coerente con "quanto altrimenti concederebbe un edificio completo" richiesto esplicitamente
-	# — nessuna eccezione speciale inventata qui per bypassarlo.
-	if not building.is_complete:
-		if not building.rules.required_materials.has(resource_name):
-			return 0
-		var required_quantity: int = int(building.rules.required_materials[resource_name])
-		var remaining_needed: int = max(required_quantity - current_quantity, 0)
-		return min(remaining_needed, space_based_max)
-
-	return space_based_max
+	return max(max_units_reachable - current_quantity, 0)
 
 
 # Preleva fino a `quantity_requested` unità di resource_name da questo edificio (2026-09-12,

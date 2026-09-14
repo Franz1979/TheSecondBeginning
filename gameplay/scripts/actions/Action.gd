@@ -32,6 +32,15 @@ var target: Variant = null
 # campo da qui, non da un nuovo posto.
 var required_tool_categories: Array[TaskTypes.ToolCategory] = []
 
+# Fasce d'età a cui è VIETATO eseguire questa Action (2026-09-12, richiesta utente — collegamento
+# di HumanTypes.AgeBand.INFANT al gameplay) — STESSO schema di required_tool_categories sopra: solo
+# struttura dati qui, la verifica vera vive nel chiamante (HumanIndividual.assign_task, vedi lì).
+# Vuoto di default = nessun vincolo. A differenza di required_tool_categories (ancora non
+# consultato da nessuno), questo campo viene letto da assign_task fin da subito: ogni Action
+# concreta esistente lo imposta a [HumanTypes.AgeBand.INFANT] nel proprio _init (vedi le
+# sottoclassi) — un INFANT non può eseguire nessuna Action oggi esistente.
+var disallowed_age_bands: Array[HumanTypes.AgeBand] = []
+
 
 # Variazione di stamina per questo istante/frame — negativa per un drain (es. Walk/Cut consumano),
 # positiva per un recharge (es. Rest recupera). `individual`/`delta` generici (Variant/float) così
@@ -49,6 +58,25 @@ var required_tool_categories: Array[TaskTypes.ToolCategory] = []
 # is_complete/activate/on_complete sotto): individual+context sono la coppia di riferimenti sempre
 # passati dal chiamante, gli altri parametri (delta, ...) variano per metodo.
 func get_stamina_delta(individual: Variant, context: Dictionary, delta: float) -> float:
+	return 0.0
+
+
+# Variazione di happiness per questo istante/frame (2026-09-13, richiesta utente) — STESSO
+# identico schema di get_stamina_delta sopra: firma identica, implementazione di base neutra
+# (0.0), ogni sottoclasse concreta la sovrascrive con il proprio tasso. Meccanismo PARALLELO e
+# INDIPENDENTE da get_stamina_delta, non un secondo valore di ritorno dello stesso metodo
+# (indagine dedicata, giro precedente: get_stamina_delta ritorna un solo float, nessuna firma
+# multi-valore già pronta) — HumanIndividualActionService.apply_action chiama ENTRAMBI i metodi
+# nello stesso frame, in sequenza (stamina prima, poi happiness).
+#
+# ATTENZIONE per chi implementa una sottoclassa (nota valida per ogni override esistente, vedi le
+# sottoclassi concrete): questo metodo NON deve mai duplicare la scrittura di stato di progresso
+# già fatta da get_stamina_delta nello stesso frame (es. _elapsed, Building.construction_progress)
+# — chiamato SEMPRE insieme a get_stamina_delta sullo stesso `delta`, un secondo incremento
+# raddoppierebbe silenziosamente la velocità di avanzamento dello step. Le sottoclassi con un
+# criterio di completamento temporale/di progresso LEGGONO quello stato (per sapere se l'azione è
+# già conclusa e quindi non deve più maturare happiness) ma non lo scrivono mai da qui.
+func get_happiness_delta(individual: Variant, context: Dictionary, delta: float) -> float:
 	return 0.0
 
 
@@ -84,6 +112,13 @@ func is_complete(individual: Variant, context: Dictionary) -> bool:
 # `context` — vedi get_stamina_delta sopra, stesso canale, ancora inutilizzato qui.
 func activate(individual: Variant, context: Dictionary) -> void:
 	individual.is_moving = false
+	# move_speed_multiplier (2026-09-13, bugfix RunAction) — STESSO principio/STESSO motivo di
+	# is_moving sopra: default 1.0 nella classe base così ogni futura azione (di movimento o
+	# stazionaria) lo ottiene corretto senza doverlo ripetere, WalkAction non ha bisogno di
+	# sovrascriverlo (1.0 è già la velocità normale), solo RunAction.activate() lo alza dopo aver
+	# chiamato questa implementazione base. Vedi HumanIndividual.move_speed_multiplier/
+	# HumanIndividualMovementService.advance_movement per i due consumatori.
+	individual.move_speed_multiplier = 1.0
 
 
 # Invocata UNA VOLTA quando is_complete(individual) diventa vero, PRIMA che la Task avanzi allo step
@@ -121,3 +156,25 @@ func get_save_data() -> Dictionary:
 # no-op di default, coerente con get_save_data() sopra.
 func load_save_data(data: Dictionary) -> void:
 	pass
+
+
+# Posizione FISICA richiesta da questo step per essere eseguito correttamente, o null se questo
+# step non ne ha una (2026-09-13, richiesta utente — fix "Walk di ritorno alla ripresa": una Task
+# sospesa in task_queue può riprendere con l'individuo fisicamente altrove rispetto a dove lo
+# step in corso si aspetta di trovarlo, es. PickUpAction/UnloadAction/RetrieveAction/
+# SetupSiteAction/ClearAction/BuildAction — tutte "stazionarie", nessuna verifica la posizione da
+# sole, vedi l'indagine precedente). Implementazione di base neutra (null): WalkAction/RestAction/
+# ThinkAction/LookAroundAction/RunAction/JumpAction NON la sovrascrivono — un Walk non ha bisogno
+# di un secondo Walk per "arrivare a se stesso" (ricalcola la distanza residua da solo al
+# prossimo activate()), le altre non hanno alcun vincolo di posizione. Le 6 Action stazionarie
+# elencate sopra la sovrascrivono, ciascuna risolvendo la propria posizione dal proprio formato
+# interno (target_position per PickUp, target_building per le altre 5 — vedi ciascuna).
+# `individual` (Variant, non HumanIndividual — stesso principio di ogni altro metodo qui) SERVE
+# per le 5 basate su target_building: la posizione di un Building è locale alla SUA macrocella
+# (target_building.micro_x/y), va convertita nel sistema di coordinate GLOBALE di
+# individual.position tramite lo stesso offset cross-macrocella già usato in
+# UnloadAction.on_complete (individual.home_macro_coords). `context` — stesso canale di ogni
+# altro metodo qui, nessuna delle 6 Action stazionarie tiene la propria posizione IN context (è
+# sempre un campo dell'istanza), passato solo per uniformità di firma con is_complete/activate.
+func get_required_position(individual: Variant, context: Dictionary) -> Variant:
+	return null

@@ -28,22 +28,31 @@ extends VBoxContainer
 # calcolare lo spazio occupato — questo pannello non conosce SecondaryResourceRules/
 # CaloricCalculator). La barra si SVUOTA man mano che si trasporta di più (mostra lo spazio
 # LIBERO, non quello occupato) — stessa logica di stamina_bar, che si svuota man mano che si
-# consuma. Il riquadro sotto (CarriedResourceBox, un ColorRect quadrato) è un PLACEHOLDER
-# (richiesta esplicita dell'utente: "le icone delle risorse non esistono ancora") — colorato
+# consuma. Il riquadro (CarriedResourceBox, un ColorRect quadrato) è un PLACEHOLDER (richiesta
+# esplicita dell'utente: "le icone delle risorse non esistono ancora") — colorato
 # deterministicamente in base al nome della risorsa trasportata (_placeholder_color_for_resource),
 # con l'iniziale maiuscola del nome al centro e la quantità sovrapposta in basso a destra; vuoto/
 # grigio e senza testo quando carried_resource_name è "".
 #
-# ToolSlot0..3 (2026-09-08, richiesta utente) — 4 quadratini FISSI sulla STESSA riga del
-# quadratino trasporto (carry_and_tools_row, un Control puro, non un Container — vedi
-# _layout_carry_and_tools_row per il perché), allineati a destra mentre il trasporto resta a
-# sinistra. Stile diverso apposta dal quadratino trasporto (richiesta esplicita): un Panel con
-# cornice visibile (StyleBoxFlat_tool_slot) invece di un ColorRect pieno, "T" attenuata (alpha
-# 0.35) come placeholder — nessun sistema di equip tool esiste ancora (vedi HumanIndividual.
-# equipped_tool_count, sempre 0), quindi sono SEMPRE vuoti/placeholder, nessuno stato da
-# aggiornare qui dentro. Se la larghezza del pannello non basta per tutti e 5 i quadratini a
-# dimensione naturale, vengono rimpiccioliti TUTTI con lo stesso fattore di scala (mai tagliati
-# fuori) — vedi _layout_carry_and_tools_row.
+# CarryRow (2026-09-13, richiesta utente — riordino barre: capacità di trasporto in fondo, il
+# riquadro trasportato sulla STESSA riga della barra, i tool in una riga a sé) — CarriedResourceBox
+# e CarryBar vivono ora insieme dentro CarryRow, un HBoxContainer semplice (non un Control
+# posizionato a mano come prima): bastano le size flags standard di Godot qui, CarriedResourceBox a
+# dimensione fissa (custom_minimum_size) e CarryBar con size_flags_horizontal=EXPAND_FILL per
+# occupare lo spazio restante — nessun bisogno dello scaling proporzionale manuale che serviva
+# quando questo riquadro condivideva la riga con i 4 tool (vedi ToolSlot0..3 sotto per quel caso,
+# ancora reale).
+#
+# ToolSlot0..3 (2026-09-08, richiesta utente) — 4 quadratini FISSI, ORA in una riga TUTTA LORO
+# (tools_row, un Control puro, non un Container — vedi _layout_tools_row per il perché: serve
+# comunque rimpicciolirli TUTTI con lo stesso fattore di scala quando lo spazio non basta, cosa che
+# nessun Container standard di Godot fa da solo), separata dalla riga trasporto sopra (2026-09-13,
+# richiesta utente — prima condividevano la riga col quadratino trasporto, ora quel riquadro è
+# salito sulla riga della barra). Stile diverso apposta dal quadratino trasporto (richiesta
+# esplicita): un Panel con cornice visibile (StyleBoxFlat_tool_slot) invece di un ColorRect pieno,
+# "T" attenuata (alpha 0.35) come placeholder — nessun sistema di equip tool esiste ancora (vedi
+# HumanIndividual.equipped_tool_count, sempre 0), quindi sono SEMPRE vuoti/placeholder, nessuno
+# stato da aggiornare qui dentro.
 #
 # Il "🎯 centra" è vissuto qui brevemente (2026-09-04) ma si è spostato di nuovo, stavolta
 # nell'header di GameInfoTabs.SelectionTab (Step 3 del piano "centra generalizzato", stessa
@@ -65,17 +74,75 @@ extends VBoxContainer
 # (GameTimeService.kill_individual_now), questo pannello resta "muto" come il resto.
 signal kill_requested(individual: HumanIndividual)
 
-@onready var sex_label: Label = $SexLabel
-@onready var age_label: Label = $AgeLabel
+# identity_label RIMOSSA (2026-09-13, richiesta utente — "perché la riga del center è vuota"):
+# nome/sesso/età/fascia vivono ORA solo nell'header di GameInfoTabs (title_label, sulla STESSA
+# riga del bottone 🎯), impostati da GameScene tramite set_selection_title — mai più duplicati qui
+# dentro. Vedi GameScene._update_individual_panel_content per individual_identity_line.
 @onready var activity_label: Label = $ActivityLabel
-@onready var stamina_label: Label = $StaminaLabel
-@onready var stamina_bar: ProgressBar = $StaminaBarMargin/StaminaBar
+# Azioni in coda (2026-09-13, richiesta utente) — sotto activity_label, in corsivo (FontVariation
+# con variation_transform di taglio — nessun font italico incluso nel progetto, "corsivo finto"
+# via shear, tecnica standard Godot 4: non verificabile visivamente da qui, segnalare se
+# l'inclinazione risultasse sbagliata/eccessiva). Nascosta di default — visible solo quando
+# individual.task_queue non è vuota, vedi show_individual sotto.
+@onready var queued_tasks_label: Label = $QueuedTasksLabel
+# VitalsBox/SkillsBox (2026-09-13, richiesta utente — "riquadro dedicato" con sfondo leggermente
+# più chiaro del blu della sidebar, STESSO colore per entrambi i riquadri pur restando separati)
+# — PanelContainer con StyleBoxFlat_section_box condiviso (stesso SubResource riusato in entrambi
+# i .tscn, non due StyleBox identici duplicati). I path di ogni Label/ProgressBar già esistente
+# sono scesi di 3 livelli (Box/BoxMargin/BoxContent) ma il loro comportamento in show_individual
+# resta identico, nessuna logica cambiata.
+@onready var vitals_section_label: Label = $VitalsBox/VitalsBoxMargin/VitalsBoxContent/VitalsSectionLabel
+@onready var stamina_label: Label = $VitalsBox/VitalsBoxMargin/VitalsBoxContent/StaminaLabel
+@onready var stamina_bar: ProgressBar = $VitalsBox/VitalsBoxMargin/VitalsBoxContent/StaminaBarMargin/StaminaBar
 @onready var carry_label: Label = $CarryLabel
-@onready var carry_bar: ProgressBar = $CarryBarMargin/CarryBar
-@onready var carry_and_tools_row: Control = $CarryAndToolsRowMargin/CarryAndToolsRow
-@onready var carried_resource_box: ColorRect = $CarryAndToolsRowMargin/CarryAndToolsRow/CarriedResourceBox
-@onready var carried_resource_initial_label: Label = $CarryAndToolsRowMargin/CarryAndToolsRow/CarriedResourceBox/InitialLabel
-@onready var carried_resource_quantity_label: Label = $CarryAndToolsRowMargin/CarryAndToolsRow/CarriedResourceBox/QuantityLabel
+@onready var carry_bar: ProgressBar = $CarryRowMargin/CarryRow/CarryBar
+# 5 nuovi parametri vitali (2026-09-13, richiesta utente) — STESSO identico schema di stamina_
+# label/stamina_bar sopra: un Label + un ProgressBar per parametro, nessuna differenza strutturale.
+@onready var hunger_label: Label = $VitalsBox/VitalsBoxMargin/VitalsBoxContent/HungerLabel
+@onready var hunger_bar: ProgressBar = $VitalsBox/VitalsBoxMargin/VitalsBoxContent/HungerBarMargin/HungerBar
+@onready var thirst_label: Label = $VitalsBox/VitalsBoxMargin/VitalsBoxContent/ThirstLabel
+@onready var thirst_bar: ProgressBar = $VitalsBox/VitalsBoxMargin/VitalsBoxContent/ThirstBarMargin/ThirstBar
+@onready var health_label: Label = $VitalsBox/VitalsBoxMargin/VitalsBoxContent/HealthLabel
+@onready var health_bar: ProgressBar = $VitalsBox/VitalsBoxMargin/VitalsBoxContent/HealthBarMargin/HealthBar
+@onready var happiness_label: Label = $VitalsBox/VitalsBoxMargin/VitalsBoxContent/HappinessLabel
+@onready var happiness_bar: ProgressBar = $VitalsBox/VitalsBoxMargin/VitalsBoxContent/HappinessBarMargin/HappinessBar
+@onready var loyalty_label: Label = $VitalsBox/VitalsBoxMargin/VitalsBoxContent/LoyaltyLabel
+@onready var loyalty_bar: ProgressBar = $VitalsBox/VitalsBoxMargin/VitalsBoxContent/LoyaltyBarMargin/LoyaltyBar
+# Sezione Skills (2026-09-13, richiesta utente) — 7 barre VERTICALI (fill_mode = FILL_BOTTOM_TO_TOP
+# nel .tscn — hunting aggiunta come 7ma dopo le prime 6, stesso trattamento identico), una per
+# skill. Ordine VISIVO qui allineato all'ordine nel .tscn (richiesta utente: management/builder
+# scambiati rispetto all'ordine di dichiarazione originale — leadership, management, builder,
+# transporter, gathering, cognition, hunting), mai un motivo funzionale, solo leggibilità/
+# preferenza visiva. Didascalie (2026-09-13, richiesta utente — nome COMPLETO invece della sigla a
+# 3 lettere, per starci scritte in verticale): ciascuna vive in un CaptionWrapper (Control semplice
+# a dimensione FISSA nel .tscn) che ospita la Label ruotata di -90° (rotation_degrees, pivot_offset
+# centrato — STESSA tecnica già nota in Godot per "testo verticale", non esiste un autowrap/
+# orientamento verticale nativo su Label) — SOTTO la barra, non sovrapposta: evita il problema di
+# leggibilità su sfondo misto grigio/colorato che una label sovrapposta alla barra avrebbe
+# richiesto (nessun bisogno di outline/contrasto dinamico). Geometria FISSA nel .tscn (mai
+# calcolata in codice, a differenza di _layout_tools_row): qui non serve alcun ridimensionamento
+# proporzionale a runtime, un solo layout costante per tutti e 7 basta.
+@onready var skills_section_label: Label = $SkillsBox/SkillsBoxMargin/SkillsBoxContent/SkillsSectionLabel
+@onready var skill_leadership_bar: ProgressBar = $SkillsBox/SkillsBoxMargin/SkillsBoxContent/SkillsRowMargin/SkillsRow/LeadershipColumn/LeadershipBar
+@onready var skill_leadership_caption: Label = $SkillsBox/SkillsBoxMargin/SkillsBoxContent/SkillsRowMargin/SkillsRow/LeadershipColumn/LeadershipCaptionWrapper/LeadershipCaption
+@onready var skill_management_bar: ProgressBar = $SkillsBox/SkillsBoxMargin/SkillsBoxContent/SkillsRowMargin/SkillsRow/ManagementColumn/ManagementBar
+@onready var skill_management_caption: Label = $SkillsBox/SkillsBoxMargin/SkillsBoxContent/SkillsRowMargin/SkillsRow/ManagementColumn/ManagementCaptionWrapper/ManagementCaption
+@onready var skill_builder_bar: ProgressBar = $SkillsBox/SkillsBoxMargin/SkillsBoxContent/SkillsRowMargin/SkillsRow/BuilderColumn/BuilderBar
+@onready var skill_builder_caption: Label = $SkillsBox/SkillsBoxMargin/SkillsBoxContent/SkillsRowMargin/SkillsRow/BuilderColumn/BuilderCaptionWrapper/BuilderCaption
+@onready var skill_transporter_bar: ProgressBar = $SkillsBox/SkillsBoxMargin/SkillsBoxContent/SkillsRowMargin/SkillsRow/TransporterColumn/TransporterBar
+@onready var skill_transporter_caption: Label = $SkillsBox/SkillsBoxMargin/SkillsBoxContent/SkillsRowMargin/SkillsRow/TransporterColumn/TransporterCaptionWrapper/TransporterCaption
+@onready var skill_gathering_bar: ProgressBar = $SkillsBox/SkillsBoxMargin/SkillsBoxContent/SkillsRowMargin/SkillsRow/GatheringColumn/GatheringBar
+@onready var skill_gathering_caption: Label = $SkillsBox/SkillsBoxMargin/SkillsBoxContent/SkillsRowMargin/SkillsRow/GatheringColumn/GatheringCaptionWrapper/GatheringCaption
+@onready var skill_cognition_bar: ProgressBar = $SkillsBox/SkillsBoxMargin/SkillsBoxContent/SkillsRowMargin/SkillsRow/CognitionColumn/CognitionBar
+@onready var skill_cognition_caption: Label = $SkillsBox/SkillsBoxMargin/SkillsBoxContent/SkillsRowMargin/SkillsRow/CognitionColumn/CognitionCaptionWrapper/CognitionCaption
+@onready var skill_hunting_bar: ProgressBar = $SkillsBox/SkillsBoxMargin/SkillsBoxContent/SkillsRowMargin/SkillsRow/HuntingColumn/HuntingBar
+@onready var skill_hunting_caption: Label = $SkillsBox/SkillsBoxMargin/SkillsBoxContent/SkillsRowMargin/SkillsRow/HuntingColumn/HuntingCaptionWrapper/HuntingCaption
+@onready var carried_resource_box: ColorRect = $CarryRowMargin/CarryRow/CarriedResourceBox
+@onready var carried_resource_initial_label: Label = $CarryRowMargin/CarryRow/CarriedResourceBox/InitialLabel
+@onready var carried_resource_quantity_label: Label = $CarryRowMargin/CarryRow/CarriedResourceBox/QuantityLabel
+# tools_row (2026-09-13, richiesta utente) — rinominato da carry_and_tools_row: ora ospita SOLO i
+# 4 ToolSlot, il quadratino trasportato è salito sulla riga della barra (vedi CarryRow sopra).
+@onready var tools_row: Control = $ToolsRowMargin/ToolsRow
 
 # Icona DISEGNATA correntemente inserita in carried_resource_box (2026-09-09, richiesta utente) —
 # null quando la risorsa trasportata non ne ha una (vedi IconRegistry.get_resource_icon_node), nel
@@ -90,10 +157,10 @@ var _carried_resource_icon_node: Control = null
 # servirà davvero rispecchiare quel campo). Sempre vuoti/placeholder oggi (nessun sistema di equip,
 # vedi HumanIndividual.equipped_tool_count) — nessuna logica di stato per slot, solo layout.
 @onready var tool_slot_boxes: Array[Control] = [
-	$CarryAndToolsRowMargin/CarryAndToolsRow/ToolSlot0,
-	$CarryAndToolsRowMargin/CarryAndToolsRow/ToolSlot1,
-	$CarryAndToolsRowMargin/CarryAndToolsRow/ToolSlot2,
-	$CarryAndToolsRowMargin/CarryAndToolsRow/ToolSlot3,
+	$ToolsRowMargin/ToolsRow/ToolSlot0,
+	$ToolsRowMargin/ToolsRow/ToolSlot1,
+	$ToolsRowMargin/ToolsRow/ToolSlot2,
+	$ToolsRowMargin/ToolsRow/ToolSlot3,
 ]
 @onready var id_label: Label = $IdLabel
 @onready var mother_label: Label = $MotherLabel
@@ -108,19 +175,22 @@ var _current_individual: HumanIndividual
 func _ready() -> void:
 	kill_button.text = tr("individual_kill_debug_button")
 	kill_button.pressed.connect(func(): kill_requested.emit(_current_individual))
-	# Layout riga trasporto+tool (2026-09-08) — ricalcolato ad ogni resize del pannello (larghezza
-	# sidebar, non fissa) oltre che una volta qui subito: vedi _layout_carry_and_tools_row.
-	carry_and_tools_row.resized.connect(_layout_carry_and_tools_row)
-	_layout_carry_and_tools_row()
+	# Layout riga tool (2026-09-08, semplificata 2026-09-13 quando il quadratino trasporto è
+	# uscito da questa riga) — ricalcolato ad ogni resize del pannello (larghezza sidebar, non
+	# fissa) oltre che una volta qui subito: vedi _layout_tools_row.
+	tools_row.resized.connect(_layout_tools_row)
+	_layout_tools_row()
 	clear()
 
 
 # Prende l'HumanIndividual intero (non piu' i soli name/sex, richiesta utente 2026-09-02: servono
-# anche id/mother_id/father_id/partner_id/source_group_ref, tutti gia' sull'oggetto) — age/
-# age_band restano calcolati dal chiamante (richiedono current_year/HumanRules, che questo
-# pannello non conosce, stesso principio di prima). max_stamina/current_stamina stesso
-# principio: gia' risolti dal chiamante (HumanCalculator.get_max_stamina), vedi commento
-# stamina_bar sopra.
+# anche id/mother_id/father_id/partner_id/source_group_ref, tutti gia' sull'oggetto). age/age_band
+# NON sono più parametri di questa funzione (rimossi 2026-09-13, richiesta utente): restano
+# calcolati dal chiamante (richiedono current_year/HumanRules, che questo pannello non conosce),
+# ma solo per comporre l'header di GameInfoTabs (vedi GameScene._update_individual_panel_content),
+# che ha sostituito la ex-IdentityLabel di questo pannello — nessun consumatore rimasto qui dentro.
+# max_stamina/current_stamina stesso principio: gia' risolti dal chiamante (HumanCalculator.
+# get_max_stamina), vedi commento stamina_bar sopra.
 #
 # activity_text (2026-09-07, richiesta utente — "cosa sta facendo questo individuo") già risolto e
 # tr()-ato dal chiamante (GameScene, via HumanIndividual.current_task.get_activity_description() o
@@ -131,39 +201,160 @@ func _ready() -> void:
 # used_carry_space) perché la barra mostra spazio LIBERO, non occupato — vedi commento su
 # carry_bar in testa al file. carried_resource_name/carried_quantity: letti direttamente
 # dall'HumanIndividual passato (stesso identico stato grezzo, nessuna risoluzione necessaria).
+#
+# max_hunger/current_hunger/.../max_loyalty/current_loyalty (2026-09-13, richiesta utente, 5 nuovi
+# parametri vitali) — STESSA firma-stile di max_stamina/current_stamina sopra, già risolti dal
+# chiamante: a differenza di max_stamina (che GameScene ricalcola fresco per i modificatori
+# volatili gravidanza/figlio-a-carico), questi 5 non hanno modificatori volatili, quindi il
+# chiamante li legge direttamente dai campi di HumanIndividual (stesso trattamento di
+# max_carry_capacity) — questo pannello resta comunque ignaro della differenza, riceve solo 10
+# float già pronti, stesso principio "muto" di ogni altro parametro qui.
 func show_individual(
-	individual: HumanIndividual, age: int, age_band: HumanTypes.AgeBand,
+	individual: HumanIndividual,
 	max_stamina: float, current_stamina: float, activity_text: String,
-	max_carry_capacity: float, free_carry_capacity: float
+	max_carry_capacity: float, free_carry_capacity: float,
+	max_hunger: float, current_hunger: float,
+	max_thirst: float, current_thirst: float,
+	max_health: float, current_health: float,
+	max_happiness: float, current_happiness: float,
+	max_loyalty: float, current_loyalty: float,
+	skill_leadership: float, skill_builder: float, skill_management: float,
+	skill_transporter: float, skill_gathering: float, skill_cognition: float,
+	skill_hunting: float,
+	queued_task_descriptions: Array[String] = []
 ) -> void:
 	visible = true
 	_current_individual = individual
-	sex_label.text = tr("sex_label").format({"sex": tr("sex_female") if individual.sex == HumanTypes.Sex.FEMALE else tr("sex_male")})
-	# Incinta sulla STESSA riga dell'age_band (richiesta utente, 2026-09-06) — non più una
-	# PregnantLabel separata sotto: appesa al valore di {band} invece che a un nodo/riga a parte.
-	var band_text: String = HumanTypes.AgeBand.keys()[age_band].capitalize()
-	if individual.is_pregnant:
-		band_text += ", " + tr("pregnant")
-	age_label.text = tr("individual_age_label").format({"age": age, "band": band_text})
+	# Riga identità (nome/sesso/età/fascia) NON più impostata qui (2026-09-13, richiesta utente) —
+	# vive ora SOLO nell'header di GameInfoTabs (title_label, impostato da GameScene tramite
+	# set_selection_title), sulla stessa riga del bottone 🎯. age/age_band NON sono più parametri
+	# di questa funzione (mai usati per altro qui dentro) — GameScene li calcola comunque per sé,
+	# vedi il commento di testa a show_individual.
 	activity_label.text = activity_text
+
+	# Azioni in coda (2026-09-13, richiesta utente) — sotto l'attività corrente, nascosta quando
+	# task_queue è vuota (il caso comune: oggi solo haul_resource/transport sono is_suspendable,
+	# quindi la coda resta vuota per la stragrande maggioranza degli individui). Descrizioni già
+	# risolte/tr()-ate dal chiamante (GameScene, stesso principio "pannello muto" di ogni altro
+	# parametro qui) — intestazione fissa (individual_queued_tasks_label, nessun {tasks} da
+	# formattare) + una riga numerata per elemento, richiesto esplicitamente dall'utente al posto
+	# dell'elenco su riga unica separato da virgole della prima versione.
+	if queued_task_descriptions.is_empty():
+		queued_tasks_label.visible = false
+	else:
+		queued_tasks_label.visible = true
+		var numbered_lines: Array[String] = []
+		for i in range(queued_task_descriptions.size()):
+			numbered_lines.append("%d. %s" % [i + 1, queued_task_descriptions[i]])
+		queued_tasks_label.text = tr("individual_queued_tasks_label") + "\n" + "\n".join(numbered_lines)
+
+	# Titolo sezione "Parametri vitali" (richiesta utente, stesso stile/stesso trattamento di
+	# skills_section_label sotto — coerenza visiva fra le due sezioni a barre del pannello).
+	vitals_section_label.text = tr("individual_vitals_section_label")
 
 	stamina_label.text = tr("individual_stamina_label")
 	stamina_bar.max_value = max_stamina
 	stamina_bar.value = current_stamina
 	stamina_bar.tooltip_text = "%d/%d" % [int(current_stamina), int(max_stamina)]
 
+	# 5 nuovi parametri vitali (2026-09-13) — 5 blocchi identici al blocco stamina sopra, copiati
+	# uno per uno (stessa forma esatta, nessuna astrazione condivisa: coerente con lo stile già
+	# in uso qui per stamina/carry, mai un helper generico per "una barra qualsiasi"). Ordine QUI
+	# allineato all'ordine VISIVO nel pannello (riordinato 2026-09-13, richiesta utente: capacità di
+	# trasporto spostata in fondo) — mai un motivo funzionale, solo leggibilità.
+	hunger_label.text = tr("individual_hunger_label")
+	hunger_bar.max_value = max_hunger
+	hunger_bar.value = current_hunger
+	hunger_bar.tooltip_text = "%d/%d" % [int(current_hunger), int(max_hunger)]
+
+	thirst_label.text = tr("individual_thirst_label")
+	thirst_bar.max_value = max_thirst
+	thirst_bar.value = current_thirst
+	thirst_bar.tooltip_text = "%d/%d" % [int(current_thirst), int(max_thirst)]
+
+	health_label.text = tr("individual_health_label")
+	health_bar.max_value = max_health
+	health_bar.value = current_health
+	health_bar.tooltip_text = "%d/%d" % [int(current_health), int(max_health)]
+
+	happiness_label.text = tr("individual_happiness_label")
+	happiness_bar.max_value = max_happiness
+	happiness_bar.value = current_happiness
+	happiness_bar.tooltip_text = "%d/%d" % [int(current_happiness), int(max_happiness)]
+
+	loyalty_label.text = tr("individual_loyalty_label")
+	loyalty_bar.max_value = max_loyalty
+	loyalty_bar.value = current_loyalty
+	loyalty_bar.tooltip_text = "%d/%d" % [int(current_loyalty), int(max_loyalty)]
+
+	# Sezione Skills (2026-09-13, richiesta utente) — 6 blocchi identici, stessa forma esatta dei
+	# blocchi vitali sopra (nessuna astrazione condivisa, coerente con lo stile del file). max_value
+	# = 1000.0 FISSO (non un parametro ricevuto: le skill non hanno un massimo variabile come i
+	# vitali, vedi HumanIndividual.gd). Didascalie (LDR/BLD/...) tr()-ate qui insieme al resto,
+	# anche se il loro testo non dipende dai dati dell'individuo — stesso trattamento "ririsolto ad
+	# ogni show_individual" già riservato a carry_label/stamina_label sopra, per coerenza.
+	skills_section_label.text = tr("individual_skills_section_label")
+
+	skill_leadership_bar.max_value = 1000.0
+	skill_leadership_bar.value = skill_leadership
+	skill_leadership_bar.tooltip_text = "%d/1000" % [int(skill_leadership)]
+	skill_leadership_caption.text = tr("skill_leadership_label")
+
+	skill_builder_bar.max_value = 1000.0
+	skill_builder_bar.value = skill_builder
+	skill_builder_bar.tooltip_text = "%d/1000" % [int(skill_builder)]
+	skill_builder_caption.text = tr("skill_builder_label")
+
+	skill_management_bar.max_value = 1000.0
+	skill_management_bar.value = skill_management
+	skill_management_bar.tooltip_text = "%d/1000" % [int(skill_management)]
+	skill_management_caption.text = tr("skill_management_label")
+
+	skill_transporter_bar.max_value = 1000.0
+	skill_transporter_bar.value = skill_transporter
+	skill_transporter_bar.tooltip_text = "%d/1000" % [int(skill_transporter)]
+	skill_transporter_caption.text = tr("skill_transporter_label")
+
+	skill_gathering_bar.max_value = 1000.0
+	skill_gathering_bar.value = skill_gathering
+	skill_gathering_bar.tooltip_text = "%d/1000" % [int(skill_gathering)]
+	skill_gathering_caption.text = tr("skill_gathering_label")
+
+	skill_cognition_bar.max_value = 1000.0
+	skill_cognition_bar.value = skill_cognition
+	skill_cognition_bar.tooltip_text = "%d/1000" % [int(skill_cognition)]
+	skill_cognition_caption.text = tr("skill_cognition_label")
+
+	skill_hunting_bar.max_value = 1000.0
+	skill_hunting_bar.value = skill_hunting
+	skill_hunting_bar.tooltip_text = "%d/1000" % [int(skill_hunting)]
+	skill_hunting_caption.text = tr("skill_hunting_label")
+
+	# Capacità di trasporto (2026-09-13, richiesta utente — spostata in FONDO alle barre, dopo i 5
+	# nuovi parametri vitali: nessun motivo funzionale, solo l'ordine visivo concordato) — la barra
+	# stessa vive ora dentro CarryRow insieme a CarriedResourceBox (vedi commento in testa al file),
+	# ma resta un ProgressBar identico a prima: stessa formula/stesso tooltip.
 	carry_label.text = tr("individual_carry_label")
 	carry_bar.max_value = max_carry_capacity
 	carry_bar.value = free_carry_capacity
 	carry_bar.tooltip_text = "%d/%d" % [int(free_carry_capacity), int(max_carry_capacity)]
+
 	_update_carried_resource_box(individual.carried_resource_name, individual.carried_quantity)
-	# Ri-layout esplicito (2026-09-08) — oltre al collegamento a carry_and_tools_row.resized in
+	# Ri-layout esplicito dei tool (2026-09-08) — oltre al collegamento a tools_row.resized in
 	# _ready(): coprire anche il caso "la riga non cambia dimensione tra due individui mostrati in
 	# sequenza" (nessun resize emesso, ma il pannello potrebbe comunque non essere mai stato
 	# disegnato mentre era nascosto — clear() lo mette invisible, un Control invisibile non
 	# garantisce dimensioni aggiornate). Economico (poche assegnazioni di position/size), nessun
 	# problema a richiamarlo qui ad ogni refresh.
-	_layout_carry_and_tools_row()
+	#
+	# call_deferred, non una chiamata diretta (bugfix 2026-09-13, richiesta utente) — alla PRIMA
+	# selezione di un individuo in una sessione tools_row.size.x risultava ancora 0/stantio in
+	# questo stesso frame — `visible` è appena passato da false a true qui sopra, e Godot
+	# ricalcola/ordina i figli di un Container in modo differito, non sincrono, quindi una lettura
+	# immediata di .size.x vedeva la larghezza di QUANDO il pannello era nascosto, non quella reale
+	# della sidebar. call_deferred esegue dopo che Godot ha già ordinato/dimensionato i Container di
+	# questo frame, quando tools_row.size.x riflette finalmente la larghezza vera.
+	call_deferred("_layout_tools_row")
 
 	var group := individual.source_group_ref
 	var folk_id: int = group.folk_ref.id if group != null and group.folk_ref != null else -1
@@ -189,11 +380,12 @@ func _format_id(value: int) -> String:
 	return "—" if value < 0 else str(value)
 
 
-# Dimensioni/spaziatura NATURALI (2026-09-08, richiesta utente — slot tool) — usate come punto di
-# partenza da _layout_carry_and_tools_row sotto, che le rimpicciolisce TUTTE proporzionalmente
-# (stesso fattore di scala per il quadratino trasporto e i 4 tool) quando non entrano nella
-# larghezza disponibile del pannello, invece di tagliarle fuori.
-const CARRY_BOX_SIZE: float = 36.0
+# Dimensioni/spaziatura NATURALI dei 4 tool slot (2026-09-08, richiesta utente) — usate come punto
+# di partenza da _layout_tools_row sotto, che le rimpicciolisce TUTTE proporzionalmente quando non
+# entrano nella larghezza disponibile del pannello, invece di tagliarle fuori. CARRY_BOX_SIZE
+# RIMOSSA (2026-09-13): il quadratino trasporto è uscito da questa riga (vedi CarryRow in testa al
+# file), il suo dimensionamento è ora gestito da Godot stesso (custom_minimum_size dentro un
+# HBoxContainer), nessun calcolo manuale più necessario per lui.
 const TOOL_BOX_SIZE: float = 28.0
 const BOX_SPACING: float = 6.0
 
@@ -263,47 +455,36 @@ func _update_carried_resource_box(resource_name: String, quantity: int) -> void:
 	carried_resource_quantity_label.visible = true
 
 
-# Posiziona/dimensiona il quadratino trasporto (sinistra) e i 4 quadratini tool (destra) dentro
-# carry_and_tools_row (2026-09-08, richiesta utente) — Control semplice, non un Container: i
-# figli sono posizionati/dimensionati A MANO qui invece che affidati al layout automatico di un
-# HBoxContainer, perché serve un comportamento che nessun Container standard di Godot offre da
-# solo: quando la larghezza disponibile non basta per la dimensione NATURALE di tutti e 5 i
-# quadratini, li si rimpicciolisce TUTTI con lo STESSO fattore di scala (mai un sottoinsieme
-# tagliato fuori, richiesta esplicita dell'utente) — un HBoxContainer con size_flags_horizontal
-# EXPAND_FILL comprimerebbe solo i figli "expand", non li scalerebbe proporzionalmente insieme,
-# e comunque non saprebbe spingere SOLO il gruppo tool a destra mantenendo il trasporto a sinistra
-# senza un terzo nodo spaziatore ad hoc.
+# Posiziona/dimensiona i 4 quadratini tool dentro tools_row (2026-09-08, richiesta utente —
+# SEMPLIFICATA 2026-09-13 quando il quadratino trasporto è uscito da questa riga, vedi CarryRow in
+# testa al file: prima questa funzione posizionava ANCHE lui, ora si occupa solo dei 4 tool)
+# — Control semplice, non un Container: i figli sono posizionati/dimensionati A MANO qui invece
+# che affidati al layout automatico di un HBoxContainer, perché serve un comportamento che nessun
+# Container standard di Godot offre da solo: quando la larghezza disponibile non basta per la
+# dimensione NATURALE di tutti e 4 i quadratini, li si rimpicciolisce TUTTI con lo STESSO fattore
+# di scala (mai un sottoinsieme tagliato fuori, richiesta esplicita dell'utente) — un HBoxContainer
+# con size_flags_horizontal EXPAND_FILL comprimerebbe solo i figli "expand", non li scalerebbe
+# proporzionalmente insieme.
 #
-# Se c'è spazio a sufficienza (available_width >= larghezza naturale totale): dimensioni naturali,
-# i tool si allineano al bordo destro della riga con uno spazio vuoto in mezzo. Se non basta: scale
-# < 1.0 applicato a box/spaziatura di ENTRAMBI i gruppi allo stesso modo, i tool restano subito a
-# destra del quadratino trasporto (nessun vuoto residuo). La formula `max(...)` sotto copre
-# entrambi i casi con un solo calcolo, senza un ramo if/else esplicito: quando c'è spazio la
-# sottrazione (available_width - tools_group_width) domina (spinge a destra); quando è tutto
-# compresso, il minimo garantito (carry_size + spacing) coincide già col punto in cui i tool
-# finiscono di essere spinti a destra, dato che available_width è stato appena reso capiente esatto
-# da `scale`.
-func _layout_carry_and_tools_row() -> void:
+# Allineati a SINISTRA (da x=0), non più al bordo destro come quando condividevano la riga col
+# quadratino trasporto (quel push-a-destra serviva a tenerli visivamente separati da lui sulla
+# STESSA riga — ora che sono soli sulla propria riga, quel motivo non esiste più: partire da
+# sinistra è la posizione più naturale, coerente con ogni altra label/riga di questo pannello).
+func _layout_tools_row() -> void:
 	var tool_count := tool_slot_boxes.size()
 	var natural_total_width: float = (
-		CARRY_BOX_SIZE + BOX_SPACING + float(tool_count) * TOOL_BOX_SIZE + float(max(tool_count - 1, 0)) * BOX_SPACING
+		float(tool_count) * TOOL_BOX_SIZE + float(max(tool_count - 1, 0)) * BOX_SPACING
 	)
-	var available_width: float = carry_and_tools_row.size.x
+	var available_width: float = tools_row.size.x
 	var scale: float = 1.0
 	if available_width > 0.0 and natural_total_width > available_width:
 		scale = available_width / natural_total_width
 
-	var carry_size: float = CARRY_BOX_SIZE * scale
 	var tool_size: float = TOOL_BOX_SIZE * scale
 	var spacing: float = BOX_SPACING * scale
-	var row_height: float = carry_and_tools_row.size.y
+	var row_height: float = tools_row.size.y
 
-	carried_resource_box.position = Vector2(0.0, (row_height - carry_size) / 2.0)
-	carried_resource_box.size = Vector2(carry_size, carry_size)
-
-	var tools_group_width: float = float(tool_count) * tool_size + float(max(tool_count - 1, 0)) * spacing
-	var tools_start_x: float = max(available_width - tools_group_width, carry_size + spacing)
 	for i in range(tool_count):
 		var box := tool_slot_boxes[i]
-		box.position = Vector2(tools_start_x + float(i) * (tool_size + spacing), (row_height - tool_size) / 2.0)
+		box.position = Vector2(float(i) * (tool_size + spacing), (row_height - tool_size) / 2.0)
 		box.size = Vector2(tool_size, tool_size)

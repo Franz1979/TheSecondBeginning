@@ -2,23 +2,30 @@ class_name EraRules
 extends Resource
 
 # Regole di un'Era geologico/tecnologica (un file .tres per Era, stesso principio di HumanRules per
-# Folk) — modulano l'aspettativa di vita SENZA introdurre una nuova age band: HumanTypes.AgeBand
-# resta a 5 valori (CHILD, TEENAGER, FERTILE_ADULT, MATURE_ADULT, OLD) in ogni Era, solo la durata
-# reale di ciascuna fascia cambia. Le fasce di gioventù/fertilità (CHILD/TEENAGER/FERTILE_ADULT)
-# restano concettualmente invariate tra Ere — è l'aspettativa di vita ADULTA (MATURE_ADULT/OLD) a
-# allungarsi/accorciarsi con l'Era, coerentemente con l'obiettivo dichiarato di questo passo.
+# Folk) — modulano l'aspettativa di vita fascia per fascia: HumanTypes.AgeBand ha 6 valori (INFANT,
+# CHILD, TEENAGER, FERTILE_ADULT, MATURE_ADULT, OLD — INFANT AGGIUNTA 2026-09-12, richiesta utente:
+# DECISIONE RIBALTATA rispetto alla nota storica di questo file, che escludeva esplicitamente una
+# nuova age band per l'eccezione 0-1 anno, gestita allora fuori da questo enum — ora è una fascia
+# a pieno titolo, dinamica per Era come le altre). Le fasce di gioventù/fertilità (CHILD/TEENAGER/
+# FERTILE_ADULT) restano concettualmente invariate tra Ere — è l'aspettativa di vita ADULTA
+# (MATURE_ADULT/OLD) a allungarsi/accorciarsi con l'Era, coerentemente con l'obiettivo dichiarato
+# di questo passo.
 #
 # SOLO dato per ora — NESSUN collegamento esiste ancora, deliberatamente rimandato a una sessione
 # futura: nessuna Era "attiva" (nessun current_era da nessuna parte), nessuna logica che applichi
 # longevity_multiplier_by_age a HumanRules.age_band_durations_male/female, nessun trigger di
-# avanzamento tech→era. HumanRules non referenzia questa classe, e viceversa.
+# avanzamento tech→era. HumanRules non referenzia questa classe, e viceversa. Il collegamento di
+# INFANT al gameplay vero (movimento/aggancio alla madre) è stato fatto 2026-09-12 (vedi
+# HumanIndividualController.gd/GameScene.gd/Action.gd) — min_birth_spacing_years sotto resta
+# comunque un campo separato, mai letto per quel collegamento (vedi il commento lì per il perché).
 
 @export_group("Longevity")
 # Moltiplicatore applicato (in una sessione futura) a HumanRules.age_band_durations_male/female —
 # stessa indicizzazione per age band di size_multiplier_by_age/caloric_multiplier_by_age/
-# stamina_multiplier_by_age in HumanRules (0=CHILD, 1=TEENAGER, 2=FERTILE_ADULT, 3=MATURE_ADULT,
-# 4=OLD). 1.0 = durata invariata rispetto al dato base di HumanRules, <1.0 = fascia accorciata.
-@export var longevity_multiplier_by_age: Array[float] = [1.0, 1.0, 1.0, 1.0, 1.0]
+# stamina_multiplier_by_age in HumanRules (0=INFANT, 1=CHILD, 2=TEENAGER, 3=FERTILE_ADULT,
+# 4=MATURE_ADULT, 5=OLD — ESTESO 2026-09-12 per la nuova fascia INFANT in testa). 1.0 = durata
+# invariata rispetto al dato base di HumanRules, <1.0 = fascia accorciata.
+@export var longevity_multiplier_by_age: Array[float] = [0.0, 1.0, 1.0, 1.0, 1.0, 1.0]
 
 @export_group("Reproduction")
 # Moltiplicatori scalari (non per age band, a differenza di longevity_multiplier_by_age sopra —
@@ -38,6 +45,15 @@ extends Resource
 # al Folk. Default di classe = 1 (richiesta utente, 2026-09-06) come fallback se un .tres futuro
 # non lo valorizzasse esplicitamente — paleolithic.tres lo imposta comunque esplicitamente, mai
 # lasciato al default implicito.
+#
+# NON toccato dall'introduzione di HumanTypes.AgeBand.INFANT (2026-09-12, richiesta esplicita
+# utente) — concettualmente imparentato con la durata di HumanTypes.AgeBand.INFANT (entrambi oggi
+# coincidono nel Paleolitico: 1 anno), ma sono due valori INDIPENDENTI — aggiornali entrambi con
+# intenzione se li si vuole tenere sincronizzati, nessun collegamento automatico. Il collegamento al
+# gameplay (movimento/aggancio alla madre) ORA passa per age_band == HumanTypes.AgeBand.INFANT
+# (HumanIndividualController._try_set_target/GameScene._sync_dependent_child_position), MAI più da
+# questo campo — min_birth_spacing_years continua a governare SOLO lo spacing tra nascite
+# (HumanConceptionIndividualService), un consumo del tutto separato.
 @export var min_birth_spacing_years: int = 1
 
 @export_group("Stamina")

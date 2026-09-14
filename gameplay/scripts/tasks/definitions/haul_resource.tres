@@ -8,3 +8,4 @@
 script = ExtResource("1_def")
 task_name = "task_haul_resource_name"
 steps = [ExtResource("2_walk"), ExtResource("3_pickup")]
+is_suspendable = true

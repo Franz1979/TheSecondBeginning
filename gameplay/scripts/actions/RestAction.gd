@@ -24,6 +24,13 @@ extends Action
 # scelto, richiesta utente) — solo il significato cambia, da "al secondo" a "al giorno intero".
 const STAMINA_REGEN_PER_DAY: float = 100.0
 
+# Recupero di HAPPINESS al giorno (2026-09-13, richiesta utente: "+50.0/day") — tasso FISSO,
+# nessun moltiplicatore rest_multiplier/clamp al tetto massimo (a differenza di get_stamina_delta
+# sotto): riposare fa bene all'umore ovunque ci si trovi, non solo a chi ha una casa migliore —
+# nessun clamp aggiuntivo richiesto (il tetto giornaliero esiste già in HumanVitalsIndividualService.
+# _clamp_current_to_max, vedi indagine dedicata), quindi qui basta un ritorno incondizionato.
+const HAPPINESS_REGEN_PER_DAY: float = 50.0
+
 # Moltiplicatore del recupero per-giorno (2026-09-12, richiesta utente — campo base per la Rest
 # Task esplicita, poi COLLEGATO lo stesso giorno: GameScene._resolve_rest_target risolve 1.4 se
 # individual.house_id punta a una Building con BuildingRules.rest_multiplier valorizzato, 1.0
@@ -36,6 +43,9 @@ var rest_multiplier: float = 1.0
 func _init(p_rest_multiplier: float = 1.0) -> void:
 	target = null
 	rest_multiplier = p_rest_multiplier
+	# INFANT non può eseguire questa Action (2026-09-12, richiesta utente — collegamento AgeBand.
+	# INFANT al gameplay, vedi Action.disallowed_age_bands).
+	disallowed_age_bands = [HumanTypes.AgeBand.INFANT]
 
 
 # Nessun calcolo superfluo una volta pieno: ritorna 0.0 immediatamente se la stamina è già al
@@ -47,6 +57,14 @@ func get_stamina_delta(individual: Variant, context: Dictionary, delta: float) -
 		return 0.0
 	var regen: float = STAMINA_REGEN_PER_DAY * rest_multiplier * delta
 	return min(regen, individual.max_stamina - individual.current_stamina)
+
+
+# Tasso fisso incondizionato (2026-09-13, richiesta utente) — nessun clamp/rest_multiplier come
+# get_stamina_delta sopra, nessuna guardia su current_happiness>=max_happiness: il tetto viene
+# comunque applicato una volta al giorno da HumanVitalsIndividualService, nessun bisogno di
+# duplicare quella logica qui.
+func get_happiness_delta(individual: Variant, context: Dictionary, delta: float) -> float:
+	return HAPPINESS_REGEN_PER_DAY * delta
 
 
 # Completa quando la stamina ha raggiunto il tetto massimo (2026-09-12, richiesta utente — Rest

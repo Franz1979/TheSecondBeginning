@@ -13,6 +13,8 @@ idea_paleolithic_constructions,Paleolithic Constructions
 sex_label,Sex: {sex}
 sex_female,Female
 sex_male,Male
+sex_female_short,F
+sex_male_short,M
 vegetation_cut_button,Cut
 vegetation_subtype_label,Subtype: {subtype}
 vegetation_age_label,Age: {age_band} ({years} years)
@@ -31,7 +33,22 @@ task_daydream_step_return,Walking back to the village center
 task_daydream_step_deposit,Sharing an idea
 task_daydream_step_leave,Walking away from the village center
 pregnant,Pregnant
+individual_vitals_section_label,Vital parameters:
+individual_identity_line,{name} - {sex} - {age} - {band}
 individual_stamina_label,Workforce:
+individual_hunger_label,Hunger:
+individual_thirst_label,Thirst:
+individual_health_label,Health:
+individual_happiness_label,Happiness:
+individual_loyalty_label,Loyalty:
+individual_skills_section_label,Skills:
+skill_leadership_label,Leadership
+skill_builder_label,Builder
+skill_management_label,Management
+skill_transporter_label,Transporter
+skill_gathering_label,Gathering
+skill_cognition_label,Cognition
+skill_hunting_label,Hunting
 individual_id_label,ID: {id} (Folk {folk}, Group {group})
 individual_mother_id_label,Mother ID: {id}
 individual_father_id_label,Father ID: {id}
@@ -47,9 +64,11 @@ task_debug_panel_header,Debug: Tasks
 task_debug_panel_clear_button,Clear
 task_debug_panel_refresh_button_tooltip,Refresh list
 task_debug_panel_unnamed_task,(unnamed)
+individual_queued_tasks_label,Queued actions:
 building_status_label,Status: {status}
 building_status_complete,Complete
 building_status_under_construction,Under construction
+building_awaiting_material_label,This site still needs {quantity} {material} to get started
 building_durability_label,Durability: {current}/{max}
 building_built_year_label,Built: year {year}
 building_not_yet_built,Not yet built
@@ -72,8 +91,16 @@ death_list,Death list
 notification_birth,{name} was born, {mother}'s {offspring_word}
 notification_stillbirth,{mother} lost the child during childbirth
 notification_idea_completed,New idea completed: {idea}
+notification_building_material_needed,Material needed to start construction of {building}
 death_cause_childbirth,childbirth
 birth_verb_male,born
 birth_verb_female,born
 offspring_word_male,son
 offspring_word_female,daughter
+help_building_materials_menu_link,Buildings and materials
+help_building_materials_title,Buildings and materials
+help_building_materials_setup_vs_construction,"Building a structure requires material in two separate phases: first setting up the construction site (a fixed amount of sticks per microcell the building occupies), then the actual construction, which will require its own materials in the future."
+help_building_materials_manual,"Right now the game never creates a Task on its own to fetch this material: if it's missing, the site simply waits. You have to bring it there yourself, by manually commanding an individual (gather the material and deposit it at the site)."
+help_building_materials_deposit_bonus,"One exception: the very first Deposit Site you build, while the village has no other building with real storage space yet, gets its setup material for free, so you can always get started even with no stock."
+help_building_materials_future,"This manual supply will be needed until you unlock the future Task management and warehouse management systems - from that point on, the game will be able to handle it on its own."
+notification_build_capacity_full,"This building is already being built by {current} of a maximum {max} workers."
