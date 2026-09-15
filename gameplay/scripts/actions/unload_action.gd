@@ -207,6 +207,19 @@ func activate(individual: Variant, context: Dictionary) -> void:
 			print("[UNLOAD] activate: target_building id=%d non ha ALCUN posto per '%s' (max_depositable=0) — deposito istantaneo nullo, on_complete gestirà il re-routing dell'intero carico." % [
 				target_building.id, individual.carried_resource_name
 			])
+	# Guardia zaino GIÀ vuoto all'arrivo (2026-09-16, richiesta utente — "Scaricare risorsa" attivata
+	# per errore, poi se lo zaino si svuota per un motivo indipendente [es. un'altra Task/comando che
+	# nel frattempo consuma/scarta il carico] la Task andava in tilt") — RAMO ESPLICITO, PRIMA
+	# implicito: se `individual.carried_quantity <= 0` già al momento di questa activate(), il ramo
+	# sopra (riga 188) non entra affatto (guardia `carried_quantity > 0`), quindi _duration/
+	# _total_stamina_cost restano a 0.0 (già azzerati poco sopra) — is_complete() sotto risulta VERO
+	# da subito (0.0 >= 0.0), esattamente come "task_activity_idle": questo step (e quindi l'intera
+	# Task "Scaricare risorsa", che è [Walk, Unload]) si DICHIARA COMPLETO immediatamente, zero
+	# costo, nessun deposito tentato — mai un errore/blocco. Log dedicato per diagnosticare il caso
+	# (prima silenzioso, nessun ramo lo intercettava esplicitamente).
+	elif deposit_kind == DepositKind.RESOURCE and target_building != null and individual.carried_quantity <= 0:
+		if DebugLogging.ENABLED:
+			print("[UNLOAD] activate: zaino già vuoto all'arrivo (target_building id=%d) — nulla da scaricare, step dichiarato completo istantaneamente, nessun costo." % target_building.id)
 	# Riverifica ramo PENSIERO (2026-09-12, richiesta utente — bugfix "deposito nel vuoto") — STESSO
 	# principio/STESSO momento della riverifica ramo RESOURCE appena sopra (activate(), quando
 	# l'individuo arriva davvero): un pensiero non ha un concetto di "capacità residua" da

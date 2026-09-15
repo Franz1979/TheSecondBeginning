@@ -100,7 +100,8 @@ const STORAGE_SLOT_FILL_BAR_FILL_COLOR := Color(1.0, 1.0, 1.0, 0.85)
 
 @onready var status_label: Label = $StatusLabel
 @onready var construction_phase_label: Label = $ConstructionPhaseLabel
-@onready var construction_progress_bar: ProgressBar = $ConstructionProgressBar
+@onready var construction_progress_bar_margin: MarginContainer = $ConstructionProgressBarMargin
+@onready var construction_progress_bar: ProgressBar = $ConstructionProgressBarMargin/ConstructionProgressBar
 @onready var awaiting_material_label: Label = $AwaitingMaterialLabel
 @onready var durability_label: Label = $DurabilityLabel
 @onready var built_year_label: Label = $BuiltYearLabel
@@ -157,27 +158,32 @@ func show_building(building: Building, residents_display_data: Array[Dictionary]
 	_refresh_construction_progress(building)
 	# "In attesa di materiale" (2026-09-14, richiesta utente — segnalazione player per un cantiere
 	# bloccato per mancanza di materiale) — SOLO visibile/valorizzata mentre building.is_awaiting_
-	# material resta true (Building.gd/HumanIndividualActionService._resolve_material_shortage
-	# gestiscono la transizione, questo pannello resta "muto": legge, non decide). Sparisce da sé al
-	# prossimo show_building() successivo alla risoluzione (bonus/deposito manuale sufficiente),
-	# stesso principio "ricostruito per intero ad ogni chiamata" già dichiarato per l'intero
-	# pannello. TESTO ARRICCHITO (2026-09-14, richiesta utente — "specifica solo quale [materiale] e
-	# per quale fase", STESSO trigger di prima, is_awaiting_material invariato: solo il contenuto
-	# del messaggio cambia) — quantità/materiale/nome-fase risolti da _resolve_setup_site_material_
-	# shortage sotto, STESSA formula/STESSA fonte (BuildingRules.setup_site_material_name/
-	# setup_site_material_per_cell) già usata da SetupSiteAction.get_missing_material_quantity/
-	# BuildingStorageService — "fase" oggi è sempre "allestimento del cantiere" (SetupSite, l'unica
-	# fase con un vero fabbisogno materiale, vedi BuildingRules.required_materials per quella
-	# futura/non ancora attiva), esplicitato comunque nel testo per non dare per scontato che sia
-	# ovvio al player, e per restare corretto il giorno in cui una seconda fase (costruzione vera e
-	# propria) avrà il proprio fabbisogno.
+	# material resta true (HumanIndividualActionService._resolve_material_shortage gestisce la
+	# transizione, questo pannello resta "muto": legge, non decide). Sparisce da sé al prossimo
+	# show_building() successivo alla risoluzione (bonus/deposito manuale sufficiente).
+	#
+	# DUE TESTI POSSIBILI (2026-09-14, richiesta utente — "step 2 della build": BuildAction ora ha un
+	# proprio fabbisogno, potenzialmente PIÙ risorse insieme, a differenza della singola risorsa di
+	# SetupSite) — quale mostrare deciso da _resolve_active_construction_phase (STESSA funzione già
+	# usata da _refresh_construction_progress sopra, un solo punto che decide "in che fase siamo",
+	# mai due copie di quella logica): fase "build" -> lista di TUTTE le risorse ancora mancanti
+	# (_resolve_build_material_shortage, STESSA formula di BuildAction.get_missing_materials, letta
+	# qui perché il pannello non ha un'istanza di BuildAction — solo il Building); qualunque altra
+	# fase (setup_site, o is_awaiting_material rimasto true per una transizione limite) -> messaggio
+	# singolo di prima, invariato.
 	awaiting_material_label.visible = building.is_awaiting_material
 	if building.is_awaiting_material:
-		var shortage := _resolve_setup_site_material_shortage(building)
-		awaiting_material_label.text = tr("building_awaiting_material_label").format({
-			"quantity": shortage["quantity"],
-			"material": shortage["material_display_name"],
-		})
+		if _resolve_active_construction_phase(building) == "build":
+			var missing := _resolve_build_material_shortage(building)
+			awaiting_material_label.text = tr("building_awaiting_material_build_label").format({
+				"list": _format_missing_materials_list(missing),
+			})
+		else:
+			var shortage := _resolve_setup_site_material_shortage(building)
+			awaiting_material_label.text = tr("building_awaiting_material_label").format({
+				"quantity": shortage["quantity"],
+				"material": shortage["material_display_name"],
+			})
 
 	var max_durability: int = building.rules.max_durability if building.rules != null else 0
 	durability_label.text = tr("building_durability_label").format({"current": building.current_durability, "max": max_durability})
@@ -199,17 +205,29 @@ func clear() -> void:
 	_current_building = null
 
 
+# Fase di lavorazione ATTIVA (2026-09-14, richiesta utente — ESTRATTA da _refresh_construction_
+# progress: ora serve anche alla logica dell'alert materiale sotto, un solo punto che decide "in che
+# fase siamo" invece di due copie della stessa logica) — "" = edificio completo/nessuna fase attiva.
+# Legge tre flag già esistenti su Building (nessun nuovo "stato di fase" introdotto): site_setup_
+# complete (SetupSiteAction, vedi Building.gd) -> construction_progress["space_reserved"] (settato
+# UNA SOLA VOLTA da ClearAction.on_complete, riusato qui come "Clear è concluso" — STESSA chiave già
+# usata per l'idempotenza della riserva di spazio, non una nuova) -> building.is_complete
+# (BuildAction.on_complete). Le fasi non ancora raggiunte restano implicitamente "non attive" per
+# costruzione (l'ordine dei tre `if` sotto le prova in sequenza, la prima non ancora conclusa vince).
+func _resolve_active_construction_phase(building: Building) -> String:
+	if building.is_complete:
+		return ""
+	if not building.site_setup_complete:
+		return "setup_site"
+	if not bool(building.construction_progress.get("space_reserved", false)):
+		return "clear_site"
+	return "build"
+
+
 # Barra di avanzamento della fase di lavorazione CORRENTE (2026-09-14, richiesta utente — "75% di
 # setup site, o 33% di build, o 19% di clear site") — nascosta del tutto per un edificio già
-# completo (building.is_complete), stesso principio "nessun elemento fuorviante" già seguito da
-# StorageGrid/ResidentsGrid per una capacità assente. Identifica la fase ATTIVA leggendo tre flag
-# già esistenti su Building (nessun nuovo "stato di fase" introdotto, solo la ricomposizione di dati
-# già lì), nello stesso ordine sequenziale delle tre fasi vere: site_setup_complete (SetupSiteAction,
-# vedi Building.gd) -> construction_progress["space_reserved"] (settato UNA SOLA VOLTA da
-# ClearAction.on_complete, riusato qui come "Clear è concluso" — STESSA chiave già usata per
-# l'idempotenza della riserva di spazio, non una nuova) -> building.is_complete (BuildAction.
-# on_complete). Le prime due fasi non ancora raggiunte restano implicitamente "non attive" per
-# costruzione (l'ordine dei tre `if` sotto le prova in sequenza, la prima non ancora conclusa vince).
+# completo, stesso principio "nessun elemento fuorviante" già seguito da StorageGrid/ResidentsGrid
+# per una capacità assente.
 #
 # Durata di ciascuna fase: SetupSite ha una soglia FISSA (SetupSiteAction.DURATION_DAYS, uguale per
 # ogni edificio) — letta come costante di classe, nessuna istanza necessaria. Clear ha una soglia
@@ -221,30 +239,32 @@ func clear() -> void:
 # required_labor (dato di tipo, sempre disponibile). duration_days<=0.0 (fase senza alcun lavoro da
 # fare, es. microcella già priva di vegetazione per Clear) mostra 100% invece di dividere per zero.
 func _refresh_construction_progress(building: Building) -> void:
-	if building.is_complete:
+	var phase := _resolve_active_construction_phase(building)
+	if phase == "":
 		construction_phase_label.visible = false
-		construction_progress_bar.visible = false
+		construction_progress_bar_margin.visible = false
 		return
 
 	var phase_name_key: String
 	var progress_days: float
 	var duration_days: float
-	if not building.site_setup_complete:
-		phase_name_key = "building_construction_phase_setup_site"
-		progress_days = float(building.construction_progress.get("site_setup_days_done", 0.0))
-		duration_days = SetupSiteAction.DURATION_DAYS
-	elif not bool(building.construction_progress.get("space_reserved", false)):
-		phase_name_key = "building_construction_phase_clear_site"
-		progress_days = float(building.construction_progress.get("clear_days_done", 0.0))
-		duration_days = float(building.construction_progress.get("clear_duration_days", 0.0))
-	else:
-		phase_name_key = "building_construction_phase_build"
-		progress_days = float(building.construction_progress.get("labor_accumulated", 0.0))
-		duration_days = float(building.rules.required_labor) if building.rules != null else 0.0
+	match phase:
+		"setup_site":
+			phase_name_key = "building_construction_phase_setup_site"
+			progress_days = float(building.construction_progress.get("site_setup_days_done", 0.0))
+			duration_days = SetupSiteAction.DURATION_DAYS
+		"clear_site":
+			phase_name_key = "building_construction_phase_clear_site"
+			progress_days = float(building.construction_progress.get("clear_days_done", 0.0))
+			duration_days = float(building.construction_progress.get("clear_duration_days", 0.0))
+		_:
+			phase_name_key = "building_construction_phase_build"
+			progress_days = float(building.construction_progress.get("labor_accumulated", 0.0))
+			duration_days = float(building.rules.required_labor) if building.rules != null else 0.0
 
 	var percent: float = (clampf(progress_days / duration_days, 0.0, 1.0) * 100.0) if duration_days > 0.0 else 100.0
 	construction_phase_label.visible = true
-	construction_progress_bar.visible = true
+	construction_progress_bar_margin.visible = true
 	construction_phase_label.text = tr("building_construction_phase_label").format({
 		"phase": tr(phase_name_key),
 		"percent": int(round(percent)),
@@ -273,6 +293,43 @@ func _resolve_setup_site_material_shortage(building: Building) -> Dictionary:
 		"quantity": max(required - stored, 0),
 		"material_display_name": IconRegistry.get_resource_display_name(material_name),
 	}
+
+
+# Fabbisogno materiale della fase BUILD (2026-09-14, richiesta utente — "step 2 della build") —
+# STESSA formula di BuildAction.get_missing_materials(), letta direttamente da BuildingRules.
+# required_materials: questo pannello non ha un'istanza di BuildAction a disposizione (solo il
+# Building), nessuna duplicazione di STATO qui, solo della stessa formula pura (unica fonte di
+# verità sul DATO). A DIFFERENZA di _resolve_setup_site_material_shortage sopra (sempre UNA sola
+# risorsa), qui il Dictionary può avere PIÙ voci insieme — required_materials non ha il vincolo "una
+# sola risorsa" di setup_site_material_name. Dictionary VUOTO = nulla manca (stesso significato di
+# BuildAction.get_missing_materials).
+func _resolve_build_material_shortage(building: Building) -> Dictionary:
+	if building.rules == null:
+		return {}
+	var missing: Dictionary = {}
+	for resource_name in building.rules.required_materials.keys():
+		var required: int = int(building.rules.required_materials[resource_name])
+		if required <= 0:
+			continue
+		var stored_entry: Dictionary = building.stored_resources.get(resource_name, {})
+		var stored: int = int(stored_entry.get("quantity", 0))
+		var missing_quantity: int = max(required - stored, 0)
+		if missing_quantity > 0:
+			missing[resource_name] = missing_quantity
+	return missing
+
+
+# Formatta un Dictionary[String, int] di risorse mancanti in una stringa leggibile tipo
+# "40 Rametti, 100 Pebble" (2026-09-14, richiesta utente) — nomi risolti via IconRegistry.
+# get_resource_display_name, STESSA fonte già usata da _resolve_setup_site_material_shortage/dallo
+# StorageGrid, così una risorsa ha sempre lo stesso nome visualizzato ovunque nella UI. Ordine di
+# iterazione = ordine di inserimento del Dictionary (stabile in GDScript), che per required_materials
+# coincide con l'ordine dichiarato nel .tres — nessun ordinamento aggiuntivo necessario.
+func _format_missing_materials_list(missing: Dictionary) -> String:
+	var parts: Array[String] = []
+	for resource_name in missing.keys():
+		parts.append("%d %s" % [int(missing[resource_name]), IconRegistry.get_resource_display_name(resource_name)])
+	return ", ".join(parts)
 
 
 # Ricostruita per intero ad ogni show_building (stesso principio "rebuild da zero" già in uso

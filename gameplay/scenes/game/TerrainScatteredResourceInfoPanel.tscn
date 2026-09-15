@@ -1,8 +1,8 @@
 [gd_scene format=3]
 
-[ext_resource type="Script" path="res://gameplay/scenes/game/StickLotInfoPanel.gd" id="1_stick_lot"]
+[ext_resource type="Script" path="res://gameplay/scenes/game/TerrainScatteredResourceInfoPanel.gd" id="1_stick_lot"]
 
-[node name="StickLotInfoPanel" type="VBoxContainer"]
+[node name="TerrainScatteredResourceInfoPanel" type="VBoxContainer"]
 script = ExtResource("1_stick_lot")
 
 [node name="StickLabel" type="Label" parent="."]

@@ -302,26 +302,44 @@ func print_cost_summary(individual: Variant) -> void:
 	print("  TOTALE: %.1f stamina, %.1f happiness, %.1f giorni" % [total_stamina, total_happiness, total_days])
 
 
-# Testo per l'info panel individuo — "cosa sta facendo ORA" (2026-09-07, richiesta utente): es.
-# "Sognare a occhi aperti (Vagando nei dintorni)" mentre il primo WalkAction di Daydream è attivo,
-# "Sognare a occhi aperti (Tornando al centro del villaggio)" durante il secondo — stesso
-# ActionType (WALK) in entrambi, significato diverso perché lo step_description cambia, mai
-# l'Action stessa (vedi TaskStepDefinition.step_description per il perché vive lì e non su Action).
-# tr() applicato QUI (non a monte, né su task_name/step_descriptions che restano chiavi grezze —
-# stesso principio di BuildingRules.building_name/Idea.display_name): la lingua corrente conta solo
-# al momento di mostrare il testo, mai quando i dati vengono assegnati. "" se la Task non ha
-# un'azione attiva (già conclusa/vuota — il chiamante non dovrebbe arrivare fin qui in quel caso,
-# dato che HumanIndividual.current_task diventa null non appena una Task finisce, ma resta una
-# guardia difensiva coerente con get_current_action).
+# Testo per l'info panel individuo — "che Task è" (RIVISTO 2026-09-16, richiesta utente: mostrava
+# prima "Nome Task (descrizione dello step attivo)", es. "Trasportare materiale (Prelevando)" — la
+# parte tra parentesi cambiava ad ogni step, ed essendo lo stesso identico testo per QUALUNQUE
+# risorsa trasportata (nessun riferimento a QUALE risorsa), due Task diverse (es. due Transport di
+# risorse diverse) risultavano indistinguibili a colpo d'occhio, e "quale action sta facendo ORA"
+# aggiungeva rumore che il player non aveva chiesto di vedere — richiesta esplicita: mostrare SOLO
+# il tipo di Task, MAI l'Action/step attivo. haul_resource/transport sono un'eccezione mirata: per
+# loro l'informazione utile non è lo step ma QUALE risorsa stanno maneggiando.
+#
+# Letta dall'ISTANZA dell'Action dentro `steps` (PickUpAction.resource_name/RetrieveAction.
+# resource_name), MAI da `context` — TaskFactory.build_task ripulisce da context ogni chiave
+# consumata per costruire gli step (vedi task_factory.gd, "consumed_context_keys": "i valori usati
+# SOLO per costruire gli step non restano appesi a task.context per tutta la vita della Task"),
+# quindi "resource_name"/"transport_resource_name" non esistono più in context subito dopo la
+# costruzione — solo l'Action stessa, che vive per tutta la vita della Task dentro `steps`, porta
+# ancora il dato. IconRegistry.get_resource_display_name (stessa funzione già usata da
+# BuildingInfoPanel per lo stesso scopo) risolve il nome leggibile ("Rametti", non "stick").
+#
+# Nessuna dipendenza da step_descriptions/current_action/current_step_index qui sotto: funziona
+# identica sia per la Task ATTIVA (current_task) sia per una Task SOSPESA in coda (task_queue) —
+# gli step restano gli stessi oggetti in entrambi i casi, un solo punto invece di due formule
+# diverse (vedi GameScene._update_individual_panel_content, unico chiamante).
 func get_activity_description() -> String:
-	if get_current_action() == null:
-		return ""
-	var step_description_key: String = step_descriptions[current_step_index] if current_step_index < step_descriptions.size() else ""
-	# Ripiego sul nome grezzo della classe Action (stesso trattamento di print_cost_summary sopra)
-	# quando lo step non ha una propria descrizione — copre le Task costruite a mano che non
-	# valorizzano step_descriptions (es. _debug_test_two_walk_task), mostrando comunque qualcosa
-	# invece di un pannello vuoto.
-	var step_text: String = tr(step_description_key) if step_description_key != "" else get_current_action().get_script().get_global_name()
-	if task_name == "":
-		return step_text
-	return "%s (%s)" % [tr(task_name), step_text]
+	var base_text: String = tr(task_name) if task_name != "" else tr("task_debug_panel_unnamed_task")
+	var resource_name: String = ""
+	match task_name:
+		"task_haul_resource_name":
+			for step in steps:
+				if step is PickUpAction:
+					resource_name = (step as PickUpAction).resource_name
+					break
+		"task_transport_name":
+			for step in steps:
+				if step is RetrieveAction:
+					resource_name = (step as RetrieveAction).resource_name
+					break
+		_:
+			return base_text
+	if resource_name == "":
+		return base_text
+	return "%s (%s)" % [base_text, IconRegistry.get_resource_display_name(resource_name)]

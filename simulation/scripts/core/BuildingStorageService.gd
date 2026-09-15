@@ -169,37 +169,44 @@ static func can_accept(building: Building, resource_name: String) -> bool:
 	if resource_rules == null:
 		return false
 	# Guard is_complete SOSTITUITO (2026-09-12, richiesta utente) — PRIMA (2026-09-11) rifiutava
-	# INCONDIZIONATAMENTE qualunque deposito su un cantiere non finito ("un cantiere non ancora finito
-	# non deve poter ricevere depositi da NESSUN percorso"), impedendo per costruzione anche il
-	# trasporto dei materiali richiesti per costruirlo — un problema reale ora che la Build Task dovrà
-	# poter consegnare quei materiali. Nuova condizione più fine: un cantiere può accettare SOLO la
-	# risorsa del proprio fabbisogno di SETUP SITE (BuildingRules.setup_site_material_name — RICALIBRATO
-	# 2026-09-14, richiesta utente: NON più rules.required_materials, che resta riservato al fabbisogno
-	# della costruzione vera e propria, futura BuildAction, un fabbisogno concettualmente distinto — vedi
-	# quel campo su BuildingRules.gd), e SOLO fino al tetto esatto richiesto (setup_site_material_per_cell
-	# × required_space) — mai altre risorse (continua a comportarsi come un magazzino generico per
-	# QUALUNQUE altra risorsa, esattamente come impediva il guard precedente), mai oltre quel tetto
-	# (evita che un cantiere accumuli scorte in eccesso come se fosse un vero magazzino). Un edificio
-	# COMPLETO non passa mai da questo ramo — comportamento sotto INVARIATO per lui.
+	# INCONDIZIONATAMENTE qualunque deposito su un cantiere non finito. Nuova condizione più fine, ORA
+	# A DUE FASI (2026-09-14, richiesta utente — "step 2 della build", BuildAction ora legge davvero
+	# required_materials): un cantiere accetta SOLO la risorsa del fabbisogno della fase in cui si
+	# trova — setup_site_material_name (BuildingRules.gd) finché site_setup_complete è false, poi
+	# rules.required_materials una volta che il setup è concluso (site_setup_complete true, ancora
+	# non is_complete) — mai altre risorse, mai oltre il tetto esatto di ciascuna fase (evita che un
+	# cantiere accumuli scorte in eccesso come se fosse un vero magazzino). Un edificio COMPLETO non
+	# passa mai da questo ramo — comportamento sotto INVARIATO per lui.
 	if not building.is_complete:
 		# `building.site_setup_complete` (2026-09-14, richiesta utente — bugfix "il materiale non
 		# spariva mai": SetupSiteAction.on_complete ora CONSUMA il materiale, vedi quel file — ma
 		# senza questo guard un deposito MANUALE tardivo, durante Clear/Build dopo che il setup è
 		# già concluso, potrebbe ricrearlo da capo, restando poi lì per sempre esattamente come il
-		# bug originale) — return false ESPLICITO, non un fall-through alle regole "edificio
-		# completo" sotto: un cantiere in Clear/Build NON è comunque un vero magazzino, il setup
-		# concluso significa solo "nessun ulteriore deposito ha senso", mai "accetta come se fosse
-		# finito".
-		if building.site_setup_complete:
+		# bug originale) — RAMO SETUP SITE (site_setup_complete==false): SOLO la risorsa del
+		# fabbisogno di setup site, fino al proprio tetto esatto.
+		if not building.site_setup_complete:
+			if resource_name != building.rules.setup_site_material_name:
+				return false
+			var required_quantity: int = building.rules.setup_site_material_per_cell * building.rules.required_space
+			if required_quantity <= 0:
+				return false
+			var stored_entry: Dictionary = building.stored_resources.get(resource_name, {})
+			var stored_quantity: int = int(stored_entry.get("quantity", 0))
+			return stored_quantity < required_quantity
+		# RAMO BUILD (2026-09-14, richiesta utente — "step 2 della build": site_setup_complete==true,
+		# ancora non is_complete) — SOLO le risorse elencate in rules.required_materials (il
+		# fabbisogno della costruzione vera e propria, ora letto davvero da BuildAction, vedi quel
+		# file), fino al proprio tetto esatto ciascuna. STESSA struttura del ramo setup site sopra,
+		# fonte diversa (required_materials, non setup_site_material_name/per_cell) — un cantiere in
+		# Clear/Build NON è comunque un vero magazzino generico, accetta solo ciò che gli serve.
+		if not building.rules.required_materials.has(resource_name):
 			return false
-		if resource_name != building.rules.setup_site_material_name:
+		var required_build_quantity: int = int(building.rules.required_materials[resource_name])
+		if required_build_quantity <= 0:
 			return false
-		var required_quantity: int = building.rules.setup_site_material_per_cell * building.rules.required_space
-		if required_quantity <= 0:
-			return false
-		var stored_entry: Dictionary = building.stored_resources.get(resource_name, {})
-		var stored_quantity: int = int(stored_entry.get("quantity", 0))
-		return stored_quantity < required_quantity
+		var stored_build_entry: Dictionary = building.stored_resources.get(resource_name, {})
+		var stored_build_quantity: int = int(stored_build_entry.get("quantity", 0))
+		return stored_build_quantity < required_build_quantity
 	if not building.rules.accepted_categories.is_empty() and not building.rules.accepted_categories.has(resource_rules.category):
 		return false
 	if not building.enabled_categories.is_empty() and not building.enabled_categories.has(resource_rules.category):
@@ -320,25 +327,26 @@ static func get_max_depositable(building: Building, resource_name: String) -> in
 	# configurare) — SOSTITUISCE l'approccio precedente (spazio fisico calcolato via storage_slot_
 	# count/storage_space_per_slot, poi combinato con min() al tetto di required_materials): quei
 	# due campi restano il vero magazzino, valido SOLO a edificio completo (vedi sotto), MAI
-	# consultati qui. RICALIBRATO 2026-09-14 (richiesta utente) — durante la costruzione il vincolo
-	# LOGICO (quanto serve) e quello FISICO (quanto entra) sono ORA setup_site_material_per_cell ×
-	# required_space per resource_name == setup_site_material_name (BuildingRules.gd), NON più
-	# rules.required_materials[resource_name]: quel Dictionary resta riservato al fabbisogno della
-	# costruzione vera e propria (futura BuildAction), un fabbisogno concettualmente DIVERSO da
-	# quello del cantiere (vedi il commento esteso su BuildingRules.setup_site_material_name/
-	# setup_site_material_per_cell per il perché della separazione). Qualunque altro resource_name
-	# → 0: un cantiere non deve mai accettare altro che il materiale di cui ha bisogno per il
-	# proprio allestimento. `building.site_setup_complete` (2026-09-14, richiesta utente — STESSO
-	# guard/STESSO motivo di can_accept sopra): una volta concluso il setup, zero posto residuo per
-	# il proprio materiale, indipendentemente da is_complete (Clear/Build possono durare ancora
-	# a lungo dopo).
+	# consultati qui. A DUE FASI (2026-09-14, richiesta utente — "step 2 della build", BuildAction ora
+	# legge davvero required_materials): durante site_setup_complete==false il vincolo è
+	# setup_site_material_per_cell × required_space per setup_site_material_name (BuildingRules.gd);
+	# una volta concluso il setup (site_setup_complete==true, ancora non is_complete) il vincolo
+	# diventa rules.required_materials[resource_name] — il fabbisogno della costruzione vera e
+	# propria, ora un vero consumatore (prima solo dato inerte). Qualunque altro resource_name → 0 in
+	# entrambe le fasi: un cantiere non deve mai accettare altro che il materiale della fase in corso.
 	if not building.is_complete:
-		if building.site_setup_complete:
+		# RAMO SETUP SITE (site_setup_complete==false) — STESSO ramo/STESSA formula di can_accept sopra.
+		if not building.site_setup_complete:
+			if resource_name != building.rules.setup_site_material_name:
+				return 0
+			var required_quantity: int = building.rules.setup_site_material_per_cell * building.rules.required_space
+			return max(required_quantity - current_quantity, 0)
+		# RAMO BUILD (2026-09-14, richiesta utente — "step 2 della build") — STESSO ramo/STESSA
+		# formula di can_accept sopra: rules.required_materials, non più setup_site_material_*.
+		if not building.rules.required_materials.has(resource_name):
 			return 0
-		if resource_name != building.rules.setup_site_material_name:
-			return 0
-		var required_quantity: int = building.rules.setup_site_material_per_cell * building.rules.required_space
-		return max(required_quantity - current_quantity, 0)
+		var required_build_quantity: int = int(building.rules.required_materials[resource_name])
+		return max(required_build_quantity - current_quantity, 0)
 
 	# Ramo edificio COMPLETO — comportamento ESATTAMENTE INVARIATO rispetto a sempre: storage_slot_
 	# count/storage_space_per_slot come UNICO vincolo (mai required_materials qui, un edificio finito

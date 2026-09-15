@@ -5,11 +5,14 @@ extends Action
 # "la costruzione vera"): accumula lavoro giorno per giorno su target_building.construction_progress
 # finché non raggiunge target_building.rules.required_labor, poi marca l'edificio completo.
 #
-# BYPASS VOLONTARIO (richiesta esplicita utente, questo passo) — NESSUN consumo/verifica di
-# rules.required_materials qui: se ne occuperà un giro futuro con una Bring Task dedicata (portare
-# materiali al cantiere prima/durante la costruzione). Questa classe non legge required_materials,
-# non decrementa alcun magazzino, non blocca il progresso per mancanza di materiali — il lavoro
-# accumula sempre, a prescindere.
+# FABBISOGNO MATERIALE (2026-09-14, richiesta utente — "step 2 della build": bypass rimosso) —
+# legge rules.required_materials (il Dictionary riservato APPOSTA a questa fase, distinto da
+# BuildingRules.setup_site_material_name/setup_site_material_per_cell che SetupSiteAction usa per
+# la fase precedente — vedi quel file per la separazione originale) e blocca il progresso finché
+# ANCHE UNA SOLA risorsa richiesta manca — vedi get_missing_materials sotto/get_stamina_delta per
+# il guard esatto. A differenza di SetupSiteAction (una sola risorsa), required_materials può avere
+# PIÙ voci insieme (es. stick_tent oggi: stick E pebble) — il blocco è "manca qualcosa", non
+# "manca tutto": basta UNA voce sotto soglia per fermare l'intero step.
 #
 # A DIFFERENZA di SetupSiteAction/ClearAction (durata nota subito, un accumulatore _elapsed
 # confrontato con una _duration fissa calcolata al costruttore o dalla composizione della
@@ -87,16 +90,50 @@ func _get_labor_accumulated() -> float:
 	return float(target_building.construction_progress.get("labor_accumulated", 0.0))
 
 
+# Fabbisogno materiale (2026-09-14, richiesta utente) — {resource_name: missing_quantity} per ogni
+# voce di rules.required_materials la cui quantità stoccata sul cantiere è ancora sotto soglia;
+# voci già soddisfatte (o con required<=0, "non richiesto per questo tipo") non compaiono affatto —
+# Dictionary VUOTO = nulla manca, stesso significato "via libera" già usato da SetupSiteAction.
+# get_missing_material_quantity() (lì un int, qui un Dictionary perché required_materials può avere
+# PIÙ voci insieme, a differenza del singolo setup_site_material_name).
+func get_missing_materials() -> Dictionary:
+	if target_building == null or target_building.rules == null:
+		return {}
+	var missing: Dictionary = {}
+	for resource_name in target_building.rules.required_materials.keys():
+		var required: int = int(target_building.rules.required_materials[resource_name])
+		if required <= 0:
+			continue
+		var stored_entry: Dictionary = target_building.stored_resources.get(resource_name, {})
+		var stored: int = int(stored_entry.get("quantity", 0))
+		var missing_quantity: int = max(required - stored, 0)
+		if missing_quantity > 0:
+			missing[resource_name] = missing_quantity
+	return missing
+
+
+# Fabbisogno materiale (2026-09-14, richiesta utente) — controllato ad OGNI attivazione di questo
+# step, STESSO principio/STESSO canale di SetupSiteAction.activate() (vedi quel file per il
+# commento esteso): se manca ANCHE UNA SOLA risorsa, questo step non accumula NULLA questo giro,
+# scrive invece la richiesta in context["pending_material_shortage"] (consumata da
+# HumanIndividualActionService._handle_pending_material_shortage). Il blocco vero (zero
+# costo/accumulo, mai completa) resta comunque garantito ANCHE da get_stamina_delta/
+# get_happiness_delta/is_complete sotto, indipendentemente da questo flag.
+#
 # LOG DEBUG VERIFICA PROGRESSO (2026-09-11, richiesta utente — "verificare se un'Action riparte da
-# zero o da un progresso preesistente", stesso trattamento esteso anche a SetupSiteAction/
-# ClearAction lo stesso giorno) — override SOLO per questo log, super() invariato (Action.activate:
-# individual.is_moving = false). CONFERMATO (punto 4 della richiesta): questa classe già leggeva
-# SEMPRE labor_accumulated dal vivo via _get_labor_accumulated() fin dalla sua introduzione — mai
-# un campo interno cachato — quindi una NUOVA istanza di BuildAction creata dopo un'interruzione
-# (Task riassegnata allo stesso individuo a metà lavoro) riprende già correttamente da dove Building
-# era rimasto, nessuna correzione necessaria, solo questo log per verificarlo a schermo.
+# zero o da un progresso preesistente") — CONFERMATO (punto 4 della richiesta): questa classe legge
+# SEMPRE labor_accumulated dal vivo via _get_labor_accumulated() — mai un campo interno cachato —
+# quindi una NUOVA istanza di BuildAction creata dopo un'interruzione (Task riassegnata allo stesso
+# individuo a metà lavoro) riprende già correttamente da dove Building era rimasto.
 func activate(individual: Variant, context: Dictionary) -> void:
 	super(individual, context)
+	var missing := get_missing_materials()
+	if not missing.is_empty():
+		context["pending_material_shortage"] = {
+			"missing": missing,
+			"target_building_id": target_building.id,
+		}
+		return
 	if DebugLogging.ENABLED and target_building != null:
 		print("[BUILD PROGRESS DEBUG] BuildAction attivata per building #%d: riparte da labor_accumulated=%.2f (era 0.0 se prima volta)" % [
 			target_building.id, _get_labor_accumulated()
@@ -109,11 +146,17 @@ func activate(individual: Variant, context: Dictionary) -> void:
 # construction_progress), già corretto qualunque sia il momento (appena creato, ripristinato da un
 # save, o già in corso da giorni) — nessun valore "interno" da perdere/duplicare a un reload.
 #
+# Guardia materiale (2026-09-14) AGGIUNTA in testa, PRIMA di quella su labor_accumulated: mentre
+# manca anche una sola risorsa questo step non deve MAI accumulare progresso, indipendentemente da
+# chi/quando consumi il pending_material_shortage scritto da activate() sopra.
+#
 # Già completo (labor_accumulated >= required_labor) → 0.0 senza ulteriore accumulo: difensivo,
 # is_complete() sotto dovrebbe già aver fermato la Task prima che questo venga richiamato di nuovo,
 # ma evita comunque un piccolo overshoot se mai chiamato un'ultima volta nello stesso frame.
 func get_stamina_delta(individual: Variant, context: Dictionary, delta: float) -> float:
 	if target_building == null or target_building.rules == null:
+		return 0.0
+	if not get_missing_materials().is_empty():
 		return 0.0
 	if _get_labor_accumulated() >= float(target_building.rules.required_labor):
 		return 0.0
@@ -128,6 +171,8 @@ func get_stamina_delta(individual: Variant, context: Dictionary, delta: float) -
 func get_happiness_delta(individual: Variant, context: Dictionary, delta: float) -> float:
 	if target_building == null or target_building.rules == null:
 		return 0.0
+	if not get_missing_materials().is_empty():
+		return 0.0
 	if _get_labor_accumulated() >= float(target_building.rules.required_labor):
 		return 0.0
 	return -HAPPINESS_DRAIN_PER_DAY * delta
@@ -135,9 +180,14 @@ func get_happiness_delta(individual: Variant, context: Dictionary, delta: float)
 
 # false (mai "vero da subito") se target_building/rules non risolvibili — difensivo: nessun dato
 # valido da cui decidere, meglio non completare mai un'Action mal costruita che fingere un
-# completamento istantaneo che salterebbe on_complete con dati a metà.
+# completamento istantaneo che salterebbe on_complete con dati a metà. Guardia materiale (2026-09-14)
+# AGGIUNTA — mai completa mentre manca anche una sola risorsa, indipendentemente da labor_accumulated
+# (che può anche essere già a target da un tentativo precedente, se mai possibile): il completamento
+# resta subordinato a ENTRAMBE le condizioni.
 func is_complete(individual: Variant, context: Dictionary) -> bool:
 	if target_building == null or target_building.rules == null:
+		return false
+	if not get_missing_materials().is_empty():
 		return false
 	return _get_labor_accumulated() >= float(target_building.rules.required_labor)
 
@@ -173,6 +223,19 @@ func on_complete(individual: Variant, context: Dictionary) -> void:
 	target_building.is_complete = true
 	if target_building.rules != null:
 		target_building.current_durability = target_building.rules.max_durability
+		# Consumo dei materiali di costruzione (2026-09-14, richiesta utente) — STESSO bugfix già
+		# applicato a SetupSiteAction.on_complete (vedi quel file per il commento esteso, "BUG
+		# CONFERMATO": il materiale restava per sempre in stored_resources anche a costruzione
+		# completa, occupando slot di storage veri su un edificio con storage_slot_count>0):
+		# erase() di ciascuna voce di required_materials, non un decremento — consumato per intero,
+		# non "ancora in giacenza parziale".
+		for resource_name in target_building.rules.required_materials.keys():
+			target_building.stored_resources.erase(resource_name)
+	# is_awaiting_material -> false (2026-09-14, richiesta utente — STESSO bugfix di
+	# SetupSiteAction.on_complete: senza questo, un cantiere bloccato per il fabbisogno di Build
+	# restava "in attesa" per sempre nel pannello anche a costruzione DAVVERO completa, dato che
+	# nessun punto lo azzerava più una volta risolto il blocco senza passare da una riattivazione).
+	target_building.is_awaiting_material = false
 	building_construction_completed.emit(target_building)
 
 

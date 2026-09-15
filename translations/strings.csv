@@ -25,6 +25,7 @@ help_rotate_or_rest,ruota la porta della capanna durante il piazzamento; se ness
 help_wander_task,assegna la Task Vagabondare (Walk-Guarda in giro-Walk-Guarda in giro-Walk) all'individuo selezionato
 help_play_task,assegna la Task Gioco (Corri-Salta-Corri-Salta, solo bambini) all'individuo selezionato
 help_stop_task,annulla il comando corrente dell'individuo selezionato (torna a riposo)
+help_unload_here_task,tenuto premuto durante un click destro su un deposito: scarica lì tutto ciò che l'individuo selezionato porta in spalla
 help_debug_clear_backpack,(debug) svuota lo zaino dell'individuo selezionato
 help_fog_of_war_menu_link,Nebbia di guerra
 help_fog_of_war_title,Nebbia di guerra
@@ -116,10 +117,10 @@ task_daydream_step_leave,Allontanandosi dal centro villaggio
 task_unload_resource_name,Scaricare risorsa
 task_unload_resource_step_walk,Andando a scaricare
 task_unload_resource_step_unload,Scaricando
-task_haul_resource_name,Trasportare risorsa al magazzino
+task_haul_resource_name,Raccolta
 task_haul_resource_step_walk,Andando a raccogliere
 task_haul_resource_step_pickup,Raccogliendo
-task_transport_name,Trasportare materiale
+task_transport_name,Trasporto
 task_transport_step_walk_to_source,Andando a prelevare
 task_transport_step_retrieve,Prelevando
 task_transport_step_walk_to_destination,Andando a consegnare
@@ -189,3 +190,9 @@ help_building_materials_manual,"Oggi il gioco non genera da sé nessuna Task per
 help_building_materials_deposit_bonus,"Unica eccezione: il primissimo Deposito che costruisci, quando nel villaggio non esiste ancora nessun altro edificio con vero spazio di stoccaggio, riceve il proprio materiale di allestimento gratuitamente, così puoi sempre iniziare anche senza scorte."
 help_building_materials_future,"Questa fornitura manuale sarà necessaria finché non scoprirai i futuri sistemi di gestione delle Task e dei magazzini: da quel momento in poi il gioco potrà occuparsene in autonomia."
 notification_build_capacity_full,"Questo edificio è già in costruzione da {current} individui su un massimo di {max}."
+building_construction_phase_label,{phase}: {percent}%
+building_construction_phase_setup_site,Allestimento cantiere
+building_construction_phase_clear_site,Pulizia del terreno
+building_construction_phase_build,Costruzione
+building_awaiting_material_build_label,"Per completare la costruzione servono ancora: {list}"
+transport_selection_banner_text,"🚚 Trasporto: seleziona l'edificio di destinazione (H per annullare)"

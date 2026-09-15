@@ -14,7 +14,7 @@ extends RefCounted
 # Tetto massimo alla coda (2026-09-13, richiesta utente) — una coda illimitata permetterebbe a un
 # individuo di accumulare Task sospese all'infinito (ogni comando manuale su un lavoro già
 # sospendibile ne aggiunge una), la maggior parte destinate a non essere mai riprese in pratica.
-const MAX_QUEUE_SIZE: int = 5
+const MAX_QUEUE_SIZE: int = 3
 
 
 # Push in fondo — se la coda è già al tetto MAX_QUEUE_SIZE, la Task PIÙ VECCHIA (indice 0, la più

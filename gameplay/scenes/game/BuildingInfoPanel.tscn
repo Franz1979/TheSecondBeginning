@@ -2,6 +2,20 @@
 
 [ext_resource type="Script" path="res://gameplay/scenes/game/BuildingInfoPanel.gd" id="1_bld"]
 
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_construction_bg"]
+bg_color = Color(0.35, 0.35, 0.35, 1)
+corner_radius_top_left = 4
+corner_radius_top_right = 4
+corner_radius_bottom_right = 4
+corner_radius_bottom_left = 4
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_construction_fill"]
+bg_color = Color(0.25, 0.5, 0.85, 1)
+corner_radius_top_left = 4
+corner_radius_top_right = 4
+corner_radius_bottom_right = 4
+corner_radius_bottom_left = 4
+
 [node name="BuildingInfoPanel" type="VBoxContainer"]
 script = ExtResource("1_bld")
 
@@ -14,9 +28,17 @@ layout_mode = 2
 visible = false
 theme_override_font_sizes/font_size = 10
 
-[node name="ConstructionProgressBar" type="ProgressBar" parent="."]
+[node name="ConstructionProgressBarMargin" type="MarginContainer" parent="."]
 layout_mode = 2
 visible = false
+theme_override_constants/margin_left = 4
+theme_override_constants/margin_right = 4
+
+[node name="ConstructionProgressBar" type="ProgressBar" parent="ConstructionProgressBarMargin"]
+layout_mode = 2
+custom_minimum_size = Vector2(0, 14)
+theme_override_styles/background = SubResource("StyleBoxFlat_construction_bg")
+theme_override_styles/fill = SubResource("StyleBoxFlat_construction_fill")
 min_value = 0.0
 max_value = 100.0
 show_percentage = false

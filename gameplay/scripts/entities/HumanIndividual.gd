@@ -702,7 +702,36 @@ func assign_task(task: Task, age_band: HumanTypes.AgeBand, is_interrupt_transiti
 	# chiamante UI che usa il valore di ritorno per scegliere l'icona di comando (✋/🔨/📦 vs ❌,
 	# vedi GameScene._debug_assign_transport_task/_try_assign_pickup_command_on_right_click) deve
 	# vedere "comando accettato" qui, non "comando rifiutato".
-	if task.interrupt_priority == -1 and carried_quantity > 0:
+	#
+	# RISTRETTO (2026-09-15, richiesta utente — "cosa c'entra lo zaino con Rest?", bugfix
+	# incoerenza): la condizione originale guardava SOLO lo zaino, ignorando del tutto quale fosse
+	# la Task in corso — risultato, un individuo a Rest/Daydream/Wander/Play (Task NON persistenti,
+	# is_suspendable == false, che non hanno MAI riempito loro stesse lo zaino) restava protetto
+	# dall'interruzione solo perché lo zaino aveva un residuo di un lavoro precedente, un
+	# comportamento indistinguibile da "a volte interrompe, a volte no" per chi gioca. Ora questo
+	# ramo scatta SOLO se la Task in corso è essa stessa persistente (current_task.is_suspendable):
+	# è LEI la proprietaria legittima di quel carico (PickUp/Retrieve che raccoglierebbe 0 se
+	# rilanciata a zaino pieno resta l'unico vero motivo di attesa), quindi ha senso farla proseguire
+	# e mettere il nuovo comando in coda dietro di lei. Il caso "Task in corso NON persistente + zaino
+	# pieno" è gestito dal ramo NUOVO subito sotto, non più qui.
+	if task.interrupt_priority == -1 and carried_quantity > 0 and current_task != null and current_task.is_suspendable:
+		# Guardia task.is_suspendable (2026-09-16, richiesta utente — bugfix: "perché Wander si è
+		# accodata? non dovrebbe essere una che non si accoda mai?") — PRIMA di questo passo il ramo
+		# accodava SEMPRE `task` (il comando NUOVO), controllando solo current_task.is_suspendable
+		# (la Task GIÀ in corso): un comando non pensato per sopravvivere a un'interruzione (Rest/
+		# Daydream/Wander/Play, is_suspendable=false PER DESIGN — vedi il commento sopra "che non
+		# hanno MAI riempito loro stesse lo zaino") finiva comunque in coda se dato mentre lo zaino
+		# era occupato da un'altra Task persistente, contraddicendo esattamente quel design. Ora: solo
+		# un comando esso stesso sospendibile viene accodato; uno non sospendibile viene scartato
+		# (nessun effetto, Task in corso invariata) — return false (non più true): qui non è successo
+		# nulla di reale da segnalare come "comando accettato" (a differenza del caso accodato sotto,
+		# che resta true per lo stesso motivo già documentato altrove in questo file).
+		if not task.is_suspendable:
+			if DebugLogging.ENABLED:
+				print("[TASK DISCARDED - ZAINO OCCUPATO] Individuo #%d %s: '%s' non sospendibile, scartata invece di essere accodata (zaino occupato: %d %s) — Task in corso '%s' prosegue indisturbata." % [
+					id, name, task.task_name, carried_quantity, carried_resource_name, current_task.task_name
+				])
+			return false
 		TaskQueueService.push_suspended_task(self, task)
 		if DebugLogging.ENABLED:
 			print("[TASK QUEUED - ZAINO OCCUPATO] Individuo #%d %s: '%s' rimandata in coda (zaino occupato: %d %s) — Task in corso '%s' prosegue indisturbata." % [
@@ -710,6 +739,45 @@ func assign_task(task: Task, age_band: HumanTypes.AgeBand, is_interrupt_transiti
 				current_task.task_name if current_task != null else "(nessuna)"
 			])
 		return true
+
+	# "Proprietario del carico" (2026-09-15, richiesta utente, NUOVO — completa il fix sopra):
+	# se la Task in corso NON è persistente (sta per essere scartata, mai sospesa — vedi il ramo
+	# sotto) ma lo zaino ha comunque del carico, quel carico appartiene necessariamente all'ULTIMA
+	# Task sospesa in coda (solo una Task persistente può averlo riempito e poi essere stata
+	# interrotta da un bisogno con quel carico ancora addosso — mai una Rest/Daydream/Wander/Play).
+	# Invece di scartare quella responsabilità insieme alla Task in corso, la ripeschiamo e la
+	# facciamo ripartire SUBITO al posto del nuovo comando, che va lui in coda dietro di lei —
+	# stesso esito pratico di "current_task persistente + zaino pieno" sopra, solo raggiunto passando
+	# per una Rest/Wander/etc. di mezzo invece che direttamente. `task` viene RIASSEGNATA qui (shadow
+	# deliberato del parametro): il resto della funzione sotto prosegue invariato, trattando la Task
+	# ripescata come "quella da assegnare" — nessuna duplicazione della logica di sostituzione sotto.
+	#
+	# resuming_cargo_owner (usata più sotto) — SOLO per evitare che discard_carried_resource() scatti
+	# nel ramo "current_task non sospendibile" qualche riga sotto: quel ramo esiste per scartare un
+	# carico quando la Task che lo trasportava sparisce senza successori, MAI quando invece stiamo
+	# proprio ripescando quella successora (la Task ripescata qui sotto userà quel carico a breve).
+	var resuming_cargo_owner := false
+	if task.interrupt_priority == -1 and carried_quantity > 0 and (current_task == null or not current_task.is_suspendable):
+		var cargo_owner_task := TaskQueueService.pop_suspended_task(self)
+		if cargo_owner_task != null:
+			# Guardia task.is_suspendable (2026-09-16, richiesta utente — STESSO bugfix del ramo sopra):
+			# `task` (il comando NUOVO) va accodato SOLO se sospendibile lui stesso — altrimenti
+			# scartato silenziosamente, mai accodato. La ripresa del cargo owner (sotto, task =
+			# cargo_owner_task) resta INVARIATA in entrambi i casi: è lei il motivo di questo ramo,
+			# indipendente da cosa succede al comando nuovo.
+			if task.is_suspendable:
+				TaskQueueService.push_suspended_task(self, task)
+				if DebugLogging.ENABLED:
+					print("[TASK QUEUED - ZAINO OCCUPATO] Individuo #%d %s: '%s' rimandata in coda dietro '%s' (zaino occupato: %d %s) — '%s' ripresa subito, Task in corso '%s' interrotta." % [
+						id, name, task.task_name, cargo_owner_task.task_name, carried_quantity, carried_resource_name,
+						cargo_owner_task.task_name, current_task.task_name if current_task != null else "(nessuna)"
+					])
+			elif DebugLogging.ENABLED:
+				print("[TASK DISCARDED - ZAINO OCCUPATO] Individuo #%d %s: '%s' non sospendibile, scartata invece di essere accodata — '%s' ripresa subito, Task in corso '%s' interrotta." % [
+					id, name, task.task_name, cargo_owner_task.task_name, current_task.task_name if current_task != null else "(nessuna)"
+				])
+			task = cargo_owner_task
+			resuming_cargo_owner = true
 
 	# TaskDebugRegistry (2026-09-12, richiesta utente — tab di debug 🐞) — chiude l'entry della
 	# Task PRECEDENTE (se ce n'era una in corso, mai chiusa perché sostituita direttamente qui
@@ -722,31 +790,42 @@ func assign_task(task: Task, age_band: HumanTypes.AgeBand, is_interrupt_transiti
 	# sostituzione — comando manuale del player (tasti R/G/P/Y, click destro Build, ecc.) O
 	# interrupt automatico da bisogno, un solo punto invece di due copie della stessa logica).
 	#
-	# current_task.is_suspendable == true (haul_resource/transport oggi) — SOSPESA in task_queue
-	# invece di scartata, qualunque sia la causa della sostituzione: TaskQueueService.
+	# current_task.is_suspendable == true (build/haul_resource/transport oggi) — SOSPESA in
+	# task_queue invece di scartata, qualunque sia la causa della sostituzione: TaskQueueService.
 	# push_suspended_task(self, current_task) PRIMA di sovrascriverla, così pop_suspended_task la
 	# ritrova più tardi esattamente come lasciata. discard_carried_resource() NON scatta in questo
 	# ramo (mai, nemmeno per un comando manuale) — l'inventario non è perso, solo in pausa insieme
 	# alla Task che lo sta trasportando.
 	#
-	# current_task non sospendibile (build/daydream/wander/play/rest/emergency_rest) —
-	# comportamento INVARIATO rispetto a prima di questo passo: discard_carried_resource() scatta
-	# SEMPRE, TRANNE quando is_interrupt_transition == true (2026-09-13, bugfix precedente — un
-	# comando manuale del player resta una perdita vera; un'assegnazione AUTOMATICA di una
-	# Task-bisogno non deve mai scartare nulla, anche se la Task sostituita non era sospendibile).
+	# current_task non sospendibile (daydream/wander/play/rest/emergency_rest) — discard_carried_
+	# resource() scatta TRANNE quando is_interrupt_transition == true (2026-09-13, bugfix precedente
+	# — un comando manuale del player resta una perdita vera; un'assegnazione AUTOMATICA di una
+	# Task-bisogno non deve mai scartare nulla) OPPURE quando resuming_cargo_owner == true
+	# (2026-09-15, NUOVO — vedi sopra: qui il carico non va perso, sta per essere ripreso in mano
+	# dalla Task appena ripescata).
 	if current_task != null and current_task.is_suspendable:
 		TaskQueueService.push_suspended_task(self, current_task)
 		if DebugLogging.ENABLED:
 			print("[TASK SUSPEND] Individuo #%d %s: Task '%s' sospesa e messa in coda (sostituita da '%s')." % [
 				id, name, current_task.task_name, task.task_name
 			])
-	elif not is_interrupt_transition:
+	elif not is_interrupt_transition and not resuming_cargo_owner:
 		discard_carried_resource()
 	current_task = task
 	TaskDebugRegistry.on_task_assigned(self, task)
-	var current_action := task.get_current_action()
-	if current_action != null:
-		current_action.activate(self, task.context)
+	# Attivazione (2026-09-15) — la Task ripescata come "proprietaria del carico" (resuming_cargo_
+	# owner) usa la STESSA logica "Walk di ritorno alla ripresa" già in uso per una ripresa normale
+	# da coda (HumanIndividualActionService.activate_resumed_task, estratta apposta da resolve_idle_
+	# individual per questo secondo chiamante): un individuo può benissimo essersi spostato altrove
+	# (a fare Rest, tipicamente) rispetto a dove quella Task si aspetta di trovarlo. Una Task MAI
+	# sospesa prima (il caso comune, resuming_cargo_owner == false) non ne ha bisogno — current_step_
+	# index è ancora quello di partenza, activate() semplice come sempre.
+	if resuming_cargo_owner:
+		HumanIndividualActionService.activate_resumed_task(self, task)
+	else:
+		var current_action := task.get_current_action()
+		if current_action != null:
+			current_action.activate(self, task.context)
 	return true
 
 

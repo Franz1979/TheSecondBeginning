@@ -256,16 +256,19 @@ func _handle_pending_material_shortage(individual: HumanIndividual, task: Task, 
 	if world == null or game_data == null:
 		return false
 
-	var resource_name := String(shortage.get("resource_name", ""))
-	var quantity_needed := int(shortage.get("quantity_needed", 0))
+	# "missing" (2026-09-14, richiesta utente — GENERALIZZATO da resource_name/quantity_needed
+	# singoli a Dictionary[String, int]): BuildAction può avere PIÙ risorse mancanti insieme (vedi
+	# BuildAction.get_missing_materials), SetupSiteAction ne scrive sempre e sola una — STESSA forma
+	# per entrambe, nessun ramo speciale qui per distinguerle.
+	var missing: Dictionary = shortage.get("missing", {})
 	var target_building_id := int(shortage.get("target_building_id", -1))
-	if resource_name == "" or quantity_needed <= 0:
+	if missing.is_empty():
 		return false
 	var target_building := _find_building_by_id(world, target_building_id)
 	if target_building == null:
 		return false
 
-	return _resolve_material_shortage(individual, world, game_data, target_building, resource_name, quantity_needed)
+	return _resolve_material_shortage(individual, world, game_data, target_building, missing)
 
 
 # Corpo condiviso di risoluzione del fabbisogno materiale (2026-09-14, richiesta utente — controllo
@@ -287,7 +290,7 @@ func _handle_pending_material_shortage(individual: HumanIndividual, task: Task, 
 # per il resto del meccanismo di sblocco (richiesta utente, stesso turno).
 func _resolve_material_shortage(
 	individual: HumanIndividual, world: World, game_data: GameData,
-	target_building: Building, resource_name: String, quantity_needed: int
+	target_building: Building, missing: Dictionary
 ) -> bool:
 	# BONUS DI PARTENZA (2026-09-13/14, richiesta utente) — SOLO per un cantiere di tipo
 	# "deposit_site" (Building.building_type_name, STESSA stringa/STESSO campo già usato ovunque nel
@@ -325,20 +328,25 @@ func _resolve_material_shortage(
 	# quantity() dal vivo e lo trova ora a 0 — "procede direttamente come se il materiale fosse già
 	# arrivato", nello stesso istante, nessun frame di ritardo aggiuntivo.
 	if target_building.building_type_name == "deposit_site" and not BuildingStorageService.world_has_any_storage_building(world):
-		var existing_entry: Dictionary = target_building.stored_resources.get(resource_name, {})
-		var current_quantity: int = int(existing_entry.get("quantity", 0))
-		target_building.stored_resources[resource_name] = {
-			"quantity": current_quantity + quantity_needed,
-			"decay_fraction": 0.0,
-		}
+		# Loop su TUTTE le risorse mancanti (2026-09-14, richiesta utente — generalizzato per
+		# BuildAction, che può averne più di una insieme): ciascuna garantita al proprio tetto
+		# esatto, stessa formula/stessa struttura dati di prima, solo ripetuta per voce.
+		for resource_name in missing.keys():
+			var quantity_needed: int = int(missing[resource_name])
+			var existing_entry: Dictionary = target_building.stored_resources.get(resource_name, {})
+			var current_quantity: int = int(existing_entry.get("quantity", 0))
+			target_building.stored_resources[resource_name] = {
+				"quantity": current_quantity + quantity_needed,
+				"decay_fraction": 0.0,
+			}
 		# is_awaiting_material -> false (2026-09-14, richiesta utente — segnalazione player) — il
 		# bonus risolve il fabbisogno all'istante, nessun motivo per restare "in attesa" anche se lo
 		# era da un tentativo precedente. Nessuna notifica per la transizione true->false (punto 3
 		# della richiesta: "nessuna notifica necessaria", il progresso visibile del cantiere basta).
 		target_building.is_awaiting_material = false
 		if DebugLogging.ENABLED:
-			print("[BUILD MATERIAL BONUS] Building #%d: nessun edificio di storage completo esiste ancora nel mondo — %d '%s' garantiti direttamente (bonus di partenza), nessuna Transport generata." % [
-				target_building.id, quantity_needed, resource_name
+			print("[BUILD MATERIAL BONUS] Building #%d: nessun edificio di storage completo esiste ancora nel mondo — garantiti direttamente (bonus di partenza), nessuna Transport generata: %s." % [
+				target_building.id, str(missing)
 			])
 		return false
 
@@ -360,8 +368,8 @@ func _resolve_material_shortage(
 		target_building.is_awaiting_material = true
 		building_material_blocked.emit(target_building)
 	if DebugLogging.ENABLED:
-		print("[BUILD MATERIAL NEEDED] Building #%d: servono %d '%s' — cantiere bloccato in attesa (nessuna Transport automatica)." % [
-			target_building.id, quantity_needed, resource_name
+		print("[BUILD MATERIAL NEEDED] Building #%d: manca ancora %s — cantiere bloccato in attesa (nessuna Transport automatica)." % [
+			target_building.id, str(missing)
 		])
 	return false
 
@@ -420,25 +428,28 @@ func retry_blocked_material_shortages(
 		if task == null or task.task_name != "task_build_name":
 			continue
 		var action := task.get_current_action()
-		if not (action is SetupSiteAction):
+		# ESTESO a BuildAction (2026-09-14, richiesta utente — "step 2 della build", il quarto step
+		# ora ha un proprio fabbisogno materiale) — STESSO principio, due rami paralleli invece di
+		# uno solo: ciascuno risolve `missing`/`target_building` dalla propria Action, poi convergono
+		# sulla STESSA _resolve_material_shortage sotto (nessuna logica duplicata tra i due tipi).
+		var missing: Dictionary = {}
+		var target_building: Building = null
+		if action is SetupSiteAction:
+			var setup_action := action as SetupSiteAction
+			target_building = setup_action.target_building
+			var missing_quantity := setup_action.get_missing_material_quantity()
+			if target_building != null and missing_quantity > 0:
+				missing[target_building.rules.setup_site_material_name] = missing_quantity
+		elif action is BuildAction:
+			var build_action := action as BuildAction
+			target_building = build_action.target_building
+			missing = build_action.get_missing_materials()
+		if target_building == null or missing.is_empty():
 			continue
-		var setup_action := action as SetupSiteAction
-		var missing := setup_action.get_missing_material_quantity()
-		if missing <= 0:
-			continue
-		var target_building := setup_action.target_building
-		if target_building == null:
-			continue
-		# resource_name (2026-09-14, richiesta utente) — letto da target_building.rules.
-		# setup_site_material_name, non più dalla costante SetupSiteAction.REQUIRED_MATERIAL_NAME
-		# (rimossa): il fabbisogno di setup site è ora dato per-tipo su BuildingRules, vedi quel
-		# file/SetupSiteAction.get_missing_material_quantity per il perché.
-		var resolved := _resolve_material_shortage(
-			individual, world, game_data, target_building, target_building.rules.setup_site_material_name, missing
-		)
+		var resolved := _resolve_material_shortage(individual, world, game_data, target_building, missing)
 		if resolved and DebugLogging.ENABLED:
-			print("[BUILD MATERIAL RETRY] Individuo #%d %s: ritentativo giornaliero riuscito — Building #%d, %d '%s' — sorgente trovata ora, Transport Task assegnata." % [
-				individual.id, individual.name, target_building.id, missing, target_building.rules.setup_site_material_name
+			print("[BUILD MATERIAL RETRY] Individuo #%d %s: ritentativo giornaliero riuscito — Building #%d: %s." % [
+				individual.id, individual.name, target_building.id, str(missing)
 			])
 
 
@@ -713,37 +724,55 @@ static func resolve_idle_individual(individual: HumanIndividual, age_band: Human
 		TaskDebugRegistry.on_task_closed(individual.current_task)
 		individual.current_task = resumed_task
 		TaskDebugRegistry.on_task_assigned(individual, resumed_task)
-		if not resumed_task.is_finished():
-			# "Walk di ritorno alla ripresa" (2026-09-13, richiesta utente, in preparazione al fix
-			# generico per QUALUNQUE Task sospesa il cui step corrente è un'Action stazionaria con
-			# una posizione fisica precisa — PickUp/Unload(RESOURCE)/Retrieve/SetupSite/Clear/Build,
-			# vedi Action.get_required_position) — QUI, non dentro TaskQueueService.pop_suspended_
-			# task: quel service si dichiara esplicitamente "il meccanismo, non la policy" (vedi il
-			# suo commento di testata), mentre questa funzione è già l'UNICO punto che decide cosa
-			# fare al momento della ripresa (bisogno/coda/perditempo/stop). MAI per un WalkAction
-			# (skip esplicito, richiesta utente — riprenderebbe comunque da solo ricalcolando la
-			# distanza residua al proprio activate(), nessun secondo Walk sopra un Walk):
-			# tecnicamente ridondante con la classe base di get_required_position (WalkAction non la
-			# sovrascrive, tornerebbe comunque null), ma reso esplicito per chiarezza e per non
-			# dipendere in futuro da quell'omissione se mai qualcuno la aggiungesse per errore.
-			var resumed_action := resumed_task.get_current_action()
-			if not (resumed_action is WalkAction):
-				var required_position: Variant = resumed_action.get_required_position(individual, resumed_task.context)
-				if required_position != null and individual.position != required_position:
-					if DebugLogging.ENABLED:
-						print("[RESUME WALKBACK] #%d %s: '%s' riprende su %s, ma l'individuo è a %s invece di %s — inserito Walk di ritorno." % [
-							individual.id, individual.name, resumed_task.task_name,
-							resumed_action.get_script().get_global_name(),
-							str(individual.position), str(required_position)
-						])
-					resumed_task.insert_step_before_current(WalkAction.new(required_position))
-					resumed_action = resumed_task.get_current_action()
-			resumed_action.activate(individual, resumed_task.context)
+		activate_resumed_task(individual, resumed_task)
 		return
 
 	if IdleTaskAssignmentService.assign_idle_fallback(individual, age_band, world):
 		return
 	individual.stop()
+
+
+# Attiva l'azione corrente di una Task appena RIPRESA dalla coda — ESTRATTO da resolve_idle_
+# individual sopra (2026-09-15, richiesta utente, "click ripetuto"... no, questo è il giro
+# successivo: "se sto facendo C non persistente con A in coda a zaino pieno, riprendo subito A") —
+# ORA un SECONDO chiamante, HumanIndividual.assign_task: quando un nuovo comando manuale sostituisce
+# una Task in corso NON persistente (Rest/Emergency Rest/Daydream/Wander/Play) mentre lo zaino ha
+# ancora il carico di una Task persistente sospesa in coda, quella Task va ripresa SUBITO al posto
+# del nuovo comando (che va lui in coda) — STESSA identica logica "Walk di ritorno alla ripresa" di
+# sempre, nessun motivo di duplicarla per il nuovo chiamante invece di riusarla.
+#
+# STATIC — non tocca mai `self`, stesso motivo/stesso trattamento di _resolve_active_stamina_need_
+# priority sopra: nessun impatto sul chiamante esistente (resolve_idle_individual, che continua a
+# chiamarla identica), HumanIndividual.gd la richiama da un contesto senza istanza di questa classe.
+#
+# No-op se resumed_task è già conclusa — stesso guard già presente prima di questa estrazione.
+static func activate_resumed_task(individual: HumanIndividual, resumed_task: Task) -> void:
+	if resumed_task.is_finished():
+		return
+	# "Walk di ritorno alla ripresa" (2026-09-13, richiesta utente, in preparazione al fix generico
+	# per QUALUNQUE Task sospesa il cui step corrente è un'Action stazionaria con una posizione
+	# fisica precisa — PickUp/Unload(RESOURCE)/Retrieve/SetupSite/Clear/Build, vedi Action.
+	# get_required_position) — QUI, non dentro TaskQueueService.pop_suspended_task: quel service si
+	# dichiara esplicitamente "il meccanismo, non la policy" (vedi il suo commento di testata),
+	# mentre questa funzione è il punto che decide cosa fare al momento della ripresa. MAI per un
+	# WalkAction (skip esplicito, richiesta utente — riprenderebbe comunque da solo ricalcolando la
+	# distanza residua al proprio activate(), nessun secondo Walk sopra un Walk): tecnicamente
+	# ridondante con la classe base di get_required_position (WalkAction non la sovrascrive,
+	# tornerebbe comunque null), ma reso esplicito per chiarezza e per non dipendere in futuro da
+	# quell'omissione se mai qualcuno la aggiungesse per errore.
+	var resumed_action := resumed_task.get_current_action()
+	if not (resumed_action is WalkAction):
+		var required_position: Variant = resumed_action.get_required_position(individual, resumed_task.context)
+		if required_position != null and individual.position != required_position:
+			if DebugLogging.ENABLED:
+				print("[RESUME WALKBACK] #%d %s: '%s' riprende su %s, ma l'individuo è a %s invece di %s — inserito Walk di ritorno." % [
+					individual.id, individual.name, resumed_task.task_name,
+					resumed_action.get_script().get_global_name(),
+					str(individual.position), str(required_position)
+				])
+			resumed_task.insert_step_before_current(WalkAction.new(required_position))
+			resumed_action = resumed_task.get_current_action()
+	resumed_action.activate(individual, resumed_task.context)
 
 
 # Interrupt/coda da bisogno stamina (2026-09-13, richiesta utente) — chiamata da apply_action

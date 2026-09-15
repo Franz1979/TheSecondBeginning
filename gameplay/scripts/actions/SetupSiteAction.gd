@@ -129,11 +129,25 @@ func get_missing_material_quantity() -> int:
 # bloccato invece di procedere per sbaglio).
 func activate(individual: Variant, context: Dictionary) -> void:
 	super(individual, context)
+	# Guardia site_setup_complete (bugfix — "i rametti spariscono ricostruendo la Build Task"): una
+	# volta che la fase è VERAMENTE conclusa una prima volta, questo step non deve più leggere
+	# get_missing_material_quantity() da capo. required_materials della fase BUILD (BuildAction)
+	# usa spesso lo STESSO resource_name di setup_site_material_name (oggi sempre "stick") sulla
+	# STESSA voce di stored_resources — senza questa guardia, una SetupSiteAction ricostruita da
+	# zero (TaskReassignmentService.reassign_task, ad ogni ripresa/riassegnazione) rileggeva
+	# "materiale presente" ogni volta che lo stock accumulato per il Build superava per caso la
+	# soglia di setup, credendo erroneamente di dover (ri)completare questa fase.
+	if target_building != null and target_building.site_setup_complete:
+		return
 	var missing := get_missing_material_quantity()
 	if missing > 0:
+		# "missing" ora un Dictionary[String, int] (2026-09-14, richiesta utente — generalizzato per
+		# BuildAction, che può avere PIÙ risorse mancanti insieme, vedi quel file) — SetupSiteAction
+		# ne ha sempre e sola una, un Dictionary a una sola voce resta comunque la stessa forma letta
+		# da HumanIndividualActionService._handle_pending_material_shortage/_resolve_material_shortage,
+		# nessun ramo speciale per il caso "una sola risorsa".
 		context["pending_material_shortage"] = {
-			"resource_name": target_building.rules.setup_site_material_name,
-			"quantity_needed": missing,
+			"missing": {target_building.rules.setup_site_material_name: missing},
 			"target_building_id": target_building.id,
 		}
 		return
@@ -153,6 +167,8 @@ func activate(individual: Variant, context: Dictionary) -> void:
 func get_stamina_delta(individual: Variant, context: Dictionary, delta: float) -> float:
 	if target_building == null:
 		return 0.0
+	if target_building.site_setup_complete:
+		return 0.0
 	if get_missing_material_quantity() > 0:
 		return 0.0
 	if _get_site_setup_days_done() >= DURATION_DAYS:
@@ -167,6 +183,8 @@ func get_stamina_delta(individual: Variant, context: Dictionary, delta: float) -
 func get_happiness_delta(individual: Variant, context: Dictionary, delta: float) -> float:
 	if target_building == null:
 		return 0.0
+	if target_building.site_setup_complete:
+		return 0.0
 	if get_missing_material_quantity() > 0:
 		return 0.0
 	if _get_site_setup_days_done() >= DURATION_DAYS:
@@ -178,6 +196,8 @@ func get_happiness_delta(individual: Variant, context: Dictionary, delta: float)
 # da site_setup_days_done (che può anche essere già a target da un tentativo precedente, se mai
 # possibile): il completamento resta subordinato a ENTRAMBE le condizioni.
 func is_complete(individual: Variant, context: Dictionary) -> bool:
+	if target_building != null and target_building.site_setup_complete:
+		return true
 	if get_missing_material_quantity() > 0:
 		return false
 	return _get_site_setup_days_done() >= DURATION_DAYS
@@ -204,8 +224,30 @@ func get_required_position(individual: Variant, context: Dictionary) -> Variant:
 # Clear/Build — erase() intero (non un decremento quantità), coerente con "consumato", non "ancora
 # in giacenza parziale".
 func on_complete(individual: Variant, context: Dictionary) -> void:
+	# Guardia site_setup_complete — idempotenza (bugfix, stesso principio di ClearAction.
+	# construction_progress["space_reserved"]): senza questo return anticipato, ogni ricostruzione
+	# della Build Task per un edificio la cui fase SetupSite è GIÀ conclusa (is_complete() sopra
+	# ritorna comunque true, per costruzione) rieseguirebbe l'erase() sotto — cancellando lo stock
+	# della STESSA risorsa che nel frattempo la fase BUILD sta accumulando per il proprio
+	# required_materials (oggi sempre "stick" per entrambe le fasi, vedi BuildingRules.
+	# setup_site_material_name).
+	if target_building != null and target_building.site_setup_complete:
+		return
 	if target_building != null and target_building.rules != null:
 		target_building.stored_resources.erase(target_building.rules.setup_site_material_name)
+	# is_awaiting_material -> false (2026-09-14, richiesta utente — bugfix: "a edificio terminato
+	# continua a uscire nell'info panel 'servono ancora 4 rametti'") — BUG CONFERMATO: questo flag
+	# diventava true quando il cantiere si bloccava (HumanIndividualActionService._resolve_material_
+	# shortage), ma per QUALUNQUE edificio diverso da deposit_site (l'unico con un ramo bonus che lo
+	# azzerava) nulla lo rimetteva mai a false dopo che il materiale arrivava manualmente — activate()
+	# (l'unico altro punto che un tempo lo azzerava) non viene richiamato di nuovo finché lo step
+	# resta bloccato sullo STESSO step (nessuna riattivazione, solo get_stamina_delta/is_complete
+	# rieseguiti ogni frame), quindi restava true per sempre anche a costruzione già completata. QUI,
+	# non altrove: on_complete() scatta esattamente e solo quando questo step è DAVVERO concluso con
+	# successo (is_complete() lo richiede, materiale già garantito presente) — punto unico e
+	# affidabile per "il blocco, se c'era, è ormai risolto". Idempotente/innocuo se era già false.
+	if target_building != null:
+		target_building.is_awaiting_material = false
 	site_setup_completed.emit(target_building)
 
 

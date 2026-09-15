@@ -150,7 +150,9 @@ func _build_shortcuts_text() -> String:
 	# di R (Rest Task, mutuamente esclusivo col piazzamento edificio — vedi GameScene._unhandled_
 	# input), G (Wander Task) e P (Play Task, aggiunta nello stesso giro di questo aggiornamento).
 	# Verificato contro OGNI KEY_* di GameScene._unhandled_input non gated da DebugLogging.ENABLED —
-	# T/Y/U restano deliberatamente FUORI (vedi nota sotto per il perché, invariata).
+	# T/Y restano deliberatamente FUORI (vedi nota sotto per il perché, invariata). U AGGIUNTO
+	# (2026-09-16, richiesta utente): non più il test debug temporaneo che era prima (vedi
+	# GameScene._unhandled_input), ora è il modificatore vero per "Scaricare risorsa qui".
 	var lines: Array[String] = [
 		"[b]%s[/b]" % tr("help_shortcuts_title"),
 		"",
@@ -163,15 +165,16 @@ func _build_shortcuts_text() -> String:
 		"[b]G[/b] — %s" % tr("help_wander_task"),
 		"[b]P[/b] — %s" % tr("help_play_task"),
 		"[b]H[/b] — %s" % tr("help_stop_task"),
+		"[b]U[/b] — %s" % tr("help_unload_here_task"),
 	]
 	# Voci DEBUG (2026-09-09, richiesta utente — "aggiungi anche z, s [H] nell'help"): mostrate
 	# solo quando i debug hook stessi sono attivi (DebugLogging.ENABLED, stesso interruttore che li
 	# abilita in GameScene._unhandled_input) — coerente col fatto che in una build "pulita" quei
-	# tasti non fanno letteralmente nulla, elencarli comunque confonderebbe il player. T/Y/U (test
+	# tasti non fanno letteralmente nulla, elencarli comunque confonderebbe il player. T/Y (test
 	# temporanei "usa e getta", da rimuovere — vedi i rispettivi commenti "TEST TEMPORANEO... DA
 	# RIMUOVERE" in GameScene.gd) restano deliberatamente FUORI da questa lista anche a debug attivo:
 	# non richiesti, e pensati per sparire a breve — a differenza di Z, un'utility di debug più
-	# duratura.
+	# duratura. U non è più tra questi (vedi sopra): è ora un comando vero, elencato incondizionatamente.
 	if DebugLogging.ENABLED:
 		lines.append("[b]Z[/b] — %s" % tr("help_debug_clear_backpack"))
 	return "\n".join(lines)

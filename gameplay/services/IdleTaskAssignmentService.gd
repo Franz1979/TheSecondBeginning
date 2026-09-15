@@ -34,7 +34,12 @@ const IDLE_FALLBACK_TASK_PATHS: Array[String] = [
 	"res://gameplay/scripts/tasks/definitions/play.tres",
 ]
 
-# DEBUG: rimettere a true a fine sessione di debug
+# SOSPESA di nuovo (2026-09-15, richiesta utente — "domani dobbiamo debuggare ancora le task
+# assegnate di default": individui che restano fermi "ondulando come quando camminano" dopo un po',
+# con task_queue che risulta vuota nel pannello finché non si preme H — sintomo da indagare prima di
+# riabilitare, probabile causa nel ciclo Wander/WalkAction o nell'interazione con la coda sospesa,
+# non ancora isolata). Era già stata disattivata in precedenza per debug (vedi git blame) — questa
+# volta il motivo è documentato qui invece che in un commento "rimettere a true a fine sessione".
 const WANDER_ENABLED := false
 
 # Lunghezza min/max (in microcelle) di ciascun tratto casuale di Wander/Play — STESSO valore/STESSO
@@ -72,7 +77,7 @@ static func resolve_play_targets(individual: HumanIndividual) -> Dictionary:
 static func _build_idle_task(path: String, individual: HumanIndividual) -> Task:
 	match path:
 		"res://gameplay/scripts/tasks/definitions/wander.tres":
-			if not WANDER_ENABLED: # DEBUG: rimettere a true a fine sessione di debug
+			if not WANDER_ENABLED:
 				return null
 			var target_data := resolve_wander_targets(individual)
 			var definition := load(path) as TaskDefinition

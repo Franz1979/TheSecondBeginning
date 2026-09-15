@@ -109,6 +109,16 @@ var game_time_service: GameTimeService
 # _setup_clock (nessun .tscn, stesso pattern di HumanIndividualView), aggiunto sotto CanvasLayer
 # così resta in overlay sopra il resto della UI di gioco.
 var notification_popup: NotificationPopup
+# Banner "selezione Transport a metà" (2026-09-14, richiesta utente — sostituisce l'idea di un
+# timeout automatico: "prova una indicazione visibile") — STESSO principio/STESSA posizione di
+# notification_popup sopra (istanziato via codice in _setup_clock, aggiunto sotto CanvasLayer),
+# ma PERSISTENTE (mai in coda/auto-dissolvenza come NotificationPopup): resta visibile per l'intera
+# durata in cui _debug_transport_source_building non è null, un singolo nodo mostrato/nascosto
+# (mai ricreato) ai tre punti che cambiano quello stato — vedi _on_transport_source_resource_chosen
+# (mostra)/_debug_try_assign_transport_command_on_right_click (nasconde, destinazione confermata)/
+# _stop_selected_individual_task (nasconde, annullato con H).
+var transport_selection_banner: PanelContainer
+var transport_selection_banner_label: Label
 # "individual" è ora il BERSAGLIO CORRENTE di movimento/streaming (Step 2 del piano movimento
 # indipendente, 2026-09-02 — non più un "leader" fisso: coincide con human_individuals[0] solo come
 # valore INIZIALE assegnato in _ready(), vedi lì). Cambia ogni volta che la selezione cambia su un
@@ -130,6 +140,17 @@ var individual_movement_service := HumanIndividualMovementService.new()
 # mai un'istanza per individuo (l'unico stato per-azione vive su HumanIndividual.current_task,
 # non qui). Girato ogni frame in _process, DOPO individual_movement_service.advance_movement.
 var individual_action_service := HumanIndividualActionService.new()
+
+# TEMPORANEO (debug, richiesta utente — indagine "pipottini che ondeggiano fermi"): il pannello
+# individuo normalmente si aggiorna solo al cambio giorno di gioco (_on_day_advanced) o al click di
+# (ri)selezione, vedi _refresh_selected_individual_panel — troppo raro per osservare in tempo reale
+# cosa succede a current_task/task_queue mentre si indaga il bug. Questo timer forza lo stesso
+# refresh ogni DEBUG_PANEL_REFRESH_INTERVAL_SEC secondi REALI (Engine.get_process_delta_time, non
+# game_delta: deve continuare anche a clock in pausa/a qualunque velocità di simulazione, stesso
+# principio del movimento player in _process). Da RIMUOVERE (insieme al blocco in _process che lo
+# consuma) una volta conclusa l'indagine — non è pensato per restare nella build finale.
+const DEBUG_PANEL_REFRESH_INTERVAL_SEC: float = 0.5
+var _debug_panel_refresh_timer: float = 0.0
 # Hit-test di selezione per QUALSIASI individuo umano visibile — vedi HumanIndividualSelectorController.gd.
 # Sostituisce, per il click sinistro, quello che prima faceva HumanIndividualController._try_select
 # (ora rimossa da lì, richiesta utente 2026-09-02: "click su un individuo qualsiasi tra quelli
@@ -290,10 +311,22 @@ var stone_info_panel: StoneInfoPanel
 # risorsa provata in _unhandled_input (dopo vegetazione/edificio/corpo morto/stone/individuo umano):
 # l'utente ha chiesto questo click come alternativa al click preciso sulla pianta già esistente, non
 # come sostituto — non compete quindi nella lista a priorità per distanza degli altri tipi mappa.
-const STICK_LOT_INFO_PANEL_SCENE := preload("res://gameplay/scenes/game/StickLotInfoPanel.tscn")
+const TERRAIN_SCATTERED_RESOURCE_INFO_PANEL_SCENE := preload("res://gameplay/scenes/game/TerrainScatteredResourceInfoPanel.tscn")
 var stick_lot_selector_controller := StickLotSelectorController.new()
 var selected_stick_lot: Dictionary = {}
-var stick_lot_info_panel: StickLotInfoPanel
+# Nome campo/costante RINOMINATI (2026-09-15, richiesta utente — vedi TerrainScatteredResourceInfoPanel.gd
+# per il perché) insieme alla classe/al file — stick_lot_selector_controller/selected_stick_lot/
+# StickLotSelectorController sopra restano INVARIATI: quel meccanismo di SELEZIONE resta specifico
+# allo stick lot per ora (non ancora esteso a fruits/funghi/uova), solo il PANNELLO che ne mostra il
+# risultato ha cambiato identità.
+var terrain_scattered_resource_info_panel: TerrainScatteredResourceInfoPanel
+# Stato del ciclo click-ripetuto vegetazione/stick-lot (2026-09-15, richiesta utente) — vedi il
+# commento esteso in _unhandled_input, dove sono l'unico punto che li legge/scrive.
+# Vector2i(-1,-1) = "nessun ciclo attivo su questo lotto" (stesso sentinel già in uso per
+# _selected_stick_lot in MicroCellRenderer.gd).
+var _overlap_cycle_macro_coords: Vector2i = Vector2i(-1, -1)
+var _overlap_cycle_lot: Vector2i = Vector2i(-1, -1)
+var _overlap_cycle_index: int = 0
 
 const MINIMAP_PANEL_SCENE := preload("res://gameplay/scenes/game/MiniMapPanel.tscn")
 var minimap_panel: MiniMapPanel
@@ -484,10 +517,11 @@ func _ready() -> void:
 	# stesso identico principio "componente muto" degli altri quattro.
 	stone_info_panel = STONE_INFO_PANEL_SCENE.instantiate()
 	game_info_tabs.selection_content.add_child(stone_info_panel)
-	# stick_lot_info_panel (2026-09-08, richiesta utente) — sesto sibling nella STESSA SelectionTab,
-	# stesso identico principio "componente muto" degli altri cinque.
-	stick_lot_info_panel = STICK_LOT_INFO_PANEL_SCENE.instantiate()
-	game_info_tabs.selection_content.add_child(stick_lot_info_panel)
+	# terrain_scattered_resource_info_panel (2026-09-08, richiesta utente; rinominato 2026-09-15 da
+	# stick_lot_info_panel, vedi TerrainScatteredResourceInfoPanel.gd) — sesto sibling nella STESSA
+	# SelectionTab, stesso identico principio "componente muto" degli altri cinque.
+	terrain_scattered_resource_info_panel = TERRAIN_SCATTERED_RESOURCE_INFO_PANEL_SCENE.instantiate()
+	game_info_tabs.selection_content.add_child(terrain_scattered_resource_info_panel)
 	# "🎯 centra" (Step 3, richiesta utente 2026-09-04): non più un bottone per-pannello (era dentro
 	# human_individual_info_panel, funzionava solo per individui) — un solo bottone condiviso
 	# nell'header di GameInfoTabs.SelectionTab, sopra a qualunque pannello selection_content stia
@@ -899,6 +933,17 @@ func _process(delta: float) -> void:
 	# active_individuals sotto, che deve girare indipendentemente da chi (se qualcuno) è selezionato.
 	var game_delta := clock.get_game_day_delta(delta)
 
+	# TEMPORANEO (debug — vedi _debug_panel_refresh_timer sopra per il perché): refresh forzato del
+	# pannello individuo selezionato ogni DEBUG_PANEL_REFRESH_INTERVAL_SEC secondi REALI, con `delta`
+	# (secondi reali di questo frame, MAI game_delta sopra) — indipendente da giorno di gioco/pausa/
+	# velocità di simulazione. _refresh_selected_individual_panel() è già no-op se non è un individuo
+	# ad essere selezionato (vedi quel commento), quindi questo blocco è innocuo quando nulla è
+	# selezionato.
+	_debug_panel_refresh_timer += delta
+	if _debug_panel_refresh_timer >= DEBUG_PANEL_REFRESH_INTERVAL_SEC:
+		_debug_panel_refresh_timer = 0.0
+		_refresh_selected_individual_panel()
+
 	# Ciclo su TUTTI gli individui con una Task attiva (2026-09-12, richiesta utente — piano
 	# multi-individuo, Step 2: GENERALIZZA il refactor "loop-readiness" del 2026-09-10 — quello
 	# costruiva già questa stessa Array[HumanIndividual] tipizzata con l'idiom append-esplicito
@@ -1072,6 +1117,18 @@ func _unhandled_input(event: InputEvent) -> void:
 	# building_hit (distanza in PIXEL, spazio locale della cella del match), compete alla pari nel
 	# confronto map_hit sotto, nessun trattamento speciale.
 	var stone_hit := stone_selector_controller.try_select(event, live_cells)
+	# Click sul "terreno" di una microcella TREE (2026-09-08, richiesta utente) — CALCOLATO QUI,
+	# prima della competizione map_hit sotto (2026-09-15, richiesta utente, "click ripetuto": in
+	# precedenza veniva provato SOLO come ultima risorsa dentro il ramo "else" più sotto, quindi non
+	# era mai disponibile quando la vegetazione vinceva la competizione — impossibile sapere se il
+	# lotto appena vinto dalla vegetazione fosse ANCHE un lotto stick selezionabile). Resta comunque
+	# un fallback DEBOLE, MAI aggiunto alla lista a priorità per distanza di best_map_distance_px
+	# sotto: qui serve solo a rilevare la sovrapposizione per il ciclo click-ripetuto (vedi sotto),
+	# non a competere per vincere map_hit — stesso identico principio/stessi commit precedenti su
+	# StickLotSelectorController, solo calcolato prima invece che dentro l'else.
+	var stick_lot_hit: Dictionary = stick_lot_selector_controller.try_select(
+		event, live_cells, MOUSE_BUTTON_LEFT, macro_world.buildings if macro_world != null else []
+	)
 	# Corpo morto (bugfix, 2026-09-06, richiesta utente: un corpo morto in una cella densa di
 	# vegetazione — es. morto in una foresta — non era mai raggiungibile dal click, perché prima
 	# veniva provato SOLO come ultima risorsa, dopo che vegetazione/edifici avevano già "vinto" a
@@ -1116,7 +1173,56 @@ func _unhandled_input(event: InputEvent) -> void:
 		map_hit_kind = SelectionKind.STONE
 		best_map_distance_px = stone_hit["distance"]
 
-	if not map_hit.is_empty() and not _is_player_closer_to_click(best_map_distance_px):
+	# Ciclo click-ripetuto vegetazione/stick-lot (2026-09-15, richiesta utente — "cliccare la cella
+	# per vedere quanti bastoncini ci sono, se ci sono anche alberi o arbusti è molto difficile...
+	# proviamo click ripetuto"): quando lo stesso lotto TREE contiene sia un individuo di
+	# vegetazione selezionabile SIA un lotto stick (caso comune — un lotto stick COINCIDE sempre con
+	# la microcella dell'albero che lo occupa, vedi StickLotSelectorController), il primo click su
+	# quel lotto seleziona comunque il vincitore normale (vegetazione, che vince sempre map_hit_kind
+	# sopra — non toccato), ma un SECONDO click sullo STESSO lotto passa al lotto stick invece di
+	# riselezionare la stessa pianta all'infinito, un TERZO torna alla vegetazione, e così via.
+	#
+	# _overlap_cycle_macro_coords/_overlap_cycle_lot/_overlap_cycle_index (campi in testa al file) —
+	# stato minimo: l'ultimo lotto su cui è scattato il ciclo + l'indice corrente (0=vegetazione,
+	# 1=stick lot). SOLO un vero click sinistro tocca questo stato (is_left_click sotto): ogni altro
+	# evento (movimento del mouse tra un click e l'altro, tasti, destro) lo lascia INVARIATO — se
+	# resettassimo ad ogni evento, muovere il mouse tra due click perderebbe il "ricordo" del lotto e
+	# il ciclo ripartirebbe sempre da capo. Un click che non ricade nel caso di sovrapposizione (lotto
+	# diverso, o niente vegetazione lì) resetta lo stato: tornare più tardi su un lotto riparte sempre
+	# dal vincitore normale, mai da dove si era rimasti l'ultima volta.
+	#
+	# _is_player_closer_to_click incluso anche qui (stessa eccezione già applicata al ramo normale
+	# sotto): se il player è oggettivamente più vicino al click della vegetazione, vince lui, il
+	# ciclo non scatta.
+	var is_left_click: bool = event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT
+	var overlap_handled := false
+	if is_left_click:
+		var is_overlap: bool = (
+			map_hit_kind == SelectionKind.VEGETATION and not stick_lot_hit.is_empty()
+			and not _is_player_closer_to_click(best_map_distance_px)
+			and map_hit["macro_coords"] == stick_lot_hit["macro_coords"]
+			and Vector2i(map_hit["individual_key"].x, map_hit["individual_key"].y) == stick_lot_hit["lot"]
+		)
+		if is_overlap:
+			if _overlap_cycle_macro_coords == stick_lot_hit["macro_coords"] and _overlap_cycle_lot == stick_lot_hit["lot"]:
+				_overlap_cycle_index = (_overlap_cycle_index + 1) % 2
+			else:
+				_overlap_cycle_macro_coords = stick_lot_hit["macro_coords"]
+				_overlap_cycle_lot = stick_lot_hit["lot"]
+				_overlap_cycle_index = 0
+			if _overlap_cycle_index == 1:
+				_select_stick_lot(stick_lot_hit)
+			else:
+				_select_vegetation(map_hit)
+			overlap_handled = true
+		else:
+			_overlap_cycle_macro_coords = Vector2i(-1, -1)
+			_overlap_cycle_lot = Vector2i(-1, -1)
+			_overlap_cycle_index = 0
+
+	if overlap_handled:
+		pass
+	elif not map_hit.is_empty() and not _is_player_closer_to_click(best_map_distance_px):
 		match map_hit_kind:
 			SelectionKind.VEGETATION:
 				_select_vegetation(map_hit)
@@ -1152,12 +1258,10 @@ func _unhandled_input(event: InputEvent) -> void:
 			else:
 				_clear_individual_selection()
 				# Click sul "terreno" di una microcella TREE (2026-09-08, richiesta utente) — ultima
-				# risorsa, provata SOLO quando nient'altro ha reclamato il click (nessun oggetto
+				# risorsa, usata SOLO quando nient'altro ha reclamato il click (nessun oggetto
 				# preciso, nessun individuo umano): vedi StickLotSelectorController per il perché non
-				# compete nella lista a priorità per distanza sopra.
-				var stick_lot_hit: Dictionary = stick_lot_selector_controller.try_select(
-					event, live_cells, MOUSE_BUTTON_LEFT, macro_world.buildings if macro_world != null else []
-				)
+				# compete nella lista a priorità per distanza sopra. Già calcolato in cima alla
+				# funzione (stick_lot_hit, 2026-09-15) — non più ricalcolato qui.
 				if not stick_lot_hit.is_empty():
 					_select_stick_lot(stick_lot_hit)
 		# Comando "vai e raccogli" (2026-09-09, richiesta utente — sostituisce l'attivazione via
@@ -1289,13 +1393,14 @@ func _unhandled_input(event: InputEvent) -> void:
 	if DebugLogging.ENABLED and event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_Z:
 		_debug_clear_selected_individual_backpack()
 
-	# TEST TEMPORANEO end-to-end "haul_resource" (2026-09-09, richiesta utente) — vedi
-	# _debug_test_haul_resource_task sotto per cosa fa e perché è qui. Tasto U (mnemonico "haUl",
-	# H già preso da Stop/"Halt"), stesso gate/stesso principio "usa e getta" di T/Y/Z sopra: DA
-	# RIMUOVERE (o spostare sotto un vero pannello/bottone debug) quando esisterà una vera
-	# TaskDefinition "haul_resource".
-	if DebugLogging.ENABLED and event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_U:
-		_debug_test_haul_resource_task()
+	# Tasto U LIBERATO (2026-09-16, richiesta utente) — prima lanciava il TEST TEMPORANEO end-to-end
+	# "haul_resource" (_debug_test_haul_resource_task sotto), che il proprio commento originale
+	# segnava già "DA RIMUOVERE... quando esisterà una vera TaskDefinition 'haul_resource'" — quella
+	# TaskDefinition esiste da tempo (Raccolta vera, click destro su stone/stick lot, vedi
+	# _assign_pickup_task), quindi questo collegamento era ormai morto. U ora è il modificatore per
+	# "Scaricare risorsa" (U + click destro su un deposito, vedi _try_assign_unload_command_on_right_
+	# click) — _debug_test_haul_resource_task resta nel file, non più raggiungibile da nessun tasto
+	# (rimozione della funzione stessa fuori scope di questo fix).
 
 
 # Vero se un individuo umano QUALSIASI è più vicino al click corrente del miglior candidato mappa
@@ -1399,6 +1504,9 @@ func _stop_selected_individual_task() -> void:
 		_debug_transport_pending_source_building = null
 		_debug_transport_resource_name = ""
 		_debug_transport_quantity = 0
+		# Banner nascosto (2026-09-14, richiesta utente) — selezione annullata.
+		if transport_selection_banner != null:
+			transport_selection_banner.visible = false
 		return
 	individual.stop()
 	# Bugfix (2026-09-14, richiesta utente) — individual.stop() da solo azzera SOLO current_task,
@@ -1932,6 +2040,10 @@ func _debug_try_assign_transport_command_on_right_click(event: InputEvent) -> bo
 
 	var source_building := _debug_transport_source_building
 	_debug_transport_source_building = null
+	# Banner nascosto (2026-09-14, richiesta utente) — destinazione confermata, la selezione non è
+	# più "a metà".
+	if transport_selection_banner != null:
+		transport_selection_banner.visible = false
 	_debug_assign_transport_task(source_building, hit_building, _debug_transport_resource_name, _debug_transport_quantity)
 	return true
 
@@ -1947,6 +2059,10 @@ func _on_transport_source_resource_chosen(resource_name: String, quantity: int) 
 	_debug_transport_pending_source_building = null
 	_debug_transport_resource_name = resource_name
 	_debug_transport_quantity = quantity
+	# Banner mostrato (2026-09-14, richiesta utente) — sorgente confermata, la selezione è ora "a
+	# metà" finché non scegli la destinazione (o premi H per annullare).
+	if transport_selection_banner != null:
+		transport_selection_banner.visible = true
 	print("[TRANSPORT] sorgente impostata: %s #%d, risorsa='%s' quantità=%d. Ora click destro sull'edificio destinazione." % [
 		_debug_transport_source_building.building_type_name, _debug_transport_source_building.id, resource_name, quantity
 	])
@@ -2888,6 +3004,18 @@ func _try_assign_unload_command_on_right_click(event: InputEvent) -> bool:
 	# NON era un bug di correttezza, solo lavoro ridondante ad ogni frame di movimento del mouse).
 	if not (event is InputEventMouseButton) or not event.pressed or event.button_index != MOUSE_BUTTON_RIGHT:
 		return false
+	# Tasto U tenuto premuto (2026-09-16, richiesta utente — bugfix "attivo questa Task spesso per
+	# errore, e se nel frattempo lo zaino si svuota per altri motivi va in tilt"): PRIMA un semplice
+	# click destro su un deposito bastava, troppo facile da innescare per sbaglio durante un click
+	# destro "normale" (es. tentando di selezionare/muoversi vicino a un deposito). Stesso pattern
+	# già in uso per il piazzamento istantaneo edifici (Sx+B, vedi _unhandled_input) — un comando
+	# "veloce ma pericoloso" richiede un modificatore esplicito, non il solo click. Mnemonico U
+	# libero per questo scopo (2026-09-16): prima era il tasto del test debug temporaneo
+	# _debug_test_haul_resource_task (mai rimosso quando la vera Raccolta è arrivata, come il suo
+	# stesso commento richiedeva) — vedi _unhandled_input, quel collegamento è stato tolto per fare
+	# posto a questo.
+	if not Input.is_key_pressed(KEY_U):
+		return false
 	if individual == null or not individual.is_selected:
 		return false
 	if individual.carried_quantity <= 0:
@@ -3151,17 +3279,17 @@ func _clear_stick_lot_selection() -> void:
 	for cell in live_cells.values():
 		if cell.renderer != null:
 			cell.renderer.clear_selected_stick_lot()
-	stick_lot_info_panel.clear()
+	terrain_scattered_resource_info_panel.clear()
 	game_info_tabs.hide_selection_tab()
 
 
 # Legge macro_state.stick_quantities (disponibilità ESATTA del lotto cliccato: capacity - harvested,
 # vedi StickPoolService). NON più resource_quantity[TREE] (2026-09-09, richiesta utente — rimosso:
 # quel valore è l'aggregato dell'INTERA macrocella, non ha alcun legame col lotto singolo cliccato,
-# leggeva come "legno di questo lotto" mentre non lo era — vedi StickLotInfoPanel per il rimpiazzo,
-# un'etichetta "wood" puramente statica finché non esisterà un vero dato per lotto). Nessuna
-# gestione "marker bloccato": stesso principio già dichiarato per stone — l'unica via di
-# invalidazione oggi resta lo scaricamento della macrocella.
+# leggeva come "legno di questo lotto" mentre non lo era — vedi TerrainScatteredResourceInfoPanel
+# per il rimpiazzo, un'etichetta "wood" puramente statica finché non esisterà un vero dato per
+# lotto). Nessuna gestione "marker bloccato": stesso principio già dichiarato per stone — l'unica
+# via di invalidazione oggi resta lo scaricamento della macrocella.
 func _refresh_stick_lot_panel() -> void:
 	var cell: LiveMacroCell = live_cells.get(selected_stick_lot["macro_coords"])
 	if cell == null or cell.macro_state == null:
@@ -3170,7 +3298,7 @@ func _refresh_stick_lot_panel() -> void:
 	var lot: Vector2i = selected_stick_lot["lot"]
 	var stick_entry: Dictionary = cell.macro_state.stick_quantities.get(lot, {})
 	var available_sticks: int = int(stick_entry.get("capacity", 0)) - int(stick_entry.get("harvested", 0))
-	stick_lot_info_panel.show_stick_lot(available_sticks)
+	terrain_scattered_resource_info_panel.show_stick_lot(available_sticks)
 	game_info_tabs.set_selection_title(tr("selection_title_type").format({"type": tr("stick_lot_selection_title")}))
 
 
@@ -3373,7 +3501,14 @@ func _update_individual_panel_content(target: HumanIndividual) -> void:
 	# testo+tr() da current_task (vedi Task.gd); null = nessuna Task in corso, cioè Rest implicito
 	# (vedi HumanIndividualActionService.apply_action), reso qui come stringa esplicita invece che
 	# un pannello vuoto/ambiguo.
-	var activity_text: String = target.current_task.get_activity_description() if target.current_task != null else tr("task_activity_idle")
+	# Id Task in coda (2026-09-16, richiesta utente — indagine "task assegnata due volte": da log
+	# testuale task_name da solo non distingue due istanze diverse della stessa Task, es. una
+	# Transport ripresa dalla coda vs una appena comandata — Task.id le distingue sempre, vedi
+	# Task.gd) — mostrato SOLO se una Task è davvero in corso, mai per "A riposo".
+	var activity_text: String = (
+		"%s [#%d]" % [target.current_task.get_activity_description(), target.current_task.id]
+		if target.current_task != null else tr("task_activity_idle")
+	)
 
 	# Capacità di trasporto (2026-09-08, richiesta utente) — a differenza di max_stamina sopra
 	# (ricalcolato fresco qui ad ogni refresh pannello), max_carry_capacity è letto DIRETTAMENTE
@@ -3400,17 +3535,20 @@ func _update_individual_panel_content(target: HumanIndividual) -> void:
 	# da target, nessun ricalcolo (nessuna crescita esiste ancora, restano sempre 0.0 finché un
 	# futuro sistema non le farà variare).
 	#
-	# Azioni in coda (2026-09-13, richiesta utente) — descrizioni già risolte qui (tr() applicato
-	# ORA, stesso principio di get_activity_description sopra), pannello resta muto. Ordine
-	# INVERTITO rispetto a task_queue (che è LIFO, vedi TaskQueueService.pop_suspended_task — l'ultima
-	# spinta è la prossima a riprendere): reverse-iterando si mostra per prima "quella che riprenderà
-	# subito dopo l'attività corrente", il che è l'informazione più utile per il player.
+	# Azioni in coda (2026-09-13, richiesta utente) — descrizioni già risolte qui, pannello resta
+	# muto. Ordine INVERTITO rispetto a task_queue (che è LIFO, vedi TaskQueueService.
+	# pop_suspended_task — l'ultima spinta è la prossima a riprendere): reverse-iterando si mostra
+	# per prima "quella che riprenderà subito dopo l'attività corrente", il che è l'informazione più
+	# utile per il player.
+	# STESSA formula/STESSO metodo di activity_text sopra (2026-09-16, richiesta utente) —
+	# Task.get_activity_description() invece del solo tr(task_name) grezzo: una Task sospesa in coda
+	# ha ancora gli stessi `steps` di quando era attiva (haul_resource/transport mostrano quindi la
+	# propria risorsa anche qui, vedi Task.gd), e Task.id (vedi commento su activity_text) permette
+	# di distinguere in coda due Task con lo stesso nome/stessa risorsa.
 	var queued_task_descriptions: Array[String] = []
 	for i in range(target.task_queue.size() - 1, -1, -1):
 		var queued_task: Task = target.task_queue[i]
-		queued_task_descriptions.append(
-			tr(queued_task.task_name) if queued_task.task_name != "" else tr("task_debug_panel_unnamed_task")
-		)
+		queued_task_descriptions.append("%s [#%d]" % [queued_task.get_activity_description(), queued_task.id])
 	human_individual_info_panel.show_individual(
 		target, max_stamina, current_stamina, activity_text,
 		target.max_carry_capacity, free_carry_capacity,
@@ -4147,6 +4285,9 @@ func _activate_live_cell(mx: int, my: int) -> LiveMacroCell:
 			# nessun motivo di lasciare quella finestra scorretta quando basta invertire due righe).
 			_refresh_building_visuals(cell)
 			_refresh_resource_visuals(cell)
+			# Bugfix reload "bastoncini agli angoli spariti" (2026-09-15) — vedi il commento esteso su
+			# _create_build_site_placeholder_nodes/_restore_build_site_placeholders_for_cell.
+			_restore_build_site_placeholders_for_cell(cell)
 
 	live_cells[Vector2i(mx, my)] = cell
 	return cell
@@ -6061,6 +6202,27 @@ func _spawn_build_site_placeholders(building: Building) -> void:
 	# _draw_construction_wip_marker.
 	building.site_setup_complete = true
 	_refresh_building_visuals(cell)
+	_create_build_site_placeholder_nodes(building, cell)
+	print("[BUILD] Cantiere edificio #%d allestito (4 placeholder posizionati)." % building.id)
+
+
+# Bugfix (2026-09-15, richiesta utente — "resta il fatto che se un cantiere è in costruzione, si
+# vedono i 4 bastoncini agli angoli, se salvo e rientro non li vedo più"): i 4 Polygon2D sotto sono
+# SOLO figli di cell.container, mai persistiti — al reload l'intera scena (e ogni LiveMacroCell) è
+# ricostruita da zero, quindi vanno rispawnati per ogni cantiere già oltre la fase "allestimento"
+# (site_setup_complete=true, il booleano VERO invece è persistito su Building e sopravvive al
+# reload). Il vecchio unico punto di spawn era SOLO il segnale SetupSiteAction.site_setup_completed
+# (vedi _spawn_build_site_placeholders sopra) — un evento "successo UNA VOLTA", mai ri-emesso per
+# uno step ormai storico (già superato, magari da sessioni precedenti) di una Task ricostruita da
+# salvataggio: _reconnect_loaded_task_signals ricollega il segnale ma non c'è più nulla che lo
+# faccia scattare di nuovo. FIX: nodo-creazione estratta a parte (_create_build_site_placeholder_
+# nodes, stessa funzione riusata da entrambi i punti, mai duplicata) e richiamata anche da
+# _restore_build_site_placeholders_for_cell sotto, invocata da _activate_live_cell per OGNI cella
+# viva (copre sia il reload sia una cella-edificio riattivata dopo essere stata smontata) — stesso
+# guard anti-duplicazione (get_node_or_null) già in uso sopra, quindi un no-op sicuro se i
+# placeholder esistono già (es. cantiere avviato e allestito nella sessione corrente, cella mai
+# smontata).
+func _create_build_site_placeholder_nodes(building: Building, cell: LiveMacroCell) -> void:
 	var cell_origin := Vector2(building.micro_x, building.micro_y) * MicroCellRenderer.CELL_SIZE
 	var corner_offsets: Array[Vector2] = [
 		Vector2(_BUILD_SITE_PLACEHOLDER_MARGIN, _BUILD_SITE_PLACEHOLDER_MARGIN),
@@ -6081,7 +6243,9 @@ func _spawn_build_site_placeholders(building: Building) -> void:
 		# altrove nel progetto (es. MicroCellRenderer._pebble_blob_polygon) per una forma "diversa ma
 		# stabile" invece di randf_range() globale: qui non è strettamente necessario (il nodo, una
 		# volta creato, non viene mai ricalcolato), ma tiene questo codice coerente con lo stile del
-		# resto del renderer.
+		# resto del renderer. Seed IDENTICO a prima di questo refactor (building.id * 4 + i): stessa
+		# forma esatta prima e dopo un reload, nessuna differenza visiva tra "spawnato in sessione" e
+		# "ripristinato al reload".
 		var rng := RandomNumberGenerator.new()
 		rng.seed = building.id * 4 + i
 		var stake := Polygon2D.new()
@@ -6092,7 +6256,23 @@ func _spawn_build_site_placeholders(building: Building) -> void:
 		stake.z_index = 1
 		placeholder_group.add_child(stake)
 
-	print("[BUILD] Cantiere edificio #%d allestito (4 placeholder posizionati)." % building.id)
+
+# Chiamata da _activate_live_cell per OGNI cella viva (reload compreso) — vedi il commento esteso
+# su _create_build_site_placeholder_nodes sopra per il perché. Un solo giro sui building di questa
+# cella; niente da fare per un edificio completo (is_complete, i placeholder sono già stati rimossi
+# da _on_building_construction_completed) o ancora nella fase "cartiere in attesa" (site_setup_
+# complete ancora false, disegna solo il cartello WIP — vedi MicroCellRenderer._draw_buildings).
+func _restore_build_site_placeholders_for_cell(cell: LiveMacroCell) -> void:
+	if macro_world == null:
+		return
+	for building in macro_world.buildings:
+		if building.macro_x != cell.macro_x or building.macro_y != cell.macro_y:
+			continue
+		if building.is_complete or not building.site_setup_complete:
+			continue
+		if cell.container.get_node_or_null(_BUILD_SITE_PLACEHOLDER_GROUP_NAME_PREFIX + str(building.id)) != null:
+			continue
+		_create_build_site_placeholder_nodes(building, cell)
 
 
 # Poligono di un singolo rametto: base ferma a (0,0) (il punto piantato nel terreno), punta verso
@@ -6576,6 +6756,44 @@ func _execute_pending_leave_action() -> void:
 		&"exit_game":
 			get_tree().quit()
 
+
+# Banner persistente "selezione Transport a metà" (2026-09-14, richiesta utente) — costruito via
+# codice, nessun .tscn, stesso principio/stessa posizione di notification_popup (istanziato in
+# _setup_clock, sotto CanvasLayer per restare in overlay sopra il resto della UI). PanelContainer +
+# Label (non un semplice Label nudo): sopra la mappa un testo senza sfondo sarebbe illeggibile in
+# certe zone/temi — sfondo giallo semi-opaco, STESSO colore "alert" già usato da NotificationPopup
+# per MATERIAL_NEEDED (coerenza visiva: "giallo" = "richiede attenzione" ovunque in questa UI).
+# Ancorato in alto al centro (PRESET_CENTER_TOP), nascosto di default (`visible = false`) — mostrato/
+# nascosto ai tre punti che cambiano _debug_transport_source_building (vedi il commento sul campo
+# transport_selection_banner in testa al file), mai ricreato.
+func _setup_transport_selection_banner() -> void:
+	var style := StyleBoxFlat.new()
+	style.bg_color = Color(0.85, 0.7, 0.15, 0.92)
+	style.corner_radius_top_left = 6
+	style.corner_radius_top_right = 6
+	style.corner_radius_bottom_right = 6
+	style.corner_radius_bottom_left = 6
+	style.content_margin_left = 12
+	style.content_margin_right = 12
+	style.content_margin_top = 6
+	style.content_margin_bottom = 6
+
+	transport_selection_banner = PanelContainer.new()
+	transport_selection_banner.add_theme_stylebox_override("panel", style)
+	transport_selection_banner.visible = false
+	transport_selection_banner.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	transport_selection_banner.set_anchors_preset(Control.PRESET_CENTER_TOP)
+	transport_selection_banner.position.y = 12
+
+	transport_selection_banner_label = Label.new()
+	transport_selection_banner_label.text = tr("transport_selection_banner_text")
+	transport_selection_banner_label.add_theme_font_size_override("font_size", 13)
+	transport_selection_banner_label.add_theme_color_override("font_color", Color(0.1, 0.1, 0.1, 1))
+	transport_selection_banner.add_child(transport_selection_banner_label)
+
+	$CanvasLayer.add_child(transport_selection_banner)
+
+
 func _setup_clock() -> void:
 	clock = GameClockController.new()
 	add_child(clock)
@@ -6584,6 +6802,7 @@ func _setup_clock() -> void:
 	# overlay sopra il resto della UI.
 	notification_popup = NotificationPopup.new()
 	$CanvasLayer.add_child(notification_popup)
+	_setup_transport_selection_banner()
 	if macro_world == null:
 		play_pause_button.disabled = true
 		for speed in speed_buttons.keys():
@@ -6677,6 +6896,12 @@ func _update_play_pause_button() -> void:
 		play_pause_button.text = "▶"
 		play_pause_button.tooltip_text = tr("play")
 
+# [DBG_TASK] LOG DI DEBUG TEMPORANEO (2026-09-16, richiesta utente — indagine coda Task) — SOLA
+# STAMPA, nessuna logica di gioco toccata. Rimozione: cancellare questa costante + l'intero blocco
+# "if DEBUG_TASK_LOG:" dentro _on_day_advanced sotto (unico consumatore), oppure mettere a false.
+const DEBUG_TASK_LOG := true
+
+
 func _on_day_advanced(checkpoint_ran: bool, animals_changed: bool) -> void:
 	# TEMPORANEO (diagnostica lentezza, vedi GameClockController._process/[DAY TOTAL]) — questo
 	# intero handler gira SINCRONO dentro day_advanced.emit(), quindi dentro il cronometro di
@@ -6724,6 +6949,30 @@ func _on_day_advanced(checkpoint_ran: bool, animals_changed: bool) -> void:
 		print("[SELECTED PANEL REFRESH] anno=%d giorno=%d: %.3f ms" % [
 			game_data.year, game_data.current_day, panel_refresh_elapsed_ms
 		])
+	# [DBG_TASK] (2026-09-16, richiesta utente) — vedi commento sulla costante DEBUG_TASK_LOG sopra.
+	# Ricalcola qui lo STESSO filtro di GameScene._process/active_individuals (current_task non nullo
+	# e non concluso) — sola lettura, non condivide stato con quel ciclo (che vive in una variabile
+	# locale a _process, irraggiungibile da qui). "Adulto" = age_band diverso da INFANT/CHILD (stessa
+	# soglia già usata altrove nel file per escludere chi non può ricevere Task di lavoro vere).
+	# Nessuna correzione qui anche a fronte di anomalie evidenti nei numeri stampati — solo dati grezzi.
+	if DEBUG_TASK_LOG:
+		var debug_active_individuals_count := 0
+		for debug_member in human_individuals:
+			if debug_member.current_task != null and not debug_member.current_task.is_finished():
+				debug_active_individuals_count += 1
+		print("[DBG_TASK] anno=%d giorno=%d — individui totali=%d, active_individuals=%d" % [
+			game_data.year, game_data.current_day, human_individuals.size(), debug_active_individuals_count
+		])
+		for debug_member in human_individuals:
+			var debug_age_band := _resolve_age_band(debug_member)
+			if debug_age_band == HumanTypes.AgeBand.INFANT or debug_age_band == HumanTypes.AgeBand.CHILD:
+				continue
+			var debug_task_name: String = debug_member.current_task.task_name if debug_member.current_task != null else "null"
+			print("[DBG_TASK]   #%d %s: current_task=%s, task_queue.size()=%d, current_stamina=%.1f, carried_resource_name='%s'" % [
+				debug_member.id, debug_member.name, debug_task_name, debug_member.task_queue.size(),
+				debug_member.current_stamina, debug_member.carried_resource_name
+			])
+
 	if not (checkpoint_ran or animals_changed):
 		# Filtrato ai soli dintorni di un checkpoint stagionale (richiesta utente, 2026-09-05 —
 		# stesso motivo/helper di WorldTimeService.advance_day/GameClockController._process: un log

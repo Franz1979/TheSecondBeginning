@@ -104,3 +104,9 @@ help_building_materials_manual,"Right now the game never creates a Task on its o
 help_building_materials_deposit_bonus,"One exception: the very first Deposit Site you build, while the village has no other building with real storage space yet, gets its setup material for free, so you can always get started even with no stock."
 help_building_materials_future,"This manual supply will be needed until you unlock the future Task management and warehouse management systems - from that point on, the game will be able to handle it on its own."
 notification_build_capacity_full,"This building is already being built by {current} of a maximum {max} workers."
+building_construction_phase_label,{phase}: {percent}%
+building_construction_phase_setup_site,Setting up site
+building_construction_phase_clear_site,Clearing site
+building_construction_phase_build,Building
+building_awaiting_material_build_label,"Still needed to complete construction: {list}"
+transport_selection_banner_text,"🚚 Transport: select the destination building (H to cancel)"
