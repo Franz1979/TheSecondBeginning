@@ -8,7 +8,8 @@ building_name = "building_stick_tent"
 required_labor = 1600
 required_materials = {
 "pebble": 100,
-"stick": 40
+"stick": 40,
+"plant_fiber": 20
 }
 max_durability = 35
 required_space = 1

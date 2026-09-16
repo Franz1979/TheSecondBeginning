@@ -71,7 +71,7 @@ static func assign_pending_residents(
 			var resident: HumanIndividual = unhoused.pop_front()
 			resident.house_id = building.id
 			free_slots -= 1
-			if DebugLogging.ENABLED:
+			if DebugLogging.ENABLED and DebugLogging.SHOW_TRANSPORT_BUILD_LOGS:
 				print("[ASSIGN HOUSE] #%d %s -> edificio #%d (%s)" % [
 					resident.id, resident.name, building.id,
 					building.rules.building_name if building.rules != null else "?"

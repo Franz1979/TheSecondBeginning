@@ -45,6 +45,10 @@ const RESOURCE_ICONS := {}
 const RESOURCE_ICON_NODES := {
 	"pebble": preload("res://simulation/scripts/ui/PebbleIcon.gd"),
 	"stick": preload("res://simulation/scripts/ui/StickIcon.gd"),
+	# "plant_fiber" (2026-09-16, richiesta utente — proposta mostrata in artifact e approvata):
+	# fascio di fibre curve legate da un nodo, stesso principio "nessun emoji rende bene il
+	# concetto" già documentato sopra per pebble/stick — vedi PlantFiberIcon.gd.
+	"plant_fiber": preload("res://simulation/scripts/ui/PlantFiberIcon.gd"),
 }
 
 

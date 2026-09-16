@@ -10,3 +10,4 @@ script = ExtResource("1_def")
 task_name = "task_play_name"
 steps = [ExtResource("2_run1"), ExtResource("3_jump"), ExtResource("4_run2"), ExtResource("3_jump")]
 allowed_age_bands = Array[int]([1])
+is_idle_activity = true

@@ -103,6 +103,8 @@ const STORAGE_SLOT_FILL_BAR_FILL_COLOR := Color(1.0, 1.0, 1.0, 0.85)
 @onready var construction_progress_bar_margin: MarginContainer = $ConstructionProgressBarMargin
 @onready var construction_progress_bar: ProgressBar = $ConstructionProgressBarMargin/ConstructionProgressBar
 @onready var awaiting_material_label: Label = $AwaitingMaterialLabel
+@onready var awaiting_material_build_caption: Label = $AwaitingMaterialBuildCaption
+@onready var awaiting_material_build_grid: HFlowContainer = $AwaitingMaterialBuildGrid
 @onready var durability_label: Label = $DurabilityLabel
 @onready var built_year_label: Label = $BuiltYearLabel
 @onready var residents_caption: Label = $ResidentsCaption
@@ -170,14 +172,18 @@ func show_building(building: Building, residents_display_data: Array[Dictionary]
 	# (_resolve_build_material_shortage, STESSA formula di BuildAction.get_missing_materials, letta
 	# qui perché il pannello non ha un'istanza di BuildAction — solo il Building); qualunque altra
 	# fase (setup_site, o is_awaiting_material rimasto true per una transizione limite) -> messaggio
-	# singolo di prima, invariato.
-	awaiting_material_label.visible = building.is_awaiting_material
+	# singolo di prima, invariato. La lista multi-risorsa (2026-09-16, richiesta utente — il vecchio
+	# Label a riga unica non andava a capo, allargando visivamente il pannello oltre la Sidebar a
+	# larghezza fissa) non è più testo: una caption fissa + una griglia di chip icona+quantità (vedi
+	# _refresh_missing_material_grid), che va a capo da sola restando dentro la larghezza del pannello.
+	var is_build_phase: bool = _resolve_active_construction_phase(building) == "build"
+	awaiting_material_label.visible = building.is_awaiting_material and not is_build_phase
+	awaiting_material_build_caption.visible = building.is_awaiting_material and is_build_phase
+	awaiting_material_build_grid.visible = building.is_awaiting_material and is_build_phase
 	if building.is_awaiting_material:
-		if _resolve_active_construction_phase(building) == "build":
-			var missing := _resolve_build_material_shortage(building)
-			awaiting_material_label.text = tr("building_awaiting_material_build_label").format({
-				"list": _format_missing_materials_list(missing),
-			})
+		if is_build_phase:
+			awaiting_material_build_caption.text = tr("building_awaiting_material_build_caption")
+			_refresh_missing_material_grid(_resolve_build_material_shortage(building))
 		else:
 			var shortage := _resolve_setup_site_material_shortage(building)
 			awaiting_material_label.text = tr("building_awaiting_material_label").format({
@@ -319,17 +325,74 @@ func _resolve_build_material_shortage(building: Building) -> Dictionary:
 	return missing
 
 
-# Formatta un Dictionary[String, int] di risorse mancanti in una stringa leggibile tipo
-# "40 Rametti, 100 Pebble" (2026-09-14, richiesta utente) — nomi risolti via IconRegistry.
-# get_resource_display_name, STESSA fonte già usata da _resolve_setup_site_material_shortage/dallo
-# StorageGrid, così una risorsa ha sempre lo stesso nome visualizzato ovunque nella UI. Ordine di
-# iterazione = ordine di inserimento del Dictionary (stabile in GDScript), che per required_materials
-# coincide con l'ordine dichiarato nel .tres — nessun ordinamento aggiuntivo necessario.
-func _format_missing_materials_list(missing: Dictionary) -> String:
-	var parts: Array[String] = []
+# Griglia di "chip" (icona + quantità mancante), una per risorsa ancora insufficiente per la fase
+# BUILD (2026-09-16, richiesta utente — sostituisce la vecchia riga di testo unica "40 Rametti, 100
+# Pebble, ...": con più risorse il Label non andava a capo, allargando visivamente il pannello
+# oltre la Sidebar a larghezza fissa). Ricostruita per intero ad ogni show_building, STESSO
+# principio "rebuild da zero" già in uso per StorageGrid/ResidentsGrid in questo stesso file —
+# costo trascurabile, required_materials.size() è sempre piccolo (2-4 voci). HFlowContainer (non
+# GridContainer/HBoxContainer): va a capo da solo quando le chip non entrano più sulla riga,
+# proprio ciò che serve per restare dentro la larghezza fissa del pannello senza contarle a mano.
+func _refresh_missing_material_grid(missing: Dictionary) -> void:
+	for child in awaiting_material_build_grid.get_children():
+		child.queue_free()
+	# Ordine di iterazione = ordine di inserimento del Dictionary (stabile in GDScript), che per
+	# required_materials coincide con l'ordine dichiarato nel .tres — nessun ordinamento aggiuntivo.
 	for resource_name in missing.keys():
-		parts.append("%d %s" % [int(missing[resource_name]), IconRegistry.get_resource_display_name(resource_name)])
-	return ", ".join(parts)
+		awaiting_material_build_grid.add_child(_build_missing_material_chip(resource_name, int(missing[resource_name])))
+
+
+# Chip singola: STESSO schema a 3 livelli (icona disegnata/emoji/iniziale) + sfondo colorato per
+# risorsa + numero in basso a destra già usato da _build_storage_slot sopra — coerenza visiva tra
+# "cosa manca" e "cosa c'è già in magazzino" invece di inventare un terzo stile. Più piccola dello
+# slot storage (MISSING_MATERIAL_CHIP_SIZE < STORAGE_SLOT_SIZE): qui è un'indicazione secondaria,
+# non la griglia principale del pannello. Nessuna barra di riempimento (non ha senso per una
+# quantità mancante, che non ha una "capacità").
+const MISSING_MATERIAL_CHIP_SIZE: float = 24.0
+
+func _build_missing_material_chip(resource_name: String, quantity: int) -> Control:
+	var box := ColorRect.new()
+	box.custom_minimum_size = Vector2(MISSING_MATERIAL_CHIP_SIZE, MISSING_MATERIAL_CHIP_SIZE)
+	box.color = IconRegistry.get_resource_color(resource_name)
+	# "%s (%d)" — STESSO formato già in uso in OptionChoiceDialog.gd per le voci dell'OptionButton,
+	# non una nuova convenzione per il solo tooltip di questa chip.
+	box.tooltip_text = "%s (%d)" % [IconRegistry.get_resource_display_name(resource_name), quantity]
+
+	var icon_node: Control = IconRegistry.get_resource_icon_node(resource_name)
+	if icon_node != null:
+		box.add_child(icon_node)
+		icon_node.anchor_left = 0.0
+		icon_node.anchor_top = 0.0
+		icon_node.anchor_right = 1.0
+		icon_node.anchor_bottom = 1.0
+		icon_node.offset_left = 0.0
+		icon_node.offset_top = 0.0
+		icon_node.offset_right = 0.0
+		icon_node.offset_bottom = 0.0
+	else:
+		var initial_label := Label.new()
+		var icon_text: String = IconRegistry.get_resource_icon(resource_name)
+		initial_label.text = icon_text if icon_text != "" else resource_name.substr(0, 1).to_upper()
+		initial_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		initial_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		initial_label.anchor_right = 1.0
+		initial_label.anchor_bottom = 1.0
+		box.add_child(initial_label)
+
+	var quantity_label := Label.new()
+	quantity_label.text = str(quantity)
+	quantity_label.add_theme_font_size_override("font_size", 8)
+	quantity_label.add_theme_color_override("font_color", Color(1, 1, 1, 1))
+	quantity_label.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 1))
+	quantity_label.add_theme_constant_override("shadow_offset_x", 1)
+	quantity_label.add_theme_constant_override("shadow_offset_y", 1)
+	quantity_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	quantity_label.vertical_alignment = VERTICAL_ALIGNMENT_BOTTOM
+	quantity_label.anchor_right = 1.0
+	quantity_label.anchor_bottom = 1.0
+	box.add_child(quantity_label)
+
+	return box
 
 
 # Ricostruita per intero ad ogni show_building (stesso principio "rebuild da zero" già in uso

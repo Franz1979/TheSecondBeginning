@@ -645,7 +645,7 @@ func _load_name_pool(path: String) -> Array[String]:
 func can_assign_task(task: Task, age_band: HumanTypes.AgeBand) -> bool:
 	for step in task.steps:
 		if step.disallowed_age_bands.has(age_band):
-			if DebugLogging.ENABLED:
+			if DebugLogging.ENABLED and DebugLogging.SHOW_TASK_LIFECYCLE_LOGS:
 				print("[TASK GUARD] Individuo #%d (age_band=%s) NON può eseguire %s — assegnazione rifiutata." % [
 					id, HumanTypes.AgeBand.keys()[age_band], step.get_script().get_global_name()
 				])
@@ -654,7 +654,7 @@ func can_assign_task(task: Task, age_band: HumanTypes.AgeBand) -> bool:
 	# indipendente dal loop sopra (vedi Task.allowed_age_bands per il perché): vuoto = nessun
 	# vincolo aggiuntivo, non vuoto = SOLO quelle fasce ammesse, tutte le altre rifiutate.
 	if not task.allowed_age_bands.is_empty() and not task.allowed_age_bands.has(age_band):
-		if DebugLogging.ENABLED:
+		if DebugLogging.ENABLED and DebugLogging.SHOW_TASK_LIFECYCLE_LOGS:
 			print("[TASK GUARD] Individuo #%d (age_band=%s) NON può eseguire la Task '%s' — riservata a %s — assegnazione rifiutata." % [
 				id, HumanTypes.AgeBand.keys()[age_band], task.task_name,
 				str(task.allowed_age_bands.map(func(b: int) -> String: return HumanTypes.AgeBand.keys()[b]))
@@ -714,7 +714,13 @@ func assign_task(task: Task, age_band: HumanTypes.AgeBand, is_interrupt_transiti
 	# rilanciata a zaino pieno resta l'unico vero motivo di attesa), quindi ha senso farla proseguire
 	# e mettere il nuovo comando in coda dietro di lei. Il caso "Task in corso NON persistente + zaino
 	# pieno" è gestito dal ramo NUOVO subito sotto, non più qui.
-	if task.interrupt_priority == -1 and carried_quantity > 0 and current_task != null and current_task.is_suspendable:
+	# ZOMBIE GUARD (2026-09-16, richiesta utente, fix "task zombie") — "not current_task.is_finished()"
+	# aggiunto: una current_task GIÀ CONCLUSA (current_step_index >= steps.size()) non è mai la
+	# "proprietaria legittima" del carico occupato, anche se is_suspendable=true — non deve MAI
+	# entrare in questo ramo (che la lascerebbe proseguire indisturbata mettendo `task` in coda
+	# dietro di lei): cade invece nel ramo generico più sotto (~riga 806+, guardato allo stesso
+	# modo), che la scarta con un log invece di trattarla come ancora in corso.
+	if task.interrupt_priority == -1 and carried_quantity > 0 and current_task != null and not current_task.is_finished() and current_task.is_suspendable:
 		# Guardia task.is_suspendable (2026-09-16, richiesta utente — bugfix: "perché Wander si è
 		# accodata? non dovrebbe essere una che non si accoda mai?") — PRIMA di questo passo il ramo
 		# accodava SEMPRE `task` (il comando NUOVO), controllando solo current_task.is_suspendable
@@ -727,13 +733,13 @@ func assign_task(task: Task, age_band: HumanTypes.AgeBand, is_interrupt_transiti
 		# nulla di reale da segnalare come "comando accettato" (a differenza del caso accodato sotto,
 		# che resta true per lo stesso motivo già documentato altrove in questo file).
 		if not task.is_suspendable:
-			if DebugLogging.ENABLED:
+			if DebugLogging.ENABLED and DebugLogging.SHOW_TASK_LIFECYCLE_LOGS:
 				print("[TASK DISCARDED - ZAINO OCCUPATO] Individuo #%d %s: '%s' non sospendibile, scartata invece di essere accodata (zaino occupato: %d %s) — Task in corso '%s' prosegue indisturbata." % [
 					id, name, task.task_name, carried_quantity, carried_resource_name, current_task.task_name
 				])
 			return false
 		TaskQueueService.push_suspended_task(self, task)
-		if DebugLogging.ENABLED:
+		if DebugLogging.ENABLED and DebugLogging.SHOW_TASK_LIFECYCLE_LOGS:
 			print("[TASK QUEUED - ZAINO OCCUPATO] Individuo #%d %s: '%s' rimandata in coda (zaino occupato: %d %s) — Task in corso '%s' prosegue indisturbata." % [
 				id, name, task.task_name, carried_quantity, carried_resource_name,
 				current_task.task_name if current_task != null else "(nessuna)"
@@ -757,7 +763,11 @@ func assign_task(task: Task, age_band: HumanTypes.AgeBand, is_interrupt_transiti
 	# carico quando la Task che lo trasportava sparisce senza successori, MAI quando invece stiamo
 	# proprio ripescando quella successora (la Task ripescata qui sotto userà quel carico a breve).
 	var resuming_cargo_owner := false
-	if task.interrupt_priority == -1 and carried_quantity > 0 and (current_task == null or not current_task.is_suspendable):
+	# ZOMBIE GUARD (2026-09-16, richiesta utente, fix "task zombie") — "or current_task.is_finished()"
+	# aggiunto: una current_task GIÀ CONCLUSA va trattata come assente/non sospendibile ai fini di
+	# questa ricerca del "proprietario del carico" — stesso principio del guard gemello sopra: non
+	# è mai lei la legittima proprietaria di un carico ancora da consegnare.
+	if task.interrupt_priority == -1 and carried_quantity > 0 and (current_task == null or not current_task.is_suspendable or current_task.is_finished()):
 		var cargo_owner_task := TaskQueueService.pop_suspended_task(self)
 		if cargo_owner_task != null:
 			# Guardia task.is_suspendable (2026-09-16, richiesta utente — STESSO bugfix del ramo sopra):
@@ -767,12 +777,12 @@ func assign_task(task: Task, age_band: HumanTypes.AgeBand, is_interrupt_transiti
 			# indipendente da cosa succede al comando nuovo.
 			if task.is_suspendable:
 				TaskQueueService.push_suspended_task(self, task)
-				if DebugLogging.ENABLED:
+				if DebugLogging.ENABLED and DebugLogging.SHOW_TASK_LIFECYCLE_LOGS:
 					print("[TASK QUEUED - ZAINO OCCUPATO] Individuo #%d %s: '%s' rimandata in coda dietro '%s' (zaino occupato: %d %s) — '%s' ripresa subito, Task in corso '%s' interrotta." % [
 						id, name, task.task_name, cargo_owner_task.task_name, carried_quantity, carried_resource_name,
 						cargo_owner_task.task_name, current_task.task_name if current_task != null else "(nessuna)"
 					])
-			elif DebugLogging.ENABLED:
+			elif DebugLogging.ENABLED and DebugLogging.SHOW_TASK_LIFECYCLE_LOGS:
 				print("[TASK DISCARDED - ZAINO OCCUPATO] Individuo #%d %s: '%s' non sospendibile, scartata invece di essere accodata — '%s' ripresa subito, Task in corso '%s' interrotta." % [
 					id, name, task.task_name, cargo_owner_task.task_name, current_task.task_name if current_task != null else "(nessuna)"
 				])
@@ -803,9 +813,28 @@ func assign_task(task: Task, age_band: HumanTypes.AgeBand, is_interrupt_transiti
 	# Task-bisogno non deve mai scartare nulla) OPPURE quando resuming_cargo_owner == true
 	# (2026-09-15, NUOVO — vedi sopra: qui il carico non va perso, sta per essere ripreso in mano
 	# dalla Task appena ripescata).
-	if current_task != null and current_task.is_suspendable:
+	# ZOMBIE GUARD (2026-09-16, richiesta utente, fix "task zombie") — controllata PRIMA di
+	# is_suspendable: una current_task già conclusa (current_step_index >= steps.size()) non va MAI
+	# sospesa in coda, qualunque sia is_suspendable — verrebbe ripescata più tardi da
+	# resolve_idle_individual/pop_suspended_task come se fosse ancora in corso, restando bloccata
+	# per sempre (activate_resumed_task la trova già finita e non fa nulla). Log gated dalla
+	# categoria SAFETY (2026-09-16, richiesta utente — riordino log di debug: prima stampava
+	# sempre, indipendentemente da DebugLogging.ENABLED; SHOW_SAFETY_LOGS default true mantiene la
+	# stessa visibilità a impostazioni invariate). discard_carried_resource() STESSO trattamento
+	# del ramo "non sospendibile" sotto: una task finita non ha più nulla da proteggere, ma la
+	# guardia is_interrupt_transition/resuming_cargo_owner resta la stessa per coerenza
+	# (un'assegnazione automatica non deve mai scartare nulla, un ripescaggio del cargo owner
+	# nemmeno).
+	if current_task != null and current_task.is_finished():
+		if DebugLogging.ENABLED and DebugLogging.SHOW_SAFETY_LOGS:
+			print("[ZOMBIE GUARD] Individuo #%d %s: current_task '%s' (step %d/%d) già conclusa — scartata invece di sospesa in coda, HumanIndividual.assign_task (ramo generico)." % [
+				id, name, current_task.task_name, current_task.current_step_index, current_task.steps.size()
+			])
+		if not is_interrupt_transition and not resuming_cargo_owner:
+			discard_carried_resource()
+	elif current_task != null and current_task.is_suspendable:
 		TaskQueueService.push_suspended_task(self, current_task)
-		if DebugLogging.ENABLED:
+		if DebugLogging.ENABLED and DebugLogging.SHOW_TASK_LIFECYCLE_LOGS:
 			print("[TASK SUSPEND] Individuo #%d %s: Task '%s' sospesa e messa in coda (sostituita da '%s')." % [
 				id, name, current_task.task_name, task.task_name
 			])
@@ -914,7 +943,7 @@ func stop() -> void:
 func discard_carried_resource() -> void:
 	if carried_quantity <= 0:
 		return
-	if DebugLogging.ENABLED:
+	if DebugLogging.ENABLED and DebugLogging.SHOW_TRANSPORT_BUILD_LOGS:
 		print("[HAUL DISCARD] Individuo #%d ha scartato %d %s (nessuna destinazione disponibile)" % [
 			id, carried_quantity, carried_resource_name
 		])

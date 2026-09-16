@@ -278,7 +278,9 @@ static func register_new_group(world: World, group: PopulationGroup) -> void:
 # (oggi MacroCellScene._ready/GameScene._refresh_lod_focus_region) senza duplicare il formato di
 # stampa. Statica: non ha bisogno di stato dell'istanza, solo del Dictionary già calcolato.
 static func print_classification_log(result: Dictionary) -> void:
-	if not DebugLogging.SHOW_LOD_CLASSIFICATION_LOGS:
+	# SHOW_LOD_LOGS (2026-09-16, richiesta utente — riordino log di debug per categoria): rinominato
+	# da SHOW_LOD_CLASSIFICATION_LOGS, stesso identico flag/comportamento.
+	if not DebugLogging.SHOW_LOD_LOGS:
 		return
 	var level_2_groups: Array = result["level_2_groups"]
 	var level_1_groups: Array = result["level_1_groups"]

@@ -218,14 +218,14 @@ func get_required_position(individual: Variant, context: Dictionary) -> Variant:
 # disattivarla dopo il test.
 func activate(individual: Variant, context: Dictionary) -> void:
 	super(individual, context)
-	if DebugLogging.ENABLED and _macro_state != null:
+	if DebugLogging.ENABLED and DebugLogging.SHOW_TRANSPORT_BUILD_LOGS and _macro_state != null:
 		print("[OCCUPIED SPACE DEBUG] ClearAction.activate (PRIMA del clear) in (%d,%d): get_empty_space()=%d, dedicated_space[BUILDING]=%d" % [
 			_position.x, _position.y,
 			_macro_state.get_empty_space(), _macro_state.get_dedicated_space(GameTypes.WorldObjectType.BUILDING)
 		])
 	# LOG DEBUG VERIFICA PROGRESSO (2026-09-11, richiesta utente — "verificare se un'Action riparte
 	# da zero o da un progresso preesistente") — vedi il commento esteso su _get_clear_days_done.
-	if DebugLogging.ENABLED and target_building != null:
+	if DebugLogging.ENABLED and DebugLogging.SHOW_TRANSPORT_BUILD_LOGS and target_building != null:
 		print("[BUILD PROGRESS DEBUG] ClearAction attivata per building #%d: riparte da clear_days_done=%.2f (era 0.0 se prima volta, su una durata totale di %.2fgg)" % [
 			target_building.id, _get_clear_days_done(), _duration
 		])
@@ -257,7 +257,7 @@ func on_complete(individual: Variant, context: Dictionary) -> void:
 		_macro_state.set_dedicated_space(GameTypes.WorldObjectType.BUILDING, current_building_space + target_building.rules.required_space)
 		target_building.construction_progress["space_reserved"] = true
 
-	if DebugLogging.ENABLED:
+	if DebugLogging.ENABLED and DebugLogging.SHOW_TRANSPORT_BUILD_LOGS:
 		print("[OCCUPIED SPACE DEBUG] ClearAction.on_complete (DOPO clear + riserva) in (%d,%d): get_empty_space()=%d, dedicated_space[BUILDING]=%d" % [
 			_position.x, _position.y,
 			_macro_state.get_empty_space(), _macro_state.get_dedicated_space(GameTypes.WorldObjectType.BUILDING)

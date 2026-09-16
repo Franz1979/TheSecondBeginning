@@ -70,7 +70,7 @@ func get_stamina_delta(individual: Variant, context: Dictionary, delta: float) -
 		+ used_carry_space
 		+ WalkAction.STAMINA_DRAIN_PER_TOOL * float(individual.equipped_tool_count)
 	)
-	if DebugLogging.ENABLED:
+	if DebugLogging.ENABLED and DebugLogging.SHOW_MOVEMENT_LOGS:
 		print("[RUN DEBUG] get_stamina_delta: distance=%.3f cost_per_microcell=%.2f (base Walk x%.1f + carico/utensili invariati) -> delta=%.2f" % [
 			distance, cost_per_microcell, RUN_INTENSITY_MULTIPLIER, -distance * cost_per_microcell
 		])
@@ -97,6 +97,8 @@ func get_happiness_delta(individual: Variant, context: Dictionary, delta: float)
 	return -distance * WalkAction.HAPPINESS_DRAIN_PER_MICROCELL
 
 
-# Identico a WalkAction.is_complete.
+# Identico a WalkAction.is_complete (2026-09-16, richiesta utente, fix bordo macrocella — vedi
+# WalkAction.ARRIVAL_TOLERANCE per il perché non è più un'uguaglianza esatta), stessa costante
+# condivisa (non una copia separata, mai un secondo numero da tenere sincronizzato a mano).
 func is_complete(individual: Variant, context: Dictionary) -> bool:
-	return individual.position == target
+	return individual.position.distance_to(target) <= WalkAction.ARRIVAL_TOLERANCE

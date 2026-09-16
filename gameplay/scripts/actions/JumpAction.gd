@@ -80,7 +80,7 @@ func get_stamina_delta(individual: Variant, context: Dictionary, delta: float) -
 	# ciclo le scatta tutte invece di perderne una.
 	while _jumps_triggered < _jump_count and _elapsed >= _duration * float(_jumps_triggered + 1) / float(_jump_count):
 		_jumps_triggered += 1
-		if DebugLogging.ENABLED:
+		if DebugLogging.ENABLED and DebugLogging.SHOW_MOVEMENT_LOGS:
 			print("[JUMP DEBUG] salto %d/%d a elapsed=%.3f/%.3fgg" % [_jumps_triggered, _jump_count, _elapsed, _duration])
 		jumped.emit()
 	return -STAMINA_DRAIN_PER_DAY * delta

@@ -110,3 +110,6 @@ building_construction_phase_clear_site,Clearing site
 building_construction_phase_build,Building
 building_awaiting_material_build_label,"Still needed to complete construction: {list}"
 transport_selection_banner_text,"🚚 Transport: select the destination building (H to cancel)"
+debug_idle_fallback_button_tooltip,Toggle automatic assignment of idle-time tasks (Wander/Play/Leisure Rest) to free individuals
+debug_idle_fallback_on,Idle fallback: ON
+debug_idle_fallback_off,Idle fallback: OFF

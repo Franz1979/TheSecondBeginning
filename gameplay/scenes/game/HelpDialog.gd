@@ -153,6 +153,10 @@ func _build_shortcuts_text() -> String:
 	# T/Y restano deliberatamente FUORI (vedi nota sotto per il perché, invariata). U AGGIUNTO
 	# (2026-09-16, richiesta utente): non più il test debug temporaneo che era prima (vedi
 	# GameScene._unhandled_input), ora è il modificatore vero per "Scaricare risorsa qui".
+	# Doppio click sinistro AGGIUNTO (2026-09-16, richiesta utente) — unico gesto MOUSE elencato qui
+	# insieme alle scorciatoie da tastiera (nessun'altra convenzione click esistente documentata in
+	# help finora): ispeziona la microcella, comando introdotto nello stesso giro in cui il click
+	# singolo ha smesso di poter selezionare una cella/lotto intero (solo oggetti precisi).
 	var lines: Array[String] = [
 		"[b]%s[/b]" % tr("help_shortcuts_title"),
 		"",
@@ -166,6 +170,7 @@ func _build_shortcuts_text() -> String:
 		"[b]P[/b] — %s" % tr("help_play_task"),
 		"[b]H[/b] — %s" % tr("help_stop_task"),
 		"[b]U[/b] — %s" % tr("help_unload_here_task"),
+		"[b]%s[/b] — %s" % [tr("help_double_click_label"), tr("help_double_click_inspect_microcell")],
 	]
 	# Voci DEBUG (2026-09-09, richiesta utente — "aggiungi anche z, s [H] nell'help"): mostrate
 	# solo quando i debug hook stessi sono attivi (DebugLogging.ENABLED, stesso interruttore che li

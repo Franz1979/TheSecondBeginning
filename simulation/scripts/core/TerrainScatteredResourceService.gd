@@ -24,6 +24,8 @@ static func get_available(macro_state: MacroCellState, resource_name: String, po
 			return int(macro_state.pebble_quantities.get(position, 0))
 		"stick":
 			return _get_available_stick(macro_state, position)
+		"plant_fiber":
+			return _get_available_plant_fiber(macro_state, position)
 		_:
 			return 0
 
@@ -36,6 +38,8 @@ static func consume(macro_state: MacroCellState, resource_name: String, position
 			_consume_pebble(macro_state, position, quantity)
 		"stick":
 			_consume_stick(macro_state, position, quantity)
+		"plant_fiber":
+			_consume_plant_fiber(macro_state, position, quantity)
 
 
 # Lookup diretto, clamp a 0 — entry lasciata a 0 senza rimuoverla (stesso comportamento già in uso
@@ -76,3 +80,30 @@ static func _consume_stick(macro_state: MacroCellState, position: Vector2i, quan
 	var harvested := int(entry.get("harvested", 0))
 	entry["harvested"] = min(harvested + quantity, capacity)
 	macro_state.stick_quantities[position] = entry
+
+
+# Mirror esatto di _get_available_stick/_consume_stick sopra, per plant_fiber (2026-09-16,
+# richiesta utente) — STESSO checkpoint growth (VegetationPoolService.most_recent_growth_
+# checkpoint_absolute_day, comune a TREE/SHRUB, verificato), STESSA formula di freschezza/clamp.
+static func _get_available_plant_fiber(macro_state: MacroCellState, position: Vector2i) -> int:
+	var entry: Dictionary = macro_state.plant_fiber_quantities.get(position, {})
+	if entry.is_empty():
+		return 0
+	if GameSettings.active_game_data == null:
+		return 0
+	var checkpoint_absolute_day := VegetationPoolService.most_recent_growth_checkpoint_absolute_day(GameSettings.active_game_data)
+	if int(entry.get("checkpoint_day", -1)) != checkpoint_absolute_day:
+		return 0
+	var capacity := int(entry.get("capacity", 0))
+	var harvested := int(entry.get("harvested", 0))
+	return max(capacity - harvested, 0)
+
+
+static func _consume_plant_fiber(macro_state: MacroCellState, position: Vector2i, quantity: int) -> void:
+	var entry: Dictionary = macro_state.plant_fiber_quantities.get(position, {})
+	if entry.is_empty():
+		return
+	var capacity := int(entry.get("capacity", 0))
+	var harvested := int(entry.get("harvested", 0))
+	entry["harvested"] = min(harvested + quantity, capacity)
+	macro_state.plant_fiber_quantities[position] = entry

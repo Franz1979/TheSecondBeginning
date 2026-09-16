@@ -33,10 +33,25 @@ const MAX_QUEUE_SIZE: int = 3
 # eventualmente riempito) — no-op silenzioso se lo zaino è già vuoto, stesso guard interno già
 # esistente in quella funzione.
 static func push_suspended_task(individual: HumanIndividual, task: Task) -> void:
+	# ZOMBIE GUARD (2026-09-16, richiesta utente, fix "task zombie") — ultima linea di difesa,
+	# indipendente dal chiamante: una task già conclusa (current_step_index >= steps.size()) non
+	# deve MAI entrare in coda, qualunque sia il percorso che ha portato fin qui — difesa in
+	# profondità rispetto alle guardie già in HumanIndividual.assign_task (che oggi non dovrebbero
+	# più chiamare questa funzione con una task finita, ma un futuro secondo chiamante potrebbe).
+	# Log gated dalla categoria SAFETY (2026-09-16, richiesta utente — riordino log di debug: prima
+	# stampava sempre, indipendentemente da DebugLogging.ENABLED; SHOW_SAFETY_LOGS default true
+	# mantiene la stessa visibilità a impostazioni invariate), stesso motivo del guard gemello in
+	# assign_task/resolve_idle_individual: segnala un'anomalia, non un evento di routine.
+	if task.is_finished():
+		if DebugLogging.ENABLED and DebugLogging.SHOW_SAFETY_LOGS:
+			print("[ZOMBIE GUARD] Individuo #%d %s: tentativo di sospendere in coda la task '%s' (step %d/%d) già conclusa — rifiutata, TaskQueueService.push_suspended_task." % [
+				individual.id, individual.name, task.task_name, task.current_step_index, task.steps.size()
+			])
+		return
 	if individual.task_queue.size() >= MAX_QUEUE_SIZE:
 		var discarded_task: Task = individual.task_queue.pop_front()
 		individual.discard_carried_resource()
-		if DebugLogging.ENABLED:
+		if DebugLogging.ENABLED and DebugLogging.SHOW_TASK_LIFECYCLE_LOGS:
 			print("[QUEUE OVERFLOW] Individuo #%d %s: coda già a %d/%d — Task '%s' (la più vecchia) scartata per fare spazio a '%s'." % [
 				individual.id, individual.name, MAX_QUEUE_SIZE, MAX_QUEUE_SIZE, discarded_task.task_name, task.task_name
 			])
@@ -47,3 +62,28 @@ static func pop_suspended_task(individual: HumanIndividual) -> Task:
 	if individual.task_queue.is_empty():
 		return null
 	return individual.task_queue.pop_back()
+
+
+# ZOMBIE GUARD — recupero da salvataggio (2026-09-16, richiesta utente, fix "task zombie") —
+# chiamata da GameScene._ready() PRIMA di valutare se un individuo caricato è libero: un
+# salvataggio fatto PRIMA di questo fix può ancora contenere in coda task già concluse (prodotte
+# dal bug ora corretto alla radice in HumanIndividualActionService._handle_task_completion_need_
+# and_queue). Rimuove ogni voce già conclusa, PRESERVANDO l'ordine relativo delle altre (mai un
+# semplice filter che stravolgerebbe il LIFO) — ritorna quante ne ha rimosse, solo per il log/i
+# test, nessuna logica di simulazione lo consulta. Log gated dalla categoria SAFETY (2026-09-16,
+# richiesta utente — riordino log di debug: prima stampava sempre indipendentemente da
+# DebugLogging.ENABLED, stesso motivo del guard gemello in push_suspended_task).
+static func purge_finished_tasks(individual: HumanIndividual) -> int:
+	var kept: Array[Task] = []
+	var removed := 0
+	for queued_task in individual.task_queue:
+		if queued_task.is_finished():
+			removed += 1
+			if DebugLogging.ENABLED and DebugLogging.SHOW_SAFETY_LOGS:
+				print("[ZOMBIE GUARD] Individuo #%d %s: task '%s' (step %d/%d) rimossa dalla coda perché già conclusa — TaskQueueService.purge_finished_tasks." % [
+					individual.id, individual.name, queued_task.task_name, queued_task.current_step_index, queued_task.steps.size()
+				])
+		else:
+			kept.append(queued_task)
+	individual.task_queue = kept
+	return removed

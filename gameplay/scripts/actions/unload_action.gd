@@ -199,11 +199,11 @@ func activate(individual: Variant, context: Dictionary) -> void:
 			if space_to_deposit > 0.0 and individual.max_carry_capacity > 0.0:
 				_duration = space_to_deposit / individual.max_carry_capacity
 				_total_stamina_cost = STAMINA_COST_PER_SPACE_UNIT * space_to_deposit
-			if DebugLogging.ENABLED:
+			if DebugLogging.ENABLED and DebugLogging.SHOW_TRANSPORT_BUILD_LOGS:
 				print("[UNLOAD] activate: deposito previsto di %d/%d (residuo restante gestito da on_complete) — duration=%.3fgg, total_stamina_cost=%.1f" % [
 					quantity_to_deposit_now, individual.carried_quantity, _duration, _total_stamina_cost
 				])
-		elif DebugLogging.ENABLED:
+		elif DebugLogging.ENABLED and DebugLogging.SHOW_TRANSPORT_BUILD_LOGS:
 			print("[UNLOAD] activate: target_building id=%d non ha ALCUN posto per '%s' (max_depositable=0) — deposito istantaneo nullo, on_complete gestirà il re-routing dell'intero carico." % [
 				target_building.id, individual.carried_resource_name
 			])
@@ -218,7 +218,7 @@ func activate(individual: Variant, context: Dictionary) -> void:
 	# costo, nessun deposito tentato — mai un errore/blocco. Log dedicato per diagnosticare il caso
 	# (prima silenzioso, nessun ramo lo intercettava esplicitamente).
 	elif deposit_kind == DepositKind.RESOURCE and target_building != null and individual.carried_quantity <= 0:
-		if DebugLogging.ENABLED:
+		if DebugLogging.ENABLED and DebugLogging.SHOW_TRANSPORT_BUILD_LOGS:
 			print("[UNLOAD] activate: zaino già vuoto all'arrivo (target_building id=%d) — nulla da scaricare, step dichiarato completo istantaneamente, nessun costo." % target_building.id)
 	# Riverifica ramo PENSIERO (2026-09-12, richiesta utente — bugfix "deposito nel vuoto") — STESSO
 	# principio/STESSO momento della riverifica ramo RESOURCE appena sopra (activate(), quando
@@ -231,9 +231,9 @@ func activate(individual: Variant, context: Dictionary) -> void:
 	# senza duplicare la condizione in due posti.
 	elif deposit_kind == DepositKind.THOUGHT and target_building != null and target_building.is_demolished:
 		individual.pending_thought = false
-		if DebugLogging.ENABLED:
+		if DebugLogging.ENABLED and DebugLogging.SHOW_TRANSPORT_BUILD_LOGS:
 			print("[UNLOAD] activate: target_building id=%d demolito nel frattempo — pending_thought azzerato, pensiero perso." % target_building.id)
-	if not DebugLogging.ENABLED:
+	if not (DebugLogging.ENABLED and DebugLogging.SHOW_TRANSPORT_BUILD_LOGS):
 		return
 	if deposit_kind != DepositKind.RESOURCE:
 		print("[UNLOAD] activate: deposit_kind=THOUGHT (ramo PENSIERO) | target_building=%s | carried_resource_name='%s' carried_quantity=%d" % [
@@ -279,12 +279,13 @@ func get_happiness_delta(individual: Variant, context: Dictionary, delta: float)
 # nessuno di loro acquisisce una durata artificiale. Il ramo FISICO con un deposito davvero in corso
 # è l'UNICO che ora impiega più di un frame/giorno per completarsi.
 func is_complete(individual: Variant, context: Dictionary) -> bool:
-	# Gated dal flag dedicato SHOW_UNLOAD_COMPLETION_LOGS (2026-09-10, richiesta utente), non più
-	# dal solo master switch ENABLED — questo print gira ad ogni chiamata (~60/s, una per frame)
-	# per l'intera durata del ramo FISICO in corso: col solo ENABLED (default true) produceva
-	# decine di righe per un singolo Unload. Default false: chi vuole vederlo lo riattiva
-	# esplicitamente, stesso principio degli altri filtri dedicati in DebugLogging.gd.
-	if DebugLogging.ENABLED and DebugLogging.SHOW_UNLOAD_COMPLETION_LOGS and _elapsed < _duration:
+	# Gated dalla categoria SHOW_TRANSPORT_BUILD_LOGS (rinominato da SHOW_UNLOAD_COMPLETION_LOGS,
+	# 2026-09-16, richiesta utente — riordino log di debug), non dal solo master switch ENABLED —
+	# questo print gira ad ogni chiamata (~60/s, una per frame) per l'intera durata del ramo FISICO
+	# in corso: col solo ENABLED produrrebbe decine di righe per un singolo Unload. Default false:
+	# chi vuole vederlo accende la categoria TRANSPORT_BUILD, stesso principio degli altri filtri
+	# dedicati in DebugLogging.gd.
+	if DebugLogging.ENABLED and DebugLogging.SHOW_TRANSPORT_BUILD_LOGS and _elapsed < _duration:
 		print("[UNLOAD] is_complete: false (in corso) — elapsed=%.3f/%.3fgg, target_building=%s" % [
 			_elapsed, _duration, str(target_building.id) if target_building != null else "null"
 		])
@@ -330,17 +331,17 @@ func get_required_position(individual: Variant, context: Dictionary) -> Variant:
 # ma non è ancora consumato da questo ramo — nessun comportamento nuovo introdotto in questo passo.
 func on_complete(individual: Variant, context: Dictionary) -> void:
 	if deposit_kind == DepositKind.RESOURCE:
-		if DebugLogging.ENABLED:
+		if DebugLogging.ENABLED and DebugLogging.SHOW_TRANSPORT_BUILD_LOGS:
 			print("[UNLOAD] on_complete: ramo FISICO (target_building id=%s)" % (str(target_building.id) if target_building != null else "null"))
 		if target_building == null:
 			return
 		if individual.carried_resource_name == "" or individual.carried_quantity <= 0:
-			if DebugLogging.ENABLED:
+			if DebugLogging.ENABLED and DebugLogging.SHOW_TRANSPORT_BUILD_LOGS:
 				print("[UNLOAD] on_complete: zaino vuoto (carried_resource_name='%s' carried_quantity=%d) — nessun deposito, return anticipato." % [
 					individual.carried_resource_name, individual.carried_quantity
 				])
 			return
-		if DebugLogging.ENABLED:
+		if DebugLogging.ENABLED and DebugLogging.SHOW_TRANSPORT_BUILD_LOGS:
 			# can_accept/get_free_space richiamati QUI solo per il log — sola lettura, nessun
 			# effetto collaterale, store() sotto li ricalcola comunque da sé indipendentemente da
 			# queste due righe (nessuna modifica alla logica esistente).
@@ -362,7 +363,7 @@ func on_complete(individual: Variant, context: Dictionary) -> void:
 		var deposited: int = BuildingStorageService.store(
 			target_building, individual.carried_resource_name, individual.carried_quantity, individual.carried_decay_fraction
 		)
-		if DebugLogging.ENABLED:
+		if DebugLogging.ENABLED and DebugLogging.SHOW_TRANSPORT_BUILD_LOGS:
 			print("[UNLOAD] on_complete: store() ha depositato %d unità (su %d richieste)" % [deposited, carried_before_deposit])
 		if deposited > 0:
 			# resource_deposited (2026-09-12) — emesso SOLO se deposited>0: chi ascolta
@@ -371,7 +372,7 @@ func on_complete(individual: Variant, context: Dictionary) -> void:
 			# griglia di stoccaggio del deposit site è comunque cambiata.
 			resource_deposited.emit(target_building)
 			individual.carried_quantity -= deposited
-		if DebugLogging.ENABLED:
+		if DebugLogging.ENABLED and DebugLogging.SHOW_TRANSPORT_BUILD_LOGS:
 			print("[UNLOAD] on_complete: carried_quantity PRIMA=%d -> DOPO=%d" % [carried_before_deposit, individual.carried_quantity])
 		if individual.carried_quantity <= 0:
 			individual.carried_quantity = 0
@@ -442,13 +443,13 @@ func on_complete(individual: Variant, context: Dictionary) -> void:
 			"excluded_building_ids": excluded,
 			"discard_on_failure": true,
 		}
-		if DebugLogging.ENABLED:
+		if DebugLogging.ENABLED and DebugLogging.SHOW_TRANSPORT_BUILD_LOGS:
 			print("[UNLOAD] on_complete: residuo di %d '%s' dopo deposito parziale/nullo in target_building id=%d — pending_warehouse_search scritto, esclusi finora=%s" % [
 				individual.carried_quantity, resource_name_before_deposit, target_building.id, str(excluded)
 			])
 		return
 
-	if DebugLogging.ENABLED:
+	if DebugLogging.ENABLED and DebugLogging.SHOW_TRANSPORT_BUILD_LOGS:
 		print("[UNLOAD] on_complete: ramo PENSIERO (deposit_kind=THOUGHT) — pending_thought=%s" % individual.pending_thought)
 	if not individual.pending_thought:
 		return

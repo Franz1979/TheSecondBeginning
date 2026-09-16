@@ -1,6 +1,6 @@
 [gd_scene format=3]
 
-[ext_resource type="Script" path="res://gameplay/scenes/game/TransportSourceDialog.gd" id="1_transport"]
+[ext_resource type="Script" uid="uid://3lj6abjglis8" path="res://gameplay/scenes/game/OptionChoiceDialog.gd" id="1_transport"]
 
 [node name="TransportSourceDialog" type="Window"]
 visible = false

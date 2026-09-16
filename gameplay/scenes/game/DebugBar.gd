@@ -18,6 +18,15 @@ extends PanelContainer
 @onready var content_group: HBoxContainer = $MarginContainer/HBoxContainer/ContentGroup
 @onready var content_row: IconButtonRow = $MarginContainer/HBoxContainer/ContentGroup/ContentRow
 @onready var coords_label: Label = $MarginContainer/HBoxContainer/ContentGroup/CoordsLabel
+# Toggle "Perditempo" (2026-09-16, richiesta utente) — un Button PIENO, non un altro slot di
+# content_row/IconButtonRow: quegli slot sono quadrati 32x32 pensati per un'icona/emoji singola
+# (vedi IconButtonRow.gd), qui invece serve un'etichetta leggibile che cambia testo con lo stato
+# ("Perditempo: ON"/"Perditempo: OFF", richiesta esplicita) — non ci sta in 32px. Stesso principio
+# già in uso per control_button sopra: un Button semplice, figlio diretto dell'HBoxContainer,
+# fuori da IconButtonRow, stesso "stile" (tema di default del progetto) degli altri bottoni di
+# questa barra. Dentro content_group (non accanto a control_button) cosi' si nasconde/mostra
+# insieme al resto degli strumenti di debug quando la barra viene richiusa.
+@onready var idle_fallback_button: Button = $MarginContainer/HBoxContainer/ContentGroup/IdleFallbackButton
 
 signal action_pressed(action_id: StringName)
 
@@ -43,6 +52,14 @@ func _ready() -> void:
 	content_row.configure_slot(4, "+1", tr("advance_year_tooltip"), &"advance_year")
 	content_row.action_pressed.connect(func(action_id: StringName) -> void: action_pressed.emit(action_id))
 	control_button.pressed.connect(_on_control_button_pressed)
+	# Toggle "Perditempo" (2026-09-16) — STESSO schema di content_row.action_pressed sopra: emette
+	# lo stesso segnale action_pressed con un action_id proprio, cosi' GameScene continua ad avere
+	# UN SOLO punto di ascolto (_on_debug_action_pressed) per ogni bottone di questa barra, incluso
+	# questo pur non passando da IconButtonRow. Tooltip statico (non cambia con lo stato, a
+	# differenza del testo del bottone — vedi set_idle_fallback_label sotto): spiega COSA fa il
+	# bottone, non lo stato attuale, che è già leggibile direttamente nel testo.
+	idle_fallback_button.tooltip_text = tr("debug_idle_fallback_button_tooltip")
+	idle_fallback_button.pressed.connect(func() -> void: action_pressed.emit(&"toggle_idle_fallback"))
 	_apply_state()
 
 
@@ -73,3 +90,14 @@ func set_slot_toggled(index: int, is_active: bool) -> void:
 # testuale di prima ("Coords: x, y"), GameScene chiama questo invece di quello.
 func set_coords(x: int, y: int) -> void:
 	coords_label.text = "Coords: " + str(x) + ", " + str(y)
+
+
+# Aggiorna il TESTO del bottone "Perditempo" (2026-09-16, richiesta utente) — a differenza di
+# set_slot_toggled sopra (che cambia solo la tinta di uno slot icona), qui è l'etichetta stessa a
+# mostrare lo stato ("Perditempo: ON"/"Perditempo: OFF"), richiesta esplicita — nessuna icona a
+# sufficienza per comunicarlo a colpo d'occhio. GameScene chiama questo sia all'avvio (stato
+# iniziale di IdleTaskAssignmentService.fallback_enabled) sia ad ogni toggle riuscito — mai
+# questa classe stessa, che non conosce IdleTaskAssignmentService (stesso principio "muto" già
+# dichiarato in testa al file).
+func set_idle_fallback_label(enabled: bool) -> void:
+	idle_fallback_button.text = tr("debug_idle_fallback_on") if enabled else tr("debug_idle_fallback_off")

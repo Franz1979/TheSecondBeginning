@@ -45,6 +45,11 @@ static func clear_microcell(macro_state: MacroCellState, pos: Vector2i, is_curre
 	# buildable_on_stone=true).
 	if macro_state.stick_quantities.has(pos):
 		macro_state.stick_quantities.erase(pos)
+	# plant_fiber (2026-09-16, richiesta utente) — STESSO gap/STESSA soluzione di stick_quantities
+	# appena sopra, applicata subito: non ripetere l'errore "dimenticato la prima volta" già successo
+	# per gli stick (vedi il commento esteso sopra).
+	if macro_state.plant_fiber_quantities.has(pos):
+		macro_state.plant_fiber_quantities.erase(pos)
 
 
 # Un ceppo tagliato o una pianta morta lì sotto non hanno più motivo di restare "in attesa di

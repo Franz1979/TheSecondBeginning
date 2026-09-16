@@ -93,3 +93,13 @@ extends Resource
 # "spazio" astratto su entrambi i lati del calcolo capacità). Solo il dato in questo step:
 # nessuna logica di trasporto/storage esiste ancora, nessuna .tres esistente lo valorizza.
 @export var space_per_unit: float = 1.0
+
+# Unità di QUESTA risorsa prodotte da UN individuo maturo (ADULT/OLD, non YOUNG) della vegetazione
+# che la genera — 2026-09-16, richiesta utente: prima una costante hardcoded per tipo
+# (StickPoolService.STICKS_PER_MATURE_TREE/PlantFiberPoolService.UNITS_PER_MATURE_SHRUB, entrambe
+# 3), ora spostata qui così è tarabile da .tres senza toccare codice. Consultato SOLO da
+# VegetationPoolService.resolve_units_per_mature_individual (stick.tres/plant_fiber.tres oggi, i
+# soli due tipi con un pool per-lotto derivato da individui maturi) — nessun'altra risorsa secondaria
+# lo legge. Default 0 (non 3): un .tres che non lo valorizza esplicitamente deve produrre un warning
+# visibile (capacity sempre 0), MAI un fallback silenzioso a un numero che sembra normale.
+@export var units_per_mature_plant: int = 0

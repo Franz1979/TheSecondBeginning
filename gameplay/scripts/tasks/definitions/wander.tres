@@ -10,3 +10,4 @@
 script = ExtResource("1_def")
 task_name = "task_wander_name"
 steps = [ExtResource("2_walk1"), ExtResource("3_look_around"), ExtResource("4_walk2"), ExtResource("3_look_around"), ExtResource("5_walk3")]
+is_idle_activity = true

@@ -146,6 +146,13 @@ var shrub_claimed_lots: Dictionary = {}
 # "capacity"; lettura/validità di freschezza lotto invece in
 # TerrainScatteredResourceService.get_available.
 var stick_quantities: Dictionary = {}
+# Pool di plant_fiber per lotto SHRUB (2026-09-16, richiesta utente) — STESSO identico formato/
+# STESSO design di stick_quantities sopra (Vector2i lotto -> {"checkpoint_day","capacity",
+# "harvested"}), popolato/aggiornato pigramente da PlantFiberPoolService.refresh_macrocell (thin
+# wrapper su VegetationPoolService, come StickPoolService — vedi quei file) sullo STESSO checkpoint
+# growth di stick (nessun checkpoint separato). A differenza di stick, conta TUTTI gli arbusti
+# maturi indipendentemente dal subtype (nessun filtro `wood_only`/`fruit_bearing`).
+var plant_fiber_quantities: Dictionary = {}
 # Stesso formato di vegetation_cut_exceptions sopra (origin_type/size_multiplier), ma per la
 # mortalità naturale invece del taglio del giocatore — con una finestra di non-ricrescita di natura
 # DIVERSA, per decisione esplicita: il taglio è un'azione deliberata (bloccata per anni, vedi

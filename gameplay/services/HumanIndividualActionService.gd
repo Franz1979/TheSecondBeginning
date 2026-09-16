@@ -63,6 +63,7 @@ const TASK_COMPLETION_SKILL_BY_TASK_NAME := {
 	"task_rest_name": "", # Nessuna skill — richiesta esplicita utente.
 	"task_wander_name": "", # Nessuna skill — richiesta esplicita utente.
 	"task_play_name": "", # Nessuna skill — richiesta esplicita utente.
+	"task_leisure_rest_name": "", # Nessuna skill — richiesta esplicita utente, 2026-09-16.
 }
 
 # Sistema di interrupt/coda da stamina critica (2026-09-13, richiesta utente) — soglie sul
@@ -154,48 +155,66 @@ func apply_action(individual: HumanIndividual, delta: float, world: World = null
 	# record_step_cost/print_cost_summary.
 	task.record_step_cost(stamina_delta, happiness_delta, delta)
 	if action.is_complete(individual, task.context):
-		# on_complete() (2026-09-07, richiesta utente, introdotta con ThinkAction) — SEMPRE PRIMA di
-		# advance_to_next_step()/stop(): quello che uno step lascia sull'individuo al proprio termine
-		# (es. ThinkAction -> individual.pending_thought = true) deve essere scritto mentre quello
-		# step è ancora "il current" per costruzione, non dopo che la Task è già passata oltre.
-		action.on_complete(individual, task.context)
-		# Ricerca magazzino (2026-09-09, richiesta utente — nata come re-routing UnloadAction su
-		# magazzino pieno, poi GENERALIZZATA per servire anche la ricerca iniziale post-PickUp di
-		# haul_resource, stesso canale/stesso Dictionary per entrambe, vedi _handle_pending_
-		# warehouse_search sotto) e "cammina via" dopo un deposito riuscito (vedi _handle_pending_
-		# walk_away sotto) — ENTRAMBE DOPO on_complete(), PRIMA di advance_to_next_step(): quello che
-		# uno step ha appena scritto in context va consumato mentre è ancora "il current" per
-		# costruzione, accodando eventuali nuovi step alla Task corrente PRIMA che l'indice avanzi,
-		# così is_finished()/il nuovo current_action sotto vedono già i nuovi step come parte della
-		# stessa Task, mai una Task separata. Ordine fra le due chiamate irrilevante in pratica: sono
-		# mutuamente esclusive per costruzione (pending_warehouse_search lo scrive solo un deposito
-		# NON riuscito/ricerca iniziale, pending_walk_away_position solo un deposito RIUSCITO — mai
-		# entrambe nello stesso passaggio, vedi unload_action.gd).
-		_handle_pending_warehouse_search(individual, task, world)
-		_handle_pending_thought_target_search(individual, task, world)
-		_handle_pending_walk_away(task)
-		task.advance_to_next_step()
-		if task.is_finished():
-			if DebugLogging.ENABLED and DebugLogging.SHOW_TASK_TOTAL_COST_LOGS:
-				task.print_cost_summary(individual)
-			# Punto ESATTO di completamento naturale con successo (2026-09-13, richiesta utente) —
-			# QUI, non dentro individual.stop(): stop() è condiviso anche con l'interruzione
-			# MANUALE (tasto H, vedi HumanIndividual.stop()), quindi non distingue da sé "arrivo
-			# naturale" da "interrotta a metà" — is_finished() qui invece è vero SOLO quando tutti
-			# gli step sono stati completati con successo. Garanzia "una volta sola": individual.
-			# current_task cambia sempre (via _handle_task_completion_need_and_queue sotto, che
-			# assegna una nuova Task-bisogno/riprende dalla coda/chiama stop()), quindi QUESTA
-			# istanza di Task non è più raggiungibile da nessuna chiamata futura di apply_action —
-			# lo stesso identico principio già sfruttato da print_cost_summary sopra.
-			_apply_task_completion_skill_growth(individual, task)
-			# Bisogno/coda (2026-09-13, richiesta utente, Punto 5) — PRIMA di considerare
-			# l'individuo libero: se un bisogno stamina è ANCORA attivo, assegna la Task-bisogno
-			# corrispondente; altrimenti riprende l'ultima Task sospesa in coda (se presente);
-			# solo se nessuna delle due condizioni vale, individual.stop() come prima di questo
-			# passo. Vedi _handle_task_completion_need_and_queue per il dettaglio dei tre rami.
-			_handle_task_completion_need_and_queue(individual, task, world, game_data)
-		else:
-			task.get_current_action().activate(individual, task.context)
+		finish_current_step(individual, task, world, game_data)
+
+
+# ESTRATTA (2026-09-16, richiesta utente, fix bordo macrocella per le task perditempo) dal corpo
+# del blocco `if action.is_complete(...)` di apply_action sopra — STESSO comportamento esatto,
+# nessun cambio: SECONDO chiamante ora GameScene._block_border_crossing, che la richiama per le
+# SOLE task perditempo (TaskDefinition.is_idle_activity, vedi task_definition.gd) quando il
+# movimento viene bloccato al bordo di una macrocella (macrocella inesistente o ingresso in
+# acqua) — in quel caso la gamba bloccata viene trattata come conclusa, STESSA identica sequenza
+# di chiusura/avanzamento di un arrivo naturale (skill growth/chiusura Task/fallback perditempo
+# inclusi se era l'ultima gamba), invece di lasciare l'individuo bloccato per sempre. Per ogni
+# altra Task questo metodo continua a essere raggiunto SOLO da qui sotto, in apply_action, quando
+# is_complete() è davvero vero — comportamento sul bordo bloccato INVARIATO per loro (nessuna
+# chiamata a questo metodo da _block_border_crossing per una Task non idle, vedi quel file).
+func finish_current_step(individual: HumanIndividual, task: Task, world: World, game_data: GameData) -> void:
+	var action := task.get_current_action()
+	# on_complete() (2026-09-07, richiesta utente, introdotta con ThinkAction) — SEMPRE PRIMA di
+	# advance_to_next_step()/stop(): quello che uno step lascia sull'individuo al proprio termine
+	# (es. ThinkAction -> individual.pending_thought = true) deve essere scritto mentre quello
+	# step è ancora "il current" per costruzione, non dopo che la Task è già passata oltre.
+	action.on_complete(individual, task.context)
+	# Ricerca magazzino (2026-09-09, richiesta utente — nata come re-routing UnloadAction su
+	# magazzino pieno, poi GENERALIZZATA per servire anche la ricerca iniziale post-PickUp di
+	# haul_resource, stesso canale/stesso Dictionary per entrambe, vedi _handle_pending_
+	# warehouse_search sotto) e "cammina via" dopo un deposito riuscito (vedi _handle_pending_
+	# walk_away sotto) — ENTRAMBE DOPO on_complete(), PRIMA di advance_to_next_step(): quello che
+	# uno step ha appena scritto in context va consumato mentre è ancora "il current" per
+	# costruzione, accodando eventuali nuovi step alla Task corrente PRIMA che l'indice avanzi,
+	# così is_finished()/il nuovo current_action sotto vedono già i nuovi step come parte della
+	# stessa Task, mai una Task separata. Ordine fra le due chiamate irrilevante in pratica: sono
+	# mutuamente esclusive per costruzione (pending_warehouse_search lo scrive solo un deposito
+	# NON riuscito/ricerca iniziale, pending_walk_away_position solo un deposito RIUSCITO — mai
+	# entrambe nello stesso passaggio, vedi unload_action.gd). Per le task perditempo (secondo
+	# chiamante, bordo bloccato) questi tre handler sono no-op garantiti: nessuno dei loro step
+	# (Walk/Run/LookAround/Rest/Jump) scrive mai queste chiavi di context.
+	_handle_pending_warehouse_search(individual, task, world)
+	_handle_pending_thought_target_search(individual, task, world)
+	_handle_pending_walk_away(task)
+	task.advance_to_next_step()
+	if task.is_finished():
+		if DebugLogging.ENABLED and DebugLogging.SHOW_TASK_LIFECYCLE_LOGS:
+			task.print_cost_summary(individual)
+		# Punto ESATTO di completamento naturale con successo (2026-09-13, richiesta utente) —
+		# QUI, non dentro individual.stop(): stop() è condiviso anche con l'interruzione
+		# MANUALE (tasto H, vedi HumanIndividual.stop()), quindi non distingue da sé "arrivo
+		# naturale" da "interrotta a metà" — is_finished() qui invece è vero SOLO quando tutti
+		# gli step sono stati completati con successo. Garanzia "una volta sola": individual.
+		# current_task cambia sempre (via _handle_task_completion_need_and_queue sotto, che
+		# assegna una nuova Task-bisogno/riprende dalla coda/chiama stop()), quindi QUESTA
+		# istanza di Task non è più raggiungibile da nessuna chiamata futura di apply_action —
+		# lo stesso identico principio già sfruttato da print_cost_summary sopra.
+		_apply_task_completion_skill_growth(individual, task)
+		# Bisogno/coda (2026-09-13, richiesta utente, Punto 5) — PRIMA di considerare
+		# l'individuo libero: se un bisogno stamina è ANCORA attivo, assegna la Task-bisogno
+		# corrispondente; altrimenti riprende l'ultima Task sospesa in coda (se presente);
+		# solo se nessuna delle due condizioni vale, individual.stop() come prima di questo
+		# passo. Vedi _handle_task_completion_need_and_queue per il dettaglio dei tre rami.
+		_handle_task_completion_need_and_queue(individual, task, world, game_data)
+	else:
+		task.get_current_action().activate(individual, task.context)
 
 
 # Consuma task.context["pending_warehouse_search"] (2026-09-09, richiesta utente — GENERALIZZATO da
@@ -344,7 +363,7 @@ func _resolve_material_shortage(
 		# era da un tentativo precedente. Nessuna notifica per la transizione true->false (punto 3
 		# della richiesta: "nessuna notifica necessaria", il progresso visibile del cantiere basta).
 		target_building.is_awaiting_material = false
-		if DebugLogging.ENABLED:
+		if DebugLogging.ENABLED and DebugLogging.SHOW_TRANSPORT_BUILD_LOGS:
 			print("[BUILD MATERIAL BONUS] Building #%d: nessun edificio di storage completo esiste ancora nel mondo — garantiti direttamente (bonus di partenza), nessuna Transport generata: %s." % [
 				target_building.id, str(missing)
 			])
@@ -367,7 +386,7 @@ func _resolve_material_shortage(
 	if not target_building.is_awaiting_material:
 		target_building.is_awaiting_material = true
 		building_material_blocked.emit(target_building)
-	if DebugLogging.ENABLED:
+	if DebugLogging.ENABLED and DebugLogging.SHOW_TRANSPORT_BUILD_LOGS:
 		print("[BUILD MATERIAL NEEDED] Building #%d: manca ancora %s — cantiere bloccato in attesa (nessuna Transport automatica)." % [
 			target_building.id, str(missing)
 		])
@@ -447,7 +466,7 @@ func retry_blocked_material_shortages(
 		if target_building == null or missing.is_empty():
 			continue
 		var resolved := _resolve_material_shortage(individual, world, game_data, target_building, missing)
-		if resolved and DebugLogging.ENABLED:
+		if resolved and DebugLogging.ENABLED and DebugLogging.SHOW_TRANSPORT_BUILD_LOGS:
 			print("[BUILD MATERIAL RETRY] Individuo #%d %s: ritentativo giornaliero riuscito — Building #%d: %s." % [
 				individual.id, individual.name, target_building.id, str(missing)
 			])
@@ -496,7 +515,7 @@ func _handle_pending_warehouse_search(individual: HumanIndividual, task: Task, w
 		# prima di questo passo, ora reso esplicito invece che dedotto dalla non-nullità dell'argomento.
 		var new_steps: Array[Action] = [WalkAction.new(candidate_position), UnloadAction.new(candidate, UnloadAction.DepositKind.RESOURCE)]
 		task.append_steps(new_steps)
-		if DebugLogging.ENABLED:
+		if DebugLogging.ENABLED and DebugLogging.SHOW_TRANSPORT_BUILD_LOGS:
 			print("[WAREHOUSE SEARCH] magazzino trovato: id=%d — Walk+Unload accodati alla Task corrente (esclusi finora: %s)." % [
 				candidate.id, str(excluded_building_ids)
 			])
@@ -511,7 +530,7 @@ func _handle_pending_warehouse_search(individual: HumanIndividual, task: Task, w
 		# scarico a terra — questo print resta qui SOLO per il contesto SPECIFICO del re-routing
 		# (perché la ricerca è scattata: magazzino pieno), non duplicato dal log generico della
 		# funzione condivisa.
-		if DebugLogging.ENABLED:
+		if DebugLogging.ENABLED and DebugLogging.SHOW_TRANSPORT_BUILD_LOGS:
 			print("[WAREHOUSE SEARCH] nessun magazzino alternativo trovato per resource_name='%s' quantity=%d dopo re-routing (magazzino originale pieno all'arrivo)." % [
 				resource_name, quantity
 			])
@@ -529,7 +548,7 @@ func _handle_pending_warehouse_search(individual: HumanIndividual, task: Task, w
 	# in apply_action, chiuderebbe comunque lo zaino via il proprio hook di sicurezza (vedi
 	# HumanIndividual.stop()), ma scartare QUI, PRIMA della terminazione, è più diretto e
 	# corrisponde esattamente al punto richiesto ("prima o durante la terminazione della Task").
-	if DebugLogging.ENABLED:
+	if DebugLogging.ENABLED and DebugLogging.SHOW_TRANSPORT_BUILD_LOGS:
 		print("[WAREHOUSE SEARCH] nessun magazzino trovato per resource_name='%s' quantity=%d — nessun edificio da abbandonare in questo caso, ma nessuna destinazione disponibile." % [
 			resource_name, quantity
 		])
@@ -582,7 +601,7 @@ func _handle_pending_thought_target_search(individual: HumanIndividual, task: Ta
 		# deposit_kind (vedi nota in testa a unload_action.gd).
 		var new_steps: Array[Action] = [WalkAction.new(candidate_position), UnloadAction.new(candidate, UnloadAction.DepositKind.THOUGHT)]
 		task.append_steps(new_steps)
-		if DebugLogging.ENABLED:
+		if DebugLogging.ENABLED and DebugLogging.SHOW_TRANSPORT_BUILD_LOGS:
 			print("[THOUGHT TARGET SEARCH] edificio trovato: id=%d — Walk+Unload(THOUGHT) accodati alla Task corrente (esclusi finora: %s)." % [
 				candidate.id, str(excluded_building_ids)
 			])
@@ -593,7 +612,7 @@ func _handle_pending_thought_target_search(individual: HumanIndividual, task: Ta
 	# sull'individuo (individual.pending_thought, se già true, non viene toccato qui), la Task
 	# prosegue/termina senza aver depositato. Nessuna perdita, non un fallimento distruttivo —
 	# stesso trattamento "nessun candidato" già riservato alla ricerca INIZIALE del magazzino sopra.
-	if DebugLogging.ENABLED:
+	if DebugLogging.ENABLED and DebugLogging.SHOW_TRANSPORT_BUILD_LOGS:
 		print("[THOUGHT TARGET SEARCH] nessun edificio con accepts_thoughts trovato — nessun deposito, la Task prosegue/termina senza aver depositato il pensiero.")
 
 
@@ -609,7 +628,7 @@ func _handle_pending_walk_away(task: Task) -> void:
 	task.context.erase("pending_walk_away_position")
 	var new_steps: Array[Action] = [WalkAction.new(walk_away_position)]
 	task.append_steps(new_steps)
-	if DebugLogging.ENABLED:
+	if DebugLogging.ENABLED and DebugLogging.SHOW_TRANSPORT_BUILD_LOGS:
 		print("[WALK AWAY] WalkAction accodato verso %s dopo un deposito riuscito." % str(walk_away_position))
 
 
@@ -631,7 +650,7 @@ func _apply_task_completion_skill_growth(individual: HumanIndividual, task: Task
 	var value_before: float = individual.get(skill_property_name)
 	var value_after: float = value_before + TASK_COMPLETION_SKILL_GROWTH_AMOUNT
 	individual.set(skill_property_name, value_after)
-	if DebugLogging.ENABLED and DebugLogging.SHOW_SKILL_GROWTH_LOGS:
+	if DebugLogging.ENABLED and DebugLogging.SHOW_TASK_LIFECYCLE_LOGS:
 		print("[SKILL GROWTH] #%d %s: Task '%s' completata -> %s %.1f -> %.1f" % [
 			individual.id, individual.name, task.task_name, skill_property_name, value_before, value_after
 		])
@@ -705,7 +724,7 @@ static func _resolve_age_band(individual: HumanIndividual, game_data: GameData) 
 static func resolve_idle_individual(individual: HumanIndividual, age_band: HumanTypes.AgeBand, world: World) -> void:
 	var needed_priority := _resolve_active_stamina_need_priority(individual)
 	if needed_priority != -1:
-		if DebugLogging.ENABLED:
+		if DebugLogging.ENABLED and DebugLogging.SHOW_TASK_LIFECYCLE_LOGS:
 			print("[INTERRUPT DEBUG] #%d %s: individuo libero, bisogno stamina attivo (priorità %d, stamina=%.1f/%.1f)." % [
 				individual.id, individual.name, needed_priority, individual.current_stamina, individual.max_stamina
 			])
@@ -716,8 +735,20 @@ static func resolve_idle_individual(individual: HumanIndividual, age_band: Human
 		return
 
 	var resumed_task := TaskQueueService.pop_suspended_task(individual)
+	# ZOMBIE GUARD (2026-09-16, richiesta utente, fix "task zombie") — scarta ogni task già
+	# conclusa estratta dalla coda (residuo possibile da un salvataggio precedente a questo fix, o
+	# difesa in profondità rispetto alla guardia in HumanIndividual.assign_task che oggi impedisce
+	# di accodarne di nuove) e passa alla successiva, finché non se ne trova una valida o la coda si
+	# svuota — MAI impostare current_task su una task già finita: activate_resumed_task la
+	# troverebbe già conclusa e non farebbe nulla, lasciando l'individuo bloccato per sempre.
+	while resumed_task != null and resumed_task.is_finished():
+		if DebugLogging.ENABLED and DebugLogging.SHOW_SAFETY_LOGS:
+			print("[ZOMBIE GUARD] Individuo #%d %s: task '%s' (step %d/%d) scartata dalla coda perché già conclusa — resolve_idle_individual, ripresa da coda." % [
+				individual.id, individual.name, resumed_task.task_name, resumed_task.current_step_index, resumed_task.steps.size()
+			])
+		resumed_task = TaskQueueService.pop_suspended_task(individual)
 	if resumed_task != null:
-		if DebugLogging.ENABLED:
+		if DebugLogging.ENABLED and DebugLogging.SHOW_TASK_LIFECYCLE_LOGS:
 			print("[INTERRUPT DEBUG] #%d %s: individuo libero, nessun bisogno attivo — riprende '%s' dalla coda." % [
 				individual.id, individual.name, resumed_task.task_name
 			])
@@ -764,7 +795,7 @@ static func activate_resumed_task(individual: HumanIndividual, resumed_task: Tas
 	if not (resumed_action is WalkAction):
 		var required_position: Variant = resumed_action.get_required_position(individual, resumed_task.context)
 		if required_position != null and individual.position != required_position:
-			if DebugLogging.ENABLED:
+			if DebugLogging.ENABLED and DebugLogging.SHOW_TASK_LIFECYCLE_LOGS:
 				print("[RESUME WALKBACK] #%d %s: '%s' riprende su %s, ma l'individuo è a %s invece di %s — inserito Walk di ritorno." % [
 					individual.id, individual.name, resumed_task.task_name,
 					resumed_action.get_script().get_global_name(),
@@ -800,7 +831,7 @@ func _handle_stamina_interrupt(individual: HumanIndividual, task: Task, world: W
 	if task.interrupt_priority != -1 and needed_priority >= task.interrupt_priority:
 		return false
 
-	if DebugLogging.ENABLED:
+	if DebugLogging.ENABLED and DebugLogging.SHOW_TASK_LIFECYCLE_LOGS:
 		print("[INTERRUPT DEBUG] #%d %s: bisogno stamina attivo (priorità %d, stamina=%.1f/%.1f) — Task '%s' in corso sostituita." % [
 			individual.id, individual.name, needed_priority, individual.current_stamina, individual.max_stamina, task.task_name
 		])
@@ -833,9 +864,45 @@ func _handle_task_completion_need_and_queue(individual: HumanIndividual, task: T
 	if game_data == null:
 		individual.stop()
 		return
-	if DebugLogging.ENABLED:
+	if DebugLogging.ENABLED and DebugLogging.SHOW_TASK_LIFECYCLE_LOGS:
 		print("[INTERRUPT DEBUG] #%d %s: Task '%s' conclusa — valuto bisogno/coda/fallback perditempo." % [
 			individual.id, individual.name, task.task_name
 		])
+	# ZOMBIE GUARD — causa alla radice (2026-09-16, richiesta utente, fix "task zombie") — rilascia
+	# QUI la task appena conclusa, PRIMA di chiamare resolve_idle_individual sotto: senza questo,
+	# individual.current_task restava puntato alla task già finita (current_step_index ==
+	# steps.size()) per tutta la durata di resolve_idle_individual/assign_idle_fallback/assign_task,
+	# che la trovava ancora "in corso" e — se is_suspendable (vero per transport/build/
+	# haul_resource) — la sospendeva in coda COSÌ COM'È non appena una Task-bisogno o un idle-
+	# fallback veniva assegnato a seguire. Alla ripresa, activate_resumed_task la trovava già
+	# conclusa e non faceva nulla: individuo bloccato per sempre (vedi ricognizione). Nessun altro
+	# punto di questa funzione/di resolve_idle_individual legge ancora `task` dopo questo azzeramento
+	# (usano solo `individual`/`age_band`/`world`) — TaskDebugRegistry.on_task_closed PRIMA
+	# dell'azzeramento, stesso ordine già in uso da HumanIndividual.stop()/assign_task per lo stesso
+	# scopo (mai una entry del pannello 🐞 lasciata "in corso" per una task in realtà già conclusa).
+	TaskDebugRegistry.on_task_closed(task)
+	individual.current_task = null
 	var age_band := _resolve_age_band(individual, game_data)
 	resolve_idle_individual(individual, age_band, world)
+
+
+# ZOMBIE GUARD — recupero da salvataggio (2026-09-16, richiesta utente, fix "task zombie") —
+# chiamata da GameScene._ready() PRIMA di valutare se un individuo caricato è libero: un
+# salvataggio fatto PRIMA di questo fix può ancora contenere una current_task già conclusa
+# (current_step_index >= steps.size()), prodotta dal bug ora corretto alla radice sopra. No-op
+# (ritorna false) se current_task è null o non ancora conclusa — il caso comune, nessun log per
+# quello. Log gated dalla categoria SAFETY (2026-09-16, richiesta utente — riordino log di debug:
+# prima stampava sempre, indipendentemente da DebugLogging.ENABLED; SHOW_SAFETY_LOGS default true
+# mantiene la stessa visibilità di prima a impostazioni invariate, ma ora rispetta anche il master
+# switch ENABLED come ogni altro log del progetto).
+static func recover_zombie_current_task(individual: HumanIndividual) -> bool:
+	if individual.current_task == null or not individual.current_task.is_finished():
+		return false
+	var zombie_task := individual.current_task
+	if DebugLogging.ENABLED and DebugLogging.SHOW_SAFETY_LOGS:
+		print("[ZOMBIE GUARD] Individuo #%d %s: current_task '%s' (step %d/%d) già conclusa ma mai rilasciata — rilasciata ora, HumanIndividualActionService.recover_zombie_current_task." % [
+			individual.id, individual.name, zombie_task.task_name, zombie_task.current_step_index, zombie_task.steps.size()
+		])
+	TaskDebugRegistry.on_task_closed(zombie_task)
+	individual.current_task = null
+	return true

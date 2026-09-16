@@ -26,6 +26,8 @@ help_wander_task,assegna la Task Vagabondare (Walk-Guarda in giro-Walk-Guarda in
 help_play_task,assegna la Task Gioco (Corri-Salta-Corri-Salta, solo bambini) all'individuo selezionato
 help_stop_task,annulla il comando corrente dell'individuo selezionato (torna a riposo)
 help_unload_here_task,tenuto premuto durante un click destro su un deposito: scarica lì tutto ciò che l'individuo selezionato porta in spalla
+help_double_click_label,Doppio click sinistro
+help_double_click_inspect_microcell,ispeziona la microcella cliccata: risorse raccoglibili e vegetazione presente (funziona anche senza individuo selezionato). Il click singolo seleziona solo oggetti precisi (individui/edifici/sassi/piante), mai la cella intera.
 help_debug_clear_backpack,(debug) svuota lo zaino dell'individuo selezionato
 help_fog_of_war_menu_link,Nebbia di guerra
 help_fog_of_war_title,Nebbia di guerra
@@ -94,8 +96,7 @@ sex_male_short,M
 vegetation_cut_button,Taglia
 vegetation_subtype_label,Sottotipo: {subtype}
 vegetation_age_label,Età: {age_band} ({years} anni)
-stone_pebble_here_label,Sassi qui: {quantity}
-stone_zone_aggregate_label,Pietra nella zona: {quantity}
+stone_zone_aggregate_label,Pietra: {quantity}
 stone_selection_title,Roccia
 stick_lot_available_here_label,Bastoni qui: {quantity}
 stick_lot_wood_label,Legno: non ancora disponibile
@@ -132,6 +133,18 @@ transport_dialog_confirm,Conferma
 transport_dialog_cancel,Annulla
 carried_resource_tooltip_pebble,Sassi
 carried_resource_tooltip_stick,Rametti
+carried_resource_tooltip_plant_fiber,Fibra vegetale
+microcell_inspection_title,Microcella ({x}; {y})
+microcell_inspection_not_visible,Cella non esplorata o non visibile.
+microcell_inspection_only_grass,Contiene solo erba.
+microcell_inspection_empty,Cella senza risorse.
+microcell_inspection_building_occupied,Cella occupata da un edificio — click singolo per i dettagli
+microcell_inspection_resources_header,Risorse raccoglibili:
+microcell_inspection_resource_line,- {resource}: {quantity}
+microcell_inspection_vegetation_header,Vegetazione presente:
+microcell_inspection_tree,Alberi
+microcell_inspection_shrub,Arbusti
+microcell_inspection_grass,Erba
 pregnant,Incinta
 individual_vitals_section_label,Parametri vitali:
 individual_identity_line,{name} - {sex} - {age} - {band}
@@ -194,5 +207,8 @@ building_construction_phase_label,{phase}: {percent}%
 building_construction_phase_setup_site,Allestimento cantiere
 building_construction_phase_clear_site,Pulizia del terreno
 building_construction_phase_build,Costruzione
-building_awaiting_material_build_label,"Per completare la costruzione servono ancora: {list}"
+building_awaiting_material_build_caption,Per completare la costruzione servono:
 transport_selection_banner_text,"🚚 Trasporto: seleziona l'edificio di destinazione (H per annullare)"
+debug_idle_fallback_button_tooltip,Attiva/disattiva l'assegnazione automatica di task perditempo (Wander/Play/Leisure Rest) agli individui liberi
+debug_idle_fallback_on,Perditempo: ON
+debug_idle_fallback_off,Perditempo: OFF

@@ -59,8 +59,19 @@ extends Resource
 
 # Sospendibilità (2026-09-13, richiesta utente, stesso contesto di interrupt_priority sopra) — vero
 # SOLO per le Task di lavoro che un interrupt può mettere in pausa e riprendere più tardi. false
-# (default) per ogni TaskDefinition esistente tranne haul_resource.tres/transport.tres (true) —
-# vedi quei due file. build.tres resterà false anche in questo passo (diventerà sospendibile in un
-# giro futuro dedicato, non qui). Copiato su Task.is_suspendable da TaskFactory.build_task, stesso
-# schema di interrupt_priority sopra.
+# (default) per ogni TaskDefinition esistente tranne haul_resource.tres/transport.tres/build.tres
+# (true) — vedi quei tre file (build.tres è diventato sospendibile in un giro successivo a questo
+# commento, correzione 2026-09-16: la nota precedente qui sotto lo dava ancora per false, non più
+# vero — verificato leggendo build.tres, che ha `is_suspendable = true`). Copiato su Task.
+# is_suspendable da TaskFactory.build_task, stesso schema di interrupt_priority sopra.
 @export var is_suspendable: bool = false
+
+# Marcatore esplicito "task perditempo" (2026-09-16, richiesta utente, fix bordo macrocella per le
+# task idle-fallback) — vero SOLO per wander.tres/play.tres/leisure_rest.tres. Criterio ESPLICITO
+# per riconoscere le task idle-fallback (mai un confronto su task_name, solo un'etichetta di
+# debug/UI): GameScene._block_border_crossing lo consulta per decidere se una gamba bloccata al
+# bordo di una macrocella (macrocella inesistente o ingresso in acqua) va considerata conclusa
+# invece di lasciare l'individuo bloccato per sempre — SOLO per queste Task, ogni altra resta
+# bloccata come oggi. Copiato su Task.is_idle_activity da TaskFactory.build_task, stesso schema di
+# is_suspendable sopra.
+@export var is_idle_activity: bool = false

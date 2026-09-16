@@ -151,6 +151,21 @@ var interrupt_priority: int = -1
 # assign_task().
 var is_suspendable: bool = false
 
+# Marcatore esplicito "task perditempo" (2026-09-16, richiesta utente, fix bordo macrocella) —
+# vero SOLO per wander.tres/play.tres/leisure_rest.tres (vedi quei tre file). Criterio ESPLICITO
+# per distinguere le task idle-fallback da ogni altra (mai un confronto su task_name, che resta
+# solo un'etichetta di debug/UI, vedi Task.task_name sopra) — unico consumatore oggi:
+# GameScene._block_border_crossing, che tratta una gamba bloccata al bordo come conclusa SOLO per
+# queste task (nessun'altra Task cambia comportamento sul bordo bloccato). Copiato da
+# TaskDefinition.is_idle_activity da TaskFactory.build_task, stesso schema di is_suspendable
+# sopra. PERSISTITO (TaskPersistenceService, stesso trattamento di interrupt_priority/
+# is_suspendable sopra, non di allowed_age_bands): current_task viene sempre serializzato
+# indipendentemente da is_suspendable (quel campo decide solo se va in CODA, non se viene
+# salvato) — un individuo può quindi salvare a metà una Wander/Play/Leisure Rest, e un
+# attraversamento di bordo può scattare in QUALUNQUE momento futuro della sessione ricaricata,
+# non solo al momento di assign_task().
+var is_idle_activity: bool = false
+
 
 func _init(p_steps: Array[Action] = []) -> void:
 	id = _next_id
@@ -253,6 +268,32 @@ func advance_to_next_step() -> void:
 
 func is_finished() -> bool:
 	return current_step_index >= steps.size()
+
+
+# Ribasa di `offset` il target POSIZIONALE (Action.target, quando è un Vector2 — vedi Action.gd:
+# solo WalkAction/RunAction lo valorizzano così, ogni altra Action lo lascia null e tiene le
+# proprie posizioni altrove, es. target_building, che si ri-derivano da sole da individual.
+# home_macro_coords appena aggiornato) di OGNI step NON ANCORA completato, incluso quello attivo
+# (da current_step_index in poi) — 2026-09-16, richiesta utente, fix bordo macrocella per le task
+# perditempo (CAUSA A). PRIMA di questo fix, GameScene._attempt_macro_cell_transition ribasava
+# SOLO lo step ATTIVO: una Task multi-Walk che risolve TUTTI i propri target assoluti in un colpo
+# solo all'assegnazione (Wander/Play/Leisure Rest, ma anche una qualunque Task futura con lo
+# stesso schema) lasciava le gambe FUTURE nel vecchio sistema di riferimento — quando una di
+# quelle diventava attiva, puntava a un target sbagliato rispetto alla macrocella corrente,
+# potendo generare un nuovo attraversamento in una direzione sbagliata. Chiamata sia sulla
+# current_task sia su ogni Task sospesa in task_queue dello stesso individuo (vedi
+# _attempt_macro_cell_transition), perché una Task in coda può restare sospesa per giorni mentre
+# l'individuo (impegnato in un'altra Task, es. Wander) attraversa bordi che la sua futura ripresa
+# non ha mai visto. Ritorna quanti step sono stati ribasati, solo per il log del chiamante
+# ([BORDER]) — nessuna logica di simulazione lo consulta.
+func rebase_positional_targets(offset: Vector2) -> int:
+	var rebased := 0
+	for i in range(current_step_index, steps.size()):
+		var step := steps[i]
+		if step.target is Vector2:
+			step.target += offset
+			rebased += 1
+	return rebased
 
 
 # Accumula il costo di QUESTO istante nello step attualmente attivo (2026-09-07, richiesta utente)

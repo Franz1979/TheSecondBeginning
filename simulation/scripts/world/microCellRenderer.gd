@@ -792,6 +792,39 @@ func _draw_selected_stick_lot_highlight() -> void:
 	draw_rect(rect, SELECTION_HIGHLIGHT_COLOR, false, SELECTION_HIGHLIGHT_WIDTH)
 
 
+# Lotto (microcella) selezionato per l'ISPEZIONE con doppio click (2026-09-16, richiesta utente —
+# "hai tolto anche il quadrato rosso sulla cella selezionata": la mutua esclusione a 7 vie in
+# GameScene toglie il contorno dell'oggetto eventualmente selezionato dal primo click del doppio
+# click, ma senza questo la microcella ispezionata restava senza ALCUN contorno — regressione
+# visiva, non l'assenza di contorno "voluta" ipotizzata in origine). Campo/funzioni/disegno
+# DUPLICATI da _selected_stick_lot/_draw_selected_stick_lot_highlight sopra (stessa identica
+# geometria — un lotto è sempre l'intera microcella, quadrato non cerchio) invece di riusarli:
+# STICK_LOT e MICROCELL sono due SelectionKind distinti e mutuamente esclusivi in GameScene, un
+# campo condiviso li farebbe interferire (selezionare l'uno spegnerebbe silenziosamente il contorno
+# dell'altro senza passare da clear_selected_stick_lot/clear_selected_microcell) — stesso principio
+# "nessuno stato condiviso tra selezioni concettualmente diverse" già seguito ovunque in questo file.
+var _selected_microcell := Vector2i(-1, -1)
+
+
+func set_selected_microcell(lot: Vector2i) -> void:
+	_selected_microcell = lot
+	queue_redraw()
+
+
+func clear_selected_microcell() -> void:
+	if _selected_microcell == Vector2i(-1, -1):
+		return
+	_selected_microcell = Vector2i(-1, -1)
+	queue_redraw()
+
+
+func _draw_selected_microcell_highlight() -> void:
+	if _selected_microcell == Vector2i(-1, -1):
+		return
+	var rect := Rect2(_selected_microcell.x * CELL_SIZE, _selected_microcell.y * CELL_SIZE, CELL_SIZE, CELL_SIZE)
+	draw_rect(rect, SELECTION_HIGHLIGHT_COLOR, false, SELECTION_HIGHLIGHT_WIDTH)
+
+
 func set_fish_positions(positions: Array) -> void:
 	fish_positions = positions
 	_rebuild_fish_multimeshes()
@@ -878,6 +911,7 @@ func _draw() -> void:
 	_draw_selected_stone_highlight()
 	_draw_stick_positions()
 	_draw_selected_stick_lot_highlight()
+	_draw_selected_microcell_highlight()
 	_draw_vegetation_positions()
 	_draw_selected_individual_highlight()
 	_draw_fish_positions()
@@ -1137,6 +1171,8 @@ func _draw_deposit_site_storage_grid(ground: Vector2, slot_breakdown: Array) -> 
 				_draw_deposit_storage_pebble_icon(top_left, DEPOSIT_SITE_STORAGE_SQUARE_SIDE)
 			"stick":
 				_draw_deposit_storage_stick_icon(top_left, DEPOSIT_SITE_STORAGE_SQUARE_SIDE)
+			"plant_fiber":
+				_draw_deposit_storage_plant_fiber_icon(top_left, DEPOSIT_SITE_STORAGE_SQUARE_SIDE)
 			_:
 				# Fallback per un'eventuale risorsa futura senza geometria replicata qui — un
 				# semplice pallino nel colore della risorsa (IconRegistry.get_resource_color, stessa
@@ -1192,6 +1228,54 @@ func _draw_deposit_storage_stick_icon(top_left: Vector2, side: float) -> void:
 func _draw_deposit_storage_twig(from: Vector2, mid: Vector2, to: Vector2, color: Color, width: float) -> void:
 	draw_line(from, mid, color, width, true)
 	draw_line(mid, to, color, width, true)
+
+
+# Replica world-space di PlantFiberIcon.gd (stesso principio dei due blocchi sopra) — 4 fili
+# curvi (curva quadratica campionata, non spezzata come i rametti) che convergono in un nodo di
+# spago, stessi punti/spessori frazionari di PlantFiberIcon, `side` al posto di w/h (icona sempre
+# quadrata qui, w=h=side).
+const DEPOSIT_STORAGE_FIBER_COLOR_MAIN := Color(0.624, 0.682, 0.361, 1.0)
+const DEPOSIT_STORAGE_FIBER_COLOR_LIGHT := Color(0.765, 0.820, 0.498, 1.0)
+const DEPOSIT_STORAGE_FIBER_COLOR_DARK := Color(0.439, 0.498, 0.247, 1.0)
+const DEPOSIT_STORAGE_FIBER_TIE_COLOR := Color(0.420, 0.290, 0.169, 1.0)
+const DEPOSIT_STORAGE_FIBER_STRANDS := [
+	{"end": Vector2(0.16, 0.12), "ctrl": Vector2(0.22, 0.42), "color": DEPOSIT_STORAGE_FIBER_COLOR_DARK, "width": 0.055},
+	{"end": Vector2(0.38, 0.08), "ctrl": Vector2(0.40, 0.40), "color": DEPOSIT_STORAGE_FIBER_COLOR_LIGHT, "width": 0.06},
+	{"end": Vector2(0.62, 0.09), "ctrl": Vector2(0.58, 0.42), "color": DEPOSIT_STORAGE_FIBER_COLOR_MAIN, "width": 0.062},
+	{"end": Vector2(0.84, 0.16), "ctrl": Vector2(0.76, 0.44), "color": DEPOSIT_STORAGE_FIBER_COLOR_DARK, "width": 0.05},
+]
+const DEPOSIT_STORAGE_FIBER_CURVE_SEGMENTS: int = 8
+
+func _draw_deposit_storage_plant_fiber_icon(top_left: Vector2, side: float) -> void:
+	var base: Vector2 = top_left + Vector2(side * 0.50, side * 0.86)
+	for strand in DEPOSIT_STORAGE_FIBER_STRANDS:
+		var ctrl: Vector2 = top_left + Vector2(strand["ctrl"].x, strand["ctrl"].y) * side
+		var end: Vector2 = top_left + Vector2(strand["end"].x, strand["end"].y) * side
+		_draw_deposit_storage_fiber_strand(base, ctrl, end, strand["color"], side * strand["width"])
+	_draw_deposit_storage_fiber_tie_knot(base, side)
+
+
+func _draw_deposit_storage_fiber_strand(base: Vector2, ctrl: Vector2, end: Vector2, color: Color, width: float) -> void:
+	var points := PackedVector2Array()
+	for i in range(DEPOSIT_STORAGE_FIBER_CURVE_SEGMENTS + 1):
+		var t: float = float(i) / float(DEPOSIT_STORAGE_FIBER_CURVE_SEGMENTS)
+		var one_minus_t: float = 1.0 - t
+		points.append(base * (one_minus_t * one_minus_t) + ctrl * (2.0 * one_minus_t * t) + end * (t * t))
+	draw_polyline(points, color, width, true)
+
+
+func _draw_deposit_storage_fiber_tie_knot(base: Vector2, side: float) -> void:
+	var center: Vector2 = base + Vector2(0.0, -side * 0.06)
+	var rx: float = side * 0.14
+	var ry: float = side * 0.075
+	var rotation: float = -0.12
+	var points := PackedVector2Array()
+	const KNOT_SEGMENTS: int = 16
+	for i in range(KNOT_SEGMENTS):
+		var angle: float = TAU * float(i) / float(KNOT_SEGMENTS)
+		var local_point := Vector2(cos(angle) * rx, sin(angle) * ry)
+		points.append(center + local_point.rotated(rotation))
+	draw_colored_polygon(points, DEPOSIT_STORAGE_FIBER_TIE_COLOR)
 
 
 # Poligono a DEPOSIT_SITE_VERTEX_COUNT lati (8, raggio in "norma del massimo" invece che

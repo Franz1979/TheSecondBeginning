@@ -48,3 +48,11 @@ layout_mode = 2
 theme_override_font_sizes/font_size = 11
 vertical_alignment = 1
 text = "Coords: -"
+
+[node name="VSeparator3" type="VSeparator" parent="MarginContainer/HBoxContainer/ContentGroup"]
+layout_mode = 2
+
+[node name="IdleFallbackButton" type="Button" parent="MarginContainer/HBoxContainer/ContentGroup"]
+custom_minimum_size = Vector2(120, 32)
+layout_mode = 2
+text = "Perditempo: ON"

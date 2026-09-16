@@ -248,7 +248,10 @@ var human_individual_views: Array[HumanIndividualView] = []
 # di movimento/camera, sempre aggiornato in coppia con la selezione, vedi _set_movement_target) —
 # nessun campo duplicato serve per questo caso. BUILDING aggiunto allo Step 4 (richiesta utente,
 # 2026-09-04) — il terzo tipo selezionabile già anticipato sopra, vedi selected_building sotto.
-enum SelectionKind { NONE, INDIVIDUAL, VEGETATION, BUILDING, DEAD_BODY, STONE, STICK_LOT }
+# MICROCELL aggiunto (2026-09-16, richiesta utente — ispezione con doppio click sinistro): settimo
+# tipo, stessa mutua esclusione a N vie degli altri sei (vedi _select_microcell/
+# _clear_microcell_selection).
+enum SelectionKind { NONE, INDIVIDUAL, VEGETATION, BUILDING, DEAD_BODY, STONE, STICK_LOT, MICROCELL }
 var _selection_kind: SelectionKind = SelectionKind.NONE
 
 # Click-detection su un singolo individuo di vegetazione (TREE/SHRUB) — vedi
@@ -312,21 +315,34 @@ var stone_info_panel: StoneInfoPanel
 # l'utente ha chiesto questo click come alternativa al click preciso sulla pianta già esistente, non
 # come sostituto — non compete quindi nella lista a priorità per distanza degli altri tipi mappa.
 const TERRAIN_SCATTERED_RESOURCE_INFO_PANEL_SCENE := preload("res://gameplay/scenes/game/TerrainScatteredResourceInfoPanel.tscn")
+
+# Pannello ispezione microcella (2026-09-16, richiesta utente — doppio click sinistro) — RIVISTO
+# nello stesso giorno: PRIMA un Window/popup indipendente da _selection_kind, scartato subito dopo
+# ("niente popup, va nella sidebar come ogni altra selezione, mutua esclusione a 7 vie") — ora
+# istanziato dinamicamente come sibling nella STESSA game_info_tabs.selection_content degli altri
+# pannelli sidebar (vedi sotto), stesso identico principio "componente muto".
+const MICRO_CELL_INSPECTION_PANEL_SCENE := preload("res://gameplay/scenes/game/MicroCellInspectionPanel.tscn")
+var micro_cell_inspection_panel: MicroCellInspectionPanel
+var selected_microcell: Dictionary = {}
 var stick_lot_selector_controller := StickLotSelectorController.new()
 var selected_stick_lot: Dictionary = {}
+# plant_fiber (2026-09-16, richiesta utente — Step 4) — STESSO principio di stick_lot_selector_
+# controller sopra, ma per lotti SHRUB, usato SOLO dal comando destro-click "vai e raccogli"
+# (_resolve_pickup_candidates sotto): nessuna selezione SINISTRO/pannello info dedicati ancora,
+# a differenza di stick (fuori scope di questo passo).
+var plant_fiber_lot_selector_controller := PlantFiberLotSelectorController.new()
 # Nome campo/costante RINOMINATI (2026-09-15, richiesta utente — vedi TerrainScatteredResourceInfoPanel.gd
 # per il perché) insieme alla classe/al file — stick_lot_selector_controller/selected_stick_lot/
 # StickLotSelectorController sopra restano INVARIATI: quel meccanismo di SELEZIONE resta specifico
 # allo stick lot per ora (non ancora esteso a fruits/funghi/uova), solo il PANNELLO che ne mostra il
 # risultato ha cambiato identità.
 var terrain_scattered_resource_info_panel: TerrainScatteredResourceInfoPanel
-# Stato del ciclo click-ripetuto vegetazione/stick-lot (2026-09-15, richiesta utente) — vedi il
-# commento esteso in _unhandled_input, dove sono l'unico punto che li legge/scrive.
-# Vector2i(-1,-1) = "nessun ciclo attivo su questo lotto" (stesso sentinel già in uso per
-# _selected_stick_lot in MicroCellRenderer.gd).
-var _overlap_cycle_macro_coords: Vector2i = Vector2i(-1, -1)
-var _overlap_cycle_lot: Vector2i = Vector2i(-1, -1)
-var _overlap_cycle_index: int = 0
+# _overlap_cycle_macro_coords/_overlap_cycle_lot/_overlap_cycle_index RIMOSSI (2026-09-16, richiesta
+# utente — "va tolto il click singolo sulla cella"): erano lo stato del ciclo click-ripetuto
+# vegetazione/stick-lot (2026-09-15) che permetteva a click singoli ripetuti di raggiungere il lotto
+# stick "coperto" da una pianta — reso obsoleto dall'ispezione con doppio click (mostra risorse E
+# vegetazione insieme, un solo gesto). Il click singolo seleziona ora SOLO oggetti precisi (stone,
+# edificio, individuo, vegetazione) — mai più il lotto/la cella, vedi _unhandled_input sotto.
 
 const MINIMAP_PANEL_SCENE := preload("res://gameplay/scenes/game/MiniMapPanel.tscn")
 var minimap_panel: MiniMapPanel
@@ -455,6 +471,11 @@ func _ready() -> void:
 	# solo il pannello che lo mostra e' cambiato.
 	debug_bar.set_slot_toggled(0, flora_daily_updates_enabled)
 	debug_bar.set_slot_toggled(1, animals_visible)
+	# Toggle "Perditempo" (2026-09-16, richiesta utente) — stato SOLO di sessione (IdleTaskAssignmentService.
+	# fallback_enabled, mai letto da GameSettings/un salvataggio): riparte sempre acceso ad ogni
+	# avvio, questa riga si limita a riflettere nel testo del bottone il default con cui la classe è
+	# già stata caricata, stesso principio delle due righe sopra per flora/animali.
+	debug_bar.set_idle_fallback_label(IdleTaskAssignmentService.fallback_enabled)
 	debug_bar.action_pressed.connect(_on_debug_action_pressed)
 	game_info_panel.primary_actions_bar.action_pressed.connect(_on_primary_action_pressed)
 	game_info_panel.secondary_actions_bar.action_pressed.connect(_on_secondary_action_pressed)
@@ -522,6 +543,10 @@ func _ready() -> void:
 	# SelectionTab, stesso identico principio "componente muto" degli altri cinque.
 	terrain_scattered_resource_info_panel = TERRAIN_SCATTERED_RESOURCE_INFO_PANEL_SCENE.instantiate()
 	game_info_tabs.selection_content.add_child(terrain_scattered_resource_info_panel)
+	# micro_cell_inspection_panel (2026-09-16, richiesta utente) — settimo sibling nella STESSA
+	# SelectionTab, stesso identico principio "componente muto" degli altri sei.
+	micro_cell_inspection_panel = MICRO_CELL_INSPECTION_PANEL_SCENE.instantiate()
+	game_info_tabs.selection_content.add_child(micro_cell_inspection_panel)
 	# "🎯 centra" (Step 3, richiesta utente 2026-09-04): non più un bottone per-pannello (era dentro
 	# human_individual_info_panel, funzionava solo per individui) — un solo bottone condiviso
 	# nell'header di GameInfoTabs.SelectionTab, sopra a qualunque pannello selection_content stia
@@ -811,6 +836,20 @@ func _ready() -> void:
 		# spawn comprese"), senza dover duplicare la chiamata in due punti diversi. Un individuo
 		# caricato con una current_task già in corso non viene toccato (guardia esplicita sotto) —
 		# resolve_idle_individual presume un individuo LIBERO, mai chiamata altrimenti.
+		#
+		# ZOMBIE GUARD — recupero da salvataggio (2026-09-16, richiesta utente, fix "task zombie") —
+		# un salvataggio fatto PRIMA di questo fix può contenere una current_task già conclusa
+		# (current_step_index >= steps.size(), il bug ora corretto alla radice in
+		# HumanIndividualActionService._handle_task_completion_need_and_queue) o task_queue con
+		# voci concluse: PRIMA di decidere "è libero?" tramite il solo confronto con null sotto,
+		# ripulisce entrambe — TaskQueueService.purge_finished_tasks/HumanIndividualActionService.
+		# recover_zombie_current_task, le stesse due funzioni usate come difesa in profondità
+		# altrove. Un individuo il cui current_task era già finito (mai un caso reale per un
+		# salvataggio fatto DOPO questo fix, solo per uno precedente) si ritrova quindi trattato
+		# come libero dal controllo esistente subito sotto, invece di restare bloccato per sempre
+		# (prima "Solo H lo sbloccava").
+		TaskQueueService.purge_finished_tasks(member)
+		HumanIndividualActionService.recover_zombie_current_task(member)
 		if member.current_task == null:
 			HumanIndividualActionService.resolve_idle_individual(member, _resolve_age_band(member), macro_world)
 
@@ -1095,6 +1134,26 @@ func _unhandled_input(event: InputEvent) -> void:
 				_try_pick_demolish_target(event)
 				return
 
+	# Ispezione microcella con DOPPIO click sinistro (2026-09-16, richiesta utente) — SEMPRE
+	# intercettato qui, PRIMA della cascata di selezione normale sotto (STESSO principio/STESSA
+	# posizione già in uso in WorldScene._unhandled_input per l'apertura di MacroCellScene): un
+	# doppio click arriva come DUE eventi separati — il primo (senza double_click) attraversa
+	# normalmente tutta la cascata sotto e seleziona/deseleziona come un click singolo qualunque
+	# (richiesta esplicita utente: "il click singolo non deve mai aprire l'ispezione, nemmeno se non
+	# colpisce nulla"); il SECONDO (con double_click=true) viene intercettato QUI, PRIMA di
+	# raggiungere la cascata, e MAI lasciato proseguire (return incondizionato, indipendentemente da
+	# cosa trova _handle_microcell_inspection_double_click) — altrimenti quel secondo evento
+	# verrebbe ANCHE trattato come un secondo click singolo dalla cascata sotto (doppia selezione/
+	# deselezione). In QUALUNQUE cella, fitta o vuota (richiesta esplicita utente) — nessun gate su
+	# vegetation_hit/building_hit/altri esiti della cascata, che qui sotto non è ancora calcolata.
+	#
+	# DOPO i blocchi fantasma-edificio/demolizione sopra (mai prima): quei due restano a priorità
+	# assoluta invariata (richiesta implicita — un doppio click rapido durante un piazzamento "in
+	# fila" di più edifici non deve trasformarsi in un'ispezione, deve continuare a piazzare).
+	if event is InputEventMouseButton and event.pressed and event.double_click and event.button_index == MOUSE_BUTTON_LEFT:
+		_handle_microcell_inspection_double_click(event)
+		return
+
 	# Priorità concordata con l'utente: vegetazione/edifici vincono entro il proprio raggio di
 	# hit-test (più piccolo/preciso del raggio di selezione del player, vedi VegetationSelectorController/
 	# BuildingSelectorController) — Step 4 (richiesta utente, 2026-09-04): generalizzato da "solo
@@ -1117,18 +1176,13 @@ func _unhandled_input(event: InputEvent) -> void:
 	# building_hit (distanza in PIXEL, spazio locale della cella del match), compete alla pari nel
 	# confronto map_hit sotto, nessun trattamento speciale.
 	var stone_hit := stone_selector_controller.try_select(event, live_cells)
-	# Click sul "terreno" di una microcella TREE (2026-09-08, richiesta utente) — CALCOLATO QUI,
-	# prima della competizione map_hit sotto (2026-09-15, richiesta utente, "click ripetuto": in
-	# precedenza veniva provato SOLO come ultima risorsa dentro il ramo "else" più sotto, quindi non
-	# era mai disponibile quando la vegetazione vinceva la competizione — impossibile sapere se il
-	# lotto appena vinto dalla vegetazione fosse ANCHE un lotto stick selezionabile). Resta comunque
-	# un fallback DEBOLE, MAI aggiunto alla lista a priorità per distanza di best_map_distance_px
-	# sotto: qui serve solo a rilevare la sovrapposizione per il ciclo click-ripetuto (vedi sotto),
-	# non a competere per vincere map_hit — stesso identico principio/stessi commit precedenti su
-	# StickLotSelectorController, solo calcolato prima invece che dentro l'else.
-	var stick_lot_hit: Dictionary = stick_lot_selector_controller.try_select(
-		event, live_cells, MOUSE_BUTTON_LEFT, macro_world.buildings if macro_world != null else []
-	)
+	# stick_lot_hit (click SINISTRO) RIMOSSO (2026-09-16, richiesta utente — "va tolto il click
+	# singolo sulla cella"): calcolava il lotto sotto il click SOLO per il ciclo click-ripetuto e il
+	# fallback "nessun oggetto preciso -> seleziona il lotto" più sotto, entrambi rimossi in questo
+	# stesso passo. Il lotto stick resta comunque raggiungibile — via il DESTRO (raccolta,
+	# _resolve_pickup_candidates più sotto, invariato) e via il DOPPIO click sinistro (ispezione,
+	# _handle_microcell_inspection_double_click sopra, invariato) — solo il SINGOLO sinistro non lo
+	# tocca più.
 	# Corpo morto (bugfix, 2026-09-06, richiesta utente: un corpo morto in una cella densa di
 	# vegetazione — es. morto in una foresta — non era mai raggiungibile dal click, perché prima
 	# veniva provato SOLO come ultima risorsa, dopo che vegetazione/edifici avevano già "vinto" a
@@ -1173,56 +1227,14 @@ func _unhandled_input(event: InputEvent) -> void:
 		map_hit_kind = SelectionKind.STONE
 		best_map_distance_px = stone_hit["distance"]
 
-	# Ciclo click-ripetuto vegetazione/stick-lot (2026-09-15, richiesta utente — "cliccare la cella
-	# per vedere quanti bastoncini ci sono, se ci sono anche alberi o arbusti è molto difficile...
-	# proviamo click ripetuto"): quando lo stesso lotto TREE contiene sia un individuo di
-	# vegetazione selezionabile SIA un lotto stick (caso comune — un lotto stick COINCIDE sempre con
-	# la microcella dell'albero che lo occupa, vedi StickLotSelectorController), il primo click su
-	# quel lotto seleziona comunque il vincitore normale (vegetazione, che vince sempre map_hit_kind
-	# sopra — non toccato), ma un SECONDO click sullo STESSO lotto passa al lotto stick invece di
-	# riselezionare la stessa pianta all'infinito, un TERZO torna alla vegetazione, e così via.
-	#
-	# _overlap_cycle_macro_coords/_overlap_cycle_lot/_overlap_cycle_index (campi in testa al file) —
-	# stato minimo: l'ultimo lotto su cui è scattato il ciclo + l'indice corrente (0=vegetazione,
-	# 1=stick lot). SOLO un vero click sinistro tocca questo stato (is_left_click sotto): ogni altro
-	# evento (movimento del mouse tra un click e l'altro, tasti, destro) lo lascia INVARIATO — se
-	# resettassimo ad ogni evento, muovere il mouse tra due click perderebbe il "ricordo" del lotto e
-	# il ciclo ripartirebbe sempre da capo. Un click che non ricade nel caso di sovrapposizione (lotto
-	# diverso, o niente vegetazione lì) resetta lo stato: tornare più tardi su un lotto riparte sempre
-	# dal vincitore normale, mai da dove si era rimasti l'ultima volta.
-	#
-	# _is_player_closer_to_click incluso anche qui (stessa eccezione già applicata al ramo normale
-	# sotto): se il player è oggettivamente più vicino al click della vegetazione, vince lui, il
-	# ciclo non scatta.
-	var is_left_click: bool = event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT
-	var overlap_handled := false
-	if is_left_click:
-		var is_overlap: bool = (
-			map_hit_kind == SelectionKind.VEGETATION and not stick_lot_hit.is_empty()
-			and not _is_player_closer_to_click(best_map_distance_px)
-			and map_hit["macro_coords"] == stick_lot_hit["macro_coords"]
-			and Vector2i(map_hit["individual_key"].x, map_hit["individual_key"].y) == stick_lot_hit["lot"]
-		)
-		if is_overlap:
-			if _overlap_cycle_macro_coords == stick_lot_hit["macro_coords"] and _overlap_cycle_lot == stick_lot_hit["lot"]:
-				_overlap_cycle_index = (_overlap_cycle_index + 1) % 2
-			else:
-				_overlap_cycle_macro_coords = stick_lot_hit["macro_coords"]
-				_overlap_cycle_lot = stick_lot_hit["lot"]
-				_overlap_cycle_index = 0
-			if _overlap_cycle_index == 1:
-				_select_stick_lot(stick_lot_hit)
-			else:
-				_select_vegetation(map_hit)
-			overlap_handled = true
-		else:
-			_overlap_cycle_macro_coords = Vector2i(-1, -1)
-			_overlap_cycle_lot = Vector2i(-1, -1)
-			_overlap_cycle_index = 0
-
-	if overlap_handled:
-		pass
-	elif not map_hit.is_empty() and not _is_player_closer_to_click(best_map_distance_px):
+	# Ciclo click-ripetuto vegetazione/stick-lot RIMOSSO (2026-09-16, richiesta utente — "va tolto
+	# il click singolo sulla cella. il click singolo vale solo su un oggetto... per vedere quello
+	# che c'è nella cella click doppio"): esisteva (2026-09-15) per permettere a click singoli
+	# ripetuti sulla stessa microcella di raggiungere il lotto stick "coperto" da una pianta —
+	# superato dall'ispezione con doppio click (mostra risorse E vegetazione insieme, un solo
+	# gesto, in qualunque cella). Il click singolo ora seleziona SOLO il vincitore normale tra
+	# vegetazione/edificio/corpo morto/sasso (map_hit_kind, calcolato sopra, invariato).
+	if not map_hit.is_empty() and not _is_player_closer_to_click(best_map_distance_px):
 		match map_hit_kind:
 			SelectionKind.VEGETATION:
 				_select_vegetation(map_hit)
@@ -1239,6 +1251,7 @@ func _unhandled_input(event: InputEvent) -> void:
 			_clear_dead_body_selection()
 			_clear_stone_selection()
 			_clear_stick_lot_selection()
+			_clear_microcell_selection() # mutua esclusione a 7 vie (2026-09-16, prima "a 6 vie")
 			# Selezione di un individuo umano QUALSIASI (richiesta utente, 2026-09-02) — hit-test
 			# puro via HumanIndividualSelectorController (non tocca mai is_selected da sé), mutua
 			# esclusione applicata qui: al più un individuo selezionato alla volta in tutto
@@ -1257,13 +1270,10 @@ func _unhandled_input(event: InputEvent) -> void:
 				_set_movement_target(hit_individual)
 			else:
 				_clear_individual_selection()
-				# Click sul "terreno" di una microcella TREE (2026-09-08, richiesta utente) — ultima
-				# risorsa, usata SOLO quando nient'altro ha reclamato il click (nessun oggetto
-				# preciso, nessun individuo umano): vedi StickLotSelectorController per il perché non
-				# compete nella lista a priorità per distanza sopra. Già calcolato in cima alla
-				# funzione (stick_lot_hit, 2026-09-15) — non più ricalcolato qui.
-				if not stick_lot_hit.is_empty():
-					_select_stick_lot(stick_lot_hit)
+				# Fallback "seleziona il lotto/la cella" RIMOSSO (2026-09-16, richiesta utente — vedi
+				# il commento esteso sopra su map_hit_kind): un click sinistro che non colpisce nessun
+				# oggetto preciso ora si limita a deselezionare (righe sopra), mai più una selezione
+				# di ripiego sulla cella intera — quella è ora esclusivamente doppio click.
 		# Comando "vai e raccogli" (2026-09-09, richiesta utente — sostituisce l'attivazione via
 		# click SINISTRO di Step 5/6, che risultava spesso "rubata" dalla vegetazione: un lotto stick
 		# COINCIDE con la microcella dell'albero stesso, quindi quasi ogni click nel suo raggio
@@ -1498,7 +1508,7 @@ func _stop_selected_individual_task() -> void:
 	# un annullo della sola selezione — un H successivo, a selezione ormai annullata, la fermerà
 	# normalmente se il player lo preme di nuovo.
 	if _debug_transport_source_building != null or _debug_transport_pending_source_building != null:
-		if DebugLogging.ENABLED:
+		if DebugLogging.ENABLED and DebugLogging.SHOW_TRANSPORT_BUILD_LOGS:
 			print("[TRANSPORT] Selezione sorgente/destinazione annullata (tasto H).")
 		_debug_transport_source_building = null
 		_debug_transport_pending_source_building = null
@@ -1794,9 +1804,10 @@ func _assign_wander_task() -> void:
 	if not individual.can_assign_task(task, age_band):
 		return
 	individual.assign_task(task, age_band)
-	print("[WANDER] Task assegnata a #%d %s: %s -> %s -> %s" % [
-		individual.id, individual.name, target_data["target_1"], target_data["target_2"], target_data["target_3"]
-	])
+	if DebugLogging.ENABLED and DebugLogging.SHOW_IDLE_LOGS:
+		print("[WANDER] Task assegnata a #%d %s: %s -> %s -> %s" % [
+			individual.id, individual.name, target_data["target_1"], target_data["target_2"], target_data["target_3"]
+		])
 
 
 # _resolve_play_targets SPOSTATA su IdleTaskAssignmentService.resolve_play_targets (2026-09-13,
@@ -1848,9 +1859,10 @@ func _assign_play_task() -> void:
 		if step is JumpAction:
 			_reconnect_jump_action_signals(step as JumpAction, individual)
 	individual.assign_task(task, age_band)
-	print("[PLAY] Task assegnata a #%d %s: %s -> %s" % [
-		individual.id, individual.name, target_data["target_1"], target_data["target_2"]
-	])
+	if DebugLogging.ENABLED and DebugLogging.SHOW_IDLE_LOGS:
+		print("[PLAY] Task assegnata a #%d %s: %s -> %s" % [
+			individual.id, individual.name, target_data["target_1"], target_data["target_2"]
+		])
 
 
 # Risoluzione del context della Transport Task, PRIMA della costruzione (2026-09-12, richiesta
@@ -1961,12 +1973,13 @@ func _debug_assign_transport_task(
 			IconRegistry.get_command_icon(command_icon_key)
 		)
 
-	print("[TRANSPORT] Task assegnata a #%d %s: %s #%d -> %s #%d, risorsa='%s' quantità=%d" % [
-		individual.id, individual.name,
-		source_building.building_type_name, source_building.id,
-		destination_building.building_type_name, destination_building.id,
-		resource_name, quantity,
-	])
+	if DebugLogging.ENABLED and DebugLogging.SHOW_TRANSPORT_BUILD_LOGS:
+		print("[TRANSPORT] Task assegnata a #%d %s: %s #%d -> %s #%d, risorsa='%s' quantità=%d" % [
+			individual.id, individual.name,
+			source_building.building_type_name, source_building.id,
+			destination_building.building_type_name, destination_building.id,
+			resource_name, quantity,
+		])
 
 
 # Stato del trigger a due click (2026-09-12, richiesta utente) — `_debug_transport_source_building`
@@ -2015,6 +2028,17 @@ func _debug_try_assign_transport_command_on_right_click(event: InputEvent) -> bo
 		return false
 
 	if _debug_transport_source_building == null:
+		# Guard età PRIMA di aprire il dialog (2026-09-16, richiesta utente — bugfix UX: senza
+		# questo controllo il popup si apriva comunque per un individuo INFANT/CHILD selezionato,
+		# che poi veniva rifiutato solo alla fine del giro a due click da can_assign_task dentro
+		# _debug_assign_transport_task, dopo aver già scelto risorsa/quantità/destinazione a vuoto).
+		# STESSA lista di RetrieveAction/UnloadAction.disallowed_age_bands (i due step che la
+		# Transport Task condivide con questo rifiuto) — duplicata qui apposta per poter bloccare
+		# PRIMA di costruire la Task stessa: se quella lista cambia in futuro, va aggiornata anche
+		# qui.
+		var age_band := _resolve_age_band(individual)
+		if age_band == HumanTypes.AgeBand.INFANT or age_band == HumanTypes.AgeBand.CHILD:
+			return true
 		# available_quantities: Dictionary[String, int] — appiattito da stored_resources (Dictionary
 		# [String, Dictionary{"quantity":int,"decay_fraction":float}]), stesso "spacchettamento" già
 		# fatto da RetrieveAction.activate()/BuildingStorageService.withdraw per la stessa struttura.
@@ -2026,7 +2050,8 @@ func _debug_try_assign_transport_command_on_right_click(event: InputEvent) -> bo
 				available_quantities[resource_name] = quantity
 
 		if available_quantities.is_empty():
-			print("[TRANSPORT] %s #%d non ha risorse da prelevare." % [hit_building.building_type_name, hit_building.id])
+			if DebugLogging.SHOW_TRANSPORT_BUILD_LOGS:
+				print("[TRANSPORT] %s #%d non ha risorse da prelevare." % [hit_building.building_type_name, hit_building.id])
 			return true
 
 		_debug_transport_pending_source_building = hit_building
@@ -2035,7 +2060,8 @@ func _debug_try_assign_transport_command_on_right_click(event: InputEvent) -> bo
 		return true
 
 	if hit_building == _debug_transport_source_building:
-		print("[TRANSPORT] destinazione uguale alla sorgente (#%d) — ignorato, clicca un edificio diverso." % hit_building.id)
+		if DebugLogging.SHOW_TRANSPORT_BUILD_LOGS:
+			print("[TRANSPORT] destinazione uguale alla sorgente (#%d) — ignorato, clicca un edificio diverso." % hit_building.id)
 		return true
 
 	var source_building := _debug_transport_source_building
@@ -2063,7 +2089,8 @@ func _on_transport_source_resource_chosen(resource_name: String, quantity: int) 
 	# metà" finché non scegli la destinazione (o premi H per annullare).
 	if transport_selection_banner != null:
 		transport_selection_banner.visible = true
-	print("[TRANSPORT] sorgente impostata: %s #%d, risorsa='%s' quantità=%d. Ora click destro sull'edificio destinazione." % [
+	if DebugLogging.ENABLED and DebugLogging.SHOW_TRANSPORT_BUILD_LOGS:
+		print("[TRANSPORT] sorgente impostata: %s #%d, risorsa='%s' quantità=%d. Ora click destro sull'edificio destinazione." % [
 		_debug_transport_source_building.building_type_name, _debug_transport_source_building.id, resource_name, quantity
 	])
 
@@ -2351,7 +2378,7 @@ func _on_minimap_cell_clicked(macro_coords: Vector2i) -> void:
 # di chiamata ha innescato la richiesta, per confermare quale ramo scatena davvero il
 # ricaricamento e quanto costa (vedi il log gemello in _set_movement_target sotto).
 func _on_population_individual_center_requested(target: HumanIndividual, source: String = "unknown") -> void:
-	if DebugLogging.ENABLED:
+	if DebugLogging.ENABLED and DebugLogging.SHOW_RECONNECT_FACTORY_LOGS:
 		print("[CENTER DEBUG] richiesta da '%s' per #%d %s: home_macro_coords=%s center_macro_coords=%s (%s)" % [
 			source, target.id, target.name, target.home_macro_coords, center_macro_coords,
 			"RICARICA NECESSARIA" if target.home_macro_coords != center_macro_coords else "già nel centro corrente"
@@ -2360,9 +2387,16 @@ func _on_population_individual_center_requested(target: HumanIndividual, source:
 	# scoperto mentre si aggiungeva la selezione edifici): PRIMA mancavano qui — selezionare un
 	# individuo da questa lista mentre vegetazione/edificio erano già selezionati lasciava ENTRAMBI
 	# selezionati (evidenziazione a schermo compresa), esattamente il difetto che la mutua
-	# esclusione a 3 vie altrove (_unhandled_input, _select_vegetation, _select_building) evita già.
+	# esclusione altrove (_unhandled_input, _select_vegetation, _select_building, ecc.) evita già.
+	# ESTESO a mutua esclusione COMPLETA a 7 vie (2026-09-16, richiesta utente — questa funzione era
+	# rimasta ferma "a 3 vie" da allora, mai aggiornata quando dead_body/stone/stick_lot/microcell
+	# sono arrivati più tardi: stesso identico bug, solo con più tipi rimasti fuori nel frattempo).
 	_clear_vegetation_selection()
 	_clear_building_selection()
+	_clear_dead_body_selection()
+	_clear_stone_selection()
+	_clear_stick_lot_selection()
+	_clear_microcell_selection()
 	_deselect_all_human_individuals()
 	target.is_selected = true
 	_selection_kind = SelectionKind.INDIVIDUAL
@@ -2409,10 +2443,11 @@ func _select_vegetation(hit: Dictionary) -> void:
 
 	_deselect_all_human_individuals()
 	human_individual_info_panel.clear()
-	_clear_building_selection() # mutua esclusione a 6 vie (2026-09-08, prima "a 5 vie")
+	_clear_building_selection() # mutua esclusione a 7 vie (2026-09-16, prima "a 6 vie")
 	_clear_dead_body_selection()
 	_clear_stone_selection()
 	_clear_stick_lot_selection()
+	_clear_microcell_selection()
 	selected_vegetation = hit
 	_selection_kind = SelectionKind.VEGETATION
 	_refresh_vegetation_panel()
@@ -2452,9 +2487,10 @@ func _select_building(hit: Dictionary) -> void:
 	_deselect_all_human_individuals()
 	human_individual_info_panel.clear()
 	_clear_vegetation_selection()
-	_clear_dead_body_selection() # mutua esclusione a 6 vie (2026-09-08, prima "a 5 vie")
+	_clear_dead_body_selection() # mutua esclusione a 7 vie (2026-09-16, prima "a 6 vie")
 	_clear_stone_selection()
 	_clear_stick_lot_selection()
+	_clear_microcell_selection()
 	selected_building = hit
 	_selection_kind = SelectionKind.BUILDING
 	_refresh_building_panel()
@@ -2553,7 +2589,8 @@ func _on_empty_all_requested(building: Building) -> void:
 	var macro_coords := Vector2i(building.macro_x, building.macro_y)
 	if live_cells.has(macro_coords):
 		_refresh_building_visuals(live_cells[macro_coords])
-	print("[BUILD] Deposito edificio #%d svuotato — tutto il materiale è scomparso dal gioco e dal deposito." % building.id)
+	if DebugLogging.ENABLED and DebugLogging.SHOW_TRANSPORT_BUILD_LOGS:
+		print("[BUILD] Deposito edificio #%d svuotato — tutto il materiale è scomparso dal gioco e dal deposito." % building.id)
 
 
 # Reazione a BuildingInfoPanel.resident_center_requested (2026-09-12, richiesta utente — "puoi
@@ -2658,8 +2695,9 @@ func _select_stone(hit: Dictionary) -> void:
 	human_individual_info_panel.clear()
 	_clear_vegetation_selection()
 	_clear_building_selection()
-	_clear_dead_body_selection() # mutua esclusione a 6 vie (2026-09-08, prima "a 5 vie")
+	_clear_dead_body_selection() # mutua esclusione a 7 vie (2026-09-16, prima "a 6 vie")
 	_clear_stick_lot_selection()
+	_clear_microcell_selection()
 
 	selected_stone = hit
 	_selection_kind = SelectionKind.STONE
@@ -2679,21 +2717,22 @@ func _clear_stone_selection() -> void:
 	game_info_tabs.hide_selection_tab()
 
 
-# Legge macro_state.pebble_quantities (posizione ESATTA cliccata) e resource_quantity[ROCK]
-# (aggregato dell'INTERA macrocella, mostrato come contesto — vedi StoneInfoPanel per
-# l'etichettatura distinta tra le due granularità). Nessuna gestione "marker bloccato": STONE non
-# ha ancora un modo di sparire (nessun consumo implementato), stesso principio già dichiarato per
-# gli edifici in _refresh_building_panel — l'unica via di invalidazione oggi resta lo scaricamento
-# della macrocella, guardia difensiva sotto.
+# Legge SOLO resource_quantity[ROCK] (aggregato dell'INTERA macrocella) — RIVISTO 2026-09-16,
+# richiesta utente: la quantità ESATTA della singola posizione (pebble_quantities) non è più
+# mostrata qui, solo tramite l'ispezione a doppio click (vedi StoneInfoPanel.gd). Nessuna gestione
+# "marker bloccato": STONE non ha ancora un modo di sparire (nessun consumo implementato), stesso
+# principio già dichiarato per gli edifici in _refresh_building_panel — l'unica via di
+# invalidazione oggi resta lo scaricamento della macrocella, guardia difensiva sotto.
 func _refresh_stone_panel() -> void:
 	var cell: LiveMacroCell = live_cells.get(selected_stone["macro_coords"])
 	if cell == null or cell.macro_state == null:
 		_clear_stone_selection()
 		return
-	var pos: Vector2i = selected_stone["position"]
-	var pebble_quantity: int = int(cell.macro_state.pebble_quantities.get(pos, 0))
+	# "pos"/pebble_quantity ESATTO della singola posizione NON PIÙ letto qui (2026-09-16, richiesta
+	# utente — vedi StoneInfoPanel.gd): quel dato resta comunque disponibile, ma solo tramite
+	# l'ispezione a doppio click, non più nel pannello di selezione singola.
 	var zone_stone_quantity: int = cell.macro_state.get_resource_quantity(GameTypes.WorldObjectType.ROCK)
-	stone_info_panel.show_stone(pebble_quantity, zone_stone_quantity)
+	stone_info_panel.show_stone(zone_stone_quantity)
 	game_info_tabs.set_selection_title(tr("selection_title_type").format({"type": tr("stone_selection_title")}))
 
 
@@ -2930,7 +2969,7 @@ func _try_assign_pickup_command_on_right_click(event: InputEvent) -> bool:
 	# LOG DEBUG TEMPORANEO (2026-09-10, richiesta utente — indagine bug Build Task/pickup) — DA
 	# RIMUOVERE una volta chiuso il bug.
 	if individual == null or not individual.is_selected:
-		if DebugLogging.ENABLED:
+		if DebugLogging.ENABLED and DebugLogging.SHOW_RECONNECT_FACTORY_LOGS:
 			print("[PICKUP CMD DEBUG] _try_assign_pickup_command_on_right_click: ritorna false (individual null o non selezionato).")
 		return false
 
@@ -2942,31 +2981,271 @@ func _try_assign_pickup_command_on_right_click(event: InputEvent) -> bool:
 	# al fallback finale), mai un errore o un comportamento diverso dal caso "niente sotto il click".
 	var current_absolute_day := game_data.get_absolute_day()
 
-	var stone_hit := stone_selector_controller.try_select(event, live_cells, MOUSE_BUTTON_RIGHT)
+	# Lista generica di candidati (2026-09-16, richiesta utente — Step 4 del piano plant_fiber) —
+	# SOSTITUISCE la vecchia catena fissa "stone, poi stick, poi false" con una lista costruita da
+	# _resolve_pickup_candidates, in ORDINE DI PRIORITÀ (stone, stick, plant_fiber — STESSO ordine
+	# di prima, invariato: aggiungere un futuro quarto candidato richiede solo una nuova riga in
+	# quella funzione). Nessun popup ancora (arriva in un passo successivo): con 0 candidati nessun
+	# comando (comportamento invariato); con 1 candidato haul immediata (comportamento invariato,
+	# indistinguibile da prima anche nel log); con 2+ candidati comportamento PROVVISORIO — vince
+	# comunque il primo in ordine di priorità (STESSO esito che avresti avuto con la vecchia catena
+	# fissa), ma ora loggato esplicitamente con [DBG_PICKUP] cosa c'era davvero sotto il click.
+	var candidates: Array[Dictionary] = _resolve_pickup_candidates(event, current_absolute_day)
+	if candidates.is_empty():
+		if DebugLogging.ENABLED and DebugLogging.SHOW_RECONNECT_FACTORY_LOGS:
+			print("[PICKUP CMD DEBUG] _try_assign_pickup_command_on_right_click: ritorna false (nessuna risorsa al click).")
+		return false
+
+	if candidates.size() > 1 and DebugLogging.ENABLED and DebugLogging.SHOW_RECONNECT_FACTORY_LOGS:
+		var candidate_descriptions: Array[String] = []
+		for candidate in candidates:
+			candidate_descriptions.append("%s(disponibile=%d)" % [candidate["resource_name"], candidate["available_quantity"]])
+		print("[DBG_PICKUP] %d candidati alla stessa posizione: %s — priorità provvisoria (vince il primo, nessun popup ancora)." % [
+			candidates.size(), ", ".join(candidate_descriptions)
+		])
+
+	var chosen: Dictionary = candidates[0]
+	if DebugLogging.ENABLED and DebugLogging.SHOW_RECONNECT_FACTORY_LOGS:
+		print("[PICKUP CMD DEBUG] _try_assign_pickup_command_on_right_click: ritorna TRUE — %s_hit=%s" % [chosen["resource_name"], str(chosen)])
+	_assign_pickup_task(chosen["macro_coords"], chosen["position"], chosen["resource_name"])
+	return true
+
+
+# Costruisce la lista di candidati raccoglibili nella posizione del click, in ORDINE DI PRIORITÀ
+# (2026-09-16, richiesta utente — Step 4) — un dict per candidato: {"resource_name", "macro_coords",
+# "position", "available_quantity"}. Ogni voce ripete lo STESSO schema (hit-test del proprio
+# *SelectorController + verifica FogOfWarVerificationService.is_detail_visible, ESATTAMENTE come
+# prima di questo passo — un hit che fallisce la visibilità non entra in lista, stesso trattamento
+# "nessun hit qui" di sempre). Aggiungere una futura risorsa scattered richiede solo un nuovo blocco
+# qui, nessuna modifica al chiamante sopra.
+#
+# TUTTI i candidati leggono solo DATI (stone_positions/pebble_quantities via StoneSelectorController,
+# tree_claimed_lots via StickLotSelectorController, shrub_claimed_lots via
+# PlantFiberLotSelectorController — mai il renderer per altro che il calcolo della posizione del
+# mouse), richiesta esplicita utente: plant_fiber non ha un proprio layer grafico, il click deve
+# funzionare cliccando sugli arbusti disegnati per la vegetazione, non su un oggetto plant_fiber-
+# specifico che non esiste.
+#
+# `required_button` (2026-09-16, richiesta utente — ispezione microcella doppio click) — default
+# MOUSE_BUTTON_RIGHT invariato per il chiamante esistente (_try_assign_pickup_command_on_right_click,
+# Step 4). L'ispezione con doppio click SINISTRO passa MOUSE_BUTTON_LEFT qui: STESSA fonte di verità
+# richiesta esplicitamente dall'utente ("_resolve_pickup_candidates o una sua estrazione comune"),
+# nessuna duplicazione tra "cosa posso raccogliere col destro" e "cosa mostro nell'ispezione".
+func _resolve_pickup_candidates(event: InputEvent, current_absolute_day: int, required_button: int = MOUSE_BUTTON_RIGHT) -> Array[Dictionary]:
+	var candidates: Array[Dictionary] = []
+
+	var stone_hit := stone_selector_controller.try_select(event, live_cells, required_button)
 	if not stone_hit.is_empty():
 		if FogOfWarVerificationService.is_detail_visible(live_cells, stone_hit["macro_coords"], stone_hit["position"], current_absolute_day):
-			if DebugLogging.ENABLED:
-				print("[PICKUP CMD DEBUG] _try_assign_pickup_command_on_right_click: ritorna TRUE — stone_hit=%s" % str(stone_hit))
-			_assign_pickup_task(stone_hit["macro_coords"], stone_hit["position"], "pebble")
-			return true
-		if DebugLogging.ENABLED:
-			print("[PICKUP CMD DEBUG] _try_assign_pickup_command_on_right_click: stone_hit=%s trovato ma cella non visibile con dettaglio, ignorato." % str(stone_hit))
+			candidates.append(_build_pickup_candidate("pebble", stone_hit["macro_coords"], stone_hit["position"]))
+		elif DebugLogging.ENABLED and DebugLogging.SHOW_RECONNECT_FACTORY_LOGS:
+			print("[PICKUP CMD DEBUG] stone_hit=%s trovato ma cella non visibile con dettaglio, ignorato." % str(stone_hit))
 
 	var stick_lot_hit := stick_lot_selector_controller.try_select(
-		event, live_cells, MOUSE_BUTTON_RIGHT, macro_world.buildings if macro_world != null else []
+		event, live_cells, required_button, macro_world.buildings if macro_world != null else []
 	)
 	if not stick_lot_hit.is_empty():
 		if FogOfWarVerificationService.is_detail_visible(live_cells, stick_lot_hit["macro_coords"], stick_lot_hit["lot"], current_absolute_day):
-			if DebugLogging.ENABLED:
-				print("[PICKUP CMD DEBUG] _try_assign_pickup_command_on_right_click: ritorna TRUE — stick_lot_hit=%s" % str(stick_lot_hit))
-			_assign_pickup_task(stick_lot_hit["macro_coords"], stick_lot_hit["lot"], "stick")
-			return true
-		if DebugLogging.ENABLED:
-			print("[PICKUP CMD DEBUG] _try_assign_pickup_command_on_right_click: stick_lot_hit=%s trovato ma cella non visibile con dettaglio, ignorato." % str(stick_lot_hit))
+			candidates.append(_build_pickup_candidate("stick", stick_lot_hit["macro_coords"], stick_lot_hit["lot"]))
+		elif DebugLogging.ENABLED and DebugLogging.SHOW_RECONNECT_FACTORY_LOGS:
+			print("[PICKUP CMD DEBUG] stick_lot_hit=%s trovato ma cella non visibile con dettaglio, ignorato." % str(stick_lot_hit))
 
-	if DebugLogging.ENABLED:
-		print("[PICKUP CMD DEBUG] _try_assign_pickup_command_on_right_click: ritorna false (nessun stone/stick lot al click).")
-	return false
+	var plant_fiber_lot_hit := plant_fiber_lot_selector_controller.try_select(
+		event, live_cells, required_button, macro_world.buildings if macro_world != null else []
+	)
+	if not plant_fiber_lot_hit.is_empty():
+		if FogOfWarVerificationService.is_detail_visible(live_cells, plant_fiber_lot_hit["macro_coords"], plant_fiber_lot_hit["lot"], current_absolute_day):
+			candidates.append(_build_pickup_candidate("plant_fiber", plant_fiber_lot_hit["macro_coords"], plant_fiber_lot_hit["lot"]))
+		elif DebugLogging.ENABLED and DebugLogging.SHOW_RECONNECT_FACTORY_LOGS:
+			print("[PICKUP CMD DEBUG] plant_fiber_lot_hit=%s trovato ma cella non visibile con dettaglio, ignorato." % str(plant_fiber_lot_hit))
+
+	return candidates
+
+
+# available_quantity (2026-09-16) — SOLO informativo per ora (log [DBG_PICKUP]/futuro popup di
+# scelta): TerrainScatteredResourceService.get_available è la STESSA fonte di verità già usata da
+# PickUpAction/TerrainScatteredResourceService.consume, nessun secondo calcolo. macro_state assente
+# (cella non più viva tra l'hit-test e questa chiamata, caso limite) -> 0, mai un crash.
+func _build_pickup_candidate(resource_name: String, macro_coords: Vector2i, position: Vector2i) -> Dictionary:
+	var cell: LiveMacroCell = live_cells.get(macro_coords)
+	var macro_state: MacroCellState = cell.macro_state if cell != null else null
+	var available_quantity: int = TerrainScatteredResourceService.get_available(macro_state, resource_name, position) if macro_state != null else 0
+	return {
+		"resource_name": resource_name,
+		"macro_coords": macro_coords,
+		"position": position,
+		"available_quantity": available_quantity,
+	}
+
+
+# Risolve in quale lotto/macrocella è caduto il click CORRENTE (2026-09-16, richiesta utente —
+# ispezione microcella) — STESSA tecnica di StickLotSelectorController/PlantFiberLotSelectorController
+# (cell.renderer.get_local_mouse_position(), mai il pixel disegnato) ma SENZA controllare alcuna
+# Dictionary di "rivendicazione": qui serve sapere QUALE microcella è stata cliccata anche se è
+# completamente vuota (per poter poi dire "Cella senza risorse"), a differenza di quei due
+# controller che rispondono {} su un lotto non rivendicato. Bounds check esplicito (0..World.WIDTH/
+# HEIGHT) al posto di un .has() su una Dictionary — è il modo con cui questa funzione scarta le
+# celle vive che NON sono quella sotto il mouse (la loro local_mouse_position cade fuori range).
+# {} se il click non cade in nessuna cella viva (fuori mappa/su un elemento UI, che comunque non
+# genera _unhandled_input).
+func _resolve_microcell_at_click() -> Dictionary:
+	for coords in live_cells:
+		var cell: LiveMacroCell = live_cells[coords]
+		if cell.renderer == null:
+			continue
+		var local_mouse: Vector2 = cell.renderer.get_local_mouse_position()
+		var click_lot := Vector2i(int(floor(local_mouse.x / MicroCellRenderer.CELL_SIZE)), int(floor(local_mouse.y / MicroCellRenderer.CELL_SIZE)))
+		if click_lot.x < 0 or click_lot.x >= World.WIDTH or click_lot.y < 0 or click_lot.y >= World.HEIGHT:
+			continue
+		return {"macro_coords": coords, "lot": click_lot}
+	return {}
+
+
+# Ispezione microcella (2026-09-16, richiesta utente — doppio click sinistro, "cosa contiene questa
+# cella") — SOLO informativa, NESSUNA assegnazione di Task/chiamata a _assign_pickup_task: funziona
+# ANCHE senza un individuo selezionato (a differenza del click destro raccolta, che richiede
+# individual.is_selected). Riusa _resolve_pickup_candidates passando MOUSE_BUTTON_LEFT come
+# required_button — STESSA fonte di verità del click destro (richiesta esplicita utente), nessuna
+# duplicazione tra "cosa posso raccogliere" e "cosa mostro nell'ispezione". Vegetazione (TREE/SHRUB/
+# GRASS) letta da cell.renderer.vegetation_positions (Dictionary[WorldObjectType, Array[Vector2i]]
+# di posizioni-GRIGLIA, non pixel — STESSA fonte già usata da GameScene per "is_currently_grass" in
+# _try_assign_build_command_on_right_click/_debug_test_two_walk_task... vedi i due usi esistenti,
+# righe ~3248/~6052 — mai disegno/rendering: è l'unico modo di sapere "c'è GRASS qui" perché GRASS
+# non ha un equivalente di tree_claimed_lots/shrub_claimed_lots persistito per-lotto).
+func _handle_microcell_inspection_double_click(event: InputEvent) -> void:
+	var hit := _resolve_microcell_at_click()
+	if hit.is_empty():
+		return
+	var macro_coords: Vector2i = hit["macro_coords"]
+	var lot: Vector2i = hit["lot"]
+
+	var current_absolute_day := game_data.get_absolute_day()
+
+	# Fog of War (richiesta esplicita utente — mantenere il controllo): STESSO tier "dettaglio"
+	# già usato da _try_assign_pickup_command_on_right_click/_resolve_pickup_candidates. Anche non
+	# visibile la cella VIENE COMUNQUE selezionata (richiesta esplicita utente, punto 2: "qualunque
+	# cosa ci sia sotto il cursore... il risultato finale deve essere la selezione della microcella")
+	# — solo il contenuto mostrato cambia, un messaggio unico invece del report normale.
+	if not FogOfWarVerificationService.is_detail_visible(live_cells, macro_coords, lot, current_absolute_day):
+		_select_microcell({"macro_coords": macro_coords, "lot": lot, "lines": [tr("microcell_inspection_not_visible")]})
+		return
+
+	# Edificio/cantiere sulla cella (2026-09-16, richiesta utente) — SOLO messaggio dedicato, NESSUN
+	# elenco risorse/vegetazione in questo caso (un edificio ha già consumato/ripulito quel lotto via
+	# BuildingSiteClearingService, quindi sarebbe comunque vuoto — ma qui evitiamo di mostrare "Cella
+	# senza risorse", fuorviante su una cella che in realtà un contenuto ce l'ha, solo non ispezionabile
+	# da qui). La cella resta comunque quella selezionata (_select_microcell sotto), MAI l'edificio —
+	# per i dettagli dell'edificio resta il click SINGOLO su di esso (_select_building, invariato).
+	if _find_building_at_microcell(macro_coords, lot) != null:
+		_select_microcell({"macro_coords": macro_coords, "lot": lot, "lines": [tr("microcell_inspection_building_occupied")]})
+		return
+
+	var candidates: Array[Dictionary] = _resolve_pickup_candidates(event, current_absolute_day, MOUSE_BUTTON_LEFT)
+	# Filtro difensivo sul lotto esatto (2026-09-16) — _resolve_pickup_candidates cerca già solo
+	# dentro la macrocella/posizione sotto il mouse di QUESTO stesso evento, quindi in pratica ogni
+	# candidato ritornato è già su (macro_coords, lot); questo filtro non cambia mai nulla in
+	# pratica, resta solo come guardia esplicita invece di fidarsi implicitamente.
+	var lot_candidates: Array[Dictionary] = []
+	for candidate in candidates:
+		if candidate["macro_coords"] == macro_coords and candidate["position"] == lot:
+			lot_candidates.append(candidate)
+
+	var cell: LiveMacroCell = live_cells.get(macro_coords)
+	var vegetation_positions: Dictionary = cell.renderer.vegetation_positions if cell != null and cell.renderer != null else {}
+	var tree_present: bool = vegetation_positions.get(GameTypes.WorldObjectType.TREE, []).has(lot)
+	var shrub_present: bool = vegetation_positions.get(GameTypes.WorldObjectType.SHRUB, []).has(lot)
+	var grass_present: bool = vegetation_positions.get(GameTypes.WorldObjectType.GRASS, []).has(lot)
+
+	var lines: Array[String] = []
+	if lot_candidates.is_empty() and not tree_present and not shrub_present and grass_present:
+		# Solo erba, nessuna risorsa raccoglibile (richiesta esplicita utente) — messaggio unico,
+		# sostituisce la doppia sezione risorse/vegetazione sotto (sarebbe stata "Risorse: (nessuna)"
+		# + "Vegetazione: Erba", più rumoroso del necessario per il caso più comune di tutti).
+		lines.append(tr("microcell_inspection_only_grass"))
+	elif lot_candidates.is_empty() and not tree_present and not shrub_present and not grass_present:
+		lines.append(tr("microcell_inspection_empty"))
+	else:
+		if not lot_candidates.is_empty():
+			lines.append(tr("microcell_inspection_resources_header"))
+			for candidate in lot_candidates:
+				lines.append(tr("microcell_inspection_resource_line").format({
+					"resource": IconRegistry.get_resource_display_name(candidate["resource_name"]),
+					"quantity": candidate["available_quantity"],
+				}))
+		if tree_present or shrub_present or grass_present:
+			lines.append(tr("microcell_inspection_vegetation_header"))
+			if tree_present:
+				lines.append("- " + tr("microcell_inspection_tree"))
+			if shrub_present:
+				lines.append("- " + tr("microcell_inspection_shrub"))
+			if grass_present:
+				lines.append("- " + tr("microcell_inspection_grass"))
+
+	_select_microcell({"macro_coords": macro_coords, "lot": lot, "lines": lines})
+
+
+# ============================================================================================
+# Selezione di una microcella (ispezione, doppio click sinistro) — Step "ispezione" (2026-09-16,
+# richiesta utente). Struttura gemella di _select_stone/_clear_stone_selection: mutua esclusione a
+# 7 vie (era "a 6" prima di questo passo — vedi i commenti "mutua esclusione a 6 vie" sparsi nelle
+# altre 6 funzioni _select_*, ora ciascuna chiama anche _clear_microcell_selection). Evidenziazione
+# quadrata sulla mappa come stick_lot/stone (vedi sotto — RIPRISTINATA 2026-09-16 dopo un primo giro
+# senza, segnalato dall'utente come regressione visiva). `hit` contiene "lines" già COMPLETAMENTE
+# risolte dal chiamante (_handle_microcell_inspection_double_click) — questa funzione/il refresh
+# sotto restano "muti", non ricalcolano nulla.
+# ============================================================================================
+
+func _select_microcell(hit: Dictionary) -> void:
+	# Evidenziazione sulla mappa (2026-09-16, richiesta utente — "hai tolto anche il quadrato rosso
+	# sulla cella selezionata": ripristinato, STESSO schema di _select_stick_lot/_select_stone sopra
+	# — quadrato sulla cella del match, spento su ogni altra cella viva).
+	for coords in live_cells:
+		var cell: LiveMacroCell = live_cells[coords]
+		if cell.renderer == null:
+			continue
+		if coords == hit["macro_coords"]:
+			cell.renderer.set_selected_microcell(hit["lot"])
+		else:
+			cell.renderer.clear_selected_microcell()
+
+	_deselect_all_human_individuals()
+	human_individual_info_panel.clear()
+	_clear_vegetation_selection()
+	_clear_building_selection()
+	_clear_dead_body_selection()
+	_clear_stone_selection()
+	_clear_stick_lot_selection() # mutua esclusione a 7 vie (2026-09-16, prima "a 6 vie")
+
+	selected_microcell = hit
+	_selection_kind = SelectionKind.MICROCELL
+	_refresh_microcell_panel()
+	game_info_tabs.show_selection_tab()
+
+
+func _clear_microcell_selection() -> void:
+	if selected_microcell.is_empty():
+		return
+	selected_microcell = {}
+	_selection_kind = SelectionKind.NONE
+	for cell in live_cells.values():
+		if cell.renderer != null:
+			cell.renderer.clear_selected_microcell()
+	micro_cell_inspection_panel.clear()
+	game_info_tabs.hide_selection_tab()
+
+
+# Nessuna rilettura dal vivo qui (a differenza di _refresh_stone_panel/_refresh_stick_lot_panel,
+# che rileggono le quantità ad ogni chiamata) — "lines" è già il contenuto finale, risolto una volta
+# sola al momento del doppio click da _handle_microcell_inspection_double_click. Nessun refresh
+# periodico agganciato (stesso trattamento di stone/stick_lot/vegetazione, MAI individuo/edificio):
+# se in futuro servisse un refresh giornaliero, andrebbe ricalcolato leggendo direttamente
+# TerrainScatteredResourceService.get_available per macro_coords/lot già noti — non richiamando di
+# nuovo _resolve_pickup_candidates, che dipende dalla posizione LIVE del mouse tramite un evento
+# reale, non disponibile fuori da un vero click.
+func _refresh_microcell_panel() -> void:
+	var lot: Vector2i = selected_microcell["lot"]
+	micro_cell_inspection_panel.show_inspection(selected_microcell.get("lines", []))
+	game_info_tabs.set_selection_title(tr("microcell_inspection_title").format({"x": lot.x, "y": lot.y}))
 
 
 # Comando "vai e scarica" via DESTRO su un edificio di stoccaggio (2026-09-09, richiesta utente) —
@@ -3235,7 +3514,8 @@ func _try_assign_build_command_on_right_click(event: InputEvent) -> bool:
 			Vector2i(hit_building.micro_x, hit_building.micro_y),
 			IconRegistry.get_command_icon("build")
 		)
-	print("[BUILD] Task di costruzione assegnata a #%d %s per l'edificio #%d." % [individual.id, individual.name, building_id])
+	if DebugLogging.ENABLED and DebugLogging.SHOW_TRANSPORT_BUILD_LOGS:
+		print("[BUILD] Task di costruzione assegnata a #%d %s per l'edificio #%d." % [individual.id, individual.name, building_id])
 	return true
 
 
@@ -3263,7 +3543,8 @@ func _select_stick_lot(hit: Dictionary) -> void:
 	_clear_vegetation_selection()
 	_clear_building_selection()
 	_clear_dead_body_selection()
-	_clear_stone_selection() # mutua esclusione a 6 vie (2026-09-08)
+	_clear_stone_selection() # mutua esclusione a 7 vie (2026-09-16, prima "a 6 vie")
+	_clear_microcell_selection()
 
 	selected_stick_lot = hit
 	_selection_kind = SelectionKind.STICK_LOT
@@ -3314,8 +3595,9 @@ func _select_dead_body(hit: Dictionary) -> void:
 	human_individual_info_panel.clear()
 	_clear_vegetation_selection()
 	_clear_building_selection()
-	_clear_stone_selection() # mutua esclusione a 6 vie (2026-09-08, prima "a 5 vie")
+	_clear_stone_selection() # mutua esclusione a 7 vie (2026-09-16, prima "a 6 vie")
 	_clear_stick_lot_selection()
+	_clear_microcell_selection()
 
 	selected_dead_body_individual_id = hit["individual_id"]
 	_set_dead_body_view_selected(selected_dead_body_individual_id, true)
@@ -3409,6 +3691,21 @@ func _find_building_by_id(building_id: int) -> Building:
 		return null
 	for building in macro_world.buildings:
 		if building.id == building_id:
+			return building
+	return null
+
+
+# Gemella di _find_building_by_id sopra, per posizione invece che per id (2026-09-16, richiesta
+# utente — ispezione microcella: "se la cella è occupata da un edificio..."). STESSO confronto
+# macro_x/macro_y/micro_x/micro_y già usato da StickLotSelectorController._is_occupied_by_building/
+# PlantFiberLotSelectorController._is_occupied_by_building — duplicato qui apposta (non riusato da
+# quelle due classi, `_`-prefixed/private per convenzione) invece che esposto come utility condivisa.
+func _find_building_at_microcell(macro_coords: Vector2i, lot: Vector2i) -> Building:
+	if macro_world == null:
+		return null
+	for building in macro_world.buildings:
+		if building.macro_x == macro_coords.x and building.macro_y == macro_coords.y \
+				and building.micro_x == lot.x and building.micro_y == lot.y:
 			return building
 	return null
 
@@ -4017,7 +4314,7 @@ func _recenter_live_cells_on(macro_coords: Vector2i) -> void:
 	center_macro_coords = macro_coords
 	var _debug_reposition_start_usec := Time.get_ticks_usec()
 	_reposition_live_cells()
-	if DebugLogging.ENABLED:
+	if DebugLogging.ENABLED and DebugLogging.SHOW_RECONNECT_FACTORY_LOGS:
 		var _debug_reposition_elapsed_ms: float = (Time.get_ticks_usec() - _debug_reposition_start_usec) / 1000.0
 		print("[CENTER DEBUG] _reposition_live_cells %s -> %s = %.1fms" % [
 			_debug_old_center_macro_coords, center_macro_coords, _debug_reposition_elapsed_ms
@@ -4659,6 +4956,18 @@ func _attempt_macro_cell_transition(target_individual: HumanIndividual, dx: int,
 		_block_border_crossing(target_individual, dx, dy)
 		return
 
+	# Ribasamento GENERALIZZATO a ogni step posizionale non ancora completato, current_task E
+	# task_queue (2026-09-16, richiesta utente, fix bordo macrocella per le task perditempo, CAUSA
+	# A) — PRIMA di questo passo veniva ribasato SOLO il WalkAction ATTIVO: una Task multi-Walk che
+	# risolve TUTTI i propri target assoluti in un colpo solo all'assegnazione (Wander/Play/Leisure
+	# Rest, ma il meccanismo è generico, vale per qualunque Task con lo stesso schema — es. il Walk
+	# di haul_resource/transport verso una posizione fissa) lasciava le gambe FUTURE e le Task
+	# sospese in coda nel vecchio sistema di riferimento, puntando a un target sbagliato quando
+	# diventavano attive. Task.rebase_positional_targets (Task.gd) fa il lavoro vero: ribasa
+	# Action.target per ogni step da current_step_index in poi la cui `target` sia un Vector2 (solo
+	# WalkAction/RunAction lo valorizzano così — ogni altra Action, es. quelle basate su
+	# target_building, si ri-deriva da sola da home_macro_coords, già aggiornato più sotto, quindi
+	# non ha bisogno di alcun ribasamento esplicito qui).
 	# Ribasamento del WalkAction attivo, NON un semplice arresto (2026-09-12, richiesta utente —
 	# CORREZIONE di un bug gemello a quello risolto in _set_movement_target: qui viveva prima
 	# `target_individual.is_moving = false` e basta — corretto per NON azzerare più current_task/
@@ -4690,8 +4999,23 @@ func _attempt_macro_cell_transition(target_individual: HumanIndividual, dx: int,
 	var current_action: Action = null
 	if target_individual.current_task != null:
 		current_action = target_individual.current_task.get_current_action()
-	if current_action is WalkAction:
-		(current_action as WalkAction).target += frame_offset
+		var rebased_current := target_individual.current_task.rebase_positional_targets(frame_offset)
+		if rebased_current > 0 and DebugLogging.ENABLED and DebugLogging.SHOW_SAFETY_LOGS:
+			print("[BORDER] Individuo #%d %s: ribasati %d step posizionali di current_task '%s' (offset=%s)." % [
+				target_individual.id, target_individual.name, rebased_current,
+				target_individual.current_task.task_name, str(frame_offset)
+			])
+	# Task sospese in coda (2026-09-16) — STESSA ribasatura, stesso motivo: una Task ferma in
+	# task_queue (es. haul_resource interrotta da un bisogno stamina mentre l'individuo è poi
+	# tornato a Wander) può restare sospesa attraverso più attraversamenti di bordo prima di essere
+	# ripresa — se il suo primo step futuro fosse un target assoluto già risolto, lo ritroverebbe
+	# nel riferimento sbagliato al momento della ripresa.
+	for queued_task in target_individual.task_queue:
+		var rebased_queued := queued_task.rebase_positional_targets(frame_offset)
+		if rebased_queued > 0 and DebugLogging.ENABLED and DebugLogging.SHOW_SAFETY_LOGS:
+			print("[BORDER] Individuo #%d %s: ribasati %d step posizionali di una task in coda '%s' (offset=%s)." % [
+				target_individual.id, target_individual.name, rebased_queued, queued_task.task_name, str(frame_offset)
+			])
 
 	var target_macro_coords := Vector2i(target_x, target_y)
 	# is_camera_focus (2026-09-12) — vedi commento di testa alla funzione: separa l'aggiornamento
@@ -4731,14 +5055,24 @@ func _attempt_macro_cell_transition(target_individual: HumanIndividual, dx: int,
 		human_individual_views[target_view_index].reparent(live_cells[target_macro_coords].container)
 
 	# Fa RIPARTIRE lo step (2026-09-12) — ORA che position/home_macro_coords sono già quelli nuovi:
-	# activate() su WalkAction (vedi WalkAction.gd) scrive target_position dal `target` GIÀ ribasato
-	# sopra e rimette is_moving a true, quindi il movimento prosegue nello stesso frame verso la
-	# STESSA destinazione assoluta di prima, solo espressa nel riferimento locale corretto — nessun
-	# frame "fermo" in mezzo, stesso principio già seguito da HumanIndividualActionService.
+	# activate() su WalkAction/RunAction (vedi rispettivi .gd) scrive target_position dal `target`
+	# GIÀ ribasato sopra e rimette is_moving a true, quindi il movimento prosegue nello stesso frame
+	# verso la STESSA destinazione assoluta di prima, solo espressa nel riferimento locale corretto
+	# — nessun frame "fermo" in mezzo, stesso principio già seguito da HumanIndividualActionService.
 	# apply_action quando una Task avanza da uno step al successivo. Sempre eseguito (non solo per
 	# il bersaglio della camera): il movimento di simulazione di un individuo non dipende da chi il
 	# player sta guardando.
-	if current_action is WalkAction:
+	#
+	# GENERALIZZATO a `current_action.target is Vector2` (2026-09-16, richiesta utente, fix bordo
+	# macrocella) — PRIMA il guard era `current_action is WalkAction`, quindi RunAction (l'unica
+	# altra Action con un target posizionale, usata dalla Play Task) non veniva MAI riattivata dopo
+	# un attraversamento: il target veniva comunque ribasato (Task.rebase_positional_targets sopra
+	# lo copre già, essendo generico su Action.target), ma individual.target_position/is_moving
+	# restavano quelli VECCHI finché quello step non fosse ridiventato attivo da capo — bug gemello
+	# a quello di WalkAction, mai notato perché Play è CHILD-only e oggi comunque disattivata
+	# insieme a Wander/Leisure Rest (WANDER_ENABLED/LEISURE_REST_ENABLED). Stesso guard generico già
+	# usato da Task.rebase_positional_targets, nessun secondo elenco di classi da tenere allineato.
+	if current_action != null and current_action.target is Vector2:
 		current_action.activate(target_individual, target_individual.current_task.context)
 
 	if not is_camera_focus:
@@ -4869,6 +5203,47 @@ func _block_border_crossing(target_individual: HumanIndividual, dx: int, dy: int
 	target_individual.is_moving = false
 	target_individual.path.clear()
 
+	# CAUSA B (2026-09-16, richiesta utente, fix bordo macrocella) — PRIMA di questo passo, il
+	# blocco sopra (clamp + is_moving=false) bastava a se stesso per QUALUNQUE Task: nessun altro
+	# punto del codice rimette mai is_moving a true per LO STESSO step, e WalkAction/RunAction.
+	# is_complete() confrontava position con target — bloccata sul bordo, mai più uguale al target
+	# oltre il bordo — quindi quello step (e la Task intera) restava bloccato PER SEMPRE, l'unico
+	# sblocco era il tasto H (individual.stop()).
+	#
+	# Da qui in poi: SOLO per le task perditempo (Task.is_idle_activity, vedi Task.gd/
+	# task_definition.gd — oggi wander.tres/play.tres/leisure_rest.tres) una gamba bloccata al
+	# bordo viene considerata CONCLUSA invece che bloccata — non hanno una destinazione "vera" da
+	# raggiungere per forza (il punto è "passare il tempo", non arrivare esattamente lì), quindi
+	# saltare alla gamba successiva è un compromesso ragionevole e invisibile al giocatore. Il
+	# criterio è ESPLICITO (il campo Task.is_idle_activity), MAI un confronto su task_name.
+	#
+	# PER OGNI ALTRA TASK (haul_resource/build/transport/Rest/Emergency Rest/qualunque futura Task
+	# di lavoro) il comportamento resta ESATTAMENTE quello di prima — richiesta esplicita
+	# dell'utente ("per tutte le altre task NON cambiare il comportamento sul bordo bloccato"): uno
+	# step bloccato al bordo per una di queste resta bloccato per sempre, stesso sintomo di sempre,
+	# nessuna chiamata a finish_current_step per loro. Non essendo mai stato isolato un caso reale
+	# in cui una Task di LAVORO arrivi a un bordo bloccato durante il normale gameplay (i target di
+	# haul_resource/transport/build sono sempre risorse/edifici già dentro la macrocella
+	# dell'individuo o raggiunti tramite Building.macro_x/y, mai un punto arbitrario che potrebbe
+	# cadere fuori mappa), questo resta un rischio noto ma non affrontato in questo passo.
+	var blocked_task := target_individual.current_task
+	var is_idle_task := blocked_task != null and blocked_task.is_idle_activity
+	if DebugLogging.ENABLED and DebugLogging.SHOW_SAFETY_LOGS:
+		print("[BORDER] Individuo #%d %s: movimento bloccato al bordo (dx=%d dy=%d — macrocella inesistente o ingresso in acqua) — task=%s is_idle_activity=%s." % [
+			target_individual.id, target_individual.name, dx, dy,
+			("'%s'" % blocked_task.task_name if blocked_task != null else "(nessuna)"), str(is_idle_task)
+		])
+	if not is_idle_task:
+		return
+	var blocked_action := blocked_task.get_current_action()
+	if not (blocked_action is WalkAction or blocked_action is RunAction):
+		return
+	if DebugLogging.ENABLED and DebugLogging.SHOW_SAFETY_LOGS:
+		print("[BORDER] Individuo #%d %s: gamba di '%s' (task perditempo) considerata conclusa — avanzo allo step successivo." % [
+			target_individual.id, target_individual.name, blocked_task.task_name
+		])
+	individual_action_service.finish_current_step(target_individual, blocked_task, macro_world, game_data)
+
 
 # Il micro-livello di ogni macrocella è terreno UNIFORME (vedi World.generate_uniform_terrain,
 # usato anche da _activate_live_cell per ogni cella): "il tipo di terreno della microcella di
@@ -4930,6 +5305,10 @@ func _refresh_resource_visuals(cell: LiveMacroCell) -> void:
 	# stick (checkpoint/movimento/taglio/edificio/pickup, vedi PickUpAction.resource_collected
 	# sotto), non due percorsi di refresh paralleli per due risorse che condividono lo stesso bisogno.
 	StickPoolService.refresh_macrocell(cell.macro_state, game_data)
+	# plant_fiber (2026-09-16, richiesta utente — Step 2) — STESSA cadenza/STESSO trigger di stick
+	# appena sopra, nessun rendering ancora agganciato (Step 3, non ancora fatto): ancora nessuna
+	# set_plant_fiber_quantities su cell.renderer.
+	PlantFiberPoolService.refresh_macrocell(cell.macro_state, game_data)
 	if cell.renderer != null:
 		cell.renderer.set_stick_quantities(_filter_positions_by_visibility(cell, cell.macro_state.stick_quantities))
 		cell.renderer.set_pebble_quantities(_filter_positions_by_visibility(cell, cell.macro_state.pebble_quantities))
@@ -5658,6 +6037,14 @@ func _on_debug_action_pressed(action_id: StringName) -> void:
 			_on_macro_cell_debug_pressed()
 		&"advance_year":
 			_on_advance_year_pressed()
+		&"toggle_idle_fallback":
+			# Interruttore GLOBALE del fallback perditempo (2026-09-16, richiesta utente) — SOLO
+			# stato di sessione su IdleTaskAssignmentService (mai GameSettings/un salvataggio, a
+			# differenza di toggle_animals_visibility/toggle_flora_updates sopra): set_fallback_
+			# enabled stampa già il log [IDLE FALLBACK], questa riga si limita a rispecchiare il
+			# nuovo stato nel testo del bottone.
+			IdleTaskAssignmentService.set_fallback_enabled(not IdleTaskAssignmentService.fallback_enabled)
+			debug_bar.set_idle_fallback_label(IdleTaskAssignmentService.fallback_enabled)
 
 
 # Tasto 🛖 nel sottomenu costruzione di BuildBar — per ora SOLO l'anteprima visiva (vedi
@@ -6086,7 +6473,7 @@ func _place_building_at(world_position: Vector2) -> void:
 func _start_building_task_at(world_position: Vector2) -> void:
 	# LOG DEBUG TEMPORANEO (2026-09-10, richiesta utente — indagine bug "il pipottino cammina
 	# sempre verso lo stesso punto in basso a destra") — DA RIMUOVERE una volta chiuso il bug.
-	if DebugLogging.ENABLED:
+	if DebugLogging.ENABLED and DebugLogging.SHOW_TRANSPORT_BUILD_LOGS:
 		print("[BUILD DEBUG] _start_building_task_at: world_position ricevuto=%s" % str(world_position))
 	if macro_world == null:
 		return
@@ -6106,7 +6493,7 @@ func _start_building_task_at(world_position: Vector2) -> void:
 	var target_cell: LiveMacroCell = placement["cell"]
 	var micro_pos: Vector2i = placement["micro_pos"]
 	# LOG DEBUG TEMPORANEO — vedi nota sopra.
-	if DebugLogging.ENABLED:
+	if DebugLogging.ENABLED and DebugLogging.SHOW_TRANSPORT_BUILD_LOGS:
 		print("[BUILD DEBUG] _start_building_task_at: risolto in macro=(%d,%d) micro=%s" % [
 			target_cell.macro_x, target_cell.macro_y, str(micro_pos)
 		])
@@ -6125,14 +6512,15 @@ func _start_building_task_at(world_position: Vector2) -> void:
 	# costruzione" (is_complete è già false qui sopra).
 	_refresh_buildings_panel()
 	# LOG DEBUG TEMPORANEO — vedi nota sopra.
-	if DebugLogging.ENABLED:
+	if DebugLogging.ENABLED and DebugLogging.SHOW_TRANSPORT_BUILD_LOGS:
 		print("[BUILD DEBUG] _start_building_task_at: Building #%d creato — macro=(%d,%d) micro=(%d,%d)" % [
 			building.id, building.macro_x, building.macro_y, building.micro_x, building.micro_y
 		])
 
 	_refresh_building_visuals(target_cell)
 
-	print("[BUILD] Cantiere per %s #%d avviato in (%d,%d) micro=(%d,%d) — in attesa di assegnazione (click destro su un individuo selezionato)." % [
+	if DebugLogging.ENABLED and DebugLogging.SHOW_TRANSPORT_BUILD_LOGS:
+		print("[BUILD] Cantiere per %s #%d avviato in (%d,%d) micro=(%d,%d) — in attesa di assegnazione (click destro su un individuo selezionato)." % [
 		_selected_building_type_name, building.id, target_cell.macro_x, target_cell.macro_y, micro_pos.x, micro_pos.y
 	])
 
@@ -6203,7 +6591,8 @@ func _spawn_build_site_placeholders(building: Building) -> void:
 	building.site_setup_complete = true
 	_refresh_building_visuals(cell)
 	_create_build_site_placeholder_nodes(building, cell)
-	print("[BUILD] Cantiere edificio #%d allestito (4 placeholder posizionati)." % building.id)
+	if DebugLogging.ENABLED and DebugLogging.SHOW_TRANSPORT_BUILD_LOGS:
+		print("[BUILD] Cantiere edificio #%d allestito (4 placeholder posizionati)." % building.id)
 
 
 # Bugfix (2026-09-15, richiesta utente — "resta il fatto che se un cantiere è in costruzione, si
@@ -6384,7 +6773,7 @@ func _reconnect_loaded_task_signals() -> void:
 				_reconnect_jump_action_signals(step as JumpAction, member)
 				jump_count += 1
 		var reconnected_total := setup_site_count + clear_count + unload_count + pickup_count + build_count + jump_count
-		if reconnected_total > 0 and DebugLogging.ENABLED:
+		if reconnected_total > 0 and DebugLogging.ENABLED and DebugLogging.SHOW_RECONNECT_FACTORY_LOGS:
 			print("[RECONNECT DEBUG] Individuo #%d: ricollegati %d signal (tipi: SetupSite=%d, Clear=%d, Unload=%d, PickUp=%d, Build=%d, Jump=%d) dopo reload" % [
 				member.id, reconnected_total, setup_site_count, clear_count, unload_count, pickup_count, build_count, jump_count
 			])
@@ -6492,7 +6881,8 @@ func _on_site_cleared(building: Building) -> void:
 	var cell: LiveMacroCell = live_cells[macro_coords]
 	cell.needs_full_vegetation_recompute = true
 	_refresh_resource_visuals(cell)
-	print("[BUILD] Cantiere edificio #%d ripulito — vegetazione rimossa, spazio riservato per l'edificio." % building.id)
+	if DebugLogging.ENABLED and DebugLogging.SHOW_TRANSPORT_BUILD_LOGS:
+		print("[BUILD] Cantiere edificio #%d ripulito — vegetazione rimossa, spazio riservato per l'edificio." % building.id)
 
 
 # Reazione a UnloadAction.resource_deposited (2026-09-12, richiesta utente — bugfix "il mucchietto
@@ -6533,7 +6923,8 @@ func _on_building_construction_completed(building: Building) -> void:
 	# logica): prima appariva DOPO assign_pending_residents sotto, facendo comparire "[ASSIGN
 	# HOUSE]" nei log prima di "completato!" anche se is_complete/built_year erano già impostati a
 	# quel punto — ora l'ordine dei print rispecchia l'ordine logico reale.
-	print("[BUILD] Edificio #%d completato! (anno=%d)" % [building.id, building.built_year])
+	if DebugLogging.ENABLED and DebugLogging.SHOW_TRANSPORT_BUILD_LOGS:
+		print("[BUILD] Edificio #%d completato! (anno=%d)" % [building.id, building.built_year])
 	# Rinfresca la scheda 🏠 (2026-09-12, richiesta utente) — lo stato passa da "in costruzione" a
 	# "completo" proprio qui, la lista deve rifletterlo subito, non aspettare il rollover d'anno.
 	_refresh_buildings_panel()
@@ -6896,12 +7287,6 @@ func _update_play_pause_button() -> void:
 		play_pause_button.text = "▶"
 		play_pause_button.tooltip_text = tr("play")
 
-# [DBG_TASK] LOG DI DEBUG TEMPORANEO (2026-09-16, richiesta utente — indagine coda Task) — SOLA
-# STAMPA, nessuna logica di gioco toccata. Rimozione: cancellare questa costante + l'intero blocco
-# "if DEBUG_TASK_LOG:" dentro _on_day_advanced sotto (unico consumatore), oppure mettere a false.
-const DEBUG_TASK_LOG := true
-
-
 func _on_day_advanced(checkpoint_ran: bool, animals_changed: bool) -> void:
 	# TEMPORANEO (diagnostica lentezza, vedi GameClockController._process/[DAY TOTAL]) — questo
 	# intero handler gira SINCRONO dentro day_advanced.emit(), quindi dentro il cronometro di
@@ -6949,13 +7334,19 @@ func _on_day_advanced(checkpoint_ran: bool, animals_changed: bool) -> void:
 		print("[SELECTED PANEL REFRESH] anno=%d giorno=%d: %.3f ms" % [
 			game_data.year, game_data.current_day, panel_refresh_elapsed_ms
 		])
-	# [DBG_TASK] (2026-09-16, richiesta utente) — vedi commento sulla costante DEBUG_TASK_LOG sopra.
-	# Ricalcola qui lo STESSO filtro di GameScene._process/active_individuals (current_task non nullo
-	# e non concluso) — sola lettura, non condivide stato con quel ciclo (che vive in una variabile
-	# locale a _process, irraggiungibile da qui). "Adulto" = age_band diverso da INFANT/CHILD (stessa
-	# soglia già usata altrove nel file per escludere chi non può ricevere Task di lavoro vere).
-	# Nessuna correzione qui anche a fronte di anomalie evidenti nei numeri stampati — solo dati grezzi.
-	if DEBUG_TASK_LOG:
+	# [DBG_TASK] (2026-09-16, richiesta utente — gated dalla categoria DAILY_SUMMARY, riordino log di
+	# debug: prima un const locale DEBUG_TASK_LOG a questo file, default true; ora
+	# DebugLogging.SHOW_DAILY_SUMMARY_LOGS, stesso default true, stesso comportamento a impostazioni
+	# invariate). Ricalcola qui lo STESSO filtro di GameScene._process/active_individuals (current_task
+	# non nullo e non concluso) — sola lettura, non condivide stato con quel ciclo (che vive in una
+	# variabile locale a _process, irraggiungibile da qui). Elenco per-individuo ESTESO a TUTTA la
+	# popolazione (2026-09-16, richiesta utente — "stampa tutti gli individui, non solo i primi 10"):
+	# PRIMA filtrava via INFANT/CHILD ("adulto" = age_band diverso da INFANT/CHILD) — nessun limite
+	# numerico a 10 individui è mai esistito nel codice (verificato), ma quel filtro per età escludeva
+	# comunque una parte della popolazione dall'elenco dettagliato; rimosso, ora stampa OGNI individuo
+	# senza eccezioni. Nessuna correzione qui anche a fronte di anomalie evidenti nei numeri stampati
+	# — solo dati grezzi.
+	if DebugLogging.ENABLED and DebugLogging.SHOW_DAILY_SUMMARY_LOGS:
 		var debug_active_individuals_count := 0
 		for debug_member in human_individuals:
 			if debug_member.current_task != null and not debug_member.current_task.is_finished():
@@ -6964,9 +7355,6 @@ func _on_day_advanced(checkpoint_ran: bool, animals_changed: bool) -> void:
 			game_data.year, game_data.current_day, human_individuals.size(), debug_active_individuals_count
 		])
 		for debug_member in human_individuals:
-			var debug_age_band := _resolve_age_band(debug_member)
-			if debug_age_band == HumanTypes.AgeBand.INFANT or debug_age_band == HumanTypes.AgeBand.CHILD:
-				continue
 			var debug_task_name: String = debug_member.current_task.task_name if debug_member.current_task != null else "null"
 			print("[DBG_TASK]   #%d %s: current_task=%s, task_queue.size()=%d, current_stamina=%.1f, carried_resource_name='%s'" % [
 				debug_member.id, debug_member.name, debug_task_name, debug_member.task_queue.size(),

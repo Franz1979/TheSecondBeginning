@@ -29,7 +29,12 @@ const SHOW_PREDATOR_LIFECYCLE_LOGS := false
 # disattivazione di un vicino in streaming, vedi GameScene._refresh_lod_focus_region), quindi
 # spesso durante l'esplorazione. A false: nessun comportamento di simulazione cambia, solo il
 # print viene soppresso.
-const SHOW_LOD_CLASSIFICATION_LOGS := true
+#
+# RINOMINATO in SHOW_LOD_LOGS (2026-09-16, richiesta utente — riordino dei log di debug per
+# categoria): stesso identico consumatore/comportamento, solo il nome allineato alla categoria
+# "LOD" del nuovo schema in fondo a questo file (vedi blocco "CATEGORIE" sotto) — nessun secondo
+# flag separato da tenere sincronizzato.
+const SHOW_LOD_LOGS := false
 
 # Filtro dedicato per i log GIORNALIERI di PredationService ([PREDATION]/[PREDATION ATTEMPT]/
 # [PREDATION STARVATION]): a differenza di SHOW_HERBIVORE_LIFECYCLE_LOGS sopra (che filtra gli
@@ -148,29 +153,56 @@ const SHOW_VITALS_INTERACTION_LOGS := false
 # soppresso.
 const SHOW_SELECTED_PANEL_REFRESH_LOGS := false
 
-# Filtro dedicato per [TASK COST] (Task.print_cost_summary, richiamato da HumanIndividualActionService.
-# apply_action) — un log UNA TANTUM quando una Task si conclude (tutti gli step completati), col
-# costo in stamina/giorni scomposto per step + un totale finale; mai un log per step o per frame.
-# A false: nessun comportamento di simulazione cambia, solo il print viene soppresso. Default true
-# (a differenza della maggior parte dei flag sopra, tutti a false): funzionalità appena introdotta,
-# non ancora verificata con un run reale — riportalo a false una volta confermato il formato.
-const SHOW_TASK_TOTAL_COST_LOGS := true
+# ---------------------------------------------------------------------------------------------
+# CATEGORIE (2026-09-16, richiesta utente — "riordino dei log di debug") — SOSTITUISCONO i flag
+# dedicati per-feature che c'erano prima in questa posizione (SHOW_TASK_TOTAL_COST_LOGS,
+# SHOW_UNLOAD_COMPLETION_LOGS, SHOW_SKILL_GROWTH_LOGS, SHOW_RUN_DEBUG_LOGS, SHOW_JUMP_DEBUG_LOGS —
+# rimossi, nessun consumatore li legge più) e SHOW_LOD_CLASSIFICATION_LOGS più sopra (rinominato
+# in SHOW_LOD_LOGS, stesso consumatore). Ogni categoria raggruppa TUTTI i prefissi di log di un
+# solo sottosistema sotto UN SOLO flag, invece di un flag per singolo tipo di riga — più facile da
+# tenere a mente/accendere in blocco quando si indaga un'area, meno voci da scorrere in questo
+# file. A false su qualunque di questi: nessun comportamento di simulazione cambia MAI, solo il
+# print viene soppresso — stesso principio di ogni altro flag in questo file.
+#
+# MOVEMENT — [RUN DEBUG] (RunAction.get_stamina_delta), [JUMP DEBUG] (JumpAction.get_stamina_delta).
+const SHOW_MOVEMENT_LOGS := false
 
-# Filtro dedicato per [UNLOAD] is_complete (UnloadAction.is_complete) - 2026-09-10, richiesta
-# utente: quel print era gated SOLO da ENABLED sopra, quindi stampava una riga AD OGNI CHIAMATA
-# (~60/s, agganciata al framerate - vedi HumanIndividualActionService.apply_action) per l'intera
-# durata del ramo FISICO in corso, decine di righe per un singolo Unload. Stesso principio degli
-# altri filtri dedicati sopra: a false nessun comportamento di simulazione cambia, solo il print
-# viene soppresso. Default false (a differenza di SHOW_TASK_TOTAL_COST_LOGS sopra): questo log e'
-# rumoroso per costruzione (per-frame, non per-evento), quindi resta disattivato finche' non lo si
-# riattiva esplicitamente per diagnosticare qualcosa sul ramo fisico di UnloadAction.
-const SHOW_UNLOAD_COMPLETION_LOGS := false
+# RESOURCE_POOL — [DBG_POOL] (VegetationPoolService).
+const SHOW_RESOURCE_POOL_LOGS := false
 
-# Filtro dedicato per [SKILL GROWTH] (HumanIndividualActionService._apply_task_completion_skill_
-# growth, richiamato da apply_action SOLO quando una Task termina con successo) — 2026-09-13,
-# richiesta utente: +1.0 su una skill quando la Task INTERA (non il singolo step) si conclude.
-# Riga diretta (stesso stile di SHOW_STAMINA_RECALC_LOGS: un evento raro, una Task alla volta, non
-# per-frame). Default true (a differenza della maggior parte dei flag sopra), stesso principio di
-# SHOW_TASK_TOTAL_COST_LOGS: funzionalità appena introdotta, non ancora verificata con un run
-# reale — riportalo a false una volta confermato il formato.
-const SHOW_SKILL_GROWTH_LOGS := true
+# LOD — [LOD] (LODOrchestrator.print_classification_log — vedi SHOW_LOD_LOGS più sopra, stesso
+# flag, questo commento resta qui solo per l'elenco delle categorie).
+
+# RECONNECT_FACTORY — [RECONNECT DEBUG]/[DBG_PICKUP] (GameScene, ricollegamento segnali dopo
+# reload), [TASKFACTORY DEBUG] (task_factory.gd), [CENTER DEBUG] (GameScene), [PICKUP CMD DEBUG]
+# (GameScene, comando debug raccolta).
+const SHOW_RECONNECT_FACTORY_LOGS := false
+
+# TASK_LIFECYCLE — [TASK COST] (Task.print_cost_summary), [INTERRUPT DEBUG]/[RESUME WALKBACK]
+# (HumanIndividualActionService), [TASK GUARD]/[TASK SUSPEND] (HumanIndividual), [SKILL GROWTH]
+# (HumanIndividualActionService), [QUEUE OVERFLOW] (TaskQueueService).
+const SHOW_TASK_LIFECYCLE_LOGS := false
+
+# IDLE — [IDLE FALLBACK] (IdleTaskAssignmentService), [REST]/[EMERGENCY REST]
+# (NeedTaskAssignmentService), [WANDER]/[PLAY] (GameScene, trigger manuali tasti G/P per le stesse
+# due Task).
+const SHOW_IDLE_LOGS := true
+
+# TRANSPORT_BUILD — [UNLOAD] (unload_action.gd), [WALK AWAY]/[WAREHOUSE SEARCH]/
+# [THOUGHT TARGET SEARCH]/[BUILD MATERIAL NEEDED]/[BUILD MATERIAL BONUS]/[BUILD MATERIAL RETRY]
+# (HumanIndividualActionService), [BUILD]/[BUILD DEBUG]/[TRANSPORT] (GameScene),
+# [BUILD PROGRESS DEBUG]/[OCCUPIED SPACE DEBUG] (SetupSiteAction/ClearAction/BuildAction),
+# [ASSIGN HOUSE] (AssignHouseService).
+const SHOW_TRANSPORT_BUILD_LOGS := false
+
+# SAFETY — [ZOMBIE GUARD] (TaskQueueService/HumanIndividualActionService/HumanIndividual),
+# [BORDER] (GameScene). Default true (a differenza della maggior parte delle categorie sopra):
+# segnalano un'anomalia reale (una task zombie intercettata, un attraversamento di bordo), non un
+# evento di routine — utile vederli anche senza aver acceso apposta il debug.
+const SHOW_SAFETY_LOGS := true
+
+# DAILY_SUMMARY — [DBG_TASK] (GameScene._on_day_advanced, riepilogo giornaliero task/stamina/
+# carico per individuo). Default true, stesso motivo di SHOW_SAFETY_LOGS: introdotto apposta come
+# strumento di indagine sempre pronto, non rumoroso quanto le categorie per-frame sopra (gira una
+# volta al giorno).
+const SHOW_DAILY_SUMMARY_LOGS := true

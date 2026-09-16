@@ -15,6 +15,14 @@ extends RefCounted
 const REST_TASK_DEFINITION_PATH := "res://gameplay/scripts/tasks/definitions/rest.tres"
 const EMERGENCY_REST_TASK_DEFINITION_PATH := "res://gameplay/scripts/tasks/definitions/emergency_rest.tres"
 
+# Tetto di sicurezza in giorni per la Rest da BISOGNO (2026-09-16, richiesta utente — bugfix:
+# anche con regen percentuale, vedi RestAction.STAMINA_REGEN_PERCENT_PER_DAY, il recupero dalla
+# soglia del 20% resta ~16gg fissi, troppo per restare bloccati senza un tetto). Passato come
+# max_duration_days a RestAction (vedi assign_rest_task sotto) con ignore_stamina_cap=false — un
+# backstop in OR col criterio "stamina piena": chi recupera prima si ferma prima, questo scatta
+# solo se il recupero fosse più lento del previsto.
+const REST_TASK_MAX_DURATION_DAYS: float = 8.0
+
 # Raggio massimo del walk-around casuale quando l'individuo NON ha una casa assegnata — STESSO
 # valore/STESSO principio già in uso prima di questo spostamento (vedi GameScene, ora rimosso da
 # lì): 4.0 scelto come via di mezzo, distanza REALE randf_range(1.0, questo raggio).
@@ -85,6 +93,11 @@ static func assign_rest_task(individual: HumanIndividual, world: World, age_band
 		"target_position": target_data["target_position"],
 		"rest_multiplier": target_data["rest_multiplier"],
 		"walk_away_target_position": target_data["walk_away_target_position"],
+		# Tetto di sicurezza (2026-09-16) — vedi REST_TASK_MAX_DURATION_DAYS sopra: la Rest da
+		# bisogno resta comunque legata alla stamina (ignore_stamina_cap=false), il tetto interviene
+		# SOLO se il recupero fosse più lento del previsto.
+		"rest_max_duration_days": REST_TASK_MAX_DURATION_DAYS,
+		"rest_ignore_stamina_cap": false,
 	}
 	var task := TaskFactory.build_task(rest_definition, context)
 	# Guard PRIMA di stop() (2026-09-13, richiesta utente, bugfix — vedi HumanIndividual.
@@ -102,7 +115,7 @@ static func assign_rest_task(individual: HumanIndividual, world: World, age_band
 	if not is_interrupt_transition:
 		individual.stop()
 	var assigned := individual.assign_task(task, age_band, is_interrupt_transition)
-	if assigned and DebugLogging.ENABLED:
+	if assigned and DebugLogging.ENABLED and DebugLogging.SHOW_IDLE_LOGS:
 		print("[REST] Task Walk+Rest assegnata a #%d %s: target=%s, rest_multiplier=%.2f" % [
 			individual.id, individual.name, target_data["target_position"], target_data["rest_multiplier"]
 		])
@@ -131,7 +144,7 @@ static func assign_emergency_rest_task(individual: HumanIndividual, age_band: Hu
 	if not is_interrupt_transition:
 		individual.stop()
 	var assigned := individual.assign_task(task, age_band, is_interrupt_transition)
-	if assigned and DebugLogging.ENABLED:
+	if assigned and DebugLogging.ENABLED and DebugLogging.SHOW_IDLE_LOGS:
 		print("[EMERGENCY REST] Task Walk+Rest assegnata a #%d %s: target=%s, rest_multiplier=1.0 (fisso)" % [
 			individual.id, individual.name, target_data["target_position"]
 		])

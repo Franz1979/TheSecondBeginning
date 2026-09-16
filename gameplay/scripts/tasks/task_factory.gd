@@ -78,24 +78,32 @@ static func build_task(definition: TaskDefinition, context: Dictionary) -> Task:
 				# LOG DEBUG TEMPORANEO (2026-09-10, richiesta utente — indagine bug "il pipottino
 				# cammina sempre verso lo stesso punto in basso a destra" su build.tres) — DA
 				# RIMUOVERE una volta chiuso il bug, non è un log permanente del progetto.
-				if DebugLogging.ENABLED:
+				if DebugLogging.ENABLED and DebugLogging.SHOW_RECONNECT_FACTORY_LOGS:
 					print("[TASKFACTORY DEBUG] step WALK di '%s': context_keys[0]='%s' -> target_position=%s" % [
 						definition.task_name, step_definition.context_keys[0], str(context[step_definition.context_keys[0]])
 					])
 				steps.append(WalkAction.new(context[step_definition.context_keys[0]]))
 				step_descriptions.append(step_definition.step_description)
 			TaskTypes.ActionType.REST:
-				# rest_multiplier OPZIONALE (2026-09-12, richiesta utente — Rest Task esplicita: Walk
-				# verso target_position + Rest con rest_multiplier) — a differenza di WALK/THINK sopra
-				# (context_keys[0] obbligatorio), qui un context_keys vuoto/non risolvibile ripiega sul
-				# default 1.0 di RestAction._init, comportamento INVARIATO per qualunque futura
-				# TaskDefinition che dichiari REST senza questa chiave (es. una futura Task senza
-				# nozione di "casa"/moltiplicatore). Vedi step_rest.tres/rest.tres per l'unico
-				# consumatore oggi (context_keys=["rest_multiplier"]).
+				# rest_multiplier/max_duration_days/ignore_stamina_cap TUTTI OPZIONALI (2026-09-12,
+				# esteso 2026-09-16, richiesta utente — Rest Task esplicita: Walk verso target_position
+				# + Rest con questi tre parametri) — a differenza di WALK/THINK sopra (context_keys[0]
+				# obbligatorio), qui un context_keys vuoto/non risolvibile per ciascuna posizione
+				# ripiega sul default di RestAction._init (1.0/-1.0/false), comportamento INVARIATO per
+				# qualunque TaskDefinition che dichiari REST senza queste chiavi. Vedi step_rest.tres
+				# (rest_multiplier, max_duration_days, ignore_stamina_cap in quest'ordine) per l'unico
+				# consumatore oggi, riusato sia da rest.tres sia da leisure_rest.tres con valori diversi
+				# di contesto.
 				var rest_multiplier: float = 1.0
-				if not step_definition.context_keys.is_empty() and context.has(step_definition.context_keys[0]):
+				if step_definition.context_keys.size() > 0 and context.has(step_definition.context_keys[0]):
 					rest_multiplier = float(context[step_definition.context_keys[0]])
-				steps.append(RestAction.new(rest_multiplier))
+				var rest_max_duration_days: float = -1.0
+				if step_definition.context_keys.size() > 1 and context.has(step_definition.context_keys[1]):
+					rest_max_duration_days = float(context[step_definition.context_keys[1]])
+				var rest_ignore_stamina_cap: bool = false
+				if step_definition.context_keys.size() > 2 and context.has(step_definition.context_keys[2]):
+					rest_ignore_stamina_cap = bool(context[step_definition.context_keys[2]])
+				steps.append(RestAction.new(rest_multiplier, rest_max_duration_days, rest_ignore_stamina_cap))
 				step_descriptions.append(step_definition.step_description)
 			TaskTypes.ActionType.THINK:
 				# 1 argomento scalare (duration: float) — stesso schema di WALK sopra, solo il
@@ -244,4 +252,7 @@ static func build_task(definition: TaskDefinition, context: Dictionary) -> Task:
 	# sopra. Nessun collegamento a logica di interrupt ancora: solo il dato copiato.
 	task.interrupt_priority = definition.interrupt_priority
 	task.is_suspendable = definition.is_suspendable
+	# is_idle_activity (2026-09-16, richiesta utente, fix bordo macrocella) — copiato da
+	# TaskDefinition, stesso schema di interrupt_priority/is_suspendable sopra.
+	task.is_idle_activity = definition.is_idle_activity
 	return task

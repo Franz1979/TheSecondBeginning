@@ -213,20 +213,37 @@ func save_game_to_json(
 			for pos in state.shrub_claimed_lots.keys():
 				shrub_claimed_lots_data.append({"x": pos.x, "y": pos.y})
 			state_data["shrub_claimed_lots"] = shrub_claimed_lots_data
-			# Pool bastoni per lotto (2026-09-08, richiesta utente — vedi MacroCellState.
-			# stick_quantities/StickPoolService) — stesso trattamento di pebble_quantities: scrittura
-			# condizionale (assente se mai calcolato per questa macrocella), nessuna pulizia/GC attiva.
-			if not state.stick_quantities.is_empty():
-				var stick_quantities_data: Array = []
-				for pos in state.stick_quantities.keys():
-					var stick_entry: Dictionary = state.stick_quantities[pos]
-					stick_quantities_data.append({
-						"x": pos.x, "y": pos.y,
-						"checkpoint_day": int(stick_entry["checkpoint_day"]),
-						"capacity": int(stick_entry["capacity"]),
-						"harvested": int(stick_entry["harvested"]),
-					})
-				state_data["stick_quantities"] = stick_quantities_data
+		# Pool bastoni per lotto (2026-09-08, richiesta utente — vedi MacroCellState.
+		# stick_quantities/StickPoolService) — stesso trattamento di pebble_quantities: scrittura
+		# condizionale (assente se mai calcolato per questa macrocella), nessuna pulizia/GC attiva.
+		if not state.stick_quantities.is_empty():
+			var stick_quantities_data: Array = []
+			for pos in state.stick_quantities.keys():
+				var stick_entry: Dictionary = state.stick_quantities[pos]
+				stick_quantities_data.append({
+					"x": pos.x, "y": pos.y,
+					"checkpoint_day": int(stick_entry["checkpoint_day"]),
+					"capacity": int(stick_entry["capacity"]),
+					"harvested": int(stick_entry["harvested"]),
+				})
+			state_data["stick_quantities"] = stick_quantities_data
+		# Pool plant_fiber per lotto (2026-09-16, richiesta utente) - STESSO formato di
+		# stick_quantities sopra, ma scritto QUI, fuori dal blocco shrub_claimed_lots - quel
+		# blocco ha un bug preesistente (segnalato a parte, non toccato in questo passo:
+		# stick_quantities e annidato dentro "if not shrub_claimed_lots.is_empty()", quindi una
+		# macrocella con alberi ma SENZA arbusti non lo salva mai) - questo blocco resta al
+		# livello giusto (sibling, non annidato) per non ereditare lo stesso difetto.
+		if not state.plant_fiber_quantities.is_empty():
+			var plant_fiber_quantities_data: Array = []
+			for pos in state.plant_fiber_quantities.keys():
+				var plant_fiber_entry: Dictionary = state.plant_fiber_quantities[pos]
+				plant_fiber_quantities_data.append({
+					"x": pos.x, "y": pos.y,
+					"checkpoint_day": int(plant_fiber_entry["checkpoint_day"]),
+					"capacity": int(plant_fiber_entry["capacity"]),
+					"harvested": int(plant_fiber_entry["harvested"]),
+				})
+			state_data["plant_fiber_quantities"] = plant_fiber_quantities_data
 		# Stesso formato/principio di vegetation_cut_exceptions sopra, ma per la mortalità naturale
 		# (vedi MacroCellState.vegetation_death_exceptions) — campo "death_year" invece di "cut_year".
 		if not state.vegetation_death_exceptions.is_empty():

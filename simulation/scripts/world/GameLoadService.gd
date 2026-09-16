@@ -225,6 +225,16 @@ func load_game_from_json(file_path: String) -> LoadedGame:
 					"capacity": int(pos_data["capacity"]),
 					"harvested": int(pos_data["harvested"]),
 				}
+			# Pool plant_fiber per lotto (2026-09-16, richiesta utente) — stesso trattamento di
+			# stick_quantities sopra, .get() con default [] per compatibilità coi save precedenti a
+			# questo campo.
+			for pos_data in state_data.get("plant_fiber_quantities", []):
+				var plant_fiber_pos := Vector2i(int(pos_data["x"]), int(pos_data["y"]))
+				state.plant_fiber_quantities[plant_fiber_pos] = {
+					"checkpoint_day": int(pos_data["checkpoint_day"]),
+					"capacity": int(pos_data["capacity"]),
+					"harvested": int(pos_data["harvested"]),
+				}
 			for pos_data in state_data.get("vegetation_death_exceptions", []):
 				var death_key := Vector3i(int(pos_data["x"]), int(pos_data["y"]), int(pos_data["i"]))
 				state.vegetation_death_exceptions[death_key] = {

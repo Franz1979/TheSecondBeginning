@@ -135,12 +135,24 @@ func get_happiness_delta(individual: Variant, context: Dictionary, delta: float)
 	return -distance * HAPPINESS_DRAIN_PER_MICROCELL
 
 
-# Completa quando la posizione ha raggiunto la destinazione DI QUESTO STEP — confronto contro
-# `target` (il proprio campo, vedi sopra), non più contro individual.target_position (2026-09-07):
-# più robusto/autocontenuto ora che target è la fonte di verità di QUESTO step (individual.
-# target_position è solo lo specchio scritto da activate(), utile a HumanIndividualMovementService
-# ma non più l'unica fonte da cui questa classe deve dipendere). Stesso criterio di sempre —
-# uguaglianza esatta, coerente con l'assegnazione diretta `position = target_position` che
-# HumanIndividualMovementService fa all'arrivo, mai un margine di tolleranza.
+# Tolleranza di arrivo (2026-09-16, richiesta utente, fix bordo macrocella — robustezza generica,
+# non specifica al bordo) — RIMPIAZZA l'uguaglianza esatta di prima: HumanIndividualMovementService
+# continua ad assegnare `position = target_position` esattamente all'arrivo normale (nessun
+# cambio di comportamento per quel caso, distance_to()==0.0 resta sempre <= tolleranza), ma un
+# target ribasato da GameScene._attempt_macro_cell_transition (Task.rebase_positional_targets)
+# combina due sottrazioni in virgola mobile (entry_position - position, poi position += offset in
+# frame successivi) invece della singola assegnazione diretta di un arrivo normale — un'uguaglianza
+# ESATTA su quella somma non è più garantita bit-per-bit. Valore minimo (0.01 microcelle,
+# ben sotto qualunque soglia visiva) che assorbe questo solo rischio senza introdurre un arrivo
+# "anticipato" percepibile.
+const ARRIVAL_TOLERANCE: float = 0.01
+
+
+# Completa quando la posizione ha raggiunto la destinazione DI QUESTO STEP (entro ARRIVAL_
+# TOLERANCE sopra) — confronto contro `target` (il proprio campo, vedi sopra), non più contro
+# individual.target_position (2026-09-07): più robusto/autocontenuto ora che target è la fonte di
+# verità di QUESTO step (individual.target_position è solo lo specchio scritto da activate(),
+# utile a HumanIndividualMovementService ma non più l'unica fonte da cui questa classe deve
+# dipendere).
 func is_complete(individual: Variant, context: Dictionary) -> bool:
-	return individual.position == target
+	return individual.position.distance_to(target) <= ARRIVAL_TOLERANCE

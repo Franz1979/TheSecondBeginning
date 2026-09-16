@@ -5,5 +5,5 @@
 [resource]
 script = ExtResource("1_rest")
 action_type = 1
-context_keys = Array[String](["rest_multiplier"])
+context_keys = Array[String](["rest_multiplier", "rest_max_duration_days", "rest_ignore_stamina_cap"])
 step_description = "task_rest_step_rest"

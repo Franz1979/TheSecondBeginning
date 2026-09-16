@@ -151,7 +151,7 @@ func activate(individual: Variant, context: Dictionary) -> void:
 			"target_building_id": target_building.id,
 		}
 		return
-	if DebugLogging.ENABLED and target_building != null:
+	if DebugLogging.ENABLED and DebugLogging.SHOW_TRANSPORT_BUILD_LOGS and target_building != null:
 		print("[BUILD PROGRESS DEBUG] SetupSiteAction attivata per building #%d: riparte da site_setup_days_done=%.2f (era 0.0 se prima volta)" % [
 			target_building.id, _get_site_setup_days_done()
 		])

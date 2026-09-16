@@ -535,6 +535,9 @@ func _refresh_resource_visuals() -> void:
 	# visuals, vedi StickPoolService per il design completo.
 	StickPoolService.refresh_macrocell(macro_state, game_data)
 	renderer.set_stick_quantities(macro_state.stick_quantities)
+	# plant_fiber (2026-09-16, richiesta utente — Step 2) — STESSA cadenza/STESSO trigger di stick
+	# sopra, nessun rendering ancora agganciato (Step 3, non ancora fatto).
+	PlantFiberPoolService.refresh_macrocell(macro_state, game_data)
 
 	var occupied: Dictionary = {}
 	for pos in macro_state.stone_positions:

@@ -10,13 +10,14 @@ extends VBoxContainer
 # pickup/consumo, richiesta esplicita di non implementarlo in questo passo): puramente
 # informativo.
 #
-# Due granularità DELIBERATAMENTE etichettate in modo distinto (richiesta esplicita dell'utente,
-# per evitare ambiguità tra le due): pebble_quantity è ESATTO per la singola posizione cliccata
-# (MacroCellState.pebble_quantities, indicizzato per Vector2i); zone_stone_quantity è l'aggregato
-# dell'INTERA macrocella (MacroCellState.resource_quantity[ROCK]), mostrato solo come contesto —
-# mai presentato come se fosse un valore della singola posizione.
+# Una sola granularità (RIVISTO 2026-09-16, richiesta utente — "se clicco singolo su stone mi esce
+# sassi qui e pietra nella zona, togli sassi qui"): il click SINGOLO mostra solo l'aggregato di
+# ZONA (MacroCellState.resource_quantity[ROCK]) — la quantità ESATTA della singola posizione
+# cliccata (MacroCellState.pebble_quantities) resta comunque visibile, ma SOLO tramite l'ispezione
+# a DOPPIO click (MicroCellInspectionPanel, che la mostra già tra i candidati raccoglibili) — due
+# gesti diversi, due domande diverse ("quanta pietra c'è in questa zona" vs "cosa raccolgo qui"),
+# non più sovrapposte nello stesso pannello.
 
-@onready var pebble_label: Label = $PebbleLabel
 @onready var zone_stone_label: Label = $ZoneStoneLabel
 
 
@@ -24,9 +25,8 @@ func _ready() -> void:
 	clear()
 
 
-func show_stone(pebble_quantity: int, zone_stone_quantity: int) -> void:
+func show_stone(zone_stone_quantity: int) -> void:
 	visible = true
-	pebble_label.text = tr("stone_pebble_here_label").format({"quantity": NumberFormatter.format_int(pebble_quantity)})
 	zone_stone_label.text = tr("stone_zone_aggregate_label").format({"quantity": NumberFormatter.format_int(zone_stone_quantity)})
 
 

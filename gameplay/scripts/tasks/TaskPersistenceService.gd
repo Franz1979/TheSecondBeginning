@@ -85,6 +85,11 @@ static func serialize_task(task: Task) -> Dictionary:
 		# priorità X" ad ogni salvataggio.
 		"interrupt_priority": task.interrupt_priority,
 		"is_suspendable": task.is_suspendable,
+		# is_idle_activity (2026-09-16, richiesta utente, fix bordo macrocella) — STESSO motivo/
+		# STESSO trattamento di interrupt_priority/is_suspendable sopra: un attraversamento di
+		# bordo può scattare in qualunque istante futuro, anche dopo un reload, quindi va
+		# ricontrollato continuamente, non solo al momento di assign_task().
+		"is_idle_activity": task.is_idle_activity,
 	}
 
 
@@ -153,6 +158,9 @@ static func deserialize_task(data: Dictionary, macro_state: MacroCellState, worl
 	# file: un save precedente a questi due campi non li conteneva mai, il default resta corretto.
 	task.interrupt_priority = int(data.get("interrupt_priority", -1))
 	task.is_suspendable = bool(data.get("is_suspendable", false))
+	# is_idle_activity — STESSO trattamento .get() con default (false, "non è una task perditempo")
+	# di interrupt_priority/is_suspendable sopra.
+	task.is_idle_activity = bool(data.get("is_idle_activity", false))
 	return task
 
 
@@ -223,10 +231,16 @@ static func _build_step(action_type: int, step_data: Dictionary, macro_state: Ma
 		TaskTypes.ActionType.WALK:
 			step = WalkAction.new(Vector2(float(step_data.get("target_x", 0.0)), float(step_data.get("target_y", 0.0))))
 		TaskTypes.ActionType.REST:
-			# rest_multiplier (2026-09-12, richiesta utente, Rest Task esplicita) — letto da
-			# RestAction.get_save_data (vedi lì), default 1.0 per compatibilità con save precedenti
-			# a questo campo, stesso trattamento di skill_multiplier/tool_multiplier per BUILD sotto.
-			step = RestAction.new(float(step_data.get("rest_multiplier", 1.0)))
+			# rest_multiplier/max_duration_days/ignore_stamina_cap (2026-09-12, esteso 2026-09-16,
+			# richiesta utente, Rest Task esplicita) — letti da RestAction.get_save_data (vedi lì),
+			# default -1.0/false per compatibilità con save precedenti a questi due campi (nessun
+			# tetto/nessuna modalità "per piacere" per una Task salvata prima di questa estensione),
+			# stesso trattamento di skill_multiplier/tool_multiplier per BUILD sotto.
+			step = RestAction.new(
+				float(step_data.get("rest_multiplier", 1.0)),
+				float(step_data.get("max_duration_days", -1.0)),
+				bool(step_data.get("ignore_stamina_cap", false))
+			)
 		TaskTypes.ActionType.THINK:
 			step = ThinkAction.new(float(step_data.get("duration", 0.0)))
 		TaskTypes.ActionType.UNLOAD:

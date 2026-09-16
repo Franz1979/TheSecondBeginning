@@ -1,0 +1,6 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://tools/zombie_task_test/ZombieTaskTest.gd" id="1_zombie"]
+
+[node name="ZombieTaskTest" type="Node"]
+script = ExtResource("1_zombie")
