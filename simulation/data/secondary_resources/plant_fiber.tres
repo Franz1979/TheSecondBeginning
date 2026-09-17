@@ -9,6 +9,6 @@ calories_per_unit = 0.0
 is_construction_material = true
 category = 1
 generation_source = 1
-day_durability = 300
+day_durability = 200
 space_per_unit = 5.0
 units_per_mature_plant = 2

@@ -22,7 +22,7 @@ const DURATION_MAX_DAYS: float = 0.75
 # DAY/RestAction.STAMINA_REGEN_PER_DAY, moltiplicato per `delta` in get_stamina_delta, MAI per
 # `_duration`: una durata tirata più lunga costa proporzionalmente di più in totale (più giorni ×
 # stesso tasso), ma il TASSO in sé resta sempre questo, non ricalibrato in base alla durata.
-const STAMINA_DRAIN_PER_DAY: float = 200.0
+const STAMINA_DRAIN_PER_DAY: float = 100.0
 
 # Recupero di HAPPINESS al giorno (2026-09-13, richiesta utente: "+10.0/day") — saltare è
 # divertente: tasso fisso incondizionato, indipendente da _duration/_jump_count (stesso principio

@@ -170,3 +170,5 @@ filters = PackedStringArray("*.json ; File JSON")
 [node name="DemolishConfirmationDialog" parent="." instance=ExtResource("13_demolish")]
 
 [node name="TransportSourceDialog" parent="." instance=ExtResource("14_transport")]
+
+[node name="PickupChoiceDialog" parent="." instance=ExtResource("14_transport")]

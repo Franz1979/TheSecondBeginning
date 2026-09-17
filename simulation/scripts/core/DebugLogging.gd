@@ -96,7 +96,7 @@ const SHOW_VEGETATION_REFRESH_TIMING_LOGS := false
 # rumorosi ora): nessun comportamento di simulazione cambia, solo [FOW REDRAW TIMING]/[FOW REDRAW
 # COUNT] vengono soppressi. Non rimosso: tornerà utile per rimisurare dopo un futuro cambiamento
 # al ciclo di redraw multi-sorgente.
-const SHOW_FOW_REDRAW_TIMING_LOGS := false
+const SHOW_FOW_REDRAW_TIMING_LOGS := true
 
 # Filtro dedicato per [HUMAN VIEW TIMING] (HumanIndividualView._process/_draw) — richiesta utente,
 # 2026-09-04: verificare col numero reale (non a occhio dal log FoW, che non misura affatto questo

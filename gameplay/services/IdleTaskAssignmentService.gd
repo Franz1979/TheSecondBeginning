@@ -33,6 +33,7 @@ const IDLE_FALLBACK_TASK_PATHS: Array[String] = [
 	"res://gameplay/scripts/tasks/definitions/wander.tres",
 	"res://gameplay/scripts/tasks/definitions/play.tres",
 	"res://gameplay/scripts/tasks/definitions/leisure_rest.tres",
+	"res://gameplay/scripts/tasks/definitions/daydreaming.tres",
 ]
 
 # Range di durata (in giorni) della Rest per SVAGO (2026-09-16, richiesta utente) — RANDOM ad ogni
@@ -95,25 +96,35 @@ static func set_fallback_enabled(enabled: bool) -> void:
 	if DebugLogging.ENABLED and DebugLogging.SHOW_IDLE_LOGS:
 		print("[IDLE FALLBACK] service %s." % ("attivato" if enabled else "disattivato"))
 
+# Hook di connessione listener per lo step_appended di una Task Daydream (2026-09-16, richiesta
+# utente, "Daydreaming nel fallback perditempo") — IdleTaskAssignmentService è uno stateless
+# service senza riferimento alla scena (nessun Node): non può chiamare da sé
+# GameScene._reconnect_unload_action_signals (side-effect UI: refresh griglia edifici, popup
+# idea). GameScene si registra da sé in _ready() con questo Callable statico, stesso principio già
+# seguito da fallback_enabled/set_fallback_enabled sopra ("GameScene configura lo stato del
+# servizio dall'esterno, il servizio resta ignaro di chi lo consuma"). Callable() vuoto di default
+# (contesti senza GameScene — tools/zombie_task_test, HumanBirthIndividualService — restano no-op
+# sicuri via `.is_valid()` sotto: la Daydream funziona comunque, solo senza gli aggiornamenti UI
+# collegati all'Unload del ramo pensiero). Chiamata da _build_idle_task sotto, subito dopo aver
+# costruito la Task, PRIMA che assign_idle_fallback la assegni — stesso ordine (costruisci, collega
+# listener, assegna) già seguito da GameScene._debug_test_daydream_task.
+static var daydream_step_appended_connector: Callable = Callable()
+
 # Lunghezza min/max (in microcelle) di ciascun tratto casuale di Wander/Play — STESSO valore/STESSO
 # principio già in uso prima di questo spostamento (vedi GameScene.gd, ora rimosso da lì).
 const WANDER_LEG_MIN_LENGTH: float = 4.0
 const WANDER_LEG_MAX_LENGTH: float = 8.0
 
-# Pesi del tiro random tra le Task idle-fallback IDONEE (2026-09-16, richiesta utente — prima un
-# tiro UNIFORME tra i soli candidati che passano il filtro età, ora pesato) — Play/Leisure Rest
-# favoriti (0.4 ciascuna) rispetto a Wander (0.2, appena riattivata dopo un bug non isolato, vedi
-# sopra — peso più basso finché non si ha più fiducia nella sua stabilità). Chiave = stesso path di
-# IDLE_FALLBACK_TASK_PATHS sopra, NESSUNA normalizzazione esplicita a somma 1.0 necessaria: _pick_
-# weighted_task sotto tira su un intervallo [0, somma_pesi_dei_soli_idonei), che mantiene da sé il
-# rapporto relativo corretto anche quando un candidato è escluso dal filtro età (es. Play per una
-# fascia diversa da CHILD) — vedi quella funzione per il dettaglio.
-const IDLE_FALLBACK_TASK_WEIGHTS := {
-	"res://gameplay/scripts/tasks/definitions/wander.tres": 0.2,
-	"res://gameplay/scripts/tasks/definitions/play.tres": 0.4,
-	"res://gameplay/scripts/tasks/definitions/leisure_rest.tres": 0.4,
-}
-
+# Distanza/durata BASE della Daydream del fallback (2026-09-16, richiesta utente) — STESSI valori
+# di GameScene._DEBUG_DAYDREAM_AROUND_DISTANCE/_DEBUG_DAYDREAM_THINK_BASE_DURATION (tasto Y), ma
+# SENZA il moltiplicatore EraRules.think_duration_multiplier che quel tasto applica: questa
+# funzione (chiamata da _resolve_active_stamina_need_priority/resolve_idle_individual a cascata,
+# vedi HumanIndividualActionService) non riceve `game_data`, solo `world` — thread-arlo giù da lì
+# toccherebbe 5 chiamanti esterni (HumanBirthIndividualService/GameLoadService/ZombieTaskTest/
+# GameScene x2) per un affinamento cosmetico. Semplificazione deliberata: durata BASE = "era
+# neutra" (moltiplicatore 1.0), coerente con l'uso già arbitrario di questa costante nel tasto Y.
+const DAYDREAM_AROUND_DISTANCE: float = 14.1
+const DAYDREAM_THINK_BASE_DURATION: float = 2.0
 
 # Risoluzione dei tre target Walk della Wander Task — STESSA identica logica di GameScene.
 # _resolve_wander_targets prima di questo spostamento (vedi doc di testa al file).
@@ -189,6 +200,25 @@ static func _build_idle_task(path: String, individual: HumanIndividual, world: W
 				"rest_ignore_stamina_cap": true,
 			}
 			return TaskFactory.build_task(definition, context)
+		"res://gameplay/scripts/tasks/definitions/daydreaming.tres":
+			# Filtro "esiste un edificio che accetta pensieri" GIÀ APPLICATO a monte da
+			# assign_idle_fallback (vedi lì) — qui si assume che il chiamante l'abbia già verificato,
+			# stesso principio "un guard, un solo posto" già seguito per allowed_age_bands. Nessun
+			# WANDER_ENABLED/LEISURE_REST_ENABLED equivalente per Daydream: nessuna richiesta di
+			# poterla disattivare separatamente oggi.
+			var around_position: Vector2 = individual.position + Vector2.from_angle(randf() * TAU) * DAYDREAM_AROUND_DISTANCE
+			var definition := load(path) as TaskDefinition
+			var context: Dictionary = {
+				"target_position": around_position,
+				"think_duration": DAYDREAM_THINK_BASE_DURATION,
+			}
+			var task := TaskFactory.build_task(definition, context)
+			# daydream_step_appended_connector (vedi sopra) — collegato SUBITO dopo la costruzione,
+			# PRIMA che assign_idle_fallback assegni la Task: stesso ordine di GameScene.
+			# _debug_test_daydream_task (costruisci, collega, assegna).
+			if daydream_step_appended_connector.is_valid():
+				daydream_step_appended_connector.call(task, individual)
+			return task
 		_:
 			push_error("IdleTaskAssignmentService._build_idle_task: path '%s' non riconosciuto — aggiungi un case quando estendi IDLE_FALLBACK_TASK_PATHS." % path)
 			return null
@@ -199,29 +229,25 @@ static func _build_idle_task(path: String, individual: HumanIndividual, world: W
 # nessuna Task in corso, nessun bisogno stamina attivo, task_queue vuota (vedi
 # HumanIndividualActionService._handle_task_completion_need_and_queue, l'unico chiamante oggi).
 #
-# Filtro età tramite individual.can_assign_task (STESSA identica logica già usata ovunque per
-# questo scopo — HumanIndividual.gd — non duplicata qui in una forma "statica" separata): per
-# ciascun path viene costruita la Task COMPLETA (con target già risolti) e verificata col guard —
-# solo chi passa entra tra i candidati. Costruire comunque ogni candidato (invece di un controllo
-# "leggero" senza costruire nulla) è il prezzo per riusare can_assign_task così com'è.
+# Filtro età LEGGERO (2026-09-16, richiesta utente — sostituisce il filtro precedente basato su
+# individual.can_assign_task): letto direttamente da TaskDefinition.allowed_age_bands, PRIMA di
+# costruire alcuna Task — niente più "costruisci tutto poi scarta chi non passa". `remaining` porta
+# solo path + TaskDefinition già caricata (mai una Task), una entry per candidato ancora in gioco.
 #
-# Un solo candidato -> usato direttamente (nessun tiro). Più di uno -> tiro PESATO (vedi
-# IDLE_FALLBACK_TASK_WEIGHTS/_pick_weighted_task sotto, 2026-09-16, richiesta utente — prima era
-# uniforme, randi() % candidates.size()). Zero candidati dopo il filtro (caso limite — non dovrebbe
-# succedere: Wander è compatibile con tutte le età sopra INFANT) -> ritorna false, nessun effetto
-# collaterale: il chiamante decide cosa fare (oggi, individual.stop() come fallback finale).
+# Tiro PESATO tra le entry rimanenti (vedi _pick_weighted_index sotto) usando TaskDefinition.
+# idle_weight — poi si costruisce SOLO la Task estratta (mai le altre): se l'assegnazione fallisce
+# (_build_idle_task torna null, es. WANDER_ENABLED/LEISURE_REST_ENABLED spento, oppure individual.
+# assign_task rifiuta per un guard più profondo per-Action) quella entry viene rimossa da
+# `remaining` e si ritira tra le rimanenti, finché una assegnazione riesce o il pool si esaurisce.
 #
-# `world` — ORA CONSULTATO (2026-09-16, richiesta utente, Rest per svago: resolve_rest_target ne
-# ha bisogno per risolvere la Building casa dell'individuo, vedi _build_idle_task sopra). Prima di
-# questo passo nessuna Task perditempo lo usava (Wander/Play non ne hanno bisogno), tenuto comunque
-# in firma da subito per lo stesso principio "deviazione firma anticipata" già visto per `world`/
-# `game_data` in HumanIndividualActionService.apply_action — quel principio ha ripagato qui.
+# `world` — consultato da _build_idle_task (Rest per svago: resolve_rest_target ne ha bisogno per
+# risolvere la Building casa dell'individuo).
 #
-# Ritorna true/false (esito di individual.assign_task, o false se nessun candidato) — stesso
-# principio "il chiamante sa se è davvero riuscita" già seguito da NeedTaskAssignmentService.
-# assign_rest_task/assign_emergency_rest_task.
+# Ritorna true/false (esito dell'assegnazione riuscita, o false se il pool si esaurisce senza
+# successo) — stesso principio "il chiamante sa se è davvero riuscita" già seguito da
+# NeedTaskAssignmentService.assign_rest_task/assign_emergency_rest_task.
 static func assign_idle_fallback(individual: HumanIndividual, age_band: HumanTypes.AgeBand, world: World) -> bool:
-	# Interruttore globale (2026-09-16, richiesta utente) — controllato PRIMA di costruire
+	# Interruttore globale (2026-09-16, richiesta utente) — controllato PRIMA di valutare
 	# qualunque candidato: a fallback_enabled=false, nessuna Task perditempo viene mai assegnata,
 	# indipendentemente da WANDER_ENABLED/LEISURE_REST_ENABLED/età — il chiamante (resolve_idle_
 	# individual) ricade sul proprio ultimo ramo, individual.stop(), esattamente come se nessun
@@ -231,54 +257,60 @@ static func assign_idle_fallback(individual: HumanIndividual, age_band: HumanTyp
 	# spento).
 	if not fallback_enabled:
 		return false
-	var candidates: Array[Task] = []
-	# candidate_paths — PARALLELO a candidates (stesso indice), necessario per risolvere il peso di
-	# ciascun candidato in _pick_weighted_task sotto: Task non porta con sé il path da cui è nata
-	# (solo task_name, un identificativo leggibile ma non lo stesso valore usato come chiave in
-	# IDLE_FALLBACK_TASK_WEIGHTS).
-	var candidate_paths: Array[String] = []
+
+	var remaining: Array[Dictionary] = []
 	for path in IDLE_FALLBACK_TASK_PATHS:
+		var definition := load(path) as TaskDefinition
+		if not definition.allowed_age_bands.is_empty() and not definition.allowed_age_bands.has(age_band):
+			continue
+		# Daydream esclusa a monte se non esiste nessun edificio COMPLETO che accetta pensieri
+		# (2026-09-16, richiesta utente) — STESSO criterio/STESSA funzione già usata dal gate upfront
+		# del tasto debug Y (vedi GameScene._debug_test_daydream_task): senza edificio, la Task
+		# finirebbe comunque "a vuoto" (Think + nessun deposito, vedi _handle_pending_thought_
+		# target_search), non un fallimento distruttivo ma inutile da estrarre nel tiro pesato.
+		if path == "res://gameplay/scripts/tasks/definitions/daydreaming.tres" and not ThoughtTargetSelectionService.has_thought_accepting_building(world):
+			continue
+		remaining.append({"path": path, "definition": definition})
+
+	while not remaining.is_empty():
+		var drawn_index := _pick_weighted_index(remaining)
+		var path: String = remaining[drawn_index]["path"]
 		var candidate_task := _build_idle_task(path, individual, world)
-		if candidate_task != null and individual.can_assign_task(candidate_task, age_band):
-			candidates.append(candidate_task)
-			candidate_paths.append(path)
-	if candidates.is_empty():
-		return false
-	var chosen_task: Task = candidates[0] if candidates.size() == 1 else _pick_weighted_task(candidates, candidate_paths)
-	var assigned := individual.assign_task(chosen_task, age_band)
-	if assigned and DebugLogging.ENABLED and DebugLogging.SHOW_IDLE_LOGS:
-		print("[IDLE FALLBACK] #%d %s: nessuna Task/bisogno/coda attivi — assegnata '%s' (%d candidate compatibili con age_band=%s)." % [
-			individual.id, individual.name, chosen_task.task_name, candidates.size(), HumanTypes.AgeBand.keys()[age_band]
-		])
-	return assigned
+		var assigned := candidate_task != null and individual.assign_task(candidate_task, age_band)
+		if assigned:
+			if DebugLogging.ENABLED and DebugLogging.SHOW_IDLE_LOGS:
+				print("[IDLE FALLBACK] #%d %s: nessuna Task/bisogno/coda attivi — assegnata '%s'." % [
+					individual.id, individual.name, candidate_task.task_name
+				])
+			return true
+		remaining.remove_at(drawn_index)
+	return false
 
 
-# Tiro PESATO tra `candidates` (2026-09-16, richiesta utente) — pesi letti da
-# IDLE_FALLBACK_TASK_WEIGHTS per il path PARALLELO in `paths` (stesso indice di `candidates`,
-# vedi assign_idle_fallback sopra). Nessuna normalizzazione esplicita a somma 1.0: il tiro
-# (`randf() * total_weight`) avviene già sul solo totale dei candidati IDONEI presenti in questa
-# chiamata — se uno o più path sono assenti (esclusi a monte dal filtro età), il loro peso semplicemente
-# non entra nella somma, e il rapporto relativo tra i pesi rimanenti resta quello dichiarato
-# (es. Wander 0.2 / Leisure Rest 0.4 = 1:2, INVARIATO anche se Play è escluso).
+# Tiro PESATO su indice tra le entry di `remaining` (2026-09-16, richiesta utente — sostituisce
+# _pick_weighted_task/IDLE_FALLBACK_TASK_WEIGHTS: il peso vive ora su TaskDefinition.idle_weight,
+# letto qui direttamente dall'entry — vedi assign_idle_fallback sopra). Nessuna normalizzazione
+# esplicita a somma 1.0: il tiro (`randf() * total_weight`) avviene già sul solo totale delle entry
+# ANCORA in gioco in questa chiamata — via via che una entry fallita viene rimossa da `remaining`
+# dal chiamante, il rapporto relativo tra i pesi restanti resta quello dichiarato.
 #
-# total_weight <= 0.0 (caso limite — un path in IDLE_FALLBACK_TASK_PATHS senza voce in
-# IDLE_FALLBACK_TASK_WEIGHTS, mai un caso reale oggi ma non un crash) -> ripiega sul tiro uniforme
-# di prima, nessun candidato mai escluso per un peso mancante.
+# total_weight <= 0.0 (caso limite — idle_weight <= 0 su ogni entry rimanente, mai un caso reale
+# oggi ma non un crash) -> ripiega sul tiro uniforme, nessuna entry mai esclusa per un peso mancante.
 #
-# Ultimo candidato come fallback finale dopo il ciclo (mai raggiunto in teoria: roll < total_weight
+# Ultimo indice come fallback finale dopo il ciclo (mai raggiunto in teoria: roll < total_weight
 # per costruzione, garantisce che l'ultimo confronto cumulativo sia sempre vero) — solo per
 # proteggere da un residuo di imprecisione in virgola mobile, stesso principio "mai un crash" già
 # seguito ovunque nel progetto.
-static func _pick_weighted_task(candidates: Array[Task], paths: Array[String]) -> Task:
+static func _pick_weighted_index(remaining: Array[Dictionary]) -> int:
 	var total_weight: float = 0.0
-	for path in paths:
-		total_weight += float(IDLE_FALLBACK_TASK_WEIGHTS.get(path, 0.0))
+	for entry in remaining:
+		total_weight += float((entry["definition"] as TaskDefinition).idle_weight)
 	if total_weight <= 0.0:
-		return candidates[randi() % candidates.size()]
+		return randi() % remaining.size()
 	var roll: float = randf() * total_weight
 	var cumulative: float = 0.0
-	for i in range(candidates.size()):
-		cumulative += float(IDLE_FALLBACK_TASK_WEIGHTS.get(paths[i], 0.0))
+	for i in range(remaining.size()):
+		cumulative += float((remaining[i]["definition"] as TaskDefinition).idle_weight)
 		if roll < cumulative:
-			return candidates[i]
-	return candidates[candidates.size() - 1]
+			return i
+	return remaining.size() - 1

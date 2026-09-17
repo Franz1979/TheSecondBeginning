@@ -75,3 +75,14 @@ extends Resource
 # bloccata come oggi. Copiato su Task.is_idle_activity da TaskFactory.build_task, stesso schema di
 # is_suspendable sopra.
 @export var is_idle_activity: bool = false
+
+# Peso del tiro random tra le task perditempo IDONEE (2026-09-16, richiesta utente — SOSTITUISCE
+# IdleTaskAssignmentService.IDLE_FALLBACK_TASK_WEIGHTS, un Dictionary separato chiave=path che
+# andava tenuto sincronizzato a mano con IDLE_FALLBACK_TASK_PATHS): il peso vive ora sulla ricetta
+# stessa, letto direttamente dalla TaskDefinition già caricata per il filtro età, nessun secondo
+# elenco da mantenere allineato. Solo un valore RELATIVO tra i candidati IDONEI presenti in una
+# data estrazione (mai normalizzato a somma 1.0) — vedi IdleTaskAssignmentService._pick_weighted_
+# index per il tiro vero. Default 1.0 = peso "neutro" per ogni TaskDefinition che non lo
+# valorizza esplicitamente (nessuna diversa da wander.tres/play.tres/leisure_rest.tres lo fa oggi,
+# dato che solo queste tre sono task perditempo — vedi is_idle_activity sopra).
+@export var idle_weight: float = 1.0

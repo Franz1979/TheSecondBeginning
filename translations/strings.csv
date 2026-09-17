@@ -131,6 +131,8 @@ transport_dialog_message,Scegli cosa prelevare da {building}:
 transport_dialog_quantity_label,Quantità:
 transport_dialog_confirm,Conferma
 transport_dialog_cancel,Annulla
+pickup_choice_dialog_title,Scegli risorsa da raccogliere
+pickup_choice_dialog_message,Questa posizione contiene più risorse raccoglibili:
 carried_resource_tooltip_pebble,Sassi
 carried_resource_tooltip_stick,Rametti
 carried_resource_tooltip_plant_fiber,Fibra vegetale

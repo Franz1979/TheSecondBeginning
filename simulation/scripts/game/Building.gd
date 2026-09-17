@@ -198,8 +198,14 @@ func get_resumable_task_definition_path() -> String:
 # (layer di gameplay/rendering) — entrambe responsabilità del chiamante, fuse come extra_context da
 # TaskReassignmentService.reassign_task.
 func get_resumable_task_context() -> Dictionary:
+	# Jitter (2026-09-17, richiesta utente — bugfix "i pipottini si fermano sempre nell'angolo in
+	# alto a sinistra della microcella", sovrapposti quando più lavoratori si alternano sullo stesso
+	# cantiere): offset casuale interno alla cella, RICALCOLATO ad ogni chiamata (nessuna posizione
+	# "canonica" da tenere stabile tra un'assegnazione e la successiva — un individuo diverso che
+	# riprende questo stesso cantiere può benissimo fermarsi in un punto diverso dal precedente).
+	var target_position_jitter: Vector2 = Vector2(randf_range(0.15, 0.85), randf_range(0.15, 0.85))
 	return {
-		"target_position": Vector2(micro_x, micro_y),
+		"target_position": Vector2(micro_x, micro_y) + target_position_jitter,
 		"target_building": self,
 	}
 

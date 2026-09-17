@@ -434,7 +434,13 @@ var _pending_leave_action: StringName = &""
 @onready var statistics_panel: StatisticsPanel = $StatisticsPanel
 @onready var tech_tree_panel: TechTreePanel = $TechTreePanel
 @onready var demolish_confirmation_dialog: DemolishConfirmationDialog = $DemolishConfirmationDialog
-@onready var transport_source_dialog: TransportSourceDialog = $TransportSourceDialog
+@onready var transport_source_dialog: OptionChoiceDialog = $TransportSourceDialog
+# pickup_choice_dialog (2026-09-17, richiesta utente, "no priorità fissa, scegli sempre se 2+
+# risorse disponibili") — SECONDA istanza dello STESSO OptionChoiceDialog.tscn/.gd di
+# transport_source_dialog sopra (vedi OptionChoiceDialog.gd per il perché due nodi e non
+# un'istanza condivisa): usata da _try_assign_pickup_command_on_right_click quando il click destro
+# trova 2+ risorse REALMENTE disponibili (available_quantity > 0) sulla stessa posizione.
+@onready var pickup_choice_dialog: OptionChoiceDialog = $PickupChoiceDialog
 @onready var save_game_file_dialog: FileDialog = $SaveGameFileDialog
 @onready var camera: Camera2D = $Camera2D
 @onready var year_title_label: Label = $CanvasLayer/Sidebar/MarginContainer/VBoxContainer/CalendarHeaderContainer/YearTitleLabel
@@ -476,6 +482,14 @@ func _ready() -> void:
 	# avvio, questa riga si limita a riflettere nel testo del bottone il default con cui la classe è
 	# già stata caricata, stesso principio delle due righe sopra per flora/animali.
 	debug_bar.set_idle_fallback_label(IdleTaskAssignmentService.fallback_enabled)
+	# daydream_step_appended_connector (2026-09-16, richiesta utente, "Daydreaming nel fallback
+	# perditempo") — IdleTaskAssignmentService è uno stateless service senza riferimento alla scena:
+	# non può chiamare da sé _reconnect_unload_action_signals (side-effect UI: refresh griglia
+	# edifici, popup idea). GameScene si registra qui con questo Callable statico, stesso principio
+	# già seguito da fallback_enabled/set_fallback_enabled sopra ("GameScene configura lo stato del
+	# servizio dall'esterno, il servizio resta ignaro di chi lo consuma") — vedi
+	# _connect_daydream_step_appended_listener sotto per cosa fa davvero.
+	IdleTaskAssignmentService.daydream_step_appended_connector = Callable(self, "_connect_daydream_step_appended_listener")
 	debug_bar.action_pressed.connect(_on_debug_action_pressed)
 	game_info_panel.primary_actions_bar.action_pressed.connect(_on_primary_action_pressed)
 	game_info_panel.secondary_actions_bar.action_pressed.connect(_on_secondary_action_pressed)
@@ -593,6 +607,8 @@ func _ready() -> void:
 	demolish_confirmation_dialog.visibility_changed.connect(_on_blocking_dialog_visibility_changed.bind(demolish_confirmation_dialog))
 	transport_source_dialog.resource_chosen.connect(_on_transport_source_resource_chosen)
 	transport_source_dialog.visibility_changed.connect(_on_blocking_dialog_visibility_changed.bind(transport_source_dialog))
+	pickup_choice_dialog.resource_chosen.connect(_on_pickup_choice_resource_chosen)
+	pickup_choice_dialog.visibility_changed.connect(_on_blocking_dialog_visibility_changed.bind(pickup_choice_dialog))
 	# Demolisci (2026-09-12, richiesta utente) — main_row.action_pressed, NON submenu_row (quello
 	# resta per i tipi edificio, ascoltato sopra da _on_build_submenu_action_pressed): BuildBar._on_
 	# main_row_action_pressed ignora già qualunque action_id diverso da OPEN_BUILD_MENU_ACTION (vedi
@@ -1569,7 +1585,9 @@ func _debug_test_two_walk_task() -> void:
 		push_error("[PICKUP TEST] Nessuna posizione con pebble disponibili nella macrocella corrente.")
 		return
 
-	var walk := WalkAction.new(Vector2(target_position))
+	# Jitter — STESSO principio di _assign_pickup_task (2026-09-17, richiesta utente, bugfix "angolo
+	# in alto a sinistra"), applicato qui per coerenza anche a questo tasto di debug.
+	var walk := WalkAction.new(Vector2(target_position) + Vector2(randf_range(0.15, 0.85), randf_range(0.15, 0.85)))
 	var pickup := PickUpAction.new(target_position, cell.macro_state)
 	var test_task := Task.new([walk, pickup])
 	# individual.stop() SOLO DOPO can_assign_task() (2026-09-13, richiesta utente, bugfix — stesso
@@ -1680,13 +1698,12 @@ func _debug_test_daydream_task() -> void:
 	# quanti frame passano tra l'assegnazione e l'evento (dipende da quando l'individuo finisce di
 	# pensare/cammina fino all'edificio trovato).
 	#
-	# _reconnect_unload_action_signals riusata TALE E QUALE (2026-09-11, estratta da qui — vedi lì
-	# per i 4 listener veri, ora condivisi con _reconnect_loaded_task_signals/il gap sul reload) —
-	# invariato ogni comportamento: STESSI 4 listener, STESSO momento (quando l'UnloadAction nasce).
-	task.step_appended.connect(func(action: Action) -> void:
-		if action is UnloadAction:
-			_reconnect_unload_action_signals(action as UnloadAction, individual)
-	)
+	# _connect_daydream_step_appended_listener (2026-09-16, richiesta utente, "Daydreaming nel
+	# fallback perditempo" — ESTRATTO da qui, il blocco era identico a ogni chiamata) — STESSO
+	# comportamento di prima: STESSI 4 listener (via _reconnect_unload_action_signals), STESSO
+	# momento (quando l'UnloadAction nasce). Ora riusato anche dal fallback automatico, vedi quella
+	# funzione per il dettaglio.
+	_connect_daydream_step_appended_listener(task, individual)
 
 	# Guard di età PRIMA di stop() (2026-09-13, richiesta utente, bugfix — bug osservato: un
 	# FERTILE_ADULT con haul_resource in corso e zaino pieno, a cui viene assegnata Daydream via
@@ -1884,15 +1901,20 @@ func _resolve_transport_context(
 	target_individual: HumanIndividual, source_building: Building, destination_building: Building,
 	resource_name: String, quantity: int
 ) -> Dictionary:
+	# Jitter — STESSO principio di _handle_pending_warehouse_search/Building.get_resumable_task_context
+	# (2026-09-17, richiesta utente, bugfix "angolo in alto a sinistra"/sovrapposizione): un offset
+	# INDIPENDENTE per sorgente e destinazione, non lo stesso valore riusato per entrambe.
 	var source_macro_offset: Vector2 = Vector2(
 		Vector2i(source_building.macro_x, source_building.macro_y) - target_individual.home_macro_coords
 	) * World.WIDTH
-	var source_position: Vector2 = Vector2(source_building.micro_x, source_building.micro_y) + source_macro_offset
+	var source_position_jitter: Vector2 = Vector2(randf_range(0.15, 0.85), randf_range(0.15, 0.85))
+	var source_position: Vector2 = Vector2(source_building.micro_x, source_building.micro_y) + source_macro_offset + source_position_jitter
 
 	var destination_macro_offset: Vector2 = Vector2(
 		Vector2i(destination_building.macro_x, destination_building.macro_y) - target_individual.home_macro_coords
 	) * World.WIDTH
-	var destination_position: Vector2 = Vector2(destination_building.micro_x, destination_building.micro_y) + destination_macro_offset
+	var destination_position_jitter: Vector2 = Vector2(randf_range(0.15, 0.85), randf_range(0.15, 0.85))
+	var destination_position: Vector2 = Vector2(destination_building.micro_x, destination_building.micro_y) + destination_macro_offset + destination_position_jitter
 
 	return {
 		"transport_source_position": source_position,
@@ -2056,7 +2078,10 @@ func _debug_try_assign_transport_command_on_right_click(event: InputEvent) -> bo
 
 		_debug_transport_pending_source_building = hit_building
 		var display_name: String = tr(hit_building.rules.building_name) if hit_building.rules != null else hit_building.building_type_name
-		transport_source_dialog.open_dialog(display_name, available_quantities)
+		# open_dialog (2026-09-17) — titolo/messaggio ora risolti QUI (tr()+format()), non più dentro
+		# OptionChoiceDialog stesso — vedi quel file per il perché (generalizzazione, riuso anche dal
+		# comando di raccolta manuale sotto).
+		transport_source_dialog.open_dialog(tr("transport_dialog_title"), tr("transport_dialog_message").format({"building": display_name}), available_quantities)
 		return true
 
 	if hit_building == _debug_transport_source_building:
@@ -2157,7 +2182,9 @@ func _debug_test_haul_resource_task() -> void:
 		push_error("[HAUL TEST] Nessuna posizione pebble/stick disponibile nella macrocella corrente.")
 		return
 
-	var walk := WalkAction.new(Vector2(target_position))
+	# Jitter — STESSO principio di _assign_pickup_task (2026-09-17, richiesta utente, bugfix "angolo
+	# in alto a sinistra"), applicato qui per coerenza anche a questo tasto di debug.
+	var walk := WalkAction.new(Vector2(target_position) + Vector2(randf_range(0.15, 0.85), randf_range(0.15, 0.85)))
 	var pickup := PickUpAction.new(target_position, cell.macro_state, target_resource_name)
 	var task := Task.new([walk, pickup])
 	task.task_name = "task_haul_resource_name"
@@ -2796,8 +2823,15 @@ func _assign_pickup_task(macro_coords: Vector2i, target_position: Vector2i, reso
 	# keys) — struttura spostata lì così ogni futuro chiamante di build_task la ottiene gratis, senza
 	# doversene ricordare (era il rischio esplicito di questa versione precedente: un erase() lato
 	# chiamante, facile da dimenticare in una nuova Task futura).
+	# Jitter sul punto di arrivo del Walk (2026-09-17, richiesta utente — bugfix "i pipottini si
+	# fermano sempre nell'angolo in alto a sinistra della microcella", sovrapposti quando più
+	# individui raccolgono nella stessa cella/lotto): offset casuale interno alla cella (evita i
+	# bordi, mai esattamente sull'angolo), applicato SOLO al target del WalkAction — "pickup_position"
+	# sotto resta il Vector2i ESATTO della cella, invariato: è la chiave che indicizza davvero il pool
+	# della risorsa (TerrainScatteredResourceService), mai un dato "visivo".
+	var target_position_jitter: Vector2 = Vector2(randf_range(0.15, 0.85), randf_range(0.15, 0.85))
 	var context: Dictionary = {
-		"target_position": Vector2(target_position),
+		"target_position": Vector2(target_position) + target_position_jitter,
 		"pickup_position": target_position,
 		"macro_state": cell.macro_state,
 		"resource_name": resource_name,
@@ -2952,6 +2986,16 @@ func _spawn_command_blink_effect(cell: LiveMacroCell, target_position: Vector2i,
 # Stesso gate `individual.is_selected` già usato da HumanIndividualController._try_set_target per
 # il movimento normale: nessun individuo selezionato -> nessun comando possibile, comportamento
 # coerente col resto del destro-click.
+# Stato "in sospeso" del pickup_choice_dialog (2026-09-17, richiesta utente) — STESSO principio dei
+# campi _debug_transport_pending_* sopra: macro_coords/position del click restano qui finché il
+# player non conferma la scelta nel dialog (o annulla, nel qual caso _assign_pickup_task non viene
+# mai chiamata — nessun segnale emesso a cancel, vedi OptionChoiceDialog._on_cancel_pressed).
+# Condivisi da tutti i candidati aperti nello stesso dialog (stesso click, stessa posizione — STESSA
+# assunzione già fatta dal vecchio codice con `candidates[0]`).
+var _pickup_pending_macro_coords: Vector2i = Vector2i.ZERO
+var _pickup_pending_position: Vector2i = Vector2i.ZERO
+
+
 func _try_assign_pickup_command_on_right_click(event: InputEvent) -> bool:
 	# Guard di tipo evento (2026-09-10, richiesta utente — BUGFIX log: senza questo, il corpo della
 	# funzione — hit-test E i log di debug sotto — girava su OGNI evento _unhandled_input, incluso
@@ -2983,32 +3027,87 @@ func _try_assign_pickup_command_on_right_click(event: InputEvent) -> bool:
 
 	# Lista generica di candidati (2026-09-16, richiesta utente — Step 4 del piano plant_fiber) —
 	# SOSTITUISCE la vecchia catena fissa "stone, poi stick, poi false" con una lista costruita da
-	# _resolve_pickup_candidates, in ORDINE DI PRIORITÀ (stone, stick, plant_fiber — STESSO ordine
-	# di prima, invariato: aggiungere un futuro quarto candidato richiede solo una nuova riga in
-	# quella funzione). Nessun popup ancora (arriva in un passo successivo): con 0 candidati nessun
-	# comando (comportamento invariato); con 1 candidato haul immediata (comportamento invariato,
-	# indistinguibile da prima anche nel log); con 2+ candidati comportamento PROVVISORIO — vince
-	# comunque il primo in ordine di priorità (STESSO esito che avresti avuto con la vecchia catena
-	# fissa), ma ora loggato esplicitamente con [DBG_PICKUP] cosa c'era davvero sotto il click.
+	# _resolve_pickup_candidates, in ORDINE DI PRIORITÀ (stone, stick, plant_fiber — usato oggi SOLO
+	# come ordine di fallback quando nessun candidato ha scorta reale, vedi sotto — MAI più come
+	# criterio di scelta tra candidati realmente disponibili, vedi bugfix 2026-09-17 sotto).
 	var candidates: Array[Dictionary] = _resolve_pickup_candidates(event, current_absolute_day)
 	if candidates.is_empty():
 		if DebugLogging.ENABLED and DebugLogging.SHOW_RECONNECT_FACTORY_LOGS:
 			print("[PICKUP CMD DEBUG] _try_assign_pickup_command_on_right_click: ritorna false (nessuna risorsa al click).")
 		return false
 
-	if candidates.size() > 1 and DebugLogging.ENABLED and DebugLogging.SHOW_RECONNECT_FACTORY_LOGS:
-		var candidate_descriptions: Array[String] = []
-		for candidate in candidates:
-			candidate_descriptions.append("%s(disponibile=%d)" % [candidate["resource_name"], candidate["available_quantity"]])
-		print("[DBG_PICKUP] %d candidati alla stessa posizione: %s — priorità provvisoria (vince il primo, nessun popup ancora)." % [
-			candidates.size(), ", ".join(candidate_descriptions)
-		])
+	# Guard età PRIMA di qualunque popup/assegnazione (2026-09-17, richiesta utente — bugfix UX: con
+	# 2+ risorse un CHILD/INFANT vedeva comunque pickup_choice_dialog, negato solo DOPO la scelta —
+	# STESSO fix già adottato da _debug_try_assign_transport_command_on_right_click per lo stesso
+	# identico problema, "guard età prima di aprire il dialog"). STESSA lista di PickUpAction.
+	# disallowed_age_bands (duplicata qui apposta per poter bloccare PRIMA di costruire/mostrare
+	# qualunque cosa — se quella lista cambia in futuro, va aggiornata anche qui). ❌ mostrato subito
+	# sul primo candidato (stessa icona "task_rejected" già usata da _assign_pickup_task per lo stesso
+	# rifiuto nei casi 0/1 candidati, qui solo anticipata prima del popup per il caso 2+).
+	var age_band := _resolve_age_band(individual)
+	if age_band == HumanTypes.AgeBand.INFANT or age_band == HumanTypes.AgeBand.CHILD:
+		if DebugLogging.ENABLED and DebugLogging.SHOW_RECONNECT_FACTORY_LOGS:
+			print("[PICKUP CMD DEBUG] _try_assign_pickup_command_on_right_click: ritorna TRUE — età non ammessa (%s), rifiutato prima di popup/assegnazione." % HumanTypes.AgeBand.keys()[age_band])
+		_spawn_command_blink_effect(live_cells.get(candidates[0]["macro_coords"]), candidates[0]["position"], IconRegistry.get_command_icon("task_rejected"))
+		return true
 
-	var chosen: Dictionary = candidates[0]
+	# Filtro su available_quantity (2026-09-17, richiesta utente, BUGFIX — caso reale osservato:
+	# lotto "stick" ancora rivendicato ma a 0 rametti disponibili, "plant_fiber" sulla STESSA
+	# posizione con 6 unità reali; la vecchia priorità fissa vinceva comunque stick, avviando una
+	# haul_resource inutile) — `available_quantity` era finora SOLO informativo (vedi _build_pickup_
+	# candidate), qui diventa il vero criterio: un candidato a scorta 0 non è una scelta reale.
+	var available_candidates: Array[Dictionary] = []
+	for candidate in candidates:
+		if int(candidate["available_quantity"]) > 0:
+			available_candidates.append(candidate)
+
+	# 0 disponibili (2026-09-17) — tutti i candidati trovati sono lotti rivendicati ma svuotati:
+	# nessuna scelta reale possibile, comportamento INVARIATO rispetto a prima di questo fix (vince
+	# il primo per priorità, PickUpAction gestisce già un pickup a vuoto come no-op valido — vedi
+	# _assign_pickup_task, "Nessun controllo sulla quantità disponibile... comportamento valido").
+	if available_candidates.is_empty():
+		var chosen: Dictionary = candidates[0]
+		if DebugLogging.ENABLED and DebugLogging.SHOW_RECONNECT_FACTORY_LOGS:
+			print("[PICKUP CMD DEBUG] _try_assign_pickup_command_on_right_click: ritorna TRUE — tutti i candidati a scorta 0, fallback su %s_hit=%s" % [chosen["resource_name"], str(chosen)])
+		_assign_pickup_task(chosen["macro_coords"], chosen["position"], chosen["resource_name"])
+		return true
+
+	# 1 disponibile (2026-09-17) — SOLO una risorsa ha davvero scorta qui (es. rametti=0/fibra=6):
+	# nessun popup, si preleva direttamente quella — nessuna scelta reale da porre al player.
+	if available_candidates.size() == 1:
+		var chosen: Dictionary = available_candidates[0]
+		if DebugLogging.ENABLED and DebugLogging.SHOW_RECONNECT_FACTORY_LOGS:
+			print("[PICKUP CMD DEBUG] _try_assign_pickup_command_on_right_click: ritorna TRUE — unico candidato con scorta reale, %s_hit=%s" % [chosen["resource_name"], str(chosen)])
+		_assign_pickup_task(chosen["macro_coords"], chosen["position"], chosen["resource_name"])
+		return true
+
+	# 2+ disponibili (2026-09-17) — vera scelta: niente priorità fissa, si apre pickup_choice_dialog
+	# (STESSO OptionChoiceDialog usato dalla Transport, vedi quel file — show_quantity=false, qui non
+	# si sceglie MAI una quantità). macro_coords/position condivisi da tutti i candidati (stesso click,
+	# stesso lotto — STESSA assunzione già fatta dal vecchio codice con `candidates[0]`), salvati in
+	# _pickup_pending_macro_coords/_position: l'assegnazione vera parte solo alla conferma del dialog,
+	# vedi _on_pickup_choice_resource_chosen sotto.
+	_pickup_pending_macro_coords = available_candidates[0]["macro_coords"]
+	_pickup_pending_position = available_candidates[0]["position"]
+	var available_quantities: Dictionary = {}
+	for candidate in available_candidates:
+		available_quantities[candidate["resource_name"]] = candidate["available_quantity"]
 	if DebugLogging.ENABLED and DebugLogging.SHOW_RECONNECT_FACTORY_LOGS:
-		print("[PICKUP CMD DEBUG] _try_assign_pickup_command_on_right_click: ritorna TRUE — %s_hit=%s" % [chosen["resource_name"], str(chosen)])
-	_assign_pickup_task(chosen["macro_coords"], chosen["position"], chosen["resource_name"])
+		print("[DBG_PICKUP] %d candidati con scorta reale alla stessa posizione: %s — apro pickup_choice_dialog." % [
+			available_candidates.size(), str(available_quantities)
+		])
+	pickup_choice_dialog.open_dialog(tr("pickup_choice_dialog_title"), tr("pickup_choice_dialog_message"), available_quantities, false)
 	return true
+
+
+# Handler di conferma del pickup_choice_dialog (2026-09-17, richiesta utente) — `quantity` ricevuta
+# ma IGNORATA (show_quantity=false all'apertura, il valore è comunque quello risolto da
+# OptionChoiceDialog._on_resource_selected, mai una scelta reale del player qui): _assign_pickup_task
+# non prende quantità, PickUpAction la risolve da sé. _pickup_pending_macro_coords/_position sono
+# quelli salvati da _try_assign_pickup_command_on_right_click al momento dell'apertura — STESSO
+# schema di _on_transport_source_resource_chosen sopra.
+func _on_pickup_choice_resource_chosen(resource_name: String, _quantity: int) -> void:
+	_assign_pickup_task(_pickup_pending_macro_coords, _pickup_pending_position, resource_name)
 
 
 # Costruisce la lista di candidati raccoglibili nella posizione del click, in ORDINE DI PRIORITÀ
@@ -5028,6 +5127,24 @@ func _attempt_macro_cell_transition(target_individual: HumanIndividual, dx: int,
 		game_data.player_macro_cell_y = target_y
 		center_macro_coords = target_macro_coords
 
+	# position/home_macro_coords aggiornati QUI, PRIMA della "rete di sicurezza" sotto (2026-09-17,
+	# richiesta utente, bugfix Fog of War "mappa nera dopo un attraversamento di bordo") — SPOSTATI
+	# da dopo _activate_live_cell a prima: quella funzione, se la cella di destinazione non è ancora
+	# viva, costruisce il FogOfWarRenderer e gli fa subito il primo update_visibility() (vedi
+	# _activate_live_cell/_relevant_source_positions_for_cell) — se a quel punto target_individual
+	# avesse ancora la posizione/home_macro_coords VECCHI (della cella di partenza), quella prima
+	# chiamata tradurrebbe la sua posizione nel sistema di riferimento SBAGLIATO (offset calcolato
+	# sulla macrocella di partenza invece che su quella di arrivo), risultando fuori da
+	# visibility_radius per costruzione — il primo flush pieno della cella nuova marcherebbe quindi
+	# l'intera macrocella nera (nessuna posizione vista), un buco che nessun redraw successivo
+	# ripara da solo per l'area già scritta nera dal flush pieno (solo il delta in-radio dei giri
+	# successivi viene ricalcolato, vedi FogOfWarRenderer._update_in_radius_dirty_delta). Nessuna
+	# altra riga tra qui e frame_offset/rebase_positional_targets sopra dipende dall'ordine
+	# (verificato: frame_offset è già stato calcolato per differenza PRIMA di questo punto, usando
+	# ancora la vecchia position — l'unico punto sensibile all'ordine, invariato).
+	target_individual.position = entry_position
+	target_individual.home_macro_coords = target_macro_coords
+
 	# Rete di sicurezza — SEMPRE valutata, non solo per il bersaglio della camera (2026-09-12): non
 	# dovrebbe capitare quasi mai per il bersaglio della camera stesso, dato il pre-caricamento per
 	# prossimità (_update_live_neighbor gira ogni frame, ben prima che raggiunga davvero il bordo
@@ -5038,18 +5155,16 @@ func _attempt_macro_cell_transition(target_individual: HumanIndividual, dx: int,
 	if not live_cells.has(target_macro_coords):
 		_activate_live_cell(target_x, target_y)
 
-	target_individual.position = entry_position
-	# Aggiorna home_macro_coords e riparenta la HumanIndividualView sotto il nuovo container,
-	# esattamente come farebbe _activate_live_cell per un renderer qualsiasi — GENERALIZZATO
-	# (2026-09-12): PRIMA questo commento diceva "il bersaglio è l'UNICO individuo la cui macrocella
-	# fisica cambia davvero (chiunque altro resta dov'era, mai mosso da nulla)", vero SOLO perché
-	# prima nessun altro individuo veniva mai avanzato in autonomia — ora qualunque individuo attivo
-	# può attraversare un bordo, quindi questo aggiornamento vale per `target_individual` chiunque
-	# esso sia, non più solo per il bersaglio della camera. reparent() invece di
-	# remove_child+add_child manuali: nessuna differenza pratica qui (HumanIndividualView._process
-	# sovrascrive comunque position da zero subito dopo, ad ogni frame), ma è l'API dedicata di
-	# Godot per lo scopo.
-	target_individual.home_macro_coords = target_macro_coords
+	# Riparenta la HumanIndividualView sotto il nuovo container, esattamente come farebbe
+	# _activate_live_cell per un renderer qualsiasi — GENERALIZZATO (2026-09-12): PRIMA questo
+	# commento diceva "il bersaglio è l'UNICO individuo la cui macrocella fisica cambia davvero
+	# (chiunque altro resta dov'era, mai mosso da nulla)", vero SOLO perché prima nessun altro
+	# individuo veniva mai avanzato in autonomia — ora qualunque individuo attivo può attraversare un
+	# bordo, quindi questo aggiornamento vale per `target_individual` chiunque esso sia, non più solo
+	# per il bersaglio della camera. reparent() invece di remove_child+add_child manuali: nessuna
+	# differenza pratica qui (HumanIndividualView._process sovrascrive comunque position da zero
+	# subito dopo, ad ogni frame), ma è l'API dedicata di Godot per lo scopo. DOPO la rete di
+	# sicurezza sopra (invariato): richiede che live_cells[target_macro_coords] esista già.
 	var target_view_index := human_individuals.find(target_individual)
 	if target_view_index != -1:
 		human_individual_views[target_view_index].reparent(live_cells[target_macro_coords].container)
@@ -6789,15 +6904,16 @@ func _reconnect_loaded_task_signals() -> void:
 # originale.
 #
 # GAP RESIDUO NON coperto qui (segnalato esplicitamente, non un'omissione silenziosa) — questi 4
-# listener sono oggi collegati SOLO da _debug_test_daydream_task, e SOLO tramite task.step_appended:
-# l'UnloadAction del ramo pensiero nasce DINAMICAMENTE quando ThinkAction completa (vedi
-# HumanIndividualActionService._handle_pending_thought_target_search), non è mai uno step statico
-# già presente in current_task.steps finché quel momento non arriva. Un salvataggio fatto PRIMA che
-# l'UnloadAction venga accodato (es. a metà ThinkAction) non ha ancora nessuna istanza su cui
-# ricollegare questi 4 listener — richiederebbe ricollegare anche task.step_appended stesso (un
-# meccanismo Task-level, non Action-level: "lo stesso intervento" chiesto copre la ricostruzione di
-# step GIÀ presenti, non un secondo canale in attesa di uno step futuro di un hook di debug
-# temporaneo) — fuori scope in questo passo, segnalato per completezza.
+# listener sono oggi collegati SOLO tramite task.step_appended (vedi
+# _connect_daydream_step_appended_listener sotto, chiamata sia da _debug_test_daydream_task sia dal
+# fallback automatico dal 2026-09-16): l'UnloadAction del ramo pensiero nasce DINAMICAMENTE quando
+# ThinkAction completa (vedi HumanIndividualActionService._handle_pending_thought_target_search),
+# non è mai uno step statico già presente in current_task.steps finché quel momento non arriva. Un
+# salvataggio fatto PRIMA che l'UnloadAction venga accodato (es. a metà ThinkAction) non ha ancora
+# nessuna istanza su cui ricollegare questi 4 listener — richiederebbe ricollegare anche task.
+# step_appended stesso (un meccanismo Task-level, non Action-level: "lo stesso intervento" chiesto
+# copre la ricostruzione di step GIÀ presenti, non un secondo canale in attesa di uno step futuro) —
+# fuori scope in questo passo, segnalato per completezza.
 func _reconnect_unload_action_signals(deposit: UnloadAction, individual_ref: HumanIndividual) -> void:
 	deposit.idea_completed.connect(func(_idea_id: String) -> void: _refresh_building_slots_buildable())
 	deposit.idea_completed.connect(_on_idea_completed)
@@ -6812,6 +6928,20 @@ func _reconnect_unload_action_signals(deposit: UnloadAction, individual_ref: Hum
 	# "un solo punto collega tutto ciò che questa classe può emettere" già seguito per gli altri —
 	# innocuo per un'istanza che non lo emetterà mai (ramo pensiero), vedi unload_action.gd.
 	deposit.resource_deposited.connect(_on_resource_deposited)
+
+
+# Collega a `task` il listener step_appended che, quando nasce l'UnloadAction del ramo pensiero
+# (accodato dinamicamente da HumanIndividualActionService._handle_pending_thought_target_search
+# quando ThinkAction completa), ricollega i suoi 4 segnali via _reconnect_unload_action_signals
+# sopra — ESTRATTO (2026-09-16, richiesta utente, "Daydreaming nel fallback perditempo") dal blocco
+# che prima viveva solo dentro _debug_test_daydream_task: un solo punto, così quel tasto debug e il
+# fallback automatico (IdleTaskAssignmentService.assign_idle_fallback, tramite il Callable statico
+# daydream_step_appended_connector registrato in _ready()) non possono disallinearsi.
+func _connect_daydream_step_appended_listener(task: Task, individual_ref: HumanIndividual) -> void:
+	task.step_appended.connect(func(action: Action) -> void:
+		if action is UnloadAction:
+			_reconnect_unload_action_signals(action as UnloadAction, individual_ref)
+	)
 
 
 # Collega PickUpAction.resource_collected (2026-09-11, richiesta utente — gap gemello di

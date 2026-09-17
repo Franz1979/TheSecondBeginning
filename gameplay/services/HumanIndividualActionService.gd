@@ -508,7 +508,12 @@ func _handle_pending_warehouse_search(individual: HumanIndividual, task: Task, w
 	)
 	if candidate != null:
 		var macro_offset: Vector2 = Vector2(Vector2i(candidate.macro_x, candidate.macro_y) - individual.home_macro_coords) * World.WIDTH
-		var candidate_position: Vector2 = Vector2(candidate.micro_x, candidate.micro_y) + macro_offset
+		# Jitter (2026-09-17, richiesta utente — bugfix "i pipottini si fermano sempre nell'angolo in
+		# alto a sinistra della microcella", sovrapposti quando più portatori consegnano allo stesso
+		# magazzino) — STESSO principio di GameScene._assign_pickup_task/Building.get_resumable_
+		# task_context, offset casuale interno alla cella applicato SOLO al punto di arrivo del Walk.
+		var target_position_jitter: Vector2 = Vector2(randf_range(0.15, 0.85), randf_range(0.15, 0.85))
+		var candidate_position: Vector2 = Vector2(candidate.micro_x, candidate.micro_y) + macro_offset + target_position_jitter
 		# DepositKind.RESOURCE passato esplicitamente (2026-09-10, richiesta utente — scollegare il
 		# ramo di UnloadAction dalla nullità di target_building): `candidate` qui è sempre un Building
 		# risolto (vedi guardia `if candidate != null` sopra), stesso comportamento di ramo fisico di
@@ -594,7 +599,10 @@ func _handle_pending_thought_target_search(individual: HumanIndividual, task: Ta
 	)
 	if candidate != null:
 		var macro_offset: Vector2 = Vector2(Vector2i(candidate.macro_x, candidate.macro_y) - individual.home_macro_coords) * World.WIDTH
-		var candidate_position: Vector2 = Vector2(candidate.micro_x, candidate.micro_y) + macro_offset
+		# Jitter — STESSO principio di _handle_pending_warehouse_search sopra (2026-09-17, richiesta
+		# utente, bugfix "angolo in alto a sinistra"/sovrapposizione).
+		var target_position_jitter: Vector2 = Vector2(randf_range(0.15, 0.85), randf_range(0.15, 0.85))
+		var candidate_position: Vector2 = Vector2(candidate.micro_x, candidate.micro_y) + macro_offset + target_position_jitter
 		# DepositKind.THOUGHT passato esplicitamente (stesso principio di DepositKind.RESOURCE in
 		# _handle_pending_warehouse_search sopra) — `candidate` qui è sempre un Building risolto
 		# (vedi guardia `if candidate != null`), coerente con target_building ora indipendente da

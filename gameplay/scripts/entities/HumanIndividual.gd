@@ -840,6 +840,25 @@ func assign_task(task: Task, age_band: HumanTypes.AgeBand, is_interrupt_transiti
 			])
 	elif not is_interrupt_transition and not resuming_cargo_owner:
 		discard_carried_resource()
+		# Daydream scartata a metà (2026-09-16, richiesta utente, "Daydreaming nel fallback
+		# perditempo") — pending_thought azzerato QUI: senza questo, un Think già completato prima
+		# dello scarto (individual.pending_thought=true, vedi ThinkAction.on_complete) resterebbe
+		# "appeso" per sempre se questa Task non arriva mai a un Unload che lo consumi (l'UNICO altro
+		# punto che lo tocca è unload_action.gd, su deposito riuscito o edificio demolito). Rilevata
+		# via `step is ThinkAction` (nessun'altra Task nel progetto ne usa uno, vedi think_action.gd)
+		# invece di un confronto su task_name, stesso principio già seguito per is_idle_activity/
+		# is_suspendable — SOLO qui, non nel ramo ZOMBIE GUARD sopra: una daydream già CONCLUSA
+		# normalmente (finished==true) può legittimamente aver lasciato un pending_thought vero, in
+		# attesa di una FUTURA Daydream che lo depositi — quel caso non è "scartata a metà", non va
+		# azzerato. current_task != null esplicito qui (BUGFIX 2026-09-16 — questo ramo NON lo
+		# garantiva già, a differenza dei due sopra: è raggiunto anche quando current_task è null,
+		# es. la primissima Task mai assegnata a un individuo, causa del crash "Invalid access to
+		# property or key 'steps' on a base object of type 'Nil'").
+		if current_task != null:
+			for step in current_task.steps:
+				if step is ThinkAction:
+					pending_thought = false
+					break
 	current_task = task
 	TaskDebugRegistry.on_task_assigned(self, task)
 	# Attivazione (2026-09-15) — la Task ripescata come "proprietaria del carico" (resuming_cargo_

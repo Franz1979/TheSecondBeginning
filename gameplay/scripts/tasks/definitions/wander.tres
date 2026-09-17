@@ -1,4 +1,4 @@
-[gd_resource type="Resource" script_class="TaskDefinition" format=3]
+[gd_resource type="Resource" script_class="TaskDefinition" format=3 uid="uid://dbs782lrrp1ha"]
 
 [ext_resource type="Script" uid="uid://1t46mu8mn6hq" path="res://gameplay/scripts/tasks/task_definition.gd" id="1_def"]
 [ext_resource type="Resource" path="res://gameplay/scripts/tasks/definitions/step_walk_wander_1.tres" id="2_walk1"]
@@ -11,3 +11,4 @@ script = ExtResource("1_def")
 task_name = "task_wander_name"
 steps = [ExtResource("2_walk1"), ExtResource("3_look_around"), ExtResource("4_walk2"), ExtResource("3_look_around"), ExtResource("5_walk3")]
 is_idle_activity = true
+idle_weight = 2.0

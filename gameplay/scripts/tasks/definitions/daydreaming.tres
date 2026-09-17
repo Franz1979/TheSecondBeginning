@@ -1,10 +1,12 @@
-[gd_resource type="Resource" script_class="TaskDefinition" format=3]
+[gd_resource type="Resource" script_class="TaskDefinition" format=3 uid="uid://bo1j8wgv4cbob"]
 
 [ext_resource type="Script" uid="uid://1t46mu8mn6hq" path="res://gameplay/scripts/tasks/task_definition.gd" id="1_def"]
-[ext_resource type="Resource" path="res://gameplay/scripts/tasks/definitions/step_walk_to_position.tres" id="2_walk"]
+[ext_resource type="Resource" uid="uid://dfg8h3k2mqrsw" path="res://gameplay/scripts/tasks/definitions/step_walk_to_position.tres" id="2_walk"]
 [ext_resource type="Resource" path="res://gameplay/scripts/tasks/definitions/step_think.tres" id="3_think"]
 
 [resource]
 script = ExtResource("1_def")
 task_name = "task_daydream_name"
 steps = [ExtResource("2_walk"), ExtResource("3_think")]
+allowed_age_bands = Array[int]([4, 5])
+is_idle_activity = true
