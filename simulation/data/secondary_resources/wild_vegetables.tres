@@ -1,0 +1,14 @@
+[gd_resource type="Resource" script_class="SecondaryResourceRules" format=3 uid="uid://c5gioepm0jv"]
+
+[ext_resource type="Script" uid="uid://cu4cyua5y4n1m" path="res://simulation/scripts/core/SecondaryResourceRules.gd" id="1_wild_vegetables"]
+
+[resource]
+script = ExtResource("1_wild_vegetables")
+secondary_resource_name = "wild_vegetables"
+calories_per_unit = 3.0
+seasonal_availability_multiplier = Array[float]([0.0, 1.0, 1.0, 0.0])
+generation_source = 1
+day_durability = 20
+patch_probability = 0.12
+patch_capacity_min = 2
+patch_capacity_max = 6

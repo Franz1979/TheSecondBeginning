@@ -254,6 +254,73 @@ var berry_harvested_by_lot: Dictionary = {}
 # che risolve. NON persistito (come berry_weight_cache sopra): dopo un load parte vuoto, innocuo —
 # al più forza un primo ricalcolo in più alla prossima query, mai un dato mancante.
 var berry_harvested_revision: Dictionary = {}
+# Nidi per "eggs" (2026-09-18, richiesta utente — uova raccoglibili per microcella, STESSO modello
+# di berry ma su GRASS invece che TREE/SHRUB): Vector2i -> float (peso del nido, NON un booleano —
+# aggiornato 2026-09-18, richiesta utente "rendi il peso variabile per nido": prima ogni nido
+# pesava esattamente 1, ora un valore deterministico in SecondaryResourceRules.patch_weight_min/
+# max di eggs.tres — RINOMINATO da nest_weight_min/max il 2026-09-19, richiesta utente:
+# wild_vegetables (vedi wild_vegetable_lots sotto) usa lo STESSO meccanismo di selezione posizione
+# su GRASS, campo patch_probability condiviso, "nest"->"patch" generico —, così la ripartizione
+# stock × peso_nido / peso_totale — TerrainScatteredResourceService.get_egg_stock_available_at —
+# distribuisce più uova ai nidi "ricchi" che a quelli "poveri" invece che in parti uguali).
+# Sottoinsieme deterministico delle posizioni GRASS correnti della macrocella (TerrainScattered
+# ResourceService.compute_egg_nest_positions, due hash sulla stessa posizione con salt diversi —
+# uno decide SE è un nido con soglia patch_probability, l'altro QUANTO pesa). Cache RUNTIME, NON
+# persistita (come berry_weight_cache sopra) — GRASS non ha
+# identità individuale/lotti persistiti a differenza di TREE/SHRUB (vedi VegetationPositionService),
+# quindi non esiste un dato "a monte" da cui ri-derivarla da sola: è GameScene._refresh_resource_
+# visuals a scriverla qui ogni volta che rigenera le posizioni GRASS della cella (stessa cadenza,
+# mai una cadenza a parte). Un lotto uscito da questo insieme dopo un rigenero (erba non più lì,
+# edificio nuovo, ecc.) semplicemente non c'è più: TerrainScatteredResourceService.get_egg_stock_
+# available_at lo tratta come "non un nido", 0 disponibile, nessun errore — eggs_harvested_by_lot
+# sotto può contenere entry stantie per quel lotto, mai lette.
+var egg_nest_positions: Dictionary = {}
+# Raccolto DA UMANI per nido (2026-09-18, richiesta utente) — Vector2i -> int, STESSO principio di
+# berry_harvested_by_lot sopra ma FLAT (non annidato per resource_name: "eggs" è l'unica risorsa di
+# questo tipo, nessuna preparazione per una seconda in questo passo, a differenza della catena
+# "fruit stock" generica). Sottratto dalla quota nominale derivata al volo (stock/numero_nidi,
+# TerrainScatteredResourceService.get_egg_stock_available_at) e incrementato dalla raccolta
+# (consume_egg_stock_at). Azzerato per intero SOLO quando il moltiplicatore stagionale di eggs SALE
+# rispetto alla stagione precedente (eggs.tres: [0.0, 1.0, 0.0, 0.0] — sale solo inverno->primavera,
+# la sola vera "ricomparsa" di questa fonte, vedi WorldTimeService._run_secondary_resource_stock_
+# checkpoint), mai quando scende. PERSISTITO in GameSaveService/GameLoadService (chiave
+# "eggs_harvested_by_lot", formato {x,y,harvested} — stesso stile di stick_quantities ma senza
+# checkpoint_day/capacity, stesso motivo di berry_harvested_by_lot: la freschezza la dà
+# l'azzeramento stagionale esplicito). Le posizioni-nido stesse (egg_nest_positions sopra) NON sono
+# invece persistite: si rigenerano, un'entry qui per un lotto che dopo il rigenero non è più un
+# nido resta semplicemente inerte (vedi commento su egg_nest_positions).
+var eggs_harvested_by_lot: Dictionary = {}
+# Lotti per "wild_vegetables" (2026-09-19, richiesta utente — verdure selvatiche raccoglibili per
+# microcella, modello a CAPACITÀ per lotto come stick/mushroom, MAI uno stock aggregato come eggs
+# sopra): Vector2i -> int (capacità RAW del lotto, non ancora scontata dalla stagione — vedi
+# TerrainScatteredResourceService.compute_wild_vegetable_lots/get_wild_vegetable_available_at).
+# STESSA natura RUNTIME/NON persistita di egg_nest_positions sopra e per lo stesso motivo: GRASS
+# non ha identità individuale/lotti persistiti a differenza di TREE/SHRUB (VegetationPoolService
+# NON è consultato per questa risorsa, richiesta esplicita utente — conterebbe individui che su
+# GRASS non esistono), quindi non c'è un dato "a monte" da cui ri-derivare l'insieme lotti da sola:
+# è GameScene._refresh_resource_visuals a scriverlo qui ogni volta che rigenera le posizioni GRASS
+# della cella. Un lotto uscito da questo insieme dopo un rigenero (erba non più lì, dedicated_space
+# (GRASS) sceso a 0, edificio nuovo, ecc.) semplicemente non c'è più: TerrainScatteredResource
+# Service.get_wild_vegetable_available_at lo tratta come "non un lotto", 0 disponibile, nessun
+# errore — wild_vegetables_harvested_by_lot sotto può contenere entry stantie per quel lotto, mai
+# lette.
+var wild_vegetable_lots: Dictionary = {}
+# Raccolto DA UMANI per lotto (2026-09-19, richiesta utente) — Vector2i -> int, STESSO formato
+# FLAT di eggs_harvested_by_lot sopra (wild_vegetables è l'unica risorsa di questa famiglia).
+# Sottratto dalla capacità (scontata dalla stagione tramite l'helper generico già usato da
+# mushroom — vedi get_wild_vegetable_available_at) e incrementato dalla raccolta (consume_wild_
+# vegetable_at). PERSISTITO in GameSaveService/GameLoadService (chiave "wild_vegetables_
+# harvested_by_lot", stesso formato {x,y,harvested} di eggs_harvested_by_lot/stick_quantities).
+# Azzerato per intero (2026-09-19, richiesta utente — bugfix "le verdure non ricrescono mai": PRIMA
+# nessun percorso lo toccava) quando il moltiplicatore stagionale di wild_vegetables SALE rispetto
+# alla stagione precedente (wild_vegetables.tres: [0.0, 1.0, 1.0, 0.0] — sale solo inverno->
+# primavera) — ma NON tramite WorldTimeService._run_secondary_resource_stock_checkpoint come
+# eggs_harvested_by_lot sopra (quel percorso presuppone uno stock aggregato di macrocella, che
+# wild_vegetables non ha, non essendo in CaloricCalculator.SECONDARY_SOURCES): vedi
+# TerrainScatteredResourceService.reset_all_lot_harvests_on_season_rise, un percorso SEPARATO e
+# GENERICO per le risorse a capacità per lotto (mushroom incluso), chiamato da WorldTimeService
+# allo stesso momento (inizio di ogni stagione).
+var wild_vegetables_harvested_by_lot: Dictionary = {}
 # Debito frazionario di spazio GRASS da rimuovere per consumo animale: il consumo giornaliero
 # convertito in "spazio equivalente" (unità/densità) è quasi sempre < 1 unità intera — invece
 # di arrotondare e perdere la frazione ogni giorno, si accumula qui finché non supera 1.0 (vedi

@@ -888,7 +888,7 @@ func _ready() -> void:
 	# Prima cella viva: il centro. center_macro_coords va fissato PRIMA di attivarla, perché
 	# _activate_live_cell non decide da sé "sono il centro" — è solo orchestrazione qui.
 	center_macro_coords = Vector2i(game_data.player_macro_cell_x, game_data.player_macro_cell_y)
-	_activate_live_cell(center_macro_coords.x, center_macro_coords.y)
+	_activate_live_cell(center_macro_coords.x, center_macro_coords.y, "_ready (centro iniziale)")
 
 	# Una HumanIndividualView a testa, TUTTE parentate sotto il container della LiveMacroCell in
 	# cui l'individuo si trova fisicamente (member.home_macro_coords, valorizzato sopra) — bugfix
@@ -1069,6 +1069,9 @@ func _process(delta: float) -> void:
 		if cell.fog_of_war_renderer == null:
 			continue
 		cell.fog_of_war_renderer.update_visibility(game_data.get_absolute_day(), _relevant_source_positions_for_cell(cell))
+		# DEBUG TEMPORANEO [FOW DIAG] — rimuovere. Vedi _debug_source_context_for_cell/
+		# FogOfWarRenderer._debug_source_context — early-out interno al flag, nessun costo se spento.
+		cell.fog_of_war_renderer.set_debug_source_context(_debug_source_context_for_cell(cell))
 
 	# Proposta 2 (mitigazione "pop-in", diagnostica lentezza) — rinfresca la vegetazione della cella
 	# centrale quando il player si è spostato abbastanza da poter aver scoperto area non coperta
@@ -3133,10 +3136,27 @@ func _on_pickup_choice_resource_chosen(resource_name: String, quantity: int) -> 
 # l'ispezione che la risorsa bloccata non viene elencata affatto (richiesta esplicita utente: "se
 # una risorsa è sconosciuta, non scriverla"). TerrainScatteredResourceService.is_resource_locked è
 # la STESSA fonte già consultata da get_available, nessun secondo criterio.
-func _append_unlocked_pickup_candidate(candidates: Array[Dictionary], resource_name: String, macro_coords: Vector2i, position: Vector2i) -> void:
+# `require_available` (2026-09-18, richiesta utente — bugfix "pickup offerto/ispezione mostra
+# quantità=0 per eggs, stesso problema per mushroom fuori stagione") — default false, INVARIATO
+# per stone/stick/plant_fiber/berry/acorn/fruit: per quelle risorse un hit su un lotto REALMENTE
+# rivendicato ma temporaneamente svuotato (es. una pietra già estratta) resta un candidato valido
+# a quantità 0 — comportamento deliberato di sessioni precedenti (vedi il ramo "0 disponibili" in
+# _try_assign_pickup_command_on_right_click: "PickUpAction gestisce già un pickup a vuoto come
+# no-op valido"), NON toccato qui. true SOLO per eggs/mushroom (vedi i due call site sotto): la
+# loro disponibilità può essere STRUTTURALMENTE zero — non "questo lotto specifico è vuoto ora",
+# ma "qui non esiste/non può esistere nulla di raccoglibile in questo momento" (fuori stagione,
+# macrocella senza BIRDS, nessun nido geometrico) — un hit del genere non deve mai diventare un
+# candidato, né per il popup di pickup né per l'elenco risorse dell'ispezione microcella (che
+# altrimenti mostrerebbe "Uova: 0"/"Funghi: 0" invece di "Contiene solo erba"/limitarsi alla sola
+# vegetazione). UN SOLO punto (questa funzione, il choke-point condiviso da ogni risorsa) invece
+# di un filtro duplicato per ciascuna delle due risorse in _resolve_pickup_candidates.
+func _append_unlocked_pickup_candidate(candidates: Array[Dictionary], resource_name: String, macro_coords: Vector2i, position: Vector2i, require_available: bool = false) -> void:
 	if TerrainScatteredResourceService.is_resource_locked(resource_name):
 		return
-	candidates.append(_build_pickup_candidate(resource_name, macro_coords, position))
+	var candidate := _build_pickup_candidate(resource_name, macro_coords, position)
+	if require_available and int(candidate["available_quantity"]) <= 0:
+		return
+	candidates.append(candidate)
 
 
 # Costruisce la lista di candidati raccoglibili nella posizione del click, in ORDINE DI PRIORITÀ
@@ -3196,7 +3216,14 @@ func _resolve_pickup_candidates(event: InputEvent, current_absolute_day: int, re
 			# nessun filtro per subtype). Disponibilità reale (capacity/harvested scalati dal
 			# moltiplicatore stagionale di mushroom.tres) già decisa da TerrainScatteredResourceService.
 			# get_available, non serve ripetere il test qui.
-			_append_unlocked_pickup_candidate(candidates, "mushroom", stick_lot_hit["macro_coords"], stick_lot_hit["lot"])
+			#
+			# require_available=true (2026-09-18, richiesta utente — bugfix: fuori stagione
+			# seasonal_availability_multiplier[stagione]=0.0 azzera la capacità di OGNI lotto con
+			# alberi, ma il tree lot stesso resta un hit valido per costruzione, come sopra: senza
+			# questo flag comparirebbe comunque "Funghi: 0" nell'ispezione anche quando funghi non
+			# possono esistere qui in nessun caso in questa stagione — vedi _append_unlocked_pickup_
+			# candidate per il perché SOLO eggs/mushroom lo passano true).
+			_append_unlocked_pickup_candidate(candidates, "mushroom", stick_lot_hit["macro_coords"], stick_lot_hit["lot"], true)
 		elif DebugLogging.ENABLED and DebugLogging.SHOW_RECONNECT_FACTORY_LOGS:
 			print("[PICKUP CMD DEBUG] stick_lot_hit=%s trovato ma cella non visibile con dettaglio, ignorato." % str(stick_lot_hit))
 
@@ -3218,6 +3245,55 @@ func _resolve_pickup_candidates(event: InputEvent, current_absolute_day: int, re
 			_append_unlocked_pickup_candidate(candidates, "berry", plant_fiber_lot_hit["macro_coords"], plant_fiber_lot_hit["lot"])
 		elif DebugLogging.ENABLED and DebugLogging.SHOW_RECONNECT_FACTORY_LOGS:
 			print("[PICKUP CMD DEBUG] plant_fiber_lot_hit=%s trovato ma cella non visibile con dettaglio, ignorato." % str(plant_fiber_lot_hit))
+
+	# Eggs (2026-09-18, richiesta utente — uova raccoglibili per microcella su GRASS) — a differenza
+	# di berry/acorn/fruit/mushroom sopra (tutti ancorati a un lotto TREE/SHRUB già rivendicato via
+	# uno dei due *LotSelectorController), GRASS non ha un equivalente lotto persistito da colpire
+	# (vedi VegetationPositionService/MacroCellState.egg_nest_positions per il perché) — STESSA
+	# tecnica generica di _resolve_microcell_at_click (qualunque lotto sotto il mouse, indipendente
+	# dal contenuto), ma l'hit è valido solo se quel lotto è REALMENTE un nido in questo momento
+	# (macro_state.egg_nest_positions — stessa fonte di verità di TerrainScatteredResourceService.
+	# get_available("eggs", ...), ORA gated a monte su secondary_resource_stock["eggs"] > 0 — vedi
+	# compute_egg_nest_positions: fuori stagione/senza BIRDS l'insieme è già vuoto, questo .has()
+	# fallisce da solo, nessun bisogno di ripetere il controllo qui).
+	#
+	# require_available=true (2026-09-18, richiesta utente — bugfix "pickup offerto/ispezione
+	# mostra Uova: 0"): SECONDA rete, per il caso in cui l'insieme nidi non sia vuoto (stock
+	# aggregato > 0 in QUALCHE nido della macrocella) ma QUESTO nido specifico sia già stato
+	# raccolto per intero quest'anno (nominale-raccolto=0 solo per lui) — a differenza di stone/
+	# stick/plant_fiber, un nido a 0 non è "un lotto reale temporaneamente vuoto" da offrire
+	# comunque, è "qui non c'è nulla da raccogliere ORA", stesso principio del blocco mushroom sopra
+	# (vedi il commento su _append_unlocked_pickup_candidate per il perché SOLO questi due lo
+	# passano true).
+	var egg_hit := _resolve_microcell_at_click()
+	if not egg_hit.is_empty():
+		var egg_cell: LiveMacroCell = live_cells.get(egg_hit["macro_coords"])
+		if egg_cell != null and egg_cell.macro_state != null and egg_cell.macro_state.egg_nest_positions.has(egg_hit["lot"]):
+			if FogOfWarVerificationService.is_detail_visible(live_cells, egg_hit["macro_coords"], egg_hit["lot"], current_absolute_day):
+				_append_unlocked_pickup_candidate(candidates, "eggs", egg_hit["macro_coords"], egg_hit["lot"], true)
+			elif DebugLogging.ENABLED and DebugLogging.SHOW_RECONNECT_FACTORY_LOGS:
+				print("[PICKUP CMD DEBUG] egg_hit=%s trovato ma cella non visibile con dettaglio, ignorato." % str(egg_hit))
+
+	# Wild vegetables (2026-09-19, richiesta utente — verdure selvatiche raccoglibili per
+	# microcella su GRASS) — STESSA tecnica generica del blocco eggs appena sopra (GRASS non ha un
+	# lotto persistito da colpire), ma l'hit è valido solo se il lotto è REALMENTE tra i lotti
+	# wild_vegetables attuali (macro_state.wild_vegetable_lots — stessa fonte di verità di
+	# TerrainScatteredResourceService.get_available("wild_vegetables", ...), già gated a monte su
+	# dedicated_space(GRASS) > 0 in compute_wild_vegetable_lots).
+	#
+	# require_available=true (2026-09-19, richiesta utente — "lo stesso controllo require_
+	# available usato per eggs e mushroom"): STESSA seconda rete del blocco eggs, per il caso in
+	# cui il lotto esista geometricamente ma sia fuori stagione (autunno/inverno,
+	# wild_vegetables.tres: [0.0, 1.0, 1.0, 0.0]) o già raccolto per intero — mai offrire un
+	# candidato a disponibilità zero.
+	var wild_vegetable_hit := _resolve_microcell_at_click()
+	if not wild_vegetable_hit.is_empty():
+		var wild_vegetable_cell: LiveMacroCell = live_cells.get(wild_vegetable_hit["macro_coords"])
+		if wild_vegetable_cell != null and wild_vegetable_cell.macro_state != null and wild_vegetable_cell.macro_state.wild_vegetable_lots.has(wild_vegetable_hit["lot"]):
+			if FogOfWarVerificationService.is_detail_visible(live_cells, wild_vegetable_hit["macro_coords"], wild_vegetable_hit["lot"], current_absolute_day):
+				_append_unlocked_pickup_candidate(candidates, "wild_vegetables", wild_vegetable_hit["macro_coords"], wild_vegetable_hit["lot"], true)
+			elif DebugLogging.ENABLED and DebugLogging.SHOW_RECONNECT_FACTORY_LOGS:
+				print("[PICKUP CMD DEBUG] wild_vegetable_hit=%s trovato ma cella non visibile con dettaglio, ignorato." % str(wild_vegetable_hit))
 
 	return candidates
 
@@ -4707,7 +4783,11 @@ func _exit_tree() -> void:
 # stesso fallback che aveva _load_macro_cell. È compito del CHIAMANTE decidere se vale la pena
 # attivare una cella (es. _update_live_neighbor non chiama questo metodo affatto se il vicino è
 # oltre il bordo del mondo — vedi lì).
-func _activate_live_cell(mx: int, my: int) -> LiveMacroCell:
+# p_debug_source: DEBUG TEMPORANEO [FOW DIAG] — rimuovere. Parametro opzionale (default innocuo,
+# nessun cambio per un eventuale futuro chiamante che non lo passa) con l'etichetta della funzione
+# chiamante — propagato a FogOfWarRenderer.setup() per il log di creazione (requisito 1: "da quale
+# funzione è stato creato").
+func _activate_live_cell(mx: int, my: int, p_debug_source: String = "unknown") -> LiveMacroCell:
 	var cell := LiveMacroCell.new()
 	cell.macro_x = mx
 	cell.macro_y = my
@@ -4754,13 +4834,15 @@ func _activate_live_cell(mx: int, my: int) -> LiveMacroCell:
 	# fog_of_war_renderer, il solo ordine dei figli le metterebbe sopra di lui, sbagliato).
 	cell.container.add_child(cell.fog_of_war_renderer)
 	cell.fog_of_war_renderer.z_index = 2
-	cell.fog_of_war_renderer.setup(cell.fog_of_war_memory)
+	cell.fog_of_war_renderer.setup(cell.fog_of_war_memory, Vector2i(mx, my), p_debug_source)
 	# Popola subito source_positions con le posizioni VERE (Step 4 FoW multi-sorgente, 2026-09-02
 	# — RIMPIAZZA il vecchio binding a un placeholder + correzione successiva via
 	# _rebind_fog_bindings): questa cella, centro o vicino che sia, non ha mai bisogno di essere
 	# "corretta" più tardi — update_visibility() riceve già le posizioni giuste al primo giro,
 	# quindi il _refresh_resource_visuals sotto (se questa cella ne fa uno) parte già corretto.
 	cell.fog_of_war_renderer.update_visibility(game_data.get_absolute_day(), _relevant_source_positions_for_cell(cell))
+	# DEBUG TEMPORANEO [FOW DIAG] — rimuovere. Vedi il call site gemello in _process sopra.
+	cell.fog_of_war_renderer.set_debug_source_context(_debug_source_context_for_cell(cell))
 
 	if cell.macro_cell != null and macro_world != null:
 		# NIENTE cell.renderer.set_neighbors qui (a differenza di MacroCellScene, che la chiama
@@ -4830,7 +4912,7 @@ func _activate_all_building_cells() -> void:
 		building_macro_coords[Vector2i(building.macro_x, building.macro_y)] = true
 	for coords in building_macro_coords:
 		if not live_cells.has(coords):
-			_activate_live_cell(coords.x, coords.y)
+			_activate_live_cell(coords.x, coords.y, "_activate_all_building_cells")
 
 
 # Scansione lineare di macro_world.buildings — accettabile con pochi edifici (tool di debug),
@@ -4863,7 +4945,7 @@ func _activate_all_individual_cells() -> void:
 		individual_macro_coords[member.home_macro_coords] = true
 	for coords in individual_macro_coords:
 		if not live_cells.has(coords):
-			_activate_live_cell(coords.x, coords.y)
+			_activate_live_cell(coords.x, coords.y, "_activate_all_individual_cells")
 
 
 # Mirror di _macro_cell_has_buildings sopra, stessa scansione lineare accettabile con pochi
@@ -4896,6 +4978,31 @@ func _relevant_source_positions_for_cell(cell: LiveMacroCell) -> Array[Vector2]:
 			continue
 		positions.append(member.position + Vector2(delta) * World.WIDTH)
 	return positions
+
+
+# DEBUG TEMPORANEO [FOW DIAG] — rimuovere. Mirror di _relevant_source_positions_for_cell sopra
+# (STESSO filtro, STESSO ordine di iterazione su human_individuals — indispensabile: FogOfWarRenderer
+# correla questo array con source_positions per indice, vedi FogOfWarRenderer._debug_source_context)
+# ma ritorna id/nome/posizione grezza/home_macro_coords invece della posizione tradotta, per il log
+# [FOW DIAG] di flush pieno (requisito 2: "più la posizione grezza e home_macro_coords degli
+# individui corrispondenti"). Early-out sul flag PRIMA di iterare: a flag spento questo non fa
+# alcun lavoro aggiuntivo ad ogni frame rispetto a prima di questo diagnostico.
+func _debug_source_context_for_cell(cell: LiveMacroCell) -> Array:
+	if not (DebugLogging.ENABLED and DebugLogging.SHOW_FOW_DIAG_LOGS):
+		return []
+	var contexts: Array = []
+	var cell_coords := Vector2i(cell.macro_x, cell.macro_y)
+	for member in human_individuals:
+		var delta := member.home_macro_coords - cell_coords
+		if abs(delta.x) >= 2 or abs(delta.y) >= 2:
+			continue
+		contexts.append({
+			"id": member.id,
+			"name": member.name,
+			"position": member.position,
+			"home_macro_coords": member.home_macro_coords,
+		})
+	return contexts
 
 
 # Celle vive che il player sta EFFETTIVAMENTE esplorando in questo momento — il centro più gli
@@ -5081,7 +5188,19 @@ func _update_live_neighbor() -> void:
 		if not live_cells.has(coords):
 			if macro_world.get_cell_at(coords.x, coords.y) == null:
 				continue # bordo del mondo: nessuna cella da attivare in questa direzione
-			_activate_live_cell(coords.x, coords.y)
+			# DEBUG TEMPORANEO [FOW DIAG] — rimuovere (requisito 3: ordine effettivo di
+			# aggiornamento posizione/home_macro_coords/creazione renderer attorno a un
+			# attraversamento di bordo). Questo ramo attiva il vicino PER PROSSIMITÀ, quindi
+			# tipicamente PRIMA che `individual` attraversi davvero il bordo (vedi
+			# LIVE_NEIGHBOR_ACTIVATE_MARGIN) — se il renderer risulta invece creato DOPO
+			# l'attraversamento (vedi log gemello "rete di sicurezza" in
+			# _attempt_macro_cell_transition), il pre-caricamento per prossimità non ha funzionato
+			# in tempo per questo caso.
+			if DebugLogging.ENABLED and DebugLogging.SHOW_FOW_DIAG_LOGS:
+				print("[FOW DIAG] _update_live_neighbor: attivo vicino %s per prossimità di #%d %s (home_macro_coords=%s, position=%s), PRIMA di un eventuale attraversamento." % [
+					str(coords), individual.id, individual.name, str(individual.home_macro_coords), str(individual.position)
+				])
+			_activate_live_cell(coords.x, coords.y, "_update_live_neighbor")
 			changed = true
 		_active_neighbor_coords_set[coords] = true
 
@@ -5262,8 +5381,31 @@ func _attempt_macro_cell_transition(target_individual: HumanIndividual, dx: int,
 	# altra riga tra qui e frame_offset/rebase_positional_targets sopra dipende dall'ordine
 	# (verificato: frame_offset è già stato calcolato per differenza PRIMA di questo punto, usando
 	# ancora la vecchia position — l'unico punto sensibile all'ordine, invariato).
+	# DEBUG TEMPORANEO [FOW DIAG] — rimuovere (requisito 3: "individuo, macrocella di partenza e di
+	# arrivo, e l'ordine effettivo in cui avvengono aggiornamento posizione, aggiornamento
+	# home_macro_coords e creazione/aggiornamento dei renderer"). Snapshot PRIMA di toccare
+	# position/home_macro_coords, così il log seguente ("AGGIORNATO") mostra il vero prima/dopo.
+	if DebugLogging.ENABLED and DebugLogging.SHOW_FOW_DIAG_LOGS:
+		print("[FOW DIAG] _attempt_macro_cell_transition: individuo #%d %s attraversa %s -> %s (dx=%d dy=%d). PRIMA: position=%s home_macro_coords=%s, cella di arrivo già viva=%s" % [
+			target_individual.id, target_individual.name, str(origin_macro_coords), str(target_macro_coords),
+			dx, dy, str(target_individual.position), str(target_individual.home_macro_coords), str(live_cells.has(target_macro_coords))
+		])
+
 	target_individual.position = entry_position
 	target_individual.home_macro_coords = target_macro_coords
+
+	# DEBUG TEMPORANEO [FOW DIAG] — rimuovere. Log gemello del blocco "PRIMA" sopra, SUBITO DOPO
+	# l'aggiornamento di position/home_macro_coords e PRIMA della rete di sicurezza sotto — mostra
+	# quindi esattamente cosa succede tra i due: se la cella di arrivo è già viva qui, il renderer è
+	# stato creato/aggiornato PRIMA di questo attraversamento (pre-caricamento per prossimità,
+	# _update_live_neighbor); se non lo è, verrà creato ORA dalla rete di sicurezza sotto, con
+	# position/home_macro_coords già quelli nuovi (l'ordine corretto, vedi commento sopra sul
+	# bugfix 2026-09-17).
+	if DebugLogging.ENABLED and DebugLogging.SHOW_FOW_DIAG_LOGS:
+		print("[FOW DIAG] _attempt_macro_cell_transition: individuo #%d %s AGGIORNATO: position=%s home_macro_coords=%s. Cella di arrivo %s già viva=%s" % [
+			target_individual.id, target_individual.name, str(target_individual.position), str(target_individual.home_macro_coords),
+			str(target_macro_coords), str(live_cells.has(target_macro_coords))
+		])
 
 	# Rete di sicurezza — SEMPRE valutata, non solo per il bersaglio della camera (2026-09-12): non
 	# dovrebbe capitare quasi mai per il bersaglio della camera stesso, dato il pre-caricamento per
@@ -5272,8 +5414,19 @@ func _attempt_macro_cell_transition(target_individual: HumanIndividual, dx: int,
 	# per chiunque altro non c'è alcun pre-caricamento equivalente in corsa (_activate_all_
 	# individual_cells gira una sola volta, in _ready() — vedi commento lì), quindi questa è
 	# l'unica rete che garantisce che la cella di destinazione esista prima di riparentarvi la view.
+	var safety_net_activated_cell := false
 	if not live_cells.has(target_macro_coords):
-		_activate_live_cell(target_x, target_y)
+		# DEBUG TEMPORANEO [FOW DIAG] — rimuovere. Se questo scatta per il bersaglio della camera
+		# (is_camera_focus=true), il pre-caricamento per prossimità di _update_live_neighbor NON ha
+		# fatto in tempo — il renderer viene creato ORA, con position/home_macro_coords GIÀ quelli
+		# nuovi (vedi log "AGGIORNATO" appena sopra), lo stesso ordine che il bugfix 2026-09-17
+		# intendeva garantire.
+		if DebugLogging.ENABLED and DebugLogging.SHOW_FOW_DIAG_LOGS:
+			print("[FOW DIAG] _attempt_macro_cell_transition: cella di arrivo %s non ancora viva, creo ORA (rete di sicurezza) per individuo #%d %s (is_camera_focus=%s)." % [
+				str(target_macro_coords), target_individual.id, target_individual.name, str(is_camera_focus)
+			])
+		_activate_live_cell(target_x, target_y, "_attempt_macro_cell_transition (rete di sicurezza)")
+		safety_net_activated_cell = true
 
 	# Riparenta la HumanIndividualView sotto il nuovo container, esattamente come farebbe
 	# _activate_live_cell per un renderer qualsiasi — GENERALIZZATO (2026-09-12): PRIMA questo
@@ -5315,6 +5468,18 @@ func _attempt_macro_cell_transition(target_individual: HumanIndividual, dx: int,
 		# guardando (vedi commento di testa alla funzione) — la sua cella è comunque già viva
 		# (attivata sopra se mancante), quindi la sua HumanIndividualView continua a disegnarsi
 		# correttamente senza che nulla della "vista" cambi.
+		#
+		# BUGFIX (richiesta utente): se la rete di sicurezza sopra ha appena creato un nuovo
+		# container per la cella di arrivo, quel container resta a position (0,0) di default
+		# finché nessuno chiama _reposition_live_cells() — per un individuo che NON è il
+		# bersaglio della camera, il ramo is_camera_focus sotto (che la chiamerebbe altrimenti)
+		# non viene mai raggiunto, quindi (0,0) coincide con lo slot schermo della cella
+		# centrale: terreno/animali/Fog della cella appena attivata finiscono disegnati sopra la
+		# cella inquadrata dal player. Chiamata SOLO se una cella è stata davvero creata ora
+		# (safety_net_activated_cell) — nessun costo per il caso comune in cui la cella di arrivo
+		# era già viva.
+		if safety_net_activated_cell:
+			_reposition_live_cells()
 		return
 
 	individual_controller.setup(individual, live_cells[center_macro_coords].renderer, game_data)
@@ -5590,9 +5755,53 @@ func _refresh_resource_visuals(cell: LiveMacroCell) -> void:
 	if cell.needs_full_vegetation_recompute:
 		var vegetation_service := VegetationPositionService.new()
 		cell.cached_vegetation_positions = vegetation_service.generate_positions(cell.macro_state, occupied, game_data.year, game_data.current_day, building_positions)
+		# Nidi "eggs" (2026-09-18, richiesta utente — uova raccoglibili per microcella) — ricalcolati
+		# alla STESSA cadenza delle posizioni GRASS appena sopra (mai una cadenza a parte: i nidi sono
+		# per costruzione un sottoinsieme di QUESTE posizioni, vedi TerrainScatteredResourceService.
+		# compute_egg_nest_positions/MacroCellState.egg_nest_positions) — GRASS non ha un lotto
+		# persistito a differenza di TREE/SHRUB, quindi questo è l'UNICO punto in cui l'insieme nidi
+		# di questa cella può essere aggiornato.
+		cell.macro_state.egg_nest_positions = TerrainScatteredResourceService.compute_egg_nest_positions(
+			cell.macro_state, cell.cached_vegetation_positions.get(GameTypes.WorldObjectType.GRASS, [])
+		)
+		# Lotti "wild_vegetables" (2026-09-19, richiesta utente — verdure selvatiche raccoglibili per
+		# microcella) — STESSO principio di egg_nest_positions appena sopra: ricalcolati alla STESSA
+		# cadenza delle posizioni GRASS (mai una cadenza a parte), GRASS non ha un lotto persistito a
+		# differenza di TREE/SHRUB, quindi questo è l'UNICO punto in cui l'insieme lotti di questa
+		# cella può essere aggiornato.
+		cell.macro_state.wild_vegetable_lots = TerrainScatteredResourceService.compute_wild_vegetable_lots(
+			cell.macro_state, cell.cached_vegetation_positions.get(GameTypes.WorldObjectType.GRASS, [])
+		)
 		cell.needs_full_vegetation_recompute = false
 	var vegetation_positions: Dictionary = cell.cached_vegetation_positions
 	_veg_timings_ms["1_position_generation"] = (Time.get_ticks_usec() - _step_start_usec) / 1000.0
+
+	# Rendering nidi "eggs" (2026-09-18, richiesta utente) — MIRROR di set_stick_quantities/
+	# set_pebble_quantities sopra: chiamato SEMPRE ad ogni refresh (non solo quando le posizioni-nido
+	# sono state appena rigenerate, esattamente come stick/pebble sopra), perché la visibilità FoW e
+	# la disponibilità (stock/raccolto) possono cambiare anche senza un rigenero vegetazione. Un solo
+	# lookup per posizione-nido candidata (TerrainScatteredResourceService.get_egg_stock_available_at,
+	# la STESSA funzione di disponibilità residua già usata da pickup/ispezione — nessun secondo
+	# calcolo) — solo le posizioni con disponibilità > 0 entrano nel Dictionary passato al renderer,
+	# così un nido fuori stagione/senza birds/già raccolto semplicemente non compare (mai un'istanza
+	# multimesh sprecata per un nido vuoto).
+	if cell.renderer != null:
+		var egg_availability: Dictionary = {}
+		for pos in cell.macro_state.egg_nest_positions.keys():
+			var egg_available: int = TerrainScatteredResourceService.get_egg_stock_available_at(cell.macro_state, pos)
+			if egg_available > 0:
+				egg_availability[pos] = egg_available
+		cell.renderer.set_egg_nest_availability(_filter_positions_by_visibility(cell, egg_availability))
+
+		# Rendering lotti "wild_vegetables" (2026-09-19, richiesta utente) — MIRROR ESATTO del
+		# blocco eggs appena sopra, stessa funzione di disponibilità residua generica
+		# (TerrainScatteredResourceService.get_wild_vegetable_available_at).
+		var wild_vegetable_availability: Dictionary = {}
+		for wv_pos in cell.macro_state.wild_vegetable_lots.keys():
+			var wv_available: int = TerrainScatteredResourceService.get_wild_vegetable_available_at(cell.macro_state, wv_pos)
+			if wv_available > 0:
+				wild_vegetable_availability[wv_pos] = wv_available
+		cell.renderer.set_wild_vegetable_availability(_filter_positions_by_visibility(cell, wild_vegetable_availability))
 
 	# Proposta 2 (filtro FoW): il renderer riceve solo le posizioni che il FoW mostrerebbe comunque
 	# in dettaglio (vedi FogOfWarRenderer.compute_visible_positions) — una posizione coperta da

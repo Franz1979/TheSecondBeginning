@@ -9,7 +9,7 @@ category = 1
 min_construction_days = 3
 required_labor = 3000
 required_materials = {
-"pebble": 500
+"pebble": 300
 }
 max_durability = 200
 required_space = 1

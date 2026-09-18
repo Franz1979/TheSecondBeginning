@@ -335,13 +335,31 @@ var _hint_count_window_start_msec: int = 0
 var _memory_lookup_usec: int = 0
 
 
+# DEBUG TEMPORANEO [FOW DIAG] — rimuovere. Macrocella e provenienza di QUESTA istanza (vedi
+# setup() sotto) — solo per correlare i log [FOW DIAG] con "quale renderer, creato da dove",
+# nessun consumatore di produzione li legge.
+var _debug_macro_coords: Vector2i = Vector2i(999999, 999999)
+var _debug_created_from: String = "?"
+
+# DEBUG TEMPORANEO [FOW DIAG] — rimuovere. Contesto (id/nome/posizione grezza/home_macro_coords)
+# degli human_individuals dietro le attuali source_positions, NELLO STESSO ORDINE — popolato da
+# GameScene via set_debug_source_context() subito dopo ogni update_visibility() (vedi
+# GameScene._debug_source_context_for_cell), solo quando DebugLogging.SHOW_FOW_DIAG_LOGS è attivo
+# (altrimenti resta vuoto, GameScene non fa nemmeno il lavoro di costruirlo).
+var _debug_source_context: Array = []
+
+
 # p_fog_of_war_memory: unico parametro rimasto (Step 4, 2026-09-02 — RIMOSSO p_individual: questo
 # renderer non è più legato a un singolo individuo/proxy, vedi source_positions sopra). Chiamato
 # UNA VOLTA per istanza, all'attivazione della cella (GameScene._activate_live_cell) — mai più
 # ri-chiamato ad ogni cambio di bersaglio (il vecchio GameScene._rebind_fog_bindings, rimosso: non
 # serve più, update_visibility() sotto riceve le posizioni corrette ogni frame indipendentemente da
 # chi sia il bersaglio corrente).
-func setup(p_fog_of_war_memory: FogOfWarMemory) -> void:
+#
+# p_debug_macro_coords/p_debug_created_from: DEBUG TEMPORANEO [FOW DIAG] — rimuovere. Parametri
+# opzionali (default innocuo, nessun cambio per chi non li passa) usati solo per popolare
+# _debug_macro_coords/_debug_created_from sopra e stampare il log di creazione sotto.
+func setup(p_fog_of_war_memory: FogOfWarMemory, p_debug_macro_coords: Vector2i = Vector2i(999999, 999999), p_debug_created_from: String = "?") -> void:
 	fog_of_war_memory = p_fog_of_war_memory
 	# Ri-letta ad ogni setup() (non solo alla creazione del nodo): FogOfWarCalculator cachea già il
 	# caricamento, quindi rileggere qui è economico e garantisce che un cambio del .tres a runtime
@@ -359,6 +377,22 @@ func setup(p_fog_of_war_memory: FogOfWarMemory) -> void:
 	# da CHI ha chiamato setup() (_activate_live_cell, _update_live_neighbor, o un futuro terzo
 	# punto) — _draw() sotto rimanda da sé il primissimo flush pieno di UN turno.
 	queue_redraw()
+
+	# DEBUG TEMPORANEO [FOW DIAG] — rimuovere (requisito 1: "alla creazione di un
+	# FogOfWarRenderer: quale macrocella, da quale funzione è stato creato, e se parte con flush
+	# pieno").
+	_debug_macro_coords = p_debug_macro_coords
+	_debug_created_from = p_debug_created_from
+	if DebugLogging.ENABLED and DebugLogging.SHOW_FOW_DIAG_LOGS:
+		print("[FOW DIAG] setup(): FogOfWarRenderer creato per macrocella %s da '%s' — full_flush_pending=%s" % [
+			str(_debug_macro_coords), _debug_created_from, str(_full_flush_pending)
+		])
+
+
+# DEBUG TEMPORANEO [FOW DIAG] — rimuovere. Chiamato da GameScene subito dopo update_visibility()
+# (vedi GameScene._debug_source_context_for_cell) — vedi campo _debug_source_context sopra.
+func set_debug_source_context(contexts: Array) -> void:
+	_debug_source_context = contexts
 
 
 # Chiamato una sola volta da setup() sopra (mai da _ready(): questo nodo è sempre creato via
@@ -746,6 +780,24 @@ func _draw() -> void:
 	# definizione, mai duplicata tra i due rami.
 	var _cells_processed := 0
 	if _full_flush_pending:
+		# DEBUG TEMPORANEO [FOW DIAG] — rimuovere (requisito 2: "ad ogni flush pieno... macrocella
+		# del renderer, numero di sorgenti ricevute e le prime 3 posizioni tradotte, più la
+		# posizione grezza e home_macro_coords degli individui corrispondenti"). PRIMA del loop
+		# (non dopo): se il flush pieno stesso è quello che sta per dipingere tutto nero, vogliamo
+		# comunque il log anche se qualcosa a valle dovesse interrompere l'esecuzione.
+		if DebugLogging.ENABLED and DebugLogging.SHOW_FOW_DIAG_LOGS:
+			var _preview_count: int = mini(3, source_positions.size())
+			for _i in range(_preview_count):
+				var _ctx: Dictionary = _debug_source_context[_i] if _i < _debug_source_context.size() else {}
+				var _individual_label: String = "?"
+				if not _ctx.is_empty():
+					_individual_label = "%s#%s" % [_ctx.get("name", "?"), str(_ctx.get("id", "?"))]
+				print("[FOW DIAG] FLUSH PIENO macrocella=%s | sorgenti=%d | tradotta[%d]=%s | individuo=%s posizione_grezza=%s home_macro_coords=%s" % [
+					str(_debug_macro_coords), source_positions.size(), _i, str(source_positions[_i]),
+					_individual_label, str(_ctx.get("position", "?")), str(_ctx.get("home_macro_coords", "?"))
+				])
+			if source_positions.is_empty():
+				print("[FOW DIAG] FLUSH PIENO macrocella=%s | sorgenti=0 (nessuna sorgente ricevuta — sospetto candidato per il nero)" % str(_debug_macro_coords))
 		for y in range(World.HEIGHT):
 			for x in range(World.WIDTH):
 				_flush_position(Vector2i(x, y))

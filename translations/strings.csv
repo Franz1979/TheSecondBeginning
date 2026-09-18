@@ -140,6 +140,8 @@ carried_resource_tooltip_berry,Bacche
 carried_resource_tooltip_acorn,Ghiande
 carried_resource_tooltip_fruit,Frutta selvatica
 carried_resource_tooltip_mushroom,Funghi
+carried_resource_tooltip_eggs,Uova
+carried_resource_tooltip_wild_vegetables,Verdure selvatiche
 microcell_inspection_title,Microcella ({x}; {y})
 microcell_inspection_not_visible,Cella non esplorata o non visibile.
 microcell_inspection_only_grass,Contiene solo erba.

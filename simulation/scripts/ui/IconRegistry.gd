@@ -27,7 +27,17 @@ extends RefCounted
 # Unicode rende bene "rametti sparsi"/"ghiaia", stesso identico problema già risolto a mano per
 # PebbleCircleIcon (vedi sotto). Questo Dictionary resta comunque il punto d'ingresso per una futura
 # risorsa che un emoji SEMPLICE rappresenta già bene (es. un domani "egg" -> 🥚).
-const RESOURCE_ICONS := {}
+#
+# "eggs" (2026-09-18, richiesta utente - uova raccoglibili per microcella): l'emoji uovo rende
+# già bene da sé il concetto - esattamente il caso "emoji semplice" anticipato nel commento sopra,
+# nessuna icona disegnata a mano necessaria a differenza di pebble/stick/berry/ecc. sotto.
+#
+# "wild_vegetables" (2026-09-19, richiesta utente - verdure selvatiche raccoglibili per
+# microcella): l'emoji verdura a foglia rende già bene il concetto, stesso principio di eggs sopra.
+const RESOURCE_ICONS := {
+	"eggs": "🥚",
+	"wild_vegetables": "🥬",
+}
 
 
 # Icone DISEGNATE A MANO (Control, non emoji) per SecondaryResourceRules.secondary_resource_name

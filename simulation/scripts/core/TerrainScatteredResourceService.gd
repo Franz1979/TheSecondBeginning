@@ -23,13 +23,17 @@ static func get_available(macro_state: MacroCellState, resource_name: String, po
 		return 0
 	match resource_name:
 		"pebble":
-			return int(macro_state.pebble_quantities.get(position, 0))
+			return _get_available_pebble(macro_state, position)
 		"stick":
 			return _get_available_stick(macro_state, position)
 		"plant_fiber":
 			return _get_available_plant_fiber(macro_state, position)
 		"mushroom":
 			return _get_available_mushroom(macro_state, position)
+		"eggs":
+			return get_egg_stock_available_at(macro_state, position)
+		"wild_vegetables":
+			return get_wild_vegetable_available_at(macro_state, position)
 		_:
 			if FRUIT_STOCK_SOURCES.has(resource_name):
 				return get_fruit_stock_available_at(resource_name, macro_state, position)
@@ -48,6 +52,10 @@ static func consume(macro_state: MacroCellState, resource_name: String, position
 			_consume_plant_fiber(macro_state, position, quantity)
 		"mushroom":
 			_consume_mushroom(macro_state, position, quantity)
+		"eggs":
+			consume_egg_stock_at(macro_state, position, quantity)
+		"wild_vegetables":
+			consume_wild_vegetable_at(macro_state, position, quantity)
 		_:
 			if FRUIT_STOCK_SOURCES.has(resource_name):
 				consume_fruit_stock_at(resource_name, macro_state, position, quantity)
@@ -79,10 +87,32 @@ static func _consume_pebble(macro_state: MacroCellState, position: Vector2i, qua
 	macro_state.pebble_quantities[position] = max(remaining, 0)
 
 
+# Lookup diretto + moltiplicatore stagionale (2026-09-19, richiesta utente — bugfix "seasonal_
+# availability_multiplier è ignorato da pebble/stick/plant_fiber": _apply_seasonal_availability_
+# to_capacity esisteva già come helper generico ma solo _get_available_mushroom lo chiamava —
+# per pebble.tres/stick.tres/plant_fiber.tres una curva non piatta veniva quindi ignorata in
+# silenzio. NESSUN cambio di comportamento oggi: pebble.tres ha una curva piatta [1,1,1,1], quindi
+# floor(capacity × 1.0) == capacity sempre — cambia solo se in futuro qualcuno valorizza una curva
+# vera). A differenza di stick/plant_fiber/mushroom, pebble non ha un Dictionary {"capacity",
+# "harvested"} per lotto: pebble_quantities[position] È già la quantità residua (harvested
+# sottratto direttamente da _consume_pebble sopra, mai una capacity grezza separata) — qui si
+# applica il moltiplicatore a QUELLA quantità residua, non a una "capacity" a parte.
+static func _get_available_pebble(macro_state: MacroCellState, position: Vector2i) -> int:
+	var remaining: int = int(macro_state.pebble_quantities.get(position, 0))
+	if remaining <= 0:
+		return 0
+	return _apply_seasonal_availability_to_capacity("pebble", remaining)
+
+
 # Lotto stale (mai ridisegnato dall'ultimo checkpoint growth passato — vedi
 # StickPoolService.most_recent_growth_checkpoint_absolute_day) → 0: senza un refresh recente la
 # capacità persistita non è affidabile, stesso confronto già usato da
 # StickPoolService.refresh_macrocell per decidere se un lotto va rigenerato.
+#
+# Moltiplicatore stagionale (2026-09-19, richiesta utente — vedi _get_available_pebble sopra per
+# il perché: STESSO bugfix, STESSO helper generico già usato da mushroom, applicato QUI PRIMA di
+# sottrarre harvested — stesso ordine/stesso principio di _get_available_mushroom). Nessun cambio
+# di comportamento oggi: stick.tres ha una curva piatta [1,1,1,1].
 static func _get_available_stick(macro_state: MacroCellState, position: Vector2i) -> int:
 	var entry: Dictionary = macro_state.stick_quantities.get(position, {})
 	if entry.is_empty():
@@ -95,7 +125,8 @@ static func _get_available_stick(macro_state: MacroCellState, position: Vector2i
 		return 0
 	var capacity := int(entry.get("capacity", 0))
 	var harvested := int(entry.get("harvested", 0))
-	return max(capacity - harvested, 0)
+	var seasonal_capacity := _apply_seasonal_availability_to_capacity("stick", capacity)
+	return max(seasonal_capacity - harvested, 0)
 
 
 # Incrementa harvested, clampato a non superare capacity — nessun controllo di freschezza qui
@@ -115,6 +146,10 @@ static func _consume_stick(macro_state: MacroCellState, position: Vector2i, quan
 # Mirror esatto di _get_available_stick/_consume_stick sopra, per plant_fiber (2026-09-16,
 # richiesta utente) — STESSO checkpoint growth (VegetationPoolService.most_recent_growth_
 # checkpoint_absolute_day, comune a TREE/SHRUB, verificato), STESSA formula di freschezza/clamp.
+#
+# Moltiplicatore stagionale (2026-09-19, richiesta utente — vedi _get_available_stick sopra per
+# il bugfix/il perché). Nessun cambio di comportamento oggi: plant_fiber.tres ha una curva piatta
+# [1,1,1,1].
 static func _get_available_plant_fiber(macro_state: MacroCellState, position: Vector2i) -> int:
 	var entry: Dictionary = macro_state.plant_fiber_quantities.get(position, {})
 	if entry.is_empty():
@@ -126,7 +161,8 @@ static func _get_available_plant_fiber(macro_state: MacroCellState, position: Ve
 		return 0
 	var capacity := int(entry.get("capacity", 0))
 	var harvested := int(entry.get("harvested", 0))
-	return max(capacity - harvested, 0)
+	var seasonal_capacity := _apply_seasonal_availability_to_capacity("plant_fiber", capacity)
+	return max(seasonal_capacity - harvested, 0)
 
 
 static func _consume_plant_fiber(macro_state: MacroCellState, position: Vector2i, quantity: int) -> void:
@@ -145,9 +181,13 @@ static func _consume_plant_fiber(macro_state: MacroCellState, position: Vector2i
 # richiesta utente, BUGFIX: la prima versione aveva una tabella SEASONAL_TERRAIN_SCATTERED_SOURCES
 # hardcoded qui nel codice, che duplicava/contraddiceva la curva già dichiarata nel .tres — il .tres
 # resta l'UNICA fonte di verità per la stagionalità, qui la si legge soltanto). Un solo helper,
-# usato oggi da _get_available_mushroom sotto, pensato per qualunque futura risorsa di questa
-# famiglia (capacità propria per lotto, nessuno stock aggregato) CON una curva stagionale non-piatta
-# nel proprio .tres, e per un eventuale rendering che debba mostrare la stessa proporzione — mai un
+# usato da OGNI risorsa "capacità per lotto" (pebble/stick/plant_fiber/mushroom — 2026-09-19,
+# richiesta utente: PRIMA solo _get_available_mushroom lo chiamava, così pebble.tres/stick.tres/
+# plant_fiber.tres avevano il campo seasonal_availability_multiplier presente ma IGNORATO in
+# silenzio da qualunque curva vi fosse impostata — bugfix di coerenza, nessun cambio di
+# comportamento oggi perché le loro tre curve sono piatte [1,1,1,1], floor(capacity×1.0)==capacity),
+# pensato per qualunque futura risorsa di questa famiglia CON una curva stagionale non-piatta nel
+# proprio .tres, e per un eventuale rendering che debba mostrare la stessa proporzione — mai un
 # secondo calcolo duplicato altrove.
 #
 # floor(capacity × moltiplicatore), mai round/ceil (stesso principio "mai frazionario" già seguito
@@ -156,7 +196,8 @@ static func _consume_plant_fiber(macro_state: MacroCellState, position: Vector2i
 # corrente) -> capacity invariata: fail-OPEN qui (a differenza del fail-closed di is_resource_locked
 # sopra), perché l'assenza di un game_data non è un segnale "nascondi tutto", è semplicemente "non
 # posso applicare il moltiplicatore" — un chiamante di solito ha già un proprio guard game_data a
-# monte (vedi _get_available_mushroom sotto) che intercetta questo caso comunque.
+# monte (vedi _get_available_mushroom/_get_available_stick/_get_available_plant_fiber/
+# _get_available_pebble) che intercetta questo caso comunque.
 static func _apply_seasonal_availability_to_capacity(resource_name: String, capacity: int) -> int:
 	var resource_rules := CaloricCalculator.get_caloric_source_rules(resource_name)
 	if resource_rules == null or GameSettings.active_game_data == null:
@@ -450,3 +491,286 @@ static func _compute_fruit_stock_weights(resource_name: String, macro_state: Mac
 		total += weight
 
 	return {"total": total, "by_lot": by_lot}
+
+
+# "Nidi" per eggs (2026-09-18, richiesta utente — uova raccoglibili per microcella, STESSO modello
+# di stock aggregato/derivazione al volo della famiglia "fruit stock" sopra, ma con una differenza
+# strutturale: berry/acorn/fruit derivano il peso per lotto da un registro PERSISTITO di individui
+# TREE/SHRUB (tree_individual_subtype/shrub_individual_subtype), che GRASS non ha (nessuna identità
+# individuale, vedi VegetationPositionService) — quindi qui non c'è un registro da cui leggere un
+# peso "vero": il peso di ogni nido è invece esso stesso deterministico da hash (vedi
+# compute_egg_nest_positions sotto, aggiornato 2026-09-18 — "rendi il peso variabile per nido": PRIMA
+# ogni nido pesava esattamente 1, ora un valore in SecondaryResourceRules.patch_weight_min/max). Per
+# lo stesso motivo per cui il peso non può essere ricostruito da un registro, dipende dalle
+# posizioni GRASS CORRENTI, che vivono solo nella cache runtime di GameScene/LiveMacroCell — è
+# GameScene._refresh_resource_visuals a scrivere MacroCellState.egg_nest_positions ogni volta che
+# rigenera quelle posizioni (vedi commento su quel campo), MAI questo file, che si limita a leggerlo.
+
+
+# Sottoinsieme deterministico di `grass_positions` (Array[Vector2i], le posizioni GRASS CORRENTI di
+# una macrocella — tipicamente cell.cached_vegetation_positions[GameTypes.WorldObjectType.GRASS]):
+# Vector2i (nido) -> float (peso, vedi sotto). Membership scelta con hash(str(micro_seed) + salt)
+# sulla posizione, filtrato dalla soglia SecondaryResourceRules.patch_probability di eggs.tres —
+# STESSO idioma di ResourcePositionService._passes_soft_threshold/_priority_hash (hash puro di
+# posizione+seed, mai randf(): stesso seed => stesso risultato sempre, indipendentemente da quando/
+# quante volte viene chiamato). rules == null o patch_probability <= 0.0 (nessuna .tres valorizzata,
+# vedi default in SecondaryResourceRules) -> {} (nessun nido), mai un errore.
+#
+# Peso per nido (2026-09-18, richiesta utente — "i nidi hanno tutti peso uniforme... rendi il peso
+# variabile", altrimenti ogni macrocella distribuirebbe sempre lo stesso numero esatto di uova per
+# nido): un SECONDO hash della stessa posizione, con un SALT DIVERSO da quello di membership sopra
+# (mai lo stesso — altrimenti "essere un nido" e "quanto pesa" sarebbero perfettamente correlati
+# invece che indipendenti, es. sempre i nidi più vicini alla soglia col peso più alto/basso),
+# interpolato linearmente in [patch_weight_min, patch_weight_max]. Deterministico come la membership:
+# stesso seed => stesso peso sempre, nessun randf().
+#
+# BUGFIX (2026-09-18, richiesta utente — "il pickup viene offerto anche dove non ci sono uova, e
+# l'ispezione mostra uova=0 invece di dire solo erba"): PRIMA questa funzione ignorava del tutto
+# secondary_resource_stock["eggs"] — un lotto passava il test hash ed entrava in egg_nest_positions
+# anche con stock aggregato a 0 (fuori dalla stagione delle uova, o in una macrocella senza BIRDS),
+# quindi risultava un "nido" geometricamente valido ma perennemente vuoto. Una posizione è un nido
+# SOLO quando esistono davvero uova per la macrocella: stock <= 0.0 -> {} (nessun nido affatto),
+# PRIMA di risolvere rules/hashare le posizioni — un aggregato pari a zero rende comunque zero ogni
+# singola quota (stock × peso/peso_totale), quindi questo early-out non cambia MAI il risultato
+# finale di get_egg_stock_available_at, si limita a farlo scattare più a monte (niente candidati/
+# render per lotti che sarebbero comunque risultati a 0). Ricalcolata alla stessa cadenza di
+# egg_nest_positions (GameScene._refresh_resource_visuals, invalidata ad ogni checkpoint stagionale
+# su TUTTE le celle vive — vedi _on_day_advanced/checkpoint_ran), quindi resta sempre coerente con
+# lo stock corrente.
+static func compute_egg_nest_positions(macro_state: MacroCellState, grass_positions: Array) -> Dictionary:
+	if macro_state.get_secondary_resource_stock("eggs") <= 0.0:
+		return {}
+	var rules := CaloricCalculator.get_caloric_source_rules("eggs")
+	if rules == null or rules.patch_probability <= 0.0:
+		return {}
+	var nest_seed: int = hash(str(macro_state.micro_seed) + "_eggs_nest")
+	var weight_seed: int = hash(str(macro_state.micro_seed) + "_eggs_nest_weight")
+	var nests: Dictionary = {}
+	for pos in grass_positions:
+		var lot := Vector2i(pos.x, pos.y)
+		var hash_value: float = float(hash(lot * 3 + Vector2i(nest_seed, 727)) % 100000) / 100000.0
+		if hash_value < rules.patch_probability:
+			var weight_hash: float = float(hash(lot * 5 + Vector2i(weight_seed, 419)) % 100000) / 100000.0
+			nests[lot] = lerp(rules.patch_weight_min, rules.patch_weight_max, weight_hash)
+	return nests
+
+
+# "Lotti" per wild_vegetables (2026-09-19, richiesta utente — verdure selvatiche raccoglibili per
+# microcella, modello a CAPACITÀ per lotto come stick/mushroom — NESSUNO stock aggregato di
+# macrocella, NESSUN consumo animale, a differenza di eggs sopra) — STESSA tecnica di selezione
+# posizione di compute_egg_nest_positions (due hash sulla stessa posizione con salt diversi: uno
+# decide SE è un lotto con la soglia patch_probability, l'altro QUANTO vale con l'intervallo
+# patch_capacity_min/max), ma il secondo hash produce una CAPACITÀ ASSOLUTA per lotto (non un peso
+# relativo da ripartire su uno stock — wild_vegetables non ha uno stock aggregato affatto), scalata
+# da un fattore [0,1] = dedicated_space(GRASS) / TOTAL_SPACE della macrocella: un prato rado (poca
+# erba rispetto allo spazio totale) rende meno di uno fitto, a parità di capacità RAW estratta
+# dall'hash. dedicated_space(GRASS) <= 0 -> {} (nessun lotto affatto), PRIMA di risolvere rules/
+# hashare le posizioni — stesso principio del gate su stock in compute_egg_nest_positions: un
+# fattore 0 renderebbe comunque capacità 0 per ogni lotto, quindi l'early-out non cambia mai il
+# risultato finale, si limita a farlo scattare più a monte. Un lotto con capacità arrotondata a 0
+# (raw molto basso × fattore molto basso) viene scartato qui stesso (mai un'entry a capacità 0 nel
+# risultato): niente da raccogliere lì, stesso principio "un hit esiste solo se il lotto è
+# realmente di quel tipo" già seguito per eggs/mushroom nel resto di questo file.
+#
+# NON VegetationPoolService (richiesta esplicita utente): quel motore conta individui maturi in
+# tree_individual_subtype/shrub_individual_subtype/tree_virtual_birth_year/shrub_virtual_birth_
+# year — nessuno di questi esiste per GRASS (nessuna identità individuale, vedi
+# VegetationPositionService), quindi non è riusabile nemmeno con un parametro aggiuntivo.
+static func compute_wild_vegetable_lots(macro_state: MacroCellState, grass_positions: Array) -> Dictionary:
+	var grass_space: int = macro_state.get_dedicated_space(GameTypes.WorldObjectType.GRASS)
+	if grass_space <= 0:
+		return {}
+	var rules := CaloricCalculator.get_caloric_source_rules("wild_vegetables")
+	if rules == null or rules.patch_probability <= 0.0:
+		return {}
+	var patch_seed: int = hash(str(macro_state.micro_seed) + "_wild_vegetables_patch")
+	var capacity_seed: int = hash(str(macro_state.micro_seed) + "_wild_vegetables_patch_capacity")
+	var density_factor: float = float(grass_space) / float(MacroCellState.TOTAL_SPACE)
+	var lots: Dictionary = {}
+	for pos in grass_positions:
+		var lot := Vector2i(pos.x, pos.y)
+		var hash_value: float = float(hash(lot * 3 + Vector2i(patch_seed, 811)) % 100000) / 100000.0
+		if hash_value >= rules.patch_probability:
+			continue
+		var capacity_hash: float = float(hash(lot * 5 + Vector2i(capacity_seed, 953)) % 100000) / 100000.0
+		var raw_capacity: float = lerp(float(rules.patch_capacity_min), float(rules.patch_capacity_max), capacity_hash)
+		var capacity: int = int(round(raw_capacity * density_factor))
+		if capacity > 0:
+			lots[lot] = capacity
+	return lots
+
+
+# Disponibilità REALE del lotto: capacità RAW (vedi compute_wild_vegetable_lots sopra, già scalata
+# per densità GRASS) passata attraverso l'helper generico di scalatura stagionale già usato da
+# mushroom (_apply_seasonal_availability_to_capacity — legge seasonal_availability_multiplier da
+# wild_vegetables.tres, NESSUNA tabella hardcoded qui) meno quanto già raccolto DA UMANI in questo
+# lotto (MacroCellState.wild_vegetables_harvested_by_lot). `position` non in wild_vegetable_lots
+# (mai stato un lotto, o non lo è più dopo un rigenero — vedi commento su quel campo) -> 0, nessuna
+# eccezione.
+static func get_wild_vegetable_available_at(macro_state: MacroCellState, position: Vector2i) -> int:
+	if not macro_state.wild_vegetable_lots.has(position):
+		return 0
+	var capacity: int = int(macro_state.wild_vegetable_lots[position])
+	var seasonal_capacity := _apply_seasonal_availability_to_capacity("wild_vegetables", capacity)
+	var harvested: int = int(macro_state.wild_vegetables_harvested_by_lot.get(position, 0))
+	return max(seasonal_capacity - harvested, 0)
+
+
+# Incrementa wild_vegetables_harvested_by_lot[position], clampato alla capacità GREZZA (non a
+# quella scontata dalla stagione) — STESSO principio esplicito di _consume_stick: capacity/
+# harvested restano quelli dell'ultima generazione nota, get_available già garantisce che questa
+# funzione non venga mai chiamata con quantity superiore alla disponibilità REALE già scontata
+# della stagione (PickUpAction risolve la quantità da get_available), quindi un secondo calcolo
+# stagionale qui sarebbe ridondante.
+static func consume_wild_vegetable_at(macro_state: MacroCellState, position: Vector2i, quantity: int) -> void:
+	var capacity: int = int(macro_state.wild_vegetable_lots.get(position, 0))
+	var harvested_before: int = int(macro_state.wild_vegetables_harvested_by_lot.get(position, 0))
+	macro_state.wild_vegetables_harvested_by_lot[position] = min(harvested_before + quantity, capacity)
+
+
+# Peso totale dei nidi di una macrocella — somma di egg_nest_positions.values(), estratta a parte
+# solo perché get_egg_stock_available_at sotto la userebbe come denominatore comune per OGNI
+# chiamata sulla stessa macrocella (nessuna cache: il Dictionary è già piccolo, tipicamente poche
+# decine di nidi, e già ricalcolato alla cadenza di egg_nest_positions — sommarlo ad ogni query
+# resta economico, stesso principio "niente cache dove non serve" già seguito per nest_count prima
+# di questo passo).
+static func _get_egg_nest_total_weight(macro_state: MacroCellState) -> float:
+	var total: float = 0.0
+	for weight in macro_state.egg_nest_positions.values():
+		total += float(weight)
+	return total
+
+
+# Disponibilità REALE del nido: quota nominale (stock aggregato × peso_nido / peso_totale — vedi
+# compute_egg_nest_positions sopra per come nasce il peso, ora variabile per nido) meno quanto già
+# raccolto DA UMANI in questo nido quest'anno (MacroCellState.eggs_harvested_by_lot). Il TOTALE
+# raccoglibile in una macrocella non cambia rispetto al vecchio peso uniforme (la somma di
+# stock×peso/peso_totale su tutti i nidi resta sempre stock, per costruzione) — cambia solo come si
+# distribuisce tra nidi ricchi (peso vicino a patch_weight_max) e poveri (vicino a patch_weight_min).
+# `position` non in egg_nest_positions (mai stato un nido, o non lo è più dopo un rigenero — vedi
+# commento su quel campo) -> 0, nessuna eccezione.
+static func get_egg_stock_available_at(macro_state: MacroCellState, position: Vector2i) -> int:
+	if not macro_state.egg_nest_positions.has(position):
+		return 0
+	var total_weight: float = _get_egg_nest_total_weight(macro_state)
+	if total_weight <= 0.0:
+		return 0
+	var lot_weight: float = float(macro_state.egg_nest_positions[position])
+	var stock: float = macro_state.get_secondary_resource_stock("eggs")
+	var nominal: int = int(floor(stock * lot_weight / total_weight))
+	var harvested: int = int(macro_state.eggs_harvested_by_lot.get(position, 0))
+	return max(nominal - harvested, 0)
+
+
+# Scala l'aggregato (stesso principio esplicito di consume_fruit_stock_at sopra — "è il punto in
+# cui la raccolta umana toglie cibo agli animali") E incrementa eggs_harvested_by_lot[position]:
+# STESSO schema di consume_fruit_stock_at, ma senza il livello aggiuntivo per resource_name (eggs è
+# l'unica risorsa di questa famiglia, vedi MacroCellState.eggs_harvested_by_lot).
+static func consume_egg_stock_at(macro_state: MacroCellState, position: Vector2i, quantity: int) -> void:
+	var stock_before: float = macro_state.get_secondary_resource_stock("eggs")
+	macro_state.set_secondary_resource_stock("eggs", stock_before - float(quantity))
+	var harvested_before: int = int(macro_state.eggs_harvested_by_lot.get(position, 0))
+	macro_state.eggs_harvested_by_lot[position] = harvested_before + quantity
+
+
+# Azzeramento stagionale del raccolto per le risorse a CAPACITÀ PER LOTTO (2026-09-19, richiesta
+# utente — bugfix "wild_vegetables_harvested_by_lot non viene mai azzerato, le verdure non
+# ricrescono mai"): eggs (sopra) ha già il proprio azzeramento stagionale, ma vive dentro
+# WorldTimeService._run_secondary_resource_stock_checkpoint, agganciato al loop su CaloricCalculator.
+# SECONDARY_SOURCES — un percorso che presuppone uno STOCK AGGREGATO di macrocella (source[
+# "primary_resource_type"]), che le risorse a capacità per lotto (mushroom, wild_vegetables) non
+# hanno affatto (richiesta esplicita utente: "le verdure non stanno in SECONDARY_SOURCES, serve un
+# percorso che valga per le risorse a capacità per lotto"). Questo è quel percorso — UN SOLO punto
+# per ENTRAMBE le risorse (non due blocchi ad-hoc separati), chiamato da WorldTimeService allo
+# STESSO momento (inizio di ogni stagione) del checkpoint eggs, ma indipendente da esso.
+#
+# VERIFICA mushroom (richiesta esplicita utente): mushroom.tres ha una curva NON piatta
+# ([0.4, 0.0, 0.3, 1.0]) — oggi il SOLO azzeramento che mushroom_quantities riceve è quello
+# INCIDENTALE di VegetationPoolService.refresh_macrocell (l'intera entry per lotto, capacity
+# INCLUSA, viene rigenerata da zero una volta l'anno al checkpoint growth di fine PRIMAVERA,
+# harvested=0 come effetto collaterale) — un reset legato al ciclo di maturazione degli alberi,
+# NON al proprio moltiplicatore stagionale: per questa curva specifica coincide (l'unico giorno di
+# reset è già a moltiplicatore 0.0, subito prima che salga in estate), ma è una coincidenza di
+# calendario, non una garanzia — un'eventuale futura curva con una salita in un punto diverso
+# dell'anno lascerebbe mushroom con lo stesso identico problema di wild_vegetables per il resto
+# dell'anno. Da qui in avanti mushroom riceve ANCHE questo azzeramento esplicito (in aggiunta al
+# reset incidentale esistente, mai in conflitto: azzerare un harvested già a 0 è un no-op).
+#
+# LISTA (2026-09-19, richiesta utente — bugfix "LOT_CAPACITY_HARVEST_SOURCES è scritta a mano,
+# sostituiscila con un criterio derivato dai dati"): PRIMA questa lista conteneva SOLO "mushroom"/
+# "wild_vegetables" perché erano le due risorse la cui curva SEMBRAVA non piatta *oggi*, guardata a
+# occhio — esattamente la trappola segnalata: dare domani una curva vera a stick.tres/plant_fiber.
+# tres non avrebbe fatto scattare nulla, perché quel file andava ricordato e riaggiornato a mano.
+# Ora elenca invece TUTTE le risorse "capacità per lotto" con un concetto di "harvested" da poter
+# azzerare (stick/plant_fiber/mushroom/wild_vegetables) — un fatto STRUTTURALE (quali campi esistono
+# su MacroCellState/quali case esistono in get_available/consume sopra), non stagionale: la DECISIONE
+# di azzerare o no resta 100% derivata dalla curva del .tres di ciascuna, ricalcolata sotto ad ogni
+# checkpoint — nessuna curva da giudicare "piatta" a mano qui. pebble È a capacità per lotto ma
+# DELIBERATAMENTE ESCLUSA: pebble_quantities[pos] è già la quantità residua (vedi _consume_pebble/
+# _get_available_pebble sopra), non esiste una "capacity" separata da cui un "harvested" possa
+# essere scorporato e azzerato — un sasso estratto non deve mai "ricrescere", qualunque sia la sua
+# curva stagionale (quella già si applica in lettura, vedi _apply_seasonal_availability_to_capacity,
+# senza bisogno di un reset qui).
+const LOT_CAPACITY_RESOURCE_NAMES: Array[String] = ["stick", "plant_fiber", "mushroom", "wild_vegetables"]
+
+
+# Driver chiamato una volta per checkpoint stagionale (WorldTimeService, inizio di OGNI stagione,
+# stesso momento del checkpoint eggs) — per ciascuna risorsa in LOT_CAPACITY_RESOURCE_NAMES,
+# decide UNA SOLA VOLTA (non per cella: nessuna dipendenza da macro_state, solo dalla curva del
+# .tres) se il moltiplicatore stagionale sale rispetto alla stagione precedente; se nessuna
+# risorsa sale, esce subito senza toccare world.cell_states (caso comune: la maggior parte delle
+# transizioni stagionali non fa salire NULLA — oggi stick/plant_fiber non salgono MAI, curve
+# piatte, quindi in pratica continuano a non ricevere alcun reset esplicito, ma per una ragione
+# che si auto-corregge il giorno in cui qualcuno gli dà una curva vera, non perché sono assenti da
+# un elenco). Altrimenti itera le celle SOLO per le risorse che devono davvero resettarsi.
+static func reset_all_lot_harvests_on_season_rise(
+	world: World, previous_season: GameTypes.Season, new_season: GameTypes.Season
+) -> void:
+	var resources_to_reset: Array[String] = []
+	for resource_name in LOT_CAPACITY_RESOURCE_NAMES:
+		var rules := CaloricCalculator.get_caloric_source_rules(resource_name)
+		if rules == null:
+			continue
+		var previous_multiplier: float = float(rules.seasonal_availability_multiplier[previous_season])
+		var new_multiplier: float = float(rules.seasonal_availability_multiplier[new_season])
+		if new_multiplier > previous_multiplier:
+			resources_to_reset.append(resource_name)
+	if resources_to_reset.is_empty():
+		return
+	for state in world.cell_states:
+		for resource_name in resources_to_reset:
+			_reset_lot_harvest_for_resource(state, resource_name)
+
+
+# Dispatch per-risorsa: "wild_vegetables" -> registro FLAT, svuotato per intero (stesso principio
+# del ramo "fruit stock" in WorldTimeService — non c'è "capacity" da preservare a parte, vedi
+# get_wild_vegetable_available_at, che la ricalcola sempre al volo); stick/plant_fiber/mushroom ->
+# STESSO registro combinato {"checkpoint_day","capacity","harvested"}, SOLO "harvested" azzerato
+# per ogni lotto tramite l'helper condiviso sotto (capacity/checkpoint_day intatti: azzerarli
+# forzerebbe una rigenerazione a vuoto prima del prossimo checkpoint growth reale, mai voluto qui).
+static func _reset_lot_harvest_for_resource(macro_state: MacroCellState, resource_name: String) -> void:
+	match resource_name:
+		"wild_vegetables":
+			if not macro_state.wild_vegetables_harvested_by_lot.is_empty():
+				macro_state.wild_vegetables_harvested_by_lot.clear()
+		"stick":
+			_reset_harvested_in_combined_registry(macro_state.stick_quantities)
+		"plant_fiber":
+			_reset_harvested_in_combined_registry(macro_state.plant_fiber_quantities)
+		"mushroom":
+			_reset_harvested_in_combined_registry(macro_state.mushroom_quantities)
+
+
+# Azzera SOLO "harvested" per ogni lotto di un registro nel formato combinato {"checkpoint_day",
+# "capacity","harvested"} (stick_quantities/plant_fiber_quantities/mushroom_quantities — stesso
+# Dictionary passato per riferimento, le scritture qui sono visibili al chiamante) — estratta una
+# volta sola invece di tre copie identiche (mushroom ne aveva già una propria, ora condivisa anche
+# da stick/plant_fiber). `if harvested == 0: continue` evita una scrittura Dictionary per il caso
+# comune (lotto mai raccolto), stesso principio già in uso altrove nel file.
+static func _reset_harvested_in_combined_registry(quantities: Dictionary) -> void:
+	for lot in quantities.keys():
+		var entry: Dictionary = quantities[lot]
+		if int(entry.get("harvested", 0)) == 0:
+			continue
+		entry["harvested"] = 0
+		quantities[lot] = entry

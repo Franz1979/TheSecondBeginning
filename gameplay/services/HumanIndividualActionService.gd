@@ -37,11 +37,14 @@ signal carried_resource_discarded(individual: HumanIndividual, resource_name: St
 # frame — e advance_movement NON chiama più individual.stop() all'arrivo, vedi lì: è QUESTO
 # servizio, non quello, a decidere quando una Task è davvero conclusa).
 #
-# Nessun clamp su current_stamina/current_happiness in questo passo (richiesta esplicita utente,
-# 2026-09-06 per stamina, confermato 2026-09-13 per happiness): possono scendere sotto zero senza
-# conseguenze — l'auto-interrupt quando si esauriscono arriverà in uno step successivo. Il tetto
-# massimo GIORNALIERO (non per-frame) resta responsabilità di HumanStaminaIndividualService/
-# HumanVitalsIndividualService, mai di questo servizio.
+# current_happiness resta senza clamp in questo passo (richiesta esplicita utente, 2026-09-13):
+# può scendere sotto zero senza conseguenze — l'auto-interrupt quando si esaurisce arriverà in uno
+# step successivo. Il tetto massimo GIORNALIERO (non per-frame) resta responsabilità di
+# HumanStaminaIndividualService/HumanVitalsIndividualService, mai di questo servizio.
+# current_stamina INVECE è clampata a 0 verso il basso qui sotto (richiesta utente — blocco task
+# sotto la soglia di Emergency Rest): non deve mai scendere sotto zero, altrimenti il rapporto
+# current_stamina/max_stamina usato da _resolve_active_stamina_need_priority/can_assign_task
+# risulterebbe negativo invece di restare fermo a 0.0.
 
 # Crescita skill al completamento Task (2026-09-13, richiesta utente) — +1.0 punto sulla skill
 # associata, UNA VOLTA SOLA quando l'INTERA Task termina con successo (mai per singola Action/
@@ -131,7 +134,7 @@ func apply_action(individual: HumanIndividual, delta: float, world: World = null
 
 	var action := task.get_current_action()
 	var stamina_delta := action.get_stamina_delta(individual, task.context, delta)
-	individual.current_stamina += stamina_delta
+	individual.current_stamina = max(individual.current_stamina + stamina_delta, 0.0)
 	# happiness (2026-09-13, richiesta utente) — STESSO ciclo/STESSO frame di stamina sopra, secondo
 	# metodo parallelo e indipendente (vedi Action.get_happiness_delta per il perché non è un
 	# secondo valore di ritorno dello stesso metodo). Nessun clamp qui: stesso principio di stamina

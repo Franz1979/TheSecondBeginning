@@ -264,6 +264,19 @@ func load_game_from_json(file_path: String) -> LoadedGame:
 				for pos_data in resource_entry.get("lots", []):
 					per_lot[Vector2i(int(pos_data["x"]), int(pos_data["y"]))] = int(pos_data["harvested"])
 				state.berry_harvested_by_lot[resource_name] = per_lot
+			# Raccolto per nido di "eggs" (2026-09-18, richiesta utente) — SIBLING del blocco
+			# berry_harvested_by_lot sopra, formato FLAT {x,y,harvested} (stesso motivo di
+			# GameSaveService — eggs è l'unica risorsa di questa famiglia, vedi MacroCellState.
+			# eggs_harvested_by_lot). .get() con default [] per compatibilità coi save precedenti a
+			# questo campo, stesso principio di ogni altro blocco opzionale in questa funzione.
+			for pos_data in state_data.get("eggs_harvested_by_lot", []):
+				var eggs_pos := Vector2i(int(pos_data["x"]), int(pos_data["y"]))
+				state.eggs_harvested_by_lot[eggs_pos] = int(pos_data["harvested"])
+			# Raccolto per lotto di "wild_vegetables" (2026-09-19, richiesta utente) — SIBLING del
+			# blocco eggs_harvested_by_lot sopra, stesso formato/stesso principio di compatibilità.
+			for pos_data in state_data.get("wild_vegetables_harvested_by_lot", []):
+				var wild_vegetables_pos := Vector2i(int(pos_data["x"]), int(pos_data["y"]))
+				state.wild_vegetables_harvested_by_lot[wild_vegetables_pos] = int(pos_data["harvested"])
 			for pos_data in state_data.get("vegetation_death_exceptions", []):
 				var death_key := Vector3i(int(pos_data["x"]), int(pos_data["y"]), int(pos_data["i"]))
 				state.vegetation_death_exceptions[death_key] = {

@@ -278,6 +278,23 @@ func save_game_to_json(
 			fruit_stock_harvested_data.append({"resource_name": resource_name, "lots": lots_data})
 		if not fruit_stock_harvested_data.is_empty():
 			state_data["berry_harvested_by_lot"] = fruit_stock_harvested_data
+		# Raccolto per nido di "eggs" (2026-09-18, richiesta utente — uova raccoglibili per
+		# microcella) — SIBLING del blocco fruit_stock_harvested_data sopra, ma FLAT (non annidato
+		# per resource_name: eggs è l'unica risorsa di questa famiglia, vedi MacroCellState.
+		# eggs_harvested_by_lot) — stesso formato {x,y,harvested} di stick_quantities, senza
+		# checkpoint_day/capacity per lo stesso motivo del blocco berry.
+		if not state.eggs_harvested_by_lot.is_empty():
+			var eggs_harvested_data: Array = []
+			for pos in state.eggs_harvested_by_lot.keys():
+				eggs_harvested_data.append({"x": pos.x, "y": pos.y, "harvested": int(state.eggs_harvested_by_lot[pos])})
+			state_data["eggs_harvested_by_lot"] = eggs_harvested_data
+		# Raccolto per lotto di "wild_vegetables" (2026-09-19, richiesta utente) — SIBLING del
+		# blocco eggs_harvested_by_lot sopra, stesso formato FLAT {x,y,harvested}.
+		if not state.wild_vegetables_harvested_by_lot.is_empty():
+			var wild_vegetables_harvested_data: Array = []
+			for pos in state.wild_vegetables_harvested_by_lot.keys():
+				wild_vegetables_harvested_data.append({"x": pos.x, "y": pos.y, "harvested": int(state.wild_vegetables_harvested_by_lot[pos])})
+			state_data["wild_vegetables_harvested_by_lot"] = wild_vegetables_harvested_data
 		# Stesso formato/principio di vegetation_cut_exceptions sopra, ma per la mortalità naturale
 		# (vedi MacroCellState.vegetation_death_exceptions) — campo "death_year" invece di "cut_year".
 		if not state.vegetation_death_exceptions.is_empty():

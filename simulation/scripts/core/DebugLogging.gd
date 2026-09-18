@@ -226,3 +226,14 @@ const SHOW_SAFETY_LOGS := true
 # comportamento di simulazione cambia, solo [DBG_TASK] viene soppresso. Rimetti a true per
 # riaverlo.
 const SHOW_DAILY_SUMMARY_LOGS := false
+
+# DEBUG TEMPORANEO [FOW DIAG] — rimuovere. Filtro dedicato per [FOW DIAG] (FogOfWarRenderer.setup/
+# _draw, GameScene._attempt_macro_cell_transition/_update_live_neighbor) — diagnostica per il bug
+# "nero ogni tanto quando un individuo attraversa il bordo macrocella, anche dopo il fix
+# precedente": traccia la creazione di ogni FogOfWarRenderer (macrocella, funzione chiamante,
+# stato full-flush), ogni flush pieno (sorgenti ricevute, prime posizioni tradotte + individuo/
+# posizione grezza/home_macro_coords corrispondenti) e l'ordine reale di aggiornamento posizione/
+# home_macro_coords/creazione renderer durante un attraversamento di bordo o un'attivazione di
+# vicino. Default true: sessione di diagnostica attiva. Solo log, nessun comportamento di
+# simulazione cambia — rimuovere flag e chiamate insieme una volta risolto il bug.
+const SHOW_FOW_DIAG_LOGS := false

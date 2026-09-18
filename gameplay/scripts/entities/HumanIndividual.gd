@@ -643,6 +643,20 @@ func _load_name_pool(path: String) -> Array[String]:
 # zaino). NESSUN side-effect qui dentro — nessuna chiamata a stop()/discard_carried_resource() da
 # questa funzione, solo lettura di task.steps/task.allowed_age_bands.
 func can_assign_task(task: Task, age_band: HumanTypes.AgeBand) -> bool:
+	# Blocco sotto la soglia di Emergency Rest (richiesta utente) — sotto HumanIndividualAction
+	# Service.STAMINA_EMERGENCY_REST_THRESHOLD (stessa soglia, unica fonte di verità, che fa già
+	# scattare l'Emergency Rest automatica in _resolve_active_stamina_need_priority) l'individuo
+	# può SOLO riposare: qualunque Task diversa da Rest/Emergency Rest viene rifiutata QUI, anche
+	# se assegnata manualmente dal giocatore. Le due Task-bisogno si riconoscono da
+	# task.interrupt_priority (1 = emergency_rest.tres, 2 = rest.tres — stesso schema già usato da
+	# _handle_stamina_interrupt), mai da un secondo confronto su task_name.
+	if max_stamina > 0.0 and current_stamina / max_stamina < HumanIndividualActionService.STAMINA_EMERGENCY_REST_THRESHOLD:
+		if task.interrupt_priority != 1 and task.interrupt_priority != 2:
+			if DebugLogging.ENABLED and DebugLogging.SHOW_TASK_LIFECYCLE_LOGS:
+				print("[TASK GUARD] Individuo #%d %s: stamina %.1f/%.1f sotto la soglia Emergency Rest — solo Rest/Emergency Rest ammesse, '%s' rifiutata." % [
+					id, name, current_stamina, max_stamina, task.task_name
+				])
+			return false
 	for step in task.steps:
 		if step.disallowed_age_bands.has(age_band):
 			if DebugLogging.ENABLED and DebugLogging.SHOW_TASK_LIFECYCLE_LOGS:

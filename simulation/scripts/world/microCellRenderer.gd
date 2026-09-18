@@ -380,6 +380,23 @@ var _pebble_multimeshes: Array = []
 var stick_quantities: Dictionary = {}
 var _stick_mesh: ArrayMesh = null
 var _stick_multimesh: MultiMesh = null
+# Nidi "eggs" (2026-09-18, richiesta utente — uova raccoglibili per microcella) — Vector2i (nido,
+# una microcella GRASS) -> quantità disponibile RESIDUA, già netta del raccolto e già filtrata a
+# > 0 dal chiamante (GameScene._refresh_resource_visuals, tramite TerrainScatteredResourceService.
+# get_egg_stock_available_at — la funzione di disponibilità residua, non un secondo calcolo qui).
+# MIRROR di stick_quantities sopra ma con un int diretto invece di {"capacity","harvested"}: il
+# chiamante ha già risolto la sottrazione, questo renderer si limita a leggere "quanto disegnare".
+# Un solo mesh condiviso (stesso principio di stick: nessuna variante multipla necessaria).
+var egg_nest_availability: Dictionary = {}
+var _egg_mesh: ArrayMesh = null
+var _egg_multimesh: MultiMesh = null
+# Lotti "wild_vegetables" (2026-09-19, richiesta utente — verdure selvatiche raccoglibili per
+# microcella) — MIRROR esatto di egg_nest_availability sopra, stesso formato/stessa fonte
+# (TerrainScatteredResourceService.get_wild_vegetable_available_at invece di get_egg_stock_
+# available_at).
+var wild_vegetable_availability: Dictionary = {}
+var _wild_vegetables_mesh: ArrayMesh = null
+var _wild_vegetables_multimesh: MultiMesh = null
 # Sottotipo congelato per individuo — Vector3i -> String ("wood_only"/"fruit_bearing" per SHRUB,
 # "wood_only"/"wild_fruit"/"domesticable_fruit"/"conifer" per TREE), stesso oggetto di
 # MacroCellState.tree_individual_subtype/shrub_individual_subtype (Dictionary per riferimento,
@@ -477,6 +494,26 @@ func set_pebble_quantities(quantities: Dictionary) -> void:
 func set_stick_quantities(quantities: Dictionary) -> void:
 	stick_quantities = quantities
 	_rebuild_stick_multimesh()
+	queue_redraw()
+
+
+# Nidi "eggs" (2026-09-18, richiesta utente) — chiamato da GameScene._refresh_resource_visuals con
+# la disponibilità RESIDUA già filtrata a > 0 e da Fog of War (STESSO momento/STESSA cadenza di
+# set_stick_quantities sopra — checkpoint stagionale/raccolta/movimento con visibilità cambiata).
+# A differenza di stone/pebble non dipende da un "set_positions" separato: i nidi sono già le
+# chiavi del Dictionary stesso (MacroCellState.egg_nest_positions concettualmente, qui letto
+# indirettamente dalle chiavi di egg_nest_availability) — stesso schema di set_stick_quantities.
+func set_egg_nest_availability(availability: Dictionary) -> void:
+	egg_nest_availability = availability
+	_rebuild_egg_multimesh()
+	queue_redraw()
+
+
+# Lotti "wild_vegetables" (2026-09-19, richiesta utente) — MIRROR esatto di
+# set_egg_nest_availability sopra, stesso momento/stessa cadenza di chiamata da GameScene.
+func set_wild_vegetable_availability(availability: Dictionary) -> void:
+	wild_vegetable_availability = availability
+	_rebuild_wild_vegetables_multimesh()
 	queue_redraw()
 
 
@@ -940,6 +977,8 @@ func _draw() -> void:
 	_draw_pebble_positions()
 	_draw_selected_stone_highlight()
 	_draw_stick_positions()
+	_draw_egg_nest_positions()
+	_draw_wild_vegetables_positions()
 	_draw_selected_stick_lot_highlight()
 	_draw_selected_microcell_highlight()
 	_draw_vegetation_positions()
@@ -1211,6 +1250,10 @@ func _draw_deposit_site_storage_grid(ground: Vector2, slot_breakdown: Array) -> 
 				_draw_deposit_storage_fruit_icon(top_left, DEPOSIT_SITE_STORAGE_SQUARE_SIDE)
 			"mushroom":
 				_draw_deposit_storage_mushroom_icon(top_left, DEPOSIT_SITE_STORAGE_SQUARE_SIDE)
+			"eggs":
+				_draw_deposit_storage_eggs_icon(top_left, DEPOSIT_SITE_STORAGE_SQUARE_SIDE)
+			"wild_vegetables":
+				_draw_deposit_storage_wild_vegetables_icon(top_left, DEPOSIT_SITE_STORAGE_SQUARE_SIDE)
 			_:
 				# Fallback per un'eventuale risorsa futura senza geometria replicata qui — un
 				# semplice pallino nel colore della risorsa (IconRegistry.get_resource_color, stessa
@@ -1522,6 +1565,88 @@ func _draw_deposit_storage_mushroom_ellipse(center: Vector2, radius: Vector2, co
 	for i in range(DEPOSIT_STORAGE_MUSHROOM_ELLIPSE_SEGMENTS):
 		var angle: float = TAU * float(i) / float(DEPOSIT_STORAGE_MUSHROOM_ELLIPSE_SEGMENTS)
 		points.append(center + Vector2(cos(angle) * radius.x, sin(angle) * radius.y))
+	draw_colored_polygon(points, color)
+
+
+# Replica world-space per "eggs" (2026-09-18, richiesta utente — bugfix "vedo solo il pallino
+# blu nel magazzino": mancava del tutto qui, cadeva nel fallback generico _: di _draw_deposit_
+# site_storage_grid — STESSO identico bug già risolto per mushroom sopra, vedi quel commento). A
+# differenza di berry/acorn/fruit/mushroom (icone Control dedicate in simulation/scripts/ui/,
+# replicate qui 1:1) eggs usa solo un emoji altrove (IconRegistry.RESOURCE_ICONS — un'emoji non è
+# replicabile in world-space, nessun *Icon.gd da cui copiare punti/colori): geometria disegnata
+# direttamente qui, TRE piccole ellissi color guscio ravvicinate ("2 o 3 uova vicine", richiesta
+# esplicita utente) invece di un singolo ovale — niente stelo/foglia, non è un frutto. Stessa forma
+# ovale asimmetrica (più stretta verso l'alto) della mesh del nido a terra (vedi _ensure_egg_mesh
+# più sotto in questo file), per coerenza visiva tra i due punti di rendering di questa risorsa.
+const DEPOSIT_STORAGE_EGG_COLOR := Color(0.93, 0.88, 0.74, 1.0)
+const DEPOSIT_STORAGE_EGG_COLOR_SHADOW := Color(0.80, 0.74, 0.58, 1.0)
+const DEPOSIT_STORAGE_EGG_ELLIPSE_SEGMENTS: int = 12
+const DEPOSIT_STORAGE_EGGS := [
+	{"cx": 0.33, "cy": 0.62, "rx": 0.13, "ry": 0.17, "rot": -0.2, "color": DEPOSIT_STORAGE_EGG_COLOR_SHADOW},
+	{"cx": 0.57, "cy": 0.68, "rx": 0.14, "ry": 0.185, "rot": 0.05, "color": DEPOSIT_STORAGE_EGG_COLOR},
+	{"cx": 0.68, "cy": 0.46, "rx": 0.125, "ry": 0.165, "rot": 0.3, "color": DEPOSIT_STORAGE_EGG_COLOR_SHADOW},
+]
+
+func _draw_deposit_storage_eggs_icon(top_left: Vector2, side: float) -> void:
+	for egg in DEPOSIT_STORAGE_EGGS:
+		_draw_deposit_storage_egg(top_left, side, egg["cx"], egg["cy"], egg["rx"], egg["ry"], egg["rot"], egg["color"])
+
+
+func _draw_deposit_storage_egg(
+	top_left: Vector2, side: float, cx: float, cy: float, rx: float, ry: float, rotation: float, color: Color
+) -> void:
+	var center: Vector2 = top_left + Vector2(cx, cy) * side
+	var radius := Vector2(rx * side, ry * side)
+	var points := PackedVector2Array()
+	for i in range(DEPOSIT_STORAGE_EGG_ELLIPSE_SEGMENTS):
+		var angle: float = TAU * float(i) / float(DEPOSIT_STORAGE_EGG_ELLIPSE_SEGMENTS)
+		var width_scale: float = lerp(0.72, 1.0, (1.0 - cos(angle)) * 0.5)
+		var local_point := Vector2(sin(angle) * radius.x * width_scale, -cos(angle) * radius.y)
+		points.append(center + local_point.rotated(rotation))
+	draw_colored_polygon(points, color)
+
+
+# Replica world-space per "wild_vegetables" (2026-09-19, richiesta utente — verdure selvatiche
+# raccoglibili per microcella; TRE foglie invece di due, una più grande delle altre, dal
+# 2026-09-19 — richiesta utente): STESSO principio di eggs sopra (nessuna icona Control dedicata
+# da replicare, geometria disegnata direttamente qui) — TRE foglie ellittiche allungate che si
+# aprono a ventaglio da una base comune + un piccolo stelo/radice, invece di un frutto rotondo:
+# la foglia centrale è più grande e punta dritta verso l'alto (rot=0), le due laterali sono più
+# piccole e simmetriche, stesso principio "una dominante, le altre di contorno" già usato per gli
+# eggs (2 gusci d'ombra + 1 pieno). Stessa forma (ellisse semplice, nessuna asimmetria come
+# l'uovo) sia qui sia nella mesh a terra (vedi _ensure_wild_vegetables_mesh più sotto in questo
+# file, che riusa DIRETTAMENTE questo stesso Array), per coerenza visiva tra i due punti di
+# rendering di questa risorsa.
+const DEPOSIT_STORAGE_WILD_VEGETABLES_COLOR_LEAF_MAIN := Color(0.42, 0.62, 0.22, 1.0)
+const DEPOSIT_STORAGE_WILD_VEGETABLES_COLOR_LEAF_DARK := Color(0.30, 0.48, 0.16, 1.0)
+const DEPOSIT_STORAGE_WILD_VEGETABLES_COLOR_STEM := Color(0.55, 0.42, 0.20, 1.0)
+const DEPOSIT_STORAGE_WILD_VEGETABLES_ELLIPSE_SEGMENTS: int = 12
+const DEPOSIT_STORAGE_WILD_VEGETABLES_LEAVES := [
+	{"cx": 0.32, "cy": 0.46, "rx": 0.13, "ry": 0.22, "rot": -0.65, "color": DEPOSIT_STORAGE_WILD_VEGETABLES_COLOR_LEAF_DARK},
+	{"cx": 0.50, "cy": 0.34, "rx": 0.19, "ry": 0.32, "rot": 0.0, "color": DEPOSIT_STORAGE_WILD_VEGETABLES_COLOR_LEAF_MAIN},
+	{"cx": 0.68, "cy": 0.46, "rx": 0.13, "ry": 0.22, "rot": 0.65, "color": DEPOSIT_STORAGE_WILD_VEGETABLES_COLOR_LEAF_DARK},
+]
+
+func _draw_deposit_storage_wild_vegetables_icon(top_left: Vector2, side: float) -> void:
+	var stem_base: Vector2 = top_left + Vector2(0.5, 0.68) * side
+	var stem_top: Vector2 = top_left + Vector2(0.5, 0.5) * side
+	draw_line(stem_base, stem_top, DEPOSIT_STORAGE_WILD_VEGETABLES_COLOR_STEM, side * 0.05, true)
+	for leaf in DEPOSIT_STORAGE_WILD_VEGETABLES_LEAVES:
+		_draw_deposit_storage_wild_vegetables_leaf(
+			top_left, side, leaf["cx"], leaf["cy"], leaf["rx"], leaf["ry"], leaf["rot"], leaf["color"]
+		)
+
+
+func _draw_deposit_storage_wild_vegetables_leaf(
+	top_left: Vector2, side: float, cx: float, cy: float, rx: float, ry: float, rotation: float, color: Color
+) -> void:
+	var center: Vector2 = top_left + Vector2(cx, cy) * side
+	var radius := Vector2(rx * side, ry * side)
+	var points := PackedVector2Array()
+	for i in range(DEPOSIT_STORAGE_WILD_VEGETABLES_ELLIPSE_SEGMENTS):
+		var angle: float = TAU * float(i) / float(DEPOSIT_STORAGE_WILD_VEGETABLES_ELLIPSE_SEGMENTS)
+		var local_point := Vector2(cos(angle) * radius.x, sin(angle) * radius.y)
+		points.append(center + local_point.rotated(rotation))
 	draw_colored_polygon(points, color)
 
 
@@ -1850,6 +1975,175 @@ func _draw_stick_positions() -> void:
 	if _stick_multimesh == null or _stick_multimesh.instance_count <= 0:
 		return
 	draw_multimesh(_stick_multimesh, null)
+	_debug_draw_primitive_count += 1
+
+
+# Nidi/eggs a terra (2026-09-18/19, richiesta utente — "anche il rendering sulla microcella
+# disegna le tre ovette come nel magazzino"): MIRROR ESATTO del pattern stick per il MECCANISMO
+# (un solo mesh unitario condiviso, UN SOLO MultiMesh con N istanze, rotazione per-istanza per la
+# varietà visiva — MAI una primitiva di disegno per nido: niente draw_circle/draw_polygon dentro
+# _draw(), un pattern immediate-mode del genere ha già esaurito il command buffer e fatto
+# crashare il gioco altrove nel progetto, vedi FogOfWarRenderer), ma la FORMA della mesh unitaria
+# è ora la STESSA composizione a tre uova (due color-ombra, una color-base — DEPOSIT_STORAGE_EGGS
+# più sotto in questo file) già usata per l'icona del magazzino, non un singolo ovale generico
+# scalato per tier di quantità (rimosso, con _egg_tier_count/EGG_TIER_*/EGG_COUNT_*: un nido è
+# UNA nidiata, non "1, 2 o 3 oggetti separati" — la composizione a tre uova non cambia con la
+# quantità disponibile, esattamente come l'icona di magazzino non scala con essa). Il mesh
+# UNITARIO qui è quindi COMPOSITO (tre ellissi, ciascuna col proprio colore cotto nei vertici via
+# SurfaceTool.set_color() — chiamato una volta per uovo PRIMA di aggiungerne i vertici, ogni
+# add_vertex successivo eredita il colore corrente, stesso principio di _build_fan_mesh ma con più
+# di un colore in una singola mesh), riusando DIRETTAMENTE i dati DEPOSIT_STORAGE_EGGS (stessa
+# fonte di verità per le due rappresentazioni della risorsa, mai una copia separata che potrebbe
+# disallinearsi). Un solo instance PER NIDO con disponibilità > 0 (nessuna variazione di conteggio
+# per quantità), con una rotazione deterministica per nido (hash su posizione) per varietà visiva
+# tra un nido e l'altro — altrimenti ogni nido sulla mappa avrebbe l'identica orientazione.
+const EGG_CLUSTER_SCALE: float = 2.6
+const EGG_ROTATION_JITTER_MAX: float = 0.35
+
+
+# Punto sul contorno di un "uovo" (ovale asimmetrico, più stretto verso l'alto/y negativo) dato
+# raggio e angolo — STESSA formula già usata per l'icona di magazzino (_draw_deposit_storage_egg
+# più sotto), duplicata apposta qui: due contesti di disegno diversi (mesh cotta vs poligono
+# immediate-mode), stesso principio "nessuna funzione condivisa tra usi diversi" già seguito
+# altrove in questo file per le ellissi di berry/mushroom.
+static func _egg_shape_point(radius: Vector2, angle: float) -> Vector2:
+	var width_scale: float = lerp(0.72, 1.0, (1.0 - cos(angle)) * 0.5)
+	return Vector2(sin(angle) * radius.x * width_scale, -cos(angle) * radius.y)
+
+
+func _ensure_egg_mesh() -> void:
+	if _egg_mesh != null:
+		return
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	for egg in DEPOSIT_STORAGE_EGGS:
+		# Da spazio [0,1] relativo a un lato quadrato (convenzione dell'icona di magazzino) a
+		# spazio centrato in (0,0) scalato per EGG_CLUSTER_SCALE — l'unica conversione necessaria
+		# per riusare DIRETTAMENTE cx/cy/rx/ry/rot di DEPOSIT_STORAGE_EGGS qui.
+		var center := Vector2(float(egg["cx"]) - 0.5, float(egg["cy"]) - 0.5) * EGG_CLUSTER_SCALE
+		var radius := Vector2(float(egg["rx"]), float(egg["ry"])) * EGG_CLUSTER_SCALE
+		var egg_rotation: float = float(egg["rot"])
+		st.set_color(egg["color"])
+		var center3 := Vector3(center.x, center.y, 0.0)
+		for i in range(DEPOSIT_STORAGE_EGG_ELLIPSE_SEGMENTS):
+			var angle_a: float = TAU * float(i) / float(DEPOSIT_STORAGE_EGG_ELLIPSE_SEGMENTS)
+			var angle_b: float = TAU * float(i + 1) / float(DEPOSIT_STORAGE_EGG_ELLIPSE_SEGMENTS)
+			var point_a: Vector2 = center + _egg_shape_point(radius, angle_a).rotated(egg_rotation)
+			var point_b: Vector2 = center + _egg_shape_point(radius, angle_b).rotated(egg_rotation)
+			st.add_vertex(center3)
+			st.add_vertex(Vector3(point_a.x, point_a.y, 0.0))
+			st.add_vertex(Vector3(point_b.x, point_b.y, 0.0))
+	_egg_mesh = st.commit()
+	_egg_multimesh = MultiMesh.new()
+	_egg_multimesh.transform_format = MultiMesh.TRANSFORM_2D
+	_egg_multimesh.mesh = _egg_mesh
+	_egg_multimesh.instance_count = 0
+
+
+# Ricostruita da set_egg_nest_availability ogni volta che GameScene rinfresca la disponibilità
+# (checkpoint stagionale/raccolta/movimento con filtro FoW cambiato) — MAI qui in modo autonomo,
+# stesso principio di _rebuild_stick_multimesh. Un'istanza per nido con disponibilità > 0 (nessuna
+# variazione di conteggio, vedi commento di testa sopra), centrata sulla SUA microcella con una
+# rotazione deterministica per varietà visiva. Vector2i tipizzato esplicitamente (non :=) perché
+# `nest_pos` proviene da un ciclo su Dictionary.keys() non tipizzato — stesso trattamento già
+# riservato a `lot` in _rebuild_stick_multimesh.
+func _rebuild_egg_multimesh() -> void:
+	_ensure_egg_mesh()
+	var half: float = CELL_SIZE / 2.0
+	var transforms: Array = []
+	for nest_pos in egg_nest_availability.keys():
+		var available: int = int(egg_nest_availability[nest_pos])
+		if available <= 0:
+			continue
+		var nest_lot: Vector2i = nest_pos
+		var ground: Vector2 = Vector2(nest_lot.x * CELL_SIZE + half, nest_lot.y * CELL_SIZE + half)
+		var seed_base: Vector2i = nest_lot * 41 + Vector2i(5, 11)
+		var jitter_rotation: float = lerp(-EGG_ROTATION_JITTER_MAX, EGG_ROTATION_JITTER_MAX, float(hash(seed_base + Vector2i(7, 3)) % 1000) / 1000.0)
+		var egg_transform := Transform2D(jitter_rotation, Vector2.ZERO)
+		egg_transform.origin = ground
+		transforms.append(egg_transform)
+	_egg_multimesh.instance_count = transforms.size()
+	for i in range(transforms.size()):
+		_egg_multimesh.set_instance_transform_2d(i, transforms[i])
+
+
+func _draw_egg_nest_positions() -> void:
+	if _egg_multimesh == null or _egg_multimesh.instance_count <= 0:
+		return
+	draw_multimesh(_egg_multimesh, null)
+	_debug_draw_primitive_count += 1
+
+
+# Lotti/wild_vegetables a terra (2026-09-19, richiesta utente — "un solo MultiMesh con un'istanza
+# per lotto con disponibilità > 0, mirror di stick... mai primitive di disegno per lotto"): STESSO
+# MECCANISMO/STESSA struttura del blocco eggs sopra (mesh COMPOSITA cotta una volta con
+# SurfaceTool, riusando DIRETTAMENTE DEPOSIT_STORAGE_WILD_VEGETABLES_LEAVES — stessa fonte di
+# verità dell'icona di magazzino, mai una copia separata — UN SOLO instance per lotto con
+# disponibilità > 0, nessuna variazione di conteggio, rotazione deterministica per varietà
+# visiva). A differenza delle uova (ovale asimmetrico), le foglie sono ellissi semplici
+# (cos/sin diretti, nessun width_scale) — stessa forma usata dall'icona di magazzino sopra.
+const WILD_VEGETABLES_CLUSTER_SCALE: float = 2.4
+const WILD_VEGETABLES_ROTATION_JITTER_MAX: float = 0.4
+
+
+func _ensure_wild_vegetables_mesh() -> void:
+	if _wild_vegetables_mesh != null:
+		return
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	for leaf in DEPOSIT_STORAGE_WILD_VEGETABLES_LEAVES:
+		# Da spazio [0,1] relativo a un lato quadrato (convenzione dell'icona di magazzino) a
+		# spazio centrato in (0,0) scalato per WILD_VEGETABLES_CLUSTER_SCALE — stessa conversione
+		# già usata per _ensure_egg_mesh sopra.
+		var center := Vector2(float(leaf["cx"]) - 0.5, float(leaf["cy"]) - 0.5) * WILD_VEGETABLES_CLUSTER_SCALE
+		var radius := Vector2(float(leaf["rx"]), float(leaf["ry"])) * WILD_VEGETABLES_CLUSTER_SCALE
+		var leaf_rotation: float = float(leaf["rot"])
+		st.set_color(leaf["color"])
+		var center3 := Vector3(center.x, center.y, 0.0)
+		for i in range(DEPOSIT_STORAGE_WILD_VEGETABLES_ELLIPSE_SEGMENTS):
+			var angle_a: float = TAU * float(i) / float(DEPOSIT_STORAGE_WILD_VEGETABLES_ELLIPSE_SEGMENTS)
+			var angle_b: float = TAU * float(i + 1) / float(DEPOSIT_STORAGE_WILD_VEGETABLES_ELLIPSE_SEGMENTS)
+			var point_a: Vector2 = center + Vector2(cos(angle_a) * radius.x, sin(angle_a) * radius.y).rotated(leaf_rotation)
+			var point_b: Vector2 = center + Vector2(cos(angle_b) * radius.x, sin(angle_b) * radius.y).rotated(leaf_rotation)
+			st.add_vertex(center3)
+			st.add_vertex(Vector3(point_a.x, point_a.y, 0.0))
+			st.add_vertex(Vector3(point_b.x, point_b.y, 0.0))
+	_wild_vegetables_mesh = st.commit()
+	_wild_vegetables_multimesh = MultiMesh.new()
+	_wild_vegetables_multimesh.transform_format = MultiMesh.TRANSFORM_2D
+	_wild_vegetables_multimesh.mesh = _wild_vegetables_mesh
+	_wild_vegetables_multimesh.instance_count = 0
+
+
+# Ricostruita da set_wild_vegetable_availability ogni volta che GameScene rinfresca la
+# disponibilità — STESSO principio di _rebuild_egg_multimesh: un'istanza per lotto con
+# disponibilità > 0, centrata sulla SUA microcella con una rotazione deterministica per varietà
+# visiva. Vector2i tipizzato esplicitamente (non :=) perché `lot_pos` proviene da un ciclo su
+# Dictionary.keys() non tipizzato.
+func _rebuild_wild_vegetables_multimesh() -> void:
+	_ensure_wild_vegetables_mesh()
+	var half: float = CELL_SIZE / 2.0
+	var transforms: Array = []
+	for lot_pos in wild_vegetable_availability.keys():
+		var available: int = int(wild_vegetable_availability[lot_pos])
+		if available <= 0:
+			continue
+		var lot: Vector2i = lot_pos
+		var ground: Vector2 = Vector2(lot.x * CELL_SIZE + half, lot.y * CELL_SIZE + half)
+		var seed_base: Vector2i = lot * 43 + Vector2i(13, 29)
+		var jitter_rotation: float = lerp(-WILD_VEGETABLES_ROTATION_JITTER_MAX, WILD_VEGETABLES_ROTATION_JITTER_MAX, float(hash(seed_base + Vector2i(7, 3)) % 1000) / 1000.0)
+		var wild_vegetables_transform := Transform2D(jitter_rotation, Vector2.ZERO)
+		wild_vegetables_transform.origin = ground
+		transforms.append(wild_vegetables_transform)
+	_wild_vegetables_multimesh.instance_count = transforms.size()
+	for i in range(transforms.size()):
+		_wild_vegetables_multimesh.set_instance_transform_2d(i, transforms[i])
+
+
+func _draw_wild_vegetables_positions() -> void:
+	if _wild_vegetables_multimesh == null or _wild_vegetables_multimesh.instance_count <= 0:
+		return
+	draw_multimesh(_wild_vegetables_multimesh, null)
 	_debug_draw_primitive_count += 1
 
 

@@ -27,11 +27,27 @@ extends Resource
 # calories_per_unit) — rappresenta quanto è marcito/sepolto/non raggiungibile. Per FORAGE: 0.6
 # in inverno significa che il 40% dell'erba residua non è più foraggiabile, il resto sì.
 @export var seasonal_availability_multiplier: Array[float] = [1.0, 1.0, 1.0, 1.0]
-# Stagione di reset pieno per fonti a stock persistente (consuming_depletes_primary = false):
-# a inizio di questa stagione lo stock si azzera e riparte dal tetto pieno di quella stagione,
-# scartando il residuo del ciclo precedente ("i frutti non si accumulano da un anno all'altro").
-# Ignorato per FORAGE (consuming_depletes_primary = true), che resta stateless — vedi
-# CaloricCalculator.update_secondary_resource_stock.
+# Stagione di reset pieno per fonti a STOCK AGGREGATO persistente (consuming_depletes_primary =
+# false): a inizio di questa stagione lo stock si azzera e riparte dal tetto pieno di quella
+# stagione, scartando il residuo del ciclo precedente ("i frutti non si accumulano da un anno
+# all'altro") — vedi CaloricCalculator.update_secondary_resource_stock/seed_secondary_resource_
+# stock_now, gli UNICI due punti che lo leggono.
+#
+# CHI LO LEGGE (2026-09-19, richiesta utente — commento aggiornato per dire esattamente chi legge
+# e chi ignora questo campo, verificato nel codice, non inventato): SOLO le risorse del modello a
+# stock aggregato via CaloricCalculator.SECONDARY_SOURCES — oggi berry/acorn/fruit/eggs. Qualunque
+# altra risorsa lo IGNORA, pur avendolo presente ed export-abile nel proprio .tres:
+#   - forage/fish_meat/bird_meat: consuming_depletes_primary=true, stateless per costruzione,
+#     nessuno stock da resettare;
+#   - pebble/stick/plant_fiber/mushroom/wild_vegetables (modello "capacità per lotto", vedi
+#     TerrainScatteredResourceService): non hanno mai avuto un ciclo legato a questo campo — il
+#     loro raccolto (dove esiste, vedi reset_all_lot_harvests_on_season_rise) si azzera quando il
+#     LORO seasonal_availability_multiplier SALE rispetto alla stagione precedente, un confronto
+#     dinamico tra due stagioni consecutive, non un singolo "giorno dell'anno" fisso come questo
+#     campo. Impostare cycle_start_season su uno di questi sei .tres non ha ALCUN effetto — non è
+#     un uso pianificato per il futuro, è semplicemente un campo della classe base non pertinente
+#     per questo modello, lasciato qui invece che reso condizionale per non introdurre una
+#     sottoclasse solo per questo.
 @export var cycle_start_season: GameTypes.Season = GameTypes.Season.SPRING
 
 @export_group("Consumption")
@@ -114,3 +130,61 @@ extends Resource
 # lo legge. Default 0 (non 3): un .tres che non lo valorizza esplicitamente deve produrre un warning
 # visibile (capacity sempre 0), MAI un fallback silenzioso a un numero che sembra normale.
 @export var units_per_mature_plant: int = 0
+
+# Probabilità [0.0, 1.0] che una data microcella GRASS diventi un "lotto" raccoglibile per questa
+# risorsa (2026-09-18, richiesta utente — eggs raccoglibile per microcella; RINOMINATO da
+# nest_probability il 2026-09-19, richiesta utente — wild_vegetables: STESSO meccanismo, un
+# secondo consumatore su GRASS oltre agli eggs, "lotto" generico invece di "nido" specifico di
+# eggs) — consultato da TerrainScatteredResourceService.compute_egg_nest_positions (eggs) e
+# compute_wild_vegetable_lots (wild_vegetables), che filtrano le posizioni GRASS correnti della
+# macrocella con hash(str(micro_seed) + salt) sulla posizione contro questa soglia — stesso idioma
+# già usato da ResourcePositionService per il bordo sfumato dei semi di rumore, salt DIVERSO per
+# risorsa (mai lo stesso hash tra eggs e wild_vegetables, altrimenti selezionerebbero sempre
+# esattamente le stesse microcelle). Default 0.0 (nessuna .tres esistente lo valorizza tranne
+# eggs.tres/wild_vegetables.tres): un .tres che non lo valorizza esplicitamente produce quindi
+# zero lotti, mai un fallback silenzioso a una probabilità che sembra normale — stesso principio
+# di units_per_mature_plant sopra.
+@export var patch_probability: float = 0.0
+
+# Intervallo [patch_weight_min, patch_weight_max] del peso di UN lotto (2026-09-18, richiesta
+# utente — eggs, "i nidi hanno tutti peso uniforme... rendi il peso variabile per nido";
+# RINOMINATO da nest_weight_min/max il 2026-09-19 insieme a patch_probability sopra) — consultato
+# SOLO da TerrainScatteredResourceService.compute_egg_nest_positions, che risolve il peso di ogni
+# nido con hash(str(micro_seed) + salt) sulla posizione (STESSO idioma/STESSA fonte di micro_seed
+# di patch_probability sopra, ma un salt DIVERSO — mai lo stesso hash usato per decidere SE una
+# posizione è un lotto, altrimenti probabilità e peso sarebbero perfettamente correlati invece che
+# indipendenti) interpolato linearmente in questo intervallo. La ripartizione resta stock ×
+# peso_nido / peso_totale (TerrainScatteredResourceService.get_egg_stock_available_at) — il totale
+# raccoglibile in una macrocella non cambia, solo come si distribuisce tra nidi ricchi e poveri.
+# CHI LO LEGGE (2026-09-19, richiesta utente — commento aggiornato per dire esattamente chi legge
+# e chi ignora questo campo): SOLO eggs (modello a stock aggregato ripartito per peso, vedi sopra).
+# Le risorse "capacità per lotto" (pebble/stick/plant_fiber/mushroom/wild_vegetables) lo IGNORANO
+# tutte, pur avendolo presente/export-abile sul proprio .tres come ogni SecondaryResourceRules —
+# wild_vegetables in particolare usa invece patch_capacity_min/max sotto (modello a capacità
+# ASSOLUTA per lotto, nessuno stock aggregato da ripartire) — due campi distinti perché sono
+# concettualmente diversi, non lo stesso valore con un nome diverso; le altre quattro non hanno
+# alcun concetto di "peso relativo" nel proprio modello. Default [0.5, 1.5] (richiesta esplicita
+# utente): nessun'altra .tres oltre eggs.tres valorizza questi due campi oggi. patch_weight_min ==
+# patch_weight_max (incluso il default 0.0==0.0 di una .tres che non li valorizza affatto) equivale
+# a peso uniforme — nessun caso speciale nel codice che li consulta, la formula regge da sola anche
+# con un intervallo degenere.
+@export var patch_weight_min: float = 0.5
+@export var patch_weight_max: float = 1.5
+
+# Intervallo [patch_capacity_min, patch_capacity_max] della capacità RAW di UN lotto (2026-09-19,
+# richiesta utente — wild_vegetables, "capacità per lotto come stick/mushroom... un valore
+# derivato dallo stesso hash (salt diverso) in un intervallo configurabile"): consultato SOLO da
+# TerrainScatteredResourceService.compute_wild_vegetable_lots, che risolve la capacità RAW di ogni
+# lotto con hash(str(micro_seed) + salt) sulla posizione (stesso idioma di patch_probability/
+# patch_weight_min/max sopra, salt ancora diverso — indipendente sia da "è un lotto?" sia dal peso
+# eggs) interpolata linearmente in questo intervallo, poi moltiplicata dal chiamante per un
+# fattore legato a dedicated_space(GRASS) della macrocella (un prato rado rende meno di uno
+# fitto) — quel fattore NON vive qui, è specifico del modello wild_vegetables, vedi
+# compute_wild_vegetable_lots. A differenza di patch_weight_min/max sopra, questo NON è un peso
+# relativo da ripartire su uno stock aggregato: è una capacità ASSOLUTA per lotto, stesso
+# significato di units_per_mature_plant × individui_maturi per stick/mushroom, solo che qui non
+# ci sono individui da contare (GRASS non ne ha). Default 0 (nessuna .tres esistente lo valorizza
+# tranne wild_vegetables.tres): stesso principio "0 = mai configurato, mai un fallback silenzioso"
+# di units_per_mature_plant/patch_probability sopra.
+@export var patch_capacity_min: int = 0
+@export var patch_capacity_max: int = 0
