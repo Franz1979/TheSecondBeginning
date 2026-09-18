@@ -244,6 +244,40 @@ func save_game_to_json(
 					"harvested": int(plant_fiber_entry["harvested"]),
 				})
 			state_data["plant_fiber_quantities"] = plant_fiber_quantities_data
+		# Pool mushroom per lotto (2026-09-17, richiesta utente) — STESSO formato/STESSA posizione
+		# (sibling, non annidato) di plant_fiber_quantities sopra.
+		if not state.mushroom_quantities.is_empty():
+			var mushroom_quantities_data: Array = []
+			for pos in state.mushroom_quantities.keys():
+				var mushroom_entry: Dictionary = state.mushroom_quantities[pos]
+				mushroom_quantities_data.append({
+					"x": pos.x, "y": pos.y,
+					"checkpoint_day": int(mushroom_entry["checkpoint_day"]),
+					"capacity": int(mushroom_entry["capacity"]),
+					"harvested": int(mushroom_entry["harvested"]),
+				})
+			state_data["mushroom_quantities"] = mushroom_quantities_data
+		# Raccolto per lotto delle risorse "fruit stock" (2026-09-17, richiesta utente — bugfix
+		# coerenza raccolta/ricrescita, poi GENERALIZZATO in preparazione di fruit/acorn, nessun
+		# cambio di comportamento per berry) — UN SOLO blocco che itera
+		# TerrainScatteredResourceService.FRUIT_STOCK_SOURCES (oggi solo "berry") invece di un
+		# campo per risorsa: vedi MacroCellState.berry_harvested_by_lot, ora annidato per
+		# resource_name -> Dictionary sparso Vector2i -> int (SOLO i lotti effettivamente
+		# raccolti), mai un checkpoint_day/capacity come stick/plant_fiber sopra (qui la freschezza
+		# è data dall'azzeramento stagionale esplicito, non da un confronto col checkpoint growth).
+		# SIBLING (3 tab, non annidato dentro plant_fiber_quantities sopra) apposta — vedi il
+		# commento su quel blocco per il bug preesistente che questa struttura evita.
+		var fruit_stock_harvested_data: Array = []
+		for resource_name in TerrainScatteredResourceService.FRUIT_STOCK_SOURCES.keys():
+			var per_lot: Dictionary = state.berry_harvested_by_lot.get(resource_name, {})
+			if per_lot.is_empty():
+				continue
+			var lots_data: Array = []
+			for pos in per_lot.keys():
+				lots_data.append({"x": pos.x, "y": pos.y, "harvested": int(per_lot[pos])})
+			fruit_stock_harvested_data.append({"resource_name": resource_name, "lots": lots_data})
+		if not fruit_stock_harvested_data.is_empty():
+			state_data["berry_harvested_by_lot"] = fruit_stock_harvested_data
 		# Stesso formato/principio di vegetation_cut_exceptions sopra, ma per la mortalità naturale
 		# (vedi MacroCellState.vegetation_death_exceptions) — campo "death_year" invece di "cut_year".
 		if not state.vegetation_death_exceptions.is_empty():

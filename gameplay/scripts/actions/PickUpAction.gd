@@ -49,6 +49,14 @@ var target_position: Vector2i
 var resource_name: String = "pebble"
 var macro_state: MacroCellState = null
 
+# Quantità RICHIESTA dal player (2026-09-18, richiesta utente — scelta quantità anche per il
+# pickup, STESSO campo/STESSO significato di RetrieveAction.quantity_requested) — NON garantita:
+# se lo spazio libero in spalla o la disponibilità reale sul lotto sono minori, _quantity_to_
+# collect sotto risulta comunque minore (vedi activate()). -1 (default) = nessun tetto scelto dal
+# player, comportamento INVARIATO per ogni chiamante che non lo passa (debug hook, fallback "1
+# candidato senza dialog"): risolve il massimo raccoglibile esattamente come prima di questo campo.
+var quantity_requested: int = -1
+
 # Quantità che questo step raccoglierà davvero — risolta in activate() (mai ricalcolata dopo),
 # consumata da on_complete() per il decremento/assegnazione carico. 0 = niente da raccogliere
 # (spazio libero insufficiente, nessun pebble disponibile in quella posizione, o zaino già occupato
@@ -76,10 +84,11 @@ var _elapsed: float = 0.0
 var _restored_from_save: bool = false
 
 
-func _init(p_target_position: Vector2i, p_macro_state: MacroCellState, p_resource_name: String = "pebble") -> void:
+func _init(p_target_position: Vector2i, p_macro_state: MacroCellState, p_resource_name: String = "pebble", p_quantity_requested: int = -1) -> void:
 	target_position = p_target_position
 	macro_state = p_macro_state
 	resource_name = p_resource_name
+	quantity_requested = p_quantity_requested
 	target = null
 	# INFANT non può eseguire questa Action (2026-09-12, richiesta utente — collegamento AgeBand.
 	# INFANT al gameplay, vedi Action.disallowed_age_bands). CHILD aggiunto 2026-09-13 (richiesta
@@ -124,6 +133,12 @@ func activate(individual: Variant, context: Dictionary) -> void:
 	_quantity_to_collect = 0
 	if individual.carried_resource_name == "" and space_per_unit > 0.0:
 		_quantity_to_collect = max(0, min(int(floor(free_space / space_per_unit)), available))
+		# Tetto scelto dal player (2026-09-18, richiesta utente) — SOLO se quantity_requested >= 0
+		# (un valore scelto davvero, vedi commento sul campo sopra): mai un secondo minimo se il
+		# chiamante non ne ha passato uno, comportamento invariato per debug hook/fallback "1
+		# candidato senza dialog".
+		if quantity_requested >= 0:
+			_quantity_to_collect = min(_quantity_to_collect, quantity_requested)
 
 	var space_collected: float = float(_quantity_to_collect) * space_per_unit
 	_duration = 0.0
@@ -235,6 +250,7 @@ func get_save_data() -> Dictionary:
 		"target_position_x": target_position.x,
 		"target_position_y": target_position.y,
 		"resource_name": resource_name,
+		"quantity_requested": quantity_requested,
 		"quantity_to_collect": _quantity_to_collect,
 		"duration": _duration,
 		"elapsed": _elapsed,

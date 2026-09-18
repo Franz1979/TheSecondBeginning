@@ -114,11 +114,16 @@ static func build_task(definition: TaskDefinition, context: Dictionary) -> Task:
 				steps.append(ThinkAction.new(context[step_definition.context_keys[0]]))
 				step_descriptions.append(step_definition.step_description)
 			TaskTypes.ActionType.PICKUP:
-				# 3 argomenti eterogenei, nell'ordine atteso da PickUpAction._init(target_position,
-				# macro_state, resource_name) — stesso ordine con cui context_keys va compilato in
-				# una TaskStepDefinition PICKUP (vedi step_pickup_from_position.tres — nome generico,
-				# riusabile da qualunque TaskDefinition, non solo haul_resource: vedi
+				# 3 argomenti eterogenei OBBLIGATORI, nell'ordine atteso da PickUpAction._init(
+				# target_position, macro_state, resource_name) — stesso ordine con cui context_keys va
+				# compilato in una TaskStepDefinition PICKUP (vedi step_pickup_from_position.tres —
+				# nome generico, riusabile da qualunque TaskDefinition, non solo haul_resource: vedi
 				# gameplay/scripts/tasks/definitions/haul_resource.tres per l'unico consumatore oggi).
+				# 4° argomento OPZIONALE (2026-09-18, richiesta utente — scelta quantità anche per il
+				# pickup): context_keys[3], se dichiarato E risolvibile in context, diventa quantity_
+				# requested — STESSO principio "opzionale" già seguito da REST sopra (rest_max_
+				# duration_days/rest_ignore_stamina_cap), assente = -1 (nessun tetto), comportamento
+				# INVARIATO per qualunque TaskDefinition PICKUP che non lo dichiari.
 				if step_definition.context_keys.size() < 3:
 					push_error("TaskFactory.build_task: context_keys insufficienti (servono 3: target_position, macro_state, resource_name) per step PICKUP di TaskDefinition '%s'." % definition.task_name)
 					continue
@@ -130,7 +135,13 @@ static func build_task(definition: TaskDefinition, context: Dictionary) -> Task:
 						target_position_key, macro_state_key, resource_name_key, definition.task_name
 					])
 					continue
-				steps.append(PickUpAction.new(context[target_position_key], context[macro_state_key], context[resource_name_key]))
+				var pickup_quantity_requested: int = -1
+				if step_definition.context_keys.size() > 3 and context.has(step_definition.context_keys[3]):
+					pickup_quantity_requested = int(context[step_definition.context_keys[3]])
+				steps.append(PickUpAction.new(
+					context[target_position_key], context[macro_state_key], context[resource_name_key],
+					pickup_quantity_requested
+				))
 				step_descriptions.append(step_definition.step_description)
 			TaskTypes.ActionType.SETUP_SITE:
 				# 1 argomento (target_building: Building) — stesso schema di WALK/THINK sopra, solo il

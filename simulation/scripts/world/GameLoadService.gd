@@ -235,6 +235,35 @@ func load_game_from_json(file_path: String) -> LoadedGame:
 					"capacity": int(pos_data["capacity"]),
 					"harvested": int(pos_data["harvested"]),
 				}
+			# Pool mushroom per lotto (2026-09-17, richiesta utente) — stesso trattamento di
+			# stick_quantities/plant_fiber_quantities sopra, .get() con default [] per
+			# compatibilità coi save precedenti a questo campo.
+			for pos_data in state_data.get("mushroom_quantities", []):
+				var mushroom_pos := Vector2i(int(pos_data["x"]), int(pos_data["y"]))
+				state.mushroom_quantities[mushroom_pos] = {
+					"checkpoint_day": int(pos_data["checkpoint_day"]),
+					"capacity": int(pos_data["capacity"]),
+					"harvested": int(pos_data["harvested"]),
+				}
+			# Raccolto per lotto delle risorse "fruit stock" (2026-09-17, richiesta utente — poi
+			# GENERALIZZATO in preparazione di fruit/acorn, nessun cambio di comportamento per
+			# berry) — un solo blocco che itera le entry salvate (una per resource_name presente,
+			# oggi solo "berry"), .get() con default [] per compatibilità coi save precedenti a
+			# questo campo. resource_entry.get("resource_name", "") (BUGFIX, non un ["resource_
+			# name"] diretto: un save precedente al formato annidato per risorsa aveva qui il
+			# vecchio formato flat {x,y,harvested} SENZA questa chiave — "Invalid access to
+			# property or key" su un salvataggio vecchio, segnalato dall'utente) — resource_name
+			# vuoto = entry nel vecchio formato, scartata: nessuna migrazione del raccolto pre-
+			# refactor, comportamento accettato esplicitamente dall'utente ("non è retrocompatibile,
+			# non fa niente").
+			for resource_entry in state_data.get("berry_harvested_by_lot", []):
+				var resource_name: String = String(resource_entry.get("resource_name", ""))
+				if resource_name == "":
+					continue
+				var per_lot: Dictionary = {}
+				for pos_data in resource_entry.get("lots", []):
+					per_lot[Vector2i(int(pos_data["x"]), int(pos_data["y"]))] = int(pos_data["harvested"])
+				state.berry_harvested_by_lot[resource_name] = per_lot
 			for pos_data in state_data.get("vegetation_death_exceptions", []):
 				var death_key := Vector3i(int(pos_data["x"]), int(pos_data["y"]), int(pos_data["i"]))
 				state.vegetation_death_exceptions[death_key] = {

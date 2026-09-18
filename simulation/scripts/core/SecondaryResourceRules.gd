@@ -65,6 +65,17 @@ extends Resource
 # consulta ancora.
 @export var category: SecondaryResourceTypes.Category
 
+# Id (Idea.id) che deve essere già in Folk.completed_ideas perché questa risorsa sia raccoglibile
+# dagli umani — STESSO campo/STESSO significato di BuildingRules.required_idea_id ("" = sempre
+# disponibile, nessun requisito). Consultato SOLO da TerrainScatteredResourceService.
+# is_resource_locked (usato a sua volta da get_available e da GameScene._resolve_pickup_candidates
+# per popup di raccolta/ispezione microcella) — MAI dal rendering (i puntini su arbusti/alberi
+# restano disegnati come sempre, indipendentemente dal blocco) né da AnimalConsumptionService (la
+# fauna continua a consumare secondary_resource_stock indipendentemente dalle idee umane). NON
+# impostato su nessuna .tres esistente oggi: ogni risorsa attuale resta sempre disponibile,
+# comportamento invariato.
+@export var required_idea_id: String = ""
+
 # Vedi SecondaryResourceTypes.GenerationSource — PURAMENTE descrittivo (documenta la provenienza
 # dello stock: pianta/animale vs sparso sul terreno), nessuna logica lo consulta. Default
 # PLANT_DERIVED (primo valore dell'enum): coincide col comportamento reale di ogni risorsa

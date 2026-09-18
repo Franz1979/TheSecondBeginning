@@ -92,11 +92,19 @@ const SHOW_VEGETATION_REFRESH_TIMING_LOGS := false
 # distanza è a N vie (una per sorgente rilevante, vedi GameScene._relevant_source_positions_for_cell)
 # invece che a una sola — serve a capire se quell'aggiunta pesa abbastanza da giustificare uno
 # "splat" pre-calcolato per-sorgente (rimandato finché non misurato, vedi discussione con l'utente).
-# A false (richiesta utente, 2026-09-04 — diagnostica del primo test già raccolta, log troppo
-# rumorosi ora): nessun comportamento di simulazione cambia, solo [FOW REDRAW TIMING]/[FOW REDRAW
-# COUNT] vengono soppressi. Non rimosso: tornerà utile per rimisurare dopo un futuro cambiamento
-# al ciclo di redraw multi-sorgente.
-const SHOW_FOW_REDRAW_TIMING_LOGS := true
+# A false (richiesta utente, 2026-09-04 e di nuovo 2026-09-17 — riacceso nel frattempo per una
+# sessione di diagnostica, log troppo rumorosi ora che è finita): nessun comportamento di
+# simulazione cambia, solo [FOW REDRAW TIMING]/[FOW REDRAW COUNT] vengono soppressi. Non rimosso:
+# tornerà utile per rimisurare dopo un futuro cambiamento al ciclo di redraw multi-sorgente.
+const SHOW_FOW_REDRAW_TIMING_LOGS := false
+
+# Filtro dedicato per [FOW HINT COUNT] (FogOfWarRenderer._on_hint_layer_draw) — diagnostica
+# TEMPORANEA (2026-09-17, richiesta utente) per il bugfix del layer hint macchie-vegetazione-stantia
+# che ridisegnava incondizionatamente ad ogni frame di movimento (DXGI_ERROR_DEVICE_REMOVED su
+# Intel UHD, migliaia di draw_circle/frame): conta quante volte _on_hint_layer_draw viene eseguito
+# e quanti draw_circle emette in totale, aggregato per secondo (non per singola chiamata, troppo
+# rumoroso). Default false: nessun comportamento cambia, solo il print viene soppresso.
+const SHOW_FOW_HINT_REDRAW_LOGS := false
 
 # Filtro dedicato per [HUMAN VIEW TIMING] (HumanIndividualView._process/_draw) — richiesta utente,
 # 2026-09-04: verificare col numero reale (non a occhio dal log FoW, che non misura affatto questo
@@ -170,6 +178,16 @@ const SHOW_MOVEMENT_LOGS := false
 # RESOURCE_POOL — [DBG_POOL] (VegetationPoolService).
 const SHOW_RESOURCE_POOL_LOGS := false
 
+# BERRY_HARVEST — [FRUIT STOCK AVAILABLE]/[FRUIT STOCK CONSUME] (TerrainScatteredResourceService.
+# get_fruit_stock_available_at/consume_fruit_stock_at) — diagnostica TEMPORANEA (2026-09-17,
+# richiesta utente) per verificare a mano stock aggregato/peso/ripartizione per lotto durante il
+# bugfix della coerenza raccolta-microcella (berry_harvested_by_lot). GENERALIZZATA lo stesso
+# giorno (richiesta esplicita utente — "il log diventa generico con il nome della risorsa nella
+# riga"): ogni riga porta ora resource_name, un solo flag copre qualunque risorsa registrata in
+# TerrainScatteredResourceService.FRUIT_STOCK_SOURCES (oggi solo "berry"). Default false: accendere
+# solo quando serve, stesso principio di ogni altro flag in questo file.
+const SHOW_BERRY_HARVEST_LOGS := false
+
 # LOD — [LOD] (LODOrchestrator.print_classification_log — vedi SHOW_LOD_LOGS più sopra, stesso
 # flag, questo commento resta qui solo per l'elenco delle categorie).
 
@@ -204,5 +222,7 @@ const SHOW_SAFETY_LOGS := true
 # DAILY_SUMMARY — [DBG_TASK] (GameScene._on_day_advanced, riepilogo giornaliero task/stamina/
 # carico per individuo). Default true, stesso motivo di SHOW_SAFETY_LOGS: introdotto apposta come
 # strumento di indagine sempre pronto, non rumoroso quanto le categorie per-frame sopra (gira una
-# volta al giorno).
-const SHOW_DAILY_SUMMARY_LOGS := true
+# volta al giorno). Spento (2026-09-17, richiesta utente — "spegni anche dbg task per ora"): nessun
+# comportamento di simulazione cambia, solo [DBG_TASK] viene soppresso. Rimetti a true per
+# riaverlo.
+const SHOW_DAILY_SUMMARY_LOGS := false

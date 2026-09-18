@@ -605,10 +605,14 @@ func _ready() -> void:
 	tech_tree_panel.visibility_changed.connect(_on_blocking_dialog_visibility_changed.bind(tech_tree_panel))
 	demolish_confirmation_dialog.demolish_confirmed.connect(_on_demolish_confirmed)
 	demolish_confirmation_dialog.visibility_changed.connect(_on_blocking_dialog_visibility_changed.bind(demolish_confirmation_dialog))
+	# NESSUN visibility_changed collegato a _on_blocking_dialog_visibility_changed per questi due
+	# (2026-09-18, richiesta utente: "il tempo non si ferma con questo popup aperto, mentre per gli
+	# altri — idea, statistiche, opzioni — continua a fermarsi") — OptionChoiceDialog è l'unico
+	# popup di questa lista che NON deve pausare l'orologio: scegliere una risorsa da raccogliere/
+	# trasportare resta un'azione rapida durante il gioco in corso, a differenza degli altri pannelli
+	# (idea/statistiche/opzioni/conferma), pensati per essere consultati con calma a tempo fermo.
 	transport_source_dialog.resource_chosen.connect(_on_transport_source_resource_chosen)
-	transport_source_dialog.visibility_changed.connect(_on_blocking_dialog_visibility_changed.bind(transport_source_dialog))
 	pickup_choice_dialog.resource_chosen.connect(_on_pickup_choice_resource_chosen)
-	pickup_choice_dialog.visibility_changed.connect(_on_blocking_dialog_visibility_changed.bind(pickup_choice_dialog))
 	# Demolisci (2026-09-12, richiesta utente) — main_row.action_pressed, NON submenu_row (quello
 	# resta per i tipi edificio, ascoltato sopra da _on_build_submenu_action_pressed): BuildBar._on_
 	# main_row_action_pressed ignora già qualunque action_id diverso da OPEN_BUILD_MENU_ACTION (vedi
@@ -2785,7 +2789,11 @@ func _refresh_stone_panel() -> void:
 # svuotata (una roccia già raccolta, un lotto senza alberi maturi) è un comportamento valido, il
 # player semplicemente non ottiene nulla, nessuna logica aggiuntiva necessaria qui per intercettarlo
 # prima.
-func _assign_pickup_task(macro_coords: Vector2i, target_position: Vector2i, resource_name: String) -> void:
+# quantity_requested (2026-09-18, richiesta utente — scelta quantità anche per il pickup) — -1
+# default = nessun tetto scelto dal player (PickUpAction risolve il massimo come sempre): i due
+# chiamanti "1 candidato senza dialog"/"tutti a scorta 0" non ne passano uno, invariati. Il
+# chiamante col dialog (_on_pickup_choice_resource_chosen) passa la quantità scelta.
+func _assign_pickup_task(macro_coords: Vector2i, target_position: Vector2i, resource_name: String, quantity_requested: int = -1) -> void:
 	var cell: LiveMacroCell = live_cells.get(macro_coords)
 	if cell == null or cell.macro_state == null:
 		return
@@ -2836,6 +2844,12 @@ func _assign_pickup_task(macro_coords: Vector2i, target_position: Vector2i, reso
 		"macro_state": cell.macro_state,
 		"resource_name": resource_name,
 	}
+	# "pickup_requested_quantity" (2026-09-18) — SOLO se il chiamante ne ha passata una reale
+	# (>= 0): omesso del tutto altrimenti, così TaskFactory.build_task risolve il proprio default
+	# -1 "nessun tetto" (vedi task_factory.gd, ramo PICKUP) esattamente come se questa chiave non
+	# esistesse in step_pickup_from_position.tres.
+	if quantity_requested >= 0:
+		context["pickup_requested_quantity"] = quantity_requested
 	var task := TaskFactory.build_task(haul_resource_definition, context)
 
 	# task.step_appended (2026-09-12, richiesta utente — bugfix "il mucchietto non si aggiorna in
@@ -3082,8 +3096,9 @@ func _try_assign_pickup_command_on_right_click(event: InputEvent) -> bool:
 		return true
 
 	# 2+ disponibili (2026-09-17) — vera scelta: niente priorità fissa, si apre pickup_choice_dialog
-	# (STESSO OptionChoiceDialog usato dalla Transport, vedi quel file — show_quantity=false, qui non
-	# si sceglie MAI una quantità). macro_coords/position condivisi da tutti i candidati (stesso click,
+	# (STESSO OptionChoiceDialog usato dalla Transport, vedi quel file — 2026-09-18: ora lascia
+	# scegliere anche la quantità, non più solo la risorsa). macro_coords/position condivisi da
+	# tutti i candidati (stesso click,
 	# stesso lotto — STESSA assunzione già fatta dal vecchio codice con `candidates[0]`), salvati in
 	# _pickup_pending_macro_coords/_position: l'assegnazione vera parte solo alla conferma del dialog,
 	# vedi _on_pickup_choice_resource_chosen sotto.
@@ -3096,18 +3111,32 @@ func _try_assign_pickup_command_on_right_click(event: InputEvent) -> bool:
 		print("[DBG_PICKUP] %d candidati con scorta reale alla stessa posizione: %s — apro pickup_choice_dialog." % [
 			available_candidates.size(), str(available_quantities)
 		])
-	pickup_choice_dialog.open_dialog(tr("pickup_choice_dialog_title"), tr("pickup_choice_dialog_message"), available_quantities, false)
+	pickup_choice_dialog.open_dialog(tr("pickup_choice_dialog_title"), tr("pickup_choice_dialog_message"), available_quantities)
 	return true
 
 
-# Handler di conferma del pickup_choice_dialog (2026-09-17, richiesta utente) — `quantity` ricevuta
-# ma IGNORATA (show_quantity=false all'apertura, il valore è comunque quello risolto da
-# OptionChoiceDialog._on_resource_selected, mai una scelta reale del player qui): _assign_pickup_task
-# non prende quantità, PickUpAction la risolve da sé. _pickup_pending_macro_coords/_position sono
-# quelli salvati da _try_assign_pickup_command_on_right_click al momento dell'apertura — STESSO
-# schema di _on_transport_source_resource_chosen sopra.
-func _on_pickup_choice_resource_chosen(resource_name: String, _quantity: int) -> void:
-	_assign_pickup_task(_pickup_pending_macro_coords, _pickup_pending_position, resource_name)
+# Handler di conferma del pickup_choice_dialog (2026-09-17, richiesta utente — 2026-09-18: `quantity`
+# ora PASSATA a _assign_pickup_task/PickUpAction.quantity_requested, non più ignorata: il player può
+# scegliere di raccogliere meno del massimo). _pickup_pending_macro_coords/_position sono quelli
+# salvati da _try_assign_pickup_command_on_right_click al momento dell'apertura — STESSO schema di
+# _on_transport_source_resource_chosen sopra.
+func _on_pickup_choice_resource_chosen(resource_name: String, quantity: int) -> void:
+	_assign_pickup_task(_pickup_pending_macro_coords, _pickup_pending_position, resource_name, quantity)
+
+
+# Filtro idea non ancora scoperta (2026-09-17, richiesta utente — SecondaryResourceRules.
+# required_idea_id) — una risorsa bloccata non deve MAI entrare in `candidates`: né il tasto destro
+# (_try_assign_pickup_command_on_right_click) né l'ispezione microcella devono saperne nulla, un
+# lotto dove l'UNICA risorsa presente è bloccata deve risultare "vuoto" a entrambi (candidates.
+# is_empty() sotto), esattamente come un lotto senza alcuna risorsa raccoglibile — per il destro
+# questo significa che il comando ricade sul movimento normale invece di un pickup, per
+# l'ispezione che la risorsa bloccata non viene elencata affatto (richiesta esplicita utente: "se
+# una risorsa è sconosciuta, non scriverla"). TerrainScatteredResourceService.is_resource_locked è
+# la STESSA fonte già consultata da get_available, nessun secondo criterio.
+func _append_unlocked_pickup_candidate(candidates: Array[Dictionary], resource_name: String, macro_coords: Vector2i, position: Vector2i) -> void:
+	if TerrainScatteredResourceService.is_resource_locked(resource_name):
+		return
+	candidates.append(_build_pickup_candidate(resource_name, macro_coords, position))
 
 
 # Costruisce la lista di candidati raccoglibili nella posizione del click, in ORDINE DI PRIORITÀ
@@ -3136,7 +3165,7 @@ func _resolve_pickup_candidates(event: InputEvent, current_absolute_day: int, re
 	var stone_hit := stone_selector_controller.try_select(event, live_cells, required_button)
 	if not stone_hit.is_empty():
 		if FogOfWarVerificationService.is_detail_visible(live_cells, stone_hit["macro_coords"], stone_hit["position"], current_absolute_day):
-			candidates.append(_build_pickup_candidate("pebble", stone_hit["macro_coords"], stone_hit["position"]))
+			_append_unlocked_pickup_candidate(candidates, "pebble", stone_hit["macro_coords"], stone_hit["position"])
 		elif DebugLogging.ENABLED and DebugLogging.SHOW_RECONNECT_FACTORY_LOGS:
 			print("[PICKUP CMD DEBUG] stone_hit=%s trovato ma cella non visibile con dettaglio, ignorato." % str(stone_hit))
 
@@ -3145,7 +3174,29 @@ func _resolve_pickup_candidates(event: InputEvent, current_absolute_day: int, re
 	)
 	if not stick_lot_hit.is_empty():
 		if FogOfWarVerificationService.is_detail_visible(live_cells, stick_lot_hit["macro_coords"], stick_lot_hit["lot"], current_absolute_day):
-			candidates.append(_build_pickup_candidate("stick", stick_lot_hit["macro_coords"], stick_lot_hit["lot"]))
+			_append_unlocked_pickup_candidate(candidates, "stick", stick_lot_hit["macro_coords"], stick_lot_hit["lot"])
+			# Acorn (2026-09-17, richiesta utente — seconda risorsa della catena "fruit stock"
+			# generica dopo berry) — STESSO hit-test di stick sopra, mai un nuovo AcornSelector
+			# Controller: i lotti eleggibili per acorn sono per costruzione lo stesso identico
+			# insieme di stick (entrambi derivano da tree_claimed_lots — acorn richiede in più che
+			# il lotto ospiti davvero individui "wild_fruit", ma quello lo decide già
+			# TerrainScatteredResourceService.get_fruit_stock_available_at, non serve ripetere il
+			# test qui) — stesso principio già seguito per berry/plant_fiber su shrub_claimed_lots.
+			_append_unlocked_pickup_candidate(candidates, "acorn", stick_lot_hit["macro_coords"], stick_lot_hit["lot"])
+			# Fruit (2026-09-17, richiesta utente — terza risorsa della catena "fruit stock"
+			# generica dopo berry/acorn) — STESSO hit-test di stick/acorn sopra, stesso motivo:
+			# i lotti eleggibili per fruit sono per costruzione lo stesso insieme di stick/acorn
+			# (tutti derivano da tree_claimed_lots), la presenza reale di individui
+			# domesticable_fruit è già decisa da TerrainScatteredResourceService.
+			# get_fruit_stock_available_at.
+			_append_unlocked_pickup_candidate(candidates, "fruit", stick_lot_hit["macro_coords"], stick_lot_hit["lot"])
+			# Mushroom (2026-09-17, richiesta utente) — STESSO hit-test di stick/acorn/fruit sopra,
+			# mai un nuovo MushroomSelectorController: i lotti eleggibili per mushroom sono per
+			# costruzione lo stesso identico insieme di stick (entrambi derivano da tree_claimed_lots,
+			# nessun filtro per subtype). Disponibilità reale (capacity/harvested scalati dal
+			# moltiplicatore stagionale di mushroom.tres) già decisa da TerrainScatteredResourceService.
+			# get_available, non serve ripetere il test qui.
+			_append_unlocked_pickup_candidate(candidates, "mushroom", stick_lot_hit["macro_coords"], stick_lot_hit["lot"])
 		elif DebugLogging.ENABLED and DebugLogging.SHOW_RECONNECT_FACTORY_LOGS:
 			print("[PICKUP CMD DEBUG] stick_lot_hit=%s trovato ma cella non visibile con dettaglio, ignorato." % str(stick_lot_hit))
 
@@ -3154,7 +3205,17 @@ func _resolve_pickup_candidates(event: InputEvent, current_absolute_day: int, re
 	)
 	if not plant_fiber_lot_hit.is_empty():
 		if FogOfWarVerificationService.is_detail_visible(live_cells, plant_fiber_lot_hit["macro_coords"], plant_fiber_lot_hit["lot"], current_absolute_day):
-			candidates.append(_build_pickup_candidate("plant_fiber", plant_fiber_lot_hit["macro_coords"], plant_fiber_lot_hit["lot"]))
+			_append_unlocked_pickup_candidate(candidates, "plant_fiber", plant_fiber_lot_hit["macro_coords"], plant_fiber_lot_hit["lot"])
+			# Berry (2026-09-17, richiesta utente) — STESSO hit-test di plant_fiber sopra, mai un
+			# nuovo BerrySelectorController: i lotti eleggibili per berry sono per costruzione lo
+			# stesso identico insieme di plant_fiber (entrambi derivano da shrub_claimed_lots — berry
+			# richiede in più che il lotto ospiti davvero individui "fruit_bearing", ma quello lo
+			# decide già TerrainScatteredResourceService.get_fruit_stock_available_at, non serve ripetere
+			# il test qui). Duplicare l'hit-test (shrub_claimed_lots.has(click_lot)) in un secondo
+			# controller identico sarebbe puro lavoro sprecato, a differenza di Stick/PlantFiberLot
+			# SelectorController — quei due restano separati perché StickLotSelectorController ha
+			# un SECONDO chiamante indipendente (pannello info al click sinistro), berry qui no.
+			_append_unlocked_pickup_candidate(candidates, "berry", plant_fiber_lot_hit["macro_coords"], plant_fiber_lot_hit["lot"])
 		elif DebugLogging.ENABLED and DebugLogging.SHOW_RECONNECT_FACTORY_LOGS:
 			print("[PICKUP CMD DEBUG] plant_fiber_lot_hit=%s trovato ma cella non visibile con dettaglio, ignorato." % str(plant_fiber_lot_hit))
 
@@ -3251,8 +3312,18 @@ func _handle_microcell_inspection_double_click(event: InputEvent) -> void:
 
 	var cell: LiveMacroCell = live_cells.get(macro_coords)
 	var vegetation_positions: Dictionary = cell.renderer.vegetation_positions if cell != null and cell.renderer != null else {}
-	var tree_present: bool = vegetation_positions.get(GameTypes.WorldObjectType.TREE, []).has(lot)
-	var shrub_present: bool = vegetation_positions.get(GameTypes.WorldObjectType.SHRUB, []).has(lot)
+	# Rotture per sottotipo/fascia d'età (2026-09-17, richiesta utente — "non mi dici quante piante
+	# o shrub e di che tipo") invece del semplice booleano presenza di prima — vedi
+	# _build_vegetation_lot_breakdown. NOTA: il vecchio `.has(lot)` qui sotto era comunque già rotto
+	# (vegetation_positions[TREE/SHRUB] è Array[Vector3i] lotto+indice individuo, mai un Vector2i —
+	# vedi MicroCellRenderer.vegetation_positions — un confronto Vector2i==Vector3i non è mai vero in
+	# GDScript, quindi tree_present/shrub_present risultavano SEMPRE false prima di questo passo,
+	# bug preesistente scoperto risolvendo questa richiesta), risolto di riflesso iterando le chiavi
+	# per componente invece di un confronto diretto.
+	var tree_breakdown: Dictionary = _build_vegetation_lot_breakdown(cell, GameTypes.WorldObjectType.TREE, lot)
+	var shrub_breakdown: Dictionary = _build_vegetation_lot_breakdown(cell, GameTypes.WorldObjectType.SHRUB, lot)
+	var tree_present: bool = not tree_breakdown.is_empty()
+	var shrub_present: bool = not shrub_breakdown.is_empty()
 	var grass_present: bool = vegetation_positions.get(GameTypes.WorldObjectType.GRASS, []).has(lot)
 
 	var lines: Array[String] = []
@@ -3264,6 +3335,18 @@ func _handle_microcell_inspection_double_click(event: InputEvent) -> void:
 	elif lot_candidates.is_empty() and not tree_present and not shrub_present and not grass_present:
 		lines.append(tr("microcell_inspection_empty"))
 	else:
+		# Vegetazione PRIMA delle risorse raccoglibili (2026-09-17, richiesta utente) — "cosa c'è"
+		# prima di "cosa raccolgo", ordine invertito rispetto al passo precedente.
+		if tree_present or shrub_present or grass_present:
+			lines.append(tr("microcell_inspection_vegetation_header"))
+			if tree_present:
+				lines.append("- " + tr("microcell_inspection_tree"))
+				lines.append_array(_format_vegetation_breakdown_lines(tree_breakdown))
+			if shrub_present:
+				lines.append("- " + tr("microcell_inspection_shrub"))
+				lines.append_array(_format_vegetation_breakdown_lines(shrub_breakdown))
+			if grass_present:
+				lines.append("- " + tr("microcell_inspection_grass"))
 		if not lot_candidates.is_empty():
 			lines.append(tr("microcell_inspection_resources_header"))
 			for candidate in lot_candidates:
@@ -3271,16 +3354,53 @@ func _handle_microcell_inspection_double_click(event: InputEvent) -> void:
 					"resource": IconRegistry.get_resource_display_name(candidate["resource_name"]),
 					"quantity": candidate["available_quantity"],
 				}))
-		if tree_present or shrub_present or grass_present:
-			lines.append(tr("microcell_inspection_vegetation_header"))
-			if tree_present:
-				lines.append("- " + tr("microcell_inspection_tree"))
-			if shrub_present:
-				lines.append("- " + tr("microcell_inspection_shrub"))
-			if grass_present:
-				lines.append("- " + tr("microcell_inspection_grass"))
 
 	_select_microcell({"macro_coords": macro_coords, "lot": lot, "lines": lines})
+
+
+# Individui VIVI di `object_type` (TREE/SHRUB, mai GRASS — che non ha identità individuale, resta
+# un booleano semplice nel chiamante) presenti in `lot`, raggruppati per sottotipo e fascia d'età
+# (2026-09-17, richiesta utente). cell.renderer.vegetation_positions contiene SOLO individui vivi
+# (i bloccati da taglio/morte sono esclusi a monte da IndividualVegetationService._is_blocked),
+# quindi non serve filtrarli di nuovo qui. Ritorna Dictionary[String subtype_name,
+# Dictionary[GameTypes.AgeBand, int]] — {} se non vive nulla di questo tipo in questo lotto.
+func _build_vegetation_lot_breakdown(cell: LiveMacroCell, object_type: GameTypes.WorldObjectType, lot: Vector2i) -> Dictionary:
+	if cell == null or cell.renderer == null:
+		return {}
+	var breakdown: Dictionary = {}
+	for key in cell.renderer.vegetation_positions.get(object_type, []):
+		if key.x != lot.x or key.y != lot.y:
+			continue
+		var info: Dictionary = cell.renderer.get_individual_info(object_type, key)
+		if info.is_empty():
+			continue
+		var subtype_name: String = info["subtype_name"]
+		var age_band: GameTypes.AgeBand = info["age_band"]
+		var by_age: Dictionary = breakdown.get(subtype_name, {})
+		by_age[age_band] = int(by_age.get(age_band, 0)) + 1
+		breakdown[subtype_name] = by_age
+	return breakdown
+
+
+# Una riga per sottotipo, conteggio totale + rottura età inline — STESSO formato "(Y:%s - A:%s -
+# O:%s)" già usato per la composizione età altrove (MacroCellDetailPanel/WorldInfoPanel, popolazione
+# animale per cella), non un tr() nuovo: testo hardcoded come quei punti (vedi il loro commento —
+# "nessuna CSV di traduzione esiste ancora per queste parole di raccordo"). Nome sottotipo NON
+# tradotto per lo stesso motivo (stessa scelta di VegetationInfoPanel.show_vegetation/
+# vegetation_subtype_label: resta la stringa tecnica, es. "fruit_bearing" — vedi risposta a parte
+# sul perché wood_only/wild_fruit/ecc. non hanno chiavi di traduzione in nessun punto del progetto).
+# Ordinate per nome sottotipo.
+func _format_vegetation_breakdown_lines(breakdown: Dictionary) -> Array[String]:
+	var lines: Array[String] = []
+	var subtype_names: Array = breakdown.keys()
+	subtype_names.sort()
+	for subtype_name in subtype_names:
+		var by_age: Dictionary = breakdown[subtype_name]
+		var young: int = int(by_age.get(GameTypes.AgeBand.YOUNG, 0))
+		var adult: int = int(by_age.get(GameTypes.AgeBand.ADULT, 0))
+		var old: int = int(by_age.get(GameTypes.AgeBand.OLD, 0))
+		lines.append("    %s: %d (Y:%d - A:%d - O:%d)" % [subtype_name, young + adult + old, young, adult, old])
+	return lines
 
 
 # ============================================================================================
@@ -5424,6 +5544,11 @@ func _refresh_resource_visuals(cell: LiveMacroCell) -> void:
 	# appena sopra, nessun rendering ancora agganciato (Step 3, non ancora fatto): ancora nessuna
 	# set_plant_fiber_quantities su cell.renderer.
 	PlantFiberPoolService.refresh_macrocell(cell.macro_state, game_data)
+	# mushroom (2026-09-17, richiesta utente) — STESSA cadenza/STESSO trigger di stick/plant_fiber
+	# sopra. NESSUN rendering agganciato (richiesta esplicita utente — "i funghi non vanno
+	# disegnati per ora"): nessuna set_mushroom_quantities su cell.renderer, questo refresh serve
+	# solo a mantenere macro_state.mushroom_quantities fresco per pickup/ispezione microcella.
+	MushroomPoolService.refresh_macrocell(cell.macro_state, game_data)
 	if cell.renderer != null:
 		cell.renderer.set_stick_quantities(_filter_positions_by_visibility(cell, cell.macro_state.stick_quantities))
 		cell.renderer.set_pebble_quantities(_filter_positions_by_visibility(cell, cell.macro_state.pebble_quantities))
@@ -5550,6 +5675,39 @@ func _refresh_resource_visuals(cell: LiveMacroCell) -> void:
 	)
 	cell.renderer.set_season(SeasonCalculator.get_season_for_day(game_data.current_day))
 	_veg_timings_ms["5_subtype_age_params_set"] = (Time.get_ticks_usec() - _step_start_usec) / 1000.0
+
+	# "Fruit stock" (berry oggi, fruit/acorn in futuro — 2026-09-17, richiesta utente:
+	# OTTIMIZZAZIONE 2026-09-17, poi GENERALIZZATA lo stesso giorno per risorsa, nessun cambio di
+	# comportamento per berry: il primo giro iterava TUTTI gli shrub_claimed_lots — mai svuotato,
+	# cresce per l'intera sessione — e ricostruiva il ratio per lotto da zero ad OGNI refresh anche
+	# a parità di stock/composizione, segnalato dall'utente come causa di scatti dopo
+	# l'introduzione delle berry). Isolato nel proprio bucket di timing (non più dentro
+	# "5_subtype_age_params_set", dove il costo era invisibile ai log). Itera
+	# TerrainScatteredResourceService.FRUIT_STOCK_SOURCES (oggi solo "berry") invece di un blocco
+	# per risorsa — aggiungere fruit/acorn significa una riga in quella tabella, nessuna riga qui.
+	#
+	# Per ciascuna risorsa registrata: firma leggera confrontata con l'ultima nota per QUESTA
+	# cella/risorsa (LiveMacroCell.last_berry_signature[resource_name]) — se identica, nulla può
+	# essere cambiato per NESSUN lotto di quella risorsa (vedi TerrainScatteredResourceService.
+	# get_fruit_stock_recompute_signature) e si salta, SENZA richiamare
+	# set_fruit_stock_available_ratio_by_lot (che marcherebbe comunque "sporco" il rebuild
+	# TREE/SHRUB già innescato sopra da set_*_subtypes/set_*_age_params, ma qui evitiamo almeno il
+	# lavoro di ricostruzione del Dictionary). Solo quando la firma è cambiata si itera
+	# get_fruit_stock_weight_lots (SOLO i lotti con peso > 0, non più l'intero shrub_claimed_lots)
+	# per ricostruire il ratio per lotto.
+	_step_start_usec = Time.get_ticks_usec()
+	for resource_name in TerrainScatteredResourceService.FRUIT_STOCK_SOURCES.keys():
+		var signature: Array = TerrainScatteredResourceService.get_fruit_stock_recompute_signature(resource_name, cell.macro_state)
+		if signature == cell.last_berry_signature.get(resource_name, []):
+			continue
+		var ratio_by_lot: Dictionary = {}
+		for lot in TerrainScatteredResourceService.get_fruit_stock_weight_lots(resource_name, cell.macro_state):
+			ratio_by_lot[lot] = TerrainScatteredResourceService.get_fruit_stock_visual_ratio_at(resource_name, cell.macro_state, lot)
+		cell.cached_berry_ratio_by_lot[resource_name] = ratio_by_lot
+		cell.last_berry_signature[resource_name] = signature
+		var object_type: GameTypes.WorldObjectType = TerrainScatteredResourceService.FRUIT_STOCK_SOURCES[resource_name]["object_type"]
+		cell.renderer.set_fruit_stock_available_ratio_by_lot(resource_name, object_type, ratio_by_lot)
+	_veg_timings_ms["5b_berry_ratio_by_lot"] = (Time.get_ticks_usec() - _step_start_usec) / 1000.0
 
 	_step_start_usec = Time.get_ticks_usec()
 	cell.renderer.end_vegetation_batch()

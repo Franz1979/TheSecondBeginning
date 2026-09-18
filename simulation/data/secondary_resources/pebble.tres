@@ -10,3 +10,4 @@ consuming_depletes_primary = false
 is_construction_material = true
 category = 1
 generation_source = 1
+space_per_unit = 5.0

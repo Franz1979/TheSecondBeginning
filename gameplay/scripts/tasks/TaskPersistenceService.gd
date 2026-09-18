@@ -259,7 +259,13 @@ static func _build_step(action_type: int, step_data: Dictionary, macro_state: Ma
 			var pickup_target := Vector2i(
 				int(step_data.get("target_position_x", 0)), int(step_data.get("target_position_y", 0))
 			)
-			step = PickUpAction.new(pickup_target, macro_state, String(step_data.get("resource_name", "pebble")))
+			# quantity_requested (2026-09-18, richiesta utente) — .get() con default -1 per
+			# compatibilità coi save precedenti a questo campo (nessuno di quei save può aver mai
+			# avuto un tetto scelto dal player, quindi -1 "nessun tetto" è sempre il valore corretto).
+			step = PickUpAction.new(
+				pickup_target, macro_state, String(step_data.get("resource_name", "pebble")),
+				int(step_data.get("quantity_requested", -1))
+			)
 		TaskTypes.ActionType.SETUP_SITE:
 			# 1 argomento (target_building: Building), stesso schema di UNLOAD sopra per risolvere il
 			# riferimento — GAP CHIUSO (2026-09-11, vedi nota su _action_type_for_step): prima d'ora

@@ -799,6 +799,43 @@ func _run_secondary_resource_stock_checkpoint(
 			CaloricCalculator.update_secondary_resource_stock(
 				rules, cell, state, source["primary_resource_type"], previous_season, new_season
 			)
+			# Raccolto per lotto delle risorse "fruit stock" (2026-09-17, richiesta utente —
+			# CORREZIONE: azzerare ad OGNI aggiornamento stagionale era sbagliato, segnalato
+			# dall'utente — poi GENERALIZZATO in preparazione di fruit/acorn, nessun cambio di
+			# comportamento per berry) — azzerato SOLO quando il moltiplicatore stagionale di
+			# QUESTA risorsa SALE rispetto alla stagione precedente (per berry.tres [0.1, 0.0, 0.7,
+			# 1.0]: primavera->estate, estate->autunno): solo lì c'è vera "ricrescita" da riflettere
+			# nella disponibilità PER LOTTO. Nelle transizioni in cui il moltiplicatore SCENDE lo
+			# stock aggregato decade (CaloricCalculator.update_secondary_resource_stock, ramo "il
+			# tetto scende") — la memoria di quanto già raccolto in ciascun lotto deve restare, non
+			# solo per non "regalare" frutto appena raccolto tornando disponibile, ma perché in
+			# quelle transizioni non è mai comparso nulla di nuovo da nessuna parte. Confrontato sul
+			# solo moltiplicatore (non sul "tetto" pieno, che dipende anche da base_quantity) — vedi
+			# SecondaryResourceRules.seasonal_availability_multiplier — LETTO da `rules`, già
+			# risolta per la risorsa di questa iterazione: NESSUNA costante di berry qui, la curva
+			# stagionale usata è sempre quella VERA della risorsa in corso. Confinato QUI (non
+			# dentro CaloricCalculator.update_secondary_resource_stock, che resta generico per
+			# qualunque risorsa a stock, mai specializzato per nome) perché questo loop è l'unico
+			# punto che già sa "sto aggiornando questa risorsa, ed è appena successo un cambio di
+			# stagione per lei" — vedi MacroCellState.berry_harvested_by_lot. La membership nel
+			# registro (TerrainScatteredResourceService.FRUIT_STOCK_SOURCES) è il solo modo con cui
+			# questo blocco riconosce "sono una delle risorse a raccolta per-microcella" — oggi solo
+			# "berry", domani anche fruit/acorn senza toccare questo file.
+			if TerrainScatteredResourceService.FRUIT_STOCK_SOURCES.has(source["resource_name"]):
+				var resource_name: String = source["resource_name"]
+				var previous_multiplier: float = float(rules.seasonal_availability_multiplier[previous_season])
+				var new_multiplier: float = float(rules.seasonal_availability_multiplier[new_season])
+				# not is_empty() (2026-09-17, richiesta utente — ottimizzazione costo berry): la
+				# stragrande maggioranza delle celle non ha mai avuto un raccolto umano, azzerare un
+				# Dictionary già vuoto non cambierebbe nulla ma incrementerebbe comunque
+				# berry_harvested_revision, invalidando inutilmente la firma leggera che GameScene usa
+				# per saltare il ricalcolo del ratio — vedi TerrainScatteredResourceService.
+				# get_fruit_stock_recompute_signature/MacroCellState.berry_harvested_revision.
+				var per_lot: Dictionary = state.berry_harvested_by_lot.get(resource_name, {})
+				if new_multiplier > previous_multiplier and not per_lot.is_empty():
+					state.berry_harvested_by_lot.erase(resource_name)
+					var revision: int = int(state.berry_harvested_revision.get(resource_name, 0))
+					state.berry_harvested_revision[resource_name] = revision + 1
 		skip_summary.append("%s=%d/%d" % [source["resource_name"], skipped, world.cell_states.size()])
 		total_skipped += skipped
 

@@ -6,10 +6,10 @@
 script = ExtResource("1_fruit")
 secondary_resource_name = "fruit"
 source_subtype = "domesticable_fruit"
-yield_ratio = 30.0
-calories_per_unit = 40.0
+yield_ratio = 20.0
+calories_per_unit = 30.0
 seasonal_availability_multiplier = Array[float]([0.1, 0.05, 0.5, 1.0])
 cycle_start_season = 2
 consuming_depletes_primary = false
-day_durability = 30
-space_per_unit = 2.0
+day_durability = 50
+space_per_unit = 5.0

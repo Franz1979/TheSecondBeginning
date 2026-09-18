@@ -205,12 +205,32 @@ var _fog_sprite: Sprite2D
 var _fog_image: Image
 var _fog_texture: ImageTexture
 
-# Nodo figlio separato per le macchie di vegetazione stantia (vedi _draw_stale_vegetation_hint) —
+# Nodo figlio separato per le macchie di vegetazione stantia (vedi _compute_hint_transforms) —
 # aggiunto DOPO _fog_sprite in setup() (l'ordine dei figli è l'ordine di disegno in Godot 2D),
 # così gli hint restano sempre sopra la texture invece di finire coperti da un blocco
 # FROZEN_OVERLAY_COLOR pieno. Nessuna sottoclasse dedicata: un Node2D semplice con il segnale
 # `draw` collegato a _on_hint_layer_draw sotto.
 var _hint_layer: Node2D
+
+# MultiMesh per gli hint (2026-09-17, richiesta utente — fix (C): il fix (A, dirty-flag) ha
+# ridotto la FREQUENZA dei redraw del layer hint ma non il VOLUME di draw_circle() per singolo
+# redraw — causa reale dell'E_OUTOFMEMORY su command_buffer_end riportato su Intel UHD integrata:
+# migliaia di draw_circle() indipendenti riempivano il command buffer oltre la memoria
+# disponibile. STESSA via già collaudata nel progetto per lo stesso identico problema
+# (MicroCellRenderer, stone/tree/shrub): un solo cerchio unitario (raggio 1, colore
+# STALE_VEGETATION_BLOB_COLOR baked nella mesh via SurfaceTool — vedi _build_hint_circle_mesh)
+# scalato/posizionato per istanza, disegnato con UNA sola draw_multimesh() invece di N
+# draw_circle() indipendenti — vedi _on_hint_layer_draw/_rebuild_hint_multimesh.
+var _hint_circle_mesh: ArrayMesh
+var _hint_multimesh: MultiMesh
+
+# Geometria per posizione, in CACHE (2026-09-17, richiesta utente — fix (B): la geometria di un
+# hint è puramente deterministica da `pos` (hash, nessun rng — vedi _compute_hint_transforms),
+# quindi la stessa posizione produce sempre gli stessi Transform2D per l'intera sessione.
+# Ricalcolarla ad ogni rebuild (come faceva il vecchio _draw_stale_vegetation_hint, rimosso) era
+# spreco puro. Vector2i -> Array[Transform2D] (1 macchia principale + 1-2 accenti), popolata
+# pigramente la prima volta che una posizione compare in _rebuild_hint_multimesh, mai invalidata.
+var _hint_transform_cache: Dictionary = {}
 
 # Vector2i -> true: MEMBERSHIP PERSISTENTE (non una lista "di questo giro" come nel passo 3.1) —
 # tutte le posizioni per cui _cell_color_cache riporta ATTUALMENTE FROZEN_OVERLAY_COLOR (a
@@ -266,6 +286,44 @@ var _previous_in_radius_positions: Dictionary = {}
 # ogni pixel la prima volta, texture appena creata da _setup_fog_texture_nodes().
 var _full_flush_pending: bool = true
 
+# true = il PROSSIMO _draw() deve rimandare il flush di UN turno (2026-09-18, richiesta utente —
+# bugfix generale "renderer creato con posizioni non aggiornate", vedi setup()/_draw() sotto),
+# consumato alla prima occasione. CORREZIONE (stesso giorno, richiesta utente — "col gioco in
+# pausa il fog non si disegna finché non premo play"): prima confrontava Engine.
+# get_process_frames() col frame di creazione, ma quel contatore NON avanza a gioco fermo, quindi
+# il rinvio non si risolveva mai finché non si toglieva la pausa. call_deferred("queue_redraw") in
+# _draw() sotto non dipende da SceneTree.paused — è la stessa coda di chiamate differite di basso
+# livello che gira comunque una volta per iterazione del motore, quindi risolve il rinvio anche in
+# pausa, senza perdere la garanzia "mai il flush nello stesso istante di creazione".
+var _first_draw_deferred: bool = true
+
+# Dirty-flag per il layer hint (2026-09-17, richiesta utente — bugfix DXGI_ERROR_DEVICE_REMOVED su
+# Intel UHD): _draw() sotto chiamava _hint_layer.queue_redraw() INCONDIZIONATAMENTE ad ogni proprio
+# redraw — cioè ad ogni frame in cui il player si muove, vedi update_visibility() — quindi
+# _on_hint_layer_draw ridisegnava migliaia di draw_circle() per frame anche quando
+# _frozen_tier_positions/_vegetation_presence non erano cambiati dal frame precedente. STESSO
+# idioma di _full_flush_pending sopra: true di default (il primo _draw() reale deve comunque
+# popolare il layer hint la prima volta), marcato true SOLO nei punti che scrivono DAVVERO
+# _frozen_tier_positions o _vegetation_presence (_flush_position su cache-miss, _mark_seen_and_
+# invalidate quando l'erase rimuove effettivamente un'entry, mark_positions_dirty,
+# set_vegetation_presence), azzerato SOLO da _draw() dopo aver inoltrato il redraw al layer hint —
+# nessun altro punto lo rimette a false, per non rischiare di "consumare" un redraw dovuto senza
+# che il layer hint l'abbia davvero eseguito.
+var _hint_layer_dirty: bool = true
+
+# Contatori diagnostici TEMPORANEI per [FOW HINT COUNT] (2026-09-17, richiesta utente — vedi
+# DebugLogging.SHOW_FOW_HINT_REDRAW_LOGS) — STESSO idioma per-secondo di _redraw_count_this_second/
+# _redraw_count_window_start_msec sotto, ma per il layer hint. AGGIORNATI dopo il fix (C) (richiesta
+# esplicita utente — "conta le primitive effettivamente emesse dopo l'accorpamento, non più i
+# draw_circle logici"): _hint_instances_this_second conta le istanze-cerchio disegnate dal
+# MultiMesh (il numero direttamente comparabile col vecchio "draw_circle/sec", 1 istanza = 1
+# vecchio draw_circle), _hint_triangles_this_second il conteggio REALE di primitive GPU
+# (istanze × HINT_CIRCLE_SEGMENTS) — entrambi aggregati per secondo, non per singola chiamata.
+var _hint_draws_this_second: int = 0
+var _hint_instances_this_second: int = 0
+var _hint_triangles_this_second: int = 0
+var _hint_count_window_start_msec: int = 0
+
 # Accumulatore ISTANZA (non più locale a _draw() come nei passi 3.1/3.2): il lavoro che finiva
 # qui dentro ora avviene anche fuori da _draw() (mark_seen in update_visibility/
 # set_building_visible_positions, vedi _mark_seen_and_invalidate) — un accumulatore locale a
@@ -296,6 +354,10 @@ func setup(p_fog_of_war_memory: FogOfWarMemory) -> void:
 		terrain_memory_days = rules.terrain_memory_days
 	_radius_squared = visibility_radius * visibility_radius
 	_setup_fog_texture_nodes()
+	# _first_draw_deferred parte già true dalla dichiarazione del campo (2026-09-18, richiesta
+	# utente — bugfix generale, vedi _draw()): nessuna assegnazione da fare qui, indipendentemente
+	# da CHI ha chiamato setup() (_activate_live_cell, _update_live_neighbor, o un futuro terzo
+	# punto) — _draw() sotto rimanda da sé il primissimo flush pieno di UN turno.
 	queue_redraw()
 
 
@@ -324,6 +386,14 @@ func _setup_fog_texture_nodes() -> void:
 	_hint_layer.draw.connect(_on_hint_layer_draw)
 	add_child(_hint_layer)
 
+	# MultiMesh hint (fix C, 2026-09-17) — vedi campi sopra. mm.mesh fisso, instance_count parte
+	# da 0: _rebuild_hint_multimesh() lo riempie SOLO quando _hint_layer_dirty è true (fix A).
+	_hint_circle_mesh = _build_hint_circle_mesh()
+	_hint_multimesh = MultiMesh.new()
+	_hint_multimesh.transform_format = MultiMesh.TRANSFORM_2D
+	_hint_multimesh.mesh = _hint_circle_mesh
+	_hint_multimesh.instance_count = 0
+
 
 # Chiamato da GameScene._refresh_resource_visuals con le stesse vegetation_positions appena date
 # a MicroCellRenderer.set_vegetation_positions — Vector3i (TREE/SHRUB) ridotto a Vector2i (lotto);
@@ -349,6 +419,21 @@ func set_vegetation_presence(positions: Dictionary) -> void:
 	# far ridisegnare il solo layer hint (immediate-mode, ricostruito da zero ad ogni suo
 	# queue_redraw() comunque). Il padre (_draw(), pixel/texture/upload) NON viene invocato da
 	# questo trigger: prima di questo passo lo era sempre, tramite _full_flush_pending.
+	#
+	# _hint_layer_dirty = true (2026-09-17, richiesta utente — bugfix DXGI_ERROR_DEVICE_REMOVED):
+	# bookkeeping, questo trigger resta comunque IMMEDIATO tramite la queue_redraw() diretta sotto
+	# (invariata) — questo è uno dei pochi eventi realmente rari che devono aggiornare gli hint
+	# indipendentemente dal ciclo _draw() del padre (che potrebbe non girare affatto se il player è
+	# fermo). Marcare il flag qui non cambia la cadenza di QUESTO trigger, serve solo a restare
+	# coerenti se in futuro _draw() dovesse girare comunque nello stesso frame.
+	#
+	# _rebuild_hint_multimesh() ESPLICITO (2026-09-17, fix C): dal momento che il MultiMesh viene
+	# ricostruito SOLO quando qualcuno lo chiede (non più dentro _on_hint_layer_draw, che oggi si
+	# limita a un draw_multimesh() sul contenuto già pronto), questo trigger deve chiamarlo
+	# esplicitamente PRIMA di riavviare il redraw — altrimenti queue_redraw() risveglierebbe
+	# _on_hint_layer_draw sul contenuto VECCHIO, mai aggiornato alla nuova _vegetation_presence.
+	_hint_layer_dirty = true
+	_rebuild_hint_multimesh()
 	_hint_layer.queue_redraw()
 
 
@@ -381,6 +466,11 @@ func mark_positions_dirty(positions: Array[Vector2i]) -> void:
 		_cell_color_cache.erase(pos)
 		_frozen_tier_positions.erase(pos)
 		_dirty_positions[pos] = true
+	# Evento raro (potatura periodica) — marca sempre il flag hint (2026-09-17, richiesta utente —
+	# bugfix DXGI_ERROR_DEVICE_REMOVED, vedi _hint_layer_dirty): l'early-out su positions.is_empty()
+	# sopra copre già il caso "nessun lavoro reale", quindi qui non serve un controllo più fine sul
+	# singolo erase come in _mark_seen_and_invalidate (chiamato ogni frame, quello sì).
+	_hint_layer_dirty = true
 	queue_redraw()
 
 
@@ -475,12 +565,22 @@ func _mark_seen_for_current_in_radius_positions() -> void:
 # nuovo last_seen, vedi _flush_position). Una cella in-raggio non può mai essere a tier FROZEN (è
 # "live", nessun overlay) quindi _frozen_tier_positions.erase è sempre corretto qui, mai
 # condizionale.
+#
+# Guardia sul valore di ritorno di erase() (2026-09-17, richiesta utente — bugfix DXGI_ERROR_
+# DEVICE_REMOVED, vedi _hint_layer_dirty): questa funzione gira per OGNI posizione in-raggio ad
+# OGNI FRAME (chiamata da _mark_seen_for_current_in_radius_positions, a sua volta da
+# update_visibility ad ogni frame di movimento) — quasi sempre `pos` non è mai stata a tier FROZEN
+# (vedi commento sopra: una cella in-raggio non lo è mai), quindi l'erase è quasi sempre un no-op.
+# Dictionary.erase() ritorna true SOLO se ha davvero rimosso una entry — marcare il flag hint solo
+# in quel caso evita di riportarlo "sporco" ad ogni singolo frame per un'operazione che nella
+# stragrande maggioranza dei casi non cambia nulla (esattamente il bug che questo fix corregge).
 func _mark_seen_and_invalidate(pos: Vector2i) -> void:
 	var _mem_start := Time.get_ticks_usec()
 	fog_of_war_memory.mark_seen(pos, _current_absolute_day)
 	_memory_lookup_usec += Time.get_ticks_usec() - _mem_start
 	_cell_color_cache.erase(pos)
-	_frozen_tier_positions.erase(pos)
+	if _frozen_tier_positions.erase(pos):
+		_hint_layer_dirty = true
 
 
 # Step 3.3 — calcola il delta (entrate/uscite) tra l'insieme in-raggio (source ∪ building) di
@@ -579,6 +679,32 @@ func compute_visible_positions(current_absolute_day: int) -> Dictionary:
 
 
 func _draw() -> void:
+	# Guardia "rimanda il primo flush di UN turno" (2026-09-18, richiesta utente — bugfix GENERALE:
+	# "renderer creato con posizioni non aggiornate", il fix di ieri in GameScene.
+	# _attempt_macro_cell_transition copriva solo quel punto, non _update_live_neighbor né futuri
+	# altri chiamanti). Il primissimo _draw() di un'istanza appena creata girerebbe con
+	# _source_visible_positions/_building_visible_positions ancora ai default (vuoti, mai
+	# aggiornati da un update_visibility() vero) SE quel _draw() capita PRIMA che il ciclo
+	# periodico di GameScene._process abbia già chiamato update_visibility() con le posizioni
+	# DEFINITIVE di questo stesso frame per tutti gli individui — dipende dall'ordine relativo tra
+	# "chi crea questa istanza" e "il loop periodico" nello stesso frame, un ordine che NON
+	# vogliamo dover garantire caso per caso ad ogni chiamante presente e futuro.
+	#
+	# CORREZIONE (stesso giorno, richiesta utente — "col gioco in pausa il fog non si disegna
+	# finché non premo play"): la prima versione confrontava Engine.get_process_frames() col frame
+	# di creazione, ma quel contatore NON avanza a gioco fermo (SceneTree.paused), quindi il rinvio
+	# non si risolveva mai. call_deferred("queue_redraw") NON dipende da SceneTree.paused — gira
+	# comunque una volta per iterazione del motore — quindi risolve il rinvio anche in pausa, senza
+	# perdere la garanzia "mai il flush nello stesso istante di creazione": _first_draw_deferred si
+	# consuma UNA sola volta (mai per i redraw successivi, es. cambio giorno/movimento), _full_
+	# flush_pending resta true (non consumato qui), quindi il turno differito farà comunque il
+	# flush pieno regolare. Nessun impatto visivo oltre un singolo frame di texture vuota/
+	# trasparente (Image.create_empty, mai nera) invece del solito overlay.
+	if _first_draw_deferred:
+		_first_draw_deferred = false
+		call_deferred("queue_redraw")
+		return
+
 	# TEMPORANEO (diagnostica Step 4 FoW multi-sorgente, vedi DebugLogging.SHOW_FOW_REDRAW_TIMING_
 	# LOGS) — misura il costo reale del redraw ora che è guidato dal dirty-tracking (Step 3.3,
 	# 2026-09-03) invece di una scansione piena delle 10.000 celle ad ogni giro.
@@ -596,8 +722,9 @@ func _draw() -> void:
 	var _draw_start_usec := Time.get_ticks_usec()
 
 	# Contatore redraw/sec (vedi _redraw_count_this_second sopra) — incrementato qui, PRIMA di
-	# qualunque early-out interno a questa funzione (non ce ne sono: se _draw() è stata chiamata,
-	# è già un redraw reale, l'unico early-out è a monte in update_visibility()).
+	# qualunque early-out interno a questa funzione OLTRE a quello "creato in questo stesso frame"
+	# appena sopra (che ritorna prima di arrivare qui apposta, per non contarlo come un redraw
+	# reale): l'unico ALTRO early-out resta a monte in update_visibility().
 	_redraw_count_this_second += 1
 	var _now_msec := Time.get_ticks_msec()
 	if _now_msec - _redraw_count_window_start_msec >= 1000:
@@ -631,7 +758,18 @@ func _draw() -> void:
 	_dirty_positions.clear()
 
 	_fog_texture.update(_fog_image)
-	_hint_layer.queue_redraw()
+	# Gate sul dirty-flag (2026-09-17, richiesta utente — bugfix DXGI_ERROR_DEVICE_REMOVED su Intel
+	# UHD): PRIMA questa chiamata era incondizionata, quindi girava ad ogni singolo _draw() del
+	# padre — cioè ad ogni frame di movimento (vedi update_visibility). Fix (A): niente rebuild/
+	# redraw se nulla è cambiato. Fix (C): quando serve, _rebuild_hint_multimesh() ricostruisce le
+	# istanze (vedi sotto) e il layer hint le disegna con UNA sola draw_multimesh() in
+	# _on_hint_layer_draw, non più migliaia di draw_circle() indipendenti (causa reale
+	# dell'E_OUTOFMEMORY su command_buffer_end). Azzerato SOLO qui, dopo aver inoltrato il redraw —
+	# vedi _hint_layer_dirty per dove viene marcato true.
+	if _hint_layer_dirty:
+		_rebuild_hint_multimesh()
+		_hint_layer.queue_redraw()
+		_hint_layer_dirty = false
 
 	if DebugLogging.SHOW_FOW_REDRAW_TIMING_LOGS:
 		var elapsed_ms: float = (Time.get_ticks_usec() - _draw_start_usec) / 1000.0
@@ -703,28 +841,87 @@ func _flush_position(pos: Vector2i) -> void:
 			_frozen_tier_positions[pos] = true
 		else:
 			_frozen_tier_positions.erase(pos)
+		# Questo ramo gira SOLO su cache-miss, già limitato a poche celle per frame dal dirty-
+		# tracking a monte (_dirty_positions/full flush, mai tutte le 10.000 celle senza motivo) —
+		# a differenza di _mark_seen_and_invalidate (chiamato ogni frame per ogni posizione in
+		# raggio), qui marcare il flag senza controllare se il valore è "davvero" cambiato resta
+		# economico: un ricalcolo di tier per una posizione non ancora cachata è già di per sé
+		# l'evento che può alterare gli hint (2026-09-17, richiesta utente — bugfix DXGI_ERROR_
+		# DEVICE_REMOVED, vedi _hint_layer_dirty).
+		_hint_layer_dirty = true
 
 	_fog_image.set_pixel(pos.x, pos.y, color)
 
 
 # Handler del segnale `draw` di _hint_layer (vedi campo sopra).
 #
-# AGGIORNAMENTO Step 3.4 (2026-09-03): show_hint non è più un bool cacheato insieme al colore —
-# calcolato LIVE ad ogni redraw di questo layer, incrociando _frozen_tier_positions (membership
-# persistente del tier, indipendente da _vegetation_presence — vedi campo sopra) con
-# _vegetation_presence COSÌ COM'È in questo momento. È esattamente questo disaccoppiamento che
-# permette a set_vegetation_presence() di non dover più invalidare _cell_color_cache/
-# _dirty_positions per aggiornare gli hint: le uniche celle che possono avere uno show_hint
-# diverso da prima sono già tutte e sole quelle in _frozen_tier_positions (il colore non cambia
-# mai per un refresh vegetazione, quindi l'insieme stesso non ha bisogno di essere ricalcolato,
-# solo riletto contro il nuovo _vegetation_presence). Iterare _frozen_tier_positions invece delle
-# 10.000 celle resta comunque necessario per lo stesso motivo del passo 3.3: _draw() non rivisita
-# più tutta la griglia ad ogni redraw. Le chiamate draw_circle() restano un passaggio
-# immediate-mode indipendente sopra la texture persistente (mai baked nell'Image).
+# AGGIORNAMENTO fix (C) (2026-09-17, richiesta utente — bugfix E_OUTOFMEMORY su command_buffer_
+# end, Intel UHD integrata): non ricalcola/ridisegna più nulla qui — il contenuto (_hint_multimesh)
+# è già pronto, ricostruito da _rebuild_hint_multimesh() SOLO quando _hint_layer_dirty era true
+# (vedi _draw()/set_vegetation_presence). Questo handler si limita a UNA sola draw_multimesh(),
+# indipendentemente da quante istanze contiene — invece delle migliaia di draw_circle()
+# indipendenti di prima (ciascuna un comando separato nel command buffer, la causa reale
+# dell'errore: non la frequenza dei redraw, già risolta dal fix A, ma il VOLUME per singolo
+# redraw).
 func _on_hint_layer_draw() -> void:
+	if _hint_multimesh != null and _hint_multimesh.instance_count > 0:
+		_hint_layer.draw_multimesh(_hint_multimesh, null)
+
+	# Contatore diagnostico TEMPORANEO [FOW HINT COUNT] (2026-09-17, richiesta utente — vedi
+	# DebugLogging.SHOW_FOW_HINT_REDRAW_LOGS) — STESSO idioma per-secondo di _redraw_count_this_
+	# second in _draw(). AGGIORNATO dopo il fix (C) (richiesta esplicita utente — "conta le
+	# primitive effettivamente emesse dopo l'accorpamento, non più i draw_circle logici"): non
+	# somma più un conteggio "1+accent_count" per chiamata come prima dell'accorpamento — legge
+	# direttamente _hint_multimesh.instance_count (quante istanze-cerchio la GPU disegna, il
+	# numero comparabile 1:1 col vecchio "draw_circle/sec") e i triangoli GPU reali
+	# (instance_count × HINT_CIRCLE_SEGMENTS, il vero conteggio di primitive), per confrontare
+	# prima/dopo quanto è cambiato il volume per redraw a parità di draw call (sempre 1, ora).
+	if DebugLogging.SHOW_FOW_HINT_REDRAW_LOGS:
+		var _instances_this_call: int = _hint_multimesh.instance_count if _hint_multimesh != null else 0
+		_hint_draws_this_second += 1
+		_hint_instances_this_second += _instances_this_call
+		_hint_triangles_this_second += _instances_this_call * HINT_CIRCLE_SEGMENTS
+		var _now_msec := Time.get_ticks_msec()
+		if _now_msec - _hint_count_window_start_msec >= 1000:
+			print("[FOW HINT COUNT] %d _on_hint_layer_draw/sec (1 draw_multimesh ciascuno) | %d istanze-cerchio/sec | %d triangoli/sec" % [
+				_hint_draws_this_second, _hint_instances_this_second, _hint_triangles_this_second
+			])
+			_hint_draws_this_second = 0
+			_hint_instances_this_second = 0
+			_hint_triangles_this_second = 0
+			_hint_count_window_start_msec = _now_msec
+
+
+# Ricostruisce _hint_multimesh dalle posizioni ATTUALI di _frozen_tier_positions ∩
+# _vegetation_presence (2026-09-17, richiesta utente — fix C) — chiamata SOLO da _draw() (quando
+# _hint_layer_dirty) e da set_vegetation_presence (trigger diretto, vedi lì), mai da
+# _on_hint_layer_draw: il redraw vero e proprio (draw_multimesh) e la ricostruzione delle istanze
+# sono ora due passi separati, esattamente come MicroCellRenderer separa _rebuild_*_multimeshes()
+# dalle chiamate draw_multimesh() dentro _draw(). Ogni posizione contribuisce 1 macchia principale
+# + 1-2 accenti (vedi _get_hint_transforms_for_position, cache-aware — fix B), concatenati in
+# un'unica Array[Transform2D] applicata al MultiMesh in un solo giro (stesso schema di
+# MicroCellRenderer._apply_transforms).
+func _rebuild_hint_multimesh() -> void:
+	var transforms: Array[Transform2D] = []
 	for pos in _frozen_tier_positions:
 		if _vegetation_presence.has(pos):
-			_draw_stale_vegetation_hint(_hint_layer, pos)
+			transforms.append_array(_get_hint_transforms_for_position(pos))
+
+	_hint_multimesh.instance_count = transforms.size()
+	for i in range(transforms.size()):
+		_hint_multimesh.set_instance_transform_2d(i, transforms[i])
+
+
+# Cache per posizione (2026-09-17, richiesta utente — fix B): _compute_hint_transforms è pura
+# funzione di `pos` (nessun rng), quindi la stessa posizione produce sempre la stessa geometria —
+# calcolarla una sola volta e riusarla per il resto della sessione, invece di rifare hash/lerp/
+# trig ad ogni rebuild come faceva il vecchio _draw_stale_vegetation_hint (rimosso).
+func _get_hint_transforms_for_position(pos: Vector2i) -> Array:
+	if _hint_transform_cache.has(pos):
+		return _hint_transform_cache[pos]
+	var transforms := _compute_hint_transforms(pos)
+	_hint_transform_cache[pos] = transforms
+	return transforms
 
 
 # Macchia grande e coprente (quasi tutta la cella) + 1-2 accenti più piccoli ai bordi per rompere
@@ -734,23 +931,24 @@ func _on_hint_layer_draw() -> void:
 # bell'e meglio. Sopra FROZEN_OVERLAY_COLOR (ora sulla texture persistente di _fog_sprite, non più
 # disegnato da questo stesso metodo).
 #
-# `target` (Step 3.1): il CanvasItem su cui emettere i draw_circle() — sempre _hint_layer oggi
-# (vedi _on_hint_layer_draw), mai `self`: gli hint sono un figlio separato apposta per restare
-# sopra la texture nell'ordine di disegno (vedi _hint_layer sopra). Parametro esplicito invece di
-# un riferimento fisso a _hint_layer dentro il corpo per tenere questo metodo puro/testabile su
-# qualunque CanvasItem, stesso principio già seguito altrove nel file per le funzioni pure.
-func _draw_stale_vegetation_hint(target: CanvasItem, pos: Vector2i) -> void:
+# STESSA identica formula del vecchio _draw_stale_vegetation_hint (rimosso, fix C/2026-09-17):
+# produce Transform2D (origine = centro assoluto + offset, scala = raggio) invece di chiamare
+# draw_circle() direttamente — il cerchio unitario (raggio 1) è già baked in _hint_circle_mesh,
+# scalarlo per istanza riproduce esattamente draw_circle(center, radius, color). static perché pura:
+# nessuna dipendenza da stato di istanza oltre a CELL_SIZE (const).
+static func _compute_hint_transforms(pos: Vector2i) -> Array:
 	var center := Vector2(pos.x * CELL_SIZE, pos.y * CELL_SIZE) + Vector2(CELL_SIZE / 2.0, CELL_SIZE / 2.0)
 	var seed: int = hash(pos * 13 + Vector2i(41, 7))
 
-	# Macchia principale: raggio fino a poco più di metà cella, leggermente decentrata — copre la
-	# gran parte del tile invece di un pallino decorativo in mezzo al nulla.
 	var main_offset := Vector2(
 		lerp(-1.5, 1.5, float(hash(seed) % 1000) / 1000.0),
 		lerp(-1.5, 1.5, float(hash(seed * 3 + 1) % 1000) / 1000.0)
 	)
 	var main_radius: float = lerp(4.2, 5.4, float(hash(seed * 7 + 2) % 1000) / 1000.0)
-	target.draw_circle(center + main_offset, main_radius, STALE_VEGETATION_BLOB_COLOR)
+	var main_transform := Transform2D(0, Vector2.ZERO).scaled(Vector2(main_radius, main_radius))
+	main_transform.origin = center + main_offset
+
+	var transforms: Array[Transform2D] = [main_transform]
 
 	var accent_count: int = 1 + (seed % 2) # 1 o 2 accenti
 	for i in range(accent_count):
@@ -758,4 +956,36 @@ func _draw_stale_vegetation_hint(target: CanvasItem, pos: Vector2i) -> void:
 		var angle: float = (float(hash(salt) % 1000) / 1000.0) * TAU
 		var distance: float = lerp(2.5, 4.0, float(hash(salt * 5 + 3) % 1000) / 1000.0)
 		var accent_radius: float = lerp(1.8, 2.8, float(hash(salt * 9 + 7) % 1000) / 1000.0)
-		target.draw_circle(center + Vector2(cos(angle), sin(angle)) * distance, accent_radius, STALE_VEGETATION_BLOB_COLOR)
+		var accent_transform := Transform2D(0, Vector2.ZERO).scaled(Vector2(accent_radius, accent_radius))
+		accent_transform.origin = center + Vector2(cos(angle), sin(angle)) * distance
+		transforms.append(accent_transform)
+
+	return transforms
+
+
+# Cerchio unitario (raggio 1, centrato all'origine, colore baked via SurfaceTool) — mirror di
+# MicroCellRenderer._build_circle_mesh/_build_fan_mesh (2026-09-17, richiesta utente — fix C: "usa
+# la via già collaudata nel progetto per lo stesso problema"), duplicato qui apposta invece di
+# condiviso tra le due classi — stesso principio "nessuna classe condivisa tra usi diversi" già
+# seguito ovunque nel progetto. Colore fisso baked nella mesh (mai use_colors sul MultiMesh: ogni
+# hint ha sempre e solo STALE_VEGETATION_BLOB_COLOR, nessuna variazione per istanza).
+const HINT_CIRCLE_SEGMENTS: int = 12
+
+static func _build_hint_circle_mesh() -> ArrayMesh:
+	var points := PackedVector2Array()
+	for i in range(HINT_CIRCLE_SEGMENTS):
+		var angle: float = (float(i) / float(HINT_CIRCLE_SEGMENTS)) * TAU
+		points.append(Vector2(cos(angle), sin(angle)))
+
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	st.set_color(STALE_VEGETATION_BLOB_COLOR)
+	var center := Vector3.ZERO
+	for i in range(HINT_CIRCLE_SEGMENTS):
+		var a := Vector3(points[i].x, points[i].y, 0.0)
+		var b := Vector3(points[(i + 1) % HINT_CIRCLE_SEGMENTS].x, points[(i + 1) % HINT_CIRCLE_SEGMENTS].y, 0.0)
+		st.add_vertex(center)
+		st.add_vertex(a)
+		st.add_vertex(b)
+
+	return st.commit()

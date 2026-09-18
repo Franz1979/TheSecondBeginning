@@ -38,6 +38,24 @@ var river_exterior_occupied: Dictionary = {}
 var needs_full_vegetation_recompute: bool = true
 var cached_vegetation_positions: Dictionary = {}
 
+# Cache del ratio disponibilità "fruit stock" per lotto (2026-09-17, richiesta utente —
+# ottimizzazione: GameScene._refresh_resource_visuals ricostruiva questo Dictionary da zero a
+# OGNI refresh, iterando l'intero shrub_claimed_lots della macrocella — mai svuotato, quindi
+# crescente per l'intera sessione — anche quando stock/composizione non erano cambiati dall'ultimo
+# refresh, segnalato dall'utente come causa di scatti; GENERALIZZATO lo stesso giorno per risorsa,
+# in preparazione di fruit/acorn — nessun cambio di comportamento per berry). Entrambi ANNIDATI
+# per resource_name (oggi solo "berry", vedi TerrainScatteredResourceService.FRUIT_STOCK_SOURCES):
+# cached_berry_ratio_by_lot[resource_name] è il Dictionary[Vector2i, float] passato l'ultima volta
+# al renderer per quella risorsa; last_berry_signature[resource_name] è l'ultima firma leggera
+# (TerrainScatteredResourceService.get_fruit_stock_recompute_signature) con cui è stato calcolato —
+# se la firma corrente coincide, GameScene riusa il Dictionary di quella risorsa senza
+# ricostruirlo né richiamare MicroCellRenderer.set_fruit_stock_available_ratio_by_lot. Entrambi
+# vuoti di default: una risorsa mai vista in last_berry_signature non coincide mai con una firma
+# reale (che ha sempre 4 elementi), quindi il primo refresh forza sempre il primo calcolo vero per
+# quella risorsa, stesso principio di needs_full_vegetation_recompute.
+var cached_berry_ratio_by_lot: Dictionary = {}
+var last_berry_signature: Dictionary = {}
+
 
 func coords() -> Vector2i:
 	return Vector2i(macro_x, macro_y)

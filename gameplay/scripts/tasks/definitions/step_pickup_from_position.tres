@@ -5,5 +5,5 @@
 [resource]
 script = ExtResource("1_pickup")
 action_type = 4
-context_keys = Array[String](["pickup_position", "macro_state", "resource_name"])
+context_keys = Array[String](["pickup_position", "macro_state", "resource_name", "pickup_requested_quantity"])
 step_description = "task_haul_resource_step_pickup"

@@ -49,6 +49,21 @@ const RESOURCE_ICON_NODES := {
 	# fascio di fibre curve legate da un nodo, stesso principio "nessun emoji rende bene il
 	# concetto" già documentato sopra per pebble/stick — vedi PlantFiberIcon.gd.
 	"plant_fiber": preload("res://simulation/scripts/ui/PlantFiberIcon.gd"),
+	# "berry" (2026-09-17, richiesta utente — proposta mostrata in artifact e approvata: "ok
+	# bello"): grappolo di 3 bacche con riflesso e stelo/fogliolina, stesso principio "nessun emoji
+	# rende bene il concetto" già documentato sopra — vedi BerryIcon.gd.
+	"berry": preload("res://simulation/scripts/ui/BerryIcon.gd"),
+	# "acorn" (2026-09-17, richiesta utente — seconda risorsa della catena "fruit stock" generica
+	# dopo berry, stesso schema icona): due ghiande, corpo+cappuccio ellittici — vedi AcornIcon.gd.
+	"acorn": preload("res://simulation/scripts/ui/AcornIcon.gd"),
+	# "fruit" (2026-09-17, richiesta utente — terza risorsa della catena "fruit stock" generica,
+	# TREE/domesticable_fruit, stesso schema icona): due mele, corpo circolare+stelo+fogliolina —
+	# vedi FruitIcon.gd.
+	"fruit": preload("res://simulation/scripts/ui/FruitIcon.gd"),
+	# "mushroom" (2026-09-17, richiesta utente — quarta risorsa TERRAIN_SCATTERED a capacità
+	# propria per lotto dopo pebble/stick/plant_fiber, modello stick): due funghi, cappello+gambo —
+	# vedi MushroomIcon.gd.
+	"mushroom": preload("res://simulation/scripts/ui/MushroomIcon.gd"),
 }
 
 

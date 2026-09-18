@@ -136,6 +136,13 @@ static func assign_emergency_rest_task(individual: HumanIndividual, age_band: Hu
 	var context: Dictionary = {
 		"target_position": target_data["target_position"],
 		"rest_multiplier": 1.0,
+		# Tetto di sicurezza (2026-09-17, richiesta utente — bugfix: mancava qui, a differenza di
+		# assign_rest_task sopra, quindi la Emergency Rest restava senza tetto e recuperava sempre
+		# fino a stamina piena, fino a ~16gg fissi nel caso peggiore). STESSA costante/STESSO
+		# principio di REST_TASK_MAX_DURATION_DAYS sopra — un backstop in OR col criterio "stamina
+		# piena", scatta solo se il recupero fosse più lento del previsto.
+		"rest_max_duration_days": REST_TASK_MAX_DURATION_DAYS,
+		"rest_ignore_stamina_cap": false,
 	}
 	var task := TaskFactory.build_task(emergency_rest_definition, context)
 	# Guard PRIMA di stop() — STESSO principio di assign_rest_task sopra.

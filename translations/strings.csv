@@ -136,6 +136,10 @@ pickup_choice_dialog_message,Questa posizione contiene più risorse raccoglibili
 carried_resource_tooltip_pebble,Sassi
 carried_resource_tooltip_stick,Rametti
 carried_resource_tooltip_plant_fiber,Fibra vegetale
+carried_resource_tooltip_berry,Bacche
+carried_resource_tooltip_acorn,Ghiande
+carried_resource_tooltip_fruit,Frutta selvatica
+carried_resource_tooltip_mushroom,Funghi
 microcell_inspection_title,Microcella ({x}; {y})
 microcell_inspection_not_visible,Cella non esplorata o non visibile.
 microcell_inspection_only_grass,Contiene solo erba.

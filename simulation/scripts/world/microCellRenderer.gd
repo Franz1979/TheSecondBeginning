@@ -845,6 +845,36 @@ func set_shrub_age_params(current_year: int, age_params: Dictionary, birth_year_
 	queue_redraw()
 
 
+# resource_name -> Dictionary[Vector2i lotto, float [0.0, 1.0]], quota di disponibilità RESIDUA
+# nel lotto rispetto al pieno stagionale (2026-09-17, richiesta utente — TerrainScatteredResourceService.
+# get_fruit_stock_visual_ratio_at, chiamato da GameScene._refresh_resource_visuals; GENERALIZZATO
+# lo stesso giorno per risorsa, in preparazione dei due multimesh frutto degli alberi — fruit/acorn,
+# non ancora aggiunti — nessun cambio di comportamento per berry). Un lotto ASSENTE dal Dictionary
+# di una risorsa vale 1.0 (mostra tutto il frutto di quella risorsa, comportamento invariato) — così
+# un chiamante che non invoca questo setter per una risorsa (es. MacroCellScene, che non usa la
+# raccolta/TerrainScatteredResourceService) continua a mostrarla esattamente come prima, nessuna
+# regressione lì.
+var fruit_stock_available_ratio_by_lot: Dictionary = {}
+
+
+# `object_type` (2026-09-17, richiesta utente — generalizzazione): quale famiglia di multimesh
+# marcare "sporca" — il renderer non consulta MAI TerrainScatteredResourceService.
+# FRUIT_STOCK_SOURCES per dedurlo da `resource_name` (violerebbe il principio "il renderer riceve
+# solo dati già risolti" già seguito ovunque in questo file), quindi il chiamante (GameScene, che
+# la tabella la conosce già) lo passa esplicito. Innesca lo stesso rebuild TREE/SHRUB già innescato
+# da set_*_subtypes/set_*_age_params — dentro la finestra di batch di GameScene.
+# _refresh_resource_visuals (begin_vegetation_batch/end_vegetation_batch) questa chiamata si limita
+# a marcare "sporco", NESSUN rebuild aggiuntivo rispetto a quelli già innescati dagli altri setter
+# nella stessa chiamata.
+func set_fruit_stock_available_ratio_by_lot(resource_name: String, object_type: GameTypes.WorldObjectType, ratios: Dictionary) -> void:
+	fruit_stock_available_ratio_by_lot[resource_name] = ratios
+	if object_type == GameTypes.WorldObjectType.TREE:
+		_defer_or_rebuild_tree()
+	else:
+		_defer_or_rebuild_shrub()
+	queue_redraw()
+
+
 func set_tree_subtypes(subtype_store: Dictionary) -> void:
 	tree_individual_subtype = subtype_store
 	_defer_or_rebuild_tree()
@@ -1173,6 +1203,14 @@ func _draw_deposit_site_storage_grid(ground: Vector2, slot_breakdown: Array) -> 
 				_draw_deposit_storage_stick_icon(top_left, DEPOSIT_SITE_STORAGE_SQUARE_SIDE)
 			"plant_fiber":
 				_draw_deposit_storage_plant_fiber_icon(top_left, DEPOSIT_SITE_STORAGE_SQUARE_SIDE)
+			"berry":
+				_draw_deposit_storage_berry_icon(top_left, DEPOSIT_SITE_STORAGE_SQUARE_SIDE)
+			"acorn":
+				_draw_deposit_storage_acorn_icon(top_left, DEPOSIT_SITE_STORAGE_SQUARE_SIDE)
+			"fruit":
+				_draw_deposit_storage_fruit_icon(top_left, DEPOSIT_SITE_STORAGE_SQUARE_SIDE)
+			"mushroom":
+				_draw_deposit_storage_mushroom_icon(top_left, DEPOSIT_SITE_STORAGE_SQUARE_SIDE)
 			_:
 				# Fallback per un'eventuale risorsa futura senza geometria replicata qui — un
 				# semplice pallino nel colore della risorsa (IconRegistry.get_resource_color, stessa
@@ -1276,6 +1314,215 @@ func _draw_deposit_storage_fiber_tie_knot(base: Vector2, side: float) -> void:
 		var local_point := Vector2(cos(angle) * rx, sin(angle) * ry)
 		points.append(center + local_point.rotated(rotation))
 	draw_colored_polygon(points, DEPOSIT_STORAGE_FIBER_TIE_COLOR)
+
+
+# Replica world-space di BerryIcon.gd (2026-09-17, richiesta utente — bugfix "pallino giallo nel
+# magazzino": mancava del tutto qui, cadeva nel fallback generico _: di _draw_deposit_site_
+# storage_grid, MAI nell'icona vera — la UI Control di BerryIcon.gd non ha mai avuto nulla a che
+# fare con questo bug, è un sistema di disegno completamente separato) — stesso principio dei tre
+# blocchi sopra: stessi punti/raggi/colori frazionari (0..1) di BerryIcon.gd, qui scalati per
+# `side` e traslati su `top_left` invece che per size.x/size.y di un Control.
+const DEPOSIT_STORAGE_BERRY_COLOR_MAIN := Color(0.75, 0.08, 0.10, 1.0)
+const DEPOSIT_STORAGE_BERRY_COLOR_DARK := Color(0.55, 0.05, 0.08, 1.0)
+const DEPOSIT_STORAGE_BERRY_COLOR_HIGHLIGHT := Color(0.93, 0.65, 0.63, 0.85)
+const DEPOSIT_STORAGE_BERRY_COLOR_STEM := Color(0.361, 0.420, 0.196, 1.0)
+const DEPOSIT_STORAGE_BERRY_COLOR_LEAF := Color(0.298, 0.518, 0.235, 1.0)
+const DEPOSIT_STORAGE_BERRIES := [
+	{"cx": 0.36, "cy": 0.58, "r": 0.175, "color": DEPOSIT_STORAGE_BERRY_COLOR_DARK},
+	{"cx": 0.64, "cy": 0.56, "r": 0.17, "color": DEPOSIT_STORAGE_BERRY_COLOR_MAIN},
+	{"cx": 0.50, "cy": 0.80, "r": 0.195, "color": DEPOSIT_STORAGE_BERRY_COLOR_MAIN},
+]
+const DEPOSIT_STORAGE_BERRY_CURVE_SEGMENTS: int = 8
+
+func _draw_deposit_storage_berry_icon(top_left: Vector2, side: float) -> void:
+	_draw_deposit_storage_berry_stem(top_left, side)
+	_draw_deposit_storage_berry_leaf(top_left, side)
+	for berry in DEPOSIT_STORAGE_BERRIES:
+		var center: Vector2 = top_left + Vector2(berry["cx"], berry["cy"]) * side
+		var radius: float = side * berry["r"]
+		draw_circle(center, radius, berry["color"])
+		var highlight_center: Vector2 = center - Vector2(radius * 0.32, radius * 0.34)
+		draw_circle(highlight_center, radius * 0.32, DEPOSIT_STORAGE_BERRY_COLOR_HIGHLIGHT)
+
+
+func _draw_deposit_storage_berry_stem(top_left: Vector2, side: float) -> void:
+	var base: Vector2 = top_left + Vector2(0.50, 0.58) * side
+	var ctrl: Vector2 = top_left + Vector2(0.58, 0.38) * side
+	var tip: Vector2 = top_left + Vector2(0.52, 0.20) * side
+	var points := PackedVector2Array()
+	for i in range(DEPOSIT_STORAGE_BERRY_CURVE_SEGMENTS + 1):
+		var t: float = float(i) / float(DEPOSIT_STORAGE_BERRY_CURVE_SEGMENTS)
+		var one_minus_t: float = 1.0 - t
+		points.append(base * (one_minus_t * one_minus_t) + ctrl * (2.0 * one_minus_t * t) + tip * (t * t))
+	draw_polyline(points, DEPOSIT_STORAGE_BERRY_COLOR_STEM, side * 0.045, true)
+
+
+func _draw_deposit_storage_berry_leaf(top_left: Vector2, side: float) -> void:
+	var base: Vector2 = top_left + Vector2(0.55, 0.30) * side
+	var tip: Vector2 = top_left + Vector2(0.76, 0.20) * side
+	var ctrl_top: Vector2 = top_left + Vector2(0.72, 0.18) * side
+	var ctrl_bottom: Vector2 = top_left + Vector2(0.62, 0.32) * side
+	var points := PackedVector2Array()
+	for i in range(DEPOSIT_STORAGE_BERRY_CURVE_SEGMENTS + 1):
+		var t: float = float(i) / float(DEPOSIT_STORAGE_BERRY_CURVE_SEGMENTS)
+		var one_minus_t: float = 1.0 - t
+		points.append(base * (one_minus_t * one_minus_t) + ctrl_top * (2.0 * one_minus_t * t) + tip * (t * t))
+	for i in range(1, DEPOSIT_STORAGE_BERRY_CURVE_SEGMENTS + 1):
+		var t: float = float(i) / float(DEPOSIT_STORAGE_BERRY_CURVE_SEGMENTS)
+		var one_minus_t: float = 1.0 - t
+		points.append(tip * (one_minus_t * one_minus_t) + ctrl_bottom * (2.0 * one_minus_t * t) + base * (t * t))
+	draw_colored_polygon(points, DEPOSIT_STORAGE_BERRY_COLOR_LEAF)
+
+
+# Replica world-space di AcornIcon.gd (2026-09-17, richiesta utente — seconda risorsa della catena
+# "fruit stock" generica dopo berry, stesso schema/stesso principio del blocco berry sopra): due
+# ghiande, ciascuna corpo+riflesso+cappuccio ellittici + piccolo stelo, stessi punti/raggi/colori
+# frazionari (0..1) di AcornIcon.gd, qui scalati per `side` e traslati su `top_left` invece che per
+# size.x/size.y di un Control.
+const DEPOSIT_STORAGE_ACORN_COLOR_BODY := Color(0.72, 0.52, 0.28, 1.0)
+const DEPOSIT_STORAGE_ACORN_COLOR_BODY_DARK := Color(0.60, 0.42, 0.20, 1.0)
+const DEPOSIT_STORAGE_ACORN_COLOR_HIGHLIGHT := Color(0.88, 0.72, 0.48, 0.85)
+const DEPOSIT_STORAGE_ACORN_COLOR_CAP := Color(0.42, 0.28, 0.14, 1.0)
+const DEPOSIT_STORAGE_ACORN_COLOR_STEM := Color(0.35, 0.30, 0.15, 1.0)
+const DEPOSIT_STORAGE_ACORN_ELLIPSE_SEGMENTS: int = 14
+const DEPOSIT_STORAGE_ACORNS := [
+	{"cx": 0.34, "cy": 0.58, "rx": 0.15, "ry": 0.19, "rot": -0.25, "color": DEPOSIT_STORAGE_ACORN_COLOR_BODY_DARK},
+	{"cx": 0.62, "cy": 0.62, "rx": 0.19, "ry": 0.235, "rot": 0.18, "color": DEPOSIT_STORAGE_ACORN_COLOR_BODY},
+]
+
+func _draw_deposit_storage_acorn_icon(top_left: Vector2, side: float) -> void:
+	for acorn in DEPOSIT_STORAGE_ACORNS:
+		_draw_deposit_storage_acorn(
+			top_left, side, acorn["cx"], acorn["cy"], acorn["rx"], acorn["ry"], acorn["rot"], acorn["color"]
+		)
+
+
+func _draw_deposit_storage_acorn(
+	top_left: Vector2, side: float, cx: float, cy: float, rx: float, ry: float, rotation: float, body_color: Color
+) -> void:
+	var center: Vector2 = top_left + Vector2(cx, cy) * side
+	var body_radius := Vector2(rx * side, ry * side)
+	_draw_deposit_storage_ellipse(center, body_radius, rotation, body_color)
+
+	var highlight_offset: Vector2 = Vector2(-body_radius.x * 0.35, -body_radius.y * 0.3).rotated(rotation)
+	_draw_deposit_storage_ellipse(center + highlight_offset, body_radius * 0.35, rotation, DEPOSIT_STORAGE_ACORN_COLOR_HIGHLIGHT)
+
+	var cap_center: Vector2 = center + Vector2(0.0, -body_radius.y * 0.62).rotated(rotation)
+	var cap_radius := Vector2(body_radius.x * 1.05, body_radius.y * 0.5)
+	_draw_deposit_storage_ellipse(cap_center, cap_radius, rotation, DEPOSIT_STORAGE_ACORN_COLOR_CAP)
+
+	var stem_base: Vector2 = cap_center + Vector2(0.0, -cap_radius.y * 0.7).rotated(rotation)
+	var stem_tip: Vector2 = stem_base + Vector2(0.0, -body_radius.y * 0.35).rotated(rotation)
+	draw_line(stem_base, stem_tip, DEPOSIT_STORAGE_ACORN_COLOR_STEM, side * 0.04, true)
+
+
+func _draw_deposit_storage_ellipse(center: Vector2, radius: Vector2, rotation: float, color: Color) -> void:
+	var points := PackedVector2Array()
+	for i in range(DEPOSIT_STORAGE_ACORN_ELLIPSE_SEGMENTS):
+		var angle: float = TAU * float(i) / float(DEPOSIT_STORAGE_ACORN_ELLIPSE_SEGMENTS)
+		var local_point := Vector2(cos(angle) * radius.x, sin(angle) * radius.y)
+		points.append(center + local_point.rotated(rotation))
+	draw_colored_polygon(points, color)
+
+
+# Replica world-space di FruitIcon.gd (2026-09-17, richiesta utente — terza risorsa della catena
+# "fruit stock" generica dopo berry/acorn, stesso schema/stesso principio dei due blocchi sopra):
+# stessi punti/raggi/colori frazionari (0..1) di FruitIcon.gd, qui scalati per `side` e traslati su
+# `top_left` invece che per size.x/size.y di un Control.
+const DEPOSIT_STORAGE_FRUIT_COLOR_BODY := Color(0.80, 0.16, 0.14, 1.0)
+const DEPOSIT_STORAGE_FRUIT_COLOR_BODY_DARK := Color(0.62, 0.10, 0.10, 1.0)
+const DEPOSIT_STORAGE_FRUIT_COLOR_HIGHLIGHT := Color(0.96, 0.62, 0.55, 0.85)
+const DEPOSIT_STORAGE_FRUIT_COLOR_STEM := Color(0.35, 0.30, 0.15, 1.0)
+const DEPOSIT_STORAGE_FRUIT_COLOR_LEAF := Color(0.30, 0.55, 0.20, 1.0)
+const DEPOSIT_STORAGE_FRUIT_CURVE_SEGMENTS: int = 8
+const DEPOSIT_STORAGE_APPLES := [
+	{"cx": 0.36, "cy": 0.60, "r": 0.185, "color": DEPOSIT_STORAGE_FRUIT_COLOR_BODY_DARK},
+	{"cx": 0.64, "cy": 0.58, "r": 0.22, "color": DEPOSIT_STORAGE_FRUIT_COLOR_BODY},
+]
+
+func _draw_deposit_storage_fruit_icon(top_left: Vector2, side: float) -> void:
+	for apple in DEPOSIT_STORAGE_APPLES:
+		_draw_deposit_storage_apple(top_left, side, apple["cx"], apple["cy"], apple["r"], apple["color"])
+
+
+func _draw_deposit_storage_apple(top_left: Vector2, side: float, cx: float, cy: float, r: float, body_color: Color) -> void:
+	var center: Vector2 = top_left + Vector2(cx, cy) * side
+	var radius: float = r * side
+	draw_circle(center, radius, body_color)
+
+	var highlight_center: Vector2 = center - Vector2(radius * 0.35, radius * 0.38)
+	draw_circle(highlight_center, radius * 0.30, DEPOSIT_STORAGE_FRUIT_COLOR_HIGHLIGHT)
+
+	var stem_base: Vector2 = center + Vector2(0.0, -radius * 0.95)
+	var stem_tip: Vector2 = stem_base + Vector2(radius * 0.05, -radius * 0.55)
+	draw_line(stem_base, stem_tip, DEPOSIT_STORAGE_FRUIT_COLOR_STEM, side * 0.045, true)
+
+	_draw_deposit_storage_fruit_leaf(stem_tip, radius)
+
+
+func _draw_deposit_storage_fruit_leaf(stem_tip: Vector2, radius: float) -> void:
+	var base: Vector2 = stem_tip
+	var tip: Vector2 = stem_tip + Vector2(radius * 0.55, -radius * 0.15)
+	var ctrl_top: Vector2 = stem_tip + Vector2(radius * 0.42, -radius * 0.35)
+	var ctrl_bottom: Vector2 = stem_tip + Vector2(radius * 0.30, radius * 0.05)
+	var points := PackedVector2Array()
+	for i in range(DEPOSIT_STORAGE_FRUIT_CURVE_SEGMENTS + 1):
+		var t: float = float(i) / float(DEPOSIT_STORAGE_FRUIT_CURVE_SEGMENTS)
+		var one_minus_t: float = 1.0 - t
+		points.append(base * (one_minus_t * one_minus_t) + ctrl_top * (2.0 * one_minus_t * t) + tip * (t * t))
+	for i in range(1, DEPOSIT_STORAGE_FRUIT_CURVE_SEGMENTS + 1):
+		var t: float = float(i) / float(DEPOSIT_STORAGE_FRUIT_CURVE_SEGMENTS)
+		var one_minus_t: float = 1.0 - t
+		points.append(tip * (one_minus_t * one_minus_t) + ctrl_bottom * (2.0 * one_minus_t * t) + base * (t * t))
+	draw_colored_polygon(points, DEPOSIT_STORAGE_FRUIT_COLOR_LEAF)
+
+
+# Replica world-space di MushroomIcon.gd (2026-09-18, richiesta utente — bugfix "pallino giallo nel
+# magazzino": mancava del tutto qui, cadeva nel fallback generico _: di _draw_deposit_site_
+# storage_grid, STESSO identico bug già risolto in passato per berry) — stessi punti/raggi/colori
+# frazionari (0..1) di MushroomIcon.gd, qui scalati per `side` e traslati su `top_left` invece che
+# per size.x/size.y di un Control.
+const DEPOSIT_STORAGE_MUSHROOM_COLOR_CAP := Color(0.62, 0.32, 0.18, 1.0)
+const DEPOSIT_STORAGE_MUSHROOM_COLOR_CAP_DARK := Color(0.48, 0.24, 0.13, 1.0)
+const DEPOSIT_STORAGE_MUSHROOM_COLOR_GILLS := Color(0.85, 0.78, 0.62, 1.0)
+const DEPOSIT_STORAGE_MUSHROOM_COLOR_STEM := Color(0.92, 0.87, 0.74, 1.0)
+const DEPOSIT_STORAGE_MUSHROOM_ELLIPSE_SEGMENTS: int = 14
+const DEPOSIT_STORAGE_MUSHROOMS := [
+	{"cx": 0.33, "cy": 0.62, "cap_rx": 0.15, "cap_ry": 0.11, "color": DEPOSIT_STORAGE_MUSHROOM_COLOR_CAP_DARK},
+	{"cx": 0.62, "cy": 0.58, "cap_rx": 0.20, "cap_ry": 0.145, "color": DEPOSIT_STORAGE_MUSHROOM_COLOR_CAP},
+]
+
+func _draw_deposit_storage_mushroom_icon(top_left: Vector2, side: float) -> void:
+	for mushroom in DEPOSIT_STORAGE_MUSHROOMS:
+		_draw_deposit_storage_mushroom(
+			top_left, side, mushroom["cx"], mushroom["cy"], mushroom["cap_rx"], mushroom["cap_ry"], mushroom["color"]
+		)
+
+
+func _draw_deposit_storage_mushroom(
+	top_left: Vector2, side: float, cx: float, cy: float, cap_rx: float, cap_ry: float, cap_color: Color
+) -> void:
+	var cap_center: Vector2 = top_left + Vector2(cx, cy) * side
+	var cap_radius := Vector2(cap_rx * side, cap_ry * side)
+
+	var stem_width: float = cap_radius.x * 0.5
+	var stem_height: float = cap_radius.y * 2.4
+	var stem_top: Vector2 = cap_center + Vector2(0.0, cap_radius.y * 0.5)
+	draw_rect(Rect2(stem_top - Vector2(stem_width * 0.5, 0.0), Vector2(stem_width, stem_height)), DEPOSIT_STORAGE_MUSHROOM_COLOR_STEM)
+
+	var rim_center: Vector2 = cap_center + Vector2(0.0, cap_radius.y * 0.35)
+	var rim_radius := Vector2(cap_radius.x * 1.1, cap_radius.y * 0.65)
+	_draw_deposit_storage_mushroom_ellipse(rim_center, rim_radius, DEPOSIT_STORAGE_MUSHROOM_COLOR_GILLS)
+
+	_draw_deposit_storage_mushroom_ellipse(cap_center, cap_radius, cap_color)
+
+
+func _draw_deposit_storage_mushroom_ellipse(center: Vector2, radius: Vector2, color: Color) -> void:
+	var points := PackedVector2Array()
+	for i in range(DEPOSIT_STORAGE_MUSHROOM_ELLIPSE_SEGMENTS):
+		var angle: float = TAU * float(i) / float(DEPOSIT_STORAGE_MUSHROOM_ELLIPSE_SEGMENTS)
+		points.append(center + Vector2(cos(angle) * radius.x, sin(angle) * radius.y))
+	draw_colored_polygon(points, color)
 
 
 # Poligono a DEPOSIT_SITE_VERTEX_COUNT lati (8, raggio in "norma del massimo" invece che
@@ -2150,11 +2397,24 @@ func _rebuild_tree_multimeshes() -> void:
 			# coefficiente usato dal calcolo calorico), stesso gate già applicato alle bacche
 			# shrub — irrilevante per wood_only/conifer, che non entrano mai in questo ramo.
 			if visual["is_fruit_bearing"] and visual["age_band"] != GameTypes.AgeBand.YOUNG:
-				var dots := _build_tree_fruit_transforms(visual["jitter_pos"], canopy_center, canopy_radius)
 				if visual["is_domesticable"]:
-					domesticable_fruit_transforms.append_array(dots)
-				else:
-					wild_fruit_transforms.append_array(dots)
+					# "fruit" (2026-09-17, richiesta utente — TREE/domesticable_fruit, terza
+					# risorsa della catena "fruit stock" generica dopo berry/acorn) — STESSO gate
+					# hash-vs-ratio già usato per le ghiande wild_fruit sotto, vedi
+					# _fruit_stock_shows: quando get_fruit_stock_available_at per questo lotto è 0,
+					# gli individui domesticable_fruit di quel lotto smettono di mostrare le mele
+					# fino alla ricrescita stagionale, su una quota proporzionale se più individui
+					# condividono il lotto (mai tutto o niente insieme).
+					if _fruit_stock_shows("fruit", individual_key, visual["jitter_pos"]):
+						domesticable_fruit_transforms.append_array(_build_tree_fruit_transforms(visual["jitter_pos"], canopy_center, canopy_radius))
+				# "acorn" (2026-09-17, richiesta utente — TREE/wild_fruit, seconda risorsa della
+				# catena "fruit stock" generica dopo berry) — STESSO gate hash-vs-ratio già usato
+				# per le bacche shrub, vedi _fruit_stock_shows: quando get_fruit_stock_available_at
+				# per questo lotto è 0, gli individui wild_fruit di quel lotto smettono di mostrare
+				# le ghiande fino alla ricrescita stagionale, su una quota proporzionale se più
+				# individui condividono il lotto (mai tutto o niente insieme).
+				elif _fruit_stock_shows("acorn", individual_key, visual["jitter_pos"]):
+					wild_fruit_transforms.append_array(_build_tree_fruit_transforms(visual["jitter_pos"], canopy_center, canopy_radius))
 
 	_apply_transforms(_tree_trunk_multimesh, trunk_transforms)
 	_apply_transforms(_tree_canopy_multimesh, canopy_transforms)
@@ -2213,6 +2473,32 @@ const SHRUB_BERRY_SALTS := [
 	Vector2i(7, 37),
 	Vector2i(53, 3),
 ]
+# Salt per il test hash-vs-ratio "questo individuo mostra ancora il frutto?" (2026-09-17, richiesta
+# utente — vedi fruit_stock_available_ratio_by_lot sopra), UNO per resource_name (GENERALIZZATO lo
+# stesso giorno in preparazione di fruit/acorn, nessun cambio di comportamento per berry: il valore
+# per "berry" resta IDENTICO — Vector2i(59, 101), STESSA formula hash di prima). Un salt DEDICATO
+# per risorsa (non un hash di resource_name mescolato in un salt condiviso, che cambierebbe la
+# selezione degli individui per berry) — stesso principio già in uso ovunque nel progetto per i
+# test hash-based (es. IndividualVegetationService.TREE_FRUIT_BEARING_SALT vs
+# SHRUB_FRUIT_BEARING_SALT, mai un salt unico derivato dal nome). Indipendente dagli altri salt
+# SHRUB_*/TREE_* così la selezione di CHI viene spento non correla con nessun'altra decisione
+# visiva (blob/bacche-count/posizione) già presa sullo stesso individuo. Stesso principio "hash
+# stabile, non randf()" già in uso ovunque in questo file — un individuo con percentile basso resta
+# visibile finché il ratio tiene, solo i marginali si spengono/riaccendono quando il ratio scende/
+# risale.
+const FRUIT_STOCK_VISIBILITY_SALT_BY_RESOURCE := {
+	"berry": Vector2i(59, 101),
+	# "acorn" (2026-09-17, richiesta utente) — salt indipendente da quello di berry: nessun
+	# individuo può mai essere sia SHRUB fruit_bearing sia TREE wild_fruit, quindi non c'è un
+	# rischio di correlazione reale oggi, ma un salt dedicato per risorsa resta il principio
+	# corretto (vedi commento sopra) anche quando, in futuro, più risorse TREE (es. fruit)
+	# condivideranno lo stesso spazio di individui.
+	"acorn": Vector2i(83, 149),
+	# "fruit" (2026-09-17, richiesta utente) — salt indipendente da berry/acorn, stesso principio:
+	# nessun individuo domesticable_fruit è mai anche wild_fruit/fruit_bearing, ma un salt dedicato
+	# per risorsa resta il principio corretto a prescindere (vedi commento sopra).
+	"fruit": Vector2i(127, 211),
+}
 # Anno di nascita virtuale per individuo SHRUB — stesso principio di tree_birth_year_store sopra
 # (Dictionary di proprietà del chiamante, MacroCellState.shrub_virtual_birth_year, passato per
 # riferimento da set_shrub_age_params): il congelamento vero avviene in IndividualVegetationService,
@@ -2305,7 +2591,7 @@ func _rebuild_shrub_multimeshes() -> void:
 		# YOUNG non produce mai bacche (production_coefficient_young = 0.0, stesso coefficiente
 		# usato dal calcolo calorico): il test di fruttiferità resta indipendente dalla fascia
 		# età, ma qui viene comunque soppresso per gli individui YOUNG.
-		if visual["is_fruit_bearing"] and visual["age_band"] != GameTypes.AgeBand.YOUNG:
+		if visual["is_fruit_bearing"] and visual["age_band"] != GameTypes.AgeBand.YOUNG and _fruit_stock_shows("berry", individual_key, jitter_pos):
 			var berry_count: int = 2 + (hash(jitter_pos * 61 + Vector2i(3, 8)) % 2) # 2 o 3 bacche
 			for i in range(berry_count):
 				var berry_salt: Vector2i = SHRUB_BERRY_SALTS[i % SHRUB_BERRY_SALTS.size()]
@@ -2328,6 +2614,35 @@ func _rebuild_shrub_multimeshes() -> void:
 		_shrub_multimesh.set_instance_color(i, blob_colors[i])
 
 	_apply_transforms(_berry_multimesh, berry_transforms)
+
+
+# Disponibilità residua del LOTTO che ospita `individual_key`, PER RISORSA (2026-09-17, richiesta
+# utente — "quando get_berry_available_at è 0 l'arbusto non deve mostrare bacche... se ci sono più
+# arbusti fruit_bearing, spegni le bacche su una quota proporzionale al raccolto invece che su
+# tutti in una volta"; GENERALIZZATO lo stesso giorno per resource_name, in preparazione dei due
+# multimesh frutto degli alberi — nessun cambio di comportamento per berry, stessa formula/stesso
+# salt di prima): fruit_stock_available_ratio_by_lot[resource_name][lot] (1.0 se la risorsa o il
+# lotto non sono nel Dictionary, vedi commento sul campo) è la frazione [0.0,1.0] di quanto resta
+# della quota nominale di QUELLA risorsa nel lotto. Un test hash-vs-ratio stabile per individuo
+# (salt dedicato per risorsa — FRUIT_STOCK_VISIBILITY_SALT_BY_RESOURCE, decorrelato da ogni altro
+# test hash sullo stesso individuo — blob/berry_count/posizione) decide chi tra gli individui del
+# sottotipo giusto nel lotto continua a mostrare il frutto: con ratio=0.6 e 5 individui idonei
+# nello stesso lotto, ~3 lo mostrano ancora e ~2 no — non un taglio "tutto o niente" sull'intero
+# lotto insieme, e stabile tra un redraw e l'altro (stesso principio "i marginali si spengono per
+# primi" già usato per _is_shrub_fruit_bearing altrove nel progetto). Chiamata SOLO per individui
+# già filtrati fruit_bearing/non-YOUNG (o l'equivalente TREE, in futuro) dal chiamante — nessun
+# costo per gli individui non idonei.
+func _fruit_stock_shows(resource_name: String, individual_key: Vector3i, jitter_pos: Vector2i) -> bool:
+	var lot := Vector2i(individual_key.x, individual_key.y)
+	var ratios: Dictionary = fruit_stock_available_ratio_by_lot.get(resource_name, {})
+	var ratio: float = float(ratios.get(lot, 1.0))
+	if ratio <= 0.0:
+		return false
+	var salt: Vector2i = FRUIT_STOCK_VISIBILITY_SALT_BY_RESOURCE.get(resource_name, Vector2i(59, 101))
+	var percentile: float = float(hash(
+		jitter_pos * salt.x + Vector2i(salt.y, individual_key.z)
+	) % 100000) / 100000.0
+	return percentile < ratio
 
 
 # Quanti individui condividono lo stesso lotto (microcella) — serve a _resolve_density_scale_and_

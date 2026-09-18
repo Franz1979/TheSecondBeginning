@@ -153,6 +153,19 @@ var stick_quantities: Dictionary = {}
 # growth di stick (nessun checkpoint separato). A differenza di stick, conta TUTTI gli arbusti
 # maturi indipendentemente dal subtype (nessun filtro `wood_only`/`fruit_bearing`).
 var plant_fiber_quantities: Dictionary = {}
+# Pool di mushroom per lotto TREE (2026-09-17, richiesta utente) — STESSO identico formato/STESSO
+# design di stick_quantities sopra (Vector2i lotto -> {"checkpoint_day","capacity","harvested"}),
+# popolato/aggiornato pigramente da MushroomPoolService.refresh_macrocell (thin wrapper su
+# VegetationPoolService, come StickPoolService — vedi quel file) sullo STESSO checkpoint growth di
+# stick (nessun checkpoint separato). Conta TUTTI gli alberi maturi indipendentemente dal subtype
+# (nessun filtro, come stick — a differenza di un futuro acorn/fruit-style filtrato). A differenza
+# di stick/plant_fiber, la disponibilità reale (TerrainScatteredResourceService.
+# get_available/_get_available_mushroom) scala "capacity" per il moltiplicatore stagionale
+# dichiarato in mushroom.tres (seasonal_availability_multiplier) prima di sottrarre "harvested" —
+# questo Dictionary resta comunque valorizzato con capacity/harvested GREZZI (pre-moltiplicatore),
+# congelati tutto l'anno fino al prossimo checkpoint growth esattamente come stick; il moltiplicatore
+# stagionale vive SOLO nella lettura, mai qui.
+var mushroom_quantities: Dictionary = {}
 # Stesso formato di vegetation_cut_exceptions sopra (origin_type/size_multiplier), ma per la
 # mortalità naturale invece del taglio del giocatore — con una finestra di non-ricrescita di natura
 # DIVERSA, per decisione esplicita: il taglio è un'azione deliberata (bloccata per anni, vedi
@@ -185,6 +198,62 @@ var last_mortality_loss: Dictionary = {}
 # Vuoto per le fonti stateless come FORAGE, che non ne hanno bisogno. Vedi
 # CaloricCalculator.update_secondary_resource_stock.
 var secondary_resource_stock: Dictionary = {}
+# Cache RUNTIME (2026-09-17, richiesta utente — raccolta berry per lotto; GENERALIZZATA lo stesso
+# giorno in preparazione di fruit/acorn, nessun cambio di comportamento per berry) del peso
+# "produttivo" degli individui TREE/SHRUB di un sottotipo a frutto, usata da
+# TerrainScatteredResourceService per ripartire secondary_resource_stock[resource_name] tra i
+# lotti SENZA un secondo dato persistente (nessun *_quantities per-lotto come stick/plant_fiber —
+# la disponibilità per lotto resta sempre derivata al volo da qui, mai un contatore a parte da
+# tenere sincrono con lo stock). Dictionary ANNIDATO per resource_name: resource_name ->
+# {"checkpoint_day": int, "primary_resource_quantity": int, "total": float, "by_lot":
+# Dictionary[Vector2i, float]} — una entry per ciascuna risorsa registrata in
+# TerrainScatteredResourceService.FRUIT_STOCK_SOURCES (oggi solo "berry"). NON referenziata da
+# GameSaveService/GameLoadService (deliberato: non è un dato persistente, solo una cache di
+# calcolo) — dopo un load parte vuota e si ricalcola alla prima query, nessuna informazione persa
+# perché è interamente derivabile da tree_individual_subtype/tree_virtual_birth_year o
+# shrub_individual_subtype/shrub_virtual_birth_year (secondo la risorsa), entrambi già persistiti.
+# "checkpoint_day"/"primary_resource_quantity" sono la firma di validità PER RISORSA: la cache di
+# quella risorsa è invalidata (ricalcolata da zero) quando l'uno o l'altro non coincide più col
+# valore corrente — il primo cattura il checkpoint vegetativo (crescita/mortalità/migrazione
+# aggregate, una volta l'anno), il secondo cattura un cambio di composizione FUORI da un checkpoint
+# (es. il player che taglia una pianta) — vedi TerrainScatteredResourceService.
+# _get_fruit_stock_weights.
+var berry_weight_cache: Dictionary = {}
+# Raccolto DA UMANI per lotto, in questa stagione (2026-09-17, richiesta utente — bugfix: prima
+# consume_fruit_stock_at scalava SOLO l'aggregato, quindi svuotare a mano un singolo lotto non lo
+# svuotava mai davvero, dato che la disponibilità per lotto derivava dal solo stock aggregato/peso
+# — un lotto appena raccolto per intero tornava a mostrare disponibilità piena finché lo stock
+# aggregato ne aveva altrove; GENERALIZZATO lo stesso giorno in preparazione di fruit/acorn,
+# nessun cambio di comportamento per berry). Dictionary ANNIDATO per resource_name: resource_name
+# -> Dictionary SPARSO Vector2i -> int, contiene SOLO i lotti effettivamente raccolti per quella
+# risorsa, mai un'entry per ogni lotto idoneo esistente. NON un secondo dato di verità sulla
+# quantità totale (quello resta secondary_resource_stock[resource_name], vedi berry_weight_cache
+# sopra) — è solo "quanto di questo lotto è già stato tolto quest'anno per questa risorsa",
+# sottratto dalla quota derivata al volo (TerrainScatteredResourceService.
+# get_fruit_stock_available_at) e incrementato dalla raccolta (consume_fruit_stock_at). Azzerato
+# per intero (per la sola risorsa interessata) SOLO quando il moltiplicatore stagionale di quella
+# risorsa SALE rispetto alla stagione precedente (vera "ricrescita" — vedi WorldTimeService.
+# _run_secondary_resource_stock_checkpoint), MAI quando scende: in quelle transizioni lo stock
+# aggregato decade ma non compare nuova frutta da nessuna parte, quindi la memoria di quanto già
+# raccolto per lotto deve restare. Persistito in GameSaveService/GameLoadService (chiave
+# "berry_harvested_by_lot", un blocco che itera le risorse registrate — vedi quei due file — stesso
+# stile {x,y,harvested} di stick_quantities/plant_fiber_quantities ma senza checkpoint_day/
+# capacity: qui non serve una firma di freschezza, la freschezza la dà l'azzeramento stagionale
+# esplicito, non un confronto con l'ultimo checkpoint growth).
+var berry_harvested_by_lot: Dictionary = {}
+# Contatore RUNTIME (2026-09-17, richiesta utente — ottimizzazione costo berry in GameScene.
+# _refresh_resource_visuals; GENERALIZZATO lo stesso giorno, nessun cambio di comportamento per
+# berry) incrementato ad ogni mutazione REALE del berry_harvested_by_lot DI QUELLA RISORSA sopra
+# (TerrainScatteredResourceService.consume_fruit_stock_at, e il suo azzeramento stagionale in
+# WorldTimeService._run_secondary_resource_stock_checkpoint) — mai altrove, mai decrementato.
+# Dictionary ANNIDATO per resource_name: resource_name -> int. Serve SOLO come componente
+# economica di una firma di "è cambiato qualcosa da riverificare" per quella risorsa (insieme a
+# secondary_resource_stock[resource_name] e alla firma di berry_weight_cache — vedi
+# TerrainScatteredResourceService.get_fruit_stock_recompute_signature), perché confrontare l'intero
+# Dictionary berry_harvested_by_lot[resource_name] ad ogni chiamata costerebbe quanto il problema
+# che risolve. NON persistito (come berry_weight_cache sopra): dopo un load parte vuoto, innocuo —
+# al più forza un primo ricalcolo in più alla prossima query, mai un dato mancante.
+var berry_harvested_revision: Dictionary = {}
 # Debito frazionario di spazio GRASS da rimuovere per consumo animale: il consumo giornaliero
 # convertito in "spazio equivalente" (unità/densità) è quasi sempre < 1 unità intera — invece
 # di arrotondare e perdere la frazione ogni giorno, si accumula qui finché non supera 1.0 (vedi

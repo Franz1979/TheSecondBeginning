@@ -538,6 +538,10 @@ func _refresh_resource_visuals() -> void:
 	# plant_fiber (2026-09-16, richiesta utente — Step 2) — STESSA cadenza/STESSO trigger di stick
 	# sopra, nessun rendering ancora agganciato (Step 3, non ancora fatto).
 	PlantFiberPoolService.refresh_macrocell(macro_state, game_data)
+	# mushroom (2026-09-17, richiesta utente) — STESSA cadenza/STESSO trigger di stick/plant_fiber
+	# sopra. NESSUN rendering agganciato (richiesta esplicita utente — "i funghi non vanno
+	# disegnati per ora").
+	MushroomPoolService.refresh_macrocell(macro_state, game_data)
 
 	var occupied: Dictionary = {}
 	for pos in macro_state.stone_positions:

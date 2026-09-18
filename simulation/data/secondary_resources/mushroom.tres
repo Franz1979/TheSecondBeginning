@@ -1,0 +1,12 @@
+[gd_resource type="Resource" script_class="SecondaryResourceRules" format=3 uid="uid://dcqt3cug6mjwq"]
+
+[ext_resource type="Script" uid="uid://cu4cyua5y4n1m" path="res://simulation/scripts/core/SecondaryResourceRules.gd" id="1_mushroom"]
+
+[resource]
+script = ExtResource("1_mushroom")
+secondary_resource_name = "mushroom"
+calories_per_unit = 6.0
+seasonal_availability_multiplier = Array[float]([0.4, 0.0, 0.3, 1.0])
+generation_source = 1
+day_durability = 90
+units_per_mature_plant = 4
