@@ -20,11 +20,52 @@ const SECONDARY_SOURCES := [
 ]
 
 
+# Cache in-memory (2026-09-19, richiesta utente — correzione prestazioni dopo il refactor
+# lot_source: get_caloric_source_rules era chiamata 3-4 volte per posizione/lotto ad ogni
+# _refresh_resource_visuals — mai cacheata, ognuna rifaceva ResourceLoader.exists()+load() da
+# disco) — STESSO identico principio/STESSA struttura di AnimalCalculator._rules_cache/
+# get_animal_rules: resource_name -> SecondaryResourceRules (o null se irrisolvibile, per non
+# ritentare ResourceLoader.exists ad ogni chiamata con un nome sbagliato). static: RefCounted
+# senza istanza persistente, un Dictionary di classe è l'unico modo di cachare tra chiamate —
+# sicuro perché i file .tres non cambiano a runtime in una sessione di gioco.
+static var _rules_cache: Dictionary = {}
+
+
 static func get_caloric_source_rules(resource_name: String) -> SecondaryResourceRules:
+	if _rules_cache.has(resource_name):
+		return _rules_cache[resource_name]
 	var path := SECONDARY_RESOURCES_DIR + resource_name + ".tres"
-	if not ResourceLoader.exists(path):
-		return null
-	return load(path) as SecondaryResourceRules
+	var rules: SecondaryResourceRules = null
+	if ResourceLoader.exists(path):
+		rules = load(path) as SecondaryResourceRules
+	_rules_cache[resource_name] = rules
+	return rules
+
+
+# Elenco per convenzione (un nome per ogni {secondary_resource_name}.tres in
+# SECONDARY_RESOURCES_DIR) — 2026-09-19, richiesta utente: refactor lot_source, "aggiungere una
+# risorsa nuova deve costare un .tres, niente altro codice" — STESSO principio/STESSA scansione
+# già in uso per BuildingCalculator.list_building_type_names/AnimalCalculator.list_species_names,
+# qui applicata per la prima volta al dominio SecondaryResourceRules (che finora, a differenza di
+# quei due, non aveva alcun elenco derivato dai dati — solo elenchi scritti a mano come
+# SECONDARY_SOURCES sopra o TerrainScatteredResourceService.FRUIT_STOCK_SOURCES/LOT_CAPACITY_
+# RESOURCE_NAMES, entrambi ancora validi/non toccati da questo passo, modelli diversi). Unico
+# consumatore oggi: LotCapacityService.get_resource_names_for_lot_source, che filtra questo elenco
+# per lot_source — un nuovo .tres con lot_source valorizzato compare lì da solo.
+static func list_secondary_resource_names() -> Array[String]:
+	var names: Array[String] = []
+	var dir := DirAccess.open(SECONDARY_RESOURCES_DIR)
+	if dir == null:
+		return names
+	dir.list_dir_begin()
+	var file_name := dir.get_next()
+	while file_name != "":
+		if not dir.current_is_dir() and file_name.ends_with(".tres"):
+			names.append(file_name.get_basename())
+		file_name = dir.get_next()
+	dir.list_dir_end()
+	names.sort()
+	return names
 
 
 # Formula generica condivisa da qualsiasi fonte calorica, presente o futura: quantità_base ×

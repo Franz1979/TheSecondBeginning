@@ -42,14 +42,6 @@ var active_growth_bonuses: Dictionary = {} # NaturalEventType -> {multiplier: fl
 var pending_migration_surplus: Dictionary = {}
 var stone_positions: Array = [] # Array[Vector2i], posizioni microcella occupate da stone (100x100)
 var stone_positions_generated: bool = false # separato dall'array vuoto: distingue "mai aperta" da "aperta ma senza stone"
-# PEBBLE/sassi (2026-09-08, richiesta utente) — Dictionary[Vector2i, int], posizione -> quantità
-# sassi rimasti in quella posizione. Nasce/vive insieme a stone_positions: popolato UNA SOLA volta
-# da StonePositionService.generate_if_needed, nello STESSO istante e sotto la STESSA guardia
-# one-shot (stone_positions_generated) — mai un flag "generated" separato, l'invariante è che
-# quando stone_positions_generated è true questo Dictionary ha esattamente una entry per ogni
-# posizione in stone_positions. Consumato (decrementato, clampato a 0, entry mai rimossa) da
-# TerrainScatteredResourceService.consume — PickUpAction.on_complete è l'unico chiamante oggi.
-var pebble_quantities: Dictionary = {}
 # LOD0 (2026-08-30): true dal primo momento in cui questa macrocella entra nel set di celle vive
 # VERE (LODOrchestrator.set_focus_region, vedi world.lod_focus_live_cells) — MAI più rimesso a
 # false, stesso principio "fatto storico permanente" di has_ever_grown sopra. È l'UNICO dato che
@@ -137,35 +129,49 @@ var shrub_individual_subtype: Dictionary = {}
 # riassegnato altrove non appena l'eccezione scade.
 var tree_claimed_lots: Dictionary = {}
 var shrub_claimed_lots: Dictionary = {}
-# Pool di bastoni per lotto TREE (2026-09-08, richiesta utente) — Vector2i (lotto, = una singola
-# microcella) -> {"checkpoint_day": int, "capacity": int, "harvested": int}. Popolato/aggiornato
-# pigramente da StickPoolService.refresh_macrocell (mai qui direttamente) — vedi quel file per il
-# design completo (capacità congelata fino al prossimo checkpoint growth, azzerata non cumulata
-# ad ogni nuovo checkpoint). "harvested" incrementato da TerrainScatteredResourceService.consume
-# (2026-09-09, unico scrittore — PickUpAction.on_complete passa da lì), clampato a non superare
-# "capacity"; lettura/validità di freschezza lotto invece in
-# TerrainScatteredResourceService.get_available.
-var stick_quantities: Dictionary = {}
-# Pool di plant_fiber per lotto SHRUB (2026-09-16, richiesta utente) — STESSO identico formato/
-# STESSO design di stick_quantities sopra (Vector2i lotto -> {"checkpoint_day","capacity",
-# "harvested"}), popolato/aggiornato pigramente da PlantFiberPoolService.refresh_macrocell (thin
-# wrapper su VegetationPoolService, come StickPoolService — vedi quei file) sullo STESSO checkpoint
-# growth di stick (nessun checkpoint separato). A differenza di stick, conta TUTTI gli arbusti
-# maturi indipendentemente dal subtype (nessun filtro `wood_only`/`fruit_bearing`).
-var plant_fiber_quantities: Dictionary = {}
-# Pool di mushroom per lotto TREE (2026-09-17, richiesta utente) — STESSO identico formato/STESSO
-# design di stick_quantities sopra (Vector2i lotto -> {"checkpoint_day","capacity","harvested"}),
-# popolato/aggiornato pigramente da MushroomPoolService.refresh_macrocell (thin wrapper su
-# VegetationPoolService, come StickPoolService — vedi quel file) sullo STESSO checkpoint growth di
-# stick (nessun checkpoint separato). Conta TUTTI gli alberi maturi indipendentemente dal subtype
-# (nessun filtro, come stick — a differenza di un futuro acorn/fruit-style filtrato). A differenza
-# di stick/plant_fiber, la disponibilità reale (TerrainScatteredResourceService.
-# get_available/_get_available_mushroom) scala "capacity" per il moltiplicatore stagionale
-# dichiarato in mushroom.tres (seasonal_availability_multiplier) prima di sottrarre "harvested" —
-# questo Dictionary resta comunque valorizzato con capacity/harvested GREZZI (pre-moltiplicatore),
-# congelati tutto l'anno fino al prossimo checkpoint growth esattamente come stick; il moltiplicatore
-# stagionale vive SOLO nella lettura, mai qui.
-var mushroom_quantities: Dictionary = {}
+# Registro unico "risorse a capacità per lotto" (2026-09-19, richiesta utente — refactor
+# lot_source: prima pebble/stick/plant_fiber/mushroom/wild_vegetables avevano ciascuna il proprio
+# campo/formato — pebble_quantities/stick_quantities/plant_fiber_quantities/mushroom_quantities/
+# wild_vegetable_lots+wild_vegetables_harvested_by_lot, due formati diversi — ora un solo
+# Dictionary ANNIDATO per resource_name: resource_name -> Dictionary[Vector2i, int], STESSO stile
+# "annidato per risorsa" già in uso per berry_harvested_by_lot/FRUIT_STOCK_SOURCES qui sotto.
+# SIGNIFICATO del valore intero dipende dal SecondaryResourceRules.lot_source della risorsa (letto
+# SOLO da LotCapacityService/TerrainScatteredResourceService, mai qui): quantità RESIDUA per
+# STONE_POSITION (pebble — nessuna "capacity" separata, la generazione iniziale non è
+# deterministica, quindi il valore va persistito com'è, mutato in loco dal consumo, esattamente
+# come il vecchio pebble_quantities); RACCOLTO quest'anno/quest'epoch per TREE_INDIVIDUAL/
+# SHRUB_INDIVIDUAL/GRASS_PATCH (stick/plant_fiber/mushroom/wild_vegetables — la "capacity" di
+# questi quattro vive invece in lot_capacity_cache sotto, una cache RUNTIME mai persistita, perché
+# sempre ri-derivabile deterministicamente da micro_seed+stato). PERSISTITO in GameSaveService/
+# GameLoadService (chiave "lot_registry", UN SOLO loop su LotCapacityService.
+# get_all_lot_capacity_resource_names() invece di un blocco per risorsa — stesso principio già
+# seguito per berry_harvested_by_lot/FRUIT_STOCK_SOURCES).
+var lot_registry: Dictionary = {}
+# Cache RUNTIME (2026-09-19) del valore "capacity" per le tre famiglie derivabili da zero
+# (TREE_INDIVIDUAL/SHRUB_INDIVIDUAL/GRASS_PATCH) — MAI persistita (a differenza di lot_registry
+# sopra): dopo un load parte vuota, si ripopola alla prima query/refresh, nessuna informazione
+# persa perché interamente ri-derivabile da tree_claimed_lots+tree_individual_subtype+
+# tree_virtual_birth_year (o l'equivalente shrub_*, per TREE_INDIVIDUAL/SHRUB_INDIVIDUAL, via
+# VegetationPoolService) o da micro_seed+dedicated_space(GRASS) (per GRASS_PATCH, via
+# LotCapacityService.refresh_grass_patch_lot_capacity) — entrambi già persistiti/deterministici a
+# monte. Dictionary ANNIDATO per resource_name: resource_name -> Dictionary[Vector2i, int]. STONE_
+# POSITION (pebble) non ne ha bisogno: la sua "capacity" è il valore in lot_registry stesso (non
+# ri-derivabile, vedi sopra), quindi questo Dictionary resta semplicemente senza entry per "pebble".
+var lot_capacity_cache: Dictionary = {}
+# Firma di freschezza RUNTIME per TREE_INDIVIDUAL/SHRUB_INDIVIDUAL SOLO (stick/plant_fiber/
+# mushroom) — resource_name -> giorno assoluto dell'ultimo checkpoint growth per cui
+# lot_capacity_cache[resource_name] è stato ricalcolato (vedi VegetationPoolService.
+# most_recent_growth_checkpoint_absolute_day/refresh_macrocell). Un mismatch invalida l'INTERA
+# cache di quella risorsa (ricalcolo completo, il checkpoint è per costruzione lo stesso per ogni
+# lotto TREE/SHRUB di questa macrocella); a parità di checkpoint, un lotto ASSENTE dalla cache
+# (nuovo tree_claimed_lots/shrub_claimed_lots comparso a metà epoch) viene comunque ricalcolato SOLO
+# per lui — stessa identica granularità/stesso costo del vecchio confronto per-lotto embedded
+# ("checkpoint_day" dentro ogni entry di stick_quantities), ora un solo scalare per risorsa invece
+# di un campo ripetuto su ogni lotto. GRASS_PATCH non ne ha bisogno (nessun concetto di "congelato
+# fino al prossimo checkpoint": ricalcolato per intero ad ogni chiamata di refresh_grass_patch_
+# lot_capacity, stessa cadenza già in uso per wild_vegetable_lots/egg_nest_positions prima di
+# questo refactor) — mai un'entry qui per una risorsa GRASS_PATCH/STONE_POSITION.
+var lot_capacity_checkpoint_day: Dictionary = {}
 # Stesso formato di vegetation_cut_exceptions sopra (origin_type/size_multiplier), ma per la
 # mortalità naturale invece del taglio del giocatore — con una finestra di non-ricrescita di natura
 # DIVERSA, per decisione esplicita: il taglio è un'azione deliberata (bloccata per anni, vedi
@@ -259,7 +265,7 @@ var berry_harvested_revision: Dictionary = {}
 # aggiornato 2026-09-18, richiesta utente "rendi il peso variabile per nido": prima ogni nido
 # pesava esattamente 1, ora un valore deterministico in SecondaryResourceRules.patch_weight_min/
 # max di eggs.tres — RINOMINATO da nest_weight_min/max il 2026-09-19, richiesta utente:
-# wild_vegetables (vedi wild_vegetable_lots sotto) usa lo STESSO meccanismo di selezione posizione
+# wild_vegetables (lot_source GRASS_PATCH, vedi lot_capacity_cache sopra) usa lo STESSO meccanismo di selezione posizione
 # su GRASS, campo patch_probability condiviso, "nest"->"patch" generico —, così la ripartizione
 # stock × peso_nido / peso_totale — TerrainScatteredResourceService.get_egg_stock_available_at —
 # distribuisce più uova ai nidi "ricchi" che a quelli "poveri" invece che in parti uguali).
@@ -290,37 +296,14 @@ var egg_nest_positions: Dictionary = {}
 # invece persistite: si rigenerano, un'entry qui per un lotto che dopo il rigenero non è più un
 # nido resta semplicemente inerte (vedi commento su egg_nest_positions).
 var eggs_harvested_by_lot: Dictionary = {}
-# Lotti per "wild_vegetables" (2026-09-19, richiesta utente — verdure selvatiche raccoglibili per
-# microcella, modello a CAPACITÀ per lotto come stick/mushroom, MAI uno stock aggregato come eggs
-# sopra): Vector2i -> int (capacità RAW del lotto, non ancora scontata dalla stagione — vedi
-# TerrainScatteredResourceService.compute_wild_vegetable_lots/get_wild_vegetable_available_at).
-# STESSA natura RUNTIME/NON persistita di egg_nest_positions sopra e per lo stesso motivo: GRASS
-# non ha identità individuale/lotti persistiti a differenza di TREE/SHRUB (VegetationPoolService
-# NON è consultato per questa risorsa, richiesta esplicita utente — conterebbe individui che su
-# GRASS non esistono), quindi non c'è un dato "a monte" da cui ri-derivare l'insieme lotti da sola:
-# è GameScene._refresh_resource_visuals a scriverlo qui ogni volta che rigenera le posizioni GRASS
-# della cella. Un lotto uscito da questo insieme dopo un rigenero (erba non più lì, dedicated_space
-# (GRASS) sceso a 0, edificio nuovo, ecc.) semplicemente non c'è più: TerrainScatteredResource
-# Service.get_wild_vegetable_available_at lo tratta come "non un lotto", 0 disponibile, nessun
-# errore — wild_vegetables_harvested_by_lot sotto può contenere entry stantie per quel lotto, mai
-# lette.
-var wild_vegetable_lots: Dictionary = {}
-# Raccolto DA UMANI per lotto (2026-09-19, richiesta utente) — Vector2i -> int, STESSO formato
-# FLAT di eggs_harvested_by_lot sopra (wild_vegetables è l'unica risorsa di questa famiglia).
-# Sottratto dalla capacità (scontata dalla stagione tramite l'helper generico già usato da
-# mushroom — vedi get_wild_vegetable_available_at) e incrementato dalla raccolta (consume_wild_
-# vegetable_at). PERSISTITO in GameSaveService/GameLoadService (chiave "wild_vegetables_
-# harvested_by_lot", stesso formato {x,y,harvested} di eggs_harvested_by_lot/stick_quantities).
-# Azzerato per intero (2026-09-19, richiesta utente — bugfix "le verdure non ricrescono mai": PRIMA
-# nessun percorso lo toccava) quando il moltiplicatore stagionale di wild_vegetables SALE rispetto
-# alla stagione precedente (wild_vegetables.tres: [0.0, 1.0, 1.0, 0.0] — sale solo inverno->
-# primavera) — ma NON tramite WorldTimeService._run_secondary_resource_stock_checkpoint come
-# eggs_harvested_by_lot sopra (quel percorso presuppone uno stock aggregato di macrocella, che
-# wild_vegetables non ha, non essendo in CaloricCalculator.SECONDARY_SOURCES): vedi
-# TerrainScatteredResourceService.reset_all_lot_harvests_on_season_rise, un percorso SEPARATO e
-# GENERICO per le risorse a capacità per lotto (mushroom incluso), chiamato da WorldTimeService
-# allo stesso momento (inizio di ogni stagione).
-var wild_vegetables_harvested_by_lot: Dictionary = {}
+# "Lotti" per wild_vegetables (2026-09-19) — a differenza di egg_nest_positions/eggs_harvested_by_
+# lot sopra (famiglia a stock aggregato, invariata da questo refactor), wild_vegetables è ora una
+# risorsa lot_source=GRASS_PATCH: la sua capacità RUNTIME vive in lot_capacity_cache["wild_
+# vegetables"] (scritta da LotCapacityService.refresh_grass_patch_lot_capacity, stessa cadenza di
+# prima — GameScene._refresh_resource_visuals, ogni volta che le posizioni GRASS vengono
+# rigenerate) e il suo raccolto in lot_registry["wild_vegetables"] (PERSISTITO, stesso registro
+# unico di pebble/stick/plant_fiber/mushroom — vedi lot_registry sopra). Nessun campo dedicato
+# resta qui: entrambi vivono ora nei due Dictionary generici sopra.
 # Debito frazionario di spazio GRASS da rimuovere per consumo animale: il consumo giornaliero
 # convertito in "spazio equivalente" (unità/densità) è quasi sempre < 1 unità intera — invece
 # di arrotondare e perdere la frazione ogni giorno, si accumula qui finché non supera 1.0 (vedi

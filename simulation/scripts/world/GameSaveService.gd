@@ -145,15 +145,11 @@ func save_game_to_json(
 			for pos in state.stone_positions:
 				stone_positions_data.append({"x": pos.x, "y": pos.y})
 			state_data["stone_positions"] = stone_positions_data
-			# PEBBLE (2026-09-08, richiesta utente) — nasce/vive insieme a stone_positions (stessa
-			# guardia one-shot in StonePositionService.generate_if_needed), persistito nella STESSA
-			# sezione: quando stone_positions_generated è true, pebble_quantities ha sempre
-			# esattamente una entry per ogni posizione in stone_positions. "q" = quantità sassi
-			# rimasti in quella posizione.
-			var pebble_quantities_data: Array = []
-			for pos in state.pebble_quantities.keys():
-				pebble_quantities_data.append({"x": pos.x, "y": pos.y, "q": state.pebble_quantities[pos]})
-			state_data["pebble_quantities"] = pebble_quantities_data
+			# PEBBLE — nasce/vive insieme a stone_positions (stessa guardia one-shot in
+			# StonePositionService.generate_if_needed): quando stone_positions_generated è true,
+			# lot_registry["pebble"] ha sempre esattamente una entry per ogni posizione in
+			# stone_positions. Persistito ora nel registro unificato sotto (lot_registry), non più
+			# in una sezione dedicata — vedi quel blocco.
 		# Assente se vuoto (nessun meccanismo di taglio esiste ancora, sempre il caso oggi), stesso
 		# principio di stone_positions sopra — non appesantire il salvataggio per un campo mai
 		# popolato. Chiave Vector3i (x, y lotto + "i" indice individuo): "i" va salvato insieme a
@@ -213,50 +209,28 @@ func save_game_to_json(
 			for pos in state.shrub_claimed_lots.keys():
 				shrub_claimed_lots_data.append({"x": pos.x, "y": pos.y})
 			state_data["shrub_claimed_lots"] = shrub_claimed_lots_data
-		# Pool bastoni per lotto (2026-09-08, richiesta utente — vedi MacroCellState.
-		# stick_quantities/StickPoolService) — stesso trattamento di pebble_quantities: scrittura
-		# condizionale (assente se mai calcolato per questa macrocella), nessuna pulizia/GC attiva.
-		if not state.stick_quantities.is_empty():
-			var stick_quantities_data: Array = []
-			for pos in state.stick_quantities.keys():
-				var stick_entry: Dictionary = state.stick_quantities[pos]
-				stick_quantities_data.append({
-					"x": pos.x, "y": pos.y,
-					"checkpoint_day": int(stick_entry["checkpoint_day"]),
-					"capacity": int(stick_entry["capacity"]),
-					"harvested": int(stick_entry["harvested"]),
-				})
-			state_data["stick_quantities"] = stick_quantities_data
-		# Pool plant_fiber per lotto (2026-09-16, richiesta utente) - STESSO formato di
-		# stick_quantities sopra, ma scritto QUI, fuori dal blocco shrub_claimed_lots - quel
-		# blocco ha un bug preesistente (segnalato a parte, non toccato in questo passo:
-		# stick_quantities e annidato dentro "if not shrub_claimed_lots.is_empty()", quindi una
-		# macrocella con alberi ma SENZA arbusti non lo salva mai) - questo blocco resta al
-		# livello giusto (sibling, non annidato) per non ereditare lo stesso difetto.
-		if not state.plant_fiber_quantities.is_empty():
-			var plant_fiber_quantities_data: Array = []
-			for pos in state.plant_fiber_quantities.keys():
-				var plant_fiber_entry: Dictionary = state.plant_fiber_quantities[pos]
-				plant_fiber_quantities_data.append({
-					"x": pos.x, "y": pos.y,
-					"checkpoint_day": int(plant_fiber_entry["checkpoint_day"]),
-					"capacity": int(plant_fiber_entry["capacity"]),
-					"harvested": int(plant_fiber_entry["harvested"]),
-				})
-			state_data["plant_fiber_quantities"] = plant_fiber_quantities_data
-		# Pool mushroom per lotto (2026-09-17, richiesta utente) — STESSO formato/STESSA posizione
-		# (sibling, non annidato) di plant_fiber_quantities sopra.
-		if not state.mushroom_quantities.is_empty():
-			var mushroom_quantities_data: Array = []
-			for pos in state.mushroom_quantities.keys():
-				var mushroom_entry: Dictionary = state.mushroom_quantities[pos]
-				mushroom_quantities_data.append({
-					"x": pos.x, "y": pos.y,
-					"checkpoint_day": int(mushroom_entry["checkpoint_day"]),
-					"capacity": int(mushroom_entry["capacity"]),
-					"harvested": int(mushroom_entry["harvested"]),
-				})
-			state_data["mushroom_quantities"] = mushroom_quantities_data
+		# Registro unificato "capacità per lotto" (2026-09-19, richiesta utente — refactor
+		# lot_source: sostituisce le sezioni separate pebble_quantities/stick_quantities/
+		# plant_fiber_quantities/mushroom_quantities/wild_vegetables_harvested_by_lot, due formati
+		# diversi, con UN SOLO loop su LotCapacityService.get_all_lot_capacity_resource_names() —
+		# stesso principio già in uso per FRUIT_STOCK_SOURCES/berry_harvested_by_lot sotto. "v" =
+		# il valore intero grezzo di MacroCellState.lot_registry[resource_name][pos]: quantità
+		# RESIDUA per pebble (STONE_POSITION), raccolto per stick/plant_fiber/mushroom/
+		# wild_vegetables (TREE_INDIVIDUAL/SHRUB_INDIVIDUAL/GRASS_PATCH) — il significato dipende
+		# dal lot_source della risorsa, mai da questo blocco (che si limita a salvare il Dictionary
+		# così com'è). La "capacity" delle quattro non-STONE_POSITION vive invece in lot_capacity_
+		# cache, RUNTIME e MAI persistita (sempre ri-derivabile, vedi MacroCellState).
+		var lot_registry_data: Array = []
+		for resource_name in LotCapacityService.get_all_lot_capacity_resource_names():
+			var per_lot: Dictionary = state.lot_registry.get(resource_name, {})
+			if per_lot.is_empty():
+				continue
+			var lots_data: Array = []
+			for pos in per_lot.keys():
+				lots_data.append({"x": pos.x, "y": pos.y, "v": int(per_lot[pos])})
+			lot_registry_data.append({"resource_name": resource_name, "lots": lots_data})
+		if not lot_registry_data.is_empty():
+			state_data["lot_registry"] = lot_registry_data
 		# Raccolto per lotto delle risorse "fruit stock" (2026-09-17, richiesta utente — bugfix
 		# coerenza raccolta/ricrescita, poi GENERALIZZATO in preparazione di fruit/acorn, nessun
 		# cambio di comportamento per berry) — UN SOLO blocco che itera
@@ -288,13 +262,8 @@ func save_game_to_json(
 			for pos in state.eggs_harvested_by_lot.keys():
 				eggs_harvested_data.append({"x": pos.x, "y": pos.y, "harvested": int(state.eggs_harvested_by_lot[pos])})
 			state_data["eggs_harvested_by_lot"] = eggs_harvested_data
-		# Raccolto per lotto di "wild_vegetables" (2026-09-19, richiesta utente) — SIBLING del
-		# blocco eggs_harvested_by_lot sopra, stesso formato FLAT {x,y,harvested}.
-		if not state.wild_vegetables_harvested_by_lot.is_empty():
-			var wild_vegetables_harvested_data: Array = []
-			for pos in state.wild_vegetables_harvested_by_lot.keys():
-				wild_vegetables_harvested_data.append({"x": pos.x, "y": pos.y, "harvested": int(state.wild_vegetables_harvested_by_lot[pos])})
-			state_data["wild_vegetables_harvested_by_lot"] = wild_vegetables_harvested_data
+		# wild_vegetables (2026-09-19) — ora nel registro unificato "lot_registry" sopra, non più
+		# in una sezione dedicata (era l'unica risorsa GRASS_PATCH prima di questo refactor).
 		# Stesso formato/principio di vegetation_cut_exceptions sopra, ma per la mortalità naturale
 		# (vedi MacroCellState.vegetation_death_exceptions) — campo "death_year" invece di "cut_year".
 		if not state.vegetation_death_exceptions.is_empty():

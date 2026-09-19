@@ -181,14 +181,9 @@ func load_game_from_json(file_path: String) -> LoadedGame:
 					stone_positions.append(Vector2i(int(pos_data["x"]), int(pos_data["y"])))
 				state.stone_positions = stone_positions
 				state.stone_positions_generated = true
-				# PEBBLE (2026-09-08, richiesta utente) — stesso blocco/stessa guardia di
-				# stone_positions sopra (nascono/vivono insieme, vedi GameSaveService). .get() con
-				# default [] per compatibilità coi save precedenti a questo campo: una macrocella
-				# già aperta prima di questo passo ha stone_positions ma non ancora
-				# pebble_quantities.
-				for pos_data in state_data.get("pebble_quantities", []):
-					var pebble_pos := Vector2i(int(pos_data["x"]), int(pos_data["y"]))
-					state.pebble_quantities[pebble_pos] = int(pos_data["q"])
+				# PEBBLE — nasce/vive insieme a stone_positions (vedi GameSaveService), ora
+				# ricaricato dal registro unificato "lot_registry" sotto, non più da una sezione
+				# dedicata.
 			for pos_data in state_data.get("vegetation_cut_exceptions", []):
 				var cut_key := Vector3i(int(pos_data["x"]), int(pos_data["y"]), int(pos_data["i"]))
 				state.vegetation_cut_exceptions[cut_key] = {
@@ -215,36 +210,23 @@ func load_game_from_json(file_path: String) -> LoadedGame:
 				state.tree_claimed_lots[Vector2i(int(pos_data["x"]), int(pos_data["y"]))] = true
 			for pos_data in state_data.get("shrub_claimed_lots", []):
 				state.shrub_claimed_lots[Vector2i(int(pos_data["x"]), int(pos_data["y"]))] = true
-			# Pool bastoni per lotto (2026-09-08, richiesta utente) — stesso trattamento di
-			# pebble_quantities: .get() con default [] per compatibilità coi save precedenti a
-			# questo campo.
-			for pos_data in state_data.get("stick_quantities", []):
-				var stick_pos := Vector2i(int(pos_data["x"]), int(pos_data["y"]))
-				state.stick_quantities[stick_pos] = {
-					"checkpoint_day": int(pos_data["checkpoint_day"]),
-					"capacity": int(pos_data["capacity"]),
-					"harvested": int(pos_data["harvested"]),
-				}
-			# Pool plant_fiber per lotto (2026-09-16, richiesta utente) — stesso trattamento di
-			# stick_quantities sopra, .get() con default [] per compatibilità coi save precedenti a
-			# questo campo.
-			for pos_data in state_data.get("plant_fiber_quantities", []):
-				var plant_fiber_pos := Vector2i(int(pos_data["x"]), int(pos_data["y"]))
-				state.plant_fiber_quantities[plant_fiber_pos] = {
-					"checkpoint_day": int(pos_data["checkpoint_day"]),
-					"capacity": int(pos_data["capacity"]),
-					"harvested": int(pos_data["harvested"]),
-				}
-			# Pool mushroom per lotto (2026-09-17, richiesta utente) — stesso trattamento di
-			# stick_quantities/plant_fiber_quantities sopra, .get() con default [] per
-			# compatibilità coi save precedenti a questo campo.
-			for pos_data in state_data.get("mushroom_quantities", []):
-				var mushroom_pos := Vector2i(int(pos_data["x"]), int(pos_data["y"]))
-				state.mushroom_quantities[mushroom_pos] = {
-					"checkpoint_day": int(pos_data["checkpoint_day"]),
-					"capacity": int(pos_data["capacity"]),
-					"harvested": int(pos_data["harvested"]),
-				}
+			# Registro unificato "capacita per lotto" (2026-09-19, richiesta utente, refactor
+			# lot_source) - un solo loop su tutte le entry salvate (una per resource_name presente:
+			# pebble/stick/plant_fiber/mushroom/wild_vegetables), stesso principio gia in uso per
+			# berry_harvested_by_lot sotto. resource_entry.get("resource_name", "") vuoto -> entry
+			# scartata (mai un formato precedente a questo refactor: "NON serve retrocompatibilita
+			# con i salvataggi esistenti", richiesta esplicita utente). Solo il registro
+			# "raccolto/residuo" viene ricaricato qui - la "capacity" delle risorse non-STONE_
+			# POSITION e una cache RUNTIME (MacroCellState.lot_capacity_cache), mai persistita, si
+			# ripopola da sola alla prima query/refresh dopo il load.
+			for resource_entry in state_data.get("lot_registry", []):
+				var lot_resource_name: String = String(resource_entry.get("resource_name", ""))
+				if lot_resource_name == "":
+					continue
+				var lot_registry_per_lot: Dictionary = {}
+				for pos_data in resource_entry.get("lots", []):
+					lot_registry_per_lot[Vector2i(int(pos_data["x"]), int(pos_data["y"]))] = int(pos_data["v"])
+				state.lot_registry[lot_resource_name] = lot_registry_per_lot
 			# Raccolto per lotto delle risorse "fruit stock" (2026-09-17, richiesta utente — poi
 			# GENERALIZZATO in preparazione di fruit/acorn, nessun cambio di comportamento per
 			# berry) — un solo blocco che itera le entry salvate (una per resource_name presente,
@@ -272,11 +254,8 @@ func load_game_from_json(file_path: String) -> LoadedGame:
 			for pos_data in state_data.get("eggs_harvested_by_lot", []):
 				var eggs_pos := Vector2i(int(pos_data["x"]), int(pos_data["y"]))
 				state.eggs_harvested_by_lot[eggs_pos] = int(pos_data["harvested"])
-			# Raccolto per lotto di "wild_vegetables" (2026-09-19, richiesta utente) — SIBLING del
-			# blocco eggs_harvested_by_lot sopra, stesso formato/stesso principio di compatibilità.
-			for pos_data in state_data.get("wild_vegetables_harvested_by_lot", []):
-				var wild_vegetables_pos := Vector2i(int(pos_data["x"]), int(pos_data["y"]))
-				state.wild_vegetables_harvested_by_lot[wild_vegetables_pos] = int(pos_data["harvested"])
+			# wild_vegetables (2026-09-19) — ora nel registro unificato "lot_registry" sopra, non
+			# più in una sezione dedicata.
 			for pos_data in state_data.get("vegetation_death_exceptions", []):
 				var death_key := Vector3i(int(pos_data["x"]), int(pos_data["y"]), int(pos_data["i"]))
 				state.vegetation_death_exceptions[death_key] = {

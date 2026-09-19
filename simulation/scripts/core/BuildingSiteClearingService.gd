@@ -19,37 +19,36 @@ static func clear_microcell(macro_state: MacroCellState, pos: Vector2i, is_curre
 	if is_currently_grass:
 		_clear_grass(macro_state)
 	_clear_exceptions_at_lot(macro_state, pos)
-	# Bastoncini residui (2026-09-11, richiesta utente — BUGFIX: verificato che questa funzione si
-	# fermasse a TREE/SHRUB/GRASS, mai alle risorse "scattered" a terra — vedi
-	# TerrainScatteredResourceService/StickPoolService) — GAP REALE, non solo teorico: MacroCellState.
-	# stick_quantities[pos] è una entry INDIPENDENTE (capacità/harvested congelati all'ultimo
-	# checkpoint growth), mai ripulita quando il TREE che la generava viene rimosso sopra
-	# (_clear_type cancella solo tree_claimed_lots/tree_individual_subtype/tree_virtual_birth_year —
-	# StickPoolService.refresh_macrocell NON rigenera/azzera mai un lotto che è appena USCITO da
-	# tree_claimed_lots, itera solo quelli ANCORA presenti, vedi lì). Senza questa riga, un pilastro
-	# di bastoncini raccoglibili poteva restare "vivo" per il resto del checkpoint growth corrente
+	# Residui "capacità per lotto" derivati da TREE/SHRUB (2026-09-11, richiesta utente — BUGFIX:
+	# verificato che questa funzione si fermasse a TREE/SHRUB/GRASS, mai alle risorse "scattered" a
+	# terra; GENERALIZZATO 2026-09-19, refactor lot_source — prima due righe scritte a mano per
+	# "stick"/"plant_fiber", che lasciavano fuori mushroom, stesso identico gap MAI notato: ora un
+	# loop su OGNI risorsa TREE_INDIVIDUAL/SHRUB_INDIVIDUAL, mushroom incluso) — GAP REALE, non solo
+	# teorico: MacroCellState.lot_registry[resource_name][pos]/lot_capacity_cache[resource_name][pos]
+	# sono entry INDIPENDENTI (capacità congelata fino al prossimo checkpoint growth), mai ripulite
+	# quando il TREE/SHRUB che la generava viene rimosso sopra (_clear_type cancella solo
+	# tree_claimed_lots/tree_individual_subtype/tree_virtual_birth_year — LotCapacityService.
+	# refresh_vegetation_lot_capacity NON rigenera/azzera mai un lotto appena USCITO da
+	# tree_claimed_lots, itera solo quelli ANCORA presenti). Senza questo, un pilastro di bastoncini/
+	# funghi raccoglibili poteva restare "vivo" per il resto del checkpoint growth corrente
 	# esattamente sulla microcella ora occupata dal cantiere/edificio — un individuo poteva ancora
 	# raccoglierli via il lotto (StickLotSelectorController + PickUpAction, nessuno dei due controlla
 	# world.buildings) anche se il terreno sopra era visivamente sparito. Applicato QUI (non come
 	# chiamata complementare separata in ClearAction) perché questa funzione è l'UNICO punto che
 	# promette "libera una microcella prima di piazzarci un edificio, rimuovendo esattamente ciò che
 	# vi si trova davvero" (vedi commento in testa al file) — un fix qui copre AUTOMATICAMENTE anche
-	# GameScene._place_building_at (piazzamento istantaneo, stesso identico gap preesistente, mai
-	# notato prima perché nessuno aveva ancora verificato risorse OLTRE la vegetazione), non solo il
-	# nuovo ClearAction. pebble_quantities NON incluso qui: generato solo su
-	# MacroCellState.stone_positions (vedi StonePositionService), e BuildingVerificationService
-	# Criterio 5 impedisce di costruire su una microcella con stone_positions per QUALUNQUE tipo di
-	# edificio oggi esistente (nessun rules.buildable_on_stone=true nei .tres attuali) — pebble e un
-	# cantiere non possono quindi mai coesistere sulla stessa microcella con le regole di oggi,
-	# nessun fix necessario finché resta così (da rivedere se un futuro tipo edificio settasse
-	# buildable_on_stone=true).
-	if macro_state.stick_quantities.has(pos):
-		macro_state.stick_quantities.erase(pos)
-	# plant_fiber (2026-09-16, richiesta utente) — STESSO gap/STESSA soluzione di stick_quantities
-	# appena sopra, applicata subito: non ripetere l'errore "dimenticato la prima volta" già successo
-	# per gli stick (vedi il commento esteso sopra).
-	if macro_state.plant_fiber_quantities.has(pos):
-		macro_state.plant_fiber_quantities.erase(pos)
+	# GameScene._place_building_at (piazzamento istantaneo, stesso identico gap preesistente). pebble
+	# NON incluso qui: generato solo su MacroCellState.stone_positions (vedi StonePositionService), e
+	# BuildingVerificationService Criterio 5 impedisce di costruire su una microcella con
+	# stone_positions per QUALUNQUE tipo di edificio oggi esistente (nessun rules.buildable_on_
+	# stone=true nei .tres attuali) — pebble e un cantiere non possono quindi mai coesistere sulla
+	# stessa microcella con le regole di oggi, nessun fix necessario finché resta così.
+	for resource_name in LotCapacityService.get_resource_names_for_lot_source(SecondaryResourceTypes.LotSource.TREE_INDIVIDUAL) \
+			+ LotCapacityService.get_resource_names_for_lot_source(SecondaryResourceTypes.LotSource.SHRUB_INDIVIDUAL):
+		if macro_state.lot_registry.has(resource_name):
+			macro_state.lot_registry[resource_name].erase(pos)
+		if macro_state.lot_capacity_cache.has(resource_name):
+			macro_state.lot_capacity_cache[resource_name].erase(pos)
 
 
 # Un ceppo tagliato o una pianta morta lì sotto non hanno più motivo di restare "in attesa di

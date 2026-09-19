@@ -125,9 +125,10 @@ extends Resource
 # che la genera — 2026-09-16, richiesta utente: prima una costante hardcoded per tipo
 # (StickPoolService.STICKS_PER_MATURE_TREE/PlantFiberPoolService.UNITS_PER_MATURE_SHRUB, entrambe
 # 3), ora spostata qui così è tarabile da .tres senza toccare codice. Consultato SOLO da
-# VegetationPoolService.resolve_units_per_mature_individual (stick.tres/plant_fiber.tres oggi, i
-# soli due tipi con un pool per-lotto derivato da individui maturi) — nessun'altra risorsa secondaria
-# lo legge. Default 0 (non 3): un .tres che non lo valorizza esplicitamente deve produrre un warning
+# VegetationPoolService.resolve_units_per_mature_individual (stick.tres/plant_fiber.tres/
+# mushroom.tres oggi, le sole risorse lot_source=TREE_INDIVIDUAL/SHRUB_INDIVIDUAL — vedi
+# SecondaryResourceTypes.LotSource) — nessun'altra risorsa secondaria lo legge. Default 0 (non 3):
+# un .tres che non lo valorizza esplicitamente deve produrre un warning
 # visibile (capacity sempre 0), MAI un fallback silenzioso a un numero che sembra normale.
 @export var units_per_mature_plant: int = 0
 
@@ -136,7 +137,8 @@ extends Resource
 # nest_probability il 2026-09-19, richiesta utente — wild_vegetables: STESSO meccanismo, un
 # secondo consumatore su GRASS oltre agli eggs, "lotto" generico invece di "nido" specifico di
 # eggs) — consultato da TerrainScatteredResourceService.compute_egg_nest_positions (eggs) e
-# compute_wild_vegetable_lots (wild_vegetables), che filtrano le posizioni GRASS correnti della
+# LotCapacityService.refresh_grass_patch_lot_capacity (2026-09-19, GRASS_PATCH — wild_vegetables e
+# ogni futura risorsa dello stesso lot_source), che filtrano le posizioni GRASS correnti della
 # macrocella con hash(str(micro_seed) + salt) sulla posizione contro questa soglia — stesso idioma
 # già usato da ResourcePositionService per il bordo sfumato dei semi di rumore, salt DIVERSO per
 # risorsa (mai lo stesso hash tra eggs e wild_vegetables, altrimenti selezionerebbero sempre
@@ -174,13 +176,13 @@ extends Resource
 # Intervallo [patch_capacity_min, patch_capacity_max] della capacità RAW di UN lotto (2026-09-19,
 # richiesta utente — wild_vegetables, "capacità per lotto come stick/mushroom... un valore
 # derivato dallo stesso hash (salt diverso) in un intervallo configurabile"): consultato SOLO da
-# TerrainScatteredResourceService.compute_wild_vegetable_lots, che risolve la capacità RAW di ogni
-# lotto con hash(str(micro_seed) + salt) sulla posizione (stesso idioma di patch_probability/
-# patch_weight_min/max sopra, salt ancora diverso — indipendente sia da "è un lotto?" sia dal peso
-# eggs) interpolata linearmente in questo intervallo, poi moltiplicata dal chiamante per un
-# fattore legato a dedicated_space(GRASS) della macrocella (un prato rado rende meno di uno
-# fitto) — quel fattore NON vive qui, è specifico del modello wild_vegetables, vedi
-# compute_wild_vegetable_lots. A differenza di patch_weight_min/max sopra, questo NON è un peso
+# LotCapacityService.refresh_grass_patch_lot_capacity (lot_source GRASS_PATCH), che risolve la
+# capacità RAW di ogni lotto con hash(str(micro_seed) + salt) sulla posizione (stesso idioma di
+# patch_probability/patch_weight_min/max sopra, salt ancora diverso — indipendente sia da "è un
+# lotto?" sia dal peso eggs) interpolata linearmente in questo intervallo, poi moltiplicata dal
+# chiamante per un fattore legato a dedicated_space(GRASS) della macrocella (un prato rado rende
+# meno di uno fitto) — quel fattore NON vive qui, è specifico della formula GRASS_PATCH, vedi
+# refresh_grass_patch_lot_capacity. A differenza di patch_weight_min/max sopra, questo NON è un peso
 # relativo da ripartire su uno stock aggregato: è una capacità ASSOLUTA per lotto, stesso
 # significato di units_per_mature_plant × individui_maturi per stick/mushroom, solo che qui non
 # ci sono individui da contare (GRASS non ne ha). Default 0 (nessuna .tres esistente lo valorizza
@@ -188,3 +190,15 @@ extends Resource
 # di units_per_mature_plant/patch_probability sopra.
 @export var patch_capacity_min: int = 0
 @export var patch_capacity_max: int = 0
+
+@export_group("Lot capacity")
+# Quale delle quattro formule di LotCapacityService risolve i lotti/capacità di questa risorsa —
+# vedi SecondaryResourceTypes.LotSource per la spiegazione estesa di ciascun valore. NONE (default)
+# = questa risorsa non usa il modello "capacità per lotto" (berry/acorn/fruit/eggs/forage/
+# fish_meat/bird_meat restano tutte a NONE). Unica leva che TerrainScatteredResourceService.
+# get_available/consume e GameScene._resolve_pickup_candidates leggono per decidere COME trattare
+# una risorsa — aggiungerne una nuova in questa famiglia significa impostare questo campo (+ gli
+# altri campi già esistenti che la formula scelta consulta: units_per_mature_plant per TREE_
+# INDIVIDUAL/SHRUB_INDIVIDUAL, patch_probability/patch_capacity_min/max per GRASS_PATCH, nessuno
+# in più per STONE_POSITION) sul proprio .tres, nessun codice nuovo.
+@export var lot_source: SecondaryResourceTypes.LotSource = SecondaryResourceTypes.LotSource.NONE

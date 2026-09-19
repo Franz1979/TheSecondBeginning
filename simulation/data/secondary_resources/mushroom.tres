@@ -10,3 +10,4 @@ seasonal_availability_multiplier = Array[float]([0.4, 0.0, 0.3, 1.0])
 generation_source = 1
 day_durability = 90
 units_per_mature_plant = 4
+lot_source = 1

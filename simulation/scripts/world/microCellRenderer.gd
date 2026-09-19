@@ -358,35 +358,40 @@ var dead_positions: Dictionary = {} # WorldObjectType -> Array[Vector3i]
 var _stone_variant_meshes: Array = [] # ArrayMesh, indicizzato per variante — costruito una volta sola
 var _stone_multimeshes: Array = [] # MultiMesh, indicizzato per variante — un draw_multimesh ciascuno
 
-# Sassi/pebble (2026-09-08, richiesta utente) — Vector2i -> int, stessa Dictionary di
-# MacroCellState.pebble_quantities (sincronizzata da set_pebble_quantities), MAI ricalcolata qui:
-# il renderer si limita a leggerla per decidere QUANTI puntini-sasso disegnare attorno a ciascuna
-# posizione stone, a 3 livelli (vedi PEBBLE_TIER_*/_pebble_tier_count) — 0 = nessun puntino
-# disegnato, così quando in futuro un consumo reale porterà una posizione a 0 basterà richiamare
-# set_pebble_quantities con i valori aggiornati perché i puntini spariscano da soli (nessuna logica
-# di rimozione dedicata: il rebuild riparte sempre da zero, stesso principio già in uso per
+# Sassi/pebble (2026-09-08, richiesta utente) — Vector2i -> int, disponibilità GIÀ RISOLTA dal
+# chiamante (2026-09-19, refactor lot_source — RINOMINATO da pebble_quantities: prima era la
+# quantità grezza di MacroCellState.pebble_quantities, ora GameScene/MacroCellScene risolvono
+# TerrainScatteredResourceService.get_available per ciascuna posizione stone prima di passarla qui,
+# STESSO principio già in uso per egg_nest_availability/wild_vegetable_availability sotto), MAI
+# ricalcolata qui: il renderer si limita a leggerla per decidere QUANTI puntini-sasso disegnare
+# attorno a ciascuna posizione stone, a 3 livelli (vedi PEBBLE_TIER_*/_pebble_tier_count) — 0 =
+# nessun puntino disegnato, così quando il consumo porta una posizione a 0 basterà richiamare
+# set_pebble_availability con i valori aggiornati perché i puntini spariscano da soli (nessuna
+# logica di rimozione dedicata: il rebuild riparte sempre da zero, stesso principio già in uso per
 # _rebuild_stone_multimeshes).
-var pebble_quantities: Dictionary = {}
+var pebble_availability: Dictionary = {}
 var _pebble_variant_meshes: Array = []
 var _pebble_multimeshes: Array = []
 
-# Bastoni/stick (2026-09-08, richiesta utente) — Vector2i (lotto TREE) -> {"checkpoint_day",
-# "capacity", "harvested"}, stessa Dictionary di MacroCellState.stick_quantities (sincronizzata da
-# set_stick_quantities), MAI ricalcolata qui — vedi StickPoolService per il calcolo vero. Disegnati
-# a terra attorno al "ground" del lotto (non della singola pianta: un lotto può avere più
-# individui), a 3 livelli come i pebble (vedi STICK_TIER_*/_stick_tier_count). Un solo mesh
-# condiviso (non varianti multiple come stone/pebble): un bastone è solo un rettangolo sottile,
-# rotazione+scala per-istanza bastano per la varietà visiva.
-var stick_quantities: Dictionary = {}
+# Bastoni/stick (2026-09-08, richiesta utente) — Vector2i (lotto TREE) -> int, disponibilità GIÀ
+# RISOLTA dal chiamante (2026-09-19, refactor lot_source — RINOMINATO da stick_quantities: prima
+# era {"checkpoint_day","capacity","harvested"}, con "capacity - harvested" calcolato QUI dentro;
+# ora GameScene/MacroCellScene risolvono TerrainScatteredResourceService.get_available per lotto
+# PRIMA di passarla qui, STESSO principio di pebble_availability sopra — mai un secondo calcolo nel
+# renderer). Disegnati a terra attorno al "ground" del lotto (non della singola pianta: un lotto
+# può avere più individui), a 3 livelli come i pebble (vedi STICK_TIER_*/_stick_tier_count). Un
+# solo mesh condiviso (non varianti multiple come stone/pebble): un bastone è solo un rettangolo
+# sottile, rotazione+scala per-istanza bastano per la varietà visiva.
+var stick_availability: Dictionary = {}
 var _stick_mesh: ArrayMesh = null
 var _stick_multimesh: MultiMesh = null
 # Nidi "eggs" (2026-09-18, richiesta utente — uova raccoglibili per microcella) — Vector2i (nido,
 # una microcella GRASS) -> quantità disponibile RESIDUA, già netta del raccolto e già filtrata a
 # > 0 dal chiamante (GameScene._refresh_resource_visuals, tramite TerrainScatteredResourceService.
 # get_egg_stock_available_at — la funzione di disponibilità residua, non un secondo calcolo qui).
-# MIRROR di stick_quantities sopra ma con un int diretto invece di {"capacity","harvested"}: il
-# chiamante ha già risolto la sottrazione, questo renderer si limita a leggere "quanto disegnare".
-# Un solo mesh condiviso (stesso principio di stick: nessuna variante multipla necessaria).
+# MIRROR di stick_availability sopra (stesso schema int diretto — il chiamante ha già risolto la
+# sottrazione, questo renderer si limita a leggere "quanto disegnare"). Un solo mesh condiviso
+# (stesso principio di stick: nessuna variante multipla necessaria).
 var egg_nest_availability: Dictionary = {}
 var _egg_mesh: ArrayMesh = null
 var _egg_multimesh: MultiMesh = null
@@ -470,39 +475,39 @@ func set_stone_positions(positions: Array) -> void:
 	stone_positions = positions
 	_rebuild_stone_multimeshes()
 	# I pebble sono ancorati alle STESSE posizioni (2026-09-08) — ricalcolati anche qui, non solo
-	# da set_pebble_quantities sotto: copre l'ordine di chiamata "prima le posizioni, poi le
-	# quantità" E il caso in cui stone_positions cambi da sola (pebble_quantities già valorizzato).
+	# da set_pebble_availability sotto: copre l'ordine di chiamata "prima le posizioni, poi le
+	# quantità" E il caso in cui stone_positions cambi da sola (pebble_availability già valorizzato).
 	_rebuild_pebble_multimeshes()
 	queue_redraw()
 
 
 # Sassi/pebble (2026-09-08, richiesta utente) — chiamato da GameScene/MacroCellScene subito dopo
-# set_stone_positions, stesso momento/stessa fonte dati (MacroCellState.pebble_quantities). Rebuild
-# anche qui (non solo da set_stone_positions sopra): copre il caso in cui le quantità cambino da
-# sole a parità di posizioni (es. un futuro consumo).
-func set_pebble_quantities(quantities: Dictionary) -> void:
-	pebble_quantities = quantities
+# set_stone_positions, stessa disponibilità già risolta (vedi pebble_availability sopra per il
+# perché). Rebuild anche qui (non solo da set_stone_positions sopra): copre il caso in cui le
+# quantità cambino da sole a parità di posizioni (es. un consumo).
+func set_pebble_availability(availability: Dictionary) -> void:
+	pebble_availability = availability
 	_rebuild_pebble_multimeshes()
 	queue_redraw()
 
 
 # Bastoni/stick (2026-09-08, richiesta utente) — chiamato da GameScene/MacroCellScene subito dopo
-# StickPoolService.refresh_macrocell, stessa fonte dati (MacroCellState.stick_quantities). A
-# differenza di stone/pebble non dipende da un "set_positions" separato: i lotti sono già le
-# chiavi del Dictionary stesso (MacroCellState.tree_claimed_lots concettualmente, qui letto
-# indirettamente dalle chiavi di stick_quantities).
-func set_stick_quantities(quantities: Dictionary) -> void:
-	stick_quantities = quantities
+# LotCapacityService.refresh_vegetation_lot_capacity, stessa disponibilità già risolta (vedi
+# stick_availability sopra per il perché). A differenza di stone/pebble non dipende da un
+# "set_positions" separato: i lotti sono già le chiavi del Dictionary stesso (MacroCellState.
+# tree_claimed_lots concettualmente, qui letto indirettamente dalle chiavi di stick_availability).
+func set_stick_availability(availability: Dictionary) -> void:
+	stick_availability = availability
 	_rebuild_stick_multimesh()
 	queue_redraw()
 
 
 # Nidi "eggs" (2026-09-18, richiesta utente) — chiamato da GameScene._refresh_resource_visuals con
 # la disponibilità RESIDUA già filtrata a > 0 e da Fog of War (STESSO momento/STESSA cadenza di
-# set_stick_quantities sopra — checkpoint stagionale/raccolta/movimento con visibilità cambiata).
+# set_stick_availability sopra — checkpoint stagionale/raccolta/movimento con visibilità cambiata).
 # A differenza di stone/pebble non dipende da un "set_positions" separato: i nidi sono già le
 # chiavi del Dictionary stesso (MacroCellState.egg_nest_positions concettualmente, qui letto
-# indirettamente dalle chiavi di egg_nest_availability) — stesso schema di set_stick_quantities.
+# indirettamente dalle chiavi di egg_nest_availability) — stesso schema di set_stick_availability.
 func set_egg_nest_availability(availability: Dictionary) -> void:
 	egg_nest_availability = availability
 	_rebuild_egg_multimesh()
@@ -1207,6 +1212,31 @@ func _draw_stick_tent(ground: Vector2, direction: GameTypes.Direction) -> void:
 	)
 
 
+# Collegamento resource_name -> funzione di disegno dell'icona magazzino (2026-09-19, richiesta
+# utente — refactor lot_source, punto 6: "il collegamento deve diventare un Dictionary invece di
+# un match scritto a mano, coerente con IconRegistry") — STESSO principio architetturale di
+# IconRegistry.RESOURCE_ICON_NODES/BUILDING_ICON_NODES (Dictionary resource_name -> "come disegnarla",
+# unica fonte di verità), adattato qui a metodi ISTANZA di questo renderer (non script Node
+# preload-abili come in IconRegistry: queste sono funzioni _draw_deposit_storage_*_icon private di
+# MicroCellRenderer, non Control autonomi) — String col nome del metodo + call() invece di
+# preload()+.new(), stesso "keyed by resource_name" nello spirito. Aggiungere una risorsa nuova con
+# una propria icona magazzino significa aggiungere una riga qui (+ la funzione _draw_deposit_
+# storage_*_icon stessa, la "parte grafica" che il piano richiede comunque) — nessun match da
+# ritoccare. Una risorsa ASSENTE da questo Dictionary usa il fallback generico (pallino colorato,
+# vedi _draw_deposit_site_storage_grid sotto), esattamente come prima di questo refactor.
+const DEPOSIT_STORAGE_ICON_DRAW_METHODS := {
+	"pebble": "_draw_deposit_storage_pebble_icon",
+	"stick": "_draw_deposit_storage_stick_icon",
+	"plant_fiber": "_draw_deposit_storage_plant_fiber_icon",
+	"berry": "_draw_deposit_storage_berry_icon",
+	"acorn": "_draw_deposit_storage_acorn_icon",
+	"fruit": "_draw_deposit_storage_fruit_icon",
+	"mushroom": "_draw_deposit_storage_mushroom_icon",
+	"eggs": "_draw_deposit_storage_eggs_icon",
+	"wild_vegetables": "_draw_deposit_storage_wild_vegetables_icon",
+}
+
+
 # Un mucchietto per SLOT occupato di `slot_breakdown` (Array di {"resource_name","quantity",
 # "space_used","space_capacity"}, vedi BuildingStorageService.get_slot_breakdown) — vedi il
 # commento esteso su DEPOSIT_SITE_STORAGE_GRID_COLUMNS sopra per il principio. Griglia 3×3 in
@@ -1235,30 +1265,14 @@ func _draw_deposit_site_storage_grid(ground: Vector2, slot_breakdown: Array) -> 
 		# posto della trasparenza vera) — disegnato SEMPRE, anche per una risorsa senza replica
 		# dedicata sotto (fallback), così il quadrato resta comunque coerente con lo sfondo.
 		draw_rect(Rect2(top_left, Vector2(DEPOSIT_SITE_STORAGE_SQUARE_SIDE, DEPOSIT_SITE_STORAGE_SQUARE_SIDE)), DEPOSIT_SITE_COLOR)
-		match resource_name:
-			"pebble":
-				_draw_deposit_storage_pebble_icon(top_left, DEPOSIT_SITE_STORAGE_SQUARE_SIDE)
-			"stick":
-				_draw_deposit_storage_stick_icon(top_left, DEPOSIT_SITE_STORAGE_SQUARE_SIDE)
-			"plant_fiber":
-				_draw_deposit_storage_plant_fiber_icon(top_left, DEPOSIT_SITE_STORAGE_SQUARE_SIDE)
-			"berry":
-				_draw_deposit_storage_berry_icon(top_left, DEPOSIT_SITE_STORAGE_SQUARE_SIDE)
-			"acorn":
-				_draw_deposit_storage_acorn_icon(top_left, DEPOSIT_SITE_STORAGE_SQUARE_SIDE)
-			"fruit":
-				_draw_deposit_storage_fruit_icon(top_left, DEPOSIT_SITE_STORAGE_SQUARE_SIDE)
-			"mushroom":
-				_draw_deposit_storage_mushroom_icon(top_left, DEPOSIT_SITE_STORAGE_SQUARE_SIDE)
-			"eggs":
-				_draw_deposit_storage_eggs_icon(top_left, DEPOSIT_SITE_STORAGE_SQUARE_SIDE)
-			"wild_vegetables":
-				_draw_deposit_storage_wild_vegetables_icon(top_left, DEPOSIT_SITE_STORAGE_SQUARE_SIDE)
-			_:
-				# Fallback per un'eventuale risorsa futura senza geometria replicata qui — un
-				# semplice pallino nel colore della risorsa (IconRegistry.get_resource_color, stessa
-				# fonte già in uso altrove), niente sfondo proprio oltre al quadrato sopra.
-				draw_circle(marker_center, DEPOSIT_SITE_STORAGE_SQUARE_SIDE * 0.25, IconRegistry.get_resource_color(resource_name))
+		var icon_draw_method: String = DEPOSIT_STORAGE_ICON_DRAW_METHODS.get(resource_name, "")
+		if icon_draw_method != "":
+			call(icon_draw_method, top_left, DEPOSIT_SITE_STORAGE_SQUARE_SIDE)
+		else:
+			# Fallback per un'eventuale risorsa futura senza geometria replicata qui — un
+			# semplice pallino nel colore della risorsa (IconRegistry.get_resource_color, stessa
+			# fonte già in uso altrove), niente sfondo proprio oltre al quadrato sopra.
+			draw_circle(marker_center, DEPOSIT_SITE_STORAGE_SQUARE_SIDE * 0.25, IconRegistry.get_resource_color(resource_name))
 
 
 # Replica in world-space (immediate-mode Node2D, NON riusabile da PebbleIcon.gd che è Control._draw
@@ -1839,7 +1853,7 @@ func _build_pebble_variant_mesh(variant: int) -> ArrayMesh:
 	return _build_fan_mesh(points, COLOR_PEBBLE)
 
 
-# Ricalcola i buffer istanza dei pebble — chiamato da set_stone_positions/set_pebble_quantities
+# Ricalcola i buffer istanza dei pebble — chiamato da set_stone_positions/set_pebble_availability
 # (2026-09-08). Per ogni posizione stone con tier>0, sparge `tier` puntini attorno al centro
 # (get_stone_screen_position, STESSO ancoraggio del masso principale) con angolo/distanza/
 # rotazione/scala deterministici per (posizione, indice puntino) — stabili tra un redraw e il
@@ -1852,7 +1866,7 @@ func _rebuild_pebble_multimeshes() -> void:
 		buckets.append([]) # Array[Transform2D]
 
 	for pos in stone_positions:
-		var quantity: int = int(pebble_quantities.get(pos, 0))
+		var quantity: int = int(pebble_availability.get(pos, 0))
 		var tier_count := _pebble_tier_count(quantity)
 		if tier_count <= 0:
 			continue
@@ -1937,20 +1951,19 @@ func _ensure_stick_mesh() -> void:
 	_stick_multimesh.instance_count = 0
 
 
-# Ricostruita da set_stick_quantities ogni volta che StickPoolService aggiorna il Dictionary
-# (macrocella ridisegnata) — mai qui in modo autonomo. Ogni lotto con quantità disponibile > 0
-# genera N bastoni (N = _stick_tier_count) sparpagliati con hash deterministico attorno al centro
-# del lotto, stesso principio dei pebble attorno alla stone (jitter stabile tra un redraw e
-# l'altro finché la quantità non cambia). Vector2i tipizzato esplicitamente (non :=) perché `lot`
-# proviene da un ciclo su Dictionary.keys() non tipizzato — stesso errore di inferenza già
-# incontrato con pebble_quantities.
+# Ricostruita da set_stick_availability ogni volta che GameScene/MacroCellScene rinfrescano la
+# disponibilità (macrocella ridisegnata) — mai qui in modo autonomo. Ogni lotto con quantità
+# disponibile > 0 genera N bastoni (N = _stick_tier_count) sparpagliati con hash deterministico
+# attorno al centro del lotto, stesso principio dei pebble attorno alla stone (jitter stabile tra
+# un redraw e l'altro finché la quantità non cambia). Vector2i tipizzato esplicitamente (non :=)
+# perché `lot` proviene da un ciclo su Dictionary.keys() non tipizzato — stesso errore di
+# inferenza già incontrato con pebble_availability.
 func _rebuild_stick_multimesh() -> void:
 	_ensure_stick_mesh()
 	var half: float = CELL_SIZE / 2.0
 	var transforms: Array = []
-	for lot in stick_quantities.keys():
-		var entry: Dictionary = stick_quantities[lot]
-		var available: int = int(entry.get("capacity", 0)) - int(entry.get("harvested", 0))
+	for lot in stick_availability.keys():
+		var available: int = int(stick_availability[lot])
 		var count := _stick_tier_count(available)
 		if count <= 0:
 			continue

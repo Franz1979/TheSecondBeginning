@@ -47,21 +47,45 @@ const CENTER_BUTTON_TEXT := "🎯"
 # sentinella "nessuna casa" già in uso ovunque per questo campo).
 const HOUSE_ICON_TEXT := "🏠"
 
+# Riga task per-individuo (2026-09-18, richiesta utente — "accanto al pipottino anche la task che
+# sta facendo... scrivilo nella riga sotto un po' indentata e metti un button hide tasks che
+# ricompatta le righe") — SOTTO la riga esistente, non affiancata: allargherebbe il pannello, cosa
+# esplicitamente da evitare (richiesta utente). Colore/attenuazione IDENTICI a QueuedTasksLabel di
+# HumanIndividualInfoPanel (stesso identico concetto — "testo secondario sulla task" — riusato qui
+# invece di inventarne un altro), solo font_size più piccolo (spazio di riga più stretto qui).
+const COLOR_TASK_DIM := Color(1, 1, 1, 0.65)
+const TASK_ROW_INDENT: float = 24.0
+# Stessa stringa già mostrata da GameScene per HumanIndividualInfoPanel.activity_text quando
+# current_task è null (tr("task_activity_idle") = "A riposo") — hardcoded qui invece di tr()
+# perché questo intero file non usa tr() (vedi commento in testa, "nessuna CSV di traduzione"),
+# ma il TESTO resta lo stesso per non mostrare due formulazioni diverse della stessa cosa.
+const IDLE_TASK_TEXT := "A riposo"
+
 # Rompe il principio "componente muto" dichiarato in testa al file SOLO per il minimo indispensabile
 # (stesso schema già in uso per MinimapPanel.cell_clicked): questo pannello non decide MAI da sé
 # selezione/camera, si limita a segnalare "l'utente ha chiesto questo individuo" — GameScene resta
 # l'unica a decidere cosa fare col click (stesso schema di _on_minimap_cell_clicked).
 signal individual_center_requested(individual: HumanIndividual)
 
-@onready var folk_label: Label = $FolkLabel
+@onready var folk_label: Label = $FolkRow/FolkLabel
+@onready var hide_tasks_button: Button = $FolkRow/HideTasksButton
 @onready var group_label: Label = $SummaryRow/GroupLabel
 @onready var male_label: Label = $SummaryRow/MaleLabel
 @onready var female_label: Label = $SummaryRow/FemaleLabel
-@onready var housing_label: Label = $SummaryRow/HousingLabel
 @onready var expand_button: Button = $SummaryRow/ExpandButton
+@onready var housing_label: Label = $SummaryRow/HousingLabel
 @onready var list_container: VBoxContainer = $ListContainer
 
 var _expanded: bool = false
+# Mostrate di default (2026-09-18, richiesta utente: il button si chiama "hide tasks" — parte
+# dallo stato "visibili", il click le ricompatta, non il contrario) — stesso principio del
+# testo che si scambia sotto (_on_hide_tasks_pressed), mai un terzo stato intermedio.
+var _show_tasks: bool = true
+# Riferimenti diretti ai MarginContainer indentati (2026-09-18) — evita di dover ricostruire
+# l'intera lista per un semplice toggle di visibilità: stesso principio "aggiorna, non ricrea"
+# già seguito da housing_label.add/remove_theme_color_override sopra, qui applicato a un Array
+# di nodi invece di un singolo Label.
+var _task_rows: Array[Control] = []
 
 
 func _ready() -> void:
@@ -70,6 +94,14 @@ func _ready() -> void:
 	expand_button.text = "+"
 	expand_button.pressed.connect(_on_expand_pressed)
 	list_container.visible = false
+	hide_tasks_button.text = "Nascondi task" if _show_tasks else "Mostra task"
+	hide_tasks_button.pressed.connect(_on_hide_tasks_pressed)
+	# Disabilitato quando la lista pipottini è compattata (2026-09-19, richiesta utente: "se il
+	# button + è raggruppato, spegni il pulsante mostra/nascondi task, tanto non funziona") — con
+	# list_container invisibile non c'è alcuna riga task da mostrare/nascondere, quindi il click non
+	# avrebbe alcun effetto visibile: disabled invece di semplicemente nasconderlo, così il player
+	# vede comunque che il controllo esiste ma non è applicabile finché la lista resta chiusa.
+	hide_tasks_button.disabled = not _expanded
 
 
 # total_count separato da individuals.size() deliberatamente (anche se oggi coincidono sempre:
@@ -134,6 +166,7 @@ func show_population(
 
 	for child in list_container.get_children():
 		child.queue_free()
+	_task_rows.clear()
 	for member in individuals:
 		var age: int = current_year - member.birth_year_virtual
 		var age_band := HumanCalculator.get_age_band(
@@ -182,7 +215,36 @@ func show_population(
 			house_icon.tooltip_text = "ID Casa: %d" % member.house_id
 			row.add_child(house_icon)
 
-		list_container.add_child(row)
+		# Riga task indentata, SOTTO la riga dell'individuo (2026-09-18, richiesta utente) —
+		# row_wrapper (VBoxContainer) tiene insieme le due righe come un solo blocco, così l'ordine
+		# nella lista resta sempre "individuo, poi la sua task" anche quando list_container viene
+		# ricostruito. Testo abbreviato = Task.get_activity_description() (STESSA formula/STESSO
+		# metodo già usato da GameScene per HumanIndividualInfoPanel.activity_text — "Costruire",
+		# "Trasportare (Rametti)", ecc., mai l'Action/step attivo, vedi Task.gd), senza il suffisso
+		# "[#id]" che ha senso solo nel pannello individuo (qui è rumore in più per una riga già
+		# compatta). member.current_task letto DIRETTAMENTE (questo pannello legge già altri campi
+		# di HumanIndividual senza passare da un Dictionary pre-risolto, es. member.house_id sopra —
+		# non è un pannello "muto" in senso stretto come BuildingInfoPanel/VegetationInfoPanel).
+		var row_wrapper := VBoxContainer.new()
+		row_wrapper.add_theme_constant_override("separation", 0)
+		row_wrapper.add_child(row)
+
+		var task_margin := MarginContainer.new()
+		task_margin.add_theme_constant_override("margin_left", int(TASK_ROW_INDENT))
+		task_margin.add_theme_constant_override("margin_bottom", 2)
+		task_margin.visible = _show_tasks
+
+		var task_label := Label.new()
+		task_label.add_theme_font_size_override("font_size", 9)
+		task_label.add_theme_color_override("font_color", COLOR_TASK_DIM)
+		task_label.text = "↳ " + (
+			member.current_task.get_activity_description() if member.current_task != null else IDLE_TASK_TEXT
+		)
+		task_margin.add_child(task_label)
+		row_wrapper.add_child(task_margin)
+		_task_rows.append(task_margin)
+
+		list_container.add_child(row_wrapper)
 
 
 func _on_center_button_pressed(member: HumanIndividual) -> void:
@@ -193,6 +255,17 @@ func _on_expand_pressed() -> void:
 	_expanded = not _expanded
 	list_container.visible = _expanded
 	expand_button.text = "-" if _expanded else "+"
+	hide_tasks_button.disabled = not _expanded
+
+
+# Ricompatta le righe task senza toccare quelle individuo (2026-09-18, richiesta utente) — un solo
+# toggle per TUTTE le righe insieme (niente per-riga: sarebbe rumore in più, la richiesta era "un
+# button" al singolare), su _task_rows così non serve ricostruire l'intera lista solo per questo.
+func _on_hide_tasks_pressed() -> void:
+	_show_tasks = not _show_tasks
+	hide_tasks_button.text = "Nascondi task" if _show_tasks else "Mostra task"
+	for task_row in _task_rows:
+		task_row.visible = _show_tasks
 
 
 # Stessa convenzione di HumanIndividualInfoPanel._format_id: sentinella -1 (non applicabile/non

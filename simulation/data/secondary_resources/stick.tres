@@ -12,3 +12,4 @@ generation_source = 1
 day_durability = 300
 space_per_unit = 10.0
 units_per_mature_plant = 3
+lot_source = 1

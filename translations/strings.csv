@@ -191,6 +191,8 @@ building_status_label,Stato: {status}
 building_status_complete,Completo
 building_status_under_construction,In costruzione
 building_awaiting_material_label,Per allestire il cantiere servono ancora {quantity} {material}
+building_assigned_builder_label,Costruttore assegnato: {names}
+building_assigned_builder_missing,Costruttore assegnato: mancante
 building_durability_label,Durabilità: {current}/{max}
 building_built_year_label,Costruito: anno {year}
 building_not_yet_built,Non ancora costruito

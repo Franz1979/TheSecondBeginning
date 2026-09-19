@@ -385,16 +385,16 @@ func _run_seasonal_checkpoints(world: World, game_data: GameData, year_rolled_ov
 				func(): _run_secondary_resource_stock_checkpoint(world, SeasonCalculator.get_previous_season(season), season)
 			)
 			# Azzeramento raccolto per le risorse a CAPACITÀ PER LOTTO (2026-09-19, richiesta utente
-			# — bugfix "le verdure non ricrescono mai") — STESSO momento del checkpoint sopra
-			# (inizio di ogni stagione), ma percorso SEPARATO: quello sopra presuppone uno stock
-			# aggregato di macrocella (CaloricCalculator.SECONDARY_SOURCES), che mushroom/
-			# wild_vegetables non hanno — vedi TerrainScatteredResourceService.
-			# reset_all_lot_harvests_on_season_rise per il dettaglio (un solo punto per entrambe le
-			# risorse, mushroom incluso: aveva lo stesso problema in potenza, mascherato solo dalla
-			# coincidenza della sua curva stagionale attuale con il proprio checkpoint growth).
+			# — bugfix "le verdure non ricrescono mai"; chiamata spostata su LotCapacityService lo
+			# stesso giorno, refactor lot_source) — STESSO momento del checkpoint sopra (inizio di
+			# ogni stagione), ma percorso SEPARATO: quello sopra presuppone uno stock aggregato di
+			# macrocella (CaloricCalculator.SECONDARY_SOURCES), che le risorse a capacità per lotto
+			# non hanno — vedi LotCapacityService.reset_all_lot_harvests_on_season_rise per il
+			# dettaglio (un solo punto per tutte, derivato da lot_source, non più un elenco scritto
+			# a mano).
 			_run_timed(
 				"lot_capacity_harvest_reset_checkpoint",
-				func(): TerrainScatteredResourceService.reset_all_lot_harvests_on_season_rise(world, SeasonCalculator.get_previous_season(season), season)
+				func(): LotCapacityService.reset_all_lot_harvests_on_season_rise(world, SeasonCalculator.get_previous_season(season), season)
 			)
 			# Cattura grass_seed_baseline (richiesta utente, 2026-09-05) — DEVE girare PRIMA del
 			# consumo appena sotto, vedi doc comment di _run_grass_baseline_capture_checkpoint per

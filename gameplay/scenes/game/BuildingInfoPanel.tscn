@@ -61,6 +61,11 @@ visible = false
 theme_override_constants/h_separation = 4
 theme_override_constants/v_separation = 4
 
+[node name="AssignedBuilderLabel" type="Label" parent="."]
+layout_mode = 2
+visible = false
+theme_override_font_sizes/font_size = 10
+
 [node name="DurabilityLabel" type="Label" parent="."]
 layout_mode = 2
 theme_override_font_sizes/font_size = 10

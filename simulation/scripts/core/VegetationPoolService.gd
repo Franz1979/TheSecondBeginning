@@ -1,25 +1,23 @@
 class_name VegetationPoolService
 extends RefCounted
 
-# Base comune per i pool "risorsa a terra per lotto/microcella derivata da individui maturi di un
-# tipo di vegetazione" (2026-09-16, richiesta utente — Step 1 del piano plant_fiber) — ESTRATTA da
-# StickPoolService.gd (TREE -> stick), che ora è un thin wrapper su questa classe, comportamento
-# IDENTICO a prima (nessun cambio per gli stick, verificato dal player con [DBG_POOL] prima/dopo
-# questo refactor). Parametrizzata su `object_type` (TREE/SHRUB) così lo stesso identico algoritmo
-# serve anche a plant_fiber (SHRUB, nessun filtro subtype, Step 2) e in futuro a bacche/frutti
-# (SHRUB/TREE filtrati per subtype specifico via `allowed_subtypes`, non ancora usato da nessun
-# chiamante oggi — vuoto = "qualunque subtype valido conta", stesso comportamento di stick).
+# Motore "capacità per lotto derivata da individui maturi di un tipo di vegetazione" (2026-09-16,
+# richiesta utente — Step 1 del piano plant_fiber; RISCRITTA 2026-09-19, richiesta utente — refactor
+# lot_source: StickPoolService/PlantFiberPoolService/MushroomPoolService, i tre thin wrapper che
+# prima chiamavano questa classe passando il proprio Dictionary/debug_label, sono spariti — ora
+# refresh_macrocell prende direttamente `resource_name` e scrive nel registro UNIFICATO di
+# MacroCellState, lot_capacity_cache[resource_name]/lot_capacity_checkpoint_day[resource_name],
+# invece del vecchio Dictionary combinato {"checkpoint_day","capacity","harvested"} passato dal
+# chiamante) — chiamata SOLO da LotCapacityService.refresh_vegetation_lot_capacity, il dispatch
+# lot_source non vive qui (questa classe non sa cosa sia un lot_source, resta parametrizzata
+# esplicitamente su `object_type`, come da Step 1).
 #
 # Non tocca in alcun modo TerrainScatteredResourceService/il click destro/il rendering/
-# BuildingSiteClearingService: questa classe resta il solo "motore di calcolo capacità", chi la
-# chiama (oggi solo StickPoolService) resta responsabile di tutto il resto, esattamente come prima.
+# BuildingSiteClearingService: questa classe resta il solo "motore di calcolo capacità".
 
 # [DBG_POOL] (2026-09-16, richiesta utente) — SOLA STAMPA, nessuna logica toccata. Gated dalla
-# categoria RESOURCE_POOL di DebugLogging.gd (2026-09-16, richiesta utente — riordino log di
-# debug: prima un const locale DBG_POOL_ENABLED a questo file, default true; ora
-# DebugLogging.SHOW_RESOURCE_POOL_LOGS, default false, stesso schema di ogni altra categoria).
-# Attivazione: nessun tasto nuovo, stampa da sé ogni volta che refresh_macrocell gira per davvero
-# (vedi StickPoolService.gd per i dettagli di quando questo succede in-game).
+# categoria RESOURCE_POOL di DebugLogging.gd. Stampa da sé ogni volta che refresh_macrocell gira
+# per davvero (cache invalidata/lotto nuovo), non ad ogni chiamata no-op.
 
 
 # Risolve "unità per individuo maturo" (2026-09-16, richiesta utente) dal campo units_per_mature_
@@ -40,10 +38,10 @@ static func resolve_units_per_mature_individual(resource_name: String) -> int:
 	return rules.units_per_mature_plant
 
 
-# Giorno assoluto dell'ultimo checkpoint growth GIÀ PASSATO (fine SPRING) — ESTRATTA identica da
-# StickPoolService (vedi quel file per il commento esteso originale, invariato nel contenuto).
-# StickPoolService.most_recent_growth_checkpoint_absolute_day ora delega qui, stessa firma/stesso
-# risultato per i chiamanti esterni esistenti (TerrainScatteredResourceService), che non cambiano.
+# Giorno assoluto dell'ultimo checkpoint growth GIÀ PASSATO (fine SPRING) — stessa unità di
+# GameData.get_absolute_day (anno*DAYS_PER_YEAR+giorno, monotono). Se oggi siamo già oltre il
+# giorno di fine SPRING di quest'anno, è quello di quest'anno; altrimenti (checkpoint di
+# quest'anno non ancora avvenuto) è quello dell'anno scorso.
 static func most_recent_growth_checkpoint_absolute_day(game_data: GameData) -> int:
 	var growth_day := SeasonCalculator.get_season_end_day(GameTypes.Season.SPRING)
 	if game_data.current_day >= growth_day:
@@ -51,71 +49,70 @@ static func most_recent_growth_checkpoint_absolute_day(game_data: GameData) -> i
 	return (game_data.year - 1) * GameData.DAYS_PER_YEAR + growth_day
 
 
-# Aggiorna `quantities` (il Dictionary di destinazione, es. macro_state.stick_quantities — passato
-# per riferimento: GDScript tratta i Dictionary come tipo a riferimento, quindi le scritture qui
-# dentro sono visibili al chiamante senza bisogno di un valore di ritorno) per ogni lotto di
-# `object_type` la cui capacità è scaduta rispetto all'ultimo checkpoint growth — STESSA identica
-# logica/STESSO no-op-se-fresco di StickPoolService.refresh_macrocell originale, ora generica.
-#
-# `debug_label` (2026-09-16) — SOLO per [DBG_POOL] (es. "stick"/"plant_fiber"): "" disattiva la
-# stampa per questa chiamata anche con la categoria RESOURCE_POOL accesa, così un futuro chiamante
-# che non vuole ancora diagnostica non deve toccare il flag globale.
+# Aggiorna macro_state.lot_capacity_cache[resource_name] per ogni lotto di `object_type` la cui
+# capacità è scaduta rispetto all'ultimo checkpoint growth (2026-09-19, RISCRITTA per il registro
+# unificato — vedi commento in testa al file):
+#   - checkpoint cambiato rispetto a lot_capacity_checkpoint_day[resource_name] -> l'INTERA cache
+#     di questa risorsa è stale (il checkpoint è per costruzione lo stesso per ogni lotto), si
+#     ricalcolano TUTTI i lotti attualmente rivendicati;
+#   - checkpoint invariato -> si ricalcolano SOLO i lotti rivendicati ma ASSENTI dalla cache
+#     (claim comparso a metà epoch) — STESSA identica granularità/STESSO costo del vecchio
+#     confronto per-lotto embedded, ora un solo scalare per risorsa invece di un campo ripetuto su
+#     ogni entry.
+# Nessun lotto da (ri)calcolare -> no-op immediato (anche il solo confronto scalare), stesso
+# principio "trascurabile anche ripetuto ad ogni refresh" di prima di questo passo.
 static func refresh_macrocell(
 	macro_state: MacroCellState,
 	game_data: GameData,
 	object_type: GameTypes.WorldObjectType,
-	units_per_mature_individual: int,
-	quantities: Dictionary,
-	allowed_subtypes: Array = [],
-	debug_label: String = ""
+	resource_name: String,
+	allowed_subtypes: Array = []
 ) -> void:
+	var units_per_mature_individual := resolve_units_per_mature_individual(resource_name)
 	var checkpoint_absolute_day := most_recent_growth_checkpoint_absolute_day(game_data)
 	var claimed_lots := _claimed_lots_store(macro_state, object_type)
 
+	var cache: Dictionary = macro_state.lot_capacity_cache.get(resource_name, {})
+	var cached_checkpoint_day: int = int(macro_state.lot_capacity_checkpoint_day.get(resource_name, -1))
+	if cached_checkpoint_day != checkpoint_absolute_day:
+		cache = {}
+
 	var stale_lots: Array = []
 	for lot in claimed_lots.keys():
-		var existing: Dictionary = quantities.get(lot, {})
-		if existing.is_empty() or int(existing.get("checkpoint_day", -1)) != checkpoint_absolute_day:
+		if not cache.has(lot):
 			stale_lots.append(lot)
-	if stale_lots.is_empty():
-		if DebugLogging.ENABLED and DebugLogging.SHOW_RESOURCE_POOL_LOGS and debug_label != "":
-			_debug_print_pool(macro_state, quantities, debug_label)
+	if stale_lots.is_empty() and cached_checkpoint_day == checkpoint_absolute_day:
+		if DebugLogging.ENABLED and DebugLogging.SHOW_RESOURCE_POOL_LOGS:
+			_debug_print_pool(macro_state, resource_name, cache)
 		return
 
 	# Raggruppamento in UNA sola passata (stesso principio già in uso nell'originale) invece di
 	# riscansionare l'intera macrocella per ogni lotto stale.
 	var individuals_by_lot := _group_individuals_by_lot(macro_state, object_type, stale_lots)
 	for lot in stale_lots:
-		var capacity := _compute_capacity_for_lot(
+		cache[lot] = _compute_capacity_for_lot(
 			macro_state, object_type, individuals_by_lot.get(lot, []), game_data.year,
 			units_per_mature_individual, allowed_subtypes
 		)
-		quantities[lot] = {
-			"checkpoint_day": checkpoint_absolute_day,
-			"capacity": capacity,
-			"harvested": 0,
-		}
-	if DebugLogging.ENABLED and DebugLogging.SHOW_RESOURCE_POOL_LOGS and debug_label != "":
-		_debug_print_pool(macro_state, quantities, debug_label)
+	macro_state.lot_capacity_cache[resource_name] = cache
+	macro_state.lot_capacity_checkpoint_day[resource_name] = checkpoint_absolute_day
+	if DebugLogging.ENABLED and DebugLogging.SHOW_RESOURCE_POOL_LOGS:
+		_debug_print_pool(macro_state, resource_name, cache)
 
 
-# [DBG_POOL] (vedi DebugLogging.SHOW_RESOURCE_POOL_LOGS sopra) — RIVISTO 2026-09-16, richiesta
-# utente: il dump completo
-# di ogni lotto (versione originale, Step 1) superava il limite della console su macrocelle con
-# molti lotti e veniva troncato. Ora: UNA riga di riepilogo (lotti totali, somma capacity, somma
-# harvested, quanti lotti hanno capacity>0, quanti hanno harvested>0) + l'elenco dei SOLI lotti con
-# harvested>0 (i lotti "intonsi", la stragrande maggioranza in pratica, non producono più una riga
-# ciascuno — il riepilogo li copre già nel conteggio). Sola lettura/stampa, nessuna logica toccata.
-static func _debug_print_pool(macro_state: MacroCellState, quantities: Dictionary, debug_label: String) -> void:
+# [DBG_POOL] (vedi DebugLogging.SHOW_RESOURCE_POOL_LOGS) — RISCRITTA per il registro unificato:
+# "harvested" ora vive in macro_state.lot_registry[resource_name] (separato dalla cache capacity),
+# lette entrambe qui solo per la stampa. Sola lettura/stampa, nessuna logica toccata.
+static func _debug_print_pool(macro_state: MacroCellState, resource_name: String, cache: Dictionary) -> void:
+	var harvested_registry: Dictionary = macro_state.lot_registry.get(resource_name, {})
 	var total_capacity := 0
 	var total_harvested := 0
 	var lots_with_capacity := 0
 	var lots_with_harvested := 0
 	var harvested_lots: Array = []
-	for lot in quantities.keys():
-		var entry: Dictionary = quantities[lot]
-		var capacity := int(entry.get("capacity", 0))
-		var harvested := int(entry.get("harvested", 0))
+	for lot in cache.keys():
+		var capacity: int = int(cache[lot])
+		var harvested: int = int(harvested_registry.get(lot, 0))
 		total_capacity += capacity
 		total_harvested += harvested
 		if capacity > 0:
@@ -123,15 +120,12 @@ static func _debug_print_pool(macro_state: MacroCellState, quantities: Dictionar
 		if harvested > 0:
 			lots_with_harvested += 1
 			harvested_lots.append(lot)
-	print("[DBG_POOL] macro=(%d,%d) %s_quantities: lotti=%d capacity_totale=%d harvested_totale=%d lotti_con_capacity=%d lotti_con_harvested=%d" % [
-		macro_state.x, macro_state.y, debug_label, quantities.size(), total_capacity, total_harvested,
+	print("[DBG_POOL] macro=(%d,%d) %s: lotti=%d capacity_totale=%d harvested_totale=%d lotti_con_capacity=%d lotti_con_harvested=%d" % [
+		macro_state.x, macro_state.y, resource_name, cache.size(), total_capacity, total_harvested,
 		lots_with_capacity, lots_with_harvested
 	])
 	for lot in harvested_lots:
-		var entry: Dictionary = quantities[lot]
-		print("[DBG_POOL]   lotto=%s capacity=%s harvested=%s checkpoint_day=%s" % [
-			lot, entry.get("capacity"), entry.get("harvested"), entry.get("checkpoint_day")
-		])
+		print("[DBG_POOL]   lotto=%s capacity=%s harvested=%s" % [lot, cache[lot], harvested_registry[lot]])
 
 
 # Dispatch TREE/SHRUB sui tre registri per-individuo di MacroCellState — STESSO identico pattern

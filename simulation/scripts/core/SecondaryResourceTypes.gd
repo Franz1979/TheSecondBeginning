@@ -31,3 +31,31 @@ enum GenerationSource {
 	PLANT_DERIVED,
 	TERRAIN_SCATTERED,
 }
+
+# Formula di derivazione lotti+capacità per il modello "capacità per lotto" (2026-09-19, richiesta
+# utente — refactor pebble/stick/plant_fiber/mushroom/wild_vegetables: prima ogni risorsa aveva un
+# proprio wrapper/case scelto per NOME nel codice — StickPoolService, un case "stick" in
+# TerrainScatteredResourceService.get_available/consume, un blocco dedicato in GameScene.
+# _resolve_pickup_candidates — ora la stessa scelta vive qui, sul dato, letta da un unico servizio
+# generico, LotCapacityService). NONE = questa risorsa non usa il modello "capacità per lotto"
+# affatto (berry/acorn/fruit/eggs/forage/fish_meat/bird_meat — altri modelli, stock aggregato o
+# stateless, non toccati da questo enum). Gli altri quattro valori sono le uniche quattro formule
+# oggi implementate da LotCapacityService, ciascuna risolve "quali microcelle sono un lotto" e
+# "quanto vale la capacità di ciascuno":
+#   - TREE_INDIVIDUAL: un lotto per ogni microcella in MacroCellState.tree_claimed_lots, capacità =
+#     units_per_mature_plant × individui TREE adulti/vecchi nel lotto (stick, mushroom).
+#   - SHRUB_INDIVIDUAL: STESSA formula di TREE_INDIVIDUAL, ma su shrub_claimed_lots (plant_fiber).
+#   - GRASS_PATCH: lotti sparsi tra le posizioni GRASS correnti (hash su micro_seed+patch_probability),
+#     capacità da un hash indipendente in [patch_capacity_min, patch_capacity_max], scalata per
+#     dedicated_space(GRASS)/TOTAL_SPACE (wild_vegetables).
+#   - STONE_POSITION: un lotto per ogni posizione di MacroCellState.stone_positions (generate UNA
+#     SOLA volta, mai rideterminate — la capacità stessa è il valore persistito, non una cache
+#     runtime, perché la generazione non è deterministica — randf_range, non hash — vedi
+#     LotCapacityService.seed_stone_lot_capacity) (pebble).
+enum LotSource {
+	NONE,
+	TREE_INDIVIDUAL,
+	SHRUB_INDIVIDUAL,
+	GRASS_PATCH,
+	STONE_POSITION,
+}

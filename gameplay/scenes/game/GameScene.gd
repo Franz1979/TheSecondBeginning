@@ -1582,7 +1582,7 @@ func _debug_test_two_walk_task() -> void:
 	var target_position := Vector2i(-1, -1)
 	var best_distance := INF
 	for pos in cell.macro_state.stone_positions:
-		if int(cell.macro_state.pebble_quantities.get(pos, 0)) <= 0:
+		if TerrainScatteredResourceService.get_available(cell.macro_state, "pebble", pos) <= 0:
 			continue
 		var distance: float = individual.position.distance_to(Vector2(pos))
 		if distance < best_distance:
@@ -1614,7 +1614,7 @@ func _debug_test_two_walk_task() -> void:
 	# Il guard è già stato verificato sopra, quindi questa chiamata è garantita riuscire.
 	individual.assign_task(test_task, age_band)
 	print("[PICKUP TEST] Task Walk+PickUp assegnata a #%d %s verso %s (pebble disponibili: %d)" % [
-		individual.id, individual.name, target_position, int(cell.macro_state.pebble_quantities.get(target_position, 0))
+		individual.id, individual.name, target_position, TerrainScatteredResourceService.get_available(cell.macro_state, "pebble", target_position)
 	])
 
 
@@ -2169,7 +2169,7 @@ func _debug_test_haul_resource_task() -> void:
 	var target_resource_name := ""
 	var best_distance := INF
 	for pos in cell.macro_state.stone_positions:
-		if int(cell.macro_state.pebble_quantities.get(pos, 0)) <= 0:
+		if TerrainScatteredResourceService.get_available(cell.macro_state, "pebble", pos) <= 0:
 			continue
 		var distance: float = individual.position.distance_to(Vector2(pos))
 		if distance < best_distance:
@@ -2556,7 +2556,7 @@ func _refresh_building_panel() -> void:
 	if building == null:
 		_clear_building_selection()
 		return
-	building_info_panel.show_building(building, _resolve_building_residents_display_data(building))
+	building_info_panel.show_building(building, _resolve_building_residents_display_data(building), _resolve_assigned_builder_names(building))
 	# Titolo (Step 6, richiesta utente 2026-09-04) — stessa formula già in BuildingInfoPanel.
 	var type_name: String = tr(building.rules.building_name) if building.rules != null else building.building_type_name
 	game_info_tabs.set_selection_title(tr("selection_title_type").format({"type": type_name}))
@@ -2619,7 +2619,7 @@ func _on_empty_all_requested(building: Building) -> void:
 	if building == null:
 		return
 	building.stored_resources.clear()
-	building_info_panel.show_building(building, _resolve_building_residents_display_data(building))
+	building_info_panel.show_building(building, _resolve_building_residents_display_data(building), _resolve_assigned_builder_names(building))
 	var macro_coords := Vector2i(building.macro_x, building.macro_y)
 	if live_cells.has(macro_coords):
 		_refresh_building_visuals(live_cells[macro_coords])
@@ -3138,18 +3138,29 @@ func _on_pickup_choice_resource_chosen(resource_name: String, quantity: int) -> 
 # la STESSA fonte già consultata da get_available, nessun secondo criterio.
 # `require_available` (2026-09-18, richiesta utente — bugfix "pickup offerto/ispezione mostra
 # quantità=0 per eggs, stesso problema per mushroom fuori stagione") — default false, INVARIATO
-# per stone/stick/plant_fiber/berry/acorn/fruit: per quelle risorse un hit su un lotto REALMENTE
+# per pebble/stick/plant_fiber/berry/acorn/fruit: per quelle risorse un hit su un lotto REALMENTE
 # rivendicato ma temporaneamente svuotato (es. una pietra già estratta) resta un candidato valido
 # a quantità 0 — comportamento deliberato di sessioni precedenti (vedi il ramo "0 disponibili" in
 # _try_assign_pickup_command_on_right_click: "PickUpAction gestisce già un pickup a vuoto come
-# no-op valido"), NON toccato qui. true SOLO per eggs/mushroom (vedi i due call site sotto): la
-# loro disponibilità può essere STRUTTURALMENTE zero — non "questo lotto specifico è vuoto ora",
-# ma "qui non esiste/non può esistere nulla di raccoglibile in questo momento" (fuori stagione,
-# macrocella senza BIRDS, nessun nido geometrico) — un hit del genere non deve mai diventare un
-# candidato, né per il popup di pickup né per l'elenco risorse dell'ispezione microcella (che
-# altrimenti mostrerebbe "Uova: 0"/"Funghi: 0" invece di "Contiene solo erba"/limitarsi alla sola
-# vegetazione). UN SOLO punto (questa funzione, il choke-point condiviso da ogni risorsa) invece
-# di un filtro duplicato per ciascuna delle due risorse in _resolve_pickup_candidates.
+# no-op valido"), NON toccato qui. true SOLO per le risorse in REQUIRE_AVAILABLE_PICKUP_RESOURCE_
+# NAMES sotto (eggs/mushroom/wild_vegetables): la loro disponibilità può essere STRUTTURALMENTE
+# zero — non "questo lotto specifico è vuoto ora", ma "qui non esiste/non può esistere nulla di
+# raccoglibile in questo momento" (fuori stagione, macrocella senza BIRDS, nessun nido/lotto
+# geometrico) — un hit del genere non deve mai diventare un candidato, né per il popup di pickup né
+# per l'elenco risorse dell'ispezione microcella (che altrimenti mostrerebbe "Uova: 0"/"Funghi: 0"
+# invece di "Contiene solo erba"/limitarsi alla sola vegetazione). UN SOLO punto (questa funzione,
+# il choke-point condiviso da ogni risorsa) invece di un filtro duplicato per ciascuna risorsa in
+# _resolve_pickup_candidates.
+#
+# ELENCO ESPLICITO, non derivato da lot_source (2026-09-19, refactor lot_source): quali risorse
+# richiedano questo secondo controllo dipende da QUANTO è marcatamente stagionale/strutturalmente
+# assente la loro curva (eggs/wild_vegetables toccano 0.0 per metà anno, mushroom quasi; stick/
+# plant_fiber restano piatte), non dal loro lot_source — pebble e stick condividono STONE_POSITION/
+# TREE_INDIVIDUAL con risorse che invece lo richiedono, quindi questo resta un elenco a parte,
+# consultato dai blocchi per-lot_source di _resolve_pickup_candidates con `resource_name in
+# REQUIRE_AVAILABLE_PICKUP_RESOURCE_NAMES` invece di un terzo parametro hardcoded per chiamata.
+const REQUIRE_AVAILABLE_PICKUP_RESOURCE_NAMES: Array[String] = ["eggs", "mushroom", "wild_vegetables"]
+
 func _append_unlocked_pickup_candidate(candidates: Array[Dictionary], resource_name: String, macro_coords: Vector2i, position: Vector2i, require_available: bool = false) -> void:
 	if TerrainScatteredResourceService.is_resource_locked(resource_name):
 		return
@@ -3182,89 +3193,55 @@ func _append_unlocked_pickup_candidate(candidates: Array[Dictionary], resource_n
 func _resolve_pickup_candidates(event: InputEvent, current_absolute_day: int, required_button: int = MOUSE_BUTTON_RIGHT) -> Array[Dictionary]:
 	var candidates: Array[Dictionary] = []
 
+	# STONE_POSITION (pebble) — UN blocco per lot_source (2026-09-19, refactor lot_source: prima un
+	# blocco per NOME risorsa scritto a mano; ora un loop su LotCapacityService.
+	# get_resource_names_for_lot_source, una risorsa STONE_POSITION nuova compare qui da sola) —
+	# stesso hit-test di sempre (StoneSelectorController, su stone_positions/lot_registry["pebble"]).
 	var stone_hit := stone_selector_controller.try_select(event, live_cells, required_button)
 	if not stone_hit.is_empty():
 		if FogOfWarVerificationService.is_detail_visible(live_cells, stone_hit["macro_coords"], stone_hit["position"], current_absolute_day):
-			_append_unlocked_pickup_candidate(candidates, "pebble", stone_hit["macro_coords"], stone_hit["position"])
+			for resource_name in LotCapacityService.get_resource_names_for_lot_source(SecondaryResourceTypes.LotSource.STONE_POSITION):
+				_append_unlocked_pickup_candidate(candidates, resource_name, stone_hit["macro_coords"], stone_hit["position"], resource_name in REQUIRE_AVAILABLE_PICKUP_RESOURCE_NAMES)
 		elif DebugLogging.ENABLED and DebugLogging.SHOW_RECONNECT_FACTORY_LOGS:
 			print("[PICKUP CMD DEBUG] stone_hit=%s trovato ma cella non visibile con dettaglio, ignorato." % str(stone_hit))
 
+	# TREE_INDIVIDUAL (stick/mushroom) — STESSO loop generico, sullo stesso hit-test di sempre
+	# (StickLotSelectorController, su tree_claimed_lots). Acorn/fruit restano hardcoded qui (mai
+	# lot_source: sono FRUIT_STOCK_SOURCES, stock aggregato ripartito per peso — fuori scope di
+	# questo refactor), ancorati allo STESSO lotto per costruzione.
 	var stick_lot_hit := stick_lot_selector_controller.try_select(
 		event, live_cells, required_button, macro_world.buildings if macro_world != null else []
 	)
 	if not stick_lot_hit.is_empty():
 		if FogOfWarVerificationService.is_detail_visible(live_cells, stick_lot_hit["macro_coords"], stick_lot_hit["lot"], current_absolute_day):
-			_append_unlocked_pickup_candidate(candidates, "stick", stick_lot_hit["macro_coords"], stick_lot_hit["lot"])
-			# Acorn (2026-09-17, richiesta utente — seconda risorsa della catena "fruit stock"
-			# generica dopo berry) — STESSO hit-test di stick sopra, mai un nuovo AcornSelector
-			# Controller: i lotti eleggibili per acorn sono per costruzione lo stesso identico
-			# insieme di stick (entrambi derivano da tree_claimed_lots — acorn richiede in più che
-			# il lotto ospiti davvero individui "wild_fruit", ma quello lo decide già
-			# TerrainScatteredResourceService.get_fruit_stock_available_at, non serve ripetere il
-			# test qui) — stesso principio già seguito per berry/plant_fiber su shrub_claimed_lots.
+			for resource_name in LotCapacityService.get_resource_names_for_lot_source(SecondaryResourceTypes.LotSource.TREE_INDIVIDUAL):
+				_append_unlocked_pickup_candidate(candidates, resource_name, stick_lot_hit["macro_coords"], stick_lot_hit["lot"], resource_name in REQUIRE_AVAILABLE_PICKUP_RESOURCE_NAMES)
 			_append_unlocked_pickup_candidate(candidates, "acorn", stick_lot_hit["macro_coords"], stick_lot_hit["lot"])
-			# Fruit (2026-09-17, richiesta utente — terza risorsa della catena "fruit stock"
-			# generica dopo berry/acorn) — STESSO hit-test di stick/acorn sopra, stesso motivo:
-			# i lotti eleggibili per fruit sono per costruzione lo stesso insieme di stick/acorn
-			# (tutti derivano da tree_claimed_lots), la presenza reale di individui
-			# domesticable_fruit è già decisa da TerrainScatteredResourceService.
-			# get_fruit_stock_available_at.
 			_append_unlocked_pickup_candidate(candidates, "fruit", stick_lot_hit["macro_coords"], stick_lot_hit["lot"])
-			# Mushroom (2026-09-17, richiesta utente) — STESSO hit-test di stick/acorn/fruit sopra,
-			# mai un nuovo MushroomSelectorController: i lotti eleggibili per mushroom sono per
-			# costruzione lo stesso identico insieme di stick (entrambi derivano da tree_claimed_lots,
-			# nessun filtro per subtype). Disponibilità reale (capacity/harvested scalati dal
-			# moltiplicatore stagionale di mushroom.tres) già decisa da TerrainScatteredResourceService.
-			# get_available, non serve ripetere il test qui.
-			#
-			# require_available=true (2026-09-18, richiesta utente — bugfix: fuori stagione
-			# seasonal_availability_multiplier[stagione]=0.0 azzera la capacità di OGNI lotto con
-			# alberi, ma il tree lot stesso resta un hit valido per costruzione, come sopra: senza
-			# questo flag comparirebbe comunque "Funghi: 0" nell'ispezione anche quando funghi non
-			# possono esistere qui in nessun caso in questa stagione — vedi _append_unlocked_pickup_
-			# candidate per il perché SOLO eggs/mushroom lo passano true).
-			_append_unlocked_pickup_candidate(candidates, "mushroom", stick_lot_hit["macro_coords"], stick_lot_hit["lot"], true)
 		elif DebugLogging.ENABLED and DebugLogging.SHOW_RECONNECT_FACTORY_LOGS:
 			print("[PICKUP CMD DEBUG] stick_lot_hit=%s trovato ma cella non visibile con dettaglio, ignorato." % str(stick_lot_hit))
 
+	# SHRUB_INDIVIDUAL (plant_fiber) — STESSO loop generico, sullo stesso hit-test di sempre
+	# (PlantFiberLotSelectorController, su shrub_claimed_lots). Berry resta hardcoded qui per lo
+	# stesso motivo di acorn/fruit sopra.
 	var plant_fiber_lot_hit := plant_fiber_lot_selector_controller.try_select(
 		event, live_cells, required_button, macro_world.buildings if macro_world != null else []
 	)
 	if not plant_fiber_lot_hit.is_empty():
 		if FogOfWarVerificationService.is_detail_visible(live_cells, plant_fiber_lot_hit["macro_coords"], plant_fiber_lot_hit["lot"], current_absolute_day):
-			_append_unlocked_pickup_candidate(candidates, "plant_fiber", plant_fiber_lot_hit["macro_coords"], plant_fiber_lot_hit["lot"])
-			# Berry (2026-09-17, richiesta utente) — STESSO hit-test di plant_fiber sopra, mai un
-			# nuovo BerrySelectorController: i lotti eleggibili per berry sono per costruzione lo
-			# stesso identico insieme di plant_fiber (entrambi derivano da shrub_claimed_lots — berry
-			# richiede in più che il lotto ospiti davvero individui "fruit_bearing", ma quello lo
-			# decide già TerrainScatteredResourceService.get_fruit_stock_available_at, non serve ripetere
-			# il test qui). Duplicare l'hit-test (shrub_claimed_lots.has(click_lot)) in un secondo
-			# controller identico sarebbe puro lavoro sprecato, a differenza di Stick/PlantFiberLot
-			# SelectorController — quei due restano separati perché StickLotSelectorController ha
-			# un SECONDO chiamante indipendente (pannello info al click sinistro), berry qui no.
+			for resource_name in LotCapacityService.get_resource_names_for_lot_source(SecondaryResourceTypes.LotSource.SHRUB_INDIVIDUAL):
+				_append_unlocked_pickup_candidate(candidates, resource_name, plant_fiber_lot_hit["macro_coords"], plant_fiber_lot_hit["lot"], resource_name in REQUIRE_AVAILABLE_PICKUP_RESOURCE_NAMES)
 			_append_unlocked_pickup_candidate(candidates, "berry", plant_fiber_lot_hit["macro_coords"], plant_fiber_lot_hit["lot"])
 		elif DebugLogging.ENABLED and DebugLogging.SHOW_RECONNECT_FACTORY_LOGS:
 			print("[PICKUP CMD DEBUG] plant_fiber_lot_hit=%s trovato ma cella non visibile con dettaglio, ignorato." % str(plant_fiber_lot_hit))
 
-	# Eggs (2026-09-18, richiesta utente — uova raccoglibili per microcella su GRASS) — a differenza
-	# di berry/acorn/fruit/mushroom sopra (tutti ancorati a un lotto TREE/SHRUB già rivendicato via
-	# uno dei due *LotSelectorController), GRASS non ha un equivalente lotto persistito da colpire
-	# (vedi VegetationPositionService/MacroCellState.egg_nest_positions per il perché) — STESSA
-	# tecnica generica di _resolve_microcell_at_click (qualunque lotto sotto il mouse, indipendente
-	# dal contenuto), ma l'hit è valido solo se quel lotto è REALMENTE un nido in questo momento
-	# (macro_state.egg_nest_positions — stessa fonte di verità di TerrainScatteredResourceService.
+	# Eggs (2026-09-18, richiesta utente — uova raccoglibili per microcella su GRASS) — MAI
+	# lot_source (stock aggregato ripartito per nido, non "capacità per lotto"): GRASS non ha un
+	# lotto persistito da colpire, STESSA tecnica generica di _resolve_microcell_at_click (qualunque
+	# lotto sotto il mouse), ma l'hit è valido solo se quel lotto è REALMENTE un nido in questo
+	# momento (macro_state.egg_nest_positions — stessa fonte di verità di TerrainScatteredResourceService.
 	# get_available("eggs", ...), ORA gated a monte su secondary_resource_stock["eggs"] > 0 — vedi
-	# compute_egg_nest_positions: fuori stagione/senza BIRDS l'insieme è già vuoto, questo .has()
-	# fallisce da solo, nessun bisogno di ripetere il controllo qui).
-	#
-	# require_available=true (2026-09-18, richiesta utente — bugfix "pickup offerto/ispezione
-	# mostra Uova: 0"): SECONDA rete, per il caso in cui l'insieme nidi non sia vuoto (stock
-	# aggregato > 0 in QUALCHE nido della macrocella) ma QUESTO nido specifico sia già stato
-	# raccolto per intero quest'anno (nominale-raccolto=0 solo per lui) — a differenza di stone/
-	# stick/plant_fiber, un nido a 0 non è "un lotto reale temporaneamente vuoto" da offrire
-	# comunque, è "qui non c'è nulla da raccogliere ORA", stesso principio del blocco mushroom sopra
-	# (vedi il commento su _append_unlocked_pickup_candidate per il perché SOLO questi due lo
-	# passano true).
+	# compute_egg_nest_positions: fuori stagione/senza BIRDS l'insieme è già vuoto).
 	var egg_hit := _resolve_microcell_at_click()
 	if not egg_hit.is_empty():
 		var egg_cell: LiveMacroCell = live_cells.get(egg_hit["macro_coords"])
@@ -3274,26 +3251,23 @@ func _resolve_pickup_candidates(event: InputEvent, current_absolute_day: int, re
 			elif DebugLogging.ENABLED and DebugLogging.SHOW_RECONNECT_FACTORY_LOGS:
 				print("[PICKUP CMD DEBUG] egg_hit=%s trovato ma cella non visibile con dettaglio, ignorato." % str(egg_hit))
 
-	# Wild vegetables (2026-09-19, richiesta utente — verdure selvatiche raccoglibili per
-	# microcella su GRASS) — STESSA tecnica generica del blocco eggs appena sopra (GRASS non ha un
-	# lotto persistito da colpire), ma l'hit è valido solo se il lotto è REALMENTE tra i lotti
-	# wild_vegetables attuali (macro_state.wild_vegetable_lots — stessa fonte di verità di
-	# TerrainScatteredResourceService.get_available("wild_vegetables", ...), già gated a monte su
-	# dedicated_space(GRASS) > 0 in compute_wild_vegetable_lots).
-	#
-	# require_available=true (2026-09-19, richiesta utente — "lo stesso controllo require_
-	# available usato per eggs e mushroom"): STESSA seconda rete del blocco eggs, per il caso in
-	# cui il lotto esista geometricamente ma sia fuori stagione (autunno/inverno,
-	# wild_vegetables.tres: [0.0, 1.0, 1.0, 0.0]) o già raccolto per intero — mai offrire un
-	# candidato a disponibilità zero.
-	var wild_vegetable_hit := _resolve_microcell_at_click()
-	if not wild_vegetable_hit.is_empty():
-		var wild_vegetable_cell: LiveMacroCell = live_cells.get(wild_vegetable_hit["macro_coords"])
-		if wild_vegetable_cell != null and wild_vegetable_cell.macro_state != null and wild_vegetable_cell.macro_state.wild_vegetable_lots.has(wild_vegetable_hit["lot"]):
-			if FogOfWarVerificationService.is_detail_visible(live_cells, wild_vegetable_hit["macro_coords"], wild_vegetable_hit["lot"], current_absolute_day):
-				_append_unlocked_pickup_candidate(candidates, "wild_vegetables", wild_vegetable_hit["macro_coords"], wild_vegetable_hit["lot"], true)
-			elif DebugLogging.ENABLED and DebugLogging.SHOW_RECONNECT_FACTORY_LOGS:
-				print("[PICKUP CMD DEBUG] wild_vegetable_hit=%s trovato ma cella non visibile con dettaglio, ignorato." % str(wild_vegetable_hit))
+	# GRASS_PATCH (wild_vegetables) — STESSA tecnica generica del blocco eggs sopra (GRASS non ha
+	# un lotto persistito da colpire), ma un loop su OGNI risorsa GRASS_PATCH (2026-09-19, refactor
+	# lot_source: prima un blocco scritto a mano per "wild_vegetables"): l'hit è valido per una data
+	# risorsa solo se il lotto è REALMENTE tra i suoi lotti attuali (macro_state.lot_capacity_cache
+	# [resource_name] — stessa fonte di verità di LotCapacityService.get_available, già gated a
+	# monte su dedicated_space(GRASS) > 0 in refresh_grass_patch_lot_capacity).
+	var grass_patch_hit := _resolve_microcell_at_click()
+	if not grass_patch_hit.is_empty():
+		var grass_patch_cell: LiveMacroCell = live_cells.get(grass_patch_hit["macro_coords"])
+		if grass_patch_cell != null and grass_patch_cell.macro_state != null:
+			for resource_name in LotCapacityService.get_resource_names_for_lot_source(SecondaryResourceTypes.LotSource.GRASS_PATCH):
+				if not grass_patch_cell.macro_state.lot_capacity_cache.get(resource_name, {}).has(grass_patch_hit["lot"]):
+					continue
+				if FogOfWarVerificationService.is_detail_visible(live_cells, grass_patch_hit["macro_coords"], grass_patch_hit["lot"], current_absolute_day):
+					_append_unlocked_pickup_candidate(candidates, resource_name, grass_patch_hit["macro_coords"], grass_patch_hit["lot"], true)
+				elif DebugLogging.ENABLED and DebugLogging.SHOW_RECONNECT_FACTORY_LOGS:
+					print("[PICKUP CMD DEBUG] grass_patch_hit=%s (%s) trovato ma cella non visibile con dettaglio, ignorato." % [str(grass_patch_hit), resource_name])
 
 	return candidates
 
@@ -3678,6 +3652,28 @@ func _task_claims_building(task: Task, target_building: Building) -> bool:
 	return false
 
 
+# Nomi (+ id) dei costruttori assegnati a `target_building` (2026-09-18, richiesta utente — pannello
+# edificio: "costruttore assegnato: con il nome, e se non c'è scrivere che è mancante"; id aggiunto
+# 2026-09-19, richiesta utente) — STESSO scan di _task_claims_building/_count_other_individuals_
+# claiming_build sopra (current_task ATTIVA + task_queue SOSPESA), qui raccoglie "Nome (#id)" invece
+# di limitarsi a contare: BuildingRules.max_builders può essere >1, quindi il pannello deve poter
+# mostrare più di un nome. Array vuoto = nessuno assegnato, il pannello mostra il messaggio
+# "mancante". Id incluso nella stessa stringa (non un secondo Array parallelo) — il pannello si
+# limita a fare ", ".join() sul risultato, stesso principio "muto" già seguito per residents_
+# display_data: nessuna logica di formattazione id/nome duplicata lì.
+func _resolve_assigned_builder_names(target_building: Building) -> Array[String]:
+	var names: Array[String] = []
+	for individual in human_individuals:
+		if _task_claims_building(individual.current_task, target_building):
+			names.append("%s (#%d)" % [individual.name, individual.id])
+			continue
+		for queued_task in individual.task_queue:
+			if _task_claims_building(queued_task, target_building):
+				names.append("%s (#%d)" % [individual.name, individual.id])
+				break
+	return names
+
+
 # Comando "vai e costruisci" via DESTRO su un edificio non ancora completo (2026-09-10, richiesta
 # utente — prima porzione Build Task; RISCRITTA 2026-09-12, richiesta utente — sostituzione di
 # _pending_build_tasks con un percorso generico "reassignable target", vedi
@@ -3859,21 +3855,23 @@ func _clear_stick_lot_selection() -> void:
 	game_info_tabs.hide_selection_tab()
 
 
-# Legge macro_state.stick_quantities (disponibilità ESATTA del lotto cliccato: capacity - harvested,
-# vedi StickPoolService). NON più resource_quantity[TREE] (2026-09-09, richiesta utente — rimosso:
-# quel valore è l'aggregato dell'INTERA macrocella, non ha alcun legame col lotto singolo cliccato,
-# leggeva come "legno di questo lotto" mentre non lo era — vedi TerrainScatteredResourceInfoPanel
-# per il rimpiazzo, un'etichetta "wood" puramente statica finché non esisterà un vero dato per
-# lotto). Nessuna gestione "marker bloccato": stesso principio già dichiarato per stone — l'unica
-# via di invalidazione oggi resta lo scaricamento della macrocella.
+# Legge TerrainScatteredResourceService.get_available (disponibilità ESATTA del lotto cliccato,
+# già scontata dalla stagione — 2026-09-19, refactor lot_source: prima leggeva direttamente
+# macro_state.stick_quantities/capacity-harvested grezzo, senza applicare la stagionalità; STESSA
+# fonte di verità già usata da pickup/ispezione, nessun secondo calcolo). NON più
+# resource_quantity[TREE] (2026-09-09, richiesta utente — rimosso: quel valore è l'aggregato
+# dell'INTERA macrocella, non ha alcun legame col lotto singolo cliccato, leggeva come "legno di
+# questo lotto" mentre non lo era — vedi TerrainScatteredResourceInfoPanel per il rimpiazzo,
+# un'etichetta "wood" puramente statica finché non esisterà un vero dato per lotto). Nessuna
+# gestione "marker bloccato": stesso principio già dichiarato per stone — l'unica via di
+# invalidazione oggi resta lo scaricamento della macrocella.
 func _refresh_stick_lot_panel() -> void:
 	var cell: LiveMacroCell = live_cells.get(selected_stick_lot["macro_coords"])
 	if cell == null or cell.macro_state == null:
 		_clear_stick_lot_selection()
 		return
 	var lot: Vector2i = selected_stick_lot["lot"]
-	var stick_entry: Dictionary = cell.macro_state.stick_quantities.get(lot, {})
-	var available_sticks: int = int(stick_entry.get("capacity", 0)) - int(stick_entry.get("harvested", 0))
+	var available_sticks: int = TerrainScatteredResourceService.get_available(cell.macro_state, "stick", lot)
 	terrain_scattered_resource_info_panel.show_stick_lot(available_sticks)
 	game_info_tabs.set_selection_title(tr("selection_title_type").format({"type": tr("stick_lot_selection_title")}))
 
@@ -4871,8 +4869,9 @@ func _activate_live_cell(mx: int, my: int, p_debug_source: String = "unknown") -
 			# sincronizzazione avviene già dentro _refresh_resource_visuals sotto (chiamata poche righe
 			# più giù), insieme a stick e con lo stesso filtro FoW — un'unica fonte di verità per
 			# QUANDO risincronizzare pebble/stick, invece di due percorsi paralleli (uno qui, uno lì)
-			# facili da disallineare in futuro. MacroCellState.pebble_quantities è comunque già
-			# popolato da generate_if_needed insieme a stone_positions, pronto per quella chiamata.
+			# facili da disallineare in futuro. MacroCellState.lot_registry["pebble"] è comunque già
+			# popolato da generate_if_needed (via LotCapacityService.seed_stone_lot_capacity) insieme
+			# a stone_positions, pronto per quella chiamata.
 
 			# _refresh_building_visuals PRIMA di _refresh_resource_visuals (ordine invertito rispetto
 			# a prima, 2026-08-30/Proposta 2): quest'ultima ora filtra cosa costruire nel renderer in
@@ -5686,37 +5685,60 @@ func _compute_river_exterior_occupied(positions: Array) -> Dictionary:
 # viva — stesso lavoro che prima faceva _refresh_resource_visuals sull'unica cella, ora
 # parametrizzato. Le coordinate in DebugBar vengono aggiornate solo se `cell` è il centro (vedi
 # _update_center_info_panel): mostrano dove si trova il player, non i vicini.
+# Disponibilità già risolta (2026-09-19, refactor lot_source) per un elenco di posizioni/lotti
+# candidati di `resource_name` — STESSO principio già in uso per eggs/wild_vegetables prima di
+# questo refactor (TerrainScatteredResourceService.get_available, la STESSA fonte di verità già
+# usata da pickup/ispezione — mai un secondo calcolo nel renderer): un solo helper condiviso
+# invece di un ciclo duplicato per ciascuna delle risorse con un rendering agganciato (pebble/
+# stick, entrambe lot_source; eggs/wild_vegetables, la seconda lot_source la prima no — stessa
+# forma di query per entrambe). Solo le posizioni con disponibilità > 0 entrano nel risultato,
+# così una posizione fuori stagione/già raccolta per intero semplicemente non compare (mai
+# un'istanza multimesh sprecata).
+func _build_lot_availability_map(macro_state: MacroCellState, resource_name: String, positions: Array) -> Dictionary:
+	var availability: Dictionary = {}
+	for pos in positions:
+		var lot := Vector2i(pos.x, pos.y)
+		var available: int = TerrainScatteredResourceService.get_available(macro_state, resource_name, lot)
+		if available > 0:
+			availability[lot] = available
+	return availability
+
+
 func _refresh_resource_visuals(cell: LiveMacroCell) -> void:
 	if cell.macro_state == null:
 		return
 
-	# Pool bastoni (2026-09-08, richiesta utente) — pigro, agganciato qui perché è esattamente il
-	# punto "questa macrocella viene effettivamente ridisegnata" (stesso principio di StonePositionService/
-	# VegetationPositionService): no-op immediato per ogni lotto già fresco rispetto all'ultimo
-	# checkpoint growth, vedi StickPoolService per il design completo.
-	#
-	# Filtro FoW su stick/pebble (2026-09-09, richiesta utente) — stesso filtro già in uso per la
+	# Pool TREE_INDIVIDUAL/SHRUB_INDIVIDUAL (2026-09-08, richiesta utente — pigro, agganciato qui
+	# perché è esattamente il punto "questa macrocella viene effettivamente ridisegnata", stesso
+	# principio di StonePositionService/VegetationPositionService: no-op immediato per ogni lotto
+	# già fresco rispetto all'ultimo checkpoint growth) — RISCRITTO 2026-09-19, refactor lot_source:
+	# UNA sola chiamata generica invece delle tre StickPoolService/PlantFiberPoolService/
+	# MushroomPoolService.refresh_macrocell hardcoded (mushroom/plant_fiber non hanno un rendering
+	# agganciato, richiesta esplicita utente — questo refresh serve comunque a mantenere la loro
+	# capacità fresca per pickup/ispezione microcella).
+	LotCapacityService.refresh_all_vegetation_lot_capacities(cell.macro_state, game_data)
+	# Filtro FoW su pebble/stick (2026-09-09, richiesta utente) — stesso filtro già in uso per la
 	# vegetazione (_filter_vegetation_positions_by_visibility sotto): prima d'ora pebble/stick
 	# disegnavano OGNI posizione incondizionatamente, anche sotto FROZEN_OVERLAY_COLOR/nero pieno,
 	# dove la vegetazione viene già nascosta — risultato: bastoncini/sassi a piena definizione in
 	# zone dove l'albero/cespuglio sorgente non è nemmeno disegnato (segnalato dall'utente).
-	# `set_pebble_quantities` spostato QUI (non più un rebuild una tantum all'attivazione della
+	# `set_pebble_availability` spostato QUI (non più un rebuild una tantum all'attivazione della
 	# macrocella, vedi il vecchio commento in _activate_cell) — stessa cadenza/stesso trigger di
 	# stick (checkpoint/movimento/taglio/edificio/pickup, vedi PickUpAction.resource_collected
 	# sotto), non due percorsi di refresh paralleli per due risorse che condividono lo stesso bisogno.
-	StickPoolService.refresh_macrocell(cell.macro_state, game_data)
-	# plant_fiber (2026-09-16, richiesta utente — Step 2) — STESSA cadenza/STESSO trigger di stick
-	# appena sopra, nessun rendering ancora agganciato (Step 3, non ancora fatto): ancora nessuna
-	# set_plant_fiber_quantities su cell.renderer.
-	PlantFiberPoolService.refresh_macrocell(cell.macro_state, game_data)
-	# mushroom (2026-09-17, richiesta utente) — STESSA cadenza/STESSO trigger di stick/plant_fiber
-	# sopra. NESSUN rendering agganciato (richiesta esplicita utente — "i funghi non vanno
-	# disegnati per ora"): nessuna set_mushroom_quantities su cell.renderer, questo refresh serve
-	# solo a mantenere macro_state.mushroom_quantities fresco per pickup/ispezione microcella.
-	MushroomPoolService.refresh_macrocell(cell.macro_state, game_data)
+	#
+	# ENTRAMBE ora passano da _build_lot_availability_map (2026-09-19, refactor lot_source) invece
+	# di leggere il proprio Dictionary grezzo: pebble/stick vivono ora nel registro unificato
+	# MacroCellState.lot_registry/lot_capacity_cache, mai più un Dictionary dedicato per risorsa —
+	# STESSO principio già in uso per eggs/wild_vegetables poco più sotto (disponibilità già
+	# risolta dal chiamante, mai un secondo calcolo nel renderer).
 	if cell.renderer != null:
-		cell.renderer.set_stick_quantities(_filter_positions_by_visibility(cell, cell.macro_state.stick_quantities))
-		cell.renderer.set_pebble_quantities(_filter_positions_by_visibility(cell, cell.macro_state.pebble_quantities))
+		cell.renderer.set_stick_availability(_filter_positions_by_visibility(
+			cell, _build_lot_availability_map(cell.macro_state, "stick", cell.macro_state.tree_claimed_lots.keys())
+		))
+		cell.renderer.set_pebble_availability(_filter_positions_by_visibility(
+			cell, _build_lot_availability_map(cell.macro_state, "pebble", cell.macro_state.stone_positions)
+		))
 
 	# TEMPORANEO (diagnostica Proposta 2, vedi DebugLogging.SHOW_VEGETATION_REFRESH_TIMING_LOGS) —
 	# cronometri separati per capire se il costo dell'8.9s/8 celle osservato al checkpoint
@@ -5764,20 +5786,22 @@ func _refresh_resource_visuals(cell: LiveMacroCell) -> void:
 		cell.macro_state.egg_nest_positions = TerrainScatteredResourceService.compute_egg_nest_positions(
 			cell.macro_state, cell.cached_vegetation_positions.get(GameTypes.WorldObjectType.GRASS, [])
 		)
-		# Lotti "wild_vegetables" (2026-09-19, richiesta utente — verdure selvatiche raccoglibili per
-		# microcella) — STESSO principio di egg_nest_positions appena sopra: ricalcolati alla STESSA
-		# cadenza delle posizioni GRASS (mai una cadenza a parte), GRASS non ha un lotto persistito a
-		# differenza di TREE/SHRUB, quindi questo è l'UNICO punto in cui l'insieme lotti di questa
-		# cella può essere aggiornato.
-		cell.macro_state.wild_vegetable_lots = TerrainScatteredResourceService.compute_wild_vegetable_lots(
-			cell.macro_state, cell.cached_vegetation_positions.get(GameTypes.WorldObjectType.GRASS, [])
-		)
+		# Lotti GRASS_PATCH (wild_vegetables) — STESSO principio di egg_nest_positions appena sopra:
+		# ricalcolati alla STESSA cadenza delle posizioni GRASS (mai una cadenza a parte), GRASS non
+		# ha un lotto persistito a differenza di TREE/SHRUB, quindi questo è l'UNICO punto in cui
+		# l'insieme lotti di questa cella può essere aggiornato. Loop su OGNI risorsa GRASS_PATCH
+		# (2026-09-19, refactor lot_source: prima una singola chiamata hardcoded per
+		# "wild_vegetables") — una futura seconda risorsa GRASS_PATCH viene rinfrescata qui da sola.
+		for resource_name in LotCapacityService.get_resource_names_for_lot_source(SecondaryResourceTypes.LotSource.GRASS_PATCH):
+			LotCapacityService.refresh_grass_patch_lot_capacity(
+				cell.macro_state, resource_name, cell.cached_vegetation_positions.get(GameTypes.WorldObjectType.GRASS, [])
+			)
 		cell.needs_full_vegetation_recompute = false
 	var vegetation_positions: Dictionary = cell.cached_vegetation_positions
 	_veg_timings_ms["1_position_generation"] = (Time.get_ticks_usec() - _step_start_usec) / 1000.0
 
-	# Rendering nidi "eggs" (2026-09-18, richiesta utente) — MIRROR di set_stick_quantities/
-	# set_pebble_quantities sopra: chiamato SEMPRE ad ogni refresh (non solo quando le posizioni-nido
+	# Rendering nidi "eggs" (2026-09-18, richiesta utente) — MIRROR di set_stick_availability/
+	# set_pebble_availability sopra: chiamato SEMPRE ad ogni refresh (non solo quando le posizioni-nido
 	# sono state appena rigenerate, esattamente come stick/pebble sopra), perché la visibilità FoW e
 	# la disponibilità (stock/raccolto) possono cambiare anche senza un rigenero vegetazione. Un solo
 	# lookup per posizione-nido candidata (TerrainScatteredResourceService.get_egg_stock_available_at,
@@ -5786,22 +5810,18 @@ func _refresh_resource_visuals(cell: LiveMacroCell) -> void:
 	# così un nido fuori stagione/senza birds/già raccolto semplicemente non compare (mai un'istanza
 	# multimesh sprecata per un nido vuoto).
 	if cell.renderer != null:
-		var egg_availability: Dictionary = {}
-		for pos in cell.macro_state.egg_nest_positions.keys():
-			var egg_available: int = TerrainScatteredResourceService.get_egg_stock_available_at(cell.macro_state, pos)
-			if egg_available > 0:
-				egg_availability[pos] = egg_available
-		cell.renderer.set_egg_nest_availability(_filter_positions_by_visibility(cell, egg_availability))
+		cell.renderer.set_egg_nest_availability(_filter_positions_by_visibility(
+			cell, _build_lot_availability_map(cell.macro_state, "eggs", cell.macro_state.egg_nest_positions.keys())
+		))
 
-		# Rendering lotti "wild_vegetables" (2026-09-19, richiesta utente) — MIRROR ESATTO del
-		# blocco eggs appena sopra, stessa funzione di disponibilità residua generica
-		# (TerrainScatteredResourceService.get_wild_vegetable_available_at).
-		var wild_vegetable_availability: Dictionary = {}
-		for wv_pos in cell.macro_state.wild_vegetable_lots.keys():
-			var wv_available: int = TerrainScatteredResourceService.get_wild_vegetable_available_at(cell.macro_state, wv_pos)
-			if wv_available > 0:
-				wild_vegetable_availability[wv_pos] = wv_available
-		cell.renderer.set_wild_vegetable_availability(_filter_positions_by_visibility(cell, wild_vegetable_availability))
+		# Rendering lotti GRASS_PATCH (wild_vegetables, 2026-09-19) — MIRROR ESATTO del blocco eggs
+		# appena sopra, stesso helper condiviso (_build_lot_availability_map). Il setter resta
+		# specifico per "wild_vegetables" (set_wild_vegetable_availability, sulla propria MultiMesh
+		# dedicata) — questa è la "parte grafica" che il piano richiede comunque per ogni nuova
+		# risorsa, un loop generico qui non la eliminerebbe, solo la renderebbe fuorviante.
+		cell.renderer.set_wild_vegetable_availability(_filter_positions_by_visibility(
+			cell, _build_lot_availability_map(cell.macro_state, "wild_vegetables", cell.macro_state.lot_capacity_cache.get("wild_vegetables", {}).keys())
+		))
 
 	# Proposta 2 (filtro FoW): il renderer riceve solo le posizioni che il FoW mostrerebbe comunque
 	# in dettaglio (vedi FogOfWarRenderer.compute_visible_positions) — una posizione coperta da
@@ -7816,6 +7836,20 @@ func _on_day_advanced(checkpoint_ran: bool, animals_changed: bool) -> void:
 	# breakdown è già economico (al più storage_slot_count slot), nessun costo misurato qui a
 	# differenza del pannello individuo.
 	_refresh_selected_building_panel()
+	# Refresh giornaliero della scheda 🧍 (2026-09-19, richiesta utente — bugfix "un pipottino in
+	# build interrotto da Emergency Rest continuava a mostrare 'build' nel pannello popolazione"):
+	# HumanPopulationInfoPanel.show_population ricostruisce la riga task di OGNI individuo da
+	# member.current_task, che HumanIndividual.assign_task aggiorna correttamente e SUBITO quando
+	# scatta un interrupt automatico — il dato era già giusto, solo non ancora rispecchiato qui:
+	# prima di questa riga _refresh_population_panel scattava solo su nascita/morte/rollover
+	# annuale/assegnazione casa, un intervallo troppo ampio per un campo che cambia più volte al
+	# giorno. Gated SOLO se la tab Popolazione è quella attualmente attiva (a differenza di
+	# _refresh_selected_individual_panel/_refresh_selected_building_panel sopra, sempre incondizionati:
+	# quei due pannelli mostrano un SOLO record, questo ricostruisce l'intero elenco individui da
+	# zero — stesso principio "lavora solo se visibile" già seguito per task_debug_panel sotto,
+	# nessun motivo di pagare quel costo per una tab che nessuno sta guardando).
+	if game_info_tabs.current_tab == GameInfoTabs.TAB_POPULATION:
+		_refresh_population_panel()
 	# Refresh giornaliero della scheda 🐞 (2026-09-12, richiesta utente — bugfix "il pannello debug
 	# task non si riempie mai di nessuna task": prima si aggiornava solo al cambio scheda/al
 	# rollover ANNUALE, troppo raro per un test rapido — spostato qui, stesso canale/stessa cadenza

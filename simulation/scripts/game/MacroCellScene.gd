@@ -469,8 +469,10 @@ func _ready() -> void:
 			stone_service.generate_if_needed(macro_state, macro_cell)
 			renderer.set_stone_positions(macro_state.stone_positions)
 			# Pebble (2026-09-08, richiesta utente) — stessa fonte/stesso momento delle posizioni
-			# stone appena sopra.
-			renderer.set_pebble_quantities(macro_state.pebble_quantities)
+			# stone appena sopra. Registro unificato (2026-09-19, refactor lot_source): pebble vive
+			# ora in MacroCellState.lot_registry["pebble"], letto tramite _build_lot_availability_map
+			# sotto invece di un Dictionary dedicato.
+			renderer.set_pebble_availability(_build_lot_availability_map("pebble", macro_state.stone_positions))
 
 			_refresh_resource_visuals()
 
@@ -527,21 +529,33 @@ func _compute_river_exterior_occupied(positions: Array) -> Dictionary:
 # _update_info_panel) — quest'ultimo però va tenuto sincronizzato ogni giorno a prescindere,
 # per questo _on_day_advanced lo richiama anche da solo nei giorni in cui questo rebuild
 # completo viene saltato.
+# Disponibilità già risolta per un elenco di posizioni/lotti candidati di `resource_name` — STESSO
+# helper/STESSO principio di GameScene._build_lot_availability_map (2026-09-19, refactor
+# lot_source), duplicato qui deliberatamente (classi diverse, nessuna utility condivisa tra le
+# due — stesso principio già seguito ovunque nel progetto per Node script distinti).
+func _build_lot_availability_map(resource_name: String, positions: Array) -> Dictionary:
+	var availability: Dictionary = {}
+	for pos in positions:
+		var lot := Vector2i(pos.x, pos.y)
+		var available: int = TerrainScatteredResourceService.get_available(macro_state, resource_name, lot)
+		if available > 0:
+			availability[lot] = available
+	return availability
+
+
 func _refresh_resource_visuals() -> void:
 	if macro_state == null:
 		return
 
-	# Pool bastoni (2026-09-08, richiesta utente) — stesso aggancio di GameScene._refresh_resource_
-	# visuals, vedi StickPoolService per il design completo.
-	StickPoolService.refresh_macrocell(macro_state, game_data)
-	renderer.set_stick_quantities(macro_state.stick_quantities)
-	# plant_fiber (2026-09-16, richiesta utente — Step 2) — STESSA cadenza/STESSO trigger di stick
-	# sopra, nessun rendering ancora agganciato (Step 3, non ancora fatto).
-	PlantFiberPoolService.refresh_macrocell(macro_state, game_data)
-	# mushroom (2026-09-17, richiesta utente) — STESSA cadenza/STESSO trigger di stick/plant_fiber
-	# sopra. NESSUN rendering agganciato (richiesta esplicita utente — "i funghi non vanno
-	# disegnati per ora").
-	MushroomPoolService.refresh_macrocell(macro_state, game_data)
+	# Pool TREE_INDIVIDUAL/SHRUB_INDIVIDUAL (2026-09-08, richiesta utente) — stesso aggancio di
+	# GameScene._refresh_resource_visuals, RISCRITTO 2026-09-19 (refactor lot_source): una sola
+	# chiamata generica invece delle tre StickPoolService/PlantFiberPoolService/MushroomPoolService.
+	# refresh_macrocell hardcoded.
+	LotCapacityService.refresh_all_vegetation_lot_capacities(macro_state, game_data)
+	renderer.set_stick_availability(_build_lot_availability_map("stick", macro_state.tree_claimed_lots.keys()))
+	# plant_fiber/mushroom: nessun rendering agganciato qui (stesso principio di prima di questo
+	# refactor — "i funghi non vanno disegnati per ora"), il refresh sopra li mantiene comunque
+	# freschi per pickup/ispezione microcella.
 
 	var occupied: Dictionary = {}
 	for pos in macro_state.stone_positions:

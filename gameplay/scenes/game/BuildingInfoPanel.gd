@@ -105,6 +105,7 @@ const STORAGE_SLOT_FILL_BAR_FILL_COLOR := Color(1.0, 1.0, 1.0, 0.85)
 @onready var awaiting_material_label: Label = $AwaitingMaterialLabel
 @onready var awaiting_material_build_caption: Label = $AwaitingMaterialBuildCaption
 @onready var awaiting_material_build_grid: HFlowContainer = $AwaitingMaterialBuildGrid
+@onready var assigned_builder_label: Label = $AssignedBuilderLabel
 @onready var durability_label: Label = $DurabilityLabel
 @onready var built_year_label: Label = $BuiltYearLabel
 @onready var residents_caption: Label = $ResidentsCaption
@@ -151,7 +152,7 @@ func _ready() -> void:
 # HumanCalculator, stesso principio dichiarato in testa al file. Default [] così ogni chiamante che
 # non lo passa ancora (nessuno oggi, ma comportamento difensivo) mostra semplicemente una griglia
 # residenti vuota invece di un errore.
-func show_building(building: Building, residents_display_data: Array[Dictionary] = []) -> void:
+func show_building(building: Building, residents_display_data: Array[Dictionary] = [], assigned_builder_names: Array[String] = []) -> void:
 	visible = true
 	_current_building = building
 	status_label.text = tr("building_status_label").format({
@@ -190,6 +191,23 @@ func show_building(building: Building, residents_display_data: Array[Dictionary]
 				"quantity": shortage["quantity"],
 				"material": shortage["material_display_name"],
 			})
+
+	# Costruttore assegnato (2026-09-18, richiesta utente — "durante la fase di costruzione... puoi
+	# indicare costruttore assegnato: con il nome? e se non c'è scrivere che è mancante") — visibile
+	# in TUTTE le fasi di lavorazione attiva (setup_site/clear_site/build), stesso gate di
+	# construction_phase_label/construction_progress_bar_margin sopra (_resolve_active_construction_
+	# phase != ""), nascosto per un edificio completo. assigned_builder_names arriva già risolto da
+	# GameScene._resolve_assigned_builder_names (pannello "muto", stesso principio di
+	# residents_display_data): current_task ATTIVA o SOSPESA in task_queue, può contenere più di un
+	# nome (BuildingRules.max_builders). Array vuoto -> messaggio "mancante" invece di una riga vuota.
+	var is_under_construction: bool = _resolve_active_construction_phase(building) != ""
+	assigned_builder_label.visible = is_under_construction
+	if is_under_construction:
+		assigned_builder_label.text = (
+			tr("building_assigned_builder_label").format({"names": ", ".join(assigned_builder_names)})
+			if not assigned_builder_names.is_empty()
+			else tr("building_assigned_builder_missing")
+		)
 
 	var max_durability: int = building.rules.max_durability if building.rules != null else 0
 	durability_label.text = tr("building_durability_label").format({"current": building.current_durability, "max": max_durability})
