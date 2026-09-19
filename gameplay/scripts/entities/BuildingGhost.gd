@@ -81,9 +81,10 @@ const DEPOSIT_SITE_INVALID_OUTLINE_COLOR := Color(0.4, 0.05, 0.05, 0.85)
 const DEPOSIT_SITE_OUTLINE_WIDTH: float = 0.5
 # 4.5 (2026-09-08, richiesta utente: "allarga ancora di più, quasi ad occupare tutta la microcella")
 # — la microcella è larga CELL_SIZE=10 (MicroCellRenderer), quindi mezza cella = 5: 4.5 lascia un
-# margine minimo prima del bordo anche col jitter massimo (vedi _deposit_site_polygon, fino a ×1.08).
+# margine minimo prima del bordo anche col jitter massimo (vedi DepositSiteShape: lati irregolari spostati al più di 0.05 × semilato verso l esterno).
 const DEPOSIT_SITE_HALF_SIDE: float = 4.5
-const DEPOSIT_SITE_VERTEX_COUNT: int = 8
+# Sagoma con angoli smussati diversamente da DepositSiteShape.build_polygon (2026-09-19, richiesta
+# utente) — il vecchio poligono a 8 vertici con jitter (DEPOSIT_SITE_VERTEX_COUNT) non esiste più.
 
 # Stick Tent (2026-09-12, richiesta utente — collegamento UI/rendering: il .tres/BuildingRules
 # esistevano già da un giro precedente, ma non era ancora disegnabile né come ghost né come
@@ -159,6 +160,9 @@ func _draw() -> void:
 	if building_type_name == "stick_tent":
 		_draw_stick_tent(STICK_TENT_COLOR if is_buildable else STICK_TENT_INVALID_COLOR,
 			STICK_TENT_OUTLINE_COLOR if is_buildable else STICK_TENT_INVALID_OUTLINE_COLOR, rotation_dir)
+		return
+	if building_type_name == "dirt_ground":
+		_draw_dirt_ground(DIRT_GROUND_COLOR if is_buildable else DIRT_GROUND_INVALID_COLOR)
 		return
 
 	var color := COLOR if is_buildable else INVALID_COLOR
@@ -251,35 +255,20 @@ func _pebble_blob_polygon(center: Vector2, seed_index: int) -> PackedVector2Arra
 # rispettare (has_door=false per questo tipo). Stessa funzione (duplicata apposta, vedi commento in
 # testa al file) di MicroCellRenderer._draw_deposit_site, così l'anteprima e l'edificio finito
 # coincidono esattamente.
+# Terreno in terra battuta (2026-09-19, richiesta utente) — quadrato pieno di una microcella
+# (lato 10 = MicroCellRenderer.CELL_SIZE, coordinate locali del ghost centrate sul mouse), senza
+# bordo né rotazione. Stessa geometria (duplicata apposta) di MicroCellRenderer._draw_dirt_ground.
+const DIRT_GROUND_COLOR := Color(0.86, 0.77, 0.58, 0.75)
+const DIRT_GROUND_INVALID_COLOR := Color(0.75, 0.15, 0.15, 0.75)
+const DIRT_GROUND_HALF_SIDE: float = 5.0
+
+func _draw_dirt_ground(color: Color) -> void:
+	draw_rect(Rect2(Vector2(-DIRT_GROUND_HALF_SIDE, -DIRT_GROUND_HALF_SIDE), Vector2(DIRT_GROUND_HALF_SIDE, DIRT_GROUND_HALF_SIDE) * 2.0), color)
+
+
 func _draw_deposit_site(color: Color, outline_color: Color) -> void:
-	var blob := _deposit_site_polygon()
-	draw_colored_polygon(blob, color)
-	var outline := blob.duplicate()
-	outline.append(blob[0])
-	draw_polyline(outline, outline_color, DEPOSIT_SITE_OUTLINE_WIDTH)
-
-
-# Poligono a DEPOSIT_SITE_VERTEX_COUNT lati (8, allineati a incrementi di 45°) con raggio-per-
-# vertice in "norma del massimo" invece che circolare — max(|cos|,|sin|) vale 1 ai 4 angoli
-# 0/90/180/270° (punti medi dei lati) e cos(45°)≈0.707 ai 4 angoli 45/135/225/315° (angoli veri),
-# quindi r(angolo) = DEPOSIT_SITE_HALF_SIDE / max(|cos|,|sin|) traccia ESATTAMENTE un quadrato di
-# semilato DEPOSIT_SITE_HALF_SIDE quando il jitter è 1 (i punti medi cadono esattamente sui lati
-# retti, nessun vertice extra visibile). Il jitter per-vertice (indipendente su angolo E raggio)
-# rompe quella perfezione quel tanto che basta perché non sembri una piastrella geometrica — "non
-# proprio un quadrato perfetto" (richiesta utente). Seed fisso (0): un solo poligono per istanza,
-# nessun bisogno di variarlo (stesso comportamento già accettato per la sagoma della capanna,
-# identica ad ogni piazzamento).
-func _deposit_site_polygon() -> PackedVector2Array:
-	var rng := RandomNumberGenerator.new()
-	rng.seed = 0
-	var points := PackedVector2Array()
-	for v in range(DEPOSIT_SITE_VERTEX_COUNT):
-		var base_angle: float = TAU * float(v) / float(DEPOSIT_SITE_VERTEX_COUNT)
-		var jittered_angle: float = base_angle + rng.randf_range(-0.05, 0.05)
-		var square_radius: float = DEPOSIT_SITE_HALF_SIDE / maxf(absf(cos(base_angle)), absf(sin(base_angle)))
-		var vertex_radius: float = square_radius * rng.randf_range(0.9, 1.08)
-		points.append(Vector2(cos(jittered_angle), sin(jittered_angle)) * vertex_radius)
-	return points
+	draw_colored_polygon(DepositSiteShape.get_polygon(DEPOSIT_SITE_HALF_SIDE), color)
+	draw_polyline(DepositSiteShape.get_closed_outline(DEPOSIT_SITE_HALF_SIDE), outline_color, DEPOSIT_SITE_OUTLINE_WIDTH)
 
 
 # Cerchio pieno attorno al punto di ancoraggio (0,0) più un piccolo TRIANGOLO sul bordo, nel verso

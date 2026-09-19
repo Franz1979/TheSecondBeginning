@@ -212,10 +212,15 @@ func show_building(building: Building, residents_display_data: Array[Dictionary]
 	var max_durability: int = building.rules.max_durability if building.rules != null else 0
 	durability_label.text = tr("building_durability_label").format({"current": building.current_durability, "max": max_durability})
 
-	built_year_label.text = (
-		tr("building_built_year_label").format({"year": building.built_year}) if building.built_year >= 0
-		else tr("building_not_yet_built")
-	)
+	# "Non ancora costruito" SOLO per un edificio non completo; completo ma senza anno registrato
+	# (built_year < 0, es. salvataggio vecchio) -> "anno non noto", mai la contraddizione con
+	# "Stato: Completo".
+	if building.built_year >= 0:
+		built_year_label.text = tr("building_built_year_label").format({"year": building.built_year})
+	elif building.is_complete:
+		built_year_label.text = tr("building_built_year_unknown")
+	else:
+		built_year_label.text = tr("building_not_yet_built")
 
 	_refresh_residents_grid(building, residents_display_data)
 	_refresh_storage_grid(building)

@@ -57,6 +57,7 @@ tech_tree_active_idea_label,Ricerca in corso: {idea}
 tech_tree_no_active_idea,Nessuna ricerca in corso
 tech_tree_debug_add_thought,+1 Thought
 idea_paleolithic_constructions,Costruzioni Paleolitiche
+idea_plant_lore,Conoscenza delle piante
 fertile_women_list,Donne fertili
 death_list,Elenco morti
 center_on_selection_tooltip,Centra la camera sulla selezione corrente
@@ -64,10 +65,12 @@ building_hut,Capanna
 building_pebble_circle,Cerchio di sassolini
 building_deposit_site,Sito di deposito
 building_stick_tent,Tenda di rami
+building_dirt_ground,Terra battuta
 build_bar_pebble_circle_tooltip,Cerchio di sassolini
 build_bar_pebble_circle_disabled_tooltip,Non costruibile: esiste già un centro villaggio
 build_bar_deposit_site_tooltip,Sito di deposito
 build_bar_stick_tent_tooltip,Tenda di rami
+build_bar_dirt_ground_tooltip,Terra battuta
 build_bar_requires_idea_tooltip,Richiede: {idea}
 build_bar_demolish_tooltip,Demolisci
 demolish_confirmation_title,Demolisci edificio
@@ -142,6 +145,7 @@ carried_resource_tooltip_fruit,Frutta selvatica
 carried_resource_tooltip_mushroom,Funghi
 carried_resource_tooltip_eggs,Uova
 carried_resource_tooltip_wild_vegetables,Verdure selvatiche
+carried_resource_tooltip_medicinal_herbs,Erbe medicinali
 microcell_inspection_title,Microcella ({x}; {y})
 microcell_inspection_not_visible,Cella non esplorata o non visibile.
 microcell_inspection_only_grass,Contiene solo erba.
@@ -196,6 +200,7 @@ building_assigned_builder_missing,Costruttore assegnato: mancante
 building_durability_label,Durabilità: {current}/{max}
 building_built_year_label,Costruito: anno {year}
 building_not_yet_built,Non ancora costruito
+building_built_year_unknown,Costruito: anno non noto
 building_stored_label,Immagazzinato: {entries}
 building_residents_caption,Residenti
 building_resident_tooltip,{name} (età {age})
@@ -206,6 +211,7 @@ building_settings_accepted_categories_caption,Categorie accettate
 building_settings_empty_all_button,Svuota tutto
 category_name_food,Cibo
 category_name_raw_material,Materiali grezzi
+category_name_medicinal,Medicinali
 help_building_materials_menu_link,Costruzioni e materiali
 help_building_materials_title,Costruzioni e materiali
 help_building_materials_setup_vs_construction,"Costruire un edificio richiede materiale in due fasi distinte: prima l'allestimento del cantiere (una quantità fissa di legnetti per ogni microcella occupata dall'edificio), poi la costruzione vera e propria, che in futuro richiederà i propri materiali."

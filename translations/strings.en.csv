@@ -3,6 +3,8 @@ build_bar_pebble_circle_tooltip,Pebble Circle
 build_bar_pebble_circle_disabled_tooltip,Not buildable: a village center already exists
 build_bar_deposit_site_tooltip,Deposit Site
 build_bar_stick_tent_tooltip,Stick Tent
+build_bar_dirt_ground_tooltip,Dirt Ground
+building_dirt_ground,Dirt Ground
 build_bar_requires_idea_tooltip,Requires: {idea}
 build_bar_demolish_tooltip,Demolish
 demolish_confirmation_title,Demolish building
@@ -10,6 +12,7 @@ demolish_confirmation_text,Demolish {building} #{id}? This is immediate and cann
 demolish_confirmation_confirm,Demolish
 demolish_confirmation_cancel,Cancel
 idea_paleolithic_constructions,Paleolithic Constructions
+idea_plant_lore,Conoscenza delle piante
 sex_label,Sex: {sex}
 sex_female,Female
 sex_male,Male
@@ -72,6 +75,7 @@ building_awaiting_material_label,This site still needs {quantity} {material} to 
 building_durability_label,Durability: {current}/{max}
 building_built_year_label,Built: year {year}
 building_not_yet_built,Not yet built
+building_built_year_unknown,Built: year unknown
 building_stored_label,Stored: {entries}
 building_residents_caption,Residents
 building_resident_tooltip,{name} (age {age})
@@ -113,3 +117,5 @@ transport_selection_banner_text,"🚚 Transport: select the destination building
 debug_idle_fallback_button_tooltip,Toggle automatic assignment of idle-time tasks (Wander/Play/Leisure Rest) to free individuals
 debug_idle_fallback_on,Idle fallback: ON
 debug_idle_fallback_off,Idle fallback: OFF
+category_name_medicinal,Medicinal
+carried_resource_tooltip_medicinal_herbs,Medicinal herbs

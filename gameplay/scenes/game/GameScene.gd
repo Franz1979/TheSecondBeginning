@@ -3159,7 +3159,7 @@ func _on_pickup_choice_resource_chosen(resource_name: String, quantity: int) -> 
 # TREE_INDIVIDUAL con risorse che invece lo richiedono, quindi questo resta un elenco a parte,
 # consultato dai blocchi per-lot_source di _resolve_pickup_candidates con `resource_name in
 # REQUIRE_AVAILABLE_PICKUP_RESOURCE_NAMES` invece di un terzo parametro hardcoded per chiamata.
-const REQUIRE_AVAILABLE_PICKUP_RESOURCE_NAMES: Array[String] = ["eggs", "mushroom", "wild_vegetables"]
+const REQUIRE_AVAILABLE_PICKUP_RESOURCE_NAMES: Array[String] = ["eggs", "mushroom", "wild_vegetables", "medicinal_herbs"]
 
 func _append_unlocked_pickup_candidate(candidates: Array[Dictionary], resource_name: String, macro_coords: Vector2i, position: Vector2i, require_available: bool = false) -> void:
 	if TerrainScatteredResourceService.is_resource_locked(resource_name):
@@ -5698,7 +5698,10 @@ func _build_lot_availability_map(macro_state: MacroCellState, resource_name: Str
 	var availability: Dictionary = {}
 	for pos in positions:
 		var lot := Vector2i(pos.x, pos.y)
-		var available: int = TerrainScatteredResourceService.get_available(macro_state, resource_name, lot)
+		# get_available_ignoring_lock, non get_available (2026-09-19, erbe medicinali): il marker a
+		# terra dipende solo dalla disponibilità, mai da required_idea_id — pickup/ispezione
+		# restano gated altrove (_append_unlocked_pickup_candidate).
+		var available: int = TerrainScatteredResourceService.get_available_ignoring_lock(macro_state, resource_name, lot)
 		if available > 0:
 			availability[lot] = available
 	return availability
@@ -5814,14 +5817,15 @@ func _refresh_resource_visuals(cell: LiveMacroCell) -> void:
 			cell, _build_lot_availability_map(cell.macro_state, "eggs", cell.macro_state.egg_nest_positions.keys())
 		))
 
-		# Rendering lotti GRASS_PATCH (wild_vegetables, 2026-09-19) — MIRROR ESATTO del blocco eggs
-		# appena sopra, stesso helper condiviso (_build_lot_availability_map). Il setter resta
-		# specifico per "wild_vegetables" (set_wild_vegetable_availability, sulla propria MultiMesh
-		# dedicata) — questa è la "parte grafica" che il piano richiede comunque per ogni nuova
-		# risorsa, un loop generico qui non la eliminerebbe, solo la renderebbe fuorviante.
-		cell.renderer.set_wild_vegetable_availability(_filter_positions_by_visibility(
-			cell, _build_lot_availability_map(cell.macro_state, "wild_vegetables", cell.macro_state.lot_capacity_cache.get("wild_vegetables", {}).keys())
-		))
+		# Rendering lotti GRASS_PATCH (2026-09-19) — MIRROR del blocco eggs appena sopra, stesso
+		# helper condiviso (_build_lot_availability_map), ora un loop su OGNI risorsa GRASS_PATCH
+		# (richiesta utente, erbe medicinali: prima un setter hardcoded per "wild_vegetables").
+		# La FORMA del marker di ciascuna vive nel renderer (MicroCellRenderer.GRASS_PATCH_MARKER_
+		# SHAPES): una risorsa GRASS_PATCH senza forma lì non viene disegnata (warning nel renderer).
+		for resource_name in LotCapacityService.get_resource_names_for_lot_source(SecondaryResourceTypes.LotSource.GRASS_PATCH):
+			cell.renderer.set_grass_patch_availability(resource_name, _filter_positions_by_visibility(
+				cell, _build_lot_availability_map(cell.macro_state, resource_name, cell.macro_state.lot_capacity_cache.get(resource_name, {}).keys())
+			))
 
 	# Proposta 2 (filtro FoW): il renderer riceve solo le posizioni che il FoW mostrerebbe comunque
 	# in dettaglio (vedi FogOfWarRenderer.compute_visible_positions) — una posizione coperta da
@@ -6585,6 +6589,10 @@ func _building_type_name_for_action(action_id: StringName) -> String:
 		# degli altri tre, azione "build_stick_tent" cablata in BuildBar._ready sopra.
 		&"build_stick_tent":
 			return "stick_tent"
+		# Terreno in terra battuta (2026-09-19, richiesta utente) — azione "build_dirt_ground"
+		# cablata in BuildBar._ready.
+		&"build_dirt_ground":
+			return "dirt_ground"
 		_:
 			return ""
 
@@ -6735,6 +6743,7 @@ func _demolish_building(building: Building) -> void:
 	var macro_coords := Vector2i(building.macro_x, building.macro_y)
 	if live_cells.has(macro_coords):
 		_refresh_building_visuals(live_cells[macro_coords])
+		_refresh_dirt_ground_neighbor_cells(building)
 	_refresh_buildings_panel()
 	# Un edificio is_village_center appena demolito può riaprire lo slot Pebble Circle nella BuildBar
 	# (vedi _building_type_availability) — stesso ricalcolo completo/idempotente già usato altrove,
@@ -6893,6 +6902,7 @@ func _place_building_at(world_position: Vector2) -> void:
 	state.set_dedicated_space(GameTypes.WorldObjectType.BUILDING, current_building_space + rules.required_space)
 
 	_refresh_building_visuals(target_cell)
+	_refresh_dirt_ground_neighbor_cells(building)
 	# Ricalcola SUBITO la vegetazione (non solo al prossimo avanzamento giorno/anno): senza questa
 	# chiamata, il taglio/decremento appena applicato ai dati resterebbe corretto ma invisibile a
 	# schermo fino al prossimo trigger naturale — vedi _building_positions_for_cell, ora incluso
@@ -7067,7 +7077,10 @@ const _BUILD_SITE_PLACEHOLDER_COLOR := Color(0.35, 0.24, 0.13)
 const _BUILD_SITE_PLACEHOLDER_GROUP_NAME_PREFIX := "BuildSitePlaceholders_"
 
 func _spawn_build_site_placeholders(building: Building) -> void:
-	if building == null:
+	# Nessun rametto per un edificio già completo o demolito (2026-09-19, richiesta utente): un
+	# segnale site_setup_completed tardivo/duplicato non deve creare nodi orfani che poi nessuno
+	# rimuove (la rimozione via segnale è già scattata, o l'edificio non esiste più).
+	if building == null or building.is_complete or building.is_demolished:
 		return
 	var macro_coords := Vector2i(building.macro_x, building.macro_y)
 	if not live_cells.has(macro_coords):
@@ -7094,7 +7107,7 @@ func _spawn_build_site_placeholders(building: Building) -> void:
 	_refresh_building_visuals(cell)
 	_create_build_site_placeholder_nodes(building, cell)
 	if DebugLogging.ENABLED and DebugLogging.SHOW_TRANSPORT_BUILD_LOGS:
-		print("[BUILD] Cantiere edificio #%d allestito (4 placeholder posizionati)." % building.id)
+		print("[BUILD] Cantiere edificio #%d allestito (4 placeholder posizionati, salvo edificio senza materiale di setup)." % building.id)
 
 
 # Bugfix (2026-09-15, richiesta utente — "resta il fatto che se un cantiere è in costruzione, si
@@ -7114,6 +7127,16 @@ func _spawn_build_site_placeholders(building: Building) -> void:
 # placeholder esistono già (es. cantiere avviato e allestito nella sessione corrente, cella mai
 # smontata).
 func _create_build_site_placeholder_nodes(building: Building, cell: LiveMacroCell) -> void:
+	# Nessun segnaposto per un edificio che non richiede materiale di setup (2026-09-19, richiesta
+	# utente — "fanno credere che servano dei bastoni"): stessa formula di SetupSiteAction.
+	# get_missing_material_quantity/BuildingStorageService (setup_site_material_per_cell ×
+	# required_space). La fase SETUP_SITE e la sua durata restano invariate — cambia solo il
+	# disegno. Messo QUI, non in _spawn_build_site_placeholders, perché questa funzione è l'unico
+	# punto di creazione condiviso anche dal ripristino dopo il caricamento
+	# (_restore_build_site_placeholders_for_cell): controllarlo solo nello spawn li avrebbe fatti
+	# ricomparire dopo un save/load. Vale per QUALUNQUE edificio senza materiale, non solo dirt_ground.
+	if building.rules != null and building.rules.setup_site_material_per_cell * building.rules.required_space <= 0:
+		return
 	var cell_origin := Vector2(building.micro_x, building.micro_y) * MicroCellRenderer.CELL_SIZE
 	var corner_offsets: Array[Vector2] = [
 		Vector2(_BUILD_SITE_PLACEHOLDER_MARGIN, _BUILD_SITE_PLACEHOLDER_MARGIN),
@@ -7435,7 +7458,8 @@ func _on_resource_deposited(building: Building) -> void:
 func _on_building_construction_completed(building: Building) -> void:
 	if building == null:
 		return
-	building.built_year = game_data.year
+	# built_year NON più scritto qui (2026-09-19, richiesta utente): lo scrive BuildAction.on_complete
+	# insieme a is_complete, così non può restare indietro se questo listener non è collegato.
 	# Log spostato QUI (2026-09-12, richiesta utente — riordino cosmetico, nessuna modifica di
 	# logica): prima appariva DOPO assign_pending_residents sotto, facendo comparire "[ASSIGN
 	# HOUSE]" nei log prima di "completato!" anche se is_complete/built_year erano già impostati a
@@ -7479,6 +7503,7 @@ func _on_building_construction_completed(building: Building) -> void:
 	# Circle/Deposit Site, finalmente disegnabile ora che is_complete=true) resterebbe invisibile
 	# fino al prossimo trigger di refresh casuale (es. il player che si muove).
 	_refresh_building_visuals(cell)
+	_refresh_dirt_ground_neighbor_cells(building)
 
 
 # Rimuove il gruppo dei 4 rametti spawnati da _spawn_build_site_placeholders per QUESTO edificio
@@ -7546,6 +7571,11 @@ func _buildings_for_cell(cell: LiveMacroCell) -> Array:
 	var result: Array = []
 	if macro_world == null:
 		return result
+	# Tile di terra battuta COMPLETI di tutto il mondo (chiave = macro + micro), costruita al primo
+	# dirt_ground incontrato: serve a calcolare la maschera dei vicini anche oltre il confine di
+	# macrocella (vedi _dirt_ground_neighbor_mask).
+	var dirt_tiles: Dictionary = {}
+	var dirt_tiles_built := false
 	for building in macro_world.buildings:
 		if building.macro_x == cell.macro_x and building.macro_y == cell.macro_y:
 			var entry: Dictionary = {
@@ -7572,8 +7602,79 @@ func _buildings_for_cell(cell: LiveMacroCell) -> Array:
 			# nessuna chiave da ignorare.
 			if building.building_type_name == "deposit_site":
 				entry["slot_breakdown"] = BuildingStorageService.get_slot_breakdown(building)
+			# Terra battuta (2026-09-19, richiesta utente): maschera dei lati che confinano con un altro
+			# tile di terra battuta completo (bit 1<<lato, ordine N,E,S,W) — il renderer lascia dritti quei
+			# lati (tile combacianti) e irregolari gli altri. Calcolata su macro_world.buildings, quindi
+			# vale anche per i vicini in un'altra macrocella, viva o no.
+			if building.building_type_name == "dirt_ground":
+				if not dirt_tiles_built:
+					dirt_tiles = _collect_complete_dirt_tiles()
+					dirt_tiles_built = true
+				entry["dirt_neighbors"] = _dirt_ground_neighbor_mask(building, dirt_tiles)
 			result.append(entry)
 	return result
+
+
+# Insieme dei tile di terra battuta COMPLETI del mondo (2026-09-19): chiave Vector4i(macro_x, macro_y,
+# micro_x, micro_y). Un tile non ancora completo non è disegnato dal renderer, quindi non conta come
+# vicino (il lato che lo tocca resta irregolare).
+func _collect_complete_dirt_tiles() -> Dictionary:
+	var tiles: Dictionary = {}
+	for other in macro_world.buildings:
+		if other.building_type_name == "dirt_ground" and other.is_complete and not other.is_demolished:
+			tiles[Vector4i(other.macro_x, other.macro_y, other.micro_x, other.micro_y)] = true
+	return tiles
+
+
+# Vicino (macro, micro) di un tile nella direzione (dx, dy), con il passaggio alla macrocella
+# adiacente quando esce dalla griglia World.WIDTH x World.HEIGHT — stessa aritmetica di
+# BuildingVerificationService._door_target_macro_micro.
+func _dirt_ground_neighbor_key(building: Building, dx: int, dy: int) -> Vector4i:
+	var macro_x: int = building.macro_x
+	var macro_y: int = building.macro_y
+	var micro_x: int = building.micro_x + dx
+	var micro_y: int = building.micro_y + dy
+	if micro_x < 0:
+		macro_x -= 1
+		micro_x = World.WIDTH - 1
+	elif micro_x >= World.WIDTH:
+		macro_x += 1
+		micro_x = 0
+	if micro_y < 0:
+		macro_y -= 1
+		micro_y = World.HEIGHT - 1
+	elif micro_y >= World.HEIGHT:
+		macro_y += 1
+		micro_y = 0
+	return Vector4i(macro_x, macro_y, micro_x, micro_y)
+
+
+# Maschera dei lati (bit 1 << lato, lati N, E, S, W = indici 0..3, STESSO ordine di
+# MicroCellRenderer.DIRT_GROUND_SIDE_DIRECTIONS) che confinano con un tile di terra battuta completo.
+func _dirt_ground_neighbor_mask(building: Building, dirt_tiles: Dictionary) -> int:
+	var mask: int = 0
+	var side_offsets: Array[Vector2i] = [Vector2i(0, -1), Vector2i(1, 0), Vector2i(0, 1), Vector2i(-1, 0)]
+	for side in range(4):
+		if dirt_tiles.has(_dirt_ground_neighbor_key(building, side_offsets[side].x, side_offsets[side].y)):
+			mask |= 1 << side
+	return mask
+
+
+# Rinfresca le macrocelle VIVE adiacenti a un tile di terra battuta sul bordo della propria cella
+# (2026-09-19): la maschera dei vicini dipende dai tile oltre il confine, quindi quando uno di essi
+# viene completato, piazzato o demolito il renderer della cella accanto va ridisegnato. Solo per
+# dirt_ground e solo per i tile su un bordo di macrocella — nessun costo altrove.
+func _refresh_dirt_ground_neighbor_cells(building: Building) -> void:
+	if building == null or building.building_type_name != "dirt_ground":
+		return
+	var side_offsets: Array[Vector2i] = [Vector2i(0, -1), Vector2i(1, 0), Vector2i(0, 1), Vector2i(-1, 0)]
+	for offset in side_offsets:
+		var neighbor_key := _dirt_ground_neighbor_key(building, offset.x, offset.y)
+		var neighbor_macro := Vector2i(neighbor_key.x, neighbor_key.y)
+		if neighbor_macro == Vector2i(building.macro_x, building.macro_y):
+			continue
+		if live_cells.has(neighbor_macro):
+			_refresh_building_visuals(live_cells[neighbor_macro])
 
 
 # Microcelle entro rules.visibility_radius di ciascun edificio di QUESTA macrocella (distanza di
@@ -7588,7 +7689,14 @@ func _building_visible_positions_for_cell(cell: LiveMacroCell) -> Dictionary:
 	for building in macro_world.buildings:
 		if building.macro_x != cell.macro_x or building.macro_y != cell.macro_y:
 			continue
-		var radius: int = building.rules.visibility_radius if building.rules != null else 0
+		# Raggio applicato SOLO agli edifici completi (2026-09-19, richiesta utente): un cantiere non
+		# completo tiene visibile la propria microcella (raggio 0, il ciclo sotto la aggiunge sempre)
+		# ma non scopre territorio attorno — altrimenti si scoprirebbe mappa piazzando cantieri
+		# senza finirli. Al completamento _on_building_construction_completed richiama
+		# _refresh_building_visuals, quindi il raggio pieno scatta in quel momento.
+		var radius: int = 0
+		if building.is_complete and building.rules != null:
+			radius = building.rules.visibility_radius
 		for dx in range(-radius, radius + 1):
 			for dy in range(-radius, radius + 1):
 				var pos := Vector2i(building.micro_x + dx, building.micro_y + dy)
@@ -7609,6 +7717,30 @@ func _refresh_building_visuals(cell: LiveMacroCell) -> void:
 	cell.renderer.set_buildings(_buildings_for_cell(cell))
 	if cell.fog_of_war_renderer != null:
 		cell.fog_of_war_renderer.set_building_visible_positions(_building_visible_positions_for_cell(cell))
+	_sync_build_site_placeholders(cell)
+
+
+# Riconcilia i rametti del cantiere di questa cella con lo STATO degli edifici (2026-09-19,
+# richiesta utente): un gruppo BuildSitePlaceholders_<id> esiste solo per un edificio ancora nel
+# mondo, non completo e non demolito — qualunque altro gruppo (edificio completato, demolito o non
+# più presente) viene rimosso, qualunque cosa sia successa al segnale building_construction_
+# completed (la rimozione via segnale in _on_building_construction_completed resta come percorso
+# rapido, ma non è più l'unico). Solo RIMOZIONE: la creazione resta a _spawn_build_site_placeholders/
+# _restore_build_site_placeholders_for_cell. Gira ogni volta che questa funzione ridisegna gli
+# edifici, quindi copre completamento, demolizione e riattivazione cella con lo stesso codice.
+func _sync_build_site_placeholders(cell: LiveMacroCell) -> void:
+	if cell.container == null:
+		return
+	var expected_group_names: Dictionary = {}
+	for building in macro_world.buildings:
+		if building.macro_x == cell.macro_x and building.macro_y == cell.macro_y \
+				and not building.is_complete and not building.is_demolished:
+			expected_group_names[_BUILD_SITE_PLACEHOLDER_GROUP_NAME_PREFIX + str(building.id)] = true
+	for child in cell.container.get_children():
+		var child_name := String(child.name)
+		if child_name.begins_with(_BUILD_SITE_PLACEHOLDER_GROUP_NAME_PREFIX) \
+				and not expected_group_names.has(child_name) and not child.is_queued_for_deletion():
+			child.queue_free()
 
 func _on_secondary_action_pressed(action_id: StringName) -> void:
 	match action_id:

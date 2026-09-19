@@ -34,9 +34,14 @@ extends RefCounted
 #
 # "wild_vegetables" (2026-09-19, richiesta utente - verdure selvatiche raccoglibili per
 # microcella): l'emoji verdura a foglia rende già bene il concetto, stesso principio di eggs sopra.
+#
+# "medicinal_herbs" (2026-09-19, richiesta utente - erbe medicinali): 🌿 rende già bene una pianta
+# officinale, stesso principio di wild_vegetables sopra. Consultato dal pannello dell'individuo
+# (HumanIndividualInfoPanel), da BuildingInfoPanel e da OptionChoiceDialog.
 const RESOURCE_ICONS := {
 	"eggs": "🥚",
 	"wild_vegetables": "🥬",
+	"medicinal_herbs": "🌿",
 }
 
 
@@ -95,8 +100,13 @@ const RESOURCE_ICON_NODES := {
 # "🔨" (martello, azione "apri il menu costruzione" in BuildBar.main_row) NON è qui: non
 # rappresenta un tipo di edificio, è un glifo di azione UI — dominio diverso, nessun bisogno di
 # generalizzarlo finché non serve altrove.
+#
+# "deposit_site" e "dirt_ground" ASSENTI da questo Dictionary (2026-09-19, richiesta utente): erano
+# emoji (🟫/🟤), ora hanno un'icona DISEGNATA (DepositSiteIcon/DirtGroundIcon, vedi
+# BUILDING_ICON_NODES sotto) che riproduce sagoma, colori e bordo del rendering sulla mappa — un
+# emoji non poteva farlo. get_building_icon ritorna quindi "" per entrambi: il chiamante usa
+# get_building_icon_node (vedi BuildBar._ready).
 const BUILDING_ICONS := {
-	"deposit_site": "🟫",
 	"hut": "🛖",
 	# Stick Tent (2026-09-12, richiesta utente — collegamento UI/rendering) — "⛺" rende già bene da
 	# sé "tenda", nessun problema di leggibilità come per pebble_circle sopra: non serve un'icona
@@ -112,6 +122,13 @@ const BUILDING_ICONS := {
 # ora (vedi commento su BUILDING_ICONS sopra per il perché non ha un'icona emoji).
 const BUILDING_ICON_NODES := {
 	"pebble_circle": preload("res://simulation/scripts/ui/PebbleCircleIcon.gd"),
+	# "deposit_site" (2026-09-19, richiesta utente): stessa sagoma, riempimento e bordo dell'edificio
+	# piazzato (DepositSiteShape) + un mucchio di tre sacchi di iuta che la distingue dalla terra
+	# battuta — vedi DepositSiteIcon.
+	"deposit_site": preload("res://simulation/scripts/ui/DepositSiteIcon.gd"),
+	# "dirt_ground" (2026-09-19, richiesta utente): quadrato a tutto slot, senza bordo, del colore base
+	# del rendering con le stesse macchie — vedi DirtGroundIcon/DirtGroundPattern.
+	"dirt_ground": preload("res://simulation/scripts/ui/DirtGroundIcon.gd"),
 }
 
 

@@ -34,6 +34,20 @@ static func get_available(macro_state: MacroCellState, resource_name: String, po
 	var rules := CaloricCalculator.get_caloric_source_rules(resource_name)
 	if is_resource_locked(resource_name, rules):
 		return 0
+	return _get_available_unlocked(macro_state, resource_name, position, rules)
+
+
+# Disponibilità SENZA il gate required_idea_id (2026-09-19, richiesta utente — erbe medicinali:
+# "il marker non dipende dal lock, solo dalla disponibilità") — per il RENDERING a terra
+# (GameScene/MacroCellScene._build_lot_availability_map), MAI per pickup/ispezione, che passano
+# sempre da get_available. Prima di questo metodo il rendering chiamava get_available, quindi
+# avrebbe nascosto anche i marker di una risorsa bloccata: contrario a quanto già dichiarato su
+# required_idea_id ("MAI dal rendering"), mai emerso solo perché nessuna .tres lo valorizzava.
+static func get_available_ignoring_lock(macro_state: MacroCellState, resource_name: String, position: Vector2i) -> int:
+	return _get_available_unlocked(macro_state, resource_name, position, CaloricCalculator.get_caloric_source_rules(resource_name))
+
+
+static func _get_available_unlocked(macro_state: MacroCellState, resource_name: String, position: Vector2i, rules: SecondaryResourceRules) -> int:
 	if rules != null and rules.lot_source != SecondaryResourceTypes.LotSource.NONE:
 		return LotCapacityService.get_available(macro_state, resource_name, position, rules)
 	if resource_name == "eggs":

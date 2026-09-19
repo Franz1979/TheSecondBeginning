@@ -151,11 +151,38 @@ func _build_resource_row(resource_name: String, quantity: int) -> Control:
 	resource_button.text = "%s (%d)" % [IconRegistry.get_resource_display_name(resource_name), quantity]
 	resource_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	resource_button.toggle_mode = true
+	_apply_selected_style(resource_button)
 	resource_button.pressed.connect(_select_resource.bind(resource_name))
 	row.add_child(resource_button)
 	_resource_row_buttons[resource_name] = resource_button
 
 	return row
+
+
+# Stile "selezionato" marcato (2026-09-19, richiesta utente — "faccio fatica a distinguerli": lo
+# stile "pressed" del tema di default è troppo tenue rispetto a "normal"): sfondo blu pieno, bordo
+# chiaro e testo bianco, solo per lo stato pressed/hover_pressed — le righe NON selezionate
+# restano col tema di default, così il contrasto è tra "una" e "le altre". Override locali sul
+# singolo Button, nessun tema di progetto toccato.
+const SELECTED_BG_COLOR := Color(0.20, 0.42, 0.78, 1.0)
+const SELECTED_BORDER_COLOR := Color(0.75, 0.87, 1.0, 1.0)
+const SELECTED_FONT_COLOR := Color(1.0, 1.0, 1.0, 1.0)
+
+
+func _apply_selected_style(button: Button) -> void:
+	var style := StyleBoxFlat.new()
+	style.bg_color = SELECTED_BG_COLOR
+	style.border_color = SELECTED_BORDER_COLOR
+	style.set_border_width_all(2)
+	style.set_corner_radius_all(3)
+	style.content_margin_left = 8.0
+	style.content_margin_right = 8.0
+	style.content_margin_top = 4.0
+	style.content_margin_bottom = 4.0
+	button.add_theme_stylebox_override("pressed", style)
+	button.add_theme_stylebox_override("hover_pressed", style)
+	button.add_theme_color_override("font_pressed_color", SELECTED_FONT_COLOR)
+	button.add_theme_color_override("font_hover_pressed_color", SELECTED_FONT_COLOR)
 
 
 # Marca `resource_name` come selezionato: aggiorna lo stile "pressed" di ogni riga (radio-button-

@@ -67,6 +67,20 @@ var move_speed: float = 10.0
 # si muoveva alla IDENTICA velocità di WalkAction (bug concettuale: "correre" doveva anche accorciare
 # il tempo di arrivo, non solo costare di più per la stessa andatura).
 var move_speed_multiplier: float = 1.0
+# Moltiplicatori di movimento del TERRENO nella microcella in cui si trova l'individuo (2026-09-19,
+# richiesta utente — terra battuta 0.95 di stamina): scritti SOLO da MovementTerrainService.
+# update_individual (chiamata da HumanIndividualMovementService.advance_movement, prima di
+# apply_action nello stesso frame), letti da HumanIndividualMovementService (velocità) e da
+# WalkAction/RunAction.get_stamina_delta (quota base del costo). MAI persistiti: derivati dalla
+# posizione, come move_speed_multiplier. 1.0 = nessun effetto (microcella non in mappa, cella non
+# viva).
+var terrain_stamina_multiplier: float = 1.0
+var terrain_speed_multiplier: float = 1.0
+# Memo dell'ultima risoluzione (chiave = macrocella + microcella, versione della mappa di quella
+# cella): finché entrambe non cambiano, update_individual non rilegge nulla — l'individuo cambia
+# microcella ogni ~0.1 giorno di gioco, cioè ogni migliaia di frame.
+var terrain_cache_key: Vector4i = Vector4i(-999999, -999999, -999999, -999999)
+var terrain_cache_version: int = -1
 var is_selected: bool = false
 
 # --- Dati anagrafici — solo campi per ora, nessuna logica di riproduzione/formazione coppie ---

@@ -15,9 +15,16 @@ class_name SecondaryResourceTypes
 # deperibilità non era consultata da nessuna logica; se servirà in futuro un vero sistema di
 # conservazione/scorte, si riaggiungerà come campo dedicato, non rimettendo sottocategorie qui.
 # Non ancora consultato da nessuna logica — solo il dato.
+#
+# MEDICINAL (2026-09-19, richiesta utente — erbe medicinali, non alimentari né materiale da
+# costruzione) aggiunto IN FONDO: i .tres salvano il valore NUMERICO (FOOD è 0 implicito,
+# RAW_MATERIAL è `category = 1` in stick/pebble/plant_fiber) e Building.enabled_categories viene
+# serializzato come Array[int] — inserirlo prima di RAW_MATERIAL avrebbe cambiato in silenzio la
+# categoria di ogni risorsa esistente e i filtri già salvati. Mai riordinare questi valori.
 enum Category {
 	FOOD,
 	RAW_MATERIAL,
+	MEDICINAL,
 }
 
 # Provenienza dello stock (2026-09-08, richiesta utente) — PURAMENTE descrittivo, nessuna logica

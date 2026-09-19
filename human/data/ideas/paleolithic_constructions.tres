@@ -1,11 +1,10 @@
-[gd_resource type="Resource" script_class="Idea" format=3]
+[gd_resource type="Resource" script_class="Idea" format=3 uid="uid://bgppm6f887b2k"]
 
-[ext_resource type="Script" path="res://human/scripts/core/Idea.gd" id="1_paleolithic_constructions"]
+[ext_resource type="Script" uid="uid://cqx38hirrk3s1" path="res://human/scripts/core/Idea.gd" id="1_paleolithic_constructions"]
 
 [resource]
 script = ExtResource("1_paleolithic_constructions")
 id = "paleolithic_constructions"
 display_name = "idea_paleolithic_constructions"
-thoughts_cost = 10
-prerequisites = Array[String]([])
+thoughts_cost = 20
 era = "paleolithic"

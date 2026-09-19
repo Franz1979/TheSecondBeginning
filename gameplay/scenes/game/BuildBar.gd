@@ -41,7 +41,10 @@ const BUILDING_SLOT_INDEX_BY_TYPE := {
 	# posto con Hut, slot 3 -> 2) — submenu_row.slot_count è già 4 (vedi BuildBar.tscn), nessuna
 	# modifica alla scena necessaria, solo l'indice qui e l'ordine delle configure_slot sotto.
 	"stick_tent": 2,
-	"hut": 3,
+	# Terreno in terra battuta (2026-09-19, richiesta utente) — slot 3, submenu_row.slot_count portato
+	# a 5 in BuildBar.tscn; Hut resta SEMPRE l'ultimo a destra (slot 4, richiesta utente).
+	"dirt_ground": 3,
+	"hut": 4,
 }
 
 enum _ViewState { MINIMIZED, LEVEL_1, LEVEL_2 }
@@ -97,7 +100,10 @@ func _ready() -> void:
 	# fonti di verità: nessun altro punto del progetto poteva riusare la stessa icona capanna senza
 	# riscriverla a mano) — chiavi = building_type_name, stessa convenzione di
 	# BUILDING_SLOT_INDEX_BY_TYPE sopra.
-	submenu_row.configure_slot(1, IconRegistry.get_building_icon("deposit_site"), tr("build_bar_deposit_site_tooltip"), &"build_deposit_site")
+	submenu_row.configure_slot(
+		1, "", tr("build_bar_deposit_site_tooltip"), &"build_deposit_site", "", true,
+		IconRegistry.get_building_icon_node("deposit_site")
+	)
 	# Stick Tent (2026-09-12, richiesta utente) — stesso schema emoji-inline di deposit_site sopra
 	# (icona "⛺", vedi IconRegistry.BUILDING_ICONS: già distintiva/riconoscibile da sé, un emoji
 	# reale non un "placeholder" nel senso di forma disegnata a mano come i rametti di
@@ -107,8 +113,14 @@ func _ready() -> void:
 	# speciale qui, stesso principio già valido per deposit_site. Slot 2 (scambiata con Hut,
 	# richiesta utente 2026-09-12 — "inverti la tenda con hut").
 	submenu_row.configure_slot(2, IconRegistry.get_building_icon("stick_tent"), tr("build_bar_stick_tent_tooltip"), &"build_stick_tent")
-	# Hut, ora slot 3 (scambiata con Stick Tent, richiesta utente 2026-09-12).
-	submenu_row.configure_slot(3, IconRegistry.get_building_icon("hut"), tr("build_bar_hut_tooltip"), &"build_hut")
+	# Terreno in terra battuta (2026-09-19, richiesta utente) — slot 3, sempre abilitato di default
+	# (nessun required_idea_id/is_village_center in dirt_ground.tres), stesso principio degli altri.
+	submenu_row.configure_slot(
+		3, "", tr("build_bar_dirt_ground_tooltip"), &"build_dirt_ground", "", true,
+		IconRegistry.get_building_icon_node("dirt_ground")
+	)
+	# Hut, ora slot 4 e sempre ULTIMA a destra (richiesta utente 2026-09-19; era slot 3 dal 2026-09-12).
+	submenu_row.configure_slot(4, IconRegistry.get_building_icon("hut"), tr("build_bar_hut_tooltip"), &"build_hut")
 	main_row.action_pressed.connect(_on_main_row_action_pressed)
 	control_button.pressed.connect(_on_control_button_pressed)
 	_apply_state()

@@ -1,0 +1,15 @@
+[gd_resource type="Resource" script_class="BuildingRules" format=3 uid="uid://chb5ljngiyqoc"]
+
+[ext_resource type="Script" uid="uid://b8pl3yflicmtn" path="res://simulation/scripts/core/BuildingRules.gd" id="1_dirt_ground"]
+
+[resource]
+script = ExtResource("1_dirt_ground")
+building_name = "building_dirt_ground"
+category = 3
+min_construction_days = 1
+required_labor = 600
+setup_site_material_per_cell = 0
+required_space = 1
+has_door = false
+movement_stamina_multiplier = 0.95
+movement_speed_multiplier = 1.0

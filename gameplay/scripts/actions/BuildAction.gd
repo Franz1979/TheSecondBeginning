@@ -221,6 +221,15 @@ func on_complete(individual: Variant, context: Dictionary) -> void:
 	if target_building == null:
 		return
 	target_building.is_complete = true
+	# built_year scritto QUI, nello stesso punto di is_complete (2026-09-19, richiesta utente —
+	# prima lo scriveva solo il listener GameScene._on_building_construction_completed: se il
+	# segnale partiva senza listener collegato, l'edificio risultava completo con built_year=-1).
+	# Letto ADESSO da GameSettings.active_game_data (stessa istanza di GameScene.game_data, vedi
+	# GameScene, dove viene assegnata) invece che iniettato al costruttore: l'anno può cambiare tra
+	# la creazione della Task e questo step (vedi il commento sopra), un valore iniettato sarebbe
+	# stantio. Nessuna partita attiva (null) -> resta -1, il pannello lo mostra come "anno non noto".
+	if GameSettings.active_game_data != null:
+		target_building.built_year = GameSettings.active_game_data.year
 	if target_building.rules != null:
 		target_building.current_durability = target_building.rules.max_durability
 		# Consumo dei materiali di costruzione (2026-09-14, richiesta utente) — STESSO bugfix già

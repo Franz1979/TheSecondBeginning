@@ -537,7 +537,8 @@ func _build_lot_availability_map(resource_name: String, positions: Array) -> Dic
 	var availability: Dictionary = {}
 	for pos in positions:
 		var lot := Vector2i(pos.x, pos.y)
-		var available: int = TerrainScatteredResourceService.get_available(macro_state, resource_name, lot)
+		# get_available_ignoring_lock — stesso motivo di GameScene._build_lot_availability_map.
+		var available: int = TerrainScatteredResourceService.get_available_ignoring_lock(macro_state, resource_name, lot)
 		if available > 0:
 			availability[lot] = available
 	return availability

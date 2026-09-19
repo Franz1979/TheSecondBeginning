@@ -87,11 +87,12 @@ static func is_position_buildable(
 		var door_front_resolved := _resolve_cell_and_microcell(live_cells, macro_cell_pixels, cell_size, door_front_position)
 		if door_front_resolved.is_empty():
 			return false
-		if not _is_position_clear(door_front_resolved["cell"], door_front_resolved["microcell"], current_absolute_day, macro_world, rules):
+		if not _is_position_clear(door_front_resolved["cell"], door_front_resolved["microcell"], current_absolute_day, macro_world, rules, true):
 			return false
 
-	# Criterio 8
-	if _blocks_existing_building_door(
+	# Criterio 8 — un edificio MOVEMENT (calpestabile, es. terra battuta) può stare davanti alla porta
+	# di un edificio esistente: non la blocca, ci si cammina sopra (2026-09-19, richiesta utente).
+	if rules.category != BuildingTypes.Category.MOVEMENT and _blocks_existing_building_door(
 		resolved["cell"].macro_x, resolved["cell"].macro_y, resolved["microcell"], macro_world
 	):
 		return false
@@ -116,7 +117,12 @@ static func _resolve_cell_and_microcell(live_cells: Dictionary, macro_cell_pixel
 # commento in testa al file) — "questo punto è noto e libero da ostacoli permanenti/di tipo",
 # usata sia per la posizione della capanna stessa sia, dal Criterio 7, per la microcella davanti
 # alla porta — `rules` decide quali dei criteri 3/4/5 si applicano per QUESTO tipo di edificio.
-static func _is_position_clear(cell: LiveMacroCell, microcell: Vector2i, current_absolute_day: int, macro_world: World, rules: BuildingRules) -> bool:
+# `ignore_movement_buildings` (2026-09-19, richiesta utente): true SOLO per la microcella davanti alla
+# porta (Criterio 7) — un edificio di categoria MOVEMENT (calpestabile, es. terra battuta) lì non è
+# un ostacolo per la porta, quindi il Criterio 6 lo salta; gli altri controlli (Fog of War, acqua,
+# fiume, roccia) restano. Per la posizione dell'edificio stesso resta false: non si costruisce sopra
+# nessun altro edificio, calpestabile o no.
+static func _is_position_clear(cell: LiveMacroCell, microcell: Vector2i, current_absolute_day: int, macro_world: World, rules: BuildingRules, ignore_movement_buildings: bool = false) -> bool:
 	# Criterio 1
 	if cell.macro_cell == null:
 		return false
@@ -144,6 +150,8 @@ static func _is_position_clear(cell: LiveMacroCell, microcell: Vector2i, current
 	# Criterio 6
 	if macro_world != null:
 		for building in macro_world.buildings:
+			if ignore_movement_buildings and building.rules != null and building.rules.category == BuildingTypes.Category.MOVEMENT:
+				continue
 			if (
 				building.macro_x == cell.macro_x and building.macro_y == cell.macro_y
 				and building.micro_x == microcell.x and building.micro_y == microcell.y

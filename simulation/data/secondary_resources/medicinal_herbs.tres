@@ -1,0 +1,17 @@
+[gd_resource type="Resource" script_class="SecondaryResourceRules" format=3 uid="uid://pmxib4m01lu0"]
+
+[ext_resource type="Script" uid="uid://cu4cyua5y4n1m" path="res://simulation/scripts/core/SecondaryResourceRules.gd" id="1_medicinal_herbs"]
+
+[resource]
+script = ExtResource("1_medicinal_herbs")
+secondary_resource_name = "medicinal_herbs"
+calories_per_unit = 0.0
+seasonal_availability_multiplier = Array[float]([0.0, 1.0, 1.0, 0.4])
+category = 2
+required_idea_id = "plant_lore"
+generation_source = 1
+day_durability = 90
+patch_probability = 0.05
+patch_capacity_min = 3
+patch_capacity_max = 12
+lot_source = 3

@@ -13,8 +13,14 @@ class_name BuildingTypes
 # altre categorie si aggiungono qui quando serviranno davvero. Non ancora consultato da BuildBar/
 # altra UI in questo passo — solo il dato, pronto per i futuri sottomenu per categoria (quando i
 # tipi di edificio saranno troppi per una sola riga, confermato con l'utente).
+#
+# MOVEMENT (2026-09-19, richiesta utente — dirt_ground, "terreno in terra battuta": in futuro
+# ridurrà il consumo di stamina di chi ci cammina sopra, oggi nessun effetto) aggiunto IN FONDO:
+# i .tres salvano il valore NUMERICO (RESIDENTIAL è 0 implicito per hut/stick_tent, che non
+# scrivono `category`) — mai riordinare questi valori.
 enum Category {
 	RESIDENTIAL,
 	POLITICAL,
 	STORAGE,
+	MOVEMENT,
 }

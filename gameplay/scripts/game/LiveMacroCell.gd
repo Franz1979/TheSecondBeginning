@@ -24,6 +24,16 @@ var fog_of_war_memory: FogOfWarMemory
 var river_positions: Array = []
 var river_exterior_occupied: Dictionary = {}
 
+# Mappa SPARSA dei modificatori di movimento (2026-09-19, richiesta utente): SOLO le microcelle che
+# deviano dalla norma, Vector2i (microcella) -> Vector2(moltiplicatore stamina, moltiplicatore
+# velocità); l'assenza significa (1.0, 1.0). Costruita da MovementTerrainService.rebuild (chiamata da
+# GameScene._refresh_building_visuals), mai da chi la interroga. movement_version: numero univoco
+# (contatore globale del service) assegnato a ogni ricostruzione — serve al memo di
+# HumanIndividual.terrain_cache_version per accorgersi che la mappa è cambiata, anche se la cella è
+# stata disattivata e ricreata.
+var movement_modifiers: Dictionary = {}
+var movement_version: int = 0
+
 # Cache del risultato di VegetationPositionService.generate_positions (diagnostica lentezza,
 # 2026-08-30) — quella chiamata è deterministica e COSTOSA (~90-190ms/cella): il suo output
 # cambia SOLO quando dedicated_space/anno/eccezioni taglio-morte/edifici cambiano DAVVERO, mai per

@@ -154,7 +154,7 @@ const PEBBLE_CIRCLE_BLOB_VERTEX_COUNT: int = 8
 # battuta SQUADRATA (2026-09-08, revisione: "molto più squadrato", non un quadrato perfetto però):
 # nessuna porta/recinto/rotazione (has_door=false in deposit_site.tres). Stessa geometria (duplicata
 # apposta, stesso principio già in uso tra MicroCellRenderer/BuildingGhost) di
-# BuildingGhost._draw_deposit_site/_deposit_site_polygon, così l'anteprima e l'edificio finito
+# BuildingGhost._draw_deposit_site (entrambi da DepositSiteShape), così l'anteprima e l'edificio finito
 # coincidono esattamente.
 # Riempimento schiarito (2026-09-12, richiesta utente: "leggermente più chiaro, lascia il bordo di
 # questo colore", poi "ancora un po' più chiaro") — DEPOSIT_SITE_COLOR alzato in due passi (era
@@ -165,9 +165,10 @@ const DEPOSIT_SITE_OUTLINE_COLOR := Color(0.24, 0.18, 0.12, 1.0)
 const DEPOSIT_SITE_OUTLINE_WIDTH: float = 0.5
 # 4.5 (2026-09-08, richiesta utente: "allarga ancora di più, quasi ad occupare tutta la microcella")
 # — la microcella è larga CELL_SIZE=10, quindi mezza cella = 5: 4.5 lascia un margine minimo prima
-# del bordo anche col jitter massimo (vedi _deposit_site_polygon, fino a ×1.08).
+# del bordo anche col jitter massimo (vedi DepositSiteShape: lati irregolari spostati al più di 0.05 × semilato verso l esterno).
 const DEPOSIT_SITE_HALF_SIDE: float = 4.5
-const DEPOSIT_SITE_VERTEX_COUNT: int = 8
+# Sagoma con angoli smussati diversamente da DepositSiteShape.build_polygon (2026-09-19, richiesta
+# utente) — il vecchio poligono a 8 vertici con jitter (DEPOSIT_SITE_VERTEX_COUNT) non esiste più.
 
 # Stick Tent (2026-09-12, richiesta utente — collegamento UI/rendering: il .tres/BuildingRules
 # esistevano già da un giro precedente, ma non era ancora disegnabile) — placeholder semplice:
@@ -362,7 +363,7 @@ var _stone_multimeshes: Array = [] # MultiMesh, indicizzato per variante — un 
 # chiamante (2026-09-19, refactor lot_source — RINOMINATO da pebble_quantities: prima era la
 # quantità grezza di MacroCellState.pebble_quantities, ora GameScene/MacroCellScene risolvono
 # TerrainScatteredResourceService.get_available per ciascuna posizione stone prima di passarla qui,
-# STESSO principio già in uso per egg_nest_availability/wild_vegetable_availability sotto), MAI
+# STESSO principio già in uso per egg_nest_availability/grass_patch_availability sotto), MAI
 # ricalcolata qui: il renderer si limita a leggerla per decidere QUANTI puntini-sasso disegnare
 # attorno a ciascuna posizione stone, a 3 livelli (vedi PEBBLE_TIER_*/_pebble_tier_count) — 0 =
 # nessun puntino disegnato, così quando il consumo porta una posizione a 0 basterà richiamare
@@ -395,13 +396,15 @@ var _stick_multimesh: MultiMesh = null
 var egg_nest_availability: Dictionary = {}
 var _egg_mesh: ArrayMesh = null
 var _egg_multimesh: MultiMesh = null
-# Lotti "wild_vegetables" (2026-09-19, richiesta utente — verdure selvatiche raccoglibili per
-# microcella) — MIRROR esatto di egg_nest_availability sopra, stesso formato/stessa fonte
-# (TerrainScatteredResourceService.get_wild_vegetable_available_at invece di get_egg_stock_
-# available_at).
-var wild_vegetable_availability: Dictionary = {}
-var _wild_vegetables_mesh: ArrayMesh = null
-var _wild_vegetables_multimesh: MultiMesh = null
+# Lotti GRASS_PATCH (wild_vegetables dal 2026-09-19, GENERALIZZATO lo stesso giorno per le erbe
+# medicinali — richiesta utente: "un dizionario resource_name → multimesh, invece di duplicare il
+# blocco") — MIRROR di egg_nest_availability sopra, stesso formato per risorsa (Vector2i lotto ->
+# quantità residua già > 0 e filtrata FoW dal chiamante). resource_name -> {lotto: quantità} /
+# resource_name -> MultiMesh (creato al primo uso da _get_grass_patch_multimesh, mesh cotta una
+# volta sola da GRASS_PATCH_MARKER_SHAPES).
+var grass_patch_availability: Dictionary = {}
+var _grass_patch_multimeshes: Dictionary = {}
+var _grass_patch_missing_shape_warned: Dictionary = {}
 # Sottotipo congelato per individuo — Vector3i -> String ("wood_only"/"fruit_bearing" per SHRUB,
 # "wood_only"/"wild_fruit"/"domesticable_fruit"/"conifer" per TREE), stesso oggetto di
 # MacroCellState.tree_individual_subtype/shrub_individual_subtype (Dictionary per riferimento,
@@ -514,16 +517,19 @@ func set_egg_nest_availability(availability: Dictionary) -> void:
 	queue_redraw()
 
 
-# Lotti "wild_vegetables" (2026-09-19, richiesta utente) — MIRROR esatto di
-# set_egg_nest_availability sopra, stesso momento/stessa cadenza di chiamata da GameScene.
-func set_wild_vegetable_availability(availability: Dictionary) -> void:
-	wild_vegetable_availability = availability
-	_rebuild_wild_vegetables_multimesh()
+# Lotti GRASS_PATCH (2026-09-19, generalizzato da set_wild_vegetable_availability) — MIRROR di
+# set_egg_nest_availability sopra, stesso momento/stessa cadenza di chiamata da GameScene, ma UNA
+# chiamata per risorsa GRASS_PATCH (ogni risorsa ha il proprio MultiMesh, vedi
+# _get_grass_patch_multimesh).
+func set_grass_patch_availability(resource_name: String, availability: Dictionary) -> void:
+	grass_patch_availability[resource_name] = availability
+	_rebuild_grass_patch_multimesh(resource_name)
 	queue_redraw()
 
 
 func set_buildings(buildings_data: Array) -> void:
 	buildings = buildings_data
+	_rebuild_dirt_ground_mesh()
 	queue_redraw()
 
 
@@ -983,7 +989,7 @@ func _draw() -> void:
 	_draw_selected_stone_highlight()
 	_draw_stick_positions()
 	_draw_egg_nest_positions()
-	_draw_wild_vegetables_positions()
+	_draw_grass_patch_positions()
 	_draw_selected_stick_lot_highlight()
 	_draw_selected_microcell_highlight()
 	_draw_vegetation_positions()
@@ -1003,6 +1009,9 @@ func _draw() -> void:
 # vegetazione — un edificio occupa una posizione precisa, non un lotto condiviso da più individui.
 func _draw_buildings() -> void:
 	var half: float = CELL_SIZE / 2.0
+	# Terra battuta PRIMA di ogni altro edificio (2026-09-19): è una superficie piatta a livello
+	# del terreno, mai sopra la sagoma di un altro edificio — vedi _rebuild_dirt_ground_mesh.
+	_draw_dirt_ground_tiles()
 	for entry in buildings:
 		var pos: Vector2i = entry["position"]
 		var ground := Vector2(pos.x * CELL_SIZE + half, pos.y * CELL_SIZE + half)
@@ -1028,6 +1037,10 @@ func _draw_buildings() -> void:
 		var building_type_name: String = entry.get("building_type_name", "hut")
 		if building_type_name == "pebble_circle":
 			_draw_pebble_circle(ground)
+			continue
+		if building_type_name == "dirt_ground":
+			# Già disegnato da _draw_dirt_ground_tiles (una sola mesh per cella, un draw call) — qui solo lo skip, il ramo "cantiere" sopra copre i tile
+			# non ancora completi.
 			continue
 		if building_type_name == "deposit_site":
 			_draw_deposit_site(ground)
@@ -1174,18 +1187,148 @@ func _building_hut_polygon(ground: Vector2, direction: GameTypes.Direction) -> P
 	return points
 
 
-# Chiazza di terra battuta attorno al centro della microcella — nessuna porta/rotazione da
-# rispettare (has_door=false per questo tipo), geometria fissa (stesso seed di
-# BuildingGhost._deposit_site_polygon). Stessa funzione (duplicata apposta, stesso principio già in
-# uso tra MicroCellRenderer/BuildingGhost) di BuildingGhost._draw_deposit_site. Chiamata SOLO a
-# edificio completo (vedi commento su _draw_pebble_circle sopra) — nessun parametro colore più
-# necessario.
+# Terreno in terra battuta (2026-09-19, richiesta utente) — superficie color sabbia che copre la
+# microcella, "sporcata" con chiazze e puntini casuali di altro colore (vedi DirtGroundPattern per
+# colori e macchie). Nessuna rotazione di edificio né porta (has_door=false in dirt_ground.tres).
+#
+# UNA SOLA MESH PER CELLA, UN SOLO draw call (2026-09-19, richiesta utente — "una sola mesh per
+# cella, 1 draw call"): tutti i tile completi della cella sono cotti in un unico ArrayMesh (colori
+# nei vertici) ricostruito in set_buildings e disegnato con un solo draw_mesh. Il contorno di ogni
+# tile è calcolato QUI, alla costruzione della mesh, mai a ogni _draw, ed è deterministico dalla
+# posizione (hash per lato e per angolo, indipendente dai vicini: costruire un tile accanto non
+# cambia la forma degli altri lati) — quindi non sfarfalla tra i redraw.
+#
+# Contorno: un lato che confina con un altro tile di terra battuta (bit della maschera
+# "dirt_neighbors" passata da GameScene, calcolata anche oltre il confine di macrocella) resta
+# DRITTO e con gli angoli esatti, così tile adiacenti combaciano senza cuciture. Un lato che confina
+# con altro è IRREGOLARE: DIRT_GROUND_SIDE_POINT_COUNT punti intermedi spostati verso l'interno di
+# una profondità casuale (0 .. DIRT_GROUND_NOTCH_MAX_DEPTH_RATIO × CELL_SIZE, ogni tanto 0) — nelle
+# rientranze non c'è geometria, quindi si vede il terreno sotto. Un angolo tra DUE lati irregolari è
+# smussato di un raggio casuale (chamfer). Le macchie stanno a distanza >=
+# DIRT_GROUND_SPECKLE_INNER_MARGIN dal bordo (maggiore della rientranza massima), così non spuntano
+# fuori sagoma.
+#
+# Triangoli per tile: fan dal centro sul contorno (al massimo circa 24) + 13 macchie × 4 = 52,
+# cioè ~76 al massimo, non più degli 80 (2 + 13 × 6) del vecchio tile a MultiMesh.
+const DIRT_GROUND_CIRCLE_SEGMENTS: int = 4
+const DIRT_GROUND_SIDE_POINT_COUNT: int = 4
+const DIRT_GROUND_NOTCH_MAX_DEPTH_RATIO: float = 0.13
+const DIRT_GROUND_CHAMFER_MIN_RATIO: float = 0.06
+const DIRT_GROUND_CHAMFER_MAX_RATIO: float = 0.16
+const DIRT_GROUND_SPECKLE_INNER_MARGIN: float = 0.16
+# Lati nell'ordine N, E, S, W (senso orario sullo schermo, y verso il basso): direzione di marcia
+# e verso l'interno del tile. Bit della maschera dei vicini: 1 << indice del lato.
+const DIRT_GROUND_SIDE_DIRECTIONS := [Vector2(1, 0), Vector2(0, 1), Vector2(-1, 0), Vector2(0, -1)]
+const DIRT_GROUND_SIDE_INWARD := [Vector2(0, 1), Vector2(-1, 0), Vector2(0, -1), Vector2(1, 0)]
+
+var _dirt_ground_mesh: ArrayMesh = null
+# Macchie per variante (DirtGroundPattern.speckles con il margine interno), calcolate al primo uso.
+var _dirt_ground_speckles_by_variant: Dictionary = {}
+
+
+# Ricostruita da set_buildings (ogni volta che GameScene rinfresca gli edifici della cella): un
+# tile per ogni terra battuta COMPLETA (un cantiere non ancora completo è disegnato dal cartello
+# "lavori in corso" in _draw_buildings, non da qui).
+func _rebuild_dirt_ground_mesh() -> void:
+	var vertices := PackedVector2Array()
+	var colors := PackedColorArray()
+	for entry in buildings:
+		if entry.get("building_type_name", "") != "dirt_ground" or not entry.get("is_complete", true):
+			continue
+		_append_dirt_ground_tile(entry["position"], int(entry.get("dirt_neighbors", 0)), vertices, colors)
+	if _dirt_ground_mesh != null:
+		_dirt_ground_mesh.clear_surfaces()
+	if vertices.is_empty():
+		return
+	if _dirt_ground_mesh == null:
+		_dirt_ground_mesh = ArrayMesh.new()
+	var arrays: Array = []
+	arrays.resize(Mesh.ARRAY_MAX)
+	arrays[Mesh.ARRAY_VERTEX] = vertices
+	arrays[Mesh.ARRAY_COLOR] = colors
+	_dirt_ground_mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+
+
+func _append_dirt_ground_tile(pos: Vector2i, neighbor_mask: int, vertices: PackedVector2Array, colors: PackedColorArray) -> void:
+	var half: float = CELL_SIZE / 2.0
+	var center := Vector2(pos.x * CELL_SIZE + half, pos.y * CELL_SIZE + half)
+	var corners: Array[Vector2] = [Vector2(-half, -half), Vector2(half, -half), Vector2(half, half), Vector2(-half, half)]
+
+	# Contorno in senso orario, coordinate locali al centro del tile. L'angolo `side` è l'inizio del
+	# lato `side` e la fine del lato precedente.
+	var boundary := PackedVector2Array()
+	for side in range(4):
+		var previous_side: int = (side + 3) % 4
+		var side_irregular: bool = (neighbor_mask & (1 << side)) == 0
+		var previous_irregular: bool = (neighbor_mask & (1 << previous_side)) == 0
+		var corner: Vector2 = corners[side]
+		if side_irregular and previous_irregular:
+			var corner_rng := RandomNumberGenerator.new()
+			corner_rng.seed = hash(Vector3i(pos.x, pos.y, 200 + side))
+			var chamfer: float = CELL_SIZE * corner_rng.randf_range(DIRT_GROUND_CHAMFER_MIN_RATIO, DIRT_GROUND_CHAMFER_MAX_RATIO)
+			boundary.append(corner - DIRT_GROUND_SIDE_DIRECTIONS[previous_side] * chamfer)
+			boundary.append(corner + DIRT_GROUND_SIDE_DIRECTIONS[side] * chamfer)
+		else:
+			boundary.append(corner)
+		if side_irregular:
+			var side_rng := RandomNumberGenerator.new()
+			side_rng.seed = hash(Vector3i(pos.x, pos.y, 100 + side))
+			for i in range(DIRT_GROUND_SIDE_POINT_COUNT):
+				# t in circa [0.2, 0.8] del lato con piccolo sfalsamento: i punti restano lontani
+				# dagli angoli (dove c'è l'eventuale smusso) e in ordine crescente.
+				var t: float = 0.2 + 0.6 * (float(i) + 0.5 + side_rng.randf_range(-0.3, 0.3)) / float(DIRT_GROUND_SIDE_POINT_COUNT)
+				var depth: float = CELL_SIZE * DIRT_GROUND_NOTCH_MAX_DEPTH_RATIO * maxf(0.0, side_rng.randf_range(-0.25, 1.0))
+				boundary.append(corner + DIRT_GROUND_SIDE_DIRECTIONS[side] * (t * CELL_SIZE) + DIRT_GROUND_SIDE_INWARD[side] * depth)
+
+	# Base: fan dal centro sul contorno (il contorno è "a stella" rispetto al centro: rientranze
+	# poco profonde, angoli al più smussati).
+	for i in range(boundary.size()):
+		vertices.append(center)
+		vertices.append(center + boundary[i])
+		vertices.append(center + boundary[(i + 1) % boundary.size()])
+		for k in range(3):
+			colors.append(DirtGroundPattern.BASE_COLOR)
+
+	# Macchie: variante per hash della posizione, ciascuna un piccolo fan a DIRT_GROUND_CIRCLE_SEGMENTS.
+	var variant: int = posmod(hash(pos * 31 + Vector2i(11, 5)), DirtGroundPattern.VARIANT_COUNT)
+	if not _dirt_ground_speckles_by_variant.has(variant):
+		_dirt_ground_speckles_by_variant[variant] = DirtGroundPattern.speckles(variant, DIRT_GROUND_SPECKLE_INNER_MARGIN)
+	for speckle in _dirt_ground_speckles_by_variant[variant]:
+		var speckle_center: Vector2 = center + (Vector2(speckle["x"], speckle["y"]) - Vector2(0.5, 0.5)) * CELL_SIZE
+		var radius: float = float(speckle["r"]) * CELL_SIZE
+		var speckle_color: Color = speckle["color"]
+		for i in range(DIRT_GROUND_CIRCLE_SEGMENTS):
+			var angle_a: float = TAU * float(i) / float(DIRT_GROUND_CIRCLE_SEGMENTS)
+			var angle_b: float = TAU * float(i + 1) / float(DIRT_GROUND_CIRCLE_SEGMENTS)
+			vertices.append(speckle_center)
+			vertices.append(speckle_center + Vector2(cos(angle_a), sin(angle_a)) * radius)
+			vertices.append(speckle_center + Vector2(cos(angle_b), sin(angle_b)) * radius)
+			for k in range(3):
+				colors.append(speckle_color)
+
+
+func _draw_dirt_ground_tiles() -> void:
+	if _dirt_ground_mesh == null or _dirt_ground_mesh.get_surface_count() == 0:
+		return
+	draw_mesh(_dirt_ground_mesh, null)
+	_debug_draw_primitive_count += 1
+
+
+# Sito di deposito: chiazza di terra battuta con lati irregolari e angoli smussati attorno al centro
+# della microcella — nessuna porta/rotazione da rispettare (has_door=false per questo tipo),
+# geometria fissa (seed fisso in DepositSiteShape, la stessa di BuildingGhost._draw_deposit_site).
+# Chiamata SOLO a edificio completo (vedi commento su _draw_pebble_circle sopra).
+#
+# Poligono e contorno vengono dalla CACHE di DepositSiteShape (2026-09-19, richiesta utente: non
+# ricalcolarli a ogni _draw) in coordinate locali centrate su (0,0); qui basta traslare il sistema di
+# disegno su `ground` — nessun nuovo array per deposito, nessun draw call in più (1 poligono + 1
+# polilinea come prima). Il transform torna a identità subito dopo, prima di _draw_deposit_site_
+# storage_grid e di ogni altro disegno.
 func _draw_deposit_site(ground: Vector2) -> void:
-	var blob := _deposit_site_polygon(ground)
-	draw_colored_polygon(blob, DEPOSIT_SITE_COLOR)
-	var outline := blob.duplicate()
-	outline.append(blob[0])
-	draw_polyline(outline, DEPOSIT_SITE_OUTLINE_COLOR, DEPOSIT_SITE_OUTLINE_WIDTH)
+	draw_set_transform(ground)
+	draw_colored_polygon(DepositSiteShape.get_polygon(DEPOSIT_SITE_HALF_SIDE), DEPOSIT_SITE_COLOR)
+	draw_polyline(DepositSiteShape.get_closed_outline(DEPOSIT_SITE_HALF_SIDE), DEPOSIT_SITE_OUTLINE_COLOR, DEPOSIT_SITE_OUTLINE_WIDTH)
+	draw_set_transform(Vector2.ZERO)
 
 
 # Cerchio pieno attorno al centro della microcella più un piccolo TRIANGOLO sul bordo, nel verso
@@ -1234,6 +1377,7 @@ const DEPOSIT_STORAGE_ICON_DRAW_METHODS := {
 	"mushroom": "_draw_deposit_storage_mushroom_icon",
 	"eggs": "_draw_deposit_storage_eggs_icon",
 	"wild_vegetables": "_draw_deposit_storage_wild_vegetables_icon",
+	"medicinal_herbs": "_draw_deposit_storage_medicinal_herbs_icon",
 }
 
 
@@ -1628,7 +1772,7 @@ func _draw_deposit_storage_egg(
 # la foglia centrale è più grande e punta dritta verso l'alto (rot=0), le due laterali sono più
 # piccole e simmetriche, stesso principio "una dominante, le altre di contorno" già usato per gli
 # eggs (2 gusci d'ombra + 1 pieno). Stessa forma (ellisse semplice, nessuna asimmetria come
-# l'uovo) sia qui sia nella mesh a terra (vedi _ensure_wild_vegetables_mesh più sotto in questo
+# l'uovo) sia qui sia nella mesh a terra (vedi _get_grass_patch_multimesh più sotto in questo
 # file, che riusa DIRETTAMENTE questo stesso Array), per coerenza visiva tra i due punti di
 # rendering di questa risorsa.
 const DEPOSIT_STORAGE_WILD_VEGETABLES_COLOR_LEAF_MAIN := Color(0.42, 0.62, 0.22, 1.0)
@@ -1664,22 +1808,35 @@ func _draw_deposit_storage_wild_vegetables_leaf(
 	draw_colored_polygon(points, color)
 
 
-# Poligono a DEPOSIT_SITE_VERTEX_COUNT lati (8, raggio in "norma del massimo" invece che
-# circolare — vedi il commento esteso su BuildingGhost._deposit_site_polygon per la derivazione)
-# attorno a `ground`, con jitter per-vertice così non legge come una piastrella geometrica. Stesso
-# principio di _stone_blob_polygon sopra, seed fisso (0): stessa sagoma per ogni Deposit Site
-# piazzato, stesso comportamento già accettato per la sagoma della capanna.
-func _deposit_site_polygon(ground: Vector2) -> PackedVector2Array:
-	var rng := RandomNumberGenerator.new()
-	rng.seed = 0
-	var points := PackedVector2Array()
-	for v in range(DEPOSIT_SITE_VERTEX_COUNT):
-		var base_angle: float = TAU * float(v) / float(DEPOSIT_SITE_VERTEX_COUNT)
-		var jittered_angle: float = base_angle + rng.randf_range(-0.05, 0.05)
-		var square_radius: float = DEPOSIT_SITE_HALF_SIDE / maxf(absf(cos(base_angle)), absf(sin(base_angle)))
-		var vertex_radius: float = square_radius * rng.randf_range(0.9, 1.08)
-		points.append(ground + Vector2(cos(jittered_angle), sin(jittered_angle)) * vertex_radius)
-	return points
+# Replica world-space per "medicinal_herbs" (2026-09-19, richiesta utente — icona nel deposito,
+# altrimenti cadeva nel pallino di fallback di _draw_deposit_site_storage_grid): un piccolo stelo
+# con due paia di foglioline ovali basse e larghe (verde-azzurro, DIVERSO dal verde-giallo di
+# wild_vegetables) e un fiorellino viola in cima — il fiore è ciò che le distingue a colpo d'occhio
+# da una verdura commestibile. Stesso principio di wild_vegetables sopra: nessuna icona Control da
+# replicare, geometria disegnata direttamente qui; la STESSA lista DEPOSIT_STORAGE_MEDICINAL_HERBS_
+# LEAVES è la fonte di verità anche per il marker a terra (vedi GRASS_PATCH_MARKER_SHAPES). Le
+# ellissi passano da _draw_deposit_storage_wild_vegetables_leaf, che è di fatto un disegna-ellisse
+# generico (cos/sin + rotazione, nessuna specificità verdura) — nessuna copia.
+const DEPOSIT_STORAGE_MEDICINAL_HERBS_COLOR_LEAF_MAIN := Color(0.35, 0.58, 0.42, 1.0)
+const DEPOSIT_STORAGE_MEDICINAL_HERBS_COLOR_LEAF_DARK := Color(0.24, 0.44, 0.32, 1.0)
+const DEPOSIT_STORAGE_MEDICINAL_HERBS_COLOR_FLOWER := Color(0.62, 0.42, 0.75, 1.0)
+const DEPOSIT_STORAGE_MEDICINAL_HERBS_COLOR_STEM := Color(0.35, 0.45, 0.25, 1.0)
+const DEPOSIT_STORAGE_MEDICINAL_HERBS_LEAVES := [
+	{"cx": 0.34, "cy": 0.58, "rx": 0.15, "ry": 0.08, "rot": -0.5, "color": DEPOSIT_STORAGE_MEDICINAL_HERBS_COLOR_LEAF_DARK},
+	{"cx": 0.66, "cy": 0.58, "rx": 0.15, "ry": 0.08, "rot": 0.5, "color": DEPOSIT_STORAGE_MEDICINAL_HERBS_COLOR_LEAF_DARK},
+	{"cx": 0.38, "cy": 0.42, "rx": 0.13, "ry": 0.07, "rot": -0.4, "color": DEPOSIT_STORAGE_MEDICINAL_HERBS_COLOR_LEAF_MAIN},
+	{"cx": 0.62, "cy": 0.42, "rx": 0.13, "ry": 0.07, "rot": 0.4, "color": DEPOSIT_STORAGE_MEDICINAL_HERBS_COLOR_LEAF_MAIN},
+	{"cx": 0.50, "cy": 0.24, "rx": 0.09, "ry": 0.09, "rot": 0.0, "color": DEPOSIT_STORAGE_MEDICINAL_HERBS_COLOR_FLOWER},
+]
+
+func _draw_deposit_storage_medicinal_herbs_icon(top_left: Vector2, side: float) -> void:
+	var stem_base: Vector2 = top_left + Vector2(0.5, 0.75) * side
+	var stem_top: Vector2 = top_left + Vector2(0.5, 0.3) * side
+	draw_line(stem_base, stem_top, DEPOSIT_STORAGE_MEDICINAL_HERBS_COLOR_STEM, side * 0.05, true)
+	for leaf in DEPOSIT_STORAGE_MEDICINAL_HERBS_LEAVES:
+		_draw_deposit_storage_wild_vegetables_leaf(
+			top_left, side, leaf["cx"], leaf["cy"], leaf["rx"], leaf["ry"], leaf["rot"], leaf["color"]
+		)
 
 
 func _direction_vector(direction: GameTypes.Direction) -> Vector2:
@@ -2069,7 +2226,7 @@ func _rebuild_egg_multimesh() -> void:
 		if available <= 0:
 			continue
 		var nest_lot: Vector2i = nest_pos
-		var ground: Vector2 = Vector2(nest_lot.x * CELL_SIZE + half, nest_lot.y * CELL_SIZE + half)
+		var ground: Vector2 = Vector2(nest_lot.x * CELL_SIZE + half, nest_lot.y * CELL_SIZE + half) + _lot_marker_offset(nest_lot, "eggs")
 		var seed_base: Vector2i = nest_lot * 41 + Vector2i(5, 11)
 		var jitter_rotation: float = lerp(-EGG_ROTATION_JITTER_MAX, EGG_ROTATION_JITTER_MAX, float(hash(seed_base + Vector2i(7, 3)) % 1000) / 1000.0)
 		var egg_transform := Transform2D(jitter_rotation, Vector2.ZERO)
@@ -2080,6 +2237,25 @@ func _rebuild_egg_multimesh() -> void:
 		_egg_multimesh.set_instance_transform_2d(i, transforms[i])
 
 
+# Offset deterministico dal centro della microcella per il marker a terra di `resource_name`
+# (2026-09-19, richiesta utente — uova/verdure/erbe medicinali disegnate tutte al centro si
+# sovrapponevano quando più risorse coesistono nello stesso lotto). Hash su posizione + NOME
+# RISORSA (due assi con suffisso diverso, quindi indipendenti): stessa posizione + stessa risorsa
+# -> sempre lo stesso offset, stabile tra redraw/sessioni (hash() di una String è deterministico,
+# nessun randf()); risorse diverse sullo stesso lotto -> offset diversi. Limitato a ±
+# LOT_MARKER_OFFSET_MAX_FRACTION × CELL_SIZE per asse, quindi il PUNTO DI ANCORAGGIO resta sempre
+# dentro la microcella (mai sul bordo: frazione < 0.5). NB: la FORMA disegnata (scala 2.4-3.6 ×
+# CELL_SIZE) è più grande della microcella, come già prima di questo offset — l'offset separa i
+# centri, non contiene i contorni. posmod, non %: hash() può essere negativo.
+const LOT_MARKER_OFFSET_MAX_FRACTION: float = 0.4
+
+func _lot_marker_offset(lot: Vector2i, resource_name: String) -> Vector2:
+	var max_offset: float = CELL_SIZE * LOT_MARKER_OFFSET_MAX_FRACTION
+	var unit_x: float = float(posmod(hash("%d_%d_%s_offset_x" % [lot.x, lot.y, resource_name]), 1000)) / 999.0
+	var unit_y: float = float(posmod(hash("%d_%d_%s_offset_y" % [lot.x, lot.y, resource_name]), 1000)) / 999.0
+	return Vector2(lerp(-max_offset, max_offset, unit_x), lerp(-max_offset, max_offset, unit_y))
+
+
 func _draw_egg_nest_positions() -> void:
 	if _egg_multimesh == null or _egg_multimesh.instance_count <= 0:
 		return
@@ -2087,77 +2263,104 @@ func _draw_egg_nest_positions() -> void:
 	_debug_draw_primitive_count += 1
 
 
-# Lotti/wild_vegetables a terra (2026-09-19, richiesta utente — "un solo MultiMesh con un'istanza
-# per lotto con disponibilità > 0, mirror di stick... mai primitive di disegno per lotto"): STESSO
-# MECCANISMO/STESSA struttura del blocco eggs sopra (mesh COMPOSITA cotta una volta con
-# SurfaceTool, riusando DIRETTAMENTE DEPOSIT_STORAGE_WILD_VEGETABLES_LEAVES — stessa fonte di
-# verità dell'icona di magazzino, mai una copia separata — UN SOLO instance per lotto con
-# disponibilità > 0, nessuna variazione di conteggio, rotazione deterministica per varietà
-# visiva). A differenza delle uova (ovale asimmetrico), le foglie sono ellissi semplici
-# (cos/sin diretti, nessun width_scale) — stessa forma usata dall'icona di magazzino sopra.
-const WILD_VEGETABLES_CLUSTER_SCALE: float = 2.4
-const WILD_VEGETABLES_ROTATION_JITTER_MAX: float = 0.4
+# Marker a terra dei lotti GRASS_PATCH (wild_vegetables dal 2026-09-19, GENERALIZZATO lo stesso
+# giorno per medicinal_herbs — richiesta utente: "un dizionario resource_name → multimesh, così
+# vale per entrambe e per le prossime, invece di duplicarlo"): un MultiMesh PER RISORSA (mesh
+# COMPOSITA cotta una volta sola con SurfaceTool a partire dalla sua forma), UN SOLO instance per
+# lotto con disponibilità > 0, nessuna variazione di conteggio, rotazione deterministica per
+# varietà visiva — stessa struttura del blocco eggs sopra. Le forme riusano DIRETTAMENTE le liste
+# DEPOSIT_STORAGE_*_LEAVES delle icone di magazzino (stessa fonte di verità, mai una copia
+# separata). Aggiungere una risorsa GRASS_PATCH nuova = una riga qui (+ la sua lista di ellissi);
+# una risorsa senza riga NON viene disegnata (warning una tantum, mai un marker generico che
+# sembra un'altra risorsa). Le foglie sono ellissi semplici (cos/sin diretti, nessun width_scale).
+const GRASS_PATCH_MARKER_SHAPES := {
+	"wild_vegetables": DEPOSIT_STORAGE_WILD_VEGETABLES_LEAVES,
+	"medicinal_herbs": DEPOSIT_STORAGE_MEDICINAL_HERBS_LEAVES,
+}
+const GRASS_PATCH_CLUSTER_SCALE: float = 2.4
+# Scala per-risorsa che sostituisce GRASS_PATCH_CLUSTER_SCALE (2026-09-19, richiesta utente — "le
+# erbe medicinali un po' più grandi": le loro foglioline sono ellissi basse, a parità di scala
+# risultano molto più piccole delle foglie delle verdure). Una risorsa assente qui usa il default.
+const GRASS_PATCH_CLUSTER_SCALE_BY_RESOURCE := {
+	"medicinal_herbs": 3.6,
+}
+const GRASS_PATCH_ROTATION_JITTER_MAX: float = 0.4
+const GRASS_PATCH_ELLIPSE_SEGMENTS: int = 12
 
 
-func _ensure_wild_vegetables_mesh() -> void:
-	if _wild_vegetables_mesh != null:
-		return
+# MultiMesh del marker di `resource_name`, creato al primo uso. null se la risorsa non ha una forma
+# in GRASS_PATCH_MARKER_SHAPES (warning una tantum per risorsa, questa funzione è chiamata a ogni
+# refresh).
+func _get_grass_patch_multimesh(resource_name: String) -> MultiMesh:
+	if _grass_patch_multimeshes.has(resource_name):
+		return _grass_patch_multimeshes[resource_name]
+	if not GRASS_PATCH_MARKER_SHAPES.has(resource_name):
+		if not _grass_patch_missing_shape_warned.has(resource_name):
+			_grass_patch_missing_shape_warned[resource_name] = true
+			push_warning("MicroCellRenderer: nessuna forma in GRASS_PATCH_MARKER_SHAPES per '%s' — marker a terra non disegnato." % resource_name)
+		return null
 	var st := SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
-	for leaf in DEPOSIT_STORAGE_WILD_VEGETABLES_LEAVES:
+	var cluster_scale: float = GRASS_PATCH_CLUSTER_SCALE_BY_RESOURCE.get(resource_name, GRASS_PATCH_CLUSTER_SCALE)
+	for leaf in GRASS_PATCH_MARKER_SHAPES[resource_name]:
 		# Da spazio [0,1] relativo a un lato quadrato (convenzione dell'icona di magazzino) a
-		# spazio centrato in (0,0) scalato per WILD_VEGETABLES_CLUSTER_SCALE — stessa conversione
-		# già usata per _ensure_egg_mesh sopra.
-		var center := Vector2(float(leaf["cx"]) - 0.5, float(leaf["cy"]) - 0.5) * WILD_VEGETABLES_CLUSTER_SCALE
-		var radius := Vector2(float(leaf["rx"]), float(leaf["ry"])) * WILD_VEGETABLES_CLUSTER_SCALE
+		# spazio centrato in (0,0) scalato per cluster_scale — stessa conversione già usata per
+		# _ensure_egg_mesh sopra.
+		var center := Vector2(float(leaf["cx"]) - 0.5, float(leaf["cy"]) - 0.5) * cluster_scale
+		var radius := Vector2(float(leaf["rx"]), float(leaf["ry"])) * cluster_scale
 		var leaf_rotation: float = float(leaf["rot"])
 		st.set_color(leaf["color"])
 		var center3 := Vector3(center.x, center.y, 0.0)
-		for i in range(DEPOSIT_STORAGE_WILD_VEGETABLES_ELLIPSE_SEGMENTS):
-			var angle_a: float = TAU * float(i) / float(DEPOSIT_STORAGE_WILD_VEGETABLES_ELLIPSE_SEGMENTS)
-			var angle_b: float = TAU * float(i + 1) / float(DEPOSIT_STORAGE_WILD_VEGETABLES_ELLIPSE_SEGMENTS)
+		for i in range(GRASS_PATCH_ELLIPSE_SEGMENTS):
+			var angle_a: float = TAU * float(i) / float(GRASS_PATCH_ELLIPSE_SEGMENTS)
+			var angle_b: float = TAU * float(i + 1) / float(GRASS_PATCH_ELLIPSE_SEGMENTS)
 			var point_a: Vector2 = center + Vector2(cos(angle_a) * radius.x, sin(angle_a) * radius.y).rotated(leaf_rotation)
 			var point_b: Vector2 = center + Vector2(cos(angle_b) * radius.x, sin(angle_b) * radius.y).rotated(leaf_rotation)
 			st.add_vertex(center3)
 			st.add_vertex(Vector3(point_a.x, point_a.y, 0.0))
 			st.add_vertex(Vector3(point_b.x, point_b.y, 0.0))
-	_wild_vegetables_mesh = st.commit()
-	_wild_vegetables_multimesh = MultiMesh.new()
-	_wild_vegetables_multimesh.transform_format = MultiMesh.TRANSFORM_2D
-	_wild_vegetables_multimesh.mesh = _wild_vegetables_mesh
-	_wild_vegetables_multimesh.instance_count = 0
+	var multimesh := MultiMesh.new()
+	multimesh.transform_format = MultiMesh.TRANSFORM_2D
+	multimesh.mesh = st.commit()
+	multimesh.instance_count = 0
+	_grass_patch_multimeshes[resource_name] = multimesh
+	return multimesh
 
 
-# Ricostruita da set_wild_vegetable_availability ogni volta che GameScene rinfresca la
-# disponibilità — STESSO principio di _rebuild_egg_multimesh: un'istanza per lotto con
-# disponibilità > 0, centrata sulla SUA microcella con una rotazione deterministica per varietà
-# visiva. Vector2i tipizzato esplicitamente (non :=) perché `lot_pos` proviene da un ciclo su
-# Dictionary.keys() non tipizzato.
-func _rebuild_wild_vegetables_multimesh() -> void:
-	_ensure_wild_vegetables_mesh()
+# Ricostruita da set_grass_patch_availability ogni volta che GameScene rinfresca la disponibilità
+# — STESSO principio di _rebuild_egg_multimesh: un'istanza per lotto con disponibilità > 0,
+# centrata sulla SUA microcella con una rotazione deterministica per varietà visiva. Vector2i
+# tipizzato esplicitamente (non :=) perché `lot_pos` proviene da un ciclo su Dictionary.keys() non
+# tipizzato.
+func _rebuild_grass_patch_multimesh(resource_name: String) -> void:
+	var multimesh := _get_grass_patch_multimesh(resource_name)
+	if multimesh == null:
+		return
+	var availability: Dictionary = grass_patch_availability.get(resource_name, {})
 	var half: float = CELL_SIZE / 2.0
 	var transforms: Array = []
-	for lot_pos in wild_vegetable_availability.keys():
-		var available: int = int(wild_vegetable_availability[lot_pos])
+	for lot_pos in availability.keys():
+		var available: int = int(availability[lot_pos])
 		if available <= 0:
 			continue
 		var lot: Vector2i = lot_pos
-		var ground: Vector2 = Vector2(lot.x * CELL_SIZE + half, lot.y * CELL_SIZE + half)
+		var ground: Vector2 = Vector2(lot.x * CELL_SIZE + half, lot.y * CELL_SIZE + half) + _lot_marker_offset(lot, resource_name)
 		var seed_base: Vector2i = lot * 43 + Vector2i(13, 29)
-		var jitter_rotation: float = lerp(-WILD_VEGETABLES_ROTATION_JITTER_MAX, WILD_VEGETABLES_ROTATION_JITTER_MAX, float(hash(seed_base + Vector2i(7, 3)) % 1000) / 1000.0)
-		var wild_vegetables_transform := Transform2D(jitter_rotation, Vector2.ZERO)
-		wild_vegetables_transform.origin = ground
-		transforms.append(wild_vegetables_transform)
-	_wild_vegetables_multimesh.instance_count = transforms.size()
+		var jitter_rotation: float = lerp(-GRASS_PATCH_ROTATION_JITTER_MAX, GRASS_PATCH_ROTATION_JITTER_MAX, float(hash(seed_base + Vector2i(7, 3)) % 1000) / 1000.0)
+		var lot_transform := Transform2D(jitter_rotation, Vector2.ZERO)
+		lot_transform.origin = ground
+		transforms.append(lot_transform)
+	multimesh.instance_count = transforms.size()
 	for i in range(transforms.size()):
-		_wild_vegetables_multimesh.set_instance_transform_2d(i, transforms[i])
+		multimesh.set_instance_transform_2d(i, transforms[i])
 
 
-func _draw_wild_vegetables_positions() -> void:
-	if _wild_vegetables_multimesh == null or _wild_vegetables_multimesh.instance_count <= 0:
-		return
-	draw_multimesh(_wild_vegetables_multimesh, null)
-	_debug_draw_primitive_count += 1
+func _draw_grass_patch_positions() -> void:
+	for multimesh: MultiMesh in _grass_patch_multimeshes.values():
+		if multimesh.instance_count <= 0:
+			continue
+		draw_multimesh(multimesh, null)
+		_debug_draw_primitive_count += 1
 
 
 # Triangola a ventaglio (dal centro locale 0,0) un poligono convesso/quasi-convesso come quello

@@ -129,13 +129,22 @@ extends Resource
 # porta propria: è un vincolo sull'edificio ESISTENTE vicino, non su quello che si sta piazzando.
 @export var has_door: bool = true
 
-# Raggio in MACROCELLE (non microcelle — un edificio proietta il proprio effetto su macrocelle
-# intere attorno a sé, unità diversa da FogOfWarRenderer.visibility_radius, che invece è in
-# microcelle dentro una singola macrocella). 0 = solo la propria macrocella, 1 = anche le 8
-# adiacenti, 2 = un altro anello oltre quello, ecc. — anelli concentrici (distanza di Chebyshev),
-# confermato con l'utente. Il collegamento vero col fog of war (FogOfWarMemory) è rimandato: per
-# ora questi quattro campi sono solo il dato che lo definirà in futuro.
+# Raggio di visibilità in MICROCELLE, dentro la macrocella dell'edificio (2026-09-19, commento
+# corretto: prima lo descriveva in macrocelle e "collegamento rimandato", ma il codice lo usa già
+# così — vedi GameScene._building_visible_positions_for_cell, che alimenta
+# FogOfWarRenderer.set_building_visible_positions). 0 = solo la microcella dell'edificio stessa (è
+# comunque visibile e "vista" ad ogni ridisegno), 1 = anche le 8 microcelle intorno, 2 = un altro
+# anello, ecc. — quadrato di lato 2r+1 (distanza di Chebyshev), ritagliato ai bordi della macrocella
+# (nessuna rivelazione oltre il confine). Applicato SOLO agli edifici COMPLETI: un cantiere non
+# completo rivela solo la propria microcella (raggio 0), così piazzare un cantiere senza finirlo non
+# scopre territorio.
 @export var visibility_radius: int = 0
+
+# political_radius/cultural_radius/religious_radius: raggio in MACROCELLE (un edificio proietta il
+# proprio effetto su macrocelle intere attorno a sé, unità diversa da visibility_radius sopra).
+# 0 = solo la propria macrocella, 1 = anche le 8 adiacenti, 2 = un altro anello oltre quello, ecc. —
+# anelli concentrici (distanza di Chebyshev), confermato con l'utente. Nessun consumatore ancora:
+# per ora questi tre campi sono solo il dato che definirà i rispettivi effetti in futuro.
 @export var political_radius: int = 0
 @export var cultural_radius: int = 0
 @export var religious_radius: int = 0
@@ -202,3 +211,16 @@ extends Resource
 # partenza. Valorizzato su stick_tent.tres (1) e hut.tres (2) — solo per marcare una futura gerarchia
 # di qualità, NESSUN effetto di gioco oggi.
 @export var residency_assignment_tier: int = 1
+
+# Moltiplicatori di movimento per chi cammina su una microcella occupata da un edificio COMPLETO di
+# questo tipo (2026-09-19, richiesta utente — terra battuta: cammino meno faticoso). Default 1.0 =
+# nessun effetto. Consultati SOLO da MovementTerrainService.rebuild, che li risolve UNA volta alla
+# costruzione della mappa sparsa delle microcelle che deviano dalla norma (LiveMacroCell.
+# movement_modifiers) — mai letti da qui a ogni query di movimento.
+#   - movement_stamina_multiplier scala la sola quota BASE del costo di stamina per microcella
+#     (WalkAction/RunAction.STAMINA_DRAIN_PER_MICROCELL_BASE), non il sovraccarico di carico e
+#     utensili. < 1.0 = meno stamina (dirt_ground 0.95), > 1.0 = più stamina.
+#   - movement_speed_multiplier scala la velocità di avanzamento (HumanIndividualMovementService).
+# Nessuna percorribilità per ora (rocce/edifici non attraversabili): solo stamina e velocità.
+@export var movement_stamina_multiplier: float = 1.0
+@export var movement_speed_multiplier: float = 1.0
