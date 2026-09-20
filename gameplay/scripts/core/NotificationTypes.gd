@@ -28,4 +28,7 @@ enum NotificationPopupType {
 	# futuro uso stilistico mai arrivato come per BIRTH sopra: un avviso di blocco deve leggersi
 	# come "attenzione", non come un evento normale della simulazione.
 	MATERIAL_NEEDED,
+	# Un individuo ha finito le provviste e comincia a consumare la riserva corporea (2026-09-19, richiesta
+	# utente) - stesso stile "alert" giallo di MATERIAL_NEEDED (vedi NotificationPopup._show_next).
+	BODY_RESERVE_IN_USE,
 }

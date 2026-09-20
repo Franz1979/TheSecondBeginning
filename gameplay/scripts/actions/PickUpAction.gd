@@ -30,11 +30,6 @@ extends Action
 # PER_DAY).
 const STAMINA_COST_PER_SPACE_UNIT: float = 2.0
 
-# Costo di HAPPINESS al GIORNO (2026-09-13, richiesta utente: "-10.0/day") — a differenza del costo
-# stamina sopra (proporzionale allo spazio raccolto), qui un tasso FISSO indipendente dalla
-# quantità: raccogliere è una scocciatura di durata variabile, non uno sforzo che scala con la
-# quantità come lo spazio occupato in spalla.
-const HAPPINESS_DRAIN_PER_DAY: float = 10.0
 
 # Emesso da on_complete() SOLO quando una raccolta reale è avvenuta (_quantity_to_collect > 0,
 # 2026-09-09, richiesta utente — bug "pebble/stick restano disegnati dopo la raccolta") — stesso
@@ -160,16 +155,6 @@ func get_stamina_delta(individual: Variant, context: Dictionary, delta: float) -
 		return 0.0
 	_elapsed += delta
 	return -(_total_stamina_cost / _duration) * delta
-
-
-# STESSA guardia _duration<=0.0 di get_stamina_delta sopra (azione immediatamente completa, nessun
-# costo) — MA non incrementa _elapsed, già avanzato da get_stamina_delta nello stesso frame (vedi
-# la nota in Action.get_happiness_delta). Tasso fisso -10.0/giorno, non proporzionale allo spazio
-# raccolto come il costo stamina.
-func get_happiness_delta(individual: Variant, context: Dictionary, delta: float) -> float:
-	if _duration <= 0.0:
-		return 0.0
-	return -HAPPINESS_DRAIN_PER_DAY * delta
 
 
 func is_complete(individual: Variant, context: Dictionary) -> bool:

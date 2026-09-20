@@ -46,11 +46,6 @@ extends Action
 # (1000-1500, vedi hut/pebble_circle/deposit_site.tres) resta completabile in pochi giorni di gioco.
 const STAMINA_DRAIN_PER_DAY: float = 200.0
 
-# Costo di HAPPINESS al GIORNO (2026-09-13, richiesta utente: "-5.0/day") — tasso fisso, NON
-# scalato da skill_multiplier/tool_multiplier (a differenza del costo stamina sopra, che li usa per
-# calcolare il lavoro effettivo — qui è solo l'umore di chi lavora, indipendente da quanto lavoro
-# utile produce quella giornata).
-const HAPPINESS_DRAIN_PER_DAY: float = 5.0
 
 var target_building: Building = null
 var skill_multiplier: float = 1.0
@@ -118,7 +113,7 @@ func get_missing_materials() -> Dictionary:
 # scrive invece la richiesta in context["pending_material_shortage"] (consumata da
 # HumanIndividualActionService._handle_pending_material_shortage). Il blocco vero (zero
 # costo/accumulo, mai completa) resta comunque garantito ANCHE da get_stamina_delta/
-# get_happiness_delta/is_complete sotto, indipendentemente da questo flag.
+# is_complete sotto, indipendentemente da questo flag.
 #
 # LOG DEBUG VERIFICA PROGRESSO (2026-09-11, richiesta utente — "verificare se un'Action riparte da
 # zero o da un progresso preesistente") — CONFERMATO (punto 4 della richiesta): questa classe legge
@@ -164,18 +159,6 @@ func get_stamina_delta(individual: Variant, context: Dictionary, delta: float) -
 	var effective_work_this_day: float = stamina_spent_this_day * skill_multiplier * tool_multiplier
 	target_building.construction_progress["labor_accumulated"] = _get_labor_accumulated() + effective_work_this_day
 	return -stamina_spent_this_day
-
-
-# STESSE guardie di get_stamina_delta sopra, MAI scrittura di labor_accumulated (già incrementato
-# da get_stamina_delta nello stesso frame). Tasso fisso, non scalato da skill/tool_multiplier.
-func get_happiness_delta(individual: Variant, context: Dictionary, delta: float) -> float:
-	if target_building == null or target_building.rules == null:
-		return 0.0
-	if not get_missing_materials().is_empty():
-		return 0.0
-	if _get_labor_accumulated() >= float(target_building.rules.required_labor):
-		return 0.0
-	return -HAPPINESS_DRAIN_PER_DAY * delta
 
 
 # false (mai "vero da subito") se target_building/rules non risolvibili — difensivo: nessun dato

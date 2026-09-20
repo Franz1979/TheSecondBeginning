@@ -128,6 +128,15 @@ static func get_max_stamina(
 	return stamina
 
 
+# Termine di taglia condiviso (2026-09-19): `base_amount` x size_multiplier_by_age[age_band] x
+# size_multiplier_by_sex[sex]. Usato da get_max_carry_capacity (che poi applica equipment_multiplier e
+# il bonus slot tool) e da get_max_food_space - un solo punto per la formula di taglia.
+static func _size_scaled_amount(
+	base_amount: float, human_rules: HumanRules, age_band: HumanTypes.AgeBand, sex: HumanTypes.Sex
+) -> float:
+	return base_amount * human_rules.size_multiplier_by_age[age_band] * human_rules.size_multiplier_by_sex[sex]
+
+
 # Capacità di trasporto MASSIMA per fascia d'età + sesso (2026-09-08, richiesta utente) — stesso
 # identico schema di get_max_stamina sopra: HumanRules.base_carry_capacity ×
 # size_multiplier_by_age[age_band] × size_multiplier_by_sex[sex], NESSUN nuovo array dedicato
@@ -153,18 +162,49 @@ static func get_max_carry_capacity(
 	human_rules: HumanRules, age_band: HumanTypes.AgeBand, sex: HumanTypes.Sex,
 	equipped_tool_count: int = 0, equipment_multiplier: float = 1.0
 ) -> float:
-	var size_scaled_capacity := (
-		human_rules.base_carry_capacity
-		* human_rules.size_multiplier_by_age[age_band]
-		* human_rules.size_multiplier_by_sex[sex]
-		* equipment_multiplier
-	)
+	var size_scaled_capacity := _size_scaled_amount(human_rules.base_carry_capacity, human_rules, age_band, sex) * equipment_multiplier
 	var empty_tool_slots: int = max(human_rules.tool_slot_count - equipped_tool_count, 0)
 	var tool_slot_bonus: float = float(empty_tool_slots) * human_rules.carry_bonus_per_empty_tool_slot
 	return size_scaled_capacity + tool_slot_bonus
 
 
-# 5 nuovi parametri vitali (2026-09-13, richiesta utente) — hunger/thirst/health/happiness/
+# Consumo calorico giornaliero (2026-09-19, richiesta utente): base_daily_calorie_consumption x
+# caloric_multiplier_by_age[age_band] x caloric_multiplier_by_sex[sex]. NON usa i size_multiplier
+# (restano per saccoccia e trasporto). Il chiamante passa gia' l'age_band risolto. Con moltiplicatore
+# 0 (INFANT) il consumo e' zero.
+static func get_daily_calorie_consumption(
+	human_rules: HumanRules, age_band: HumanTypes.AgeBand, sex: HumanTypes.Sex,
+	has_dependent_child: bool = false, era_rules: EraRules = null
+) -> float:
+	var consumption: float = (
+		human_rules.base_daily_calorie_consumption
+		* human_rules.caloric_multiplier_by_age[age_band]
+		* human_rules.caloric_multiplier_by_sex[sex]
+	)
+	# Costo dell'allattamento (2026-09-19, richiesta utente): chi ha un figlio a carico consuma di piu'
+	# (EraRules.dependent_child_calorie_multiplier). Il neonato non consuma nulla di suo (INFANT a 0.0).
+	if has_dependent_child and era_rules != null:
+		consumption *= era_rules.dependent_child_calorie_multiplier
+	return consumption
+
+
+# Spazio MASSIMO della saccoccia del cibo (2026-09-19, richiesta utente) - SOSTITUISCE get_max_hunger:
+# base_food_space x size_multiplier_by_age[age_band] x size_multiplier_by_sex[sex] (stessi
+# moltiplicatori di taglia del trasporto, via _size_scaled_amount), SENZA bonus slot tool liberi e
+# senza equipment_multiplier. Il chiamante passa gia' l'age_band risolto.
+static func get_max_food_space(human_rules: HumanRules, age_band: HumanTypes.AgeBand, sex: HumanTypes.Sex) -> float:
+	return _size_scaled_amount(human_rules.base_food_space, human_rules, age_band, sex)
+
+
+# Riserva calorica MASSIMA del corpo (2026-09-19, richiesta utente): base_body_calories x
+# size_multiplier_by_age[age_band] x size_multiplier_by_sex[sex], con lo stesso helper di taglia di
+# get_max_food_space (i size_multiplier, NON i caloric_multiplier). Il chiamante passa gia' l'age_band
+# risolto. Nessun consumatore ancora.
+static func get_max_body_calories(human_rules: HumanRules, age_band: HumanTypes.AgeBand, sex: HumanTypes.Sex) -> float:
+	return _size_scaled_amount(human_rules.base_body_calories, human_rules, age_band, sex)
+
+
+# 5 nuovi parametri vitali (2026-09-13, richiesta utente) — thirst/health/happiness/
 # loyalty, STESSO identico schema di get_max_stamina sopra (base × multiplier_by_age[age_band] ×
 # multiplier_by_sex[sex]), ma firma SEMPLIFICATA a soli 3 parametri (human_rules, age_band, sex):
 # i due modificatori aggiuntivi di get_max_stamina (is_pregnant/has_dependent_child, con
@@ -174,14 +214,6 @@ static func get_max_carry_capacity(
 # decisione se/quali di questi modificatori li riguardino anche loro). Nessuna chiamata a
 # get_age_band qui, stesso principio di get_max_stamina/get_max_carry_capacity: il chiamante passa
 # già l'age_band risolto.
-static func get_max_hunger(human_rules: HumanRules, age_band: HumanTypes.AgeBand, sex: HumanTypes.Sex) -> float:
-	return (
-		human_rules.base_max_hunger
-		* human_rules.hunger_multiplier_by_age[age_band]
-		* human_rules.hunger_multiplier_by_sex[sex]
-	)
-
-
 static func get_max_thirst(human_rules: HumanRules, age_band: HumanTypes.AgeBand, sex: HumanTypes.Sex) -> float:
 	return (
 		human_rules.base_max_thirst

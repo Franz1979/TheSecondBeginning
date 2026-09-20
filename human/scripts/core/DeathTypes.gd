@@ -14,4 +14,12 @@ enum DeathCause {
 	# HumanBirthIndividualService._roll_childbirth_survival), completamente slegato dall'esito del
 	# tiro sopravvivenza figlio (i due restano indipendenti, come già impostato).
 	CHILDBIRTH,
+	# STARVATION (morte per fame) e ILLNESS (malattia) (2026-09-19, richiesta utente) - AGGIUNTE IN CODA:
+	# il valore numerico e' persistito (death_events[].cause, HumanIndividual.scheduled_death_cause), mai
+	# riordinare/inserire in mezzo. STARVATION e' generata da GameTimeService._apply_daily_starvation
+	# (body_calories a 0 per STARVATION_DAYS giorni, o INFANT orfano per lo stesso numero di giorni);
+	# ILLNESS non e' ancora generata da nessun sistema. Le statistiche (StatisticsPanel itera l'enum) e i
+	# popup di morte (chiave tr "death_cause_<nome minuscolo>") le registrano.
+	STARVATION,
+	ILLNESS,
 }

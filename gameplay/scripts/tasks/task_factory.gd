@@ -210,6 +210,19 @@ static func build_task(definition: TaskDefinition, context: Dictionary) -> Task:
 					context[retrieve_building_key], context[retrieve_resource_name_key], int(context[retrieve_quantity_key])
 				))
 				step_descriptions.append(step_definition.step_description)
+			TaskTypes.ActionType.RESTOCK_POUCH:
+				# 1 argomento (target_building: Building), stesso schema di SETUP_SITE/BUILD/UNLOAD. Nessuna
+				# TaskDefinition la usa ancora (2026-09-19, richiesta utente - solo l'Action e il collegamento
+				# a TaskFactory/persistenza in questo giro).
+				if step_definition.context_keys.is_empty():
+					push_error("TaskFactory.build_task: context_keys[0] mancante per step RESTOCK_POUCH di TaskDefinition '%s'." % definition.task_name)
+					continue
+				var restock_building_key: String = step_definition.context_keys[0]
+				if not context.has(restock_building_key):
+					push_error("TaskFactory.build_task: chiave di contesto mancante '%s' per step RESTOCK_POUCH di TaskDefinition '%s'." % [restock_building_key, definition.task_name])
+					continue
+				steps.append(RestockPouchAction.new(context[restock_building_key]))
+				step_descriptions.append(step_definition.step_description)
 			TaskTypes.ActionType.UNLOAD:
 				# 1 argomento (target_building: Building) — stesso schema di SETUP_SITE/BUILD sopra.
 				# deposit_kind SEMPRE RESOURCE (vedi nota in testa al file per il perché) — mai letto da

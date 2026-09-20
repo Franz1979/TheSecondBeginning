@@ -1034,7 +1034,7 @@ func _process(delta: float) -> void:
 		# 2026-09-06): WalkAction.get_stamina_delta calcola la distanza confrontando position con
 		# l'ultima nota, quindi deve leggere la position GIÀ aggiornata da advance_movement in
 		# questo stesso frame, per QUESTO individuo specifico.
-		individual_movement_service.advance_movement(active_individual, game_delta)
+		individual_movement_service.advance_movement(active_individual, game_delta, live_cells)
 		# macro_world (2026-09-09, richiesta utente — re-routing UnloadAction su magazzino pieno) —
 		# apply_action ne ha bisogno per WarehouseSelectionService.find_best (world.buildings), vedi
 		# HumanIndividualActionService.apply_action. game_data (2026-09-13, richiesta utente —
@@ -1404,6 +1404,14 @@ func _unhandled_input(event: InputEvent) -> void:
 	# (soglia 5% stamina + coda), un prompt successivo.
 	if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_E:
 		_assign_emergency_rest_task()
+
+	# Leisure Restock Task (2026-09-19, richiesta utente) - tasto F, mnemonico "Food", verificato libero
+	# (nessuna occorrenza di KEY_F nel progetto; W/A/S/D+frecce pan, +/- zoom, B/R dentro il ramo
+	# fantasma edificio, X/H/G/P/E gli altri comandi diretti, T/Y/Z/U i debug hook). Comando VERO su
+	# individuo selezionato, nessun guard sullo stato delle provviste: se il player lo preme, si
+	# esegue comunque (se esiste un magazzino con cibo).
+	if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_F:
+		_assign_leisure_restock_task()
 
 	# TEST TEMPORANEO Task (2026-09-07, richiesta utente) — vedi _debug_test_two_walk_task sotto per
 	# cosa fa e perché è qui. Tasto T, gated da DebugLogging.ENABLED (stesso flag che nasconde
@@ -1784,6 +1792,15 @@ func _assign_emergency_rest_task() -> void:
 	if individual == null or not individual.is_selected:
 		return
 	NeedTaskAssignmentService.assign_emergency_rest_task(individual, _resolve_age_band(individual))
+
+
+
+# Leisure Restock (2026-09-19, richiesta utente): tasto F sull'individuo selezionato - vedi
+# NeedTaskAssignmentService.assign_leisure_restock_task (la Task non nasce se nessun magazzino ha cibo).
+func _assign_leisure_restock_task() -> void:
+	if individual == null or not individual.is_selected:
+		return
+	NeedTaskAssignmentService.assign_leisure_restock_task(individual, macro_world, _resolve_age_band(individual))
 
 
 # _resolve_wander_targets SPOSTATA su IdleTaskAssignmentService.resolve_wander_targets (2026-09-13,
@@ -4107,13 +4124,12 @@ func _update_individual_panel_content(target: HumanIndividual) -> void:
 	# Spazio occupato = carried_quantity × SecondaryResourceRules.space_per_unit della risorsa
 	# trasportata, lookup dal .tres corrispondente CALCOLATO AL VOLO qui (mai cachato) — nessuna
 	# risorsa trasportata (carried_resource_name vuoto) o .tres non risolvibile => spazio occupato
-	# 0, tutta la capacità risulta libera.
+	# 0 (barra del carico vuota). Il pannello riceve lo spazio OCCUPATO, non quello libero.
 	var used_carry_space := 0.0
 	if target.carried_resource_name != "":
 		var carried_resource_rules := CaloricCalculator.get_caloric_source_rules(target.carried_resource_name)
 		if carried_resource_rules != null:
 			used_carry_space = float(target.carried_quantity) * carried_resource_rules.space_per_unit
-	var free_carry_capacity: float = max(target.max_carry_capacity - used_carry_space, 0.0)
 
 	# 5 nuovi parametri vitali (2026-09-13, richiesta utente) — stesso trattamento di
 	# max_carry_capacity sopra: letti DIRETTAMENTE da target, nessun ricalcolo live (a differenza di
@@ -4139,10 +4155,17 @@ func _update_individual_panel_content(target: HumanIndividual) -> void:
 	for i in range(target.task_queue.size() - 1, -1, -1):
 		var queued_task: Task = target.task_queue[i]
 		queued_task_descriptions.append("%s [#%d]" % [queued_task.get_activity_description(), queued_task.id])
+	# Consumo calorico giornaliero (2026-09-19): serve al pannello per decidere se la barra delle provviste
+	# passa alla riserva corporea (solo se l'individuo consuma calorie, non per un INFANT). Stessa formula
+	# del consumo reale (HumanVitalsIndividualService.apply_daily_calorie_consumption).
+	var daily_calorie_consumption := HumanCalculator.get_daily_calorie_consumption(
+		human_folk.human_rules_ref, age_band, target.sex, target.dependent_child_id != -1, era_rules
+	)
 	human_individual_info_panel.show_individual(
 		target, max_stamina, current_stamina, activity_text,
-		target.max_carry_capacity, free_carry_capacity,
-		target.max_hunger, target.current_hunger,
+		target.max_carry_capacity, used_carry_space,
+		target.food_space_capacity, target.food_space_used, target.food_calories_held,
+		target.body_calories, target.body_calories_capacity, daily_calorie_consumption,
 		target.max_thirst, target.current_thirst,
 		target.max_health, target.current_health,
 		target.max_happiness, target.current_happiness,
@@ -4411,6 +4434,17 @@ func _on_idea_completed(idea_id: String) -> void:
 	notification_popup.enqueue(
 		NotificationTypes.NotificationPopupType.IDEA_COMPLETED,
 		tr("notification_idea_completed").format({"idea": display_name})
+	)
+
+
+# Inizio consumo della riserva corporea (2026-09-19, richiesta utente): l'individuo ha finito le
+# provviste. Popup di alert giallo (BODY_RESERVE_IN_USE), stesso gate UserOptions.show_notification_popups.
+func _on_individual_started_body_reserve(individual: HumanIndividual) -> void:
+	if not UserOptions.show_notification_popups:
+		return
+	notification_popup.enqueue(
+		NotificationTypes.NotificationPopupType.BODY_RESERVE_IN_USE,
+		tr("notification_body_reserve_started").format({"name": individual.name})
 	)
 
 
@@ -7715,6 +7749,9 @@ func _refresh_building_visuals(cell: LiveMacroCell) -> void:
 	if macro_world == null:
 		return
 	cell.renderer.set_buildings(_buildings_for_cell(cell))
+	# Mappa sparsa dei modificatori di movimento (2026-09-19): stessi eventi degli edifici (completamento,
+	# piazzamento, demolizione, riattivazione cella, rinfresco dei vicini) — vedi MovementTerrainService.
+	MovementTerrainService.rebuild(cell, macro_world)
 	if cell.fog_of_war_renderer != null:
 		cell.fog_of_war_renderer.set_building_visible_positions(_building_visible_positions_for_cell(cell))
 	_sync_build_site_placeholders(cell)
@@ -7897,6 +7934,8 @@ func _setup_clock() -> void:
 	# sopra); building_resources_decayed vive invece su clock (WorldTimeService, non GameTimeService,
 	# gestisce il decadimento edifici — vedi WorldTimeService._run_daily_building_resource_decay).
 	game_time_service.individual_resource_decayed.connect(_on_individual_resource_decayed)
+	# Inizio consumo della riserva corporea (2026-09-19, richiesta utente) - alert giallo, stesso gate.
+	game_time_service.individual_started_body_reserve.connect(_on_individual_started_body_reserve)
 	clock.building_resources_decayed.connect(_on_building_resources_decayed)
 	# Cantiere bloccato per mancanza di materiale (2026-09-14, richiesta utente) — vive su
 	# individual_action_service (già un campo di GameScene, la STESSA istanza che guida apply_action

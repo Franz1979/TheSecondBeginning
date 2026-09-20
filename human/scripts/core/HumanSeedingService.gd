@@ -205,6 +205,16 @@ func seed_player_start(
 			mother, father, game_data, total_children, used_names
 		)
 		individuals.append_array(children)
+		# Un figlio INFANT del gruppo di partenza viene portato dalla madre (2026-09-19, richiesta utente:
+		# un INFANT senza adulto che lo porta muore per STARVATION dopo STARVATION_DAYS giorni): senza
+		# questo legame il bambino seminato sarebbe orfano fin dal primo giorno.
+		for child in children:
+			var child_age_band := HumanCalculator.get_age_band(
+				effective_age_band_durations_male, effective_age_band_durations_female,
+				child.sex, float(current_year - child.birth_year_virtual)
+			)
+			if child_age_band == HumanTypes.AgeBand.INFANT and mother.dependent_child_id == -1:
+				mother.dependent_child_id = child.id
 	else:
 		# COUPLE (l'unica preferenza rimasta, dato che GROUP/FAMILY sono già gestite sopra — vedi
 		# VALID_GROUP_SIZE_PREFERENCES) — richiesta utente, 2026-09-04: "molto semplice, un uomo e

@@ -5,11 +5,12 @@
 [resource]
 script = ExtResource("1_wild_vegetables")
 secondary_resource_name = "wild_vegetables"
-calories_per_unit = 3.0
-seasonal_availability_multiplier = Array[float]([0.0, 1.0, 1.0, 0.0])
+calories_per_unit = 4.0
+seasonal_availability_multiplier = Array[float]([0.3, 1.0, 1.0, 0.2])
 generation_source = 1
 day_durability = 20
-patch_probability = 0.12
-patch_capacity_min = 5
-patch_capacity_max = 25
+space_per_unit = 0.5
+patch_probability = 0.2
+patch_capacity_min = 20
+patch_capacity_max = 50
 lot_source = 3

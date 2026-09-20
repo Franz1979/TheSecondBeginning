@@ -205,6 +205,10 @@ static func _action_type_for_step(step: Action) -> int:
 	# come accadde storicamente per SETUP_SITE al suo debutto).
 	if step is RetrieveAction:
 		return TaskTypes.ActionType.RETRIEVE
+	# RESTOCK_POUCH (2026-09-19, richiesta utente): aggiunta insieme al proprio case in _build_step
+	# sotto, stesso schema di RETRIEVE.
+	if step is RestockPouchAction:
+		return TaskTypes.ActionType.RESTOCK_POUCH
 	# RUN/JUMP (2026-09-13, richiesta utente, aggiunte insieme ai propri case in _build_step sotto,
 	# stesso schema di RETRIEVE sopra: mai lasciate "temporaneamente" scoperte come accadde
 	# storicamente per SETUP_SITE al suo debutto).
@@ -330,6 +334,14 @@ static func _build_step(action_type: int, step_data: Dictionary, macro_state: Ma
 				String(step_data.get("resource_name", "")),
 				int(step_data.get("quantity_requested", 0))
 			)
+		TaskTypes.ActionType.RESTOCK_POUCH:
+			# 1 argomento (target_building), risolto per id come per RETRIEVE/UNLOAD. Il progresso (scelta,
+			# durata, trascorso) arriva da RestockPouchAction.load_save_data, chiamato dal chiamante SOLO se
+			# questo e' lo step corrente.
+			var restock_target_building: Building = null
+			if step_data.has("target_building_id"):
+				restock_target_building = _find_building_by_id(world, int(step_data["target_building_id"]))
+			step = RestockPouchAction.new(restock_target_building)
 		TaskTypes.ActionType.RUN:
 			# 1 argomento (target: Vector2), stesso schema di WALK sopra (target_x/target_y già
 			# coperti genericamente da serialize_task, vedi la nota in testa al file).

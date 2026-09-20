@@ -586,6 +586,12 @@ func _run_growth_checkpoint(world: World, game_data: GameData) -> void:
 	# "pulita" al prossimo first-sight, esattamente come una già nota.
 	_run_timed("  clear_natural_death_markers", func(): _clear_natural_death_markers(world))
 
+	# Rigenerazione ANNUALE delle risorse a lotto senza stagionalita' (2026-09-19, richiesta utente): il
+	# raccolto accumulato sui lotti (es. stick) si azzera qui, insieme al ricalcolo annuale della capacita'.
+	# Le risorse con moltiplicatore che sale sono gia' azzerate all'inizio della stagione in cui sale, vedi
+	# LotCapacityService.reset_harvests_for_resources_without_seasonal_rise.
+	_run_timed("  lot_harvest_reset_annuale (senza stagionalita')", func(): LotCapacityService.reset_harvests_for_resources_without_seasonal_rise(world))
+
 	# Step 11 Step 4: mitigazione dell'encroachment da presenza fisica di fauna brucante (densità
 	# di riempimento per cella rispetto ad AnimalRules.max_density_per_cell) — vedi
 	# BrowsingMitigationService. Il risultato è ora un INPUT REALE per encroach_resources sotto
@@ -727,6 +733,13 @@ func _run_daily_territory_dynamics_stagger(world: World, game_data: GameData) ->
 func _run_daily_building_resource_decay(world: World) -> Array:
 	var events: Array = []
 	for building in world.buildings:
+		# Un cantiere non completo NON decade (2026-09-19, richiesta utente): il materiale consegnato a un
+		# edificio in costruzione non e' merce in magazzino ma parte dell'opera, e non deve deperire mentre
+		# l'edificio e' in attesa di essere finito (altrimenti un cantiere fermo a lungo perdeva per intero
+		# una risorsa gia' consegnata, e la richiedeva di nuovo). Il decadimento riparte, per lo stock che
+		# resta, solo a edificio completo (is_complete == true), cioe' quando e' un vero magazzino.
+		if not building.is_complete:
+			continue
 		var lost := ResourceDecayService.advance_building_decay(building)
 		for loss in lost:
 			events.append({"building": building, "resource_name": loss["resource_name"], "quantity": loss["quantity"]})

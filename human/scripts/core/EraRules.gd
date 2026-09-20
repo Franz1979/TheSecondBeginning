@@ -71,6 +71,13 @@ extends Resource
 # Workforce->Stamina) — solo rename, nessuna modifica di valore/logica.
 @export var dependent_child_stamina_multiplier: float = 1.0
 
+# Costo calorico dell'allattamento (2026-09-19, richiesta utente): moltiplicatore del CONSUMO CALORICO
+# giornaliero di chi ha un figlio a carico (dependent_child_id != -1), accanto a
+# dependent_child_stamina_multiplier sopra. Il caloric_multiplier_by_age dell'INFANT resta 0.0: il
+# neonato non consuma nulla di suo, il costo lo paga chi lo porta. Vedi
+# HumanCalculator.get_daily_calorie_consumption.
+@export var dependent_child_calorie_multiplier: float = 1.0
+
 @export_group("Think")
 # Moltiplicatore applicato alla durata BASE di ThinkAction (2026-09-07, richiesta utente, primo
 # passo del futuro Daydream) — stesso principio "base altrove × moltiplicatore qui" già seguito da

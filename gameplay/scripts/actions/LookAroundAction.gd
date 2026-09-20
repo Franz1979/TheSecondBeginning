@@ -40,9 +40,6 @@ const DURATION_DAYS_OPTIONS: Array[float] = [1.0, 1.5, 2.0]
 # ri-sovrascritta da un secondo tiro).
 var _duration: float = 0.0
 
-# Recupero di HAPPINESS al giorno (2026-09-13, richiesta utente: "+5.0/day") — guardarsi in giro è
-# un piccolo svago, tasso fisso incondizionato.
-const HAPPINESS_REGEN_PER_DAY: float = 5.0
 
 # Tempo trascorso in QUESTO step, in frazioni di giorno di gioco — stesso principio di
 # ThinkAction._elapsed (parte da 0.0, nessun caso speciale per il primo frame).
@@ -77,13 +74,6 @@ func get_stamina_delta(individual: Variant, context: Dictionary, delta: float) -
 		individual.facing_direction = Vector2.from_angle(randf() * TAU)
 		_direction_change_2_done = true
 	return -STAMINA_DRAIN_PER_DAY * delta
-
-
-# NON incrementa _elapsed/i due flag di cambio direzione (2026-09-13) — già avanzati da
-# get_stamina_delta sopra nello stesso frame, stesso motivo di JumpAction.get_happiness_delta.
-# Tasso fisso incondizionato.
-func get_happiness_delta(individual: Variant, context: Dictionary, delta: float) -> float:
-	return HAPPINESS_REGEN_PER_DAY * delta
 
 
 func is_complete(individual: Variant, context: Dictionary) -> bool:

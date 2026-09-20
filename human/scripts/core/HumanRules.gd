@@ -60,6 +60,15 @@ extends Resource
 # get_max_carry_capacity). Nessuna logica la legge ancora oltre a quel calcolo.
 @export var base_carry_capacity: float = 30.0
 
+# Spazio della "saccoccia" del cibo (2026-09-19, richiesta utente) — SPAZIO, non calorie: stessa unita' astratta di base_carry_capacity sopra e di SecondaryResourceRules.space_per_unit. Parametro INDIPENDENTE da base_carry_capacity (non derivato dal trasporto), scalato dagli STESSI due assi di taglia (size_multiplier_by_age/size_multiplier_by_sex) ma SENZA il bonus degli slot attrezzi liberi e senza equipment_multiplier - vedi HumanCalculator.get_max_food_space. Sostituisce concettualmente il vecchio parametro vitale "fame" (HumanIndividual.max_hunger, ora max_food_space).
+@export var base_food_space: float = 30.0
+
+# Riserva calorica del corpo (2026-09-19, richiesta utente): calorie di riserva di un individuo con
+# taglia 1.0, scalate dagli STESSI due assi di taglia (size_multiplier_by_age/size_multiplier_by_sex,
+# non dai caloric_multiplier) - vedi HumanCalculator.get_max_body_calories. Verra' intaccata quando le
+# provviste sono a zero. Solo il parametro: nessun campo sull'individuo, nessun consumo, nessuna UI.
+@export var base_body_calories: float = 200.0
+
 # Slot tool (2026-09-08, richiesta utente) — SOLO spazio/bonus per ora, NESSUN uso funzionale dei
 # tool (non equipaggiabili ancora, vedi HumanIndividual.equipped_tool_count). tool_slot_count è il
 # numero totale di slot che un individuo ha a disposizione; ogni slot VUOTO (non occupato da un
@@ -82,6 +91,13 @@ extends Resource
 # Indicizzato come size_multiplier_by_age sopra (0=INFANT..5=OLD, ESTESO 2026-09-12).
 @export var caloric_multiplier_by_age: Array[float] = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
 @export var caloric_multiplier_by_sex: Array[float] = [0.0, 0.0]
+
+# Consumo calorico giornaliero di base (2026-09-19, richiesta utente): calorie consumate al giorno da
+# un individuo con moltiplicatore 1.0, scalate da caloric_multiplier_by_age/caloric_multiplier_by_sex
+# sopra (NON dai size_multiplier, che restano per saccoccia e trasporto) - vedi
+# HumanCalculator.get_daily_calorie_consumption e HumanVitalsIndividualService.
+# apply_daily_calorie_consumption.
+@export var base_daily_calorie_consumption: float = 20.0
 
 @export_group("Mortality")
 # Curva di mortalità età-dipendente: due estremi scalari (non per-fascia come gli array sopra,
@@ -147,28 +163,26 @@ extends Resource
 # caloric_multiplier_by_sex sopra. Placeholder, da rivedere.
 @export var stamina_multiplier_by_sex: Array[float] = [1.0, 0.85]
 
-# 5 nuovi parametri vitali (2026-09-13, richiesta utente) — hunger/thirst/health/happiness/
-# loyalty, STESSO identico schema di stamina sopra. Multiplier di default TUTTI NEUTRI (1.0, non i
-# valori placeholder "a mano" di stamina sopra — es. CHILD=0.0 lì): questi 5 parametri sono
+# Parametri vitali (2026-09-13, richiesta utente) — thirst/health/happiness/loyalty (il parametro
+# "hunger" e' stato rimosso il 2026-09-19: base_max_hunger e hunger_multiplier_by_age/sex non esistono
+# piu', la saccoccia del cibo usa base_food_space e i moltiplicatori di taglia, e il futuro fabbisogno
+# calorico usera' la taglia, non moltiplicatori di fame dedicati), STESSO identico schema di stamina sopra. Multiplier di default TUTTI NEUTRI (1.0, non i
+# valori placeholder "a mano" di stamina sopra — es. CHILD=0.0 lì): questi 4 parametri sono
 # dichiarazione pura in questo passo, nessun consumatore reale/Task/Action li legge ancora
 # (arriverà in un giro successivo, quando si decideranno i moltiplicatori specifici) — un default
 # neutro evita di inventare una curva per-età/sesso plausibile ora per poi doverla rifare da capo.
 # base_max_<nome> = 5000.0 per ciascuno, STESSO valore di base_max_stamina sopra, stessa
 # motivazione ("un numero coerente col resto del sistema", nessun significato fisico ancora deciso).
 #
-# hunger/thirst (fabbisogni fisiologici) — SOSTITUISCONO concettualmente il precedente gruppo
+# thirst (fabbisogno fisiologico) — SOSTITUISCE concettualmente il precedente gruppo
 # @export_group("Hunger") (daily_caloric_requirement/max_days_without_food, RIMOSSO in un passo
 # precedente: verificato con un grep esaustivo che nessuna logica del progetto lo consultava
 # mai, a differenza dell'omonimo AnimalRules.daily_caloric_requirement/max_days_without_food,
 # quello sì usato ovunque nel dominio animale — i due erano campi distinti su classi distinte, mai
-# collegati tra loro). hunger/thirst qui sono invece un parametro vitale 0..max stile stamina
+# collegati tra loro). thirst qui e' invece un parametro vitale 0..max stile stamina
 # (consumato/recuperato da un futuro sistema di Task/Action), non più "giorni di digiuno prima
 # della morte": stesso spostamento concettuale già maturato per stamina rispetto alla vecchia
 # Workforce.
-@export var base_max_hunger: float = 5000.0
-@export var hunger_multiplier_by_age: Array[float] = [1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
-@export var hunger_multiplier_by_sex: Array[float] = [1.0, 1.0]
-
 @export var base_max_thirst: float = 5000.0
 @export var thirst_multiplier_by_age: Array[float] = [1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
 @export var thirst_multiplier_by_sex: Array[float] = [1.0, 1.0]

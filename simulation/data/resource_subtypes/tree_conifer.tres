@@ -6,7 +6,7 @@
 script = ExtResource("1_conifer")
 subtype_name = "conifer"
 initial_ratio_by_biome = {
-1: 0.35,
+1: 0.25,
 2: 0.1,
 4: 0.15,
 5: 0.05,

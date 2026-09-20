@@ -6,9 +6,9 @@
 script = ExtResource("1_acorn")
 secondary_resource_name = "acorn"
 source_subtype = "wild_fruit"
-yield_ratio = 30.0
-calories_per_unit = 12.0
-seasonal_availability_multiplier = Array[float]([0.3, 0.1, 0.0, 1.0])
+yield_ratio = 60.0
+calories_per_unit = 16.0
+seasonal_availability_multiplier = Array[float]([0.4, 0.2, 0.0, 1.0])
 cycle_start_season = 3
 consuming_depletes_primary = false
 day_durability = 150

@@ -37,13 +37,9 @@ const STAMINA_DRAIN_PER_MICROCELL_BASE: float = 5.0
 # valore ARBITRARIO di partenza, stesso principio "da bilanciare" già dichiarato sopra per la base.
 const STAMINA_DRAIN_PER_TOOL: float = 3.0
 
-# Costo di HAPPINESS per microcella percorsa (2026-09-13, richiesta utente) — camminare stanca
-# anche l'umore, non solo il corpo, ma con un tasso FISSO (richiesta esplicita: "-5.0 per
-# microcella percorsa"), a differenza di STAMINA_DRAIN_PER_MICROCELL_BASE sopra: nessun termine
-# aggiuntivo per carico trasportato/utensili equipaggiati, un unico numero. Riferita direttamente
-# da RunAction.get_happiness_delta (stesso principio già in uso per STAMINA_DRAIN_PER_MICROCELL_
-# BASE/STAMINA_DRAIN_PER_TOOL: Run non duplica la costante, la richiama).
-const HAPPINESS_DRAIN_PER_MICROCELL: float = 5.0
+# Nessun effetto sull'happiness (2026-09-19, richiesta utente): le Action non toccano i parametri
+# vitali di happiness, solo le Task lo fanno al completamento (vedi TaskCompletionEffects,
+# task_completion_effects.tres). Il vecchio drain per microcella (-5.0) e' stato rimosso.
 
 
 func _init(p_target: Vector2) -> void:
@@ -111,28 +107,15 @@ func get_stamina_delta(individual: Variant, context: Dictionary, delta: float) -
 		if carried_resource_rules != null:
 			used_carry_space = float(individual.carried_quantity) * carried_resource_rules.space_per_unit
 
-	var cost_per_microcell: float = STAMINA_DRAIN_PER_MICROCELL_BASE + used_carry_space + STAMINA_DRAIN_PER_TOOL * float(individual.equipped_tool_count)
+	# individual.terrain_stamina_multiplier (2026-09-19, richiesta utente — vedi MovementTerrainService): scala
+	# la sola quota BASE del costo, mai il sovraccarico di carico e utensili.
+	var cost_per_microcell: float = STAMINA_DRAIN_PER_MICROCELL_BASE * individual.terrain_stamina_multiplier + used_carry_space + STAMINA_DRAIN_PER_TOOL * float(individual.equipped_tool_count)
+	if DebugLogging.ENABLED and DebugLogging.SHOW_MOVEMENT_STAMINA_LOGS:
+		MovementStaminaDebugLog.record(
+			individual, "Walk", distance, individual.terrain_stamina_multiplier, STAMINA_DRAIN_PER_MICROCELL_BASE,
+			used_carry_space + STAMINA_DRAIN_PER_TOOL * float(individual.equipped_tool_count)
+		)
 	return -distance * cost_per_microcell
-
-
-# Tracciamento distanza INDIPENDENTE da _last_position sopra (2026-09-13, richiesta utente) —
-# necessario perché HumanIndividualActionService.apply_action chiama get_stamina_delta PRIMA nello
-# stesso frame, che aggiorna già _last_position alla posizione corrente: se questo metodo leggesse
-# la STESSA variabile, la distanza risulterebbe sempre 0 (già "consumata" dalla chiamata stamina).
-# Stesso identico pattern (sentinella null al primo frame, mai Vector2.ZERO — vedi il commento su
-# _last_position sopra per il perché), solo un campo separato e indipendente.
-var _last_happiness_position: Variant = null
-
-
-# Costo happiness = distanza × HAPPINESS_DRAIN_PER_MICROCELL, nessun termine di carico/utensili (a
-# differenza di get_stamina_delta sopra) — tasso fisso richiesto esplicitamente.
-func get_happiness_delta(individual: Variant, context: Dictionary, delta: float) -> float:
-	if _last_happiness_position == null:
-		_last_happiness_position = individual.position
-		return 0.0
-	var distance: float = individual.position.distance_to(_last_happiness_position)
-	_last_happiness_position = individual.position
-	return -distance * HAPPINESS_DRAIN_PER_MICROCELL
 
 
 # Tolleranza di arrivo (2026-09-16, richiesta utente, fix bordo macrocella — robustezza generica,
@@ -156,3 +139,11 @@ const ARRIVAL_TOLERANCE: float = 0.01
 # dipendere).
 func is_complete(individual: Variant, context: Dictionary) -> bool:
 	return individual.position.distance_to(target) <= ARRIVAL_TOLERANCE
+
+
+# Chiude la riga di log dell'ultima microcella attraversata (diagnostica TEMPORANEA, vedi
+# MovementStaminaDebugLog) — nessun effetto se il flag è spento.
+func on_complete(individual: Variant, context: Dictionary) -> void:
+	super(individual, context)
+	if DebugLogging.ENABLED and DebugLogging.SHOW_MOVEMENT_STAMINA_LOGS:
+		MovementStaminaDebugLog.flush(individual)

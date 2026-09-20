@@ -63,7 +63,7 @@ func set_focus_region(world: World, live_cell_coords: Dictionary, season: GameTy
 			if not state.has_ever_been_discovered:
 				_catch_up_secondary_resource_stock(world, coords, state, season)
 				if DebugLogging.ENABLED:
-					_print_new_discovery_secondary_stock(coords, state)
+					_print_new_discovery_secondary_stock(coords, state, season)
 			state.has_ever_been_discovered = true
 
 	var level_2_groups: Array = []
@@ -120,10 +120,31 @@ static func _catch_up_secondary_resource_stock(world: World, coords: Vector2i, s
 # MicroCellRenderer) — le due cose sono indipendenti: un valore di composizione > 0 NON implica
 # uno stock > 0, ed è proprio questo che vogliamo distinguere prima di decidere se serve un
 # catch-up dedicato al momento della scoperta.
-static func _print_new_discovery_secondary_stock(coords: Vector2i, state: MacroCellState) -> void:
+#
+# Esteso (2026-09-19, richiesta utente — verifica del seeding stagionale): in testa stagione e giorno
+# correnti; per ogni fonte a stock (l'elenco e' CaloricCalculator.SECONDARY_SOURCES, non piu' una
+# lista scritta a mano) lo stock e il moltiplicatore stagionale di `season` (quello che
+# seed_secondary_resource_stock_now ha applicato); poi, a parte, il moltiplicatore stagionale delle
+# risorse a capacita' per lotto (mushroom, stick, ecc.), che NON hanno uno stock per macrocella.
+# `season` e' la stessa passata a set_focus_region; il giorno e' letto da GameSettings.
+# active_game_data ("?" se assente).
+static func _print_new_discovery_secondary_stock(coords: Vector2i, state: MacroCellState, season: GameTypes.Season) -> void:
+	var day_text := "?"
+	if GameSettings.active_game_data != null:
+		day_text = str(GameSettings.active_game_data.current_day)
 	var stock_parts: Array[String] = []
-	for source_name in ["berry", "acorn", "fruit", "eggs"]:
-		stock_parts.append("%s=%.2f" % [source_name, state.get_secondary_resource_stock(source_name)])
+	for source in CaloricCalculator.SECONDARY_SOURCES:
+		var source_name: String = source["resource_name"]
+		var source_rules := CaloricCalculator.get_caloric_source_rules(source_name)
+		var multiplier_text := "?"
+		if source_rules != null:
+			multiplier_text = "%.2f" % source_rules.seasonal_availability_multiplier[season]
+		stock_parts.append("%s=%.2f (x%s)" % [source_name, state.get_secondary_resource_stock(source_name), multiplier_text])
+	var lot_parts: Array[String] = []
+	for lot_name in LotCapacityService.get_all_lot_capacity_resource_names():
+		var lot_rules := CaloricCalculator.get_caloric_source_rules(lot_name)
+		if lot_rules != null:
+			lot_parts.append("%s x%.2f" % [lot_name, lot_rules.seasonal_availability_multiplier[season]])
 	var composition_parts: Array[String] = []
 	for entry in [
 		{"label": "shrub.fruit_bearing", "type": GameTypes.WorldObjectType.SHRUB, "subtype": "fruit_bearing"},
@@ -131,8 +152,9 @@ static func _print_new_discovery_secondary_stock(coords: Vector2i, state: MacroC
 		{"label": "tree.domesticable_fruit", "type": GameTypes.WorldObjectType.TREE, "subtype": "domesticable_fruit"},
 	]:
 		composition_parts.append("%s=%d" % [entry["label"], state.get_subtype_count(entry["type"], entry["subtype"])])
-	print("[CELL DISCOVERED] (%d,%d) secondary_resource_stock (REALE, quello che mangiano gli animali): %s | subtype_composition (COSMETICO, solo disegno): %s" % [
-		coords.x, coords.y, ", ".join(stock_parts), ", ".join(composition_parts)
+	print("[CELL DISCOVERED] %s giorno %s (%d,%d) secondary_resource_stock (REALE, quello che mangiano gli animali): %s | moltiplicatori lotti: %s | subtype_composition (COSMETICO, solo disegno): %s" % [
+		GameTypes.Season.keys()[season], day_text, coords.x, coords.y,
+		", ".join(stock_parts), ", ".join(lot_parts), ", ".join(composition_parts)
 	])
 
 

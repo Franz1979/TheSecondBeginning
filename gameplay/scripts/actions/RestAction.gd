@@ -46,12 +46,6 @@ var ignore_stamina_cap: bool = false
 # per cui ThinkAction lo incrementa lì e non altrove).
 var _elapsed: float = 0.0
 
-# Recupero di HAPPINESS al giorno (2026-09-13, richiesta utente: "+50.0/day") — tasso FISSO,
-# nessun moltiplicatore rest_multiplier/clamp al tetto massimo (a differenza di get_stamina_delta
-# sotto): riposare fa bene all'umore ovunque ci si trovi, non solo a chi ha una casa migliore —
-# nessun clamp aggiuntivo richiesto (il tetto giornaliero esiste già in HumanVitalsIndividualService.
-# _clamp_current_to_max, vedi indagine dedicata), quindi qui basta un ritorno incondizionato.
-const HAPPINESS_REGEN_PER_DAY: float = 50.0
 
 # Moltiplicatore del recupero per-giorno (2026-09-12, richiesta utente — campo base per la Rest
 # Task esplicita, poi COLLEGATO lo stesso giorno: GameScene._resolve_rest_target risolve 1.4 se
@@ -72,7 +66,7 @@ func _init(p_rest_multiplier: float = 1.0, p_max_duration_days: float = -1.0, p_
 	disallowed_age_bands = [HumanTypes.AgeBand.INFANT]
 
 
-# _elapsed incrementato QUI (2026-09-16), non in is_complete()/get_happiness_delta — stesso motivo
+# _elapsed incrementato QUI (2026-09-16), non in is_complete() — stesso motivo
 # di ThinkAction: questo metodo è l'unico chiamato SEMPRE, ogni frame, con `delta` disponibile,
 # prima che is_complete() venga valutato nello stesso passaggio (vedi HumanIndividualActionService.
 # apply_action per l'ordine esatto). Incrementato PRIMA del calcolo/guardia sotto, così continua ad
@@ -91,14 +85,6 @@ func get_stamina_delta(individual: Variant, context: Dictionary, delta: float) -
 		return 0.0
 	var regen: float = individual.max_stamina * STAMINA_REGEN_PERCENT_PER_DAY * rest_multiplier * delta
 	return min(regen, individual.max_stamina - individual.current_stamina)
-
-
-# Tasso fisso incondizionato (2026-09-13, richiesta utente) — nessun clamp/rest_multiplier come
-# get_stamina_delta sopra, nessuna guardia su current_happiness>=max_happiness: il tetto viene
-# comunque applicato una volta al giorno da HumanVitalsIndividualService, nessun bisogno di
-# duplicare quella logica qui.
-func get_happiness_delta(individual: Variant, context: Dictionary, delta: float) -> float:
-	return HAPPINESS_REGEN_PER_DAY * delta
 
 
 # Completa quando la stamina ha raggiunto il tetto massimo (2026-09-12, richiesta utente — Rest

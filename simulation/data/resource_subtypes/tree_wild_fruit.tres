@@ -6,10 +6,10 @@
 script = ExtResource("1_wild")
 subtype_name = "wild_fruit"
 initial_ratio_by_biome = {
-1: 0.15,
-2: 0.2,
-4: 0.2,
-5: 0.2
+1: 0.25,
+2: 0.3,
+4: 0.25,
+5: 0.3
 }
 suitable_biomes = Array[int]([1, 2, 4, 5])
 suitable_terrains = Array[int]([1, 2, 3])

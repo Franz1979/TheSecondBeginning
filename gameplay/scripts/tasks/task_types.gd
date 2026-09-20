@@ -60,6 +60,12 @@ enum ActionType {
 	# ancora). Vedi gameplay/scripts/actions/RunAction.gd/JumpAction.gd.
 	RUN,
 	JUMP,
+	# RESTOCK_POUCH (2026-09-19, richiesta utente - RestockPouchAction: preleva cibo da un edificio
+	# direttamente nelle provviste, senza passare dallo zaino) - STESSO principio di RETRIEVE/RUN/JUMP
+	# sopra, AGGIUNTO IN CODA. TaskFactory.build_task e TaskPersistenceService la supportano gia'
+	# entrambi da questo stesso passo - nessuna TaskDefinition la usa ancora. Vedi
+	# gameplay/scripts/actions/RestockPouchAction.gd.
+	RESTOCK_POUCH,
 }
 
 # Categorie di tool richiedibili da un'Action (2026-09-08, richiesta utente — SOLO struttura dati,

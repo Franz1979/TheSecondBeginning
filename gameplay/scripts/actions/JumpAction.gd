@@ -24,10 +24,6 @@ const DURATION_MAX_DAYS: float = 0.75
 # stesso tasso), ma il TASSO in sé resta sempre questo, non ricalibrato in base alla durata.
 const STAMINA_DRAIN_PER_DAY: float = 100.0
 
-# Recupero di HAPPINESS al giorno (2026-09-13, richiesta utente: "+10.0/day") — saltare è
-# divertente: tasso fisso incondizionato, indipendente da _duration/_jump_count (stesso principio
-# "il TASSO resta sempre questo" già dichiarato sopra per STAMINA_DRAIN_PER_DAY).
-const HAPPINESS_REGEN_PER_DAY: float = 10.0
 
 # Numero di salti — puramente per animazione/varietà (richiesta esplicita utente: "3 o 4 salti
 # scelti a caso, nessun impatto su costo o durata") — tirato UNA VOLTA in _init insieme a
@@ -84,14 +80,6 @@ func get_stamina_delta(individual: Variant, context: Dictionary, delta: float) -
 			print("[JUMP DEBUG] salto %d/%d a elapsed=%.3f/%.3fgg" % [_jumps_triggered, _jump_count, _elapsed, _duration])
 		jumped.emit()
 	return -STAMINA_DRAIN_PER_DAY * delta
-
-
-# NON incrementa _elapsed/_jumps_triggered (2026-09-13) — quello stato è già avanzato da
-# get_stamina_delta sopra nello STESSO frame (chiamato PRIMA da HumanIndividualActionService.
-# apply_action): un secondo incremento qui raddoppierebbe silenziosamente la velocità con cui
-# _elapsed matura, sfasando is_complete()/le soglie di salto. Tasso fisso incondizionato.
-func get_happiness_delta(individual: Variant, context: Dictionary, delta: float) -> float:
-	return HAPPINESS_REGEN_PER_DAY * delta
 
 
 func is_complete(individual: Variant, context: Dictionary) -> bool:

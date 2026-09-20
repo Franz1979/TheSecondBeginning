@@ -69,6 +69,16 @@ signal human_stillbirth(mother: HumanIndividual)
 # UI, si limita a segnalare il FATTO, GameScene decide come mostrarlo.
 signal individual_resource_decayed(individual: HumanIndividual, resource_name: String, quantity: int)
 
+# Emesso il giorno in cui un individuo finisce le provviste e comincia a consumare la riserva corporea
+# (2026-09-19, richiesta utente): una volta per inizio di consumo, vedi body_reserve_in_use. GameScene
+# lo trasforma in un popup di alert.
+signal individual_started_body_reserve(individual: HumanIndividual)
+
+# Giorni consecutivi di fame dopo i quali un individuo muore per STARVATION (2026-09-19, richiesta
+# utente). Un individuo che consuma calorie conta i giorni con body_calories a 0; un INFANT senza nessun
+# adulto che lo porta conta i giorni da orfano. Vedi _apply_daily_starvation e HumanIndividual.starvation_days.
+const STARVATION_DAYS: int = 5
+
 var _game_data: GameData
 # Riferimenti (non copie) allo STESSO Array/Folk/HumanPopulationGroup che GameScene possiede —
 # un Array in GDScript è per riferimento, quindi la rimozione reale (Step 6, vedi
@@ -135,9 +145,17 @@ func connect_to_clock(
 # ignorati.
 func _on_day_advanced(_checkpoint_ran: bool, _animals_changed: bool) -> void:
 	_apply_scheduled_human_deaths()
+	# Validazione giornaliera dei figli a carico (2026-09-19, richiesta utente) - PRIMA del ricalcolo della
+	# stamina, cosi' il malus del figlio a carico sparisce lo stesso giorno in cui il figlio esce da INFANT
+	# o muore (le morti programmate sono gia' state applicate sopra).
+	_validate_daily_dependent_children()
 	_recalculate_daily_max_stamina()
 	_recalculate_daily_carry_capacity()
 	_recalculate_daily_vitals()
+	# Morte per fame (2026-09-19, richiesta utente): dopo il consumo calorico del giorno, che aggiorna
+	# body_calories.
+	_apply_daily_starvation()
+	_log_daily_food_need()
 	_apply_daily_vitals_interaction()
 	_advance_daily_individual_resource_decay()
 	# Ritentativo giornaliero fabbisogno materiale (2026-09-14, richiesta utente) — INCONDIZIONATO,
@@ -209,13 +227,85 @@ func _recalculate_daily_max_stamina() -> void:
 	var era_rules := EraCalculator.get_era_rules(_game_data.current_era_name)
 	var start_usec := Time.get_ticks_usec()
 	for individual in _human_individuals:
-		HumanStaminaIndividualService.recalculate_max_stamina(individual, _game_data, era_rules)
+		HumanStaminaIndividualService.recalculate_max_stamina(individual, _game_data, era_rules, _world)
 	if not DebugLogging.ENABLED or not DebugLogging.SHOW_STAMINA_RECALC_LOGS:
 		return
 	var elapsed_ms := (Time.get_ticks_usec() - start_usec) / 1000.0
 	print("[HUMAN STAMINA RECALC] anno=%d giorno=%d: %d individui ricalcolati in %.3f ms" % [
 		_game_data.year, _game_data.current_day, _human_individuals.size(), elapsed_ms
 	])
+
+
+# Validazione giornaliera di HumanIndividual.dependent_child_id per l'INTERA popolazione (2026-09-19,
+# richiesta utente - bugfix: prima il riferimento veniva azzerato SOLO da GameScene._sync_dependent_
+# child_position, che gira solo per gli individui con una Task attiva, quindi una madre ferma teneva
+# il malus di stamina del figlio a carico anche dopo che il figlio aveva superato la fascia INFANT):
+# se dependent_child_id != -1 e il figlio non esiste piu' (non e' in _human_individuals) o non e' piu'
+# INFANT (stessa formula di GameScene._resolve_age_band), lo azzera. _sync_dependent_child_position
+# resta com'e' per la posizione del figlio. Una sola mappa id -> individuo per giorno (O(N)), non una
+# ricerca lineare per madre.
+func _validate_daily_dependent_children() -> void:
+	var individuals_by_id: Dictionary = {}
+	var has_dependent_child := false
+	for individual in _human_individuals:
+		individuals_by_id[individual.id] = individual
+		if individual.dependent_child_id != -1:
+			has_dependent_child = true
+	if not has_dependent_child:
+		return
+	for mother in _human_individuals:
+		if mother.dependent_child_id == -1:
+			continue
+		var child: HumanIndividual = individuals_by_id.get(mother.dependent_child_id)
+		if child == null:
+			mother.dependent_child_id = -1
+			continue
+		var child_age := float(_game_data.year - child.birth_year_virtual)
+		var child_age_band := HumanCalculator.get_age_band(
+			_game_data.era_effective_age_band_durations_male, _game_data.era_effective_age_band_durations_female,
+			child.sex, child_age
+		)
+		if child_age_band != HumanTypes.AgeBand.INFANT:
+			mother.dependent_child_id = -1
+
+
+# Log giornaliero del bisogno di PROVVISTE (2026-09-19, richiesta utente): dietro
+# DebugLogging.SHOW_FOOD_NEED_LOGS, per l'UNICO individuo FOOD_NEED_LOG_INDIVIDUAL_ID. E' l'unica
+# chiamata a HumanIndividualActionService._resolve_active_food_need_priority: solo lettura, nessuna
+# Task e nessun interrupt. Chiamata dopo _recalculate_daily_vitals, cioe' dopo il consumo calorico
+# del giorno (le calorie stampate sono quelle residue). Consumo e autonomia sono ricalcolati qui solo
+# per la riga di log, con la stessa formula della funzione.
+func _log_daily_food_need() -> void:
+	if not DebugLogging.ENABLED or not DebugLogging.SHOW_FOOD_NEED_LOGS:
+		return
+	for individual in _human_individuals:
+		if individual.id != DebugLogging.FOOD_NEED_LOG_INDIVIDUAL_ID:
+			continue
+		var human_rules: HumanRules = null
+		if individual.source_group_ref != null and individual.source_group_ref.folk_ref != null:
+			human_rules = individual.source_group_ref.folk_ref.human_rules_ref
+		if human_rules == null:
+			return
+		var era_rules := EraCalculator.get_era_rules(_game_data.current_era_name)
+		var age := float(_game_data.year - individual.birth_year_virtual)
+		var age_band := HumanCalculator.get_age_band(
+			_game_data.era_effective_age_band_durations_male, _game_data.era_effective_age_band_durations_female,
+			individual.sex, age
+		)
+		var daily_consumption: float = HumanCalculator.get_daily_calorie_consumption(
+			human_rules, age_band, individual.sex, individual.dependent_child_id != -1, era_rules
+		)
+		var autonomy_text := "infinita"
+		if daily_consumption > 0.0:
+			autonomy_text = "%.2f" % (individual.food_calories_held / daily_consumption)
+		var priority: int = HumanIndividualActionService._resolve_active_food_need_priority(
+			individual, human_rules, age_band, individual.sex, era_rules
+		)
+		print("[FOOD NEED DEBUG] anno=%d giorno=%d #%d calorie=%.3f consumo_giornaliero=%.3f autonomia_giorni=%s priorita=%d" % [
+			_game_data.year, _game_data.current_day, individual.id, individual.food_calories_held,
+			daily_consumption, autonomy_text, priority
+		])
+		return
 
 
 # Ricalcolo giornaliero di HumanIndividual.max_carry_capacity per l'INTERA popolazione (2026-09-08,
@@ -250,8 +340,14 @@ func _recalculate_daily_vitals() -> void:
 	if _human_individuals.is_empty():
 		return
 	var start_usec := Time.get_ticks_usec()
+	var era_rules := EraCalculator.get_era_rules(_game_data.current_era_name)
 	for individual in _human_individuals:
 		HumanVitalsIndividualService.recalculate_vitals(individual, _game_data)
+		# Consumo calorico giornaliero della saccoccia (2026-09-19, richiesta utente): stesso ciclo, quindi
+		# per l'INTERA popolazione e non solo per chi ha una task attiva. Dopo il ricalcolo della capacita'
+		# (_recalculate_daily_carry_capacity, chiamata prima nello stesso tick).
+		if HumanVitalsIndividualService.apply_daily_calorie_consumption(individual, _game_data, era_rules):
+			individual_started_body_reserve.emit(individual)
 	if not DebugLogging.ENABLED or not DebugLogging.SHOW_VITALS_RECALC_LOGS:
 		return
 	var elapsed_ms := (Time.get_ticks_usec() - start_usec) / 1000.0
@@ -514,7 +610,7 @@ func _run_annual_human_births() -> void:
 			human_stillbirth.emit(mother)
 		var roll: Dictionary = entry["survival_roll"]
 		if not roll["mother_survived_roll"]:
-			_transfer_or_orphan_dependent_child(mother)
+			# La custodia del figlio a carico passa ora da _kill_individual (a OGNI morte, qualunque causa).
 			var mother_index := _human_individuals.find(mother)
 			if mother_index != -1:
 				var mother_age_at_death := _game_data.year - mother.birth_year_virtual
@@ -720,6 +816,10 @@ func kill_individual_now(individual: HumanIndividual) -> void:
 func _kill_individual(
 	individual: HumanIndividual, index: int, cause: DeathTypes.DeathCause, day: int, age_at_death: int
 ) -> bool:
+	# Custodia del figlio a carico (2026-09-19, richiesta utente): a OGNI morte, qualunque causa, mentre
+	# dependent_child_id e' ancora leggibile e l'individuo e' ancora nel roster (il padre e' cercato li').
+	# Se il padre non puo' prenderlo in carico il bambino resta orfano, vedi _apply_daily_starvation.
+	_transfer_or_orphan_dependent_child(individual)
 	_game_data.death_events.append({
 		"individual_id": individual.id,
 		"name": individual.name,
@@ -815,8 +915,9 @@ func _free_partner_if_any(deceased: HumanIndividual) -> bool:
 	return false
 
 
-# Step 2 dell'effetto morte materna (2026-09-06) — chiamata PRIMA di rimuovere `mother` via
-# _kill_individual: se ha un figlio a carico (dependent_child_id != -1), il riferimento passa al
+# Custodia del figlio a carico alla morte di `mother` (2026-09-06, esteso 2026-09-19: ora chiamata da
+# _kill_individual a OGNI morte, qualunque causa, non piu' solo il parto) — se ha un figlio a carico
+# (dependent_child_id != -1), il riferimento passa al
 # padre di quel figlio, se vivo, reperibile e libero — stesso identico campo/meccanismo di
 # GameScene._sync_dependent_child_position, che legge dependent_child_id da CHIUNQUE lo tenga
 # valorizzato, mai assumendo che sia la madre biologica (nessuna modifica lì necessaria — vedi
@@ -851,6 +952,57 @@ func _transfer_or_orphan_dependent_child(mother: HumanIndividual) -> void:
 		return
 	father.dependent_child_id = mother.dependent_child_id
 	mother.dependent_child_id = -1
+
+
+# Morte per fame (2026-09-19, richiesta utente), una volta al giorno per l'INTERA popolazione, dopo il
+# consumo calorico. Aggiorna HumanIndividual.starvation_days e uccide (causa STARVATION) chi raggiunge
+# STARVATION_DAYS:
+#   - individuo che consuma calorie (fascia diversa da INFANT): "in fame" se body_calories <= 0;
+#   - INFANT (non consuma calorie): "in fame" se nessun individuo del roster lo porta
+#     (dependent_child_id uguale al suo id), cioe' e' orfano.
+# Il contatore si azzera il giorno in cui la condizione cessa. Le uccisioni passano da _kill_individual
+# (death_events, corpo, popup con "death_cause_starvation", custodia del figlio a carico); l'indice e'
+# ricalcolato fresco per ogni morte.
+func _apply_daily_starvation() -> void:
+	if _human_individuals.is_empty():
+		return
+	var carried_child_ids: Dictionary = {}
+	for individual in _human_individuals:
+		if individual.dependent_child_id != -1:
+			carried_child_ids[individual.dependent_child_id] = true
+	var doomed: Array[HumanIndividual] = []
+	for individual in _human_individuals:
+		var age_band := HumanCalculator.get_age_band(
+			_game_data.era_effective_age_band_durations_male, _game_data.era_effective_age_band_durations_female,
+			individual.sex, float(_game_data.year - individual.birth_year_virtual)
+		)
+		var starving: bool
+		if age_band == HumanTypes.AgeBand.INFANT:
+			starving = not carried_child_ids.has(individual.id)
+		else:
+			starving = individual.body_calories <= 0.0
+		individual.starvation_days = (individual.starvation_days + 1) if starving else 0
+		if individual.starvation_days >= STARVATION_DAYS:
+			doomed.append(individual)
+	if doomed.is_empty():
+		return
+	var removed_log_lines: Array[String] = []
+	for individual in doomed:
+		var index := _human_individuals.find(individual)
+		if index == -1:
+			continue
+		var age_at_death := _game_data.year - individual.birth_year_virtual
+		var partner_freed := _kill_individual(
+			individual, index, DeathTypes.DeathCause.STARVATION, _game_data.current_day, age_at_death
+		)
+		if DebugLogging.ENABLED:
+			removed_log_lines.append("#%d %s (eta'=%d, causa=%s%s)" % [
+				individual.id, individual.name, age_at_death,
+				_cause_debug_name(DeathTypes.DeathCause.STARVATION), ", coniuge liberato" if partner_freed else ""
+			])
+	if DebugLogging.ENABLED and not removed_log_lines.is_empty():
+		print("[HUMAN DEATH] giorno=%d: %s" % [_game_data.current_day, ", ".join(removed_log_lines)])
+	human_population_changed.emit()
 
 
 # Placeholder: nessuna reazione ancora, solo il collegamento richiesto (vedi doc di testa al

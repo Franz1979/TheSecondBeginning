@@ -140,26 +140,81 @@ static func find_best(
 # RetrieveAction.activate) — un magazzino con SOLO 1 unità disponibile resta comunque un candidato
 # valido (porterà solo 1 unità questo viaggio, il chiamante dovrà eventualmente generare un
 # secondo viaggio per il resto, stesso principio "porta quello che riesci" già confermato per
-# haul_resource/transport). Filtro categoria/is_complete/is_demolished DELIBERATAMENTE assente
-# qui (a differenza di find_best, che passa da get_max_depositable — con tutti quei guard):
-# RetrieveAction stessa non ha mai richiesto nulla del genere per il PRELIEVO (vedi la nota in
-# testa a RetrieveAction.gd — "funziona su QUALUNQUE building con stored_resources, completo o in
-# costruzione"), quindi questa ricerca resta coerente con quello che l'Action che la userà può
-# davvero fare.
+# haul_resource/transport). [Nota storica: la versione originale non filtrava su is_complete/
+# is_demolished, coerente con RetrieveAction che preleva da QUALUNQUE building con stored_resources;
+# con la generalizzazione sotto, i candidati devono invece essere completi e non demoliti.]
+# GENERALIZZATA (2026-09-19, richiesta utente - assorbe la ricerca "magazzino con cibo", niente due
+# ricerche quasi identiche): il vecchio `resource_name: String` diventa `criterion`, che accetta:
+#   - un NOME di risorsa (String, es. "stick") - comportamento originale, servira' al futuro Produce;
+#   - null o "" - QUALUNQUE risorsa;
+#   - una CATEGORIA (SecondaryResourceTypes.Category, es. FOOD) - qualunque risorsa di quella
+#     categoria (SecondaryResourceRules.category, via CaloricCalculator.get_caloric_source_rules).
+# `min_quantity` (default 1, cioe' quantity > 0 come prima): quantita' minima di UNA singola risorsa
+# che soddisfa il criterio - non la somma tra risorse diverse. Un edificio e' candidato se ne ha
+# almeno una.
+#
+# Filtri sull'edificio: COMPLETO e NON demolito (aggiunti insieme alla generalizzazione; la versione
+# originale non li aveva). Ritorna l'edificio piu' vicino o null, via SpatialSelectionService.
+# find_nearest.
+#
+# `requesting_individual_id` (opzionale, default -1): serve SOLO al log diagnostico
+# (DebugLogging.SHOW_FOOD_SOURCE_LOGS, spento di default) per stampare l'esito per l'individuo con l'id
+# configurato; non influisce sulla ricerca.
 static func find_source_for_retrieval(
 	world: World,
 	origin_position: Vector2,
 	origin_macro_coords: Vector2i,
-	resource_name: String,
-	excluded_building_ids: Array[int] = []
+	criterion: Variant = null,
+	excluded_building_ids: Array[int] = [],
+	min_quantity: int = 1,
+	requesting_individual_id: int = -1
 ) -> Building:
 	if world == null:
 		return null
 
 	var has_stock := func(building: Building) -> bool:
-		var stored_entry: Dictionary = building.stored_resources.get(resource_name, {})
-		return int(stored_entry.get("quantity", 0)) > 0
+		if not building.is_complete or building.is_demolished:
+			return false
+		return not WarehouseSelectionService._get_matching_stock(building, criterion, min_quantity).is_empty()
 
-	return SpatialSelectionService.find_nearest(
+	var source := SpatialSelectionService.find_nearest(
 		world.buildings, origin_position, origin_macro_coords, has_stock, excluded_building_ids
 	) as Building
+
+	if DebugLogging.ENABLED and DebugLogging.SHOW_FOOD_SOURCE_LOGS \
+			and requesting_individual_id == DebugLogging.FOOD_SOURCE_LOG_INDIVIDUAL_ID:
+		if source == null:
+			print("[FOOD SOURCE DEBUG] #%d origine=%s criterio=%s min=%d: nessun magazzino completo idoneo (esclusi=%s)." % [
+				requesting_individual_id, str(origin_position), str(criterion), min_quantity, str(excluded_building_ids)
+			])
+		else:
+			print("[FOOD SOURCE DEBUG] #%d origine=%s criterio=%s min=%d: trovato %s #%d in macro=(%d,%d) micro=(%d,%d), risorse=%s (esclusi=%s)." % [
+				requesting_individual_id, str(origin_position), str(criterion), min_quantity, source.building_type_name,
+				source.id, source.macro_x, source.macro_y, source.micro_x, source.micro_y,
+				str(_get_matching_stock(source, criterion, min_quantity)), str(excluded_building_ids)
+			])
+	return source
+
+
+# nome risorsa -> quantita' delle sole risorse di stored_resources di `building` che soddisfano
+# `criterion` (vedi find_source_for_retrieval: nome, null/"" = qualunque, categoria) con quantity >=
+# min_quantity (e comunque > 0). Vuoto = nessuna. Era l'helper del cibo, ora
+# generalizzato.
+static func _get_matching_stock(building: Building, criterion: Variant, min_quantity: int) -> Dictionary:
+	var matching_stock: Dictionary = {}
+	var minimum: int = maxi(min_quantity, 1)
+	for resource_name in building.stored_resources.keys():
+		var entry: Dictionary = building.stored_resources[resource_name]
+		var quantity: int = int(entry.get("quantity", 0))
+		if quantity < minimum:
+			continue
+		if criterion == null or (criterion is String and criterion == ""):
+			matching_stock[resource_name] = quantity
+		elif criterion is String or criterion is StringName:
+			if resource_name == String(criterion):
+				matching_stock[resource_name] = quantity
+		else:
+			var rules := CaloricCalculator.get_caloric_source_rules(resource_name)
+			if rules != null and rules.category == int(criterion):
+				matching_stock[resource_name] = quantity
+	return matching_stock

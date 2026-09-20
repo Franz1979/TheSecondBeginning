@@ -34,7 +34,15 @@ const IDLE_FALLBACK_TASK_PATHS: Array[String] = [
 	"res://gameplay/scripts/tasks/definitions/play.tres",
 	"res://gameplay/scripts/tasks/definitions/leisure_rest.tres",
 	"res://gameplay/scripts/tasks/definitions/daydreaming.tres",
+	"res://gameplay/scripts/tasks/definitions/leisure_restock.tres",
 ]
+
+# Guard di eleggibilita' di leisure_restock nel sorteggio idle (2026-09-19, richiesta utente): la Task e'
+# eleggibile solo se lo spazio libero nelle provviste (food_space_capacity - food_space_used) e' almeno
+# questa frazione della capacita' (0.4 = 40%). Con le provviste quasi piene il sorteggio la salta e ne
+# pesca un'altra. Vale SOLO per il sorteggio idle: l'attivazione manuale (tasto F) resta senza
+# condizioni.
+const LEISURE_RESTOCK_MIN_FREE_SPACE_RATIO: float = 0.4
 
 # Range di durata (in giorni) della Rest per SVAGO (2026-09-16, richiesta utente) — RANDOM ad ogni
 # assegnazione (a differenza del tetto FISSO di 8gg della Rest da bisogno, vedi
@@ -148,6 +156,15 @@ static func resolve_play_targets(individual: HumanIndividual) -> Dictionary:
 	return {"target_1": target_1, "target_2": target_2}
 
 
+# Eleggibilita' di leisure_restock nel sorteggio idle: spazio libero nelle provviste >=
+# LEISURE_RESTOCK_MIN_FREE_SPACE_RATIO x capacita'. Capacita' <= 0 -> non eleggibile.
+static func _is_leisure_restock_eligible(individual: HumanIndividual) -> bool:
+	if individual.food_space_capacity <= 0.0:
+		return false
+	var free_space: float = individual.food_space_capacity - individual.food_space_used
+	return free_space >= LEISURE_RESTOCK_MIN_FREE_SPACE_RATIO * individual.food_space_capacity
+
+
 # Costruisce la Task runtime per UNO dei path di IDLE_FALLBACK_TASK_PATHS — match ESPLICITO per
 # path (vedi il commento su IDLE_FALLBACK_TASK_PATHS sopra per il perché non è genericizzato). Il
 # case `_` logga un errore invece di un crash silenzioso, per segnalare subito una voce aggiunta a
@@ -219,6 +236,12 @@ static func _build_idle_task(path: String, individual: HumanIndividual, world: W
 			if daydream_step_appended_connector.is_valid():
 				daydream_step_appended_connector.call(task, individual)
 			return task
+		"res://gameplay/scripts/tasks/definitions/leisure_restock.tres":
+			# Guard dello spazio libero GIA' APPLICATO a monte da assign_idle_fallback (vedi lì). Se nessun
+			# magazzino ha cibo torna null e assign_idle_fallback ritira tra le altre perditempo.
+			return NeedTaskAssignmentService.build_restock_task(
+				individual, world, NeedTaskAssignmentService.LEISURE_RESTOCK_TASK_DEFINITION_PATH
+			)
 		_:
 			push_error("IdleTaskAssignmentService._build_idle_task: path '%s' non riconosciuto — aggiungi un case quando estendi IDLE_FALLBACK_TASK_PATHS." % path)
 			return null
@@ -269,6 +292,10 @@ static func assign_idle_fallback(individual: HumanIndividual, age_band: HumanTyp
 		# finirebbe comunque "a vuoto" (Think + nessun deposito, vedi _handle_pending_thought_
 		# target_search), non un fallimento distruttivo ma inutile da estrarre nel tiro pesato.
 		if path == "res://gameplay/scripts/tasks/definitions/daydreaming.tres" and not ThoughtTargetSelectionService.has_thought_accepting_building(world):
+			continue
+		# leisure_restock esclusa a monte se le provviste sono quasi piene (spazio libero sotto
+		# LEISURE_RESTOCK_MIN_FREE_SPACE_RATIO della capacita'): il sorteggio ne pesca un'altra.
+		if path == "res://gameplay/scripts/tasks/definitions/leisure_restock.tres" and not _is_leisure_restock_eligible(individual):
 			continue
 		remaining.append({"path": path, "definition": definition})
 

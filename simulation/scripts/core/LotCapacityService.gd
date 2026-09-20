@@ -209,7 +209,10 @@ static func get_available(macro_state: MacroCellState, resource_name: String, po
 			var remaining: int = int(macro_state.lot_registry.get(resource_name, {}).get(position, 0))
 			if remaining <= 0:
 				return 0
-			return _apply_seasonal_availability_to_capacity(resolved_rules, remaining)
+			var seasonal_remaining := _apply_seasonal_availability_to_capacity(resolved_rules, remaining)
+			if DebugLogging.ENABLED and DebugLogging.SHOW_LOT_CAPACITY_LOGS:
+				_log_lot_capacity(macro_state, resource_name, position, resolved_rules, remaining, seasonal_remaining, -1, seasonal_remaining)
+			return seasonal_remaining
 		SecondaryResourceTypes.LotSource.TREE_INDIVIDUAL, SecondaryResourceTypes.LotSource.SHRUB_INDIVIDUAL:
 			if not _is_vegetation_cache_fresh(macro_state, resource_name):
 				return 0
@@ -260,7 +263,66 @@ static func _capacity_minus_harvested(macro_state: MacroCellState, resource_name
 		return 0
 	var seasonal_capacity := _apply_seasonal_availability_to_capacity(rules, capacity)
 	var harvested: int = int(macro_state.lot_registry.get(resource_name, {}).get(position, 0))
-	return max(seasonal_capacity - harvested, 0)
+	var available: int = max(seasonal_capacity - harvested, 0)
+	if DebugLogging.ENABLED and DebugLogging.SHOW_LOT_CAPACITY_LOGS:
+		_log_lot_capacity(macro_state, resource_name, position, rules, capacity, seasonal_capacity, harvested, available)
+	return available
+
+
+# Log [LOT CAPACITY] (DebugLogging.SHOW_LOT_CAPACITY_LOGS, 2026-09-19, richiesta utente): capacita' base
+# del lotto, moltiplicatore stagionale, capacita' stagionale (floor(base x moltiplicatore), la stessa
+# di _apply_seasonal_availability_to_capacity), raccolto e disponibilita' finale. Il moltiplicatore e'
+# ricalcolato qui (stessa lettura di _apply_seasonal_availability_to_capacity, con lo stesso fail-open
+# a 1.0 senza game_data) e NON e' usato dalla simulazione. `harvested` = -1 per STONE_POSITION (il
+# registro e' gia' la quantita' residua, nessun raccolto separato). Dedup: un lotto viene stampato solo
+# alla prima lettura e quando cambiano stagione/capacita'/raccolto/risultato, perche' get_available
+# gira per ogni posizione ad ogni refresh.
+#
+# FILTRI (2026-09-19, richiesta utente - senza, il seeding stampava centinaia di righe): solo le risorse
+# ALIMENTARI (SecondaryResourceTypes.Category.FOOD, non pebble/stick/plant_fiber/erbe medicinali) e solo
+# quando il moltiplicatore stagionale e' DIVERSO da 1.0 (con 1.0 la stagione non cambia nulla, non c'e'
+# niente da verificare). In piu' un tetto di righe per macrocella e risorsa
+# (LOT_CAPACITY_LOG_MAX_LINES_PER_MACRO_RESOURCE): oltre il tetto una sola riga di avviso, poi silenzio.
+const LOT_CAPACITY_LOG_MAX_LINES_PER_MACRO_RESOURCE: int = 5
+static var _lot_capacity_last_logged: Dictionary = {}
+static var _lot_capacity_lines_by_macro_resource: Dictionary = {}
+
+static func _log_lot_capacity(
+	macro_state: MacroCellState, resource_name: String, position: Vector2i, rules: SecondaryResourceRules,
+	base_capacity: int, seasonal_capacity: int, harvested: int, available: int
+) -> void:
+	if rules.category != SecondaryResourceTypes.Category.FOOD:
+		return
+	var season_text := "?"
+	var day_text := "?"
+	var multiplier := 1.0
+	if GameSettings.active_game_data != null:
+		var day: int = GameSettings.active_game_data.current_day
+		var season := SeasonCalculator.get_season_for_day(day)
+		season_text = GameTypes.Season.keys()[season]
+		day_text = str(day)
+		multiplier = rules.seasonal_availability_multiplier[season]
+	if is_equal_approx(multiplier, 1.0):
+		return
+	var key := "%d,%d|%s|%d,%d" % [macro_state.x, macro_state.y, resource_name, position.x, position.y]
+	var signature := "%s|%d|%d|%d|%d" % [season_text, base_capacity, seasonal_capacity, harvested, available]
+	if _lot_capacity_last_logged.get(key, "") == signature:
+		return
+	_lot_capacity_last_logged[key] = signature
+	var cap_key := "%d,%d|%s" % [macro_state.x, macro_state.y, resource_name]
+	var lines_printed: int = int(_lot_capacity_lines_by_macro_resource.get(cap_key, 0))
+	if lines_printed >= LOT_CAPACITY_LOG_MAX_LINES_PER_MACRO_RESOURCE:
+		if lines_printed == LOT_CAPACITY_LOG_MAX_LINES_PER_MACRO_RESOURCE:
+			_lot_capacity_lines_by_macro_resource[cap_key] = lines_printed + 1
+			print("[LOT CAPACITY] macro=(%d,%d) %s: raggiunto il tetto di %d righe, altri lotti omessi" % [
+				macro_state.x, macro_state.y, resource_name, LOT_CAPACITY_LOG_MAX_LINES_PER_MACRO_RESOURCE
+			])
+		return
+	_lot_capacity_lines_by_macro_resource[cap_key] = lines_printed + 1
+	print("[LOT CAPACITY] macro=(%d,%d) %s lotto=(%d,%d) %s giorno %s | capacita_base=%d x moltiplicatore=%.2f -> capacita_stagionale=%d | raccolto=%s | disponibile=%d" % [
+		macro_state.x, macro_state.y, resource_name, position.x, position.y, season_text, day_text,
+		base_capacity, multiplier, seasonal_capacity, str(harvested) if harvested >= 0 else "n/a", available
+	])
 
 
 static func _set_registry_value(macro_state: MacroCellState, resource_name: String, position: Vector2i, value: int) -> void:
@@ -327,3 +389,49 @@ static func reset_all_lot_harvests_on_season_rise(
 		for resource_name in resources_to_reset:
 			if not state.lot_registry.get(resource_name, {}).is_empty():
 				state.lot_registry[resource_name] = {}
+
+
+# Azzeramento ANNUALE del raccolto per le risorse a lotto SENZA variazione stagionale (2026-09-19,
+# richiesta utente - es. stick: un albero maturo produce ogni anno, non una volta sola). Chiamata una
+# volta all'anno dal checkpoint di crescita della vegetazione (WorldTimeService._run_growth_checkpoint,
+# fine SPRING, giorno 181), stesso momento in cui la capacita' per lotto viene ricalcolata.
+#
+# Complementare a reset_all_lot_harvests_on_season_rise sopra, che azzera solo quando il moltiplicatore
+# stagionale SALE: una risorsa il cui moltiplicatore non sale mai (tutti e 4 i valori uguali, come il
+# default [1.0, 1.0, 1.0, 1.0]) non verrebbe resettata da nessuno. Qui si azzera ESATTAMENTE quel
+# complemento (_has_seasonal_rise falso), quindi nessuna risorsa e' resettata da entrambi i percorsi.
+# Generica: scansiona i lot_source rigenerabili (TREE_INDIVIDUAL/SHRUB_INDIVIDUAL/GRASS_PATCH), mai un
+# nome di risorsa scritto a mano; MAI STONE_POSITION (un sasso estratto non ricresce). Non tocca il
+# seasonal_availability_multiplier.
+static func reset_harvests_for_resources_without_seasonal_rise(world: World) -> void:
+	var resources_to_reset: Array[String] = []
+	for lot_source in [
+		SecondaryResourceTypes.LotSource.TREE_INDIVIDUAL,
+		SecondaryResourceTypes.LotSource.SHRUB_INDIVIDUAL,
+		SecondaryResourceTypes.LotSource.GRASS_PATCH,
+	]:
+		for resource_name in get_resource_names_for_lot_source(lot_source):
+			var rules := CaloricCalculator.get_caloric_source_rules(resource_name)
+			if rules == null:
+				continue
+			if not _has_seasonal_rise(rules):
+				resources_to_reset.append(resource_name)
+	if resources_to_reset.is_empty():
+		return
+	for state in world.cell_states:
+		for resource_name in resources_to_reset:
+			if not state.lot_registry.get(resource_name, {}).is_empty():
+				state.lot_registry[resource_name] = {}
+
+
+# Vero se in almeno una stagione il moltiplicatore e' MAGGIORE di quello della stagione precedente: lo
+# stesso confronto di reset_all_lot_harvests_on_season_rise, valutato su tutte e 4 le transizioni
+# dell'anno. Per un array ciclico questo equivale a "non tutti i valori sono uguali".
+static func _has_seasonal_rise(rules: SecondaryResourceRules) -> bool:
+	for season in [
+		GameTypes.Season.WINTER, GameTypes.Season.SPRING, GameTypes.Season.SUMMER, GameTypes.Season.AUTUMN
+	]:
+		var previous_season := SeasonCalculator.get_previous_season(season)
+		if float(rules.seasonal_availability_multiplier[season]) > float(rules.seasonal_availability_multiplier[previous_season]):
+			return true
+	return false

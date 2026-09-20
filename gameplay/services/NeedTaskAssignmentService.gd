@@ -15,6 +15,14 @@ extends RefCounted
 const REST_TASK_DEFINITION_PATH := "res://gameplay/scripts/tasks/definitions/rest.tres"
 const EMERGENCY_REST_TASK_DEFINITION_PATH := "res://gameplay/scripts/tasks/definitions/emergency_rest.tres"
 
+# Task perditempo "leisure_restock" (2026-09-19, richiesta utente): Walk verso il magazzino piu' vicino
+# con cibo -> RestockPouchAction. interrupt_priority -1 e is_idle_activity come wander/leisure_rest.
+const LEISURE_RESTOCK_TASK_DEFINITION_PATH := "res://gameplay/scripts/tasks/definitions/leisure_restock.tres"
+
+# Task-bisogno "emergency_restock" (2026-09-19, richiesta utente): stessi step di leisure_restock ma
+# interrupt_priority 20 (interrompe). Vedi assign_emergency_restock_task.
+const EMERGENCY_RESTOCK_TASK_DEFINITION_PATH := "res://gameplay/scripts/tasks/definitions/emergency_restock.tres"
+
 # Tetto di sicurezza in giorni per la Rest da BISOGNO (2026-09-16, richiesta utente — bugfix:
 # anche con regen percentuale, vedi RestAction.STAMINA_REGEN_PERCENT_PER_DAY, il recupero dalla
 # soglia del 20% resta ~16gg fissi, troppo per restare bloccati senza un tetto). Passato come
@@ -161,6 +169,88 @@ static func assign_emergency_rest_task(individual: HumanIndividual, age_band: Hu
 # Scansione lineare di World.buildings — stesso identico pattern/stesso costo accettato già in uso
 # altrove nel progetto per liste di questa dimensione (GameScene._find_building_by_id/
 # TaskPersistenceService._find_building_by_id, entrambe copie indipendenti dello stesso principio).
+# Costruisce (senza assegnarla) una Task di rifornimento delle provviste (2026-09-19, richiesta
+# utente): trova il magazzino piu' vicino che contiene cibo (WarehouseSelectionService.
+# find_source_for_retrieval con la categoria FOOD) e costruisce Walk -> RestockPouchAction dalla
+# definizione `definition_path` (leisure_restock.tres oppure emergency_restock.tres: stessi step,
+# cambia solo la priorita'). Se nessun magazzino completo ha cibo ritorna null: la Task NON nasce.
+# Nessun guard sullo stato delle provviste. Il Walk punta alla microcella dell'edificio con un
+# piccolo scarto casuale interno, come le altre Task verso edifici (offset cross-macrocella come in
+# resolve_rest_target). Usata da assign_leisure_restock_task, assign_emergency_restock_task e dal
+# fallback idle (IdleTaskAssignmentService._build_idle_task).
+static func build_restock_task(individual: HumanIndividual, world: World, definition_path: String) -> Task:
+	var source := WarehouseSelectionService.find_source_for_retrieval(
+		world, individual.position, individual.home_macro_coords, SecondaryResourceTypes.Category.FOOD,
+		[], 1, individual.id
+	)
+	if source == null:
+		if DebugLogging.should_log_restock(individual.id):
+			print("[RESTOCK] #%d %s: nessun magazzino completo con cibo trovato, Task non creata (%s)." % [
+				individual.id, individual.name, definition_path.get_file()
+			])
+		return null
+	var macro_offset: Vector2 = Vector2(
+		Vector2i(source.macro_x, source.macro_y) - individual.home_macro_coords
+	) * World.WIDTH
+	var target_position: Vector2 = Vector2(source.micro_x, source.micro_y) + macro_offset \
+		+ Vector2(randf_range(0.15, 0.85), randf_range(0.15, 0.85))
+	var definition := load(definition_path) as TaskDefinition
+	var context: Dictionary = {
+		"restock_target_position": target_position,
+		"restock_target_building": source,
+	}
+	if DebugLogging.should_log_restock(individual.id):
+		print("[RESTOCK] #%d %s: magazzino scelto %s #%d in macro=(%d,%d) micro=(%d,%d), target=%s (%s)" % [
+			individual.id, individual.name, source.building_type_name, source.id,
+			source.macro_x, source.macro_y, source.micro_x, source.micro_y, str(target_position),
+			definition_path.get_file()
+		])
+	return TaskFactory.build_task(definition, context)
+
+
+# Assegnazione comune delle Task di rifornimento: build_restock_task + can_assign_task + assign_task,
+# con il log [RESTOCK] dell'esito. NON chiama individual.stop() (scarterebbe lo zaino: rifornirsi deve
+# poter avvenire anche mentre si trasporta qualcosa).
+static func _assign_restock_task(
+	individual: HumanIndividual, world: World, age_band: HumanTypes.AgeBand, definition_path: String,
+	is_interrupt_transition: bool
+) -> bool:
+	var task := build_restock_task(individual, world, definition_path)
+	if task == null:
+		return false
+	if not individual.can_assign_task(task, age_band):
+		if DebugLogging.should_log_restock(individual.id):
+			print("[RESTOCK] #%d %s: Task %s rifiutata da can_assign_task." % [individual.id, individual.name, task.task_name])
+		return false
+	var assigned := individual.assign_task(task, age_band, is_interrupt_transition)
+	if DebugLogging.should_log_restock(individual.id):
+		print("[RESTOCK] Task %s %s a #%d %s." % [
+			task.task_name, "assegnata" if assigned else "NON assegnata (assign_task ha rifiutato)", individual.id, individual.name
+		])
+	return assigned
+
+
+# Assegna la Task leisure_restock (attivazione manuale, tasto F), sullo schema di assign_rest_task.
+# Se nessun magazzino ha cibo la Task non nasce (false). Nessun guard sullo stato delle provviste: se il
+# giocatore la lancia, si esegue comunque (il guard dello spazio libero vale SOLO per il sorteggio idle,
+# vedi IdleTaskAssignmentService.LEISURE_RESTOCK_MIN_FREE_SPACE_RATIO). Priorita' -1: passa dalle
+# regole generali di assign_task (zaino occupato compreso).
+static func assign_leisure_restock_task(individual: HumanIndividual, world: World, age_band: HumanTypes.AgeBand) -> bool:
+	return _assign_restock_task(individual, world, age_band, LEISURE_RESTOCK_TASK_DEFINITION_PATH, false)
+
+
+# Assegna la Task emergency_restock (2026-09-19, richiesta utente), sullo schema di
+# assign_emergency_rest_task: il bisogno di cibo che interrompe (interrupt_priority 20). Nessun guard
+# sullo spazio libero. Se nessun magazzino ha cibo la Task non nasce e ritorna false SENZA toccare la
+# Task in corso (l'interruzione avviene solo dentro assign_task). `is_interrupt_transition` = true dai
+# due agganci automatici (HumanIndividualActionService._handle_food_interrupt/resolve_idle_individual):
+# conserva lo zaino e sospende la Task in corso se sospendibile.
+static func assign_emergency_restock_task(
+	individual: HumanIndividual, world: World, age_band: HumanTypes.AgeBand, is_interrupt_transition: bool = false
+) -> bool:
+	return _assign_restock_task(individual, world, age_band, EMERGENCY_RESTOCK_TASK_DEFINITION_PATH, is_interrupt_transition)
+
+
 static func _find_building_by_id(world: World, building_id: int) -> Building:
 	if world == null:
 		return null

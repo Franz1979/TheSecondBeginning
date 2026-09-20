@@ -528,8 +528,15 @@ func save_game_to_json(
 				# alla dichiarazione dei campi, non rimandata a quando arriverà un vero consumatore —
 				# stessa richiesta esplicita già fatta per questo giro. Quando un futuro Action/evento
 				# farà davvero variare i current_*, un reload non li perderà silenziosamente.
-				"current_hunger": individual.current_hunger,
-				"max_hunger": individual.max_hunger,
+				# Saccoccia del cibo (2026-09-19): spazio occupato e calorie contenute - la capacita'
+				# (food_space_capacity) non e' persistita, la ricalcola HumanCarryCapacityIndividualService.
+				"food_space_used": individual.food_space_used,
+				"food_calories_held": individual.food_calories_held,
+				# Riserva corporea (2026-09-19): solo le calorie attuali, il massimo lo ricalcola
+				# HumanCarryCapacityIndividualService.
+				"body_calories": individual.body_calories,
+				"body_reserve_in_use": individual.body_reserve_in_use,
+				"starvation_days": individual.starvation_days,
 				"current_thirst": individual.current_thirst,
 				"max_thirst": individual.max_thirst,
 				"current_health": individual.current_health,

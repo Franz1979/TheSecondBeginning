@@ -66,10 +66,17 @@ func get_stamina_delta(individual: Variant, context: Dictionary, delta: float) -
 			used_carry_space = float(individual.carried_quantity) * carried_resource_rules.space_per_unit
 
 	var cost_per_microcell: float = (
-		RUN_INTENSITY_MULTIPLIER * WalkAction.STAMINA_DRAIN_PER_MICROCELL_BASE
+		# terrain_stamina_multiplier (2026-09-19, vedi MovementTerrainService): solo sulla quota base.
+		RUN_INTENSITY_MULTIPLIER * WalkAction.STAMINA_DRAIN_PER_MICROCELL_BASE * individual.terrain_stamina_multiplier
 		+ used_carry_space
 		+ WalkAction.STAMINA_DRAIN_PER_TOOL * float(individual.equipped_tool_count)
 	)
+	if DebugLogging.ENABLED and DebugLogging.SHOW_MOVEMENT_STAMINA_LOGS:
+		MovementStaminaDebugLog.record(
+			individual, "Run", distance, individual.terrain_stamina_multiplier,
+			RUN_INTENSITY_MULTIPLIER * WalkAction.STAMINA_DRAIN_PER_MICROCELL_BASE,
+			used_carry_space + WalkAction.STAMINA_DRAIN_PER_TOOL * float(individual.equipped_tool_count)
+		)
 	if DebugLogging.ENABLED and DebugLogging.SHOW_MOVEMENT_LOGS:
 		print("[RUN DEBUG] get_stamina_delta: distance=%.3f cost_per_microcell=%.2f (base Walk x%.1f + carico/utensili invariati) -> delta=%.2f" % [
 			distance, cost_per_microcell, RUN_INTENSITY_MULTIPLIER, -distance * cost_per_microcell
@@ -77,28 +84,16 @@ func get_stamina_delta(individual: Variant, context: Dictionary, delta: float) -
 	return -distance * cost_per_microcell
 
 
-# Tracciamento distanza INDIPENDENTE da _last_position sopra (2026-09-13, richiesta utente) —
-# STESSO motivo di WalkAction.get_happiness_delta: get_stamina_delta gira PRIMA nello stesso frame
-# e aggiorna già _last_position, quindi questo metodo ha bisogno di un proprio campo per non
-# leggere sempre distanza 0.
-var _last_happiness_position: Variant = null
-
-
-# Costo happiness = distanza × WalkAction.HAPPINESS_DRAIN_PER_MICROCELL — richiesta esplicita
-# utente: STESSA base di Walk, NON raddoppiata da RUN_INTENSITY_MULTIPLIER come invece è il costo
-# stamina sopra (correre "stanca" l'umore quanto camminare la stessa distanza, non il doppio).
-# Nessun termine di carico/utensili, stesso trattamento di WalkAction.get_happiness_delta.
-func get_happiness_delta(individual: Variant, context: Dictionary, delta: float) -> float:
-	if _last_happiness_position == null:
-		_last_happiness_position = individual.position
-		return 0.0
-	var distance: float = individual.position.distance_to(_last_happiness_position)
-	_last_happiness_position = individual.position
-	return -distance * WalkAction.HAPPINESS_DRAIN_PER_MICROCELL
-
-
 # Identico a WalkAction.is_complete (2026-09-16, richiesta utente, fix bordo macrocella — vedi
 # WalkAction.ARRIVAL_TOLERANCE per il perché non è più un'uguaglianza esatta), stessa costante
 # condivisa (non una copia separata, mai un secondo numero da tenere sincronizzato a mano).
 func is_complete(individual: Variant, context: Dictionary) -> bool:
 	return individual.position.distance_to(target) <= WalkAction.ARRIVAL_TOLERANCE
+
+
+# Chiude la riga di log dell'ultima microcella attraversata (diagnostica TEMPORANEA, vedi
+# MovementStaminaDebugLog) — nessun effetto se il flag è spento.
+func on_complete(individual: Variant, context: Dictionary) -> void:
+	super(individual, context)
+	if DebugLogging.ENABLED and DebugLogging.SHOW_MOVEMENT_STAMINA_LOGS:
+		MovementStaminaDebugLog.flush(individual)

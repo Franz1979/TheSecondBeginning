@@ -101,7 +101,11 @@ func _show_next() -> void:
 	# triangolo anteposto + testo scuro (leggibile su sfondo chiaro, a differenza del bianco di
 	# default su sfondo scuro). Ogni altro tipo esistente (DEATH/BIRTH/IDEA_COMPLETED/
 	# RESOURCE_DECAYED) resta sullo stile scorso finora, invariato.
-	var is_alert: bool = entry["type"] == NotificationTypes.NotificationPopupType.MATERIAL_NEEDED
+	# Stile alert anche per BODY_RESERVE_IN_USE (2026-09-19).
+	var is_alert: bool = [
+		NotificationTypes.NotificationPopupType.MATERIAL_NEEDED,
+		NotificationTypes.NotificationPopupType.BODY_RESERVE_IN_USE,
+	].has(entry["type"])
 	add_theme_stylebox_override("panel", _style_alert if is_alert else _style_default)
 	_label.add_theme_color_override("font_color", Color(0.15, 0.1, 0.0) if is_alert else Color.WHITE)
 	_label.text = (ALERT_ICON_PREFIX + String(entry["text"])) if is_alert else entry["text"]

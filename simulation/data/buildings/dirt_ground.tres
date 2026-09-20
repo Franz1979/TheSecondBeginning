@@ -12,4 +12,3 @@ setup_site_material_per_cell = 0
 required_space = 1
 has_door = false
 movement_stamina_multiplier = 0.95
-movement_speed_multiplier = 1.0

@@ -52,8 +52,8 @@ extends Resource
 # Priorità di interrupt (2026-09-13, richiesta utente, in preparazione al sistema di interrupt da
 # stamina critica — SOLO la struttura dati in questo passo) — numero più BASSO = più urgente. -1
 # (default) = "non è una Task-bisogno, la priorità non si applica a lei", invariato per ogni
-# TaskDefinition esistente tranne emergency_rest.tres (1, massima urgenza) e rest.tres (2, urgenza
-# minore) — vedi quei due file. Copiato su Task.interrupt_priority da TaskFactory.build_task,
+# TaskDefinition esistente tranne emergency_rest.tres (10, massima urgenza) e rest.tres (30, urgenza
+# minore; passo 10 per lasciare spazio ai bisogni futuri) — vedi quei due file. Copiato su Task.interrupt_priority da TaskFactory.build_task,
 # stesso schema di allowed_age_bands sopra.
 @export var interrupt_priority: int = -1
 

@@ -211,6 +211,13 @@ var task_queue: Array[Task] = []
 # rimetterà a false). Default false, mai toccato da Walk/Rest.
 var pending_thought: bool = false
 
+# Ultimo giorno di gioco (GameData.get_absolute_day) in cui HumanIndividualActionService ha valutato il
+# bisogno di provviste di emergenza per questo individuo (2026-09-19, richiesta utente - freno ai
+# tentativi): se non c'e' nessun magazzino con cibo la Task emergency_restock non nasce, e non si
+# riprova a ogni frame ma al massimo una volta al giorno. -1 = mai valutato. Transitorio: MAI
+# persistito (al caricamento riparte da -1 e si rivaluta subito).
+var food_need_last_check_day: int = -1
+
 # Fallback usato da _resolve_initial_max_stamina sotto quando la catena source_group_ref->
 # folk_ref->human_rules_ref non è ancora risolvibile — stesso valore del nuovo default di
 # HumanRules.base_max_stamina, deliberatamente (un fallback "onesto": nessun consumatore reale
@@ -259,8 +266,6 @@ var max_stamina: float = 0.0
 # HumanRules corrispondente" già stabilito per stamina/carry capacity.
 const FALLBACK_MAX_VITAL: float = 5000.0
 
-var current_hunger: float = 0.0
-var max_hunger: float = 0.0
 var current_thirst: float = 0.0
 var max_thirst: float = 0.0
 var current_health: float = 0.0
@@ -278,10 +283,65 @@ var max_loyalty: float = 0.0
 # deliberatamente (un fallback "onesto", stesso principio di FALLBACK_MAX_STAMINA).
 const FALLBACK_MAX_CARRY_CAPACITY: float = 30.0
 
+# Fallback della saccoccia del cibo (2026-09-19) - stesso valore del default di
+# HumanRules.base_food_space, stesso principio "fallback onesto" di FALLBACK_MAX_CARRY_CAPACITY.
+const FALLBACK_MAX_FOOD_SPACE: float = 30.0
+
+# Fallback della riserva corporea (2026-09-19) - stesso valore del default di
+# HumanRules.base_body_calories, stesso principio "fallback onesto" di FALLBACK_MAX_FOOD_SPACE.
+const FALLBACK_MAX_BODY_CALORIES: float = 200.0
+
 # Ricalcolato ogni giorno da HumanCarryCapacityIndividualService (agganciato a GameTimeService.
 # _on_day_advanced) — stesso identico pattern di max_stamina sopra, vedi quel commento per il
 # perché è un ricalcolo periodico e non event-driven.
 var max_carry_capacity: float = 0.0
+
+# Saccoccia del cibo (2026-09-19, richiesta utente): SPAZIO e CALORIE, non piu' un parametro vitale.
+#   - food_space_capacity (ex max_food_space): spazio massimo, ricalcolato da
+#     HumanCarryCapacityIndividualService (creazione, ingresso in scena, ogni giorno) con
+#     HumanCalculator.get_max_food_space, MAI persistito.
+#   - food_space_used (ex current_food_space): spazio occupato dal contenuto, persistito.
+#   - food_calories_held: calorie del contenuto, persistite come food_space_used.
+# Alla creazione la saccoccia parte piena di frutta (HumanFoodPouchService.fill_with_fruit). Nessun
+# consumo in questo passo.
+var food_space_capacity: float = 0.0
+var food_space_used: float = 0.0
+var food_calories_held: float = 0.0
+# Transitorio, mai persistito: false finche' la capacita' non e' stata calcolata da HumanRules reali
+# (l'_init non le conosce) - vedi HumanFoodPouchService.on_capacity_recalculated. GameLoadService lo
+# mette a true se il salvataggio contiene il contenuto.
+var food_pouch_resolved: bool = false
+
+# Riserva corporea (2026-09-19, richiesta utente): calorie del corpo, intaccate dal consumo
+# giornaliero solo per la parte che le provviste non coprono (HumanVitalsIndividualService.
+# apply_daily_calorie_consumption). Per ora SOLO consumo: nessun recupero, nessuna UI, nessuna penalita'
+# o morte a 0.
+#   - body_calories: calorie attuali, persistite. Alla creazione partono al pieno (fallback
+#     FALLBACK_MAX_BODY_CALORIES, poi ricalcolate al valore vero, vedi body_calories_resolved).
+#   - body_calories_capacity: massimo (HumanCalculator.get_max_body_calories), ricalcolato da
+#     HumanCarryCapacityIndividualService insieme alla capacita' delle provviste, MAI persistito.
+#   - body_calories_resolved: transitorio, stessa logica di food_pouch_resolved: false finche' il
+#     massimo non e' stato calcolato da HumanRules reali (l'_init non le conosce); la PRIMA volta
+#     la riserva viene riportata al pieno vero, da allora in poi solo clamp verso il basso.
+#     GameLoadService lo mette a true se il salvataggio contiene body_calories.
+var body_calories: float = FALLBACK_MAX_BODY_CALORIES
+var body_calories_capacity: float = FALLBACK_MAX_BODY_CALORIES
+var body_calories_resolved: bool = false
+# true dal giorno in cui la riserva corporea comincia a essere intaccata (provviste esaurite) finche' il
+# consumo dalla riserva continua (2026-09-19, richiesta utente): serve a generare l'avviso UNA sola volta
+# per inizio di consumo, vedi HumanVitalsIndividualService.apply_daily_calorie_consumption. Persistito, cosi'
+# un caricamento a meta' consumo non ripete l'avviso.
+var body_reserve_in_use: bool = false
+# Giorni consecutivi in stato di "fame" (2026-09-19, richiesta utente): un individuo che consuma calorie
+# conta i giorni con body_calories a 0; un INFANT (che non consuma) conta i giorni senza nessun adulto
+# che lo porta (nessun individuo con dependent_child_id uguale al suo id). Si azzera il giorno in cui la
+# condizione cessa. A GameTimeService.STARVATION_DAYS muore con causa DeathCause.STARVATION. Persistito.
+var starvation_days: int = 0
+# Fascia d'eta' (HumanTypes.AgeBand come int) usata all'ULTIMO ricalcolo di max_stamina; -1 = non ancora nota.
+# Transitorio, NON persistito (2026-09-19, richiesta utente): serve a HumanStaminaIndividualService per
+# riconoscere il cambio di fascia e alzare current_stamina in proporzione al nuovo massimo. Dopo un
+# caricamento riparte da -1 e viene rivalorizzato al primo ricalcolo (ingresso in scena), senza effetti.
+var stamina_age_band: int = -1
 
 # Nome della risorsa secondaria attualmente trasportata (SecondaryResourceRules.
 # secondary_resource_name) — "" = non sta trasportando nulla. Un individuo trasporta UN SOLO tipo
@@ -360,9 +420,8 @@ func _init() -> void:
 	current_stamina = initial_stamina
 	max_stamina = initial_stamina
 	max_carry_capacity = _resolve_initial_max_carry_capacity()
-	var initial_hunger := _resolve_initial_max_hunger()
-	current_hunger = initial_hunger
-	max_hunger = initial_hunger
+	food_space_capacity = _resolve_initial_food_space_capacity()
+	HumanFoodPouchService.fill_with_fruit(self)
 	var initial_thirst := _resolve_initial_max_thirst()
 	current_thirst = initial_thirst
 	max_thirst = initial_thirst
@@ -416,13 +475,13 @@ func _resolve_initial_max_carry_capacity() -> float:
 # ogni asse su tutti e 5 i nuovi parametri, vedi HumanRules.gd). Cinque funzioni separate, non una
 # generica parametrizzata su un Callable — stessa scelta stilistica già fatta qui per stamina/carry
 # capacity (mai unificate in un helper condiviso), nessun nuovo pattern di indirizione introdotto.
-func _resolve_initial_max_hunger() -> float:
+func _resolve_initial_food_space_capacity() -> float:
 	var human_rules: HumanRules = null
 	if source_group_ref != null and source_group_ref.folk_ref != null:
 		human_rules = source_group_ref.folk_ref.human_rules_ref
 	if human_rules == null:
-		return FALLBACK_MAX_VITAL
-	return HumanCalculator.get_max_hunger(human_rules, HumanTypes.AgeBand.FERTILE_ADULT, sex)
+		return FALLBACK_MAX_FOOD_SPACE
+	return HumanCalculator.get_max_food_space(human_rules, HumanTypes.AgeBand.FERTILE_ADULT, sex)
 
 
 func _resolve_initial_max_thirst() -> float:
@@ -662,12 +721,19 @@ func can_assign_task(task: Task, age_band: HumanTypes.AgeBand) -> bool:
 	# scattare l'Emergency Rest automatica in _resolve_active_stamina_need_priority) l'individuo
 	# può SOLO riposare: qualunque Task diversa da Rest/Emergency Rest viene rifiutata QUI, anche
 	# se assegnata manualmente dal giocatore. Le due Task-bisogno si riconoscono da
-	# task.interrupt_priority (1 = emergency_rest.tres, 2 = rest.tres — stesso schema già usato da
+	# task.interrupt_priority (10 = emergency_rest.tres, 30 = rest.tres — stesso schema già usato da
 	# _handle_stamina_interrupt), mai da un secondo confronto su task_name.
 	if max_stamina > 0.0 and current_stamina / max_stamina < HumanIndividualActionService.STAMINA_EMERGENCY_REST_THRESHOLD:
-		if task.interrupt_priority != 1 and task.interrupt_priority != 2:
+		# Accetta le Task-bisogno di stamina (10 Emergency Rest, 30 Rest) e l'emergenza di provviste (20
+		# Emergency Restock - 2026-09-19): sotto la soglia di emergenza ci si puo' solo rifocillare oltre
+		# che riposare.
+		if not [
+			HumanIndividualActionService.INTERRUPT_PRIORITY_EMERGENCY_REST,
+			HumanIndividualActionService.INTERRUPT_PRIORITY_EMERGENCY_RESTOCK,
+			HumanIndividualActionService.INTERRUPT_PRIORITY_REST,
+		].has(task.interrupt_priority):
 			if DebugLogging.ENABLED and DebugLogging.SHOW_TASK_LIFECYCLE_LOGS:
-				print("[TASK GUARD] Individuo #%d %s: stamina %.1f/%.1f sotto la soglia Emergency Rest — solo Rest/Emergency Rest ammesse, '%s' rifiutata." % [
+				print("[TASK GUARD] Individuo #%d %s: stamina %.1f/%.1f sotto la soglia Emergency Rest — solo Task-bisogno (Rest/Emergency Rest, Emergency Restock) ammesse, '%s' rifiutata." % [
 					id, name, current_stamina, max_stamina, task.task_name
 				])
 			return false

@@ -3,8 +3,15 @@ extends RefCounted
 
 const DAYS_PER_YEAR := 365
 
+# Giorno di partenza di una nuova partita (2026-09-19, richiesta utente): 220 = meta' estate
+# (SUMMER = 182..272, vedi SeasonCalculator), non piu' 0 = inizio inverno. Costante separata dal default
+# di current_day cosi' chi ha bisogno della stagione iniziale (es. il default di
+# MicroCellRenderer.current_season) la deriva da qui invece di duplicare la stagione a mano. I
+# salvataggi portano il proprio current_day (GameLoadService), quindi non sono toccati.
+const START_DAY := 220
+
 var year: int = 0
-var current_day: int = 0 # 0..DAYS_PER_YEAR-1
+var current_day: int = START_DAY # 0..DAYS_PER_YEAR-1
 
 # Era geologico/tecnologica corrente (richiesta utente, 2026-09-04) — GLOBALE alla partita per
 # ora (un solo current_era_name per l'intera GameData, non uno per Folk), coerentemente col fatto

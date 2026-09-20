@@ -23,12 +23,13 @@ extends VBoxContainer
 # prende solo i due float già risolti.
 #
 # carry_bar/carried_resource_box (2026-09-08, richiesta utente, capacità di trasporto) — stesso
-# principio "muto" di stamina_bar sopra: max_carry_capacity/free_carry_capacity arrivano già
+# principio "muto" di stamina_bar sopra: max_carry_capacity/used_carry_space arrivano già
 # risolti dal chiamante (GameScene, che fa il lookup di SecondaryResourceRules.space_per_unit per
 # calcolare lo spazio occupato — questo pannello non conosce SecondaryResourceRules/
-# CaloricCalculator). La barra si SVUOTA man mano che si trasporta di più (mostra lo spazio
-# LIBERO, non quello occupato) — stessa logica di stamina_bar, che si svuota man mano che si
-# consuma. Il riquadro (CarriedResourceBox, un ColorRect quadrato) è un PLACEHOLDER (richiesta
+# CaloricCalculator). La barra si RIEMPIE man mano che si trasporta di più (mostra lo spazio
+# OCCUPATO, carried_quantity × space_per_unit, non quello libero): vuota a zaino vuoto, piena a zaino
+# pieno; tooltip occupato/massimo (invertita il 2026-09-20, richiesta utente — prima mostrava lo
+# spazio libero e un carico leggero la lasciava quasi piena). Il riquadro (CarriedResourceBox, un ColorRect quadrato) è un PLACEHOLDER (richiesta
 # esplicita dell'utente: "le icone delle risorse non esistono ancora") — colorato
 # deterministicamente in base al nome della risorsa trasportata (_placeholder_color_for_resource),
 # con l'iniziale maiuscola del nome al centro e la quantità sovrapposta in basso a destra; vuoto/
@@ -98,8 +99,17 @@ signal kill_requested(individual: HumanIndividual)
 @onready var carry_bar: ProgressBar = $CarryRowMargin/CarryRow/CarryBar
 # 5 nuovi parametri vitali (2026-09-13, richiesta utente) — STESSO identico schema di stamina_
 # label/stamina_bar sopra: un Label + un ProgressBar per parametro, nessuna differenza strutturale.
-@onready var hunger_label: Label = $VitalsBox/VitalsBoxMargin/VitalsBoxContent/HungerLabel
-@onready var hunger_bar: ProgressBar = $VitalsBox/VitalsBoxMargin/VitalsBoxContent/HungerBarMargin/HungerBar
+@onready var food_space_label: Label = $VitalsBox/VitalsBoxMargin/VitalsBoxContent/FoodSpaceLabel
+@onready var food_space_bar: ProgressBar = $VitalsBox/VitalsBoxMargin/VitalsBoxContent/FoodSpaceBarMargin/FoodSpaceBar
+
+# Barra delle provviste in modalita' RISERVA CORPOREA (2026-09-19, richiesta utente): quando
+# food_calories_held e' 0 la barra mostra body_calories/body_calories_capacity in rosso invece dello
+# spazio. Lo stile "fill" originale (dal .tscn) viene salvato alla prima lettura e ripristinato quando
+# le provviste tornano a contenere qualcosa; quello rosso e' un duplicato dello stesso StyleBoxFlat
+# con solo il colore cambiato (stessi angoli arrotondati).
+const FOOD_BAR_BODY_RESERVE_COLOR := Color(0.85, 0.15, 0.15, 1.0)
+var _food_bar_fill_normal: StyleBox = null
+var _food_bar_fill_body_reserve: StyleBoxFlat = null
 @onready var thirst_label: Label = $VitalsBox/VitalsBoxMargin/VitalsBoxContent/ThirstLabel
 @onready var thirst_bar: ProgressBar = $VitalsBox/VitalsBoxMargin/VitalsBoxContent/ThirstBarMargin/ThirstBar
 @onready var health_label: Label = $VitalsBox/VitalsBoxMargin/VitalsBoxContent/HealthLabel
@@ -196,13 +206,13 @@ func _ready() -> void:
 # tr()-ato dal chiamante (GameScene, via HumanIndividual.current_task.get_activity_description() o
 # la stringa "a riposo" se current_task è null) — stesso identico principio "questo pannello riceve
 # solo dati già pronti" di ogni altro parametro qui.
-# max_carry_capacity/free_carry_capacity (2026-09-08, richiesta utente) — stesso principio di
-# max_stamina/current_stamina sopra: già risolti dal chiamante. free_carry_capacity (non
-# used_carry_space) perché la barra mostra spazio LIBERO, non occupato — vedi commento su
-# carry_bar in testa al file. carried_resource_name/carried_quantity: letti direttamente
+# max_carry_capacity/used_carry_space (2026-09-08, richiesta utente; invertito 2026-09-20, da
+# free_carry_capacity a used_carry_space) — stesso principio di max_stamina/current_stamina sopra:
+# già risolti dal chiamante. La barra mostra lo spazio OCCUPATO — vedi commento su carry_bar in
+# testa al file. carried_resource_name/carried_quantity: letti direttamente
 # dall'HumanIndividual passato (stesso identico stato grezzo, nessuna risoluzione necessaria).
 #
-# max_hunger/current_hunger/.../max_loyalty/current_loyalty (2026-09-13, richiesta utente, 5 nuovi
+# food_space_capacity/food_space_used (saccoccia del cibo, ex hunger)/.../max_loyalty/current_loyalty (2026-09-13, richiesta utente, 5 nuovi
 # parametri vitali) — STESSA firma-stile di max_stamina/current_stamina sopra, già risolti dal
 # chiamante: a differenza di max_stamina (che GameScene ricalcola fresco per i modificatori
 # volatili gravidanza/figlio-a-carico), questi 5 non hanno modificatori volatili, quindi il
@@ -212,8 +222,9 @@ func _ready() -> void:
 func show_individual(
 	individual: HumanIndividual,
 	max_stamina: float, current_stamina: float, activity_text: String,
-	max_carry_capacity: float, free_carry_capacity: float,
-	max_hunger: float, current_hunger: float,
+	max_carry_capacity: float, used_carry_space: float,
+	food_space_capacity: float, food_space_used: float, food_calories_held: float,
+	body_calories: float, body_calories_capacity: float, daily_calorie_consumption: float,
 	max_thirst: float, current_thirst: float,
 	max_health: float, current_health: float,
 	max_happiness: float, current_happiness: float,
@@ -262,10 +273,36 @@ func show_individual(
 	# in uso qui per stamina/carry, mai un helper generico per "una barra qualsiasi"). Ordine QUI
 	# allineato all'ordine VISIVO nel pannello (riordinato 2026-09-13, richiesta utente: capacità di
 	# trasporto spostata in fondo) — mai un motivo funzionale, solo leggibilità.
-	hunger_label.text = tr("individual_hunger_label")
-	hunger_bar.max_value = max_hunger
-	hunger_bar.value = current_hunger
-	hunger_bar.tooltip_text = "%d/%d" % [int(current_hunger), int(max_hunger)]
+	# Provviste (2026-09-19, richiesta utente - era la barra "Fame", poi "Saccoccia"): SPAZIO usato/capacita'.
+	# Le calorie contenute NON compaiono come valore visibile accanto alla barra: solo nel tooltip,
+	# insieme a spazio usato e capacita'.
+	food_space_label.text = tr("individual_supplies_label")
+	# Provviste vuote (food_calories_held == 0) E individuo che consuma calorie (daily_calorie_consumption
+	# > 0, gia' risolto dal chiamante): la barra passa alla riserva corporea, in rosso, e il tooltip lo
+	# dice. Chi non consuma (INFANT, moltiplicatore calorico 0) ha le provviste a 0 per definizione ma
+	# non e' affamato: per lui resta la barra normale. Altrimenti spazio usato/capacita', con le calorie
+	# nel tooltip.
+	if _food_bar_fill_normal == null:
+		_food_bar_fill_normal = food_space_bar.get_theme_stylebox("fill")
+	if food_calories_held <= 0.0 and daily_calorie_consumption > 0.0:
+		if _food_bar_fill_body_reserve == null:
+			var base_fill := _food_bar_fill_normal as StyleBoxFlat
+			_food_bar_fill_body_reserve = base_fill.duplicate() as StyleBoxFlat if base_fill != null else StyleBoxFlat.new()
+			_food_bar_fill_body_reserve.bg_color = FOOD_BAR_BODY_RESERVE_COLOR
+		food_space_bar.add_theme_stylebox_override("fill", _food_bar_fill_body_reserve)
+		food_space_bar.max_value = body_calories_capacity
+		food_space_bar.value = body_calories
+		food_space_bar.tooltip_text = tr("individual_supplies_tooltip_body").format({
+			"current": int(round(body_calories)), "max": int(round(body_calories_capacity))
+		})
+	else:
+		food_space_bar.add_theme_stylebox_override("fill", _food_bar_fill_normal)
+		food_space_bar.max_value = food_space_capacity
+		food_space_bar.value = food_space_used
+		food_space_bar.tooltip_text = "%s - %s" % [
+			tr("individual_supplies_tooltip_pouch").format({"used": int(food_space_used), "capacity": int(food_space_capacity)}),
+			tr("individual_food_calories_value").format({"calories": int(round(food_calories_held))})
+		]
 
 	thirst_label.text = tr("individual_thirst_label")
 	thirst_bar.max_value = max_thirst
@@ -336,8 +373,8 @@ func show_individual(
 	# ma resta un ProgressBar identico a prima: stessa formula/stesso tooltip.
 	carry_label.text = tr("individual_carry_label")
 	carry_bar.max_value = max_carry_capacity
-	carry_bar.value = free_carry_capacity
-	carry_bar.tooltip_text = "%d/%d" % [int(free_carry_capacity), int(max_carry_capacity)]
+	carry_bar.value = used_carry_space
+	carry_bar.tooltip_text = "%s/%s" % [_format_space(used_carry_space), _format_space(max_carry_capacity)]
 
 	_update_carried_resource_box(individual.carried_resource_name, individual.carried_quantity)
 	# Ri-layout esplicito dei tool (2026-09-08) — oltre al collegamento a tools_row.resized in
@@ -488,3 +525,9 @@ func _layout_tools_row() -> void:
 		var box := tool_slot_boxes[i]
 		box.position = Vector2(float(i) * (tool_size + spacing), (row_height - tool_size) / 2.0)
 		box.size = Vector2(tool_size, tool_size)
+
+
+# Spazio per il tooltip del carico: un decimale solo se serve ("4", "2.5"), mai "4.0" — lo spazio occupato
+# puo' essere frazionario (space_per_unit 0.5), un %d lo troncherebbe.
+static func _format_space(value: float) -> String:
+	return ("%.1f" % value).rstrip("0").rstrip(".")

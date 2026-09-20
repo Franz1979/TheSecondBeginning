@@ -43,9 +43,6 @@ extends Action
 # condivisa tra Action diverse.
 const STAMINA_DRAIN_PER_DAY: float = 200.0
 
-# Costo di HAPPINESS al GIORNO (2026-09-13, richiesta utente: "-10.0/day") — costante separata,
-# stesso principio "nessuna costante condivisa tra Action" già dichiarato sopra.
-const HAPPINESS_DRAIN_PER_DAY: float = 10.0
 
 var target_building: Building = null
 var _macro_state: MacroCellState = null
@@ -173,16 +170,6 @@ func get_stamina_delta(individual: Variant, context: Dictionary, delta: float) -
 		return 0.0
 	target_building.construction_progress["clear_days_done"] = _get_clear_days_done() + delta
 	return -STAMINA_DRAIN_PER_DAY * delta
-
-
-# STESSE guardie di get_stamina_delta sopra, MAI scrittura di clear_days_done (già incrementato da
-# get_stamina_delta nello stesso frame). Tasso fisso.
-func get_happiness_delta(individual: Variant, context: Dictionary, delta: float) -> float:
-	if _duration <= 0.0 or target_building == null:
-		return 0.0
-	if _get_clear_days_done() >= _duration:
-		return 0.0
-	return -HAPPINESS_DRAIN_PER_DAY * delta
 
 
 func is_complete(individual: Variant, context: Dictionary) -> bool:

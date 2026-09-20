@@ -34,7 +34,7 @@ const SHOW_PREDATOR_LIFECYCLE_LOGS := false
 # categoria): stesso identico consumatore/comportamento, solo il nome allineato alla categoria
 # "LOD" del nuovo schema in fondo a questo file (vedi blocco "CATEGORIE" sotto) — nessun secondo
 # flag separato da tenere sincronizzato.
-const SHOW_LOD_LOGS := false
+const SHOW_LOD_LOGS := true
 
 # Filtro dedicato per i log GIORNALIERI di PredationService ([PREDATION]/[PREDATION ATTEMPT]/
 # [PREDATION STARVATION]): a differenza di SHOW_HERBIVORE_LIFECYCLE_LOGS sopra (che filtra gli
@@ -175,8 +175,66 @@ const SHOW_SELECTED_PANEL_REFRESH_LOGS := false
 # MOVEMENT — [RUN DEBUG] (RunAction.get_stamina_delta), [JUMP DEBUG] (JumpAction.get_stamina_delta).
 const SHOW_MOVEMENT_LOGS := false
 
+# MOVEMENT STAMINA (TEMPORANEO, 2026-09-19, richiesta utente) — [MOVE STAMINA DEBUG]
+# (MovementStaminaDebugLog, chiamato da WalkAction/RunAction): per UN SOLO individuo, una riga per
+# microcella attraversata con moltiplicatore del terreno, quota base, carico+utensili e totale.
+# L'id dell'individuo tracciato è la costante sotto (19 = valore iniziale, da cambiare a mano).
+const SHOW_MOVEMENT_STAMINA_LOGS := false
+const MOVEMENT_STAMINA_LOG_INDIVIDUAL_ID: int = 9
+
+# DAILY CALORIE (2026-09-19, richiesta utente) - [DAILY CALORIE DEBUG] (HumanVitalsIndividualService.
+# apply_daily_calorie_consumption): per UN SOLO individuo, una riga al giorno con consumo calcolato,
+# calorie e spazio della saccoccia prima/dopo e capacita'. Stesso schema di
+# SHOW_MOVEMENT_STAMINA_LOGS: nessun effetto sulla simulazione, solo print.
+const SHOW_DAILY_CALORIE_LOGS := false
+const DAILY_CALORIE_LOG_INDIVIDUAL_ID: int = 9
+
+# FOOD NEED (2026-09-19, richiesta utente) - [FOOD NEED DEBUG] (GameTimeService._log_daily_food_need,
+# che chiama HumanIndividualActionService._resolve_active_food_need_priority): per UN SOLO individuo,
+# una riga al giorno con calorie, consumo giornaliero, autonomia in giorni e priorita' risultante.
+# Solo lettura del bisogno: nessuna Task, nessun interrupt. Stesso schema di SHOW_DAILY_CALORIE_LOGS.
+const SHOW_FOOD_NEED_LOGS := false
+const FOOD_NEED_LOG_INDIVIDUAL_ID: int = 9
+
+# FOOD SOURCE (2026-09-19, richiesta utente) - [FOOD SOURCE DEBUG] (WarehouseSelectionService.
+# find_source_for_retrieval): esito della ricerca del magazzino piu' vicino che soddisfa il criterio, per UN SOLO individuo
+# (l'id passato dal chiamante come requesting_individual_id). Solo print: nessun effetto sulla ricerca.
+const SHOW_FOOD_SOURCE_LOGS := false
+const FOOD_SOURCE_LOG_INDIVIDUAL_ID: int = 9
+
+# FOOD SELECTION (2026-09-19, richiesta utente) - [FOOD SELECTION DEBUG] (FoodSelectionService.
+# select_food): candidati ordinati per calorie/spazio e scelta fatta per riempire lo spazio libero.
+# Solo print: nessun effetto sul calcolo. Il service non riceve l'individuo, quindi nessun filtro per id.
+const SHOW_FOOD_SELECTION_LOGS := false
+
+# RESTOCK (2026-09-19, richiesta utente) - [RESTOCK] (NeedTaskAssignmentService.
+# assign_leisure_restock_task e RestockPouchAction.on_complete): assegnazione della Task leisure_restock
+# (magazzino scelto o nessuno trovato) e completamento del rifornimento (quantita' prelevate per
+# risorsa, spazio e calorie prima/dopo). RESTOCK_LOG_INDIVIDUAL_ID = -1 significa TUTTI gli individui.
+# Solo print: nessun effetto sulla simulazione.
+const SHOW_RESTOCK_LOGS := false
+const RESTOCK_LOG_INDIVIDUAL_ID: int = -1
+
+# true se il log RESTOCK e' attivo per questo individuo (flag acceso e id configurato uguale, oppure -1).
+static func should_log_restock(individual_id: int) -> bool:
+	return ENABLED and SHOW_RESTOCK_LOGS and (RESTOCK_LOG_INDIVIDUAL_ID == -1 or RESTOCK_LOG_INDIVIDUAL_ID == individual_id)
+
 # RESOURCE_POOL — [DBG_POOL] (VegetationPoolService).
 const SHOW_RESOURCE_POOL_LOGS := false
+
+# LOT_CAPACITY — [LOT CAPACITY] (LotCapacityService.get_available -> _log_lot_capacity, 2026-09-19,
+# richiesta utente): per un lotto stampa macrocella, risorsa, posizione, stagione/giorno correnti,
+# capacita' BASE (prima della stagione), moltiplicatore stagionale applicato, capacita' stagionale
+# risultante, raccolto e disponibilita' finale. Serve a verificare che la stagione di partenza
+# della partita sia applicata correttamente alle risorse a capacita' per lotto. get_available e'
+# chiamata molto spesso (una volta per posizione ad ogni refresh): ogni lotto viene stampato solo
+# alla PRIMA lettura e ogni volta che stagione/capacita'/raccolto cambiano, non ad ogni chiamata.
+# Filtrato (richiesta utente): solo risorse alimentari (Category.FOOD) con moltiplicatore stagionale
+# diverso da 1.0, al massimo LotCapacityService.LOT_CAPACITY_LOG_MAX_LINES_PER_MACRO_RESOURCE righe per
+# macrocella e risorsa.
+# Solo print: nessun effetto sulla simulazione. Default false; acceso su richiesta utente
+# (2026-09-19) per verificare il seeding stagionale con partenza al giorno 220.
+const SHOW_LOT_CAPACITY_LOGS := false
 
 # BERRY_HARVEST — [FRUIT STOCK AVAILABLE]/[FRUIT STOCK CONSUME] (TerrainScatteredResourceService.
 # get_fruit_stock_available_at/consume_fruit_stock_at) — diagnostica TEMPORANEA (2026-09-17,
@@ -204,7 +262,7 @@ const SHOW_TASK_LIFECYCLE_LOGS := false
 # IDLE — [IDLE FALLBACK] (IdleTaskAssignmentService), [REST]/[EMERGENCY REST]
 # (NeedTaskAssignmentService), [WANDER]/[PLAY] (GameScene, trigger manuali tasti G/P per le stesse
 # due Task).
-const SHOW_IDLE_LOGS := true
+const SHOW_IDLE_LOGS := false
 
 # TRANSPORT_BUILD — [UNLOAD] (unload_action.gd), [WALK AWAY]/[WAREHOUSE SEARCH]/
 # [THOUGHT TARGET SEARCH]/[BUILD MATERIAL NEEDED]/[BUILD MATERIAL BONUS]/[BUILD MATERIAL RETRY]

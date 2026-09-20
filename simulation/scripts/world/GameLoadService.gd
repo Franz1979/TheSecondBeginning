@@ -574,8 +574,23 @@ func load_game_from_json(file_path: String) -> LoadedGame:
 			# catena Rules non è risolvibile), stesso trattamento di current_stamina/max_stamina
 			# sopra: un save precedente a questi campi non aveva alcuno stato reale da perdere
 			# (nessun consumo esisteva ancora), quindi il fallback resta un valore onesto anche qui.
-			individual.current_hunger = float(individual_data.get("current_hunger", HumanIndividual.FALLBACK_MAX_VITAL))
-			individual.max_hunger = float(individual_data.get("max_hunger", HumanIndividual.FALLBACK_MAX_VITAL))
+			# Saccoccia del cibo (2026-09-19): se ENTRAMBE le chiavi del contenuto ci sono le si usa
+			# cosi' come sono; se ne manca una (salvataggi precedenti) l'individuo mantiene il riempimento
+			# di frutta dell'_init e food_pouch_resolved resta false: HumanCarryCapacityIndividualService lo
+			# rifa' con la capacita' vera all'ingresso in scena (la capacita' non e' persistita e qui non e'
+			# ancora nota). Le vecchie chiavi hunger sono ignorate.
+			if individual_data.has("food_space_used") and individual_data.has("food_calories_held"):
+				individual.food_space_used = float(individual_data["food_space_used"])
+				individual.food_calories_held = float(individual_data["food_calories_held"])
+				individual.food_pouch_resolved = true
+			# Riserva corporea (2026-09-19): se la chiave manca (salvataggi precedenti) l'individuo resta al
+			# pieno dell'_init e body_calories_resolved a false: HumanCarryCapacityIndividualService lo riporta
+			# al pieno vero all'ingresso in scena.
+			if individual_data.has("body_calories"):
+				individual.body_calories = float(individual_data["body_calories"])
+				individual.body_calories_resolved = true
+			individual.body_reserve_in_use = bool(individual_data.get("body_reserve_in_use", false))
+			individual.starvation_days = int(individual_data.get("starvation_days", 0))
 			individual.current_thirst = float(individual_data.get("current_thirst", HumanIndividual.FALLBACK_MAX_VITAL))
 			individual.max_thirst = float(individual_data.get("max_thirst", HumanIndividual.FALLBACK_MAX_VITAL))
 			individual.current_health = float(individual_data.get("current_health", HumanIndividual.FALLBACK_MAX_VITAL))

@@ -27,11 +27,6 @@ extends Action
 # condivisa tra Action diverse.
 const STAMINA_COST_PER_SPACE_UNIT: float = 2.0
 
-# Costo di HAPPINESS al GIORNO (2026-09-13, richiesta utente: "-10.0/day") — STESSO valore di
-# PickUpAction.HAPPINESS_DRAIN_PER_DAY, costante SEPARATA (stesso principio "nessuna costante
-# condivisa tra Action diverse" già dichiarato sopra per STAMINA_COST_PER_SPACE_UNIT). Tasso fisso,
-# non proporzionale allo spazio prelevato.
-const HAPPINESS_DRAIN_PER_DAY: float = 10.0
 
 # Emesso da on_complete() SOLO quando un prelievo reale è avvenuto (_quantity_to_retrieve > 0 E
 # BuildingStorageService.withdraw ha davvero restituito qualcosa) — stesso principio di
@@ -135,14 +130,6 @@ func get_stamina_delta(individual: Variant, context: Dictionary, delta: float) -
 		return 0.0
 	_elapsed += delta
 	return -(_total_stamina_cost / _duration) * delta
-
-
-# STESSA guardia/STESSO trattamento di PickUpAction.get_happiness_delta (nessun incremento di
-# _elapsed, già avanzato da get_stamina_delta nello stesso frame). Tasso fisso.
-func get_happiness_delta(individual: Variant, context: Dictionary, delta: float) -> float:
-	if _duration <= 0.0:
-		return 0.0
-	return -HAPPINESS_DRAIN_PER_DAY * delta
 
 
 func is_complete(individual: Variant, context: Dictionary) -> bool:

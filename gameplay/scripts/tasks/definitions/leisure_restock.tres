@@ -1,0 +1,12 @@
+[gd_resource type="Resource" script_class="TaskDefinition" format=3]
+
+[ext_resource type="Script" uid="uid://1t46mu8mn6hq" path="res://gameplay/scripts/tasks/task_definition.gd" id="1_def"]
+[ext_resource type="Resource" path="res://gameplay/scripts/tasks/definitions/step_walk_restock.tres" id="2_walk_restock"]
+[ext_resource type="Resource" path="res://gameplay/scripts/tasks/definitions/step_restock_pouch.tres" id="3_restock_pouch"]
+
+[resource]
+script = ExtResource("1_def")
+task_name = "task_leisure_restock_name"
+steps = [ExtResource("2_walk_restock"), ExtResource("3_restock_pouch")]
+is_idle_activity = true
+idle_weight = 2.0

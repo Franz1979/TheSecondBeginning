@@ -5,10 +5,10 @@
 [resource]
 script = ExtResource("1_eggs")
 secondary_resource_name = "eggs"
-yield_ratio = 1.5
-calories_per_unit = 20.0
+yield_ratio = 2.0
+calories_per_unit = 24.0
 seasonal_availability_multiplier = Array[float]([0.0, 1.0, 0.0, 0.0])
 consuming_depletes_primary = false
 day_durability = 45
-space_per_unit = 3.0
+space_per_unit = 2.5
 patch_probability = 0.15

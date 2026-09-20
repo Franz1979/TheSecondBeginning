@@ -33,7 +33,7 @@ corner_radius_top_right = 4
 corner_radius_bottom_right = 4
 corner_radius_bottom_left = 4
 
-[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_hunger_fill"]
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_food_space_fill"]
 bg_color = Color(0.9, 0.55, 0.15, 1)
 corner_radius_top_left = 4
 corner_radius_top_right = 4
@@ -179,20 +179,20 @@ theme_override_styles/background = SubResource("StyleBoxFlat_stamina_bg")
 theme_override_styles/fill = SubResource("StyleBoxFlat_stamina_fill")
 show_percentage = false
 
-[node name="HungerLabel" type="Label" parent="VitalsBox/VitalsBoxMargin/VitalsBoxContent"]
+[node name="FoodSpaceLabel" type="Label" parent="VitalsBox/VitalsBoxMargin/VitalsBoxContent"]
 layout_mode = 2
 theme_override_font_sizes/font_size = 10
 
-[node name="HungerBarMargin" type="MarginContainer" parent="VitalsBox/VitalsBoxMargin/VitalsBoxContent"]
+[node name="FoodSpaceBarMargin" type="MarginContainer" parent="VitalsBox/VitalsBoxMargin/VitalsBoxContent"]
 layout_mode = 2
 theme_override_constants/margin_left = 4
 theme_override_constants/margin_right = 4
 
-[node name="HungerBar" type="ProgressBar" parent="VitalsBox/VitalsBoxMargin/VitalsBoxContent/HungerBarMargin"]
+[node name="FoodSpaceBar" type="ProgressBar" parent="VitalsBox/VitalsBoxMargin/VitalsBoxContent/FoodSpaceBarMargin"]
 layout_mode = 2
 custom_minimum_size = Vector2(0, 14)
 theme_override_styles/background = SubResource("StyleBoxFlat_stamina_bg")
-theme_override_styles/fill = SubResource("StyleBoxFlat_hunger_fill")
+theme_override_styles/fill = SubResource("StyleBoxFlat_food_space_fill")
 show_percentage = false
 
 [node name="ThirstLabel" type="Label" parent="VitalsBox/VitalsBoxMargin/VitalsBoxContent"]

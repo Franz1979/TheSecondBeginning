@@ -10,3 +10,4 @@ task_name = "task_daydream_name"
 steps = [ExtResource("2_walk"), ExtResource("3_think")]
 allowed_age_bands = Array[int]([4, 5])
 is_idle_activity = true
+idle_weight = 0.5

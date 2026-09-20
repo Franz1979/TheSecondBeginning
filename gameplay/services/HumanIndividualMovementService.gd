@@ -7,9 +7,16 @@ extends RefCounted
 # dal clock giorno/anno (confermato con l'utente: il movimento del player resta attivo anche a
 # clock in pausa).
 
-func advance_movement(individual: HumanIndividual, delta: float) -> void:
+# `live_cells` (2026-09-19, richiesta utente — modificatori di movimento del terreno): opzionale, default
+# {} = nessun modificatore (tutte le microcelle 1.0). La velocità usa il terreno della microcella di
+# PARTENZA del passo; alla fine il memo viene aggiornato sulla microcella di ARRIVO, così
+# WalkAction/RunAction.get_stamina_delta (chiamate subito dopo, nello stesso frame, da apply_action)
+# leggono il moltiplicatore di stamina della microcella in cui l'individuo si trova ora — vedi
+# MovementTerrainService.
+func advance_movement(individual: HumanIndividual, delta: float, live_cells: Dictionary = {}) -> void:
 	if not individual.is_moving:
 		return
+	MovementTerrainService.update_individual(individual, live_cells)
 
 	var to_target := individual.target_position - individual.position
 	var distance := to_target.length()
@@ -18,7 +25,7 @@ func advance_movement(individual: HumanIndividual, delta: float) -> void:
 	# e il perché): questo service resta comunque agnostico su QUALE Action sia attiva, legge solo i
 	# due campi che qualunque Action di movimento scrive, stesso principio già in uso per is_moving/
 	# target_position.
-	var step := individual.move_speed * individual.move_speed_multiplier * delta
+	var step := individual.move_speed * individual.move_speed_multiplier * individual.terrain_speed_multiplier * delta
 
 	# Aggiorna facing_direction PRIMA di muovere position (2026-09-04, richiesta utente: persistere
 	# l'orientamento) — soglia minima invece di un confronto diretto con zero: a un passo
@@ -43,3 +50,4 @@ func advance_movement(individual: HumanIndividual, delta: float) -> void:
 		individual.position = individual.target_position
 	else:
 		individual.position += to_target.normalized() * step
+	MovementTerrainService.update_individual(individual, live_cells)

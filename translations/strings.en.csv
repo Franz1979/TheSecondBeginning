@@ -35,11 +35,19 @@ task_daydream_step_think,Thinking
 task_daydream_step_return,Walking back to the village center
 task_daydream_step_deposit,Sharing an idea
 task_daydream_step_leave,Walking away from the village center
+task_leisure_restock_name,Restocking
+task_leisure_restock_step_walk,Heading to the storehouse
+task_leisure_restock_step_restock,Restocking supplies
+task_emergency_restock_name,Urgent restock
 pregnant,Pregnant
 individual_vitals_section_label,Vital parameters:
 individual_identity_line,{name} - {sex} - {age} - {band}
 individual_stamina_label,Workforce:
-individual_hunger_label,Hunger:
+individual_carry_label,Load:
+individual_supplies_label,Supplies:
+individual_food_calories_value,{calories} cal
+individual_supplies_tooltip_pouch,Supplies: {used}/{capacity}
+individual_supplies_tooltip_body,Body reserve (supplies depleted): {current}/{max} cal
 individual_thirst_label,Thirst:
 individual_health_label,Health:
 individual_happiness_label,Happiness:
@@ -96,7 +104,10 @@ notification_birth,{name} was born, {mother}'s {offspring_word}
 notification_stillbirth,{mother} lost the child during childbirth
 notification_idea_completed,New idea completed: {idea}
 notification_building_material_needed,Material needed to start construction of {building}
+notification_body_reserve_started,{name} has run out of supplies and is using their body reserve
 death_cause_childbirth,childbirth
+death_cause_starvation,starvation
+death_cause_illness,illness
 birth_verb_male,born
 birth_verb_female,born
 offspring_word_male,son

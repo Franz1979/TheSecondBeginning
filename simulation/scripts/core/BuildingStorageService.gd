@@ -65,17 +65,17 @@ static func get_capacity(building: Building) -> int:
 	return building.rules.storage_slot_count * building.rules.storage_space_per_slot
 
 
-static func get_used_space(building: Building) -> int:
+static func get_used_space(building: Building) -> float:
 	if building == null:
-		return 0
-	var used := 0
+		return 0.0
+	var used := 0.0
 	for resource_name in building.stored_resources.keys():
 		var entry: Dictionary = building.stored_resources[resource_name]
 		var quantity: int = int(entry.get("quantity", 0))
 		var resource_rules := CaloricCalculator.get_caloric_source_rules(String(resource_name))
 		if resource_rules == null:
 			continue
-		used += quantity * int(resource_rules.space_per_unit)
+		used += float(quantity) * resource_rules.space_per_unit
 	return used
 
 
@@ -83,8 +83,8 @@ static func get_used_space(building: Building) -> int:
 # store() sotto usa get_free_slots, più preciso perché tiene conto della frammentazione a slot).
 # Resta utile come cifra riassuntiva "quanto spazio resta in totale", non come garanzia che una
 # specifica risorsa possa davvero riempirlo tutto (vedi commento in testa al file).
-static func get_free_space(building: Building) -> int:
-	return max(get_capacity(building) - get_used_space(building), 0)
+static func get_free_space(building: Building) -> float:
+	return maxf(float(get_capacity(building)) - get_used_space(building), 0.0)
 
 
 # Quante unità della risorsa (dato il suo space_per_unit) entrano in UN singolo slot — 0 se

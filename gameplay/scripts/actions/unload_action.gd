@@ -116,11 +116,6 @@ const WALK_AWAY_DISTANCE: float = 5.0
 # stesso principio già seguito ovunque in questo progetto (nessuna costante condivisa tra Action).
 const STAMINA_COST_PER_SPACE_UNIT: float = 2.0
 
-# Costo di HAPPINESS al GIORNO (2026-09-13, richiesta utente: "-10.0/day") — tasso fisso, non
-# proporzionale allo spazio depositato (a differenza del costo stamina sopra) — STESSO valore di
-# PickUpAction/RetrieveAction.HAPPINESS_DRAIN_PER_DAY, costante separata, stesso principio "nessuna
-# costante condivisa tra Action" già dichiarato sopra per STAMINA_COST_PER_SPACE_UNIT.
-const HAPPINESS_DRAIN_PER_DAY: float = 10.0
 
 var _duration: float = 0.0
 var _total_stamina_cost: float = 0.0
@@ -262,15 +257,6 @@ func get_stamina_delta(individual: Variant, context: Dictionary, delta: float) -
 	return -(_total_stamina_cost / _duration) * delta
 
 
-# STESSA guardia _duration<=0.0 di get_stamina_delta sopra (copre anche il ramo PENSIERO, sempre a
-# costo zero — stessa logica "nessuna quantità da timerare" già dichiarata in testa al file) — MA
-# non incrementa _elapsed, già avanzato da get_stamina_delta nello stesso frame. Tasso fisso.
-func get_happiness_delta(individual: Variant, context: Dictionary, delta: float) -> float:
-	if _duration <= 0.0:
-		return 0.0
-	return -HAPPINESS_DRAIN_PER_DAY * delta
-
-
 # NON PIÙ sempre true (2026-09-10, richiesta utente — costo/durata reali per il deposito fisico) —
 # ora confronta _elapsed con _duration, STESSO schema esatto di PickUpAction/ThinkAction.is_complete.
 # Resta "istantanea" (0.0 >= 0.0, vero da subito) per QUALUNQUE caso in cui activate() ha lasciato
@@ -345,7 +331,7 @@ func on_complete(individual: Variant, context: Dictionary) -> void:
 			# can_accept/get_free_space richiamati QUI solo per il log — sola lettura, nessun
 			# effetto collaterale, store() sotto li ricalcola comunque da sé indipendentemente da
 			# queste due righe (nessuna modifica alla logica esistente).
-			print("[UNLOAD] on_complete: can_accept('%s')=%s, free_space=%d, carried_quantity PRIMA=%d" % [
+			print("[UNLOAD] on_complete: can_accept('%s')=%s, free_space=%.1f, carried_quantity PRIMA=%d" % [
 				individual.carried_resource_name,
 				BuildingStorageService.can_accept(target_building, individual.carried_resource_name),
 				BuildingStorageService.get_free_space(target_building),

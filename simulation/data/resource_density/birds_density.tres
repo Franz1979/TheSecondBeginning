@@ -4,7 +4,7 @@
 
 [resource]
 script = ExtResource("1_birds")
-base_density = 2.0
+base_density = 3.0
 presence_chance = 0.8
 terrain_multiplier_hill = 1.2
 terrain_multiplier_mountain = 0.6

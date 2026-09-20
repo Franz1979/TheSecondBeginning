@@ -10,4 +10,4 @@ script = ExtResource("1_def")
 task_name = "task_leisure_rest_name"
 steps = [ExtResource("2_walk"), ExtResource("3_rest"), ExtResource("4_walk_away")]
 is_idle_activity = true
-idle_weight = 3.0
+idle_weight = 2.0

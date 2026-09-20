@@ -32,6 +32,9 @@ static func recalculate_max_carry_capacity(individual: HumanIndividual, game_dat
 		human_rules = individual.source_group_ref.folk_ref.human_rules_ref
 	if human_rules == null:
 		individual.max_carry_capacity = HumanIndividual.FALLBACK_MAX_CARRY_CAPACITY
+		individual.food_space_capacity = HumanIndividual.FALLBACK_MAX_FOOD_SPACE
+		HumanFoodPouchService.on_capacity_recalculated(individual, false)
+		_recalculate_body_calories_capacity(individual, HumanIndividual.FALLBACK_MAX_BODY_CALORIES, false)
 		return
 	var age := float(game_data.year - individual.birth_year_virtual)
 	var age_band := HumanCalculator.get_age_band(
@@ -41,3 +44,30 @@ static func recalculate_max_carry_capacity(individual: HumanIndividual, game_dat
 	individual.max_carry_capacity = HumanCalculator.get_max_carry_capacity(
 		human_rules, age_band, individual.sex, individual.equipped_tool_count
 	)
+	# Saccoccia del cibo (2026-09-19, richiesta utente - ricalcolo spostato qui da
+	# HumanVitalsIndividualService): stessa eta'/regole gia' risolte sopra, stessa cadenza (creazione,
+	# ingresso in scena, ogni giorno). Il massimo (food_space_capacity) non e' persistito.
+	individual.food_space_capacity = HumanCalculator.get_max_food_space(human_rules, age_band, individual.sex)
+	# Contenuto della saccoccia (riempimento alla prima capacita' vera, poi solo clamp) - vedi
+	# HumanFoodPouchService.
+	HumanFoodPouchService.on_capacity_recalculated(individual, true)
+	# Riserva corporea (2026-09-19, richiesta utente): stesso punto e stessa cadenza del massimo delle
+	# provviste, stesso clamp verso il basso.
+	_recalculate_body_calories_capacity(
+		individual, HumanCalculator.get_max_body_calories(human_rules, age_band, individual.sex), true
+	)
+
+
+# Aggiorna body_calories_capacity e riallinea body_calories (2026-09-19, richiesta utente). `from_rules`:
+# true se il massimo viene da HumanRules reali, false se dal fallback. Stessa logica di
+# HumanFoodPouchService.on_capacity_recalculated: la PRIMA volta che il massimo vero e' noto
+# (body_calories_resolved ancora false: individuo appena creato, o caricato da un salvataggio senza la
+# chiave) la riserva riparte piena al massimo vero; da allora in poi solo clamp verso il basso (se il
+# massimo cresce la riserva non cambia).
+static func _recalculate_body_calories_capacity(individual: HumanIndividual, max_value: float, from_rules: bool) -> void:
+	individual.body_calories_capacity = max_value
+	if from_rules and not individual.body_calories_resolved:
+		individual.body_calories = max_value
+		individual.body_calories_resolved = true
+		return
+	individual.body_calories = minf(individual.body_calories, max_value)

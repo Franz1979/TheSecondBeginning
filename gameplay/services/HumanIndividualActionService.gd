@@ -37,46 +37,47 @@ signal carried_resource_discarded(individual: HumanIndividual, resource_name: St
 # frame — e advance_movement NON chiama più individual.stop() all'arrivo, vedi lì: è QUESTO
 # servizio, non quello, a decidere quando una Task è davvero conclusa).
 #
-# current_happiness resta senza clamp in questo passo (richiesta esplicita utente, 2026-09-13):
-# può scendere sotto zero senza conseguenze — l'auto-interrupt quando si esaurisce arriverà in uno
-# step successivo. Il tetto massimo GIORNALIERO (non per-frame) resta responsabilità di
+# current_happiness è clampata a 0 verso il basso (2026-09-19, richiesta utente: nessun parametro
+# vitale scende sotto 0; prima poteva andare in negativo) — l'auto-interrupt quando si esaurisce
+# arriverà in uno step successivo. Il tetto massimo GIORNALIERO (non per-frame) resta responsabilità di
 # HumanStaminaIndividualService/HumanVitalsIndividualService, mai di questo servizio.
 # current_stamina INVECE è clampata a 0 verso il basso qui sotto (richiesta utente — blocco task
 # sotto la soglia di Emergency Rest): non deve mai scendere sotto zero, altrimenti il rapporto
 # current_stamina/max_stamina usato da _resolve_active_stamina_need_priority/can_assign_task
 # risulterebbe negativo invece di restare fermo a 0.0.
 
-# Crescita skill al completamento Task (2026-09-13, richiesta utente) — +1.0 punto sulla skill
-# associata, UNA VOLTA SOLA quando l'INTERA Task termina con successo (mai per singola Action/
-# step). Mappa task.task_name (stringa già esistente, vedi Task.gd — copiata da TaskDefinition.
-# task_name da TaskFactory.build_task) -> nome property skill_* su HumanIndividual.
-#
-# task_rest_name/task_wander_name/task_play_name ELENCATE ESPLICITAMENTE con valore "" (nessuna
-# skill) — richiesta esplicita utente: "non un'assenza silenziosa". Questo le distingue nel log da
-# un task_name sconosciuto/non ancora mappato (es. "" per una Task costruita a mano nei test di
-# debug, o un futuro tipo di Task non ancora aggiunto qui): quel caso non è nella mappa affatto,
-# _apply_task_completion_skill_growth sotto lo tratta allo stesso modo (nessun incremento) ma è un
-# caso concettualmente diverso da "niente cresce apposta".
-const TASK_COMPLETION_SKILL_GROWTH_AMOUNT: float = 1.0
-const TASK_COMPLETION_SKILL_BY_TASK_NAME := {
-	"task_haul_resource_name": "skill_gathering",
-	"task_daydream_name": "skill_cognition",
-	"task_build_name": "skill_builder",
-	"task_transport_name": "skill_transporter",
-	"task_rest_name": "", # Nessuna skill — richiesta esplicita utente.
-	"task_wander_name": "", # Nessuna skill — richiesta esplicita utente.
-	"task_play_name": "", # Nessuna skill — richiesta esplicita utente.
-	"task_leisure_rest_name": "", # Nessuna skill — richiesta esplicita utente, 2026-09-16.
-}
-
 # Sistema di interrupt/coda da stamina critica (2026-09-13, richiesta utente) — soglie sul
 # rapporto current_stamina/max_stamina, valutate OGNI frame per l'individuo attivo (vedi
 # _resolve_active_stamina_need_priority/_handle_stamina_interrupt sotto). Numero più BASSO =
-# priorità più urgente, STESSO significato/STESSI valori di Task.interrupt_priority (1 =
-# emergency_rest.tres, 2 = rest.tres) — le due soglie sotto sono la fonte di verità che decide
+# priorità più urgente, STESSO significato/STESSI valori di Task.interrupt_priority (10 =
+# emergency_rest.tres, 30 = rest.tres, passo 10 per lasciare spazio ai bisogni futuri come fame e sete) — le due soglie sotto sono la fonte di verità che decide
 # QUANDO ciascuna delle due priorità è "attiva", non duplicate altrove.
 const STAMINA_EMERGENCY_REST_THRESHOLD: float = 0.05
 const STAMINA_REST_THRESHOLD: float = 0.20
+
+# Priorita' di interrupt delle due Task-bisogno di stamina (2026-09-19, richiesta utente): rinumerate da
+# 1/2 a 10/30 (passo 10, spazio per i bisogni futuri: fame, sete). Devono coincidere con
+# interrupt_priority di emergency_rest.tres e rest.tres. Numero piu' BASSO = piu' urgente. Usate da
+# _resolve_active_stamina_need_priority, dai confronti in _handle_stamina_interrupt/
+# resolve_idle_individual e da HumanIndividual.can_assign_task (soglia di emergenza).
+const INTERRUPT_PRIORITY_EMERGENCY_REST: int = 10
+const INTERRUPT_PRIORITY_REST: int = 30
+
+# Priorita' di interrupt del bisogno di PROVVISTE (2026-09-19, richiesta utente): stesso schema di
+# quelle di stamina sopra, in un blocco a se' (mai fuso con esse): UNA sola priorita', l'emergenza
+# restock (20), tra Emergency Rest (10) e Rest (30). Numero piu' BASSO = piu' urgente. Il rifornimento
+# NON emergenziale non e' un bisogno-interrupt: sara' una Task perditempo (leisure_restock) con
+# interrupt_priority -1, come wander e leisure_rest. Letta da _resolve_active_food_need_priority, da HumanIndividual.can_assign_task e dagli agganci
+# automatici (_handle_food_interrupt, resolve_idle_individual) che assegnano emergency_restock.
+const INTERRUPT_PRIORITY_EMERGENCY_RESTOCK: int = 20
+
+# Soglia di autonomia delle provviste, in giorni (food_calories_held / consumo calorico giornaliero):
+# fino a questa (compresa) e' emergenza.
+const FOOD_AUTONOMY_EMERGENCY_DAYS: float = 1.0
+# Tolleranza sul confronto dell'emergenza (2026-09-19): l'autonomia e' un rapporto di float e le
+# calorie scendono per sottrazioni ripetute, quindi "esattamente 1 giorno" puo' risultare 1.0000000002.
+# Senza tolleranza il confronto <= mancherebbe proprio il caso che deve scattare.
+const FOOD_AUTONOMY_EPSILON: float = 0.001
 
 # `world` (2026-09-09, richiesta utente — nato per il re-routing UnloadAction su magazzino pieno,
 # poi GENERALIZZATO alla ricerca magazzino post-PickUp, vedi _handle_pending_warehouse_search
@@ -140,7 +141,9 @@ func apply_action(individual: HumanIndividual, delta: float, world: World = null
 	# secondo valore di ritorno dello stesso metodo). Nessun clamp qui: stesso principio di stamina
 	# sopra, il tetto giornaliero vive in HumanVitalsIndividualService, non per-frame.
 	var happiness_delta := action.get_happiness_delta(individual, task.context, delta)
-	individual.current_happiness += happiness_delta
+	# Mai sotto zero (2026-09-19, richiesta utente: nessun parametro vitale puo' andare sotto 0), come
+	# current_stamina sopra. Il tetto massimo resta quello giornaliero.
+	individual.current_happiness = maxf(individual.current_happiness + happiness_delta, 0.0)
 
 	# Interrupt/coda da bisogno stamina (2026-09-13, richiesta utente) - valutato QUI, SUBITO DOPO
 	# i due delta sopra (stesso frame, stessa lettura di current_stamina appena aggiornata), PRIMA
@@ -151,6 +154,11 @@ func apply_action(individual: HumanIndividual, delta: float, world: World = null
 	# apply_action dal prossimo frame, stesso principio gia' in uso per un normale cambio di step
 	# (activate() ora, delta dal prossimo giro del ciclo).
 	if _handle_stamina_interrupt(individual, task, world, game_data):
+		return
+	# Bisogno di PROVVISTE (2026-09-19, richiesta utente): blocco a se', MAI fuso con quello di stamina
+	# sopra (come dice il commento su _resolve_active_stamina_need_priority). Stesso schema: bool di
+	# ritorno, return immediato se ha sostituito individual.current_task.
+	if _handle_food_interrupt(individual, task, world, game_data):
 		return
 
 	# Accumulo costo per-step (2026-09-07, richiesta utente; happiness aggiunta 2026-09-13) — stessi
@@ -209,7 +217,9 @@ func finish_current_step(individual: HumanIndividual, task: Task, world: World, 
 		# assegna una nuova Task-bisogno/riprende dalla coda/chiama stop()), quindi QUESTA
 		# istanza di Task non è più raggiungibile da nessuna chiamata futura di apply_action —
 		# lo stesso identico principio già sfruttato da print_cost_summary sopra.
-		_apply_task_completion_skill_growth(individual, task)
+		# Effetti del completamento su skill e parametri vitali: TaskCompletionEffectService (dati in
+		# task_completion_effects.tres), non qui - questo servizio parla di singole Action.
+		TaskCompletionEffectService.apply_effects(individual, task)
 		# Bisogno/coda (2026-09-13, richiesta utente, Punto 5) — PRIMA di considerare
 		# l'individuo libero: se un bisogno stamina è ANCORA attivo, assegna la Task-bisogno
 		# corrispondente; altrimenti riprende l'ultima Task sospesa in coda (se presente);
@@ -412,7 +422,7 @@ func _resolve_material_shortage(
 #
 # Filtro a 3 condizioni, TUTTE necessarie:
 #   1) current_task != null e current_task.task_name == "task_build_name" — SOLO la Build Task,
-#      stessa stringa già usata altrove in questo file (TASK_COMPLETION_SKILL_BY_TASK_NAME).
+#      stessa stringa già usata altrove (TaskCompletionEffects, task_completion_effects.tres).
 #   2) lo step ATTIVO è un SetupSiteAction (`is`) — BuildAction/ClearAction non hanno un fabbisogno
 #      materiale in questo giro (bypassate per costruzione, vedi SetupSiteAction.gd), quindi non
 #      possono mai essere "bloccate" per questo motivo.
@@ -643,30 +653,6 @@ func _handle_pending_walk_away(task: Task) -> void:
 		print("[WALK AWAY] WalkAction accodato verso %s dopo un deposito riuscito." % str(walk_away_position))
 
 
-# Incrementa di TASK_COMPLETION_SKILL_GROWTH_AMOUNT (1.0) la skill mappata da TASK_COMPLETION_
-# SKILL_BY_TASK_NAME per task.task_name — chiamata SOLO da apply_action sopra, SOLO nell'esatto
-# frame in cui la Task INTERA termina con successo (vedi il commento lì per la garanzia "una volta
-# sola"). No-op silenzioso (nessun log) se task.task_name non è nella mappa affatto (Task
-# costruita a mano senza task_name, o un futuro tipo di Task non ancora mappato qui) o se è
-# mappato esplicitamente a "" (task_rest_name/task_wander_name/task_play_name — nessuna skill per
-# queste tre, richiesta esplicita utente). Nessun clamp a 1000: le skill non hanno ancora un vero
-# massimo enforced (verificato — nessun clamp esiste oggi su alcun campo skill_*, a differenza dei
-# parametri vitali che hanno HumanVitalsIndividualService._clamp_current_to_max).
-func _apply_task_completion_skill_growth(individual: HumanIndividual, task: Task) -> void:
-	if not TASK_COMPLETION_SKILL_BY_TASK_NAME.has(task.task_name):
-		return
-	var skill_property_name: String = TASK_COMPLETION_SKILL_BY_TASK_NAME[task.task_name]
-	if skill_property_name == "":
-		return
-	var value_before: float = individual.get(skill_property_name)
-	var value_after: float = value_before + TASK_COMPLETION_SKILL_GROWTH_AMOUNT
-	individual.set(skill_property_name, value_after)
-	if DebugLogging.ENABLED and DebugLogging.SHOW_TASK_LIFECYCLE_LOGS:
-		print("[SKILL GROWTH] #%d %s: Task '%s' completata -> %s %.1f -> %.1f" % [
-			individual.id, individual.name, task.task_name, skill_property_name, value_before, value_after
-		])
-
-
 # Priorità del bisogno stamina più urgente ATTIVO ORA per `individual`, o -1 se nessuno (2026-09-13,
 # richiesta utente, sistema di interrupt/coda da stamina critica) — SOLO stamina in questo passo:
 # un futuro bisogno fame/sete si aggiungerà con lo stesso schema (una soglia/un blocco a sé), MAI
@@ -683,10 +669,94 @@ static func _resolve_active_stamina_need_priority(individual: HumanIndividual) -
 		return -1
 	var stamina_percent: float = individual.current_stamina / individual.max_stamina
 	if stamina_percent < STAMINA_EMERGENCY_REST_THRESHOLD:
-		return 1
+		return INTERRUPT_PRIORITY_EMERGENCY_REST
 	if stamina_percent < STAMINA_REST_THRESHOLD:
-		return 2
+		return INTERRUPT_PRIORITY_REST
 	return -1
+
+
+# Priorita' del bisogno di PROVVISTE piu' urgente ATTIVO ORA per `individual`, o -1 se nessuno
+# (2026-09-19, richiesta utente) - parallela a _resolve_active_stamina_need_priority sopra, in un blocco
+# a se'. Autonomia in giorni = food_calories_held / consumo calorico giornaliero
+# (HumanCalculator.get_daily_calorie_consumption): fino a FOOD_AUTONOMY_EMERGENCY_DAYS (1 giorno,
+# compreso) -> INTERRUPT_PRIORITY_EMERGENCY_RESTOCK; altrimenti -1 (nessun'altra priorita': il
+# rifornimento normale e' una Task perditempo, non un bisogno-interrupt). Consumo 0 (INFANT) =
+# autonomia infinita -> -1. Regole non risolvibili -> -1.
+#
+# `era_rules` (opzionale, in coda alla firma richiesta): serve al moltiplicatore dell'allattamento
+# (dependent_child_calorie_multiplier) cosi' l'autonomia usa lo STESSO consumo che apply_daily_
+# calorie_consumption toglie davvero; senza, il costo del figlio a carico non viene considerato.
+#
+# STATIC, stesso motivo di _resolve_active_stamina_need_priority. Solo lettura: chi assegna
+# emergency_restock e' _handle_food_interrupt (via _active_food_need_priority) e resolve_idle_individual.
+static func _resolve_active_food_need_priority(
+	individual: HumanIndividual, human_rules: HumanRules, age_band: HumanTypes.AgeBand, sex: HumanTypes.Sex,
+	era_rules: EraRules = null
+) -> int:
+	if human_rules == null:
+		return -1
+	var daily_consumption: float = HumanCalculator.get_daily_calorie_consumption(
+		human_rules, age_band, sex, individual.dependent_child_id != -1, era_rules
+	)
+	if daily_consumption <= 0.0:
+		return -1
+	var autonomy_days: float = individual.food_calories_held / daily_consumption
+	# <= (non <): l'emergenza scatta GIA' a 1 giorno di autonomia. Le calorie calano di un consumo intero
+	# al giorno, quindi l'autonomia vale 5, 4, 3, 2, 1, 0: con < l'emergenza scattava solo a 0.
+	if autonomy_days <= FOOD_AUTONOMY_EMERGENCY_DAYS + FOOD_AUTONOMY_EPSILON:
+		return INTERRUPT_PRIORITY_EMERGENCY_RESTOCK
+	return -1
+
+
+# Priorita' del bisogno di provviste per `individual` risolvendo regole ed era da soli (2026-09-19):
+# HumanRules dalla catena source_group_ref -> folk_ref -> human_rules_ref, EraRules da
+# GameSettings.active_game_data (resolve_idle_individual e' statica e non riceve game_data). Usa
+# _resolve_active_food_need_priority (20 o -1). Regole non risolvibili -> -1.
+static func _active_food_need_priority(individual: HumanIndividual, age_band: HumanTypes.AgeBand) -> int:
+	var human_rules: HumanRules = null
+	if individual.source_group_ref != null and individual.source_group_ref.folk_ref != null:
+		human_rules = individual.source_group_ref.folk_ref.human_rules_ref
+	var era_rules: EraRules = null
+	if GameSettings.active_game_data != null:
+		era_rules = EraCalculator.get_era_rules(GameSettings.active_game_data.current_era_name)
+	return _resolve_active_food_need_priority(individual, human_rules, age_band, individual.sex, era_rules)
+
+
+# Interrupt da bisogno di PROVVISTE (2026-09-19, richiesta utente), in un blocco a se' accanto a
+# _handle_stamina_interrupt: se il bisogno e' l'emergenza (20) e la Task in corso puo' essere
+# interrotta, assegna emergency_restock (che sospende la Task in corso se sospendibile, vedi
+# HumanIndividual.assign_task). Nessun guard sullo spazio libero. Ritorna true SOLO se emergency_restock
+# e' stata davvero assegnata (l'individuo ha cambiato Task): se nessun magazzino ha cibo la Task non
+# nasce e la Task in corso prosegue indisturbata.
+#
+# FRENO AI TENTATIVI: valutato al massimo UNA VOLTA al giorno di gioco per individuo
+# (HumanIndividual.food_need_last_check_day). Le calorie cambiano solo col consumo giornaliero, quindi
+# rivalutare a ogni frame non serve; soprattutto, senza magazzino con cibo la ricerca (e il log
+# [RESTOCK]) si ripeterebbe a ogni frame. Ricontrollo al giorno successivo.
+#
+# Uscita rapida, PRIMA di qualunque calcolo: una Task con priorita' <= 20 (Emergency Rest 10,
+# Emergency Restock 20) non puo' essere interrotta da questo bisogno; Rest (30) si'.
+func _handle_food_interrupt(individual: HumanIndividual, task: Task, world: World, game_data: GameData) -> bool:
+	if game_data == null:
+		return false
+	if task.interrupt_priority != -1 and task.interrupt_priority <= INTERRUPT_PRIORITY_EMERGENCY_RESTOCK:
+		return false
+	var today: int = game_data.get_absolute_day()
+	if individual.food_need_last_check_day == today:
+		return false
+	var age_band := _resolve_age_band(individual, game_data)
+	var needed_priority := _active_food_need_priority(individual, age_band)
+	if needed_priority == -1:
+		individual.food_need_last_check_day = today
+		return false
+	if task.interrupt_priority != -1 and needed_priority >= task.interrupt_priority:
+		return false
+	individual.food_need_last_check_day = today
+	if DebugLogging.should_log_restock(individual.id):
+		print("[RESTOCK] #%d %s: bisogno di provviste di emergenza (calorie=%.1f) - Task '%s' in corso, provo emergency_restock." % [
+			individual.id, individual.name, individual.food_calories_held, task.task_name
+		])
+	return NeedTaskAssignmentService.assign_emergency_restock_task(individual, world, age_band, true)
 
 
 # Age band dell'individuo, risolta con le durate EFFETTIVE per l'Era corrente — STESSO principio
@@ -739,11 +809,23 @@ static func resolve_idle_individual(individual: HumanIndividual, age_band: Human
 			print("[INTERRUPT DEBUG] #%d %s: individuo libero, bisogno stamina attivo (priorità %d, stamina=%.1f/%.1f)." % [
 				individual.id, individual.name, needed_priority, individual.current_stamina, individual.max_stamina
 			])
-		if needed_priority == 1:
+		if needed_priority == INTERRUPT_PRIORITY_EMERGENCY_REST:
 			NeedTaskAssignmentService.assign_emergency_rest_task(individual, age_band, true)
 		else:
 			NeedTaskAssignmentService.assign_rest_task(individual, world, age_band, true)
 		return
+
+	# Individuo libero con bisogno di provviste di emergenza (2026-09-19, richiesta utente): riceve
+	# emergency_restock invece di una perditempo. Nessun guard sullo spazio libero. Se nessun magazzino
+	# ha cibo la Task non nasce e si prosegue con coda/perditempo (il caso "resta ad aspettare" verra'
+	# dopo). Dopo il bisogno di stamina sopra (che ha la precedenza).
+	if _active_food_need_priority(individual, age_band) == INTERRUPT_PRIORITY_EMERGENCY_RESTOCK:
+		if DebugLogging.should_log_restock(individual.id):
+			print("[RESTOCK] #%d %s: individuo libero con bisogno di provviste di emergenza (calorie=%.1f) - provo emergency_restock." % [
+				individual.id, individual.name, individual.food_calories_held
+			])
+		if NeedTaskAssignmentService.assign_emergency_restock_task(individual, world, age_band, true):
+			return
 
 	var resumed_task := TaskQueueService.pop_suspended_task(individual)
 	# ZOMBIE GUARD (2026-09-16, richiesta utente, fix "task zombie") — scarta ogni task già
@@ -855,7 +937,7 @@ func _handle_stamina_interrupt(individual: HumanIndividual, task: Task, world: W
 	# rami (sospendibile -> TaskQueueService.push_suspended_task; non sospendibile -> discard se
 	# is_interrupt_transition è false, mai qui che è sempre true).
 	var age_band := _resolve_age_band(individual, game_data)
-	if needed_priority == 1:
+	if needed_priority == INTERRUPT_PRIORITY_EMERGENCY_REST:
 		NeedTaskAssignmentService.assign_emergency_rest_task(individual, age_band, true)
 	else:
 		NeedTaskAssignmentService.assign_rest_task(individual, world, age_band, true)

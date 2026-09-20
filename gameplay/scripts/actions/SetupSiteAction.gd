@@ -46,9 +46,6 @@ signal site_setup_completed(building: Building)
 # tra Action diverse.
 const STAMINA_DRAIN_PER_DAY: float = 100.0
 
-# Costo di HAPPINESS al GIORNO (2026-09-13, richiesta utente: "-10.0/day") — costante separata,
-# stesso principio "nessuna costante condivisa tra Action" già dichiarato sopra.
-const HAPPINESS_DRAIN_PER_DAY: float = 10.0
 
 # Durata FISSA — 1 giorno di gioco, edifici monocella (2026-09-10, richiesta esplicita utente: "per
 # ora, edifici monocella"). Non un parametro di costruttore come ThinkAction.duration: finché ogni
@@ -122,7 +119,7 @@ func get_missing_material_quantity() -> int:
 # consumato da un chiamante esterno che sa risolvere Building/World/WarehouseSelectionService, mai
 # da questa classe — vedi HumanIndividualActionService._handle_pending_material_shortage). Il
 # "blocco" vero e proprio (zero costo, mai completa) è comunque garantito ANCHE da get_stamina_
-# delta/get_happiness_delta/is_complete sotto, indipendentemente da questo flag: quello che scrive
+# delta/is_complete sotto, indipendentemente da questo flag: quello che scrive
 # qui serve solo a FAR PARTIRE la Transport Task il prima possibile, non a impedire da solo
 # l'avanzamento (il vero gate vive nei tre metodi sotto, così anche il caso limite "nessun
 # magazzino sorgente trovato" — fuori scope in questo giro, vedi quel service — resta comunque
@@ -175,21 +172,6 @@ func get_stamina_delta(individual: Variant, context: Dictionary, delta: float) -
 		return 0.0
 	target_building.construction_progress["site_setup_days_done"] = _get_site_setup_days_done() + delta
 	return -STAMINA_DRAIN_PER_DAY * delta
-
-
-# STESSE guardie di get_stamina_delta sopra (lettura, mai scrittura di site_setup_days_done: già
-# incrementato da get_stamina_delta nello stesso frame — vedi la nota in Action.get_happiness_
-# delta). Tasso fisso.
-func get_happiness_delta(individual: Variant, context: Dictionary, delta: float) -> float:
-	if target_building == null:
-		return 0.0
-	if target_building.site_setup_complete:
-		return 0.0
-	if get_missing_material_quantity() > 0:
-		return 0.0
-	if _get_site_setup_days_done() >= DURATION_DAYS:
-		return 0.0
-	return -HAPPINESS_DRAIN_PER_DAY * delta
 
 
 # Guardia materiale (2026-09-13) AGGIUNTA — mai completa mentre manca materiale, indipendentemente

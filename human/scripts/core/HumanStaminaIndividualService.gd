@@ -40,10 +40,12 @@ extends RefCounted
 # codebase scrive/clampa current_stamina — solo HumanIndividual._init() (assegnazione iniziale) e
 # HumanIndividualActionService.apply_action (drain/recharge, deliberatamente SENZA clamp, task
 # separato) lo toccano; questo resta l'UNICO punto che applica il tetto massimo.
-static func recalculate_max_stamina(individual: HumanIndividual, game_data: GameData, era_rules: EraRules) -> void:
+static func recalculate_max_stamina(individual: HumanIndividual, game_data: GameData, era_rules: EraRules, world: World = null) -> void:
 	var human_rules: HumanRules = null
+	var changed_to_band: int = -1
 	if individual.source_group_ref != null and individual.source_group_ref.folk_ref != null:
 		human_rules = individual.source_group_ref.folk_ref.human_rules_ref
+	var max_before: float = individual.max_stamina
 	if human_rules == null:
 		individual.max_stamina = HumanIndividual.FALLBACK_MAX_STAMINA
 	else:
@@ -55,6 +57,23 @@ static func recalculate_max_stamina(individual: HumanIndividual, game_data: Game
 		individual.max_stamina = HumanCalculator.get_max_stamina(
 			human_rules, age_band, individual.sex, individual.is_pregnant, individual.dependent_child_id != -1, era_rules
 		)
+		# Cambio di fascia d'eta' (2026-09-19, richiesta utente): se la fascia e' cambiata rispetto all'ultimo
+		# ricalcolo (stamina_age_band noto) e il massimo SALE, current_stamina sale in proporzione,
+		# mantenendo la stessa percentuale di prima. Se prima era 0 su 0 (es. INFANT, moltiplicatore 0.0) si
+		# tratta come pieno: chi comincia a camminare non parte esausto. Un massimo che sale per altri
+		# motivi (gravidanza, figlio a carico) NON alza current_stamina, come prima.
+		if individual.stamina_age_band != -1 and individual.stamina_age_band != age_band and individual.max_stamina > max_before:
+			var ratio: float = (individual.current_stamina / max_before) if max_before > 0.0 else 1.0
+			var raised: float = clampf(ratio, 0.0, 1.0) * individual.max_stamina
+			if DebugLogging.ENABLED and DebugLogging.SHOW_STAMINA_RECALC_LOGS:
+				print("[HUMAN STAMINA RECALC] #%d %s: cambio fascia (%s -> %s), max %.1f -> %.1f, current_stamina %.1f -> %.1f (stessa percentuale, 0 su 0 = pieno)" % [
+					individual.id, individual.name, HumanTypes.AgeBand.keys()[individual.stamina_age_band],
+					HumanTypes.AgeBand.keys()[age_band], max_before, individual.max_stamina, individual.current_stamina, raised
+				])
+			individual.current_stamina = raised
+		if individual.stamina_age_band != -1 and individual.stamina_age_band != age_band:
+			changed_to_band = age_band
+		individual.stamina_age_band = age_band
 	if individual.current_stamina > individual.max_stamina:
 		# Log SOLO quando il clamp scatta davvero (evento reale, non ogni ricalcolo — stesso
 		# principio di [HUMAN BIRTH]/[HUMAN DEATH]: un log ad ogni passata "senza effetto" sarebbe
@@ -65,3 +84,11 @@ static func recalculate_max_stamina(individual: HumanIndividual, game_data: Game
 				individual.id, individual.name, individual.current_stamina, individual.max_stamina, individual.max_stamina
 			])
 		individual.current_stamina = individual.max_stamina
+	# Cambio di fascia con individuo libero (2026-09-19, richiesta utente): resolve_idle_individual e' chiamata
+	# solo a eventi, quindi chi cambia fascia senza generarne (es. INFANT -> CHILD, mai avuto una task)
+	# resterebbe fermo. Solo su cambio fascia + current_task == null: nessuna verifica giornaliera degli
+	# inattivi, chi il giocatore ha lasciato fermo di proposito non viene toccato. Ultimo passo, cosi' vede
+	# la stamina gia' aggiornata/tagliata. Serve `world` dal chiamante; senza (null) non fa nulla.
+	if changed_to_band != -1 and changed_to_band != HumanTypes.AgeBand.INFANT \
+			and world != null and individual.current_task == null:
+		HumanIndividualActionService.resolve_idle_individual(individual, changed_to_band as HumanTypes.AgeBand, world)

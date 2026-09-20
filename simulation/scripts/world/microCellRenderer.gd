@@ -432,7 +432,10 @@ var tree_current_year: int = 0
 # Stagione corrente (vedi GRASS_PALETTE_BY_SEASON/FRUITING_SEASONS sopra) — arriva già risolta
 # dal chiamante (MacroCellScene, via SeasonCalculator.get_season_for_day), stessa separazione
 # di responsabilità delle altre proprietà "calcolate altrove" del renderer.
-var current_season: GameTypes.Season = GameTypes.Season.WINTER
+# Il default è la stagione del giorno di partenza di una nuova partita (GameData.START_DAY),
+# calcolata e non scritta a mano: se il giorno di partenza cambia, il default resta allineato
+# anche nei frame prima del primo set_season.
+var current_season: GameTypes.Season = SeasonCalculator.get_season_for_day(GameData.START_DAY)
 
 # DEBUG TEMPORANEO: conta le chiamate di disegno EFFETTIVE (draw_multimesh/draw_multiline_colors)
 # per stone+grass+shrub+tree+bacche in un singolo _draw(), non più le istanze logiche — dopo la

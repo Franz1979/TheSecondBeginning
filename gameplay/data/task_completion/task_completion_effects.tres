@@ -1,0 +1,46 @@
+[gd_resource type="Resource" script_class="TaskCompletionEffects" format=3 uid="uid://duk2vxgx7tfww"]
+
+[ext_resource type="Script" uid="uid://d1fi1w5hs4w0i" path="res://gameplay/scripts/core/TaskCompletionEffects.gd" id="1_tce"]
+
+[resource]
+script = ExtResource("1_tce")
+skill_effects_by_task_name = {
+"task_build_name": {
+"skill_builder": 1.0
+},
+"task_daydream_name": {
+"skill_cognition": 1.0
+},
+"task_emergency_rest_name": {},
+"task_emergency_restock_name": {},
+"task_haul_resource_name": {
+"skill_gathering": 1.0
+},
+"task_leisure_rest_name": {},
+"task_leisure_restock_name": {},
+"task_play_name": {},
+"task_rest_name": {},
+"task_transport_name": {
+"skill_transporter": 1.0
+},
+"task_wander_name": {}
+}
+vital_effects_by_task_name = {
+"task_build_name": {},
+"task_daydream_name": {
+"current_happiness": 20.0
+},
+"task_emergency_rest_name": {},
+"task_emergency_restock_name": {},
+"task_haul_resource_name": {},
+"task_leisure_rest_name": {},
+"task_leisure_restock_name": {},
+"task_play_name": {
+"current_happiness": 40.0
+},
+"task_rest_name": {},
+"task_transport_name": {},
+"task_wander_name": {
+"current_happiness": 10.0
+}
+}

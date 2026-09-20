@@ -62,18 +62,19 @@ extends Resource
 @export var accepted_categories: Array[SecondaryResourceTypes.Category] = []
 
 # Moltiplicatore di durabilità PER CATEGORIA DI RISORSA (2026-09-09, richiesta utente) — indice =
-# SecondaryResourceTypes.Category (0=FOOD, 1=RAW_MATERIAL), stesso principio "array indicizzato per
+# SecondaryResourceTypes.Category (0=FOOD, 1=RAW_MATERIAL, 2=MEDICINAL — un
+# elemento per valore dell'enum, da allungare quando se ne aggiunge uno in fondo), stesso principio "array indicizzato per
 # enum" già in uso per HumanRules/AnimalRules (es. caloric_multiplier_by_age). Consultato da
 # ResourceDecayService.advance_building_decay: l'incremento giornaliero di decay_fraction diventa
 # 1/(day_durability × moltiplicatore) invece di 1/day_durability puro — >1.0 rallenta il
 # decadimento (l'edificio "conserva meglio" quella categoria), <1.0 lo accelera, 1.0 = invariato.
-# Default [1.0, 1.0] per OGNI tipo esistente (deposit_site/hut non lo sovrascrivono ancora) —
+# Default [1.0, 1.0, 1.0] per OGNI tipo esistente (deposit_site/hut non lo sovrascrivono ancora) —
 # comportamento identico a prima dell'introduzione di questo campo finché non lo si valorizza
 # esplicitamente in un .tres. Indicizzazione diretta (mai .get(), un Array non un Dictionary): un
 # accesso fuori range (una futura categoria aggiunta senza aggiornare questo array) va trattato dal
 # chiamante come "nessun moltiplicatore" (1.0), non un crash — vedi ResourceDecayService per la
 # guardia.
-@export var durability_multiplier_by_category: Array[float] = [1.0, 1.0]
+@export var durability_multiplier_by_category: Array[float] = [1.0, 1.0, 1.0]
 
 # Nome risorsa (stringa libera per ora, es. "wood"/"stick"/"stone"/"iron" — nessun enum dedicato
 # finché non esiste un vero inventario/economia) -> quantità richiesta per completare la

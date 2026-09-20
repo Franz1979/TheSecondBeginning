@@ -81,6 +81,8 @@ notification_death,{name} è morto/a per {cause} (età {age}, giorno {day})
 death_cause_old_age,vecchiaia
 death_cause_murder,omicidio
 death_cause_childbirth,parto
+death_cause_starvation,fame
+death_cause_illness,malattia
 notification_birth,{name} è {birth_verb}, {offspring_word} di {mother}
 notification_stillbirth,{mother} ha perso il bambino durante il parto
 birth_verb_male,nato
@@ -91,6 +93,7 @@ notification_idea_completed,Nuova idea completata: {idea}
 notification_resource_decayed_individual,{name} ha perso {quantity} {resource} (deperiti)
 notification_resource_decayed_building,{quantity} {resource} deperiti in {building} (#{id})
 notification_building_material_needed,Serve materiale per avviare la costruzione di {building}
+notification_body_reserve_started,{name} ha finito le provviste e sta consumando la riserva corporea
 sex_label,Sesso: {sex}
 sex_female,Femmina
 sex_male,Maschio
@@ -129,6 +132,10 @@ task_transport_step_walk_to_source,Andando a prelevare
 task_transport_step_retrieve,Prelevando
 task_transport_step_walk_to_destination,Andando a consegnare
 task_transport_step_unload,Consegnando
+task_leisure_restock_name,Rifornirsi
+task_leisure_restock_step_walk,Andando al magazzino
+task_leisure_restock_step_restock,Rifornendo le provviste
+task_emergency_restock_name,Rifornimento urgente
 transport_dialog_title,Trasporta risorsa
 transport_dialog_message,Scegli cosa prelevare da {building}:
 transport_dialog_quantity_label,Quantità:
@@ -161,8 +168,11 @@ pregnant,Incinta
 individual_vitals_section_label,Parametri vitali:
 individual_identity_line,{name} - {sex} - {age} - {band}
 individual_stamina_label,Forza lavoro:
-individual_carry_label,Capacità di trasporto:
-individual_hunger_label,Fame:
+individual_carry_label,Carico:
+individual_supplies_label,Provviste:
+individual_food_calories_value,{calories} cal
+individual_supplies_tooltip_pouch,Provviste: {used}/{capacity}
+individual_supplies_tooltip_body,Riserva corporea (provviste esaurite): {current}/{max} cal
 individual_thirst_label,Sete:
 individual_health_label,Salute:
 individual_happiness_label,Felicità:
