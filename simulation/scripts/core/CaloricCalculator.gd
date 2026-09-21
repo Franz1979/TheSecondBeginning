@@ -188,11 +188,16 @@ static func has_secondary_resource_potential(
 # resta stateless. Ad ogni cambio di stagione:
 #  - se new_season è la cycle_start_season della fonte: reset pieno, il residuo precedente è
 #    scartato ("i frutti non si accumulano da un ciclo all'altro");
-#  - altrimenti, se il tetto teorico (base_quantity * yield_ratio * multiplier) sale rispetto
-#    alla stagione precedente: lo stock guadagna esattamente la differenza tra i due tetti
-#    (nuova maturazione, non un secondo reset pieno);
-#  - se il tetto scende: lo stock decade in proporzione al rapporto tra i moltiplicatori (non tra
-#    i tetti, per restare corretto anche quando base_quantity è 0).
+#  - altrimenti, se il nuovo moltiplicatore stagionale è 0: lo stock va a 0 (2026-09-20, richiesta
+#    utente — bugfix uova d'estate);
+#  - altrimenti, se il moltiplicatore sale (o resta uguale) rispetto alla stagione precedente: lo stock
+#    guadagna esattamente la differenza tra i due tetti teorici (base_quantity * yield_ratio *
+#    multiplier: nuova maturazione, non un secondo reset pieno);
+#  - se il moltiplicatore scende: lo stock decade in proporzione al rapporto tra i moltiplicatori.
+# Il ramo si sceglie sui MOLTIPLICATORI, mai sul confronto tra i tetti (2026-09-20): con base_quantity
+# a 0 (fonte azzerata, es. BIRDS migrati o alberi/arbusti spariti) i due tetti valgono entrambi 0, il
+# vecchio confronto `new_ceiling >= old_ceiling` passava e lo stock della stagione precedente
+# sopravviveva fuori stagione (uova raccoglibili in estate, ghiande in estate, frutti non decaduti).
 static func update_secondary_resource_stock(
 	rules: SecondaryResourceRules,
 	cell: MacroCellData,
@@ -212,13 +217,15 @@ static func update_secondary_resource_stock(
 	if new_season == rules.cycle_start_season:
 		new_stock = new_ceiling
 	else:
-		var old_ceiling := base_quantity * rules.yield_ratio * rules.seasonal_availability_multiplier[previous_season]
-		if new_ceiling >= old_ceiling:
+		var old_multiplier: float = rules.seasonal_availability_multiplier[previous_season]
+		var new_multiplier: float = rules.seasonal_availability_multiplier[new_season]
+		if new_multiplier <= 0.0:
+			new_stock = 0.0
+		elif new_multiplier >= old_multiplier:
+			var old_ceiling := base_quantity * rules.yield_ratio * old_multiplier
 			new_stock = before + (new_ceiling - old_ceiling)
 		else:
-			var old_multiplier: float = rules.seasonal_availability_multiplier[previous_season]
-			var new_multiplier: float = rules.seasonal_availability_multiplier[new_season]
-			new_stock = before * (new_multiplier / old_multiplier) if old_multiplier > 0.0 else 0.0
+			new_stock = before * (new_multiplier / old_multiplier)
 
 	state.set_secondary_resource_stock(rules.secondary_resource_name, new_stock)
 

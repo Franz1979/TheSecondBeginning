@@ -15,7 +15,7 @@ required_materials = {
 "wood": 0
 }
 required_space = 1
-visibility_radius = 2
+visibility_radius = 3
 rest_multiplier = 1.4
 max_residents = 5
 residency_assignment_tier = 2

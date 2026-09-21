@@ -46,6 +46,11 @@ var movement_version: int = 0
 # cella). Un refresh da movimento (nessuno di questi eventi) trova il flag false e riusa
 # cached_vegetation_positions senza richiamare generate_positions.
 var needs_full_vegetation_recompute: bool = true
+# Valore di FogOfWarRenderer.visible_set_version letto dall'ULTIMO _refresh_resource_visuals di questa cella
+# (2026-09-20): il refresh da movimento in GameScene._process parte solo se la versione corrente e' diversa,
+# cioe' se dall'ultimo refresh e' comparsa almeno una cella visibile nuova (o e' cambiato il giorno). -1 =
+# mai rinfrescata: il primo confronto differisce sempre.
+var last_refresh_visible_version: int = -1
 var cached_vegetation_positions: Dictionary = {}
 
 # Cache del ratio disponibilità "fruit stock" per lotto (2026-09-17, richiesta utente —

@@ -5,6 +5,10 @@
 [node name="MiniMapPanel" type="VBoxContainer"]
 script = ExtResource("1_minimap")
 
+[node name="ToggleButton" type="Button" parent="."]
+layout_mode = 2
+flat = true
+
 [node name="MapArea" type="Control" parent="."]
 layout_mode = 2
 custom_minimum_size = Vector2(150, 150)

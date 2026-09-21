@@ -447,7 +447,33 @@ var _debug_draw_primitive_count: int = 0
 
 func setup(_world: World) -> void:
 	world = _world
+	_terrain_uniform = _is_world_uniform(_world)
 	queue_redraw()
+
+
+# Terreno uniforme (2026-09-20, richiesta utente — profilo del frame del click: il ciclo sulle 10.000
+# celle di _draw costava ~340 ms a ogni ridisegno): il micro-mondo di una macrocella viva è generato da
+# World.generate_uniform_terrain (GameScene._activate_live_cell, MacroCellScene), quindi le 10.000
+# microcelle hanno lo stesso terreno/acqua/costa/bioma e quindi lo STESSO colore. Verificato UNA volta
+# in setup(), non a ogni _draw: vero => _draw usa _draw_uniform_terrain (un rettangolo + un
+# draw_multiline_colors) invece del ciclo per-cella; falso (es. il ripiego generate_empty_world() quando la
+# macrocella non esiste) => si tiene il ciclo per-cella di sempre. I campi confrontati sono TUTTI e SOLI
+# quelli letti da TerrainColors.get_cell_color/get_land_color (water_type, terrain_base, coast_type, biome).
+# `world` non viene modificato dopo setup() (nessun editor sul micro-mondo): se un giorno lo fosse, va
+# richiamata setup() per rivalutare il flag.
+var _terrain_uniform: bool = false
+
+static func _is_world_uniform(w: World) -> bool:
+	if w == null or w.cells.is_empty():
+		return false
+	var first: MacroCellData = w.cells[0]
+	for cell in w.cells:
+		if cell.terrain_base != first.terrain_base \
+				or cell.water_type != first.water_type \
+				or cell.coast_type != first.coast_type \
+				or cell.biome != first.biome:
+			return false
+	return true
 
 
 func set_neighbors(neighbors: Dictionary, states: Dictionary = {}) -> void:
@@ -972,16 +998,19 @@ func _draw() -> void:
 
 	_debug_draw_primitive_count = 0
 
-	for cell in world.cells:
-		var color: Color = TerrainColors.get_land_color(cell) if is_river else TerrainColors.get_cell_color(cell)
-		var rect := Rect2(
-			cell.x * CELL_SIZE,
-			cell.y * CELL_SIZE,
-			CELL_SIZE,
-			CELL_SIZE
-		)
-		draw_rect(rect, color)
-		draw_rect(rect, TerrainColors.GRID, false, 1.0)
+	if _terrain_uniform:
+		_draw_uniform_terrain()
+	else:
+		for cell in world.cells:
+			var color: Color = TerrainColors.get_land_color(cell) if is_river else TerrainColors.get_cell_color(cell)
+			var rect := Rect2(
+				cell.x * CELL_SIZE,
+				cell.y * CELL_SIZE,
+				CELL_SIZE,
+				CELL_SIZE
+			)
+			draw_rect(rect, color)
+			draw_rect(rect, TerrainColors.GRID, false, 1.0)
 
 	var grid_size: int = World.WIDTH * CELL_SIZE
 	if is_river:
@@ -1004,6 +1033,48 @@ func _draw() -> void:
 	_draw_boundary(grid_size)
 
 	#print("[DEBUG RENDER] primitive stone+grass+shrub+tree+bacche in questo _draw(): ", _debug_draw_primitive_count)
+
+
+# Terreno uniforme (vedi _terrain_uniform/_is_world_uniform sopra): UN rettangolo con il colore comune a
+# tutta la griglia (get_land_color se c'è un fiume, come il ciclo per-cella) + UN draw_multiline_colors con
+# le linee della griglia. Il ciclo per-cella disegnava il contorno da 1 px di ogni cella con alpha
+# TerrainColors.GRID.a: ogni bordo interno è condiviso da due celle, quindi veniva disegnato due volte
+# (alpha composta 1 - (1 - a)^2 = ~0,28 con a = 0,15), mentre il bordo esterno una volta sola (alpha a).
+# Le linee interne usano quindi l'alpha composta, quelle esterne l'alpha singola: stesso aspetto medio con
+# 404 punti in un solo comando invece di 20.000 comandi.
+# Punti e colori delle linee sono costanti (dipendono solo da CELL_SIZE e dal numero di celle), costruiti
+# una volta sola e condivisi da tutte le istanze.
+static var _uniform_grid_points: PackedVector2Array = PackedVector2Array()
+static var _uniform_grid_colors: PackedColorArray = PackedColorArray()
+
+static func _ensure_uniform_grid_lines() -> void:
+	if not _uniform_grid_points.is_empty():
+		return
+	var width_px: float = float(World.WIDTH * CELL_SIZE)
+	var height_px: float = float(World.HEIGHT * CELL_SIZE)
+	var outer_color: Color = TerrainColors.GRID
+	var inner_color: Color = Color(
+		TerrainColors.GRID.r, TerrainColors.GRID.g, TerrainColors.GRID.b,
+		1.0 - pow(1.0 - TerrainColors.GRID.a, 2.0)
+	)
+	for column in range(World.WIDTH + 1):
+		var x: float = float(column * CELL_SIZE)
+		_uniform_grid_points.append(Vector2(x, 0.0))
+		_uniform_grid_points.append(Vector2(x, height_px))
+		_uniform_grid_colors.append(outer_color if column == 0 or column == World.WIDTH else inner_color)
+	for row in range(World.HEIGHT + 1):
+		var y: float = float(row * CELL_SIZE)
+		_uniform_grid_points.append(Vector2(0.0, y))
+		_uniform_grid_points.append(Vector2(width_px, y))
+		_uniform_grid_colors.append(outer_color if row == 0 or row == World.HEIGHT else inner_color)
+
+
+func _draw_uniform_terrain() -> void:
+	var first_cell: MacroCellData = world.cells[0]
+	var color: Color = TerrainColors.get_land_color(first_cell) if is_river else TerrainColors.get_cell_color(first_cell)
+	draw_rect(Rect2(0.0, 0.0, float(World.WIDTH * CELL_SIZE), float(World.HEIGHT * CELL_SIZE)), color)
+	_ensure_uniform_grid_lines()
+	draw_multiline_colors(_uniform_grid_points, _uniform_grid_colors, 1.0)
 
 
 # Stessa geometria di BuildingGhost._draw() (recinto a linea continua + capanna tonda con porta a V,
@@ -1571,7 +1642,7 @@ func _draw_deposit_storage_berry_leaf(top_left: Vector2, side: float) -> void:
 		var t: float = float(i) / float(DEPOSIT_STORAGE_BERRY_CURVE_SEGMENTS)
 		var one_minus_t: float = 1.0 - t
 		points.append(base * (one_minus_t * one_minus_t) + ctrl_top * (2.0 * one_minus_t * t) + tip * (t * t))
-	for i in range(1, DEPOSIT_STORAGE_BERRY_CURVE_SEGMENTS + 1):
+	for i in range(1, DEPOSIT_STORAGE_BERRY_CURVE_SEGMENTS):
 		var t: float = float(i) / float(DEPOSIT_STORAGE_BERRY_CURVE_SEGMENTS)
 		var one_minus_t: float = 1.0 - t
 		points.append(tip * (one_minus_t * one_minus_t) + ctrl_bottom * (2.0 * one_minus_t * t) + base * (t * t))
@@ -1674,7 +1745,7 @@ func _draw_deposit_storage_fruit_leaf(stem_tip: Vector2, radius: float) -> void:
 		var t: float = float(i) / float(DEPOSIT_STORAGE_FRUIT_CURVE_SEGMENTS)
 		var one_minus_t: float = 1.0 - t
 		points.append(base * (one_minus_t * one_minus_t) + ctrl_top * (2.0 * one_minus_t * t) + tip * (t * t))
-	for i in range(1, DEPOSIT_STORAGE_FRUIT_CURVE_SEGMENTS + 1):
+	for i in range(1, DEPOSIT_STORAGE_FRUIT_CURVE_SEGMENTS):
 		var t: float = float(i) / float(DEPOSIT_STORAGE_FRUIT_CURVE_SEGMENTS)
 		var one_minus_t: float = 1.0 - t
 		points.append(tip * (one_minus_t * one_minus_t) + ctrl_bottom * (2.0 * one_minus_t * t) + base * (t * t))

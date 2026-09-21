@@ -6,6 +6,13 @@ close_and_save,Salva e chiudi
 options,Opzioni
 options_show_notification_popups,Mostra notifiche popup
 options_language,Lingua
+options_pickup_default,Raccolta: preselezione
+options_pickup_default_group_category,Categoria
+options_pickup_default_group_resource,Risorsa
+minimap_show_tooltip,Mostra la minimappa
+minimap_hide_tooltip,Nascondi la minimappa
+options_repeat_default,Raccolta e trasporto: ripeti fino a {count} volte
+task_repeat_checkbox,Ripeti fino a {count} volte
 language_none,Predefinita (sistema)
 language_italian,Italiano
 language_english,Inglese
@@ -143,6 +150,13 @@ transport_dialog_confirm,Conferma
 transport_dialog_cancel,Annulla
 pickup_choice_dialog_title,Scegli risorsa da raccogliere
 pickup_choice_dialog_message,Questa posizione contiene più risorse raccoglibili:
+pickup_choice_all,Tutto
+pickup_choice_category_food,Cibo
+pickup_choice_category_raw_material,Materiali
+pickup_choice_category_medicinal,Medicinali
+pickup_choice_all_food,Tutto il cibo
+pickup_choice_all_raw_material,Tutti i materiali
+pickup_choice_all_medicinal,Tutti i medicinali
 carried_resource_tooltip_pebble,Sassi
 carried_resource_tooltip_stick,Rametti
 carried_resource_tooltip_plant_fiber,Fibra vegetale

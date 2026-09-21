@@ -112,6 +112,10 @@ func _ready() -> void:
 	# 2026-09-01: poche tab qui contro le 6 di WorldInfoPanel, c'è margine per etichette/icone un
 	# po' più leggibili senza rischiare le freccette di scroll di TabBar).
 	add_theme_font_size_override("font_size", 15)
+	# Larghezza minima = quella della tab PIU' LARGA, non della sola tab corrente (2026-09-20, richiesta utente: la
+	# sidebar cambiava larghezza passando da una tab all'altra). set() dinamico: se la proprieta' non esistesse in
+	# questa versione di Godot resta un no-op invece di rompere lo script.
+	set("use_hidden_tabs_for_min_size", true)
 	add_theme_constant_override("side_margin", 0)
 
 	set_tab_title(TAB_POPULATION, "🧍")

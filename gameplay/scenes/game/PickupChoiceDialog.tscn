@@ -1,11 +1,11 @@
 [gd_scene format=3]
 
-[ext_resource type="Script" uid="uid://3lj6abjglis8" path="res://gameplay/scenes/game/OptionChoiceDialog.gd" id="1_transport"]
+[ext_resource type="Script" path="res://gameplay/scenes/game/PickupChoiceDialog.gd" id="1_pickup_choice"]
 
-[node name="TransportSourceDialog" type="Window"]
+[node name="PickupChoiceDialog" type="Window"]
 visible = false
-size = Vector2i(280, 200)
-script = ExtResource("1_transport")
+size = Vector2i(320, 300)
+script = ExtResource("1_pickup_choice")
 
 [node name="MarginContainer" type="MarginContainer" parent="."]
 anchors_preset = 15
@@ -23,8 +23,14 @@ layout_mode = 2
 layout_mode = 2
 autowrap_mode = 3
 
-[node name="ResourceListContainer" type="VBoxContainer" parent="MarginContainer/VBoxContainer"]
+[node name="ChoiceScroll" type="ScrollContainer" parent="MarginContainer/VBoxContainer"]
 layout_mode = 2
+size_flags_vertical = 3
+horizontal_scroll_mode = 0
+
+[node name="ChoiceListContainer" type="VBoxContainer" parent="MarginContainer/VBoxContainer/ChoiceScroll"]
+layout_mode = 2
+size_flags_horizontal = 3
 
 [node name="RepeatCheckBox" type="CheckBox" parent="MarginContainer/VBoxContainer"]
 layout_mode = 2

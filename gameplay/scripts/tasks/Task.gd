@@ -334,13 +334,13 @@ func print_cost_summary(individual: Variant) -> void:
 		var step_name: String = steps[i].get_script().get_global_name()
 		# happiness aggiunta accanto a stamina sulla STESSA riga (2026-09-13, richiesta utente) —
 		# stesso formato "%.1f" già in uso per stamina/giorni, nessun nuovo stile.
-		print("  - %s: %.1f stamina, %.1f happiness (%.1f giorni)" % [
+		print("  - %s: %.1f stamina, %.1f happiness (%.4f giorni)" % [
 			step_name, step_stamina_cost[i], step_happiness_cost[i], step_days_elapsed[i]
 		])
 		total_stamina += step_stamina_cost[i]
 		total_happiness += step_happiness_cost[i]
 		total_days += step_days_elapsed[i]
-	print("  TOTALE: %.1f stamina, %.1f happiness, %.1f giorni" % [total_stamina, total_happiness, total_days])
+	print("  TOTALE: %.1f stamina, %.1f happiness, %.4f giorni" % [total_stamina, total_happiness, total_days])
 
 
 # Testo per l'info panel individuo — "che Task è" (RIVISTO 2026-09-16, richiesta utente: mostrava
@@ -372,7 +372,10 @@ func get_activity_description() -> String:
 		"task_haul_resource_name":
 			for step in steps:
 				if step is PickUpAction:
-					resource_name = (step as PickUpAction).resource_name
+					# Solo con criterio per NOME la risorsa e' una sola (zaino multi-risorsa, 2026-09-20): con
+					# categoria/tutto non ce n'e' una da mostrare, resta il solo nome della Task.
+					if (step as PickUpAction).criterion_kind == PickUpAction.CriterionKind.NAME:
+						resource_name = (step as PickUpAction).resource_name
 					break
 		"task_transport_name":
 			for step in steps:

@@ -2,9 +2,15 @@ class_name HumanVitalsInteractionService
 extends RefCounted
 
 # Interazione GIORNALIERA tra i parametri vitali, per un SINGOLO individuo (2026-09-13, richiesta
-# utente; estesa 2026-09-19) - quattro regole applicate in cascata nello stesso passaggio, in
-# quest'ordine (ciascuna legge i valori GIA' aggiornati dalle precedenti, cosi' un solo passaggio
-# coerente per individuo):
+# utente; estesa 2026-09-19 e 2026-09-20) - cinque regole applicate in cascata nello stesso
+# passaggio, in quest'ordine (ciascuna legge i valori GIA' aggiornati dalle precedenti, cosi' un solo
+# passaggio coerente per individuo):
+# 0. casa -> health e happiness (2026-09-20, richiesta utente): house_id != -1 ? +HOME_HEALTH_DELTA /
+#    +HOME_HAPPINESS_DELTA : -HOMELESS_HEALTH_PENALTY / -HOMELESS_HAPPINESS_PENALTY (+10/+5 con casa,
+#    -10/-5 senza) su current_health/current_happiness. Applicata PER PRIMA, cosi' le regole 1-4
+#    (soglie su health/happiness) leggono i valori gia' toccati dalla casa. Il service non ha `world`:
+#    "ha casa" = house_id != -1, senza verificare che il Building esista ancora (la demolizione, vedi
+#    GameScene._demolish_building, riporta gia' house_id a -1 per i residenti).
 # 1. riserva corporea -> health: body_calories < body_calories_capacity (riserva non al massimo) ?
 #    -100.0 : +50.0 su current_health.
 # 2. stamina -> happiness: current_stamina >= max_stamina / 2.0 ? +100.0 : -100.0 su current_happiness.
@@ -29,10 +35,23 @@ extends RefCounted
 # rifornimento la somma in virgola mobile puo' fermarsi un soffio sotto il massimo.
 const BODY_RESERVE_FULL_EPSILON: float = 0.001
 
+const HOME_HEALTH_DELTA: float = 10.0
+const HOME_HAPPINESS_DELTA: float = 5.0
+const HOMELESS_HEALTH_PENALTY: float = 10.0
+const HOMELESS_HAPPINESS_PENALTY: float = 5.0
+
 static func apply_daily_interaction(individual: HumanIndividual) -> void:
 	var health_before := individual.current_health
 	var happiness_before := individual.current_happiness
 	var loyalty_before := individual.current_loyalty
+
+	var has_home: bool = individual.house_id != -1
+	individual.current_health = _add_clamped(
+		individual.current_health, HOME_HEALTH_DELTA if has_home else -HOMELESS_HEALTH_PENALTY, individual.max_health
+	)
+	individual.current_happiness = _add_clamped(
+		individual.current_happiness, HOME_HAPPINESS_DELTA if has_home else -HOMELESS_HAPPINESS_PENALTY, individual.max_happiness
+	)
 
 	var body_reserve_full: bool = individual.body_calories >= individual.body_calories_capacity - BODY_RESERVE_FULL_EPSILON
 	individual.current_health = _add_clamped(individual.current_health, 50.0 if body_reserve_full else -100.0, individual.max_health)
@@ -54,8 +73,8 @@ static func apply_daily_interaction(individual: HumanIndividual) -> void:
 
 	if not DebugLogging.ENABLED or not DebugLogging.SHOW_VITALS_INTERACTION_LOGS:
 		return
-	print("[VITALS INTERACTION] #%d %s: riserva_corpo=%.1f/%.1f | stamina=%.1f/soglia=%.1f | health %.1f -> %.1f (soglia=%.1f) | happiness %.1f -> %.1f | loyalty %.1f -> %.1f" % [
-		individual.id, individual.name, individual.body_calories, individual.body_calories_capacity,
+	print("[VITALS INTERACTION] #%d %s: casa=%s | riserva_corpo=%.1f/%.1f | stamina=%.1f/soglia=%.1f | health %.1f -> %.1f (soglia=%.1f) | happiness %.1f -> %.1f | loyalty %.1f -> %.1f" % [
+		individual.id, individual.name, str(has_home), individual.body_calories, individual.body_calories_capacity,
 		individual.current_stamina, stamina_threshold,
 		health_before, individual.current_health, health_threshold,
 		happiness_before, individual.current_happiness, loyalty_before, individual.current_loyalty

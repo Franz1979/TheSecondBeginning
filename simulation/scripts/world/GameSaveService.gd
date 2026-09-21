@@ -557,19 +557,17 @@ func save_game_to_json(
 				"skill_gathering": individual.skill_gathering,
 				"skill_cognition": individual.skill_cognition,
 				"skill_hunting": individual.skill_hunting,
-				# Capacità di trasporto (2026-09-08, richiesta utente) — carried_resource_name/
-				# carried_quantity sono l'unico stato "posseduto" da un individuo che sparirebbe
-				# silenziosamente al reload senza persistenza (stesso principio di dependent_child_id
-				# sopra: un possesso, non un dato ricalcolabile al volo). max_carry_capacity
-				# DELIBERATAMENTE non persistito: ricalcolato ogni giorno da
+				# Capacità di trasporto (2026-09-08, richiesta utente) — lo zaino è l'unico stato "posseduto"
+				# da un individuo che sparirebbe silenziosamente al reload senza persistenza (stesso
+				# principio di dependent_child_id sopra: un possesso, non un dato ricalcolabile al volo).
+				# max_carry_capacity DELIBERATAMENTE non persistito: ricalcolato ogni giorno da
 				# HumanCarryCapacityIndividualService, stesso trattamento che max_stamina aveva PRIMA
 				# di questo passo.
-				"carried_resource_name": individual.carried_resource_name,
-				"carried_quantity": individual.carried_quantity,
-				# carried_decay_fraction (2026-09-09, richiesta utente, Step 3 decadimento) — stesso
-				# trattamento/stesso motivo di carried_quantity sopra: un possesso che sparirebbe
-				# silenziosamente al reload senza persistenza.
-				"carried_decay_fraction": individual.carried_decay_fraction,
+				# Zaino multi-risorsa (2026-09-20, richiesta utente): un solo dizionario, nome risorsa ->
+				# {"quantity", "decay_fraction"} (quest'ultima, 2026-09-09 Step 3 decadimento, ora per
+				# varietà) — sostituisce i tre campi mono-risorsa carried_resource_name/carried_quantity/
+				# carried_decay_fraction, che GameLoadService continua a leggere per i salvataggi vecchi.
+				"carried_resources": individual.carried_resources.duplicate(true),
 				# Task/Action in corso (2026-09-08, richiesta utente — "salva anche lo stato della
 				# sua action") — null se l'individuo non ha una Task attiva (Rest implicito, vedi
 				# HumanIndividualActionService.apply_action), altrimenti l'intera sequenza di step

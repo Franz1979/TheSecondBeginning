@@ -64,8 +64,17 @@ signal thought_deposited()
 # di Building.stored_resources presa al momento dell'ultimo refresh, non dall'oggetto live).
 signal resource_deposited(building: Building)
 
+# Consegna effettiva della TRANSPORT alla propria destinazione (2026-09-20, ripetizione automatica): emesso da
+# on_complete() SOLO per l'Unload la cui destinazione e' quella indicata da context["transport_destination_id"]
+# (chiave non consumata dalla factory, quindi ancora in task.context; l'Unload della destinazione e' quello
+# costruito da transport.tres, mai i Walk+Unload aggiunti a runtime per i residui, che puntano ad altri
+# magazzini: la destinazione e' in excluded_building_ids). `delivered` = unita' della risorsa
+# context["transport_delivery_resource"] DAVVERO entrate nella destinazione (0 se non e' entrato niente);
+# `context` e' il task.context vivo, cosi' chi ascolta legge contatore e obiettivo senza un secondo canale.
+signal transport_delivered(individual: Variant, context: Dictionary, delivered: int)
+
 # Discriminatore ESPLICITO di ramo (2026-09-10, vedi nota in testa al file) — RESOURCE = ramo
-# FISICO (deposita individual.carried_resource_name/carried_quantity in target_building via
+# FISICO (deposita TUTTE le varietà di individual.carried_resources che l'edificio accetta in target_building via
 # BuildingStorageService), THOUGHT = ramo PENSIERO (IdeaProgressService.add_thoughts). Sostituisce
 # la deduzione implicita da `target_building != null` usata prima di questo passo — activate()/
 # on_complete() sotto controllano SEMPRE questo campo, mai più la nullità di target_building.
@@ -80,8 +89,8 @@ var deposit_kind: DepositKind = DepositKind.THOUGHT
 
 # Bersaglio opzionale, indipendente da deposit_kind (2026-09-10, DEVIAZIONE dal comportamento
 # pre-refactor: PRIMA la nullità di questo campo era essa stessa il discriminatore di ramo, vedi
-# deposit_kind sopra) — oggi usato attivamente SOLO dal ramo FISICO (deposita individual.carried_
-# resource_name/carried_quantity in questo Building via BuildingStorageService, vedi on_complete
+# deposit_kind sopra) — oggi usato attivamente SOLO dal ramo FISICO (deposita individual.
+# carried_resources in questo Building via BuildingStorageService, vedi on_complete
 # sotto); un ramo PENSIERO con target_building valorizzato è ora strutturalmente possibile (es. un
 # futuro Building trovato con predicate "accepts_thoughts") ma questa classe non lo consuma ancora
 # per quel ramo — arriverà con un handler successivo, fuori scope qui. Iniettato dal costruttore,
@@ -151,8 +160,8 @@ func _init(p_target_building: Building = null, p_deposit_kind: DepositKind = Dep
 # DEPOSITO PARZIALE (2026-09-14, richiesta utente — bugfix "porto più/diverso materiale di quanto
 # serve, oggi va tutto perso invece di depositare quel che entra"; RICALIBRATO rispetto alla vecchia
 # logica "still_fits" — vedi cronologia sotto) — costo/durata risolti QUI su quanto verrà DAVVERO
-# depositato in QUESTO passaggio (min(carried_quantity, max_depositable), MAI più l'intera
-# carried_quantity a prescindere): se il posto residuo è meno di quanto trasportato, l'individuo
+# depositato in QUESTO passaggio (min(quantità della varietà in spalla, max_depositable), per ogni varietà accettata, MAI più l'intera
+# quantità in spalla a prescindere): se il posto residuo è meno di quanto trasportato, l'individuo
 # scarica solo quella parte (tempo/stamina proporzionali a quella sola quantità, coerente col
 # principio "il costo riflette il lavoro davvero svolto") — il deposito VERO E PROPRIO (store(),
 # decremento zaino, eventuale re-routing del residuo) resta in on_complete() sotto, che rilegge
@@ -161,7 +170,7 @@ func _init(p_target_building: Building = null, p_deposit_kind: DepositKind = Dep
 # trascorsi in mezzo).
 #
 # CRONOLOGIA (perché non c'è più un ramo "still_fits") — PRIMA (2026-09-09/13) un controllo
-# `max_depositable >= carried_quantity` decideva TUTTO O NIENTE: se l'intero carico non entrava,
+# `max_depositable >= quantità in spalla` decideva TUTTO O NIENTE: se l'intero carico non entrava,
 # zero deposito qui, l'INTERA quantità andava in re-routing (context["pending_warehouse_search"],
 # vedi sotto) — comportamento CONFERMATO SBAGLIATO con l'utente: portare 4 stick a un cantiere che
 # ne aspetta ancora 2 faceva perdere il viaggio per intero (0 depositati), invece dei 2 che
@@ -180,39 +189,48 @@ func activate(individual: Variant, context: Dictionary) -> void:
 	_duration = 0.0
 	_total_stamina_cost = 0.0
 	_elapsed = 0.0
-	if deposit_kind == DepositKind.RESOURCE and target_building != null and individual.carried_quantity > 0:
-		var max_depositable := BuildingStorageService.get_max_depositable(target_building, individual.carried_resource_name)
-		var quantity_to_deposit_now: int = min(max_depositable, individual.carried_quantity)
-		if quantity_to_deposit_now > 0:
-			# Costo/durata SOLO su quantity_to_deposit_now (2026-09-14) — non più sull'intera
-			# carried_quantity: stessa formula di PickUpAction.activate, durata proporzionale allo
-			# spazio occupato rispetto alla capacità di carico TOTALE dell'individuo, costo
-			# proporzionale allo spazio, ma calcolati solo su ciò che entrerà davvero questo giro.
-			var resource_rules := CaloricCalculator.get_caloric_source_rules(individual.carried_resource_name)
+	if deposit_kind == DepositKind.RESOURCE and target_building != null and not individual.carried_resources.is_empty():
+		# Zaino multi-risorsa (2026-09-20, richiesta utente): deposita TUTTO quello che l'edificio accetta.
+		# Costo/durata = somma, per ogni varietà accettata, di min(get_max_depositable, quantità in spalla) —
+		# STESSA formula di PickUpAction.activate applicata a ciò che entrerà davvero questo giro (2026-09-14:
+		# solo quantity_to_deposit_now, non l'intero carico). Stima: le varietà si contendono gli stessi slot,
+		# quindi on_complete (che le deposita in sequenza) può depositare meno di quanto stimato qui — mai più.
+		var space_to_deposit: float = 0.0
+		var planned_units: Dictionary = {}
+		for resource_name in individual.carried_resources.keys():
+			var carried_units: int = individual.get_carried_quantity(String(resource_name))
+			if carried_units <= 0 or not BuildingStorageService.can_accept(target_building, String(resource_name)):
+				continue
+			var units_now: int = min(BuildingStorageService.get_max_depositable(target_building, String(resource_name)), carried_units)
+			if units_now <= 0:
+				continue
+			var resource_rules := CaloricCalculator.get_caloric_source_rules(String(resource_name))
 			var space_per_unit: float = resource_rules.space_per_unit if resource_rules != null else 0.0
-			var space_to_deposit: float = float(quantity_to_deposit_now) * space_per_unit
+			space_to_deposit += float(units_now) * space_per_unit
+			planned_units[resource_name] = units_now
+		if not planned_units.is_empty():
 			if space_to_deposit > 0.0 and individual.max_carry_capacity > 0.0:
 				_duration = space_to_deposit / individual.max_carry_capacity
 				_total_stamina_cost = STAMINA_COST_PER_SPACE_UNIT * space_to_deposit
 			if DebugLogging.ENABLED and DebugLogging.SHOW_TRANSPORT_BUILD_LOGS:
-				print("[UNLOAD] activate: deposito previsto di %d/%d (residuo restante gestito da on_complete) — duration=%.3fgg, total_stamina_cost=%.1f" % [
-					quantity_to_deposit_now, individual.carried_quantity, _duration, _total_stamina_cost
+				print("[UNLOAD] activate: deposito previsto %s su zaino %s (residuo restante gestito da on_complete) — duration=%.3fgg, total_stamina_cost=%.1f" % [
+					str(planned_units), str(individual.carried_resources), _duration, _total_stamina_cost
 				])
 		elif DebugLogging.ENABLED and DebugLogging.SHOW_TRANSPORT_BUILD_LOGS:
-			print("[UNLOAD] activate: target_building id=%d non ha ALCUN posto per '%s' (max_depositable=0) — deposito istantaneo nullo, on_complete gestirà il re-routing dell'intero carico." % [
-				target_building.id, individual.carried_resource_name
+			print("[UNLOAD] activate: target_building id=%d non ha ALCUN posto (o non accetta nulla) per %s — deposito istantaneo nullo, on_complete gestirà il re-routing dell'intero carico." % [
+				target_building.id, str(individual.carried_resources.keys())
 			])
 	# Guardia zaino GIÀ vuoto all'arrivo (2026-09-16, richiesta utente — "Scaricare risorsa" attivata
 	# per errore, poi se lo zaino si svuota per un motivo indipendente [es. un'altra Task/comando che
 	# nel frattempo consuma/scarta il carico] la Task andava in tilt") — RAMO ESPLICITO, PRIMA
-	# implicito: se `individual.carried_quantity <= 0` già al momento di questa activate(), il ramo
-	# sopra (riga 188) non entra affatto (guardia `carried_quantity > 0`), quindi _duration/
+	# implicito: se `carried_resources` vuoto già al momento di questa activate(), il ramo
+	# sopra non entra affatto (guardia `not carried_resources.is_empty()`), quindi _duration/
 	# _total_stamina_cost restano a 0.0 (già azzerati poco sopra) — is_complete() sotto risulta VERO
 	# da subito (0.0 >= 0.0), esattamente come "task_activity_idle": questo step (e quindi l'intera
 	# Task "Scaricare risorsa", che è [Walk, Unload]) si DICHIARA COMPLETO immediatamente, zero
 	# costo, nessun deposito tentato — mai un errore/blocco. Log dedicato per diagnosticare il caso
 	# (prima silenzioso, nessun ramo lo intercettava esplicitamente).
-	elif deposit_kind == DepositKind.RESOURCE and target_building != null and individual.carried_quantity <= 0:
+	elif deposit_kind == DepositKind.RESOURCE and target_building != null and individual.carried_resources.is_empty():
 		if DebugLogging.ENABLED and DebugLogging.SHOW_TRANSPORT_BUILD_LOGS:
 			print("[UNLOAD] activate: zaino già vuoto all'arrivo (target_building id=%d) — nulla da scaricare, step dichiarato completo istantaneamente, nessun costo." % target_building.id)
 	# Riverifica ramo PENSIERO (2026-09-12, richiesta utente — bugfix "deposito nel vuoto") — STESSO
@@ -231,15 +249,15 @@ func activate(individual: Variant, context: Dictionary) -> void:
 	if not (DebugLogging.ENABLED and DebugLogging.SHOW_TRANSPORT_BUILD_LOGS):
 		return
 	if deposit_kind != DepositKind.RESOURCE:
-		print("[UNLOAD] activate: deposit_kind=THOUGHT (ramo PENSIERO) | target_building=%s | carried_resource_name='%s' carried_quantity=%d" % [
-			(str(target_building.id) if target_building != null else "null"), individual.carried_resource_name, individual.carried_quantity
+		print("[UNLOAD] activate: deposit_kind=THOUGHT (ramo PENSIERO) | target_building=%s | zaino=%s" % [
+			(str(target_building.id) if target_building != null else "null"), str(individual.carried_resources)
 		])
 		return
 	var accepted_categories: String = "QUALUNQUE (array vuoto)" if target_building.rules != null and target_building.rules.accepted_categories.is_empty() else str(target_building.rules.accepted_categories if target_building.rules != null else "rules=null")
-	print("[UNLOAD] activate: target_building id=%d macro=(%d,%d) micro=(%d,%d) categorie_accettate=%s | individuo carried_resource_name='%s' carried_quantity=%d" % [
+	print("[UNLOAD] activate: target_building id=%d macro=(%d,%d) micro=(%d,%d) categorie_accettate=%s | individuo zaino=%s" % [
 		target_building.id, target_building.macro_x, target_building.macro_y,
 		target_building.micro_x, target_building.micro_y, accepted_categories,
-		individual.carried_resource_name, individual.carried_quantity
+		str(individual.carried_resources)
 	])
 
 
@@ -298,11 +316,11 @@ func get_required_position(individual: Variant, context: Dictionary) -> Variant:
 # non un caso ambiguo da risolvere qui dentro.
 #
 # Ramo FISICO (deposit_kind == RESOURCE, Step 1 BuildingStorageService) — legge lo zaino
-# dell'individuo (carried_resource_name/carried_quantity), tenta di depositarlo per intero in
-# target_building via BuildingStorageService.store (che clampa da sé allo spazio libero/categoria
-# accettata), poi decrementa lo zaino di SOLO quanto è stato effettivamente depositato: se lo
+# dell'individuo (carried_resources, multi-risorsa dal 2026-09-20), tenta di depositare OGNI varietà per
+# intero in target_building via BuildingStorageService.store (che clampa da sé allo spazio libero/
+# categoria accettata), poi decrementa lo zaino di SOLO quanto è stato effettivamente depositato: se lo
 # spazio non basta (o la categoria non è accettata), il resto resta trasportato, MAI perso. Nessun
-# effetto se lo zaino è già vuoto (carried_resource_name == "" o carried_quantity <= 0) — niente da
+# effetto se lo zaino è già vuoto (carried_resources vuoto) — niente da
 # scaricare, coerente col "no-op istantaneo senza effetti" già seguito da PickUpAction.on_complete
 # quando _quantity_to_collect è 0. target_building == null qui è un caso limite difensivo (nessun
 # call site reale lo produce oggi, vedi call site aggiornati) — return anticipato, mai un crash.
@@ -321,52 +339,63 @@ func on_complete(individual: Variant, context: Dictionary) -> void:
 			print("[UNLOAD] on_complete: ramo FISICO (target_building id=%s)" % (str(target_building.id) if target_building != null else "null"))
 		if target_building == null:
 			return
-		if individual.carried_resource_name == "" or individual.carried_quantity <= 0:
+		if individual.carried_resources.is_empty():
 			if DebugLogging.ENABLED and DebugLogging.SHOW_TRANSPORT_BUILD_LOGS:
-				print("[UNLOAD] on_complete: zaino vuoto (carried_resource_name='%s' carried_quantity=%d) — nessun deposito, return anticipato." % [
-					individual.carried_resource_name, individual.carried_quantity
-				])
+				print("[UNLOAD] on_complete: zaino vuoto — nessun deposito, return anticipato.")
 			return
 		if DebugLogging.ENABLED and DebugLogging.SHOW_TRANSPORT_BUILD_LOGS:
 			# can_accept/get_free_space richiamati QUI solo per il log — sola lettura, nessun
 			# effetto collaterale, store() sotto li ricalcola comunque da sé indipendentemente da
-			# queste due righe (nessuna modifica alla logica esistente).
-			print("[UNLOAD] on_complete: can_accept('%s')=%s, free_space=%.1f, carried_quantity PRIMA=%d" % [
-				individual.carried_resource_name,
-				BuildingStorageService.can_accept(target_building, individual.carried_resource_name),
+			# queste righe (nessuna modifica alla logica esistente).
+			var accepted_log: Dictionary = {}
+			for resource_name in individual.carried_resources.keys():
+				accepted_log[resource_name] = BuildingStorageService.can_accept(target_building, String(resource_name))
+			print("[UNLOAD] on_complete: can_accept=%s, free_space=%.1f, zaino PRIMA=%s" % [
+				str(accepted_log),
 				BuildingStorageService.get_free_space(target_building),
-				individual.carried_quantity,
+				str(individual.carried_resources),
 			])
-		var carried_before_deposit: int = individual.carried_quantity
-		var resource_name_before_deposit: String = individual.carried_resource_name
-		# carried_decay_fraction (2026-09-09, richiesta utente — Step 3 decadimento) — passato a
+		# Snapshot dello zaino PRIMA dei depositi: si itera su questa copia mentre lo zaino vero viene
+		# decrementato varietà per varietà (mai mutare un Dictionary mentre lo si itera).
+		var carried_before_deposit: Dictionary = individual.carried_resources.duplicate(true)
+		# decay_fraction della varietà (2026-09-09, richiesta utente — Step 3 decadimento) — passata a
 		# store() così la frazione dello zaino si fonde (media pesata) con quella già presente nel
 		# magazzino per lo stesso resource_name, invece di andare persa/azzerata al deposito.
-		# store() clampa DA SÉ a min(carried_quantity, get_max_depositable(...)) — può quindi
-		# depositare MENO del richiesto (deposito PARZIALE) o 0 (nessun posto/risorsa sbagliata),
-		# MAI un errore: i due rami sotto (deposited>0 / deposited<=0) confluiscono nella STESSA
-		# gestione del residuo (2026-09-14, richiesta utente — vedi cronologia in testa ad activate()).
-		var deposited: int = BuildingStorageService.store(
-			target_building, individual.carried_resource_name, individual.carried_quantity, individual.carried_decay_fraction
-		)
-		if DebugLogging.ENABLED and DebugLogging.SHOW_TRANSPORT_BUILD_LOGS:
-			print("[UNLOAD] on_complete: store() ha depositato %d unità (su %d richieste)" % [deposited, carried_before_deposit])
-		if deposited > 0:
-			# resource_deposited (2026-09-12) — emesso SOLO se deposited>0: chi ascolta
-			# (GameScene._on_resource_deposited) deve rinfrescare la mappa anche se il deposito è
-			# stato solo PARZIALE (deposited < carried_before_deposit, il resto gestito sotto) — la
-			# griglia di stoccaggio del deposit site è comunque cambiata.
+		# store() clampa DA SÉ a min(quantità, get_max_depositable(...)) — può quindi depositare MENO del
+		# richiesto (deposito PARZIALE) o 0 (nessun posto/risorsa non accettata), MAI un errore: chi resta in
+		# spalla confluisce nella STESSA gestione del residuo sotto (2026-09-14, richiesta utente — vedi
+		# cronologia in testa ad activate()). Zaino multi-risorsa (2026-09-20): una store() per varietà, in
+		# sequenza — ognuna vede gli slot già occupati dalle precedenti.
+		var any_deposited: bool = false
+		var deposited_by_resource: Dictionary = {}
+		for resource_name in carried_before_deposit.keys():
+			var carried_entry: Dictionary = carried_before_deposit[resource_name]
+			var deposited: int = BuildingStorageService.store(
+				target_building, String(resource_name), int(carried_entry["quantity"]), float(carried_entry["decay_fraction"])
+			)
+			if DebugLogging.ENABLED and DebugLogging.SHOW_TRANSPORT_BUILD_LOGS:
+				print("[UNLOAD] on_complete: store() ha depositato %d unità di '%s' (su %d richieste)" % [
+					deposited, resource_name, int(carried_entry["quantity"])
+				])
+			deposited_by_resource[String(resource_name)] = deposited
+			if deposited > 0:
+				any_deposited = true
+				individual.remove_carried_resource(String(resource_name), deposited)
+		if any_deposited:
+			# resource_deposited (2026-09-12) — emesso SOLO se qualcosa è stato depositato (una volta per
+			# on_complete, non per varietà): chi ascolta (GameScene._on_resource_deposited) deve rinfrescare la
+			# mappa anche se il deposito è stato solo PARZIALE (il resto gestito sotto) — la griglia di
+			# stoccaggio del deposit site è comunque cambiata.
 			resource_deposited.emit(target_building)
-			individual.carried_quantity -= deposited
+		# Consegna Transport (2026-09-20): valutata QUI, al deposito effettivo, non alla stima di activate().
+		if context.has("transport_destination_id") and int(context["transport_destination_id"]) == target_building.id:
+			var delivery_resource: String = String(context.get("transport_delivery_resource", ""))
+			transport_delivered.emit(individual, context, int(deposited_by_resource.get(delivery_resource, 0)))
 		if DebugLogging.ENABLED and DebugLogging.SHOW_TRANSPORT_BUILD_LOGS:
-			print("[UNLOAD] on_complete: carried_quantity PRIMA=%d -> DOPO=%d" % [carried_before_deposit, individual.carried_quantity])
-		if individual.carried_quantity <= 0:
-			individual.carried_quantity = 0
-			individual.carried_resource_name = ""
-			# carried_decay_fraction azzerata insieme a resource_name/quantity (2026-09-09) — stesso
-			# principio già dichiarato su HumanIndividual.carried_decay_fraction: mai un valore
-			# "orfano" associato a uno zaino vuoto.
-			individual.carried_decay_fraction = 0.0
+			print("[UNLOAD] on_complete: zaino PRIMA=%s -> DOPO=%s" % [str(carried_before_deposit), str(individual.carried_resources)])
+		if individual.carried_resources.is_empty():
+			# Le decay_fraction vivono dentro le entry di carried_resources: con lo zaino vuoto non resta
+			# nessun valore "orfano" (vedi HumanIndividual.carried_resources).
 			# "Cammina via" (2026-09-09, richiesta utente — haul_resource, stesso schema di walk_away
 			# in Daydream: target_building.position + Vector2.from_angle(randf() * TAU) * 5.0) — SOLO
 			# quando lo zaino si è svuotato DEL TUTTO qui (deposito completo, nessun residuo da
@@ -397,9 +426,10 @@ func on_complete(individual: Variant, context: Dictionary) -> void:
 			return
 		# RESIDUO (2026-09-14, richiesta utente — deposito parziale, punto 1 del piano concordato:
 		# "deposito ok seguito da rerouting SOLO del residuo") — copre ENTRAMBI i casi che lasciano
-		# carried_quantity > 0 qui: deposited=0 (nulla è entrato, es. risorsa sbagliata o cantiere già
-		# rifornito — l'INTERO carico è "residuo") e 0<deposited<carried_before_deposit (deposito
-		# parziale, solo l'eccedenza è "residuo"). STESSA forma/STESSO canale generico già usato da
+		# qualcosa nello zaino qui: deposited=0 per una varietà (nulla è entrato, es. risorsa non accettata o
+		# cantiere già rifornito — l'INTERA varietà è "residuo") e 0<deposited<quantità (deposito parziale,
+		# solo l'eccedenza è "residuo"). Zaino multi-risorsa (2026-09-20): UNA ricerca per varietà residua,
+		# tutte nella stessa voce "searches" del canale. STESSA forma/STESSO canale generico già usato da
 		# PickUpAction.on_complete per la ricerca iniziale (context["pending_warehouse_search"],
 		# consumato da HumanIndividualActionService._handle_pending_warehouse_search DOPO
 		# on_complete()) — SPOSTATA QUI da activate() (che PRIMA scriveva questa stessa richiesta
@@ -408,9 +438,9 @@ func on_complete(individual: Variant, context: Dictionary) -> void:
 		# prescindere da quanto sia effettivamente entrato.
 		#
 		# discard_on_failure: true (invariato) — se find_best non trova nemmeno un vero magazzino per
-		# il residuo, individual.discard_carried_resource() lo scarta (vedi
+		# il residuo di una varietà, quella varietà viene scartata (discard_carried_resource_entry, vedi
 		# _handle_pending_warehouse_search) — stesso comportamento di prima per il caso "nessun
-		# candidato", solo applicato ora alla quantità corretta.
+		# candidato", solo applicato ora alla quantità corretta e alla sola varietà che non ha trovato posto.
 		#
 		# target_building.id escluso (2026-09-14) — STESSO principio di prima (un edificio appena
 		# rifiutato/riempito non va riproposto identico): dopo un fix A (WarehouseSelectionService.
@@ -423,15 +453,20 @@ func on_complete(individual: Variant, context: Dictionary) -> void:
 		if not excluded.has(target_building.id):
 			excluded.append(target_building.id)
 		context["warehouse_search_excluded_building_ids"] = excluded
+		var residual_searches: Array = []
+		for resource_name in individual.carried_resources.keys():
+			residual_searches.append({
+				"resource_name": String(resource_name),
+				"quantity": individual.get_carried_quantity(String(resource_name)),
+			})
 		context["pending_warehouse_search"] = {
-			"resource_name": resource_name_before_deposit,
-			"quantity": individual.carried_quantity,
+			"searches": residual_searches,
 			"excluded_building_ids": excluded,
 			"discard_on_failure": true,
 		}
 		if DebugLogging.ENABLED and DebugLogging.SHOW_TRANSPORT_BUILD_LOGS:
-			print("[UNLOAD] on_complete: residuo di %d '%s' dopo deposito parziale/nullo in target_building id=%d — pending_warehouse_search scritto, esclusi finora=%s" % [
-				individual.carried_quantity, resource_name_before_deposit, target_building.id, str(excluded)
+			print("[UNLOAD] on_complete: residuo %s dopo deposito parziale/nullo in target_building id=%d — pending_warehouse_search scritto (una ricerca per varietà), esclusi finora=%s" % [
+				str(individual.carried_resources), target_building.id, str(excluded)
 			])
 		return
 

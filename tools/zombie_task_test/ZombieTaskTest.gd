@@ -383,7 +383,7 @@ func _test_h1_regression_partial_deposit() -> void:
 	var warehouse_stick: int = int(warehouse.stored_resources.get("stick", {}).get("quantity", 0))
 	_check(destination_stick == 1, "h) 1 stick depositato al cantiere originale (deposito parziale) — trovato %d" % destination_stick)
 	_check(warehouse_stick == 3, "h) 3 stick residui re-instradati e depositati nel magazzino — trovato %d" % warehouse_stick)
-	_check(individual.carried_quantity == 0 and individual.carried_resource_name == "", "h) zaino vuoto al termine")
+	_check(individual.carried_resources.is_empty(), "h) zaino vuoto al termine")
 	_check(individual.current_task == null, "h) la transport termina regolarmente, individuo libero")
 	_check(individual.task_queue.is_empty(), "h) nessuna task in coda dopo la conclusione regolare")
 

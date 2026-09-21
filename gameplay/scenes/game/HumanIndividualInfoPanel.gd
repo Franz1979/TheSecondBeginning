@@ -27,22 +27,24 @@ extends VBoxContainer
 # risolti dal chiamante (GameScene, che fa il lookup di SecondaryResourceRules.space_per_unit per
 # calcolare lo spazio occupato — questo pannello non conosce SecondaryResourceRules/
 # CaloricCalculator). La barra si RIEMPIE man mano che si trasporta di più (mostra lo spazio
-# OCCUPATO, carried_quantity × space_per_unit, non quello libero): vuota a zaino vuoto, piena a zaino
-# pieno; tooltip occupato/massimo (invertita il 2026-09-20, richiesta utente — prima mostrava lo
-# spazio libero e un carico leggero la lasciava quasi piena). Il riquadro (CarriedResourceBox, un ColorRect quadrato) è un PLACEHOLDER (richiesta
+# OCCUPATO, somma di quantity × space_per_unit di ogni varietà, non quello libero): vuota a zaino vuoto,
+# piena a zaino pieno; tooltip occupato/massimo (invertita il 2026-09-20, richiesta utente — prima
+# mostrava lo spazio libero e un carico leggero la lasciava quasi piena). Zaino multi-risorsa
+# (2026-09-20): fino a HumanIndividual.MAX_CARRIED_VARIETIES (4) riquadri affiancati SOPRA la barra, uno
+# per varietà, nell'ordine di inserimento di HumanIndividual.carried_resources; gli slot liberi restano
+# grigi. Il riquadro (CarriedResourceBox, un ColorRect quadrato — il primo è in scena, gli altri sono
+# duplicati di lui creati in _ready) è un PLACEHOLDER (richiesta
 # esplicita dell'utente: "le icone delle risorse non esistono ancora") — colorato
 # deterministicamente in base al nome della risorsa trasportata (_placeholder_color_for_resource),
 # con l'iniziale maiuscola del nome al centro e la quantità sovrapposta in basso a destra; vuoto/
-# grigio e senza testo quando carried_resource_name è "".
+# grigio e senza testo quando lo slot non ha una varietà.
 #
-# CarryRow (2026-09-13, richiesta utente — riordino barre: capacità di trasporto in fondo, il
-# riquadro trasportato sulla STESSA riga della barra, i tool in una riga a sé) — CarriedResourceBox
-# e CarryBar vivono ora insieme dentro CarryRow, un HBoxContainer semplice (non un Control
-# posizionato a mano come prima): bastano le size flags standard di Godot qui, CarriedResourceBox a
-# dimensione fissa (custom_minimum_size) e CarryBar con size_flags_horizontal=EXPAND_FILL per
-# occupare lo spazio restante — nessun bisogno dello scaling proporzionale manuale che serviva
-# quando questo riquadro condivideva la riga con i 4 tool (vedi ToolSlot0..3 sotto per quel caso,
-# ancora reale).
+# CarryRow (2026-09-13, richiesta utente — riordino barre: capacità di trasporto in fondo, i tool in
+# una riga a sé; RIORGANIZZATA 2026-09-20 per lo zaino multi-risorsa) — CarryRow è ora un VBoxContainer:
+# la riga CarriedBoxesRow (HBoxContainer con i riquadri, ciascuno a dimensione fissa via
+# custom_minimum_size) SOPRA, poi CarryBar con size_flags_horizontal=EXPAND_FILL. Bastano le size flags
+# standard di Godot, nessun bisogno dello scaling proporzionale manuale che serviva quando un riquadro
+# condivideva la riga con i 4 tool (vedi ToolSlot0..3 sotto per quel caso, ancora reale).
 #
 # ToolSlot0..3 (2026-09-08, richiesta utente) — 4 quadratini FISSI, ORA in una riga TUTTA LORO
 # (tools_row, un Control puro, non un Container — vedi _layout_tools_row per il perché: serve
@@ -147,20 +149,25 @@ var _food_bar_fill_body_reserve: StyleBoxFlat = null
 @onready var skill_cognition_caption: Label = $SkillsBox/SkillsBoxMargin/SkillsBoxContent/SkillsRowMargin/SkillsRow/CognitionColumn/CognitionCaptionWrapper/CognitionCaption
 @onready var skill_hunting_bar: ProgressBar = $SkillsBox/SkillsBoxMargin/SkillsBoxContent/SkillsRowMargin/SkillsRow/HuntingColumn/HuntingBar
 @onready var skill_hunting_caption: Label = $SkillsBox/SkillsBoxMargin/SkillsBoxContent/SkillsRowMargin/SkillsRow/HuntingColumn/HuntingCaptionWrapper/HuntingCaption
-@onready var carried_resource_box: ColorRect = $CarryRowMargin/CarryRow/CarriedResourceBox
-@onready var carried_resource_initial_label: Label = $CarryRowMargin/CarryRow/CarriedResourceBox/InitialLabel
-@onready var carried_resource_quantity_label: Label = $CarryRowMargin/CarryRow/CarriedResourceBox/QuantityLabel
+@onready var carried_boxes_row: HBoxContainer = $CarryRowMargin/CarryRow/CarriedBoxesRow
+# Primo riquadro (slot 0), in scena: fa anche da modello per gli altri, duplicati in _build_carried_slots.
+@onready var carried_resource_box: ColorRect = $CarryRowMargin/CarryRow/CarriedBoxesRow/CarriedResourceBox
 # tools_row (2026-09-13, richiesta utente) — rinominato da carry_and_tools_row: ora ospita SOLO i
 # 4 ToolSlot, il quadratino trasportato è salito sulla riga della barra (vedi CarryRow sopra).
 @onready var tools_row: Control = $ToolsRowMargin/ToolsRow
 
-# Icona DISEGNATA correntemente inserita in carried_resource_box (2026-09-09, richiesta utente) —
+# Slot dei riquadri trasportati (2026-09-20, zaino multi-risorsa) — array paralleli, indice = slot,
+# riempiti da _build_carried_slots in _ready: il riquadro, la sua InitialLabel e la sua QuantityLabel.
+var _carried_boxes: Array[ColorRect] = []
+var _carried_initial_labels: Array[Label] = []
+var _carried_quantity_labels: Array[Label] = []
+# Icona DISEGNATA correntemente inserita nel riquadro di ciascuno slot (2026-09-09, richiesta utente) —
 # null quando la risorsa trasportata non ne ha una (vedi IconRegistry.get_resource_icon_node), nel
-# qual caso si ripiega su carried_resource_initial_label come prima. Tenuta a parte (non un figlio
-# fisso della scena, a differenza di InitialLabel/QuantityLabel sopra) perché QUALE icona serve
+# qual caso si ripiega sulla InitialLabel dello slot come prima. Tenuta a parte (non un figlio
+# fisso della scena, a differenza di InitialLabel/QuantityLabel) perché QUALE icona serve
 # dipende dalla risorsa trasportata, che cambia a runtime — instanziata/rimossa ad ogni refresh in
 # _update_carried_resource_box.
-var _carried_resource_icon_node: Control = null
+var _carried_icon_nodes: Array[Control] = []
 # Slot tool (2026-09-08, richiesta utente) — 4 riquadri FISSI in scena (non generati da
 # HumanRules.tool_slot_count, che oggi potrebbe anche valere un numero diverso da 4 per un
 # eventuale futuro HumanRules non-player: questa UI resta un mockup a conteggio fisso finché non
@@ -190,6 +197,7 @@ func _ready() -> void:
 	# fissa) oltre che una volta qui subito: vedi _layout_tools_row.
 	tools_row.resized.connect(_layout_tools_row)
 	_layout_tools_row()
+	_build_carried_slots()
 	clear()
 
 
@@ -209,8 +217,8 @@ func _ready() -> void:
 # max_carry_capacity/used_carry_space (2026-09-08, richiesta utente; invertito 2026-09-20, da
 # free_carry_capacity a used_carry_space) — stesso principio di max_stamina/current_stamina sopra:
 # già risolti dal chiamante. La barra mostra lo spazio OCCUPATO — vedi commento su carry_bar in
-# testa al file. carried_resource_name/carried_quantity: letti direttamente
-# dall'HumanIndividual passato (stesso identico stato grezzo, nessuna risoluzione necessaria).
+# testa al file. carried_resources: letto direttamente dall'HumanIndividual passato (stesso
+# identico stato grezzo, nessuna risoluzione necessaria).
 #
 # food_space_capacity/food_space_used (saccoccia del cibo, ex hunger)/.../max_loyalty/current_loyalty (2026-09-13, richiesta utente, 5 nuovi
 # parametri vitali) — STESSA firma-stile di max_stamina/current_stamina sopra, già risolti dal
@@ -372,11 +380,14 @@ func show_individual(
 	# stessa vive ora dentro CarryRow insieme a CarriedResourceBox (vedi commento in testa al file),
 	# ma resta un ProgressBar identico a prima: stessa formula/stesso tooltip.
 	carry_label.text = tr("individual_carry_label")
-	carry_bar.max_value = max_carry_capacity
-	carry_bar.value = used_carry_space
+	# Solo in VISUALIZZAZIONE (2026-09-20, richiesta utente): barra e tooltip usano interi arrotondati
+	# (la capacita' deriva dai moltiplicatori di taglia e ha decimali, es. 56.8 -> 57); i valori float
+	# ricevuti dal chiamante (used_carry_space/max_carry_capacity) non vengono toccati.
+	carry_bar.max_value = roundf(max_carry_capacity)
+	carry_bar.value = roundf(used_carry_space)
 	carry_bar.tooltip_text = "%s/%s" % [_format_space(used_carry_space), _format_space(max_carry_capacity)]
 
-	_update_carried_resource_box(individual.carried_resource_name, individual.carried_quantity)
+	_update_carried_resource_boxes(individual.carried_resources)
 	# Ri-layout esplicito dei tool (2026-09-08) — oltre al collegamento a tools_row.resized in
 	# _ready(): coprire anche il caso "la riga non cambia dimensione tra due individui mostrati in
 	# sequenza" (nessun resize emesso, ma il pannello potrebbe comunque non essere mai stato
@@ -446,32 +457,35 @@ const EMPTY_CARRIED_RESOURCE_COLOR := Color(0.3, 0.3, 0.3, 0.4)
 # distinzione visiva legata al livello di fallback usato).
 #
 # Tooltip (2026-09-09, richiesta utente — "con hover su icona esca scritto di che risorsa è") —
-# vive sul CONTENITORE (carried_resource_box), non sull'icona disegnata (che ha mouse_filter =
+# vive sul CONTENITORE (il riquadro dello slot), non sull'icona disegnata (che ha mouse_filter =
 # IGNORE apposta, vedi PebbleIcon/StickIcon._ready): un Control con IGNORE non riceve mai hover,
 # quindi il tooltip andrebbe perso se vivesse lì. "" quando non si trasporta nulla (nessun tooltip
 # su un riquadro vuoto).
-func _update_carried_resource_box(resource_name: String, quantity: int) -> void:
-	if _carried_resource_icon_node != null:
-		_carried_resource_icon_node.queue_free()
-		_carried_resource_icon_node = null
+func _update_carried_resource_box(slot: int, resource_name: String, quantity: int) -> void:
+	var slot_box: ColorRect = _carried_boxes[slot]
+	var slot_initial_label: Label = _carried_initial_labels[slot]
+	var slot_quantity_label: Label = _carried_quantity_labels[slot]
+	if _carried_icon_nodes[slot] != null:
+		_carried_icon_nodes[slot].queue_free()
+		_carried_icon_nodes[slot] = null
 
 	if resource_name == "":
-		carried_resource_box.color = EMPTY_CARRIED_RESOURCE_COLOR
-		carried_resource_box.tooltip_text = ""
-		carried_resource_initial_label.visible = true
-		carried_resource_initial_label.text = ""
-		carried_resource_quantity_label.visible = false
+		slot_box.color = EMPTY_CARRIED_RESOURCE_COLOR
+		slot_box.tooltip_text = ""
+		slot_initial_label.visible = true
+		slot_initial_label.text = ""
+		slot_quantity_label.visible = false
 		return
 
-	carried_resource_box.color = IconRegistry.get_resource_color(resource_name)
-	carried_resource_box.tooltip_text = IconRegistry.get_resource_display_name(resource_name)
+	slot_box.color = IconRegistry.get_resource_color(resource_name)
+	slot_box.tooltip_text = IconRegistry.get_resource_display_name(resource_name)
 
 	var icon_node: Control = IconRegistry.get_resource_icon_node(resource_name)
 	if icon_node != null:
-		carried_resource_initial_label.visible = false
-		carried_resource_initial_label.text = ""
-		_carried_resource_icon_node = icon_node
-		carried_resource_box.add_child(icon_node)
+		slot_initial_label.visible = false
+		slot_initial_label.text = ""
+		_carried_icon_nodes[slot] = icon_node
+		slot_box.add_child(icon_node)
 		# PRESET_FULL_RECT via ancore+offset DIRETTI (stesso bugfix già documentato in
 		# IconButtonRow.configure_slot per PebbleCircleIcon: il preset di default userebbe la
 		# minimum size del figlio, zero per un Control senza testo/figli come queste icone).
@@ -484,12 +498,46 @@ func _update_carried_resource_box(resource_name: String, quantity: int) -> void:
 		icon_node.offset_right = 0.0
 		icon_node.offset_bottom = 0.0
 	else:
-		carried_resource_initial_label.visible = true
+		slot_initial_label.visible = true
 		var icon: String = IconRegistry.get_resource_icon(resource_name)
-		carried_resource_initial_label.text = icon if icon != "" else resource_name.substr(0, 1).to_upper()
+		slot_initial_label.text = icon if icon != "" else resource_name.substr(0, 1).to_upper()
 
-	carried_resource_quantity_label.text = str(quantity)
-	carried_resource_quantity_label.visible = true
+	slot_quantity_label.text = str(quantity)
+	slot_quantity_label.visible = true
+
+
+# Aggiorna TUTTI gli slot dai contenuti dello zaino (2026-09-20, zaino multi-risorsa): le varietà
+# occupano gli slot nell'ordine di inserimento del dizionario, gli slot rimasti liberi tornano al
+# placeholder grigio (nome vuoto).
+func _update_carried_resource_boxes(carried_resources: Dictionary) -> void:
+	var carried_names: Array = carried_resources.keys()
+	for slot in range(_carried_boxes.size()):
+		if slot < carried_names.size():
+			var carried_name := String(carried_names[slot])
+			var carried_entry: Dictionary = carried_resources[carried_name]
+			_update_carried_resource_box(slot, carried_name, int(carried_entry.get("quantity", 0)))
+		else:
+			_update_carried_resource_box(slot, "", 0)
+
+
+# Costruisce gli slot dei riquadri trasportati (una volta, da _ready): il riquadro in scena è lo slot 0,
+# gli altri fino a HumanIndividual.MAX_CARRIED_VARIETIES sono suoi duplicati (con InitialLabel/
+# QuantityLabel figlie), affiancati nella stessa riga. Va chiamata PRIMA che qualunque icona venga
+# inserita nel riquadro modello, altrimenti i duplicati la erediterebbero.
+func _build_carried_slots() -> void:
+	_carried_boxes = [carried_resource_box]
+	while _carried_boxes.size() < HumanIndividual.MAX_CARRIED_VARIETIES:
+		var extra_box: ColorRect = carried_resource_box.duplicate() as ColorRect
+		extra_box.name = "CarriedResourceBox%d" % _carried_boxes.size()
+		carried_boxes_row.add_child(extra_box)
+		_carried_boxes.append(extra_box)
+	_carried_initial_labels = []
+	_carried_quantity_labels = []
+	_carried_icon_nodes = []
+	for box in _carried_boxes:
+		_carried_initial_labels.append(box.get_node("InitialLabel") as Label)
+		_carried_quantity_labels.append(box.get_node("QuantityLabel") as Label)
+		_carried_icon_nodes.append(null)
 
 
 # Posiziona/dimensiona i 4 quadratini tool dentro tools_row (2026-09-08, richiesta utente —
@@ -527,7 +575,7 @@ func _layout_tools_row() -> void:
 		box.size = Vector2(tool_size, tool_size)
 
 
-# Spazio per il tooltip del carico: un decimale solo se serve ("4", "2.5"), mai "4.0" — lo spazio occupato
-# puo' essere frazionario (space_per_unit 0.5), un %d lo troncherebbe.
+# Spazio per il tooltip del carico, arrotondato all'intero piu' vicino (2026-09-20, richiesta utente: "30/57"
+# invece di "30/56.8") — solo testo mostrato, il calcolo interno resta float.
 static func _format_space(value: float) -> String:
-	return ("%.1f" % value).rstrip("0").rstrip(".")
+	return str(int(roundf(value)))

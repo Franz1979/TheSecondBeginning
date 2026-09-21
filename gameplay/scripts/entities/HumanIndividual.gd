@@ -343,29 +343,20 @@ var starvation_days: int = 0
 # caricamento riparte da -1 e viene rivalorizzato al primo ricalcolo (ingresso in scena), senza effetti.
 var stamina_age_band: int = -1
 
-# Nome della risorsa secondaria attualmente trasportata (SecondaryResourceRules.
-# secondary_resource_name) — "" = non sta trasportando nulla. Un individuo trasporta UN SOLO tipo
-# di risorsa alla volta (nessun inventario multi-risorsa) — verificato che nessun sistema
-# Task/Action esistente assuma diversamente: non esiste ancora alcuna Action di raccolta/trasporto
-# (TaskTypes.ActionType ha solo WALK/REST oggi), quindi nessun consumatore da rispettare/rompere.
-# Nessuna logica di raccolta/deposito la valorizza ancora in questo passo — solo il dato.
-var carried_resource_name: String = ""
-# Quantità della risorsa in carried_resource_name — 0 quando carried_resource_name è "" (nessuna
-# logica impone ancora questo invariante, dato che nulla scrive questi due campi insieme oggi, ma
-# è la lettura corretta per un futuro consumatore). Spazio occupato = carried_quantity ×
-# SecondaryResourceRules.space_per_unit della risorsa trasportata — calcolato al volo dal
-# chiamante (mai cachato qui, vedi GameScene._update_individual_panel_content), MAI un terzo campo
-# ridondante su questa classe.
-var carried_quantity: int = 0
-
-# Frazione di decadimento 0.0->1.0 della risorsa in carried_resource_name (2026-09-09, richiesta
-# utente — Step 3 decadimento a lotto unico) — avanzata di 1/day_durability al giorno da
-# ResourceDecayService.advance_individual_decay, azzerata insieme a carried_resource_name/
-# carried_quantity quando lo zaino si svuota (per qualunque via: raggiunge 1.0 e deperisce del
-# tutto, oppure viene scaricato per intero in un edificio, vedi UnloadAction.on_complete) — mai
-# un valore residuo "orfano" associato a uno zaino vuoto. 0.0 di default = mai deperito, coerente
-# col significato "zaino vuoto" quando accoppiato a carried_resource_name == "".
-var carried_decay_fraction: float = 0.0
+# Zaino MULTI-RISORSA (2026-09-20, richiesta utente — sostituisce i tre campi mono-risorsa
+# carried_resource_name/carried_quantity/carried_decay_fraction): STESSO modello di
+# Building.stored_resources, nome risorsa (SecondaryResourceRules.secondary_resource_name) ->
+# {"quantity": int, "decay_fraction": float}. Vuoto = non sta trasportando nulla. Al massimo
+# MAX_CARRIED_VARIETIES varietà diverse contemporaneamente: la quinta non entra (add_carried_resource
+# ritorna 0). Invarianti: nessuna entry con quantity <= 0 (remove_carried_resource/
+# discard_carried_resource_entry la cancellano); decay_fraction 0.0->1.0 PER VARIETÀ, avanzata di
+# 1/day_durability al giorno da ResourceDecayService.advance_individual_decay (a 1.0 quella varietà
+# deperisce del tutto e la entry sparisce), fusa con media pesata sulla quantità quando arriva altra
+# merce della stessa risorsa (vedi add_carried_resource, stessa formula di BuildingStorageService.
+# store). Spazio occupato = somma di quantity × SecondaryResourceRules.space_per_unit: calcolato al
+# volo da get_carried_space() (mai cachato, mai un campo ridondante su questa classe).
+const MAX_CARRIED_VARIETIES: int = 4
+var carried_resources: Dictionary = {}
 
 # Slot tool (2026-09-08, richiesta utente) — SOLO spazio/bonus per ora (vedi HumanRules.
 # tool_slot_count/carry_bonus_per_empty_tool_slot), NESSUN uso funzionale: nessun sistema di equip
@@ -766,12 +757,18 @@ func assign_task(task: Task, age_band: HumanTypes.AgeBand, is_interrupt_transiti
 	if not can_assign_task(task, age_band):
 		return false
 
-	# Zaino occupato + Task NON-bisogno (2026-09-13, richiesta utente — fix "PickUp/Retrieve
-	# fallirebbe silenziosamente a zero se lo zaino è già occupato": verificato in un'indagine
-	# dedicata che una seconda PickUpAction con carried_resource_name già valorizzato colleziona
-	# SEMPRE 0, senza log, la Task nuova si concludeva "vuota" e la Task precedente riprendeva
-	# comunque dalla coda — nessun danno ai dati, ma la Task nuova andava sprecata invece di
-	# semplicemente aspettare il proprio turno) — SOLO per task.interrupt_priority == -1 (comando
+	# Zaino occupato + Task NON-bisogno (2026-09-13, richiesta utente; MOTIVO AGGIORNATO 2026-09-20). Il
+	# blocco serve a NON INTERROMPERE UN TRASPORTO A META': chi ha qualcosa in spalla sta portando un carico
+	# verso un magazzino (haul_resource/transport), e un nuovo comando manuale che diventasse subito
+	# current_task lo sostituirebbe — la Task in corso finirebbe in coda o, se nessuna Task sospesa possiede
+	# quel carico, lo zaino verrebbe scartato (vedi il ramo generico piu' sotto). La nuova Task aspetta invece
+	# il proprio turno in coda. Conseguenza voluta o da rivedere: con lo zaino non vuoto un nuovo comando
+	# di raccolta NON parte, anche se PickUpAction ora saprebbe raccogliere a zaino occupato.
+	# (Motivo STORICO, non piu' valido: il blocco nacque perche' PickUpAction richiedeva lo zaino vuoto e una
+	# seconda PickUpAction con lo zaino occupato collezionava SEMPRE 0, senza log — la Task nuova si
+	# concludeva "vuota" e quella precedente riprendeva dalla coda. Dal passo 2 dello zaino multi-risorsa
+	# PickUpAction raccoglie anche a zaino occupato, nel rispetto dello spazio e del tetto di 4 varieta', quindi
+	# la protezione da pickup a vuoto non e' piu' necessaria.) — SOLO per task.interrupt_priority == -1 (comando
 	# manuale o Task auto-generata come la Transport di Build, MAI per una Task-bisogno: vedi sotto,
 	# quel ramo resta invariato e vince sempre). Quando lo zaino è occupato, la nuova Task NON
 	# diventa current_task: entra direttamente in coda TRAMITE LO STESSO MECCANISMO già usato per
@@ -794,7 +791,7 @@ func assign_task(task: Task, age_band: HumanTypes.AgeBand, is_interrupt_transiti
 	# l'individuo resta esattamente come era; questo ramo invece PRODUCE un effetto reale — la Task
 	# è stata accettata e messa in coda, partirà da sola non appena l'individuo si libera) — un
 	# chiamante UI che usa il valore di ritorno per scegliere l'icona di comando (✋/🔨/📦 vs ❌,
-	# vedi GameScene._debug_assign_transport_task/_try_assign_pickup_command_on_right_click) deve
+	# vedi GameScene._assign_transport_task/_try_assign_pickup_command_on_right_click) deve
 	# vedere "comando accettato" qui, non "comando rifiutato".
 	#
 	# RISTRETTO (2026-09-15, richiesta utente — "cosa c'entra lo zaino con Rest?", bugfix
@@ -814,7 +811,7 @@ func assign_task(task: Task, age_band: HumanTypes.AgeBand, is_interrupt_transiti
 	# entrare in questo ramo (che la lascerebbe proseguire indisturbata mettendo `task` in coda
 	# dietro di lei): cade invece nel ramo generico più sotto (~riga 806+, guardato allo stesso
 	# modo), che la scarta con un log invece di trattarla come ancora in corso.
-	if task.interrupt_priority == -1 and carried_quantity > 0 and current_task != null and not current_task.is_finished() and current_task.is_suspendable:
+	if task.interrupt_priority == -1 and not carried_resources.is_empty() and current_task != null and not current_task.is_finished() and current_task.is_suspendable:
 		# Guardia task.is_suspendable (2026-09-16, richiesta utente — bugfix: "perché Wander si è
 		# accodata? non dovrebbe essere una che non si accoda mai?") — PRIMA di questo passo il ramo
 		# accodava SEMPRE `task` (il comando NUOVO), controllando solo current_task.is_suspendable
@@ -828,14 +825,14 @@ func assign_task(task: Task, age_band: HumanTypes.AgeBand, is_interrupt_transiti
 		# che resta true per lo stesso motivo già documentato altrove in questo file).
 		if not task.is_suspendable:
 			if DebugLogging.ENABLED and DebugLogging.SHOW_TASK_LIFECYCLE_LOGS:
-				print("[TASK DISCARDED - ZAINO OCCUPATO] Individuo #%d %s: '%s' non sospendibile, scartata invece di essere accodata (zaino occupato: %d %s) — Task in corso '%s' prosegue indisturbata." % [
-					id, name, task.task_name, carried_quantity, carried_resource_name, current_task.task_name
+				print("[TASK DISCARDED - ZAINO OCCUPATO] Individuo #%d %s: '%s' non sospendibile, scartata invece di essere accodata (zaino occupato: %s) — Task in corso '%s' prosegue indisturbata." % [
+					id, name, task.task_name, str(carried_resources), current_task.task_name
 				])
 			return false
 		TaskQueueService.push_suspended_task(self, task)
 		if DebugLogging.ENABLED and DebugLogging.SHOW_TASK_LIFECYCLE_LOGS:
-			print("[TASK QUEUED - ZAINO OCCUPATO] Individuo #%d %s: '%s' rimandata in coda (zaino occupato: %d %s) — Task in corso '%s' prosegue indisturbata." % [
-				id, name, task.task_name, carried_quantity, carried_resource_name,
+			print("[TASK QUEUED - ZAINO OCCUPATO] Individuo #%d %s: '%s' rimandata in coda (zaino occupato: %s) — Task in corso '%s' prosegue indisturbata." % [
+				id, name, task.task_name, str(carried_resources),
 				current_task.task_name if current_task != null else "(nessuna)"
 			])
 		return true
@@ -861,7 +858,7 @@ func assign_task(task: Task, age_band: HumanTypes.AgeBand, is_interrupt_transiti
 	# aggiunto: una current_task GIÀ CONCLUSA va trattata come assente/non sospendibile ai fini di
 	# questa ricerca del "proprietario del carico" — stesso principio del guard gemello sopra: non
 	# è mai lei la legittima proprietaria di un carico ancora da consegnare.
-	if task.interrupt_priority == -1 and carried_quantity > 0 and (current_task == null or not current_task.is_suspendable or current_task.is_finished()):
+	if task.interrupt_priority == -1 and not carried_resources.is_empty() and (current_task == null or not current_task.is_suspendable or current_task.is_finished()):
 		var cargo_owner_task := TaskQueueService.pop_suspended_task(self)
 		if cargo_owner_task != null:
 			# Guardia task.is_suspendable (2026-09-16, richiesta utente — STESSO bugfix del ramo sopra):
@@ -872,8 +869,8 @@ func assign_task(task: Task, age_band: HumanTypes.AgeBand, is_interrupt_transiti
 			if task.is_suspendable:
 				TaskQueueService.push_suspended_task(self, task)
 				if DebugLogging.ENABLED and DebugLogging.SHOW_TASK_LIFECYCLE_LOGS:
-					print("[TASK QUEUED - ZAINO OCCUPATO] Individuo #%d %s: '%s' rimandata in coda dietro '%s' (zaino occupato: %d %s) — '%s' ripresa subito, Task in corso '%s' interrotta." % [
-						id, name, task.task_name, cargo_owner_task.task_name, carried_quantity, carried_resource_name,
+					print("[TASK QUEUED - ZAINO OCCUPATO] Individuo #%d %s: '%s' rimandata in coda dietro '%s' (zaino occupato: %s) — '%s' ripresa subito, Task in corso '%s' interrotta." % [
+						id, name, task.task_name, cargo_owner_task.task_name, str(carried_resources),
 						cargo_owner_task.task_name, current_task.task_name if current_task != null else "(nessuna)"
 					])
 			elif DebugLogging.ENABLED and DebugLogging.SHOW_TASK_LIFECYCLE_LOGS:
@@ -1004,7 +1001,7 @@ func stop() -> void:
 	# volontario (tasto H) sia l'arrivo naturale a fine Task con QUALCOSA ancora in spalla
 	# (Scenario B1, "ricerca iniziale fallita" — quel percorso scarta già esplicitamente PRIMA di
 	# arrivare qui, vedi HumanIndividualActionService._handle_pending_warehouse_search, quindi
-	# questa chiamata vi trova già carried_quantity a 0 e non fa nulla: rete di sicurezza, non
+	# questa chiamata vi trova già lo zaino vuoto e non fa nulla: rete di sicurezza, non
 	# duplicazione). Guard interno a discard_carried_resource(), nessun controllo esplicito qui.
 	discard_carried_resource()
 	# Cablaggio Walk/Task (2026-09-06/07, richiesta utente) — la task associata va ripulita ogni
@@ -1018,8 +1015,8 @@ func stop() -> void:
 # Funzione CONDIVISA "scarico a terra" (2026-09-12, richiesta utente, fix unificato per i tre
 # scenari in cui un individuo può restare con merce in spalla senza consegnarla durante
 # haul_resource — interruzione manuale con zaino pieno, ricerca iniziale fallita, re-routing
-# fallito) — UN solo punto invece di tre azzeramenti duplicati di carried_resource_name/
-# carried_quantity/carried_decay_fraction, chiamato da: assign_task()/stop() sopra (Scenario A),
+# fallito) — UN solo punto invece di tre azzeramenti duplicati dello zaino (carried_resources),
+# chiamato da: assign_task()/stop() sopra (Scenario A),
 # HumanIndividualActionService._handle_pending_warehouse_search (Scenario B1 — nessun magazzino
 # trovato affatto dopo PickUp, E Scenario B2 — magazzino pieno all'arrivo, re-routing fallito;
 # quest'ultimo prima duplicava questo stesso azzeramento inline senza log/commento).
@@ -1051,15 +1048,102 @@ func stop() -> void:
 # la risorsa. Quel lotto, essendo all'aperto, dovrebbe avere velocità di decay DOPPIA rispetto allo
 # standard (oggi non esiste un concetto di decay "outdoor" — vedi indagine precedente su
 # ResourceDecayService, che dichiara esplicitamente "materiale abbandonato a terra: FUORI SCOPE").
-# Vedi TaskFactory/HumanIndividual per l'inventario attuale (carried_resource_name/carried_quantity/
-# carried_decay_fraction, gli stessi tre campi azzerati qui sotto).
+# Vedi TaskFactory/HumanIndividual per l'inventario attuale (carried_resources, il dizionario azzerato
+# qui sotto).
+#
+# Zaino multi-risorsa (2026-09-20, richiesta utente): scarta TUTTO lo zaino, tutte le varietà — invariato
+# rispetto al comportamento mono-risorsa. La perdita di UNA sola varietà (ricerca magazzino fallita per
+# una risorsa residua) passa da discard_carried_resource_entry sotto.
 func discard_carried_resource() -> void:
-	if carried_quantity <= 0:
+	if carried_resources.is_empty():
 		return
 	if DebugLogging.ENABLED and DebugLogging.SHOW_TRANSPORT_BUILD_LOGS:
-		print("[HAUL DISCARD] Individuo #%d ha scartato %d %s (nessuna destinazione disponibile)" % [
-			id, carried_quantity, carried_resource_name
+		print("[HAUL DISCARD] Individuo #%d ha scartato %s (nessuna destinazione disponibile)" % [
+			id, str(carried_resources)
 		])
-	carried_resource_name = ""
-	carried_quantity = 0
-	carried_decay_fraction = 0.0
+	carried_resources.clear()
+
+
+# Scarto di UNA sola varietà dello zaino (2026-09-20, zaino multi-risorsa) — usato dalla ricerca
+# magazzino (HumanIndividualActionService._handle_pending_warehouse_search) quando fallisce per una
+# risorsa residua: le altre varietà, che magari hanno già trovato un altro magazzino, restano in
+# spalla. Ritorna la quantità scartata (0 se la varietà non era nello zaino).
+func discard_carried_resource_entry(resource_name: String) -> int:
+	var discarded: int = get_carried_quantity(resource_name)
+	if discarded <= 0:
+		return 0
+	if DebugLogging.ENABLED and DebugLogging.SHOW_TRANSPORT_BUILD_LOGS:
+		print("[HAUL DISCARD] Individuo #%d ha scartato %d %s (nessuna destinazione disponibile)" % [
+			id, discarded, resource_name
+		])
+	carried_resources.erase(resource_name)
+	return discarded
+
+
+# --- Zaino multi-risorsa: accesso al dizionario carried_resources (2026-09-20) ---
+
+# Quantità trasportata di una varietà (0 se assente).
+func get_carried_quantity(resource_name: String) -> int:
+	var entry: Dictionary = carried_resources.get(resource_name, {})
+	return int(entry.get("quantity", 0))
+
+
+# Frazione di decadimento di una varietà (0.0 se assente).
+func get_carried_decay_fraction(resource_name: String) -> float:
+	var entry: Dictionary = carried_resources.get(resource_name, {})
+	return float(entry.get("decay_fraction", 0.0))
+
+
+# Spazio occupato dallo zaino: somma di quantity × SecondaryResourceRules.space_per_unit di ogni
+# varietà (2026-09-20 — UNICA formula, prima duplicata in PickUp/Retrieve/Walk/Run/GameScene). Una
+# varietà con .tres non risolvibile non conta (stesso trattamento di prima: spazio 0).
+func get_carried_space() -> float:
+	var total := 0.0
+	for resource_name in carried_resources.keys():
+		var quantity: int = get_carried_quantity(String(resource_name))
+		if quantity <= 0:
+			continue
+		var resource_rules := CaloricCalculator.get_caloric_source_rules(String(resource_name))
+		if resource_rules == null:
+			continue
+		total += float(quantity) * resource_rules.space_per_unit
+	return total
+
+
+# Vero se una varietà può ENTRARE nello zaino quanto a numero di varietà: già presente (si fonde) oppure
+# c'è ancora posto sotto MAX_CARRIED_VARIETIES. Non guarda lo spazio in unità — quello resta al
+# chiamante (free space / space_per_unit).
+func can_carry_variety(resource_name: String) -> bool:
+	return carried_resources.has(resource_name) or carried_resources.size() < MAX_CARRIED_VARIETIES
+
+
+# Aggiunge `quantity` unità con `decay_fraction` in arrivo. Se la varietà c'è già si FONDE con media pesata
+# sulla quantità (stessa formula di BuildingStorageService.store); se non c'è e le varietà sono già
+# MAX_CARRIED_VARIETIES, non entra. Ritorna quanto è entrato davvero (0 = rifiutato o quantity <= 0).
+func add_carried_resource(resource_name: String, quantity: int, decay_fraction: float = 0.0) -> int:
+	if quantity <= 0 or resource_name == "" or not can_carry_variety(resource_name):
+		return 0
+	var current_quantity: int = get_carried_quantity(resource_name)
+	var new_quantity: int = current_quantity + quantity
+	var new_decay_fraction: float = decay_fraction
+	if current_quantity > 0:
+		new_decay_fraction = (
+			float(current_quantity) * get_carried_decay_fraction(resource_name) + float(quantity) * decay_fraction
+		) / float(new_quantity)
+	carried_resources[resource_name] = {"quantity": new_quantity, "decay_fraction": new_decay_fraction}
+	return quantity
+
+
+# Toglie fino a `quantity` unità di una varietà; la entry sparisce a quantità 0. Ritorna quanto è stato
+# tolto davvero.
+func remove_carried_resource(resource_name: String, quantity: int) -> int:
+	var current_quantity: int = get_carried_quantity(resource_name)
+	if quantity <= 0 or current_quantity <= 0:
+		return 0
+	var removed: int = mini(quantity, current_quantity)
+	var remaining: int = current_quantity - removed
+	if remaining <= 0:
+		carried_resources.erase(resource_name)
+	else:
+		carried_resources[resource_name] = {"quantity": remaining, "decay_fraction": get_carried_decay_fraction(resource_name)}
+	return removed

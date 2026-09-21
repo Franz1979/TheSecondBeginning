@@ -161,7 +161,7 @@ func _on_day_advanced(_checkpoint_ran: bool, _animals_changed: bool) -> void:
 	# Ritentativo giornaliero fabbisogno materiale (2026-09-14, richiesta utente) — INCONDIZIONATO,
 	# stesso principio "periodico" di ogni _recalculate_daily_*/_advance_daily_* sopra. Vedi
 	# HumanIndividualActionService.retry_blocked_material_shortages per il dettaglio/il perché.
-	_individual_action_service.retry_blocked_material_shortages(_world, _human_individuals, _game_data)
+	_individual_action_service.retry_blocked_material_shortages(_world, _human_individuals)
 	# Pulizia temporale del registro debug 🐞 (2026-09-13, richiesta utente: "le interrotte o
 	# completate cancellale dopo 2gg") — INCONDIZIONATO, stesso principio delle altre
 	# _recalculate_daily_*/_advance_daily_* sopra: TaskDebugRegistry.on_day_advanced aggiorna il
@@ -370,19 +370,19 @@ func _apply_daily_vitals_interaction() -> void:
 		HumanVitalsInteractionService.apply_daily_interaction(individual)
 
 
-# Avanzamento giornaliero di HumanIndividual.carried_decay_fraction per l'INTERA popolazione
+# Avanzamento giornaliero della decay_fraction di ogni varietà di HumanIndividual.carried_resources per l'INTERA popolazione
 # (2026-09-09, richiesta utente, Step 3 decadimento) — stesso identico pattern/motivazione di
 # _recalculate_daily_max_stamina/_recalculate_daily_carry_capacity sopra (INCONDIZIONATO, periodico,
 # stessa cadenza giornaliera): ResourceDecayService.advance_individual_decay stessa già no-op per
 # zaino vuoto/risorsa non deperibile, nessun filtro aggiuntivo necessario qui. Emette
-# individual_resource_decayed SOLO quando il Dictionary di ritorno non è vuoto (una perdita reale
+# individual_resource_decayed una volta per ogni varietà deperita (l'Array di ritorno; una perdita reale
 # oggi) — il caso comune (nulla deperisce quel giorno) non emette mai nulla.
 func _advance_daily_individual_resource_decay() -> void:
 	if _human_individuals.is_empty():
 		return
 	for individual in _human_individuals:
-		var lost := ResourceDecayService.advance_individual_decay(individual)
-		if not lost.is_empty():
+		# Una emissione per varietà deperita (zaino multi-risorsa, 2026-09-20).
+		for lost in ResourceDecayService.advance_individual_decay(individual):
 			individual_resource_decayed.emit(individual, lost["resource_name"], lost["quantity"])
 
 

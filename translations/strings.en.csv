@@ -130,3 +130,22 @@ debug_idle_fallback_on,Idle fallback: ON
 debug_idle_fallback_off,Idle fallback: OFF
 category_name_medicinal,Medicinal
 carried_resource_tooltip_medicinal_herbs,Medicinal herbs
+pickup_choice_dialog_title,Choose what to pick up
+pickup_choice_dialog_message,This spot has several pickable resources:
+pickup_choice_all,Everything
+pickup_choice_category_food,Food
+pickup_choice_category_raw_material,Materials
+pickup_choice_category_medicinal,Medicinals
+pickup_choice_all_food,All food
+pickup_choice_all_raw_material,All materials
+pickup_choice_all_medicinal,All medicinals
+transport_dialog_quantity_label,Quantity:
+transport_dialog_confirm,Confirm
+transport_dialog_cancel,Cancel
+options_pickup_default,Pick-up: default choice
+options_pickup_default_group_category,Category
+options_pickup_default_group_resource,Resource
+options_repeat_default,Pick-up and transport: repeat up to {count} times
+task_repeat_checkbox,Repeat up to {count} times
+minimap_show_tooltip,Show the minimap
+minimap_hide_tooltip,Hide the minimap

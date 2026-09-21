@@ -14,6 +14,15 @@ extends RefCounted
 const UNIT_FIT_EPSILON: float = 0.000001
 
 
+# Criterio di ordinamento "piu' denso prima" (2026-09-20, estratto da select_food per condividerlo con
+# PickUpAction, zaino multi-risorsa): calorie/spazio DECRESCENTE, a parita' per nome (esito deterministico).
+# true se la risorsa A va scelta prima della B.
+static func is_denser_food_first(ratio_a: float, name_a: String, ratio_b: float, name_b: String) -> bool:
+	if not is_equal_approx(ratio_a, ratio_b):
+		return ratio_a > ratio_b
+	return name_a < name_b
+
+
 # Ritorna {"quantities": {nome_risorsa: unita' intere da prelevare}, "space_used": float,
 # "calories": float, "body_quantities": {...}, "body_calories": float}. Le risorse commestibili presenti in building.stored_resources (quantity > 0)
 # sono ordinate per calorie/spazio DECRESCENTE (a parita', per nome, cosi' l'esito e' deterministico);
@@ -58,9 +67,7 @@ static func select_food(building: Building, free_space: float, calorie_target: f
 			"ratio": rules.calories_per_unit / rules.space_per_unit,
 		})
 	candidates.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
-		if not is_equal_approx(float(a["ratio"]), float(b["ratio"])):
-			return float(a["ratio"]) > float(b["ratio"])
-		return String(a["name"]) < String(b["name"])
+		return FoodSelectionService.is_denser_food_first(float(a["ratio"]), String(a["name"]), float(b["ratio"]), String(b["name"]))
 	)
 
 	# Fase 1 - riserva corporea (vedi sopra). candidates e' in ordine di ratio DECRESCENTE: si scorre al

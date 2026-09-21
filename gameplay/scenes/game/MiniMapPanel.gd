@@ -49,6 +49,7 @@ const ZOOM_STEP: float = 0.5
 # cliccare sul vuoto/nero non genera nulla, semplicemente mostra il vuoto del canvas lì).
 signal cell_clicked(macro_coords: Vector2i)
 
+@onready var toggle_button: Button = $ToggleButton
 @onready var map_area: Control = $MapArea
 @onready var map_viewport: Control = $MapArea/MapViewport
 @onready var map_texture_rect: TextureRect = $MapArea/MapViewport/MapTextureRect
@@ -56,6 +57,13 @@ signal cell_clicked(macro_coords: Vector2i)
 @onready var zoom_out_button: Button = $MapArea/ButtonRow/ZoomOutButton
 @onready var zoom_in_button: Button = $MapArea/ButtonRow/ZoomInButton
 @onready var player_marker: Panel = $MapArea/MapViewport/MapTextureRect/PlayerMarker
+
+# Apri/chiudi (2026-09-20, richiesta utente): un bottone in cima (ToggleButton) nasconde o mostra tutta la mappa.
+# Chiusa libera l'altezza per il corpo della sidebar (le tab, che hanno il proprio scroll interno); riaperta le
+# tab tornano a scorrere se serve — e' il layout a Container a fare tutto. Niente ridimensionamento a mano.
+# Simboli: aperta "▼" (clic = chiudi, la mappa scende fuori vista), chiusa "🗺 ▲" (mappa + freccia in su: clic =
+# riapri). Stato salvato in UserOptions.minimap_collapsed.
+var _collapsed: bool = false
 
 var _zoom: float = MIN_ZOOM
 var _base_image: Image
@@ -91,6 +99,9 @@ func _ready() -> void:
 	_player_marker_style.border_color = Color(1, 0, 0, 1)
 	player_marker.add_theme_stylebox_override("panel", _player_marker_style)
 	_update_zoom_buttons()
+	toggle_button.pressed.connect(_on_toggle_pressed)
+	_collapsed = UserOptions.minimap_collapsed
+	_update_toggle_button()
 	# resized (non una chiamata diretta e basta) perché la larghezza vera che Sidebar/body_
 	# container concedono a questo pannello non è nota nello stesso frame — si autocorregge non
 	# appena il layout reale si assesta, e resta corretta anche se in futuro la Sidebar cambiasse
@@ -191,6 +202,20 @@ func _on_panel_resized() -> void:
 	map_area.custom_minimum_size = Vector2(_square_size, _square_size)
 	map_viewport.custom_minimum_size = Vector2(_square_size, _square_size)
 	_apply_zoom()
+
+
+# Apre/chiude la minimappa (nasconde MapArea: il VBox non le riserva piu' altezza) e salva lo stato.
+func _on_toggle_pressed() -> void:
+	_collapsed = not _collapsed
+	UserOptions.minimap_collapsed = _collapsed
+	UserOptions.save_to_disk()
+	_update_toggle_button()
+
+
+func _update_toggle_button() -> void:
+	map_area.visible = not _collapsed
+	toggle_button.text = "🗺 ▲" if _collapsed else "▼"
+	toggle_button.tooltip_text = tr("minimap_show_tooltip") if _collapsed else tr("minimap_hide_tooltip")
 
 
 func _on_zoom_in_pressed() -> void:

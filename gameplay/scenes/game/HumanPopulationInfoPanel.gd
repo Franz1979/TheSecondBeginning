@@ -86,6 +86,12 @@ var _show_tasks: bool = true
 # già seguito da housing_label.add/remove_theme_color_override sopra, qui applicato a un Array
 # di nodi invece di un singolo Label.
 var _task_rows: Array[Control] = []
+# Larghezza del CASO PEGGIORE (2026-09-20, richiesta utente — la sidebar non deve allargarsi e restringersi):
+# la riga piu' larga tra "riga individuo" e "riga task indentata", misurata a prescindere da lista aperta/chiusa e
+# task mostrate/nascoste, e MAI ridotta (solo crescente, nella sessione). Si riporta come larghezza minima del
+# pannello (custom_minimum_size.x), cosi' la tab popolazione occupa sempre la larghezza che avrebbe con tutto
+# aperto. Vedi show_population.
+var _widest_row: float = 0.0
 
 
 func _ready() -> void:
@@ -245,6 +251,12 @@ func show_population(
 		_task_rows.append(task_margin)
 
 		list_container.add_child(row_wrapper)
+		# Misura DOPO l'inserimento (font/tema risolti dall'albero) e a prescindere dalla visibilita' della lista
+		# o della riga task: get_combined_minimum_size non dipende dalla visibilita' del nodo stesso.
+		_widest_row = maxf(_widest_row, row.get_combined_minimum_size().x)
+		_widest_row = maxf(_widest_row, TASK_ROW_INDENT + task_label.get_combined_minimum_size().x)
+
+	custom_minimum_size.x = maxf(custom_minimum_size.x, _widest_row)
 
 
 func _on_center_button_pressed(member: HumanIndividual) -> void:

@@ -266,9 +266,12 @@ static func _build_step(action_type: int, step_data: Dictionary, macro_state: Ma
 			# quantity_requested (2026-09-18, richiesta utente) — .get() con default -1 per
 			# compatibilità coi save precedenti a questo campo (nessuno di quei save può aver mai
 			# avuto un tetto scelto dal player, quindi -1 "nessun tetto" è sempre il valore corretto).
+			# criterion_kind/criterion_category (2026-09-20, zaino multi-risorsa) — .get() con default NAME/-1 per
+			# i salvataggi precedenti (una raccolta di UNA risorsa per nome, il comportamento di sempre).
 			step = PickUpAction.new(
 				pickup_target, macro_state, String(step_data.get("resource_name", "pebble")),
-				int(step_data.get("quantity_requested", -1))
+				int(step_data.get("quantity_requested", -1)),
+				int(step_data.get("criterion_kind", PickUpAction.CriterionKind.NAME)), int(step_data.get("criterion_category", -1))
 			)
 		TaskTypes.ActionType.SETUP_SITE:
 			# 1 argomento (target_building: Building), stesso schema di UNLOAD sopra per risolvere il

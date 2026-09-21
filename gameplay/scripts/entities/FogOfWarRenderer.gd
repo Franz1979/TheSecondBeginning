@@ -97,6 +97,17 @@ var detail_memory_days: int = 10
 var resource_memory_days: int = 30
 var terrain_memory_days: int = 90
 
+# Versione dell'insieme "visibile in dettaglio" (2026-09-20, richiesta utente — evitare il refresh
+# vegetazione da movimento quando non e' comparsa nessuna cella nuova, vedi GameScene._process/
+# _refresh_resource_visuals). L'insieme calcolato da compute_visible_positions e' (in raggio) U
+# (risorse ancora fresche in memoria): cresce SOLO quando una cella entra in raggio senza essere gia' fresca
+# (vedi _mark_seen_and_invalidate) e cala SOLO quando cambia il giorno (le entry scadono, vedi
+# update_visibility) — questo contatore sale in ENTRAMBI i casi, mai altrove. Un chiamante che memorizza il
+# valore letto al momento del suo ultimo calcolo sa che, se e' ancora lo stesso, il risultato di
+# compute_visible_positions e' identico. Assume resource_memory_days/visibility_radius costanti tra due
+# letture (oggi lo sono: nessuno li modifica a runtime).
+var visible_set_version: int = 0
+
 # Posizioni (Vector2, LOCALI a questo renderer — cioè già nello spazio di QUESTA macrocella, non
 # quello di partenza dell'individuo) di TUTTE le sorgenti di visibilità rilevanti per questa cella
 # — Step 4 FoW multi-sorgente, 2026-09-02: SOSTITUISCE il vecchio singolo campo `individual`
@@ -559,6 +570,14 @@ func update_visibility(current_absolute_day: int, positions: Array[Vector2]) -> 
 	if day_changed:
 		_cell_color_cache = {}
 		_full_flush_pending = true
+		# Cambio giorno: le entry di memoria possono essere scadute (l'insieme visibile puo' ridursi) e la
+		# disponibilita' stagionale delle risorse puo' essere cambiata — vedi visible_set_version.
+		visible_set_version += 1
+	# Senza memoria l'insieme visibile e' il solo insieme in raggio, che cambia con le posizioni: nessuna
+	# cella "fresca" su cui contare, quindi ogni cambio di posizione conta (caso non atteso in pratica, una
+	# cella viva ha sempre la sua FogOfWarMemory — vedi GameScene._activate_live_cell).
+	if position_changed and fog_of_war_memory == null:
+		visible_set_version += 1
 	# mark_seen per l'insieme in-raggio CORRENTE — SEMPRE quando non c'è early-out (posizione O
 	# giorno cambiati), mai gated da position_changed da solo: una sorgente ferma per più giorni
 	# deve comunque continuare a rinfrescare last_seen_by_position ogni giorno simulato (vedi
@@ -609,6 +628,13 @@ func _mark_seen_for_current_in_radius_positions() -> void:
 # in quel caso evita di riportarlo "sporco" ad ogni singolo frame per un'operazione che nella
 # stragrande maggioranza dei casi non cambia nulla (esattamente il bug che questo fix corregge).
 func _mark_seen_and_invalidate(pos: Vector2i) -> void:
+	# Cella che ENTRA in raggio (non era nell'insieme in-raggio del giro precedente: _previous_in_radius_
+	# positions e' aggiornato da _update_in_radius_dirty_delta, sempre DOPO questa funzione) e non era gia'
+	# fresca in memoria: l'insieme visibile cresce di una cella — vedi visible_set_version. Una cella gia'
+	# in raggio al giro prima e' per costruzione fresca (mark_seen di oggi), quindi qui non si ricontrolla.
+	if not _previous_in_radius_positions.has(pos) \
+			and not fog_of_war_memory.is_resource_fresh(pos, _current_absolute_day, resource_memory_days):
+		visible_set_version += 1
 	var _mem_start := Time.get_ticks_usec()
 	fog_of_war_memory.mark_seen(pos, _current_absolute_day)
 	_memory_lookup_usec += Time.get_ticks_usec() - _mem_start

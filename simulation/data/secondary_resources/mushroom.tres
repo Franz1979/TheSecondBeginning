@@ -6,9 +6,9 @@
 script = ExtResource("1_mushroom")
 secondary_resource_name = "mushroom"
 calories_per_unit = 8.0
-seasonal_availability_multiplier = Array[float]([0.5, 0.2, 0.5, 1.0])
+seasonal_availability_multiplier = Array[float]([0.6, 0.3, 0.6, 1.0])
 generation_source = 1
 day_durability = 90
 space_per_unit = 0.5
-units_per_mature_plant = 8
+units_per_mature_plant = 10
 lot_source = 1

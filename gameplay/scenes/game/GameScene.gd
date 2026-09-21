@@ -113,9 +113,9 @@ var notification_popup: NotificationPopup
 # timeout automatico: "prova una indicazione visibile") — STESSO principio/STESSA posizione di
 # notification_popup sopra (istanziato via codice in _setup_clock, aggiunto sotto CanvasLayer),
 # ma PERSISTENTE (mai in coda/auto-dissolvenza come NotificationPopup): resta visibile per l'intera
-# durata in cui _debug_transport_source_building non è null, un singolo nodo mostrato/nascosto
+# durata in cui _transport_source_building non è null, un singolo nodo mostrato/nascosto
 # (mai ricreato) ai tre punti che cambiano quello stato — vedi _on_transport_source_resource_chosen
-# (mostra)/_debug_try_assign_transport_command_on_right_click (nasconde, destinazione confermata)/
+# (mostra)/_try_assign_transport_command_on_right_click (nasconde, destinazione confermata)/
 # _stop_selected_individual_task (nasconde, annullato con H).
 var transport_selection_banner: PanelContainer
 var transport_selection_banner_label: Label
@@ -209,7 +209,7 @@ const PLAY_TASK_DEFINITION_PATH := "res://gameplay/scripts/tasks/definitions/pla
 # condizionale sul numero di step qui, source/destination/resource_name/quantity sono risolti PRIMA
 # della costruzione da _resolve_transport_context (vedi sotto), stesso schema già in uso per Rest/
 # Wander. source_building/destination_building arrivano dal trigger a due click destri
-# (_debug_try_assign_transport_command_on_right_click, vedi sotto); resource_name/quantity dalla
+# (_try_assign_transport_command_on_right_click, vedi sotto); resource_name/quantity dalla
 # scelta del player nel TransportSourceDialog aperto dallo stesso trigger.
 const TRANSPORT_TASK_DEFINITION_PATH := "res://gameplay/scripts/tasks/definitions/transport.tres"
 # TaskDefinition "emergency_rest" — stesso trattamento di "rest" sopra: path/risoluzione target/
@@ -436,11 +436,12 @@ var _pending_leave_action: StringName = &""
 @onready var demolish_confirmation_dialog: DemolishConfirmationDialog = $DemolishConfirmationDialog
 @onready var transport_source_dialog: OptionChoiceDialog = $TransportSourceDialog
 # pickup_choice_dialog (2026-09-17, richiesta utente, "no priorità fissa, scegli sempre se 2+
-# risorse disponibili") — SECONDA istanza dello STESSO OptionChoiceDialog.tscn/.gd di
-# transport_source_dialog sopra (vedi OptionChoiceDialog.gd per il perché due nodi e non
-# un'istanza condivisa): usata da _try_assign_pickup_command_on_right_click quando il click destro
-# trova 2+ risorse REALMENTE disponibili (available_quantity > 0) sulla stessa posizione.
-@onready var pickup_choice_dialog: OptionChoiceDialog = $PickupChoiceDialog
+# risorse disponibili") — usata da _try_assign_pickup_command_on_right_click quando il click destro
+# trova 2+ risorse REALMENTE disponibili (available_quantity > 0) sulla stessa posizione. Dal 2026-09-20
+# (zaino multi-risorsa, passo 3) e' un PickupChoiceDialog: menu gerarchico Tutto / categoria / risorsa, non
+# piu' una seconda istanza di OptionChoiceDialog (quello resta solo per la Transport, transport_source_dialog
+# sopra).
+@onready var pickup_choice_dialog: PickupChoiceDialog = $PickupChoiceDialog
 @onready var save_game_file_dialog: FileDialog = $SaveGameFileDialog
 @onready var camera: Camera2D = $Camera2D
 @onready var year_title_label: Label = $CanvasLayer/Sidebar/MarginContainer/VBoxContainer/CalendarHeaderContainer/YearTitleLabel
@@ -507,6 +508,16 @@ func _ready() -> void:
 	# vegetazione/minimappa/selezione.
 	game_info_tabs = GAME_INFO_TABS_SCENE.instantiate()
 	game_info_panel.body_container.add_child(game_info_tabs)
+	# Larghezza della sidebar MAI ridotta (2026-09-20, richiesta utente: "si allarga e rimpicciolisce, non mi
+	# piace"): la sidebar e' un PanelContainer ancorato a destra la cui larghezza segue il contenuto; qui si tiene
+	# come minimo la piu' larga mai raggiunta (crescente, nella sessione). Con la tab popolazione che riporta sempre
+	# la larghezza del caso peggiore (HumanPopulationInfoPanel._widest_row) e le tab che contano tutte per la
+	# larghezza (GameInfoTabs), il massimo si raggiunge da subito.
+	var sidebar_panel: Control = $CanvasLayer/Sidebar
+	sidebar_panel.resized.connect(func() -> void:
+		if sidebar_panel.size.x > sidebar_panel.custom_minimum_size.x + 0.5:
+			sidebar_panel.custom_minimum_size.x = sidebar_panel.size.x
+	)
 	# minimap_panel (richiesta utente, 2026-09-02: schermo ingrandito, la minimappa deve restare
 	# SEMPRE visibile in basso, ANCORATA — non deve più salire/scendere a seconda di quale scheda
 	# è aperta, come succedeva quando viveva dentro body_container insieme a game_info_tabs, la
@@ -612,7 +623,7 @@ func _ready() -> void:
 	# trasportare resta un'azione rapida durante il gioco in corso, a differenza degli altri pannelli
 	# (idea/statistiche/opzioni/conferma), pensati per essere consultati con calma a tempo fermo.
 	transport_source_dialog.resource_chosen.connect(_on_transport_source_resource_chosen)
-	pickup_choice_dialog.resource_chosen.connect(_on_pickup_choice_resource_chosen)
+	pickup_choice_dialog.choice_made.connect(_on_pickup_choice_made)
 	# Demolisci (2026-09-12, richiesta utente) — main_row.action_pressed, NON submenu_row (quello
 	# resta per i tipi edificio, ascoltato sopra da _on_build_submenu_action_pressed): BuildBar._on_
 	# main_row_action_pressed ignora già qualunque action_id diverso da OPEN_BUILD_MENU_ACTION (vedi
@@ -974,10 +985,66 @@ func _ready() -> void:
 		camera.zoom = Vector2(game_data.camera_zoom, game_data.camera_zoom)
 
 
+# TEMPORANEO (2026-09-20, richiesta utente — diagnosi cantiere che non avanza): vedi DebugLogging.WATCH_TASK_INDIVIDUAL_ID.
+# Una riga [TASK WATCH] ogni WATCH_TASK_INTERVAL_SECONDS reali con task corrente, step (indice/totale + azione, con
+# is_complete e, se l'azione ha un target_building, il suo id/is_awaiting_material/site_setup_complete), stato di stamina
+# e zaino, e la coda sospesa (dal fondo verso la prossima da riprendere: l'ULTIMA e' quella ripresa per prima).
+var _watch_task_elapsed: float = 0.0
+
+
+func _debug_watch_task(delta: float) -> void:
+	if not DebugLogging.ENABLED or DebugLogging.WATCH_TASK_INDIVIDUAL_ID < 0:
+		return
+	_watch_task_elapsed += delta
+	if _watch_task_elapsed < DebugLogging.WATCH_TASK_INTERVAL_SECONDS:
+		return
+	_watch_task_elapsed = 0.0
+	var watched: HumanIndividual = null
+	for member in human_individuals:
+		if member.id == DebugLogging.WATCH_TASK_INDIVIDUAL_ID:
+			watched = member
+			break
+	if watched == null:
+		print("[TASK WATCH] individuo #%d non trovato in human_individuals." % DebugLogging.WATCH_TASK_INDIVIDUAL_ID)
+		return
+	var current_text := "(nessuna)"
+	var task := watched.current_task
+	if task != null:
+		current_text = _debug_describe_task(watched, task, true)
+	var queue_parts: Array[String] = []
+	for queued_task in watched.task_queue:
+		queue_parts.append(_debug_describe_task(watched, queued_task, false))
+	print("[TASK WATCH] #%d %s | stamina %.1f/%.1f | zaino=%s | corrente: %s | coda(%d, ultima=prossima): [%s]" % [
+		watched.id, watched.name, watched.current_stamina, watched.max_stamina, str(watched.carried_resources),
+		current_text, watched.task_queue.size(), ", ".join(queue_parts)
+	])
+
+
+func _debug_describe_task(watched: HumanIndividual, task: Task, detailed: bool) -> String:
+	var text := "'%s' step %d/%d" % [task.task_name, task.current_step_index + 1, task.steps.size()]
+	if task.is_finished():
+		return text + " FINITA"
+	var action := task.get_current_action()
+	if action == null:
+		return text
+	text += " %s" % action.get_script().get_global_name()
+	if detailed:
+		text += " is_complete=%s" % str(action.is_complete(watched, task.context))
+	var target_building = action.get("target_building")
+	if target_building is Building:
+		var building := target_building as Building
+		text += " (edificio #%d %s: awaiting=%s setup=%s complete=%s)" % [
+			building.id, building.building_type_name, str(building.is_awaiting_material),
+			str(building.site_setup_complete), str(building.is_complete)
+		]
+	return text
+
+
 # Movimento dell'individuo controllabile: gira ogni frame, indipendentemente da clock.is_playing
 # (il player deve poter esplorare la macrocella anche a simulazione in pausa — confermato con
 # l'utente). Non tocca in alcun modo il pipeline giorno/anno di WorldTimeService.
 func _process(delta: float) -> void:
+	_debug_watch_task(delta)
 	# Aggancio al tempo di gioco (2026-09-07, richiesta utente) — movimento e azioni ora scalano
 	# con la velocità 1x/2x/4x/X8/DEBUG e si fermano in pausa, invece di girare a tempo reale
 	# grezzo: game_delta è una FRAZIONE DI GIORNO (stesso calcolo di GameClockController._process,
@@ -1081,11 +1148,20 @@ func _process(delta: float) -> void:
 	# proprio raggio edificio — vedi _building_visible_positions — non dalla posizione del player).
 	if individual != null and live_cells.has(center_macro_coords):
 		if individual.position.distance_to(_last_vegetation_refresh_position) >= VEGETATION_REFRESH_MOVE_THRESHOLD:
-			if DebugLogging.SHOW_VEGETATION_REFRESH_TIMING_LOGS:
-				print("[VEG REFRESH TRIGGER] movimento: cella (%d,%d), spostamento=%.1f microcelle da ultimo refresh" % [
-					center_macro_coords.x, center_macro_coords.y, individual.position.distance_to(_last_vegetation_refresh_position)
-				])
-			_refresh_resource_visuals(live_cells[center_macro_coords])
+			# Solo se dall'ultimo refresh di questa cella l'insieme visibile del fog of war e' cambiato
+			# (2026-09-20, richiesta utente — vedi FogOfWarRenderer.visible_set_version): in una zona gia'
+			# esplorata (celle ancora fresche in memoria) il refresh da movimento non riparte affatto. La
+			# distanza di trigger non e' toccata; se la versione e' invariata _last_vegetation_refresh_position
+			# NON viene azzerata (lo fa solo un refresh vero), cosi' appena compare una cella nuova il refresh
+			# parte subito, non dopo altre 3 microcelle. Costo del controllo: un confronto di interi per frame.
+			var center_cell: LiveMacroCell = live_cells[center_macro_coords]
+			if center_cell.fog_of_war_renderer == null \
+					or center_cell.fog_of_war_renderer.visible_set_version != center_cell.last_refresh_visible_version:
+				if DebugLogging.SHOW_VEGETATION_REFRESH_TIMING_LOGS:
+					print("[VEG REFRESH TRIGGER] movimento: cella (%d,%d), spostamento=%.1f microcelle da ultimo refresh" % [
+						center_macro_coords.x, center_macro_coords.y, individual.position.distance_to(_last_vegetation_refresh_position)
+					])
+				_refresh_resource_visuals(center_cell)
 
 	if _building_ghost != null:
 		_building_ghost.global_position = _building_ghost.get_global_mouse_position()
@@ -1322,23 +1398,22 @@ func _unhandled_input(event: InputEvent) -> void:
 		if individual_controller != null:
 			# Selezione Transport a metà (2026-09-14, richiesta utente — "il click destro successivo
 			# vale SOLO per la destinazione Transport", niente competizione con altri comandi) —
-			# CONTROLLATO PER PRIMO: se _debug_transport_source_building è già impostata (sorgente
+			# CONTROLLATO PER PRIMO: se _transport_source_building è già impostata (sorgente
 			# scelta, in attesa del click di destinazione), pickup/unload/build vengono SALTATI DEL
 			# TUTTO per questo evento — mai anche solo provati, non solo ignorato il loro esito. Prima
 			# di questo fix _try_assign_build_command_on_right_click (provato PRIMA nella catena
 			# sotto) intercettava sempre un click destro su un cantiere incompleto, il caso D'USO PIÙ
 			# COMUNE come destinazione Transport (portare materiale a un cantiere), "rubando" il click
-			# prima che _debug_try_assign_transport_command_on_right_click venisse mai raggiunta —
+			# prima che _try_assign_transport_command_on_right_click venisse mai raggiunta —
 			# BUG CONFERMATO con l'utente. Nessun problema simmetrico con pickup/unload (mai
 			# verificato un caso reale), ma bypassati comunque per coerenza: mentre una selezione
 			# Transport è aperta, il destro è un canale "riservato" a quella sola interazione.
-			if _debug_transport_source_building != null:
-				if not _debug_try_assign_transport_command_on_right_click(event):
+			if _transport_source_building != null:
+				if not _try_assign_transport_command_on_right_click(event):
 					individual_controller.handle_input(event)
-			# _debug_try_assign_transport_command_on_right_click (2026-09-12, richiesta utente — test
-			# Transport Task) — provato per ULTIMO, dopo pickup/unload/build: gated da
-			# DebugLogging.ENABLED al proprio interno, vedi lì per il perché di questa posizione.
-			elif not _try_assign_pickup_command_on_right_click(event) and not _try_assign_unload_command_on_right_click(event) and not _try_assign_build_command_on_right_click(event) and not _debug_try_assign_transport_command_on_right_click(event):
+			# _try_assign_transport_command_on_right_click (2026-09-12, richiesta utente) — provato per ULTIMO, dopo
+			# pickup/unload/build; dal 2026-09-20 comando normale del gioco (non piu' gated da DebugLogging.ENABLED).
+			elif not _try_assign_pickup_command_on_right_click(event) and not _try_assign_unload_command_on_right_click(event) and not _try_assign_build_command_on_right_click(event) and not _try_assign_transport_command_on_right_click(event):
 				individual_controller.handle_input(event)
 
 	if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_X:
@@ -1519,16 +1594,16 @@ func _center_camera_on_individual(animated: bool = true) -> void:
 # IMMEDIATAMENTE (nessun completamento del tragitto). Se lo step corrente era invece un
 # PickUpAction, nessuna pulizia aggiuntiva necessaria (richiesta esplicita, verificata): consume()
 # scatta solo dentro on_complete(), mai chiamato qui, quindi non c'è alcun effetto già applicato da
-# annullare — la sola quantità "prenotata" (_quantity_to_collect) resta nell'istanza scartata,
+# annullare — la sola quantità "prenotata" (il piano di PickUpAction) resta nell'istanza scartata,
 # innocua.
 func _stop_selected_individual_task() -> void:
 	if individual == null or not individual.is_selected:
 		return
 	# Annulla selezione Transport a metà (2026-09-14, richiesta utente — "H cancella una task se in
 	# corso completa, oppure se è in selezione a metà [tipo il transport], cancella quella") — DA
-	# CONTROLLARE PER PRIMO, PRIMA di individual.stop() sotto: _debug_transport_source_building/
-	# _debug_transport_pending_source_building sono stato del comando debug a due click (vedi
-	# _debug_try_assign_transport_command_on_right_click), COMPLETAMENTE INDIPENDENTE da
+	# CONTROLLARE PER PRIMO, PRIMA di individual.stop() sotto: _transport_source_building/
+	# _transport_pending_source_building sono stato del comando debug a due click (vedi
+	# _try_assign_transport_command_on_right_click), COMPLETAMENTE INDIPENDENTE da
 	# individual.current_task — nessuna Transport Task esiste ancora finché la destinazione non
 	# viene confermata, quindi non c'è nulla da "fermare" su individual, solo questo stato interno
 	# di GameScene da azzerare. PRIMA di questo fix non esisteva NESSUN modo di uscire da questo
@@ -1538,13 +1613,14 @@ func _stop_selected_individual_task() -> void:
 	# selezione (i due stati sono ortogonali, possono coesistere), quella Task NON viene toccata da
 	# un annullo della sola selezione — un H successivo, a selezione ormai annullata, la fermerà
 	# normalmente se il player lo preme di nuovo.
-	if _debug_transport_source_building != null or _debug_transport_pending_source_building != null:
+	if _transport_source_building != null or _transport_pending_source_building != null:
 		if DebugLogging.ENABLED and DebugLogging.SHOW_TRANSPORT_BUILD_LOGS:
 			print("[TRANSPORT] Selezione sorgente/destinazione annullata (tasto H).")
-		_debug_transport_source_building = null
-		_debug_transport_pending_source_building = null
-		_debug_transport_resource_name = ""
-		_debug_transport_quantity = 0
+		_transport_source_building = null
+		_transport_pending_source_building = null
+		_transport_resource_name = ""
+		_transport_quantity = 0
+		_transport_repeat = false
 		# Banner nascosto (2026-09-14, richiesta utente) — selezione annullata.
 		if transport_selection_banner != null:
 			transport_selection_banner.visible = false
@@ -1568,7 +1644,7 @@ func _stop_selected_individual_task() -> void:
 # originariamente due WalkAction verso coordinate fisse; ora costruisce [WalkAction, PickUpAction]
 # verso la posizione pebble più vicina all'individuo nella SUA macrocella corrente (individual.
 # home_macro_coords), per verificare in-game decremento MacroCellState.pebble_quantities e
-# assegnazione carico (carried_resource_name/carried_quantity) prima di passare a click/
+# assegnazione carico (carried_resources) prima di passare a click/
 # persistenza/UI nei prossimi step. Nessuna integrazione con TaskFactory/TaskPersistenceService qui
 # (esplicitamente fuori scope di questo passo) — Task costruita a mano, stesso principio già seguito
 # da questa stessa funzione e da _debug_test_daydream_task sotto.
@@ -1613,7 +1689,7 @@ func _debug_test_two_walk_task() -> void:
 		return
 	individual.stop()
 	# Stesso refresh pebble/stick di _assign_pickup_task (2026-09-09) — vedi quel commento gemello.
-	pickup.resource_collected.connect(func(_res: String, _pos: Vector2i, _qty: int) -> void:
+	pickup.collection_completed.connect(func(_collected: Dictionary) -> void:
 		_refresh_resource_visuals(cell)
 	)
 	# assign_task (2026-09-09, richiesta utente, Step 4) — sostituisce l'assegnazione manuale
@@ -1912,7 +1988,7 @@ func _assign_play_task() -> void:
 # [Walk->source, Retrieve, Walk->destination, Unload] (vedi transport.tres), mai null.
 # source_building/destination_building/resource_name/quantity arrivano GIÀ RISOLTI dal chiamante
 # (source/destination dal trigger a due click destri, resource_name/quantity dalla scelta del
-# player nel TransportSourceDialog — vedi _debug_try_assign_transport_command_on_right_click/
+# player nel TransportSourceDialog — vedi _try_assign_transport_command_on_right_click/
 # _on_transport_source_resource_chosen sotto): questa funzione si limita a tradurre le posizioni dei
 # due edifici nello spazio locale di `target_individual` e a impacchettare tutto nelle chiavi che
 # transport.tres si aspetta.
@@ -1950,68 +2026,50 @@ func _resolve_transport_context(
 	}
 
 
-# Costruisce ed assegna la Transport Task completa [Walk, Retrieve, Walk, Unload] all'individuo
-# selezionato (2026-09-12, richiesta utente) — chiamata SOLO dal trigger a due click destri sotto,
-# mai da _unhandled_input direttamente (stesso principio di _assign_rest_task/_assign_wander_task,
-# separazione risoluzione/assegnazione). resource_name/quantity arrivano GIÀ SCELTI dal player nel
-# TransportSourceDialog (vedi _on_transport_source_resource_chosen sotto), non più fissati nel
-# codice.
+# Assegna la Transport Task completa [Walk, Retrieve, Walk, Unload] all'individuo selezionato (2026-09-12,
+# richiesta utente) — chiamata SOLO dal trigger a due click destri sotto. resource_name/quantity arrivano GIA'
+# SCELTI dal player nel TransportSourceDialog (vedi _on_transport_source_resource_chosen), `repeat_enabled`
+# dalla casella "Ripeti" dello stesso dialog (2026-09-20, ripetizione automatica, vedi TaskRepeatRules).
 #
-# individual.stop() RIMOSSO (2026-09-14, richiesta utente — bugfix confermato con log: una Build
-# Task sospendibile in corso spariva invece di sospendersi in coda quando il player assegnava
-# Transport a quello stesso individuo — nessun [TASK SUSPEND] in log, a differenza dell'identica
-# sequenza per Pickup/haul_resource, che invece sospende correttamente). STESSO fix di
-# _assign_wander_task/_assign_play_task, vedi quei commenti estesi: RIMOSSO, non sostituito con
-# nulla — assign_task() sotto già sospende/scarta/attiva da sé la Task precedente, nessun "reset di
-# stato pulito" perso (Action.activate() sul primo step della Transport azzera già is_moving).
+# OBIETTIVO del viaggio (2026-09-20): il minimo tra la quantita' chiesta dal player e il fabbisogno della
+# destinazione se questa NON e' completa (_transport_trip_target); verso un edificio completo vale il numero del
+# player. Un fabbisogno a zero (la destinazione non ha bisogno di quella risorsa) rifiuta il comando invece di
+# mandare l'individuo a portare qualcosa che non entrerebbe.
 #
-# Segnali ricollegati SUBITO dopo la costruzione (2026-09-12) — STESSO principio già seguito da
-# _try_assign_unload_command_on_right_click per il proprio UnloadAction costruito a mano: senza
-# questo, il deposito/prelievo fisico muterebbe comunque stored_resources correttamente (la
-# mutazione vera vive in BuildingStorageService, non nel segnale), ma la UI (griglia di stoccaggio
-# del pannello edificio, se aperto) non si aggiornerebbe da sola. resource_retrieved (nuovo segnale
-# di RetrieveAction) riusa lo stesso identico handler di resource_deposited (_on_resource_deposited
-# si limita a rinfrescare la macrocella dell'edificio passato, generico per qualunque building) —
-# nessun nuovo handler dedicato necessario.
-#
-# Lampeggio SULLA DESTINAZIONE (2026-09-12, richiesta utente — "sul magazzino destinazione, fai un
-# lampeggio come accade per la build, e per la pick up task") — STESSO trigger/STESSO principio di
-# _try_assign_pickup_command_on_right_click/_try_assign_build_command_on_right_click: subito
-# all'assegnazione, non all'arrivo. Icona "transport" (IconRegistry.COMMAND_ICONS), diversa da
-# "pickup"/"build" — vedi IconRegistry.gd per la scelta dell'emoji (nessuna carriola in Unicode
-# standard).
-func _debug_assign_transport_task(
-	source_building: Building, destination_building: Building, resource_name: String, quantity: int
+# individual.stop() RIMOSSO (2026-09-14): assign_task() sotto gia' sospende/scarta/attiva da sé la Task
+# precedente — vedi il commento esteso in HumanIndividual.assign_task. Segnali collegati DOPO il guard
+# can_assign_task (nessun segnale orfano su una Task mai attivata). Lampeggio SULLA DESTINAZIONE, subito
+# all'assegnazione (icona "transport" o "task_rejected").
+func _assign_transport_task(
+	source_building: Building, destination_building: Building, resource_name: String, quantity: int,
+	repeat_enabled: bool = false
 ) -> void:
 	if individual == null or not individual.is_selected:
 		return
-	var context: Dictionary = _resolve_transport_context(
-		individual, source_building, destination_building, resource_name, quantity
+	var destination_macro_coords := Vector2i(destination_building.macro_x, destination_building.macro_y)
+	var trip_target: int = _transport_trip_target(destination_building, resource_name, quantity)
+	if trip_target <= 0:
+		if live_cells.has(destination_macro_coords):
+			_spawn_command_blink_effect(
+				live_cells[destination_macro_coords],
+				Vector2i(destination_building.micro_x, destination_building.micro_y),
+				IconRegistry.get_command_icon("task_rejected")
+			)
+		if DebugLogging.ENABLED and DebugLogging.SHOW_TRANSPORT_BUILD_LOGS:
+			print("[TRANSPORT] rifiutata: %s #%d non ha bisogno di '%s' (obiettivo 0)." % [
+				destination_building.building_type_name, destination_building.id, resource_name
+			])
+		return
+	var task := _build_transport_task(
+		individual, source_building, destination_building, resource_name, trip_target, quantity, repeat_enabled, 0
 	)
-	var transport_definition := load(TRANSPORT_TASK_DEFINITION_PATH) as TaskDefinition
-	var task := TaskFactory.build_task(transport_definition, context)
-	# Guard PRIMA di costruire i collegamenti signal sotto (2026-09-13, richiesta utente — un guard
-	# rifiutato, oggi solo INFANT/CHILD selezionati, non deve lasciare segnali orfani collegati a una
-	# Task mai attivata). individual.stop() NON PIÙ chiamato qui (2026-09-14 — vedi il commento esteso
-	# in testa alla funzione): assign_task() sotto gestisce da sé sospensione/scarto della Task
-	# precedente.
 	var age_band := _resolve_age_band(individual)
 	if not individual.can_assign_task(task, age_band):
 		return
-	for step in task.steps:
-		if step is UnloadAction:
-			_reconnect_unload_action_signals(step as UnloadAction, individual)
-		elif step is RetrieveAction:
-			(step as RetrieveAction).resource_retrieved.connect(
-				func(_res_name: String, building: Building, _qty: int) -> void: _on_resource_deposited(building)
-			)
-	# Il guard è già stato verificato sopra (can_assign_task), quindi questa chiamata è garantita
-	# riuscire — "❌" non scatta più da qui (nessun rifiuto possibile a questo punto), resta solo
-	# come icona di comando "transport" riuscito.
+	_wire_transport_task(task, individual)
 	var assigned := individual.assign_task(task, age_band)
 	var command_icon_key := "transport" if assigned else "task_rejected"
 
-	var destination_macro_coords := Vector2i(destination_building.macro_x, destination_building.macro_y)
 	if live_cells.has(destination_macro_coords):
 		_spawn_command_blink_effect(
 			live_cells[destination_macro_coords],
@@ -2020,26 +2078,122 @@ func _debug_assign_transport_task(
 		)
 
 	if DebugLogging.ENABLED and DebugLogging.SHOW_TRANSPORT_BUILD_LOGS:
-		print("[TRANSPORT] Task assegnata a #%d %s: %s #%d -> %s #%d, risorsa='%s' quantità=%d" % [
+		print("[TRANSPORT] Task assegnata a #%d %s: %s #%d -> %s #%d, risorsa='%s' chiesta=%d obiettivo=%d ripeti=%s" % [
 			individual.id, individual.name,
 			source_building.building_type_name, source_building.id,
 			destination_building.building_type_name, destination_building.id,
-			resource_name, quantity,
+			resource_name, quantity, trip_target, str(repeat_enabled),
 		])
 
 
-# Stato del trigger a due click (2026-09-12, richiesta utente) — `_debug_transport_source_building`
+# Obiettivo di UN viaggio (2026-09-20): min(quantita' ancora da portare, fabbisogno della destinazione) se la
+# destinazione non e' completa — il fabbisogno e' BuildingStorageService.get_max_depositable (per un cantiere
+# = required - stored della fase in corso: materiale di setup, poi required_materials) — altrimenti (edificio
+# completo, magazzino) la sola quantita' ancora da portare. Ricalcolato a ogni viaggio, perche' il fabbisogno
+# puo' essere cambiato (un altro portatore ha consegnato, la fase e' avanzata).
+func _transport_trip_target(destination_building: Building, resource_name: String, remaining_quantity: int) -> int:
+	if remaining_quantity <= 0 or destination_building == null:
+		return 0
+	if destination_building.is_demolished:
+		return 0
+	if not destination_building.is_complete:
+		return mini(remaining_quantity, BuildingStorageService.get_max_depositable(destination_building, resource_name))
+	return remaining_quantity
+
+
+# Costruisce la Transport Task SENZA assegnarla ne' collegare i segnali (2026-09-20, estratta per riusarla nella
+# ripetizione). `trip_target` = quanto RECUPERARE in questo viaggio (transport_quantity di RetrieveAction);
+# `requested_remaining` = quanto il player voleva ancora che arrivasse (la quantita' chiesta meno il gia'
+# consegnato). Le chiavi transport_source_id/transport_destination_id/transport_delivery_resource/
+# transport_requested_remaining NON sono nei context_keys di transport.tres: restano in task.context (salvate) e
+# servono a UnloadAction.transport_delivered / _on_transport_delivered.
+func _build_transport_task(
+	owner: HumanIndividual, source_building: Building, destination_building: Building, resource_name: String,
+	trip_target: int, requested_remaining: int, repeat_enabled: bool, repeat_count: int
+) -> Task:
+	var context: Dictionary = _resolve_transport_context(owner, source_building, destination_building, resource_name, trip_target)
+	context["transport_source_id"] = source_building.id
+	context["transport_destination_id"] = destination_building.id
+	context["transport_delivery_resource"] = resource_name
+	context["transport_requested_remaining"] = requested_remaining
+	TaskRepeatRules.write(context, repeat_enabled, repeat_count)
+	var transport_definition := load(TRANSPORT_TASK_DEFINITION_PATH) as TaskDefinition
+	return TaskFactory.build_task(transport_definition, context)
+
+
+# Segnali degli step della Transport (2026-09-12): il deposito/prelievo fisico muta comunque
+# stored_resources (la mutazione vive in BuildingStorageService), i segnali servono alla UI (griglia di
+# stoccaggio) e, dal 2026-09-20, alla ripetizione (UnloadAction.transport_delivered, collegato in
+# _reconnect_unload_action_signals).
+func _wire_transport_task(task: Task, owner: HumanIndividual) -> void:
+	for step in task.steps:
+		if step is UnloadAction:
+			_reconnect_unload_action_signals(step as UnloadAction, owner)
+		elif step is RetrieveAction:
+			(step as RetrieveAction).resource_retrieved.connect(
+				func(_res_name: String, building: Building, _qty: int) -> void: _on_resource_deposited(building)
+			)
+
+
+# Ripetizione automatica della Transport (2026-09-20, richiesta utente): UnloadAction.transport_delivered, cioe' al
+# deposito EFFETTIVO nella destinazione. Regola: il primo viaggio piu' al massimo TaskRepeatRules.MAX_REPEATS
+# ripetizioni; si ripete finche' l'obiettivo non e' raggiunto o la sorgente non ha piu' scorta. Il residuo da portare
+# e' transport_requested_remaining meno `delivered`; il nuovo obiettivo e' il minimo tra quel residuo e il
+# fabbisogno ATTUALE della destinazione (_transport_trip_target). Niente ripetizione se: casella spenta, tetto
+# raggiunto, `delivered` 0 (la destinazione non accetta niente), residuo esaurito, obiettivo 0, sorgente/destinazione
+# sparite o sorgente senza scorta, coda dell'individuo piena (push_suspended_task scarterebbe la Task piu' vecchia E
+# lo zaino).
+func _on_transport_delivered(owner: HumanIndividual, context: Dictionary, delivered: int) -> void:
+	if owner == null or not TaskRepeatRules.is_enabled(context) or delivered <= 0:
+		return
+	var repeats_done: int = TaskRepeatRules.get_count(context)
+	if repeats_done >= TaskRepeatRules.MAX_REPEATS:
+		return
+	var resource_name: String = String(context.get("transport_delivery_resource", ""))
+	var remaining: int = int(context.get("transport_requested_remaining", 0)) - delivered
+	if resource_name == "" or remaining <= 0:
+		return
+	var source_building := _find_building_by_id(int(context.get("transport_source_id", -1)))
+	var destination_building := _find_building_by_id(int(context.get("transport_destination_id", -1)))
+	if source_building == null or destination_building == null or source_building.is_demolished:
+		return
+	var source_entry: Dictionary = source_building.stored_resources.get(resource_name, {})
+	if int(source_entry.get("quantity", 0)) <= 0:
+		return
+	var trip_target: int = _transport_trip_target(destination_building, resource_name, remaining)
+	if trip_target <= 0:
+		return
+	if owner.task_queue.size() >= TaskQueueService.MAX_QUEUE_SIZE:
+		if DebugLogging.ENABLED and DebugLogging.SHOW_TRANSPORT_BUILD_LOGS:
+			print("[TRANSPORT] #%d %s: ripetizione %d non accodata - coda piena (%d)." % [
+				owner.id, owner.name, repeats_done + 1, TaskQueueService.MAX_QUEUE_SIZE
+			])
+		return
+	var repeat_task := _build_transport_task(
+		owner, source_building, destination_building, resource_name, trip_target, remaining, true, repeats_done + 1
+	)
+	_wire_transport_task(repeat_task, owner)
+	TaskQueueService.push_suspended_task(owner, repeat_task)
+	if DebugLogging.ENABLED and DebugLogging.SHOW_TRANSPORT_BUILD_LOGS:
+		print("[TRANSPORT] #%d %s: ripetizione %d/%d accodata - consegnate %d, residuo %d, obiettivo del viaggio %d." % [
+			owner.id, owner.name, repeats_done + 1, TaskRepeatRules.MAX_REPEATS, delivered, remaining, trip_target
+		])
+
+
+# Stato del trigger a due click (2026-09-12, richiesta utente) — `_transport_source_building`
 # è null finché il player non conferma il TransportSourceDialog: il PRIMO click destro su un
 # edificio con risorse NON lo imposta subito come sorgente, apre invece il dialog e tiene
-# l'edificio "in sospeso" in `_debug_transport_pending_source_building` finché il player non
+# l'edificio "in sospeso" in `_transport_pending_source_building` finché il player non
 # conferma (sorgente impostata + resource_name/quantity salvati) o annulla (niente viene impostato,
 # come se non avesse cliccato nulla — richiesta esplicita utente). Campi vivi per l'intera sessione
 # di gioco (mai resettati altrove), stesso principio "usa e getta" degli altri campi di stato dei
 # debug hook di questo file.
-var _debug_transport_source_building: Building = null
-var _debug_transport_pending_source_building: Building = null
-var _debug_transport_resource_name: String = ""
-var _debug_transport_quantity: int = 0
+var _transport_source_building: Building = null
+var _transport_pending_source_building: Building = null
+var _transport_resource_name: String = ""
+var _transport_quantity: int = 0
+# Casella "Ripeti" scelta nel TransportSourceDialog (2026-09-20, TaskRepeatRules).
+var _transport_repeat: bool = false
 
 
 # Trigger "Transport" a due click DESTRI consecutivi su edifici DIVERSI (2026-09-12, richiesta
@@ -2053,12 +2207,10 @@ var _debug_transport_quantity: int = 0
 # _try_assign_unload_command_on_right_click/_try_assign_build_command_on_right_click sopra (provato
 # per ULTIMO, dopo tutti e tre: un edificio già intercettato da uno di quelli — es. uno storage con
 # zaino pieno per Unload, o un cantiere incompleto per Build — non arriva mai qui, nessuna
-# competizione reale). Gated da DebugLogging.ENABLED, stesso principio "usa e getta" di T/Y/Z/U — DA
-# RIMUOVERE (o spostare sotto un vero pannello/bottone debug) quando questo comando avrà una vera
-# UI permanente (es. un bottone dedicato nella BuildBar).
-func _debug_try_assign_transport_command_on_right_click(event: InputEvent) -> bool:
-	if not DebugLogging.ENABLED:
-		return false
+# competizione reale). Funzione NORMALE del gioco (2026-09-20, richiesta utente: rimosso il gate
+# DebugLogging.ENABLED e il prefisso _debug_) — per questo NON inghiotte il click destro quando non c'e' nulla da
+# trasportare (edificio senza risorse, individuo CHILD/INFANT): ritorna false e il movimento normale prosegue.
+func _try_assign_transport_command_on_right_click(event: InputEvent) -> bool:
 	if not (event is InputEventMouseButton) or not event.pressed or event.button_index != MOUSE_BUTTON_RIGHT:
 		return false
 	if individual == null or not individual.is_selected:
@@ -2073,18 +2225,18 @@ func _debug_try_assign_transport_command_on_right_click(event: InputEvent) -> bo
 	if hit_building == null:
 		return false
 
-	if _debug_transport_source_building == null:
+	if _transport_source_building == null:
 		# Guard età PRIMA di aprire il dialog (2026-09-16, richiesta utente — bugfix UX: senza
 		# questo controllo il popup si apriva comunque per un individuo INFANT/CHILD selezionato,
 		# che poi veniva rifiutato solo alla fine del giro a due click da can_assign_task dentro
-		# _debug_assign_transport_task, dopo aver già scelto risorsa/quantità/destinazione a vuoto).
+		# _assign_transport_task, dopo aver già scelto risorsa/quantità/destinazione a vuoto).
 		# STESSA lista di RetrieveAction/UnloadAction.disallowed_age_bands (i due step che la
 		# Transport Task condivide con questo rifiuto) — duplicata qui apposta per poter bloccare
 		# PRIMA di costruire la Task stessa: se quella lista cambia in futuro, va aggiornata anche
 		# qui.
 		var age_band := _resolve_age_band(individual)
 		if age_band == HumanTypes.AgeBand.INFANT or age_band == HumanTypes.AgeBand.CHILD:
-			return true
+			return false
 		# available_quantities: Dictionary[String, int] — appiattito da stored_resources (Dictionary
 		# [String, Dictionary{"quantity":int,"decay_fraction":float}]), stesso "spacchettamento" già
 		# fatto da RetrieveAction.activate()/BuildingStorageService.withdraw per la stessa struttura.
@@ -2095,31 +2247,34 @@ func _debug_try_assign_transport_command_on_right_click(event: InputEvent) -> bo
 			if quantity > 0:
 				available_quantities[resource_name] = quantity
 
+		# Nessuna risorsa da prelevare (2026-09-20): il comando non e' piu' di debug, quindi il click destro su un
+		# edificio vuoto NON viene inghiottito (return false: prosegue il movimento normale). Stessa scelta per
+		# CHILD/INFANT sopra.
 		if available_quantities.is_empty():
-			if DebugLogging.SHOW_TRANSPORT_BUILD_LOGS:
+			if DebugLogging.ENABLED and DebugLogging.SHOW_TRANSPORT_BUILD_LOGS:
 				print("[TRANSPORT] %s #%d non ha risorse da prelevare." % [hit_building.building_type_name, hit_building.id])
-			return true
+			return false
 
-		_debug_transport_pending_source_building = hit_building
+		_transport_pending_source_building = hit_building
 		var display_name: String = tr(hit_building.rules.building_name) if hit_building.rules != null else hit_building.building_type_name
 		# open_dialog (2026-09-17) — titolo/messaggio ora risolti QUI (tr()+format()), non più dentro
 		# OptionChoiceDialog stesso — vedi quel file per il perché (generalizzazione, riuso anche dal
 		# comando di raccolta manuale sotto).
-		transport_source_dialog.open_dialog(tr("transport_dialog_title"), tr("transport_dialog_message").format({"building": display_name}), available_quantities)
+		transport_source_dialog.open_dialog(tr("transport_dialog_title"), tr("transport_dialog_message").format({"building": display_name}), available_quantities, UserOptions.repeat_default)
 		return true
 
-	if hit_building == _debug_transport_source_building:
+	if hit_building == _transport_source_building:
 		if DebugLogging.SHOW_TRANSPORT_BUILD_LOGS:
 			print("[TRANSPORT] destinazione uguale alla sorgente (#%d) — ignorato, clicca un edificio diverso." % hit_building.id)
 		return true
 
-	var source_building := _debug_transport_source_building
-	_debug_transport_source_building = null
+	var source_building := _transport_source_building
+	_transport_source_building = null
 	# Banner nascosto (2026-09-14, richiesta utente) — destinazione confermata, la selezione non è
 	# più "a metà".
 	if transport_selection_banner != null:
 		transport_selection_banner.visible = false
-	_debug_assign_transport_task(source_building, hit_building, _debug_transport_resource_name, _debug_transport_quantity)
+	_assign_transport_task(source_building, hit_building, _transport_resource_name, _transport_quantity, _transport_repeat)
 	return true
 
 
@@ -2127,20 +2282,21 @@ func _debug_try_assign_transport_command_on_right_click(event: InputEvent) -> bo
 # sorgente "in sospeso" SOLO ora (mai al primo click, vedi commento sopra): da qui in poi il gioco
 # resta in attesa del click destro sulla destinazione, stesso comportamento "sorgente impostata,
 # aspetto destinazione" già esistente prima del dialog.
-func _on_transport_source_resource_chosen(resource_name: String, quantity: int) -> void:
-	if _debug_transport_pending_source_building == null:
+func _on_transport_source_resource_chosen(resource_name: String, quantity: int, repeat: bool) -> void:
+	if _transport_pending_source_building == null:
 		return
-	_debug_transport_source_building = _debug_transport_pending_source_building
-	_debug_transport_pending_source_building = null
-	_debug_transport_resource_name = resource_name
-	_debug_transport_quantity = quantity
+	_transport_source_building = _transport_pending_source_building
+	_transport_pending_source_building = null
+	_transport_resource_name = resource_name
+	_transport_quantity = quantity
+	_transport_repeat = repeat
 	# Banner mostrato (2026-09-14, richiesta utente) — sorgente confermata, la selezione è ora "a
 	# metà" finché non scegli la destinazione (o premi H per annullare).
 	if transport_selection_banner != null:
 		transport_selection_banner.visible = true
 	if DebugLogging.ENABLED and DebugLogging.SHOW_TRANSPORT_BUILD_LOGS:
 		print("[TRANSPORT] sorgente impostata: %s #%d, risorsa='%s' quantità=%d. Ora click destro sull'edificio destinazione." % [
-		_debug_transport_source_building.building_type_name, _debug_transport_source_building.id, resource_name, quantity
+		_transport_source_building.building_type_name, _transport_source_building.id, resource_name, quantity
 	])
 
 
@@ -2155,8 +2311,7 @@ func _on_transport_source_resource_chosen(resource_name: String, quantity: int) 
 func _debug_clear_selected_individual_backpack() -> void:
 	if individual == null or not individual.is_selected:
 		return
-	individual.carried_resource_name = ""
-	individual.carried_quantity = 0
+	individual.carried_resources.clear()
 	print("[DEBUG] Zaino svuotato per #%d %s" % [individual.id, individual.name])
 
 
@@ -2220,7 +2375,7 @@ func _debug_test_haul_resource_task() -> void:
 		return
 	individual.stop()
 	# Stesso refresh pebble/stick di _assign_pickup_task (2026-09-09) — vedi quel commento gemello.
-	pickup.resource_collected.connect(func(_res: String, _pos: Vector2i, _qty: int) -> void:
+	pickup.collection_completed.connect(func(_collected: Dictionary) -> void:
 		_refresh_resource_visuals(cell)
 	)
 	individual.assign_task(task, age_band)
@@ -2812,11 +2967,48 @@ func _refresh_stone_panel() -> void:
 # quantity_requested (2026-09-18, richiesta utente — scelta quantità anche per il pickup) — -1
 # default = nessun tetto scelto dal player (PickUpAction risolve il massimo come sempre): i due
 # chiamanti "1 candidato senza dialog"/"tutti a scorta 0" non ne passano uno, invariati. Il
-# chiamante col dialog (_on_pickup_choice_resource_chosen) passa la quantità scelta.
-func _assign_pickup_task(macro_coords: Vector2i, target_position: Vector2i, resource_name: String, quantity_requested: int = -1) -> void:
+# chiamante col dialog (_on_pickup_choice_made) passa la quantità scelta (solo con criterio per nome).
+# criterion_kind/criterion_category (2026-09-20, zaino multi-risorsa, passo 2): il criterio di raccolta di
+# PickUpAction (NAME = solo `resource_name`, comportamento di sempre; CATEGORY = tutte le risorse della
+# categoria; ALL = tutto quello che c'e' nella microcella). `resource_name` resta obbligatorio (TaskFactory lo
+# richiede) ma con CATEGORY/ALL non viene usato; quantity_requested vale solo con NAME.
+func _assign_pickup_task(
+	macro_coords: Vector2i, target_position: Vector2i, resource_name: String, quantity_requested: int = -1,
+	criterion_kind: int = PickUpAction.CriterionKind.NAME, criterion_category: int = -1,
+	repeat_enabled: bool = false, repeat_count: int = 0
+) -> void:
 	var cell: LiveMacroCell = live_cells.get(macro_coords)
 	if cell == null or cell.macro_state == null:
 		return
+	# La Task (Walk + PickUp, con wiring dei segnali) e' costruita da _build_pickup_task, condivisa con la
+	# ripetizione automatica (_queue_pickup_repeat), che la accoda invece di assegnarla. `individual` e' il
+	# proprietario della Task (qui, l'individuo selezionato).
+	var task := _build_pickup_task(
+		cell, target_position, resource_name, quantity_requested, criterion_kind, criterion_category,
+		repeat_enabled, repeat_count, individual
+	)
+
+	# Icona letta da IconRegistry (2026-09-11, richiesta utente — generalizzazione del meccanismo di
+	# lampeggio: prima "✋" era hardcoded dentro _spawn_pickup_command_effect, ora vive nel registro
+	# centrale insieme a tutte le altre icone, vedi IconRegistry.COMMAND_ICONS) — TRIGGER invariato:
+	# ancora SUBITO al click destro (non a PickUpAction.activate()), stesso motivo di sempre — il
+	# player deve vedere da dove è partita la Task anche mentre l'individuo sta ancora camminando.
+	#
+	# "❌" se il guard di assign_task rifiuta (2026-09-13, richiesta utente — bugfix: prima la
+	# "manina" appariva comunque anche quando la Task non partiva mai, es. INFANT) — assign_task ora
+	# ritorna bool, catturato qui per scegliere l'icona giusta invece di assumere sempre successo.
+	var assigned := individual.assign_task(task, _resolve_age_band(individual))
+	var command_icon_key := "pickup" if assigned else "task_rejected"
+	_spawn_command_blink_effect(cell, target_position, IconRegistry.get_command_icon(command_icon_key))
+
+
+# Costruisce la Task di raccolta (Walk + PickUp) senza assegnarla (2026-09-20, estratta da _assign_pickup_task per
+# riusarla nella ripetizione automatica). `owner` e' l'individuo proprietario della Task: serve al collegamento
+# dei segnali di Unload. Ritorna la Task gia' cablata.
+func _build_pickup_task(
+	cell: LiveMacroCell, target_position: Vector2i, resource_name: String, quantity_requested: int,
+	criterion_kind: int, criterion_category: int, repeat_enabled: bool, repeat_count: int, owner: HumanIndividual
+) -> Task:
 
 	# TaskFactory.build_task (2026-09-10, richiesta utente — estensione TaskFactory per PICKUP)
 	# SOSTITUISCE la costruzione manuale [WalkAction, PickUpAction] di prima: task_name/
@@ -2870,6 +3062,17 @@ func _assign_pickup_task(macro_coords: Vector2i, target_position: Vector2i, reso
 	# esistesse in step_pickup_from_position.tres.
 	if quantity_requested >= 0:
 		context["pickup_requested_quantity"] = quantity_requested
+	# Criterio (2026-09-20): scritto SOLO se non e' il default NAME — omesso, TaskFactory risolve NAME/-1 come
+	# prima (stesso schema di pickup_requested_quantity).
+	if criterion_kind != PickUpAction.CriterionKind.NAME:
+		context["pickup_criterion_kind"] = criterion_kind
+		context["pickup_criterion_category"] = criterion_category
+	# Ripetizione automatica (2026-09-20, richiesta utente): le chiavi di TaskRepeatRules NON sono
+	# in context_keys di step_pickup_from_position.tres, quindi TaskFactory non le consuma e restano in
+	# task.context per tutta la vita della Task (PickUpAction.on_complete li legge da li', e vengono salvati col
+	# context).
+	if repeat_enabled:
+		TaskRepeatRules.write(context, true, repeat_count)
 	var task := TaskFactory.build_task(haul_resource_definition, context)
 
 	# task.step_appended (2026-09-12, richiesta utente — bugfix "il mucchietto non si aggiorna in
@@ -2885,7 +3088,7 @@ func _assign_pickup_task(macro_coords: Vector2i, target_position: Vector2i, reso
 	# sarebbe mai rinfrescata da sola dopo un haul_resource completo.
 	task.step_appended.connect(func(action: Action) -> void:
 		if action is UnloadAction:
-			_reconnect_unload_action_signals(action as UnloadAction, individual)
+			_reconnect_unload_action_signals(action as UnloadAction, owner)
 	)
 
 	# Rinfresca pebble/stick di QUESTA cella non appena la raccolta è davvero avvenuta (2026-09-09,
@@ -2913,19 +3116,37 @@ func _assign_pickup_task(macro_coords: Vector2i, target_position: Vector2i, reso
 		if step is PickUpAction:
 			_reconnect_pickup_action_signals(step as PickUpAction)
 			break
+	return task
 
-	# Icona letta da IconRegistry (2026-09-11, richiesta utente — generalizzazione del meccanismo di
-	# lampeggio: prima "✋" era hardcoded dentro _spawn_pickup_command_effect, ora vive nel registro
-	# centrale insieme a tutte le altre icone, vedi IconRegistry.COMMAND_ICONS) — TRIGGER invariato:
-	# ancora SUBITO al click destro (non a PickUpAction.activate()), stesso motivo di sempre — il
-	# player deve vedere da dove è partita la Task anche mentre l'individuo sta ancora camminando.
-	#
-	# "❌" se il guard di assign_task rifiuta (2026-09-13, richiesta utente — bugfix: prima la
-	# "manina" appariva comunque anche quando la Task non partiva mai, es. INFANT) — assign_task ora
-	# ritorna bool, catturato qui per scegliere l'icona giusta invece di assumere sempre successo.
-	var assigned := individual.assign_task(task, _resolve_age_band(individual))
-	var command_icon_key := "pickup" if assigned else "task_rejected"
-	_spawn_command_blink_effect(cell, target_position, IconRegistry.get_command_icon(command_icon_key))
+
+# Ripetizione automatica della raccolta (2026-09-20, richiesta utente): PickUpAction.repeat_requested. Genera una
+# nuova Task di raccolta IDENTICA (stessa cella, stesso criterio, stessa quantita' richiesta) con il contatore
+# di ripetizioni aggiornato e la ACCODA all'individuo (TaskQueueService.push_suspended_task, coda LIFO): parte
+# quando la Task in corso (il trasporto al magazzino) finisce. Nessun controllo sulla cella prima di partire.
+# Se la coda dell'individuo e' gia' piena non si accoda nulla: push_suspended_task in quel caso scarterebbe la
+# Task piu' vecchia E lo zaino (vedi TaskQueueService), e qui lo zaino e' appena stato riempito.
+func _queue_pickup_repeat(step: PickUpAction, owner: HumanIndividual, next_repeat_count: int) -> void:
+	if owner == null or step.macro_state == null:
+		return
+	var repeat_cell: LiveMacroCell = null
+	for cell in live_cells.values():
+		if cell.macro_state == step.macro_state:
+			repeat_cell = cell
+			break
+	if repeat_cell == null:
+		return
+	if owner.task_queue.size() >= TaskQueueService.MAX_QUEUE_SIZE:
+		if DebugLogging.ENABLED and DebugLogging.SHOW_PICKUP_LOGS:
+			print("[PICKUP] #%d %s: ripetizione %d non accodata — coda piena (%d)." % [
+				owner.id, owner.name, next_repeat_count, TaskQueueService.MAX_QUEUE_SIZE
+			])
+		return
+	var repeat_task := _build_pickup_task(
+		repeat_cell, step.target_position, step.resource_name, step.quantity_requested, step.criterion_kind,
+		step.criterion_category, true, next_repeat_count, owner
+	)
+	TaskQueueService.push_suspended_task(owner, repeat_task)
+
 
 
 # Numero di lampeggi e durata di ciascuna metà-ciclo (buio->chiaro o chiaro->buio) dell'effetto
@@ -3021,13 +3242,21 @@ func _spawn_command_blink_effect(cell: LiveMacroCell, target_position: Vector2i,
 # il movimento normale: nessun individuo selezionato -> nessun comando possibile, comportamento
 # coerente col resto del destro-click.
 # Stato "in sospeso" del pickup_choice_dialog (2026-09-17, richiesta utente) — STESSO principio dei
-# campi _debug_transport_pending_* sopra: macro_coords/position del click restano qui finché il
+# campi _transport_pending_* sopra: macro_coords/position del click restano qui finché il
 # player non conferma la scelta nel dialog (o annulla, nel qual caso _assign_pickup_task non viene
 # mai chiamata — nessun segnale emesso a cancel, vedi OptionChoiceDialog._on_cancel_pressed).
 # Condivisi da tutti i candidati aperti nello stesso dialog (stesso click, stessa posizione — STESSA
 # assunzione già fatta dal vecchio codice con `candidates[0]`).
 var _pickup_pending_macro_coords: Vector2i = Vector2i.ZERO
 var _pickup_pending_position: Vector2i = Vector2i.ZERO
+# Risorse mostrate nel dialog (2026-09-20): [{"resource_name", "category", "quantity"}, ...] — servono a
+# _on_pickup_choice_made per scegliere una risorsa "rappresentativa" da passare a _assign_pickup_task quando il
+# criterio e' CATEGORY/ALL (TaskFactory vuole sempre un resource_name, che PickUpAction poi ignora).
+var _pickup_pending_resources: Array = []
+
+# La voce preselezionata del pickup_choice_dialog viene da UserOptions.get_pickup_default_choice() (2026-09-20,
+# richiesta utente: opzione salvata, scelta dal menu Opzioni; default "Tutto"). Il dialog ripiega risalendo
+# (categoria, poi "Tutto") se la voce configurata non e' presente nella cella.
 
 
 func _try_assign_pickup_command_on_right_click(event: InputEvent) -> bool:
@@ -3072,7 +3301,7 @@ func _try_assign_pickup_command_on_right_click(event: InputEvent) -> bool:
 
 	# Guard età PRIMA di qualunque popup/assegnazione (2026-09-17, richiesta utente — bugfix UX: con
 	# 2+ risorse un CHILD/INFANT vedeva comunque pickup_choice_dialog, negato solo DOPO la scelta —
-	# STESSO fix già adottato da _debug_try_assign_transport_command_on_right_click per lo stesso
+	# STESSO fix già adottato da _try_assign_transport_command_on_right_click per lo stesso
 	# identico problema, "guard età prima di aprire il dialog"). STESSA lista di PickUpAction.
 	# disallowed_age_bands (duplicata qui apposta per poter bloccare PRIMA di costruire/mostrare
 	# qualunque cosa — se quella lista cambia in futuro, va aggiornata anche qui). ❌ mostrato subito
@@ -3103,7 +3332,10 @@ func _try_assign_pickup_command_on_right_click(event: InputEvent) -> bool:
 		var chosen: Dictionary = candidates[0]
 		if DebugLogging.ENABLED and DebugLogging.SHOW_RECONNECT_FACTORY_LOGS:
 			print("[PICKUP CMD DEBUG] _try_assign_pickup_command_on_right_click: ritorna TRUE — tutti i candidati a scorta 0, fallback su %s_hit=%s" % [chosen["resource_name"], str(chosen)])
-		_assign_pickup_task(chosen["macro_coords"], chosen["position"], chosen["resource_name"])
+		_assign_pickup_task(
+			chosen["macro_coords"], chosen["position"], chosen["resource_name"], -1,
+			PickUpAction.CriterionKind.NAME, -1, UserOptions.repeat_default
+		)
 		return true
 
 	# 1 disponibile (2026-09-17) — SOLO una risorsa ha davvero scorta qui (es. rametti=0/fibra=6):
@@ -3112,36 +3344,80 @@ func _try_assign_pickup_command_on_right_click(event: InputEvent) -> bool:
 		var chosen: Dictionary = available_candidates[0]
 		if DebugLogging.ENABLED and DebugLogging.SHOW_RECONNECT_FACTORY_LOGS:
 			print("[PICKUP CMD DEBUG] _try_assign_pickup_command_on_right_click: ritorna TRUE — unico candidato con scorta reale, %s_hit=%s" % [chosen["resource_name"], str(chosen)])
-		_assign_pickup_task(chosen["macro_coords"], chosen["position"], chosen["resource_name"])
+		_assign_pickup_task(
+			chosen["macro_coords"], chosen["position"], chosen["resource_name"], -1,
+			PickUpAction.CriterionKind.NAME, -1, UserOptions.repeat_default
+		)
 		return true
 
 	# 2+ disponibili (2026-09-17) — vera scelta: niente priorità fissa, si apre pickup_choice_dialog
-	# (STESSO OptionChoiceDialog usato dalla Transport, vedi quel file — 2026-09-18: ora lascia
+	# (PickupChoiceDialog, menu gerarchico Tutto/categoria/risorsa — 2026-09-18: lascia
 	# scegliere anche la quantità, non più solo la risorsa). macro_coords/position condivisi da
 	# tutti i candidati (stesso click,
 	# stesso lotto — STESSA assunzione già fatta dal vecchio codice con `candidates[0]`), salvati in
 	# _pickup_pending_macro_coords/_position: l'assegnazione vera parte solo alla conferma del dialog,
-	# vedi _on_pickup_choice_resource_chosen sotto.
+	# vedi _on_pickup_choice_made sotto.
 	_pickup_pending_macro_coords = available_candidates[0]["macro_coords"]
 	_pickup_pending_position = available_candidates[0]["position"]
 	var available_quantities: Dictionary = {}
+	var pending_resources: Array = []
 	for candidate in available_candidates:
 		available_quantities[candidate["resource_name"]] = candidate["available_quantity"]
+		var candidate_rules := CaloricCalculator.get_caloric_source_rules(candidate["resource_name"])
+		pending_resources.append({
+			"resource_name": candidate["resource_name"],
+			"category": int(candidate_rules.category) if candidate_rules != null else int(SecondaryResourceTypes.Category.FOOD),
+			"quantity": int(candidate["available_quantity"]),
+		})
+	_pickup_pending_resources = pending_resources
 	if DebugLogging.ENABLED and DebugLogging.SHOW_RECONNECT_FACTORY_LOGS:
 		print("[DBG_PICKUP] %d candidati con scorta reale alla stessa posizione: %s — apro pickup_choice_dialog." % [
 			available_candidates.size(), str(available_quantities)
 		])
-	pickup_choice_dialog.open_dialog(tr("pickup_choice_dialog_title"), tr("pickup_choice_dialog_message"), available_quantities)
+	pickup_choice_dialog.open_dialog(tr("pickup_choice_dialog_title"), tr("pickup_choice_dialog_message"), pending_resources, UserOptions.get_pickup_default_choice(), UserOptions.repeat_default)
 	return true
 
 
 # Handler di conferma del pickup_choice_dialog (2026-09-17, richiesta utente — 2026-09-18: `quantity`
 # ora PASSATA a _assign_pickup_task/PickUpAction.quantity_requested, non più ignorata: il player può
-# scegliere di raccogliere meno del massimo). _pickup_pending_macro_coords/_position sono quelli
-# salvati da _try_assign_pickup_command_on_right_click al momento dell'apertura — STESSO schema di
-# _on_transport_source_resource_chosen sopra.
-func _on_pickup_choice_resource_chosen(resource_name: String, quantity: int) -> void:
-	_assign_pickup_task(_pickup_pending_macro_coords, _pickup_pending_position, resource_name, quantity)
+# scegliere di raccogliere meno del massimo; 2026-09-20, zaino multi-risorsa passo 3: il dialog restituisce il
+# CRITERIO scelto). _pickup_pending_macro_coords/_position sono quelli salvati da
+# _try_assign_pickup_command_on_right_click al momento dell'apertura — STESSO schema di
+# _on_transport_source_resource_chosen sopra. `kind` e' un PickUpAction.CriterionKind:
+#   - NAME: una risorsa, con la quantita' scelta (comportamento di sempre);
+#   - CATEGORY: tutte le risorse di `category`, quantita' ignorata;
+#   - ALL: tutto quello che c'e', quantita' ignorata.
+# Con CATEGORY/ALL _assign_pickup_task vuole comunque un resource_name (TaskFactory lo richiede): si passa la
+# prima risorsa del dialog di quella categoria (o la prima in assoluto), che PickUpAction non usa.
+func _on_pickup_choice_made(kind: int, category: int, resource_name: String, quantity: int, repeat: bool) -> void:
+	match kind:
+		PickUpAction.CriterionKind.NAME:
+			_assign_pickup_task(
+				_pickup_pending_macro_coords, _pickup_pending_position, resource_name, quantity,
+				PickUpAction.CriterionKind.NAME, -1, repeat
+			)
+		PickUpAction.CriterionKind.CATEGORY:
+			var category_resource := _pickup_representative_resource(category)
+			if category_resource != "":
+				_assign_pickup_task(
+					_pickup_pending_macro_coords, _pickup_pending_position, category_resource, -1,
+					PickUpAction.CriterionKind.CATEGORY, category, repeat
+				)
+		PickUpAction.CriterionKind.ALL:
+			var any_resource := _pickup_representative_resource(-1)
+			if any_resource != "":
+				_assign_pickup_task(
+					_pickup_pending_macro_coords, _pickup_pending_position, any_resource, -1,
+					PickUpAction.CriterionKind.ALL, -1, repeat
+				)
+
+
+# Nome della prima risorsa mostrata nel dialog per `category` (-1 = qualunque categoria); "" se non ce n'e'.
+func _pickup_representative_resource(category: int) -> String:
+	for entry in _pickup_pending_resources:
+		if category == -1 or int(entry["category"]) == category:
+			return String(entry["resource_name"])
+	return ""
 
 
 # Filtro idea non ancora scoperta (2026-09-17, richiesta utente — SecondaryResourceRules.
@@ -3549,9 +3825,9 @@ func _refresh_microcell_panel() -> void:
 #   1. l'edificio colpito è di categoria STORAGE (rules.category — un hit su hut/pebble_circle
 #      colpiti col destro resta movimento semplice, non un errore, semplicemente non è un target
 #      valido per Unload);
-#   2. lo zaino non è vuoto (carried_quantity > 0 — zaino vuoto non ha nulla da scaricare, stesso
-#      principio "niente da fare" già seguito da PickUpAction quando _quantity_to_collect è 0);
-#   3. BuildingStorageService.can_accept è vero per carried_resource_name (categoria della risorsa
+#   2. lo zaino non è vuoto (carried_resources non vuoto — zaino vuoto non ha nulla da scaricare, stesso
+#      principio "niente da fare" già seguito da PickUpAction quando il piano di raccolta è vuoto);
+#   3. BuildingStorageService.can_accept è vero per ALMENO UNA varietà di carried_resources (categoria della risorsa
 #      trasportata compatibile con building.rules.accepted_categories — vedi BuildingStorageService.
 #      gd). Nessun feedback "categoria rifiutata" in questo passo (nessuna UI per l'inventario
 #      edificio ancora, richiesta esplicita) — semplicemente nessun comando, movimento normale.
@@ -3583,7 +3859,7 @@ func _try_assign_unload_command_on_right_click(event: InputEvent) -> bool:
 		return false
 	if individual == null or not individual.is_selected:
 		return false
-	if individual.carried_quantity <= 0:
+	if individual.carried_resources.is_empty():
 		return false
 
 	var building_hit := building_selector_controller.try_select(
@@ -3595,7 +3871,14 @@ func _try_assign_unload_command_on_right_click(event: InputEvent) -> bool:
 	var building := _find_building_by_id(building_hit["building_id"])
 	if building == null or building.rules == null or building.rules.category != BuildingTypes.Category.STORAGE:
 		return false
-	if not BuildingStorageService.can_accept(building, individual.carried_resource_name):
+	# Zaino multi-risorsa (2026-09-20): l'Unload deposita tutto ciò che l'edificio accetta, quindi basta che
+	# ne accetti ALMENO UNA varietà (prima: la sola risorsa trasportata).
+	var building_accepts_something := false
+	for carried_name in individual.carried_resources.keys():
+		if BuildingStorageService.can_accept(building, String(carried_name)):
+			building_accepts_something = true
+			break
+	if not building_accepts_something:
 		return false
 
 	var macro_offset: Vector2 = Vector2(Vector2i(building.macro_x, building.macro_y) - individual.home_macro_coords) * World.WIDTH
@@ -4121,15 +4404,11 @@ func _update_individual_panel_content(target: HumanIndividual) -> void:
 	# (ricalcolato fresco qui ad ogni refresh pannello), max_carry_capacity è letto DIRETTAMENTE
 	# da target: nessun secondo calcolo ridondante, il campo è già mantenuto aggiornato una volta
 	# al giorno da HumanCarryCapacityIndividualService (vedi GameTimeService._on_day_advanced).
-	# Spazio occupato = carried_quantity × SecondaryResourceRules.space_per_unit della risorsa
-	# trasportata, lookup dal .tres corrispondente CALCOLATO AL VOLO qui (mai cachato) — nessuna
-	# risorsa trasportata (carried_resource_name vuoto) o .tres non risolvibile => spazio occupato
-	# 0 (barra del carico vuota). Il pannello riceve lo spazio OCCUPATO, non quello libero.
-	var used_carry_space := 0.0
-	if target.carried_resource_name != "":
-		var carried_resource_rules := CaloricCalculator.get_caloric_source_rules(target.carried_resource_name)
-		if carried_resource_rules != null:
-			used_carry_space = float(target.carried_quantity) * carried_resource_rules.space_per_unit
+	# Spazio occupato = HumanIndividual.get_carried_space() (somma di quantity ×
+	# SecondaryResourceRules.space_per_unit di ogni varietà trasportata, CALCOLATO AL VOLO, mai cachato) —
+	# nessuna risorsa trasportata o .tres non risolvibile => spazio occupato 0 (barra del carico vuota).
+	# Il pannello riceve lo spazio OCCUPATO, non quello libero.
+	var used_carry_space: float = target.get_carried_space()
 
 	# 5 nuovi parametri vitali (2026-09-13, richiesta utente) — stesso trattamento di
 	# max_carry_capacity sopra: letti DIRETTAMENTE da target, nessun ricalcolo live (a differenza di
@@ -5754,6 +6033,18 @@ func _refresh_resource_visuals(cell: LiveMacroCell) -> void:
 	# agganciato, richiesta esplicita utente — questo refresh serve comunque a mantenere la loro
 	# capacità fresca per pickup/ispezione microcella).
 	LotCapacityService.refresh_all_vegetation_lot_capacities(cell.macro_state, game_data)
+	# Insieme "visibile in dettaglio" calcolato UNA SOLA VOLTA per refresh (2026-09-20, richiesta utente —
+	# prima veniva ricalcolato per ognuno dei 6 filtri sotto: stick, pebble, uova, ogni risorsa GRASS_PATCH e
+	# vegetazione, ~12 ms ciascuno perche' compute_visible_positions scandisce le 10.000 celle; nello stesso
+	# refresh giorno, sorgenti ed edifici sono identici, quindi il risultato e' lo stesso). null = cella senza
+	# FogOfWarRenderer: i filtri restituiscono le posizioni invariate. Si memorizza anche la versione
+	# dell'insieme letta ora (LiveMacroCell.last_refresh_visible_version) per il trigger da movimento.
+	var _fog_step_start_usec := Time.get_ticks_usec()
+	var visible_positions: Variant = null
+	if cell.fog_of_war_renderer != null:
+		visible_positions = cell.fog_of_war_renderer.compute_visible_positions(game_data.get_absolute_day())
+		cell.last_refresh_visible_version = cell.fog_of_war_renderer.visible_set_version
+	var _fog_visible_set_ms: float = (Time.get_ticks_usec() - _fog_step_start_usec) / 1000.0
 	# Filtro FoW su pebble/stick (2026-09-09, richiesta utente) — stesso filtro già in uso per la
 	# vegetazione (_filter_vegetation_positions_by_visibility sotto): prima d'ora pebble/stick
 	# disegnavano OGNI posizione incondizionatamente, anche sotto FROZEN_OVERLAY_COLOR/nero pieno,
@@ -5771,10 +6062,10 @@ func _refresh_resource_visuals(cell: LiveMacroCell) -> void:
 	# risolta dal chiamante, mai un secondo calcolo nel renderer).
 	if cell.renderer != null:
 		cell.renderer.set_stick_availability(_filter_positions_by_visibility(
-			cell, _build_lot_availability_map(cell.macro_state, "stick", cell.macro_state.tree_claimed_lots.keys())
+			cell, _build_lot_availability_map(cell.macro_state, "stick", cell.macro_state.tree_claimed_lots.keys()), visible_positions
 		))
 		cell.renderer.set_pebble_availability(_filter_positions_by_visibility(
-			cell, _build_lot_availability_map(cell.macro_state, "pebble", cell.macro_state.stone_positions)
+			cell, _build_lot_availability_map(cell.macro_state, "pebble", cell.macro_state.stone_positions), visible_positions
 		))
 
 	# TEMPORANEO (diagnostica Proposta 2, vedi DebugLogging.SHOW_VEGETATION_REFRESH_TIMING_LOGS) —
@@ -5787,6 +6078,7 @@ func _refresh_resource_visuals(cell: LiveMacroCell) -> void:
 	# specie per cella — non c'entra col FoW, ma vale la pena isolarlo comunque visto che vive
 	# nella stessa funzione).
 	var _veg_timings_ms: Dictionary = {}
+	_veg_timings_ms["0_fog_visible_set"] = _fog_visible_set_ms
 	var _veg_refresh_start_usec := Time.get_ticks_usec()
 
 	var occupied: Dictionary = {}
@@ -5848,7 +6140,7 @@ func _refresh_resource_visuals(cell: LiveMacroCell) -> void:
 	# multimesh sprecata per un nido vuoto).
 	if cell.renderer != null:
 		cell.renderer.set_egg_nest_availability(_filter_positions_by_visibility(
-			cell, _build_lot_availability_map(cell.macro_state, "eggs", cell.macro_state.egg_nest_positions.keys())
+			cell, _build_lot_availability_map(cell.macro_state, "eggs", cell.macro_state.egg_nest_positions.keys()), visible_positions
 		))
 
 		# Rendering lotti GRASS_PATCH (2026-09-19) — MIRROR del blocco eggs appena sopra, stesso
@@ -5858,7 +6150,8 @@ func _refresh_resource_visuals(cell: LiveMacroCell) -> void:
 		# SHAPES): una risorsa GRASS_PATCH senza forma lì non viene disegnata (warning nel renderer).
 		for resource_name in LotCapacityService.get_resource_names_for_lot_source(SecondaryResourceTypes.LotSource.GRASS_PATCH):
 			cell.renderer.set_grass_patch_availability(resource_name, _filter_positions_by_visibility(
-				cell, _build_lot_availability_map(cell.macro_state, resource_name, cell.macro_state.lot_capacity_cache.get(resource_name, {}).keys())
+				cell, _build_lot_availability_map(cell.macro_state, resource_name, cell.macro_state.lot_capacity_cache.get(resource_name, {}).keys()),
+				visible_positions
 			))
 
 	# Proposta 2 (filtro FoW): il renderer riceve solo le posizioni che il FoW mostrerebbe comunque
@@ -5871,7 +6164,7 @@ func _refresh_resource_visuals(cell: LiveMacroCell) -> void:
 	# fino al prossimo refresh) resta un limite noto e accettato — mitigato da VEGETATION_REFRESH_
 	# MOVE_THRESHOLD in _process, non risolto del tutto.
 	_step_start_usec = Time.get_ticks_usec()
-	var render_vegetation_positions := _filter_vegetation_positions_by_visibility(cell, vegetation_positions)
+	var render_vegetation_positions := _filter_vegetation_positions_by_visibility(cell, vegetation_positions, visible_positions)
 	_veg_timings_ms["1b_fog_visibility_filter"] = (Time.get_ticks_usec() - _step_start_usec) / 1000.0
 
 	# begin_vegetation_batch()/end_vegetation_batch() (vedi MicroCellRenderer.gd): senza batching, i
@@ -6012,10 +6305,13 @@ func _refresh_resource_visuals(cell: LiveMacroCell) -> void:
 # senza bisogno di conoscere il tipo esatto per voce. Ritorna `positions` invariato (nessun filtro)
 # se la cella non ha un FogOfWarRenderer valido — difensivo, non dovrebbe succedere in pratica per
 # una cella viva reale.
-func _filter_vegetation_positions_by_visibility(cell: LiveMacroCell, positions: Dictionary) -> Dictionary:
+# `visible_positions` (2026-09-20): l'insieme gia' calcolato da _refresh_resource_visuals, condiviso da tutti i
+# filtri dello stesso refresh; null = calcolalo qui (comportamento di prima, per un eventuale chiamante che non
+# lo ha).
+func _filter_vegetation_positions_by_visibility(cell: LiveMacroCell, positions: Dictionary, visible_positions: Variant = null) -> Dictionary:
 	if cell.fog_of_war_renderer == null:
 		return positions
-	var visible := cell.fog_of_war_renderer.compute_visible_positions(game_data.get_absolute_day())
+	var visible: Dictionary = visible_positions if visible_positions != null else cell.fog_of_war_renderer.compute_visible_positions(game_data.get_absolute_day())
 	var filtered: Dictionary = {}
 	for object_type in positions:
 		var kept: Array = []
@@ -6035,10 +6331,11 @@ func _filter_vegetation_positions_by_visibility(cell: LiveMacroCell, positions: 
 # `visible` già calcolato per la vegetazione in questa stessa _refresh_resource_visuals): tenerla
 # autonoma, come l'altra, invece di introdurre uno stato condiviso tra le due per un risparmio
 # marginale (compute_visible_positions è limitato al raggio di visibilità, non all'intera griglia).
-func _filter_positions_by_visibility(cell: LiveMacroCell, positions: Dictionary) -> Dictionary:
+# `visible_positions`: come per _filter_vegetation_positions_by_visibility sopra (insieme condiviso per refresh).
+func _filter_positions_by_visibility(cell: LiveMacroCell, positions: Dictionary, visible_positions: Variant = null) -> Dictionary:
 	if cell.fog_of_war_renderer == null:
 		return positions
-	var visible := cell.fog_of_war_renderer.compute_visible_positions(game_data.get_absolute_day())
+	var visible: Dictionary = visible_positions if visible_positions != null else cell.fog_of_war_renderer.compute_visible_positions(game_data.get_absolute_day())
 	var filtered: Dictionary = {}
 	for pos in positions:
 		if visible.has(Vector2i(pos.x, pos.y)):
@@ -7297,6 +7594,15 @@ func _reconnect_build_task_signals(step: Action) -> void:
 # aggiunto lì vale automaticamente anche qui, senza rischio di disallineamento tra i due punti.
 func _reconnect_loaded_task_signals() -> void:
 	for member in human_individuals:
+		# Task IN CODA (2026-09-20, ripetizione automatica): una raccolta accodata prima del salvataggio ha gli step
+		# ricostruiti come istanze nuove, senza segnali — ricollega quelli di PickUp (refresh + ripetizione), anche
+		# per un individuo senza current_task.
+		for queued_task in member.task_queue:
+			for queued_step in queued_task.steps:
+				if queued_step is PickUpAction:
+					_reconnect_pickup_action_signals(queued_step as PickUpAction)
+				elif queued_step is UnloadAction:
+					_reconnect_unload_action_signals(queued_step as UnloadAction, member)
 		if member.current_task == null:
 			continue
 		# Conteggio SOLO per il log di conferma sotto (2026-09-11, richiesta utente — "verificare che
@@ -7372,6 +7678,11 @@ func _reconnect_unload_action_signals(deposit: UnloadAction, individual_ref: Hum
 	# "un solo punto collega tutto ciò che questa classe può emettere" già seguito per gli altri —
 	# innocuo per un'istanza che non lo emetterà mai (ramo pensiero), vedi unload_action.gd.
 	deposit.resource_deposited.connect(_on_resource_deposited)
+	# Consegna della Transport alla destinazione (2026-09-20, ripetizione automatica): emesso solo se il
+	# context porta transport_destination_id — mai per haul/pensiero, quindi innocuo collegarlo sempre.
+	deposit.transport_delivered.connect(func(delivered_owner: Variant, delivered_context: Dictionary, delivered: int) -> void:
+		_on_transport_delivered(delivered_owner as HumanIndividual, delivered_context, delivered)
+	)
 
 
 # Collega a `task` il listener step_appended che, quando nasce l'UnloadAction del ramo pensiero
@@ -7407,11 +7718,15 @@ func _connect_daydream_step_appended_listener(task: Task, individual_ref: HumanI
 # davvero (macrocella nel frattempo disattivata) — coerente con _refresh_resource_visuals, che
 # comunque non avrebbe nulla da rinfrescare per una cella non più live.
 func _reconnect_pickup_action_signals(step: PickUpAction) -> void:
-	step.resource_collected.connect(func(_res: String, _pos: Vector2i, _qty: int) -> void:
+	step.collection_completed.connect(func(_collected: Dictionary) -> void:
 		for cell in live_cells.values():
 			if cell.macro_state == step.macro_state:
 				_refresh_resource_visuals(cell)
 				break
+	)
+	# Ripetizione automatica (2026-09-20): la Task nuova viene generata e accodata da _queue_pickup_repeat.
+	step.repeat_requested.connect(func(repeat_owner: Variant, next_repeat_count: int) -> void:
+		_queue_pickup_repeat(step, repeat_owner as HumanIndividual, next_repeat_count)
 	)
 
 
@@ -7841,7 +8156,7 @@ func _execute_pending_leave_action() -> void:
 # certe zone/temi — sfondo giallo semi-opaco, STESSO colore "alert" già usato da NotificationPopup
 # per MATERIAL_NEEDED (coerenza visiva: "giallo" = "richiede attenzione" ovunque in questa UI).
 # Ancorato in alto al centro (PRESET_CENTER_TOP), nascosto di default (`visible = false`) — mostrato/
-# nascosto ai tre punti che cambiano _debug_transport_source_building (vedi il commento sul campo
+# nascosto ai tre punti che cambiano _transport_source_building (vedi il commento sul campo
 # transport_selection_banner in testa al file), mai ricreato.
 func _setup_transport_selection_banner() -> void:
 	var style := StyleBoxFlat.new()
@@ -8058,9 +8373,9 @@ func _on_day_advanced(checkpoint_ran: bool, animals_changed: bool) -> void:
 		])
 		for debug_member in human_individuals:
 			var debug_task_name: String = debug_member.current_task.task_name if debug_member.current_task != null else "null"
-			print("[DBG_TASK]   #%d %s: current_task=%s, task_queue.size()=%d, current_stamina=%.1f, carried_resource_name='%s'" % [
+			print("[DBG_TASK]   #%d %s: current_task=%s, task_queue.size()=%d, current_stamina=%.1f, carried_resources=%s" % [
 				debug_member.id, debug_member.name, debug_task_name, debug_member.task_queue.size(),
-				debug_member.current_stamina, debug_member.carried_resource_name
+				debug_member.current_stamina, str(debug_member.carried_resources)
 			])
 
 	if not (checkpoint_ran or animals_changed):

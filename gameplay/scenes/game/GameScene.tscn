@@ -14,6 +14,7 @@
 [ext_resource type="PackedScene" path="res://gameplay/scenes/game/TechTreePanel.tscn" id="12_techtree"]
 [ext_resource type="PackedScene" path="res://gameplay/scenes/game/DemolishConfirmationDialog.tscn" id="13_demolish"]
 [ext_resource type="PackedScene" path="res://gameplay/scenes/game/OptionChoiceDialog.tscn" id="14_transport"]
+[ext_resource type="PackedScene" path="res://gameplay/scenes/game/PickupChoiceDialog.tscn" id="15_pickup_choice"]
 
 [sub_resource type="StyleBoxFlat" id="StyleBoxFlat_game"]
 bg_color = Color(0.19934133, 0.34936652, 0.5477696, 1)
@@ -171,4 +172,4 @@ filters = PackedStringArray("*.json ; File JSON")
 
 [node name="TransportSourceDialog" parent="." instance=ExtResource("14_transport")]
 
-[node name="PickupChoiceDialog" parent="." instance=ExtResource("14_transport")]
+[node name="PickupChoiceDialog" parent="." instance=ExtResource("15_pickup_choice")]

@@ -79,25 +79,20 @@ func _init(p_target_building: Building, p_resource_name: String, p_quantity_requ
 # Risolve UNA VOLTA (mai più ricalcolato dopo, stesso principio di PickUpAction.activate) quanto
 # verrà prelevato — STESSA identica formula di PickUpAction, con l'unica differenza della fonte
 # "disponibile" (target_building.stored_resources invece di TerrainScatteredResourceService):
-#   spazio_libero  = max_carry_capacity - (carried_quantity × space_per_unit della risorsa già
-#                    trasportata, se presente)
+#   spazio_libero  = max_carry_capacity - individual.get_carried_space() (somma di quantity ×
+#                    space_per_unit di ogni varietà già trasportata)
 #   disponibile    = target_building.stored_resources.get(resource_name, {}).get("quantity", 0)
 #   quantità       = min(quantity_requested, floor(spazio_libero / space_per_unit), disponibile)
 #   spazio_prelevato = quantità × space_per_unit
-# Stessa assunzione esplicita di PickUpAction: l'individuo arriva con carried_resource_name == ""
-# (zaino vuoto) — se non è così, quantità resta 0 (nessuna azione), nessuna gestione mista di due
+# Stessa assunzione esplicita di PickUpAction: l'individuo arriva con lo zaino vuoto
+# (carried_resources vuoto) — se non è così, quantità resta 0 (nessuna azione), nessuna gestione mista di due
 # risorse diverse in questo step.
 func activate(individual: Variant, context: Dictionary) -> void:
 	super(individual, context)
 	if _restored_from_save:
 		return
 
-	var used_space := 0.0
-	if individual.carried_resource_name != "":
-		var carried_rules := CaloricCalculator.get_caloric_source_rules(individual.carried_resource_name)
-		if carried_rules != null:
-			used_space = float(individual.carried_quantity) * carried_rules.space_per_unit
-	var free_space: float = individual.max_carry_capacity - used_space
+	var free_space: float = individual.max_carry_capacity - individual.get_carried_space()
 
 	var resource_rules := CaloricCalculator.get_caloric_source_rules(resource_name)
 	var space_per_unit: float = resource_rules.space_per_unit if resource_rules != null else 0.0
@@ -108,7 +103,7 @@ func activate(individual: Variant, context: Dictionary) -> void:
 		available = int(stored_entry.get("quantity", 0))
 
 	_quantity_to_retrieve = 0
-	if individual.carried_resource_name == "" and space_per_unit > 0.0:
+	if individual.carried_resources.is_empty() and space_per_unit > 0.0:
 		_quantity_to_retrieve = max(0, min(quantity_requested, min(int(floor(free_space / space_per_unit)), available)))
 
 	var space_retrieved: float = float(_quantity_to_retrieve) * space_per_unit
@@ -165,7 +160,7 @@ func get_required_position(individual: Variant, context: Dictionary) -> Variant:
 # prelevata è la STESSA), va letta a parte da chi chiama, PRIMA che l'eventuale svuotamento della
 # entry (quantità residua a 0) la rimuova dal Dictionary.
 #
-# carried_quantity/carried_resource_name caricati con la quantità EFFETTIVAMENTE prelevata
+# carried_resources (add_carried_resource) caricato con la quantità EFFETTIVAMENTE prelevata
 # (`withdrawn`, il valore di ritorno di withdraw()), MAI _quantity_to_retrieve stesso — richiesta
 # esplicita utente: "il chiamante deve sapere quanto ha in spalla l'individuo dopo, non presumere
 # sempre la quantità richiesta". In pratica coincidono sempre (nessuna finestra in cui lo stock del
@@ -179,9 +174,7 @@ func on_complete(individual: Variant, context: Dictionary) -> void:
 	var withdrawn: int = BuildingStorageService.withdraw(target_building, resource_name, _quantity_to_retrieve)
 	if withdrawn <= 0:
 		return
-	individual.carried_resource_name = resource_name
-	individual.carried_quantity += withdrawn
-	individual.carried_decay_fraction = decay_fraction
+	individual.add_carried_resource(resource_name, withdrawn, decay_fraction)
 	resource_retrieved.emit(resource_name, target_building, withdrawn)
 
 

@@ -138,9 +138,18 @@ static func build_task(definition: TaskDefinition, context: Dictionary) -> Task:
 				var pickup_quantity_requested: int = -1
 				if step_definition.context_keys.size() > 3 and context.has(step_definition.context_keys[3]):
 					pickup_quantity_requested = int(context[step_definition.context_keys[3]])
+				# 5° e 6° argomento OPZIONALI (2026-09-20, zaino multi-risorsa): context_keys[4]/[5], se dichiarati E
+				# risolvibili in context, sono criterion_kind (PickUpAction.CriterionKind) e criterion_category;
+				# assenti = NAME/-1, comportamento INVARIATO (una risorsa per nome).
+				var pickup_criterion_kind: int = PickUpAction.CriterionKind.NAME
+				if step_definition.context_keys.size() > 4 and context.has(step_definition.context_keys[4]):
+					pickup_criterion_kind = int(context[step_definition.context_keys[4]])
+				var pickup_criterion_category: int = -1
+				if step_definition.context_keys.size() > 5 and context.has(step_definition.context_keys[5]):
+					pickup_criterion_category = int(context[step_definition.context_keys[5]])
 				steps.append(PickUpAction.new(
 					context[target_position_key], context[macro_state_key], context[resource_name_key],
-					pickup_quantity_requested
+					pickup_quantity_requested, pickup_criterion_kind, pickup_criterion_category
 				))
 				step_descriptions.append(step_definition.step_description)
 			TaskTypes.ActionType.SETUP_SITE:

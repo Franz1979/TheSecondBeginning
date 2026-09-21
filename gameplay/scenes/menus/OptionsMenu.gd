@@ -22,6 +22,10 @@ extends Window
 @onready var language_row: HBoxContainer = $MarginContainer/VBoxContainer/LanguageRow
 @onready var language_option_button: OptionButton = $MarginContainer/VBoxContainer/LanguageRow/OptionButton
 @onready var language_label: Label = $MarginContainer/VBoxContainer/LanguageRow/Label
+@onready var pickup_default_label: Label = $MarginContainer/VBoxContainer/PickupDefaultRow/Label
+@onready var pickup_default_option_button: OptionButton = $MarginContainer/VBoxContainer/PickupDefaultRow/OptionButton
+@onready var repeat_label: Label = $MarginContainer/VBoxContainer/RepeatRow/Label
+@onready var repeat_check_box: CheckBox = $MarginContainer/VBoxContainer/RepeatRow/CheckBox
 @onready var close_button: Button = $MarginContainer/VBoxContainer/CloseButton
 
 # Bugfix (richiesta utente, 2026-09-06): _resize_to_content() prima si limitava a INSEGUIRE il
@@ -53,6 +57,8 @@ func _ready() -> void:
 
 	notification_popups_check_box.toggled.connect(_on_notification_popups_toggled)
 	language_option_button.item_selected.connect(_on_language_selected)
+	pickup_default_option_button.item_selected.connect(_on_pickup_default_selected)
+	repeat_check_box.toggled.connect(_on_repeat_toggled)
 	close_button.pressed.connect(hide)
 	# close_requested NON collegato a hide() + X nascosta (richiesta utente, 2026-09-05, stesso
 	# motivo/meccanismo di SystemMenuDialog._hide_native_close_button): si chiude solo dal
@@ -74,6 +80,9 @@ func open_menu(show_language: bool = true) -> void:
 	notification_popups_check_box.set_pressed_no_signal(UserOptions.show_notification_popups)
 	language_option_button.select(UserOptions.language)
 	language_row.visible = show_language
+	# La preselezione raccolta e' pertinente sia dal menu principale sia in partita: la riga c'e' sempre.
+	_select_pickup_default_from_options()
+	repeat_check_box.set_pressed_no_signal(UserOptions.repeat_default)
 	exclusive = true
 	_resize_to_content()
 	popup_centered()
@@ -119,9 +128,99 @@ func _refresh_texts() -> void:
 	title = tr("options")
 	notification_popups_label.text = tr("options_show_notification_popups")
 	language_label.text = tr("options_language")
+	pickup_default_label.text = tr("options_pickup_default")
+	repeat_label.text = tr("options_repeat_default").format({"count": TaskRepeatRules.MAX_REPEATS})
+	_rebuild_pickup_default_options()
 	# "close_and_save" (non "close_menu", richiesta utente 2026-09-05): stesso identico
 	# comportamento (hide()), solo l'etichetta comunica che le modifiche sono già salvate — coerente
 	# con UserOptions che persiste ad ogni singola modifica, non solo alla chiusura.
 	close_button.text = tr("close_and_save")
 	for i in LANGUAGE_LABEL_KEYS.size():
 		language_option_button.set_item_text(i, tr(LANGUAGE_LABEL_KEYS[i]))
+
+
+# --- Preselezione del dialog di raccolta (2026-09-20, richiesta utente) ---
+
+# Ricostruisce l'elenco COMPLETO delle scelte possibili (non solo quelle presenti in una cella), con i testi
+# nella lingua corrente — chiamata da _refresh_texts, quindi anche dopo un cambio lingua:
+#   Tutto
+#   -- Categoria --   Tutto il cibo / Tutti i materiali / Tutti i medicinali
+#   -- Risorsa --     tutte le risorse raccoglibili (TerrainScatteredResourceService.is_pickable), raggruppate per
+#                      categoria nell'ordine di PickUpAction.PRIORITY_CATEGORIES e, dentro, per nome leggibile.
+# Ogni voce selezionabile porta come metadata {"kind", "category", "resource_name"}; le intestazioni sono
+# separatori (senza metadata). Poi riseleziona la voce salvata in UserOptions.
+func _rebuild_pickup_default_options() -> void:
+	pickup_default_option_button.clear()
+	_add_pickup_default_item(tr("pickup_choice_all"), PickUpAction.CriterionKind.ALL, -1, "")
+
+	pickup_default_option_button.add_separator(tr("options_pickup_default_group_category"))
+	for category in PickUpAction.PRIORITY_CATEGORIES:
+		var text_keys: Array = PickupChoiceDialog.CATEGORY_TEXT_KEYS.get(category, ["", ""])
+		if text_keys[1] == "":
+			continue
+		_add_pickup_default_item(tr(text_keys[1]), PickUpAction.CriterionKind.CATEGORY, int(category), "")
+
+	pickup_default_option_button.add_separator(tr("options_pickup_default_group_resource"))
+	var names_by_category: Dictionary = {}
+	for resource_name in CaloricCalculator.list_secondary_resource_names():
+		if not TerrainScatteredResourceService.is_pickable(resource_name):
+			continue
+		var rules := CaloricCalculator.get_caloric_source_rules(resource_name)
+		if rules == null:
+			continue
+		var category: int = int(rules.category)
+		if not names_by_category.has(category):
+			names_by_category[category] = []
+		names_by_category[category].append(resource_name)
+	for category in PickUpAction.PRIORITY_CATEGORIES:
+		var category_names: Array = names_by_category.get(int(category), [])
+		category_names.sort_custom(func(a: String, b: String) -> bool:
+			return IconRegistry.get_resource_display_name(a) < IconRegistry.get_resource_display_name(b)
+		)
+		for resource_name in category_names:
+			_add_pickup_default_item(IconRegistry.get_resource_display_name(resource_name), PickUpAction.CriterionKind.NAME, int(category), resource_name)
+
+	_select_pickup_default_from_options()
+
+
+func _add_pickup_default_item(text: String, kind: int, category: int, resource_name: String) -> void:
+	pickup_default_option_button.add_item(text)
+	var index: int = pickup_default_option_button.item_count - 1
+	pickup_default_option_button.set_item_metadata(index, {"kind": kind, "category": category, "resource_name": resource_name})
+
+
+# Seleziona nel menu la voce salvata in UserOptions; se non c'e' (risorsa non piu' esistente, categoria non
+# valida) ripiega su "Tutto" (indice 0).
+func _select_pickup_default_from_options() -> void:
+	var selected_index: int = 0
+	for i in range(pickup_default_option_button.item_count):
+		if pickup_default_option_button.is_item_separator(i):
+			continue
+		var meta: Variant = pickup_default_option_button.get_item_metadata(i)
+		if not (meta is Dictionary):
+			continue
+		if int(meta["kind"]) != UserOptions.pickup_default_kind:
+			continue
+		if int(meta["kind"]) == PickUpAction.CriterionKind.CATEGORY and int(meta["category"]) != UserOptions.pickup_default_category:
+			continue
+		if int(meta["kind"]) == PickUpAction.CriterionKind.NAME and String(meta["resource_name"]) != UserOptions.pickup_default_resource:
+			continue
+		selected_index = i
+		break
+	pickup_default_option_button.select(selected_index)
+
+
+func _on_pickup_default_selected(index: int) -> void:
+	var meta: Variant = pickup_default_option_button.get_item_metadata(index)
+	if not (meta is Dictionary):
+		return
+	UserOptions.pickup_default_kind = int(meta["kind"])
+	UserOptions.pickup_default_category = int(meta["category"]) if int(meta["kind"]) != PickUpAction.CriterionKind.ALL else -1
+	UserOptions.pickup_default_resource = String(meta["resource_name"])
+	UserOptions.save_to_disk()
+
+
+# Default del flag "Ripeti fino a N volte" dei dialog di raccolta e di trasporto (2026-09-20, richiesta utente).
+func _on_repeat_toggled(pressed: bool) -> void:
+	UserOptions.repeat_default = pressed
+	UserOptions.save_to_disk()

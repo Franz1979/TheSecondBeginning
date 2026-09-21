@@ -59,11 +59,7 @@ func get_stamina_delta(individual: Variant, context: Dictionary, delta: float) -
 	_last_position = individual.position
 
 	# Stesso identico lookup di WalkAction.get_stamina_delta per il carico trasportato.
-	var used_carry_space := 0.0
-	if individual.carried_resource_name != "":
-		var carried_resource_rules := CaloricCalculator.get_caloric_source_rules(individual.carried_resource_name)
-		if carried_resource_rules != null:
-			used_carry_space = float(individual.carried_quantity) * carried_resource_rules.space_per_unit
+	var used_carry_space: float = individual.get_carried_space()
 
 	var cost_per_microcell: float = (
 		# terrain_stamina_multiplier (2026-09-19, vedi MovementTerrainService): solo sulla quota base.

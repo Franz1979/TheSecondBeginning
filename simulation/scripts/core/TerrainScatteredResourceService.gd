@@ -47,6 +47,18 @@ static func get_available_ignoring_lock(macro_state: MacroCellState, resource_na
 	return _get_available_unlocked(macro_state, resource_name, position, CaloricCalculator.get_caloric_source_rules(resource_name))
 
 
+# Vero se `resource_name` puo' comparire tra le risorse raccoglibili a terra (2026-09-20, richiesta utente — menu
+# Opzioni "preselezione raccolta": elenca TUTTE le risorse raccoglibili, non solo quelle presenti in una cella).
+# STESSE tre famiglie di _get_available_unlocked/consume: lot_source != NONE, "eggs", FRUIT_STOCK_SOURCES;
+# fish_meat/bird_meat e simili non lo sono. Indipendente dal blocco per idea (una risorsa bloccata e' comunque
+# raccoglibile in linea di principio).
+static func is_pickable(resource_name: String) -> bool:
+	var rules := CaloricCalculator.get_caloric_source_rules(resource_name)
+	if rules != null and rules.lot_source != SecondaryResourceTypes.LotSource.NONE:
+		return true
+	return resource_name == "eggs" or FRUIT_STOCK_SOURCES.has(resource_name)
+
+
 static func _get_available_unlocked(macro_state: MacroCellState, resource_name: String, position: Vector2i, rules: SecondaryResourceRules) -> int:
 	if rules != null and rules.lot_source != SecondaryResourceTypes.LotSource.NONE:
 		return LotCapacityService.get_available(macro_state, resource_name, position, rules)

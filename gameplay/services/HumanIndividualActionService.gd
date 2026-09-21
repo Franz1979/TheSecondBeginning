@@ -125,13 +125,11 @@ func apply_action(individual: HumanIndividual, delta: float, world: World = null
 	# fabbisogno di materiale) — controllato QUI, PRIMA di risolvere `action`/calcolare qualunque
 	# delta di questo frame: se SetupSiteAction.activate() ha scritto una richiesta (vedi
 	# SetupSiteAction.gd per il perché "ad ogni attivazione", non solo la prima), questo step non
-	# deve accumulare NULLA questo frame — stesso principio già seguito da _handle_stamina_interrupt
-	# sotto (bool di ritorno, return immediato se ha sostituito individual.current_task: `task`
-	# locale non sarebbe più valido). A differenza di _handle_stamina_interrupt (valutato DOPO i
+	# deve accumulare NULLA questo frame. A differenza di _handle_stamina_interrupt (valutato DOPO i
 	# delta, righe sotto), questo va PRIMA: quel meccanismo reagisce a uno stato che è già maturato
-	# questo frame, questo invece deve IMPEDIRE che una Action bloccata maturi alcunché.
-	if _handle_pending_material_shortage(individual, task, world, game_data):
-		return
+	# questo frame, questo invece deve IMPEDIRE che una Action bloccata maturi alcunché. Non ritorna nulla
+	# (2026-09-20): non riassegna mai individual.current_task, quindi `task` resta valido.
+	_handle_pending_material_shortage(task, world)
 
 	var action := task.get_current_action()
 	var stamina_delta := action.get_stamina_delta(individual, task.context, delta)
@@ -166,7 +164,25 @@ func apply_action(individual: HumanIndividual, delta: float, world: World = null
 	# record_step_cost/print_cost_summary.
 	task.record_step_cost(stamina_delta, happiness_delta, delta)
 	if action.is_complete(individual, task.context):
+		# Tempo REALE dello step appena concluso (2026-09-20, richiesta utente): DOPO record_step_cost (l'ultimo
+		# delta e' gia' incluso), PRIMA di finish_current_step (che avanza current_step_index).
+		if DebugLogging.ENABLED and DebugLogging.SHOW_ACTION_TIME_LOGS:
+			_log_action_time(individual, task, action)
 		finish_current_step(individual, task, world, game_data)
+
+
+# Log [ACTION TIME] (DebugLogging.SHOW_ACTION_TIME_LOGS): nome dell'azione (get_script().get_global_name(), come
+# Task.print_cost_summary), giorni di gioco trascorsi nello step (Task.step_days_elapsed, il valore accumulato da
+# record_step_cost, quindi il tempo effettivamente maturato e non la stima di activate) e i secondi reali che
+# corrispondono a velocita' 1x (GameClockController.SECONDS_PER_DAY_BY_SPEED[X1]; a 2x/4x/X8 vanno divisi per 2/4/8).
+func _log_action_time(individual: HumanIndividual, task: Task, action: Action) -> void:
+	var step_index: int = task.current_step_index
+	var days_elapsed: float = task.step_days_elapsed[step_index] if step_index >= 0 and step_index < task.step_days_elapsed.size() else 0.0
+	var seconds_at_1x: float = days_elapsed * GameClockController.SECONDS_PER_DAY_BY_SPEED[GameClockController.Speed.X1]
+	print("[ACTION TIME] #%d %s: %s (step %d/%d di '%s') - %.4f giorni = %.3f s a 1x" % [
+		individual.id, individual.name, action.get_script().get_global_name(), step_index + 1, task.steps.size(),
+		task.task_name, days_elapsed, seconds_at_1x
+	])
 
 
 # ESTRATTA (2026-09-16, richiesta utente, fix bordo macrocella per le task perditempo) dal corpo
@@ -267,26 +283,17 @@ func finish_current_step(individual: HumanIndividual, task: Task, world: World, 
 # già consumato il proprio istante, un deposito/raccolta appena riuscita), questo deve essere
 # intercettato PRIMA che SetupSiteAction "lavori" anche solo per un frame senza materiale.
 #
-# Ritorna bool (2026-09-14, RICALIBRATO — prima del bugfix "elimina la Transport automatica" questo
-# indicava "ha sostituito individual.current_task"; ora _resolve_material_shortage non riassegna
-# più nulla, quindi ritorna sempre false — mantenuto bool solo per coerenza di firma con
-# _handle_stamina_interrupt sotto, non void come gli altri _handle_pending_*), STESSO contratto di
-# _handle_stamina_interrupt sotto, non void come gli altri _handle_pending_*.
-#
-# world/game_data (2026-09-14, RICALIBRATO) — `individual`/`game_data` non sono più usati dal corpo
-# di risoluzione (nessuna Transport da assegnare, nessun age_band da risolvere) — restano parametri
-# di questa funzione/di _resolve_material_shortage solo perché quest'ultima li tiene ancora in
-# firma per il bonus di partenza (che oggi legge solo `world`) e per non rompere gli altri call
-# site senza istruzioni esplicite in merito. `world == null` continua a disattivare l'intero
-# meccanismo (il cantiere resta semplicemente "fermo" — is_complete() di SetupSiteAction è già
-# bloccata da sé in quel caso, vedi quel file, nessun avanzamento scorretto), mai un crash.
-func _handle_pending_material_shortage(individual: HumanIndividual, task: Task, world: World, game_data: GameData) -> bool:
+# Nessun valore di ritorno (2026-09-20, ripulito): ai tempi della Transport automatica dalla Build ritornava
+# "ha sostituito individual.current_task", ma quella generazione e' stata rimossa (2026-09-14) e la risoluzione non
+# riassegna piu' nulla. `world == null` disattiva l'intero meccanismo (il cantiere resta "fermo": is_complete()
+# di SetupSiteAction e' gia' bloccata da sé in quel caso), mai un crash.
+func _handle_pending_material_shortage(task: Task, world: World) -> void:
 	if not task.context.has("pending_material_shortage"):
-		return false
+		return
 	var shortage: Dictionary = task.context["pending_material_shortage"]
 	task.context.erase("pending_material_shortage")
-	if world == null or game_data == null:
-		return false
+	if world == null:
+		return
 
 	# "missing" (2026-09-14, richiesta utente — GENERALIZZATO da resource_name/quantity_needed
 	# singoli a Dictionary[String, int]): BuildAction può avere PIÙ risorse mancanti insieme (vedi
@@ -295,12 +302,12 @@ func _handle_pending_material_shortage(individual: HumanIndividual, task: Task, 
 	var missing: Dictionary = shortage.get("missing", {})
 	var target_building_id := int(shortage.get("target_building_id", -1))
 	if missing.is_empty():
-		return false
+		return
 	var target_building := _find_building_by_id(world, target_building_id)
 	if target_building == null:
-		return false
+		return
 
-	return _resolve_material_shortage(individual, world, game_data, target_building, missing)
+	_resolve_material_shortage(world, target_building, missing)
 
 
 # Corpo condiviso di risoluzione del fabbisogno materiale (2026-09-14, richiesta utente — controllo
@@ -311,19 +318,12 @@ func _handle_pending_material_shortage(individual: HumanIndividual, task: Task, 
 # senza dover passare da un context/flag one-shot (quel canale resta comunque il percorso normale,
 # invariato — questa funzione è ora il nucleo comune a entrambi).
 #
-# RICALIBRATO 2026-09-14 (richiesta utente — "va eliminato totalmente... il pipottino resta in
-# attesa del materiale, non può avanzare se non c'è materiale"): la ricerca sorgente + Transport
-# Task automatica è stata RIMOSSA — restano solo due esiti, bonus di partenza (SOLO deposit_site +
-# nessuno storage nel mondo, vedi sotto) oppure "bloccato in attesa", MAI più una riassegnazione di
-# individual.current_task. Ritorna SEMPRE false ora (il vecchio contratto "true = Transport
-# riassegnata" non ha più modo di verificarsi) — il valore di ritorno resta bool per non toccare la
-# firma di retry_blocked_material_shortages, ma il suo ramo "if resolved" (log [BUILD MATERIAL
-# RETRY]) è di fatto irraggiungibile ora: lasciato così in attesa di istruzioni su come procedere
-# per il resto del meccanismo di sblocco (richiesta utente, stesso turno).
-func _resolve_material_shortage(
-	individual: HumanIndividual, world: World, game_data: GameData,
-	target_building: Building, missing: Dictionary
-) -> bool:
+# Esiti (2026-09-14, richiesta utente — "va eliminato totalmente... il pipottino resta in attesa del materiale,
+# non può avanzare se non c'è materiale"; ripulito 2026-09-20): bonus di partenza (SOLO deposit_site + nessuno
+# storage nel mondo, vedi sotto) oppure "bloccato in attesa" con la notifica building_material_blocked. La
+# vecchia ricerca sorgente + Transport Task automatica non esiste piu': niente riassegnazione di
+# individual.current_task e nessun valore di ritorno.
+func _resolve_material_shortage(world: World, target_building: Building, missing: Dictionary) -> void:
 	# BONUS DI PARTENZA (2026-09-13/14, richiesta utente) — SOLO per un cantiere di tipo
 	# "deposit_site" (Building.building_type_name, STESSA stringa/STESSO campo già usato ovunque nel
 	# progetto per questo confronto — vedi GameScene._demolish_building/microCellRenderer.gd/
@@ -354,7 +354,7 @@ func _resolve_material_shortage(
 	# building per il perché: se l'unico storage esistente venisse distrutto, il prossimo deposit_
 	# site tornerebbe a ricevere il bonus automaticamente, nessuna logica "solo alla prima Task" qui.
 	#
-	# `return false` (non un'assegnazione di Transport, mai un cambio di individual.current_task) —
+	# Nessun cambio di individual.current_task —
 	# SetupSiteAction resta lo step attivo: il chiamante (apply_action) prosegue nello STESSO frame
 	# a calcolare get_stamina_delta/is_complete su di essa, che rilegge get_missing_material_
 	# quantity() dal vivo e lo trova ora a 0 — "procede direttamente come se il materiale fosse già
@@ -380,7 +380,7 @@ func _resolve_material_shortage(
 			print("[BUILD MATERIAL BONUS] Building #%d: nessun edificio di storage completo esiste ancora nel mondo — garantiti direttamente (bonus di partenza), nessuna Transport generata: %s." % [
 				target_building.id, str(missing)
 			])
-		return false
+		return
 
 	# Transport Task automatica RIMOSSA (2026-09-14, richiesta utente — "va eliminato totalmente...
 	# il pipottino resta in attesa del materiale, non può avanzare se non c'è materiale"): fuori dal
@@ -389,9 +389,7 @@ func _resolve_material_shortage(
 	# SetupSiteAction resta false, get_stamina_delta/get_happiness_delta restano a 0, vedi quel
 	# file) finché il materiale non arriva per un'altra via (oggi: solo il bonus sopra, o un
 	# deposito MANUALE del player — BuildingStorageService.can_accept continua ad accettare il
-	# materiale di setup site su un cantiere non finito). `individual`/`game_data` restano parametri
-	# di questa funzione ma NON sono più letti da nessun ramo (il bonus sopra usa solo `world`) —
-	# lasciati in firma per non rompere i due call site senza istruzioni esplicite in merito.
+	# materiale di setup site su un cantiere non finito).
 	#
 	# is_awaiting_material — TRANSIZIONE, non stato (2026-09-14, richiesta utente — segnalazione
 	# player) — il segnale building_material_blocked scatta SOLO al passaggio false->true (punto 2
@@ -403,7 +401,6 @@ func _resolve_material_shortage(
 		print("[BUILD MATERIAL NEEDED] Building #%d: manca ancora %s — cantiere bloccato in attesa (nessuna Transport automatica)." % [
 			target_building.id, str(missing)
 		])
-	return false
 
 
 # Controllo giornaliero di ritentativo per un individuo bloccato su SetupSiteAction in attesa di
@@ -430,18 +427,13 @@ func _resolve_material_shortage(
 #      formula/lo stesso dato già usato da activate()/get_stamina_delta/is_complete di quella
 #      classe: nessun secondo calcolo che potrebbe disallinearsi.
 #
-# `world`/`game_data` obbligatori qui (a differenza di apply_action, che li accetta null per
-# difesa) — GameTimeService li ha sempre entrambi disponibili al momento della chiamata, nessun
-# caso reale in cui mancherebbero: un guard difensivo resta comunque in testa, coerente con lo
-# stile "mai un crash" del resto del file.
+# `world` obbligatorio qui (a differenza di apply_action, che lo accetta null per difesa) — GameTimeService
+# lo ha sempre disponibile al momento della chiamata: un guard difensivo resta comunque in testa, coerente con
+# lo stile "mai un crash" del resto del file.
 #
-# Log [BUILD MATERIAL RETRY] (richiesta utente) — SOLO quando _resolve_material_shortage ritorna
-# true, cioè SOLO quando il ritentativo genera davvero una NUOVA Transport Task (una sorgente che
-# prima non c'era è stata trovata ORA): il bonus di partenza stampa già il proprio
-# [BUILD MATERIAL BONUS] dentro _resolve_material_shortage, e "ancora nessuna sorgente" stampa già
-# [BUILD MATERIAL NEEDED] lì — nessun log duplicato per quei due casi, questo tag esiste apposta per
-# confermare lo SBLOCCO, non ogni tentativo (anche quelli falliti, silenziosi qui, sono già coperti
-# dal log esistente dentro _resolve_material_shortage).
+# (Il vecchio log [BUILD MATERIAL RETRY], che confermava lo sblocco tramite una nuova Transport automatica, e'
+# stato rimosso il 2026-09-20 insieme a quella generazione: i due esiti restanti stampano gia' i propri log —
+# [BUILD MATERIAL BONUS]/[BUILD MATERIAL NEEDED] — dentro _resolve_material_shortage.)
 #
 # NON static (bugfix, 2026-09-14 — "Cannot call non-static function _resolve_material_shortage()
 # from the static function retry_blocked_material_shortages()"): _resolve_material_shortage è
@@ -450,10 +442,8 @@ func _resolve_material_shortage(
 # HumanIndividualActionService che GameScene già possiede (individual_action_service, la stessa che
 # guida apply_action ogni frame), non più chiamabile per nome di classe. GameTimeService la riceve
 # ora da GameScene._setup_clock (vedi connect_to_clock), la tiene in _individual_action_service.
-func retry_blocked_material_shortages(
-	world: World, all_individuals: Array[HumanIndividual], game_data: GameData
-) -> void:
-	if world == null or game_data == null:
+func retry_blocked_material_shortages(world: World, all_individuals: Array[HumanIndividual]) -> void:
+	if world == null:
 		return
 	for individual in all_individuals:
 		var task := individual.current_task
@@ -478,11 +468,7 @@ func retry_blocked_material_shortages(
 			missing = build_action.get_missing_materials()
 		if target_building == null or missing.is_empty():
 			continue
-		var resolved := _resolve_material_shortage(individual, world, game_data, target_building, missing)
-		if resolved and DebugLogging.ENABLED and DebugLogging.SHOW_TRANSPORT_BUILD_LOGS:
-			print("[BUILD MATERIAL RETRY] Individuo #%d %s: ritentativo giornaliero riuscito — Building #%d: %s." % [
-				individual.id, individual.name, target_building.id, str(missing)
-			])
+		_resolve_material_shortage(world, target_building, missing)
 
 
 # Scansione lineare di World.buildings (2026-09-13) — STESSA identica funzione/STESSO principio di
@@ -498,16 +484,25 @@ static func _find_building_by_id(world: World, building_id: int) -> Building:
 	return null
 
 
+# Zaino multi-risorsa (2026-09-20, richiesta utente): la richiesta può portare UNA ricerca per varietà
+# residua. Forma nuova (scritta da UnloadAction): {"searches": [{"resource_name", "quantity"}, ...],
+# "excluded_building_ids", "discard_on_failure"}. Forma singola storica (scritta da PickUpAction, e
+# presente nei salvataggi precedenti): {"resource_name", "quantity", "excluded_building_ids", ...} —
+# trattata come una lista di una sola ricerca. Ogni ricerca prova, in ordine di preferenza di
+# WarehouseSelectionService.find_best, un magazzino DIVERSO da quelli in excluded_building_ids (i
+# rifiutati finora, accumulati da UnloadAction a ogni tentativo fallito): non è quindi "un solo
+# tentativo", la catena Walk+Unload+ricerca si ripete finché find_best non trova più nessuno.
 func _handle_pending_warehouse_search(individual: HumanIndividual, task: Task, world: World) -> void:
 	if not task.context.has("pending_warehouse_search"):
 		return
 	var search: Dictionary = task.context["pending_warehouse_search"]
 	task.context.erase("pending_warehouse_search")
 
-	var resource_name := String(search.get("resource_name", ""))
-	var quantity := int(search.get("quantity", 0))
-	if resource_name == "" or quantity <= 0:
-		return
+	var searches: Array = []
+	if search.has("searches"):
+		searches = search["searches"]
+	else:
+		searches = [{"resource_name": search.get("resource_name", ""), "quantity": search.get("quantity", 0)}]
 
 	# Costruita manualmente (int(id) per elemento), non Array[int](search.get(...)) — stesso motivo
 	# di UnloadAction.activate (vedi lì): gestisce anche un context deserializzato da JSON (numeri
@@ -515,11 +510,37 @@ func _handle_pending_warehouse_search(individual: HumanIndividual, task: Task, w
 	var excluded_building_ids: Array[int] = []
 	for raw_id in search.get("excluded_building_ids", []):
 		excluded_building_ids.append(int(raw_id))
+	var discard_on_failure: bool = bool(search.get("discard_on_failure", false))
+
+	# Magazzini già scelti in QUESTA richiesta: un Unload deposita tutto ciò che l'edificio accetta,
+	# quindi se find_best restituisce per una seconda varietà lo stesso magazzino già scelto per una
+	# precedente, non si accoda un secondo Walk+Unload identico (viaggio sprecato).
+	var targeted_building_ids: Array[int] = []
+	for entry in searches:
+		_search_warehouse_for_resource(
+			individual, task, world, String(entry.get("resource_name", "")), int(entry.get("quantity", 0)),
+			excluded_building_ids, discard_on_failure, targeted_building_ids
+		)
+
+
+func _search_warehouse_for_resource(
+	individual: HumanIndividual, task: Task, world: World, resource_name: String, quantity: int,
+	excluded_building_ids: Array[int], discard_on_failure: bool, targeted_building_ids: Array[int]
+) -> void:
+	if resource_name == "" or quantity <= 0:
+		return
 
 	var candidate := WarehouseSelectionService.find_best(
 		world, individual.position, individual.home_macro_coords, resource_name, quantity, excluded_building_ids
 	)
 	if candidate != null:
+		if targeted_building_ids.has(candidate.id):
+			if DebugLogging.ENABLED and DebugLogging.SHOW_TRANSPORT_BUILD_LOGS:
+				print("[WAREHOUSE SEARCH] '%s': magazzino id=%d già scelto per un'altra varietà — nessun Walk+Unload aggiuntivo." % [
+					resource_name, candidate.id
+				])
+			return
+		targeted_building_ids.append(candidate.id)
 		var macro_offset: Vector2 = Vector2(Vector2i(candidate.macro_x, candidate.macro_y) - individual.home_macro_coords) * World.WIDTH
 		# Jitter (2026-09-17, richiesta utente — bugfix "i pipottini si fermano sempre nell'angolo in
 		# alto a sinistra della microcella", sovrapposti quando più portatori consegnano allo stesso
@@ -539,7 +560,7 @@ func _handle_pending_warehouse_search(individual: HumanIndividual, task: Task, w
 			])
 		return
 
-	if bool(search.get("discard_on_failure", false)):
+	if discard_on_failure:
 		# Scenario B2 — re-routing fallito (2026-09-09, richiesta utente iniziale — nota di
 		# contesto in fase di indagine; UNIFICATO 2026-09-12 sotto discard_carried_resource, che
 		# prima duplicava qui lo stesso azzeramento inline senza log/commento dedicato): nessun
@@ -552,8 +573,13 @@ func _handle_pending_warehouse_search(individual: HumanIndividual, task: Task, w
 			print("[WAREHOUSE SEARCH] nessun magazzino alternativo trovato per resource_name='%s' quantity=%d dopo re-routing (magazzino originale pieno all'arrivo)." % [
 				resource_name, quantity
 			])
-		individual.discard_carried_resource()
-		carried_resource_discarded.emit(individual, resource_name, quantity)
+		# Zaino multi-risorsa (2026-09-20, richiesta utente — una ricerca per varietà residua): scarta SOLO
+		# la varietà di questa ricerca (discard_carried_resource_entry), non l'intero zaino: le altre
+		# varietà possono aver già trovato un altro magazzino. Con zaino mono-risorsa l'effetto è quello di
+		# prima.
+		var discarded_quantity: int = individual.discard_carried_resource_entry(resource_name)
+		if discarded_quantity > 0:
+			carried_resource_discarded.emit(individual, resource_name, discarded_quantity)
 		return
 
 	# Scenario B1 — ricerca INIZIALE (PickUpAction) senza candidato (2026-09-12, richiesta utente
@@ -570,8 +596,9 @@ func _handle_pending_warehouse_search(individual: HumanIndividual, task: Task, w
 		print("[WAREHOUSE SEARCH] nessun magazzino trovato per resource_name='%s' quantity=%d — nessun edificio da abbandonare in questo caso, ma nessuna destinazione disponibile." % [
 			resource_name, quantity
 		])
-	individual.discard_carried_resource()
-	carried_resource_discarded.emit(individual, resource_name, quantity)
+	var discarded_quantity_b1: int = individual.discard_carried_resource_entry(resource_name)
+	if discarded_quantity_b1 > 0:
+		carried_resource_discarded.emit(individual, resource_name, discarded_quantity_b1)
 
 
 # Consuma task.context["pending_thought_target_search"] (2026-09-10, richiesta utente — handler di

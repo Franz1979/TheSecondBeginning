@@ -265,7 +265,7 @@ static func get_slot_breakdown(building: Building) -> Array:
 #   depositabile = min(quantity_richiesta, unità_massime_raggiungibili - quantità_già_presente)
 #
 # `decay_fraction` (2026-09-09, richiesta utente — Step 3 decadimento) — la frazione di
-# decadimento di CIÒ CHE ARRIVA (tipicamente HumanIndividual.carried_decay_fraction, vedi
+# decadimento di CIÒ CHE ARRIVA (tipicamente la decay_fraction della varietà in HumanIndividual.carried_resources, vedi
 # UnloadAction.on_complete, il chiamante). Se la risorsa è già presente in questo edificio, si
 # FONDE con quella esistente via MEDIA PESATA sulla quantità (mai sostituita, mai scartata):
 #   nuova_decay_fraction = (quantità_esistente × decay_fraction_esistente

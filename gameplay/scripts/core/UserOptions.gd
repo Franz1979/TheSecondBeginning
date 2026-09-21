@@ -34,6 +34,25 @@ var show_notification_popups: bool = true
 # (arriverà con l'Options vera).
 var language: SettingsTypes.Language = SettingsTypes.Language.NONE
 
+# Preselezione del dialog di raccolta (2026-09-20, richiesta utente, zaino multi-risorsa): quale voce del menu
+# Tutto / categoria / risorsa e' preselezionata quando si apre il PickupChoiceDialog. Tre campi:
+#   - pickup_default_kind: PickUpAction.CriterionKind (ALL = "Tutto", il default; CATEGORY; NAME = una risorsa);
+#   - pickup_default_category: SecondaryResourceTypes.Category come int (solo con CATEGORY, altrimenti -1);
+#   - pickup_default_resource: nome della risorsa (solo con NAME, altrimenti "").
+# Se la voce non e' presente nella microcella il dialog ripiega risalendo (categoria, poi "Tutto") — vedi
+# PickupChoiceDialog._resolve_default_index. Letto da GameScene tramite get_pickup_default_choice().
+var pickup_default_kind: int = PickUpAction.CriterionKind.ALL
+var pickup_default_category: int = -1
+var pickup_default_resource: String = ""
+# Ripetizione automatica di raccolta E trasporto (2026-09-20, richiesta utente; era solo "pickup"): default del
+# flag "Ripeti fino a TaskRepeatRules.MAX_REPEATS volte" dei dialog di raccolta e di trasporto. Vale anche quando il
+# dialog di raccolta non compare (cella con una sola risorsa). Chiave in options.cfg: "repeat_default" (con lettura
+# di ripiego della vecchia "pickup_repeat_default").
+var repeat_default: bool = false
+# Minimappa della sidebar chiusa (2026-09-20, richiesta utente): true = nascosta, resta solo il bottone per
+# riaprirla; false (default) = visibile. Salvato a ogni click sul bottone.
+var minimap_collapsed: bool = false
+
 
 func _ready() -> void:
 	load_from_disk()
@@ -51,6 +70,15 @@ func load_from_disk() -> void:
 		return
 	show_notification_popups = bool(config.get_value(SECTION, "show_notification_popups", true))
 	language = int(config.get_value(SECTION, "language", SettingsTypes.Language.NONE)) as SettingsTypes.Language
+	# Preselezione raccolta: valori fuori range (file modificato a mano, enum cambiato) ripiegano su "Tutto".
+	var loaded_kind: int = int(config.get_value(SECTION, "pickup_default_kind", PickUpAction.CriterionKind.ALL))
+	if loaded_kind < PickUpAction.CriterionKind.NAME or loaded_kind > PickUpAction.CriterionKind.ALL:
+		loaded_kind = PickUpAction.CriterionKind.ALL
+	pickup_default_kind = loaded_kind
+	pickup_default_category = int(config.get_value(SECTION, "pickup_default_category", -1))
+	pickup_default_resource = String(config.get_value(SECTION, "pickup_default_resource", ""))
+	repeat_default = bool(config.get_value(SECTION, "repeat_default", config.get_value(SECTION, "pickup_repeat_default", false)))
+	minimap_collapsed = bool(config.get_value(SECTION, "minimap_collapsed", false))
 
 
 # Pubblico per un futuro menu Options — nessun chiamante reale ancora (i campi sopra si cambiano
@@ -59,7 +87,29 @@ func save_to_disk() -> void:
 	var config := ConfigFile.new()
 	config.set_value(SECTION, "show_notification_popups", show_notification_popups)
 	config.set_value(SECTION, "language", language)
+	config.set_value(SECTION, "pickup_default_kind", pickup_default_kind)
+	config.set_value(SECTION, "pickup_default_category", pickup_default_category)
+	config.set_value(SECTION, "pickup_default_resource", pickup_default_resource)
+	config.set_value(SECTION, "repeat_default", repeat_default)
+	config.set_value(SECTION, "minimap_collapsed", minimap_collapsed)
 	config.save(OPTIONS_FILE_PATH)
+
+
+# La preselezione del dialog di raccolta nel formato atteso da PickupChoiceDialog.open_dialog:
+# {"kind", "category", "resource_name"}. Con kind NAME la categoria e' ricavata dalle regole della risorsa (non
+# dal valore salvato), cosi' il ripiego "categoria" resta corretto anche se una .tres cambia categoria; se la
+# risorsa non ha piu' regole si usa il valore salvato.
+func get_pickup_default_choice() -> Dictionary:
+	var category: int = pickup_default_category
+	if pickup_default_kind == PickUpAction.CriterionKind.NAME:
+		var rules := CaloricCalculator.get_caloric_source_rules(pickup_default_resource)
+		if rules != null:
+			category = int(rules.category)
+	return {
+		"kind": pickup_default_kind,
+		"category": category,
+		"resource_name": pickup_default_resource if pickup_default_kind == PickUpAction.CriterionKind.NAME else "",
+	}
 
 
 # TEMPORANEO/DEBUG (richiesta utente, 2026-09-05, esplicitamente da rimuovere a fine debug): con

@@ -39,6 +39,26 @@ size_flags_horizontal = 3
 [node name="OptionButton" type="OptionButton" parent="MarginContainer/VBoxContainer/LanguageRow"]
 layout_mode = 2
 
+[node name="PickupDefaultRow" type="HBoxContainer" parent="MarginContainer/VBoxContainer"]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="MarginContainer/VBoxContainer/PickupDefaultRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="OptionButton" type="OptionButton" parent="MarginContainer/VBoxContainer/PickupDefaultRow"]
+layout_mode = 2
+
+[node name="RepeatRow" type="HBoxContainer" parent="MarginContainer/VBoxContainer"]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="MarginContainer/VBoxContainer/RepeatRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="CheckBox" type="CheckBox" parent="MarginContainer/VBoxContainer/RepeatRow"]
+layout_mode = 2
+
 [node name="HSeparator" type="HSeparator" parent="MarginContainer/VBoxContainer"]
 layout_mode = 2
 

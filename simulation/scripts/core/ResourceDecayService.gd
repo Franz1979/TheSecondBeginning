@@ -6,12 +6,12 @@ extends RefCounted
 # Service: nessuna istanza, opera sempre su un HumanIndividual/Building passato dal chiamante.
 #
 # MODELLO: una frazione 0.0->1.0 (mai "giorni residui"), avanzata al giorno di 1/day_durability per
-# lo zaino individuo (nessun moltiplicatore ambiente lì: un individuo non ha una "categoria"), e di
+# lo zaino individuo (per varietà, nessun moltiplicatore ambiente lì: un individuo non ha una "categoria"), e di
 # 1/(day_durability × BuildingRules.durability_multiplier_by_category[categoria]) per un edificio
 # (2026-09-09, richiesta utente — moltiplicatore PER TIPO DI EDIFICIO × CATEGORIA DI RISORSA, non
 # per ambiente generico: un deposit_site potrà conservare raw_material meglio/peggio di food, un
 # altro tipo di edificio avrà il proprio array indipendente). "Lotto unico" perché lo zaino ha un
-# solo slot (HumanIndividual.carried_*) e un edificio fonde ogni nuovo deposito con quanto già
+# solo slot per varietà (HumanIndividual.carried_resources) e un edificio fonde ogni nuovo deposito con quanto già
 # presente via media pesata (vedi BuildingStorageService.store) — mai due sotto-lotti della stessa
 # risorsa tracciati separatamente nello stesso contenitore.
 #
@@ -23,31 +23,41 @@ extends RefCounted
 # nessuna funzione qui lo tocca.
 
 
-# Avanza carried_decay_fraction di 1/day_durability — no-op se lo zaino è vuoto o la risorsa
-# trasportata non decade (day_durability == -1). Azzera TUTTI E TRE i campi (carried_resource_name/
-# carried_quantity/carried_decay_fraction) quando la frazione raggiunge/supera 1.0 — la risorsa è
-# deperita per intero e persa, coerente col principio "mai un valore orfano associato a uno zaino
-# vuoto" già dichiarato su HumanIndividual.carried_decay_fraction.
+# Avanza la decay_fraction di OGNI varietà dello zaino (individual.carried_resources, multi-risorsa dal
+# 2026-09-20) di 1/day_durability della rispettiva risorsa — ciascuna varietà ha il proprio
+# avanzamento indipendente, come le entry di building.stored_resources (vedi advance_building_decay
+# sotto). No-op per le varietà con day_durability == -1 (non decadono). Quando la frazione di una
+# varietà raggiunge/supera 1.0 quella varietà è deperita per intero e persa: la entry sparisce dal
+# dizionario (mai un valore orfano), le altre varietà restano.
 #
-# Ritorna {} se nulla è deperito oggi, altrimenti {"resource_name","quantity"} — SOLO per permettere
-# al chiamante (GameTimeService) di notificare il player (2026-09-09, richiesta utente: popup +
-# pannello aggiornato) senza che questo service sappia nulla di UI/segnali, resta puramente una
-# funzione di calcolo che riporta il proprio esito.
-static func advance_individual_decay(individual: HumanIndividual) -> Dictionary:
-	if individual == null or individual.carried_resource_name == "" or individual.carried_quantity <= 0:
-		return {}
-	var resource_rules := CaloricCalculator.get_caloric_source_rules(individual.carried_resource_name)
-	if resource_rules == null or resource_rules.day_durability == -1:
-		return {}
-	individual.carried_decay_fraction += 1.0 / float(resource_rules.day_durability)
-	if individual.carried_decay_fraction < 1.0:
-		return {}
-	var lost_resource_name := individual.carried_resource_name
-	var lost_quantity := individual.carried_quantity
-	individual.carried_resource_name = ""
-	individual.carried_quantity = 0
-	individual.carried_decay_fraction = 0.0
-	return {"resource_name": lost_resource_name, "quantity": lost_quantity}
+# Ritorna un Array (vuoto se nulla è deperito oggi) di {"resource_name","quantity"}, una voce per
+# varietà deperita — SOLO per permettere al chiamante (GameTimeService) di notificare il player
+# (2026-09-09, richiesta utente: popup + pannello aggiornato) senza che questo service sappia nulla
+# di UI/segnali, resta puramente una funzione di calcolo che riporta il proprio esito. Array (a
+# differenza della versione mono-risorsa, che ritornava un solo Dictionary) perché più varietà
+# possono deperire nello stesso giorno. Le entry da rimuovere sono raccolte a parte e cancellate DOPO
+# il ciclo (mai mutare un Dictionary mentre lo si itera).
+static func advance_individual_decay(individual: HumanIndividual) -> Array:
+	var lost: Array = []
+	if individual == null or individual.carried_resources.is_empty():
+		return lost
+	var expired_names: Array[String] = []
+	for resource_name in individual.carried_resources.keys():
+		var quantity: int = individual.get_carried_quantity(String(resource_name))
+		if quantity <= 0:
+			continue
+		var resource_rules := CaloricCalculator.get_caloric_source_rules(String(resource_name))
+		if resource_rules == null or resource_rules.day_durability == -1:
+			continue
+		var new_fraction: float = individual.get_carried_decay_fraction(String(resource_name)) + 1.0 / float(resource_rules.day_durability)
+		if new_fraction < 1.0:
+			individual.carried_resources[resource_name] = {"quantity": quantity, "decay_fraction": new_fraction}
+			continue
+		expired_names.append(String(resource_name))
+		lost.append({"resource_name": String(resource_name), "quantity": quantity})
+	for expired_name in expired_names:
+		individual.carried_resources.erase(expired_name)
+	return lost
 
 
 # Stessa logica di advance_individual_decay sopra, per OGNI entry di building.stored_resources —

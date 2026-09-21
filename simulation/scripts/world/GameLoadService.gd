@@ -602,7 +602,7 @@ func load_game_from_json(file_path: String) -> LoadedGame:
 			# 6 nuove skill (2026-09-13, richiesta utente) — .get() con default 0.0: un save precedente
 			# a questi campi non può avere mai avuto una skill diversa da 0.0 (nessuna crescita esiste
 			# ancora), quindi il default è sempre corretto, non solo un ripiego onesto (stesso
-			# trattamento di carried_resource_name/carried_quantity sotto).
+			# trattamento di carried_resources sotto).
 			individual.skill_leadership = float(individual_data.get("skill_leadership", 0.0))
 			individual.skill_builder = float(individual_data.get("skill_builder", 0.0))
 			individual.skill_management = float(individual_data.get("skill_management", 0.0))
@@ -614,12 +614,32 @@ func load_game_from_json(file_path: String) -> LoadedGame:
 			# trasportando nulla": un save precedente a questo campo non può avere mai avuto un
 			# individuo in trasporto (nessun PickUp esiste ancora), quindi il default è sempre
 			# corretto, non solo un ripiego.
-			individual.carried_resource_name = String(individual_data.get("carried_resource_name", ""))
-			individual.carried_quantity = int(individual_data.get("carried_quantity", 0))
-			# carried_decay_fraction (2026-09-09, richiesta utente, Step 3 decadimento) — .get() con
-			# default 0.0 per compatibilità con save precedenti l'introduzione del campo (stesso
-			# principio già richiesto per ogni campo opzionale in questo file).
-			individual.carried_decay_fraction = float(individual_data.get("carried_decay_fraction", 0.0))
+			# Zaino multi-risorsa (2026-09-20, richiesta utente): "carried_resources" = nome ->
+			# {"quantity", "decay_fraction"}. Un salvataggio precedente porta invece i tre vecchi campi
+			# carried_resource_name/carried_quantity/carried_decay_fraction (decay 2026-09-09, .get() con
+			# default 0.0): se "carried_resources" manca e il vecchio nome non è vuoto con quantità > 0, si
+			# converte in UNA voce del dizionario. Le entry con quantity <= 0 vengono scartate (invariante
+			# del modello: mai una entry vuota).
+			individual.carried_resources = {}
+			if individual_data.has("carried_resources"):
+				var saved_carried: Dictionary = individual_data["carried_resources"]
+				for saved_resource_name in saved_carried.keys():
+					var saved_entry: Dictionary = saved_carried[saved_resource_name]
+					var saved_quantity: int = int(saved_entry.get("quantity", 0))
+					if saved_quantity <= 0:
+						continue
+					individual.carried_resources[String(saved_resource_name)] = {
+						"quantity": saved_quantity,
+						"decay_fraction": float(saved_entry.get("decay_fraction", 0.0)),
+					}
+			else:
+				var legacy_resource_name := String(individual_data.get("carried_resource_name", ""))
+				var legacy_quantity := int(individual_data.get("carried_quantity", 0))
+				if legacy_resource_name != "" and legacy_quantity > 0:
+					individual.carried_resources[legacy_resource_name] = {
+						"quantity": legacy_quantity,
+						"decay_fraction": float(individual_data.get("carried_decay_fraction", 0.0)),
+					}
 			# Task/Action in corso (2026-09-08, richiesta utente) — "current_task" assente (save
 			# precedente a questo campo) o esplicitamente null (individuo a Rest implicito al
 			# momento del salvataggio) lasciano individual.current_task al default null, nessuna

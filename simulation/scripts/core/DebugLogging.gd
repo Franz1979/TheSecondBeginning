@@ -219,6 +219,16 @@ const RESTOCK_LOG_INDIVIDUAL_ID: int = -1
 static func should_log_restock(individual_id: int) -> bool:
 	return ENABLED and SHOW_RESTOCK_LOGS and (RESTOCK_LOG_INDIVIDUAL_ID == -1 or RESTOCK_LOG_INDIVIDUAL_ID == individual_id)
 
+# PICKUP (2026-09-20, richiesta utente — zaino multi-risorsa): [PICKUP] (PickUpAction.on_complete) una riga per
+# raccolta con criterio (nome/categoria/tutto), cosa e' stato raccolto, perche' si e' fermata (spazio pieno,
+# 4 varieta', niente altro disponibile, quantita' richiesta raggiunta) e lo zaino dopo. Solo print.
+const SHOW_PICKUP_LOGS := false
+
+# ACTION TIME (2026-09-20, richiesta utente): [ACTION TIME] (HumanIndividualActionService.apply_action, subito prima
+# di finish_current_step) una riga per OGNI step completato di qualunque Task: azione, giorni di gioco davvero
+# trascorsi (step_days_elapsed, non la stima di activate) e secondi equivalenti a velocita' 1x. Solo print.
+const SHOW_ACTION_TIME_LOGS := false
+
 # RESOURCE_POOL — [DBG_POOL] (VegetationPoolService).
 const SHOW_RESOURCE_POOL_LOGS := false
 
@@ -295,3 +305,9 @@ const SHOW_DAILY_SUMMARY_LOGS := false
 # vicino. Default true: sessione di diagnostica attiva. Solo log, nessun comportamento di
 # simulazione cambia — rimuovere flag e chiamate insieme una volta risolto il bug.
 const SHOW_FOW_DIAG_LOGS := false
+
+# TEMPORANEO (2026-09-20, richiesta utente — diagnosi cantiere che non avanza): [TASK WATCH] (GameScene._debug_watch_task)
+# stampa, ogni WATCH_TASK_INTERVAL_SECONDS reali, task corrente/step/coda sospesa dell'individuo con id
+# WATCH_TASK_INDIVIDUAL_ID (-1 = disattivato). Solo print: rimuovere costanti, chiamata in _process e funzione insieme.
+const WATCH_TASK_INDIVIDUAL_ID := 6
+const WATCH_TASK_INTERVAL_SECONDS := 1.0

@@ -82,7 +82,7 @@ func _draw_leaf(w: float, h: float) -> void:
 	for i in range(CURVE_SEGMENTS + 1):
 		var t: float = float(i) / float(CURVE_SEGMENTS)
 		points.append(_quadratic_point(base, ctrl_top, tip, t))
-	for i in range(1, CURVE_SEGMENTS + 1):
+	for i in range(1, CURVE_SEGMENTS):
 		var t: float = float(i) / float(CURVE_SEGMENTS)
 		points.append(_quadratic_point(tip, ctrl_bottom, base, t))
 	draw_colored_polygon(points, COLOR_LEAF)

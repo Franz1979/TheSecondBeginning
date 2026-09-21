@@ -30,7 +30,7 @@ extends Action
 # HumanIndividual.move_speed e SECONDS_PER_DAY_BY_SPEED per l'aggancio al game clock).
 # Base FISSA del costo/microcella (richiesta utente, 2026-09-08) — non più l'intero costo: ora solo
 # il termine indipendente dal carico, sommato a used_carry_space/tool sotto in get_stamina_delta.
-# Con carried_resource_name vuoto ed equipped_tool_count 0 il costo totale resta esattamente questo
+# Con lo zaino vuoto (carried_resources) ed equipped_tool_count 0 il costo totale resta esattamente questo
 # valore (nessun carico), invariato rispetto a prima di questa modifica.
 const STAMINA_DRAIN_PER_MICROCELL_BASE: float = 5.0
 # Costo aggiuntivo/microcella per ogni utensile in equipaggiamento (richiesta utente, 2026-09-08) —
@@ -101,11 +101,7 @@ func get_stamina_delta(individual: Variant, context: Dictionary, delta: float) -
 	# (richiesta utente, 2026-09-08) — stesso identico lookup/stessa identica formula di
 	# used_carry_space già usata da GameScene._update_individual_panel_content per il pannello
 	# individuo (mai cachato: il carico può cambiare tra una chiamata e l'altra).
-	var used_carry_space := 0.0
-	if individual.carried_resource_name != "":
-		var carried_resource_rules := CaloricCalculator.get_caloric_source_rules(individual.carried_resource_name)
-		if carried_resource_rules != null:
-			used_carry_space = float(individual.carried_quantity) * carried_resource_rules.space_per_unit
+	var used_carry_space: float = individual.get_carried_space()
 
 	# individual.terrain_stamina_multiplier (2026-09-19, richiesta utente — vedi MovementTerrainService): scala
 	# la sola quota BASE del costo, mai il sovraccarico di carico e utensili.

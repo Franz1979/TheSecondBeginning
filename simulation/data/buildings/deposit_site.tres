@@ -14,4 +14,4 @@ durability_multiplier_by_category = Array[float]([1.0, 1.1, 1.0])
 max_durability = 60
 required_space = 1
 has_door = false
-visibility_radius = 1
+visibility_radius = 2

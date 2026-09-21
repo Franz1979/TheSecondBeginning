@@ -484,17 +484,21 @@ layout_mode = 2
 theme_override_constants/margin_left = 4
 theme_override_constants/margin_right = 4
 
-[node name="CarryRow" type="HBoxContainer" parent="CarryRowMargin"]
+[node name="CarryRow" type="VBoxContainer" parent="CarryRowMargin"]
+layout_mode = 2
+theme_override_constants/separation = 4
+
+[node name="CarriedBoxesRow" type="HBoxContainer" parent="CarryRowMargin/CarryRow"]
 layout_mode = 2
 theme_override_constants/separation = 6
 
-[node name="CarriedResourceBox" type="ColorRect" parent="CarryRowMargin/CarryRow"]
+[node name="CarriedResourceBox" type="ColorRect" parent="CarryRowMargin/CarryRow/CarriedBoxesRow"]
 layout_mode = 2
 size_flags_vertical = 4
 custom_minimum_size = Vector2(36, 36)
 color = Color(0.3, 0.3, 0.3, 0.4)
 
-[node name="InitialLabel" type="Label" parent="CarryRowMargin/CarryRow/CarriedResourceBox"]
+[node name="InitialLabel" type="Label" parent="CarryRowMargin/CarryRow/CarriedBoxesRow/CarriedResourceBox"]
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
@@ -503,7 +507,7 @@ theme_override_font_sizes/font_size = 18
 horizontal_alignment = 1
 vertical_alignment = 1
 
-[node name="QuantityLabel" type="Label" parent="CarryRowMargin/CarryRow/CarriedResourceBox"]
+[node name="QuantityLabel" type="Label" parent="CarryRowMargin/CarryRow/CarriedBoxesRow/CarriedResourceBox"]
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0

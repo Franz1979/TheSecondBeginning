@@ -20,10 +20,10 @@ extends RefCounted
 # folk_ref->human_rules_ref non è risolvibile — stesso criterio di HumanStaminaIndividualService/
 # HumanIndividual._resolve_initial_max_carry_capacity (mai un secondo fallback diverso).
 #
-# Nessun clamp su carried_quantity qui (a differenza del clamp su current_stamina in
+# Nessun clamp sullo zaino (carried_resources) qui (a differenza del clamp su current_stamina in
 # HumanStaminaIndividualService): un max_carry_capacity che scende sotto lo spazio già occupato
 # oggi non ha ancora una conseguenza definita (nessun sistema di trasporto/PickUp esiste ancora,
-# vedi HumanIndividual.carried_resource_name/carried_quantity) — quando arriverà, la policy
+# vedi HumanIndividual.carried_resources) — quando arriverà, la policy
 # ("l'eccedenza cade a terra"? "non può più raccogliere finché non scarica"?) andrà decisa da chi
 # implementerà quel sistema, non anticipata qui senza un consumatore reale.
 static func recalculate_max_carry_capacity(individual: HumanIndividual, game_data: GameData) -> void:

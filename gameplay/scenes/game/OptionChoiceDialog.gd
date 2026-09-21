@@ -4,7 +4,9 @@ extends Window
 # Popup GENERICO "scegli una risorsa e una quantità tra più candidate" — nato (2026-09-12,
 # richiesta utente) come TransportSourceDialog, poi GENERALIZZATO (2026-09-17, richiesta utente:
 # "usiamo OptionChoiceDialog per tutti i casi") per essere riusato ANCHE dal comando di raccolta
-# manuale (destro-click su una cella con più risorse raccoglibili).
+# manuale (destro-click su una cella con più risorse raccoglibili). DAL 2026-09-20 (zaino multi-risorsa, passo 3)
+# la raccolta ha un dialog proprio, PickupChoiceDialog (menu gerarchico Tutto/categoria/risorsa): questa classe
+# serve di nuovo solo alla Transport (GameScene ne instanzia un nodo, TransportSourceDialog).
 #
 # Lista SEMPRE VISIBILE, non più un OptionButton a tendina (2026-09-18, richiesta utente — "invece
 # di un menu a tendina, fammi un elenco sempre visibile delle risorse, con icona, e le etichette
@@ -33,10 +35,12 @@ extends Window
 # richiesta utente: "il tempo non si ferma con questo popup aperto, a differenza di idea/
 # statistiche/opzioni") — il collegamento vive/non vive in GameScene._ready, non qui: questa
 # classe non sa nulla del clock, resta "pannello muto" anche su questo.
-signal resource_chosen(resource_name: String, quantity: int)
+# repeat (2026-09-20): stato della casella "Ripeti fino a N volte" (TaskRepeatRules), indipendente da risorsa/quantita'.
+signal resource_chosen(resource_name: String, quantity: int, repeat: bool)
 
 @onready var message_label: Label = $MarginContainer/VBoxContainer/MessageLabel
 @onready var resource_list_container: VBoxContainer = $MarginContainer/VBoxContainer/ResourceListContainer
+@onready var repeat_check_box: CheckBox = $MarginContainer/VBoxContainer/RepeatCheckBox
 @onready var quantity_label: Label = $MarginContainer/VBoxContainer/QuantityRow/QuantityLabel
 @onready var quantity_spin_box: SpinBox = $MarginContainer/VBoxContainer/QuantityRow/QuantitySpinBox
 @onready var confirm_button: Button = $MarginContainer/VBoxContainer/ButtonsRow/ConfirmButton
@@ -54,7 +58,7 @@ const RESOURCE_ROW_ICON_SIZE: float = 24.0
 # appena segnalato dall'utente con la versione precedente). DIALOG_BASE_HEIGHT include GIÀ la riga
 # quantità/separatore/riga bottoni (sempre presenti ora, mai condizionali) — solo la lista risorse
 # cresce con RESOURCE_ROW_HEIGHT per candidato.
-const DIALOG_BASE_HEIGHT: float = 190.0
+const DIALOG_BASE_HEIGHT: float = 224.0
 const RESOURCE_ROW_HEIGHT: float = 34.0
 
 # resource_name -> quantità disponibile, salvato da open_dialog (2026-09-12) — usato SOLO per
@@ -78,6 +82,7 @@ func _ready() -> void:
 	# "transport_" nella chiave di traduzione — invariate per non toccare il CSV per un rinominare
 	# puramente cosmetico, nessuna differenza di testo visibile tra i due usi.
 	quantity_label.text = tr("transport_dialog_quantity_label")
+	repeat_check_box.text = tr("task_repeat_checkbox").format({"count": TaskRepeatRules.MAX_REPEATS})
 	confirm_button.text = tr("transport_dialog_confirm")
 	cancel_button.text = tr("transport_dialog_cancel")
 	confirm_button.pressed.connect(_on_confirm_pressed)
@@ -93,10 +98,12 @@ func _ready() -> void:
 #
 # NESSUN parametro show_quantity (2026-09-18, rimosso — vedi doc di testa al file): la riga
 # quantità è sempre presente ora, per entrambi gli usi.
-func open_dialog(dialog_title: String, message: String, available_quantities: Dictionary) -> void:
+# `repeat_default` (2026-09-20): stato iniziale della casella "Ripeti" (UserOptions.repeat_default).
+func open_dialog(dialog_title: String, message: String, available_quantities: Dictionary, repeat_default: bool = false) -> void:
 	_available_quantities = available_quantities
 	title = dialog_title
 	message_label.text = message
+	repeat_check_box.button_pressed = repeat_default
 
 	for child in resource_list_container.get_children():
 		child.queue_free()
@@ -205,7 +212,7 @@ func _on_confirm_pressed() -> void:
 	var resource_name := _selected_resource_name
 	var quantity: int = int(quantity_spin_box.value)
 	hide()
-	resource_chosen.emit(resource_name, quantity)
+	resource_chosen.emit(resource_name, quantity, repeat_check_box.button_pressed)
 
 
 # Nessun segnale emesso all'annullamento (stesso principio di DemolishConfirmationDialog._on_
