@@ -19,6 +19,14 @@ extends Resource
 # HumanIndividualController.gd/GameScene.gd/Action.gd) — min_birth_spacing_years sotto resta
 # comunque un campo separato, mai letto per quel collegamento (vedi il commento lì per il perché).
 
+@export_group("General")
+# Posizione dell'Era nella sequenza (0 = prima) e nome per la UI (chiave tr(), MAI testo già
+# tradotto — es. "era_paleolithic"). Fonte UNICA dell'ordine delle Ere: EraCalculator.list_era_names
+# ordina i file .tres di questa cartella per era_order (l'ordine alfabetico dei nomi file non
+# coincide con quello cronologico).
+@export var era_order: int = 0
+@export var display_name: String = ""
+
 @export_group("Longevity")
 # Moltiplicatore applicato (in una sessione futura) a HumanRules.age_band_durations_male/female —
 # stessa indicizzazione per age band di size_multiplier_by_age/caloric_multiplier_by_age/
@@ -87,3 +95,12 @@ extends Resource
 # costruttore. 1.0 = nessun effetto rispetto alla durata base, <1.0 = pensare più rapido in questa
 # Era, >1.0 più lento.
 @export var think_duration_multiplier: float = 1.0
+
+@export_group("Ideas")
+# Decadimento dei pensieri investiti in un'idea NON attiva e NON completata (2026-09-21, richiesta
+# utente) — vedi IdeaDecayService. Anni di grazia dal momento in cui l'idea smette di essere
+# attiva: la prima perdita avviene a (grace + 1) anni, poi una a ogni anniversario completo.
+@export var idea_decay_grace_years: int = 1
+# Quota del thoughts_cost dell'idea persa a ogni decadimento (0.10 = 10%), arrotondata per eccesso,
+# minimo 1 pensiero. Mai frazionale nel corso dell'anno.
+@export var idea_decay_percent_of_cost: float = 0.10

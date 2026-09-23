@@ -6,5 +6,7 @@
 script = ExtResource("1_plant_lore")
 id = "plant_lore"
 display_name = "idea_plant_lore"
+summary = "idea_plant_lore_summary"
+description = "idea_plant_lore_description"
 thoughts_cost = 30
 era = "paleolithic"

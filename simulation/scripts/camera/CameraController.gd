@@ -23,10 +23,22 @@ const EDGE_PAN_ACTIVATION_DELAY: float = 0.3
 
 var _edge_pan_hover_time: float = 0.0
 
+# Quando true la camera ignora ogni input (pan WASD/frecce, edge-pan, drag centrale, zoom a rotella
+# e da tastiera) — impostato da GameScene mentre un popup bloccante è aperto (vedi
+# GameScene._on_blocking_dialog_visibility_changed). Le scene che non lo impostano (WorldScene,
+# MacroCellScene, editor) restano invariate: default false.
+var input_locked: bool = false
+
 func _ready() -> void:
 	position = Vector2(800, 400)
 
 func _process(delta: float) -> void:
+	if input_locked:
+		# Azzera anche il timer edge-pan: al rilascio del blocco il mouse potrebbe trovarsi ancora
+		# nel margine e il pan deve ripartire dalla soglia di attivazione, non subito.
+		_edge_pan_hover_time = 0.0
+		return
+
 	var direction := Vector2.ZERO
 
 	if Input.is_key_pressed(KEY_W) or Input.is_key_pressed(KEY_UP):
@@ -89,6 +101,8 @@ func _get_edge_pan_vector() -> Vector2:
 
 
 func _unhandled_input(event: InputEvent) -> void:
+	if input_locked:
+		return
 	# Drag-to-pan col tasto CENTRALE (richiesta utente, 2026-09-02 — mancava, unica modalità di
 	# movimento manuale della camera non ancora coperta da WASD/edge-pan; il tasto destro resta
 	# escluso apposta, già impegnato per gli ordini di movimento in GameScene). event.relative è

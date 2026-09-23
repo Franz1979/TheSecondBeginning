@@ -103,6 +103,11 @@ var camera_x: float = 0.0
 var camera_y: float = 0.0
 var camera_position_saved: bool = false
 
+# true dopo che il completamento del PRIMO edificio con accepts_thoughts della partita ha già
+# aperto l'albero delle idee (vedi GameScene._on_building_construction_completed) — persistito
+# perché il trigger è "una volta per partita", non "una volta per sessione".
+var thought_building_tech_tree_shown: bool = false
+
 # Ultimo absolute_day (vedi get_absolute_day sotto) in cui GameScene ha eseguito la pulizia
 # periodica di FogOfWarMemory.last_seen_by_position (vedi FogOfWarMemory.prune_stale/
 # GameScene._maybe_prune_fog_of_war_memories) — deve sopravvivere a save/load, altrimenti ogni

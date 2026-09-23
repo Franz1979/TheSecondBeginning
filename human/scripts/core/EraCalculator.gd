@@ -35,3 +35,32 @@ static func _apply_multiplier(base_durations: Array[float], multiplier_by_age: A
 	for i in range(base_durations.size()):
 		result.append(base_durations[i] * multiplier_by_age[i])
 	return result
+
+
+# Elenco ordinato UNICO delle Ere (2026-09-21, richiesta utente): un nome per ogni {era}.tres in
+# ERA_RULES_DIR, ordinato per EraRules.era_order (poi per nome, a parità) — l'ordine dei file su
+# disco è alfabetico e NON cronologico (neolithic < paleolithic). Una nuova Era compare qui da sola
+# appena il suo .tres viene aggiunto.
+static func list_era_names() -> Array[String]:
+	var entries: Array[Dictionary] = []
+	var dir := DirAccess.open(ERA_RULES_DIR)
+	if dir == null:
+		return []
+	dir.list_dir_begin()
+	var file_name := dir.get_next()
+	while file_name != "":
+		if not dir.current_is_dir() and file_name.ends_with(".tres"):
+			var era_name := file_name.get_basename()
+			var rules := get_era_rules(era_name)
+			entries.append({"name": era_name, "order": rules.era_order if rules != null else 0})
+		file_name = dir.get_next()
+	dir.list_dir_end()
+	entries.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+		if a["order"] != b["order"]:
+			return a["order"] < b["order"]
+		return a["name"] < b["name"]
+	)
+	var names: Array[String] = []
+	for entry in entries:
+		names.append(entry["name"])
+	return names

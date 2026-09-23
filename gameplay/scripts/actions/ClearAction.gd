@@ -106,6 +106,12 @@ func _init(
 		target_building.construction_progress["clear_duration_days"] = _duration
 
 
+# Validità (vedi Action.is_target_valid): nullo o demolito. A differenza di Build/SetupSite un edificio
+# già completo resta valido: Clear è idempotente su un cantiere già ripulito (guardia space_reserved).
+func is_target_valid() -> bool:
+	return target_building != null and not target_building.is_demolished
+
+
 # Lettura pura di Building.construction_progress["clear_days_done"] — 0.0 se target_building è
 # null o se la chiave non esiste ancora (primissimo giorno di lavoro su questo cantiere). STESSA
 # funzione/STESSO principio di BuildAction._get_labor_accumulated/SetupSiteAction.

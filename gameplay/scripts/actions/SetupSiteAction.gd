@@ -85,6 +85,11 @@ func _get_site_setup_days_done() -> float:
 	return float(target_building.construction_progress.get("site_setup_days_done", 0.0))
 
 
+# Validità (vedi Action.is_target_valid): come BuildAction — cantiere nullo, demolito o già completo.
+func is_target_valid() -> bool:
+	return target_building != null and not target_building.is_demolished and not target_building.is_complete
+
+
 # Quantità del materiale di setup site (BuildingRules.setup_site_material_name) ancora mancante
 # rispetto al tetto richiesto (setup_site_material_per_cell × required_space) — 0 se target_building/
 # rules non risolvibili, o se ne è già stoccato a sufficienza. STESSO dato/STESSA chiave già letti

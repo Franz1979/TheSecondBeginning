@@ -24,7 +24,13 @@ const TOP_MARGIN := 24.0
 # di questa classe, non del chiamante.
 const ALERT_ICON_PREFIX := "⚠️ "
 
+# Emesso quando si entra/esce da una voce requires_ack in attesa di OK (una sola volta per sequenza
+# di voci consecutive con OK) — GameScene lo usa per fermare il tempo come per i dialoghi bloccanti.
+signal ack_wait_changed(waiting: bool)
+
+var _waiting_ack: bool = false
 var _label: Label
+var _ok_button: Button
 var _timer: Timer
 var _queue: Array[Dictionary] = []
 
@@ -69,11 +75,24 @@ func _ready() -> void:
 
 	add_theme_stylebox_override("panel", _style_default)
 
+	# VBox (label + OK) invece del solo Label: il pulsante OK serve alle voci "richiede conferma"
+	# (vedi enqueue/requires_ack) — nascosto per tutte le altre, che restano identiche a prima.
+	var box := VBoxContainer.new()
+	box.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(box)
+
 	_label = Label.new()
 	_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_label.add_theme_color_override("font_color", Color.WHITE)
-	add_child(_label)
+	box.add_child(_label)
+
+	_ok_button = Button.new()
+	_ok_button.text = tr("notification_ok")
+	_ok_button.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	_ok_button.visible = false
+	_ok_button.pressed.connect(_on_ok_pressed)
+	box.add_child(_ok_button)
 
 	_timer = Timer.new()
 	_timer.one_shot = true
@@ -86,8 +105,11 @@ func _ready() -> void:
 # passa il tipo (non ancora usato per differenziare stile/icona, solo DEATH esiste — il
 # parametro c'è già così quando arriveranno altri tipi non serve toccare la firma) e il testo già
 # formattato (questa classe non compone mai il messaggio da sé).
-func enqueue(popup_type: NotificationTypes.NotificationPopupType, text: String) -> void:
-	_queue.append({"type": popup_type, "text": text})
+#
+# requires_ack (2026-09-21, richiesta utente — popup "Nuova idea completata"): invece del Timer,
+# la voce resta visibile finché il giocatore preme OK. Le voci successive in coda attendono.
+func enqueue(popup_type: NotificationTypes.NotificationPopupType, text: String, requires_ack: bool = false) -> void:
+	_queue.append({"type": popup_type, "text": text, "requires_ack": requires_ack})
 	if not visible:
 		_show_next()
 
@@ -95,6 +117,9 @@ func enqueue(popup_type: NotificationTypes.NotificationPopupType, text: String) 
 func _show_next() -> void:
 	if _queue.is_empty():
 		visible = false
+		# DOPO visible = false: chi ascolta visibility_changed (es. l'apertura automatica del
+		# TechTreePanel) riparte prima che il tempo venga rilasciato, senza un frame di clock attivo.
+		_set_waiting_ack(false)
 		return
 	var entry: Dictionary = _queue.pop_front()
 	# Variante "alert" (2026-09-14, richiesta utente) — SOLO per MATERIAL_NEEDED: sfondo giallo +
@@ -109,13 +134,31 @@ func _show_next() -> void:
 	add_theme_stylebox_override("panel", _style_alert if is_alert else _style_default)
 	_label.add_theme_color_override("font_color", Color(0.15, 0.1, 0.0) if is_alert else Color.WHITE)
 	_label.text = (ALERT_ICON_PREFIX + String(entry["text"])) if is_alert else entry["text"]
+	var requires_ack: bool = entry.get("requires_ack", false)
+	_ok_button.visible = requires_ack
+	_set_waiting_ack(requires_ack)
+	# Reset esplicito: un PanelContainer cresce con il contenuto ma non si restringe da solo, e le
+	# voci con OK/testo multiriga sono più alte delle altre.
+	size = Vector2.ZERO
 	visible = true
 	# Un frame di attesa: lascia che il PanelContainer si ridimensioni sul nuovo testo prima di
 	# ricentrare in base alla sua size reale (più robusto di calcolare offset via anchor a mano).
 	await get_tree().process_frame
 	position = Vector2((get_viewport_rect().size.x - size.x) / 2.0, TOP_MARGIN)
-	_timer.start()
+	if not requires_ack:
+		_timer.start()
 
 
 func _on_timer_timeout() -> void:
+	_show_next()
+
+
+func _set_waiting_ack(waiting: bool) -> void:
+	if waiting == _waiting_ack:
+		return
+	_waiting_ack = waiting
+	ack_wait_changed.emit(waiting)
+
+
+func _on_ok_pressed() -> void:
 	_show_next()

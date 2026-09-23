@@ -1,3 +1,7 @@
 # Godot 4+ specific ignores
 .godot/
 /android/
+
+# Audio provvisorio, non committare
+audio/assets/**/*.wav
+audio/assets/**/*.wav.import

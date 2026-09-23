@@ -64,14 +64,14 @@ func get_stamina_delta(individual: Variant, context: Dictionary, delta: float) -
 	var cost_per_microcell: float = (
 		# terrain_stamina_multiplier (2026-09-19, vedi MovementTerrainService): solo sulla quota base.
 		RUN_INTENSITY_MULTIPLIER * WalkAction.STAMINA_DRAIN_PER_MICROCELL_BASE * individual.terrain_stamina_multiplier
-		+ used_carry_space
+		+ used_carry_space * WalkAction.CARRY_STAMINA_MULTIPLIER
 		+ WalkAction.STAMINA_DRAIN_PER_TOOL * float(individual.equipped_tool_count)
 	)
 	if DebugLogging.ENABLED and DebugLogging.SHOW_MOVEMENT_STAMINA_LOGS:
 		MovementStaminaDebugLog.record(
 			individual, "Run", distance, individual.terrain_stamina_multiplier,
 			RUN_INTENSITY_MULTIPLIER * WalkAction.STAMINA_DRAIN_PER_MICROCELL_BASE,
-			used_carry_space + WalkAction.STAMINA_DRAIN_PER_TOOL * float(individual.equipped_tool_count)
+			used_carry_space * WalkAction.CARRY_STAMINA_MULTIPLIER + WalkAction.STAMINA_DRAIN_PER_TOOL * float(individual.equipped_tool_count)
 		)
 	if DebugLogging.ENABLED and DebugLogging.SHOW_MOVEMENT_LOGS:
 		print("[RUN DEBUG] get_stamina_delta: distance=%.3f cost_per_microcell=%.2f (base Walk x%.1f + carico/utensili invariati) -> delta=%.2f" % [

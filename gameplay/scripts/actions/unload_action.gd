@@ -197,9 +197,12 @@ func activate(individual: Variant, context: Dictionary) -> void:
 		# quindi on_complete (che le deposita in sequenza) può depositare meno di quanto stimato qui — mai più.
 		var space_to_deposit: float = 0.0
 		var planned_units: Dictionary = {}
+		# Cantiere di una Transport già completato (vedi _is_completed_site_destination): nulla viene
+		# pianificato qui, on_complete lo tratta come destinazione non valida (reinstradamento).
+		var destination_rejected: bool = _is_completed_site_destination(context)
 		for resource_name in individual.carried_resources.keys():
 			var carried_units: int = individual.get_carried_quantity(String(resource_name))
-			if carried_units <= 0 or not BuildingStorageService.can_accept(target_building, String(resource_name)):
+			if carried_units <= 0 or destination_rejected or not BuildingStorageService.can_accept(target_building, String(resource_name)):
 				continue
 			var units_now: int = min(BuildingStorageService.get_max_depositable(target_building, String(resource_name)), carried_units)
 			if units_now <= 0:
@@ -259,6 +262,18 @@ func activate(individual: Variant, context: Dictionary) -> void:
 		target_building.micro_x, target_building.micro_y, accepted_categories,
 		str(individual.carried_resources)
 	])
+
+
+# Destinazione di una Transport che alla creazione era un CANTIERE (context["transport_destination_is_site"],
+# scritto da GameScene._build_transport_task) ed è stata completata nel frattempo (2026-09-21, richiesta
+# utente): il materiale per costruirla non serve più e non va depositato nell'edificio finito — trattata
+# come destinazione non valida, con il reinstradamento esistente verso un magazzino (come per una
+# destinazione demolita). Una Transport verso un magazzino vero non ha il flag: nessun effetto.
+func _is_completed_site_destination(context: Dictionary) -> bool:
+	return deposit_kind == DepositKind.RESOURCE and target_building != null \
+		and bool(context.get("transport_destination_is_site", false)) \
+		and int(context.get("transport_destination_id", -1)) == target_building.id \
+		and target_building.is_complete
 
 
 # Nessun override prima d'ora (ereditava Action.get_stamina_delta — sempre 0.0, invariato per il
@@ -370,9 +385,14 @@ func on_complete(individual: Variant, context: Dictionary) -> void:
 		var deposited_by_resource: Dictionary = {}
 		for resource_name in carried_before_deposit.keys():
 			var carried_entry: Dictionary = carried_before_deposit[resource_name]
-			var deposited: int = BuildingStorageService.store(
-				target_building, String(resource_name), int(carried_entry["quantity"]), float(carried_entry["decay_fraction"])
-			)
+			# Destinazione non valida (cantiere già completato, vedi _is_completed_site_destination): nessun
+			# deposito, tutto il carico confluisce nel residuo e nel reinstradamento verso un magazzino
+			# qui sotto — stesso esito di una destinazione demolita (can_accept/store ritornano 0).
+			var deposited: int = 0
+			if not _is_completed_site_destination(context):
+				deposited = BuildingStorageService.store(
+					target_building, String(resource_name), int(carried_entry["quantity"]), float(carried_entry["decay_fraction"])
+				)
 			if DebugLogging.ENABLED and DebugLogging.SHOW_TRANSPORT_BUILD_LOGS:
 				print("[UNLOAD] on_complete: store() ha depositato %d unità di '%s' (su %d richieste)" % [
 					deposited, resource_name, int(carried_entry["quantity"])

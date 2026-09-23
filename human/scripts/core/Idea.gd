@@ -25,6 +25,13 @@ extends Resource
 # GameScene._refresh_building_slots_buildable/_on_idea_completed).
 @export var display_name: String = ""
 
+# Testi descrittivi (2026-09-21, richiesta utente) — anch'essi chiavi tr(), MAI testo già tradotto
+# (stessa regola di display_name sopra), convenzione idea_<id>_summary / idea_<id>_description.
+# summary = una riga (popup di sblocco, tooltip); description = testo più esteso (tooltip del
+# TechTreePanel). Vuoto = niente da mostrare, i consumatori saltano la riga.
+@export var summary: String = ""
+@export var description: String = ""
+
 # Costo in "pensieri" (Folk.thoughts_count/thoughts_invested) per completare questa idea — non
 # ancora confrontato da nessuna logica in questo passo.
 @export var thoughts_cost: int = 0

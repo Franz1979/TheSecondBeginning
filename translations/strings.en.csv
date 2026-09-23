@@ -12,7 +12,39 @@ demolish_confirmation_text,Demolish {building} #{id}? This is immediate and cann
 demolish_confirmation_confirm,Demolish
 demolish_confirmation_cancel,Cancel
 idea_paleolithic_constructions,Paleolithic Constructions
-idea_plant_lore,Conoscenza delle piante
+idea_plant_lore,Plant Lore
+idea_work_areas,Work Areas
+idea_task_assignment,Task Assignment
+idea_warehouse_management,Warehouse Management
+idea_paleolithic_constructions_summary,Allows building the first shelters.
+idea_paleolithic_constructions_description,"Branches, hides and stones become structures to shelter and rest in."
+idea_plant_lore_summary,Allows recognizing medicinal herbs.
+idea_plant_lore_description,"By observing plants, the group learns which ones heal and where to find them."
+idea_work_areas_summary,Allows marking out work areas.
+idea_work_areas_description,The land is divided into zones dedicated to gathering and activities.
+idea_task_assignment_summary,A villager can hand out tasks.
+idea_task_assignment_description,A group member coordinates work and assigns tasks to others.
+idea_warehouse_management_summary,A villager can manage the storehouse.
+idea_warehouse_management_description,A group member keeps the stores in order and organizes their movement.
+unlock_kind_idea,Unlocks ideas
+unlock_kind_building,Unlocks buildings
+unlock_kind_resource,Unlocks resources
+tech_tree_requires,Requires: {ideas}
+tech_tree_research_button,Research this idea
+tech_tree_detail_placeholder,Click an idea to see its details
+era_paleolithic,Paleolithic
+era_neolithic,Neolithic
+idea_agriculture,Agriculture
+idea_agriculture_summary,Growing plants instead of gathering them.
+idea_agriculture_description,The group learns to sow and harvest in the same place.
+tech_tree_unknown_idea,Unknown idea
+notification_ok,OK
+tech_tree_cost,Cost: {cost} thoughts
+tech_tree_select_idea_prompt,Select an idea to research
+tech_tree_state_completed,Completed
+tech_tree_state_researching,Researching
+tech_tree_state_available,Available
+tech_tree_state_locked,Locked
 sex_label,Sex: {sex}
 sex_female,Female
 sex_male,Male
@@ -94,7 +126,6 @@ statistics_tab_population,Population
 statistics_tab_buildings,Buildings
 tech_tree_tooltip,Tech tree
 tech_tree_title,Tech tree
-tech_tree_completed_caption,Completed ideas
 tech_tree_active_idea_label,Researching: {idea}
 tech_tree_no_active_idea,No research in progress
 tech_tree_debug_add_thought,+1 Thought
@@ -146,6 +177,11 @@ options_pickup_default,Pick-up: default choice
 options_pickup_default_group_category,Category
 options_pickup_default_group_resource,Resource
 options_repeat_default,Pick-up and transport: repeat up to {count} times
+options_volume_master,Master volume
+options_volume_music,Music volume
+options_volume_ambience,Ambience volume
+options_volume_sfx,Effects volume
+options_volume_ui,Interface volume
 task_repeat_checkbox,Repeat up to {count} times
 minimap_show_tooltip,Show the minimap
 minimap_hide_tooltip,Hide the minimap

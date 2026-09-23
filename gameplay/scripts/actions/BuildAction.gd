@@ -48,6 +48,10 @@ const STAMINA_DRAIN_PER_DAY: float = 200.0
 
 
 var target_building: Building = null
+# Individuo che sta completando la costruzione, valorizzato SOLO durante l'emissione di
+# building_construction_completed (on_complete) — il segnale porta solo l'edificio, ma chi lo ascolta
+# (GameScene) deve sapere chi ha completato per non chiudere la sua stessa task.
+var completing_individual: Variant = null
 var skill_multiplier: float = 1.0
 var tool_multiplier: float = 1.0
 
@@ -74,6 +78,13 @@ func _init(
 	# INFANT al gameplay, vedi Action.disallowed_age_bands). CHILD aggiunto 2026-09-13 (richiesta
 	# utente).
 	disallowed_age_bands = [HumanTypes.AgeBand.INFANT, HumanTypes.AgeBand.CHILD]
+
+
+# Validità (vedi Action.is_target_valid): un cantiere nullo, demolito o già completo non ha più nulla
+# da costruire — il completamento cancella i materiali di required_materials, quindi alla ripresa
+# get_missing_materials() li troverebbe mancanti e questo step resterebbe bloccato per sempre.
+func is_target_valid() -> bool:
+	return target_building != null and not target_building.is_demolished and not target_building.is_complete
 
 
 # Lettura pura di Building.construction_progress["labor_accumulated"] — 0.0 se target_building è
@@ -228,7 +239,9 @@ func on_complete(individual: Variant, context: Dictionary) -> void:
 	# restava "in attesa" per sempre nel pannello anche a costruzione DAVVERO completa, dato che
 	# nessun punto lo azzerava più una volta risolto il blocco senza passare da una riattivazione).
 	target_building.is_awaiting_material = false
+	completing_individual = individual
 	building_construction_completed.emit(target_building)
+	completing_individual = null
 
 
 # Persistenza (2026-09-11, richiesta utente, punto 4) — SOLO dati "di identità" del costruttore

@@ -2114,6 +2114,9 @@ func _build_transport_task(
 	var context: Dictionary = _resolve_transport_context(owner, source_building, destination_building, resource_name, trip_target)
 	context["transport_source_id"] = source_building.id
 	context["transport_destination_id"] = destination_building.id
+	# Vero se alla creazione la destinazione è un cantiere: se sarà completata prima dell'Unload,
+	# UnloadAction la tratta come destinazione non valida (vedi _is_completed_site_destination).
+	context["transport_destination_is_site"] = not destination_building.is_complete
 	context["transport_delivery_resource"] = resource_name
 	context["transport_requested_remaining"] = requested_remaining
 	TaskRepeatRules.write(context, repeat_enabled, repeat_count)
@@ -3933,6 +3936,46 @@ func _count_other_individuals_claiming_build(target_building: Building, excludin
 	return count
 
 
+# Chiude le task (current_task E task_queue) di tutti gli individui, tranne `excluded`, che puntano a
+# `building` (2026-09-21, richiesta utente — logica estratta da _demolish_building per riusarla al
+# completamento di un edificio da parte di un altro individuo). Ritorna gli individui la cui
+# current_task è stata chiusa: il chiamante li rimette in moto con resolve_idle_individual, al momento
+# giusto per lui. discard_carried: true (demolizione) = zaino scartato — current_task via stop(), task in
+# coda come fa TaskQueueService.push_suspended_task per l'overflow; false (edificio completato) = zaino
+# lasciato dov'è, la task viene solo chiusa/rimossa.
+func _close_tasks_claiming_building(building: Building, excluded: HumanIndividual, discard_carried: bool) -> Array[HumanIndividual]:
+	var freed: Array[HumanIndividual] = []
+	for other in human_individuals:
+		if other == excluded:
+			continue
+		if _task_claims_building(other.current_task, building):
+			other.stop(discard_carried)
+			freed.append(other)
+		var kept_queue: Array[Task] = []
+		for queued_task in other.task_queue:
+			if _task_claims_building(queued_task, building):
+				if discard_carried:
+					other.discard_carried_resource()
+			else:
+				kept_queue.append(queued_task)
+		other.task_queue = kept_queue
+	return freed
+
+
+# L'individuo che sta completando `building` in questo istante (il cui BuildAction corrente sta
+# emettendo building_construction_completed, vedi BuildAction.completing_individual) — null se non
+# c'è (es. segnale emesso fuori da BuildAction.on_complete).
+func _find_completing_individual(building: Building) -> HumanIndividual:
+	for candidate in human_individuals:
+		if candidate.current_task == null:
+			continue
+		var action := candidate.current_task.get_current_action()
+		if action is BuildAction and (action as BuildAction).target_building == building \
+				and (action as BuildAction).completing_individual == candidate:
+			return candidate
+	return null
+
+
 # BUGFIX (2026-09-14, richiesta utente — guard max_builders confermato non funzionante: "ne lascia
 # assegnare ancora un sacco") — PRIMA leggeva task.context.get("target_building"), SEMPRE null:
 # TaskFactory.build_task (righe 224-230) ripulisce SEMPRE context dalle chiavi consumate per
@@ -4705,15 +4748,48 @@ func _on_human_stillbirth(mother: HumanIndividual) -> void:
 # sopra (un'impostazione utente/installazione, non di partita — si disattiva insieme alle altre da
 # Opzioni, richiesta esplicita). display_name è una chiave tr() (vedi Idea.gd), mai testo diretto —
 # stesso trattamento già corretto in _refresh_building_slots_buildable/TechTreePanel.
+#
+# Poi (2026-09-21, richiesta utente) riapre l'albero idee perché il giocatore scelga la prossima
+# ricerca — dopo il popup di sblocco, vedi _open_tech_tree_after_notification_popup. Tutti i
+# percorsi di completamento (deposito pensiero, ricollegamento dopo reload, bottone debug del
+# pannello) passano da qui, quindi il trigger vive qui e non nei singoli listener.
 func _on_idea_completed(idea_id: String) -> void:
-	if not UserOptions.show_notification_popups:
+	if UserOptions.show_notification_popups:
+		var completed_idea := IdeaCalculator.get_idea(idea_id)
+		var display_name: String = tr(completed_idea.display_name) if completed_idea != null else idea_id
+		# Multiriga (2026-09-21, richiesta utente): nome, summary e sblocchi (IdeaUnlocksService,
+		# una riga per gruppo — idee/edifici/risorse).
+		var popup_lines: Array[String] = [tr("notification_idea_completed").format({"idea": display_name})]
+		if completed_idea != null and completed_idea.summary != "":
+			popup_lines.append(tr(completed_idea.summary))
+		# Stesso filtro del dettaglio del TechTreePanel: idee sbloccate ancora coperte -> "???".
+		popup_lines.append_array(IdeaUnlocksService.format_lines(
+			idea_id,
+			func(kind: StringName, unlock_id: String) -> bool:
+				return IdeaProgressService.is_unlock_hidden(human_folk, kind, unlock_id)
+		))
+		notification_popup.enqueue(
+			NotificationTypes.NotificationPopupType.IDEA_COMPLETED,
+			"\n".join(popup_lines),
+			true # requires_ack: resta finché il giocatore preme OK (2026-09-21, richiesta utente)
+		)
+	_open_tech_tree_after_notification_popup()
+
+
+# Attende che la coda di NotificationPopup si svuoti (il popup si nasconde da solo a coda finita,
+# vedi NotificationPopup._show_next — nessuna modifica lì, basta il suo visibility_changed) e poi
+# apre il pannello. Se nel frattempo è già aperto (bottone debug, o aperto a mano dal giocatore)
+# non lo riapre: sarebbe un no-op che azzererebbe solo lo scroll. Dopo l'await, refresh_content()
+# perché lo stato può essere cambiato mentre il popup era visibile.
+func _open_tech_tree_after_notification_popup() -> void:
+	if tech_tree_panel.visible:
 		return
-	var completed_idea := IdeaCalculator.get_idea(idea_id)
-	var display_name: String = tr(completed_idea.display_name) if completed_idea != null else idea_id
-	notification_popup.enqueue(
-		NotificationTypes.NotificationPopupType.IDEA_COMPLETED,
-		tr("notification_idea_completed").format({"idea": display_name})
-	)
+	while notification_popup.visible:
+		await notification_popup.visibility_changed
+	if tech_tree_panel.visible:
+		tech_tree_panel.refresh_content()
+		return
+	tech_tree_panel.open_dialog(human_folk, game_data)
 
 
 # Inizio consumo della riserva corporea (2026-09-19, richiesta utente): l'individuo ha finito le
@@ -6846,7 +6922,7 @@ func _on_primary_action_pressed(action_id: StringName) -> void:
 			)
 		# Slot 1, accanto alle statistiche (2026-09-07, richiesta utente) — 💡, apre TechTreePanel.
 		&"tech_tree":
-			tech_tree_panel.open_dialog(human_folk)
+			tech_tree_panel.open_dialog(human_folk, game_data)
 
 
 # toggle_animals_visibility/toggle_flora_updates/world_debug/macro_cell_debug — vissuti prima
@@ -7006,15 +7082,18 @@ func _demolish_building(building: Building) -> void:
 	# stessa Task fin dalla creazione via TaskFactory.build_task — vedi Task.context). Nessun
 	# riferimento diretto building->individuo esiste oggi (vedi il report): scansione lineare di
 	# human_individuals, stesso costo già accettato altrove nel progetto per questo stesso array
-	# (es. AssignHouseService sopra). other.stop() qui SENZA il resolve_idle_individual aggiunto a
-	# _stop_selected_individual_task (tasto H, 2026-09-14 bugfix) — deliberato, non un'omissione:
-	# demolire l'edificio target invalida la Task, ma un eventuale resume dalla coda/fallback
-	# perditempo per un individuo NON selezionato qui è fuori scope di questo fix (limitato al tasto
-	# H su richiesta utente); resta il comportamento "nessun fallback automatico" di prima.
-	for other in human_individuals:
-		var other_task: Task = other.current_task
-		if other_task != null and other_task.context.get("target_building") == building:
-			other.stop()
+	# (es. AssignHouseService sopra). (Storico: prima other.stop() qui era SENZA resolve_idle_individual,
+	# "fuori scope"; dal 2026-09-21 lo si richiama dopo la demolizione, vedi sotto.)
+	#
+	# BUGFIX (2026-09-21, richiesta utente): il controllo su context["target_building"] non scattava MAI
+	# (TaskFactory.build_task ripulisce quella chiave dal context, vedi _task_claims_building) e
+	# ignorava la coda. Ora usa _task_claims_building (legge il target dagli step) su current_task E su
+	# task_queue: le task che puntano a questo edificio vengono chiuse. current_task via stop() (scarta
+	# anche lo zaino, come sempre); per una task tolta dalla coda lo zaino viene scartato come fa
+	# TaskQueueService.push_suspended_task quando ne scarta una per overflow. Gli individui la cui
+	# current_task è stata chiusa vengono rimessi in moto (bisogno/coda/perditempo) DOPO che l'edificio
+	# è demolito (step 6), così una task in coda per lo stesso edificio non può essere ripresa.
+	var individuals_to_resolve: Array[HumanIndividual] = _close_tasks_claiming_building(building, null, true)
 
 	# 2) Residenti: libera gli slot (house_id torna a -1, stesso valore di default di HumanIndividual
 	# senza casa) — solo se l'edificio era residenziale, stesso guard già usato da AssignHouseService/
@@ -7061,6 +7140,10 @@ func _demolish_building(building: Building) -> void:
 	# diretto che resta valido anche dopo che l'edificio sparisce da questa lista).
 	building.is_demolished = true
 	macro_world.buildings.erase(building)
+	# Individui rimasti senza task per la demolizione (step 1): riprendono dalla coda o vanno in
+	# perditempo — vedi il commento allo step 1.
+	for freed in individuals_to_resolve:
+		HumanIndividualActionService.resolve_idle_individual(freed, _resolve_age_band(freed), macro_world)
 
 	# Chiudi il pannello se era proprio questo l'edificio selezionato (stesso principio già seguito
 	# da _clear_building_selection altrove: nessun pannello che punti a un Building non più
@@ -7807,6 +7890,14 @@ func _on_resource_deposited(building: Building) -> void:
 func _on_building_construction_completed(building: Building) -> void:
 	if building == null:
 		return
+	# Altri individui con una task (corrente o in coda) su questo edificio (2026-09-21, richiesta
+	# utente): non hanno più nulla da costruire — BuildAction.on_complete ha appena cancellato i
+	# materiali di required_materials, quindi il loro step Build resterebbe bloccato. Stessa logica
+	# della demolizione (_close_tasks_claiming_building), ma lo zaino NON viene scartato. Chi ha
+	# completato è escluso: la sua task prosegue da sé (finish_current_step).
+	var other_freed := _close_tasks_claiming_building(building, _find_completing_individual(building), false)
+	for freed in other_freed:
+		HumanIndividualActionService.resolve_idle_individual(freed, _resolve_age_band(freed), macro_world)
 	# built_year NON più scritto qui (2026-09-19, richiesta utente): lo scrive BuildAction.on_complete
 	# insieme a is_complete, così non può restare indietro se questo listener non è collegato.
 	# Log spostato QUI (2026-09-12, richiesta utente — riordino cosmetico, nessuna modifica di
@@ -7818,6 +7909,13 @@ func _on_building_construction_completed(building: Building) -> void:
 	# Rinfresca la scheda 🏠 (2026-09-12, richiesta utente) — lo stato passa da "in costruzione" a
 	# "completo" proprio qui, la lista deve rifletterlo subito, non aspettare il rollover d'anno.
 	_refresh_buildings_panel()
+	# Primo edificio con accepts_thoughts completato in questa partita (2026-09-21, richiesta
+	# utente) -> apre l'albero idee, una volta sola (GameData.thought_building_tech_tree_shown,
+	# persistito). call_deferred: questo handler gira dentro BuildAction.on_complete, in pieno tick
+	# di simulazione — aprire il pannello mette in pausa il clock, meglio farlo a fine frame.
+	if building.rules != null and building.rules.accepts_thoughts and not game_data.thought_building_tech_tree_shown:
+		game_data.thought_building_tech_tree_shown = true
+		tech_tree_panel.open_dialog.call_deferred(human_folk, game_data)
 	# AssignHouseService (2026-09-12, richiesta utente — trigger 4a: "quando un edificio
 	# residenziale completa la costruzione") — SOLO se max_residents > 0 (un edificio non
 	# residenziale, es. Pebble Circle/Deposit Site, non ha senso farlo passare da qui: nessun posto
@@ -8101,8 +8199,20 @@ func _on_secondary_action_pressed(action_id: StringName) -> void:
 		&"menu":
 			system_menu_dialog.open_menu()
 
-func _on_blocking_dialog_visibility_changed(dialog: Window) -> void:
-	if dialog.visible:
+# `dialog` è un Node (non Window): TechTreePanel è ora un CanvasLayer overlay, stesso segnale
+# visibility_changed e stessa proprietà `visible` delle Window.
+func _on_blocking_dialog_visibility_changed(dialog: Node) -> void:
+	_adjust_blocking_dialog_count(1 if dialog.get("visible") else -1)
+
+
+# Popup di NotificationPopup con requires_ack (2026-09-21, richiesta utente): fermano il tempo finché
+# non si preme OK, con lo STESSO contatore dei dialoghi bloccanti.
+func _on_notification_ack_wait_changed(waiting: bool) -> void:
+	_adjust_blocking_dialog_count(1 if waiting else -1)
+
+
+func _adjust_blocking_dialog_count(delta: int) -> void:
+	if delta > 0:
 		if _open_dialog_count == 0:
 			_clock_was_playing_before_dialogs = clock.is_playing
 			if clock.is_playing:
@@ -8114,6 +8224,10 @@ func _on_blocking_dialog_visibility_changed(dialog: Window) -> void:
 		if _open_dialog_count == 0 and _clock_was_playing_before_dialogs and not clock.is_playing:
 			clock.toggle_play_pause()
 			_update_play_pause_button()
+	# Camera bloccata finché c'è almeno un popup che ferma il tempo (2026-09-21, richiesta utente) —
+	# stesso contatore del clock, quindi vale per tutti i dialoghi bloccanti, non solo l'albero idee.
+	# camera è tipizzata Camera2D (CameraController non ha class_name): set() per nome.
+	camera.set("input_locked", _open_dialog_count > 0)
 
 func _on_system_menu_action_selected(action_id: StringName) -> void:
 	match action_id:
@@ -8194,6 +8308,7 @@ func _setup_clock() -> void:
 	# overlay sopra il resto della UI.
 	notification_popup = NotificationPopup.new()
 	$CanvasLayer.add_child(notification_popup)
+	notification_popup.ack_wait_changed.connect(_on_notification_ack_wait_changed)
 	_setup_transport_selection_banner()
 	if macro_world == null:
 		play_pause_button.disabled = true
@@ -8219,6 +8334,11 @@ func _setup_clock() -> void:
 	# agganciarsi al nuovo clock.year_rolled_over (vedi GameClockController) invece che a
 	# day_advanced (che scatterebbe inutilmente ogni giorno).
 	clock.year_rolled_over.connect(_on_year_rolled_over)
+	# Ambience stagionale (2026-09-21): il controller vive sotto audio/, GameScene si limita a istanziarlo e
+	# passargli clock e game_data. Pulisce da sé gli strati audio quando la scena viene lasciata.
+	var ambience_controller := AmbienceController.new()
+	add_child(ambience_controller)
+	ambience_controller.start(clock, game_data)
 	# Primo aggancio gameplay-side ai checkpoint classificati (richiesta utente, 2026-09-05) — vedi
 	# GameTimeService per il perché l'istanza va tenuta in un campo, non usa-e-getta.
 	# human_individuals/human_folk/human_population_group passati per riferimento (Step 5/6 piano

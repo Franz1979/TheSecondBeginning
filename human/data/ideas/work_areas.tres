@@ -1,0 +1,12 @@
+[gd_resource type="Resource" script_class="Idea" format=3 uid="uid://bw1k4yad2pqa7"]
+
+[ext_resource type="Script" uid="uid://cqx38hirrk3s1" path="res://human/scripts/core/Idea.gd" id="1_work_areas"]
+
+[resource]
+script = ExtResource("1_work_areas")
+id = "work_areas"
+display_name = "idea_work_areas"
+summary = "idea_work_areas_summary"
+description = "idea_work_areas_description"
+thoughts_cost = 30
+era = "paleolithic"

@@ -58,6 +58,8 @@ func save_game_to_json(
 			"camera_x": game_data.camera_x,
 			"camera_y": game_data.camera_y,
 			"camera_position_saved": game_data.camera_position_saved,
+			# Apertura automatica albero idee al primo edificio "pensieri" (vedi GameData).
+			"thought_building_tech_tree_shown": game_data.thought_building_tech_tree_shown,
 			# Ultimo giorno di pulizia periodica del fog of war (vedi GameData) — deve
 			# sopravvivere a save/load per non sfasare la cadenza reale.
 			"fog_of_war_last_prune_absolute_day": game_data.fog_of_war_last_prune_absolute_day,
@@ -444,7 +446,9 @@ func save_game_to_json(
 				"thoughts_count": human_folk.thoughts_count,
 				"active_idea_id": human_folk.active_idea_id,
 				"thoughts_invested": human_folk.thoughts_invested,
-				"completed_ideas": human_folk.completed_ideas
+				"completed_ideas": human_folk.completed_ideas,
+				# Giorno assoluto del prossimo decadimento per idea (vedi Folk/IdeaDecayService).
+				"idea_decay_due_day": human_folk.idea_decay_due_day
 			},
 			"group": {
 				"id": human_population_group.id,

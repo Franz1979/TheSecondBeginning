@@ -34,7 +34,7 @@ const SHOW_PREDATOR_LIFECYCLE_LOGS := false
 # categoria): stesso identico consumatore/comportamento, solo il nome allineato alla categoria
 # "LOD" del nuovo schema in fondo a questo file (vedi blocco "CATEGORIE" sotto) — nessun secondo
 # flag separato da tenere sincronizzato.
-const SHOW_LOD_LOGS := true
+const SHOW_LOD_LOGS := false
 
 # Filtro dedicato per i log GIORNALIERI di PredationService ([PREDATION]/[PREDATION ATTEMPT]/
 # [PREDATION STARVATION]): a differenza di SHOW_HERBIVORE_LIFECYCLE_LOGS sopra (che filtra gli
@@ -272,7 +272,7 @@ const SHOW_TASK_LIFECYCLE_LOGS := false
 # IDLE — [IDLE FALLBACK] (IdleTaskAssignmentService), [REST]/[EMERGENCY REST]
 # (NeedTaskAssignmentService), [WANDER]/[PLAY] (GameScene, trigger manuali tasti G/P per le stesse
 # due Task).
-const SHOW_IDLE_LOGS := false
+const SHOW_IDLE_LOGS := true
 
 # TRANSPORT_BUILD — [UNLOAD] (unload_action.gd), [WALK AWAY]/[WAREHOUSE SEARCH]/
 # [THOUGHT TARGET SEARCH]/[BUILD MATERIAL NEEDED]/[BUILD MATERIAL BONUS]/[BUILD MATERIAL RETRY]
@@ -285,7 +285,7 @@ const SHOW_TRANSPORT_BUILD_LOGS := false
 # [BORDER] (GameScene). Default true (a differenza della maggior parte delle categorie sopra):
 # segnalano un'anomalia reale (una task zombie intercettata, un attraversamento di bordo), non un
 # evento di routine — utile vederli anche senza aver acceso apposta il debug.
-const SHOW_SAFETY_LOGS := true
+const SHOW_SAFETY_LOGS := false
 
 # DAILY_SUMMARY — [DBG_TASK] (GameScene._on_day_advanced, riepilogo giornaliero task/stamina/
 # carico per individuo). Default true, stesso motivo di SHOW_SAFETY_LOGS: introdotto apposta come
@@ -309,5 +309,5 @@ const SHOW_FOW_DIAG_LOGS := false
 # TEMPORANEO (2026-09-20, richiesta utente — diagnosi cantiere che non avanza): [TASK WATCH] (GameScene._debug_watch_task)
 # stampa, ogni WATCH_TASK_INTERVAL_SECONDS reali, task corrente/step/coda sospesa dell'individuo con id
 # WATCH_TASK_INDIVIDUAL_ID (-1 = disattivato). Solo print: rimuovere costanti, chiamata in _process e funzione insieme.
-const WATCH_TASK_INDIVIDUAL_ID := 6
+const WATCH_TASK_INDIVIDUAL_ID := -1
 const WATCH_TASK_INTERVAL_SECONDS := 1.0

@@ -860,6 +860,14 @@ func assign_task(task: Task, age_band: HumanTypes.AgeBand, is_interrupt_transiti
 	# è mai lei la legittima proprietaria di un carico ancora da consegnare.
 	if task.interrupt_priority == -1 and not carried_resources.is_empty() and (current_task == null or not current_task.is_suspendable or current_task.is_finished()):
 		var cargo_owner_task := TaskQueueService.pop_suspended_task(self)
+		# Bersaglio non più valido (2026-09-21, richiesta utente): la task in coda viene scartata pulita,
+		# non ripresa — si prova la successiva, o nessuna.
+		while cargo_owner_task != null and not HumanIndividualActionService.is_task_valid(cargo_owner_task):
+			if DebugLogging.ENABLED and DebugLogging.SHOW_SAFETY_LOGS:
+				print("[INVALID TARGET] Individuo #%d %s: task '%s' scartata dalla coda (ripresa per zaino occupato) — bersaglio non più valido." % [
+					id, name, cargo_owner_task.task_name
+				])
+			cargo_owner_task = TaskQueueService.pop_suspended_task(self)
 		if cargo_owner_task != null:
 			# Guardia task.is_suspendable (2026-09-16, richiesta utente — STESSO bugfix del ramo sopra):
 			# `task` (il comando NUOVO) va accodato SOLO se sospendibile lui stesso — altrimenti
@@ -987,7 +995,9 @@ func set_target(target: Vector2, age_band: HumanTypes.AgeBand) -> void:
 	assign_task(Task.new([WalkAction.new(target)]), age_band)
 
 
-func stop() -> void:
+# discard_cargo (2026-09-21, richiesta utente): false = lascia lo zaino com'è (usato quando un edificio
+# viene completato da altri e la Task va solo chiusa, vedi GameScene._close_tasks_claiming_building).
+func stop(discard_cargo: bool = true) -> void:
 	is_moving = false
 	path.clear()
 	# TaskDebugRegistry (2026-09-12, richiesta utente — tab di debug 🐞) — chiude l'entry PRIMA di
@@ -1003,7 +1013,8 @@ func stop() -> void:
 	# arrivare qui, vedi HumanIndividualActionService._handle_pending_warehouse_search, quindi
 	# questa chiamata vi trova già lo zaino vuoto e non fa nulla: rete di sicurezza, non
 	# duplicazione). Guard interno a discard_carried_resource(), nessun controllo esplicito qui.
-	discard_carried_resource()
+	if discard_cargo:
+		discard_carried_resource()
 	# Cablaggio Walk/Task (2026-09-06/07, richiesta utente) — la task associata va ripulita ogni
 	# volta che il movimento finisce, sia per arrivo naturale (HumanIndividualActionService.
 	# apply_action chiama stop() quando la Task risulta conclusa dopo l'ultimo step, NON più

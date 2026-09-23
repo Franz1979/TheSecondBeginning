@@ -1,0 +1,13 @@
+[gd_resource type="Resource" script_class="Idea" format=3 uid="uid://c8agr1cu1t0re"]
+
+[ext_resource type="Script" uid="uid://cqx38hirrk3s1" path="res://human/scripts/core/Idea.gd" id="1_agriculture"]
+
+[resource]
+script = ExtResource("1_agriculture")
+id = "agriculture"
+display_name = "idea_agriculture"
+summary = "idea_agriculture_summary"
+description = "idea_agriculture_description"
+thoughts_cost = 20
+prerequisites = Array[String](["plant_lore"])
+era = "neolithic"

@@ -42,11 +42,12 @@ func _init(p_duration: float) -> void:
 	duration = p_duration
 	target = null
 	# INFANT non può eseguire questa Action (2026-09-12, richiesta utente — collegamento AgeBand.
-	# INFANT al gameplay, vedi Action.disallowed_age_bands). CHILD/TEENAGER/FERTILE_ADULT aggiunti
-	# 2026-09-13 (richiesta utente): pensare è riservato agli adulti anziani/maturi.
+	# INFANT al gameplay, vedi Action.disallowed_age_bands). CHILD/TEENAGER aggiunti 2026-09-13 (richiesta
+	# utente): pensare è riservato agli adulti. FERTILE_ADULT RIAMMESSA 2026-09-21 (richiesta utente): i
+	# fondatori nascono tutti in quella fascia, senza di loro nessuna idea avanzerebbe.
 	disallowed_age_bands = [
 		HumanTypes.AgeBand.INFANT, HumanTypes.AgeBand.CHILD,
-		HumanTypes.AgeBand.TEENAGER, HumanTypes.AgeBand.FERTILE_ADULT,
+		HumanTypes.AgeBand.TEENAGER,
 	]
 
 

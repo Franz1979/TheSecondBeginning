@@ -1,0 +1,13 @@
+[gd_resource type="Resource" script_class="Idea" format=3 uid="uid://by7q206e4hsla"]
+
+[ext_resource type="Script" uid="uid://cqx38hirrk3s1" path="res://human/scripts/core/Idea.gd" id="1_warehouse_management"]
+
+[resource]
+script = ExtResource("1_warehouse_management")
+id = "warehouse_management"
+display_name = "idea_warehouse_management"
+summary = "idea_warehouse_management_summary"
+description = "idea_warehouse_management_description"
+thoughts_cost = 50
+prerequisites = Array[String](["task_assignment"])
+era = "paleolithic"

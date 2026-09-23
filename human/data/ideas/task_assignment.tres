@@ -1,0 +1,13 @@
+[gd_resource type="Resource" script_class="Idea" format=3 uid="uid://bx3m8v5c1nrt2"]
+
+[ext_resource type="Script" uid="uid://cqx38hirrk3s1" path="res://human/scripts/core/Idea.gd" id="1_task_assignment"]
+
+[resource]
+script = ExtResource("1_task_assignment")
+id = "task_assignment"
+display_name = "idea_task_assignment"
+summary = "idea_task_assignment_summary"
+description = "idea_task_assignment_description"
+thoughts_cost = 40
+prerequisites = Array[String](["work_areas"])
+era = "paleolithic"

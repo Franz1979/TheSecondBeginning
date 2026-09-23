@@ -42,3 +42,9 @@ var thoughts_invested: Dictionary = {}
 # futuro per risolvere Idea.prerequisites e BuildingRules.required_idea_id, non ancora consultato
 # da nessuna logica in questo passo.
 var completed_ideas: Array[String] = []
+
+# Decadimento dei pensieri (2026-09-21, richiesta utente — vedi IdeaDecayService): Idea.id ->
+# giorno assoluto (GameData.get_absolute_day) del prossimo decadimento, SOLO per idee con pensieri
+# investiti che non sono né attive né completate. Impostato da IdeaProgressService.select_idea
+# quando un'idea smette di essere attiva, rimosso quando torna attiva o a thoughts_invested zero.
+var idea_decay_due_day: Dictionary = {}

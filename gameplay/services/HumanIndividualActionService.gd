@@ -243,7 +243,20 @@ func finish_current_step(individual: HumanIndividual, task: Task, world: World, 
 		# passo. Vedi _handle_task_completion_need_and_queue per il dettaglio dei tre rami.
 		_handle_task_completion_need_and_queue(individual, task, world, game_data)
 	else:
-		task.get_current_action().activate(individual, task.context)
+		# Validità del bersaglio all'attivazione dello step (2026-09-21, richiesta utente): se il
+		# bersaglio persistente dello step che sta per partire è sparito/completato nel frattempo, la
+		# Task si chiude (stessa sequenza di una Task conclusa: bisogno -> coda -> perditempo) invece di
+		# attivarlo e restare bloccata. Nessun effetto di completamento (skill/vitali): non è un successo.
+		var next_action := task.get_current_action()
+		if not next_action.is_target_valid():
+			if DebugLogging.ENABLED and DebugLogging.SHOW_SAFETY_LOGS:
+				print("[INVALID TARGET] Individuo #%d %s: Task '%s' chiusa — lo step %d/%d (%s) ha un bersaglio non più valido (edificio demolito o già completo)." % [
+					individual.id, individual.name, task.task_name, task.current_step_index + 1, task.steps.size(),
+					next_action.get_script().get_global_name()
+				])
+			_handle_task_completion_need_and_queue(individual, task, world, game_data)
+			return
+		next_action.activate(individual, task.context)
 
 
 # Consuma task.context["pending_warehouse_search"] (2026-09-09, richiesta utente — GENERALIZZATO da
@@ -324,6 +337,12 @@ func _handle_pending_material_shortage(task: Task, world: World) -> void:
 # vecchia ricerca sorgente + Transport Task automatica non esiste piu': niente riassegnazione di
 # individual.current_task e nessun valore di ritorno.
 func _resolve_material_shortage(world: World, target_building: Building, missing: Dictionary) -> void:
+	# Edificio demolito o già completo (2026-09-21, richiesta utente): nessun fabbisogno da risolvere —
+	# né il bonus di partenza (non si iniettano materiali su un edificio orfano), né la notifica
+	# "materiale necessario". Lo stato di attesa eventualmente rimasto viene ripulito.
+	if target_building.is_demolished or target_building.is_complete:
+		target_building.is_awaiting_material = false
+		return
 	# BONUS DI PARTENZA (2026-09-13/14, richiesta utente) — SOLO per un cantiere di tipo
 	# "deposit_site" (Building.building_type_name, STESSA stringa/STESSO campo già usato ovunque nel
 	# progetto per questo confronto — vedi GameScene._demolish_building/microCellRenderer.gd/
@@ -466,7 +485,15 @@ func retry_blocked_material_shortages(world: World, all_individuals: Array[Human
 			var build_action := action as BuildAction
 			target_building = build_action.target_building
 			missing = build_action.get_missing_materials()
-		if target_building == null or missing.is_empty():
+		if target_building == null:
+			continue
+		# Edificio demolito o già completo (2026-09-21, richiesta utente): niente retry, niente popup né
+		# bonus di partenza — solo pulizia dello stato di attesa. Prima di `missing.is_empty()`: un
+		# cantiere completato risulta "con materiali mancanti" (il completamento li consuma).
+		if target_building.is_demolished or target_building.is_complete:
+			target_building.is_awaiting_material = false
+			continue
+		if missing.is_empty():
 			continue
 		_resolve_material_shortage(world, target_building, missing)
 
@@ -861,11 +888,18 @@ static func resolve_idle_individual(individual: HumanIndividual, age_band: Human
 	# di accodarne di nuove) e passa alla successiva, finché non se ne trova una valida o la coda si
 	# svuota — MAI impostare current_task su una task già finita: activate_resumed_task la
 	# troverebbe già conclusa e non farebbe nulla, lasciando l'individuo bloccato per sempre.
-	while resumed_task != null and resumed_task.is_finished():
+	while resumed_task != null and (resumed_task.is_finished() or not is_task_valid(resumed_task)):
 		if DebugLogging.ENABLED and DebugLogging.SHOW_SAFETY_LOGS:
-			print("[ZOMBIE GUARD] Individuo #%d %s: task '%s' (step %d/%d) scartata dalla coda perché già conclusa — resolve_idle_individual, ripresa da coda." % [
-				individual.id, individual.name, resumed_task.task_name, resumed_task.current_step_index, resumed_task.steps.size()
-			])
+			if resumed_task.is_finished():
+				print("[ZOMBIE GUARD] Individuo #%d %s: task '%s' (step %d/%d) scartata dalla coda perché già conclusa — resolve_idle_individual, ripresa da coda." % [
+					individual.id, individual.name, resumed_task.task_name, resumed_task.current_step_index, resumed_task.steps.size()
+				])
+			else:
+				# Validità del bersaglio (2026-09-21, richiesta utente): uno step (dal corrente in poi) punta
+				# a un edificio demolito/già completo — scartata pulita, mai riattivata (né zombie).
+				print("[INVALID TARGET] Individuo #%d %s: task '%s' (step %d/%d) scartata dalla coda — bersaglio non più valido (edificio demolito o già completo)." % [
+					individual.id, individual.name, resumed_task.task_name, resumed_task.current_step_index + 1, resumed_task.steps.size()
+				])
 		resumed_task = TaskQueueService.pop_suspended_task(individual)
 	if resumed_task != null:
 		if DebugLogging.ENABLED and DebugLogging.SHOW_TASK_LIFECYCLE_LOGS:
@@ -897,9 +931,24 @@ static func resolve_idle_individual(individual: HumanIndividual, age_band: Human
 # chiamarla identica), HumanIndividual.gd la richiama da un contesto senza istanza di questa classe.
 #
 # No-op se resumed_task è già conclusa — stesso guard già presente prima di questa estrazione.
-static func activate_resumed_task(individual: HumanIndividual, resumed_task: Task) -> void:
+#
+# Validità (2026-09-21, richiesta utente): ritorna false se la Task non viene attivata — già conclusa, o
+# con uno step dal corrente in poi il cui bersaglio non è più valido (vedi is_task_valid); in
+# quest'ultimo caso la Task viene CHIUSA qui (registro debug + individual.current_task azzerato se era
+# proprio lei). I due chiamanti filtrano già a monte (resolve_idle_individual, HumanIndividual.
+# assign_task): questo controllo è la difesa in profondità.
+static func activate_resumed_task(individual: HumanIndividual, resumed_task: Task) -> bool:
 	if resumed_task.is_finished():
-		return
+		return false
+	if not is_task_valid(resumed_task):
+		if DebugLogging.ENABLED and DebugLogging.SHOW_SAFETY_LOGS:
+			print("[INVALID TARGET] Individuo #%d %s: task '%s' chiusa alla ripresa — bersaglio non più valido." % [
+				individual.id, individual.name, resumed_task.task_name
+			])
+		TaskDebugRegistry.on_task_closed(resumed_task)
+		if individual.current_task == resumed_task:
+			individual.current_task = null
+		return false
 	# "Walk di ritorno alla ripresa" (2026-09-13, richiesta utente, in preparazione al fix generico
 	# per QUALUNQUE Task sospesa il cui step corrente è un'Action stazionaria con una posizione
 	# fisica precisa — PickUp/Unload(RESOURCE)/Retrieve/SetupSite/Clear/Build, vedi Action.
@@ -924,6 +973,17 @@ static func activate_resumed_task(individual: HumanIndividual, resumed_task: Tas
 			resumed_task.insert_step_before_current(WalkAction.new(required_position))
 			resumed_action = resumed_task.get_current_action()
 	resumed_action.activate(individual, resumed_task.context)
+	return true
+
+
+# true se OGNI step dal corrente in poi ha ancora un bersaglio valido (Action.is_target_valid) — una
+# Task con anche un solo step futuro non valido (es. Build su un edificio nel frattempo demolito o
+# completato) va scartata, non ripresa. Static: usata anche da HumanIndividual.assign_task.
+static func is_task_valid(task: Task) -> bool:
+	for i in range(task.current_step_index, task.steps.size()):
+		if not task.steps[i].is_target_valid():
+			return false
+	return true
 
 
 # Interrupt/coda da bisogno stamina (2026-09-13, richiesta utente) — chiamata da apply_action

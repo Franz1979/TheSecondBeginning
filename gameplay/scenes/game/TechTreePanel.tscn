@@ -2,55 +2,143 @@
 
 [ext_resource type="Script" path="res://gameplay/scenes/game/TechTreePanel.gd" id="1_techtree"]
 
-[node name="TechTreePanel" type="Window"]
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_detail"]
+bg_color = Color(0.16, 0.19, 0.25, 1)
+border_width_left = 2
+border_width_top = 2
+border_width_right = 2
+border_width_bottom = 2
+border_color = Color(0.5, 0.58, 0.72, 1)
+corner_radius_top_left = 8
+corner_radius_top_right = 8
+corner_radius_bottom_right = 8
+corner_radius_bottom_left = 8
+
+[node name="TechTreePanel" type="CanvasLayer"]
+layer = 10
 visible = false
-size = Vector2i(320, 400)
 script = ExtResource("1_techtree")
 
-[node name="MarginContainer" type="MarginContainer" parent="."]
+[node name="Root" type="Control" parent="."]
+layout_mode = 3
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
-theme_override_constants/margin_left = 10
-theme_override_constants/margin_top = 10
-theme_override_constants/margin_right = 10
-theme_override_constants/margin_bottom = 10
+grow_horizontal = 2
+grow_vertical = 2
 
-[node name="VBoxContainer" type="VBoxContainer" parent="MarginContainer"]
+[node name="Background" type="ColorRect" parent="Root"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+color = Color(0.06, 0.07, 0.09, 0.95)
+
+[node name="MarginContainer" type="MarginContainer" parent="Root"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_constants/margin_left = 24
+theme_override_constants/margin_top = 20
+theme_override_constants/margin_right = 24
+theme_override_constants/margin_bottom = 20
+
+[node name="VBoxContainer" type="VBoxContainer" parent="Root/MarginContainer"]
 layout_mode = 2
 
-[node name="ActiveIdeaLabel" type="Label" parent="MarginContainer/VBoxContainer"]
+[node name="HeaderRow" type="HBoxContainer" parent="Root/MarginContainer/VBoxContainer"]
 layout_mode = 2
-autowrap_mode = 2
 
-[node name="ProgressBar" type="ProgressBar" parent="MarginContainer/VBoxContainer"]
+[node name="TitleLabel" type="Label" parent="Root/MarginContainer/VBoxContainer/HeaderRow"]
 layout_mode = 2
-show_percentage = false
+theme_override_font_sizes/font_size = 22
 
-[node name="ProgressLabel" type="Label" parent="MarginContainer/VBoxContainer"]
+[node name="SummaryLabel" type="Label" parent="Root/MarginContainer/VBoxContainer/HeaderRow"]
 layout_mode = 2
+size_flags_horizontal = 3
 horizontal_alignment = 1
 
-[node name="HSeparator" type="HSeparator" parent="MarginContainer/VBoxContainer"]
+[node name="DebugAddThoughtButton" type="Button" parent="Root/MarginContainer/VBoxContainer/HeaderRow"]
 layout_mode = 2
 
-[node name="CompletedCaption" type="Label" parent="MarginContainer/VBoxContainer"]
+[node name="CloseButton" type="Button" parent="Root/MarginContainer/VBoxContainer/HeaderRow"]
 layout_mode = 2
 
-[node name="CompletedListScroll" type="ScrollContainer" parent="MarginContainer/VBoxContainer"]
-custom_minimum_size = Vector2(0, 140)
+[node name="HSeparator" type="HSeparator" parent="Root/MarginContainer/VBoxContainer"]
+layout_mode = 2
+
+[node name="ContentRow" type="HBoxContainer" parent="Root/MarginContainer/VBoxContainer"]
+layout_mode = 2
+size_flags_vertical = 3
+theme_override_constants/separation = 12
+
+[node name="TreeScroll" type="ScrollContainer" parent="Root/MarginContainer/VBoxContainer/ContentRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+horizontal_scroll_mode = 1
+vertical_scroll_mode = 1
+
+[node name="TreeCanvas" type="Control" parent="Root/MarginContainer/VBoxContainer/ContentRow/TreeScroll"]
 layout_mode = 2
 size_flags_vertical = 3
 
-[node name="CompletedListContainer" type="VBoxContainer" parent="MarginContainer/VBoxContainer/CompletedListScroll"]
+[node name="DetailPanel" type="PanelContainer" parent="Root/MarginContainer/VBoxContainer/ContentRow"]
+custom_minimum_size = Vector2(340, 0)
 layout_mode = 2
-size_flags_horizontal = 3
+theme_override_styles/panel = SubResource("StyleBoxFlat_detail")
 
-[node name="HSeparator2" type="HSeparator" parent="MarginContainer/VBoxContainer"]
+[node name="DetailMargin" type="MarginContainer" parent="Root/MarginContainer/VBoxContainer/ContentRow/DetailPanel"]
+layout_mode = 2
+theme_override_constants/margin_left = 14
+theme_override_constants/margin_top = 14
+theme_override_constants/margin_right = 14
+theme_override_constants/margin_bottom = 14
+
+[node name="DetailBox" type="VBoxContainer" parent="Root/MarginContainer/VBoxContainer/ContentRow/DetailPanel/DetailMargin"]
 layout_mode = 2
 
-[node name="DebugAddThoughtButton" type="Button" parent="MarginContainer/VBoxContainer"]
+[node name="PlaceholderLabel" type="Label" parent="Root/MarginContainer/VBoxContainer/ContentRow/DetailPanel/DetailMargin/DetailBox"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 18
+autowrap_mode = 3
+
+[node name="DetailContent" type="VBoxContainer" parent="Root/MarginContainer/VBoxContainer/ContentRow/DetailPanel/DetailMargin/DetailBox"]
+layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="NameLabel" type="Label" parent="Root/MarginContainer/VBoxContainer/ContentRow/DetailPanel/DetailMargin/DetailBox/DetailContent"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 22
+autowrap_mode = 3
+
+[node name="SummaryLabel" type="Label" parent="Root/MarginContainer/VBoxContainer/ContentRow/DetailPanel/DetailMargin/DetailBox/DetailContent"]
+layout_mode = 2
+autowrap_mode = 3
+
+[node name="DescriptionLabel" type="Label" parent="Root/MarginContainer/VBoxContainer/ContentRow/DetailPanel/DetailMargin/DetailBox/DetailContent"]
+layout_mode = 2
+autowrap_mode = 3
+
+[node name="CostLabel" type="Label" parent="Root/MarginContainer/VBoxContainer/ContentRow/DetailPanel/DetailMargin/DetailBox/DetailContent"]
 layout_mode = 2
 
-[node name="CloseButton" type="Button" parent="MarginContainer/VBoxContainer"]
+[node name="RequiresLabel" type="Label" parent="Root/MarginContainer/VBoxContainer/ContentRow/DetailPanel/DetailMargin/DetailBox/DetailContent"]
+layout_mode = 2
+autowrap_mode = 3
+
+[node name="UnlocksLabel" type="Label" parent="Root/MarginContainer/VBoxContainer/ContentRow/DetailPanel/DetailMargin/DetailBox/DetailContent"]
+layout_mode = 2
+autowrap_mode = 3
+
+[node name="Spacer" type="Control" parent="Root/MarginContainer/VBoxContainer/ContentRow/DetailPanel/DetailMargin/DetailBox"]
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="ResearchButton" type="Button" parent="Root/MarginContainer/VBoxContainer/ContentRow/DetailPanel/DetailMargin/DetailBox"]
+custom_minimum_size = Vector2(0, 40)
 layout_mode = 2

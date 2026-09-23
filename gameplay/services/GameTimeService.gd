@@ -158,6 +158,13 @@ func _on_day_advanced(_checkpoint_ran: bool, _animals_changed: bool) -> void:
 	_log_daily_food_need()
 	_apply_daily_vitals_interaction()
 	_advance_daily_individual_resource_decay()
+	# Decadimento giornaliero dei pensieri nelle idee non attive (2026-09-21, richiesta utente) —
+	# INCONDIZIONATO come gli altri _advance_daily_* sopra; IdeaDecayService agisce solo sulle voci
+	# scadute di Folk.idea_decay_due_day. Nessun refresh UI: il TechTreePanel ricalcola tutto ad ogni
+	# apertura, e mentre è aperto il tempo è fermo.
+	IdeaDecayService.apply_daily(
+		_human_folk, _game_data.get_absolute_day(), EraCalculator.get_era_rules(_game_data.current_era_name)
+	)
 	# Ritentativo giornaliero fabbisogno materiale (2026-09-14, richiesta utente) — INCONDIZIONATO,
 	# stesso principio "periodico" di ogni _recalculate_daily_*/_advance_daily_* sopra. Vedi
 	# HumanIndividualActionService.retry_blocked_material_shortages per il dettaglio/il perché.

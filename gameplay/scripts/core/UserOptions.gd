@@ -53,10 +53,27 @@ var repeat_default: bool = false
 # riaprirla; false (default) = visibile. Salvato a ogni click sul bottone.
 var minimap_collapsed: bool = false
 
+# Volumi audio (2026-09-21, richiesta utente): lineari 0-1, default 0.8, uno per bus (vedi
+# audio/buses/default_bus_layout.tres). Applicati ai bus con apply_volumes(), al load e ad ogni modifica.
+const DEFAULT_VOLUME: float = 0.8
+const VOLUME_BUSES := {
+	"master_volume": &"Master",
+	"music_volume": &"Music",
+	"ambience_volume": &"Ambience",
+	"sfx_volume": &"SFX",
+	"ui_volume": &"UI",
+}
+var master_volume: float = DEFAULT_VOLUME
+var music_volume: float = DEFAULT_VOLUME
+var ambience_volume: float = DEFAULT_VOLUME
+var sfx_volume: float = DEFAULT_VOLUME
+var ui_volume: float = DEFAULT_VOLUME
+
 
 func _ready() -> void:
 	load_from_disk()
 	apply_language()
+	apply_volumes()
 
 
 # Se il file non esiste ancora (primissimo avvio su questa installazione) restano i default
@@ -79,6 +96,8 @@ func load_from_disk() -> void:
 	pickup_default_resource = String(config.get_value(SECTION, "pickup_default_resource", ""))
 	repeat_default = bool(config.get_value(SECTION, "repeat_default", config.get_value(SECTION, "pickup_repeat_default", false)))
 	minimap_collapsed = bool(config.get_value(SECTION, "minimap_collapsed", false))
+	for field in VOLUME_BUSES.keys():
+		set(field, clampf(float(config.get_value(SECTION, field, DEFAULT_VOLUME)), 0.0, 1.0))
 
 
 # Pubblico per un futuro menu Options — nessun chiamante reale ancora (i campi sopra si cambiano
@@ -92,6 +111,8 @@ func save_to_disk() -> void:
 	config.set_value(SECTION, "pickup_default_resource", pickup_default_resource)
 	config.set_value(SECTION, "repeat_default", repeat_default)
 	config.set_value(SECTION, "minimap_collapsed", minimap_collapsed)
+	for field in VOLUME_BUSES.keys():
+		config.set_value(SECTION, field, get(field))
 	config.save(OPTIONS_FILE_PATH)
 
 
@@ -122,6 +143,16 @@ func get_pickup_default_choice() -> Dictionary:
 # di questo cambio. NON è il futuro sistema di cambio lingua reale (quello dovrà coprire tutte le
 # lingue, non solo IT/EN) — solo un aiuto di debug per verificare il flusso NONE, va ripulito
 # quando arriverà una vera gestione multi-lingua.
+# Applica i cinque volumi lineari ai rispettivi bus: AudioServer.set_bus_volume_db(idx, linear_to_db(v)).
+# 0 -> -80 dB (linear_to_db(0) sarebbe -inf). Bus assenti (get_bus_index == -1) vengono saltati.
+func apply_volumes() -> void:
+	for field in VOLUME_BUSES.keys():
+		var bus_index := AudioServer.get_bus_index(VOLUME_BUSES[field])
+		if bus_index == -1:
+			continue
+		AudioServer.set_bus_volume_db(bus_index, linear_to_db(maxf(float(get(field)), 0.0001)))
+
+
 func apply_language() -> void:
 	TranslationServer.clear()
 	if language == SettingsTypes.Language.NONE:

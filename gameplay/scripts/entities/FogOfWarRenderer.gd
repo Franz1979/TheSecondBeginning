@@ -682,6 +682,7 @@ func _splat_source_visible_positions() -> Dictionary:
 			for x in range(maxi(min_x, 0), mini(max_x + 1, World.WIDTH)):
 				var pos := Vector2i(x, y)
 				if visible.has(pos):
+
 					continue
 				var cell_center := Vector2(x + 0.5, y + 0.5)
 				if cell_center.distance_squared_to(source_pos) <= _radius_squared:

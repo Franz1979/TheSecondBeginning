@@ -75,6 +75,7 @@ func load_game_from_json(file_path: String) -> LoadedGame:
 	game_data.camera_x = float(data["game"].get("camera_x", 0.0))
 	game_data.camera_y = float(data["game"].get("camera_y", 0.0))
 	game_data.camera_position_saved = bool(data["game"].get("camera_position_saved", false))
+	game_data.thought_building_tech_tree_shown = bool(data["game"].get("thought_building_tech_tree_shown", false))
 	# .get(key, 0) per compatibilità con save precedenti l'introduzione della pulizia
 	# periodica del fog of war (vedi GameData) — 0 è lo stesso default della classe.
 	game_data.fog_of_war_last_prune_absolute_day = int(data["game"].get("fog_of_war_last_prune_absolute_day", 0))
@@ -508,6 +509,11 @@ func load_game_from_json(file_path: String) -> LoadedGame:
 		human_folk.thoughts_invested = human_data["folk"].get("thoughts_invested", {})
 		var completed_ideas: Array = human_data["folk"].get("completed_ideas", [])
 		human_folk.completed_ideas.assign(completed_ideas)
+		# Default {} per i salvataggi precedenti al decadimento dei pensieri (IdeaDecayService inizializza
+		# da sé le scadenze mancanti). JSON legge i numeri come float: convertiti a int per-valore.
+		var decay_due_day: Dictionary = human_data["folk"].get("idea_decay_due_day", {})
+		for decay_idea_id in decay_due_day:
+			human_folk.idea_decay_due_day[String(decay_idea_id)] = int(decay_due_day[decay_idea_id])
 
 		human_population_group = HumanPopulationGroup.new()
 		human_population_group.id = int(human_data["group"]["id"])
@@ -664,15 +670,18 @@ func load_game_from_json(file_path: String) -> LoadedGame:
 			)
 			var current_task_data: Variant = individual_data.get("current_task")
 			if current_task_data is Dictionary:
+				# null (2026-09-21): task scartata perché il suo edificio target non esiste più — nessuna
+				# current_task, l'individuo verrà trattato come libero da GameScene._ready.
 				individual.current_task = TaskPersistenceService.deserialize_task(current_task_data, task_macro_state, world)
 				# TaskDebugRegistry (2026-09-12, richiesta utente — tab di debug 🐞) — questo percorso
 				# scrive current_task DIRETTAMENTE (non passa da HumanIndividual.assign_task, l'unico
 				# altro punto che registra — vedi TaskDebugRegistry.gd), quindi va registrato qui a
 				# parte perché una Task in corso al momento del salvataggio compaia comunque nella tab
 				# dopo un reload, invece di restare invisibile finché non viene chiusa.
-				TaskDebugRegistry.on_task_assigned(individual, individual.current_task)
-				if not individual.current_task.is_finished():
-					individual.current_task.get_current_action().activate(individual, individual.current_task.context)
+				if individual.current_task != null:
+					TaskDebugRegistry.on_task_assigned(individual, individual.current_task)
+					if not individual.current_task.is_finished():
+						individual.current_task.get_current_action().activate(individual, individual.current_task.context)
 			# Coda personale di Task sospese (2026-09-13, richiesta utente) — "task_queue" assente
 			# (save precedente a questo campo) o vuoto lasciano individual.task_queue al default []
 			# (.get() con default [], stesso principio di ogni campo opzionale in questo file).
@@ -686,9 +695,10 @@ func load_game_from_json(file_path: String) -> LoadedGame:
 			var raw_task_queue: Array = individual_data.get("task_queue", [])
 			for queued_task_data in raw_task_queue:
 				if queued_task_data is Dictionary:
-					individual.task_queue.append(
-						TaskPersistenceService.deserialize_task(queued_task_data, task_macro_state, world)
-					)
+					var queued_task := TaskPersistenceService.deserialize_task(queued_task_data, task_macro_state, world)
+					# null = task scartata (edificio target inesistente), non messa in coda.
+					if queued_task != null:
+						individual.task_queue.append(queued_task)
 			human_individuals.append(individual)
 
 	var loaded_game := LoadedGame.new()

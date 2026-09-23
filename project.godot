@@ -19,6 +19,11 @@ config/icon="res://icon.svg"
 
 GameSettings="*uid://cq1lrgfvng22c"
 UserOptions="*res://gameplay/scripts/core/UserOptions.gd"
+AudioManager="*res://audio/scripts/AudioManager.gd"
+
+[audio]
+
+buses/default_bus_layout="res://audio/buses/default_bus_layout.tres"
 
 [display]
 

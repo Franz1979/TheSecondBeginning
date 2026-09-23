@@ -28,6 +28,19 @@ extends Window
 @onready var repeat_check_box: CheckBox = $MarginContainer/VBoxContainer/RepeatRow/CheckBox
 @onready var close_button: Button = $MarginContainer/VBoxContainer/CloseButton
 
+# Righe volume audio (2026-09-21, richiesta utente): nome del nodo riga, chiave tr() dell'etichetta e campo di
+# UserOptions. Slider e label vengono risolti per nome in _ready (stesso schema Label + controllo delle altre righe).
+const VOLUME_ROWS := [
+	{"row": "MasterVolumeRow", "label_key": "options_volume_master", "field": "master_volume"},
+	{"row": "MusicVolumeRow", "label_key": "options_volume_music", "field": "music_volume"},
+	{"row": "AmbienceVolumeRow", "label_key": "options_volume_ambience", "field": "ambience_volume"},
+	{"row": "SfxVolumeRow", "label_key": "options_volume_sfx", "field": "sfx_volume"},
+	{"row": "UiVolumeRow", "label_key": "options_volume_ui", "field": "ui_volume"},
+]
+var _volume_sliders: Dictionary = {}  # field -> HSlider
+var _volume_labels: Dictionary = {}  # field -> Label
+var _volumes_dirty: bool = false
+
 # Bugfix (richiesta utente, 2026-09-06): _resize_to_content() prima si limitava a INSEGUIRE il
 # contenuto corrente (size = get_contents_minimum_size() ogni volta) — passando a una lingua col
 # testo reale più corto (es. Italiano, una volta caricata la traduzione) la finestra si RIMPICCIOLIVA
@@ -53,6 +66,12 @@ const LANGUAGE_LABEL_KEYS := [
 func _ready() -> void:
 	for key in LANGUAGE_LABEL_KEYS:
 		language_option_button.add_item(tr(key))
+	for row_data in VOLUME_ROWS:
+		var row_path: String = "MarginContainer/VBoxContainer/%s" % row_data["row"]
+		var slider: HSlider = get_node(row_path + "/Slider")
+		_volume_sliders[row_data["field"]] = slider
+		_volume_labels[row_data["field"]] = get_node(row_path + "/Label")
+		slider.value_changed.connect(_on_volume_changed.bind(row_data["field"]))
 	_refresh_texts()
 
 	notification_popups_check_box.toggled.connect(_on_notification_popups_toggled)
@@ -60,6 +79,10 @@ func _ready() -> void:
 	pickup_default_option_button.item_selected.connect(_on_pickup_default_selected)
 	repeat_check_box.toggled.connect(_on_repeat_toggled)
 	close_button.pressed.connect(hide)
+	# I volumi si applicano in tempo reale (_on_volume_changed) ma si salvano su disco alla chiusura del
+	# menu: visibility_changed copre il CloseButton e qualunque altro hide(), anche per le modifiche da tastiera
+	# (che non emettono drag_ended). Nessun salvataggio a vuoto: solo se un volume è cambiato (_volumes_dirty).
+	visibility_changed.connect(_on_visibility_changed)
 	# close_requested NON collegato a hide() + X nascosta (richiesta utente, 2026-09-05, stesso
 	# motivo/meccanismo di SystemMenuDialog._hide_native_close_button): si chiude solo dal
 	# CloseButton esplicito.
@@ -83,6 +106,8 @@ func open_menu(show_language: bool = true) -> void:
 	# La preselezione raccolta e' pertinente sia dal menu principale sia in partita: la riga c'e' sempre.
 	_select_pickup_default_from_options()
 	repeat_check_box.set_pressed_no_signal(UserOptions.repeat_default)
+	for field in _volume_sliders.keys():
+		(_volume_sliders[field] as HSlider).set_value_no_signal(float(UserOptions.get(field)))
 	exclusive = true
 	_resize_to_content()
 	popup_centered()
@@ -135,6 +160,9 @@ func _refresh_texts() -> void:
 	# comportamento (hide()), solo l'etichetta comunica che le modifiche sono già salvate — coerente
 	# con UserOptions che persiste ad ogni singola modifica, non solo alla chiusura.
 	close_button.text = tr("close_and_save")
+	for row_data in VOLUME_ROWS:
+		if _volume_labels.has(row_data["field"]):
+			(_volume_labels[row_data["field"]] as Label).text = tr(row_data["label_key"])
 	for i in LANGUAGE_LABEL_KEYS.size():
 		language_option_button.set_item_text(i, tr(LANGUAGE_LABEL_KEYS[i]))
 
@@ -218,6 +246,19 @@ func _on_pickup_default_selected(index: int) -> void:
 	UserOptions.pickup_default_category = int(meta["category"]) if int(meta["kind"]) != PickUpAction.CriterionKind.ALL else -1
 	UserOptions.pickup_default_resource = String(meta["resource_name"])
 	UserOptions.save_to_disk()
+
+
+# Volume di un bus (2026-09-21): applicato subito ai bus; il salvataggio su disco avviene alla chiusura del menu.
+func _on_volume_changed(value: float, field: String) -> void:
+	UserOptions.set(field, value)
+	UserOptions.apply_volumes()
+	_volumes_dirty = true
+
+
+func _on_visibility_changed() -> void:
+	if not visible and _volumes_dirty:
+		_volumes_dirty = false
+		UserOptions.save_to_disk()
 
 
 # Default del flag "Ripeti fino a N volte" dei dialog di raccolta e di trasporto (2026-09-20, richiesta utente).

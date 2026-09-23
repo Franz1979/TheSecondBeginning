@@ -178,3 +178,14 @@ func load_save_data(data: Dictionary) -> void:
 # sempre un campo dell'istanza), passato solo per uniformità di firma con is_complete/activate.
 func get_required_position(individual: Variant, context: Dictionary) -> Variant:
 	return null
+
+
+# Validità del bersaglio (2026-09-21, richiesta utente — fix task su edifici completati/demoliti):
+# false = questo step non ha più senso perché il suo bersaglio persistente non esiste più o non è
+# più nello stato atteso (es. edificio demolito, cantiere già completato). Controllato alla RIPRESA
+# di una Task dalla coda (HumanIndividualActionService.resolve_idle_individual/activate_resumed_task)
+# e all'ATTIVAZIONE di uno step (finish_current_step): una Task con uno step non valido viene chiusa
+# invece di restare bloccata. Default true — nessun vincolo per le Action senza bersaglio persistente;
+# ogni sottoclasse con un target_building lo sovrascrive se serve.
+func is_target_valid() -> bool:
+	return true

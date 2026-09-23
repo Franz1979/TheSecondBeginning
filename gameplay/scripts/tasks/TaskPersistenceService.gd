@@ -96,9 +96,13 @@ static func serialize_task(task: Task) -> Dictionary:
 # .get() con default per OGNI campo (2026-09-08) — questo intero sistema di persistenza è nuovo,
 # nessun save precedente lo contiene mai: stesso principio già richiesto da CLAUDE.md per campi
 # nuovi/opzionali, qui applicato fin dal primo giorno invece che aggiunto in un secondo passo.
-# Ritorna una Task vuota (nessuno step) se `data` è vuoto/malformato invece di null — il chiamante
+# Ritorna una Task vuota (nessuno step) se `data` è vuoto/malformato — il chiamante
 # (GameLoadService) decide se assegnarla o meno a individual.current_task in base a "esisteva un
 # current_task nel salvataggio" (vedi lì), questa funzione resta pura rispetto a quella decisione.
+# Ritorna invece NULL (2026-09-21, richiesta utente) se uno step Build/SetupSite/Clear ha un
+# target_building_id che non si risolve più (edificio demolito dopo il salvataggio, o mai caricato):
+# ricostruirla con target nullo la lascerebbe bloccata per sempre (BuildAction/SetupSiteAction con
+# target null non completano mai) — il chiamante deve scartarla (current_task null / non in coda).
 # `macro_state`/`world` — vedi i commenti in testa al file: propagati a _build_step, `macro_state`
 # consultato per il solo caso PICKUP e `world` per il solo caso UNLOAD, ignorati per ogni altro
 # action_type.
@@ -132,6 +136,13 @@ static func deserialize_task(data: Dictionary, macro_state: MacroCellState, worl
 		var step := _build_step(int(step_data.get("action_type", -1)), step_data, macro_state, world)
 		if step == null:
 			continue
+		# Bersaglio non risolvibile (Build/SetupSite/Clear): scarta l'intera Task — vedi il commento sul
+		# valore di ritorno sopra.
+		if (step is BuildAction or step is SetupSiteAction or step is ClearAction) and step.get("target_building") == null:
+			push_warning("TaskPersistenceService: task '%s' scartata al caricamento — l'edificio target dello step %d non esiste più." % [
+				String(data.get("task_name", "")), i
+			])
+			return null
 		# Solo lo step CORRENTE riceve load_save_data() — vedi BUGFIX sopra. `i` è l'indice
 		# nell'array grezzo salvato (data["steps"]), che coincide con l'indice in task.steps al
 		# momento del salvataggio (serialize_task itera task.steps con lo stesso indice) — lo skip
