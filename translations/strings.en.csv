@@ -3,6 +3,10 @@ build_bar_pebble_circle_tooltip,Pebble Circle
 build_bar_pebble_circle_disabled_tooltip,Not buildable: a village center already exists
 build_bar_deposit_site_tooltip,Deposit Site
 build_bar_stick_tent_tooltip,Stick Tent
+build_bar_campfire_tooltip,Campfire
+build_bar_toolmaker_hut_tooltip,Toolmaker's hut
+building_campfire,Campfire
+building_toolmaker_hut,Toolmaker's hut
 build_bar_dirt_ground_tooltip,Dirt Ground
 building_dirt_ground,Dirt Ground
 build_bar_requires_idea_tooltip,Requires: {idea}
@@ -92,6 +96,7 @@ skill_transporter_label,Transporter
 skill_gathering_label,Gathering
 skill_cognition_label,Cognition
 skill_hunting_label,Hunting
+skill_crafting_label,Crafting
 individual_id_label,ID: {id} (Folk {folk}, Group {group})
 individual_mother_id_label,Mother ID: {id}
 individual_father_id_label,Father ID: {id}
@@ -159,8 +164,15 @@ transport_selection_banner_text,"🚚 Transport: select the destination building
 debug_idle_fallback_button_tooltip,Toggle automatic assignment of idle-time tasks (Wander/Play/Leisure Rest) to free individuals
 debug_idle_fallback_on,Idle fallback: ON
 debug_idle_fallback_off,Idle fallback: OFF
+category_name_food,Food
+category_name_raw_material,Raw materials
 category_name_medicinal,Medicinal
+category_name_semi_finished,Semi-finished
+category_name_tool,Tools
 carried_resource_tooltip_medicinal_herbs,Medicinal herbs
+carried_resource_tooltip_fiber_rope,Fiber rope
+carried_resource_tooltip_wooden_spear,Wooden spear
+carried_resource_tooltip_stone_knife,Stone knife
 pickup_choice_dialog_title,Choose what to pick up
 pickup_choice_dialog_message,This spot has several pickable resources:
 pickup_choice_all,Everything
@@ -170,6 +182,10 @@ pickup_choice_category_medicinal,Medicinals
 pickup_choice_all_food,All food
 pickup_choice_all_raw_material,All materials
 pickup_choice_all_medicinal,All medicinals
+pickup_choice_category_semi_finished,Semi-finished
+pickup_choice_category_tool,Tools
+pickup_choice_all_semi_finished,All semi-finished
+pickup_choice_all_tool,All tools
 transport_dialog_quantity_label,Quantity:
 transport_dialog_confirm,Confirm
 transport_dialog_cancel,Cancel
@@ -185,3 +201,27 @@ options_volume_ui,Interface volume
 task_repeat_checkbox,Repeat up to {count} times
 minimap_show_tooltip,Show the minimap
 minimap_hide_tooltip,Hide the minimap
+building_awaiting_material_production_caption,To produce {resource} you still need:
+building_awaiting_fuel_production_label,"Missing fuel: {amount} ({fuels})"
+building_production_suspended_label,"Production suspended: {resource}, {percent}% done"
+building_delivered_materials_caption,Starting materials:
+building_production_in_progress_label,In progress: {items}
+building_production_in_progress_none,In progress: nothing
+task_produce_name,Production
+task_build_name,Construction
+task_produce_step_walk,Walking to the workstation
+task_produce_step_produce,Producing
+building_output_buffer_caption,Finished products: {used}/{capacity}
+building_output_buffer_full,Finished products full: collect them to keep producing
+building_production_recipes_caption,Production:
+produce_recipe_button,Produce {resource}
+produce_recipe_disabled_busy,"Workstation busy: production assigned to {workers}"
+produce_recipe_disabled_output_full,Finished products full: collect them before starting a new production
+produce_quantity_label,Quantity:
+produce_quantity_tooltip,Pieces to produce with this order (up to {max})
+produce_assign_banner_text,⚒️ Produce {resource}: click an individual (Esc to cancel)
+task_produce_activity,Production: {resource}
+transport_dialog_group_products,Products
+transport_dialog_group_delivered,Delivered materials
+transport_dialog_take_all_products,Take all products ({quantity})
+transport_all_products_activity,all products

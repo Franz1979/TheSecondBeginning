@@ -1,6 +1,47 @@
 class_name GameLoadService
 extends RefCounted
 
+# Risorse secondarie rinominate (2026-09-24, richiesta utente): vecchio secondary_resource_name ->
+# nuovo. Un save scritto prima della rinomina contiene ancora il vecchio nome ovunque una risorsa è
+# citata per nome (stored_resources/production_output/production_progress degli edifici, zaino e
+# Task degli individui, oggetti scaduti): senza conversione quel nome non corrisponde a nessun .tres
+# né a nessuna icona, e i pannelli ricadono sull'iniziale (es. "R" per "rope").
+const RESOURCE_RENAMES := {
+	"rope": "fiber_rope",
+}
+
+
+# Applica RESOURCE_RENAMES alle sezioni del save che citano risorse per nome — edifici, individui
+# (Task comprese, serializzate dentro ciascun individuo) e oggetti scaduti — rinominando sia le
+# CHIAVI dei Dictionary sia i VALORI stringa che coincidono ESATTAMENTE con un vecchio nome. Le
+# celle del mondo non vengono toccate: lì compaiono solo risorse naturali, e sono di gran lunga la
+# parte più grande del file.
+func _apply_resource_renames(data: Dictionary) -> void:
+	if data.has("world") and data["world"] is Dictionary and data["world"].has("buildings"):
+		data["world"]["buildings"] = _rename_resources_in(data["world"]["buildings"])
+	if data.has("human") and data["human"] is Dictionary and data["human"].has("individuals"):
+		data["human"]["individuals"] = _rename_resources_in(data["human"]["individuals"])
+	if data.has("game") and data["game"] is Dictionary and data["game"].has("expired_objects"):
+		data["game"]["expired_objects"] = _rename_resources_in(data["game"]["expired_objects"])
+
+
+func _rename_resources_in(value: Variant) -> Variant:
+	if value is Dictionary:
+		var renamed: Dictionary = {}
+		for key in value.keys():
+			var new_key: Variant = RESOURCE_RENAMES.get(key, key) if key is String else key
+			renamed[new_key] = _rename_resources_in(value[key])
+		return renamed
+	if value is Array:
+		var renamed_array: Array = []
+		for item in value:
+			renamed_array.append(_rename_resources_in(item))
+		return renamed_array
+	if value is String:
+		return RESOURCE_RENAMES.get(value, value)
+	return value
+
+
 func load_game_from_json(file_path: String) -> LoadedGame:
 	if not FileAccess.file_exists(file_path):
 		print("File salvataggio non trovato: ", file_path)
@@ -15,6 +56,7 @@ func load_game_from_json(file_path: String) -> LoadedGame:
 	if not data.has("file_type") or data["file_type"] != "game_save":
 		push_error("Il file selezionato non è una partita salvata.")
 		return null
+	_apply_resource_renames(data)
 
 	# TaskDebugRegistry (2026-09-12, richiesta utente — fix righe duplicate/fantasma nel pannello di
 	# debug 🐞) — registro STATIC (vita di processo), mai svuotato automaticamente tra due
@@ -443,6 +485,17 @@ func load_game_from_json(file_path: String) -> LoadedGame:
 			# JSON (che non distingue int/float, ogni numero torna come float), nessun cast/
 			# retrocompatibilità aggiuntiva necessaria qui.
 			building.construction_progress = building_data.get("construction_progress", {})
+			# production_progress (2026-09-23, richiesta utente — ProduceAction): stesso .get(key, {}) di
+			# construction_progress sopra, vuoto per i save precedenti al campo. Un record per ricetta dal
+			# 2026-09-24: ProductionService.normalize_progress converte il vecchio record singolo
+			# ({"resource_name", "labor_accumulated"}) senza perdere il progresso.
+			building.production_progress = ProductionService.normalize_progress(building_data.get("production_progress", {}))
+			# production_output (2026-09-23, buffer di uscita): int() per voce, JSON rende ogni numero float.
+			var production_output: Dictionary = {}
+			var raw_production_output: Dictionary = building_data.get("production_output", {})
+			for output_name in raw_production_output.keys():
+				production_output[String(output_name)] = int(raw_production_output[output_name])
+			building.production_output = production_output
 			# enabled_categories (2026-09-09, richiesta utente) — .get(key, []) per compatibilità
 			# con save precedenti l'introduzione del campo, stesso principio già usato per ogni
 			# altro campo opzionale in questo file. int() esplicito per voce (non un .assign()
@@ -616,6 +669,8 @@ func load_game_from_json(file_path: String) -> LoadedGame:
 			individual.skill_gathering = float(individual_data.get("skill_gathering", 0.0))
 			individual.skill_cognition = float(individual_data.get("skill_cognition", 0.0))
 			individual.skill_hunting = float(individual_data.get("skill_hunting", 0.0))
+			# skill_crafting (2026-09-24): 0.0 per i save precedenti alla skill.
+			individual.skill_crafting = float(individual_data.get("skill_crafting", 0.0))
 			# Capacità di trasporto (2026-09-08, richiesta utente) — .get() con default "non sta
 			# trasportando nulla": un save precedente a questo campo non può avere mai avuto un
 			# individuo in trasporto (nessun PickUp esiste ancora), quindi il default è sempre

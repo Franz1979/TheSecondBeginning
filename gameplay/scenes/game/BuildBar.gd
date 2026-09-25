@@ -44,7 +44,13 @@ const BUILDING_SLOT_INDEX_BY_TYPE := {
 	# Terreno in terra battuta (2026-09-19, richiesta utente) — slot 3, submenu_row.slot_count portato
 	# a 5 in BuildBar.tscn; Hut resta SEMPRE l'ultimo a destra (slot 4, richiesta utente).
 	"dirt_ground": 3,
-	"hut": 4,
+	# Focolare (2026-09-23, richiesta utente) — slot 4, submenu_row.slot_count portato a 6 in
+	# BuildBar.tscn; Hut resta l'ultimo a destra (slot 5).
+	"campfire": 4,
+	# Capanna dell'attrezzista (2026-09-24, richiesta utente) — slot 5, submenu_row.slot_count portato
+	# a 7 in BuildBar.tscn; Hut resta l'ultimo a destra (slot 6).
+	"toolmaker_hut": 5,
+	"hut": 6,
 }
 
 enum _ViewState { MINIMIZED, LEVEL_1, LEVEL_2 }
@@ -119,8 +125,15 @@ func _ready() -> void:
 		3, "", tr("build_bar_dirt_ground_tooltip"), &"build_dirt_ground", "", true,
 		IconRegistry.get_building_icon_node("dirt_ground")
 	)
-	# Hut, ora slot 4 e sempre ULTIMA a destra (richiesta utente 2026-09-19; era slot 3 dal 2026-09-12).
-	submenu_row.configure_slot(4, IconRegistry.get_building_icon("hut"), tr("build_bar_hut_tooltip"), &"build_hut")
+	# Focolare (2026-09-23, richiesta utente) — slot 4, sempre abilitato di default (nessun
+	# required_idea_id/is_village_center in campfire.tres).
+	submenu_row.configure_slot(4, IconRegistry.get_building_icon("campfire"), tr("build_bar_campfire_tooltip"), &"build_campfire")
+	# Capanna dell'attrezzista (2026-09-24, richiesta utente) — slot 5; richiede l'idea
+	# paleolithic_constructions (required_idea_id in toolmaker_hut.tres), disabilitato da GameScene.
+	# _refresh_building_slots_buildable finché manca, come la capanna.
+	submenu_row.configure_slot(5, IconRegistry.get_building_icon("toolmaker_hut"), tr("build_bar_toolmaker_hut_tooltip"), &"build_toolmaker_hut")
+	# Hut, ora slot 6 e sempre ULTIMA a destra (richiesta utente 2026-09-19; slot 6 dal 2026-09-24).
+	submenu_row.configure_slot(6, IconRegistry.get_building_icon("hut"), tr("build_bar_hut_tooltip"), &"build_hut")
 	main_row.action_pressed.connect(_on_main_row_action_pressed)
 	control_button.pressed.connect(_on_control_button_pressed)
 	_apply_state()

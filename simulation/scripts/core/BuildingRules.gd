@@ -62,19 +62,19 @@ extends Resource
 @export var accepted_categories: Array[SecondaryResourceTypes.Category] = []
 
 # Moltiplicatore di durabilità PER CATEGORIA DI RISORSA (2026-09-09, richiesta utente) — indice =
-# SecondaryResourceTypes.Category (0=FOOD, 1=RAW_MATERIAL, 2=MEDICINAL — un
+# SecondaryResourceTypes.Category (0=FOOD, 1=RAW_MATERIAL, 2=MEDICINAL, 3=SEMI_FINISHED, 4=TOOL — un
 # elemento per valore dell'enum, da allungare quando se ne aggiunge uno in fondo), stesso principio "array indicizzato per
 # enum" già in uso per HumanRules/AnimalRules (es. caloric_multiplier_by_age). Consultato da
 # ResourceDecayService.advance_building_decay: l'incremento giornaliero di decay_fraction diventa
 # 1/(day_durability × moltiplicatore) invece di 1/day_durability puro — >1.0 rallenta il
 # decadimento (l'edificio "conserva meglio" quella categoria), <1.0 lo accelera, 1.0 = invariato.
-# Default [1.0, 1.0, 1.0] per OGNI tipo esistente (deposit_site/hut non lo sovrascrivono ancora) —
+# Default [1.0, 1.0, 1.0, 1.0, 1.0] per OGNI tipo che non lo sovrascrive (deposit_site/hut lo sovrascrivono) —
 # comportamento identico a prima dell'introduzione di questo campo finché non lo si valorizza
 # esplicitamente in un .tres. Indicizzazione diretta (mai .get(), un Array non un Dictionary): un
 # accesso fuori range (una futura categoria aggiunta senza aggiornare questo array) va trattato dal
 # chiamante come "nessun moltiplicatore" (1.0), non un crash — vedi ResourceDecayService per la
 # guardia.
-@export var durability_multiplier_by_category: Array[float] = [1.0, 1.0, 1.0]
+@export var durability_multiplier_by_category: Array[float] = [1.0, 1.0, 1.0, 1.0, 1.0]
 
 # Nome risorsa (stringa libera per ora, es. "wood"/"stick"/"stone"/"iron" — nessun enum dedicato
 # finché non esiste un vero inventario/economia) -> quantità richiesta per completare la
@@ -225,3 +225,31 @@ extends Resource
 # Nessuna percorribilità per ora (rocce/edifici non attraversabili): solo stamina e velocità.
 @export var movement_stamina_multiplier: float = 1.0
 @export var movement_speed_multiplier: float = 1.0
+
+@export_group("Production")
+# Sistema di produzione (2026-09-23, richiesta utente — step 1: solo il dato, nessuna logica li
+# legge ancora). Nessun tipo esistente li attiva.
+# true = questo tipo di edificio può ospitare la produzione di risorse con una ricetta
+# (SecondaryResourceRules.recipe_workstation_types elenca i tipi ammessi per ciascuna ricetta).
+@export var is_workstation: bool = false
+# Moltiplicatore del combustibile richiesto (SecondaryResourceRules.recipe_fuel_required) quando si
+# produce in questo edificio — < 1.0 = consuma meno combustibile, 1.0 = neutro.
+@export var production_fuel_multiplier: float = 1.0
+# Moltiplicatore del lavoro richiesto (SecondaryResourceRules.recipe_labor) quando si produce in
+# questo edificio — < 1.0 = serve meno lavoro, 1.0 = neutro.
+@export var production_labor_multiplier: float = 1.0
+# Capienza del buffer di uscita (2026-09-23, richiesta utente) — numero di PEZZI prodotti che
+# l'edificio può tenere in Building.production_output, separato dallo storage a slot e contato a
+# unità, non a spazio. 0 = nessun buffer: nessuna produzione può completarsi (il prodotto non avrebbe
+# dove andare) — vedi ProductionService.has_output_room.
+@export var production_output_slots: int = 0
+# Quante ricette diverse possono stare in coda su questo edificio (2026-09-24, richiesta utente) —
+# 1 = nessuna coda, solo la produzione corrente: con una produzione già assegnata (anche con
+# l'individuo ancora in cammino) i pulsanti ricetta si spengono. La coda vera (>1) non è ancora
+# implementata: oggi il valore è usato solo come tetto di Produce Task contemporanee sull'edificio,
+# vedi ProductionService.get_queue_capacity.
+@export var production_queue_slots: int = 1
+# Quanti pezzi si possono ordinare per ricetta con un solo comando (2026-09-24, richiesta utente) —
+# il pannello offre una quantità da 1 a questo valore; la Produce Task ripete il ciclo fino a quel
+# numero di pezzi, vedi ProduceAction.
+@export var production_max_quantity: int = 1

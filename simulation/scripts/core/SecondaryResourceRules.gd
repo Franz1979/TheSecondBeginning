@@ -202,3 +202,30 @@ extends Resource
 # INDIVIDUAL/SHRUB_INDIVIDUAL, patch_probability/patch_capacity_min/max per GRASS_PATCH, nessuno
 # in più per STONE_POSITION) sul proprio .tres, nessun codice nuovo.
 @export var lot_source: SecondaryResourceTypes.LotSource = SecondaryResourceTypes.LotSource.NONE
+
+@export_group("Fuel")
+# Valore combustibile di UNA unità (2026-09-23, richiesta utente — sistema di produzione). 0.0
+# (default) = non combustibile. Valorizzato solo su stick.tres (1.0, provvisorio in attesa di
+# taratura). Letto da ProductionService (sezione Combustibile, dal 2026-09-24) per coprire
+# recipe_fuel_required delle ricette in corso.
+@export var fuel_value: float = 0.0
+
+@export_group("Recipe")
+# Ricetta di produzione presso una workstation (2026-09-23, richiesta utente — sistema di
+# produzione, step 1: solo il dato, nessuna logica lo legge ancora). Una risorsa prodotta resta
+# questa stessa classe: le risorse naturali lasciano l'intero gruppo ai default (vuoto = non
+# producibile).
+# Nome risorsa (secondary_resource_name) -> quantità consumata per UN ciclo di produzione — stessa
+# forma di BuildingRules.required_materials.
+@export var recipe_inputs: Dictionary = {}
+# Unità di questa risorsa prodotte da UN ciclo.
+@export var recipe_output_quantity: int = 1
+# Lavoro necessario per UN ciclo, stessa unità di BuildingRules.required_labor.
+@export var recipe_labor: float = 0.0
+# Valore combustibile (somma di fuel_value degli input bruciati) richiesto per UN ciclo — 0.0 =
+# nessun combustibile. Moltiplicato da BuildingRules.production_fuel_multiplier (2026-09-24, vedi
+# ProductionService.get_required_fuel).
+@export var recipe_fuel_required: float = 0.0
+# Tipi di edificio (Building.building_type_name, es. "hut" — non la chiave tr() di BuildingRules.
+# building_name) presso cui la ricetta è eseguibile. Vuoto = risorsa non producibile.
+@export var recipe_workstation_types: Array[String] = []

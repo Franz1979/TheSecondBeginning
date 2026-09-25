@@ -59,8 +59,10 @@ var is_demolished: bool = false
 # questo stato (edifici già completi, o senza required_materials valorizzato).
 var is_awaiting_material: bool = false
 
-# true dal momento in cui SetupSiteAction completa per questo edificio (vedi GameScene.
-# _spawn_build_site_placeholders, che lo valorizza sul segnale SetupSiteAction.site_setup_completed)
+# true dal momento in cui SetupSiteAction completa per questo edificio (impostato da SetupSiteAction.
+# on_complete insieme al consumo del materiale di setup — 2026-09-24, bugfix: prima lo impostava solo
+# GameScene._spawn_build_site_placeholders, gestore grafico del segnale site_setup_completed che non
+# sempre gira; ora quel gestore disegna soltanto i rametti)
 # — DIVERSO da is_complete: un cantiere allestito non è ancora un edificio finito (ClearAction, terzo
 # step, rimuove la vegetazione e riserva lo spazio ma non tocca is_complete; BuildAction, quarto e
 # ultimo step arrivato il 2026-09-11, è quella che davvero lo valorizza a true — vedi BuildAction.
@@ -131,6 +133,27 @@ var stored_resources: Dictionary = {}
 # sempre, coerentemente con is_complete=true assegnato subito — vedi quella funzione, non toccata
 # qui). Non tocca construction_started_day: resta come oggi, nessun consumatore ancora.
 var construction_progress: Dictionary = {}
+
+# Produzione in corso presso questa workstation (2026-09-23, richiesta utente — ProduceAction) —
+# stesso principio di construction_progress sopra: letto e scritto DAL VIVO dall'Action ad ogni
+# get_stamina_delta, mai cachato sull'istanza, così il progresso sopravvive a interruzioni e
+# salvataggi (serializzato per intero da GameSaveService/GameLoadService). Contenuto:
+#   {resource_name: {"labor_accumulated": float}} — UN RECORD PER RICETTA in corso (2026-09-24,
+#   richiesta utente), al più BuildingRules.production_queue_slots record.
+# Vuoto = nessuna produzione in corso. Scritto/rimosso SOLO da ProductionService (start_production/
+# add_labor/complete_production/make_room_for). Ogni ricetta con un record = produzione in corso:
+# BuildingStorageService.can_accept restringe i materiali delle ricette in corso alla quantità
+# esatta mancante (vedi ProductionService.get_missing_inputs, che somma i fabbisogni).
+var production_progress: Dictionary = {}
+
+# Buffer di uscita della produzione (2026-09-23, richiesta utente) — nome risorsa -> quantità (int),
+# SEPARATO da stored_resources: qui finisce il prodotto al completamento di un ciclo
+# (ProductionService.complete_production), con capienza a pezzi BuildingRules.production_output_slots.
+# Travasato automaticamente nello storage quando l'edificio ha slot liberi (ProductionService.
+# flush_output_to_storage); altrimenti si svuota solo con un Retrieve (BuildingStorageService.withdraw
+# preleva da stored_resources e poi da qui). Nessun decadimento mentre resta nel buffer: il prodotto
+# riparte da decay_fraction 0.0 quando ne esce.
+var production_output: Dictionary = {}
 
 # Restrizione PER-ISTANZA delle categorie accettate (2026-09-09, richiesta utente) — DIVERSO da
 # BuildingRules.accepted_categories: quello è per TIPO (condiviso — vedi BuildingCalculator.

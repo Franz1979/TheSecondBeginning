@@ -164,8 +164,14 @@ func _draw() -> void:
 	if building_type_name == "dirt_ground":
 		_draw_dirt_ground(DIRT_GROUND_COLOR if is_buildable else DIRT_GROUND_INVALID_COLOR)
 		return
+	if building_type_name == "campfire":
+		_draw_campfire(is_buildable)
+		return
 
-	var color := COLOR if is_buildable else INVALID_COLOR
+	# Capanna dell'attrezzista (2026-09-24, richiesta utente): sagoma della capanna con riempimento
+	# proprio e segno "attrezzi incrociati", vedi _draw_toolmaker_hut_mark sotto.
+	var is_toolmaker_hut: bool = building_type_name == "toolmaker_hut"
+	var color := (TOOLMAKER_HUT_COLOR if is_toolmaker_hut else COLOR) if is_buildable else INVALID_COLOR
 	var outline_color := OUTLINE_COLOR if is_buildable else INVALID_OUTLINE_COLOR
 	var fence_color := FENCE_COLOR if is_buildable else INVALID_FENCE_COLOR
 
@@ -181,6 +187,23 @@ func _draw() -> void:
 	var outline_points := hut_points.duplicate()
 	outline_points.append(hut_points[0])
 	draw_polyline(outline_points, outline_color, OUTLINE_WIDTH)
+	if is_toolmaker_hut and is_buildable:
+		_draw_toolmaker_hut_mark()
+
+
+# Capanna dell'attrezzista (2026-09-24, richiesta utente) — forma provvisoria, stessa geometria
+# (duplicata apposta) di MicroCellRenderer._draw_toolmaker_hut_mark, in versione semitrasparente.
+const TOOLMAKER_HUT_COLOR := Color(0.46, 0.40, 0.34, 0.75)
+const TOOLMAKER_HUT_MARK_COLOR := Color(0.88, 0.84, 0.76, 0.85)
+const TOOLMAKER_HUT_MARK_HALF_LENGTH: float = 1.3
+const TOOLMAKER_HUT_MARK_WIDTH: float = 0.35
+const TOOLMAKER_HUT_MARK_HEAD_RADIUS: float = 0.4
+
+func _draw_toolmaker_hut_mark() -> void:
+	for diagonal in [Vector2(1, -1), Vector2(-1, -1)]:
+		var half: Vector2 = diagonal.normalized() * TOOLMAKER_HUT_MARK_HALF_LENGTH
+		draw_line(-half, half, TOOLMAKER_HUT_MARK_COLOR, TOOLMAKER_HUT_MARK_WIDTH)
+		draw_circle(half, TOOLMAKER_HUT_MARK_HEAD_RADIUS, TOOLMAKER_HUT_MARK_COLOR)
 
 
 # Recinto: linea circolare CONTINUA con una vera apertura in corrispondenza della porta (stesso
@@ -264,6 +287,30 @@ const DIRT_GROUND_HALF_SIDE: float = 5.0
 
 func _draw_dirt_ground(color: Color) -> void:
 	draw_rect(Rect2(Vector2(-DIRT_GROUND_HALF_SIDE, -DIRT_GROUND_HALF_SIDE), Vector2(DIRT_GROUND_HALF_SIDE, DIRT_GROUND_HALF_SIDE) * 2.0), color)
+
+
+# Focolare (2026-09-23, richiesta utente) — forma provvisoria: anello di pietre scure attorno a una
+# fiamma (cerchio arancio + nucleo giallo), senza porta né rotazione (has_door=false in
+# campfire.tres). Stessa geometria (duplicata apposta) di MicroCellRenderer._draw_campfire, in
+# versione semitrasparente; tutto rosso se non edificabile.
+const CAMPFIRE_STONE_COLOR := Color(0.35, 0.33, 0.30, 0.75)
+const CAMPFIRE_FLAME_COLOR := Color(0.95, 0.45, 0.10, 0.75)
+const CAMPFIRE_FLAME_CORE_COLOR := Color(1.0, 0.85, 0.30, 0.75)
+const CAMPFIRE_INVALID_COLOR := Color(0.75, 0.15, 0.15, 0.75)
+const CAMPFIRE_RING_RADIUS: float = 2.6
+const CAMPFIRE_STONE_RADIUS: float = 0.6
+const CAMPFIRE_STONE_COUNT: int = 8
+const CAMPFIRE_FLAME_RADIUS: float = 1.4
+const CAMPFIRE_FLAME_CORE_RADIUS: float = 0.7
+
+func _draw_campfire(buildable: bool) -> void:
+	var stone_color := CAMPFIRE_STONE_COLOR if buildable else CAMPFIRE_INVALID_COLOR
+	for i in range(CAMPFIRE_STONE_COUNT):
+		var angle: float = TAU * float(i) / float(CAMPFIRE_STONE_COUNT)
+		draw_circle(Vector2(cos(angle), sin(angle)) * CAMPFIRE_RING_RADIUS, CAMPFIRE_STONE_RADIUS, stone_color)
+	draw_circle(Vector2.ZERO, CAMPFIRE_FLAME_RADIUS, CAMPFIRE_FLAME_COLOR if buildable else CAMPFIRE_INVALID_COLOR)
+	if buildable:
+		draw_circle(Vector2.ZERO, CAMPFIRE_FLAME_CORE_RADIUS, CAMPFIRE_FLAME_CORE_COLOR)
 
 
 func _draw_deposit_site(color: Color, outline_color: Color) -> void:

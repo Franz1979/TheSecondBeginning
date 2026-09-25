@@ -1,0 +1,21 @@
+[gd_resource type="Resource" script_class="BuildingRules" format=3 uid="uid://okff5cjopahf"]
+
+[ext_resource type="Script" uid="uid://b8pl3yflicmtn" path="res://simulation/scripts/core/BuildingRules.gd" id="1_campfire"]
+
+[resource]
+script = ExtResource("1_campfire")
+building_name = "building_campfire"
+category = 4
+min_construction_days = 2
+required_labor = 800
+required_materials = {
+"pebble": 100
+}
+max_durability = 40
+required_space = 1
+has_door = false
+visibility_radius = 2
+is_workstation = true
+production_output_slots = 3
+production_queue_slots = 1
+production_max_quantity = 3

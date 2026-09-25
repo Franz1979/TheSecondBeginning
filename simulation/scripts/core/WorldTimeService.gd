@@ -743,6 +743,9 @@ func _run_daily_building_resource_decay(world: World) -> Array:
 		var lost := ResourceDecayService.advance_building_decay(building)
 		for loss in lost:
 			events.append({"building": building, "resource_name": loss["resource_name"], "quantity": loss["quantity"]})
+		# Travaso giornaliero del buffer di uscita (2026-09-23, richiesta utente): lo spazio liberato da
+		# decadimento o da un cambio dei filtri di categoria viene riempito dal prodotto in attesa.
+		ProductionService.flush_output_to_storage(building)
 	return events
 
 

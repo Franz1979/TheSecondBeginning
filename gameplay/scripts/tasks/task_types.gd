@@ -66,6 +66,10 @@ enum ActionType {
 	# entrambi da questo stesso passo - nessuna TaskDefinition la usa ancora. Vedi
 	# gameplay/scripts/actions/RestockPouchAction.gd.
 	RESTOCK_POUCH,
+	# PRODUCE (2026-09-23, richiesta utente — ProduceAction, sistema di produzione: Walk→Produce, vedi
+	# produce.tres) — AGGIUNTO IN CODA come ogni valore precedente. TaskFactory.build_task e
+	# TaskPersistenceService lo supportano entrambi. Vedi gameplay/scripts/actions/ProduceAction.gd.
+	PRODUCE,
 }
 
 # Categorie di tool richiedibili da un'Action (2026-09-08, richiesta utente — SOLO struttura dati,

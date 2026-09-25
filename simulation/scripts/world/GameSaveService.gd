@@ -380,6 +380,11 @@ func save_game_to_json(
 			# file). Vuoto per ogni edificio piazzato istantaneamente da _place_building_at (percorso
 			# che non passa mai da queste tre Action).
 			"construction_progress": building.construction_progress,
+			# production_progress (2026-09-23, richiesta utente — ProduceAction; un record per ricetta dal
+			# 2026-09-24, {resource_name: {"labor_accumulated": float}}): stesso trattamento
+			# wholesale di construction_progress sopra.
+			"production_progress": building.production_progress,
+			"production_output": building.production_output,
 			# enabled_categories (2026-09-09, richiesta utente) — filtro categorie PER-ISTANZA (vedi
 			# Building.gd), Array[SecondaryResourceTypes.Category] serializzato come Array[int]
 			# grezzo (JSON non ha un concetto di array tipizzato Godot, gli enum sono int sotto il
@@ -561,6 +566,7 @@ func save_game_to_json(
 				"skill_gathering": individual.skill_gathering,
 				"skill_cognition": individual.skill_cognition,
 				"skill_hunting": individual.skill_hunting,
+				"skill_crafting": individual.skill_crafting,
 				# Capacità di trasporto (2026-09-08, richiesta utente) — lo zaino è l'unico stato "posseduto"
 				# da un individuo che sparirebbe silenziosamente al reload senza persistenza (stesso
 				# principio di dependent_child_id sopra: un possesso, non un dato ricalcolabile al volo).

@@ -207,6 +207,15 @@ static func can_accept(building: Building, resource_name: String) -> bool:
 		var stored_build_entry: Dictionary = building.stored_resources.get(resource_name, {})
 		var stored_build_quantity: int = int(stored_build_entry.get("quantity", 0))
 		return stored_build_quantity < required_build_quantity
+	# RAMO PRODUZIONE (2026-09-23, richiesta utente — ProduceAction): con una produzione in corso
+	# (Building.production_progress), i materiali di QUELLA ricetta sono accettati solo fino alla
+	# quantità esatta mancante, come un cantiere — indipendentemente dai filtri di categoria sotto
+	# (una workstation senza storage deve comunque ricevere i propri input). Ogni altra risorsa
+	# prosegue sul ramo magazzino normale, invariato. Combustibile (2026-09-24): con una ricetta in
+	# corso che ne richiede, anche le risorse con fuel_value > 0 passano da qui, fino alle unità che
+	# mancano a coprirlo (ProductionService.is_production_demand/get_production_demand).
+	if ProductionService.is_production_demand(building, resource_name):
+		return ProductionService.get_production_demand(building, resource_name) > 0
 	if not building.rules.accepted_categories.is_empty() and not building.rules.accepted_categories.has(resource_rules.category):
 		return false
 	if not building.enabled_categories.is_empty() and not building.enabled_categories.has(resource_rules.category):
@@ -348,6 +357,11 @@ static func get_max_depositable(building: Building, resource_name: String) -> in
 		var required_build_quantity: int = int(building.rules.required_materials[resource_name])
 		return max(required_build_quantity - current_quantity, 0)
 
+	# Ramo PRODUZIONE (2026-09-23, richiesta utente) — STESSA condizione di can_accept sopra: un input
+	# della ricetta in corso entra solo fino alla quantità esatta mancante, senza consultare gli slot.
+	if ProductionService.is_production_demand(building, resource_name):
+		return ProductionService.get_production_demand(building, resource_name)
+
 	# Ramo edificio COMPLETO — comportamento ESATTAMENTE INVARIATO rispetto a sempre: storage_slot_
 	# count/storage_space_per_slot come UNICO vincolo (mai required_materials qui, un edificio finito
 	# può stoccare qualunque categoria accettata, non solo i propri ex-materiali da costruzione).
@@ -382,7 +396,34 @@ static func get_max_depositable(building: Building, resource_name: String) -> in
 # mai calcolata qui dentro, vedi RetrieveAction.on_complete). Entry rimossa dal Dictionary quando la
 # quantità residua arriva a 0 — stesso trattamento già riservato altrove a stored_resources quando
 # una risorsa si esaurisce (es. ResourceDecayService.advance_building_decay a decadimento completo).
+#
+# BUFFER DI USCITA (2026-09-23, richiesta utente): dopo stored_resources preleva anche da
+# Building.production_output (ProductionService.withdraw_output), così il prodotto di una
+# workstation è una normale sorgente per Retrieve/Transport. Poi, con lo spazio appena liberato, prova
+# il travaso del buffer nello storage (ProductionService.flush_output_to_storage).
 static func withdraw(building: Building, resource_name: String, quantity_requested: int) -> int:
+	if building == null or quantity_requested <= 0:
+		return 0
+	var withdrawn := withdraw_stored(building, resource_name, quantity_requested)
+	withdrawn += ProductionService.withdraw_output(building, resource_name, quantity_requested - withdrawn)
+	if withdrawn > 0:
+		ProductionService.flush_output_to_storage(building)
+	return withdrawn
+
+
+# Quantità prelevabile di resource_name da `building`: stored_resources più il buffer di uscita della
+# produzione (2026-09-23) — stessa somma che withdraw() sopra può davvero prelevare.
+static func get_available_quantity(building: Building, resource_name: String) -> int:
+	if building == null:
+		return 0
+	var stored_entry: Dictionary = building.stored_resources.get(resource_name, {})
+	return int(stored_entry.get("quantity", 0)) + int(building.production_output.get(resource_name, 0))
+
+
+# Prelievo dal SOLO stored_resources — il corpo originale di withdraw() (vedi il commento sopra
+# withdraw per il contratto), estratto il 2026-09-23 per ProductionService.complete_production, che
+# consuma gli input senza mai toccare il buffer di uscita né innescarne il travaso.
+static func withdraw_stored(building: Building, resource_name: String, quantity_requested: int) -> int:
 	if building == null or quantity_requested <= 0:
 		return 0
 	var existing_entry: Dictionary = building.stored_resources.get(resource_name, {})

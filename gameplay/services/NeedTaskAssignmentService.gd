@@ -55,7 +55,7 @@ static func resolve_rest_target(individual: HumanIndividual, world: World) -> Di
 			var macro_offset: Vector2 = Vector2(
 				Vector2i(house.macro_x, house.macro_y) - individual.home_macro_coords
 			) * World.WIDTH
-			var house_position: Vector2 = Vector2(house.micro_x, house.micro_y) + macro_offset
+			var house_position: Vector2 = Vector2(house.micro_x, house.micro_y) + macro_offset + _random_point_near_cell_border()
 			var house_rest_multiplier: float = 1.0
 			if house.rules != null:
 				house_rest_multiplier = house.rules.rest_multiplier
@@ -73,6 +73,28 @@ static func resolve_rest_target(individual: HumanIndividual, world: World) -> Di
 		"rest_multiplier": 1.0,
 		"walk_away_target_position": walk_away_position,
 	}
+
+
+# Scostamento del punto di riposo DENTRO la microcella della casa, sempre vicino al suo bordo
+# (2026-09-24, richiesta utente — bugfix: prima tutti i residenti andavano sull'angolo in alto a
+# sinistra, micro_x/micro_y interi, uno sopra l'altro). Un lato a caso della microcella, a una
+# distanza dal bordo di HOUSE_REST_BORDER_INSET_MIN..MAX e in un punto a caso lungo quel lato:
+# i residenti si dispongono attorno alla sagoma della casa (disegnata al centro), non sopra.
+const HOUSE_REST_BORDER_INSET_MIN: float = 0.08
+const HOUSE_REST_BORDER_INSET_MAX: float = 0.2
+
+static func _random_point_near_cell_border() -> Vector2:
+	var inset: float = randf_range(HOUSE_REST_BORDER_INSET_MIN, HOUSE_REST_BORDER_INSET_MAX)
+	var along: float = randf_range(inset, 1.0 - inset)
+	match randi() % 4:
+		0:
+			return Vector2(along, inset)
+		1:
+			return Vector2(1.0 - inset, along)
+		2:
+			return Vector2(along, 1.0 - inset)
+		_:
+			return Vector2(inset, along)
 
 
 # Risoluzione del target Walk della Emergency Rest Task — STESSA identica logica di GameScene.

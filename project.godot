@@ -15,15 +15,15 @@ run/main_scene="uid://304gskv81v7r"
 config/features=PackedStringArray("4.6", "Forward Plus")
 config/icon="res://icon.svg"
 
+[audio]
+
+buses/default_bus_layout="res://audio/buses/default_bus_layout.tres"
+
 [autoload]
 
 GameSettings="*uid://cq1lrgfvng22c"
 UserOptions="*res://gameplay/scripts/core/UserOptions.gd"
 AudioManager="*res://audio/scripts/AudioManager.gd"
-
-[audio]
-
-buses/default_bus_layout="res://audio/buses/default_bus_layout.tres"
 
 [display]
 

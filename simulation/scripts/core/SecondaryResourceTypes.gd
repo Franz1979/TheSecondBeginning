@@ -21,10 +21,16 @@ class_name SecondaryResourceTypes
 # RAW_MATERIAL è `category = 1` in stick/pebble/plant_fiber) e Building.enabled_categories viene
 # serializzato come Array[int] — inserirlo prima di RAW_MATERIAL avrebbe cambiato in silenzio la
 # categoria di ogni risorsa esistente e i filtri già salvati. Mai riordinare questi valori.
+#
+# SEMI_FINISHED/TOOL (2026-09-23, richiesta utente — sistema di produzione, step 1: solo dati)
+# aggiunti IN FONDO per lo stesso motivo: risorse prodotte presso una workstation (es. corda) e
+# strumenti. Nessuna risorsa esistente li usa ancora.
 enum Category {
 	FOOD,
 	RAW_MATERIAL,
 	MEDICINAL,
+	SEMI_FINISHED,
+	TOOL,
 }
 
 # Provenienza dello stock (2026-09-08, richiesta utente) — PURAMENTE descrittivo, nessuna logica
@@ -34,9 +40,13 @@ enum Category {
 # (TERRAIN_SCATTERED — es. pebble, generato da StonePositionService a partire dalle posizioni di
 # ROCK, mai attraverso il pipeline CaloricCalculator.SECONDARY_SOURCES). Solo due valori: nessun
 # caso ipotetico anticipato oltre questi, stesso principio già seguito per Category sopra.
+#
+# CRAFTED (2026-09-23, richiesta utente — sistema di produzione) aggiunto IN FONDO: risorsa prodotta
+# presso una workstation con una ricetta (SecondaryResourceRules gruppo Recipe), es. fiber_rope.
 enum GenerationSource {
 	PLANT_DERIVED,
 	TERRAIN_SCATTERED,
+	CRAFTED,
 }
 
 # Formula di derivazione lotti+capacità per il modello "capacità per lotto" (2026-09-19, richiesta

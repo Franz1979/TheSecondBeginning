@@ -69,11 +69,14 @@ signal repeat_requested(individual: Variant, next_repeat_count: int)
 # (TaskPersistenceService): non riordinare, solo aggiungere in coda.
 enum CriterionKind { NAME, CATEGORY, ALL }
 
-# Priorita' fissa tra categorie (2026-09-20): cibo, poi materiali, poi medicinali.
+# Priorita' fissa tra categorie (2026-09-20): cibo, poi materiali, poi medicinali; semilavorati e
+# strumenti (2026-09-23) in coda.
 const PRIORITY_CATEGORIES: Array = [
 	SecondaryResourceTypes.Category.FOOD,
 	SecondaryResourceTypes.Category.RAW_MATERIAL,
 	SecondaryResourceTypes.Category.MEDICINAL,
+	SecondaryResourceTypes.Category.SEMI_FINISHED,
+	SecondaryResourceTypes.Category.TOOL,
 ]
 
 var target_position: Vector2i

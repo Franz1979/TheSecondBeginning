@@ -60,17 +60,20 @@ const RESOURCE_ROW_ICON_SIZE: float = 24.0
 # cresce con RESOURCE_ROW_HEIGHT per candidato.
 const DIALOG_BASE_HEIGHT: float = 224.0
 const RESOURCE_ROW_HEIGHT: float = 34.0
+# Altezza di un'intestazione di gruppo (2026-09-24, open_grouped_dialog).
+const GROUP_HEADER_HEIGHT: float = 22.0
 
-# resource_name -> quantità disponibile, salvato da open_dialog (2026-09-12) — usato SOLO per
-# chiarire il tetto massimo dello SpinBox quando la selezione cambia, mai per una nuova query a
-# Building/al mondo: stesso principio "mute panel" del commento sopra.
-var _available_quantities: Dictionary = {}
+# Righe del dialog (2026-09-12, chiave per riga dal 2026-09-24): chiave di riga -> {"resource_name",
+# "quantity"}. La chiave coincide col resource_name in open_dialog; in open_grouped_dialog è
+# prefissata dal gruppo ("products:"/"delivered:"), perché la stessa risorsa può comparire in
+# entrambi i gruppi. Usato SOLO per il tetto dello SpinBox e per il segnale, mai per una nuova query
+# a Building/al mondo: stesso principio "mute panel" del commento sopra.
+var _row_entries: Dictionary = {}
 
-# Risorsa attualmente selezionata (2026-09-18) — "" solo se open_dialog non ha ancora ricevuto
-# candidati (mai il caso reale: il chiamante apre questo dialog solo con 2+ candidati).
-var _selected_resource_name: String = ""
+# Chiave della riga selezionata (2026-09-18) — "" solo se non ci sono candidati.
+var _selected_key: String = ""
 
-# resource_name -> Button della riga corrispondente (2026-09-18) — serve SOLO per aggiornare lo
+# Chiave di riga -> Button della riga corrispondente (2026-09-18) — serve SOLO per aggiornare lo
 # stato "pressed" (evidenziazione "selezionato", stile radio-button via toggle_mode) quando la
 # selezione cambia, senza dover riattraversare resource_list_container.get_children() ogni volta.
 var _resource_row_buttons: Dictionary = {}
@@ -100,25 +103,72 @@ func _ready() -> void:
 # quantità è sempre presente ora, per entrambi gli usi.
 # `repeat_default` (2026-09-20): stato iniziale della casella "Ripeti" (UserOptions.repeat_default).
 func open_dialog(dialog_title: String, message: String, available_quantities: Dictionary, repeat_default: bool = false) -> void:
-	_available_quantities = available_quantities
+	_reset_rows(dialog_title, message, repeat_default)
+	for resource_name: String in available_quantities.keys():
+		_add_row(resource_name, resource_name, int(available_quantities[resource_name]))
+	_popup_with_height(DIALOG_BASE_HEIGHT + float(available_quantities.size()) * RESOURCE_ROW_HEIGHT)
+
+
+# Variante a gruppi per le workstation (2026-09-24, richiesta utente): intestazione "Prodotti"
+# (buffer di uscita) con in cima la voce "Prendi tutti i prodotti" (RetrieveAction.ALL_PRODUCTS),
+# poi intestazione "Materiali consegnati" (stored_resources). Le voci singole funzionano come in
+# open_dialog; un gruppo vuoto non compare. `product_quantities`/`delivered_quantities`:
+# resource_name -> quantità, già risolti dal chiamante.
+func open_grouped_dialog(
+	dialog_title: String, message: String, product_quantities: Dictionary, delivered_quantities: Dictionary,
+	repeat_default: bool = false
+) -> void:
+	_reset_rows(dialog_title, message, repeat_default)
+	var height: float = DIALOG_BASE_HEIGHT
+	if not product_quantities.is_empty():
+		resource_list_container.add_child(_build_group_header(tr("transport_dialog_group_products")))
+		var total_products := 0
+		for resource_name: String in product_quantities.keys():
+			total_products += int(product_quantities[resource_name])
+		_add_row("products:" + RetrieveAction.ALL_PRODUCTS, RetrieveAction.ALL_PRODUCTS, total_products)
+		for resource_name: String in product_quantities.keys():
+			_add_row("products:" + resource_name, resource_name, int(product_quantities[resource_name]))
+		height += GROUP_HEADER_HEIGHT + float(product_quantities.size() + 1) * RESOURCE_ROW_HEIGHT
+	if not delivered_quantities.is_empty():
+		resource_list_container.add_child(_build_group_header(tr("transport_dialog_group_delivered")))
+		for resource_name: String in delivered_quantities.keys():
+			_add_row("delivered:" + resource_name, resource_name, int(delivered_quantities[resource_name]))
+		height += GROUP_HEADER_HEIGHT + float(delivered_quantities.size()) * RESOURCE_ROW_HEIGHT
+	_popup_with_height(height)
+
+
+func _reset_rows(dialog_title: String, message: String, repeat_default: bool) -> void:
 	title = dialog_title
 	message_label.text = message
 	repeat_check_box.button_pressed = repeat_default
-
+	repeat_check_box.disabled = false
+	quantity_spin_box.editable = true
 	for child in resource_list_container.get_children():
 		child.queue_free()
 	_resource_row_buttons.clear()
-	_selected_resource_name = ""
+	_row_entries.clear()
+	_selected_key = ""
 
-	for resource_name: String in available_quantities.keys():
-		var quantity: int = int(available_quantities[resource_name])
-		resource_list_container.add_child(_build_resource_row(resource_name, quantity))
-		if _selected_resource_name == "":
-			_select_resource(resource_name)
 
+# Aggiunge una riga e seleziona la prima aggiunta.
+func _add_row(key: String, resource_name: String, quantity: int) -> void:
+	_row_entries[key] = {"resource_name": resource_name, "quantity": quantity}
+	resource_list_container.add_child(_build_resource_row(key, resource_name, quantity))
+	if _selected_key == "":
+		_select_resource(key)
+
+
+func _popup_with_height(height: float) -> void:
 	exclusive = true
-	var height: float = DIALOG_BASE_HEIGHT + float(available_quantities.size()) * RESOURCE_ROW_HEIGHT
 	popup_centered(Vector2i(280, int(height)))
+
+
+# Intestazione di gruppo (2026-09-24): testo semplice colorato, non selezionabile.
+func _build_group_header(text: String) -> Control:
+	var header := Label.new()
+	header.text = text
+	header.add_theme_color_override("font_color", Color(0.95, 0.8, 0.45, 1.0))
+	return header
 
 
 # Una riga: icona (disegnata/emoji/iniziale, STESSO schema a 3 livelli già in uso da
@@ -127,12 +177,13 @@ func open_dialog(dialog_title: String, message: String, available_quantities: Di
 # (quantità)". toggle_mode=true SOLO per lo stile "pressed" quando selezionato (vedi _select_
 # resource sotto) — non un vero comportamento toggle-indipendente, ogni pressione lo riporta
 # comunque a true tramite _select_resource, mai lasciato libero di spegnersi da solo.
-func _build_resource_row(resource_name: String, quantity: int) -> Control:
+func _build_resource_row(key: String, resource_name: String, quantity: int) -> Control:
 	var row := HBoxContainer.new()
 
 	var icon_box := Control.new()
 	icon_box.custom_minimum_size = Vector2(RESOURCE_ROW_ICON_SIZE, RESOURCE_ROW_ICON_SIZE)
-	var icon_node: Control = IconRegistry.get_resource_icon_node(resource_name)
+	# "Prendi tutti i prodotti" (2026-09-24): nessuna icona di risorsa, un simbolo generico (sotto).
+	var icon_node: Control = null if resource_name == RetrieveAction.ALL_PRODUCTS else IconRegistry.get_resource_icon_node(resource_name)
 	if icon_node != null:
 		icon_box.add_child(icon_node)
 		icon_node.anchor_left = 0.0
@@ -146,6 +197,8 @@ func _build_resource_row(resource_name: String, quantity: int) -> Control:
 	else:
 		var fallback_label := Label.new()
 		var icon_text: String = IconRegistry.get_resource_icon(resource_name)
+		if resource_name == RetrieveAction.ALL_PRODUCTS:
+			icon_text = "📦"
 		fallback_label.text = icon_text if icon_text != "" else resource_name.substr(0, 1).to_upper()
 		fallback_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		fallback_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
@@ -155,13 +208,16 @@ func _build_resource_row(resource_name: String, quantity: int) -> Control:
 	row.add_child(icon_box)
 
 	var resource_button := Button.new()
-	resource_button.text = "%s (%d)" % [IconRegistry.get_resource_display_name(resource_name), quantity]
+	if resource_name == RetrieveAction.ALL_PRODUCTS:
+		resource_button.text = tr("transport_dialog_take_all_products").format({"quantity": quantity})
+	else:
+		resource_button.text = "%s (%d)" % [IconRegistry.get_resource_display_name(resource_name), quantity]
 	resource_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	resource_button.toggle_mode = true
 	_apply_selected_style(resource_button)
-	resource_button.pressed.connect(_select_resource.bind(resource_name))
+	resource_button.pressed.connect(_select_resource.bind(key))
 	row.add_child(resource_button)
-	_resource_row_buttons[resource_name] = resource_button
+	_resource_row_buttons[key] = resource_button
 
 	return row
 
@@ -192,27 +248,35 @@ func _apply_selected_style(button: Button) -> void:
 	button.add_theme_color_override("font_hover_pressed_color", SELECTED_FONT_COLOR)
 
 
-# Marca `resource_name` come selezionato: aggiorna lo stile "pressed" di ogni riga (radio-button-
-# like, mai più di una selezionata) e il tetto/valore dell'UNICA riga quantità condivisa.
-func _select_resource(resource_name: String) -> void:
-	_selected_resource_name = resource_name
-	for other_resource_name in _resource_row_buttons.keys():
-		_resource_row_buttons[other_resource_name].button_pressed = other_resource_name == resource_name
-	var max_quantity: int = int(_available_quantities.get(resource_name, 0))
+# Marca la riga `key` come selezionata: aggiorna lo stile "pressed" di ogni riga (radio-button-
+# like, mai più di una selezionata) e il tetto/valore dell'UNICA riga quantità condivisa. Con
+# "Prendi tutti i prodotti" (2026-09-24) quantità e "Ripeti" non hanno senso — si prende quanto
+# entra nello zaino, un viaggio solo — e restano disattivati.
+func _select_resource(key: String) -> void:
+	_selected_key = key
+	for other_key in _resource_row_buttons.keys():
+		_resource_row_buttons[other_key].button_pressed = other_key == key
+	var entry: Dictionary = _row_entries.get(key, {})
+	var max_quantity: int = int(entry.get("quantity", 0))
+	var is_all_products: bool = String(entry.get("resource_name", "")) == RetrieveAction.ALL_PRODUCTS
 	quantity_spin_box.max_value = max_quantity
 	quantity_spin_box.min_value = 1 if max_quantity > 0 else 0
 	quantity_spin_box.value = max_quantity
+	quantity_spin_box.editable = not is_all_products
+	repeat_check_box.disabled = is_all_products
+	if is_all_products:
+		repeat_check_box.button_pressed = false
 
 
-# _selected_resource_name == "" (nessun candidato, mai il caso reale) -> no-op difensivo, mai un
-# segnale con un resource_name vuoto.
+# _selected_key == "" (nessun candidato, mai il caso reale) -> no-op difensivo, mai un segnale con un
+# resource_name vuoto.
 func _on_confirm_pressed() -> void:
-	if _selected_resource_name == "":
+	if _selected_key == "":
 		return
-	var resource_name := _selected_resource_name
+	var resource_name: String = String(_row_entries[_selected_key]["resource_name"])
 	var quantity: int = int(quantity_spin_box.value)
 	hide()
-	resource_chosen.emit(resource_name, quantity, repeat_check_box.button_pressed)
+	resource_chosen.emit(resource_name, quantity, repeat_check_box.button_pressed and not repeat_check_box.disabled)
 
 
 # Nessun segnale emesso all'annullamento (stesso principio di DemolishConfirmationDialog._on_

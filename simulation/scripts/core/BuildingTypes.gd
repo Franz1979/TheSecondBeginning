@@ -18,9 +18,13 @@ class_name BuildingTypes
 # ridurrà il consumo di stamina di chi ci cammina sopra, oggi nessun effetto) aggiunto IN FONDO:
 # i .tres salvano il valore NUMERICO (RESIDENTIAL è 0 implicito per hut/stick_tent, che non
 # scrivono `category`) — mai riordinare questi valori.
+#
+# PRODUCTION (2026-09-23, richiesta utente — campfire, prima workstation del sistema di produzione)
+# aggiunto IN FONDO per lo stesso motivo.
 enum Category {
 	RESIDENTIAL,
 	POLITICAL,
 	STORAGE,
 	MOVEMENT,
+	PRODUCTION,
 }

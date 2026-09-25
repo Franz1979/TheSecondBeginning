@@ -19,6 +19,9 @@ skill_effects_by_task_name = {
 "task_leisure_rest_name": {},
 "task_leisure_restock_name": {},
 "task_play_name": {},
+"task_produce_name": {
+"skill_crafting": 1.0
+},
 "task_rest_name": {},
 "task_transport_name": {
 "skill_transporter": 1.0

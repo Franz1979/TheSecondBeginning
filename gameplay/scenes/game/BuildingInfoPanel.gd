@@ -56,6 +56,12 @@ extends VBoxContainer
 # _current_building che questo pannello ha già in mano.
 signal empty_all_requested(building: Building)
 
+# Pulsante ricetta premuto (2026-09-23, richiesta utente — comando di produzione dal pannello): stesso
+# principio "muto" di empty_all_requested, GameScene entra nella modalità "assegna produzione".
+# quantity (2026-09-24, richiesta utente): pezzi scelti nel selettore sopra i pulsanti, 1..
+# ProductionService.get_max_order_quantity(building).
+signal produce_requested(building: Building, resource_name: String, quantity: int)
+
 # Emesso al click su un'icona OCCUPATA della griglia residenti (2026-09-12, richiesta utente —
 # "puoi fare che la icona delle persone nella vista edificio funzioni come un centra su di loro?")
 # — stesso principio "muto" di empty_all_requested sopra: questo pannello non sa cosa significhi
@@ -105,13 +111,38 @@ const STORAGE_SLOT_FILL_BAR_FILL_COLOR := Color(1.0, 1.0, 1.0, 0.85)
 @onready var awaiting_material_label: Label = $AwaitingMaterialLabel
 @onready var awaiting_material_build_caption: Label = $AwaitingMaterialBuildCaption
 @onready var awaiting_material_build_grid: HFlowContainer = $AwaitingMaterialBuildGrid
+# Combustibile mancante alle produzioni in corso (2026-09-24, richiesta utente) — riga separata e di
+# colore diverso (arancio) dalla griglia dei materiali, vedi _refresh_awaiting_fuel.
+@onready var awaiting_fuel_label: Label = $AwaitingFuelLabel
 @onready var assigned_builder_label: Label = $AssignedBuilderLabel
+# "In costruzione: ..." per un edificio produttivo completo (2026-09-24, richiesta utente), vedi
+# _format_production_in_progress.
+@onready var production_in_progress_label: Label = $ProductionInProgressLabel
 @onready var durability_label: Label = $DurabilityLabel
 @onready var built_year_label: Label = $BuiltYearLabel
 @onready var residents_caption: Label = $ResidentsCaption
 @onready var residents_grid: GridContainer = $ResidentsGrid
 @onready var storage_caption: Label = $StorageCaption
 @onready var storage_grid: GridContainer = $StorageGrid
+# Buffer di uscita della produzione (2026-09-23, richiesta utente) — caption con pezzi usati/capienza,
+# griglia di chip col contenuto, avviso giallo quando il buffer pieno blocca la produzione. Nascosti
+# per un edificio senza buffer (BuildingRules.production_output_slots <= 0).
+@onready var output_buffer_caption: Label = $OutputBufferCaption
+@onready var output_buffer_grid: HFlowContainer = $OutputBufferGrid
+@onready var output_buffer_full_label: Label = $OutputBufferFullLabel
+# Materiali consegnati (2026-09-24, richiesta utente) — contenuto di stored_resources per una
+# workstation SENZA storage (storage_slot_count <= 0), dove StorageGrid resta nascosta: senza questa
+# sezione il materiale consegnato per le ricette non compariva da nessuna parte. Distinta dal buffer
+# di uscita (prodotti) sopra. Vedi _refresh_delivered_materials.
+@onready var delivered_materials_caption: Label = $DeliveredMaterialsCaption
+@onready var delivered_materials_grid: HFlowContainer = $DeliveredMaterialsGrid
+# Produzioni sospese (2026-09-24, richiesta utente) — record presenti su production_progress senza
+# nessuna Produce Task che ci lavori: "Produzione sospesa: X, N% completata", una riga per ricetta.
+@onready var suspended_production_label: Label = $SuspendedProductionLabel
+# Pulsanti ricetta (2026-09-23): uno per risorsa producibile qui (ProductionService.
+# get_producible_resources), nascosti per un edificio che non è una workstation valida.
+@onready var production_recipes_caption: Label = $ProductionRecipesCaption
+@onready var production_recipes_container: VBoxContainer = $ProductionRecipesContainer
 @onready var id_label: Label = $IdLabel
 @onready var settings_separator: HSeparator = $SettingsSeparator
 @onready var settings_caption: Label = $SettingsCaption
@@ -127,6 +158,12 @@ const STORAGE_SLOT_FILL_BAR_FILL_COLOR := Color(1.0, 1.0, 1.0, 0.85)
 # un riferimento va tenuto qui, non ricavato altrove (questo pannello non conosce GameScene/
 # selezione, resta "muto" come dichiarato in testa al file).
 var _current_building: Building = null
+
+# Quantità scelta nel selettore delle ricette (2026-09-24, richiesta utente) — tenuta qui perché i
+# pulsanti ricetta (e il selettore stesso) si ricostruiscono a ogni show_building, anche al refresh
+# giornaliero: senza, la scelta tornerebbe a 1 ogni giorno. Torna a 1 cambiando edificio.
+var _order_quantity: int = 1
+var _order_quantity_building_id: int = -1
 
 
 func _ready() -> void:
@@ -152,9 +189,24 @@ func _ready() -> void:
 # HumanCalculator, stesso principio dichiarato in testa al file. Default [] così ogni chiamante che
 # non lo passa ancora (nessuno oggi, ma comportamento difensivo) mostra semplicemente una griglia
 # residenti vuota invece di un errore.
-func show_building(building: Building, residents_display_data: Array[Dictionary] = [], assigned_builder_names: Array[String] = []) -> void:
+# production_claimant_names (2026-09-24, richiesta utente — blocco ricette): "Nome (#id)" di chi ha
+# una Produce Task su questo edificio (attiva o in coda, anche se non ancora arrivato), risolti da
+# GameScene._resolve_production_claimant_names. Non vuoto = edificio già impegnato: ricette spente.
+#
+# production_claimed_recipes (2026-09-24, richiesta utente — produzioni sospese): ricette con almeno
+# una Produce Task che ci lavora (GameScene._resolve_production_claimed_recipes). Un record di
+# production_progress la cui ricetta non è qui è SOSPESO: il pannello lo segnala come tale e non ne
+# mostra il fabbisogno di materiale/combustibile come se qualcuno ci stesse lavorando.
+func show_building(building: Building, residents_display_data: Array[Dictionary] = [], assigned_builder_names: Array[String] = [], production_claimant_names: Array[String] = [], production_claimed_recipes: Array[String] = []) -> void:
 	visible = true
 	_current_building = building
+	var working_recipes: Array[String] = []
+	var suspended_recipes: Array[String] = []
+	for active_name in ProductionService.get_active_resource_names(building):
+		if production_claimed_recipes.has(active_name):
+			working_recipes.append(active_name)
+		else:
+			suspended_recipes.append(active_name)
 	status_label.text = tr("building_status_label").format({
 		"status": tr("building_status_complete") if building.is_complete else tr("building_status_under_construction")
 	})
@@ -181,6 +233,21 @@ func show_building(building: Building, residents_display_data: Array[Dictionary]
 	awaiting_material_label.visible = building.is_awaiting_material and not is_build_phase
 	awaiting_material_build_caption.visible = building.is_awaiting_material and is_build_phase
 	awaiting_material_build_grid.visible = building.is_awaiting_material and is_build_phase
+	# Produzione in attesa di materiale (2026-09-23, richiesta utente — Produce Task): su un edificio
+	# completo con una produzione in corso (Building.production_progress) a cui mancano input, stessa
+	# caption+griglia di chip della fase build, con una caption dedicata. Letto da ProductionService,
+	# nessun flag su Building: "in attesa" = produzione registrata e input mancanti. Solo le ricette
+	# con una Task che ci lavora (2026-09-24): quelle sospese hanno la propria riga sotto.
+	var production_missing: Dictionary = ProductionService.get_missing_inputs_for_recipes(building, working_recipes) if building.is_complete else {}
+	if not production_missing.is_empty():
+		awaiting_material_build_caption.visible = true
+		awaiting_material_build_grid.visible = true
+		awaiting_material_build_caption.text = tr("building_awaiting_material_production_caption").format({
+			"resource": _format_recipe_names(working_recipes),
+		})
+		_refresh_missing_material_grid(production_missing)
+	_refresh_awaiting_fuel(building, working_recipes)
+	_refresh_suspended_production(building, suspended_recipes)
 	if building.is_awaiting_material:
 		if is_build_phase:
 			awaiting_material_build_caption.text = tr("building_awaiting_material_build_caption")
@@ -208,6 +275,19 @@ func show_building(building: Building, residents_display_data: Array[Dictionary]
 			if not assigned_builder_names.is_empty()
 			else tr("building_assigned_builder_missing")
 		)
+	# Edificio produttivo completo (2026-09-24, richiesta utente): SEMPRE le due righe "In costruzione:"
+	# (cosa si sta producendo, o "nulla") e costruttore assegnato (chi ha una Produce Task qui, attiva
+	# o in coda — production_claimant_names — o "mancante"), stessa riga/stesse chiavi del cantiere.
+	var is_active_workstation: bool = building.is_complete and building.rules != null and building.rules.is_workstation
+	production_in_progress_label.visible = is_active_workstation
+	if is_active_workstation:
+		production_in_progress_label.text = _format_production_in_progress(building, production_claimed_recipes)
+		assigned_builder_label.visible = true
+		assigned_builder_label.text = (
+			tr("building_assigned_builder_label").format({"names": ", ".join(production_claimant_names)})
+			if not production_claimant_names.is_empty()
+			else tr("building_assigned_builder_missing")
+		)
 
 	var max_durability: int = building.rules.max_durability if building.rules != null else 0
 	durability_label.text = tr("building_durability_label").format({"current": building.current_durability, "max": max_durability})
@@ -224,6 +304,9 @@ func show_building(building: Building, residents_display_data: Array[Dictionary]
 
 	_refresh_residents_grid(building, residents_display_data)
 	_refresh_storage_grid(building)
+	_refresh_output_buffer(building)
+	_refresh_delivered_materials(building)
+	_refresh_production_recipes(building, production_claimant_names)
 	_refresh_settings_section(building)
 
 	id_label.text = tr("building_id_label").format({"id": building.id})
@@ -356,6 +439,90 @@ func _resolve_build_material_shortage(building: Building) -> Dictionary:
 # costo trascurabile, required_materials.size() è sempre piccolo (2-4 voci). HFlowContainer (non
 # GridContainer/HBoxContainer): va a capo da solo quando le chip non entrano più sulla riga,
 # proprio ciò che serve per restare dentro la larghezza fissa del pannello senza contarle a mano.
+# Nomi visibili di `recipe_names`, separati da virgola (2026-09-24 — più ricette contemporanee): la
+# griglia "materiale mancante" sopra somma i fabbisogni delle ricette al lavoro
+# (ProductionService.get_missing_inputs_for_recipes).
+func _format_recipe_names(recipe_names: Array[String]) -> String:
+	var display_names: Array[String] = []
+	for recipe_name in recipe_names:
+		display_names.append(IconRegistry.get_resource_display_name(recipe_name))
+	return ", ".join(display_names)
+
+
+# "In costruzione: Corda di fibre (40%)" / "In costruzione: nulla" (2026-09-24, richiesta utente) —
+# ricette con una Produce Task che ci lavora (anche con l'individuo ancora in cammino, 0% finché il
+# record non ha lavoro); percentuale = ciclo corrente (ProductionService.get_cycle_progress).
+func _format_production_in_progress(building: Building, claimed_recipes: Array[String]) -> String:
+	if claimed_recipes.is_empty():
+		return tr("building_production_in_progress_none")
+	var parts: Array[String] = []
+	for recipe_name in claimed_recipes:
+		parts.append("%s (%d%%)" % [
+			IconRegistry.get_resource_display_name(recipe_name),
+			int(round(ProductionService.get_cycle_progress(building, recipe_name) * 100.0)),
+		])
+	return tr("building_production_in_progress_label").format({"items": ", ".join(parts)})
+
+
+# "Produzione sospesa: Corda di fibre, 40% completata" (2026-09-24, richiesta utente) — una riga per
+# ogni record senza Task che ci lavori; percentuale = lavoro del ciclo corrente
+# (ProductionService.get_cycle_progress). Nascosta se non c'è nulla di sospeso.
+func _refresh_suspended_production(building: Building, suspended_recipes: Array[String]) -> void:
+	suspended_production_label.visible = building.is_complete and not suspended_recipes.is_empty()
+	if not suspended_production_label.visible:
+		return
+	var lines: Array[String] = []
+	for recipe_name in suspended_recipes:
+		lines.append(tr("building_production_suspended_label").format({
+			"resource": IconRegistry.get_resource_display_name(recipe_name),
+			"percent": int(round(ProductionService.get_cycle_progress(building, recipe_name) * 100.0)),
+		}))
+	suspended_production_label.text = "\n".join(lines)
+
+
+# "Materiali consegnati" (2026-09-24, richiesta utente) — SOLO per una workstation senza storage
+# (storage_slot_count <= 0): lì StorageGrid è nascosta e il materiale consegnato per le ricette
+# (input e combustibile, anche di produzioni sospese) non comparirebbe altrimenti. Una chip per
+# risorsa di stored_resources, stesso stile del buffer di uscita. Nascosta se vuota; per gli edifici
+# CON storage quel contenuto è già nella StorageGrid.
+func _refresh_delivered_materials(building: Building) -> void:
+	for child in delivered_materials_grid.get_children():
+		child.queue_free()
+	var has_storage: bool = building.rules != null and building.rules.storage_slot_count > 0
+	var is_workstation: bool = building.rules != null and building.rules.is_workstation
+	var entries: Dictionary = {}
+	for resource_name in building.stored_resources.keys():
+		var quantity: int = int(building.stored_resources[resource_name].get("quantity", 0))
+		if quantity > 0:
+			entries[String(resource_name)] = quantity
+	var show_section: bool = building.is_complete and is_workstation and not has_storage and not entries.is_empty()
+	delivered_materials_caption.visible = show_section
+	delivered_materials_grid.visible = show_section
+	if not show_section:
+		return
+	delivered_materials_caption.text = tr("building_delivered_materials_caption")
+	for resource_name in entries.keys():
+		delivered_materials_grid.add_child(_build_missing_material_chip(resource_name, int(entries[resource_name])))
+
+
+# "Combustibile mancante: 1.0 (Rametto)" (2026-09-24, richiesta utente) — visibile solo su un edificio
+# completo con produzioni in corso il cui combustibile non è coperto (ProductionService.
+# get_missing_fuel, fabbisogni sommati). Tra parentesi le risorse che fanno da combustibile.
+func _refresh_awaiting_fuel(building: Building, working_recipes: Array[String]) -> void:
+	var missing_fuel: float = ProductionService.get_missing_fuel_for_recipes(building, working_recipes) if building.is_complete else 0.0
+	awaiting_fuel_label.visible = missing_fuel > 0.0
+	if missing_fuel <= 0.0:
+		return
+	var fuel_names: Array[String] = []
+	for resource_name in CaloricCalculator.list_secondary_resource_names():
+		if ProductionService.get_fuel_value(resource_name) > 0.0:
+			fuel_names.append(IconRegistry.get_resource_display_name(resource_name))
+	awaiting_fuel_label.text = tr("building_awaiting_fuel_production_label").format({
+		"amount": "%.1f" % missing_fuel,
+		"fuels": ", ".join(fuel_names),
+	})
+
+
 func _refresh_missing_material_grid(missing: Dictionary) -> void:
 	for child in awaiting_material_build_grid.get_children():
 		child.queue_free()
@@ -416,6 +583,98 @@ func _build_missing_material_chip(resource_name: String, quantity: int) -> Contr
 	box.add_child(quantity_label)
 
 	return box
+
+
+# Pulsanti ricetta (2026-09-23, richiesta utente — comando di produzione dal pannello): uno per
+# risorsa producibile presso questo edificio, "Produci <risorsa>". Il click emette produce_requested;
+# chi assegna la Task e a chi lo decide GameScene. Ricostruiti da zero a ogni show_building.
+#
+# Pulsante spento (2026-09-24, richiesta utente) con un tooltip che ne spiega il motivo, uno per
+# riga se sono più d'uno: edificio già impegnato (Produce Task assegnate — production_claimant_names,
+# attive o con l'individuo ancora in cammino — arrivate a ProductionService.get_queue_capacity; con
+# production_queue_slots = 1 basta una sola, e vale per tutte le ricette) e/o buffer di uscita senza
+# posto per un ciclo di QUESTA ricetta (dipende da recipe_output_quantity, quindi per-ricetta).
+#
+# Selettore quantità (2026-09-24, richiesta utente): "Quantità" + SpinBox 1..production_max_quantity
+# in testa ai pulsanti, condiviso da tutte le ricette (il pulsante premuto emette il valore corrente).
+# Assente se l'edificio ammette un solo pezzo per ordine.
+func _refresh_production_recipes(building: Building, production_claimant_names: Array[String]) -> void:
+	for child in production_recipes_container.get_children():
+		child.queue_free()
+	var producible := ProductionService.get_producible_resources(building)
+	production_recipes_caption.visible = not producible.is_empty()
+	production_recipes_container.visible = not producible.is_empty()
+	production_recipes_caption.text = tr("building_production_recipes_caption")
+	if producible.is_empty():
+		return
+
+	var max_quantity := ProductionService.get_max_order_quantity(building)
+	if _order_quantity_building_id != building.id:
+		_order_quantity_building_id = building.id
+		_order_quantity = 1
+	_order_quantity = clampi(_order_quantity, 1, max_quantity)
+	if max_quantity > 1:
+		production_recipes_container.add_child(_build_order_quantity_row(max_quantity))
+
+	var is_queue_full := ProductionService.is_production_queue_full(building, production_claimant_names.size())
+	for resource_name in producible:
+		var button := Button.new()
+		button.text = tr("produce_recipe_button").format({"resource": IconRegistry.get_resource_display_name(resource_name)})
+		button.add_theme_font_size_override("font_size", 10)
+		var disabled_reasons: Array[String] = []
+		if is_queue_full:
+			disabled_reasons.append(tr("produce_recipe_disabled_busy").format({"workers": ", ".join(production_claimant_names)}))
+		# Buffer di uscita pieno (2026-09-23, richiesta utente): nessuna nuova assegnazione finché il
+		# prodotto non viene ritirato.
+		if not ProductionService.has_output_room(building, resource_name):
+			disabled_reasons.append(tr("produce_recipe_disabled_output_full"))
+		if not disabled_reasons.is_empty():
+			button.disabled = true
+			button.tooltip_text = "\n".join(disabled_reasons)
+		button.pressed.connect(func(): produce_requested.emit(building, resource_name, _order_quantity))
+		production_recipes_container.add_child(button)
+
+
+# Riga "Quantità: [SpinBox]" del selettore ricette — il valore scelto finisce in _order_quantity.
+func _build_order_quantity_row(max_quantity: int) -> Control:
+	var row := HBoxContainer.new()
+	var label := Label.new()
+	label.text = tr("produce_quantity_label")
+	label.add_theme_font_size_override("font_size", 10)
+	row.add_child(label)
+	var spin_box := SpinBox.new()
+	spin_box.min_value = 1
+	spin_box.max_value = max_quantity
+	spin_box.step = 1
+	spin_box.rounded = true
+	spin_box.value = _order_quantity
+	spin_box.tooltip_text = tr("produce_quantity_tooltip").format({"max": max_quantity})
+	spin_box.value_changed.connect(func(value: float): _order_quantity = int(value))
+	row.add_child(spin_box)
+	return row
+
+
+# Buffer di uscita della produzione (2026-09-23, richiesta utente): "Prodotti: {used}/{capacity}",
+# una chip per risorsa (stesso stile delle chip "materiale mancante") e l'avviso di buffer pieno
+# quando blocca la produzione in corso (ProductionService.is_output_blocking). Tutto nascosto per un
+# edificio senza buffer. Ricostruita da zero ad ogni show_building, come le altre griglie.
+func _refresh_output_buffer(building: Building) -> void:
+	for child in output_buffer_grid.get_children():
+		child.queue_free()
+	var capacity := ProductionService.get_output_capacity(building)
+	var has_buffer: bool = capacity > 0
+	output_buffer_caption.visible = has_buffer
+	output_buffer_grid.visible = has_buffer and not building.production_output.is_empty()
+	output_buffer_full_label.visible = has_buffer and ProductionService.is_output_blocking(building)
+	if not has_buffer:
+		return
+	output_buffer_caption.text = tr("building_output_buffer_caption").format({
+		"used": ProductionService.get_output_used(building),
+		"capacity": capacity,
+	})
+	for output_name in building.production_output.keys():
+		output_buffer_grid.add_child(_build_missing_material_chip(String(output_name), int(building.production_output[output_name])))
+	output_buffer_full_label.text = tr("building_output_buffer_full")
 
 
 # Ricostruita per intero ad ogni show_building (stesso principio "rebuild da zero" già in uso

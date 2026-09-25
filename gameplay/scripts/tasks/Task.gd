@@ -382,8 +382,37 @@ func get_activity_description() -> String:
 				if step is RetrieveAction:
 					resource_name = (step as RetrieveAction).resource_name
 					break
+		# Costruzione (2026-09-24, richiesta utente): "Costruzione (Tenda di rami)", stesso stile della
+		# raccolta. Edificio letto dal primo step che ha un target_building (SetupSite/Clear/Build),
+		# nome tradotto da BuildingRules.building_name. Nessun edificio risolvibile = solo il nome
+		# della Task.
+		"task_build_name":
+			for step in steps:
+				if "target_building" in step and step.target_building != null:
+					var building: Building = step.target_building
+					var building_display_name: String = tr(building.rules.building_name) if building.rules != null else building.building_type_name
+					return "%s (%s)" % [base_text, building_display_name]
+			return base_text
+		# Produzione (2026-09-23, richiesta utente): "Produzione: Corda di fibre". Letta da context
+		# ["production_resource_name"], chiave scritta da GameScene._assign_produce_task e NON
+		# consumata da TaskFactory (a differenza di "produce_resource_name", che costruisce lo step e
+		# viene quindi ripulita) — resta in context e viene salvata con esso. Assente (save precedente)
+		# = solo il nome della Task.
+		"task_produce_name":
+			var produced_name: String = String(context.get("production_resource_name", ""))
+			if produced_name == "":
+				return base_text
+			# Quantità ordinata (2026-09-24): "Corda di fibre ×3", solo se > 1; assente nei save precedenti.
+			var produced_display_name := IconRegistry.get_resource_display_name(produced_name)
+			var produced_quantity: int = int(context.get("production_quantity", 1))
+			if produced_quantity > 1:
+				produced_display_name = "%s ×%d" % [produced_display_name, produced_quantity]
+			return tr("task_produce_activity").format({"resource": produced_display_name})
 		_:
 			return base_text
 	if resource_name == "":
 		return base_text
+	# "Prendi tutti i prodotti" (2026-09-24): nessun nome di risorsa singolo da mostrare.
+	if resource_name == RetrieveAction.ALL_PRODUCTS:
+		return "%s (%s)" % [base_text, tr("transport_all_products_activity")]
 	return "%s (%s)" % [base_text, IconRegistry.get_resource_display_name(resource_name)]

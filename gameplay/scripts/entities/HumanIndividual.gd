@@ -385,6 +385,10 @@ var skill_cognition: float = 0.0
 # hunting (2026-09-13, richiesta utente — 7ma skill, aggiunta dopo le prime 6) — STESSO identico
 # trattamento/STESSO default 0.0 delle altre 6 sopra, nessuna eccezione.
 var skill_hunting: float = 0.0
+# crafting (2026-09-24, richiesta utente — 8a skill, produzione presso le workstation): stesso
+# trattamento/default delle altre. Cresce al completamento della Produce Task (task_completion_
+# effects.tres); nessun effetto sul lavoro prodotto per ora (ProduceAction.skill_multiplier resta 1.0).
+var skill_crafting: float = 0.0
 
 
 # Nomi di TUTTE le property skill_* dell'istanza, raccolti via reflection (2026-09-13, richiesta

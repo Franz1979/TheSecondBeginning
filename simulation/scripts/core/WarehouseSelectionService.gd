@@ -203,9 +203,14 @@ static func find_source_for_retrieval(
 static func _get_matching_stock(building: Building, criterion: Variant, min_quantity: int) -> Dictionary:
 	var matching_stock: Dictionary = {}
 	var minimum: int = maxi(min_quantity, 1)
-	for resource_name in building.stored_resources.keys():
-		var entry: Dictionary = building.stored_resources[resource_name]
-		var quantity: int = int(entry.get("quantity", 0))
+	# stored_resources più il buffer di uscita della produzione (2026-09-23): stessa quantità che
+	# BuildingStorageService.withdraw può prelevare.
+	var candidate_names: Array = building.stored_resources.keys()
+	for output_name in building.production_output.keys():
+		if not candidate_names.has(output_name):
+			candidate_names.append(output_name)
+	for resource_name in candidate_names:
+		var quantity: int = BuildingStorageService.get_available_quantity(building, String(resource_name))
 		if quantity < minimum:
 			continue
 		if criterion == null or (criterion is String and criterion == ""):

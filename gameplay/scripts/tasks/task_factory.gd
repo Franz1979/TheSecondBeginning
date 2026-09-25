@@ -192,6 +192,25 @@ static func build_task(definition: TaskDefinition, context: Dictionary) -> Task:
 					continue
 				steps.append(BuildAction.new(context[step_definition.context_keys[0]]))
 				step_descriptions.append(step_definition.step_description)
+			TaskTypes.ActionType.PRODUCE:
+				# 2 argomenti (target_building, resource_name) — 2026-09-23, ProduceAction.
+				if step_definition.context_keys.size() < 2:
+					push_error("TaskFactory.build_task: context_keys insufficienti (servono 2: target_building, resource_name) per step PRODUCE di TaskDefinition '%s'." % definition.task_name)
+					continue
+				var produce_building_key: String = step_definition.context_keys[0]
+				var produce_resource_name_key: String = step_definition.context_keys[1]
+				if not context.has(produce_building_key) or not context.has(produce_resource_name_key):
+					push_error("TaskFactory.build_task: una o più chiavi di contesto mancanti ('%s'/'%s') per step PRODUCE di TaskDefinition '%s'." % [
+						produce_building_key, produce_resource_name_key, definition.task_name
+					])
+					continue
+				# Terza chiave FACOLTATIVA (2026-09-24, richiesta utente): pezzi ordinati, default 1 se
+				# la chiave non è dichiarata o non è nel contesto.
+				var produce_quantity: int = 1
+				if step_definition.context_keys.size() >= 3 and context.has(step_definition.context_keys[2]):
+					produce_quantity = int(context[step_definition.context_keys[2]])
+				steps.append(ProduceAction.new(context[produce_building_key], String(context[produce_resource_name_key]), 1.0, 1.0, produce_quantity))
+				step_descriptions.append(step_definition.step_description)
 			TaskTypes.ActionType.LOOK_AROUND:
 				# Nessun argomento — LookAroundAction._init non prende parametri (durata/drain fissi,
 				# nessun target). Vedi step_look_around.tres/wander.tres per l'unico consumatore oggi

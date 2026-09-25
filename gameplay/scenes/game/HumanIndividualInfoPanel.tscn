@@ -117,6 +117,13 @@ corner_radius_top_right = 4
 corner_radius_bottom_right = 4
 corner_radius_bottom_left = 4
 
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_crafting_fill"]
+bg_color = Color(0.72, 0.5, 0.25, 1)
+corner_radius_top_left = 4
+corner_radius_top_right = 4
+corner_radius_bottom_right = 4
+corner_radius_bottom_left = 4
+
 [sub_resource type="StyleBoxFlat" id="StyleBoxFlat_tool_slot"]
 bg_color = Color(0.25, 0.25, 0.25, 0.35)
 border_width_left = 1
@@ -464,6 +471,33 @@ layout_mode = 2
 custom_minimum_size = Vector2(22, 88)
 
 [node name="HuntingCaption" type="Label" parent="SkillsBox/SkillsBoxMargin/SkillsBoxContent/SkillsRowMargin/SkillsRow/HuntingColumn/HuntingCaptionWrapper"]
+layout_mode = 0
+offset_left = -29.0
+offset_top = 34.0
+offset_right = 51.0
+offset_bottom = 54.0
+pivot_offset = Vector2(40, 10)
+rotation_degrees = -90.0
+theme_override_font_sizes/font_size = 9
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="CraftingColumn" type="VBoxContainer" parent="SkillsBox/SkillsBoxMargin/SkillsBoxContent/SkillsRowMargin/SkillsRow"]
+layout_mode = 2
+
+[node name="CraftingBar" type="ProgressBar" parent="SkillsBox/SkillsBoxMargin/SkillsBoxContent/SkillsRowMargin/SkillsRow/CraftingColumn"]
+layout_mode = 2
+custom_minimum_size = Vector2(20, 70)
+fill_mode = 3
+theme_override_styles/background = SubResource("StyleBoxFlat_stamina_bg")
+theme_override_styles/fill = SubResource("StyleBoxFlat_crafting_fill")
+show_percentage = false
+
+[node name="CraftingCaptionWrapper" type="Control" parent="SkillsBox/SkillsBoxMargin/SkillsBoxContent/SkillsRowMargin/SkillsRow/CraftingColumn"]
+layout_mode = 2
+custom_minimum_size = Vector2(22, 88)
+
+[node name="CraftingCaption" type="Label" parent="SkillsBox/SkillsBoxMargin/SkillsBoxContent/SkillsRowMargin/SkillsRow/CraftingColumn/CraftingCaptionWrapper"]
 layout_mode = 0
 offset_left = -29.0
 offset_top = 34.0

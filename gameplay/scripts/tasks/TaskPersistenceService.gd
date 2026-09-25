@@ -138,7 +138,7 @@ static func deserialize_task(data: Dictionary, macro_state: MacroCellState, worl
 			continue
 		# Bersaglio non risolvibile (Build/SetupSite/Clear): scarta l'intera Task — vedi il commento sul
 		# valore di ritorno sopra.
-		if (step is BuildAction or step is SetupSiteAction or step is ClearAction) and step.get("target_building") == null:
+		if (step is BuildAction or step is SetupSiteAction or step is ClearAction or step is ProduceAction) and step.get("target_building") == null:
 			push_warning("TaskPersistenceService: task '%s' scartata al caricamento — l'edificio target dello step %d non esiste più." % [
 				String(data.get("task_name", "")), i
 			])
@@ -207,6 +207,10 @@ static func _action_type_for_step(step: Action) -> int:
 	# "temporaneamente" scoperta come accadde per SETUP_SITE al suo debutto).
 	if step is BuildAction:
 		return TaskTypes.ActionType.BUILD
+	# PRODUCE (2026-09-23, richiesta utente — ProduceAction), aggiunta insieme al proprio case in
+	# _build_step sotto.
+	if step is ProduceAction:
+		return TaskTypes.ActionType.PRODUCE
 	# LOOK_AROUND (2026-09-12, richiesta utente — Wander Task, aggiunta insieme al proprio case in
 	# _build_step sotto, stesso schema di BUILD sopra: mai lasciata "temporaneamente" scoperta).
 	if step is LookAroundAction:
@@ -327,6 +331,22 @@ static func _build_step(action_type: int, step_data: Dictionary, macro_state: Ma
 				build_target_building,
 				float(step_data.get("skill_multiplier", 1.0)),
 				float(step_data.get("tool_multiplier", 1.0))
+			)
+		TaskTypes.ActionType.PRODUCE:
+			# 4 argomenti (target_building, resource_name, skill_multiplier, tool_multiplier), stesso
+			# schema di BUILD sopra (2026-09-23, ProduceAction). Nessun progresso da ripristinare qui:
+			# labor_accumulated vive su Building.production_progress, già ricaricato da GameLoadService.
+			var produce_target_building: Building = null
+			if step_data.has("target_building_id"):
+				produce_target_building = _find_building_by_id(world, int(step_data["target_building_id"]))
+			# "quantity" (2026-09-24) default 1 per i save precedenti; produced_count arriva da
+			# ProduceAction.load_save_data.
+			step = ProduceAction.new(
+				produce_target_building,
+				String(step_data.get("resource_name", "")),
+				float(step_data.get("skill_multiplier", 1.0)),
+				float(step_data.get("tool_multiplier", 1.0)),
+				int(step_data.get("quantity", 1))
 			)
 		TaskTypes.ActionType.LOOK_AROUND:
 			# Nessun argomento — LookAroundAction._init non prende parametri (2026-09-12, richiesta

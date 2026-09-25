@@ -108,11 +108,15 @@ building_hut,Capanna
 building_pebble_circle,Cerchio di sassolini
 building_deposit_site,Sito di deposito
 building_stick_tent,Tenda di rami
+building_campfire,Focolare
+building_toolmaker_hut,Capanna dell'attrezzista
 building_dirt_ground,Terra battuta
 build_bar_pebble_circle_tooltip,Cerchio di sassolini
 build_bar_pebble_circle_disabled_tooltip,Non costruibile: esiste già un centro villaggio
 build_bar_deposit_site_tooltip,Sito di deposito
 build_bar_stick_tent_tooltip,Tenda di rami
+build_bar_campfire_tooltip,Focolare
+build_bar_toolmaker_hut_tooltip,Capanna dell'attrezzista
 build_bar_dirt_ground_tooltip,Terra battuta
 build_bar_requires_idea_tooltip,Richiede: {idea}
 build_bar_demolish_tooltip,Demolisci
@@ -171,6 +175,7 @@ task_haul_resource_name,Raccolta
 task_haul_resource_step_walk,Andando a raccogliere
 task_haul_resource_step_pickup,Raccogliendo
 task_transport_name,Trasporto
+task_build_name,Costruzione
 task_transport_step_walk_to_source,Andando a prelevare
 task_transport_step_retrieve,Prelevando
 task_transport_step_walk_to_destination,Andando a consegnare
@@ -181,6 +186,10 @@ task_leisure_restock_step_restock,Rifornendo le provviste
 task_emergency_restock_name,Rifornimento urgente
 transport_dialog_title,Trasporta risorsa
 transport_dialog_message,Scegli cosa prelevare da {building}:
+transport_dialog_group_products,Prodotti
+transport_dialog_group_delivered,Materiali consegnati
+transport_dialog_take_all_products,Prendi tutti i prodotti ({quantity})
+transport_all_products_activity,tutti i prodotti
 transport_dialog_quantity_label,Quantità:
 transport_dialog_confirm,Conferma
 transport_dialog_cancel,Annulla
@@ -193,6 +202,10 @@ pickup_choice_category_medicinal,Medicinali
 pickup_choice_all_food,Tutto il cibo
 pickup_choice_all_raw_material,Tutti i materiali
 pickup_choice_all_medicinal,Tutti i medicinali
+pickup_choice_category_semi_finished,Semilavorati
+pickup_choice_category_tool,Strumenti
+pickup_choice_all_semi_finished,Tutti i semilavorati
+pickup_choice_all_tool,Tutti gli strumenti
 carried_resource_tooltip_pebble,Sassi
 carried_resource_tooltip_stick,Rametti
 carried_resource_tooltip_plant_fiber,Fibra vegetale
@@ -203,6 +216,9 @@ carried_resource_tooltip_mushroom,Funghi
 carried_resource_tooltip_eggs,Uova
 carried_resource_tooltip_wild_vegetables,Verdure selvatiche
 carried_resource_tooltip_medicinal_herbs,Erbe medicinali
+carried_resource_tooltip_fiber_rope,Corda di fibre
+carried_resource_tooltip_wooden_spear,Lancia di legno
+carried_resource_tooltip_stone_knife,Coltello di pietra
 microcell_inspection_title,Microcella ({x}; {y})
 microcell_inspection_not_visible,Cella non esplorata o non visibile.
 microcell_inspection_only_grass,Contiene solo erba.
@@ -235,6 +251,7 @@ skill_transporter_label,Trasportatore
 skill_gathering_label,Raccolta
 skill_cognition_label,Cognizione
 skill_hunting_label,Caccia
+skill_crafting_label,Artigianato
 individual_id_label,ID: {id} (Folk {folk}, Gruppo {group})
 individual_mother_id_label,ID Madre: {id}
 individual_father_id_label,ID Padre: {id}
@@ -272,6 +289,8 @@ building_settings_empty_all_button,Svuota tutto
 category_name_food,Cibo
 category_name_raw_material,Materiali grezzi
 category_name_medicinal,Medicinali
+category_name_semi_finished,Semilavorati
+category_name_tool,Strumenti
 help_building_materials_menu_link,Costruzioni e materiali
 help_building_materials_title,Costruzioni e materiali
 help_building_materials_setup_vs_construction,"Costruire un edificio richiede materiale in due fasi distinte: prima l'allestimento del cantiere (una quantità fissa di legnetti per ogni microcella occupata dall'edificio), poi la costruzione vera e propria, che in futuro richiederà i propri materiali."
@@ -288,3 +307,22 @@ transport_selection_banner_text,"🚚 Trasporto: seleziona l'edificio di destina
 debug_idle_fallback_button_tooltip,Attiva/disattiva l'assegnazione automatica di task perditempo (Wander/Play/Leisure Rest) agli individui liberi
 debug_idle_fallback_on,Perditempo: ON
 debug_idle_fallback_off,Perditempo: OFF
+building_awaiting_material_production_caption,Per produrre {resource} servono:
+building_awaiting_fuel_production_label,"Combustibile mancante: {amount} ({fuels})"
+building_production_suspended_label,"Produzione sospesa: {resource}, {percent}% completata"
+building_delivered_materials_caption,Materiali di partenza:
+building_production_in_progress_label,In costruzione: {items}
+building_production_in_progress_none,In costruzione: nulla
+task_produce_name,Produzione
+task_produce_step_walk,Andando alla postazione di lavoro
+task_produce_step_produce,Producendo
+building_output_buffer_caption,Prodotti finiti: {used}/{capacity}
+building_output_buffer_full,Prodotti finiti pieni: ritirali per continuare a produrre
+building_production_recipes_caption,Produzione:
+produce_recipe_button,Produci {resource}
+produce_recipe_disabled_busy,"Postazione già impegnata: produzione assegnata a {workers}"
+produce_recipe_disabled_output_full,Prodotti finiti pieni: ritirali prima di avviare una nuova produzione
+produce_quantity_label,Quantità:
+produce_quantity_tooltip,Pezzi da produrre con questo ordine (massimo {max})
+produce_assign_banner_text,⚒️ Produci {resource}: clicca un individuo (Esc per annullare)
+task_produce_activity,Produzione: {resource}

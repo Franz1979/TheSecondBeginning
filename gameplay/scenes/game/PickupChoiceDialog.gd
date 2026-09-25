@@ -52,6 +52,8 @@ const CATEGORY_TEXT_KEYS := {
 	SecondaryResourceTypes.Category.FOOD: ["pickup_choice_category_food", "pickup_choice_all_food"],
 	SecondaryResourceTypes.Category.RAW_MATERIAL: ["pickup_choice_category_raw_material", "pickup_choice_all_raw_material"],
 	SecondaryResourceTypes.Category.MEDICINAL: ["pickup_choice_category_medicinal", "pickup_choice_all_medicinal"],
+	SecondaryResourceTypes.Category.SEMI_FINISHED: ["pickup_choice_category_semi_finished", "pickup_choice_all_semi_finished"],
+	SecondaryResourceTypes.Category.TOOL: ["pickup_choice_category_tool", "pickup_choice_all_tool"],
 }
 
 const INDENT_PER_LEVEL: float = 16.0

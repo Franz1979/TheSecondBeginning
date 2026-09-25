@@ -623,6 +623,7 @@ func _ready() -> void:
 	# trasportare resta un'azione rapida durante il gioco in corso, a differenza degli altri pannelli
 	# (idea/statistiche/opzioni/conferma), pensati per essere consultati con calma a tempo fermo.
 	transport_source_dialog.resource_chosen.connect(_on_transport_source_resource_chosen)
+	building_info_panel.produce_requested.connect(_enter_produce_assign_mode)
 	pickup_choice_dialog.choice_made.connect(_on_pickup_choice_made)
 	# Demolisci (2026-09-12, richiesta utente) — main_row.action_pressed, NON submenu_row (quello
 	# resta per i tipi edificio, ascoltato sopra da _on_build_submenu_action_pressed): BuildBar._on_
@@ -1232,6 +1233,11 @@ func _unhandled_input(event: InputEvent) -> void:
 			if event.button_index == MOUSE_BUTTON_LEFT:
 				_try_pick_demolish_target(event)
 				return
+
+	# Modalità "assegna produzione" (2026-09-23, richiesta utente) — stessa priorità dei due blocchi
+	# sopra: finché è attiva, i click servono solo a scegliere l'individuo (o ad annullare).
+	if _produce_assign_building != null and _handle_produce_assign_input(event):
+		return
 
 	# Ispezione microcella con DOPPIO click sinistro (2026-09-16, richiesta utente) — SEMPRE
 	# intercettato qui, PRIMA della cascata di selezione normale sotto (STESSO principio/STESSA
@@ -2047,7 +2053,16 @@ func _assign_transport_task(
 	if individual == null or not individual.is_selected:
 		return
 	var destination_macro_coords := Vector2i(destination_building.macro_x, destination_building.macro_y)
-	var trip_target: int = _transport_trip_target(destination_building, resource_name, quantity)
+	var trip_target: int = 0
+	# "Prendi tutti i prodotti" (2026-09-24): nessun fabbisogno per-risorsa da confrontare con la
+	# destinazione — si prende quanto entra nello zaino (RetrieveAction.ALL_PRODUCTS), e all'Unload
+	# quanto la destinazione non accetta segue il normale giro di ricerca magazzino. Obiettivo = tutto
+	# il buffer di uscita della sorgente; 0 se nel frattempo si è svuotato.
+	if resource_name == RetrieveAction.ALL_PRODUCTS:
+		for output_name in source_building.production_output.keys():
+			trip_target += int(source_building.production_output[output_name])
+	else:
+		trip_target = _transport_trip_target(destination_building, resource_name, quantity)
 	if trip_target <= 0:
 		if live_cells.has(destination_macro_coords):
 			_spawn_command_blink_effect(
@@ -2096,7 +2111,9 @@ func _transport_trip_target(destination_building: Building, resource_name: Strin
 		return 0
 	if destination_building.is_demolished:
 		return 0
-	if not destination_building.is_complete:
+	# Produzione in corso (2026-09-23, richiesta utente — Produce Task): un input della ricetta entra
+	# solo fino alla quantità esatta mancante, stesso tetto di un cantiere.
+	if not destination_building.is_complete or ProductionService.is_production_demand(destination_building, resource_name):
 		return mini(remaining_quantity, BuildingStorageService.get_max_depositable(destination_building, resource_name))
 	return remaining_quantity
 
@@ -2160,8 +2177,8 @@ func _on_transport_delivered(owner: HumanIndividual, context: Dictionary, delive
 	var destination_building := _find_building_by_id(int(context.get("transport_destination_id", -1)))
 	if source_building == null or destination_building == null or source_building.is_demolished:
 		return
-	var source_entry: Dictionary = source_building.stored_resources.get(resource_name, {})
-	if int(source_entry.get("quantity", 0)) <= 0:
+	# Include il buffer di uscita della produzione (2026-09-23): è una normale sorgente di Retrieve.
+	if BuildingStorageService.get_available_quantity(source_building, resource_name) <= 0:
 		return
 	var trip_target: int = _transport_trip_target(destination_building, resource_name, remaining)
 	if trip_target <= 0:
@@ -2244,11 +2261,16 @@ func _try_assign_transport_command_on_right_click(event: InputEvent) -> bool:
 		# [String, Dictionary{"quantity":int,"decay_fraction":float}]), stesso "spacchettamento" già
 		# fatto da RetrieveAction.activate()/BuildingStorageService.withdraw per la stessa struttura.
 		var available_quantities: Dictionary = {}
-		for resource_name: String in hit_building.stored_resources.keys():
-			var entry: Dictionary = hit_building.stored_resources[resource_name]
-			var quantity: int = int(entry.get("quantity", 0))
+		# stored_resources più il buffer di uscita della produzione (2026-09-23): il prodotto di una
+		# workstation si ritira con la normale Transport.
+		var source_names: Array = hit_building.stored_resources.keys()
+		for output_name in hit_building.production_output.keys():
+			if not source_names.has(output_name):
+				source_names.append(output_name)
+		for resource_name in source_names:
+			var quantity: int = BuildingStorageService.get_available_quantity(hit_building, String(resource_name))
 			if quantity > 0:
-				available_quantities[resource_name] = quantity
+				available_quantities[String(resource_name)] = quantity
 
 		# Nessuna risorsa da prelevare (2026-09-20): il comando non e' piu' di debug, quindi il click destro su un
 		# edificio vuoto NON viene inghiottito (return false: prosegue il movimento normale). Stessa scelta per
@@ -2260,10 +2282,28 @@ func _try_assign_transport_command_on_right_click(event: InputEvent) -> bool:
 
 		_transport_pending_source_building = hit_building
 		var display_name: String = tr(hit_building.rules.building_name) if hit_building.rules != null else hit_building.building_type_name
+		var dialog_title: String = tr("transport_dialog_title")
+		var dialog_message: String = tr("transport_dialog_message").format({"building": display_name})
+		# Workstation (2026-09-24, richiesta utente): due gruppi separati — "Prodotti" (buffer di uscita,
+		# con in cima "Prendi tutti i prodotti") e "Materiali consegnati" (stored_resources: materiale e
+		# combustibile portati per la produzione). Gli altri edifici restano con la lista unica.
+		if hit_building.rules != null and hit_building.rules.is_workstation:
+			var product_quantities: Dictionary = {}
+			for output_name in hit_building.production_output.keys():
+				var output_quantity: int = int(hit_building.production_output[output_name])
+				if output_quantity > 0:
+					product_quantities[String(output_name)] = output_quantity
+			var delivered_quantities: Dictionary = {}
+			for stored_name in hit_building.stored_resources.keys():
+				var stored_quantity: int = int(hit_building.stored_resources[stored_name].get("quantity", 0))
+				if stored_quantity > 0:
+					delivered_quantities[String(stored_name)] = stored_quantity
+			transport_source_dialog.open_grouped_dialog(dialog_title, dialog_message, product_quantities, delivered_quantities, UserOptions.repeat_default)
+			return true
 		# open_dialog (2026-09-17) — titolo/messaggio ora risolti QUI (tr()+format()), non più dentro
 		# OptionChoiceDialog stesso — vedi quel file per il perché (generalizzazione, riuso anche dal
 		# comando di raccolta manuale sotto).
-		transport_source_dialog.open_dialog(tr("transport_dialog_title"), tr("transport_dialog_message").format({"building": display_name}), available_quantities, UserOptions.repeat_default)
+		transport_source_dialog.open_dialog(dialog_title, dialog_message, available_quantities, UserOptions.repeat_default)
 		return true
 
 	if hit_building == _transport_source_building:
@@ -2731,7 +2771,7 @@ func _refresh_building_panel() -> void:
 	if building == null:
 		_clear_building_selection()
 		return
-	building_info_panel.show_building(building, _resolve_building_residents_display_data(building), _resolve_assigned_builder_names(building))
+	building_info_panel.show_building(building, _resolve_building_residents_display_data(building), _resolve_assigned_builder_names(building), _resolve_production_claimant_names(building), _resolve_production_claimed_recipes(building))
 	# Titolo (Step 6, richiesta utente 2026-09-04) — stessa formula già in BuildingInfoPanel.
 	var type_name: String = tr(building.rules.building_name) if building.rules != null else building.building_type_name
 	game_info_tabs.set_selection_title(tr("selection_title_type").format({"type": type_name}))
@@ -2794,7 +2834,7 @@ func _on_empty_all_requested(building: Building) -> void:
 	if building == null:
 		return
 	building.stored_resources.clear()
-	building_info_panel.show_building(building, _resolve_building_residents_display_data(building), _resolve_assigned_builder_names(building))
+	building_info_panel.show_building(building, _resolve_building_residents_display_data(building), _resolve_assigned_builder_names(building), _resolve_production_claimant_names(building), _resolve_production_claimed_recipes(building))
 	var macro_coords := Vector2i(building.macro_x, building.macro_y)
 	if live_cells.has(macro_coords):
 		_refresh_building_visuals(live_cells[macro_coords])
@@ -4017,6 +4057,53 @@ func _resolve_assigned_builder_names(target_building: Building) -> Array[String]
 	return names
 
 
+# true se `task` è una Produce Task NON conclusa su `target_building` (2026-09-24, richiesta utente —
+# blocco ricette) — stesso schema di _task_claims_building, per la Produce.
+func _task_claims_production(task: Task, target_building: Building) -> bool:
+	if task == null or task.task_name != "task_produce_name" or task.is_finished():
+		return false
+	for step in task.steps:
+		if "target_building" in step and step.target_building == target_building:
+			return true
+	return false
+
+
+# "Nome (#id)" di chi ha una Produce Task su `target_building` (2026-09-24, richiesta utente —
+# l'edificio deve sapere di essere già impegnato, anche se l'individuo non è ancora arrivato) —
+# STESSO scan di _resolve_assigned_builder_names (current_task attiva + task_queue sospesa). Derivato
+# dalle Task e non da un flag su Building: un flag andrebbe ripulito a mano su annullamento (H),
+# morte o rifiuto, e production_progress resta volutamente sull'edificio anche dopo un annullamento
+# (produzione ripristinabile), quindi da solo non dice se qualcuno ci sta lavorando. Vuoto = libero.
+func _resolve_production_claimant_names(target_building: Building) -> Array[String]:
+	var names: Array[String] = []
+	for individual in human_individuals:
+		if _task_claims_production(individual.current_task, target_building):
+			names.append("%s (#%d)" % [individual.name, individual.id])
+			continue
+		for queued_task in individual.task_queue:
+			if _task_claims_production(queued_task, target_building):
+				names.append("%s (#%d)" % [individual.name, individual.id])
+				break
+	return names
+
+
+# Ricette con almeno una Produce Task NON conclusa (attiva o in coda) su `target_building` (2026-09-24,
+# richiesta utente — un record per ricetta): i record di queste ricette non vanno mai liberati da
+# ProductionService.make_room_for. Stesso scan di _resolve_production_claimant_names.
+func _resolve_production_claimed_recipes(target_building: Building) -> Array[String]:
+	var recipes: Array[String] = []
+	for individual in human_individuals:
+		var tasks: Array = [individual.current_task]
+		tasks.append_array(individual.task_queue)
+		for task in tasks:
+			if not _task_claims_production(task, target_building):
+				continue
+			for step in task.steps:
+				if step is ProduceAction and step.target_building == target_building and not recipes.has(step.resource_name):
+					recipes.append(step.resource_name)
+	return recipes
+
+
 # Comando "vai e costruisci" via DESTRO su un edificio non ancora completo (2026-09-10, richiesta
 # utente — prima porzione Build Task; RISCRITTA 2026-09-12, richiesta utente — sostituzione di
 # _pending_build_tasks con un percorso generico "reassignable target", vedi
@@ -4151,6 +4238,143 @@ func _try_assign_build_command_on_right_click(event: InputEvent) -> bool:
 	if DebugLogging.ENABLED and DebugLogging.SHOW_TRANSPORT_BUILD_LOGS:
 		print("[BUILD] Task di costruzione assegnata a #%d %s per l'edificio #%d." % [individual.id, individual.name, building_id])
 	return true
+
+
+# Modalità "assegna produzione" (2026-09-23, richiesta utente — comando dal pannello): un pulsante
+# ricetta nel pannello della workstation (BuildingInfoPanel.produce_requested) la attiva; il click
+# sinistro successivo su un individuo gli assegna la Produce Task. Escape, click destro o click
+# sinistro a vuoto la annullano. Indicatore: banner giallo in alto (stesso stile di quello della
+# Transport) e cursore a croce. _produce_assign_building != null = modalità attiva.
+var _produce_assign_building: Building = null
+var _produce_assign_resource_name: String = ""
+# Pezzi ordinati dal selettore del pannello (2026-09-24, richiesta utente).
+var _produce_assign_quantity: int = 1
+var produce_assign_banner: PanelContainer
+var produce_assign_banner_label: Label
+
+const PRODUCE_TASK_DEFINITION_PATH := "res://gameplay/scripts/tasks/definitions/produce.tres"
+
+
+# true se l'edificio ha già tante Produce Task assegnate quante ne ammette (BuildingRules.
+# production_queue_slots, 2026-09-24): stessa regola usata dal pannello per spegnere le ricette.
+func _is_production_queue_full(building: Building) -> bool:
+	return ProductionService.is_production_queue_full(building, _resolve_production_claimant_names(building).size())
+
+
+# Testo "Corda di fibre" / "Corda di fibre ×3" per banner e log dell'ordine di produzione (2026-09-24).
+func _format_production_order(resource_name: String, quantity: int) -> String:
+	var display_name := IconRegistry.get_resource_display_name(resource_name)
+	return display_name if quantity <= 1 else "%s ×%d" % [display_name, quantity]
+
+
+func _enter_produce_assign_mode(building: Building, resource_name: String, quantity: int = 1) -> void:
+	if building == null or not ProductionService.can_produce_at(building, resource_name):
+		return
+	# Buffer di uscita pieno (2026-09-23, richiesta utente): nessuna nuova assegnazione. Il pulsante è
+	# già spento dal pannello, ma il pannello si ricalcola solo a selezione/giorno: se era rimasto
+	# acceso (buffer riempito nel frattempo) lo si aggiorna qui.
+	# Edificio già impegnato da un'altra Produce Task (2026-09-24, richiesta utente): stesso principio.
+	if not ProductionService.has_output_room(building, resource_name) or _is_production_queue_full(building):
+		_refresh_selected_building_panel()
+		return
+	_produce_assign_building = building
+	_produce_assign_resource_name = resource_name
+	_produce_assign_quantity = clampi(quantity, 1, ProductionService.get_max_order_quantity(building))
+	if produce_assign_banner_label != null:
+		produce_assign_banner_label.text = tr("produce_assign_banner_text").format({
+			"resource": _format_production_order(resource_name, _produce_assign_quantity),
+		})
+	if produce_assign_banner != null:
+		produce_assign_banner.visible = true
+	Input.set_default_cursor_shape(Input.CURSOR_CROSS)
+
+
+func _exit_produce_assign_mode() -> void:
+	_produce_assign_building = null
+	_produce_assign_resource_name = ""
+	_produce_assign_quantity = 1
+	if produce_assign_banner != null:
+		produce_assign_banner.visible = false
+	Input.set_default_cursor_shape(Input.CURSOR_ARROW)
+
+
+# Consuma l'evento mentre la modalità è attiva (chiamata SOLO da _unhandled_input). Ritorna true se
+# l'evento è stato consumato. Sinistro su un individuo = assegna ed esce; sinistro a vuoto, destro o
+# Escape = esce senza assegnare. Ogni altro evento (movimento mouse, tasti camera) passa oltre.
+func _handle_produce_assign_input(event: InputEvent) -> bool:
+	if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_ESCAPE:
+		_exit_produce_assign_mode()
+		return true
+	if not (event is InputEventMouseButton) or not event.pressed:
+		return false
+	if event.button_index == MOUSE_BUTTON_LEFT:
+		var hit_individual: HumanIndividual = null
+		if live_cells.has(center_macro_coords):
+			hit_individual = human_individual_selector_controller.try_select(
+				event, live_cells[center_macro_coords].renderer, human_individuals, center_macro_coords
+			)
+		var target_building := _produce_assign_building
+		var resource_name := _produce_assign_resource_name
+		var quantity := _produce_assign_quantity
+		_exit_produce_assign_mode()
+		if hit_individual != null:
+			_assign_produce_task(hit_individual, target_building, resource_name, quantity)
+		return true
+	if event.button_index == MOUSE_BUTTON_RIGHT:
+		_exit_produce_assign_mode()
+		return true
+	return false
+
+
+# Costruisce e assegna la Produce Task [Walk → Produce] a `worker` (2026-09-23). Stesso esito visivo
+# della Build: icona di comando se assegnata (o accodata), X se rifiutata.
+func _assign_produce_task(worker: HumanIndividual, target_building: Building, resource_name: String, quantity: int = 1) -> void:
+	if worker == null or target_building == null or not ProductionService.can_produce_at(target_building, resource_name):
+		return
+	if not ProductionService.has_output_room(target_building, resource_name) or _is_production_queue_full(target_building):
+		return
+	quantity = clampi(quantity, 1, ProductionService.get_max_order_quantity(target_building))
+	var definition := load(PRODUCE_TASK_DEFINITION_PATH) as TaskDefinition
+	if definition == null:
+		return
+
+	# Stessa formula cross-macrocella di _resolve_transport_context, più il jitter interno alla cella
+	# di Building.get_resumable_task_context (lavoratori diversi non si fermano nello stesso punto).
+	var macro_offset: Vector2 = Vector2(Vector2i(target_building.macro_x, target_building.macro_y) - worker.home_macro_coords) * World.WIDTH
+	var jitter := Vector2(randf_range(0.15, 0.85), randf_range(0.15, 0.85))
+	var target_position: Vector2 = Vector2(target_building.micro_x, target_building.micro_y) + jitter + macro_offset
+	var task := TaskFactory.build_task(definition, {
+		"target_position": target_position,
+		"target_building": target_building,
+		"produce_resource_name": resource_name,
+		"produce_quantity": quantity,
+	})
+	task.debug_target_key = "production:%d" % target_building.id
+	# Nome del prodotto per il pannello individuo (Task.get_activity_description): chiave NON consumata
+	# da TaskFactory, resta in task.context per tutta la vita della Task (e nel salvataggio).
+	task.context["production_resource_name"] = resource_name
+	task.context["production_quantity"] = quantity
+	worker.assign_task(task, _resolve_age_band(worker))
+
+	var building_macro_coords := Vector2i(target_building.macro_x, target_building.macro_y)
+	var assigned := worker.current_task == task or worker.task_queue.has(task)
+	# Record di produzione riservato SUBITO, già all'assegnazione (2026-09-24, richiesta utente — un
+	# record per ricetta): così il posto è suo anche mentre l'individuo è ancora in cammino. Se
+	# l'edificio ha tutti i record occupati, make_room_for libera quelli di ricette che nessuna Produce
+	# Task sta più lavorando (resti di Task annullate); mai quelli ancora assegnati. Se non si libera
+	# nulla, ProduceAction riproverà da sé all'arrivo e ogni giorno.
+	if assigned and ProductionService.make_room_for(target_building, resource_name, _resolve_production_claimed_recipes(target_building)):
+		ProductionService.start_production(target_building, resource_name)
+	if live_cells.has(building_macro_coords):
+		_spawn_command_blink_effect(
+			live_cells[building_macro_coords],
+			Vector2i(target_building.micro_x, target_building.micro_y),
+			IconRegistry.get_command_icon("produce" if assigned else "task_rejected")
+		)
+	# Pulsanti ricetta spenti subito (edificio ora impegnato), senza aspettare il refresh giornaliero.
+	_refresh_selected_building_panel()
+	if assigned and DebugLogging.ENABLED and DebugLogging.SHOW_TRANSPORT_BUILD_LOGS:
+		print("[PRODUCE] Task di produzione '%s' x%d assegnata a #%d %s presso l'edificio #%d." % [resource_name, quantity, worker.id, worker.name, target_building.id])
 
 
 # ============================================================================================
@@ -4494,7 +4718,7 @@ func _update_individual_panel_content(target: HumanIndividual) -> void:
 		target.max_loyalty, target.current_loyalty,
 		target.skill_leadership, target.skill_builder, target.skill_management,
 		target.skill_transporter, target.skill_gathering, target.skill_cognition,
-		target.skill_hunting,
+		target.skill_hunting, target.skill_crafting,
 		queued_task_descriptions
 	)
 	# Titolo header consolidato (2026-09-13, richiesta utente — "perché la riga del center è
@@ -4552,7 +4776,14 @@ func _compute_housing_capacity() -> int:
 # sicurezza periodica — STESSO schema di _refresh_population_panel, riusato per coerenza invece di
 # inventare un meccanismo diverso.
 func _refresh_buildings_panel() -> void:
-	var buildings: Array[Building] = macro_world.buildings if macro_world != null else []
+	# Esclusi gli edifici di categoria MOVEMENT (2026-09-24, richiesta utente — es. terra battuta):
+	# sono superfici posate a tappeto, spesso a decine, e affollavano l'elenco senza informazione utile.
+	var buildings: Array[Building] = []
+	if macro_world != null:
+		for building in macro_world.buildings:
+			if building.rules != null and building.rules.category == BuildingTypes.Category.MOVEMENT:
+				continue
+			buildings.append(building)
 	buildings_info_panel.show_buildings(buildings)
 
 
@@ -7000,6 +7231,13 @@ func _building_type_name_for_action(action_id: StringName) -> String:
 		# cablata in BuildBar._ready.
 		&"build_dirt_ground":
 			return "dirt_ground"
+		# Focolare (2026-09-23, richiesta utente) — azione "build_campfire" cablata in BuildBar._ready.
+		&"build_campfire":
+			return "campfire"
+		# Capanna dell'attrezzista (2026-09-24, richiesta utente) — azione "build_toolmaker_hut"
+		# cablata in BuildBar._ready.
+		&"build_toolmaker_hut":
+			return "toolmaker_hut"
 		_:
 			return ""
 
@@ -7107,6 +7345,9 @@ func _demolish_building(building: Building) -> void:
 	# "la merce scartata sparisce" già applicato ad haul_resource, vedi HumanIndividual.
 	# discard_carried_resource).
 	building.stored_resources.clear()
+	# Buffer di uscita e produzione in corso (2026-09-23): persi insieme allo storage.
+	building.production_output.clear()
+	building.production_progress = {}
 
 	# 4) Libera lo spazio dedicato SOLO se era stato davvero riservato — is_complete=true copre sia
 	# il percorso Build Task (ClearAction.on_complete lo riserva, poi BuildAction completa) sia il
@@ -7516,8 +7757,10 @@ func _spawn_build_site_placeholders(building: Building) -> void:
 	# validato `cell` sopra, prima di spawnare i placeholder: refresh esplicito, non implicito nel
 	# prossimo redraw casuale, così il cartello "work in progress" sparisce nello STESSO frame in
 	# cui compaiono i 4 rametti, vedi Building.site_setup_complete/MicroCellRenderer._draw_buildings/
-	# _draw_construction_wip_marker.
-	building.site_setup_complete = true
+	# _draw_construction_wip_marker. Solo visivo (2026-09-24, bugfix "cantiere bloccato in
+	# allestimento"): site_setup_complete è già stato impostato da SetupSiteAction.on_complete prima
+	# del segnale — se questo gestore non gira (cella non viva), i rametti ricompaiono comunque
+	# all'attivazione della cella (_restore_build_site_placeholders_for_cell).
 	_refresh_building_visuals(cell)
 	_create_build_site_placeholder_nodes(building, cell)
 	if DebugLogging.ENABLED and DebugLogging.SHOW_TRANSPORT_BUILD_LOGS:
@@ -7682,6 +7925,11 @@ func _reconnect_loaded_task_signals() -> void:
 		# per un individuo senza current_task.
 		for queued_task in member.task_queue:
 			for queued_step in queued_task.steps:
+				# Build Task sospese in coda (2026-09-24, bugfix "cantiere bloccato in allestimento"):
+				# stessi segnali SetupSite/Clear/Build di current_task sotto — senza, i gestori visivi
+				# (rametti, rimozione placeholder, sprite finale) non scattavano mai per una Build ripresa
+				# dalla coda dopo un reload.
+				_reconnect_build_task_signals(queued_step)
 				if queued_step is PickUpAction:
 					_reconnect_pickup_action_signals(queued_step as PickUpAction)
 				elif queued_step is UnloadAction:
@@ -8018,9 +8266,9 @@ func _buildings_for_cell(cell: LiveMacroCell) -> Array:
 	var result: Array = []
 	if macro_world == null:
 		return result
-	# Tile di terra battuta COMPLETI di tutto il mondo (chiave = macro + micro), costruita al primo
-	# dirt_ground incontrato: serve a calcolare la maschera dei vicini anche oltre il confine di
-	# macrocella (vedi _dirt_ground_neighbor_mask).
+	# Microcelle occupate da un edificio COMPLETO in tutto il mondo (chiave = macro + micro), costruita
+	# al primo tile con fondo di terra incontrato: serve a calcolare la maschera dei vicini anche oltre
+	# il confine di macrocella (vedi _dirt_ground_neighbor_mask).
 	var dirt_tiles: Dictionary = {}
 	var dirt_tiles_built := false
 	for building in macro_world.buildings:
@@ -8050,10 +8298,13 @@ func _buildings_for_cell(cell: LiveMacroCell) -> Array:
 			if building.building_type_name == "deposit_site":
 				entry["slot_breakdown"] = BuildingStorageService.get_slot_breakdown(building)
 			# Terra battuta (2026-09-19, richiesta utente): maschera dei lati che confinano con un altro
-			# tile di terra battuta completo (bit 1<<lato, ordine N,E,S,W) — il renderer lascia dritti quei
-			# lati (tile combacianti) e irregolari gli altri. Calcolata su macro_world.buildings, quindi
-			# vale anche per i vicini in un'altra macrocella, viva o no.
-			if building.building_type_name == "dirt_ground":
+			# edificio completo (bit 1<<lato, ordine N,E,S,W) — il renderer lascia dritti quei lati
+			# (bordo continuo) e irregolari gli altri, verso le celle senza nulla. Calcolata su
+			# macro_world.buildings, quindi vale anche per i vicini in un'altra macrocella, viva o no.
+			# Dal 2026-09-24 (richiesta utente) vale anche per il fondo di terra battuta sotto tenda,
+			# cerchio di sassolini e focolare (MicroCellRenderer.GROUND_UNDER_BUILDING_TYPES), e il vicino
+			# che rende dritto un lato è QUALUNQUE edificio completo, non più solo la terra battuta.
+			if building.building_type_name == "dirt_ground" or MicroCellRenderer.GROUND_UNDER_BUILDING_TYPES.has(building.building_type_name):
 				if not dirt_tiles_built:
 					dirt_tiles = _collect_complete_dirt_tiles()
 					dirt_tiles_built = true
@@ -8062,13 +8313,13 @@ func _buildings_for_cell(cell: LiveMacroCell) -> Array:
 	return result
 
 
-# Insieme dei tile di terra battuta COMPLETI del mondo (2026-09-19): chiave Vector4i(macro_x, macro_y,
-# micro_x, micro_y). Un tile non ancora completo non è disegnato dal renderer, quindi non conta come
-# vicino (il lato che lo tocca resta irregolare).
+# Insieme delle microcelle occupate da un edificio COMPLETO del mondo (2026-09-19, esteso a ogni tipo
+# di edificio il 2026-09-24): chiave Vector4i(macro_x, macro_y, micro_x, micro_y). Un edificio non
+# ancora completo non conta come vicino (il lato che lo tocca resta irregolare).
 func _collect_complete_dirt_tiles() -> Dictionary:
 	var tiles: Dictionary = {}
 	for other in macro_world.buildings:
-		if other.building_type_name == "dirt_ground" and other.is_complete and not other.is_demolished:
+		if other.is_complete and not other.is_demolished:
 			tiles[Vector4i(other.macro_x, other.macro_y, other.micro_x, other.micro_y)] = true
 	return tiles
 
@@ -8097,7 +8348,7 @@ func _dirt_ground_neighbor_key(building: Building, dx: int, dy: int) -> Vector4i
 
 
 # Maschera dei lati (bit 1 << lato, lati N, E, S, W = indici 0..3, STESSO ordine di
-# MicroCellRenderer.DIRT_GROUND_SIDE_DIRECTIONS) che confinano con un tile di terra battuta completo.
+# MicroCellRenderer.DIRT_GROUND_SIDE_DIRECTIONS) che confinano con un edificio completo.
 func _dirt_ground_neighbor_mask(building: Building, dirt_tiles: Dictionary) -> int:
 	var mask: int = 0
 	var side_offsets: Array[Vector2i] = [Vector2i(0, -1), Vector2i(1, 0), Vector2i(0, 1), Vector2i(-1, 0)]
@@ -8109,10 +8360,11 @@ func _dirt_ground_neighbor_mask(building: Building, dirt_tiles: Dictionary) -> i
 
 # Rinfresca le macrocelle VIVE adiacenti a un tile di terra battuta sul bordo della propria cella
 # (2026-09-19): la maschera dei vicini dipende dai tile oltre il confine, quindi quando uno di essi
-# viene completato, piazzato o demolito il renderer della cella accanto va ridisegnato. Solo per
-# dirt_ground e solo per i tile su un bordo di macrocella — nessun costo altrove.
+# viene completato, piazzato o demolito il renderer della cella accanto va ridisegnato. Per QUALUNQUE
+# edificio dal 2026-09-24 (ogni edificio completo rende dritto il lato di un fondo di terra vicino),
+# ma solo per quelli su un bordo di macrocella — nessun costo altrove.
 func _refresh_dirt_ground_neighbor_cells(building: Building) -> void:
-	if building == null or building.building_type_name != "dirt_ground":
+	if building == null:
 		return
 	var side_offsets: Array[Vector2i] = [Vector2i(0, -1), Vector2i(1, 0), Vector2i(0, 1), Vector2i(-1, 0)]
 	for offset in side_offsets:
@@ -8273,6 +8525,18 @@ func _execute_pending_leave_action() -> void:
 # nascosto ai tre punti che cambiano _transport_source_building (vedi il commento sul campo
 # transport_selection_banner in testa al file), mai ricreato.
 func _setup_transport_selection_banner() -> void:
+	transport_selection_banner = _build_selection_banner()
+	transport_selection_banner_label = transport_selection_banner.get_child(0) as Label
+	transport_selection_banner_label.text = tr("transport_selection_banner_text")
+	# Banner della modalità "assegna produzione" (2026-09-23): stesso stile/posizione, testo impostato
+	# a ogni ingresso in modalità (dipende dalla ricetta), vedi _enter_produce_assign_mode.
+	produce_assign_banner = _build_selection_banner()
+	produce_assign_banner_label = produce_assign_banner.get_child(0) as Label
+
+
+# Banner giallo in alto al centro, nascosto, con una Label come unico figlio — estratto il 2026-09-23
+# da _setup_transport_selection_banner per riusarlo per la modalità "assegna produzione".
+func _build_selection_banner() -> PanelContainer:
 	var style := StyleBoxFlat.new()
 	style.bg_color = Color(0.85, 0.7, 0.15, 0.92)
 	style.corner_radius_top_left = 6
@@ -8284,20 +8548,20 @@ func _setup_transport_selection_banner() -> void:
 	style.content_margin_top = 6
 	style.content_margin_bottom = 6
 
-	transport_selection_banner = PanelContainer.new()
-	transport_selection_banner.add_theme_stylebox_override("panel", style)
-	transport_selection_banner.visible = false
-	transport_selection_banner.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	transport_selection_banner.set_anchors_preset(Control.PRESET_CENTER_TOP)
-	transport_selection_banner.position.y = 12
+	var banner := PanelContainer.new()
+	banner.add_theme_stylebox_override("panel", style)
+	banner.visible = false
+	banner.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	banner.set_anchors_preset(Control.PRESET_CENTER_TOP)
+	banner.position.y = 12
 
-	transport_selection_banner_label = Label.new()
-	transport_selection_banner_label.text = tr("transport_selection_banner_text")
-	transport_selection_banner_label.add_theme_font_size_override("font_size", 13)
-	transport_selection_banner_label.add_theme_color_override("font_color", Color(0.1, 0.1, 0.1, 1))
-	transport_selection_banner.add_child(transport_selection_banner_label)
+	var label := Label.new()
+	label.add_theme_font_size_override("font_size", 13)
+	label.add_theme_color_override("font_color", Color(0.1, 0.1, 0.1, 1))
+	banner.add_child(label)
 
-	$CanvasLayer.add_child(transport_selection_banner)
+	$CanvasLayer.add_child(banner)
+	return banner
 
 
 func _setup_clock() -> void:

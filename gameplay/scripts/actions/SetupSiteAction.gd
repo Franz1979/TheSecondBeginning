@@ -222,6 +222,15 @@ func on_complete(individual: Variant, context: Dictionary) -> void:
 		return
 	if target_building != null and target_building.rules != null:
 		target_building.stored_resources.erase(target_building.rules.setup_site_material_name)
+	# Fase di allestimento conclusa (2026-09-24, richiesta utente — bugfix "cantiere bloccato in
+	# allestimento"): il flag va impostato QUI, nello stesso punto in cui il materiale viene consumato.
+	# Prima lo impostava solo GameScene._spawn_build_site_placeholders, gestore GRAFICO del segnale
+	# sotto, che non sempre gira (macrocella non caricata, o segnale non riagganciato dopo un reload
+	# per una Task in coda): materiale consumato ma flag a false, e il cantiere richiedeva di nuovo il
+	# materiale di setup all'infinito senza mai accettare quelli della fase Build. Un salvataggio già
+	# in quello stato si sistema da sé al prossimo allestimento completato.
+	if target_building != null:
+		target_building.site_setup_complete = true
 	# is_awaiting_material -> false (2026-09-14, richiesta utente — bugfix: "a edificio terminato
 	# continua a uscire nell'info panel 'servono ancora 4 rametti'") — BUG CONFERMATO: questo flag
 	# diventava true quando il cantiere si bloccava (HumanIndividualActionService._resolve_material_

@@ -42,6 +42,9 @@ const RESOURCE_ICONS := {
 	"eggs": "🥚",
 	"wild_vegetables": "🥬",
 	"medicinal_herbs": "🌿",
+	# "fiber_rope" (2026-09-23, richiesta utente - corda di fibre, primo prodotto del sistema di produzione): emoji
+	# nodo provvisorio.
+	"fiber_rope": "🪢",
 }
 
 
@@ -79,6 +82,11 @@ const RESOURCE_ICON_NODES := {
 	# propria per lotto dopo pebble/stick/plant_fiber, modello stick): due funghi, cappello+gambo —
 	# vedi MushroomIcon.gd.
 	"mushroom": preload("res://simulation/scripts/ui/MushroomIcon.gd"),
+	# Primi attrezzi (2026-09-24, richiesta utente — gli emoji 🔱/🔪 leggevano come forcone e coltello
+	# moderno): bastone appuntito con punta indurita al fuoco, e scheggia di selce senza manico — vedi
+	# WoodenSpearIcon.gd/StoneKnifeIcon.gd.
+	"wooden_spear": preload("res://simulation/scripts/ui/WoodenSpearIcon.gd"),
+	"stone_knife": preload("res://simulation/scripts/ui/StoneKnifeIcon.gd"),
 }
 
 
@@ -112,6 +120,10 @@ const BUILDING_ICONS := {
 	# sé "tenda", nessun problema di leggibilità come per pebble_circle sopra: non serve un'icona
 	# disegnata a mano.
 	"stick_tent": "⛺",
+	# Focolare (2026-09-23, richiesta utente) — emoji provvisorio, già leggibile da sé.
+	"campfire": "🔥",
+	# Capanna dell'attrezzista (2026-09-24, richiesta utente) — emoji provvisorio.
+	"toolmaker_hut": "🛠️",
 }
 
 
@@ -171,6 +183,8 @@ const COMMAND_ICONS := {
 	"pickup": "✋",
 	"build": "🔨",
 	"transport": "📦",
+	# "produce" (2026-09-23, richiesta utente — Produce Task): icona provvisoria.
+	"produce": "⚒️",
 	"task_rejected": "❌",
 }
 

@@ -1,0 +1,18 @@
+[gd_resource type="Resource" script_class="SecondaryResourceRules" format=3 uid="uid://c633jwsjwb0gh"]
+
+[ext_resource type="Script" uid="uid://cu4cyua5y4n1m" path="res://simulation/scripts/core/SecondaryResourceRules.gd" id="1_wooden_spear"]
+
+[resource]
+script = ExtResource("1_wooden_spear")
+secondary_resource_name = "wooden_spear"
+calories_per_unit = 0.0
+category = 4
+generation_source = 2
+day_durability = 600
+space_per_unit = 8.0
+recipe_inputs = {
+"stick": 1
+}
+recipe_labor = 300.0
+recipe_fuel_required = 3.0
+recipe_workstation_types = Array[String](["campfire", "toolmaker_hut"])

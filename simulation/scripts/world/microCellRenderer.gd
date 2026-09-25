@@ -1112,6 +1112,9 @@ func _draw_buildings() -> void:
 		if building_type_name == "pebble_circle":
 			_draw_pebble_circle(ground)
 			continue
+		if building_type_name == "campfire":
+			_draw_campfire(ground)
+			continue
 		if building_type_name == "dirt_ground":
 			# Già disegnato da _draw_dirt_ground_tiles (una sola mesh per cella, un draw call) — qui solo lo skip, il ramo "cantiere" sopra copre i tile
 			# non ancora completi.
@@ -1131,9 +1134,13 @@ func _draw_buildings() -> void:
 		if building_type_name == "stick_tent":
 			_draw_stick_tent(ground, direction)
 			continue
+		# Capanna dell'attrezzista (2026-09-24, richiesta utente) — disegno provvisorio: stessa sagoma
+		# della capanna (porta + recinto, ruota con `direction`), riempimento più scuro e un segno
+		# "attrezzi incrociati" al centro, vedi _draw_toolmaker_hut_mark.
+		var is_toolmaker_hut: bool = building_type_name == "toolmaker_hut"
 		_draw_building_fence(ground, direction)
 		var hut_points := _building_hut_polygon(ground, direction)
-		draw_colored_polygon(hut_points, BUILDING_COLOR)
+		draw_colored_polygon(hut_points, TOOLMAKER_HUT_COLOR if is_toolmaker_hut else BUILDING_COLOR)
 		# Riempie il ritaglio della porta col colore del bordo invece di lasciarlo trasparente
 		# (richiesta utente, 2026-08-30: aperto sul terreno sotto leggeva come una sagoma a V
 		# "stile Batman", non come una porta) — stessi tre punti già calcolati per hut_points:
@@ -1145,6 +1152,25 @@ func _draw_buildings() -> void:
 		var outline_points := hut_points.duplicate()
 		outline_points.append(hut_points[0])
 		draw_polyline(outline_points, BUILDING_OUTLINE_COLOR, BUILDING_OUTLINE_WIDTH)
+		if is_toolmaker_hut:
+			_draw_toolmaker_hut_mark(ground)
+
+
+# Capanna dell'attrezzista (2026-09-24, richiesta utente) — forma provvisoria: riempimento della
+# sagoma capanna più scuro/grigiastro (pietra lavorata) + due tratti incrociati chiari al centro
+# (attrezzi incrociati), con una piccola "testa" su ciascuno. Stessa geometria (duplicata apposta)
+# di BuildingGhost._draw_toolmaker_hut_mark.
+const TOOLMAKER_HUT_COLOR := Color(0.46, 0.40, 0.34, 1.0)
+const TOOLMAKER_HUT_MARK_COLOR := Color(0.88, 0.84, 0.76, 1.0)
+const TOOLMAKER_HUT_MARK_HALF_LENGTH: float = 1.3
+const TOOLMAKER_HUT_MARK_WIDTH: float = 0.35
+const TOOLMAKER_HUT_MARK_HEAD_RADIUS: float = 0.4
+
+func _draw_toolmaker_hut_mark(ground: Vector2) -> void:
+	for diagonal in [Vector2(1, -1), Vector2(-1, -1)]:
+		var half: Vector2 = diagonal.normalized() * TOOLMAKER_HUT_MARK_HALF_LENGTH
+		draw_line(ground - half, ground + half, TOOLMAKER_HUT_MARK_COLOR, TOOLMAKER_HUT_MARK_WIDTH)
+		draw_circle(ground + half, TOOLMAKER_HUT_MARK_HEAD_RADIUS, TOOLMAKER_HUT_MARK_COLOR)
 
 
 # Cartello "work in progress" — vedi il commento esteso su WIP_SIGN_POST_COLOR sopra per il perché.
@@ -1299,6 +1325,13 @@ var _dirt_ground_mesh: ArrayMesh = null
 # Macchie per variante (DirtGroundPattern.speckles con il margine interno), calcolate al primo uso.
 var _dirt_ground_speckles_by_variant: Dictionary = {}
 
+# Tipi di edificio con un fondo di terra battuta sotto la sagoma (2026-09-24, richiesta utente —
+# prima si vedeva il verde del terreno attorno a tenda, cerchio di sassolini e focolare): stesso
+# tile irregolare della terra battuta, stessi identici colori. Solo a edificio completo. Bordi come la terra
+# battuta: dritti verso un edificio completo confinante ("dirt_neighbors", calcolata da GameScene),
+# irregolari verso le celle senza nulla.
+const GROUND_UNDER_BUILDING_TYPES: Array[String] = ["stick_tent", "pebble_circle", "campfire"]
+
 
 # Ricostruita da set_buildings (ogni volta che GameScene rinfresca gli edifici della cella): un
 # tile per ogni terra battuta COMPLETA (un cantiere non ancora completo è disegnato dal cartello
@@ -1307,9 +1340,13 @@ func _rebuild_dirt_ground_mesh() -> void:
 	var vertices := PackedVector2Array()
 	var colors := PackedColorArray()
 	for entry in buildings:
-		if entry.get("building_type_name", "") != "dirt_ground" or not entry.get("is_complete", true):
+		if not entry.get("is_complete", true):
 			continue
-		_append_dirt_ground_tile(entry["position"], int(entry.get("dirt_neighbors", 0)), vertices, colors)
+		var building_type_name: String = entry.get("building_type_name", "")
+		if building_type_name == "dirt_ground":
+			_append_dirt_ground_tile(entry["position"], int(entry.get("dirt_neighbors", 0)), vertices, colors)
+		elif GROUND_UNDER_BUILDING_TYPES.has(building_type_name):
+			_append_dirt_ground_tile(entry["position"], int(entry.get("dirt_neighbors", 0)), vertices, colors)
 	if _dirt_ground_mesh != null:
 		_dirt_ground_mesh.clear_surfaces()
 	if vertices.is_empty():
@@ -1411,6 +1448,28 @@ func _draw_deposit_site(ground: Vector2) -> void:
 # (duplicata apposta, vedi commento su STICK_TENT_COLOR sopra) di BuildingGhost._draw_stick_tent.
 # Chiamata SOLO a edificio completo (vedi commento su _draw_pebble_circle sopra) — nessun parametro
 # colore più necessario, solo `direction`.
+# Focolare (2026-09-23, richiesta utente) — forma provvisoria: anello di CAMPFIRE_STONE_COUNT pietre
+# scure attorno a una fiamma (cerchio arancio + nucleo giallo). Più piccolo e più scuro del Pebble
+# Circle (anello di raggio 4 di sassolini chiari), così i due non si confondono. Nessuna porta né
+# rotazione (has_door=false in campfire.tres). Stessa geometria (duplicata apposta) di
+# BuildingGhost._draw_campfire. Chiamata SOLO a edificio completo (vedi _draw_buildings).
+const CAMPFIRE_STONE_COLOR := Color(0.35, 0.33, 0.30, 1.0)
+const CAMPFIRE_FLAME_COLOR := Color(0.95, 0.45, 0.10, 1.0)
+const CAMPFIRE_FLAME_CORE_COLOR := Color(1.0, 0.85, 0.30, 1.0)
+const CAMPFIRE_RING_RADIUS: float = 2.6
+const CAMPFIRE_STONE_RADIUS: float = 0.6
+const CAMPFIRE_STONE_COUNT: int = 8
+const CAMPFIRE_FLAME_RADIUS: float = 1.4
+const CAMPFIRE_FLAME_CORE_RADIUS: float = 0.7
+
+func _draw_campfire(ground: Vector2) -> void:
+	for i in range(CAMPFIRE_STONE_COUNT):
+		var angle: float = TAU * float(i) / float(CAMPFIRE_STONE_COUNT)
+		draw_circle(ground + Vector2(cos(angle), sin(angle)) * CAMPFIRE_RING_RADIUS, CAMPFIRE_STONE_RADIUS, CAMPFIRE_STONE_COLOR)
+	draw_circle(ground, CAMPFIRE_FLAME_RADIUS, CAMPFIRE_FLAME_COLOR)
+	draw_circle(ground, CAMPFIRE_FLAME_CORE_RADIUS, CAMPFIRE_FLAME_CORE_COLOR)
+
+
 func _draw_stick_tent(ground: Vector2, direction: GameTypes.Direction) -> void:
 	draw_circle(ground, STICK_TENT_RADIUS, STICK_TENT_COLOR)
 	draw_arc(ground, STICK_TENT_RADIUS, 0.0, TAU, BUILDING_CIRCLE_SEGMENTS, STICK_TENT_OUTLINE_COLOR, STICK_TENT_OUTLINE_WIDTH, true)
@@ -1452,6 +1511,9 @@ const DEPOSIT_STORAGE_ICON_DRAW_METHODS := {
 	"eggs": "_draw_deposit_storage_eggs_icon",
 	"wild_vegetables": "_draw_deposit_storage_wild_vegetables_icon",
 	"medicinal_herbs": "_draw_deposit_storage_medicinal_herbs_icon",
+	"fiber_rope": "_draw_deposit_storage_fiber_rope_icon",
+	"wooden_spear": "_draw_deposit_storage_wooden_spear_icon",
+	"stone_knife": "_draw_deposit_storage_stone_knife_icon",
 }
 
 
@@ -1911,6 +1973,39 @@ func _draw_deposit_storage_medicinal_herbs_icon(top_left: Vector2, side: float) 
 		_draw_deposit_storage_wild_vegetables_leaf(
 			top_left, side, leaf["cx"], leaf["cy"], leaf["rx"], leaf["ry"], leaf["rot"], leaf["color"]
 		)
+
+
+# Corda di fibre (2026-09-23, richiesta utente — prima era il pallino giallo di fallback): un rotolo a
+# spirale (2,5 giri, raggio crescente dal centro) color canapa con un capo libero verso l'angolo in
+# basso a destra. Ogni tratto è disegnato due volte — prima più spesso e scuro, poi più sottile e
+# chiaro — così il cordone ha un bordo e le spire restano distinguibili anche a questa scala.
+const DEPOSIT_STORAGE_FIBER_ROPE_COLOR := Color(0.78, 0.64, 0.40, 1.0)
+const DEPOSIT_STORAGE_FIBER_ROPE_OUTLINE_COLOR := Color(0.42, 0.31, 0.16, 1.0)
+const DEPOSIT_STORAGE_FIBER_ROPE_TURNS: float = 2.5
+const DEPOSIT_STORAGE_FIBER_ROPE_SEGMENTS: int = 40
+
+# Primi attrezzi (2026-09-24, richiesta utente) — stessa geometria delle icone del pannello
+# (WoodenSpearIcon/StoneKnifeIcon.draw_into), un solo disegno per entrambi i punti.
+func _draw_deposit_storage_wooden_spear_icon(top_left: Vector2, side: float) -> void:
+	WoodenSpearIcon.draw_into(self, top_left, Vector2(side, side))
+
+
+func _draw_deposit_storage_stone_knife_icon(top_left: Vector2, side: float) -> void:
+	StoneKnifeIcon.draw_into(self, top_left, Vector2(side, side))
+
+
+func _draw_deposit_storage_fiber_rope_icon(top_left: Vector2, side: float) -> void:
+	var center: Vector2 = top_left + Vector2(0.46, 0.46) * side
+	var points := PackedVector2Array()
+	for i in range(DEPOSIT_STORAGE_FIBER_ROPE_SEGMENTS + 1):
+		var t: float = float(i) / float(DEPOSIT_STORAGE_FIBER_ROPE_SEGMENTS)
+		var angle: float = t * TAU * DEPOSIT_STORAGE_FIBER_ROPE_TURNS
+		var radius: float = side * (0.05 + 0.28 * t)
+		points.append(center + Vector2(cos(angle), sin(angle)) * radius)
+	# Capo libero: dall'ultima spira verso l'angolo in basso a destra.
+	points.append(top_left + Vector2(0.88, 0.88) * side)
+	draw_polyline(points, DEPOSIT_STORAGE_FIBER_ROPE_OUTLINE_COLOR, side * 0.13, true)
+	draw_polyline(points, DEPOSIT_STORAGE_FIBER_ROPE_COLOR, side * 0.08, true)
 
 
 func _direction_vector(direction: GameTypes.Direction) -> Vector2:

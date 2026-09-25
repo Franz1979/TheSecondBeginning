@@ -1,0 +1,17 @@
+[gd_resource type="Resource" script_class="SecondaryResourceRules" format=3 uid="uid://d4eaq156uoc5l"]
+
+[ext_resource type="Script" uid="uid://cu4cyua5y4n1m" path="res://simulation/scripts/core/SecondaryResourceRules.gd" id="1_stone_knife"]
+
+[resource]
+script = ExtResource("1_stone_knife")
+secondary_resource_name = "stone_knife"
+calories_per_unit = 0.0
+category = 4
+generation_source = 2
+space_per_unit = 2.0
+units_per_mature_plant = 2
+recipe_inputs = {
+"pebble": 1
+}
+recipe_labor = 200.0
+recipe_workstation_types = Array[String](["campfire", "toolmaker_hut"])

@@ -149,6 +149,9 @@ var _food_bar_fill_body_reserve: StyleBoxFlat = null
 @onready var skill_cognition_caption: Label = $SkillsBox/SkillsBoxMargin/SkillsBoxContent/SkillsRowMargin/SkillsRow/CognitionColumn/CognitionCaptionWrapper/CognitionCaption
 @onready var skill_hunting_bar: ProgressBar = $SkillsBox/SkillsBoxMargin/SkillsBoxContent/SkillsRowMargin/SkillsRow/HuntingColumn/HuntingBar
 @onready var skill_hunting_caption: Label = $SkillsBox/SkillsBoxMargin/SkillsBoxContent/SkillsRowMargin/SkillsRow/HuntingColumn/HuntingCaptionWrapper/HuntingCaption
+# crafting (2026-09-24, richiesta utente) — 8a barra, in coda dopo hunting, stesso trattamento.
+@onready var skill_crafting_bar: ProgressBar = $SkillsBox/SkillsBoxMargin/SkillsBoxContent/SkillsRowMargin/SkillsRow/CraftingColumn/CraftingBar
+@onready var skill_crafting_caption: Label = $SkillsBox/SkillsBoxMargin/SkillsBoxContent/SkillsRowMargin/SkillsRow/CraftingColumn/CraftingCaptionWrapper/CraftingCaption
 @onready var carried_boxes_row: HBoxContainer = $CarryRowMargin/CarryRow/CarriedBoxesRow
 # Primo riquadro (slot 0), in scena: fa anche da modello per gli altri, duplicati in _build_carried_slots.
 @onready var carried_resource_box: ColorRect = $CarryRowMargin/CarryRow/CarriedBoxesRow/CarriedResourceBox
@@ -239,7 +242,7 @@ func show_individual(
 	max_loyalty: float, current_loyalty: float,
 	skill_leadership: float, skill_builder: float, skill_management: float,
 	skill_transporter: float, skill_gathering: float, skill_cognition: float,
-	skill_hunting: float,
+	skill_hunting: float, skill_crafting: float,
 	queued_task_descriptions: Array[String] = []
 ) -> void:
 	visible = true
@@ -374,6 +377,11 @@ func show_individual(
 	skill_hunting_bar.value = skill_hunting
 	skill_hunting_bar.tooltip_text = "%d/1000" % [int(skill_hunting)]
 	skill_hunting_caption.text = tr("skill_hunting_label")
+
+	skill_crafting_bar.max_value = 1000.0
+	skill_crafting_bar.value = skill_crafting
+	skill_crafting_bar.tooltip_text = "%d/1000" % [int(skill_crafting)]
+	skill_crafting_caption.text = tr("skill_crafting_label")
 
 	# Capacità di trasporto (2026-09-13, richiesta utente — spostata in FONDO alle barre, dopo i 5
 	# nuovi parametri vitali: nessun motivo funzionale, solo l'ordine visivo concordato) — la barra

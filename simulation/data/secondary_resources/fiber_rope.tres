@@ -1,0 +1,17 @@
+[gd_resource type="Resource" script_class="SecondaryResourceRules" format=3 uid="uid://coq65nucxu24i"]
+
+[ext_resource type="Script" uid="uid://cu4cyua5y4n1m" path="res://simulation/scripts/core/SecondaryResourceRules.gd" id="1_fiber_rope"]
+
+[resource]
+script = ExtResource("1_fiber_rope")
+secondary_resource_name = "fiber_rope"
+calories_per_unit = 0.0
+category = 3
+generation_source = 2
+day_durability = 500
+space_per_unit = 2.0
+recipe_inputs = {
+"plant_fiber": 3
+}
+recipe_labor = 100.0
+recipe_workstation_types = Array[String](["campfire", "toolmaker_hut"])

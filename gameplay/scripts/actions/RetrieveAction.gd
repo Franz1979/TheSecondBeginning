@@ -37,6 +37,14 @@ const STAMINA_COST_PER_SPACE_UNIT: float = 2.0
 # resource_deposited).
 signal resource_retrieved(resource_name: String, building: Building, quantity: int)
 
+# "Prendi tutti i prodotti" (2026-09-24, richiesta utente — popup di prelievo delle workstation):
+# valore speciale di resource_name. Invece di una sola risorsa, lo step preleva TUTTE le varietà del
+# buffer di uscita (Building.production_output), nei limiti di spazio e di varietà dello zaino
+# (HumanIndividual.MAX_CARRIED_VARIETIES) — quanto non entra resta nel buffer. Non tocca MAI
+# stored_resources (materiali consegnati per la produzione). Viaggia come un normale resource_name
+# attraverso la Transport Task (context, TaskFactory, salvataggio): solo questa classe lo interpreta.
+const ALL_PRODUCTS := "__all_products__"
+
 var target_building: Building = null
 var resource_name: String = ""
 # Quantità RICHIESTA (2026-09-12, richiesta utente) — NON garantita: se target_building non ne ha
@@ -50,6 +58,10 @@ var quantity_requested: int = 0
 # quella risorsa, zaino già occupato da un'altra risorsa, o quantity_requested <= 0) — stesso
 # significato di "azione immediatamente completa" già richiesto per PickUpAction.
 var _quantity_to_retrieve: int = 0
+
+# Piano di prelievo in modalità ALL_PRODUCTS (2026-09-24): [{"resource_name", "quantity"}, ...],
+# risolto in activate() come _quantity_to_retrieve (che ne diventa la somma). Vuoto negli altri casi.
+var _retrieve_plan: Array = []
 
 # Stesso schema esatto di PickUpAction._duration/_total_stamina_cost/_elapsed — vedi lì per il
 # perché (ThinkAction generalizzato a un costo/tasso non costante, ma dipendente dallo spazio
@@ -93,14 +105,20 @@ func activate(individual: Variant, context: Dictionary) -> void:
 		return
 
 	var free_space: float = individual.max_carry_capacity - individual.get_carried_space()
+	_retrieve_plan = []
+
+	if resource_name == ALL_PRODUCTS:
+		_activate_all_products(individual, free_space)
+		return
 
 	var resource_rules := CaloricCalculator.get_caloric_source_rules(resource_name)
 	var space_per_unit: float = resource_rules.space_per_unit if resource_rules != null else 0.0
 
 	var available: int = 0
 	if target_building != null:
-		var stored_entry: Dictionary = target_building.stored_resources.get(resource_name, {})
-		available = int(stored_entry.get("quantity", 0))
+		# Include il buffer di uscita della produzione (2026-09-23): BuildingStorageService.withdraw
+		# preleva da entrambi.
+		available = BuildingStorageService.get_available_quantity(target_building, resource_name)
 
 	_quantity_to_retrieve = 0
 	if individual.carried_resources.is_empty() and space_per_unit > 0.0:
@@ -113,6 +131,43 @@ func activate(individual: Variant, context: Dictionary) -> void:
 		_duration = space_retrieved / individual.max_carry_capacity
 		_total_stamina_cost = STAMINA_COST_PER_SPACE_UNIT * space_retrieved
 	_elapsed = 0.0
+
+
+# Modalità ALL_PRODUCTS (2026-09-24): una voce di piano per ogni varietà del buffer di uscita, in
+# ordine di nome, finché c'è spazio e posto per una varietà in più; stessa formula di quantità e di
+# costo del ramo singolo (min(disponibile, floor(spazio_libero / space_per_unit)), durata e stamina
+# proporzionali allo spazio prelevato in totale). Stessa assunzione di zaino vuoto all'arrivo.
+func _activate_all_products(individual: Variant, free_space: float) -> void:
+	_quantity_to_retrieve = 0
+	_duration = 0.0
+	_total_stamina_cost = 0.0
+	_elapsed = 0.0
+	if target_building == null or not individual.carried_resources.is_empty():
+		return
+	var output_names: Array[String] = []
+	for output_name in target_building.production_output.keys():
+		output_names.append(String(output_name))
+	output_names.sort()
+	var remaining_space: float = free_space
+	var space_retrieved: float = 0.0
+	for output_name in output_names:
+		if _retrieve_plan.size() >= HumanIndividual.MAX_CARRIED_VARIETIES:
+			break
+		var rules := CaloricCalculator.get_caloric_source_rules(output_name)
+		var space_per_unit: float = rules.space_per_unit if rules != null else 0.0
+		if space_per_unit <= 0.0:
+			continue
+		var available: int = int(target_building.production_output.get(output_name, 0))
+		var quantity: int = mini(available, int(floor(remaining_space / space_per_unit)))
+		if quantity <= 0:
+			continue
+		_retrieve_plan.append({"resource_name": output_name, "quantity": quantity})
+		_quantity_to_retrieve += quantity
+		remaining_space -= float(quantity) * space_per_unit
+		space_retrieved += float(quantity) * space_per_unit
+	if _quantity_to_retrieve > 0 and individual.max_carry_capacity > 0.0:
+		_duration = space_retrieved / individual.max_carry_capacity
+		_total_stamina_cost = STAMINA_COST_PER_SPACE_UNIT * space_retrieved
 
 
 # Stesso schema esatto di PickUpAction.get_stamina_delta/is_complete — unica differenza: il tasso
@@ -169,13 +224,42 @@ func get_required_position(individual: Variant, context: Dictionary) -> Variant:
 func on_complete(individual: Variant, context: Dictionary) -> void:
 	if _quantity_to_retrieve <= 0 or target_building == null:
 		return
+	if resource_name == ALL_PRODUCTS:
+		_complete_all_products(individual)
+		return
 	var stored_entry: Dictionary = target_building.stored_resources.get(resource_name, {})
-	var decay_fraction: float = float(stored_entry.get("decay_fraction", 0.0))
+	var stored_quantity: int = int(stored_entry.get("quantity", 0))
+	var stored_decay_fraction: float = float(stored_entry.get("decay_fraction", 0.0))
 	var withdrawn: int = BuildingStorageService.withdraw(target_building, resource_name, _quantity_to_retrieve)
 	if withdrawn <= 0:
 		return
+	# withdraw preleva prima da stored_resources, poi dal buffer di uscita (2026-09-23), dove il prodotto
+	# è sempre fresco (0.0): media pesata sulle due parti.
+	var from_stored: int = min(withdrawn, stored_quantity)
+	var decay_fraction: float = float(from_stored) * stored_decay_fraction / float(withdrawn)
 	individual.add_carried_resource(resource_name, withdrawn, decay_fraction)
 	resource_retrieved.emit(resource_name, target_building, withdrawn)
+
+
+# Modalità ALL_PRODUCTS (2026-09-24): preleva ogni voce del piano SOLO dal buffer di uscita
+# (ProductionService.withdraw_output, mai stored_resources); il prodotto è sempre fresco (decay 0.0).
+# Il resto rimasto nel buffer prova poi il travaso nello storage, come dopo un prelievo normale.
+func _complete_all_products(individual: Variant) -> void:
+	var any_withdrawn := false
+	for entry in _retrieve_plan:
+		var output_name: String = String(entry.get("resource_name", ""))
+		var withdrawn: int = ProductionService.withdraw_output(target_building, output_name, int(entry.get("quantity", 0)))
+		if withdrawn <= 0:
+			continue
+		var carried: int = individual.add_carried_resource(output_name, withdrawn, 0.0)
+		# Mai perdere merce: quanto non entra nello zaino (caso limite) torna nel buffer.
+		if carried < withdrawn:
+			target_building.production_output[output_name] = int(target_building.production_output.get(output_name, 0)) + (withdrawn - carried)
+		if carried > 0:
+			any_withdrawn = true
+			resource_retrieved.emit(output_name, target_building, carried)
+	if any_withdrawn:
+		ProductionService.flush_output_to_storage(target_building)
 
 
 # Persistenza — STESSO schema esatto di PickUpAction.get_save_data/load_save_data, con l'aggiunta di
@@ -195,6 +279,7 @@ func get_save_data() -> Dictionary:
 		"duration": _duration,
 		"elapsed": _elapsed,
 		"total_stamina_cost": _total_stamina_cost,
+		"retrieve_plan": _retrieve_plan,
 	}
 	if target_building != null:
 		data["target_building_id"] = target_building.id
@@ -211,4 +296,5 @@ func load_save_data(data: Dictionary) -> void:
 	_duration = float(data.get("duration", 0.0))
 	_elapsed = float(data.get("elapsed", 0.0))
 	_total_stamina_cost = float(data.get("total_stamina_cost", 0.0))
+	_retrieve_plan = data.get("retrieve_plan", [])
 	_restored_from_save = true
