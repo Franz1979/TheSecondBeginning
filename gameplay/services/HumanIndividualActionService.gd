@@ -220,6 +220,21 @@ func finish_current_step(individual: HumanIndividual, task: Task, world: World, 
 	_handle_pending_warehouse_search(individual, task, world)
 	_handle_pending_thought_target_search(individual, task, world)
 	_handle_pending_walk_away(task)
+	# Caccia (2026-09-26): recupero dell'arma scagliata e riavvicinamento chiesti da AimAction/ThrowAction/
+	# RecoverWeaponAction (step aggiunti subito dopo quello corrente), poi chiusura anticipata chiesta da uno
+	# step o dal tetto dei riavvicinamenti.
+	_handle_pending_hunt_weapon_recovery(individual, task)
+	_handle_pending_hunt_reapproach(individual, task)
+	if task.context.has(CONTEXT_PENDING_TASK_ABORT):
+		var abort_reason := String(task.context[CONTEXT_PENDING_TASK_ABORT])
+		task.context.erase(CONTEXT_PENDING_TASK_ABORT)
+		if HuntService.is_hunt_task(task):
+			HuntService.log_event(individual, "caccia chiusa: %s." % abort_reason)
+		elif DebugLogging.ENABLED and DebugLogging.SHOW_TASK_LIFECYCLE_LOGS:
+			print("[TASK ABORT] Individuo #%d %s: Task '%s' chiusa — %s." % [individual.id, individual.name, task.task_name, abort_reason])
+		# Stessa chiusura di un bersaglio non più valido (sotto): nessun effetto di completamento.
+		_handle_task_completion_need_and_queue(individual, task, world, game_data)
+		return
 	task.advance_to_next_step()
 	if task.is_finished():
 		if DebugLogging.ENABLED and DebugLogging.SHOW_TASK_LIFECYCLE_LOGS:
@@ -253,6 +268,11 @@ func finish_current_step(individual: HumanIndividual, task: Task, world: World, 
 				print("[INVALID TARGET] Individuo #%d %s: Task '%s' chiusa — lo step %d/%d (%s) ha un bersaglio non più valido (edificio demolito o già completo)." % [
 					individual.id, individual.name, task.task_name, task.current_step_index + 1, task.steps.size(),
 					next_action.get_script().get_global_name()
+				])
+			if HuntService.is_hunt_task(task):
+				HuntService.log_event(individual, "caccia chiusa prima dello step %d/%d (%s): %s." % [
+					task.current_step_index + 1, task.steps.size(), next_action.get_script().get_global_name(),
+					HuntService.describe_task_prey_loss(task)
 				])
 			_handle_task_completion_need_and_queue(individual, task, world, game_data)
 			return
@@ -386,10 +406,12 @@ func _resolve_material_shortage(world: World, target_building: Building, missing
 			var quantity_needed: int = int(missing[resource_name])
 			var existing_entry: Dictionary = target_building.stored_resources.get(resource_name, {})
 			var current_quantity: int = int(existing_entry.get("quantity", 0))
-			target_building.stored_resources[resource_name] = {
-				"quantity": current_quantity + quantity_needed,
-				"decay_fraction": 0.0,
-			}
+			# duplicate() (2026-09-26 — attrezzi come istanze): conserva le altre chiavi della voce
+			# (es. "used_instances" di un attrezzo, vedi BuildingStorageService) invece di ricostruirla da zero.
+			var bonus_entry: Dictionary = existing_entry.duplicate(true)
+			bonus_entry["quantity"] = current_quantity + quantity_needed
+			bonus_entry["decay_fraction"] = 0.0
+			target_building.stored_resources[resource_name] = bonus_entry
 		# is_awaiting_material -> false (2026-09-14, richiesta utente — segnalazione player) — il
 		# bonus risolve il fabbisogno all'istante, nessun motivo per restare "in attesa" anche se lo
 		# era da un tentativo precedente. Nessuna notifica per la transizione true->false (punto 3
@@ -696,6 +718,73 @@ func _handle_pending_thought_target_search(individual: HumanIndividual, task: Ta
 # step "cammina via" — stesso schema di walk_away in Daydream). No-op se la chiave non è presente
 # (il caso comune). A differenza di _handle_pending_warehouse_search sopra, non ha bisogno di
 # `individual`/`world`: la posizione è già completamente risolta da chi ha scritto la chiave.
+# Chiusura anticipata di una Task chiesta da uno step (2026-09-26): lo step scrive in Task.context questa
+# chiave con il motivo, finish_current_step la consuma e chiude la Task come per un bersaglio non più
+# valido (bisogno -> coda -> perditempo, nessun effetto di completamento). Oggi usata dalla caccia (arma
+# sparita, bersaglio perso al lancio, tetto dei riavvicinamenti raggiunto).
+const CONTEXT_PENDING_TASK_ABORT := "pending_task_abort"
+
+
+# Riavvicinamento della caccia (2026-09-26, richiesta utente): AimAction/ThrowAction scrivono
+# HuntService.CONTEXT_PENDING_REAPPROACH quando il tiro non parte (bersaglio uscito dalla gittata) o, dopo un
+# tiro valido non letale, quando la caccia prosegue. Qui, con lo step richiedente ancora corrente, si
+# inseriscono SUBITO DOPO di lui gli step per tornare sul bersaglio (HuntService.build_reapproach_steps):
+#   - dopo la mira: [Approach, Aim] — il Throw già in coda resta e segue la nuova mira;
+#   - dopo un lancio non partito o un tiro non letale: [Approach, Aim, Throw].
+# I riavvicinamenti da tiro NON PARTITO contano verso HuntService.MAX_REAPPROACHES (contatore in
+# Task.context, salvato con la Task): oltre il tetto la caccia si chiude. Quelli dopo un tiro valido no.
+func _handle_pending_hunt_reapproach(individual: HumanIndividual, task: Task) -> void:
+	if not task.context.has(HuntService.CONTEXT_PENDING_REAPPROACH):
+		return
+	var mode := String(task.context[HuntService.CONTEXT_PENDING_REAPPROACH])
+	task.context.erase(HuntService.CONTEXT_PENDING_REAPPROACH)
+	var requesting_action := task.get_current_action()
+	var combat_target: CombatTarget = null
+	if requesting_action is AimAction:
+		combat_target = (requesting_action as AimAction).combat_target
+	elif requesting_action is ThrowAction:
+		combat_target = (requesting_action as ThrowAction).combat_target
+	elif requesting_action is RecoverWeaponAction:
+		combat_target = (requesting_action as RecoverWeaponAction).combat_target
+	if combat_target == null:
+		return
+	if mode != HuntService.REAPPROACH_AFTER_THROW:
+		var count: int = int(task.context.get(HuntService.CONTEXT_REAPPROACH_COUNT, 0)) + 1
+		task.context[HuntService.CONTEXT_REAPPROACH_COUNT] = count
+		if count > HuntService.MAX_REAPPROACHES:
+			task.context[CONTEXT_PENDING_TASK_ABORT] = "tiro non partito per la %da volta, tetto di %d riavvicinamenti superato" % [count, HuntService.MAX_REAPPROACHES]
+			return
+		HuntService.log_event(individual, "riavvicinamento %d/%d a %s dopo un tiro non partito." % [count, HuntService.MAX_REAPPROACHES, combat_target.describe()])
+	var include_throw := mode != HuntService.REAPPROACH_AFTER_AIM
+	var new_steps := HuntService.build_reapproach_steps(combat_target, include_throw)
+	var descriptions: Array[String] = ["task_hunt_step_approach", "task_hunt_step_aim"]
+	if include_throw:
+		descriptions.append("task_hunt_step_throw")
+	task.insert_steps_after_current(new_steps, descriptions)
+
+
+# Recupero dell'arma scagliata (2026-09-26, richiesta utente): ThrowAction scrive HuntService.
+# CONTEXT_PENDING_WEAPON_RECOVERY quando l'arma, ancora integra, è rimasta a terra (preda uccisa o tiro a
+# vuoto). Qui, con il ThrowAction ancora corrente, si inserisce subito dopo di lui un RecoverWeaponAction che
+# porta con sé l'arma: da questo momento l'arma esiste solo in quello step.
+func _handle_pending_hunt_weapon_recovery(individual: HumanIndividual, task: Task) -> void:
+	if not task.context.has(HuntService.CONTEXT_PENDING_WEAPON_RECOVERY):
+		return
+	var request: Dictionary = task.context[HuntService.CONTEXT_PENDING_WEAPON_RECOVERY]
+	task.context.erase(HuntService.CONTEXT_PENDING_WEAPON_RECOVERY)
+	var throw_action := task.get_current_action() as ThrowAction
+	if throw_action == null:
+		return
+	var weapon_name := String(request.get("weapon", ""))
+	var recover := RecoverWeaponAction.new(
+		weapon_name, int(request.get("uses", 0)), throw_action.combat_target, bool(request.get("prey_killed", false))
+	)
+	var new_steps: Array[Action] = [recover]
+	var descriptions: Array[String] = ["task_hunt_step_recover_weapon"]
+	task.insert_steps_after_current(new_steps, descriptions)
+	HuntService.log_event(individual, "%s a terra: si va a recuperarla." % IconRegistry.get_resource_display_name(weapon_name))
+
+
 func _handle_pending_walk_away(task: Task) -> void:
 	if not task.context.has("pending_walk_away_position"):
 		return
@@ -900,6 +989,10 @@ static func resolve_idle_individual(individual: HumanIndividual, age_band: Human
 				print("[INVALID TARGET] Individuo #%d %s: task '%s' (step %d/%d) scartata dalla coda — bersaglio non più valido (edificio demolito o già completo)." % [
 					individual.id, individual.name, resumed_task.task_name, resumed_task.current_step_index + 1, resumed_task.steps.size()
 				])
+		if HuntService.is_hunt_task(resumed_task):
+			HuntService.log_event(individual, "caccia scartata dalla coda alla ripresa: %s." % [
+				"già conclusa" if resumed_task.is_finished() else HuntService.describe_task_prey_loss(resumed_task)
+			])
 		resumed_task = TaskQueueService.pop_suspended_task(individual)
 	if resumed_task != null:
 		if DebugLogging.ENABLED and DebugLogging.SHOW_TASK_LIFECYCLE_LOGS:
@@ -945,6 +1038,8 @@ static func activate_resumed_task(individual: HumanIndividual, resumed_task: Tas
 			print("[INVALID TARGET] Individuo #%d %s: task '%s' chiusa alla ripresa — bersaglio non più valido." % [
 				individual.id, individual.name, resumed_task.task_name
 			])
+		if HuntService.is_hunt_task(resumed_task):
+			HuntService.log_event(individual, "caccia chiusa alla ripresa: %s." % HuntService.describe_task_prey_loss(resumed_task))
 		TaskDebugRegistry.on_task_closed(resumed_task)
 		if individual.current_task == resumed_task:
 			individual.current_task = null

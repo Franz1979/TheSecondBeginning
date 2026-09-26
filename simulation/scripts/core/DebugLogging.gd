@@ -281,6 +281,25 @@ const SHOW_IDLE_LOGS := true
 # [ASSIGN HOUSE] (AssignHouseService).
 const SHOW_TRANSPORT_BUILD_LOGS := false
 
+# HUNT — [HUNT] (2026-09-26, richiesta utente — log di debug della caccia): assegnazione (chi, quale
+# preda, quale arma e gittata; rifiuto), avvicinamento (distanza dalla preda ogni
+# HUNT_APPROACH_LOG_INTERVAL_DAYS di gioco, non a ogni frame), fine dell'avvicinamento (distanza
+# raggiunta e motivo), attesa attrezzi (inizio/fine e motivo), completamento, e chiusura anticipata
+# con il motivo (preda sparita, scartata dalla coda, annullata a mano, annullata da un bisogno o da un nuovo comando).
+# Punti: GameScene (assegnazione, annullo), ApproachPreyAction/AimAction/ThrowAction, HumanIndividualActionService
+# (bersaglio non valido), HumanIndividual.assign_task (sospensione). Stampa tramite HuntService.log_event.
+const SHOW_HUNT_LOGS := true
+# Intervallo tra due righe di avvicinamento, in GIORNI DI GIOCO (1 giorno = 8 s reali a 1x): 0.125 =
+# circa una riga al secondo a velocità 1x.
+const HUNT_APPROACH_LOG_INTERVAL_DAYS := 0.125
+
+# ANIMAL_PROCESS_TIMING — [ANIMAL TIMING] (2026-09-26, comportamento degli animali step 2): ogni 5 s reali,
+# tempo medio per frame speso nel _process di TUTTI gli AnimalGroupRenderer, e di cui nel controllo
+# periodico di disagio (AnimalGroupRenderer._run_disturbance_check), con numero di renderer e individui.
+# Solo misura, nessun effetto sul comportamento.
+const SHOW_ANIMAL_PROCESS_TIMING := false
+
+
 # SAFETY — [ZOMBIE GUARD] (TaskQueueService/HumanIndividualActionService/HumanIndividual),
 # [BORDER] (GameScene). Default true (a differenza della maggior parte delle categorie sopra):
 # segnalano un'anomalia reale (una task zombie intercettata, un attraversamento di bordo), non un

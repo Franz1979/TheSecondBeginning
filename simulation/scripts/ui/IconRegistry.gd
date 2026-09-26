@@ -229,6 +229,31 @@ static func get_command_icon(command_icon_key: String) -> String:
 	return COMMAND_ICONS.get(command_icon_key, "")
 
 
+# Icone di comando DISEGNATE (2026-09-26, richiesta utente — mirino della caccia): stesso ruolo di
+# COMMAND_ICONS sopra (lampeggiano sul bersaglio quando si impartisce il comando), per i comandi che
+# nessun emoji rende bene. A differenza delle icone di risorse/edifici (Control a tutto slot) sono
+# Node2D centrati sul bersaglio. GameScene._spawn_command_icon prova prima queste, poi COMMAND_ICONS.
+# Dal 2026-09-26 (richiesta utente) OGNI comando ha qui la propria icona disegnata, ed è la regola per
+# i comandi futuri: se un disegno non convince si ridisegna, non si torna all'emoji. Le emoji di
+# COMMAND_ICONS restano solo come rete di sicurezza per una chiave senza icona (non dovrebbe capitare).
+const COMMAND_ICON_NODES := {
+	"hunt": preload("res://simulation/scripts/ui/CrosshairIcon.gd"),
+	"pickup": preload("res://simulation/scripts/ui/CommandHandIcon.gd"),
+	"build": preload("res://simulation/scripts/ui/CommandHammerIcon.gd"),
+	"transport": preload("res://simulation/scripts/ui/CommandBoxIcon.gd"),
+	"produce": preload("res://simulation/scripts/ui/CommandProduceIcon.gd"),
+	"task_rejected": preload("res://simulation/scripts/ui/CommandRejectedIcon.gd"),
+}
+
+
+# null se command_icon_key non ha un'icona disegnata — istanza NUOVA a ogni chiamata, mai cachata,
+# stesso principio di get_resource_icon_node.
+static func get_command_icon_node(command_icon_key: String) -> Node2D:
+	if not COMMAND_ICON_NODES.has(command_icon_key):
+		return null
+	return COMMAND_ICON_NODES[command_icon_key].new()
+
+
 # Nome leggibile per resource_name — chiave tr() "carried_resource_tooltip_<resource_name>" (2026-
 # 09-09, promossa qui da HumanIndividualInfoPanel._display_name_for_resource, che la duplicava:
 # ORA anche BuildingInfoPanel/griglia slot magazzino la consulta per il proprio tooltip, un solo

@@ -18,6 +18,9 @@ extends PanelContainer
 @onready var content_group: HBoxContainer = $MarginContainer/HBoxContainer/ContentGroup
 @onready var content_row: IconButtonRow = $MarginContainer/HBoxContainer/ContentGroup/ContentRow
 @onready var coords_label: Label = $MarginContainer/HBoxContainer/ContentGroup/CoordsLabel
+# Celle vive (2026-09-26, richiesta utente — debug): numero nel testo, elenco con i motivi di attivazione
+# nel tooltip — vedi set_live_cells e GameScene._refresh_debug_live_cells.
+@onready var live_cells_label: Label = $MarginContainer/HBoxContainer/ContentGroup/LiveCellsLabel
 # Riepilogo animali della macrocella del giocatore (quota cella / individui istanziati per specie)
 # — vedi set_animal_summary sotto e GameScene._refresh_debug_animal_summary.
 @onready var animal_summary_label: Label = $MarginContainer/HBoxContainer/ContentGroup/AnimalSummaryLabel
@@ -111,6 +114,18 @@ func set_slot_toggled(index: int, is_active: bool) -> void:
 # testuale di prima ("Coords: x, y"), GameScene chiama questo invece di quello.
 func set_coords(x: int, y: int) -> void:
 	coords_label.text = "Coords: " + str(x) + ", " + str(y)
+
+
+# Celle vive (2026-09-26, debug): `lines` = una riga per cella, già composta da GameScene ("(87,68):
+# giocatore, individuo"). Testo = solo il numero, dettaglio nel tooltip; ridimensiona il pannello solo
+# se il numero cambia (il tooltip non occupa spazio).
+func set_live_cells(lines: PackedStringArray) -> void:
+	var text := "Celle vive: %d" % lines.size()
+	live_cells_label.tooltip_text = "Celle vive e motivo di attivazione:\n" + "\n".join(lines)
+	if live_cells_label.text == text:
+		return
+	live_cells_label.text = text
+	reset_size()
 
 
 # Riepilogo animali (debug): `entries` = Array di {"species", "quota", "instanced"}, già filtrato

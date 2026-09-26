@@ -21,6 +21,19 @@ extends RefCounted
 # mai un cast diretto a int come nel vecchio formato — retrocompatibilità con save pre-decadimento
 # gestita da GameLoadService (vedi lì), non qui: questo file assume SEMPRE il formato nuovo.
 #
+# ATTREZZI COME ISTANZE (2026-09-26, richiesta utente — step 1: il magazzino): SOLO per le risorse di
+# categoria TOOL (ToolInstance.is_tool_resource) la voce può avere una terza chiave, "used_instances":
+# Array di istanze USATE (ToolInstance, oggi {"remaining_uses": int}). "quantity" resta il TOTALE dei
+# pezzi (nuovi + usati) — i nuovi si ricavano per differenza (quantity - used_instances.size()) — così
+# ogni lettore esterno di "quantity" (UI, WarehouseSelectionService, ProductionService, RetrieveAction…)
+# resta corretto senza modifiche, e spazio/slot non cambiano (un'istanza occupa lo stesso space_per_unit
+# di un pezzo nuovo). La chiave c'è solo se la lista non è vuota: una voce senza istanze è identica al
+# formato di sempre. Invariante: used_instances.size() <= quantity, ogni istanza utilizzabile (> 0 usi).
+# Ingresso: store() per i pezzi nuovi, store_tool_instance() per un pezzo usato (a usi pieni rientra
+# tra i nuovi, rotto viene rifiutato). Uscita: withdraw_tool_units() restituisce le unità con il loro
+# stato (prima le istanze più consumate, poi i nuovi); withdraw()/withdraw_stored() applicano lo stesso
+# ordine ma restituiscono solo il conteggio. Tutte le altre risorse restano esattamente come prima.
+#
 # MODELLO A SLOT: ogni risorsa occupa ceil(spazio_totale_risorsa / storage_space_per_slot) slot
 # INTERI (arrotondati per eccesso — un'unità non si spezza mai tra due slot), mai condivisi con
 # un'altra risorsa (es. 6 slot pietre + 3 slot rami = 9/9, nessuno spazio residuo nell'ultimo slot
@@ -301,8 +314,93 @@ static func store(building: Building, resource_name: String, quantity: int, deca
 			float(current_quantity) * current_decay_fraction + float(deposit_amount) * decay_fraction
 		) / float(new_quantity)
 
-	building.stored_resources[resource_name] = {"quantity": new_quantity, "decay_fraction": new_decay_fraction}
+	# Pezzi NUOVI: si sommano a quantity, le eventuali istanze usate già presenti restano (attrezzi).
+	_write_entry(building, resource_name, new_quantity, new_decay_fraction, ToolInstance.get_used_instances(existing_entry))
 	return deposit_amount
+
+
+# Deposita UN attrezzo usato (2026-09-26 — attrezzi come istanze, vedi testa del file). Stessi controlli
+# di store() per una unità (can_accept, get_max_depositable). Istanza a usi pieni = indistinguibile da un
+# pezzo nuovo: passa da store() e rientra nella quantità dei nuovi (vale anche per un attrezzo con
+# max_uses <= 0, che non si usura: sempre "pieno"). Istanza parziale: quantity + 1 e l'istanza (copia)
+# si aggiunge a used_instances. Rifiutata (false) se la risorsa non è un attrezzo o se l'istanza è rotta
+# (0 usi) — guardia: un attrezzo che si rompe sparisce e non deve mai arrivare qui.
+static func store_tool_instance(building: Building, resource_name: String, instance: Dictionary) -> bool:
+	if not ToolInstance.is_tool_resource(resource_name):
+		return false
+	if ToolInstance.is_full(instance, ToolInstance.get_max_uses(resource_name)):
+		return store(building, resource_name, 1, 0.0) == 1
+	if not ToolInstance.is_usable(instance):
+		return false
+	if not can_accept(building, resource_name) or get_max_depositable(building, resource_name) < 1:
+		return false
+
+	var entry: Dictionary = (building.stored_resources.get(resource_name, {}) as Dictionary).duplicate(true)
+	var current_quantity: int = int(entry.get("quantity", 0))
+	# Stessa media pesata di store(), con decay 0.0 in arrivo (gli attrezzi non deperiscono, day_durability -1).
+	entry["decay_fraction"] = float(current_quantity) * float(entry.get("decay_fraction", 0.0)) / float(current_quantity + 1)
+	ToolInstance.add_instance_to_entry(entry, instance)
+	building.stored_resources[resource_name] = entry
+	return true
+
+
+# Deposita in sequenza le unità di un attrezzo (istanze, es. prese dallo zaino con HumanIndividual.
+# take_carried_tool_units) finché il magazzino le accetta (2026-09-26, step 2 — UnloadAction). Si ferma
+# al primo rifiuto: ritorna quante unità, dall'inizio dell'Array, sono state depositate — le restanti
+# restano al chiamante, che le rimette dove le aveva prese.
+static func store_tool_units(building: Building, resource_name: String, units: Array) -> int:
+	var stored := 0
+	for unit in units:
+		if not store_tool_instance(building, resource_name, unit):
+			break
+		stored += 1
+	return stored
+
+
+# Preleva fino a `quantity_requested` unità di un attrezzo restituendole CON il loro stato (2026-09-26 —
+# attrezzi come istanze): un Array di istanze ToolInstance, una per unità prelevata; un pezzo nuovo
+# esce come istanza a usi pieni (ToolInstance.create(max_uses)). Stessa sequenza di withdraw(): prima
+# stored_resources (istanze più consumate, poi pezzi nuovi — vedi _take_stored_tool_units), poi il
+# buffer di uscita della produzione (sempre pezzi nuovi), poi il travaso del buffer nello storage.
+# Array vuoto se la risorsa non è un attrezzo o non c'è nulla da prelevare.
+static func withdraw_tool_units(building: Building, resource_name: String, quantity_requested: int) -> Array:
+	var units: Array = []
+	if building == null or quantity_requested <= 0 or not ToolInstance.is_tool_resource(resource_name):
+		return units
+	units = _take_stored_tool_units(building, resource_name, quantity_requested)
+	var from_output: int = ProductionService.withdraw_output(building, resource_name, quantity_requested - units.size())
+	var max_uses: int = ToolInstance.get_max_uses(resource_name)
+	for i in range(from_output):
+		units.append(ToolInstance.create(max_uses))
+	if not units.is_empty():
+		ProductionService.flush_output_to_storage(building)
+	return units
+
+
+# Unico punto che (ri)scrive una voce di stored_resources con quantità e decay: quantità 0 = voce
+# rimossa; "used_instances" scritta solo se non vuota, così una voce senza istanze resta nel formato di sempre.
+static func _write_entry(building: Building, resource_name: String, quantity: int, decay_fraction: float, used_instances: Array) -> void:
+	if quantity <= 0:
+		building.stored_resources.erase(resource_name)
+		return
+	var entry: Dictionary = {"quantity": quantity, "decay_fraction": decay_fraction}
+	ToolInstance.set_used_instances(entry, used_instances)
+	building.stored_resources[resource_name] = entry
+
+
+# Prelievo di un attrezzo dal SOLO stored_resources (ToolInstance.take_units_from_entry: prima le istanze
+# più consumate, poi i pezzi nuovi). Ritorna le unità prelevate come istanze (i nuovi a usi pieni).
+# decay_fraction della voce invariata, stesso principio "lotto unico" di withdraw_stored.
+static func _take_stored_tool_units(building: Building, resource_name: String, quantity_requested: int) -> Array:
+	if not building.stored_resources.has(resource_name) or quantity_requested <= 0:
+		return []
+	var entry: Dictionary = (building.stored_resources[resource_name] as Dictionary).duplicate(true)
+	var units: Array = ToolInstance.take_units_from_entry(entry, quantity_requested, ToolInstance.get_max_uses(resource_name))
+	if int(entry.get("quantity", 0)) <= 0:
+		building.stored_resources.erase(resource_name)
+	else:
+		building.stored_resources[resource_name] = entry
+	return units
 
 
 # Quante unità di resource_name entrerebbero ANCORA in questo edificio ORA (2026-09-09, richiesta
@@ -423,21 +521,23 @@ static func get_available_quantity(building: Building, resource_name: String) ->
 # Prelievo dal SOLO stored_resources — il corpo originale di withdraw() (vedi il commento sopra
 # withdraw per il contratto), estratto il 2026-09-23 per ProductionService.complete_production, che
 # consuma gli input senza mai toccare il buffer di uscita né innescarne il travaso.
+#
+# Attrezzi (2026-09-26 — attrezzi come istanze): stesso ordine di withdraw_tool_units (prima le istanze
+# più consumate, poi i nuovi), ma ritorna solo il conteggio — lo stato delle unità prelevate va perso,
+# come oggi: zaino e cintura non tracciano ancora gli usi (step successivi).
 static func withdraw_stored(building: Building, resource_name: String, quantity_requested: int) -> int:
 	if building == null or quantity_requested <= 0:
 		return 0
+	if ToolInstance.is_tool_resource(resource_name):
+		return _take_stored_tool_units(building, resource_name, quantity_requested).size()
 	var existing_entry: Dictionary = building.stored_resources.get(resource_name, {})
 	var current_quantity: int = int(existing_entry.get("quantity", 0))
 	if current_quantity <= 0:
 		return 0
 
 	var withdrawn: int = min(quantity_requested, current_quantity)
-	var remaining_quantity: int = current_quantity - withdrawn
-	if remaining_quantity <= 0:
-		building.stored_resources.erase(resource_name)
-	else:
-		building.stored_resources[resource_name] = {
-			"quantity": remaining_quantity,
-			"decay_fraction": float(existing_entry.get("decay_fraction", 0.0)),
-		}
+	_write_entry(
+		building, resource_name, current_quantity - withdrawn,
+		float(existing_entry.get("decay_fraction", 0.0)), []
+	)
 	return withdrawn

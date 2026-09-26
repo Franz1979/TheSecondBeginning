@@ -263,6 +263,9 @@ func on_complete(individual: Variant, context: Dictionary) -> void:
 	if equip_slot_index >= 0:
 		_complete_equip(individual)
 		return
+	if ToolInstance.is_tool_resource(resource_name):
+		_complete_tool_retrieve(individual)
+		return
 	var stored_entry: Dictionary = target_building.stored_resources.get(resource_name, {})
 	var stored_quantity: int = int(stored_entry.get("quantity", 0))
 	var stored_decay_fraction: float = float(stored_entry.get("decay_fraction", 0.0))
@@ -285,13 +288,32 @@ func _complete_equip(individual: Variant) -> void:
 	var slot: int = individual.find_slot_for_direct_equip(resource_name, equip_slot_index)
 	if slot == -1:
 		return
-	var withdrawn: int = BuildingStorageService.withdraw(target_building, resource_name, 1)
-	if withdrawn <= 0:
+	# Usi residui conservati (2026-09-26, attrezzi come istanze): esce l'unità più consumata del
+	# magazzino, con il suo stato, e rientra con lo stesso stato se la cintura la rifiuta.
+	var units: Array = BuildingStorageService.withdraw_tool_units(target_building, resource_name, 1)
+	if units.is_empty():
 		return
-	if not individual.equip_tool_direct(resource_name, slot, null):
-		BuildingStorageService.store(target_building, resource_name, withdrawn, 0.0)
+	if not individual.equip_tool_direct(resource_name, slot, null, units[0]):
+		BuildingStorageService.store_tool_instance(target_building, resource_name, units[0])
 		return
-	resource_retrieved.emit(resource_name, target_building, withdrawn)
+	resource_retrieved.emit(resource_name, target_building, units.size())
+
+
+# Prelievo normale (nello zaino) di un attrezzo (2026-09-26, attrezzi come istanze): stesse quantità
+# del ramo generico di on_complete, ma le unità escono con il loro stato (prima le istanze più
+# consumate, poi i nuovi) ed entrano così nello zaino. decay_fraction non serve: gli attrezzi non
+# deperiscono. Un'unità che lo zaino rifiutasse (varietà piena, caso non atteso: activate ha già
+# verificato) torna nel magazzino, mai persa.
+func _complete_tool_retrieve(individual: Variant) -> void:
+	var units: Array = BuildingStorageService.withdraw_tool_units(target_building, resource_name, _quantity_to_retrieve)
+	var carried := 0
+	for unit in units:
+		if individual.add_carried_tool_instance(resource_name, unit):
+			carried += 1
+		else:
+			BuildingStorageService.store_tool_instance(target_building, resource_name, unit)
+	if carried > 0:
+		resource_retrieved.emit(resource_name, target_building, carried)
 
 
 # Modalità ALL_PRODUCTS (2026-09-24): preleva ogni voce del piano SOLO dal buffer di uscita

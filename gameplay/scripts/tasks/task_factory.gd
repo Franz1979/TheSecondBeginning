@@ -297,6 +297,34 @@ static func build_task(definition: TaskDefinition, context: Dictionary) -> Task:
 				# la usa ancora oggi (2026-09-13, richiesta utente — stesso discorso di RUN sopra).
 				steps.append(JumpAction.new())
 				step_descriptions.append(step_definition.step_description)
+			TaskTypes.ActionType.APPROACH_PREY, TaskTypes.ActionType.HUNT, TaskTypes.ActionType.AIM, TaskTypes.ActionType.THROW:
+				# 3 chiavi (prey_id: int, prey_species: String, prey_macro_coords: Vector2i), le stesse per tutti
+				# gli step della caccia (vedi hunt.tres): stessa preda. ApproachPreyAction le riceve così come
+				# sono; AimAction/ThrowAction (2026-09-26, mira e tiro separati) ricevono un CombatTarget animale
+				# costruito da queste. HUNT (vecchia HuntAction, non più usata dai .tres) = ThrowAction.
+				if step_definition.context_keys.size() < 3:
+					push_error("TaskFactory.build_task: context_keys insufficienti (servono 3: prey_id, prey_species, prey_macro_coords) per step della caccia (APPROACH_PREY/AIM/THROW) di TaskDefinition '%s'." % definition.task_name)
+					continue
+				var prey_id_key: String = step_definition.context_keys[0]
+				var prey_species_key: String = step_definition.context_keys[1]
+				var prey_macro_key: String = step_definition.context_keys[2]
+				if not context.has(prey_id_key) or not context.has(prey_species_key) or not context.has(prey_macro_key):
+					push_error("TaskFactory.build_task: una o più chiavi di contesto mancanti ('%s'/'%s'/'%s') per step della caccia (APPROACH_PREY/AIM/THROW) di TaskDefinition '%s'." % [
+						prey_id_key, prey_species_key, prey_macro_key, definition.task_name
+					])
+					continue
+				var prey_id := int(context[prey_id_key])
+				var prey_species := String(context[prey_species_key])
+				var prey_macro := Vector2i(context[prey_macro_key])
+				if step_definition.action_type == TaskTypes.ActionType.APPROACH_PREY:
+					steps.append(ApproachPreyAction.new(prey_id, prey_species, prey_macro))
+				else:
+					var combat_target := CombatTarget.for_animal(prey_id, prey_species, prey_macro)
+					if step_definition.action_type == TaskTypes.ActionType.AIM:
+						steps.append(AimAction.new(combat_target))
+					else:
+						steps.append(ThrowAction.new(combat_target))
+				step_descriptions.append(step_definition.step_description)
 			_:
 				push_error("TaskFactory.build_task: ActionType %d non supportato (TaskDefinition '%s')." % [
 					step_definition.action_type, definition.task_name

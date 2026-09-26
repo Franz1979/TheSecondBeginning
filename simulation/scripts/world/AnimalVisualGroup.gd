@@ -27,6 +27,32 @@ var cluster_index: int = 0
 # Irrilevante quando l'istanza è usata come centro-cluster (mai disegnata, stesso trattamento di
 # cluster_index sopra).
 var age_band: GameTypes.AgeBand = GameTypes.AgeBand.ADULT
+# Salute corrente (2026-09-26, richiesta utente — caccia, step 1: solo dati, nessun danno ancora).
+# Parte dal massimo della specie scalato per la fascia d'età di QUESTO individuo (AnimalRules.
+# max_health × size_multiplier_by_age[age_band], assegnato da AnimalGroupRenderer alla nascita).
+# Vive quanto l'individuo: alla disattivazione della cella si perde con lui. Salvata e ricaricata
+# con gli altri dati dell'individuo (caccia step 2, AnimalGroupRenderer.get_individuals_snapshot/
+# restore_individuals). Irrilevante per i centri-cluster (id 0).
+var health: float = 0.0
+# Macrocella in cui l'individuo vive (2026-09-26, caccia step 2): la sua `position` è locale a questa
+# cella. Copiata da AnimalGroupRenderer.macro_coords alla nascita/ricostruzione; serve a chi insegue
+# l'individuo da un'altra cella (ApproachPreyAction) per convertirne la posizione. Un individuo non
+# cambia mai macrocella (la posizione resta dentro 0..World.WIDTH/HEIGHT).
+var macro_coords: Vector2i = Vector2i.ZERO
+
+# Comportamento verso umani ed edifici (2026-09-26, richiesta utente — comportamento degli animali,
+# step 2). Transitorio, mai salvato: si ricalcola da sé.
+# Disagio: direzione in cui allontanarsi e intensità 0..1 (0 = nessun disagio), ricalcolate a ogni
+# controllo periodico di AnimalGroupRenderer (_run_disturbance_check). Solo una spinta sulla direzione:
+# balzi, velocità e pause restano quelli normali. Vale anche per i centri-cluster (id 0), così il
+# gruppetto non richiama gli animali verso l'umano.
+var avoid_direction: Vector2 = Vector2.ZERO
+var avoid_weight: float = 0.0
+# Fuga: giorni di gioco residui (0 = non in fuga) e direzione, impostati da un evento (un colpo di
+# caccia, AnimalGroupRenderer.trigger_flee). Durante la fuga l'individuo corre dritto a hop_speed senza
+# pause, poi torna al movimento normale.
+var flee_timer: float = 0.0
+var flee_direction: Vector2 = Vector2.ZERO
 
 # Macchina a stati a due livelli per il movimento a balzi (vedi AnimalGroupRenderer). Rilevante
 # solo per i gruppi disegnati, ignorata quando l'istanza è usata come centro-cluster (stesso

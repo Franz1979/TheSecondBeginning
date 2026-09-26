@@ -231,6 +231,16 @@ static func _action_type_for_step(step: Action) -> int:
 		return TaskTypes.ActionType.RUN
 	if step is JumpAction:
 		return TaskTypes.ActionType.JUMP
+	# APPROACH_PREY/HUNT (2026-09-26, caccia step 2), aggiunte insieme ai propri case in _build_step.
+	if step is ApproachPreyAction:
+		return TaskTypes.ActionType.APPROACH_PREY
+	# AIM/THROW (2026-09-26, mira e tiro separati — sostituiscono HUNT, vedi _build_step per i vecchi salvataggi).
+	if step is AimAction:
+		return TaskTypes.ActionType.AIM
+	if step is ThrowAction:
+		return TaskTypes.ActionType.THROW
+	if step is RecoverWeaponAction:
+		return TaskTypes.ActionType.RECOVER_WEAPON
 	push_error("TaskPersistenceService._action_type_for_step: tipo Action sconosciuto (%s)." % step.get_script().get_global_name())
 	return -1
 
@@ -390,6 +400,37 @@ static func _build_step(action_type: int, step_data: Dictionary, macro_state: Ma
 			# senza quella chiamata l'istanza fresca qui tiene i valori appena tirati a caso dal
 			# proprio _init, corretto per uno step non ancora raggiunto.
 			step = JumpAction.new()
+		TaskTypes.ActionType.APPROACH_PREY, TaskTypes.ActionType.HUNT:
+			# 3 argomenti (prey_id, prey_species, prey_macro_coords) da get_save_data dei due step
+			# (2026-09-26, caccia step 2). La preda non si risolve qui: resta un id, ritrovato nel registro
+			# degli individui vivi (AnimalGroupRenderer.find_live_individual) quando la sua cella è viva —
+			# GameScene._activate_hunt_prey_cells la attiva prima del primo tick dopo il caricamento.
+			var prey_id := int(step_data.get("prey_id", 0))
+			var prey_species := String(step_data.get("prey_species", ""))
+			var prey_macro := Vector2i(int(step_data.get("prey_macro_x", 0)), int(step_data.get("prey_macro_y", 0)))
+			if action_type == TaskTypes.ActionType.APPROACH_PREY:
+				step = ApproachPreyAction.new(prey_id, prey_species, prey_macro)
+			else:
+				# HUNT: salvataggio precedente alla separazione di mira e tiro (2026-09-26) — ricostruito come
+				# ThrowAction sullo stesso bersaglio: il lancio verifica la gittata e, se la preda è lontana,
+				# la caccia torna ad avvicinarsi da sé.
+				step = ThrowAction.new(CombatTarget.from_save_data(step_data))
+		TaskTypes.ActionType.AIM, TaskTypes.ActionType.THROW:
+			# Bersaglio da CombatTarget.to_save_data (tipo, id, etichetta, macrocella) più la categoria
+			# dell'arma; il progresso della mira arriva da AimAction.load_save_data (solo step corrente).
+			var saved_target := CombatTarget.from_save_data(step_data)
+			var weapon_category: TaskTypes.ToolCategory = int(step_data.get("weapon_category", TaskTypes.ToolCategory.HUNTING))
+			if action_type == TaskTypes.ActionType.AIM:
+				step = AimAction.new(saved_target, weapon_category)
+			else:
+				step = ThrowAction.new(saved_target, weapon_category)
+		TaskTypes.ActionType.RECOVER_WEAPON:
+			# Arma a terra (vive solo in questo step), esito del tiro e bersaglio; il punto di caduta è in
+			# Task.context (HuntService.CONTEXT_WEAPON_DROP), ripristinato con il resto del context.
+			step = RecoverWeaponAction.new(
+				String(step_data.get("weapon_name", "")), int(step_data.get("weapon_uses", 0)),
+				CombatTarget.from_save_data(step_data), bool(step_data.get("prey_killed", false))
+			)
 		_:
 			push_error("TaskPersistenceService._build_step: action_type %d non supportato." % action_type)
 			return null

@@ -412,9 +412,12 @@ func on_complete(individual: Variant, context: Dictionary) -> void:
 			# qui sotto — stesso esito di una destinazione demolita (can_accept/store ritornano 0).
 			var deposited: int = 0
 			if not _is_completed_site_destination(context):
-				deposited = BuildingStorageService.store(
-					target_building, String(resource_name), int(carried_entry["quantity"]), float(carried_entry["decay_fraction"])
-				)
+				if ToolInstance.is_tool_resource(String(resource_name)):
+					deposited = _store_carried_tool(individual, String(resource_name), int(carried_entry["quantity"]))
+				else:
+					deposited = BuildingStorageService.store(
+						target_building, String(resource_name), int(carried_entry["quantity"]), float(carried_entry["decay_fraction"])
+					)
 			if DebugLogging.ENABLED and DebugLogging.SHOW_TRANSPORT_BUILD_LOGS:
 				print("[UNLOAD] on_complete: store() ha depositato %d unità di '%s' (su %d richieste)" % [
 					deposited, resource_name, int(carried_entry["quantity"])
@@ -422,7 +425,9 @@ func on_complete(individual: Variant, context: Dictionary) -> void:
 			deposited_by_resource[String(resource_name)] = deposited
 			if deposited > 0:
 				any_deposited = true
-				individual.remove_carried_resource(String(resource_name), deposited)
+				# Gli attrezzi sono già usciti dallo zaino dentro _store_carried_tool (con il loro stato).
+				if not ToolInstance.is_tool_resource(String(resource_name)):
+					individual.remove_carried_resource(String(resource_name), deposited)
 		if any_deposited:
 			# resource_deposited (2026-09-12) — emesso SOLO se qualcosa è stato depositato (una volta per
 			# on_complete, non per varietà): chi ascolta (GameScene._on_resource_deposited) deve rinfrescare la
@@ -594,13 +599,33 @@ func _complete_unequip(individual: Variant, context: Dictionary) -> void:
 		return
 	if BuildingStorageService.get_max_depositable(target_building, tool_name) <= 0:
 		return
-	if BuildingStorageService.store(target_building, tool_name, 1, 0.0) <= 0:
+	# Usi residui conservati (2026-09-26, attrezzi come istanze): l'attrezzo entra nel magazzino con il
+	# suo stato (tra i nuovi se a usi pieni, come istanza se consumato).
+	if not BuildingStorageService.store_tool_instance(target_building, tool_name, individual.get_equipped_tool_instance(unequip_slot_index)):
 		return
 	individual.take_equipped_tool(unequip_slot_index, null)
 	resource_deposited.emit(target_building)
 	var macro_offset: Vector2 = Vector2(Vector2i(target_building.macro_x, target_building.macro_y) - individual.home_macro_coords) * World.WIDTH
 	var building_position: Vector2 = Vector2(target_building.micro_x, target_building.micro_y) + macro_offset
 	context["pending_walk_away_position"] = building_position + Vector2.from_angle(randf() * TAU) * PHYSICAL_WALK_AWAY_DISTANCE
+
+
+# Deposito di un attrezzo dallo zaino (2026-09-26, attrezzi come istanze): si tolgono dallo zaino le
+# unità che il magazzino può accettare (stesso tetto di store(): can_accept + get_max_depositable), con
+# il loro stato — prima le più consumate — e si depositano una per una (BuildingStorageService.
+# store_tool_units). Quelle eventualmente rifiutate tornano nello zaino con lo stesso stato. Ritorna le
+# unità depositate, stesso significato del valore di ritorno di store().
+func _store_carried_tool(individual: Variant, resource_name: String, carried_quantity: int) -> int:
+	if not BuildingStorageService.can_accept(target_building, resource_name):
+		return 0
+	var to_deposit: int = mini(carried_quantity, BuildingStorageService.get_max_depositable(target_building, resource_name))
+	if to_deposit <= 0:
+		return 0
+	var units: Array = individual.take_carried_tool_units(resource_name, to_deposit)
+	var stored: int = BuildingStorageService.store_tool_units(target_building, resource_name, units)
+	for i in range(stored, units.size()):
+		individual.add_carried_tool_instance(resource_name, units[i])
+	return stored
 
 
 func get_save_data() -> Dictionary:

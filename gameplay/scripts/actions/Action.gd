@@ -32,6 +32,16 @@ var target: Variant = null
 # campo da qui, non da un nuovo posto.
 var required_tool_categories: Array[TaskTypes.ToolCategory] = []
 
+# Attesa degli attrezzi (spostata qui da ProduceAction il 2026-09-26, caccia step 2 — prima era solo
+# della produzione): stato dell'ULTIMO controllo di ToolGateService fatto da ensure_required_tools,
+# ricalcolato a ogni tick dallo step che lo chiama, mai salvato. tool_wait_result == OK = nessuna
+# attesa; MISSING_TOOLS = mancano gli attrezzi per tool_wait_missing_categories; BELT_FULL/
+# CANNOT_EQUIP = l'attrezzo tool_wait_tool_name c'è nello zaino ma non entra in cintura. Letti da
+# GameScene._describe_tool_wait per i pannelli, per qualunque step.
+var tool_wait_result: int = ToolGateService.Result.OK
+var tool_wait_missing_categories: Array = []
+var tool_wait_tool_name: String = ""
+
 # Fasce d'età a cui è VIETATO eseguire questa Action (2026-09-12, richiesta utente — collegamento
 # di HumanTypes.AgeBand.INFANT al gameplay) — STESSO schema di required_tool_categories sopra: solo
 # struttura dati qui, la verifica vera vive nel chiamante (HumanIndividual.assign_task, vedi lì).
@@ -51,7 +61,7 @@ var disallowed_age_bands: Array[HumanTypes.AgeBand] = []
 # `context` (2026-09-09, richiesta utente — prerequisito per il futuro SearchAction) — il
 # Task.context CONDIVISO della Task che possiede questo step (Dictionary libero, vedi Task.gd),
 # passato così un'Action può in futuro leggere un risultato scritto da uno step precedente della
-# stessa Task (es. SearchAction scrive qui cosa ha trovato, PickUpAction/HuntAction lo leggono).
+# stessa Task (es. SearchAction scrive qui cosa ha trovato, PickUpAction/AimAction lo leggono).
 # SOLO IL CANALE per ora: questa classe base non lo usa (nessun comportamento di default), e
 # nessuna sottoclasse esistente lo legge/scrive ancora — vedi le sottoclassi concrete per la stessa
 # nota. Posizionato subito dopo `individual` in ogni firma di questo file (stesso ordine in
@@ -189,3 +199,44 @@ func get_required_position(individual: Variant, context: Dictionary) -> Variant:
 # ogni sottoclasse con un target_building lo sovrascrive se serve.
 func is_target_valid() -> bool:
 	return true
+
+
+# Categorie richieste da questo step (sue + ricetta per ProduceAction, vedi ToolGateService.
+# get_action_required_categories) coperte dalla cintura, spostando dallo zaino ciò che serve; aggiorna
+# lo stato tool_wait_*. Ritorna true se lo step può lavorare. Chiamata a ogni tick dagli step che
+# richiedono attrezzi (ProduceAction, ApproachPreyAction): senza attrezzi restano fermi
+# e ripartono da soli quando arrivano nello zaino. game_data null: lo step non lo possiede — la
+# capacità di trasporto viene corretta del solo bonus dello slot occupato (HumanIndividual.
+# _recalculate_carry_capacity_after_tool_change).
+func ensure_required_tools(individual: Variant) -> bool:
+	var required := ToolGateService.get_action_required_categories(self)
+	if required.is_empty() or individual == null:
+		tool_wait_result = ToolGateService.Result.OK
+		tool_wait_missing_categories = []
+		tool_wait_tool_name = ""
+		return true
+	var outcome := ToolGateService.try_satisfy(individual, required, null)
+	tool_wait_result = int(outcome["result"])
+	tool_wait_missing_categories = outcome["missing_categories"]
+	tool_wait_tool_name = String(outcome["tool_name"])
+	if DebugLogging.ENABLED and DebugLogging.SHOW_TRANSPORT_BUILD_LOGS and not outcome["equipped"].is_empty():
+		print("[TOOLS] #%d: attrezzi spostati in cintura per %s: %s." % [individual.id, get_script().get_global_name(), str(outcome["equipped"])])
+	return tool_wait_result == ToolGateService.Result.OK
+
+
+func is_waiting_for_tools() -> bool:
+	return tool_wait_result != ToolGateService.Result.OK
+
+
+# Avviso di rottura degli attrezzi (spostato qui da ProduceAction il 2026-09-26, condiviso con la caccia):
+# `broken` = nomi restituiti da ToolGateService.consume_tool_uses. Testo tradotto sul pannello
+# dell'individuo (stesso canale di tool_gate_warning). No-op se nulla si è rotto.
+func report_broken_tools(individual: Variant, broken: Array[String]) -> void:
+	if broken.is_empty() or individual == null:
+		return
+	var tool_names: PackedStringArray = []
+	for tool_name in broken:
+		tool_names.append(IconRegistry.get_resource_display_name(tool_name))
+	individual.tool_gate_warning = tr("tool_broken_warning").format({
+		"name": individual.name, "tool": ", ".join(tool_names),
+	})

@@ -19,9 +19,29 @@ corner_radius_bottom_left = 4
 [node name="BuildingInfoPanel" type="VBoxContainer"]
 script = ExtResource("1_bld")
 
-[node name="StatusLabel" type="Label" parent="."]
+[node name="StatusRow" type="HBoxContainer" parent="."]
 layout_mode = 2
+
+[node name="StatusLabel" type="Label" parent="StatusRow"]
+layout_mode = 2
+size_flags_horizontal = 3
 theme_override_font_sizes/font_size = 11
+
+[node name="CancelWorkButton" type="Button" parent="StatusRow"]
+visible = false
+layout_mode = 2
+size_flags_vertical = 0
+custom_minimum_size = Vector2(18, 18)
+mouse_default_cursor_shape = 2
+theme_override_colors/font_color = Color(0.9, 0.15, 0.15, 1)
+theme_override_colors/font_hover_color = Color(1, 0.3, 0.3, 1)
+theme_override_colors/font_pressed_color = Color(0.7, 0.1, 0.1, 1)
+theme_override_colors/font_focus_color = Color(0.9, 0.15, 0.15, 1)
+theme_override_colors/font_outline_color = Color(0.9, 0.15, 0.15, 1)
+theme_override_constants/outline_size = 2
+theme_override_font_sizes/font_size = 10
+flat = true
+text = "✕"
 
 [node name="ConstructionPhaseLabel" type="Label" parent="."]
 layout_mode = 2

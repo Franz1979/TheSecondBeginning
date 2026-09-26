@@ -30,6 +30,35 @@ extends Resource
 # min_territory_cells/max_days_without_food sotto. Nessuna logica lo legge ancora.
 @export var prey_calories: float
 
+# Resistenza di un individuo ADULTO della specie (2026-09-26, richiesta utente — caccia, step 1: solo
+# dati). Scalata per le altre fasce d'età con size_multiplier_by_age (adult=1.0 è il riferimento),
+# stesso principio di prey_calories sopra. Unità astratta, da tarare insieme a SecondaryResourceRules.
+# attack_power degli attrezzi. Ogni specie la dichiara nel proprio .tres (partridge 8 … aurochs 50,
+# proporzionata alla taglia). Letta oggi solo per inizializzare la salute corrente degli individui
+# disegnati (AnimalVisualGroup.health, via AnimalGroupRenderer); nessuna logica di danno ancora.
+@export var max_health: float = 0.0
+# Moltiplicatore della probabilità di colpire un individuo della specie (2026-09-26, richiesta utente — prima
+# era la costante unica HuntService.HIT_CHANCE_SCALE, 1.4 per tutte): >1 più facile, <1 più difficile. Usato
+# da HuntService.compute_hit_chance. Negativo (default) = la specie non lo dichiara e vale
+# HuntService.DEFAULT_HIT_CHANCE_SCALE.
+@export var hit_chance_scale: float = -1.0
+
+@export_group("Behavior")
+# Comportamento degli individui verso umani ed edifici (2026-09-26, richiesta utente — comportamento
+# degli animali, step 1: SOLO i parametri, nessuna logica li legge ancora). Per specie, non per età.
+# Distanze in MICROCELLE, stessa unità di AnimalVisualGroup.position/HumanIndividual.position.
+# Entro questa distanza da un essere umano l'individuo si allontana con calma.
+@export var discomfort_radius: float = 0.0
+# Entro questa distanza da un essere umano l'individuo fugge davvero (tipicamente < discomfort_radius).
+@export var flee_radius: float = 0.0
+# Distanza a cui l'individuo tende a restare dagli edifici COMPLETI.
+@export var building_avoidance_radius: float = 0.0
+# Reattività al disagio (2026-09-26, richiesta utente — "fa parte del carattere dell'animale"): quanto
+# ogni balzo piega la direzione verso "via dall'umano/edificio", a intensità piena (a contatto). Frazione
+# 0..1 della rotazione, usata da AnimalGroupRenderer._apply_avoidance_on_hop. Negativo (default) = la
+# specie non la dichiara e vale AnimalGroupRenderer.AVOID_BIAS_PER_HOP.
+@export var avoidance_strength: float = -1.0
+
 @export_group("Visualization")
 # Quanti individui rappresenta una singola icona/gruppo nella resa visiva animata (vedi
 # AnimalGroupRenderer). Default 1 = rappresentazione 1:1, per compatibilità con specie che

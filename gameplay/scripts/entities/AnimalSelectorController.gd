@@ -20,8 +20,10 @@ const CELL_SIZE: int = 10 # stesso fattore pixel/microcella di MicroCellRenderer
 const SELECT_RADIUS_MICROCELLS: float = 0.8
 
 
-func try_select(event: InputEvent, live_cells: Dictionary) -> Dictionary:
-	if not (event is InputEventMouseButton) or not event.pressed or event.button_index != MOUSE_BUTTON_LEFT:
+# `required_button` (2026-09-26, caccia step 2): sinistro per la selezione, destro per il comando di
+# caccia (GameScene._try_assign_hunt_command_on_right_click) — stesso parametro del selettore edifici.
+func try_select(event: InputEvent, live_cells: Dictionary, required_button: int = MOUSE_BUTTON_LEFT) -> Dictionary:
+	if not (event is InputEventMouseButton) or not event.pressed or event.button_index != required_button:
 		return {}
 
 	var best: Dictionary = {}

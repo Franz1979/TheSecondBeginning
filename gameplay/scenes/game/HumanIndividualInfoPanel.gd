@@ -637,10 +637,18 @@ func _update_tool_slots(individual: HumanIndividual) -> void:
 			label.add_theme_color_override("font_color", EMPTY_TOOL_SLOT_TEXT_COLOR)
 			box.tooltip_text = tr("tool_slot_empty_tooltip")
 			box.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+			_update_tool_uses_bar(slot, 0, 0)
 			continue
 
 		label.add_theme_color_override("font_color", Color.WHITE)
 		box.tooltip_text = tr("tool_slot_full_tooltip").format({"tool": IconRegistry.get_resource_display_name(tool_name)})
+		# Usi residui (2026-09-26, attrezzi come istanze — step 3): riga in più nel tooltip e barra in basso
+		# nel riquadro. Un attrezzo che non si usura (max_uses <= 0) non mostra né l'una né l'altra.
+		var max_uses: int = ToolInstance.get_max_uses(tool_name)
+		var remaining_uses: int = individual.get_equipped_tool_uses(slot)
+		if max_uses > 0:
+			box.tooltip_text += "\n" + tr("tool_slot_uses_line").format({"uses": remaining_uses, "max": max_uses})
+		_update_tool_uses_bar(slot, remaining_uses, max_uses)
 		box.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
 		var icon_node: Control = IconRegistry.get_resource_icon_node(tool_name)
 		if icon_node != null:
@@ -659,6 +667,51 @@ func _update_tool_slots(individual: HumanIndividual) -> void:
 			label.visible = true
 			var icon: String = IconRegistry.get_resource_icon(tool_name)
 			label.text = icon if icon != "" else tool_name.substr(0, 1).to_upper()
+		# L'icona appena aggiunta va in coda ai figli e coprirebbe la barra: la barra torna sopra.
+		if _tool_uses_bars[slot] != null:
+			box.move_child(_tool_uses_bars[slot], -1)
+
+
+# Barra degli usi residui di uno slot della cintura (2026-09-26, attrezzi come istanze — step 3):
+# striscia sottile in fondo al riquadro, sfondo scuro e riempimento proporzionale agli usi, dal verde
+# (pieno) al rosso (quasi rotto). Creata al primo uso e poi riusata; nascosta per slot vuoti e per
+# attrezzi che non si usurano (max_uses <= 0). mouse_filter IGNORE: hover e click restano al riquadro.
+var _tool_uses_bars: Array[ColorRect] = [null, null, null, null]
+const TOOL_USES_BAR_HEIGHT_FRACTION := 0.14
+const TOOL_USES_BAR_BACKGROUND := Color(0, 0, 0, 0.55)
+
+
+func _update_tool_uses_bar(slot: int, remaining_uses: int, max_uses: int) -> void:
+	if slot >= _tool_uses_bars.size():
+		return
+	var bar: ColorRect = _tool_uses_bars[slot]
+	if max_uses <= 0:
+		if bar != null:
+			bar.visible = false
+		return
+	if bar == null:
+		bar = ColorRect.new()
+		bar.name = "UsesBar"
+		bar.color = TOOL_USES_BAR_BACKGROUND
+		bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		bar.anchor_left = 0.0
+		bar.anchor_right = 1.0
+		bar.anchor_top = 1.0 - TOOL_USES_BAR_HEIGHT_FRACTION
+		bar.anchor_bottom = 1.0
+		var fill := ColorRect.new()
+		fill.name = "Fill"
+		fill.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		fill.anchor_left = 0.0
+		fill.anchor_top = 0.0
+		fill.anchor_bottom = 1.0
+		bar.add_child(fill)
+		tool_slot_boxes[slot].add_child(bar)
+		_tool_uses_bars[slot] = bar
+	var ratio: float = clampf(float(remaining_uses) / float(max_uses), 0.0, 1.0)
+	var fill_rect := bar.get_node("Fill") as ColorRect
+	fill_rect.anchor_right = ratio
+	fill_rect.color = Color.RED.lerp(Color.GREEN, ratio)
+	bar.visible = true
 
 
 # Costruisce gli slot dei riquadri trasportati (una volta, da _ready): il riquadro in scena è lo slot 0,

@@ -11,6 +11,37 @@ extends Node2D
 # quando cambiano le trasformazioni istanza — a differenza di MicroCellRenderer, qui NON si usa
 # _draw()/queue_redraw(): un redraw manuale a ogni frame rifarebbe inutilmente anche i buffer
 # statici (erba, pietre, alberi) di tutta la cella.
+
+# =====================================================================================================
+# TARATURA DEL COMPORTAMENTO: disagio e fuga (2026-09-26, richiesta utente — vedi la sezione "Disagio e
+# fuga" più sotto per il funzionamento). I raggi sono per specie, in AnimalRules (discomfort_radius,
+# flee_radius, building_avoidance_radius); qui solo intensità, curva e tempi, uguali per tutte le specie.
+# =====================================================================================================
+
+# Ogni quanti secondi REALI ogni renderer ricalcola chi è a disagio.
+const BEHAVIOR_CHECK_INTERVAL_SEC: float = 1.0
+
+# Curva dell'intensità con la distanza: intensità = (1 - distanza/raggio) ^ AVOID_CURVE_EXPONENT, da 0 al
+# bordo del raggio a 1 a contatto. 1 = lineare; 2 = a metà raggio vale 0.25; 3 = a metà raggio 0.125. Più
+# è alto, più al bordo del raggio il movimento resta casuale e la tendenza diventa netta solo da vicino.
+# 3 (2026-09-26, taratura: da 2): spinta quasi nulla per gran parte del raggio, cresce negli ultimi metri.
+const AVOID_CURVE_EXPONENT: float = 3.0
+
+# Quanto ogni balzo piega la direzione verso "via dall'umano": frazione della rotazione (slerp) applicata
+# all'inizio di ogni balzo, moltiplicata per l'intensità. 0.20 con intensità 1 (a contatto) = un quinto
+# della strada verso la direzione di allontanamento a ogni balzo; al bordo del raggio l'intensità è ~0 e
+# la direzione resta quella casuale di sempre. È il DEFAULT: ogni specie può dichiarare la propria
+# reattività in AnimalRules.avoidance_strength, che ha la precedenza (2026-09-26, taratura: da 0.35).
+const AVOID_BIAS_PER_HOP: float = 0.20
+
+# Spinta sui centri dei gruppetti (che si muovono in continuo, senza pause): rotazione per giorno di gioco
+# × intensità, applicata a ogni frame. Tenuta bassa: il gruppetto si sposta con calma invece di
+# trascinare tutti gli animali in linea retta. 0 = centri esclusi dal disagio.
+const CLUSTER_AVOID_STEER_RATE: float = 3.0
+
+# Durata della fuga in giorni di gioco: 0.2 = 1.6 s reali a 1x (coniglio: ~7.6 microcelle a hop_speed 38).
+const FLEE_DURATION_DAYS: float = 0.1
+
 const CELL_SIZE: int = 10 # stesso fattore pixel/microcella di MicroCellRenderer
 const BODY_SEGMENTS: int = 16 # risoluzione del ventaglio del corpo, condivisa da tutte le specie
 const TAIL_SEGMENTS: int = 8  # risoluzione del cerchietto della coda, condivisa da tutte le specie
@@ -361,6 +392,9 @@ var hop_pause_max: float = 0.0375
 # GameTypes.AgeBand. Default [1,1,1]: nessuna scala per specie che non lo passano esplicitamente
 # (compatibilità con set_population, il fallback non age-aware, che tagga tutto ADULT).
 var size_multiplier_by_age: Array = [1.0, 1.0, 1.0]
+# AnimalRules.max_health della specie (adulto), risolto in configure (2026-09-26, caccia step 1) —
+# base della salute iniziale di ogni individuo, scalata per fascia d'età (_max_health_for).
+var _adult_max_health: float = 0.0
 
 # Se assegnato (vedi MacroCellScene._ready), i gruppi si muovono solo quando clock.is_playing
 # è true — stesso orologio che governa l'avanzamento giorno/anno, così i conigli si fermano
@@ -384,6 +418,57 @@ var visibility_test: Callable = Callable()
 # viene mai riassegnato, nemmeno a un individuo di un'altra cella/specie o a uno rigenerato dopo
 # la riattivazione di una cella. Non persistito (nessun salvataggio degli individui in questo step).
 static var _next_individual_id: int = 1
+
+# Registro degli individui vivi di TUTTI i renderer (2026-09-26, caccia step 2): id -> AnimalVisualGroup.
+# Permette a chi insegue un animale (ApproachPreyAction/AimAction/ThrowAction) di ritrovarlo per id senza
+# conoscere GameScene né tenere un riferimento che resterebbe vivo in memoria dopo la rimozione.
+# Mantenuto in un solo punto per ogni caso: aggiunta in _make_individual/restore_individuals,
+# rimozione in _remove_individuals_by_id, restore_individuals (individui sostituiti) e _exit_tree
+# (renderer distrutto con la sua cella). Non persistito: si ricostruisce da sé con gli individui.
+static var _live_individuals: Dictionary = {}
+# Renderer di ciascun individuo vivo (id -> AnimalGroupRenderer), aggiornato negli stessi punti di
+# _live_individuals (2026-09-26, caccia — preda persa di vista): serve a is_live_individual_in_sight per
+# usare il test di visibilità del renderer che la disegna.
+static var _live_individual_renderers: Dictionary = {}
+
+# --- Disagio e fuga (2026-09-26, richiesta utente — comportamento degli animali, step 2) ---
+#
+# Disagio (sempre attivo): ogni BEHAVIOR_CHECK_INTERVAL_SEC secondi REALI il renderer chiede a
+# disturbance_source le posizioni di umani ed edifici completi (UNA chiamata per controllo) e, per
+# ogni individuo e centro-cluster, calcola una direzione e un'intensità di allontanamento
+# (_evaluate_avoidance, curva AVOID_CURVE_EXPONENT). Per gli individui non è un bersaglio da inseguire:
+# è una TENDENZA applicata solo quando l'animale inizia un balzo (_apply_avoidance_on_hop), che piega un
+# poco la direzione e lascia agire la deriva casuale tra un balzo e l'altro — balzi, velocità e pause
+# restano quelli normali. I centri-cluster (moto continuo, senza pause) ricevono una spinta per frame
+# molto più debole (CLUSTER_AVOID_STEER_RATE), così non trascinano più l'intero gruppetto in linea retta.
+# Fuga (solo su evento): trigger_flee (statica, chiamata da ThrowAction a ogni lancio) mette in fuga ogni
+# individuo entro flee_radius dal punto del tiro, in tutti i renderer vivi: corsa dritta a hop_speed,
+# senza pause, per FLEE_DURATION_DAYS, poi comportamento normale.
+# Tutte le costanti di taratura sono in cima al file.
+
+# Sorgenti di disturbo della cella, assegnate come visibility_test da chi istanzia il renderer
+# (GameScene._activate_live_cell): Callable senza argomenti che ritorna {"humans": Array[Vector2],
+# "buildings": Array[Vector2]} in coordinate LOCALI di questa cella (microcelle, anche fuori da 0..100
+# per chi sta nelle celle vicine). Callable invece di un riferimento a GameScene, così questo renderer
+# (layer simulation) non dipende da una classe di gameplay. Non valido (MacroCellScene) = nessun disagio.
+var disturbance_source: Callable = Callable()
+# Raggi della specie (AnimalRules, letti in configure), in microcelle.
+var discomfort_radius: float = 0.0
+var flee_radius: float = 0.0
+var building_avoidance_radius: float = 0.0
+# Reattività della specie al disagio (AnimalRules.avoidance_strength, risolta in configure): frazione per
+# balzo usata da _apply_avoidance_on_hop. Default AVOID_BIAS_PER_HOP per le specie che non la dichiarano.
+var avoidance_strength: float = AVOID_BIAS_PER_HOP
+# Secondi reali al prossimo controllo: parte da un valore casuale così i renderer di celle e specie
+# diverse non controllano tutti nello stesso frame.
+var _behavior_check_timer: float = 0.0
+# Renderer vivi (per trigger_flee): aggiunti in configure, tolti in _exit_tree.
+static var _live_renderers: Array = []
+
+# Macrocella di questo renderer (assegnata da GameScene all'attivazione della cella, caccia step 2),
+# copiata su ogni individuo (AnimalVisualGroup.macro_coords). Default (0,0) dove nessuno la assegna
+# (MacroCellScene): lì nessuno insegue animali.
+var macro_coords: Vector2i = Vector2i.ZERO
 
 var _groups: Array = [] # Array[AnimalVisualGroup], un elemento per individuo (id > 0)
 var _clusters: Array = [] # Array[AnimalVisualGroup], riusata come "centro mobile", mai disegnata
@@ -414,6 +499,21 @@ func configure(params: Dictionary) -> void:
 	hop_pause_min = float(params.get("hop_pause_min", 0.0125))
 	hop_pause_max = float(params.get("hop_pause_max", 0.0375))
 	size_multiplier_by_age = params.get("size_multiplier_by_age", [1.0, 1.0, 1.0])
+	# Salute di un adulto (caccia, step 1): letta dalle regole della specie qui, una volta, invece di
+	# aggiungerla a ciascuno dei dizionari di parametri costruiti per specie da GameScene/MacroCellScene.
+	var species_rules := AnimalCalculator.get_animal_rules(species_name)
+	_adult_max_health = species_rules.max_health if species_rules != null else 0.0
+	# Disagio e fuga (comportamento step 2): raggi della specie, stessa lettura una tantum.
+	if species_rules != null:
+		discomfort_radius = species_rules.discomfort_radius
+		flee_radius = species_rules.flee_radius
+		building_avoidance_radius = species_rules.building_avoidance_radius
+		# Valore negativo (default di AnimalRules) = specie che non la dichiara: resta AVOID_BIAS_PER_HOP.
+		if species_rules.avoidance_strength >= 0.0:
+			avoidance_strength = species_rules.avoidance_strength
+	_behavior_check_timer = randf() * BEHAVIOR_CHECK_INTERVAL_SEC
+	if not _live_renderers.has(self):
+		_live_renderers.append(self)
 
 	var mesh: ArrayMesh = params["mesh"]
 
@@ -536,6 +636,9 @@ func _remove_individuals_by_id(ids: Dictionary) -> void:
 	for individual in _groups:
 		if not ids.has(individual.id):
 			kept.append(individual)
+		else:
+			_live_individuals.erase(individual.id)
+			_live_individual_renderers.erase(individual.id)
 	_groups = kept
 
 
@@ -655,6 +758,8 @@ func get_individuals_snapshot() -> Array:
 			"age_band": int(individual.age_band),
 			"x": individual.position.x,
 			"y": individual.position.y,
+			# Salute corrente (2026-09-26, caccia step 2): un animale ferito resta ferito dopo un salvataggio.
+			"health": individual.health,
 		})
 	return result
 
@@ -666,6 +771,7 @@ func restore_individuals(entries: Array) -> void:
 	if not _configured:
 		return
 
+	_unregister_all_individuals()
 	_groups.clear()
 	for entry in entries:
 		var age_band := int(entry.get("age_band", GameTypes.AgeBand.ADULT)) as GameTypes.AgeBand
@@ -674,12 +780,17 @@ func restore_individuals(entries: Array) -> void:
 		individual.species_name = String(entry.get("species", species_name))
 		individual.position = Vector2(float(entry.get("x", 0.0)), float(entry.get("y", 0.0)))
 		individual.cluster_index = -1
+		individual.macro_coords = macro_coords
+		# Salute salvata (caccia step 2); save precedenti senza la chiave = massimo per la sua età.
+		individual.health = float(entry.get("health", _max_health_for(age_band)))
 		if individual.id <= 0:
 			# Difensivo: un individuo senza id valido ne riceve uno nuovo invece di restare id 0
 			# (riservato ai centri-cluster).
 			individual.id = _next_individual_id
 		_next_individual_id = max(_next_individual_id, individual.id + 1)
 		_groups.append(individual)
+		_live_individuals[individual.id] = individual
+		_live_individual_renderers[individual.id] = self
 
 	_sync_cluster_count(_groups.size())
 	_cluster_restored_individuals()
@@ -788,7 +899,66 @@ func _make_individual(age_band: GameTypes.AgeBand, cluster_index: int) -> Animal
 	individual.species_name = species_name
 	individual.cluster_index = cluster_index
 	individual.position = _random_point_near_cluster(cluster_index)
+	individual.health = _max_health_for(age_band)
+	individual.macro_coords = macro_coords
+	_live_individuals[individual.id] = individual
+	_live_individual_renderers[individual.id] = self
 	return individual
+
+
+# --- Registro degli individui vivi (2026-09-26, caccia step 2) — vedi _live_individuals ---
+
+# L'individuo animale con questo id, se esiste ancora in una cella viva; null altrimenti (rimosso dalla
+# riconciliazione con la popolazione, cella disattivata, mai esistito).
+static func find_live_individual(individual_id: int) -> AnimalVisualGroup:
+	return _live_individuals.get(individual_id, null)
+
+
+# true se l'individuo vivo con questo id è in vista (2026-09-26, caccia — preda persa di vista): lo stesso
+# test della nebbia di guerra con cui il renderer decide se disegnarlo (_is_visible_now, cioè
+# FogOfWarRenderer.is_animal_visible_at), NON il pulsante che nasconde gli animali (are_animals_shown):
+# quella è una preferenza di visualizzazione e non deve chiudere una caccia. false se l'individuo non
+# esiste più.
+static func is_live_individual_in_sight(individual_id: int) -> bool:
+	var individual: AnimalVisualGroup = _live_individuals.get(individual_id, null)
+	var renderer = _live_individual_renderers.get(individual_id, null)
+	if individual == null or renderer == null or not is_instance_valid(renderer):
+		return false
+	return renderer._is_visible_now(individual.position)
+
+
+# Rimuove UN individuo preciso (2026-09-26, caccia — la preda uccisa): proprio quello, non uno scelto a
+# caso dalla riconciliazione con la popolazione. Il chiamante (GameScene._on_prey_killed) cala anche la
+# popolazione del gruppo di uno nella stessa fascia, così la riconciliazione successiva trova già il
+# conto giusto. Ritorna true se l'individuo c'era.
+func remove_individual(individual_id: int) -> bool:
+	if get_individual_by_id(individual_id) == null:
+		return false
+	_remove_individuals_by_id({individual_id: true})
+	_refresh_instances()
+	return true
+
+
+func _unregister_all_individuals() -> void:
+	for individual in _groups:
+		_live_individuals.erase(individual.id)
+		_live_individual_renderers.erase(individual.id)
+
+
+# Renderer distrutto (cella disattivata, cambio scena): i suoi individui smettono di esistere.
+func _exit_tree() -> void:
+	_unregister_all_individuals()
+	_live_renderers.erase(self)
+
+
+# Salute massima di un individuo di questa specie nella fascia d'età data (2026-09-26, caccia step 1):
+# AnimalRules.max_health dell'adulto × size_multiplier_by_age[fascia], stessa scala per età già usata
+# per la taglia visiva e per le calorie di preda. Fascia fuori range = scala 1.0.
+func _max_health_for(age_band: GameTypes.AgeBand) -> float:
+	var age_scale: float = 1.0
+	if age_band >= 0 and age_band < size_multiplier_by_age.size():
+		age_scale = float(size_multiplier_by_age[age_band])
+	return _adult_max_health * age_scale
 
 
 func _random_point_near_cluster(cluster_index: int) -> Vector2:
@@ -842,6 +1012,7 @@ func _update_group_phase(group: AnimalVisualGroup, delta: float) -> void:
 			else:
 				group.micro_phase = AnimalVisualGroup.MicroPhase.HOPPING
 				group.micro_phase_timer = randf_range(hop_duration_min, hop_duration_max)
+				_apply_avoidance_on_hop(group)
 		if group.macro_phase_timer <= 0.0:
 			group.macro_phase = AnimalVisualGroup.MacroPhase.RESTING
 			group.macro_phase_timer = randf_range(rest_phase_duration_min, rest_phase_duration_max)
@@ -851,6 +1022,7 @@ func _update_group_phase(group: AnimalVisualGroup, delta: float) -> void:
 			group.macro_phase_timer = randf_range(movement_phase_duration_min, movement_phase_duration_max)
 			group.micro_phase = AnimalVisualGroup.MicroPhase.HOPPING
 			group.micro_phase_timer = randf_range(hop_duration_min, hop_duration_max)
+			_apply_avoidance_on_hop(group)
 
 
 # Livello 1: movimento casuale semplice, non un vero sistema di IA. I cluster (centri invisibili)
@@ -878,23 +1050,49 @@ func _process(real_delta: float) -> void:
 	# trascorsa in questo frame, come HumanIndividualMovementService per gli umani: la velocità degli
 	# animali rispetto a un umano non cambia con la velocità di gioco (1x/2x/4x/8x).
 	var delta := _game_day_delta(real_delta)
+	var timing_start_usec: int = Time.get_ticks_usec() if _is_timing_enabled() else 0
+
+	# Disagio (comportamento step 2): controllo periodico, non a ogni frame — vedi _run_disturbance_check.
+	_behavior_check_timer -= real_delta
+	if _behavior_check_timer <= 0.0:
+		_behavior_check_timer += BEHAVIOR_CHECK_INTERVAL_SEC
+		var check_start_usec: int = Time.get_ticks_usec() if _is_timing_enabled() else 0
+		_run_disturbance_check()
+		if _is_timing_enabled():
+			_timing_check_usec += Time.get_ticks_usec() - check_start_usec
 
 	# I cluster avanzano per primi (stessa logica di sempre) così i gruppi, elaborati subito
 	# dopo, tirano verso il centro già aggiornato di questo frame invece che verso quello vecchio.
 	for cluster in _clusters:
 		cluster.direction = cluster.direction.rotated(randf_range(-turn_rate, turn_rate) * delta)
+		_apply_cluster_avoidance(cluster, delta)
 		cluster.position += cluster.direction * move_speed * delta
 		_bounce_at_bounds(cluster)
 
 	for i in range(_groups.size()):
 		var group: AnimalVisualGroup = _groups[i]
+		# Fuga (comportamento step 2): corsa dritta a hop_speed, senza pause, finché dura il timer. Le fasi
+		# di balzo restano ferme durante la fuga e riprendono da dove erano.
+		if group.flee_timer > 0.0:
+			group.flee_timer -= delta
+			group.direction = group.flee_direction
+			group.position += group.direction * hop_speed * delta
+			_bounce_at_bounds(group)
+			group.flee_direction = group.direction
+			_write_instance_transform(i, group)
+			continue
 		group.direction = group.direction.rotated(randf_range(-turn_rate, turn_rate) * delta)
 		_apply_cluster_attraction(group, delta)
+		# Il disagio dei singoli individui non agisce qui a ogni frame: piega la direzione solo all'inizio di
+		# ogni balzo, dentro _update_group_phase (_apply_avoidance_on_hop).
 		_update_group_phase(group, delta)
 		if group.macro_phase == AnimalVisualGroup.MacroPhase.MOVING and group.micro_phase == AnimalVisualGroup.MicroPhase.HOPPING:
 			group.position += group.direction * hop_speed * delta
 			_bounce_at_bounds(group)
 		_write_instance_transform(i, group)
+
+	if _is_timing_enabled():
+		_record_process_timing(Time.get_ticks_usec() - timing_start_usec)
 
 
 # Frazione di giorno di gioco corrispondente a `real_delta` secondi reali: dal clock se assegnato
@@ -922,6 +1120,155 @@ func _apply_cluster_attraction(group: AnimalVisualGroup, delta: float) -> void:
 	var pull_strength: float = clamp((distance - cluster_comfort_radius) / cluster_comfort_radius, 0.0, 1.0)
 	var pull_weight: float = clamp(pull_strength * cluster_attraction_strength * delta, 0.0, 1.0)
 	group.direction = group.direction.slerp(pull_direction, pull_weight)
+
+
+# Tendenza del disagio per un INDIVIDUO (vedi AnimalVisualGroup.avoid_direction/avoid_weight): all'inizio
+# di ogni balzo la direzione ruota verso "via dall'umano" di una frazione pari a intensità ×
+# avoidance_strength (della specie, default AVOID_BIAS_PER_HOP). Una volta per balzo, non a ogni frame: tra un balzo e l'altro la deriva casuale e il
+# richiamo del gruppetto continuano ad agire, quindi al bordo del raggio (intensità ~0) il movimento resta
+# quello casuale di sempre e la tendenza si fa netta solo da vicino. Mai un cambio di velocità o di pause.
+func _apply_avoidance_on_hop(group: AnimalVisualGroup) -> void:
+	if group.avoid_weight <= 0.0:
+		return
+	group.direction = group.direction.slerp(group.avoid_direction, clampf(group.avoid_weight * avoidance_strength, 0.0, 1.0))
+
+
+# Spinta del disagio per un CENTRO-CLUSTER (moto continuo, senza balzi né pause): a ogni frame, debole
+# (CLUSTER_AVOID_STEER_RATE), così il gruppetto si sposta con calma senza trascinare gli animali in linea retta.
+func _apply_cluster_avoidance(cluster: AnimalVisualGroup, delta: float) -> void:
+	if cluster.avoid_weight <= 0.0 or CLUSTER_AVOID_STEER_RATE <= 0.0:
+		return
+	cluster.direction = cluster.direction.slerp(cluster.avoid_direction, clampf(cluster.avoid_weight * CLUSTER_AVOID_STEER_RATE * delta, 0.0, 1.0))
+
+
+# Controllo del disagio: UNA chiamata a disturbance_source per le posizioni di umani ed edifici, poi
+# per ogni individuo e centro-cluster una direzione di allontanamento. Senza sorgenti (nessun umano né
+# edificio in portata) azzera il disagio di tutti e non calcola altro.
+func _run_disturbance_check() -> void:
+	var humans: Array = []
+	var buildings: Array = []
+	if disturbance_source.is_valid():
+		var sources: Dictionary = disturbance_source.call()
+		humans = sources.get("humans", [])
+		buildings = sources.get("buildings", [])
+	if discomfort_radius <= 0.0:
+		humans = []
+	if building_avoidance_radius <= 0.0:
+		buildings = []
+	var no_sources := humans.is_empty() and buildings.is_empty()
+	for group in _groups:
+		_evaluate_avoidance(group, humans, buildings, no_sources)
+	for cluster in _clusters:
+		_evaluate_avoidance(cluster, humans, buildings, no_sources)
+
+
+# Direzione e intensità del disagio di UN individuo. Umani: solo il più vicino, e solo se entro
+# discomfort_radius (oltre, escluso subito senza altri calcoli). Edifici: ciascuno entro
+# building_avoidance_radius contribuisce. Intensità di ogni contributo = 1 - distanza/raggio (più vicino,
+# più forte); somma normalizzata come direzione, lunghezza (massimo 1) come intensità.
+func _evaluate_avoidance(group: AnimalVisualGroup, humans: Array, buildings: Array, no_sources: bool) -> void:
+	group.avoid_direction = Vector2.ZERO
+	group.avoid_weight = 0.0
+	if no_sources:
+		return
+	var push := Vector2.ZERO
+	if not humans.is_empty():
+		var nearest_distance_sq := INF
+		var nearest: Vector2 = Vector2.ZERO
+		for human_position in humans:
+			var distance_sq: float = group.position.distance_squared_to(human_position)
+			if distance_sq < nearest_distance_sq:
+				nearest_distance_sq = distance_sq
+				nearest = human_position
+		if nearest_distance_sq <= discomfort_radius * discomfort_radius:
+			push += _away_from(group.position, nearest, discomfort_radius)
+	var building_radius_sq := building_avoidance_radius * building_avoidance_radius
+	for building_position in buildings:
+		if group.position.distance_squared_to(building_position) <= building_radius_sq:
+			push += _away_from(group.position, building_position, building_avoidance_radius)
+	var push_length := push.length()
+	if push_length <= 0.0001:
+		return
+	group.avoid_direction = push / push_length
+	group.avoid_weight = minf(push_length, 1.0)
+
+
+# Vettore di allontanamento da `source` pesato per vicinanza (1 a contatto, 0 al bordo di `radius`).
+# Sovrapposti (distanza ~0): direzione casuale, così l'animale si sposta comunque.
+func _away_from(from_position: Vector2, source: Vector2, radius: float) -> Vector2:
+	var offset := from_position - source
+	var distance := offset.length()
+	var away: Vector2 = offset / distance if distance > 0.001 else Vector2.RIGHT.rotated(randf_range(0.0, TAU))
+	# Curva con la distanza (AVOID_CURVE_EXPONENT, in cima al file): ~0 al bordo del raggio, 1 a contatto.
+	return away * pow(1.0 - clampf(distance / radius, 0.0, 1.0), AVOID_CURVE_EXPONENT)
+
+
+# Fuga su evento (2026-09-26, comportamento step 2 — chiamata da ThrowAction a ogni lancio partito, a segno o a
+# vuoto): in TUTTI i renderer vivi, ogni individuo entro il flee_radius della propria specie da
+# `event_point` fugge per FLEE_DURATION_DAYS, allontanandosi da `threat_point` (il cacciatore). Punti in
+# coordinate locali delle rispettive macrocelle (`event_macro`/`threat_macro`), convertiti per ogni
+# renderer, così la fuga attraversa anche il confine tra celle vive.
+static func trigger_flee(event_macro: Vector2i, event_point: Vector2, threat_macro: Vector2i, threat_point: Vector2) -> void:
+	for renderer in _live_renderers:
+		if is_instance_valid(renderer):
+			renderer._start_flee(event_macro, event_point, threat_macro, threat_point)
+
+
+func _start_flee(event_macro: Vector2i, event_point: Vector2, threat_macro: Vector2i, threat_point: Vector2) -> void:
+	if flee_radius <= 0.0 or _groups.is_empty():
+		return
+	var event_local: Vector2 = event_point + Vector2(event_macro - macro_coords) * World.WIDTH
+	var threat_local: Vector2 = threat_point + Vector2(threat_macro - macro_coords) * World.WIDTH
+	var flee_radius_sq := flee_radius * flee_radius
+	for group in _groups:
+		if group.position.distance_squared_to(event_local) > flee_radius_sq:
+			continue
+		var away: Vector2 = group.position - threat_local
+		if away.length_squared() < 0.000001:
+			away = group.position - event_local
+		if away.length_squared() < 0.000001:
+			away = Vector2.RIGHT.rotated(randf_range(0.0, TAU))
+		group.flee_direction = away.normalized()
+		group.direction = group.flee_direction
+		group.flee_timer = FLEE_DURATION_DAYS
+
+
+# --- Temporizzazione di _process (2026-09-26, DebugLogging.SHOW_ANIMAL_PROCESS_TIMING) ---
+# Somma, su tutti i renderer, del tempo speso in _process e nel solo controllo del disagio; ogni
+# TIMING_PRINT_INTERVAL_MSEC stampa la media per frame. Solo diagnostica, spenta di default.
+const TIMING_PRINT_INTERVAL_MSEC: int = 5000
+static var _timing_process_usec: int = 0
+static var _timing_check_usec: int = 0
+static var _timing_start_frame: int = -1
+static var _timing_last_print_msec: int = 0
+
+
+static func _is_timing_enabled() -> bool:
+	return DebugLogging.ENABLED and DebugLogging.SHOW_ANIMAL_PROCESS_TIMING
+
+
+func _record_process_timing(usec: int) -> void:
+	_timing_process_usec += usec
+	var now_msec := Time.get_ticks_msec()
+	if _timing_start_frame < 0:
+		_timing_start_frame = Engine.get_process_frames()
+		_timing_last_print_msec = now_msec
+		return
+	if now_msec - _timing_last_print_msec < TIMING_PRINT_INTERVAL_MSEC:
+		return
+	var frames: int = maxi(Engine.get_process_frames() - _timing_start_frame, 1)
+	var individual_count := 0
+	for renderer in _live_renderers:
+		if is_instance_valid(renderer):
+			individual_count += renderer._groups.size()
+	print("[ANIMAL TIMING] _process di tutti i renderer: %.3f ms/frame medi (di cui controllo disagio %.3f ms/frame), %d renderer, %d individui, %d frame." % [
+		float(_timing_process_usec) / 1000.0 / frames, float(_timing_check_usec) / 1000.0 / frames,
+		_live_renderers.size(), individual_count, frames
+	])
+	_timing_process_usec = 0
+	_timing_check_usec = 0
+	_timing_start_frame = Engine.get_process_frames()
+	_timing_last_print_msec = now_msec
 
 
 func _bounce_at_bounds(group: AnimalVisualGroup) -> void:

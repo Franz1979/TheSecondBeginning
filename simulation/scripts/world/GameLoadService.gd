@@ -694,10 +694,16 @@ func load_game_from_json(file_path: String) -> LoadedGame:
 					var saved_quantity: int = int(saved_entry.get("quantity", 0))
 					if saved_quantity <= 0:
 						continue
-					individual.carried_resources[String(saved_resource_name)] = {
+					var carried_entry: Dictionary = {
 						"quantity": saved_quantity,
 						"decay_fraction": float(saved_entry.get("decay_fraction", 0.0)),
 					}
+					# Istanze usate di un attrezzo (2026-09-26, step 2): stessa lettura del magazzino
+					# (_parse_used_instances), assenti nei save precedenti = tutti pezzi nuovi.
+					ToolInstance.set_used_instances(
+						carried_entry, _parse_used_instances(String(saved_resource_name), saved_entry, saved_quantity)
+					)
+					individual.carried_resources[String(saved_resource_name)] = carried_entry
 			else:
 				var legacy_resource_name := String(individual_data.get("carried_resource_name", ""))
 				var legacy_quantity := int(individual_data.get("carried_quantity", 0))
@@ -712,6 +718,19 @@ func load_game_from_json(file_path: String) -> LoadedGame:
 			individual.equipped_tools.clear()
 			for saved_tool in individual_data.get("equipped_tools", []):
 				individual.equipped_tools.append(String(saved_tool) if saved_tool != null else "")
+			# Usi residui per slot (2026-09-26, attrezzi come istanze): parallelo a equipped_tools. Save
+			# precedenti (chiave assente) o valore mancante/non valido per uno slot pieno = usi pieni;
+			# slot vuoto = 0. Stessa regola di HumanIndividual._ensure_tool_slots.
+			var saved_tool_uses: Array = individual_data.get("equipped_tool_uses", [])
+			individual.equipped_tool_uses.clear()
+			for slot_index in range(individual.equipped_tools.size()):
+				var slot_tool: String = individual.equipped_tools[slot_index]
+				var slot_uses: int = 0
+				if slot_tool != "":
+					slot_uses = int(saved_tool_uses[slot_index]) if slot_index < saved_tool_uses.size() else 0
+					if slot_uses <= 0:
+						slot_uses = ToolInstance.get_max_uses(slot_tool)
+				individual.equipped_tool_uses.append(slot_uses)
 			# Task/Action in corso (2026-09-08, richiesta utente) — "current_task" assente (save
 			# precedente a questo campo) o esplicitamente null (individuo a Rest implicito al
 			# momento del salvataggio) lasciano individual.current_task al default null, nessuna
@@ -842,15 +861,40 @@ func _expired_objects_from_json(raw: Array) -> Array[Dictionary]:
 # nuovo (letto con .get() per i due campi, comunque difensivo); qualunque altro tipo (il vecchio
 # int, o un float — JSON non distingue i due) viene reinterpretato come "vecchio formato":
 # {"quantity": quel numero, "decay_fraction": 0.0} — mai un breaking change per un save preesistente.
+#
+# "used_instances" (2026-09-26, richiesta utente — attrezzi come istanze, vedi BuildingStorageService):
+# letta SOLO per le risorse di categoria TOOL (ToolInstance.is_tool_resource), ignorata per ogni altra.
+# Save precedenti (chiave assente) = voce a pura quantità, tutti pezzi nuovi. Istanze non utilizzabili
+# scartate (un attrezzo rotto non sta mai in magazzino) e lista limitata a quantity, così l'invariante
+# used_instances.size() <= quantity regge anche con un file modificato a mano.
 func _parse_stored_resources(raw: Dictionary) -> Dictionary:
 	var result: Dictionary = {}
 	for resource_name in raw.keys():
 		var value = raw[resource_name]
 		if value is Dictionary:
-			result[resource_name] = {
-				"quantity": int(value.get("quantity", 0)),
+			var quantity: int = int(value.get("quantity", 0))
+			var entry: Dictionary = {
+				"quantity": quantity,
 				"decay_fraction": float(value.get("decay_fraction", 0.0)),
 			}
+			ToolInstance.set_used_instances(entry, _parse_used_instances(String(resource_name), value, quantity))
+			result[resource_name] = entry
 		else:
 			result[resource_name] = {"quantity": int(value), "decay_fraction": 0.0}
 	return result
+
+
+# Istanze usate di una voce a istanze (magazzino o zaino, 2026-09-26 — vedi ToolInstance): lette SOLO
+# per le risorse TOOL, [] per ogni altra o se la chiave manca (save precedenti). Scartate le istanze non
+# utilizzabili, lista limitata a `quantity` (invariante used_instances.size() <= quantity).
+func _parse_used_instances(resource_name: String, raw_entry: Dictionary, quantity: int) -> Array:
+	var used_instances: Array = []
+	var raw_instances = raw_entry.get(ToolInstance.KEY_USED_INSTANCES, [])
+	if not (raw_instances is Array) or not ToolInstance.is_tool_resource(resource_name):
+		return used_instances
+	for raw_instance in raw_instances:
+		if used_instances.size() >= quantity:
+			break
+		if raw_instance is Dictionary and ToolInstance.is_usable(raw_instance):
+			used_instances.append(ToolInstance.normalized(raw_instance))
+	return used_instances

@@ -233,9 +233,9 @@ extends Resource
 @export var recipe_workstation_types: Array[String] = []
 # Categorie di attrezzo che servono per produrre questa risorsa (2026-09-25, richiesta utente) —
 # TaskTypes.ToolCategory, stessa enum di Action.required_tool_categories e di tool_categories sotto.
-# Il futuro gate degli attrezzi le SOMMERÀ a quelle richieste dall'Action (ProduceAction), non le
-# sostituirà. Da compilare più avanti: oggi nessuna risorsa lo valorizza e nessuna logica lo legge.
-# Vuoto = nessun attrezzo richiesto dalla ricetta.
+# ToolGateService le SOMMA a quelle richieste dall'Action (ProduceAction), non le sostituisce, e ogni
+# ciclo completato consuma un uso degli attrezzi che le coprono. Valorizzato oggi su fiber_rope e
+# wooden_spear (CUTTING). Vuoto = nessun attrezzo richiesto dalla ricetta.
 @export var recipe_required_tool_categories: Array[TaskTypes.ToolCategory] = []
 
 @export_group("Tool")
@@ -249,3 +249,8 @@ extends Resource
 @export var max_uses: int = 0
 # Quanto fa male se usato per colpire (caccia/combattimento). 0.0 = non è un'arma.
 @export var attack_power: float = 0.0
+# Distanza massima, in microcelle, entro cui l'attrezzo può colpire (2026-09-26, richiesta utente —
+# caccia, step 1: solo dati, nessuna logica lo legge ancora). 0.0 = arma da corpo a corpo (serve il
+# contatto). Scala di riferimento: un umano adulto misura ~0.22 microcelle, quindi 1 microcella ≈ 7-8 m.
+# wooden_spear 3.0 (lancio efficace ~20-25 m), stone_knife 1.0 (lancio ravvicinato, ~7-8 m).
+@export var max_range: float = 0.0

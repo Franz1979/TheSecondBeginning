@@ -1,0 +1,9 @@
+[gd_resource type="Resource" script_class="TaskStepDefinition" format=3]
+
+[ext_resource type="Script" uid="uid://d3sri3tos2u4f" path="res://gameplay/scripts/tasks/task_step_definition.gd" id="1_throw"]
+
+[resource]
+script = ExtResource("1_throw")
+action_type = 17
+context_keys = Array[String](["hunt_prey_id", "hunt_prey_species", "hunt_prey_macro_coords"])
+step_description = "task_hunt_step_throw"

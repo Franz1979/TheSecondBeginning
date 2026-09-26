@@ -42,14 +42,8 @@ var tool_multiplier: float = 1.0
 # Pezzi ordinati (minimo 1) e pezzi già prodotti da questo step — vedi QUANTITÀ in testa al file.
 var quantity: int = 1
 var produced_count: int = 0
-# Attesa degli attrezzi (2026-09-25, richiesta utente — "task in attesa invece di rifiuto"): stato
-# dell'ULTIMO controllo di ToolGateService fatto da _ensure_required_tools, ricalcolato a ogni tick,
-# mai salvato. tool_wait_result == ToolGateService.Result.OK = nessuna attesa; MISSING_TOOLS =
-# mancano gli attrezzi per tool_wait_missing_categories; BELT_FULL/CANNOT_EQUIP = l'attrezzo
-# tool_wait_tool_name c'è nello zaino ma non entra in cintura. Letti da GameScene per i pannelli.
-var tool_wait_result: int = ToolGateService.Result.OK
-var tool_wait_missing_categories: Array = []
-var tool_wait_tool_name: String = ""
+# Attesa degli attrezzi (2026-09-25, "task in attesa invece di rifiuto"): stato tool_wait_* e
+# ensure_required_tools vivono nella classe base Action dal 2026-09-26 (condivisi con la caccia).
 
 
 func _init(
@@ -103,7 +97,7 @@ func get_stamina_delta(individual: Variant, context: Dictionary, delta: float) -
 	# Attrezzi (2026-09-25): come per il materiale mancante, lo step resta fermo (zero stamina, zero
 	# lavoro) finché gli attrezzi richiesti non ci sono; appena compaiono nello zaino vengono spostati
 	# in cintura e il lavoro parte da solo, senza riassegnare la Task.
-	if not _ensure_required_tools(individual):
+	if not ensure_required_tools(individual):
 		return 0.0
 	if not get_missing_materials().is_empty() or not ProductionService.has_output_room(target_building, resource_name):
 		return 0.0
@@ -116,32 +110,8 @@ func get_stamina_delta(individual: Variant, context: Dictionary, delta: float) -
 	if labor_accumulated < required_labor:
 		stamina_spent_this_day = STAMINA_DRAIN_PER_DAY * delta
 		ProductionService.add_labor(target_building, resource_name, stamina_spent_this_day * skill_multiplier * tool_multiplier)
-	_try_complete_cycle()
+	_try_complete_cycle(individual)
 	return -stamina_spent_this_day
-
-
-# Categorie richieste da questo step (sue + ricetta, vedi ToolGateService.get_action_required_
-# categories) coperte dalla cintura, spostando dallo zaino ciò che serve. Aggiorna lo stato tool_wait_*.
-# game_data null: lo step non lo possiede — la capacità di trasporto viene corretta del solo bonus
-# dello slot occupato (HumanIndividual._recalculate_carry_capacity_after_tool_change).
-func _ensure_required_tools(individual: Variant) -> bool:
-	var required := ToolGateService.get_action_required_categories(self)
-	if required.is_empty() or not (individual is HumanIndividual):
-		tool_wait_result = ToolGateService.Result.OK
-		tool_wait_missing_categories = []
-		tool_wait_tool_name = ""
-		return true
-	var outcome := ToolGateService.try_satisfy(individual, required, null)
-	tool_wait_result = int(outcome["result"])
-	tool_wait_missing_categories = outcome["missing_categories"]
-	tool_wait_tool_name = String(outcome["tool_name"])
-	if DebugLogging.ENABLED and DebugLogging.SHOW_TRANSPORT_BUILD_LOGS and not outcome["equipped"].is_empty():
-		print("[PRODUCE] #%d: attrezzi spostati in cintura per '%s': %s." % [individual.id, resource_name, str(outcome["equipped"])])
-	return tool_wait_result == ToolGateService.Result.OK
-
-
-func is_waiting_for_tools() -> bool:
-	return tool_wait_result != ToolGateService.Result.OK
 
 
 # Conclude un ciclo appena lavoro, input e posto nel buffer lo consentono (ProductionService.
@@ -149,17 +119,36 @@ func is_waiting_for_tools() -> bool:
 # ricetta; 0 = non ancora possibile). Se mancano ancora pezzi all'ordine, ricrea subito il record
 # (start_production, il posto appena liberato è il suo) così il ciclo successivo riparte da zero e
 # can_accept continua ad accettarne gli input.
-func _try_complete_cycle() -> void:
+func _try_complete_cycle(individual: Variant) -> void:
 	if ProductionService.get_labor_accumulated(target_building, resource_name) < ProductionService.get_required_labor(target_building, resource_name):
 		return
 	var produced := ProductionService.complete_production(target_building, resource_name)
 	if produced <= 0:
 		return
 	produced_count += produced
+	_consume_tools_for_cycle(individual)
 	if DebugLogging.ENABLED and DebugLogging.SHOW_TRANSPORT_BUILD_LOGS:
 		print("[PRODUCE] Building #%d: prodotte %d unità di '%s' (%d/%d)." % [target_building.id, produced, resource_name, produced_count, quantity])
 	if produced_count < quantity:
 		ProductionService.start_production(target_building, resource_name)
+
+
+# Usura degli attrezzi (2026-09-26, attrezzi come istanze — step 3): a ciclo completato ogni attrezzo
+# distinto usato per le categorie di questo step perde un uso (ToolGateService.consume_tool_uses). Se
+# uno si rompe: avviso sul pannello dell'individuo (stesso canale di tool_gate_warning) e log. Nessuna
+# gestione della Task qui: al tick successivo ensure_required_tools non trova più la categoria e
+# rimette in cintura un attrezzo di scorta dallo zaino, oppure lascia lo step in attesa (MISSING_TOOLS)
+# — stesso percorso di quando gli attrezzi mancano fin dall'inizio. game_data null: lo step non lo
+# possiede (capacità corretta del solo bonus dello slot liberato, come per l'equipaggiamento automatico).
+func _consume_tools_for_cycle(individual: Variant) -> void:
+	if not (individual is HumanIndividual):
+		return
+	var broken := ToolGateService.consume_tool_uses(individual, ToolGateService.get_action_required_categories(self), null)
+	if broken.is_empty():
+		return
+	report_broken_tools(individual, broken)
+	if DebugLogging.ENABLED and DebugLogging.SHOW_TRANSPORT_BUILD_LOGS:
+		print("[PRODUCE] #%d: attrezzi rotti dopo il ciclo di '%s': %s." % [individual.id, resource_name, str(broken)])
 
 
 # Completa solo quando l'ordine è evaso (produced_count >= quantity). Record assente (edificio pieno),

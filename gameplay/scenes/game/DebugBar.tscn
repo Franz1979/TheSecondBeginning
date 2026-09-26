@@ -49,6 +49,16 @@ theme_override_font_sizes/font_size = 11
 vertical_alignment = 1
 text = "Coords: -"
 
+[node name="VSeparatorLiveCells" type="VSeparator" parent="MarginContainer/HBoxContainer/ContentGroup"]
+layout_mode = 2
+
+[node name="LiveCellsLabel" type="Label" parent="MarginContainer/HBoxContainer/ContentGroup"]
+layout_mode = 2
+mouse_filter = 1
+theme_override_font_sizes/font_size = 11
+vertical_alignment = 1
+text = "Celle vive: -"
+
 [node name="VSeparatorAnimals" type="VSeparator" parent="MarginContainer/HBoxContainer/ContentGroup"]
 layout_mode = 2
 

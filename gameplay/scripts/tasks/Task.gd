@@ -247,6 +247,22 @@ func insert_step_before_current(new_action: Action, description: String = "") ->
 	step_appended.emit(new_action)
 
 
+# Inserisce `new_actions` subito DOPO lo step corrente, nell'ordine dato (2026-09-26, richiesta utente —
+# riavvicinamento della caccia: gli step aggiunti devono venire prima di quelli già in coda, non in fondo
+# come con append_steps). Stessi array paralleli e stesso segnale step_appended di insert_step_before_
+# current/append_steps. `descriptions`: chiavi tr() per gli step, "" se mancanti.
+func insert_steps_after_current(new_actions: Array[Action], descriptions: Array[String] = []) -> void:
+	var insert_index := current_step_index + 1
+	for i in range(new_actions.size()):
+		var index := insert_index + i
+		steps.insert(index, new_actions[i])
+		step_stamina_cost.insert(index, 0.0)
+		step_days_elapsed.insert(index, 0.0)
+		step_happiness_cost.insert(index, 0.0)
+		step_descriptions.insert(index, descriptions[i] if i < descriptions.size() else "")
+		step_appended.emit(new_actions[i])
+
+
 # Azione attiva (quella all'indice corrente) — null se la lista è vuota o l'indice è già oltre
 # l'ultimo step (Task conclusa). Il chiamante NON deve mai assumere un'Action non-null senza aver
 # controllato prima is_finished()/il valore di ritorno qui (stesso pattern già in uso da
@@ -412,6 +428,14 @@ func get_activity_description() -> String:
 		# attrezzo (Coltello di pietra)". Nome da context["tool_resource_name"], scritto da GameScene.
 		"task_equip_tool_name", "task_store_tool_name":
 			resource_name = String(context.get("tool_resource_name", ""))
+		# Caccia (2026-09-26, caccia step 2): "Caccia: Coniglio". Specie da context["hunt_activity_species"],
+		# scritta da GameScene._try_assign_hunt_command_on_right_click e non consumata da TaskFactory;
+		# nome tradotto con la stessa chiave del pannello animale (animal_species_<specie>).
+		"task_hunt_name":
+			var prey_species: String = String(context.get("hunt_activity_species", ""))
+			if prey_species == "":
+				return base_text
+			return tr("task_hunt_activity").format({"species": tr("animal_species_" + prey_species)})
 		_:
 			return base_text
 	if resource_name == "":

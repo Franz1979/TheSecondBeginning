@@ -74,6 +74,12 @@ signal produce_requested(building: Building, resource_name: String, quantity: in
 # diversa solo per questo pannello.
 signal resident_center_requested(individual_id: int)
 
+# X rossa accanto a "Stato" (2026-09-26, richiesta utente — annullare il lavoro dall'edificio): stesso
+# principio "muto" di empty_all_requested. GameScene chiude le Task di costruzione/produzione su questo
+# edificio di chi ci lavora (in corso e in coda), lasciando intatto il lavoro accumulato sull'edificio.
+# Visibile solo se qualcuno ci lavora: con il costruttore/lavoratore "mancante" non c'è nulla da annullare.
+signal work_cancel_requested(building: Building)
+
 const STORAGE_SLOT_SIZE: float = 32.0
 const EMPTY_STORAGE_SLOT_COLOR := Color(0.3, 0.3, 0.3, 0.4)
 
@@ -104,7 +110,10 @@ const STORAGE_SLOT_FILL_BAR_WIDTH: float = 4.0
 const STORAGE_SLOT_FILL_BAR_TRACK_COLOR := Color(0.0, 0.0, 0.0, 0.5)
 const STORAGE_SLOT_FILL_BAR_FILL_COLOR := Color(1.0, 1.0, 1.0, 0.85)
 
-@onready var status_label: Label = $StatusLabel
+@onready var status_label: Label = $StatusRow/StatusLabel
+# X accanto a "Stato" (2026-09-26, richiesta utente): annulla il lavoro in corso sull'edificio
+# (costruzione o produzione) di TUTTI gli individui che ci lavorano — vedi work_cancel_requested.
+@onready var cancel_work_button: Button = $StatusRow/CancelWorkButton
 @onready var construction_phase_label: Label = $ConstructionPhaseLabel
 @onready var construction_progress_bar_margin: MarginContainer = $ConstructionProgressBarMargin
 @onready var construction_progress_bar: ProgressBar = $ConstructionProgressBarMargin/ConstructionProgressBar
@@ -185,6 +194,8 @@ func _ready() -> void:
 	# cut_requested, un solo collegamento in _ready() che resta valido per tutta la vita del
 	# pannello, indipendentemente da quale edificio sia mostrato in un dato momento.
 	empty_all_button.pressed.connect(func(): empty_all_requested.emit(_current_building))
+	cancel_work_button.tooltip_text = tr("building_cancel_work_tooltip")
+	cancel_work_button.pressed.connect(func(): work_cancel_requested.emit(_current_building))
 
 
 # residents_display_data (2026-09-12, richiesta utente — griglia residenti): Array di Dictionary
@@ -294,6 +305,13 @@ func show_building(building: Building, residents_display_data: Array[Dictionary]
 			if not production_claimant_names.is_empty()
 			else tr("building_assigned_worker_missing")
 		)
+	# X di annullo (2026-09-26): solo se qualcuno ci lavora davvero — costruttori di un cantiere, o
+	# lavoratori di una workstation completa. Con "mancante" resta nascosta: nessuna Task da annullare, e
+	# il lavoro già fatto resta comunque sull'edificio (ripreso da chi verrà assegnato dopo).
+	cancel_work_button.visible = (
+		(is_under_construction and not assigned_builder_names.is_empty())
+		or (is_active_workstation and not production_claimant_names.is_empty())
+	)
 	tool_wait_label.visible = is_active_workstation and not production_tool_wait_lines.is_empty()
 	tool_wait_label.text = "\n".join(production_tool_wait_lines) if tool_wait_label.visible else ""
 

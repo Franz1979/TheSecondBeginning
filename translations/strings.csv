@@ -326,6 +326,13 @@ produce_quantity_label,Quantità:
 produce_quantity_tooltip,Pezzi da produrre con questo ordine (massimo {max})
 produce_assign_banner_text,⚒️ Produci {resource}: clicca un individuo (Esc per annullare)
 task_produce_activity,Produzione: {resource}
+task_hunt_name,Caccia
+task_hunt_step_approach,Avvicinandosi alla preda
+task_hunt_step_hunt,Cacciando
+task_hunt_step_aim,Prendendo la mira
+task_hunt_step_throw,Scagliando
+task_hunt_step_recover_weapon,Recuperando l'arma
+task_hunt_activity,Caccia: {species}
 animal_selection_title,Animale
 animal_species_label,Specie: {species}
 animal_age_band_label,Età: {age_band}
@@ -345,6 +352,23 @@ animal_age_band_old,Anziano
 tool_gate_missing_tools,{name} non può iniziare: servono attrezzi per {tools}.
 tool_gate_belt_full,"{name} non può iniziare: la cintura è piena, libera uno slot per {tool}."
 tool_gate_cannot_equip,{name} non può iniziare: lo zaino è troppo pieno per spostare {tool} nella cintura.
+tool_gate_hunt_no_weapon,{name} non può andare a caccia: gli serve un'arma da caccia{examples}.
+tool_gate_hunt_weapon_examples,(es. {tools})
+task_reject_too_young,{name} è troppo giovane per {activity}.
+task_reject_age_not_allowed,{name} non ha l'età adatta per {activity}.
+task_reject_low_stamina,{name} non ha abbastanza energie per {activity}: prima deve riposare.
+task_reject_generic,{name} non può {activity} adesso.
+task_activity_hunt,andare a caccia
+task_activity_produce,produrre
+task_activity_transport,trasportare materiale
+task_activity_pickup,raccogliere
+task_activity_unload,depositare
+task_activity_build,costruire
+task_activity_equip_tool,prendere un attrezzo
+task_activity_store_tool,riporre un attrezzo
+task_reject_transport_not_needed,{name} non può trasportare: {building} non ha bisogno di {resource}.
+task_reject_transport_no_products,{name} non può trasportare: {building} non ha prodotti da ritirare.
+tool_equip_no_source,Nessun magazzino raggiungibile ha {tool}
 tool_category_hunting,caccia
 tool_category_cutting,taglio
 tool_category_digging,scavo
@@ -363,6 +387,8 @@ tool_storage_menu_empty,Nessun attrezzo nei magazzini
 tool_store_no_storage,Nessun magazzino può accettare {tool}
 tool_slot_empty_tooltip,Slot vuoto — click destro: prendi un attrezzo da un magazzino
 tool_slot_full_tooltip,{tool} — click sinistro: rimetti nello zaino; click destro: riponi in un magazzino
+tool_slot_uses_line,Usi residui: {uses}/{max}
+tool_broken_warning,{name}: attrezzo rotto — {tool}.
 tool_storage_dialog_title,Prendi un attrezzo
 tool_storage_dialog_message,Scegli l'attrezzo da prendere dal magazzino più vicino:
 task_equip_tool_step_retrieve,Prendendo l'attrezzo
@@ -371,3 +397,4 @@ task_equip_tool_step_walk,Andando a prendere l'attrezzo
 task_store_tool_step_walk,Andando a riporre l'attrezzo
 building_assigned_worker_label,Lavoratore assegnato: {names}
 building_assigned_worker_missing,Lavoratore assegnato: mancante
+building_cancel_work_tooltip,Annulla il lavoro su questo edificio per chi ci sta lavorando (il lavoro già fatto resta)

@@ -8,7 +8,6 @@ secondary_resource_name = "stone_knife"
 calories_per_unit = 0.0
 category = 4
 generation_source = 2
-day_durability = -1
 space_per_unit = 2.0
 units_per_mature_plant = 2
 recipe_inputs = {
@@ -16,6 +15,7 @@ recipe_inputs = {
 }
 recipe_labor = 200.0
 recipe_workstation_types = Array[String](["campfire", "toolmaker_hut"])
-tool_categories = Array[int]([1, 4, 5])
+tool_categories = Array[int]([0, 1, 4, 5])
 max_uses = 60
 attack_power = 5.0
+max_range = 1.0

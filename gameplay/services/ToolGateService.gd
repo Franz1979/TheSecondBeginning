@@ -19,6 +19,9 @@ extends RefCounted
 #
 # Non decide né mostra nulla lato UI: restituisce l'esito, GameScene compone avviso/popup.
 #
+# Usura (2026-09-26, attrezzi come istanze — step 3): consume_tool_uses toglie un uso a ogni attrezzo
+# distinto usato in un ciclo (get_slots_used_for/find_belt_slot_for) e riporta quelli rotti.
+#
 # Attesa invece di rifiuto (2026-09-25, richiesta utente): con MISSING_TOOLS la Task viene assegnata
 # comunque e resta in attesa — ProduceAction richiama try_satisfy a ogni tick sulle proprie categorie
 # (get_action_required_categories) e parte da sola quando gli attrezzi arrivano nello zaino. Solo
@@ -124,11 +127,69 @@ static func _tool_categories(tool_name: String) -> Array:
 
 
 static func _belt_covers(individual: HumanIndividual, category: TaskTypes.ToolCategory) -> bool:
+	return find_belt_slot_for(individual, category) != -1
+
+
+# Primo slot della cintura il cui attrezzo copre la categoria, -1 se nessuno (2026-09-26, attrezzi come
+# istanze — step 3: serve sapere QUALE attrezzo consumare, non solo se la categoria è coperta). Stesso
+# ordine di scansione di sempre: lo slot scelto qui è quello che il gate ha considerato "coprente".
+static func find_belt_slot_for(individual: HumanIndividual, category: TaskTypes.ToolCategory) -> int:
 	for slot in range(individual.get_tool_slot_count()):
 		var tool_name := individual.get_equipped_tool(slot)
 		if tool_name != "" and _tool_categories(tool_name).has(category):
-			return true
-	return false
+			return slot
+	return -1
+
+
+# Gittata massima (SecondaryResourceRules.max_range, microcelle) tra gli attrezzi in cintura che coprono
+# la categoria (2026-09-26, caccia step 2 — ApproachPreyAction: entro quanto l'individuo può colpire
+# la preda). -1.0 se nessun attrezzo in cintura copre la categoria; 0.0 = solo armi da corpo a corpo.
+static func get_belt_max_range_for(individual: HumanIndividual, category: TaskTypes.ToolCategory) -> float:
+	var best := -1.0
+	for slot in range(individual.get_tool_slot_count()):
+		var tool_name := individual.get_equipped_tool(slot)
+		if tool_name == "" or not _tool_categories(tool_name).has(category):
+			continue
+		var rules := CaloricCalculator.get_caloric_source_rules(tool_name)
+		best = maxf(best, rules.max_range if rules != null else 0.0)
+	return best
+
+
+# Slot DISTINTI della cintura che coprono le categorie richieste (2026-09-26, step 3): un attrezzo già
+# scelto per una categoria copre anche le altre che sa fare, quindi conta una volta sola (es. il
+# coltello per CUTTING e BUTCHERING insieme). Categorie non coperte ignorate: qui si guarda solo cosa
+# è stato davvero usato.
+static func get_slots_used_for(individual: HumanIndividual, required: Array[TaskTypes.ToolCategory]) -> Array[int]:
+	var slots: Array[int] = []
+	for category in required:
+		var already_covered := false
+		for chosen_slot in slots:
+			if _tool_categories(individual.get_equipped_tool(chosen_slot)).has(category):
+				already_covered = true
+				break
+		if already_covered:
+			continue
+		var slot := find_belt_slot_for(individual, category)
+		if slot != -1:
+			slots.append(slot)
+	return slots
+
+
+# Consumo di UN uso per ogni attrezzo distinto usato (2026-09-26, step 3 — chiamato da ProduceAction a
+# ogni ciclo completato). Un attrezzo che arriva a 0 usi sparisce dallo slot (HumanIndividual.
+# consume_equipped_tool_use, che aggiorna anche la capacità di trasporto). Ritorna i nomi degli
+# attrezzi rotti in questa chiamata (vuoto = nessuna rottura), per l'avviso al giocatore. Nessuna logica
+# di Task qui: al tick successivo il normale try_satisfy non trova più la categoria e rimette in cintura
+# un attrezzo di scorta dallo zaino, o lascia lo step in attesa (MISSING_TOOLS).
+static func consume_tool_uses(individual: HumanIndividual, required: Array[TaskTypes.ToolCategory], game_data: GameData) -> Array[String]:
+	var broken: Array[String] = []
+	if individual == null or required.is_empty():
+		return broken
+	for slot in get_slots_used_for(individual, required):
+		var tool_name := individual.get_equipped_tool(slot)
+		if individual.consume_equipped_tool_use(slot, game_data):
+			broken.append(tool_name)
+	return broken
 
 
 static func _tools_cover(tool_names: Array[String], category: TaskTypes.ToolCategory) -> bool:

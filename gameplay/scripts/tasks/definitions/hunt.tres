@@ -1,0 +1,11 @@
+[gd_resource type="Resource" script_class="TaskDefinition" format=3]
+
+[ext_resource type="Script" uid="uid://1t46mu8mn6hq" path="res://gameplay/scripts/tasks/task_definition.gd" id="1_def"]
+[ext_resource type="Resource" path="res://gameplay/scripts/tasks/definitions/step_walk_hunt.tres" id="2_approach"]
+[ext_resource type="Resource" path="res://gameplay/scripts/tasks/definitions/step_aim.tres" id="3_aim"]
+[ext_resource type="Resource" path="res://gameplay/scripts/tasks/definitions/step_throw.tres" id="4_throw"]
+
+[resource]
+script = ExtResource("1_def")
+task_name = "task_hunt_name"
+steps = [ExtResource("2_approach"), ExtResource("3_aim"), ExtResource("4_throw")]

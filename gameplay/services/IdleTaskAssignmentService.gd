@@ -49,8 +49,9 @@ const LEISURE_RESTOCK_MIN_FREE_SPACE_RATIO: float = 0.4
 # NeedTaskAssignmentService.REST_TASK_MAX_DURATION_DAYS): qui non c'è un vero bisogno da soddisfare,
 # solo un modo di passare il tempo, quindi una durata variabile è più naturale/meno meccanica di un
 # singolo numero fisso ripetuto ad ogni occorrenza.
-const LEISURE_REST_MIN_DURATION_DAYS: float = 4.0
-const LEISURE_REST_MAX_DURATION_DAYS: float = 8.0
+# Taratura 2026-09-26 (richiesta utente): da 4-8 a 2-5 giorni.
+const LEISURE_REST_MIN_DURATION_DAYS: float = 2.0
+const LEISURE_REST_MAX_DURATION_DAYS: float = 5.0
 
 # RIATTIVATA (2026-09-16, richiesta utente) — era stata sospesa per il sintomo "i pipottini che
 # ondulano fermi su se stessi"/"ondulando come quando camminano", causa poi isolata e corretta:

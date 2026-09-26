@@ -34,4 +34,8 @@ enum NotificationPopupType {
 	# Task non partita per mancanza di attrezzi (2026-09-25, richiesta utente — ToolGateService):
 	# attrezzo assente, oppure cintura piena. Stesso stile "alert" giallo di MATERIAL_NEEDED.
 	TOOL_REQUIRED,
+	# Comando rifiutato perché l'individuo non è idoneo (2026-09-26, richiesta utente): troppo giovane,
+	# fascia d'età non ammessa, stamina insufficiente — vedi HumanIndividual.get_assign_rejection_reason.
+	# Aggiunto IN CODA. Stesso stile "alert" giallo di TOOL_REQUIRED.
+	TASK_REJECTED,
 }

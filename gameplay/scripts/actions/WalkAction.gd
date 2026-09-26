@@ -101,7 +101,14 @@ func get_stamina_delta(individual: Variant, context: Dictionary, delta: float) -
 	# accetta comunque la conversione a runtime (il valore reale è sempre un float).
 	var distance: float = individual.position.distance_to(_last_position)
 	_last_position = individual.position
+	return compute_walk_stamina_delta(individual, distance, "Walk")
 
+
+# Costo di stamina per `distance` microcelle camminate — ESTRATTO (2026-09-26, caccia step 2) dal corpo
+# di get_stamina_delta sopra, formula invariata, per condividerlo con ApproachPreyAction (che cammina
+# allo stesso modo ma verso un bersaglio mobile). Ritorna il delta (negativo). `debug_label` = nome
+# dell'azione nella riga di MovementStaminaDebugLog.
+static func compute_walk_stamina_delta(individual: Variant, distance: float, debug_label: String) -> float:
 	# Costo/microcella = base + spazio REALMENTE occupato dal carico + costo per utensile
 	# (richiesta utente, 2026-09-08) — stesso identico lookup/stessa identica formula di
 	# used_carry_space già usata da GameScene._update_individual_panel_content per il pannello
@@ -113,7 +120,7 @@ func get_stamina_delta(individual: Variant, context: Dictionary, delta: float) -
 	var cost_per_microcell: float = STAMINA_DRAIN_PER_MICROCELL_BASE * individual.terrain_stamina_multiplier + used_carry_space * CARRY_STAMINA_MULTIPLIER + STAMINA_DRAIN_PER_TOOL * float(individual.equipped_tool_count)
 	if DebugLogging.ENABLED and DebugLogging.SHOW_MOVEMENT_STAMINA_LOGS:
 		MovementStaminaDebugLog.record(
-			individual, "Walk", distance, individual.terrain_stamina_multiplier, STAMINA_DRAIN_PER_MICROCELL_BASE,
+			individual, debug_label, distance, individual.terrain_stamina_multiplier, STAMINA_DRAIN_PER_MICROCELL_BASE,
 			used_carry_space * CARRY_STAMINA_MULTIPLIER + STAMINA_DRAIN_PER_TOOL * float(individual.equipped_tool_count)
 		)
 	return -distance * cost_per_microcell

@@ -24,6 +24,13 @@ extends Node2D
 # vicino cardinale nella direzione di avvicinamento (vedi _update_live_neighbor), mai le 8
 # circostanti, niente diagonali.
 
+# Emesso quando compare sulla mappa la lampadina di un pensiero depositato (_spawn_idea_deposit_effect),
+# con la posizione globale dell'individuo. Ascoltato da AudioEventListener (2026-09-26, richiesta utente).
+signal idea_bulb_shown(global_pos: Vector2)
+# Emesso quando un click sinistro del giocatore seleziona un oggetto nel mondo (vegetazione, edificio, corpo
+# morto, pietra, animale o individuo), con la posizione globale del click. Ascoltato da AudioEventListener.
+signal world_object_selected(global_pos: Vector2)
+
 # Margine di clamp quando un attraversamento bordo viene bloccato (vedi _block_border_crossing):
 # tiene l'individuo appena dentro il bordo attuale invece che un'intera microcella indietro.
 const BORDER_CLAMP_EPSILON: float = 0.01
@@ -160,6 +167,11 @@ var individual_action_service := HumanIndividualActionService.new()
 # consuma) una volta conclusa l'indagine — non è pensato per restare nella build finale.
 const DEBUG_PANEL_REFRESH_INTERVAL_SEC: float = 0.5
 var _debug_panel_refresh_timer: float = 0.0
+# Spegnimento periodico delle celle vive residue (2026-09-26) — secondi REALI tra due controlli, vedi
+# _cleanup_residual_live_cells. Non serve reattività: una cella residua accesa qualche secondo in più
+# costa solo il suo aggiornamento.
+const RESIDUAL_CELL_CLEANUP_INTERVAL_SEC: float = 3.0
+var _residual_cell_cleanup_timer: float = 0.0
 # Hit-test di selezione per QUALSIASI individuo umano visibile — vedi HumanIndividualSelectorController.gd.
 # Sostituisce, per il click sinistro, quello che prima faceva HumanIndividualController._try_select
 # (ora rimossa da lì, richiesta utente 2026-09-02: "click su un individuo qualsiasi tra quelli
@@ -239,6 +251,9 @@ const TRANSPORT_TASK_DEFINITION_PATH := "res://gameplay/scripts/tasks/definition
 var human_folk: Folk
 var human_population_group: HumanPopulationGroup
 var human_individuals: Array[HumanIndividual] = []
+# Segnaposto delle armi scagliate a terra in attesa di recupero (2026-09-26): id del cacciatore ->
+# DroppedWeaponMarker. Allineato ogni frame da _sync_dropped_weapon_markers.
+var _dropped_weapon_markers: Dictionary = {}
 var human_individual_views: Array[HumanIndividualView] = []
 # Autorità di selezione unica — Step 1 (richiesta utente, 2026-09-04) del piano "centra
 # generalizzato + selezione edifici" discusso con l'utente: PRIMA esistevano due meccanismi
@@ -478,6 +493,9 @@ var _pending_leave_action: StringName = &""
 @onready var season_progress_bar: SeasonProgressBar = $CanvasLayer/Sidebar/MarginContainer/VBoxContainer/SeasonProgressBar
 
 func _ready() -> void:
+	# Eventi di gioco -> suoni (2026-09-26, richiesta utente): nodo figlio che ascolta i segnali di questa scena.
+	add_child(AudioEventListener.new())
+
 	# Ripristina lo stato dei due toggle dalla sessione precedente (vedi GameSettings): senza
 	# questo, uscendo e rientrando in questa scena tornerebbero sempre al default "attivo",
 	# perdendo silenziosamente la scelta dell'utente — stesso principio già usato da
@@ -588,6 +606,8 @@ func _ready() -> void:
 	# resident_center_requested (2026-09-12, richiesta utente) — vedi _on_building_resident_center_
 	# requested sotto.
 	building_info_panel.resident_center_requested.connect(_on_building_resident_center_requested)
+	# X accanto a "Stato" (2026-09-26) — vedi _on_building_work_cancel_requested.
+	building_info_panel.work_cancel_requested.connect(_on_building_work_cancel_requested)
 	# dead_body_info_panel (Step 6 del sistema oggetti-scaduti, 2026-09-05) — quarto sibling nella
 	# STESSA SelectionTab, stesso identico principio "componente muto" degli altri tre.
 	dead_body_info_panel = DEAD_BODY_INFO_PANEL_SCENE.instantiate()
@@ -976,6 +996,9 @@ func _ready() -> void:
 	# sopra) questo riordino è un no-op.
 	_activate_all_building_cells()
 	_activate_all_individual_cells()
+	# Caccia (2026-09-26): le prede delle Hunt Task ricaricate devono essere nel registro degli
+	# individui vivi prima del primo tick — vedi _activate_hunt_prey_cells.
+	_activate_hunt_prey_cells()
 
 	human_individual_views.clear()
 	for member in human_individuals:
@@ -1117,11 +1140,18 @@ func _process(delta: float) -> void:
 	# velocità di simulazione. _refresh_selected_individual_panel() è già no-op se non è un individuo
 	# ad essere selezionato (vedi quel commento), quindi questo blocco è innocuo quando nulla è
 	# selezionato.
+	# Celle vive residue (2026-09-26): spente su timer reale, anche a gioco in pausa (non dipende dal tempo di gioco).
+	_residual_cell_cleanup_timer += delta
+	if _residual_cell_cleanup_timer >= RESIDUAL_CELL_CLEANUP_INTERVAL_SEC:
+		_residual_cell_cleanup_timer = 0.0
+		_cleanup_residual_live_cells()
+
 	_debug_panel_refresh_timer += delta
 	if _debug_panel_refresh_timer >= DEBUG_PANEL_REFRESH_INTERVAL_SEC:
 		_debug_panel_refresh_timer = 0.0
 		_refresh_selected_individual_panel()
 		_refresh_debug_animal_summary()
+		_refresh_debug_live_cells()
 		_validate_selected_animal()
 
 	# Ciclo su TUTTI gli individui con una Task attiva (2026-09-12, richiesta utente — piano
@@ -1149,6 +1179,11 @@ func _process(delta: float) -> void:
 			active_individuals.append(member)
 
 	for active_individual in active_individuals:
+		# Refresh del disegno del magazzino (2026-09-26): collega i segnali di prelievo/deposito degli
+		# step della Task corrente, qualunque sia chi l'ha creata (NeedTaskAssignmentService/
+		# IdleTaskAssignmentService per il rifornimento, GameScene, caricamento da salvataggio, ripresa
+		# dalla coda) — vedi _ensure_step_signals.
+		_ensure_step_signals(active_individual.current_task)
 		# advance_movement PRIMA di apply_action, per QUESTO individuo (2026-09-12, Step 3 — prima
 		# advance_movement viveva FUORI da questo ciclo, chiamata una sola volta sul solo
 		# `individual` selezionato) — stesso ordine/stesso motivo di sempre (invariato dal
@@ -1175,6 +1210,8 @@ func _process(delta: float) -> void:
 		# sincronizza un suo eventuale figlio a carico, nello stesso frame.
 		_check_macro_cell_border_crossing(active_individual)
 		_sync_dependent_child_position(active_individual)
+
+	_sync_dropped_weapon_markers()
 
 	if individual != null:
 		_update_live_neighbor()
@@ -1412,6 +1449,7 @@ func _unhandled_input(event: InputEvent) -> void:
 				_select_stone(map_hit)
 			SelectionKind.ANIMAL:
 				_select_animal(map_hit)
+		world_object_selected.emit(get_global_mouse_position())
 	else:
 		if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
 			_clear_vegetation_selection()
@@ -1437,6 +1475,7 @@ func _unhandled_input(event: InputEvent) -> void:
 				_selection_kind = SelectionKind.INDIVIDUAL
 				_select_individual(hit_individual)
 				_set_movement_target(hit_individual)
+				world_object_selected.emit(get_global_mouse_position())
 			else:
 				_clear_individual_selection()
 				# Fallback "seleziona il lotto/la cella" RIMOSSO (2026-09-16, richiesta utente — vedi
@@ -1483,7 +1522,10 @@ func _unhandled_input(event: InputEvent) -> void:
 					individual_controller.handle_input(event)
 			# _try_assign_transport_command_on_right_click (2026-09-12, richiesta utente) — provato per ULTIMO, dopo
 			# pickup/unload/build; dal 2026-09-20 comando normale del gioco (non piu' gated da DebugLogging.ENABLED).
-			elif not _try_assign_pickup_command_on_right_click(event) and not _try_assign_unload_command_on_right_click(event) and not _try_assign_build_command_on_right_click(event) and not _try_assign_transport_command_on_right_click(event):
+			# _try_assign_hunt_command_on_right_click (2026-09-26, caccia step 2) — provato PER PRIMO: un
+			# animale è un bersaglio esplicito e si muove, non deve essere "rubato" da un sasso o da un
+			# lotto che gli sta sotto.
+			elif not _try_assign_hunt_command_on_right_click(event) and not _try_assign_pickup_command_on_right_click(event) and not _try_assign_unload_command_on_right_click(event) and not _try_assign_build_command_on_right_click(event) and not _try_assign_transport_command_on_right_click(event):
 				individual_controller.handle_input(event)
 
 	if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_X:
@@ -1695,6 +1737,8 @@ func _stop_selected_individual_task() -> void:
 		if transport_selection_banner != null:
 			transport_selection_banner.visible = false
 		return
+	if HuntService.is_hunt_task(individual.current_task):
+		HuntService.log_event(individual, "caccia chiusa: annullata a mano (X o tasto H).")
 	individual.stop()
 	# Bugfix (2026-09-14, richiesta utente) — individual.stop() da solo azzera SOLO current_task,
 	# senza mai toccare task_queue né richiamare resolve_idle_individual: un individuo con una o più
@@ -2129,11 +2173,22 @@ func _assign_transport_task(
 		trip_target = _transport_trip_target(destination_building, resource_name, quantity)
 	if trip_target <= 0:
 		if live_cells.has(destination_macro_coords):
-			_spawn_command_blink_effect(
+			_spawn_command_icon_at_microcell(
 				live_cells[destination_macro_coords],
 				Vector2i(destination_building.micro_x, destination_building.micro_y),
-				IconRegistry.get_command_icon("task_rejected")
+				"task_rejected"
 			)
+		# Motivo (2026-09-26): la destinazione non ha bisogno di quella risorsa, oppure — "prendi tutti i
+		# prodotti" — la sorgente non ha più prodotti da ritirare.
+		if resource_name == RetrieveAction.ALL_PRODUCTS:
+			_report_command_rejection(individual, tr("task_reject_transport_no_products").format({
+				"name": individual.name, "building": _building_display_name(source_building),
+			}))
+		else:
+			_report_command_rejection(individual, tr("task_reject_transport_not_needed").format({
+				"name": individual.name, "building": _building_display_name(destination_building),
+				"resource": IconRegistry.get_resource_display_name(resource_name),
+			}))
 		if DebugLogging.ENABLED and DebugLogging.SHOW_TRANSPORT_BUILD_LOGS:
 			print("[TRANSPORT] rifiutata: %s #%d non ha bisogno di '%s' (obiettivo 0)." % [
 				destination_building.building_type_name, destination_building.id, resource_name
@@ -2143,17 +2198,28 @@ func _assign_transport_task(
 		individual, source_building, destination_building, resource_name, trip_target, quantity, repeat_enabled, 0
 	)
 	var age_band := _resolve_age_band(individual)
-	if not individual.can_assign_task(task, age_band):
+	var rejection := individual.get_assign_rejection_reason(task, age_band)
+	if rejection != HumanIndividual.ASSIGN_OK:
+		# Prima un return silenzioso (2026-09-26): ora X rossa sulla destinazione e motivo.
+		_report_assign_rejection(individual, rejection, "task_activity_transport")
+		if live_cells.has(destination_macro_coords):
+			_spawn_command_icon_at_microcell(
+				live_cells[destination_macro_coords],
+				Vector2i(destination_building.micro_x, destination_building.micro_y),
+				"task_rejected"
+			)
 		return
 	_wire_transport_task(task, individual)
 	var assigned := individual.assign_task(task, age_band)
 	var command_icon_key := "transport" if assigned else "task_rejected"
+	if not assigned:
+		_report_failed_assignment(individual, task, "task_activity_transport")
 
 	if live_cells.has(destination_macro_coords):
-		_spawn_command_blink_effect(
+		_spawn_command_icon_at_microcell(
 			live_cells[destination_macro_coords],
 			Vector2i(destination_building.micro_x, destination_building.micro_y),
-			IconRegistry.get_command_icon(command_icon_key)
+			command_icon_key
 		)
 
 	if DebugLogging.ENABLED and DebugLogging.SHOW_TRANSPORT_BUILD_LOGS:
@@ -2223,10 +2289,8 @@ func _wire_transport_task(task: Task, owner: HumanIndividual) -> void:
 	for step in task.steps:
 		if step is UnloadAction:
 			_reconnect_unload_action_signals(step as UnloadAction, owner)
-		elif step is RetrieveAction:
-			(step as RetrieveAction).resource_retrieved.connect(
-				func(_res_name: String, building: Building, _qty: int) -> void: _on_resource_deposited(building)
-			)
+		else:
+			_connect_storage_refresh_signals(step)
 
 
 # Ripetizione automatica della Transport (2026-09-20, richiesta utente): UnloadAction.transport_delivered, cioe' al
@@ -2330,7 +2394,13 @@ func _try_assign_transport_command_on_right_click(event: InputEvent) -> bool:
 		# qui.
 		var age_band := _resolve_age_band(individual)
 		if age_band == HumanTypes.AgeBand.INFANT or age_band == HumanTypes.AgeBand.CHILD:
-			return false
+			# Prima un return false silenzioso (il click proseguiva come movimento): ora il comando viene
+			# consumato con X rossa sull'edificio e motivo (2026-09-26, richiesta utente).
+			_report_assign_rejection(individual, HumanIndividual.ASSIGN_REJECT_TOO_YOUNG, "task_activity_transport")
+			var hit_macro_coords := Vector2i(hit_building.macro_x, hit_building.macro_y)
+			if live_cells.has(hit_macro_coords):
+				_spawn_command_icon_at_microcell(live_cells[hit_macro_coords], Vector2i(hit_building.micro_x, hit_building.micro_y), "task_rejected")
+			return true
 		# available_quantities: Dictionary[String, int] — appiattito da stored_resources (Dictionary
 		# [String, Dictionary{"quantity":int,"decay_fraction":float}]), stesso "spacchettamento" già
 		# fatto da RetrieveAction.activate()/BuildingStorageService.withdraw per la stessa struttura.
@@ -2520,7 +2590,9 @@ func _spawn_idea_deposit_effect(individual: HumanIndividual) -> void:
 	# conversione microcelle->pixel locali già in uso ovunque nel file (es.
 	# _center_camera_on_individual).
 	label.position = individual.position * MicroCellRenderer.CELL_SIZE + Vector2(-3, -12)
-	live_cells[individual.home_macro_coords].container.add_child(label)
+	var cell_container: Node2D = live_cells[individual.home_macro_coords].container
+	cell_container.add_child(label)
+	idea_bulb_shown.emit(cell_container.to_global(individual.position * MicroCellRenderer.CELL_SIZE))
 
 	# Salita più alta e dissolvenza più lenta (richiesta utente 2026-09-07, secondo giro di
 	# ritocchi) — due durate separate invece di una sola condivisa: la salita resta rapida (0.9s,
@@ -2857,7 +2929,7 @@ func _refresh_building_panel() -> void:
 	if building == null:
 		_clear_building_selection()
 		return
-	building_info_panel.show_building(building, _resolve_building_residents_display_data(building), _resolve_assigned_builder_names(building), _resolve_production_claimant_names(building), _resolve_production_claimed_recipes(building), _resolve_production_tool_wait_lines(building))
+	building_info_panel.show_building(building, _resolve_building_residents_display_data(building), _resolve_names_working_on_building(building, BUILD_TASK_NAMES), _resolve_names_working_on_building(building, PRODUCE_TASK_NAMES), _resolve_production_claimed_recipes(building), _resolve_production_tool_wait_lines(building))
 	# Titolo (Step 6, richiesta utente 2026-09-04) — stessa formula già in BuildingInfoPanel.
 	var type_name: String = tr(building.rules.building_name) if building.rules != null else building.building_type_name
 	game_info_tabs.set_selection_title(tr("selection_title_type").format({"type": type_name}))
@@ -2920,7 +2992,7 @@ func _on_empty_all_requested(building: Building) -> void:
 	if building == null:
 		return
 	building.stored_resources.clear()
-	building_info_panel.show_building(building, _resolve_building_residents_display_data(building), _resolve_assigned_builder_names(building), _resolve_production_claimant_names(building), _resolve_production_claimed_recipes(building), _resolve_production_tool_wait_lines(building))
+	building_info_panel.show_building(building, _resolve_building_residents_display_data(building), _resolve_names_working_on_building(building, BUILD_TASK_NAMES), _resolve_names_working_on_building(building, PRODUCE_TASK_NAMES), _resolve_production_claimed_recipes(building), _resolve_production_tool_wait_lines(building))
 	var macro_coords := Vector2i(building.macro_x, building.macro_y)
 	if live_cells.has(macro_coords):
 		_refresh_building_visuals(live_cells[macro_coords])
@@ -2951,6 +3023,24 @@ func _on_empty_all_requested(building: Building) -> void:
 # quando si riprenderà l'indagine: confermeranno se si tratta solo del costo legittimo di
 # _reposition_live_cells quando il residente è lontano dal centro corrente, o se c'è dell'altro
 # non ancora scoperto.
+# X rossa accanto a "Stato" nel pannello edificio (2026-09-26, richiesta utente): annulla la costruzione/
+# produzione di QUESTO edificio per tutti quelli che ci lavorano — per ciascuno SOLO le Task su questo
+# edificio (in corso e in coda), le altre restano intatte. Zaino conservato (discard_carried false).
+# Chi aveva la Task in corso riparte come dopo la X del pannello individuo (resolve_idle_individual:
+# bisogno -> coda -> perditempo). Il lavoro accumulato resta sull'edificio, come per l'annullo
+# dall'individuo: una nuova assegnazione riprende da dove si era arrivati.
+func _on_building_work_cancel_requested(building: Building) -> void:
+	if building == null:
+		return
+	var freed := _close_tasks_working_on_building(building, BUILDING_WORK_TASK_NAMES, null, false)
+	for member in freed:
+		HumanIndividualActionService.resolve_idle_individual(member, _resolve_age_band(member), macro_world)
+	if DebugLogging.ENABLED and DebugLogging.SHOW_TASK_LIFECYCLE_LOGS:
+		print("[BUILDING CANCEL] Edificio #%d: lavoro annullato dal pannello (task in corso chiuse: %d)." % [building.id, freed.size()])
+	_refresh_selected_building_panel()
+	_refresh_selected_individual_panel()
+
+
 func _on_building_resident_center_requested(individual_id: int) -> void:
 	var target := _find_human_individual_by_id(individual_id)
 	if target == null:
@@ -3203,9 +3293,17 @@ func _assign_pickup_task(
 	# "❌" se il guard di assign_task rifiuta (2026-09-13, richiesta utente — bugfix: prima la
 	# "manina" appariva comunque anche quando la Task non partiva mai, es. INFANT) — assign_task ora
 	# ritorna bool, catturato qui per scegliere l'icona giusta invece di assumere sempre successo.
+	# Idoneità prima dell'assegnazione (2026-09-26): X rossa e motivo invece della sola X.
+	var rejection := individual.get_assign_rejection_reason(task, _resolve_age_band(individual))
+	if rejection != HumanIndividual.ASSIGN_OK:
+		_report_assign_rejection(individual, rejection, "task_activity_pickup")
+		_spawn_command_icon_at_microcell(cell, target_position, "task_rejected")
+		return
 	var assigned := individual.assign_task(task, _resolve_age_band(individual))
 	var command_icon_key := "pickup" if assigned else "task_rejected"
-	_spawn_command_blink_effect(cell, target_position, IconRegistry.get_command_icon(command_icon_key))
+	if not assigned:
+		_report_failed_assignment(individual, task, "task_activity_pickup")
+	_spawn_command_icon_at_microcell(cell, target_position, command_icon_key)
 
 
 # Costruisce la Task di raccolta (Walk + PickUp) senza assegnarla (2026-09-20, estratta da _assign_pickup_task per
@@ -3432,6 +3530,36 @@ func _spawn_command_blink_effect(cell: LiveMacroCell, target_position: Vector2i,
 	tween.chain().tween_callback(label.queue_free)
 
 
+# Icona di comando per chiave (2026-09-26, richiesta utente — mirino della caccia): se IconRegistry ha
+# un'icona DISEGNATA per la chiave (COMMAND_ICON_NODES, es. "hunt") la mostra centrata sulla posizione
+# ESATTA del bersaglio (microcelle in virgola mobile), con lo stesso lampeggio e la stessa pulizia
+# automatica di _spawn_command_blink_effect; altrimenti ricade sull'emoji di COMMAND_ICONS via
+# _spawn_command_blink_effect, sulla microcella del bersaglio.
+func _spawn_command_icon(cell: LiveMacroCell, target_position: Vector2, command_icon_key: String) -> void:
+	var icon_node := IconRegistry.get_command_icon_node(command_icon_key)
+	if icon_node == null:
+		_spawn_command_blink_effect(cell, Vector2i(target_position), IconRegistry.get_command_icon(command_icon_key))
+		return
+	icon_node.z_index = 2
+	icon_node.position = target_position * MicroCellRenderer.CELL_SIZE
+	cell.container.add_child(icon_node)
+
+	var tween := create_tween()
+	tween.set_loops(COMMAND_BLINK_EFFECT_BLINK_COUNT)
+	tween.tween_property(icon_node, "modulate:a", 0.15, COMMAND_BLINK_EFFECT_BLINK_HALF_DURATION)
+	tween.tween_property(icon_node, "modulate:a", 1.0, COMMAND_BLINK_EFFECT_BLINK_HALF_DURATION)
+	tween.chain().tween_callback(icon_node.queue_free)
+
+
+# Stessa icona di comando di _spawn_command_icon, per un bersaglio che è una MICROCELLA (edificio,
+# posizione di raccolta): l'icona disegnata va al centro della microcella, dove l'emoji di
+# _spawn_command_blink_effect risulta centrata nel proprio riquadro 10×10. Punto unico usato da tutti
+# i comandi (2026-09-26, richiesta utente): un'icona disegnata aggiunta a IconRegistry.
+# COMMAND_ICON_NODES vale subito per ogni comando con quella chiave.
+func _spawn_command_icon_at_microcell(cell: LiveMacroCell, microcell: Vector2i, command_icon_key: String) -> void:
+	_spawn_command_icon(cell, Vector2(microcell) + Vector2(0.5, 0.5), command_icon_key)
+
+
 # Comando "vai e raccogli" via DESTRO (2026-09-09, richiesta utente — sostituisce l'attivazione via
 # SINISTRO di Step 5/6: quel percorso condivideva il tasto con la selezione — click su un lotto già
 # selezionato che diventava improvvisamente un comando in base a uno stato nascosto, `individual.
@@ -3517,7 +3645,8 @@ func _try_assign_pickup_command_on_right_click(event: InputEvent) -> bool:
 	if age_band == HumanTypes.AgeBand.INFANT or age_band == HumanTypes.AgeBand.CHILD:
 		if DebugLogging.ENABLED and DebugLogging.SHOW_RECONNECT_FACTORY_LOGS:
 			print("[PICKUP CMD DEBUG] _try_assign_pickup_command_on_right_click: ritorna TRUE — età non ammessa (%s), rifiutato prima di popup/assegnazione." % HumanTypes.AgeBand.keys()[age_band])
-		_spawn_command_blink_effect(live_cells.get(candidates[0]["macro_coords"]), candidates[0]["position"], IconRegistry.get_command_icon("task_rejected"))
+		_report_assign_rejection(individual, HumanIndividual.ASSIGN_REJECT_TOO_YOUNG, "task_activity_pickup")
+		_spawn_command_icon_at_microcell(live_cells.get(candidates[0]["macro_coords"]), candidates[0]["position"], "task_rejected")
 		return true
 
 	# Filtro su available_quantity (2026-09-17, richiesta utente, BUGFIX — caso reale osservato:
@@ -4108,61 +4237,124 @@ func _try_assign_unload_command_on_right_click(event: InputEvent) -> bool:
 	# esiste ancora (TaskFactory non supporta UNLOAD, vedi task_factory.gd).
 	task.task_name = "task_unload_resource_name"
 	task.step_descriptions = ["task_unload_resource_step_walk", "task_unload_resource_step_unload"]
-	individual.assign_task(task, _resolve_age_band(individual))
+	# Rifiuto con motivo (2026-09-26): prima un rifiuto di assign_task passava in silenzio, senza nemmeno
+	# la X. Ora X rossa sull'edificio e motivo, come gli altri comandi.
+	var building_macro_coords := Vector2i(building.macro_x, building.macro_y)
+	if not individual.assign_task(task, _resolve_age_band(individual)):
+		_report_failed_assignment(individual, task, "task_activity_unload")
+		if live_cells.has(building_macro_coords):
+			_spawn_command_icon_at_microcell(live_cells[building_macro_coords], Vector2i(building.micro_x, building.micro_y), "task_rejected")
 	return true
+
+
+# ============================================================================================
+# Task che lavorano su un edificio (2026-09-26, richiesta utente — RINOMINATE e rese generiche:
+# prima due controlli gemelli, _task_claims_building per la sola costruzione e
+# _task_claims_production per la sola produzione, e una _close_tasks_claiming_building legata alla
+# costruzione). Ora un solo controllo e una sola chiusura, parametrizzati da un elenco di task_name:
+# un nuovo tipo di lavoro su un edificio si aggiunge a una lista qui sotto (o in una lista nuova),
+# senza toccare le funzioni. Vale per ogni Task i cui step tengono l'edificio in un campo
+# `target_building` (oggi tutte quelle che lavorano su un edificio).
+# ============================================================================================
+
+# Costruzione (SetupSite/Clear/Build): usata da conteggio costruttori, demolizione e completamento.
+const BUILD_TASK_NAMES: Array[String] = ["task_build_name"]
+# Produzione presso una workstation.
+const PRODUCE_TASK_NAMES: Array[String] = ["task_produce_name"]
+# "Lavoro sull'edificio" annullabile dal pannello edificio (X accanto al lavoratore).
+const BUILDING_WORK_TASK_NAMES: Array[String] = ["task_build_name", "task_produce_name"]
+
+
+# true se `task` è una Task NON conclusa, con task_name in `task_names`, e almeno uno dei suoi step ha
+# `target_building` == `building`. Letto dagli step (non da task.context, ripulito da TaskFactory
+# subito dopo la costruzione — BUGFIX 2026-09-14), su TUTTI gli step, non solo quello corrente.
+# "target_building" in step (duck typing): gli step senza quel campo (WalkAction, ...) si escludono da soli.
+# Una Task conclusa non conta mai (prima il controllo della sola costruzione non lo verificava).
+func _task_works_on_building(task: Task, building: Building, task_names: Array[String]) -> bool:
+	if task == null or task.is_finished() or not task_names.has(task.task_name):
+		return false
+	for step in task.steps:
+		if "target_building" in step and step.target_building == building:
+			return true
+	return false
+
+
+# Individui (in ordine di human_individuals) con una Task di `task_names` su `building`, attiva
+# (current_task) o sospesa in coda (task_queue) — un individuo compare una volta sola.
+func _resolve_individuals_working_on_building(building: Building, task_names: Array[String]) -> Array[HumanIndividual]:
+	var workers: Array[HumanIndividual] = []
+	for member in human_individuals:
+		if _task_works_on_building(member.current_task, building, task_names):
+			workers.append(member)
+			continue
+		for queued_task in member.task_queue:
+			if _task_works_on_building(queued_task, building, task_names):
+				workers.append(member)
+				break
+	return workers
+
+
+# "Nome (#id)" di ciascun individuo di _resolve_individuals_working_on_building — sostituisce
+# _resolve_assigned_builder_names/_resolve_production_claimant_names (stesso scan, stesso formato).
+func _resolve_names_working_on_building(building: Building, task_names: Array[String]) -> Array[String]:
+	var names: Array[String] = []
+	for member in _resolve_individuals_working_on_building(building, task_names):
+		names.append(_format_worker_name(member))
+	return names
+
+
+func _format_worker_name(member: HumanIndividual) -> String:
+	return "%s (#%d)" % [member.name, member.id]
 
 
 # Guard max_builders (2026-09-14, richiesta utente — bugfix "più builder sullo stesso cantiere si
 # intrappolano a vicenda": la VERA gestione multi-builder resta da progettare, questo è solo un
 # guard temporaneo per impedire il caso rotto finché non c'è) — conta quanti ALTRI individui
-# (esclude `excluding_individual`, che può sempre riprendere il PROPRIO cantiere) hanno già un
-# "claim" sulla Build Task di `target_building`, sia come current_task ATTIVA sia come Task
-# SOSPESA nella propria task_queue: un builder mandato temporaneamente a fare un'altra commissione
-# deve continuare a "occupare" il proprio posto, altrimenti nella finestra in cui è sospeso un
-# secondo individuo potrebbe intrufolarsi, ricreando lo stesso problema. Identificazione del target
-# via _task_claims_building sotto (BUGFIX 2026-09-14: NON tramite task.context, ripulito da
-# TaskFactory.build_task subito dopo la costruzione — letta invece dagli step stessi, che la
-# portano come campo proprio dell'istanza). Scansione lineare di
-# human_individuals (+ le poche voci di ciascuna task_queue, max TaskQueueService.MAX_QUEUE_SIZE) —
-# stesso principio "O(N) accettabile finché N resta piccolo" già assunto ovunque in questo progetto.
+# (esclude `excluding_individual`, che può sempre riprendere il PROPRIO cantiere) hanno già la
+# Build Task di `target_building`, attiva o sospesa in coda: un builder mandato temporaneamente a
+# fare un'altra commissione deve continuare a "occupare" il proprio posto.
 func _count_other_individuals_claiming_build(target_building: Building, excluding_individual: HumanIndividual) -> int:
 	var count := 0
-	for other in human_individuals:
-		if other == excluding_individual:
-			continue
-		if _task_claims_building(other.current_task, target_building):
+	for other in _resolve_individuals_working_on_building(target_building, BUILD_TASK_NAMES):
+		if other != excluding_individual:
 			count += 1
-			continue
-		for queued_task in other.task_queue:
-			if _task_claims_building(queued_task, target_building):
-				count += 1
-				break
 	return count
 
 
-# Chiude le task (current_task E task_queue) di tutti gli individui, tranne `excluded`, che puntano a
-# `building` (2026-09-21, richiesta utente — logica estratta da _demolish_building per riusarla al
-# completamento di un edificio da parte di un altro individuo). Ritorna gli individui la cui
-# current_task è stata chiusa: il chiamante li rimette in moto con resolve_idle_individual, al momento
-# giusto per lui. discard_carried: true (demolizione) = zaino scartato — current_task via stop(), task in
-# coda come fa TaskQueueService.push_suspended_task per l'overflow; false (edificio completato) = zaino
-# lasciato dov'è, la task viene solo chiusa/rimossa.
-func _close_tasks_claiming_building(building: Building, excluded: HumanIndividual, discard_carried: bool) -> Array[HumanIndividual]:
+# Chiude, per UN individuo, le sole Task di `task_names` su `building` (2026-09-26 — estratta da
+# _close_tasks_working_on_building per l'annullo di un singolo lavoratore dal pannello edificio): la
+# current_task se lavora lì (stop), e le Task in coda che lavorano lì (rimosse). Tutte le altre sue
+# Task, in corso o in coda, restano intatte. discard_carried: true = zaino scartato (anche per una Task
+# in coda rimossa, come fa TaskQueueService.push_suspended_task per l'overflow); false = zaino lasciato
+# dov'è. Ritorna true se la current_task è stata chiusa: il chiamante rimette in moto l'individuo con
+# resolve_idle_individual, al momento giusto per lui.
+func _close_individual_tasks_on_building(member: HumanIndividual, building: Building, task_names: Array[String], discard_carried: bool) -> bool:
+	var current_closed := false
+	if _task_works_on_building(member.current_task, building, task_names):
+		member.stop(discard_carried)
+		current_closed = true
+	var kept_queue: Array[Task] = []
+	for queued_task in member.task_queue:
+		if _task_works_on_building(queued_task, building, task_names):
+			if discard_carried:
+				member.discard_carried_resource()
+		else:
+			kept_queue.append(queued_task)
+	member.task_queue = kept_queue
+	return current_closed
+
+
+# Chiude le Task di `task_names` su `building` di tutti gli individui tranne `excluded` (RINOMINATA
+# 2026-09-26, era _close_tasks_claiming_building — logica invariata, estratta 2026-09-21 da
+# _demolish_building per riusarla al completamento). Ritorna gli individui la cui current_task è
+# stata chiusa, da rimettere in moto a cura del chiamante.
+func _close_tasks_working_on_building(building: Building, task_names: Array[String], excluded: HumanIndividual, discard_carried: bool) -> Array[HumanIndividual]:
 	var freed: Array[HumanIndividual] = []
 	for other in human_individuals:
 		if other == excluded:
 			continue
-		if _task_claims_building(other.current_task, building):
-			other.stop(discard_carried)
+		if _close_individual_tasks_on_building(other, building, task_names, discard_carried):
 			freed.append(other)
-		var kept_queue: Array[Task] = []
-		for queued_task in other.task_queue:
-			if _task_claims_building(queued_task, building):
-				if discard_carried:
-					other.discard_carried_resource()
-			else:
-				kept_queue.append(queued_task)
-		other.task_queue = kept_queue
 	return freed
 
 
@@ -4174,81 +4366,9 @@ func _find_completing_individual(building: Building) -> HumanIndividual:
 		if candidate.current_task == null:
 			continue
 		var action := candidate.current_task.get_current_action()
-		if action is BuildAction and (action as BuildAction).target_building == building \
-				and (action as BuildAction).completing_individual == candidate:
+		if action is BuildAction and (action as BuildAction).target_building == building 				and (action as BuildAction).completing_individual == candidate:
 			return candidate
 	return null
-
-
-# BUGFIX (2026-09-14, richiesta utente — guard max_builders confermato non funzionante: "ne lascia
-# assegnare ancora un sacco") — PRIMA leggeva task.context.get("target_building"), SEMPRE null:
-# TaskFactory.build_task (righe 224-230) ripulisce SEMPRE context dalle chiavi consumate per
-# costruire gli step, "target_building" incluso — la chiave viene letta per costruire SetupSiteAction/
-# ClearAction/BuildAction, poi CANCELLATA da context prima che diventi task.context. Letto ora
-# invece direttamente dagli step (SetupSiteAction/ClearAction/BuildAction espongono target_building
-# come campo proprio dell'istanza, MAI cancellato — sopravvive alla pulizia del context, e resta
-# leggibile indipendentemente da quale step sia quello CORRENTE: scandisco tutti i 4 step della
-# Task, non solo quello attivo). "target_building" in step (duck typing, non `is` per tipo — WalkAction
-# non ha questo campo, la esclude naturalmente senza bisogno di elencare i tre tipi che ce l'hanno).
-func _task_claims_building(task: Task, target_building: Building) -> bool:
-	if task == null or task.task_name != "task_build_name":
-		return false
-	for step in task.steps:
-		if "target_building" in step and step.target_building == target_building:
-			return true
-	return false
-
-
-# Nomi (+ id) dei costruttori assegnati a `target_building` (2026-09-18, richiesta utente — pannello
-# edificio: "costruttore assegnato: con il nome, e se non c'è scrivere che è mancante"; id aggiunto
-# 2026-09-19, richiesta utente) — STESSO scan di _task_claims_building/_count_other_individuals_
-# claiming_build sopra (current_task ATTIVA + task_queue SOSPESA), qui raccoglie "Nome (#id)" invece
-# di limitarsi a contare: BuildingRules.max_builders può essere >1, quindi il pannello deve poter
-# mostrare più di un nome. Array vuoto = nessuno assegnato, il pannello mostra il messaggio
-# "mancante". Id incluso nella stessa stringa (non un secondo Array parallelo) — il pannello si
-# limita a fare ", ".join() sul risultato, stesso principio "muto" già seguito per residents_
-# display_data: nessuna logica di formattazione id/nome duplicata lì.
-func _resolve_assigned_builder_names(target_building: Building) -> Array[String]:
-	var names: Array[String] = []
-	for individual in human_individuals:
-		if _task_claims_building(individual.current_task, target_building):
-			names.append("%s (#%d)" % [individual.name, individual.id])
-			continue
-		for queued_task in individual.task_queue:
-			if _task_claims_building(queued_task, target_building):
-				names.append("%s (#%d)" % [individual.name, individual.id])
-				break
-	return names
-
-
-# true se `task` è una Produce Task NON conclusa su `target_building` (2026-09-24, richiesta utente —
-# blocco ricette) — stesso schema di _task_claims_building, per la Produce.
-func _task_claims_production(task: Task, target_building: Building) -> bool:
-	if task == null or task.task_name != "task_produce_name" or task.is_finished():
-		return false
-	for step in task.steps:
-		if "target_building" in step and step.target_building == target_building:
-			return true
-	return false
-
-
-# "Nome (#id)" di chi ha una Produce Task su `target_building` (2026-09-24, richiesta utente —
-# l'edificio deve sapere di essere già impegnato, anche se l'individuo non è ancora arrivato) —
-# STESSO scan di _resolve_assigned_builder_names (current_task attiva + task_queue sospesa). Derivato
-# dalle Task e non da un flag su Building: un flag andrebbe ripulito a mano su annullamento (H),
-# morte o rifiuto, e production_progress resta volutamente sull'edificio anche dopo un annullamento
-# (produzione ripristinabile), quindi da solo non dice se qualcuno ci sta lavorando. Vuoto = libero.
-func _resolve_production_claimant_names(target_building: Building) -> Array[String]:
-	var names: Array[String] = []
-	for individual in human_individuals:
-		if _task_claims_production(individual.current_task, target_building):
-			names.append("%s (#%d)" % [individual.name, individual.id])
-			continue
-		for queued_task in individual.task_queue:
-			if _task_claims_production(queued_task, target_building):
-				names.append("%s (#%d)" % [individual.name, individual.id])
-				break
-	return names
 
 
 # Righe di avviso "attrezzi mancanti" per il pannello edificio (2026-09-25, richiesta utente — su una
@@ -4259,7 +4379,7 @@ func _resolve_production_claimant_names(target_building: Building) -> Array[Stri
 func _resolve_production_tool_wait_lines(target_building: Building) -> Array[String]:
 	var waits: Array[Dictionary] = []
 	for individual in human_individuals:
-		if not _task_claims_production(individual.current_task, target_building):
+		if not _task_works_on_building(individual.current_task, target_building, PRODUCE_TASK_NAMES):
 			continue
 		var tool_wait_text := _describe_tool_wait(individual.current_task)
 		if tool_wait_text != "":
@@ -4272,14 +4392,14 @@ func _resolve_production_tool_wait_lines(target_building: Building) -> Array[Str
 
 # Ricette con almeno una Produce Task NON conclusa (attiva o in coda) su `target_building` (2026-09-24,
 # richiesta utente — un record per ricetta): i record di queste ricette non vanno mai liberati da
-# ProductionService.make_room_for. Stesso scan di _resolve_production_claimant_names.
+# ProductionService.make_room_for. Stesso scan di _resolve_names_working_on_building.
 func _resolve_production_claimed_recipes(target_building: Building) -> Array[String]:
 	var recipes: Array[String] = []
 	for individual in human_individuals:
 		var tasks: Array = [individual.current_task]
 		tasks.append_array(individual.task_queue)
 		for task in tasks:
-			if not _task_claims_production(task, target_building):
+			if not _task_works_on_building(task, target_building, PRODUCE_TASK_NAMES):
 				continue
 			for step in task.steps:
 				if step is ProduceAction and step.target_building == target_building and not recipes.has(step.resource_name):
@@ -4343,19 +4463,17 @@ func _try_assign_build_command_on_right_click(event: InputEvent) -> bool:
 	var other_builders_count := _count_other_individuals_claiming_build(hit_building, individual)
 	if other_builders_count >= max_builders:
 		if live_cells.has(build_macro_coords):
-			_spawn_command_blink_effect(
+			_spawn_command_icon_at_microcell(
 				live_cells[build_macro_coords],
 				Vector2i(hit_building.micro_x, hit_building.micro_y),
-				IconRegistry.get_command_icon("task_rejected")
+				"task_rejected"
 			)
-		if UserOptions.show_notification_popups:
-			notification_popup.enqueue(
-				NotificationTypes.NotificationPopupType.MATERIAL_NEEDED,
-				tr("notification_build_capacity_full").format({
-					"current": other_builders_count,
-					"max": max_builders,
-				})
-			)
+		# Stesso testo di prima, ora sul canale comune dei rifiuti (2026-09-26): popup TASK_REJECTED e avviso
+		# nel pannello dell'individuo, come per ogni altro comando rifiutato.
+		_report_command_rejection(individual, tr("notification_build_capacity_full").format({
+			"current": other_builders_count,
+			"max": max_builders,
+		}))
 		return true
 
 	var macro_state := macro_world.get_cell_state_at(hit_building.macro_x, hit_building.macro_y) if macro_world != null else null
@@ -4390,11 +4508,14 @@ func _try_assign_build_command_on_right_click(event: InputEvent) -> bool:
 	# risulterebbe indistinguibile da "rifiutata dal guard età" — qui invece è un comando riuscito.
 	if individual.current_task != task and not individual.task_queue.has(task):
 		if live_cells.has(build_macro_coords):
-			_spawn_command_blink_effect(
+			_spawn_command_icon_at_microcell(
 				live_cells[build_macro_coords],
 				Vector2i(hit_building.micro_x, hit_building.micro_y),
-				IconRegistry.get_command_icon("task_rejected")
+				"task_rejected"
 			)
+		# Motivo (2026-09-26): prima solo la X. reassign_task ha già tentato l'assegnazione, quindi il motivo
+		# si rilegge dal guard di idoneità (puro, stesso esito).
+		_report_failed_assignment(individual, task, "task_activity_build")
 		return true
 
 	# Collegamento signal SetupSiteAction.site_setup_completed / ClearAction.site_cleared (vedi
@@ -4413,10 +4534,10 @@ func _try_assign_build_command_on_right_click(event: InputEvent) -> bool:
 	# Build Task (chiave "build" in IconRegistry, non più una per step — vedi IconRegistry.gd per lo
 	# storico del tentativo precedente, scartato).
 	if live_cells.has(build_macro_coords):
-		_spawn_command_blink_effect(
+		_spawn_command_icon_at_microcell(
 			live_cells[build_macro_coords],
 			Vector2i(hit_building.micro_x, hit_building.micro_y),
-			IconRegistry.get_command_icon("build")
+			"build"
 		)
 	if DebugLogging.ENABLED and DebugLogging.SHOW_TRANSPORT_BUILD_LOGS:
 		print("[BUILD] Task di costruzione assegnata a #%d %s per l'edificio #%d." % [individual.id, individual.name, building_id])
@@ -4449,7 +4570,7 @@ const PRODUCE_TASK_DEFINITION_PATH := "res://gameplay/scripts/tasks/definitions/
 # true se l'edificio ha già tante Produce Task assegnate quante ne ammette (BuildingRules.
 # production_queue_slots, 2026-09-24): stessa regola usata dal pannello per spegnere le ricette.
 func _is_production_queue_full(building: Building) -> bool:
-	return ProductionService.is_production_queue_full(building, _resolve_production_claimant_names(building).size())
+	return ProductionService.is_production_queue_full(building, _resolve_names_working_on_building(building, PRODUCE_TASK_NAMES).size())
 
 
 # Testo "Corda di fibre" / "Corda di fibre ×3" per banner e log dell'ordine di produzione (2026-09-24).
@@ -4562,6 +4683,51 @@ func _report_tool_gate_failure(worker: HumanIndividual, tool_gate: Dictionary) -
 	_refresh_selected_individual_panel()
 
 
+# Avviso di un comando rifiutato perché l'individuo non è idoneo (2026-09-26, richiesta utente): motivo
+# da HumanIndividual.get_assign_rejection_reason, `activity_key` = chiave tr() dell'attività ("andare a
+# caccia", "produrre"). Testo nel pannello individuo (stesso canale degli avvisi del gate attrezzi) e popup
+# giallo, stesso gate UserOptions. La X rossa sul bersaglio la mostra il chiamante (_spawn_command_icon).
+func _report_assign_rejection(worker: HumanIndividual, reason: String, activity_key: String) -> void:
+	var reason_key := "task_reject_generic"
+	match reason:
+		HumanIndividual.ASSIGN_REJECT_TOO_YOUNG:
+			reason_key = "task_reject_too_young"
+		HumanIndividual.ASSIGN_REJECT_AGE_NOT_ALLOWED:
+			reason_key = "task_reject_age_not_allowed"
+		HumanIndividual.ASSIGN_REJECT_LOW_STAMINA:
+			reason_key = "task_reject_low_stamina"
+	_report_command_rejection(worker, tr(reason_key).format({"name": worker.name, "activity": tr(activity_key)}))
+
+
+# Mostra un motivo di rifiuto già tradotto (2026-09-26, richiesta utente — il giocatore deve sapere sempre
+# perché un ordine non è stato accettato, per QUALUNQUE comando): testo nel pannello dell'individuo
+# (stesso canale degli avvisi del gate attrezzi) e popup giallo TASK_REJECTED. Usata da
+# _report_assign_rejection (idoneità) e direttamente per i motivi propri di un comando (destinazione che
+# non ha bisogno della risorsa, cantiere al completo, nessun magazzino con l'attrezzo...). La X rossa sul
+# bersaglio resta a cura del chiamante (_spawn_command_icon*).
+func _report_command_rejection(worker: HumanIndividual, text: String) -> void:
+	if worker != null:
+		worker.tool_gate_warning = text
+	if UserOptions.show_notification_popups:
+		notification_popup.enqueue(NotificationTypes.NotificationPopupType.TASK_REJECTED, text)
+	_refresh_selected_individual_panel()
+
+
+# Nome leggibile di un edificio per i messaggi (BuildingRules.building_name tradotto), stesso fallback sul
+# tipo usato altrove in questo file.
+func _building_display_name(building: Building) -> String:
+	return tr(building.rules.building_name) if building.rules != null else building.building_type_name
+
+
+# Motivo del rifiuto di un'assegnazione GIÀ tentata e fallita (assign_task ha restituito false, o la Task
+# non risulta né in corso né in coda): il guard di idoneità è puro, quindi rileggerlo ora dà lo stesso
+# esito; se il guard passa, il rifiuto è venuto da assign_task stessa (Task non sospendibile scartata
+# perché lo zaino occupato appartiene a un'altra Task) -> messaggio generico.
+func _report_failed_assignment(worker: HumanIndividual, task: Task, activity_key: String) -> void:
+	var reason := worker.get_assign_rejection_reason(task, _resolve_age_band(worker))
+	_report_assign_rejection(worker, reason, activity_key)
+
+
 # Categorie mancanti con esempi di attrezzi che le coprono (2026-09-25, richiesta utente — il
 # messaggio deve dire QUALI attrezzi servono): "taglio (es. Coltello di pietra); caccia (es. Lancia
 # di legno)". Una categoria senza alcun attrezzo noto compare col solo nome.
@@ -4582,13 +4748,13 @@ func _describe_missing_tool_categories(categories: Array) -> String:
 
 
 # Testo di attesa attrezzi per la Task (vuoto se non è in attesa): guarda lo step CORRENTE, l'unico
-# che ricontrolla gli attrezzi (oggi solo ProduceAction, vedi il suo stato tool_wait_*). Usato dal
-# pannello individuo (riga attività) e dal pannello edificio (accanto al lavoratore).
+# che ricontrolla gli attrezzi (stato tool_wait_* della classe base Action, dal 2026-09-26 comune a
+# produzione e caccia). Usato dal pannello individuo (riga attività) e dal pannello edificio.
 func _describe_tool_wait(task: Task) -> String:
 	if task == null or task.is_finished():
 		return ""
 	var step := task.get_current_action()
-	if not (step is ProduceAction) or not step.is_waiting_for_tools():
+	if step == null or not step.is_waiting_for_tools():
 		return ""
 	match step.tool_wait_result:
 		ToolGateService.Result.MISSING_TOOLS:
@@ -4630,6 +4796,20 @@ func _assign_produce_task(worker: HumanIndividual, target_building: Building, re
 	task.context["production_quantity"] = quantity
 
 	var building_macro_coords := Vector2i(target_building.macro_x, target_building.macro_y)
+	# Idoneità PRIMA del gate degli attrezzi (2026-09-26, richiesta utente): il gate sposta davvero gli
+	# attrezzi dallo zaino alla cintura, quindi un individuo non idoneo (troppo giovane, stamina
+	# insufficiente, ...) va rifiutato prima, senza toccare zaino né cintura. X rossa + popup col motivo.
+	var rejection := worker.get_assign_rejection_reason(task, _resolve_age_band(worker))
+	if rejection != HumanIndividual.ASSIGN_OK:
+		_report_assign_rejection(worker, rejection, "task_activity_produce")
+		if live_cells.has(building_macro_coords):
+			_spawn_command_icon_at_microcell(
+				live_cells[building_macro_coords],
+				Vector2i(target_building.micro_x, target_building.micro_y),
+				"task_rejected"
+			)
+		_refresh_selected_building_panel()
+		return
 	# Controllo attrezzi (2026-09-25, richiesta utente — la ricetta può richiedere categorie di
 	# attrezzo, es. la corda richiede CUTTING). ToolGateService sposta in cintura gli attrezzi
 	# necessari presi dallo zaino. Esiti:
@@ -4651,10 +4831,10 @@ func _assign_produce_task(worker: HumanIndividual, target_building: Building, re
 	elif tool_gate["result"] != ToolGateService.Result.OK:
 		_report_tool_gate_failure(worker, tool_gate)
 		if live_cells.has(building_macro_coords):
-			_spawn_command_blink_effect(
+			_spawn_command_icon_at_microcell(
 				live_cells[building_macro_coords],
 				Vector2i(target_building.micro_x, target_building.micro_y),
-				IconRegistry.get_command_icon("task_rejected")
+				"task_rejected"
 			)
 		_refresh_selected_building_panel()
 		return
@@ -4666,6 +4846,9 @@ func _assign_produce_task(worker: HumanIndividual, target_building: Building, re
 	worker.assign_task(task, _resolve_age_band(worker))
 
 	var assigned := worker.current_task == task or worker.task_queue.has(task)
+	if not assigned:
+		# Motivo del rifiuto anche qui (2026-09-26): idoneità già verificata sopra, resta il caso generico.
+		_report_failed_assignment(worker, task, "task_activity_produce")
 	# Record di produzione riservato SUBITO, già all'assegnazione (2026-09-24, richiesta utente — un
 	# record per ricetta): così il posto è suo anche mentre l'individuo è ancora in cammino. Se
 	# l'edificio ha tutti i record occupati, make_room_for libera quelli di ricette che nessuna Produce
@@ -4674,15 +4857,214 @@ func _assign_produce_task(worker: HumanIndividual, target_building: Building, re
 	if assigned and ProductionService.make_room_for(target_building, resource_name, _resolve_production_claimed_recipes(target_building)):
 		ProductionService.start_production(target_building, resource_name)
 	if live_cells.has(building_macro_coords):
-		_spawn_command_blink_effect(
+		_spawn_command_icon_at_microcell(
 			live_cells[building_macro_coords],
 			Vector2i(target_building.micro_x, target_building.micro_y),
-			IconRegistry.get_command_icon("produce" if assigned else "task_rejected")
+			"produce" if assigned else "task_rejected"
 		)
 	# Pulsanti ricetta spenti subito (edificio ora impegnato), senza aspettare il refresh giornaliero.
 	_refresh_selected_building_panel()
 	if assigned and DebugLogging.ENABLED and DebugLogging.SHOW_TRANSPORT_BUILD_LOGS:
 		print("[PRODUCE] Task di produzione '%s' x%d assegnata a #%d %s presso l'edificio #%d." % [resource_name, quantity, worker.id, worker.name, target_building.id])
+
+
+# ============================================================================================
+# Caccia (2026-09-26, richiesta utente — caccia, step 2: avvicinamento alla preda)
+# ============================================================================================
+
+const HUNT_TASK_DEFINITION_PATH := "res://gameplay/scripts/tasks/definitions/hunt.tres"
+
+
+# Click destro su un animale, con un individuo selezionato: Hunt Task [ApproachPrey → Hunt] verso
+# quell'individuo animale. Gate degli attrezzi (categoria HUNTING dagli step), ma a differenza della
+# produzione SENZA attesa: nessuna arma né in cintura né nello zaino = caccia rifiutata con popup
+# (2026-09-26, la preda si muove); arma nello zaino ma cintura/zaino pieni = rifiutata. Ritorna true se il
+# click ha colpito un animale (comando consumato, anche se rifiutato), false per lasciarlo proseguire
+# agli altri comandi.
+func _try_assign_hunt_command_on_right_click(event: InputEvent) -> bool:
+	if not (event is InputEventMouseButton) or not event.pressed or event.button_index != MOUSE_BUTTON_RIGHT:
+		return false
+	if individual == null or not individual.is_selected:
+		return false
+	var animal_hit := animal_selector_controller.try_select(event, live_cells, MOUSE_BUTTON_RIGHT)
+	if animal_hit.is_empty():
+		return false
+	var prey := AnimalGroupRenderer.find_live_individual(int(animal_hit["individual_id"]))
+	if prey == null:
+		return false
+	var definition := load(HUNT_TASK_DEFINITION_PATH) as TaskDefinition
+	if definition == null:
+		return false
+
+	var species: String = String(animal_hit["species"])
+	var task := TaskFactory.build_task(definition, {
+		"hunt_prey_id": prey.id,
+		"hunt_prey_species": species,
+		"hunt_prey_macro_coords": prey.macro_coords,
+	})
+	# Specie per il pannello individuo (Task.get_activity_description): chiave NON consumata da
+	# TaskFactory (a differenza di "hunt_prey_species"), resta in task.context e nel salvataggio.
+	task.context["hunt_activity_species"] = species
+
+	var prey_cell: LiveMacroCell = live_cells.get(prey.macro_coords)
+	# Idoneità PRIMA del gate degli attrezzi (2026-09-26, richiesta utente): il gate sposta davvero l'arma
+	# dallo zaino alla cintura, e un individuo non idoneo (troppo giovane — la caccia è vietata fino agli
+	# adolescenti compresi —, stamina insufficiente, ...) riceveva prima il messaggio sull'arma mancante.
+	# Ora: rifiuto immediato, X rossa sulla preda e popup col motivo giusto, zaino e cintura intatti.
+	var rejection := individual.get_assign_rejection_reason(task, _resolve_age_band(individual))
+	if rejection != HumanIndividual.ASSIGN_OK:
+		_report_assign_rejection(individual, rejection, "task_activity_hunt")
+		if prey_cell != null:
+			_spawn_command_icon(prey_cell, prey.position, "task_rejected")
+		HuntService.log_event(individual, "caccia RIFIUTATA (preda %s #%d): individuo non idoneo (%s)." % [species, prey.id, rejection])
+		return true
+	var tool_gate := ToolGateService.check_and_prepare(individual, task, game_data)
+	if tool_gate["result"] == ToolGateService.Result.MISSING_TOOLS:
+		# Senza arma la caccia viene RIFIUTATA, non messa in attesa come la produzione (2026-09-26,
+		# richiesta utente): la preda si muove, e quando l'arma arrivasse l'animale sarebbe ormai lontano
+		# — un inseguimento senza senso. Avviso nel pannello individuo + popup, come gli altri rifiuti del gate.
+		# Esempi di armi che coprono HUNTING ("es. Lancia di legno"), omessi se nessuna è nota.
+		var weapon_names: PackedStringArray = []
+		for weapon_name in ToolGateService.get_tools_covering(TaskTypes.ToolCategory.HUNTING):
+			weapon_names.append(IconRegistry.get_resource_display_name(weapon_name))
+		var examples_text := "" if weapon_names.is_empty() else " " + tr("tool_gate_hunt_weapon_examples").format({"tools": ", ".join(weapon_names)})
+		var text := tr("tool_gate_hunt_no_weapon").format({"name": individual.name, "examples": examples_text})
+		individual.tool_gate_warning = text
+		if UserOptions.show_notification_popups:
+			notification_popup.enqueue(NotificationTypes.NotificationPopupType.TOOL_REQUIRED, text)
+		if prey_cell != null:
+			_spawn_command_icon(prey_cell, prey.position, "task_rejected")
+		HuntService.log_event(individual, "caccia RIFIUTATA (preda %s #%d): nessuna arma da caccia né in cintura né nello zaino." % [species, prey.id])
+		_refresh_selected_individual_panel()
+		return true
+	elif tool_gate["result"] != ToolGateService.Result.OK:
+		_report_tool_gate_failure(individual, tool_gate)
+		if prey_cell != null:
+			_spawn_command_icon(prey_cell, prey.position, "task_rejected")
+		HuntService.log_event(individual, "caccia RIFIUTATA (preda %s #%d): %s non entra in cintura (%s)." % [
+			species, prey.id, String(tool_gate["tool_name"]), String(ToolGateService.Result.keys()[tool_gate["result"]])
+		])
+		return true
+	individual.tool_gate_warning = ""
+	if not tool_gate["equipped"].is_empty():
+		_refresh_selected_individual_panel()
+
+	individual.assign_task(task, _resolve_age_band(individual))
+	var assigned := individual.current_task == task or individual.task_queue.has(task)
+	if not assigned:
+		# Motivo del rifiuto anche qui (2026-09-26): idoneità già verificata sopra, resta il caso generico
+		# (caccia non sospendibile scartata perché lo zaino occupato appartiene a un'altra task).
+		_report_failed_assignment(individual, task, "task_activity_hunt")
+	if prey_cell != null:
+		_spawn_command_icon(prey_cell, prey.position, "hunt" if assigned else "task_rejected")
+	if HuntService.is_logging():
+		if not assigned:
+			HuntService.log_event(individual, "caccia RIFIUTATA (preda %s #%d): assegnazione non accettata (la task in corso ha lo zaino occupato)." % [species, prey.id])
+		else:
+			var weapon_text := HuntService.describe_weapon(individual)
+			if not tool_gate["equipped"].is_empty():
+				weapon_text += " — spostata dallo zaino alla cintura"
+			HuntService.log_event(individual, "caccia assegnata%s: preda %s #%d in %s, arma %s." % [
+				"" if individual.current_task == task else " (in coda)", species, prey.id, str(prey.macro_coords), weapon_text
+			])
+	return true
+
+
+# Sorgenti di disturbo per gli animali della cella `coords` (2026-09-26, comportamento degli animali step
+# 2 — AnimalGroupRenderer.disturbance_source): {"humans": posizioni di tutti gli umani, "buildings":
+# centri degli edifici COMPLETI di questa cella e delle 8 vicine}, in coordinate LOCALI di `coords`
+# (microcelle; chi sta in una cella vicina esce da 0..100). Chiamata da ciascun renderer una volta per
+# controllo (1 al secondo): pochi umani e pochi edifici, nessuna cache necessaria.
+func _animal_disturbance_sources(coords: Vector2i) -> Dictionary:
+	var humans: Array = []
+	for member in human_individuals:
+		humans.append(member.position + Vector2(member.home_macro_coords - coords) * World.WIDTH)
+	var buildings: Array = []
+	if macro_world != null:
+		for building in macro_world.buildings:
+			if not building.is_complete or building.is_demolished:
+				continue
+			var building_macro := Vector2i(building.macro_x, building.macro_y)
+			if absi(building_macro.x - coords.x) > 1 or absi(building_macro.y - coords.y) > 1:
+				continue
+			buildings.append(Vector2(building.micro_x, building.micro_y) + Vector2(0.5, 0.5) + Vector2(building_macro - coords) * World.WIDTH)
+	return {"humans": humans, "buildings": buildings}
+
+
+# Celle delle prede delle cacce in corso o in coda (2026-09-26, caccia step 2), attivate nel _ready
+# PRIMA del primo tick dopo un caricamento: la preda è un id ritrovato nel registro degli individui vivi
+# (AnimalGroupRenderer.find_live_individual), popolato solo quando la sua cella si attiva e ricostruisce
+# gli individui salvati. Senza questo passo una preda in una cella vicina (attivata da
+# _update_live_neighbor solo DOPO il ciclo delle task del primo frame) risulterebbe sparita e la caccia
+# si chiuderebbe subito. Come le celle attivate per edifici e individui, restano vive: non sono tracciate
+# come "vicini di prossimità", quindi _update_live_neighbor non le disattiva.
+func _activate_hunt_prey_cells() -> void:
+	if macro_world == null:
+		return
+	var prey_cells := _collect_hunt_prey_cells()
+	for coords in prey_cells:
+		if not live_cells.has(coords) and macro_world.get_cell_at(coords.x, coords.y) != null:
+			_activate_live_cell(coords.x, coords.y, "_activate_hunt_prey_cells")
+
+
+# Macrocelle delle prede di tutte le cacce in corso o in coda (Vector2i -> true), lette dagli step
+# ApproachPreyAction/AimAction/ThrowAction. Condivisa da _activate_hunt_prey_cells e dal debug delle celle vive.
+func _collect_hunt_prey_cells() -> Dictionary:
+	var prey_cells: Dictionary = {}
+	for member in human_individuals:
+		var tasks: Array[Task] = []
+		if member.current_task != null:
+			tasks.append(member.current_task)
+		tasks.append_array(member.task_queue)
+		for task in tasks:
+			for step in task.steps:
+				if step is ApproachPreyAction:
+					prey_cells[(step as ApproachPreyAction).prey_macro_coords] = true
+				elif step is AimAction:
+					prey_cells[(step as AimAction).combat_target.macro_coords] = true
+				elif step is ThrowAction:
+					prey_cells[(step as ThrowAction).combat_target.macro_coords] = true
+				elif step is RecoverWeaponAction:
+					prey_cells[(step as RecoverWeaponAction).combat_target.macro_coords] = true
+	return prey_cells
+
+
+# Segnaposto delle armi scagliate a terra (2026-09-26, richiesta utente — recupero dell'arma): un
+# DroppedWeaponMarker per ogni cacciatore il cui step corrente è un RecoverWeaponAction, nel punto di caduta
+# (Task.context[HuntService.CONTEXT_WEAPON_DROP]) se quella macrocella è viva. Stato ricavato ogni frame dalle
+# Task, mai salvato: il segnaposto sparisce da solo quando l'arma viene raccolta, quando la Task si interrompe
+# (l'arma è persa) o quando la cella si spegne, e ricompare dopo un caricamento o una riattivazione della cella.
+func _sync_dropped_weapon_markers() -> void:
+	var wanted: Dictionary = {}
+	for member in human_individuals:
+		if member.current_task == null or member.current_task.is_finished():
+			continue
+		var recover := member.current_task.get_current_action() as RecoverWeaponAction
+		if recover == null:
+			continue
+		var drop := HuntService.read_weapon_drop(member.current_task.context)
+		if drop.is_empty() or not live_cells.has(drop["macro_coords"]):
+			continue
+		wanted[member.id] = {"drop": drop, "weapon": recover.weapon_name}
+	for hunter_id in _dropped_weapon_markers.keys():
+		var marker: DroppedWeaponMarker = _dropped_weapon_markers[hunter_id]
+		var keep := false
+		if is_instance_valid(marker) and wanted.has(hunter_id):
+			var drop: Dictionary = wanted[hunter_id]["drop"]
+			keep = marker.get_parent() == live_cells[drop["macro_coords"]].container 				and marker.position == drop["position"] * MicroCellRenderer.CELL_SIZE
+		if keep:
+			wanted.erase(hunter_id)
+			continue
+		if is_instance_valid(marker):
+			marker.queue_free()
+		_dropped_weapon_markers.erase(hunter_id)
+	for hunter_id in wanted:
+		var drop: Dictionary = wanted[hunter_id]["drop"]
+		var marker := DroppedWeaponMarker.new()
+		marker.position = drop["position"] * MicroCellRenderer.CELL_SIZE
+		marker.setup(String(wanted[hunter_id]["weapon"]), int(hunter_id))
+		live_cells[drop["macro_coords"]].container.add_child(marker)
+		_dropped_weapon_markers[hunter_id] = marker
 
 
 # ============================================================================================
@@ -5744,13 +6126,10 @@ func _on_tool_to_storage_requested(target: HumanIndividual, slot_index: int) -> 
 		macro_world, target.position, target.home_macro_coords, tool_name, 1
 	)
 	if destination == null:
-		if UserOptions.show_notification_popups:
-			notification_popup.enqueue(
-				NotificationTypes.NotificationPopupType.TOOL_REQUIRED,
-				tr("tool_store_no_storage").format({"tool": IconRegistry.get_resource_display_name(tool_name)})
-			)
+		# Canale comune dei rifiuti (2026-09-26): popup + avviso nel pannello dell'individuo.
+		_report_command_rejection(target, tr("tool_store_no_storage").format({"tool": IconRegistry.get_resource_display_name(tool_name)}))
 		return
-	_assign_tool_task(target, STORE_TOOL_TASK_DEFINITION_PATH, tool_name, destination, slot_index, "transport")
+	_assign_tool_task(target, STORE_TOOL_TASK_DEFINITION_PATH, tool_name, destination, slot_index, "transport", "task_activity_store_tool")
 
 
 func _assign_equip_tool_task(target: HumanIndividual, slot_index: int, tool_name: String) -> void:
@@ -5760,8 +6139,10 @@ func _assign_equip_tool_task(target: HumanIndividual, slot_index: int, tool_name
 		macro_world, target.position, target.home_macro_coords, tool_name
 	)
 	if source == null:
+		# Prima un return silenzioso (2026-09-26): ora il motivo — nessun magazzino raggiungibile ha l'attrezzo.
+		_report_command_rejection(target, tr("tool_equip_no_source").format({"tool": IconRegistry.get_resource_display_name(tool_name)}))
 		return
-	_assign_tool_task(target, EQUIP_TOOL_TASK_DEFINITION_PATH, tool_name, source, slot_index, "pickup")
+	_assign_tool_task(target, EQUIP_TOOL_TASK_DEFINITION_PATH, tool_name, source, slot_index, "pickup", "task_activity_equip_tool")
 
 
 # Prepara il context per la TaskDefinition (equip_tool.tres/store_tool.tres: [step_walk_to_position,
@@ -5769,8 +6150,12 @@ func _assign_equip_tool_task(target: HumanIndividual, slot_index: int, tool_name
 # d'arrivo con lo stesso jitter delle altre Task verso un edificio, edificio, attrezzo, quantità 1 e
 # slot della cintura. Poi segnali collegati come per la Transport (refresh della griglia di
 # stoccaggio) e icona di comando sull'edificio (✋/📦 se accettata o accodata, ❌ se rifiutata).
+#
+# `activity_key` (2026-09-26): chiave tr() dell'attività per il motivo di un eventuale rifiuto
+# ("prendere un attrezzo" / "riporre un attrezzo").
 func _assign_tool_task(
-	target: HumanIndividual, definition_path: String, tool_name: String, building: Building, slot_index: int, icon_key: String
+	target: HumanIndividual, definition_path: String, tool_name: String, building: Building, slot_index: int, icon_key: String,
+	activity_key: String
 ) -> void:
 	var definition := load(definition_path) as TaskDefinition
 	if definition == null:
@@ -5792,14 +6177,23 @@ func _assign_tool_task(
 	# schema di production_resource_name in _assign_produce_task.
 	task.context["tool_resource_name"] = tool_name
 	task.debug_target_key = "tool:%d" % building.id
+	var building_macro_coords := Vector2i(building.macro_x, building.macro_y)
+	# Idoneità prima dell'assegnazione (2026-09-26): X rossa sull'edificio e motivo.
+	var rejection := target.get_assign_rejection_reason(task, _resolve_age_band(target))
+	if rejection != HumanIndividual.ASSIGN_OK:
+		_report_assign_rejection(target, rejection, activity_key)
+		if live_cells.has(building_macro_coords):
+			_spawn_command_icon_at_microcell(live_cells[building_macro_coords], Vector2i(building.micro_x, building.micro_y), "task_rejected")
+		return
 	_wire_transport_task(task, target)
 	var assigned := target.assign_task(task, _resolve_age_band(target))
-	var building_macro_coords := Vector2i(building.macro_x, building.macro_y)
+	if not assigned:
+		_report_failed_assignment(target, task, activity_key)
 	if live_cells.has(building_macro_coords):
-		_spawn_command_blink_effect(
+		_spawn_command_icon_at_microcell(
 			live_cells[building_macro_coords],
 			Vector2i(building.micro_x, building.micro_y),
-			IconRegistry.get_command_icon(icon_key if assigned else "task_rejected")
+			icon_key if assigned else "task_rejected"
 		)
 	_refresh_selected_individual_panel()
 	if DebugLogging.ENABLED and DebugLogging.SHOW_TRANSPORT_BUILD_LOGS:
@@ -5930,13 +6324,10 @@ func _activate_live_cell(mx: int, my: int, p_debug_source: String = "unknown") -
 	cell.container.add_child(cell.renderer)
 	cell.renderer.setup(cell.world)
 
-	cell.animal_renderers = _build_animal_renderers(cell.container)
-	for r in cell.animal_renderers.values():
-		r.set_animals_visible(animals_visible)
-		r.clock = clock # può essere null qui (centro attivato prima di _setup_clock in _ready()); vedi _assign_clock_to_all_live_cells
-	# Individui da un salvataggio appena caricato (step 2) — PRIMA del _refresh_resource_visuals
-	# sotto, la cui riconciliazione con la popolazione è così un no-op invece di una rigenerazione.
-	_restore_saved_animal_individuals(cell)
+	# Renderer animali: nessuno creato qui (2026-09-26) — nascono solo per le specie presenti, da
+	# _restore_saved_animal_individuals e dalla riconciliazione con la popolazione (_refresh_animal_
+	# individuals, via _refresh_resource_visuals sotto), dopo la nebbia di guerra, che serve loro.
+	cell.animal_renderers = {}
 
 	# Riusa la FogOfWarMemory già accumulata per QUESTE coordinate se questa macrocella è già
 	# stata viva in questa sessione (vedi fog_of_war_memories) — ne crea una nuova vuota solo la
@@ -5966,11 +6357,11 @@ func _activate_live_cell(mx: int, my: int, p_debug_source: String = "unknown") -
 	cell.fog_of_war_renderer.update_visibility(game_data.get_absolute_day(), _relevant_source_positions_for_cell(cell))
 	# DEBUG TEMPORANEO [FOW DIAG] — rimuovere. Vedi il call site gemello in _process sopra.
 	cell.fog_of_war_renderer.set_debug_source_context(_debug_source_context_for_cell(cell))
-	# Animali visibili solo in raggio o con dettaglio fresco (vedi FogOfWarRenderer.
-	# is_animal_visible_at) — collegato come il clock sopra, a fog già inizializzata con le sorgenti
-	# vere. Il filtro si applica a ogni frame in AnimalGroupRenderer._write_instance_transform.
-	for r in cell.animal_renderers.values():
-		r.visibility_test = cell.fog_of_war_renderer.is_animal_visible_at
+	# Individui da un salvataggio appena caricato (step 2) — PRIMA del _refresh_resource_visuals
+	# sotto, la cui riconciliazione con la popolazione è così un no-op invece di una rigenerazione.
+	# DOPO la nebbia (2026-09-26): crea i renderer delle specie salvate, e _setup_animal_renderer ne
+	# collega il filtro di visibilità alla nebbia già inizializzata con le sorgenti vere.
+	_restore_saved_animal_individuals(cell)
 
 	if cell.macro_cell != null and macro_world != null:
 		# NIENTE cell.renderer.set_neighbors qui (a differenza di MacroCellScene, che la chiama
@@ -6240,6 +6631,90 @@ func _refresh_debug_animal_summary() -> void:
 				"instanced": renderer_node.get_individual_count(),
 			})
 	debug_bar.set_animal_summary(entries)
+
+
+# DEBUG — celle vive (2026-09-26, richiesta utente): numero e, nel tooltip della DebugBar, perché
+# ciascuna è attiva. Motivi ricavati al momento dalle stesse regole che le tengono vive:
+#   - "giocatore": la cella centrale (center_macro_coords);
+#   - "vicina": vicino di prossimità attivato da _update_live_neighbor (_active_neighbor_coords_set);
+#   - "edificio" / "individuo": ospita un edificio o un individuo della popolazione del giocatore
+#     (_macro_cell_has_buildings/_macro_cell_has_individuals, le regole di _activate_all_*_cells);
+#   - "preda di caccia": cella della preda di una caccia in corso o in coda (_collect_hunt_prey_cells).
+# Nessun motivo attuale = "residua" (attivata per una ragione che non vale più, es. un edificio demolito).
+# Chiamata dallo stesso timer di debug di _refresh_debug_animal_summary (in _process).
+func _refresh_debug_live_cells() -> void:
+	var hunt_prey_cells := _collect_hunt_prey_cells()
+	var sorted_coords: Array = live_cells.keys()
+	sorted_coords.sort_custom(func(a: Vector2i, b: Vector2i) -> bool: return a.x < b.x or (a.x == b.x and a.y < b.y))
+	var lines: PackedStringArray = []
+	for coords in sorted_coords:
+		var reasons := _live_cell_reasons(coords, hunt_prey_cells)
+		if reasons.is_empty():
+			reasons.append("residua (nessun motivo attuale)")
+		lines.append("(%d,%d): %s" % [coords.x, coords.y, ", ".join(reasons)])
+	debug_bar.set_live_cells(lines)
+
+
+# Motivi per cui la cella viva `coords` deve restare accesa (vuoto = nessuno: la cella è residua e
+# _cleanup_residual_live_cells la spegne). Unico punto con le regole, condiviso da debug e spegnimento:
+#   - "giocatore": la cella centrale;
+#   - "vicina": vicino di prossimità (_active_neighbor_coords_set, spento da _update_live_neighbor);
+#   - "edificio" / "individuo": ospita un edificio o un individuo della popolazione del giocatore;
+#   - "preda di caccia": cella della preda di una caccia in corso o in coda (`hunt_prey_cells`, da
+#     _collect_hunt_prey_cells, passato dal chiamante per calcolarlo una volta sola);
+#   - "corpo": ospita il corpo di un defunto (DeadBodyView): è solo una vista, spegnendo la cella
+#     andrebbe persa (non viene ricreata alla riattivazione).
+func _live_cell_reasons(coords: Vector2i, hunt_prey_cells: Dictionary) -> PackedStringArray:
+	var reasons: PackedStringArray = []
+	if coords == center_macro_coords:
+		reasons.append("giocatore")
+	if _active_neighbor_coords_set.has(coords):
+		reasons.append("vicina")
+	if _macro_cell_has_buildings(coords):
+		reasons.append("edificio")
+	if _macro_cell_has_individuals(coords):
+		reasons.append("individuo")
+	if hunt_prey_cells.has(coords):
+		reasons.append("preda di caccia")
+	if _live_cell_has_dead_body(coords):
+		reasons.append("corpo")
+	return reasons
+
+
+func _live_cell_has_dead_body(coords: Vector2i) -> bool:
+	var cell: LiveMacroCell = live_cells.get(coords)
+	if cell == null:
+		return false
+	for view in dead_body_views.values():
+		if is_instance_valid(view) and view.get_parent() == cell.container:
+			return true
+	return false
+
+
+# Spegnimento delle celle vive residue (2026-09-26, richiesta utente): prima si spegnevano solo i vicini
+# di prossimità, e una cella attivata per un edificio, un individuo o una preda restava accesa per sempre
+# anche quando il motivo era venuto meno. Qui ogni cella viva senza più alcun motivo (_live_cell_reasons
+# vuoto) viene disattivata. Poi, se qualcosa si è spento: riposizionamento dei container e
+# riclassificazione del LOD (i gruppi che toccavano solo celle spente passano dal livello 2 al livello 1,
+# come quando si spegne un vicino). Gli animali individuali della cella spenta, ferite comprese, si
+# perdono e verranno rigenerati dalla popolazione alla riaccensione (comportamento voluto). Chiamata su
+# timer da _process (RESIDUAL_CELL_CLEANUP_INTERVAL_SEC).
+func _cleanup_residual_live_cells() -> void:
+	if live_cells.is_empty():
+		return
+	var hunt_prey_cells := _collect_hunt_prey_cells()
+	var residual: Array[Vector2i] = []
+	for coords in live_cells.keys():
+		if _live_cell_reasons(coords, hunt_prey_cells).is_empty():
+			residual.append(coords)
+	if residual.is_empty():
+		return
+	for coords in residual:
+		_deactivate_live_cell(coords)
+	_reposition_live_cells()
+	_refresh_lod_focus_region()
+	if DebugLogging.ENABLED and DebugLogging.SHOW_SAFETY_LOGS:
+		print("[LIVE CELLS] Spente %d celle vive residue (nessun motivo attuale): %s." % [residual.size(), str(residual)])
 
 
 func _update_center_info_panel() -> void:
@@ -7280,9 +7755,21 @@ func _refresh_animal_individuals(cell: LiveMacroCell) -> void:
 	if cell.macro_cell == null or macro_world == null:
 		return
 	var this_cell := Vector2i(cell.macro_cell.x, cell.macro_cell.y)
-	for species in cell.animal_renderers:
-		var group := macro_world.find_population_group(species, this_cell)
-		_update_animal_renderer_population(cell.animal_renderers[species], group, AnimalCalculator.get_animal_rules(species), this_cell)
+	# Renderer solo per le specie presenti (2026-09-26): specie con quota > 0 in questa cella -> il suo
+	# gruppo (uno per specie per cella: i territori della stessa specie non si sovrappongono).
+	var present_groups: Dictionary = {}
+	for group in macro_world.get_population_groups_at(this_cell):
+		if int(group.get_population_by_cell().get(this_cell, 0)) > 0:
+			present_groups[group.species_name] = group
+	# Specie sparite dalla cella: renderer rimosso (i suoi individui escono dal registro dei vivi).
+	for species in cell.animal_renderers.keys():
+		if not present_groups.has(species):
+			_remove_animal_renderer(cell, String(species))
+	# Specie presenti: renderer creato se è appena arrivata, poi riconciliazione individui/popolazione.
+	for species in present_groups:
+		var renderer_node := _ensure_animal_renderer(cell, String(species))
+		if renderer_node != null:
+			_update_animal_renderer_population(renderer_node, present_groups[species], AnimalCalculator.get_animal_rules(species), this_cell)
 
 
 # --- Salvataggio individui animali (step 2) ---
@@ -7321,8 +7808,8 @@ func _take_saved_animal_individuals() -> void:
 
 # Ricostruisce gli individui salvati per QUESTA cella (se ce ne sono in attesa), ripartiti per
 # specie nel renderer corrispondente, e li toglie dall'attesa: una visita successiva della stessa
-# cella genera individui nuovi dalla popolazione, come sempre. Una specie salvata senza renderer
-# (non dovrebbe capitare: i renderer sono sempre le stesse 10 specie) viene ignorata.
+# cella genera individui nuovi dalla popolazione, come sempre. Il renderer di ogni specie salvata viene
+# creato qui (_ensure_animal_renderer); una specie senza configurazione (non esiste oggi) viene ignorata.
 func _restore_saved_animal_individuals(cell: LiveMacroCell) -> void:
 	var coords := cell.coords()
 	if not _pending_saved_animal_individuals.has(coords):
@@ -7334,8 +7821,11 @@ func _restore_saved_animal_individuals(cell: LiveMacroCell) -> void:
 			by_species[species] = []
 		by_species[species].append(entry)
 	for species in by_species:
-		if cell.animal_renderers.has(species):
-			cell.animal_renderers[species].restore_individuals(by_species[species])
+		# Renderer creato per ogni specie salvata (2026-09-26, renderer solo per le specie presenti): se nel
+		# frattempo la specie non c'è più, la riconciliazione che segue lo rimuove.
+		var renderer_node := _ensure_animal_renderer(cell, String(species))
+		if renderer_node != null:
+			renderer_node.restore_individuals(by_species[species])
 	_pending_saved_animal_individuals.erase(coords)
 
 
@@ -7412,11 +7902,25 @@ func _get_dead_positions(macro_state: MacroCellState) -> Dictionary:
 
 
 # ============================================================================================
-# Costruzione dei 10 AnimalGroupRenderer per una cella viva — stessa configurazione per ogni
-# specie di sempre (fallback identici quando AnimalCalculator.get_animal_rules ritorna null),
-# solo estratta in un helper riusabile una volta per cella invece che scritta una volta sola per
-# tutta la scena.
+# AnimalGroupRenderer di una cella viva — UNO PER SPECIE PRESENTE (2026-09-26, richiesta utente: prima
+# se ne creavano sempre 10, uno per ogni specie del gioco, anche se assenti dalla cella). Creati al volo
+# quando una specie compare nella cella (attivazione, riconciliazione giornaliera, individui da un
+# salvataggio) e rimossi quando la sua quota va a zero — vedi _refresh_animal_individuals. La
+# configurazione per specie è quella di sempre (fallback identici quando get_animal_rules ritorna null),
+# ora costruita una volta sola per la scena (_get_animal_renderer_configs, sagome condivise).
 # ============================================================================================
+
+# Configurazione per specie (species_name -> Dictionary per AnimalGroupRenderer.configure), costruita
+# alla prima richiesta. Le ArrayMesh delle sagome sono condivise da tutti i renderer della stessa specie:
+# nessuno le modifica dopo la costruzione.
+var _animal_renderer_configs: Dictionary = {}
+
+
+func _get_animal_renderer_configs() -> Dictionary:
+	if _animal_renderer_configs.is_empty():
+		_animal_renderer_configs = _build_animal_renderer_configs()
+	return _animal_renderer_configs
+
 
 func _build_animal_renderer(container: Node2D, config: Dictionary) -> AnimalGroupRenderer:
 	var r := AnimalGroupRenderer.new()
@@ -7425,11 +7929,56 @@ func _build_animal_renderer(container: Node2D, config: Dictionary) -> AnimalGrou
 	return r
 
 
-func _build_animal_renderers(container: Node2D) -> Dictionary:
-	var renderers: Dictionary = {}
+# Il renderer della specie nella cella, creato ora se manca (null se la specie non ha una configurazione).
+# Un renderer creato dopo l'attivazione viene subito collegato come quelli creati all'attivazione
+# (_setup_animal_renderer): macrocella, visibilità, orologio, nebbia, disturbo.
+func _ensure_animal_renderer(cell: LiveMacroCell, species: String) -> AnimalGroupRenderer:
+	if cell.animal_renderers.has(species):
+		return cell.animal_renderers[species]
+	var configs := _get_animal_renderer_configs()
+	if not configs.has(species):
+		return null
+	var r := _build_animal_renderer(cell.container, configs[species])
+	_setup_animal_renderer(cell, r)
+	cell.animal_renderers[species] = r
+	return r
+
+
+# Collegamenti di un renderer alla sua cella — un solo punto per tutti (prima sparsi in
+# _activate_live_cell). La macrocella va impostata PRIMA di creare o ricostruire individui (la copiano
+# alla nascita). Il renderer viene messo prima della nebbia di guerra tra i figli del container, così
+# l'ordine di disegno resta quello di quando i renderer nascevano tutti all'attivazione.
+func _setup_animal_renderer(cell: LiveMacroCell, r: AnimalGroupRenderer) -> void:
+	r.macro_coords = cell.coords()
+	r.set_animals_visible(animals_visible)
+	r.clock = clock # può essere null (cella attivata prima di _setup_clock in _ready()); vedi _assign_clock_to_all_live_cells
+	# Disagio degli animali (comportamento step 2): posizioni di umani ed edifici viste da questa cella.
+	r.disturbance_source = _animal_disturbance_sources.bind(cell.coords())
+	if cell.fog_of_war_renderer != null:
+		# Animali visibili solo in raggio o con dettaglio fresco (FogOfWarRenderer.is_animal_visible_at).
+		r.visibility_test = cell.fog_of_war_renderer.is_animal_visible_at
+		cell.container.move_child(r, cell.fog_of_war_renderer.get_index())
+
+
+# Rimuove il renderer di una specie non più presente nella cella. remove_child subito (non solo
+# queue_free): _exit_tree del renderer toglie i suoi individui dal registro dei vivi in questo stesso
+# istante, non a fine frame. Selezione chiusa se l'animale selezionato era suo.
+func _remove_animal_renderer(cell: LiveMacroCell, species: String) -> void:
+	if not cell.animal_renderers.has(species):
+		return
+	if not selected_animal.is_empty() and selected_animal["macro_coords"] == cell.coords() and selected_animal["species"] == species:
+		_clear_animal_selection()
+	var r: AnimalGroupRenderer = cell.animal_renderers[species]
+	cell.animal_renderers.erase(species)
+	cell.container.remove_child(r)
+	r.queue_free()
+
+
+func _build_animal_renderer_configs() -> Dictionary:
+	var configs: Dictionary = {}
 
 	var rabbit_rules := AnimalCalculator.get_animal_rules("rabbit")
-	renderers["rabbit"] = _build_animal_renderer(container, {
+	configs["rabbit"] = {
 		"species_name": "rabbit",
 		"move_speed": rabbit_rules.move_speed if rabbit_rules != null else 24.0,
 		"turn_rate": rabbit_rules.turn_rate if rabbit_rules != null else 12.0,
@@ -7451,10 +8000,10 @@ func _build_animal_renderers(container: Node2D) -> Dictionary:
 			AnimalGroupRenderer.RABBIT_EAR_LENGTH, AnimalGroupRenderer.RABBIT_EAR_WIDTH,
 			AnimalGroupRenderer.RABBIT_COLOR
 		),
-	})
+	}
 
 	var deer_rules := AnimalCalculator.get_animal_rules("deer")
-	renderers["deer"] = _build_animal_renderer(container, {
+	configs["deer"] = {
 		"species_name": "deer",
 		"move_speed": deer_rules.move_speed if deer_rules != null else 28.0,
 		"turn_rate": deer_rules.turn_rate if deer_rules != null else 9.6,
@@ -7476,10 +8025,10 @@ func _build_animal_renderers(container: Node2D) -> Dictionary:
 			AnimalGroupRenderer.DEER_EAR_LENGTH, AnimalGroupRenderer.DEER_EAR_WIDTH,
 			AnimalGroupRenderer.DEER_COLOR
 		),
-	})
+	}
 
 	var boar_rules := AnimalCalculator.get_animal_rules("boar")
-	renderers["boar"] = _build_animal_renderer(container, {
+	configs["boar"] = {
 		"species_name": "boar",
 		"move_speed": boar_rules.move_speed if boar_rules != null else 24.0,
 		"turn_rate": boar_rules.turn_rate if boar_rules != null else 12.0,
@@ -7501,10 +8050,10 @@ func _build_animal_renderers(container: Node2D) -> Dictionary:
 			AnimalGroupRenderer.BOAR_EAR_LENGTH, AnimalGroupRenderer.BOAR_EAR_WIDTH,
 			AnimalGroupRenderer.BOAR_COLOR
 		),
-	})
+	}
 
 	var tarpan_rules := AnimalCalculator.get_animal_rules("tarpan")
-	renderers["tarpan"] = _build_animal_renderer(container, {
+	configs["tarpan"] = {
 		"species_name": "tarpan",
 		"move_speed": tarpan_rules.move_speed if tarpan_rules != null else 24.0,
 		"turn_rate": tarpan_rules.turn_rate if tarpan_rules != null else 12.0,
@@ -7526,10 +8075,10 @@ func _build_animal_renderers(container: Node2D) -> Dictionary:
 			AnimalGroupRenderer.TARPAN_EAR_LENGTH, AnimalGroupRenderer.TARPAN_EAR_WIDTH,
 			AnimalGroupRenderer.TARPAN_COLOR
 		),
-	})
+	}
 
 	var aurochs_rules := AnimalCalculator.get_animal_rules("aurochs")
-	renderers["aurochs"] = _build_animal_renderer(container, {
+	configs["aurochs"] = {
 		"species_name": "aurochs",
 		"move_speed": aurochs_rules.move_speed if aurochs_rules != null else 24.0,
 		"turn_rate": aurochs_rules.turn_rate if aurochs_rules != null else 12.0,
@@ -7551,10 +8100,10 @@ func _build_animal_renderers(container: Node2D) -> Dictionary:
 			AnimalGroupRenderer.AUROCHS_EAR_LENGTH, AnimalGroupRenderer.AUROCHS_EAR_WIDTH,
 			AnimalGroupRenderer.AUROCHS_COLOR
 		),
-	})
+	}
 
 	var wild_donkey_rules := AnimalCalculator.get_animal_rules("wild_donkey")
-	renderers["wild_donkey"] = _build_animal_renderer(container, {
+	configs["wild_donkey"] = {
 		"species_name": "wild_donkey",
 		"move_speed": wild_donkey_rules.move_speed if wild_donkey_rules != null else 24.0,
 		"turn_rate": wild_donkey_rules.turn_rate if wild_donkey_rules != null else 12.0,
@@ -7576,10 +8125,10 @@ func _build_animal_renderers(container: Node2D) -> Dictionary:
 			AnimalGroupRenderer.WILD_DONKEY_EAR_LENGTH, AnimalGroupRenderer.WILD_DONKEY_EAR_WIDTH,
 			AnimalGroupRenderer.WILD_DONKEY_COLOR
 		),
-	})
+	}
 
 	var mouflon_rules := AnimalCalculator.get_animal_rules("mouflon")
-	renderers["mouflon"] = _build_animal_renderer(container, {
+	configs["mouflon"] = {
 		"species_name": "mouflon",
 		"move_speed": mouflon_rules.move_speed if mouflon_rules != null else 24.0,
 		"turn_rate": mouflon_rules.turn_rate if mouflon_rules != null else 12.0,
@@ -7601,10 +8150,10 @@ func _build_animal_renderers(container: Node2D) -> Dictionary:
 			AnimalGroupRenderer.MOUFLON_EAR_LENGTH, AnimalGroupRenderer.MOUFLON_EAR_WIDTH,
 			AnimalGroupRenderer.MOUFLON_COLOR
 		),
-	})
+	}
 
 	var bezoar_rules := AnimalCalculator.get_animal_rules("bezoar")
-	renderers["bezoar"] = _build_animal_renderer(container, {
+	configs["bezoar"] = {
 		"species_name": "bezoar",
 		"move_speed": bezoar_rules.move_speed if bezoar_rules != null else 24.0,
 		"turn_rate": bezoar_rules.turn_rate if bezoar_rules != null else 12.0,
@@ -7626,10 +8175,10 @@ func _build_animal_renderers(container: Node2D) -> Dictionary:
 			AnimalGroupRenderer.BEZOAR_EAR_LENGTH, AnimalGroupRenderer.BEZOAR_EAR_WIDTH,
 			AnimalGroupRenderer.BEZOAR_COLOR
 		),
-	})
+	}
 
 	var partridge_rules := AnimalCalculator.get_animal_rules("partridge")
-	renderers["partridge"] = _build_animal_renderer(container, {
+	configs["partridge"] = {
 		"species_name": "partridge",
 		"move_speed": partridge_rules.move_speed if partridge_rules != null else 24.0,
 		"turn_rate": partridge_rules.turn_rate if partridge_rules != null else 12.0,
@@ -7651,10 +8200,10 @@ func _build_animal_renderers(container: Node2D) -> Dictionary:
 			AnimalGroupRenderer.PARTRIDGE_EAR_LENGTH, AnimalGroupRenderer.PARTRIDGE_EAR_WIDTH,
 			AnimalGroupRenderer.PARTRIDGE_COLOR
 		),
-	})
+	}
 
 	var wolf_rules := AnimalCalculator.get_animal_rules("wolf")
-	renderers["wolf"] = _build_animal_renderer(container, {
+	configs["wolf"] = {
 		"species_name": "wolf",
 		"move_speed": wolf_rules.move_speed if wolf_rules != null else 24.0,
 		"turn_rate": wolf_rules.turn_rate if wolf_rules != null else 12.0,
@@ -7676,9 +8225,9 @@ func _build_animal_renderers(container: Node2D) -> Dictionary:
 			AnimalGroupRenderer.WOLF_EAR_LENGTH, AnimalGroupRenderer.WOLF_EAR_WIDTH,
 			AnimalGroupRenderer.WOLF_COLOR
 		),
-	})
+	}
 
-	return renderers
+	return configs
 
 
 func _assign_clock_to_all_live_cells() -> void:
@@ -7936,14 +8485,14 @@ func _demolish_building(building: Building) -> void:
 	# "fuori scope"; dal 2026-09-21 lo si richiama dopo la demolizione, vedi sotto.)
 	#
 	# BUGFIX (2026-09-21, richiesta utente): il controllo su context["target_building"] non scattava MAI
-	# (TaskFactory.build_task ripulisce quella chiave dal context, vedi _task_claims_building) e
-	# ignorava la coda. Ora usa _task_claims_building (legge il target dagli step) su current_task E su
+	# (TaskFactory.build_task ripulisce quella chiave dal context, vedi _task_works_on_building) e
+	# ignorava la coda. Ora usa _task_works_on_building (legge il target dagli step) su current_task E su
 	# task_queue: le task che puntano a questo edificio vengono chiuse. current_task via stop() (scarta
 	# anche lo zaino, come sempre); per una task tolta dalla coda lo zaino viene scartato come fa
 	# TaskQueueService.push_suspended_task quando ne scarta una per overflow. Gli individui la cui
 	# current_task è stata chiusa vengono rimessi in moto (bisogno/coda/perditempo) DOPO che l'edificio
 	# è demolito (step 6), così una task in coda per lo stesso edificio non può essere ripresa.
-	var individuals_to_resolve: Array[HumanIndividual] = _close_tasks_claiming_building(building, null, true)
+	var individuals_to_resolve: Array[HumanIndividual] = _close_tasks_working_on_building(building, BUILD_TASK_NAMES, null, true)
 
 	# 2) Residenti: libera gli slot (house_id torna a -1, stesso valore di default di HumanIndividual
 	# senza casa) — solo se l'edificio era residenziale, stesso guard già usato da AssignHouseService/
@@ -8620,7 +9169,9 @@ func _reconnect_unload_action_signals(deposit: UnloadAction, individual_ref: Hum
 	# questo scatta SOLO dal ramo FISICO: connesso incondizionatamente qui comunque, stesso principio
 	# "un solo punto collega tutto ciò che questa classe può emettere" già seguito per gli altri —
 	# innocuo per un'istanza che non lo emetterà mai (ramo pensiero), vedi unload_action.gd.
-	deposit.resource_deposited.connect(_on_resource_deposited)
+	# Guardia is_connected (2026-09-26): _connect_storage_refresh_signals può averlo già collegato.
+	if not deposit.resource_deposited.is_connected(_on_resource_deposited):
+		deposit.resource_deposited.connect(_on_resource_deposited)
 	# Consegna della Transport alla destinazione (2026-09-20, ripetizione automatica): emesso solo se il
 	# context porta transport_destination_id — mai per haul/pensiero, quindi innocuo collegarlo sempre.
 	deposit.transport_delivered.connect(func(delivered_owner: Variant, delivered_context: Dictionary, delivered: int) -> void:
@@ -8732,6 +9283,85 @@ func _on_resource_deposited(building: Building) -> void:
 	_refresh_building_visuals(live_cells[macro_coords])
 
 
+# Stesso refresh di _on_resource_deposited per i prelievi (RetrieveAction.resource_retrieved,
+# RestockPouchAction.pouch_restocked): metodi con nome, non lambda, così is_connected riconosce un
+# collegamento già fatto (vedi _connect_storage_refresh_signals).
+func _on_resource_retrieved(_resource_name: String, building: Building, _quantity: int) -> void:
+	_on_resource_deposited(building)
+
+
+func _on_pouch_restocked(building: Building, _quantities: Dictionary) -> void:
+	_on_resource_deposited(building)
+
+
+# Refresh del disegno del magazzino (2026-09-26, richiesta utente — "il rifornimento aggiorna il
+# pannello ma non il disegno"): pouch_restocked non era collegato da nessuno (le Task di rifornimento
+# nascono nei service, che non conoscono GameScene) e resource_retrieved solo alla creazione di una
+# Transport, mai dopo un caricamento. Chiamata a ogni frame per la Task corrente di ogni individuo
+# attivo: copre ogni punto di creazione, il reload e la ripresa dalla coda. Idempotente (is_connected),
+# costo trascurabile (pochi step per Task). RINOMINATA (2026-09-26, era _ensure_storage_refresh_signals):
+# collega ora anche i segnali della caccia (_connect_hunt_signals) — un solo punto per frame per tutti
+# i segnali di step che GameScene deve ascoltare qualunque sia chi ha creato la Task.
+func _ensure_step_signals(task: Task) -> void:
+	if task == null:
+		return
+	for step in task.steps:
+		_connect_storage_refresh_signals(step)
+		_connect_hunt_signals(step)
+
+
+# ThrowAction.target_killed -> _on_target_killed (2026-09-26, caccia — mira e tiro separati). Idempotente
+# come sopra.
+func _connect_hunt_signals(step: Action) -> void:
+	if step is ThrowAction:
+		var throw_action := step as ThrowAction
+		if not throw_action.target_killed.is_connected(_on_target_killed):
+			throw_action.target_killed.connect(_on_target_killed)
+
+
+# Bersaglio ucciso da un lancio (ThrowAction, 2026-09-26): smista per tipo di bersaglio (CombatTarget.Kind).
+# Oggi solo animali; un bersaglio umano avrà il proprio ramo.
+func _on_target_killed(target_kind: int, target_id: int, label: String, age_band: int, target_macro_coords: Vector2i) -> void:
+	match target_kind:
+		CombatTarget.Kind.ANIMAL:
+			_on_prey_killed(target_id, label, age_band, target_macro_coords)
+
+
+# Preda uccisa da un colpo di caccia (ThrowAction, via _on_target_killed, 2026-09-26): sparisce PROPRIO quel
+# individuo dagli animali disegnati (AnimalGroupRenderer.remove_individual, esce anche dal registro dei
+# vivi) e la popolazione del gruppo cala di uno nella sua fascia d'età (apply_predation_loss, stessa
+# funzione della predazione dei lupi). Così la riconciliazione giornaliera individui/popolazione trova
+# già il conto giusto invece di togliere un animale a caso. Selezione chiusa se era la preda. Niente
+# carcassa/carne in questo step.
+func _on_prey_killed(prey_id: int, prey_species: String, prey_age_band: int, prey_macro_coords: Vector2i) -> void:
+	var cell: LiveMacroCell = live_cells.get(prey_macro_coords)
+	if cell != null and cell.animal_renderers.has(prey_species):
+		cell.animal_renderers[prey_species].remove_individual(prey_id)
+	if macro_world != null:
+		var group := macro_world.find_population_group(prey_species, prey_macro_coords)
+		if group != null:
+			group.apply_predation_loss(prey_age_band as GameTypes.AgeBand, 1)
+	if not selected_animal.is_empty() and int(selected_animal["individual_id"]) == prey_id:
+		_clear_animal_selection()
+
+
+func _connect_storage_refresh_signals(step: Action) -> void:
+	if step is RetrieveAction:
+		var retrieve := step as RetrieveAction
+		if not retrieve.resource_retrieved.is_connected(_on_resource_retrieved):
+			retrieve.resource_retrieved.connect(_on_resource_retrieved)
+	elif step is RestockPouchAction:
+		var restock := step as RestockPouchAction
+		if not restock.pouch_restocked.is_connected(_on_pouch_restocked):
+			restock.pouch_restocked.connect(_on_pouch_restocked)
+	elif step is UnloadAction:
+		# Un'UnloadAction creata fuori da GameScene non passa da _reconnect_unload_action_signals:
+		# qui si aggiunge il solo refresh, senza gli altri segnali di quella funzione.
+		var deposit := step as UnloadAction
+		if not deposit.resource_deposited.is_connected(_on_resource_deposited):
+			deposit.resource_deposited.connect(_on_resource_deposited)
+
+
 # Reazione a BuildAction.building_construction_completed (2026-09-11, richiesta utente, quarto e
 # ultimo step della Build Task) — building.is_complete/current_durability sono già stati valorizzati
 # DENTRO BuildAction.on_complete PRIMA che questo segnale venga emesso (stesso principio di
@@ -8753,9 +9383,9 @@ func _on_building_construction_completed(building: Building) -> void:
 	# Altri individui con una task (corrente o in coda) su questo edificio (2026-09-21, richiesta
 	# utente): non hanno più nulla da costruire — BuildAction.on_complete ha appena cancellato i
 	# materiali di required_materials, quindi il loro step Build resterebbe bloccato. Stessa logica
-	# della demolizione (_close_tasks_claiming_building), ma lo zaino NON viene scartato. Chi ha
+	# della demolizione (_close_tasks_working_on_building), ma lo zaino NON viene scartato. Chi ha
 	# completato è escluso: la sua task prosegue da sé (finish_current_step).
-	var other_freed := _close_tasks_claiming_building(building, _find_completing_individual(building), false)
+	var other_freed := _close_tasks_working_on_building(building, BUILD_TASK_NAMES, _find_completing_individual(building), false)
 	for freed in other_freed:
 		HumanIndividualActionService.resolve_idle_individual(freed, _resolve_age_band(freed), macro_world)
 	# built_year NON più scritto qui (2026-09-19, richiesta utente): lo scrive BuildAction.on_complete

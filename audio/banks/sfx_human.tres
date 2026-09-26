@@ -1,0 +1,17 @@
+[gd_resource type="Resource" script_class="SoundBank" format=3 uid="uid://q76nl2scfky"]
+
+[ext_resource type="Script" uid="uid://b3kx6e6vf3lj5" path="res://audio/scripts/SoundDef.gd" id="1_abvs6"]
+[ext_resource type="AudioStream" uid="uid://ccqc3b25jyduk" path="res://audio/assets/sfx/human/idea_spark.wav" id="2_s34pt"]
+[ext_resource type="Script" uid="uid://di7uwrrgk1okb" path="res://audio/scripts/SoundBank.gd" id="3_5vvjm"]
+
+[sub_resource type="Resource" id="Resource_vhq6q"]
+script = ExtResource("1_abvs6")
+id = &"idea_spark"
+streams = Array[AudioStream]([ExtResource("2_s34pt")])
+spatial = true
+max_voices = 2
+cooldown_ms = 200
+
+[resource]
+script = ExtResource("3_5vvjm")
+defs = Array[ExtResource("1_abvs6")]([SubResource("Resource_vhq6q")])

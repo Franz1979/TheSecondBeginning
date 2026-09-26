@@ -15,6 +15,12 @@ diet_compatibility = {
 }
 is_browsing_species = true
 prey_calories = 140.0
+max_health = 32.0
+hit_chance_scale = 1.0
+discomfort_radius = 4.0
+flee_radius = 2.0
+building_avoidance_radius = 5.0
+avoidance_strength = 0.12
 max_individuals_per_cluster = 8
 hop_duration_min = 1.0
 hop_duration_max = 1.625

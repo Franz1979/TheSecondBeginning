@@ -70,6 +70,22 @@ enum ActionType {
 	# produce.tres) — AGGIUNTO IN CODA come ogni valore precedente. TaskFactory.build_task e
 	# TaskPersistenceService lo supportano entrambi. Vedi gameplay/scripts/actions/ProduceAction.gd.
 	PRODUCE,
+	# APPROACH_PREY/HUNT (2026-09-26, richiesta utente — caccia, step 2: ApproachPreyAction e la vecchia HuntAction,
+	# vedi hunt.tres) — AGGIUNTI IN CODA come ogni valore precedente. TaskFactory.build_task e
+	# TaskPersistenceService li supportano entrambi.
+	APPROACH_PREY,
+	# HUNT: la vecchia HuntAction, SOSTITUITA il 2026-09-26 da AIM + THROW. Il valore resta (i .tres e i
+	# salvataggi usano i numeri, mai riordinare): un salvataggio che lo contiene viene ricostruito come
+	# ThrowAction (vedi TaskPersistenceService._build_step).
+	HUNT,
+	# AIM/THROW (2026-09-26, richiesta utente — caccia: mira e tiro separati, AimAction/ThrowAction, vedi
+	# hunt.tres) — AGGIUNTI IN CODA. TaskFactory.build_task e TaskPersistenceService li supportano entrambi.
+	AIM,
+	THROW,
+	# RECOVER_WEAPON (2026-09-26, richiesta utente — recupero dell'arma scagliata, RecoverWeaponAction) —
+	# AGGIUNTO IN CODA. Mai in un .tres: lo step è inserito a metà Task dopo un lancio; lo supporta solo
+	# TaskPersistenceService.
+	RECOVER_WEAPON,
 }
 
 # Categorie di tool richiedibili da un'Action (2026-09-08, richiesta utente — SOLO struttura dati,

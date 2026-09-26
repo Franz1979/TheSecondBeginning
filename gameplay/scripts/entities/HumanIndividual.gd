@@ -365,13 +365,22 @@ var carried_resources: Dictionary = {}
 # Un attrezzo in cintura NON occupa spazio nello zaino: il suo costo è il bonus di capacità perso
 # (HumanRules.carry_bonus_per_empty_tool_slot per slot vuoto, vedi HumanCalculator.
 # get_max_carry_capacity) e WalkAction/RunAction.STAMINA_DRAIN_PER_TOOL per microcella. Spostamenti
-# zaino <-> cintura SOLO da equip_tool_from_backpack/unequip_tool_to_backpack. Nessuna usura e nessun
-# requisito di attrezzo (gate) in questo step.
+# zaino <-> cintura SOLO da equip_tool_from_backpack/unequip_tool_to_backpack. Usi residui per slot in
+# equipped_tool_uses (sotto, 2026-09-26).
 const DEFAULT_TOOL_SLOT_COUNT: int = 4
 var equipped_tools: Array[String] = []
+# Usi residui dell'attrezzo in ciascuno slot (2026-09-26, richiesta utente — attrezzi come istanze,
+# step 2): array PARALLELO a equipped_tools, stesso indice, stessa lunghezza (riallineati insieme da
+# _ensure_tool_slots). Per uno slot vuoto vale 0 e non significa nulla; per uno slot pieno è l'istanza
+# dell'attrezzo ridotta ai soli usi (vedi get_equipped_tool_instance). Scritto SOLO dalle funzioni che
+# scrivono equipped_tools. PERSISTITO (GameSaveService/GameLoadService, default usi pieni per i save
+# vecchi). Calano di uno a ogni ciclo di produzione in cui l'attrezzo serve (step 3, vedi
+# consume_equipped_tool_use): a 0 l'attrezzo si rompe e lo slot si svuota.
+var equipped_tool_uses: Array[int] = []
 # Ultimo avviso del controllo attrezzi (ToolGateService, 2026-09-25): testo già tradotto, mostrato nel
 # pannello individuo; "" = nessun avviso. Scritto da GameScene quando un'assegnazione viene rifiutata
 # per mancanza di attrezzi, azzerato alla prima assegnazione che lo supera. Transitorio, non salvato.
+# Stesso canale per l'avviso di rottura di un attrezzo (2026-09-26, step 3 — scritto da ProduceAction).
 var tool_gate_warning: String = ""
 # Numero di attrezzi in cintura — RICAVATO da equipped_tools, non più un campo a sé. Stessi lettori
 # di prima: HumanCalculator.get_max_carry_capacity (bonus per slot vuoto) e WalkAction/RunAction
@@ -731,6 +740,26 @@ func _load_name_pool(path: String) -> Array[String]:
 # zaino). NESSUN side-effect qui dentro — nessuna chiamata a stop()/discard_carried_resource() da
 # questa funzione, solo lettura di task.steps/task.allowed_age_bands.
 func can_assign_task(task: Task, age_band: HumanTypes.AgeBand) -> bool:
+	return get_assign_rejection_reason(task, age_band) == ASSIGN_OK
+
+
+# Motivi di rifiuto di un'assegnazione (2026-09-26, richiesta utente — i comandi devono dire PERCHÉ una
+# task è stata rifiutata, non solo mostrare la X): ASSIGN_OK = assegnabile. Stringhe usate come chiavi
+# dal chiamante (GameScene._report_assign_rejection), mai mostrate così come sono.
+const ASSIGN_OK := ""
+# Stamina sotto la soglia di Emergency Rest: sono ammesse solo le Task-bisogno.
+const ASSIGN_REJECT_LOW_STAMINA := "low_stamina"
+# Uno step della task vieta la fascia d'età dell'individuo (Action.disallowed_age_bands) e l'individuo è
+# più giovane di un adulto (le fasce vietate oggi sono sempre quelle giovani).
+const ASSIGN_REJECT_TOO_YOUNG := "too_young"
+# Fascia d'età non ammessa per altri motivi: vietata da uno step ma non giovane, oppure esclusa da
+# Task.allowed_age_bands (es. Play solo per bambini).
+const ASSIGN_REJECT_AGE_NOT_ALLOWED := "age_not_allowed"
+
+
+# Stessi controlli (e stessi log [TASK GUARD]) di sempre, nello stesso ordine, ma restituisce il MOTIVO
+# del primo rifiuto invece di un semplice sì/no. can_assign_task sopra è ora solo un involucro.
+func get_assign_rejection_reason(task: Task, age_band: HumanTypes.AgeBand) -> String:
 	# Blocco sotto la soglia di Emergency Rest (richiesta utente) — sotto HumanIndividualAction
 	# Service.STAMINA_EMERGENCY_REST_THRESHOLD (stessa soglia, unica fonte di verità, che fa già
 	# scattare l'Emergency Rest automatica in _resolve_active_stamina_need_priority) l'individuo
@@ -751,14 +780,14 @@ func can_assign_task(task: Task, age_band: HumanTypes.AgeBand) -> bool:
 				print("[TASK GUARD] Individuo #%d %s: stamina %.1f/%.1f sotto la soglia Emergency Rest — solo Task-bisogno (Rest/Emergency Rest, Emergency Restock) ammesse, '%s' rifiutata." % [
 					id, name, current_stamina, max_stamina, task.task_name
 				])
-			return false
+			return ASSIGN_REJECT_LOW_STAMINA
 	for step in task.steps:
 		if step.disallowed_age_bands.has(age_band):
 			if DebugLogging.ENABLED and DebugLogging.SHOW_TASK_LIFECYCLE_LOGS:
 				print("[TASK GUARD] Individuo #%d (age_band=%s) NON può eseguire %s — assegnazione rifiutata." % [
 					id, HumanTypes.AgeBand.keys()[age_band], step.get_script().get_global_name()
 				])
-			return false
+			return ASSIGN_REJECT_TOO_YOUNG if age_band < HumanTypes.AgeBand.FERTILE_ADULT else ASSIGN_REJECT_AGE_NOT_ALLOWED
 	# allowed_age_bands (2026-09-13, richiesta utente, Play Task CHILD-only) — vincolo di TASK,
 	# indipendente dal loop sopra (vedi Task.allowed_age_bands per il perché): vuoto = nessun
 	# vincolo aggiuntivo, non vuoto = SOLO quelle fasce ammesse, tutte le altre rifiutate.
@@ -768,8 +797,8 @@ func can_assign_task(task: Task, age_band: HumanTypes.AgeBand) -> bool:
 				id, HumanTypes.AgeBand.keys()[age_band], task.task_name,
 				str(task.allowed_age_bands.map(func(b: int) -> String: return HumanTypes.AgeBand.keys()[b]))
 			])
-		return false
-	return true
+		return ASSIGN_REJECT_AGE_NOT_ALLOWED
+	return ASSIGN_OK
 
 
 func assign_task(task: Task, age_band: HumanTypes.AgeBand, is_interrupt_transition: bool = false) -> bool:
@@ -891,6 +920,8 @@ func assign_task(task: Task, age_band: HumanTypes.AgeBand, is_interrupt_transiti
 				print("[INVALID TARGET] Individuo #%d %s: task '%s' scartata dalla coda (ripresa per zaino occupato) — bersaglio non più valido." % [
 					id, name, cargo_owner_task.task_name
 				])
+			if HuntService.is_hunt_task(cargo_owner_task):
+				HuntService.log_event(self, "caccia scartata dalla coda (ripresa per zaino occupato): %s." % HuntService.describe_task_prey_loss(cargo_owner_task))
 			cargo_owner_task = TaskQueueService.pop_suspended_task(self)
 		if cargo_owner_task != null:
 			# Guardia task.is_suspendable (2026-09-16, richiesta utente — STESSO bugfix del ramo sopra):
@@ -948,6 +979,13 @@ func assign_task(task: Task, age_band: HumanTypes.AgeBand, is_interrupt_transiti
 	# guardia is_interrupt_transition/resuming_cargo_owner resta la stessa per coerenza
 	# (un'assegnazione automatica non deve mai scartare nulla, un ripescaggio del cargo owner
 	# nemmeno).
+	# Caccia non sospendibile (2026-09-26): sostituita da un bisogno o da un nuovo comando viene annullata,
+	# mai messa in coda — la preda si muove. Solo log (DebugLogging.SHOW_HUNT_LOGS): lo scarto è quello
+	# comune a ogni Task non sospendibile, nei rami qui sotto.
+	if HuntService.is_hunt_task(current_task) and not current_task.is_finished() and not current_task.is_suspendable:
+		HuntService.log_event(self, "caccia annullata: sostituita da '%s'%s." % [
+			task.task_name, " (bisogno urgente)" if is_interrupt_transition else ""
+		])
 	if current_task != null and current_task.is_finished():
 		if DebugLogging.ENABLED and DebugLogging.SHOW_SAFETY_LOGS:
 			print("[ZOMBIE GUARD] Individuo #%d %s: current_task '%s' (step %d/%d) già conclusa — scartata invece di sospesa in coda, HumanIndividual.assign_task (ramo generico)." % [
@@ -956,6 +994,10 @@ func assign_task(task: Task, age_band: HumanTypes.AgeBand, is_interrupt_transiti
 		if not is_interrupt_transition and not resuming_cargo_owner:
 			discard_carried_resource()
 	elif current_task != null and current_task.is_suspendable:
+		if HuntService.is_hunt_task(current_task):
+			HuntService.log_event(self, "caccia sospesa e messa in coda: sostituita da '%s'%s." % [
+				task.task_name, " (bisogno urgente)" if is_interrupt_transition else ""
+			])
 		TaskQueueService.push_suspended_task(self, current_task)
 		if DebugLogging.ENABLED and DebugLogging.SHOW_TASK_LIFECYCLE_LOGS:
 			print("[TASK SUSPEND] Individuo #%d %s: Task '%s' sospesa e messa in coda (sostituita da '%s')." % [
@@ -1155,6 +1197,10 @@ func can_carry_variety(resource_name: String) -> bool:
 # Aggiunge `quantity` unità con `decay_fraction` in arrivo. Se la varietà c'è già si FONDE con media pesata
 # sulla quantità (stessa formula di BuildingStorageService.store); se non c'è e le varietà sono già
 # MAX_CARRIED_VARIETIES, non entra. Ritorna quanto è entrato davvero (0 = rifiutato o quantity <= 0).
+#
+# Attrezzi come istanze (2026-09-26, step 2): per una risorsa TOOL le unità aggiunte qui sono pezzi
+# NUOVI — le istanze usate già nello zaino restano (vedi ToolInstance per la forma della voce). Un pezzo
+# usato entra invece da add_carried_tool_instance.
 func add_carried_resource(resource_name: String, quantity: int, decay_fraction: float = 0.0) -> int:
 	if quantity <= 0 or resource_name == "" or not can_carry_variety(resource_name):
 		return 0
@@ -1165,8 +1211,47 @@ func add_carried_resource(resource_name: String, quantity: int, decay_fraction: 
 		new_decay_fraction = (
 			float(current_quantity) * get_carried_decay_fraction(resource_name) + float(quantity) * decay_fraction
 		) / float(new_quantity)
-	carried_resources[resource_name] = {"quantity": new_quantity, "decay_fraction": new_decay_fraction}
+	var entry: Dictionary = {"quantity": new_quantity, "decay_fraction": new_decay_fraction}
+	ToolInstance.set_used_instances(entry, ToolInstance.get_used_instances(carried_resources.get(resource_name, {})))
+	carried_resources[resource_name] = entry
 	return quantity
+
+
+# Mette nello zaino UN attrezzo con il suo stato (2026-09-26, step 2 — attrezzi come istanze). A usi
+# pieni (o attrezzo che non si usura) è indistinguibile da un nuovo: entra come quantità. Parziale:
+# quantity + 1 e l'istanza in used_instances. Rifiutato (false) se non è un attrezzo, se è rotto (0 usi)
+# o se non c'è posto per la varietà (MAX_CARRIED_VARIETIES). Lo SPAZIO resta a carico del chiamante,
+# come per add_carried_resource.
+func add_carried_tool_instance(resource_name: String, instance: Dictionary) -> bool:
+	if not ToolInstance.is_tool_resource(resource_name) or not can_carry_variety(resource_name):
+		return false
+	if ToolInstance.is_full(instance, ToolInstance.get_max_uses(resource_name)):
+		return add_carried_resource(resource_name, 1, 0.0) == 1
+	if not ToolInstance.is_usable(instance):
+		return false
+	var entry: Dictionary = (carried_resources.get(resource_name, {}) as Dictionary).duplicate(true)
+	var current_quantity: int = int(entry.get("quantity", 0))
+	# Stessa media pesata di add_carried_resource, con decay 0.0 in arrivo (attrezzi: day_durability -1).
+	entry["decay_fraction"] = float(current_quantity) * float(entry.get("decay_fraction", 0.0)) / float(current_quantity + 1)
+	ToolInstance.add_instance_to_entry(entry, instance)
+	carried_resources[resource_name] = entry
+	return true
+
+
+# Toglie dallo zaino fino a `quantity` unità di un attrezzo e le restituisce con il loro stato
+# (2026-09-26, step 2): prima le istanze più consumate, poi i pezzi nuovi (come istanze a usi pieni) —
+# stesso ordine del magazzino (ToolInstance.take_units_from_entry). La voce sparisce a quantità 0.
+# Array vuoto se la risorsa non è un attrezzo o non è nello zaino.
+func take_carried_tool_units(resource_name: String, quantity: int) -> Array:
+	if quantity <= 0 or not ToolInstance.is_tool_resource(resource_name) or not carried_resources.has(resource_name):
+		return []
+	var entry: Dictionary = (carried_resources[resource_name] as Dictionary).duplicate(true)
+	var units: Array = ToolInstance.take_units_from_entry(entry, quantity, ToolInstance.get_max_uses(resource_name))
+	if int(entry.get("quantity", 0)) <= 0:
+		carried_resources.erase(resource_name)
+	else:
+		carried_resources[resource_name] = entry
+	return units
 
 
 # Toglie fino a `quantity` unità di una varietà; la entry sparisce a quantità 0. Ritorna quanto è stato
@@ -1186,11 +1271,22 @@ func get_tool_slot_count() -> int:
 
 # Porta equipped_tools esattamente a get_tool_slot_count() posti ("" = vuoto), senza toccare quelli
 # già occupati entro il nuovo numero. Chiamata prima di ogni lettura/scrittura della cintura.
+#
+# equipped_tool_uses (2026-09-26, step 2) riallineato alla stessa lunghezza, ma NON con il riempimento di
+# default di Array[int].resize (0, che per uno slot pieno significherebbe "rotto"): ogni posto nuovo
+# prende gli usi pieni dell'attrezzo che contiene, 0 solo se lo slot è vuoto. Copre anche un save
+# vecchio che ha equipped_tools ma nessun equipped_tool_uses.
 func _ensure_tool_slots() -> void:
 	var slot_count: int = get_tool_slot_count()
 	if equipped_tools.size() != slot_count:
 		# Array[String].resize riempie i nuovi posti con "" (slot vuoti).
 		equipped_tools.resize(slot_count)
+	if equipped_tool_uses.size() != slot_count:
+		var previous_size: int = equipped_tool_uses.size()
+		equipped_tool_uses.resize(slot_count)
+		for slot_index in range(previous_size, slot_count):
+			var tool_name: String = equipped_tools[slot_index]
+			equipped_tool_uses[slot_index] = ToolInstance.get_max_uses(tool_name) if tool_name != "" else 0
 
 
 # Nome dell'attrezzo nello slot, "" se vuoto o fuori range.
@@ -1199,6 +1295,34 @@ func get_equipped_tool(slot_index: int) -> String:
 	if slot_index < 0 or slot_index >= equipped_tools.size():
 		return ""
 	return equipped_tools[slot_index]
+
+
+# Usi residui dell'attrezzo nello slot (2026-09-26, step 2), 0 se vuoto o fuori range.
+func get_equipped_tool_uses(slot_index: int) -> int:
+	if get_equipped_tool(slot_index) == "":
+		return 0
+	return equipped_tool_uses[slot_index]
+
+
+# L'attrezzo dello slot come istanza ToolInstance (2026-09-26, step 2) — la forma con cui esce dalla
+# cintura verso zaino o magazzino. {} se lo slot è vuoto.
+func get_equipped_tool_instance(slot_index: int) -> Dictionary:
+	if get_equipped_tool(slot_index) == "":
+		return {}
+	return ToolInstance.create(equipped_tool_uses[slot_index])
+
+
+# Unico punto che scrive uno slot della cintura (nome + usi insieme, mai uno senza l'altro). `instance`
+# vuota = pezzo nuovo (usi pieni). resource_name "" = svuota lo slot (usi 0). Chiamare dopo
+# _ensure_tool_slots, con slot_index già validato dal chiamante.
+func _set_tool_slot(slot_index: int, resource_name: String, instance: Dictionary = {}) -> void:
+	equipped_tools[slot_index] = resource_name
+	if resource_name == "":
+		equipped_tool_uses[slot_index] = 0
+	elif instance.is_empty():
+		equipped_tool_uses[slot_index] = ToolInstance.get_max_uses(resource_name)
+	else:
+		equipped_tool_uses[slot_index] = ToolInstance.get_remaining_uses(instance)
 
 
 static func is_tool_resource(resource_name: String) -> bool:
@@ -1229,9 +1353,12 @@ func equip_tool_from_backpack(resource_name: String, game_data: GameData) -> boo
 	var capacity_after: float = max_carry_capacity - _carry_bonus_per_empty_tool_slot()
 	if space_after > capacity_after:
 		return false
-	if remove_carried_resource(resource_name, 1) != 1:
+	# Usi residui conservati (2026-09-26, step 2): esce dallo zaino l'unità più consumata (stesso ordine
+	# del magazzino), con il suo stato — vale sia per il click dal pannello sia per il gate degli attrezzi.
+	var units: Array = take_carried_tool_units(resource_name, 1)
+	if units.is_empty():
 		return false
-	equipped_tools[free_slot] = resource_name
+	_set_tool_slot(free_slot, resource_name, units[0])
 	_recalculate_carry_capacity_after_tool_change(game_data, -1)
 	return true
 
@@ -1249,9 +1376,10 @@ func unequip_tool_to_backpack(slot_index: int, game_data: GameData) -> bool:
 	var capacity_after: float = max_carry_capacity + _carry_bonus_per_empty_tool_slot()
 	if get_carried_space() + space_per_unit > capacity_after:
 		return false
-	if add_carried_resource(resource_name, 1, 0.0) != 1:
+	# Usi residui conservati (2026-09-26, step 2): rientra nello zaino come istanza (come nuovo se a usi pieni).
+	if not add_carried_tool_instance(resource_name, get_equipped_tool_instance(slot_index)):
 		return false
-	equipped_tools[slot_index] = ""
+	_set_tool_slot(slot_index, "")
 	_recalculate_carry_capacity_after_tool_change(game_data, 1)
 	return true
 
@@ -1279,23 +1407,42 @@ func find_slot_for_direct_equip(resource_name: String, preferred_slot: int) -> i
 
 
 # Mette l'attrezzo nello slot (già verificato con find_slot_for_direct_equip) e aggiorna la capacità.
-func equip_tool_direct(resource_name: String, slot_index: int, game_data: GameData) -> bool:
+# `instance` (2026-09-26, step 2): lo stato dell'unità presa dal magazzino (BuildingStorageService.
+# withdraw_tool_units); vuota = pezzo nuovo, usi pieni.
+func equip_tool_direct(resource_name: String, slot_index: int, game_data: GameData, instance: Dictionary = {}) -> bool:
 	if get_equipped_tool(slot_index) != "" or slot_index < 0 or slot_index >= equipped_tools.size():
 		return false
-	equipped_tools[slot_index] = resource_name
+	_set_tool_slot(slot_index, resource_name, instance)
 	_recalculate_carry_capacity_after_tool_change(game_data, -1)
 	return true
 
 
-# Toglie l'attrezzo dallo slot SENZA metterlo nello zaino (il chiamante lo ha già depositato altrove)
-# e aggiorna la capacità. Ritorna il nome tolto, "" se lo slot era vuoto.
+# Toglie l'attrezzo dallo slot SENZA metterlo nello zaino (il chiamante lo ha già depositato altrove,
+# leggendone prima lo stato con get_equipped_tool_instance) e aggiorna la capacità. Ritorna il nome
+# tolto, "" se lo slot era vuoto.
 func take_equipped_tool(slot_index: int, game_data: GameData) -> String:
 	var resource_name: String = get_equipped_tool(slot_index)
 	if resource_name == "":
 		return ""
-	equipped_tools[slot_index] = ""
+	_set_tool_slot(slot_index, "")
 	_recalculate_carry_capacity_after_tool_change(game_data, 1)
 	return resource_name
+
+
+# Toglie UN uso all'attrezzo dello slot (2026-09-26, attrezzi come istanze — step 3, chiamata da
+# ToolGateService.consume_tool_uses). A 0 usi l'attrezzo si rompe: sparisce dallo slot senza lasciare
+# nulla e la capacità di trasporto si aggiorna come per qualunque slot liberato. Ritorna true se si è
+# rotto. No-op (false) per uno slot vuoto o per un attrezzo con max_uses <= 0 (non si usura).
+func consume_equipped_tool_use(slot_index: int, game_data: GameData) -> bool:
+	var resource_name: String = get_equipped_tool(slot_index)
+	if resource_name == "" or ToolInstance.get_max_uses(resource_name) <= 0:
+		return false
+	equipped_tool_uses[slot_index] -= 1
+	if equipped_tool_uses[slot_index] > 0:
+		return false
+	_set_tool_slot(slot_index, "")
+	_recalculate_carry_capacity_after_tool_change(game_data, 1)
+	return true
 
 
 # Il bonus di capacità dipende dagli slot vuoti: stesso ricalcolo completo del giro giornaliero
@@ -1310,7 +1457,11 @@ func _recalculate_carry_capacity_after_tool_change(game_data: GameData, empty_sl
 		max_carry_capacity += float(empty_slot_delta) * _carry_bonus_per_empty_tool_slot()
 
 
+# Attrezzi (2026-09-26, step 2): stesso ordine di take_carried_tool_units (prima le istanze più consumate),
+# ma lo stato delle unità tolte va perso — chi deve conservarlo usa take_carried_tool_units.
 func remove_carried_resource(resource_name: String, quantity: int) -> int:
+	if ToolInstance.is_tool_resource(resource_name):
+		return take_carried_tool_units(resource_name, quantity).size()
 	var current_quantity: int = get_carried_quantity(resource_name)
 	if quantity <= 0 or current_quantity <= 0:
 		return 0

@@ -585,6 +585,10 @@ func save_game_to_json(
 				# Cintura degli attrezzi (2026-09-25, richiesta utente): un nome risorsa per slot, "" =
 				# vuoto (vedi HumanIndividual.equipped_tools).
 				"equipped_tools": Array(individual.equipped_tools),
+				# Usi residui per slot (2026-09-26, attrezzi come istanze — vedi HumanIndividual.
+				# equipped_tool_uses), parallelo a equipped_tools. Lo zaino sopra porta già le istanze
+				# usate dentro le proprie voci ("used_instances"), salvate con il duplicate(true).
+				"equipped_tool_uses": Array(individual.equipped_tool_uses),
 				# Task/Action in corso (2026-09-08, richiesta utente — "salva anche lo stato della
 				# sua action") — null se l'individuo non ha una Task attiva (Rest implicito, vedi
 				# HumanIndividualActionService.apply_action), altrimenti l'intera sequenza di step

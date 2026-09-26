@@ -221,6 +221,13 @@ produce_quantity_label,Quantity:
 produce_quantity_tooltip,Pieces to produce with this order (up to {max})
 produce_assign_banner_text,⚒️ Produce {resource}: click an individual (Esc to cancel)
 task_produce_activity,Production: {resource}
+task_hunt_name,Hunting
+task_hunt_step_approach,Approaching the prey
+task_hunt_step_hunt,Hunting
+task_hunt_step_aim,Taking aim
+task_hunt_step_throw,Throwing
+task_hunt_step_recover_weapon,Recovering the weapon
+task_hunt_activity,Hunting: {species}
 transport_dialog_group_products,Products
 transport_dialog_group_delivered,Delivered materials
 transport_dialog_take_all_products,Take all products ({quantity})
@@ -244,6 +251,23 @@ animal_age_band_old,Old
 tool_gate_missing_tools,{name} can't start: tools needed for {tools}.
 tool_gate_belt_full,"{name} can't start: the tool belt is full, free a slot for {tool}."
 tool_gate_cannot_equip,{name} can't start: the backpack is too full to move {tool} to the tool belt.
+tool_gate_hunt_no_weapon,{name} can't go hunting: a hunting weapon is needed{examples}.
+tool_gate_hunt_weapon_examples,(e.g. {tools})
+task_reject_too_young,{name} is too young to {activity}.
+task_reject_age_not_allowed,{name} is not the right age to {activity}.
+task_reject_low_stamina,{name} does not have enough energy to {activity}: rest first.
+task_reject_generic,{name} cannot {activity} right now.
+task_activity_hunt,go hunting
+task_activity_produce,produce
+task_activity_transport,carry materials
+task_activity_pickup,gather
+task_activity_unload,deposit
+task_activity_build,build
+task_activity_equip_tool,fetch a tool
+task_activity_store_tool,store a tool
+task_reject_transport_not_needed,{name} can't carry: {building} does not need {resource}.
+task_reject_transport_no_products,{name} can't carry: {building} has no products to collect.
+tool_equip_no_source,No reachable storage building has {tool}
 tool_category_hunting,hunting
 tool_category_cutting,cutting
 tool_category_digging,digging
@@ -262,11 +286,16 @@ tool_storage_menu_empty,No tools in storage
 tool_store_no_storage,No storage building can accept {tool}
 tool_slot_empty_tooltip,Empty slot — right click: fetch a tool from storage
 tool_slot_full_tooltip,{tool} — left click: move to backpack; right click: store in a storage building
+tool_slot_uses_line,Uses left: {uses}/{max}
+tool_broken_warning,{name}: tool broken — {tool}.
 tool_storage_dialog_title,Fetch a tool
 tool_storage_dialog_message,Choose the tool to fetch from the nearest storage:
 task_equip_tool_step_retrieve,Taking the tool
 task_store_tool_step_unload,Storing the tool
 task_equip_tool_step_walk,Going to fetch the tool
 task_store_tool_step_walk,Going to store the tool
+building_assigned_builder_label,Assigned builder: {names}
+building_assigned_builder_missing,Assigned builder: missing
 building_assigned_worker_label,Assigned worker: {names}
 building_assigned_worker_missing,Assigned worker: missing
+building_cancel_work_tooltip,Cancel the work on this building for everyone working on it (progress is kept)

@@ -29,7 +29,8 @@ const EMERGENCY_RESTOCK_TASK_DEFINITION_PATH := "res://gameplay/scripts/tasks/de
 # max_duration_days a RestAction (vedi assign_rest_task sotto) con ignore_stamina_cap=false — un
 # backstop in OR col criterio "stamina piena": chi recupera prima si ferma prima, questo scatta
 # solo se il recupero fosse più lento del previsto.
-const REST_TASK_MAX_DURATION_DAYS: float = 8.0
+# Taratura 2026-09-26 (richiesta utente): da 8.0 a 6.0, insieme al recupero portato al 10% al giorno.
+const REST_TASK_MAX_DURATION_DAYS: float = 6.0
 
 # Raggio massimo del walk-around casuale quando l'individuo NON ha una casa assegnata — STESSO
 # valore/STESSO principio già in uso prima di questo spostamento (vedi GameScene, ora rimosso da

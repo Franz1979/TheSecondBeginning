@@ -35,7 +35,9 @@ extends Action
 #     del tutto — SOLO max_duration_days decide la fine (per una Rest "per piacere", non per
 #     bisogno: si ferma quando sono passati N giorni, non quando la stamina è già tornata al tetto).
 # Vedi is_complete() sotto per la combinazione esatta dei due.
-const STAMINA_REGEN_PERCENT_PER_DAY: float = 0.05
+# Taratura 2026-09-26 (richiesta utente): da 0.05 a 0.10 — dal 20% il pieno arriva in 8 giorni all'aperto,
+# 6.7 in tenda, 5.7 in capanna (prima 16/13.3/11.4, sempre troncati dal tetto di NeedTaskAssignmentService).
+const STAMINA_REGEN_PERCENT_PER_DAY: float = 0.10
 
 var max_duration_days: float = -1.0
 var ignore_stamina_cap: bool = false
