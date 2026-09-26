@@ -77,10 +77,19 @@ var _elapsed: float = 0.0
 var _restored_from_save: bool = false
 
 
-func _init(p_target_building: Building, p_resource_name: String, p_quantity_requested: int) -> void:
+# Modalità "cintura" (2026-09-25, richiesta utente — prendi un attrezzo dal magazzino dal pannello
+# individuo): se >= 0, lo step preleva UNA unità dell'attrezzo e la mette direttamente in questo slot
+# della cintura (o nel primo libero, se nel frattempo è stato occupato), senza passare dallo zaino e
+# senza l'assunzione "zaino vuoto" del prelievo normale. -1 (default) = prelievo normale nello zaino.
+# Persistito (get_save_data, letto da TaskPersistenceService._build_step).
+var equip_slot_index: int = -1
+
+
+func _init(p_target_building: Building, p_resource_name: String, p_quantity_requested: int, p_equip_slot_index: int = -1) -> void:
 	target_building = p_target_building
 	resource_name = p_resource_name
 	quantity_requested = p_quantity_requested
+	equip_slot_index = p_equip_slot_index
 	target = null
 	# INFANT non può eseguire questa Action (2026-09-12, richiesta utente — collegamento AgeBand.
 	# INFANT al gameplay, vedi Action.disallowed_age_bands). CHILD aggiunto 2026-09-13 (richiesta
@@ -111,6 +120,10 @@ func activate(individual: Variant, context: Dictionary) -> void:
 		_activate_all_products(individual, free_space)
 		return
 
+	if equip_slot_index >= 0:
+		_activate_equip(individual)
+		return
+
 	var resource_rules := CaloricCalculator.get_caloric_source_rules(resource_name)
 	var space_per_unit: float = resource_rules.space_per_unit if resource_rules != null else 0.0
 
@@ -131,6 +144,26 @@ func activate(individual: Variant, context: Dictionary) -> void:
 		_duration = space_retrieved / individual.max_carry_capacity
 		_total_stamina_cost = STAMINA_COST_PER_SPACE_UNIT * space_retrieved
 	_elapsed = 0.0
+
+
+# Modalità "cintura": una sola unità, se il magazzino ce l'ha e se c'è uno slot in cui può entrare
+# (HumanIndividual.find_slot_for_direct_equip). Durata e stamina con la stessa formula del prelievo
+# normale, sullo spazio di quell'unità.
+func _activate_equip(individual: Variant) -> void:
+	_quantity_to_retrieve = 0
+	_duration = 0.0
+	_total_stamina_cost = 0.0
+	_elapsed = 0.0
+	if target_building == null or BuildingStorageService.get_available_quantity(target_building, resource_name) <= 0:
+		return
+	if individual.find_slot_for_direct_equip(resource_name, equip_slot_index) == -1:
+		return
+	_quantity_to_retrieve = 1
+	var resource_rules := CaloricCalculator.get_caloric_source_rules(resource_name)
+	var space_retrieved: float = resource_rules.space_per_unit if resource_rules != null else 0.0
+	if space_retrieved > 0.0 and individual.max_carry_capacity > 0.0:
+		_duration = space_retrieved / individual.max_carry_capacity
+		_total_stamina_cost = STAMINA_COST_PER_SPACE_UNIT * space_retrieved
 
 
 # Modalità ALL_PRODUCTS (2026-09-24): una voce di piano per ogni varietà del buffer di uscita, in
@@ -227,6 +260,9 @@ func on_complete(individual: Variant, context: Dictionary) -> void:
 	if resource_name == ALL_PRODUCTS:
 		_complete_all_products(individual)
 		return
+	if equip_slot_index >= 0:
+		_complete_equip(individual)
+		return
 	var stored_entry: Dictionary = target_building.stored_resources.get(resource_name, {})
 	var stored_quantity: int = int(stored_entry.get("quantity", 0))
 	var stored_decay_fraction: float = float(stored_entry.get("decay_fraction", 0.0))
@@ -238,6 +274,23 @@ func on_complete(individual: Variant, context: Dictionary) -> void:
 	var from_stored: int = min(withdrawn, stored_quantity)
 	var decay_fraction: float = float(from_stored) * stored_decay_fraction / float(withdrawn)
 	individual.add_carried_resource(resource_name, withdrawn, decay_fraction)
+	resource_retrieved.emit(resource_name, target_building, withdrawn)
+
+
+# Modalità "cintura": ricontrolla lo slot al momento del prelievo (può essere cambiato durante il
+# prelievo), preleva UNA unità e la mette in cintura. Se non c'è più posto non preleva nulla: l'attrezzo
+# resta nel magazzino, mai perso né finito nello zaino. game_data null: capacità corretta del solo
+# bonus dello slot (vedi HumanIndividual._recalculate_carry_capacity_after_tool_change).
+func _complete_equip(individual: Variant) -> void:
+	var slot: int = individual.find_slot_for_direct_equip(resource_name, equip_slot_index)
+	if slot == -1:
+		return
+	var withdrawn: int = BuildingStorageService.withdraw(target_building, resource_name, 1)
+	if withdrawn <= 0:
+		return
+	if not individual.equip_tool_direct(resource_name, slot, null):
+		BuildingStorageService.store(target_building, resource_name, withdrawn, 0.0)
+		return
 	resource_retrieved.emit(resource_name, target_building, withdrawn)
 
 
@@ -280,6 +333,8 @@ func get_save_data() -> Dictionary:
 		"elapsed": _elapsed,
 		"total_stamina_cost": _total_stamina_cost,
 		"retrieve_plan": _retrieve_plan,
+		# Modalità "cintura" (2026-09-25) — letta da TaskPersistenceService._build_step.
+		"equip_slot_index": equip_slot_index,
 	}
 	if target_building != null:
 		data["target_building_id"] = target_building.id

@@ -227,8 +227,8 @@ extends Resource
 @export var movement_speed_multiplier: float = 1.0
 
 @export_group("Production")
-# Sistema di produzione (2026-09-23, richiesta utente — step 1: solo il dato, nessuna logica li
-# legge ancora). Nessun tipo esistente li attiva.
+# Sistema di produzione (2026-09-23, richiesta utente) — letti da ProductionService/ProduceAction e
+# dal pannello edificio. Workstation oggi: campfire e toolmaker_hut.
 # true = questo tipo di edificio può ospitare la produzione di risorse con una ricetta
 # (SecondaryResourceRules.recipe_workstation_types elenca i tipi ammessi per ciascuna ricetta).
 @export var is_workstation: bool = false

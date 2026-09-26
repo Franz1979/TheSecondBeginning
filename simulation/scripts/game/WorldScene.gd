@@ -267,14 +267,7 @@ func _populate_new_world(target_world: World) -> void:
 			density = GameTypes.AnimalDensity.MEDIUM
 		"MANY":
 			density = GameTypes.AnimalDensity.MANY
-	var population_size := GameTypes.PopulationSize.NORMAL
-	match GameSettings.selected_population_size:
-		"SPARSE":
-			population_size = GameTypes.PopulationSize.SPARSE
-		"NORMAL":
-			population_size = GameTypes.PopulationSize.NORMAL
-		"DENSE":
-			population_size = GameTypes.PopulationSize.DENSE
+	var population_size := AnimalSeedingService.population_size_from_string(GameSettings.selected_population_size)
 
 	AnimalSeedingService.new().populate_animals(target_world, density, population_size)
 

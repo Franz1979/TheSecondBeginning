@@ -35,6 +35,7 @@ extends Action
 const STAMINA_DRAIN_PER_MICROCELL_BASE: float = 5.0
 # Costo aggiuntivo/microcella per ogni utensile in equipaggiamento (richiesta utente, 2026-09-08) —
 # valore ARBITRARIO di partenza, stesso principio "da bilanciare" già dichiarato sopra per la base.
+# Attivo dal 2026-09-25: HumanIndividual.equipped_tool_count conta gli attrezzi nella cintura.
 const STAMINA_DRAIN_PER_TOOL: float = 3.0
 # Moltiplicatore del carico trasportato nel costo/microcella (2026-09-21, richiesta utente — con 1.0 un
 # carico di 40 di spazio costava 45 stamina/microcella contro le 5 a vuoto, "troppo"): il costo del

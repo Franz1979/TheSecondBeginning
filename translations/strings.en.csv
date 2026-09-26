@@ -225,3 +225,48 @@ transport_dialog_group_products,Products
 transport_dialog_group_delivered,Delivered materials
 transport_dialog_take_all_products,Take all products ({quantity})
 transport_all_products_activity,all products
+animal_selection_title,Animal
+animal_species_label,Species: {species}
+animal_age_band_label,Age: {age_band}
+animal_species_rabbit,Rabbit
+animal_species_partridge,Partridge
+animal_species_deer,Deer
+animal_species_boar,Boar
+animal_species_mouflon,Mouflon
+animal_species_bezoar,Bezoar ibex
+animal_species_tarpan,Tarpan
+animal_species_wild_donkey,Wild donkey
+animal_species_aurochs,Aurochs
+animal_species_wolf,Wolf
+animal_age_band_young,Young
+animal_age_band_adult,Adult
+animal_age_band_old,Old
+tool_gate_missing_tools,{name} can't start: tools needed for {tools}.
+tool_gate_belt_full,"{name} can't start: the tool belt is full, free a slot for {tool}."
+tool_gate_cannot_equip,{name} can't start: the backpack is too full to move {tool} to the tool belt.
+tool_category_hunting,hunting
+tool_category_cutting,cutting
+tool_category_digging,digging
+tool_category_crafting,crafting
+tool_category_butchering,butchering
+tool_category_combat,combat
+individual_cancel_task_tooltip,Cancel the current activity (same as the H key)
+tool_gate_assigned_waiting,{name} is waiting for tools before starting: {tools}. Bring them to the backpack and the work will start on its own.
+tool_gate_category_with_examples,{category} (e.g. {examples})
+tool_gate_waiting_tools,Missing tools: {tools}
+tool_gate_waiting_belt_full,"Waiting: tool belt full, free a slot for {tool}"
+tool_gate_waiting_cannot_equip,Waiting: backpack too full to move {tool} to the tool belt
+task_equip_tool_name,Fetch tool
+task_store_tool_name,Store tool
+tool_storage_menu_empty,No tools in storage
+tool_store_no_storage,No storage building can accept {tool}
+tool_slot_empty_tooltip,Empty slot — right click: fetch a tool from storage
+tool_slot_full_tooltip,{tool} — left click: move to backpack; right click: store in a storage building
+tool_storage_dialog_title,Fetch a tool
+tool_storage_dialog_message,Choose the tool to fetch from the nearest storage:
+task_equip_tool_step_retrieve,Taking the tool
+task_store_tool_step_unload,Storing the tool
+task_equip_tool_step_walk,Going to fetch the tool
+task_store_tool_step_walk,Going to store the tool
+building_assigned_worker_label,Assigned worker: {names}
+building_assigned_worker_missing,Assigned worker: missing

@@ -18,6 +18,14 @@ extends PanelContainer
 @onready var content_group: HBoxContainer = $MarginContainer/HBoxContainer/ContentGroup
 @onready var content_row: IconButtonRow = $MarginContainer/HBoxContainer/ContentGroup/ContentRow
 @onready var coords_label: Label = $MarginContainer/HBoxContainer/ContentGroup/CoordsLabel
+# Riepilogo animali della macrocella del giocatore (quota cella / individui istanziati per specie)
+# — vedi set_animal_summary sotto e GameScene._refresh_debug_animal_summary.
+@onready var animal_summary_label: Label = $MarginContainer/HBoxContainer/ContentGroup/AnimalSummaryLabel
+# FPS (Engine.get_frames_per_second, già mediato dal motore sull'ultimo secondo). Unico dato che
+# questa barra legge da sé invece di riceverlo da GameScene: è globale del motore, non dello stato
+# di gioco — vedi _process.
+@onready var fps_label: Label = $MarginContainer/HBoxContainer/ContentGroup/FpsLabel
+var _last_fps: int = -1
 # Toggle "Perditempo" (2026-09-16, richiesta utente) — un Button PIENO, non un altro slot di
 # content_row/IconButtonRow: quegli slot sono quadrati 32x32 pensati per un'icona/emoji singola
 # (vedi IconButtonRow.gd), qui invece serve un'etichetta leggibile che cambia testo con lo stato
@@ -59,8 +67,21 @@ func _ready() -> void:
 	# differenza del testo del bottone — vedi set_idle_fallback_label sotto): spiega COSA fa il
 	# bottone, non lo stato attuale, che è già leggibile direttamente nel testo.
 	idle_fallback_button.tooltip_text = tr("debug_idle_fallback_button_tooltip")
+	animal_summary_label.tooltip_text = "Animali della macrocella del giocatore: quota della cella / individui istanziati (≠ = discrepanza)"
 	idle_fallback_button.pressed.connect(func() -> void: action_pressed.emit(&"toggle_idle_fallback"))
 	_apply_state()
+
+
+# Aggiorna l'etichetta FPS solo quando il valore cambia (il motore lo ricalcola una volta al
+# secondo) e solo a barra espansa: nessun lavoro per frame oltre a un confronto tra interi.
+func _process(_delta: float) -> void:
+	if not _expanded:
+		return
+	var fps := int(Engine.get_frames_per_second())
+	if fps == _last_fps:
+		return
+	_last_fps = fps
+	fps_label.text = "FPS: %d" % fps
 
 
 func _on_control_button_pressed() -> void:
@@ -90,6 +111,38 @@ func set_slot_toggled(index: int, is_active: bool) -> void:
 # testuale di prima ("Coords: x, y"), GameScene chiama questo invece di quello.
 func set_coords(x: int, y: int) -> void:
 	coords_label.text = "Coords: " + str(x) + ", " + str(y)
+
+
+# Riepilogo animali (debug): `entries` = Array di {"species", "quota", "instanced"}, già filtrato
+# da GameScene alle sole specie con quota > 0. Formato "specie quota/istanziati"; una specie in cui
+# i due numeri differiscono è marcata con "≠" e l'intera etichetta diventa rossa, così la
+# discrepanza salta all'occhio anche con molte specie in riga. Muta come il resto della barra: non
+# sa da dove arrivano i numeri, li formatta soltanto.
+func set_animal_summary(entries: Array) -> void:
+	if entries.is_empty():
+		animal_summary_label.text = "Animali: -"
+		animal_summary_label.remove_theme_color_override("font_color")
+		reset_size()
+		return
+
+	var parts: PackedStringArray = []
+	var has_mismatch := false
+	for entry in entries:
+		var quota: int = int(entry["quota"])
+		var instanced: int = int(entry["instanced"])
+		var part := "%s %d/%d" % [entry["species"], quota, instanced]
+		if quota != instanced:
+			part += " ≠"
+			has_mismatch = true
+		parts.append(part)
+
+	animal_summary_label.text = "Animali: " + " | ".join(parts)
+	if has_mismatch:
+		animal_summary_label.add_theme_color_override("font_color", Color(1.0, 0.45, 0.45))
+	else:
+		animal_summary_label.remove_theme_color_override("font_color")
+	# Stesso motivo di _apply_state: la larghezza del testo cambia, il pannello deve seguirla.
+	reset_size()
 
 
 # Aggiorna il TESTO del bottone "Perditempo" (2026-09-16, richiesta utente) — a differenza di

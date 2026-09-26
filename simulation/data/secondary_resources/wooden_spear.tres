@@ -8,7 +8,7 @@ secondary_resource_name = "wooden_spear"
 calories_per_unit = 0.0
 category = 4
 generation_source = 2
-day_durability = 600
+day_durability = -1
 space_per_unit = 8.0
 recipe_inputs = {
 "stick": 1
@@ -16,3 +16,6 @@ recipe_inputs = {
 recipe_labor = 300.0
 recipe_fuel_required = 3.0
 recipe_workstation_types = Array[String](["campfire", "toolmaker_hut"])
+tool_categories = Array[int]([0])
+max_uses = 40
+attack_power = 12.0

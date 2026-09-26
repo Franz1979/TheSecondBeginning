@@ -137,7 +137,28 @@ func open_grouped_dialog(
 	_popup_with_height(height)
 
 
+# Variante "scegli solo quale" (2026-09-25, richiesta utente — attrezzo da prendere per uno slot
+# della cintura): stessa lista/aspetto di open_dialog, ma senza riga quantità né casella "Ripeti"
+# (si prende sempre UNA unità). Il segnale resource_chosen resta lo stesso; la quantità emessa è
+# quella della riga (ignorata dal chiamante). open_dialog/open_grouped_dialog le rimostrano.
+const QUANTITY_AND_REPEAT_HEIGHT: float = 64.0
+
+
+func open_choice_only_dialog(dialog_title: String, message: String, available_quantities: Dictionary) -> void:
+	_reset_rows(dialog_title, message, false)
+	_set_quantity_and_repeat_visible(false)
+	for resource_name: String in available_quantities.keys():
+		_add_row(resource_name, resource_name, int(available_quantities[resource_name]))
+	_popup_with_height(DIALOG_BASE_HEIGHT - QUANTITY_AND_REPEAT_HEIGHT + float(available_quantities.size()) * RESOURCE_ROW_HEIGHT)
+
+
+func _set_quantity_and_repeat_visible(show: bool) -> void:
+	repeat_check_box.visible = show
+	quantity_label.get_parent().visible = show
+
+
 func _reset_rows(dialog_title: String, message: String, repeat_default: bool) -> void:
+	_set_quantity_and_repeat_visible(true)
 	title = dialog_title
 	message_label.text = message
 	repeat_check_box.button_pressed = repeat_default

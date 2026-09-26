@@ -63,6 +63,10 @@ func save_game_to_json(
 			# Ultimo giorno di pulizia periodica del fog of war (vedi GameData) — deve
 			# sopravvivere a save/load per non sfasare la cadenza reale.
 			"fog_of_war_last_prune_absolute_day": game_data.fog_of_war_last_prune_absolute_day,
+			# Individui animali delle celle vive + prossimo id (individui animali step 2, vedi
+			# GameData) — già soli tipi JSON-nativi, scritti da GameScene prima del salvataggio.
+			"animal_individuals_by_cell": game_data.animal_individuals_by_cell,
+			"next_animal_individual_id": game_data.next_animal_individual_id,
 			# Log grezzo eventi morte (Step 8, vedi GameData) — Array[Dictionary] di soli tipi
 			# JSON-nativi, nessuna conversione necessaria qui a differenza di altri campi sopra.
 			"death_events": game_data.death_events,
@@ -578,6 +582,9 @@ func save_game_to_json(
 				# varietà) — sostituisce i tre campi mono-risorsa carried_resource_name/carried_quantity/
 				# carried_decay_fraction, che GameLoadService continua a leggere per i salvataggi vecchi.
 				"carried_resources": individual.carried_resources.duplicate(true),
+				# Cintura degli attrezzi (2026-09-25, richiesta utente): un nome risorsa per slot, "" =
+				# vuoto (vedi HumanIndividual.equipped_tools).
+				"equipped_tools": Array(individual.equipped_tools),
 				# Task/Action in corso (2026-09-08, richiesta utente — "salva anche lo stato della
 				# sua action") — null se l'individuo non ha una Task attiva (Rest implicito, vedi
 				# HumanIndividualActionService.apply_action), altrimenti l'intera sequenza di step

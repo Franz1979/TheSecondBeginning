@@ -115,6 +115,10 @@ const STORAGE_SLOT_FILL_BAR_FILL_COLOR := Color(1.0, 1.0, 1.0, 0.85)
 # colore diverso (arancio) dalla griglia dei materiali, vedi _refresh_awaiting_fuel.
 @onready var awaiting_fuel_label: Label = $AwaitingFuelLabel
 @onready var assigned_builder_label: Label = $AssignedBuilderLabel
+# Avvisi "attrezzi mancanti" dei lavoratori della workstation (2026-09-25, richiesta utente): riga a
+# parte, arancione, sotto "Lavoratore assegnato" — testi già risolti da GameScene
+# (_resolve_production_tool_wait_lines), nascosta se non ce ne sono.
+@onready var tool_wait_label: Label = $ToolWaitLabel
 # "In costruzione: ..." per un edificio produttivo completo (2026-09-24, richiesta utente), vedi
 # _format_production_in_progress.
 @onready var production_in_progress_label: Label = $ProductionInProgressLabel
@@ -197,7 +201,7 @@ func _ready() -> void:
 # una Produce Task che ci lavora (GameScene._resolve_production_claimed_recipes). Un record di
 # production_progress la cui ricetta non è qui è SOSPESO: il pannello lo segnala come tale e non ne
 # mostra il fabbisogno di materiale/combustibile come se qualcuno ci stesse lavorando.
-func show_building(building: Building, residents_display_data: Array[Dictionary] = [], assigned_builder_names: Array[String] = [], production_claimant_names: Array[String] = [], production_claimed_recipes: Array[String] = []) -> void:
+func show_building(building: Building, residents_display_data: Array[Dictionary] = [], assigned_builder_names: Array[String] = [], production_claimant_names: Array[String] = [], production_claimed_recipes: Array[String] = [], production_tool_wait_lines: Array[String] = []) -> void:
 	visible = true
 	_current_building = building
 	var working_recipes: Array[String] = []
@@ -283,11 +287,15 @@ func show_building(building: Building, residents_display_data: Array[Dictionary]
 	if is_active_workstation:
 		production_in_progress_label.text = _format_production_in_progress(building, production_claimed_recipes)
 		assigned_builder_label.visible = true
+		# "Lavoratore assegnato" (2026-09-25, richiesta utente): chiavi proprie della produzione, non più
+		# quelle del cantiere ("Costruttore assegnato").
 		assigned_builder_label.text = (
-			tr("building_assigned_builder_label").format({"names": ", ".join(production_claimant_names)})
+			tr("building_assigned_worker_label").format({"names": ", ".join(production_claimant_names)})
 			if not production_claimant_names.is_empty()
-			else tr("building_assigned_builder_missing")
+			else tr("building_assigned_worker_missing")
 		)
+	tool_wait_label.visible = is_active_workstation and not production_tool_wait_lines.is_empty()
+	tool_wait_label.text = "\n".join(production_tool_wait_lines) if tool_wait_label.visible else ""
 
 	var max_durability: int = building.rules.max_durability if building.rules != null else 0
 	durability_label.text = tr("building_durability_label").format({"current": building.current_durability, "max": max_durability})

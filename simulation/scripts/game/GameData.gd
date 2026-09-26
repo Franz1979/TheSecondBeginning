@@ -117,6 +117,19 @@ var thought_building_tech_tree_shown: bool = false
 # nessun caso speciale da gestire nel confronto (current_absolute_day - questo campo >= intervallo).
 var fog_of_war_last_prune_absolute_day: int = 0
 
+# Individui animali delle celle vive al momento del salvataggio (individui animali step 2) — solo
+# per rendere identico "salva e ricarica": GameScene li scrive appena prima di salvare
+# (_sync_animal_individuals_to_game_data) e al caricamento li ricostruisce nelle celle vive invece
+# di rigenerarli dalla popolazione (_take_saved_animal_individuals), poi svuota questo campo.
+# Soli tipi JSON-nativi: Array di {"macro_x", "macro_y", "individuals": [{"id", "species",
+# "age_band", "x", "y"}]}. Vuoto = nessun individuo salvato (partita nuova o save precedente):
+# gli individui si generano dalla popolazione come sempre.
+var animal_individuals_by_cell: Array = []
+# Prossimo id individuo animale (AnimalGroupRenderer._next_individual_id) al momento del
+# salvataggio, così dopo un caricamento un id non viene mai riusato. 0 = non salvato (save
+# precedente): il contatore della sessione resta com'è.
+var next_animal_individual_id: int = 0
+
 # Log grezzo di ogni morte umana (Step 8 del piano mortalità, 2026-09-05) — un Dictionary per
 # evento (individual_id, name, sex, age_at_death, cause: DeathTypes.DeathCause, year, day,
 # spouse_id), scritto da GameTimeService._apply_scheduled_human_deaths. NESSUNA statistica

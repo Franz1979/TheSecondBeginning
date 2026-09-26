@@ -28,9 +28,9 @@ extends Node2D
 # ticchettato nel tempo: nessun processo periodico che aggiorna o rimuove entry scadute — vedi
 # FogOfWarMemory.gd per il perché le entry scadute restano comunque nel dizionario, solo ignorate.
 #
-# NOTA: gli animali (AnimalGroupRenderer) restano visibili anche sotto overlay leggero/medio —
-# gap noto, non risolto in questo step: verrà affrontato insieme al fix di visibilità animali
-# già pianificato dopo il completamento della fog of war.
+# Animali (AnimalGroupRenderer): visibili SOLO nei primi due stati — in raggio (trasparente) o
+# dettaglio ancora fresco (recent_overlay_alpha). Sotto overlay leggero/medio/nero non si
+# disegnano: vedi is_animal_visible_at, interrogata per ogni istanza a ogni frame.
 #
 # Nodo separato da MicroCellRenderer (non baked nel suo _draw()) apposta: quel _draw() ridisegna
 # anche il terreno (loop su tutte le 10.000 microcelle) e va richiamato solo sui cambi di stato
@@ -162,6 +162,21 @@ var _building_visible_positions: Dictionary = {}
 # _building_visible_positions sopra resta un dizionario a parte (già O(1), non dipende dalle
 # sorgenti, nessun motivo di fonderli).
 var _source_visible_positions: Dictionary = {}
+
+# Vector2i -> true: microcelle in cui gli animali si disegnano — in raggio ORA o dettaglio ancora
+# fresco (is_detail_fresh), cioè i due stati con velo trasparente o recent_overlay_alpha (vedi
+# _flush_position: stessa soglia detail_memory_days, così velo e animali non possono dissentire).
+# Cache sorella di quella dietro visible_set_version/compute_visible_positions (che usa invece la
+# soglia risorse), invalidata negli stessi punti:
+#   - una cella che entra in raggio viene aggiunta SUBITO (_mark_seen_and_invalidate: appena vista,
+#     è per definizione dettaglio fresco) — nessuna ricostruzione durante il movimento;
+#   - cambio giorno: le entry possono scadere -> ricostruzione pigra alla prima interrogazione
+#     (_rebuild_animal_visible_positions, una scansione di last_seen_by_position al giorno);
+#   - senza FogOfWarMemory (difensivo) l'insieme è il solo raggio -> invalidata a ogni spostamento.
+# Una cella che ESCE dal raggio resta dettaglio fresco (vista oggi), quindi non va tolta.
+# FogOfWarMemory.prune_stale rimuove solo entry oltre il tier più lungo, mai dettaglio fresco.
+var _animal_visible_positions: Dictionary = {}
+var _animal_visible_cache_valid: bool = false
 
 # Vector2i -> Color: cache del tier/colore per le celle FUORI dal raggio splat (misurato
 # 2026-09-02, richiesta utente: dentro "decisione" i lookup su FogOfWarMemory —
@@ -484,6 +499,10 @@ func set_vegetation_presence(positions: Dictionary) -> void:
 
 func set_building_visible_positions(positions: Dictionary) -> void:
 	_building_visible_positions = positions
+	# Con la memoria le celle nuove entrano nell'insieme animali tramite _mark_seen_and_invalidate
+	# sotto; senza memoria (difensivo) l'insieme è il solo raggio e va ricostruito.
+	if fog_of_war_memory == null:
+		_animal_visible_cache_valid = false
 	# Step 3.3: prima del passo 3.3, mark_seen per le celle in-raggio girava DENTRO _draw(), quindi
 	# QUALUNQUE trigger di redraw (compreso questo, che chiama sempre queue_redraw() senza early-
 	# out) lo eseguiva indirettamente. Ora che mark_seen vive fuori da _draw() (vedi
@@ -573,11 +592,14 @@ func update_visibility(current_absolute_day: int, positions: Array[Vector2]) -> 
 		# Cambio giorno: le entry di memoria possono essere scadute (l'insieme visibile puo' ridursi) e la
 		# disponibilita' stagionale delle risorse puo' essere cambiata — vedi visible_set_version.
 		visible_set_version += 1
+		# Stesso motivo per l'insieme animali (dettaglio fresco): ricostruito alla prossima richiesta.
+		_animal_visible_cache_valid = false
 	# Senza memoria l'insieme visibile e' il solo insieme in raggio, che cambia con le posizioni: nessuna
 	# cella "fresca" su cui contare, quindi ogni cambio di posizione conta (caso non atteso in pratica, una
 	# cella viva ha sempre la sua FogOfWarMemory — vedi GameScene._activate_live_cell).
 	if position_changed and fog_of_war_memory == null:
 		visible_set_version += 1
+		_animal_visible_cache_valid = false
 	# mark_seen per l'insieme in-raggio CORRENTE — SEMPRE quando non c'è early-out (posizione O
 	# giorno cambiati), mai gated da position_changed da solo: una sorgente ferma per più giorni
 	# deve comunque continuare a rinfrescare last_seen_by_position ogni giorno simulato (vedi
@@ -638,6 +660,9 @@ func _mark_seen_and_invalidate(pos: Vector2i) -> void:
 	var _mem_start := Time.get_ticks_usec()
 	fog_of_war_memory.mark_seen(pos, _current_absolute_day)
 	_memory_lookup_usec += Time.get_ticks_usec() - _mem_start
+	# Appena vista = dettaglio fresco: gli animali qui si vedono da subito (vedi
+	# _animal_visible_positions). Innocuo anche a cache non valida (la ricostruzione la includerebbe).
+	_animal_visible_positions[pos] = true
 	_cell_color_cache.erase(pos)
 	if _frozen_tier_positions.erase(pos):
 		_hint_layer_dirty = true
@@ -703,6 +728,29 @@ func _positions_equal(a: Array[Vector2], b: Array[Vector2]) -> bool:
 		if a[i] != b[i]:
 			return false
 	return true
+
+
+# Test per-istanza degli animali (AnimalGroupRenderer, a ogni frame): true se in `pos` il velo è
+# trasparente (in raggio) o a recent_overlay_alpha (dettaglio fresco) — mai per la sola memoria
+# risorse/terreno né sul nero. Lookup O(1) sulla cache _animal_visible_positions, ricostruita solo
+# quando invalidata (vedi lì).
+func is_animal_visible_at(pos: Vector2i) -> bool:
+	if not _animal_visible_cache_valid:
+		_rebuild_animal_visible_positions()
+	return _animal_visible_positions.has(pos)
+
+
+func _rebuild_animal_visible_positions() -> void:
+	_animal_visible_positions.clear()
+	for pos in _source_visible_positions:
+		_animal_visible_positions[pos] = true
+	for pos in _building_visible_positions:
+		_animal_visible_positions[pos] = true
+	if fog_of_war_memory != null:
+		for pos in fog_of_war_memory.last_seen_by_position:
+			if fog_of_war_memory.is_detail_fresh(pos, _current_absolute_day, detail_memory_days):
+				_animal_visible_positions[pos] = true
+	_animal_visible_cache_valid = true
 
 
 # Proposta 2: insieme delle posizioni (Vector2i) in cui un individuo di vegetazione sarebbe

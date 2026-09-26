@@ -78,9 +78,13 @@ enum ActionType {
 # (equip/verifica/PickUp), stesso principio "non un caso ipotetico anticipato" già seguito per
 # BuildingTypes.Category/SecondaryResourceTypes.Category: si aggiungono voci qui quando servirà
 # davvero, mai in anticipo.
+# BUTCHERING/COMBAT (2026-09-25, richiesta utente — campi degli attrezzi) aggiunti IN FONDO: i .tres
+# salvano il valore numerico (vedi SecondaryResourceRules.tool_categories), mai riordinare.
 enum ToolCategory {
 	HUNTING,
 	CUTTING,
 	DIGGING,
 	CRAFTING,
+	BUTCHERING,
+	COMBAT,
 }

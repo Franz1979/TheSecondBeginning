@@ -273,7 +273,8 @@ static func _build_step(action_type: int, step_data: Dictionary, macro_state: Ma
 			# vedi UnloadAction.get_save_data). Default THOUGHT per compatibilità con save più vecchi
 			# salvati prima di questo campo.
 			var deposit_kind: UnloadAction.DepositKind = int(step_data.get("deposit_kind", UnloadAction.DepositKind.THOUGHT))
-			step = UnloadAction.new(target_building, deposit_kind)
+			# unequip_slot_index (2026-09-25, modalità "cintura"): -1 per i save precedenti.
+			step = UnloadAction.new(target_building, deposit_kind, int(step_data.get("unequip_slot_index", -1)))
 		TaskTypes.ActionType.PICKUP:
 			var pickup_target := Vector2i(
 				int(step_data.get("target_position_x", 0)), int(step_data.get("target_position_y", 0))
@@ -366,7 +367,9 @@ static func _build_step(action_type: int, step_data: Dictionary, macro_state: Ma
 			step = RetrieveAction.new(
 				retrieve_target_building,
 				String(step_data.get("resource_name", "")),
-				int(step_data.get("quantity_requested", 0))
+				int(step_data.get("quantity_requested", 0)),
+				# equip_slot_index (2026-09-25, modalità "cintura"): -1 per i save precedenti.
+				int(step_data.get("equip_slot_index", -1))
 			)
 		TaskTypes.ActionType.RESTOCK_POUCH:
 			# 1 argomento (target_building), risolto per id come per RETRIEVE/UNLOAD. Il progresso (scelta,

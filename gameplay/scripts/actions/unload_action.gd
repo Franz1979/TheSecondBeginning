@@ -105,7 +105,13 @@ var target_building: Building = null
 # "uno sopra l'altro" sulla stessa microcella dopo un deposito ripetuto. Qui però è una vera
 # costante di classe (non un valore di debug "usa e getta"): haul_resource, a differenza del test
 # Daydream, non è un hook temporaneo.
+# Oggi usata SOLO dal ramo pensiero (Daydream); il ramo fisico usa PHYSICAL_WALK_AWAY_DISTANCE sotto.
 const WALK_AWAY_DISTANCE: float = 5.0
+# "Cammina via" dopo un deposito FISICO completo — transport, haul_resource e scarico manuale dello
+# zaino (2026-09-25, richiesta utente: da 5 a circa 1 microcella, un piccolo passo per liberare la
+# microcella dell'edificio invece di un allontanamento vero). Misurata dal centro della microcella
+# dell'edificio: il tratto effettivamente percorso è quindi circa 0.5–1.5 microcelle.
+const PHYSICAL_WALK_AWAY_DISTANCE: float = 1.0
 
 # Costo/durata del deposito FISICO (2026-09-10, richiesta utente — "lo metterei come unload, sia
 # come costo che come tempo", stesso schema esatto di PickUpAction.get_stamina_delta/is_complete:
@@ -139,10 +145,20 @@ var _elapsed: float = 0.0
 var _restored_from_save: bool = false
 
 
-func _init(p_target_building: Building = null, p_deposit_kind: DepositKind = DepositKind.THOUGHT) -> void:
+# Modalità "cintura" (2026-09-25, richiesta utente — riponi un attrezzo in un magazzino dal pannello
+# individuo): se >= 0, lo step deposita in target_building l'attrezzo di QUESTO slot della cintura,
+# senza passare dallo zaino e senza la logica di re-routing/ricerca magazzino del deposito normale
+# (il magazzino è già stato scelto da GameScene con WarehouseSelectionService.find_best). Richiede
+# deposit_kind RESOURCE. -1 (default) = deposito normale dallo zaino. Persistito (get_save_data, letto
+# da TaskPersistenceService._build_step).
+var unequip_slot_index: int = -1
+
+
+func _init(p_target_building: Building = null, p_deposit_kind: DepositKind = DepositKind.THOUGHT, p_unequip_slot_index: int = -1) -> void:
 	target = null
 	target_building = p_target_building
 	deposit_kind = p_deposit_kind
+	unequip_slot_index = p_unequip_slot_index
 	# INFANT non può eseguire questa Action (2026-09-12, richiesta utente — collegamento AgeBand.
 	# INFANT al gameplay, vedi Action.disallowed_age_bands). CHILD aggiunto 2026-09-13 (richiesta
 	# utente).
@@ -189,6 +205,9 @@ func activate(individual: Variant, context: Dictionary) -> void:
 	_duration = 0.0
 	_total_stamina_cost = 0.0
 	_elapsed = 0.0
+	if unequip_slot_index >= 0:
+		_activate_unequip(individual)
+		return
 	if deposit_kind == DepositKind.RESOURCE and target_building != null and not individual.carried_resources.is_empty():
 		# Zaino multi-risorsa (2026-09-20, richiesta utente): deposita TUTTO quello che l'edificio accetta.
 		# Costo/durata = somma, per ogni varietà accettata, di min(get_max_depositable, quantità in spalla) —
@@ -349,6 +368,9 @@ func get_required_position(individual: Variant, context: Dictionary) -> Variant:
 # lo sono. target_building può essere valorizzato anche qui (vedi nota sul campo, in testa al file)
 # ma non è ancora consumato da questo ramo — nessun comportamento nuovo introdotto in questo passo.
 func on_complete(individual: Variant, context: Dictionary) -> void:
+	if unequip_slot_index >= 0:
+		_complete_unequip(individual, context)
+		return
 	if deposit_kind == DepositKind.RESOURCE:
 		if DebugLogging.ENABLED and DebugLogging.SHOW_TRANSPORT_BUILD_LOGS:
 			print("[UNLOAD] on_complete: ramo FISICO (target_building id=%s)" % (str(target_building.id) if target_building != null else "null"))
@@ -417,7 +439,8 @@ func on_complete(individual: Variant, context: Dictionary) -> void:
 			# Le decay_fraction vivono dentro le entry di carried_resources: con lo zaino vuoto non resta
 			# nessun valore "orfano" (vedi HumanIndividual.carried_resources).
 			# "Cammina via" (2026-09-09, richiesta utente — haul_resource, stesso schema di walk_away
-			# in Daydream: target_building.position + Vector2.from_angle(randf() * TAU) * 5.0) — SOLO
+			# in Daydream: target_building.position + Vector2.from_angle(randf() * TAU) * distanza,
+			# qui PHYSICAL_WALK_AWAY_DISTANCE = 1.0, non i 5.0 del ramo pensiero) — SOLO
 			# quando lo zaino si è svuotato DEL TUTTO qui (deposito completo, nessun residuo da
 			# reinstradare sotto): mai per il ramo pensiero (richiesta esplicita utente: "quando
 			# UnloadAction.on_complete() deposita fisicamente con successo"). Questa Action non ha
@@ -442,7 +465,7 @@ func on_complete(individual: Variant, context: Dictionary) -> void:
 			# aggiornare anche questo punto.
 			var macro_offset: Vector2 = Vector2(Vector2i(target_building.macro_x, target_building.macro_y) - individual.home_macro_coords) * World.WIDTH
 			var building_position: Vector2 = Vector2(target_building.micro_x, target_building.micro_y) + macro_offset
-			context["pending_walk_away_position"] = building_position + Vector2.from_angle(randf() * TAU) * WALK_AWAY_DISTANCE
+			context["pending_walk_away_position"] = building_position + Vector2.from_angle(randf() * TAU) * PHYSICAL_WALK_AWAY_DISTANCE
 			return
 		# RESIDUO (2026-09-14, richiesta utente — deposito parziale, punto 1 del piano concordato:
 		# "deposito ok seguito da rerouting SOLO del residuo") — copre ENTRAMBI i casi che lasciano
@@ -546,12 +569,48 @@ func on_complete(individual: Variant, context: Dictionary) -> void:
 #
 # `target` resta sempre null per questa Action (vedi _init sopra) quindi non è mai coperto dal
 # trattamento GENERICO di TaskPersistenceService.serialize_task.
+# Modalità "cintura": durata e stamina con la stessa formula del deposito normale, sullo spazio di
+# UNA unità dell'attrezzo dello slot; nulla da fare (durata 0) se lo slot è vuoto o il magazzino non
+# lo accetta più.
+func _activate_unequip(individual: Variant) -> void:
+	var tool_name: String = individual.get_equipped_tool(unequip_slot_index)
+	if tool_name == "" or target_building == null or BuildingStorageService.get_max_depositable(target_building, tool_name) <= 0:
+		return
+	var resource_rules := CaloricCalculator.get_caloric_source_rules(tool_name)
+	var space: float = resource_rules.space_per_unit if resource_rules != null else 0.0
+	if space > 0.0 and individual.max_carry_capacity > 0.0:
+		_duration = space / individual.max_carry_capacity
+		_total_stamina_cost = STAMINA_COST_PER_SPACE_UNIT * space
+
+
+# Modalità "cintura": deposita l'attrezzo dello slot (ricontrollando che il magazzino lo accetti) e
+# libera lo slot; se il magazzino non lo accetta più l'attrezzo resta in cintura, mai perso. Poi lo
+# stesso piccolo "cammina via" del deposito fisico (PHYSICAL_WALK_AWAY_DISTANCE). game_data null:
+# capacità corretta del solo bonus dello slot (vedi HumanIndividual._recalculate_carry_capacity_after_
+# tool_change).
+func _complete_unequip(individual: Variant, context: Dictionary) -> void:
+	var tool_name: String = individual.get_equipped_tool(unequip_slot_index)
+	if tool_name == "" or target_building == null:
+		return
+	if BuildingStorageService.get_max_depositable(target_building, tool_name) <= 0:
+		return
+	if BuildingStorageService.store(target_building, tool_name, 1, 0.0) <= 0:
+		return
+	individual.take_equipped_tool(unequip_slot_index, null)
+	resource_deposited.emit(target_building)
+	var macro_offset: Vector2 = Vector2(Vector2i(target_building.macro_x, target_building.macro_y) - individual.home_macro_coords) * World.WIDTH
+	var building_position: Vector2 = Vector2(target_building.micro_x, target_building.micro_y) + macro_offset
+	context["pending_walk_away_position"] = building_position + Vector2.from_angle(randf() * TAU) * PHYSICAL_WALK_AWAY_DISTANCE
+
+
 func get_save_data() -> Dictionary:
 	var data := {
 		"duration": _duration,
 		"elapsed": _elapsed,
 		"total_stamina_cost": _total_stamina_cost,
 		"deposit_kind": deposit_kind,
+		# Modalità "cintura" (2026-09-25) — letta da TaskPersistenceService._build_step.
+		"unequip_slot_index": unequip_slot_index,
 	}
 	if target_building != null:
 		data["target_building_id"] = target_building.id

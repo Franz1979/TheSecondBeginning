@@ -139,10 +139,24 @@ corner_radius_bottom_left = 3
 [node name="HumanIndividualInfoPanel" type="VBoxContainer"]
 script = ExtResource("1_hind")
 
-[node name="ActivityLabel" type="Label" parent="."]
+[node name="ActivityRow" type="HBoxContainer" parent="."]
 layout_mode = 2
+
+[node name="ActivityLabel" type="Label" parent="ActivityRow"]
+layout_mode = 2
+size_flags_horizontal = 3
 theme_override_font_sizes/font_size = 11
 autowrap_mode = 2
+
+[node name="CancelTaskButton" type="Button" parent="ActivityRow"]
+visible = false
+layout_mode = 2
+size_flags_vertical = 0
+custom_minimum_size = Vector2(18, 18)
+mouse_default_cursor_shape = 2
+theme_override_font_sizes/font_size = 10
+flat = true
+text = "✕"
 
 [node name="QueuedTasksLabel" type="Label" parent="."]
 layout_mode = 2
@@ -644,6 +658,13 @@ theme_override_font_sizes/font_size = 14
 horizontal_alignment = 1
 vertical_alignment = 1
 text = "T"
+
+[node name="ToolWarningLabel" type="Label" parent="."]
+visible = false
+layout_mode = 2
+theme_override_colors/font_color = Color(1, 0.8, 0.3, 1)
+theme_override_font_sizes/font_size = 11
+autowrap_mode = 2
 
 [node name="IdLabel" type="Label" parent="."]
 layout_mode = 2

@@ -14,7 +14,8 @@ class_name SecondaryResourceTypes
 # RAW_MATERIAL a FOOD+RAW_MATERIAL (2026-09-09, richiesta utente) — la distinzione di velocità di
 # deperibilità non era consultata da nessuna logica; se servirà in futuro un vero sistema di
 # conservazione/scorte, si riaggiungerà come campo dedicato, non rimettendo sottocategorie qui.
-# Non ancora consultato da nessuna logica — solo il dato.
+# Consultato da BuildingStorageService.can_accept (BuildingRules.accepted_categories per tipo e
+# Building.enabled_categories per istanza).
 #
 # MEDICINAL (2026-09-19, richiesta utente — erbe medicinali, non alimentari né materiale da
 # costruzione) aggiunto IN FONDO: i .tres salvano il valore NUMERICO (FOOD è 0 implicito,
@@ -24,7 +25,8 @@ class_name SecondaryResourceTypes
 #
 # SEMI_FINISHED/TOOL (2026-09-23, richiesta utente — sistema di produzione, step 1: solo dati)
 # aggiunti IN FONDO per lo stesso motivo: risorse prodotte presso una workstation (es. corda) e
-# strumenti. Nessuna risorsa esistente li usa ancora.
+# strumenti. SEMI_FINISHED: fiber_rope (consumata come materiale da costruzione, es. stick_tent).
+# TOOL: stone_knife, wooden_spear (prodotti, ma nessuna logica di equipaggiamento li usa ancora).
 enum Category {
 	FOOD,
 	RAW_MATERIAL,

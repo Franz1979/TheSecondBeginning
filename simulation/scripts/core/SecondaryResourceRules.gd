@@ -212,7 +212,9 @@ extends Resource
 
 @export_group("Recipe")
 # Ricetta di produzione presso una workstation (2026-09-23, richiesta utente — sistema di
-# produzione, step 1: solo il dato, nessuna logica lo legge ancora). Una risorsa prodotta resta
+# produzione): letta da ProductionService (consumo input, lavoro, combustibile, uscita) e dal
+# pannello edificio per i pulsanti ricetta. Oggi valorizzata su fiber_rope, stone_knife e
+# wooden_spear. Una risorsa prodotta resta
 # questa stessa classe: le risorse naturali lasciano l'intero gruppo ai default (vuoto = non
 # producibile).
 # Nome risorsa (secondary_resource_name) -> quantità consumata per UN ciclo di produzione — stessa
@@ -229,3 +231,21 @@ extends Resource
 # Tipi di edificio (Building.building_type_name, es. "hut" — non la chiave tr() di BuildingRules.
 # building_name) presso cui la ricetta è eseguibile. Vuoto = risorsa non producibile.
 @export var recipe_workstation_types: Array[String] = []
+# Categorie di attrezzo che servono per produrre questa risorsa (2026-09-25, richiesta utente) —
+# TaskTypes.ToolCategory, stessa enum di Action.required_tool_categories e di tool_categories sotto.
+# Il futuro gate degli attrezzi le SOMMERÀ a quelle richieste dall'Action (ProduceAction), non le
+# sostituirà. Da compilare più avanti: oggi nessuna risorsa lo valorizza e nessuna logica lo legge.
+# Vuoto = nessun attrezzo richiesto dalla ricetta.
+@export var recipe_required_tool_categories: Array[TaskTypes.ToolCategory] = []
+
+@export_group("Tool")
+# Campi degli attrezzi (2026-09-25, richiesta utente) — solo il dato: NESSUNA logica li legge ancora
+# (equipaggiamento, usura, caccia/combattimento arriveranno dopo). Valorizzati oggi su wooden_spear e
+# stone_knife (category TOOL); ogni altra risorsa li lascia ai default (non è un attrezzo).
+# Cosa l'attrezzo sa fare — TaskTypes.ToolCategory, la stessa enum di Action.required_tool_categories.
+# I .tres salvano i valori numerici dell'enum (Array[int]). Vuoto = non è un attrezzo.
+@export var tool_categories: Array[TaskTypes.ToolCategory] = []
+# Numero di utilizzi prima di rompersi. 0 = non applicabile (non è un attrezzo, o non si usura).
+@export var max_uses: int = 0
+# Quanto fa male se usato per colpire (caccia/combattimento). 0.0 = non è un'arma.
+@export var attack_power: float = 0.0

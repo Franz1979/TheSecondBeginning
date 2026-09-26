@@ -121,6 +121,11 @@ func load_game_from_json(file_path: String) -> LoadedGame:
 	# .get(key, 0) per compatibilità con save precedenti l'introduzione della pulizia
 	# periodica del fog of war (vedi GameData) — 0 è lo stesso default della classe.
 	game_data.fog_of_war_last_prune_absolute_day = int(data["game"].get("fog_of_war_last_prune_absolute_day", 0))
+	# Individui animali (step 2, vedi GameData) — .get() con i default della classe per i save
+	# precedenti: nessun individuo salvato = rigenerazione dalla popolazione, contatore invariato.
+	# Lasciati grezzi (numeri JSON come float): li converte GameScene alla ricostruzione.
+	game_data.animal_individuals_by_cell = data["game"].get("animal_individuals_by_cell", [])
+	game_data.next_animal_individual_id = int(data["game"].get("next_animal_individual_id", 0))
 	# .get(key, []) per compatibilità con save precedenti l'introduzione del log morti (Step 8,
 	# vedi GameData.death_events) — [] è lo stesso default della classe.
 	game_data.death_events = _dictionary_array_from_json(data["game"].get("death_events", []))
@@ -701,6 +706,12 @@ func load_game_from_json(file_path: String) -> LoadedGame:
 						"quantity": legacy_quantity,
 						"decay_fraction": float(individual_data.get("carried_decay_fraction", 0.0)),
 					}
+			# Cintura degli attrezzi (2026-09-25, richiesta utente): .get() con [] per i save precedenti
+			# (cintura vuota). Il numero di posti viene poi riallineato a HumanRules.tool_slot_count da
+			# HumanIndividual._ensure_tool_slots alla prima lettura.
+			individual.equipped_tools.clear()
+			for saved_tool in individual_data.get("equipped_tools", []):
+				individual.equipped_tools.append(String(saved_tool) if saved_tool != null else "")
 			# Task/Action in corso (2026-09-08, richiesta utente) — "current_task" assente (save
 			# precedente a questo campo) o esplicitamente null (individuo a Rest implicito al
 			# momento del salvataggio) lasciano individual.current_task al default null, nessuna

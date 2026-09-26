@@ -49,6 +49,26 @@ theme_override_font_sizes/font_size = 11
 vertical_alignment = 1
 text = "Coords: -"
 
+[node name="VSeparatorAnimals" type="VSeparator" parent="MarginContainer/HBoxContainer/ContentGroup"]
+layout_mode = 2
+
+[node name="AnimalSummaryLabel" type="Label" parent="MarginContainer/HBoxContainer/ContentGroup"]
+layout_mode = 2
+mouse_filter = 1
+theme_override_font_sizes/font_size = 11
+vertical_alignment = 1
+text = "Animali: -"
+
+[node name="VSeparatorFps" type="VSeparator" parent="MarginContainer/HBoxContainer/ContentGroup"]
+layout_mode = 2
+
+[node name="FpsLabel" type="Label" parent="MarginContainer/HBoxContainer/ContentGroup"]
+custom_minimum_size = Vector2(52, 0)
+layout_mode = 2
+theme_override_font_sizes/font_size = 11
+vertical_alignment = 1
+text = "FPS: -"
+
 [node name="VSeparator3" type="VSeparator" parent="MarginContainer/HBoxContainer/ContentGroup"]
 layout_mode = 2
 

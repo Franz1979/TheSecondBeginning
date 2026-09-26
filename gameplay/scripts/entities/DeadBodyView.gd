@@ -125,7 +125,9 @@ func setup_dead_body(
 		)
 		var age_multiplier: float = human_rules.size_multiplier_by_age[age_band]
 		var sex_multiplier: float = human_rules.size_multiplier_by_sex[sex]
-		scale = Vector2.ONE * age_multiplier * sex_multiplier
+		scale = Vector2.ONE * BASE_DRAW_SCALE * age_multiplier * sex_multiplier
+	else:
+		scale = Vector2.ONE * BASE_DRAW_SCALE
 	queue_redraw()
 
 

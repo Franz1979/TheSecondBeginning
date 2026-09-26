@@ -75,6 +75,15 @@ var _active_neighbor_coords_set: Dictionary = {}
 # pulizia — entrambi rimandati a un prossimo step dedicato una volta validata questa forma dati.
 var fog_of_war_memories: Dictionary = {}
 
+# Individui animali da un salvataggio appena caricato (individui animali step 2), in attesa che la
+# loro cella diventi viva: Vector2i (coord macro) -> Array di entry (formato AnimalGroupRenderer.
+# get_individuals_snapshot). Riempito una volta in _ready da _take_saved_animal_individuals,
+# consumato cella per cella da _restore_saved_animal_individuals all'attivazione e svuotato del
+# tutto al primo giorno che avanza (_on_day_advanced): serve solo a rendere identico "salva e
+# ricarica" per le celle vive al salvataggio, mai a far ricomparire gli stessi individui in una
+# visita successiva (uscendo da una cella gli individui restano scartati, come sempre).
+var _pending_saved_animal_individuals: Dictionary = {}
+
 # DEBUG TEMPORANEO — misura quanti individui TREE/SHRUB stiamo trattando come tali, per macrocella
 # mai per costruzione più delle celle vive/appena uscite dal set vivo (max 4) con questo sistema —
 # serve da baseline prima del redesign "individui solo dove il fog è fresco" (vedi discussione con
@@ -251,7 +260,7 @@ var human_individual_views: Array[HumanIndividualView] = []
 # MICROCELL aggiunto (2026-09-16, richiesta utente — ispezione con doppio click sinistro): settimo
 # tipo, stessa mutua esclusione a N vie degli altri sei (vedi _select_microcell/
 # _clear_microcell_selection).
-enum SelectionKind { NONE, INDIVIDUAL, VEGETATION, BUILDING, DEAD_BODY, STONE, STICK_LOT, MICROCELL }
+enum SelectionKind { NONE, INDIVIDUAL, VEGETATION, BUILDING, DEAD_BODY, STONE, STICK_LOT, MICROCELL, ANIMAL }
 var _selection_kind: SelectionKind = SelectionKind.NONE
 
 # Click-detection su un singolo individuo di vegetazione (TREE/SHRUB) — vedi
@@ -306,6 +315,17 @@ const STONE_INFO_PANEL_SCENE := preload("res://gameplay/scenes/game/StoneInfoPan
 var stone_selector_controller := StoneSelectorController.new()
 var selected_stone: Dictionary = {}
 var stone_info_panel: StoneInfoPanel
+
+# Click-detection su un singolo individuo animale (2026-09-25, richiesta utente) — vedi
+# AnimalSelectorController. {} = nessuna selezione, altrimenti {"macro_coords": Vector2i,
+# "species": String, "individual_id": int} (più "distance" dal selettore, non usato dopo).
+# Significativo solo quando _selection_kind == ANIMAL. L'individuo resta posseduto dal suo
+# AnimalGroupRenderer (lo si ritrova per id), che disegna anche l'anello di selezione. Vedi
+# _select_animal/_clear_animal_selection/_refresh_animal_panel.
+const ANIMAL_INFO_PANEL_SCENE := preload("res://gameplay/scenes/game/AnimalInfoPanel.tscn")
+var animal_selector_controller := AnimalSelectorController.new()
+var selected_animal: Dictionary = {}
+var animal_info_panel: AnimalInfoPanel
 
 # Click-detection sul "terreno" di una microcella TREE (2026-09-08, richiesta utente) — a
 # differenza di selected_vegetation (un individuo preciso) qui l'intero LOTTO è il bersaglio, vedi
@@ -546,6 +566,19 @@ func _ready() -> void:
 	game_info_tabs.selection_content.add_child(human_individual_info_panel)
 	# Step 9d piano mortalità (2026-09-05) — vedi _on_kill_requested.
 	human_individual_info_panel.kill_requested.connect(_on_kill_requested)
+	# Cintura degli attrezzi (2026-09-25, richiesta utente) — stesso schema di kill_requested.
+	human_individual_info_panel.equip_tool_requested.connect(_on_equip_tool_requested)
+	human_individual_info_panel.unequip_tool_requested.connect(_on_unequip_tool_requested)
+	# X accanto all'attività nel pannello (2026-09-25, richiesta utente) — stessa funzione del tasto H.
+	human_individual_info_panel.cancel_task_requested.connect(_on_cancel_task_requested)
+	# Click destro sugli slot della cintura (2026-09-25, richiesta utente): Task "prendi/riponi attrezzo".
+	human_individual_info_panel.tool_from_storage_requested.connect(_on_tool_from_storage_requested)
+	human_individual_info_panel.tool_to_storage_requested.connect(_on_tool_to_storage_requested)
+	# Dialogo di scelta dell'attrezzo: una istanza DEDICATA dello stesso OptionChoiceDialog della
+	# Transport (stesso aspetto/impaginazione), mai condivisa con quella (vedi OptionChoiceDialog.gd).
+	tool_storage_dialog = OPTION_CHOICE_DIALOG_SCENE.instantiate()
+	add_child(tool_storage_dialog)
+	tool_storage_dialog.resource_chosen.connect(_on_tool_storage_resource_chosen)
 	# building_info_panel (Step 5, richiesta utente 2026-09-04) — terzo sibling nella STESSA
 	# SelectionTab, stesso identico principio "componente muto" di vegetation_info_panel/
 	# human_individual_info_panel; zero modifiche a GameInfoTabs per aggiungerlo (già agnostica).
@@ -563,6 +596,10 @@ func _ready() -> void:
 	# stesso identico principio "componente muto" degli altri quattro.
 	stone_info_panel = STONE_INFO_PANEL_SCENE.instantiate()
 	game_info_tabs.selection_content.add_child(stone_info_panel)
+	# animal_info_panel (2026-09-25, richiesta utente) — altro sibling nella STESSA SelectionTab,
+	# stesso principio "componente muto" degli altri.
+	animal_info_panel = ANIMAL_INFO_PANEL_SCENE.instantiate()
+	game_info_tabs.selection_content.add_child(animal_info_panel)
 	# terrain_scattered_resource_info_panel (2026-09-08, richiesta utente; rinominato 2026-09-15 da
 	# stick_lot_info_panel, vedi TerrainScatteredResourceInfoPanel.gd) — sesto sibling nella STESSA
 	# SelectionTab, stesso identico principio "componente muto" degli altri cinque.
@@ -711,6 +748,16 @@ func _ready() -> void:
 			)
 			game_data.player_macro_cell_x = chosen.x
 			game_data.player_macro_cell_y = chosen.y
+			# "Presenza sicura animali": garantisce una preda piccola (conigli e/o pernici) sulla cella
+			# di partenza DEFINITIVA, seminandola se manca — vedi AnimalSeedingService.
+			# ensure_small_prey_at. Solo qui (prima apertura di una partita nuova, dopo il seeding
+			# normale di WorldScene), mai per un salvataggio caricato. Esclusa CLASSIC, che per scelta
+			# non semina animali. Prima di qualunque _activate_live_cell sotto, così gli individui
+			# animali della cella di partenza includono già la preda al primo frame.
+			if game_data.starting_guarantee_animal_presence and game_data.starting_world_age_mode != "CLASSIC":
+				AnimalSeedingService.new().ensure_small_prey_at(
+					macro_world, chosen, AnimalSeedingService.population_size_from_string(game_data.starting_population_size)
+				)
 
 	# Semina Folk + HumanPopulationGroup + HumanIndividual (coppie fondatrici + figli) — vedi
 	# HumanSeedingService per l'algoritmo di composizione/eta'/nomi — OPPURE ricostruisce un popolo
@@ -897,6 +944,10 @@ func _ready() -> void:
 	# _refresh_population_panel sopra, non lasciata vuota finché non arriva il primo refresh reale.
 	_refresh_buildings_panel()
 
+	# Individui animali salvati (step 2): PRIMA di attivare qualunque cella viva, così la prima
+	# attivazione li ricostruisce invece di rigenerarli dalla popolazione.
+	_take_saved_animal_individuals()
+
 	# Prima cella viva: il centro. center_macro_coords va fissato PRIMA di attivarla, perché
 	# _activate_live_cell non decide da sé "sono il centro" — è solo orchestrazione qui.
 	center_macro_coords = Vector2i(game_data.player_macro_cell_x, game_data.player_macro_cell_y)
@@ -1070,6 +1121,8 @@ func _process(delta: float) -> void:
 	if _debug_panel_refresh_timer >= DEBUG_PANEL_REFRESH_INTERVAL_SEC:
 		_debug_panel_refresh_timer = 0.0
 		_refresh_selected_individual_panel()
+		_refresh_debug_animal_summary()
+		_validate_selected_animal()
 
 	# Ciclo su TUTTI gli individui con una Task attiva (2026-09-12, richiesta utente — piano
 	# multi-individuo, Step 2: GENERALIZZA il refactor "loop-readiness" del 2026-09-10 — quello
@@ -1281,6 +1334,10 @@ func _unhandled_input(event: InputEvent) -> void:
 	# building_hit (distanza in PIXEL, spazio locale della cella del match), compete alla pari nel
 	# confronto map_hit sotto, nessun trattamento speciale.
 	var stone_hit := stone_selector_controller.try_select(event, live_cells)
+	# Animale (2026-09-25, richiesta utente) — stessa unità (PIXEL locali della cella) e stesso
+	# confronto alla pari di vegetazione/edifici/pietre; solo animali visibili (vedi
+	# AnimalSelectorController), con tolleranza ampia come per gli umani.
+	var animal_hit := animal_selector_controller.try_select(event, live_cells)
 	# stick_lot_hit (click SINISTRO) RIMOSSO (2026-09-16, richiesta utente — "va tolto il click
 	# singolo sulla cella"): calcolava il lotto sotto il click SOLO per il ciclo click-ripetuto e il
 	# fallback "nessun oggetto preciso -> seleziona il lotto" più sotto, entrambi rimossi in questo
@@ -1331,6 +1388,10 @@ func _unhandled_input(event: InputEvent) -> void:
 		map_hit = stone_hit
 		map_hit_kind = SelectionKind.STONE
 		best_map_distance_px = stone_hit["distance"]
+	if not animal_hit.is_empty() and animal_hit["distance"] < best_map_distance_px:
+		map_hit = animal_hit
+		map_hit_kind = SelectionKind.ANIMAL
+		best_map_distance_px = animal_hit["distance"]
 
 	# Ciclo click-ripetuto vegetazione/stick-lot RIMOSSO (2026-09-16, richiesta utente — "va tolto
 	# il click singolo sulla cella. il click singolo vale solo su un oggetto... per vedere quello
@@ -1349,6 +1410,8 @@ func _unhandled_input(event: InputEvent) -> void:
 				_select_dead_body(map_hit)
 			SelectionKind.STONE:
 				_select_stone(map_hit)
+			SelectionKind.ANIMAL:
+				_select_animal(map_hit)
 	else:
 		if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
 			_clear_vegetation_selection()
@@ -1356,7 +1419,8 @@ func _unhandled_input(event: InputEvent) -> void:
 			_clear_dead_body_selection()
 			_clear_stone_selection()
 			_clear_stick_lot_selection()
-			_clear_microcell_selection() # mutua esclusione a 7 vie (2026-09-16, prima "a 6 vie")
+			_clear_microcell_selection() # mutua esclusione a 8 vie (2026-09-25, con gli animali)
+			_clear_animal_selection()
 			# Selezione di un individuo umano QUALSIASI (richiesta utente, 2026-09-02) — hit-test
 			# puro via HumanIndividualSelectorController (non tocca mai is_selected da sé), mutua
 			# esclusione applicata qui: al più un individuo selezionato alla volta in tutto
@@ -2104,7 +2168,8 @@ func _assign_transport_task(
 # Obiettivo di UN viaggio (2026-09-20): min(quantita' ancora da portare, fabbisogno della destinazione) se la
 # destinazione non e' completa — il fabbisogno e' BuildingStorageService.get_max_depositable (per un cantiere
 # = required - stored della fase in corso: materiale di setup, poi required_materials) — altrimenti (edificio
-# completo, magazzino) la sola quantita' ancora da portare. Ricalcolato a ogni viaggio, perche' il fabbisogno
+# completo, magazzino) min(quantita' ancora da portare, posto reale), 0 se la categoria non e' accettata (dal
+# 2026-09-25, prima la sola quantita' ancora da portare). Ricalcolato a ogni viaggio, perche' il fabbisogno
 # puo' essere cambiato (un altro portatore ha consegnato, la fase e' avanzata).
 func _transport_trip_target(destination_building: Building, resource_name: String, remaining_quantity: int) -> int:
 	if remaining_quantity <= 0 or destination_building == null:
@@ -2115,7 +2180,16 @@ func _transport_trip_target(destination_building: Building, resource_name: Strin
 	# solo fino alla quantità esatta mancante, stesso tetto di un cantiere.
 	if not destination_building.is_complete or ProductionService.is_production_demand(destination_building, resource_name):
 		return mini(remaining_quantity, BuildingStorageService.get_max_depositable(destination_building, resource_name))
-	return remaining_quantity
+	# Edificio completo (2026-09-25, richiesta utente — bugfix "Transport verso chi non può ricevere",
+	# es. un coltello al focolare, che non ha slot di stoccaggio): stesso criterio di
+	# WarehouseSelectionService.find_best — categoria accettata (can_accept) E posto reale
+	# (get_max_depositable). Prima l'obiettivo era la quantità chiesta senza alcun controllo: il comando
+	# partiva, il viaggio andava a vuoto e la merce veniva reinstradata a un altro magazzino. Obiettivo 0
+	# = comando rifiutato con la X (vedi _assign_transport_task). Il controllo all'arrivo e il
+	# reinstradamento di UnloadAction restano invariati, per i cambiamenti durante il viaggio.
+	if not BuildingStorageService.can_accept(destination_building, resource_name):
+		return 0
+	return mini(remaining_quantity, BuildingStorageService.get_max_depositable(destination_building, resource_name))
 
 
 # Costruisce la Transport Task SENZA assegnarla ne' collegare i segnali (2026-09-20, estratta per riusarla nella
@@ -2557,6 +2631,15 @@ func _center_camera_on_selection(animated: bool = true) -> void:
 			var stone_local_position: Vector2 = stone_cell.renderer.get_stone_screen_position(selected_stone["position"])
 			var stone_macro_offset := Vector2(stone_macro_coords - center_macro_coords) * MACRO_CELL_PIXELS
 			_animate_camera_to(stone_local_position + stone_macro_offset, animated)
+		SelectionKind.ANIMAL:
+			# Stessa traduzione cross-macrocella dei rami sopra (2026-09-25): posizione corrente
+			# dell'individuo (si muove, quindi letta al momento del centramento).
+			var animal := _find_selected_animal()
+			if animal == null:
+				return
+			var animal_macro_coords: Vector2i = selected_animal["macro_coords"]
+			var animal_macro_offset := Vector2(animal_macro_coords - center_macro_coords) * MACRO_CELL_PIXELS
+			_animate_camera_to(animal.position * MicroCellRenderer.CELL_SIZE + animal_macro_offset, animated)
 		SelectionKind.STICK_LOT:
 			# Nessun get_*_screen_position dedicato (2026-09-08, richiesta utente): il bersaglio è il
 			# CENTRO del lotto stesso, non un oggetto puntiforme — stessa conversione lotto*CELL_SIZE
@@ -2646,6 +2729,7 @@ func _on_population_individual_center_requested(target: HumanIndividual, source:
 	_clear_stone_selection()
 	_clear_stick_lot_selection()
 	_clear_microcell_selection()
+	_clear_animal_selection()
 	_deselect_all_human_individuals()
 	target.is_selected = true
 	_selection_kind = SelectionKind.INDIVIDUAL
@@ -2697,6 +2781,7 @@ func _select_vegetation(hit: Dictionary) -> void:
 	_clear_stone_selection()
 	_clear_stick_lot_selection()
 	_clear_microcell_selection()
+	_clear_animal_selection()
 	selected_vegetation = hit
 	_selection_kind = SelectionKind.VEGETATION
 	_refresh_vegetation_panel()
@@ -2740,6 +2825,7 @@ func _select_building(hit: Dictionary) -> void:
 	_clear_stone_selection()
 	_clear_stick_lot_selection()
 	_clear_microcell_selection()
+	_clear_animal_selection()
 	selected_building = hit
 	_selection_kind = SelectionKind.BUILDING
 	_refresh_building_panel()
@@ -2771,7 +2857,7 @@ func _refresh_building_panel() -> void:
 	if building == null:
 		_clear_building_selection()
 		return
-	building_info_panel.show_building(building, _resolve_building_residents_display_data(building), _resolve_assigned_builder_names(building), _resolve_production_claimant_names(building), _resolve_production_claimed_recipes(building))
+	building_info_panel.show_building(building, _resolve_building_residents_display_data(building), _resolve_assigned_builder_names(building), _resolve_production_claimant_names(building), _resolve_production_claimed_recipes(building), _resolve_production_tool_wait_lines(building))
 	# Titolo (Step 6, richiesta utente 2026-09-04) — stessa formula già in BuildingInfoPanel.
 	var type_name: String = tr(building.rules.building_name) if building.rules != null else building.building_type_name
 	game_info_tabs.set_selection_title(tr("selection_title_type").format({"type": type_name}))
@@ -2834,7 +2920,7 @@ func _on_empty_all_requested(building: Building) -> void:
 	if building == null:
 		return
 	building.stored_resources.clear()
-	building_info_panel.show_building(building, _resolve_building_residents_display_data(building), _resolve_assigned_builder_names(building), _resolve_production_claimant_names(building), _resolve_production_claimed_recipes(building))
+	building_info_panel.show_building(building, _resolve_building_residents_display_data(building), _resolve_assigned_builder_names(building), _resolve_production_claimant_names(building), _resolve_production_claimed_recipes(building), _resolve_production_tool_wait_lines(building))
 	var macro_coords := Vector2i(building.macro_x, building.macro_y)
 	if live_cells.has(macro_coords):
 		_refresh_building_visuals(live_cells[macro_coords])
@@ -2947,6 +3033,7 @@ func _select_stone(hit: Dictionary) -> void:
 	_clear_dead_body_selection() # mutua esclusione a 7 vie (2026-09-16, prima "a 6 vie")
 	_clear_stick_lot_selection()
 	_clear_microcell_selection()
+	_clear_animal_selection()
 
 	selected_stone = hit
 	_selection_kind = SelectionKind.STONE
@@ -2983,6 +3070,82 @@ func _refresh_stone_panel() -> void:
 	var zone_stone_quantity: int = cell.macro_state.get_resource_quantity(GameTypes.WorldObjectType.ROCK)
 	stone_info_panel.show_stone(zone_stone_quantity)
 	game_info_tabs.set_selection_title(tr("selection_title_type").format({"type": tr("stone_selection_title")}))
+
+
+# ============================================================================================
+# Selezione di un individuo animale — 2026-09-25, richiesta utente. Struttura gemella di
+# _select_stone/_clear_stone_selection/_refresh_stone_panel sopra. L'anello di evidenziazione è
+# disegnato dall'AnimalGroupRenderer della specie (set_selected_individual), che lo fa seguire
+# all'individuo mentre si muove; qui si decide solo QUALE individuo.
+# ============================================================================================
+
+func _select_animal(hit: Dictionary) -> void:
+	for coords in live_cells:
+		var cell: LiveMacroCell = live_cells[coords]
+		for renderer_node in cell.animal_renderers.values():
+			renderer_node.clear_selected_individual()
+	var hit_cell: LiveMacroCell = live_cells.get(hit["macro_coords"])
+	if hit_cell != null and hit_cell.animal_renderers.has(hit["species"]):
+		hit_cell.animal_renderers[hit["species"]].set_selected_individual(int(hit["individual_id"]))
+
+	_deselect_all_human_individuals()
+	human_individual_info_panel.clear()
+	_clear_vegetation_selection()
+	_clear_building_selection()
+	_clear_dead_body_selection()
+	_clear_stone_selection()
+	_clear_stick_lot_selection()
+	_clear_microcell_selection() # mutua esclusione a 8 vie (2026-09-25, con gli animali)
+
+	selected_animal = hit
+	_selection_kind = SelectionKind.ANIMAL
+	_refresh_animal_panel()
+	game_info_tabs.show_selection_tab()
+
+
+func _clear_animal_selection() -> void:
+	if selected_animal.is_empty():
+		return
+	var cell: LiveMacroCell = live_cells.get(selected_animal["macro_coords"])
+	if cell != null and cell.animal_renderers.has(selected_animal["species"]):
+		cell.animal_renderers[selected_animal["species"]].clear_selected_individual()
+	selected_animal = {}
+	_selection_kind = SelectionKind.NONE
+	animal_info_panel.clear()
+	game_info_tabs.hide_selection_tab()
+
+
+# L'individuo selezionato, ritrovato per id nel renderer della sua specie — null se non esiste più
+# (rimosso dalla riconciliazione con la popolazione, o cella non più viva).
+func _find_selected_animal() -> AnimalVisualGroup:
+	if selected_animal.is_empty():
+		return null
+	var cell: LiveMacroCell = live_cells.get(selected_animal["macro_coords"])
+	if cell == null or not cell.animal_renderers.has(selected_animal["species"]):
+		return null
+	return cell.animal_renderers[selected_animal["species"]].get_individual_by_id(int(selected_animal["individual_id"]))
+
+
+# Per ora solo specie e fascia d'età (fissa per individuo: un individuo non cambia fascia, la
+# riconciliazione per età ne toglie e ne aggiunge). Se l'individuo non esiste più la selezione si
+# chiude — vedi anche _validate_selected_animal, chiamata dal timer di debug in _process.
+func _refresh_animal_panel() -> void:
+	var individual := _find_selected_animal()
+	if individual == null:
+		_clear_animal_selection()
+		return
+	var species: String = selected_animal["species"]
+	var age_band_key: String = String(GameTypes.AgeBand.keys()[individual.age_band]).to_lower()
+	animal_info_panel.show_animal(tr("animal_species_" + species), tr("animal_age_band_" + age_band_key))
+	game_info_tabs.set_selection_title(tr("selection_title_type").format({"type": tr("animal_selection_title")}))
+
+
+# Chiude la selezione se l'individuo selezionato è sparito (morto per mortalità/predazione, cioè
+# rimosso dalla riconciliazione con la popolazione) — altrimenti pannello e anello resterebbero
+# appesi a un animale che non c'è più.
+func _validate_selected_animal() -> void:
+	if not selected_animal.is_empty() and _find_selected_animal() == null:
+		_clear_animal_selection()
 
 
 # Assegna a `individual` (il bersaglio correntemente selezionato) una Task Walk->PickUp verso una
@@ -3820,6 +3983,7 @@ func _select_microcell(hit: Dictionary) -> void:
 	_clear_dead_body_selection()
 	_clear_stone_selection()
 	_clear_stick_lot_selection() # mutua esclusione a 7 vie (2026-09-16, prima "a 6 vie")
+	_clear_animal_selection()
 
 	selected_microcell = hit
 	_selection_kind = SelectionKind.MICROCELL
@@ -4087,6 +4251,25 @@ func _resolve_production_claimant_names(target_building: Building) -> Array[Stri
 	return names
 
 
+# Righe di avviso "attrezzi mancanti" per il pannello edificio (2026-09-25, richiesta utente — su una
+# riga a parte, sotto "Lavoratore assegnato", per non allungare quella del nome): una per ogni
+# lavoratore con la Produce Task ATTIVA su `target_building` e in attesa di attrezzi (le Task in coda
+# non ricontrollano ancora gli attrezzi, vedi ProduceAction). Con più di un lavoratore in attesa la riga
+# porta anche il nome, per sapere a chi mancano.
+func _resolve_production_tool_wait_lines(target_building: Building) -> Array[String]:
+	var waits: Array[Dictionary] = []
+	for individual in human_individuals:
+		if not _task_claims_production(individual.current_task, target_building):
+			continue
+		var tool_wait_text := _describe_tool_wait(individual.current_task)
+		if tool_wait_text != "":
+			waits.append({"name": "%s (#%d)" % [individual.name, individual.id], "text": tool_wait_text})
+	var lines: Array[String] = []
+	for wait in waits:
+		lines.append(("⚠ %s: %s" % [wait["name"], wait["text"]]) if waits.size() > 1 else ("⚠ " + String(wait["text"])))
+	return lines
+
+
 # Ricette con almeno una Produce Task NON conclusa (attiva o in coda) su `target_building` (2026-09-24,
 # richiesta utente — un record per ricetta): i record di queste ricette non vanno mai liberati da
 # ProductionService.make_room_for. Stesso scan di _resolve_production_claimant_names.
@@ -4249,6 +4432,14 @@ var _produce_assign_building: Building = null
 var _produce_assign_resource_name: String = ""
 # Pezzi ordinati dal selettore del pannello (2026-09-24, richiesta utente).
 var _produce_assign_quantity: int = 1
+# Cursore della modalità "scegli il lavoratore" (2026-09-25, richiesta utente — sostituisce il
+# cursore a croce di sistema, CURSOR_CROSS): un cerchietto rosso generato via codice una sola volta
+# (_get_produce_assign_cursor), con l'hotspot al centro del cerchio.
+const PRODUCE_ASSIGN_CURSOR_SIZE: int = 24
+const PRODUCE_ASSIGN_CURSOR_RADIUS: float = 8.0
+const PRODUCE_ASSIGN_CURSOR_THICKNESS: float = 2.0
+const PRODUCE_ASSIGN_CURSOR_COLOR := Color(0.9, 0.15, 0.15, 1.0)
+var _produce_assign_cursor: ImageTexture = null
 var produce_assign_banner: PanelContainer
 var produce_assign_banner_label: Label
 
@@ -4286,7 +4477,8 @@ func _enter_produce_assign_mode(building: Building, resource_name: String, quant
 		})
 	if produce_assign_banner != null:
 		produce_assign_banner.visible = true
-	Input.set_default_cursor_shape(Input.CURSOR_CROSS)
+	var cursor_center := Vector2(PRODUCE_ASSIGN_CURSOR_SIZE, PRODUCE_ASSIGN_CURSOR_SIZE) / 2.0
+	Input.set_custom_mouse_cursor(_get_produce_assign_cursor(), Input.CURSOR_ARROW, cursor_center)
 
 
 func _exit_produce_assign_mode() -> void:
@@ -4295,7 +4487,28 @@ func _exit_produce_assign_mode() -> void:
 	_produce_assign_quantity = 1
 	if produce_assign_banner != null:
 		produce_assign_banner.visible = false
-	Input.set_default_cursor_shape(Input.CURSOR_ARROW)
+	Input.set_custom_mouse_cursor(null, Input.CURSOR_ARROW)
+
+
+# Cerchietto rosso con bordi sfumati (antialias: alpha in base alla distanza dalla circonferenza),
+# costruito una volta e poi riusato.
+func _get_produce_assign_cursor() -> ImageTexture:
+	if _produce_assign_cursor != null:
+		return _produce_assign_cursor
+	var image := Image.create(PRODUCE_ASSIGN_CURSOR_SIZE, PRODUCE_ASSIGN_CURSOR_SIZE, false, Image.FORMAT_RGBA8)
+	image.fill(Color(0, 0, 0, 0))
+	var center := Vector2(PRODUCE_ASSIGN_CURSOR_SIZE, PRODUCE_ASSIGN_CURSOR_SIZE) / 2.0
+	var half_thickness: float = PRODUCE_ASSIGN_CURSOR_THICKNESS / 2.0
+	for y in range(PRODUCE_ASSIGN_CURSOR_SIZE):
+		for x in range(PRODUCE_ASSIGN_CURSOR_SIZE):
+			var distance: float = Vector2(x + 0.5, y + 0.5).distance_to(center)
+			var coverage: float = clampf(half_thickness + 0.5 - absf(distance - PRODUCE_ASSIGN_CURSOR_RADIUS), 0.0, 1.0)
+			if coverage > 0.0:
+				var color := PRODUCE_ASSIGN_CURSOR_COLOR
+				color.a *= coverage
+				image.set_pixel(x, y, color)
+	_produce_assign_cursor = ImageTexture.create_from_image(image)
+	return _produce_assign_cursor
 
 
 # Consuma l'evento mentre la modalità è attiva (chiamata SOLO da _unhandled_input). Ritorna true se
@@ -4326,6 +4539,67 @@ func _handle_produce_assign_input(event: InputEvent) -> bool:
 	return false
 
 
+# Avviso di un'assegnazione rifiutata dal controllo attrezzi (ToolGateService, 2026-09-25): testo
+# salvato sull'individuo (mostrato nel suo pannello) e popup giallo, stesso gate UserOptions degli altri.
+func _report_tool_gate_failure(worker: HumanIndividual, tool_gate: Dictionary) -> void:
+	var text := ""
+	match tool_gate["result"]:
+		ToolGateService.Result.MISSING_TOOLS:
+			text = tr("tool_gate_missing_tools").format({
+				"name": worker.name, "tools": _describe_missing_tool_categories(tool_gate["missing_categories"]),
+			})
+		ToolGateService.Result.BELT_FULL:
+			text = tr("tool_gate_belt_full").format({
+				"name": worker.name, "tool": IconRegistry.get_resource_display_name(tool_gate["tool_name"]),
+			})
+		ToolGateService.Result.CANNOT_EQUIP:
+			text = tr("tool_gate_cannot_equip").format({
+				"name": worker.name, "tool": IconRegistry.get_resource_display_name(tool_gate["tool_name"]),
+			})
+	worker.tool_gate_warning = text
+	if UserOptions.show_notification_popups and text != "":
+		notification_popup.enqueue(NotificationTypes.NotificationPopupType.TOOL_REQUIRED, text)
+	_refresh_selected_individual_panel()
+
+
+# Categorie mancanti con esempi di attrezzi che le coprono (2026-09-25, richiesta utente — il
+# messaggio deve dire QUALI attrezzi servono): "taglio (es. Coltello di pietra); caccia (es. Lancia
+# di legno)". Una categoria senza alcun attrezzo noto compare col solo nome.
+func _describe_missing_tool_categories(categories: Array) -> String:
+	var parts: PackedStringArray = []
+	for category in categories:
+		var category_name := tr("tool_category_" + String(TaskTypes.ToolCategory.keys()[category]).to_lower())
+		var examples: PackedStringArray = []
+		for tool_name in ToolGateService.get_tools_covering(category):
+			examples.append(IconRegistry.get_resource_display_name(tool_name))
+		if examples.is_empty():
+			parts.append(category_name)
+		else:
+			parts.append(tr("tool_gate_category_with_examples").format({
+				"category": category_name, "examples": ", ".join(examples),
+			}))
+	return "; ".join(parts)
+
+
+# Testo di attesa attrezzi per la Task (vuoto se non è in attesa): guarda lo step CORRENTE, l'unico
+# che ricontrolla gli attrezzi (oggi solo ProduceAction, vedi il suo stato tool_wait_*). Usato dal
+# pannello individuo (riga attività) e dal pannello edificio (accanto al lavoratore).
+func _describe_tool_wait(task: Task) -> String:
+	if task == null or task.is_finished():
+		return ""
+	var step := task.get_current_action()
+	if not (step is ProduceAction) or not step.is_waiting_for_tools():
+		return ""
+	match step.tool_wait_result:
+		ToolGateService.Result.MISSING_TOOLS:
+			return tr("tool_gate_waiting_tools").format({"tools": _describe_missing_tool_categories(step.tool_wait_missing_categories)})
+		ToolGateService.Result.BELT_FULL:
+			return tr("tool_gate_waiting_belt_full").format({"tool": IconRegistry.get_resource_display_name(step.tool_wait_tool_name)})
+		ToolGateService.Result.CANNOT_EQUIP:
+			return tr("tool_gate_waiting_cannot_equip").format({"tool": IconRegistry.get_resource_display_name(step.tool_wait_tool_name)})
+	return ""
+
+
 # Costruisce e assegna la Produce Task [Walk → Produce] a `worker` (2026-09-23). Stesso esito visivo
 # della Build: icona di comando se assegnata (o accodata), X se rifiutata.
 func _assign_produce_task(worker: HumanIndividual, target_building: Building, resource_name: String, quantity: int = 1) -> void:
@@ -4354,9 +4628,43 @@ func _assign_produce_task(worker: HumanIndividual, target_building: Building, re
 	# da TaskFactory, resta in task.context per tutta la vita della Task (e nel salvataggio).
 	task.context["production_resource_name"] = resource_name
 	task.context["production_quantity"] = quantity
-	worker.assign_task(task, _resolve_age_band(worker))
 
 	var building_macro_coords := Vector2i(target_building.macro_x, target_building.macro_y)
+	# Controllo attrezzi (2026-09-25, richiesta utente — la ricetta può richiedere categorie di
+	# attrezzo, es. la corda richiede CUTTING). ToolGateService sposta in cintura gli attrezzi
+	# necessari presi dallo zaino. Esiti:
+	#   - MISSING_TOOLS: la Task viene ASSEGNATA comunque e resta in attesa all'edificio, come la Build
+	#     senza materiale — ProduceAction ricontrolla a ogni tick e parte da sola quando gli attrezzi
+	#     arrivano nello zaino. Popup informativo con QUALI attrezzi servono.
+	#   - BELT_FULL/CANNOT_EQUIP: l'attrezzo c'è ma non entra in cintura — la Task NON viene assegnata
+	#     finché il giocatore non libera uno slot (o lo zaino): avviso nel pannello + popup + X.
+	var tool_gate := ToolGateService.check_and_prepare(worker, task, game_data)
+	if tool_gate["result"] == ToolGateService.Result.MISSING_TOOLS:
+		if UserOptions.show_notification_popups:
+			notification_popup.enqueue(
+				NotificationTypes.NotificationPopupType.TOOL_REQUIRED,
+				tr("tool_gate_assigned_waiting").format({
+					"name": worker.name,
+					"tools": _describe_missing_tool_categories(tool_gate["missing_categories"]),
+				})
+			)
+	elif tool_gate["result"] != ToolGateService.Result.OK:
+		_report_tool_gate_failure(worker, tool_gate)
+		if live_cells.has(building_macro_coords):
+			_spawn_command_blink_effect(
+				live_cells[building_macro_coords],
+				Vector2i(target_building.micro_x, target_building.micro_y),
+				IconRegistry.get_command_icon("task_rejected")
+			)
+		_refresh_selected_building_panel()
+		return
+	worker.tool_gate_warning = ""
+	if not tool_gate["equipped"].is_empty():
+		# Attrezzi appena spostati dallo zaino alla cintura: il pannello individuo deve mostrarli.
+		_refresh_selected_individual_panel()
+
+	worker.assign_task(task, _resolve_age_band(worker))
+
 	var assigned := worker.current_task == task or worker.task_queue.has(task)
 	# Record di produzione riservato SUBITO, già all'assegnazione (2026-09-24, richiesta utente — un
 	# record per ricetta): così il posto è suo anche mentre l'individuo è ancora in cammino. Se
@@ -4403,6 +4711,7 @@ func _select_stick_lot(hit: Dictionary) -> void:
 	_clear_dead_body_selection()
 	_clear_stone_selection() # mutua esclusione a 7 vie (2026-09-16, prima "a 6 vie")
 	_clear_microcell_selection()
+	_clear_animal_selection()
 
 	selected_stick_lot = hit
 	_selection_kind = SelectionKind.STICK_LOT
@@ -4458,6 +4767,7 @@ func _select_dead_body(hit: Dictionary) -> void:
 	_clear_stone_selection() # mutua esclusione a 7 vie (2026-09-16, prima "a 6 vie")
 	_clear_stick_lot_selection()
 	_clear_microcell_selection()
+	_clear_animal_selection()
 
 	selected_dead_body_individual_id = hit["individual_id"]
 	_set_dead_body_view_selected(selected_dead_body_individual_id, true)
@@ -4666,6 +4976,10 @@ func _update_individual_panel_content(target: HumanIndividual) -> void:
 		"%s [#%d]" % [target.current_task.get_activity_description(), target.current_task.id]
 		if target.current_task != null else tr("task_activity_idle")
 	)
+	# Task in attesa di attrezzi (2026-09-25, richiesta utente): quali servono, accanto alla Task.
+	var tool_wait_text := _describe_tool_wait(target.current_task)
+	if tool_wait_text != "":
+		activity_text += "\n" + tool_wait_text
 
 	# Capacità di trasporto (2026-09-08, richiesta utente) — a differenza di max_stamina sopra
 	# (ricalcolato fresco qui ad ogni refresh pannello), max_carry_capacity è letto DIRETTAMENTE
@@ -5320,6 +5634,191 @@ func _invalidate_selected_vegetation_if_missing(cell: LiveMacroCell) -> void:
 # guardia difensiva comunque, stesso principio del resto del file. La rimozione vera/il log/il
 # DeathEvent/il popup passano tutti dal normale percorso individual_died già esistente
 # (GameTimeService.kill_individual_now -> _kill_individual, vedi lì).
+# Cintura degli attrezzi (2026-09-25, richiesta utente): i controlli (è un attrezzo, slot libero,
+# spazio/varietà nello zaino) e il ricalcolo della capacità di trasporto vivono in HumanIndividual —
+# qui solo la chiamata e il refresh del pannello. Un click su una risorsa che non è un attrezzo, o
+# uno spostamento non possibile, viene semplicemente rifiutato (nessun effetto).
+func _on_equip_tool_requested(individual: HumanIndividual, resource_name: String) -> void:
+	if individual == null:
+		return
+	if individual.equip_tool_from_backpack(resource_name, game_data):
+		_refresh_selected_individual_panel()
+	elif DebugLogging.ENABLED:
+		print("[TOOL BELT] #%d %s: '%s' non equipaggiato (non è un attrezzo, cintura piena o zaino oltre la capacità ridotta)." % [
+			individual.id, individual.name, resource_name
+		])
+
+
+func _on_unequip_tool_requested(individual: HumanIndividual, slot_index: int) -> void:
+	if individual == null:
+		return
+	if individual.unequip_tool_to_backpack(slot_index, game_data):
+		_refresh_selected_individual_panel()
+	elif DebugLogging.ENABLED:
+		print("[TOOL BELT] #%d %s: slot %d non rimesso nello zaino (varietà o spazio insufficienti)." % [
+			individual.id, individual.name, slot_index
+		])
+
+
+# ============================================================================================
+# Task di equipaggiamento dal pannello individuo (2026-09-25, richiesta utente): click destro su uno
+# slot della cintura. Riusano gli step esistenti in modalità "cintura":
+#   - "prendi attrezzo": [Walk -> RetrieveAction(equip_slot_index)] verso il magazzino più vicino che
+#     ha l'attrezzo (WarehouseSelectionService.find_source_for_retrieval); l'attrezzo va dritto nello
+#     slot, senza passare dallo zaino e senza destinazione di scarico;
+#   - "riponi attrezzo": [Walk -> UnloadAction(unequip_slot_index)] verso il magazzino più vicino che
+#     lo accetta (WarehouseSelectionService.find_best, la stessa ricerca del re-routing dei depositi).
+# Sono Task normali (is_suspendable): si accodano, si sospendono e si annullano come le altre.
+# ============================================================================================
+
+# TaskDefinition delle due Task (2026-09-25 — allineate allo schema .tres + TaskFactory delle altre).
+const EQUIP_TOOL_TASK_DEFINITION_PATH := "res://gameplay/scripts/tasks/definitions/equip_tool.tres"
+const STORE_TOOL_TASK_DEFINITION_PATH := "res://gameplay/scripts/tasks/definitions/store_tool.tres"
+const OPTION_CHOICE_DIALOG_SCENE := preload("res://gameplay/scenes/game/OptionChoiceDialog.tscn")
+var tool_storage_dialog: OptionChoiceDialog
+# Richiesta in corso del dialogo attrezzi: {"individual": HumanIndividual, "slot": int}.
+var _tool_storage_request: Dictionary = {}
+
+
+# Attrezzi (tool_categories non vuoto) disponibili in tutti i magazzini completi e non demoliti del
+# mondo (stored_resources + buffer di uscita della produzione, la stessa quantità che un Retrieve può
+# prelevare): nome risorsa -> quantità totale.
+func _collect_tools_in_storage() -> Dictionary:
+	var totals: Dictionary = {}
+	if macro_world == null:
+		return totals
+	for building in macro_world.buildings:
+		if not building.is_complete or building.is_demolished:
+			continue
+		var names: Array = building.stored_resources.keys()
+		for output_name in building.production_output.keys():
+			if not names.has(output_name):
+				names.append(output_name)
+		for raw_name in names:
+			var resource_name := String(raw_name)
+			if not HumanIndividual.is_tool_resource(resource_name):
+				continue
+			var quantity: int = BuildingStorageService.get_available_quantity(building, resource_name)
+			if quantity > 0:
+				totals[resource_name] = int(totals.get(resource_name, 0)) + quantity
+	return totals
+
+
+func _on_tool_from_storage_requested(target: HumanIndividual, slot_index: int) -> void:
+	if target == null:
+		return
+	var available := _collect_tools_in_storage()
+	if available.is_empty():
+		if UserOptions.show_notification_popups:
+			notification_popup.enqueue(NotificationTypes.NotificationPopupType.TOOL_REQUIRED, tr("tool_storage_menu_empty"))
+		return
+	# Ordine alfabetico per nome risorsa, come le altre liste di scelta.
+	var tool_names: Array = available.keys()
+	tool_names.sort()
+	var ordered: Dictionary = {}
+	for tool_name in tool_names:
+		ordered[tool_name] = available[tool_name]
+	_tool_storage_request = {"individual": target, "slot": slot_index}
+	# Senza riga quantità né "Ripeti": si prende sempre un solo attrezzo per lo slot.
+	tool_storage_dialog.open_choice_only_dialog(
+		tr("tool_storage_dialog_title"), tr("tool_storage_dialog_message"), ordered
+	)
+
+
+# resource_chosen dello stesso OptionChoiceDialog: quantità e "Ripeti" non servono qui (una sola unità).
+func _on_tool_storage_resource_chosen(resource_name: String, _quantity: int, _repeat: bool) -> void:
+	var request := _tool_storage_request
+	_tool_storage_request = {}
+	if request.is_empty():
+		return
+	_assign_equip_tool_task(request["individual"], int(request["slot"]), resource_name)
+
+
+func _on_tool_to_storage_requested(target: HumanIndividual, slot_index: int) -> void:
+	if target == null:
+		return
+	var tool_name := target.get_equipped_tool(slot_index)
+	if tool_name == "":
+		return
+	var destination := WarehouseSelectionService.find_best(
+		macro_world, target.position, target.home_macro_coords, tool_name, 1
+	)
+	if destination == null:
+		if UserOptions.show_notification_popups:
+			notification_popup.enqueue(
+				NotificationTypes.NotificationPopupType.TOOL_REQUIRED,
+				tr("tool_store_no_storage").format({"tool": IconRegistry.get_resource_display_name(tool_name)})
+			)
+		return
+	_assign_tool_task(target, STORE_TOOL_TASK_DEFINITION_PATH, tool_name, destination, slot_index, "transport")
+
+
+func _assign_equip_tool_task(target: HumanIndividual, slot_index: int, tool_name: String) -> void:
+	if target == null or tool_name == "":
+		return
+	var source := WarehouseSelectionService.find_source_for_retrieval(
+		macro_world, target.position, target.home_macro_coords, tool_name
+	)
+	if source == null:
+		return
+	_assign_tool_task(target, EQUIP_TOOL_TASK_DEFINITION_PATH, tool_name, source, slot_index, "pickup")
+
+
+# Prepara il context per la TaskDefinition (equip_tool.tres/store_tool.tres: [step_walk_to_position,
+# step_retrieve_equip/step_unload_tool]) e costruisce la Task con TaskFactory, come le altre: posizione
+# d'arrivo con lo stesso jitter delle altre Task verso un edificio, edificio, attrezzo, quantità 1 e
+# slot della cintura. Poi segnali collegati come per la Transport (refresh della griglia di
+# stoccaggio) e icona di comando sull'edificio (✋/📦 se accettata o accodata, ❌ se rifiutata).
+func _assign_tool_task(
+	target: HumanIndividual, definition_path: String, tool_name: String, building: Building, slot_index: int, icon_key: String
+) -> void:
+	var definition := load(definition_path) as TaskDefinition
+	if definition == null:
+		return
+	var macro_offset: Vector2 = Vector2(Vector2i(building.macro_x, building.macro_y) - target.home_macro_coords) * World.WIDTH
+	var jitter := Vector2(randf_range(0.15, 0.85), randf_range(0.15, 0.85))
+	var task := TaskFactory.build_task(definition, {
+		"target_position": Vector2(building.micro_x, building.micro_y) + macro_offset + jitter,
+		"tool_building": building,
+		"tool_resource_name": tool_name,
+		"tool_quantity": 1,
+		"tool_slot_index": slot_index,
+	})
+	if task == null:
+		return
+	var task_name: String = task.task_name
+	# TaskFactory rimuove dal context le chiavi consumate dagli step (tool_resource_name compresa):
+	# la si rimette per Task.get_activity_description ("Prendi attrezzo (Coltello di pietra)"), stesso
+	# schema di production_resource_name in _assign_produce_task.
+	task.context["tool_resource_name"] = tool_name
+	task.debug_target_key = "tool:%d" % building.id
+	_wire_transport_task(task, target)
+	var assigned := target.assign_task(task, _resolve_age_band(target))
+	var building_macro_coords := Vector2i(building.macro_x, building.macro_y)
+	if live_cells.has(building_macro_coords):
+		_spawn_command_blink_effect(
+			live_cells[building_macro_coords],
+			Vector2i(building.micro_x, building.micro_y),
+			IconRegistry.get_command_icon(icon_key if assigned else "task_rejected")
+		)
+	_refresh_selected_individual_panel()
+	if DebugLogging.ENABLED and DebugLogging.SHOW_TRANSPORT_BUILD_LOGS:
+		print("[TOOL TASK] '%s' (%s) %s a #%d %s, edificio #%d." % [
+			task_name, tool_name, "assegnata" if assigned else "rifiutata", target.id, target.name, building.id
+		])
+
+
+# X del pannello individuo: ESATTAMENTE il tasto H (_stop_selected_individual_task, stessi effetti,
+# compreso l'annullo di una selezione Transport a metà), che agisce sull'individuo selezionato e
+# controllato (`individual`) — lo stesso mostrato dal pannello; guardia se per qualche motivo non
+# coincidessero. Poi refresh del pannello, così la X sparisce e l'attività si aggiorna subito.
+func _on_cancel_task_requested(target: HumanIndividual) -> void:
+	if target == null or target != individual:
+		return
+	_stop_selected_individual_task()
+	_refresh_selected_individual_panel()
+
+
 func _on_kill_requested(individual: HumanIndividual) -> void:
 	if individual == null:
 		return
@@ -5382,6 +5881,9 @@ func _apply_natural_mortality_visuals(cell: LiveMacroCell) -> void:
 # Azzera lo stato di focus del LOD quando questa scena viene lasciata — stessa motivazione di
 # MacroCellScene._exit_tree().
 func _exit_tree() -> void:
+	# Cursore personalizzato della modalità "scegli il lavoratore": è globale (Input), non muore con
+	# la scena — se si esce con la modalità attiva, senza questo resterebbe il cerchietto rosso nei menu.
+	Input.set_custom_mouse_cursor(null, Input.CURSOR_ARROW)
 	if macro_world != null:
 		macro_world.lod_focus_state = {}
 		macro_world.lod_focus_live_cells = {}
@@ -5432,6 +5934,9 @@ func _activate_live_cell(mx: int, my: int, p_debug_source: String = "unknown") -
 	for r in cell.animal_renderers.values():
 		r.set_animals_visible(animals_visible)
 		r.clock = clock # può essere null qui (centro attivato prima di _setup_clock in _ready()); vedi _assign_clock_to_all_live_cells
+	# Individui da un salvataggio appena caricato (step 2) — PRIMA del _refresh_resource_visuals
+	# sotto, la cui riconciliazione con la popolazione è così un no-op invece di una rigenerazione.
+	_restore_saved_animal_individuals(cell)
 
 	# Riusa la FogOfWarMemory già accumulata per QUESTE coordinate se questa macrocella è già
 	# stata viva in questa sessione (vedi fog_of_war_memories) — ne crea una nuova vuota solo la
@@ -5461,6 +5966,11 @@ func _activate_live_cell(mx: int, my: int, p_debug_source: String = "unknown") -
 	cell.fog_of_war_renderer.update_visibility(game_data.get_absolute_day(), _relevant_source_positions_for_cell(cell))
 	# DEBUG TEMPORANEO [FOW DIAG] — rimuovere. Vedi il call site gemello in _process sopra.
 	cell.fog_of_war_renderer.set_debug_source_context(_debug_source_context_for_cell(cell))
+	# Animali visibili solo in raggio o con dettaglio fresco (vedi FogOfWarRenderer.
+	# is_animal_visible_at) — collegato come il clock sopra, a fog già inizializzata con le sorgenti
+	# vere. Il filtro si applica a ogni frame in AnimalGroupRenderer._write_instance_transform.
+	for r in cell.animal_renderers.values():
+		r.visibility_test = cell.fog_of_war_renderer.is_animal_visible_at
 
 	if cell.macro_cell != null and macro_world != null:
 		# NIENTE cell.renderer.set_neighbors qui (a differenza di MacroCellScene, che la chiama
@@ -5657,6 +6167,10 @@ func _deactivate_live_cell(coords: Vector2i) -> void:
 	# appena aggiunta): il renderer che sta per essere distrutto è quello che possiede il contorno.
 	if not selected_stone.is_empty() and selected_stone["macro_coords"] == coords:
 		_clear_stone_selection()
+	# Stessa cura per gli animali (2026-09-25): l'individuo selezionato e il suo anello vivono
+	# nell'AnimalGroupRenderer della cella che sta per essere distrutta.
+	if not selected_animal.is_empty() and selected_animal["macro_coords"] == coords:
+		_clear_animal_selection()
 	# Stessa cura di stone sopra (2026-09-08, richiesta utente — click sul terreno TREE): il
 	# renderer che sta per essere distrutto è quello che possiede il contorno quadrato del lotto.
 	if not selected_stick_lot.is_empty() and selected_stick_lot["macro_coords"] == coords:
@@ -5700,6 +6214,32 @@ func _refresh_lod_focus_region() -> void:
 	macro_world.lod_focus_live_cells = focus_live_cells
 	macro_world.lod_focus_state = lod_result
 	minimap_panel.update_visibility(focus_live_cells, center_macro_coords)
+
+
+# DEBUG — riepilogo animali della macrocella del giocatore (center_macro_coords) in DebugBar:
+# per ogni specie con quota > 0 nella cella, quota della cella (PopulationGroup.
+# get_population_by_cell, stessa fonte di _refresh_animal_individuals) contro individui
+# effettivamente istanziati dal renderer di quella specie. Chiamata dal timer di debug in _process
+# (ogni DEBUG_PANEL_REFRESH_INTERVAL_SEC secondi reali), così segue sia i cambi di cella del
+# giocatore sia i cambi di popolazione senza agganci dedicati.
+func _refresh_debug_animal_summary() -> void:
+	var entries: Array = []
+	var cell: LiveMacroCell = live_cells.get(center_macro_coords)
+	if cell != null and macro_world != null:
+		for species in cell.animal_renderers:
+			var group := macro_world.find_population_group(species, center_macro_coords)
+			if group == null:
+				continue
+			var quota: int = int(group.get_population_by_cell().get(center_macro_coords, 0))
+			if quota <= 0:
+				continue
+			var renderer_node: AnimalGroupRenderer = cell.animal_renderers[species]
+			entries.append({
+				"species": species,
+				"quota": quota,
+				"instanced": renderer_node.get_individual_count(),
+			})
+	debug_bar.set_animal_summary(entries)
 
 
 func _update_center_info_panel() -> void:
@@ -6525,10 +7065,7 @@ func _refresh_resource_visuals(cell: LiveMacroCell) -> void:
 	_veg_timings_ms["3_fish_positions"] = (Time.get_ticks_usec() - _step_start_usec) / 1000.0
 
 	_step_start_usec = Time.get_ticks_usec()
-	var this_cell := Vector2i(cell.macro_cell.x, cell.macro_cell.y)
-	for species in cell.animal_renderers:
-		var group := macro_world.find_population_group(species, this_cell)
-		_update_animal_renderer_population(cell.animal_renderers[species], group, AnimalCalculator.get_animal_rules(species), this_cell)
+	_refresh_animal_individuals(cell)
 	_veg_timings_ms["4_animal_renderer_population"] = (Time.get_ticks_usec() - _step_start_usec) / 1000.0
 
 	_step_start_usec = Time.get_ticks_usec()
@@ -6733,6 +7270,75 @@ func _debug_print_dedicated_space(cell: LiveMacroCell) -> void:
 	])
 
 
+# Individui animali step 1: riconcilia gli individui di OGNI specie di questa cella viva con la
+# quota della cella (vedi _update_animal_renderer_population/AnimalGroupRenderer.
+# set_population_by_age — alla prima chiamata dopo _activate_live_cell genera un individuo per
+# animale, poi aggiunge/rimuove per id). Chiamata da _refresh_resource_visuals e, nei giorni in cui
+# cambiano solo gli animali, da _on_day_advanced: economica (nessun rebuild vegetazione), e una
+# chiamata senza variazioni di popolazione è un no-op sugli individui.
+func _refresh_animal_individuals(cell: LiveMacroCell) -> void:
+	if cell.macro_cell == null or macro_world == null:
+		return
+	var this_cell := Vector2i(cell.macro_cell.x, cell.macro_cell.y)
+	for species in cell.animal_renderers:
+		var group := macro_world.find_population_group(species, this_cell)
+		_update_animal_renderer_population(cell.animal_renderers[species], group, AnimalCalculator.get_animal_rules(species), this_cell)
+
+
+# --- Salvataggio individui animali (step 2) ---
+
+# Snapshot degli individui di TUTTE le celle vive in game_data, più il contatore degli id — chiamata
+# subito prima di GameSaveService.save_game_to_json. Una cella viva senza individui non viene
+# scritta: al caricamento ricadrà sulla rigenerazione dalla popolazione (che darà comunque zero).
+func _sync_animal_individuals_to_game_data() -> void:
+	var cells: Array = []
+	for coords in live_cells:
+		var cell: LiveMacroCell = live_cells[coords]
+		var individuals: Array = []
+		for species in cell.animal_renderers:
+			individuals.append_array(cell.animal_renderers[species].get_individuals_snapshot())
+		if individuals.is_empty():
+			continue
+		cells.append({"macro_x": coords.x, "macro_y": coords.y, "individuals": individuals})
+	game_data.animal_individuals_by_cell = cells
+	game_data.next_animal_individual_id = AnimalGroupRenderer.get_next_individual_id()
+
+
+# Sposta gli individui salvati da game_data a _pending_saved_animal_individuals (per cella) e fa
+# riprendere il contatore degli id dal valore salvato. game_data.animal_individuals_by_cell viene
+# svuotato: serve una sola volta, subito dopo il caricamento (un salvataggio successivo lo riscrive
+# da capo con _sync_animal_individuals_to_game_data). Save precedenti allo step 2: campo vuoto,
+# nessun individuo in attesa, generazione dalla popolazione come sempre.
+func _take_saved_animal_individuals() -> void:
+	_pending_saved_animal_individuals.clear()
+	for cell_entry in game_data.animal_individuals_by_cell:
+		var coords := Vector2i(int(cell_entry.get("macro_x", 0)), int(cell_entry.get("macro_y", 0)))
+		_pending_saved_animal_individuals[coords] = cell_entry.get("individuals", [])
+	game_data.animal_individuals_by_cell = []
+	if game_data.next_animal_individual_id > 0:
+		AnimalGroupRenderer.set_next_individual_id(game_data.next_animal_individual_id)
+
+
+# Ricostruisce gli individui salvati per QUESTA cella (se ce ne sono in attesa), ripartiti per
+# specie nel renderer corrispondente, e li toglie dall'attesa: una visita successiva della stessa
+# cella genera individui nuovi dalla popolazione, come sempre. Una specie salvata senza renderer
+# (non dovrebbe capitare: i renderer sono sempre le stesse 10 specie) viene ignorata.
+func _restore_saved_animal_individuals(cell: LiveMacroCell) -> void:
+	var coords := cell.coords()
+	if not _pending_saved_animal_individuals.has(coords):
+		return
+	var by_species: Dictionary = {}
+	for entry in _pending_saved_animal_individuals[coords]:
+		var species := String(entry.get("species", ""))
+		if not by_species.has(species):
+			by_species[species] = []
+		by_species[species].append(entry)
+	for species in by_species:
+		if cell.animal_renderers.has(species):
+			cell.animal_renderers[species].restore_individuals(by_species[species])
+	_pending_saved_animal_individuals.erase(coords)
+
+
 func _update_animal_renderer_population(
 	renderer_node: AnimalGroupRenderer, group: PopulationGroup, rules: AnimalRules, coords: Vector2i
 ) -> void:
@@ -6824,21 +7430,21 @@ func _build_animal_renderers(container: Node2D) -> Dictionary:
 
 	var rabbit_rules := AnimalCalculator.get_animal_rules("rabbit")
 	renderers["rabbit"] = _build_animal_renderer(container, {
-		"individuals_per_group": rabbit_rules.visual_group_size if rabbit_rules != null else 1,
-		"move_speed": rabbit_rules.move_speed if rabbit_rules != null else 3.0,
-		"turn_rate": rabbit_rules.turn_rate if rabbit_rules != null else 1.5,
+		"species_name": "rabbit",
+		"move_speed": rabbit_rules.move_speed if rabbit_rules != null else 24.0,
+		"turn_rate": rabbit_rules.turn_rate if rabbit_rules != null else 12.0,
 		"max_individuals_per_cluster": rabbit_rules.max_individuals_per_cluster if rabbit_rules != null else 1,
 		"cluster_comfort_radius": rabbit_rules.cluster_comfort_radius if rabbit_rules != null else 5.0,
-		"cluster_attraction_strength": rabbit_rules.cluster_attraction_strength if rabbit_rules != null else 1.5,
-		"hop_speed": rabbit_rules.hop_speed if rabbit_rules != null else 6.0,
-		"movement_phase_duration_min": rabbit_rules.movement_phase_duration_min if rabbit_rules != null else 2.0,
-		"movement_phase_duration_max": rabbit_rules.movement_phase_duration_max if rabbit_rules != null else 5.0,
-		"rest_phase_duration_min": rabbit_rules.rest_phase_duration_min if rabbit_rules != null else 3.0,
-		"rest_phase_duration_max": rabbit_rules.rest_phase_duration_max if rabbit_rules != null else 7.0,
-		"hop_duration_min": rabbit_rules.hop_duration_min if rabbit_rules != null else 0.2,
-		"hop_duration_max": rabbit_rules.hop_duration_max if rabbit_rules != null else 0.4,
-		"hop_pause_min": rabbit_rules.hop_pause_min if rabbit_rules != null else 0.1,
-		"hop_pause_max": rabbit_rules.hop_pause_max if rabbit_rules != null else 0.3,
+		"cluster_attraction_strength": rabbit_rules.cluster_attraction_strength if rabbit_rules != null else 12.0,
+		"hop_speed": rabbit_rules.hop_speed if rabbit_rules != null else 48.0,
+		"movement_phase_duration_min": rabbit_rules.movement_phase_duration_min if rabbit_rules != null else 0.25,
+		"movement_phase_duration_max": rabbit_rules.movement_phase_duration_max if rabbit_rules != null else 0.625,
+		"rest_phase_duration_min": rabbit_rules.rest_phase_duration_min if rabbit_rules != null else 0.375,
+		"rest_phase_duration_max": rabbit_rules.rest_phase_duration_max if rabbit_rules != null else 0.875,
+		"hop_duration_min": rabbit_rules.hop_duration_min if rabbit_rules != null else 0.025,
+		"hop_duration_max": rabbit_rules.hop_duration_max if rabbit_rules != null else 0.05,
+		"hop_pause_min": rabbit_rules.hop_pause_min if rabbit_rules != null else 0.0125,
+		"hop_pause_max": rabbit_rules.hop_pause_max if rabbit_rules != null else 0.0375,
 		"size_multiplier_by_age": rabbit_rules.size_multiplier_by_age if rabbit_rules != null else [1.0, 1.0, 1.0],
 		"mesh": AnimalGroupRenderer.build_rabbit_mesh(
 			AnimalGroupRenderer.RABBIT_BODY_LENGTH, AnimalGroupRenderer.RABBIT_BODY_WIDTH,
@@ -6849,21 +7455,21 @@ func _build_animal_renderers(container: Node2D) -> Dictionary:
 
 	var deer_rules := AnimalCalculator.get_animal_rules("deer")
 	renderers["deer"] = _build_animal_renderer(container, {
-		"individuals_per_group": deer_rules.visual_group_size if deer_rules != null else 1,
-		"move_speed": deer_rules.move_speed if deer_rules != null else 3.5,
-		"turn_rate": deer_rules.turn_rate if deer_rules != null else 1.2,
+		"species_name": "deer",
+		"move_speed": deer_rules.move_speed if deer_rules != null else 28.0,
+		"turn_rate": deer_rules.turn_rate if deer_rules != null else 9.6,
 		"max_individuals_per_cluster": deer_rules.max_individuals_per_cluster if deer_rules != null else 1,
 		"cluster_comfort_radius": deer_rules.cluster_comfort_radius if deer_rules != null else 6.0,
-		"cluster_attraction_strength": deer_rules.cluster_attraction_strength if deer_rules != null else 1.5,
-		"hop_speed": deer_rules.hop_speed if deer_rules != null else 6.0,
-		"movement_phase_duration_min": deer_rules.movement_phase_duration_min if deer_rules != null else 2.0,
-		"movement_phase_duration_max": deer_rules.movement_phase_duration_max if deer_rules != null else 5.0,
-		"rest_phase_duration_min": deer_rules.rest_phase_duration_min if deer_rules != null else 3.0,
-		"rest_phase_duration_max": deer_rules.rest_phase_duration_max if deer_rules != null else 7.0,
-		"hop_duration_min": deer_rules.hop_duration_min if deer_rules != null else 0.2,
-		"hop_duration_max": deer_rules.hop_duration_max if deer_rules != null else 0.4,
-		"hop_pause_min": deer_rules.hop_pause_min if deer_rules != null else 0.1,
-		"hop_pause_max": deer_rules.hop_pause_max if deer_rules != null else 0.3,
+		"cluster_attraction_strength": deer_rules.cluster_attraction_strength if deer_rules != null else 12.0,
+		"hop_speed": deer_rules.hop_speed if deer_rules != null else 48.0,
+		"movement_phase_duration_min": deer_rules.movement_phase_duration_min if deer_rules != null else 0.25,
+		"movement_phase_duration_max": deer_rules.movement_phase_duration_max if deer_rules != null else 0.625,
+		"rest_phase_duration_min": deer_rules.rest_phase_duration_min if deer_rules != null else 0.375,
+		"rest_phase_duration_max": deer_rules.rest_phase_duration_max if deer_rules != null else 0.875,
+		"hop_duration_min": deer_rules.hop_duration_min if deer_rules != null else 0.025,
+		"hop_duration_max": deer_rules.hop_duration_max if deer_rules != null else 0.05,
+		"hop_pause_min": deer_rules.hop_pause_min if deer_rules != null else 0.0125,
+		"hop_pause_max": deer_rules.hop_pause_max if deer_rules != null else 0.0375,
 		"size_multiplier_by_age": deer_rules.size_multiplier_by_age if deer_rules != null else [1.0, 1.0, 1.0],
 		"mesh": AnimalGroupRenderer.build_deer_mesh(
 			AnimalGroupRenderer.DEER_BODY_LENGTH, AnimalGroupRenderer.DEER_BODY_WIDTH,
@@ -6874,21 +7480,21 @@ func _build_animal_renderers(container: Node2D) -> Dictionary:
 
 	var boar_rules := AnimalCalculator.get_animal_rules("boar")
 	renderers["boar"] = _build_animal_renderer(container, {
-		"individuals_per_group": boar_rules.visual_group_size if boar_rules != null else 1,
-		"move_speed": boar_rules.move_speed if boar_rules != null else 3.0,
-		"turn_rate": boar_rules.turn_rate if boar_rules != null else 1.5,
+		"species_name": "boar",
+		"move_speed": boar_rules.move_speed if boar_rules != null else 24.0,
+		"turn_rate": boar_rules.turn_rate if boar_rules != null else 12.0,
 		"max_individuals_per_cluster": boar_rules.max_individuals_per_cluster if boar_rules != null else 1,
 		"cluster_comfort_radius": boar_rules.cluster_comfort_radius if boar_rules != null else 5.0,
-		"cluster_attraction_strength": boar_rules.cluster_attraction_strength if boar_rules != null else 1.5,
-		"hop_speed": boar_rules.hop_speed if boar_rules != null else 6.0,
-		"movement_phase_duration_min": boar_rules.movement_phase_duration_min if boar_rules != null else 2.0,
-		"movement_phase_duration_max": boar_rules.movement_phase_duration_max if boar_rules != null else 5.0,
-		"rest_phase_duration_min": boar_rules.rest_phase_duration_min if boar_rules != null else 3.0,
-		"rest_phase_duration_max": boar_rules.rest_phase_duration_max if boar_rules != null else 7.0,
-		"hop_duration_min": boar_rules.hop_duration_min if boar_rules != null else 0.2,
-		"hop_duration_max": boar_rules.hop_duration_max if boar_rules != null else 0.4,
-		"hop_pause_min": boar_rules.hop_pause_min if boar_rules != null else 0.1,
-		"hop_pause_max": boar_rules.hop_pause_max if boar_rules != null else 0.3,
+		"cluster_attraction_strength": boar_rules.cluster_attraction_strength if boar_rules != null else 12.0,
+		"hop_speed": boar_rules.hop_speed if boar_rules != null else 48.0,
+		"movement_phase_duration_min": boar_rules.movement_phase_duration_min if boar_rules != null else 0.25,
+		"movement_phase_duration_max": boar_rules.movement_phase_duration_max if boar_rules != null else 0.625,
+		"rest_phase_duration_min": boar_rules.rest_phase_duration_min if boar_rules != null else 0.375,
+		"rest_phase_duration_max": boar_rules.rest_phase_duration_max if boar_rules != null else 0.875,
+		"hop_duration_min": boar_rules.hop_duration_min if boar_rules != null else 0.025,
+		"hop_duration_max": boar_rules.hop_duration_max if boar_rules != null else 0.05,
+		"hop_pause_min": boar_rules.hop_pause_min if boar_rules != null else 0.0125,
+		"hop_pause_max": boar_rules.hop_pause_max if boar_rules != null else 0.0375,
 		"size_multiplier_by_age": boar_rules.size_multiplier_by_age if boar_rules != null else [1.0, 1.0, 1.0],
 		"mesh": AnimalGroupRenderer.build_boar_mesh(
 			AnimalGroupRenderer.BOAR_BODY_LENGTH, AnimalGroupRenderer.BOAR_BODY_WIDTH,
@@ -6899,21 +7505,21 @@ func _build_animal_renderers(container: Node2D) -> Dictionary:
 
 	var tarpan_rules := AnimalCalculator.get_animal_rules("tarpan")
 	renderers["tarpan"] = _build_animal_renderer(container, {
-		"individuals_per_group": tarpan_rules.visual_group_size if tarpan_rules != null else 1,
-		"move_speed": tarpan_rules.move_speed if tarpan_rules != null else 3.0,
-		"turn_rate": tarpan_rules.turn_rate if tarpan_rules != null else 1.5,
+		"species_name": "tarpan",
+		"move_speed": tarpan_rules.move_speed if tarpan_rules != null else 24.0,
+		"turn_rate": tarpan_rules.turn_rate if tarpan_rules != null else 12.0,
 		"max_individuals_per_cluster": tarpan_rules.max_individuals_per_cluster if tarpan_rules != null else 1,
 		"cluster_comfort_radius": tarpan_rules.cluster_comfort_radius if tarpan_rules != null else 5.0,
-		"cluster_attraction_strength": tarpan_rules.cluster_attraction_strength if tarpan_rules != null else 1.5,
-		"hop_speed": tarpan_rules.hop_speed if tarpan_rules != null else 6.0,
-		"movement_phase_duration_min": tarpan_rules.movement_phase_duration_min if tarpan_rules != null else 2.0,
-		"movement_phase_duration_max": tarpan_rules.movement_phase_duration_max if tarpan_rules != null else 5.0,
-		"rest_phase_duration_min": tarpan_rules.rest_phase_duration_min if tarpan_rules != null else 3.0,
-		"rest_phase_duration_max": tarpan_rules.rest_phase_duration_max if tarpan_rules != null else 7.0,
-		"hop_duration_min": tarpan_rules.hop_duration_min if tarpan_rules != null else 0.2,
-		"hop_duration_max": tarpan_rules.hop_duration_max if tarpan_rules != null else 0.4,
-		"hop_pause_min": tarpan_rules.hop_pause_min if tarpan_rules != null else 0.1,
-		"hop_pause_max": tarpan_rules.hop_pause_max if tarpan_rules != null else 0.3,
+		"cluster_attraction_strength": tarpan_rules.cluster_attraction_strength if tarpan_rules != null else 12.0,
+		"hop_speed": tarpan_rules.hop_speed if tarpan_rules != null else 48.0,
+		"movement_phase_duration_min": tarpan_rules.movement_phase_duration_min if tarpan_rules != null else 0.25,
+		"movement_phase_duration_max": tarpan_rules.movement_phase_duration_max if tarpan_rules != null else 0.625,
+		"rest_phase_duration_min": tarpan_rules.rest_phase_duration_min if tarpan_rules != null else 0.375,
+		"rest_phase_duration_max": tarpan_rules.rest_phase_duration_max if tarpan_rules != null else 0.875,
+		"hop_duration_min": tarpan_rules.hop_duration_min if tarpan_rules != null else 0.025,
+		"hop_duration_max": tarpan_rules.hop_duration_max if tarpan_rules != null else 0.05,
+		"hop_pause_min": tarpan_rules.hop_pause_min if tarpan_rules != null else 0.0125,
+		"hop_pause_max": tarpan_rules.hop_pause_max if tarpan_rules != null else 0.0375,
 		"size_multiplier_by_age": tarpan_rules.size_multiplier_by_age if tarpan_rules != null else [1.0, 1.0, 1.0],
 		"mesh": AnimalGroupRenderer.build_tarpan_mesh(
 			AnimalGroupRenderer.TARPAN_BODY_LENGTH, AnimalGroupRenderer.TARPAN_BODY_WIDTH,
@@ -6924,21 +7530,21 @@ func _build_animal_renderers(container: Node2D) -> Dictionary:
 
 	var aurochs_rules := AnimalCalculator.get_animal_rules("aurochs")
 	renderers["aurochs"] = _build_animal_renderer(container, {
-		"individuals_per_group": aurochs_rules.visual_group_size if aurochs_rules != null else 1,
-		"move_speed": aurochs_rules.move_speed if aurochs_rules != null else 3.0,
-		"turn_rate": aurochs_rules.turn_rate if aurochs_rules != null else 1.5,
+		"species_name": "aurochs",
+		"move_speed": aurochs_rules.move_speed if aurochs_rules != null else 24.0,
+		"turn_rate": aurochs_rules.turn_rate if aurochs_rules != null else 12.0,
 		"max_individuals_per_cluster": aurochs_rules.max_individuals_per_cluster if aurochs_rules != null else 1,
 		"cluster_comfort_radius": aurochs_rules.cluster_comfort_radius if aurochs_rules != null else 5.0,
-		"cluster_attraction_strength": aurochs_rules.cluster_attraction_strength if aurochs_rules != null else 1.5,
-		"hop_speed": aurochs_rules.hop_speed if aurochs_rules != null else 6.0,
-		"movement_phase_duration_min": aurochs_rules.movement_phase_duration_min if aurochs_rules != null else 2.0,
-		"movement_phase_duration_max": aurochs_rules.movement_phase_duration_max if aurochs_rules != null else 5.0,
-		"rest_phase_duration_min": aurochs_rules.rest_phase_duration_min if aurochs_rules != null else 3.0,
-		"rest_phase_duration_max": aurochs_rules.rest_phase_duration_max if aurochs_rules != null else 7.0,
-		"hop_duration_min": aurochs_rules.hop_duration_min if aurochs_rules != null else 0.2,
-		"hop_duration_max": aurochs_rules.hop_duration_max if aurochs_rules != null else 0.4,
-		"hop_pause_min": aurochs_rules.hop_pause_min if aurochs_rules != null else 0.1,
-		"hop_pause_max": aurochs_rules.hop_pause_max if aurochs_rules != null else 0.3,
+		"cluster_attraction_strength": aurochs_rules.cluster_attraction_strength if aurochs_rules != null else 12.0,
+		"hop_speed": aurochs_rules.hop_speed if aurochs_rules != null else 48.0,
+		"movement_phase_duration_min": aurochs_rules.movement_phase_duration_min if aurochs_rules != null else 0.25,
+		"movement_phase_duration_max": aurochs_rules.movement_phase_duration_max if aurochs_rules != null else 0.625,
+		"rest_phase_duration_min": aurochs_rules.rest_phase_duration_min if aurochs_rules != null else 0.375,
+		"rest_phase_duration_max": aurochs_rules.rest_phase_duration_max if aurochs_rules != null else 0.875,
+		"hop_duration_min": aurochs_rules.hop_duration_min if aurochs_rules != null else 0.025,
+		"hop_duration_max": aurochs_rules.hop_duration_max if aurochs_rules != null else 0.05,
+		"hop_pause_min": aurochs_rules.hop_pause_min if aurochs_rules != null else 0.0125,
+		"hop_pause_max": aurochs_rules.hop_pause_max if aurochs_rules != null else 0.0375,
 		"size_multiplier_by_age": aurochs_rules.size_multiplier_by_age if aurochs_rules != null else [1.0, 1.0, 1.0],
 		"mesh": AnimalGroupRenderer.build_aurochs_mesh(
 			AnimalGroupRenderer.AUROCHS_BODY_LENGTH, AnimalGroupRenderer.AUROCHS_BODY_WIDTH,
@@ -6949,21 +7555,21 @@ func _build_animal_renderers(container: Node2D) -> Dictionary:
 
 	var wild_donkey_rules := AnimalCalculator.get_animal_rules("wild_donkey")
 	renderers["wild_donkey"] = _build_animal_renderer(container, {
-		"individuals_per_group": wild_donkey_rules.visual_group_size if wild_donkey_rules != null else 1,
-		"move_speed": wild_donkey_rules.move_speed if wild_donkey_rules != null else 3.0,
-		"turn_rate": wild_donkey_rules.turn_rate if wild_donkey_rules != null else 1.5,
+		"species_name": "wild_donkey",
+		"move_speed": wild_donkey_rules.move_speed if wild_donkey_rules != null else 24.0,
+		"turn_rate": wild_donkey_rules.turn_rate if wild_donkey_rules != null else 12.0,
 		"max_individuals_per_cluster": wild_donkey_rules.max_individuals_per_cluster if wild_donkey_rules != null else 1,
 		"cluster_comfort_radius": wild_donkey_rules.cluster_comfort_radius if wild_donkey_rules != null else 5.0,
-		"cluster_attraction_strength": wild_donkey_rules.cluster_attraction_strength if wild_donkey_rules != null else 1.5,
-		"hop_speed": wild_donkey_rules.hop_speed if wild_donkey_rules != null else 6.0,
-		"movement_phase_duration_min": wild_donkey_rules.movement_phase_duration_min if wild_donkey_rules != null else 2.0,
-		"movement_phase_duration_max": wild_donkey_rules.movement_phase_duration_max if wild_donkey_rules != null else 5.0,
-		"rest_phase_duration_min": wild_donkey_rules.rest_phase_duration_min if wild_donkey_rules != null else 3.0,
-		"rest_phase_duration_max": wild_donkey_rules.rest_phase_duration_max if wild_donkey_rules != null else 7.0,
-		"hop_duration_min": wild_donkey_rules.hop_duration_min if wild_donkey_rules != null else 0.2,
-		"hop_duration_max": wild_donkey_rules.hop_duration_max if wild_donkey_rules != null else 0.4,
-		"hop_pause_min": wild_donkey_rules.hop_pause_min if wild_donkey_rules != null else 0.1,
-		"hop_pause_max": wild_donkey_rules.hop_pause_max if wild_donkey_rules != null else 0.3,
+		"cluster_attraction_strength": wild_donkey_rules.cluster_attraction_strength if wild_donkey_rules != null else 12.0,
+		"hop_speed": wild_donkey_rules.hop_speed if wild_donkey_rules != null else 48.0,
+		"movement_phase_duration_min": wild_donkey_rules.movement_phase_duration_min if wild_donkey_rules != null else 0.25,
+		"movement_phase_duration_max": wild_donkey_rules.movement_phase_duration_max if wild_donkey_rules != null else 0.625,
+		"rest_phase_duration_min": wild_donkey_rules.rest_phase_duration_min if wild_donkey_rules != null else 0.375,
+		"rest_phase_duration_max": wild_donkey_rules.rest_phase_duration_max if wild_donkey_rules != null else 0.875,
+		"hop_duration_min": wild_donkey_rules.hop_duration_min if wild_donkey_rules != null else 0.025,
+		"hop_duration_max": wild_donkey_rules.hop_duration_max if wild_donkey_rules != null else 0.05,
+		"hop_pause_min": wild_donkey_rules.hop_pause_min if wild_donkey_rules != null else 0.0125,
+		"hop_pause_max": wild_donkey_rules.hop_pause_max if wild_donkey_rules != null else 0.0375,
 		"size_multiplier_by_age": wild_donkey_rules.size_multiplier_by_age if wild_donkey_rules != null else [1.0, 1.0, 1.0],
 		"mesh": AnimalGroupRenderer.build_wild_donkey_mesh(
 			AnimalGroupRenderer.WILD_DONKEY_BODY_LENGTH, AnimalGroupRenderer.WILD_DONKEY_BODY_WIDTH,
@@ -6974,21 +7580,21 @@ func _build_animal_renderers(container: Node2D) -> Dictionary:
 
 	var mouflon_rules := AnimalCalculator.get_animal_rules("mouflon")
 	renderers["mouflon"] = _build_animal_renderer(container, {
-		"individuals_per_group": mouflon_rules.visual_group_size if mouflon_rules != null else 1,
-		"move_speed": mouflon_rules.move_speed if mouflon_rules != null else 3.0,
-		"turn_rate": mouflon_rules.turn_rate if mouflon_rules != null else 1.5,
+		"species_name": "mouflon",
+		"move_speed": mouflon_rules.move_speed if mouflon_rules != null else 24.0,
+		"turn_rate": mouflon_rules.turn_rate if mouflon_rules != null else 12.0,
 		"max_individuals_per_cluster": mouflon_rules.max_individuals_per_cluster if mouflon_rules != null else 1,
 		"cluster_comfort_radius": mouflon_rules.cluster_comfort_radius if mouflon_rules != null else 5.0,
-		"cluster_attraction_strength": mouflon_rules.cluster_attraction_strength if mouflon_rules != null else 1.5,
-		"hop_speed": mouflon_rules.hop_speed if mouflon_rules != null else 6.0,
-		"movement_phase_duration_min": mouflon_rules.movement_phase_duration_min if mouflon_rules != null else 2.0,
-		"movement_phase_duration_max": mouflon_rules.movement_phase_duration_max if mouflon_rules != null else 5.0,
-		"rest_phase_duration_min": mouflon_rules.rest_phase_duration_min if mouflon_rules != null else 3.0,
-		"rest_phase_duration_max": mouflon_rules.rest_phase_duration_max if mouflon_rules != null else 7.0,
-		"hop_duration_min": mouflon_rules.hop_duration_min if mouflon_rules != null else 0.2,
-		"hop_duration_max": mouflon_rules.hop_duration_max if mouflon_rules != null else 0.4,
-		"hop_pause_min": mouflon_rules.hop_pause_min if mouflon_rules != null else 0.1,
-		"hop_pause_max": mouflon_rules.hop_pause_max if mouflon_rules != null else 0.3,
+		"cluster_attraction_strength": mouflon_rules.cluster_attraction_strength if mouflon_rules != null else 12.0,
+		"hop_speed": mouflon_rules.hop_speed if mouflon_rules != null else 48.0,
+		"movement_phase_duration_min": mouflon_rules.movement_phase_duration_min if mouflon_rules != null else 0.25,
+		"movement_phase_duration_max": mouflon_rules.movement_phase_duration_max if mouflon_rules != null else 0.625,
+		"rest_phase_duration_min": mouflon_rules.rest_phase_duration_min if mouflon_rules != null else 0.375,
+		"rest_phase_duration_max": mouflon_rules.rest_phase_duration_max if mouflon_rules != null else 0.875,
+		"hop_duration_min": mouflon_rules.hop_duration_min if mouflon_rules != null else 0.025,
+		"hop_duration_max": mouflon_rules.hop_duration_max if mouflon_rules != null else 0.05,
+		"hop_pause_min": mouflon_rules.hop_pause_min if mouflon_rules != null else 0.0125,
+		"hop_pause_max": mouflon_rules.hop_pause_max if mouflon_rules != null else 0.0375,
 		"size_multiplier_by_age": mouflon_rules.size_multiplier_by_age if mouflon_rules != null else [1.0, 1.0, 1.0],
 		"mesh": AnimalGroupRenderer.build_mouflon_mesh(
 			AnimalGroupRenderer.MOUFLON_BODY_LENGTH, AnimalGroupRenderer.MOUFLON_BODY_WIDTH,
@@ -6999,21 +7605,21 @@ func _build_animal_renderers(container: Node2D) -> Dictionary:
 
 	var bezoar_rules := AnimalCalculator.get_animal_rules("bezoar")
 	renderers["bezoar"] = _build_animal_renderer(container, {
-		"individuals_per_group": bezoar_rules.visual_group_size if bezoar_rules != null else 1,
-		"move_speed": bezoar_rules.move_speed if bezoar_rules != null else 3.0,
-		"turn_rate": bezoar_rules.turn_rate if bezoar_rules != null else 1.5,
+		"species_name": "bezoar",
+		"move_speed": bezoar_rules.move_speed if bezoar_rules != null else 24.0,
+		"turn_rate": bezoar_rules.turn_rate if bezoar_rules != null else 12.0,
 		"max_individuals_per_cluster": bezoar_rules.max_individuals_per_cluster if bezoar_rules != null else 1,
 		"cluster_comfort_radius": bezoar_rules.cluster_comfort_radius if bezoar_rules != null else 5.0,
-		"cluster_attraction_strength": bezoar_rules.cluster_attraction_strength if bezoar_rules != null else 1.5,
-		"hop_speed": bezoar_rules.hop_speed if bezoar_rules != null else 6.0,
-		"movement_phase_duration_min": bezoar_rules.movement_phase_duration_min if bezoar_rules != null else 2.0,
-		"movement_phase_duration_max": bezoar_rules.movement_phase_duration_max if bezoar_rules != null else 5.0,
-		"rest_phase_duration_min": bezoar_rules.rest_phase_duration_min if bezoar_rules != null else 3.0,
-		"rest_phase_duration_max": bezoar_rules.rest_phase_duration_max if bezoar_rules != null else 7.0,
-		"hop_duration_min": bezoar_rules.hop_duration_min if bezoar_rules != null else 0.2,
-		"hop_duration_max": bezoar_rules.hop_duration_max if bezoar_rules != null else 0.4,
-		"hop_pause_min": bezoar_rules.hop_pause_min if bezoar_rules != null else 0.1,
-		"hop_pause_max": bezoar_rules.hop_pause_max if bezoar_rules != null else 0.3,
+		"cluster_attraction_strength": bezoar_rules.cluster_attraction_strength if bezoar_rules != null else 12.0,
+		"hop_speed": bezoar_rules.hop_speed if bezoar_rules != null else 48.0,
+		"movement_phase_duration_min": bezoar_rules.movement_phase_duration_min if bezoar_rules != null else 0.25,
+		"movement_phase_duration_max": bezoar_rules.movement_phase_duration_max if bezoar_rules != null else 0.625,
+		"rest_phase_duration_min": bezoar_rules.rest_phase_duration_min if bezoar_rules != null else 0.375,
+		"rest_phase_duration_max": bezoar_rules.rest_phase_duration_max if bezoar_rules != null else 0.875,
+		"hop_duration_min": bezoar_rules.hop_duration_min if bezoar_rules != null else 0.025,
+		"hop_duration_max": bezoar_rules.hop_duration_max if bezoar_rules != null else 0.05,
+		"hop_pause_min": bezoar_rules.hop_pause_min if bezoar_rules != null else 0.0125,
+		"hop_pause_max": bezoar_rules.hop_pause_max if bezoar_rules != null else 0.0375,
 		"size_multiplier_by_age": bezoar_rules.size_multiplier_by_age if bezoar_rules != null else [1.0, 1.0, 1.0],
 		"mesh": AnimalGroupRenderer.build_bezoar_mesh(
 			AnimalGroupRenderer.BEZOAR_BODY_LENGTH, AnimalGroupRenderer.BEZOAR_BODY_WIDTH,
@@ -7024,21 +7630,21 @@ func _build_animal_renderers(container: Node2D) -> Dictionary:
 
 	var partridge_rules := AnimalCalculator.get_animal_rules("partridge")
 	renderers["partridge"] = _build_animal_renderer(container, {
-		"individuals_per_group": partridge_rules.visual_group_size if partridge_rules != null else 1,
-		"move_speed": partridge_rules.move_speed if partridge_rules != null else 3.0,
-		"turn_rate": partridge_rules.turn_rate if partridge_rules != null else 1.5,
+		"species_name": "partridge",
+		"move_speed": partridge_rules.move_speed if partridge_rules != null else 24.0,
+		"turn_rate": partridge_rules.turn_rate if partridge_rules != null else 12.0,
 		"max_individuals_per_cluster": partridge_rules.max_individuals_per_cluster if partridge_rules != null else 1,
 		"cluster_comfort_radius": partridge_rules.cluster_comfort_radius if partridge_rules != null else 5.0,
-		"cluster_attraction_strength": partridge_rules.cluster_attraction_strength if partridge_rules != null else 1.5,
-		"hop_speed": partridge_rules.hop_speed if partridge_rules != null else 6.0,
-		"movement_phase_duration_min": partridge_rules.movement_phase_duration_min if partridge_rules != null else 2.0,
-		"movement_phase_duration_max": partridge_rules.movement_phase_duration_max if partridge_rules != null else 5.0,
-		"rest_phase_duration_min": partridge_rules.rest_phase_duration_min if partridge_rules != null else 3.0,
-		"rest_phase_duration_max": partridge_rules.rest_phase_duration_max if partridge_rules != null else 7.0,
-		"hop_duration_min": partridge_rules.hop_duration_min if partridge_rules != null else 0.2,
-		"hop_duration_max": partridge_rules.hop_duration_max if partridge_rules != null else 0.4,
-		"hop_pause_min": partridge_rules.hop_pause_min if partridge_rules != null else 0.1,
-		"hop_pause_max": partridge_rules.hop_pause_max if partridge_rules != null else 0.3,
+		"cluster_attraction_strength": partridge_rules.cluster_attraction_strength if partridge_rules != null else 12.0,
+		"hop_speed": partridge_rules.hop_speed if partridge_rules != null else 48.0,
+		"movement_phase_duration_min": partridge_rules.movement_phase_duration_min if partridge_rules != null else 0.25,
+		"movement_phase_duration_max": partridge_rules.movement_phase_duration_max if partridge_rules != null else 0.625,
+		"rest_phase_duration_min": partridge_rules.rest_phase_duration_min if partridge_rules != null else 0.375,
+		"rest_phase_duration_max": partridge_rules.rest_phase_duration_max if partridge_rules != null else 0.875,
+		"hop_duration_min": partridge_rules.hop_duration_min if partridge_rules != null else 0.025,
+		"hop_duration_max": partridge_rules.hop_duration_max if partridge_rules != null else 0.05,
+		"hop_pause_min": partridge_rules.hop_pause_min if partridge_rules != null else 0.0125,
+		"hop_pause_max": partridge_rules.hop_pause_max if partridge_rules != null else 0.0375,
 		"size_multiplier_by_age": partridge_rules.size_multiplier_by_age if partridge_rules != null else [1.0, 1.0, 1.0],
 		"mesh": AnimalGroupRenderer.build_partridge_mesh(
 			AnimalGroupRenderer.PARTRIDGE_BODY_LENGTH, AnimalGroupRenderer.PARTRIDGE_BODY_WIDTH,
@@ -7049,21 +7655,21 @@ func _build_animal_renderers(container: Node2D) -> Dictionary:
 
 	var wolf_rules := AnimalCalculator.get_animal_rules("wolf")
 	renderers["wolf"] = _build_animal_renderer(container, {
-		"individuals_per_group": wolf_rules.visual_group_size if wolf_rules != null else 1,
-		"move_speed": wolf_rules.move_speed if wolf_rules != null else 3.0,
-		"turn_rate": wolf_rules.turn_rate if wolf_rules != null else 1.5,
+		"species_name": "wolf",
+		"move_speed": wolf_rules.move_speed if wolf_rules != null else 24.0,
+		"turn_rate": wolf_rules.turn_rate if wolf_rules != null else 12.0,
 		"max_individuals_per_cluster": wolf_rules.max_individuals_per_cluster if wolf_rules != null else 1,
 		"cluster_comfort_radius": wolf_rules.cluster_comfort_radius if wolf_rules != null else 5.0,
-		"cluster_attraction_strength": wolf_rules.cluster_attraction_strength if wolf_rules != null else 1.5,
-		"hop_speed": wolf_rules.hop_speed if wolf_rules != null else 6.0,
-		"movement_phase_duration_min": wolf_rules.movement_phase_duration_min if wolf_rules != null else 2.0,
-		"movement_phase_duration_max": wolf_rules.movement_phase_duration_max if wolf_rules != null else 5.0,
-		"rest_phase_duration_min": wolf_rules.rest_phase_duration_min if wolf_rules != null else 3.0,
-		"rest_phase_duration_max": wolf_rules.rest_phase_duration_max if wolf_rules != null else 7.0,
-		"hop_duration_min": wolf_rules.hop_duration_min if wolf_rules != null else 0.2,
-		"hop_duration_max": wolf_rules.hop_duration_max if wolf_rules != null else 0.4,
-		"hop_pause_min": wolf_rules.hop_pause_min if wolf_rules != null else 0.1,
-		"hop_pause_max": wolf_rules.hop_pause_max if wolf_rules != null else 0.3,
+		"cluster_attraction_strength": wolf_rules.cluster_attraction_strength if wolf_rules != null else 12.0,
+		"hop_speed": wolf_rules.hop_speed if wolf_rules != null else 48.0,
+		"movement_phase_duration_min": wolf_rules.movement_phase_duration_min if wolf_rules != null else 0.25,
+		"movement_phase_duration_max": wolf_rules.movement_phase_duration_max if wolf_rules != null else 0.625,
+		"rest_phase_duration_min": wolf_rules.rest_phase_duration_min if wolf_rules != null else 0.375,
+		"rest_phase_duration_max": wolf_rules.rest_phase_duration_max if wolf_rules != null else 0.875,
+		"hop_duration_min": wolf_rules.hop_duration_min if wolf_rules != null else 0.025,
+		"hop_duration_max": wolf_rules.hop_duration_max if wolf_rules != null else 0.05,
+		"hop_pause_min": wolf_rules.hop_pause_min if wolf_rules != null else 0.0125,
+		"hop_pause_max": wolf_rules.hop_pause_max if wolf_rules != null else 0.0375,
 		"size_multiplier_by_age": wolf_rules.size_multiplier_by_age if wolf_rules != null else [1.0, 1.0, 1.0],
 		"mesh": AnimalGroupRenderer.build_wolf_mesh(
 			AnimalGroupRenderer.WOLF_BODY_LENGTH, AnimalGroupRenderer.WOLF_BODY_WIDTH,
@@ -7130,10 +7736,16 @@ func _on_save_pressed() -> void:
 	save_game_file_dialog.popup_centered()
 
 func _on_save_game_file_selected(path: String) -> void:
+	# Qui (non in _on_save_pressed) così lo snapshot è quello del momento esatto della scrittura.
+	_sync_animal_individuals_to_game_data()
 	var save_service := GameSaveService.new()
 	save_service.save_game_to_json(
 		macro_world, game_data, path, fog_of_war_memories, human_folk, human_population_group, human_individuals
 	)
+	# Lo snapshot serve solo al file appena scritto: tenuto in game_data, un rientro in GameScene
+	# nella stessa sessione (senza caricare) ricostruirebbe individui ormai vecchi. Il contatore
+	# resta (è comunque mai all'indietro, vedi AnimalGroupRenderer.set_next_individual_id).
+	game_data.animal_individuals_by_cell = []
 
 	if _pending_leave_action != &"":
 		_execute_pending_leave_action()
@@ -8689,6 +9301,10 @@ func _on_day_advanced(checkpoint_ran: bool, animals_changed: bool) -> void:
 	# stagionale di WorldTimeService (vedi _maybe_prune_fog_of_war_memories per il perché) — gira
 	# quindi anche nei giorni "vuoti" in cui il resto di questa funzione farebbe early-return sotto.
 	_maybe_prune_fog_of_war_memories()
+	# Individui animali salvati non ancora ricostruiti (cella viva al salvataggio ma non riattivata
+	# dopo il caricamento): passato un giorno il "salva e ricarica identico" non ha più senso, una
+	# visita futura genera individui nuovi dalla popolazione come sempre.
+	_pending_saved_animal_individuals.clear()
 	# Refresh giornaliero del pannello individuo selezionato (2026-09-06, richiesta utente) — PRIMA
 	# dell'early-return sotto, stesso motivo di _maybe_prune_fog_of_war_memories sopra: deve girare
 	# anche nei giorni "vuoti" (nessun checkpoint/animali cambiati), non solo quando il resto della
@@ -8761,6 +9377,15 @@ func _on_day_advanced(checkpoint_ran: bool, animals_changed: bool) -> void:
 				debug_member.id, debug_member.name, debug_task_name, debug_member.task_queue.size(),
 				debug_member.current_stamina, str(debug_member.carried_resources)
 			])
+
+	# Individui animali step 1: la riconciliazione degli individui con la popolazione della cella
+	# non deve dipendere dal rebuild vegetazione sotto (che nei giorni con solo animals_changed e
+	# flora_daily_updates_enabled=false non gira) — altrimenti gli individui resterebbero indietro
+	# rispetto alla popolazione fino al prossimo refresh da movimento/checkpoint. Tutte le celle vive,
+	# non solo quelle di prossimità: costo trascurabile, nessun MultiMesh vegetazione coinvolto.
+	if animals_changed:
+		for cell in live_cells.values():
+			_refresh_animal_individuals(cell)
 
 	if not (checkpoint_ran or animals_changed):
 		# Filtrato ai soli dintorni di un checkpoint stagionale (richiesta utente, 2026-09-05 —

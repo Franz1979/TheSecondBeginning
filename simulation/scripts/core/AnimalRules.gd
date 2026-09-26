@@ -34,28 +34,36 @@ extends Resource
 # Quanti individui rappresenta una singola icona/gruppo nella resa visiva animata (vedi
 # AnimalGroupRenderer). Default 1 = rappresentazione 1:1, per compatibilità con specie che
 # non lo impostano esplicitamente nel proprio .tres.
+# NON PIÙ LETTO (individui animali step 1): AnimalGroupRenderer disegna ora un individuo per
+# animale, sempre 1:1. Campo lasciato per compatibilità con i .tres esistenti (rabbit=10,
+# partridge=8).
 @export var visual_group_size: int = 1
 # Quanti individui al massimo per cluster (branco visivo di gruppi vicini tra loro, vedi
 # AnimalGroupRenderer). Default 1 fa collassare il numero di cluster al numero di gruppi
 # (un cluster per gruppo), disattivando di fatto l'effetto per le specie che non lo impostano
 # esplicitamente — stesso pattern "default = no-op" di visual_group_size sopra.
 @export var max_individuals_per_cluster: int = 1
-# Movimento a balzi dei gruppi (vedi AnimalGroupRenderer): un balzo (hop_duration) alterna a
+# Movimento a balzi degli individui (vedi AnimalGroupRenderer): un balzo (hop_duration) alterna a
 # una breve pausa (hop_pause) durante la fase "movimento" (movement_phase_duration); a quella
 # segue una sosta lunga (rest_phase_duration) prima del prossimo movimento. Ogni durata è
-# pescata a caso nel proprio range min/max a ogni transizione, indipendentemente per gruppo.
-@export var hop_duration_min: float = 0.2
-@export var hop_duration_max: float = 0.4
-@export var hop_pause_min: float = 0.1
-@export var hop_pause_max: float = 0.3
-@export var movement_phase_duration_min: float = 2.0
-@export var movement_phase_duration_max: float = 5.0
-@export var rest_phase_duration_min: float = 3.0
-@export var rest_phase_duration_max: float = 7.0
-# Velocità durante un singolo balzo (microcelle/secondo) — sostituisce move_speed per il
-# movimento dei gruppi disegnati; move_speed resta usato solo per il vagare continuo dei
-# centri-cluster invisibili (vedi AnimalGroupRenderer).
-@export var hop_speed: float = 6.0
+# pescata a caso nel proprio range min/max a ogni transizione, indipendentemente per individuo.
+# TEMPO DI GIOCO (2026-09-25): tutte le durate sono in GIORNI DI GIOCO, come il movimento umano
+# (HumanIndividualMovementService) — scorrono con la velocità di gioco e si fermano in pausa. I
+# valori sono la conversione dei vecchi secondi reali a 1x (1 giorno = 8 s reali, vedi
+# GameClockController.SECONDS_PER_DAY_BY_SPEED): secondi / 8.
+@export var hop_duration_min: float = 0.025
+@export var hop_duration_max: float = 0.05
+@export var hop_pause_min: float = 0.0125
+@export var hop_pause_max: float = 0.0375
+@export var movement_phase_duration_min: float = 0.25
+@export var movement_phase_duration_max: float = 0.625
+@export var rest_phase_duration_min: float = 0.375
+@export var rest_phase_duration_max: float = 0.875
+# Velocità durante un singolo balzo, in MICROCELLE PER GIORNO DI GIOCO (stessa unità di
+# HumanIndividual.move_speed, 10.0 per un umano che cammina) — sostituisce move_speed per il
+# movimento degli individui disegnati; move_speed resta usato solo per il vagare continuo dei
+# centri-cluster invisibili (vedi AnimalGroupRenderer). Vecchi microcelle/secondo × 8.
+@export var hop_speed: float = 48.0
 # Moltiplicatore di scala visiva (young, adult, old) applicato da AnimalGroupRenderer a ogni
 # icona disegnata — adult=1.0 è il riferimento a cui le dimensioni base (body_length/body_width,
 # passate da chi istanzia il renderer) sono tarate; young tipicamente <1 (cucciolo più piccolo),
@@ -71,14 +79,19 @@ extends Resource
 # gruppi disegnati non si muovono mai a questa velocità, vengono solo debolmente attratti verso
 # il centro (vedi cluster_comfort_radius/cluster_attraction_strength sotto). Default = valori
 # storici di rabbit (erano hardcoded in MacroCellScene prima di questo refactor).
-@export var move_speed: float = 3.0 # microcelle/secondo
-@export var turn_rate: float = 1.5 # radianti/secondo massimi di deriva casuale della direzione
+# TEMPO DI GIOCO (2026-09-25): unità per GIORNO DI GIOCO come le durate sopra — vecchi valori per
+# secondo reale × 8 (1 giorno = 8 s reali a 1x).
+@export var move_speed: float = 24.0 # microcelle/giorno di gioco
+# Radianti/giorno di gioco massimi di deriva casuale della direzione — vale sia per i centri-cluster
+# sia per gli individui.
+@export var turn_rate: float = 12.0
 # Guinzaglio elastico (AnimalGroupRenderer._apply_cluster_attraction): entro questo raggio
-# (microcelle) dal centro-cluster un gruppo non subisce alcuna trazione; oltre la soglia la sua
-# direzione viene gradualmente reindirizzata verso il centro, con intensità
-# cluster_attraction_strength.
+# (microcelle, NON dipende dal tempo) dal centro-cluster un individuo non subisce alcuna trazione;
+# oltre la soglia la sua direzione viene gradualmente reindirizzata verso il centro, con intensità
+# cluster_attraction_strength — un tasso per GIORNO DI GIOCO (moltiplica il delta), quindi
+# convertito anch'esso: vecchio valore per secondo × 8.
 @export var cluster_comfort_radius: float = 5.0
-@export var cluster_attraction_strength: float = 1.5
+@export var cluster_attraction_strength: float = 12.0
 
 @export_group("Age Bands")
 # Master switch, analogo a SubtypeRules.track_age_bands: false (default) = nessuna delle

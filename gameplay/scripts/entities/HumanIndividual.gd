@@ -358,11 +358,31 @@ var stamina_age_band: int = -1
 const MAX_CARRIED_VARIETIES: int = 4
 var carried_resources: Dictionary = {}
 
-# Slot tool (2026-09-08, richiesta utente) — SOLO spazio/bonus per ora (vedi HumanRules.
-# tool_slot_count/carry_bonus_per_empty_tool_slot), NESSUN uso funzionale: nessun sistema di equip
-# esiste ancora, quindi questo resta SEMPRE 0 finché non arriverà. Letto da HumanCalculator.
-# get_max_carry_capacity (bonus flat per slot VUOTO = tool_slot_count - questo campo).
-var equipped_tool_count: int = 0
+# Cintura degli attrezzi (2026-09-25, richiesta utente — sostituisce il vecchio campo
+# equipped_tool_count, sempre 0): HumanRules.tool_slot_count posti (4), ciascuno "" (vuoto) oppure il
+# nome di una risorsa attrezzo (SecondaryResourceRules.tool_categories non vuoto). Dimensionata da
+# _ensure_tool_slots. PERSISTITA (GameSaveService/GameLoadService, default vuoto per i save vecchi).
+# Un attrezzo in cintura NON occupa spazio nello zaino: il suo costo è il bonus di capacità perso
+# (HumanRules.carry_bonus_per_empty_tool_slot per slot vuoto, vedi HumanCalculator.
+# get_max_carry_capacity) e WalkAction/RunAction.STAMINA_DRAIN_PER_TOOL per microcella. Spostamenti
+# zaino <-> cintura SOLO da equip_tool_from_backpack/unequip_tool_to_backpack. Nessuna usura e nessun
+# requisito di attrezzo (gate) in questo step.
+const DEFAULT_TOOL_SLOT_COUNT: int = 4
+var equipped_tools: Array[String] = []
+# Ultimo avviso del controllo attrezzi (ToolGateService, 2026-09-25): testo già tradotto, mostrato nel
+# pannello individuo; "" = nessun avviso. Scritto da GameScene quando un'assegnazione viene rifiutata
+# per mancanza di attrezzi, azzerato alla prima assegnazione che lo supera. Transitorio, non salvato.
+var tool_gate_warning: String = ""
+# Numero di attrezzi in cintura — RICAVATO da equipped_tools, non più un campo a sé. Stessi lettori
+# di prima: HumanCalculator.get_max_carry_capacity (bonus per slot vuoto) e WalkAction/RunAction
+# (stamina per attrezzo).
+var equipped_tool_count: int:
+	get:
+		var count: int = 0
+		for tool_name in equipped_tools:
+			if tool_name != "":
+				count += 1
+		return count
 
 # --- Skill (2026-09-13, richiesta utente) ---
 #
@@ -1151,6 +1171,145 @@ func add_carried_resource(resource_name: String, quantity: int, decay_fraction: 
 
 # Toglie fino a `quantity` unità di una varietà; la entry sparisce a quantità 0. Ritorna quanto è stato
 # tolto davvero.
+# --- Cintura degli attrezzi (2026-09-25, richiesta utente) — vedi equipped_tools ---
+
+func _get_human_rules() -> HumanRules:
+	if source_group_ref != null and source_group_ref.folk_ref != null:
+		return source_group_ref.folk_ref.human_rules_ref
+	return null
+
+
+func get_tool_slot_count() -> int:
+	var human_rules := _get_human_rules()
+	return human_rules.tool_slot_count if human_rules != null else DEFAULT_TOOL_SLOT_COUNT
+
+
+# Porta equipped_tools esattamente a get_tool_slot_count() posti ("" = vuoto), senza toccare quelli
+# già occupati entro il nuovo numero. Chiamata prima di ogni lettura/scrittura della cintura.
+func _ensure_tool_slots() -> void:
+	var slot_count: int = get_tool_slot_count()
+	if equipped_tools.size() != slot_count:
+		# Array[String].resize riempie i nuovi posti con "" (slot vuoti).
+		equipped_tools.resize(slot_count)
+
+
+# Nome dell'attrezzo nello slot, "" se vuoto o fuori range.
+func get_equipped_tool(slot_index: int) -> String:
+	_ensure_tool_slots()
+	if slot_index < 0 or slot_index >= equipped_tools.size():
+		return ""
+	return equipped_tools[slot_index]
+
+
+static func is_tool_resource(resource_name: String) -> bool:
+	var resource_rules := CaloricCalculator.get_caloric_source_rules(resource_name)
+	return resource_rules != null and not resource_rules.tool_categories.is_empty()
+
+
+# Bonus di capacità che uno slot della cintura dà quando è VUOTO (HumanRules.
+# carry_bonus_per_empty_tool_slot) — 0 senza regole risolvibili, coerente col fallback della capacità.
+func _carry_bonus_per_empty_tool_slot() -> float:
+	var human_rules := _get_human_rules()
+	return human_rules.carry_bonus_per_empty_tool_slot if human_rules != null else 0.0
+
+
+# Sposta UNA unità dell'attrezzo dallo zaino al primo slot libero della cintura. Controlli: la risorsa
+# è un attrezzo, è nello zaino, c'è uno slot libero, e lo zaino resta entro la capacità ridotta
+# (occupare uno slot toglie il suo bonus: senza questo controllo uno zaino quasi pieno finirebbe oltre
+# il massimo). Ricalcola poi la capacità di trasporto. Ritorna true se lo spostamento è avvenuto.
+func equip_tool_from_backpack(resource_name: String, game_data: GameData) -> bool:
+	_ensure_tool_slots()
+	if not is_tool_resource(resource_name) or get_carried_quantity(resource_name) <= 0:
+		return false
+	var free_slot: int = equipped_tools.find("")
+	if free_slot == -1:
+		return false
+	var resource_rules := CaloricCalculator.get_caloric_source_rules(resource_name)
+	var space_after: float = get_carried_space() - resource_rules.space_per_unit
+	var capacity_after: float = max_carry_capacity - _carry_bonus_per_empty_tool_slot()
+	if space_after > capacity_after:
+		return false
+	if remove_carried_resource(resource_name, 1) != 1:
+		return false
+	equipped_tools[free_slot] = resource_name
+	_recalculate_carry_capacity_after_tool_change(game_data, -1)
+	return true
+
+
+# Rimette nello zaino l'attrezzo dello slot. Controlli: slot pieno, varietà disponibile nello zaino
+# (MAX_CARRIED_VARIETIES) e spazio sufficiente contando anche il bonus che lo slot, liberandosi,
+# restituisce. Ricalcola poi la capacità di trasporto. Ritorna true se lo spostamento è avvenuto.
+# L'attrezzo rientra con decay_fraction 0.0: gli attrezzi hanno day_durability -1 (non deperiscono).
+func unequip_tool_to_backpack(slot_index: int, game_data: GameData) -> bool:
+	var resource_name: String = get_equipped_tool(slot_index)
+	if resource_name == "" or not can_carry_variety(resource_name):
+		return false
+	var resource_rules := CaloricCalculator.get_caloric_source_rules(resource_name)
+	var space_per_unit: float = resource_rules.space_per_unit if resource_rules != null else 0.0
+	var capacity_after: float = max_carry_capacity + _carry_bonus_per_empty_tool_slot()
+	if get_carried_space() + space_per_unit > capacity_after:
+		return false
+	if add_carried_resource(resource_name, 1, 0.0) != 1:
+		return false
+	equipped_tools[slot_index] = ""
+	_recalculate_carry_capacity_after_tool_change(game_data, 1)
+	return true
+
+
+# --- Cintura <-> magazzino, senza passare dallo zaino (2026-09-25, richiesta utente — task di
+# equipaggiamento dal pannello: RetrieveAction/UnloadAction in modalità "slot della cintura") ---
+
+# Slot in cui un attrezzo preso direttamente da un magazzino può entrare: `preferred_slot` se è vuoto,
+# altrimenti il primo slot libero; -1 se non è un attrezzo, se la cintura è piena, o se occupare uno
+# slot (che toglie il suo bonus di capacità) porterebbe lo zaino attuale oltre il massimo.
+func find_slot_for_direct_equip(resource_name: String, preferred_slot: int) -> int:
+	_ensure_tool_slots()
+	if not is_tool_resource(resource_name):
+		return -1
+	var slot: int = -1
+	if preferred_slot >= 0 and preferred_slot < equipped_tools.size() and equipped_tools[preferred_slot] == "":
+		slot = preferred_slot
+	else:
+		slot = equipped_tools.find("")
+	if slot == -1:
+		return -1
+	if get_carried_space() > max_carry_capacity - _carry_bonus_per_empty_tool_slot():
+		return -1
+	return slot
+
+
+# Mette l'attrezzo nello slot (già verificato con find_slot_for_direct_equip) e aggiorna la capacità.
+func equip_tool_direct(resource_name: String, slot_index: int, game_data: GameData) -> bool:
+	if get_equipped_tool(slot_index) != "" or slot_index < 0 or slot_index >= equipped_tools.size():
+		return false
+	equipped_tools[slot_index] = resource_name
+	_recalculate_carry_capacity_after_tool_change(game_data, -1)
+	return true
+
+
+# Toglie l'attrezzo dallo slot SENZA metterlo nello zaino (il chiamante lo ha già depositato altrove)
+# e aggiorna la capacità. Ritorna il nome tolto, "" se lo slot era vuoto.
+func take_equipped_tool(slot_index: int, game_data: GameData) -> String:
+	var resource_name: String = get_equipped_tool(slot_index)
+	if resource_name == "":
+		return ""
+	equipped_tools[slot_index] = ""
+	_recalculate_carry_capacity_after_tool_change(game_data, 1)
+	return resource_name
+
+
+# Il bonus di capacità dipende dagli slot vuoti: stesso ricalcolo completo del giro giornaliero
+# (fascia d'età dall'Era corrente, per questo serve game_data). Senza game_data (es. equipaggiamento
+# automatico dentro una ProduceAction in attesa di attrezzi, che non lo possiede) si corregge la
+# capacità corrente del solo bonus di uno slot: `empty_slot_delta` = +1 se uno slot si è liberato,
+# -1 se è stato occupato. Il ricalcolo giornaliero riallinea comunque tutto.
+func _recalculate_carry_capacity_after_tool_change(game_data: GameData, empty_slot_delta: int) -> void:
+	if game_data != null:
+		HumanCarryCapacityIndividualService.recalculate_max_carry_capacity(self, game_data)
+	else:
+		max_carry_capacity += float(empty_slot_delta) * _carry_bonus_per_empty_tool_slot()
+
+
 func remove_carried_resource(resource_name: String, quantity: int) -> int:
 	var current_quantity: int = get_carried_quantity(resource_name)
 	if quantity <= 0 or current_quantity <= 0:

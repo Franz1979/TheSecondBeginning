@@ -183,8 +183,9 @@ static func build_task(definition: TaskDefinition, context: Dictionary) -> Task:
 			TaskTypes.ActionType.BUILD:
 				# 1 argomento (target_building: Building) — stesso schema di SETUP_SITE sopra.
 				# skill_multiplier/tool_multiplier NON letti da context: restano al default 1.0 di
-				# BuildAction._init (nessun sistema skill/tool esiste ancora da cui pescare un valore
-				# diverso, vedi BuildAction.gd) — nessuna TaskStepDefinition dichiara quelle chiavi
+				# BuildAction._init. Le skill esistono e crescono al completamento della Task
+				# (task_completion_effects.tres, skill_builder), ma non influenzano ancora il lavoro;
+				# nessun sistema tool esiste ancora — nessuna TaskStepDefinition dichiara quelle chiavi
 				# oggi. Vedi step_build.tres/gameplay/scripts/tasks/definitions/build.tres per l'unico
 				# consumatore oggi (2026-09-11, quarto e ultimo step della Build Task).
 				if step_definition.context_keys.is_empty() or not context.has(step_definition.context_keys[0]):
@@ -194,6 +195,9 @@ static func build_task(definition: TaskDefinition, context: Dictionary) -> Task:
 				step_descriptions.append(step_definition.step_description)
 			TaskTypes.ActionType.PRODUCE:
 				# 2 argomenti (target_building, resource_name) — 2026-09-23, ProduceAction.
+				# skill/tool multiplier fissi a 1.0 come per BUILD: skill_crafting cresce al
+				# completamento della Produce Task (task_completion_effects.tres) ma non accelera ancora
+				# il lavoro.
 				if step_definition.context_keys.size() < 2:
 					push_error("TaskFactory.build_task: context_keys insufficienti (servono 2: target_building, resource_name) per step PRODUCE di TaskDefinition '%s'." % definition.task_name)
 					continue
@@ -234,8 +238,17 @@ static func build_task(definition: TaskDefinition, context: Dictionary) -> Task:
 						retrieve_building_key, retrieve_resource_name_key, retrieve_quantity_key, definition.task_name
 					])
 					continue
+				# Quarta chiave FACOLTATIVA (2026-09-25, richiesta utente — Task "prendi attrezzo",
+				# equip_tool.tres): slot della cintura in cui mettere direttamente l'attrezzo prelevato
+				# (RetrieveAction.equip_slot_index). Default -1 = prelievo normale nello zaino, se la chiave
+				# non è dichiarata (Transport) o non è nel contesto — stesso schema della quantità facoltativa
+				# della PRODUCE sopra.
+				var retrieve_equip_slot: int = -1
+				if step_definition.context_keys.size() >= 4 and context.has(step_definition.context_keys[3]):
+					retrieve_equip_slot = int(context[step_definition.context_keys[3]])
 				steps.append(RetrieveAction.new(
-					context[retrieve_building_key], context[retrieve_resource_name_key], int(context[retrieve_quantity_key])
+					context[retrieve_building_key], context[retrieve_resource_name_key], int(context[retrieve_quantity_key]),
+					retrieve_equip_slot
 				))
 				step_descriptions.append(step_definition.step_description)
 			TaskTypes.ActionType.RESTOCK_POUCH:
@@ -259,7 +272,14 @@ static func build_task(definition: TaskDefinition, context: Dictionary) -> Task:
 				if step_definition.context_keys.is_empty() or not context.has(step_definition.context_keys[0]):
 					push_error("TaskFactory.build_task: context_keys[0] mancante/non risolvibile per step UNLOAD di TaskDefinition '%s'." % definition.task_name)
 					continue
-				steps.append(UnloadAction.new(context[step_definition.context_keys[0]], UnloadAction.DepositKind.RESOURCE))
+				# Seconda chiave FACOLTATIVA (2026-09-25, richiesta utente — Task "riponi attrezzo",
+				# store_tool.tres): slot della cintura il cui attrezzo va depositato direttamente
+				# (UnloadAction.unequip_slot_index). Default -1 = deposito normale dallo zaino, se la chiave
+				# non è dichiarata (Transport, raccolta) o non è nel contesto.
+				var unload_unequip_slot: int = -1
+				if step_definition.context_keys.size() >= 2 and context.has(step_definition.context_keys[1]):
+					unload_unequip_slot = int(context[step_definition.context_keys[1]])
+				steps.append(UnloadAction.new(context[step_definition.context_keys[0]], UnloadAction.DepositKind.RESOURCE, unload_unequip_slot))
 				step_descriptions.append(step_definition.step_description)
 			TaskTypes.ActionType.RUN:
 				# 1 argomento (target: Vector2) — stesso schema di WALK sopra, RunAction.new(target).

@@ -151,13 +151,13 @@ static func _size_scaled_amount(
 # scalato per taglia (age/sex), MAI al bonus slot tool sotto — quel bonus è deliberatamente FLAT,
 # fuori da qualunque moltiplicatore (vedi il campo su HumanRules per il perché).
 #
-# equipped_tool_count (2026-09-08, richiesta utente — slot tool, SOLO spazio/bonus, nessun uso
-# funzionale ancora): bonus FLAT di HumanRules.carry_bonus_per_empty_tool_slot per ogni slot
+# equipped_tool_count (2026-09-08, richiesta utente; dal 2026-09-25 ricavato dalla cintura
+# HumanIndividual.equipped_tools): bonus FLAT di HumanRules.carry_bonus_per_empty_tool_slot per ogni slot
 # VUOTO, aggiunto DOPO il termine scalato per taglia, non dentro (richiesta esplicita — un
 # individuo piccolo e uno grande con lo stesso zaino vuoto ottengono lo stesso bonus assoluto, non
-# uno scalato con la taglia). max(..., 0) difensivo: equipped_tool_count è sempre 0 oggi (nessun
-# sistema di equip), ma se in futuro superasse tool_slot_count per qualche motivo il bonus non deve
-# diventare negativo.
+# uno scalato con la taglia). max(..., 0) difensivo: la cintura ha sempre tool_slot_count posti, ma
+# se equipped_tool_count superasse tool_slot_count per qualche motivo il bonus non deve diventare
+# negativo.
 static func get_max_carry_capacity(
 	human_rules: HumanRules, age_band: HumanTypes.AgeBand, sex: HumanTypes.Sex,
 	equipped_tool_count: int = 0, equipment_multiplier: float = 1.0

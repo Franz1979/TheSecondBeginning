@@ -40,6 +40,27 @@ const POPULATION_SIZE_DIVISOR := {
 const POPULATION_JITTER_RATIO := 0.10
 const POPULATION_MIN_FLOOR := 4
 
+# Prede piccole garantite sulla cella di partenza con "presenza sicura animali" (vedi
+# ensure_small_prey_at), in ordine di preferenza. SMALL_PREY_HABITAT_SPECIES e' la specie il cui
+# habitat (suitable_biomes/suitable_terrains) fa da criterio di scelta della cella di partenza in
+# FirstStartMacroCellSelectionService — coniglio e pernice hanno oggi lo stesso habitat.
+const SMALL_PREY_SPECIES: Array[String] = ["rabbit", "partridge"]
+const SMALL_PREY_HABITAT_SPECIES := "rabbit"
+
+
+# Conversione della taglia popolazione scelta in NewGameOptionsMenu (stringa di GameSettings.
+# selected_population_size / GameData.starting_population_size) nell'enum usato dal seeding —
+# unico punto condiviso da WorldScene._populate_new_world e GameScene (semina prede alla partenza).
+# Valore sconosciuto -> NORMAL, stesso default di prima.
+static func population_size_from_string(value: String) -> GameTypes.PopulationSize:
+	match value:
+		"SPARSE":
+			return GameTypes.PopulationSize.SPARSE
+		"DENSE":
+			return GameTypes.PopulationSize.DENSE
+		_:
+			return GameTypes.PopulationSize.NORMAL
+
 
 func populate_animals(world: World, density: GameTypes.AnimalDensity, population_size: GameTypes.PopulationSize) -> void:
 	var divisor: int = DENSITY_DIVISOR[density]
@@ -118,6 +139,62 @@ func populate_animals(world: World, density: GameTypes.AnimalDensity, population
 			])
 		else:
 			print("[ANIMAL SEEDING] %s: %d candidati, %d popolazioni create%s" % [species_name, candidates.size(), created, overlap_note])
+
+
+# "Presenza sicura animali" (chiamato da GameScene._ready alla prima apertura di una partita nuova,
+# DOPO il seeding e dopo la scelta definitiva della cella di partenza): garantisce una preda piccola
+# in `coords`, seminandola se manca. Regola:
+#   - nessun gruppo animale (di qualunque specie, predatori inclusi) ha `coords` nel territorio ->
+#     semina sia conigli sia pernici;
+#   - c'e' gia' almeno una specie -> ne semina UNA sola: conigli se `coords` non e' gia' in un
+#     territorio di conigli, altrimenti pernici se non e' gia' in un territorio di pernici;
+#   - conigli e pernici gia' presenti -> nessuna semina.
+# Ogni semina passa da _create_population (stesso territorio/taglia/eta' del seeding normale) e
+# avviene solo se `coords` e' idonea alla specie (is_suitable_for): la cella di partenza e' gia'
+# scelta tra quelle idonee al coniglio, quindi una cella non idonea e' quella di ripiego di
+# FirstStartMacroCellSelectionService — in quel caso nessuna semina forzata e un push_warning.
+# Restituisce le specie effettivamente seminate (vuoto se nessuna).
+func ensure_small_prey_at(world: World, coords: Vector2i, population_size: GameTypes.PopulationSize) -> Array[String]:
+	var seeded: Array[String] = []
+	var cell := world.get_cell_at(coords.x, coords.y)
+	if cell == null:
+		push_warning("AnimalSeedingService.ensure_small_prey_at: macrocella (%d, %d) inesistente, nessuna semina." % [coords.x, coords.y])
+		return seeded
+
+	var any_group_here := false
+	for group in world.population_groups:
+		if group.territory != null and group.territory.contains(coords):
+			any_group_here = true
+			break
+
+	var to_seed: Array[String] = []
+	if not any_group_here:
+		to_seed.assign(SMALL_PREY_SPECIES)
+	else:
+		for species_name in SMALL_PREY_SPECIES:
+			if world.find_population_group(species_name, coords) == null:
+				to_seed.append(species_name)
+				break
+
+	for species_name in to_seed:
+		var rules := AnimalCalculator.get_animal_rules(species_name)
+		if rules == null:
+			push_warning("AnimalSeedingService.ensure_small_prey_at: regole di '%s' non trovate, specie non seminata." % species_name)
+			continue
+		if cell.terrain_base == GameTypes.TerrainBase.WATER or not rules.is_suitable_for(cell.biome, cell.terrain_base):
+			push_warning(
+				"AnimalSeedingService.ensure_small_prey_at: la cella di partenza (%d, %d) non e' idonea a '%s' "
+				% [coords.x, coords.y, species_name]
+				+ "(probabile cella di ripiego: nessuna candidata soddisfaceva i filtri), nessuna semina forzata."
+			)
+			continue
+		_create_population(world, rules, species_name, coords, population_size)
+		seeded.append(species_name)
+
+	print("[ANIMAL SEEDING] prede piccole alla partenza (%d, %d): gruppi gia' presenti=%s, seminate=%s" % [
+		coords.x, coords.y, "si" if any_group_here else "no", str(seeded)
+	])
+	return seeded
 
 
 # Stesso identico pattern di creazione gia' usato dal debug manuale (WorldScene.

@@ -9,7 +9,10 @@ extends Node2D
 
 const CELL_SIZE: int = 10 # stesso fattore pixel/microcella di MicroCellRenderer/AnimalGroupRenderer
 const SELECTION_COLOR := Color(1.0, 1.0, 1.0, 0.9)
-const SELECTION_WIDTH: float = 0.6
+# Spessore dell'anello di selezione in unità di disegno: il nodo è scalato (BASE_DRAW_SCALE × età ×
+# sesso), quindi a schermo un adulto maschio ha 0.45 × ~1.22 ≈ 0.55 px (2026-09-25, richiesta
+# utente: un pelino più sottile — era 0.6, cioè ~0.73 px dopo l'ingrandimento dell'umano).
+const SELECTION_WIDTH: float = 0.45
 
 # Step 2 (2026-09-04) — forma base statica, sostituisce il cerchio unico dello Step 0/1: un'ellisse
 # per il busto (più larga lungo le "spalle", asse Y locale, che in profondità, asse X locale —
@@ -83,6 +86,14 @@ const HAIR_LONG_OFFSET_FORWARD: float = -0.55
 # Ridotti da 1.0/1.3 (richiesta utente, 2026-09-04: busto troppo grande, "stringere appena appena"
 # per sembrare più sottile) — stesso rapporto forward/side di prima (~1:1.3), solo scalato un po'
 # più in basso.
+# Scala di base del disegno (2026-09-25, richiesta utente — scala grafica umani/animali): TUTTE le
+# costanti di forma di questo file (busto, testa, arti, capelli, faccia, anello di selezione) sono
+# nella scala storica, in cui un adulto misura 2 × TORSO_RADIUS_FORWARD = 1.8 px nella direzione di
+# marcia; questo fattore le ingrandisce tutte insieme, in proporzione, portando l'adulto a ~2.2 px
+# in marcia (e le spalle, 2 × TORSO_RADIUS_SIDE = 2.3 px, a ~2.8 px).
+# Applicato come `scale` del nodo, moltiplicato per età/sesso (vedi _process e DeadBodyView.setup):
+# nessuna costante di forma cambia e nessuna forma in _draw() deve saperlo.
+const BASE_DRAW_SCALE: float = 2.2 / 1.8
 const TORSO_RADIUS_FORWARD: float = 0.9 # lungo X locale (profondità, verso la direzione di marcia)
 const TORSO_RADIUS_SIDE: float = 1.15 # lungo Y locale (spalle)
 # Centrata sul busto, nessun offset (richiesta utente, 2026-09-04 — dopo aver ridotto lo sporgere
@@ -340,7 +351,9 @@ func _process(delta: float) -> void:
 		)
 		var age_multiplier: float = human_rules.size_multiplier_by_age[_current_age_band]
 		var sex_multiplier: float = human_rules.size_multiplier_by_sex[individual.sex]
-		scale = Vector2.ONE * age_multiplier * sex_multiplier
+		scale = Vector2.ONE * BASE_DRAW_SCALE * age_multiplier * sex_multiplier
+	else:
+		scale = Vector2.ONE * BASE_DRAW_SCALE
 	if individual.is_moving:
 		# Bugfix (richiesta utente, 2026-09-07): in pausa (clock.is_playing == false) walk_phase
 		# resta CONGELATA al valore corrente — nessun avanzamento, ma nemmeno un azzeramento, che

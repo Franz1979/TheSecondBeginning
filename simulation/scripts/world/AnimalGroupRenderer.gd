@@ -325,11 +325,12 @@ const PARTRIDGE_EAR_LENGTH: float = 0.5
 const PARTRIDGE_EAR_WIDTH: float = 0.35
 const PARTRIDGE_COLOR: Color = Color(0.68, 0.5, 0.32, 0.95)
 
-# Popolazione -> numero di gruppi disegnati: individui rappresentati da ciascuna icona,
-# arriva da AnimalRules.visual_group_size (letto dal chiamante, mai hardcoded qui).
-var individuals_per_group: int = 1
-var move_speed: float = 0.0 # microcelle/secondo
-var turn_rate: float = 0.0 # radianti/secondo massimi di deriva casuale della direzione
+# Individui animali step 1: un'istanza disegnata = un animale reale della quota di questa cella
+# (AnimalRules.visual_group_size non è più letto — un individuo non rappresenta più N animali).
+# species_name arriva da configure(params["species_name"]) ed è copiato su ogni individuo generato.
+var species_name: String = ""
+var move_speed: float = 0.0 # microcelle/giorno di gioco
+var turn_rate: float = 0.0 # radianti/giorno di gioco massimi di deriva casuale della direzione
 
 # Cluster: stessa popolazione -> quanti gruppi disegnare, arriva da AnimalRules.max_individuals_per_cluster
 # (letto dal chiamante, mai hardcoded qui). Un cluster è un punto che vaga con la STESSA logica
@@ -339,20 +340,21 @@ var turn_rate: float = 0.0 # radianti/secondo massimi di deriva casuale della di
 # attrazione tra cluster diversi).
 var max_individuals_per_cluster: int = 1
 var cluster_comfort_radius: float = 5.0 # microcelle: entro questo raggio dal centro-cluster nessuna trazione
-var cluster_attraction_strength: float = 1.5 # quanto forte la trazione oltre il raggio comfort
+var cluster_attraction_strength: float = 12.0 # tasso per giorno di gioco della trazione oltre il raggio comfort
 
 # Movimento a balzi dei gruppi (vedi AnimalVisualGroup.MacroPhase/MicroPhase e _update_group_phase),
 # arrivano da AnimalRules (letti dal chiamante, mai hardcoded qui). move_speed sopra resta usato
-# solo per il vagare continuo dei centri-cluster invisibili.
+# solo per il vagare continuo dei centri-cluster invisibili. TEMPO DI GIOCO: hop_speed in
+# microcelle/giorno di gioco, tutte le durate in giorni di gioco (vedi AnimalRules e _process).
 var hop_speed: float = 0.0
-var movement_phase_duration_min: float = 2.0
-var movement_phase_duration_max: float = 5.0
-var rest_phase_duration_min: float = 3.0
-var rest_phase_duration_max: float = 7.0
-var hop_duration_min: float = 0.2
-var hop_duration_max: float = 0.4
-var hop_pause_min: float = 0.1
-var hop_pause_max: float = 0.3
+var movement_phase_duration_min: float = 0.25
+var movement_phase_duration_max: float = 0.625
+var rest_phase_duration_min: float = 0.375
+var rest_phase_duration_max: float = 0.875
+var hop_duration_min: float = 0.025
+var hop_duration_max: float = 0.05
+var hop_pause_min: float = 0.0125
+var hop_pause_max: float = 0.0375
 
 # Scala visiva (young, adult, old) applicata per-istanza in _write_instance_transform, arriva da
 # AnimalRules.size_multiplier_by_age (letto dal chiamante, mai hardcoded qui) — indicizzato da
@@ -363,11 +365,27 @@ var size_multiplier_by_age: Array = [1.0, 1.0, 1.0]
 # Se assegnato (vedi MacroCellScene._ready), i gruppi si muovono solo quando clock.is_playing
 # è true — stesso orologio che governa l'avanzamento giorno/anno, così i conigli si fermano
 # in pausa e durante le finestre di dialogo bloccanti (che già mettono in pausa il clock, vedi
-# _on_blocking_dialog_visibility_changed). Se null (nessun clock assegnato), il movimento resta
-# sempre attivo — comportamento invariato per contesti che non hanno un GameClockController.
+# _on_blocking_dialog_visibility_changed). Dà anche il delta in giorni di gioco usato da tutto il
+# movimento (vedi _game_day_delta). Se null (nessun clock assegnato), il movimento resta sempre
+# attivo, al ritmo della velocità 1x.
 var clock: GameClockController = null
 
-var _groups: Array = [] # Array[AnimalVisualGroup]
+# Test di visibilità fog of war per microcella (Vector2i -> bool), assegnato come il clock da chi
+# istanzia il renderer — GameScene._activate_live_cell lo lega a FogOfWarRenderer.
+# is_animal_visible_at della stessa cella (in raggio o dettaglio fresco). Callable invece di un
+# riferimento a FogOfWarRenderer, così questo renderer (layer simulation) non dipende da una classe
+# di gameplay. Applicato in _write_instance_transform a OGNI frame: un'istanza in una microcella
+# non visibile non si disegna (scala zero), senza toccare posizione né movimento — gli animali
+# restano su tutta la macrocella e possono entrare nella zona visibile da fuori. Non valida
+# (default, es. MacroCellScene senza fog): tutti visibili, comportamento di sempre.
+var visibility_test: Callable = Callable()
+
+# Contatore id individui, condiviso da TUTTI i renderer (static) per l'intera sessione: un id non
+# viene mai riassegnato, nemmeno a un individuo di un'altra cella/specie o a uno rigenerato dopo
+# la riattivazione di una cella. Non persistito (nessun salvataggio degli individui in questo step).
+static var _next_individual_id: int = 1
+
+var _groups: Array = [] # Array[AnimalVisualGroup], un elemento per individuo (id > 0)
 var _clusters: Array = [] # Array[AnimalVisualGroup], riusata come "centro mobile", mai disegnata
 var _multimesh: MultiMesh
 var _multimesh_instance: MultiMeshInstance2D
@@ -380,21 +398,21 @@ var _configured: bool = false
 # che non la passa è un bug reale (specie senza sagoma configurata), meglio un errore rumoroso
 # che un coniglio-fallback silenzioso per una specie che non lo è.
 func configure(params: Dictionary) -> void:
-	individuals_per_group = max(int(params.get("individuals_per_group", 1)), 1)
-	move_speed = float(params.get("move_speed", 3.0))
-	turn_rate = float(params.get("turn_rate", 1.5))
+	species_name = String(params.get("species_name", ""))
+	move_speed = float(params.get("move_speed", 24.0))
+	turn_rate = float(params.get("turn_rate", 12.0))
 	max_individuals_per_cluster = max(int(params.get("max_individuals_per_cluster", 1)), 1)
 	cluster_comfort_radius = float(params.get("cluster_comfort_radius", 5.0))
-	cluster_attraction_strength = float(params.get("cluster_attraction_strength", 1.5))
-	hop_speed = float(params.get("hop_speed", 6.0))
-	movement_phase_duration_min = float(params.get("movement_phase_duration_min", 2.0))
-	movement_phase_duration_max = float(params.get("movement_phase_duration_max", 5.0))
-	rest_phase_duration_min = float(params.get("rest_phase_duration_min", 3.0))
-	rest_phase_duration_max = float(params.get("rest_phase_duration_max", 7.0))
-	hop_duration_min = float(params.get("hop_duration_min", 0.2))
-	hop_duration_max = float(params.get("hop_duration_max", 0.4))
-	hop_pause_min = float(params.get("hop_pause_min", 0.1))
-	hop_pause_max = float(params.get("hop_pause_max", 0.3))
+	cluster_attraction_strength = float(params.get("cluster_attraction_strength", 12.0))
+	hop_speed = float(params.get("hop_speed", 48.0))
+	movement_phase_duration_min = float(params.get("movement_phase_duration_min", 0.25))
+	movement_phase_duration_max = float(params.get("movement_phase_duration_max", 0.625))
+	rest_phase_duration_min = float(params.get("rest_phase_duration_min", 0.375))
+	rest_phase_duration_max = float(params.get("rest_phase_duration_max", 0.875))
+	hop_duration_min = float(params.get("hop_duration_min", 0.025))
+	hop_duration_max = float(params.get("hop_duration_max", 0.05))
+	hop_pause_min = float(params.get("hop_pause_min", 0.0125))
+	hop_pause_max = float(params.get("hop_pause_max", 0.0375))
 	size_multiplier_by_age = params.get("size_multiplier_by_age", [1.0, 1.0, 1.0])
 
 	var mesh: ArrayMesh = params["mesh"]
@@ -419,100 +437,369 @@ func set_animals_visible(v: bool) -> void:
 		_multimesh_instance.visible = v
 
 
-# Ricalcola quanti gruppi disegnare da una popolazione totale (arrotondato), aggiungendo
-# nuovi gruppi in posizione/direzione casuale o rimuovendo quelli in eccesso dalla fine
-# dell'array — i gruppi già esistenti non vengono mai spostati da questa chiamata. Tutti taggati
-# ADULT (age_band di default): fallback per specie che non tracciano age band (track_age_bands
-# false), quindi disegnati a scala fissa size_multiplier_by_age[ADULT] (1.0 se non impostato).
+# Fallback per specie che non tracciano age band (track_age_bands false): stessa riconciliazione
+# per id di set_population_by_age sotto, con l'intera quota della cella taggata ADULT (scala fissa
+# size_multiplier_by_age[ADULT], 1.0 se non impostato). Un individuo per animale.
 func set_population(total_population: int) -> void:
 	if not _configured:
 		return
 
-	var target_groups: int = int(round(float(max(total_population, 0)) / individuals_per_group))
-
-	while _groups.size() < target_groups:
-		_groups.append(_make_random_group())
-	while _groups.size() > target_groups:
-		_groups.pop_back()
-
-	_multimesh.instance_count = _groups.size()
-	_resync_clusters(total_population)
-
-	for i in range(_groups.size()):
-		_write_instance_transform(i, _groups[i])
+	_apply_band_targets({
+		GameTypes.AgeBand.YOUNG: 0,
+		GameTypes.AgeBand.ADULT: max(total_population, 0),
+		GameTypes.AgeBand.OLD: 0,
+	})
 
 
-# Come set_population sopra, ma per specie con track_age_bands=true: la popolazione arriva già
-# ripartita per fascia (chiamante: MacroCellScene, via PopulationGroup.get_age_composition_in_cell)
-# così ogni gruppo disegnato viene taggato con la propria age_band e scalato di conseguenza in
-# _write_instance_transform (AnimalRules.size_multiplier_by_age). Ridimensiona ciascuna fascia
-# INDIPENDENTEMENTE dalle altre (stesso pattern add/remove di set_population, applicato tre
-# volte) — _groups resta un unico array misto: il movimento/cluster restano indifferenti alla
-# fascia (vedi _process/_resync_clusters, invariati), solo l'aspetto cambia.
+# Specie con track_age_bands=true: la quota della cella arriva già ripartita per fascia
+# (chiamante: GameScene/MacroCellScene, via PopulationGroup.get_age_composition_in_cell). Ogni
+# fascia è riconciliata INDIPENDENTEMENTE dalle altre — _groups resta un unico array misto: il
+# movimento/cluster restano indifferenti alla fascia, solo l'aspetto (scala per age_band in
+# _write_instance_transform) cambia. Alla prima chiamata dopo l'attivazione della cella (_groups
+# vuoto) genera un individuo per ogni animale della quota.
 func set_population_by_age(young: int, adult: int, old: int) -> void:
 	if not _configured:
 		return
 
-	var targets := {
-		GameTypes.AgeBand.YOUNG: int(round(float(max(young, 0)) / individuals_per_group)),
-		GameTypes.AgeBand.ADULT: int(round(float(max(adult, 0)) / individuals_per_group)),
-		GameTypes.AgeBand.OLD: int(round(float(max(old, 0)) / individuals_per_group)),
-	}
+	_apply_band_targets({
+		GameTypes.AgeBand.YOUNG: max(young, 0),
+		GameTypes.AgeBand.ADULT: max(adult, 0),
+		GameTypes.AgeBand.OLD: max(old, 0),
+	})
 
-	for age_band in targets.keys():
-		var target: int = targets[age_band]
-		var current: int = 0
-		for group in _groups:
-			if group.age_band == age_band:
-				current += 1
 
-		while current < target:
-			_groups.append(_make_random_group(age_band))
+# Riconciliazione per id in tre fasi, in quest'ordine:
+# 1. rimozioni: per ogni fascia in eccesso, individui scelti a caso e tolti per id;
+# 2. centri-cluster: numero ricalcolato sulla popolazione FINALE (_sync_cluster_count); chi
+#    apparteneva a un centro rimosso viene riassegnato (_reassign_orphaned_individuals), tutti gli
+#    altri tengono il proprio centro — l'appartenenza non dipende mai dalla posizione nell'array;
+# 3. nascite: ogni nuovo individuo riceve alla nascita il centro meno popolato e nasce già
+#    dentro il suo raggio di comfort (_make_individual), invece che in un punto qualunque della
+#    macrocella.
+# Gli individui sopravvissuti mantengono id, posizione, centro e ordine relativo.
+func _apply_band_targets(targets: Dictionary) -> void:
+	var total_population: int = 0
+	for age_band in targets:
+		_remove_excess_in_band(age_band, int(targets[age_band]))
+		total_population += int(targets[age_band])
+
+	_sync_cluster_count(total_population)
+	_reassign_orphaned_individuals()
+
+	for age_band in targets:
+		_add_missing_in_band(age_band, int(targets[age_band]))
+
+	_refresh_instances()
+
+
+# Se la fascia ha più individui di `target`, sceglie a caso quali rimuovere (non "l'ultimo della
+# fascia", così a sparire non sono sempre i più recenti) e li toglie per id.
+func _remove_excess_in_band(age_band: GameTypes.AgeBand, target: int) -> void:
+	var band_ids: Array[int] = []
+	for individual in _groups:
+		if individual.age_band == age_band:
+			band_ids.append(individual.id)
+	if band_ids.size() <= target:
+		return
+
+	band_ids.shuffle()
+	var ids_to_remove: Dictionary = {}
+	for i in range(band_ids.size() - target):
+		ids_to_remove[band_ids[i]] = true
+	_remove_individuals_by_id(ids_to_remove)
+
+
+# Se la fascia ha meno individui di `target`, ne genera di nuovi IN CODA a _groups, ciascuno
+# assegnato al centro meno popolato in quel momento (i nuovi si distribuiscono tra i centri
+# invece di accumularsi tutti sullo stesso).
+func _add_missing_in_band(age_band: GameTypes.AgeBand, target: int) -> void:
+	var current: int = 0
+	for individual in _groups:
+		if individual.age_band == age_band:
 			current += 1
-		while current > target:
-			# Rimuove l'ultima istanza di QUESTA fascia trovata nell'array, non l'ultimo elemento
-			# assoluto (_groups mescola le fasce) — scorre all'indietro così la rimozione è O(1)
-			# ammortizzato nel caso comune (le istanze della stessa fascia tendono ad accumularsi
-			# verso la fine, essendo state aggiunte in blocco dal while sopra in round precedenti).
-			for i in range(_groups.size() - 1, -1, -1):
-				if _groups[i].age_band == age_band:
-					_groups.remove_at(i)
-					break
-			current -= 1
+	if current >= target or _clusters.is_empty():
+		return
 
+	var counts := _cluster_member_counts()
+	for i in range(target - current):
+		var cluster_index := _least_filled_cluster(counts)
+		counts[cluster_index] += 1
+		_groups.append(_make_individual(age_band, cluster_index))
+
+
+# Rimuove da _groups gli individui il cui id è in `ids` (Dictionary id -> true), preservando
+# l'ordine dei rimanenti. Unico punto di rimozione degli individui.
+func _remove_individuals_by_id(ids: Dictionary) -> void:
+	if ids.is_empty():
+		return
+	var kept: Array = []
+	for individual in _groups:
+		if not ids.has(individual.id):
+			kept.append(individual)
+	_groups = kept
+
+
+# Numero di individui attualmente istanziati (uno per animale) — letto dal riepilogo debug di
+# GameScene per confrontarlo con la quota della cella.
+func get_individual_count() -> int:
+	return _groups.size()
+
+
+# --- Selezione (AnimalSelectorController / GameScene) ---
+# Gli individui restano posseduti da questo renderer: chi li legge da fuori non li modifica mai.
+
+const SELECTION_RING_COLOR := Color(1.0, 1.0, 1.0, 0.9) # stesso bianco dell'anello umano (HumanIndividualView)
+const SELECTION_RING_WIDTH: float = 0.55 # stesso spessore a schermo dell'anello umano (~0.55 px)
+# L'anello sta sempre un po' fuori dalla sagoma (margine) e mai sotto un raggio minimo, così resta
+# leggibile anche attorno a un cucciolo di coniglio (~1 px).
+const SELECTION_RING_MARGIN_PX: float = 1.5
+const SELECTION_RING_MIN_RADIUS_PX: float = 2.5
+const SELECTION_RING_SEGMENTS: int = 24
+
+# Id dell'individuo selezionato in QUESTO renderer (0 = nessuno) — l'anello è disegnato da _draw.
+var _selected_individual_id: int = 0
+
+
+# Array[AnimalVisualGroup] degli individui (per riferimento, sola lettura per chi lo riceve).
+func get_individuals() -> Array:
+	return _groups
+
+
+func get_individual_by_id(individual_id: int) -> AnimalVisualGroup:
+	if individual_id <= 0:
+		return null
+	for individual in _groups:
+		if individual.id == individual_id:
+			return individual
+	return null
+
+
+# Animali di questo renderer mostrati (toggle "animali" della barra di debug, set_animals_visible).
+func are_animals_shown() -> bool:
+	return _multimesh_instance != null and _multimesh_instance.visible
+
+
+# Stesso test del disegno (visibility_test sulla microcella dell'individuo, vedi
+# _write_instance_transform), più il toggle di visibilità: un animale che non si vede non è
+# selezionabile né evidenziato.
+func is_individual_visible(individual: AnimalVisualGroup) -> bool:
+	return individual != null and are_animals_shown() and _is_visible_now(individual.position)
+
+
+func set_selected_individual(individual_id: int) -> void:
+	_selected_individual_id = individual_id
+	queue_redraw()
+
+
+func clear_selected_individual() -> void:
+	if _selected_individual_id == 0:
+		return
+	_selected_individual_id = 0
+	queue_redraw()
+
+
+# Anello attorno all'individuo selezionato, nello stesso spazio pixel delle istanze MultiMesh
+# (posizione × CELL_SIZE). Raggio dal bounding box della mesh della specie (quindi proporzionato
+# alla taglia) × scala d'età, più un margine. Il nodo disegna PRIMA dei figli (il MultiMesh), quindi
+# l'anello resta sotto la sagoma, che ci sta dentro.
+func _draw() -> void:
+	if _selected_individual_id <= 0:
+		return
+	var individual := get_individual_by_id(_selected_individual_id)
+	if not is_individual_visible(individual):
+		return
+	draw_arc(
+		individual.position * CELL_SIZE, _selection_ring_radius(individual), 0.0, TAU,
+		SELECTION_RING_SEGMENTS, SELECTION_RING_COLOR, SELECTION_RING_WIDTH
+	)
+
+
+func _selection_ring_radius(individual: AnimalVisualGroup) -> float:
+	var base_radius: float = 0.0
+	if _multimesh != null and _multimesh.mesh != null:
+		var aabb: AABB = _multimesh.mesh.get_aabb()
+		base_radius = maxf(
+			maxf(absf(aabb.position.x), absf(aabb.end.x)),
+			maxf(absf(aabb.position.y), absf(aabb.end.y))
+		)
+	var age_scale: float = 1.0
+	if individual.age_band >= 0 and individual.age_band < size_multiplier_by_age.size():
+		age_scale = float(size_multiplier_by_age[individual.age_band])
+	return maxf(base_radius * age_scale + SELECTION_RING_MARGIN_PX, SELECTION_RING_MIN_RADIUS_PX)
+
+
+# --- Salvataggio (individui animali step 2) ---
+# Solo per rendere identico "salva e ricarica": GameScene legge gli individui delle celle vive con
+# get_individuals_snapshot prima di salvare e li ricostruisce con restore_individuals subito dopo
+# la costruzione del renderer, PRIMA della prima riconciliazione con la popolazione. Direzione e
+# fase del movimento a balzi non sono salvate (ripartono casuali), né i centri-cluster: questi
+# vengono ricostruiti dalle posizioni salvate (vedi _cluster_restored_individuals).
+
+static func get_next_individual_id() -> int:
+	return _next_individual_id
+
+
+# Mai all'indietro: un id già assegnato in questa sessione non viene riusato nemmeno dopo aver
+# caricato un salvataggio con un contatore più basso.
+static func set_next_individual_id(value: int) -> void:
+	_next_individual_id = max(_next_individual_id, value)
+
+
+# Soli tipi JSON-nativi, nell'ordine di _groups.
+func get_individuals_snapshot() -> Array:
+	var result: Array = []
+	for individual in _groups:
+		result.append({
+			"id": individual.id,
+			"species": individual.species_name,
+			"age_band": int(individual.age_band),
+			"x": individual.position.x,
+			"y": individual.position.y,
+		})
+	return result
+
+
+# Ricostruisce gli individui così come salvati (id, fascia d'età, posizione), sostituendo quelli
+# presenti. `entries`: stesso formato di get_individuals_snapshot (numeri JSON anche come float).
+# Il contatore degli id viene portato oltre l'id più alto ricostruito, per non riusarlo mai.
+func restore_individuals(entries: Array) -> void:
+	if not _configured:
+		return
+
+	_groups.clear()
+	for entry in entries:
+		var age_band := int(entry.get("age_band", GameTypes.AgeBand.ADULT)) as GameTypes.AgeBand
+		var individual := _make_random_group(age_band)
+		individual.id = int(entry.get("id", 0))
+		individual.species_name = String(entry.get("species", species_name))
+		individual.position = Vector2(float(entry.get("x", 0.0)), float(entry.get("y", 0.0)))
+		individual.cluster_index = -1
+		if individual.id <= 0:
+			# Difensivo: un individuo senza id valido ne riceve uno nuovo invece di restare id 0
+			# (riservato ai centri-cluster).
+			individual.id = _next_individual_id
+		_next_individual_id = max(_next_individual_id, individual.id + 1)
+		_groups.append(individual)
+
+	_sync_cluster_count(_groups.size())
+	_cluster_restored_individuals()
+	_refresh_instances()
+
+
+# Centri per individui ricostruiti da un salvataggio (i centri non sono salvati): ogni centro parte
+# dalla posizione di un individuo scelto a intervalli regolari, ogni individuo va al centro più
+# vicino, poi ogni centro si sposta sul baricentro dei propri membri. Così i gruppetti ripartono
+# da dove gli individui si trovano già, invece di essere attratti verso centri casuali lontani.
+func _cluster_restored_individuals() -> void:
+	if _clusters.is_empty() or _groups.is_empty():
+		return
+
+	var group_count: int = _groups.size()
+	var cluster_count: int = _clusters.size()
+	for c in range(cluster_count):
+		_clusters[c].position = _groups[(c * group_count) / cluster_count].position
+
+	var sums: Array[Vector2] = []
+	sums.resize(cluster_count)
+	sums.fill(Vector2.ZERO)
+	var counts: Array[int] = []
+	counts.resize(cluster_count)
+	counts.fill(0)
+	for individual in _groups:
+		var best: int = 0
+		var best_distance: float = INF
+		for c in range(cluster_count):
+			var distance: float = individual.position.distance_squared_to(_clusters[c].position)
+			if distance < best_distance:
+				best_distance = distance
+				best = c
+		individual.cluster_index = best
+		sums[best] += individual.position
+		counts[best] += 1
+
+	for c in range(cluster_count):
+		if counts[c] > 0:
+			_clusters[c].position = sums[c] / float(counts[c])
+
+
+func _refresh_instances() -> void:
 	_multimesh.instance_count = _groups.size()
-	_resync_clusters(young + adult + old)
-
 	for i in range(_groups.size()):
 		_write_instance_transform(i, _groups[i])
 
 
-# Ricalcola quanti cluster servono (formula: ceil(popolazione/max_individuals_per_cluster),
-# mai più dei gruppi disponibili) e riassegna cluster_index a ogni gruppo, riempiendo i cluster
-# in sequenza (i primi groups_per_cluster_cap gruppi al cluster 0, i successivi al cluster 1,
-# ecc. — l'ultimo cluster assorbe l'eventuale resto). Chiamata da set_population ogni volta che
-# la popolazione cambia: riassegnare tutti i cluster_index da zero è economico (poche decine di
-# gruppi al più) e non causa scatti visivi, perché la posizione del gruppo non cambia — solo il
-# centro verso cui viene debolmente attratto, e l'attrazione stessa è già graduale (vedi
-# _apply_cluster_attraction).
-func _resync_clusters(total_population: int) -> void:
-	if _groups.is_empty():
+# Numero di centri per la popolazione (formula: ceil(popolazione/max_individuals_per_cluster), mai
+# più degli individui). Nuovi centri in coda in posizione casuale; i centri in eccesso vengono tolti
+# dalla coda — i loro membri restano "orfani" (cluster_index fuori range) finché
+# _reassign_orphaned_individuals non li riassegna. Nessun altro individuo cambia centro.
+func _sync_cluster_count(total_population: int) -> void:
+	if total_population <= 0:
 		_clusters.clear()
 		return
 
-	var num_clusters: int = int(ceil(float(max(total_population, 0)) / max_individuals_per_cluster))
-	num_clusters = clamp(num_clusters, 1, _groups.size())
-
+	var num_clusters: int = clampi(ceili(float(total_population) / max_individuals_per_cluster), 1, total_population)
 	while _clusters.size() < num_clusters:
 		_clusters.append(_make_random_group())
-	while _clusters.size() > num_clusters:
-		_clusters.pop_back()
-
-	var groups_per_cluster_cap: int = max(1, int(floor(float(max_individuals_per_cluster) / individuals_per_group)))
-	for i in range(_groups.size()):
-		_groups[i].cluster_index = min(i / groups_per_cluster_cap, num_clusters - 1)
+	if _clusters.size() > num_clusters:
+		_clusters.resize(num_clusters)
 
 
+# Riassegna SOLO gli individui senza un centro valido (il loro centro è stato rimosso), ciascuno al
+# centro meno popolato. Chi ha già un centro valido non viene mai toccato.
+func _reassign_orphaned_individuals() -> void:
+	if _clusters.is_empty():
+		return
+	var counts := _cluster_member_counts()
+	for individual in _groups:
+		if individual.cluster_index >= 0 and individual.cluster_index < _clusters.size():
+			continue
+		var cluster_index := _least_filled_cluster(counts)
+		counts[cluster_index] += 1
+		individual.cluster_index = cluster_index
+
+
+func _cluster_member_counts() -> Array[int]:
+	var counts: Array[int] = []
+	counts.resize(_clusters.size())
+	counts.fill(0)
+	for individual in _groups:
+		if individual.cluster_index >= 0 and individual.cluster_index < counts.size():
+			counts[individual.cluster_index] += 1
+	return counts
+
+
+# A parità di membri vince l'indice più basso.
+func _least_filled_cluster(counts: Array[int]) -> int:
+	var best: int = 0
+	for i in range(1, counts.size()):
+		if counts[i] < counts[best]:
+			best = i
+	return best
+
+
+# Nuovo individuo: id progressivo mai riassegnato (vedi _next_individual_id), specie di questo
+# renderer, centro assegnato UNA volta qui e poi fisso (cambia solo se quel centro viene rimosso),
+# posizione casuale DENTRO il raggio di comfort del proprio centro (distribuzione uniforme sul
+# disco, limitata ai bordi della macrocella) — nasce già nel suo gruppetto.
+func _make_individual(age_band: GameTypes.AgeBand, cluster_index: int) -> AnimalVisualGroup:
+	var individual := _make_random_group(age_band)
+	individual.id = _next_individual_id
+	_next_individual_id += 1
+	individual.species_name = species_name
+	individual.cluster_index = cluster_index
+	individual.position = _random_point_near_cluster(cluster_index)
+	return individual
+
+
+func _random_point_near_cluster(cluster_index: int) -> Vector2:
+	var center: Vector2 = _clusters[cluster_index].position
+	var offset := Vector2.RIGHT.rotated(randf_range(0.0, TAU)) * cluster_comfort_radius * sqrt(randf())
+	var point := center + offset
+	return Vector2(clampf(point.x, 0.0, World.WIDTH), clampf(point.y, 0.0, World.HEIGHT))
+
+
+# Istanza con posizione/direzione/fase casuali e NESSUNA identità (id 0) — usata così com'è per i
+# centri-cluster invisibili, e come base da _make_individual per gli individui veri.
 func _make_random_group(age_band: GameTypes.AgeBand = GameTypes.AgeBand.ADULT) -> AnimalVisualGroup:
 	var position := Vector2(randf_range(0.0, World.WIDTH), randf_range(0.0, World.HEIGHT))
 	var direction := Vector2.RIGHT.rotated(randf_range(0.0, TAU))
@@ -570,11 +857,27 @@ func _update_group_phase(group: AnimalVisualGroup, delta: float) -> void:
 # vagano in modo continuo (deriva + rimbalzo, come sempre); i gruppi disegnati invece si
 # muovono a balzi (vedi _update_group_phase) — deriva della direzione e attrazione verso il
 # cluster restano sempre attive anche da fermi, solo l'avanzamento è gated dalla fase HOPPING.
-func _process(delta: float) -> void:
+func _process(real_delta: float) -> void:
+	# Anello di selezione (vedi _draw): ridisegnato a ogni frame finché c'è una selezione, così segue
+	# l'individuo che si muove e sparisce da solo se l'individuo non esiste più o non è più visibile.
+	if _selected_individual_id > 0:
+		queue_redraw()
 	if not _configured or _groups.is_empty():
 		return
 	if clock != null and not clock.is_playing:
+		# In pausa nessuno si muove, ma la visibilità fog of war può cambiare comunque (es. un
+		# edificio piazzato a gioco fermo): le trasformazioni si riscrivono lo stesso, così il
+		# filtro di visibilità resta per-frame anche qui.
+		if visibility_test.is_valid():
+			for i in range(_groups.size()):
+				_write_instance_transform(i, _groups[i])
 		return
+
+	# Tempo di gioco (2026-09-25): tutto il movimento sotto — spostamenti, deriva della direzione,
+	# guinzaglio e timer delle fasi (_update_group_phase) — usa la frazione di giorno di gioco
+	# trascorsa in questo frame, come HumanIndividualMovementService per gli umani: la velocità degli
+	# animali rispetto a un umano non cambia con la velocità di gioco (1x/2x/4x/8x).
+	var delta := _game_day_delta(real_delta)
 
 	# I cluster avanzano per primi (stessa logica di sempre) così i gruppi, elaborati subito
 	# dopo, tirano verso il centro già aggiornato di questo frame invece che verso quello vecchio.
@@ -592,6 +895,15 @@ func _process(delta: float) -> void:
 			group.position += group.direction * hop_speed * delta
 			_bounce_at_bounds(group)
 		_write_instance_transform(i, group)
+
+
+# Frazione di giorno di gioco corrispondente a `real_delta` secondi reali: dal clock se assegnato
+# (0 in pausa, scala con la velocità di gioco), altrimenti come a velocità 1x — contesti senza
+# GameClockController si muovono come prima di questa conversione.
+func _game_day_delta(real_delta: float) -> float:
+	if clock != null:
+		return clock.get_game_day_delta(real_delta)
+	return real_delta / GameClockController.SECONDS_PER_DAY_BY_SPEED[GameClockController.Speed.X1]
 
 
 # Guinzaglio elastico verso il centro del proprio cluster: nessuna trazione entro
@@ -634,6 +946,10 @@ func _bounce_at_bounds(group: AnimalVisualGroup) -> void:
 # (basis e/o origin a seconda della versione); moltiplicare x/y a mano è inequivocabile: scala
 # solo gli assi locali, mai la posizione già scritta in origin.
 func _write_instance_transform(index: int, group: AnimalVisualGroup) -> void:
+	if not _is_visible_now(group.position):
+		# Istanza nascosta: basi a zero (nessun triangolo visibile), origine alla posizione vera.
+		_multimesh.set_instance_transform_2d(index, Transform2D(Vector2.ZERO, Vector2.ZERO, group.position * CELL_SIZE))
+		return
 	var transform := Transform2D(group.direction.angle(), group.position * CELL_SIZE)
 	var scale: float = 1.0
 	if group.age_band >= 0 and group.age_band < size_multiplier_by_age.size():
@@ -641,6 +957,18 @@ func _write_instance_transform(index: int, group: AnimalVisualGroup) -> void:
 	transform.x *= scale
 	transform.y *= scale
 	_multimesh.set_instance_transform_2d(index, transform)
+
+
+# Microcella dell'animale (posizione float 0..100, il bordo 100.0 ricade nell'ultima microcella)
+# interrogata con visibility_test — vedi il campo.
+func _is_visible_now(position: Vector2) -> bool:
+	if not visibility_test.is_valid():
+		return true
+	var cell := Vector2i(
+		clampi(int(floor(position.x)), 0, World.WIDTH - 1),
+		clampi(int(floor(position.y)), 0, World.HEIGHT - 1)
+	)
+	return bool(visibility_test.call(cell))
 
 
 # Corpo a goccia (ventaglio con raggio Y assottigliato verso il muso e allargato verso i
@@ -657,7 +985,8 @@ static func build_rabbit_mesh(
 	body_length: float, body_width: float, ear_length: float, ear_width: float, color: Color
 ) -> ArrayMesh:
 	return _build_mesh_from_geometry(
-		get_rabbit_silhouette_geometry(body_length, body_width, ear_length, ear_width), color
+		get_rabbit_silhouette_geometry(body_length, body_width, ear_length, ear_width), color,
+		_field_scale(RABBIT_FIELD_BODY_LENGTH_PX, body_length)
 	)
 
 
@@ -670,7 +999,8 @@ static func build_deer_mesh(
 	body_length: float, body_width: float, ear_length: float, ear_width: float, color: Color
 ) -> ArrayMesh:
 	return _build_mesh_from_geometry(
-		get_deer_silhouette_geometry(body_length, body_width, ear_length, ear_width), color
+		get_deer_silhouette_geometry(body_length, body_width, ear_length, ear_width), color,
+		_field_scale(DEER_FIELD_BODY_LENGTH_PX, body_length)
 	)
 
 
@@ -681,7 +1011,8 @@ static func build_boar_mesh(
 	body_length: float, body_width: float, ear_length: float, ear_width: float, color: Color
 ) -> ArrayMesh:
 	return _build_mesh_from_geometry(
-		get_boar_silhouette_geometry(body_length, body_width, ear_length, ear_width), color
+		get_boar_silhouette_geometry(body_length, body_width, ear_length, ear_width), color,
+		_field_scale(BOAR_FIELD_BODY_LENGTH_PX, body_length)
 	)
 
 
@@ -692,7 +1023,8 @@ static func build_tarpan_mesh(
 	body_length: float, body_width: float, ear_length: float, ear_width: float, color: Color
 ) -> ArrayMesh:
 	return _build_mesh_from_geometry(
-		get_tarpan_silhouette_geometry(body_length, body_width, ear_length, ear_width), color
+		get_tarpan_silhouette_geometry(body_length, body_width, ear_length, ear_width), color,
+		_field_scale(TARPAN_FIELD_BODY_LENGTH_PX, body_length)
 	)
 
 
@@ -703,7 +1035,8 @@ static func build_wild_donkey_mesh(
 	body_length: float, body_width: float, ear_length: float, ear_width: float, color: Color
 ) -> ArrayMesh:
 	return _build_mesh_from_geometry(
-		get_wild_donkey_silhouette_geometry(body_length, body_width, ear_length, ear_width), color
+		get_wild_donkey_silhouette_geometry(body_length, body_width, ear_length, ear_width), color,
+		_field_scale(WILD_DONKEY_FIELD_BODY_LENGTH_PX, body_length)
 	)
 
 
@@ -714,7 +1047,8 @@ static func build_aurochs_mesh(
 	body_length: float, body_width: float, ear_length: float, ear_width: float, color: Color
 ) -> ArrayMesh:
 	return _build_mesh_from_geometry(
-		get_aurochs_silhouette_geometry(body_length, body_width, ear_length, ear_width), color
+		get_aurochs_silhouette_geometry(body_length, body_width, ear_length, ear_width), color,
+		_field_scale(AUROCHS_FIELD_BODY_LENGTH_PX, body_length)
 	)
 
 
@@ -726,7 +1060,8 @@ static func build_mouflon_mesh(
 	body_length: float, body_width: float, ear_length: float, ear_width: float, color: Color
 ) -> ArrayMesh:
 	return _build_mesh_from_geometry(
-		get_mouflon_silhouette_geometry(body_length, body_width, ear_length, ear_width), color
+		get_mouflon_silhouette_geometry(body_length, body_width, ear_length, ear_width), color,
+		_field_scale(MOUFLON_FIELD_BODY_LENGTH_PX, body_length)
 	)
 
 
@@ -738,7 +1073,8 @@ static func build_bezoar_mesh(
 	body_length: float, body_width: float, ear_length: float, ear_width: float, color: Color
 ) -> ArrayMesh:
 	return _build_mesh_from_geometry(
-		get_bezoar_silhouette_geometry(body_length, body_width, ear_length, ear_width), color
+		get_bezoar_silhouette_geometry(body_length, body_width, ear_length, ear_width), color,
+		_field_scale(BEZOAR_FIELD_BODY_LENGTH_PX, body_length)
 	)
 
 
@@ -750,7 +1086,8 @@ static func build_wolf_mesh(
 	body_length: float, body_width: float, ear_length: float, ear_width: float, color: Color
 ) -> ArrayMesh:
 	return _build_mesh_from_geometry(
-		get_wolf_silhouette_geometry(body_length, body_width, ear_length, ear_width), color
+		get_wolf_silhouette_geometry(body_length, body_width, ear_length, ear_width), color,
+		_field_scale(WOLF_FIELD_BODY_LENGTH_PX, body_length)
 	)
 
 
@@ -762,7 +1099,8 @@ static func build_partridge_mesh(
 	body_length: float, body_width: float, ear_length: float, ear_width: float, color: Color
 ) -> ArrayMesh:
 	return _build_mesh_from_geometry(
-		get_partridge_silhouette_geometry(body_length, body_width, ear_length, ear_width), color
+		get_partridge_silhouette_geometry(body_length, body_width, ear_length, ear_width), color,
+		_field_scale(PARTRIDGE_FIELD_BODY_LENGTH_PX, body_length)
 	)
 
 
@@ -920,16 +1258,36 @@ static func _get_silhouette_geometry(
 	}
 
 
-# Scala applicata SOLO qui, non in _get_silhouette_geometry: quest'ultima è pubblica e condivisa
-# con AnimalSilhouetteIcon (icona specie nel filtro Fauna di WorldInfoPanel), che deve restare
-# leggibile a dimensione fissa nella sidebar — mentre _build_mesh_from_geometry è raggiunta SOLO
-# dai build_*_mesh usati per la mesh sul campo (MacroCellScene/GameScene). Riscalare qui invece
-# che nelle costanti BODY_LENGTH/WIDTH/EAR_LENGTH/WIDTH per specie (fonte di verità condivisa con
-# l'icona, vedi commento lì) evita di dover toccare 11 specie individualmente o i loro call site.
-const WORLD_MESH_SCALE: float = 0.6
+# Dimensione sul campo (2026-09-25, richiesta utente — scala grafica umani/animali): lunghezza TOTALE
+# del corpo di un adulto, in pixel a schermo (10 px = 1 microcella; un umano adulto misura ~2.2 px
+# nella direzione di marcia, vedi HumanIndividualView.BASE_DRAW_SCALE). Sostituisce la vecchia scala
+# unica WORLD_MESH_SCALE (0.6): ogni build_*_mesh ricava la propria scala come
+# lunghezza_px / (2 × <SPECIE>_BODY_LENGTH) — le costanti BODY_LENGTH sono SEMIASSI — e la applica a
+# TUTTA la geometria (corpo, larghezza, orecchie/corna/ali, coda), quindi la sagoma non si deforma.
+# Le costanti di forma per specie restano invariate: sono condivise con AnimalSilhouetteIcon (icona
+# del filtro Fauna), che adatta la sagoma al proprio riquadro e quindi non cambia dimensione.
+# La scala per fascia d'età (size_multiplier_by_age) si applica sopra, per istanza.
+const PARTRIDGE_FIELD_BODY_LENGTH_PX: float = 1.8
+const RABBIT_FIELD_BODY_LENGTH_PX: float = 2.0
+const BEZOAR_FIELD_BODY_LENGTH_PX: float = 3.5
+const MOUFLON_FIELD_BODY_LENGTH_PX: float = 3.5
+const BOAR_FIELD_BODY_LENGTH_PX: float = 4.5
+const WOLF_FIELD_BODY_LENGTH_PX: float = 4.5
+const DEER_FIELD_BODY_LENGTH_PX: float = 5.0
+const WILD_DONKEY_FIELD_BODY_LENGTH_PX: float = 6.0
+const TARPAN_FIELD_BODY_LENGTH_PX: float = 6.0
+const AUROCHS_FIELD_BODY_LENGTH_PX: float = 7.0
 
-static func _build_mesh_from_geometry(geometry: Dictionary, color: Color) -> ArrayMesh:
-	var scaled := _scale_geometry(geometry, WORLD_MESH_SCALE)
+
+# Scala che porta un corpo di semiasse `body_length` (unità di forma) a `field_body_length_px` pixel.
+static func _field_scale(field_body_length_px: float, body_length: float) -> float:
+	if body_length <= 0.0:
+		return 1.0
+	return field_body_length_px / (2.0 * body_length)
+
+
+static func _build_mesh_from_geometry(geometry: Dictionary, color: Color, scale: float) -> ArrayMesh:
+	var scaled := _scale_geometry(geometry, scale)
 
 	var st := SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)

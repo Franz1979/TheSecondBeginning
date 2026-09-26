@@ -69,8 +69,8 @@ extends Resource
 # provviste sono a zero. Solo il parametro: nessun campo sull'individuo, nessun consumo, nessuna UI.
 @export var base_body_calories: float = 200.0
 
-# Slot tool (2026-09-08, richiesta utente) — SOLO spazio/bonus per ora, NESSUN uso funzionale dei
-# tool (non equipaggiabili ancora, vedi HumanIndividual.equipped_tool_count). tool_slot_count è il
+# Slot tool (2026-09-08, richiesta utente; dal 2026-09-25 gli attrezzi si equipaggiano nella cintura
+# HumanIndividual.equipped_tools, ancora senza usura né requisiti). tool_slot_count è il
 # numero totale di slot che un individuo ha a disposizione; ogni slot VUOTO (non occupato da un
 # tool equipaggiato) dà un bonus FLAT alla capacità di trasporto effettiva — un tool, quando il
 # sistema di equip esisterà, presumibilmente offrirà il proprio bonus specifico al posto di questo

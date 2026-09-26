@@ -31,4 +31,7 @@ enum NotificationPopupType {
 	# Un individuo ha finito le provviste e comincia a consumare la riserva corporea (2026-09-19, richiesta
 	# utente) - stesso stile "alert" giallo di MATERIAL_NEEDED (vedi NotificationPopup._show_next).
 	BODY_RESERVE_IN_USE,
+	# Task non partita per mancanza di attrezzi (2026-09-25, richiesta utente — ToolGateService):
+	# attrezzo assente, oppure cintura piena. Stesso stile "alert" giallo di MATERIAL_NEEDED.
+	TOOL_REQUIRED,
 }

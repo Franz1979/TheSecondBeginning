@@ -1,0 +1,9 @@
+[gd_resource type="Resource" script_class="TaskStepDefinition" format=3]
+
+[ext_resource type="Script" uid="uid://d3sri3tos2u4f" path="res://gameplay/scripts/tasks/task_step_definition.gd" id="1_retrieve_equip"]
+
+[resource]
+script = ExtResource("1_retrieve_equip")
+action_type = 9
+context_keys = Array[String](["tool_building", "tool_resource_name", "tool_quantity", "tool_slot_index"])
+step_description = "task_equip_tool_step_retrieve"

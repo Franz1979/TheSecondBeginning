@@ -30,8 +30,10 @@ const TIER_MIN_CANDIDATES_FOR_FIXED_SIZE := TIER_SAMPLE_SIZE * 3
 # GameSettings/DifficultyCalculator per i moltiplicatori di difficolta' collegati): quando attivi,
 # scartano ANCHE le celle "ostili" (vedi _is_hostile), e/o quelle occupate dal territorio (TUTTE le
 # celle, non solo il centro della BFS — vedi _collect_predator_territory_cells) di un branco
-# predatore gia' seminato, e/o quelle SENZA presenza erbivora reale (population>0, non solo
-# territorio — vedi _collect_animal_present_cells), e/o quelle SENZA roccia gia' seminata
+# predatore gia' seminato, e/o quelle NON idonee alle prede piccole (habitat del coniglio, che
+# coincide con quello della pernice — vedi _is_small_prey_habitat; sostituisce il vecchio criterio
+# "almeno un erbivoro qualunque con quota > 0": la preda viene poi GARANTITA da GameScene con
+# AnimalSeedingService.ensure_small_prey_at sulla cella scelta), e/o quelle SENZA roccia gia' seminata
 # (MacroCellState.get_dedicated_space(ROCK) > 0 — vedi _collect_stone_present_cells; roccia e'
 # generata a livello di macrocella da InitialResourceSetupService/ParametricResourceSetupService
 # ben prima che questo servizio giri, quindi il dato e' gia' disponibile qui), dai candidati
@@ -53,8 +55,8 @@ func select_starting_cell(
 	var predator_cells := (
 		_collect_predator_territory_cells(world) if exclude_predator_territories else {}
 	)
-	var animal_present_cells := (
-		_collect_animal_present_cells(world) if guarantee_animal_presence else {}
+	var small_prey_rules: AnimalRules = (
+		AnimalCalculator.get_animal_rules(AnimalSeedingService.SMALL_PREY_HABITAT_SPECIES) if guarantee_animal_presence else null
 	)
 	var stone_present_cells := (
 		_collect_stone_present_cells(world) if guarantee_stone_presence else {}
@@ -72,7 +74,7 @@ func select_starting_cell(
 			continue
 		if exclude_predator_territories and predator_cells.has(pos):
 			continue
-		if guarantee_animal_presence and not animal_present_cells.has(pos):
+		if guarantee_animal_presence and not _is_small_prey_habitat(small_prey_rules, cell):
 			continue
 		if guarantee_stone_presence and not stone_present_cells.has(pos):
 			continue
@@ -149,27 +151,16 @@ func _collect_predator_territory_cells(world: World) -> Dictionary:
 	return cells
 
 
-# Tutte le celle con presenza REALE di almeno un individuo erbivoro (population>0 in QUELLA
-# cella, via get_population_by_cell — non l'intero territorio come sopra: un territorio
-# multi-cella puo' avere quote diverse per cella, alcune a zero, e "presenza animali" per il
-# giocatore deve significare "ci sono davvero individui qui", non "questa cella fa parte di un
-# territorio"). Predatori esclusi (stesso downcast di _collect_predator_territory_cells): un
-# branco predatore non e' "presenza animali rassicurante" per il player, e' gia' gestito a parte
-# dal toggle "escludi predatori".
-func _collect_animal_present_cells(world: World) -> Dictionary:
-	var cells: Dictionary = {}
-	for group in world.population_groups:
-		if group.territory == null or group.population <= 0:
-			continue
-		var rules := AnimalCalculator.get_animal_rules(group.species_name)
-		if rules == null or rules is PredatorRules:
-			continue
-
-		var population_by_cell := group.get_population_by_cell()
-		for coords in population_by_cell.keys():
-			if int(population_by_cell[coords]) > 0:
-				cells[coords] = true
-	return cells
+# "Presenza sicura animali": cella idonea alle prede piccole — habitat del coniglio
+# (AnimalRules.is_suitable_for su bioma e terreno), identico a quello della pernice, cosi' la preda
+# che GameScene semina subito dopo sulla cella scelta (AnimalSeedingService.ensure_small_prey_at)
+# ci puo' vivere. Nessun controllo sugli animali gia' presenti: la presenza non e' piu' un requisito
+# della cella, e' garantita per costruzione dalla semina. rules null (specie coniglio non trovata):
+# nessuna cella scartata su quest'asse, stesso trattamento permissivo di un lookup fallito altrove.
+func _is_small_prey_habitat(rules: AnimalRules, cell: MacroCellData) -> bool:
+	if rules == null:
+		return true
+	return rules.is_suitable_for(cell.biome, cell.terrain_base)
 
 
 # Tutte le celle dove ROCK e' gia' stato seminato (2026-09-08, richiesta utente — "Presenza
@@ -181,8 +172,7 @@ func _collect_animal_present_cells(world: World) -> Dictionary:
 # StonePositionService.generate_if_needed per contare quante posizioni generare. Nessuna posizione
 # puntuale coinvolta qui (StonePositionService non ha ancora girato per la maggior parte delle
 # macrocelle a questo punto, vedi la sua lazy-generation): un aggregato per macrocella basta,
-# stesso identico livello di granularita' di _collect_predator_territory_cells/
-# _collect_animal_present_cells sopra.
+# stesso identico livello di granularita' di _collect_predator_territory_cells sopra.
 func _collect_stone_present_cells(world: World) -> Dictionary:
 	var cells: Dictionary = {}
 	for cell in world.cells:

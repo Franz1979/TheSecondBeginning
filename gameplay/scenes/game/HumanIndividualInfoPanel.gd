@@ -76,12 +76,30 @@ extends VBoxContainer
 # segnale invece di far riscandire GameScene per is_selected). GameScene decide se/come agire
 # (GameTimeService.kill_individual_now), questo pannello resta "muto" come il resto.
 signal kill_requested(individual: HumanIndividual)
+# Cintura degli attrezzi (2026-09-25, richiesta utente) — stesso schema di kill_requested: il pannello
+# segnala soltanto il click, GameScene chiama HumanIndividual.equip_tool_from_backpack/
+# unequip_tool_to_backpack (che fanno tutti i controlli) e poi rinfresca il pannello.
+# Click su un riquadro dello zaino (qualunque risorsa: se non è un attrezzo il metodo rifiuta).
+signal equip_tool_requested(individual: HumanIndividual, resource_name: String)
+# Click su uno slot pieno della cintura.
+signal unequip_tool_requested(individual: HumanIndividual, slot_index: int)
+# Click sulla X accanto all'attività (2026-09-25): GameScene annulla la Task come il tasto H.
+signal cancel_task_requested(individual: HumanIndividual)
+# Click DESTRO su uno slot della cintura (2026-09-25, richiesta utente — task di equipaggiamento): slot
+# vuoto -> GameScene propone gli attrezzi nei magazzini e crea la Task "prendi attrezzo"; slot pieno ->
+# GameScene crea la Task "riponi attrezzo" verso il magazzino più vicino che lo accetta.
+signal tool_from_storage_requested(individual: HumanIndividual, slot_index: int)
+signal tool_to_storage_requested(individual: HumanIndividual, slot_index: int)
 
 # identity_label RIMOSSA (2026-09-13, richiesta utente — "perché la riga del center è vuota"):
 # nome/sesso/età/fascia vivono ORA solo nell'header di GameInfoTabs (title_label, sulla STESSA
 # riga del bottone 🎯), impostati da GameScene tramite set_selection_title — mai più duplicati qui
 # dentro. Vedi GameScene._update_individual_panel_content per individual_identity_line.
-@onready var activity_label: Label = $ActivityLabel
+@onready var activity_label: Label = $ActivityRow/ActivityLabel
+# Piccola X a destra dell'attività (2026-09-25, richiesta utente): annulla la Task in corso, stessa
+# funzione del tasto H (GameScene._stop_selected_individual_task, via cancel_task_requested).
+# Visibile solo quando l'individuo ha una Task in corso.
+@onready var cancel_task_button: Button = $ActivityRow/CancelTaskButton
 # Azioni in coda (2026-09-13, richiesta utente) — sotto activity_label, in corsivo (FontVariation
 # con variation_transform di taglio — nessun font italico incluso nel progetto, "corsivo finto"
 # via shear, tecnica standard Godot 4: non verificabile visivamente da qui, segnalare se
@@ -182,6 +200,7 @@ var _carried_icon_nodes: Array[Control] = []
 	$ToolsRowMargin/ToolsRow/ToolSlot2,
 	$ToolsRowMargin/ToolsRow/ToolSlot3,
 ]
+@onready var tool_warning_label: Label = $ToolWarningLabel
 @onready var id_label: Label = $IdLabel
 @onready var mother_label: Label = $MotherLabel
 @onready var father_label: Label = $FatherLabel
@@ -195,12 +214,15 @@ var _current_individual: HumanIndividual
 func _ready() -> void:
 	kill_button.text = tr("individual_kill_debug_button")
 	kill_button.pressed.connect(func(): kill_requested.emit(_current_individual))
+	cancel_task_button.tooltip_text = tr("individual_cancel_task_tooltip")
+	cancel_task_button.pressed.connect(func(): cancel_task_requested.emit(_current_individual))
 	# Layout riga tool (2026-09-08, semplificata 2026-09-13 quando il quadratino trasporto è
 	# uscito da questa riga) — ricalcolato ad ogni resize del pannello (larghezza sidebar, non
 	# fissa) oltre che una volta qui subito: vedi _layout_tools_row.
 	tools_row.resized.connect(_layout_tools_row)
 	_layout_tools_row()
 	_build_carried_slots()
+	_connect_tool_belt_clicks()
 	clear()
 
 
@@ -253,6 +275,7 @@ func show_individual(
 	# di questa funzione (mai usati per altro qui dentro) — GameScene li calcola comunque per sé,
 	# vedi il commento di testa a show_individual.
 	activity_label.text = activity_text
+	cancel_task_button.visible = individual != null and individual.current_task != null and not individual.current_task.is_finished()
 
 	# Azioni in coda (2026-09-13, richiesta utente) — sotto l'attività corrente, nascosta quando
 	# task_queue è vuota (il caso comune: oggi solo haul_resource/transport sono is_suspendable,
@@ -396,6 +419,11 @@ func show_individual(
 	carry_bar.tooltip_text = "%s/%s" % [_format_space(used_carry_space), _format_space(max_carry_capacity)]
 
 	_update_carried_resource_boxes(individual.carried_resources)
+	_update_tool_slots(individual)
+	# Ultimo avviso del controllo attrezzi (2026-09-25, richiesta utente — vedi ToolGateService e
+	# HumanIndividual.tool_gate_warning): testo già tradotto da GameScene, nascosto se vuoto.
+	tool_warning_label.text = individual.tool_gate_warning
+	tool_warning_label.visible = individual.tool_gate_warning != ""
 	# Ri-layout esplicito dei tool (2026-09-08) — oltre al collegamento a tools_row.resized in
 	# _ready(): coprire anche il caso "la riga non cambia dimensione tra due individui mostrati in
 	# sequenza" (nessun resize emesso, ma il pannello potrebbe comunque non essere mai stato
@@ -494,6 +522,12 @@ func _update_carried_resource_box(slot: int, resource_name: String, quantity: in
 		slot_initial_label.text = ""
 		_carried_icon_nodes[slot] = icon_node
 		slot_box.add_child(icon_node)
+		# Icona come PRIMO figlio (2026-09-26, richiesta utente — bugfix "113 si legge 13"): in Godot
+		# l'ordine dei figli è l'ordine di disegno, quindi aggiunta in coda l'icona (a tutto riquadro,
+		# opaca) copriva la QuantityLabel in basso a destra e la prima cifra dei numeri a tre cifre.
+		# Spostata in testa, le etichette (InitialLabel/QuantityLabel) restano sempre sopra. Vale per
+		# ogni risorsa con icona disegnata, questo è l'unico punto che la inserisce nel riquadro.
+		slot_box.move_child(icon_node, 0)
 		# PRESET_FULL_RECT via ancore+offset DIRETTI (stesso bugfix già documentato in
 		# IconButtonRow.configure_slot per PebbleCircleIcon: il preset di default userebbe la
 		# minimum size del figlio, zero per un Control senza testo/figli come queste icone).
@@ -519,13 +553,112 @@ func _update_carried_resource_box(slot: int, resource_name: String, quantity: in
 # placeholder grigio (nome vuoto).
 func _update_carried_resource_boxes(carried_resources: Dictionary) -> void:
 	var carried_names: Array = carried_resources.keys()
+	_carried_slot_names.clear()
 	for slot in range(_carried_boxes.size()):
 		if slot < carried_names.size():
 			var carried_name := String(carried_names[slot])
 			var carried_entry: Dictionary = carried_resources[carried_name]
 			_update_carried_resource_box(slot, carried_name, int(carried_entry.get("quantity", 0)))
+			_carried_slot_names.append(carried_name)
+			# Manina solo sugli attrezzi: sono gli unici riquadri che un click sposta nella cintura.
+			_carried_boxes[slot].mouse_default_cursor_shape = (
+				Control.CURSOR_POINTING_HAND if HumanIndividual.is_tool_resource(carried_name) else Control.CURSOR_ARROW
+			)
 		else:
 			_update_carried_resource_box(slot, "", 0)
+			_carried_slot_names.append("")
+			_carried_boxes[slot].mouse_default_cursor_shape = Control.CURSOR_ARROW
+
+
+# --- Cintura degli attrezzi (2026-09-25, richiesta utente) ---
+# Nome della risorsa mostrata in ciascun riquadro dello zaino (stesso ordine di _carried_boxes, ""
+# = vuoto): serve al click per sapere QUALE risorsa chiedere di equipaggiare.
+var _carried_slot_names: Array[String] = []
+# Icona disegnata dentro ciascuno slot della cintura (null = nessuna), stesso trattamento di
+# _carried_icon_nodes per i riquadri dello zaino.
+var _tool_icon_nodes: Array[Control] = [null, null, null, null]
+# Colore della "T" segnaposto di uno slot vuoto — lo stesso impostato nella scena (alpha 0.35).
+const EMPTY_TOOL_SLOT_TEXT_COLOR := Color(1, 1, 1, 0.35)
+
+
+func _connect_tool_belt_clicks() -> void:
+	for slot in range(_carried_boxes.size()):
+		_carried_boxes[slot].gui_input.connect(_on_carried_box_gui_input.bind(slot))
+	for slot in range(tool_slot_boxes.size()):
+		tool_slot_boxes[slot].gui_input.connect(_on_tool_slot_gui_input.bind(slot))
+
+
+func _is_left_click(event: InputEvent) -> bool:
+	return event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT
+
+
+func _on_carried_box_gui_input(event: InputEvent, slot: int) -> void:
+	if not _is_left_click(event) or _current_individual == null:
+		return
+	if slot >= _carried_slot_names.size() or _carried_slot_names[slot] == "":
+		return
+	accept_event()
+	equip_tool_requested.emit(_current_individual, _carried_slot_names[slot])
+
+
+# Sinistro su slot pieno: di nuovo nello zaino, subito (nessuna Task). Destro: Task verso/da un magazzino.
+func _on_tool_slot_gui_input(event: InputEvent, slot: int) -> void:
+	if _current_individual == null or not (event is InputEventMouseButton) or not event.pressed:
+		return
+	var slot_is_empty: bool = _current_individual.get_equipped_tool(slot) == ""
+	if event.button_index == MOUSE_BUTTON_LEFT:
+		if slot_is_empty:
+			return
+		accept_event()
+		unequip_tool_requested.emit(_current_individual, slot)
+	elif event.button_index == MOUSE_BUTTON_RIGHT:
+		accept_event()
+		if slot_is_empty:
+			tool_from_storage_requested.emit(_current_individual, slot)
+		else:
+			tool_to_storage_requested.emit(_current_individual, slot)
+
+
+# Stesso schema di _update_carried_resource_box: icona della risorsa (IconRegistry) a tutto riquadro,
+# oppure la sua emoji/iniziale nella Label; slot vuoto = la "T" attenuata di sempre. Tooltip col nome
+# dell'attrezzo e cursore a manina sugli slot pieni (cliccabili per rimetterli nello zaino).
+func _update_tool_slots(individual: HumanIndividual) -> void:
+	for slot in range(tool_slot_boxes.size()):
+		var box: Control = tool_slot_boxes[slot]
+		var label: Label = box.get_node("Label") as Label
+		if _tool_icon_nodes[slot] != null:
+			_tool_icon_nodes[slot].queue_free()
+			_tool_icon_nodes[slot] = null
+
+		var tool_name: String = individual.get_equipped_tool(slot) if individual != null else ""
+		if tool_name == "":
+			label.visible = true
+			label.text = "T"
+			label.add_theme_color_override("font_color", EMPTY_TOOL_SLOT_TEXT_COLOR)
+			box.tooltip_text = tr("tool_slot_empty_tooltip")
+			box.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+			continue
+
+		label.add_theme_color_override("font_color", Color.WHITE)
+		box.tooltip_text = tr("tool_slot_full_tooltip").format({"tool": IconRegistry.get_resource_display_name(tool_name)})
+		box.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+		var icon_node: Control = IconRegistry.get_resource_icon_node(tool_name)
+		if icon_node != null:
+			label.visible = false
+			_tool_icon_nodes[slot] = icon_node
+			box.add_child(icon_node)
+			icon_node.anchor_left = 0.0
+			icon_node.anchor_top = 0.0
+			icon_node.anchor_right = 1.0
+			icon_node.anchor_bottom = 1.0
+			icon_node.offset_left = 0.0
+			icon_node.offset_top = 0.0
+			icon_node.offset_right = 0.0
+			icon_node.offset_bottom = 0.0
+		else:
+			label.visible = true
+			var icon: String = IconRegistry.get_resource_icon(tool_name)
+			label.text = icon if icon != "" else tool_name.substr(0, 1).to_upper()
 
 
 # Costruisce gli slot dei riquadri trasportati (una volta, da _ready): il riquadro in scena è lo slot 0,

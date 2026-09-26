@@ -15,3 +15,4 @@ recipe_inputs = {
 }
 recipe_labor = 100.0
 recipe_workstation_types = Array[String](["campfire", "toolmaker_hut"])
+recipe_required_tool_categories = Array[int]([1])

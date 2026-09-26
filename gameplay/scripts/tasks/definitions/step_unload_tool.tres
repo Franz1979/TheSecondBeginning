@@ -1,0 +1,9 @@
+[gd_resource type="Resource" script_class="TaskStepDefinition" format=3]
+
+[ext_resource type="Script" uid="uid://d3sri3tos2u4f" path="res://gameplay/scripts/tasks/task_step_definition.gd" id="1_unload_tool"]
+
+[resource]
+script = ExtResource("1_unload_tool")
+action_type = 3
+context_keys = Array[String](["tool_building", "tool_slot_index"])
+step_description = "task_store_tool_step_unload"

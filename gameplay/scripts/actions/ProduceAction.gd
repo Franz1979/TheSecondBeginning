@@ -20,7 +20,8 @@ extends Action
 # Nessun accumulatore interno: labor_accumulated letto/scritto dal vivo su Building, stesso motivo
 # di BuildAction (sopravvive a interruzione/riassegnazione e al salvataggio senza load_save_data).
 #
-# Combustibile (recipe_fuel_required): non ancora gestito in questo step.
+# Combustibile (recipe_fuel_required, dal 2026-09-24): gestito da ProductionService — un ciclo non si
+# completa senza combustibile sufficiente, bruciato al completamento dopo i materiali (_consume_fuel).
 #
 # QUANTITÀ (2026-09-24, richiesta utente): lo step produce `quantity` pezzi (1..BuildingRules.
 # production_max_quantity, scelti nel pannello) ripetendo il ciclo sul record della propria ricetta:
@@ -41,6 +42,14 @@ var tool_multiplier: float = 1.0
 # Pezzi ordinati (minimo 1) e pezzi già prodotti da questo step — vedi QUANTITÀ in testa al file.
 var quantity: int = 1
 var produced_count: int = 0
+# Attesa degli attrezzi (2026-09-25, richiesta utente — "task in attesa invece di rifiuto"): stato
+# dell'ULTIMO controllo di ToolGateService fatto da _ensure_required_tools, ricalcolato a ogni tick,
+# mai salvato. tool_wait_result == ToolGateService.Result.OK = nessuna attesa; MISSING_TOOLS =
+# mancano gli attrezzi per tool_wait_missing_categories; BELT_FULL/CANNOT_EQUIP = l'attrezzo
+# tool_wait_tool_name c'è nello zaino ma non entra in cintura. Letti da GameScene per i pannelli.
+var tool_wait_result: int = ToolGateService.Result.OK
+var tool_wait_missing_categories: Array = []
+var tool_wait_tool_name: String = ""
 
 
 func _init(
@@ -91,6 +100,11 @@ func _ensure_own_record() -> bool:
 func get_stamina_delta(individual: Variant, context: Dictionary, delta: float) -> float:
 	if not is_target_valid() or produced_count >= quantity or not _ensure_own_record():
 		return 0.0
+	# Attrezzi (2026-09-25): come per il materiale mancante, lo step resta fermo (zero stamina, zero
+	# lavoro) finché gli attrezzi richiesti non ci sono; appena compaiono nello zaino vengono spostati
+	# in cintura e il lavoro parte da solo, senza riassegnare la Task.
+	if not _ensure_required_tools(individual):
+		return 0.0
 	if not get_missing_materials().is_empty() or not ProductionService.has_output_room(target_building, resource_name):
 		return 0.0
 	# Combustibile mancante (2026-09-24): fermo come per i materiali.
@@ -104,6 +118,30 @@ func get_stamina_delta(individual: Variant, context: Dictionary, delta: float) -
 		ProductionService.add_labor(target_building, resource_name, stamina_spent_this_day * skill_multiplier * tool_multiplier)
 	_try_complete_cycle()
 	return -stamina_spent_this_day
+
+
+# Categorie richieste da questo step (sue + ricetta, vedi ToolGateService.get_action_required_
+# categories) coperte dalla cintura, spostando dallo zaino ciò che serve. Aggiorna lo stato tool_wait_*.
+# game_data null: lo step non lo possiede — la capacità di trasporto viene corretta del solo bonus
+# dello slot occupato (HumanIndividual._recalculate_carry_capacity_after_tool_change).
+func _ensure_required_tools(individual: Variant) -> bool:
+	var required := ToolGateService.get_action_required_categories(self)
+	if required.is_empty() or not (individual is HumanIndividual):
+		tool_wait_result = ToolGateService.Result.OK
+		tool_wait_missing_categories = []
+		tool_wait_tool_name = ""
+		return true
+	var outcome := ToolGateService.try_satisfy(individual, required, null)
+	tool_wait_result = int(outcome["result"])
+	tool_wait_missing_categories = outcome["missing_categories"]
+	tool_wait_tool_name = String(outcome["tool_name"])
+	if DebugLogging.ENABLED and DebugLogging.SHOW_TRANSPORT_BUILD_LOGS and not outcome["equipped"].is_empty():
+		print("[PRODUCE] #%d: attrezzi spostati in cintura per '%s': %s." % [individual.id, resource_name, str(outcome["equipped"])])
+	return tool_wait_result == ToolGateService.Result.OK
+
+
+func is_waiting_for_tools() -> bool:
+	return tool_wait_result != ToolGateService.Result.OK
 
 
 # Conclude un ciclo appena lavoro, input e posto nel buffer lo consentono (ProductionService.

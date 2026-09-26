@@ -408,6 +408,10 @@ func get_activity_description() -> String:
 			if produced_quantity > 1:
 				produced_display_name = "%s ×%d" % [produced_display_name, produced_quantity]
 			return tr("task_produce_activity").format({"resource": produced_display_name})
+		# Prendi/riponi attrezzo dal pannello individuo (2026-09-25, richiesta utente): "Prendi
+		# attrezzo (Coltello di pietra)". Nome da context["tool_resource_name"], scritto da GameScene.
+		"task_equip_tool_name", "task_store_tool_name":
+			resource_name = String(context.get("tool_resource_name", ""))
 		_:
 			return base_text
 	if resource_name == "":
