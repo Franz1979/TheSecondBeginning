@@ -32,6 +32,14 @@ var target_point: Vector2 = Vector2.ZERO
 #   in questo stesso array (-1 = nessuno), trasformati in id veri all'accoglienza.
 var members: Array[Dictionary] = []
 
+# Percorso del punto centrale (2026-09-27, pathfinding step 5 — VisitorService.advance): waypoint (centri di microcella)
+# verso path_target, calcolato con PathfindingService.find_path e ricalcolato se cambia target_point o un blocco della
+# macrocella (path_block_version). NON salvato: al caricamento path_planned è false e si ricalcola dal punto attuale.
+var path: Array[Vector2] = []
+var path_target: Vector2 = Vector2.ZERO
+var path_planned: bool = false
+var path_block_version: int = -1
+
 
 func to_save_data() -> Dictionary:
 	var members_data: Array = []

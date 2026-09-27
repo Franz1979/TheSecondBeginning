@@ -158,14 +158,30 @@ static func _size_scaled_amount(
 # uno scalato con la taglia). max(..., 0) difensivo: la cintura ha sempre tool_slot_count posti, ma
 # se equipped_tool_count superasse tool_slot_count per qualche motivo il bonus non deve diventare
 # negativo.
+#
+# equipped_tools (2026-09-27, richiesta utente — sacca di pelle): gli attrezzi in cintura; si aggiunge, FLAT come il
+# bonus degli slot, il carry_capacity_bonus più alto tra loro (get_equipped_carry_bonus) — due sacche valgono una.
 static func get_max_carry_capacity(
 	human_rules: HumanRules, age_band: HumanTypes.AgeBand, sex: HumanTypes.Sex,
-	equipped_tool_count: int = 0, equipment_multiplier: float = 1.0
+	equipped_tool_count: int = 0, equipment_multiplier: float = 1.0, equipped_tools: Array[String] = []
 ) -> float:
 	var size_scaled_capacity := _size_scaled_amount(human_rules.base_carry_capacity, human_rules, age_band, sex) * equipment_multiplier
 	var empty_tool_slots: int = max(human_rules.tool_slot_count - equipped_tool_count, 0)
 	var tool_slot_bonus: float = float(empty_tool_slots) * human_rules.carry_bonus_per_empty_tool_slot
-	return size_scaled_capacity + tool_slot_bonus
+	return size_scaled_capacity + tool_slot_bonus + get_equipped_carry_bonus(equipped_tools)
+
+
+# Bonus di capacità degli attrezzi in cintura (2026-09-27): il SecondaryResourceRules.carry_capacity_bonus più alto
+# tra `equipped_tools` ("" = slot vuoto), 0.0 se nessuno ne ha.
+static func get_equipped_carry_bonus(equipped_tools: Array[String]) -> float:
+	var best: float = 0.0
+	for tool_name in equipped_tools:
+		if tool_name == "":
+			continue
+		var tool_rules := CaloricCalculator.get_caloric_source_rules(tool_name)
+		if tool_rules != null:
+			best = maxf(best, tool_rules.carry_capacity_bonus)
+	return best
 
 
 # Consumo calorico giornaliero (2026-09-19, richiesta utente): base_daily_calorie_consumption x

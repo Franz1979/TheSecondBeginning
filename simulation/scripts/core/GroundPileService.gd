@@ -70,12 +70,27 @@ static func drop_entries(game_data: GameData, macro_coords: Vector2i, position: 
 # media pesata. L'edificio viene svuotato SEMPRE, anche senza una microcella libera: in quel caso il contenuto va
 # perso (drop_entries lo segnala con un avviso). Non tocca production_progress. Ritorna il mucchio, o null se
 # l'edificio era vuoto o non c'era posto.
-static func drop_building_contents(game_data: GameData, building: Building, world: World = null) -> GroundPile:
+# `extra_fresh` (2026-09-27, Demolish Task): nome risorsa -> quantità (int) aggiunte allo STESSO mucchio come i pezzi
+# del buffer (fresche, sommate con la media pesata) — i materiali recuperati dalla demolizione.
+static func drop_building_contents(game_data: GameData, building: Building, world: World = null, extra_fresh: Dictionary = {}) -> GroundPile:
 	if building == null:
 		return null
 	var entries: Dictionary = building.stored_resources.duplicate(true)
-	for output_name in building.production_output.keys():
-		var output_quantity: int = int(building.production_output[output_name])
+	_merge_fresh_entries(entries, building.production_output)
+	_merge_fresh_entries(entries, extra_fresh)
+	building.stored_resources.clear()
+	building.production_output.clear()
+	if entries.is_empty():
+		return null
+	var building_position := Vector2(float(building.micro_x) + 0.5, float(building.micro_y) + 0.5)
+	return drop_entries(game_data, Vector2i(building.macro_x, building.macro_y), building_position, entries, world)
+
+
+# Somma a `entries` (formato magazzino) le quantità fresche di `fresh` (nome -> int, decay_fraction 0.0): una risorsa
+# già presente si somma alla sua voce con la media pesata del deperimento.
+static func _merge_fresh_entries(entries: Dictionary, fresh: Dictionary) -> void:
+	for output_name in fresh.keys():
+		var output_quantity: int = int(fresh[output_name])
 		if output_quantity <= 0:
 			continue
 		var existing: Dictionary = entries.get(output_name, {})
@@ -87,12 +102,6 @@ static func drop_building_contents(game_data: GameData, building: Building, worl
 		existing["decay_fraction"] = float(existing_quantity) * float(existing.get("decay_fraction", 0.0)) / float(total_quantity)
 		existing["quantity"] = total_quantity
 		entries[output_name] = existing
-	building.stored_resources.clear()
-	building.production_output.clear()
-	if entries.is_empty():
-		return null
-	var building_position := Vector2(float(building.micro_x) + 0.5, float(building.micro_y) + 0.5)
-	return drop_entries(game_data, Vector2i(building.macro_x, building.macro_y), building_position, entries, world)
 
 
 # Lascia a terra la carcassa di un animale ucciso (2026-09-26, richiesta utente — carcassa a terra) partendo
@@ -190,12 +199,13 @@ static func find_drop_microcell(game_data: GameData, world: World, macro_coords:
 	if macro_cell == null:
 		return null
 	var river_lookup := BuildingVerificationService.get_river_lookup(macro_cell, macro_state)
+	# Ostacoli raccolti UNA volta per tutta la ricerca (2026-09-27, MicrocellObstacles): stessa regola di
+	# BuildingVerificationService.is_microcell_free, senza rifare le scansioni per ogni microcella candidata.
+	var obstacles := MicrocellObstacles.build(macro_coords, macro_cell, macro_state, river_lookup, world)
 	var is_free := func(microcell: Vector2i) -> bool:
 		if microcell.x < 0 or microcell.y < 0 or microcell.x >= World.WIDTH or microcell.y >= World.HEIGHT:
 			return false
-		return BuildingVerificationService.is_microcell_free(
-			macro_coords, macro_cell, macro_state, river_lookup, microcell, world, false, false, false, true
-		)
+		return obstacles.is_free(microcell, false, false, false, true)
 
 	# 1. Mucchio già vicino.
 	var best_pile: GroundPile = null

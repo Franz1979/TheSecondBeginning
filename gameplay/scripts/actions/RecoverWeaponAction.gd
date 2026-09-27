@@ -37,6 +37,9 @@ var _drop_local_position: Vector2 = Vector2.ZERO
 var _last_position: Variant = null
 # Arma raccolta (non salvato: lo step si completa nello stesso frame).
 var _done: bool = false
+# Punto di caduta irraggiungibile (2026-09-27, pathfinding step 3): l'arma resta lì (persa, non è un oggetto del mondo)
+# e la caccia si chiude — vedi on_complete.
+var _unreachable: bool = false
 
 
 func _init(p_weapon_name: String = "", p_weapon_uses: int = 0, p_combat_target: CombatTarget = null, p_prey_killed: bool = false) -> void:
@@ -52,6 +55,7 @@ func _init(p_weapon_name: String = "", p_weapon_uses: int = 0, p_combat_target: 
 func activate(individual: Variant, context: Dictionary) -> void:
 	super(individual, context)
 	_done = false
+	_unreachable = false
 	_last_position = null
 	var drop := HuntService.read_weapon_drop(context)
 	if drop.is_empty():
@@ -61,6 +65,8 @@ func activate(individual: Variant, context: Dictionary) -> void:
 	else:
 		_drop_macro_coords = drop["macro_coords"]
 		_drop_local_position = drop["position"]
+	# Richiesta esplicita all'avvio (anche alla ripresa): mai ereditare un percorso o un fallimento vecchi.
+	request_path(individual, _drop_position_for(individual))
 	_head_to_drop(individual)
 	HuntService.log_event(individual, "recupero di %s: a %.2f microcelle dal punto di caduta." % [
 		IconRegistry.get_resource_display_name(weapon_name), individual.position.distance_to(_drop_position_for(individual))
@@ -75,6 +81,11 @@ func get_stamina_delta(individual: Variant, context: Dictionary, delta: float) -
 		var distance: float = individual.position.distance_to(_last_position)
 		stamina_delta = WalkAction.compute_walk_stamina_delta(individual, distance, "RecoverWeapon")
 	_last_position = individual.position
+	# Punto di caduta irraggiungibile (2026-09-27, step 3): il percorso è fallito, lo step finisce e on_complete chiude.
+	if is_path_unreachable(individual, _drop_position_for(individual)):
+		_unreachable = true
+		individual.is_moving = false
+		return stamina_delta
 	if individual.position.distance_to(_drop_position_for(individual)) <= PICKUP_REACH:
 		_done = true
 		individual.target_position = individual.position
@@ -86,13 +97,21 @@ func get_stamina_delta(individual: Variant, context: Dictionary, delta: float) -
 
 
 func is_complete(individual: Variant, context: Dictionary) -> bool:
-	return _done
+	return _done or _unreachable
 
 
 # Decisione dopo il recupero (vedi il commento in testa). Scrive le chiavi consumate da finish_current_step.
 func on_complete(individual: Variant, context: Dictionary) -> void:
 	super(individual, context)
 	context.erase(HuntService.CONTEXT_WEAPON_DROP)
+	# Punto di caduta irraggiungibile (2026-09-27, pathfinding step 3): l'arma resta lì — non è un oggetto del mondo,
+	# quindi è persa — e la caccia si chiude (niente macellazione né riavvicinamento).
+	if _unreachable:
+		HuntService.log_event(individual, "punto di caduta di %s irraggiungibile: l'arma resta lì (persa) e la caccia si chiude." % [
+			IconRegistry.get_resource_display_name(weapon_name)
+		])
+		abort_task_unreachable(individual, context, "punto di caduta dell'arma irraggiungibile")
+		return
 	if prey_killed:
 		HuntService.log_event(individual, "arma recuperata accanto a %s ucciso: la caccia è conclusa." % combat_target.describe())
 		# Macellazione (2026-09-26): il cacciatore è accanto alla carcassa, se ha una lama la si accoda
@@ -122,8 +141,14 @@ func _drop_position_for(individual: Variant) -> Vector2:
 	return _drop_local_position + macro_offset
 
 
+# Pathfinding (2026-09-27, step 3): il percorso verso il punto di caduta si chiede solo quando la destinazione cambia
+# (avvio, o dopo un passaggio di cella che la ribasa); nei tick successivi target_position resta la stessa e il
+# percorso resta valido (Action.request_path).
 func _head_to_drop(individual: Variant) -> void:
-	individual.target_position = _drop_position_for(individual)
+	var destination := _drop_position_for(individual)
+	if individual.path_target != destination:
+		request_path(individual, destination)
+	individual.target_position = destination
 	individual.is_moving = true
 
 

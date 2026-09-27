@@ -321,7 +321,8 @@ func is_complete(individual: Variant, context: Dictionary) -> bool:
 # rappresentato una risorsa fuori dalla cella viva corrente). `individual`/`context` inutilizzati
 # qui, stessa firma di ogni altro override.
 func get_required_position(individual: Variant, context: Dictionary) -> Variant:
-	return Vector2(target_position)
+	# Punto casuale dentro la microcella di raccolta, mai l'angolo esatto (2026-09-27, PathfindingService.random_point_in_microcell).
+	return PathfindingService.random_point_in_microcell(Vector2(target_position))
 
 
 # Esegue il piano (_plan) risolto in activate(): per ogni risorsa la aggiunge allo zaino (add_carried_resource:

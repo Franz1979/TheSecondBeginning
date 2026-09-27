@@ -138,24 +138,47 @@ const DAYDREAM_THINK_BASE_DURATION: float = 2.0
 
 # Risoluzione dei tre target Walk della Wander Task — STESSA identica logica di GameScene.
 # _resolve_wander_targets prima di questo spostamento (vedi doc di testa al file).
+# Pathfinding (2026-09-27, step 2b): i due punti intermedi solo su microcelle libere e raggiungibili
+# (PathfindingService.pick_free_destination, fino a 8 sorteggi ciascuno, lunghezza e direzione ritirate ogni volta);
+# nessuno valido = quel tratto resta sul punto precedente. Il secondo è controllato dalla posizione attuale: il primo
+# è raggiungibile da lì, quindi sta nella stessa regione e la risposta è la stessa. Il ritorno (target_3) è la
+# partenza, com'era.
 static func resolve_wander_targets(individual: HumanIndividual) -> Dictionary:
 	var starting_position: Vector2 = individual.position
-	var first_leg_length: float = randf_range(WANDER_LEG_MIN_LENGTH, WANDER_LEG_MAX_LENGTH)
-	var target_1: Vector2 = starting_position + Vector2.from_angle(randf() * TAU) * first_leg_length
-	var second_leg_length: float = randf_range(WANDER_LEG_MIN_LENGTH, WANDER_LEG_MAX_LENGTH)
-	var target_2: Vector2 = target_1 + Vector2.from_angle(randf() * TAU) * second_leg_length
+	var target_1: Vector2 = _free_leg_end(individual, starting_position)
+	var target_2: Vector2 = _free_leg_end(individual, target_1)
 	return {"target_1": target_1, "target_2": target_2, "target_3": starting_position}
+
+
+# Fine di un tratto di Wander da `leg_start`: lunghezza WANDER_LEG_MIN..MAX_LENGTH in una direzione a caso, su una
+# microcella libera e raggiungibile; nessun sorteggio valido = `leg_start`.
+static func _free_leg_end(individual: HumanIndividual, leg_start: Vector2) -> Vector2:
+	var destination: Variant = PathfindingService.pick_free_destination(
+		individual,
+		func() -> Vector2: return leg_start + Vector2.from_angle(randf() * TAU) * randf_range(WANDER_LEG_MIN_LENGTH, WANDER_LEG_MAX_LENGTH)
+	)
+	return destination if destination != null else leg_start
 
 
 # Risoluzione dei due target Run della Play Task — STESSA identica logica di GameScene.
 # _resolve_play_targets prima di questo spostamento (vedi doc di testa al file).
+# Pathfinding (2026-09-27, step 3): stessi tratti liberi e raggiungibili di Wander (_free_leg_end).
 static func resolve_play_targets(individual: HumanIndividual) -> Dictionary:
 	var starting_position: Vector2 = individual.position
-	var first_leg_length: float = randf_range(WANDER_LEG_MIN_LENGTH, WANDER_LEG_MAX_LENGTH)
-	var target_1: Vector2 = starting_position + Vector2.from_angle(randf() * TAU) * first_leg_length
-	var second_leg_length: float = randf_range(WANDER_LEG_MIN_LENGTH, WANDER_LEG_MAX_LENGTH)
-	var target_2: Vector2 = target_1 + Vector2.from_angle(randf() * TAU) * second_leg_length
+	var target_1: Vector2 = _free_leg_end(individual, starting_position)
+	var target_2: Vector2 = _free_leg_end(individual, target_1)
 	return {"target_1": target_1, "target_2": target_2}
+
+
+# Punto "vicino" del sogno a occhi aperti (2026-09-27, pathfinding step 3 — condiviso con GameScene.
+# _debug_test_daydream_task): a `distance` dall'individuo in una direzione a caso, su una microcella libera e
+# raggiungibile (PathfindingService.pick_free_destination, fino a 8 sorteggi); nessuno valido = la posizione attuale.
+static func resolve_daydream_around_position(individual: HumanIndividual, distance: float = DAYDREAM_AROUND_DISTANCE) -> Vector2:
+	var origin: Vector2 = individual.position
+	var destination: Variant = PathfindingService.pick_free_destination(
+		individual, func() -> Vector2: return origin + Vector2.from_angle(randf() * TAU) * distance
+	)
+	return destination if destination != null else origin
 
 
 # Eleggibilita' di leisure_restock nel sorteggio idle: spazio libero nelle provviste >=
@@ -218,14 +241,19 @@ static func _build_idle_task(path: String, individual: HumanIndividual, world: W
 				"rest_max_duration_days": randf_range(LEISURE_REST_MIN_DURATION_DAYS, LEISURE_REST_MAX_DURATION_DAYS),
 				"rest_ignore_stamina_cap": true,
 			}
-			return TaskFactory.build_task(definition, context)
+			var leisure_rest_task := TaskFactory.build_task(definition, context)
+			# Ultimo step di leisure_rest.tres = "allontanati" dopo il riposo (2026-09-27, stessa regola di rest.tres):
+			# saltato se all'attivazione c'è un seguito noto (HumanIndividualActionService.has_known_follow_up).
+			if not leisure_rest_task.steps.is_empty() and leisure_rest_task.steps[-1] is WalkAction:
+				(leisure_rest_task.steps[-1] as WalkAction).is_walk_away = true
+			return leisure_rest_task
 		"res://gameplay/scripts/tasks/definitions/daydreaming.tres":
 			# Filtro "esiste un edificio che accetta pensieri" GIÀ APPLICATO a monte da
 			# assign_idle_fallback (vedi lì) — qui si assume che il chiamante l'abbia già verificato,
 			# stesso principio "un guard, un solo posto" già seguito per allowed_age_bands. Nessun
 			# WANDER_ENABLED/LEISURE_REST_ENABLED equivalente per Daydream: nessuna richiesta di
 			# poterla disattivare separatamente oggi.
-			var around_position: Vector2 = individual.position + Vector2.from_angle(randf() * TAU) * DAYDREAM_AROUND_DISTANCE
+			var around_position: Vector2 = resolve_daydream_around_position(individual)
 			var definition := load(path) as TaskDefinition
 			var context: Dictionary = {
 				"target_position": around_position,

@@ -149,6 +149,29 @@ func on_complete(individual: Variant, context: Dictionary) -> void:
 	pass
 
 
+# --- Percorso (2026-09-27, pathfinding step 3 — estratto da WalkAction, condiviso con RunAction/RecoverWeaponAction/
+# ApproachPreyAction) ---
+
+# Chiede al servizio di movimento un percorso verso `destination` (lo calcola HumanIndividualMovementService al primo
+# passo, che ha le celle vive). Il percorso vale finché individual.target_position resta `destination`.
+func request_path(individual: Variant, destination: Vector2) -> void:
+	individual.clear_path()
+	individual.path_target = destination
+	individual.path_pending = true
+
+
+# true se il percorso verso `destination` è risultato impossibile (destinazione irraggiungibile).
+func is_path_unreachable(individual: Variant, destination: Vector2) -> bool:
+	return individual.path_failed and individual.path_target == destination
+
+
+# Chiusura anticipata della Task per destinazione irraggiungibile (stessa via di ogni chiusura anticipata:
+# HumanIndividualActionService.finish_current_step, CONTEXT_PENDING_TASK_ABORT). Azzera il percorso fallito.
+func abort_task_unreachable(individual: Variant, context: Dictionary, reason: String) -> void:
+	individual.clear_path()
+	context[HumanIndividualActionService.CONTEXT_PENDING_TASK_ABORT] = reason
+
+
 # Stato interno di progresso di QUESTO step da persistere, oltre a quanto TaskPersistenceService
 # già copre genericamente da solo (action_type via dispatch sul tipo concreto, `target` se è un
 # Vector2 — vedi Action.target sopra) — 2026-09-08, richiesta utente (persistenza Task/Action).

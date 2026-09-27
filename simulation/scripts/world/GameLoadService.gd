@@ -275,6 +275,11 @@ func load_game_from_json(file_path: String) -> LoadedGame:
 			state.has_ever_been_discovered = bool(state_data.get("has_ever_been_discovered", false))
 			state.vegetation_feeding_active = bool(state_data.get("vegetation_feeding_active", false))
 			state.grass_seed_baseline = int(state_data.get("grass_seed_baseline", -1))
+			# Guadi (2026-09-27, pathfinding): assente = nessun guado.
+			var ford_positions: Array = []
+			for pos_data in state_data.get("ford_positions", []):
+				ford_positions.append(Vector2i(int(pos_data["x"]), int(pos_data["y"])))
+			state.ford_positions = ford_positions
 			if state_data.has("stone_positions"):
 				var stone_positions: Array = []
 				for pos_data in state_data["stone_positions"]:
@@ -521,6 +526,8 @@ func load_game_from_json(file_path: String) -> LoadedGame:
 			# senza che sia mai osservabile oggi (nessun save pre-esistente ha davvero is_complete=
 			# false, la Build Task è arrivata dopo).
 			building.site_setup_complete = bool(building_data.get("site_setup_complete", building.is_complete))
+			# Edificio "da demolire" (2026-09-27, Demolish Task) — false per i salvataggi precedenti.
+			building.is_marked_for_demolition = bool(building_data.get("is_marked_for_demolition", false))
 			building.current_durability = int(building_data.get("current_durability", 0))
 			building.built_year = int(building_data.get("built_year", -1))
 			# stored_resources (2026-09-09, richiesta utente, Step 3 decadimento) — formato cambiato

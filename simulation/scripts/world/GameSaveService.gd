@@ -156,6 +156,12 @@ func save_game_to_json(
 				state_data["grass_seed_baseline"] = state.grass_seed_baseline
 		# Solo le macrocelle già aperte in MacroCellScene hanno posizioni stone generate:
 		# la chiave resta assente per tutte le altre, per non appesantire il salvataggio.
+		# Guadi (2026-09-27, pathfinding): stesso formato {x,y} di stone_positions, chiave assente se vuoto.
+		if not state.ford_positions.is_empty():
+			var ford_positions_data: Array = []
+			for pos in state.ford_positions:
+				ford_positions_data.append({"x": pos.x, "y": pos.y})
+			state_data["ford_positions"] = ford_positions_data
 		if state.stone_positions_generated:
 			var stone_positions_data: Array = []
 			for pos in state.stone_positions:
@@ -380,6 +386,8 @@ func save_game_to_json(
 			# completata) continua a mostrare il cartello dopo un reload, invece di saltare
 			# direttamente alla fase "solo bastoncini" per default.
 			"site_setup_complete": building.site_setup_complete,
+			# Edificio "da demolire" (2026-09-27, Demolish Task), vedi Building.is_marked_for_demolition.
+			"is_marked_for_demolition": building.is_marked_for_demolition,
 			"current_durability": building.current_durability,
 			"built_year": building.built_year,
 			"stored_resources": building.stored_resources,

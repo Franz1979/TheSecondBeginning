@@ -1,0 +1,22 @@
+[gd_resource type="Resource" script_class="SecondaryResourceRules" format=3 uid="uid://dl6t1e0fbntdo"]
+
+[ext_resource type="Script" uid="uid://cu4cyua5y4n1m" path="res://simulation/scripts/core/SecondaryResourceRules.gd" id="1_hide_bag"]
+
+[resource]
+script = ExtResource("1_hide_bag")
+secondary_resource_name = "hide_bag"
+calories_per_unit = 0.0
+category = 4
+generation_source = 2
+space_per_unit = 3.0
+recipe_inputs = {
+"fiber_rope": 1,
+"hide": 4,
+"sinew": 2
+}
+recipe_labor = 400.0
+recipe_workstation_types = Array[String](["campfire", "toolmaker_hut"])
+recipe_required_tool_categories = Array[int]([6])
+tool_categories = Array[int]([7])
+carry_capacity_bonus = 20.0
+max_uses = 100

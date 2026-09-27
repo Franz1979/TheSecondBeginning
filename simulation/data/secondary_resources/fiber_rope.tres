@@ -13,6 +13,6 @@ space_per_unit = 2.0
 recipe_inputs = {
 "plant_fiber": 3
 }
-recipe_labor = 100.0
+recipe_labor = 150.0
 recipe_workstation_types = Array[String](["campfire", "toolmaker_hut"])
 recipe_required_tool_categories = Array[int]([1])

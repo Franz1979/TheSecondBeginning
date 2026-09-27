@@ -45,11 +45,18 @@ static func find_nearest(
 	origin_position: Vector2,
 	origin_macro_coords: Vector2i,
 	predicate: Callable,
-	excluded_ids: Array = []
+	excluded_ids: Array = [],
+	reachable: Callable = Callable()
 ) -> Variant:
+	# `reachable` (2026-09-27, pathfinding step 2b): opzionale, Callable(candidato) -> bool "raggiungibile da qui?".
+	# Se valido, i candidati irraggiungibili sono esclusi. Lo costruisce il chiamante del livello gameplay (con
+	# PathfindingService.is_reachable): questo service non conosce celle vive né griglie. Valutato solo per un
+	# candidato che sarebbe il nuovo più vicino (dopo esclusi, predicate e distanza). La distanza resta in linea d'aria:
+	# il più vicino tra i raggiungibili, non il più vicino a piedi.
 	if candidates == null:
 		return null
 
+	var check_reachable := reachable.is_valid()
 	var best: Variant = null
 	var best_distance_squared := INF
 	for candidate in candidates:
@@ -59,6 +66,8 @@ static func find_nearest(
 			continue
 		var candidate_position := _position_relative_to(candidate, origin_macro_coords)
 		var distance_squared := origin_position.distance_squared_to(candidate_position)
+		if distance_squared < best_distance_squared and check_reachable and not reachable.call(candidate):
+			continue
 		if distance_squared < best_distance_squared:
 			best_distance_squared = distance_squared
 			best = candidate

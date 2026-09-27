@@ -39,9 +39,18 @@ var facing_direction: Vector2 = Vector2.RIGHT
 # sotto il container della macrocella giusta (vedi LiveMacroCell.container) — mai per calcoli di
 # simulazione, solo rendering.
 var home_macro_coords: Vector2i = Vector2i(-1, -1)
-# Waypoint intermedi per un futuro pathfinding — vuoto oggi: HumanIndividualMovementService muove
-# sempre in linea retta verso target_position finché questo campo non verrà popolato altrove.
+# Percorso (2026-09-27, pathfinding step 2): waypoint intermedi (centri di microcella) verso target_position,
+# calcolati da HumanIndividualMovementService con PathfindingService.find_path quando un WalkAction parte (path_pending)
+# e ricalcolati dal punto in cui si è quando cambia un blocco sulla macrocella (path_block_version). Il moto resta
+# rettilineo tra un punto e l'altro; l'ultimo tratto va alla posizione esatta di target_position. Valido solo finché
+# target_position == path_target (un'altra azione che cambia bersaglio lo invalida). Nessuno di questi campi è salvato:
+# al caricamento WalkAction.activate lo richiede di nuovo.
 var path: Array[Vector2] = []
+var path_target: Vector2 = Vector2.ZERO
+var path_pending: bool = false
+var path_active: bool = false
+var path_failed: bool = false
+var path_block_version: int = -1
 # microcelle/secondo — ridotto da 4.5 a 2.0 (richiesta utente, 2026-09-04: troppo veloce per
 # leggere l'animazione delle gambe appena aggiunta a HumanIndividualView), poi ulteriormente a 1.2
 # (richiesta utente, 2026-09-04: ancora troppo veloce, indipendentemente dal ritmo delle gambe —
@@ -359,7 +368,7 @@ const MAX_CARRIED_VARIETIES: int = 4
 var carried_resources: Dictionary = {}
 
 # Cintura degli attrezzi (2026-09-25, richiesta utente — sostituisce il vecchio campo
-# equipped_tool_count, sempre 0): HumanRules.tool_slot_count posti (4), ciascuno "" (vuoto) oppure il
+# equipped_tool_count, sempre 0): HumanRules.tool_slot_count posti (5 dal 2026-09-27, prima 4), ciascuno "" (vuoto) oppure il
 # nome di una risorsa attrezzo (SecondaryResourceRules.tool_categories non vuoto). Dimensionata da
 # _ensure_tool_slots. PERSISTITA (GameSaveService/GameLoadService, default vuoto per i save vecchi).
 # Un attrezzo in cintura NON occupa spazio nello zaino: il suo costo è il bonus di capacità perso
@@ -367,7 +376,7 @@ var carried_resources: Dictionary = {}
 # get_max_carry_capacity) e WalkAction/RunAction.STAMINA_DRAIN_PER_TOOL per microcella. Spostamenti
 # zaino <-> cintura SOLO da equip_tool_from_backpack/unequip_tool_to_backpack. Usi residui per slot in
 # equipped_tool_uses (sotto, 2026-09-26).
-const DEFAULT_TOOL_SLOT_COUNT: int = 4
+const DEFAULT_TOOL_SLOT_COUNT: int = 5
 var equipped_tools: Array[String] = []
 # Usi residui dell'attrezzo in ciascuno slot (2026-09-26, richiesta utente — attrezzi come istanze,
 # step 2): array PARALLELO a equipped_tools, stesso indice, stessa lunghezza (riallineati insieme da
@@ -489,7 +498,7 @@ func _resolve_initial_max_carry_capacity() -> float:
 		human_rules = source_group_ref.folk_ref.human_rules_ref
 	if human_rules == null:
 		return FALLBACK_MAX_CARRY_CAPACITY
-	return HumanCalculator.get_max_carry_capacity(human_rules, HumanTypes.AgeBand.FERTILE_ADULT, sex, equipped_tool_count)
+	return HumanCalculator.get_max_carry_capacity(human_rules, HumanTypes.AgeBand.FERTILE_ADULT, sex, equipped_tool_count, 1.0, equipped_tools)
 
 
 # 5 risoluzioni "al volo" per i nuovi parametri vitali (2026-09-13) — STESSO identico
@@ -1061,11 +1070,19 @@ func set_target(target: Vector2, age_band: HumanTypes.AgeBand) -> void:
 	assign_task(Task.new([WalkAction.new(target)]), age_band)
 
 
+# Azzera il percorso e il suo stato (2026-09-27, pathfinding step 2): nessun percorso da seguire né da calcolare.
+func clear_path() -> void:
+	path.clear()
+	path_pending = false
+	path_active = false
+	path_failed = false
+
+
 # discard_cargo (2026-09-21, richiesta utente): false = lascia lo zaino com'è (usato quando un edificio
 # viene completato da altri e la Task va solo chiusa, vedi GameScene._close_tasks_claiming_building).
 func stop(discard_cargo: bool = true) -> void:
 	is_moving = false
-	path.clear()
+	clear_path()
 	# TaskDebugRegistry (2026-09-12, richiesta utente — tab di debug 🐞) — chiude l'entry PRIMA di
 	# azzerare current_task sotto: se apply_action ha già verificato is_finished()==true (arrivo
 	# naturale), viene marcata "completata"; se stop() è invece chiamata a Task ancora incompleta
@@ -1376,8 +1393,9 @@ func equip_tool_from_backpack(resource_name: String, game_data: GameData) -> boo
 	var units: Array = take_carried_tool_units(resource_name, 1)
 	if units.is_empty():
 		return false
+	var tool_bonus_before := HumanCalculator.get_equipped_carry_bonus(equipped_tools)
 	_set_tool_slot(free_slot, resource_name, units[0])
-	_recalculate_carry_capacity_after_tool_change(game_data, -1)
+	_recalculate_carry_capacity_after_tool_change(game_data, -1, tool_bonus_before)
 	return true
 
 
@@ -1397,8 +1415,9 @@ func unequip_tool_to_backpack(slot_index: int, game_data: GameData) -> bool:
 	# Usi residui conservati (2026-09-26, step 2): rientra nello zaino come istanza (come nuovo se a usi pieni).
 	if not add_carried_tool_instance(resource_name, get_equipped_tool_instance(slot_index)):
 		return false
+	var tool_bonus_before := HumanCalculator.get_equipped_carry_bonus(equipped_tools)
 	_set_tool_slot(slot_index, "")
-	_recalculate_carry_capacity_after_tool_change(game_data, 1)
+	_recalculate_carry_capacity_after_tool_change(game_data, 1, tool_bonus_before)
 	return true
 
 
@@ -1430,8 +1449,9 @@ func find_slot_for_direct_equip(resource_name: String, preferred_slot: int) -> i
 func equip_tool_direct(resource_name: String, slot_index: int, game_data: GameData, instance: Dictionary = {}) -> bool:
 	if get_equipped_tool(slot_index) != "" or slot_index < 0 or slot_index >= equipped_tools.size():
 		return false
+	var tool_bonus_before := HumanCalculator.get_equipped_carry_bonus(equipped_tools)
 	_set_tool_slot(slot_index, resource_name, instance)
-	_recalculate_carry_capacity_after_tool_change(game_data, -1)
+	_recalculate_carry_capacity_after_tool_change(game_data, -1, tool_bonus_before)
 	return true
 
 
@@ -1442,8 +1462,9 @@ func take_equipped_tool(slot_index: int, game_data: GameData) -> String:
 	var resource_name: String = get_equipped_tool(slot_index)
 	if resource_name == "":
 		return ""
+	var tool_bonus_before := HumanCalculator.get_equipped_carry_bonus(equipped_tools)
 	_set_tool_slot(slot_index, "")
-	_recalculate_carry_capacity_after_tool_change(game_data, 1)
+	_recalculate_carry_capacity_after_tool_change(game_data, 1, tool_bonus_before)
 	return resource_name
 
 
@@ -1458,21 +1479,24 @@ func consume_equipped_tool_use(slot_index: int, game_data: GameData) -> bool:
 	equipped_tool_uses[slot_index] -= 1
 	if equipped_tool_uses[slot_index] > 0:
 		return false
+	var tool_bonus_before := HumanCalculator.get_equipped_carry_bonus(equipped_tools)
 	_set_tool_slot(slot_index, "")
-	_recalculate_carry_capacity_after_tool_change(game_data, 1)
+	_recalculate_carry_capacity_after_tool_change(game_data, 1, tool_bonus_before)
 	return true
 
 
-# Il bonus di capacità dipende dagli slot vuoti: stesso ricalcolo completo del giro giornaliero
-# (fascia d'età dall'Era corrente, per questo serve game_data). Senza game_data (es. equipaggiamento
-# automatico dentro una ProduceAction in attesa di attrezzi, che non lo possiede) si corregge la
-# capacità corrente del solo bonus di uno slot: `empty_slot_delta` = +1 se uno slot si è liberato,
-# -1 se è stato occupato. Il ricalcolo giornaliero riallinea comunque tutto.
-func _recalculate_carry_capacity_after_tool_change(game_data: GameData, empty_slot_delta: int) -> void:
+# Il bonus di capacità dipende dagli slot vuoti e dagli attrezzi in cintura: stesso ricalcolo completo del giro
+# giornaliero (fascia d'età dall'Era corrente, per questo serve game_data). Senza game_data (es. equipaggiamento
+# automatico dentro una ProduceAction in attesa di attrezzi, che non lo possiede) si corregge la capacità corrente:
+# del bonus di uno slot (`empty_slot_delta` = +1 se uno slot si è liberato, -1 se è stato occupato) e della
+# variazione del bonus degli attrezzi (2026-09-27, sacca di pelle: `tool_bonus_before` = HumanCalculator.
+# get_equipped_carry_bonus PRIMA del cambio). Il ricalcolo giornaliero riallinea comunque tutto.
+func _recalculate_carry_capacity_after_tool_change(game_data: GameData, empty_slot_delta: int, tool_bonus_before: float) -> void:
 	if game_data != null:
 		HumanCarryCapacityIndividualService.recalculate_max_carry_capacity(self, game_data)
 	else:
 		max_carry_capacity += float(empty_slot_delta) * _carry_bonus_per_empty_tool_slot()
+		max_carry_capacity += HumanCalculator.get_equipped_carry_bonus(equipped_tools) - tool_bonus_before
 
 
 # Attrezzi (2026-09-26, step 2): stesso ordine di take_carried_tool_units (prima le istanze più consumate),

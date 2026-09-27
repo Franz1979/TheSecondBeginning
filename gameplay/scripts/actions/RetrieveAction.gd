@@ -196,7 +196,8 @@ func _activate_delivery(individual: Variant, context: Dictionary, free_space: fl
 	var total_carried: int = quantity + individual.get_carried_quantity(resource_name)
 	var excluded_ids: Array[int] = [target_building.id]
 	var destination := WarehouseSelectionService.find_best(
-		GameSettings.active_world, individual.position, individual.home_macro_coords, resource_name, total_carried, excluded_ids
+		GameSettings.active_world, individual.position, individual.home_macro_coords, resource_name, total_carried, excluded_ids,
+		PathfindingService.reachability_for(individual)
 	)
 	if destination == null:
 		if DebugLogging.ENABLED and DebugLogging.SHOW_TRANSPORT_BUILD_LOGS:
@@ -293,7 +294,8 @@ func get_required_position(individual: Variant, context: Dictionary) -> Variant:
 	if target_building == null:
 		return null
 	var macro_offset: Vector2 = Vector2(Vector2i(target_building.macro_x, target_building.macro_y) - individual.home_macro_coords) * World.WIDTH
-	return Vector2(target_building.micro_x, target_building.micro_y) + macro_offset
+	# Punto casuale dentro la microcella, mai l'angolo esatto (2026-09-27, PathfindingService.random_point_in_microcell).
+	return PathfindingService.random_point_in_microcell(Vector2(target_building.micro_x, target_building.micro_y) + macro_offset)
 
 
 # Preleva DAVVERO tramite BuildingStorageService.withdraw() — no-op se _quantity_to_retrieve è 0 o

@@ -34,6 +34,25 @@ var river_exterior_occupied: Dictionary = {}
 var movement_modifiers: Dictionary = {}
 var movement_version: int = 0
 
+# Griglia di pathfinding di QUESTA cella (2026-09-27, pathfinding step 1 — vedi PathfindingService, l'unico che la
+# scrive): AStarGrid2D 100x100 (null = non ancora costruita), ostacoli raccolti una volta (path_obstacles), guadi
+# (microcella -> true), pesi diversi da 1 (microcella -> peso), id di regione connessa per microcella (indice
+# y * World.WIDTH + x, -1 = bloccata) e numero di regioni. path_grid_version cresce a ogni modifica (overlay di debug).
+var path_grid: AStarGrid2D = null
+var path_obstacles: MicrocellObstacles = null
+var path_fords: Dictionary = {}
+var path_weights: Dictionary = {}
+var path_regions: PackedInt32Array = PackedInt32Array()
+var path_region_count: int = 0
+var path_grid_version: int = 0
+# Specchio dei blocchi della griglia (2026-09-27, step 2): 1 = bloccata, indice y * World.WIDTH + x — letto dal flood
+# fill delle regioni senza interrogare l'AStarGrid2D cella per cella. path_regions_dirty: regioni da ricalcolare alla
+# prossima get_region (ricalcolo pigro). path_block_version cresce SOLO quando cambia un blocco: i pipottini in cammino
+# lo confrontano per ricalcolare il percorso.
+var path_solid: PackedByteArray = PackedByteArray()
+var path_regions_dirty: bool = true
+var path_block_version: int = 0
+
 # Cache del risultato di VegetationPositionService.generate_positions (diagnostica lentezza,
 # 2026-08-30) — quella chiamata è deterministica e COSTOSA (~90-190ms/cella): il suo output
 # cambia SOLO quando dedicated_space/anno/eccezioni taglio-morte/edifici cambiano DAVVERO, mai per

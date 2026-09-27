@@ -49,6 +49,8 @@ const DEPOSIT_STORAGE_ICON_DRAW_METHODS := {
 	"fiber_rope": "_draw_deposit_storage_fiber_rope_icon",
 	"wooden_spear": "_draw_deposit_storage_wooden_spear_icon",
 	"stone_knife": "_draw_deposit_storage_stone_knife_icon",
+	"bone_awl": "_draw_deposit_storage_bone_awl_icon",
+	"hide_bag": "_draw_deposit_storage_hide_bag_icon",
 	"meat": "_draw_deposit_storage_meat_icon",
 	"cooked_meat": "_draw_deposit_storage_cooked_meat_icon",
 	"hide": "_draw_deposit_storage_hide_icon",
@@ -494,6 +496,16 @@ static func _draw_deposit_storage_wooden_spear_icon(canvas: CanvasItem, top_left
 
 static func _draw_deposit_storage_stone_knife_icon(canvas: CanvasItem, top_left: Vector2, side: float) -> void:
 	StoneKnifeIcon.draw_into(canvas, top_left, Vector2(side, side))
+
+
+# Punteruolo d'osso (2026-09-27): stessa geometria dell'icona del pannello (BoneAwlIcon.draw_into).
+static func _draw_deposit_storage_bone_awl_icon(canvas: CanvasItem, top_left: Vector2, side: float) -> void:
+	BoneAwlIcon.draw_into(canvas, top_left, Vector2(side, side))
+
+
+# Sacca di pelle (2026-09-27): stessa geometria dell'icona del pannello (HideBagIcon.draw_into).
+static func _draw_deposit_storage_hide_bag_icon(canvas: CanvasItem, top_left: Vector2, side: float) -> void:
+	HideBagIcon.draw_into(canvas, top_left, Vector2(side, side))
 
 
 # Prodotti della macellazione (2026-09-26, icone provvisorie): stessa geometria delle icone del pannello

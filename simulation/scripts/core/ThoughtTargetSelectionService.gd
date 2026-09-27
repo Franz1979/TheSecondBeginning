@@ -17,16 +17,18 @@ static func find_best(
 	world: World,
 	origin_position: Vector2,
 	origin_macro_coords: Vector2i,
-	excluded_building_ids: Array[int] = []
+	excluded_building_ids: Array[int] = [],
+	reachable: Callable = Callable()
 ) -> Building:
 	if world == null:
 		return null
 
+	# Edificio "da demolire" escluso (2026-09-27, Building.is_marked_for_demolition): non funziona più.
 	var predicate := func(building: Building) -> bool:
-		return building.rules != null and building.rules.accepts_thoughts
+		return building.rules != null and building.rules.accepts_thoughts and not building.is_marked_for_demolition
 
 	return SpatialSelectionService.find_nearest(
-		world.buildings, origin_position, origin_macro_coords, predicate, excluded_building_ids
+		world.buildings, origin_position, origin_macro_coords, predicate, excluded_building_ids, reachable
 	) as Building
 
 
@@ -54,6 +56,6 @@ static func has_thought_accepting_building(world: World) -> bool:
 	if world == null:
 		return false
 	for building in world.buildings:
-		if building.rules != null and building.rules.accepts_thoughts and building.is_complete:
+		if building.rules != null and building.rules.accepts_thoughts and building.is_complete and not building.is_marked_for_demolition:
 			return true
 	return false

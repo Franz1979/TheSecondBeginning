@@ -274,6 +274,10 @@ const SHOW_TASK_LIFECYCLE_LOGS := true
 # due Task).
 const SHOW_IDLE_LOGS := false
 
+# REST CHOICE — [REST] scelta tra riposo a casa e sul posto (2026-09-27, richiesta utente —
+# NeedTaskAssignmentService.resolve_rest_target): i due tempi, il costo C della camminata e la decisione.
+const SHOW_REST_CHOICE_LOGS := true
+
 # TRANSPORT_BUILD — [UNLOAD] (unload_action.gd), [WALK AWAY]/[WAREHOUSE SEARCH]/
 # [THOUGHT TARGET SEARCH]/[BUILD MATERIAL NEEDED]/[BUILD MATERIAL BONUS]/[BUILD MATERIAL RETRY]
 # (HumanIndividualActionService), [BUILD]/[BUILD DEBUG]/[TRANSPORT] (GameScene),
@@ -316,6 +320,11 @@ const SHOW_RESOURCE_DECAY_LOGS := false
 # moltiplicatori del villaggio e dell'evento, probabilità risultante, tiro, se è stato estratto e per quale giorno;
 # per un evento non idoneo, il motivo. Solo stampa, nessun effetto sul sorteggio.
 const SHOW_RANDOM_EVENT_ROLL_LOGS := true
+
+# PATHFINDING — [PATHFINDING] (2026-09-27, pathfinding step 1, PathfindingService): tempo di costruzione della griglia di
+# una macrocella (con microcelle bloccate e numero di regioni connesse) e, a ogni costruzione/demolizione di edificio,
+# microcelle aggiornate, tempo per microcella e tempo del ricalcolo delle regioni. Solo stampa.
+const SHOW_PATHFINDING_LOGS := false
 
 # ANIMAL_PROCESS_TIMING — [ANIMAL TIMING] (2026-09-26, comportamento degli animali step 2): ogni 5 s reali,
 # tempo medio per frame speso nel _process di TUTTI gli AnimalGroupRenderer, e di cui nel controllo

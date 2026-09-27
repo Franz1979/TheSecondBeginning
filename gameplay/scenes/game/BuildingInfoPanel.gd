@@ -82,6 +82,23 @@ signal resident_center_requested(individual_id: int)
 # Visibile solo se qualcuno ci lavora: con il costruttore/lavoratore "mancante" non c'è nulla da annullare.
 signal work_cancel_requested(building: Building)
 
+# Bottone "Demolisci" (2026-09-27, richiesta utente — prima era un bottone della BuildBar): stesso principio "muto" di
+# empty_all_requested, GameScene apre la conferma (DemolishConfirmationDialog). Nascosto per un edificio già "da
+# demolire".
+signal demolish_requested(building: Building)
+
+# Bottone "Assegna demolitore" (2026-09-27, richiesta utente): visibile per un edificio "da demolire" senza nessuno
+# con la Demolish Task (in corso o in coda); GameScene entra nella modalità di scelta del demolitore.
+signal demolisher_assign_requested(building: Building)
+
+# Bottone "Annulla demolizione" (2026-09-27, richiesta utente): visibile per un edificio "da demolire" finché il
+# lavoro di demolizione non è iniziato (DemolishAction.LABOR_KEY a 0); GameScene chiude le Demolish Task e toglie
+# il flag.
+signal demolition_cancel_requested(building: Building)
+
+# Colore della scritta di stato "In demolizione" (2026-09-27): arancio, demolizione iniziata e non più annullabile.
+const DEMOLITION_IN_PROGRESS_STATUS_COLOR := Color(1.0, 0.55, 0.15, 1.0)
+
 const STORAGE_SLOT_SIZE: float = 32.0
 const EMPTY_STORAGE_SLOT_COLOR := Color(0.3, 0.3, 0.3, 0.4)
 
@@ -168,6 +185,9 @@ const STORAGE_SLOT_FILL_BAR_FILL_COLOR := Color(1.0, 1.0, 1.0, 0.85)
 @onready var accepted_categories_caption: Label = $AcceptedCategoriesCaption
 @onready var category_toggles_container: VBoxContainer = $CategoryTogglesContainer
 @onready var empty_all_button: Button = $EmptyAllButton
+@onready var demolish_button: Button = $DemolishButton
+@onready var assign_demolisher_button: Button = $AssignDemolisherButton
+@onready var cancel_demolition_button: Button = $CancelDemolitionButton
 
 # Edificio correntemente mostrato (2026-09-09) — MAI esistito prima come campo: show_building
 # riceveva `building` solo come parametro locale, nessun consumatore ne aveva bisogno dopo il
@@ -205,6 +225,11 @@ func _ready() -> void:
 	empty_all_button.pressed.connect(func(): empty_all_requested.emit(_current_building))
 	cancel_work_button.tooltip_text = tr("building_cancel_work_tooltip")
 	cancel_work_button.pressed.connect(func(): work_cancel_requested.emit(_current_building))
+	demolish_button.pressed.connect(func(): demolish_requested.emit(_current_building))
+	assign_demolisher_button.text = tr("building_assign_demolisher_button")
+	assign_demolisher_button.pressed.connect(func(): demolisher_assign_requested.emit(_current_building))
+	cancel_demolition_button.text = tr("building_cancel_demolition_button")
+	cancel_demolition_button.pressed.connect(func(): demolition_cancel_requested.emit(_current_building))
 
 
 # residents_display_data (2026-09-12, richiesta utente — griglia residenti): Array di Dictionary
@@ -221,7 +246,9 @@ func _ready() -> void:
 # una Produce Task che ci lavora (GameScene._resolve_production_claimed_recipes). Un record di
 # production_progress la cui ricetta non è qui è SOSPESO: il pannello lo segnala come tale e non ne
 # mostra il fabbisogno di materiale/combustibile come se qualcuno ci stesse lavorando.
-func show_building(building: Building, residents_display_data: Array[Dictionary] = [], assigned_builder_names: Array[String] = [], production_claimant_names: Array[String] = [], production_claimed_recipes: Array[String] = [], production_tool_wait_lines: Array[String] = []) -> void:
+# demolisher_names (2026-09-27): "Nome (#id)" di chi ha la Demolish Task su questo edificio (in corso o in coda) —
+# vuoto su un edificio "da demolire" = bottone "Assegna demolitore".
+func show_building(building: Building, residents_display_data: Array[Dictionary] = [], assigned_builder_names: Array[String] = [], production_claimant_names: Array[String] = [], production_claimed_recipes: Array[String] = [], production_tool_wait_lines: Array[String] = [], demolisher_names: Array[String] = []) -> void:
 	visible = true
 	_current_building = building
 	var working_recipes: Array[String] = []
@@ -231,9 +258,22 @@ func show_building(building: Building, residents_display_data: Array[Dictionary]
 			working_recipes.append(active_name)
 		else:
 			suspended_recipes.append(active_name)
-	status_label.text = tr("building_status_label").format({
-		"status": tr("building_status_complete") if building.is_complete else tr("building_status_under_construction")
-	})
+	# "Da demolire" (2026-09-27, Building.is_marked_for_demolition) prima di completo/in costruzione.
+	var status_key: String = "building_status_complete" if building.is_complete else "building_status_under_construction"
+	# Demolizione iniziata (2026-09-27, richiesta utente): "In demolizione" in arancio, non più annullabile.
+	var demolition_started: bool = building.is_marked_for_demolition and float(building.construction_progress.get(DemolishAction.LABOR_KEY, 0.0)) > 0.0
+	if building.is_marked_for_demolition:
+		status_key = "building_status_demolition_in_progress" if demolition_started else "building_status_marked_for_demolition"
+	status_label.text = tr("building_status_label").format({"status": tr(status_key)})
+	if demolition_started:
+		status_label.add_theme_color_override("font_color", DEMOLITION_IN_PROGRESS_STATUS_COLOR)
+	else:
+		status_label.remove_theme_color_override("font_color")
+	cancel_demolition_button.visible = building.is_marked_for_demolition and not demolition_started
+	demolish_button.visible = not building.is_marked_for_demolition
+	# Su un cantiere la conferma annulla il cantiere (2026-09-27): stesso bottone, testo diverso.
+	demolish_button.text = tr("building_demolish_button") if building.is_complete else tr("building_cancel_site_button")
+	assign_demolisher_button.visible = building.is_marked_for_demolition and demolisher_names.is_empty()
 	_refresh_construction_progress(building)
 	# "In attesa di materiale" (2026-09-14, richiesta utente — segnalazione player per un cantiere
 	# bloccato per mancanza di materiale) — SOLO visibile/valorizzata mentre building.is_awaiting_
@@ -537,6 +577,9 @@ func _refresh_suspended_production(building: Building, suspended_recipes: Array[
 # (input e combustibile, anche di produzioni sospese) non comparirebbe altrimenti. Una chip per
 # risorsa di stored_resources, stesso stile del buffer di uscita. Nascosta se vuota; per gli edifici
 # CON storage quel contenuto è già nella StorageGrid.
+# Cantiere (2026-09-27, richiesta utente): per un edificio non completo, con o senza storage, la stessa sezione
+# mostra il materiale da costruzione consegnato (caption "Materiale consegnato") — la StorageGrid resta nascosta
+# finché l'edificio non è completo, vedi _refresh_storage_grid.
 func _refresh_delivered_materials(building: Building) -> void:
 	for child in delivered_materials_grid.get_children():
 		child.queue_free()
@@ -547,12 +590,13 @@ func _refresh_delivered_materials(building: Building) -> void:
 		var quantity: int = int(building.stored_resources[resource_name].get("quantity", 0))
 		if quantity > 0:
 			entries[String(resource_name)] = quantity
-	var show_section: bool = building.is_complete and is_workstation and not has_storage and not entries.is_empty()
+	var is_site: bool = not building.is_complete
+	var show_section: bool = (is_site or (is_workstation and not has_storage)) and not entries.is_empty()
 	delivered_materials_caption.visible = show_section
 	delivered_materials_grid.visible = show_section
 	if not show_section:
 		return
-	delivered_materials_caption.text = tr("building_delivered_materials_caption")
+	delivered_materials_caption.text = tr("building_site_delivered_materials_caption" if is_site else "building_delivered_materials_caption")
 	for resource_name in entries.keys():
 		delivered_materials_grid.add_child(_build_missing_material_chip(resource_name, int(entries[resource_name])))
 
@@ -747,7 +791,9 @@ func _refresh_storage_grid(building: Building) -> void:
 		child.queue_free()
 
 	var slot_count: int = building.rules.storage_slot_count if building.rules != null else 0
-	if slot_count <= 0:
+	# Solo a edificio completo (2026-09-27, richiesta utente): su un cantiere stored_resources contiene il materiale
+	# da costruzione consegnato, mostrato come "Materiale consegnato" da _refresh_delivered_materials.
+	if slot_count <= 0 or not building.is_complete:
 		storage_caption.visible = false
 		storage_grid.visible = false
 		return
@@ -972,7 +1018,9 @@ func _resident_icon(sex: int, is_child: bool) -> String:
 # Nessun edificio con capacità da configurare oggi -> l'intera sezione (separatore+titolo compresi)
 # resta nascosta, stesso principio già seguito da StorageGrid per storage_slot_count<=0.
 func _refresh_settings_section(building: Building) -> void:
-	var has_storage: bool = building.rules != null and building.rules.storage_slot_count > 0
+	# Solo a edificio completo (2026-09-27, richiesta utente): su un cantiere "Svuota tutto" e le categorie
+	# accettate non hanno senso (stored_resources contiene solo il materiale da costruzione).
+	var has_storage: bool = building.rules != null and building.rules.storage_slot_count > 0 and building.is_complete
 	_refresh_accepted_categories_toggles(building, has_storage)
 
 	# Almeno un blocco visibile -> mostra la "chrome" condivisa (separatore/titolo/bottone

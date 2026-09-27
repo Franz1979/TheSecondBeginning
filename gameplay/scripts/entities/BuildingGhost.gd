@@ -157,7 +157,8 @@ func _draw() -> void:
 		_draw_deposit_site(DEPOSIT_SITE_COLOR if is_buildable else DEPOSIT_SITE_INVALID_COLOR,
 			DEPOSIT_SITE_OUTLINE_COLOR if is_buildable else DEPOSIT_SITE_INVALID_OUTLINE_COLOR)
 		return
-	if building_type_name == "stick_tent":
+	# Tenda di pelli (2026-09-27): grafica provvisoria, la stessa della tenda di rami.
+	if building_type_name == "stick_tent" or building_type_name == "hide_tent":
 		_draw_stick_tent(STICK_TENT_COLOR if is_buildable else STICK_TENT_INVALID_COLOR,
 			STICK_TENT_OUTLINE_COLOR if is_buildable else STICK_TENT_INVALID_OUTLINE_COLOR, rotation_dir)
 		return

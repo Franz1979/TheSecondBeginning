@@ -43,6 +43,8 @@ func activate(individual: Variant, context: Dictionary) -> void:
 	individual.target_position = target
 	individual.is_moving = true
 	individual.move_speed_multiplier = RUN_INTENSITY_MULTIPLIER
+	# Pathfinding (2026-09-27, step 3): stesso percorso di WalkAction (funzioni comuni in Action).
+	request_path(individual, target)
 
 
 # Stesso identico meccanismo di WalkAction._last_position — vedi lì per il perché (nessuna API di
@@ -84,6 +86,9 @@ func get_stamina_delta(individual: Variant, context: Dictionary, delta: float) -
 # WalkAction.ARRIVAL_TOLERANCE per il perché non è più un'uguaglianza esatta), stessa costante
 # condivisa (non una copia separata, mai un secondo numero da tenere sincronizzato a mano).
 func is_complete(individual: Variant, context: Dictionary) -> bool:
+	# Bersaglio irraggiungibile (2026-09-27, step 3): lo step finisce subito e on_complete chiude la Task, come WalkAction.
+	if is_path_unreachable(individual, target):
+		return true
 	return individual.position.distance_to(target) <= WalkAction.ARRIVAL_TOLERANCE
 
 
@@ -93,3 +98,7 @@ func on_complete(individual: Variant, context: Dictionary) -> void:
 	super(individual, context)
 	if DebugLogging.ENABLED and DebugLogging.SHOW_MOVEMENT_STAMINA_LOGS:
 		MovementStaminaDebugLog.flush(individual)
+	# Bersaglio irraggiungibile (2026-09-27, step 3): chiusura anticipata della Task, come WalkAction. Il log
+	# [PATHFINDING] l'ha già scritto HumanIndividualMovementService.
+	if is_path_unreachable(individual, target):
+		abort_task_unreachable(individual, context, "bersaglio della corsa %s irraggiungibile" % str(target))

@@ -243,6 +243,8 @@ static func _action_type_for_step(step: Action) -> int:
 		return TaskTypes.ActionType.RECOVER_WEAPON
 	if step is ButcherAction:
 		return TaskTypes.ActionType.BUTCHER
+	if step is DemolishAction:
+		return TaskTypes.ActionType.DEMOLISH
 	push_error("TaskPersistenceService._action_type_for_step: tipo Action sconosciuto (%s)." % step.get_script().get_global_name())
 	return -1
 
@@ -261,6 +263,8 @@ static func _build_step(action_type: int, step_data: Dictionary, macro_state: Ma
 	match action_type:
 		TaskTypes.ActionType.WALK:
 			step = WalkAction.new(Vector2(float(step_data.get("target_x", 0.0)), float(step_data.get("target_y", 0.0))))
+			# Passo "allontanati" (2026-09-27, WalkAction.is_walk_away) — assente nei salvataggi precedenti.
+			(step as WalkAction).is_walk_away = bool(step_data.get("is_walk_away", false))
 		TaskTypes.ActionType.REST:
 			# rest_multiplier/max_duration_days/ignore_stamina_cap (2026-09-12, esteso 2026-09-16,
 			# richiesta utente, Rest Task esplicita) — letti da RestAction.get_save_data (vedi lì),
@@ -441,6 +445,12 @@ static func _build_step(action_type: int, step_data: Dictionary, macro_state: Ma
 				Vector2i(int(step_data.get("pile_micro_x", 0)), int(step_data.get("pile_micro_y", 0))),
 				int(step_data.get("carcass_id", -1))
 			)
+		TaskTypes.ActionType.DEMOLISH:
+			# Solo l'edificio: il progresso vive su Building.construction_progress (vedi DemolishAction).
+			var demolish_target_building: Building = null
+			if step_data.has("target_building_id"):
+				demolish_target_building = _find_building_by_id(world, int(step_data["target_building_id"]))
+			step = DemolishAction.new(demolish_target_building)
 		TaskTypes.ActionType.RECOVER_WEAPON:
 			# Arma a terra (vive solo in questo step), esito del tiro e bersaglio; il punto di caduta è in
 			# Task.context (HuntService.CONTEXT_WEAPON_DROP), ripristinato con il resto del context.

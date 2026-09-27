@@ -22,17 +22,24 @@ var _pending_building: Variant = null
 
 
 func _ready() -> void:
-	ok_button_text = tr("demolish_confirmation_confirm")
 	cancel_button_text = tr("demolish_confirmation_cancel")
 	confirmed.connect(_on_confirmed)
 	canceled.connect(_on_canceled)
 
 
-func open_dialog(building: Variant, display_name: String, building_id: int) -> void:
+# is_site (2026-09-27, richiesta utente): true per un cantiere non completo — testo, titolo e pulsante di
+# conferma diversi ("Annulla cantiere"), perché lì la conferma annulla subito invece di segnare "da demolire".
+# Una sola riga, senza a capo: size azzerata prima di popup_centered, così il dialog prende la larghezza minima
+# del testo corrente invece di restare della misura dell'apertura precedente.
+func open_dialog(building: Variant, display_name: String, building_id: int, is_site: bool = false) -> void:
 	_pending_building = building
-	title = tr("demolish_confirmation_title")
-	dialog_text = tr("demolish_confirmation_text").format({"building": display_name, "id": building_id})
+	var prefix := "demolish_confirmation_site_" if is_site else "demolish_confirmation_"
+	title = tr(prefix + "title")
+	dialog_text = tr(prefix + "text").format({"building": display_name, "id": building_id})
+	ok_button_text = tr(prefix + "confirm")
+	dialog_autowrap = false
 	exclusive = true
+	size = Vector2i.ZERO
 	popup_centered()
 
 

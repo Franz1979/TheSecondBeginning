@@ -32,6 +32,14 @@ signal carried_resource_discarded(individual: HumanIndividual, resource_name: St
 # lama e coda e mostrare l'icona spetta a chi ascolta (GameScene._on_butcher_after_hunt_requested).
 signal butcher_after_hunt_requested(individual: HumanIndividual, carcass: Dictionary)
 
+# Trasporto di un mucchio a terra al magazzino (2026-09-27, richiesta utente — generico, oggi usato dalla demolizione):
+# uno step chiede di accodare allo stesso individuo "porta il mucchio al magazzino" scrivendo in context
+# CONTEXT_PENDING_GROUND_PILE_HAUL = {"macro_x", "macro_y", "micro_x", "micro_y"} (microcella del mucchio). Stesso
+# schema della macellazione dopo la caccia: segnale, e la Task la costruisce chi ascolta
+# (GameScene._on_ground_pile_haul_requested).
+signal ground_pile_haul_requested(individual: HumanIndividual, pile_ref: Dictionary)
+const CONTEXT_PENDING_GROUND_PILE_HAUL := "pending_ground_pile_haul"
+
 # Servizio single-responsibility (stesso pattern di HumanIndividualMovementService, stesso
 # livello/cartella): applica lo step ATTIVO della Task corrente di un HumanIndividual
 # (individual.current_task), se presente — costo/recupero di stamina E happiness (2026-09-13,
@@ -233,6 +241,7 @@ func finish_current_step(individual: HumanIndividual, task: Task, world: World, 
 	_handle_pending_hunt_weapon_recovery(individual, task)
 	_handle_pending_hunt_reapproach(individual, task)
 	_handle_pending_hunt_butcher(individual, task)
+	_handle_pending_ground_pile_haul(individual, task)
 	if task.context.has(CONTEXT_PENDING_TASK_ABORT):
 		var abort_reason := String(task.context[CONTEXT_PENDING_TASK_ABORT])
 		task.context.erase(CONTEXT_PENDING_TASK_ABORT)
@@ -247,6 +256,8 @@ func finish_current_step(individual: HumanIndividual, task: Task, world: World, 
 	# Scarichi programmati rimasti senza carico (2026-09-27): saltati PRIMA del controllo di fine, così se erano gli
 	# ultimi passi la Task si chiude qui normalmente (effetti di completamento, riepilogo costi).
 	_skip_unloads_without_cargo(individual, task)
+	# Passo "allontanati" con un seguito noto (2026-09-27): saltato allo stesso modo, il pipottino resta dov'è.
+	_skip_walk_away_with_follow_up(individual, task)
 	if task.is_finished():
 		if DebugLogging.ENABLED and DebugLogging.SHOW_TASK_LIFECYCLE_LOGS:
 			task.print_cost_summary(individual)
@@ -661,11 +672,13 @@ func _search_warehouse_for_resource(
 	var candidate: Building = null
 	if bool(task.context.get(CONTEXT_PREFER_RECIPE_WORKSTATION, false)):
 		candidate = WarehouseSelectionService.find_nearest_recipe_workstation(
-			world, individual.position, individual.home_macro_coords, resource_name, 1, excluded_building_ids
+			world, individual.position, individual.home_macro_coords, resource_name, 1, excluded_building_ids,
+			PathfindingService.reachability_for(individual)
 		)
 	if candidate == null:
 		candidate = WarehouseSelectionService.find_best(
-			world, individual.position, individual.home_macro_coords, resource_name, quantity, excluded_building_ids
+			world, individual.position, individual.home_macro_coords, resource_name, quantity, excluded_building_ids,
+			PathfindingService.reachability_for(individual)
 		)
 	if candidate != null:
 		if targeted_building_ids.has(candidate.id):
@@ -776,7 +789,8 @@ func _handle_pending_thought_target_search(individual: HumanIndividual, task: Ta
 		excluded_building_ids.append(int(raw_id))
 
 	var candidate := ThoughtTargetSelectionService.find_best(
-		world, individual.position, individual.home_macro_coords, excluded_building_ids
+		world, individual.position, individual.home_macro_coords, excluded_building_ids,
+		PathfindingService.reachability_for(individual)
 	)
 	if candidate != null:
 		var macro_offset: Vector2 = Vector2(Vector2i(candidate.macro_x, candidate.macro_y) - individual.home_macro_coords) * World.WIDTH
@@ -803,6 +817,33 @@ func _handle_pending_thought_target_search(individual: HumanIndividual, task: Ta
 	# stesso trattamento "nessun candidato" già riservato alla ricerca INIZIALE del magazzino sopra.
 	if DebugLogging.ENABLED and DebugLogging.SHOW_TRANSPORT_BUILD_LOGS:
 		print("[THOUGHT TARGET SEARCH] nessun edificio con accepts_thoughts trovato — nessun deposito, la Task prosegue/termina senza aver depositato il pensiero.")
+
+
+# Seguito noto (2026-09-27, richiesta utente — regola unica per ogni passo "allontanati"): true se `individual` sa già
+# cosa farà dopo lo step corrente di `task` — altri step nella stessa Task dopo quello corrente, oppure Task in coda
+# (task_queue, dove finiscono anche i viaggi ripetuti di transport e raccolta, accodati prima della fine dello scarico).
+static func has_known_follow_up(individual: HumanIndividual, task: Task) -> bool:
+	if task != null and task.current_step_index + 1 < task.steps.size():
+		return true
+	return not individual.task_queue.is_empty()
+
+
+# Salta, a partire dallo step corrente, i passi "allontanati" (WalkAction.is_walk_away) quando c'è un seguito noto
+# (has_known_follow_up): il pipottino resta dov'è e la Task successiva (o lo step successivo) parte da lì, lasciando
+# ad A* la scelta del lato da cui uscire. Nessuno step viene attivato qui: il chiamante attiva quello su cui ci si
+# ferma, o chiude la Task se è finita. Senza seguito noto l'allontanati resta.
+static func _skip_walk_away_with_follow_up(individual: HumanIndividual, task: Task) -> void:
+	while not task.is_finished():
+		var current := task.get_current_action()
+		if not (current is WalkAction and (current as WalkAction).is_walk_away):
+			return
+		if not has_known_follow_up(individual, task):
+			return
+		if DebugLogging.ENABLED and DebugLogging.SHOW_TRANSPORT_BUILD_LOGS:
+			print("[WALK AWAY] #%d %s: '%s' — allontanati saltato, seguito noto (step successivi o coda di %d)." % [
+				individual.id, individual.name, task.task_name, individual.task_queue.size()
+			])
+		task.advance_to_next_step()
 
 
 # Consuma task.context["pending_walk_away_position"] scritto da UnloadAction.on_complete() (vedi lì)
@@ -900,6 +941,17 @@ func _handle_pending_hunt_butcher(individual: HumanIndividual, task: Task) -> vo
 	butcher_after_hunt_requested.emit(individual, carcass)
 
 
+# Trasporto del mucchio al magazzino (2026-09-27): consuma CONTEXT_PENDING_GROUND_PILE_HAUL e lo passa a chi ascolta
+# ground_pile_haul_requested. Qui nessuna decisione: mucchio ancora presente, coda piena e magazzino disponibile li
+# valuta GameScene.
+func _handle_pending_ground_pile_haul(individual: HumanIndividual, task: Task) -> void:
+	if not task.context.has(CONTEXT_PENDING_GROUND_PILE_HAUL):
+		return
+	var pile_ref: Dictionary = task.context[CONTEXT_PENDING_GROUND_PILE_HAUL]
+	task.context.erase(CONTEXT_PENDING_GROUND_PILE_HAUL)
+	ground_pile_haul_requested.emit(individual, pile_ref)
+
+
 # Rifornimento dopo lo zaino (2026-09-26, richiesta utente): RestockPouchAction con sorgente BACKPACK scrive
 # RestockPouchAction.CONTEXT_PENDING_WAREHOUSE_RESTOCK a fine step. Se il bisogno resta, si accodano Walk +
 # RestockPouch(magazzino) verso il magazzino con cibo più vicino. "Resta" dipende dalla task:
@@ -960,7 +1012,11 @@ func _handle_pending_walk_away(task: Task) -> void:
 		return
 	var walk_away_position: Vector2 = task.context["pending_walk_away_position"]
 	task.context.erase("pending_walk_away_position")
-	var new_steps: Array[Action] = [WalkAction.new(walk_away_position)]
+	# Marcato come "allontanati" (2026-09-27): se all'attivazione il pipottino ha un seguito noto viene saltato
+	# (_skip_walk_away_with_follow_up).
+	var walk_away := WalkAction.new(walk_away_position)
+	walk_away.is_walk_away = true
+	var new_steps: Array[Action] = [walk_away]
 	task.append_steps(new_steps)
 	if DebugLogging.ENABLED and DebugLogging.SHOW_TRANSPORT_BUILD_LOGS:
 		print("[WALK AWAY] WalkAction accodato verso %s dopo un deposito riuscito." % str(walk_away_position))
@@ -1246,7 +1302,10 @@ static func activate_resumed_task(individual: HumanIndividual, resumed_task: Tas
 	var resumed_action := resumed_task.get_current_action()
 	if not (resumed_action is WalkAction):
 		var required_position: Variant = resumed_action.get_required_position(individual, resumed_task.context)
-		if required_position != null and individual.position != required_position:
+		# Solo se l'individuo non è già nella microcella richiesta (2026-09-27): prima era un confronto esatto tra
+		# posizioni, vero quasi sempre (l'arrivo normale ha uno scostamento casuale dentro la cella) — un ritorno inutile
+		# a ogni ripresa.
+		if required_position != null and Vector2i(individual.position.floor()) != Vector2i((required_position as Vector2).floor()):
 			if DebugLogging.ENABLED and DebugLogging.SHOW_TASK_LIFECYCLE_LOGS:
 				print("[RESUME WALKBACK] #%d %s: '%s' riprende su %s, ma l'individuo è a %s invece di %s — inserito Walk di ritorno." % [
 					individual.id, individual.name, resumed_task.task_name,

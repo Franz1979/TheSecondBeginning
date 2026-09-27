@@ -31,9 +31,9 @@ extends RefCounted
 # applicare a QUEL building, non prima.
 # Posti liberi di un edificio (2026-09-27, estratto da assign_pending_residents per condividerlo con il
 # conteggio dei posti del villaggio): rules.max_residents meno i residenti assegnati (house_id == building.id).
-# 0 per un edificio non residenziale (max_residents <= 0) o non completo, mai negativo.
+# 0 per un edificio non residenziale (max_residents <= 0), non completo o "da demolire" (2026-09-27), mai negativo.
 static func get_free_slots(building: Building, human_individuals: Array[HumanIndividual]) -> int:
-	if building.rules == null or building.rules.max_residents <= 0 or not building.is_complete:
+	if building.rules == null or building.rules.max_residents <= 0 or not building.is_complete or building.is_marked_for_demolition:
 		return 0
 	var occupied_count := 0
 	for individual in human_individuals:

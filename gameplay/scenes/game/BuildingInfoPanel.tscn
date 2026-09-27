@@ -206,3 +206,14 @@ layout_mode = 2
 
 [node name="EmptyAllButton" type="Button" parent="."]
 layout_mode = 2
+
+[node name="DemolishButton" type="Button" parent="."]
+layout_mode = 2
+
+[node name="AssignDemolisherButton" type="Button" parent="."]
+visible = false
+layout_mode = 2
+
+[node name="CancelDemolitionButton" type="Button" parent="."]
+visible = false
+layout_mode = 2

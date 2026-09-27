@@ -326,6 +326,10 @@ var _ground_pile_views: Dictionary = {}  # pile id -> GroundPileView
 # Gruppi di visitatori (2026-09-27, gameplay/visitors/): id del gruppo -> VisitorPartyView. Allineato ogni
 # frame da _sync_visitor_party_views, sullo schema di _ground_pile_views.
 var _visitor_party_views: Dictionary = {}
+# Overlay di debug del pathfinding (2026-09-27, step 1 — tasto N): acceso/spento e nodo attuale (figlio del container
+# della macrocella corrente). Vedi _sync_pathfinding_overlay.
+var _pathfinding_overlay_enabled: bool = false
+var _pathfinding_overlay: PathfindingDebugOverlay = null
 # Ultimo stato mostrato nel pannello [id, revisione, giorno assoluto]: si ridisegna solo quando cambia.
 var _ground_pile_panel_key: Array = []
 # individual_id -> DeadBodyView (bugfix, 2026-09-05: serve per accendere/spegnere il cerchiolino
@@ -452,15 +456,6 @@ var _building_ghost: BuildingGhost = null
 # hardcoded in _place_building_at evita di dover toccare quel metodo quando arriverà un secondo
 # tipo di edificio.
 var _selected_building_type_name: String = ""
-# Modalità "seleziona bersaglio da demolire" (2026-09-12, richiesta utente — bottone 🧨 Demolisci
-# della BuildBar) — true tra il click sul bottone e il click successivo (sinistro = tenta la
-# demolizione sull'edificio colpito, destro = annulla), stesso identico pattern del modo piazzamento
-# edificio (_building_ghost sopra: destro annulla, sinistro consuma) ma senza fantasma da disegnare
-# — solo un flag, il cursore/feedback resta il toggle acceso sul bottone stesso (vedi
-# _set_demolish_mode/BuildBar.DEMOLISH_MAIN_ROW_SLOT_INDEX). Nessuna demolizione avviene finché
-# l'utente non conferma nel DemolishConfirmationDialog che si apre al click su un edificio valido —
-# questo flag riguarda SOLO la fase di targeting, non l'esecuzione.
-var _demolish_mode_active: bool = false
 # Camera LIBERA (Step 3 del piano movimento indipendente, 2026-09-02 — RIMUOVE il follow
 # automatico che prima seguiva individual.position ogni frame mentre individual.is_moving era
 # vero): nessun individuo viene più inseguito, mai — WASD/edge-pan/drag-to-pan (vedi
@@ -513,6 +508,9 @@ var _pending_leave_action: StringName = &""
 func _ready() -> void:
 	# Eventi di gioco -> suoni (2026-09-26, richiesta utente): nodo figlio che ascolta i segnali di questa scena.
 	add_child(AudioEventListener.new())
+	# Celle vive per le destinazioni casuali libere del pathfinding (2026-09-27, PathfindingService.pick_free_destination):
+	# stesso Dictionary per tutta la vita della scena (live_cells non viene mai riassegnato, solo modificato).
+	PathfindingService.register_live_cells(live_cells)
 
 	# Ripristina lo stato dei due toggle dalla sessione precedente (vedi GameSettings): senza
 	# questo, uscendo e rientrando in questa scena tornerebbero sempre al default "attivo",
@@ -705,11 +703,12 @@ func _ready() -> void:
 	transport_source_dialog.resource_chosen.connect(_on_transport_source_resource_chosen)
 	building_info_panel.produce_requested.connect(_enter_produce_assign_mode)
 	pickup_choice_dialog.choice_made.connect(_on_pickup_choice_made)
-	# Demolisci (2026-09-12, richiesta utente) — main_row.action_pressed, NON submenu_row (quello
-	# resta per i tipi edificio, ascoltato sopra da _on_build_submenu_action_pressed): BuildBar._on_
-	# main_row_action_pressed ignora già qualunque action_id diverso da OPEN_BUILD_MENU_ACTION (vedi
-	# BuildBar.gd), quindi questo secondo ascoltatore sullo stesso segnale non compete con quello.
-	build_bar.main_row.action_pressed.connect(_on_build_main_row_action_pressed)
+	# Demolisci dal pannello edificio (2026-09-27, richiesta utente — prima era un bottone della BuildBar con una
+	# modalità "scegli bersaglio"): apre DemolishConfirmationDialog sull'edificio mostrato.
+	building_info_panel.demolish_requested.connect(_on_demolish_requested)
+	# "Assegna demolitore" (2026-09-27): scelta del demolitore; uscire senza scegliere non annulla la demolizione.
+	building_info_panel.demolisher_assign_requested.connect(_enter_demolisher_pick_mode)
+	building_info_panel.demolition_cancel_requested.connect(_on_demolition_cancel_requested)
 	# idea_completed(idea_id) (2026-09-07, richiesta utente) — DUE ascoltatori separati, non uno
 	# solo con più responsabilità: _refresh_building_slots_buildable per lo sblocco edifici (stesso
 	# punto di aggancio già predisposto per un futuro Think/DepositThoughtAction), e
@@ -1238,6 +1237,8 @@ func _process(delta: float) -> void:
 	# sono in human_individuals e non passano da movimento/azioni/bisogni del villaggio.
 	_advance_visitor_parties(game_delta)
 	_sync_visitor_party_views()
+	if _pathfinding_overlay_enabled or _pathfinding_overlay != null:
+		_sync_pathfinding_overlay()
 	_open_pending_visitor_decision()
 	_sync_dropped_weapon_markers()
 	_sync_ground_pile_views()
@@ -1335,27 +1336,9 @@ func _unhandled_input(event: InputEvent) -> void:
 			_building_ghost.rotate_clockwise()
 			return
 
-	# Modalità "seleziona bersaglio da demolire" (2026-09-12, richiesta utente) — STESSO identico
-	# principio di priorità assoluta del blocco _building_ghost sopra (mutuamente esclusivi in
-	# pratica: il bottone Demolisci non è premibile mentre un'anteprima di piazzamento è attiva,
-	# nessuna verifica incrociata scritta qui perché non può succedere per costruzione dell'unico
-	# punto che entra in questa modalità, _on_build_main_row_action_pressed). Destro = annulla
-	# (_set_demolish_mode(false), nessuna azione), sinistro = tenta la demolizione sull'edificio
-	# colpito (_try_pick_demolish_target apre la conferma se il click ha colpito qualcosa, altrimenti
-	# è un no-op silenzioso) — in ENTRAMBI i casi la modalità termina con questo singolo click, mai
-	# persistente per piazzamenti multipli come invece il fantasma edificio.
-	if _demolish_mode_active:
-		if event is InputEventMouseButton and event.pressed:
-			if event.button_index == MOUSE_BUTTON_RIGHT:
-				_set_demolish_mode(false)
-				return
-			if event.button_index == MOUSE_BUTTON_LEFT:
-				_try_pick_demolish_target(event)
-				return
-
-	# Modalità "assegna produzione" (2026-09-23, richiesta utente) — stessa priorità dei due blocchi
+	# Modalità "scegli il lavoratore" (2026-09-23 Produce, generica dal 2026-09-27) — stessa priorità del blocco
 	# sopra: finché è attiva, i click servono solo a scegliere l'individuo (o ad annullare).
-	if _produce_assign_building != null and _handle_produce_assign_input(event):
+	if _worker_pick_on_pick.is_valid() and _handle_worker_pick_input(event):
 		return
 
 	# Ispezione microcella con DOPPIO click sinistro (2026-09-16, richiesta utente) — SEMPRE
@@ -1571,7 +1554,7 @@ func _unhandled_input(event: InputEvent) -> void:
 			# _try_assign_hunt_command_on_right_click (2026-09-26, caccia step 2) — provato PER PRIMO: un
 			# animale è un bersaglio esplicito e si muove, non deve essere "rubato" da un sasso o da un
 			# lotto che gli sta sotto.
-			elif not _try_assign_hunt_command_on_right_click(event) and not _try_assign_butcher_command_on_right_click(event) and not _try_assign_pickup_command_on_right_click(event) and not _try_assign_unload_command_on_right_click(event) and not _try_assign_build_command_on_right_click(event) and not _try_assign_transport_command_on_right_click(event):
+			elif not _try_assign_hunt_command_on_right_click(event) and not _try_assign_butcher_command_on_right_click(event) and not _try_assign_pickup_command_on_right_click(event) and not _try_assign_build_command_on_right_click(event) and not _try_assign_transport_command_on_right_click(event):
 				individual_controller.handle_input(event)
 
 	if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_X:
@@ -1666,6 +1649,13 @@ func _unhandled_input(event: InputEvent) -> void:
 	# debug) quando non servirà più a velocizzare i test manuali di PickUp su risorse diverse.
 	if DebugLogging.ENABLED and event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_Z:
 		_debug_clear_selected_individual_backpack()
+
+	# Overlay del pathfinding (2026-09-27, step 1) — tasto N (mnemonico "Navigazione"), verificato libero in tutto il
+	# progetto; stesso gate di T/Y/Z: microcelle bloccate della macrocella corrente in rosso, vedi
+	# _sync_pathfinding_overlay.
+	if DebugLogging.ENABLED and event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_N:
+		_pathfinding_overlay_enabled = not _pathfinding_overlay_enabled
+		_sync_pathfinding_overlay()
 
 	# Tasto U LIBERATO (2026-09-16, richiesta utente) — prima lanciava il TEST TEMPORANEO end-to-end
 	# "haul_resource" (_debug_test_haul_resource_task sotto), che il proprio commento originale
@@ -1922,7 +1912,8 @@ func _debug_test_daydream_task() -> void:
 		push_error("[DAYDREAM TEST] Nessun edificio COMPLETO che accetta pensieri in questa partita — costruisci (e completa) uno Pebble Circle (BuildBar) prima di premere Y.")
 		return
 
-	var around_position: Vector2 = individual.position + Vector2.from_angle(randf() * TAU) * _DEBUG_DAYDREAM_AROUND_DISTANCE
+	# Punto libero e raggiungibile (2026-09-27, pathfinding step 3), stessa funzione del sogno a occhi aperti di svago.
+	var around_position: Vector2 = IdleTaskAssignmentService.resolve_daydream_around_position(individual, _DEBUG_DAYDREAM_AROUND_DISTANCE)
 
 	# Durata risolta = base × EraRules.think_duration_multiplier (invariato — stessa risoluzione
 	# era_rules già in uso altrove nel file, es. _update_individual_panel_content, null-safe: un'Era
@@ -2135,7 +2126,7 @@ func _assign_play_task() -> void:
 	if not individual.can_assign_task(task, age_band):
 		return
 	# Collegamento signal JumpAction.jumped (2026-09-13, richiesta utente, feedback visivo minimo) —
-	# STESSO principio/STESSA posizione di _try_pick_demolish_target/TaskReassignmentService (vedi
+	# STESSO principio/STESSA posizione di TaskReassignmentService (vedi
 	# _reconnect_build_task_signals: "un solo punto, i due chiamanti — creazione in-sessione e reload
 	# — non possono disallinearsi", qui il gemello per Play è _reconnect_loaded_task_signals sotto).
 	# Il guard CHILD-only è già stato verificato sopra (can_assign_task), quindi assign_task sotto
@@ -2368,7 +2359,9 @@ func _on_transport_delivered(owner: HumanIndividual, context: Dictionary, delive
 		return
 	var source_building := _find_building_by_id(int(context.get("transport_source_id", -1)))
 	var destination_building := _find_building_by_id(int(context.get("transport_destination_id", -1)))
-	if source_building == null or destination_building == null or source_building.is_demolished:
+	# Un cantiere non completo non è una sorgente (2026-09-27, richiesta utente): il suo materiale si recupera
+	# annullandolo, che lo fa cadere a terra.
+	if source_building == null or destination_building == null or source_building.is_demolished or not source_building.is_complete:
 		return
 	# Include il buffer di uscita della produzione (2026-09-23): è una normale sorgente di Retrieve.
 	if BuildingStorageService.get_available_quantity(source_building, resource_name) <= 0:
@@ -2460,6 +2453,10 @@ func _try_assign_transport_command_on_right_click(event: InputEvent) -> bool:
 		# [String, Dictionary{"quantity":int,"decay_fraction":float}]), stesso "spacchettamento" già
 		# fatto da RetrieveAction.activate()/BuildingStorageService.withdraw per la stessa struttura.
 		var available_quantities: Dictionary = {}
+		# Un cantiere non completo non è una sorgente di prelievo (2026-09-27, richiesta utente): il suo materiale si
+		# recupera annullandolo (cade a terra). Trattato come un edificio senza risorse: il click prosegue.
+		if not hit_building.is_complete:
+			return false
 		# stored_resources più il buffer di uscita della produzione (2026-09-23): il prodotto di una
 		# workstation si ritira con la normale Transport.
 		var source_names: Array = hit_building.stored_resources.keys()
@@ -2966,7 +2963,7 @@ func _refresh_building_panel() -> void:
 		return
 	# Fabbisogno dell'ordine intero aggiornato prima di mostrarlo (2026-09-26).
 	_reconcile_production_units(building)
-	building_info_panel.show_building(building, _resolve_building_residents_display_data(building), _resolve_names_working_on_building(building, BUILD_TASK_NAMES), _resolve_names_working_on_building(building, PRODUCE_TASK_NAMES), _resolve_production_claimed_recipes(building), _resolve_production_tool_wait_lines(building))
+	building_info_panel.show_building(building, _resolve_building_residents_display_data(building), _resolve_names_working_on_building(building, BUILD_TASK_NAMES), _resolve_names_working_on_building(building, PRODUCE_TASK_NAMES), _resolve_production_claimed_recipes(building), _resolve_production_tool_wait_lines(building), _resolve_names_working_on_building(building, DEMOLISH_TASK_NAMES))
 	building_info_panel.show_ground_pile(_ground_pile_lines_at(Vector2i(building.macro_x, building.macro_y), Vector2i(building.micro_x, building.micro_y)))
 	# Titolo (Step 6, richiesta utente 2026-09-04) — stessa formula già in BuildingInfoPanel.
 	var type_name: String = tr(building.rules.building_name) if building.rules != null else building.building_type_name
@@ -3033,7 +3030,7 @@ func _on_empty_all_requested(building: Building) -> void:
 	if building == null:
 		return
 	var pile := GroundPileService.drop_building_contents(game_data, building, macro_world)
-	building_info_panel.show_building(building, _resolve_building_residents_display_data(building), _resolve_names_working_on_building(building, BUILD_TASK_NAMES), _resolve_names_working_on_building(building, PRODUCE_TASK_NAMES), _resolve_production_claimed_recipes(building), _resolve_production_tool_wait_lines(building))
+	building_info_panel.show_building(building, _resolve_building_residents_display_data(building), _resolve_names_working_on_building(building, BUILD_TASK_NAMES), _resolve_names_working_on_building(building, PRODUCE_TASK_NAMES), _resolve_production_claimed_recipes(building), _resolve_production_tool_wait_lines(building), _resolve_names_working_on_building(building, DEMOLISH_TASK_NAMES))
 	building_info_panel.show_ground_pile(_ground_pile_lines_at(Vector2i(building.macro_x, building.macro_y), Vector2i(building.micro_x, building.micro_y)))
 	var macro_coords := Vector2i(building.macro_x, building.macro_y)
 	if live_cells.has(macro_coords):
@@ -4211,116 +4208,9 @@ func _refresh_microcell_panel() -> void:
 	game_info_tabs.set_selection_title(tr("microcell_inspection_title").format({"x": lot.x, "y": lot.y}))
 
 
-# Comando "vai e scarica" via DESTRO su un edificio di stoccaggio (2026-09-09, richiesta utente) —
-# stesso identico principio/stessa posizione nella catena di _try_assign_pickup_command_on_right_
-# click sopra (provato subito dopo, mai in competizione spaziale: un edificio non condivide mai la
-# propria microcella con una posizione stone/lotto stick, vedi BuildingVerificationService
-# Criterio 6). `individual.is_selected` — stesso gate di sopra: nessun individuo selezionato,
-# nessun comando.
-#
-# required_button=MOUSE_BUTTON_RIGHT passato esplicitamente a BuildingSelectorController.try_select
-# (default LEFT, per il suo chiamante di selezione esistente in _unhandled_input sopra, invariato).
-#
-# Tre condizioni, in quest'ordine, TUTTE necessarie perché il comando scatti (altrimenti false,
-# fallback al movimento normale — MAI un comando "parziale"/un errore silenzioso):
-#   1. l'edificio colpito è di categoria STORAGE (rules.category — un hit su hut/pebble_circle
-#      colpiti col destro resta movimento semplice, non un errore, semplicemente non è un target
-#      valido per Unload);
-#   2. lo zaino non è vuoto (carried_resources non vuoto — zaino vuoto non ha nulla da scaricare, stesso
-#      principio "niente da fare" già seguito da PickUpAction quando il piano di raccolta è vuoto);
-#   3. BuildingStorageService.can_accept è vero per ALMENO UNA varietà di carried_resources (categoria della risorsa
-#      trasportata compatibile con building.rules.accepted_categories — vedi BuildingStorageService.
-#      gd). Nessun feedback "categoria rifiutata" in questo passo (nessuna UI per l'inventario
-#      edificio ancora, richiesta esplicita) — semplicemente nessun comando, movimento normale.
-#
-# Posizione target tradotta nello spazio locale dell'INDIVIDUO (non dell'edificio) — stessa formula
-# già in uso in _debug_test_daydream_task per lo Pebble Circle: building.micro_x/y sono locali alla
-# macrocella DELL'EDIFICIO, non necessariamente quella corrente dell'individuo (offset zero, no-op,
-# se invece coincidono).
-func _try_assign_unload_command_on_right_click(event: InputEvent) -> bool:
-	# Guard di tipo evento (2026-09-10, richiesta utente — aggiunto per coerenza con
-	# _try_assign_pickup_command_on_right_click/_try_assign_build_command_on_right_click sopra,
-	# stessa catena di _unhandled_input: questa funzione non ha mai avuto log di debug quindi non
-	# produceva flooding, ma girava comunque su OGNI evento incluso il motion, senza necessità —
-	# building_selector_controller.try_select filtra già internamente per tipo/pulsante, quindi
-	# NON era un bug di correttezza, solo lavoro ridondante ad ogni frame di movimento del mouse).
-	if not (event is InputEventMouseButton) or not event.pressed or event.button_index != MOUSE_BUTTON_RIGHT:
-		return false
-	# Tasto U tenuto premuto (2026-09-16, richiesta utente — bugfix "attivo questa Task spesso per
-	# errore, e se nel frattempo lo zaino si svuota per altri motivi va in tilt"): PRIMA un semplice
-	# click destro su un deposito bastava, troppo facile da innescare per sbaglio durante un click
-	# destro "normale" (es. tentando di selezionare/muoversi vicino a un deposito). Stesso pattern
-	# già in uso per il piazzamento istantaneo edifici (Sx+B, vedi _unhandled_input) — un comando
-	# "veloce ma pericoloso" richiede un modificatore esplicito, non il solo click. Mnemonico U
-	# libero per questo scopo (2026-09-16): prima era il tasto del test debug temporaneo
-	# _debug_test_haul_resource_task (mai rimosso quando la vera Raccolta è arrivata, come il suo
-	# stesso commento richiedeva) — vedi _unhandled_input, quel collegamento è stato tolto per fare
-	# posto a questo.
-	if not Input.is_key_pressed(KEY_U):
-		return false
-	if individual == null or not individual.is_selected:
-		return false
-	if individual.carried_resources.is_empty():
-		return false
-
-	var building_hit := building_selector_controller.try_select(
-		event, live_cells, macro_world.buildings if macro_world != null else [], MOUSE_BUTTON_RIGHT
-	)
-	if building_hit.is_empty():
-		return false
-
-	var building := _find_building_by_id(building_hit["building_id"])
-	if building == null or building.rules == null or building.rules.category != BuildingTypes.Category.STORAGE:
-		return false
-	# Zaino multi-risorsa (2026-09-20): l'Unload deposita tutto ciò che l'edificio accetta, quindi basta che
-	# ne accetti ALMENO UNA varietà (prima: la sola risorsa trasportata).
-	var building_accepts_something := false
-	for carried_name in individual.carried_resources.keys():
-		if BuildingStorageService.can_accept(building, String(carried_name)):
-			building_accepts_something = true
-			break
-	if not building_accepts_something:
-		return false
-
-	var macro_offset: Vector2 = Vector2(Vector2i(building.macro_x, building.macro_y) - individual.home_macro_coords) * World.WIDTH
-	var building_position: Vector2 = Vector2(building.micro_x, building.micro_y) + macro_offset
-
-	var walk := WalkAction.new(building_position)
-	# DepositKind.RESOURCE esplicito (2026-09-10, richiesta utente — scollegare il ramo di
-	# UnloadAction dalla nullità di target_building): `building` qui è già garantito non-null dalla
-	# guardia sopra, stesso comportamento di ramo fisico di prima di questo passo.
-	var unload := UnloadAction.new(building, UnloadAction.DepositKind.RESOURCE)
-	# _reconnect_unload_action_signals (2026-09-12, richiesta utente — bugfix "il mucchietto non si
-	# aggiorna in automatico quando viene fatto il deposito"): questo comando manuale "scarica qui"
-	# costruisce il proprio UnloadAction direttamente (non via TaskFactory/task.step_appended come
-	# _assign_pickup_task sopra), quindi va ricollegato qui, subito, stesso principio/stessa funzione
-	# condivisa già in uso ovunque altro in questo file.
-	_reconnect_unload_action_signals(unload, individual)
-	var task := Task.new([walk, unload])
-	# task_name/step_descriptions (2026-09-09) — stesso trattamento hardcoded già in uso per
-	# "task_haul_resource" (_assign_pickup_task sopra): nessuna TaskDefinition "unload_resource"
-	# esiste ancora (TaskFactory non supporta UNLOAD, vedi task_factory.gd).
-	task.task_name = "task_unload_resource_name"
-	task.step_descriptions = ["task_unload_resource_step_walk", "task_unload_resource_step_unload"]
-	# Rifiuto con motivo (2026-09-26): prima un rifiuto di assign_task passava in silenzio, senza nemmeno
-	# la X. Ora X rossa sull'edificio e motivo, come gli altri comandi.
-	var building_macro_coords := Vector2i(building.macro_x, building.macro_y)
-	if not individual.assign_task(task, _resolve_age_band(individual)):
-		_report_failed_assignment(individual, task, "task_activity_unload")
-		if live_cells.has(building_macro_coords):
-			_spawn_command_icon_at_microcell(live_cells[building_macro_coords], Vector2i(building.micro_x, building.micro_y), "task_rejected")
-	return true
-
-
-# ============================================================================================
-# Task che lavorano su un edificio (2026-09-26, richiesta utente — RINOMINATE e rese generiche:
-# prima due controlli gemelli, _task_claims_building per la sola costruzione e
-# _task_claims_production per la sola produzione, e una _close_tasks_claiming_building legata alla
-# costruzione). Ora un solo controllo e una sola chiusura, parametrizzati da un elenco di task_name:
-# un nuovo tipo di lavoro su un edificio si aggiunge a una lista qui sotto (o in una lista nuova),
-# senza toccare le funzioni. Vale per ogni Task i cui step tengono l'edificio in un campo
-# `target_building` (oggi tutte quelle che lavorano su un edificio).
-# ============================================================================================
+# Comando manuale di scarico "U + destro" RIMOSSO (2026-09-27, richiesta utente): non serviva più e il suo bugfix
+# avrebbe toccato le regole "zaino occupato" di HumanIndividual.assign_task. Lo scarico resta automatico (ricerca
+# del magazzino dopo raccolta/macellazione) o via comando Transport.
 
 # Costruzione (SetupSite/Clear/Build): usata da conteggio costruttori, demolizione e completamento.
 const BUILD_TASK_NAMES: Array[String] = ["task_build_name"]
@@ -4328,6 +4218,10 @@ const BUILD_TASK_NAMES: Array[String] = ["task_build_name"]
 const PRODUCE_TASK_NAMES: Array[String] = ["task_produce_name"]
 # "Lavoro sull'edificio" annullabile dal pannello edificio (X accanto al lavoratore).
 const BUILDING_WORK_TASK_NAMES: Array[String] = ["task_build_name", "task_produce_name"]
+# Demolizione (2026-09-27, demolish.tres).
+const DEMOLISH_TASK_NAMES: Array[String] = ["task_demolish_name"]
+# Task chiuse quando un edificio viene abbattuto (_demolish_building).
+const BUILD_AND_DEMOLISH_TASK_NAMES: Array[String] = ["task_build_name", "task_demolish_name"]
 
 
 # true se `task` è una Task NON conclusa, con task_name in `task_names`, e almeno uno dei suoi step ha
@@ -4384,9 +4278,10 @@ func _format_worker_name(member: HumanIndividual) -> String:
 # (esclude `excluding_individual`, che può sempre riprendere il PROPRIO cantiere) hanno già la
 # Build Task di `target_building`, attiva o sospesa in coda: un builder mandato temporaneamente a
 # fare un'altra commissione deve continuare a "occupare" il proprio posto.
-func _count_other_individuals_claiming_build(target_building: Building, excluding_individual: HumanIndividual) -> int:
+# task_names (2026-09-27): BUILD_TASK_NAMES per la costruzione, DEMOLISH_TASK_NAMES per la demolizione.
+func _count_other_individuals_claiming_build(target_building: Building, excluding_individual: HumanIndividual, task_names: Array[String] = BUILD_TASK_NAMES) -> int:
 	var count := 0
-	for other in _resolve_individuals_working_on_building(target_building, BUILD_TASK_NAMES):
+	for other in _resolve_individuals_working_on_building(target_building, task_names):
 		if other != excluding_individual:
 			count += 1
 	return count
@@ -4558,7 +4453,19 @@ func _try_assign_build_command_on_right_click(event: InputEvent) -> bool:
 	if hit_building == null or not hit_building.has_resumable_task():
 		return false
 
+	return _assign_resumable_building_task(individual, hit_building)
+
+
+# Assegna a `worker` la Task di lavoro su `hit_building` (2026-09-27, estratta da _try_assign_build_command_on_right_click
+# per riusarla dalla modalità di scelta del demolitore): Build per un cantiere, Demolish per un edificio "da demolire",
+# via TaskReassignmentService.reassign_task. Icona sul bersaglio e motivo in caso di rifiuto. Ritorna false solo se la
+# Task non si è potuta costruire (nessun comando da segnalare), true altrimenti.
+func _assign_resumable_building_task(worker: HumanIndividual, hit_building: Building) -> bool:
 	var build_macro_coords := Vector2i(hit_building.macro_x, hit_building.macro_y)
+	# Demolish Task (2026-09-27, richiesta utente): stesso percorso per un edificio "da demolire" — reassign_task
+	# costruisce demolish.tres (Building.get_resumable_task_definition_path), stesso guard max_builders contato sulle
+	# Demolish Task, icona "demolish".
+	var is_demolition: bool = hit_building.is_marked_for_demolition
 
 	# Guard max_builders (2026-09-14, richiesta utente) — vedi _count_other_individuals_claiming_
 	# build sopra per cosa conta come "claim". Rifiuto ESPLICITO qui, PRIMA di costruire qualunque
@@ -4568,7 +4475,7 @@ func _try_assign_build_command_on_right_click(event: InputEvent) -> bool:
 	# (silenzioso lato notifica, solo la X), qui l'utente ha chiesto ESPLICITAMENTE anche un avviso
 	# testuale con {current}/{max}.
 	var max_builders: int = hit_building.rules.max_builders if hit_building.rules != null else 1
-	var other_builders_count := _count_other_individuals_claiming_build(hit_building, individual)
+	var other_builders_count := _count_other_individuals_claiming_build(hit_building, worker, DEMOLISH_TASK_NAMES if is_demolition else BUILD_TASK_NAMES)
 	if other_builders_count >= max_builders:
 		if live_cells.has(build_macro_coords):
 			_spawn_command_icon_at_microcell(
@@ -4578,34 +4485,38 @@ func _try_assign_build_command_on_right_click(event: InputEvent) -> bool:
 			)
 		# Stesso testo di prima, ora sul canale comune dei rifiuti (2026-09-26): popup TASK_REJECTED e avviso
 		# nel pannello dell'individuo, come per ogni altro comando rifiutato.
-		_report_command_rejection(individual, tr("notification_build_capacity_full").format({
+		_report_command_rejection(worker, tr("notification_build_capacity_full").format({
 			"current": other_builders_count,
 			"max": max_builders,
 		}))
 		return true
 
-	var macro_state := macro_world.get_cell_state_at(hit_building.macro_x, hit_building.macro_y) if macro_world != null else null
-	var is_currently_grass := false
-	if live_cells.has(build_macro_coords):
-		var current_grass_positions: Array = live_cells[build_macro_coords].renderer.vegetation_positions.get(GameTypes.WorldObjectType.GRASS, [])
-		is_currently_grass = current_grass_positions.has(Vector2i(hit_building.micro_x, hit_building.micro_y))
-	var extra_context: Dictionary = {
-		"macro_state": macro_state,
-		"is_currently_grass": is_currently_grass,
-	}
-	var task := TaskReassignmentService.reassign_task(hit_building, individual, _resolve_age_band(individual), extra_context)
+	# extra_context solo per la Build (lo consumano SetupSite/Clear): per la Demolish resterebbe nel context della
+	# Task (MacroCellState non è salvabile in JSON).
+	var extra_context: Dictionary = {}
+	if not is_demolition:
+		var macro_state := macro_world.get_cell_state_at(hit_building.macro_x, hit_building.macro_y) if macro_world != null else null
+		var is_currently_grass := false
+		if live_cells.has(build_macro_coords):
+			var current_grass_positions: Array = live_cells[build_macro_coords].renderer.vegetation_positions.get(GameTypes.WorldObjectType.GRASS, [])
+			is_currently_grass = current_grass_positions.has(Vector2i(hit_building.micro_x, hit_building.micro_y))
+		extra_context = {
+			"macro_state": macro_state,
+			"is_currently_grass": is_currently_grass,
+		}
+	var task := TaskReassignmentService.reassign_task(hit_building, worker, _resolve_age_band(worker), extra_context)
 	if task == null:
 		return false
 
 	# Guard di assign_task rifiutato (2026-09-13, richiesta utente — bugfix: il "martelletto"
 	# compariva comunque anche quando la Task non veniva mai davvero assegnata) — reassign_task
-	# chiama individual.assign_task internamente e ritorna SEMPRE `task` non-null se è riuscita a
+	# chiama worker.assign_task internamente e ritorna SEMPRE `task` non-null se è riuscita a
 	# COSTRUIRLA, indipendentemente dall'esito del guard age_band (quel `null` sopra copre solo
 	# "nessun target valido"/"nessuna TaskDefinition risolvibile", casi in cui non c'è nulla da
 	# segnalare — restano silenziosi, invariati). Per distinguere "costruita ma rifiutata" da
 	# "assegnata davvero" senza cambiare la firma di reassign_task (usata da un solo chiamante,
 	# ma il suo contratto pubblico -> Task resta comunque più chiaro così) uso la stessa garanzia
-	# già documentata su HumanIndividual.assign_task: se il guard scatta, individual.current_task
+	# già documentata su HumanIndividual.assign_task: se il guard scatta, worker.current_task
 	# resta ESATTAMENTE quello di prima, quindi diverso per riferimento dal `task` appena costruito.
 	#
 	# task_queue.has(task) (2026-09-13, richiesta utente — bugfix "manina vs X": stesso motivo del
@@ -4614,7 +4525,7 @@ func _try_assign_build_command_on_right_click(event: InputEvent) -> bool:
 	# di prima, per costruzione, IDENTICO a un vero rifiuto per il solo confronto per riferimento
 	# sopra) e partirà da sola quando si libera. Senza questo controllo aggiuntivo, "accodata"
 	# risulterebbe indistinguibile da "rifiutata dal guard età" — qui invece è un comando riuscito.
-	if individual.current_task != task and not individual.task_queue.has(task):
+	if worker.current_task != task and not worker.task_queue.has(task):
 		if live_cells.has(build_macro_coords):
 			_spawn_command_icon_at_microcell(
 				live_cells[build_macro_coords],
@@ -4623,7 +4534,7 @@ func _try_assign_build_command_on_right_click(event: InputEvent) -> bool:
 			)
 		# Motivo (2026-09-26): prima solo la X. reassign_task ha già tentato l'assegnazione, quindi il motivo
 		# si rilegge dal guard di idoneità (puro, stesso esito).
-		_report_failed_assignment(individual, task, "task_activity_build")
+		_report_failed_assignment(worker, task, "task_activity_demolish" if is_demolition else "task_activity_build")
 		return true
 
 	# Collegamento signal SetupSiteAction.site_setup_completed / ClearAction.site_cleared (vedi
@@ -4645,34 +4556,32 @@ func _try_assign_build_command_on_right_click(event: InputEvent) -> bool:
 		_spawn_command_icon_at_microcell(
 			live_cells[build_macro_coords],
 			Vector2i(hit_building.micro_x, hit_building.micro_y),
-			"build"
+			"demolish" if is_demolition else "build"
 		)
 	if DebugLogging.ENABLED and DebugLogging.SHOW_TRANSPORT_BUILD_LOGS:
-		print("[BUILD] Task di costruzione assegnata a #%d %s per l'edificio #%d." % [individual.id, individual.name, building_id])
+		print("[BUILD] Task di %s assegnata a #%d %s per l'edificio #%d." % [
+			"demolizione" if is_demolition else "costruzione", worker.id, worker.name, hit_building.id
+		])
 	return true
 
 
-# Modalità "assegna produzione" (2026-09-23, richiesta utente — comando dal pannello): un pulsante
-# ricetta nel pannello della workstation (BuildingInfoPanel.produce_requested) la attiva; il click
-# sinistro successivo su un individuo gli assegna la Produce Task. Escape, click destro o click
-# sinistro a vuoto la annullano. Indicatore: banner giallo in alto (stesso stile di quello della
-# Transport) e cursore a croce. _produce_assign_building != null = modalità attiva.
-var _produce_assign_building: Building = null
-var _produce_assign_resource_name: String = ""
-# Pezzi ordinati dal selettore del pannello (2026-09-24, richiesta utente).
-var _produce_assign_quantity: int = 1
-# Spunta "Consegna al magazzino" dell'ordine in attesa di assegnazione (2026-09-26).
-var _produce_assign_deliver: bool = true
-# Cursore della modalità "scegli il lavoratore" (2026-09-25, richiesta utente — sostituisce il
-# cursore a croce di sistema, CURSOR_CROSS): un cerchietto rosso generato via codice una sola volta
-# (_get_produce_assign_cursor), con l'hotspot al centro del cerchio.
-const PRODUCE_ASSIGN_CURSOR_SIZE: int = 24
-const PRODUCE_ASSIGN_CURSOR_RADIUS: float = 8.0
-const PRODUCE_ASSIGN_CURSOR_THICKNESS: float = 2.0
-const PRODUCE_ASSIGN_CURSOR_COLOR := Color(0.9, 0.15, 0.15, 1.0)
-var _produce_assign_cursor: ImageTexture = null
-var produce_assign_banner: PanelContainer
-var produce_assign_banner_label: Label
+# Modalità "scegli il lavoratore" (2026-09-23 per la Produce, resa generica il 2026-09-27 per riusarla nella
+# scelta del demolitore): chi la attiva (_enter_worker_pick_mode) passa il testo del banner e cosa fare con
+# l'individuo scelto (on_pick) o all'uscita senza scelta (on_cancel, facoltativo). Click sinistro su un individuo =
+# on_pick; Escape, click destro o click sinistro a vuoto = on_cancel. Indicatore: banner giallo in alto (stesso
+# stile di quello della Transport) e cursore a cerchietto rosso. _worker_pick_on_pick valido = modalità attiva.
+var _worker_pick_on_pick: Callable = Callable()
+var _worker_pick_on_cancel: Callable = Callable()
+# Cursore della modalità (2026-09-25, richiesta utente — sostituisce il cursore a croce di sistema,
+# CURSOR_CROSS): un cerchietto rosso generato via codice una sola volta (_get_worker_pick_cursor), con
+# l'hotspot al centro del cerchio.
+const WORKER_PICK_CURSOR_SIZE: int = 24
+const WORKER_PICK_CURSOR_RADIUS: float = 8.0
+const WORKER_PICK_CURSOR_THICKNESS: float = 2.0
+const WORKER_PICK_CURSOR_COLOR := Color(0.9, 0.15, 0.15, 1.0)
+var _worker_pick_cursor: ImageTexture = null
+var worker_pick_banner: PanelContainer
+var worker_pick_banner_label: Label
 
 const PRODUCE_TASK_DEFINITION_PATH := "res://gameplay/scripts/tasks/definitions/produce.tres"
 
@@ -4699,77 +4608,96 @@ func _enter_produce_assign_mode(building: Building, resource_name: String, quant
 	if not ProductionService.has_output_room(building, resource_name) or _is_production_queue_full(building):
 		_refresh_selected_building_panel()
 		return
-	_produce_assign_building = building
-	_produce_assign_resource_name = resource_name
-	_produce_assign_quantity = clampi(quantity, 1, ProductionService.get_max_order_quantity(building))
-	_produce_assign_deliver = deliver_to_warehouse
-	if produce_assign_banner_label != null:
-		produce_assign_banner_label.text = tr("produce_assign_banner_text").format({
-			"resource": _format_production_order(resource_name, _produce_assign_quantity),
-		})
-	if produce_assign_banner != null:
-		produce_assign_banner.visible = true
-	var cursor_center := Vector2(PRODUCE_ASSIGN_CURSOR_SIZE, PRODUCE_ASSIGN_CURSOR_SIZE) / 2.0
-	Input.set_custom_mouse_cursor(_get_produce_assign_cursor(), Input.CURSOR_ARROW, cursor_center)
+	var order_quantity := clampi(quantity, 1, ProductionService.get_max_order_quantity(building))
+	var on_pick := func(worker: HumanIndividual) -> void:
+		_assign_produce_task(worker, building, resource_name, order_quantity, deliver_to_warehouse)
+	_enter_worker_pick_mode(
+		tr("produce_assign_banner_text").format({"resource": _format_production_order(resource_name, order_quantity)}), on_pick
+	)
 
 
-func _exit_produce_assign_mode() -> void:
-	_produce_assign_building = null
-	_produce_assign_resource_name = ""
-	_produce_assign_quantity = 1
-	if produce_assign_banner != null:
-		produce_assign_banner.visible = false
+# Scelta del demolitore (2026-09-27, richiesta utente) per un edificio "da demolire": l'individuo scelto riceve la
+# Demolish Task come con il click destro (_assign_resumable_building_task). cancel_demolition_on_exit: true subito
+# dopo la conferma della demolizione (uscire senza scegliere annulla la demolizione, _cancel_building_demolition);
+# false dal bottone "Assegna demolitore" del pannello (uscire lascia l'edificio "da demolire").
+func _enter_demolisher_pick_mode(building: Building, cancel_demolition_on_exit: bool = false) -> void:
+	if building == null or building.is_demolished or not building.is_marked_for_demolition:
+		return
+	var on_cancel := Callable()
+	if cancel_demolition_on_exit:
+		on_cancel = func() -> void:
+			_cancel_building_demolition(building)
+	var on_pick := func(worker: HumanIndividual) -> void:
+		if building.is_demolished or not building.is_marked_for_demolition:
+			return
+		_assign_resumable_building_task(worker, building)
+		_refresh_selected_building_panel()
+	_enter_worker_pick_mode(tr("demolisher_pick_banner_text"), on_pick, on_cancel)
+
+
+func _enter_worker_pick_mode(banner_text: String, on_pick: Callable, on_cancel: Callable = Callable()) -> void:
+	_worker_pick_on_pick = on_pick
+	_worker_pick_on_cancel = on_cancel
+	if worker_pick_banner_label != null:
+		worker_pick_banner_label.text = banner_text
+	if worker_pick_banner != null:
+		worker_pick_banner.visible = true
+	var cursor_center := Vector2(WORKER_PICK_CURSOR_SIZE, WORKER_PICK_CURSOR_SIZE) / 2.0
+	Input.set_custom_mouse_cursor(_get_worker_pick_cursor(), Input.CURSOR_ARROW, cursor_center)
+
+
+func _exit_worker_pick_mode() -> void:
+	_worker_pick_on_pick = Callable()
+	_worker_pick_on_cancel = Callable()
+	if worker_pick_banner != null:
+		worker_pick_banner.visible = false
 	Input.set_custom_mouse_cursor(null, Input.CURSOR_ARROW)
 
 
 # Cerchietto rosso con bordi sfumati (antialias: alpha in base alla distanza dalla circonferenza),
 # costruito una volta e poi riusato.
-func _get_produce_assign_cursor() -> ImageTexture:
-	if _produce_assign_cursor != null:
-		return _produce_assign_cursor
-	var image := Image.create(PRODUCE_ASSIGN_CURSOR_SIZE, PRODUCE_ASSIGN_CURSOR_SIZE, false, Image.FORMAT_RGBA8)
+func _get_worker_pick_cursor() -> ImageTexture:
+	if _worker_pick_cursor != null:
+		return _worker_pick_cursor
+	var image := Image.create(WORKER_PICK_CURSOR_SIZE, WORKER_PICK_CURSOR_SIZE, false, Image.FORMAT_RGBA8)
 	image.fill(Color(0, 0, 0, 0))
-	var center := Vector2(PRODUCE_ASSIGN_CURSOR_SIZE, PRODUCE_ASSIGN_CURSOR_SIZE) / 2.0
-	var half_thickness: float = PRODUCE_ASSIGN_CURSOR_THICKNESS / 2.0
-	for y in range(PRODUCE_ASSIGN_CURSOR_SIZE):
-		for x in range(PRODUCE_ASSIGN_CURSOR_SIZE):
+	var center := Vector2(WORKER_PICK_CURSOR_SIZE, WORKER_PICK_CURSOR_SIZE) / 2.0
+	var half_thickness: float = WORKER_PICK_CURSOR_THICKNESS / 2.0
+	for y in range(WORKER_PICK_CURSOR_SIZE):
+		for x in range(WORKER_PICK_CURSOR_SIZE):
 			var distance: float = Vector2(x + 0.5, y + 0.5).distance_to(center)
-			var coverage: float = clampf(half_thickness + 0.5 - absf(distance - PRODUCE_ASSIGN_CURSOR_RADIUS), 0.0, 1.0)
+			var coverage: float = clampf(half_thickness + 0.5 - absf(distance - WORKER_PICK_CURSOR_RADIUS), 0.0, 1.0)
 			if coverage > 0.0:
-				var color := PRODUCE_ASSIGN_CURSOR_COLOR
+				var color := WORKER_PICK_CURSOR_COLOR
 				color.a *= coverage
 				image.set_pixel(x, y, color)
-	_produce_assign_cursor = ImageTexture.create_from_image(image)
-	return _produce_assign_cursor
+	_worker_pick_cursor = ImageTexture.create_from_image(image)
+	return _worker_pick_cursor
 
 
 # Consuma l'evento mentre la modalità è attiva (chiamata SOLO da _unhandled_input). Ritorna true se
-# l'evento è stato consumato. Sinistro su un individuo = assegna ed esce; sinistro a vuoto, destro o
-# Escape = esce senza assegnare. Ogni altro evento (movimento mouse, tasti camera) passa oltre.
-func _handle_produce_assign_input(event: InputEvent) -> bool:
+# l'evento è stato consumato. Sinistro su un individuo = on_pick; sinistro a vuoto, destro o Escape =
+# on_cancel. Ogni altro evento (movimento mouse, tasti camera) passa oltre. La modalità si chiude PRIMA di
+# chiamare la callback.
+func _handle_worker_pick_input(event: InputEvent) -> bool:
+	var picked: HumanIndividual = null
 	if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_ESCAPE:
-		_exit_produce_assign_mode()
-		return true
-	if not (event is InputEventMouseButton) or not event.pressed:
-		return false
-	if event.button_index == MOUSE_BUTTON_LEFT:
-		var hit_individual: HumanIndividual = null
+		pass
+	elif event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
 		if live_cells.has(center_macro_coords):
-			hit_individual = human_individual_selector_controller.try_select(
+			picked = human_individual_selector_controller.try_select(
 				event, live_cells[center_macro_coords].renderer, human_individuals, center_macro_coords
 			)
-		var target_building := _produce_assign_building
-		var resource_name := _produce_assign_resource_name
-		var quantity := _produce_assign_quantity
-		var deliver := _produce_assign_deliver
-		_exit_produce_assign_mode()
-		if hit_individual != null:
-			_assign_produce_task(hit_individual, target_building, resource_name, quantity, deliver)
-		return true
-	if event.button_index == MOUSE_BUTTON_RIGHT:
-		_exit_produce_assign_mode()
-		return true
-	return false
+	elif not (event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_RIGHT):
+		return false
+	var on_pick := _worker_pick_on_pick
+	var on_cancel := _worker_pick_on_cancel
+	_exit_worker_pick_mode()
+	if picked != null:
+		on_pick.call(picked)
+	elif on_cancel.is_valid():
+		on_cancel.call()
+	return true
 
 
 # Avviso di un'assegnazione rifiutata dal controllo attrezzi (ToolGateService, 2026-09-25): testo
@@ -5244,6 +5172,12 @@ func _try_assign_hunt_command_on_right_click(event: InputEvent) -> bool:
 	if not tool_gate["equipped"].is_empty():
 		_refresh_selected_individual_panel()
 
+	# Arma della caccia (2026-09-27): scelta ora, dopo il gate degli attrezzi, contro questa preda, e salvata nel context
+	# della Task — la stessa per tutta la caccia (HuntService.resolve_weapon; se in seguito non è più in cintura, si
+	# sceglie di nuovo con la stessa regola).
+	var chosen_weapon := HuntService.choose_weapon(individual, TaskTypes.ToolCategory.HUNTING, species, int(prey.age_band))
+	if chosen_weapon != "":
+		task.context[HuntService.CONTEXT_HUNT_WEAPON] = chosen_weapon
 	individual.assign_task(task, _resolve_age_band(individual))
 	var assigned := individual.current_task == task or individual.task_queue.has(task)
 	if not assigned:
@@ -5256,7 +5190,7 @@ func _try_assign_hunt_command_on_right_click(event: InputEvent) -> bool:
 		if not assigned:
 			HuntService.log_event(individual, "caccia RIFIUTATA (preda %s #%d): assegnazione non accettata (la task in corso ha lo zaino occupato)." % [species, prey.id])
 		else:
-			var weapon_text := HuntService.describe_weapon(individual)
+			var weapon_text := HuntService.describe_weapon(individual, String(task.context.get(HuntService.CONTEXT_HUNT_WEAPON, "")))
 			if not tool_gate["equipped"].is_empty():
 				weapon_text += " — spostata dallo zaino alla cintura"
 			HuntService.log_event(individual, "caccia assegnata%s: preda %s #%d in %s, arma %s." % [
@@ -5566,6 +5500,27 @@ func _sync_visitor_party_views() -> void:
 		_visitor_party_views.erase(party_id)
 
 
+# Overlay del pathfinding (2026-09-27, step 1): con il tasto N acceso, un PathfindingDebugOverlay sulla macrocella
+# corrente (center_macro_coords), spostato quando la macrocella corrente cambia; spento o cella non viva = nessun
+# overlay. L'overlay si ridisegna da sé quando la griglia cambia.
+func _sync_pathfinding_overlay() -> void:
+	var cell: LiveMacroCell = live_cells.get(center_macro_coords) if _pathfinding_overlay_enabled else null
+	if _pathfinding_overlay != null and (not is_instance_valid(_pathfinding_overlay) or cell == null or _pathfinding_overlay.get_cell() != cell or _pathfinding_overlay.get_parent() != cell.container):
+		if is_instance_valid(_pathfinding_overlay):
+			_pathfinding_overlay.queue_free()
+		_pathfinding_overlay = null
+	if cell == null or cell.container == null or _pathfinding_overlay != null:
+		return
+	_pathfinding_overlay = PathfindingDebugOverlay.new()
+	_pathfinding_overlay.z_index = 20
+	cell.container.add_child(_pathfinding_overlay)
+	_pathfinding_overlay.show_cell(cell)
+	if DebugLogging.ENABLED and DebugLogging.SHOW_PATHFINDING_LOGS:
+		print("[PATHFINDING] overlay su %s: %d microcelle bloccate, %d regioni." % [
+			center_macro_coords, PathfindingService.count_blocked(cell), PathfindingService.get_region_count(cell)
+		])
+
+
 # Primo gruppo (il più vecchio) nella fase data, o null.
 func _find_visitor_party_in_phase(phase: VisitorTypes.Phase) -> VisitorParty:
 	if game_data == null:
@@ -5701,16 +5656,19 @@ func _give_visitor_dowry(party: VisitorParty, member_index: int, newcomer: Human
 	# Prima un magazzino con posto per tutta la dote; altrimenti uno che ne accetti almeno un'unità (il residuo lo
 	# ricolloca UnloadAction.on_complete con il re-routing già esistente).
 	var warehouse := WarehouseSelectionService.find_best(
-		macro_world, newcomer.position, newcomer.home_macro_coords, resource_name, quantity
+		macro_world, newcomer.position, newcomer.home_macro_coords, resource_name, quantity, [],
+		PathfindingService.reachability_for(newcomer)
 	)
 	if warehouse == null:
 		warehouse = WarehouseSelectionService.find_best(
-			macro_world, newcomer.position, newcomer.home_macro_coords, resource_name, 1
+			macro_world, newcomer.position, newcomer.home_macro_coords, resource_name, 1, [],
+			PathfindingService.reachability_for(newcomer)
 		)
 	var assigned := false
 	if warehouse != null:
 		var macro_offset: Vector2 = Vector2(Vector2i(warehouse.macro_x, warehouse.macro_y) - newcomer.home_macro_coords) * World.WIDTH
-		var walk := WalkAction.new(Vector2(warehouse.micro_x, warehouse.micro_y) + macro_offset)
+		# Punto casuale dentro la microcella del magazzino, mai l'angolo esatto (2026-09-27).
+		var walk := WalkAction.new(PathfindingService.random_point_in_microcell(Vector2(warehouse.micro_x, warehouse.micro_y) + macro_offset))
 		var unload := UnloadAction.new(warehouse, UnloadAction.DepositKind.RESOURCE)
 		_reconnect_unload_action_signals(unload, newcomer)
 		var task := Task.new([walk, unload])
@@ -6812,7 +6770,8 @@ func _on_tool_to_storage_requested(target: HumanIndividual, slot_index: int) -> 
 	if tool_name == "":
 		return
 	var destination := WarehouseSelectionService.find_best(
-		macro_world, target.position, target.home_macro_coords, tool_name, 1
+		macro_world, target.position, target.home_macro_coords, tool_name, 1, [],
+		PathfindingService.reachability_for(target)
 	)
 	if destination == null:
 		# Canale comune dei rifiuti (2026-09-26): popup + avviso nel pannello dell'individuo.
@@ -6825,7 +6784,8 @@ func _assign_equip_tool_task(target: HumanIndividual, slot_index: int, tool_name
 	if target == null or tool_name == "":
 		return
 	var source := WarehouseSelectionService.find_source_for_retrieval(
-		macro_world, target.position, target.home_macro_coords, tool_name
+		macro_world, target.position, target.home_macro_coords, tool_name, [], 1, -1,
+		PathfindingService.reachability_for(target)
 	)
 	if source == null:
 		# Prima un return silenzioso (2026-09-26): ora il motivo — nessun magazzino raggiungibile ha l'attrezzo.
@@ -8634,6 +8594,8 @@ func _setup_animal_renderer(cell: LiveMacroCell, r: AnimalGroupRenderer) -> void
 	r.clock = clock # può essere null (cella attivata prima di _setup_clock in _ready()); vedi _assign_clock_to_all_live_cells
 	# Disagio degli animali (comportamento step 2): posizioni di umani ed edifici viste da questa cella.
 	r.disturbance_source = _animal_disturbance_sources.bind(cell.coords())
+	# Collisione con rocce, edifici e fiume (2026-09-27, pathfinding step 4): la griglia della cella, via Callable.
+	r.blocked_test = PathfindingService.blocked_test_for(cell.coords())
 	if cell.fog_of_war_renderer != null:
 		# Animali visibili solo in raggio o con dettaglio fresco (FogOfWarRenderer.is_animal_visible_at).
 		r.visibility_test = cell.fog_of_war_renderer.is_animal_visible_at
@@ -9071,6 +9033,9 @@ func _building_type_name_for_action(action_id: StringName) -> String:
 		# degli altri tre, azione "build_stick_tent" cablata in BuildBar._ready sopra.
 		&"build_stick_tent":
 			return "stick_tent"
+		# Tenda di pelli (2026-09-27, richiesta utente) — azione "build_hide_tent" cablata in BuildBar._ready.
+		&"build_hide_tent":
+			return "hide_tent"
 		# Terreno in terra battuta (2026-09-19, richiesta utente) — azione "build_dirt_ground"
 		# cablata in BuildBar._ready.
 		&"build_dirt_ground":
@@ -9104,56 +9069,159 @@ func _clear_building_ghost() -> void:
 
 
 # ============================================================================================
-# Demolizione (2026-09-12, richiesta utente — "attiva il bottone Demolisci già presente in UI:
-# demolizione immediata, nessuna Task/tempo per ora, con conferma prima di eseguire") — bottone
-# main_row (BuildBar.DEMOLISH_MAIN_ROW_SLOT_INDEX), ascoltato QUI (non da _on_build_submenu_action_
-# pressed sopra, che resta per submenu_row/i tipi edificio): entrare in modalità "seleziona
-# bersaglio" (_demolish_mode_active), un click sinistro sull'edificio colpito apre
-# DemolishConfirmationDialog, solo alla conferma esplicita _demolish_building esegue davvero.
+# Demolizione (2026-09-12, richiesta utente; come Task dal 2026-09-27) — bottone "Demolisci" del pannello
+# edificio (BuildingInfoPanel.demolish_requested) -> DemolishConfirmationDialog. Alla conferma:
+#   - cantiere non completo: annullato subito (_demolish_building), il materiale già depositato cade a terra;
+#   - edificio completo: segnato "da demolire" (_mark_building_for_demolition). Smette di funzionare e diventa
+#     il bersaglio della Demolish Task (click destro con un pipottino selezionato, come la Build); a fine lavoro
+#     DemolishAction segnala demolition_completed e _on_demolition_completed lo abbatte davvero.
 # ============================================================================================
 
-func _on_build_main_row_action_pressed(action_id: StringName) -> void:
-	if action_id != BuildBar.DEMOLISH_ACTION:
+func _on_demolish_requested(building: Building) -> void:
+	if building == null or building.is_demolished or building.is_marked_for_demolition:
 		return
-	_set_demolish_mode(not _demolish_mode_active)
-
-
-# Entra/esce dalla modalità targeting (2026-09-12) — annullabile ricliccando il bottone stesso
-# (sopra) o con il destro nel mondo (vedi il gate in _unhandled_input) — STESSO doppio modo di
-# uscita già offerto dal modo piazzamento edificio (_building_ghost: destro annulla, sinistro
-# consuma). set_slot_toggled riusa qui il significato "acceso mentre la modalità è impegnata",
-# stesso principio del toggle mostra/nascondi già documentato in IconButtonRow.gd — a riposo il
-# bottone Demolisci resta comunque pienamente abilitato/a piena luminosità (enabled=true da
-# BuildBar._ready), set_slot_toggled(false) qui lo attenua leggermente SOLO per differenziare
-# visivamente "modalità non attiva" da "in attesa di un click sull'edificio da demolire".
-func _set_demolish_mode(active: bool) -> void:
-	_demolish_mode_active = active
-	build_bar.main_row.set_slot_toggled(BuildBar.DEMOLISH_MAIN_ROW_SLOT_INDEX, active)
-
-
-# Consuma il click mentre la modalità è attiva (chiamata SOLO da _unhandled_input, gate in testa
-# alla funzione) — hit o miss, la modalità termina comunque qui (un singolo tentativo per
-# attivazione, stesso principio "un click, poi il modo si chiude" già seguito da _try_assign_
-# build_command_on_right_click per l'assegnazione, non un modo persistente da disattivare a parte).
-# Nessuna demolizione qui dentro: solo l'apertura della conferma, se il click ha colpito un edificio
-# vero — _demolish_building (sotto) è l'UNICO punto che muta stato, chiamato solo da
-# _on_demolish_confirmed.
-func _try_pick_demolish_target(event: InputEvent) -> void:
-	var building_hit := building_selector_controller.try_select(
-		event, live_cells, macro_world.buildings if macro_world != null else []
-	)
-	_set_demolish_mode(false)
-	if building_hit.is_empty():
-		return
-	var target_building := _find_building_by_id(building_hit["building_id"])
-	if target_building == null:
-		return
-	var display_name: String = tr(target_building.rules.building_name) if target_building.rules != null else target_building.building_type_name
-	demolish_confirmation_dialog.open_dialog(target_building, display_name, target_building.id)
+	var display_name: String = tr(building.rules.building_name) if building.rules != null else building.building_type_name
+	demolish_confirmation_dialog.open_dialog(building, display_name, building.id, not building.is_complete)
 
 
 func _on_demolish_confirmed(building: Variant) -> void:
-	_demolish_building(building)
+	var target_building := building as Building
+	if target_building == null or target_building.is_demolished or target_building.is_marked_for_demolition:
+		return
+	if target_building.is_complete:
+		_mark_building_for_demolition(target_building)
+		# Scelta del demolitore subito dopo la conferma (2026-09-27, richiesta utente): uscire senza scegliere
+		# annulla la demolizione.
+		_enter_demolisher_pick_mode(target_building, true)
+	else:
+		_demolish_building(target_building)
+
+
+# Edificio completo segnato "da demolire" (2026-09-27, richiesta utente): da qui non funziona più (niente depositi,
+# prelievi o produzione — vedi Building.is_marked_for_demolition), resta un ostacolo finché non viene abbattuto. Le
+# Task di produzione su di esso vengono chiuse come con la X del pannello (zaino conservato); i residenti vengono
+# liberati e ricollocati come alla demolizione.
+func _mark_building_for_demolition(building: Building) -> void:
+	building.is_marked_for_demolition = true
+	var freed := _close_tasks_working_on_building(building, PRODUCE_TASK_NAMES, null, false)
+	for member in freed:
+		HumanIndividualActionService.resolve_idle_individual(member, _resolve_age_band(member), macro_world)
+	_reconcile_production_units(building)
+	if building.rules != null and building.rules.max_residents > 0:
+		for occupant in human_individuals:
+			if occupant.house_id == building.id:
+				occupant.house_id = -1
+	AssignHouseService.assign_pending_residents(macro_world, human_individuals, game_data.year)
+	_refresh_population_panel()
+	_refresh_buildings_panel()
+	_refresh_selected_building_panel()
+	_refresh_selected_individual_panel()
+	print("[DEMOLISH] Edificio #%d (%s) segnato da demolire." % [
+		building.id, tr(building.rules.building_name) if building.rules != null else building.building_type_name
+	])
+
+
+# Demolizione annullata (2026-09-27, richiesta utente — uscita senza scelta dalla modalità del demolitore aperta
+# dalla conferma): il flag "da demolire" si toglie e l'edificio torna a funzionare (depositi, prelievi, produzione,
+# ricerche dei magazzini). I residenti liberati alla marcatura vengono ricollocati da AssignHouseService come al
+# solito (anche in altri edifici); le Produce Task chiuse alla marcatura non vengono ripristinate.
+func _cancel_building_demolition(building: Building) -> void:
+	if building == null or building.is_demolished or not building.is_marked_for_demolition:
+		return
+	building.is_marked_for_demolition = false
+	AssignHouseService.assign_pending_residents(macro_world, human_individuals, game_data.year)
+	_refresh_population_panel()
+	_refresh_buildings_panel()
+	_refresh_selected_building_panel()
+	print("[DEMOLISH] Demolizione dell'edificio #%d (%s) annullata." % [building.id, _building_display_name(building)])
+
+
+# "Annulla demolizione" dal pannello (2026-09-27, richiesta utente): solo finché il lavoro non è iniziato. Chiude le
+# Demolish Task su questo edificio di tutti (correnti e in coda) con la stessa chiusura di _demolish_building, poi
+# annulla come dalla modalità di scelta del demolitore (_cancel_building_demolition).
+func _on_demolition_cancel_requested(building: Building) -> void:
+	if building == null or building.is_demolished or not building.is_marked_for_demolition:
+		return
+	if float(building.construction_progress.get(DemolishAction.LABOR_KEY, 0.0)) > 0.0:
+		_refresh_selected_building_panel()
+		return
+	var freed := _close_tasks_working_on_building(building, DEMOLISH_TASK_NAMES, null, true)
+	_cancel_building_demolition(building)
+	for member in freed:
+		HumanIndividualActionService.resolve_idle_individual(member, _resolve_age_band(member), macro_world)
+	_refresh_selected_individual_panel()
+
+
+# Fine della Demolish Task (DemolishAction.demolition_completed, 2026-09-27): abbatte l'edificio con la logica di
+# _demolish_building, facendo cadere in un unico mucchio metà dei required_materials (per difetto; il materiale di
+# allestimento non si recupera), il deposito e il buffer di uscita. Se c'è un mucchio, chiede nel context della Task
+# di accodare allo stesso individuo il trasporto al magazzino (HumanIndividualActionService.
+# CONTEXT_PENDING_GROUND_PILE_HAUL, consumato subito dopo questo step).
+func _on_demolition_completed(building: Building, demolisher: Variant, context: Dictionary) -> void:
+	if building == null or building.is_demolished:
+		return
+	var salvaged: Dictionary = {}
+	if building.rules != null:
+		for material_name in building.rules.required_materials.keys():
+			var salvaged_quantity: int = floori(float(building.rules.required_materials[material_name]) / 2.0)
+			if salvaged_quantity > 0:
+				salvaged[material_name] = salvaged_quantity
+	var pile := _demolish_building(building, salvaged, demolisher as HumanIndividual)
+	if pile != null:
+		context[HumanIndividualActionService.CONTEXT_PENDING_GROUND_PILE_HAUL] = {
+			"macro_x": pile.macro_coords.x, "macro_y": pile.macro_coords.y,
+			"micro_x": pile.microcell.x, "micro_y": pile.microcell.y,
+		}
+
+
+# "Porta il mucchio al magazzino" (2026-09-27, richiesta utente — generico, HumanIndividualActionService.
+# ground_pile_haul_requested): accoda a `carrier` la raccolta di tutto il mucchio (haul_resource.tres con sorgente
+# GROUND_PILE e criterio ALL, _build_pickup_task) — dopo il PickUp la catena di sempre cerca il magazzino e accoda
+# Walk + Unload. Non si accoda nulla (il mucchio resta a terra) se il mucchio non c'è più, la sua cella non è viva,
+# la coda è piena, l'età non lo consente o nessun magazzino raggiungibile accetta almeno una delle sue risorse.
+# Icona "pickup" sul mucchio, come per il comando di raccolta.
+func _on_ground_pile_haul_requested(carrier: HumanIndividual, pile_ref: Dictionary) -> void:
+	var macro_coords := Vector2i(int(pile_ref.get("macro_x", 0)), int(pile_ref.get("macro_y", 0)))
+	var microcell := Vector2i(int(pile_ref.get("micro_x", 0)), int(pile_ref.get("micro_y", 0)))
+	var pile := GroundPileService.find_at(game_data, macro_coords, microcell)
+	var cell: LiveMacroCell = live_cells.get(macro_coords)
+	if pile == null or pile.resources.is_empty() or cell == null or cell.macro_state == null:
+		return
+	if carrier.task_queue.size() >= TaskQueueService.MAX_QUEUE_SIZE:
+		if DebugLogging.ENABLED and DebugLogging.SHOW_TRANSPORT_BUILD_LOGS:
+			print("[GROUND PILE HAUL] #%d %s: coda piena, il mucchio #%d resta a terra." % [carrier.id, carrier.name, pile.id])
+		return
+	var resource_names := pile.get_resource_names()
+	var has_destination := false
+	for resource_name in resource_names:
+		if pile.get_quantity(resource_name) > 0 and WarehouseSelectionService.find_best(
+			macro_world, carrier.position, carrier.home_macro_coords, resource_name, 1, [],
+			PathfindingService.reachability_for(carrier)
+		) != null:
+			has_destination = true
+			break
+	if not has_destination:
+		if DebugLogging.ENABLED and DebugLogging.SHOW_TRANSPORT_BUILD_LOGS:
+			print("[GROUND PILE HAUL] #%d %s: nessun magazzino raggiungibile accetta il contenuto del mucchio #%d, resta a terra." % [
+				carrier.id, carrier.name, pile.id
+			])
+		return
+	var task := _build_pickup_task(
+		cell, microcell, resource_names[0], -1, PickUpAction.CriterionKind.ALL, -1, false, 0, carrier,
+		PickUpAction.SourceKind.GROUND_PILE
+	)
+	var carrier_age_band := _resolve_age_band(carrier)
+	for step in task.steps:
+		if step.disallowed_age_bands.has(carrier_age_band):
+			return
+	TaskQueueService.push_suspended_task(carrier, task)
+	_spawn_command_icon_at_microcell(cell, microcell, "pickup")
+	if DebugLogging.ENABLED and DebugLogging.SHOW_TRANSPORT_BUILD_LOGS:
+		print("[GROUND PILE HAUL] #%d %s: trasporto del mucchio #%d al magazzino accodato (coda ora %d)." % [
+			carrier.id, carrier.name, pile.id, carrier.task_queue.size()
+		])
+	if carrier == individual:
+		_refresh_selected_individual_panel()
 
 
 # Demolizione VERA (2026-09-12, richiesta utente, punto 2) — funzione unica, chiamata solo dopo
@@ -9162,9 +9230,12 @@ func _on_demolish_confirmed(building: Variant) -> void:
 # lo STESSO Building (non resta più raggiungibile da nessun building_id/click successivo) — NESSUN
 # flag di idempotenza necessario, a differenza di ClearAction.space_reserved (che invece doveva
 # proteggersi da una ricostruzione ripetuta della STESSA Action per lo stesso edificio ancora vivo).
-func _demolish_building(building: Building) -> void:
+# Chiamata anche a fine Demolish Task (2026-09-27, _on_demolition_completed): `salvaged` = materiali recuperati
+# (nome -> quantità) che cadono a terra insieme al contenuto; `completing` = chi ha appena finito di abbatterlo, la
+# cui Task (in pieno completamento) non va chiusa. Ritorna il mucchio a terra, o null.
+func _demolish_building(building: Building, salvaged: Dictionary = {}, completing: HumanIndividual = null) -> GroundPile:
 	if building == null or macro_world == null:
-		return
+		return null
 
 	# 1) Interrompi qualunque Task il cui target sia questo edificio — sia una Build Task in corso
 	# (SetupSite/Clear/Build, context["target_building"]) sia una assegnata ma non ancora avviata
@@ -9184,7 +9255,8 @@ func _demolish_building(building: Building) -> void:
 	# TaskQueueService.push_suspended_task quando ne scarta una per overflow. Gli individui la cui
 	# current_task è stata chiusa vengono rimessi in moto (bisogno/coda/perditempo) DOPO che l'edificio
 	# è demolito (step 6), così una task in coda per lo stesso edificio non può essere ripresa.
-	var individuals_to_resolve: Array[HumanIndividual] = _close_tasks_working_on_building(building, BUILD_TASK_NAMES, null, true)
+	# Anche le Demolish Task di altri individui sullo stesso edificio (2026-09-27).
+	var individuals_to_resolve: Array[HumanIndividual] = _close_tasks_working_on_building(building, BUILD_AND_DEMOLISH_TASK_NAMES, completing, true)
 
 	# 2) Residenti: libera gli slot (house_id torna a -1, stesso valore di default di HumanIndividual
 	# senza casa) — solo se l'edificio era residenziale, stesso guard già usato da AssignHouseService/
@@ -9194,12 +9266,9 @@ func _demolish_building(building: Building) -> void:
 			if occupant.house_id == building.id:
 				occupant.house_id = -1
 
-	# 3) Storage perso — azzerato semplicemente, nessuna materializzazione a terra (stesso principio
-	# "la merce scartata sparisce" già applicato ad haul_resource, vedi HumanIndividual.
-	# discard_carried_resource).
-	building.stored_resources.clear()
-	# Buffer di uscita e produzione in corso (2026-09-23): persi insieme allo storage.
-	building.production_output.clear()
+	# 3) Produzione in corso persa (2026-09-23). Deposito e buffer di uscita non si perdono più (2026-09-27): cadono
+	# a terra con i materiali recuperati, dopo la rimozione dall'elenco (step 6), così il mucchio può posarsi anche
+	# sulla microcella liberata.
 	building.production_progress = {}
 
 	# 4) Libera lo spazio dedicato SOLO se era stato davvero riservato — is_complete=true copre sia
@@ -9234,6 +9303,8 @@ func _demolish_building(building: Building) -> void:
 	# diretto che resta valido anche dopo che l'edificio sparisce da questa lista).
 	building.is_demolished = true
 	macro_world.buildings.erase(building)
+	# Contenuto e materiali recuperati a terra in un unico mucchio (GroundPileService.drop_building_contents).
+	var pile := GroundPileService.drop_building_contents(game_data, building, macro_world, salvaged)
 	# Individui rimasti senza task per la demolizione (step 1): riprendono dalla coda o vanno in
 	# perditempo — vedi il commento allo step 1.
 	for freed in individuals_to_resolve:
@@ -9258,8 +9329,9 @@ func _demolish_building(building: Building) -> void:
 	# non un caso speciale scritto qui.
 	_refresh_building_slots_buildable()
 
-	print("[DEMOLISH] Edificio #%d (%s) demolito." % [
-		building.id, tr(building.rules.building_name) if building.rules != null else building.building_type_name
+	print("[DEMOLISH] Edificio #%d (%s) demolito — %s." % [
+		building.id, tr(building.rules.building_name) if building.rules != null else building.building_type_name,
+		("mucchio a terra #%d, microcella %s" % [pile.id, str(pile.microcell)]) if pile != null else "nulla a terra"
 	])
 
 	# 7) Ricolloca eventuali individui rimasti senza casa (punto 2/3) in altri posti liberi, poi
@@ -9270,6 +9342,7 @@ func _demolish_building(building: Building) -> void:
 	# non si vedrebbero nella scheda fino al prossimo rollover d'anno.
 	AssignHouseService.assign_pending_residents(macro_world, human_individuals, game_data.year)
 	_refresh_population_panel()
+	return pile
 
 
 # Vincoli di disponibilità PER TIPO in BuildBar (2026-09-07, richiesta utente — GENERALIZZATA da
@@ -9751,6 +9824,10 @@ func _reconnect_build_task_signals(step: Action) -> void:
 		# al refresh VISIVO (rimozione placeholder + sprite pieno, vedi
 		# GameScene._on_building_construction_completed).
 		(step as BuildAction).building_construction_completed.connect(_on_building_construction_completed)
+	elif step is DemolishAction:
+		# Demolish Task (2026-09-27): qui avviene l'abbattimento vero, vedi _on_demolition_completed. Stesso punto
+		# unico per creazione in-sessione e reload (current_task e coda, _reconnect_loaded_task_signals).
+		(step as DemolishAction).demolition_completed.connect(_on_demolition_completed)
 
 
 # Ricollega i segnali persi dalla ricostruzione da salvataggio (2026-09-11, richiesta utente —
@@ -10352,6 +10429,9 @@ func _refresh_building_visuals(cell: LiveMacroCell) -> void:
 	# Mappa sparsa dei modificatori di movimento (2026-09-19): stessi eventi degli edifici (completamento,
 	# piazzamento, demolizione, riattivazione cella, rinfresco dei vicini) — vedi MovementTerrainService.
 	MovementTerrainService.rebuild(cell, macro_world)
+	# Griglia di pathfinding (2026-09-27, step 1): costruita alla prima chiamata (ingresso nella macrocella), poi
+	# aggiornata solo nelle microcelle cambiate — DOPO MovementTerrainService, perché i pesi leggono movement_modifiers.
+	PathfindingService.sync_buildings(cell, macro_world)
 	if cell.fog_of_war_renderer != null:
 		cell.fog_of_war_renderer.set_building_visible_positions(_building_visible_positions_for_cell(cell))
 	_sync_build_site_placeholders(cell)
@@ -10463,10 +10543,10 @@ func _setup_transport_selection_banner() -> void:
 	transport_selection_banner = _build_selection_banner()
 	transport_selection_banner_label = transport_selection_banner.get_child(0) as Label
 	transport_selection_banner_label.text = tr("transport_selection_banner_text")
-	# Banner della modalità "assegna produzione" (2026-09-23): stesso stile/posizione, testo impostato
-	# a ogni ingresso in modalità (dipende dalla ricetta), vedi _enter_produce_assign_mode.
-	produce_assign_banner = _build_selection_banner()
-	produce_assign_banner_label = produce_assign_banner.get_child(0) as Label
+	# Banner della modalità "scegli il lavoratore" (2026-09-23 Produce, generica dal 2026-09-27): stesso
+	# stile/posizione, testo impostato a ogni ingresso in modalità, vedi _enter_worker_pick_mode.
+	worker_pick_banner = _build_selection_banner()
+	worker_pick_banner_label = worker_pick_banner.get_child(0) as Label
 
 
 # Banner giallo in alto al centro, nascosto, con una Label come unico figlio — estratto il 2026-09-23
@@ -10587,6 +10667,8 @@ func _setup_clock() -> void:
 	# sopra — vedi _on_building_material_blocked.
 	# Macellazione automatica dopo la caccia (2026-09-26) — vedi _on_butcher_after_hunt_requested.
 	individual_action_service.butcher_after_hunt_requested.connect(_on_butcher_after_hunt_requested)
+	# Trasporto di un mucchio a terra al magazzino (2026-09-27, oggi dopo la demolizione) — vedi _on_ground_pile_haul_requested.
+	individual_action_service.ground_pile_haul_requested.connect(_on_ground_pile_haul_requested)
 	individual_action_service.building_material_blocked.connect(_on_building_material_blocked)
 	play_pause_button.pressed.connect(_on_play_pause_pressed)
 	for speed in speed_buttons.keys():

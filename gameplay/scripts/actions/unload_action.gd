@@ -348,7 +348,8 @@ func get_required_position(individual: Variant, context: Dictionary) -> Variant:
 	if deposit_kind != DepositKind.RESOURCE or target_building == null:
 		return null
 	var macro_offset: Vector2 = Vector2(Vector2i(target_building.macro_x, target_building.macro_y) - individual.home_macro_coords) * World.WIDTH
-	return Vector2(target_building.micro_x, target_building.micro_y) + macro_offset
+	# Punto casuale dentro la microcella, mai l'angolo esatto (2026-09-27, PathfindingService.random_point_in_microcell).
+	return PathfindingService.random_point_in_microcell(Vector2(target_building.micro_x, target_building.micro_y) + macro_offset)
 
 
 # Due rami MUTUAMENTE ESCLUSIVI secondo deposit_kind (2026-09-10, DEVIAZIONE dal discriminatore
@@ -448,6 +449,10 @@ func on_complete(individual: Variant, context: Dictionary) -> void:
 		if DebugLogging.ENABLED and DebugLogging.SHOW_TRANSPORT_BUILD_LOGS:
 			print("[UNLOAD] on_complete: zaino PRIMA=%s -> DOPO=%s" % [str(carried_before_deposit), str(individual.carried_resources)])
 		if individual.carried_resources.is_empty():
+			# Viaggio carico concluso (2026-09-27, richiesta utente — sacca di pelle): lo zaino si è svuotato con un
+			# deposito vero (any_deposited) -> un uso in meno all'attrezzo CARRYING in cintura.
+			if any_deposited:
+				_consume_carrying_tool_use(individual)
 			# Le decay_fraction vivono dentro le entry di carried_resources: con lo zaino vuoto non resta
 			# nessun valore "orfano" (vedi HumanIndividual.carried_resources).
 			# "Cammina via" (2026-09-09, richiesta utente — haul_resource, stesso schema di walk_away
@@ -476,8 +481,8 @@ func on_complete(individual: Variant, context: Dictionary) -> void:
 			# limitazione sui bordi venga rimossa in futuro senza che nessuno si ricordi di
 			# aggiornare anche questo punto.
 			var macro_offset: Vector2 = Vector2(Vector2i(target_building.macro_x, target_building.macro_y) - individual.home_macro_coords) * World.WIDTH
-			var building_position: Vector2 = Vector2(target_building.micro_x, target_building.micro_y) + macro_offset
-			context["pending_walk_away_position"] = building_position + Vector2.from_angle(randf() * TAU) * PHYSICAL_WALK_AWAY_DISTANCE
+			var building_position: Vector2 = Vector2(target_building.micro_x, target_building.micro_y) + macro_offset + Vector2(0.5, 0.5)
+			context["pending_walk_away_position"] = _walk_away_destination(individual, building_position, PHYSICAL_WALK_AWAY_DISTANCE)
 			return
 		# RESIDUO (2026-09-14, richiesta utente — deposito parziale, punto 1 del piano concordato:
 		# "deposito ok seguito da rerouting SOLO del residuo") — copre ENTRAMBI i casi che lasciano
@@ -555,8 +560,8 @@ func on_complete(individual: Variant, context: Dictionary) -> void:
 	# dinamicamente via 2c — nessun comportamento nuovo visibile in-game da questo prompt.
 	if target_building != null:
 		var thought_macro_offset: Vector2 = Vector2(Vector2i(target_building.macro_x, target_building.macro_y) - individual.home_macro_coords) * World.WIDTH
-		var thought_building_position: Vector2 = Vector2(target_building.micro_x, target_building.micro_y) + thought_macro_offset
-		context["pending_walk_away_position"] = thought_building_position + Vector2.from_angle(randf() * TAU) * WALK_AWAY_DISTANCE
+		var thought_building_position: Vector2 = Vector2(target_building.micro_x, target_building.micro_y) + thought_macro_offset + Vector2(0.5, 0.5)
+		context["pending_walk_away_position"] = _walk_away_destination(individual, thought_building_position, WALK_AWAY_DISTANCE)
 
 
 # Persistenza (2026-09-09, richiesta utente; ESTESA 2026-09-10 per costo/durata E per deposit_kind)
@@ -613,8 +618,32 @@ func _complete_unequip(individual: Variant, context: Dictionary) -> void:
 	individual.take_equipped_tool(unequip_slot_index, null)
 	resource_deposited.emit(target_building)
 	var macro_offset: Vector2 = Vector2(Vector2i(target_building.macro_x, target_building.macro_y) - individual.home_macro_coords) * World.WIDTH
-	var building_position: Vector2 = Vector2(target_building.micro_x, target_building.micro_y) + macro_offset
-	context["pending_walk_away_position"] = building_position + Vector2.from_angle(randf() * TAU) * PHYSICAL_WALK_AWAY_DISTANCE
+	var building_position: Vector2 = Vector2(target_building.micro_x, target_building.micro_y) + macro_offset + Vector2(0.5, 0.5)
+	context["pending_walk_away_position"] = _walk_away_destination(individual, building_position, PHYSICAL_WALK_AWAY_DISTANCE)
+
+
+# Usura della sacca (2026-09-27, richiesta utente): 1 uso all'attrezzo CARRYING in cintura a ogni viaggio carico
+# concluso con lo zaino svuotato da un deposito — stesso meccanismo degli altri attrezzi (ToolGateService.
+# consume_tool_uses); se si rompe, stesso avviso (Action.report_broken_tools). Chiamata solo dal ramo fisico di
+# on_complete: mai dal ramo del pensiero, da _complete_unequip o per un Unload arrivato con lo zaino già vuoto.
+# GameData attivo passato per il ricalcolo completo della capacità se la sacca si rompe.
+func _consume_carrying_tool_use(individual: Variant) -> void:
+	if not (individual is HumanIndividual):
+		return
+	var required: Array[TaskTypes.ToolCategory] = [TaskTypes.ToolCategory.CARRYING]
+	var broken := ToolGateService.consume_tool_uses(individual, required, GameSettings.active_game_data)
+	report_broken_tools(individual, broken)
+
+
+# Punto di "allontanati" (2026-09-27): a `distance` da `origin` (centro della microcella dell'edificio) in una
+# direzione a caso, su una microcella libera e raggiungibile (PathfindingService.pick_free_destination, fino a 8
+# sorteggi); nessuno valido = resta dov'è. Se il pipottino ha già un seguito noto il passo viene saltato
+# all'attivazione (HumanIndividualActionService.has_known_follow_up): la decisione non si prende qui.
+static func _walk_away_destination(individual: Variant, origin: Vector2, distance: float) -> Vector2:
+	var destination: Variant = PathfindingService.pick_free_destination(
+		individual, func() -> Vector2: return origin + Vector2.from_angle(randf() * TAU) * distance
+	)
+	return destination if destination != null else individual.position
 
 
 # Deposito di un attrezzo dallo zaino (2026-09-26, attrezzi come istanze): si tolgono dallo zaino le

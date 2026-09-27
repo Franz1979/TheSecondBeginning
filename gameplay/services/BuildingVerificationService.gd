@@ -160,33 +160,11 @@ static func is_microcell_free(
 	microcell: Vector2i, macro_world: World, allow_water: bool = false, allow_river: bool = false,
 	allow_stone: bool = false, ignore_movement_buildings: bool = false
 ) -> bool:
-	if macro_cell == null:
-		return false
-
-	# Criterio 3
-	if not allow_water and macro_cell.terrain_base == GameTypes.TerrainBase.WATER:
-		return false
-
-	# Criterio 4
-	if not allow_river and river_positions != null and river_positions.has(microcell):
-		return false
-
-	# Criterio 5
-	if not allow_stone and macro_state != null and macro_state.stone_positions.has(microcell):
-		return false
-
-	# Criterio 6
-	if macro_world != null:
-		for building in macro_world.buildings:
-			if ignore_movement_buildings and building.rules != null and building.rules.category == BuildingTypes.Category.MOVEMENT:
-				continue
-			if (
-				building.macro_x == macro_coords.x and building.macro_y == macro_coords.y
-				and building.micro_x == microcell.x and building.micro_y == microcell.y
-			):
-				return false
-
-	return true
+	# Regola spostata in MicrocellObstacles (2026-09-27, pathfinding step 1), comportamento invariato: chi interroga
+	# molte microcelle della stessa macrocella costruisce MicrocellObstacles una volta e usa is_free direttamente.
+	return MicrocellObstacles.build(macro_coords, macro_cell, macro_state, river_positions, macro_world).is_free(
+		microcell, allow_water, allow_river, allow_stone, ignore_movement_buildings
+	)
 
 
 # Microcelle del fiume di una macrocella, calcolate dai dati (stessa formula di GameScene._activate_live_cell

@@ -71,12 +71,14 @@ func _resolve(individual: Variant, context: Dictionary) -> bool:
 	if status != CombatTarget.Status.OK:
 		context[HumanIndividualActionService.CONTEXT_PENDING_TASK_ABORT] = CombatTarget.describe_status(status)
 		return false
-	var weapon_name := HuntService.pick_weapon(individual, weapon_category)
+	# Arma della caccia (2026-09-27): la stessa per tutta la caccia (HuntService.resolve_weapon_for_target); gittata,
+	# attacco e usura sono i suoi.
+	var weapon_name := HuntService.resolve_weapon_for_target(individual, context, weapon_category, combat_target)
 	if weapon_name == "":
 		context[HumanIndividualActionService.CONTEXT_PENDING_TASK_ABORT] = "nessuna arma in cintura al momento del lancio"
 		return false
 	var distance := combat_target.distance_from(individual)
-	var reach := HuntService.compute_reach(individual, weapon_category)
+	var reach := HuntService.compute_weapon_reach(weapon_name)
 	if distance > reach:
 		context[HuntService.CONTEXT_PENDING_REAPPROACH] = HuntService.REAPPROACH_AFTER_THROW_NOT_STARTED
 		HuntService.log_event(individual, "tiro NON PARTITO: %s fuori gittata al momento del lancio (distanza %.2f > gittata %.2f)." % [
@@ -88,8 +90,11 @@ func _resolve(individual: Variant, context: Dictionary) -> bool:
 	var weapon_display := IconRegistry.get_resource_display_name(weapon_name)
 	var weapon_rules := CaloricCalculator.get_caloric_source_rules(weapon_name)
 	var attack_power: float = weapon_rules.attack_power if weapon_rules != null else 0.0
-	var weapon_slot := ToolGateService.find_belt_slot_for(individual, weapon_category)
-	var broken := ToolGateService.consume_tool_uses(individual, required_tool_categories, null)
+	# Usura dello slot dell'arma scelta (non del primo attrezzo della categoria in cintura).
+	var weapon_slot := HuntService.find_weapon_slot(individual, weapon_name)
+	var broken: Array[String] = []
+	if weapon_slot != -1 and individual.consume_equipped_tool_use(weapon_slot, null):
+		broken.append(weapon_name)
 	if not broken.is_empty():
 		report_broken_tools(individual, broken)
 		HuntService.log_event(individual, "arma rotta dopo il lancio: %s." % str(broken))

@@ -44,18 +44,18 @@ extends VBoxContainer
 # la riga CarriedBoxesRow (HBoxContainer con i riquadri, ciascuno a dimensione fissa via
 # custom_minimum_size) SOPRA, poi CarryBar con size_flags_horizontal=EXPAND_FILL. Bastano le size flags
 # standard di Godot, nessun bisogno dello scaling proporzionale manuale che serviva quando un riquadro
-# condivideva la riga con i 4 tool (vedi ToolSlot0..3 sotto per quel caso, ancora reale).
+# condivideva la riga con gli slot della cintura (vedi ToolSlot0 sotto per quel caso, ancora reale).
 #
-# ToolSlot0..3 (2026-09-08, richiesta utente) — 4 quadratini FISSI, ORA in una riga TUTTA LORO
+# ToolSlot0 (2026-09-08, richiesta utente; dal 2026-09-27 modello per gli slot generati da
+# HumanIndividual.get_tool_slot_count, vedi _ensure_tool_slot_boxes) — quadratini in una riga TUTTA LORO
 # (tools_row, un Control puro, non un Container — vedi _layout_tools_row per il perché: serve
 # comunque rimpicciolirli TUTTI con lo stesso fattore di scala quando lo spazio non basta, cosa che
 # nessun Container standard di Godot fa da solo), separata dalla riga trasporto sopra (2026-09-13,
 # richiesta utente — prima condividevano la riga col quadratino trasporto, ora quel riquadro è
 # salito sulla riga della barra). Stile diverso apposta dal quadratino trasporto (richiesta
 # esplicita): un Panel con cornice visibile (StyleBoxFlat_tool_slot) invece di un ColorRect pieno,
-# "T" attenuata (alpha 0.35) come placeholder — nessun sistema di equip tool esiste ancora (vedi
-# HumanIndividual.equipped_tool_count, sempre 0), quindi sono SEMPRE vuoti/placeholder, nessuno
-# stato da aggiornare qui dentro.
+# "T" attenuata (alpha 0.35) come placeholder per uno slot vuoto; uno slot pieno mostra l'attrezzo (vedi
+# _update_tool_slots).
 #
 # Il "🎯 centra" è vissuto qui brevemente (2026-09-04) ma si è spostato di nuovo, stavolta
 # nell'header di GameInfoTabs.SelectionTab (Step 3 del piano "centra generalizzato", stessa
@@ -173,8 +173,8 @@ var _food_bar_fill_body_reserve: StyleBoxFlat = null
 @onready var carried_boxes_row: HBoxContainer = $CarryRowMargin/CarryRow/CarriedBoxesRow
 # Primo riquadro (slot 0), in scena: fa anche da modello per gli altri, duplicati in _build_carried_slots.
 @onready var carried_resource_box: ColorRect = $CarryRowMargin/CarryRow/CarriedBoxesRow/CarriedResourceBox
-# tools_row (2026-09-13, richiesta utente) — rinominato da carry_and_tools_row: ora ospita SOLO i
-# 4 ToolSlot, il quadratino trasportato è salito sulla riga della barra (vedi CarryRow sopra).
+# tools_row (2026-09-13, richiesta utente) — rinominato da carry_and_tools_row: ora ospita SOLO gli
+# slot della cintura, il quadratino trasportato è salito sulla riga della barra (vedi CarryRow sopra).
 @onready var tools_row: Control = $ToolsRowMargin/ToolsRow
 
 # Slot dei riquadri trasportati (2026-09-20, zaino multi-risorsa) — array paralleli, indice = slot,
@@ -189,17 +189,14 @@ var _carried_quantity_labels: Array[Label] = []
 # dipende dalla risorsa trasportata, che cambia a runtime — instanziata/rimossa ad ogni refresh in
 # _update_carried_resource_box.
 var _carried_icon_nodes: Array[Control] = []
-# Slot tool (2026-09-08, richiesta utente) — 4 riquadri FISSI in scena (non generati da
-# HumanRules.tool_slot_count, che oggi potrebbe anche valere un numero diverso da 4 per un
-# eventuale futuro HumanRules non-player: questa UI resta un mockup a conteggio fisso finché non
-# servirà davvero rispecchiare quel campo). Sempre vuoti/placeholder oggi (nessun sistema di equip,
-# vedi HumanIndividual.equipped_tool_count) — nessuna logica di stato per slot, solo layout.
+# Slot della cintura (2026-09-08, richiesta utente; generati dal 2026-09-27) — tanti riquadri quanti
+# HumanIndividual.get_tool_slot_count() (HumanRules.tool_slot_count): ToolSlot0 è in scena, gli altri sono
+# copie di un suo duplicato pulito (_tool_slot_template), creati/rimossi da _ensure_tool_slot_boxes.
 @onready var tool_slot_boxes: Array[Control] = [
 	$ToolsRowMargin/ToolsRow/ToolSlot0,
-	$ToolsRowMargin/ToolsRow/ToolSlot1,
-	$ToolsRowMargin/ToolsRow/ToolSlot2,
-	$ToolsRowMargin/ToolsRow/ToolSlot3,
 ]
+# Copia di ToolSlot0 presa in _ready, prima che vi finiscano icone o barre degli usi: modello degli slot aggiunti.
+var _tool_slot_template: Control = null
 @onready var tool_warning_label: Label = $ToolWarningLabel
 @onready var id_label: Label = $IdLabel
 @onready var mother_label: Label = $MotherLabel
@@ -220,9 +217,11 @@ func _ready() -> void:
 	# uscito da questa riga) — ricalcolato ad ogni resize del pannello (larghezza sidebar, non
 	# fissa) oltre che una volta qui subito: vedi _layout_tools_row.
 	tools_row.resized.connect(_layout_tools_row)
+	_tool_slot_template = tool_slot_boxes[0].duplicate() as Control
 	_layout_tools_row()
 	_build_carried_slots()
 	_connect_tool_belt_clicks()
+	_ensure_tool_slot_boxes(HumanIndividual.DEFAULT_TOOL_SLOT_COUNT)
 	clear()
 
 
@@ -464,7 +463,7 @@ func _format_id(value: int) -> String:
 	return "—" if value < 0 else str(value)
 
 
-# Dimensioni/spaziatura NATURALI dei 4 tool slot (2026-09-08, richiesta utente) — usate come punto
+# Dimensioni/spaziatura NATURALI degli slot della cintura (2026-09-08, richiesta utente) — usate come punto
 # di partenza da _layout_tools_row sotto, che le rimpicciolisce TUTTE proporzionalmente quando non
 # entrano nella larghezza disponibile del pannello, invece di tagliarle fuori. CARRY_BOX_SIZE
 # RIMOSSA (2026-09-13): il quadratino trasporto è uscito da questa riga (vedi CarryRow in testa al
@@ -576,7 +575,7 @@ func _update_carried_resource_boxes(carried_resources: Dictionary) -> void:
 var _carried_slot_names: Array[String] = []
 # Icona disegnata dentro ciascuno slot della cintura (null = nessuna), stesso trattamento di
 # _carried_icon_nodes per i riquadri dello zaino.
-var _tool_icon_nodes: Array[Control] = [null, null, null, null]
+var _tool_icon_nodes: Array[Control] = [null]
 # Colore della "T" segnaposto di uno slot vuoto — lo stesso impostato nella scena (alpha 0.35).
 const EMPTY_TOOL_SLOT_TEXT_COLOR := Color(1, 1, 1, 0.35)
 
@@ -623,6 +622,8 @@ func _on_tool_slot_gui_input(event: InputEvent, slot: int) -> void:
 # oppure la sua emoji/iniziale nella Label; slot vuoto = la "T" attenuata di sempre. Tooltip col nome
 # dell'attrezzo e cursore a manina sugli slot pieni (cliccabili per rimetterli nello zaino).
 func _update_tool_slots(individual: HumanIndividual) -> void:
+	if individual != null:
+		_ensure_tool_slot_boxes(individual.get_tool_slot_count())
 	for slot in range(tool_slot_boxes.size()):
 		var box: Control = tool_slot_boxes[slot]
 		var label: Label = box.get_node("Label") as Label
@@ -648,6 +649,11 @@ func _update_tool_slots(individual: HumanIndividual) -> void:
 		var remaining_uses: int = individual.get_equipped_tool_uses(slot)
 		if max_uses > 0:
 			box.tooltip_text += "\n" + tr("tool_slot_uses_line").format({"uses": remaining_uses, "max": max_uses})
+		# Bonus di capacità di trasporto (2026-09-27, richiesta utente — sacca di pelle): SecondaryResourceRules.
+		# carry_capacity_bonus dell'attrezzo, se ne ha uno.
+		var tool_rules := CaloricCalculator.get_caloric_source_rules(tool_name)
+		if tool_rules != null and tool_rules.carry_capacity_bonus > 0.0:
+			box.tooltip_text += "\n" + tr("tool_slot_carry_bonus_line").format({"bonus": int(roundf(tool_rules.carry_capacity_bonus))})
 		_update_tool_uses_bar(slot, remaining_uses, max_uses)
 		box.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
 		var icon_node: Control = IconRegistry.get_resource_icon_node(tool_name)
@@ -676,7 +682,7 @@ func _update_tool_slots(individual: HumanIndividual) -> void:
 # striscia sottile in fondo al riquadro, sfondo scuro e riempimento proporzionale agli usi, dal verde
 # (pieno) al rosso (quasi rotto). Creata al primo uso e poi riusata; nascosta per slot vuoti e per
 # attrezzi che non si usurano (max_uses <= 0). mouse_filter IGNORE: hover e click restano al riquadro.
-var _tool_uses_bars: Array[ColorRect] = [null, null, null, null]
+var _tool_uses_bars: Array[ColorRect] = [null]
 const TOOL_USES_BAR_HEIGHT_FRACTION := 0.14
 const TOOL_USES_BAR_BACKGROUND := Color(0, 0, 0, 0.55)
 
@@ -714,6 +720,31 @@ func _update_tool_uses_bar(slot: int, remaining_uses: int, max_uses: int) -> voi
 	bar.visible = true
 
 
+# Porta i riquadri della cintura a `slot_count` (2026-09-27, richiesta utente — prima 4 nodi fissi in scena): i nuovi
+# sono duplicati di _tool_slot_template (stesso stile e stessa "T"), con lo stesso collegamento del clic
+# (_on_tool_slot_gui_input); quelli in più vengono rimossi. Tiene allineati _tool_icon_nodes/_tool_uses_bars e
+# rifà il layout della riga. No-op se il numero è già giusto.
+func _ensure_tool_slot_boxes(slot_count: int) -> void:
+	slot_count = maxi(slot_count, 1)
+	if tool_slot_boxes.size() == slot_count:
+		return
+	while tool_slot_boxes.size() < slot_count:
+		var slot: int = tool_slot_boxes.size()
+		var box: Control = _tool_slot_template.duplicate() as Control
+		box.name = "ToolSlot%d" % slot
+		tools_row.add_child(box)
+		box.gui_input.connect(_on_tool_slot_gui_input.bind(slot))
+		tool_slot_boxes.append(box)
+		_tool_icon_nodes.append(null)
+		_tool_uses_bars.append(null)
+	while tool_slot_boxes.size() > slot_count:
+		var removed: Control = tool_slot_boxes.pop_back()
+		removed.queue_free()
+		_tool_icon_nodes.pop_back()
+		_tool_uses_bars.pop_back()
+	_layout_tools_row()
+
+
 # Costruisce gli slot dei riquadri trasportati (una volta, da _ready): il riquadro in scena è lo slot 0,
 # gli altri fino a HumanIndividual.MAX_CARRIED_VARIETIES sono suoi duplicati (con InitialLabel/
 # QuantityLabel figlie), affiancati nella stessa riga. Va chiamata PRIMA che qualunque icona venga
@@ -734,13 +765,13 @@ func _build_carried_slots() -> void:
 		_carried_icon_nodes.append(null)
 
 
-# Posiziona/dimensiona i 4 quadratini tool dentro tools_row (2026-09-08, richiesta utente —
+# Posiziona/dimensiona gli slot della cintura dentro tools_row (2026-09-08, richiesta utente —
 # SEMPLIFICATA 2026-09-13 quando il quadratino trasporto è uscito da questa riga, vedi CarryRow in
-# testa al file: prima questa funzione posizionava ANCHE lui, ora si occupa solo dei 4 tool)
+# testa al file: prima questa funzione posizionava ANCHE lui, ora si occupa solo degli slot)
 # — Control semplice, non un Container: i figli sono posizionati/dimensionati A MANO qui invece
 # che affidati al layout automatico di un HBoxContainer, perché serve un comportamento che nessun
 # Container standard di Godot offre da solo: quando la larghezza disponibile non basta per la
-# dimensione NATURALE di tutti e 4 i quadratini, li si rimpicciolisce TUTTI con lo STESSO fattore
+# dimensione NATURALE di tutti i quadratini, li si rimpicciolisce TUTTI con lo STESSO fattore
 # di scala (mai un sottoinsieme tagliato fuori, richiesta esplicita dell'utente) — un HBoxContainer
 # con size_flags_horizontal EXPAND_FILL comprimerebbe solo i figli "expand", non li scalerebbe
 # proporzionalmente insieme.

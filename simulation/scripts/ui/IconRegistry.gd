@@ -87,6 +87,10 @@ const RESOURCE_ICON_NODES := {
 	# WoodenSpearIcon.gd/StoneKnifeIcon.gd.
 	"wooden_spear": preload("res://simulation/scripts/ui/WoodenSpearIcon.gd"),
 	"stone_knife": preload("res://simulation/scripts/ui/StoneKnifeIcon.gd"),
+	# Punteruolo d'osso (2026-09-27, richiesta utente): scheggia d'osso sottile e appuntita — vedi BoneAwlIcon.gd.
+	"bone_awl": preload("res://simulation/scripts/ui/BoneAwlIcon.gd"),
+	# Sacca di pelle (2026-09-27, richiesta utente): sacchetto di cuoio chiuso da un laccio — vedi HideBagIcon.gd.
+	"hide_bag": preload("res://simulation/scripts/ui/HideBagIcon.gd"),
 	# Prodotti della macellazione (2026-09-26, richiesta utente — icone provvisorie): carne, pelle, tendini,
 	# ossa — vedi MeatIcon.gd/HideIcon.gd/SinewIcon.gd/BoneIcon.gd.
 	"meat": preload("res://simulation/scripts/ui/MeatIcon.gd"),
@@ -128,6 +132,8 @@ const BUILDING_ICONS := {
 	# sé "tenda", nessun problema di leggibilità come per pebble_circle sopra: non serve un'icona
 	# disegnata a mano.
 	"stick_tent": "⛺",
+	# Tenda di pelli (2026-09-27, richiesta utente) — icona provvisoria, la stessa della tenda di rami.
+	"hide_tent": "⛺",
 	# Focolare (2026-09-23, richiesta utente) — emoji provvisorio, già leggibile da sé.
 	"campfire": "🔥",
 	# Capanna dell'attrezzista (2026-09-24, richiesta utente) — emoji provvisorio.
@@ -199,6 +205,7 @@ const COMMAND_ICONS := {
 	"transport": "📦",
 	# "produce" (2026-09-23, richiesta utente — Produce Task): icona provvisoria.
 	"produce": "⚒️",
+	"demolish": "⛏️",
 	"task_rejected": "❌",
 }
 
@@ -258,6 +265,8 @@ const COMMAND_ICON_NODES := {
 	"produce": preload("res://simulation/scripts/ui/CommandProduceIcon.gd"),
 	# "butcher" (2026-09-26, richiesta utente — macellazione): coltello, vedi CommandKnifeIcon.gd.
 	"butcher": preload("res://simulation/scripts/ui/CommandKnifeIcon.gd"),
+	# "demolish" (2026-09-27, richiesta utente — Demolish Task): piccone, vedi CommandPickaxeIcon.gd.
+	"demolish": preload("res://simulation/scripts/ui/CommandPickaxeIcon.gd"),
 	"task_rejected": preload("res://simulation/scripts/ui/CommandRejectedIcon.gd"),
 }
 

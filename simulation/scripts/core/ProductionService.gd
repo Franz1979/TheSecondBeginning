@@ -38,12 +38,12 @@ extends RefCounted
 # a buffer pieno nessun nuovo ciclo avanza né si completa (has_output_room).
 
 
-# true se `building` può produrre `resource_name` ADESSO: edificio completo, non demolito,
-# workstation, e il suo tipo è in recipe_workstation_types della risorsa.
+# true se `building` può produrre `resource_name` ADESSO: edificio completo, non demolito né "da demolire"
+# (2026-09-27, Building.is_marked_for_demolition), workstation, e il suo tipo è in recipe_workstation_types della risorsa.
 static func can_produce_at(building: Building, resource_name: String) -> bool:
 	if building == null or building.rules == null:
 		return false
-	if building.is_demolished or not building.is_complete or not building.rules.is_workstation:
+	if building.is_demolished or building.is_marked_for_demolition or not building.is_complete or not building.rules.is_workstation:
 		return false
 	var recipe_rules := CaloricCalculator.get_caloric_source_rules(resource_name)
 	if recipe_rules == null:

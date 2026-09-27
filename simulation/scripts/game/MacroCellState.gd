@@ -42,6 +42,9 @@ var active_growth_bonuses: Dictionary = {} # NaturalEventType -> {multiplier: fl
 var pending_migration_surplus: Dictionary = {}
 var stone_positions: Array = [] # Array[Vector2i], posizioni microcella occupate da stone (100x100)
 var stone_positions_generated: bool = false # separato dall'array vuoto: distingue "mai aperta" da "aperta ma senza stone"
+# Guadi (2026-09-27, pathfinding step 1): microcelle di fiume attraversabili a piedi, Array[Vector2i]. Per ora sempre
+# vuoto (nessuna logica li genera); letto da PathfindingService. Salvato come stone_positions (chiave assente se vuoto).
+var ford_positions: Array = []
 # LOD0 (2026-08-30): true dal primo momento in cui questa macrocella entra nel set di celle vive
 # VERE (LODOrchestrator.set_focus_region, vedi world.lod_focus_live_cells) — MAI più rimesso a
 # false, stesso principio "fatto storico permanente" di has_ever_grown sopra. È l'UNICO dato che

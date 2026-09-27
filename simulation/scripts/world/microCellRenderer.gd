@@ -604,8 +604,9 @@ func get_individual_screen_position(object_type: GameTypes.WorldObjectType, indi
 # itera solo posizioni reali.
 func get_stone_screen_position(pos: Vector2i) -> Vector2:
 	var half: float = CELL_SIZE / 2.0
-	var offset_x: float = lerp(-0.8, 0.8, float(hash(pos * 5 + Vector2i(2, 9)) % 1000) / 1000.0)
-	var offset_y: float = lerp(-0.8, 0.8, float(hash(pos * 5 + Vector2i(9, 2)) % 1000) / 1000.0)
+	# Scostamento ridotto a ±STONE_CENTER_JITTER (2026-09-27, rocce contenute nella microcella; era ±0,8 px).
+	var offset_x: float = lerp(-STONE_CENTER_JITTER, STONE_CENTER_JITTER, float(hash(pos * 5 + Vector2i(2, 9)) % 1000) / 1000.0)
+	var offset_y: float = lerp(-STONE_CENTER_JITTER, STONE_CENTER_JITTER, float(hash(pos * 5 + Vector2i(9, 2)) % 1000) / 1000.0)
 	var base := Vector2(pos.x * CELL_SIZE, pos.y * CELL_SIZE)
 	return base + Vector2(half, half) + Vector2(offset_x, offset_y)
 
@@ -827,8 +828,8 @@ func clear_selected_stone() -> void:
 # Stesso colore/spessore/margine del contorno vegetazione/edifici (SELECTION_HIGHLIGHT_COLOR/WIDTH/
 # SELECTION_OUTLINE_PADDING_RATIO, già dichiarati sopra per _draw_selected_individual_highlight) —
 # coerenza visiva "questo è selezionato" in tutto il progetto. Raggio = quello massimo del blob
-# stone disegnato (STONE_RADIUS_MAX del lerp 6.5-7.5 in _build_stone_variant_mesh, qui hardcoded a
-# 7.5 per non dipendere da una costante locale a quella funzione), così il contorno racchiude
+# stone disegnato (STONE_MAX_EXTENT: raggio massimo della sagoma per lo scostamento dei vertici e la scala massima —
+# 2026-09-27, rocce ridisegnate contenute nella microcella), così il contorno racchiude
 # sempre l'intero masso indipendentemente da quale variante è toccata a questa posizione. Nessun
 # disegno se la posizione selezionata non è (più) tra le stone_positions di questa cella — stesso
 # principio difensivo di has_individual/get_building_screen_position sopra.
@@ -838,7 +839,8 @@ func _draw_selected_stone_highlight() -> void:
 	if not stone_positions.has(_selected_stone_position):
 		return
 	var center := get_stone_screen_position(_selected_stone_position)
-	var radius: float = 7.5 * SELECTION_OUTLINE_PADDING_RATIO
+	# Raggio della roccia ridisegnata (2026-09-27): STONE_MAX_EXTENT invece del vecchio 7,5 fisso.
+	var radius: float = STONE_MAX_EXTENT * SELECTION_OUTLINE_PADDING_RATIO
 	draw_arc(center, radius, 0, TAU, 24, SELECTION_HIGHLIGHT_COLOR, SELECTION_HIGHLIGHT_WIDTH)
 
 
@@ -1135,7 +1137,8 @@ func _draw_buildings() -> void:
 			PlaceholderBuildingShapes.draw(self, building_type_name, ground)
 			continue
 		var direction: GameTypes.Direction = entry["rotation"]
-		if building_type_name == "stick_tent":
+		# Tenda di pelli (2026-09-27): grafica provvisoria, la stessa della tenda di rami.
+		if building_type_name == "stick_tent" or building_type_name == "hide_tent":
 			_draw_stick_tent(ground, direction)
 			continue
 		# Capanna dell'attrezzista (2026-09-24, richiesta utente) — disegno provvisorio: stessa sagoma
@@ -1335,7 +1338,7 @@ var _dirt_ground_speckles_by_variant: Dictionary = {}
 # battuta: dritti verso un edificio completo confinante ("dirt_neighbors", calcolata da GameScene),
 # irregolari verso le celle senza nulla.
 const GROUND_UNDER_BUILDING_TYPES: Array[String] = [
-	"stick_tent", "pebble_circle", "campfire", "drying_rack", "smokehouse", "burial", "earthwork",
+	"stick_tent", "hide_tent", "pebble_circle", "campfire", "drying_rack", "smokehouse", "burial", "earthwork",
 ]
 
 
@@ -1559,6 +1562,18 @@ func _draw_stone_positions() -> void:
 const STONE_BLOB_VERTEX_COUNT: int = 9
 const STONE_BLOB_VERTEX_JITTER: float = 0.18 # ±18% del raggio base, per vertice
 const STONE_VARIANT_COUNT: int = 12
+# Rocce contenute nella microcella (2026-09-27, richiesta utente — prima sbordavano fino a ~5,5 px): raggio base più
+# piccolo, sagoma tagliata a un quadrato di lato 2 × STONE_SHAPE_AXIS_LIMIT, centro poco scostato, rotazioni solo a
+# multipli di 90° (il quadrato di taglio resta allineato alla cella). Bordo a <= ~6 px dal centro della cella.
+const STONE_RADIUS_MIN: float = 4.5
+const STONE_RADIUS_MAX: float = 5.0
+const STONE_SHAPE_AXIS_LIMIT: float = 5.2
+const STONE_CENTER_JITTER: float = 0.3
+const STONE_SCALE_MIN: float = 0.9
+const STONE_SCALE_MAX: float = 1.1
+# Distanza massima di un vertice dal centro della roccia, già scalata (contorno di selezione): raggio massimo ×
+# (1 + scostamento dei vertici) × scala massima.
+const STONE_MAX_EXTENT: float = STONE_RADIUS_MAX * (1.0 + STONE_BLOB_VERTEX_JITTER) * STONE_SCALE_MAX
 
 
 func _ensure_stone_multimeshes() -> void:
@@ -1577,7 +1592,7 @@ func _ensure_stone_multimeshes() -> void:
 
 func _build_stone_variant_mesh(variant: int) -> ArrayMesh:
 	var radius_variation: float = float(hash(Vector2i(variant, 977)) % 1000) / 1000.0
-	var radius: float = lerp(6.5, 7.5, radius_variation)
+	var radius: float = lerp(STONE_RADIUS_MIN, STONE_RADIUS_MAX, radius_variation)
 
 	var points := PackedVector2Array()
 	for i in range(STONE_BLOB_VERTEX_COUNT):
@@ -1585,7 +1600,11 @@ func _build_stone_variant_mesh(variant: int) -> ArrayMesh:
 		var vertex_t: float = float(hash(Vector2i(variant, i) * 41 + Vector2i(i * 13 + 3, 7)) % 1000) / 1000.0
 		var vertex_jitter: float = lerp(-STONE_BLOB_VERTEX_JITTER, STONE_BLOB_VERTEX_JITTER, vertex_t)
 		var vertex_radius: float = radius * (1.0 + vertex_jitter)
-		points.append(Vector2(cos(angle), sin(angle)) * vertex_radius)
+		var vertex := Vector2(cos(angle), sin(angle)) * vertex_radius
+		# Taglio al quadrato (2026-09-27): una volta sola, nella sagoma condivisa da tutte le rocce di questa variante.
+		vertex.x = clampf(vertex.x, -STONE_SHAPE_AXIS_LIMIT, STONE_SHAPE_AXIS_LIMIT)
+		vertex.y = clampf(vertex.y, -STONE_SHAPE_AXIS_LIMIT, STONE_SHAPE_AXIS_LIMIT)
+		points.append(vertex)
 
 	return _build_fan_mesh(points, COLOR_STONE)
 
@@ -1608,12 +1627,16 @@ func _rebuild_stone_multimeshes() -> void:
 		# disallinearsi tra disegno e hit-test.
 		var center := get_stone_screen_position(pos)
 
-		# Rotazione + lieve variazione di scala per-istanza: disguisano la ripetizione tra le
-		# STONE_VARIANT_COUNT sagome condivise, oltre alla posizione già unica per pietra.
-		var rotation: float = (float(hash(pos * 13 + Vector2i(31, 17)) % 1000) / 1000.0) * TAU
-		var scale_variation: float = lerp(0.9, 1.1, float(hash(pos * 19 + Vector2i(3, 41)) % 1000) / 1000.0)
+		# Rotazione + specchiatura + lieve variazione di scala per-istanza: disguisano la ripetizione tra le
+		# STONE_VARIANT_COUNT sagome condivise, oltre alla posizione già unica per pietra. Rotazione solo a multipli di
+		# 90° e specchiatura su un asse (2026-09-27): la sagoma tagliata al quadrato resta allineata alla cella. Stessi
+		# hash di prima (la specchiatura ne usa uno nuovo), quindi deterministica.
+		var quarter_turns: int = int(float(hash(pos * 13 + Vector2i(31, 17)) % 1000) / 250.0) % 4
+		var rotation: float = float(quarter_turns) * PI / 2.0
+		var mirror: float = -1.0 if hash(pos * 29 + Vector2i(11, 53)) % 2 == 0 else 1.0
+		var scale_variation: float = lerp(STONE_SCALE_MIN, STONE_SCALE_MAX, float(hash(pos * 19 + Vector2i(3, 41)) % 1000) / 1000.0)
 
-		var transform := Transform2D(rotation, Vector2.ZERO).scaled(Vector2(scale_variation, scale_variation))
+		var transform := Transform2D(rotation, Vector2.ZERO).scaled(Vector2(scale_variation * mirror, scale_variation))
 		transform.origin = center
 
 		buckets[variant].append(transform)
@@ -1649,11 +1672,12 @@ const PEBBLE_RADIUS_MAX: float = 1.0
 const PEBBLE_VARIANT_COUNT: int = 6
 # Anello (non un disco pieno da 0) verso il BORDO della microcella (2026-09-08, richiesta utente:
 # "verso il lato della microcella") — half-cell = CELL_SIZE/2 = 5, quindi 4.0-4.8 resta appena
-# dentro il bordo: i puntini si leggono come sparsi attorno al masso principale (che da solo ha
-# raggio 6.5-7.5, quindi sconfina già oltre la propria microcella) invece che ammassati/nascosti
+# dentro il bordo: i puntini si leggono come sparsi attorno al masso principale invece che ammassati/nascosti
 # sotto di esso al centro.
-const PEBBLE_SCATTER_MIN_RADIUS: float = 4.0
-const PEBBLE_SCATTER_MAX_RADIUS: float = 4.8
+# Ridotto (2026-09-27, rocce contenute nella microcella) a 3,6–4,2: centro del ciottolo + raggio massimo del ciottolo
+# (1,0 × 1,2 × 1,15 ≈ 1,38) + scostamento del centro della roccia (0,3 per asse, ~0,42) <= 6 px dal centro della cella.
+const PEBBLE_SCATTER_MIN_RADIUS: float = 3.6
+const PEBBLE_SCATTER_MAX_RADIUS: float = 4.2
 
 
 # >0 = "pochi"/"quantità normale"/"molti" secondo le soglie sopra, 0 = quantity<=0 (nessun sasso
@@ -1683,7 +1707,7 @@ func _ensure_pebble_multimeshes() -> void:
 
 
 # Stessa identica tecnica di _build_stone_variant_mesh (poligono a raggio irregolare, jitter
-# seminato per variante), solo raggio più piccolo (PEBBLE_RADIUS_MIN/MAX contro 6.5-7.5 di STONE)
+# seminato per variante), solo raggio più piccolo (PEBBLE_RADIUS_MIN/MAX contro STONE_RADIUS_MIN/MAX)
 # e seed diverso (moltiplicatori diversi nell'hash) così le due sagome-base non risultano
 # identiche a parità di indice variante.
 func _build_pebble_variant_mesh(variant: int) -> ArrayMesh:

@@ -247,6 +247,10 @@ extends Resource
 @export var tool_categories: Array[TaskTypes.ToolCategory] = []
 # Numero di utilizzi prima di rompersi. 0 = non applicabile (non è un attrezzo, o non si usura).
 @export var max_uses: int = 0
+# Capacità di trasporto aggiunta quando l'attrezzo è in cintura (2026-09-27, richiesta utente — sacca di pelle):
+# conta il bonus più alto tra gli attrezzi in cintura, non la somma (HumanCalculator.get_equipped_carry_bonus).
+# 0.0 = nessun bonus.
+@export var carry_capacity_bonus: float = 0.0
 # Quanto fa male se usato per colpire (caccia/combattimento). 0.0 = non è un'arma.
 @export var attack_power: float = 0.0
 # Distanza massima, in microcelle, entro cui l'attrezzo può colpire (2026-09-26, richiesta utente —

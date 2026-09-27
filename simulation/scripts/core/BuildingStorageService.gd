@@ -178,8 +178,9 @@ static func can_accept(building: Building, resource_name: String) -> bool:
 	# valutato per primo, indipendentemente da is_complete sotto: un edificio demolito (completo o
 	# meno) non deve mai accettare nulla da nessun percorso. Un individuo con una Task già in corso
 	# verso questo edificio (Walk+Unload) tiene un riferimento diretto che resta valido anche dopo la
-	# demolizione (vedi Building.is_demolished per il perché).
-	if building.is_demolished:
+	# demolizione (vedi Building.is_demolished per il perché). Stesso rifiuto per un edificio "da demolire"
+	# (2026-09-27, Building.is_marked_for_demolition): non funziona più, nessun nuovo deposito.
+	if building.is_demolished or building.is_marked_for_demolition:
 		return false
 	var resource_rules := CaloricCalculator.get_caloric_source_rules(resource_name)
 	if resource_rules == null:
@@ -378,6 +379,8 @@ static func withdraw_tool_units(building: Building, resource_name: String, quant
 	var units: Array = []
 	if building == null or quantity_requested <= 0 or not ToolInstance.is_tool_resource(resource_name):
 		return units
+	if building.is_marked_for_demolition:
+		return units
 	units = _take_stored_tool_units(building, resource_name, quantity_requested)
 	var from_output: int = ProductionService.withdraw_output(building, resource_name, quantity_requested - units.size())
 	var max_uses: int = ToolInstance.get_max_uses(resource_name)
@@ -430,8 +433,9 @@ static func get_max_depositable(building: Building, resource_name: String) -> in
 	# valutato per primo, indipendentemente da is_complete sotto: STESSO motivo/STESSA posizione di
 	# can_accept sopra (chiamata anche DIRETTAMENTE da WarehouseSelectionService.find_best/
 	# UnloadAction.activate, vedi lì) — un edificio demolito deve risultare "senza posto" da
-	# QUALUNQUE punto lo interroghi.
-	if building.is_demolished:
+	# QUALUNQUE punto lo interroghi. Anche un edificio "da demolire" (2026-09-27): fuori da find_best e
+	# dalle ricerche di postazioni di lavoro, che leggono questo valore.
+	if building.is_demolished or building.is_marked_for_demolition:
 		return 0
 	var resource_rules := CaloricCalculator.get_caloric_source_rules(resource_name)
 	if resource_rules == null:
@@ -516,7 +520,8 @@ static func get_max_depositable(building: Building, resource_name: String) -> in
 # workstation è una normale sorgente per Retrieve/Transport. Poi, con lo spazio appena liberato, prova
 # il travaso del buffer nello storage (ProductionService.flush_output_to_storage).
 static func withdraw(building: Building, resource_name: String, quantity_requested: int) -> int:
-	if building == null or quantity_requested <= 0:
+	# Edificio "da demolire" (2026-09-27): niente prelievi, il contenuto cade a terra alla demolizione.
+	if building == null or quantity_requested <= 0 or building.is_marked_for_demolition:
 		return 0
 	var withdrawn := withdraw_stored(building, resource_name, quantity_requested)
 	withdrawn += ProductionService.withdraw_output(building, resource_name, quantity_requested - withdrawn)
@@ -526,9 +531,10 @@ static func withdraw(building: Building, resource_name: String, quantity_request
 
 
 # Quantità prelevabile di resource_name da `building`: stored_resources più il buffer di uscita della
-# produzione (2026-09-23) — stessa somma che withdraw() sopra può davvero prelevare.
+# produzione (2026-09-23) — stessa somma che withdraw() sopra può davvero prelevare. 0 per un edificio
+# "da demolire" (2026-09-27): niente prelievi, quindi nemmeno sorgente di ricerche e comandi di prelievo.
 static func get_available_quantity(building: Building, resource_name: String) -> int:
-	if building == null:
+	if building == null or building.is_marked_for_demolition:
 		return 0
 	var stored_entry: Dictionary = building.stored_resources.get(resource_name, {})
 	return int(stored_entry.get("quantity", 0)) + int(building.production_output.get(resource_name, 0))

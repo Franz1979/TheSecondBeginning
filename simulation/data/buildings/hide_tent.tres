@@ -1,0 +1,21 @@
+[gd_resource type="Resource" script_class="BuildingRules" format=3]
+
+[ext_resource type="Script" uid="uid://b8pl3yflicmtn" path="res://simulation/scripts/core/BuildingRules.gd" id="1_hide_tent"]
+
+[resource]
+script = ExtResource("1_hide_tent")
+building_name = "building_hide_tent"
+required_idea_id = "paleolithic_constructions"
+required_labor = 2200
+required_materials = {
+"fiber_rope": 5,
+"hide": 20,
+"pebble": 20,
+"plant_fiber": 20,
+"stick": 50
+}
+max_durability = 35
+required_space = 1
+visibility_radius = 2
+rest_multiplier = 1.4
+max_residents = 4

@@ -402,7 +402,8 @@ func get_activity_description() -> String:
 		# raccolta. Edificio letto dal primo step che ha un target_building (SetupSite/Clear/Build),
 		# nome tradotto da BuildingRules.building_name. Nessun edificio risolvibile = solo il nome
 		# della Task.
-		"task_build_name":
+		# Demolizione (2026-09-27): stesso formato, "Demolizione (Capanna)".
+		"task_build_name", "task_demolish_name":
 			for step in steps:
 				if "target_building" in step and step.target_building != null:
 					var building: Building = step.target_building

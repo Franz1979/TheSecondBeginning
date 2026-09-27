@@ -3,6 +3,8 @@ build_bar_pebble_circle_tooltip,Pebble Circle
 build_bar_pebble_circle_disabled_tooltip,Not buildable: a village center already exists
 build_bar_deposit_site_tooltip,Deposit Site
 build_bar_stick_tent_tooltip,Stick Tent
+build_bar_hide_tent_tooltip,Hide Tent
+building_hide_tent,Hide Tent
 build_bar_campfire_tooltip,Campfire
 build_bar_toolmaker_hut_tooltip,Toolmaker's hut
 build_bar_drying_rack_tooltip,Drying rack
@@ -25,18 +27,23 @@ building_earthwork,Earthwork
 build_bar_dirt_ground_tooltip,Dirt Ground
 building_dirt_ground,Dirt Ground
 build_bar_requires_idea_tooltip,Requires: {idea}
-build_bar_demolish_tooltip,Demolish
 demolish_confirmation_title,Demolish building
-demolish_confirmation_text,Demolish {building} #{id}? This is immediate and cannot be undone.
+demolish_confirmation_text,Demolish {building} #{id}?
 demolish_confirmation_confirm,Demolish
 demolish_confirmation_cancel,Cancel
+demolish_confirmation_site_title,Cancel construction
+demolish_confirmation_site_text,Cancel the construction of {building} #{id}? The material drops to the ground.
+demolish_confirmation_site_confirm,Cancel construction
 idea_paleolithic_constructions,Paleolithic Constructions
 idea_plant_lore,Plant Lore
 idea_work_areas,Work Areas
 idea_task_assignment,Task Assignment
 idea_warehouse_management,Warehouse Management
+idea_advanced_paleolithic_constructions,Advanced Paleolithic Constructions
 idea_paleolithic_constructions_summary,Allows building the first shelters.
 idea_paleolithic_constructions_description,"Branches, hides and stones become structures to shelter and rest in."
+idea_advanced_paleolithic_constructions_summary,Allows building the hut.
+idea_advanced_paleolithic_constructions_description,"Sturdy poles, weaving and solid roofs make larger, longer-lasting shelters."
 idea_drying,Drying
 idea_drying_summary,Allows building the drying rack to dry meat.
 idea_drying_description,"Laid out in sun and wind on a rack, meat keeps much longer."
@@ -149,6 +156,13 @@ individual_queued_tasks_label,Queued actions:
 building_status_label,Status: {status}
 building_status_complete,Complete
 building_status_under_construction,Under construction
+building_status_marked_for_demolition,To be demolished
+building_status_demolition_in_progress,Being demolished
+building_demolish_button,Demolish
+building_cancel_site_button,Cancel construction
+building_assign_demolisher_button,Assign demolisher
+building_cancel_demolition_button,Cancel demolition
+demolisher_pick_banner_text,⛏️ Select who will demolish: click an individual (Esc to cancel)
 building_awaiting_material_label,This site still needs {quantity} {material} to get started
 building_durability_label,Durability: {current}/{max}
 building_built_year_label,Built: year {year}
@@ -210,6 +224,8 @@ carried_resource_tooltip_medicinal_herbs,Medicinal herbs
 carried_resource_tooltip_fiber_rope,Fiber rope
 carried_resource_tooltip_wooden_spear,Wooden spear
 carried_resource_tooltip_stone_knife,Stone knife
+carried_resource_tooltip_bone_awl,Bone awl
+carried_resource_tooltip_hide_bag,Hide bag
 carried_resource_tooltip_meat,Raw meat
 carried_resource_tooltip_cooked_meat,Cooked meat
 carried_resource_tooltip_hide,Hide
@@ -249,10 +265,13 @@ building_awaiting_material_production_caption,To produce {resource} you still ne
 building_awaiting_fuel_production_label,"Missing fuel: {amount} ({fuels})"
 building_production_suspended_label,"Production suspended: {resource}, {percent}% done"
 building_delivered_materials_caption,Starting materials:
+building_site_delivered_materials_caption,Delivered material:
 building_production_in_progress_label,In progress: {items}
 building_production_in_progress_none,In progress: nothing
 task_produce_name,Production
 task_build_name,Construction
+task_demolish_name,Demolition
+task_demolish_step_demolish,Demolishing
 task_produce_step_walk,Walking to the workstation
 task_produce_step_produce,Producing
 task_produce_step_deliver,Delivering to the warehouse
@@ -312,6 +331,7 @@ task_activity_transport,carry materials
 task_activity_pickup,gather
 task_activity_unload,deposit
 task_activity_build,build
+task_activity_demolish,demolish
 task_activity_equip_tool,fetch a tool
 task_activity_store_tool,store a tool
 task_reject_transport_not_needed,{name} can't carry: {building} does not need {resource}.
@@ -323,6 +343,8 @@ tool_category_digging,digging
 tool_category_crafting,crafting
 tool_category_butchering,butchering
 tool_category_combat,combat
+tool_category_sewing,sewing
+tool_category_carrying,carrying
 individual_cancel_task_tooltip,Cancel the current activity (same as the H key)
 tool_gate_assigned_waiting,{name} is waiting for tools before starting: {tools}. Bring them to the backpack and the work will start on its own.
 tool_gate_category_with_examples,{category} (e.g. {examples})
@@ -336,6 +358,7 @@ tool_store_no_storage,No storage building can accept {tool}
 tool_slot_empty_tooltip,Empty slot — right click: fetch a tool from storage
 tool_slot_full_tooltip,{tool} — left click: move to backpack; right click: store in a storage building
 tool_slot_uses_line,Uses left: {uses}/{max}
+tool_slot_carry_bonus_line,+{bonus} carrying capacity
 tool_broken_warning,{name}: tool broken — {tool}.
 tool_storage_dialog_title,Fetch a tool
 tool_storage_dialog_message,Choose the tool to fetch from the nearest storage:

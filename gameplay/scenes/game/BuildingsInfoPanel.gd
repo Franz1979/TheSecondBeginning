@@ -78,6 +78,10 @@ func show_buildings(buildings: Array[Building]) -> void:
 		var status_text: String = (
 			tr("building_status_complete") if building.is_complete else tr("building_status_under_construction")
 		)
+		# "Da demolire" (2026-09-27), come nel pannello di dettaglio.
+		if building.is_marked_for_demolition:
+			var demolition_started: bool = float(building.construction_progress.get(DemolishAction.LABOR_KEY, 0.0)) > 0.0
+			status_text = tr("building_status_demolition_in_progress" if demolition_started else "building_status_marked_for_demolition")
 		label.text = "%s #%d — %s" % [type_name, building.id, status_text]
 		row.add_child(label)
 

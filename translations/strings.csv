@@ -74,8 +74,11 @@ idea_plant_lore,Conoscenza delle piante
 idea_work_areas,Aree di lavoro
 idea_task_assignment,Assegnazione compiti
 idea_warehouse_management,Gestione magazzino
+idea_advanced_paleolithic_constructions,Costruzioni paleolitiche avanzate
 idea_paleolithic_constructions_summary,Permette di costruire i primi ripari.
 idea_paleolithic_constructions_description,"Rami, pelli e pietre diventano strutture in cui ripararsi e riposare."
+idea_advanced_paleolithic_constructions_summary,Permette di costruire la capanna.
+idea_advanced_paleolithic_constructions_description,"Pali robusti, intrecci e coperture solide danno ripari più grandi e duraturi."
 idea_drying,Essiccazione
 idea_drying_summary,Permette di costruire il graticcio per essiccare la carne.
 idea_drying_description,"Stesa al sole e al vento su un graticcio, la carne si conserva molto più a lungo."
@@ -116,6 +119,7 @@ building_hut,Capanna
 building_pebble_circle,Cerchio di sassolini
 building_deposit_site,Sito di deposito
 building_stick_tent,Tenda di rami
+building_hide_tent,Tenda di pelli
 building_campfire,Focolare
 building_toolmaker_hut,Capanna dell'attrezzista
 building_category_residential,Residenziale
@@ -134,6 +138,7 @@ build_bar_pebble_circle_tooltip,Cerchio di sassolini
 build_bar_pebble_circle_disabled_tooltip,Non costruibile: esiste già un centro villaggio
 build_bar_deposit_site_tooltip,Sito di deposito
 build_bar_stick_tent_tooltip,Tenda di rami
+build_bar_hide_tent_tooltip,Tenda di pelli
 build_bar_campfire_tooltip,Focolare
 build_bar_toolmaker_hut_tooltip,Capanna dell'attrezzista
 build_bar_drying_rack_tooltip,Graticcio
@@ -142,11 +147,13 @@ build_bar_burial_tooltip,Sepoltura
 build_bar_earthwork_tooltip,Vallo di terra
 build_bar_dirt_ground_tooltip,Terra battuta
 build_bar_requires_idea_tooltip,Richiede: {idea}
-build_bar_demolish_tooltip,Demolisci
 demolish_confirmation_title,Demolisci edificio
-demolish_confirmation_text,Demolire {building} #{id}? L'operazione è immediata e non può essere annullata.
+demolish_confirmation_text,Demolire {building} #{id}?
 demolish_confirmation_confirm,Demolisci
 demolish_confirmation_cancel,Annulla
+demolish_confirmation_site_title,Annulla cantiere
+demolish_confirmation_site_text,Annullare il cantiere di {building} #{id}? Il materiale cade a terra.
+demolish_confirmation_site_confirm,Annulla cantiere
 notification_death,{name} è morto/a per {cause} (età {age}, giorno {day})
 death_cause_old_age,vecchiaia
 death_cause_murder,omicidio
@@ -210,6 +217,8 @@ task_haul_resource_step_walk,Andando a raccogliere
 task_haul_resource_step_pickup,Raccogliendo
 task_transport_name,Trasporto
 task_build_name,Costruzione
+task_demolish_name,Demolizione
+task_demolish_step_demolish,Demolendo
 task_transport_step_walk_to_source,Andando a prelevare
 task_transport_step_retrieve,Prelevando
 task_transport_step_walk_to_destination,Andando a consegnare
@@ -254,6 +263,8 @@ carried_resource_tooltip_medicinal_herbs,Erbe medicinali
 carried_resource_tooltip_fiber_rope,Corda di fibre
 carried_resource_tooltip_wooden_spear,Lancia di legno
 carried_resource_tooltip_stone_knife,Coltello di pietra
+carried_resource_tooltip_bone_awl,Punteruolo d'osso
+carried_resource_tooltip_hide_bag,Sacca di pelle
 carried_resource_tooltip_meat,Carne cruda
 carried_resource_tooltip_cooked_meat,Carne cotta
 carried_resource_tooltip_hide,Pelle
@@ -311,6 +322,13 @@ individual_queued_tasks_label,Azioni in coda:
 building_status_label,Stato: {status}
 building_status_complete,Completo
 building_status_under_construction,In costruzione
+building_status_marked_for_demolition,Da demolire
+building_status_demolition_in_progress,In demolizione
+building_demolish_button,Demolisci
+building_cancel_site_button,Annulla cantiere
+building_assign_demolisher_button,Assegna demolitore
+building_cancel_demolition_button,Annulla demolizione
+demolisher_pick_banner_text,⛏️ Seleziona chi demolirà: clicca un individuo (Esc per annullare)
 building_awaiting_material_label,Per allestire il cantiere servono ancora {quantity} {material}
 building_assigned_builder_label,Costruttore assegnato: {names}
 building_assigned_builder_missing,Costruttore assegnato: mancante
@@ -355,6 +373,7 @@ building_awaiting_material_production_caption,Per produrre {resource} servono:
 building_awaiting_fuel_production_label,"Combustibile mancante: {amount} ({fuels})"
 building_production_suspended_label,"Produzione sospesa: {resource}, {percent}% completata"
 building_delivered_materials_caption,Materiali di partenza:
+building_site_delivered_materials_caption,Materiale consegnato:
 building_production_in_progress_label,In costruzione: {items}
 building_production_in_progress_none,In costruzione: nulla
 task_produce_name,Produzione
@@ -413,6 +432,7 @@ task_activity_transport,trasportare materiale
 task_activity_pickup,raccogliere
 task_activity_unload,depositare
 task_activity_build,costruire
+task_activity_demolish,demolire
 task_activity_equip_tool,prendere un attrezzo
 task_activity_store_tool,riporre un attrezzo
 task_reject_transport_not_needed,{name} non può trasportare: {building} non ha bisogno di {resource}.
@@ -424,6 +444,8 @@ tool_category_digging,scavo
 tool_category_crafting,lavorazione
 tool_category_butchering,macellazione
 tool_category_combat,combattimento
+tool_category_sewing,cucito
+tool_category_carrying,trasporto
 individual_cancel_task_tooltip,Annulla l'attività in corso (come il tasto H)
 tool_gate_assigned_waiting,{name} aspetta gli attrezzi per iniziare: {tools}. Portaglieli nello zaino e partirà da solo.
 tool_gate_category_with_examples,{category} (es. {examples})
@@ -437,6 +459,7 @@ tool_store_no_storage,Nessun magazzino può accettare {tool}
 tool_slot_empty_tooltip,Slot vuoto — click destro: prendi un attrezzo da un magazzino
 tool_slot_full_tooltip,{tool} — click sinistro: rimetti nello zaino; click destro: riponi in un magazzino
 tool_slot_uses_line,Usi residui: {uses}/{max}
+tool_slot_carry_bonus_line,+{bonus} capacità di trasporto
 tool_broken_warning,{name}: attrezzo rotto — {tool}.
 tool_storage_dialog_title,Prendi un attrezzo
 tool_storage_dialog_message,Scegli l'attrezzo da prendere dal magazzino più vicino:

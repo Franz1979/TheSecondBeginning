@@ -91,18 +91,81 @@ static func compute_hit_chance(attack_power: float, skill_hunting: float, specie
 	return clampf(species_scale * weapon_factor * skill_factor * size_factor * age_factor, HIT_CHANCE_MIN, HIT_CHANCE_MAX)
 
 
-# Arma usata per l'attacco nella categoria `category`: il primo slot della cintura che la copre
-# (ToolGateService.find_belt_slot_for) — lo stesso che il gate considera, che describe_weapon mostra nei log
-# e che consume_tool_uses consuma, così l'arma che colpisce è sempre quella che si usura. "" se non c'è.
-static func pick_weapon(individual: Variant, category: TaskTypes.ToolCategory) -> String:
-	var slot := ToolGateService.find_belt_slot_for(individual, category)
-	return individual.get_equipped_tool(slot) if slot != -1 else ""
+# --- Arma della caccia (2026-09-27, richiesta utente — scelta dell'arma) ---
+# Una sola arma per tutta la caccia, salvata in Task.context[CONTEXT_HUNT_WEAPON] (nome della risorsa): la usano
+# avvicinamento (gittata), mira, lancio (gittata, attacco, usura), log e recupero. Scelta con choose_weapon: tra gli
+# attrezzi della categoria IN CINTURA (lo zaino non conta), quello con la probabilità di colpire più alta contro la
+# preda (compute_hit_chance); a parità, quello con più usi rimasti. Se l'arma salvata non è più in cintura (persa,
+# rotta), resolve_weapon sceglie di nuovo con la stessa regola; nessuna arma = "" (la caccia si chiude come prima).
+const CONTEXT_HUNT_WEAPON := "hunt_weapon"
 
 
-# Gittata utile dell'attaccante: la max_range più alta tra le armi in cintura della categoria, mai sotto la
-# distanza di contatto per le armi da corpo a corpo. Stessa regola dell'avvicinamento.
-static func compute_reach(individual: Variant, category: TaskTypes.ToolCategory) -> float:
-	return maxf(ToolGateService.get_belt_max_range_for(individual, category), ApproachPreyAction.MELEE_REACH)
+# Migliore arma in cintura della categoria contro la preda `species`/`age_band` (vedi sopra). "" se nessuna. Con
+# species "" o age_band -1 i fattori della preda valgono 1: il confronto resta sull'attacco dell'arma.
+static func choose_weapon(individual: Variant, category: TaskTypes.ToolCategory, species: String, age_band: int) -> String:
+	var best_name := ""
+	var best_chance := -1.0
+	var best_uses := -1
+	for slot in range(individual.get_tool_slot_count()):
+		var tool_name: String = individual.get_equipped_tool(slot)
+		if tool_name == "" or not ToolGateService._tool_categories(tool_name).has(category):
+			continue
+		var rules := CaloricCalculator.get_caloric_source_rules(tool_name)
+		var chance := compute_hit_chance(rules.attack_power if rules != null else 0.0, float(individual.skill_hunting), species, age_band)
+		var uses: int = individual.get_equipped_tool_uses(slot)
+		if chance > best_chance + 0.000001 or (absf(chance - best_chance) <= 0.000001 and uses > best_uses):
+			best_name = tool_name
+			best_chance = chance
+			best_uses = uses
+	return best_name
+
+
+# Arma della caccia per questo step: quella salvata nel context se è ancora in cintura, altrimenti una nuova scelta
+# (salvata nel context, con un log se cambia). "" = nessuna arma della categoria in cintura.
+static func resolve_weapon(individual: Variant, context: Dictionary, category: TaskTypes.ToolCategory, species: String, age_band: int) -> String:
+	var saved: String = String(context.get(CONTEXT_HUNT_WEAPON, ""))
+	if saved != "" and find_weapon_slot(individual, saved) != -1:
+		return saved
+	var chosen := choose_weapon(individual, category, species, age_band)
+	if chosen == "":
+		context.erase(CONTEXT_HUNT_WEAPON)
+		return ""
+	context[CONTEXT_HUNT_WEAPON] = chosen
+	if saved != chosen:
+		log_event(individual, "arma della caccia: %s%s." % [
+			describe_weapon(individual, chosen), (" (al posto di %s, non più in cintura)" % IconRegistry.get_resource_display_name(saved)) if saved != "" else ""
+		])
+	return chosen
+
+
+# resolve_weapon con specie e fascia d'età presi dal bersaglio (-1 se l'animale non c'è più).
+static func resolve_weapon_for_target(individual: Variant, context: Dictionary, category: TaskTypes.ToolCategory, combat_target: CombatTarget) -> String:
+	var animal: AnimalVisualGroup = combat_target.get_animal() if combat_target != null else null
+	return resolve_weapon(
+		individual, context, category, combat_target.label if combat_target != null else "", int(animal.age_band) if animal != null else -1
+	)
+
+
+# Slot di cintura con `weapon_name`: se ce n'è più d'uno, quello con più usi rimasti (lo stesso che choose_weapon
+# considera). -1 se non è in cintura.
+static func find_weapon_slot(individual: Variant, weapon_name: String) -> int:
+	var best_slot := -1
+	var best_uses := -1
+	for slot in range(individual.get_tool_slot_count()):
+		if individual.get_equipped_tool(slot) != weapon_name:
+			continue
+		var uses: int = individual.get_equipped_tool_uses(slot)
+		if uses > best_uses:
+			best_slot = slot
+			best_uses = uses
+	return best_slot
+
+
+# Gittata dell'arma `weapon_name` (la SUA max_range, non la massima della cintura), mai sotto la distanza di contatto
+# per le armi da corpo a corpo. MELEE_REACH se nessuna arma.
+static func compute_weapon_reach(weapon_name: String) -> float:
+	var rules: SecondaryResourceRules = CaloricCalculator.get_caloric_source_rules(weapon_name) if weapon_name != "" else null
+	return maxf(rules.max_range if rules != null else 0.0, ApproachPreyAction.MELEE_REACH)
 
 
 # Step da aggiungere per tornare ad avvicinarsi al bersaglio (vedi le costanti REAPPROACH_*). Oggi il
@@ -174,13 +237,13 @@ static func is_hunt_task(task: Task) -> bool:
 	return task != null and task.task_name == "task_hunt_name"
 
 
-# Arma di caccia in cintura, per i log: "Lancia di legno (gittata 3.0)". "nessuna arma in cintura" se manca.
-static func describe_weapon(individual: HumanIndividual) -> String:
-	var slot := ToolGateService.find_belt_slot_for(individual, TaskTypes.ToolCategory.HUNTING)
-	if slot == -1:
+# Arma di caccia per i log: "Lancia di legno (gittata 3.0)", con la gittata di QUELL'arma. `weapon_name` vuoto = la
+# migliore in cintura secondo choose_weapon (senza dati sulla preda). "nessuna arma in cintura" se manca.
+static func describe_weapon(individual: Variant, weapon_name: String = "") -> String:
+	var weapon := weapon_name if weapon_name != "" else choose_weapon(individual, TaskTypes.ToolCategory.HUNTING, "", -1)
+	if weapon == "":
 		return "nessuna arma in cintura"
-	var tool_range := ToolGateService.get_belt_max_range_for(individual, TaskTypes.ToolCategory.HUNTING)
-	return "%s (gittata %.1f)" % [IconRegistry.get_resource_display_name(individual.get_equipped_tool(slot)), tool_range]
+	return "%s (gittata %.1f)" % [IconRegistry.get_resource_display_name(weapon), compute_weapon_reach(weapon)]
 
 
 # Motivo leggibile della perdita del bersaglio di una Task di caccia (per i log di chiusura fuori dalle

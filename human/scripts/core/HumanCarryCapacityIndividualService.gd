@@ -42,7 +42,7 @@ static func recalculate_max_carry_capacity(individual: HumanIndividual, game_dat
 		individual.sex, age
 	)
 	individual.max_carry_capacity = HumanCalculator.get_max_carry_capacity(
-		human_rules, age_band, individual.sex, individual.equipped_tool_count
+		human_rules, age_band, individual.sex, individual.equipped_tool_count, 1.0, individual.equipped_tools
 	)
 	# Saccoccia del cibo (2026-09-19, richiesta utente - ricalcolo spostato qui da
 	# HumanVitalsIndividualService): stessa eta'/regole gia' risolte sopra, stessa cadenza (creazione,

@@ -48,6 +48,13 @@ var is_complete: bool = false
 # demolito non torna mai in vita, nessun bisogno di un percorso di "ripristino".
 var is_demolished: bool = false
 
+# Edificio "da demolire" (2026-09-27, richiesta utente — Demolish Task): impostato alla conferma della demolizione
+# di un edificio COMPLETO (GameScene._mark_building_for_demolition), resta true finché una DemolishAction non lo
+# abbatte davvero (GameScene._demolish_building, che poi imposta is_demolished). Da quel momento l'edificio non
+# funziona più — niente depositi, prelievi o produzione (BuildingStorageService/ProductionService), nessun
+# residente (AssignHouseService.get_free_slots) — ma resta in world.buildings e resta un ostacolo. Salvato.
+var is_marked_for_demolition: bool = false
+
 # true quando questo cantiere (SetupSiteAction) è bloccato perché nessuna sorgente ha materiale da
 # costruzione disponibile (2026-09-14, richiesta utente — segnalazione player) — valorizzato/
 # azzerato ESCLUSIVAMENTE da HumanIndividualActionService._resolve_material_shortage: true alla
@@ -198,18 +205,22 @@ func _init(_rules: BuildingRules = null, _macro_x: int = 0, _macro_y: int = 0, _
 # renderer live): quel dato resta responsabilità del chiamante (vedi TaskReassignmentService/
 # GameScene._try_assign_build_command_on_right_click, extra_context).
 
-# true finché esiste ancora lavoro di costruzione da fare per questo edificio — è la condizione che
-# decide se il click destro su di esso deve (ri)avviare/riprendere una Build Task invece di essere
-# ignorato (un edificio già completo non è mai un target riassegnabile).
+# true finché esiste ancora lavoro da fare su questo edificio — è la condizione che decide se il
+# click destro su di esso deve (ri)avviare/riprendere una Task invece di essere ignorato: la Build
+# Task per un cantiere non completo, la Demolish Task (2026-09-27) per un edificio "da demolire".
+# Un edificio completo e non da demolire non è un target riassegnabile.
 func has_resumable_task() -> bool:
-	return not is_complete
+	return not is_complete or is_marked_for_demolition
 
 
 # Path del TaskDefinition da ricostruire da zero per riprendere il lavoro su questo edificio. Vive
 # QUI (non su GameScene, dove stava prima come BUILD_TASK_DEFINITION_PATH) perché è un dato di TIPO
 # di target riassegnabile, non un dettaglio del chiamante — un futuro secondo tipo di target
-# riassegnabile fornirà il proprio path allo stesso modo.
+# riassegnabile fornirà il proprio path allo stesso modo. demolish.tres (Walk → Demolish) per un
+# edificio "da demolire" (2026-09-27).
 func get_resumable_task_definition_path() -> String:
+	if is_marked_for_demolition:
+		return "res://gameplay/scripts/tasks/definitions/demolish.tres"
 	return "res://gameplay/scripts/tasks/definitions/build.tres"
 
 

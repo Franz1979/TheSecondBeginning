@@ -80,7 +80,12 @@ static func get_building_point(building: Building) -> Vector2:
 # sono provati dal più vicino; su ciascun lato si parte dalla microcella allineata a `from_point` e ci si
 # allarga alternando i due versi. Ritorna il centro della microcella scelta, o null se tutta la cornice è
 # acqua (o la cella non esiste).
-static func find_border_point(world: World, macro_coords: Vector2i, from_point: Vector2) -> Variant:
+#
+# Pathfinding (2026-09-27, step 5): con `reach_from` (microcella del villaggio da cui il punto deve essere raggiungibile)
+# e la griglia della cella disponibile, il punto deve anche essere su una microcella LIBERA e RAGGIUNGIBILE
+# (PathfindingService.is_blocked / is_reachable). Se nessun punto del bordo lo è, si ripiega sulla scelta di sempre
+# (solo non acqua) con un log [VISITOR].
+static func find_border_point(world: World, macro_coords: Vector2i, from_point: Vector2, reach_from: Variant = null) -> Variant:
 	if world == null:
 		return null
 	var cell: MacroCellData = world.get_cell_at(macro_coords.x, macro_coords.y)
@@ -89,6 +94,24 @@ static func find_border_point(world: World, macro_coords: Vector2i, from_point: 
 	var water: Variant = RiverMicrocellService.get_water_microcells(world, cell)
 	if water == null:
 		return null
+	var live_cell := PathfindingService.get_live_cell(macro_coords)
+	if reach_from != null and live_cell != null and live_cell.path_grid != null:
+		var from_cell: Vector2i = reach_from
+		var strict: Variant = _scan_border(from_point, func(microcell: Vector2i) -> bool:
+			return not (water as Dictionary).has(microcell) and not PathfindingService.is_blocked(live_cell, microcell) 				and PathfindingService.is_reachable(live_cell, from_cell, microcell)
+		)
+		if strict != null:
+			return strict
+		if DebugLogging.ENABLED:
+			print("[VISITOR] Nessun punto del bordo di %s libero e raggiungibile da %s: si usa il primo punto non d'acqua." % [
+				macro_coords, from_cell
+			])
+	return _scan_border(from_point, func(microcell: Vector2i) -> bool: return not (water as Dictionary).has(microcell))
+
+
+# Scansione della cornice (vedi find_border_point): primo punto per cui `accept` (Callable(Vector2i) -> bool) è vero,
+# lati dal più vicino a `from_point`, su ciascun lato a partire dalla microcella allineata. Centro della microcella o null.
+static func _scan_border(from_point: Vector2, accept: Callable) -> Variant:
 	var width := World.WIDTH
 	var height := World.HEIGHT
 	# [distanza dal lato, lato] — 0 ovest, 1 est, 2 nord, 3 sud.
@@ -112,7 +135,7 @@ static func find_border_point(world: World, macro_coords: Vector2i, from_point: 
 				1: microcell = Vector2i(width - 1, along)
 				2: microcell = Vector2i(along, 0)
 				_: microcell = Vector2i(along, height - 1)
-			if not (water as Dictionary).has(microcell):
+			if accept.call(microcell):
 				return Vector2(microcell) + Vector2(BORDER_INSET, BORDER_INSET)
 	return null
 
@@ -128,7 +151,8 @@ static func spawn_party(
 		return null
 	var macro_coords := Vector2i(center_building.macro_x, center_building.macro_y)
 	var center_point := get_building_point(center_building)
-	var entry: Variant = find_border_point(world, macro_coords, center_point)
+	# Ingresso raggiungibile dal centro del villaggio (2026-09-27, pathfinding step 5).
+	var entry: Variant = find_border_point(world, macro_coords, center_point, Vector2i(center_building.micro_x, center_building.micro_y))
 	if entry == null:
 		return null
 	var party := VisitorParty.new()
@@ -224,22 +248,73 @@ static func is_moving(party: VisitorParty) -> bool:
 
 # Avanza il gruppo di `game_delta` (frazione di giorno di gioco; 0 in pausa). true = il gruppo è uscito dalla
 # mappa e va rimosso (solo in LEAVING).
+#
+# Pathfinding (2026-09-27, step 5): il punto centrale segue il percorso (_ensure_path) di punto in punto, alla stessa
+# velocità; l'ultimo tratto va dritto verso target_point e si ferma a stop_distance come prima. Senza percorso (cella
+# non viva, griglia assente, destinazione irraggiungibile) si va in linea retta come prima. I membri restano disposti
+# attorno al punto centrale (get_member_position), senza evitare gli ostacoli.
 static func advance(party: VisitorParty, game_delta: float) -> bool:
 	if game_delta <= 0.0 or party.phase == VisitorTypes.Phase.AWAITING_DECISION:
 		return false
+	_ensure_path(party)
 	var stop_distance := ARRIVAL_RADIUS if party.phase == VisitorTypes.Phase.ARRIVING else 0.0
-	var to_target: Vector2 = party.target_point - party.position
-	var remaining := to_target.length() - stop_distance
-	if remaining <= 0.0:
+	if party.position.distance_to(party.target_point) - stop_distance <= 0.0:
 		return _on_target_reached(party)
-	var direction := to_target / to_target.length()
+	# Punti intermedi: si passa al successivo entro PathfindingService.WAYPOINT_REACH_DISTANCE (2026-09-27, lisciatura);
+	# la destinazione finale resta esatta.
+	while not party.path.is_empty() and party.position.distance_to(party.path[0]) <= PathfindingService.WAYPOINT_REACH_DISTANCE:
+		party.path.pop_front()
+	var following_waypoint := not party.path.is_empty()
+	var goal: Vector2 = party.path[0] if following_waypoint else party.target_point
+	var to_goal: Vector2 = goal - party.position
+	var remaining := to_goal.length() - (0.0 if following_waypoint else stop_distance)
+	if remaining <= 0.000001:
+		if following_waypoint:
+			party.path.pop_front()
+			return false
+		return _on_target_reached(party)
+	var direction := to_goal / to_goal.length()
 	party.facing_direction = direction
 	var step := MOVE_SPEED * game_delta
 	if step >= remaining:
 		party.position += direction * remaining
+		if following_waypoint:
+			party.path.pop_front()
+			return false
 		return _on_target_reached(party)
 	party.position += direction * step
 	return false
+
+
+# Calcola (o ricalcola) il percorso del punto centrale quando serve: prima volta, target_point cambiato (rifiuto, dopo
+# un caricamento) o un blocco della macrocella cambiato (LiveMacroCell.path_block_version). Il calcolo è quello dei
+# pipottini (PathfindingService.find_path: partenza e destinazione sempre attraversabili); waypoint = centri delle
+# microcelle intermedie. Destinazione irraggiungibile: nessun percorso (linea retta) e un log [VISITOR], senza fermare
+# il gruppo; si riprova solo al prossimo cambio di blocco.
+static func _ensure_path(party: VisitorParty) -> void:
+	var cell := PathfindingService.get_live_cell(party.macro_coords)
+	var block_version: int = cell.path_block_version if cell != null else -1
+	if party.path_planned and party.path_target == party.target_point and party.path_block_version == block_version:
+		return
+	party.path.clear()
+	party.path_planned = true
+	party.path_target = party.target_point
+	party.path_block_version = block_version
+	if cell == null or cell.path_grid == null:
+		return
+	var from := Vector2i(party.position.floor())
+	var to := Vector2i(party.target_point.floor())
+	if not PathfindingService._in_bounds(from) or not PathfindingService._in_bounds(to) or from == to:
+		return
+	var cells := PathfindingService.find_path(cell, from, to)
+	if cells.is_empty():
+		if DebugLogging.ENABLED:
+			print("[VISITOR] Gruppo #%d: destinazione %s irraggiungibile da %s nella macrocella %s — si prosegue in linea retta." % [
+				party.id, to, from, party.macro_coords
+			])
+		return
+	for i in range(1, cells.size() - 1):
+		party.path.append(Vector2(cells[i]) + Vector2(0.5, 0.5))
 
 
 static func _on_target_reached(party: VisitorParty) -> bool:
@@ -258,7 +333,8 @@ static func _on_target_reached(party: VisitorParty) -> bool:
 static func dismiss(party: VisitorParty, world: World) -> bool:
 	if party.phase != VisitorTypes.Phase.AWAITING_DECISION:
 		return false
-	var exit: Variant = find_border_point(world, party.macro_coords, party.position)
+	# Uscita raggiungibile da dove il gruppo si trova (2026-09-27, pathfinding step 5).
+	var exit: Variant = find_border_point(world, party.macro_coords, party.position, Vector2i(party.position.floor()))
 	party.exit_point = exit if exit != null else party.entry_point
 	party.target_point = party.exit_point
 	party.phase = VisitorTypes.Phase.LEAVING

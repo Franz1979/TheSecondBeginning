@@ -78,13 +78,18 @@ extends RefCounted
 #
 # Firma di find_best INVARIATA — nessun call site (HumanIndividualActionService.
 # _handle_pending_warehouse_search) tocca.
+# `reachable` (2026-09-27, pathfinding step 2b — vale anche per find_nearest_recipe_workstation e
+# find_source_for_retrieval): Callable(edificio) -> bool opzionale, passato da chi cerca per un pipottino
+# (PathfindingService.reachability_for); esclude gli edifici che il pipottino non può raggiungere. Vedi
+# SpatialSelectionService.find_nearest.
 static func find_best(
 	world: World,
 	origin_position: Vector2,
 	origin_macro_coords: Vector2i,
 	resource_name: String,
 	quantity_needed: int,
-	excluded_building_ids: Array[int] = []
+	excluded_building_ids: Array[int] = [],
+	reachable: Callable = Callable()
 ) -> Building:
 	if world == null or quantity_needed <= 0:
 		return null
@@ -103,14 +108,15 @@ static func find_best(
 	# Postazioni di lavoro escluse (2026-09-27, richiesta utente): il loro storage è per la produzione, non un
 	# magazzino di ripiego; restano raggiungibili solo come destinazione esplicita (comando Transport, consegna
 	# degli ingredienti, preferenza di scarico della macellazione — find_nearest_recipe_workstation sotto).
+	# Edificio "da demolire" escluso (2026-09-27, Building.is_marked_for_demolition): non funziona più.
 	var has_capacity := func(building: Building) -> bool:
-		return building.is_complete and building.rules != null and not building.rules.is_workstation \
+		return building.is_complete and not building.is_marked_for_demolition and building.rules != null and not building.rules.is_workstation \
 			and BuildingStorageService.get_max_depositable(building, resource_name) >= quantity_needed
 
 	var storage_predicate := func(building: Building) -> bool:
 		return building.rules != null and building.rules.category == BuildingTypes.Category.STORAGE and has_capacity.call(building)
 	var candidate: Variant = SpatialSelectionService.find_nearest(
-		world.buildings, origin_position, origin_macro_coords, storage_predicate, excluded_building_ids
+		world.buildings, origin_position, origin_macro_coords, storage_predicate, excluded_building_ids, reachable
 	)
 	if candidate != null:
 		return candidate as Building
@@ -118,7 +124,7 @@ static func find_best(
 	var residential_predicate := func(building: Building) -> bool:
 		return building.rules != null and building.rules.category == BuildingTypes.Category.RESIDENTIAL and has_capacity.call(building)
 	candidate = SpatialSelectionService.find_nearest(
-		world.buildings, origin_position, origin_macro_coords, residential_predicate, excluded_building_ids
+		world.buildings, origin_position, origin_macro_coords, residential_predicate, excluded_building_ids, reachable
 	)
 	if candidate != null:
 		return candidate as Building
@@ -126,7 +132,7 @@ static func find_best(
 	var other_predicate := func(building: Building) -> bool:
 		return building.rules != null and building.rules.category != BuildingTypes.Category.STORAGE and has_capacity.call(building)
 	return SpatialSelectionService.find_nearest(
-		world.buildings, origin_position, origin_macro_coords, other_predicate, excluded_building_ids
+		world.buildings, origin_position, origin_macro_coords, other_predicate, excluded_building_ids, reachable
 	) as Building
 
 
@@ -170,17 +176,17 @@ static func find_best(
 # al focolare, dove verrà cotta, prima che al magazzino.
 static func find_nearest_recipe_workstation(
 	world: World, origin_position: Vector2, origin_macro_coords: Vector2i, resource_name: String, min_quantity: int = 1,
-	excluded_building_ids: Array[int] = []
+	excluded_building_ids: Array[int] = [], reachable: Callable = Callable()
 ) -> Building:
 	if world == null or min_quantity <= 0:
 		return null
 	var predicate := func(building: Building) -> bool:
-		return building.is_complete and building.rules != null and building.rules.is_workstation \
+		return building.is_complete and not building.is_marked_for_demolition and building.rules != null and building.rules.is_workstation \
 			and ProductionService.is_recipe_input_of(building, resource_name) \
 			and BuildingStorageService.can_accept(building, resource_name) \
 			and BuildingStorageService.get_max_depositable(building, resource_name) >= min_quantity
 	return SpatialSelectionService.find_nearest(
-		world.buildings, origin_position, origin_macro_coords, predicate, excluded_building_ids
+		world.buildings, origin_position, origin_macro_coords, predicate, excluded_building_ids, reachable
 	) as Building
 
 
@@ -191,18 +197,19 @@ static func find_source_for_retrieval(
 	criterion: Variant = null,
 	excluded_building_ids: Array[int] = [],
 	min_quantity: int = 1,
-	requesting_individual_id: int = -1
+	requesting_individual_id: int = -1,
+	reachable: Callable = Callable()
 ) -> Building:
 	if world == null:
 		return null
 
 	var has_stock := func(building: Building) -> bool:
-		if not building.is_complete or building.is_demolished:
+		if not building.is_complete or building.is_demolished or building.is_marked_for_demolition:
 			return false
 		return not WarehouseSelectionService._get_matching_stock(building, criterion, min_quantity).is_empty()
 
 	var source := SpatialSelectionService.find_nearest(
-		world.buildings, origin_position, origin_macro_coords, has_stock, excluded_building_ids
+		world.buildings, origin_position, origin_macro_coords, has_stock, excluded_building_ids, reachable
 	) as Building
 
 	if DebugLogging.ENABLED and DebugLogging.SHOW_FOOD_SOURCE_LOGS \

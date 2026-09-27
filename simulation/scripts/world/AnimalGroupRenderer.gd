@@ -452,6 +452,10 @@ static var _live_individual_renderers: Dictionary = {}
 # per chi sta nelle celle vicine). Callable invece di un riferimento a GameScene, così questo renderer
 # (layer simulation) non dipende da una classe di gameplay. Non valido (MacroCellScene) = nessun disagio.
 var disturbance_source: Callable = Callable()
+# Collisione con gli ostacoli (2026-09-27, pathfinding step 4): Callable(Vector2i microcella) -> bool "microcella
+# bloccata?", assegnato da GameScene._setup_animal_renderer (PathfindingService.blocked_test_for). Callable perché
+# questo renderer (layer simulation) non conosce LiveMacroCell. Non valido (MacroCellScene) = nessuna collisione.
+var blocked_test: Callable = Callable()
 # Raggi della specie (AnimalRules, letti in configure), in microcelle.
 var discomfort_radius: float = 0.0
 var flee_radius: float = 0.0
@@ -1066,6 +1070,7 @@ func _process(real_delta: float) -> void:
 	for cluster in _clusters:
 		cluster.direction = cluster.direction.rotated(randf_range(-turn_rate, turn_rate) * delta)
 		_apply_cluster_avoidance(cluster, delta)
+		# Centri dei gruppetti senza collisione (2026-09-27): solo i singoli individui scorrono lungo gli ostacoli.
 		cluster.position += cluster.direction * move_speed * delta
 		_bounce_at_bounds(cluster)
 
@@ -1076,8 +1081,7 @@ func _process(real_delta: float) -> void:
 		if group.flee_timer > 0.0:
 			group.flee_timer -= delta
 			group.direction = group.flee_direction
-			group.position += group.direction * hop_speed * delta
-			_bounce_at_bounds(group)
+			_move_with_collision(group, group.direction * hop_speed * delta)
 			group.flee_direction = group.direction
 			_write_instance_transform(i, group)
 			continue
@@ -1087,8 +1091,7 @@ func _process(real_delta: float) -> void:
 		# ogni balzo, dentro _update_group_phase (_apply_avoidance_on_hop).
 		_update_group_phase(group, delta)
 		if group.macro_phase == AnimalVisualGroup.MacroPhase.MOVING and group.micro_phase == AnimalVisualGroup.MicroPhase.HOPPING:
-			group.position += group.direction * hop_speed * delta
-			_bounce_at_bounds(group)
+			_move_with_collision(group, group.direction * hop_speed * delta)
 		_write_instance_transform(i, group)
 
 	if _is_timing_enabled():
@@ -1269,6 +1272,45 @@ func _record_process_timing(usec: int) -> void:
 	_timing_check_usec = 0
 	_timing_start_frame = Engine.get_process_frames()
 	_timing_last_print_msec = now_msec
+
+
+# Spostamento di un singolo individuo con collisione (2026-09-27, pathfinding step 4 — balzi e fuga, tutte le
+# specie; i centri dei gruppetti non collidono). Se `displacement` porterebbe in una microcella BLOCCATA diversa da
+# quella attuale, l'individuo SCORRE lungo l'ostacolo: prova lo spostamento solo sull'asse x, poi solo sull'asse y,
+# e tiene il primo che finisce in una microcella libera (o resta in quella attuale); se sono bloccati entrambi
+# (angolo) resta fermo per questo frame. La direzione non viene mai invertita dall'ostacolo (prima rimbalzava,
+# rimandando gli animali verso l'insediamento e annullando il disagio). Chi è già su una microcella bloccata
+# (seminato su una roccia, edificio costruito sopra) può uscirne liberamente: conta solo l'ingresso. Senza
+# blocked_test, o fuori dalla macrocella: come prima.
+func _move_with_collision(group: AnimalVisualGroup, displacement: Vector2) -> void:
+	var next_position: Vector2 = group.position + displacement
+	if blocked_test.is_valid():
+		var from_cell := Vector2i(group.position.floor())
+		if not _can_enter(from_cell, next_position):
+			var x_only: Vector2 = group.position + Vector2(displacement.x, 0.0)
+			var y_only: Vector2 = group.position + Vector2(0.0, displacement.y)
+			if displacement.x != 0.0 and _can_enter(from_cell, x_only):
+				next_position = x_only
+			elif displacement.y != 0.0 and _can_enter(from_cell, y_only):
+				next_position = y_only
+			else:
+				return
+	group.position = next_position
+	_bounce_at_bounds(group)
+
+
+# true se da `from_cell` si può arrivare in `target_position`: stessa microcella, oppure una microcella non bloccata.
+func _can_enter(from_cell: Vector2i, target_position: Vector2) -> bool:
+	var to_cell := Vector2i(target_position.floor())
+	return to_cell == from_cell or not _is_cell_blocked(to_cell)
+
+
+# true se `microcell` (dentro la macrocella) è bloccata secondo blocked_test; fuori dalla macrocella decide
+# _bounce_at_bounds, non la griglia.
+func _is_cell_blocked(microcell: Vector2i) -> bool:
+	if microcell.x < 0 or microcell.y < 0 or microcell.x >= World.WIDTH or microcell.y >= World.HEIGHT:
+		return false
+	return bool(blocked_test.call(microcell))
 
 
 func _bounce_at_bounds(group: AnimalVisualGroup) -> void:

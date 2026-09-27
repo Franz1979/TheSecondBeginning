@@ -7,10 +7,7 @@ extends CenterContainer
 # controllo (niente back separato, deciso con l'utente) il cui significato/icona cambia in base al
 # livello corrente: ▼ minimizza (da livello 1), ▲ riespande (da minimizzato), ← torna indietro (da
 # livello 2) — sempre "un passo indietro nella gerarchia", mai un secondo bottone dedicato.
-# Demolisci (2026-09-12) è la PRIMA azione di main_row con una vera azione collegata a GameScene
-# (main_row.action_pressed, ascoltato DA GameScene — vedi DEMOLISH_ACTION sotto): questa classe resta
-# comunque muta su World/Building (nessuna verifica/logica di demolizione qui dentro), si limita a
-# emettere l'action_id ed esporre main_row per il feedback visivo (set_slot_toggled).
+# (Il bottone 🧨 Demolisci di main_row è stato tolto il 2026-09-27: la demolizione parte dal pannello edificio.)
 #
 # Radice CenterContainer apposta: ancorata a tutta larghezza in basso (vedi .tscn), pannello vero
 # ricentrato automaticamente ad ogni cambio di contenuto (livello di menu attivo/minimizzazione)
@@ -56,34 +53,22 @@ const BUILDING_SLOT_INDEX_BY_TYPE := {
 	"smokehouse": 7,
 	"burial": 8,
 	"earthwork": 9,
-	"hut": 10,
+	# Tenda di pelli (2026-09-27, richiesta utente) — slot 10, submenu_row.slot_count portato a 12 in BuildBar.tscn;
+	# Hut resta l'ultimo a destra (slot 11).
+	"hide_tent": 10,
+	"hut": 11,
 }
 
 enum _ViewState { MINIMIZED, LEVEL_1, LEVEL_2 }
 
 var _state: _ViewState = _ViewState.LEVEL_1
 
-# Azione + indice slot per Demolisci (2026-09-12, richiesta utente — "attiva il bottone Demolisci")
-# — pubblici perché GameScene deve ascoltare main_row.action_pressed per QUESTA azione specifica
-# (BuildBar._on_main_row_action_pressed sotto ignora qualunque action_id diverso da
-# OPEN_BUILD_MENU_ACTION, quindi "demolish" non viene consumato qui dentro) e deve poter riflettere
-# lo stato "modalità selezione bersaglio attiva" sul bottone stesso (set_slot_toggled) — stesso
-# principio di BUILDING_SLOT_INDEX_BY_TYPE sopra: l'indice vive UNA volta qui, non ridigitato altrove.
-const DEMOLISH_ACTION := &"demolish"
-const DEMOLISH_MAIN_ROW_SLOT_INDEX := 1
-
 
 func _ready() -> void:
 	main_row.configure_slot(0, "🔨", tr("build_bar_build_tooltip"), OPEN_BUILD_MENU_ACTION)
-	# Demolisci (2026-09-12, richiesta utente — ATTIVATO in questo passo: prima SOLO presentazione,
-	# enabled=false, nessuna logica collegata da nessuna parte). Ora enabled=true: un click emette
-	# action_pressed(DEMOLISH_ACTION) su main_row, ascoltato da GameScene (non da questa classe, che
-	# resta muta su World/Building — vedi il commento in testa al file) per entrare in "modalità
-	# selezione bersaglio" (prossimo click sinistro su un edificio nel mondo).
-	main_row.configure_slot(DEMOLISH_MAIN_ROW_SLOT_INDEX, "🧨", tr("build_bar_demolish_tooltip"), DEMOLISH_ACTION)
-	# Slot 3+ di entrambe le righe restano placeholder vuoti (disabilitati/attenuati di default,
-	# vedi IconButtonRow._ready) — pronti per le prossime categorie/tipi di edificio, nessuno
-	# configurato ancora.
+	# Slot 1+ di main_row (e gli slot non configurati di submenu_row) restano placeholder vuoti
+	# (disabilitati/attenuati di default, vedi IconButtonRow._ready) — pronti per le prossime
+	# categorie/tipi di edificio, nessuno configurato ancora.
 	#
 	# Pebble Circle PRIMA della capanna (2026-09-07, richiesta utente: "il più a sinistra deve
 	# essere Pebble Circle") — solo ordine visivo/slot, nessun significato di priorità/categoria
@@ -144,6 +129,9 @@ func _ready() -> void:
 			BUILDING_SLOT_INDEX_BY_TYPE[placeholder_type], "", tr("build_bar_%s_tooltip" % placeholder_type),
 			StringName("build_%s" % placeholder_type), "", true, IconRegistry.get_building_icon_node(placeholder_type)
 		)
+	# Tenda di pelli (2026-09-27, richiesta utente): richiede paleolithic_constructions (required_idea_id in
+	# hide_tent.tres), disabilitata da GameScene._refresh_building_slots_buildable finché manca.
+	submenu_row.configure_slot(BUILDING_SLOT_INDEX_BY_TYPE["hide_tent"], IconRegistry.get_building_icon("hide_tent"), tr("build_bar_hide_tent_tooltip"), &"build_hide_tent")
 	submenu_row.configure_slot(BUILDING_SLOT_INDEX_BY_TYPE["hut"], IconRegistry.get_building_icon("hut"), tr("build_bar_hut_tooltip"), &"build_hut")
 	main_row.action_pressed.connect(_on_main_row_action_pressed)
 	control_button.pressed.connect(_on_control_button_pressed)

@@ -193,6 +193,13 @@ static func build_task(definition: TaskDefinition, context: Dictionary) -> Task:
 					continue
 				steps.append(BuildAction.new(context[step_definition.context_keys[0]]))
 				step_descriptions.append(step_definition.step_description)
+			TaskTypes.ActionType.DEMOLISH:
+				# 1 argomento (target_building: Building) — stesso schema di BUILD sopra (2026-09-27, demolish.tres).
+				if step_definition.context_keys.is_empty() or not context.has(step_definition.context_keys[0]):
+					push_error("TaskFactory.build_task: context_keys[0] mancante/non risolvibile per step DEMOLISH di TaskDefinition '%s'." % definition.task_name)
+					continue
+				steps.append(DemolishAction.new(context[step_definition.context_keys[0]]))
+				step_descriptions.append(step_definition.step_description)
 			TaskTypes.ActionType.PRODUCE:
 				# 2 argomenti (target_building, resource_name) — 2026-09-23, ProduceAction.
 				# skill/tool multiplier fissi a 1.0 come per BUILD: skill_crafting cresce al

@@ -49,6 +49,12 @@ const CARRY_STAMINA_MULTIPLIER: float = 0.25
 # task_completion_effects.tres). Il vecchio drain per microcella (-5.0) e' stato rimosso.
 
 
+# Passo "allontanati" (2026-09-27, richiesta utente): dopo uno scarico, la restituzione di un attrezzo, il deposito di
+# un pensiero o un riposo. Si salta se il pipottino ha già un seguito noto (HumanIndividualActionService.
+# has_known_follow_up, controllato all'attivazione in finish_current_step). Salvato (get_save_data).
+var is_walk_away: bool = false
+
+
 func _init(p_target: Vector2) -> void:
 	target = p_target
 	# INFANT non può camminare da solo (2026-09-12, richiesta utente — collegamento AgeBand.INFANT
@@ -68,6 +74,10 @@ func activate(individual: Variant, context: Dictionary) -> void:
 	super(individual, context)
 	individual.target_position = target
 	individual.is_moving = true
+	# Pathfinding (2026-09-27, step 2; funzioni comuni in Action dallo step 3): il percorso verso `target` lo calcola
+	# HumanIndividualMovementService al primo passo; qui solo la richiesta. Anche alla ripresa, al caricamento e dopo un
+	# passaggio di cella (activate richiamata) il percorso si ricalcola da dove si è.
+	request_path(individual, target)
 
 
 # Distanza percorsa nel FRAME CORRENTE — HumanIndividualMovementService.advance_movement non
@@ -111,21 +121,24 @@ func get_stamina_delta(individual: Variant, context: Dictionary, delta: float) -
 # allo stesso modo ma verso un bersaglio mobile). Ritorna il delta (negativo). `debug_label` = nome
 # dell'azione nella riga di MovementStaminaDebugLog.
 static func compute_walk_stamina_delta(individual: Variant, distance: float, debug_label: String) -> float:
-	# Costo/microcella = base + spazio REALMENTE occupato dal carico + costo per utensile
-	# (richiesta utente, 2026-09-08) — stesso identico lookup/stessa identica formula di
-	# used_carry_space già usata da GameScene._update_individual_panel_content per il pannello
-	# individuo (mai cachato: il carico può cambiare tra una chiamata e l'altra).
 	var used_carry_space: float = individual.get_carried_space()
-
-	# individual.terrain_stamina_multiplier (2026-09-19, richiesta utente — vedi MovementTerrainService): scala
-	# la sola quota BASE del costo, mai il sovraccarico di carico e utensili.
-	var cost_per_microcell: float = STAMINA_DRAIN_PER_MICROCELL_BASE * individual.terrain_stamina_multiplier + used_carry_space * CARRY_STAMINA_MULTIPLIER + STAMINA_DRAIN_PER_TOOL * float(individual.equipped_tool_count)
+	var cost_per_microcell: float = get_walk_cost_per_microcell(individual)
 	if DebugLogging.ENABLED and DebugLogging.SHOW_MOVEMENT_STAMINA_LOGS:
 		MovementStaminaDebugLog.record(
 			individual, debug_label, distance, individual.terrain_stamina_multiplier, STAMINA_DRAIN_PER_MICROCELL_BASE,
 			used_carry_space * CARRY_STAMINA_MULTIPLIER + STAMINA_DRAIN_PER_TOOL * float(individual.equipped_tool_count)
 		)
 	return -distance * cost_per_microcell
+
+
+# Costo di stamina (positivo) di UNA microcella camminata ADESSO (2026-09-27, estratto da compute_walk_stamina_delta
+# per la stima del riposo a casa, NeedTaskAssignmentService.resolve_rest_target — formula invariata).
+# Costo/microcella = base + spazio REALMENTE occupato dal carico + costo per utensile (richiesta utente, 2026-09-08),
+# mai cachato: il carico può cambiare tra una chiamata e l'altra. individual.terrain_stamina_multiplier (2026-09-19,
+# vedi MovementTerrainService) scala la sola quota BASE del costo, mai il sovraccarico di carico e utensili.
+static func get_walk_cost_per_microcell(individual: Variant) -> float:
+	var used_carry_space: float = individual.get_carried_space()
+	return STAMINA_DRAIN_PER_MICROCELL_BASE * individual.terrain_stamina_multiplier + used_carry_space * CARRY_STAMINA_MULTIPLIER + STAMINA_DRAIN_PER_TOOL * float(individual.equipped_tool_count)
 
 
 # Tolleranza di arrivo (2026-09-16, richiesta utente, fix bordo macrocella — robustezza generica,
@@ -148,12 +161,27 @@ const ARRIVAL_TOLERANCE: float = 0.01
 # utile a HumanIndividualMovementService ma non più l'unica fonte da cui questa classe deve
 # dipendere).
 func is_complete(individual: Variant, context: Dictionary) -> bool:
+	# Destinazione irraggiungibile (2026-09-27, pathfinding): lo step "finisce" subito e on_complete chiude la Task.
+	if is_path_unreachable(individual, target):
+		return true
 	return individual.position.distance_to(target) <= ARRIVAL_TOLERANCE
+
+
+# Solo il flag "allontanati" (2026-09-27): il target lo salva già TaskPersistenceService. Letto da
+# TaskPersistenceService._build_step per ogni step, non solo per quello corrente.
+func get_save_data() -> Dictionary:
+	return {"is_walk_away": true} if is_walk_away else {}
 
 
 # Chiude la riga di log dell'ultima microcella attraversata (diagnostica TEMPORANEA, vedi
 # MovementStaminaDebugLog) — nessun effetto se il flag è spento.
 func on_complete(individual: Variant, context: Dictionary) -> void:
 	super(individual, context)
+	# Destinazione irraggiungibile (2026-09-27, pathfinding): la Task fallisce subito, con la chiusura anticipata già
+	# esistente (HumanIndividualActionService.finish_current_step, CONTEXT_PENDING_TASK_ABORT). Il log [PATHFINDING]
+	# l'ha già scritto HumanIndividualMovementService.
+	if is_path_unreachable(individual, target):
+		abort_task_unreachable(individual, context, "destinazione %s irraggiungibile" % str(target))
+		return
 	if DebugLogging.ENABLED and DebugLogging.SHOW_MOVEMENT_STAMINA_LOGS:
 		MovementStaminaDebugLog.flush(individual)

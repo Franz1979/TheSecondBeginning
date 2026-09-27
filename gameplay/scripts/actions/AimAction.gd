@@ -56,7 +56,7 @@ func activate(individual: Variant, context: Dictionary) -> void:
 	_done = false
 	HuntService.log_event(individual, "mira su %s iniziata (durata %.2f giorni, distanza %.2f, gittata %.2f)." % [
 		combat_target.describe(), AIM_DURATION_DAYS, combat_target.distance_from(individual),
-		HuntService.compute_reach(individual, weapon_category)
+		HuntService.compute_weapon_reach(HuntService.resolve_weapon_for_target(individual, context, weapon_category, combat_target))
 	])
 
 
@@ -70,12 +70,14 @@ func get_stamina_delta(individual: Variant, context: Dictionary, delta: float) -
 			combat_target.describe(), CombatTarget.describe_status(status)
 		])
 		return 0.0
-	if HuntService.pick_weapon(individual, weapon_category) == "":
+	# Arma della caccia (2026-09-27): la stessa per tutta la caccia, e la SUA gittata (HuntService.resolve_weapon_for_target).
+	var weapon_name := HuntService.resolve_weapon_for_target(individual, context, weapon_category, combat_target)
+	if weapon_name == "":
 		_done = true
 		context[HumanIndividualActionService.CONTEXT_PENDING_TASK_ABORT] = "nessuna arma in cintura durante la mira"
 		return 0.0
 	var distance := combat_target.distance_from(individual)
-	var reach := HuntService.compute_reach(individual, weapon_category)
+	var reach := HuntService.compute_weapon_reach(weapon_name)
 	if distance > reach:
 		# Tiro non partito: nessun uso dell'arma, nessuna fuga — si torna ad avvicinarsi.
 		_done = true

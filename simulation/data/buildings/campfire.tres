@@ -8,6 +8,10 @@ building_name = "building_campfire"
 category = 4
 min_construction_days = 2
 required_labor = 800
+storage_slot_count = 4
+storage_space_per_slot = 40
+accepted_categories = Array[int]([0, 1])
+categories_locked = true
 required_materials = {
 "pebble": 100
 }
@@ -17,11 +21,6 @@ has_door = false
 visibility_radius = 2
 is_workstation = true
 production_output_slots = 3
-production_queue_slots = 1
-production_max_quantity = 3
-storage_slot_count = 4
-storage_space_per_slot = 40
-accepted_categories = Array[int]([0, 1])
-categories_locked = true
 production_output_to_storage = false
 storage_accepts_recipe_materials_only = true
+production_max_quantity = 3

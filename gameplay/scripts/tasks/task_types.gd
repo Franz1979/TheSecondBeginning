@@ -89,6 +89,9 @@ enum ActionType {
 	# BUTCHER (2026-09-26, richiesta utente — macellazione, ButcherAction, vedi butcher.tres) — AGGIUNTO IN CODA.
 	# TaskFactory.build_task e TaskPersistenceService lo supportano entrambi.
 	BUTCHER,
+	# DEMOLISH (2026-09-27, richiesta utente — demolizione come Task, DemolishAction, vedi demolish.tres) — AGGIUNTO IN
+	# CODA. TaskFactory.build_task e TaskPersistenceService lo supportano entrambi.
+	DEMOLISH,
 }
 
 # Categorie di tool richiedibili da un'Action (2026-09-08, richiesta utente — SOLO struttura dati,
@@ -106,4 +109,9 @@ enum ToolCategory {
 	CRAFTING,
 	BUTCHERING,
 	COMBAT,
+	# SEWING (2026-09-27, richiesta utente — punteruolo d'osso, bone_awl.tres) aggiunto IN FONDO, stesso motivo.
+	SEWING,
+	# CARRYING (2026-09-27, richiesta utente — sacca di pelle, hide_bag.tres) aggiunto IN FONDO, stesso motivo.
+	# Nessuna Action la richiede: la sacca non si usura (max_uses = 0).
+	CARRYING,
 }
