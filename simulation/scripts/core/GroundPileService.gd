@@ -62,6 +62,39 @@ static func drop_entries(game_data: GameData, macro_coords: Vector2i, position: 
 	return pile
 
 
+# Svuota a terra un edificio (2026-09-27, richiesta utente — "Svuota tutto", riusabile dalla futura demolizione):
+# deposito (stored_resources) e buffer dei prodotti (production_output) finiscono in UN mucchio posato con la regola
+# di drop_entries a partire dalla microcella dell'edificio (davanti alla porta se ne ha una, altrimenti la prima
+# microcella libera vicina). Le voci del deposito conservano deperimento e usura degli attrezzi; i pezzi del buffer
+# entrano freschi (decay_fraction 0.0) e, se la stessa risorsa è anche nel deposito, si sommano a quella voce con la
+# media pesata. L'edificio viene svuotato SEMPRE, anche senza una microcella libera: in quel caso il contenuto va
+# perso (drop_entries lo segnala con un avviso). Non tocca production_progress. Ritorna il mucchio, o null se
+# l'edificio era vuoto o non c'era posto.
+static func drop_building_contents(game_data: GameData, building: Building, world: World = null) -> GroundPile:
+	if building == null:
+		return null
+	var entries: Dictionary = building.stored_resources.duplicate(true)
+	for output_name in building.production_output.keys():
+		var output_quantity: int = int(building.production_output[output_name])
+		if output_quantity <= 0:
+			continue
+		var existing: Dictionary = entries.get(output_name, {})
+		var existing_quantity: int = int(existing.get("quantity", 0))
+		if existing_quantity <= 0:
+			entries[output_name] = {"quantity": output_quantity, "decay_fraction": 0.0}
+			continue
+		var total_quantity: int = existing_quantity + output_quantity
+		existing["decay_fraction"] = float(existing_quantity) * float(existing.get("decay_fraction", 0.0)) / float(total_quantity)
+		existing["quantity"] = total_quantity
+		entries[output_name] = existing
+	building.stored_resources.clear()
+	building.production_output.clear()
+	if entries.is_empty():
+		return null
+	var building_position := Vector2(float(building.micro_x) + 0.5, float(building.micro_y) + 0.5)
+	return drop_entries(game_data, Vector2i(building.macro_x, building.macro_y), building_position, entries, world)
+
+
 # Lascia a terra la carcassa di un animale ucciso (2026-09-26, richiesta utente — carcassa a terra) partendo
 # dal punto `position` della preda (microcelle locali a `macro_coords`): stessa regola di posa di drop_entries
 # (find_drop_microcell — microcella libera più vicina, mucchio esistente se c'è). La carcassa è un contenuto

@@ -148,7 +148,13 @@ func _resolve(individual: Variant, context: Dictionary) -> bool:
 			context.erase(HuntService.CONTEXT_WEAPON_DROP)
 			# Nessuna arma da recuperare: la macellazione si chiede subito.
 			if context.has(HuntService.CONTEXT_KILL_CARCASS):
-				context[HuntService.CONTEXT_PENDING_BUTCHER] = context[HuntService.CONTEXT_KILL_CARCASS]
+				# "requested_by" (2026-09-27, diagnosi): origine della richiesta, letta solo dai log [HUNT].
+				var butcher_request: Dictionary = (context[HuntService.CONTEXT_KILL_CARCASS] as Dictionary).duplicate()
+				butcher_request["requested_by"] = "ThrowAction (arma rotta al colpo mortale)"
+				context[HuntService.CONTEXT_PENDING_BUTCHER] = butcher_request
+				HuntService.log_event(individual, "richiesta macellazione scritta da %s, carcassa #%d (%s)." % [
+					butcher_request["requested_by"], int(butcher_request.get("id", -1)), HuntService.describe_now()
+				])
 		return true
 	# Ferito: fugge con l'arma conficcata — persa (se si era rotta non c'è comunque nulla da recuperare).
 	context.erase(HuntService.CONTEXT_WEAPON_DROP)

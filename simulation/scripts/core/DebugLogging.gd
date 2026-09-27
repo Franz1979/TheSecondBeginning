@@ -267,12 +267,12 @@ const SHOW_RECONNECT_FACTORY_LOGS := false
 # TASK_LIFECYCLE — [TASK COST] (Task.print_cost_summary), [INTERRUPT DEBUG]/[RESUME WALKBACK]
 # (HumanIndividualActionService), [TASK GUARD]/[TASK SUSPEND] (HumanIndividual), [SKILL GROWTH]
 # (HumanIndividualActionService), [QUEUE OVERFLOW] (TaskQueueService).
-const SHOW_TASK_LIFECYCLE_LOGS := false
+const SHOW_TASK_LIFECYCLE_LOGS := true
 
 # IDLE — [IDLE FALLBACK] (IdleTaskAssignmentService), [REST]/[EMERGENCY REST]
 # (NeedTaskAssignmentService), [WANDER]/[PLAY] (GameScene, trigger manuali tasti G/P per le stesse
 # due Task).
-const SHOW_IDLE_LOGS := true
+const SHOW_IDLE_LOGS := false
 
 # TRANSPORT_BUILD — [UNLOAD] (unload_action.gd), [WALK AWAY]/[WAREHOUSE SEARCH]/
 # [THOUGHT TARGET SEARCH]/[BUILD MATERIAL NEEDED]/[BUILD MATERIAL BONUS]/[BUILD MATERIAL RETRY]
@@ -288,6 +288,10 @@ const SHOW_TRANSPORT_BUILD_LOGS := false
 # con il motivo (preda sparita, scartata dalla coda, annullata a mano, annullata da un bisogno o da un nuovo comando).
 # Punti: GameScene (assegnazione, annullo), ApproachPreyAction/AimAction/ThrowAction, HumanIndividualActionService
 # (bersaglio non valido), HumanIndividual.assign_task (sospensione). Stampa tramite HuntService.log_event.
+# Macellazione dopo la caccia (2026-09-27, diagnosi "accodata due volte"): chi scrive la richiesta (ThrowAction/
+# RecoverWeaponAction), quale Task/step la consuma, la ricezione in GameScene (e il rifiuto se la carcassa ha già
+# una macellazione in corso o in coda), l'accodamento, e [BUTCHER] a macellazione compiuta. Ogni riga ha anno,
+# giorno e frame del motore (HuntService.describe_now).
 const SHOW_HUNT_LOGS := true
 # Intervallo tra due righe di avvicinamento, in GIORNI DI GIOCO (1 giorno = 8 s reali a 1x): 0.125 =
 # circa una riga al secondo a velocità 1x.
@@ -298,14 +302,20 @@ const HUNT_APPROACH_LOG_INTERVAL_DAYS := 0.125
 # mancanti, materiale mancante, buffer di uscita pieno, combustibile mancante — con le quantità in gioco (per
 # ciclo e per l'ordine intero), e una riga "ripresa" quando torna a lavorare. Una riga solo quando il messaggio
 # cambia, non a ogni tick. Solo stampa: rimuovere flag, variabile e funzioni in ProduceAction insieme.
-const SHOW_PRODUCTION_BLOCK_LOGS := true
+const SHOW_PRODUCTION_BLOCK_LOGS := false
 
 # RESOURCE_DECAY — [RESOURCE DECAY] (2026-09-26, richiesta utente): ogni giorno, per ogni edificio completo
 # (ResourceDecayService.advance_building_decay) e per ogni mucchio a terra (GroundPileService._advance_pile_decay)
 # con risorse deperibili, una riga per risorsa: quantità, frazione di deperimento prima -> dopo, incremento del
 # giorno e giorni che restano prima che la voce sparisca; e una riga per ogni voce sparita del tutto. Le risorse
 # che non deperiscono (day_durability -1) non compaiono. Solo stampa, nessun effetto sulla simulazione.
-const SHOW_RESOURCE_DECAY_LOGS := true
+const SHOW_RESOURCE_DECAY_LOGS := false
+
+# RANDOM_EVENT_ROLL — [RANDOM EVENT ROLL] (2026-09-27, richiesta utente): al sorteggio annuale degli eventi casuali
+# (giorno RandomEventService.ROLL_DAY_OF_YEAR), una riga per evento: probabilità base (fascia di popolazione),
+# moltiplicatori del villaggio e dell'evento, probabilità risultante, tiro, se è stato estratto e per quale giorno;
+# per un evento non idoneo, il motivo. Solo stampa, nessun effetto sul sorteggio.
+const SHOW_RANDOM_EVENT_ROLL_LOGS := true
 
 # ANIMAL_PROCESS_TIMING — [ANIMAL TIMING] (2026-09-26, comportamento degli animali step 2): ogni 5 s reali,
 # tempo medio per frame speso nel _process di TUTTI gli AnimalGroupRenderer, e di cui nel controllo

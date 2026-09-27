@@ -1,0 +1,8 @@
+[gd_resource type="Resource" script_class="RandomEventCategoryRules" format=3]
+
+[ext_resource type="Script" path="res://gameplay/events/scripts/RandomEventCategoryRules.gd" id="1_category"]
+
+[resource]
+script = ExtResource("1_category")
+id = "visitors"
+cooldown_multiplier_by_years_elapsed = Array[float]([0.0, 0.2, 0.4, 0.6, 0.8])

@@ -6,13 +6,23 @@ extends RefCounted
 # event_script). Istanza nuova per ogni applicazione (RandomEventService.apply_event): niente stato tra un
 # evento e l'altro.
 #
-# apply() applica gli effetti sul mondo; get_popup_text() restituisce il testo (già tradotto) del popup non di
+# apply() applica gli effetti sul mondo e dice se è riuscito; get_popup_text() restituisce il testo (già tradotto) del popup non di
 # allarme mostrato dopo l'applicazione — "" = nessun popup. Entrambi ricevono lo stesso RandomEventContext.
 
 
-func apply(context: RandomEventContext) -> void:
-	pass
+# Ritorna true se l'evento è andato a buon fine (2026-09-27, richiesta utente): solo allora il raffreddamento della
+# sua categoria riparte (RandomEventService.apply_event). Un evento che può fallire (es. un arrivo di visitatori
+# senza centro del villaggio) ritorna false quando non produce nulla.
+func apply(context: RandomEventContext) -> bool:
+	return true
 
 
 func get_popup_text(context: RandomEventContext) -> String:
 	return ""
+
+
+# Moltiplicatore della probabilità annua PROPRIO dell'evento (2026-09-27), applicato dal sorteggio
+# (RandomEventService.get_probability_breakdown) insieme a quelli generali del villaggio. Per condizioni che
+# dipendono dall'evento stesso (es. posti liberi per la dimensione del gruppo in arrivo). 1.0 = nessun effetto.
+func get_probability_multiplier(context: RandomEventContext) -> float:
+	return 1.0

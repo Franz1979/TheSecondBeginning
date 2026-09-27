@@ -1,0 +1,9 @@
+[gd_resource type="Resource" script_class="VisitorPartyRules" format=3]
+
+[ext_resource type="Script" path="res://gameplay/visitors/scripts/VisitorPartyRules.gd" id="1_rules"]
+
+[resource]
+script = ExtResource("1_rules")
+dowry_resource_name = "acorn"
+dowry_carry_fill_ratio = 1.0
+dowry_member_roles = Array[int]([0])

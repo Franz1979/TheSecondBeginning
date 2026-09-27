@@ -98,7 +98,13 @@ func on_complete(individual: Variant, context: Dictionary) -> void:
 		# Macellazione (2026-09-26): il cacciatore è accanto alla carcassa, se ha una lama la si accoda
 		# (HumanIndividualActionService._handle_pending_hunt_butcher -> GameScene).
 		if context.has(HuntService.CONTEXT_KILL_CARCASS):
-			context[HuntService.CONTEXT_PENDING_BUTCHER] = context[HuntService.CONTEXT_KILL_CARCASS]
+			# "requested_by" (2026-09-27, diagnosi): origine della richiesta, letta solo dai log [HUNT].
+			var butcher_request: Dictionary = (context[HuntService.CONTEXT_KILL_CARCASS] as Dictionary).duplicate()
+			butcher_request["requested_by"] = "RecoverWeaponAction (arma recuperata dopo l'uccisione)"
+			context[HuntService.CONTEXT_PENDING_BUTCHER] = butcher_request
+			HuntService.log_event(individual, "richiesta macellazione scritta da %s, carcassa #%d (%s)." % [
+				butcher_request["requested_by"], int(butcher_request.get("id", -1)), HuntService.describe_now()
+			])
 		return
 	var status := combat_target.get_status()
 	if status == CombatTarget.Status.OK:

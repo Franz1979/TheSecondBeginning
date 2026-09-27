@@ -402,6 +402,33 @@ static func _consume_fuel(building: Building, required: float) -> void:
 		remaining -= float(burned) * fuel_value
 
 
+# true se `resource_name` è un ingrediente (recipe_inputs) di almeno una ricetta producibile presso `building`
+# (get_producible_resources, in corso o no) — 2026-09-27, storage riservato alla produzione e preferenza di scarico
+# della macellazione. Il combustibile non conta qui: vedi is_recipe_material.
+static func is_recipe_input_of(building: Building, resource_name: String) -> bool:
+	for recipe_name in get_producible_resources(building):
+		var recipe_rules := CaloricCalculator.get_caloric_source_rules(recipe_name)
+		if recipe_rules != null and recipe_rules.recipe_inputs.has(resource_name):
+			return true
+	return false
+
+
+# true se `resource_name` serve alle ricette di `building`: ingrediente di una ricetta producibile, oppure
+# combustibile (fuel_value > 0) se almeno una di quelle ricette ne richiede (2026-09-27 — BuildingRules.
+# storage_accepts_recipe_materials_only, letto da BuildingStorageService).
+static func is_recipe_material(building: Building, resource_name: String) -> bool:
+	var is_fuel := get_fuel_value(resource_name) > 0.0
+	for recipe_name in get_producible_resources(building):
+		var recipe_rules := CaloricCalculator.get_caloric_source_rules(recipe_name)
+		if recipe_rules == null:
+			continue
+		if recipe_rules.recipe_inputs.has(resource_name):
+			return true
+		if is_fuel and recipe_rules.recipe_fuel_required > 0.0:
+			return true
+	return false
+
+
 # true se `input_name` è un materiale di almeno una ricetta in corso — letto da
 # BuildingStorageService per decidere se applicare il vincolo "quantità esatta mancante".
 static func is_active_recipe_input(building: Building, input_name: String) -> bool:
@@ -474,11 +501,14 @@ static func is_output_blocking(building: Building) -> bool:
 
 # Travasa il buffer di uscita nello storage normale dell'edificio, per quanto c'è posto
 # (BuildingStorageService.store: slot, filtri di categoria). Il prodotto entra a decay_fraction 0.0.
-# No-op per un edificio senza storage (campfire: il buffer resta pieno finché non lo si svuota) o con
-# buffer vuoto. Chiamata al completamento di un ciclo, dopo ogni prelievo (BuildingStorageService.
+# No-op per un edificio senza storage o con buffer vuoto (il buffer resta pieno finché non lo si svuota). Chiamata al completamento di un ciclo, dopo ogni prelievo (BuildingStorageService.
 # withdraw) e una volta al giorno (WorldTimeService), così il buffer si svuota appena si libera spazio.
+# No-op anche con BuildingRules.production_output_to_storage false (2026-09-27, campfire con storage: il prodotto
+# resta nel buffer, che resta il tetto della produzione).
 static func flush_output_to_storage(building: Building) -> void:
 	if building == null or building.production_output.is_empty() or BuildingStorageService.get_capacity(building) <= 0:
+		return
+	if building.rules != null and not building.rules.production_output_to_storage:
 		return
 	var emptied: Array[String] = []
 	for output_name in building.production_output.keys():

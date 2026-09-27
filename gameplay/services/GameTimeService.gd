@@ -398,11 +398,64 @@ func _apply_daily_vitals_interaction() -> void:
 # applicazione degli eventi programmati per oggi, rimossi dalla lista come le morti programmate.
 func _run_daily_random_events() -> void:
 	if RandomEventService.AUTO_ROLL_ENABLED and _game_data.current_day == RandomEventService.ROLL_DAY_OF_YEAR:
-		var scheduled := RandomEventService.roll_year(_game_data, _build_random_event_context(null, {}))
-		if DebugLogging.ENABLED and not scheduled.is_empty():
-			print("[RANDOM EVENTS] anno=%d: programmati %s" % [_game_data.year, str(scheduled)])
+		var roll_report := RandomEventService.roll_year(_game_data, _build_random_event_context(null, {}))
+		if DebugLogging.ENABLED and DebugLogging.SHOW_RANDOM_EVENT_ROLL_LOGS:
+			_log_random_event_roll(roll_report)
 	for entry in RandomEventService.take_due_events(_game_data):
 		_apply_random_event(String(entry.get("id", "")), entry.get("params", {}))
+
+
+# Log [RANDOM EVENT ROLL] del sorteggio annuale (2026-09-27): dal resoconto di RandomEventService.roll_year, una
+# riga per evento (probabilità con fasce, moltiplicatori e raffreddamento, esito e giorno previsto) e poi una per
+# ogni tiro di categoria (probabilità usata, tiro, esito ed evento scelto tra i candidati).
+func _log_random_event_roll(report: Dictionary) -> void:
+	var events: Array = report.get("events", [])
+	var categories: Array = report.get("categories", [])
+	print("[RANDOM EVENT ROLL] anno=%d giorno=%d: sorteggio di %d eventi, %d categorie con candidati." % [
+		_game_data.year, _game_data.current_day, events.size(), categories.size()
+	])
+	for entry in events:
+		if String(entry["ineligible_reason"]) != "":
+			print("[RANDOM EVENT ROLL]   '%s': non idoneo (%s)." % [entry["id"], entry["ineligible_reason"]])
+			continue
+		var in_category := String(entry.get("category", "")) != "" and float(entry["probability"]) > 0.0
+		var outcome: String
+		if bool(entry["drawn"]):
+			var absolute_day: int = entry["absolute_day"]
+			outcome = "ESTRATTO, previsto anno %d giorno %d" % [absolute_day / GameData.DAYS_PER_YEAR, absolute_day % GameData.DAYS_PER_YEAR]
+		elif bool(entry["no_valid_day"]):
+			outcome = "estratto ma nessun giorno nelle stagioni ammesse"
+		elif float(entry["probability"]) <= 0.0:
+			outcome = "non tirato (probabilità nulla)"
+		elif in_category:
+			outcome = "non estratto (tiro della categoria '%s', vedi sotto)" % entry["category"]
+		else:
+			outcome = "non estratto (tiro %.3f)" % float(entry["roll"])
+		# Raffreddamento della categoria (2026-09-27): voce a sé, con la categoria e l'anno dell'ultimo evento.
+		var category: String = entry.get("category", "")
+		var cooldown_text := "raffreddamento=—"
+		if category != "":
+			var last_year: int = int(_game_data.random_event_category_last_year.get(category, -1))
+			cooldown_text = "raffreddamento[%s, ultimo %s]=%.2f" % [
+				category, ("anno %d" % last_year) if last_year >= 0 else "mai", float(entry["cooldown_multiplier"])
+			]
+		print("[RANDOM EVENT ROLL]   '%s': popolazione=%d base=%.3f x villaggio=%.2f x evento=%.2f x %s = %.3f -> %s." % [
+			entry["id"], int(entry["population"]), float(entry["base_probability"]), float(entry["village_multiplier"]),
+			float(entry["event_multiplier"]), cooldown_text, float(entry["probability"]), outcome
+		])
+	for category_entry in categories:
+		var candidate_texts := PackedStringArray()
+		for candidate in category_entry["candidates"]:
+			candidate_texts.append("%s=%.3f" % [candidate["id"], float(candidate["probability"])])
+		var category_outcome: String
+		if bool(category_entry["succeeded"]):
+			category_outcome = "RIUSCITO, scelto '%s' (tiro di scelta %.3f)" % [category_entry["chosen_id"], float(category_entry["choice_roll"])]
+		else:
+			category_outcome = "fallito"
+		print("[RANDOM EVENT ROLL]   categoria '%s': candidati [%s], probabilità usata %.3f (la massima), tiro %.3f -> %s." % [
+			category_entry["category"], ", ".join(candidate_texts), float(category_entry["probability"]),
+			float(category_entry["roll"]), category_outcome
+		])
 
 
 # Scatena subito un evento (barra di debug), senza vincoli di sorteggio: stesso percorso dell'applicazione

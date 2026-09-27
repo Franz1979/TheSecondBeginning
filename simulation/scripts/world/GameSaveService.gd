@@ -94,7 +94,12 @@ func save_game_to_json(
 			"ground_piles": game_data.ground_piles.map(func(pile: GroundPile) -> Dictionary: return pile.to_save_data()),
 			"next_ground_pile_id": game_data.next_ground_pile_id,
 			# Eventi casuali programmati (2026-09-26): già JSON-nativi.
-			"scheduled_random_events": game_data.scheduled_random_events
+			"scheduled_random_events": game_data.scheduled_random_events,
+			# Raffreddamento per categoria di eventi (2026-09-27): id categoria -> anno, già JSON-nativo.
+			"random_event_category_last_year": game_data.random_event_category_last_year,
+			# Gruppi di visitatori (2026-09-27): VisitorParty.to_save_data è già JSON-nativo.
+			"visitor_parties": game_data.visitor_parties.map(func(party: VisitorParty) -> Dictionary: return party.to_save_data()),
+			"next_visitor_party_id": game_data.next_visitor_party_id,
 		},
 		"world": {
 			"width": World.WIDTH,

@@ -91,9 +91,12 @@ static func _warn_unknown_task_names(effects: TaskCompletionEffects) -> void:
 	dir.list_dir_begin()
 	var file_name := dir.get_next()
 	while file_name != "":
-		if not dir.current_is_dir() and file_name.ends_with(".tres") and not file_name.begins_with("step_"):
-			var definition := load(TASK_DEFINITIONS_DIR + file_name) as TaskDefinition
-			if definition != null:
+		# Build esportate (2026-09-27): "*.tres.remap" — load() sul percorso originale risolve da sé il remap. Vedi
+		# CaloricCalculator.list_secondary_resource_names.
+		var resource_file := file_name.trim_suffix(".remap")
+		if not dir.current_is_dir() and resource_file.ends_with(".tres") and not resource_file.begins_with("step_"):
+			var definition := load(TASK_DEFINITIONS_DIR + resource_file) as TaskDefinition
+			if definition != null and not known_names.has(definition.task_name):
 				known_names.append(definition.task_name)
 		file_name = dir.get_next()
 	dir.list_dir_end()

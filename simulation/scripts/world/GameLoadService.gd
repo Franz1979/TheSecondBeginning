@@ -176,6 +176,25 @@ func load_game_from_json(file_path: String) -> LoadedGame:
 				"absolute_day": int(raw_event.get("absolute_day", 0)),
 				"params": raw_params if raw_params is Dictionary else {},
 			})
+	# Raffreddamento per categoria di eventi (2026-09-27) — .get(key, {}) per i salvataggi precedenti; anno
+	# normalizzato a int (JSON non distingue int/float).
+	game_data.random_event_category_last_year.clear()
+	var raw_category_years = data["game"].get("random_event_category_last_year", {})
+	if raw_category_years is Dictionary:
+		for category in raw_category_years.keys():
+			game_data.random_event_category_last_year[String(category)] = int(raw_category_years[category])
+	# Gruppi di visitatori (2026-09-27) — .get(key, []) per i salvataggi precedenti; voci non valide scartate.
+	# Il prossimo id non scende mai sotto quello di un gruppo caricato.
+	game_data.visitor_parties.clear()
+	game_data.next_visitor_party_id = int(data["game"].get("next_visitor_party_id", 1))
+	for raw_party in data["game"].get("visitor_parties", []):
+		if not raw_party is Dictionary:
+			continue
+		var party := VisitorParty.from_save_data(raw_party)
+		if party == null:
+			continue
+		game_data.visitor_parties.append(party)
+		game_data.next_visitor_party_id = maxi(game_data.next_visitor_party_id, party.id + 1)
 	for pile in game_data.ground_piles:
 		game_data.next_ground_pile_id = maxi(game_data.next_ground_pile_id, pile.id + 1)
 		for carcass in pile.carcasses:

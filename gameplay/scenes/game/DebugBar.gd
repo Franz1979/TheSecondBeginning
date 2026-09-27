@@ -42,6 +42,9 @@ var _last_fps: int = -1
 # (RandomEventService.list_rules, nome tradotto, id come metadata) e pulsante per scatenare quello scelto.
 @onready var random_event_option_button: OptionButton = $MarginContainer/HBoxContainer/ContentGroup/RandomEventOptionButton
 @onready var random_event_apply_button: Button = $MarginContainer/HBoxContainer/ContentGroup/RandomEventApplyButton
+# Gruppi di visitatori (2026-09-27, gameplay/visitors/): lancia l'evento family_arrival, inoltrato come
+# action_pressed a GameScene._on_debug_action_pressed. L'esito si sceglie nel popup di decisione.
+@onready var visitor_spawn_button: Button = $MarginContainer/HBoxContainer/ContentGroup/VisitorSpawnButton
 
 signal action_pressed(action_id: StringName)
 # Evento casuale da scatenare subito (id di RandomEventRules), dal menu a tendina degli eventi.
@@ -82,6 +85,8 @@ func _ready() -> void:
 	random_event_apply_button.text = tr("debug_random_event_apply")
 	random_event_apply_button.tooltip_text = tr("debug_random_event_apply_tooltip")
 	random_event_apply_button.pressed.connect(_on_random_event_apply_pressed)
+	visitor_spawn_button.tooltip_text = tr("debug_visitor_spawn_tooltip")
+	visitor_spawn_button.pressed.connect(func() -> void: action_pressed.emit(&"visitor_spawn"))
 	_apply_state()
 
 

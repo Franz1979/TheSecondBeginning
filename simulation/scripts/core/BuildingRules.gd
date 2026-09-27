@@ -60,6 +60,9 @@ extends Resource
 # edificio specializzato ancora) — un futuro edificio specializzato (es. un granaio solo FOOD)
 # lo restringerà esplicitamente nel proprio .tres.
 @export var accepted_categories: Array[SecondaryResourceTypes.Category] = []
+# Spunte di categoria bloccate (2026-09-27, richiesta utente — campfire): il pannello le mostra ma non si possono
+# togliere, e Building.enabled_categories viene ignorato (vale solo accepted_categories del tipo).
+@export var categories_locked: bool = false
 
 # Moltiplicatore di durabilità PER CATEGORIA DI RISORSA (2026-09-09, richiesta utente) — indice =
 # SecondaryResourceTypes.Category (0=FOOD, 1=RAW_MATERIAL, 2=MEDICINAL, 3=SEMI_FINISHED, 4=TOOL — un
@@ -243,6 +246,15 @@ extends Resource
 # unità, non a spazio. 0 = nessun buffer: nessuna produzione può completarsi (il prodotto non avrebbe
 # dove andare) — vedi ProductionService.has_output_room.
 @export var production_output_slots: int = 0
+# Il buffer di uscita si travasa nello storage dell'edificio quando c'è posto (2026-09-27, richiesta utente) —
+# ProductionService.flush_output_to_storage. false = il prodotto resta SOLO nel buffer, che resta il tetto della
+# produzione (campfire: il suo storage è per la scorta di ingredienti, non per il prodotto).
+@export var production_output_to_storage: bool = true
+# Storage riservato alla produzione (2026-09-27, richiesta utente — campfire): accetta solo gli ingredienti e il
+# combustibile delle ricette che l'edificio sa fare (ProductionService.is_recipe_material), sempre dentro
+# accepted_categories e gli slot; senza il vincolo "quantità esatta mancante" di una workstation senza storage,
+# così si può portare una scorta per più cicli.
+@export var storage_accepts_recipe_materials_only: bool = false
 # Quante ricette diverse possono stare in coda su questo edificio (2026-09-24, richiesta utente) —
 # 1 = nessuna coda, solo la produzione corrente: con una produzione già assegnata (anche con
 # l'individuo ancora in cammino) i pulsanti ricetta si spengono. La coda vera (>1) non è ancora

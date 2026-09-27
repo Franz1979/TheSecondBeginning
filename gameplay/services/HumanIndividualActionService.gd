@@ -244,6 +244,9 @@ func finish_current_step(individual: HumanIndividual, task: Task, world: World, 
 		_handle_task_completion_need_and_queue(individual, task, world, game_data)
 		return
 	task.advance_to_next_step()
+	# Scarichi programmati rimasti senza carico (2026-09-27): saltati PRIMA del controllo di fine, così se erano gli
+	# ultimi passi la Task si chiude qui normalmente (effetti di completamento, riepilogo costi).
+	_skip_unloads_without_cargo(individual, task)
 	if task.is_finished():
 		if DebugLogging.ENABLED and DebugLogging.SHOW_TASK_LIFECYCLE_LOGS:
 			task.print_cost_summary(individual)
@@ -580,6 +583,57 @@ func _handle_pending_warehouse_search(individual: HumanIndividual, task: Task, w
 		)
 
 
+# Primo scarico programmato (UnloadAction.planned_resources) per `resource_name` nei passi SUCCESSIVI a quello corrente
+# (indice > current_step_index), o null. I passi già eseguiti, compreso quello corrente, non contano.
+static func _find_later_planned_unload(task: Task, resource_name: String) -> UnloadAction:
+	for i in range(task.current_step_index + 1, task.steps.size()):
+		var step: Action = task.steps[i]
+		if step is UnloadAction and (step as UnloadAction).planned_resources.has(resource_name):
+			return step as UnloadAction
+	return null
+
+
+# Ultimo scarico verso `building` nei passi successivi a quello corrente, o null — quello appena accodato da questa
+# stessa ricerca per un'altra varietà.
+static func _find_later_unload_to(task: Task, building: Building) -> UnloadAction:
+	for i in range(task.steps.size() - 1, task.current_step_index, -1):
+		var step: Action = task.steps[i]
+		if step is UnloadAction and (step as UnloadAction).target_building == building:
+			return step as UnloadAction
+	return null
+
+
+# Rete di sicurezza (2026-09-27, richiesta utente — viaggi doppi dopo la macellazione): salta, a partire dal passo
+# corrente, gli scarichi programmati (planned_resources non vuoto) per cui nello zaino non c'è più NESSUNA delle
+# loro risorse, insieme alla camminata che li precede subito. La condizione è per singolo scarico, non "zaino
+# vuoto": se lo zaino si svuota a metà, gli scarichi successivi con carico ancora valido restano. Gli scarichi non
+# programmati dalla ricerca (manuali, trasporto, consegne) non si saltano mai. Nessuno step viene attivato qui: il
+# chiamante attiva quello su cui ci si ferma (o chiude la Task se è finita). Ritorna quanti step ha saltato.
+static func _skip_unloads_without_cargo(individual: HumanIndividual, task: Task) -> int:
+	var skipped := 0
+	while not task.is_finished():
+		var current := task.get_current_action()
+		var unload_step: UnloadAction = null
+		var steps_to_skip := 0
+		if current is UnloadAction:
+			unload_step = current as UnloadAction
+			steps_to_skip = 1
+		elif current is WalkAction and task.current_step_index + 1 < task.steps.size() and task.steps[task.current_step_index + 1] is UnloadAction:
+			unload_step = task.steps[task.current_step_index + 1] as UnloadAction
+			steps_to_skip = 2
+		if unload_step == null or unload_step.has_cargo_for(individual):
+			break
+		if DebugLogging.ENABLED and DebugLogging.SHOW_TRANSPORT_BUILD_LOGS:
+			print("[UNLOAD SKIP] #%d %s: '%s' — scarico verso id=%s saltato, nello zaino non c'è più nessuna delle sue risorse %s." % [
+				individual.id, individual.name, task.task_name,
+				str(unload_step.target_building.id) if unload_step.target_building != null else "?", str(unload_step.planned_resources)
+			])
+		for _i in range(steps_to_skip):
+			task.advance_to_next_step()
+		skipped += steps_to_skip
+	return skipped
+
+
 func _search_warehouse_for_resource(
 	individual: HumanIndividual, task: Task, world: World, resource_name: String, quantity: int,
 	excluded_building_ids: Array[int], discard_on_failure: bool, targeted_building_ids: Array[int]
@@ -587,11 +641,39 @@ func _search_warehouse_for_resource(
 	if resource_name == "" or quantity <= 0:
 		return
 
-	var candidate := WarehouseSelectionService.find_best(
-		world, individual.position, individual.home_macro_coords, resource_name, quantity, excluded_building_ids
-	)
+	# Niente viaggi doppi (2026-09-27, richiesta utente): se nei passi SUCCESSIVI a quello corrente c'è già uno scarico
+	# programmato per questa risorsa, la consegnerà lui — nessuna destinazione in più. Solo i passi successivi: uno
+	# scarico programmato già eseguito (es. magazzino pieno all'arrivo, risorsa rimasta nello zaino) non conta, e il
+	# re-routing cerca normalmente un'alternativa.
+	var already_planned := _find_later_planned_unload(task, resource_name)
+	if already_planned != null:
+		if DebugLogging.ENABLED and DebugLogging.SHOW_TRANSPORT_BUILD_LOGS:
+			print("[WAREHOUSE SEARCH] '%s': già in programma uno scarico più avanti (edificio id=%s) — nessun Walk+Unload aggiuntivo." % [
+				resource_name, str(already_planned.target_building.id) if already_planned.target_building != null else "?"
+			])
+		return
+
+	# Preferenza per la postazione di lavoro (2026-09-27, richiesta utente — Task con CONTEXT_PREFER_RECIPE_WORKSTATION,
+	# oggi la macellazione): se la risorsa è un ingrediente di una ricetta, prima la postazione più vicina che ne
+	# accetta almeno un'unità (la carne al focolare, dove verrà cotta); le altre risorse (pelli, ossa, tendini) non
+	# sono ingredienti e vanno al magazzino come sempre. Il residuo che non entra lo ricolloca UnloadAction con il
+	# re-routing normale, che non considera mai le postazioni.
+	var candidate: Building = null
+	if bool(task.context.get(CONTEXT_PREFER_RECIPE_WORKSTATION, false)):
+		candidate = WarehouseSelectionService.find_nearest_recipe_workstation(
+			world, individual.position, individual.home_macro_coords, resource_name, 1, excluded_building_ids
+		)
+	if candidate == null:
+		candidate = WarehouseSelectionService.find_best(
+			world, individual.position, individual.home_macro_coords, resource_name, quantity, excluded_building_ids
+		)
 	if candidate != null:
 		if targeted_building_ids.has(candidate.id):
+			# Stesso magazzino già scelto per un'altra varietà in questa ricerca: la risorsa si aggiunge alle
+			# risorse programmate di quello scarico (2026-09-27, planned_resources).
+			var shared_unload := _find_later_unload_to(task, candidate)
+			if shared_unload != null and not shared_unload.planned_resources.has(resource_name):
+				shared_unload.planned_resources.append(resource_name)
 			if DebugLogging.ENABLED and DebugLogging.SHOW_TRANSPORT_BUILD_LOGS:
 				print("[WAREHOUSE SEARCH] '%s': magazzino id=%d già scelto per un'altra varietà — nessun Walk+Unload aggiuntivo." % [
 					resource_name, candidate.id
@@ -609,7 +691,9 @@ func _search_warehouse_for_resource(
 		# ramo di UnloadAction dalla nullità di target_building): `candidate` qui è sempre un Building
 		# risolto (vedi guardia `if candidate != null` sopra), stesso comportamento di ramo fisico di
 		# prima di questo passo, ora reso esplicito invece che dedotto dalla non-nullità dell'argomento.
-		var new_steps: Array[Action] = [WalkAction.new(candidate_position), UnloadAction.new(candidate, UnloadAction.DepositKind.RESOURCE)]
+		var planned_unload := UnloadAction.new(candidate, UnloadAction.DepositKind.RESOURCE)
+		planned_unload.planned_resources.append(resource_name)
+		var new_steps: Array[Action] = [WalkAction.new(candidate_position), planned_unload]
 		task.append_steps(new_steps)
 		if DebugLogging.ENABLED and DebugLogging.SHOW_TRANSPORT_BUILD_LOGS:
 			print("[WAREHOUSE SEARCH] magazzino trovato: id=%d — Walk+Unload accodati alla Task corrente (esclusi finora: %s)." % [
@@ -731,6 +815,10 @@ func _handle_pending_thought_target_search(individual: HumanIndividual, task: Ta
 # valido (bisogno -> coda -> perditempo, nessun effetto di completamento). Oggi usata dalla caccia (arma
 # sparita, bersaglio perso al lancio, tetto dei riavvicinamenti raggiunto).
 const CONTEXT_PENDING_TASK_ABORT := "pending_task_abort"
+# Chiave di task.context (2026-09-27): true = la ricerca del magazzino dopo una raccolta preferisce, per gli
+# ingredienti di una ricetta, la postazione di lavoro più vicina (vedi _search_warehouse_for_resource). Scritta da
+# GameScene._build_butcher_task; resta nel context, quindi sopravvive al salvataggio.
+const CONTEXT_PREFER_RECIPE_WORKSTATION := "prefer_recipe_workstation"
 
 
 # Riavvicinamento della caccia (2026-09-26, richiesta utente): AimAction/ThrowAction scrivono
@@ -802,6 +890,13 @@ func _handle_pending_hunt_butcher(individual: HumanIndividual, task: Task) -> vo
 		return
 	var carcass: Dictionary = task.context[HuntService.CONTEXT_PENDING_BUTCHER]
 	task.context.erase(HuntService.CONTEXT_PENDING_BUTCHER)
+	# Diagnosi (2026-09-27, macellazione accodata due volte): quale Task/step consuma la richiesta e quando.
+	var step := task.get_current_action()
+	HuntService.log_event(individual, "richiesta macellazione consumata: carcassa #%d, da %s, Task '%s' (istanza %d) step %d/%d %s (%s)." % [
+		int(carcass.get("id", -1)), String(carcass.get("requested_by", "origine sconosciuta")), task.task_name,
+		task.get_instance_id(), task.current_step_index + 1, task.steps.size(),
+		step.get_script().get_global_name() if step != null else "-", HuntService.describe_now()
+	])
 	butcher_after_hunt_requested.emit(individual, carcass)
 
 
@@ -1114,6 +1209,14 @@ static func activate_resumed_task(individual: HumanIndividual, resumed_task: Tas
 		return false
 	# Carico da consegnare ormai vuoto (2026-09-26): vedi is_empty_cargo_delivery.
 	if is_empty_cargo_delivery(individual, resumed_task):
+		TaskDebugRegistry.on_task_closed(resumed_task)
+		if individual.current_task == resumed_task:
+			individual.current_task = null
+		return false
+	# Scarichi programmati rimasti senza carico (2026-09-27): saltati anche alla ripresa, prima del Walk di ritorno. Se
+	# restavano solo quelli la Task è finita: chiusa come la consegna a vuoto qui sopra.
+	_skip_unloads_without_cargo(individual, resumed_task)
+	if resumed_task.is_finished():
 		TaskDebugRegistry.on_task_closed(resumed_task)
 		if individual.current_task == resumed_task:
 			individual.current_task = null

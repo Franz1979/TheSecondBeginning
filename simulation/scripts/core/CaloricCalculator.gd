@@ -60,8 +60,11 @@ static func list_secondary_resource_names() -> Array[String]:
 	dir.list_dir_begin()
 	var file_name := dir.get_next()
 	while file_name != "":
-		if not dir.current_is_dir() and file_name.ends_with(".tres"):
-			names.append(file_name.get_basename())
+		# Build esportate (2026-09-27): le risorse testuali compaiono come "*.tres.remap" — stesso trattamento di
+		# RandomEventService.list_rules. Senza, in una build l'elenco resterebbe vuoto (nessuna ricetta producibile).
+		var resource_file := file_name.trim_suffix(".remap")
+		if not dir.current_is_dir() and resource_file.ends_with(".tres") and not names.has(resource_file.get_basename()):
+			names.append(resource_file.get_basename())
 		file_name = dir.get_next()
 	dir.list_dir_end()
 	names.sort()

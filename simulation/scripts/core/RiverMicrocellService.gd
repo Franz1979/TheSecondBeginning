@@ -41,6 +41,30 @@ static func get_river_positions(river_shape: GameTypes.RiverShape, thickness_rat
 	return positions
 
 
+# Microcelle d'acqua di una macrocella (2026-09-27, estratto da GameScene._is_entry_microcell_water per
+# condividerlo con VisitorService). Il micro-livello è terreno uniforme: terrain_base == WATER (mare/lago)
+# rende acqua l'intera cella -> ritorna null; una cella-fiume ha acqua solo sulla fascia fluviale ->
+# set Vector2i -> true di quelle microcelle; qualunque altra cella -> set vuoto. Calcolarlo una volta
+# conviene a chi deve provare molte microcelle della stessa cella.
+static func get_water_microcells(world: World, cell: MacroCellData) -> Variant:
+	if cell.terrain_base == GameTypes.TerrainBase.WATER:
+		return null
+	var water: Dictionary = {}
+	if cell.water_type == GameTypes.WaterType.RIVER and world != null:
+		var state := world.get_cell_state_at(cell.x, cell.y)
+		if state != null:
+			var thickness_ratio: float = float(state.get_river_space()) / float(MacroCellState.TOTAL_SPACE)
+			for pos in get_river_positions(cell.river_shape, thickness_ratio):
+				water[pos] = true
+	return water
+
+
+# true se la microcella `microcell` della macrocella `cell` è acqua (vedi get_water_microcells).
+static func is_water_microcell(world: World, cell: MacroCellData, microcell: Vector2i) -> bool:
+	var water: Variant = get_water_microcells(world, cell)
+	return water == null or (water as Dictionary).has(microcell)
+
+
 static func _is_in_straight_band(
 	point: Vector2, river_shape: GameTypes.RiverShape, grid_size: float, center: float, thickness: float
 ) -> bool:

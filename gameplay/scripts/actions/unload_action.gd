@@ -153,6 +153,13 @@ var _restored_from_save: bool = false
 # da TaskPersistenceService._build_step).
 var unequip_slot_index: int = -1
 
+# Risorse per cui la ricerca del magazzino ha programmato QUESTO scarico (2026-09-27, richiesta utente — viaggi
+# doppi dopo la macellazione): scritto da HumanIndividualActionService._search_warehouse_for_resource. Serve a (1)
+# non cercare un'altra destinazione per una risorsa che ha già uno scarico programmato più avanti nella Task e
+# (2) saltare lo scarico se nello zaino non c'è più nessuna delle sue risorse (_skip_unloads_without_cargo). Vuoto =
+# scarico non programmato dalla ricerca (comando manuale, trasporto, consegne): mai saltato. Persistito.
+var planned_resources: Array[String] = []
+
 
 func _init(p_target_building: Building = null, p_deposit_kind: DepositKind = DepositKind.THOUGHT, p_unequip_slot_index: int = -1) -> void:
 	target = null
@@ -639,7 +646,21 @@ func get_save_data() -> Dictionary:
 	}
 	if target_building != null:
 		data["target_building_id"] = target_building.id
+	# Risorse programmate (2026-09-27) — letto da TaskPersistenceService._build_step.
+	if not planned_resources.is_empty():
+		data["planned_resources"] = planned_resources.duplicate()
 	return data
+
+
+# true se nello zaino c'è almeno una delle risorse per cui questo scarico è stato programmato (planned_resources).
+# Sempre true per uno scarico non programmato dalla ricerca (planned_resources vuoto): quelli non si saltano mai.
+func has_cargo_for(individual: Variant) -> bool:
+	if planned_resources.is_empty():
+		return true
+	for resource_name in planned_resources:
+		if individual.get_carried_quantity(resource_name) > 0:
+			return true
+	return false
 
 
 # Il building vero E deposit_kind vengono risolti e iniettati da TaskPersistenceService._build_step

@@ -348,3 +348,14 @@ building_assigned_builder_missing,Assigned builder: missing
 building_assigned_worker_label,Assigned worker: {names}
 building_assigned_worker_missing,Assigned worker: missing
 building_cancel_work_tooltip,Cancel the work on this building for everyone working on it (progress is kept)
+debug_visitor_spawn_tooltip,Trigger the A family arrives event (requires the village center)
+visitor_decision_family_title,A family arrives
+visitor_decision_family_text,A family has reached the village center and asks to join you:
+visitor_decision_family_question,Do you welcome them into the village?
+visitor_decision_accept,Welcome
+visitor_decision_reject,Refuse
+visitor_member_man,Man aged {age}
+visitor_member_woman,Woman aged {age}
+visitor_member_boy,Boy aged {age}
+visitor_member_girl,Girl aged {age}
+random_event_family_arrival_name,A family arrives

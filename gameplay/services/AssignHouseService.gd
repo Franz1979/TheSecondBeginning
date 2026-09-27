@@ -29,6 +29,30 @@ extends RefCounted
 # diversi vorranno criteri diversi (es. "famiglia/nucleo" per i tier più alti), quella logica andrà
 # aggiunta QUI, leggendo building.rules.residency_assignment_tier per scegliere quale criterio
 # applicare a QUEL building, non prima.
+# Posti liberi di un edificio (2026-09-27, estratto da assign_pending_residents per condividerlo con il
+# conteggio dei posti del villaggio): rules.max_residents meno i residenti assegnati (house_id == building.id).
+# 0 per un edificio non residenziale (max_residents <= 0) o non completo, mai negativo.
+static func get_free_slots(building: Building, human_individuals: Array[HumanIndividual]) -> int:
+	if building.rules == null or building.rules.max_residents <= 0 or not building.is_complete:
+		return 0
+	var occupied_count := 0
+	for individual in human_individuals:
+		if individual.house_id == building.id:
+			occupied_count += 1
+	return maxi(building.rules.max_residents - occupied_count, 0)
+
+
+# Posti liberi nelle abitazioni di tutto il villaggio: somma di get_free_slots sugli edifici del mondo (2026-09-27 —
+# usato dal moltiplicatore di probabilità dell'arrivo di visitatori, FamilyArrivalEvent).
+static func count_free_slots(world: World, human_individuals: Array[HumanIndividual]) -> int:
+	if world == null:
+		return 0
+	var free_slots := 0
+	for building in world.buildings:
+		free_slots += get_free_slots(building, human_individuals)
+	return free_slots
+
+
 static func assign_pending_residents(
 	world: World, human_individuals: Array[HumanIndividual], current_year: int
 ) -> void:
@@ -58,15 +82,7 @@ static func assign_pending_residents(
 	for building in world.buildings:
 		if unhoused.is_empty():
 			break
-		if building.rules == null or building.rules.max_residents <= 0:
-			continue
-		if not building.is_complete:
-			continue
-		var occupied_count := 0
-		for individual in human_individuals:
-			if individual.house_id == building.id:
-				occupied_count += 1
-		var free_slots: int = building.rules.max_residents - occupied_count
+		var free_slots: int = get_free_slots(building, human_individuals)
 		while free_slots > 0 and not unhoused.is_empty():
 			var resident: HumanIndividual = unhoused.pop_front()
 			resident.house_id = building.id

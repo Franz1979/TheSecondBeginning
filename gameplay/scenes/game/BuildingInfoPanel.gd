@@ -1016,6 +1016,13 @@ func _refresh_accepted_categories_toggles(building: Building, has_storage: bool)
 		# DurabilityLabel/BuiltYearLabel/IdLabel sopra, più piccola del default tema per un elenco
 		# di opzioni secondarie come questo.
 		check_box.add_theme_font_size_override("font_size", 10)
+		# Categorie bloccate (2026-09-27, BuildingRules.categories_locked — campfire): sempre spuntate e
+		# disattivate, nessun toggle collegato (BuildingStorageService ignora comunque enabled_categories).
+		if building.rules.categories_locked:
+			check_box.button_pressed = true
+			check_box.disabled = true
+			category_toggles_container.add_child(check_box)
+			continue
 		check_box.button_pressed = building.enabled_categories.is_empty() or building.enabled_categories.has(category)
 		check_box.toggled.connect(_on_category_toggled.bind(category, building, categories_to_show))
 		category_toggles_container.add_child(check_box)

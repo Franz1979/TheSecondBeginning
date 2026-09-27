@@ -287,6 +287,9 @@ static func _build_step(action_type: int, step_data: Dictionary, macro_state: Ma
 			var deposit_kind: UnloadAction.DepositKind = int(step_data.get("deposit_kind", UnloadAction.DepositKind.THOUGHT))
 			# unequip_slot_index (2026-09-25, modalità "cintura"): -1 per i save precedenti.
 			step = UnloadAction.new(target_building, deposit_kind, int(step_data.get("unequip_slot_index", -1)))
+			# planned_resources (2026-09-27): vuoto per i save precedenti = scarico mai saltato, come prima.
+			for planned_name in step_data.get("planned_resources", []):
+				(step as UnloadAction).planned_resources.append(String(planned_name))
 		TaskTypes.ActionType.PICKUP:
 			var pickup_target := Vector2i(
 				int(step_data.get("target_position_x", 0)), int(step_data.get("target_position_y", 0))

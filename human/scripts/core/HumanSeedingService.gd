@@ -336,7 +336,7 @@ func _create_adult(
 	individual.assign_hair_color()
 	individual.assign_skin_color()
 	individual.assign_random_clothing()
-	_seed_random_skills(individual)
+	seed_random_skills(individual)
 	return individual
 
 
@@ -399,7 +399,7 @@ func _create_unpaired_fertile_group(
 			individual.assign_hair_color()
 			individual.assign_skin_color()
 			individual.assign_random_clothing()
-			_seed_random_skills(individual)
+			seed_random_skills(individual)
 			individuals.append(individual)
 			local_index += 1
 	return individuals
@@ -438,7 +438,7 @@ func _create_coordinated_couple(
 	father.assign_hair_color()
 	father.assign_skin_color()
 	father.assign_random_clothing()
-	_seed_random_skills(father)
+	seed_random_skills(father)
 	used_names.append(father.name)
 
 	var mother := HumanIndividual.new()
@@ -460,7 +460,7 @@ func _create_coordinated_couple(
 	mother.assign_hair_color()
 	mother.assign_skin_color()
 	mother.assign_random_clothing()
-	_seed_random_skills(mother)
+	seed_random_skills(mother)
 	used_names.append(mother.name)
 
 	return [mother, father]
@@ -528,7 +528,7 @@ func _create_family_children(
 		child.assign_hair_color(mother, father)
 		child.assign_skin_color(mother, father)
 		child.assign_random_clothing()
-		_seed_random_skills(child)
+		seed_random_skills(child)
 		used_names.append(child.name)
 		children.append(child)
 	return children
@@ -591,7 +591,7 @@ func _create_child(
 	individual.assign_hair_color(mother, father)
 	individual.assign_skin_color(mother, father)
 	individual.assign_random_clothing()
-	_seed_random_skills(individual)
+	seed_random_skills(individual)
 	used_names.append(individual.name)
 	return individual
 
@@ -624,8 +624,9 @@ func _random_age_in_band(durations_male: Array[float], durations_female: Array[f
 # Assegna la distribuzione iniziale di skill a `individual` — vedi il commento su
 # SEED_SKILL_POINTS_TOTAL/RANDOM_WEIGHT_MIN sopra per l'algoritmo. Chiamata da OGNI punto di
 # creazione individuo di questo service (fondatori GROUP/COUPLE/FAMILY, figli iniziali FAMILY),
-# mai duplicata inline: un solo posto dove l'algoritmo di distribuzione vive.
-func _seed_random_skills(individual: HumanIndividual) -> void:
+# mai duplicata inline: un solo posto dove l'algoritmo di distribuzione vive. Pubblica e statica dal
+# 2026-09-27: la usa anche VisitorService.materialize_members per i visitatori accolti.
+static func seed_random_skills(individual: HumanIndividual) -> void:
 	var skill_names := individual.get_skill_property_names()
 	if skill_names.is_empty():
 		return

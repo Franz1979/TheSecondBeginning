@@ -100,8 +100,12 @@ static func find_best(
 	# deve essere COMPLETO prima ancora di guardare la capacità: uno storage/residenziale vero
 	# accetta merce solo da completo (vedi BuildingStorageService.get_max_depositable, ramo
 	# "edificio COMPLETO"), mai mentre è ancora un cantiere.
+	# Postazioni di lavoro escluse (2026-09-27, richiesta utente): il loro storage è per la produzione, non un
+	# magazzino di ripiego; restano raggiungibili solo come destinazione esplicita (comando Transport, consegna
+	# degli ingredienti, preferenza di scarico della macellazione — find_nearest_recipe_workstation sotto).
 	var has_capacity := func(building: Building) -> bool:
-		return building.is_complete and BuildingStorageService.get_max_depositable(building, resource_name) >= quantity_needed
+		return building.is_complete and building.rules != null and not building.rules.is_workstation \
+			and BuildingStorageService.get_max_depositable(building, resource_name) >= quantity_needed
 
 	var storage_predicate := func(building: Building) -> bool:
 		return building.rules != null and building.rules.category == BuildingTypes.Category.STORAGE and has_capacity.call(building)
@@ -160,6 +164,26 @@ static func find_best(
 # `requesting_individual_id` (opzionale, default -1): serve SOLO al log diagnostico
 # (DebugLogging.SHOW_FOOD_SOURCE_LOGS, spento di default) per stampare l'esito per l'individuo con l'id
 # configurato; non influisce sulla ricerca.
+# Postazione di lavoro più vicina per cui `resource_name` è un INGREDIENTE di una ricetta (ProductionService.
+# is_recipe_input_of — il solo combustibile non basta) e che ne accetta almeno `min_quantity` unità (can_accept e
+# get_max_depositable). null se nessuna. 2026-09-27, richiesta utente: lo scarico dopo la macellazione porta la carne
+# al focolare, dove verrà cotta, prima che al magazzino.
+static func find_nearest_recipe_workstation(
+	world: World, origin_position: Vector2, origin_macro_coords: Vector2i, resource_name: String, min_quantity: int = 1,
+	excluded_building_ids: Array[int] = []
+) -> Building:
+	if world == null or min_quantity <= 0:
+		return null
+	var predicate := func(building: Building) -> bool:
+		return building.is_complete and building.rules != null and building.rules.is_workstation \
+			and ProductionService.is_recipe_input_of(building, resource_name) \
+			and BuildingStorageService.can_accept(building, resource_name) \
+			and BuildingStorageService.get_max_depositable(building, resource_name) >= min_quantity
+	return SpatialSelectionService.find_nearest(
+		world.buildings, origin_position, origin_macro_coords, predicate, excluded_building_ids
+	) as Building
+
+
 static func find_source_for_retrieval(
 	world: World,
 	origin_position: Vector2,

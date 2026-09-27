@@ -161,6 +161,15 @@ static func log_event(individual: Variant, text: String) -> void:
 	print("[HUNT] #%d %s: %s" % [individual.id, individual.name, text])
 
 
+# Momento di gioco per i log (2026-09-27, diagnosi macellazione accodata due volte): "anno A giorno G, frame F".
+# Il frame del motore distingue due righe nello stesso giorno (stesso frame = stessa chiamata a catena).
+static func describe_now() -> String:
+	var game_data: GameData = GameSettings.active_game_data
+	if game_data == null:
+		return "frame %d" % Engine.get_process_frames()
+	return "anno %d giorno %d, frame %d" % [game_data.year, game_data.current_day, Engine.get_process_frames()]
+
+
 static func is_hunt_task(task: Task) -> bool:
 	return task != null and task.task_name == "task_hunt_name"
 

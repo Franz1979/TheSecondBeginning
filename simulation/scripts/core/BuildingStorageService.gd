@@ -66,8 +66,11 @@ extends RefCounted
 static func world_has_any_storage_building(world: World) -> bool:
 	if world == null:
 		return false
+	# Postazioni di lavoro escluse (2026-09-27): il loro storage è riservato alla produzione e non fa da magazzino
+	# generico (WarehouseSelectionService.find_best le esclude), quindi non conta come "storage reale" — un focolare
+	# con slot non toglie il bonus di partenza al primo sito di deposito.
 	for building in world.buildings:
-		if building.is_complete and get_capacity(building) > 0:
+		if building.is_complete and get_capacity(building) > 0 and building.rules != null and not building.rules.is_workstation:
 			return true
 	return false
 
@@ -227,11 +230,19 @@ static func can_accept(building: Building, resource_name: String) -> bool:
 	# prosegue sul ramo magazzino normale, invariato. Combustibile (2026-09-24): con una ricetta in
 	# corso che ne richiede, anche le risorse con fuel_value > 0 passano da qui, fino alle unità che
 	# mancano a coprirlo (ProductionService.is_production_demand/get_production_demand).
-	if ProductionService.is_production_demand(building, resource_name):
+	#
+	# STORAGE RISERVATO ALLA PRODUZIONE (2026-09-27, richiesta utente — campfire, BuildingRules.
+	# storage_accepts_recipe_materials_only): niente ramo "quantità esatta" sopra — l'edificio ha slot propri per una
+	# scorta di più cicli — ma solo ingredienti e combustibile delle sue ricette, dentro i filtri di categoria.
+	if building.rules.storage_accepts_recipe_materials_only:
+		if not ProductionService.is_recipe_material(building, resource_name):
+			return false
+	elif ProductionService.is_production_demand(building, resource_name):
 		return ProductionService.get_production_demand(building, resource_name) > 0
 	if not building.rules.accepted_categories.is_empty() and not building.rules.accepted_categories.has(resource_rules.category):
 		return false
-	if not building.enabled_categories.is_empty() and not building.enabled_categories.has(resource_rules.category):
+	# Categorie bloccate (2026-09-27, BuildingRules.categories_locked): il filtro per-istanza non si applica.
+	if not building.rules.categories_locked and not building.enabled_categories.is_empty() and not building.enabled_categories.has(resource_rules.category):
 		return false
 	return true
 
@@ -457,7 +468,12 @@ static func get_max_depositable(building: Building, resource_name: String) -> in
 
 	# Ramo PRODUZIONE (2026-09-23, richiesta utente) — STESSA condizione di can_accept sopra: un input
 	# della ricetta in corso entra solo fino alla quantità esatta mancante, senza consultare gli slot.
-	if ProductionService.is_production_demand(building, resource_name):
+	# Storage riservato alla produzione (2026-09-27, vedi can_accept): niente ramo "quantità esatta", solo
+	# ingredienti e combustibile delle sue ricette, poi il normale calcolo a slot sotto.
+	if building.rules.storage_accepts_recipe_materials_only:
+		if not ProductionService.is_recipe_material(building, resource_name):
+			return 0
+	elif ProductionService.is_production_demand(building, resource_name):
 		return ProductionService.get_production_demand(building, resource_name)
 
 	# Ramo edificio COMPLETO — comportamento ESATTAMENTE INVARIATO rispetto a sempre: storage_slot_

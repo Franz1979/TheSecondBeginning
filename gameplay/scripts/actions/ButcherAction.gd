@@ -121,9 +121,11 @@ func _finish_butchering(individual: Variant) -> void:
 	var broken := ToolGateService.consume_tool_uses(individual, required_tool_categories, null)
 	if not broken.is_empty():
 		report_broken_tools(individual, broken)
-	if DebugLogging.ENABLED and DebugLogging.SHOW_TRANSPORT_BUILD_LOGS:
-		print("[BUTCHER] #%d %s: macellata carcassa di %s (fascia %d) -> %s%s." % [
-			individual.id, individual.name, String(carcass["species"]), int(carcass["age_band"]), str(yields),
+	# Anche con i log della caccia (2026-09-27, diagnosi macellazione doppia): mostra quante volte la stessa carcassa
+	# viene davvero macellata.
+	if HuntService.is_logging() or (DebugLogging.ENABLED and DebugLogging.SHOW_TRANSPORT_BUILD_LOGS):
+		print("[BUTCHER] #%d %s: macellata carcassa #%d di %s (fascia %d) -> %s%s." % [
+			individual.id, individual.name, carcass_id, String(carcass["species"]), int(carcass["age_band"]), str(yields),
 			"" if broken.is_empty() else ", attrezzi rotti: %s" % str(broken)
 		])
 

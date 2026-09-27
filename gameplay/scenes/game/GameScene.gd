@@ -125,6 +125,8 @@ var game_time_service: GameTimeService
 # _setup_clock (nessun .tscn, stesso pattern di HumanIndividualView), aggiunto sotto CanvasLayer
 # così resta in overlay sopra il resto della UI di gioco.
 var notification_popup: NotificationPopup
+# Popup di decisione generico degli eventi (2026-09-27 — primo uso: visitatori), creato in _setup_clock.
+var event_decision_dialog: EventDecisionDialog
 # Banner "selezione Transport a metà" (2026-09-14, richiesta utente — sostituisce l'idea di un
 # timeout automatico: "prova una indicazione visibile") — STESSO principio/STESSA posizione di
 # notification_popup sopra (istanziato via codice in _setup_clock, aggiunto sotto CanvasLayer),
@@ -321,6 +323,9 @@ const GROUND_PILE_OVER_WALKABLE_RADIUS_PX: float = 2.5
 var ground_pile_info_panel: GroundPileInfoPanel
 var selected_ground_pile_id: int = -1
 var _ground_pile_views: Dictionary = {}  # pile id -> GroundPileView
+# Gruppi di visitatori (2026-09-27, gameplay/visitors/): id del gruppo -> VisitorPartyView. Allineato ogni
+# frame da _sync_visitor_party_views, sullo schema di _ground_pile_views.
+var _visitor_party_views: Dictionary = {}
 # Ultimo stato mostrato nel pannello [id, revisione, giorno assoluto]: si ridisegna solo quando cambia.
 var _ground_pile_panel_key: Array = []
 # individual_id -> DeadBodyView (bugfix, 2026-09-05: serve per accendere/spegnere il cerchiolino
@@ -1229,6 +1234,11 @@ func _process(delta: float) -> void:
 		_check_macro_cell_border_crossing(active_individual)
 		_sync_dependent_child_position(active_individual)
 
+	# Gruppi di visitatori (2026-09-27): ciclo dedicato, separato da quello degli individui — i visitatori non
+	# sono in human_individuals e non passano da movimento/azioni/bisogni del villaggio.
+	_advance_visitor_parties(game_delta)
+	_sync_visitor_party_views()
+	_open_pending_visitor_decision()
 	_sync_dropped_weapon_markers()
 	_sync_ground_pile_views()
 
@@ -3004,10 +3014,8 @@ func _resolve_building_residents_display_data(building: Building) -> Array[Dicti
 # lato dati: la capacità/gli slot occupati sono sempre CALCOLATI da stored_resources (vedi
 # BuildingStorageService.get_used_space/get_slots_used), mai tracciati altrove, quindi svuotare
 # questo Dictionary libera automaticamente ogni slot per il prossimo deposito — nessuna altra
-# contabilità da resettare. Nessuna destinazione per il materiale rimosso (richiesta esplicita
-# utente, "per ora non pensiamo a dove vada") — semplicemente scompare, stesso trattamento
-# "temporaneo, nessun sistema di scarico a terra" già accettato altrove nel progetto (vedi
-# HumanIndividualActionService._handle_pending_warehouse_search, ramo discard_on_failure).
+# contabilità da resettare. (Storico: fino al 2026-09-27 il materiale rimosso scompariva, in attesa del
+# ground drop — vedi sotto.)
 #
 # Refresh ESPLICITO in ENTRAMBE le direzioni — pannello (show_building ri-letto subito, la griglia
 # StorageGrid dentro BuildingInfoPanel si ricostruisce da sé) E mappa (_refresh_building_visuals,
@@ -3016,17 +3024,24 @@ func _resolve_building_residents_display_data(building: Building) -> Array[Dicti
 # _buildings_for_cell, non dall'oggetto live, quindi senza questa chiamata resterebbe visibilmente
 # sbagliata — mucchietti ancora disegnati per materiale che non esiste più — fino al prossimo
 # trigger di refresh naturale).
+#
+# GROUND DROP (2026-09-27, richiesta utente): il contenuto non scompare più — deposito E buffer dei prodotti (prima
+# lasciato intatto) cadono a terra davanti all'edificio come un mucchio (GroundPileService.drop_building_contents,
+# stessa funzione pensata per la futura demolizione). Senza una microcella libera l'edificio viene svuotato lo
+# stesso e il contenuto va perso, come prima. Il mucchio compare sulla mappa da sé (_sync_ground_pile_views).
 func _on_empty_all_requested(building: Building) -> void:
 	if building == null:
 		return
-	building.stored_resources.clear()
+	var pile := GroundPileService.drop_building_contents(game_data, building, macro_world)
 	building_info_panel.show_building(building, _resolve_building_residents_display_data(building), _resolve_names_working_on_building(building, BUILD_TASK_NAMES), _resolve_names_working_on_building(building, PRODUCE_TASK_NAMES), _resolve_production_claimed_recipes(building), _resolve_production_tool_wait_lines(building))
 	building_info_panel.show_ground_pile(_ground_pile_lines_at(Vector2i(building.macro_x, building.macro_y), Vector2i(building.micro_x, building.micro_y)))
 	var macro_coords := Vector2i(building.macro_x, building.macro_y)
 	if live_cells.has(macro_coords):
 		_refresh_building_visuals(live_cells[macro_coords])
 	if DebugLogging.ENABLED and DebugLogging.SHOW_TRANSPORT_BUILD_LOGS:
-		print("[BUILD] Deposito edificio #%d svuotato — tutto il materiale è scomparso dal gioco e dal deposito." % building.id)
+		print("[BUILD] Edificio #%d svuotato — %s." % [
+			building.id, ("contenuto a terra nel mucchio #%d, microcella %s" % [pile.id, str(pile.microcell)]) if pile != null else "nulla a terra (edificio vuoto o nessuna microcella libera)"
+		])
 
 
 # Reazione a BuildingInfoPanel.resident_center_requested (2026-09-12, richiesta utente — "puoi
@@ -5043,6 +5058,8 @@ func _build_butcher_task(worker: HumanIndividual, pile: GroundPile, carcass_id: 
 		"resource_name": "meat",
 		"pickup_criterion_kind": PickUpAction.CriterionKind.ALL,
 		"pickup_criterion_category": -1,
+		# Scarico (2026-09-27): la carne va prima al focolare più vicino con posto, il resto al magazzino.
+		HumanIndividualActionService.CONTEXT_PREFER_RECIPE_WORKSTATION: true,
 	})
 	task.step_appended.connect(func(action: Action) -> void:
 		if action is UnloadAction:
@@ -5061,6 +5078,7 @@ func _build_butcher_task(worker: HumanIndividual, pile: GroundPile, carcass_id: 
 #   - il cacciatore ha in CINTURA un attrezzo che copre BUTCHERING (niente spostamenti dallo zaino: senza lama
 #     pronta non si accoda nulla e la carcassa resta lì);
 #   - la carcassa c'è ancora e la sua cella è viva;
+#   - la carcassa non ha già una macellazione in corso o in coda, di nessun individuo (2026-09-27);
 #   - la coda non è piena (TaskQueueService.MAX_QUEUE_SIZE): non si forza, la carcassa resta lì;
 #   - l'individuo può fare la task (età, get_assign_rejection_reason).
 # La task entra nella coda come una qualsiasi altra (sospendibile, annullabile): la caccia finisce subito dopo e la
@@ -5069,6 +5087,18 @@ func _on_butcher_after_hunt_requested(hunter: HumanIndividual, carcass: Dictiona
 	var macro_coords := Vector2i(int(carcass.get("macro_x", 0)), int(carcass.get("macro_y", 0)))
 	var microcell := Vector2i(int(carcass.get("micro_x", 0)), int(carcass.get("micro_y", 0)))
 	var carcass_id: int = int(carcass.get("id", -1))
+	HuntService.log_event(hunter, "richiesta macellazione ricevuta: carcassa #%d, da %s (%s)." % [
+		carcass_id, String(carcass.get("requested_by", "origine sconosciuta")), HuntService.describe_now()
+	])
+	# Niente doppioni (2026-09-27, richiesta utente): se la carcassa ha già una macellazione in corso o in coda, di
+	# qualunque individuo, la richiesta non ne accoda un'altra.
+	for member in human_individuals:
+		var where := _describe_butcher_task_for_carcass(member, carcass_id)
+		if where != "":
+			HuntService.log_event(hunter, "macellazione non accodata: la carcassa #%d ha già una macellazione — #%d %s, %s." % [
+				carcass_id, member.id, member.name, where
+			])
+			return
 	if ToolGateService.find_belt_slot_for(hunter, TaskTypes.ToolCategory.BUTCHERING) == -1:
 		HuntService.log_event(hunter, "macellazione non accodata: nessuna lama in cintura, la carcassa resta a terra.")
 		return
@@ -5091,9 +5121,33 @@ func _on_butcher_after_hunt_requested(hunter: HumanIndividual, carcass: Dictiona
 			return
 	TaskQueueService.push_suspended_task(hunter, task)
 	_spawn_command_icon_at_microcell(cell, microcell, "butcher")
-	HuntService.log_event(hunter, "macellazione accodata sulla carcassa #%d." % carcass_id)
+	HuntService.log_event(hunter, "macellazione accodata sulla carcassa #%d (Task istanza %d, coda ora %d)." % [
+		carcass_id, task.get_instance_id(), hunter.task_queue.size()
+	])
 	if hunter == individual:
 		_refresh_selected_individual_panel()
+
+
+# Controllo dei doppioni di macellazione (2026-09-27, _on_butcher_after_hunt_requested): dove `member` ha una Task
+# non conclusa con un ButcherAction sulla carcassa `carcass_id` — "task in
+# corso (istanza N)", "in coda posizione P (istanza N)" — o "" se nessuna. Più voci unite da "; ".
+func _describe_butcher_task_for_carcass(member: HumanIndividual, carcass_id: int) -> String:
+	var places := PackedStringArray()
+	if _task_butchers_carcass(member.current_task, carcass_id):
+		places.append("task in corso (istanza %d)" % member.current_task.get_instance_id())
+	for i in range(member.task_queue.size()):
+		if _task_butchers_carcass(member.task_queue[i], carcass_id):
+			places.append("in coda posizione %d (istanza %d)" % [i + 1, member.task_queue[i].get_instance_id()])
+	return "; ".join(places)
+
+
+func _task_butchers_carcass(task: Task, carcass_id: int) -> bool:
+	if task == null or task.is_finished():
+		return false
+	for step in task.steps:
+		if step is ButcherAction and (step as ButcherAction).carcass_id == carcass_id:
+			return true
+	return false
 
 
 # Mucchio con almeno una carcassa sotto il click (cella viva, entro GROUND_PILE_SELECT_RADIUS_PX dal suo centro,
@@ -5463,6 +5517,214 @@ func _sync_ground_pile_views() -> void:
 		_ground_pile_views.erase(pile_id)
 	if selected_ground_pile_id != -1:
 		_refresh_ground_pile_panel()
+
+
+# ============================================================================================
+# Gruppi di visitatori (2026-09-27, richiesta utente — gameplay/visitors/, vedi VisitorService)
+# ============================================================================================
+
+# Ciclo dedicato: fa camminare ogni gruppo (game_delta 0 in pausa) e toglie quelli usciti dalla mappa.
+func _advance_visitor_parties(game_delta: float) -> void:
+	if game_data == null or game_data.visitor_parties.is_empty():
+		return
+	var departed: Array[VisitorParty] = []
+	for party in game_data.visitor_parties:
+		if VisitorService.advance(party, game_delta):
+			departed.append(party)
+	for party in departed:
+		game_data.visitor_parties.erase(party)
+
+
+# Una VisitorPartyView per gruppo, sotto il container della sua macrocella se è viva; ricreata quando la
+# cella viene riattivata, liberata quando il gruppo sparisce (stesso schema di _sync_ground_pile_views).
+func _sync_visitor_party_views() -> void:
+	var alive: Dictionary = {}
+	if game_data != null:
+		for party in game_data.visitor_parties:
+			var cell: LiveMacroCell = live_cells.get(party.macro_coords)
+			if cell == null:
+				continue
+			alive[party.id] = true
+			var view = _visitor_party_views.get(party.id)
+			if view != null and (not is_instance_valid(view) or view.get_parent() != cell.container):
+				if is_instance_valid(view):
+					view.queue_free()
+				view = null
+			if view == null:
+				view = VisitorPartyView.new()
+				view.z_index = 1
+				cell.container.add_child(view)
+				view.setup(party, game_data, human_folk.human_rules_ref if human_folk != null else null)
+				_visitor_party_views[party.id] = view
+			view.clock = clock
+	for party_id in _visitor_party_views.keys():
+		if alive.has(party_id):
+			continue
+		var stale = _visitor_party_views[party_id]
+		if is_instance_valid(stale):
+			stale.queue_free()
+		_visitor_party_views.erase(party_id)
+
+
+# Primo gruppo (il più vecchio) nella fase data, o null.
+func _find_visitor_party_in_phase(phase: VisitorTypes.Phase) -> VisitorParty:
+	if game_data == null:
+		return null
+	for party in game_data.visitor_parties:
+		if party.phase == phase:
+			return party
+	return null
+
+
+# Comando di debug 👥+ (2026-09-27): lancia subito l'evento family_arrival, stesso percorso del menu degli
+# eventi casuali (nessun vincolo di sorteggio; l'evento stesso rifiuta lo spawn senza centro del villaggio).
+# Nessuna attivazione di cella: la macrocella del centro del villaggio è già viva per il suo edificio
+# (_activate_all_building_cells); se non lo fosse, _sync_visitor_party_views semplicemente non la disegna.
+const _DEBUG_VISITOR_EVENT_ID := "family_arrival"
+
+func _debug_spawn_visitor_party() -> void:
+	if game_time_service == null:
+		return
+	game_time_service.trigger_random_event_now(_DEBUG_VISITOR_EVENT_ID)
+
+
+# Decisione sui visitatori (2026-09-27, richiesta utente): appena un gruppo è in attesa di decisione si apre
+# EventDecisionDialog (bloccante) sul gruppo più vecchio; con più gruppi in attesa, uno alla volta. Controllato
+# ogni frame, anche a tempo fermo: copre sia l'arrivo al centro sia un salvataggio ricaricato con un gruppo già
+# in attesa. Il context del popup identifica il gruppo per id (non per riferimento).
+const _EVENT_DECISION_KIND_VISITOR_PARTY := "visitor_party"
+const _VISITOR_DECISION_ACCEPT := 0
+const _VISITOR_DECISION_REJECT := 1
+
+func _open_pending_visitor_decision() -> void:
+	if event_decision_dialog == null or event_decision_dialog.visible:
+		return
+	var party := _find_visitor_party_in_phase(VisitorTypes.Phase.AWAITING_DECISION)
+	if party == null:
+		return
+	event_decision_dialog.open_dialog(
+		tr("visitor_decision_family_title"), _build_visitor_decision_text(party),
+		tr("visitor_decision_accept"), tr("visitor_decision_reject"),
+		{"kind": _EVENT_DECISION_KIND_VISITOR_PARTY, "party_id": party.id}
+	)
+
+
+# Testo della decisione: chi è arrivato, un membro per riga con età. Oggi un solo tipo di gruppo (MIGRANTS, la
+# famiglia di family_arrival); tipi futuri (mercanti, predoni...) avranno un proprio testo qui, per party_type.
+func _build_visitor_decision_text(party: VisitorParty) -> String:
+	var lines := PackedStringArray([tr("visitor_decision_family_text")])
+	for member in party.members:
+		var is_female: bool = member.get("sex", HumanTypes.Sex.MALE) == HumanTypes.Sex.FEMALE
+		var key: String
+		if member.get("role", VisitorTypes.MemberRole.ADULT) == VisitorTypes.MemberRole.CHILD:
+			key = "visitor_member_girl" if is_female else "visitor_member_boy"
+		else:
+			key = "visitor_member_woman" if is_female else "visitor_member_man"
+		lines.append("• " + tr(key).format({"age": int(member.get("age", 0))}))
+	lines.append("")
+	lines.append(tr("visitor_decision_family_question"))
+	return "\n".join(lines)
+
+
+# Scelta nel popup di decisione: smista per `kind` del context (oggi solo i visitatori). Il gruppo è riletto per
+# id e deve essere ancora in attesa di decisione, altrimenti la scelta è ignorata.
+func _on_event_decision_chosen(option_index: int, context: Variant) -> void:
+	if not context is Dictionary or context.get("kind", "") != _EVENT_DECISION_KIND_VISITOR_PARTY:
+		return
+	var party: VisitorParty = null
+	for candidate in game_data.visitor_parties:
+		if candidate.id == int(context.get("party_id", -1)) and candidate.phase == VisitorTypes.Phase.AWAITING_DECISION:
+			party = candidate
+			break
+	if party == null:
+		push_warning("[VISITORS] Decisione su un gruppo non più in attesa (id %s): ignorata." % str(context.get("party_id", -1)))
+		return
+	if option_index == _VISITOR_DECISION_ACCEPT:
+		_welcome_visitor_party(party)
+	else:
+		VisitorService.dismiss(party, macro_world)
+		if DebugLogging.ENABLED:
+			print("[VISITORS] Gruppo #%d rifiutato: se ne va verso %s." % [party.id, str(party.exit_point)])
+
+
+# Accoglienza: i membri diventano HumanIndividual veri del gruppo del villaggio, con lo stesso percorso delle
+# nascite (assegnazione casa, vista, conteggio del gruppo) e stamina, provviste e riserva piene. Le provviste
+# e la riserva si riempiono al primo ricalcolo della capacità da regole vere (HumanCarryCapacityIndividualService),
+# come per ogni individuo appena creato; la stamina viene portata al massimo qui. Chi porta una dote la riceve
+# nello zaino e va prima a depositarla (_give_visitor_dowry); gli altri passano subito dall'idle.
+func _welcome_visitor_party(party: VisitorParty) -> void:
+	var used_names: Array[String] = []
+	for member in human_individuals:
+		used_names.append(member.name)
+	var newcomers := VisitorService.materialize_members(party, game_data, human_population_group, used_names)
+	var era_rules := EraCalculator.get_era_rules(game_data.current_era_name)
+	for newcomer in newcomers:
+		HumanStaminaIndividualService.recalculate_max_stamina(newcomer, game_data, era_rules, macro_world)
+		HumanCarryCapacityIndividualService.recalculate_max_carry_capacity(newcomer, game_data)
+		HumanVitalsIndividualService.recalculate_vitals(newcomer, game_data)
+		newcomer.current_stamina = newcomer.max_stamina
+		human_individuals.append(newcomer)
+	human_population_group.total_count = human_individuals.size()
+	game_data.visitor_parties.erase(party)
+	AssignHouseService.assign_pending_residents(macro_world, human_individuals, game_data.year)
+	# newcomers è nello stesso ordine di party.members (VisitorService.materialize_members): l'indice serve alla dote.
+	for i in range(newcomers.size()):
+		var newcomer := newcomers[i]
+		_add_human_individual_view(newcomer)
+		if not _give_visitor_dowry(party, i, newcomer):
+			HumanIndividualActionService.resolve_idle_individual(newcomer, _resolve_age_band(newcomer), macro_world)
+	_refresh_population_panel()
+	if DebugLogging.ENABLED:
+		var labels := PackedStringArray()
+		for newcomer in newcomers:
+			labels.append("#%d %s" % [newcomer.id, newcomer.name])
+		print("[VISITORS] Gruppo #%d accolto: %s entrano nel villaggio." % [party.id, ", ".join(labels)])
+
+
+# Dote del nuovo arrivato (2026-09-27, richiesta utente — VisitorPartyRules del tipo di gruppo, es. ghiande per i
+# migranti adulti): zaino riempito in proporzione alla capacità di trasporto, e deposito al magazzino come prima
+# attività. true = Task di deposito assegnata (il chiamante NON deve risolvere l'idle).
+#
+# Ordine voluto: la Task si assegna PRIMA di riempire lo zaino. HumanIndividual.assign_task, per chi non ha una
+# Task in corso, scarta a terra il carico (ramo "discard_carried_resource"): con lo zaino ancora vuoto non c'è
+# nulla da scartare, e l'UnloadAction legge lo zaino solo quando si attiva, all'arrivo al magazzino. Per lo
+# stesso motivo non si passa dall'idle con lo zaino pieno: la prima perditempo lo lascerebbe cadere come mucchio.
+# La Task è sospendibile (come haul/transport): un bisogno (riposo, rifornimento) la mette in coda con il carico
+# invece di perderla, e riprende dopo. Se nessun magazzino accetta la dote (o non c'è posto) la dote viene data
+# lo stesso e si torna all'idle: il carico finisce a terra vicino all'individuo come mucchio, raccoglibile.
+func _give_visitor_dowry(party: VisitorParty, member_index: int, newcomer: HumanIndividual) -> bool:
+	var dowry := VisitorService.get_member_dowry(party, member_index, newcomer)
+	var resource_name: String = dowry["resource_name"]
+	var quantity: int = dowry["quantity"]
+	if quantity <= 0:
+		return false
+	# Prima un magazzino con posto per tutta la dote; altrimenti uno che ne accetti almeno un'unità (il residuo lo
+	# ricolloca UnloadAction.on_complete con il re-routing già esistente).
+	var warehouse := WarehouseSelectionService.find_best(
+		macro_world, newcomer.position, newcomer.home_macro_coords, resource_name, quantity
+	)
+	if warehouse == null:
+		warehouse = WarehouseSelectionService.find_best(
+			macro_world, newcomer.position, newcomer.home_macro_coords, resource_name, 1
+		)
+	var assigned := false
+	if warehouse != null:
+		var macro_offset: Vector2 = Vector2(Vector2i(warehouse.macro_x, warehouse.macro_y) - newcomer.home_macro_coords) * World.WIDTH
+		var walk := WalkAction.new(Vector2(warehouse.micro_x, warehouse.micro_y) + macro_offset)
+		var unload := UnloadAction.new(warehouse, UnloadAction.DepositKind.RESOURCE)
+		_reconnect_unload_action_signals(unload, newcomer)
+		var task := Task.new([walk, unload])
+		task.task_name = "task_unload_resource_name"
+		task.step_descriptions = ["task_unload_resource_step_walk", "task_unload_resource_step_unload"]
+		task.is_suspendable = true
+		assigned = newcomer.assign_task(task, _resolve_age_band(newcomer))
+	var added := newcomer.add_carried_resource(resource_name, quantity)
+	if DebugLogging.ENABLED:
+		print("[VISITORS] Dote di #%d %s: %d %s nello zaino, %s." % [
+			newcomer.id, newcomer.name, added, resource_name,
+			("deposito accodato al magazzino #%d" % warehouse.id) if assigned else "nessun magazzino disponibile (finirà a terra)"
+		])
+	return assigned
 
 
 # Candidati di raccolta dal mucchio nella microcella del click (click destro): una voce per risorsa del mucchio,
@@ -6041,6 +6303,22 @@ func _on_human_individual_died(
 # parenta sotto il container della cella giusta -> setup() -> z_index -> append). Nessuna view se
 # home_macro_coords non è (più) una cella viva — stesso principio già applicato a DeadBodyView in
 # _on_human_individual_died: niente si disegna fuori dal focus LOD.
+# Vista di un individuo appena entrato in human_individuals (nascita o visitatore accolto), in coda a
+# human_individual_views. Estratta da _on_human_individual_born (2026-09-27) per condividerla con
+# _welcome_visitor_party. false (nessuna vista) se la macrocella dell'individuo non è viva — stesso
+# comportamento di prima per le nascite.
+func _add_human_individual_view(individual: HumanIndividual) -> bool:
+	if not live_cells.has(individual.home_macro_coords):
+		return false
+	var view := HumanIndividualView.new()
+	live_cells[individual.home_macro_coords].container.add_child(view)
+	view.setup(individual, game_data, human_folk.human_rules_ref if human_folk != null else null)
+	view.clock = clock
+	view.z_index = 1
+	human_individual_views.append(view)
+	return true
+
+
 func _on_human_individual_born(individual: HumanIndividual) -> void:
 	# AssignHouseService (2026-09-12, richiesta utente — trigger 4b: "quando nasce un nuovo
 	# individuo") — chiamata PRIMA del guard "cella viva" sotto (l'assegnazione non ha nulla a che
@@ -6050,14 +6328,8 @@ func _on_human_individual_born(individual: HumanIndividual) -> void:
 	# views) con house_id == -1 di default (HumanIndividual.gd) — è quindi già candidato "senza
 	# casa" per questa stessa chiamata.
 	AssignHouseService.assign_pending_residents(macro_world, human_individuals, game_data.year)
-	if not live_cells.has(individual.home_macro_coords):
+	if not _add_human_individual_view(individual):
 		return
-	var view := HumanIndividualView.new()
-	live_cells[individual.home_macro_coords].container.add_child(view)
-	view.setup(individual, game_data, human_folk.human_rules_ref if human_folk != null else null)
-	view.clock = clock
-	view.z_index = 1
-	human_individual_views.append(view)
 	# Sistema notifiche, effetto nato-morto (2026-09-06) — stesso gate/schema di
 	# _on_human_individual_died per la morte: UserOptions.show_notification_popups è
 	# un'impostazione utente/installazione, non di partita. birth_verb/offspring_word dipendono dal
@@ -7703,20 +7975,11 @@ func _block_border_crossing(target_individual: HumanIndividual, dx: int, dy: int
 # fiume (terra con una fascia fluviale locale) — lì la posizione di ingresso va confrontata con
 # RiverMicrocellService.get_river_positions, lo stesso servizio già usato da _activate_live_cell,
 # cosi il test di occupazione non può mai disallinearsi da cosa viene davvero disegnato.
+# Corpo spostato in RiverMicrocellService.is_water_microcell (2026-09-27), condiviso con VisitorService.
 func _is_entry_microcell_water(target_cell: MacroCellData, entry_position: Vector2) -> bool:
-	if target_cell.terrain_base == GameTypes.TerrainBase.WATER:
-		return true
-
-	if target_cell.water_type == GameTypes.WaterType.RIVER:
-		var target_state := macro_world.get_cell_state_at(target_cell.x, target_cell.y)
-		if target_state != null:
-			var thickness_ratio: float = float(target_state.get_river_space()) / float(MacroCellState.TOTAL_SPACE)
-			var river_cells := RiverMicrocellService.get_river_positions(target_cell.river_shape, thickness_ratio)
-			var entry_microcell := Vector2i(int(entry_position.x), int(entry_position.y))
-			if river_cells.has(entry_microcell):
-				return true
-
-	return false
+	return RiverMicrocellService.is_water_microcell(
+		macro_world, target_cell, Vector2i(int(entry_position.x), int(entry_position.y))
+	)
 
 
 func _compute_river_exterior_occupied(positions: Array) -> Dictionary:
@@ -8767,6 +9030,9 @@ func _on_debug_action_pressed(action_id: StringName) -> void:
 			# nuovo stato nel testo del bottone.
 			IdleTaskAssignmentService.set_fallback_enabled(not IdleTaskAssignmentService.fallback_enabled)
 			debug_bar.set_idle_fallback_label(IdleTaskAssignmentService.fallback_enabled)
+		# Gruppi di visitatori (2026-09-27): spawn di prova; l'esito si sceglie nel popup di decisione.
+		&"visitor_spawn":
+			_debug_spawn_visitor_party()
 
 
 # Tasto 🛖 nel sottomenu costruzione di BuildBar — per ora SOLO l'anteprima visiva (vedi
@@ -10242,6 +10508,12 @@ func _setup_clock() -> void:
 	notification_popup = NotificationPopup.new()
 	$CanvasLayer.add_child(notification_popup)
 	notification_popup.ack_wait_changed.connect(_on_notification_ack_wait_changed)
+	# Popup di decisione degli eventi (2026-09-27): bloccante come gli altri dialoghi (tempo e camera fermi).
+	# Qui e non in _ready perché il contatore dei dialoghi bloccanti usa `clock`, creato appena sopra.
+	event_decision_dialog = EventDecisionDialog.new()
+	add_child(event_decision_dialog)
+	event_decision_dialog.visibility_changed.connect(_on_blocking_dialog_visibility_changed.bind(event_decision_dialog))
+	event_decision_dialog.option_chosen.connect(_on_event_decision_chosen)
 	_setup_transport_selection_banner()
 	if macro_world == null:
 		play_pause_button.disabled = true

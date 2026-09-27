@@ -97,3 +97,11 @@ layout_mode = 2
 [node name="RandomEventApplyButton" type="Button" parent="MarginContainer/HBoxContainer/ContentGroup"]
 custom_minimum_size = Vector2(80, 32)
 layout_mode = 2
+
+[node name="VSeparatorVisitors" type="VSeparator" parent="MarginContainer/HBoxContainer/ContentGroup"]
+layout_mode = 2
+
+[node name="VisitorSpawnButton" type="Button" parent="MarginContainer/HBoxContainer/ContentGroup"]
+custom_minimum_size = Vector2(44, 32)
+layout_mode = 2
+text = "👥+"

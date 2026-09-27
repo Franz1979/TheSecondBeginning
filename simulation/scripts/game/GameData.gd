@@ -221,11 +221,26 @@ var ground_piles: Array[GroundPile] = []
 # evento {"id": String, "absolute_day": int, "params": Dictionary}, solo tipi JSON-nativi. Salvati da
 # GameSaveService ("scheduled_random_events"), applicati e rimossi da GameTimeService il giorno previsto.
 var scheduled_random_events: Array[Dictionary] = []
+# Anno dell'ultimo evento avvenuto per ogni CATEGORIA di eventi casuali (2026-09-27, richiesta utente —
+# raffreddamento condiviso, vedi RandomEventCategoryRules): id categoria (String) -> anno (int). Scritto da
+# RandomEventService.apply_event, letto dal sorteggio. Salvato da GameSaveService ("random_event_category_last_year").
+var random_event_category_last_year: Dictionary = {}
 var next_ground_pile_id: int = 1
 
 func allocate_ground_pile_id() -> int:
 	var id := next_ground_pile_id
 	next_ground_pile_id += 1
+	return id
+
+# Gruppi di visitatori presenti (2026-09-27, richiesta utente — gameplay/visitors/, VisitorService): fuori
+# dal villaggio finché non vengono accolti o se ne vanno. Salvati da GameSaveService ("visitor_parties"),
+# insieme al prossimo id da assegnare.
+var visitor_parties: Array[VisitorParty] = []
+var next_visitor_party_id: int = 1
+
+func allocate_visitor_party_id() -> int:
+	var id := next_visitor_party_id
+	next_visitor_party_id += 1
 	return id
 
 # Monotonic day count since year 0, day 0 — the single source of truth for "how long ago"

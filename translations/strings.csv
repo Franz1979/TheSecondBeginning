@@ -447,3 +447,14 @@ task_store_tool_step_walk,Andando a riporre l'attrezzo
 building_assigned_worker_label,Lavoratore assegnato: {names}
 building_assigned_worker_missing,Lavoratore assegnato: mancante
 building_cancel_work_tooltip,Annulla il lavoro su questo edificio per chi ci sta lavorando (il lavoro già fatto resta)
+debug_visitor_spawn_tooltip,Lancia l'evento Arrivo di una famiglia (richiede il centro del villaggio)
+visitor_decision_family_title,Arrivo di una famiglia
+visitor_decision_family_text,Una famiglia è arrivata al centro del villaggio e chiede di unirsi a voi:
+visitor_decision_family_question,La accogliete nel villaggio?
+visitor_decision_accept,Accogli
+visitor_decision_reject,Rifiuta
+visitor_member_man,Uomo di {age} anni
+visitor_member_woman,Donna di {age} anni
+visitor_member_boy,Bambino di {age} anni
+visitor_member_girl,Bambina di {age} anni
+random_event_family_arrival_name,Arrivo di una famiglia
