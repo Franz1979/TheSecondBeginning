@@ -69,6 +69,17 @@ signal repeat_requested(individual: Variant, next_repeat_count: int)
 # (TaskPersistenceService): non riordinare, solo aggiungere in coda.
 enum CriterionKind { NAME, CATEGORY, ALL }
 
+# Sorgente della raccolta (2026-09-26, richiesta utente — ground drop). La sorgente è identificata sempre dalla
+# stessa coppia (macro_state, target_position):
+#   - TERRAIN: le risorse sparse della microcella (TerrainScatteredResourceService), il comportamento di sempre;
+#   - GROUND_PILE: il mucchio a terra in quella microcella (GroundPileService, un solo mucchio per microcella).
+#     Quantità, deperimento e istanze degli attrezzi escono dal mucchio così come sono: gli attrezzi vanno nello
+#     zaino (mai in cintura) con i loro usi residui. Nessun gate required_idea_id: il mucchio contiene ciò che
+#     qualcuno ha lasciato cadere, non ciò che il terreno offre.
+# Scelta da chi crea la Task (GameScene._build_pickup_task) dopo TaskFactory, così haul_resource.tres resta
+# invariata; persistita in get_save_data e letta da TaskPersistenceService._build_step. Non riordinare.
+enum SourceKind { TERRAIN, GROUND_PILE }
+
 # Priorita' fissa tra categorie (2026-09-20): cibo, poi materiali, poi medicinali; semilavorati e
 # strumenti (2026-09-23) in coda.
 const PRIORITY_CATEGORIES: Array = [
@@ -84,6 +95,8 @@ var target_position: Vector2i
 # valorizzato (TaskFactory lo richiede sempre come argomento).
 var resource_name: String = "pebble"
 var macro_state: MacroCellState = null
+
+var source_kind: SourceKind = SourceKind.TERRAIN
 
 var criterion_kind: CriterionKind = CriterionKind.NAME
 # SecondaryResourceTypes.Category come int, valido solo con criterion_kind == CATEGORY (-1 altrimenti).
@@ -131,10 +144,11 @@ var _restored_from_save: bool = false
 
 func _init(
 	p_target_position: Vector2i, p_macro_state: MacroCellState, p_resource_name: String = "pebble", p_quantity_requested: int = -1,
-	p_criterion_kind: int = CriterionKind.NAME, p_criterion_category: int = -1
+	p_criterion_kind: int = CriterionKind.NAME, p_criterion_category: int = -1, p_source_kind: int = SourceKind.TERRAIN
 ) -> void:
 	target_position = p_target_position
 	macro_state = p_macro_state
+	source_kind = p_source_kind as SourceKind
 	resource_name = p_resource_name
 	quantity_requested = p_quantity_requested
 	criterion_kind = p_criterion_kind as CriterionKind
@@ -199,7 +213,7 @@ func _build_candidates() -> Array[Dictionary]:
 			continue
 		if criterion_kind == CriterionKind.CATEGORY and int(rules.category) != criterion_category:
 			continue
-		var available: int = TerrainScatteredResourceService.get_available(macro_state, candidate_name, target_position)
+		var available: int = _get_source_available(candidate_name)
 		if available <= 0:
 			continue
 		candidates.append({
@@ -328,11 +342,9 @@ func on_complete(individual: Variant, context: Dictionary) -> void:
 	var searches: Array = []
 	for entry in _plan:
 		var entry_name: String = entry["resource_name"]
-		var added: int = individual.add_carried_resource(entry_name, int(entry["quantity"]), 0.0)
+		var added: int = _collect_from_source(individual, entry_name, int(entry["quantity"]))
 		if added <= 0:
 			continue
-		if macro_state != null:
-			TerrainScatteredResourceService.consume(macro_state, entry_name, target_position, added)
 		collected[entry_name] = added
 		resource_collected.emit(entry_name, target_position, added)
 		# Quantita' cercata = TUTTO quello che ora si trasporta di questa risorsa (comprese eventuali unita'
@@ -393,6 +405,53 @@ func _request_repeat_if_needed(individual: Variant, context: Dictionary) -> void
 	repeat_requested.emit(individual, repeats_done + 1)
 
 
+# Disponibilità di una risorsa nella sorgente (vedi SourceKind).
+func _get_source_available(candidate_name: String) -> int:
+	if macro_state == null:
+		return 0
+	if source_kind == SourceKind.GROUND_PILE:
+		return GroundPileService.get_available(GameSettings.active_game_data, _source_macro_coords(), target_position, candidate_name)
+	return TerrainScatteredResourceService.get_available(macro_state, candidate_name, target_position)
+
+
+# Sposta fino a `quantity` unità dalla sorgente allo zaino e ritorna quante ne sono entrate. Si toglie dalla
+# sorgente SOLO quanto entra davvero.
+#   - TERRAIN: unità fresche (decay 0.0, vedi il commento su on_complete), poi consumo dal pool della microcella;
+#   - GROUND_PILE: la varietà deve poter entrare nello zaino (MAX_CARRIED_VARIETIES) prima di prelevare; un
+#     attrezzo esce come istanze con i suoi usi residui (add_carried_tool_instance, mai in cintura), le altre
+#     risorse con la decay_fraction che avevano nel mucchio.
+func _collect_from_source(individual: Variant, entry_name: String, quantity: int) -> int:
+	if source_kind == SourceKind.TERRAIN:
+		var added: int = individual.add_carried_resource(entry_name, quantity, 0.0)
+		if added > 0 and macro_state != null:
+			TerrainScatteredResourceService.consume(macro_state, entry_name, target_position, added)
+		return added
+	if macro_state == null or not individual.can_carry_variety(entry_name):
+		return 0
+	var taken := GroundPileService.take(GameSettings.active_game_data, _source_macro_coords(), target_position, entry_name, quantity)
+	var taken_quantity: int = int(taken["quantity"])
+	if taken_quantity <= 0:
+		return 0
+	var units: Array = taken["units"]
+	if units.is_empty():
+		return individual.add_carried_resource(entry_name, taken_quantity, float(taken["decay_fraction"]))
+	var added_units := 0
+	var refused: Dictionary = {}
+	for unit in units:
+		if individual.add_carried_tool_instance(entry_name, unit):
+			added_units += 1
+		else:
+			# Non dovrebbe accadere (varietà già verificata, istanze utilizzabili): l'unità torna nel mucchio.
+			ToolInstance.add_instance_to_entry(refused, unit)
+	if not refused.is_empty():
+		GroundPileService.drop_entries(GameSettings.active_game_data, _source_macro_coords(), Vector2(target_position), {entry_name: refused})
+	return added_units
+
+
+func _source_macro_coords() -> Vector2i:
+	return Vector2i(macro_state.x, macro_state.y) if macro_state != null else Vector2i.ZERO
+
+
 # Descrizione del criterio per il log SHOW_PICKUP_LOGS: nome=<risorsa>, categoria=<FOOD|RAW_MATERIAL|MEDICINAL>
 # o tutto.
 func _criterion_text() -> String:
@@ -426,6 +485,8 @@ func get_save_data() -> Dictionary:
 		# risolto da activate() (ripristinato da load_save_data, vedi _restored_from_save).
 		"criterion_kind": int(criterion_kind),
 		"criterion_category": criterion_category,
+		# Sorgente (2026-09-26, ground drop): letta da TaskPersistenceService._build_step come argomento di _init.
+		"source_kind": int(source_kind),
 		"plan": _plan.duplicate(true),
 		"stop_reason": _stop_reason,
 		"duration": _duration,

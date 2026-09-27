@@ -293,6 +293,20 @@ const SHOW_HUNT_LOGS := true
 # circa una riga al secondo a velocità 1x.
 const HUNT_APPROACH_LOG_INTERVAL_DAYS := 0.125
 
+# TEMPORANEO (2026-09-27, richiesta utente — diagnosi produzione che non avanza): [PRODUCE BLOCK]
+# (ProduceAction._debug_log_block) stampa perché uno step di produzione è fermo — record assente, attrezzi
+# mancanti, materiale mancante, buffer di uscita pieno, combustibile mancante — con le quantità in gioco (per
+# ciclo e per l'ordine intero), e una riga "ripresa" quando torna a lavorare. Una riga solo quando il messaggio
+# cambia, non a ogni tick. Solo stampa: rimuovere flag, variabile e funzioni in ProduceAction insieme.
+const SHOW_PRODUCTION_BLOCK_LOGS := true
+
+# RESOURCE_DECAY — [RESOURCE DECAY] (2026-09-26, richiesta utente): ogni giorno, per ogni edificio completo
+# (ResourceDecayService.advance_building_decay) e per ogni mucchio a terra (GroundPileService._advance_pile_decay)
+# con risorse deperibili, una riga per risorsa: quantità, frazione di deperimento prima -> dopo, incremento del
+# giorno e giorni che restano prima che la voce sparisca; e una riga per ogni voce sparita del tutto. Le risorse
+# che non deperiscono (day_durability -1) non compaiono. Solo stampa, nessun effetto sulla simulazione.
+const SHOW_RESOURCE_DECAY_LOGS := true
+
 # ANIMAL_PROCESS_TIMING — [ANIMAL TIMING] (2026-09-26, comportamento degli animali step 2): ogni 5 s reali,
 # tempo medio per frame speso nel _process di TUTTI gli AnimalGroupRenderer, e di cui nel controllo
 # periodico di disagio (AnimalGroupRenderer._run_disturbance_check), con numero di renderer e individui.

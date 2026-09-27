@@ -20,4 +20,12 @@ enum RemovalActionType {
 # ora, stesso "non un caso ipotetico anticipato" già seguito da DeathTypes.DeathCause.
 enum ExpiredObjectType {
 	DEAD_BODY,
+	# Mucchio di risorse a terra (2026-09-26, ground drop — vedi GroundPile): NON vive in
+	# GameData.expired_objects, usa solo le regole (ground_pile_rules.tres, durata massima) e
+	# ExpiredObjectCalculator per la scadenza. Aggiunto in coda: i salvataggi usano i numeri.
+	GROUND_PILE,
+	# Carcassa di un animale ucciso (2026-09-26, richiesta utente): contenuto speciale di un GroundPile, NON in
+	# GameData.expired_objects — usa solo le regole (carcass_rules.tres, giorni prima che marcisca) e
+	# ExpiredObjectCalculator. Aggiunto in coda.
+	CARCASS,
 }

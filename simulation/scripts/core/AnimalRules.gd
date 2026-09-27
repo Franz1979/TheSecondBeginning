@@ -43,6 +43,17 @@ extends Resource
 # HuntService.DEFAULT_HIT_CHANCE_SCALE.
 @export var hit_chance_scale: float = -1.0
 
+@export_group("Butchering")
+# Resa della macellazione di un individuo ADULTO della specie (2026-09-26, richiesta utente — macellazione,
+# step 1: solo dati, nessuna logica li legge ancora), in unità delle risorse meat/hide/sinew/bone
+# (simulation/data/secondary_resources/). Per le altre fasce d'età si scalano con size_multiplier_by_age
+# (adulto = 1.0), come prey_calories. 0 = la specie non rende quella risorsa (es. una pernice non ha una pelle
+# utile). Valori iniziali proporzionali alla taglia (carne ≈ prey_calories / 5), da tarare.
+@export var butcher_meat_units: int = 0
+@export var butcher_hide_units: int = 0
+@export var butcher_sinew_units: int = 0
+@export var butcher_bone_units: int = 0
+
 @export_group("Behavior")
 # Comportamento degli individui verso umani ed edifici (2026-09-26, richiesta utente — comportamento
 # degli animali, step 1: SOLO i parametri, nessuna logica li legge ancora). Per specie, non per età.

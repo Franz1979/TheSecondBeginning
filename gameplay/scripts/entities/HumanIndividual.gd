@@ -1102,8 +1102,13 @@ func stop(discard_cargo: bool = true) -> void:
 # ogni chiamante può richiamarla incondizionatamente (stesso principio "rete di sicurezza, mai
 # doppio effetto" già seguito per TaskDebugRegistry.on_task_closed).
 #
-# La risorsa SPARISCE (stesso comportamento già esistente nel ramo di re-routing prima di questo
-# passo) — NESSUNO spostamento dell'individuo prima dello scarto. VALUTATO esplicitamente (richiesta
+# GROUND DROP (2026-09-26, richiesta utente): il carico NON sparisce più — le voci finiscono in un mucchio a
+# terra (GroundPileService.drop_entries) nella microcella dell'individuo, con quantità, deperimento e istanze
+# degli attrezzi così come erano nello zaino; il mucchio si può raccogliere (PickUpAction, sorgente
+# GROUND_PILE). I chiamanti restano invariati. Il TODO e le valutazioni qui sotto sono storici: il sistema di
+# ground drop di cui parlano è questo.
+#
+# NESSUNO spostamento dell'individuo prima dello scarto. VALUTATO esplicitamente (richiesta
 # utente) un piccolo Walk casuale (2-3 microcelle, stesso raggio di REST_TASK_NO_HOUSE_WANDER_RADIUS
 # in GameScene.gd) prima di scartare, per evitare che lo scarto si accumuli visivamente sempre sotto
 # lo stesso magazzino pieno — SCARTATO per questo giro, motivazione: il punto di chiamata più
@@ -1135,9 +1140,10 @@ func discard_carried_resource() -> void:
 	if carried_resources.is_empty():
 		return
 	if DebugLogging.ENABLED and DebugLogging.SHOW_TRANSPORT_BUILD_LOGS:
-		print("[HAUL DISCARD] Individuo #%d ha scartato %s (nessuna destinazione disponibile)" % [
+		print("[HAUL DISCARD] Individuo #%d ha lasciato a terra %s (nessuna destinazione disponibile)" % [
 			id, str(carried_resources)
 		])
+	_drop_on_ground(carried_resources.duplicate(true))
 	carried_resources.clear()
 
 
@@ -1150,11 +1156,23 @@ func discard_carried_resource_entry(resource_name: String) -> int:
 	if discarded <= 0:
 		return 0
 	if DebugLogging.ENABLED and DebugLogging.SHOW_TRANSPORT_BUILD_LOGS:
-		print("[HAUL DISCARD] Individuo #%d ha scartato %d %s (nessuna destinazione disponibile)" % [
+		print("[HAUL DISCARD] Individuo #%d ha lasciato a terra %d %s (nessuna destinazione disponibile)" % [
 			id, discarded, resource_name
 		])
+	_drop_on_ground({resource_name: (carried_resources[resource_name] as Dictionary).duplicate(true)})
 	carried_resources.erase(resource_name)
 	return discarded
+
+
+# Lascia a terra delle voci dello zaino (ground drop, 2026-09-26): mucchio nella microcella dell'individuo.
+# Il GameData attivo arriva da GameSettings.active_game_data (l'individuo non ha accesso al mondo); senza,
+# il carico va perso come prima, con un avviso.
+func _drop_on_ground(entries: Dictionary) -> void:
+	var game_data: GameData = GameSettings.active_game_data
+	if game_data == null:
+		push_warning("HumanIndividual #%d: nessun GameData attivo, il carico scartato va perso (%s)." % [id, str(entries)])
+		return
+	GroundPileService.drop_entries(game_data, home_macro_coords, position, entries)
 
 
 # --- Zaino multi-risorsa: accesso al dizionario carried_resources (2026-09-20) ---

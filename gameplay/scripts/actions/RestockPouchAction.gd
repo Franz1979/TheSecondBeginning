@@ -45,6 +45,17 @@ const DURATION_FACTOR: float = 0.5
 # prelevato per le provviste).
 const BODY_RESTORE_DURATION_PER_CALORIE: float = 0.001
 
+# SORGENTE del rifornimento (2026-09-26, richiesta utente — rifornirsi dal proprio zaino). Non riordinare: è
+# persistita.
+#   - BUILDING: il magazzino target_building, come sempre (l'individuo deve essere lì, vedi get_required_position);
+#   - BACKPACK: lo zaino dell'individuo (HumanIndividual.carried_resources), sul posto, senza spostarsi. Stessa
+#     scelta del cibo (FoodSelectionService.select_food_from_entries: riserva col cibo meno denso, provviste col
+#     più denso), stesso travaso in riserva e provviste. Mangia anche il carico che stava trasportando per una
+#     task (arriverà meno roba a destinazione). A fine step chiede, se il bisogno resta, il viaggio al magazzino
+#     (CONTEXT_PENDING_WAREHOUSE_RESTOCK, consumata da HumanIndividualActionService._handle_pending_warehouse_restock).
+enum SourceKind { BUILDING, BACKPACK }
+const CONTEXT_PENDING_WAREHOUSE_RESTOCK := "pending_warehouse_restock"
+
 
 # Emesso da on_complete() SOLO quando un rifornimento reale e' avvenuto (almeno un'unita' davvero
 # prelevata) - stesso principio di RetrieveAction.resource_retrieved: chi crea la Task decide se/come
@@ -64,8 +75,12 @@ var _elapsed: float = 0.0
 var _restored_from_save: bool = false
 
 
-func _init(p_target_building: Building = null) -> void:
+var source_kind: SourceKind = SourceKind.BUILDING
+
+
+func _init(p_target_building: Building = null, p_source_kind: int = SourceKind.BUILDING) -> void:
 	target_building = p_target_building
+	source_kind = p_source_kind as SourceKind
 	target = null
 	disallowed_age_bands = [HumanTypes.AgeBand.INFANT]
 
@@ -76,7 +91,12 @@ func activate(individual: Variant, context: Dictionary) -> void:
 		return
 	var free_space: float = maxf(individual.food_space_capacity - individual.food_space_used, 0.0)
 	var body_deficit: float = maxf(individual.body_calories_capacity - individual.body_calories, 0.0)
-	_selection = FoodSelectionService.select_food(target_building, free_space, body_deficit)
+	if source_kind == SourceKind.BACKPACK:
+		_selection = FoodSelectionService.select_food_from_entries(
+			individual.carried_resources, free_space, body_deficit, "zaino di #%d" % individual.id
+		)
+	else:
+		_selection = FoodSelectionService.select_food(target_building, free_space, body_deficit)
 	var space_to_take: float = float(_selection.get("space_used", 0.0))
 	_duration = 0.0
 	_total_stamina_cost = 0.0
@@ -104,7 +124,7 @@ func is_complete(individual: Variant, context: Dictionary) -> bool:
 # Stessa formula di RetrieveAction.get_required_position: posizione dell'edificio nello spazio locale
 # di individual.home_macro_coords.
 func get_required_position(individual: Variant, context: Dictionary) -> Variant:
-	if target_building == null:
+	if source_kind == SourceKind.BACKPACK or target_building == null:
 		return null
 	var macro_offset: Vector2 = Vector2(Vector2i(target_building.macro_x, target_building.macro_y) - individual.home_macro_coords) * World.WIDTH
 	return Vector2(target_building.micro_x, target_building.micro_y) + macro_offset
@@ -126,7 +146,11 @@ func on_complete(individual: Variant, context: Dictionary) -> void:
 	var space_before: float = individual.food_space_used
 	var calories_before: float = individual.food_calories_held
 	var body_before: float = individual.body_calories
-	if target_building == null or (pouch_quantities.is_empty() and body_quantities.is_empty()):
+	if source_kind == SourceKind.BACKPACK:
+		# Il viaggio al magazzino si valuta comunque dopo lo zaino (anche se lo zaino non ha dato nulla).
+		context[CONTEXT_PENDING_WAREHOUSE_RESTOCK] = true
+	var has_source: bool = source_kind == SourceKind.BACKPACK or target_building != null
+	if not has_source or (pouch_quantities.is_empty() and body_quantities.is_empty()):
 		_log_completion(individual, {}, space_before, calories_before, body_before, 0.0, 0.0)
 		return
 	var resource_names: Array = []
@@ -143,7 +167,7 @@ func on_complete(individual: Variant, context: Dictionary) -> void:
 	for resource_name in resource_names:
 		var requested_body: int = int(body_quantities.get(resource_name, 0))
 		var requested_pouch: int = int(pouch_quantities.get(resource_name, 0))
-		var withdrawn: int = BuildingStorageService.withdraw(target_building, resource_name, requested_body + requested_pouch)
+		var withdrawn: int = _withdraw_from_source(individual, resource_name, requested_body + requested_pouch)
 		if withdrawn <= 0:
 			continue
 		var rules := CaloricCalculator.get_caloric_source_rules(resource_name)
@@ -170,7 +194,15 @@ func on_complete(individual: Variant, context: Dictionary) -> void:
 	individual.food_calories_held += pouch_calories_added
 	HumanFoodPouchService.clamp_to_capacity(individual)
 	_log_completion(individual, withdrawn_quantities, space_before, calories_before, body_before, body_gain, pouch_calories_added)
-	pouch_restocked.emit(target_building, withdrawn_quantities)
+	if source_kind == SourceKind.BUILDING:
+		pouch_restocked.emit(target_building, withdrawn_quantities)
+
+
+# Preleva dalla sorgente: dallo zaino (remove_carried_resource) o dal magazzino (BuildingStorageService.withdraw).
+func _withdraw_from_source(individual: Variant, resource_name: String, quantity: int) -> int:
+	if source_kind == SourceKind.BACKPACK:
+		return individual.remove_carried_resource(resource_name, quantity)
+	return BuildingStorageService.withdraw(target_building, resource_name, quantity)
 
 
 # Log diagnostico del completamento (DebugLogging.SHOW_RESTOCK_LOGS, filtro per individuo
@@ -186,7 +218,7 @@ func _log_completion(
 		return
 	print("[RESTOCK] #%d %s: rifornimento da %s %s - prelevato=%s spazio %.2f->%.2f (capacita=%.2f) calorie %.2f->%.2f | calorie_riserva=+%.2f (riserva %.2f->%.2f, max=%.2f) calorie_provviste=+%.2f" % [
 		individual.id, individual.name,
-		target_building.building_type_name if target_building != null else "(nessun edificio)",
+		"zaino" if source_kind == SourceKind.BACKPACK else (target_building.building_type_name if target_building != null else "(nessun edificio)"),
 		("#%d" % target_building.id) if target_building != null else "",
 		str(withdrawn) if not withdrawn.is_empty() else "niente (nulla da prelevare)",
 		space_before, individual.food_space_used, individual.food_space_capacity,
@@ -205,6 +237,7 @@ func get_save_data() -> Dictionary:
 		"duration": _duration,
 		"elapsed": _elapsed,
 		"total_stamina_cost": _total_stamina_cost,
+		"source_kind": int(source_kind),
 	}
 	if target_building != null:
 		data["target_building_id"] = target_building.id

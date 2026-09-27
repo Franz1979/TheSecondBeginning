@@ -8,6 +8,8 @@ extends RefCounted
 # né a nessuna icona, e i pannelli ricadono sull'iniziale (es. "R" per "rope").
 const RESOURCE_RENAMES := {
 	"rope": "fiber_rope",
+	# 2026-09-26 (macellazione): bird_meat, fonte virtuale mai consumata, diventa la carne generica.
+	"bird_meat": "meat",
 }
 
 
@@ -23,6 +25,8 @@ func _apply_resource_renames(data: Dictionary) -> void:
 		data["human"]["individuals"] = _rename_resources_in(data["human"]["individuals"])
 	if data.has("game") and data["game"] is Dictionary and data["game"].has("expired_objects"):
 		data["game"]["expired_objects"] = _rename_resources_in(data["game"]["expired_objects"])
+	if data.has("game") and data["game"] is Dictionary and data["game"].has("ground_piles"):
+		data["game"]["ground_piles"] = _rename_resources_in(data["game"]["ground_piles"])
 
 
 func _rename_resources_in(value: Variant) -> Variant:
@@ -152,6 +156,35 @@ func load_game_from_json(file_path: String) -> LoadedGame:
 	# perché quel pattern (usato invece per next_population_group_id/next_building_id sotto)
 	# sarebbe sbagliato qui.
 	game_data.next_human_id = int(data["game"].get("next_human_id", 1))
+	# Mucchi a terra (2026-09-26, ground drop) — .get(key, []) per i salvataggi precedenti. Le voci passano
+	# dallo stesso parser dei magazzini (_parse_stored_resources: attrezzi a istanze compresi).
+	game_data.ground_piles.clear()
+	for raw_pile in data["game"].get("ground_piles", []):
+		if raw_pile is Dictionary:
+			var pile := GroundPileService.from_save_data(raw_pile, _parse_stored_resources)
+			if not pile.is_empty():
+				game_data.ground_piles.append(pile)
+	game_data.next_ground_pile_id = int(data["game"].get("next_ground_pile_id", 1))
+	# Eventi casuali programmati (2026-09-26) — .get(key, []) per i salvataggi precedenti; giorno normalizzato a int
+	# (JSON non distingue int/float).
+	game_data.scheduled_random_events.clear()
+	for raw_event in data["game"].get("scheduled_random_events", []):
+		if raw_event is Dictionary and String(raw_event.get("id", "")) != "":
+			var raw_params = raw_event.get("params", {})
+			game_data.scheduled_random_events.append({
+				"id": String(raw_event["id"]),
+				"absolute_day": int(raw_event.get("absolute_day", 0)),
+				"params": raw_params if raw_params is Dictionary else {},
+			})
+	for pile in game_data.ground_piles:
+		game_data.next_ground_pile_id = maxi(game_data.next_ground_pile_id, pile.id + 1)
+		for carcass in pile.carcasses:
+			game_data.next_ground_pile_id = maxi(game_data.next_ground_pile_id, int(carcass["id"]) + 1)
+	# Carcasse salvate prima che avessero un id (2026-09-26, macellazione): ricevono un id nuovo.
+	for pile in game_data.ground_piles:
+		for carcass in pile.carcasses:
+			if int(carcass["id"]) < 0:
+				carcass["id"] = game_data.allocate_ground_pile_id()
 
 	var world_data = data["world"]
 	var world := World.new()

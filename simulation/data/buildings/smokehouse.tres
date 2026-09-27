@@ -1,0 +1,24 @@
+[gd_resource type="Resource" script_class="BuildingRules" format=3]
+
+[ext_resource type="Script" uid="uid://b8pl3yflicmtn" path="res://simulation/scripts/core/BuildingRules.gd" id="1_smokehouse"]
+
+[resource]
+script = ExtResource("1_smokehouse")
+building_name = "building_smokehouse"
+category = 4
+required_idea_id = "smoking"
+min_construction_days = 4
+required_labor = 1500
+required_materials = {
+"hide": 2,
+"pebble": 20,
+"stick": 20
+}
+max_durability = 50
+required_space = 1
+has_door = false
+visibility_radius = 2
+is_workstation = true
+production_output_slots = 4
+production_queue_slots = 1
+production_max_quantity = 5

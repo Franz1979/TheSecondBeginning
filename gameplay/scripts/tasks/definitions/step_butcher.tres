@@ -1,0 +1,9 @@
+[gd_resource type="Resource" script_class="TaskStepDefinition" format=3]
+
+[ext_resource type="Script" uid="uid://d3sri3tos2u4f" path="res://gameplay/scripts/tasks/task_step_definition.gd" id="1_butcher"]
+
+[resource]
+script = ExtResource("1_butcher")
+action_type = 19
+context_keys = Array[String](["butcher_macro_coords", "butcher_microcell", "butcher_carcass_id"])
+step_description = "task_butcher_step_butcher"

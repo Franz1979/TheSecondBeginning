@@ -22,6 +22,14 @@ const LEISURE_RESTOCK_TASK_DEFINITION_PATH := "res://gameplay/scripts/tasks/defi
 # Task-bisogno "emergency_restock" (2026-09-19, richiesta utente): stessi step di leisure_restock ma
 # interrupt_priority 20 (interrompe). Vedi assign_emergency_restock_task.
 const EMERGENCY_RESTOCK_TASK_DEFINITION_PATH := "res://gameplay/scripts/tasks/definitions/emergency_restock.tres"
+# Varianti "dallo zaino" (2026-09-26, richiesta utente — rifornirsi dal proprio zaino): stesso task_name/priorità, un
+# solo step RestockPouch con sorgente BACKPACK e nessun cammino. Scelte da build_restock_task quando lo zaino contiene
+# cibo commestibile; se dopo il travaso il bisogno resta, il viaggio al magazzino viene accodato a fine step
+# (HumanIndividualActionService._handle_pending_warehouse_restock).
+const BACKPACK_RESTOCK_DEFINITION_PATHS := {
+	LEISURE_RESTOCK_TASK_DEFINITION_PATH: "res://gameplay/scripts/tasks/definitions/leisure_restock_backpack.tres",
+	EMERGENCY_RESTOCK_TASK_DEFINITION_PATH: "res://gameplay/scripts/tasks/definitions/emergency_restock_backpack.tres",
+}
 
 # Tetto di sicurezza in giorni per la Rest da BISOGNO (2026-09-16, richiesta utente — bugfix:
 # anche con regen percentuale, vedi RestAction.STAMINA_REGEN_PERCENT_PER_DAY, il recupero dalla
@@ -30,7 +38,8 @@ const EMERGENCY_RESTOCK_TASK_DEFINITION_PATH := "res://gameplay/scripts/tasks/de
 # backstop in OR col criterio "stamina piena": chi recupera prima si ferma prima, questo scatta
 # solo se il recupero fosse più lento del previsto.
 # Taratura 2026-09-26 (richiesta utente): da 8.0 a 6.0, insieme al recupero portato al 10% al giorno.
-const REST_TASK_MAX_DURATION_DAYS: float = 6.0
+# Taratura 2026-09-27 (richiesta utente): da 6.0 a 4.0, insieme al recupero portato al 20% al giorno.
+const REST_TASK_MAX_DURATION_DAYS: float = 4.0
 
 # Raggio massimo del walk-around casuale quando l'individuo NON ha una casa assegnata — STESSO
 # valore/STESSO principio già in uso prima di questo spostamento (vedi GameScene, ora rimosso da
@@ -202,10 +211,16 @@ static func assign_emergency_rest_task(individual: HumanIndividual, age_band: Hu
 # resolve_rest_target). Usata da assign_leisure_restock_task, assign_emergency_restock_task e dal
 # fallback idle (IdleTaskAssignmentService._build_idle_task).
 static func build_restock_task(individual: HumanIndividual, world: World, definition_path: String) -> Task:
-	var source := WarehouseSelectionService.find_source_for_retrieval(
-		world, individual.position, individual.home_macro_coords, SecondaryResourceTypes.Category.FOOD,
-		[], 1, individual.id
-	)
+	# Prima lo zaino (2026-09-26): con cibo commestibile addosso la task parte sul posto, senza cammino e anche se
+	# non esiste nessun magazzino con cibo. Anche il carico di un'altra task viene mangiato.
+	if BACKPACK_RESTOCK_DEFINITION_PATHS.has(definition_path) and FoodSelectionService.has_edible_food(individual.carried_resources):
+		if DebugLogging.should_log_restock(individual.id):
+			print("[RESTOCK] #%d %s: cibo nello zaino, rifornimento sul posto (%s)." % [individual.id, individual.name, definition_path.get_file()])
+		return TaskFactory.build_task(load(BACKPACK_RESTOCK_DEFINITION_PATHS[definition_path]) as TaskDefinition, {
+			"restock_target_building": null,
+			"restock_source_kind": RestockPouchAction.SourceKind.BACKPACK,
+		})
+	var source := find_restock_source(individual, world)
 	if source == null:
 		if DebugLogging.should_log_restock(individual.id):
 			print("[RESTOCK] #%d %s: nessun magazzino completo con cibo trovato, Task non creata (%s)." % [
@@ -234,6 +249,14 @@ static func build_restock_task(individual: HumanIndividual, world: World, defini
 # Assegnazione comune delle Task di rifornimento: build_restock_task + can_assign_task + assign_task,
 # con il log [RESTOCK] dell'esito. NON chiama individual.stop() (scarterebbe lo zaino: rifornirsi deve
 # poter avvenire anche mentre si trasporta qualcosa).
+# Magazzino da cui rifornirsi: il più vicino con cibo (stessa ricerca di sempre). null se non ce n'è.
+static func find_restock_source(individual: HumanIndividual, world: World) -> Building:
+	return WarehouseSelectionService.find_source_for_retrieval(
+		world, individual.position, individual.home_macro_coords, SecondaryResourceTypes.Category.FOOD,
+		[], 1, individual.id
+	)
+
+
 static func _assign_restock_task(
 	individual: HumanIndividual, world: World, age_band: HumanTypes.AgeBand, definition_path: String,
 	is_interrupt_transition: bool

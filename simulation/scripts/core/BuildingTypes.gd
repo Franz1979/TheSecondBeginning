@@ -21,10 +21,15 @@ class_name BuildingTypes
 #
 # PRODUCTION (2026-09-23, richiesta utente — campfire, prima workstation del sistema di produzione)
 # aggiunto IN FONDO per lo stesso motivo.
+#
+# MILITARY (earthwork) e RELIGIOUS (burial) (2026-09-26, richiesta utente) aggiunti IN FONDO per lo stesso
+# motivo. Nomi visibili: chiavi tr() "building_category_<nome_minuscolo>" (StatisticsPanel).
 enum Category {
 	RESIDENTIAL,
 	POLITICAL,
 	STORAGE,
 	MOVEMENT,
 	PRODUCTION,
+	MILITARY,
+	RELIGIOUS,
 }

@@ -49,6 +49,9 @@ var pickup_default_resource: String = ""
 # dialog di raccolta non compare (cella con una sola risorsa). Chiave in options.cfg: "repeat_default" (con lettura
 # di ripiego della vecchia "pickup_repeat_default").
 var repeat_default: bool = false
+# Consegna al magazzino dopo la produzione (2026-09-26, richiesta utente): default della spunta "Consegna al
+# magazzino" del pannello di produzione. Chiave in options.cfg: "production_delivery_default".
+var production_delivery_default: bool = true
 # Minimappa della sidebar chiusa (2026-09-20, richiesta utente): true = nascosta, resta solo il bottone per
 # riaprirla; false (default) = visibile. Salvato a ogni click sul bottone.
 var minimap_collapsed: bool = false
@@ -95,6 +98,7 @@ func load_from_disk() -> void:
 	pickup_default_category = int(config.get_value(SECTION, "pickup_default_category", -1))
 	pickup_default_resource = String(config.get_value(SECTION, "pickup_default_resource", ""))
 	repeat_default = bool(config.get_value(SECTION, "repeat_default", config.get_value(SECTION, "pickup_repeat_default", false)))
+	production_delivery_default = bool(config.get_value(SECTION, "production_delivery_default", true))
 	minimap_collapsed = bool(config.get_value(SECTION, "minimap_collapsed", false))
 	for field in VOLUME_BUSES.keys():
 		set(field, clampf(float(config.get_value(SECTION, field, DEFAULT_VOLUME)), 0.0, 1.0))
@@ -110,6 +114,7 @@ func save_to_disk() -> void:
 	config.set_value(SECTION, "pickup_default_category", pickup_default_category)
 	config.set_value(SECTION, "pickup_default_resource", pickup_default_resource)
 	config.set_value(SECTION, "repeat_default", repeat_default)
+	config.set_value(SECTION, "production_delivery_default", production_delivery_default)
 	config.set_value(SECTION, "minimap_collapsed", minimap_collapsed)
 	for field in VOLUME_BUSES.keys():
 		config.set_value(SECTION, field, get(field))

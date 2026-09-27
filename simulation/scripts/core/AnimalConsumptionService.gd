@@ -2,14 +2,12 @@ class_name AnimalConsumptionService
 extends RefCounted
 
 const FORAGE_SOURCE_NAME := "forage"
-# fish_meat/bird_meat: stesso trattamento di FORAGE (consuming_depletes_primary = true, vedi
-# SecondaryResourceRules) — decrementano direttamente la risorsa primaria collegata (FISH/BIRDS),
-# mai uno stock proprio. Nessuna specie ha ancora questi due nomi in diet_compatibility (nessun
-# consumo umano implementato), quindi questi rami non sono ancora davvero raggiunti — ma il
-# dispatcher sotto e' gia' corretto per quando lo saranno, invece di trattarli per errore come
-# fonti a stock (unico altro ramo disponibile prima di questa modifica).
+# fish_meat: stesso trattamento di FORAGE (consuming_depletes_primary = true, vedi SecondaryResourceRules) —
+# decrementa direttamente la risorsa primaria collegata (FISH), mai uno stock proprio. Nessuna specie ha
+# ancora questo nome in diet_compatibility, quindi il ramo non e' ancora davvero raggiunto — ma il
+# dispatcher sotto e' gia' corretto per quando lo sara'. Il gemello bird_meat/BIRDS e' stato rimosso il
+# 2026-09-26: bird_meat e' diventata "meat", la carne generica della macellazione, non piu' una fonte di dieta.
 const FISH_MEAT_SOURCE_NAME := "fish_meat"
-const BIRD_MEAT_SOURCE_NAME := "bird_meat"
 
 # Consumo calorico giornaliero (non stagionale) per ogni gruppo animale, ripartito tra le celle
 # del suo territorio (vedi _consume_group) e, dentro ciascuna cella, tra TUTTE le fonti con
@@ -267,8 +265,6 @@ func _consume_requirement_in_cell(
 					_consume_forage(cell, state, units_consumed)
 				FISH_MEAT_SOURCE_NAME:
 					_consume_fish_meat(cell, state, units_consumed)
-				BIRD_MEAT_SOURCE_NAME:
-					_consume_bird_meat(cell, state, units_consumed)
 				_:
 					var before := state.get_secondary_resource_stock(source_name)
 					state.set_secondary_resource_stock(source_name, before - units_consumed)
@@ -343,36 +339,5 @@ func _consume_fish_meat(cell: MacroCellData, state: MacroCellState, units_consum
 		)
 		space_debt -= actually_removed
 	state.set_pending_fish_space_debt(space_debt)
-
-	return removed
-
-
-# Gemella di _consume_forage sopra, sulla risorsa BIRDS: terrestrial_dedicated_space (get/
-# set_terrestrial_space) invece di dedicated_space, densità via get_max_density(BIRDS, terrain,
-# biome, coast) — BIRDS è una risorsa di terra come GRASS (stesso asse Terrain/Biome/Coast già
-# usato da InitialResourceSetupService.populate_birds), solo con la propria dedicated_space.
-# Nessun chiamante reale ancora (vedi BIRD_MEAT_SOURCE_NAME sopra), pronta per quando esisterà.
-func _consume_bird_meat(cell: MacroCellData, state: MacroCellState, units_consumed: float) -> bool:
-	var max_density := ResourceCalculator.get_max_density(
-		GameTypes.WorldObjectType.BIRDS, cell.terrain_base, cell.biome, cell.coast_type
-	)
-	if max_density <= 0.0:
-		return false
-
-	var space_debt := state.get_pending_bird_space_debt() + (units_consumed / max_density)
-	var space_to_remove: int = int(floor(space_debt))
-	var removed := false
-	if space_to_remove > 0:
-		var current_space := state.get_terrestrial_space(GameTypes.WorldObjectType.BIRDS)
-		var actually_removed: int = min(space_to_remove, current_space)
-		if actually_removed > 0:
-			removed = true
-		var new_space := current_space - actually_removed
-		state.set_terrestrial_space(GameTypes.WorldObjectType.BIRDS, new_space)
-		state.set_resource_quantity(
-			GameTypes.WorldObjectType.BIRDS, int(round(new_space * max_density))
-		)
-		space_debt -= actually_removed
-	state.set_pending_bird_space_debt(space_debt)
 
 	return removed

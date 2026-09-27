@@ -21,6 +21,16 @@ extends RefCounted
 # Combustibile (recipe_fuel_required/production_fuel_multiplier/fuel_value): gestito dal 2026-09-24,
 # vedi la sezione "Combustibile" sotto (get_missing_fuel_for/get_production_demand/_consume_fuel).
 #
+# ORDINE INTERO (2026-09-26, richiesta utente — materiale per l'ordine intero): ogni record porta anche
+# "units_remaining", i pezzi ancora dovuti dalle Produce Task che lavorano quella ricetta (sommati se sono più
+# d'una). Lo scrive GameScene (_reconcile_production_units: all'assegnazione, all'annullo e ogni giorno, dalla
+# somma delle Task vive), lo decrementa complete_production a ogni ciclo concluso. Il FABBISOGNO dell'edificio
+# (get_missing_inputs_for_recipes/get_missing_fuel_for_recipes, quindi get_production_demand e il pannello) è
+# calcolato sull'ordine intero: input × cicli ancora dovuti (get_cycles_due), meno lo stoccato. Un record senza
+# unità (nessuna Task lo lavora più, "sospeso") torna a un ciclo. Il calcolo per SINGOLO ciclo
+# (get_missing_inputs_for/get_missing_fuel_for), usato da ProduceAction e dal completamento, resta invariato: il
+# materiale in più resta nell'edificio e serve ai cicli successivi.
+#
 # BUFFER DI USCITA (2026-09-23, richiesta utente): il prodotto di un ciclo va in
 # Building.production_output (a pezzi, capienza BuildingRules.production_output_slots), mai
 # direttamente in stored_resources né nello zaino. Se l'edificio ha storage con posto, il buffer si
@@ -60,12 +70,16 @@ static func normalize_progress(raw: Dictionary) -> Dictionary:
 	if raw.has("resource_name") and not (raw["resource_name"] is Dictionary):
 		var legacy_name := String(raw["resource_name"])
 		if legacy_name != "":
-			progress[legacy_name] = {"labor_accumulated": float(raw.get("labor_accumulated", 0.0))}
+			progress[legacy_name] = {"labor_accumulated": float(raw.get("labor_accumulated", 0.0)), "units_remaining": 0}
 		return progress
 	for resource_name in raw.keys():
 		var record: Variant = raw[resource_name]
 		if record is Dictionary:
-			progress[String(resource_name)] = {"labor_accumulated": float(record.get("labor_accumulated", 0.0))}
+			# units_remaining (2026-09-26): 0 per i save precedenti — GameScene lo ricalcola dalle Task vive.
+			progress[String(resource_name)] = {
+				"labor_accumulated": float(record.get("labor_accumulated", 0.0)),
+				"units_remaining": int(record.get("units_remaining", 0)),
+			}
 	return progress
 
 
@@ -99,8 +113,36 @@ static func start_production(building: Building, resource_name: String) -> bool:
 		return true
 	if building.production_progress.size() >= get_queue_capacity(building):
 		return false
-	building.production_progress[resource_name] = {"labor_accumulated": 0.0}
+	building.production_progress[resource_name] = {"labor_accumulated": 0.0, "units_remaining": 0}
 	return true
+
+
+# --- Ordine intero (2026-09-26) ---
+
+# Pezzi ancora dovuti sul record di `resource_name` (0 = record assente o nessuna Task lo lavora più).
+static func get_units_remaining(building: Building, resource_name: String) -> int:
+	if building == null:
+		return 0
+	var record: Dictionary = building.production_progress.get(resource_name, {})
+	return int(record.get("units_remaining", 0))
+
+
+# Scrive i pezzi dovuti sul record (no-op se il record non esiste). Chiamata da GameScene._reconcile_production_units.
+static func set_units_remaining(building: Building, resource_name: String, units: int) -> void:
+	if building == null or not building.production_progress.has(resource_name):
+		return
+	(building.production_progress[resource_name] as Dictionary)["units_remaining"] = maxi(units, 0)
+
+
+# Cicli ancora dovuti per la ricetta: pezzi dovuti / pezzi per ciclo (per eccesso); almeno 1 (un record sospeso,
+# senza pezzi dovuti, conta come un ciclo — il comportamento di prima).
+static func get_cycles_due(building: Building, resource_name: String) -> int:
+	var units := get_units_remaining(building, resource_name)
+	if units <= 0:
+		return 1
+	var recipe_rules := CaloricCalculator.get_caloric_source_rules(resource_name)
+	var per_cycle: int = maxi(recipe_rules.recipe_output_quantity, 1) if recipe_rules != null else 1
+	return maxi(int(ceil(float(units) / float(per_cycle))), 1)
 
 
 # Libera posto per `resource_name` quando l'edificio ha già tutti i record occupati: rimuove record di
@@ -188,8 +230,8 @@ static func get_missing_inputs_for(building: Building, resource_name: String) ->
 	return missing
 
 
-# Materiali mancanti per UN ciclo di OGNI ricetta in corso, insieme: il fabbisogno di un input
-# condiviso da più ricette è la SOMMA dei rispettivi recipe_inputs, confrontata con lo storage
+# Materiali mancanti per l'ORDINE INTERO di ogni ricetta in corso (2026-09-26: recipe_inputs × get_cycles_due;
+# prima un solo ciclo), insieme: il fabbisogno di un input condiviso da più ricette è la SOMMA, confrontata con lo storage
 # (condiviso anch'esso). Vuoto se nessuna produzione è in corso o nulla manca. Usato da
 # BuildingStorageService (quanto accettare) e dal pannello (cosa manca).
 static func get_missing_inputs(building: Building) -> Dictionary:
@@ -207,8 +249,9 @@ static func get_missing_inputs_for_recipes(building: Building, recipe_names: Arr
 		var recipe_rules := CaloricCalculator.get_caloric_source_rules(String(active_name))
 		if recipe_rules == null:
 			continue
+		var cycles := get_cycles_due(building, String(active_name))
 		for input_name in recipe_rules.recipe_inputs.keys():
-			var required: int = int(recipe_rules.recipe_inputs[input_name])
+			var required: int = int(recipe_rules.recipe_inputs[input_name]) * cycles
 			if required > 0:
 				required_totals[String(input_name)] = int(required_totals.get(String(input_name), 0)) + required
 	for input_name in required_totals.keys():
@@ -287,12 +330,14 @@ static func get_missing_fuel_for_recipes(building: Building, recipe_names: Array
 	var required := 0.0
 	var reserved: Dictionary = {}
 	for active_name in recipe_names:
-		required += get_required_fuel(building, String(active_name))
+		# Ordine intero (2026-09-26): combustibile e materiali riservati × cicli ancora dovuti.
+		var cycles := get_cycles_due(building, String(active_name))
+		required += get_required_fuel(building, String(active_name)) * cycles
 		var recipe_rules := CaloricCalculator.get_caloric_source_rules(String(active_name))
 		if recipe_rules == null:
 			continue
 		for input_name in recipe_rules.recipe_inputs.keys():
-			reserved[input_name] = int(reserved.get(input_name, 0)) + int(recipe_rules.recipe_inputs[input_name])
+			reserved[input_name] = int(reserved.get(input_name, 0)) + int(recipe_rules.recipe_inputs[input_name]) * cycles
 	if required <= 0.0:
 		return 0.0
 	var missing := required - get_available_fuel(building, reserved)
@@ -491,6 +536,12 @@ static func complete_production(building: Building, active_name: String) -> int:
 	var produced: int = max(recipe_rules.recipe_output_quantity, 0)
 	if produced > 0:
 		building.production_output[active_name] = int(building.production_output.get(active_name, 0)) + produced
-	building.production_progress.erase(active_name)
+	# Ordine intero (2026-09-26): il record resta, con lavoro azzerato, finché ci sono pezzi dovuti; sparisce
+	# solo a ordine concluso (o se nessuna Task lo reclamava: units_remaining 0, il comportamento di prima).
+	var units_left := get_units_remaining(building, active_name) - produced
+	if units_left > 0:
+		building.production_progress[active_name] = {"labor_accumulated": 0.0, "units_remaining": units_left}
+	else:
+		building.production_progress.erase(active_name)
 	flush_output_to_storage(building)
 	return produced

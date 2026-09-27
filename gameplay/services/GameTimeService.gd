@@ -36,6 +36,10 @@ const DEBUG_LOG_COUPLING := true
 # ora sempre il giorno vero passato a _kill_individual, cause la causa vera invece del fisso
 # OLD_AGE di prima — nessun consumo ancora nel testo del popup (arriva in uno step successivo),
 # ma il segnale porta già il dato corretto.
+# Evento casuale applicato (2026-09-26, richiesta utente — gameplay/events/): `popup_text` già tradotto, "" =
+# nessun popup. GameScene lo mostra con NotificationPopup (tipo RANDOM_EVENT).
+signal random_event_applied(event_id: String, popup_text: String)
+
 signal individual_died(
 	individual: HumanIndividual, index: int, age_at_death: int, partner_freed: bool,
 	cause: DeathTypes.DeathCause, day: int
@@ -158,6 +162,11 @@ func _on_day_advanced(_checkpoint_ran: bool, _animals_changed: bool) -> void:
 	_log_daily_food_need()
 	_apply_daily_vitals_interaction()
 	_advance_daily_individual_resource_decay()
+	_run_daily_random_events()
+	# Mucchi a terra (2026-09-26, ground drop): deperimento a velocità doppia e durata massima, vedi
+	# GroundPileService.advance_daily. I mucchi rimossi spariscono dalla mappa da soli (GameScene li
+	# riallinea ogni frame).
+	GroundPileService.advance_daily(_game_data)
 	# Decadimento giornaliero dei pensieri nelle idee non attive (2026-09-21, richiesta utente) —
 	# INCONDIZIONATO come gli altri _advance_daily_* sopra; IdeaDecayService agisce solo sulle voci
 	# scadute di Folk.idea_decay_due_day. Nessun refresh UI: il TechTreePanel ricalcola tutto ad ogni
@@ -384,6 +393,46 @@ func _apply_daily_vitals_interaction() -> void:
 # zaino vuoto/risorsa non deperibile, nessun filtro aggiuntivo necessario qui. Emette
 # individual_resource_decayed una volta per ogni varietà deperita (l'Array di ritorno; una perdita reale
 # oggi) — il caso comune (nulla deperisce quel giorno) non emette mai nulla.
+# Eventi casuali (2026-09-26, richiesta utente — vedi RandomEventService): sorteggio annuale al giorno
+# ROLL_DAY_OF_YEAR (solo con AUTO_ROLL_ENABLED; nessun sorteggio all'avvio di una partita nuova), poi
+# applicazione degli eventi programmati per oggi, rimossi dalla lista come le morti programmate.
+func _run_daily_random_events() -> void:
+	if RandomEventService.AUTO_ROLL_ENABLED and _game_data.current_day == RandomEventService.ROLL_DAY_OF_YEAR:
+		var scheduled := RandomEventService.roll_year(_game_data, _build_random_event_context(null, {}))
+		if DebugLogging.ENABLED and not scheduled.is_empty():
+			print("[RANDOM EVENTS] anno=%d: programmati %s" % [_game_data.year, str(scheduled)])
+	for entry in RandomEventService.take_due_events(_game_data):
+		_apply_random_event(String(entry.get("id", "")), entry.get("params", {}))
+
+
+# Scatena subito un evento (barra di debug), senza vincoli di sorteggio: stesso percorso dell'applicazione
+# programmata (effetti + popup).
+func trigger_random_event_now(event_id: String) -> void:
+	_apply_random_event(event_id, {})
+
+
+func _apply_random_event(event_id: String, params: Dictionary) -> void:
+	var rules := RandomEventService.get_rules(event_id)
+	if rules == null:
+		push_warning("GameTimeService: evento casuale '%s' sconosciuto." % event_id)
+		return
+	var popup_text := RandomEventService.apply_event(_build_random_event_context(rules, params))
+	if DebugLogging.ENABLED:
+		print("[RANDOM EVENTS] anno=%d giorno=%d: applicato '%s'." % [_game_data.year, _game_data.current_day, event_id])
+	random_event_applied.emit(event_id, popup_text)
+
+
+func _build_random_event_context(rules: RandomEventRules, params: Dictionary) -> RandomEventContext:
+	var context := RandomEventContext.new()
+	context.rules = rules
+	context.game_data = _game_data
+	context.world = _world
+	context.human_individuals = _human_individuals
+	context.human_folk = _human_folk
+	context.params = params
+	return context
+
+
 func _advance_daily_individual_resource_decay() -> void:
 	if _human_individuals.is_empty():
 		return

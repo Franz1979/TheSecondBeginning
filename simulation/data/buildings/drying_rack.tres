@@ -1,0 +1,23 @@
+[gd_resource type="Resource" script_class="BuildingRules" format=3]
+
+[ext_resource type="Script" uid="uid://b8pl3yflicmtn" path="res://simulation/scripts/core/BuildingRules.gd" id="1_drying_rack"]
+
+[resource]
+script = ExtResource("1_drying_rack")
+building_name = "building_drying_rack"
+category = 4
+required_idea_id = "drying"
+min_construction_days = 2
+required_labor = 600
+required_materials = {
+"plant_fiber": 6,
+"stick": 12
+}
+max_durability = 30
+required_space = 1
+has_door = false
+visibility_radius = 1
+is_workstation = true
+production_output_slots = 3
+production_queue_slots = 1
+production_max_quantity = 5

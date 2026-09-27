@@ -45,6 +45,23 @@ signal resource_retrieved(resource_name: String, building: Building, quantity: i
 # attraverso la Transport Task (context, TaskFactory, salvataggio): solo questa classe lo interpreta.
 const ALL_PRODUCTS := "__all_products__"
 
+# CONSEGNA AL MAGAZZINO DOPO LA PRODUZIONE (2026-09-26, richiesta utente — terzo step di produce.tres: Walk ->
+# Produce -> Retrieve sullo stesso edificio). Con deliver_to_warehouse = true lo step:
+#   - parte a ordine finito (è dopo ProduceAction, che si completa solo a ordine intero) e preleva SOLO la risorsa
+#     prodotta, fino ai pezzi prodotti dall'ordine (context[CONTEXT_PRODUCED_COUNT], scritto da
+#     ProduceAction.on_complete), da stored_resources + buffer di uscita come il prelievo per nome di sempre;
+#   - NON richiede lo zaino vuoto: basta che la varietà possa entrare (MAX_CARRIED_VARIETIES) e lo spazio libero;
+#   - prima di prelevare verifica che un magazzino (WarehouseSelectionService.find_best, edificio di produzione
+#     escluso) possa ricevere tutto quanto si trasporterà di quella risorsa: se non c'è, non preleva nulla e il
+#     prodotto resta nel buffer;
+#   - dopo il prelievo scrive context["pending_warehouse_search"] (stessa catena della raccolta: Walk + Unload
+#     accodati da HumanIndividualActionService._handle_pending_warehouse_search) con l'edificio di produzione
+#     tra gli esclusi, così il viaggio non torna verso sé stesso;
+#   - è opzionale: context[CONTEXT_DELIVER_TO_WAREHOUSE] = false (spunta "Consegna al magazzino" del pannello di
+#     produzione) lo rende uno step vuoto, completato subito.
+const CONTEXT_DELIVER_TO_WAREHOUSE := "production_deliver_to_warehouse"
+const CONTEXT_PRODUCED_COUNT := "production_produced_count"
+
 var target_building: Building = null
 var resource_name: String = ""
 # Quantità RICHIESTA (2026-09-12, richiesta utente) — NON garantita: se target_building non ne ha
@@ -83,13 +100,16 @@ var _restored_from_save: bool = false
 # senza l'assunzione "zaino vuoto" del prelievo normale. -1 (default) = prelievo normale nello zaino.
 # Persistito (get_save_data, letto da TaskPersistenceService._build_step).
 var equip_slot_index: int = -1
+# Modalità "consegna al magazzino dopo la produzione" (vedi CONSEGNA AL MAGAZZINO in testa al file).
+var deliver_to_warehouse: bool = false
 
 
-func _init(p_target_building: Building, p_resource_name: String, p_quantity_requested: int, p_equip_slot_index: int = -1) -> void:
+func _init(p_target_building: Building, p_resource_name: String, p_quantity_requested: int, p_equip_slot_index: int = -1, p_deliver_to_warehouse: bool = false) -> void:
 	target_building = p_target_building
 	resource_name = p_resource_name
 	quantity_requested = p_quantity_requested
 	equip_slot_index = p_equip_slot_index
+	deliver_to_warehouse = p_deliver_to_warehouse
 	target = null
 	# INFANT non può eseguire questa Action (2026-09-12, richiesta utente — collegamento AgeBand.
 	# INFANT al gameplay, vedi Action.disallowed_age_bands). CHILD aggiunto 2026-09-13 (richiesta
@@ -118,6 +138,10 @@ func activate(individual: Variant, context: Dictionary) -> void:
 
 	if resource_name == ALL_PRODUCTS:
 		_activate_all_products(individual, free_space)
+		return
+
+	if deliver_to_warehouse:
+		_activate_delivery(individual, context, free_space)
 		return
 
 	if equip_slot_index >= 0:
@@ -149,6 +173,44 @@ func activate(individual: Variant, context: Dictionary) -> void:
 # Modalità "cintura": una sola unità, se il magazzino ce l'ha e se c'è uno slot in cui può entrare
 # (HumanIndividual.find_slot_for_direct_equip). Durata e stamina con la stessa formula del prelievo
 # normale, sullo spazio di quell'unità.
+# Consegna dopo la produzione: pezzi da prelevare = min(prodotti dall'ordine, disponibili, quanti ne entrano),
+# solo se la varietà può entrare nello zaino e un magazzino può riceverli; altrimenti 0 (niente prelievo, tutto
+# resta nell'edificio).
+func _activate_delivery(individual: Variant, context: Dictionary, free_space: float) -> void:
+	_quantity_to_retrieve = 0
+	_duration = 0.0
+	_total_stamina_cost = 0.0
+	_elapsed = 0.0
+	if target_building == null or not bool(context.get(CONTEXT_DELIVER_TO_WAREHOUSE, true)):
+		return
+	var resource_rules := CaloricCalculator.get_caloric_source_rules(resource_name)
+	var space_per_unit: float = resource_rules.space_per_unit if resource_rules != null else 0.0
+	if space_per_unit <= 0.0 or not individual.can_carry_variety(resource_name):
+		return
+	var wanted: int = int(context.get(CONTEXT_PRODUCED_COUNT, quantity_requested))
+	var available: int = BuildingStorageService.get_available_quantity(target_building, resource_name)
+	var quantity: int = mini(mini(wanted, available), int(floor(free_space / space_per_unit)))
+	if quantity <= 0:
+		return
+	# La ricerca dopo il prelievo cercherà un posto per TUTTO quello che si trasporta di questa risorsa.
+	var total_carried: int = quantity + individual.get_carried_quantity(resource_name)
+	var excluded_ids: Array[int] = [target_building.id]
+	var destination := WarehouseSelectionService.find_best(
+		GameSettings.active_world, individual.position, individual.home_macro_coords, resource_name, total_carried, excluded_ids
+	)
+	if destination == null:
+		if DebugLogging.ENABLED and DebugLogging.SHOW_TRANSPORT_BUILD_LOGS:
+			print("[PRODUCE DELIVERY] #%d: nessun magazzino può ricevere %d %s — il prodotto resta nell'edificio #%d." % [
+				individual.id, total_carried, resource_name, target_building.id
+			])
+		return
+	_quantity_to_retrieve = quantity
+	var space_retrieved: float = float(quantity) * space_per_unit
+	if individual.max_carry_capacity > 0.0:
+		_duration = space_retrieved / individual.max_carry_capacity
+		_total_stamina_cost = STAMINA_COST_PER_SPACE_UNIT * space_retrieved
+
+
 func _activate_equip(individual: Variant) -> void:
 	_quantity_to_retrieve = 0
 	_duration = 0.0
@@ -257,6 +319,9 @@ func get_required_position(individual: Variant, context: Dictionary) -> Variant:
 func on_complete(individual: Variant, context: Dictionary) -> void:
 	if _quantity_to_retrieve <= 0 or target_building == null:
 		return
+	if deliver_to_warehouse:
+		_complete_delivery(individual, context)
+		return
 	if resource_name == ALL_PRODUCTS:
 		_complete_all_products(individual)
 		return
@@ -266,6 +331,12 @@ func on_complete(individual: Variant, context: Dictionary) -> void:
 	if ToolInstance.is_tool_resource(resource_name):
 		_complete_tool_retrieve(individual)
 		return
+	_complete_named_retrieve(individual)
+
+
+# Prelievo per nome nello zaino (da stored_resources e buffer di uscita), con la decay_fraction media della parte
+# presa dal magazzino dell'edificio (quella dal buffer è fresca).
+func _complete_named_retrieve(individual: Variant) -> void:
 	var stored_entry: Dictionary = target_building.stored_resources.get(resource_name, {})
 	var stored_quantity: int = int(stored_entry.get("quantity", 0))
 	var stored_decay_fraction: float = float(stored_entry.get("decay_fraction", 0.0))
@@ -284,6 +355,23 @@ func on_complete(individual: Variant, context: Dictionary) -> void:
 # prelievo), preleva UNA unità e la mette in cintura. Se non c'è più posto non preleva nulla: l'attrezzo
 # resta nel magazzino, mai perso né finito nello zaino. game_data null: capacità corretta del solo
 # bonus dello slot (vedi HumanIndividual._recalculate_carry_capacity_after_tool_change).
+# Consegna dopo la produzione: prelievo (attrezzi come istanze, il resto per nome), poi la ricerca del magazzino
+# con l'edificio di produzione escluso.
+func _complete_delivery(individual: Variant, context: Dictionary) -> void:
+	var carried_before: int = individual.get_carried_quantity(resource_name)
+	if ToolInstance.is_tool_resource(resource_name):
+		_complete_tool_retrieve(individual)
+	else:
+		_complete_named_retrieve(individual)
+	var carried_now: int = individual.get_carried_quantity(resource_name)
+	if carried_now <= carried_before:
+		return
+	context["pending_warehouse_search"] = {
+		"searches": [{"resource_name": resource_name, "quantity": carried_now}],
+		"excluded_building_ids": [target_building.id],
+	}
+
+
 func _complete_equip(individual: Variant) -> void:
 	var slot: int = individual.find_slot_for_direct_equip(resource_name, equip_slot_index)
 	if slot == -1:
@@ -357,6 +445,7 @@ func get_save_data() -> Dictionary:
 		"retrieve_plan": _retrieve_plan,
 		# Modalità "cintura" (2026-09-25) — letta da TaskPersistenceService._build_step.
 		"equip_slot_index": equip_slot_index,
+		"deliver_to_warehouse": deliver_to_warehouse,
 	}
 	if target_building != null:
 		data["target_building_id"] = target_building.id

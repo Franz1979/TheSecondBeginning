@@ -1,0 +1,13 @@
+[gd_resource type="Resource" script_class="Idea" format=3]
+
+[ext_resource type="Script" uid="uid://cqx38hirrk3s1" path="res://human/scripts/core/Idea.gd" id="1_smoking"]
+
+[resource]
+script = ExtResource("1_smoking")
+id = "smoking"
+display_name = "idea_smoking"
+summary = "idea_smoking_summary"
+description = "idea_smoking_description"
+thoughts_cost = 40
+prerequisites = Array[String](["drying"])
+era = "paleolithic"

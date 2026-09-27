@@ -89,7 +89,12 @@ func save_game_to_json(
 			# Allocatore id HumanIndividual (vedi GameData.next_human_id) — salvato COSÌ COM'È, mai
 			# ricalcolato al caricamento (a differenza di World.next_population_group_id/
 			# next_building_id): vedi il commento sul campo per il perché.
-			"next_human_id": game_data.next_human_id
+			"next_human_id": game_data.next_human_id,
+			# Mucchi a terra (2026-09-26, ground drop): GroundPile.to_save_data è già JSON-nativo.
+			"ground_piles": game_data.ground_piles.map(func(pile: GroundPile) -> Dictionary: return pile.to_save_data()),
+			"next_ground_pile_id": game_data.next_ground_pile_id,
+			# Eventi casuali programmati (2026-09-26): già JSON-nativi.
+			"scheduled_random_events": game_data.scheduled_random_events
 		},
 		"world": {
 			"width": World.WIDTH,

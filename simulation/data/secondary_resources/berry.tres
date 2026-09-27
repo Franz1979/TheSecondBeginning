@@ -6,8 +6,8 @@
 script = ExtResource("1_berry")
 secondary_resource_name = "berry"
 source_subtype = "fruit_bearing"
-yield_ratio = 80.0
-calories_per_unit = 5.0
+yield_ratio = 100.0
+calories_per_unit = 4.0
 seasonal_availability_multiplier = Array[float]([0.4, 0.2, 0.7, 1.0])
 cycle_start_season = 2
 consuming_depletes_primary = false

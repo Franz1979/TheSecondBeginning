@@ -42,6 +42,9 @@ var tool_multiplier: float = 1.0
 # Pezzi ordinati (minimo 1) e pezzi già prodotti da questo step — vedi QUANTITÀ in testa al file.
 var quantity: int = 1
 var produced_count: int = 0
+# DEBUG TEMPORANEO [PRODUCE BLOCK] (2026-09-27): ultimo messaggio stampato, per stampare solo i cambiamenti.
+# Non salvato. Vedi DebugLogging.SHOW_PRODUCTION_BLOCK_LOGS.
+var _debug_last_block_message: String = ""
 # Attesa degli attrezzi (2026-09-25, "task in attesa invece di rifiuto"): stato tool_wait_* e
 # ensure_required_tools vivono nella classe base Action dal 2026-09-26 (condivisi con la caccia).
 
@@ -92,18 +95,31 @@ func _ensure_own_record() -> bool:
 
 
 func get_stamina_delta(individual: Variant, context: Dictionary, delta: float) -> float:
-	if not is_target_valid() or produced_count >= quantity or not _ensure_own_record():
+	if produced_count >= quantity:
+		return 0.0
+	if not is_target_valid():
+		_debug_log_block(individual, "edificio non valido (demolito, incompleto o non più workstation per la ricetta)")
+		return 0.0
+	if not _ensure_own_record():
+		_debug_log_block(individual, _debug_describe_no_record())
 		return 0.0
 	# Attrezzi (2026-09-25): come per il materiale mancante, lo step resta fermo (zero stamina, zero
 	# lavoro) finché gli attrezzi richiesti non ci sono; appena compaiono nello zaino vengono spostati
 	# in cintura e il lavoro parte da solo, senza riassegnare la Task.
 	if not ensure_required_tools(individual):
+		_debug_log_block(individual, _debug_describe_tools())
 		return 0.0
-	if not get_missing_materials().is_empty() or not ProductionService.has_output_room(target_building, resource_name):
+	if not get_missing_materials().is_empty():
+		_debug_log_block(individual, _debug_describe_materials())
+		return 0.0
+	if not ProductionService.has_output_room(target_building, resource_name):
+		_debug_log_block(individual, _debug_describe_output_buffer())
 		return 0.0
 	# Combustibile mancante (2026-09-24): fermo come per i materiali.
 	if ProductionService.get_missing_fuel_for(target_building, resource_name) > 0.0:
+		_debug_log_block(individual, _debug_describe_fuel())
 		return 0.0
+	_debug_log_block(individual, "")
 	var required_labor := ProductionService.get_required_labor(target_building, resource_name)
 	var labor_accumulated := ProductionService.get_labor_accumulated(target_building, resource_name)
 	var stamina_spent_this_day: float = 0.0
@@ -131,6 +147,78 @@ func _try_complete_cycle(individual: Variant) -> void:
 		print("[PRODUCE] Building #%d: prodotte %d unità di '%s' (%d/%d)." % [target_building.id, produced, resource_name, produced_count, quantity])
 	if produced_count < quantity:
 		ProductionService.start_production(target_building, resource_name)
+
+
+# --- DEBUG TEMPORANEO [PRODUCE BLOCK] (2026-09-27, richiesta utente) — rimuovere insieme al flag ---
+# `message` "" = lo step lavora: stampa "ripresa" solo se prima era fermo. Stampa solo quando il messaggio
+# cambia (quantità comprese), quindi una riga per consegna/consumo, non una per tick.
+func _debug_log_block(individual: Variant, message: String) -> void:
+	if not (DebugLogging.ENABLED and DebugLogging.SHOW_PRODUCTION_BLOCK_LOGS):
+		return
+	if message == _debug_last_block_message:
+		return
+	var previous := _debug_last_block_message
+	_debug_last_block_message = message
+	var who: String = ("#%d" % int(individual.id)) if individual is HumanIndividual else "?"
+	var building_id: int = target_building.id if target_building != null else -1
+	if message == "":
+		if previous != "":
+			print("[PRODUCE BLOCK] %s edificio #%d '%s' (%d/%d): ripresa, lavoro %.1f/%.1f." % [
+				who, building_id, resource_name, produced_count, quantity,
+				ProductionService.get_labor_accumulated(target_building, resource_name),
+				ProductionService.get_required_labor(target_building, resource_name)])
+		return
+	print("[PRODUCE BLOCK] %s edificio #%d '%s' (%d/%d): FERMO — %s" % [who, building_id, resource_name, produced_count, quantity, message])
+
+
+func _debug_describe_no_record() -> String:
+	return "record assente e coda dell'edificio piena: record %s, capienza %d." % [
+		str(target_building.production_progress.keys()), ProductionService.get_queue_capacity(target_building)]
+
+
+func _debug_describe_tools() -> String:
+	return "attrezzi mancanti: esito %s, categorie mancanti %s, attrezzo %s." % [
+		ToolGateService.Result.keys()[tool_wait_result], str(tool_wait_missing_categories), tool_wait_tool_name if tool_wait_tool_name != "" else "-"]
+
+
+# Per ciclo (il controllo che ferma lo step) e per l'ordine intero (quello che mostra il pannello).
+func _debug_describe_materials() -> String:
+	var recipe_rules := CaloricCalculator.get_caloric_source_rules(resource_name)
+	var parts: PackedStringArray = []
+	if recipe_rules != null:
+		for input_name in recipe_rules.recipe_inputs.keys():
+			var stored_entry: Dictionary = target_building.stored_resources.get(input_name, {})
+			parts.append("%s servono %d/ciclo, in deposito %d" % [input_name, int(recipe_rules.recipe_inputs[input_name]), int(stored_entry.get("quantity", 0))])
+	var own_recipe: Array[String] = [resource_name]
+	return "materiale mancante per il ciclo %s [%s]; ordine: pezzi dovuti %d, cicli %d, mancanti per l'ordine %s; chiavi in deposito %s." % [
+		str(get_missing_materials()), ", ".join(parts),
+		ProductionService.get_units_remaining(target_building, resource_name),
+		ProductionService.get_cycles_due(target_building, resource_name),
+		str(ProductionService.get_missing_inputs_for_recipes(target_building, own_recipe)),
+		str(target_building.stored_resources.keys())]
+
+
+func _debug_describe_output_buffer() -> String:
+	var recipe_rules := CaloricCalculator.get_caloric_source_rules(resource_name)
+	return "buffer di uscita pieno: occupato %d, capienza %d, pezzi per ciclo %d, contenuto %s." % [
+		ProductionService.get_output_used(target_building), ProductionService.get_output_capacity(target_building),
+		recipe_rules.recipe_output_quantity if recipe_rules != null else 0, str(target_building.production_output)]
+
+
+func _debug_describe_fuel() -> String:
+	var recipe_rules := CaloricCalculator.get_caloric_source_rules(resource_name)
+	var reserved: Dictionary = recipe_rules.recipe_inputs if recipe_rules != null else {}
+	var sources: PackedStringArray = []
+	for stored_name in target_building.stored_resources.keys():
+		var fuel_value := ProductionService.get_fuel_value(String(stored_name))
+		if fuel_value > 0.0:
+			sources.append("%s x%d (valore %.1f, riservate come materiale %d)" % [
+				stored_name, int(target_building.stored_resources[stored_name].get("quantity", 0)), fuel_value, int(reserved.get(stored_name, 0))])
+	return "combustibile mancante: richiesto %.1f/ciclo, disponibile %.1f, manca %.1f; fonti [%s]." % [
+		ProductionService.get_required_fuel(target_building, resource_name),
+		ProductionService.get_available_fuel(target_building, reserved),
+		ProductionService.get_missing_fuel_for(target_building, resource_name),
+		", ".join(sources)]
 
 
 # Usura degli attrezzi (2026-09-26, attrezzi come istanze — step 3): a ciclo completato ogni attrezzo
@@ -169,8 +257,10 @@ func get_required_position(individual: Variant, context: Dictionary) -> Variant:
 
 
 # Nessun effetto: ogni ciclo, compreso l'ultimo, si conclude già in _try_complete_cycle.
+# Pezzi prodotti dall'ordine (2026-09-26): li legge lo step di consegna al magazzino che segue (RetrieveAction in
+# modalità deliver_to_warehouse), per prelevare solo quanto prodotto da questo ordine.
 func on_complete(individual: Variant, context: Dictionary) -> void:
-	pass
+	context[RetrieveAction.CONTEXT_PRODUCED_COUNT] = produced_count
 
 
 # Dati "di identità" (edificio via id, risorsa, moltiplicatori, quantità ordinata) più i pezzi già

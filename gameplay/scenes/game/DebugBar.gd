@@ -38,8 +38,14 @@ var _last_fps: int = -1
 # questa barra. Dentro content_group (non accanto a control_button) cosi' si nasconde/mostra
 # insieme al resto degli strumenti di debug quando la barra viene richiusa.
 @onready var idle_fallback_button: Button = $MarginContainer/HBoxContainer/ContentGroup/IdleFallbackButton
+# Eventi casuali (2026-09-26, richiesta utente — gameplay/events/): menu a tendina con tutti gli eventi definiti
+# (RandomEventService.list_rules, nome tradotto, id come metadata) e pulsante per scatenare quello scelto.
+@onready var random_event_option_button: OptionButton = $MarginContainer/HBoxContainer/ContentGroup/RandomEventOptionButton
+@onready var random_event_apply_button: Button = $MarginContainer/HBoxContainer/ContentGroup/RandomEventApplyButton
 
 signal action_pressed(action_id: StringName)
+# Evento casuale da scatenare subito (id di RandomEventRules), dal menu a tendina degli eventi.
+signal random_event_trigger_requested(event_id: String)
 
 var _expanded: bool = true
 
@@ -72,7 +78,26 @@ func _ready() -> void:
 	idle_fallback_button.tooltip_text = tr("debug_idle_fallback_button_tooltip")
 	animal_summary_label.tooltip_text = "Animali della macrocella del giocatore: quota della cella / individui istanziati (≠ = discrepanza)"
 	idle_fallback_button.pressed.connect(func() -> void: action_pressed.emit(&"toggle_idle_fallback"))
+	_fill_random_events()
+	random_event_apply_button.text = tr("debug_random_event_apply")
+	random_event_apply_button.tooltip_text = tr("debug_random_event_apply_tooltip")
+	random_event_apply_button.pressed.connect(_on_random_event_apply_pressed)
 	_apply_state()
+
+
+func _fill_random_events() -> void:
+	random_event_option_button.clear()
+	for rules in RandomEventService.list_rules():
+		random_event_option_button.add_item(tr(rules.display_name))
+		random_event_option_button.set_item_metadata(random_event_option_button.item_count - 1, rules.id)
+	random_event_apply_button.disabled = random_event_option_button.item_count == 0
+
+
+func _on_random_event_apply_pressed() -> void:
+	var selected := random_event_option_button.selected
+	if selected < 0:
+		return
+	random_event_trigger_requested.emit(String(random_event_option_button.get_item_metadata(selected)))
 
 
 # Aggiorna l'etichetta FPS solo quando il valore cambia (il motore lo ricalcola una volta al

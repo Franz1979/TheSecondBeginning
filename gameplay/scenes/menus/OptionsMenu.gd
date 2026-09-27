@@ -26,6 +26,8 @@ extends Window
 @onready var pickup_default_option_button: OptionButton = $MarginContainer/VBoxContainer/PickupDefaultRow/OptionButton
 @onready var repeat_label: Label = $MarginContainer/VBoxContainer/RepeatRow/Label
 @onready var repeat_check_box: CheckBox = $MarginContainer/VBoxContainer/RepeatRow/CheckBox
+@onready var delivery_label: Label = $MarginContainer/VBoxContainer/DeliveryRow/Label
+@onready var delivery_check_box: CheckBox = $MarginContainer/VBoxContainer/DeliveryRow/CheckBox
 @onready var close_button: Button = $MarginContainer/VBoxContainer/CloseButton
 
 # Righe volume audio (2026-09-21, richiesta utente): nome del nodo riga, chiave tr() dell'etichetta e campo di
@@ -78,6 +80,7 @@ func _ready() -> void:
 	language_option_button.item_selected.connect(_on_language_selected)
 	pickup_default_option_button.item_selected.connect(_on_pickup_default_selected)
 	repeat_check_box.toggled.connect(_on_repeat_toggled)
+	delivery_check_box.toggled.connect(_on_delivery_toggled)
 	close_button.pressed.connect(hide)
 	# I volumi si applicano in tempo reale (_on_volume_changed) ma si salvano su disco alla chiusura del
 	# menu: visibility_changed copre il CloseButton e qualunque altro hide(), anche per le modifiche da tastiera
@@ -106,6 +109,7 @@ func open_menu(show_language: bool = true) -> void:
 	# La preselezione raccolta e' pertinente sia dal menu principale sia in partita: la riga c'e' sempre.
 	_select_pickup_default_from_options()
 	repeat_check_box.set_pressed_no_signal(UserOptions.repeat_default)
+	delivery_check_box.set_pressed_no_signal(UserOptions.production_delivery_default)
 	for field in _volume_sliders.keys():
 		(_volume_sliders[field] as HSlider).set_value_no_signal(float(UserOptions.get(field)))
 	exclusive = true
@@ -155,6 +159,7 @@ func _refresh_texts() -> void:
 	language_label.text = tr("options_language")
 	pickup_default_label.text = tr("options_pickup_default")
 	repeat_label.text = tr("options_repeat_default").format({"count": TaskRepeatRules.MAX_REPEATS})
+	delivery_label.text = tr("options_production_delivery_default")
 	_rebuild_pickup_default_options()
 	# "close_and_save" (non "close_menu", richiesta utente 2026-09-05): stesso identico
 	# comportamento (hide()), solo l'etichetta comunica che le modifiche sono già salvate — coerente
@@ -264,4 +269,10 @@ func _on_visibility_changed() -> void:
 # Default del flag "Ripeti fino a N volte" dei dialog di raccolta e di trasporto (2026-09-20, richiesta utente).
 func _on_repeat_toggled(pressed: bool) -> void:
 	UserOptions.repeat_default = pressed
+	UserOptions.save_to_disk()
+
+
+# Default della spunta "Consegna al magazzino" del pannello di produzione (2026-09-26, richiesta utente).
+func _on_delivery_toggled(pressed: bool) -> void:
+	UserOptions.production_delivery_default = pressed
 	UserOptions.save_to_disk()

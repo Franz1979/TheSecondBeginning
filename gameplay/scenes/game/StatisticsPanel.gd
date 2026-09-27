@@ -296,13 +296,14 @@ func _refresh_buildings_tab(buildings: Array[Building], building_snapshots: Dict
 	# Itera l'ENUM intero (non solo le categorie osservate) — stesso principio già seguito sopra per
 	# cause di morte/fasce d'età: una categoria senza edifici compare comunque a 0, invece di
 	# sparire silenziosamente dalla torta/legenda.
+	# Nomi tradotti (2026-09-26): chiave "building_category_<nome_minuscolo>", una per valore dell'enum.
 	var category_counts := {}
 	for category_name in BuildingTypes.Category.keys():
-		category_counts[String(category_name).capitalize()] = 0
+		category_counts[_building_category_display_name(String(category_name))] = 0
 	for building in buildings:
 		if building.rules == null:
 			continue
-		var category_name := String(BuildingTypes.Category.keys()[building.rules.category]).capitalize()
+		var category_name := _building_category_display_name(String(BuildingTypes.Category.keys()[building.rules.category]))
 		category_counts[category_name] += 1
 	building_type_distribution_chart.set_data(category_counts)
 
@@ -312,6 +313,10 @@ func _refresh_buildings_tab(buildings: Array[Building], building_snapshots: Dict
 	# "un futuro consumatore con semantica diversa" (vedi LineChart.gd).
 	buildings_per_year_chart.set_axis_labels("Anno", "Edifici")
 	buildings_per_year_chart.set_data(building_snapshots)
+
+
+func _building_category_display_name(enum_key: String) -> String:
+	return tr("building_category_" + enum_key.to_lower())
 
 
 # Riempie con 0 ogni anno mancante nell'intervallo [0, massimo osservato] tra le chiavi di

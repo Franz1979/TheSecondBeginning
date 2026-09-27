@@ -94,8 +94,11 @@ func on_complete(individual: Variant, context: Dictionary) -> void:
 	super(individual, context)
 	context.erase(HuntService.CONTEXT_WEAPON_DROP)
 	if prey_killed:
-		# Punto di aggancio futuro: raccolta della preda uccisa (la carne non esiste ancora come risorsa).
 		HuntService.log_event(individual, "arma recuperata accanto a %s ucciso: la caccia è conclusa." % combat_target.describe())
+		# Macellazione (2026-09-26): il cacciatore è accanto alla carcassa, se ha una lama la si accoda
+		# (HumanIndividualActionService._handle_pending_hunt_butcher -> GameScene).
+		if context.has(HuntService.CONTEXT_KILL_CARCASS):
+			context[HuntService.CONTEXT_PENDING_BUTCHER] = context[HuntService.CONTEXT_KILL_CARCASS]
 		return
 	var status := combat_target.get_status()
 	if status == CombatTarget.Status.OK:

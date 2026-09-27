@@ -179,6 +179,13 @@ theme_override_font_sizes/font_size = 10
 layout_mode = 2
 visible = false
 
+[node name="GroundPileCaption" type="Label" parent="."]
+layout_mode = 2
+theme_override_font_sizes/font_size = 11
+
+[node name="GroundPileContainer" type="VBoxContainer" parent="."]
+layout_mode = 2
+
 [node name="IdLabel" type="Label" parent="."]
 layout_mode = 2
 theme_override_font_sizes/font_size = 10

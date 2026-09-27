@@ -167,6 +167,10 @@ func _draw() -> void:
 	if building_type_name == "campfire":
 		_draw_campfire(is_buildable)
 		return
+	# Edifici segnaposto (2026-09-26, richiesta utente) — stesso disegno provvisorio della mappa.
+	if PlaceholderBuildingShapes.TYPES.has(building_type_name):
+		PlaceholderBuildingShapes.draw(self, building_type_name, Vector2.ZERO, not is_buildable)
+		return
 
 	# Capanna dell'attrezzista (2026-09-24, richiesta utente): sagoma della capanna con riempimento
 	# proprio e segno "attrezzi incrociati", vedi _draw_toolmaker_hut_mark sotto.

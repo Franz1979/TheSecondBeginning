@@ -85,7 +85,12 @@ static func advance_building_decay(building: Building) -> Array:
 			continue
 		var multiplier := _durability_multiplier(building, resource_rules.category)
 		var entry: Dictionary = building.stored_resources[resource_name]
-		var decay_fraction: float = float(entry.get("decay_fraction", 0.0)) + 1.0 / (float(resource_rules.day_durability) * multiplier)
+		var decay_before: float = float(entry.get("decay_fraction", 0.0))
+		var daily_step: float = 1.0 / (float(resource_rules.day_durability) * multiplier)
+		var decay_fraction: float = decay_before + daily_step
+		if DebugLogging.ENABLED and DebugLogging.SHOW_RESOURCE_DECAY_LOGS:
+			log_decay_line("edificio #%d %s" % [building.id, building.building_type_name], String(resource_name),
+				int(entry.get("quantity", 0)), decay_before, decay_fraction, daily_step)
 		if decay_fraction >= 1.0:
 			keys_to_erase.append(resource_name)
 			lost.append({"resource_name": String(resource_name), "quantity": int(entry.get("quantity", 0))})
@@ -95,6 +100,20 @@ static func advance_building_decay(building: Building) -> Array:
 	for resource_name in keys_to_erase:
 		building.stored_resources.erase(resource_name)
 	return lost
+
+
+# Riga di log del deperimento giornaliero (DebugLogging.SHOW_RESOURCE_DECAY_LOGS), condivisa con i mucchi a
+# terra (GroundPileService): `where` descrive il contenitore. A frazione >= 1 la voce sparisce del tutto.
+static func log_decay_line(where: String, resource_name: String, quantity: int, before: float, after: float, daily_step: float) -> void:
+	var game_data: GameData = GameSettings.active_game_data
+	var day_text := "anno %d giorno %d" % [game_data.year, game_data.current_day] if game_data != null else "?"
+	if after >= 1.0:
+		print("[RESOURCE DECAY] %s — %s: %s x%d DEPERITA E SPARITA (%.2f -> %.2f)." % [day_text, where, resource_name, quantity, before, after])
+		return
+	var days_left: float = (1.0 - after) / daily_step if daily_step > 0.0 else INF
+	print("[RESOURCE DECAY] %s — %s: %s x%d deperimento %.2f -> %.2f (+%.3f/giorno), sparisce tra ~%.1f giorni." % [
+		day_text, where, resource_name, quantity, before, after, daily_step, days_left
+	])
 
 
 # Moltiplicatore per `category` da BuildingRules.durability_multiplier_by_category (2026-09-09,

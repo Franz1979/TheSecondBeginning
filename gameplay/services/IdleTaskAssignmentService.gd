@@ -50,8 +50,9 @@ const LEISURE_RESTOCK_MIN_FREE_SPACE_RATIO: float = 0.4
 # solo un modo di passare il tempo, quindi una durata variabile è più naturale/meno meccanica di un
 # singolo numero fisso ripetuto ad ogni occorrenza.
 # Taratura 2026-09-26 (richiesta utente): da 4-8 a 2-5 giorni.
-const LEISURE_REST_MIN_DURATION_DAYS: float = 2.0
-const LEISURE_REST_MAX_DURATION_DAYS: float = 5.0
+# Taratura 2026-09-27 (richiesta utente): da 2-5 a 1-3 giorni.
+const LEISURE_REST_MIN_DURATION_DAYS: float = 1.0
+const LEISURE_REST_MAX_DURATION_DAYS: float = 3.0
 
 # RIATTIVATA (2026-09-16, richiesta utente) — era stata sospesa per il sintomo "i pipottini che
 # ondulano fermi su se stessi"/"ondulando come quando camminano", causa poi isolata e corretta:

@@ -1,0 +1,7 @@
+[gd_resource type="Resource" script_class="ExpiredObjectRules" format=3]
+
+[ext_resource type="Script" uid="uid://c2o7hskspx7gi" path="res://gameplay/scripts/core/ExpiredObjectRules.gd" id="1_ground_pile"]
+
+[resource]
+script = ExtResource("1_ground_pile")
+days_to_expire = 200

@@ -202,8 +202,8 @@ const STICK_TENT_DOOR_MARKER_HEIGHT: float = 1.1
 # "stratagemma sfondo-uguale-al-deposito" indicato dall'utente al posto della trasparenza vera
 # (immediate-mode Node2D _draw() non supporta facilmente un blend "vedi sotto" per un rettangolo
 # pieno) — sopra il quale viene ridisegnata la VERA icona pebble/stick (geometria replicata da
-# PebbleIcon.gd/StickIcon.gd, vedi _draw_deposit_storage_pebble_icon/_draw_deposit_storage_stick_
-# icon sotto: non riusabili direttamente, quelle sono Control._draw(), qui serve immediate-mode
+# PebbleIcon.gd/StickIcon.gd, vedi DepositStorageIcons._draw_deposit_storage_pebble_icon/_draw_deposit_storage_stick_
+# icon: non riusabili direttamente, quelle sono Control._draw(), qui serve immediate-mode
 # Node2D in world-space) SENZA alcuno sfondo proprio — il risultato visivo voluto dall'utente:
 # "si devono vedere solo i bastoncini sopra il terreno del deposito... o solo i sassolini". Nessuna
 # dimensione proporzionale alla quantità (richiesta esplicita, invariata) — un semplice "c'è/non
@@ -1130,6 +1130,10 @@ func _draw_buildings() -> void:
 			# difensivo già seguito sopra per "building_type_name").
 			_draw_deposit_site_storage_grid(ground, entry.get("slot_breakdown", []))
 			continue
+		# Edifici segnaposto (2026-09-26, richiesta utente) — disegno provvisorio condiviso, senza porta.
+		if PlaceholderBuildingShapes.TYPES.has(building_type_name):
+			PlaceholderBuildingShapes.draw(self, building_type_name, ground)
+			continue
 		var direction: GameTypes.Direction = entry["rotation"]
 		if building_type_name == "stick_tent":
 			_draw_stick_tent(ground, direction)
@@ -1330,7 +1334,9 @@ var _dirt_ground_speckles_by_variant: Dictionary = {}
 # tile irregolare della terra battuta, stessi identici colori. Solo a edificio completo. Bordi come la terra
 # battuta: dritti verso un edificio completo confinante ("dirt_neighbors", calcolata da GameScene),
 # irregolari verso le celle senza nulla.
-const GROUND_UNDER_BUILDING_TYPES: Array[String] = ["stick_tent", "pebble_circle", "campfire"]
+const GROUND_UNDER_BUILDING_TYPES: Array[String] = [
+	"stick_tent", "pebble_circle", "campfire", "drying_rack", "smokehouse", "burial", "earthwork",
+]
 
 
 # Ricostruita da set_buildings (ogni volta che GameScene rinfresca gli edifici della cella): un
@@ -1488,35 +1494,6 @@ func _draw_stick_tent(ground: Vector2, direction: GameTypes.Direction) -> void:
 	)
 
 
-# Collegamento resource_name -> funzione di disegno dell'icona magazzino (2026-09-19, richiesta
-# utente — refactor lot_source, punto 6: "il collegamento deve diventare un Dictionary invece di
-# un match scritto a mano, coerente con IconRegistry") — STESSO principio architetturale di
-# IconRegistry.RESOURCE_ICON_NODES/BUILDING_ICON_NODES (Dictionary resource_name -> "come disegnarla",
-# unica fonte di verità), adattato qui a metodi ISTANZA di questo renderer (non script Node
-# preload-abili come in IconRegistry: queste sono funzioni _draw_deposit_storage_*_icon private di
-# MicroCellRenderer, non Control autonomi) — String col nome del metodo + call() invece di
-# preload()+.new(), stesso "keyed by resource_name" nello spirito. Aggiungere una risorsa nuova con
-# una propria icona magazzino significa aggiungere una riga qui (+ la funzione _draw_deposit_
-# storage_*_icon stessa, la "parte grafica" che il piano richiede comunque) — nessun match da
-# ritoccare. Una risorsa ASSENTE da questo Dictionary usa il fallback generico (pallino colorato,
-# vedi _draw_deposit_site_storage_grid sotto), esattamente come prima di questo refactor.
-const DEPOSIT_STORAGE_ICON_DRAW_METHODS := {
-	"pebble": "_draw_deposit_storage_pebble_icon",
-	"stick": "_draw_deposit_storage_stick_icon",
-	"plant_fiber": "_draw_deposit_storage_plant_fiber_icon",
-	"berry": "_draw_deposit_storage_berry_icon",
-	"acorn": "_draw_deposit_storage_acorn_icon",
-	"fruit": "_draw_deposit_storage_fruit_icon",
-	"mushroom": "_draw_deposit_storage_mushroom_icon",
-	"eggs": "_draw_deposit_storage_eggs_icon",
-	"wild_vegetables": "_draw_deposit_storage_wild_vegetables_icon",
-	"medicinal_herbs": "_draw_deposit_storage_medicinal_herbs_icon",
-	"fiber_rope": "_draw_deposit_storage_fiber_rope_icon",
-	"wooden_spear": "_draw_deposit_storage_wooden_spear_icon",
-	"stone_knife": "_draw_deposit_storage_stone_knife_icon",
-}
-
-
 # Un mucchietto per SLOT occupato di `slot_breakdown` (Array di {"resource_name","quantity",
 # "space_used","space_capacity"}, vedi BuildingStorageService.get_slot_breakdown) — vedi il
 # commento esteso su DEPOSIT_SITE_STORAGE_GRID_COLUMNS sopra per il principio. Griglia 3×3 in
@@ -1545,467 +1522,12 @@ func _draw_deposit_site_storage_grid(ground: Vector2, slot_breakdown: Array) -> 
 		# posto della trasparenza vera) — disegnato SEMPRE, anche per una risorsa senza replica
 		# dedicata sotto (fallback), così il quadrato resta comunque coerente con lo sfondo.
 		draw_rect(Rect2(top_left, Vector2(DEPOSIT_SITE_STORAGE_SQUARE_SIDE, DEPOSIT_SITE_STORAGE_SQUARE_SIDE)), DEPOSIT_SITE_COLOR)
-		var icon_draw_method: String = DEPOSIT_STORAGE_ICON_DRAW_METHODS.get(resource_name, "")
-		if icon_draw_method != "":
-			call(icon_draw_method, top_left, DEPOSIT_SITE_STORAGE_SQUARE_SIDE)
-		else:
+		# Icona magazzino della risorsa (DepositStorageIcons, condivisa con i mucchi a terra — GroundPileView).
+		if not DepositStorageIcons.draw_icon(self, resource_name, top_left, DEPOSIT_SITE_STORAGE_SQUARE_SIDE):
 			# Fallback per un'eventuale risorsa futura senza geometria replicata qui — un
 			# semplice pallino nel colore della risorsa (IconRegistry.get_resource_color, stessa
 			# fonte già in uso altrove), niente sfondo proprio oltre al quadrato sopra.
 			draw_circle(marker_center, DEPOSIT_SITE_STORAGE_SQUARE_SIDE * 0.25, IconRegistry.get_resource_color(resource_name))
-
-
-# Replica in world-space (immediate-mode Node2D, NON riusabile da PebbleIcon.gd che è Control._draw
-# — stesso principio "duplicata apposta" già seguito altrove in questo file, es. _draw_deposit_site
-# vs BuildingGhost) della geometria/colori di PebbleIcon.gd: stessi punti/raggi frazionari (0..1),
-# qui scalati per `side` invece che per size.x/size.y di un Control, e traslati su `top_left`
-# (angolo in alto a sinistra del quadrato di sfondo, non il centro — stessa convenzione di
-# PebbleIcon, dove i punti sono frazioni dell'intero rettangolo, non del centro).
-const DEPOSIT_STORAGE_PEBBLE_COLOR := Color(0.58, 0.57, 0.54, 1.0)
-const DEPOSIT_STORAGE_PEBBLE_OUTLINE_COLOR := Color(0.32, 0.31, 0.29, 1.0)
-const DEPOSIT_STORAGE_PEBBLES := [
-	Vector3(0.22, 0.28, 0.12), Vector3(0.55, 0.18, 0.10), Vector3(0.78, 0.35, 0.13),
-	Vector3(0.35, 0.55, 0.11), Vector3(0.65, 0.60, 0.09), Vector3(0.85, 0.72, 0.10),
-	Vector3(0.15, 0.75, 0.09), Vector3(0.48, 0.82, 0.08),
-]
-
-func _draw_deposit_storage_pebble_icon(top_left: Vector2, side: float) -> void:
-	for pebble in DEPOSIT_STORAGE_PEBBLES:
-		var center: Vector2 = top_left + Vector2(pebble.x * side, pebble.y * side)
-		var radius: float = pebble.z * side
-		draw_circle(center, radius, DEPOSIT_STORAGE_PEBBLE_COLOR)
-		draw_arc(center, radius, 0.0, TAU, 8, DEPOSIT_STORAGE_PEBBLE_OUTLINE_COLOR, side * 0.04, true)
-
-
-# Replica world-space di StickIcon.gd (stesso principio del blocco pebble sopra) — 3 "rametti"
-# (linee spezzate a due segmenti, non rette) in tre bruni diversi, stessi punti frazionari/stessi
-# spessori relativi (h*0.09/0.07/0.06 in StickIcon, qui side al posto di h: icona sempre quadrata
-# quindi w=h=side, nessuna distinzione necessaria).
-const DEPOSIT_STORAGE_STICK_COLOR_MAIN := Color(0.42, 0.30, 0.16, 1.0)
-const DEPOSIT_STORAGE_STICK_COLOR_LIGHT := Color(0.55, 0.40, 0.22, 1.0)
-const DEPOSIT_STORAGE_STICK_COLOR_DARK := Color(0.32, 0.22, 0.11, 1.0)
-
-func _draw_deposit_storage_stick_icon(top_left: Vector2, side: float) -> void:
-	_draw_deposit_storage_twig(
-		top_left + Vector2(side * 0.18, side * 0.78), top_left + Vector2(side * 0.52, side * 0.42),
-		top_left + Vector2(side * 0.82, side * 0.20), DEPOSIT_STORAGE_STICK_COLOR_MAIN, side * 0.09
-	)
-	_draw_deposit_storage_twig(
-		top_left + Vector2(side * 0.15, side * 0.30), top_left + Vector2(side * 0.48, side * 0.58),
-		top_left + Vector2(side * 0.85, side * 0.75), DEPOSIT_STORAGE_STICK_COLOR_LIGHT, side * 0.07
-	)
-	_draw_deposit_storage_twig(
-		top_left + Vector2(side * 0.35, side * 0.85), top_left + Vector2(side * 0.55, side * 0.50),
-		top_left + Vector2(side * 0.68, side * 0.15), DEPOSIT_STORAGE_STICK_COLOR_DARK, side * 0.06
-	)
-
-
-func _draw_deposit_storage_twig(from: Vector2, mid: Vector2, to: Vector2, color: Color, width: float) -> void:
-	draw_line(from, mid, color, width, true)
-	draw_line(mid, to, color, width, true)
-
-
-# Replica world-space di PlantFiberIcon.gd (stesso principio dei due blocchi sopra) — 4 fili
-# curvi (curva quadratica campionata, non spezzata come i rametti) che convergono in un nodo di
-# spago, stessi punti/spessori frazionari di PlantFiberIcon, `side` al posto di w/h (icona sempre
-# quadrata qui, w=h=side).
-const DEPOSIT_STORAGE_FIBER_COLOR_MAIN := Color(0.624, 0.682, 0.361, 1.0)
-const DEPOSIT_STORAGE_FIBER_COLOR_LIGHT := Color(0.765, 0.820, 0.498, 1.0)
-const DEPOSIT_STORAGE_FIBER_COLOR_DARK := Color(0.439, 0.498, 0.247, 1.0)
-const DEPOSIT_STORAGE_FIBER_TIE_COLOR := Color(0.420, 0.290, 0.169, 1.0)
-const DEPOSIT_STORAGE_FIBER_STRANDS := [
-	{"end": Vector2(0.16, 0.12), "ctrl": Vector2(0.22, 0.42), "color": DEPOSIT_STORAGE_FIBER_COLOR_DARK, "width": 0.055},
-	{"end": Vector2(0.38, 0.08), "ctrl": Vector2(0.40, 0.40), "color": DEPOSIT_STORAGE_FIBER_COLOR_LIGHT, "width": 0.06},
-	{"end": Vector2(0.62, 0.09), "ctrl": Vector2(0.58, 0.42), "color": DEPOSIT_STORAGE_FIBER_COLOR_MAIN, "width": 0.062},
-	{"end": Vector2(0.84, 0.16), "ctrl": Vector2(0.76, 0.44), "color": DEPOSIT_STORAGE_FIBER_COLOR_DARK, "width": 0.05},
-]
-const DEPOSIT_STORAGE_FIBER_CURVE_SEGMENTS: int = 8
-
-func _draw_deposit_storage_plant_fiber_icon(top_left: Vector2, side: float) -> void:
-	var base: Vector2 = top_left + Vector2(side * 0.50, side * 0.86)
-	for strand in DEPOSIT_STORAGE_FIBER_STRANDS:
-		var ctrl: Vector2 = top_left + Vector2(strand["ctrl"].x, strand["ctrl"].y) * side
-		var end: Vector2 = top_left + Vector2(strand["end"].x, strand["end"].y) * side
-		_draw_deposit_storage_fiber_strand(base, ctrl, end, strand["color"], side * strand["width"])
-	_draw_deposit_storage_fiber_tie_knot(base, side)
-
-
-func _draw_deposit_storage_fiber_strand(base: Vector2, ctrl: Vector2, end: Vector2, color: Color, width: float) -> void:
-	var points := PackedVector2Array()
-	for i in range(DEPOSIT_STORAGE_FIBER_CURVE_SEGMENTS + 1):
-		var t: float = float(i) / float(DEPOSIT_STORAGE_FIBER_CURVE_SEGMENTS)
-		var one_minus_t: float = 1.0 - t
-		points.append(base * (one_minus_t * one_minus_t) + ctrl * (2.0 * one_minus_t * t) + end * (t * t))
-	draw_polyline(points, color, width, true)
-
-
-func _draw_deposit_storage_fiber_tie_knot(base: Vector2, side: float) -> void:
-	var center: Vector2 = base + Vector2(0.0, -side * 0.06)
-	var rx: float = side * 0.14
-	var ry: float = side * 0.075
-	var rotation: float = -0.12
-	var points := PackedVector2Array()
-	const KNOT_SEGMENTS: int = 16
-	for i in range(KNOT_SEGMENTS):
-		var angle: float = TAU * float(i) / float(KNOT_SEGMENTS)
-		var local_point := Vector2(cos(angle) * rx, sin(angle) * ry)
-		points.append(center + local_point.rotated(rotation))
-	draw_colored_polygon(points, DEPOSIT_STORAGE_FIBER_TIE_COLOR)
-
-
-# Replica world-space di BerryIcon.gd (2026-09-17, richiesta utente — bugfix "pallino giallo nel
-# magazzino": mancava del tutto qui, cadeva nel fallback generico _: di _draw_deposit_site_
-# storage_grid, MAI nell'icona vera — la UI Control di BerryIcon.gd non ha mai avuto nulla a che
-# fare con questo bug, è un sistema di disegno completamente separato) — stesso principio dei tre
-# blocchi sopra: stessi punti/raggi/colori frazionari (0..1) di BerryIcon.gd, qui scalati per
-# `side` e traslati su `top_left` invece che per size.x/size.y di un Control.
-const DEPOSIT_STORAGE_BERRY_COLOR_MAIN := Color(0.75, 0.08, 0.10, 1.0)
-const DEPOSIT_STORAGE_BERRY_COLOR_DARK := Color(0.55, 0.05, 0.08, 1.0)
-const DEPOSIT_STORAGE_BERRY_COLOR_HIGHLIGHT := Color(0.93, 0.65, 0.63, 0.85)
-const DEPOSIT_STORAGE_BERRY_COLOR_STEM := Color(0.361, 0.420, 0.196, 1.0)
-const DEPOSIT_STORAGE_BERRY_COLOR_LEAF := Color(0.298, 0.518, 0.235, 1.0)
-const DEPOSIT_STORAGE_BERRIES := [
-	{"cx": 0.36, "cy": 0.58, "r": 0.175, "color": DEPOSIT_STORAGE_BERRY_COLOR_DARK},
-	{"cx": 0.64, "cy": 0.56, "r": 0.17, "color": DEPOSIT_STORAGE_BERRY_COLOR_MAIN},
-	{"cx": 0.50, "cy": 0.80, "r": 0.195, "color": DEPOSIT_STORAGE_BERRY_COLOR_MAIN},
-]
-const DEPOSIT_STORAGE_BERRY_CURVE_SEGMENTS: int = 8
-
-func _draw_deposit_storage_berry_icon(top_left: Vector2, side: float) -> void:
-	_draw_deposit_storage_berry_stem(top_left, side)
-	_draw_deposit_storage_berry_leaf(top_left, side)
-	for berry in DEPOSIT_STORAGE_BERRIES:
-		var center: Vector2 = top_left + Vector2(berry["cx"], berry["cy"]) * side
-		var radius: float = side * berry["r"]
-		draw_circle(center, radius, berry["color"])
-		var highlight_center: Vector2 = center - Vector2(radius * 0.32, radius * 0.34)
-		draw_circle(highlight_center, radius * 0.32, DEPOSIT_STORAGE_BERRY_COLOR_HIGHLIGHT)
-
-
-func _draw_deposit_storage_berry_stem(top_left: Vector2, side: float) -> void:
-	var base: Vector2 = top_left + Vector2(0.50, 0.58) * side
-	var ctrl: Vector2 = top_left + Vector2(0.58, 0.38) * side
-	var tip: Vector2 = top_left + Vector2(0.52, 0.20) * side
-	var points := PackedVector2Array()
-	for i in range(DEPOSIT_STORAGE_BERRY_CURVE_SEGMENTS + 1):
-		var t: float = float(i) / float(DEPOSIT_STORAGE_BERRY_CURVE_SEGMENTS)
-		var one_minus_t: float = 1.0 - t
-		points.append(base * (one_minus_t * one_minus_t) + ctrl * (2.0 * one_minus_t * t) + tip * (t * t))
-	draw_polyline(points, DEPOSIT_STORAGE_BERRY_COLOR_STEM, side * 0.045, true)
-
-
-func _draw_deposit_storage_berry_leaf(top_left: Vector2, side: float) -> void:
-	var base: Vector2 = top_left + Vector2(0.55, 0.30) * side
-	var tip: Vector2 = top_left + Vector2(0.76, 0.20) * side
-	var ctrl_top: Vector2 = top_left + Vector2(0.72, 0.18) * side
-	var ctrl_bottom: Vector2 = top_left + Vector2(0.62, 0.32) * side
-	var points := PackedVector2Array()
-	for i in range(DEPOSIT_STORAGE_BERRY_CURVE_SEGMENTS + 1):
-		var t: float = float(i) / float(DEPOSIT_STORAGE_BERRY_CURVE_SEGMENTS)
-		var one_minus_t: float = 1.0 - t
-		points.append(base * (one_minus_t * one_minus_t) + ctrl_top * (2.0 * one_minus_t * t) + tip * (t * t))
-	for i in range(1, DEPOSIT_STORAGE_BERRY_CURVE_SEGMENTS):
-		var t: float = float(i) / float(DEPOSIT_STORAGE_BERRY_CURVE_SEGMENTS)
-		var one_minus_t: float = 1.0 - t
-		points.append(tip * (one_minus_t * one_minus_t) + ctrl_bottom * (2.0 * one_minus_t * t) + base * (t * t))
-	draw_colored_polygon(points, DEPOSIT_STORAGE_BERRY_COLOR_LEAF)
-
-
-# Replica world-space di AcornIcon.gd (2026-09-17, richiesta utente — seconda risorsa della catena
-# "fruit stock" generica dopo berry, stesso schema/stesso principio del blocco berry sopra): due
-# ghiande, ciascuna corpo+riflesso+cappuccio ellittici + piccolo stelo, stessi punti/raggi/colori
-# frazionari (0..1) di AcornIcon.gd, qui scalati per `side` e traslati su `top_left` invece che per
-# size.x/size.y di un Control.
-const DEPOSIT_STORAGE_ACORN_COLOR_BODY := Color(0.72, 0.52, 0.28, 1.0)
-const DEPOSIT_STORAGE_ACORN_COLOR_BODY_DARK := Color(0.60, 0.42, 0.20, 1.0)
-const DEPOSIT_STORAGE_ACORN_COLOR_HIGHLIGHT := Color(0.88, 0.72, 0.48, 0.85)
-const DEPOSIT_STORAGE_ACORN_COLOR_CAP := Color(0.42, 0.28, 0.14, 1.0)
-const DEPOSIT_STORAGE_ACORN_COLOR_STEM := Color(0.35, 0.30, 0.15, 1.0)
-const DEPOSIT_STORAGE_ACORN_ELLIPSE_SEGMENTS: int = 14
-const DEPOSIT_STORAGE_ACORNS := [
-	{"cx": 0.34, "cy": 0.58, "rx": 0.15, "ry": 0.19, "rot": -0.25, "color": DEPOSIT_STORAGE_ACORN_COLOR_BODY_DARK},
-	{"cx": 0.62, "cy": 0.62, "rx": 0.19, "ry": 0.235, "rot": 0.18, "color": DEPOSIT_STORAGE_ACORN_COLOR_BODY},
-]
-
-func _draw_deposit_storage_acorn_icon(top_left: Vector2, side: float) -> void:
-	for acorn in DEPOSIT_STORAGE_ACORNS:
-		_draw_deposit_storage_acorn(
-			top_left, side, acorn["cx"], acorn["cy"], acorn["rx"], acorn["ry"], acorn["rot"], acorn["color"]
-		)
-
-
-func _draw_deposit_storage_acorn(
-	top_left: Vector2, side: float, cx: float, cy: float, rx: float, ry: float, rotation: float, body_color: Color
-) -> void:
-	var center: Vector2 = top_left + Vector2(cx, cy) * side
-	var body_radius := Vector2(rx * side, ry * side)
-	_draw_deposit_storage_ellipse(center, body_radius, rotation, body_color)
-
-	var highlight_offset: Vector2 = Vector2(-body_radius.x * 0.35, -body_radius.y * 0.3).rotated(rotation)
-	_draw_deposit_storage_ellipse(center + highlight_offset, body_radius * 0.35, rotation, DEPOSIT_STORAGE_ACORN_COLOR_HIGHLIGHT)
-
-	var cap_center: Vector2 = center + Vector2(0.0, -body_radius.y * 0.62).rotated(rotation)
-	var cap_radius := Vector2(body_radius.x * 1.05, body_radius.y * 0.5)
-	_draw_deposit_storage_ellipse(cap_center, cap_radius, rotation, DEPOSIT_STORAGE_ACORN_COLOR_CAP)
-
-	var stem_base: Vector2 = cap_center + Vector2(0.0, -cap_radius.y * 0.7).rotated(rotation)
-	var stem_tip: Vector2 = stem_base + Vector2(0.0, -body_radius.y * 0.35).rotated(rotation)
-	draw_line(stem_base, stem_tip, DEPOSIT_STORAGE_ACORN_COLOR_STEM, side * 0.04, true)
-
-
-func _draw_deposit_storage_ellipse(center: Vector2, radius: Vector2, rotation: float, color: Color) -> void:
-	var points := PackedVector2Array()
-	for i in range(DEPOSIT_STORAGE_ACORN_ELLIPSE_SEGMENTS):
-		var angle: float = TAU * float(i) / float(DEPOSIT_STORAGE_ACORN_ELLIPSE_SEGMENTS)
-		var local_point := Vector2(cos(angle) * radius.x, sin(angle) * radius.y)
-		points.append(center + local_point.rotated(rotation))
-	draw_colored_polygon(points, color)
-
-
-# Replica world-space di FruitIcon.gd (2026-09-17, richiesta utente — terza risorsa della catena
-# "fruit stock" generica dopo berry/acorn, stesso schema/stesso principio dei due blocchi sopra):
-# stessi punti/raggi/colori frazionari (0..1) di FruitIcon.gd, qui scalati per `side` e traslati su
-# `top_left` invece che per size.x/size.y di un Control.
-const DEPOSIT_STORAGE_FRUIT_COLOR_BODY := Color(0.80, 0.16, 0.14, 1.0)
-const DEPOSIT_STORAGE_FRUIT_COLOR_BODY_DARK := Color(0.62, 0.10, 0.10, 1.0)
-const DEPOSIT_STORAGE_FRUIT_COLOR_HIGHLIGHT := Color(0.96, 0.62, 0.55, 0.85)
-const DEPOSIT_STORAGE_FRUIT_COLOR_STEM := Color(0.35, 0.30, 0.15, 1.0)
-const DEPOSIT_STORAGE_FRUIT_COLOR_LEAF := Color(0.30, 0.55, 0.20, 1.0)
-const DEPOSIT_STORAGE_FRUIT_CURVE_SEGMENTS: int = 8
-const DEPOSIT_STORAGE_APPLES := [
-	{"cx": 0.36, "cy": 0.60, "r": 0.185, "color": DEPOSIT_STORAGE_FRUIT_COLOR_BODY_DARK},
-	{"cx": 0.64, "cy": 0.58, "r": 0.22, "color": DEPOSIT_STORAGE_FRUIT_COLOR_BODY},
-]
-
-func _draw_deposit_storage_fruit_icon(top_left: Vector2, side: float) -> void:
-	for apple in DEPOSIT_STORAGE_APPLES:
-		_draw_deposit_storage_apple(top_left, side, apple["cx"], apple["cy"], apple["r"], apple["color"])
-
-
-func _draw_deposit_storage_apple(top_left: Vector2, side: float, cx: float, cy: float, r: float, body_color: Color) -> void:
-	var center: Vector2 = top_left + Vector2(cx, cy) * side
-	var radius: float = r * side
-	draw_circle(center, radius, body_color)
-
-	var highlight_center: Vector2 = center - Vector2(radius * 0.35, radius * 0.38)
-	draw_circle(highlight_center, radius * 0.30, DEPOSIT_STORAGE_FRUIT_COLOR_HIGHLIGHT)
-
-	var stem_base: Vector2 = center + Vector2(0.0, -radius * 0.95)
-	var stem_tip: Vector2 = stem_base + Vector2(radius * 0.05, -radius * 0.55)
-	draw_line(stem_base, stem_tip, DEPOSIT_STORAGE_FRUIT_COLOR_STEM, side * 0.045, true)
-
-	_draw_deposit_storage_fruit_leaf(stem_tip, radius)
-
-
-func _draw_deposit_storage_fruit_leaf(stem_tip: Vector2, radius: float) -> void:
-	var base: Vector2 = stem_tip
-	var tip: Vector2 = stem_tip + Vector2(radius * 0.55, -radius * 0.15)
-	var ctrl_top: Vector2 = stem_tip + Vector2(radius * 0.42, -radius * 0.35)
-	var ctrl_bottom: Vector2 = stem_tip + Vector2(radius * 0.30, radius * 0.05)
-	var points := PackedVector2Array()
-	for i in range(DEPOSIT_STORAGE_FRUIT_CURVE_SEGMENTS + 1):
-		var t: float = float(i) / float(DEPOSIT_STORAGE_FRUIT_CURVE_SEGMENTS)
-		var one_minus_t: float = 1.0 - t
-		points.append(base * (one_minus_t * one_minus_t) + ctrl_top * (2.0 * one_minus_t * t) + tip * (t * t))
-	for i in range(1, DEPOSIT_STORAGE_FRUIT_CURVE_SEGMENTS):
-		var t: float = float(i) / float(DEPOSIT_STORAGE_FRUIT_CURVE_SEGMENTS)
-		var one_minus_t: float = 1.0 - t
-		points.append(tip * (one_minus_t * one_minus_t) + ctrl_bottom * (2.0 * one_minus_t * t) + base * (t * t))
-	draw_colored_polygon(points, DEPOSIT_STORAGE_FRUIT_COLOR_LEAF)
-
-
-# Replica world-space di MushroomIcon.gd (2026-09-18, richiesta utente — bugfix "pallino giallo nel
-# magazzino": mancava del tutto qui, cadeva nel fallback generico _: di _draw_deposit_site_
-# storage_grid, STESSO identico bug già risolto in passato per berry) — stessi punti/raggi/colori
-# frazionari (0..1) di MushroomIcon.gd, qui scalati per `side` e traslati su `top_left` invece che
-# per size.x/size.y di un Control.
-const DEPOSIT_STORAGE_MUSHROOM_COLOR_CAP := Color(0.62, 0.32, 0.18, 1.0)
-const DEPOSIT_STORAGE_MUSHROOM_COLOR_CAP_DARK := Color(0.48, 0.24, 0.13, 1.0)
-const DEPOSIT_STORAGE_MUSHROOM_COLOR_GILLS := Color(0.85, 0.78, 0.62, 1.0)
-const DEPOSIT_STORAGE_MUSHROOM_COLOR_STEM := Color(0.92, 0.87, 0.74, 1.0)
-const DEPOSIT_STORAGE_MUSHROOM_ELLIPSE_SEGMENTS: int = 14
-const DEPOSIT_STORAGE_MUSHROOMS := [
-	{"cx": 0.33, "cy": 0.62, "cap_rx": 0.15, "cap_ry": 0.11, "color": DEPOSIT_STORAGE_MUSHROOM_COLOR_CAP_DARK},
-	{"cx": 0.62, "cy": 0.58, "cap_rx": 0.20, "cap_ry": 0.145, "color": DEPOSIT_STORAGE_MUSHROOM_COLOR_CAP},
-]
-
-func _draw_deposit_storage_mushroom_icon(top_left: Vector2, side: float) -> void:
-	for mushroom in DEPOSIT_STORAGE_MUSHROOMS:
-		_draw_deposit_storage_mushroom(
-			top_left, side, mushroom["cx"], mushroom["cy"], mushroom["cap_rx"], mushroom["cap_ry"], mushroom["color"]
-		)
-
-
-func _draw_deposit_storage_mushroom(
-	top_left: Vector2, side: float, cx: float, cy: float, cap_rx: float, cap_ry: float, cap_color: Color
-) -> void:
-	var cap_center: Vector2 = top_left + Vector2(cx, cy) * side
-	var cap_radius := Vector2(cap_rx * side, cap_ry * side)
-
-	var stem_width: float = cap_radius.x * 0.5
-	var stem_height: float = cap_radius.y * 2.4
-	var stem_top: Vector2 = cap_center + Vector2(0.0, cap_radius.y * 0.5)
-	draw_rect(Rect2(stem_top - Vector2(stem_width * 0.5, 0.0), Vector2(stem_width, stem_height)), DEPOSIT_STORAGE_MUSHROOM_COLOR_STEM)
-
-	var rim_center: Vector2 = cap_center + Vector2(0.0, cap_radius.y * 0.35)
-	var rim_radius := Vector2(cap_radius.x * 1.1, cap_radius.y * 0.65)
-	_draw_deposit_storage_mushroom_ellipse(rim_center, rim_radius, DEPOSIT_STORAGE_MUSHROOM_COLOR_GILLS)
-
-	_draw_deposit_storage_mushroom_ellipse(cap_center, cap_radius, cap_color)
-
-
-func _draw_deposit_storage_mushroom_ellipse(center: Vector2, radius: Vector2, color: Color) -> void:
-	var points := PackedVector2Array()
-	for i in range(DEPOSIT_STORAGE_MUSHROOM_ELLIPSE_SEGMENTS):
-		var angle: float = TAU * float(i) / float(DEPOSIT_STORAGE_MUSHROOM_ELLIPSE_SEGMENTS)
-		points.append(center + Vector2(cos(angle) * radius.x, sin(angle) * radius.y))
-	draw_colored_polygon(points, color)
-
-
-# Replica world-space per "eggs" (2026-09-18, richiesta utente — bugfix "vedo solo il pallino
-# blu nel magazzino": mancava del tutto qui, cadeva nel fallback generico _: di _draw_deposit_
-# site_storage_grid — STESSO identico bug già risolto per mushroom sopra, vedi quel commento). A
-# differenza di berry/acorn/fruit/mushroom (icone Control dedicate in simulation/scripts/ui/,
-# replicate qui 1:1) eggs usa solo un emoji altrove (IconRegistry.RESOURCE_ICONS — un'emoji non è
-# replicabile in world-space, nessun *Icon.gd da cui copiare punti/colori): geometria disegnata
-# direttamente qui, TRE piccole ellissi color guscio ravvicinate ("2 o 3 uova vicine", richiesta
-# esplicita utente) invece di un singolo ovale — niente stelo/foglia, non è un frutto. Stessa forma
-# ovale asimmetrica (più stretta verso l'alto) della mesh del nido a terra (vedi _ensure_egg_mesh
-# più sotto in questo file), per coerenza visiva tra i due punti di rendering di questa risorsa.
-const DEPOSIT_STORAGE_EGG_COLOR := Color(0.93, 0.88, 0.74, 1.0)
-const DEPOSIT_STORAGE_EGG_COLOR_SHADOW := Color(0.80, 0.74, 0.58, 1.0)
-const DEPOSIT_STORAGE_EGG_ELLIPSE_SEGMENTS: int = 12
-const DEPOSIT_STORAGE_EGGS := [
-	{"cx": 0.33, "cy": 0.62, "rx": 0.13, "ry": 0.17, "rot": -0.2, "color": DEPOSIT_STORAGE_EGG_COLOR_SHADOW},
-	{"cx": 0.57, "cy": 0.68, "rx": 0.14, "ry": 0.185, "rot": 0.05, "color": DEPOSIT_STORAGE_EGG_COLOR},
-	{"cx": 0.68, "cy": 0.46, "rx": 0.125, "ry": 0.165, "rot": 0.3, "color": DEPOSIT_STORAGE_EGG_COLOR_SHADOW},
-]
-
-func _draw_deposit_storage_eggs_icon(top_left: Vector2, side: float) -> void:
-	for egg in DEPOSIT_STORAGE_EGGS:
-		_draw_deposit_storage_egg(top_left, side, egg["cx"], egg["cy"], egg["rx"], egg["ry"], egg["rot"], egg["color"])
-
-
-func _draw_deposit_storage_egg(
-	top_left: Vector2, side: float, cx: float, cy: float, rx: float, ry: float, rotation: float, color: Color
-) -> void:
-	var center: Vector2 = top_left + Vector2(cx, cy) * side
-	var radius := Vector2(rx * side, ry * side)
-	var points := PackedVector2Array()
-	for i in range(DEPOSIT_STORAGE_EGG_ELLIPSE_SEGMENTS):
-		var angle: float = TAU * float(i) / float(DEPOSIT_STORAGE_EGG_ELLIPSE_SEGMENTS)
-		var width_scale: float = lerp(0.72, 1.0, (1.0 - cos(angle)) * 0.5)
-		var local_point := Vector2(sin(angle) * radius.x * width_scale, -cos(angle) * radius.y)
-		points.append(center + local_point.rotated(rotation))
-	draw_colored_polygon(points, color)
-
-
-# Replica world-space per "wild_vegetables" (2026-09-19, richiesta utente — verdure selvatiche
-# raccoglibili per microcella; TRE foglie invece di due, una più grande delle altre, dal
-# 2026-09-19 — richiesta utente): STESSO principio di eggs sopra (nessuna icona Control dedicata
-# da replicare, geometria disegnata direttamente qui) — TRE foglie ellittiche allungate che si
-# aprono a ventaglio da una base comune + un piccolo stelo/radice, invece di un frutto rotondo:
-# la foglia centrale è più grande e punta dritta verso l'alto (rot=0), le due laterali sono più
-# piccole e simmetriche, stesso principio "una dominante, le altre di contorno" già usato per gli
-# eggs (2 gusci d'ombra + 1 pieno). Stessa forma (ellisse semplice, nessuna asimmetria come
-# l'uovo) sia qui sia nella mesh a terra (vedi _get_grass_patch_multimesh più sotto in questo
-# file, che riusa DIRETTAMENTE questo stesso Array), per coerenza visiva tra i due punti di
-# rendering di questa risorsa.
-const DEPOSIT_STORAGE_WILD_VEGETABLES_COLOR_LEAF_MAIN := Color(0.42, 0.62, 0.22, 1.0)
-const DEPOSIT_STORAGE_WILD_VEGETABLES_COLOR_LEAF_DARK := Color(0.30, 0.48, 0.16, 1.0)
-const DEPOSIT_STORAGE_WILD_VEGETABLES_COLOR_STEM := Color(0.55, 0.42, 0.20, 1.0)
-const DEPOSIT_STORAGE_WILD_VEGETABLES_ELLIPSE_SEGMENTS: int = 12
-const DEPOSIT_STORAGE_WILD_VEGETABLES_LEAVES := [
-	{"cx": 0.32, "cy": 0.46, "rx": 0.13, "ry": 0.22, "rot": -0.65, "color": DEPOSIT_STORAGE_WILD_VEGETABLES_COLOR_LEAF_DARK},
-	{"cx": 0.50, "cy": 0.34, "rx": 0.19, "ry": 0.32, "rot": 0.0, "color": DEPOSIT_STORAGE_WILD_VEGETABLES_COLOR_LEAF_MAIN},
-	{"cx": 0.68, "cy": 0.46, "rx": 0.13, "ry": 0.22, "rot": 0.65, "color": DEPOSIT_STORAGE_WILD_VEGETABLES_COLOR_LEAF_DARK},
-]
-
-func _draw_deposit_storage_wild_vegetables_icon(top_left: Vector2, side: float) -> void:
-	var stem_base: Vector2 = top_left + Vector2(0.5, 0.68) * side
-	var stem_top: Vector2 = top_left + Vector2(0.5, 0.5) * side
-	draw_line(stem_base, stem_top, DEPOSIT_STORAGE_WILD_VEGETABLES_COLOR_STEM, side * 0.05, true)
-	for leaf in DEPOSIT_STORAGE_WILD_VEGETABLES_LEAVES:
-		_draw_deposit_storage_wild_vegetables_leaf(
-			top_left, side, leaf["cx"], leaf["cy"], leaf["rx"], leaf["ry"], leaf["rot"], leaf["color"]
-		)
-
-
-func _draw_deposit_storage_wild_vegetables_leaf(
-	top_left: Vector2, side: float, cx: float, cy: float, rx: float, ry: float, rotation: float, color: Color
-) -> void:
-	var center: Vector2 = top_left + Vector2(cx, cy) * side
-	var radius := Vector2(rx * side, ry * side)
-	var points := PackedVector2Array()
-	for i in range(DEPOSIT_STORAGE_WILD_VEGETABLES_ELLIPSE_SEGMENTS):
-		var angle: float = TAU * float(i) / float(DEPOSIT_STORAGE_WILD_VEGETABLES_ELLIPSE_SEGMENTS)
-		var local_point := Vector2(cos(angle) * radius.x, sin(angle) * radius.y)
-		points.append(center + local_point.rotated(rotation))
-	draw_colored_polygon(points, color)
-
-
-# Replica world-space per "medicinal_herbs" (2026-09-19, richiesta utente — icona nel deposito,
-# altrimenti cadeva nel pallino di fallback di _draw_deposit_site_storage_grid): un piccolo stelo
-# con due paia di foglioline ovali basse e larghe (verde-azzurro, DIVERSO dal verde-giallo di
-# wild_vegetables) e un fiorellino viola in cima — il fiore è ciò che le distingue a colpo d'occhio
-# da una verdura commestibile. Stesso principio di wild_vegetables sopra: nessuna icona Control da
-# replicare, geometria disegnata direttamente qui; la STESSA lista DEPOSIT_STORAGE_MEDICINAL_HERBS_
-# LEAVES è la fonte di verità anche per il marker a terra (vedi GRASS_PATCH_MARKER_SHAPES). Le
-# ellissi passano da _draw_deposit_storage_wild_vegetables_leaf, che è di fatto un disegna-ellisse
-# generico (cos/sin + rotazione, nessuna specificità verdura) — nessuna copia.
-const DEPOSIT_STORAGE_MEDICINAL_HERBS_COLOR_LEAF_MAIN := Color(0.35, 0.58, 0.42, 1.0)
-const DEPOSIT_STORAGE_MEDICINAL_HERBS_COLOR_LEAF_DARK := Color(0.24, 0.44, 0.32, 1.0)
-const DEPOSIT_STORAGE_MEDICINAL_HERBS_COLOR_FLOWER := Color(0.62, 0.42, 0.75, 1.0)
-const DEPOSIT_STORAGE_MEDICINAL_HERBS_COLOR_STEM := Color(0.35, 0.45, 0.25, 1.0)
-const DEPOSIT_STORAGE_MEDICINAL_HERBS_LEAVES := [
-	{"cx": 0.34, "cy": 0.58, "rx": 0.15, "ry": 0.08, "rot": -0.5, "color": DEPOSIT_STORAGE_MEDICINAL_HERBS_COLOR_LEAF_DARK},
-	{"cx": 0.66, "cy": 0.58, "rx": 0.15, "ry": 0.08, "rot": 0.5, "color": DEPOSIT_STORAGE_MEDICINAL_HERBS_COLOR_LEAF_DARK},
-	{"cx": 0.38, "cy": 0.42, "rx": 0.13, "ry": 0.07, "rot": -0.4, "color": DEPOSIT_STORAGE_MEDICINAL_HERBS_COLOR_LEAF_MAIN},
-	{"cx": 0.62, "cy": 0.42, "rx": 0.13, "ry": 0.07, "rot": 0.4, "color": DEPOSIT_STORAGE_MEDICINAL_HERBS_COLOR_LEAF_MAIN},
-	{"cx": 0.50, "cy": 0.24, "rx": 0.09, "ry": 0.09, "rot": 0.0, "color": DEPOSIT_STORAGE_MEDICINAL_HERBS_COLOR_FLOWER},
-]
-
-func _draw_deposit_storage_medicinal_herbs_icon(top_left: Vector2, side: float) -> void:
-	var stem_base: Vector2 = top_left + Vector2(0.5, 0.75) * side
-	var stem_top: Vector2 = top_left + Vector2(0.5, 0.3) * side
-	draw_line(stem_base, stem_top, DEPOSIT_STORAGE_MEDICINAL_HERBS_COLOR_STEM, side * 0.05, true)
-	for leaf in DEPOSIT_STORAGE_MEDICINAL_HERBS_LEAVES:
-		_draw_deposit_storage_wild_vegetables_leaf(
-			top_left, side, leaf["cx"], leaf["cy"], leaf["rx"], leaf["ry"], leaf["rot"], leaf["color"]
-		)
-
-
-# Corda di fibre (2026-09-23, richiesta utente — prima era il pallino giallo di fallback): un rotolo a
-# spirale (2,5 giri, raggio crescente dal centro) color canapa con un capo libero verso l'angolo in
-# basso a destra. Ogni tratto è disegnato due volte — prima più spesso e scuro, poi più sottile e
-# chiaro — così il cordone ha un bordo e le spire restano distinguibili anche a questa scala.
-const DEPOSIT_STORAGE_FIBER_ROPE_COLOR := Color(0.78, 0.64, 0.40, 1.0)
-const DEPOSIT_STORAGE_FIBER_ROPE_OUTLINE_COLOR := Color(0.42, 0.31, 0.16, 1.0)
-const DEPOSIT_STORAGE_FIBER_ROPE_TURNS: float = 2.5
-const DEPOSIT_STORAGE_FIBER_ROPE_SEGMENTS: int = 40
-
-# Primi attrezzi (2026-09-24, richiesta utente) — stessa geometria delle icone del pannello
-# (WoodenSpearIcon/StoneKnifeIcon.draw_into), un solo disegno per entrambi i punti.
-func _draw_deposit_storage_wooden_spear_icon(top_left: Vector2, side: float) -> void:
-	WoodenSpearIcon.draw_into(self, top_left, Vector2(side, side))
-
-
-func _draw_deposit_storage_stone_knife_icon(top_left: Vector2, side: float) -> void:
-	StoneKnifeIcon.draw_into(self, top_left, Vector2(side, side))
-
-
-func _draw_deposit_storage_fiber_rope_icon(top_left: Vector2, side: float) -> void:
-	var center: Vector2 = top_left + Vector2(0.46, 0.46) * side
-	var points := PackedVector2Array()
-	for i in range(DEPOSIT_STORAGE_FIBER_ROPE_SEGMENTS + 1):
-		var t: float = float(i) / float(DEPOSIT_STORAGE_FIBER_ROPE_SEGMENTS)
-		var angle: float = t * TAU * DEPOSIT_STORAGE_FIBER_ROPE_TURNS
-		var radius: float = side * (0.05 + 0.28 * t)
-		points.append(center + Vector2(cos(angle), sin(angle)) * radius)
-	# Capo libero: dall'ultima spira verso l'angolo in basso a destra.
-	points.append(top_left + Vector2(0.88, 0.88) * side)
-	draw_polyline(points, DEPOSIT_STORAGE_FIBER_ROPE_OUTLINE_COLOR, side * 0.13, true)
-	draw_polyline(points, DEPOSIT_STORAGE_FIBER_ROPE_COLOR, side * 0.08, true)
 
 
 func _direction_vector(direction: GameTypes.Direction) -> Vector2:
@@ -2341,8 +1863,7 @@ const EGG_ROTATION_JITTER_MAX: float = 0.35
 
 
 # Punto sul contorno di un "uovo" (ovale asimmetrico, più stretto verso l'alto/y negativo) dato
-# raggio e angolo — STESSA formula già usata per l'icona di magazzino (_draw_deposit_storage_egg
-# più sotto), duplicata apposta qui: due contesti di disegno diversi (mesh cotta vs poligono
+# raggio e angolo — STESSA formula già usata per l'icona di magazzino (DepositStorageIcons._draw_deposit_storage_egg), duplicata apposta qui: due contesti di disegno diversi (mesh cotta vs poligono
 # immediate-mode), stesso principio "nessuna funzione condivisa tra usi diversi" già seguito
 # altrove in questo file per le ellissi di berry/mushroom.
 static func _egg_shape_point(radius: Vector2, angle: float) -> Vector2:
@@ -2355,7 +1876,7 @@ func _ensure_egg_mesh() -> void:
 		return
 	var st := SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
-	for egg in DEPOSIT_STORAGE_EGGS:
+	for egg in DepositStorageIcons.DEPOSIT_STORAGE_EGGS:
 		# Da spazio [0,1] relativo a un lato quadrato (convenzione dell'icona di magazzino) a
 		# spazio centrato in (0,0) scalato per EGG_CLUSTER_SCALE — l'unica conversione necessaria
 		# per riusare DIRETTAMENTE cx/cy/rx/ry/rot di DEPOSIT_STORAGE_EGGS qui.
@@ -2364,9 +1885,9 @@ func _ensure_egg_mesh() -> void:
 		var egg_rotation: float = float(egg["rot"])
 		st.set_color(egg["color"])
 		var center3 := Vector3(center.x, center.y, 0.0)
-		for i in range(DEPOSIT_STORAGE_EGG_ELLIPSE_SEGMENTS):
-			var angle_a: float = TAU * float(i) / float(DEPOSIT_STORAGE_EGG_ELLIPSE_SEGMENTS)
-			var angle_b: float = TAU * float(i + 1) / float(DEPOSIT_STORAGE_EGG_ELLIPSE_SEGMENTS)
+		for i in range(DepositStorageIcons.DEPOSIT_STORAGE_EGG_ELLIPSE_SEGMENTS):
+			var angle_a: float = TAU * float(i) / float(DepositStorageIcons.DEPOSIT_STORAGE_EGG_ELLIPSE_SEGMENTS)
+			var angle_b: float = TAU * float(i + 1) / float(DepositStorageIcons.DEPOSIT_STORAGE_EGG_ELLIPSE_SEGMENTS)
 			var point_a: Vector2 = center + _egg_shape_point(radius, angle_a).rotated(egg_rotation)
 			var point_b: Vector2 = center + _egg_shape_point(radius, angle_b).rotated(egg_rotation)
 			st.add_vertex(center3)
@@ -2443,8 +1964,8 @@ func _draw_egg_nest_positions() -> void:
 # una risorsa senza riga NON viene disegnata (warning una tantum, mai un marker generico che
 # sembra un'altra risorsa). Le foglie sono ellissi semplici (cos/sin diretti, nessun width_scale).
 const GRASS_PATCH_MARKER_SHAPES := {
-	"wild_vegetables": DEPOSIT_STORAGE_WILD_VEGETABLES_LEAVES,
-	"medicinal_herbs": DEPOSIT_STORAGE_MEDICINAL_HERBS_LEAVES,
+	"wild_vegetables": DepositStorageIcons.DEPOSIT_STORAGE_WILD_VEGETABLES_LEAVES,
+	"medicinal_herbs": DepositStorageIcons.DEPOSIT_STORAGE_MEDICINAL_HERBS_LEAVES,
 }
 const GRASS_PATCH_CLUSTER_SCALE: float = 2.4
 # Scala per-risorsa che sostituisce GRASS_PATCH_CLUSTER_SCALE (2026-09-19, richiesta utente — "le

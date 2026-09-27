@@ -130,11 +130,25 @@ func _resolve(individual: Variant, context: Dictionary) -> bool:
 		HuntService.log_event(individual, "%s UCCISO (fascia %s)." % [
 			combat_target.describe(), String(GameTypes.AgeBand.keys()[animal.age_band])
 		])
+		# Carcassa a terra nel punto della preda (2026-09-26 — prima la creava GameScene._on_prey_killed), con la
+		# regola di posa dei mucchi; il riferimento resta nel context per la macellazione dopo la caccia.
+		var carcass_pile := GroundPileService.drop_carcass(
+			GameSettings.active_game_data, animal.macro_coords, animal.position, combat_target.label, int(animal.age_band)
+		)
+		if carcass_pile != null:
+			context[HuntService.CONTEXT_KILL_CARCASS] = {
+				"macro_x": carcass_pile.macro_coords.x, "macro_y": carcass_pile.macro_coords.y,
+				"micro_x": carcass_pile.microcell.x, "micro_y": carcass_pile.microcell.y,
+				"id": int(carcass_pile.carcasses[-1]["id"]),
+			}
 		target_killed.emit(combat_target.kind, combat_target.target_id, combat_target.label, int(animal.age_band), animal.macro_coords)
 		if weapon_intact:
 			_request_recovery(context, weapon_name, weapon_uses, true)
 		else:
 			context.erase(HuntService.CONTEXT_WEAPON_DROP)
+			# Nessuna arma da recuperare: la macellazione si chiede subito.
+			if context.has(HuntService.CONTEXT_KILL_CARCASS):
+				context[HuntService.CONTEXT_PENDING_BUTCHER] = context[HuntService.CONTEXT_KILL_CARCASS]
 		return true
 	# Ferito: fugge con l'arma conficcata — persa (se si era rotta non c'è comunque nulla da recuperare).
 	context.erase(HuntService.CONTEXT_WEAPON_DROP)

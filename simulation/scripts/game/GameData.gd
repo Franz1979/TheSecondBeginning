@@ -214,6 +214,20 @@ func allocate_human_id() -> int:
 	next_human_id += 1
 	return id
 
+# Mucchi di risorse a terra (2026-09-26, ground drop — vedi GroundPile/GroundPileService), un solo mucchio
+# per microcella. Salvati da GameSaveService ("ground_piles"), insieme al prossimo id da assegnare.
+var ground_piles: Array[GroundPile] = []
+# Eventi casuali programmati (2026-09-26, richiesta utente — gameplay/events/, RandomEventService): una voce per
+# evento {"id": String, "absolute_day": int, "params": Dictionary}, solo tipi JSON-nativi. Salvati da
+# GameSaveService ("scheduled_random_events"), applicati e rimossi da GameTimeService il giorno previsto.
+var scheduled_random_events: Array[Dictionary] = []
+var next_ground_pile_id: int = 1
+
+func allocate_ground_pile_id() -> int:
+	var id := next_ground_pile_id
+	next_ground_pile_id += 1
+	return id
+
 # Monotonic day count since year 0, day 0 — the single source of truth for "how long ago"
 # comparisons (e.g. natural-event growth-bonus expiry) that must not reset/round at a year
 # boundary the way a per-year counter would.

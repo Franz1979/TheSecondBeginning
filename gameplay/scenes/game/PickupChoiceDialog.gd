@@ -36,7 +36,8 @@ extends Window
 # category: SecondaryResourceTypes.Category come int (solo con CATEGORY, altrimenti -1); resource_name: solo
 # con NAME, altrimenti ""; quantity: solo con NAME (quella scelta nello SpinBox), altrimenti -1; repeat: stato
 # del flag "Ripeti fino a N volte" (2026-09-20), indipendente dal criterio.
-signal choice_made(kind: int, category: int, resource_name: String, quantity: int, repeat: bool)
+# source_kind (2026-09-26, ground drop): PickUpAction.SourceKind della voce scelta (mucchio a terra o terreno).
+signal choice_made(kind: int, category: int, resource_name: String, quantity: int, repeat: bool, source_kind: int)
 
 @onready var message_label: Label = $MarginContainer/VBoxContainer/MessageLabel
 @onready var choice_list_container: VBoxContainer = $MarginContainer/VBoxContainer/ChoiceScroll/ChoiceListContainer
@@ -56,6 +57,24 @@ const CATEGORY_TEXT_KEYS := {
 	SecondaryResourceTypes.Category.TOOL: ["pickup_choice_category_tool", "pickup_choice_all_tool"],
 }
 
+# Sorgenti nell'ordine in cui compaiono (2026-09-26, ground drop): prima il mucchio a terra (sta sopra), poi il
+# terreno, con la chiave tr() della loro intestazione. Le intestazioni compaiono solo se le sorgenti sono due.
+const SOURCE_ORDER: Array[int] = [PickUpAction.SourceKind.GROUND_PILE, PickUpAction.SourceKind.TERRAIN]
+# Riquadri delle sorgenti (2026-09-26, richiesta utente — con due sorgenti le sezioni si distinguevano poco):
+# sfondo leggermente diverso per sorgente (terroso per il mucchio, verdastro per il terreno), bordo, intestazione
+# più grande staccata da un separatore, spazio vuoto tra un riquadro e l'altro.
+const SOURCE_PANEL_COLORS := {
+	PickUpAction.SourceKind.GROUND_PILE: Color(0.30, 0.24, 0.17, 1.0),
+	PickUpAction.SourceKind.TERRAIN: Color(0.19, 0.25, 0.18, 1.0),
+}
+const SOURCE_PANEL_BORDER_COLOR := Color(0.55, 0.52, 0.45, 1.0)
+const SOURCE_HEADER_FONT_SIZE: int = 15
+const SOURCE_PANEL_GAP: float = 10.0
+const SOURCE_TEXT_KEYS := {
+	PickUpAction.SourceKind.GROUND_PILE: "pickup_choice_source_ground_pile",
+	PickUpAction.SourceKind.TERRAIN: "pickup_choice_source_terrain",
+}
+
 const INDENT_PER_LEVEL: float = 16.0
 const RESOURCE_ROW_ICON_SIZE: float = 24.0
 
@@ -68,9 +87,12 @@ const MAX_DIALOG_HEIGHT: float = 640.0
 const DIALOG_WIDTH: int = 320
 
 # Voci selezionabili, in ordine di comparsa: {"button": Button, "kind": int, "category": int,
-# "resource_name": String, "max_quantity": int}. La selezione e' radio-style: una sola alla volta.
+# "resource_name": String, "max_quantity": int, "source_kind": int (PickUpAction.SourceKind)}. La selezione e' radio-style: una sola alla volta.
 var _choices: Array[Dictionary] = []
 var _selected_index: int = -1
+# Contenitore in cui _add_source_section/_add_choice aggiungono le righe: la lista stessa, oppure il riquadro
+# della sorgente quando le sorgenti sono due (2026-09-26).
+var _rows_container: VBoxContainer = null
 
 
 func _ready() -> void:
@@ -83,7 +105,8 @@ func _ready() -> void:
 	close_requested.connect(_on_cancel_pressed)
 
 
-# `resources`: Array di Dictionary {"resource_name": String, "category": int, "quantity": int (> 0)} — SOLO
+# `resources`: Array di Dictionary {"resource_name": String, "category": int, "quantity": int (> 0),
+# "source_kind": PickUpAction.SourceKind (facoltativo, default TERRAIN)} — SOLO
 # quelle realmente presenti nella microcella. `default_choice`: {"kind": PickUpAction.CriterionKind,
 # "category": int, "resource_name": String}; vuoto o senza "kind" = "Tutto" (il default fisso di oggi).
 # `repeat_default`: stato iniziale del flag "Ripeti fino a N volte" (2026-09-20: UserOptions.repeat_default).
@@ -97,10 +120,70 @@ func open_dialog(dialog_title: String, message: String, resources: Array, defaul
 	_choices.clear()
 	_selected_index = -1
 
-	# Raggruppa per categoria, nell'ordine di priorita' di PickUpAction (cibo, materiali, medicinali); dentro la
-	# categoria, per nome leggibile — solo le categorie con almeno una risorsa.
-	var by_category: Dictionary = {}
+	# Sorgenti presenti (2026-09-26, ground drop): una voce senza "source_kind" e' del terreno. Con due sorgenti
+	# ogni sezione ha la propria intestazione e il proprio "Tutto"/categorie, perche' una raccolta prende da una
+	# sola sorgente; con una sola sorgente il menu e' quello di sempre.
+	var by_source: Dictionary = {}
 	for entry in resources:
+		var source_kind: int = int(entry.get("source_kind", PickUpAction.SourceKind.TERRAIN))
+		if not by_source.has(source_kind):
+			by_source[source_kind] = []
+		by_source[source_kind].append(entry)
+	var show_source_headers: bool = by_source.size() > 1
+	var row_count: int = 0
+	var first_block: bool = true
+	for source_kind in SOURCE_ORDER:
+		if not by_source.has(source_kind):
+			continue
+		_rows_container = choice_list_container
+		if show_source_headers:
+			if not first_block:
+				var gap := Control.new()
+				gap.custom_minimum_size = Vector2(0.0, SOURCE_PANEL_GAP)
+				choice_list_container.add_child(gap)
+				row_count += 1
+			_rows_container = _build_source_block(source_kind)
+			row_count += 2
+		first_block = false
+		row_count += _add_source_section(by_source[source_kind], source_kind, 0)
+	_rows_container = choice_list_container
+
+	_select_choice(_resolve_default_index(default_choice))
+
+	exclusive = true
+	var height: float = minf(DIALOG_BASE_HEIGHT + float(row_count) * ROW_HEIGHT, MAX_DIALOG_HEIGHT)
+	popup_centered(Vector2i(DIALOG_WIDTH, int(height)))
+
+
+# Riquadro di una sorgente (solo con due sorgenti): PanelContainer con sfondo proprio e bordo, dentro
+# l'intestazione e un separatore; ritorna il VBoxContainer in cui aggiungere le righe della sezione.
+func _build_source_block(source_kind: int) -> VBoxContainer:
+	var panel := PanelContainer.new()
+	var style := StyleBoxFlat.new()
+	style.bg_color = SOURCE_PANEL_COLORS.get(source_kind, Color(0.2, 0.2, 0.2, 1.0))
+	style.border_color = SOURCE_PANEL_BORDER_COLOR
+	style.set_border_width_all(1)
+	style.set_corner_radius_all(4)
+	style.set_content_margin_all(6.0)
+	panel.add_theme_stylebox_override("panel", style)
+	choice_list_container.add_child(panel)
+	var block := VBoxContainer.new()
+	panel.add_child(block)
+	var header := Label.new()
+	header.text = tr(SOURCE_TEXT_KEYS[source_kind])
+	header.add_theme_font_size_override("font_size", SOURCE_HEADER_FONT_SIZE)
+	block.add_child(header)
+	block.add_child(HSeparator.new())
+	return block
+
+
+# Sezione del menu per una sorgente: "Tutto", poi per categoria (ordine di priorita' di PickUpAction:
+# cibo, materiali, medicinali...) l'intestazione, il "tutto" della categoria e le singole risorse per nome
+# leggibile. `base_level` sposta tutta la sezione di un rientro sotto l'intestazione della sorgente. Ritorna il
+# numero di righe aggiunte (per il dimensionamento del popup).
+func _add_source_section(entries: Array, source_kind: int, base_level: int) -> int:
+	var by_category: Dictionary = {}
+	for entry in entries:
 		var category: int = int(entry["category"])
 		if not by_category.has(category):
 			by_category[category] = []
@@ -114,7 +197,7 @@ func open_dialog(dialog_title: String, message: String, resources: Array, defaul
 			)
 
 	# Livello 1: "Tutto".
-	_add_choice(_build_text_row(tr("pickup_choice_all"), 0), PickUpAction.CriterionKind.ALL, -1, "", 0)
+	_add_choice(_build_text_row(tr("pickup_choice_all"), base_level), PickUpAction.CriterionKind.ALL, -1, "", 0, source_kind)
 	var row_count: int = 1
 	for category in present_categories:
 		var text_keys: Array = CATEGORY_TEXT_KEYS.get(category, ["", ""])
@@ -122,23 +205,18 @@ func open_dialog(dialog_title: String, message: String, resources: Array, defaul
 		var header := Label.new()
 		header.text = tr(text_keys[0]) if text_keys[0] != "" else str(category)
 		var header_row := HBoxContainer.new()
-		header_row.add_child(_build_indent(1))
+		header_row.add_child(_build_indent(base_level + 1))
 		header_row.add_child(header)
-		choice_list_container.add_child(header_row)
+		_rows_container.add_child(header_row)
 		# Livello 3: "tutto" della categoria + le singole risorse.
-		_add_choice(_build_text_row(tr(text_keys[1]) if text_keys[1] != "" else str(category), 2), PickUpAction.CriterionKind.CATEGORY, category, "", 0)
+		_add_choice(_build_text_row(tr(text_keys[1]) if text_keys[1] != "" else str(category), base_level + 2), PickUpAction.CriterionKind.CATEGORY, category, "", 0, source_kind)
 		for entry in by_category[category]:
 			var resource_name: String = entry["resource_name"]
 			var quantity: int = int(entry["quantity"])
-			_add_choice(_build_resource_row(resource_name, quantity, 2), PickUpAction.CriterionKind.NAME, category, resource_name, quantity)
+			_add_choice(_build_resource_row(resource_name, quantity, base_level + 2), PickUpAction.CriterionKind.NAME, category, resource_name, quantity, source_kind)
 			row_count += 1
 		row_count += 2
-
-	_select_choice(_resolve_default_index(default_choice))
-
-	exclusive = true
-	var height: float = minf(DIALOG_BASE_HEIGHT + float(row_count) * ROW_HEIGHT, MAX_DIALOG_HEIGHT)
-	popup_centered(Vector2i(DIALOG_WIDTH, int(height)))
+	return row_count
 
 
 # Indice della voce di default. Ripiego risalendo (2026-09-20, richiesta utente): se la voce richiesta non c'e',
@@ -174,14 +252,15 @@ func _find_choice(kind: int, category: int, resource_name: String) -> int:
 
 
 # Registra una voce selezionabile: `row` e' la riga gia' costruita (contiene il suo Button toggle, ultimo figlio).
-func _add_choice(row: Control, kind: int, category: int, resource_name: String, max_quantity: int) -> void:
+func _add_choice(row: Control, kind: int, category: int, resource_name: String, max_quantity: int, source_kind: int) -> void:
 	var button: Button = row.get_child(row.get_child_count() - 1) as Button
 	var index: int = _choices.size()
 	_choices.append({
 		"button": button, "kind": kind, "category": category, "resource_name": resource_name, "max_quantity": max_quantity,
+		"source_kind": source_kind,
 	})
 	button.pressed.connect(_select_choice.bind(index))
-	choice_list_container.add_child(row)
+	_rows_container.add_child(row)
 
 
 func _build_indent(level: int) -> Control:
@@ -290,7 +369,7 @@ func _on_confirm_pressed() -> void:
 	var resource_name: String = String(choice["resource_name"]) if kind == PickUpAction.CriterionKind.NAME else ""
 	var quantity: int = int(quantity_spin_box.value) if kind == PickUpAction.CriterionKind.NAME else -1
 	hide()
-	choice_made.emit(kind, category, resource_name, quantity, repeat_check_box.button_pressed)
+	choice_made.emit(kind, category, resource_name, quantity, repeat_check_box.button_pressed, int(choice["source_kind"]))
 
 
 # Nessun segnale all'annullamento (stesso principio di OptionChoiceDialog): il chiamante non ha ancora impostato

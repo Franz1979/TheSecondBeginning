@@ -42,6 +42,15 @@ const CONTEXT_WEAPON_DROP := "hunt_weapon_drop"
 # L'arma passa da qui allo step RecoverWeaponAction e non resta mai nel context.
 const CONTEXT_PENDING_WEAPON_RECOVERY := "pending_hunt_weapon_recovery"
 
+# --- Macellazione dopo la caccia (2026-09-26, richiesta utente) ---
+# Carcassa creata dal colpo letale (ThrowAction): {"macro_x", "macro_y", "micro_x", "micro_y", "id"}, solo numeri
+# (il context passa da JSON). Resta in Task.context fino alla fine della caccia.
+const CONTEXT_KILL_CARCASS := "hunt_kill_carcass"
+# Richiesta di accodare la macellazione su quella carcassa (stessa forma), scritta dopo il recupero dell'arma
+# (RecoverWeaponAction) o subito dal colpo letale se l'arma si è rotta e non c'è nulla da recuperare (ThrowAction);
+# consumata nello stesso finish_current_step da HumanIndividualActionService._handle_pending_hunt_butcher.
+const CONTEXT_PENDING_BUTCHER := "pending_hunt_butcher"
+
 # --- Probabilità di colpire (da tarare) — vedi compute_hit_chance ---
 #   p = clamp(scala_specie × arma × skill × taglia × età, HIT_CHANCE_MIN, HIT_CHANCE_MAX)
 #   scala_specie = AnimalRules.hit_chance_scale (DEFAULT_HIT_CHANCE_SCALE se la specie non lo dichiara)

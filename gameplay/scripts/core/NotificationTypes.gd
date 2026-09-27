@@ -38,4 +38,7 @@ enum NotificationPopupType {
 	# fascia d'età non ammessa, stamina insufficiente — vedi HumanIndividual.get_assign_rejection_reason.
 	# Aggiunto IN CODA. Stesso stile "alert" giallo di TOOL_REQUIRED.
 	TASK_REJECTED,
+	# Evento casuale (2026-09-26, richiesta utente — gameplay/events/): stile di default, non di allarme, come le
+	# nascite. Aggiunto IN CODA.
+	RANDOM_EVENT,
 }

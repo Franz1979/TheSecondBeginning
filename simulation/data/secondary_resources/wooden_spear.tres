@@ -13,7 +13,7 @@ recipe_inputs = {
 "stick": 1
 }
 recipe_labor = 300.0
-recipe_fuel_required = 3.0
+recipe_fuel_required = 2.0
 recipe_workstation_types = Array[String](["campfire", "toolmaker_hut"])
 recipe_required_tool_categories = Array[int]([1])
 tool_categories = Array[int]([0])

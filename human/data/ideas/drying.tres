@@ -1,0 +1,12 @@
+[gd_resource type="Resource" script_class="Idea" format=3]
+
+[ext_resource type="Script" uid="uid://cqx38hirrk3s1" path="res://human/scripts/core/Idea.gd" id="1_drying"]
+
+[resource]
+script = ExtResource("1_drying")
+id = "drying"
+display_name = "idea_drying"
+summary = "idea_drying_summary"
+description = "idea_drying_description"
+thoughts_cost = 30
+era = "paleolithic"

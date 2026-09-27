@@ -241,6 +241,8 @@ static func _action_type_for_step(step: Action) -> int:
 		return TaskTypes.ActionType.THROW
 	if step is RecoverWeaponAction:
 		return TaskTypes.ActionType.RECOVER_WEAPON
+	if step is ButcherAction:
+		return TaskTypes.ActionType.BUTCHER
 	push_error("TaskPersistenceService._action_type_for_step: tipo Action sconosciuto (%s)." % step.get_script().get_global_name())
 	return -1
 
@@ -297,7 +299,8 @@ static func _build_step(action_type: int, step_data: Dictionary, macro_state: Ma
 			step = PickUpAction.new(
 				pickup_target, macro_state, String(step_data.get("resource_name", "pebble")),
 				int(step_data.get("quantity_requested", -1)),
-				int(step_data.get("criterion_kind", PickUpAction.CriterionKind.NAME)), int(step_data.get("criterion_category", -1))
+				int(step_data.get("criterion_kind", PickUpAction.CriterionKind.NAME)), int(step_data.get("criterion_category", -1)),
+				int(step_data.get("source_kind", PickUpAction.SourceKind.TERRAIN))
 			)
 		TaskTypes.ActionType.SETUP_SITE:
 			# 1 argomento (target_building: Building), stesso schema di UNLOAD sopra per risolvere il
@@ -379,7 +382,9 @@ static func _build_step(action_type: int, step_data: Dictionary, macro_state: Ma
 				String(step_data.get("resource_name", "")),
 				int(step_data.get("quantity_requested", 0)),
 				# equip_slot_index (2026-09-25, modalità "cintura"): -1 per i save precedenti.
-				int(step_data.get("equip_slot_index", -1))
+				int(step_data.get("equip_slot_index", -1)),
+				# Consegna dopo la produzione (2026-09-26): false per i save precedenti.
+				bool(step_data.get("deliver_to_warehouse", false))
 			)
 		TaskTypes.ActionType.RESTOCK_POUCH:
 			# 1 argomento (target_building), risolto per id come per RETRIEVE/UNLOAD. Il progresso (scelta,
@@ -388,7 +393,8 @@ static func _build_step(action_type: int, step_data: Dictionary, macro_state: Ma
 			var restock_target_building: Building = null
 			if step_data.has("target_building_id"):
 				restock_target_building = _find_building_by_id(world, int(step_data["target_building_id"]))
-			step = RestockPouchAction.new(restock_target_building)
+			# Sorgente (2026-09-26, rifornirsi dal proprio zaino): BUILDING per i save precedenti.
+			step = RestockPouchAction.new(restock_target_building, int(step_data.get("source_kind", RestockPouchAction.SourceKind.BUILDING)))
 		TaskTypes.ActionType.RUN:
 			# 1 argomento (target: Vector2), stesso schema di WALK sopra (target_x/target_y già
 			# coperti genericamente da serialize_task, vedi la nota in testa al file).
@@ -424,6 +430,14 @@ static func _build_step(action_type: int, step_data: Dictionary, macro_state: Ma
 				step = AimAction.new(saved_target, weapon_category)
 			else:
 				step = ThrowAction.new(saved_target, weapon_category)
+		TaskTypes.ActionType.BUTCHER:
+			# Mucchio (macrocella, microcella) e id della carcassa; durata e progresso arrivano da
+			# ButcherAction.load_save_data (solo step corrente).
+			step = ButcherAction.new(
+				Vector2i(int(step_data.get("pile_macro_x", 0)), int(step_data.get("pile_macro_y", 0))),
+				Vector2i(int(step_data.get("pile_micro_x", 0)), int(step_data.get("pile_micro_y", 0))),
+				int(step_data.get("carcass_id", -1))
+			)
 		TaskTypes.ActionType.RECOVER_WEAPON:
 			# Arma a terra (vive solo in questo step), esito del tiro e bersaglio; il punto di caduta è in
 			# Task.context (HuntService.CONTEXT_WEAPON_DROP), ripristinato con il resto del context.

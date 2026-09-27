@@ -31,11 +31,11 @@ const HYBRID_WEIGHT := 0.2
 # resta untracked, ROCK non e' cibo).
 const VEGETAL_SOURCES: Array[String] = ["acorn", "fruit", "berry"]
 
-# Ibride: fish_meat/bird_meat (placeholder — nessuna fonte calorica esisteva per loro prima
-# d'ora, valori provvisori da ritarare, vedi fish_meat.tres/bird_meat.tres — stesso schema di
-# FORAGE: consuming_depletes_primary=true, nessuno stock/sottotipo, non ancora una risorsa
-# secondaria gestibile dal giocatore) + eggs (gia' definita, quella si' a stock).
-const HYBRID_SOURCES: Array[String] = ["fish_meat", "bird_meat", "eggs"]
+# Ibride: fish_meat (placeholder — valori provvisori da ritarare, vedi fish_meat.tres — stesso schema di
+# FORAGE: consuming_depletes_primary=true, nessuno stock/sottotipo, non una risorsa secondaria gestibile dal
+# giocatore) + eggs (quella si' a stock). bird_meat rimossa il 2026-09-26: e' diventata "meat", la carne
+# generica della macellazione (materia prima, 0 calorie), non piu' una fonte calorica legata a BIRDS.
+const HYBRID_SOURCES: Array[String] = ["fish_meat", "eggs"]
 
 # Risorsa primaria da cui ciascuna fonte calorica deriva — SecondaryResourceRules non lo dichiara
 # da sola (lo sa solo il chiamante, stesso schema gia' in uso in WorldTimeService._SECONDARY_SOURCES
@@ -45,7 +45,6 @@ const _SOURCE_PRIMARY_TYPE := {
 	"fruit": GameTypes.WorldObjectType.TREE,
 	"berry": GameTypes.WorldObjectType.SHRUB,
 	"fish_meat": GameTypes.WorldObjectType.FISH,
-	"bird_meat": GameTypes.WorldObjectType.BIRDS,
 	"eggs": GameTypes.WorldObjectType.BIRDS,
 }
 

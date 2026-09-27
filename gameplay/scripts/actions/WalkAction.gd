@@ -36,11 +36,13 @@ const STAMINA_DRAIN_PER_MICROCELL_BASE: float = 5.0
 # Costo aggiuntivo/microcella per ogni utensile in equipaggiamento (richiesta utente, 2026-09-08) —
 # valore ARBITRARIO di partenza, stesso principio "da bilanciare" già dichiarato sopra per la base.
 # Attivo dal 2026-09-25: HumanIndividual.equipped_tool_count conta gli attrezzi nella cintura.
-const STAMINA_DRAIN_PER_TOOL: float = 3.0
+# Taratura 2026-09-27 (richiesta utente): da 3.0 a 2.0.
+const STAMINA_DRAIN_PER_TOOL: float = 2.0
 # Moltiplicatore del carico trasportato nel costo/microcella (2026-09-21, richiesta utente — con 1.0 un
 # carico di 40 di spazio costava 45 stamina/microcella contro le 5 a vuoto, "troppo"): il costo del
 # carico è used_carry_space × questo valore. Usato anche da RunAction.
-const CARRY_STAMINA_MULTIPLIER: float = 0.5
+# Taratura 2026-09-27 (richiesta utente): da 0.5 a 0.25.
+const CARRY_STAMINA_MULTIPLIER: float = 0.25
 
 # Nessun effetto sull'happiness (2026-09-19, richiesta utente): le Action non toccano i parametri
 # vitali di happiness, solo le Task lo fanno al completamento (vedi TaskCompletionEffects,

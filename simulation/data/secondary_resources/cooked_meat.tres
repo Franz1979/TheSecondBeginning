@@ -1,0 +1,18 @@
+[gd_resource type="Resource" script_class="SecondaryResourceRules" format=3 uid="uid://dtotwrag8uwaa"]
+
+[ext_resource type="Script" uid="uid://cu4cyua5y4n1m" path="res://simulation/scripts/core/SecondaryResourceRules.gd" id="1_cooked_meat"]
+
+[resource]
+script = ExtResource("1_cooked_meat")
+secondary_resource_name = "cooked_meat"
+calories_per_unit = 100.0
+consuming_depletes_primary = false
+generation_source = 2
+day_durability = 20
+space_per_unit = 5.0
+recipe_inputs = {
+"meat": 1
+}
+recipe_labor = 50.0
+recipe_fuel_required = 3.0
+recipe_workstation_types = Array[String](["campfire"])

@@ -8,6 +8,9 @@ skill_effects_by_task_name = {
 "task_build_name": {
 "skill_builder": 1.0
 },
+"task_butcher_name": {
+"skill_crafting": 1.0
+},
 "task_daydream_name": {
 "skill_cognition": 1.0
 },
@@ -33,6 +36,7 @@ skill_effects_by_task_name = {
 }
 vital_effects_by_task_name = {
 "task_build_name": {},
+"task_butcher_name": {},
 "task_daydream_name": {
 "current_happiness": 20.0
 },

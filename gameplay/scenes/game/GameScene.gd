@@ -275,7 +275,7 @@ var human_individual_views: Array[HumanIndividualView] = []
 # MICROCELL aggiunto (2026-09-16, richiesta utente — ispezione con doppio click sinistro): settimo
 # tipo, stessa mutua esclusione a N vie degli altri sei (vedi _select_microcell/
 # _clear_microcell_selection).
-enum SelectionKind { NONE, INDIVIDUAL, VEGETATION, BUILDING, DEAD_BODY, STONE, STICK_LOT, MICROCELL, ANIMAL }
+enum SelectionKind { NONE, INDIVIDUAL, VEGETATION, BUILDING, DEAD_BODY, STONE, STICK_LOT, MICROCELL, ANIMAL, GROUND_PILE }
 var _selection_kind: SelectionKind = SelectionKind.NONE
 
 # Click-detection su un singolo individuo di vegetazione (TREE/SHRUB) — vedi
@@ -310,6 +310,19 @@ const DEAD_BODY_INFO_PANEL_SCENE := preload("res://gameplay/scenes/game/DeadBody
 var dead_body_selector_controller := DeadBodySelectorController.new()
 var selected_dead_body_individual_id: int = -1
 var dead_body_info_panel: DeadBodyInfoPanel
+# Mucchi a terra (2026-09-26, ground drop — vedi GroundPile): pannello, selezione e viste, sullo schema dei
+# cadaveri. Le viste sono allineate ogni frame ai dati (_sync_ground_pile_views).
+const GROUND_PILE_INFO_PANEL_SCENE := preload("res://gameplay/scenes/game/GroundPileInfoPanel.tscn")
+# Raggio di selezione di un mucchio, in pixel locali della cella (mezza microcella).
+const GROUND_PILE_SELECT_RADIUS_PX: float = 5.0
+# Sopra un edificio percorribile (MOVEMENT) il mucchio vince il click solo entro questo raggio dal suo centro,
+# circa l'area delle sue icone (vedi il confronto map_hit in _unhandled_input).
+const GROUND_PILE_OVER_WALKABLE_RADIUS_PX: float = 2.5
+var ground_pile_info_panel: GroundPileInfoPanel
+var selected_ground_pile_id: int = -1
+var _ground_pile_views: Dictionary = {}  # pile id -> GroundPileView
+# Ultimo stato mostrato nel pannello [id, revisione, giorno assoluto]: si ridisegna solo quando cambia.
+var _ground_pile_panel_key: Array = []
 # individual_id -> DeadBodyView (bugfix, 2026-09-05: serve per accendere/spegnere il cerchiolino
 # di selezione sulla view giusta — vedi _select_dead_body/_clear_dead_body_selection). Popolato in
 # _on_human_individual_died quando la view viene creata. Voci possono restare stantie se la view
@@ -530,6 +543,8 @@ func _ready() -> void:
 	# _connect_daydream_step_appended_listener sotto per cosa fa davvero.
 	IdleTaskAssignmentService.daydream_step_appended_connector = Callable(self, "_connect_daydream_step_appended_listener")
 	debug_bar.action_pressed.connect(_on_debug_action_pressed)
+	# Eventi casuali scatenati a mano dalla barra di debug (2026-09-26) — stesso percorso dell'applicazione programmata.
+	debug_bar.random_event_trigger_requested.connect(func(event_id: String) -> void: game_time_service.trigger_random_event_now(event_id))
 	game_info_panel.primary_actions_bar.action_pressed.connect(_on_primary_action_pressed)
 	game_info_panel.secondary_actions_bar.action_pressed.connect(_on_secondary_action_pressed)
 	build_bar.submenu_row.action_pressed.connect(_on_build_submenu_action_pressed)
@@ -612,6 +627,9 @@ func _ready() -> void:
 	# STESSA SelectionTab, stesso identico principio "componente muto" degli altri tre.
 	dead_body_info_panel = DEAD_BODY_INFO_PANEL_SCENE.instantiate()
 	game_info_tabs.selection_content.add_child(dead_body_info_panel)
+	# ground_pile_info_panel (2026-09-26, ground drop) — altro sibling nella STESSA SelectionTab.
+	ground_pile_info_panel = GROUND_PILE_INFO_PANEL_SCENE.instantiate()
+	game_info_tabs.selection_content.add_child(ground_pile_info_panel)
 	# stone_info_panel (2026-09-08, richiesta utente) — quinto sibling nella STESSA SelectionTab,
 	# stesso identico principio "componente muto" degli altri quattro.
 	stone_info_panel = STONE_INFO_PANEL_SCENE.instantiate()
@@ -1212,6 +1230,7 @@ func _process(delta: float) -> void:
 		_sync_dependent_child_position(active_individual)
 
 	_sync_dropped_weapon_markers()
+	_sync_ground_pile_views()
 
 	if individual != null:
 		_update_live_neighbor()
@@ -1429,6 +1448,20 @@ func _unhandled_input(event: InputEvent) -> void:
 		map_hit = animal_hit
 		map_hit_kind = SelectionKind.ANIMAL
 		best_map_distance_px = animal_hit["distance"]
+	# Mucchio a terra (2026-09-26, ground drop) — stessa unità (pixel locali della cella), confronto alla pari.
+	# Eccezione: un mucchio sopra un edificio percorribile (MOVEMENT, es. sentiero) ha lo stesso centro
+	# dell'edificio e perderebbe sempre il pareggio; lì vince il mucchio quando il click cade sulle sue icone
+	# (entro GROUND_PILE_OVER_WALKABLE_RADIUS_PX), mentre il resto del sentiero seleziona l'edificio.
+	var ground_pile_hit := _try_select_ground_pile(event)
+	var pile_over_walkable_building: bool = (
+		not ground_pile_hit.is_empty() and map_hit_kind == SelectionKind.BUILDING
+		and _is_walkable_building_id(int(map_hit["building_id"]))
+		and float(ground_pile_hit["distance"]) <= GROUND_PILE_OVER_WALKABLE_RADIUS_PX
+	)
+	if not ground_pile_hit.is_empty() and (ground_pile_hit["distance"] < best_map_distance_px or pile_over_walkable_building):
+		map_hit = ground_pile_hit
+		map_hit_kind = SelectionKind.GROUND_PILE
+		best_map_distance_px = ground_pile_hit["distance"]
 
 	# Ciclo click-ripetuto vegetazione/stick-lot RIMOSSO (2026-09-16, richiesta utente — "va tolto
 	# il click singolo sulla cella. il click singolo vale solo su un oggetto... per vedere quello
@@ -1449,6 +1482,8 @@ func _unhandled_input(event: InputEvent) -> void:
 				_select_stone(map_hit)
 			SelectionKind.ANIMAL:
 				_select_animal(map_hit)
+			SelectionKind.GROUND_PILE:
+				_select_ground_pile(map_hit)
 		world_object_selected.emit(get_global_mouse_position())
 	else:
 		if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
@@ -1459,6 +1494,7 @@ func _unhandled_input(event: InputEvent) -> void:
 			_clear_stick_lot_selection()
 			_clear_microcell_selection() # mutua esclusione a 8 vie (2026-09-25, con gli animali)
 			_clear_animal_selection()
+			_clear_ground_pile_selection()
 			# Selezione di un individuo umano QUALSIASI (richiesta utente, 2026-09-02) — hit-test
 			# puro via HumanIndividualSelectorController (non tocca mai is_selected da sé), mutua
 			# esclusione applicata qui: al più un individuo selezionato alla volta in tutto
@@ -1525,7 +1561,7 @@ func _unhandled_input(event: InputEvent) -> void:
 			# _try_assign_hunt_command_on_right_click (2026-09-26, caccia step 2) — provato PER PRIMO: un
 			# animale è un bersaglio esplicito e si muove, non deve essere "rubato" da un sasso o da un
 			# lotto che gli sta sotto.
-			elif not _try_assign_hunt_command_on_right_click(event) and not _try_assign_pickup_command_on_right_click(event) and not _try_assign_unload_command_on_right_click(event) and not _try_assign_build_command_on_right_click(event) and not _try_assign_transport_command_on_right_click(event):
+			elif not _try_assign_hunt_command_on_right_click(event) and not _try_assign_butcher_command_on_right_click(event) and not _try_assign_pickup_command_on_right_click(event) and not _try_assign_unload_command_on_right_click(event) and not _try_assign_build_command_on_right_click(event) and not _try_assign_transport_command_on_right_click(event):
 				individual_controller.handle_input(event)
 
 	if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_X:
@@ -1739,7 +1775,16 @@ func _stop_selected_individual_task() -> void:
 		return
 	if HuntService.is_hunt_task(individual.current_task):
 		HuntService.log_event(individual, "caccia chiusa: annullata a mano (X o tasto H).")
+	var stopped_produce_building: Building = null
+	if individual.current_task != null and individual.current_task.task_name == "task_produce_name":
+		for step in individual.current_task.steps:
+			if step is ProduceAction:
+				stopped_produce_building = (step as ProduceAction).target_building
+				break
 	individual.stop()
+	# Ordine intero (2026-09-26): la produzione annullata non conta più nel fabbisogno dell'edificio.
+	if stopped_produce_building != null:
+		_reconcile_production_units(stopped_produce_building)
 	# Bugfix (2026-09-14, richiesta utente) — individual.stop() da solo azzera SOLO current_task,
 	# senza mai toccare task_queue né richiamare resolve_idle_individual: un individuo con una o più
 	# Task sospese in coda (es. interrotto prima da un bisogno stamina) restava bloccato per sempre
@@ -2498,8 +2543,10 @@ func _on_transport_source_resource_chosen(resource_name: String, quantity: int, 
 func _debug_clear_selected_individual_backpack() -> void:
 	if individual == null or not individual.is_selected:
 		return
-	individual.carried_resources.clear()
-	print("[DEBUG] Zaino svuotato per #%d %s" % [individual.id, individual.name])
+	# Ground drop (2026-09-26): lo zaino non sparisce più, finisce a terra come un vero scarto (mucchio nella
+	# microcella dell'individuo, vedi HumanIndividual.discard_carried_resource).
+	individual.discard_carried_resource()
+	print("[DEBUG] Zaino lasciato a terra da #%d %s" % [individual.id, individual.name])
 
 
 # DEBUG "usa e getta" (2026-09-09, richiesta utente) — verifica la Task haul_resource end-to-end:
@@ -2598,31 +2645,6 @@ func _spawn_idea_deposit_effect(individual: HumanIndividual) -> void:
 	# ritocchi) — due durate separate invece di una sola condivisa: la salita resta rapida (0.9s,
 	# "parte" visibilmente), la dissolvenza si allunga (2.0s) cosi' resta visibile più a lungo prima
 	# di sparire del tutto.
-	var tween := create_tween()
-	tween.set_parallel(true)
-	tween.tween_property(label, "position:y", label.position.y - 40.0, 0.9)
-	tween.tween_property(label, "modulate:a", 0.0, 3.0)
-	tween.chain().tween_callback(label.queue_free)
-
-
-# Effetto "usa e getta" per un carico scartato (2026-09-14, richiesta utente — step C del piano
-# "rerouting": "il terzo caso [nessun magazzino trovato] fa discard, rendiamolo esplicito con un
-# simbolo sulla mappa che scompare dopo qualche secondo") — STESSO schema/STESSA posizione/STESSA
-# guardia live_cells.has(...) di _spawn_idea_deposit_effect sopra (nessun effetto se la macrocella
-# dell'individuo non è più una cella viva del focus LOD), icona fissa "🗑️" (non l'icona della
-# risorsa scartata via IconRegistry: qui il messaggio è "qualcosa è andato perso qui", non "questa
-# risorsa è disponibile qui" — le due cose andrebbero confuse visivamente con la stessa icona già
-# usata per i mucchietti di stone/vegetazione sulla mappa).
-func _spawn_carried_resource_discarded_effect(individual: HumanIndividual) -> void:
-	if not live_cells.has(individual.home_macro_coords):
-		return
-	var label := Label.new()
-	label.text = "🗑️"
-	label.z_index = 2
-	label.add_theme_font_size_override("font_size", 6)
-	label.position = individual.position * MicroCellRenderer.CELL_SIZE + Vector2(-3, -12)
-	live_cells[individual.home_macro_coords].container.add_child(label)
-
 	var tween := create_tween()
 	tween.set_parallel(true)
 	tween.tween_property(label, "position:y", label.position.y - 40.0, 0.9)
@@ -2802,6 +2824,7 @@ func _on_population_individual_center_requested(target: HumanIndividual, source:
 	_clear_stick_lot_selection()
 	_clear_microcell_selection()
 	_clear_animal_selection()
+	_clear_ground_pile_selection()
 	_deselect_all_human_individuals()
 	target.is_selected = true
 	_selection_kind = SelectionKind.INDIVIDUAL
@@ -2854,6 +2877,7 @@ func _select_vegetation(hit: Dictionary) -> void:
 	_clear_stick_lot_selection()
 	_clear_microcell_selection()
 	_clear_animal_selection()
+	_clear_ground_pile_selection()
 	selected_vegetation = hit
 	_selection_kind = SelectionKind.VEGETATION
 	_refresh_vegetation_panel()
@@ -2898,6 +2922,7 @@ func _select_building(hit: Dictionary) -> void:
 	_clear_stick_lot_selection()
 	_clear_microcell_selection()
 	_clear_animal_selection()
+	_clear_ground_pile_selection()
 	selected_building = hit
 	_selection_kind = SelectionKind.BUILDING
 	_refresh_building_panel()
@@ -2929,7 +2954,10 @@ func _refresh_building_panel() -> void:
 	if building == null:
 		_clear_building_selection()
 		return
+	# Fabbisogno dell'ordine intero aggiornato prima di mostrarlo (2026-09-26).
+	_reconcile_production_units(building)
 	building_info_panel.show_building(building, _resolve_building_residents_display_data(building), _resolve_names_working_on_building(building, BUILD_TASK_NAMES), _resolve_names_working_on_building(building, PRODUCE_TASK_NAMES), _resolve_production_claimed_recipes(building), _resolve_production_tool_wait_lines(building))
+	building_info_panel.show_ground_pile(_ground_pile_lines_at(Vector2i(building.macro_x, building.macro_y), Vector2i(building.micro_x, building.micro_y)))
 	# Titolo (Step 6, richiesta utente 2026-09-04) — stessa formula già in BuildingInfoPanel.
 	var type_name: String = tr(building.rules.building_name) if building.rules != null else building.building_type_name
 	game_info_tabs.set_selection_title(tr("selection_title_type").format({"type": type_name}))
@@ -2993,6 +3021,7 @@ func _on_empty_all_requested(building: Building) -> void:
 		return
 	building.stored_resources.clear()
 	building_info_panel.show_building(building, _resolve_building_residents_display_data(building), _resolve_names_working_on_building(building, BUILD_TASK_NAMES), _resolve_names_working_on_building(building, PRODUCE_TASK_NAMES), _resolve_production_claimed_recipes(building), _resolve_production_tool_wait_lines(building))
+	building_info_panel.show_ground_pile(_ground_pile_lines_at(Vector2i(building.macro_x, building.macro_y), Vector2i(building.micro_x, building.micro_y)))
 	var macro_coords := Vector2i(building.macro_x, building.macro_y)
 	if live_cells.has(macro_coords):
 		_refresh_building_visuals(live_cells[macro_coords])
@@ -3035,6 +3064,8 @@ func _on_building_work_cancel_requested(building: Building) -> void:
 	var freed := _close_tasks_working_on_building(building, BUILDING_WORK_TASK_NAMES, null, false)
 	for member in freed:
 		HumanIndividualActionService.resolve_idle_individual(member, _resolve_age_band(member), macro_world)
+	# Ordine intero (2026-09-26): le Task annullate non contano più nel fabbisogno.
+	_reconcile_production_units(building)
 	if DebugLogging.ENABLED and DebugLogging.SHOW_TASK_LIFECYCLE_LOGS:
 		print("[BUILDING CANCEL] Edificio #%d: lavoro annullato dal pannello (task in corso chiuse: %d)." % [building.id, freed.size()])
 	_refresh_selected_building_panel()
@@ -3124,6 +3155,7 @@ func _select_stone(hit: Dictionary) -> void:
 	_clear_stick_lot_selection()
 	_clear_microcell_selection()
 	_clear_animal_selection()
+	_clear_ground_pile_selection()
 
 	selected_stone = hit
 	_selection_kind = SelectionKind.STONE
@@ -3186,6 +3218,7 @@ func _select_animal(hit: Dictionary) -> void:
 	_clear_stone_selection()
 	_clear_stick_lot_selection()
 	_clear_microcell_selection() # mutua esclusione a 8 vie (2026-09-25, con gli animali)
+	_clear_ground_pile_selection()
 
 	selected_animal = hit
 	_selection_kind = SelectionKind.ANIMAL
@@ -3271,7 +3304,7 @@ func _validate_selected_animal() -> void:
 func _assign_pickup_task(
 	macro_coords: Vector2i, target_position: Vector2i, resource_name: String, quantity_requested: int = -1,
 	criterion_kind: int = PickUpAction.CriterionKind.NAME, criterion_category: int = -1,
-	repeat_enabled: bool = false, repeat_count: int = 0
+	repeat_enabled: bool = false, repeat_count: int = 0, source_kind: int = PickUpAction.SourceKind.TERRAIN
 ) -> void:
 	var cell: LiveMacroCell = live_cells.get(macro_coords)
 	if cell == null or cell.macro_state == null:
@@ -3281,7 +3314,7 @@ func _assign_pickup_task(
 	# proprietario della Task (qui, l'individuo selezionato).
 	var task := _build_pickup_task(
 		cell, target_position, resource_name, quantity_requested, criterion_kind, criterion_category,
-		repeat_enabled, repeat_count, individual
+		repeat_enabled, repeat_count, individual, source_kind
 	)
 
 	# Icona letta da IconRegistry (2026-09-11, richiesta utente — generalizzazione del meccanismo di
@@ -3311,7 +3344,8 @@ func _assign_pickup_task(
 # dei segnali di Unload. Ritorna la Task gia' cablata.
 func _build_pickup_task(
 	cell: LiveMacroCell, target_position: Vector2i, resource_name: String, quantity_requested: int,
-	criterion_kind: int, criterion_category: int, repeat_enabled: bool, repeat_count: int, owner: HumanIndividual
+	criterion_kind: int, criterion_category: int, repeat_enabled: bool, repeat_count: int, owner: HumanIndividual,
+	source_kind: int = PickUpAction.SourceKind.TERRAIN
 ) -> Task:
 
 	# TaskFactory.build_task (2026-09-10, richiesta utente — estensione TaskFactory per PICKUP)
@@ -3418,6 +3452,9 @@ func _build_pickup_task(
 	# dentro _ready()) non possono disallinearsi.
 	for step in task.steps:
 		if step is PickUpAction:
+			# Sorgente (2026-09-26, ground drop): impostata qui, dopo TaskFactory, così haul_resource.tres resta
+			# invariata (vedi PickUpAction.SourceKind).
+			(step as PickUpAction).source_kind = source_kind as PickUpAction.SourceKind
 			_reconnect_pickup_action_signals(step as PickUpAction)
 			break
 	return task
@@ -3447,7 +3484,7 @@ func _queue_pickup_repeat(step: PickUpAction, owner: HumanIndividual, next_repea
 		return
 	var repeat_task := _build_pickup_task(
 		repeat_cell, step.target_position, step.resource_name, step.quantity_requested, step.criterion_kind,
-		step.criterion_category, true, next_repeat_count, owner
+		step.criterion_category, true, next_repeat_count, owner, step.source_kind
 	)
 	TaskQueueService.push_suspended_task(owner, repeat_task)
 
@@ -3581,8 +3618,6 @@ func _spawn_command_icon_at_microcell(cell: LiveMacroCell, microcell: Vector2i, 
 # mai chiamata — nessun segnale emesso a cancel, vedi OptionChoiceDialog._on_cancel_pressed).
 # Condivisi da tutti i candidati aperti nello stesso dialog (stesso click, stessa posizione — STESSA
 # assunzione già fatta dal vecchio codice con `candidates[0]`).
-var _pickup_pending_macro_coords: Vector2i = Vector2i.ZERO
-var _pickup_pending_position: Vector2i = Vector2i.ZERO
 # Risorse mostrate nel dialog (2026-09-20): [{"resource_name", "category", "quantity"}, ...] — servono a
 # _on_pickup_choice_made per scegliere una risorsa "rappresentativa" da passare a _assign_pickup_task quando il
 # criterio e' CATEGORY/ALL (TaskFactory vuole sempre un resource_name, che PickUpAction poi ignora).
@@ -3669,7 +3704,8 @@ func _try_assign_pickup_command_on_right_click(event: InputEvent) -> bool:
 			print("[PICKUP CMD DEBUG] _try_assign_pickup_command_on_right_click: ritorna TRUE — tutti i candidati a scorta 0, fallback su %s_hit=%s" % [chosen["resource_name"], str(chosen)])
 		_assign_pickup_task(
 			chosen["macro_coords"], chosen["position"], chosen["resource_name"], -1,
-			PickUpAction.CriterionKind.NAME, -1, UserOptions.repeat_default
+			PickUpAction.CriterionKind.NAME, -1, UserOptions.repeat_default, 0,
+			int(chosen.get("source_kind", PickUpAction.SourceKind.TERRAIN))
 		)
 		return true
 
@@ -3681,19 +3717,17 @@ func _try_assign_pickup_command_on_right_click(event: InputEvent) -> bool:
 			print("[PICKUP CMD DEBUG] _try_assign_pickup_command_on_right_click: ritorna TRUE — unico candidato con scorta reale, %s_hit=%s" % [chosen["resource_name"], str(chosen)])
 		_assign_pickup_task(
 			chosen["macro_coords"], chosen["position"], chosen["resource_name"], -1,
-			PickUpAction.CriterionKind.NAME, -1, UserOptions.repeat_default
+			PickUpAction.CriterionKind.NAME, -1, UserOptions.repeat_default, 0,
+			int(chosen.get("source_kind", PickUpAction.SourceKind.TERRAIN))
 		)
 		return true
 
 	# 2+ disponibili (2026-09-17) — vera scelta: niente priorità fissa, si apre pickup_choice_dialog
 	# (PickupChoiceDialog, menu gerarchico Tutto/categoria/risorsa — 2026-09-18: lascia
-	# scegliere anche la quantità, non più solo la risorsa). macro_coords/position condivisi da
-	# tutti i candidati (stesso click,
-	# stesso lotto — STESSA assunzione già fatta dal vecchio codice con `candidates[0]`), salvati in
-	# _pickup_pending_macro_coords/_position: l'assegnazione vera parte solo alla conferma del dialog,
-	# vedi _on_pickup_choice_made sotto.
-	_pickup_pending_macro_coords = available_candidates[0]["macro_coords"]
-	_pickup_pending_position = available_candidates[0]["position"]
+	# scegliere anche la quantità, non più solo la risorsa). L'assegnazione vera parte solo alla conferma
+	# del dialog, vedi _on_pickup_choice_made sotto.
+	# Ogni voce porta sorgente (mucchio o terreno, 2026-09-26) e posizione del proprio candidato: il popup
+	# raggruppa per sorgente e _on_pickup_choice_made usa la posizione della voce scelta.
 	var available_quantities: Dictionary = {}
 	var pending_resources: Array = []
 	for candidate in available_candidates:
@@ -3703,6 +3737,9 @@ func _try_assign_pickup_command_on_right_click(event: InputEvent) -> bool:
 			"resource_name": candidate["resource_name"],
 			"category": int(candidate_rules.category) if candidate_rules != null else int(SecondaryResourceTypes.Category.FOOD),
 			"quantity": int(candidate["available_quantity"]),
+			"source_kind": int(candidate.get("source_kind", PickUpAction.SourceKind.TERRAIN)),
+			"macro_coords": candidate["macro_coords"],
+			"position": candidate["position"],
 		})
 	_pickup_pending_resources = pending_resources
 	if DebugLogging.ENABLED and DebugLogging.SHOW_RECONNECT_FACTORY_LOGS:
@@ -3716,43 +3753,41 @@ func _try_assign_pickup_command_on_right_click(event: InputEvent) -> bool:
 # Handler di conferma del pickup_choice_dialog (2026-09-17, richiesta utente — 2026-09-18: `quantity`
 # ora PASSATA a _assign_pickup_task/PickUpAction.quantity_requested, non più ignorata: il player può
 # scegliere di raccogliere meno del massimo; 2026-09-20, zaino multi-risorsa passo 3: il dialog restituisce il
-# CRITERIO scelto). _pickup_pending_macro_coords/_position sono quelli salvati da
-# _try_assign_pickup_command_on_right_click al momento dell'apertura — STESSO schema di
-# _on_transport_source_resource_chosen sopra. `kind` e' un PickUpAction.CriterionKind:
+# CRITERIO scelto; 2026-09-26, ground drop: anche la SORGENTE, mucchio a terra o terreno — PickUpAction.
+# SourceKind). Posizione e macrocella vengono dalla voce scelta, salvata da _try_assign_pickup_command_on_right_click
+# in _pickup_pending_resources. `kind` e' un PickUpAction.CriterionKind, sempre riferito alla sorgente scelta:
 #   - NAME: una risorsa, con la quantita' scelta (comportamento di sempre);
 #   - CATEGORY: tutte le risorse di `category`, quantita' ignorata;
 #   - ALL: tutto quello che c'e', quantita' ignorata.
 # Con CATEGORY/ALL _assign_pickup_task vuole comunque un resource_name (TaskFactory lo richiede): si passa la
-# prima risorsa del dialog di quella categoria (o la prima in assoluto), che PickUpAction non usa.
-func _on_pickup_choice_made(kind: int, category: int, resource_name: String, quantity: int, repeat: bool) -> void:
-	match kind:
-		PickUpAction.CriterionKind.NAME:
-			_assign_pickup_task(
-				_pickup_pending_macro_coords, _pickup_pending_position, resource_name, quantity,
-				PickUpAction.CriterionKind.NAME, -1, repeat
-			)
-		PickUpAction.CriterionKind.CATEGORY:
-			var category_resource := _pickup_representative_resource(category)
-			if category_resource != "":
-				_assign_pickup_task(
-					_pickup_pending_macro_coords, _pickup_pending_position, category_resource, -1,
-					PickUpAction.CriterionKind.CATEGORY, category, repeat
-				)
-		PickUpAction.CriterionKind.ALL:
-			var any_resource := _pickup_representative_resource(-1)
-			if any_resource != "":
-				_assign_pickup_task(
-					_pickup_pending_macro_coords, _pickup_pending_position, any_resource, -1,
-					PickUpAction.CriterionKind.ALL, -1, repeat
-				)
+# prima risorsa del dialog di quella sorgente e categoria (o la prima della sorgente), che PickUpAction non usa.
+func _on_pickup_choice_made(kind: int, category: int, resource_name: String, quantity: int, repeat: bool, source_kind: int) -> void:
+	# Voce del dialog da cui prendere posizione (e, per CATEGORY/ALL, il resource_name rappresentativo):
+	# la risorsa scelta per NAME, altrimenti la prima della sorgente scelta (e della categoria, per CATEGORY).
+	var entry := _find_pickup_pending_entry(source_kind, category if kind == PickUpAction.CriterionKind.CATEGORY else -1,
+		resource_name if kind == PickUpAction.CriterionKind.NAME else "")
+	if entry.is_empty():
+		return
+	var entry_resource: String = String(entry["resource_name"])
+	var entry_category: int = category if kind == PickUpAction.CriterionKind.CATEGORY else -1
+	_assign_pickup_task(
+		entry["macro_coords"], entry["position"], entry_resource, quantity if kind == PickUpAction.CriterionKind.NAME else -1,
+		kind, entry_category, repeat, 0, source_kind
+	)
 
 
-# Nome della prima risorsa mostrata nel dialog per `category` (-1 = qualunque categoria); "" se non ce n'e'.
-func _pickup_representative_resource(category: int) -> String:
+# Prima voce del dialog della sorgente `source_kind` con categoria `category` (-1 = qualunque) e nome
+# `resource_name` ("" = qualunque); {} se non ce n'è.
+func _find_pickup_pending_entry(source_kind: int, category: int, resource_name: String) -> Dictionary:
 	for entry in _pickup_pending_resources:
-		if category == -1 or int(entry["category"]) == category:
-			return String(entry["resource_name"])
-	return ""
+		if int(entry.get("source_kind", PickUpAction.SourceKind.TERRAIN)) != source_kind:
+			continue
+		if category != -1 and int(entry["category"]) != category:
+			continue
+		if resource_name != "" and String(entry["resource_name"]) != resource_name:
+			continue
+		return entry
+	return {}
 
 
 # Filtro idea non ancora scoperta (2026-09-17, richiesta utente — SecondaryResourceRules.
@@ -3819,7 +3854,10 @@ func _append_unlocked_pickup_candidate(candidates: Array[Dictionary], resource_n
 # richiesta esplicitamente dall'utente ("_resolve_pickup_candidates o una sua estrazione comune"),
 # nessuna duplicazione tra "cosa posso raccogliere col destro" e "cosa mostro nell'ispezione".
 func _resolve_pickup_candidates(event: InputEvent, current_absolute_day: int, required_button: int = MOUSE_BUTTON_RIGHT) -> Array[Dictionary]:
-	var candidates: Array[Dictionary] = []
+	# Mucchio a terra (2026-09-26, ground drop): il contenuto del mucchio nella microcella del click compare
+	# INSIEME alle risorse naturali (non le nasconde più), ogni candidato con il proprio source_kind — il popup
+	# di scelta li distingue e il giocatore sceglie da dove raccogliere. Prima il mucchio (sta sopra), poi il resto.
+	var candidates: Array[Dictionary] = _resolve_ground_pile_pickup_candidates(current_absolute_day)
 
 	# STONE_POSITION (pebble) — UN blocco per lot_source (2026-09-19, refactor lot_source: prima un
 	# blocco per NOME risorsa scritto a mano; ora un loop su LotCapacityService.
@@ -4025,13 +4063,24 @@ func _handle_microcell_inspection_double_click(event: InputEvent) -> void:
 				lines.append_array(_format_vegetation_breakdown_lines(shrub_breakdown))
 			if grass_present:
 				lines.append("- " + tr("microcell_inspection_grass"))
-		if not lot_candidates.is_empty():
+		# Risorse naturali e contenuto del mucchio a terra in due sezioni distinte (2026-09-26, ground drop).
+		var terrain_lines: Array[String] = []
+		var pile_lines: Array[String] = []
+		for candidate in lot_candidates:
+			var line := tr("microcell_inspection_resource_line").format({
+				"resource": IconRegistry.get_resource_display_name(candidate["resource_name"]),
+				"quantity": candidate["available_quantity"],
+			})
+			if int(candidate.get("source_kind", PickUpAction.SourceKind.TERRAIN)) == PickUpAction.SourceKind.GROUND_PILE:
+				pile_lines.append(line)
+			else:
+				terrain_lines.append(line)
+		if not terrain_lines.is_empty():
 			lines.append(tr("microcell_inspection_resources_header"))
-			for candidate in lot_candidates:
-				lines.append(tr("microcell_inspection_resource_line").format({
-					"resource": IconRegistry.get_resource_display_name(candidate["resource_name"]),
-					"quantity": candidate["available_quantity"],
-				}))
+			lines.append_array(terrain_lines)
+		if not pile_lines.is_empty():
+			lines.append(tr("microcell_inspection_ground_pile_header"))
+			lines.append_array(pile_lines)
 
 	_select_microcell({"macro_coords": macro_coords, "lot": lot, "lines": lines})
 
@@ -4113,6 +4162,7 @@ func _select_microcell(hit: Dictionary) -> void:
 	_clear_stone_selection()
 	_clear_stick_lot_selection() # mutua esclusione a 7 vie (2026-09-16, prima "a 6 vie")
 	_clear_animal_selection()
+	_clear_ground_pile_selection()
 
 	selected_microcell = hit
 	_selection_kind = SelectionKind.MICROCELL
@@ -4273,7 +4323,13 @@ const BUILDING_WORK_TASK_NAMES: Array[String] = ["task_build_name", "task_produc
 func _task_works_on_building(task: Task, building: Building, task_names: Array[String]) -> bool:
 	if task == null or task.is_finished() or not task_names.has(task.task_name):
 		return false
-	for step in task.steps:
+	# Solo gli step ancora da fare (2026-09-26, consegna dopo la produzione): a ordine finito il produttore che
+	# porta il prodotto al magazzino non occupa più la postazione (nuovi ordini, annullo dal pannello). Lo step di
+	# consegna (RetrieveAction.deliver_to_warehouse) non conta come lavoro sull'edificio.
+	for step_index in range(task.current_step_index, task.steps.size()):
+		var step: Action = task.steps[step_index]
+		if step is RetrieveAction and (step as RetrieveAction).deliver_to_warehouse:
+			continue
 		if "target_building" in step and step.target_building == building:
 			return true
 	return false
@@ -4393,6 +4449,43 @@ func _resolve_production_tool_wait_lines(target_building: Building) -> Array[Str
 # Ricette con almeno una Produce Task NON conclusa (attiva o in coda) su `target_building` (2026-09-24,
 # richiesta utente — un record per ricetta): i record di queste ricette non vanno mai liberati da
 # ProductionService.make_room_for. Stesso scan di _resolve_names_working_on_building.
+# Pezzi ancora dovuti per ricetta sull'edificio (2026-09-26, richiesta utente — materiale per l'ordine intero),
+# ricalcolati dalle Task VIVE (in corso e in coda) di tutti gli individui: per ogni Produce Task sull'edificio il
+# cui step di produzione non è ancora concluso, quantità ordinata - pezzi già prodotti. Scritti sui record esistenti
+# (ProductionService.set_units_remaining): più individui sulla stessa ricetta si sommano, una Task annullata,
+# scartata o di un individuo morto non conta più e la sua parte sparisce. Un record senza Task torna a 0 (un ciclo).
+# Chiamata all'assegnazione, all'annullo, al refresh del pannello e ogni giorno (_reconcile_all_production_units).
+func _reconcile_production_units(target_building: Building) -> void:
+	if target_building == null or target_building.production_progress.is_empty():
+		return
+	var units_by_recipe: Dictionary = {}
+	for member in human_individuals:
+		var tasks: Array = [member.current_task]
+		tasks.append_array(member.task_queue)
+		for task in tasks:
+			if task == null or task.is_finished() or task.task_name != "task_produce_name":
+				continue
+			for step_index in range(task.current_step_index, task.steps.size()):
+				var step: Action = task.steps[step_index]
+				if not (step is ProduceAction):
+					continue
+				var produce := step as ProduceAction
+				if produce.target_building != target_building:
+					continue
+				var remaining: int = maxi(produce.quantity - produce.produced_count, 0)
+				units_by_recipe[produce.resource_name] = int(units_by_recipe.get(produce.resource_name, 0)) + remaining
+	for recipe_name in ProductionService.get_active_resource_names(target_building):
+		ProductionService.set_units_remaining(target_building, recipe_name, int(units_by_recipe.get(recipe_name, 0)))
+
+
+func _reconcile_all_production_units() -> void:
+	if macro_world == null:
+		return
+	for building in macro_world.buildings:
+		if not building.production_progress.is_empty():
+			_reconcile_production_units(building)
+
+
 func _resolve_production_claimed_recipes(target_building: Building) -> Array[String]:
 	var recipes: Array[String] = []
 	for individual in human_individuals:
@@ -4553,6 +4646,8 @@ var _produce_assign_building: Building = null
 var _produce_assign_resource_name: String = ""
 # Pezzi ordinati dal selettore del pannello (2026-09-24, richiesta utente).
 var _produce_assign_quantity: int = 1
+# Spunta "Consegna al magazzino" dell'ordine in attesa di assegnazione (2026-09-26).
+var _produce_assign_deliver: bool = true
 # Cursore della modalità "scegli il lavoratore" (2026-09-25, richiesta utente — sostituisce il
 # cursore a croce di sistema, CURSOR_CROSS): un cerchietto rosso generato via codice una sola volta
 # (_get_produce_assign_cursor), con l'hotspot al centro del cerchio.
@@ -4579,7 +4674,7 @@ func _format_production_order(resource_name: String, quantity: int) -> String:
 	return display_name if quantity <= 1 else "%s ×%d" % [display_name, quantity]
 
 
-func _enter_produce_assign_mode(building: Building, resource_name: String, quantity: int = 1) -> void:
+func _enter_produce_assign_mode(building: Building, resource_name: String, quantity: int = 1, deliver_to_warehouse: bool = true) -> void:
 	if building == null or not ProductionService.can_produce_at(building, resource_name):
 		return
 	# Buffer di uscita pieno (2026-09-23, richiesta utente): nessuna nuova assegnazione. Il pulsante è
@@ -4592,6 +4687,7 @@ func _enter_produce_assign_mode(building: Building, resource_name: String, quant
 	_produce_assign_building = building
 	_produce_assign_resource_name = resource_name
 	_produce_assign_quantity = clampi(quantity, 1, ProductionService.get_max_order_quantity(building))
+	_produce_assign_deliver = deliver_to_warehouse
 	if produce_assign_banner_label != null:
 		produce_assign_banner_label.text = tr("produce_assign_banner_text").format({
 			"resource": _format_production_order(resource_name, _produce_assign_quantity),
@@ -4650,9 +4746,10 @@ func _handle_produce_assign_input(event: InputEvent) -> bool:
 		var target_building := _produce_assign_building
 		var resource_name := _produce_assign_resource_name
 		var quantity := _produce_assign_quantity
+		var deliver := _produce_assign_deliver
 		_exit_produce_assign_mode()
 		if hit_individual != null:
-			_assign_produce_task(hit_individual, target_building, resource_name, quantity)
+			_assign_produce_task(hit_individual, target_building, resource_name, quantity, deliver)
 		return true
 	if event.button_index == MOUSE_BUTTON_RIGHT:
 		_exit_produce_assign_mode()
@@ -4768,7 +4865,7 @@ func _describe_tool_wait(task: Task) -> String:
 
 # Costruisce e assegna la Produce Task [Walk → Produce] a `worker` (2026-09-23). Stesso esito visivo
 # della Build: icona di comando se assegnata (o accodata), X se rifiutata.
-func _assign_produce_task(worker: HumanIndividual, target_building: Building, resource_name: String, quantity: int = 1) -> void:
+func _assign_produce_task(worker: HumanIndividual, target_building: Building, resource_name: String, quantity: int = 1, deliver_to_warehouse: bool = true) -> void:
 	if worker == null or target_building == null or not ProductionService.can_produce_at(target_building, resource_name):
 		return
 	if not ProductionService.has_output_room(target_building, resource_name) or _is_production_queue_full(target_building):
@@ -4794,6 +4891,8 @@ func _assign_produce_task(worker: HumanIndividual, target_building: Building, re
 	# da TaskFactory, resta in task.context per tutta la vita della Task (e nel salvataggio).
 	task.context["production_resource_name"] = resource_name
 	task.context["production_quantity"] = quantity
+	# Consegna al magazzino a ordine finito (2026-09-26): letta dallo step di consegna (RetrieveAction), salvata col context.
+	task.context[RetrieveAction.CONTEXT_DELIVER_TO_WAREHOUSE] = deliver_to_warehouse
 
 	var building_macro_coords := Vector2i(target_building.macro_x, target_building.macro_y)
 	# Idoneità PRIMA del gate degli attrezzi (2026-09-26, richiesta utente): il gate sposta davvero gli
@@ -4856,6 +4955,8 @@ func _assign_produce_task(worker: HumanIndividual, target_building: Building, re
 	# nulla, ProduceAction riproverà da sé all'arrivo e ogni giorno.
 	if assigned and ProductionService.make_room_for(target_building, resource_name, _resolve_production_claimed_recipes(target_building)):
 		ProductionService.start_production(target_building, resource_name)
+	# Pezzi dovuti sul record (2026-09-26, ordine intero): somma degli ordini di tutte le Task sulla ricetta.
+	_reconcile_production_units(target_building)
 	if live_cells.has(building_macro_coords):
 		_spawn_command_icon_at_microcell(
 			live_cells[building_macro_coords],
@@ -4873,6 +4974,146 @@ func _assign_produce_task(worker: HumanIndividual, target_building: Building, re
 # ============================================================================================
 
 const HUNT_TASK_DEFINITION_PATH := "res://gameplay/scripts/tasks/definitions/hunt.tres"
+# Macellazione (2026-09-26, richiesta utente): Walk verso la carcassa -> Butcher -> PickUp dal mucchio. Vedi
+# _try_assign_butcher_command_on_right_click.
+const BUTCHER_TASK_DEFINITION_PATH := "res://gameplay/scripts/tasks/definitions/butcher.tres"
+
+
+# Comando "macella" (2026-09-26, richiesta utente): click destro su una carcassa a terra con un individuo
+# selezionato. Viene PRIMA della raccolta nella catena del click destro: su un mucchio con una carcassa il click
+# destro macella (la raccolta delle risorse dello stesso mucchio torna disponibile quando la carcassa non c'è
+# più). Task butcher.tres: Walk verso il mucchio, ButcherAction sulla carcassa più vecchia del mucchio, poi
+# PickUp di tutto dal mucchio (sorgente GROUND_PILE, criterio ALL) — da lì la catena di sempre verso il
+# magazzino, e quello che non entra nello zaino resta a terra. Controlli come la caccia: età/task
+# (get_assign_rejection_reason), attrezzi (ToolGateService.check_and_prepare, categoria BUTCHERING); icona
+# "butcher" (CommandKnifeIcon) sul mucchio, "task_rejected" se rifiutato.
+func _try_assign_butcher_command_on_right_click(event: InputEvent) -> bool:
+	if not (event is InputEventMouseButton) or not event.pressed or event.button_index != MOUSE_BUTTON_RIGHT:
+		return false
+	if individual == null or not individual.is_selected:
+		return false
+	var pile := _find_carcass_pile_at_click()
+	if pile == null:
+		return false
+	var cell: LiveMacroCell = live_cells.get(pile.macro_coords)
+	if cell == null or cell.macro_state == null:
+		return false
+	var task := _build_butcher_task(individual, pile, int(pile.carcasses[0]["id"]), cell)
+	if task == null:
+		return false
+
+	var rejection := individual.get_assign_rejection_reason(task, _resolve_age_band(individual))
+	if rejection != HumanIndividual.ASSIGN_OK:
+		_report_assign_rejection(individual, rejection, "task_activity_butcher")
+		_spawn_command_icon_at_microcell(cell, pile.microcell, "task_rejected")
+		return true
+	var tool_gate := ToolGateService.check_and_prepare(individual, task, game_data)
+	if tool_gate["result"] != ToolGateService.Result.OK:
+		_report_tool_gate_failure(individual, tool_gate)
+		_spawn_command_icon_at_microcell(cell, pile.microcell, "task_rejected")
+		return true
+	individual.tool_gate_warning = ""
+	if not tool_gate["equipped"].is_empty():
+		_refresh_selected_individual_panel()
+
+	individual.assign_task(task, _resolve_age_band(individual))
+	var assigned := individual.current_task == task or individual.task_queue.has(task)
+	if not assigned:
+		_report_failed_assignment(individual, task, "task_activity_butcher")
+	_spawn_command_icon_at_microcell(cell, pile.microcell, "butcher" if assigned else "task_rejected")
+	return true
+
+
+# Task di macellazione (butcher.tres) per `worker` sulla carcassa `carcass_id` del mucchio `pile` (cella viva
+# `cell`): Walk verso il mucchio, Butcher, PickUp di tutto dal mucchio (sorgente GROUND_PILE, criterio ALL), con lo
+# stesso cablaggio di _build_pickup_task (segnali di raccolta e dello scarico accodato). Condivisa dal comando
+# (click destro) e dalla macellazione automatica dopo la caccia. null se la definizione non si carica.
+func _build_butcher_task(worker: HumanIndividual, pile: GroundPile, carcass_id: int, cell: LiveMacroCell) -> Task:
+	var definition := load(BUTCHER_TASK_DEFINITION_PATH) as TaskDefinition
+	if definition == null:
+		return null
+	var macro_offset: Vector2 = Vector2(pile.macro_coords - worker.home_macro_coords) * World.WIDTH
+	var task := TaskFactory.build_task(definition, {
+		"target_position": pile.get_position() + macro_offset,
+		"butcher_macro_coords": pile.macro_coords,
+		"butcher_microcell": pile.microcell,
+		"butcher_carcass_id": carcass_id,
+		"pickup_position": pile.microcell,
+		"macro_state": cell.macro_state,
+		"resource_name": "meat",
+		"pickup_criterion_kind": PickUpAction.CriterionKind.ALL,
+		"pickup_criterion_category": -1,
+	})
+	task.step_appended.connect(func(action: Action) -> void:
+		if action is UnloadAction:
+			_reconnect_unload_action_signals(action as UnloadAction, worker)
+	)
+	for step in task.steps:
+		if step is PickUpAction:
+			(step as PickUpAction).source_kind = PickUpAction.SourceKind.GROUND_PILE
+			_reconnect_pickup_action_signals(step as PickUpAction)
+	return task
+
+
+# Macellazione automatica dopo la caccia (2026-09-26, richiesta utente — HumanIndividualActionService.
+# butcher_after_hunt_requested): la caccia si è conclusa con la preda uccisa. Si accoda la task di macellazione
+# sulla carcassa appena creata SOLO se:
+#   - il cacciatore ha in CINTURA un attrezzo che copre BUTCHERING (niente spostamenti dallo zaino: senza lama
+#     pronta non si accoda nulla e la carcassa resta lì);
+#   - la carcassa c'è ancora e la sua cella è viva;
+#   - la coda non è piena (TaskQueueService.MAX_QUEUE_SIZE): non si forza, la carcassa resta lì;
+#   - l'individuo può fare la task (età, get_assign_rejection_reason).
+# La task entra nella coda come una qualsiasi altra (sospendibile, annullabile): la caccia finisce subito dopo e la
+# ripresa dalla coda la fa partire. Icona del coltello sulla carcassa, come per il comando.
+func _on_butcher_after_hunt_requested(hunter: HumanIndividual, carcass: Dictionary) -> void:
+	var macro_coords := Vector2i(int(carcass.get("macro_x", 0)), int(carcass.get("macro_y", 0)))
+	var microcell := Vector2i(int(carcass.get("micro_x", 0)), int(carcass.get("micro_y", 0)))
+	var carcass_id: int = int(carcass.get("id", -1))
+	if ToolGateService.find_belt_slot_for(hunter, TaskTypes.ToolCategory.BUTCHERING) == -1:
+		HuntService.log_event(hunter, "macellazione non accodata: nessuna lama in cintura, la carcassa resta a terra.")
+		return
+	if GroundPileService.find_carcass(game_data, macro_coords, microcell, carcass_id).is_empty():
+		return
+	var cell: LiveMacroCell = live_cells.get(macro_coords)
+	var pile := GroundPileService.find_at(game_data, macro_coords, microcell)
+	if cell == null or cell.macro_state == null or pile == null:
+		return
+	if hunter.task_queue.size() >= TaskQueueService.MAX_QUEUE_SIZE:
+		HuntService.log_event(hunter, "macellazione non accodata: coda piena, la carcassa resta a terra.")
+		return
+	var task := _build_butcher_task(hunter, pile, carcass_id, cell)
+	if task == null:
+		return
+	# Solo l'età: la stamina bassa non impedisce di mettere la task in coda (partirà a stamina recuperata).
+	var hunter_age_band := _resolve_age_band(hunter)
+	for step in task.steps:
+		if step.disallowed_age_bands.has(hunter_age_band):
+			return
+	TaskQueueService.push_suspended_task(hunter, task)
+	_spawn_command_icon_at_microcell(cell, microcell, "butcher")
+	HuntService.log_event(hunter, "macellazione accodata sulla carcassa #%d." % carcass_id)
+	if hunter == individual:
+		_refresh_selected_individual_panel()
+
+
+# Mucchio con almeno una carcassa sotto il click (cella viva, entro GROUND_PILE_SELECT_RADIUS_PX dal suo centro,
+# in pixel locali della cella); il più vicino, null se nessuno.
+func _find_carcass_pile_at_click() -> GroundPile:
+	if game_data == null:
+		return null
+	var best: GroundPile = null
+	var best_distance: float = GROUND_PILE_SELECT_RADIUS_PX
+	for pile in game_data.ground_piles:
+		if pile.carcasses.is_empty():
+			continue
+		var cell: LiveMacroCell = live_cells.get(pile.macro_coords)
+		if cell == null or cell.renderer == null:
+			continue
+		var distance: float = cell.renderer.get_local_mouse_position().distance_to(pile.get_position() * MicroCellRenderer.CELL_SIZE)
+		if distance <= best_distance:
+			best_distance = distance
+			best = pile
+	return best
 
 
 # Click destro su un animale, con un individuo selezionato: Hunt Task [ApproachPrey → Hunt] verso
@@ -5047,11 +5288,14 @@ func _sync_dropped_weapon_markers() -> void:
 			continue
 		wanted[member.id] = {"drop": drop, "weapon": recover.weapon_name}
 	for hunter_id in _dropped_weapon_markers.keys():
-		var marker: DroppedWeaponMarker = _dropped_weapon_markers[hunter_id]
+		var marker = _dropped_weapon_markers[hunter_id]
 		var keep := false
 		if is_instance_valid(marker) and wanted.has(hunter_id):
 			var drop: Dictionary = wanted[hunter_id]["drop"]
-			keep = marker.get_parent() == live_cells[drop["macro_coords"]].container 				and marker.position == drop["position"] * MicroCellRenderer.CELL_SIZE
+			keep = (
+				marker.get_parent() == live_cells[drop["macro_coords"]].container
+				and marker.position == drop["position"] * MicroCellRenderer.CELL_SIZE
+			)
 		if keep:
 			wanted.erase(hunter_id)
 			continue
@@ -5065,6 +5309,181 @@ func _sync_dropped_weapon_markers() -> void:
 		marker.setup(String(wanted[hunter_id]["weapon"]), int(hunter_id))
 		live_cells[drop["macro_coords"]].container.add_child(marker)
 		_dropped_weapon_markers[hunter_id] = marker
+
+
+# --- Mucchi a terra (2026-09-26, richiesta utente — ground drop, vedi GroundPile/GroundPileService) ---
+
+# Hit-test del click sinistro sui mucchi delle celle vive: il più vicino entro GROUND_PILE_SELECT_RADIUS_PX, in
+# pixel locali della cella (stessa unità di vegetazione/edifici/pietre nel confronto map_hit).
+func _try_select_ground_pile(event: InputEvent) -> Dictionary:
+	if not (event is InputEventMouseButton) or not event.pressed or event.button_index != MOUSE_BUTTON_LEFT:
+		return {}
+	if game_data == null:
+		return {}
+	var best: Dictionary = {}
+	var best_distance: float = GROUND_PILE_SELECT_RADIUS_PX
+	for pile in game_data.ground_piles:
+		var cell: LiveMacroCell = live_cells.get(pile.macro_coords)
+		if cell == null or cell.renderer == null:
+			continue
+		var distance: float = cell.renderer.get_local_mouse_position().distance_to(pile.get_position() * MicroCellRenderer.CELL_SIZE)
+		if distance <= best_distance:
+			best_distance = distance
+			best = {"pile_id": pile.id, "macro_coords": pile.macro_coords, "distance": distance}
+	return best
+
+
+func _select_ground_pile(hit: Dictionary) -> void:
+	_deselect_all_human_individuals()
+	human_individual_info_panel.clear()
+	_clear_vegetation_selection()
+	_clear_building_selection()
+	_clear_dead_body_selection()
+	_clear_stone_selection()
+	_clear_stick_lot_selection()
+	_clear_microcell_selection()
+	_clear_animal_selection()
+	selected_ground_pile_id = int(hit["pile_id"])
+	_selection_kind = SelectionKind.GROUND_PILE
+	_refresh_ground_pile_panel(true)
+	game_info_tabs.show_selection_tab()
+
+
+func _clear_ground_pile_selection() -> void:
+	if selected_ground_pile_id == -1:
+		return
+	selected_ground_pile_id = -1
+	_ground_pile_panel_key = []
+	_selection_kind = SelectionKind.NONE
+	ground_pile_info_panel.clear()
+	game_info_tabs.hide_selection_tab()
+
+
+# Pannello del mucchio selezionato: ridisegnato solo se cambia il contenuto (revisione) o il giorno (giorni
+# rimanenti). Mucchio sparito (raccolto, deperito, scaduto) -> deselezione.
+func _refresh_ground_pile_panel(force: bool = false) -> void:
+	var pile := GroundPileService.find_by_id(game_data, selected_ground_pile_id)
+	if pile == null:
+		_clear_ground_pile_selection()
+		return
+	var key: Array = [pile.id, pile.revision, game_data.get_absolute_day()]
+	if not force and key == _ground_pile_panel_key:
+		return
+	_ground_pile_panel_key = key
+	ground_pile_info_panel.show_pile(
+		pile, GroundPileService.get_days_remaining(game_data, pile), _terrain_resources_at(pile.macro_coords, pile.microcell),
+		_carcass_lines(pile)
+	)
+	game_info_tabs.set_selection_title(tr("ground_pile_title"))
+
+
+# true se l'edificio con questo id è percorribile (categoria MOVEMENT, es. sentiero): un mucchio ci può stare sopra.
+func _is_walkable_building_id(building_id: int) -> bool:
+	var building := _find_building_by_id(building_id)
+	return building != null and building.rules != null and building.rules.category == BuildingTypes.Category.MOVEMENT
+
+
+# Righe del contenuto del mucchio a terra in una microcella (pannello dell'edificio), [] se lì non c'è un mucchio.
+func _ground_pile_lines_at(macro_coords: Vector2i, microcell: Vector2i) -> Array[String]:
+	var lines: Array[String] = []
+	var pile := GroundPileService.find_at(game_data, macro_coords, microcell)
+	if pile == null:
+		return lines
+	lines.append_array(_carcass_lines(pile))
+	for resource_name in pile.get_resource_names():
+		lines.append(tr("ground_pile_resource_line").format({
+			"name": IconRegistry.get_resource_display_name(resource_name),
+			"quantity": pile.get_quantity(resource_name),
+		}))
+	return lines
+
+
+# Una riga per carcassa del mucchio (2026-09-26): specie, fascia d'età e giorni prima che marcisca.
+func _carcass_lines(pile: GroundPile) -> Array[String]:
+	var lines: Array[String] = []
+	for carcass in pile.carcasses:
+		var age_band: int = int(carcass.get("age_band", GameTypes.AgeBand.ADULT))
+		var age_key: String = String(GameTypes.AgeBand.keys()[age_band]).to_lower() if age_band >= 0 and age_band < GameTypes.AgeBand.size() else "adult"
+		lines.append(tr("ground_pile_carcass_line").format({
+			"species": tr("animal_species_" + String(carcass.get("species", ""))),
+			"age": tr("animal_age_band_" + age_key),
+			"days": GroundPileService.get_carcass_days_remaining(game_data, carcass),
+		}))
+	return lines
+
+
+# Risorse naturali raccoglibili in una microcella (2026-09-26, ground drop — pannello del mucchio): ogni risorsa
+# secondaria con disponibilità > 0 secondo TerrainScatteredResourceService (stessa fonte della raccolta, gate
+# delle idee compreso). [{"resource_name", "quantity"}], ordinate per nome; vuoto se la cella non è viva.
+func _terrain_resources_at(macro_coords: Vector2i, microcell: Vector2i) -> Array:
+	var result: Array = []
+	var cell: LiveMacroCell = live_cells.get(macro_coords)
+	if cell == null or cell.macro_state == null:
+		return result
+	for resource_name in CaloricCalculator.list_secondary_resource_names():
+		var available: int = TerrainScatteredResourceService.get_available(cell.macro_state, resource_name, microcell)
+		if available > 0:
+			result.append({"resource_name": resource_name, "quantity": available})
+	result.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return String(a["resource_name"]) < String(b["resource_name"]))
+	return result
+
+
+# Allinea ogni frame le viste ai mucchi di GameData.ground_piles (stesso principio pull di
+# _sync_dropped_weapon_markers): una GroundPileView per ogni mucchio in una cella viva, ridisegnata quando la
+# revisione del mucchio cambia; le viste di mucchi spariti o di celle spente vengono rimosse. Aggiorna anche il
+# pannello del mucchio selezionato.
+func _sync_ground_pile_views() -> void:
+	var alive: Dictionary = {}
+	if game_data != null:
+		for pile in game_data.ground_piles:
+			var cell: LiveMacroCell = live_cells.get(pile.macro_coords)
+			if cell == null:
+				continue
+			alive[pile.id] = true
+			var view = _ground_pile_views.get(pile.id)
+			if view != null and (not is_instance_valid(view) or view.get_parent() != cell.container):
+				if is_instance_valid(view):
+					view.queue_free()
+				view = null
+			if view == null:
+				view = GroundPileView.new()
+				view.position = pile.get_position() * MicroCellRenderer.CELL_SIZE
+				cell.container.add_child(view)
+				_ground_pile_views[pile.id] = view
+				view.show_pile(pile)
+			elif view.shown_revision != pile.revision:
+				view.show_pile(pile)
+			view.set_selected(pile.id == selected_ground_pile_id)
+	for pile_id in _ground_pile_views.keys():
+		if alive.has(pile_id):
+			continue
+		var stale = _ground_pile_views[pile_id]
+		if is_instance_valid(stale):
+			stale.queue_free()
+		_ground_pile_views.erase(pile_id)
+	if selected_ground_pile_id != -1:
+		_refresh_ground_pile_panel()
+
+
+# Candidati di raccolta dal mucchio nella microcella del click (click destro): una voce per risorsa del mucchio,
+# con source_kind GROUND_PILE (PickUpAction). Vuoto se lì non c'è un mucchio o la microcella non è visibile.
+func _resolve_ground_pile_pickup_candidates(current_absolute_day: int) -> Array[Dictionary]:
+	var candidates: Array[Dictionary] = []
+	var hit := _resolve_microcell_at_click()
+	if hit.is_empty() or game_data == null:
+		return candidates
+	var pile := GroundPileService.find_at(game_data, hit["macro_coords"], hit["lot"])
+	if pile == null or not FogOfWarVerificationService.is_detail_visible(live_cells, hit["macro_coords"], hit["lot"], current_absolute_day):
+		return candidates
+	for resource_name in pile.get_resource_names():
+		candidates.append({
+			"resource_name": resource_name,
+			"macro_coords": pile.macro_coords,
+			"position": pile.microcell,
+			"available_quantity": pile.get_quantity(resource_name),
+			"source_kind": PickUpAction.SourceKind.GROUND_PILE,
+		})
+	return candidates
 
 
 # ============================================================================================
@@ -5094,6 +5513,7 @@ func _select_stick_lot(hit: Dictionary) -> void:
 	_clear_stone_selection() # mutua esclusione a 7 vie (2026-09-16, prima "a 6 vie")
 	_clear_microcell_selection()
 	_clear_animal_selection()
+	_clear_ground_pile_selection()
 
 	selected_stick_lot = hit
 	_selection_kind = SelectionKind.STICK_LOT
@@ -5150,6 +5570,7 @@ func _select_dead_body(hit: Dictionary) -> void:
 	_clear_stick_lot_selection()
 	_clear_microcell_selection()
 	_clear_animal_selection()
+	_clear_ground_pile_selection()
 
 	selected_dead_body_individual_id = hit["individual_id"]
 	_set_dead_body_view_selected(selected_dead_body_individual_id, true)
@@ -5721,6 +6142,14 @@ func _open_tech_tree_after_notification_popup() -> void:
 
 # Inizio consumo della riserva corporea (2026-09-19, richiesta utente): l'individuo ha finito le
 # provviste. Popup di alert giallo (BODY_RESERVE_IN_USE), stesso gate UserOptions.show_notification_popups.
+# Evento casuale applicato (2026-09-26, richiesta utente — gameplay/events/): popup non di allarme (tipo
+# RANDOM_EVENT, stile delle nascite) con il testo preparato dallo script dell'evento.
+func _on_random_event_applied(event_id: String, popup_text: String) -> void:
+	if popup_text == "" or not UserOptions.show_notification_popups:
+		return
+	notification_popup.enqueue(NotificationTypes.NotificationPopupType.RANDOM_EVENT, popup_text)
+
+
 func _on_individual_started_body_reserve(individual: HumanIndividual) -> void:
 	if not UserOptions.show_notification_popups:
 		return
@@ -5793,18 +6222,6 @@ func _on_building_material_blocked(building: Building) -> void:
 		NotificationTypes.NotificationPopupType.MATERIAL_NEEDED,
 		tr("notification_building_material_needed").format({"building": building_display_name})
 	)
-
-
-# Discard esplicito sulla mappa (2026-09-14, richiesta utente — collegata a
-# individual_action_service.carried_resource_discarded, vedi _setup_clock/il commento sul segnale
-# stesso) — SOLO l'effetto visivo (_spawn_carried_resource_discarded_effect, vedi sopra): nessun
-# popup NotificationPopup per questo evento (richiesta esplicita, "un simbolo sulla mappa", non una
-# notifica testuale — a differenza di _on_building_material_blocked sopra, che invece è un vero
-# popup). resource_name/quantity ricevuti ma non ancora usati nell'effetto visivo stesso (solo
-# nel log DebugLogging già stampato da _handle_pending_warehouse_search) — tenuti in firma per
-# coerenza col segnale/per un futuro tooltip, senza dover cambiare la firma quando servirà davvero.
-func _on_carried_resource_discarded(individual: HumanIndividual, resource_name: String, quantity: int) -> void:
-	_spawn_carried_resource_discarded_effect(individual)
 
 
 # Step 6 piano mortalità (2026-09-05): rinfresca la scheda 👨‍👩‍👧 DOPO che tutte le rimozioni/
@@ -8399,6 +8816,15 @@ func _building_type_name_for_action(action_id: StringName) -> String:
 		# cablata in BuildBar._ready.
 		&"build_toolmaker_hut":
 			return "toolmaker_hut"
+		# Edifici segnaposto (2026-09-26, richiesta utente) — azioni cablate in BuildBar._ready.
+		&"build_drying_rack":
+			return "drying_rack"
+		&"build_smokehouse":
+			return "smokehouse"
+		&"build_burial":
+			return "burial"
+		&"build_earthwork":
+			return "earthwork"
 		_:
 			return ""
 
@@ -9334,6 +9760,7 @@ func _on_target_killed(target_kind: int, target_id: int, label: String, age_band
 # già il conto giusto invece di togliere un animale a caso. Selezione chiusa se era la preda. Niente
 # carcassa/carne in questo step.
 func _on_prey_killed(prey_id: int, prey_species: String, prey_age_band: int, prey_macro_coords: Vector2i) -> void:
+	# La carcassa a terra nasce in ThrowAction (colpo letale), che ne tiene il riferimento per la macellazione.
 	var cell: LiveMacroCell = live_cells.get(prey_macro_coords)
 	if cell != null and cell.animal_renderers.has(prey_species):
 		cell.animal_renderers[prey_species].remove_individual(prey_id)
@@ -9866,6 +10293,8 @@ func _setup_clock() -> void:
 	# le due collezioni parallele per indice (il neonato è sempre l'ULTIMO elemento di
 	# human_individuals in questo momento, mai inserito a metà array).
 	game_time_service.individual_born.connect(_on_human_individual_born)
+	# Eventi casuali (2026-09-26): popup non di allarme, stesso gate degli altri popup.
+	game_time_service.random_event_applied.connect(_on_random_event_applied)
 	# Effetto nato-morto (2026-09-06) — simmetrico a individual_born sopra, stesso schema.
 	game_time_service.human_stillbirth.connect(_on_human_stillbirth)
 	game_time_service.human_population_changed.connect(_on_human_population_changed)
@@ -9884,14 +10313,9 @@ func _setup_clock() -> void:
 	# _resolve_material_shortage, chiamata sia dal ciclo per-frame sia dal ritentativo giornaliero.
 	# Stesso gate UserOptions.show_notification_popups/stesso NotificationPopup di ogni altro evento
 	# sopra — vedi _on_building_material_blocked.
+	# Macellazione automatica dopo la caccia (2026-09-26) — vedi _on_butcher_after_hunt_requested.
+	individual_action_service.butcher_after_hunt_requested.connect(_on_butcher_after_hunt_requested)
 	individual_action_service.building_material_blocked.connect(_on_building_material_blocked)
-	# Discard esplicito sulla mappa (2026-09-14, richiesta utente — step C del piano "rerouting":
-	# "rendiamo esplicito il discard con un simbolo sulla mappa che scompare dopo qualche secondo")
-	# — stesso principio/stessa posizione della connessione sopra, effetto puramente visivo (nessun
-	# gate su UserOptions.show_notification_popups, quello vale per i popup di NotificationPopup,
-	# non per un effetto sulla mappa come _spawn_idea_deposit_effect — vedi _on_carried_resource_
-	# discarded).
-	individual_action_service.carried_resource_discarded.connect(_on_carried_resource_discarded)
 	play_pause_button.pressed.connect(_on_play_pause_pressed)
 	for speed in speed_buttons.keys():
 		speed_buttons[speed].pressed.connect(_on_speed_button_pressed.bind(speed))
@@ -9917,6 +10341,9 @@ func _update_play_pause_button() -> void:
 		play_pause_button.tooltip_text = tr("play")
 
 func _on_day_advanced(checkpoint_ran: bool, animals_changed: bool) -> void:
+	# Pezzi dovuti delle produzioni (2026-09-26, ordine intero): riallinea ogni giorno i record alle Task vive
+	# (copre anche le Task sparite senza passare da un annullo, es. individuo morto).
+	_reconcile_all_production_units()
 	# TEMPORANEO (diagnostica lentezza, vedi GameClockController._process/[DAY TOTAL]) — questo
 	# intero handler gira SINCRONO dentro day_advanced.emit(), quindi dentro il cronometro di
 	# [DAY TOTAL]: il ramo sotto (rebuild vegetazione per cella viva, "come individui" — posizioni/

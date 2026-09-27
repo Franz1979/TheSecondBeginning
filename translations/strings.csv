@@ -12,12 +12,14 @@ options_pickup_default_group_resource,Risorsa
 minimap_show_tooltip,Mostra la minimappa
 minimap_hide_tooltip,Nascondi la minimappa
 options_repeat_default,Raccolta e trasporto: ripeti fino a {count} volte
+options_production_delivery_default,Produzione: consegna al magazzino
 options_volume_master,Volume generale
 options_volume_music,Volume musica
 options_volume_ambience,Volume ambiente
 options_volume_sfx,Volume effetti
 options_volume_ui,Volume interfaccia
 task_repeat_checkbox,Ripeti fino a {count} volte
+produce_deliver_checkbox,Consegna al magazzino
 language_none,Predefinita (sistema)
 language_italian,Italiano
 language_english,Inglese
@@ -74,6 +76,12 @@ idea_task_assignment,Assegnazione compiti
 idea_warehouse_management,Gestione magazzino
 idea_paleolithic_constructions_summary,Permette di costruire i primi ripari.
 idea_paleolithic_constructions_description,"Rami, pelli e pietre diventano strutture in cui ripararsi e riposare."
+idea_drying,Essiccazione
+idea_drying_summary,Permette di costruire il graticcio per essiccare la carne.
+idea_drying_description,"Stesa al sole e al vento su un graticcio, la carne si conserva molto più a lungo."
+idea_smoking,Affumicatura
+idea_smoking_summary,Permette di costruire l'affumicatoio.
+idea_smoking_description,"Il fumo lento di un fuoco coperto conserva la carne e le dà sapore."
 idea_plant_lore_summary,Permette di riconoscere le erbe medicinali.
 idea_plant_lore_description,"Osservando le piante, il gruppo impara quali curano e dove trovarle."
 idea_work_areas_summary,Permette di delimitare aree di lavoro.
@@ -110,6 +118,17 @@ building_deposit_site,Sito di deposito
 building_stick_tent,Tenda di rami
 building_campfire,Focolare
 building_toolmaker_hut,Capanna dell'attrezzista
+building_category_residential,Residenziale
+building_category_political,Politico
+building_category_storage,Magazzino
+building_category_movement,Percorribile
+building_category_production,Produzione
+building_category_military,Militare
+building_category_religious,Religioso
+building_drying_rack,Graticcio
+building_smokehouse,Affumicatoio
+building_burial,Sepoltura
+building_earthwork,Vallo di terra
 building_dirt_ground,Terra battuta
 build_bar_pebble_circle_tooltip,Cerchio di sassolini
 build_bar_pebble_circle_disabled_tooltip,Non costruibile: esiste già un centro villaggio
@@ -117,6 +136,10 @@ build_bar_deposit_site_tooltip,Sito di deposito
 build_bar_stick_tent_tooltip,Tenda di rami
 build_bar_campfire_tooltip,Focolare
 build_bar_toolmaker_hut_tooltip,Capanna dell'attrezzista
+build_bar_drying_rack_tooltip,Graticcio
+build_bar_smokehouse_tooltip,Affumicatoio
+build_bar_burial_tooltip,Sepoltura
+build_bar_earthwork_tooltip,Vallo di terra
 build_bar_dirt_ground_tooltip,Terra battuta
 build_bar_requires_idea_tooltip,Richiede: {idea}
 build_bar_demolish_tooltip,Demolisci
@@ -159,6 +182,17 @@ vegetation_dead_plant,Pianta morta
 dead_body_age_label,Età alla morte: {age}
 dead_body_cause_label,Causa: {cause}
 dead_body_decomposes_label,Si decompone tra {days} giorni
+ground_pile_title,Mucchio a terra
+ground_pile_carcass_line,Carcassa di {species} ({age}) — marcisce tra {days} giorni
+ground_pile_resource_line,{name}: {quantity}
+ground_pile_decay_suffix,(deperito al {percent}%)
+ground_pile_used_tools_suffix,(usi residui dei pezzi usati: {uses})
+ground_pile_disappears_label,Sparisce tra {days} giorni
+ground_pile_terrain_header,Sul terreno qui
+building_ground_pile_caption,Mucchio a terra qui:
+microcell_inspection_ground_pile_header,Mucchio a terra:
+pickup_choice_source_ground_pile,Dal mucchio a terra
+pickup_choice_source_terrain,Dal terreno
 individual_kill_debug_button,Uccidi (debug)
 individual_age_label,Età: {age} ({band})
 task_activity_idle,A riposo
@@ -183,6 +217,7 @@ task_transport_step_unload,Consegnando
 task_leisure_restock_name,Rifornirsi
 task_leisure_restock_step_walk,Andando al magazzino
 task_leisure_restock_step_restock,Rifornendo le provviste
+task_restock_step_backpack,Mangiando dallo zaino
 task_emergency_restock_name,Rifornimento urgente
 transport_dialog_title,Trasporta risorsa
 transport_dialog_message,Scegli cosa prelevare da {building}:
@@ -219,6 +254,11 @@ carried_resource_tooltip_medicinal_herbs,Erbe medicinali
 carried_resource_tooltip_fiber_rope,Corda di fibre
 carried_resource_tooltip_wooden_spear,Lancia di legno
 carried_resource_tooltip_stone_knife,Coltello di pietra
+carried_resource_tooltip_meat,Carne cruda
+carried_resource_tooltip_cooked_meat,Carne cotta
+carried_resource_tooltip_hide,Pelle
+carried_resource_tooltip_sinew,Tendini
+carried_resource_tooltip_bone,Ossa
 microcell_inspection_title,Microcella ({x}; {y})
 microcell_inspection_not_visible,Cella non esplorata o non visibile.
 microcell_inspection_only_grass,Contiene solo erba.
@@ -305,6 +345,10 @@ building_construction_phase_build,Costruzione
 building_awaiting_material_build_caption,Per completare la costruzione servono:
 transport_selection_banner_text,"🚚 Trasporto: seleziona l'edificio di destinazione (H per annullare)"
 debug_idle_fallback_button_tooltip,Attiva/disattiva l'assegnazione automatica di task perditempo (Wander/Play/Leisure Rest) agli individui liberi
+random_event_test_name,Evento di prova
+random_event_test_popup,Evento di prova (giorno {day}): il sistema degli eventi funziona.
+debug_random_event_apply,Applica evento
+debug_random_event_apply_tooltip,Scatena subito l'evento scelto nel menu
 debug_idle_fallback_on,Perditempo: ON
 debug_idle_fallback_off,Perditempo: OFF
 building_awaiting_material_production_caption,Per produrre {resource} servono:
@@ -316,6 +360,7 @@ building_production_in_progress_none,In costruzione: nulla
 task_produce_name,Produzione
 task_produce_step_walk,Andando alla postazione di lavoro
 task_produce_step_produce,Producendo
+task_produce_step_deliver,Consegnando al magazzino
 building_output_buffer_caption,Prodotti finiti: {used}/{capacity}
 building_output_buffer_full,Prodotti finiti pieni: ritirali per continuare a produrre
 building_production_recipes_caption,Produzione:
@@ -331,6 +376,10 @@ task_hunt_step_approach,Avvicinandosi alla preda
 task_hunt_step_hunt,Cacciando
 task_hunt_step_aim,Prendendo la mira
 task_hunt_step_throw,Scagliando
+task_butcher_name,Macellazione
+task_butcher_step_walk,Andando alla carcassa
+task_butcher_step_butcher,Macellando
+task_activity_butcher,macellare
 task_hunt_step_recover_weapon,Recuperando l'arma
 task_hunt_activity,Caccia: {species}
 animal_selection_title,Animale

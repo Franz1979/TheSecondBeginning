@@ -28,10 +28,9 @@ const MAX_QUEUE_SIZE: int = 3
 # sia libero, incluso lo stesso individuo in futuro) invece di sparire per sempre — NON
 # implementato qui, solo questo commento per chi tornerà su questo codice.
 #
-# discard_carried_resource() sull'INDIVIDUO (non un campo per-Task: l'inventario vive su
-# HumanIndividual, un solo slot condiviso indipendentemente da quale Task in coda l'abbia
-# eventualmente riempito) — no-op silenzioso se lo zaino è già vuoto, stesso guard interno già
-# esistente in quella funzione.
+# Zaino (2026-09-26, ground drop): discard_carried_resource() ora lascia il carico a terra in un mucchio, e
+# scatta SOLO se la task tolta dalla coda è la proprietaria del carico (get_cargo_owner); il carico di
+# un'altra task resta addosso all'individuo.
 static func push_suspended_task(individual: HumanIndividual, task: Task) -> void:
 	# ZOMBIE GUARD (2026-09-16, richiesta utente, fix "task zombie") — ultima linea di difesa,
 	# indipendente dal chiamante: una task già conclusa (current_step_index >= steps.size()) non
@@ -49,13 +48,33 @@ static func push_suspended_task(individual: HumanIndividual, task: Task) -> void
 			])
 		return
 	if individual.task_queue.size() >= MAX_QUEUE_SIZE:
+		# Lo zaino si lascia a terra SOLO se la task che esce è la proprietaria del carico (2026-09-26, richiesta
+		# utente — prima si scartava lo zaino qualunque task uscisse): il carico di un'altra task resta addosso.
+		var cargo_owner := get_cargo_owner(individual)
 		var discarded_task: Task = individual.task_queue.pop_front()
-		individual.discard_carried_resource()
+		if cargo_owner != null and cargo_owner == discarded_task:
+			individual.discard_carried_resource()
 		if DebugLogging.ENABLED and DebugLogging.SHOW_TASK_LIFECYCLE_LOGS:
 			print("[QUEUE OVERFLOW] Individuo #%d %s: coda già a %d/%d — Task '%s' (la più vecchia) scartata per fare spazio a '%s'." % [
 				individual.id, individual.name, MAX_QUEUE_SIZE, MAX_QUEUE_SIZE, discarded_task.task_name, task.task_name
 			])
 	individual.task_queue.append(task)
+
+
+# Task proprietaria del carico nello zaino (2026-09-26), secondo la regola già seguita da HumanIndividual.
+# assign_task (il "cargo owner"): la current_task se è sospendibile e non conclusa — una task persistente con
+# carico addosso non viene mai sostituita, il nuovo comando va in coda — altrimenti l'ultima task sospesa in
+# coda (solo una task persistente può aver riempito lo zaino ed essere stata interrotta con il carico ancora
+# addosso). null se lo zaino è vuoto o non c'è nessuna candidata.
+static func get_cargo_owner(individual: HumanIndividual) -> Task:
+	if individual.carried_resources.is_empty():
+		return null
+	var current := individual.current_task
+	if current != null and current.is_suspendable and not current.is_finished():
+		return current
+	if individual.task_queue.is_empty():
+		return null
+	return individual.task_queue.back()
 
 
 static func pop_suspended_task(individual: HumanIndividual) -> Task:

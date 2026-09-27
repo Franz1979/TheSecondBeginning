@@ -86,6 +86,9 @@ enum ActionType {
 	# AGGIUNTO IN CODA. Mai in un .tres: lo step è inserito a metà Task dopo un lancio; lo supporta solo
 	# TaskPersistenceService.
 	RECOVER_WEAPON,
+	# BUTCHER (2026-09-26, richiesta utente — macellazione, ButcherAction, vedi butcher.tres) — AGGIUNTO IN CODA.
+	# TaskFactory.build_task e TaskPersistenceService lo supportano entrambi.
+	BUTCHER,
 }
 
 # Categorie di tool richiedibili da un'Action (2026-09-08, richiesta utente — SOLO struttura dati,

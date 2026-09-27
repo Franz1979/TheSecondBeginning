@@ -86,3 +86,14 @@ layout_mode = 2
 custom_minimum_size = Vector2(120, 32)
 layout_mode = 2
 text = "Perditempo: ON"
+
+[node name="VSeparatorEvents" type="VSeparator" parent="MarginContainer/HBoxContainer/ContentGroup"]
+layout_mode = 2
+
+[node name="RandomEventOptionButton" type="OptionButton" parent="MarginContainer/HBoxContainer/ContentGroup"]
+custom_minimum_size = Vector2(140, 32)
+layout_mode = 2
+
+[node name="RandomEventApplyButton" type="Button" parent="MarginContainer/HBoxContainer/ContentGroup"]
+custom_minimum_size = Vector2(80, 32)
+layout_mode = 2

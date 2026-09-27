@@ -1,4 +1,4 @@
-[gd_resource type="Resource" script_class="SecondaryResourceRules" format=3 uid="uid://b1f841mxodk2v"]
+[gd_resource type="Resource" script_class="SecondaryResourceRules" format=3 uid="uid://dhx553atxnky6"]
 
 [ext_resource type="Script" uid="uid://cu4cyua5y4n1m" path="res://simulation/scripts/core/SecondaryResourceRules.gd" id="1_bird_meat"]
 

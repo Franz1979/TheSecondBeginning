@@ -60,7 +60,9 @@ signal empty_all_requested(building: Building)
 # principio "muto" di empty_all_requested, GameScene entra nella modalità "assegna produzione".
 # quantity (2026-09-24, richiesta utente): pezzi scelti nel selettore sopra i pulsanti, 1..
 # ProductionService.get_max_order_quantity(building).
-signal produce_requested(building: Building, resource_name: String, quantity: int)
+# deliver_to_warehouse (2026-09-26, richiesta utente): spunta "Consegna al magazzino" sopra i pulsanti — a ordine
+# finito il produttore porta il prodotto al magazzino (RetrieveAction.deliver_to_warehouse).
+signal produce_requested(building: Building, resource_name: String, quantity: int, deliver_to_warehouse: bool)
 
 # Emesso al click su un'icona OCCUPATA della griglia residenti (2026-09-12, richiesta utente —
 # "puoi fare che la icona delle persone nella vista edificio funzioni come un centra su di loro?")
@@ -156,6 +158,10 @@ const STORAGE_SLOT_FILL_BAR_FILL_COLOR := Color(1.0, 1.0, 1.0, 0.85)
 # get_producible_resources), nascosti per un edificio che non è una workstation valida.
 @onready var production_recipes_caption: Label = $ProductionRecipesCaption
 @onready var production_recipes_container: VBoxContainer = $ProductionRecipesContainer
+# Mucchio a terra nella microcella dell'edificio (2026-09-26, ground drop — tipicamente un sentiero o un altro
+# edificio MOVEMENT, dove un mucchio può stare): vedi show_ground_pile.
+@onready var ground_pile_caption: Label = $GroundPileCaption
+@onready var ground_pile_container: VBoxContainer = $GroundPileContainer
 @onready var id_label: Label = $IdLabel
 @onready var settings_separator: HSeparator = $SettingsSeparator
 @onready var settings_caption: Label = $SettingsCaption
@@ -177,6 +183,9 @@ var _current_building: Building = null
 # giornaliero: senza, la scelta tornerebbe a 1 ogni giorno. Torna a 1 cambiando edificio.
 var _order_quantity: int = 1
 var _order_quantity_building_id: int = -1
+# Spunta "Consegna al magazzino" (2026-09-26): riparte dal default di UserOptions a ogni cambio di edificio, come
+# la quantità; il cambio vale per gli ordini di questo pannello (stesso schema di "Ripeti" nei dialog).
+var _order_deliver: bool = true
 
 
 func _ready() -> void:
@@ -341,6 +350,23 @@ func show_building(building: Building, residents_display_data: Array[Dictionary]
 func clear() -> void:
 	visible = false
 	_current_building = null
+	show_ground_pile([])
+
+
+# Contenuto del mucchio a terra nella stessa microcella dell'edificio (2026-09-26, ground drop), una riga per
+# risorsa già formattata da GameScene; lista vuota = nessun mucchio, sezione nascosta. Chiamata dopo
+# show_building, allo stesso modo in cui il pannello del mucchio mostra le risorse naturali della microcella.
+func show_ground_pile(lines: Array[String]) -> void:
+	for child in ground_pile_container.get_children():
+		child.queue_free()
+	ground_pile_caption.visible = not lines.is_empty()
+	ground_pile_container.visible = not lines.is_empty()
+	ground_pile_caption.text = tr("building_ground_pile_caption")
+	for line in lines:
+		var label := Label.new()
+		label.text = line
+		label.add_theme_font_size_override("font_size", 10)
+		ground_pile_container.add_child(label)
 
 
 # Fase di lavorazione ATTIVA (2026-09-14, richiesta utente — ESTRATTA da _refresh_construction_
@@ -638,9 +664,16 @@ func _refresh_production_recipes(building: Building, production_claimant_names: 
 	if _order_quantity_building_id != building.id:
 		_order_quantity_building_id = building.id
 		_order_quantity = 1
+		_order_deliver = UserOptions.production_delivery_default
 	_order_quantity = clampi(_order_quantity, 1, max_quantity)
 	if max_quantity > 1:
 		production_recipes_container.add_child(_build_order_quantity_row(max_quantity))
+	var deliver_check_box := CheckBox.new()
+	deliver_check_box.text = tr("produce_deliver_checkbox")
+	deliver_check_box.add_theme_font_size_override("font_size", 10)
+	deliver_check_box.button_pressed = _order_deliver
+	deliver_check_box.toggled.connect(func(pressed: bool): _order_deliver = pressed)
+	production_recipes_container.add_child(deliver_check_box)
 
 	var is_queue_full := ProductionService.is_production_queue_full(building, production_claimant_names.size())
 	for resource_name in producible:
@@ -657,7 +690,7 @@ func _refresh_production_recipes(building: Building, production_claimant_names: 
 		if not disabled_reasons.is_empty():
 			button.disabled = true
 			button.tooltip_text = "\n".join(disabled_reasons)
-		button.pressed.connect(func(): produce_requested.emit(building, resource_name, _order_quantity))
+		button.pressed.connect(func(): produce_requested.emit(building, resource_name, _order_quantity, _order_deliver))
 		production_recipes_container.add_child(button)
 
 

@@ -26,6 +26,12 @@ signal building_material_blocked(building: Building)
 # _handle_pending_warehouse_search, il vero residuo scartato.
 signal carried_resource_discarded(individual: HumanIndividual, resource_name: String, quantity: int)
 
+# Macellazione dopo la caccia (2026-09-26, richiesta utente): una caccia conclusa con la preda uccisa chiede di
+# accodare la macellazione della carcassa appena creata. `carcass` = {"macro_x", "macro_y", "micro_x", "micro_y",
+# "id"} (HuntService.CONTEXT_PENDING_BUTCHER). Segnale e non assegnazione diretta: costruire la Task, controllare
+# lama e coda e mostrare l'icona spetta a chi ascolta (GameScene._on_butcher_after_hunt_requested).
+signal butcher_after_hunt_requested(individual: HumanIndividual, carcass: Dictionary)
+
 # Servizio single-responsibility (stesso pattern di HumanIndividualMovementService, stesso
 # livello/cartella): applica lo step ATTIVO della Task corrente di un HumanIndividual
 # (individual.current_task), se presente — costo/recupero di stamina E happiness (2026-09-13,
@@ -219,12 +225,14 @@ func finish_current_step(individual: HumanIndividual, task: Task, world: World, 
 	# (Walk/Run/LookAround/Rest/Jump) scrive mai queste chiavi di context.
 	_handle_pending_warehouse_search(individual, task, world)
 	_handle_pending_thought_target_search(individual, task, world)
+	_handle_pending_warehouse_restock(individual, task, world, game_data)
 	_handle_pending_walk_away(task)
 	# Caccia (2026-09-26): recupero dell'arma scagliata e riavvicinamento chiesti da AimAction/ThrowAction/
 	# RecoverWeaponAction (step aggiunti subito dopo quello corrente), poi chiusura anticipata chiesta da uno
 	# step o dal tetto dei riavvicinamenti.
 	_handle_pending_hunt_weapon_recovery(individual, task)
 	_handle_pending_hunt_reapproach(individual, task)
+	_handle_pending_hunt_butcher(individual, task)
 	if task.context.has(CONTEXT_PENDING_TASK_ABORT):
 		var abort_reason := String(task.context[CONTEXT_PENDING_TASK_ABORT])
 		task.context.erase(CONTEXT_PENDING_TASK_ABORT)
@@ -785,6 +793,73 @@ func _handle_pending_hunt_weapon_recovery(individual: HumanIndividual, task: Tas
 	HuntService.log_event(individual, "%s a terra: si va a recuperarla." % IconRegistry.get_resource_display_name(weapon_name))
 
 
+# Macellazione dopo la caccia (2026-09-26): consuma HuntService.CONTEXT_PENDING_BUTCHER (scritto da
+# RecoverWeaponAction dopo il recupero dell'arma, o da ThrowAction se l'arma si è rotta col colpo letale) e lo
+# passa a chi ascolta butcher_after_hunt_requested. Qui nessuna decisione: lama in cintura, coda piena e carcassa
+# ancora presente li valuta GameScene.
+func _handle_pending_hunt_butcher(individual: HumanIndividual, task: Task) -> void:
+	if not task.context.has(HuntService.CONTEXT_PENDING_BUTCHER):
+		return
+	var carcass: Dictionary = task.context[HuntService.CONTEXT_PENDING_BUTCHER]
+	task.context.erase(HuntService.CONTEXT_PENDING_BUTCHER)
+	butcher_after_hunt_requested.emit(individual, carcass)
+
+
+# Rifornimento dopo lo zaino (2026-09-26, richiesta utente): RestockPouchAction con sorgente BACKPACK scrive
+# RestockPouchAction.CONTEXT_PENDING_WAREHOUSE_RESTOCK a fine step. Se il bisogno resta, si accodano Walk +
+# RestockPouch(magazzino) verso il magazzino con cibo più vicino. "Resta" dipende dalla task:
+#   - emergenza (interrupt_priority == INTERRUPT_PRIORITY_EMERGENCY_RESTOCK): autonomia delle provviste ancora
+#     entro la soglia di emergenza (_active_food_need_priority);
+#   - rifornimento normale: provviste ancora con almeno LEISURE_RESTOCK_MIN_FREE_SPACE_RATIO di spazio libero
+#     (IdleTaskAssignmentService._is_leisure_restock_eligible), la stessa soglia che lo fa partire.
+# Nessun magazzino con cibo: niente viaggio, la task finisce con quanto preso dallo zaino.
+func _handle_pending_warehouse_restock(individual: HumanIndividual, task: Task, world: World, game_data: GameData) -> void:
+	if not task.context.has(RestockPouchAction.CONTEXT_PENDING_WAREHOUSE_RESTOCK):
+		return
+	task.context.erase(RestockPouchAction.CONTEXT_PENDING_WAREHOUSE_RESTOCK)
+	var still_needed: bool = false
+	if task.interrupt_priority == INTERRUPT_PRIORITY_EMERGENCY_RESTOCK:
+		still_needed = game_data != null and _active_food_need_priority(individual, _resolve_age_band(individual, game_data)) == INTERRUPT_PRIORITY_EMERGENCY_RESTOCK
+	else:
+		still_needed = IdleTaskAssignmentService._is_leisure_restock_eligible(individual)
+	if not still_needed:
+		return
+	var source := NeedTaskAssignmentService.find_restock_source(individual, world)
+	if source == null:
+		if DebugLogging.should_log_restock(individual.id):
+			print("[RESTOCK] #%d %s: bisogno ancora attivo dopo lo zaino, ma nessun magazzino con cibo — niente viaggio." % [individual.id, individual.name])
+		return
+	var macro_offset: Vector2 = Vector2(Vector2i(source.macro_x, source.macro_y) - individual.home_macro_coords) * World.WIDTH
+	var target_position: Vector2 = Vector2(source.micro_x, source.micro_y) + macro_offset \
+		+ Vector2(randf_range(0.15, 0.85), randf_range(0.15, 0.85))
+	var new_steps: Array[Action] = [WalkAction.new(target_position), RestockPouchAction.new(source)]
+	var descriptions: Array[String] = ["task_leisure_restock_step_walk", "task_leisure_restock_step_restock"]
+	task.insert_steps_after_current(new_steps, descriptions)
+	if DebugLogging.should_log_restock(individual.id):
+		print("[RESTOCK] #%d %s: bisogno ancora attivo dopo lo zaino — accodato il viaggio al magazzino %s #%d." % [
+			individual.id, individual.name, source.building_type_name, source.id
+		])
+
+
+# Consegna di un carico ormai vuoto (2026-09-26, richiesta utente — rifornirsi dal proprio zaino): true se lo zaino
+# è vuoto e alla task restano solo cammini e scarichi di risorse (Walk / Unload RESOURCE). È il caso di una task di
+# trasporto sospesa il cui carico è stato mangiato nel frattempo: riprenderla farebbe camminare fino al magazzino
+# per scaricare nulla, quindi alla ripresa viene scartata (resolve_idle_individual, activate_resumed_task).
+static func is_empty_cargo_delivery(individual: HumanIndividual, task: Task) -> bool:
+	if task == null or not individual.carried_resources.is_empty():
+		return false
+	var has_unload := false
+	for i in range(task.current_step_index, task.steps.size()):
+		var step: Action = task.steps[i]
+		if step is UnloadAction and (step as UnloadAction).deposit_kind == UnloadAction.DepositKind.RESOURCE:
+			has_unload = true
+			continue
+		if step is WalkAction:
+			continue
+		return false
+	return has_unload
+
+
 func _handle_pending_walk_away(task: Task) -> void:
 	if not task.context.has("pending_walk_away_position"):
 		return
@@ -977,7 +1052,11 @@ static func resolve_idle_individual(individual: HumanIndividual, age_band: Human
 	# di accodarne di nuove) e passa alla successiva, finché non se ne trova una valida o la coda si
 	# svuota — MAI impostare current_task su una task già finita: activate_resumed_task la
 	# troverebbe già conclusa e non farebbe nulla, lasciando l'individuo bloccato per sempre.
-	while resumed_task != null and (resumed_task.is_finished() or not is_task_valid(resumed_task)):
+	while resumed_task != null and (resumed_task.is_finished() or not is_task_valid(resumed_task) or is_empty_cargo_delivery(individual, resumed_task)):
+		if is_empty_cargo_delivery(individual, resumed_task) and DebugLogging.ENABLED and DebugLogging.SHOW_TASK_LIFECYCLE_LOGS:
+			print("[EMPTY CARGO] Individuo #%d %s: task '%s' scartata dalla coda — restava solo da consegnare un carico che non c'è più." % [
+				individual.id, individual.name, resumed_task.task_name
+			])
 		if DebugLogging.ENABLED and DebugLogging.SHOW_SAFETY_LOGS:
 			if resumed_task.is_finished():
 				print("[ZOMBIE GUARD] Individuo #%d %s: task '%s' (step %d/%d) scartata dalla coda perché già conclusa — resolve_idle_individual, ripresa da coda." % [
@@ -1032,6 +1111,12 @@ static func resolve_idle_individual(individual: HumanIndividual, age_band: Human
 # assign_task): questo controllo è la difesa in profondità.
 static func activate_resumed_task(individual: HumanIndividual, resumed_task: Task) -> bool:
 	if resumed_task.is_finished():
+		return false
+	# Carico da consegnare ormai vuoto (2026-09-26): vedi is_empty_cargo_delivery.
+	if is_empty_cargo_delivery(individual, resumed_task):
+		TaskDebugRegistry.on_task_closed(resumed_task)
+		if individual.current_task == resumed_task:
+			individual.current_task = null
 		return false
 	if not is_task_valid(resumed_task):
 		if DebugLogging.ENABLED and DebugLogging.SHOW_SAFETY_LOGS:

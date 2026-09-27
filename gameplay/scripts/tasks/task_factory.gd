@@ -215,6 +215,21 @@ static func build_task(definition: TaskDefinition, context: Dictionary) -> Task:
 					produce_quantity = int(context[step_definition.context_keys[2]])
 				steps.append(ProduceAction.new(context[produce_building_key], String(context[produce_resource_name_key]), 1.0, 1.0, produce_quantity))
 				step_descriptions.append(step_definition.step_description)
+			TaskTypes.ActionType.BUTCHER:
+				# 3 argomenti (2026-09-26, macellazione): macrocella e microcella del mucchio, id della carcassa.
+				if step_definition.context_keys.size() < 3:
+					push_error("TaskFactory.build_task: context_keys insufficienti (servono 3: macrocella, microcella, id carcassa) per step BUTCHER di TaskDefinition '%s'." % definition.task_name)
+					continue
+				var butcher_macro_key: String = step_definition.context_keys[0]
+				var butcher_micro_key: String = step_definition.context_keys[1]
+				var butcher_carcass_key: String = step_definition.context_keys[2]
+				if not context.has(butcher_macro_key) or not context.has(butcher_micro_key) or not context.has(butcher_carcass_key):
+					push_error("TaskFactory.build_task: una o più chiavi di contesto mancanti ('%s'/'%s'/'%s') per step BUTCHER di TaskDefinition '%s'." % [
+						butcher_macro_key, butcher_micro_key, butcher_carcass_key, definition.task_name
+					])
+					continue
+				steps.append(ButcherAction.new(context[butcher_macro_key], context[butcher_micro_key], int(context[butcher_carcass_key])))
+				step_descriptions.append(step_definition.step_description)
 			TaskTypes.ActionType.LOOK_AROUND:
 				# Nessun argomento — LookAroundAction._init non prende parametri (durata/drain fissi,
 				# nessun target). Vedi step_look_around.tres/wander.tres per l'unico consumatore oggi
@@ -246,9 +261,15 @@ static func build_task(definition: TaskDefinition, context: Dictionary) -> Task:
 				var retrieve_equip_slot: int = -1
 				if step_definition.context_keys.size() >= 4 and context.has(step_definition.context_keys[3]):
 					retrieve_equip_slot = int(context[step_definition.context_keys[3]])
+				# Quinta chiave FACOLTATIVA (2026-09-26, consegna dopo la produzione, produce.tres): se lo step la
+				# dichiara è uno step di consegna al magazzino (RetrieveAction.deliver_to_warehouse), attivo salvo
+				# che il contesto dica false.
+				var retrieve_deliver: bool = false
+				if step_definition.context_keys.size() >= 5:
+					retrieve_deliver = bool(context.get(step_definition.context_keys[4], true))
 				steps.append(RetrieveAction.new(
 					context[retrieve_building_key], context[retrieve_resource_name_key], int(context[retrieve_quantity_key]),
-					retrieve_equip_slot
+					retrieve_equip_slot, retrieve_deliver
 				))
 				step_descriptions.append(step_definition.step_description)
 			TaskTypes.ActionType.RESTOCK_POUCH:
@@ -262,7 +283,12 @@ static func build_task(definition: TaskDefinition, context: Dictionary) -> Task:
 				if not context.has(restock_building_key):
 					push_error("TaskFactory.build_task: chiave di contesto mancante '%s' per step RESTOCK_POUCH di TaskDefinition '%s'." % [restock_building_key, definition.task_name])
 					continue
-				steps.append(RestockPouchAction.new(context[restock_building_key]))
+				# Seconda chiave FACOLTATIVA (2026-09-26, rifornirsi dal proprio zaino): sorgente del rifornimento
+				# (RestockPouchAction.SourceKind), default BUILDING se la chiave non è dichiarata o non è nel contesto.
+				var restock_source_kind: int = RestockPouchAction.SourceKind.BUILDING
+				if step_definition.context_keys.size() >= 2 and context.has(step_definition.context_keys[1]):
+					restock_source_kind = int(context[step_definition.context_keys[1]])
+				steps.append(RestockPouchAction.new(context[restock_building_key], restock_source_kind))
 				step_descriptions.append(step_definition.step_description)
 			TaskTypes.ActionType.UNLOAD:
 				# 1 argomento (target_building: Building) — stesso schema di SETUP_SITE/BUILD sopra.

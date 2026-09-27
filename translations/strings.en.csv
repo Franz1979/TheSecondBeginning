@@ -5,8 +5,23 @@ build_bar_deposit_site_tooltip,Deposit Site
 build_bar_stick_tent_tooltip,Stick Tent
 build_bar_campfire_tooltip,Campfire
 build_bar_toolmaker_hut_tooltip,Toolmaker's hut
+build_bar_drying_rack_tooltip,Drying rack
+build_bar_smokehouse_tooltip,Smokehouse
+build_bar_burial_tooltip,Burial
+build_bar_earthwork_tooltip,Earthwork
 building_campfire,Campfire
 building_toolmaker_hut,Toolmaker's hut
+building_category_residential,Residential
+building_category_political,Political
+building_category_storage,Storage
+building_category_movement,Walkable
+building_category_production,Production
+building_category_military,Military
+building_category_religious,Religious
+building_drying_rack,Drying rack
+building_smokehouse,Smokehouse
+building_burial,Burial
+building_earthwork,Earthwork
 build_bar_dirt_ground_tooltip,Dirt Ground
 building_dirt_ground,Dirt Ground
 build_bar_requires_idea_tooltip,Requires: {idea}
@@ -22,6 +37,12 @@ idea_task_assignment,Task Assignment
 idea_warehouse_management,Warehouse Management
 idea_paleolithic_constructions_summary,Allows building the first shelters.
 idea_paleolithic_constructions_description,"Branches, hides and stones become structures to shelter and rest in."
+idea_drying,Drying
+idea_drying_summary,Allows building the drying rack to dry meat.
+idea_drying_description,"Laid out in sun and wind on a rack, meat keeps much longer."
+idea_smoking,Smoking
+idea_smoking_summary,Allows building the smokehouse.
+idea_smoking_description,"The slow smoke of a covered fire preserves meat and adds flavor."
 idea_plant_lore_summary,Allows recognizing medicinal herbs.
 idea_plant_lore_description,"By observing plants, the group learns which ones heal and where to find them."
 idea_work_areas_summary,Allows marking out work areas.
@@ -62,6 +83,17 @@ vegetation_dead_plant,Dead plant
 dead_body_age_label,Age at death: {age}
 dead_body_cause_label,Cause: {cause}
 dead_body_decomposes_label,Decomposes in {days} days
+ground_pile_title,Pile on the ground
+ground_pile_carcass_line,{species} carcass ({age}) — rots in {days} days
+ground_pile_resource_line,{name}: {quantity}
+ground_pile_decay_suffix,({percent}% decayed)
+ground_pile_used_tools_suffix,(remaining uses of used pieces: {uses})
+ground_pile_disappears_label,Disappears in {days} days
+ground_pile_terrain_header,On the ground here
+building_ground_pile_caption,Pile on the ground here:
+microcell_inspection_ground_pile_header,Pile on the ground:
+pickup_choice_source_ground_pile,From the pile on the ground
+pickup_choice_source_terrain,From the terrain
 individual_kill_debug_button,Kill (debug)
 individual_age_label,Age: {age} ({band})
 task_activity_idle,Resting
@@ -74,6 +106,7 @@ task_daydream_step_leave,Walking away from the village center
 task_leisure_restock_name,Restocking
 task_leisure_restock_step_walk,Heading to the storehouse
 task_leisure_restock_step_restock,Restocking supplies
+task_restock_step_backpack,Eating from the backpack
 task_emergency_restock_name,Urgent restock
 pregnant,Pregnant
 individual_vitals_section_label,Vital parameters:
@@ -162,6 +195,10 @@ building_construction_phase_build,Building
 building_awaiting_material_build_label,"Still needed to complete construction: {list}"
 transport_selection_banner_text,"🚚 Transport: select the destination building (H to cancel)"
 debug_idle_fallback_button_tooltip,Toggle automatic assignment of idle-time tasks (Wander/Play/Leisure Rest) to free individuals
+random_event_test_name,Test event
+random_event_test_popup,Test event (day {day}): the event system works.
+debug_random_event_apply,Apply event
+debug_random_event_apply_tooltip,Trigger the chosen event now
 debug_idle_fallback_on,Idle fallback: ON
 debug_idle_fallback_off,Idle fallback: OFF
 category_name_food,Food
@@ -173,6 +210,11 @@ carried_resource_tooltip_medicinal_herbs,Medicinal herbs
 carried_resource_tooltip_fiber_rope,Fiber rope
 carried_resource_tooltip_wooden_spear,Wooden spear
 carried_resource_tooltip_stone_knife,Stone knife
+carried_resource_tooltip_meat,Raw meat
+carried_resource_tooltip_cooked_meat,Cooked meat
+carried_resource_tooltip_hide,Hide
+carried_resource_tooltip_sinew,Sinew
+carried_resource_tooltip_bone,Bones
 pickup_choice_dialog_title,Choose what to pick up
 pickup_choice_dialog_message,This spot has several pickable resources:
 pickup_choice_all,Everything
@@ -193,12 +235,14 @@ options_pickup_default,Pick-up: default choice
 options_pickup_default_group_category,Category
 options_pickup_default_group_resource,Resource
 options_repeat_default,Pick-up and transport: repeat up to {count} times
+options_production_delivery_default,Production: deliver to warehouse
 options_volume_master,Master volume
 options_volume_music,Music volume
 options_volume_ambience,Ambience volume
 options_volume_sfx,Effects volume
 options_volume_ui,Interface volume
 task_repeat_checkbox,Repeat up to {count} times
+produce_deliver_checkbox,Deliver to warehouse
 minimap_show_tooltip,Show the minimap
 minimap_hide_tooltip,Hide the minimap
 building_awaiting_material_production_caption,To produce {resource} you still need:
@@ -211,6 +255,7 @@ task_produce_name,Production
 task_build_name,Construction
 task_produce_step_walk,Walking to the workstation
 task_produce_step_produce,Producing
+task_produce_step_deliver,Delivering to the warehouse
 building_output_buffer_caption,Finished products: {used}/{capacity}
 building_output_buffer_full,Finished products full: collect them to keep producing
 building_production_recipes_caption,Production:
@@ -226,6 +271,10 @@ task_hunt_step_approach,Approaching the prey
 task_hunt_step_hunt,Hunting
 task_hunt_step_aim,Taking aim
 task_hunt_step_throw,Throwing
+task_butcher_name,Butchering
+task_butcher_step_walk,Walking to the carcass
+task_butcher_step_butcher,Butchering the carcass
+task_activity_butcher,butcher
 task_hunt_step_recover_weapon,Recovering the weapon
 task_hunt_activity,Hunting: {species}
 transport_dialog_group_products,Products

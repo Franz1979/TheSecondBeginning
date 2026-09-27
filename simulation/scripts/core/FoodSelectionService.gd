@@ -43,16 +43,50 @@ static func is_denser_food_first(ratio_a: float, name_a: String, ratio_b: float,
 #   2. PROVVISTE: come sempre, sul cibo rimasto dopo la fase 1. Esito in "quantities"/"space_used"/
 #      "calories", che descrivono SOLO cio' che va alle provviste (stesso significato di prima).
 # Il chiamante preleva la somma dei due gruppi.
+#
+# BUFFER DI USCITA (2026-09-27, bug "affamati che girano a vuoto al focolare"): le disponibilita' sono
+# stored_resources PIU' Building.production_output, la stessa somma che WarehouseSelectionService.
+# find_source_for_retrieval considera per scegliere la sorgente e che BuildingStorageService.withdraw
+# preleva davvero. Prima si guardava solo lo storage: un focolare con carne cotta solo nel buffer era
+# una sorgente valida ma la scelta risultava vuota, la task finiva senza prelievo e il bisogno rinasceva.
 static func select_food(building: Building, free_space: float, calorie_target: float = 0.0) -> Dictionary:
+	if building == null:
+		return select_food_from_entries({}, free_space, calorie_target, "(nessuno)")
+	return select_food_from_entries(
+		_get_withdrawable_entries(building), free_space, calorie_target, "%s #%d" % [building.building_type_name, building.id]
+	)
+
+
+# Voci resource_name -> {"quantity"} prelevabili da `building`: stored_resources sommato al buffer di uscita
+# (stessa quantita' di BuildingStorageService.get_available_quantity). Copia: non tocca l'edificio.
+static func _get_withdrawable_entries(building: Building) -> Dictionary:
+	if building.production_output.is_empty():
+		return building.stored_resources
+	var entries: Dictionary = {}
+	for resource_name in building.stored_resources.keys():
+		entries[resource_name] = {"quantity": int((building.stored_resources[resource_name] as Dictionary).get("quantity", 0))}
+	for output_name in building.production_output.keys():
+		var buffered: int = int(building.production_output[output_name])
+		if buffered <= 0:
+			continue
+		var existing: Dictionary = entries.get(output_name, {"quantity": 0})
+		entries[output_name] = {"quantity": int(existing.get("quantity", 0)) + buffered}
+	return entries
+
+
+# Stessa scelta di select_food su VOCI GENERICHE (2026-09-26, richiesta utente — rifornirsi dal proprio zaino):
+# resource_name -> {"quantity", ...}, il formato comune di Building.stored_resources e di HumanIndividual.
+# carried_resources. `source_label` serve solo al log. Criterio invariato: calorie/spazio decrescente.
+static func select_food_from_entries(entries: Dictionary, free_space: float, calorie_target: float = 0.0, source_label: String = "") -> Dictionary:
 	var result := {"quantities": {}, "space_used": 0.0, "calories": 0.0, "body_quantities": {}, "body_calories": 0.0}
-	if building == null or (free_space <= 0.0 and calorie_target <= 0.0):
-		_log_selection(building, free_space, [], result)
+	if free_space <= 0.0 and calorie_target <= 0.0:
+		_log_selection(source_label, free_space, [], result)
 		return result
 
 	# Candidati: {"name", "available", "space", "calories", "ratio"}.
 	var candidates: Array = []
-	for resource_name in building.stored_resources.keys():
-		var entry: Dictionary = building.stored_resources[resource_name]
+	for resource_name in entries.keys():
+		var entry: Dictionary = entries[resource_name]
 		var available: int = int(entry.get("quantity", 0))
 		if available <= 0:
 			continue
@@ -101,13 +135,25 @@ static func select_food(building: Building, free_space: float, calorie_target: f
 		result["calories"] += float(units) * float(candidate["calories"])
 		remaining_space -= float(units) * space_per_unit
 
-	_log_selection(building, free_space, candidates, result)
+	_log_selection(source_label, free_space, candidates, result)
 	return result
+
+
+# true se tra le voci c'è almeno un'unità di cibo commestibile (calories_per_unit > 0 e space_per_unit > 0, stesso
+# criterio della scelta). Usata per decidere se il rifornimento può partire dallo zaino.
+static func has_edible_food(entries: Dictionary) -> bool:
+	for resource_name in entries.keys():
+		if int((entries[resource_name] as Dictionary).get("quantity", 0)) <= 0:
+			continue
+		var rules := CaloricCalculator.get_caloric_source_rules(String(resource_name))
+		if rules != null and rules.calories_per_unit > 0.0 and rules.space_per_unit > 0.0:
+			return true
+	return false
 
 
 # Log diagnostico (DebugLogging.SHOW_FOOD_SELECTION_LOGS, spento di default): candidati in ordine di
 # calorie/spazio e scelta fatta. Solo print.
-static func _log_selection(building: Building, free_space: float, candidates: Array, result: Dictionary) -> void:
+static func _log_selection(source_label: String, free_space: float, candidates: Array, result: Dictionary) -> void:
 	if not DebugLogging.ENABLED or not DebugLogging.SHOW_FOOD_SELECTION_LOGS:
 		return
 	var candidate_texts: Array[String] = []
@@ -115,8 +161,8 @@ static func _log_selection(building: Building, free_space: float, candidates: Ar
 		candidate_texts.append("%s(disp=%d spazio/u=%.2f cal/u=%.2f cal/spazio=%.2f)" % [
 			candidate["name"], candidate["available"], candidate["space"], candidate["calories"], candidate["ratio"]
 		])
-	print("[FOOD SELECTION DEBUG] edificio=%s spazio_libero=%.2f candidati=[%s] -> riserva=%s calorie_riserva=%.2f | provviste=%s spazio_usato=%.2f calorie=%.2f" % [
-		("%s #%d" % [building.building_type_name, building.id]) if building != null else "(nessuno)",
+	print("[FOOD SELECTION DEBUG] sorgente=%s spazio_libero=%.2f candidati=[%s] -> riserva=%s calorie_riserva=%.2f | provviste=%s spazio_usato=%.2f calorie=%.2f" % [
+		source_label,
 		free_space, ", ".join(candidate_texts), str(result["body_quantities"]), result["body_calories"],
 		str(result["quantities"]), result["space_used"], result["calories"]
 	])

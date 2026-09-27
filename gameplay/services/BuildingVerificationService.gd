@@ -81,6 +81,13 @@ static func is_position_buildable(
 	if not _is_position_clear(resolved["cell"], resolved["microcell"], current_absolute_day, macro_world, rules):
 		return false
 
+	# Criterio 9 (2026-09-26, ground drop): non si costruisce sopra un mucchio a terra. Vale solo per la
+	# microcella dell'edificio: davanti alla porta un mucchio non è un ostacolo (ci si cammina sopra).
+	if GroundPileService.find_at(
+		GameSettings.active_game_data, Vector2i(resolved["cell"].macro_x, resolved["cell"].macro_y), resolved["microcell"]
+	) != null:
+		return false
+
 	# Criterio 7
 	if rules.has_door:
 		var door_front_position: Vector2 = world_position + _direction_vector(direction) * cell_size
@@ -135,16 +142,37 @@ static func _is_position_clear(cell: LiveMacroCell, microcell: Vector2i, current
 	):
 		return false
 
+	# Criteri 3-6: regola condivisa con la posa dei mucchi a terra (is_microcell_free).
+	return is_microcell_free(
+		Vector2i(cell.macro_x, cell.macro_y), cell.macro_cell, cell.macro_state, cell.river_positions, microcell, macro_world,
+		rules.buildable_on_water, rules.buildable_on_river, rules.buildable_on_stone, ignore_movement_buildings
+	)
+
+
+# Criteri 3-6 su dati puri (2026-09-26, estratti da _is_position_clear e condivisi con GroundPileService.
+# find_drop_microcell — posa dei mucchi a terra): "la microcella non ha ostacoli permanenti". Nessuna cella viva
+# né Fog of War qui: lavora su MacroCellData/MacroCellState/World, così la può usare chi non ha una
+# LiveMacroCell. `river_positions` = microcelle del fiume della macrocella (Array o Dictionary, basta .has()).
+# I tre flag allow_* corrispondono a BuildingRules.buildable_on_water/_river/_stone; ignore_movement_buildings
+# salta gli edifici calpestabili (categoria MOVEMENT).
+static func is_microcell_free(
+	macro_coords: Vector2i, macro_cell: MacroCellData, macro_state: MacroCellState, river_positions: Variant,
+	microcell: Vector2i, macro_world: World, allow_water: bool = false, allow_river: bool = false,
+	allow_stone: bool = false, ignore_movement_buildings: bool = false
+) -> bool:
+	if macro_cell == null:
+		return false
+
 	# Criterio 3
-	if not rules.buildable_on_water and cell.macro_cell.terrain_base == GameTypes.TerrainBase.WATER:
+	if not allow_water and macro_cell.terrain_base == GameTypes.TerrainBase.WATER:
 		return false
 
 	# Criterio 4
-	if not rules.buildable_on_river and cell.river_positions.has(microcell):
+	if not allow_river and river_positions != null and river_positions.has(microcell):
 		return false
 
 	# Criterio 5
-	if not rules.buildable_on_stone and cell.macro_state != null and cell.macro_state.stone_positions.has(microcell):
+	if not allow_stone and macro_state != null and macro_state.stone_positions.has(microcell):
 		return false
 
 	# Criterio 6
@@ -153,12 +181,32 @@ static func _is_position_clear(cell: LiveMacroCell, microcell: Vector2i, current
 			if ignore_movement_buildings and building.rules != null and building.rules.category == BuildingTypes.Category.MOVEMENT:
 				continue
 			if (
-				building.macro_x == cell.macro_x and building.macro_y == cell.macro_y
+				building.macro_x == macro_coords.x and building.macro_y == macro_coords.y
 				and building.micro_x == microcell.x and building.micro_y == microcell.y
 			):
 				return false
 
 	return true
+
+
+# Microcelle del fiume di una macrocella, calcolate dai dati (stessa formula di GameScene._activate_live_cell
+# per LiveMacroCell.river_positions), come Dictionary per lookup rapidi. Vuoto se la macrocella non ha fiume.
+static func get_river_lookup(macro_cell: MacroCellData, macro_state: MacroCellState) -> Dictionary:
+	var lookup: Dictionary = {}
+	if macro_cell == null or macro_state == null or macro_cell.water_type != GameTypes.WaterType.RIVER:
+		return lookup
+	var thickness_ratio: float = float(macro_state.get_river_space()) / float(MacroCellState.TOTAL_SPACE)
+	for position in RiverMicrocellService.get_river_positions(macro_cell.river_shape, thickness_ratio):
+		lookup[position] = true
+	return lookup
+
+
+# Microcella davanti alla porta di un edificio con porta: {"macro": Vector2i, "micro": Vector2i}, {} se
+# l'edificio non ha porta. Pubblica per la posa dei mucchi a terra (GroundPileService).
+static func get_door_front(building: Building) -> Dictionary:
+	if building == null or building.rules == null or not building.rules.has_door:
+		return {}
+	return _door_target_macro_micro(building.macro_x, building.macro_y, building.micro_x, building.micro_y, building.rotation)
 
 
 # Criterio 8 (vedi commento in testa al file): true se un edificio esistente CON PORTA ha la porta

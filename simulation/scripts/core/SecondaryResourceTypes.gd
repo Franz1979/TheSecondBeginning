@@ -45,10 +45,13 @@ enum Category {
 #
 # CRAFTED (2026-09-23, richiesta utente — sistema di produzione) aggiunto IN FONDO: risorsa prodotta
 # presso una workstation con una ricetta (SecondaryResourceRules gruppo Recipe), es. fiber_rope.
+# ANIMAL_DERIVED (2026-09-26, richiesta utente — macellazione) aggiunto IN FONDO: risorsa ricavata dalla
+# carcassa di un animale ucciso (meat, hide, sinew, bone), vedi AnimalRules gruppo Butchering.
 enum GenerationSource {
 	PLANT_DERIVED,
 	TERRAIN_SCATTERED,
 	CRAFTED,
+	ANIMAL_DERIVED,
 }
 
 # Formula di derivazione lotti+capacità per il modello "capacità per lotto" (2026-09-19, richiesta

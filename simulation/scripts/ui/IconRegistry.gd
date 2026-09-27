@@ -87,6 +87,14 @@ const RESOURCE_ICON_NODES := {
 	# WoodenSpearIcon.gd/StoneKnifeIcon.gd.
 	"wooden_spear": preload("res://simulation/scripts/ui/WoodenSpearIcon.gd"),
 	"stone_knife": preload("res://simulation/scripts/ui/StoneKnifeIcon.gd"),
+	# Prodotti della macellazione (2026-09-26, richiesta utente — icone provvisorie): carne, pelle, tendini,
+	# ossa — vedi MeatIcon.gd/HideIcon.gd/SinewIcon.gd/BoneIcon.gd.
+	"meat": preload("res://simulation/scripts/ui/MeatIcon.gd"),
+	# "cooked_meat" (2026-09-26, richiesta utente — icona provvisoria): vedi CookedMeatIcon.gd.
+	"cooked_meat": preload("res://simulation/scripts/ui/CookedMeatIcon.gd"),
+	"hide": preload("res://simulation/scripts/ui/HideIcon.gd"),
+	"sinew": preload("res://simulation/scripts/ui/SinewIcon.gd"),
+	"bone": preload("res://simulation/scripts/ui/BoneIcon.gd"),
 }
 
 
@@ -141,6 +149,12 @@ const BUILDING_ICON_NODES := {
 	# "dirt_ground" (2026-09-19, richiesta utente): quadrato a tutto slot, senza bordo, del colore base
 	# del rendering con le stesse macchie — vedi DirtGroundIcon/DirtGroundPattern.
 	"dirt_ground": preload("res://simulation/scripts/ui/DirtGroundIcon.gd"),
+	# Edifici segnaposto (2026-09-26, richiesta utente — icone provvisorie, stesso disegno della mappa via
+	# PlaceholderBuildingShapes): graticcio, affumicatoio, sepoltura, vallo di terra.
+	"drying_rack": preload("res://simulation/scripts/ui/DryingRackIcon.gd"),
+	"smokehouse": preload("res://simulation/scripts/ui/SmokehouseIcon.gd"),
+	"burial": preload("res://simulation/scripts/ui/BurialIcon.gd"),
+	"earthwork": preload("res://simulation/scripts/ui/EarthworkIcon.gd"),
 }
 
 
@@ -242,6 +256,8 @@ const COMMAND_ICON_NODES := {
 	"build": preload("res://simulation/scripts/ui/CommandHammerIcon.gd"),
 	"transport": preload("res://simulation/scripts/ui/CommandBoxIcon.gd"),
 	"produce": preload("res://simulation/scripts/ui/CommandProduceIcon.gd"),
+	# "butcher" (2026-09-26, richiesta utente — macellazione): coltello, vedi CommandKnifeIcon.gd.
+	"butcher": preload("res://simulation/scripts/ui/CommandKnifeIcon.gd"),
 	"task_rejected": preload("res://simulation/scripts/ui/CommandRejectedIcon.gd"),
 }
 

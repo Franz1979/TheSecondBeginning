@@ -59,6 +59,16 @@ size_flags_horizontal = 3
 [node name="CheckBox" type="CheckBox" parent="MarginContainer/VBoxContainer/RepeatRow"]
 layout_mode = 2
 
+[node name="DeliveryRow" type="HBoxContainer" parent="MarginContainer/VBoxContainer"]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="MarginContainer/VBoxContainer/DeliveryRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="CheckBox" type="CheckBox" parent="MarginContainer/VBoxContainer/DeliveryRow"]
+layout_mode = 2
+
 [node name="MasterVolumeRow" type="HBoxContainer" parent="MarginContainer/VBoxContainer"]
 layout_mode = 2
 
