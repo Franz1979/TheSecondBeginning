@@ -24,6 +24,11 @@ extends CenterContainer
 @onready var submenu_row: IconButtonRow = $Panel/MarginContainer/HBoxContainer/ContentContainer/SubmenuRow
 
 const OPEN_BUILD_MENU_ACTION := &"open_build_menu"
+# Zone di lavoro (2026-09-27, richiesta utente — work areas): slot 1 di main_row, accanto al martello. Il clic emette
+# action_pressed(WORK_AREAS_ACTION), ascoltato da GameScene (modalità "disegna area"); acceso solo a idea completata
+# (set_work_areas_available, chiamata da GameScene come set_building_buildable).
+const WORK_AREAS_ACTION := &"work_areas"
+const WORK_AREAS_MAIN_ROW_SLOT_INDEX := 1
 
 # Indice slot in submenu_row per ogni tipo edificio (2026-09-07, richiesta utente — GENERALIZZATO
 # da PEBBLE_CIRCLE_SLOT_INDEX: un solo indice bastava finché il controllo di disponibilità
@@ -66,6 +71,9 @@ var _state: _ViewState = _ViewState.LEVEL_1
 
 func _ready() -> void:
 	main_row.configure_slot(0, "🔨", tr("build_bar_build_tooltip"), OPEN_BUILD_MENU_ACTION)
+	main_row.configure_slot(
+		WORK_AREAS_MAIN_ROW_SLOT_INDEX, "", tr("build_bar_work_areas_tooltip"), WORK_AREAS_ACTION, "", true, WorkAreaIcon.new()
+	)
 	# Slot 1+ di main_row (e gli slot non configurati di submenu_row) restano placeholder vuoti
 	# (disabilitati/attenuati di default, vedi IconButtonRow._ready) — pronti per le prossime
 	# categorie/tipi di edificio, nessuno configurato ancora.
@@ -156,6 +164,12 @@ func set_building_buildable(building_type_name: String, is_buildable: bool, disa
 		BUILDING_SLOT_INDEX_BY_TYPE[building_type_name], not is_buildable,
 		disabled_tooltip if not is_buildable else ""
 	)
+
+
+# Bottone "Zone di lavoro" acceso o spento (2026-09-27): stesso schema di set_building_buildable, disabled_tooltip
+# = motivo ("Richiede: …").
+func set_work_areas_available(is_available: bool, disabled_tooltip: String = "") -> void:
+	main_row.set_slot_disabled(WORK_AREAS_MAIN_ROW_SLOT_INDEX, not is_available, disabled_tooltip if not is_available else "")
 
 
 # Il martello naviga dentro il sottomenu — lo sostituisce alla riga principale (mai simultanei).

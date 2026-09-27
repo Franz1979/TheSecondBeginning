@@ -61,6 +61,26 @@ idea_warehouse_management_description,A group member keeps the stores in order a
 unlock_kind_idea,Unlocks ideas
 unlock_kind_building,Unlocks buildings
 unlock_kind_resource,Unlocks resources
+unlock_kind_tool,Unlocks tools
+unlock_tool_work_areas,Work areas
+build_bar_work_areas_tooltip,Work areas
+work_area_draw_banner_text,Drag to draw a work area (Esc or right click to exit)
+work_area_default_name,Area {n}
+work_area_job_haul,Gathering
+work_area_job_hunt,Hunting
+work_area_selection_title,Work area
+work_area_name_tooltip,Area name (Enter to confirm)
+work_area_center_tooltip,Center the camera on the area
+work_area_size_label,Size: {w}×{h} · Macro cell ({x}, {y})
+work_area_color_caption,Color
+work_area_jobs_caption,Jobs
+work_area_filter_all,Everything
+work_area_filter_all_prey,All prey
+work_area_redraw_button,Redraw
+work_area_delete_button,Delete
+work_area_delete_confirm,Delete {name}?
+work_area_delete_yes,Yes
+work_area_delete_no,No
 tech_tree_requires,Requires: {ideas}
 tech_tree_research_button,Research this idea
 tech_tree_detail_placeholder,Click an idea to see its details
@@ -172,11 +192,22 @@ building_stored_label,Stored: {entries}
 building_residents_caption,Residents
 building_resident_tooltip,{name} (age {age})
 building_storage_caption,Storage
-building_id_label,ID: {id}
 statistics_tab_births,Births
 statistics_tab_population,Population
 statistics_tab_buildings,Buildings
 tech_tree_tooltip,Tech tree
+map_layers_tooltip,Map layers
+map_layer_none,None
+map_layer_coming_soon,Coming soon
+map_layer_walkability,Walkability
+map_layer_work_areas,Work areas
+map_layer_territory,Territory
+map_layer_known_zone,Known area
+map_layer_resources,Resources
+map_layer_fauna,Fauna
+map_layer_cultural_influence,Cultural influence
+map_layer_political_influence,Political influence
+map_layer_religious_influence,Religious influence
 tech_tree_title,Tech tree
 tech_tree_active_idea_label,Researching: {idea}
 tech_tree_no_active_idea,No research in progress
@@ -261,13 +292,10 @@ task_repeat_checkbox,Repeat up to {count} times
 produce_deliver_checkbox,Deliver to warehouse
 minimap_show_tooltip,Show the minimap
 minimap_hide_tooltip,Hide the minimap
-building_awaiting_material_production_caption,To produce {resource} you still need:
 building_awaiting_fuel_production_label,"Missing fuel: {amount} ({fuels})"
 building_production_suspended_label,"Production suspended: {resource}, {percent}% done"
 building_delivered_materials_caption,Starting materials:
 building_site_delivered_materials_caption,Delivered material:
-building_production_in_progress_label,In progress: {items}
-building_production_in_progress_none,In progress: nothing
 task_produce_name,Production
 task_build_name,Construction
 task_demolish_name,Demolition
@@ -275,14 +303,20 @@ task_demolish_step_demolish,Demolishing
 task_produce_step_walk,Walking to the workstation
 task_produce_step_produce,Producing
 task_produce_step_deliver,Delivering to the warehouse
-building_output_buffer_caption,Finished products: {used}/{capacity}
+building_output_buffer_caption,Finished products {used}/{capacity}
 building_output_buffer_full,Finished products full: collect them to keep producing
-building_production_recipes_caption,Production:
-produce_recipe_button,Produce {resource}
+building_production_recipes_caption,Production
+building_selection_title,{type}   ID: {id}
+building_production_status_caption,In production:
+building_production_status_none,nothing
+building_production_status_item_tooltip,{resource} ×{quantity} ({percent}%)
+building_production_needs_caption,This production still needs:
+recipe_tooltip_ingredients,Ingredients: {items}
+recipe_tooltip_fuel,Fuel: {amount}
+recipe_tooltip_labor,Labor: {labor}
+recipe_tooltip_tools,Required tool: {tools}
 produce_recipe_disabled_busy,"Workstation busy: production assigned to {workers}"
 produce_recipe_disabled_output_full,Finished products full: collect them before starting a new production
-produce_quantity_label,Quantity:
-produce_quantity_tooltip,Pieces to produce with this order (up to {max})
 produce_assign_banner_text,⚒️ Produce {resource}: click an individual (Esc to cancel)
 task_produce_activity,Production: {resource}
 task_hunt_name,Hunting

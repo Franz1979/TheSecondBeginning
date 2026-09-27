@@ -100,6 +100,9 @@ func save_game_to_json(
 			# Gruppi di visitatori (2026-09-27): VisitorParty.to_save_data è già JSON-nativo.
 			"visitor_parties": game_data.visitor_parties.map(func(party: VisitorParty) -> Dictionary: return party.to_save_data()),
 			"next_visitor_party_id": game_data.next_visitor_party_id,
+			# Zone di lavoro (2026-09-27): WorkArea.to_save_data è già JSON-nativo.
+			"work_areas": game_data.work_areas.map(func(area: WorkArea) -> Dictionary: return area.to_save_data()),
+			"next_work_area_id": game_data.next_work_area_id,
 		},
 		"world": {
 			"width": World.WIDTH,

@@ -43,6 +43,8 @@ func _init(p_pile_macro_coords: Vector2i = Vector2i.ZERO, p_pile_microcell: Vect
 	carcass_id = p_carcass_id
 	required_tool_categories = [TaskTypes.ToolCategory.BUTCHERING]
 	disallowed_age_bands = [HumanTypes.AgeBand.INFANT, HumanTypes.AgeBand.CHILD]
+	# Effetto della skill (2026-09-27, SkillEffectService, chiave "butcher").
+	skill_effect_key = "butcher"
 
 
 # Rese di una carcassa: {"meat", "hide", "sinew", "bone"} in unità intere, dalle rese dell'adulto della specie
@@ -92,7 +94,9 @@ func get_stamina_delta(individual: Variant, context: Dictionary, delta: float) -
 		return 0.0
 	if not ensure_required_tools(individual):
 		return 0.0
-	_elapsed += delta
+	# Skill (2026-09-27, SkillEffectService "butcher"): durata divisa per il fattore, letto a ogni tick — realizzato
+	# facendo avanzare il tempo maturato del fattore (_duration salvata resta quella base).
+	_elapsed += delta * SkillEffectService.get_factor_for_action(self, individual, context)
 	if _elapsed >= _duration:
 		_done = true
 		_finish_butchering(individual)

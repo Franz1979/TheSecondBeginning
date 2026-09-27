@@ -42,6 +42,8 @@ func _init(p_combat_target: CombatTarget = null, p_weapon_category: TaskTypes.To
 	weapon_category = p_weapon_category
 	required_tool_categories = [weapon_category]
 	disallowed_age_bands = AimAction.attack_disallowed_age_bands(weapon_category)
+	# Effetto della skill di caccia sulla probabilità di colpire (2026-09-27, SkillEffectService).
+	skill_effect_key = HuntService.SKILL_EFFECT_KEY
 
 
 func is_target_valid() -> bool:
@@ -111,7 +113,8 @@ func _resolve(individual: Variant, context: Dictionary) -> bool:
 		weapon_display, combat_target.describe(), distance
 	])
 
-	var hit_chance := HuntService.compute_hit_chance(attack_power, float(individual.skill_hunting), combat_target.label, animal.age_band)
+	var skill_factor := SkillEffectService.get_factor_for_action(self, individual, context)
+	var hit_chance := HuntService.compute_hit_chance(attack_power, skill_factor, combat_target.label, animal.age_band)
 	var roll := randf()
 	if roll >= hit_chance:
 		HuntService.log_event(individual, "tiro a VUOTO su %s (probabilità %.0f%%, tiro %.2f)." % [combat_target.describe(), hit_chance * 100.0, roll])

@@ -55,7 +55,8 @@ const CONTEXT_PENDING_BUTCHER := "pending_hunt_butcher"
 #   p = clamp(scala_specie × arma × skill × taglia × età, HIT_CHANCE_MIN, HIT_CHANCE_MAX)
 #   scala_specie = AnimalRules.hit_chance_scale (DEFAULT_HIT_CHANCE_SCALE se la specie non lo dichiara)
 #   arma   = attack_power / (attack_power + WEAPON_HALF_POWER)     lancia 12 -> 0.55, coltello 5 -> 0.33
-#   skill  = 1 + SKILL_BONUS_AT_MAX × skill_hunting / SKILL_MAX    0 -> 1.0, 1000 -> 1.5
+#   skill  = SkillEffectService, chiave SKILL_EFFECT_KEY ("hunt_throw", skill_action_effects.tres):
+#            1 + 0.5 × clamp(skill_hunting / 1000, 0, 1)            0 -> 1.0, 1000 -> 1.5
 #   taglia = clamp(sqrt(salute_max_preda / SIZE_REFERENCE_HEALTH), SIZE_FACTOR_MIN, SIZE_FACTOR_MAX)
 #            salute_max_preda = AnimalRules.max_health × size_multiplier_by_age[fascia] (bersaglio più grande = più facile)
 #   età    = AGE_HIT_FACTOR[fascia]                                giovane più sfuggente, anziano più lento
@@ -63,8 +64,10 @@ const CONTEXT_PENDING_BUTCHER := "pending_hunt_butcher"
 # fattore è ora per specie; prima era la costante unica HIT_CHANCE_SCALE, 1.4 per tutte).
 const DEFAULT_HIT_CHANCE_SCALE: float = 1.0
 const WEAPON_HALF_POWER: float = 10.0
-const SKILL_BONUS_AT_MAX: float = 0.5
-const SKILL_MAX: float = 1000.0
+# Chiave dell'effetto della skill di caccia (2026-09-27 — prima SKILL_BONUS_AT_MAX/SKILL_MAX qui): bonus e skill_max
+# sono in skill_action_effects.tres, il fattore lo calcola SkillEffectService. Usata da ThrowAction
+# (skill_effect_key) e da choose_weapon.
+const SKILL_EFFECT_KEY := "hunt_throw"
 const SIZE_REFERENCE_HEALTH: float = 20.0
 const SIZE_FACTOR_MIN: float = 0.6
 const SIZE_FACTOR_MAX: float = 1.4
@@ -73,10 +76,10 @@ const HIT_CHANCE_MIN: float = 0.05
 const HIT_CHANCE_MAX: float = 0.95
 
 
-# Probabilità di colpire un animale (formula e costanti sopra). Statica e pura.
-static func compute_hit_chance(attack_power: float, skill_hunting: float, species: String, age_band: int) -> float:
+# Probabilità di colpire un animale (formula e costanti sopra). Statica e pura. `skill_factor` (2026-09-27): il
+# fattore della skill già calcolato da SkillEffectService (chiave SKILL_EFFECT_KEY), non più la skill grezza.
+static func compute_hit_chance(attack_power: float, skill_factor: float, species: String, age_band: int) -> float:
 	var weapon_factor: float = attack_power / (attack_power + WEAPON_HALF_POWER) if attack_power > 0.0 else 0.0
-	var skill_factor: float = 1.0 + SKILL_BONUS_AT_MAX * clampf(skill_hunting / SKILL_MAX, 0.0, 1.0)
 	var size_factor: float = 1.0
 	var rules := AnimalCalculator.get_animal_rules(species)
 	var species_scale: float = DEFAULT_HIT_CHANCE_SCALE
@@ -106,12 +109,13 @@ static func choose_weapon(individual: Variant, category: TaskTypes.ToolCategory,
 	var best_name := ""
 	var best_chance := -1.0
 	var best_uses := -1
+	var skill_factor := SkillEffectService.get_factor(SKILL_EFFECT_KEY, individual)
 	for slot in range(individual.get_tool_slot_count()):
 		var tool_name: String = individual.get_equipped_tool(slot)
 		if tool_name == "" or not ToolGateService._tool_categories(tool_name).has(category):
 			continue
 		var rules := CaloricCalculator.get_caloric_source_rules(tool_name)
-		var chance := compute_hit_chance(rules.attack_power if rules != null else 0.0, float(individual.skill_hunting), species, age_band)
+		var chance := compute_hit_chance(rules.attack_power if rules != null else 0.0, skill_factor, species, age_band)
 		var uses: int = individual.get_equipped_tool_uses(slot)
 		if chance > best_chance + 0.000001 or (absf(chance - best_chance) <= 0.000001 and uses > best_uses):
 			best_name = tool_name

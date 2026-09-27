@@ -48,7 +48,25 @@ static func _sources() -> Array[Dictionary]:
 		{"kind": &"idea", "label_key": "unlock_kind_idea", "collect": IdeaUnlocksService._collect_ideas},
 		{"kind": &"building", "label_key": "unlock_kind_building", "collect": IdeaUnlocksService._collect_buildings},
 		{"kind": &"resource", "label_key": "unlock_kind_resource", "collect": IdeaUnlocksService._collect_resources},
+		# Strumenti dell'interfaccia (2026-09-27, richiesta utente — zone di lavoro), vedi TOOLS.
+		{"kind": &"tool", "label_key": "unlock_kind_tool", "collect": IdeaUnlocksService._collect_tools},
 	]
+
+
+# Strumenti dell'interfaccia sbloccati da un'idea (2026-09-27): id -> {"name_key", "required_idea_id"}. Un nuovo
+# strumento legato a un'idea si aggiunge qui, così l'albero lo mostra tra gli sblocchi.
+const TOOLS := {
+	"work_areas": {"name_key": "unlock_tool_work_areas", "required_idea_id": WorkAreaTypes.REQUIRED_IDEA_ID},
+}
+
+
+static func _collect_tools(idea_id: String) -> Array[Dictionary]:
+	var entries: Array[Dictionary] = []
+	for tool_id in TOOLS.keys():
+		var tool: Dictionary = TOOLS[tool_id]
+		if String(tool["required_idea_id"]) == idea_id:
+			entries.append({"id": String(tool_id), "display_name": TranslationServer.translate(String(tool["name_key"]))})
+	return entries
 
 
 # Idee successive: quelle che hanno `idea_id` tra i prerequisites.

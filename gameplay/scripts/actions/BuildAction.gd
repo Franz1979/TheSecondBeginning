@@ -19,11 +19,9 @@ extends Action
 # microcella) — questa classe NON precalcola alcuna durata: lavora a CICLI GIORNALIERI, drenando
 # stamina ad un tasso costante (STAMINA_DRAIN_PER_DAY, stesso principio "costante di classe, da
 # bilanciare in seguito" di ogni altra Action di questo sistema) e convertendo quella stamina spesa
-# in lavoro EFFETTIVO tramite skill_multiplier/tool_multiplier — entrambi PLACEHOLDER oggi (nessun
-# sistema skill/tool esiste ancora, vedi TaskTypes.ToolCategory/Action.required_tool_categories),
-# ma già parametri ESPLICITI del costruttore (non costanti hardcoded qui dentro) così quando quei
-# sistemi esisteranno davvero non servirà toccare questa classe — solo chi la costruisce passerà
-# valori diversi da 1.0.
+# in lavoro EFFETTIVO tramite il fattore della skill (SkillEffectService, chiave "build", letto a ogni tick dal
+# 2026-09-27 — prima un campo skill_multiplier sempre 1.0) e tool_multiplier (parametro del costruttore, oggi sempre
+# 1.0, servirà più avanti).
 #
 # L'ACCUMULATORE VIVE SU Building.construction_progress["labor_accumulated"] (float), NON su un
 # campo interno di questa istanza (DEVIAZIONE deliberata dal pattern _elapsed/_duration usato
@@ -36,8 +34,8 @@ extends Action
 # GameSaveService/GameLoadService (vedi Building.gd), quindi labor_accumulated sopravvive a un
 # salvataggio/ricaricamento senza che questa classe debba implementare get_save_data/load_save_data
 # per il proprio progresso (a differenza di ThinkAction/PickUpAction/UnloadAction/ClearAction, che
-# DEVONO persistere _elapsed/_duration da sé) — solo target_building_id/skill_multiplier/
-# tool_multiplier restano da salvare qui, dati "di identità" del costruttore, mai progresso.
+# DEVONO persistere _elapsed/_duration da sé) — solo target_building_id/tool_multiplier restano da salvare qui,
+# dati "di identità" del costruttore, mai progresso.
 #
 # STAMINA_DRAIN_PER_DAY — valore di partenza ARBITRARIO, stesso trattamento "da bilanciare in
 # seguito" di ogni altra costante di questo sistema, scelto nello stesso ordine di grandezza di
@@ -52,7 +50,8 @@ var target_building: Building = null
 # building_construction_completed (on_complete) — il segnale porta solo l'edificio, ma chi lo ascolta
 # (GameScene) deve sapere chi ha completato per non chiudere la sua stessa task.
 var completing_individual: Variant = null
-var skill_multiplier: float = 1.0
+# Moltiplicatore degli attrezzi, oggi sempre 1.0. La skill non è più un campo salvato: il fattore si legge a ogni tick
+# da SkillEffectService (2026-09-27, chiave "build"), vedi get_stamina_delta.
 var tool_multiplier: float = 1.0
 
 # Emesso UNA VOLTA quando la costruzione è DAVVERO completa (2026-09-11) — stesso principio di
@@ -67,13 +66,12 @@ signal building_construction_completed(building: Building)
 
 func _init(
 	p_target_building: Building = null,
-	p_skill_multiplier: float = 1.0,
 	p_tool_multiplier: float = 1.0
 ) -> void:
 	target = null
 	target_building = p_target_building
-	skill_multiplier = p_skill_multiplier
 	tool_multiplier = p_tool_multiplier
+	skill_effect_key = "build"
 	# INFANT non può eseguire questa Action (2026-09-12, richiesta utente — collegamento AgeBand.
 	# INFANT al gameplay, vedi Action.disallowed_age_bands). CHILD aggiunto 2026-09-13 (richiesta
 	# utente).
@@ -167,7 +165,10 @@ func get_stamina_delta(individual: Variant, context: Dictionary, delta: float) -
 	if _get_labor_accumulated() >= float(target_building.rules.required_labor):
 		return 0.0
 	var stamina_spent_this_day: float = STAMINA_DRAIN_PER_DAY * delta
-	var effective_work_this_day: float = stamina_spent_this_day * skill_multiplier * tool_multiplier
+	# Skill (2026-09-27, SkillEffectService "build"): lavoro richiesto diviso per il fattore, realizzato moltiplicando
+	# il lavoro aggiunto (stesso tempo; il progresso sull'edificio resta misurato su required_labor).
+	var skill_factor := SkillEffectService.get_factor_for_action(self, individual, context)
+	var effective_work_this_day: float = stamina_spent_this_day * skill_factor * tool_multiplier
 	target_building.construction_progress["labor_accumulated"] = _get_labor_accumulated() + effective_work_this_day
 	return -stamina_spent_this_day
 
@@ -246,22 +247,18 @@ func on_complete(individual: Variant, context: Dictionary) -> void:
 
 
 # Persistenza (2026-09-11, richiesta utente, punto 4) — SOLO dati "di identità" del costruttore
-# (target_building via id, skill_multiplier/tool_multiplier): nessun progresso da salvare qui, vedi
-# il commento in testa al file — labor_accumulated vive su Building.construction_progress, già
-# serializzato per intero da GameSaveService/GameLoadService, persiste "gratis" senza che questa
-# classe debba fare nulla. skill_multiplier/tool_multiplier persistiti per COMPLETEZZA (oggi sempre
-# 1.0, nessun chiamante reale li valorizza diversamente ancora) — così un futuro chiamante che li
-# valorizzasse davvero non perderebbe silenziosamente quel valore ad un reload.
+# (target_building via id, tool_multiplier): nessun progresso da salvare qui, vedi il commento in testa al file —
+# labor_accumulated vive su Building.construction_progress, già serializzato per intero da GameSaveService/
+# GameLoadService. La skill non si salva: il fattore si legge a ogni tick da SkillEffectService (2026-09-27).
 func get_save_data() -> Dictionary:
 	var data := {
-		"skill_multiplier": skill_multiplier,
 		"tool_multiplier": tool_multiplier,
 	}
 	if target_building != null:
 		data["target_building_id"] = target_building.id
 	return data
 
-# Nessun load_save_data() sovrascritto — vedi get_save_data sopra: skill_multiplier/tool_multiplier/
+# Nessun load_save_data() sovrascritto — vedi get_save_data sopra: tool_multiplier/
 # target_building sono già risolti e passati al costruttore da TaskPersistenceService._build_step
 # PRIMA che load_save_data() (l'implementazione NEUTRA di Action.gd, mai chiamata con effetto qui)
 # venga invocata — nessun progresso interno da questa classe da ripristinare in più.

@@ -136,9 +136,13 @@ static func compute_walk_stamina_delta(individual: Variant, distance: float, deb
 # Costo/microcella = base + spazio REALMENTE occupato dal carico + costo per utensile (richiesta utente, 2026-09-08),
 # mai cachato: il carico può cambiare tra una chiamata e l'altra. individual.terrain_stamina_multiplier (2026-09-19,
 # vedi MovementTerrainService) scala la sola quota BASE del costo, mai il sovraccarico di carico e utensili.
+# Skill da trasportatore (2026-09-27, SkillEffectService "walk_loaded"): a zaino carico il costo è diviso per il
+# fattore — vale per la camminata vera (compute_walk_stamina_delta) e per la stima del riposo
+# (NeedTaskAssignmentService._should_rest_at_home).
 static func get_walk_cost_per_microcell(individual: Variant) -> float:
 	var used_carry_space: float = individual.get_carried_space()
-	return STAMINA_DRAIN_PER_MICROCELL_BASE * individual.terrain_stamina_multiplier + used_carry_space * CARRY_STAMINA_MULTIPLIER + STAMINA_DRAIN_PER_TOOL * float(individual.equipped_tool_count)
+	var base_cost: float = STAMINA_DRAIN_PER_MICROCELL_BASE * individual.terrain_stamina_multiplier + used_carry_space * CARRY_STAMINA_MULTIPLIER + STAMINA_DRAIN_PER_TOOL * float(individual.equipped_tool_count)
+	return base_cost / SkillEffectService.get_factor(walk_skill_effect_key(individual), individual)
 
 
 # Tolleranza di arrivo (2026-09-16, richiesta utente, fix bordo macrocella — robustezza generica,
@@ -165,6 +169,18 @@ func is_complete(individual: Variant, context: Dictionary) -> bool:
 	if is_path_unreachable(individual, target):
 		return true
 	return individual.position.distance_to(target) <= ARRIVAL_TOLERANCE
+
+
+# Effetto della skill da trasportatore (2026-09-27, SkillEffectService): "walk_loaded" solo a zaino carico,
+# altrimenti nessuna chiave (fattore 1.0). Vedi walk_skill_effect_key.
+func get_skill_effect_key(individual: Variant, context: Dictionary) -> String:
+	return walk_skill_effect_key(individual)
+
+
+# Chiave dell'effetto skill di una camminata di `individual` in questo istante: "walk_loaded" con lo zaino carico
+# (carried_resources non vuoto), "" altrimenti. Statica: la usa anche get_walk_cost_per_microcell.
+static func walk_skill_effect_key(individual: Variant) -> String:
+	return "walk_loaded" if not individual.carried_resources.is_empty() else ""
 
 
 # Solo il flag "allontanati" (2026-09-27): il target lo salva già TaskPersistenceService. Letto da

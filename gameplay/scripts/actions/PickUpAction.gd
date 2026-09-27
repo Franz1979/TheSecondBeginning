@@ -158,6 +158,8 @@ func _init(
 	# INFANT al gameplay, vedi Action.disallowed_age_bands). CHILD aggiunto 2026-09-13 (richiesta
 	# utente).
 	disallowed_age_bands = [HumanTypes.AgeBand.INFANT, HumanTypes.AgeBand.CHILD]
+	# Effetto della skill (2026-09-27, SkillEffectService, chiave "pickup").
+	skill_effect_key = "pickup"
 
 
 # Risolve UNA VOLTA (mai più ricalcolato dopo, stesso principio di WalkAction.target/ThinkAction.
@@ -304,7 +306,10 @@ func _resolve_plan(individual: Variant) -> float:
 func get_stamina_delta(individual: Variant, context: Dictionary, delta: float) -> float:
 	if _duration <= 0.0:
 		return 0.0
-	_elapsed += delta
+	# Skill (2026-09-27, SkillEffectService "pickup"): durata divisa per il fattore, letto a ogni tick — il tempo
+	# maturato avanza del fattore, il costo al giorno resta _total_stamina_cost/_duration (quindi anche il costo
+	# totale si riduce dello stesso fattore).
+	_elapsed += delta * SkillEffectService.get_factor_for_action(self, individual, context)
 	return -(_total_stamina_cost / _duration) * delta
 
 

@@ -33,11 +33,16 @@ extends Action
 
 # Stesso ordine di grandezza di BuildAction.STAMINA_DRAIN_PER_DAY — da bilanciare in seguito.
 const STAMINA_DRAIN_PER_DAY: float = 150
+# Effetto della skill (2026-09-27, SkillEffectService, chiave "produce"): il lavoro richiesto (già moltiplicato per
+# production_labor_multiplier della postazione) diviso per il fattore non scende mai sotto questa frazione del
+# recipe_labor base della ricetta.
+const MIN_REQUIRED_LABOR_FRACTION: float = 0.4
 
 var target_building: Building = null
 # Nome della risorsa da produrre (SecondaryResourceRules.secondary_resource_name).
 var resource_name: String = ""
-var skill_multiplier: float = 1.0
+# Moltiplicatore degli attrezzi, oggi sempre 1.0 (servirà più avanti). La skill non è più un campo salvato: il fattore
+# si legge a ogni tick da SkillEffectService (2026-09-27, _get_labor_scale).
 var tool_multiplier: float = 1.0
 # Pezzi ordinati (minimo 1) e pezzi già prodotti da questo step — vedi QUANTITÀ in testa al file.
 var quantity: int = 1
@@ -52,15 +57,14 @@ var _debug_last_block_message: String = ""
 func _init(
 	p_target_building: Building = null,
 	p_resource_name: String = "",
-	p_skill_multiplier: float = 1.0,
 	p_tool_multiplier: float = 1.0,
 	p_quantity: int = 1
 ) -> void:
 	target = null
 	target_building = p_target_building
 	resource_name = p_resource_name
-	skill_multiplier = p_skill_multiplier
 	tool_multiplier = p_tool_multiplier
+	skill_effect_key = "produce"
 	quantity = max(p_quantity, 1)
 	# Stesse fasce escluse di BuildAction.
 	disallowed_age_bands = [HumanTypes.AgeBand.INFANT, HumanTypes.AgeBand.CHILD]
@@ -125,9 +129,26 @@ func get_stamina_delta(individual: Variant, context: Dictionary, delta: float) -
 	var stamina_spent_this_day: float = 0.0
 	if labor_accumulated < required_labor:
 		stamina_spent_this_day = STAMINA_DRAIN_PER_DAY * delta
-		ProductionService.add_labor(target_building, resource_name, stamina_spent_this_day * skill_multiplier * tool_multiplier)
+		ProductionService.add_labor(target_building, resource_name, stamina_spent_this_day * _get_labor_scale(individual, context) * tool_multiplier)
 	_try_complete_cycle(individual)
 	return -stamina_spent_this_day
+
+
+# Effetto della skill sul lavoro (2026-09-27, SkillEffectService, chiave "produce"). Lavoro richiesto effettivo =
+# max(lavoro della postazione / fattore, MIN_REQUIRED_LABOR_FRACTION × recipe_labor base). Realizzato scalando il
+# lavoro AGGIUNTO (lavoro della postazione / lavoro effettivo) invece di cambiare il lavoro richiesto salvato: stesso
+# tempo di produzione, e il progresso condiviso sull'edificio (pannello, più lavoratori, salvataggi) resta sempre
+# misurato sul lavoro della postazione.
+func _get_labor_scale(individual: Variant, context: Dictionary) -> float:
+	var station_labor := ProductionService.get_required_labor(target_building, resource_name)
+	var recipe_rules := CaloricCalculator.get_caloric_source_rules(resource_name)
+	if station_labor <= 0.0 or recipe_rules == null:
+		return 1.0
+	var skill_factor := SkillEffectService.get_factor_for_action(self, individual, context)
+	var effective_labor: float = maxf(station_labor / skill_factor, MIN_REQUIRED_LABOR_FRACTION * recipe_rules.recipe_labor)
+	if effective_labor <= 0.0:
+		return 1.0
+	return station_labor / effective_labor
 
 
 # Conclude un ciclo appena lavoro, input e posto nel buffer lo consentono (ProductionService.
@@ -188,7 +209,10 @@ func _debug_describe_materials() -> String:
 	if recipe_rules != null:
 		for input_name in recipe_rules.recipe_inputs.keys():
 			var stored_entry: Dictionary = target_building.stored_resources.get(input_name, {})
-			parts.append("%s servono %d/ciclo, in deposito %d" % [input_name, int(recipe_rules.recipe_inputs[input_name]), int(stored_entry.get("quantity", 0))])
+			# Anche il buffer di uscita della postazione vale come ingrediente (2026-09-27, ProductionService.get_input_available).
+			parts.append("%s servono %d/ciclo, in deposito %d, nel buffer %d" % [
+				input_name, int(recipe_rules.recipe_inputs[input_name]), int(stored_entry.get("quantity", 0)),
+				int(target_building.production_output.get(input_name, 0))])
 	var own_recipe: Array[String] = [resource_name]
 	return "materiale mancante per il ciclo %s [%s]; ordine: pezzi dovuti %d, cicli %d, mancanti per l'ordine %s; chiavi in deposito %s." % [
 		str(get_missing_materials()), ", ".join(parts),
@@ -271,7 +295,6 @@ func on_complete(individual: Variant, context: Dictionary) -> void:
 func get_save_data() -> Dictionary:
 	var data := {
 		"resource_name": resource_name,
-		"skill_multiplier": skill_multiplier,
 		"tool_multiplier": tool_multiplier,
 		"quantity": quantity,
 		"produced_count": produced_count,

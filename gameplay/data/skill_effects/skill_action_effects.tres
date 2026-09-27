@@ -1,0 +1,38 @@
+[gd_resource type="Resource" script_class="SkillActionEffects" format=3]
+
+[ext_resource type="Script" path="res://gameplay/scripts/core/SkillActionEffects.gd" id="1_sae"]
+
+[resource]
+script = ExtResource("1_sae")
+effects_by_action_key = {
+"build": {
+"bonus": 0.25,
+"skill": "skill_builder",
+"skill_max": 1000.0
+},
+"butcher": {
+"bonus": 0.25,
+"skill": "skill_crafting",
+"skill_max": 1000.0
+},
+"hunt_throw": {
+"bonus": 0.5,
+"skill": "skill_hunting",
+"skill_max": 1000.0
+},
+"pickup": {
+"bonus": 0.25,
+"skill": "skill_gathering",
+"skill_max": 1000.0
+},
+"produce": {
+"bonus": 0.25,
+"skill": "skill_crafting",
+"skill_max": 1000.0
+},
+"walk_loaded": {
+"bonus": 0.25,
+"skill": "skill_transporter",
+"skill_max": 1000.0
+}
+}

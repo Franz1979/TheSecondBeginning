@@ -28,6 +28,8 @@ func _init(p_target_building: Building = null) -> void:
 	target = null
 	target_building = p_target_building
 	disallowed_age_bands = [HumanTypes.AgeBand.INFANT, HumanTypes.AgeBand.CHILD]
+	# Effetto della skill da costruttore (2026-09-27, SkillEffectService "build", stessa voce di BuildAction).
+	skill_effect_key = "build"
 
 
 # Validità (vedi Action.is_target_valid): l'edificio deve esistere ancora ed essere "da demolire".
@@ -53,7 +55,9 @@ func get_stamina_delta(individual: Variant, context: Dictionary, delta: float) -
 	if _get_labor_accumulated() >= get_required_labor():
 		return 0.0
 	var stamina_spent: float = STAMINA_DRAIN_PER_DAY * delta
-	target_building.construction_progress[LABOR_KEY] = _get_labor_accumulated() + stamina_spent
+	# Lavoro richiesto diviso per il fattore della skill, realizzato moltiplicando il lavoro aggiunto (come BuildAction).
+	var skill_factor := SkillEffectService.get_factor_for_action(self, individual, context)
+	target_building.construction_progress[LABOR_KEY] = _get_labor_accumulated() + stamina_spent * skill_factor
 	return -stamina_spent
 
 

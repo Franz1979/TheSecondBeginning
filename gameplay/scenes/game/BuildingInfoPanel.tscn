@@ -43,6 +43,10 @@ theme_override_font_sizes/font_size = 10
 flat = true
 text = "✕"
 
+[node name="BuiltYearLabel" type="Label" parent="."]
+layout_mode = 2
+theme_override_font_sizes/font_size = 10
+
 [node name="ConstructionPhaseLabel" type="Label" parent="."]
 layout_mode = 2
 visible = false
@@ -81,39 +85,11 @@ visible = false
 theme_override_constants/h_separation = 4
 theme_override_constants/v_separation = 4
 
-[node name="AwaitingFuelLabel" type="Label" parent="."]
-layout_mode = 2
-visible = false
-theme_override_colors/font_color = Color(0.95, 0.5, 0.15, 1)
-theme_override_font_sizes/font_size = 10
-autowrap_mode = 3
-
-[node name="ProductionInProgressLabel" type="Label" parent="."]
-layout_mode = 2
-visible = false
-theme_override_font_sizes/font_size = 10
-autowrap_mode = 3
-
 [node name="AssignedBuilderLabel" type="Label" parent="."]
 layout_mode = 2
 visible = false
 theme_override_font_sizes/font_size = 10
 autowrap_mode = 3
-
-[node name="ToolWaitLabel" type="Label" parent="."]
-layout_mode = 2
-visible = false
-theme_override_colors/font_color = Color(1, 0.8, 0.3, 1)
-theme_override_font_sizes/font_size = 10
-autowrap_mode = 3
-
-[node name="DurabilityLabel" type="Label" parent="."]
-layout_mode = 2
-theme_override_font_sizes/font_size = 10
-
-[node name="BuiltYearLabel" type="Label" parent="."]
-layout_mode = 2
-theme_override_font_sizes/font_size = 10
 
 [node name="ResidentsCaption" type="Label" parent="."]
 layout_mode = 2
@@ -163,12 +139,10 @@ visible = false
 theme_override_constants/h_separation = 4
 theme_override_constants/v_separation = 4
 
-[node name="SuspendedProductionLabel" type="Label" parent="."]
-layout_mode = 2
+[node name="ProductionSeparator" type="HSeparator" parent="."]
 visible = false
-theme_override_colors/font_color = Color(0.7, 0.7, 0.75, 1)
-theme_override_font_sizes/font_size = 10
-autowrap_mode = 3
+layout_mode = 2
+theme_override_constants/separation = 10
 
 [node name="ProductionRecipesCaption" type="Label" parent="."]
 layout_mode = 2
@@ -179,16 +153,75 @@ theme_override_font_sizes/font_size = 10
 layout_mode = 2
 visible = false
 
+[node name="ProductionStatusRow" type="HBoxContainer" parent="."]
+visible = false
+layout_mode = 2
+theme_override_constants/separation = 4
+
+[node name="ProductionStatusCaption" type="Label" parent="ProductionStatusRow"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 10
+
+[node name="ProductionStatusItems" type="HFlowContainer" parent="ProductionStatusRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/h_separation = 4
+theme_override_constants/v_separation = 4
+
+[node name="ProductionCancelButton" type="Button" parent="ProductionStatusRow"]
+visible = false
+layout_mode = 2
+size_flags_vertical = 0
+custom_minimum_size = Vector2(18, 18)
+mouse_default_cursor_shape = 2
+theme_override_colors/font_color = Color(0.9, 0.15, 0.15, 1)
+theme_override_colors/font_hover_color = Color(1, 0.3, 0.3, 1)
+theme_override_colors/font_pressed_color = Color(0.7, 0.1, 0.1, 1)
+theme_override_colors/font_focus_color = Color(0.9, 0.15, 0.15, 1)
+theme_override_colors/font_outline_color = Color(0.9, 0.15, 0.15, 1)
+theme_override_constants/outline_size = 2
+theme_override_font_sizes/font_size = 10
+flat = true
+text = "✕"
+
+[node name="AssignedWorkerLabel" type="Label" parent="."]
+visible = false
+layout_mode = 2
+theme_override_font_sizes/font_size = 10
+autowrap_mode = 3
+
+[node name="ToolWaitLabel" type="Label" parent="."]
+layout_mode = 2
+visible = false
+theme_override_colors/font_color = Color(1, 0.8, 0.3, 1)
+theme_override_font_sizes/font_size = 10
+autowrap_mode = 3
+
+[node name="ProductionNeedsCaption" type="Label" parent="."]
+visible = false
+layout_mode = 2
+theme_override_colors/font_color = Color(0.95, 0.75, 0.1, 1)
+theme_override_font_sizes/font_size = 10
+
+[node name="ProductionNeedsGrid" type="HFlowContainer" parent="."]
+visible = false
+layout_mode = 2
+theme_override_constants/h_separation = 4
+theme_override_constants/v_separation = 4
+
+[node name="SuspendedProductionLabel" type="Label" parent="."]
+layout_mode = 2
+visible = false
+theme_override_colors/font_color = Color(0.7, 0.7, 0.75, 1)
+theme_override_font_sizes/font_size = 10
+autowrap_mode = 3
+
 [node name="GroundPileCaption" type="Label" parent="."]
 layout_mode = 2
 theme_override_font_sizes/font_size = 11
 
 [node name="GroundPileContainer" type="VBoxContainer" parent="."]
 layout_mode = 2
-
-[node name="IdLabel" type="Label" parent="."]
-layout_mode = 2
-theme_override_font_sizes/font_size = 10
 
 [node name="SettingsSeparator" type="HSeparator" parent="."]
 layout_mode = 2

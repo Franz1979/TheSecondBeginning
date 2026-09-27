@@ -36,6 +36,13 @@ extends RefCounted
 # direttamente in stored_resources né nello zaino. Se l'edificio ha storage con posto, il buffer si
 # travasa lì (flush_output_to_storage: al completamento, dopo ogni prelievo e una volta al giorno);
 # a buffer pieno nessun nuovo ciclo avanza né si completa (has_output_room).
+#
+# INGREDIENTI DAL BUFFER (2026-09-27, richiesta utente — la sacca di pelle al focolare aspettava la corda prodotta
+# dallo stesso focolare): una ricetta può usare i propri ingredienti anche dal buffer di uscita della STESSA
+# postazione. Disponibile = stored_resources + production_output (get_input_available), letto da ogni controllo
+# degli ingredienti (get_missing_inputs_for/_for_recipes, quindi ProduceAction, pannello e get_production_demand);
+# al consumo (complete_production) prima lo storage, poi il buffer per quello che manca (_consume_input). Il
+# combustibile resta solo dallo storage; consegna automatica al magazzino e limite del buffer invariati.
 
 
 # true se `building` può produrre `resource_name` ADESSO: edificio completo, non demolito né "da demolire"
@@ -208,8 +215,25 @@ static func get_required_labor(building: Building, resource_name: String) -> flo
 	return recipe_rules.recipe_labor * multiplier
 
 
-# Materiali mancanti per UN ciclo della ricetta di `resource_name`: recipe_inputs meno quanto c'è
-# già in building.stored_resources — {resource_name: missing_quantity}, stessa forma di
+# Quantità di `input_name` utilizzabile come ingrediente presso `building`: stored_resources più il buffer di uscita
+# della stessa postazione (2026-09-27, vedi INGREDIENTI DAL BUFFER in testa al file).
+static func get_input_available(building: Building, input_name: String) -> int:
+	if building == null:
+		return 0
+	var stored_entry: Dictionary = building.stored_resources.get(input_name, {})
+	return int(stored_entry.get("quantity", 0)) + int(building.production_output.get(input_name, 0))
+
+
+# Consuma `required` unità dell'ingrediente `input_name`: prima da stored_resources, poi dal buffer di uscita per
+# quello che manca (2026-09-27). Il chiamante ha già verificato la disponibilità (get_missing_inputs_for).
+static func _consume_input(building: Building, input_name: String, required: int) -> void:
+	var from_storage := BuildingStorageService.withdraw_stored(building, input_name, required)
+	if from_storage < required:
+		withdraw_output(building, input_name, required - from_storage)
+
+
+# Materiali mancanti per UN ciclo della ricetta di `resource_name`: recipe_inputs meno quanto è già disponibile
+# (stored_resources più buffer di uscita, get_input_available) — {resource_name: missing_quantity}, stessa forma di
 # BuildAction.get_missing_materials. Vuoto = nulla manca.
 static func get_missing_inputs_for(building: Building, resource_name: String) -> Dictionary:
 	var missing: Dictionary = {}
@@ -222,9 +246,7 @@ static func get_missing_inputs_for(building: Building, resource_name: String) ->
 		var required: int = int(recipe_rules.recipe_inputs[input_name])
 		if required <= 0:
 			continue
-		var stored_entry: Dictionary = building.stored_resources.get(input_name, {})
-		var stored: int = int(stored_entry.get("quantity", 0))
-		var missing_quantity: int = max(required - stored, 0)
+		var missing_quantity: int = max(required - get_input_available(building, String(input_name)), 0)
 		if missing_quantity > 0:
 			missing[String(input_name)] = missing_quantity
 	return missing
@@ -254,9 +276,9 @@ static func get_missing_inputs_for_recipes(building: Building, recipe_names: Arr
 			var required: int = int(recipe_rules.recipe_inputs[input_name]) * cycles
 			if required > 0:
 				required_totals[String(input_name)] = int(required_totals.get(String(input_name), 0)) + required
+	# Disponibile = storage più buffer di uscita (2026-09-27, get_input_available).
 	for input_name in required_totals.keys():
-		var stored_entry: Dictionary = building.stored_resources.get(input_name, {})
-		var missing_quantity: int = max(int(required_totals[input_name]) - int(stored_entry.get("quantity", 0)), 0)
+		var missing_quantity: int = max(int(required_totals[input_name]) - get_input_available(building, String(input_name)), 0)
 		if missing_quantity > 0:
 			missing[input_name] = missing_quantity
 	return missing
@@ -559,8 +581,8 @@ static func complete_production(building: Building, active_name: String) -> int:
 	for input_name in recipe_rules.recipe_inputs.keys():
 		var required: int = int(recipe_rules.recipe_inputs[input_name])
 		if required > 0:
-			# Solo da stored_resources: gli input non stanno mai nel buffer di uscita.
-			BuildingStorageService.withdraw_stored(building, String(input_name), required)
+			# Prima lo storage, poi il buffer di uscita della stessa postazione (2026-09-27, _consume_input).
+			_consume_input(building, String(input_name), required)
 	_consume_fuel(building, get_required_fuel(building, active_name))
 
 	var produced: int = max(recipe_rules.recipe_output_quantity, 0)

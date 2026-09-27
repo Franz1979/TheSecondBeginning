@@ -86,6 +86,12 @@ var _pan_offset := Vector2.ZERO
 # prima, da riempimento pieno, non succedeva) — border_width ricalcolato ad ogni riposizionamento
 # in _update_player_marker, mai più di metà cella per lato così resta sempre dentro i suoi confini.
 var _player_marker_style := StyleBoxFlat.new()
+# Layer della mappa (2026-09-27, richiesta utente — menu "Layer", MapLayerRegistry): un Control a tutto riquadro sopra
+# la mappa (figlio di MapTextureRect, quindi segue zoom e pan) che chiama _layer_drawer a ogni ridisegno con
+# (canvas, cell_px, visible_cells). Callable non valida = nessun layer disegnato.
+var _layer_overlay: Control = null
+var _layer_drawer: Callable = Callable()
+var _visible_cells: Dictionary = {}
 
 
 func _ready() -> void:
@@ -108,6 +114,34 @@ func _ready() -> void:
 	# larghezza a runtime (oggi non succede, ma non richiede alcuna logica speciale qui).
 	resized.connect(_on_panel_resized)
 	_on_panel_resized()
+	_layer_overlay = Control.new()
+	_layer_overlay.name = "LayerOverlay"
+	_layer_overlay.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_layer_overlay.anchor_right = 1.0
+	_layer_overlay.anchor_bottom = 1.0
+	_layer_overlay.draw.connect(_draw_layer_overlay)
+	map_texture_rect.add_child(_layer_overlay)
+	map_texture_rect.move_child(_layer_overlay, 0)
+
+
+# Imposta chi disegna il layer attivo sulla minimappa (Callable(canvas: Control, cell_px: float, visible_cells:
+# Dictionary)), o lo toglie con una Callable non valida (2026-09-27, menu dei layer).
+func set_layer_drawer(drawer: Callable) -> void:
+	_layer_drawer = drawer
+	if _layer_overlay != null:
+		_layer_overlay.queue_redraw()
+
+
+# Ridisegna il layer attivo (2026-09-27): per un layer i cui dati cambiano senza che cambi la visibilità delle celle
+# (es. una zona di lavoro appena creata).
+func refresh_layer() -> void:
+	if _layer_overlay != null:
+		_layer_overlay.queue_redraw()
+
+
+func _draw_layer_overlay() -> void:
+	if _layer_drawer.is_valid():
+		_layer_drawer.call(_layer_overlay, _cell_px(), _visible_cells)
 
 
 func setup(world: World) -> void:
@@ -133,6 +167,10 @@ func update_visibility(live_cells: Dictionary, player_macro_coords: Vector2i) ->
 	map_texture_rect.texture = ImageTexture.create_from_image(display)
 	_player_macro_coords = player_macro_coords
 	_update_player_marker()
+	# Celle visibili per il layer attivo (2026-09-27): il layer non disegna mai sulle celle ancora nere.
+	_visible_cells = live_cells
+	if _layer_overlay != null:
+		_layer_overlay.queue_redraw()
 
 
 # Dimensione (in pixel schermo) di UNA macrocella all'attuale zoom, calcolata da _square_size/_zoom
@@ -237,6 +275,8 @@ func _apply_zoom() -> void:
 	var new_size := Vector2(_square_size, _square_size) * _zoom
 	map_texture_rect.custom_minimum_size = new_size
 	map_texture_rect.size = new_size
+	if _layer_overlay != null:
+		_layer_overlay.queue_redraw()
 	_clamp_pan_offset()
 	map_texture_rect.position = -_pan_offset
 	_update_zoom_buttons()

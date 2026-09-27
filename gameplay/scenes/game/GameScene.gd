@@ -277,7 +277,7 @@ var human_individual_views: Array[HumanIndividualView] = []
 # MICROCELL aggiunto (2026-09-16, richiesta utente — ispezione con doppio click sinistro): settimo
 # tipo, stessa mutua esclusione a N vie degli altri sei (vedi _select_microcell/
 # _clear_microcell_selection).
-enum SelectionKind { NONE, INDIVIDUAL, VEGETATION, BUILDING, DEAD_BODY, STONE, STICK_LOT, MICROCELL, ANIMAL, GROUND_PILE }
+enum SelectionKind { NONE, INDIVIDUAL, VEGETATION, BUILDING, DEAD_BODY, STONE, STICK_LOT, MICROCELL, ANIMAL, GROUND_PILE, WORK_AREA }
 var _selection_kind: SelectionKind = SelectionKind.NONE
 
 # Click-detection su un singolo individuo di vegetazione (TREE/SHRUB) — vedi
@@ -322,6 +322,9 @@ const GROUND_PILE_SELECT_RADIUS_PX: float = 5.0
 const GROUND_PILE_OVER_WALKABLE_RADIUS_PX: float = 2.5
 var ground_pile_info_panel: GroundPileInfoPanel
 var selected_ground_pile_id: int = -1
+# Zona di lavoro selezionata (2026-09-27, richiesta utente — work areas, passo 1b): pannello e id (-1 = nessuna).
+var work_area_info_panel: WorkAreaInfoPanel
+var selected_work_area_id: int = -1
 var _ground_pile_views: Dictionary = {}  # pile id -> GroundPileView
 # Gruppi di visitatori (2026-09-27, gameplay/visitors/): id del gruppo -> VisitorPartyView. Allineato ogni
 # frame da _sync_visitor_party_views, sullo schema di _ground_pile_views.
@@ -330,6 +333,11 @@ var _visitor_party_views: Dictionary = {}
 # della macrocella corrente). Vedi _sync_pathfinding_overlay.
 var _pathfinding_overlay_enabled: bool = false
 var _pathfinding_overlay: PathfindingDebugOverlay = null
+# Layer della mappa (2026-09-27, richiesta utente — menu "Layer" della barra in alto, MapLayerRegistry): id del layer
+# attivo (MapLayerRegistry.NONE_ID = nessuno), il suo overlay sulla macrocella corrente e il menu a tendina.
+var _active_map_layer_id: String = MapLayerRegistry.NONE_ID
+var _map_layer_overlay: Node2D = null
+var _map_layers_menu: MapLayersMenu = null
 # Ultimo stato mostrato nel pannello [id, revisione, giorno assoluto]: si ridisegna solo quando cambia.
 var _ground_pile_panel_key: Array = []
 # individual_id -> DeadBodyView (bugfix, 2026-09-05: serve per accendere/spegnere il cerchiolino
@@ -551,6 +559,8 @@ func _ready() -> void:
 	game_info_panel.primary_actions_bar.action_pressed.connect(_on_primary_action_pressed)
 	game_info_panel.secondary_actions_bar.action_pressed.connect(_on_secondary_action_pressed)
 	build_bar.submenu_row.action_pressed.connect(_on_build_submenu_action_pressed)
+	# Zone di lavoro (2026-09-27, richiesta utente): bottone accanto al martello, vedi _on_build_main_row_action_pressed.
+	build_bar.main_row.action_pressed.connect(_on_build_main_row_action_pressed)
 	# Controllo a schede (richiesta utente, 2026-09-01, sostituisce lo spacer elastico +
 	# minimap_panel/vegetation_info_panel diretti usati prima — vedi GameInfoTabs.gd) — unico
 	# figlio diretto di body_container: size_flags_vertical=3 (impostato nel suo stesso .tscn) gli
@@ -633,6 +643,13 @@ func _ready() -> void:
 	# ground_pile_info_panel (2026-09-26, ground drop) — altro sibling nella STESSA SelectionTab.
 	ground_pile_info_panel = GROUND_PILE_INFO_PANEL_SCENE.instantiate()
 	game_info_tabs.selection_content.add_child(ground_pile_info_panel)
+	# work_area_info_panel (2026-09-27, zone di lavoro) — altro sibling nella STESSA SelectionTab, costruito in codice.
+	work_area_info_panel = WorkAreaInfoPanel.new()
+	game_info_tabs.selection_content.add_child(work_area_info_panel)
+	work_area_info_panel.area_changed.connect(_on_work_area_changed)
+	work_area_info_panel.redraw_requested.connect(func(area: WorkArea) -> void: _enter_work_area_draw_mode(area.id))
+	work_area_info_panel.delete_requested.connect(_on_work_area_delete_requested)
+	work_area_info_panel.center_requested.connect(func(_area: WorkArea) -> void: _center_camera_on_selection())
 	# stone_info_panel (2026-09-08, richiesta utente) — quinto sibling nella STESSA SelectionTab,
 	# stesso identico principio "componente muto" degli altri quattro.
 	stone_info_panel = STONE_INFO_PANEL_SCENE.instantiate()
@@ -701,7 +718,9 @@ func _ready() -> void:
 	# trasportare resta un'azione rapida durante il gioco in corso, a differenza degli altri pannelli
 	# (idea/statistiche/opzioni/conferma), pensati per essere consultati con calma a tempo fermo.
 	transport_source_dialog.resource_chosen.connect(_on_transport_source_resource_chosen)
-	building_info_panel.produce_requested.connect(_enter_produce_assign_mode)
+	# Griglia delle ricette (2026-09-27, richiesta utente — prima produce_requested dai bottoni "Produci …"): vedi
+	# _on_production_order_changed.
+	building_info_panel.production_order_changed.connect(_on_production_order_changed)
 	pickup_choice_dialog.choice_made.connect(_on_pickup_choice_made)
 	# Demolisci dal pannello edificio (2026-09-27, richiesta utente — prima era un bottone della BuildBar con una
 	# modalità "scegli bersaglio"): apre DemolishConfirmationDialog sull'edificio mostrato.
@@ -1239,6 +1258,10 @@ func _process(delta: float) -> void:
 	_sync_visitor_party_views()
 	if _pathfinding_overlay_enabled or _pathfinding_overlay != null:
 		_sync_pathfinding_overlay()
+	if _active_map_layer_id != MapLayerRegistry.NONE_ID or _map_layer_overlay != null:
+		_sync_map_layer_overlay()
+	if selected_work_area_id != -1 or _work_area_selection_overlay != null:
+		_sync_work_area_selection_overlay()
 	_open_pending_visitor_decision()
 	_sync_dropped_weapon_markers()
 	_sync_ground_pile_views()
@@ -1339,6 +1362,11 @@ func _unhandled_input(event: InputEvent) -> void:
 	# Modalità "scegli il lavoratore" (2026-09-23 Produce, generica dal 2026-09-27) — stessa priorità del blocco
 	# sopra: finché è attiva, i click servono solo a scegliere l'individuo (o ad annullare).
 	if _worker_pick_on_pick.is_valid() and _handle_worker_pick_input(event):
+		return
+
+	# Modalità "disegna area" (2026-09-27, richiesta utente — zone di lavoro): stessa priorità dei blocchi sopra, vedi
+	# _handle_work_area_draw_input.
+	if _work_area_draw_active and _handle_work_area_draw_input(event):
 		return
 
 	# Ispezione microcella con DOPPIO click sinistro (2026-09-16, richiesta utente) — SEMPRE
@@ -1488,6 +1516,7 @@ func _unhandled_input(event: InputEvent) -> void:
 			_clear_microcell_selection() # mutua esclusione a 8 vie (2026-09-25, con gli animali)
 			_clear_animal_selection()
 			_clear_ground_pile_selection()
+			_clear_work_area_selection()
 			# Selezione di un individuo umano QUALSIASI (richiesta utente, 2026-09-02) — hit-test
 			# puro via HumanIndividualSelectorController (non tocca mai is_selected da sé), mutua
 			# esclusione applicata qui: al più un individuo selezionato alla volta in tutto
@@ -1506,6 +1535,8 @@ func _unhandled_input(event: InputEvent) -> void:
 				_set_movement_target(hit_individual)
 				world_object_selected.emit(get_global_mouse_position())
 			else:
+				# Le zone di lavoro NON si selezionano da qui (2026-09-27, richiesta utente): il layer "Aree di lavoro"
+				# è solo in lettura, le zone si gestiscono solo dalla modalità zone (_finish_work_area_drag).
 				_clear_individual_selection()
 				# Fallback "seleziona il lotto/la cella" RIMOSSO (2026-09-16, richiesta utente — vedi
 				# il commento esteso sopra su map_hit_kind): un click sinistro che non colpisce nessun
@@ -1656,6 +1687,11 @@ func _unhandled_input(event: InputEvent) -> void:
 	if DebugLogging.ENABLED and event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_N:
 		_pathfinding_overlay_enabled = not _pathfinding_overlay_enabled
 		_sync_pathfinding_overlay()
+
+	# Layer della mappa (2026-09-27, richiesta utente) — tasto L: passa al layer disponibile successivo, in ordine,
+	# compreso "Nessuno" (MapLayerRegistry.get_cycle_ids). Non è un comando di debug.
+	if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_L:
+		_cycle_map_layer()
 
 	# Tasto U LIBERATO (2026-09-16, richiesta utente) — prima lanciava il TEST TEMPORANEO end-to-end
 	# "haul_resource" (_debug_test_haul_resource_task sotto), che il proprio commento originale
@@ -2681,6 +2717,14 @@ func _spawn_idea_deposit_effect(individual: HumanIndividual) -> void:
 #     MicroCellRenderer.get_building_screen_position, l'equivalente per gli edifici.
 func _center_camera_on_selection(animated: bool = true) -> void:
 	match _selection_kind:
+		# Zona di lavoro (2026-09-27): centro del rettangolo, stessa traduzione cross-macrocella degli altri rami.
+		SelectionKind.WORK_AREA:
+			var work_area := WorkAreaService.find_by_id(game_data, selected_work_area_id)
+			if work_area == null:
+				return
+			var area_center: Vector2 = (Vector2(work_area.rect.position) + Vector2(work_area.rect.size) / 2.0) * MicroCellRenderer.CELL_SIZE
+			var area_macro_offset := Vector2(work_area.macro_coords - center_macro_coords) * MACRO_CELL_PIXELS
+			_animate_camera_to(area_center + area_macro_offset, animated)
 		SelectionKind.INDIVIDUAL:
 			_center_camera_on_individual(animated)
 		SelectionKind.VEGETATION:
@@ -2832,6 +2876,7 @@ func _on_population_individual_center_requested(target: HumanIndividual, source:
 	_clear_microcell_selection()
 	_clear_animal_selection()
 	_clear_ground_pile_selection()
+	_clear_work_area_selection()
 	_deselect_all_human_individuals()
 	target.is_selected = true
 	_selection_kind = SelectionKind.INDIVIDUAL
@@ -2885,6 +2930,7 @@ func _select_vegetation(hit: Dictionary) -> void:
 	_clear_microcell_selection()
 	_clear_animal_selection()
 	_clear_ground_pile_selection()
+	_clear_work_area_selection()
 	selected_vegetation = hit
 	_selection_kind = SelectionKind.VEGETATION
 	_refresh_vegetation_panel()
@@ -2930,6 +2976,7 @@ func _select_building(hit: Dictionary) -> void:
 	_clear_microcell_selection()
 	_clear_animal_selection()
 	_clear_ground_pile_selection()
+	_clear_work_area_selection()
 	selected_building = hit
 	_selection_kind = SelectionKind.BUILDING
 	_refresh_building_panel()
@@ -2965,9 +3012,10 @@ func _refresh_building_panel() -> void:
 	_reconcile_production_units(building)
 	building_info_panel.show_building(building, _resolve_building_residents_display_data(building), _resolve_names_working_on_building(building, BUILD_TASK_NAMES), _resolve_names_working_on_building(building, PRODUCE_TASK_NAMES), _resolve_production_claimed_recipes(building), _resolve_production_tool_wait_lines(building), _resolve_names_working_on_building(building, DEMOLISH_TASK_NAMES))
 	building_info_panel.show_ground_pile(_ground_pile_lines_at(Vector2i(building.macro_x, building.macro_y), Vector2i(building.micro_x, building.micro_y)))
-	# Titolo (Step 6, richiesta utente 2026-09-04) — stessa formula già in BuildingInfoPanel.
+	# Titolo (Step 6, richiesta utente 2026-09-04) — stessa formula già in BuildingInfoPanel. Dal 2026-09-27 (richiesta
+	# utente, riorganizzazione del pannello edificio) sulla riga del titolo c'è anche l'ID, prima in fondo al pannello.
 	var type_name: String = tr(building.rules.building_name) if building.rules != null else building.building_type_name
-	game_info_tabs.set_selection_title(tr("selection_title_type").format({"type": type_name}))
+	game_info_tabs.set_selection_title(tr("building_selection_title").format({"type": type_name, "id": building.id}))
 
 
 # Dati di presentazione per la griglia residenti del pannello edificio (2026-09-12, richiesta
@@ -3168,6 +3216,7 @@ func _select_stone(hit: Dictionary) -> void:
 	_clear_microcell_selection()
 	_clear_animal_selection()
 	_clear_ground_pile_selection()
+	_clear_work_area_selection()
 
 	selected_stone = hit
 	_selection_kind = SelectionKind.STONE
@@ -3231,6 +3280,7 @@ func _select_animal(hit: Dictionary) -> void:
 	_clear_stick_lot_selection()
 	_clear_microcell_selection() # mutua esclusione a 8 vie (2026-09-25, con gli animali)
 	_clear_ground_pile_selection()
+	_clear_work_area_selection()
 
 	selected_animal = hit
 	_selection_kind = SelectionKind.ANIMAL
@@ -4175,6 +4225,7 @@ func _select_microcell(hit: Dictionary) -> void:
 	_clear_stick_lot_selection() # mutua esclusione a 7 vie (2026-09-16, prima "a 6 vie")
 	_clear_animal_selection()
 	_clear_ground_pile_selection()
+	_clear_work_area_selection()
 
 	selected_microcell = hit
 	_selection_kind = SelectionKind.MICROCELL
@@ -4572,6 +4623,9 @@ func _assign_resumable_building_task(worker: HumanIndividual, hit_building: Buil
 # stile di quello della Transport) e cursore a cerchietto rosso. _worker_pick_on_pick valido = modalità attiva.
 var _worker_pick_on_pick: Callable = Callable()
 var _worker_pick_on_cancel: Callable = Callable()
+# true mentre la scelta del lavoratore attiva è quella della produzione (2026-09-27): la griglia delle ricette la chiude
+# quando l'ordine torna a 0, senza toccare quella del demolitore.
+var _produce_pick_active: bool = false
 # Cursore della modalità (2026-09-25, richiesta utente — sostituisce il cursore a croce di sistema,
 # CURSOR_CROSS): un cerchietto rosso generato via codice una sola volta (_get_worker_pick_cursor), con
 # l'hotspot al centro del cerchio.
@@ -4609,11 +4663,30 @@ func _enter_produce_assign_mode(building: Building, resource_name: String, quant
 		_refresh_selected_building_panel()
 		return
 	var order_quantity := clampi(quantity, 1, ProductionService.get_max_order_quantity(building))
+	# Dopo l'assegnazione, o uscendo senza scegliere, l'ordine preparato nella griglia del pannello torna a 0
+	# (2026-09-27, richiesta utente).
 	var on_pick := func(worker: HumanIndividual) -> void:
 		_assign_produce_task(worker, building, resource_name, order_quantity, deliver_to_warehouse)
+		building_info_panel.reset_production_order()
+	var on_cancel := func() -> void:
+		building_info_panel.reset_production_order()
 	_enter_worker_pick_mode(
-		tr("produce_assign_banner_text").format({"resource": _format_production_order(resource_name, order_quantity)}), on_pick
+		tr("produce_assign_banner_text").format({"resource": _format_production_order(resource_name, order_quantity)}), on_pick, on_cancel
 	)
+	_produce_pick_active = true
+
+
+# Ordine cambiato nella griglia delle ricette del pannello (2026-09-27, richiesta utente): quantità > 0 = apre (o
+# aggiorna, con la quantità nuova) la scelta del lavoratore della produzione; 0 = la chiude, se è quella della
+# produzione. Se la produzione non può partire (buffer pieno, postazione impegnata) l'ordine torna a 0.
+func _on_production_order_changed(building: Building, resource_name: String, quantity: int, deliver_to_warehouse: bool) -> void:
+	if quantity <= 0:
+		if _produce_pick_active:
+			_exit_worker_pick_mode()
+		return
+	_enter_produce_assign_mode(building, resource_name, quantity, deliver_to_warehouse)
+	if not _produce_pick_active:
+		building_info_panel.reset_production_order()
 
 
 # Scelta del demolitore (2026-09-27, richiesta utente) per un edificio "da demolire": l'individuo scelto riceve la
@@ -4636,6 +4709,8 @@ func _enter_demolisher_pick_mode(building: Building, cancel_demolition_on_exit: 
 
 
 func _enter_worker_pick_mode(banner_text: String, on_pick: Callable, on_cancel: Callable = Callable()) -> void:
+	# La produzione lo rimette a true subito dopo (_enter_produce_assign_mode); ogni altra scelta lo lascia false.
+	_produce_pick_active = false
 	_worker_pick_on_pick = on_pick
 	_worker_pick_on_cancel = on_cancel
 	if worker_pick_banner_label != null:
@@ -4649,6 +4724,7 @@ func _enter_worker_pick_mode(banner_text: String, on_pick: Callable, on_cancel: 
 func _exit_worker_pick_mode() -> void:
 	_worker_pick_on_pick = Callable()
 	_worker_pick_on_cancel = Callable()
+	_produce_pick_active = false
 	if worker_pick_banner != null:
 		worker_pick_banner.visible = false
 	Input.set_custom_mouse_cursor(null, Input.CURSOR_ARROW)
@@ -5521,6 +5597,78 @@ func _sync_pathfinding_overlay() -> void:
 		])
 
 
+# --- Layer della mappa (2026-09-27, richiesta utente — menu "Layer") ---
+# Menu a tendina sotto il bottone "Layer" (MapLayersMenu: un PanelContainer nel CanvasLayer dell'interfaccia, accanto
+# al pannello laterale — non più un PopupMenu, che come finestra separata usava tema e misure di default ed era enorme
+# e sfocato): "Nessuno" più le voci di MapLayerRegistry, in ordine, una alla volta, i non disponibili in grigio con il
+# tooltip "In arrivo". Si chiude scegliendo una voce o cliccando fuori. Ricostruito a ogni apertura (lingua e stato);
+# un secondo clic sul bottone lo richiude.
+func _open_map_layers_menu() -> void:
+	if _map_layers_menu == null:
+		_map_layers_menu = MapLayersMenu.new()
+		_map_layers_menu.layer_chosen.connect(_set_active_map_layer)
+		$CanvasLayer.add_child(_map_layers_menu)
+	if _map_layers_menu.visible:
+		_map_layers_menu.close()
+		return
+	var button: Control = game_info_panel.primary_actions_bar.get_slot_button(GameInfoPanel.MAP_LAYERS_SLOT_INDEX)
+	var anchor_rect := button.get_global_rect() if button != null else Rect2()
+	var sidebar := $CanvasLayer/Sidebar as Control
+	var bounds := sidebar.get_global_rect() if sidebar != null else get_viewport().get_visible_rect()
+	var panel_style: StyleBox = sidebar.get_theme_stylebox("panel") if sidebar != null else null
+	_map_layers_menu.open(_active_map_layer_id, anchor_rect, bounds, panel_style)
+
+
+# Tasto L: il layer disponibile successivo a quello attivo, "Nessuno" compreso, poi da capo.
+func _cycle_map_layer() -> void:
+	var ids := MapLayerRegistry.get_cycle_ids()
+	var current_index: int = ids.find(_active_map_layer_id)
+	_set_active_map_layer(ids[(current_index + 1) % ids.size()])
+
+
+# Attiva un layer (o nessuno): segnale sul bottone, overlay sulla mappa, disegno sulla minimappa. Un layer non
+# disponibile non si attiva.
+func _set_active_map_layer(layer_id: String) -> void:
+	if layer_id != MapLayerRegistry.NONE_ID and not MapLayerRegistry.is_available(layer_id):
+		return
+	_active_map_layer_id = layer_id
+	if game_info_panel.map_layers_icon != null:
+		game_info_panel.map_layers_icon.active = layer_id != MapLayerRegistry.NONE_ID
+	_sync_map_layer_overlay()
+	if MapLayerRegistry.has_minimap_drawing(layer_id):
+		var drawer := func(canvas: Control, cell_px: float, visible_cells: Dictionary) -> void:
+			MapLayerRegistry.draw_minimap(layer_id, canvas, cell_px, macro_world, visible_cells)
+		minimap_panel.set_layer_drawer(drawer)
+	else:
+		minimap_panel.set_layer_drawer(Callable())
+
+
+# Overlay del layer attivo sulla macrocella corrente (center_macro_coords), stesso schema di _sync_pathfinding_overlay:
+# spostato quando la macrocella corrente cambia, ricreato se il layer cambia, tolto con "Nessuno" o cella non viva.
+# L'overlay si ridisegna da sé (vedi il suo script nel registro).
+var _map_layer_overlay_layer_id: String = MapLayerRegistry.NONE_ID
+
+func _sync_map_layer_overlay() -> void:
+	var cell: LiveMacroCell = live_cells.get(center_macro_coords) if _active_map_layer_id != MapLayerRegistry.NONE_ID else null
+	if _map_layer_overlay != null and (
+		not is_instance_valid(_map_layer_overlay) or cell == null or _map_layer_overlay_layer_id != _active_map_layer_id
+		or _map_layer_overlay.call("get_cell") != cell or _map_layer_overlay.get_parent() != cell.container
+	):
+		if is_instance_valid(_map_layer_overlay):
+			_map_layer_overlay.queue_free()
+		_map_layer_overlay = null
+	if cell == null or cell.container == null or _map_layer_overlay != null:
+		return
+	var overlay := MapLayerRegistry.create_map_overlay(_active_map_layer_id)
+	if overlay == null:
+		return
+	overlay.z_index = 20
+	cell.container.add_child(overlay)
+	overlay.call("show_cell", cell)
+	_map_layer_overlay = overlay
+	_map_layer_overlay_layer_id = _active_map_layer_id
+
+
 # Primo gruppo (il più vecchio) nella fase data, o null.
 func _find_visitor_party_in_phase(phase: VisitorTypes.Phase) -> VisitorParty:
 	if game_data == null:
@@ -5734,6 +5882,7 @@ func _select_stick_lot(hit: Dictionary) -> void:
 	_clear_microcell_selection()
 	_clear_animal_selection()
 	_clear_ground_pile_selection()
+	_clear_work_area_selection()
 
 	selected_stick_lot = hit
 	_selection_kind = SelectionKind.STICK_LOT
@@ -5791,6 +5940,7 @@ func _select_dead_body(hit: Dictionary) -> void:
 	_clear_microcell_selection()
 	_clear_animal_selection()
 	_clear_ground_pile_selection()
+	_clear_work_area_selection()
 
 	selected_dead_body_individual_id = hit["individual_id"]
 	_set_dead_body_view_selected(selected_dead_body_individual_id, true)
@@ -8957,6 +9107,9 @@ func _on_primary_action_pressed(action_id: StringName) -> void:
 		# Slot 1, accanto alle statistiche (2026-09-07, richiesta utente) — 💡, apre TechTreePanel.
 		&"tech_tree":
 			tech_tree_panel.open_dialog(human_folk, game_data)
+		# Slot 2 (2026-09-27): menu a tendina dei layer della mappa.
+		&"map_layers":
+			_open_map_layers_menu()
 
 
 # toggle_animals_visibility/toggle_flora_updates/world_debug/macro_cell_debug — vissuti prima
@@ -9009,6 +9162,9 @@ func _on_build_submenu_action_pressed(action_id: StringName) -> void:
 	if _building_ghost != null:
 		_clear_building_ghost()
 		return
+	# Modalità esclusive (2026-09-27): scegliere un edificio chiude il disegno delle zone di lavoro.
+	if _work_area_draw_active:
+		_exit_work_area_draw_mode()
 	_selected_building_type_name = building_type_name
 	_building_ghost = BuildingGhost.new()
 	# Quale sagoma disegnare durante l'anteprima (2026-09-07, richiesta utente, Pebble Circle) — vedi
@@ -9369,6 +9525,243 @@ func _refresh_building_slots_buildable() -> void:
 			continue
 		var availability := _building_type_availability(rules)
 		build_bar.set_building_buildable(building_type_name, availability["is_buildable"], availability["disabled_tooltip"])
+	# Zone di lavoro (2026-09-27, richiesta utente): stesso ricalcolo, stesso tooltip "Richiede: …" degli edifici.
+	var work_areas_available := _is_work_areas_tool_available()
+	var required_idea := IdeaCalculator.get_idea(WorkAreaTypes.REQUIRED_IDEA_ID)
+	var required_idea_name: String = tr(required_idea.display_name) if required_idea != null else WorkAreaTypes.REQUIRED_IDEA_ID
+	build_bar.set_work_areas_available(work_areas_available, tr("build_bar_requires_idea_tooltip").format({"idea": required_idea_name}))
+	if not work_areas_available and _work_area_draw_active:
+		_exit_work_area_draw_mode()
+
+
+# --- Zone di lavoro (2026-09-27, richiesta utente — work areas, passo 1a) ---
+# Modalità "disegna area": bottone della barra in basso (acceso solo con l'idea work_areas completata). Banner giallo,
+# pressione-trascinamento-rilascio del tasto sinistro crea una zona (WorkAreaService.create), limitata alla macrocella
+# in cui è iniziato il trascinamento e a WorkAreaTypes.MAX_SIDE × MAX_SIDE, con l'anteprima e le misure. Si resta in
+# modalità dopo ogni zona; Esc o clic destro escono. Durante la modalità il layer "Aree di lavoro" è acceso; all'uscita
+# torna il layer di prima.
+const WORK_AREA_LAYER_ID := "work_areas"
+var _work_area_draw_active: bool = false
+var _work_area_layer_before_draw: String = MapLayerRegistry.NONE_ID
+# Trascinamento in corso: cella viva e microcella di partenza; cella null = nessun trascinamento.
+var _work_area_drag_cell: LiveMacroCell = null
+var _work_area_drag_start: Vector2i = Vector2i.ZERO
+var _work_area_drag_preview: WorkAreaDragPreview = null
+var work_area_draw_banner: PanelContainer
+
+
+func _is_work_areas_tool_available() -> bool:
+	return human_folk != null and human_folk.completed_ideas.has(WorkAreaTypes.REQUIRED_IDEA_ID)
+
+
+func _on_build_main_row_action_pressed(action_id: StringName) -> void:
+	if action_id != BuildBar.WORK_AREAS_ACTION:
+		return
+	if _work_area_draw_active:
+		_exit_work_area_draw_mode()
+	elif _is_work_areas_tool_available():
+		_enter_work_area_draw_mode()
+
+
+# redraw_area_id (2026-09-27, "Ridisegna" del pannello): id della zona il cui rettangolo va sostituito, -1 = zona nuova.
+var _work_area_redraw_id: int = -1
+# Un trascinamento crea (o ridisegna) una zona solo se copre almeno questo numero di microcelle su uno dei lati; sotto
+# è un clic, che seleziona la zona sotto il mouse.
+const WORK_AREA_MIN_DRAG_SIDE: int = 2
+
+func _enter_work_area_draw_mode(redraw_area_id: int = -1) -> void:
+	_work_area_redraw_id = redraw_area_id
+	# Modalità esclusive: via il fantasma di un edificio e la scelta di un lavoratore.
+	if _building_ghost != null:
+		_clear_building_ghost()
+	if _worker_pick_on_pick.is_valid():
+		_exit_worker_pick_mode()
+	_work_area_draw_active = true
+	_work_area_layer_before_draw = _active_map_layer_id
+	_set_active_map_layer(WORK_AREA_LAYER_ID)
+	build_bar.main_row.set_slot_toggled(BuildBar.WORK_AREAS_MAIN_ROW_SLOT_INDEX, true)
+	if work_area_draw_banner != null:
+		work_area_draw_banner.visible = true
+
+
+# All'uscita il layer torna a quello di prima; la zona eventualmente selezionata resta comunque visibile
+# (_sync_work_area_selection_overlay).
+func _exit_work_area_draw_mode(restore_layer: bool = true) -> void:
+	_work_area_draw_active = false
+	_work_area_redraw_id = -1
+	_cancel_work_area_drag()
+	if restore_layer:
+		_set_active_map_layer(_work_area_layer_before_draw)
+	build_bar.main_row.set_slot_toggled(BuildBar.WORK_AREAS_MAIN_ROW_SLOT_INDEX, false)
+	if work_area_draw_banner != null:
+		work_area_draw_banner.visible = false
+
+
+# Consuma l'evento mentre la modalità è attiva (chiamata SOLO da _unhandled_input). Esc o clic destro: esce. Sinistro
+# premuto su una cella viva: inizio del trascinamento; movimento: anteprima; sinistro rilasciato: crea la zona. Gli
+# altri eventi (camera, tasti) passano oltre.
+func _handle_work_area_draw_input(event: InputEvent) -> bool:
+	if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_ESCAPE:
+		_exit_work_area_draw_mode()
+		return true
+	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_RIGHT and event.pressed:
+		_exit_work_area_draw_mode()
+		return true
+	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
+		if event.pressed:
+			_start_work_area_drag()
+		else:
+			_finish_work_area_drag()
+		return true
+	if event is InputEventMouseMotion and _work_area_drag_cell != null:
+		_update_work_area_drag()
+		return false
+	return false
+
+
+func _start_work_area_drag() -> void:
+	_cancel_work_area_drag()
+	var placement := _live_cell_and_micro_position_at(get_global_mouse_position())
+	if placement.is_empty():
+		return
+	_work_area_drag_cell = placement["cell"]
+	_work_area_drag_start = placement["micro_pos"]
+	_work_area_drag_preview = WorkAreaDragPreview.new()
+	_work_area_drag_preview.z_index = 21
+	_work_area_drag_cell.container.add_child(_work_area_drag_preview)
+	_update_work_area_drag()
+
+
+# Rettangolo corrente: dalla microcella di partenza a quella sotto il mouse, calcolata sempre rispetto alla macrocella
+# di partenza (anche se il mouse è uscito), limitata a quella macrocella e a MAX_SIDE (WorkAreaService.rect_from_drag).
+func _current_work_area_drag_rect() -> Rect2i:
+	var local_position: Vector2 = _work_area_drag_cell.container.to_local(get_global_mouse_position())
+	var current := Vector2i(floori(local_position.x / MicroCellRenderer.CELL_SIZE), floori(local_position.y / MicroCellRenderer.CELL_SIZE))
+	return WorkAreaService.rect_from_drag(_work_area_drag_start, current)
+
+
+func _update_work_area_drag() -> void:
+	if _work_area_drag_cell == null or not is_instance_valid(_work_area_drag_preview):
+		return
+	_work_area_drag_preview.set_rect(_current_work_area_drag_rect())
+
+
+func _finish_work_area_drag() -> void:
+	if _work_area_drag_cell == null:
+		return
+	var rect := _current_work_area_drag_rect()
+	var macro_coords := Vector2i(_work_area_drag_cell.macro_x, _work_area_drag_cell.macro_y)
+	var start := _work_area_drag_start
+	_cancel_work_area_drag()
+	# Clic senza trascinamento (2026-09-27): nessuna zona; se sotto il mouse c'è una zona la si seleziona.
+	if rect.size.x < WORK_AREA_MIN_DRAG_SIDE and rect.size.y < WORK_AREA_MIN_DRAG_SIDE:
+		var clicked := WorkAreaService.find_smallest_at(game_data, macro_coords, start)
+		if clicked != null:
+			_exit_work_area_draw_mode()
+			_select_work_area(clicked)
+		return
+	var area: WorkArea = null
+	if _work_area_redraw_id >= 0:
+		area = WorkAreaService.find_by_id(game_data, _work_area_redraw_id)
+		if area == null or not WorkAreaService.set_rect(game_data, area, macro_coords, rect):
+			return
+		print("[WORK AREA] ridisegnata %s (#%d) in %s, microcelle %s, %d×%d." % [area.name, area.id, macro_coords, rect.position, rect.size.x, rect.size.y])
+	else:
+		area = WorkAreaService.create(game_data, macro_coords, rect)
+		if area == null:
+			return
+		print("[WORK AREA] creata %s (#%d) in %s, microcelle %s, %d×%d." % [area.name, area.id, macro_coords, rect.position, rect.size.x, rect.size.y])
+	minimap_panel.refresh_layer()
+	# Dopo aver creato (o ridisegnato) una zona si esce dal disegno (layer di prima ripristinato) e la zona viene
+	# selezionata, con il suo pannello; resta visibile anche a layer spento (_sync_work_area_selection_overlay).
+	_exit_work_area_draw_mode()
+	_select_work_area(area)
+
+
+# --- Selezione delle zone di lavoro (2026-09-27, richiesta utente — work areas, passo 1b) ---
+# Si seleziona solo dalla modalità zone (clic su una zona o zona appena creata/ridisegnata, _finish_work_area_drag).
+func _select_work_area(area: WorkArea) -> void:
+	if area == null:
+		return
+	_deselect_all_human_individuals()
+	human_individual_info_panel.clear()
+	_clear_vegetation_selection()
+	_clear_building_selection()
+	_clear_dead_body_selection()
+	_clear_stone_selection()
+	_clear_stick_lot_selection()
+	_clear_microcell_selection()
+	_clear_animal_selection()
+	_clear_ground_pile_selection()
+	selected_work_area_id = area.id
+	_selection_kind = SelectionKind.WORK_AREA
+	WorkAreaOverlay.selected_area_id = area.id
+	work_area_info_panel.show_area(area)
+	game_info_tabs.set_selection_title(tr("work_area_selection_title"))
+	game_info_tabs.show_selection_tab()
+
+
+func _clear_work_area_selection() -> void:
+	if selected_work_area_id == -1:
+		return
+	selected_work_area_id = -1
+	WorkAreaOverlay.selected_area_id = -1
+	_selection_kind = SelectionKind.NONE
+	work_area_info_panel.clear()
+	game_info_tabs.hide_selection_tab()
+	_sync_work_area_selection_overlay()
+
+
+# Zona selezionata visibile anche con il layer "Aree di lavoro" spento (2026-09-27, richiesta utente): un
+# WorkAreaOverlay in modalità only_selected sulla macrocella della zona, finché la zona è selezionata. Con il layer
+# acceso non serve (la disegna già l'overlay del layer, bordo spesso compreso) e viene tolto.
+var _work_area_selection_overlay: WorkAreaOverlay = null
+
+func _sync_work_area_selection_overlay() -> void:
+	var area: WorkArea = null
+	if selected_work_area_id != -1 and _active_map_layer_id != WORK_AREA_LAYER_ID:
+		area = WorkAreaService.find_by_id(game_data, selected_work_area_id)
+	var cell: LiveMacroCell = live_cells.get(area.macro_coords) if area != null else null
+	if cell != null and cell.container == null:
+		cell = null
+	if _work_area_selection_overlay != null and (
+		not is_instance_valid(_work_area_selection_overlay) or cell == null
+		or _work_area_selection_overlay.get_cell() != cell or _work_area_selection_overlay.get_parent() != cell.container
+	):
+		if is_instance_valid(_work_area_selection_overlay):
+			_work_area_selection_overlay.queue_free()
+		_work_area_selection_overlay = null
+	if cell == null or _work_area_selection_overlay != null:
+		return
+	var overlay := WorkAreaOverlay.new()
+	overlay.only_selected = true
+	overlay.z_index = 20
+	cell.container.add_child(overlay)
+	overlay.show_cell(cell)
+	_work_area_selection_overlay = overlay
+
+
+# Modifica dal pannello (nome, colore, lavori, filtri): revisione alzata, overlay e minimappa si aggiornano.
+func _on_work_area_changed(area: WorkArea) -> void:
+	WorkAreaService.notify_changed(game_data, area)
+	minimap_panel.refresh_layer()
+
+
+func _on_work_area_delete_requested(area: WorkArea) -> void:
+	if area == null:
+		return
+	var area_id := area.id
+	_clear_work_area_selection()
+	if WorkAreaService.delete(game_data, area_id):
+		minimap_panel.refresh_layer()
+		print("[WORK AREA] eliminata %s (#%d)." % [area.name, area_id])
+
+
+func _cancel_work_area_drag() -> void:
+	if is_instance_valid(_work_area_drag_preview):
+		_work_area_drag_preview.queue_free()
+	_work_area_drag_preview = null
+	_work_area_drag_cell = null
 
 
 # Estratta da _refresh_building_slots_buildable (2026-09-07, richiesta utente — bugfix incoerenza
@@ -10547,6 +10940,9 @@ func _setup_transport_selection_banner() -> void:
 	# stile/posizione, testo impostato a ogni ingresso in modalità, vedi _enter_worker_pick_mode.
 	worker_pick_banner = _build_selection_banner()
 	worker_pick_banner_label = worker_pick_banner.get_child(0) as Label
+	# Banner della modalità "disegna area" (2026-09-27, zone di lavoro): stesso stile/posizione.
+	work_area_draw_banner = _build_selection_banner()
+	(work_area_draw_banner.get_child(0) as Label).text = tr("work_area_draw_banner_text")
 
 
 # Banner giallo in alto al centro, nascosto, con una Label come unico figlio — estratto il 2026-09-23

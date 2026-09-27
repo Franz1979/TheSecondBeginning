@@ -66,6 +66,12 @@ func configure_slot(
 		icon_node.offset_bottom = 0.0
 
 
+# Bottone dello slot (2026-09-27, menu dei layer): serve a chi deve posizionare qualcosa rispetto al bottone, come un
+# menu a tendina che si apre sotto di lui.
+func get_slot_button(index: int) -> Control:
+	return _slots[index] if index >= 0 and index < _slots.size() else null
+
+
 const ACTIVE_MODULATE := Color(1, 1, 1, 1)
 const INACTIVE_MODULATE := Color(0.55, 0.55, 0.55, 0.75)
 

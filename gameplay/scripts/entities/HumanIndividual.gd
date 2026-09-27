@@ -425,7 +425,7 @@ var skill_cognition: float = 0.0
 var skill_hunting: float = 0.0
 # crafting (2026-09-24, richiesta utente — 8a skill, produzione presso le workstation): stesso
 # trattamento/default delle altre. Cresce al completamento della Produce Task (task_completion_
-# effects.tres); nessun effetto sul lavoro prodotto per ora (ProduceAction.skill_multiplier resta 1.0).
+# effects.tres); dal 2026-09-27 accelera produzione e macellazione (SkillEffectService, chiavi "produce"/"butcher").
 var skill_crafting: float = 0.0
 
 

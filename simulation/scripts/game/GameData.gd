@@ -243,6 +243,19 @@ func allocate_visitor_party_id() -> int:
 	next_visitor_party_id += 1
 	return id
 
+# Zone di lavoro (2026-09-27, richiesta utente — work areas, vedi WorkArea/WorkAreaService). Salvate da
+# GameSaveService ("work_areas"), insieme al prossimo id da assegnare.
+var work_areas: Array[WorkArea] = []
+var next_work_area_id: int = 1
+# Contatore delle modifiche all'elenco delle zone (runtime, non salvato): alzato da WorkAreaService a ogni
+# creazione/eliminazione, letto dalle viste (overlay del layer "Aree di lavoro", minimappa) per ridisegnarsi.
+var work_areas_revision: int = 0
+
+func allocate_work_area_id() -> int:
+	var id := next_work_area_id
+	next_work_area_id += 1
+	return id
+
 # Monotonic day count since year 0, day 0 — the single source of truth for "how long ago"
 # comparisons (e.g. natural-event growth-bonus expiry) that must not reset/round at a year
 # boundary the way a per-year counter would.

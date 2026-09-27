@@ -50,6 +50,12 @@ extends PanelContainer
 @onready var minimap_slot: Control = $MarginContainer/VBoxContainer/MinimapSlot
 @onready var secondary_actions_bar: IconButtonRow = $MarginContainer/VBoxContainer/SecondaryActionsBar
 
+# Bottone "Layer" (2026-09-27, richiesta utente — menu dei layer della mappa): slot 2 di primary_actions_bar, accanto a
+# statistiche e idee. L'icona disegnata è tenuta qui perché GameScene ne accende il segnale (LayersIcon.active) quando
+# un layer è attivo; il menu lo apre GameScene (_open_map_layers_menu).
+const MAP_LAYERS_SLOT_INDEX := 2
+var map_layers_icon: LayersIcon = null
+
 
 func _ready() -> void:
 	# toggle_animals_visibility/toggle_flora_updates e i due bottoni di navigazione debug
@@ -71,6 +77,8 @@ func _ready() -> void:
 	# Slot 1, accanto alle statistiche (2026-09-07, richiesta utente) — apre TechTreePanel, stesso
 	# slot placeholder disabilitato di prima (slot_count=5 in .tscn, mai nessuna .tscn da toccare).
 	primary_actions_bar.configure_slot(1, "💡", tr("tech_tree_tooltip"), &"tech_tree")
+	map_layers_icon = LayersIcon.new()
+	primary_actions_bar.configure_slot(MAP_LAYERS_SLOT_INDEX, "", tr("map_layers_tooltip"), &"map_layers", "", true, map_layers_icon)
 
 	# ☰/❓ restano qui (mai strumenti di debug): il menu di sistema e l'help sono UI definitiva.
 	secondary_actions_bar.configure_slot(0, "☰", tr("menu"), &"menu")

@@ -182,11 +182,8 @@ static func build_task(definition: TaskDefinition, context: Dictionary) -> Task:
 				step_descriptions.append(step_definition.step_description)
 			TaskTypes.ActionType.BUILD:
 				# 1 argomento (target_building: Building) — stesso schema di SETUP_SITE sopra.
-				# skill_multiplier/tool_multiplier NON letti da context: restano al default 1.0 di
-				# BuildAction._init. Le skill esistono e crescono al completamento della Task
-				# (task_completion_effects.tres, skill_builder), ma non influenzano ancora il lavoro;
-				# nessun sistema tool esiste ancora — nessuna TaskStepDefinition dichiara quelle chiavi
-				# oggi. Vedi step_build.tres/gameplay/scripts/tasks/definitions/build.tres per l'unico
+				# tool_multiplier NON letto da context: resta al default 1.0 di BuildAction._init. La skill
+				# (skill_builder) conta a ogni tick tramite SkillEffectService (2026-09-27), non passa da qui. Vedi step_build.tres/gameplay/scripts/tasks/definitions/build.tres per l'unico
 				# consumatore oggi (2026-09-11, quarto e ultimo step della Build Task).
 				if step_definition.context_keys.is_empty() or not context.has(step_definition.context_keys[0]):
 					push_error("TaskFactory.build_task: context_keys[0] mancante/non risolvibile per step BUILD di TaskDefinition '%s'." % definition.task_name)
@@ -202,9 +199,8 @@ static func build_task(definition: TaskDefinition, context: Dictionary) -> Task:
 				step_descriptions.append(step_definition.step_description)
 			TaskTypes.ActionType.PRODUCE:
 				# 2 argomenti (target_building, resource_name) — 2026-09-23, ProduceAction.
-				# skill/tool multiplier fissi a 1.0 come per BUILD: skill_crafting cresce al
-				# completamento della Produce Task (task_completion_effects.tres) ma non accelera ancora
-				# il lavoro.
+				# tool_multiplier fisso a 1.0 come per BUILD; skill_crafting accelera il lavoro a ogni tick tramite
+				# SkillEffectService (2026-09-27), non passa da qui.
 				if step_definition.context_keys.size() < 2:
 					push_error("TaskFactory.build_task: context_keys insufficienti (servono 2: target_building, resource_name) per step PRODUCE di TaskDefinition '%s'." % definition.task_name)
 					continue
@@ -220,7 +216,7 @@ static func build_task(definition: TaskDefinition, context: Dictionary) -> Task:
 				var produce_quantity: int = 1
 				if step_definition.context_keys.size() >= 3 and context.has(step_definition.context_keys[2]):
 					produce_quantity = int(context[step_definition.context_keys[2]])
-				steps.append(ProduceAction.new(context[produce_building_key], String(context[produce_resource_name_key]), 1.0, 1.0, produce_quantity))
+				steps.append(ProduceAction.new(context[produce_building_key], String(context[produce_resource_name_key]), 1.0, produce_quantity))
 				step_descriptions.append(step_definition.step_description)
 			TaskTypes.ActionType.BUTCHER:
 				# 3 argomenti (2026-09-26, macellazione): macrocella e microcella del mucchio, id della carcassa.

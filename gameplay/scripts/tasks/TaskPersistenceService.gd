@@ -270,7 +270,7 @@ static func _build_step(action_type: int, step_data: Dictionary, macro_state: Ma
 			# richiesta utente, Rest Task esplicita) — letti da RestAction.get_save_data (vedi lì),
 			# default -1.0/false per compatibilità con save precedenti a questi due campi (nessun
 			# tetto/nessuna modalità "per piacere" per una Task salvata prima di questa estensione),
-			# stesso trattamento di skill_multiplier/tool_multiplier per BUILD sotto.
+			# stesso trattamento di tool_multiplier per BUILD sotto.
 			step = RestAction.new(
 				float(step_data.get("rest_multiplier", 1.0)),
 				float(step_data.get("max_duration_days", -1.0)),
@@ -340,21 +340,21 @@ static func _build_step(action_type: int, step_data: Dictionary, macro_state: Ma
 				clear_target_building, clear_macro_state, bool(step_data.get("is_currently_grass", false))
 			)
 		TaskTypes.ActionType.BUILD:
-			# 3 argomenti (target_building, skill_multiplier, tool_multiplier), stesso schema di
-			# SETUP_SITE sopra per il riferimento + BuildAction.get_save_data per i due moltiplicatori
+			# 2 argomenti (target_building, tool_multiplier), stesso schema di
+			# SETUP_SITE sopra per il riferimento + BuildAction.get_save_data per il moltiplicatore
 			# (2026-09-11, quarto e ultimo step della Build Task). Nessun progresso da ripristinare
 			# qui (labor_accumulated vive su Building.construction_progress, già ricostruito per
 			# intero da GameLoadService — vedi BuildAction.gd, non richiede load_save_data()).
 			var build_target_building: Building = null
 			if step_data.has("target_building_id"):
 				build_target_building = _find_building_by_id(world, int(step_data["target_building_id"]))
+			# skill_multiplier dei save precedenti ignorato (2026-09-27): la skill si legge da SkillEffectService.
 			step = BuildAction.new(
 				build_target_building,
-				float(step_data.get("skill_multiplier", 1.0)),
 				float(step_data.get("tool_multiplier", 1.0))
 			)
 		TaskTypes.ActionType.PRODUCE:
-			# 4 argomenti (target_building, resource_name, skill_multiplier, tool_multiplier), stesso
+			# 4 argomenti (target_building, resource_name, tool_multiplier, quantity), stesso
 			# schema di BUILD sopra (2026-09-23, ProduceAction). Nessun progresso da ripristinare qui:
 			# labor_accumulated vive su Building.production_progress, già ricaricato da GameLoadService.
 			var produce_target_building: Building = null
@@ -362,10 +362,10 @@ static func _build_step(action_type: int, step_data: Dictionary, macro_state: Ma
 				produce_target_building = _find_building_by_id(world, int(step_data["target_building_id"]))
 			# "quantity" (2026-09-24) default 1 per i save precedenti; produced_count arriva da
 			# ProduceAction.load_save_data.
+			# skill_multiplier dei save precedenti ignorato (2026-09-27): la skill si legge da SkillEffectService.
 			step = ProduceAction.new(
 				produce_target_building,
 				String(step_data.get("resource_name", "")),
-				float(step_data.get("skill_multiplier", 1.0)),
 				float(step_data.get("tool_multiplier", 1.0)),
 				int(step_data.get("quantity", 1))
 			)

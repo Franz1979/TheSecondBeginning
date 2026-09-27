@@ -51,6 +51,16 @@ var tool_wait_tool_name: String = ""
 # sottoclassi) — un INFANT non può eseguire nessuna Action oggi esistente.
 var disallowed_age_bands: Array[HumanTypes.AgeBand] = []
 
+# Chiave dell'effetto skill sul rendimento di questa Action (2026-09-27, richiesta utente — SkillEffectService, dati in
+# skill_action_effects.tres). Vuota di default = nessun effetto (fattore 1.0). Una sottoclasse la imposta nel proprio
+# _init, oppure sovrascrive get_skill_effect_key se la chiave dipende dal suo stato (es. camminata carica o scarica).
+var skill_effect_key: String = ""
+
+
+# Chiave dell'effetto skill per questo istante: di default il valore fisso skill_effect_key.
+func get_skill_effect_key(individual: Variant, context: Dictionary) -> String:
+	return skill_effect_key
+
 
 # Variazione di stamina per questo istante/frame — negativa per un drain (es. Walk/Cut consumano),
 # positiva per un recharge (es. Rest recupera). `individual`/`delta` generici (Variant/float) così

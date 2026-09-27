@@ -65,6 +65,18 @@ statistics_tab_births,Nascite
 statistics_tab_population,Popolazione
 statistics_tab_buildings,Edifici
 tech_tree_tooltip,Albero delle tecnologie
+map_layers_tooltip,Layer della mappa
+map_layer_none,Nessuno
+map_layer_coming_soon,In arrivo
+map_layer_walkability,Percorribilità
+map_layer_work_areas,Aree di lavoro
+map_layer_territory,Territorio
+map_layer_known_zone,Zona conosciuta
+map_layer_resources,Risorse
+map_layer_fauna,Fauna
+map_layer_cultural_influence,Influenza culturale
+map_layer_political_influence,Influenza politica
+map_layer_religious_influence,Influenza religiosa
 tech_tree_title,Albero delle tecnologie
 tech_tree_active_idea_label,Ricerca in corso: {idea}
 tech_tree_no_active_idea,Nessuna ricerca in corso
@@ -96,6 +108,26 @@ idea_warehouse_management_description,Un membro del gruppo tiene ordine nelle sc
 unlock_kind_idea,Sblocca idee
 unlock_kind_building,Sblocca edifici
 unlock_kind_resource,Sblocca risorse
+unlock_kind_tool,Sblocca strumenti
+unlock_tool_work_areas,Zone di lavoro
+build_bar_work_areas_tooltip,Zone di lavoro
+work_area_draw_banner_text,Trascina per disegnare una zona di lavoro (Esc o clic destro per uscire)
+work_area_default_name,Zona {n}
+work_area_job_haul,Raccolta
+work_area_job_hunt,Caccia
+work_area_selection_title,Zona di lavoro
+work_area_name_tooltip,Nome della zona (Invio per confermare)
+work_area_center_tooltip,Centra la camera sulla zona
+work_area_size_label,Dimensioni: {w}×{h} · Macrocella ({x}, {y})
+work_area_color_caption,Colore
+work_area_jobs_caption,Lavori
+work_area_filter_all,Tutto
+work_area_filter_all_prey,Tutte le prede
+work_area_redraw_button,Ridisegna
+work_area_delete_button,Elimina
+work_area_delete_confirm,Eliminare {name}?
+work_area_delete_yes,Sì
+work_area_delete_no,No
 tech_tree_requires,Richiede: {ideas}
 tech_tree_research_button,Ricerca questa idea
 tech_tree_detail_placeholder,Clicca su un'idea per vederne i dettagli
@@ -340,7 +372,6 @@ building_stored_label,Immagazzinato: {entries}
 building_residents_caption,Residenti
 building_resident_tooltip,{name} (età {age})
 building_storage_caption,Magazzino
-building_id_label,ID: {id}
 building_settings_caption,Impostazioni
 building_settings_accepted_categories_caption,Categorie accettate
 building_settings_empty_all_button,Svuota tutto
@@ -369,25 +400,28 @@ debug_random_event_apply,Applica evento
 debug_random_event_apply_tooltip,Scatena subito l'evento scelto nel menu
 debug_idle_fallback_on,Perditempo: ON
 debug_idle_fallback_off,Perditempo: OFF
-building_awaiting_material_production_caption,Per produrre {resource} servono:
 building_awaiting_fuel_production_label,"Combustibile mancante: {amount} ({fuels})"
 building_production_suspended_label,"Produzione sospesa: {resource}, {percent}% completata"
 building_delivered_materials_caption,Materiali di partenza:
 building_site_delivered_materials_caption,Materiale consegnato:
-building_production_in_progress_label,In costruzione: {items}
-building_production_in_progress_none,In costruzione: nulla
 task_produce_name,Produzione
 task_produce_step_walk,Andando alla postazione di lavoro
 task_produce_step_produce,Producendo
 task_produce_step_deliver,Consegnando al magazzino
-building_output_buffer_caption,Prodotti finiti: {used}/{capacity}
+building_output_buffer_caption,Prodotti finiti {used}/{capacity}
 building_output_buffer_full,Prodotti finiti pieni: ritirali per continuare a produrre
-building_production_recipes_caption,Produzione:
-produce_recipe_button,Produci {resource}
+building_production_recipes_caption,Produzione
+building_selection_title,{type}   ID: {id}
+building_production_status_caption,In produzione:
+building_production_status_none,nulla
+building_production_status_item_tooltip,{resource} ×{quantity} ({percent}%)
+building_production_needs_caption,Per questa produzione serve:
+recipe_tooltip_ingredients,Ingredienti: {items}
+recipe_tooltip_fuel,Combustibile: {amount}
+recipe_tooltip_labor,Lavoro: {labor}
+recipe_tooltip_tools,Attrezzo richiesto: {tools}
 produce_recipe_disabled_busy,"Postazione già impegnata: produzione assegnata a {workers}"
 produce_recipe_disabled_output_full,Prodotti finiti pieni: ritirali prima di avviare una nuova produzione
-produce_quantity_label,Quantità:
-produce_quantity_tooltip,Pezzi da produrre con questo ordine (massimo {max})
 produce_assign_banner_text,⚒️ Produci {resource}: clicca un individuo (Esc per annullare)
 task_produce_activity,Produzione: {resource}
 task_hunt_name,Caccia

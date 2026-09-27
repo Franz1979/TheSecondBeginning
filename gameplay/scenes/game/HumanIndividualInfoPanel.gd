@@ -69,8 +69,10 @@ extends VBoxContainer
 # imposta (game_info_tabs.set_selection_title) subito insieme a questa show_individual, con la
 # stessa identica stringa che sarebbe finita qui.
 #
-# KillButton (Step 9d del piano mortalità, 2026-09-05) — tasto di DEBUG per velocizzare i test
-# ("Kill (debug)", non una vera meccanica di gioco): emette kill_requested con l'individuo
+# KillButton (Step 9d del piano mortalità, 2026-09-05; bottone TOLTO dal pannello il 2026-09-27, richiesta utente —
+# segnale, gestore GameScene._on_kill_requested e chiave tr() individual_kill_debug_button restano per poterlo
+# rimettere) — tasto di DEBUG per velocizzare i test ("Kill (debug)", non una vera meccanica di gioco): emetteva
+# kill_requested con l'individuo
 # attualmente mostrato (_current_individual, salvato da show_individual — stesso principio di
 # HumanPopulationInfoPanel.individual_center_requested, che porta il payload direttamente nel
 # segnale invece di far riscandire GameScene per is_selected). GameScene decide se/come agire
@@ -203,14 +205,11 @@ var _tool_slot_template: Control = null
 @onready var father_label: Label = $FatherLabel
 @onready var partner_label: Label = $PartnerLabel
 @onready var house_label: Label = $HouseLabel
-@onready var kill_button: Button = $KillButton
 
 var _current_individual: HumanIndividual
 
 
 func _ready() -> void:
-	kill_button.text = tr("individual_kill_debug_button")
-	kill_button.pressed.connect(func(): kill_requested.emit(_current_individual))
 	cancel_task_button.tooltip_text = tr("individual_cancel_task_tooltip")
 	cancel_task_button.pressed.connect(func(): cancel_task_requested.emit(_current_individual))
 	# Layout riga tool (2026-09-08, semplificata 2026-09-13 quando il quadratino trasporto è

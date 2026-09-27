@@ -195,6 +195,19 @@ func load_game_from_json(file_path: String) -> LoadedGame:
 			continue
 		game_data.visitor_parties.append(party)
 		game_data.next_visitor_party_id = maxi(game_data.next_visitor_party_id, party.id + 1)
+	# Zone di lavoro (2026-09-27) — .get(key, []) per i salvataggi precedenti; voci non valide scartate. Il prossimo id
+	# non scende mai sotto quello di una zona caricata.
+	game_data.work_areas.clear()
+	game_data.next_work_area_id = int(data["game"].get("next_work_area_id", 1))
+	for raw_area in data["game"].get("work_areas", []):
+		if not raw_area is Dictionary:
+			continue
+		var area := WorkArea.from_save_data(raw_area)
+		if area == null:
+			continue
+		game_data.work_areas.append(area)
+		game_data.next_work_area_id = maxi(game_data.next_work_area_id, area.id + 1)
+	game_data.work_areas_revision += 1
 	for pile in game_data.ground_piles:
 		game_data.next_ground_pile_id = maxi(game_data.next_ground_pile_id, pile.id + 1)
 		for carcass in pile.carcasses:
