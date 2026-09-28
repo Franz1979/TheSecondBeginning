@@ -17,10 +17,15 @@ const CENTER_GAP_PX: float = 1.0
 const LINE_WIDTH_PX: float = 0.35
 const SEGMENTS: int = 32
 
+# Fattore applicato a coordinate e spessori (2026-09-28, bottone della barra dei comandi — CommandButtonIcon): 1 sulla
+# mappa (pixel di cella, come sempre); nel bottone il disegno avviene direttamente alla dimensione reale invece di
+# ingrandire il nodo con `scale`, che sfocherebbe i bordi antialiasati.
+var icon_scale: float = 1.0
+
 
 func _draw() -> void:
-	draw_arc(Vector2.ZERO, RADIUS_PX, 0.0, TAU, SEGMENTS, COLOR, LINE_WIDTH_PX, true)
+	draw_arc(Vector2.ZERO, RADIUS_PX * icon_scale, 0.0, TAU, SEGMENTS, COLOR, LINE_WIDTH_PX * icon_scale, true)
 	# Quattro tratti a 45°/135°/225°/315°: le due diagonali di una X, interrotte al centro.
 	for quadrant in range(4):
 		var direction := Vector2.from_angle(PI / 4.0 + quadrant * PI / 2.0)
-		draw_line(direction * CENTER_GAP_PX, direction * RADIUS_PX, COLOR, LINE_WIDTH_PX, true)
+		draw_line(direction * CENTER_GAP_PX * icon_scale, direction * RADIUS_PX * icon_scale, COLOR, LINE_WIDTH_PX * icon_scale, true)

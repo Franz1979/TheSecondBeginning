@@ -245,6 +245,8 @@ static func _action_type_for_step(step: Action) -> int:
 		return TaskTypes.ActionType.BUTCHER
 	if step is DemolishAction:
 		return TaskTypes.ActionType.DEMOLISH
+	if step is SearchHaulZoneAction:
+		return TaskTypes.ActionType.SEARCH_HAUL_ZONE
 	push_error("TaskPersistenceService._action_type_for_step: tipo Action sconosciuto (%s)." % step.get_script().get_global_name())
 	return -1
 
@@ -309,6 +311,9 @@ static func _build_step(action_type: int, step_data: Dictionary, macro_state: Ma
 				int(step_data.get("criterion_kind", PickUpAction.CriterionKind.NAME)), int(step_data.get("criterion_category", -1)),
 				int(step_data.get("source_kind", PickUpAction.SourceKind.TERRAIN))
 			)
+			# Risorse ammesse della raccolta in una WorkArea (2026-09-27): assenti nei salvataggi precedenti = nessuna restrizione.
+			for restricted_name in step_data.get("restricted_names", []):
+				(step as PickUpAction).restricted_names.append(String(restricted_name))
 		TaskTypes.ActionType.SETUP_SITE:
 			# 1 argomento (target_building: Building), stesso schema di UNLOAD sopra per risolvere il
 			# riferimento — GAP CHIUSO (2026-09-11, vedi nota su _action_type_for_step): prima d'ora
@@ -445,6 +450,9 @@ static func _build_step(action_type: int, step_data: Dictionary, macro_state: Ma
 				Vector2i(int(step_data.get("pile_micro_x", 0)), int(step_data.get("pile_micro_y", 0))),
 				int(step_data.get("carcass_id", -1))
 			)
+		TaskTypes.ActionType.SEARCH_HAUL_ZONE:
+			# Nessun dato proprio (2026-09-27): la zona è nel context della Task, salvato con lei.
+			step = SearchHaulZoneAction.new()
 		TaskTypes.ActionType.DEMOLISH:
 			# Solo l'edificio: il progresso vive su Building.construction_progress (vedi DemolishAction).
 			var demolish_target_building: Building = null

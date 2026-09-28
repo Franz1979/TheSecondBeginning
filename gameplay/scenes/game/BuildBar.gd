@@ -22,6 +22,10 @@ extends CenterContainer
 @onready var content_container: HBoxContainer = $Panel/MarginContainer/HBoxContainer/ContentContainer
 @onready var main_row: IconButtonRow = $Panel/MarginContainer/HBoxContainer/ContentContainer/MainRow
 @onready var submenu_row: IconButtonRow = $Panel/MarginContainer/HBoxContainer/ContentContainer/SubmenuRow
+# Comandi del pipottino (2026-09-28, richiesta utente — work areas): a destra degli strumenti, dopo un separatore
+# verticale, nella stessa barra. Nascosti finché GameScene non li mostra (pipottino selezionato + idea delle zone); la
+# barra, CenterContainer, si allarga e si ricentra da sola. Vedi CommandBar.
+var command_bar: CommandBar = null
 
 const OPEN_BUILD_MENU_ACTION := &"open_build_menu"
 # Zone di lavoro (2026-09-27, richiesta utente — work areas): slot 1 di main_row, accanto al martello. Il clic emette
@@ -143,6 +147,8 @@ func _ready() -> void:
 	submenu_row.configure_slot(BUILDING_SLOT_INDEX_BY_TYPE["hut"], IconRegistry.get_building_icon("hut"), tr("build_bar_hut_tooltip"), &"build_hut")
 	main_row.action_pressed.connect(_on_main_row_action_pressed)
 	control_button.pressed.connect(_on_control_button_pressed)
+	command_bar = CommandBar.new()
+	$Panel/MarginContainer/HBoxContainer.add_child(command_bar)
 	_apply_state()
 
 

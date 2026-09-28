@@ -279,6 +279,12 @@ static func get_command_icon_node(command_icon_key: String) -> Node2D:
 	return COMMAND_ICON_NODES[command_icon_key].new()
 
 
+# Icona di un bottone della barra dei comandi (2026-09-27, work areas passo 3b): la stessa icona disegnata del comando
+# (COMMAND_ICON_NODES), dentro un Control che la centra e la adatta al bottone (CommandButtonIcon).
+static func get_command_button_icon_node(command_icon_key: String) -> Control:
+	return CommandButtonIcon.new(command_icon_key)
+
+
 # Nome leggibile per resource_name — chiave tr() "carried_resource_tooltip_<resource_name>" (2026-
 # 09-09, promossa qui da HumanIndividualInfoPanel._display_name_for_resource, che la duplicava:
 # ORA anche BuildingInfoPanel/griglia slot magazzino la consulta per il proprio tooltip, un solo

@@ -92,6 +92,8 @@ enum ActionType {
 	# DEMOLISH (2026-09-27, richiesta utente — demolizione come Task, DemolishAction, vedi demolish.tres) — AGGIUNTO IN
 	# CODA. TaskFactory.build_task e TaskPersistenceService lo supportano entrambi.
 	DEMOLISH,
+	# Ricerca della cella dentro la zona di raccolta (2026-09-27, work areas passo 2 — SearchHaulZoneAction).
+	SEARCH_HAUL_ZONE,
 }
 
 # Categorie di tool richiedibili da un'Action (2026-09-08, richiesta utente — SOLO struttura dati,

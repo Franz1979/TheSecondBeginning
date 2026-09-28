@@ -231,6 +231,7 @@ func finish_current_step(individual: HumanIndividual, task: Task, world: World, 
 	# entrambe nello stesso passaggio, vedi unload_action.gd). Per le task perditempo (secondo
 	# chiamante, bordo bloccato) questi tre handler sono no-op garantiti: nessuno dei loro step
 	# (Walk/Run/LookAround/Rest/Jump) scrive mai queste chiavi di context.
+	_handle_pending_haul_zone_search(individual, task, world)
 	_handle_pending_warehouse_search(individual, task, world)
 	_handle_pending_thought_target_search(individual, task, world)
 	_handle_pending_warehouse_restock(individual, task, world, game_data)
@@ -563,6 +564,110 @@ static func _find_building_by_id(world: World, building_id: int) -> Building:
 # WarehouseSelectionService.find_best, un magazzino DIVERSO da quelli in excluded_building_ids (i
 # rifiutati finora, accumulati da UnloadAction a ogni tentativo fallito): non è quindi "un solo
 # tentativo", la catena Walk+Unload+ricerca si ripete finché find_best non trova più nessuno.
+# Consuma task.context[SearchHaulZoneAction.CONTEXT_PENDING] (2026-09-27, richiesta utente — work areas, passo 2):
+# sceglie la cella di raccolta dentro la zona del context (HaulZoneService.find_target_cell, stessa disponibilità del
+# PickUp) e accoda Walk + PickUp verso di lei, costruiti come li costruiva GameScene._build_pickup_task (stesso jitter
+# sul punto d'arrivo, stessa PickUpAction con filtro e sorgente della zona, stesse descrizioni degli step). Nessuna
+# cella = nessuno step: la Task si chiude. I segnali del PickUp li collega chi ha creato la Task (step_appended).
+func _handle_pending_haul_zone_search(individual: HumanIndividual, task: Task, world: World) -> void:
+	if not task.context.has(SearchHaulZoneAction.CONTEXT_PENDING):
+		return
+	task.context.erase(SearchHaulZoneAction.CONTEXT_PENDING)
+	var zone := HaulZoneService.get_zone(task.context)
+	if zone.is_empty() or world == null:
+		return
+	if HaulZoneService.is_work_area_zone(zone):
+		_continue_work_area_haul(individual, task, world, zone)
+		return
+	var macro_coords := HaulZoneService.get_macro_coords(zone)
+	var macro_state := world.get_cell_state_at(macro_coords.x, macro_coords.y)
+	if macro_state == null:
+		return
+	var found: Variant = HaulZoneService.find_target_cell(zone, macro_state, individual.position)
+	if found == null:
+		if DebugLogging.ENABLED and DebugLogging.SHOW_PICKUP_LOGS:
+			print("[PICKUP] #%d %s: niente da raccogliere nella zona %s — raccolta chiusa." % [
+				individual.id, individual.name, str(HaulZoneService.get_rect(zone))
+			])
+		return
+	var target_cell: Vector2i = found
+	var target_position_jitter: Vector2 = Vector2(randf_range(0.15, 0.85), randf_range(0.15, 0.85))
+	var pickup := PickUpAction.new(
+		target_cell, macro_state, HaulZoneService.get_resource_name(zone), HaulZoneService.get_quantity_requested(zone),
+		HaulZoneService.get_criterion_kind(zone), HaulZoneService.get_criterion_category(zone), HaulZoneService.get_source_kind(zone)
+	)
+	var new_steps: Array[Action] = [WalkAction.new(Vector2(target_cell) + target_position_jitter), pickup]
+	task.append_steps(new_steps)
+	var description_count := task.step_descriptions.size()
+	task.step_descriptions[description_count - 2] = "task_haul_resource_step_walk"
+	task.step_descriptions[description_count - 1] = "task_haul_resource_step_pickup"
+
+
+# Raccolta in una WorkArea (2026-09-27, richiesta utente — work areas passo 3a), chiamata all'inizio della Task e dopo
+# ogni PickUp (anche a vuoto). Zona, rettangolo e filtro si rileggono dalla WorkArea (modifiche del giocatore subito
+# valide; zona eliminata = fine viaggio). Se lo zaino ha ancora posto per qualcosa dell'ordine e la zona ha una cella
+# raggiungibile con qualcosa (HaulZoneService.find_work_area_target_cell), accoda Walk + PickUp verso di lei; altrimenti
+# il viaggio finisce (_end_work_area_trip).
+func _continue_work_area_haul(individual: HumanIndividual, task: Task, world: World, zone: Dictionary) -> void:
+	var area := HaulZoneService.resolve_work_area(zone)
+	var macro_state: MacroCellState = null
+	var names: Array[String] = []
+	if area != null:
+		macro_state = world.get_cell_state_at(area.macro_coords.x, area.macro_coords.y)
+		names = HaulZoneService.allowed_names(zone, area)
+		var fitting := HaulZoneService.fitting_names(individual, names)
+		var found: Variant = HaulZoneService.find_work_area_target_cell(area, macro_state, fitting, individual)
+		if found != null:
+			var target_cell: Vector2i = found
+			var target_position_jitter: Vector2 = Vector2(randf_range(0.15, 0.85), randf_range(0.15, 0.85))
+			var pickup := PickUpAction.new(
+				target_cell, macro_state, HaulZoneService.get_resource_name(zone), -1, HaulZoneService.get_criterion_kind(zone),
+				HaulZoneService.get_criterion_category(zone), PickUpAction.SourceKind.TERRAIN
+			)
+			pickup.restricted_names = names
+			var walk_target: Vector2 = Vector2(target_cell) + target_position_jitter + HaulZoneService.macro_offset_for(individual, area.macro_coords)
+			var new_steps: Array[Action] = [WalkAction.new(walk_target), pickup]
+			task.append_steps(new_steps)
+			var description_count := task.step_descriptions.size()
+			task.step_descriptions[description_count - 2] = "task_haul_resource_step_walk"
+			task.step_descriptions[description_count - 1] = "task_haul_resource_step_pickup"
+			return
+	_end_work_area_trip(individual, task, zone, area, macro_state, names)
+
+
+# Fine di un viaggio di raccolta in una WorkArea: ricerca del magazzino per le risorse raccolte nel viaggio (stessa
+# forma del PickUp di sempre, consumata subito dopo da _handle_pending_warehouse_search) e, se il viaggio ha raccolto
+# qualcosa, ripetizione: attiva, sotto il massimo della zona, zona ancora esistente e con qualcosa da raccogliere. La
+# ripetizione passa dal segnale repeat_requested del PickUp che ha appena concluso (GameScene accoda la Task). Nessuna
+# raccolta nel viaggio = nessuno scarico e nessuna ripetizione: la Task si chiude.
+func _end_work_area_trip(
+	individual: HumanIndividual, task: Task, zone: Dictionary, area: WorkArea, macro_state: MacroCellState, names: Array[String]
+) -> void:
+	var trip_resources: Array = task.context.get(HaulZoneService.CONTEXT_TRIP_RESOURCES, [])
+	task.context.erase(HaulZoneService.CONTEXT_TRIP_RESOURCES)
+	var searches: Array = []
+	for trip_name in trip_resources:
+		var carried: int = individual.get_carried_quantity(String(trip_name))
+		if carried > 0:
+			searches.append({"resource_name": String(trip_name), "quantity": carried})
+	if searches.is_empty():
+		if DebugLogging.ENABLED and DebugLogging.SHOW_PICKUP_LOGS:
+			print("[PICKUP] #%d %s: raccolta nella zona chiusa — niente raccolto in questo viaggio." % [individual.id, individual.name])
+		return
+	task.context["pending_warehouse_search"] = {"searches": searches, "excluded_building_ids": []}
+	if not TaskRepeatRules.is_enabled(task.context) or area == null:
+		return
+	var repeats_done: int = TaskRepeatRules.get_count(task.context)
+	var max_repeats: int = HaulZoneService.get_max_repeats(zone)
+	if repeats_done >= max_repeats or not HaulZoneService.work_area_has_available(area, macro_state, names):
+		if DebugLogging.ENABLED and DebugLogging.SHOW_PICKUP_LOGS:
+			print("[PICKUP] #%d %s: ripetizione nella zona non richiesta (%d/%d)." % [individual.id, individual.name, repeats_done, max_repeats])
+		return
+	var finishing_step := task.get_current_action()
+	if finishing_step is PickUpAction:
+		(finishing_step as PickUpAction).repeat_requested.emit(individual, repeats_done + 1, zone.duplicate(true))
+
+
 func _handle_pending_warehouse_search(individual: HumanIndividual, task: Task, world: World) -> void:
 	if not task.context.has("pending_warehouse_search"):
 		return

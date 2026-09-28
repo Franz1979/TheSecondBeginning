@@ -199,6 +199,10 @@ const PLAYER_HUMAN_RULES_PATH := "res://human/data/human_rules/player_human_rule
 # catena (ricerca magazzino/Unload/cammina-via) resta costruito a runtime da
 # HumanIndividualActionService, invariato.
 const HAUL_RESOURCE_TASK_DEFINITION_PATH := "res://gameplay/scripts/tasks/definitions/haul_resource.tres"
+# Raccolta su zona (2026-09-27, work areas passo 2): stessa Task "haul_resource" (stesso nome), primo step "cerca nella
+# zona" (SearchHaulZoneAction) che accoda Walk + PickUp. Usata dal comando di raccolta e dalla sua ripetizione;
+# HAUL_RESOURCE_TASK_DEFINITION_PATH resta per il trasporto del mucchio a terra (_build_pickup_task).
+const HAUL_RESOURCE_ZONE_TASK_DEFINITION_PATH := "res://gameplay/scripts/tasks/definitions/haul_resource_zone.tres"
 # TaskDefinition "daydreaming" (2026-09-10, richiesta utente — refactor Daydream via TaskFactory,
 # secondo/ultimo prompt) — stesso identico trattamento di HAUL_RESOURCE_TASK_DEFINITION_PATH sopra:
 # copre solo i primi due step [Walk, Think] (vedi daydreaming.tres) — il resto della catena
@@ -1260,6 +1264,7 @@ func _process(delta: float) -> void:
 		_sync_pathfinding_overlay()
 	if _active_map_layer_id != MapLayerRegistry.NONE_ID or _map_layer_overlay != null:
 		_sync_map_layer_overlay()
+	_sync_command_bar()
 	if selected_work_area_id != -1 or _work_area_selection_overlay != null:
 		_sync_work_area_selection_overlay()
 	_open_pending_visitor_decision()
@@ -1367,6 +1372,9 @@ func _unhandled_input(event: InputEvent) -> void:
 	# Modalità "disegna area" (2026-09-27, richiesta utente — zone di lavoro): stessa priorità dei blocchi sopra, vedi
 	# _handle_work_area_draw_input.
 	if _work_area_draw_active and _handle_work_area_draw_input(event):
+		return
+	# Scelta manuale della zona per la raccolta (2026-09-27, work areas passo 3b) — vedi _handle_work_area_pick_input.
+	if _work_area_pick_active and _handle_work_area_pick_input(event):
 		return
 
 	# Ispezione microcella con DOPPIO click sinistro (2026-09-16, richiesta utente) — SEMPRE
@@ -3371,13 +3379,15 @@ func _assign_pickup_task(
 	var cell: LiveMacroCell = live_cells.get(macro_coords)
 	if cell == null or cell.macro_state == null:
 		return
-	# La Task (Walk + PickUp, con wiring dei segnali) e' costruita da _build_pickup_task, condivisa con la
-	# ripetizione automatica (_queue_pickup_repeat), che la accoda invece di assegnarla. `individual` e' il
+	# Zona 1×1 sulla cella cliccata (2026-09-27, work areas passo 2): la Task cerca nella zona e accoda Walk + PickUp
+	# verso quella cella — stesso risultato di prima. Costruita da _build_haul_zone_task, condivisa con la
+	# ripetizione automatica (_queue_pickup_repeat). Non entra in GameData.work_areas. `individual` e' il
 	# proprietario della Task (qui, l'individuo selezionato).
-	var task := _build_pickup_task(
-		cell, target_position, resource_name, quantity_requested, criterion_kind, criterion_category,
-		repeat_enabled, repeat_count, individual, source_kind
+	var zone := HaulZoneService.make_zone(
+		macro_coords, Rect2i(target_position, Vector2i.ONE), criterion_kind, criterion_category, resource_name,
+		quantity_requested, source_kind, HaulZoneService.CLICK_MAX_REPEATS
 	)
+	var task := _build_haul_zone_task(zone, repeat_enabled, repeat_count, individual)
 
 	# Icona letta da IconRegistry (2026-09-11, richiesta utente — generalizzazione del meccanismo di
 	# lampeggio: prima "✋" era hardcoded dentro _spawn_pickup_command_effect, ora vive nel registro
@@ -3523,32 +3533,273 @@ func _build_pickup_task(
 
 
 # Ripetizione automatica della raccolta (2026-09-20, richiesta utente): PickUpAction.repeat_requested. Genera una
-# nuova Task di raccolta IDENTICA (stessa cella, stesso criterio, stessa quantita' richiesta) con il contatore
-# di ripetizioni aggiornato e la ACCODA all'individuo (TaskQueueService.push_suspended_task, coda LIFO): parte
+# nuova Task di raccolta sulla STESSA ZONA (2026-09-27, work areas passo 2: rifà la ricerca nella zona invece di
+# tornare alla stessa cella; con la zona 1×1 del clic è la stessa cella di sempre) con il contatore di ripetizioni
+# aggiornato e la ACCODA all'individuo (TaskQueueService.push_suspended_task, coda LIFO): parte
 # quando la Task in corso (il trasporto al magazzino) finisce. Nessun controllo sulla cella prima di partire.
 # Se la coda dell'individuo e' gia' piena non si accoda nulla: push_suspended_task in quel caso scarterebbe la
 # Task piu' vecchia E lo zaino (vedi TaskQueueService), e qui lo zaino e' appena stato riempito.
-func _queue_pickup_repeat(step: PickUpAction, owner: HumanIndividual, next_repeat_count: int) -> void:
-	if owner == null or step.macro_state == null:
+func _queue_pickup_repeat(owner: HumanIndividual, next_repeat_count: int, zone: Dictionary) -> void:
+	if owner == null or zone.is_empty():
 		return
-	var repeat_cell: LiveMacroCell = null
-	for cell in live_cells.values():
-		if cell.macro_state == step.macro_state:
-			repeat_cell = cell
-			break
-	if repeat_cell == null:
-		return
+	# Zona 1×1 del clic: la sua macrocella deve essere viva. Una WorkArea (2026-09-27) si rilegge alla ricerca.
+	if not HaulZoneService.is_work_area_zone(zone):
+		var repeat_cell: LiveMacroCell = live_cells.get(HaulZoneService.get_macro_coords(zone))
+		if repeat_cell == null or repeat_cell.macro_state == null:
+			return
 	if owner.task_queue.size() >= TaskQueueService.MAX_QUEUE_SIZE:
 		if DebugLogging.ENABLED and DebugLogging.SHOW_PICKUP_LOGS:
 			print("[PICKUP] #%d %s: ripetizione %d non accodata — coda piena (%d)." % [
 				owner.id, owner.name, next_repeat_count, TaskQueueService.MAX_QUEUE_SIZE
 			])
 		return
-	var repeat_task := _build_pickup_task(
-		repeat_cell, step.target_position, step.resource_name, step.quantity_requested, step.criterion_kind,
-		step.criterion_category, true, next_repeat_count, owner, step.source_kind
-	)
+	var repeat_task := _build_haul_zone_task(zone, true, next_repeat_count, owner)
 	TaskQueueService.push_suspended_task(owner, repeat_task)
+
+
+# --- Comandi del pipottino (2026-09-27, richiesta utente — work areas passo 3b) ---
+# CommandBar, dentro la BuildBar a destra degli strumenti (dal 2026-09-28): visibile con almeno un pipottino selezionato
+# e l'idea delle zone completata (_sync_command_bar, a ogni frame). Ogni comando vale per TUTTI i pipottini selezionati (_get_selected_individuals,
+# oggi al più uno), così la selezione multipla non richiederà di rifarla.
+var command_bar: CommandBar = null
+
+
+func _setup_command_bar() -> void:
+	command_bar = build_bar.command_bar
+	command_bar.gather_requested.connect(_on_command_bar_gather_requested)
+
+
+func _get_selected_individuals() -> Array[HumanIndividual]:
+	var selected: Array[HumanIndividual] = []
+	for member in human_individuals:
+		if member.is_selected:
+			selected.append(member)
+	return selected
+
+
+func _sync_command_bar() -> void:
+	if command_bar == null:
+		return
+	var bar_visible := _is_work_areas_tool_available() and not _get_selected_individuals().is_empty()
+	command_bar.set_bar_visible(bar_visible)
+	if bar_visible:
+		command_bar.set_gather_available(HaulZoneService.has_haul_work_area(game_data), tr("command_bar_gather_no_zone_tooltip"))
+
+
+# Comando "Raccogli" (spostato qui dal pannello del pipottino, 3a -> 3b): controllo dell'età per ogni selezionato (i
+# troppo giovani ricevono il rifiuto e restano fuori), poi il dialog di scelta di sempre (Tutto / categoria / risorsa,
+# senza quantità) con le risorse presenti nelle zone con la raccolta abilitata e "Ripeti (fino a 5 volte)"; la scelta
+# arriva a _on_pickup_choice_made -> _on_work_area_gather_choice.
+func _on_command_bar_gather_requested() -> void:
+	var workers: Array[HumanIndividual] = []
+	for member in _get_selected_individuals():
+		var age_band := _resolve_age_band(member)
+		if age_band == HumanTypes.AgeBand.INFANT or age_band == HumanTypes.AgeBand.CHILD:
+			_report_assign_rejection(member, HumanIndividual.ASSIGN_REJECT_TOO_YOUNG, "task_activity_pickup")
+			continue
+		workers.append(member)
+	if workers.is_empty():
+		return
+	var entries := HaulZoneService.list_work_area_resources(game_data, macro_world)
+	if entries.is_empty():
+		for worker in workers:
+			_report_command_rejection(worker, tr("work_area_gather_no_zone").format({"name": worker.name}))
+		return
+	_pickup_pending_resources = []
+	_pickup_dialog_work_area_workers = workers
+	pickup_choice_dialog.open_dialog(
+		tr("work_area_gather_dialog_title"), tr("work_area_gather_dialog_message"), entries,
+		UserOptions.get_pickup_default_choice(), UserOptions.repeat_default, HaulZoneService.WORK_AREA_MAX_REPEATS, false
+	)
+
+
+# Filtro scelto nel dialog. Zona automatica (UserOptions.work_area_auto_zone): ogni pipottino va nella propria zona
+# migliore (HaulZoneService.choose_work_area), avviso per chi non ne ha una valida. Zona manuale: modalità "scegli la
+# zona" con le sole zone valide per il filtro (per almeno uno dei pipottini); nessuna valida = avviso e nessun ordine.
+func _on_work_area_gather_choice(workers: Array[HumanIndividual], kind: int, category: int, resource_name: String, repeat: bool) -> void:
+	var order := {
+		"kind": kind,
+		"category": category if kind == PickUpAction.CriterionKind.CATEGORY else -1,
+		"resource_name": resource_name if kind == PickUpAction.CriterionKind.NAME else "",
+		"repeat": repeat,
+	}
+	if UserOptions.work_area_auto_zone:
+		for worker in workers:
+			if not human_individuals.has(worker):
+				continue
+			var area := HaulZoneService.choose_work_area(
+				game_data, macro_world, worker, kind, int(order["category"]), String(order["resource_name"])
+			)
+			if area == null:
+				_report_command_rejection(worker, tr("work_area_gather_no_zone").format({"name": worker.name}))
+				continue
+			_assign_work_area_gather(worker, area, order)
+		return
+	var valid_ids: Array[int] = []
+	for area in game_data.work_areas:
+		var names := HaulZoneService.allowed_names_for(area, kind, int(order["category"]), String(order["resource_name"]))
+		if names.is_empty():
+			continue
+		var macro_state := macro_world.get_cell_state_at(area.macro_coords.x, area.macro_coords.y)
+		for worker in workers:
+			if HaulZoneService.count_available(area, macro_state, names, worker) > 0:
+				valid_ids.append(area.id)
+				break
+	if valid_ids.is_empty():
+		for worker in workers:
+			_report_command_rejection(worker, tr("work_area_gather_no_zone").format({"name": worker.name}))
+		return
+	_enter_work_area_pick_mode(workers, order, valid_ids)
+
+
+# Ordine di raccolta nella zona `area` (`order`: kind/category/resource_name/repeat). La Task è quella della raccolta su
+# zona (_build_haul_zone_task) con work_area_id e il filtro dell'ordine nel context; stessi controlli di idoneità e
+# icona del clic su una cella (sul centro della zona, se la sua macrocella è viva).
+func _assign_work_area_gather(worker: HumanIndividual, area: WorkArea, order: Dictionary) -> void:
+	if worker == null or area == null or not human_individuals.has(worker):
+		return
+	var kind := int(order["kind"])
+	var order_category := int(order["category"])
+	var order_resource := String(order["resource_name"])
+	var repeat := bool(order["repeat"])
+	var zone := HaulZoneService.make_work_area_zone(area.id, kind, order_category, order_resource)
+	var task := _build_haul_zone_task(zone, repeat, 0, worker)
+	var icon_cell: LiveMacroCell = live_cells.get(area.macro_coords)
+	var icon_position: Vector2i = area.rect.position + area.rect.size / 2
+	var rejection := worker.get_assign_rejection_reason(task, _resolve_age_band(worker))
+	if rejection != HumanIndividual.ASSIGN_OK:
+		_report_assign_rejection(worker, rejection, "task_activity_pickup")
+		if icon_cell != null:
+			_spawn_command_icon_at_microcell(icon_cell, icon_position, "task_rejected")
+		return
+	var assigned := worker.assign_task(task, _resolve_age_band(worker))
+	if not assigned:
+		_report_failed_assignment(worker, task, "task_activity_pickup")
+	if icon_cell != null:
+		_spawn_command_icon_at_microcell(icon_cell, icon_position, "pickup" if assigned else "task_rejected")
+	if DebugLogging.ENABLED and DebugLogging.SHOW_PICKUP_LOGS:
+		print("[PICKUP] #%d %s: raccolta nella zona %s (#%d), criterio %d/%d/'%s', ripeti=%s." % [
+			worker.id, worker.name, area.name, area.id, kind, order_category, order_resource, str(repeat)
+		])
+
+
+# --- Scelta manuale della zona (2026-09-27, work areas passo 3b — zona automatica spenta) ---
+# Banner "Scegli la zona (Esc per annullare)", layer delle zone acceso con le sole zone valide evidenziate
+# (WorkAreaOverlay.pick_mode/pick_area_ids). Clic sinistro dentro una zona valida (la più piccola se sovrapposte) =
+# ordine a tutti i pipottini dell'ordine in quella zona; Esc, clic destro o clic fuori dalle zone valide annullano.
+# Modalità esclusiva con il fantasma di un edificio, la scelta del lavoratore e il disegno delle zone.
+var work_area_pick_banner: PanelContainer
+var _work_area_pick_active: bool = false
+var _work_area_pick_workers: Array[HumanIndividual] = []
+var _work_area_pick_order: Dictionary = {}
+var _work_area_pick_layer_before: String = MapLayerRegistry.NONE_ID
+
+
+func _enter_work_area_pick_mode(workers: Array[HumanIndividual], order: Dictionary, valid_ids: Array[int]) -> void:
+	if _work_area_draw_active:
+		_exit_work_area_draw_mode()
+	if _building_ghost != null:
+		_clear_building_ghost()
+	if _worker_pick_on_pick.is_valid():
+		_exit_worker_pick_mode()
+	_work_area_pick_active = true
+	_work_area_pick_workers = workers
+	_work_area_pick_order = order
+	_work_area_pick_layer_before = _active_map_layer_id
+	WorkAreaOverlay.pick_area_ids.assign(valid_ids)
+	WorkAreaOverlay.pick_mode = true
+	_set_active_map_layer(WORK_AREA_LAYER_ID)
+	if work_area_pick_banner != null:
+		work_area_pick_banner.visible = true
+
+
+func _exit_work_area_pick_mode() -> void:
+	_work_area_pick_active = false
+	_work_area_pick_workers = []
+	_work_area_pick_order = {}
+	WorkAreaOverlay.pick_mode = false
+	WorkAreaOverlay.pick_area_ids.clear()
+	_set_active_map_layer(_work_area_pick_layer_before)
+	if work_area_pick_banner != null:
+		work_area_pick_banner.visible = false
+
+
+# Consuma l'evento mentre la modalità è attiva (chiamata SOLO da _unhandled_input). Gli eventi non di clic/Esc (camera,
+# tasti) passano oltre.
+func _handle_work_area_pick_input(event: InputEvent) -> bool:
+	if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_ESCAPE:
+		_exit_work_area_pick_mode()
+		return true
+	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_RIGHT and event.pressed:
+		_exit_work_area_pick_mode()
+		return true
+	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
+		if not event.pressed:
+			return true
+		var area := _pick_valid_work_area_at_mouse()
+		var workers := _work_area_pick_workers
+		var order := _work_area_pick_order
+		_exit_work_area_pick_mode()
+		if area != null:
+			for worker in workers:
+				_assign_work_area_gather(worker, area, order)
+		return true
+	return false
+
+
+# Zona valida (WorkAreaOverlay.pick_area_ids) sotto il mouse, la più piccola se più d'una; null se nessuna.
+func _pick_valid_work_area_at_mouse() -> WorkArea:
+	var placement := _live_cell_and_micro_position_at(get_global_mouse_position())
+	if placement.is_empty():
+		return null
+	var cell: LiveMacroCell = placement["cell"]
+	var best: WorkArea = null
+	for area in WorkAreaService.find_at(game_data, Vector2i(cell.macro_x, cell.macro_y), placement["micro_pos"]):
+		if not WorkAreaOverlay.pick_area_ids.has(area.id):
+			continue
+		if best == null or area.rect.get_area() < best.rect.get_area():
+			best = area
+	return best
+
+
+# Costruisce la Task di raccolta su zona senza assegnarla (2026-09-27, work areas passo 2): primo step "cerca nella
+# zona" (HAUL_RESOURCE_ZONE_TASK_DEFINITION_PATH), la zona (HaulZoneService) e la ripetizione nel context. Walk e
+# PickUp nascono a runtime dalla ricerca: i loro segnali (e quelli dell'Unload che seguirà) si collegano via
+# step_appended (_connect_haul_zone_step_appended). `owner` e' l'individuo proprietario della Task.
+func _build_haul_zone_task(zone: Dictionary, repeat_enabled: bool, repeat_count: int, owner: HumanIndividual) -> Task:
+	var definition := load(HAUL_RESOURCE_ZONE_TASK_DEFINITION_PATH) as TaskDefinition
+	var context: Dictionary = {HaulZoneService.CONTEXT_KEY: zone}
+	# Chiavi di TaskRepeatRules nel context per tutta la vita della Task, come in _build_pickup_task.
+	if repeat_enabled:
+		TaskRepeatRules.write(context, true, repeat_count)
+	var task := TaskFactory.build_task(definition, context)
+	_connect_haul_zone_step_appended(task, owner)
+	return task
+
+
+# Segnali degli step accodati alla raccolta su zona: PickUp (refresh della cella e ripetizione) e Unload, gli stessi
+# che _build_pickup_task collega. Anche dopo un reload, per una raccolta che non ha ancora fatto la ricerca
+# (_haul_zone_task_awaits_search, vedi _reconnect_loaded_task_signals).
+func _connect_haul_zone_step_appended(task: Task, owner: HumanIndividual) -> void:
+	task.step_appended.connect(func(action: Action) -> void:
+		if action is PickUpAction:
+			_reconnect_pickup_action_signals(action as PickUpAction)
+		elif action is UnloadAction:
+			_reconnect_unload_action_signals(action as UnloadAction, owner)
+	)
+
+
+# true per una raccolta su zona il cui PickUp non è ancora stato accodato dalla ricerca, o per una raccolta in una
+# WorkArea (2026-09-27): lì la ricerca accoda altri PickUp a ogni cella del viaggio.
+func _haul_zone_task_awaits_search(task: Task) -> bool:
+	if task == null or not task.context.has(HaulZoneService.CONTEXT_KEY):
+		return false
+	if HaulZoneService.is_work_area_zone(HaulZoneService.get_zone(task.context)):
+		return true
+	for step in task.steps:
+		if step is PickUpAction:
+			return false
+	return true
 
 
 
@@ -3684,6 +3935,10 @@ func _spawn_command_icon_at_microcell(cell: LiveMacroCell, microcell: Vector2i, 
 # _on_pickup_choice_made per scegliere una risorsa "rappresentativa" da passare a _assign_pickup_task quando il
 # criterio e' CATEGORY/ALL (TaskFactory vuole sempre un resource_name, che PickUpAction poi ignora).
 var _pickup_pending_resources: Array = []
+# Pipottini a cui va l'ordine quando il pickup_choice_dialog è stato aperto dal comando "Raccogli" della barra dei
+# comandi (2026-09-27, work areas passo 3a/3b): la scelta non riguarda una cella ma la raccolta in una zona di lavoro.
+# Vuoto = dialog aperto dal clic su una cella (comportamento di sempre).
+var _pickup_dialog_work_area_workers: Array[HumanIndividual] = []
 
 # La voce preselezionata del pickup_choice_dialog viene da UserOptions.get_pickup_default_choice() (2026-09-20,
 # richiesta utente: opzione salvata, scelta dal menu Opzioni; default "Tutto"). Il dialog ripiega risalendo
@@ -3808,7 +4063,8 @@ func _try_assign_pickup_command_on_right_click(event: InputEvent) -> bool:
 		print("[DBG_PICKUP] %d candidati con scorta reale alla stessa posizione: %s — apro pickup_choice_dialog." % [
 			available_candidates.size(), str(available_quantities)
 		])
-	pickup_choice_dialog.open_dialog(tr("pickup_choice_dialog_title"), tr("pickup_choice_dialog_message"), pending_resources, UserOptions.get_pickup_default_choice(), UserOptions.repeat_default)
+	_pickup_dialog_work_area_workers = []
+	pickup_choice_dialog.open_dialog(tr("pickup_choice_dialog_title"), tr("pickup_choice_dialog_message"), pending_resources, UserOptions.get_pickup_default_choice(), UserOptions.repeat_default, HaulZoneService.CLICK_MAX_REPEATS)
 	return true
 
 
@@ -3824,6 +4080,11 @@ func _try_assign_pickup_command_on_right_click(event: InputEvent) -> bool:
 # Con CATEGORY/ALL _assign_pickup_task vuole comunque un resource_name (TaskFactory lo richiede): si passa la
 # prima risorsa del dialog di quella sorgente e categoria (o la prima della sorgente), che PickUpAction non usa.
 func _on_pickup_choice_made(kind: int, category: int, resource_name: String, quantity: int, repeat: bool, source_kind: int) -> void:
+	if not _pickup_dialog_work_area_workers.is_empty():
+		var workers := _pickup_dialog_work_area_workers
+		_pickup_dialog_work_area_workers = []
+		_on_work_area_gather_choice(workers, kind, category, resource_name, repeat)
+		return
 	# Voce del dialog da cui prendere posizione (e, per CATEGORY/ALL, il resource_name rappresentativo):
 	# la risorsa scelta per NAME, altrimenti la prima della sorgente scelta (e della categoria, per CATEGORY).
 	var entry := _find_pickup_pending_entry(source_kind, category if kind == PickUpAction.CriterionKind.CATEGORY else -1,
@@ -9570,6 +9831,8 @@ var _work_area_redraw_id: int = -1
 const WORK_AREA_MIN_DRAG_SIDE: int = 2
 
 func _enter_work_area_draw_mode(redraw_area_id: int = -1) -> void:
+	if _work_area_pick_active:
+		_exit_work_area_pick_mode()
 	_work_area_redraw_id = redraw_area_id
 	# Modalità esclusive: via il fantasma di un edificio e la scelta di un lavoratore.
 	if _building_ghost != null:
@@ -10247,6 +10510,10 @@ func _reconnect_loaded_task_signals() -> void:
 		# ricostruiti come istanze nuove, senza segnali — ricollega quelli di PickUp (refresh + ripetizione), anche
 		# per un individuo senza current_task.
 		for queued_task in member.task_queue:
+			# Raccolta su zona non ancora partita (2026-09-27, es. ripetizione in coda): il PickUp nascerà dalla
+			# ricerca, i suoi segnali passano da step_appended.
+			if _haul_zone_task_awaits_search(queued_task):
+				_connect_haul_zone_step_appended(queued_task, member)
 			for queued_step in queued_task.steps:
 				# Build Task sospese in coda (2026-09-24, bugfix "cantiere bloccato in allestimento"):
 				# stessi segnali SetupSite/Clear/Build di current_task sotto — senza, i gestori visivi
@@ -10259,6 +10526,8 @@ func _reconnect_loaded_task_signals() -> void:
 					_reconnect_unload_action_signals(queued_step as UnloadAction, member)
 		if member.current_task == null:
 			continue
+		if _haul_zone_task_awaits_search(member.current_task):
+			_connect_haul_zone_step_appended(member.current_task, member)
 		# Conteggio SOLO per il log di conferma sotto (2026-09-11, richiesta utente — "verificare che
 		# la riconnessione funzioni davvero, prima di procedere oltre") — nessuna logica di
 		# ricollegamento qui: quella resta interamente dentro _reconnect_build_task_signals/
@@ -10381,8 +10650,8 @@ func _reconnect_pickup_action_signals(step: PickUpAction) -> void:
 				break
 	)
 	# Ripetizione automatica (2026-09-20): la Task nuova viene generata e accodata da _queue_pickup_repeat.
-	step.repeat_requested.connect(func(repeat_owner: Variant, next_repeat_count: int) -> void:
-		_queue_pickup_repeat(step, repeat_owner as HumanIndividual, next_repeat_count)
+	step.repeat_requested.connect(func(repeat_owner: Variant, next_repeat_count: int, zone: Dictionary) -> void:
+		_queue_pickup_repeat(repeat_owner as HumanIndividual, next_repeat_count, zone)
 	)
 
 
@@ -10943,6 +11212,10 @@ func _setup_transport_selection_banner() -> void:
 	# Banner della modalità "disegna area" (2026-09-27, zone di lavoro): stesso stile/posizione.
 	work_area_draw_banner = _build_selection_banner()
 	(work_area_draw_banner.get_child(0) as Label).text = tr("work_area_draw_banner_text")
+	# Banner della scelta manuale della zona (2026-09-27, work areas passo 3b) e barra dei comandi del pipottino.
+	work_area_pick_banner = _build_selection_banner()
+	(work_area_pick_banner.get_child(0) as Label).text = tr("work_area_pick_banner_text")
+	_setup_command_bar()
 
 
 # Banner giallo in alto al centro, nascosto, con una Label come unico figlio — estratto il 2026-09-23

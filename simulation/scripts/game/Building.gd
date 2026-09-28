@@ -179,6 +179,11 @@ var production_output: Dictionary = {}
 # da store() (il momento del deposito), mai da get_used_space/get_slots_used/get_slot_breakdown
 # (che restano una lettura pura di ciò che è già stoccato, a prescindere da questo filtro).
 var enabled_categories: Array[SecondaryResourceTypes.Category] = []
+# true = il filtro per-istanza è attivo e enabled_categories è l'elenco ESATTO delle categorie accettate, anche vuoto
+# ("nessuna categoria": togliendo tutte le spunte l'edificio non accetta niente). false = nessuna restrizione propria,
+# enabled_categories ignorato (2026-09-28, richiesta utente — prima "vuoto" valeva sempre "accetta tutto"). Salvataggi
+# precedenti: GameLoadService lo deduce da enabled_categories (non vuoto = attivo), stesso comportamento di prima.
+var restricts_categories: bool = false
 
 # Orientamento (dove guarda la porta) — scelto dal player durante il piazzamento (vedi
 # BuildingGhost.rotation/GameScene, tasto R per ruotare), fissato al momento del piazzamento

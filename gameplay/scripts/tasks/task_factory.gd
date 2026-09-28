@@ -197,6 +197,10 @@ static func build_task(definition: TaskDefinition, context: Dictionary) -> Task:
 					continue
 				steps.append(DemolishAction.new(context[step_definition.context_keys[0]]))
 				step_descriptions.append(step_definition.step_description)
+			TaskTypes.ActionType.SEARCH_HAUL_ZONE:
+				# Nessun argomento (2026-09-27, work areas passo 2): la zona resta in context (HaulZoneService.CONTEXT_KEY).
+				steps.append(SearchHaulZoneAction.new())
+				step_descriptions.append(step_definition.step_description)
 			TaskTypes.ActionType.PRODUCE:
 				# 2 argomenti (target_building, resource_name) — 2026-09-23, ProduceAction.
 				# tool_multiplier fisso a 1.0 come per BUILD; skill_crafting accelera il lavoro a ogni tick tramite

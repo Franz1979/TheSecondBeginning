@@ -18,7 +18,7 @@ options_volume_music,Volume musica
 options_volume_ambience,Volume ambiente
 options_volume_sfx,Volume effetti
 options_volume_ui,Volume interfaccia
-task_repeat_checkbox,Ripeti fino a {count} volte
+task_repeat_checkbox,Ripeti (fino a {count} volte)
 produce_deliver_checkbox,Consegna al magazzino
 language_none,Predefinita (sistema)
 language_italian,Italiano
@@ -118,7 +118,8 @@ work_area_job_hunt,Caccia
 work_area_selection_title,Zona di lavoro
 work_area_name_tooltip,Nome della zona (Invio per confermare)
 work_area_center_tooltip,Centra la camera sulla zona
-work_area_size_label,Dimensioni: {w}×{h} · Macrocella ({x}, {y})
+work_area_size_label,Dimensioni: {w}×{h}
+work_area_macro_label,"Macrocella ({x}, {y})"
 work_area_color_caption,Colore
 work_area_jobs_caption,Lavori
 work_area_filter_all,Tutto
@@ -245,6 +246,16 @@ task_unload_resource_name,Scaricare risorsa
 task_unload_resource_step_walk,Andando a scaricare
 task_unload_resource_step_unload,Scaricando
 task_haul_resource_name,Raccolta
+task_haul_resource_step_search,Cercando dove raccogliere
+command_bar_gather_tooltip,Raccogli
+command_bar_hunt_tooltip,Caccia
+command_bar_coming_soon,In arrivo
+command_bar_auto_zone,Scegli zona in automatico
+command_bar_gather_no_zone_tooltip,Nessuna zona di lavoro con la raccolta abilitata
+work_area_pick_banner_text,Scegli la zona (Esc per annullare)
+work_area_gather_dialog_title,Raccogli nelle zone di lavoro
+work_area_gather_dialog_message,Cosa raccogliere? La zona si sceglie in automatico.
+work_area_gather_no_zone,"{name}: nessuna zona di lavoro valida per questa raccolta."
 task_haul_resource_step_walk,Andando a raccogliere
 task_haul_resource_step_pickup,Raccogliendo
 task_transport_name,Trasporto

@@ -71,7 +71,8 @@ work_area_job_hunt,Hunting
 work_area_selection_title,Work area
 work_area_name_tooltip,Area name (Enter to confirm)
 work_area_center_tooltip,Center the camera on the area
-work_area_size_label,Size: {w}×{h} · Macro cell ({x}, {y})
+work_area_size_label,Size: {w}×{h}
+work_area_macro_label,"Macro cell ({x}, {y})"
 work_area_color_caption,Color
 work_area_jobs_caption,Jobs
 work_area_filter_all,Everything
@@ -288,7 +289,7 @@ options_volume_music,Music volume
 options_volume_ambience,Ambience volume
 options_volume_sfx,Effects volume
 options_volume_ui,Interface volume
-task_repeat_checkbox,Repeat up to {count} times
+task_repeat_checkbox,Repeat (up to {count} times)
 produce_deliver_checkbox,Deliver to warehouse
 minimap_show_tooltip,Show the minimap
 minimap_hide_tooltip,Hide the minimap
@@ -416,3 +417,22 @@ visitor_member_woman,Woman aged {age}
 visitor_member_boy,Boy aged {age}
 visitor_member_girl,Girl aged {age}
 random_event_family_arrival_name,A family arrives
+task_haul_resource_step_search,Looking for a spot to gather
+command_bar_gather_tooltip,Gather
+command_bar_hunt_tooltip,Hunt
+command_bar_coming_soon,Coming soon
+command_bar_auto_zone,Choose area automatically
+command_bar_gather_no_zone_tooltip,No work area with gathering enabled
+work_area_pick_banner_text,Choose the area (Esc to cancel)
+work_area_gather_dialog_title,Gather in work areas
+work_area_gather_dialog_message,What to gather? The area is chosen automatically.
+work_area_gather_no_zone,"{name}: no work area is valid for this gathering."
+carried_resource_tooltip_acorn,Acorns
+carried_resource_tooltip_berry,Berries
+carried_resource_tooltip_eggs,Eggs
+carried_resource_tooltip_fruit,Wild fruit
+carried_resource_tooltip_mushroom,Mushrooms
+carried_resource_tooltip_wild_vegetables,Wild vegetables
+carried_resource_tooltip_pebble,Pebbles
+carried_resource_tooltip_plant_fiber,Plant fiber
+carried_resource_tooltip_stick,Sticks

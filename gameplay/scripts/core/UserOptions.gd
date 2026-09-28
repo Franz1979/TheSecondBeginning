@@ -55,6 +55,9 @@ var production_delivery_default: bool = true
 # Minimappa della sidebar chiusa (2026-09-20, richiesta utente): true = nascosta, resta solo il bottone per
 # riaprirla; false (default) = visibile. Salvato a ogni click sul bottone.
 var minimap_collapsed: bool = false
+# Raccolta nelle zone di lavoro (2026-09-27, work areas passo 3b — spunta della barra dei comandi): true = zona scelta in
+# automatico con il punteggio, false = il giocatore clicca la zona sulla mappa. Impostazione unica per tutto il gioco.
+var work_area_auto_zone: bool = true
 
 # Volumi audio (2026-09-21, richiesta utente): lineari 0-1, default 0.8, uno per bus (vedi
 # audio/buses/default_bus_layout.tres). Applicati ai bus con apply_volumes(), al load e ad ogni modifica.
@@ -100,6 +103,7 @@ func load_from_disk() -> void:
 	repeat_default = bool(config.get_value(SECTION, "repeat_default", config.get_value(SECTION, "pickup_repeat_default", false)))
 	production_delivery_default = bool(config.get_value(SECTION, "production_delivery_default", true))
 	minimap_collapsed = bool(config.get_value(SECTION, "minimap_collapsed", false))
+	work_area_auto_zone = bool(config.get_value(SECTION, "work_area_auto_zone", true))
 	for field in VOLUME_BUSES.keys():
 		set(field, clampf(float(config.get_value(SECTION, field, DEFAULT_VOLUME)), 0.0, 1.0))
 
@@ -116,6 +120,7 @@ func save_to_disk() -> void:
 	config.set_value(SECTION, "repeat_default", repeat_default)
 	config.set_value(SECTION, "production_delivery_default", production_delivery_default)
 	config.set_value(SECTION, "minimap_collapsed", minimap_collapsed)
+	config.set_value(SECTION, "work_area_auto_zone", work_area_auto_zone)
 	for field in VOLUME_BUSES.keys():
 		config.set_value(SECTION, field, get(field))
 	config.save(OPTIONS_FILE_PATH)

@@ -585,6 +585,9 @@ func load_game_from_json(file_path: String) -> LoadedGame:
 			for category_value in building_data.get("enabled_categories", []):
 				enabled_categories.append(int(category_value))
 			building.enabled_categories = enabled_categories
+			# restricts_categories (2026-09-28): assente nei salvataggi precedenti — lì "vuoto" voleva dire "nessuna
+			# restrizione", quindi il filtro è attivo solo se l'elenco non è vuoto (stesso comportamento di prima).
+			building.restricts_categories = bool(building_data.get("restricts_categories", not enabled_categories.is_empty()))
 			building.rotation = int(building_data.get("rotation", GameTypes.Direction.SOUTH))
 			# is_awaiting_material (2026-09-14, richiesta utente) — .get(key, false) per compatibilità
 			# con save precedenti l'introduzione del campo, stesso principio di enabled_categories

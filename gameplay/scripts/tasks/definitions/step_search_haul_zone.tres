@@ -1,0 +1,9 @@
+[gd_resource type="Resource" script_class="TaskStepDefinition" format=3]
+
+[ext_resource type="Script" uid="uid://d3sri3tos2u4f" path="res://gameplay/scripts/tasks/task_step_definition.gd" id="1_search"]
+
+[resource]
+script = ExtResource("1_search")
+action_type = 21
+context_keys = Array[String]([])
+step_description = "task_haul_resource_step_search"

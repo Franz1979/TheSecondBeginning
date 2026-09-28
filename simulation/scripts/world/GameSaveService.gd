@@ -416,6 +416,9 @@ func save_game_to_json(
 			# cofano) — vuoto per ogni edificio che il player non ha ancora ristretto, stesso
 			# trattamento "storia reale" già usato per stored_resources sopra.
 			"enabled_categories": building.enabled_categories,
+			# Filtro per-istanza attivo (2026-09-28, Building.restricts_categories): distingue "nessuna restrizione" da
+			# "nessuna categoria accettata" quando enabled_categories è vuoto.
+			"restricts_categories": building.restricts_categories,
 			"rotation": building.rotation,
 			# is_awaiting_material (2026-09-14, richiesta utente — segnalazione player per un cantiere
 			# bloccato per mancanza di materiale, vedi Building.gd) — persistito così il pannello

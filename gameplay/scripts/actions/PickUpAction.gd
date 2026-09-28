@@ -58,12 +58,12 @@ signal resource_collected(resource_name: String, target_position: Vector2i, quan
 signal collection_completed(collected: Dictionary)
 
 # Emesso da on_complete() quando la raccolta e' andata a buon fine, la ripetizione e' attiva nel context della
-# Task, le ripetizioni fatte sono meno di TaskRepeatRules.MAX_REPEATS e nella microcella resta ancora qualcosa che il criterio
+# Task, le ripetizioni fatte sono meno del massimo della zona e nella zona resta ancora qualcosa che il criterio
 # puo' prendere: chiede a chi ha creato la Task (GameScene._queue_pickup_repeat) di generare una nuova Task di
-# raccolta identica (stessa cella, stesso criterio) e accodarla a `individual`. `next_repeat_count` = numero di
-# ripetizioni gia' fatte INCLUSA la nuova (la prima ripetizione porta 1). La classe non conosce Task ne'
-# TaskFactory: come per collection_completed si limita a segnalare.
-signal repeat_requested(individual: Variant, next_repeat_count: int)
+# raccolta sulla stessa zona (`zone`, HaulZoneService — 2026-09-27, work areas passo 2: prima era la stessa cella) e
+# accodarla a `individual`. `next_repeat_count` = numero di ripetizioni gia' fatte INCLUSA la nuova (la prima
+# ripetizione porta 1). La classe non conosce Task ne' TaskFactory: come per collection_completed si limita a segnalare.
+signal repeat_requested(individual: Variant, next_repeat_count: int, zone: Dictionary)
 
 # Criterio di raccolta (vedi il commento in testa al file). L'ordine dei valori e' persistito nei salvataggi
 # (TaskPersistenceService): non riordinare, solo aggiungere in coda.
@@ -110,6 +110,11 @@ var criterion_category: int = -1
 # candidato senza dialog"): risolve il massimo raccoglibile esattamente come prima di questo campo.
 # Vale SOLO con criterion_kind == NAME (tetto su quella risorsa); con CATEGORY/ALL e' ignorata.
 var quantity_requested: int = -1
+
+# Risorse ammesse (2026-09-27, work areas passo 3a): se non vuoto sostituisce l'elenco del criterio — la raccolta in una
+# WorkArea prende solo le risorse accettate sia dall'ordine sia dalla zona (HaulZoneService.allowed_names), fissate
+# alla ricerca della cella. Vuoto = il criterio da solo, come sempre. Persistito (TaskPersistenceService._build_step).
+var restricted_names: Array[String] = []
 
 # Piano di raccolta risolto in activate() (mai ricalcolato dopo), consumato da on_complete(): un elemento per
 # risorsa, gia' nell'ordine di raccolta, {"resource_name": String, "quantity": int > 0}. Vuoto = niente da
@@ -200,31 +205,70 @@ func activate(individual: Variant, context: Dictionary) -> void:
 #   - ordine: categoria secondo PRIORITY_CATEGORIES; dentro il cibo calorie/spazio decrescente
 #     (FoodSelectionService.is_denser_food_first); dentro le altre categorie quantita' disponibile
 #     decrescente; a parita' per nome (esito deterministico).
+#
+# Logica statica (2026-09-27, work areas passo 2): la stessa disponibilita' serve alla ricerca della cella nella zona
+# (HaulZoneService), che la chiede per molte celle — list_candidate_names si legge una volta e si passa a
+# build_candidates_at/has_candidates_at per ogni cella.
 func _build_candidates() -> Array[Dictionary]:
-	var candidates: Array[Dictionary] = []
-	if macro_state == null:
-		return candidates
-	var names: Array[String] = []
-	if criterion_kind == CriterionKind.NAME:
-		names.append(resource_name)
-	else:
-		names = CaloricCalculator.list_secondary_resource_names()
+	var names: Array[String] = restricted_names if not restricted_names.is_empty() else list_candidate_names(criterion_kind, resource_name)
+	return build_candidates_at(macro_state, target_position, source_kind, criterion_kind, criterion_category, names)
+
+
+# Risorse da considerare per il criterio: NAME = solo `p_resource_name`; CATEGORY/ALL = tutto il catalogo
+# (CaloricCalculator.list_secondary_resource_names(), che scandisce la cartella: da leggere una volta sola).
+static func list_candidate_names(p_criterion_kind: int, p_resource_name: String) -> Array[String]:
+	if p_criterion_kind == CriterionKind.NAME:
+		var single: Array[String] = [p_resource_name]
+		return single
+	return CaloricCalculator.list_secondary_resource_names()
+
+
+# Candidato per una risorsa in una microcella, {} se non passa il criterio o non ce n'e'.
+static func _candidate_at(
+	p_macro_state: MacroCellState, position: Vector2i, p_source_kind: int, p_criterion_kind: int, p_criterion_category: int,
+	candidate_name: String
+) -> Dictionary:
+	var rules := CaloricCalculator.get_caloric_source_rules(candidate_name)
+	if rules == null or rules.space_per_unit <= 0.0:
+		return {}
+	if p_criterion_kind == CriterionKind.CATEGORY and int(rules.category) != p_criterion_category:
+		return {}
+	var available: int = get_source_available_at(p_macro_state, position, p_source_kind, candidate_name)
+	if available <= 0:
+		return {}
+	return {
+		"name": candidate_name,
+		"available": available,
+		"space": rules.space_per_unit,
+		"category": int(rules.category),
+		"density": rules.calories_per_unit / rules.space_per_unit,
+	}
+
+
+# true se in `position` c'e' almeno un candidato (stesso filtro di build_candidates_at, senza ordinare).
+static func has_candidates_at(
+	p_macro_state: MacroCellState, position: Vector2i, p_source_kind: int, p_criterion_kind: int, p_criterion_category: int,
+	names: Array[String]
+) -> bool:
+	if p_macro_state == null:
+		return false
 	for candidate_name in names:
-		var rules := CaloricCalculator.get_caloric_source_rules(candidate_name)
-		if rules == null or rules.space_per_unit <= 0.0:
-			continue
-		if criterion_kind == CriterionKind.CATEGORY and int(rules.category) != criterion_category:
-			continue
-		var available: int = _get_source_available(candidate_name)
-		if available <= 0:
-			continue
-		candidates.append({
-			"name": candidate_name,
-			"available": available,
-			"space": rules.space_per_unit,
-			"category": int(rules.category),
-			"density": rules.calories_per_unit / rules.space_per_unit,
-		})
+		if not _candidate_at(p_macro_state, position, p_source_kind, p_criterion_kind, p_criterion_category, candidate_name).is_empty():
+			return true
+	return false
+
+
+static func build_candidates_at(
+	p_macro_state: MacroCellState, position: Vector2i, p_source_kind: int, p_criterion_kind: int, p_criterion_category: int,
+	names: Array[String]
+) -> Array[Dictionary]:
+	var candidates: Array[Dictionary] = []
+	if p_macro_state == null:
+		return candidates
+	for candidate_name in names:
+		var candidate := _candidate_at(p_macro_state, position, p_source_kind, p_criterion_kind, p_criterion_category, candidate_name)
+		if not candidate.is_empty():
+			candidates.append(candidate)
 	candidates.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
 		var priority_a: int = PickUpAction.PRIORITY_CATEGORIES.find(a["category"])
 		var priority_b: int = PickUpAction.PRIORITY_CATEGORIES.find(b["category"])
@@ -327,7 +371,12 @@ func is_complete(individual: Variant, context: Dictionary) -> bool:
 # qui, stessa firma di ogni altro override.
 func get_required_position(individual: Variant, context: Dictionary) -> Variant:
 	# Punto casuale dentro la microcella di raccolta, mai l'angolo esatto (2026-09-27, PathfindingService.random_point_in_microcell).
-	return PathfindingService.random_point_in_microcell(Vector2(target_position))
+	# Macrocella della raccolta diversa da quella di casa (2026-09-27, zone di lavoro): target_position è locale alla
+	# propria macrocella, le posizioni dell'individuo alla sua home — si aggiunge lo scostamento tra le due (zero a casa).
+	var macro_offset := Vector2.ZERO
+	if macro_state != null and individual != null:
+		macro_offset = Vector2(Vector2i(macro_state.x, macro_state.y) - individual.home_macro_coords) * World.WIDTH
+	return PathfindingService.random_point_in_microcell(Vector2(target_position) + macro_offset)
 
 
 # Esegue il piano (_plan) risolto in activate(): per ogni risorsa la aggiunge allo zaino (add_carried_resource:
@@ -363,9 +412,24 @@ func on_complete(individual: Variant, context: Dictionary) -> void:
 			individual.id, individual.name, _criterion_text(), target_position.x, target_position.y,
 			str(collected), _stop_reason, str(individual.carried_resources)
 		])
+	# Raccolta in una WorkArea (2026-09-27, work areas passo 3a): la cella successiva, la fine del viaggio (ricerca del
+	# magazzino) e la ripetizione le decide la ricerca nella zona (HumanIndividualActionService.
+	# _handle_pending_haul_zone_search), anche con la cella trovata vuota all'arrivo (si rifà la ricerca invece di
+	# chiudere). Le risorse raccolte si accumulano nel context per la ricerca del magazzino a fine viaggio.
+	var is_work_area_haul: bool = HaulZoneService.is_work_area_zone(HaulZoneService.get_zone(context))
 	if collected.is_empty():
+		if is_work_area_haul:
+			context[SearchHaulZoneAction.CONTEXT_PENDING] = true
 		return
 	collection_completed.emit(collected)
+	if is_work_area_haul:
+		var trip_resources: Array = context.get(HaulZoneService.CONTEXT_TRIP_RESOURCES, [])
+		for collected_name in collected.keys():
+			if not trip_resources.has(collected_name):
+				trip_resources.append(collected_name)
+		context[HaulZoneService.CONTEXT_TRIP_RESOURCES] = trip_resources
+		context[SearchHaulZoneAction.CONTEXT_PENDING] = true
+		return
 
 	# Ricerca magazzino INIZIALE (2026-09-09, richiesta utente — haul_resource, stesso canale
 	# generico usato dal re-routing di UnloadAction.activate, vedi lì per il Dictionary gemello):
@@ -389,35 +453,43 @@ func on_complete(individual: Variant, context: Dictionary) -> void:
 # TaskRepeatRules.CONTEXT_ENABLED (scritto da GameScene alla creazione; il contatore CONTEXT_COUNT viaggia li',
 # non nell'Action, e sopravvive al salvataggio insieme al context). Nessun controllo "in anticipo" sulla cella
 # prima di partire: la nuova Task va comunque, e se qualcuno nel frattempo l'ha svuotata trova zero, si chiude
-# senza raccogliere (piano vuoto, on_complete esce prima di arrivare qui) e non ne nasce un'altra. Qui, a
-# raccolta avvenuta, si verifica solo che il criterio possa ancora prendere qualcosa (_build_candidates: stessa
-# fonte di disponibilita' di activate).
+# senza raccogliere e non ne nasce un'altra. Qui, a raccolta avvenuta, si verifica solo che il criterio possa
+# ancora prendere qualcosa.
+# Zona (2026-09-27, work areas passo 2): massimo di ripetizioni e controllo "resta qualcosa" vengono dalla zona del
+# context (HaulZoneService), su tutte le sue celle; una Task salvata prima delle zone usa la zona 1×1 della propria
+# cella con le ripetizioni del clic (HaulZoneService.from_pickup) — identico a prima.
 func _request_repeat_if_needed(individual: Variant, context: Dictionary) -> void:
 	if not TaskRepeatRules.is_enabled(context):
 		return
+	var zone := HaulZoneService.get_zone(context)
+	if zone.is_empty():
+		zone = HaulZoneService.from_pickup(self)
+	var max_repeats: int = HaulZoneService.get_max_repeats(zone)
 	var repeats_done: int = TaskRepeatRules.get_count(context)
-	if repeats_done >= TaskRepeatRules.MAX_REPEATS:
+	if repeats_done >= max_repeats:
 		return
-	if _build_candidates().is_empty():
+	if not HaulZoneService.has_available(zone, macro_state):
 		if DebugLogging.ENABLED and DebugLogging.SHOW_PICKUP_LOGS:
-			print("[PICKUP] #%d %s: ripetizione non richiesta (%d/%d) — la microcella non ha piu' nulla per il criterio." % [
-				individual.id, individual.name, repeats_done, TaskRepeatRules.MAX_REPEATS
+			print("[PICKUP] #%d %s: ripetizione non richiesta (%d/%d) — la zona non ha piu' nulla per il criterio." % [
+				individual.id, individual.name, repeats_done, max_repeats
 			])
 		return
 	if DebugLogging.ENABLED and DebugLogging.SHOW_PICKUP_LOGS:
 		print("[PICKUP] #%d %s: ripetizione %d/%d richiesta — resta ancora qualcosa per il criterio." % [
-			individual.id, individual.name, repeats_done + 1, TaskRepeatRules.MAX_REPEATS
+			individual.id, individual.name, repeats_done + 1, max_repeats
 		])
-	repeat_requested.emit(individual, repeats_done + 1)
+	repeat_requested.emit(individual, repeats_done + 1, zone.duplicate(true))
 
 
-# Disponibilità di una risorsa nella sorgente (vedi SourceKind).
-func _get_source_available(candidate_name: String) -> int:
-	if macro_state == null:
+# Disponibilità di una risorsa nella sorgente (vedi SourceKind), in una microcella qualunque della macrocella.
+static func get_source_available_at(p_macro_state: MacroCellState, position: Vector2i, p_source_kind: int, candidate_name: String) -> int:
+	if p_macro_state == null:
 		return 0
-	if source_kind == SourceKind.GROUND_PILE:
-		return GroundPileService.get_available(GameSettings.active_game_data, _source_macro_coords(), target_position, candidate_name)
-	return TerrainScatteredResourceService.get_available(macro_state, candidate_name, target_position)
+	if p_source_kind == SourceKind.GROUND_PILE:
+		return GroundPileService.get_available(
+			GameSettings.active_game_data, Vector2i(p_macro_state.x, p_macro_state.y), position, candidate_name
+		)
+	return TerrainScatteredResourceService.get_available(p_macro_state, candidate_name, position)
 
 
 # Sposta fino a `quantity` unità dalla sorgente allo zaino e ritorna quante ne sono entrate. Si toglie dalla
@@ -493,6 +565,7 @@ func get_save_data() -> Dictionary:
 		"criterion_category": criterion_category,
 		# Sorgente (2026-09-26, ground drop): letta da TaskPersistenceService._build_step come argomento di _init.
 		"source_kind": int(source_kind),
+		"restricted_names": Array(restricted_names),
 		"plan": _plan.duplicate(true),
 		"stop_reason": _stop_reason,
 		"duration": _duration,

@@ -25,17 +25,23 @@ const THUMB_WIDTH_PX: float = 0.8
 const PALM := Rect2(Vector2(-1.45, -0.2), Vector2(2.9, 2.9))
 const PALM_CORNER_PX: float = 0.8
 
+# Fattore applicato a coordinate e spessori (2026-09-28, bottone della barra dei comandi — CommandButtonIcon): 1 sulla
+# mappa (pixel di cella, come sempre); nel bottone il disegno avviene direttamente alla dimensione reale invece di
+# ingrandire il nodo con `scale`, che sfocherebbe i bordi antialiasati.
+var icon_scale: float = 1.0
+
 
 func _draw() -> void:
 	# Prima tutti i contorni (forme ingrandite del bordo), poi tutti i riempimenti sopra: così le forme
 	# si fondono in un'unica sagoma, come nell'emoji, e il bordo resta solo all'esterno.
+	var s := icon_scale
 	_draw_shapes(OUTLINE, OUTLINE_WIDTH_PX)
 	_draw_shapes(SKIN, 0.0)
 	# Righe sottili tra le dita, dalla base del palmo fino alla punta del dito più corto dei due vicini.
 	for i in range(FINGER_X.size() - 1):
 		var x: float = (FINGER_X[i] + FINGER_X[i + 1]) / 2.0
 		var top: float = maxf(FINGER_TOP_Y[i], FINGER_TOP_Y[i + 1]) + FINGER_WIDTH_PX * 0.5
-		draw_line(Vector2(x, 0.6), Vector2(x, top), FINGER_SEPARATION, FINGER_SEPARATION_WIDTH_PX, true)
+		draw_line(Vector2(x, 0.6) * s, Vector2(x, top) * s, FINGER_SEPARATION, FINGER_SEPARATION_WIDTH_PX * s, true)
 
 
 # Sagoma completa (dita, pollice, palmo) in `color`, allargata di `grow` pixel su ogni lato.
@@ -43,14 +49,18 @@ func _draw_shapes(color: Color, grow: float) -> void:
 	for i in range(FINGER_X.size()):
 		_draw_capsule(Vector2(FINGER_X[i], FINGER_BASE_Y), Vector2(FINGER_X[i], FINGER_TOP_Y[i]), FINGER_WIDTH_PX + grow * 2.0, color)
 	_draw_capsule(THUMB_BASE, THUMB_TIP, THUMB_WIDTH_PX + grow * 2.0, color)
-	draw_colored_polygon(_rounded_rect_points(PALM.grow(grow), PALM_CORNER_PX + grow), color)
+	var palm := PALM.grow(grow)
+	draw_colored_polygon(
+		_rounded_rect_points(Rect2(palm.position * icon_scale, palm.size * icon_scale), (PALM_CORNER_PX + grow) * icon_scale), color
+	)
 
 
 # Segmento dalle estremità arrotondate (dito): linea spessa più un cerchio a ciascun capo.
 func _draw_capsule(from: Vector2, to: Vector2, width: float, color: Color) -> void:
-	draw_line(from, to, color, width, true)
-	draw_circle(from, width * 0.5, color)
-	draw_circle(to, width * 0.5, color)
+	var s := icon_scale
+	draw_line(from * s, to * s, color, width * s, true)
+	draw_circle(from * s, width * s * 0.5, color)
+	draw_circle(to * s, width * s * 0.5, color)
 
 
 # Contorno di un rettangolo dagli angoli arrotondati, come poligono.

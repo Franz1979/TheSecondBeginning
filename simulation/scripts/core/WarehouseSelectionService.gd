@@ -82,6 +82,12 @@ extends RefCounted
 # find_source_for_retrieval): Callable(edificio) -> bool opzionale, passato da chi cerca per un pipottino
 # (PathfindingService.reachability_for); esclude gli edifici che il pipottino non può raggiungere. Vedi
 # SpatialSelectionService.find_nearest.
+# Candidato idoneo (2026-09-28, richiesta utente — bugfix "va nel magazzino che non accetta il cibo"): edificio completo,
+# non da demolire, non postazione di lavoro, che ACCETTA la risorsa (BuildingStorageService.can_accept: categorie del
+# tipo e quelle impostate dal giocatore sull'edificio) e ha posto per ALMENO UN'UNITÀ (prima: per tutta
+# quantity_needed). Il residuo che non entra lo ricolloca UnloadAction.on_complete con il re-routing già esistente, che
+# esclude via via i magazzini già tentati (context "warehouse_search_excluded_building_ids"). quantity_needed resta
+# nella firma (una richiesta <= 0 non cerca nulla).
 static func find_best(
 	world: World,
 	origin_position: Vector2,
@@ -111,7 +117,8 @@ static func find_best(
 	# Edificio "da demolire" escluso (2026-09-27, Building.is_marked_for_demolition): non funziona più.
 	var has_capacity := func(building: Building) -> bool:
 		return building.is_complete and not building.is_marked_for_demolition and building.rules != null and not building.rules.is_workstation \
-			and BuildingStorageService.get_max_depositable(building, resource_name) >= quantity_needed
+			and BuildingStorageService.can_accept(building, resource_name) \
+			and BuildingStorageService.get_max_depositable(building, resource_name) >= 1
 
 	var storage_predicate := func(building: Building) -> bool:
 		return building.rules != null and building.rules.category == BuildingTypes.Category.STORAGE and has_capacity.call(building)

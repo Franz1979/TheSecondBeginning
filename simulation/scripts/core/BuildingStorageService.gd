@@ -243,7 +243,9 @@ static func can_accept(building: Building, resource_name: String) -> bool:
 	if not building.rules.accepted_categories.is_empty() and not building.rules.accepted_categories.has(resource_rules.category):
 		return false
 	# Categorie bloccate (2026-09-27, BuildingRules.categories_locked): il filtro per-istanza non si applica.
-	if not building.rules.categories_locked and not building.enabled_categories.is_empty() and not building.enabled_categories.has(resource_rules.category):
+	# Filtro per-istanza attivo (Building.restricts_categories, 2026-09-28): enabled_categories è l'elenco esatto, anche
+	# vuoto (nessuna categoria accettata).
+	if not building.rules.categories_locked and building.restricts_categories and not building.enabled_categories.has(resource_rules.category):
 		return false
 	return true
 

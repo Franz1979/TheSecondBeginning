@@ -386,8 +386,14 @@ func get_activity_description() -> String:
 	var resource_name: String = ""
 	match task_name:
 		"task_haul_resource_name":
+			# Raccolta su zona (2026-09-27, work areas passo 2): prima della ricerca il PickUp non esiste ancora (es.
+			# ripetizione in coda) — la risorsa si legge dal filtro della zona, stessa regola "solo con NAME".
+			var haul_zone := HaulZoneService.get_zone(context)
+			if not haul_zone.is_empty() and HaulZoneService.get_criterion_kind(haul_zone) == PickUpAction.CriterionKind.NAME:
+				resource_name = HaulZoneService.get_resource_name(haul_zone)
 			for step in steps:
 				if step is PickUpAction:
+					resource_name = ""
 					# Solo con criterio per NOME la risorsa e' una sola (zaino multi-risorsa, 2026-09-20): con
 					# categoria/tutto non ce n'e' una da mostrare, resta il solo nome della Task.
 					if (step as PickUpAction).criterion_kind == PickUpAction.CriterionKind.NAME:

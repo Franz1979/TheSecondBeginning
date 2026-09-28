@@ -1192,7 +1192,7 @@ func _refresh_accepted_categories_toggles(building: Building, has_storage: bool)
 			check_box.disabled = true
 			category_toggles_container.add_child(check_box)
 			continue
-		check_box.button_pressed = building.enabled_categories.is_empty() or building.enabled_categories.has(category)
+		check_box.button_pressed = not building.restricts_categories or building.enabled_categories.has(category)
 		check_box.toggled.connect(_on_category_toggled.bind(category, building, categories_to_show))
 		category_toggles_container.add_child(check_box)
 
@@ -1218,12 +1218,18 @@ func _category_display_name(category: int) -> String:
 # la normalizzazione inversa sotto (se il player riabilita l'ultima categoria mancante, l'elenco
 # esplicito torna a coincidere con categories_to_show — a quel punto si ricollassa a [] per
 # restare nella forma canonica "nessuna restrizione propria", equivalente ma più pulita).
+#
+# Filtro attivo (2026-09-28, Building.restricts_categories): il primo deflag attiva il filtro con "tutto tranne questa";
+# togliendo l'ultima spunta l'elenco resta vuoto CON il filtro attivo, quindi l'edificio non accetta niente (prima un
+# elenco vuoto tornava a voler dire "accetta tutto").
 func _on_category_toggled(pressed: bool, category: int, building: Building, categories_to_show: Array) -> void:
 	if pressed:
-		if not building.enabled_categories.is_empty() and not building.enabled_categories.has(category):
+		if building.restricts_categories and not building.enabled_categories.has(category):
 			building.enabled_categories.append(category)
 	else:
-		if building.enabled_categories.is_empty():
+		if not building.restricts_categories:
+			building.restricts_categories = true
+			building.enabled_categories.clear()
 			for shown_category in categories_to_show:
 				if shown_category != category:
 					building.enabled_categories.append(shown_category)
@@ -1231,8 +1237,8 @@ func _on_category_toggled(pressed: bool, category: int, building: Building, cate
 			building.enabled_categories.erase(category)
 
 	# Normalizzazione (vedi commento sopra): elenco esplicito che ormai copre di nuovo TUTTO
-	# categories_to_show -> ricollassa a [] (forma canonica "nessuna restrizione propria").
-	if not building.enabled_categories.is_empty():
+	# categories_to_show -> filtro spento e elenco vuoto (forma canonica "nessuna restrizione propria").
+	if building.restricts_categories:
 		var covers_everything := true
 		for shown_category in categories_to_show:
 			if not building.enabled_categories.has(shown_category):
@@ -1240,6 +1246,7 @@ func _on_category_toggled(pressed: bool, category: int, building: Building, cate
 				break
 		if covers_everything:
 			building.enabled_categories.clear()
+			building.restricts_categories = false
 
 	if _current_building == building:
 		_refresh_settings_section(building)

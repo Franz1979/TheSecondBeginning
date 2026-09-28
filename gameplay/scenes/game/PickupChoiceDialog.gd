@@ -93,6 +93,8 @@ var _selected_index: int = -1
 # Contenitore in cui _add_source_section/_add_choice aggiungono le righe: la lista stessa, oppure il riquadro
 # della sorgente quando le sorgenti sono due (2026-09-26).
 var _rows_container: VBoxContainer = null
+# false = nessuna scelta della quantità (2026-09-27, raccolta nelle zone di lavoro: la quantità non si sceglie).
+var _quantity_enabled: bool = true
 
 
 func _ready() -> void:
@@ -110,10 +112,17 @@ func _ready() -> void:
 # quelle realmente presenti nella microcella. `default_choice`: {"kind": PickUpAction.CriterionKind,
 # "category": int, "resource_name": String}; vuoto o senza "kind" = "Tutto" (il default fisso di oggi).
 # `repeat_default`: stato iniziale del flag "Ripeti fino a N volte" (2026-09-20: UserOptions.repeat_default).
-func open_dialog(dialog_title: String, message: String, resources: Array, default_choice: Dictionary = {}, repeat_default: bool = false) -> void:
+# repeat_max/quantity_enabled (2026-09-27, work areas passo 3a): ripetizioni mostrate nella spunta (3 per il clic su una
+# cella, 5 per la raccolta nelle zone) e scelta della quantità (spenta per le zone).
+func open_dialog(
+	dialog_title: String, message: String, resources: Array, default_choice: Dictionary = {}, repeat_default: bool = false,
+	repeat_max: int = TaskRepeatRules.MAX_REPEATS, quantity_enabled: bool = true
+) -> void:
 	title = dialog_title
 	message_label.text = message
 	repeat_check_box.button_pressed = repeat_default
+	repeat_check_box.text = tr("task_repeat_checkbox").format({"count": repeat_max})
+	_quantity_enabled = quantity_enabled
 
 	for child in choice_list_container.get_children():
 		child.queue_free()
@@ -352,7 +361,7 @@ func _select_choice(index: int) -> void:
 		(_choices[i]["button"] as Button).button_pressed = i == index
 	var choice: Dictionary = _choices[index]
 	var is_resource: bool = int(choice["kind"]) == PickUpAction.CriterionKind.NAME
-	quantity_row.visible = is_resource
+	quantity_row.visible = is_resource and _quantity_enabled
 	if is_resource:
 		var max_quantity: int = int(choice["max_quantity"])
 		quantity_spin_box.max_value = max_quantity
@@ -367,7 +376,7 @@ func _on_confirm_pressed() -> void:
 	var kind: int = int(choice["kind"])
 	var category: int = int(choice["category"]) if kind == PickUpAction.CriterionKind.CATEGORY else -1
 	var resource_name: String = String(choice["resource_name"]) if kind == PickUpAction.CriterionKind.NAME else ""
-	var quantity: int = int(quantity_spin_box.value) if kind == PickUpAction.CriterionKind.NAME else -1
+	var quantity: int = int(quantity_spin_box.value) if kind == PickUpAction.CriterionKind.NAME and _quantity_enabled else -1
 	hide()
 	choice_made.emit(kind, category, resource_name, quantity, repeat_check_box.button_pressed, int(choice["source_kind"]))
 

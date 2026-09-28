@@ -205,6 +205,12 @@ func _activate_delivery(individual: Variant, context: Dictionary, free_space: fl
 				individual.id, total_carried, resource_name, target_building.id
 			])
 		return
+	# find_best accetta anche un magazzino con posto per una parte sola (2026-09-28): si preleva solo quanto la
+	# destinazione può ricevere, il resto del prodotto resta nell'edificio invece di finire scartato dal re-routing.
+	var destination_room: int = BuildingStorageService.get_max_depositable(destination, resource_name) - individual.get_carried_quantity(resource_name)
+	quantity = mini(quantity, destination_room)
+	if quantity <= 0:
+		return
 	_quantity_to_retrieve = quantity
 	var space_retrieved: float = float(quantity) * space_per_unit
 	if individual.max_carry_capacity > 0.0:
