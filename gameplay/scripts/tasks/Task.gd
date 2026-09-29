@@ -247,6 +247,35 @@ func insert_step_before_current(new_action: Action, description: String = "") ->
 	step_appended.emit(new_action)
 
 
+# Variante multi-step di insert_step_before_current (2026-09-29, richiesta utente — rifornimento automatico di
+# materiale, MaterialSupplyService): inserisce `new_actions` all'indice current_step_index, nell'ordine dato; il primo
+# diventa lo step corrente e quello che era attivo slitta subito dopo l'ultimo. Stessi array paralleli e stesso
+# segnale step_appended. `descriptions`: chiavi tr() per gli step, "" se mancanti.
+func insert_steps_before_current(new_actions: Array[Action], descriptions: Array[String] = []) -> void:
+	for i in range(new_actions.size()):
+		var index := current_step_index + i
+		steps.insert(index, new_actions[i])
+		step_stamina_cost.insert(index, 0.0)
+		step_days_elapsed.insert(index, 0.0)
+		step_happiness_cost.insert(index, 0.0)
+		step_descriptions.insert(index, descriptions[i] if i < descriptions.size() else "")
+		step_appended.emit(new_actions[i])
+
+
+# Rimuove `count` step a partire da `from_index` (2026-09-29, MaterialSupplyService.drop_pending_supply_round — un
+# giro di rifornimento non ancora caricato, scartato alla ripresa per ripianificarlo). Solo step correnti o futuri:
+# current_step_index resta invariato e punta allo step che segue quelli rimossi.
+func remove_steps(from_index: int, count: int) -> void:
+	if from_index < current_step_index or count <= 0:
+		return
+	for _i in range(mini(count, steps.size() - from_index)):
+		steps.remove_at(from_index)
+		step_stamina_cost.remove_at(from_index)
+		step_days_elapsed.remove_at(from_index)
+		step_happiness_cost.remove_at(from_index)
+		step_descriptions.remove_at(from_index)
+
+
 # Inserisce `new_actions` subito DOPO lo step corrente, nell'ordine dato (2026-09-26, richiesta utente —
 # riavvicinamento della caccia: gli step aggiunti devono venire prima di quelli già in coda, non in fondo
 # come con append_steps). Stessi array paralleli e stesso segnale step_appended di insert_step_before_
@@ -409,10 +438,14 @@ func get_activity_description() -> String:
 		# nome tradotto da BuildingRules.building_name. Nessun edificio risolvibile = solo il nome
 		# della Task.
 		# Demolizione (2026-09-27): stesso formato, "Demolizione (Capanna)".
+		# Solo gli step di lavoro sul cantiere (2026-09-29, bugfix): i Retrieve/Unload inseriti dal rifornimento automatico
+		# (MaterialSupplyService) hanno anch'essi un target_building — il magazzino sorgente — e l'etichetta mostrava quello.
 		"task_build_name", "task_demolish_name":
 			for step in steps:
-				if "target_building" in step and step.target_building != null:
-					var building: Building = step.target_building
+				if not (step is SetupSiteAction or step is ClearAction or step is BuildAction or step is DemolishAction):
+					continue
+				if step.get("target_building") != null:
+					var building: Building = step.get("target_building")
 					var building_display_name: String = tr(building.rules.building_name) if building.rules != null else building.building_type_name
 					return "%s (%s)" % [base_text, building_display_name]
 			return base_text

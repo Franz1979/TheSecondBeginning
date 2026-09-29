@@ -22,9 +22,13 @@ const DECAY_SPEED_MULTIPLIER: float = 2.0
 # Raggio massimo (anelli di microcelle, distanza di Chebyshev) entro cui cercare una microcella libera; oltre,
 # il carico va perso.
 const MAX_DROP_SEARCH_RADIUS: int = 6
-# Un mucchio esistente entro questa distanza dal punto di partenza viene preferito a una microcella vuota, così
-# scarti successivi nello stesso posto (es. davanti allo stesso magazzino pieno) si sommano invece di spargersi.
-const MERGE_WITH_EXISTING_RADIUS: int = 2
+# Un mucchio esistente entro questa distanza dal punto di partenza viene preferito a una microcella vuota. 0 dal
+# 2026-09-29 (richiesta utente — prima 2, un annullo di cantiere finiva "nascosto" in un mucchio vicino): si unisce
+# solo a un mucchio nella STESSA microcella del punto di caduta, altrimenti nasce un mucchio nuovo. In ogni caso non
+# esistono mai due mucchi nella stessa microcella: drop_entries/drop_carcass cercano sempre il mucchio della
+# microcella scelta (find_at) prima di crearne uno, anche quando la ricerca ad anelli sceglie una microcella che ne
+# ha già uno.
+const MERGE_WITH_EXISTING_RADIUS: int = 0
 
 
 # Lascia a terra `entries` (resource_name -> voce nel formato zaino/magazzino) partendo dal punto `position`
@@ -186,7 +190,8 @@ static func _new_pile(game_data: GameData, macro_coords: Vector2i, microcell: Ve
 # Microcella in cui posare un mucchio partendo da `start` (dentro `macro_coords`, la ricerca non esce mai dalla
 # macrocella). Microcella libera = BuildingVerificationService.is_microcell_free (niente acqua, fiume, sassi,
 # edifici o cantieri; gli edifici MOVEMENT come i sentieri non bloccano; gli alberi sono ammessi). Ordine:
-#   1. un mucchio esistente su una microcella libera entro MERGE_WITH_EXISTING_RADIUS da `start` (il più vicino);
+#   1. un mucchio esistente su una microcella libera entro MERGE_WITH_EXISTING_RADIUS da `start` (il più vicino; con
+#      raggio 0 solo quello in `start` stessa);
 #   2. se `start` è occupata da un edificio con porta, la microcella davanti alla porta;
 #   3. anelli concentrici attorno a `start` (raggio 0, 1, …, MAX_DROP_SEARCH_RADIUS): la prima microcella
 #      libera, la più vicina a `start` dentro l'anello.

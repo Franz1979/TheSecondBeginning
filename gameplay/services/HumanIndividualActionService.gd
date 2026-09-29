@@ -143,7 +143,11 @@ func apply_action(individual: HumanIndividual, delta: float, world: World = null
 	# delta, righe sotto), questo va PRIMA: quel meccanismo reagisce a uno stato che è già maturato
 	# questo frame, questo invece deve IMPEDIRE che una Action bloccata maturi alcunché. Non ritorna nulla
 	# (2026-09-20): non riassegna mai individual.current_task, quindi `task` resta valido.
-	_handle_pending_material_shortage(task, world)
+	_handle_pending_material_shortage(individual, task, world, game_data)
+	# La Build è appena andata in coda per far partire un ordine del giocatore (_yield_after_supply_delivery): il
+	# resto di questo frame non riguarda più `task`.
+	if individual.current_task != task:
+		return
 
 	var action := task.get_current_action()
 	var stamina_delta := action.get_stamina_delta(individual, task.context, delta)
@@ -259,6 +263,15 @@ func finish_current_step(individual: HumanIndividual, task: Task, world: World, 
 	_skip_unloads_without_cargo(individual, task)
 	# Passo "allontanati" con un seguito noto (2026-09-27): saltato allo stesso modo, il pipottino resta dov'è.
 	_skip_walk_away_with_follow_up(individual, task)
+	# Ordine del giocatore in attesa della consegna di rifornimento (2026-09-29, MaterialSupplyService.
+	# CONTEXT_YIELD_AFTER_DELIVERY): appena completato un Unload del giro — o se il giro non c'è più (scartato alla
+	# ripresa, dopo il Walk di ritorno al cantiere) — la Build va in coda e parte l'ordine. Solo a zaino vuoto: con un
+	# avanzo da riportare al magazzino (Walk+Unload appena inseriti) si aspetta anche quello scarico.
+	if task.context.has(MaterialSupplyService.CONTEXT_YIELD_AFTER_DELIVERY) and not task.is_finished() \
+			and individual.carried_resources.is_empty() \
+			and (action is UnloadAction or not MaterialSupplyService.is_in_supply_round(task)):
+		_yield_after_supply_delivery(individual, task, world, game_data)
+		return
 	if task.is_finished():
 		if DebugLogging.ENABLED and DebugLogging.SHOW_TASK_LIFECYCLE_LOGS:
 			task.print_cost_summary(individual)
@@ -343,7 +356,35 @@ func finish_current_step(individual: HumanIndividual, task: Task, world: World, 
 # "ha sostituito individual.current_task", ma quella generazione e' stata rimossa (2026-09-14) e la risoluzione non
 # riassegna piu' nulla. `world == null` disattiva l'intero meccanismo (il cantiere resta "fermo": is_complete()
 # di SetupSiteAction e' gia' bloccata da sé in quel caso), mai un crash.
-func _handle_pending_material_shortage(task: Task, world: World) -> void:
+# Consegna di rifornimento completata con un ordine del giocatore in attesa (2026-09-29, richiesta utente — vedi
+# HumanIndividual._queue_order_after_supply_delivery): la Build va in coda come una normale Task sospesa e parte
+# l'ordine (l'ultimo accodato, LIFO). Un eventuale resto del giro (dopo uno scarico di "zaino occupato") viene
+# ripianificato alla ripresa (activate_resumed_task → MaterialSupplyService.drop_pending_supply_round). Stessa
+# sequenza di resolve_idle_individual per la Task ripresa; se l'ordine non si attiva, risoluzione dell'idle normale.
+func _yield_after_supply_delivery(individual: HumanIndividual, task: Task, world: World, game_data: GameData) -> void:
+	task.context.erase(MaterialSupplyService.CONTEXT_YIELD_AFTER_DELIVERY)
+	var order := TaskQueueService.pop_suspended_task(individual)
+	TaskDebugRegistry.on_task_closed(task)
+	TaskQueueService.push_suspended_task(individual, task)
+	individual.current_task = null
+	individual.is_moving = false
+	individual.clear_path()
+	if DebugLogging.ENABLED and DebugLogging.SHOW_TASK_LIFECYCLE_LOGS:
+		print("[MATERIAL SUPPLY] #%d %s: consegna completata — '%s' in coda, parte '%s'." % [
+			individual.id, individual.name, task.task_name, order.task_name if order != null else "(nessun ordine)"
+		])
+	if order != null:
+		individual.current_task = order
+		TaskDebugRegistry.on_task_assigned(individual, order)
+		if activate_resumed_task(individual, order, world):
+			return
+	if game_data == null:
+		individual.stop(false)
+		return
+	resolve_idle_individual(individual, _resolve_age_band(individual, game_data), world)
+
+
+func _handle_pending_material_shortage(individual: HumanIndividual, task: Task, world: World, game_data: GameData = null) -> void:
 	if not task.context.has("pending_material_shortage"):
 		return
 	var shortage: Dictionary = task.context["pending_material_shortage"]
@@ -363,7 +404,16 @@ func _handle_pending_material_shortage(task: Task, world: World) -> void:
 	if target_building == null:
 		return
 
+	# Rifornimento automatico "livello 0" (2026-09-29, richiesta utente — setup site e costruzione, MaterialSupplyService.is_supplied_step): prima
+	# prova ad andare da sé a prendere il materiale (MaterialSupplyService, che inserisce gli step e attiva il nuovo
+	# step corrente); se non è possibile, comportamento di prima (bonus deposit_site, attesa, popup).
+	if MaterialSupplyService.is_supplied_step(task.get_current_action()) and MaterialSupplyService.try_supply_at_level_zero(individual, task, world, target_building):
+		return
 	_resolve_material_shortage(world, target_building, missing)
+	# Ordine del giocatore in attesa di una consegna (CONTEXT_YIELD_AFTER_DELIVERY) ma nessun nuovo giro possibile:
+	# la Build resterebbe ferma in attesa con l'ordine bloccato in coda — va in coda subito e parte l'ordine.
+	if task.context.has(MaterialSupplyService.CONTEXT_YIELD_AFTER_DELIVERY):
+		_yield_after_supply_delivery(individual, task, world, game_data)
 
 
 # Corpo condiviso di risoluzione del fabbisogno materiale (2026-09-14, richiesta utente — controllo
@@ -539,6 +589,10 @@ func retry_blocked_material_shortages(world: World, all_individuals: Array[Human
 			target_building.is_awaiting_material = false
 			continue
 		if missing.is_empty():
+			continue
+		# Rifornimento automatico (2026-09-29, setup site e costruzione): se nel frattempo un magazzino ha la risorsa, il
+		# pipottino riparte da sé invece di restare in attesa.
+		if MaterialSupplyService.is_supplied_step(action) and MaterialSupplyService.try_supply_at_level_zero(individual, task, world, target_building):
 			continue
 		_resolve_material_shortage(world, target_building, missing)
 
@@ -761,7 +815,12 @@ func _search_warehouse_for_resource(
 	# programmato per questa risorsa, la consegnerà lui — nessuna destinazione in più. Solo i passi successivi: uno
 	# scarico programmato già eseguito (es. magazzino pieno all'arrivo, risorsa rimasta nello zaino) non conta, e il
 	# re-routing cerca normalmente un'alternativa.
-	var already_planned := _find_later_planned_unload(task, resource_name)
+	# Giro di rifornimento (2026-09-29, richiesta utente — avanzo dell'Unload al cantiere o del Retrieve): il Walk+Unload
+	# verso il magazzino va SUBITO dopo lo scarico appena concluso, prima che lo step bloccato torni corrente — non in
+	# fondo alla Task, dopo la Build, dove l'avanzo resterebbe nello zaino finché la Build è ferma. Per lo stesso motivo
+	# non conta uno scarico programmato più avanti nella Task (sarebbe comunque dopo la Build).
+	var in_supply_round := MaterialSupplyService.is_in_supply_round(task)
+	var already_planned: UnloadAction = null if in_supply_round else _find_later_planned_unload(task, resource_name)
 	if already_planned != null:
 		if DebugLogging.ENABLED and DebugLogging.SHOW_TRANSPORT_BUILD_LOGS:
 			print("[WAREHOUSE SEARCH] '%s': già in programma uno scarico più avanti (edificio id=%s) — nessun Walk+Unload aggiuntivo." % [
@@ -812,7 +871,17 @@ func _search_warehouse_for_resource(
 		var planned_unload := UnloadAction.new(candidate, UnloadAction.DepositKind.RESOURCE)
 		planned_unload.planned_resources.append(resource_name)
 		var new_steps: Array[Action] = [WalkAction.new(candidate_position), planned_unload]
-		task.append_steps(new_steps)
+		if in_supply_round:
+			# Avanzo dello scarico AL CANTIERE (fine del giro): dopo il magazzino il pipottino torna al cantiere e riprende
+			# lo step bloccato da lì. Un solo Walk di ritorno, aggiunto dalla prima varietà: le successive si inseriscono
+			# subito dopo lo step corrente, quindi prima di esso, e il ritorno resta l'ultimo.
+			var site := MaterialSupplyService.get_supply_target(task)
+			var current_unload := task.get_current_action() as UnloadAction
+			if site != null and current_unload != null and current_unload.target_building == site and targeted_building_ids.size() == 1:
+				new_steps.append(WalkAction.new(MaterialSupplyService.building_point(individual, site)))
+			task.insert_steps_after_current(new_steps)
+		else:
+			task.append_steps(new_steps)
 		if DebugLogging.ENABLED and DebugLogging.SHOW_TRANSPORT_BUILD_LOGS:
 			print("[WAREHOUSE SEARCH] magazzino trovato: id=%d — Walk+Unload accodati alla Task corrente (esclusi finora: %s)." % [
 				candidate.id, str(excluded_building_ids)
@@ -1337,7 +1406,7 @@ static func resolve_idle_individual(individual: HumanIndividual, age_band: Human
 		TaskDebugRegistry.on_task_closed(individual.current_task)
 		individual.current_task = resumed_task
 		TaskDebugRegistry.on_task_assigned(individual, resumed_task)
-		activate_resumed_task(individual, resumed_task)
+		activate_resumed_task(individual, resumed_task, world)
 		return
 
 	if IdleTaskAssignmentService.assign_idle_fallback(individual, age_band, world):
@@ -1365,7 +1434,9 @@ static func resolve_idle_individual(individual: HumanIndividual, age_band: Human
 # quest'ultimo caso la Task viene CHIUSA qui (registro debug + individual.current_task azzerato se era
 # proprio lei). I due chiamanti filtrano già a monte (resolve_idle_individual, HumanIndividual.
 # assign_task): questo controllo è la difesa in profondità.
-static func activate_resumed_task(individual: HumanIndividual, resumed_task: Task) -> bool:
+# `world` (2026-09-29, rifornimento automatico): opzionale — se presente, un giro di rifornimento non ancora caricato
+# viene ripianificato subito dalla posizione attuale; senza (HumanIndividual.assign_task) si ripianifica al cantiere.
+static func activate_resumed_task(individual: HumanIndividual, resumed_task: Task, world: World = null) -> bool:
 	if resumed_task.is_finished():
 		return false
 	# Carico da consegnare ormai vuoto (2026-09-26): vedi is_empty_cargo_delivery.
@@ -1393,6 +1464,17 @@ static func activate_resumed_task(individual: HumanIndividual, resumed_task: Tas
 		if individual.current_task == resumed_task:
 			individual.current_task = null
 		return false
+	# Giro di rifornimento non ancora caricato (2026-09-29, MaterialSupplyService.drop_pending_supply_round): scartato
+	# e ripianificato — durante la sospensione la sorgente può essersi svuotata o il cantiere essere stato rifornito.
+	if MaterialSupplyService.drop_pending_supply_round(resumed_task):
+		if DebugLogging.ENABLED and DebugLogging.SHOW_TRANSPORT_BUILD_LOGS:
+			print("[MATERIAL SUPPLY] #%d %s: '%s' ripresa a metà di un giro non ancora caricato — giro scartato, si ripianifica." % [
+				individual.id, individual.name, resumed_task.task_name
+			])
+		var blocked_action := resumed_task.get_current_action()
+		if world != null and MaterialSupplyService.is_supplied_step(blocked_action) \
+				and MaterialSupplyService.try_supply_at_level_zero(individual, resumed_task, world, blocked_action.get("target_building")):
+			return true
 	# "Walk di ritorno alla ripresa" (2026-09-13, richiesta utente, in preparazione al fix generico
 	# per QUALUNQUE Task sospesa il cui step corrente è un'Action stazionaria con una posizione
 	# fisica precisa — PickUp/Unload(RESOURCE)/Retrieve/SetupSite/Clear/Build, vedi Action.

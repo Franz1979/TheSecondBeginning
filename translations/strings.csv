@@ -180,6 +180,7 @@ build_bar_burial_tooltip,Sepoltura
 build_bar_earthwork_tooltip,Vallo di terra
 build_bar_dirt_ground_tooltip,Terra battuta
 build_bar_requires_idea_tooltip,Richiede: {idea}
+build_bar_requires_deposit_site_tooltip,Serve prima un deposito
 demolish_confirmation_title,Demolisci edificio
 demolish_confirmation_text,Demolire {building} #{id}?
 demolish_confirmation_confirm,Demolisci

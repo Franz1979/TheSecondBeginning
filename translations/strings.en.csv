@@ -27,6 +27,7 @@ building_earthwork,Earthwork
 build_bar_dirt_ground_tooltip,Dirt Ground
 building_dirt_ground,Dirt Ground
 build_bar_requires_idea_tooltip,Requires: {idea}
+build_bar_requires_deposit_site_tooltip,A deposit is needed first
 demolish_confirmation_title,Demolish building
 demolish_confirmation_text,Demolish {building} #{id}?
 demolish_confirmation_confirm,Demolish

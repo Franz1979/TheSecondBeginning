@@ -77,6 +77,14 @@ const FERTILE_EDGE_MARGIN_MAX_YEARS: float = 6.0
 # consultano. RIMETTI A FALSE per tornare alla semina normale (FERTILE_ADULT, invariata) — nessun
 # altro codice va toccato per il rollback, un solo flag.
 const DEBUG_SEED_FOUNDERS_AS_MATURE_ADULT := false
+
+# Età dei due fondatori della sola composizione COUPLE (2026-09-29, richiesta utente — una coppia giovane): padre tra
+# COUPLE_MIN_AGE_YEARS e COUPLE_MAX_AGE_YEARS, madre tra COUPLE_MIN_AGE_YEARS e l'età del padre (mai più vecchia di
+# lui), età intere estratte in modo uniforme. Sostituiscono, SOLO per COUPLE, il range "fascia FERTILE_ADULT meno
+# FERTILE_EDGE_MARGIN_YEARS/FERTILE_EDGE_MARGIN_MAX_YEARS" che FAMILY e GROUP continuano a usare (vedi
+# _create_coordinated_couple, parametro use_couple_age_range). Ignorate con DEBUG_SEED_FOUNDERS_AS_MATURE_ADULT.
+const COUPLE_MIN_AGE_YEARS: int = 19
+const COUPLE_MAX_AGE_YEARS: int = 21
 # Eta' massima dei figli di una FAMILY (invece del massimo teorico "tutta la fascia CHILD") —
 # risultato voluto: una famiglia giovane con figli piccoli, eta' distribuite tra 0 e questo
 # valore invece che sempre 0 (bug precedente) o sparse fino al limite della fascia CHILD.
@@ -223,7 +231,8 @@ func seed_player_start(
 		# lì), semplicemente senza mai chiamare _create_family_children: GROUP_SIZE_COMPOSITIONS
 		# ["COUPLE"].children è 0 per definizione, nessun figlio da creare per questo tipo.
 		var couple := _create_coordinated_couple(
-			effective_age_band_durations_male, effective_age_band_durations_female, current_year, game_data, ([] as Array[String])
+			effective_age_band_durations_male, effective_age_band_durations_female, current_year, game_data, ([] as Array[String]),
+			true
 		)
 		var mother: HumanIndividual = couple[0]
 		var father: HumanIndividual = couple[1]
@@ -420,9 +429,14 @@ func _create_unpaired_fertile_group(
 # — passato per riferimento, aggiornato QUI subito dopo ogni assign_random_name cosi' la chiamata
 # successiva (madre, poi gli eventuali figli nel chiamante) vede gia' i nomi presi finora. COUPLE
 # passa un array vuoto "usa e getta" (nessun figlio dopo, nessun dedup oltre padre/madre stessi).
+#
+# use_couple_age_range (2026-09-29): true solo per COUPLE — età da COUPLE_MIN_AGE_YEARS/COUPLE_MAX_AGE_YEARS invece
+# che dalla fascia FERTILE_ADULT con i margini (FAMILY passa false, il default: comportamento invariato).
 func _create_coordinated_couple(
-	durations_male: Array[float], durations_female: Array[float], current_year: int, game_data: GameData, used_names: Array[String]
+	durations_male: Array[float], durations_female: Array[float], current_year: int, game_data: GameData, used_names: Array[String],
+	use_couple_age_range: bool = false
 ) -> Array[HumanIndividual]:
+	var couple_ages := use_couple_age_range and not DEBUG_SEED_FOUNDERS_AS_MATURE_ADULT
 	var father := HumanIndividual.new()
 	father.id = game_data.allocate_human_id()
 	father.sex = HumanTypes.Sex.MALE
@@ -431,6 +445,8 @@ func _create_coordinated_couple(
 	var father_min: float = father_range.x if DEBUG_SEED_FOUNDERS_AS_MATURE_ADULT else father_range.x + FERTILE_EDGE_MARGIN_YEARS
 	var father_max: float = father_range.y if DEBUG_SEED_FOUNDERS_AS_MATURE_ADULT else father_range.y - FERTILE_EDGE_MARGIN_MAX_YEARS
 	var father_age: float = randf_range(father_min, father_max) if father_max > father_min else father_range.x
+	if couple_ages:
+		father_age = float(randi_range(COUPLE_MIN_AGE_YEARS, COUPLE_MAX_AGE_YEARS))
 	father.birth_year_virtual = current_year - int(round(father_age))
 	father.assign_random_name(used_names)
 	# Fondatore, nessun genitore simulato — random puro (vedi assign_hair_color/assign_skin_color
@@ -453,6 +469,8 @@ func _create_coordinated_couple(
 	# diversi), la madre ripiega sul proprio minimo invece di produrre un intervallo invertito.
 	var mother_max: float = clampf(father_age, mother_min, mother_band_max)
 	var mother_age: float = randf_range(mother_min, mother_max) if mother_max > mother_min else mother_min
+	if couple_ages:
+		mother_age = float(randi_range(COUPLE_MIN_AGE_YEARS, maxi(int(father_age), COUPLE_MIN_AGE_YEARS)))
 	mother.birth_year_virtual = current_year - int(round(mother_age))
 	mother.assign_random_name(used_names)
 	# Fondatrice, nessun genitore simulato — random puro (vedi assign_hair_color/assign_skin_color

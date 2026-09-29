@@ -102,14 +102,23 @@ var _restored_from_save: bool = false
 var equip_slot_index: int = -1
 # Modalità "consegna al magazzino dopo la produzione" (vedi CONSEGNA AL MAGAZZINO in testa al file).
 var deliver_to_warehouse: bool = false
+# Prelievo di rifornimento di un cantiere (2026-09-29, MaterialSupplyService): se a fine step nello zaino non è
+# arrivato nulla di resource_name, scrive context[MaterialSupplyService.CONTEXT_SUPPLY_FAILED] (protezione dai loop).
+# Persistito (get_save_data, letto da TaskPersistenceService._build_step).
+var material_supply: bool = false
+# Cantiere rifornito da questo prelievo: a prelievo riuscito (almeno un'unità) il suo is_awaiting_material torna
+# false, così il pannello non mostra "in attesa" mentre il pipottino porta il materiale. Persistito per id.
+var supply_target_building: Building = null
 
 
-func _init(p_target_building: Building, p_resource_name: String, p_quantity_requested: int, p_equip_slot_index: int = -1, p_deliver_to_warehouse: bool = false) -> void:
+func _init(p_target_building: Building, p_resource_name: String, p_quantity_requested: int, p_equip_slot_index: int = -1, p_deliver_to_warehouse: bool = false, p_material_supply: bool = false, p_supply_target_building: Building = null) -> void:
 	target_building = p_target_building
 	resource_name = p_resource_name
 	quantity_requested = p_quantity_requested
 	equip_slot_index = p_equip_slot_index
 	deliver_to_warehouse = p_deliver_to_warehouse
+	material_supply = p_material_supply
+	supply_target_building = p_supply_target_building
 	target = null
 	# INFANT non può eseguire questa Action (2026-09-12, richiesta utente — collegamento AgeBand.
 	# INFANT al gameplay, vedi Action.disallowed_age_bands). CHILD aggiunto 2026-09-13 (richiesta
@@ -325,6 +334,18 @@ func get_required_position(individual: Variant, context: Dictionary) -> Variant:
 # building possa cambiare tra activate() e questo on_complete(), la Task avanza sempre in modo
 # sincrono step-per-step), ma questa Action non fa mai quell'assunzione.
 func on_complete(individual: Variant, context: Dictionary) -> void:
+	var carried_before: int = individual.get_carried_quantity(resource_name) if material_supply else 0
+	_complete_retrieve(individual, context)
+	if not material_supply:
+		return
+	if individual.get_carried_quantity(resource_name) <= carried_before:
+		# Prelievo fallito: is_awaiting_material resta com'è (il popup non si ripete a ogni retry giornaliero).
+		context[MaterialSupplyService.CONTEXT_SUPPLY_FAILED] = true
+	elif supply_target_building != null:
+		supply_target_building.is_awaiting_material = false
+
+
+func _complete_retrieve(individual: Variant, context: Dictionary) -> void:
 	if _quantity_to_retrieve <= 0 or target_building == null:
 		return
 	if deliver_to_warehouse:
@@ -454,9 +475,12 @@ func get_save_data() -> Dictionary:
 		# Modalità "cintura" (2026-09-25) — letta da TaskPersistenceService._build_step.
 		"equip_slot_index": equip_slot_index,
 		"deliver_to_warehouse": deliver_to_warehouse,
+		"material_supply": material_supply,
 	}
 	if target_building != null:
 		data["target_building_id"] = target_building.id
+	if supply_target_building != null:
+		data["supply_target_building_id"] = supply_target_building.id
 	return data
 
 

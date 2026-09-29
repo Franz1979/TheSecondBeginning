@@ -396,7 +396,10 @@ static func _build_step(action_type: int, step_data: Dictionary, macro_state: Ma
 				# equip_slot_index (2026-09-25, modalità "cintura"): -1 per i save precedenti.
 				int(step_data.get("equip_slot_index", -1)),
 				# Consegna dopo la produzione (2026-09-26): false per i save precedenti.
-				bool(step_data.get("deliver_to_warehouse", false))
+				bool(step_data.get("deliver_to_warehouse", false)),
+				# Rifornimento di un cantiere (2026-09-29, MaterialSupplyService): false per i save precedenti.
+				bool(step_data.get("material_supply", false)),
+				_find_building_by_id(world, int(step_data.get("supply_target_building_id", -1)))
 			)
 		TaskTypes.ActionType.RESTOCK_POUCH:
 			# 1 argomento (target_building), risolto per id come per RETRIEVE/UNLOAD. Il progresso (scelta,

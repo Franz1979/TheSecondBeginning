@@ -874,6 +874,10 @@ func assign_task(task: Task, age_band: HumanTypes.AgeBand, is_interrupt_transiti
 	# dietro di lei): cade invece nel ramo generico più sotto (~riga 806+, guardato allo stesso
 	# modo), che la scarta con un log invece di trattarla come ancora in corso.
 	if task.interrupt_priority == -1 and not carried_resources.is_empty() and current_task != null and not current_task.is_finished() and current_task.is_suspendable:
+		# Giro di rifornimento con lo zaino carico (2026-09-29, richiesta utente): il pipottino finisce solo la
+		# consegna in corso, poi la Build va in coda e parte l'ordine — vedi _queue_order_after_supply_delivery.
+		if MaterialSupplyService.is_in_supply_round(current_task):
+			return _queue_order_after_supply_delivery(task, current_task)
 		# Guardia task.is_suspendable (2026-09-16, richiesta utente — bugfix: "perché Wander si è
 		# accodata? non dovrebbe essere una che non si accoda mai?") — PRIMA di questo passo il ramo
 		# accodava SEMPRE `task` (il comando NUOVO), controllando solo current_task.is_suspendable
@@ -938,7 +942,11 @@ func assign_task(task: Task, age_band: HumanTypes.AgeBand, is_interrupt_transiti
 			# scartato silenziosamente, mai accodato. La ripresa del cargo owner (sotto, task =
 			# cargo_owner_task) resta INVARIATA in entrambi i casi: è lei il motivo di questo ramo,
 			# indipendente da cosa succede al comando nuovo.
-			if task.is_suspendable:
+			# Build ripresa a metà di un giro di rifornimento (2026-09-29, richiesta utente): stessa regola del ramo
+			# "zaino occupato" sopra — l'ordine parte appena finita la consegna in corso.
+			if MaterialSupplyService.is_in_supply_round(cargo_owner_task):
+				_queue_order_after_supply_delivery(task, cargo_owner_task)
+			elif task.is_suspendable:
 				TaskQueueService.push_suspended_task(self, task)
 				if DebugLogging.ENABLED and DebugLogging.SHOW_TASK_LIFECYCLE_LOGS:
 					print("[TASK QUEUED - ZAINO OCCUPATO] Individuo #%d %s: '%s' rimandata in coda dietro '%s' (zaino occupato: %s) — '%s' ripresa subito, Task in corso '%s' interrotta." % [
@@ -1048,6 +1056,28 @@ func assign_task(task: Task, age_band: HumanTypes.AgeBand, is_interrupt_transiti
 		var current_action := task.get_current_action()
 		if current_action != null:
 			current_action.activate(self, task.context)
+	return true
+
+
+# Ordine del giocatore a metà di un giro di rifornimento con lo zaino carico (2026-09-29, richiesta utente): l'ordine
+# va in coda e la Build viene marcata (MaterialSupplyService.CONTEXT_YIELD_AFTER_DELIVERY). Al primo Unload del giro
+# completato, HumanIndividualActionService._yield_after_supply_delivery mette la Build in coda e fa partire l'ordine.
+# Anche un ordine non sospendibile (Rest/Wander/...) passa dalla coda, solo per questa breve attesa: invece di essere
+# scartato come nel ramo generico, parte a consegna finita. Un ordine non sospendibile già in cima alla coda viene
+# sostituito da quello nuovo (in coda non ci entra per nessun'altra via, quindi è un ordine precedente di questa stessa
+# attesa, superato). Ritorna true: comando accettato.
+# `supply_task`: la Build a metà giro (current_task, o la Task proprietaria del carico appena ripresa dalla coda).
+func _queue_order_after_supply_delivery(task: Task, supply_task: Task) -> bool:
+	if not task_queue.is_empty() and not task_queue.back().is_suspendable:
+		var replaced: Task = task_queue.pop_back()
+		if DebugLogging.ENABLED and DebugLogging.SHOW_TASK_LIFECYCLE_LOGS:
+			print("[MATERIAL SUPPLY] Individuo #%d %s: ordine '%s' in attesa sostituito da '%s'." % [id, name, replaced.task_name, task.task_name])
+	TaskQueueService.push_suspended_task(self, task)
+	supply_task.context[MaterialSupplyService.CONTEXT_YIELD_AFTER_DELIVERY] = true
+	if DebugLogging.ENABLED and DebugLogging.SHOW_TASK_LIFECYCLE_LOGS:
+		print("[MATERIAL SUPPLY] Individuo #%d %s: '%s' parte dopo la consegna in corso (zaino: %s), poi '%s' va in coda." % [
+			id, name, task.task_name, str(carried_resources), supply_task.task_name
+		])
 	return true
 
 

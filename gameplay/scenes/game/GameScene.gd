@@ -1796,6 +1796,31 @@ func _center_camera_on_individual(animated: bool = true) -> void:
 # scatta solo dentro on_complete(), mai chiamato qui, quindi non c'è alcun effetto già applicato da
 # annullare — la sola quantità "prenotata" (il piano di PickUpAction) resta nell'istanza scartata,
 # innocua.
+# Task corrente a metà di un giro di rifornimento con lo zaino carico (2026-09-29, richiesta utente — tasto H e
+# "Annulla cantiere"): invece dello scarto a terra, la Task viene chiusa e sostituita direttamente dal ritorno del
+# carico al magazzino più vicino (MaterialSupplyService.build_cargo_return_task), senza passare da assign_task (che
+# con lo zaino carico riprenderebbe dalla coda la Task "proprietaria del carico"). true = sostituita: il chiamante non
+# deve né scartare lo zaino né rimettere l'individuo in moto. false = nessun giro, zaino vuoto o nessun magazzino.
+func _replace_supply_round_with_cargo_return(member: HumanIndividual) -> bool:
+	if member == null or not MaterialSupplyService.is_in_supply_round(member.current_task):
+		return false
+	var cargo_return_task := MaterialSupplyService.build_cargo_return_task(member, macro_world)
+	if cargo_return_task == null:
+		return false
+	member.stop(false)
+	for step in cargo_return_task.steps:
+		if step is UnloadAction:
+			_reconnect_unload_action_signals(step as UnloadAction, member)
+	member.current_task = cargo_return_task
+	TaskDebugRegistry.on_task_assigned(member, cargo_return_task)
+	cargo_return_task.get_current_action().activate(member, cargo_return_task.context)
+	if DebugLogging.ENABLED and DebugLogging.SHOW_TRANSPORT_BUILD_LOGS:
+		print("[MATERIAL SUPPLY] #%d %s: rifornimento annullato con lo zaino carico %s — lo riporta al magazzino." % [
+			member.id, member.name, str(member.carried_resources)
+		])
+	return true
+
+
 func _stop_selected_individual_task() -> void:
 	if individual == null or not individual.is_selected:
 		return
@@ -1833,6 +1858,12 @@ func _stop_selected_individual_task() -> void:
 			if step is ProduceAction:
 				stopped_produce_building = (step as ProduceAction).target_building
 				break
+	# Annullo a metà di un giro di rifornimento con lo zaino carico (2026-09-29, richiesta utente): il carico non va a
+	# terra, il pipottino lo riporta al magazzino più vicino. Solo questo caso — altrove lo scarto resta quello di sempre
+	# (e anche qui, se nessun magazzino lo accetta). La Task di ritorno sostituisce direttamente quella annullata, senza
+	# passare da assign_task (che con lo zaino carico riprenderebbe dalla coda la Task "proprietaria del carico").
+	if _replace_supply_round_with_cargo_return(individual):
+		return
 	individual.stop()
 	# Ordine intero (2026-09-26): la produzione annullata non conta più nel fabbisogno dell'edificio.
 	if stopped_produce_building != null:
@@ -4610,22 +4641,44 @@ func _count_other_individuals_claiming_build(target_building: Building, excludin
 # Chiude, per UN individuo, le sole Task di `task_names` su `building` (2026-09-26 — estratta da
 # _close_tasks_working_on_building per l'annullo di un singolo lavoratore dal pannello edificio): la
 # current_task se lavora lì (stop), e le Task in coda che lavorano lì (rimosse). Tutte le altre sue
-# Task, in corso o in coda, restano intatte. discard_carried: true = zaino scartato (anche per una Task
-# in coda rimossa, come fa TaskQueueService.push_suspended_task per l'overflow); false = zaino lasciato
-# dov'è. Ritorna true se la current_task è stata chiusa: il chiamante rimette in moto l'individuo con
+# Task, in corso o in coda, restano intatte. discard_carried: true = zaino scartato alla chiusura della current_task
+# (tranne a metà di un giro di rifornimento: il carico torna al magazzino, _replace_supply_round_with_cargo_return);
+# false = zaino lasciato dov'è. Le Task in coda rimosse non toccano mai lo zaino (2026-09-29). Ritorna true se la
+# current_task è stata chiusa senza sostituirla: il chiamante rimette in moto l'individuo con
 # resolve_idle_individual, al momento giusto per lui.
 func _close_individual_tasks_on_building(member: HumanIndividual, building: Building, task_names: Array[String], discard_carried: bool) -> bool:
 	var current_closed := false
+	# Proprietaria del carico letta PRIMA di toccare current_task/coda (vedi il ciclo sulla coda sotto).
+	var cargo_owner := TaskQueueService.get_cargo_owner(member)
 	if _task_works_on_building(member.current_task, building, task_names):
-		member.stop(discard_carried)
-		current_closed = true
+		# Giro di rifornimento con lo zaino carico (2026-09-29, richiesta utente): il carico torna al magazzino invece
+		# di cadere a terra — la Task di ritorno è già attiva, quindi l'individuo NON va rimesso in moto dal chiamante.
+		if not (discard_carried and _replace_supply_round_with_cargo_return(member)):
+			member.stop(discard_carried)
+			current_closed = true
 	var kept_queue: Array[Task] = []
 	for queued_task in member.task_queue:
-		if _task_works_on_building(queued_task, building, task_names):
-			if discard_carried:
-				member.discard_carried_resource()
-		else:
+		# Task in coda: chiusa senza toccare lo zaino (2026-09-29, richiesta utente — prima veniva scartato tutto): il
+		# carico appartiene alla Task corrente del pipottino, che prosegue indisturbata.
+		if not _task_works_on_building(queued_task, building, task_names):
 			kept_queue.append(queued_task)
+		elif discard_carried and queued_task == cargo_owner:
+			# Eccezione (2026-09-29, richiesta utente): la Task in coda chiusa era LEI la proprietaria del carico (es.
+			# Build interrotta da un riposo a metà giro di rifornimento). Il carico non resta senza proprietario: al suo
+			# posto in coda va il ritorno al magazzino più vicino, che parte alla ripresa dalla coda; nessun magazzino →
+			# scarto a terra come prima.
+			var cargo_return_task := MaterialSupplyService.build_cargo_return_task(member, macro_world)
+			if cargo_return_task == null:
+				member.discard_carried_resource()
+				continue
+			for step in cargo_return_task.steps:
+				if step is UnloadAction:
+					_reconnect_unload_action_signals(step as UnloadAction, member)
+			kept_queue.append(cargo_return_task)
+			if DebugLogging.ENABLED and DebugLogging.SHOW_TRANSPORT_BUILD_LOGS:
+				print("[MATERIAL SUPPLY] #%d %s: Build in coda chiusa con il carico %s — sostituita in coda dal ritorno al magazzino." % [
+					member.id, member.name, str(member.carried_resources)
+				])
 	member.task_queue = kept_queue
 	return current_closed
 
@@ -4827,6 +4880,7 @@ func _assign_resumable_building_task(worker: HumanIndividual, hit_building: Buil
 	var task := TaskReassignmentService.reassign_task(hit_building, worker, _resolve_age_band(worker), extra_context)
 	if task == null:
 		return false
+	_connect_material_supply_step_appended(task, worker)
 
 	# Guard di assign_task rifiutato (2026-09-13, richiesta utente — bugfix: il "martelletto"
 	# compariva comunque anche quando la Task non veniva mai davvero assegnata) — reassign_task
@@ -9877,7 +9931,7 @@ func _refresh_building_slots_buildable() -> void:
 		var rules := BuildingCalculator.get_building_rules(building_type_name)
 		if rules == null:
 			continue
-		var availability := _building_type_availability(rules)
+		var availability := _building_type_availability(rules, building_type_name)
 		build_bar.set_building_buildable(building_type_name, availability["is_buildable"], availability["disabled_tooltip"])
 	# Zone di lavoro (2026-09-27, richiesta utente): stesso ricalcolo, stesso tooltip "Richiede: …" degli edifici.
 	var work_areas_available := _is_work_areas_tool_available()
@@ -10129,7 +10183,14 @@ func _cancel_work_area_drag() -> void:
 # Ritorna {"is_buildable": bool, "disabled_tooltip": String} — la tooltip è calcolata comunque
 # anche quando il chiamante (_place_building_at) non la userà mai, per non duplicare la logica in
 # due posti.
-func _building_type_availability(rules: BuildingRules) -> Dictionary:
+#
+# Primo deposito (2026-09-29, richiesta utente): finché nel mondo non esiste un deposit_site COMPLETO, è disponibile
+# solo il deposit_site — ogni altro tipo resta disabilitato con "Serve prima un deposito". Il primo deposito è anche
+# l'unico cantiere che riceve il bonus di partenza sul materiale di setup (HumanIndividualActionService.
+# _resolve_material_shortage). Ricalcolato come il resto a ogni piazzamento, completamento e demolizione.
+func _building_type_availability(rules: BuildingRules, building_type_name: String) -> Dictionary:
+	if building_type_name != FIRST_REQUIRED_BUILDING_TYPE and not _world_has_complete_building_of_type(FIRST_REQUIRED_BUILDING_TYPE):
+		return {"is_buildable": false, "disabled_tooltip": tr("build_bar_requires_deposit_site_tooltip")}
 	if rules.is_village_center:
 		var village_center_exists := false
 		if macro_world != null:
@@ -10150,6 +10211,18 @@ func _building_type_availability(rules: BuildingRules) -> Dictionary:
 			"disabled_tooltip": tr("build_bar_requires_idea_tooltip").format({"idea": required_idea_display_name}),
 		}
 	return {"is_buildable": true, "disabled_tooltip": ""}
+
+
+const FIRST_REQUIRED_BUILDING_TYPE := "deposit_site"
+
+
+func _world_has_complete_building_of_type(building_type_name: String) -> bool:
+	if macro_world == null:
+		return false
+	for building in macro_world.buildings:
+		if building.building_type_name == building_type_name and building.is_complete and not building.is_demolished:
+			return true
+	return false
 
 
 # Alberi e cespugli (2026-09-28, richiesta utente — BuildingVerificationService criterio 10): si possono liberare
@@ -10226,7 +10299,7 @@ func _place_building_at(world_position: Vector2) -> void:
 	# logica già usata per la BuildBar (_building_type_availability), qui riapplicata al singolo
 	# tipo che si sta effettivamente piazzando ORA — non in BuildingVerificationService.
 	# is_position_buildable, che resta legata solo a terreno/spazio/sovrapposizioni di una posizione.
-	if not _building_type_availability(rules)["is_buildable"]:
+	if not _building_type_availability(rules, _selected_building_type_name)["is_buildable"]:
 		return
 	if not BuildingVerificationService.is_position_buildable(
 		live_cells, MACRO_CELL_PIXELS, MicroCellRenderer.CELL_SIZE, world_position,
@@ -10360,7 +10433,7 @@ func _start_building_task_at(world_position: Vector2) -> void:
 	var rules := BuildingCalculator.get_building_rules(_selected_building_type_name)
 	if rules == null:
 		return
-	if not _building_type_availability(rules)["is_buildable"]:
+	if not _building_type_availability(rules, _selected_building_type_name)["is_buildable"]:
 		return
 	if not _is_placement_buildable_or_report(world_position, rules):
 		return
@@ -10638,6 +10711,7 @@ func _reconnect_loaded_task_signals() -> void:
 		# ricostruiti come istanze nuove, senza segnali — ricollega quelli di PickUp (refresh + ripetizione), anche
 		# per un individuo senza current_task.
 		for queued_task in member.task_queue:
+			_connect_material_supply_step_appended(queued_task, member)
 			# Raccolta su zona non ancora partita (2026-09-27, es. ripetizione in coda): il PickUp nascerà dalla
 			# ricerca, i suoi segnali passano da step_appended.
 			if _haul_zone_task_awaits_search(queued_task):
@@ -10648,6 +10722,7 @@ func _reconnect_loaded_task_signals() -> void:
 				# (rametti, rimozione placeholder, sprite finale) non scattavano mai per una Build ripresa
 				# dalla coda dopo un reload.
 				_reconnect_build_task_signals(queued_step)
+				_connect_storage_refresh_signals_for_retrieve(queued_step)
 				if queued_step is PickUpAction:
 					_reconnect_pickup_action_signals(queued_step as PickUpAction)
 				elif queued_step is UnloadAction:
@@ -10656,6 +10731,7 @@ func _reconnect_loaded_task_signals() -> void:
 			continue
 		if _haul_zone_task_awaits_search(member.current_task):
 			_connect_haul_zone_step_appended(member.current_task, member)
+		_connect_material_supply_step_appended(member.current_task, member)
 		# Conteggio SOLO per il log di conferma sotto (2026-09-11, richiesta utente — "verificare che
 		# la riconnessione funzioni davvero, prima di procedere oltre") — nessuna logica di
 		# ricollegamento qui: quella resta interamente dentro _reconnect_build_task_signals/
@@ -10673,6 +10749,7 @@ func _reconnect_loaded_task_signals() -> void:
 		var jump_count := 0
 		for step in member.current_task.steps:
 			_reconnect_build_task_signals(step)
+			_connect_storage_refresh_signals_for_retrieve(step)
 			if step is SetupSiteAction:
 				setup_site_count += 1
 			elif step is ClearAction:
@@ -10905,6 +10982,27 @@ func _on_prey_killed(prey_id: int, prey_species: String, prey_age_band: int, pre
 		_clear_animal_selection()
 
 
+# Rifornimento automatico dei cantieri (2026-09-29, MaterialSupplyService): Walk/Retrieve/Unload inseriti a runtime
+# nella Build Task. Collega i segnali di refresh della griglia di stoccaggio (magazzino sorgente e cantiere) ai
+# Retrieve/Unload appena nati — stesso principio dei listener step_appended di raccolta e pensiero. Solo Build Task.
+func _connect_material_supply_step_appended(task: Task, owner: HumanIndividual) -> void:
+	if task == null or task.task_name != "task_build_name":
+		return
+	task.step_appended.connect(func(action: Action) -> void:
+		if action is UnloadAction:
+			_reconnect_unload_action_signals(action as UnloadAction, owner)
+		elif action is RetrieveAction:
+			_connect_storage_refresh_signals(action)
+	)
+
+
+# Reload: i RetrieveAction ricostruiti dal salvataggio non avevano più resource_retrieved collegato (2026-09-29, emerso
+# con il rifornimento automatico — vale anche per la Transport). Guardia is_connected in _connect_storage_refresh_signals.
+func _connect_storage_refresh_signals_for_retrieve(step: Action) -> void:
+	if step is RetrieveAction:
+		_connect_storage_refresh_signals(step)
+
+
 func _connect_storage_refresh_signals(step: Action) -> void:
 	if step is RetrieveAction:
 		var retrieve := step as RetrieveAction
@@ -10959,6 +11057,8 @@ func _on_building_construction_completed(building: Building) -> void:
 	# Rinfresca la scheda 🏠 (2026-09-12, richiesta utente) — lo stato passa da "in costruzione" a
 	# "completo" proprio qui, la lista deve rifletterlo subito, non aspettare il rollover d'anno.
 	_refresh_buildings_panel()
+	# Il primo deposito completo sblocca gli altri edifici nella BuildBar (2026-09-29, _building_type_availability).
+	_refresh_building_slots_buildable()
 	# Scoperte BUILDING_COMPLETED (2026-09-28 — sostituisce il vecchio "primo edificio con accepts_thoughts apre
 	# l'albero idee", ora il .tres first_thought_building con azione OPEN_TECH_TREE). Popup e azioni partono a
 	# fine frame (_flush_discoveries, deferred): questo handler gira in pieno tick di simulazione.
