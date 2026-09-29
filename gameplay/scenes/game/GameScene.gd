@@ -127,6 +127,13 @@ var game_time_service: GameTimeService
 var notification_popup: NotificationPopup
 # Popup di decisione generico degli eventi (2026-09-27 — primo uso: visitatori), creato in _setup_clock.
 var event_decision_dialog: EventDecisionDialog
+# Popup "Scoperta" (2026-09-28, richiesta utente — sostituisce il NotificationPopup IDEA_COMPLETED), creato in
+# _setup_clock. Le sezioni che scattano nello stesso frame si raccolgono qui e finiscono in UN popup
+# (_flush_discoveries, deferred); le azioni di chiusura (insieme, quindi senza doppioni) partono dopo l'OK.
+var discovery_popup: DiscoveryPopup
+var _pending_discovery_sections: Array[Dictionary] = []
+var _pending_discovery_close_actions: Dictionary = {} # DiscoveryTypes.CloseAction -> true
+var _discovery_flush_scheduled: bool = false
 # Banner "selezione Transport a metà" (2026-09-14, richiesta utente — sostituisce l'idea di un
 # timeout automatico: "prova una indicazione visibile") — STESSO principio/STESSA posizione di
 # notification_popup sopra (istanziato via codice in _setup_clock, aggiunto sotto CanvasLayer),
@@ -1325,7 +1332,8 @@ func _process(delta: float) -> void:
 			_building_ghost,
 			ghost_rules != null and BuildingVerificationService.is_position_buildable(
 				live_cells, MACRO_CELL_PIXELS, MicroCellRenderer.CELL_SIZE, _building_ghost.global_position,
-				game_data.get_absolute_day(), macro_world, _building_ghost.rotation_dir, ghost_rules
+				game_data.get_absolute_day(), macro_world, _building_ghost.rotation_dir, ghost_rules,
+				_can_tribe_cut()
 			)
 		)
 
@@ -5963,6 +5971,9 @@ const _VISITOR_DECISION_REJECT := 1
 func _open_pending_visitor_decision() -> void:
 	if event_decision_dialog == null or event_decision_dialog.visible:
 		return
+	# Una sola Window esclusiva alla volta: la decisione aspetta la chiusura del popup delle scoperte.
+	if discovery_popup != null and discovery_popup.visible:
+		return
 	var party := _find_visitor_party_in_phase(VisitorTypes.Phase.AWAITING_DECISION)
 	if party == null:
 		return
@@ -6732,37 +6743,47 @@ func _on_human_stillbirth(mother: HumanIndividual) -> void:
 	)
 
 
-# Sblocco Idea (2026-09-07, richiesta utente) — collegato a TechTreePanel.idea_completed: stesso
-# identico NotificationPopup/stesso gate UserOptions.show_notification_popups di morte/nascita
-# sopra (un'impostazione utente/installazione, non di partita — si disattiva insieme alle altre da
-# Opzioni, richiesta esplicita). display_name è una chiave tr() (vedi Idea.gd), mai testo diretto —
-# stesso trattamento già corretto in _refresh_building_slots_buildable/TechTreePanel.
+# Idea completata (2026-09-07, rivisto 2026-09-28 — richiesta utente, sistema "Scoperte"): una sezione del
+# DiscoveryPopup invece del vecchio NotificationPopup IDEA_COMPLETED. Nome, summary e sblocchi (IdeaUnlocksService)
+# seguono UserOptions.show_notification_popups come prima; i paragrafi di eventuali DiscoveryHintRules
+# IDEA_COMPLETED per questa idea seguono UserOptions.show_discovery_hints. display_name è una chiave tr() (vedi
+# Idea.gd), mai testo diretto.
 #
-# Poi (2026-09-21, richiesta utente) riapre l'albero idee perché il giocatore scelga la prossima
-# ricerca — dopo il popup di sblocco, vedi _open_tech_tree_after_notification_popup. Tutti i
-# percorsi di completamento (deposito pensiero, ricollegamento dopo reload, bottone debug del
-# pannello) passano da qui, quindi il trigger vive qui e non nei singoli listener.
+# Poi (2026-09-21) riapre l'albero idee perché il giocatore scelga la prossima ricerca: ora è l'azione di chiusura
+# OPEN_TECH_TREE, eseguita dopo l'OK (o subito se non c'è nulla da mostrare) e una volta sola anche se più idee/
+# scoperte la chiedono insieme. Tutti i percorsi di completamento (deposito pensiero, ricollegamento dopo reload,
+# bottone debug del pannello) passano da qui, quindi il trigger vive qui e non nei singoli listener.
 func _on_idea_completed(idea_id: String) -> void:
+	var hints := _take_discovery_hints(DiscoveryTypes.TriggerType.IDEA_COMPLETED, {"idea_id": idea_id})
+	_pending_discovery_close_actions[DiscoveryTypes.CloseAction.OPEN_TECH_TREE] = true
+	var completed_idea := IdeaCalculator.get_idea(idea_id)
+	var display_name: String = tr(completed_idea.display_name) if completed_idea != null else idea_id
+	var lines: Array[String] = []
+	var title := ""
 	if UserOptions.show_notification_popups:
-		var completed_idea := IdeaCalculator.get_idea(idea_id)
-		var display_name: String = tr(completed_idea.display_name) if completed_idea != null else idea_id
-		# Multiriga (2026-09-21, richiesta utente): nome, summary e sblocchi (IdeaUnlocksService,
-		# una riga per gruppo — idee/edifici/risorse).
-		var popup_lines: Array[String] = [tr("notification_idea_completed").format({"idea": display_name})]
+		title = tr("notification_idea_completed").format({"idea": display_name})
 		if completed_idea != null and completed_idea.summary != "":
-			popup_lines.append(tr(completed_idea.summary))
+			lines.append(tr(completed_idea.summary))
 		# Stesso filtro del dettaglio del TechTreePanel: idee sbloccate ancora coperte -> "???".
-		popup_lines.append_array(IdeaUnlocksService.format_lines(
+		lines.append_array(IdeaUnlocksService.format_lines(
 			idea_id,
 			func(kind: StringName, unlock_id: String) -> bool:
 				return IdeaProgressService.is_unlock_hidden(human_folk, kind, unlock_id)
 		))
-		notification_popup.enqueue(
-			NotificationTypes.NotificationPopupType.IDEA_COMPLETED,
-			"\n".join(popup_lines),
-			true # requires_ack: resta finché il giocatore preme OK (2026-09-21, richiesta utente)
-		)
-	_open_tech_tree_after_notification_popup()
+	# Spiegazioni nella STESSA sezione dell'idea; titolo della scoperta come sottotitolo (o come titolo della
+	# sezione se le notifiche sono spente).
+	if UserOptions.show_discovery_hints:
+		for hint in hints:
+			if title == "":
+				title = tr(hint.title_key) if hint.title_key != "" else display_name
+			elif hint.title_key != "":
+				lines.append("")
+				lines.append("[b]%s[/b]" % tr(hint.title_key))
+			lines.append_array(_get_discovery_hint_paragraphs(hint))
+	var section: Dictionary = {}
+	if title != "":
+		section = {"trigger": DiscoveryTypes.TriggerType.IDEA_COMPLETED, "title": title, "lines": lines}
+	_queue_discovery(section)
 
 
 # Attende che la coda di NotificationPopup si svuoti (il popup si nasconde da solo a coda finita,
@@ -6779,6 +6800,78 @@ func _open_tech_tree_after_notification_popup() -> void:
 		tech_tree_panel.refresh_content()
 		return
 	tech_tree_panel.open_dialog(human_folk, game_data)
+
+
+# --- Scoperte (2026-09-28, richiesta utente) ---
+
+# Scoperte non ancora viste per il trigger: le segna subito come viste (anche con le spiegazioni disattivate: il
+# momento è passato) e registra le loro azioni di chiusura. Il testo lo compone il chiamante.
+func _take_discovery_hints(trigger: DiscoveryTypes.TriggerType, data: Dictionary) -> Array[DiscoveryHintRules]:
+	var hints := DiscoveryHintService.find_unseen(game_data, trigger, data)
+	for hint in hints:
+		DiscoveryHintService.mark_seen(game_data, hint.id)
+		if hint.close_action != DiscoveryTypes.CloseAction.NONE:
+			_pending_discovery_close_actions[hint.close_action] = true
+	return hints
+
+
+func _get_discovery_hint_paragraphs(hint: DiscoveryHintRules) -> Array[String]:
+	var paragraphs: Array[String] = []
+	for key in hint.paragraph_keys:
+		paragraphs.append(tr(key))
+	return paragraphs
+
+
+# Trigger generico di una milestone (es. edificio completato): una sezione per scoperta, solo se le spiegazioni
+# sono attive.
+# Senza scoperte non fa nulla; con scoperte ma spiegazioni spente esegue comunque le azioni di chiusura.
+func _trigger_discoveries(trigger: DiscoveryTypes.TriggerType, data: Dictionary) -> void:
+	var hints := _take_discovery_hints(trigger, data)
+	if hints.is_empty():
+		return
+	if not UserOptions.show_discovery_hints:
+		_queue_discovery({})
+		return
+	for hint in hints:
+		_queue_discovery({"trigger": trigger, "title": tr(hint.title_key), "lines": _get_discovery_hint_paragraphs(hint)})
+
+
+# section vuota = nessun testo, solo azioni di chiusura da eseguire.
+func _queue_discovery(section: Dictionary) -> void:
+	if not section.is_empty():
+		_pending_discovery_sections.append(section)
+	if not _discovery_flush_scheduled:
+		_discovery_flush_scheduled = true
+		_flush_discoveries.call_deferred()
+
+
+# A fine frame: tutte le sezioni raccolte in UN popup (o aggiunte a quello già aperto — mai due popup di scoperta
+# consecutivi). Nulla da mostrare e nessun popup aperto -> azioni di chiusura subito. Aspetta un eventuale
+# EventDecisionDialog aperto: due Window esclusive insieme non sono ammesse.
+func _flush_discoveries() -> void:
+	while event_decision_dialog != null and event_decision_dialog.visible:
+		await event_decision_dialog.visibility_changed
+	_discovery_flush_scheduled = false
+	var sections := _pending_discovery_sections
+	_pending_discovery_sections = []
+	if not sections.is_empty():
+		if discovery_popup.visible:
+			discovery_popup.append_sections(sections)
+		else:
+			discovery_popup.open_popup(sections)
+		return
+	if not discovery_popup.visible:
+		_run_discovery_close_actions()
+
+
+# Dopo l'OK del DiscoveryPopup (segnale acknowledged) o subito se non c'era nulla da mostrare.
+func _run_discovery_close_actions() -> void:
+	var actions := _pending_discovery_close_actions.keys()
+	_pending_discovery_close_actions.clear()
+	for action in actions:
+		match action:
+			DiscoveryTypes.CloseAction.OPEN_TECH_TREE:
+				_open_tech_tree_after_notification_popup()
 
 
 # Inizio consumo della riserva corporea (2026-09-19, richiesta utente): l'individuo ha finito le
@@ -10059,6 +10152,44 @@ func _building_type_availability(rules: BuildingRules) -> Dictionary:
 	return {"is_buildable": true, "disabled_tooltip": ""}
 
 
+# Alberi e cespugli (2026-09-28, richiesta utente — BuildingVerificationService criterio 10): si possono liberare
+# solo se qualcuno può abbattere (CHOPPING), secondo la regola unica VegetationClearingService.can_clear_vegetation. Con
+# pipottini selezionati conta chi è selezionato (basta uno), altrimenti tutta la tribù. Chiamata ogni frame
+# dall'anteprima: pochi individui e una scansione di cintura/zaino, costo trascurabile.
+func _can_tribe_cut() -> bool:
+	var selected := _get_selected_individuals()
+	if selected.is_empty():
+		return VegetationClearingService.can_clear_vegetation(null, human_individuals)
+	for member in selected:
+		if VegetationClearingService.can_clear_vegetation(member):
+			return true
+	return false
+
+
+# Controllo di edificabilità al click della Build Task: stesso controllo dell'anteprima (il piazzamento istantaneo
+# con B, bypass di debug/test, non lo usa e ignora alberi/cespugli come prima). Se il
+# rifiuto dipende SOLO da alberi/cespugli senza chi possa abbattere (la stessa posizione passerebbe con
+# can_cut = true), lo spiega col canale di sempre dei comandi rifiutati (_report_command_rejection: pannello del
+# selezionato + popup giallo) e la X rossa sulla microcella. Gli altri motivi restano segnalati solo dal fantasma rosso.
+func _is_placement_buildable_or_report(world_position: Vector2, rules: BuildingRules) -> bool:
+	var can_cut := _can_tribe_cut()
+	if BuildingVerificationService.is_position_buildable(
+		live_cells, MACRO_CELL_PIXELS, MicroCellRenderer.CELL_SIZE, world_position,
+		game_data.get_absolute_day(), macro_world, _building_ghost.rotation_dir, rules, can_cut
+	):
+		return true
+	if not can_cut and BuildingVerificationService.is_position_buildable(
+		live_cells, MACRO_CELL_PIXELS, MicroCellRenderer.CELL_SIZE, world_position,
+		game_data.get_absolute_day(), macro_world, _building_ghost.rotation_dir, rules, true
+	):
+		var selected := _get_selected_individuals()
+		_report_command_rejection(selected[0] if not selected.is_empty() else null, tr("build_blocked_no_cutting_tool"))
+		var placement := _live_cell_and_micro_position_at(world_position)
+		if not placement.is_empty():
+			_spawn_command_icon_at_microcell(placement["cell"], placement["micro_pos"], "task_rejected")
+	return false
+
+
 # Piazzamento ISTANTANEO (2026-09-10, richiesta utente — RIDOTTO a bypass debug/test: prima
 # porzione Build Task, il click sinistro semplice ora passa da _start_building_task_at sotto invece
 # di qui, vedi _unhandled_input. Questa funzione resta raggiungibile SOLO tenendo premuto B mentre
@@ -10231,10 +10362,7 @@ func _start_building_task_at(world_position: Vector2) -> void:
 		return
 	if not _building_type_availability(rules)["is_buildable"]:
 		return
-	if not BuildingVerificationService.is_position_buildable(
-		live_cells, MACRO_CELL_PIXELS, MicroCellRenderer.CELL_SIZE, world_position,
-		game_data.get_absolute_day(), macro_world, _building_ghost.rotation_dir, rules
-	):
+	if not _is_placement_buildable_or_report(world_position, rules):
 		return
 	var placement := _live_cell_and_micro_position_at(world_position)
 	if placement.is_empty():
@@ -10831,13 +10959,10 @@ func _on_building_construction_completed(building: Building) -> void:
 	# Rinfresca la scheda 🏠 (2026-09-12, richiesta utente) — lo stato passa da "in costruzione" a
 	# "completo" proprio qui, la lista deve rifletterlo subito, non aspettare il rollover d'anno.
 	_refresh_buildings_panel()
-	# Primo edificio con accepts_thoughts completato in questa partita (2026-09-21, richiesta
-	# utente) -> apre l'albero idee, una volta sola (GameData.thought_building_tech_tree_shown,
-	# persistito). call_deferred: questo handler gira dentro BuildAction.on_complete, in pieno tick
-	# di simulazione — aprire il pannello mette in pausa il clock, meglio farlo a fine frame.
-	if building.rules != null and building.rules.accepts_thoughts and not game_data.thought_building_tech_tree_shown:
-		game_data.thought_building_tech_tree_shown = true
-		tech_tree_panel.open_dialog.call_deferred(human_folk, game_data)
+	# Scoperte BUILDING_COMPLETED (2026-09-28 — sostituisce il vecchio "primo edificio con accepts_thoughts apre
+	# l'albero idee", ora il .tres first_thought_building con azione OPEN_TECH_TREE). Popup e azioni partono a
+	# fine frame (_flush_discoveries, deferred): questo handler gira in pieno tick di simulazione.
+	_trigger_discoveries(DiscoveryTypes.TriggerType.BUILDING_COMPLETED, {"building": building})
 	# AssignHouseService (2026-09-12, richiesta utente — trigger 4a: "quando un edificio
 	# residenziale completa la costruzione") — SOLO se max_residents > 0 (un edificio non
 	# residenziale, es. Pebble Circle/Deposit Site, non ha senso farlo passare da qui: nessun posto
@@ -11263,6 +11388,11 @@ func _setup_clock() -> void:
 	add_child(event_decision_dialog)
 	event_decision_dialog.visibility_changed.connect(_on_blocking_dialog_visibility_changed.bind(event_decision_dialog))
 	event_decision_dialog.option_chosen.connect(_on_event_decision_chosen)
+	# Popup delle scoperte (2026-09-28): bloccante come gli altri dialoghi, stesso motivo di posizione.
+	discovery_popup = DiscoveryPopup.new()
+	add_child(discovery_popup)
+	discovery_popup.visibility_changed.connect(_on_blocking_dialog_visibility_changed.bind(discovery_popup))
+	discovery_popup.acknowledged.connect(_run_discovery_close_actions)
 	_setup_transport_selection_banner()
 	if macro_world == null:
 		play_pause_button.disabled = true

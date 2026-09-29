@@ -121,6 +121,14 @@ static func try_satisfy(individual: HumanIndividual, required: Array[TaskTypes.T
 	return outcome
 
 
+# L'individuo ha un attrezzo che copre la categoria, in cintura o nello zaino (2026-09-28, richiesta utente —
+# edificabilità su alberi/cespugli, vedi GameScene._can_tribe_cut). Sola lettura: nessuno spostamento in cintura.
+static func has_tool_for(individual: HumanIndividual, category: TaskTypes.ToolCategory) -> bool:
+	if individual == null:
+		return false
+	return _belt_covers(individual, category) or _find_backpack_tool_for(individual, category, []) != ""
+
+
 static func _tool_categories(tool_name: String) -> Array:
 	var rules := CaloricCalculator.get_caloric_source_rules(tool_name)
 	return rules.tool_categories if rules != null else []

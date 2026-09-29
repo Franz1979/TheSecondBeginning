@@ -1,0 +1,12 @@
+[gd_resource type="Resource" script_class="DiscoveryHintRules" format=3]
+
+[ext_resource type="Script" path="res://gameplay/discoveries/scripts/DiscoveryHintRules.gd" id="1_rules"]
+
+[resource]
+script = ExtResource("1_rules")
+id = "first_thought_building"
+title_key = "discovery_first_thought_building_title"
+paragraph_keys = Array[String](["discovery_first_thought_building_p1", "discovery_first_thought_building_p2"])
+trigger_type = 1
+close_action = 1
+building_flag = "accepts_thoughts"

@@ -92,6 +92,10 @@ func _init(
 	_is_currently_grass = p_is_currently_grass
 	_position = Vector2i(p_target_building.micro_x, p_target_building.micro_y) if p_target_building != null else Vector2i.ZERO
 	_duration = _compute_duration()
+	# Alberi o cespugli sulla microcella (2026-09-28, richiesta utente): categorie da VegetationClearingService (la
+	# regola unica condivisa col piazzamento). Solo erba o microcella vuota: nessun requisito. Controllo a ogni tick
+	# in get_stamina_delta: senza attrezzo lo step resta in attesa e riparte da solo.
+	required_tool_categories = VegetationClearingService.get_required_tool_categories(_macro_state, _position)
 	# Persistita su Building.construction_progress["clear_duration_days"] (2026-09-14, richiesta
 	# utente — barra di avanzamento nel pannello edificio) — a differenza di clear_days_done
 	# (progresso, sempre scritto dal vivo su Building), _duration è la SOGLIA target: PRIMA viveva
@@ -174,6 +178,11 @@ func get_stamina_delta(individual: Variant, context: Dictionary, delta: float) -
 		return 0.0
 	if _get_clear_days_done() >= _duration:
 		return 0.0
+	# ensure_required_tools per primo: sposta l'attrezzo in cintura e aggiorna lo stato di attesa mostrato nel
+	# pannello; poi la regola unica, così un requisito futuro oltre agli attrezzi vale anche qui.
+	if not required_tool_categories.is_empty():
+		if not ensure_required_tools(individual) or not VegetationClearingService.can_clear_vegetation(individual):
+			return 0.0
 	target_building.construction_progress["clear_days_done"] = _get_clear_days_done() + delta
 	return -STAMINA_DRAIN_PER_DAY * delta
 

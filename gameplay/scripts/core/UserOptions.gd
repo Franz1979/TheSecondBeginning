@@ -25,6 +25,9 @@ const IT_TRANSLATION_PATH := "res://translations/strings.it.translation"
 const EN_TRANSLATION_PATH := "res://translations/strings.en.translation"
 
 var show_notification_popups: bool = true
+# Spiegazioni delle scoperte nel DiscoveryPopup (2026-09-28, richiesta utente) — indipendente da
+# show_notification_popups: spento, il popup mostra solo le parti "notifica" (es. idea completata e sblocchi).
+var show_discovery_hints: bool = true
 # SettingsTypes.Language — NONE (default, richiesta utente 2026-09-05: NON forzare ITALIAN come
 # default di questo campo) = nessuna lingua forzata, si usa il comportamento tr() di default
 # (locale di sistema + fallback di progetto, vedi project.godot). Che oggi questo mostri comunque
@@ -92,6 +95,7 @@ func load_from_disk() -> void:
 		save_to_disk()
 		return
 	show_notification_popups = bool(config.get_value(SECTION, "show_notification_popups", true))
+	show_discovery_hints = bool(config.get_value(SECTION, "show_discovery_hints", true))
 	language = int(config.get_value(SECTION, "language", SettingsTypes.Language.NONE)) as SettingsTypes.Language
 	# Preselezione raccolta: valori fuori range (file modificato a mano, enum cambiato) ripiegano su "Tutto".
 	var loaded_kind: int = int(config.get_value(SECTION, "pickup_default_kind", PickUpAction.CriterionKind.ALL))
@@ -113,6 +117,7 @@ func load_from_disk() -> void:
 func save_to_disk() -> void:
 	var config := ConfigFile.new()
 	config.set_value(SECTION, "show_notification_popups", show_notification_popups)
+	config.set_value(SECTION, "show_discovery_hints", show_discovery_hints)
 	config.set_value(SECTION, "language", language)
 	config.set_value(SECTION, "pickup_default_kind", pickup_default_kind)
 	config.set_value(SECTION, "pickup_default_category", pickup_default_category)

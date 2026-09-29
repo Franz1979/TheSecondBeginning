@@ -16,6 +16,8 @@ enum NotificationPopupType {
 	# Sblocco Idea (2026-09-07, richiesta utente) — riusa lo STESSO NotificationPopup/gate
 	# UserOptions.show_notification_popups di morte/nascita (vedi GameScene._on_idea_completed),
 	# non un sistema di avvisi separato: si disattiva insieme agli altri da Opzioni.
+	# NON PIÙ USATO dal 2026-09-28: l'idea completata va nel DiscoveryPopup (vedi GameScene._on_idea_completed).
+	# Lasciato al suo posto per non spostare i valori successivi.
 	IDEA_COMPLETED,
 	# Decadimento risorsa (2026-09-09, richiesta utente, Step 3 decadimento) — una risorsa
 	# trasportata/stoccata ha raggiunto decay_fraction >= 1.0 ed è stata rimossa (zaino individuo o

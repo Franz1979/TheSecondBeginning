@@ -116,4 +116,8 @@ enum ToolCategory {
 	# CARRYING (2026-09-27, richiesta utente — sacca di pelle, hide_bag.tres) aggiunto IN FONDO, stesso motivo.
 	# Nessuna Action la richiede: la sacca non si usura (max_uses = 0).
 	CARRYING,
+	# CHOPPING (2026-09-28, richiesta utente) aggiunto IN FONDO, stesso motivo: abbattere/sgrossare legno — più
+	# specifica di CUTTING (che il coltello copre). Richiesta per liberare alberi e cespugli, vedi
+	# VegetationClearingService. Nessun .tres la possiede ancora.
+	CHOPPING,
 }

@@ -491,6 +491,7 @@ tool_category_butchering,macellazione
 tool_category_combat,combattimento
 tool_category_sewing,cucito
 tool_category_carrying,trasporto
+tool_category_chopping,abbattimento
 individual_cancel_task_tooltip,Annulla l'attività in corso (come il tasto H)
 tool_gate_assigned_waiting,{name} aspetta gli attrezzi per iniziare: {tools}. Portaglieli nello zaino e partirà da solo.
 tool_gate_category_with_examples,{category} (es. {examples})
@@ -526,3 +527,9 @@ visitor_member_woman,Donna di {age} anni
 visitor_member_boy,Bambino di {age} anni
 visitor_member_girl,Bambina di {age} anni
 random_event_family_arrival_name,Arrivo di una famiglia
+discovery_popup_title,Scoperta
+options_show_discovery_hints,Mostra spiegazioni delle scoperte
+discovery_first_thought_building_title,Il centro del villaggio
+discovery_first_thought_building_p1,"Qui i tuoi pipottini depositano i pensieri: accumulandoli, il villaggio sviluppa nuove idee."
+discovery_first_thought_building_p2,"Scegli dall'albero delle idee quale ricercare: ogni idea completata sblocca edifici, risorse o strumenti."
+build_blocked_no_cutting_tool,"Senza uno strumento per abbattere non si può liberare il terreno da alberi e cespugli."

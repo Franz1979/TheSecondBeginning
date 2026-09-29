@@ -121,7 +121,13 @@ func load_game_from_json(file_path: String) -> LoadedGame:
 	game_data.camera_x = float(data["game"].get("camera_x", 0.0))
 	game_data.camera_y = float(data["game"].get("camera_y", 0.0))
 	game_data.camera_position_saved = bool(data["game"].get("camera_position_saved", false))
-	game_data.thought_building_tech_tree_shown = bool(data["game"].get("thought_building_tech_tree_shown", false))
+	# Scoperte già mostrate (2026-09-28, vedi GameData) — .get(key, []) per i save precedenti. Un save col vecchio
+	# thought_building_tech_tree_shown a true riceve come vista la scoperta equivalente.
+	game_data.seen_discovery_hints.clear()
+	for hint_id in data["game"].get("seen_discovery_hints", []):
+		DiscoveryHintService.mark_seen(game_data, String(hint_id))
+	if bool(data["game"].get("thought_building_tech_tree_shown", false)):
+		DiscoveryHintService.mark_seen(game_data, DiscoveryHintService.LEGACY_THOUGHT_BUILDING_HINT_ID)
 	# .get(key, 0) per compatibilità con save precedenti l'introduzione della pulizia
 	# periodica del fog of war (vedi GameData) — 0 è lo stesso default della classe.
 	game_data.fog_of_war_last_prune_absolute_day = int(data["game"].get("fog_of_war_last_prune_absolute_day", 0))

@@ -380,6 +380,7 @@ tool_category_butchering,butchering
 tool_category_combat,combat
 tool_category_sewing,sewing
 tool_category_carrying,carrying
+tool_category_chopping,chopping
 individual_cancel_task_tooltip,Cancel the current activity (same as the H key)
 tool_gate_assigned_waiting,{name} is waiting for tools before starting: {tools}. Bring them to the backpack and the work will start on its own.
 tool_gate_category_with_examples,{category} (e.g. {examples})
@@ -436,3 +437,9 @@ carried_resource_tooltip_wild_vegetables,Wild vegetables
 carried_resource_tooltip_pebble,Pebbles
 carried_resource_tooltip_plant_fiber,Plant fiber
 carried_resource_tooltip_stick,Sticks
+discovery_popup_title,Discovery
+options_show_discovery_hints,Show discovery explanations
+discovery_first_thought_building_title,The village center
+discovery_first_thought_building_p1,"Your people bring their thoughts here: as they accumulate, the village develops new ideas."
+discovery_first_thought_building_p2,"Pick which idea to research from the idea tree: each completed idea unlocks buildings, resources or tools."
+build_blocked_no_cutting_tool,"Without a chopping tool the ground can't be cleared of trees and shrubs."

@@ -19,6 +19,8 @@ extends Window
 
 @onready var notification_popups_check_box: CheckBox = $MarginContainer/VBoxContainer/NotificationPopupsRow/CheckBox
 @onready var notification_popups_label: Label = $MarginContainer/VBoxContainer/NotificationPopupsRow/Label
+@onready var discovery_hints_check_box: CheckBox = $MarginContainer/VBoxContainer/DiscoveryHintsRow/CheckBox
+@onready var discovery_hints_label: Label = $MarginContainer/VBoxContainer/DiscoveryHintsRow/Label
 @onready var language_row: HBoxContainer = $MarginContainer/VBoxContainer/LanguageRow
 @onready var language_option_button: OptionButton = $MarginContainer/VBoxContainer/LanguageRow/OptionButton
 @onready var language_label: Label = $MarginContainer/VBoxContainer/LanguageRow/Label
@@ -77,6 +79,7 @@ func _ready() -> void:
 	_refresh_texts()
 
 	notification_popups_check_box.toggled.connect(_on_notification_popups_toggled)
+	discovery_hints_check_box.toggled.connect(_on_discovery_hints_toggled)
 	language_option_button.item_selected.connect(_on_language_selected)
 	pickup_default_option_button.item_selected.connect(_on_pickup_default_selected)
 	repeat_check_box.toggled.connect(_on_repeat_toggled)
@@ -104,6 +107,7 @@ func _ready() -> void:
 # non pertinente in quel contesto non deve nemmeno occupare spazio.
 func open_menu(show_language: bool = true) -> void:
 	notification_popups_check_box.set_pressed_no_signal(UserOptions.show_notification_popups)
+	discovery_hints_check_box.set_pressed_no_signal(UserOptions.show_discovery_hints)
 	language_option_button.select(UserOptions.language)
 	language_row.visible = show_language
 	# La preselezione raccolta e' pertinente sia dal menu principale sia in partita: la riga c'e' sempre.
@@ -119,6 +123,12 @@ func open_menu(show_language: bool = true) -> void:
 
 func _on_notification_popups_toggled(pressed: bool) -> void:
 	UserOptions.show_notification_popups = pressed
+	UserOptions.save_to_disk()
+
+
+# Spiegazioni delle scoperte (2026-09-28, richiesta utente), indipendente dalle notifiche popup.
+func _on_discovery_hints_toggled(pressed: bool) -> void:
+	UserOptions.show_discovery_hints = pressed
 	UserOptions.save_to_disk()
 
 
@@ -156,6 +166,7 @@ func _resize_to_content() -> void:
 func _refresh_texts() -> void:
 	title = tr("options")
 	notification_popups_label.text = tr("options_show_notification_popups")
+	discovery_hints_label.text = tr("options_show_discovery_hints")
 	language_label.text = tr("options_language")
 	pickup_default_label.text = tr("options_pickup_default")
 	repeat_label.text = tr("options_repeat_default").format({"count": TaskRepeatRules.MAX_REPEATS})

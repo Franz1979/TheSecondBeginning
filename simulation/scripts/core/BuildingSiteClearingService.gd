@@ -13,6 +13,23 @@ extends RefCounted
 # comunque "noti" in tree_claimed_lots/shrub_claimed_lots (mai cancellati, stesso principio del
 # taglio) — così, se l'edificio viene demolito in futuro, il lotto torna semplicemente eleggibile
 # per un nuovo individuo alla prossima crescita, senza bisogno di alcuna resurrezione esplicita.
+# true se la microcella ha almeno un TREE o SHRUB vivo, cioè ciò che clear_microcell rimuoverebbe con
+# _clear_type (2026-09-28, richiesta utente — serve uno strumento CHOPPING per liberarla, vedi
+# BuildingVerificationService criterio 10 e ClearAction). Sola lettura. L'erba non conta: si toglie a mano.
+static func has_woody_vegetation(macro_state: MacroCellState, pos: Vector2i) -> bool:
+	if macro_state == null:
+		return false
+	for object_type in [GameTypes.WorldObjectType.TREE, GameTypes.WorldObjectType.SHRUB]:
+		var claimed_lots: Dictionary = macro_state.tree_claimed_lots if object_type == GameTypes.WorldObjectType.TREE else macro_state.shrub_claimed_lots
+		if not claimed_lots.has(pos):
+			continue
+		var subtype_store: Dictionary = macro_state.tree_individual_subtype if object_type == GameTypes.WorldObjectType.TREE else macro_state.shrub_individual_subtype
+		for key in subtype_store.keys():
+			if key.x == pos.x and key.y == pos.y:
+				return true
+	return false
+
+
 static func clear_microcell(macro_state: MacroCellState, pos: Vector2i, is_currently_grass: bool) -> void:
 	_clear_type(macro_state, GameTypes.WorldObjectType.TREE, pos)
 	_clear_type(macro_state, GameTypes.WorldObjectType.SHRUB, pos)

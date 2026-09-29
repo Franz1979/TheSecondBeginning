@@ -58,8 +58,8 @@ func save_game_to_json(
 			"camera_x": game_data.camera_x,
 			"camera_y": game_data.camera_y,
 			"camera_position_saved": game_data.camera_position_saved,
-			# Apertura automatica albero idee al primo edificio "pensieri" (vedi GameData).
-			"thought_building_tech_tree_shown": game_data.thought_building_tech_tree_shown,
+			# Scoperte già mostrate (vedi GameData, DiscoveryHintService).
+			"seen_discovery_hints": game_data.seen_discovery_hints,
 			# Ultimo giorno di pulizia periodica del fog of war (vedi GameData) — deve
 			# sopravvivere a save/load per non sfasare la cadenza reale.
 			"fog_of_war_last_prune_absolute_day": game_data.fog_of_war_last_prune_absolute_day,

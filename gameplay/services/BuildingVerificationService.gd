@@ -71,14 +71,27 @@ extends RefCounted
 # (BUGFIX 2026-09-08, richiesta utente: un Deposit Site bloccava la costruzione sul lato sud, la sua
 # `rotation` di default/SOUTH veniva letta come se fosse una porta vera anche con has_door=false).
 
+#
+# Criterio 10 (2026-09-28, richiesta utente): alberi e cespugli (TREE/SHRUB vivi sulla microcella dell'edificio,
+# BuildingSiteClearingService.has_woody_vegetation) si possono liberare solo con uno strumento per abbattere (CHOPPING): con
+# can_cut = false (nessuno può tagliare, lo decide il chiamante — GameScene._can_tribe_cut) la microcella non è
+# edificabile. Erba e microcelle vuote restano edificabili. Solo la microcella dell'edificio, non quella davanti
+# alla porta (la pulizia del cantiere non la tocca). Default true = criterio disattivato. Per sapere se il rifiuto
+# dipende SOLO da questo criterio basta richiamare con can_cut = true (vedi GameScene._report_woody_vegetation_block).
+
 static func is_position_buildable(
 	live_cells: Dictionary, macro_cell_pixels: int, cell_size: int, world_position: Vector2,
-	current_absolute_day: int, macro_world: World, direction: GameTypes.Direction, rules: BuildingRules
+	current_absolute_day: int, macro_world: World, direction: GameTypes.Direction, rules: BuildingRules,
+	can_cut: bool = true
 ) -> bool:
 	var resolved := _resolve_cell_and_microcell(live_cells, macro_cell_pixels, cell_size, world_position)
 	if resolved.is_empty():
 		return false
 	if not _is_position_clear(resolved["cell"], resolved["microcell"], current_absolute_day, macro_world, rules):
+		return false
+
+	# Criterio 10
+	if not can_cut and BuildingSiteClearingService.has_woody_vegetation(resolved["cell"].macro_state, resolved["microcell"]):
 		return false
 
 	# Criterio 9 (2026-09-26, ground drop): non si costruisce sopra un mucchio a terra. Vale solo per la
