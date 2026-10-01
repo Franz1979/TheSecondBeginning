@@ -228,7 +228,8 @@ static func _random_free_point_around(individual: HumanIndividual, min_distance:
 #
 # is_interrupt_transition (2026-09-13, richiesta utente, bugfix inventario) — default false,
 # inoltrato TALE E QUALE a individual.assign_task: il trigger manuale tasto R (GameScene, nessun
-# argomento passato) resta invariato (discard sempre); HumanIndividualActionService passa true
+# argomento passato) segue la regola unica del carico (_release_cargo_before_manual_need, dal 2026-09-29 — prima
+# scartava sempre lo zaino); HumanIndividualActionService passa true
 # SOLO quando assegna questa Task-bisogno a seguito di un interrupt automatico rilevato — vedi
 # HumanIndividual.assign_task per il perché.
 static func assign_rest_task(individual: HumanIndividual, world: World, age_band: HumanTypes.AgeBand, is_interrupt_transition: bool = false) -> bool:
@@ -262,8 +263,8 @@ static func assign_rest_task(individual: HumanIndividual, world: World, age_band
 	# innocuo qui, il primo step è sempre un WalkAction che sovrascrive is_moving/target_position
 	# da sé in activate() — ma resta comunque un side-effect non necessario per quel percorso,
 	# stesso principio "tocca solo quello che serve" già seguito per il discard).
-	if not is_interrupt_transition:
-		individual.stop()
+	if not is_interrupt_transition and _release_cargo_before_manual_need(individual, world, task):
+		return true
 	var assigned := individual.assign_task(task, age_band, is_interrupt_transition)
 	if assigned and DebugLogging.ENABLED and DebugLogging.SHOW_IDLE_LOGS:
 		print("[REST] Task Walk+Rest assegnata a #%d %s: target=%s, rest_multiplier=%.2f" % [
@@ -298,14 +299,27 @@ static func assign_emergency_rest_task(individual: HumanIndividual, age_band: Hu
 	# Guard PRIMA di stop() — STESSO principio di assign_rest_task sopra.
 	if not individual.can_assign_task(task, age_band):
 		return false
-	if not is_interrupt_transition:
-		individual.stop()
+	if not is_interrupt_transition and _release_cargo_before_manual_need(individual, GameSettings.active_world, task):
+		return true
 	var assigned := individual.assign_task(task, age_band, is_interrupt_transition)
 	if assigned and DebugLogging.ENABLED and DebugLogging.SHOW_IDLE_LOGS:
 		print("[EMERGENCY REST] Task Walk+Rest assegnata a #%d %s: target=%s, rest_multiplier=1.0 (fisso)" % [
 			individual.id, individual.name, target_data["target_position"]
 		])
 	return assigned
+
+
+# Riposo MANUALE (tasti R/E, is_interrupt_transition false — 2026-09-29, regola unica del carico, CargoReturnService):
+# sostituisce il vecchio individual.stop(), che scartava lo zaino a terra. Se la Task in corso possiede il carico, al
+# suo posto parte il ritorno al magazzino e `need_task` va in coda (parte dopo): true. Altrimenti la Task in corso si
+# ferma senza scartare lo zaino (un carico di una Task in coda resta suo; uno rimasto senza proprietario lo gestisce
+# assign_task) e il chiamante assegna `need_task` come prima: false. L'interrupt automatico non passa mai di qui.
+static func _release_cargo_before_manual_need(individual: HumanIndividual, world: World, need_task: Task) -> bool:
+	if CargoReturnService.release_cargo(individual, individual.current_task, world) == CargoReturnService.Outcome.RETURNING:
+		TaskQueueService.push_suspended_task(individual, need_task)
+		return true
+	individual.stop(false)
+	return false
 
 
 # Scansione lineare di World.buildings — stesso identico pattern/stesso costo accettato già in uso

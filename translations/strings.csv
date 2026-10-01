@@ -101,9 +101,9 @@ idea_plant_lore_summary,Permette di riconoscere le erbe medicinali.
 idea_plant_lore_description,"Osservando le piante, il gruppo impara quali curano e dove trovarle."
 idea_work_areas_summary,Permette di delimitare aree di lavoro.
 idea_work_areas_description,Il territorio si divide in zone dedicate a raccolta e attività.
-idea_task_assignment_summary,Un pipottino può distribuire i compiti.
+idea_task_assignment_summary,Un abitante può distribuire i compiti.
 idea_task_assignment_description,Un membro del gruppo coordina il lavoro e assegna i compiti agli altri.
-idea_warehouse_management_summary,Un pipottino può gestire il magazzino.
+idea_warehouse_management_summary,Un abitante può gestire il magazzino.
 idea_warehouse_management_description,Un membro del gruppo tiene ordine nelle scorte e ne organizza i movimenti.
 unlock_kind_idea,Sblocca idee
 unlock_kind_building,Sblocca edifici
@@ -149,7 +149,7 @@ fertile_women_list,Donne fertili
 death_list,Elenco morti
 center_on_selection_tooltip,Centra la camera sulla selezione corrente
 building_hut,Capanna
-building_pebble_circle,Cerchio di sassolini
+building_pebble_circle,Cerchio di sassi
 building_deposit_site,Sito di deposito
 building_stick_tent,Tenda di rami
 building_hide_tent,Tenda di pelli
@@ -167,7 +167,7 @@ building_smokehouse,Affumicatoio
 building_burial,Sepoltura
 building_earthwork,Vallo di terra
 building_dirt_ground,Terra battuta
-build_bar_pebble_circle_tooltip,Cerchio di sassolini
+build_bar_pebble_circle_tooltip,Cerchio di sassi
 build_bar_pebble_circle_disabled_tooltip,Non costruibile: esiste già un centro villaggio
 build_bar_deposit_site_tooltip,Sito di deposito
 build_bar_stick_tent_tooltip,Tenda di rami
@@ -531,6 +531,22 @@ random_event_family_arrival_name,Arrivo di una famiglia
 discovery_popup_title,Scoperta
 options_show_discovery_hints,Mostra spiegazioni delle scoperte
 discovery_first_thought_building_title,Il centro del villaggio
-discovery_first_thought_building_p1,"Qui i tuoi pipottini depositano i pensieri: accumulandoli, il villaggio sviluppa nuove idee."
+discovery_first_thought_building_p1,"Qui i tuoi abitanti depositano i pensieri: accumulandoli, il villaggio sviluppa nuove idee."
 discovery_first_thought_building_p2,"Scegli dall'albero delle idee quale ricercare: ogni idea completata sblocca edifici, risorse o strumenti."
 build_blocked_no_cutting_tool,"Senza uno strumento per abbattere non si può liberare il terreno da alberi e cespugli."
+task_rest_name,Riposo
+task_rest_step_rest,Riposando
+task_rest_step_walk_away,Allontanandosi
+task_emergency_rest_name,Riposo d'emergenza
+task_leisure_rest_name,Oziare
+task_wander_name,Passeggiata
+task_wander_step_walk,Passeggiando
+task_wander_step_look_around,Guardandosi intorno
+task_play_name,Gioco
+task_play_step_run,Correndo
+task_play_step_jump,Saltando
+task_build_step_setup_site,Allestendo il cantiere
+task_build_step_clear_site,Sgomberando il terreno
+task_build_step_build,Costruendo
+building_site_materials_progress_caption,Materiale (consegnato/richiesto):
+building_production_materials_caption,Materiali per la produzione (disponibili/richiesti):

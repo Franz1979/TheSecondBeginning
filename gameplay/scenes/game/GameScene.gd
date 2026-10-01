@@ -564,6 +564,8 @@ func _ready() -> void:
 	# servizio dall'esterno, il servizio resta ignaro di chi lo consuma") — vedi
 	# _connect_daydream_step_appended_listener sotto per cosa fa davvero.
 	IdleTaskAssignmentService.daydream_step_appended_connector = Callable(self, "_connect_daydream_step_appended_listener")
+	# Ritorno del carico al magazzino (2026-09-29, CargoReturnService): segnali degli Unload delle Task di ritorno.
+	CargoReturnService.unload_signal_connector = Callable(self, "_reconnect_unload_action_signals")
 	debug_bar.action_pressed.connect(_on_debug_action_pressed)
 	# Eventi casuali scatenati a mano dalla barra di debug (2026-09-26) — stesso percorso dell'applicazione programmata.
 	debug_bar.random_event_trigger_requested.connect(func(event_id: String) -> void: game_time_service.trigger_random_event_now(event_id))
@@ -1796,31 +1798,6 @@ func _center_camera_on_individual(animated: bool = true) -> void:
 # scatta solo dentro on_complete(), mai chiamato qui, quindi non c'è alcun effetto già applicato da
 # annullare — la sola quantità "prenotata" (il piano di PickUpAction) resta nell'istanza scartata,
 # innocua.
-# Task corrente a metà di un giro di rifornimento con lo zaino carico (2026-09-29, richiesta utente — tasto H e
-# "Annulla cantiere"): invece dello scarto a terra, la Task viene chiusa e sostituita direttamente dal ritorno del
-# carico al magazzino più vicino (MaterialSupplyService.build_cargo_return_task), senza passare da assign_task (che
-# con lo zaino carico riprenderebbe dalla coda la Task "proprietaria del carico"). true = sostituita: il chiamante non
-# deve né scartare lo zaino né rimettere l'individuo in moto. false = nessun giro, zaino vuoto o nessun magazzino.
-func _replace_supply_round_with_cargo_return(member: HumanIndividual) -> bool:
-	if member == null or not MaterialSupplyService.is_in_supply_round(member.current_task):
-		return false
-	var cargo_return_task := MaterialSupplyService.build_cargo_return_task(member, macro_world)
-	if cargo_return_task == null:
-		return false
-	member.stop(false)
-	for step in cargo_return_task.steps:
-		if step is UnloadAction:
-			_reconnect_unload_action_signals(step as UnloadAction, member)
-	member.current_task = cargo_return_task
-	TaskDebugRegistry.on_task_assigned(member, cargo_return_task)
-	cargo_return_task.get_current_action().activate(member, cargo_return_task.context)
-	if DebugLogging.ENABLED and DebugLogging.SHOW_TRANSPORT_BUILD_LOGS:
-		print("[MATERIAL SUPPLY] #%d %s: rifornimento annullato con lo zaino carico %s — lo riporta al magazzino." % [
-			member.id, member.name, str(member.carried_resources)
-		])
-	return true
-
-
 func _stop_selected_individual_task() -> void:
 	if individual == null or not individual.is_selected:
 		return
@@ -1858,16 +1835,18 @@ func _stop_selected_individual_task() -> void:
 			if step is ProduceAction:
 				stopped_produce_building = (step as ProduceAction).target_building
 				break
-	# Annullo a metà di un giro di rifornimento con lo zaino carico (2026-09-29, richiesta utente): il carico non va a
-	# terra, il pipottino lo riporta al magazzino più vicino. Solo questo caso — altrove lo scarto resta quello di sempre
-	# (e anche qui, se nessun magazzino lo accetta). La Task di ritorno sostituisce direttamente quella annullata, senza
-	# passare da assign_task (che con lo zaino carico riprenderebbe dalla coda la Task "proprietaria del carico").
-	if _replace_supply_round_with_cargo_return(individual):
-		return
-	individual.stop()
+	# Regola unica del carico (2026-09-29, CargoReturnService.release_cargo): se la Task annullata possiede il carico,
+	# il pipottino lo riporta al magazzino più vicino (a terra solo se nessun magazzino lo accetta); H su una Task di
+	# ritorno la ferma davvero, con il carico a terra. Con un carico di un'altra Task lo zaino resta com'è.
+	var cargo_outcome := CargoReturnService.release_cargo(individual, individual.current_task, macro_world)
+	if cargo_outcome != CargoReturnService.Outcome.RETURNING:
+		individual.stop(false)
 	# Ordine intero (2026-09-26): la produzione annullata non conta più nel fabbisogno dell'edificio.
 	if stopped_produce_building != null:
 		_reconcile_production_units(stopped_produce_building)
+	# Ritorno al magazzino già attivo come Task corrente: niente da risolvere.
+	if cargo_outcome == CargoReturnService.Outcome.RETURNING:
+		return
 	# Bugfix (2026-09-14, richiesta utente) — individual.stop() da solo azzera SOLO current_task,
 	# senza mai toccare task_queue né richiamare resolve_idle_individual: un individuo con una o più
 	# Task sospese in coda (es. interrotto prima da un bisogno stamina) restava bloccato per sempre
@@ -3161,14 +3140,15 @@ func _on_empty_all_requested(building: Building) -> void:
 # non ancora scoperto.
 # X rossa accanto a "Stato" nel pannello edificio (2026-09-26, richiesta utente): annulla la costruzione/
 # produzione di QUESTO edificio per tutti quelli che ci lavorano — per ciascuno SOLO le Task su questo
-# edificio (in corso e in coda), le altre restano intatte. Zaino conservato (discard_carried false).
+# edificio (in corso e in coda), le altre restano intatte. Carico dello zaino: regola unica di CargoReturnService
+# (dal 2026-09-29; prima lo zaino restava addosso senza proprietario).
 # Chi aveva la Task in corso riparte come dopo la X del pannello individuo (resolve_idle_individual:
 # bisogno -> coda -> perditempo). Il lavoro accumulato resta sull'edificio, come per l'annullo
 # dall'individuo: una nuova assegnazione riprende da dove si era arrivati.
 func _on_building_work_cancel_requested(building: Building) -> void:
 	if building == null:
 		return
-	var freed := _close_tasks_working_on_building(building, BUILDING_WORK_TASK_NAMES, null, false)
+	var freed := _close_tasks_working_on_building(building, BUILDING_WORK_TASK_NAMES, null)
 	for member in freed:
 		HumanIndividualActionService.resolve_idle_individual(member, _resolve_age_band(member), macro_world)
 	# Ordine intero (2026-09-26): le Task annullate non contano più nel fabbisogno.
@@ -4641,45 +4621,23 @@ func _count_other_individuals_claiming_build(target_building: Building, excludin
 # Chiude, per UN individuo, le sole Task di `task_names` su `building` (2026-09-26 — estratta da
 # _close_tasks_working_on_building per l'annullo di un singolo lavoratore dal pannello edificio): la
 # current_task se lavora lì (stop), e le Task in coda che lavorano lì (rimosse). Tutte le altre sue
-# Task, in corso o in coda, restano intatte. discard_carried: true = zaino scartato alla chiusura della current_task
-# (tranne a metà di un giro di rifornimento: il carico torna al magazzino, _replace_supply_round_with_cargo_return);
-# false = zaino lasciato dov'è. Le Task in coda rimosse non toccano mai lo zaino (2026-09-29). Ritorna true se la
-# current_task è stata chiusa senza sostituirla: il chiamante rimette in moto l'individuo con
-# resolve_idle_individual, al momento giusto per lui.
-func _close_individual_tasks_on_building(member: HumanIndividual, building: Building, task_names: Array[String], discard_carried: bool) -> bool:
+# Task, in corso o in coda, restano intatte. Carico nello zaino (2026-09-29, regola unica — CargoReturnService.
+# release_cargo, chiamata PRIMA di chiudere ciascuna Task): se la Task chiusa lo possiede, al suo posto (corrente o in
+# coda) va il ritorno al magazzino più vicino; a terra solo se nessun magazzino lo accetta; un carico di un'altra Task
+# resta nello zaino. Ritorna true se la current_task è stata chiusa senza sostituirla: il chiamante rimette in moto
+# l'individuo con resolve_idle_individual, al momento giusto per lui.
+func _close_individual_tasks_on_building(member: HumanIndividual, building: Building, task_names: Array[String]) -> bool:
 	var current_closed := false
-	# Proprietaria del carico letta PRIMA di toccare current_task/coda (vedi il ciclo sulla coda sotto).
-	var cargo_owner := TaskQueueService.get_cargo_owner(member)
 	if _task_works_on_building(member.current_task, building, task_names):
-		# Giro di rifornimento con lo zaino carico (2026-09-29, richiesta utente): il carico torna al magazzino invece
-		# di cadere a terra — la Task di ritorno è già attiva, quindi l'individuo NON va rimesso in moto dal chiamante.
-		if not (discard_carried and _replace_supply_round_with_cargo_return(member)):
-			member.stop(discard_carried)
+		if CargoReturnService.release_cargo(member, member.current_task, macro_world) != CargoReturnService.Outcome.RETURNING:
+			member.stop(false)
 			current_closed = true
-	var kept_queue: Array[Task] = []
-	for queued_task in member.task_queue:
-		# Task in coda: chiusa senza toccare lo zaino (2026-09-29, richiesta utente — prima veniva scartato tutto): il
-		# carico appartiene alla Task corrente del pipottino, che prosegue indisturbata.
+	for queued_task in member.task_queue.duplicate():
 		if not _task_works_on_building(queued_task, building, task_names):
-			kept_queue.append(queued_task)
-		elif discard_carried and queued_task == cargo_owner:
-			# Eccezione (2026-09-29, richiesta utente): la Task in coda chiusa era LEI la proprietaria del carico (es.
-			# Build interrotta da un riposo a metà giro di rifornimento). Il carico non resta senza proprietario: al suo
-			# posto in coda va il ritorno al magazzino più vicino, che parte alla ripresa dalla coda; nessun magazzino →
-			# scarto a terra come prima.
-			var cargo_return_task := MaterialSupplyService.build_cargo_return_task(member, macro_world)
-			if cargo_return_task == null:
-				member.discard_carried_resource()
-				continue
-			for step in cargo_return_task.steps:
-				if step is UnloadAction:
-					_reconnect_unload_action_signals(step as UnloadAction, member)
-			kept_queue.append(cargo_return_task)
-			if DebugLogging.ENABLED and DebugLogging.SHOW_TRANSPORT_BUILD_LOGS:
-				print("[MATERIAL SUPPLY] #%d %s: Build in coda chiusa con il carico %s — sostituita in coda dal ritorno al magazzino." % [
-					member.id, member.name, str(member.carried_resources)
-				])
-	member.task_queue = kept_queue
+			continue
+		# RETURNING: il ritorno ha già preso il posto di questa Task nella coda.
+		if CargoReturnService.release_cargo(member, queued_task, macro_world) != CargoReturnService.Outcome.RETURNING:
+			member.task_queue.erase(queued_task)
 	return current_closed
 
 
@@ -4687,12 +4645,12 @@ func _close_individual_tasks_on_building(member: HumanIndividual, building: Buil
 # 2026-09-26, era _close_tasks_claiming_building — logica invariata, estratta 2026-09-21 da
 # _demolish_building per riusarla al completamento). Ritorna gli individui la cui current_task è
 # stata chiusa, da rimettere in moto a cura del chiamante.
-func _close_tasks_working_on_building(building: Building, task_names: Array[String], excluded: HumanIndividual, discard_carried: bool) -> Array[HumanIndividual]:
+func _close_tasks_working_on_building(building: Building, task_names: Array[String], excluded: HumanIndividual) -> Array[HumanIndividual]:
 	var freed: Array[HumanIndividual] = []
 	for other in human_individuals:
 		if other == excluded:
 			continue
-		if _close_individual_tasks_on_building(other, building, task_names, discard_carried):
+		if _close_individual_tasks_on_building(other, building, task_names):
 			freed.append(other)
 	return freed
 
@@ -5284,6 +5242,9 @@ func _assign_produce_task(worker: HumanIndividual, target_building: Building, re
 		# Attrezzi appena spostati dallo zaino alla cintura: il pannello individuo deve mostrarli.
 		_refresh_selected_individual_panel()
 
+	# Segnali degli step inseriti dal rifornimento automatico (2026-09-29, MaterialSupplyService) — prima di assign_task,
+	# che può già attivare il primo step.
+	_connect_material_supply_step_appended(task, worker)
 	worker.assign_task(task, _resolve_age_band(worker))
 
 	var assigned := worker.current_task == task or worker.task_queue.has(task)
@@ -9667,7 +9628,7 @@ func _on_demolish_confirmed(building: Variant) -> void:
 # liberati e ricollocati come alla demolizione.
 func _mark_building_for_demolition(building: Building) -> void:
 	building.is_marked_for_demolition = true
-	var freed := _close_tasks_working_on_building(building, PRODUCE_TASK_NAMES, null, false)
+	var freed := _close_tasks_working_on_building(building, PRODUCE_TASK_NAMES, null)
 	for member in freed:
 		HumanIndividualActionService.resolve_idle_individual(member, _resolve_age_band(member), macro_world)
 	_reconcile_production_units(building)
@@ -9709,7 +9670,7 @@ func _on_demolition_cancel_requested(building: Building) -> void:
 	if float(building.construction_progress.get(DemolishAction.LABOR_KEY, 0.0)) > 0.0:
 		_refresh_selected_building_panel()
 		return
-	var freed := _close_tasks_working_on_building(building, DEMOLISH_TASK_NAMES, null, true)
+	var freed := _close_tasks_working_on_building(building, DEMOLISH_TASK_NAMES, null)
 	_cancel_building_demolition(building)
 	for member in freed:
 		HumanIndividualActionService.resolve_idle_individual(member, _resolve_age_band(member), macro_world)
@@ -9814,13 +9775,13 @@ func _demolish_building(building: Building, salvaged: Dictionary = {}, completin
 	# BUGFIX (2026-09-21, richiesta utente): il controllo su context["target_building"] non scattava MAI
 	# (TaskFactory.build_task ripulisce quella chiave dal context, vedi _task_works_on_building) e
 	# ignorava la coda. Ora usa _task_works_on_building (legge il target dagli step) su current_task E su
-	# task_queue: le task che puntano a questo edificio vengono chiuse. current_task via stop() (scarta
-	# anche lo zaino, come sempre); per una task tolta dalla coda lo zaino viene scartato come fa
-	# TaskQueueService.push_suspended_task quando ne scarta una per overflow. Gli individui la cui
+	# task_queue: le task che puntano a questo edificio vengono chiuse. Il carico dello zaino segue la regola
+	# unica di CargoReturnService (dal 2026-09-29: ritorno al magazzino se la task chiusa lo possiede, a terra
+	# solo senza magazzino). Gli individui la cui
 	# current_task è stata chiusa vengono rimessi in moto (bisogno/coda/perditempo) DOPO che l'edificio
 	# è demolito (step 6), così una task in coda per lo stesso edificio non può essere ripresa.
 	# Anche le Demolish Task di altri individui sullo stesso edificio (2026-09-27).
-	var individuals_to_resolve: Array[HumanIndividual] = _close_tasks_working_on_building(building, BUILD_AND_DEMOLISH_TASK_NAMES, completing, true)
+	var individuals_to_resolve: Array[HumanIndividual] = _close_tasks_working_on_building(building, BUILD_AND_DEMOLISH_TASK_NAMES, completing)
 
 	# 2) Residenti: libera gli slot (house_id torna a -1, stesso valore di default di HumanIndividual
 	# senza casa) — solo se l'edificio era residenziale, stesso guard già usato da AssignHouseService/
@@ -10986,7 +10947,8 @@ func _on_prey_killed(prey_id: int, prey_species: String, prey_age_band: int, pre
 # nella Build Task. Collega i segnali di refresh della griglia di stoccaggio (magazzino sorgente e cantiere) ai
 # Retrieve/Unload appena nati — stesso principio dei listener step_appended di raccolta e pensiero. Solo Build Task.
 func _connect_material_supply_step_appended(task: Task, owner: HumanIndividual) -> void:
-	if task == null or task.task_name != "task_build_name":
+	# Build e, dal 2026-09-29, Produce (rifornimento automatico della workstation).
+	if task == null or not BUILDING_WORK_TASK_NAMES.has(task.task_name):
 		return
 	task.step_appended.connect(func(action: Action) -> void:
 		if action is UnloadAction:
@@ -11043,7 +11005,7 @@ func _on_building_construction_completed(building: Building) -> void:
 	# materiali di required_materials, quindi il loro step Build resterebbe bloccato. Stessa logica
 	# della demolizione (_close_tasks_working_on_building), ma lo zaino NON viene scartato. Chi ha
 	# completato è escluso: la sua task prosegue da sé (finish_current_step).
-	var other_freed := _close_tasks_working_on_building(building, BUILD_TASK_NAMES, _find_completing_individual(building), false)
+	var other_freed := _close_tasks_working_on_building(building, BUILD_TASK_NAMES, _find_completing_individual(building))
 	for freed in other_freed:
 		HumanIndividualActionService.resolve_idle_individual(freed, _resolve_age_band(freed), macro_world)
 	# built_year NON più scritto qui (2026-09-19, richiesta utente): lo scrive BuildAction.on_complete

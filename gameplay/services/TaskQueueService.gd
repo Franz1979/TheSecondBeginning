@@ -28,9 +28,8 @@ const MAX_QUEUE_SIZE: int = 3
 # sia libero, incluso lo stesso individuo in futuro) invece di sparire per sempre — NON
 # implementato qui, solo questo commento per chi tornerà su questo codice.
 #
-# Zaino (2026-09-26, ground drop): discard_carried_resource() ora lascia il carico a terra in un mucchio, e
-# scatta SOLO se la task tolta dalla coda è la proprietaria del carico (get_cargo_owner); il carico di
-# un'altra task resta addosso all'individuo.
+# Zaino (2026-09-29, regola unica del carico — sostituisce lo scarto a terra del 2026-09-26): la task proprietaria
+# del carico (get_cargo_owner) non viene mai espulsa, vedi il corpo sotto.
 static func push_suspended_task(individual: HumanIndividual, task: Task) -> void:
 	# ZOMBIE GUARD (2026-09-16, richiesta utente, fix "task zombie") — ultima linea di difesa,
 	# indipendente dal chiamante: una task già conclusa (current_step_index >= steps.size()) non
@@ -48,16 +47,33 @@ static func push_suspended_task(individual: HumanIndividual, task: Task) -> void
 			])
 		return
 	if individual.task_queue.size() >= MAX_QUEUE_SIZE:
-		# Lo zaino si lascia a terra SOLO se la task che esce è la proprietaria del carico (2026-09-26, richiesta
-		# utente — prima si scartava lo zaino qualunque task uscisse): il carico di un'altra task resta addosso.
+		# Regola unica del carico (2026-09-29, CargoReturnService — prima veniva espulsa comunque la più vecchia, con lo
+		# zaino a terra se era la proprietaria del carico): la proprietaria del carico non viene MAI espulsa, esce la
+		# più vecchia tra le altre. Letta PRIMA di toccare la coda.
 		var cargo_owner := get_cargo_owner(individual)
-		var discarded_task: Task = individual.task_queue.pop_front()
-		if cargo_owner != null and cargo_owner == discarded_task:
-			individual.discard_carried_resource()
-		if DebugLogging.ENABLED and DebugLogging.SHOW_TASK_LIFECYCLE_LOGS:
-			print("[QUEUE OVERFLOW] Individuo #%d %s: coda già a %d/%d — Task '%s' (la più vecchia) scartata per fare spazio a '%s'." % [
-				individual.id, individual.name, MAX_QUEUE_SIZE, MAX_QUEUE_SIZE, discarded_task.task_name, task.task_name
-			])
+		var expel_index := -1
+		for i in range(individual.task_queue.size()):
+			if individual.task_queue[i] != cargo_owner:
+				expel_index = i
+				break
+		if expel_index >= 0:
+			var discarded_task: Task = individual.task_queue.pop_at(expel_index)
+			if DebugLogging.ENABLED and DebugLogging.SHOW_TASK_LIFECYCLE_LOGS:
+				print("[QUEUE OVERFLOW] Individuo #%d %s: coda già a %d/%d — Task '%s' (la più vecchia non proprietaria del carico) scartata per fare spazio a '%s'." % [
+					individual.id, individual.name, MAX_QUEUE_SIZE, MAX_QUEUE_SIZE, discarded_task.task_name, task.task_name
+				])
+		else:
+			# Ultima risorsa: in coda c'è solo la proprietaria del carico (raggiungibile solo con MAX_QUEUE_SIZE 1). Il
+			# carico torna al magazzino con la regola unica: il ritorno prende il posto della proprietaria (la coda
+			# supera il tetto di uno); senza magazzino il carico va a terra e la proprietaria esce.
+			var outcome := CargoReturnService.release_cargo(individual, cargo_owner, GameSettings.active_world)
+			if outcome != CargoReturnService.Outcome.RETURNING:
+				individual.task_queue.erase(cargo_owner)
+			if DebugLogging.ENABLED and DebugLogging.SHOW_TASK_LIFECYCLE_LOGS:
+				print("[QUEUE OVERFLOW] Individuo #%d %s: coda piena della sola proprietaria del carico '%s' — %s, per fare spazio a '%s'." % [
+					individual.id, individual.name, cargo_owner.task_name,
+					"sostituita dal ritorno al magazzino" if outcome == CargoReturnService.Outcome.RETURNING else "scartata", task.task_name
+				])
 	individual.task_queue.append(task)
 
 

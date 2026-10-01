@@ -306,9 +306,12 @@ func show_building(building: Building, residents_display_data: Array[Dictionary]
 	# larghezza fissa) non è più testo: una caption fissa + una griglia di chip icona+quantità (vedi
 	# _refresh_missing_material_grid), che va a capo da sola restando dentro la larghezza del pannello.
 	var is_build_phase: bool = _resolve_active_construction_phase(building) == "build"
-	awaiting_material_label.visible = building.is_awaiting_material and not is_build_phase
-	awaiting_material_build_caption.visible = building.is_awaiting_material and is_build_phase
-	awaiting_material_build_grid.visible = building.is_awaiting_material and is_build_phase
+	# Solo per un cantiere (2026-09-29): una workstation completa può essere "in attesa" per la produzione (rifornimento
+	# automatico, ProduceAction) — il suo fabbisogno è già nella sezione Produzione, non nelle righe del cantiere.
+	var show_site_awaiting: bool = building.is_awaiting_material and not building.is_complete
+	awaiting_material_label.visible = show_site_awaiting and not is_build_phase
+	awaiting_material_build_caption.visible = show_site_awaiting and is_build_phase
+	awaiting_material_build_grid.visible = show_site_awaiting and is_build_phase
 	# Produzione in attesa di materiale (2026-09-23, richiesta utente — Produce Task): su un edificio
 	# completo con una produzione in corso (Building.production_progress) a cui mancano input, stessa
 	# caption+griglia di chip della fase build, con una caption dedicata. Letto da ProductionService,
@@ -316,7 +319,7 @@ func show_building(building: Building, residents_display_data: Array[Dictionary]
 	# con una Task che ci lavora (2026-09-24): quelle sospese hanno la propria riga sotto.
 	# Il fabbisogno della produzione in corso è nella sezione Produzione dal 2026-09-27 (_refresh_production_status).
 	_refresh_suspended_production(building, suspended_recipes)
-	if building.is_awaiting_material:
+	if show_site_awaiting:
 		if is_build_phase:
 			awaiting_material_build_caption.text = tr("building_awaiting_material_build_caption")
 			_refresh_missing_material_grid(_resolve_build_material_shortage(building))
@@ -561,27 +564,51 @@ func _refresh_production_status(
 		if not claimant_names.is_empty()
 		else tr("building_assigned_worker_missing")
 	)
-	var missing: Dictionary = ProductionService.get_missing_inputs_for_recipes(building, working_recipes)
-	var missing_fuel: float = ProductionService.get_missing_fuel_for_recipes(building, working_recipes)
-	var has_needs: bool = not missing.is_empty() or missing_fuel > 0.0
+	# Disponibili/richiesti per l'ordine intero (2026-09-29, richiesta utente — prima solo il mancante): ogni input delle
+	# ricette in lavorazione (input × cicli ancora dovuti, disponibile = deposito + buffer, get_input_available) e il
+	# combustibile, anche quando sono già coperti — la sezione resta visibile finché c'è una produzione in lavorazione
+	# con materiali richiesti.
+	var required_inputs: Dictionary = {}
+	var reserved_inputs: Dictionary = {}
+	var required_fuel := 0.0
+	for recipe_name in working_recipes:
+		var recipe_rules := CaloricCalculator.get_caloric_source_rules(recipe_name)
+		if recipe_rules == null:
+			continue
+		var cycles := ProductionService.get_cycles_due(building, recipe_name)
+		required_fuel += ProductionService.get_required_fuel(building, recipe_name) * cycles
+		for input_name in recipe_rules.recipe_inputs.keys():
+			var required: int = int(recipe_rules.recipe_inputs[input_name]) * cycles
+			if required > 0:
+				required_inputs[String(input_name)] = int(required_inputs.get(String(input_name), 0)) + required
+				reserved_inputs[input_name] = int(reserved_inputs.get(input_name, 0)) + required
+	var has_needs: bool = not required_inputs.is_empty() or required_fuel > 0.0
 	production_needs_caption.visible = has_needs
 	production_needs_grid.visible = has_needs
 	if not has_needs:
 		return
-	production_needs_caption.text = tr("building_production_needs_caption")
-	for resource_name in missing.keys():
-		production_needs_grid.add_child(_build_missing_material_chip(String(resource_name), int(missing[resource_name])))
-	if missing_fuel > 0.0:
-		production_needs_grid.add_child(_build_fuel_chip(missing_fuel))
+	production_needs_caption.text = tr("building_production_materials_caption")
+	for resource_name in required_inputs.keys():
+		var required: int = int(required_inputs[resource_name])
+		var available: int = mini(ProductionService.get_input_available(building, resource_name), required)
+		production_needs_grid.add_child(_build_missing_material_chip(resource_name, available, "%d/%d" % [available, required]))
+	if required_fuel > 0.0:
+		var available_fuel: float = minf(ProductionService.get_available_fuel(building, reserved_inputs), required_fuel)
+		production_needs_grid.add_child(_build_fuel_chip(
+			maxf(required_fuel - available_fuel, 0.0), "%s/%s" % [_format_fuel(available_fuel), _format_fuel(required_fuel)]
+		))
 
 
 # Chip del combustibile mancante (2026-09-27): "🔥" con il valore mancante; nel tooltip il valore e le risorse che
 # fanno da combustibile (fuel_value > 0).
 const FUEL_CHIP_COLOR := Color(0.55, 0.3, 0.12, 1.0)
 
-func _build_fuel_chip(missing_fuel: float) -> Control:
+# `amount_text` (2026-09-29): testo del chip, es. "3/10" (disponibile/richiesto); "" = il solo mancante, come prima.
+# Il tooltip riporta sempre il mancante.
+func _build_fuel_chip(missing_fuel: float, amount_text: String = "") -> Control:
+	var shown_text: String = amount_text if amount_text != "" else _format_fuel(missing_fuel)
 	var box := ColorRect.new()
-	box.custom_minimum_size = Vector2(MISSING_MATERIAL_CHIP_SIZE, MISSING_MATERIAL_CHIP_SIZE)
+	box.custom_minimum_size = Vector2(maxf(MISSING_MATERIAL_CHIP_SIZE, 6.0 * shown_text.length()), MISSING_MATERIAL_CHIP_SIZE)
 	box.color = FUEL_CHIP_COLOR
 	var fuel_names: Array[String] = []
 	for resource_name in CaloricCalculator.list_secondary_resource_names():
@@ -599,7 +626,7 @@ func _build_fuel_chip(missing_fuel: float) -> Control:
 	icon_label.anchor_bottom = 1.0
 	box.add_child(icon_label)
 	var amount_label := Label.new()
-	amount_label.text = ("%.1f" % missing_fuel).trim_suffix(".0")
+	amount_label.text = shown_text
 	amount_label.add_theme_font_size_override("font_size", 8)
 	amount_label.add_theme_color_override("font_color", Color(1, 1, 1, 1))
 	amount_label.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 1))
@@ -616,6 +643,11 @@ func _build_fuel_chip(missing_fuel: float) -> Control:
 # "Produzione sospesa: Corda di fibre, 40% completata" (2026-09-24, richiesta utente) — una riga per
 # ogni record senza Task che ci lavori; percentuale = lavoro del ciclo corrente
 # (ProductionService.get_cycle_progress). Nascosta se non c'è nulla di sospeso.
+# Valore combustibile a una cifra decimale, senza ".0" finale (stesso formato di prima nel chip).
+static func _format_fuel(value: float) -> String:
+	return ("%.1f" % value).trim_suffix(".0")
+
+
 func _refresh_suspended_production(building: Building, suspended_recipes: Array[String]) -> void:
 	suspended_production_label.visible = building.is_complete and not suspended_recipes.is_empty()
 	if not suspended_production_label.visible:
@@ -648,7 +680,22 @@ func _refresh_delivered_materials(building: Building) -> void:
 		if quantity > 0:
 			entries[String(resource_name)] = quantity
 	var is_site: bool = not building.is_complete
-	var show_section: bool = (is_site or (is_workstation and not has_storage)) and not entries.is_empty()
+	# Cantiere (2026-09-29, richiesta utente): sempre, finché la fase non è completa, consegnato/richiesto per ogni
+	# materiale della fase in corso (es. "11/100"), non solo quanto consegnato — anche durante i giri di rifornimento,
+	# quando il cantiere non è "in attesa". Il messaggio arancione resta solo per l'attesa vera (show_building).
+	if is_site:
+		var requirements := _resolve_site_phase_requirements(building)
+		delivered_materials_caption.visible = not requirements.is_empty()
+		delivered_materials_grid.visible = not requirements.is_empty()
+		if requirements.is_empty():
+			return
+		delivered_materials_caption.text = tr("building_site_materials_progress_caption")
+		for resource_name in requirements.keys():
+			var required: int = int(requirements[resource_name])
+			var delivered: int = mini(int(entries.get(resource_name, 0)), required)
+			delivered_materials_grid.add_child(_build_missing_material_chip(resource_name, delivered, "%d/%d" % [delivered, required]))
+		return
+	var show_section: bool = (is_workstation and not has_storage) and not entries.is_empty()
 	delivered_materials_caption.visible = show_section
 	delivered_materials_grid.visible = show_section
 	if not show_section:
@@ -656,6 +703,24 @@ func _refresh_delivered_materials(building: Building) -> void:
 	delivered_materials_caption.text = tr("building_site_delivered_materials_caption" if is_site else "building_delivered_materials_caption")
 	for resource_name in entries.keys():
 		delivered_materials_grid.add_child(_build_missing_material_chip(resource_name, int(entries[resource_name])))
+
+
+# Materiali richiesti dalla fase in corso del cantiere: setup → il materiale di allestimento; sgombero e costruzione →
+# required_materials (consegnabili già durante lo sgombero). {nome: quantità richiesta}, vuoto se nulla è richiesto.
+func _resolve_site_phase_requirements(building: Building) -> Dictionary:
+	var requirements: Dictionary = {}
+	if building.rules == null:
+		return requirements
+	if _resolve_active_construction_phase(building) == "setup_site":
+		var setup_required: int = building.rules.setup_site_material_per_cell * building.rules.required_space
+		if building.rules.setup_site_material_name != "" and setup_required > 0:
+			requirements[building.rules.setup_site_material_name] = setup_required
+		return requirements
+	for resource_name in building.rules.required_materials.keys():
+		var required: int = int(building.rules.required_materials[resource_name])
+		if required > 0:
+			requirements[String(resource_name)] = required
+	return requirements
 
 
 func _refresh_missing_material_grid(missing: Dictionary) -> void:
@@ -675,13 +740,16 @@ func _refresh_missing_material_grid(missing: Dictionary) -> void:
 # quantità mancante, che non ha una "capacità").
 const MISSING_MATERIAL_CHIP_SIZE: float = 24.0
 
-func _build_missing_material_chip(resource_name: String, quantity: int) -> Control:
+# `quantity_text` (2026-09-29): testo alternativo alla quantità, es. "11/100" (consegnato/richiesto) — il chip si
+# allarga per contenerlo. "" = la sola quantità, come sempre.
+func _build_missing_material_chip(resource_name: String, quantity: int, quantity_text: String = "") -> Control:
 	var box := ColorRect.new()
-	box.custom_minimum_size = Vector2(MISSING_MATERIAL_CHIP_SIZE, MISSING_MATERIAL_CHIP_SIZE)
+	var shown_text: String = quantity_text if quantity_text != "" else str(quantity)
+	box.custom_minimum_size = Vector2(maxf(MISSING_MATERIAL_CHIP_SIZE, 6.0 * shown_text.length()), MISSING_MATERIAL_CHIP_SIZE)
 	box.color = IconRegistry.get_resource_color(resource_name)
-	# "%s (%d)" — STESSO formato già in uso in OptionChoiceDialog.gd per le voci dell'OptionButton,
+	# "%s (%s)" — STESSO formato già in uso in OptionChoiceDialog.gd per le voci dell'OptionButton,
 	# non una nuova convenzione per il solo tooltip di questa chip.
-	box.tooltip_text = "%s (%d)" % [IconRegistry.get_resource_display_name(resource_name), quantity]
+	box.tooltip_text = "%s (%s)" % [IconRegistry.get_resource_display_name(resource_name), shown_text]
 
 	var icon_node: Control = IconRegistry.get_resource_icon_node(resource_name)
 	if icon_node != null:
@@ -705,7 +773,7 @@ func _build_missing_material_chip(resource_name: String, quantity: int) -> Contr
 		box.add_child(initial_label)
 
 	var quantity_label := Label.new()
-	quantity_label.text = str(quantity)
+	quantity_label.text = shown_text
 	quantity_label.add_theme_font_size_override("font_size", 8)
 	quantity_label.add_theme_color_override("font_color", Color(1, 1, 1, 1))
 	quantity_label.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 1))

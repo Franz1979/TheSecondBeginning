@@ -417,17 +417,30 @@ func get_activity_description() -> String:
 		"task_haul_resource_name":
 			# Raccolta su zona (2026-09-27, work areas passo 2): prima della ricerca il PickUp non esiste ancora (es.
 			# ripetizione in coda) — la risorsa si legge dal filtro della zona, stessa regola "solo con NAME".
+			# Filtro per CATEGORIA (2026-09-29, richiesta utente): "Raccolta (Cibo)", nome della categoria tradotto
+			# (chiave category_name_<categoria>, come il pannello edificio); con "tutto" resta il solo nome della Task.
+			var haul_category: int = -1
 			var haul_zone := HaulZoneService.get_zone(context)
-			if not haul_zone.is_empty() and HaulZoneService.get_criterion_kind(haul_zone) == PickUpAction.CriterionKind.NAME:
-				resource_name = HaulZoneService.get_resource_name(haul_zone)
+			if not haul_zone.is_empty():
+				match HaulZoneService.get_criterion_kind(haul_zone):
+					PickUpAction.CriterionKind.NAME:
+						resource_name = HaulZoneService.get_resource_name(haul_zone)
+					PickUpAction.CriterionKind.CATEGORY:
+						haul_category = HaulZoneService.get_criterion_category(haul_zone)
 			for step in steps:
 				if step is PickUpAction:
 					resource_name = ""
-					# Solo con criterio per NOME la risorsa e' una sola (zaino multi-risorsa, 2026-09-20): con
-					# categoria/tutto non ce n'e' una da mostrare, resta il solo nome della Task.
-					if (step as PickUpAction).criterion_kind == PickUpAction.CriterionKind.NAME:
-						resource_name = (step as PickUpAction).resource_name
+					haul_category = -1
+					# Solo con criterio per NOME la risorsa e' una sola (zaino multi-risorsa, 2026-09-20).
+					match (step as PickUpAction).criterion_kind:
+						PickUpAction.CriterionKind.NAME:
+							resource_name = (step as PickUpAction).resource_name
+						PickUpAction.CriterionKind.CATEGORY:
+							haul_category = (step as PickUpAction).criterion_category
 					break
+			if resource_name == "" and haul_category >= 0 and haul_category < SecondaryResourceTypes.Category.size():
+				var category_key: String = SecondaryResourceTypes.Category.keys()[haul_category]
+				return "%s (%s)" % [base_text, tr("category_name_%s" % category_key.to_lower())]
 		"task_transport_name":
 			for step in steps:
 				if step is RetrieveAction:

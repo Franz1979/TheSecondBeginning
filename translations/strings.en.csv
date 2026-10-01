@@ -444,3 +444,30 @@ discovery_first_thought_building_title,The village center
 discovery_first_thought_building_p1,"Your people bring their thoughts here: as they accumulate, the village develops new ideas."
 discovery_first_thought_building_p2,"Pick which idea to research from the idea tree: each completed idea unlocks buildings, resources or tools."
 build_blocked_no_cutting_tool,"Without a chopping tool the ground can't be cleared of trees and shrubs."
+task_rest_name,Rest
+task_rest_step_rest,Resting
+task_rest_step_walk_away,Moving away
+task_emergency_rest_name,Emergency rest
+task_leisure_rest_name,Leisure rest
+task_wander_name,Wandering
+task_wander_step_walk,Wandering around
+task_wander_step_look_around,Looking around
+task_play_name,Playing
+task_play_step_run,Running
+task_play_step_jump,Jumping
+task_build_step_setup_site,Setting up the site
+task_build_step_clear_site,Clearing the ground
+task_build_step_build,Building
+task_haul_resource_name,Gathering
+task_haul_resource_step_walk,Going to gather
+task_haul_resource_step_pickup,Gathering
+task_transport_name,Transport
+task_transport_step_walk_to_source,Going to pick up
+task_transport_step_retrieve,Picking up
+task_transport_step_walk_to_destination,Going to deliver
+task_transport_step_unload,Delivering
+task_unload_resource_name,Unloading resource
+task_unload_resource_step_walk,Going to unload
+task_unload_resource_step_unload,Unloading
+building_site_materials_progress_caption,Material (delivered/required):
+building_production_materials_caption,Production materials (available/required):

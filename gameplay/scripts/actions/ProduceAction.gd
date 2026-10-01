@@ -12,10 +12,10 @@ extends Action
 #     non cancella l'intera voce come BuildAction.on_complete;
 #   - il prodotto va nel buffer di uscita (Building.production_output): a buffer pieno lo step resta
 #     fermo come in attesa di materiale, finché il buffer non viene svuotato;
-#   - nessun pending_material_shortage/bonus di partenza/notifica: in attesa di materiale lo step
-#     resta fermo (zero stamina, zero lavoro, mai completo) finché gli input non arrivano o il
-#     giocatore annulla la Task (tasto H) — BuildingInfoPanel mostra cosa manca leggendo
-#     ProductionService.get_missing_inputs.
+#   - in attesa di materiale o combustibile lo step resta fermo (zero stamina, zero lavoro, mai completo) e, dal
+#     2026-09-29, scrive pending_material_shortage come la Build (_report_material_shortage): il pipottino va da sé
+#     a rifornire la postazione (MaterialSupplyService), altrimenti attesa con popup e retry giornaliero. Nessun
+#     bonus di partenza. BuildingInfoPanel mostra cosa manca leggendo ProductionService.get_missing_inputs.
 #
 # Nessun accumulatore interno: labor_accumulated letto/scritto dal vivo su Building, stesso motivo
 # di BuildAction (sopravvive a interruzione/riassegnazione e al salvataggio senza load_save_data).
@@ -50,6 +50,13 @@ var produced_count: int = 0
 # DEBUG TEMPORANEO [PRODUCE BLOCK] (2026-09-27): ultimo messaggio stampato, per stampare solo i cambiamenti.
 # Non salvato. Vedi DebugLogging.SHOW_PRODUCTION_BLOCK_LOGS.
 var _debug_last_block_message: String = ""
+# Rifornimento automatico (2026-09-29, MaterialSupplyService): true se l'ultimo tick si è fermato per materiale o
+# combustibile mancanti (letto dal retry giornaliero, HumanIndividualActionService.retry_blocked_material_shortages), e
+# se la richiesta pending_material_shortage per questo blocco è già stata scritta (una volta per blocco, non a ogni
+# tick — azzerata quando il blocco finisce e a ogni activate, cioè al ritorno da un giro di rifornimento). Non salvati:
+# dopo un caricamento il primo tick bloccato riscrive la richiesta.
+var _blocked_by_materials: bool = false
+var _material_shortage_reported: bool = false
 # Attesa degli attrezzi (2026-09-25, "task in attesa invece di rifiuto"): stato tool_wait_* e
 # ensure_required_tools vivono nella classe base Action dal 2026-09-26 (condivisi con la caccia).
 
@@ -88,6 +95,7 @@ func get_missing_materials() -> Dictionary:
 # riprova a ogni giorno (get_stamina_delta), senza toccare i record delle altre ricette.
 func activate(individual: Variant, context: Dictionary) -> void:
 	super(individual, context)
+	_material_shortage_reported = false
 	if is_target_valid():
 		ProductionService.start_production(target_building, resource_name)
 
@@ -99,6 +107,7 @@ func _ensure_own_record() -> bool:
 
 
 func get_stamina_delta(individual: Variant, context: Dictionary, delta: float) -> float:
+	_blocked_by_materials = false
 	if produced_count >= quantity:
 		return 0.0
 	if not is_target_valid():
@@ -115,6 +124,7 @@ func get_stamina_delta(individual: Variant, context: Dictionary, delta: float) -
 		return 0.0
 	if not get_missing_materials().is_empty():
 		_debug_log_block(individual, _debug_describe_materials())
+		_report_material_shortage(context)
 		return 0.0
 	if not ProductionService.has_output_room(target_building, resource_name):
 		_debug_log_block(individual, _debug_describe_output_buffer())
@@ -122,8 +132,13 @@ func get_stamina_delta(individual: Variant, context: Dictionary, delta: float) -
 	# Combustibile mancante (2026-09-24): fermo come per i materiali.
 	if ProductionService.get_missing_fuel_for(target_building, resource_name) > 0.0:
 		_debug_log_block(individual, _debug_describe_fuel())
+		_report_material_shortage(context)
 		return 0.0
 	_debug_log_block(individual, "")
+	# Blocco per materiale finito: nuova richiesta al prossimo blocco, e il pannello non resta "in attesa".
+	_material_shortage_reported = false
+	if target_building.is_awaiting_material:
+		target_building.is_awaiting_material = false
 	var required_labor := ProductionService.get_required_labor(target_building, resource_name)
 	var labor_accumulated := ProductionService.get_labor_accumulated(target_building, resource_name)
 	var stamina_spent_this_day: float = 0.0
@@ -132,6 +147,26 @@ func get_stamina_delta(individual: Variant, context: Dictionary, delta: float) -
 		ProductionService.add_labor(target_building, resource_name, stamina_spent_this_day * _get_labor_scale(individual, context) * tool_multiplier)
 	_try_complete_cycle(individual)
 	return -stamina_spent_this_day
+
+
+# Materiale o combustibile mancanti (2026-09-29, rifornimento automatico): stessa richiesta della Build
+# (context["pending_material_shortage"], consumata da HumanIndividualActionService._handle_pending_material_shortage,
+# che prova MaterialSupplyService e altrimenti ricade nell'attesa con popup), scritta UNA volta per blocco. Il
+# fabbisogno riportato è quello dell'ordine intero (MaterialSupplyService.get_missing_materials), non del ciclo.
+func _report_material_shortage(context: Dictionary) -> void:
+	_blocked_by_materials = true
+	if _material_shortage_reported:
+		return
+	_material_shortage_reported = true
+	context["pending_material_shortage"] = {
+		"missing": MaterialSupplyService.get_missing_materials(target_building),
+		"target_building_id": target_building.id,
+	}
+
+
+# true se l'ultimo tick si è fermato per materiale o combustibile mancanti (retry giornaliero del rifornimento).
+func is_blocked_by_materials() -> bool:
+	return _blocked_by_materials
 
 
 # Effetto della skill sul lavoro (2026-09-27, SkillEffectService, chiave "produce"). Lavoro richiesto effettivo =

@@ -432,8 +432,9 @@ func _handle_pending_material_shortage(individual: HumanIndividual, task: Task, 
 func _resolve_material_shortage(world: World, target_building: Building, missing: Dictionary) -> void:
 	# Edificio demolito o già completo (2026-09-21, richiesta utente): nessun fabbisogno da risolvere —
 	# né il bonus di partenza (non si iniettano materiali su un edificio orfano), né la notifica
-	# "materiale necessario". Lo stato di attesa eventualmente rimasto viene ripulito.
-	if target_building.is_demolished or target_building.is_complete:
+	# "materiale necessario". Lo stato di attesa eventualmente rimasto viene ripulito. Eccezione (2026-09-29): una
+	# workstation completa in attesa di input o combustibile per la produzione (ProduceAction) è un fabbisogno vero.
+	if target_building.is_demolished or (target_building.is_complete and not _is_workstation(target_building)):
 		target_building.is_awaiting_material = false
 		return
 	# BONUS DI PARTENZA (2026-09-13/14, richiesta utente) — SOLO per un cantiere di tipo
@@ -561,7 +562,7 @@ func retry_blocked_material_shortages(world: World, all_individuals: Array[Human
 		return
 	for individual in all_individuals:
 		var task := individual.current_task
-		if task == null or task.task_name != "task_build_name":
+		if task == null or not (task.task_name == "task_build_name" or task.task_name == "task_produce_name"):
 			continue
 		var action := task.get_current_action()
 		# ESTESO a BuildAction (2026-09-14, richiesta utente — "step 2 della build", il quarto step
@@ -580,21 +581,32 @@ func retry_blocked_material_shortages(world: World, all_individuals: Array[Human
 			var build_action := action as BuildAction
 			target_building = build_action.target_building
 			missing = build_action.get_missing_materials()
+		elif action is ProduceAction:
+			# Produzione (2026-09-29): solo se l'ultimo tick era fermo per materiale o combustibile — attrezzi mancanti,
+			# buffer pieno o coda dell'edificio piena restano come prima. Fabbisogno dell'ordine intero.
+			var produce_action := action as ProduceAction
+			target_building = produce_action.target_building
+			if produce_action.is_blocked_by_materials():
+				missing = MaterialSupplyService.get_missing_materials(target_building)
 		if target_building == null:
 			continue
 		# Edificio demolito o già completo (2026-09-21, richiesta utente): niente retry, niente popup né
 		# bonus di partenza — solo pulizia dello stato di attesa. Prima di `missing.is_empty()`: un
 		# cantiere completato risulta "con materiali mancanti" (il completamento li consuma).
-		if target_building.is_demolished or target_building.is_complete:
+		if target_building.is_demolished or (target_building.is_complete and not (action is ProduceAction)):
 			target_building.is_awaiting_material = false
 			continue
 		if missing.is_empty():
 			continue
-		# Rifornimento automatico (2026-09-29, setup site e costruzione): se nel frattempo un magazzino ha la risorsa, il
+		# Rifornimento automatico (2026-09-29, setup site, costruzione e produzione): se nel frattempo un magazzino ha la risorsa, il
 		# pipottino riparte da sé invece di restare in attesa.
 		if MaterialSupplyService.is_supplied_step(action) and MaterialSupplyService.try_supply_at_level_zero(individual, task, world, target_building):
 			continue
 		_resolve_material_shortage(world, target_building, missing)
+
+
+static func _is_workstation(building: Building) -> bool:
+	return building.rules != null and building.rules.is_workstation
 
 
 # Scansione lineare di World.buildings (2026-09-13) — STESSA identica funzione/STESSO principio di
@@ -1407,6 +1419,12 @@ static func resolve_idle_individual(individual: HumanIndividual, age_band: Human
 		individual.current_task = resumed_task
 		TaskDebugRegistry.on_task_assigned(individual, resumed_task)
 		activate_resumed_task(individual, resumed_task, world)
+		return
+
+	# Carico senza proprietario (2026-09-29, regola unica — CargoReturnService): nessuna Task in coda lo reclama, quindi
+	# torna al magazzino invece di cadere a terra (prima lo scartava il fallback perditempo, assegnato con assign_task,
+	# o lo stop() finale). A terra solo se nessun magazzino lo accetta.
+	if CargoReturnService.release_orphan_cargo(individual, world):
 		return
 
 	if IdleTaskAssignmentService.assign_idle_fallback(individual, age_band, world):

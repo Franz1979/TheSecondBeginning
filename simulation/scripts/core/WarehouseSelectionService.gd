@@ -234,8 +234,18 @@ static func find_source_for_retrieval(
 	return source
 
 
+# Criterio "combustibile" per find_source_for_retrieval (2026-09-29, rifornimento automatico della Produce): qualunque
+# risorsa con fuel_value > 0 (ProductionService.get_fuel_value). Valore sentinella, mai un vero nome di risorsa.
+const FUEL_CRITERION := "__fuel__"
+
+
+# Accesso pubblico a _get_matching_stock (MaterialSupplyService: quale combustibile prendere dalla sorgente scelta).
+static func get_matching_stock(building: Building, criterion: Variant, min_quantity: int = 1) -> Dictionary:
+	return _get_matching_stock(building, criterion, min_quantity)
+
+
 # nome risorsa -> quantita' delle sole risorse di stored_resources di `building` che soddisfano
-# `criterion` (vedi find_source_for_retrieval: nome, null/"" = qualunque, categoria) con quantity >=
+# `criterion` (vedi find_source_for_retrieval: nome, null/"" = qualunque, categoria, FUEL_CRITERION) con quantity >=
 # min_quantity (e comunque > 0). Vuoto = nessuna. Era l'helper del cibo, ora
 # generalizzato.
 static func _get_matching_stock(building: Building, criterion: Variant, min_quantity: int) -> Dictionary:
@@ -253,6 +263,9 @@ static func _get_matching_stock(building: Building, criterion: Variant, min_quan
 			continue
 		if criterion == null or (criterion is String and criterion == ""):
 			matching_stock[resource_name] = quantity
+		elif (criterion is String or criterion is StringName) and String(criterion) == FUEL_CRITERION:
+			if ProductionService.get_fuel_value(String(resource_name)) > 0.0:
+				matching_stock[resource_name] = quantity
 		elif criterion is String or criterion is StringName:
 			if resource_name == String(criterion):
 				matching_stock[resource_name] = quantity

@@ -9,10 +9,11 @@ extends RefCounted
 #   (b) SODDISFAZIONE "livello 0" — il pipottino bloccato va da sé: inserisce nella SUA Task, prima dello step
 #       corrente, Walk → Retrieve → Walk → Unload verso il bersaglio. Usa (a), mai il contrario.
 #
-# Fasi coperte: setup site (materiale BuildingRules.setup_site_material_name, SetupSiteAction) e, dal 2026-09-29,
-# costruzione (BuildingRules.required_materials, BuildAction) — gli "step riforniti" di is_supplied_step. Per estendere
-# a Produce (input della ricetta, combustibile) vanno allargati get_missing_materials, is_supplied_step e
-# _get_supply_target; il resto è già generico sul nome della risorsa. L'aggancio vive in HumanIndividualActionService
+# Fasi coperte (gli "step riforniti" di is_supplied_step): setup site (BuildingRules.setup_site_material_name,
+# SetupSiteAction), costruzione (BuildingRules.required_materials, BuildAction) e, dal 2026-09-29, produzione presso
+# una workstation (input delle ricette per l'ordine intero, poi combustibile — ProduceAction). Il resto è generico sul
+# nome della risorsa; il combustibile passa dalla voce speciale FUEL_KEY, risolta in una risorsa vera solo quando si
+# sceglie la sorgente (get_supply_need). L'aggancio vive in HumanIndividualActionService
 # (_handle_pending_material_shortage, retry_blocked_material_shortages, activate_resumed_task).
 #
 # Ripetizione "a giri": nessun contatore. Finito l'Unload, lo step bloccato torna corrente, la sua activate() riscrive
@@ -28,6 +29,11 @@ const CONTEXT_SUPPLY_FAILED := "material_supply_failed"
 # primo Unload del giro completato — la Build va in coda e parte l'ordine. Salvato con il context.
 const CONTEXT_YIELD_AFTER_DELIVERY := "material_supply_yield_after_delivery"
 
+# Voce di get_missing_materials per il combustibile mancante di una workstation (2026-09-29): il valore è il
+# combustibile mancante (float, in unità di fuel_value), non una quantità di risorsa — quale risorsa portare lo decide
+# get_supply_need in base al magazzino sorgente. Sempre l'ultima voce: prima gli input delle ricette.
+const FUEL_KEY := "__fuel__"
+
 
 # ============================================================================================
 # (a) FABBISOGNO — nessun effetto collaterale
@@ -36,12 +42,25 @@ const CONTEXT_YIELD_AFTER_DELIVERY := "material_supply_yield_after_delivery"
 # {resource_name: quantità mancante} del bersaglio, vuoto se nulla manca, per la fase in corso del cantiere:
 #   - setup site (site_setup_complete false): stessa formula di SetupSiteAction.get_missing_material_quantity;
 #   - costruzione (site_setup_complete true): required_materials meno lo stoccato, stessa formula di
-#     BuildAction.get_missing_materials, nell'ordine in cui required_materials le elenca (un giro per risorsa).
+#     BuildAction.get_missing_materials, nell'ordine in cui required_materials le elenca (un giro per risorsa);
+#   - workstation completa (produzione): input mancanti per l'ORDINE INTERO delle produzioni in corso
+#     (ProductionService.get_missing_inputs, la stessa base di get_production_demand/get_max_depositable), poi il
+#     combustibile mancante come voce FUEL_KEY (ProductionService.get_missing_fuel).
 static func get_missing_materials(target_building: Building) -> Dictionary:
 	var missing: Dictionary = {}
 	if target_building == null or target_building.rules == null:
 		return missing
-	if target_building.is_demolished or target_building.is_marked_for_demolition or target_building.is_complete:
+	if target_building.is_demolished or target_building.is_marked_for_demolition:
+		return missing
+	if target_building.is_complete:
+		if not target_building.rules.is_workstation:
+			return missing
+		var missing_inputs := ProductionService.get_missing_inputs(target_building)
+		for input_name in missing_inputs.keys():
+			missing[String(input_name)] = int(missing_inputs[input_name])
+		var missing_fuel := ProductionService.get_missing_fuel(target_building)
+		if missing_fuel > 0.0:
+			missing[FUEL_KEY] = missing_fuel
 		return missing
 	if not target_building.site_setup_complete:
 		var material_name: String = target_building.rules.setup_site_material_name
@@ -70,6 +89,9 @@ static func get_missing_materials(target_building: Building) -> Dictionary:
 #   get_max_depositable), che il Retrieve limiterà poi allo zaino; source = magazzino più vicino con almeno un'unità
 #   (WarehouseSelectionService.find_source_for_retrieval), escludendo il bersaglio e tutte le workstation. source null
 #   = la risorsa manca ma nessuna sorgente la ha. Con più risorse mancanti vince la prima che ha una sorgente.
+# Combustibile (FUEL_KEY): sorgente = magazzino più vicino con almeno una risorsa con fuel_value > 0
+# (WarehouseSelectionService.FUEL_CRITERION); risorsa = quella con fuel_value più alto in quel magazzino; quantità =
+# combustibile mancante / fuel_value arrotondato per eccesso, limitata da get_max_depositable.
 static func get_supply_need(
 	world: World, target_building: Building, origin_position: Vector2, origin_macro_coords: Vector2i,
 	reachable: Callable = Callable()
@@ -80,18 +102,60 @@ static func get_supply_need(
 	var excluded := _get_excluded_source_ids(world, target_building)
 	var first_need: Dictionary = {}
 	for resource_name in missing.keys():
-		var quantity: int = mini(int(missing[resource_name]), BuildingStorageService.get_max_depositable(target_building, String(resource_name)))
-		if quantity <= 0:
-			continue
-		var source := WarehouseSelectionService.find_source_for_retrieval(
-			world, origin_position, origin_macro_coords, String(resource_name), excluded, 1, -1, reachable
-		)
-		var need := {"resource_name": String(resource_name), "quantity": quantity, "source": source}
-		if source != null:
+		var need: Dictionary
+		if resource_name == FUEL_KEY:
+			need = _get_fuel_need(world, target_building, float(missing[resource_name]), origin_position, origin_macro_coords, excluded, reachable)
+			if need.is_empty():
+				continue
+		else:
+			var quantity: int = mini(int(missing[resource_name]), BuildingStorageService.get_max_depositable(target_building, String(resource_name)))
+			if quantity <= 0:
+				continue
+			var source := WarehouseSelectionService.find_source_for_retrieval(
+				world, origin_position, origin_macro_coords, String(resource_name), excluded, 1, -1, reachable
+			)
+			need = {"resource_name": String(resource_name), "quantity": quantity, "source": source}
+		if need["source"] != null:
 			return need
 		if first_need.is_empty():
 			first_need = need
 	return first_need
+
+
+# Fabbisogno di combustibile (vedi get_supply_need). {} se nulla è depositabile; source null se nessun magazzino ha
+# combustibile.
+static func _get_fuel_need(
+	world: World, target_building: Building, missing_fuel: float, origin_position: Vector2, origin_macro_coords: Vector2i,
+	excluded: Array[int], reachable: Callable
+) -> Dictionary:
+	var source := WarehouseSelectionService.find_source_for_retrieval(
+		world, origin_position, origin_macro_coords, WarehouseSelectionService.FUEL_CRITERION, excluded, 1, -1, reachable
+	)
+	if source == null:
+		return {"resource_name": FUEL_KEY, "quantity": 0, "source": null}
+	var fuel_name := _best_fuel_in(source)
+	var fuel_value := ProductionService.get_fuel_value(fuel_name)
+	if fuel_name == "" or fuel_value <= 0.0:
+		return {}
+	var units: int = int(ceil(missing_fuel / fuel_value - ProductionService.FUEL_EPSILON))
+	var quantity: int = mini(units, BuildingStorageService.get_max_depositable(target_building, fuel_name))
+	if quantity <= 0:
+		return {}
+	return {"resource_name": fuel_name, "quantity": quantity, "source": source}
+
+
+# Risorsa con fuel_value più alto tra quelle disponibili in `building` (a parità, in ordine di nome — stesso ordine
+# di ProductionService._consume_fuel); "" se nessuna.
+static func _best_fuel_in(building: Building) -> String:
+	var best_name := ""
+	var best_value := 0.0
+	for raw_name in WarehouseSelectionService.get_matching_stock(building, WarehouseSelectionService.FUEL_CRITERION).keys():
+		var candidate := String(raw_name)
+		var value := ProductionService.get_fuel_value(candidate)
+		if value > best_value or (value == best_value and best_name != "" and candidate < best_name):
+			best_value = value
+			best_name = candidate
+	return best_name
 
 
 # Id esclusi come sorgente: il bersaglio stesso e ogni workstation (il loro storage serve alla produzione).
@@ -130,7 +194,7 @@ static func try_supply_at_level_zero(individual: HumanIndividual, task: Task, wo
 	var descriptions: Array[String] = []
 
 	for resource_name in missing.keys():
-		if individual.get_carried_quantity(String(resource_name)) > 0:
+		if _is_carrying_for(individual, target_building, String(resource_name)):
 			_append_walk_and_unload(individual, target_building, new_steps, descriptions)
 			_insert_and_activate(individual, task, new_steps, descriptions)
 			_log(individual, target_building, "ha già '%s' nello zaino — lo scarica al cantiere." % resource_name)
@@ -169,6 +233,19 @@ static func try_supply_at_level_zero(individual: HumanIndividual, task: Task, wo
 	return true
 
 
+# true se lo zaino contiene già qualcosa che copre la voce `key` del fabbisogno: la risorsa stessa, oppure — per
+# FUEL_KEY — una qualunque risorsa con fuel_value > 0 che il bersaglio accetta ancora.
+static func _is_carrying_for(individual: HumanIndividual, target_building: Building, key: String) -> bool:
+	if key != FUEL_KEY:
+		return individual.get_carried_quantity(key) > 0
+	for raw_name in individual.carried_resources.keys():
+		var carried_name := String(raw_name)
+		if individual.get_carried_quantity(carried_name) > 0 and ProductionService.get_fuel_value(carried_name) > 0.0 \
+				and BuildingStorageService.get_max_depositable(target_building, carried_name) > 0:
+			return true
+	return false
+
+
 # --- Giro di rifornimento in corso: riconoscimento, annullo, ripresa ---
 # Un giro finisce sempre con l'Unload al cantiere bersaglio dello step bloccato (SetupSiteAction o BuildAction della
 # Build Task), che nessun altro percorso inserisce: i re-routing dei residui puntano a magazzini, mai a un cantiere
@@ -177,13 +254,13 @@ static func try_supply_at_level_zero(individual: HumanIndividual, task: Task, wo
 # true se `action` è uno step che il rifornimento sa sbloccare (2026-09-29: setup site e costruzione). Unico punto da
 # allargare per nuove fasi — i controlli in HumanIndividualActionService passano da qui.
 static func is_supplied_step(action: Action) -> bool:
-	return action is SetupSiteAction or action is BuildAction
+	return action is SetupSiteAction or action is BuildAction or action is ProduceAction
 
 
 # Step di lavoro sul cantiere (setup, sgombero, costruzione): un giro di rifornimento sta sempre prima di uno di questi,
 # mai a cavallo — _find_round_end_index si ferma al primo che incontra.
 static func _is_site_work_step(action: Action) -> bool:
-	return action is SetupSiteAction or action is ClearAction or action is BuildAction
+	return action is SetupSiteAction or action is ClearAction or action is BuildAction or action is ProduceAction
 
 # Accessi pubblici per HumanIndividualActionService (avanzo di fine giro: Walk di ritorno al cantiere).
 static func get_supply_target(task: Task) -> Building:
@@ -222,34 +299,9 @@ static func _find_round_end_index(task: Task) -> int:
 	return -1
 
 
-# true se `task` è a metà di un giro di rifornimento (tasto H: GameScene riporta il carico al magazzino).
+# true se `task` è a metà di un giro di rifornimento (ordine del giocatore a metà giro, avanzo, ripresa dalla coda).
 static func is_in_supply_round(task: Task) -> bool:
 	return _find_round_end_index(task) >= 0
-
-
-# Annullo (tasto H) durante un giro con lo zaino carico (2026-09-29, richiesta utente): invece dello scarto a terra,
-# Task [Walk → Unload] verso il magazzino più vicino che accetta la prima varietà dello zaino — stessa forma della
-# Task di deposito della dote (GameScene._give_visitor_dowry). Il residuo che non entra segue il re-routing normale
-# di UnloadAction. null = zaino vuoto o nessun magazzino: il chiamante applica lo scarto di sempre. Non assegna nulla.
-static func build_cargo_return_task(individual: HumanIndividual, world: World) -> Task:
-	if individual == null or world == null or individual.carried_resources.is_empty():
-		return null
-	var carried_name := String(individual.carried_resources.keys()[0])
-	var warehouse := WarehouseSelectionService.find_best(
-		world, individual.position, individual.home_macro_coords, carried_name,
-		individual.get_carried_quantity(carried_name), [], PathfindingService.reachability_for(individual)
-	)
-	if warehouse == null:
-		return null
-	var steps: Array[Action] = [
-		WalkAction.new(_building_point(individual, warehouse)),
-		UnloadAction.new(warehouse, UnloadAction.DepositKind.RESOURCE),
-	]
-	var task := Task.new(steps)
-	task.task_name = "task_unload_resource_name"
-	task.step_descriptions = ["task_unload_resource_step_walk", "task_unload_resource_step_unload"]
-	task.is_suspendable = true
-	return task
 
 
 # Ripresa dalla coda (2026-09-29): un giro il cui prelievo non è ancora avvenuto va ripianificato — nel frattempo la

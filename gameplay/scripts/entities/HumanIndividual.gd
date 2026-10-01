@@ -920,6 +920,9 @@ func assign_task(task: Task, age_band: HumanTypes.AgeBand, is_interrupt_transiti
 	# carico quando la Task che lo trasportava sparisce senza successori, MAI quando invece stiamo
 	# proprio ripescando quella successora (la Task ripescata qui sotto userà quel carico a breve).
 	var resuming_cargo_owner := false
+	# Ritorno al magazzino del carico rimasto senza proprietario (2026-09-29, _release_orphan_cargo_for_order): se
+	# valorizzato, diventa la Task corrente e `task` va in coda (vedi sotto, prima di current_task = task).
+	var cargo_return_task: Task = null
 	# ZOMBIE GUARD (2026-09-16, richiesta utente, fix "task zombie") — "or current_task.is_finished()"
 	# aggiunto: una current_task GIÀ CONCLUSA va trattata come assente/non sospendibile ai fini di
 	# questa ricerca del "proprietario del carico" — stesso principio del guard gemello sopra: non
@@ -1009,7 +1012,7 @@ func assign_task(task: Task, age_band: HumanTypes.AgeBand, is_interrupt_transiti
 				id, name, current_task.task_name, current_task.current_step_index, current_task.steps.size()
 			])
 		if not is_interrupt_transition and not resuming_cargo_owner:
-			discard_carried_resource()
+			cargo_return_task = _release_orphan_cargo_for_order()
 	elif current_task != null and current_task.is_suspendable:
 		if HuntService.is_hunt_task(current_task):
 			HuntService.log_event(self, "caccia sospesa e messa in coda: sostituita da '%s'%s." % [
@@ -1021,7 +1024,7 @@ func assign_task(task: Task, age_band: HumanTypes.AgeBand, is_interrupt_transiti
 				id, name, current_task.task_name, task.task_name
 			])
 	elif not is_interrupt_transition and not resuming_cargo_owner:
-		discard_carried_resource()
+		cargo_return_task = _release_orphan_cargo_for_order()
 		# Daydream scartata a metà (2026-09-16, richiesta utente, "Daydreaming nel fallback
 		# perditempo") — pending_thought azzerato QUI: senza questo, un Think già completato prima
 		# dello scarto (individual.pending_thought=true, vedi ThinkAction.on_complete) resterebbe
@@ -1041,6 +1044,16 @@ func assign_task(task: Task, age_band: HumanTypes.AgeBand, is_interrupt_transiti
 				if step is ThinkAction:
 					pending_thought = false
 					break
+	# Carico rimasto senza proprietario (2026-09-29, regola unica — CargoReturnService): prima il ritorno al magazzino
+	# come Task corrente, il nuovo ordine va in coda e parte dopo (resolve_idle_individual lo riprende a ritorno finito).
+	if cargo_return_task != null:
+		TaskQueueService.push_suspended_task(self, task)
+		CargoReturnService.connect_unload_signals(self, cargo_return_task)
+		if DebugLogging.ENABLED and DebugLogging.SHOW_TASK_LIFECYCLE_LOGS:
+			print("[CARGO RETURN] Individuo #%d %s: carico %s senza proprietario — prima lo riporta al magazzino, '%s' in coda." % [
+				id, name, str(carried_resources.keys()), task.task_name
+			])
+		task = cargo_return_task
 	current_task = task
 	TaskDebugRegistry.on_task_assigned(self, task)
 	# Attivazione (2026-09-15) — la Task ripescata come "proprietaria del carico" (resuming_cargo_
@@ -1057,6 +1070,19 @@ func assign_task(task: Task, age_band: HumanTypes.AgeBand, is_interrupt_transiti
 		if current_action != null:
 			current_action.activate(self, task.context)
 	return true
+
+
+# Ordine manuale che sostituisce una Task conclusa o non sospendibile con lo zaino carico (2026-09-29, regola unica
+# del carico — CargoReturnService; prima: discard_carried_resource). Se il carico ha un proprietario in coda
+# (TaskQueueService.get_cargo_owner) resta nello zaino, sarà lui a usarlo. Senza proprietario: Task di ritorno al
+# magazzino (non assegnata qui — la assegna assign_task, mettendo l'ordine in coda); nessun magazzino → a terra, null.
+func _release_orphan_cargo_for_order() -> Task:
+	if carried_resources.is_empty() or TaskQueueService.get_cargo_owner(self) != null:
+		return null
+	var return_task := CargoReturnService.build_cargo_return_task(self, GameSettings.active_world)
+	if return_task == null:
+		discard_carried_resource()
+	return return_task
 
 
 # Ordine del giocatore a metà di un giro di rifornimento con lo zaino carico (2026-09-29, richiesta utente): l'ordine
