@@ -46,6 +46,9 @@ static func push_suspended_task(individual: HumanIndividual, task: Task) -> void
 				individual.id, individual.name, task.task_name, task.current_step_index, task.steps.size()
 			])
 		return
+	# Caccia in zona sospesa durante l'inseguimento (2026-10-01): la preda si perde, alla ripresa si riparte dalla
+	# pattuglia. Unico punto da cui passa ogni Task che va in coda.
+	HuntZoneService.reset_to_patrol_on_suspend(task)
 	if individual.task_queue.size() >= MAX_QUEUE_SIZE:
 		# Regola unica del carico (2026-09-29, CargoReturnService — prima veniva espulsa comunque la più vecchia, con lo
 		# zaino a terra se era la proprietaria del carico): la proprietaria del carico non viene MAI espulsa, esce la

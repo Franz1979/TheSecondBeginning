@@ -50,6 +50,9 @@ extends PanelContainer
 @onready var minimap_slot: Control = $MarginContainer/VBoxContainer/MinimapSlot
 @onready var secondary_actions_bar: IconButtonRow = $MarginContainer/VBoxContainer/SecondaryActionsBar
 
+# Slot 1 di primary_actions_bar: albero delle idee (GameScene._refresh_tech_tree_button lo abilita/disabilita).
+const TECH_TREE_SLOT_INDEX := 1
+
 # Bottone "Layer" (2026-09-27, richiesta utente — menu dei layer della mappa): slot 2 di primary_actions_bar, accanto a
 # statistiche e idee. L'icona disegnata è tenuta qui perché GameScene ne accende il segnale (LayersIcon.active) quando
 # un layer è attivo; il menu lo apre GameScene (_open_map_layers_menu).
@@ -76,7 +79,8 @@ func _ready() -> void:
 	primary_actions_bar.configure_slot(0, "📊", tr("statistics_tooltip"), &"statistics")
 	# Slot 1, accanto alle statistiche (2026-09-07, richiesta utente) — apre TechTreePanel, stesso
 	# slot placeholder disabilitato di prima (slot_count=5 in .tscn, mai nessuna .tscn da toccare).
-	primary_actions_bar.configure_slot(1, "💡", tr("tech_tree_tooltip"), &"tech_tree")
+	# Abilitato/disabilitato da GameScene._refresh_tech_tree_button (serve un edificio completo con accepts_thoughts).
+	primary_actions_bar.configure_slot(TECH_TREE_SLOT_INDEX, "💡", tr("tech_tree_tooltip"), &"tech_tree")
 	map_layers_icon = LayersIcon.new()
 	primary_actions_bar.configure_slot(MAP_LAYERS_SLOT_INDEX, "", tr("map_layers_tooltip"), &"map_layers", "", true, map_layers_icon)
 

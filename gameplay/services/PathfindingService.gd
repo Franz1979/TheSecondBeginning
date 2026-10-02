@@ -51,6 +51,11 @@ static func get_live_cell(macro_coords: Vector2i) -> LiveMacroCell:
 	return _live_cells.get(macro_coords)
 
 
+# Tutte le celle vive (macrocella -> LiveMacroCell), per chi non ha GameScene sotto mano (PatrolAreaAction).
+static func get_live_cells() -> Dictionary:
+	return _live_cells
+
+
 # Punto casuale dentro la microcella il cui angolo in alto a sinistra è `corner` (coordinate già nel riferimento
 # dell'individuo, macro_offset compreso): corner + (0,15–0,85, 0,15–0,85). Mai l'angolo esatto, che è condiviso con 3
 # microcelle vicine (il disegno del pipottino ci cadrebbe dentro per un quarto ciascuna).

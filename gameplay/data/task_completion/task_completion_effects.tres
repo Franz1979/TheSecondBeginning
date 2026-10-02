@@ -25,6 +25,9 @@ skill_effects_by_task_name = {
 "task_hunt_name": {
 "skill_hunting": 1.0
 },
+"task_hunt_zone_name": {
+"skill_hunting": 1.0
+},
 "task_leisure_rest_name": {},
 "task_leisure_restock_name": {},
 "task_play_name": {},
@@ -48,6 +51,7 @@ vital_effects_by_task_name = {
 "task_emergency_restock_name": {},
 "task_haul_resource_name": {},
 "task_hunt_name": {},
+"task_hunt_zone_name": {},
 "task_leisure_rest_name": {},
 "task_leisure_restock_name": {},
 "task_play_name": {

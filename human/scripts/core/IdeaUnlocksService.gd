@@ -41,6 +41,20 @@ static func format_lines(idea_id: String, is_hidden: Callable = Callable()) -> A
 	return lines
 
 
+# Sola riga delle idee successive, "Prossima idea da ricercare: <nome>, <nome>" (2026-10-01 — sezione dell'idea
+# regalata nel popup, GameScene._on_idea_completed). Stesso is_hidden di format_lines. "" se non apre altre idee.
+static func format_next_ideas_line(idea_id: String, is_hidden: Callable = Callable()) -> String:
+	var names: Array[String] = []
+	for entry in _collect_ideas(idea_id):
+		if is_hidden.is_valid() and is_hidden.call(&"idea", entry["id"]):
+			names.append("???")
+		else:
+			names.append(entry["display_name"])
+	if names.is_empty():
+		return ""
+	return "%s: %s" % [TranslationServer.translate("unlock_next_ideas"), ", ".join(names)]
+
+
 # Elenco delle sorgenti di sblocco — l'UNICO punto da toccare per una nuova. Funzione (non const)
 # perché i Callable statici non sono espressioni costanti.
 static func _sources() -> Array[Dictionary]:
@@ -57,6 +71,7 @@ static func _sources() -> Array[Dictionary]:
 # strumento legato a un'idea si aggiunge qui, così l'albero lo mostra tra gli sblocchi.
 const TOOLS := {
 	"work_areas": {"name_key": "unlock_tool_work_areas", "required_idea_id": WorkAreaTypes.REQUIRED_IDEA_ID},
+	"work_areas_advanced": {"name_key": "unlock_tool_work_areas_advanced", "required_idea_id": WorkAreaTypes.ADVANCED_REQUIRED_IDEA_ID},
 }
 
 

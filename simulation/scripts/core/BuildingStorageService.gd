@@ -235,17 +235,16 @@ static func can_accept(building: Building, resource_name: String) -> bool:
 	# STORAGE RISERVATO ALLA PRODUZIONE (2026-09-27, richiesta utente — campfire, BuildingRules.
 	# storage_accepts_recipe_materials_only): niente ramo "quantità esatta" sopra — l'edificio ha slot propri per una
 	# scorta di più cicli — ma solo ingredienti e combustibile delle sue ricette, dentro i filtri di categoria.
-	if building.rules.storage_accepts_recipe_materials_only:
-		if not ProductionService.is_recipe_material(building, resource_name):
-			return false
-	elif ProductionService.is_production_demand(building, resource_name):
-		return ProductionService.get_production_demand(building, resource_name) > 0
-	if not building.rules.accepted_categories.is_empty() and not building.rules.accepted_categories.has(resource_rules.category):
-		return false
-	# Categorie bloccate (2026-09-27, BuildingRules.categories_locked): il filtro per-istanza non si applica.
-	# Filtro per-istanza attivo (Building.restricts_categories, 2026-09-28): enabled_categories è l'elenco esatto, anche
-	# vuoto (nessuna categoria accettata).
-	if not building.rules.categories_locked and building.restricts_categories and not building.enabled_categories.has(resource_rules.category):
+	#
+	# FABBISOGNO DELL'ORDINE PRIMA DEI FILTRI (2026-10-02, bugfix "la corda non entra nel focolare"): ingredienti e
+	# combustibile della ricetta in produzione sono SEMPRE accettati fino al fabbisogno dell'ordine
+	# (_production_quota), anche negli edifici con storage riservato alla produzione e qualunque siano le categorie
+	# accettate — quelle valgono solo per lo stoccaggio libero. Prima un semilavorato (es. corda, SEMI_FINISHED) chiesto
+	# da una ricetta del focolare (categorie Cibo e Materiali grezzi) era escluso qui ma contato da get_max_depositable:
+	# il rifornimento lo portava e lo scarico lo rifiutava. Stessa regola in get_max_depositable.
+	if _production_quota(building, resource_name) > 0:
+		return true
+	if not _free_storage_allows(building, resource_name, resource_rules):
 		return false
 	return true
 
@@ -424,10 +423,8 @@ static func _take_stored_tool_units(building: Building, resource_name: String, q
 # WarehouseSelectionService.find_best e da UnloadAction.activate, che devono chiedere "ci sta?"
 # SENZA scrivere nulla — store() sotto ora chiama semplicemente questa funzione invece di duplicare
 # la formula). Pura lettura: non modifica building.stored_resources. can_accept NON è ripetuto qui
-# dentro (il chiamante che vuole anche il filtro di categoria lo controlla a parte, stesso principio
-# "domande diverse" già dichiarato sopra per get_capacity/get_used_space/can_accept) — una risorsa
-# la cui categoria non è accettata ritorna comunque un numero (probabilmente positivo) da questa
-# funzione, il rifiuto sta SOLO in can_accept.
+# dentro, ma dal 2026-10-02 la STESSA regola di accettazione lo è (_production_quota/_free_storage_allows): una
+# risorsa che can_accept rifiuta qui vale 0, così il rifornimento non parte mai per un deposito che verrebbe rifiutato.
 static func get_max_depositable(building: Building, resource_name: String) -> int:
 	if building == null or building.rules == null:
 		return 0
@@ -476,23 +473,57 @@ static func get_max_depositable(building: Building, resource_name: String) -> in
 	# della ricetta in corso entra solo fino alla quantità esatta mancante, senza consultare gli slot.
 	# Storage riservato alla produzione (2026-09-27, vedi can_accept): niente ramo "quantità esatta", solo
 	# ingredienti e combustibile delle sue ricette, poi il normale calcolo a slot sotto.
-	if building.rules.storage_accepts_recipe_materials_only:
-		if not ProductionService.is_recipe_material(building, resource_name):
-			return 0
-	elif ProductionService.is_production_demand(building, resource_name):
-		return ProductionService.get_production_demand(building, resource_name)
+	# Fabbisogno dell'ordine (2026-10-02, stessa regola di can_accept): sempre accettato, senza filtri di categoria né
+	# slot; oltre, lo stoccaggio libero con i filtri (_free_storage_allows) e gli slot sotto. Un input della ricetta in
+	# corso in una workstation senza storage riservato entra SOLO fino al fabbisogno (nessuna scorta, come prima).
+	var production_quota := _production_quota(building, resource_name)
+	if not building.rules.storage_accepts_recipe_materials_only and ProductionService.is_production_demand(building, resource_name):
+		return production_quota
+	if not _free_storage_allows(building, resource_name, resource_rules):
+		return production_quota
 
 	# Ramo edificio COMPLETO — comportamento ESATTAMENTE INVARIATO rispetto a sempre: storage_slot_
 	# count/storage_space_per_slot come UNICO vincolo (mai required_materials qui, un edificio finito
 	# può stoccare qualunque categoria accettata, non solo i propri ex-materiali da costruzione).
 	var units_per_slot := _units_per_slot(building, resource_rules.space_per_unit)
 	if units_per_slot <= 0:
-		return 0
+		return production_quota
 	var slots_used_by_this_resource: int = _slots_for_quantity(current_quantity, units_per_slot)
 	var slots_used_by_others: int = get_slots_used(building) - slots_used_by_this_resource
 	var max_slots_for_this_resource: int = max(building.rules.storage_slot_count - slots_used_by_others, 0)
 	var max_units_reachable: int = max_slots_for_this_resource * units_per_slot
-	return max(max_units_reachable - current_quantity, 0)
+	return maxi(max(max_units_reachable - current_quantity, 0), production_quota)
+
+
+# Quanto di `resource_name` manca ancora agli ordini in produzione dell'edificio (ingrediente o combustibile di una
+# ricetta in corso, ProductionService.get_production_demand); 0 se non è un fabbisogno. Accettato sempre, senza filtri
+# di categoria (2026-10-02) — regola unica per can_accept e get_max_depositable.
+static func _production_quota(building: Building, resource_name: String) -> int:
+	if not ProductionService.is_production_demand(building, resource_name):
+		return 0
+	return maxi(ProductionService.get_production_demand(building, resource_name), 0)
+
+
+# Stoccaggio libero (oltre il fabbisogno degli ordini) di un edificio completo — regola unica per can_accept e
+# get_max_depositable (2026-10-02):
+#   - storage riservato alla produzione (campfire): solo ingredienti e combustibile delle sue ricette;
+#   - workstation senza storage riservato: un input di una ricetta in corso non si accumula oltre il fabbisogno;
+#   - poi i filtri di categoria: il TIPO (BuildingRules.accepted_categories, vuoto = tutte) e l'ISTANZA
+#     (Building.enabled_categories con restricts_categories, salvo categories_locked).
+static func _free_storage_allows(building: Building, resource_name: String, resource_rules: SecondaryResourceRules) -> bool:
+	if building.rules.storage_accepts_recipe_materials_only:
+		if not ProductionService.is_recipe_material(building, resource_name):
+			return false
+	elif ProductionService.is_production_demand(building, resource_name):
+		return false
+	if not building.rules.accepted_categories.is_empty() and not building.rules.accepted_categories.has(resource_rules.category):
+		return false
+	# Categorie bloccate (2026-09-27, BuildingRules.categories_locked): il filtro per-istanza non si applica.
+	# Filtro per-istanza attivo (Building.restricts_categories, 2026-09-28): enabled_categories è l'elenco esatto, anche
+	# vuoto (nessuna categoria accettata).
+	if not building.rules.categories_locked and building.restricts_categories and not building.enabled_categories.has(resource_rules.category):
+		return false
+	return true
 
 
 # Preleva fino a `quantity_requested` unità di resource_name da questo edificio (2026-09-12,

@@ -12,6 +12,7 @@ build_bar_smokehouse_tooltip,Smokehouse
 build_bar_burial_tooltip,Burial
 build_bar_earthwork_tooltip,Earthwork
 building_campfire,Campfire
+building_pebble_circle,Pebble circle
 building_toolmaker_hut,Toolmaker's hut
 building_category_residential,Residential
 building_category_political,Political
@@ -37,7 +38,8 @@ demolish_confirmation_site_text,Cancel the construction of {building} #{id}? The
 demolish_confirmation_site_confirm,Cancel construction
 idea_paleolithic_constructions,Paleolithic Constructions
 idea_plant_lore,Plant Lore
-idea_work_areas,Work Areas
+idea_work_areas,Gathering Areas
+idea_work_areas_advanced,Work Areas
 idea_task_assignment,Task Assignment
 idea_warehouse_management,Warehouse Management
 idea_advanced_paleolithic_constructions,Advanced Paleolithic Constructions
@@ -53,17 +55,21 @@ idea_smoking_summary,Allows building the smokehouse.
 idea_smoking_description,"The slow smoke of a covered fire preserves meat and adds flavor."
 idea_plant_lore_summary,Allows recognizing medicinal herbs.
 idea_plant_lore_description,"By observing plants, the group learns which ones heal and where to find them."
-idea_work_areas_summary,Allows marking out work areas.
-idea_work_areas_description,The land is divided into zones dedicated to gathering and activities.
+idea_work_areas_summary,Unlocks food gathering areas.
+idea_work_areas_description,The group learns to mark out zones where food is gathered.
+idea_work_areas_advanced_summary,Unlocks work areas for every resource.
+idea_work_areas_advanced_description,"The land is divided into zones dedicated to gathering any resource and, in the future, to other activities such as hunting."
 idea_task_assignment_summary,A villager can hand out tasks.
 idea_task_assignment_description,A group member coordinates work and assigns tasks to others.
 idea_warehouse_management_summary,A villager can manage the storehouse.
 idea_warehouse_management_description,A group member keeps the stores in order and organizes their movement.
-unlock_kind_idea,Unlocks ideas
+unlock_kind_idea,You can now research
 unlock_kind_building,Unlocks buildings
 unlock_kind_resource,Unlocks resources
-unlock_kind_tool,Unlocks tools
-unlock_tool_work_areas,Work areas
+unlock_kind_tool,New features
+unlock_next_ideas,Next idea to research
+unlock_tool_work_areas,Food gathering areas
+unlock_tool_work_areas_advanced,Work areas for all resources
 build_bar_work_areas_tooltip,Work areas
 work_area_draw_banner_text,Drag to draw a work area (Esc or right click to exit)
 work_area_default_name,Area {n}
@@ -77,6 +83,7 @@ work_area_macro_label,"Macro cell ({x}, {y})"
 work_area_color_caption,Color
 work_area_jobs_caption,Jobs
 work_area_filter_all,Everything
+work_area_filter_food_only_hint,"Food only: other resources require the ""{idea}"" idea."
 work_area_filter_all_prey,All prey
 work_area_redraw_button,Redraw
 work_area_delete_button,Delete
@@ -198,6 +205,7 @@ statistics_tab_births,Births
 statistics_tab_population,Population
 statistics_tab_buildings,Buildings
 tech_tree_tooltip,Tech tree
+tech_tree_requires_thought_building_tooltip,"Build a pebble circle: your people will be able to deposit their thoughts and develop ideas."
 map_layers_tooltip,Map layers
 map_layer_none,None
 map_layer_coming_soon,Coming soon
@@ -329,9 +337,13 @@ task_hunt_step_throw,Throwing
 task_butcher_name,Butchering
 task_butcher_step_walk,Walking to the carcass
 task_butcher_step_butcher,Butchering the carcass
+task_butcher_step_return_to_pile,Returning to the carcass pile
 task_activity_butcher,butcher
 task_hunt_step_recover_weapon,Recovering the weapon
 task_hunt_activity,Hunting: {species}
+task_hunt_zone_name,Hunt
+task_hunt_zone_step_patrol,Patrolling the area
+task_hunt_zone_activity_series,{task} ({zone}) {delivered}/{target} meat
 transport_dialog_group_products,Products
 transport_dialog_group_delivered,Delivered materials
 transport_dialog_take_all_products,Take all products ({quantity})
@@ -425,9 +437,19 @@ command_bar_hunt_tooltip,Hunt
 command_bar_coming_soon,Coming soon
 command_bar_auto_zone,Choose area automatically
 command_bar_gather_no_zone_tooltip,No work area with gathering enabled
+command_bar_hunt_no_zone_tooltip,No work area with hunting enabled
+hunt_order_dialog_title,Hunt in work areas
+hunt_order_dialog_message,The hunter patrols the area and keeps hunting until the chosen amount is reached.
+hunt_order_dialog_stop_prefix,Stop after bringing home
+hunt_order_dialog_stop_suffix,meat
+work_area_hunt_needs_knife,{name} can't hunt in work areas: a knife on the belt is needed.
+work_area_hunt_no_zone,{name}: no work area with hunting enabled.
+hunt_no_weapon_left,"{name}: no hunting weapon left, the hunt stops."
+hunt_no_knife_carcass_left,"{name}: no knife, the carcass will stay on the ground"
 work_area_pick_banner_text,Choose the area (Esc to cancel)
 work_area_gather_dialog_title,Gather in work areas
 work_area_gather_dialog_message,What to gather? The area is chosen automatically.
+work_area_gather_trips_label,Trips
 work_area_gather_no_zone,"{name}: no work area is valid for this gathering."
 carried_resource_tooltip_acorn,Acorns
 carried_resource_tooltip_berry,Berries
@@ -442,7 +464,10 @@ discovery_popup_title,Discovery
 options_show_discovery_hints,Show discovery explanations
 discovery_first_thought_building_title,The village center
 discovery_first_thought_building_p1,"Your people bring their thoughts here: as they accumulate, the village develops new ideas."
-discovery_first_thought_building_p2,"Pick which idea to research from the idea tree: each completed idea unlocks buildings, resources or tools."
+discovery_first_thought_building_p2,"Pick which idea to research from the idea tree: each completed idea unlocks buildings, resources or new features."
+discovery_first_thought_building_gift_title,The village's first idea: {idea}
+discovery_first_thought_building_gift_p1,"As its first thoughts accumulated, the village received its first idea, as a gift."
+discovery_first_thought_building_gift_p2,You can now draw a gathering area on the map and send a villager there: they will decide on their own where and how much food to gather.
 build_blocked_no_cutting_tool,"Without a chopping tool the ground can't be cleared of trees and shrubs."
 task_rest_name,Rest
 task_rest_step_rest,Resting

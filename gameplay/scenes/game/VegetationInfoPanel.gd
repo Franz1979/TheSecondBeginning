@@ -19,6 +19,10 @@ extends VBoxContainer
 # show_cut_marker, con la stessa identica stringa che sarebbe finita qui in entrambi i casi.
 signal cut_requested
 
+# Bottone "Taglia" sospeso (2026-10-02, richiesta utente): nascosto, ma segnale, GameScene._on_cut_requested e tutta la
+# logica del taglio restano intatti. Rimettere true per riattivarlo.
+const CUT_BUTTON_ENABLED := false
+
 @onready var subtype_label: Label = $SubtypeLabel
 @onready var age_label: Label = $AgeLabel
 @onready var cut_button: Button = $CutButton
@@ -37,7 +41,7 @@ func show_vegetation(object_type: GameTypes.WorldObjectType, subtype_name: Strin
 		"age_band": GameTypes.AgeBand.keys()[age_band].capitalize(),
 		"years": NumberFormatter.format_int(years_lived),
 	})
-	cut_button.visible = true
+	cut_button.visible = CUT_BUTTON_ENABLED
 
 
 # Selezionato un ceppo/rovi/marker di morte invece di una pianta viva (vedi GameScene.

@@ -38,9 +38,12 @@ extends Window
 # del flag "Ripeti fino a N volte" (2026-09-20), indipendente dal criterio.
 # source_kind (2026-09-26, ground drop): PickUpAction.SourceKind della voce scelta (mucchio a terra o terreno).
 signal choice_made(kind: int, category: int, resource_name: String, quantity: int, repeat: bool, source_kind: int)
+# Modalità caccia (2026-10-01, comando Caccia nelle zone — open_hunt_dialog): solo il selettore "Carne", nessun elenco.
+signal hunt_choice_made(meat_target: int)
 
 @onready var message_label: Label = $MarginContainer/VBoxContainer/MessageLabel
 @onready var choice_list_container: VBoxContainer = $MarginContainer/VBoxContainer/ChoiceScroll/ChoiceListContainer
+@onready var choice_scroll: ScrollContainer = $MarginContainer/VBoxContainer/ChoiceScroll
 @onready var repeat_check_box: CheckBox = $MarginContainer/VBoxContainer/RepeatCheckBox
 @onready var quantity_row: HBoxContainer = $MarginContainer/VBoxContainer/QuantityRow
 @onready var quantity_label: Label = $MarginContainer/VBoxContainer/QuantityRow/QuantityLabel
@@ -95,6 +98,20 @@ var _selected_index: int = -1
 var _rows_container: VBoxContainer = null
 # false = nessuna scelta della quantità (2026-09-27, raccolta nelle zone di lavoro: la quantità non si sceglie).
 var _quantity_enabled: bool = true
+# Selettore "viaggi" (2026-10-01, raccolta nelle zone): al posto della casella delle ripetizioni quando open_dialog riceve
+# trips > 0. Riga costruita in codice sotto la casella (_ensure_trips_row). Il valore scelto è in selected_trips al
+# momento di choice_made (repeat = selected_trips > 1); 0 = modalità casella (clic su una cella).
+var selected_trips: int = 0
+var _trips_mode: bool = false
+var _trips_row: HBoxContainer = null
+var _trips_spin_box: SpinBox = null
+# Modalità caccia (open_hunt_dialog): riga "Carne" con i valori ammessi, costruita in codice come la riga dei viaggi.
+var _hunt_mode: bool = false
+var _meat_row: HBoxContainer = null
+var _meat_option: OptionButton = null
+var _meat_values: Array[int] = []
+# Altezza di partenza in modalità caccia: la finestra poi si adatta al contenuto (_fit_to_content).
+const HUNT_DIALOG_HEIGHT: float = 120.0
 
 
 func _ready() -> void:
@@ -105,6 +122,8 @@ func _ready() -> void:
 	confirm_button.pressed.connect(_on_confirm_pressed)
 	cancel_button.pressed.connect(_on_cancel_pressed)
 	close_requested.connect(_on_cancel_pressed)
+	# Esc chiude senza fare nulla, in entrambe le modalità (2026-10-01).
+	window_input.connect(_on_window_input)
 
 
 # `resources`: Array di Dictionary {"resource_name": String, "category": int, "quantity": int (> 0),
@@ -116,12 +135,21 @@ func _ready() -> void:
 # cella, 5 per la raccolta nelle zone) e scelta della quantità (spenta per le zone).
 func open_dialog(
 	dialog_title: String, message: String, resources: Array, default_choice: Dictionary = {}, repeat_default: bool = false,
-	repeat_max: int = TaskRepeatRules.MAX_REPEATS, quantity_enabled: bool = true
+	repeat_max: int = TaskRepeatRules.MAX_REPEATS, quantity_enabled: bool = true, trips: int = 0, trips_max: int = 0
 ) -> void:
+	_set_hunt_mode(false)
 	title = dialog_title
 	message_label.text = message
 	repeat_check_box.button_pressed = repeat_default
 	repeat_check_box.text = tr("task_repeat_checkbox").format({"count": repeat_max})
+	_trips_mode = trips > 0
+	repeat_check_box.visible = not _trips_mode
+	_ensure_trips_row()
+	_trips_row.visible = _trips_mode
+	selected_trips = 0
+	if _trips_mode:
+		_trips_spin_box.max_value = maxi(trips_max, 1)
+		_trips_spin_box.value = clampi(trips, 1, maxi(trips_max, 1))
 	_quantity_enabled = quantity_enabled
 
 	for child in choice_list_container.get_children():
@@ -161,7 +189,7 @@ func open_dialog(
 
 	exclusive = true
 	var height: float = minf(DIALOG_BASE_HEIGHT + float(row_count) * ROW_HEIGHT, MAX_DIALOG_HEIGHT)
-	popup_centered(Vector2i(DIALOG_WIDTH, int(height)))
+	_popup_fitted(height)
 
 
 # Riquadro di una sorgente (solo con due sorgenti): PanelContainer con sfondo proprio e bordo, dentro
@@ -369,7 +397,107 @@ func _select_choice(index: int) -> void:
 		quantity_spin_box.value = max_quantity
 
 
+# Modalità caccia (2026-10-01, comando Caccia nelle zone): stesso dialog e stesso stile di Raccogli, con titolo e
+# messaggio della caccia, senza elenco delle risorse, con il solo selettore "Carne" (`meat_options`, preselezionato
+# `default_target` o il primo valore) e Conferma/Annulla. Conferma -> hunt_choice_made(valore); Annulla/Esc -> nulla.
+# Ritorna false (dialog NON aperto, nessun pannello lasciato sullo schermo) se la riga non si costruisce o non ci sono
+# valori: il chiamante non deve aspettarsi una risposta.
+func open_hunt_dialog(dialog_title: String, message: String, meat_options: Array[int], default_target: int) -> bool:
+	_ensure_meat_row()
+	if _meat_option == null or meat_options.is_empty():
+		push_error("PickupChoiceDialog.open_hunt_dialog: riga \"Carne\" non disponibile o nessun valore — dialog non aperto.")
+		hide()
+		return false
+	_set_hunt_mode(true)
+	title = dialog_title
+	message_label.text = message
+	_meat_values = meat_options.duplicate()
+	_meat_option.clear()
+	var selected_index := 0
+	for i in range(_meat_values.size()):
+		_meat_option.add_item(str(_meat_values[i]), i)
+		if _meat_values[i] == default_target:
+			selected_index = i
+	_meat_option.select(selected_index)
+	exclusive = true
+	_popup_fitted(HUNT_DIALOG_HEIGHT)
+	return true
+
+
+# Apre centrato con l'altezza voluta e poi (2026-10-01, bugfix "bottoni tagliati") adatta la finestra al contenuto: il
+# messaggio va a capo solo quando conosce la propria larghezza, quindi l'altezza minima vera si legge dopo il primo
+# layout. Mai più bassa del contenuto (bottoni sempre interi), mai più stretta di DIALOG_WIDTH; in Raccogli resta
+# l'altezza calcolata dalle righe se è maggiore (l'elenco scorre).
+func _popup_fitted(desired_height: float) -> void:
+	popup_centered(Vector2i(DIALOG_WIDTH, int(desired_height)))
+	_fit_to_content.call_deferred(desired_height)
+
+
+func _fit_to_content(desired_height: float) -> void:
+	await get_tree().process_frame
+	if not visible:
+		return
+	var content := get_node_or_null("MarginContainer") as Control
+	if content == null:
+		return
+	var min_size := content.get_combined_minimum_size()
+	var fitted := Vector2i(maxi(DIALOG_WIDTH, ceili(min_size.x)), maxi(int(desired_height), ceili(min_size.y)))
+	if fitted != size:
+		size = fitted
+		move_to_center()
+
+
+# Mostra solo ciò che serve alla modalità: elenco/casella/quantità/viaggi per la raccolta, riga "Carne" per la caccia.
+func _set_hunt_mode(enabled: bool) -> void:
+	_hunt_mode = enabled
+	choice_scroll.visible = not enabled
+	if enabled:
+		repeat_check_box.visible = false
+		quantity_row.visible = false
+		if _trips_row != null:
+			_trips_row.visible = false
+	if _meat_row != null:
+		_meat_row.visible = enabled
+
+
+func _ensure_meat_row() -> void:
+	if _meat_row != null:
+		return
+	# Una frase con il menu dentro (2026-10-01): «Fermati dopo aver portato a casa [10] di carne». La prima parte va a
+	# capo se serve, così la finestra resta larga DIALOG_WIDTH.
+	_meat_row = HBoxContainer.new()
+	_meat_row.alignment = BoxContainer.ALIGNMENT_CENTER
+	var prefix := Label.new()
+	prefix.text = tr("hunt_order_dialog_stop_prefix")
+	prefix.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	prefix.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	prefix.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	_meat_row.add_child(prefix)
+	_meat_option = OptionButton.new()
+	_meat_option.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	_meat_row.add_child(_meat_option)
+	var suffix := Label.new()
+	suffix.text = tr("hunt_order_dialog_stop_suffix")
+	_meat_row.add_child(suffix)
+	var parent := repeat_check_box.get_parent()
+	parent.add_child(_meat_row)
+	parent.move_child(_meat_row, repeat_check_box.get_index() + 1)
+	_meat_row.visible = false
+
+
+func _on_window_input(event: InputEvent) -> void:
+	if visible and event.is_action_pressed("ui_cancel"):
+		set_input_as_handled()
+		_on_cancel_pressed()
+
+
 func _on_confirm_pressed() -> void:
+	if _hunt_mode:
+		var index := _meat_option.selected if _meat_option != null else -1
+		hide()
+		if index >= 0 and index < _meat_values.size():
+			hunt_choice_made.emit(_meat_values[index])
+		return
 	if _selected_index < 0 or _selected_index >= _choices.size():
 		return
 	var choice: Dictionary = _choices[_selected_index]
@@ -377,8 +505,29 @@ func _on_confirm_pressed() -> void:
 	var category: int = int(choice["category"]) if kind == PickUpAction.CriterionKind.CATEGORY else -1
 	var resource_name: String = String(choice["resource_name"]) if kind == PickUpAction.CriterionKind.NAME else ""
 	var quantity: int = int(quantity_spin_box.value) if kind == PickUpAction.CriterionKind.NAME and _quantity_enabled else -1
+	selected_trips = int(_trips_spin_box.value) if _trips_mode else 0
+	var repeat: bool = selected_trips > 1 if _trips_mode else repeat_check_box.button_pressed
 	hide()
-	choice_made.emit(kind, category, resource_name, quantity, repeat_check_box.button_pressed, int(choice["source_kind"]))
+	choice_made.emit(kind, category, resource_name, quantity, repeat, int(choice["source_kind"]))
+
+
+# Riga "Viaggi: [1..N]" sotto la casella delle ripetizioni, creata alla prima apertura in modalità viaggi.
+func _ensure_trips_row() -> void:
+	if _trips_row != null:
+		return
+	_trips_row = HBoxContainer.new()
+	var label := Label.new()
+	label.text = tr("work_area_gather_trips_label")
+	label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_trips_row.add_child(label)
+	_trips_spin_box = SpinBox.new()
+	_trips_spin_box.min_value = 1
+	_trips_spin_box.step = 1
+	_trips_spin_box.rounded = true
+	_trips_row.add_child(_trips_spin_box)
+	var parent := repeat_check_box.get_parent()
+	parent.add_child(_trips_row)
+	parent.move_child(_trips_row, repeat_check_box.get_index() + 1)
 
 
 # Nessun segnale all'annullamento (stesso principio di OptionChoiceDialog): il chiamante non ha ancora impostato

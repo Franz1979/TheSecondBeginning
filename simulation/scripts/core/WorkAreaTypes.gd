@@ -15,6 +15,9 @@ const MAX_SIDE: int = 10
 
 # Idea che sblocca lo strumento "zone di lavoro" (bottone della barra in basso, IdeaUnlocksService).
 const REQUIRED_IDEA_ID := "work_areas"
+# Idea "Aree di lavoro" (2026-10-01, richiesta utente): estende le zone a tutte le risorse (e in futuro alla caccia).
+# Per ora solo dato + voce tra gli sblocchi (IdeaUnlocksService.TOOLS); il limite al cibo senza di essa arriverà dopo.
+const ADVANCED_REQUIRED_IDEA_ID := "work_areas_advanced"
 
 # Colori assegnati a rotazione alle zone nuove (WorkAreaService.create): ben distinguibili tra loro e dal terreno.
 const PALETTE: Array[Color] = [

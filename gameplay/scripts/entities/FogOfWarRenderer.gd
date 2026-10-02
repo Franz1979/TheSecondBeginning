@@ -523,6 +523,13 @@ func set_building_visible_positions(positions: Dictionary) -> void:
 # essere stantio (in teoria sempre già corretto oggi, dato che prune_stale rimuove solo entry già
 # oltre il tier più lungo — vedi discussione con l'utente — ma questo metodo non si affida a
 # quell'invariante, la ricalcola sempre da zero).
+# L'insieme "visibile in dettaglio" (compute_visible_positions) è cambiato per un motivo esterno al raggio e al giorno
+# (2026-10-01: pavimento delle zone di lavoro in FogOfWarMemory): alza visible_set_version, così chi confronta la
+# versione rifà il refresh della vegetazione. Evento raro, nessun ricalcolo qui.
+func invalidate_visible_set() -> void:
+	visible_set_version += 1
+
+
 func mark_positions_dirty(positions: Array[Vector2i]) -> void:
 	if positions.is_empty():
 		return

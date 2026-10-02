@@ -77,7 +77,8 @@ func _resolve(individual: Variant, context: Dictionary) -> bool:
 	# attacco e usura sono i suoi.
 	var weapon_name := HuntService.resolve_weapon_for_target(individual, context, weapon_category, combat_target)
 	if weapon_name == "":
-		context[HumanIndividualActionService.CONTEXT_PENDING_TASK_ABORT] = "nessuna arma in cintura al momento del lancio"
+		# Cambio d'arma (2026-10-01): un'altra arma nello zaino -> riavvicinamento (che la porta in cintura), altrimenti stop.
+		HuntService.continue_with_other_weapon_or_stop(individual, context, "nessuna arma in cintura al momento del lancio", HuntService.REAPPROACH_AFTER_THROW_NOT_STARTED)
 		return false
 	var distance := combat_target.distance_from(individual)
 	var reach := HuntService.compute_weapon_reach(weapon_name)
@@ -100,17 +101,23 @@ func _resolve(individual: Variant, context: Dictionary) -> bool:
 	if not broken.is_empty():
 		report_broken_tools(individual, broken)
 		HuntService.log_event(individual, "arma rotta dopo il lancio: %s." % str(broken))
-	# Arma integra = ancora nel suo slot dopo il consumo: lascia la cintura, da qui esiste solo nel recupero.
+	# Arma integra = ancora nel suo slot dopo il consumo. Arma da lancio integra: lascia la cintura, da qui esiste solo
+	# nel recupero. Arma da mischia (HuntService.is_melee_weapon, 2026-10-01): mai lanciata, resta in cintura.
 	var weapon_intact: bool = weapon_slot != -1 and individual.get_equipped_tool(weapon_slot) == weapon_name
+	var melee := HuntService.is_melee_weapon(weapon_name)
+	var weapon_thrown: bool = weapon_intact and not melee
 	var weapon_uses := 0
-	if weapon_intact:
+	if weapon_thrown:
 		weapon_uses = individual.get_equipped_tool_uses(weapon_slot)
 		individual.take_equipped_tool(weapon_slot, null)
 	var animal := combat_target.get_animal()
-	HuntService.write_weapon_drop(context, animal.macro_coords, animal.position)
+	if weapon_thrown:
+		HuntService.write_weapon_drop(context, animal.macro_coords, animal.position)
+	else:
+		context.erase(HuntService.CONTEXT_WEAPON_DROP)
 	AnimalGroupRenderer.trigger_flee(animal.macro_coords, animal.position, individual.home_macro_coords, individual.position)
-	HuntService.log_event(individual, "lancio di %s su %s (distanza %.2f): gli animali entro il raggio di fuga scappano." % [
-		weapon_display, combat_target.describe(), distance
+	HuntService.log_event(individual, "%s di %s su %s (distanza %.2f): gli animali entro il raggio di fuga scappano." % [
+		"colpo in mischia" if melee else "lancio", weapon_display, combat_target.describe(), distance
 	])
 
 	var skill_factor := SkillEffectService.get_factor_for_action(self, individual, context)
@@ -118,15 +125,13 @@ func _resolve(individual: Variant, context: Dictionary) -> bool:
 	var roll := randf()
 	if roll >= hit_chance:
 		HuntService.log_event(individual, "tiro a VUOTO su %s (probabilità %.0f%%, tiro %.2f)." % [combat_target.describe(), hit_chance * 100.0, roll])
-		if weapon_intact:
+		if weapon_thrown:
 			_request_recovery(context, weapon_name, weapon_uses, false)
-		elif HuntService.has_hunting_weapon_available(individual):
-			context.erase(HuntService.CONTEXT_WEAPON_DROP)
+		elif weapon_intact:
+			# Mischia: l'arma è in mano, si torna sotto la preda per un altro colpo.
 			context[HuntService.CONTEXT_PENDING_REAPPROACH] = HuntService.REAPPROACH_AFTER_THROW
-			HuntService.log_event(individual, "arma rotta, nulla da recuperare: si torna ad avvicinarsi con un'altra arma.")
 		else:
-			context.erase(HuntService.CONTEXT_WEAPON_DROP)
-			context[HumanIndividualActionService.CONTEXT_PENDING_TASK_ABORT] = "arma rotta nel tiro a vuoto e nessun'altra arma di caccia"
+			HuntService.continue_with_other_weapon_or_stop(individual, context, "%s rotta nel colpo a vuoto" % weapon_display)
 		return true
 
 	var health_before: float = animal.health
@@ -150,25 +155,32 @@ func _resolve(individual: Variant, context: Dictionary) -> bool:
 				"id": int(carcass_pile.carcasses[-1]["id"]),
 			}
 		target_killed.emit(combat_target.kind, combat_target.target_id, combat_target.label, int(animal.age_band), animal.macro_coords)
-		if weapon_intact:
+		if weapon_thrown:
 			_request_recovery(context, weapon_name, weapon_uses, true)
 		else:
-			context.erase(HuntService.CONTEXT_WEAPON_DROP)
-			# Nessuna arma da recuperare: la macellazione si chiede subito.
+			# Nessuna arma da recuperare (mischia, o arma rotta): la macellazione si chiede subito.
 			if context.has(HuntService.CONTEXT_KILL_CARCASS):
 				# "requested_by" (2026-09-27, diagnosi): origine della richiesta, letta solo dai log [HUNT].
 				var butcher_request: Dictionary = (context[HuntService.CONTEXT_KILL_CARCASS] as Dictionary).duplicate()
-				butcher_request["requested_by"] = "ThrowAction (arma rotta al colpo mortale)"
+				butcher_request["requested_by"] = "ThrowAction (colpo mortale senza arma a terra)"
 				context[HuntService.CONTEXT_PENDING_BUTCHER] = butcher_request
 				HuntService.log_event(individual, "richiesta macellazione scritta da %s, carcassa #%d (%s)." % [
 					butcher_request["requested_by"], int(butcher_request.get("id", -1)), HuntService.describe_now()
 				])
 		return true
-	# Ferito: fugge con l'arma conficcata — persa (se si era rotta non c'è comunque nulla da recuperare).
+	# Ferito (2026-10-01, regole delle armi): la preda fugge e la caccia la insegue ancora.
+	#   - arma da lancio integra: conficcata nell'animale, persa -> si continua con un'altra arma, se c'è;
+	#   - mischia: l'arma è rimasta in mano -> nuovo avvicinamento;
+	#   - arma rotta: si continua con un'altra arma, se c'è.
 	context.erase(HuntService.CONTEXT_WEAPON_DROP)
-	context[HumanIndividualActionService.CONTEXT_PENDING_TASK_ABORT] = "%s ferito (salute %.1f) è fuggito%s" % [
-		combat_target.describe(), animal.health, " portando via %s" % weapon_display if weapon_intact else ""
-	]
+	var wounded := "%s ferito (salute %.1f) è fuggito" % [combat_target.describe(), animal.health]
+	if weapon_thrown:
+		HuntService.continue_with_other_weapon_or_stop(individual, context, "%s portando via %s" % [wounded, weapon_display])
+	elif weapon_intact:
+		context[HuntService.CONTEXT_PENDING_REAPPROACH] = HuntService.REAPPROACH_AFTER_THROW
+		HuntService.log_event(individual, "%s: lo si insegue ancora." % wounded)
+	else:
+		HuntService.continue_with_other_weapon_or_stop(individual, context, "%s, %s rotta" % [wounded, weapon_display])
 	return true
 
 

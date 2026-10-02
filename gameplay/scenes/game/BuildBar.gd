@@ -22,10 +22,9 @@ extends CenterContainer
 @onready var content_container: HBoxContainer = $Panel/MarginContainer/HBoxContainer/ContentContainer
 @onready var main_row: IconButtonRow = $Panel/MarginContainer/HBoxContainer/ContentContainer/MainRow
 @onready var submenu_row: IconButtonRow = $Panel/MarginContainer/HBoxContainer/ContentContainer/SubmenuRow
-# Comandi del pipottino (2026-09-28, richiesta utente — work areas): a destra degli strumenti, dopo un separatore
-# verticale, nella stessa barra. Nascosti finché GameScene non li mostra (pipottino selezionato + idea delle zone); la
-# barra, CenterContainer, si allarga e si ricentra da sola. Vedi CommandBar.
-var command_bar: CommandBar = null
+# I comandi del pipottino (CommandBar) non stanno più qui (2026-10-01, richiesta utente): pannello a sé alla sinistra di
+# questa barra, sulla stessa riga in basso (GameScene._setup_command_bar, che sposta anche questa barra dentro la riga
+# centrata a sinistra della sidebar). Questa barra resta per ciò che si piazza nel mondo (edifici, zone).
 
 const OPEN_BUILD_MENU_ACTION := &"open_build_menu"
 # Zone di lavoro (2026-09-27, richiesta utente — work areas): slot 1 di main_row, accanto al martello. Il clic emette
@@ -147,9 +146,22 @@ func _ready() -> void:
 	submenu_row.configure_slot(BUILDING_SLOT_INDEX_BY_TYPE["hut"], IconRegistry.get_building_icon("hut"), tr("build_bar_hut_tooltip"), &"build_hut")
 	main_row.action_pressed.connect(_on_main_row_action_pressed)
 	control_button.pressed.connect(_on_control_button_pressed)
-	command_bar = CommandBar.new()
-	$Panel/MarginContainer/HBoxContainer.add_child(command_bar)
 	_apply_state()
+
+
+# true se la barra è aperta sugli edifici (livello 2) — GameScene._sync_command_bar nasconde allora i comandi.
+func is_build_menu_open() -> bool:
+	return _state == _ViewState.LEVEL_2
+
+
+# Stile del pannello (stesso StyleBoxFlat del .tscn), riusato dal pannello dei comandi (GameScene._setup_command_bar).
+func get_panel_style() -> StyleBox:
+	return $Panel.get_theme_stylebox("panel")
+
+
+# Il pannello visibile della barra (GameScene._setup_command_bar ne allinea l'altezza a quella del pannello comandi).
+func get_panel() -> PanelContainer:
+	return $Panel
 
 
 # Chiamato da GameScene (2026-09-07, richiesta utente — GENERALIZZATO da set_pebble_circle_buildable,

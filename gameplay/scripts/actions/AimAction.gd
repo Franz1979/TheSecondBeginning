@@ -74,7 +74,8 @@ func get_stamina_delta(individual: Variant, context: Dictionary, delta: float) -
 	var weapon_name := HuntService.resolve_weapon_for_target(individual, context, weapon_category, combat_target)
 	if weapon_name == "":
 		_done = true
-		context[HumanIndividualActionService.CONTEXT_PENDING_TASK_ABORT] = "nessuna arma in cintura durante la mira"
+		# Cambio d'arma (2026-10-01): un'altra arma (anche nello zaino) -> si torna ad avvicinarsi, altrimenti stop.
+		HuntService.continue_with_other_weapon_or_stop(individual, context, "nessuna arma in cintura durante la mira", HuntService.REAPPROACH_AFTER_AIM)
 		return 0.0
 	var distance := combat_target.distance_from(individual)
 	var reach := HuntService.compute_weapon_reach(weapon_name)

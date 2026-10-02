@@ -55,6 +55,21 @@ static func add_thoughts(folk: Folk, amount: int) -> bool:
 	return true
 
 
+# Idea regalata (2026-10-01, richiesta utente — DiscoveryHintRules.grant_idea_id): completata senza pensieri né
+# controllo dei prerequisiti. Azzera i pensieri investiti, la scadenza del decadimento e l'idea attiva se era
+# questa (IdeaDecayService ignora comunque le idee completate). Ritorna true solo se l'idea è stata aggiunta ora
+# (false se già completata o id non risolvibile): il chiamante propaga il completamento come per add_thoughts.
+static func grant_idea(folk: Folk, idea_id: String) -> bool:
+	if folk == null or folk.completed_ideas.has(idea_id) or IdeaCalculator.get_idea(idea_id) == null:
+		return false
+	folk.completed_ideas.append(idea_id)
+	folk.thoughts_invested.erase(idea_id)
+	folk.idea_decay_due_day.erase(idea_id)
+	if folk.active_idea_id == idea_id:
+		folk.active_idea_id = ""
+	return true
+
+
 # "Disponibile" = non ancora completata e con TUTTI i prerequisites già in folk.completed_ideas
 # (l'idea attiva stessa resta disponibile: chi distingue "in ricerca" è il chiamante, vedi
 # TechTreePanel._state_of).

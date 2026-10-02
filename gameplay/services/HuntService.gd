@@ -50,6 +50,12 @@ const CONTEXT_KILL_CARCASS := "hunt_kill_carcass"
 # (RecoverWeaponAction) o subito dal colpo letale se l'arma si è rotta e non c'è nulla da recuperare (ThrowAction);
 # consumata nello stesso finish_current_step da HumanIndividualActionService._handle_pending_hunt_butcher.
 const CONTEXT_PENDING_BUTCHER := "pending_hunt_butcher"
+# Nessuna arma da caccia rimasta (2026-10-01, regole delle armi): scritta insieme alla chiusura anticipata da
+# continue_with_other_weapon_or_stop. HumanIndividualActionService mostra il messaggio al giocatore e chiude la caccia,
+# diretta o in zona (niente ritorno alla pattuglia).
+const CONTEXT_NO_WEAPON := "hunt_no_weapon_left"
+# Portata massima di un'arma da mischia (vedi is_melee_weapon).
+const MELEE_MAX_REACH: float = 1.0
 
 # --- Probabilità di colpire (da tarare) — vedi compute_hit_chance ---
 #   p = clamp(scala_specie × arma × skill × taglia × età, HIT_CHANCE_MIN, HIT_CHANCE_MAX)
@@ -167,6 +173,27 @@ static func find_weapon_slot(individual: Variant, weapon_name: String) -> int:
 
 # Gittata dell'arma `weapon_name` (la SUA max_range, non la massima della cintura), mai sotto la distanza di contatto
 # per le armi da corpo a corpo. MELEE_REACH se nessuna arma.
+# Arma da mischia (2026-10-01, regole delle armi — UNICO punto della regola, da sostituire un domani con un campo
+# esplicito delle regole dell'arma): portata ≤ MELEE_MAX_REACH. Non viene mai lanciata: l'attacco avviene entro la
+# portata, consuma un uso, ma l'arma resta in cintura — nessuna caduta, nessun recupero, mai persa con l'animale.
+static func is_melee_weapon(weapon_name: String) -> bool:
+	return compute_weapon_reach(weapon_name) <= MELEE_MAX_REACH
+
+
+# Cambio d'arma (2026-10-01, regole delle armi): l'arma in uso si è rotta, è stata persa o non c'è più in cintura. Con
+# un'altra arma da caccia (cintura o zaino, has_hunting_weapon_available) la caccia continua: arma della caccia
+# azzerata (resolve_weapon sceglie la nuova) e riavvicinamento `reapproach_mode`. Senza: chiusura anticipata con
+# CONTEXT_NO_WEAPON (messaggio al giocatore). `reason` = motivo per i log/la chiusura.
+static func continue_with_other_weapon_or_stop(individual: Variant, context: Dictionary, reason: String, reapproach_mode: String = REAPPROACH_AFTER_THROW) -> void:
+	context.erase(CONTEXT_HUNT_WEAPON)
+	if has_hunting_weapon_available(individual):
+		context[CONTEXT_PENDING_REAPPROACH] = reapproach_mode
+		log_event(individual, "%s: si continua con un'altra arma (%s)." % [reason, describe_weapon(individual)])
+		return
+	context[CONTEXT_NO_WEAPON] = true
+	context[HumanIndividualActionService.CONTEXT_PENDING_TASK_ABORT] = "%s e nessun'altra arma da caccia" % reason
+
+
 static func compute_weapon_reach(weapon_name: String) -> float:
 	var rules: SecondaryResourceRules = CaloricCalculator.get_caloric_source_rules(weapon_name) if weapon_name != "" else null
 	return maxf(rules.max_range if rules != null else 0.0, ApproachPreyAction.MELEE_REACH)
@@ -238,7 +265,8 @@ static func describe_now() -> String:
 
 
 static func is_hunt_task(task: Task) -> bool:
-	return task != null and task.task_name == "task_hunt_name"
+	# Anche la caccia in zona (2026-10-01, HuntZoneService.TASK_NAME): stessi step, stessi log, stesse regole di coda.
+	return task != null and (task.task_name == "task_hunt_name" or task.task_name == HuntZoneService.TASK_NAME)
 
 
 # Arma di caccia per i log: "Lancia di legno (gittata 3.0)", con la gittata di QUELL'arma. `weapon_name` vuoto = la

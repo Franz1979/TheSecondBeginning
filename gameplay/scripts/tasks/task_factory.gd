@@ -197,6 +197,14 @@ static func build_task(definition: TaskDefinition, context: Dictionary) -> Task:
 					continue
 				steps.append(DemolishAction.new(context[step_definition.context_keys[0]]))
 				step_descriptions.append(step_definition.step_description)
+			TaskTypes.ActionType.PATROL_AREA:
+				# 1 argomento (id della WorkArea, 2026-10-01): chiave consumata dalla factory — chi crea la Task scrive
+				# anche HuntZoneService.CONTEXT_WORK_AREA_ID, che resta nel context.
+				if step_definition.context_keys.is_empty() or not context.has(step_definition.context_keys[0]):
+					push_error("TaskFactory.build_task: context_keys[0] mancante/non risolvibile per step PATROL_AREA di TaskDefinition '%s'." % definition.task_name)
+					continue
+				steps.append(PatrolAreaAction.new(int(context[step_definition.context_keys[0]])))
+				step_descriptions.append(step_definition.step_description)
 			TaskTypes.ActionType.SEARCH_HAUL_ZONE:
 				# Nessun argomento (2026-09-27, work areas passo 2): la zona resta in context (HaulZoneService.CONTEXT_KEY).
 				steps.append(SearchHaulZoneAction.new())

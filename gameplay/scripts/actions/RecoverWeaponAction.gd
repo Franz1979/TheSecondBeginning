@@ -105,13 +105,13 @@ func on_complete(individual: Variant, context: Dictionary) -> void:
 	super(individual, context)
 	context.erase(HuntService.CONTEXT_WEAPON_DROP)
 	# Punto di caduta irraggiungibile (2026-09-27, pathfinding step 3): l'arma resta lì — non è un oggetto del mondo,
-	# quindi è persa — e la caccia si chiude (niente macellazione né riavvicinamento).
+	# quindi è persa. Dal 2026-10-01 (regole delle armi) la caccia prosegue come dopo un recupero mancato: macellazione
+	# se la preda è morta, altrimenti un'altra arma se c'è (sotto).
 	if _unreachable:
-		HuntService.log_event(individual, "punto di caduta di %s irraggiungibile: l'arma resta lì (persa) e la caccia si chiude." % [
+		individual.clear_path()
+		HuntService.log_event(individual, "punto di caduta di %s irraggiungibile: l'arma resta lì (persa)." % [
 			IconRegistry.get_resource_display_name(weapon_name)
 		])
-		abort_task_unreachable(individual, context, "punto di caduta dell'arma irraggiungibile")
-		return
 	if prey_killed:
 		HuntService.log_event(individual, "arma recuperata accanto a %s ucciso: la caccia è conclusa." % combat_target.describe())
 		# Macellazione (2026-09-26): il cacciatore è accanto alla carcassa, se ha una lama la si accoda
@@ -124,6 +124,12 @@ func on_complete(individual: Variant, context: Dictionary) -> void:
 			HuntService.log_event(individual, "richiesta macellazione scritta da %s, carcassa #%d (%s)." % [
 				butcher_request["requested_by"], int(butcher_request.get("id", -1)), HuntService.describe_now()
 			])
+		return
+	# Arma non tornata (irraggiungibile o senza posto in cintura/zaino) e nessun'altra arma da caccia: stop con messaggio.
+	if not HuntService.has_hunting_weapon_available(individual):
+		context.erase(HuntService.CONTEXT_HUNT_WEAPON)
+		context[HuntService.CONTEXT_NO_WEAPON] = true
+		context[HumanIndividualActionService.CONTEXT_PENDING_TASK_ABORT] = "%s persa e nessun'altra arma da caccia" % IconRegistry.get_resource_display_name(weapon_name)
 		return
 	var status := combat_target.get_status()
 	if status == CombatTarget.Status.OK:

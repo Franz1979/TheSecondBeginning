@@ -136,6 +136,9 @@ static func has_available(zone: Dictionary, macro_state: MacroCellState) -> bool
 
 # Ripetizioni massime di una raccolta in una WorkArea (una ripetizione = un viaggio completo fino allo scarico).
 const WORK_AREA_MAX_REPEATS: int = 5
+# Viaggi della raccolta in zona (2026-10-01, selettore "viaggi" del dialog di Raccogli, UserOptions.work_area_gather_trips):
+# da 1 a WORK_AREA_MAX_TRIPS. N viaggi = il primo + (N - 1) ripetizioni (max_repeats della zona); 1 = nessuna ripetizione.
+const WORK_AREA_MAX_TRIPS: int = 5
 # Scelta della cella: una cella verso cui sta già andando un altro pipottino che raccoglie nella stessa zona conta
 # come più lontana di tante microcelle (per ogni pipottino diretto lì).
 const HEADING_CELL_DISTANCE_PENALTY: float = 6.0
@@ -150,7 +153,9 @@ const CONTEXT_TRIP_RESOURCES := "haul_trip_resources"
 const HAUL_JOB := "haul"
 
 
-static func make_work_area_zone(area_id: int, criterion_kind: int, criterion_category: int, resource_name: String) -> Dictionary:
+static func make_work_area_zone(
+	area_id: int, criterion_kind: int, criterion_category: int, resource_name: String, max_repeats: int = WORK_AREA_MAX_REPEATS
+) -> Dictionary:
 	return {
 		"work_area_id": area_id,
 		"criterion_kind": criterion_kind,
@@ -158,7 +163,7 @@ static func make_work_area_zone(area_id: int, criterion_kind: int, criterion_cat
 		"resource_name": resource_name,
 		"quantity_requested": -1,
 		"source_kind": PickUpAction.SourceKind.TERRAIN,
-		"max_repeats": WORK_AREA_MAX_REPEATS,
+		"max_repeats": max_repeats,
 	}
 
 
@@ -177,15 +182,29 @@ static func resolve_work_area(zone: Dictionary) -> WorkArea:
 	return WorkAreaService.find_by_id(GameSettings.active_game_data, get_work_area_id(zone))
 
 
+# Limite "solo cibo" delle zone (2026-10-01, richiesta utente): attivo finché il Folk del giocatore non ha completato
+# WorkAreaTypes.ADVANCED_REQUIRED_IDEA_ID. Le idee si leggono da GameSettings.active_human_folk (stesso canale di
+# TerrainScatteredResourceService.is_resource_locked e di active_game_data/active_human_individuals già usati qui),
+# così nessuna firma cambia. Senza un Folk attivo il limite resta acceso. Letto ad ogni chiamata, mai memorizzato:
+# completata l'idea, le zone esistenti accettano subito tutto.
+static func is_food_only_limit_active() -> bool:
+	var folk := GameSettings.active_human_folk
+	return folk == null or not folk.completed_ideas.has(WorkAreaTypes.ADVANCED_REQUIRED_IDEA_ID)
+
+
 # true se la zona raccoglie questa risorsa: raccolta abilitata e filtro della zona ("all", oppure categoria o risorsa
-# spuntate — vedi WorkAreaInfoPanel).
+# spuntate — vedi WorkAreaInfoPanel). Col limite "solo cibo" ogni risorsa non FOOD è rifiutata e "all" vale come
+# "tutto il cibo" (anche per le zone salvate prima). Unico punto del vincolo: allowed_names_for, choose_work_area,
+# list_work_area_resources e has_haul_work_area passano tutti da qui.
 static func work_area_accepts(area: WorkArea, resource_name: String) -> bool:
 	if area == null or not area.enabled_jobs.has(HAUL_JOB):
+		return false
+	var rules := CaloricCalculator.get_caloric_source_rules(resource_name)
+	if is_food_only_limit_active() and (rules == null or int(rules.category) != int(SecondaryResourceTypes.Category.FOOD)):
 		return false
 	var filters: Variant = area.filters.get(HAUL_JOB, {})
 	if not (filters is Dictionary) or bool(filters.get("all", true)):
 		return true
-	var rules := CaloricCalculator.get_caloric_source_rules(resource_name)
 	var categories: Array = filters.get("categories", [])
 	if rules != null and categories.has(int(rules.category)):
 		return true
@@ -349,14 +368,34 @@ static func choose_work_area(
 	return best
 
 
-# true se esiste almeno una WorkArea con la raccolta abilitata (bottone "Raccogli" del pannello del pipottino).
+# true se esiste almeno una WorkArea con la raccolta abilitata che accetta almeno una risorsa raccoglibile da terra
+# (bottone "Raccogli" della barra comandi): col limite "solo cibo" una zona che filtra solo non-cibo non conta.
 static func has_haul_work_area(game_data: GameData) -> bool:
 	if game_data == null:
 		return false
 	for area in game_data.work_areas:
-		if area.enabled_jobs.has(HAUL_JOB):
-			return true
+		if not area.enabled_jobs.has(HAUL_JOB):
+			continue
+		for resource_name in _list_pickable_names():
+			if work_area_accepts(area, resource_name):
+				return true
 	return false
+
+
+# Risorse raccoglibili da terra (TerrainScatteredResourceService.is_pickable), lette una volta per sessione: il catalogo
+# delle .tres non cambia e has_haul_work_area gira ad ogni frame (GameScene._sync_command_bar), mentre
+# list_secondary_resource_names scansiona la cartella.
+static var _pickable_names_cache: Array[String] = []
+static var _pickable_names_loaded: bool = false
+
+
+static func _list_pickable_names() -> Array[String]:
+	if not _pickable_names_loaded:
+		_pickable_names_loaded = true
+		for resource_name in CaloricCalculator.list_secondary_resource_names():
+			if TerrainScatteredResourceService.is_pickable(resource_name):
+				_pickable_names_cache.append(resource_name)
+	return _pickable_names_cache
 
 
 # Risorse raccoglibili nelle WorkArea con la raccolta abilitata, per il dialog di scelta: una voce per risorsa con la

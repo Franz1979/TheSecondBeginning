@@ -300,6 +300,11 @@ const SHOW_HUNT_LOGS := true
 # Intervallo tra due righe di avvicinamento, in GIORNI DI GIOCO (1 giorno = 8 s reali a 1x): 0.125 =
 # circa una riga al secondo a velocità 1x.
 const HUNT_APPROACH_LOG_INTERVAL_DAYS := 0.125
+# Caccia nelle zone (2026-10-01, diagnosi "il bottone Caccia non fa nulla"): righe [HUNT ZONE] lungo il comando —
+# pressione di bottone/tasto, selezionati, esito di età/stamina/coltello, zone trovate, zona scelta o scelta manuale,
+# creazione e assegnazione della Task, primo passo della pattuglia. Indipendente da ENABLED, acceso per ora.
+# Stampa tramite HuntZoneService.log_event.
+const SHOW_HUNT_ZONE_LOGS := true
 
 # TEMPORANEO (2026-09-27, richiesta utente — diagnosi produzione che non avanza): [PRODUCE BLOCK]
 # (ProduceAction._debug_log_block) stampa perché uno step di produzione è fermo — record assente, attrezzi

@@ -65,6 +65,7 @@ statistics_tab_births,Nascite
 statistics_tab_population,Popolazione
 statistics_tab_buildings,Edifici
 tech_tree_tooltip,Albero delle tecnologie
+tech_tree_requires_thought_building_tooltip,"Costruisci un cerchio di sassi: i tuoi abitanti potranno depositare i pensieri e sviluppare idee."
 map_layers_tooltip,Layer della mappa
 map_layer_none,Nessuno
 map_layer_coming_soon,In arrivo
@@ -83,7 +84,8 @@ tech_tree_no_active_idea,Nessuna ricerca in corso
 tech_tree_debug_add_thought,+1 Thought
 idea_paleolithic_constructions,Costruzioni Paleolitiche
 idea_plant_lore,Conoscenza delle piante
-idea_work_areas,Aree di lavoro
+idea_work_areas,Aree di raccolta
+idea_work_areas_advanced,Aree di lavoro
 idea_task_assignment,Assegnazione compiti
 idea_warehouse_management,Gestione magazzino
 idea_advanced_paleolithic_constructions,Costruzioni paleolitiche avanzate
@@ -99,17 +101,21 @@ idea_smoking_summary,Permette di costruire l'affumicatoio.
 idea_smoking_description,"Il fumo lento di un fuoco coperto conserva la carne e le dà sapore."
 idea_plant_lore_summary,Permette di riconoscere le erbe medicinali.
 idea_plant_lore_description,"Osservando le piante, il gruppo impara quali curano e dove trovarle."
-idea_work_areas_summary,Permette di delimitare aree di lavoro.
-idea_work_areas_description,Il territorio si divide in zone dedicate a raccolta e attività.
+idea_work_areas_summary,Sblocca le aree di raccolta del cibo.
+idea_work_areas_description,Il gruppo impara a delimitare zone in cui raccogliere il cibo.
+idea_work_areas_advanced_summary,Sblocca le aree di lavoro per tutte le risorse.
+idea_work_areas_advanced_description,"Il territorio si divide in zone dedicate alla raccolta di ogni risorsa e, in futuro, ad altre attività come la caccia."
 idea_task_assignment_summary,Un abitante può distribuire i compiti.
 idea_task_assignment_description,Un membro del gruppo coordina il lavoro e assegna i compiti agli altri.
 idea_warehouse_management_summary,Un abitante può gestire il magazzino.
 idea_warehouse_management_description,Un membro del gruppo tiene ordine nelle scorte e ne organizza i movimenti.
-unlock_kind_idea,Sblocca idee
+unlock_kind_idea,Ora puoi ricercare
 unlock_kind_building,Sblocca edifici
 unlock_kind_resource,Sblocca risorse
-unlock_kind_tool,Sblocca strumenti
-unlock_tool_work_areas,Zone di lavoro
+unlock_kind_tool,Nuove funzioni
+unlock_next_ideas,Prossima idea da ricercare
+unlock_tool_work_areas,Aree di raccolta per il cibo
+unlock_tool_work_areas_advanced,Aree di lavoro per tutte le risorse
 build_bar_work_areas_tooltip,Zone di lavoro
 work_area_draw_banner_text,Trascina per disegnare una zona di lavoro (Esc o clic destro per uscire)
 work_area_default_name,Zona {n}
@@ -123,6 +129,7 @@ work_area_macro_label,"Macrocella ({x}, {y})"
 work_area_color_caption,Colore
 work_area_jobs_caption,Lavori
 work_area_filter_all,Tutto
+work_area_filter_food_only_hint,"Solo cibo: le altre risorse richiedono l'idea ""{idea}""."
 work_area_filter_all_prey,Tutte le prede
 work_area_redraw_button,Ridisegna
 work_area_delete_button,Elimina
@@ -253,9 +260,19 @@ command_bar_hunt_tooltip,Caccia
 command_bar_coming_soon,In arrivo
 command_bar_auto_zone,Scegli zona in automatico
 command_bar_gather_no_zone_tooltip,Nessuna zona di lavoro con la raccolta abilitata
+command_bar_hunt_no_zone_tooltip,Nessuna zona di lavoro con la caccia abilitata
+hunt_order_dialog_title,Caccia nelle zone di lavoro
+hunt_order_dialog_message,Il cacciatore pattuglia la zona e torna a cacciare finché non raggiunge la quantità scelta.
+hunt_order_dialog_stop_prefix,Fermati dopo aver portato a casa
+hunt_order_dialog_stop_suffix,di carne
+work_area_hunt_needs_knife,{name} non può cacciare nelle zone: serve un coltello in cintura.
+work_area_hunt_no_zone,{name}: nessuna zona di lavoro con la caccia abilitata.
+hunt_no_weapon_left,"{name}: nessuna arma da caccia rimasta, la caccia si interrompe."
+hunt_no_knife_carcass_left,"{name}: nessun coltello, la carcassa resterà a terra"
 work_area_pick_banner_text,Scegli la zona (Esc per annullare)
 work_area_gather_dialog_title,Raccogli nelle zone di lavoro
 work_area_gather_dialog_message,Cosa raccogliere? La zona si sceglie in automatico.
+work_area_gather_trips_label,Viaggi
 work_area_gather_no_zone,"{name}: nessuna zona di lavoro valida per questa raccolta."
 task_haul_resource_step_walk,Andando a raccogliere
 task_haul_resource_step_pickup,Raccogliendo
@@ -444,9 +461,13 @@ task_hunt_step_throw,Scagliando
 task_butcher_name,Macellazione
 task_butcher_step_walk,Andando alla carcassa
 task_butcher_step_butcher,Macellando
+task_butcher_step_return_to_pile,Tornando al mucchio della preda
 task_activity_butcher,macellare
 task_hunt_step_recover_weapon,Recuperando l'arma
 task_hunt_activity,Caccia: {species}
+task_hunt_zone_name,Caccia
+task_hunt_zone_step_patrol,Pattugliando la zona
+task_hunt_zone_activity_series,{task} ({zone}) {delivered}/{target} carne
 animal_selection_title,Animale
 animal_species_label,Specie: {species}
 animal_age_band_label,Età: {age_band}
@@ -532,7 +553,10 @@ discovery_popup_title,Scoperta
 options_show_discovery_hints,Mostra spiegazioni delle scoperte
 discovery_first_thought_building_title,Il centro del villaggio
 discovery_first_thought_building_p1,"Qui i tuoi abitanti depositano i pensieri: accumulandoli, il villaggio sviluppa nuove idee."
-discovery_first_thought_building_p2,"Scegli dall'albero delle idee quale ricercare: ogni idea completata sblocca edifici, risorse o strumenti."
+discovery_first_thought_building_p2,"Scegli dall'albero delle idee quale ricercare: ogni idea completata sblocca edifici, risorse o nuove funzioni."
+discovery_first_thought_building_gift_title,La prima idea del villaggio: {idea}
+discovery_first_thought_building_gift_p1,"Accumulando i primi pensieri, il villaggio ha avuto la sua prima idea, in dono."
+discovery_first_thought_building_gift_p2,Ora puoi disegnare sulla mappa un'area di raccolta e mandarci un abitante: sceglierà da solo dove e quanto cibo raccogliere.
 build_blocked_no_cutting_tool,"Senza uno strumento per abbattere non si può liberare il terreno da alberi e cespugli."
 task_rest_name,Riposo
 task_rest_step_rest,Riposando

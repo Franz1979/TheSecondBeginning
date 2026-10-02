@@ -135,15 +135,24 @@ func _build_colors() -> void:
 	add_child(row)
 
 
-# Lavori abilitati e, per ciascuno abilitato, i suoi filtri.
+# Ricostruisce la zona mostrata con lo stato attuale (2026-10-01): GameScene la chiama al completamento di un'idea,
+# così il limite "solo cibo" sparisce dal pannello aperto senza riselezionare la zona.
+func refresh() -> void:
+	if _area != null:
+		_rebuild()
+
+
+# Lavori abilitati e, per ciascuno abilitato, i suoi filtri. Caccia e filtro specie compaiono solo con l'idea "Aree di
+# lavoro" completata (HuntZoneService.is_hunt_job_unlocked, 2026-10-01); senza, il dato salvato resta intatto.
 func _build_jobs() -> void:
 	add_child(_label(tr("work_area_jobs_caption"), CAPTION_FONT_SIZE))
 	add_child(_job_check_box(HAUL_JOB))
 	if _area.enabled_jobs.has(HAUL_JOB):
 		_build_haul_filters()
-	add_child(_job_check_box(HUNT_JOB))
-	if _area.enabled_jobs.has(HUNT_JOB):
-		_build_hunt_filters()
+	if HuntZoneService.is_hunt_job_unlocked():
+		add_child(_job_check_box(HUNT_JOB))
+		if _area.enabled_jobs.has(HUNT_JOB):
+			_build_hunt_filters()
 
 
 func _job_check_box(job_id: String) -> CheckBox:
@@ -194,15 +203,25 @@ func _build_haul_filters() -> void:
 				_set_checked(checked, leaf_name, pressed)
 				_save_haul_selection(filters, tree, checked)
 			))
+	# Limite "solo cibo" (2026-10-01): l'albero mostra solo il cibo, una riga dice quale idea sblocca il resto.
+	if HaulZoneService.is_food_only_limit_active():
+		var advanced_idea := IdeaCalculator.get_idea(WorkAreaTypes.ADVANCED_REQUIRED_IDEA_ID)
+		var idea_name: String = tr(advanced_idea.display_name) if advanced_idea != null else WorkAreaTypes.ADVANCED_REQUIRED_IDEA_ID
+		var hint := _label(tr("work_area_filter_food_only_hint").format({"idea": idea_name}))
+		hint.modulate = Color(1, 1, 1, 0.7)
+		box.add_child(hint)
 
 
 # Categoria (int, nell'ordine di PickUpAction.PRIORITY_CATEGORIES) -> risorse raccoglibili da terra, ordinate per nome
-# visibile. Solo categorie con almeno una risorsa.
+# visibile. Solo categorie con almeno una risorsa; col limite "solo cibo" (HaulZoneService) solo FOOD.
 func _haul_tree() -> Dictionary:
 	var by_category: Dictionary = {}
+	var food_only := HaulZoneService.is_food_only_limit_active()
 	for resource_name in CaloricCalculator.list_secondary_resource_names():
 		var rules := CaloricCalculator.get_caloric_source_rules(resource_name)
 		if rules == null or not TerrainScatteredResourceService.is_pickable(resource_name):
+			continue
+		if food_only and int(rules.category) != int(SecondaryResourceTypes.Category.FOOD):
 			continue
 		var category := int(rules.category)
 		if not by_category.has(category):

@@ -15,6 +15,9 @@ extends Action
 #   - Al termine: carne, pelli, tendini e ossa (AnimalRules gruppo Butchering, scalati per
 #     size_multiplier_by_age della fascia della carcassa) vanno nello STESSO mucchio, poi la carcassa viene tolta.
 #     Lo step successivo (PickUp dal mucchio) raccoglie quel che entra nello zaino.
+#   - Più viaggi (2026-10-01, richiesta utente): consegnato il carico, la Task torna allo stesso mucchio finché
+#     contiene prodotti della macellazione (HumanIndividualActionService._continue_butcher_pile_trips, mucchio nel
+#     context CONTEXT_PILE_TRIPS).
 #   - Carcassa marcita o sparita prima della fine: la Task si chiude (pending_task_abort).
 # La skill (skill_crafting) cresce al completamento della Task, via TaskCompletionEffects (task_butcher_name).
 
@@ -24,6 +27,11 @@ const MEAT_UNITS_PER_DAY: float = 10.0
 const MIN_DURATION_DAYS: float = 0.1
 # Stamina per giorno di gioco durante il lavoro (stesso ordine di ProduceAction/BuildAction).
 const STAMINA_DRAIN_PER_DAY: float = 150.0
+# Prodotti della macellazione (le chiavi di compute_yields): i viaggi successivi raccolgono solo questi.
+const PRODUCT_NAMES: Array[String] = ["meat", "hide", "sinew", "bone"]
+# Context della Task di macellazione: mucchio da svuotare a più viaggi {"macro_x", "macro_y", "micro_x", "micro_y",
+# "last_total" (prodotti nel mucchio alla partenza dell'ultimo viaggio aggiunto, -1 = nessuno)}. JSON-nativo.
+const CONTEXT_PILE_TRIPS := "butcher_pile_trips"
 
 var pile_macro_coords: Vector2i = Vector2i.ZERO
 var pile_microcell: Vector2i = Vector2i.ZERO
@@ -50,7 +58,7 @@ func _init(p_pile_macro_coords: Vector2i = Vector2i.ZERO, p_pile_microcell: Vect
 # Rese di una carcassa: {"meat", "hide", "sinew", "bone"} in unità intere, dalle rese dell'adulto della specie
 # (AnimalRules.butcher_*_units) scalate per size_multiplier_by_age della fascia. Statica e pura.
 static func compute_yields(species: String, age_band: int) -> Dictionary:
-	var yields := {"meat": 0, "hide": 0, "sinew": 0, "bone": 0}
+	var yields := {"meat": 0, "hide": 0, "sinew": 0, "bone": 0} # stesse chiavi di PRODUCT_NAMES
 	var rules := AnimalCalculator.get_animal_rules(species)
 	if rules == null:
 		return yields

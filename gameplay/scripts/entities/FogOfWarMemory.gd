@@ -30,6 +30,14 @@ extends RefCounted
 # MacroCellState (i due servizi toccano sempre i campi pubblici direttamente).
 var last_seen_by_position: Dictionary = {} # Vector2i -> int (absolute_day)
 
+# Pavimento delle zone di lavoro (2026-10-01, richiesta utente): microcelle dentro una WorkArea di questa macrocella
+# (Vector2i -> true), ricostruite da GameScene._refresh_work_area_fog_floor SOLO quando cambiano le zone o la macrocella
+# si attiva. Per queste posizioni, se già viste almeno una volta, terreno e risorse restano sempre "freschi" (livello 2:
+# risorse visibili, animali no — is_detail_fresh non lo guarda) e prune_stale non le cancella. Nessun nuovo stato:
+# solo una ricerca in più nel Dictionary, e solo quando la memoria normale è già scaduta. Non salvato (si ricava dalle
+# zone).
+var floor_positions: Dictionary = {}
+
 
 func mark_seen(pos: Vector2i, absolute_day: int) -> void:
 	last_seen_by_position[pos] = absolute_day
@@ -54,11 +62,11 @@ func has_ever_been_seen(pos: Vector2i) -> bool:
 # numeri (in futuro modificabili da tech/edifici, Step 4) — sa solo confrontare il timestamp
 # grezzo che possiede con la soglia che le viene data.
 func is_terrain_fresh(pos: Vector2i, current_absolute_day: int, terrain_memory_days: int) -> bool:
-	return _is_within_memory(pos, current_absolute_day, terrain_memory_days)
+	return _is_within_memory(pos, current_absolute_day, terrain_memory_days) or _is_floor(pos)
 
 
 func is_resource_fresh(pos: Vector2i, current_absolute_day: int, resource_memory_days: int) -> bool:
-	return _is_within_memory(pos, current_absolute_day, resource_memory_days)
+	return _is_within_memory(pos, current_absolute_day, resource_memory_days) or _is_floor(pos)
 
 
 func is_detail_fresh(pos: Vector2i, current_absolute_day: int, detail_memory_days: int) -> bool:
@@ -69,6 +77,26 @@ func _is_within_memory(pos: Vector2i, current_absolute_day: int, memory_duration
 	if not last_seen_by_position.has(pos):
 		return false
 	return current_absolute_day - last_seen_by_position[pos] <= memory_duration_days
+
+
+# Pavimento (vedi floor_positions): solo per celle già viste almeno una volta, così una zona disegnata nel nero non
+# rivela nulla.
+func _is_floor(pos: Vector2i) -> bool:
+	return floor_positions.has(pos) and last_seen_by_position.has(pos)
+
+
+# Sostituisce il pavimento con `positions` (Vector2i -> true) e restituisce le posizioni entrate o uscite, da passare
+# a FogOfWarRenderer.mark_positions_dirty. Chiamata solo da GameScene._refresh_work_area_fog_floor.
+func set_floor_positions(positions: Dictionary) -> Array[Vector2i]:
+	var changed: Array[Vector2i] = []
+	for pos in floor_positions:
+		if not positions.has(pos):
+			changed.append(pos)
+	for pos in positions:
+		if not floor_positions.has(pos):
+			changed.append(pos)
+	floor_positions = positions
+	return changed
 
 
 # Pulizia periodica (non ad ogni _draw() come i getter sopra, che restano puri e senza mutazione)
@@ -88,7 +116,8 @@ func _is_within_memory(pos: Vector2i, current_absolute_day: int, memory_duration
 func prune_stale(current_absolute_day: int, max_memory_days: int) -> Array[Vector2i]:
 	var stale_positions: Array[Vector2i] = []
 	for pos in last_seen_by_position:
-		if current_absolute_day - last_seen_by_position[pos] > max_memory_days:
+		# Pavimento delle zone (2026-10-01): il "visto almeno una volta" deve restare, mai potato.
+		if current_absolute_day - last_seen_by_position[pos] > max_memory_days and not floor_positions.has(pos):
 			stale_positions.append(pos)
 	for pos in stale_positions:
 		last_seen_by_position.erase(pos)

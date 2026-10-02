@@ -247,6 +247,8 @@ static func _action_type_for_step(step: Action) -> int:
 		return TaskTypes.ActionType.DEMOLISH
 	if step is SearchHaulZoneAction:
 		return TaskTypes.ActionType.SEARCH_HAUL_ZONE
+	if step is PatrolAreaAction:
+		return TaskTypes.ActionType.PATROL_AREA
 	push_error("TaskPersistenceService._action_type_for_step: tipo Action sconosciuto (%s)." % step.get_script().get_global_name())
 	return -1
 
@@ -456,6 +458,10 @@ static func _build_step(action_type: int, step_data: Dictionary, macro_state: Ma
 		TaskTypes.ActionType.SEARCH_HAUL_ZONE:
 			# Nessun dato proprio (2026-09-27): la zona è nel context della Task, salvato con lei.
 			step = SearchHaulZoneAction.new()
+		TaskTypes.ActionType.PATROL_AREA:
+			# Solo la zona (2026-10-01); il tempo senza avvistamenti è nel context della Task
+			# (HuntZoneService.CONTEXT_UNSIGHTED_DAYS), salvato con lei.
+			step = PatrolAreaAction.new(int(step_data.get("work_area_id", -1)))
 		TaskTypes.ActionType.DEMOLISH:
 			# Solo l'edificio: il progresso vive su Building.construction_progress (vedi DemolishAction).
 			var demolish_target_building: Building = null

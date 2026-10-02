@@ -9,4 +9,7 @@ title_key = "discovery_first_thought_building_title"
 paragraph_keys = Array[String](["discovery_first_thought_building_p1", "discovery_first_thought_building_p2"])
 trigger_type = 1
 close_action = 1
+grant_idea_id = "work_areas"
+grant_title_key = "discovery_first_thought_building_gift_title"
+grant_paragraph_keys = Array[String](["discovery_first_thought_building_gift_p1", "discovery_first_thought_building_gift_p2"])
 building_flag = "accepts_thoughts"

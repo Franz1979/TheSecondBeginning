@@ -134,6 +134,9 @@ var discovery_popup: DiscoveryPopup
 var _pending_discovery_sections: Array[Dictionary] = []
 var _pending_discovery_close_actions: Dictionary = {} # DiscoveryTypes.CloseAction -> true
 var _discovery_flush_scheduled: bool = false
+# Idee regalate dalle scoperte scattate in questo frame (DiscoveryHintRules.grant_idea_id), applicate in
+# _flush_discoveries così la sezione "idea completata" segue quella della scoperta nello stesso popup.
+var _pending_discovery_grants: Array[DiscoveryHintRules] = []
 # Banner "selezione Transport a metà" (2026-09-14, richiesta utente — sostituisce l'idea di un
 # timeout automatico: "prova una indicazione visibile") — STESSO principio/STESSA posizione di
 # notification_popup sopra (istanziato via codice in _setup_clock, aggiunto sotto CanvasLayer),
@@ -793,6 +796,9 @@ func _ready() -> void:
 	if game_data == null:
 		push_warning("Nessun game_data condiviso: creo un anno locale di riserva.")
 		game_data = GameData.new()
+	# Pavimento delle zone (2026-10-01) su tutte le memorie con zone, anche di macrocelle non vive: prune_stale gira su
+	# tutte e non deve potare celle di una zona. Una sola passata all'avvio.
+	_refresh_all_work_area_fog_floors()
 
 	if macro_world != null:
 		minimap_panel.setup(macro_world)
@@ -913,6 +919,13 @@ func _ready() -> void:
 		human_folk = seeding_result.folk
 		human_population_group = seeding_result.group
 		human_individuals = seeding_result.individuals
+		# Pubblicati subito anche in GameSettings (2026-10-01): i servizi statici li leggono da lì
+		# (HaulZoneService.is_food_only_limit_active, TerrainScatteredResourceService.is_resource_locked,
+		# HaulZoneService con active_human_individuals). Prima restavano null/[] per tutta la prima sessione di una
+		# partita nuova, fino al primo cambio scena: stessi oggetti, nessuna copia.
+		GameSettings.active_human_folk = human_folk
+		GameSettings.active_human_population_group = human_population_group
+		GameSettings.active_human_individuals = human_individuals
 		# Tutto il gruppo nasce nella stessa macrocella (vedi HumanIndividual.home_macro_coords) —
 		# valorizzato qui, prima di qualunque view (vedi sotto, dopo l'attivazione della cella
 		# centrale): è il dato che dice a GameScene sotto quale LiveMacroCell.container parentare
@@ -3577,15 +3590,242 @@ func _queue_pickup_repeat(owner: HumanIndividual, next_repeat_count: int, zone: 
 
 
 # --- Comandi del pipottino (2026-09-27, richiesta utente — work areas passo 3b) ---
-# CommandBar, dentro la BuildBar a destra degli strumenti (dal 2026-09-28): visibile con almeno un pipottino selezionato
-# e l'idea delle zone completata (_sync_command_bar, a ogni frame). Ogni comando vale per TUTTI i pipottini selezionati (_get_selected_individuals,
+# CommandBar, pannello a sé (2026-10-01, richiesta utente — prima dentro la BuildBar): centrato in basso subito sopra la
+# BuildBar, nello spazio a sinistra della sidebar. Visibile con almeno un pipottino selezionato e l'idea delle zone
+# completata, nascosto con la BuildBar aperta sugli edifici, col fantasma di costruzione e durante il disegno delle zone
+# (_sync_command_bar, a ogni frame). Ogni comando vale per TUTTI i pipottini selezionati (_get_selected_individuals,
 # oggi al più uno), così la selezione multipla non richiederà di rifarla.
 var command_bar: CommandBar = null
+# Contenitore del pannello (CenterContainer a tutta larghezza meno la sidebar, che ignora il mouse fuori dal pannello).
+var command_panel: Control = null
+# Tinta del pannello comandi (2026-10-01): stesso StyleBox della BuildBar (forma, bordi), sfondo caldo ocra scuro, della
+# stessa luminosità del blu della BuildBar e del viola della DebugBar. Cambiare qui per ritoccarla.
+const COMMAND_PANEL_COLOR := Color(0.5, 0.33, 0.15, 1.0)
+# Cacciatori in attesa della conferma del dialog di Caccia (PickupChoiceDialog in modalità caccia, 2026-10-01).
+var _hunt_dialog_hunters: Array[HumanIndividual] = []
+# Spazio tra pannello comandi e BuildBar sulla riga in basso.
+const BOTTOM_ROW_SEPARATION: int = 12
 
 
+# Riga in basso (2026-10-01, richiesta utente): [ comandi ]  [ costruzione ], centrati insieme nello spazio a sinistra
+# della sidebar. Un CenterContainer ancorato in basso (altezza della fascia della BuildBar, a destra fino al bordo della
+# sidebar) con dentro un HBoxContainer; la BuildBar vi viene spostata come secondo figlio. Un figlio nascosto non occupa
+# posto, quindi senza comandi la BuildBar resta da sola, centrata nello stesso spazio (prima era centrata sull'intera
+# finestra e nelle finestre strette finiva in parte sotto la sidebar).
 func _setup_command_bar() -> void:
-	command_bar = build_bar.command_bar
+	var canvas_layer := build_bar.get_parent()
+	var bottom_row := CenterContainer.new()
+	bottom_row.name = "BottomBarRow"
+	bottom_row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	bottom_row.anchor_left = 0.0
+	bottom_row.anchor_right = 1.0
+	bottom_row.anchor_top = 1.0
+	bottom_row.anchor_bottom = 1.0
+	# A destra si ferma al bordo della sidebar (offset_left della sidebar = -larghezza), così non le va mai sotto.
+	var sidebar := get_node_or_null("CanvasLayer/Sidebar") as Control
+	bottom_row.offset_right = sidebar.offset_left if sidebar != null else 0.0
+	bottom_row.offset_top = build_bar.offset_top
+	bottom_row.offset_bottom = 0.0
+	bottom_row.grow_vertical = Control.GROW_DIRECTION_BEGIN
+	var row := HBoxContainer.new()
+	row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	row.add_theme_constant_override("separation", BOTTOM_ROW_SEPARATION)
+	bottom_row.add_child(row)
+	# Prima della BuildBar nell'ordine dei figli del CanvasLayer: stesso ordine di disegno di prima.
+	canvas_layer.add_child(bottom_row)
+	canvas_layer.move_child(bottom_row, build_bar.get_index())
+
+	# Pannello comandi: stesso StyleBox della BuildBar (duplicato, solo lo sfondo cambia) e stessi margini.
+	var panel := PanelContainer.new()
+	panel.name = "CommandPanel"
+	var style := build_bar.get_panel_style().duplicate() as StyleBox
+	if style is StyleBoxFlat:
+		(style as StyleBoxFlat).bg_color = COMMAND_PANEL_COLOR
+	panel.add_theme_stylebox_override("panel", style)
+	panel.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	var margin := MarginContainer.new()
+	for side in ["margin_left", "margin_top", "margin_right", "margin_bottom"]:
+		margin.add_theme_constant_override(side, 8)
+	command_bar = CommandBar.new()
+	margin.add_child(command_bar)
+	panel.add_child(margin)
+	row.add_child(panel)
+	command_panel = panel
+
+	build_bar.reparent(row, false)
+	build_bar.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	# Stessa altezza per i due pannelli (entrambi centrati in verticale nella riga): la maggiore delle due altezze
+	# minime, imposta a tutti e due. Il contenuto non cambia altezza (slot e bottoni sempre da 32 px).
+	var build_panel := build_bar.get_panel()
+	var height := maxf(build_panel.get_combined_minimum_size().y, panel.get_combined_minimum_size().y)
+	build_panel.custom_minimum_size.y = height
+	panel.custom_minimum_size.y = height
+	# Nascosto finché _sync_command_bar non lo mostra (dopo il calcolo dell'altezza, che lo vuole visibile).
+	panel.visible = false
 	command_bar.gather_requested.connect(_on_command_bar_gather_requested)
+	command_bar.hunt_requested.connect(_on_command_bar_hunt_requested)
+	# Dialog del comando Caccia (2026-10-01): il dialog di Raccogli in modalità caccia, selettore "Carne" della serie.
+	pickup_choice_dialog.hunt_choice_made.connect(_on_hunt_order_confirmed)
+
+
+# Comando "Caccia" nelle zone (2026-10-01, passo 2a — ricalca "Raccogli"). Per ogni pipottino selezionato: idoneità
+# della Task (età, stamina: get_assign_rejection_reason) e coltello in cintura (HuntZoneService.get_hunt_rejection), con
+# il messaggio di rifiuto per chi non va. Poi la zona: automatica (HuntZoneService.choose_work_area, per ciascuno) o
+# scelta a mano tra le zone con la caccia attiva (stessa modalità "scegli la zona" della raccolta, ordine "hunt").
+# Il comando diretto sull'animale (clic destro) resta invariato.
+func _on_command_bar_hunt_requested() -> void:
+	var selected := _get_selected_individuals()
+	HuntZoneService.log_event(null, "comando Caccia ricevuto: %d selezionati %s, zona automatica %s." % [
+		selected.size(), str(selected.map(func(member: HumanIndividual) -> String: return member.name)),
+		"accesa" if UserOptions.work_area_auto_zone else "spenta"
+	])
+	var hunters: Array[HumanIndividual] = []
+	for member in selected:
+		var probe := _build_hunt_zone_task(-1)
+		if probe == null:
+			HuntZoneService.log_event(member, "Task di prova NON creata (%s non caricabile) — controllo di età/stamina saltato." % HuntZoneService.TASK_DEFINITION_PATH)
+		else:
+			var rejection := member.get_assign_rejection_reason(probe, _resolve_age_band(member))
+			if rejection != HumanIndividual.ASSIGN_OK:
+				HuntZoneService.log_event(member, "rifiutato da età/stamina: %s." % rejection)
+				_report_assign_rejection(member, rejection, "task_activity_hunt")
+				continue
+		var knife_rejection := HuntZoneService.get_hunt_rejection(member)
+		if knife_rejection != "":
+			HuntZoneService.log_event(member, "rifiutato: %s" % knife_rejection)
+			_report_command_rejection(member, knife_rejection)
+			continue
+		HuntZoneService.log_event(member, "età, stamina e coltello in cintura: ok.")
+		hunters.append(member)
+	if hunters.is_empty():
+		HuntZoneService.log_event(null, "nessun cacciatore idoneo: comando chiuso.")
+		return
+	var areas := HuntZoneService.list_hunt_work_areas(game_data)
+	HuntZoneService.log_event(null, "zone con la caccia attiva: %s (idea Aree di lavoro %s)." % [
+		str(areas.map(func(area: WorkArea) -> String: return "%s #%d" % [area.name, area.id])),
+		"completata" if HuntZoneService.is_hunt_job_unlocked() else "NON completata"
+	])
+	if areas.is_empty():
+		for hunter in hunters:
+			_report_command_rejection(hunter, tr("work_area_hunt_no_zone").format({"name": hunter.name}))
+		return
+	# Dialog della carne (2026-10-01); la scelta della zona segue alla conferma (_on_hunt_order_confirmed).
+	# Il dialog è condiviso con Raccogli: nessuna raccolta in attesa mentre è aperto per la caccia.
+	_pickup_dialog_work_area_workers = []
+	_hunt_dialog_hunters = hunters
+	var opened := pickup_choice_dialog.open_hunt_dialog(
+		tr("hunt_order_dialog_title"), tr("hunt_order_dialog_message"), HuntZoneService.MEAT_TARGET_OPTIONS,
+		UserOptions.hunt_zone_meat_target
+	)
+	HuntZoneService.log_event(null, "dialog della caccia %s (carne preselezionata %d)." % [
+		"aperto" if opened else "NON aperto", UserOptions.hunt_zone_meat_target
+	])
+	if not opened:
+		_hunt_dialog_hunters = []
+
+
+# Conferma del dialog di Caccia: valore ricordato, poi la zona come prima — automatica (per ciascuno) o scelta a mano
+# tra le zone con la caccia attiva. Ogni caccia parte con una serie fino a `meat_target` di carne consegnata.
+func _on_hunt_order_confirmed(meat_target: int) -> void:
+	UserOptions.hunt_zone_meat_target = meat_target
+	UserOptions.save_to_disk()
+	var hunters: Array[HumanIndividual] = []
+	for hunter in _hunt_dialog_hunters:
+		if human_individuals.has(hunter):
+			hunters.append(hunter)
+	_hunt_dialog_hunters = []
+	HuntZoneService.log_event(null, "dialog della caccia confermato: fino a %d carne, %d cacciatori." % [meat_target, hunters.size()])
+	var areas := HuntZoneService.list_hunt_work_areas(game_data)
+	if hunters.is_empty() or areas.is_empty():
+		return
+	if UserOptions.work_area_auto_zone:
+		for hunter in hunters:
+			var area := HuntZoneService.choose_work_area(game_data, hunter)
+			if area == null:
+				HuntZoneService.log_event(hunter, "nessuna zona scelta in automatico.")
+				_report_command_rejection(hunter, tr("work_area_hunt_no_zone").format({"name": hunter.name}))
+				continue
+			HuntZoneService.log_event(hunter, "zona scelta in automatico: %s #%d." % [area.name, area.id])
+			_assign_work_area_hunt(hunter, area, HuntZoneService.make_meat_series(area.id, meat_target))
+		return
+	var valid_ids: Array[int] = []
+	for area in areas:
+		valid_ids.append(area.id)
+	HuntZoneService.log_event(null, "scelta manuale della zona tra %s." % str(valid_ids))
+	_enter_work_area_pick_mode(hunters, {"job": HuntZoneService.HUNT_JOB, "meat_target": meat_target}, valid_ids)
+
+
+# Task di caccia in zona (hunt_zone.tres, inizia con PatrolAreaAction) per la WorkArea `area_id`. La zona resta nel
+# context (HuntZoneService.CONTEXT_WORK_AREA_ID) per etichetta, scelta della preda e ritorno alla pattuglia.
+# `series` (2026-10-01, passo 2b): serie fino a un limite di carne ({} = una sola caccia).
+func _build_hunt_zone_task(area_id: int, series: Dictionary = {}) -> Task:
+	var definition := load(HuntZoneService.TASK_DEFINITION_PATH) as TaskDefinition
+	if definition == null:
+		return null
+	var task := TaskFactory.build_task(definition, {HuntZoneService.FACTORY_WORK_AREA_KEY: area_id})
+	task.context[HuntZoneService.CONTEXT_WORK_AREA_ID] = area_id
+	if not series.is_empty():
+		task.context[HuntZoneService.CONTEXT_MEAT_SERIES] = series
+	return task
+
+
+func _assign_work_area_hunt(hunter: HumanIndividual, area: WorkArea, series: Dictionary = {}) -> void:
+	if hunter == null or area == null or not human_individuals.has(hunter):
+		return
+	var task := _build_hunt_zone_task(area.id, series)
+	if task == null:
+		HuntZoneService.log_event(hunter, "Task NON creata per la zona %s #%d." % [area.name, area.id])
+		return
+	HuntZoneService.log_event(hunter, "Task '%s' creata per la zona %s #%d: %d step." % [task.task_name, area.name, area.id, task.steps.size()])
+	var icon_cell: LiveMacroCell = live_cells.get(area.macro_coords)
+	var icon_position: Vector2i = area.rect.position + area.rect.size / 2
+	var rejection := hunter.get_assign_rejection_reason(task, _resolve_age_band(hunter))
+	if rejection != HumanIndividual.ASSIGN_OK:
+		_report_assign_rejection(hunter, rejection, "task_activity_hunt")
+		if icon_cell != null:
+			_spawn_command_icon_at_microcell(icon_cell, icon_position, "task_rejected")
+		return
+	var assigned := hunter.assign_task(task, _resolve_age_band(hunter))
+	if not assigned:
+		_report_failed_assignment(hunter, task, "task_activity_hunt")
+	if icon_cell != null:
+		_spawn_command_icon_at_microcell(icon_cell, icon_position, "hunt" if assigned else "task_rejected")
+	HuntZoneService.log_event(hunter, "assegnazione della caccia nella zona %s #%d: %s (Task corrente: '%s')." % [
+		area.name, area.id, "riuscita" if assigned else "FALLITA",
+		hunter.current_task.task_name if hunter.current_task != null else "nessuna"
+	])
+
+
+# Caccia interrotta con un messaggio, per esempio senza più armi (HumanIndividualActionService.hunt_ended_with_message).
+func _on_hunt_ended_with_message(hunter: HumanIndividual, message: String) -> void:
+	_report_command_rejection(hunter, message)
+
+
+# Serie di cacce sotto il limite di carne dopo una macellazione (HumanIndividualActionService.
+# hunt_zone_series_continue_requested): nuova caccia nella stessa zona, accodata (parte appena il pipottino è libero,
+# dopo eventuali bisogni). La serie finisce se la zona non esiste più o non ha più la caccia attiva, o se manca il
+# coltello (messaggio).
+func _on_hunt_zone_series_continue_requested(hunter: HumanIndividual, series: Dictionary) -> void:
+	if hunter == null or not human_individuals.has(hunter):
+		return
+	var area := WorkAreaService.find_by_id(game_data, int(series.get("work_area_id", -1)))
+	if area == null or not HuntZoneService.list_hunt_work_areas(game_data).has(area):
+		HuntZoneService.log_event(hunter, "serie di caccia chiusa: zona non più disponibile per la caccia.")
+		return
+	var knife_rejection := HuntZoneService.get_hunt_rejection(hunter)
+	if knife_rejection != "":
+		HuntZoneService.log_event(hunter, "serie di caccia chiusa: %s" % knife_rejection)
+		_report_command_rejection(hunter, knife_rejection)
+		return
+	var task := _build_hunt_zone_task(area.id, series)
+	if task == null:
+		return
+	TaskQueueService.push_suspended_task(hunter, task)
+	HuntZoneService.log_event(hunter, "nuova caccia della serie accodata in %s #%d (%d/%d carne)." % [
+		area.name, area.id, int(series.get("delivered", 0)), int(series.get("target", 0))
+	])
+	if hunter == individual:
+		_refresh_selected_individual_panel()
 
 
 func _get_selected_individuals() -> Array[HumanIndividual]:
@@ -3599,10 +3839,15 @@ func _get_selected_individuals() -> Array[HumanIndividual]:
 func _sync_command_bar() -> void:
 	if command_bar == null:
 		return
-	var bar_visible := _is_work_areas_tool_available() and not _get_selected_individuals().is_empty()
+	# Nascosto mentre si piazza qualcosa nel mondo (edifici aperti, fantasma, disegno zone); resta durante la scelta
+	# manuale della zona dopo "Raccogli" (_work_area_pick_active), che è un comando in corso.
+	var placing := build_bar.is_build_menu_open() or _building_ghost != null or _work_area_draw_active
+	var bar_visible := _is_work_areas_tool_available() and not _get_selected_individuals().is_empty() and not placing
+	command_panel.visible = bar_visible
 	command_bar.set_bar_visible(bar_visible)
 	if bar_visible:
 		command_bar.set_gather_available(HaulZoneService.has_haul_work_area(game_data), tr("command_bar_gather_no_zone_tooltip"))
+		command_bar.set_hunt_available(HuntZoneService.has_hunt_work_area(game_data), tr("command_bar_hunt_no_zone_tooltip"))
 
 
 # Comando "Raccogli" (spostato qui dal pannello del pipottino, 3a -> 3b): controllo dell'età per ogni selezionato (i
@@ -3626,21 +3871,26 @@ func _on_command_bar_gather_requested() -> void:
 		return
 	_pickup_pending_resources = []
 	_pickup_dialog_work_area_workers = workers
+	_hunt_dialog_hunters = []
 	pickup_choice_dialog.open_dialog(
 		tr("work_area_gather_dialog_title"), tr("work_area_gather_dialog_message"), entries,
-		UserOptions.get_pickup_default_choice(), UserOptions.repeat_default, HaulZoneService.WORK_AREA_MAX_REPEATS, false
+		UserOptions.get_pickup_default_choice(), false, HaulZoneService.WORK_AREA_MAX_REPEATS, false,
+		# Selettore "viaggi" (2026-10-01) al posto della casella delle ripetizioni, valore ricordato.
+		clampi(UserOptions.work_area_gather_trips, 1, HaulZoneService.WORK_AREA_MAX_TRIPS), HaulZoneService.WORK_AREA_MAX_TRIPS
 	)
 
 
 # Filtro scelto nel dialog. Zona automatica (UserOptions.work_area_auto_zone): ogni pipottino va nella propria zona
 # migliore (HaulZoneService.choose_work_area), avviso per chi non ne ha una valida. Zona manuale: modalità "scegli la
 # zona" con le sole zone valide per il filtro (per almeno uno dei pipottini); nessuna valida = avviso e nessun ordine.
-func _on_work_area_gather_choice(workers: Array[HumanIndividual], kind: int, category: int, resource_name: String, repeat: bool) -> void:
+# `trips` (2026-10-01): viaggi scelti nel dialog, 1..HaulZoneService.WORK_AREA_MAX_TRIPS (1 = nessuna ripetizione).
+func _on_work_area_gather_choice(workers: Array[HumanIndividual], kind: int, category: int, resource_name: String, trips: int) -> void:
 	var order := {
 		"kind": kind,
 		"category": category if kind == PickUpAction.CriterionKind.CATEGORY else -1,
 		"resource_name": resource_name if kind == PickUpAction.CriterionKind.NAME else "",
-		"repeat": repeat,
+		"repeat": trips > 1,
+		"trips": trips,
 	}
 	if UserOptions.work_area_auto_zone:
 		for worker in workers:
@@ -3681,7 +3931,9 @@ func _assign_work_area_gather(worker: HumanIndividual, area: WorkArea, order: Di
 	var order_category := int(order["category"])
 	var order_resource := String(order["resource_name"])
 	var repeat := bool(order["repeat"])
-	var zone := HaulZoneService.make_work_area_zone(area.id, kind, order_category, order_resource)
+	# Viaggi scelti (2026-10-01): N viaggi = il primo + N - 1 ripetizioni.
+	var trips := int(order.get("trips", HaulZoneService.WORK_AREA_MAX_REPEATS + 1))
+	var zone := HaulZoneService.make_work_area_zone(area.id, kind, order_category, order_resource, maxi(trips - 1, 0))
 	var task := _build_haul_zone_task(zone, repeat, 0, worker)
 	var icon_cell: LiveMacroCell = live_cells.get(area.macro_coords)
 	var icon_position: Vector2i = area.rect.position + area.rect.size / 2
@@ -3759,9 +4011,17 @@ func _handle_work_area_pick_input(event: InputEvent) -> bool:
 		var workers := _work_area_pick_workers
 		var order := _work_area_pick_order
 		_exit_work_area_pick_mode()
+		if String(order.get("job", "")) == HuntZoneService.HUNT_JOB:
+			HuntZoneService.log_event(null, "scelta manuale: %s." % ("zona %s #%d" % [area.name, area.id] if area != null else "nessuna zona valida sotto il mouse"))
 		if area != null:
 			for worker in workers:
-				_assign_work_area_gather(worker, area, order)
+				# Stessa modalità per la caccia in zona (2026-10-01): ordine {"job": "hunt"}.
+				if String(order.get("job", "")) == HuntZoneService.HUNT_JOB:
+					_assign_work_area_hunt(worker, area, HuntZoneService.make_meat_series(
+						area.id, int(order.get("meat_target", HuntZoneService.MEAT_TARGET_DEFAULT))
+					))
+				else:
+					_assign_work_area_gather(worker, area, order)
 		return true
 	return false
 
@@ -4102,7 +4362,10 @@ func _on_pickup_choice_made(kind: int, category: int, resource_name: String, qua
 	if not _pickup_dialog_work_area_workers.is_empty():
 		var workers := _pickup_dialog_work_area_workers
 		_pickup_dialog_work_area_workers = []
-		_on_work_area_gather_choice(workers, kind, category, resource_name, repeat)
+		var trips: int = maxi(pickup_choice_dialog.selected_trips, 1)
+		UserOptions.work_area_gather_trips = trips
+		UserOptions.save_to_disk()
+		_on_work_area_gather_choice(workers, kind, category, resource_name, trips)
 		return
 	# Voce del dialog da cui prendere posizione (e, per CATEGORY/ALL, il resource_name rappresentativo):
 	# la risorsa scelta per NAME, altrimenti la prima della sorgente scelta (e della categoria, per CATEGORY).
@@ -5349,15 +5612,30 @@ func _build_butcher_task(worker: HumanIndividual, pile: GroundPile, carcass_id: 
 		# Scarico (2026-09-27): la carne va prima al focolare più vicino con posto, il resto al magazzino.
 		HumanIndividualActionService.CONTEXT_PREFER_RECIPE_WORKSTATION: true,
 	})
-	task.step_appended.connect(func(action: Action) -> void:
-		if action is UnloadAction:
-			_reconnect_unload_action_signals(action as UnloadAction, worker)
-	)
+	# Più viaggi (2026-10-01): consegnato il carico si torna a questo mucchio finché ha prodotti della macellazione
+	# (HumanIndividualActionService._continue_butcher_pile_trips). Vale per caccia diretta e comando manuale.
+	task.context[ButcherAction.CONTEXT_PILE_TRIPS] = {
+		"macro_x": pile.macro_coords.x, "macro_y": pile.macro_coords.y,
+		"micro_x": pile.microcell.x, "micro_y": pile.microcell.y,
+		"last_total": -1,
+	}
+	_connect_butcher_step_appended(task, worker)
 	for step in task.steps:
 		if step is PickUpAction:
 			(step as PickUpAction).source_kind = PickUpAction.SourceKind.GROUND_PILE
 			_reconnect_pickup_action_signals(step as PickUpAction)
 	return task
+
+
+# Step aggiunti a runtime alla Task di macellazione: Walk + Unload del giro di consegna e, dal 2026-10-01, Walk + PickUp
+# dei viaggi successivi al mucchio. Collegato alla creazione e, dopo un caricamento, da _reconnect_loaded_task_signals.
+func _connect_butcher_step_appended(task: Task, owner: HumanIndividual) -> void:
+	task.step_appended.connect(func(action: Action) -> void:
+		if action is UnloadAction:
+			_reconnect_unload_action_signals(action as UnloadAction, owner)
+		elif action is PickUpAction:
+			_reconnect_pickup_action_signals(action as PickUpAction)
+	)
 
 
 # Macellazione automatica dopo la caccia (2026-09-26, richiesta utente — HumanIndividualActionService.
@@ -5389,6 +5667,8 @@ func _on_butcher_after_hunt_requested(hunter: HumanIndividual, carcass: Dictiona
 			return
 	if ToolGateService.find_belt_slot_for(hunter, TaskTypes.ToolCategory.BUTCHERING) == -1:
 		HuntService.log_event(hunter, "macellazione non accodata: nessuna lama in cintura, la carcassa resta a terra.")
+		# Sempre un messaggio (2026-10-01, regole delle armi): caccia diretta o in zona.
+		_report_command_rejection(hunter, tr("hunt_no_knife_carcass_left").format({"name": hunter.name}))
 		return
 	if GroundPileService.find_carcass(game_data, macro_coords, microcell, carcass_id).is_empty():
 		return
@@ -5402,6 +5682,9 @@ func _on_butcher_after_hunt_requested(hunter: HumanIndividual, carcass: Dictiona
 	var task := _build_butcher_task(hunter, pile, carcass_id, cell)
 	if task == null:
 		return
+	# Serie di cacce fino a un limite di carne (2026-10-01): la macellazione conta la carne che consegna.
+	if carcass.has("hunt_zone_series"):
+		task.context[HuntZoneService.CONTEXT_MEAT_SERIES] = carcass["hunt_zone_series"]
 	# Solo l'età: la stamina bassa non impedisce di mettere la task in coda (partirà a stamina recuperata).
 	var hunter_age_band := _resolve_age_band(hunter)
 	for step in task.steps:
@@ -6768,23 +7051,35 @@ func _on_human_stillbirth(mother: HumanIndividual) -> void:
 # OPEN_TECH_TREE, eseguita dopo l'OK (o subito se non c'è nulla da mostrare) e una volta sola anche se più idee/
 # scoperte la chiedono insieme. Tutti i percorsi di completamento (deposito pensiero, ricollegamento dopo reload,
 # bottone debug del pannello) passano da qui, quindi il trigger vive qui e non nei singoli listener.
-func _on_idea_completed(idea_id: String) -> void:
+#
+# granting_hint (2026-10-01): la scoperta che ha regalato l'idea (DiscoveryHintRules.grant_idea_id), null per una
+# ricerca normale. Se ha un grant_title_key la sezione usa i suoi testi (titolo, paragrafi) e, come sblocchi, la sola
+# riga "Prossima idea da ricercare" — niente summary né riga delle funzioni, già raccontate dai paragrafi.
+func _on_idea_completed(idea_id: String, granting_hint: DiscoveryHintRules = null) -> void:
+	# Pannello della zona aperto (2026-10-01): un'idea come work_areas_advanced cambia i filtri proponibili.
+	work_area_info_panel.refresh()
 	var hints := _take_discovery_hints(DiscoveryTypes.TriggerType.IDEA_COMPLETED, {"idea_id": idea_id})
 	_pending_discovery_close_actions[DiscoveryTypes.CloseAction.OPEN_TECH_TREE] = true
 	var completed_idea := IdeaCalculator.get_idea(idea_id)
 	var display_name: String = tr(completed_idea.display_name) if completed_idea != null else idea_id
 	var lines: Array[String] = []
 	var title := ""
-	if UserOptions.show_notification_popups:
+	var is_hidden := func(kind: StringName, unlock_id: String) -> bool:
+		return IdeaProgressService.is_unlock_hidden(human_folk, kind, unlock_id)
+	if UserOptions.show_notification_popups and granting_hint != null and granting_hint.grant_title_key != "":
+		title = tr(granting_hint.grant_title_key).format({"idea": display_name})
+		for key in granting_hint.grant_paragraph_keys:
+			lines.append(tr(key))
+		var next_ideas_line := IdeaUnlocksService.format_next_ideas_line(idea_id, is_hidden)
+		if next_ideas_line != "":
+			lines.append("")
+			lines.append(next_ideas_line)
+	elif UserOptions.show_notification_popups:
 		title = tr("notification_idea_completed").format({"idea": display_name})
 		if completed_idea != null and completed_idea.summary != "":
 			lines.append(tr(completed_idea.summary))
 		# Stesso filtro del dettaglio del TechTreePanel: idee sbloccate ancora coperte -> "???".
-		lines.append_array(IdeaUnlocksService.format_lines(
-			idea_id,
-			func(kind: StringName, unlock_id: String) -> bool:
-				return IdeaProgressService.is_unlock_hidden(human_folk, kind, unlock_id)
-		))
+		lines.append_array(IdeaUnlocksService.format_lines(idea_id, is_hidden))
 	# Spiegazioni nella STESSA sezione dell'idea; titolo della scoperta come sottotitolo (o come titolo della
 	# sezione se le notifiche sono spente).
 	if UserOptions.show_discovery_hints:
@@ -6807,7 +7102,7 @@ func _on_idea_completed(idea_id: String) -> void:
 # non lo riapre: sarebbe un no-op che azzererebbe solo lo scroll. Dopo l'await, refresh_content()
 # perché lo stato può essere cambiato mentre il popup era visibile.
 func _open_tech_tree_after_notification_popup() -> void:
-	if tech_tree_panel.visible:
+	if tech_tree_panel.visible or not _is_tech_tree_available():
 		return
 	while notification_popup.visible:
 		await notification_popup.visibility_changed
@@ -6827,7 +7122,26 @@ func _take_discovery_hints(trigger: DiscoveryTypes.TriggerType, data: Dictionary
 		DiscoveryHintService.mark_seen(game_data, hint.id)
 		if hint.close_action != DiscoveryTypes.CloseAction.NONE:
 			_pending_discovery_close_actions[hint.close_action] = true
+		if hint.grant_idea_id != "" and not _pending_discovery_grants.any(
+			func(pending: DiscoveryHintRules) -> bool: return pending.grant_idea_id == hint.grant_idea_id
+		):
+			_pending_discovery_grants.append(hint)
 	return hints
+
+
+# Idee regalate dalle scoperte (2026-10-01, richiesta utente): stesso percorso di un completamento normale
+# (_refresh_building_slots_buildable + _on_idea_completed, che accoda la sua sezione e OPEN_TECH_TREE). Chiamata da
+# _flush_discoveries prima di raccogliere le sezioni; un'idea regalata può far scattare altre scoperte con regali.
+func _apply_pending_discovery_grants() -> void:
+	while not _pending_discovery_grants.is_empty():
+		var granting_hint: DiscoveryHintRules = _pending_discovery_grants.pop_front()
+		var idea_id := granting_hint.grant_idea_id
+		if not IdeaProgressService.grant_idea(human_folk, idea_id):
+			continue
+		_refresh_building_slots_buildable()
+		_on_idea_completed(idea_id, granting_hint)
+		if tech_tree_panel.visible:
+			tech_tree_panel.refresh_content()
 
 
 func _get_discovery_hint_paragraphs(hint: DiscoveryHintRules) -> Array[String]:
@@ -6866,6 +7180,8 @@ func _queue_discovery(section: Dictionary) -> void:
 func _flush_discoveries() -> void:
 	while event_decision_dialog != null and event_decision_dialog.visible:
 		await event_decision_dialog.visibility_changed
+	# Prima di azzerare _discovery_flush_scheduled: le sezioni dei regali si accodano a questo flush, non a uno nuovo.
+	_apply_pending_discovery_grants()
 	_discovery_flush_scheduled = false
 	var sections := _pending_discovery_sections
 	_pending_discovery_sections = []
@@ -7505,6 +7821,8 @@ func _activate_live_cell(mx: int, my: int, p_debug_source: String = "unknown") -
 	if not fog_of_war_memories.has(coords):
 		fog_of_war_memories[coords] = FogOfWarMemory.new()
 	cell.fog_of_war_memory = fog_of_war_memories[coords]
+	# Pavimento delle zone (2026-10-01) prima del renderer: il primo disegno lo vede già, nulla da invalidare.
+	_refresh_work_area_fog_floor(coords)
 	cell.fog_of_war_renderer = FogOfWarRenderer.new()
 	# ULTIMO figlio del container aggiunto apposta (vedi FogOfWarRenderer.gd): l'ordine dei figli
 	# è l'ordine di disegno in Godot 2D, deve stare sopra renderer/animali per coprire davvero
@@ -9475,7 +9793,8 @@ func _on_primary_action_pressed(action_id: StringName) -> void:
 			)
 		# Slot 1, accanto alle statistiche (2026-09-07, richiesta utente) — 💡, apre TechTreePanel.
 		&"tech_tree":
-			tech_tree_panel.open_dialog(human_folk, game_data)
+			if _is_tech_tree_available():
+				tech_tree_panel.open_dialog(human_folk, game_data)
 		# Slot 2 (2026-09-27): menu a tendina dei layer della mappa.
 		&"map_layers":
 			_open_map_layers_menu()
@@ -9901,6 +10220,26 @@ func _refresh_building_slots_buildable() -> void:
 	build_bar.set_work_areas_available(work_areas_available, tr("build_bar_requires_idea_tooltip").format({"idea": required_idea_name}))
 	if not work_areas_available and _work_area_draw_active:
 		_exit_work_area_draw_mode()
+	_refresh_tech_tree_button()
+
+
+# Bottone dell'albero delle idee (2026-10-01, richiesta utente): abilitato solo se nel mondo c'è almeno un edificio
+# COMPLETO con accepts_thoughts (oggi il cerchio di sassi). Ricalcolato insieme agli slot della BuildBar, quindi al
+# caricamento, al completamento e alla demolizione di un edificio. Un edificio solo segnato da demolire conta ancora
+# (diversamente da ThoughtTargetSelectionService.has_thought_accepting_building): si disabilita a demolizione avvenuta.
+func _is_tech_tree_available() -> bool:
+	if macro_world == null:
+		return false
+	for building in macro_world.buildings:
+		if building.rules != null and building.rules.accepts_thoughts and building.is_complete and not building.is_demolished:
+			return true
+	return false
+
+
+func _refresh_tech_tree_button() -> void:
+	game_info_panel.primary_actions_bar.set_slot_disabled(
+		GameInfoPanel.TECH_TREE_SLOT_INDEX, not _is_tech_tree_available(), tr("tech_tree_requires_thought_building_tooltip")
+	)
 
 
 # --- Zone di lavoro (2026-09-27, richiesta utente — work areas, passo 1a) ---
@@ -10034,13 +10373,18 @@ func _finish_work_area_drag() -> void:
 	var area: WorkArea = null
 	if _work_area_redraw_id >= 0:
 		area = WorkAreaService.find_by_id(game_data, _work_area_redraw_id)
+		var previous_macro_coords: Vector2i = area.macro_coords if area != null else macro_coords
 		if area == null or not WorkAreaService.set_rect(game_data, area, macro_coords, rect):
 			return
+		if previous_macro_coords != macro_coords:
+			_refresh_work_area_fog_floor(previous_macro_coords)
+		_refresh_work_area_fog_floor(macro_coords)
 		print("[WORK AREA] ridisegnata %s (#%d) in %s, microcelle %s, %d×%d." % [area.name, area.id, macro_coords, rect.position, rect.size.x, rect.size.y])
 	else:
 		area = WorkAreaService.create(game_data, macro_coords, rect)
 		if area == null:
 			return
+		_refresh_work_area_fog_floor(macro_coords)
 		print("[WORK AREA] creata %s (#%d) in %s, microcelle %s, %d×%d." % [area.name, area.id, macro_coords, rect.position, rect.size.x, rect.size.y])
 	minimap_panel.refresh_layer()
 	# Dopo aver creato (o ridisegnato) una zona si esce dal disegno (layer di prima ripristinato) e la zona viene
@@ -10122,10 +10466,49 @@ func _on_work_area_delete_requested(area: WorkArea) -> void:
 	if area == null:
 		return
 	var area_id := area.id
+	var area_macro_coords := area.macro_coords
 	_clear_work_area_selection()
 	if WorkAreaService.delete(game_data, area_id):
+		_refresh_work_area_fog_floor(area_macro_coords)
 		minimap_panel.refresh_layer()
 		print("[WORK AREA] eliminata %s (#%d)." % [area.name, area_id])
+
+
+# --- Pavimento della nebbia nelle zone di lavoro (2026-10-01, richiesta utente) ---
+# Le microcelle delle zone di una macrocella, già viste almeno una volta, non scendono sotto il livello "risorse
+# fresche" (FogOfWarMemory.floor_positions). L'insieme si ricostruisce SOLO qui: all'avvio, all'attivazione della
+# macrocella e a creazione/ridisegno/eliminazione di una zona — mai a ogni frame né a ogni aggiornamento di visibilità.
+func _refresh_work_area_fog_floor(coords: Vector2i) -> void:
+	var memory: FogOfWarMemory = fog_of_war_memories.get(coords)
+	if memory == null or game_data == null:
+		return
+	var positions: Dictionary = {}
+	for area in game_data.work_areas:
+		if area.macro_coords != coords:
+			continue
+		for y in range(area.rect.position.y, area.rect.end.y):
+			for x in range(area.rect.position.x, area.rect.end.x):
+				positions[Vector2i(x, y)] = true
+	var changed := memory.set_floor_positions(positions)
+	if changed.is_empty():
+		return
+	# Macrocella viva: colore (cache del renderer) e vegetazione (insieme visibile) si aggiornano subito.
+	var cell: LiveMacroCell = live_cells.get(coords)
+	if cell == null or cell.fog_of_war_renderer == null:
+		return
+	cell.fog_of_war_renderer.mark_positions_dirty(changed)
+	cell.fog_of_war_renderer.invalidate_visible_set()
+	_refresh_resource_visuals(cell)
+
+
+func _refresh_all_work_area_fog_floors() -> void:
+	if game_data == null:
+		return
+	var coords_with_areas: Dictionary = {}
+	for area in game_data.work_areas:
+		coords_with_areas[area.macro_coords] = true
+	for coords in coords_with_areas:
+		_refresh_work_area_fog_floor(coords)
 
 
 func _cancel_work_area_drag() -> void:
@@ -10673,6 +11056,8 @@ func _reconnect_loaded_task_signals() -> void:
 		# per un individuo senza current_task.
 		for queued_task in member.task_queue:
 			_connect_material_supply_step_appended(queued_task, member)
+			if queued_task.context.has(ButcherAction.CONTEXT_PILE_TRIPS):
+				_connect_butcher_step_appended(queued_task, member)
 			# Raccolta su zona non ancora partita (2026-09-27, es. ripetizione in coda): il PickUp nascerà dalla
 			# ricerca, i suoi segnali passano da step_appended.
 			if _haul_zone_task_awaits_search(queued_task):
@@ -10693,6 +11078,8 @@ func _reconnect_loaded_task_signals() -> void:
 		if _haul_zone_task_awaits_search(member.current_task):
 			_connect_haul_zone_step_appended(member.current_task, member)
 		_connect_material_supply_step_appended(member.current_task, member)
+		if member.current_task.context.has(ButcherAction.CONTEXT_PILE_TRIPS):
+			_connect_butcher_step_appended(member.current_task, member)
 		# Conteggio SOLO per il log di conferma sotto (2026-09-11, richiesta utente — "verificare che
 		# la riconnessione funzioni davvero, prima di procedere oltre") — nessuna logica di
 		# ricollegamento qui: quella resta interamente dentro _reconnect_build_task_signals/
@@ -11530,6 +11917,8 @@ func _setup_clock() -> void:
 	individual_action_service.butcher_after_hunt_requested.connect(_on_butcher_after_hunt_requested)
 	# Trasporto di un mucchio a terra al magazzino (2026-09-27, oggi dopo la demolizione) — vedi _on_ground_pile_haul_requested.
 	individual_action_service.ground_pile_haul_requested.connect(_on_ground_pile_haul_requested)
+	individual_action_service.hunt_ended_with_message.connect(_on_hunt_ended_with_message)
+	individual_action_service.hunt_zone_series_continue_requested.connect(_on_hunt_zone_series_continue_requested)
 	individual_action_service.building_material_blocked.connect(_on_building_material_blocked)
 	play_pause_button.pressed.connect(_on_play_pause_pressed)
 	for speed in speed_buttons.keys():

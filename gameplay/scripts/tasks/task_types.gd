@@ -94,6 +94,9 @@ enum ActionType {
 	DEMOLISH,
 	# Ricerca della cella dentro la zona di raccolta (2026-09-27, work areas passo 2 — SearchHaulZoneAction).
 	SEARCH_HAUL_ZONE,
+	# Pattuglia di una zona per la caccia (2026-10-01, caccia nelle zone passo 2a — PatrolAreaAction, vedi
+	# hunt_zone.tres). AGGIUNTO IN CODA. TaskFactory.build_task e TaskPersistenceService lo supportano entrambi.
+	PATROL_AREA,
 }
 
 # Categorie di tool richiedibili da un'Action (2026-09-08, richiesta utente — SOLO struttura dati,

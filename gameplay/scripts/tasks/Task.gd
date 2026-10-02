@@ -413,6 +413,8 @@ func print_cost_summary(individual: Variant) -> void:
 func get_activity_description() -> String:
 	var base_text: String = tr(task_name) if task_name != "" else tr("task_debug_panel_unnamed_task")
 	var resource_name: String = ""
+	# Progresso dei viaggi della raccolta in zona (2026-10-01): " 2/5", aggiunto in coda all'etichetta.
+	var progress_suffix: String = ""
 	match task_name:
 		"task_haul_resource_name":
 			# Raccolta su zona (2026-09-27, work areas passo 2): prima della ricerca il PickUp non esiste ancora (es.
@@ -421,6 +423,10 @@ func get_activity_description() -> String:
 			# (chiave category_name_<categoria>, come il pannello edificio); con "tutto" resta il solo nome della Task.
 			var haul_category: int = -1
 			var haul_zone := HaulZoneService.get_zone(context)
+			# Viaggio corrente / viaggi scelti, solo per le zone di lavoro (il clic su una cella resta com'era).
+			if HaulZoneService.is_work_area_zone(haul_zone):
+				var total_trips: int = HaulZoneService.get_max_repeats(haul_zone) + 1 if TaskRepeatRules.is_enabled(context) else 1
+				progress_suffix = " %d/%d" % [mini(TaskRepeatRules.get_count(context) + 1, total_trips), total_trips]
 			if not haul_zone.is_empty():
 				match HaulZoneService.get_criterion_kind(haul_zone):
 					PickUpAction.CriterionKind.NAME:
@@ -440,7 +446,7 @@ func get_activity_description() -> String:
 					break
 			if resource_name == "" and haul_category >= 0 and haul_category < SecondaryResourceTypes.Category.size():
 				var category_key: String = SecondaryResourceTypes.Category.keys()[haul_category]
-				return "%s (%s)" % [base_text, tr("category_name_%s" % category_key.to_lower())]
+				return "%s (%s)%s" % [base_text, tr("category_name_%s" % category_key.to_lower()), progress_suffix]
 		"task_transport_name":
 			for step in steps:
 				if step is RetrieveAction:
@@ -489,11 +495,25 @@ func get_activity_description() -> String:
 			if prey_species == "":
 				return base_text
 			return tr("task_hunt_activity").format({"species": tr("animal_species_" + prey_species)})
+		# Caccia in zona (2026-10-01): "Caccia (Zona 1)", nome della WorkArea dal context. Zona eliminata = solo il nome
+		# della Task.
+		"task_hunt_zone_name":
+			var hunt_area := HuntZoneService.resolve_task_area(self)
+			if hunt_area == null:
+				return base_text
+			# Serie fino a un limite di carne (2026-10-01): "Caccia (Zona 1) 4/10 carne".
+			var meat_series := HuntZoneService.get_meat_series(context)
+			if not meat_series.is_empty():
+				return tr("task_hunt_zone_activity_series").format({
+					"task": base_text, "zone": hunt_area.name,
+					"delivered": int(meat_series.get("delivered", 0)), "target": int(meat_series.get("target", 0)),
+				})
+			return "%s (%s)" % [base_text, hunt_area.name]
 		_:
 			return base_text
 	if resource_name == "":
-		return base_text
+		return base_text + progress_suffix
 	# "Prendi tutti i prodotti" (2026-09-24): nessun nome di risorsa singolo da mostrare.
 	if resource_name == RetrieveAction.ALL_PRODUCTS:
 		return "%s (%s)" % [base_text, tr("transport_all_products_activity")]
-	return "%s (%s)" % [base_text, IconRegistry.get_resource_display_name(resource_name)]
+	return "%s (%s)%s" % [base_text, IconRegistry.get_resource_display_name(resource_name), progress_suffix]

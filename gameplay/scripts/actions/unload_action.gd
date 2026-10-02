@@ -442,6 +442,9 @@ func on_complete(individual: Variant, context: Dictionary) -> void:
 			# mappa anche se il deposito è stato solo PARZIALE (il resto gestito sotto) — la griglia di
 			# stoccaggio del deposit site è comunque cambiata.
 			resource_deposited.emit(target_building)
+		# Serie di cacce fino a un limite di carne (2026-10-01): la carne consegnata da una macellazione della serie.
+		if context.has(HuntZoneService.CONTEXT_MEAT_SERIES):
+			HuntZoneService.add_delivered_meat(context, int(deposited_by_resource.get(HuntZoneService.MEAT_RESOURCE, 0)))
 		# Consegna Transport (2026-09-20): valutata QUI, al deposito effettivo, non alla stima di activate().
 		if context.has("transport_destination_id") and int(context["transport_destination_id"]) == target_building.id:
 			var delivery_resource: String = String(context.get("transport_delivery_resource", ""))

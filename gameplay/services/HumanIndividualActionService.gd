@@ -38,6 +38,12 @@ signal butcher_after_hunt_requested(individual: HumanIndividual, carcass: Dictio
 # schema della macellazione dopo la caccia: segnale, e la Task la costruisce chi ascolta
 # (GameScene._on_ground_pile_haul_requested).
 signal ground_pile_haul_requested(individual: HumanIndividual, pile_ref: Dictionary)
+# Caccia (diretta o in zona) interrotta per un motivo da mostrare al giocatore (2026-10-01: nessuna arma da caccia
+# rimasta). `message` già tradotto; GameScene lo mostra come i rifiuti dei comandi.
+signal hunt_ended_with_message(individual: HumanIndividual, message: String)
+# Serie di cacce fino a un limite di carne (2026-10-01): una macellazione della serie è finita sotto il limite; GameScene
+# accoda una nuova caccia nella stessa zona (o chiude la serie se la zona non c'è più o manca il coltello).
+signal hunt_zone_series_continue_requested(individual: HumanIndividual, series: Dictionary)
 const CONTEXT_PENDING_GROUND_PILE_HAUL := "pending_ground_pile_haul"
 
 # Servizio single-responsibility (stesso pattern di HumanIndividualMovementService, stesso
@@ -246,17 +252,24 @@ func finish_current_step(individual: HumanIndividual, task: Task, world: World, 
 	_handle_pending_hunt_weapon_recovery(individual, task)
 	_handle_pending_hunt_reapproach(individual, task)
 	_handle_pending_hunt_butcher(individual, task)
+	_handle_pending_hunt_zone_prey(individual, task)
 	_handle_pending_ground_pile_haul(individual, task)
 	if task.context.has(CONTEXT_PENDING_TASK_ABORT):
 		var abort_reason := String(task.context[CONTEXT_PENDING_TASK_ABORT])
 		task.context.erase(CONTEXT_PENDING_TASK_ABORT)
-		if HuntService.is_hunt_task(task):
-			HuntService.log_event(individual, "caccia chiusa: %s." % abort_reason)
-		elif DebugLogging.ENABLED and DebugLogging.SHOW_TASK_LIFECYCLE_LOGS:
-			print("[TASK ABORT] Individuo #%d %s: Task '%s' chiusa — %s." % [individual.id, individual.name, task.task_name, abort_reason])
-		# Stessa chiusura di un bersaglio non più valido (sotto): nessun effetto di completamento.
-		_handle_task_completion_need_and_queue(individual, task, world, game_data)
-		return
+		# Caccia senza più armi (2026-10-01): messaggio e chiusura, anche in zona (niente pattuglia).
+		var stopped_without_weapon := _report_hunt_without_weapon(individual, task)
+		# Caccia in zona (2026-10-01): una preda persa durante l'inseguimento riporta alla pattuglia (step successivi
+		# sostituiti) invece di chiudere; la Task prosegue sotto come dopo uno step normale.
+		if stopped_without_weapon or not _redirect_zone_hunt_to_patrol(individual, task, action, task.current_step_index + 1, abort_reason):
+			if HuntService.is_hunt_task(task):
+				HuntService.log_event(individual, "caccia chiusa: %s." % abort_reason)
+			elif DebugLogging.ENABLED and DebugLogging.SHOW_TASK_LIFECYCLE_LOGS:
+				print("[TASK ABORT] Individuo #%d %s: Task '%s' chiusa — %s." % [individual.id, individual.name, task.task_name, abort_reason])
+			# Stessa chiusura di un bersaglio non più valido (sotto): nessun effetto di completamento.
+			_continue_hunt_zone_series(individual, task)
+			_handle_task_completion_need_and_queue(individual, task, world, game_data)
+			return
 	task.advance_to_next_step()
 	# Scarichi programmati rimasti senza carico (2026-09-27): saltati PRIMA del controllo di fine, così se erano gli
 	# ultimi passi la Task si chiude qui normalmente (effetti di completamento, riepilogo costi).
@@ -272,6 +285,9 @@ func finish_current_step(individual: HumanIndividual, task: Task, world: World, 
 			and (action is UnloadAction or not MaterialSupplyService.is_in_supply_round(task)):
 		_yield_after_supply_delivery(individual, task, world, game_data)
 		return
+	# Macellazione a più viaggi (2026-10-01): a fine giro, se il mucchio ha ancora prodotti, nuovo Walk + PickUp.
+	if task.is_finished():
+		_continue_butcher_pile_trips(individual, task, world, game_data)
 	if task.is_finished():
 		if DebugLogging.ENABLED and DebugLogging.SHOW_TASK_LIFECYCLE_LOGS:
 			task.print_cost_summary(individual)
@@ -287,6 +303,8 @@ func finish_current_step(individual: HumanIndividual, task: Task, world: World, 
 		# Effetti del completamento su skill e parametri vitali: TaskCompletionEffectService (dati in
 		# task_completion_effects.tres), non qui - questo servizio parla di singole Action.
 		TaskCompletionEffectService.apply_effects(individual, task)
+		# Serie di cacce (2026-10-01): prima di bisogno/coda, così la nuova caccia accodata è già lì.
+		_continue_hunt_zone_series(individual, task)
 		# Bisogno/coda (2026-09-13, richiesta utente, Punto 5) — PRIMA di considerare
 		# l'individuo libero: se un bisogno stamina è ANCORA attivo, assegna la Task-bisogno
 		# corrispondente; altrimenti riprende l'ultima Task sospesa in coda (se presente);
@@ -299,6 +317,11 @@ func finish_current_step(individual: HumanIndividual, task: Task, world: World, 
 		# Task si chiude (stessa sequenza di una Task conclusa: bisogno -> coda -> perditempo) invece di
 		# attivarlo e restare bloccata. Nessun effetto di completamento (skill/vitali): non è un successo.
 		var next_action := task.get_current_action()
+		# Caccia in zona (2026-10-01): preda persa prima dello step di caccia successivo -> di nuovo pattuglia.
+		if not next_action.is_target_valid() and _redirect_zone_hunt_to_patrol(
+			individual, task, action, task.current_step_index, HuntService.describe_task_prey_loss(task)
+		):
+			next_action = task.get_current_action()
 		if not next_action.is_target_valid():
 			if DebugLogging.ENABLED and DebugLogging.SHOW_SAFETY_LOGS:
 				print("[INVALID TARGET] Individuo #%d %s: Task '%s' chiusa — lo step %d/%d (%s) ha un bersaglio non più valido (edificio demolito o già completo)." % [
@@ -1117,6 +1140,10 @@ func _handle_pending_hunt_butcher(individual: HumanIndividual, task: Task) -> vo
 		return
 	var carcass: Dictionary = task.context[HuntService.CONTEXT_PENDING_BUTCHER]
 	task.context.erase(HuntService.CONTEXT_PENDING_BUTCHER)
+	# Serie di cacce (2026-10-01): passa alla macellazione, che conta la carne consegnata.
+	var series := HuntZoneService.get_meat_series(task.context)
+	if not series.is_empty():
+		carcass["hunt_zone_series"] = series.duplicate()
 	# Diagnosi (2026-09-27, macellazione accodata due volte): quale Task/step consuma la richiesta e quando.
 	var step := task.get_current_action()
 	HuntService.log_event(individual, "richiesta macellazione consumata: carcassa #%d, da %s, Task '%s' (istanza %d) step %d/%d %s (%s)." % [
@@ -1130,6 +1157,162 @@ func _handle_pending_hunt_butcher(individual: HumanIndividual, task: Task) -> vo
 # Trasporto del mucchio al magazzino (2026-09-27): consuma CONTEXT_PENDING_GROUND_PILE_HAUL e lo passa a chi ascolta
 # ground_pile_haul_requested. Qui nessuna decisione: mucchio ancora presente, coda piena e magazzino disponibile li
 # valuta GameScene.
+# Macellazione a più viaggi (2026-10-01, richiesta utente): chiamata quando la Task con
+# ButcherAction.CONTEXT_PILE_TRIPS ha finito i suoi passi (l'ultimo scarico del giro). Se il mucchio della carcassa
+# esiste ancora e contiene prodotti della macellazione (ButcherAction.PRODUCT_NAMES), accoda Walk fino al mucchio +
+# PickUp dal mucchio limitato a quei prodotti: il PickUp riscrive la ricerca del magazzino come il primo (carne
+# preferibilmente alla workstation della ricetta, CONTEXT_PREFER_RECIPE_WORKSTATION, il resto al magazzino), quindi il
+# giro si ripete da solo, senza un limite fisso. Niente viaggio (la Task si chiude normalmente) se:
+#   - il mucchio è sparito o non ha più prodotti (deperiti o raccolti da altri);
+#   - il viaggio precedente non ne ha tolto nessuno (totale non sceso: zaino senza posto, garanzia di terminazione);
+#   - nessuna destinazione raggiungibile accetta i prodotti rimasti (si raccoglierebbe solo per scartare).
+func _continue_butcher_pile_trips(individual: HumanIndividual, task: Task, world: World, game_data: GameData) -> void:
+	if not task.context.has(ButcherAction.CONTEXT_PILE_TRIPS) or world == null:
+		return
+	var trips: Dictionary = task.context[ButcherAction.CONTEXT_PILE_TRIPS]
+	var data: GameData = game_data if game_data != null else GameSettings.active_game_data
+	var macro_coords := Vector2i(int(trips.get("macro_x", 0)), int(trips.get("macro_y", 0)))
+	var microcell := Vector2i(int(trips.get("micro_x", 0)), int(trips.get("micro_y", 0)))
+	var pile: GroundPile = GroundPileService.find_at(data, macro_coords, microcell) if data != null else null
+	var macro_state := world.get_cell_state_at(macro_coords.x, macro_coords.y)
+	if pile == null or macro_state == null:
+		_log_butcher_trips_end(individual, "mucchio sparito")
+		return
+	var remaining: Array[String] = []
+	var total := 0
+	for product_name in ButcherAction.PRODUCT_NAMES:
+		var quantity := pile.get_quantity(product_name)
+		if quantity > 0:
+			remaining.append(product_name)
+			total += quantity
+	if remaining.is_empty():
+		_log_butcher_trips_end(individual, "mucchio senza più prodotti")
+		return
+	var last_total := int(trips.get("last_total", -1))
+	if last_total >= 0 and total >= last_total:
+		_log_butcher_trips_end(individual, "l'ultimo viaggio non ha raccolto nulla (restano %d)" % total)
+		return
+	if not _has_butcher_product_destination(individual, task, world, remaining):
+		_log_butcher_trips_end(individual, "nessuna destinazione per %s" % str(remaining))
+		return
+	trips["last_total"] = total
+	task.context[ButcherAction.CONTEXT_PILE_TRIPS] = trips
+	# Magazzini rifiutati nel giro precedente (UnloadAction): un nuovo giro riparte da zero, possono aver fatto posto.
+	task.context.erase("warehouse_search_excluded_building_ids")
+	var macro_offset: Vector2 = Vector2(macro_coords - individual.home_macro_coords) * World.WIDTH
+	var pickup := PickUpAction.new(
+		microcell, macro_state, remaining[0], -1, PickUpAction.CriterionKind.ALL, -1, PickUpAction.SourceKind.GROUND_PILE
+	)
+	pickup.restricted_names = remaining
+	var new_steps: Array[Action] = [WalkAction.new(pile.get_position() + macro_offset), pickup]
+	task.append_steps(new_steps)
+	var description_count := task.step_descriptions.size()
+	task.step_descriptions[description_count - 2] = "task_butcher_step_return_to_pile"
+	task.step_descriptions[description_count - 1] = "task_haul_resource_step_pickup"
+	if HuntService.is_logging() or (DebugLogging.ENABLED and DebugLogging.SHOW_TRANSPORT_BUILD_LOGS):
+		print("[BUTCHER] #%d %s: nuovo viaggio al mucchio %s/%s — restano %d unità di %s." % [
+			individual.id, individual.name, str(macro_coords), str(microcell), total, str(remaining)
+		])
+
+
+# true se almeno un prodotto rimasto ha una destinazione raggiungibile: la workstation della ricetta (se la Task la
+# preferisce) o un magazzino — stessa coppia di ricerche di _search_warehouse_for_resource.
+func _has_butcher_product_destination(individual: HumanIndividual, task: Task, world: World, product_names: Array[String]) -> bool:
+	var reachability := PathfindingService.reachability_for(individual)
+	var prefer_workstation := bool(task.context.get(CONTEXT_PREFER_RECIPE_WORKSTATION, false))
+	for product_name in product_names:
+		if prefer_workstation and WarehouseSelectionService.find_nearest_recipe_workstation(
+			world, individual.position, individual.home_macro_coords, product_name, 1, [], reachability
+		) != null:
+			return true
+		if WarehouseSelectionService.find_best(
+			world, individual.position, individual.home_macro_coords, product_name, 1, [], reachability
+		) != null:
+			return true
+	return false
+
+
+func _log_butcher_trips_end(individual: HumanIndividual, reason: String) -> void:
+	if HuntService.is_logging() or (DebugLogging.ENABLED and DebugLogging.SHOW_TRANSPORT_BUILD_LOGS):
+		print("[BUTCHER] #%d %s: macellazione conclusa, nessun altro viaggio — %s." % [individual.id, individual.name, reason])
+
+
+# Serie di cacce fino a un limite di carne (2026-10-01, passo 2b): chiamata quando una Task si chiude (completata o
+# chiusa in anticipo). Solo per una macellazione della serie (la caccia passa la serie alla macellazione all'uccisione:
+# una caccia che finisce senza preda non ha seguito). Sotto il limite: GameScene accoda una nuova caccia nella stessa
+# zona; raggiunto: la serie è conclusa. L'annullamento del giocatore (H) non passa da qui: chiude la serie.
+func _continue_hunt_zone_series(individual: HumanIndividual, task: Task) -> void:
+	if HuntZoneService.is_zone_hunt_task(task):
+		return
+	var series := HuntZoneService.get_meat_series(task.context)
+	if series.is_empty():
+		return
+	if HuntZoneService.is_meat_series_complete(series):
+		HuntZoneService.log_event(individual, "serie di caccia conclusa: %d/%d carne consegnata." % [
+			int(series.get("delivered", 0)), int(series.get("target", 0))
+		])
+		return
+	HuntZoneService.log_event(individual, "macellazione finita con %d/%d carne: si continua a cacciare." % [
+		int(series.get("delivered", 0)), int(series.get("target", 0))
+	])
+	hunt_zone_series_continue_requested.emit(individual, series.duplicate())
+
+
+# Caccia in zona (2026-10-01, passo 2a): PatrolAreaAction ha avvistato una preda (HuntZoneService.CONTEXT_PENDING_PREY,
+# preda già nel context). Si inseriscono subito dopo la pattuglia gli step di caccia di sempre — ApproachPrey → Aim →
+# Throw (HuntZoneService.build_chase_steps) — con il conteggio dei riavvicinamenti azzerato. Da lì in poi recupero
+# dell'arma, riavvicinamenti e macellazione seguono la catena della caccia diretta.
+func _handle_pending_hunt_zone_prey(individual: HumanIndividual, task: Task) -> void:
+	if not task.context.has(HuntZoneService.CONTEXT_PENDING_PREY):
+		return
+	task.context.erase(HuntZoneService.CONTEXT_PENDING_PREY)
+	task.context.erase(HuntService.CONTEXT_REAPPROACH_COUNT)
+	task.insert_steps_after_current(HuntZoneService.build_chase_steps(task.context), HuntZoneService.CHASE_STEP_DESCRIPTIONS)
+
+
+# Caccia in zona (2026-10-01, passo 2a): la Task stava per chiudersi (chiusura anticipata, o bersaglio non più valido
+# allo step successivo) dopo uno step dell'inseguimento. Se la preda è solo persa (fuga, fuori vista, irraggiungibile,
+# tetto dei riavvicinamenti), gli step da `from_index` in poi diventano una PatrolAreaAction nuova e la preda viene
+# dimenticata: true, la Task prosegue. false (chiusura normale) se:
+#   - non è una caccia in zona, o lo step concluso è la pattuglia stessa (giorno senza avvistamenti, zona sparita);
+#   - la zona non esiste più;
+#   - non resta nessuna arma da caccia (cintura o zaino) — messaggio. Un'arma rotta o persa con un'altra ancora a
+#     disposizione non chiude nulla (regole delle armi, 2026-10-01): il coltello mancante conta solo per iniziare una
+#     nuova caccia della serie, non per continuare quella in corso.
+func _redirect_zone_hunt_to_patrol(
+	individual: HumanIndividual, task: Task, completed_action: Action, from_index: int, reason: String
+) -> bool:
+	if not HuntZoneService.is_zone_hunt_task(task) or completed_action is PatrolAreaAction:
+		return false
+	var area := HuntZoneService.resolve_task_area(task)
+	if area == null:
+		return false
+	if not HuntService.has_hunting_weapon_available(individual):
+		_emit_no_weapon_message(individual)
+		return false
+	task.remove_steps(from_index, task.steps.size())
+	HuntZoneService.clear_prey_context(task.context)
+	var patrol: Array[Action] = [PatrolAreaAction.new(area.id)]
+	task.append_steps(patrol)
+	task.step_descriptions[task.step_descriptions.size() - 1] = "task_hunt_zone_step_patrol"
+	HuntService.log_event(individual, "preda persa (%s): si torna a pattugliare %s." % [reason, area.name])
+	return true
+
+
+# Caccia interrotta per mancanza di armi (HuntService.CONTEXT_NO_WEAPON, scritta da continue_with_other_weapon_or_stop o
+# da RecoverWeaponAction): messaggio al giocatore, true = la Task va chiusa (anche una caccia in zona).
+func _report_hunt_without_weapon(individual: HumanIndividual, task: Task) -> bool:
+	if not task.context.has(HuntService.CONTEXT_NO_WEAPON):
+		return false
+	task.context.erase(HuntService.CONTEXT_NO_WEAPON)
+	_emit_no_weapon_message(individual)
+	return true
+
+
+func _emit_no_weapon_message(individual: HumanIndividual) -> void:
+	hunt_ended_with_message.emit(individual, TranslationServer.translate("hunt_no_weapon_left").format({"name": individual.name}))
+
+
 func _handle_pending_ground_pile_haul(individual: HumanIndividual, task: Task) -> void:
 	if not task.context.has(CONTEXT_PENDING_GROUND_PILE_HAUL):
 		return

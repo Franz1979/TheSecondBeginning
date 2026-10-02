@@ -61,6 +61,14 @@ var minimap_collapsed: bool = false
 # Raccolta nelle zone di lavoro (2026-09-27, work areas passo 3b — spunta della barra dei comandi): true = zona scelta in
 # automatico con il punteggio, false = il giocatore clicca la zona sulla mappa. Impostazione unica per tutto il gioco.
 var work_area_auto_zone: bool = true
+# Selettori numerici dei comandi nelle zone (2026-10-01, al posto delle spunte di ripetizione), ricordati dall'ultima
+# conferma del rispettivo dialog:
+#   - work_area_gather_trips: viaggi della raccolta in zona, 1..HaulZoneService.WORK_AREA_MAX_TRIPS (dialog di Raccogli);
+#   - hunt_zone_meat_target: carne da consegnare della serie di cacce, uno di HuntZoneService.MEAT_TARGET_OPTIONS
+#     (dialog di Caccia).
+# Chiavi in options.cfg con lo stesso nome.
+var work_area_gather_trips: int = 5
+var hunt_zone_meat_target: int = 10
 
 # Volumi audio (2026-09-21, richiesta utente): lineari 0-1, default 0.8, uno per bus (vedi
 # audio/buses/default_bus_layout.tres). Applicati ai bus con apply_volumes(), al load e ad ogni modifica.
@@ -108,6 +116,9 @@ func load_from_disk() -> void:
 	production_delivery_default = bool(config.get_value(SECTION, "production_delivery_default", true))
 	minimap_collapsed = bool(config.get_value(SECTION, "minimap_collapsed", false))
 	work_area_auto_zone = bool(config.get_value(SECTION, "work_area_auto_zone", true))
+	# Letti così come sono: i dialog li riportano nei valori ammessi (PickupChoiceDialog, anche in modalità caccia).
+	work_area_gather_trips = int(config.get_value(SECTION, "work_area_gather_trips", 5))
+	hunt_zone_meat_target = int(config.get_value(SECTION, "hunt_zone_meat_target", 10))
 	for field in VOLUME_BUSES.keys():
 		set(field, clampf(float(config.get_value(SECTION, field, DEFAULT_VOLUME)), 0.0, 1.0))
 
@@ -126,6 +137,8 @@ func save_to_disk() -> void:
 	config.set_value(SECTION, "production_delivery_default", production_delivery_default)
 	config.set_value(SECTION, "minimap_collapsed", minimap_collapsed)
 	config.set_value(SECTION, "work_area_auto_zone", work_area_auto_zone)
+	config.set_value(SECTION, "work_area_gather_trips", work_area_gather_trips)
+	config.set_value(SECTION, "hunt_zone_meat_target", hunt_zone_meat_target)
 	for field in VOLUME_BUSES.keys():
 		config.set_value(SECTION, field, get(field))
 	config.save(OPTIONS_FILE_PATH)

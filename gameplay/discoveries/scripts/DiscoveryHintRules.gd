@@ -15,6 +15,14 @@ extends Resource
 @export var trigger_type: DiscoveryTypes.TriggerType = DiscoveryTypes.TriggerType.IDEA_COMPLETED
 # Azione dopo l'OK (NONE = nessuna).
 @export var close_action: DiscoveryTypes.CloseAction = DiscoveryTypes.CloseAction.NONE
+# Idea regalata quando la scoperta scatta (Idea.id, vuoto = nessuna) — 2026-10-01, richiesta utente. Applicata da
+# GameScene (_take_discovery_hints -> _flush_discoveries) con IdeaProgressService.grant_idea: la sua sezione "idea
+# completata" finisce nello stesso popup, dopo quella della scoperta.
+@export var grant_idea_id: String = ""
+# Testi della sezione dell'idea regalata (2026-10-01): chiave tr() del titolo ({idea} = nome dell'idea) e dei paragrafi.
+# Vuoto = sezione di un'idea completata normale (titolo "Nuova idea completata", summary e sblocchi).
+@export var grant_title_key: String = ""
+@export var grant_paragraph_keys: Array[String] = []
 
 @export_group("Filter")
 # Filtri del trigger: vuoto = qualunque; quelli valorizzati devono valere TUTTI. Ognuno conta solo per il suo
