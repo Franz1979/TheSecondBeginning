@@ -1,4 +1,4 @@
-[gd_resource type="Resource" script_class="BuildingRules" format=3]
+[gd_resource type="Resource" script_class="BuildingRules" format=3 uid="uid://uvl1v0ka4c75"]
 
 [ext_resource type="Script" uid="uid://b8pl3yflicmtn" path="res://simulation/scripts/core/BuildingRules.gd" id="1_storage_hut"]
 
@@ -12,12 +12,11 @@ storage_slot_count = 12
 storage_space_per_slot = 150
 durability_multiplier_by_category = Array[float]([1.3, 1.3, 1.2, 1.2, 1.2])
 required_materials = {
-"dried_hide": 10,
-"fiber_rope": 8,
-"pebble": 30,
-"plant_fiber": 30,
-"stick": 80
+"dried_hide": 1,
+"fiber_rope": 1,
+"pebble": 1,
+"plant_fiber": 1,
+"stick": 1
 }
-max_durability = 50
 required_space = 1
 visibility_radius = 2

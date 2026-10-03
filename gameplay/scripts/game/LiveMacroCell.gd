@@ -74,6 +74,13 @@ var last_refresh_visible_version: int = -1
 # richiesta utente): lo riusa il ridisegno leggero dopo una raccolta (_refresh_collected_resource_visuals) senza
 # ripassare le 10.000 microcelle. null = mai calcolato (o cella senza FogOfWarRenderer).
 var last_visible_positions: Variant = null
+# Salto del rimontaggio nei ridisegni per movimento/nebbia (2026-10-03, richiesta utente — passo 1, vedi
+# GameScene._refresh_resource_visuals): ultimo elenco filtrato passato al renderer (null = nessuno), giorno assoluto
+# di quel rimontaggio (-1 = nessuno) e ultima disponibilità visibile di ogni risorsa sparsa (chiave = nome o
+# "grass_patch:<nome>"). Azzerati a ogni rigenerazione completa.
+var last_render_vegetation_positions: Variant = null
+var last_vegetation_rebuild_day: int = -1
+var last_scattered_availability: Dictionary = {}
 var cached_vegetation_positions: Dictionary = {}
 
 # Cache del ratio disponibilità "fruit stock" per lotto (2026-09-17, richiesta utente —
