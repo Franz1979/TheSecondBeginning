@@ -197,6 +197,14 @@ static func build_task(definition: TaskDefinition, context: Dictionary) -> Task:
 					continue
 				steps.append(DemolishAction.new(context[step_definition.context_keys[0]]))
 				step_descriptions.append(step_definition.step_description)
+			TaskTypes.ActionType.RITE:
+				# 2 argomenti (edificio, id del rito) — 2026-10-02, RiteAction.
+				if step_definition.context_keys.size() < 2 or not context.has(step_definition.context_keys[0]) \
+						or not context.has(step_definition.context_keys[1]):
+					push_error("TaskFactory.build_task: context_keys mancanti/non risolvibili per step RITE di TaskDefinition '%s'." % definition.task_name)
+					continue
+				steps.append(RiteAction.new(context[step_definition.context_keys[0]], String(context[step_definition.context_keys[1]])))
+				step_descriptions.append(step_definition.step_description)
 			TaskTypes.ActionType.PATROL_AREA:
 				# 1 argomento (id della WorkArea, 2026-10-01): chiave consumata dalla factory — chi crea la Task scrive
 				# anche HuntZoneService.CONTEXT_WORK_AREA_ID, che resta nel context.

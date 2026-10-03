@@ -1,0 +1,16 @@
+[gd_resource type="Resource" script_class="RiteRules" format=3]
+
+[ext_resource type="Script" path="res://gameplay/rites/scripts/RiteRules.gd" id="1_rite"]
+
+[resource]
+script = ExtResource("1_rite")
+id = "simple_rite"
+display_name = "rite_simple_name"
+building_types = Array[String](["stacked_stones"])
+duration_days = 0.25
+min_skill = 0.0
+allowed_age_bands = Array[int]([])
+faith_celebrant = 200.0
+faith_present = 50.0
+faith_population = 10.0
+radius_gain = 0.2

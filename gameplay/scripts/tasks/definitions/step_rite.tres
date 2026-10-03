@@ -1,0 +1,9 @@
+[gd_resource type="Resource" script_class="TaskStepDefinition" format=3]
+
+[ext_resource type="Script" uid="uid://d3sri3tos2u4f" path="res://gameplay/scripts/tasks/task_step_definition.gd" id="1_rite"]
+
+[resource]
+script = ExtResource("1_rite")
+action_type = 23
+context_keys = Array[String](["rite_target_building", "rite_id"])
+step_description = "task_rite_step_rite"

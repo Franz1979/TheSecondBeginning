@@ -283,6 +283,9 @@ var current_happiness: float = 0.0
 var max_happiness: float = 0.0
 var current_loyalty: float = 0.0
 var max_loyalty: float = 0.0
+# Faith (2026-10-02, richiesta utente): stesso schema di loyalty, ma current_faith nasce a 0, non al massimo.
+var current_faith: float = 0.0
+var max_faith: float = 0.0
 
 # --- Capacità di trasporto (2026-09-08, richiesta utente) ---
 #
@@ -427,6 +430,9 @@ var skill_hunting: float = 0.0
 # trattamento/default delle altre. Cresce al completamento della Produce Task (task_completion_
 # effects.tres); dal 2026-09-27 accelera produzione e macellazione (SkillEffectService, chiavi "produce"/"butcher").
 var skill_crafting: float = 0.0
+# ritual (2026-10-02, richiesta utente — 9a skill, riti presso gli edifici religiosi): stesso trattamento/default
+# delle altre. Nessuna azione la usa né la fa crescere ancora (arriverà con la task Rito).
+var skill_ritual: float = 0.0
 
 
 # Nomi di TUTTE le property skill_* dell'istanza, raccolti via reflection (2026-09-13, richiesta
@@ -467,6 +473,8 @@ func _init() -> void:
 	var initial_loyalty := _resolve_initial_max_loyalty()
 	current_loyalty = initial_loyalty
 	max_loyalty = initial_loyalty
+	current_faith = 0.0
+	max_faith = _resolve_initial_max_faith()
 
 
 # Vedi il TODO sul campo current_stamina sopra per i limiti di questa risoluzione "al volo".
@@ -553,6 +561,15 @@ func _resolve_initial_max_loyalty() -> float:
 	if human_rules == null:
 		return FALLBACK_MAX_VITAL
 	return HumanCalculator.get_max_loyalty(human_rules, HumanTypes.AgeBand.FERTILE_ADULT, sex)
+
+
+func _resolve_initial_max_faith() -> float:
+	var human_rules: HumanRules = null
+	if source_group_ref != null and source_group_ref.folk_ref != null:
+		human_rules = source_group_ref.folk_ref.human_rules_ref
+	if human_rules == null:
+		return FALLBACK_MAX_VITAL
+	return HumanCalculator.get_max_faith(human_rules, HumanTypes.AgeBand.FERTILE_ADULT, sex)
 
 
 # Liste nomi come semplice testo (un nome per riga), non .tres — pensate per crescere a

@@ -97,6 +97,10 @@ enum ActionType {
 	# Pattuglia di una zona per la caccia (2026-10-01, caccia nelle zone passo 2a — PatrolAreaAction, vedi
 	# hunt_zone.tres). AGGIUNTO IN CODA. TaskFactory.build_task e TaskPersistenceService lo supportano entrambi.
 	PATROL_AREA,
+	# Celebrazione di un rito presso un edificio religioso (2026-10-02, task Rite — RiteAction, vedi rite.tres).
+	# AGGIUNTO IN CODA (i .tres salvano il valore numerico, 23). TaskFactory.build_task e TaskPersistenceService lo
+	# supportano entrambi.
+	RITE,
 }
 
 # Categorie di tool richiedibili da un'Action (2026-09-08, richiesta utente — SOLO struttura dati,

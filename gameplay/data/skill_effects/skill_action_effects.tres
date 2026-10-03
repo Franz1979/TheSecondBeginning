@@ -20,6 +20,11 @@ effects_by_action_key = {
 "skill": "skill_hunting",
 "skill_max": 1000.0
 },
+"rite": {
+"bonus": 0.5,
+"skill": "skill_ritual",
+"skill_max": 1000.0
+},
 "pickup": {
 "bonus": 0.25,
 "skill": "skill_gathering",

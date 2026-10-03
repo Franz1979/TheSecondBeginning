@@ -39,6 +39,17 @@ const AVOID_BIAS_PER_HOP: float = 0.20
 # trascinare tutti gli animali in linea retta. 0 = centri esclusi dal disagio.
 const CLUSTER_AVOID_STEER_RATE: float = 3.0
 
+# Distanza dei CENTRI dei gruppetti dagli edifici (2026-10-02, richiesta utente — animali troppo vicini al villaggio):
+# zona da evitare = entro building_avoidance_radius della specie × questo moltiplicatore dal centro di un edificio
+# completo, esclusi quelli di categoria MOVEMENT (sorgente "cluster_buildings" di disturbance_source). Un centro nasce
+# fuori dalla zona (_random_cluster_position) e, se ci si trova dentro (edificio costruito dopo), viene spinto fuori a
+# CLUSTER_BUILDING_PUSH_SPEED (_push_cluster_out_of_buildings). Gli individui seguono il loro centro col guinzaglio.
+const CLUSTER_BUILDING_AVOID_MULTIPLIER: float = 3.0
+# Velocità della spinta fuori dalla zona, in microcelle per giorno di gioco (circa 3 volte il vagare dei centri).
+const CLUSTER_BUILDING_PUSH_SPEED: float = 80.0
+# Tentativi di estrazione di un punto fuori dalla zona per un nuovo centro.
+const CLUSTER_SPAWN_MAX_ATTEMPTS: int = 20
+
 # Durata della fuga in giorni di gioco: 0.2 = 1.6 s reali a 1x (coniglio: ~7.6 microcelle a hop_speed 38).
 const FLEE_DURATION_DAYS: float = 0.1
 
@@ -460,6 +471,9 @@ var blocked_test: Callable = Callable()
 var discomfort_radius: float = 0.0
 var flee_radius: float = 0.0
 var building_avoidance_radius: float = 0.0
+# Edifici da cui tenere lontani i centri dei gruppetti (centri in coordinate locali, MOVEMENT esclusi): ultimo valore
+# letto da disturbance_source in _run_disturbance_check, usato a ogni frame da _push_cluster_out_of_buildings.
+var _cluster_avoid_buildings: Array = []
 # Reattività della specie al disagio (AnimalRules.avoidance_strength, risolta in configure): frazione per
 # balzo usata da _apply_avoidance_on_hop. Default AVOID_BIAS_PER_HOP per le specie che non la dichiarano.
 var avoidance_strength: float = AVOID_BIAS_PER_HOP
@@ -854,7 +868,9 @@ func _sync_cluster_count(total_population: int) -> void:
 
 	var num_clusters: int = clampi(ceili(float(total_population) / max_individuals_per_cluster), 1, total_population)
 	while _clusters.size() < num_clusters:
-		_clusters.append(_make_random_group())
+		var cluster := _make_random_group()
+		cluster.position = _random_cluster_position()
+		_clusters.append(cluster)
 	if _clusters.size() > num_clusters:
 		_clusters.resize(num_clusters)
 
@@ -1072,6 +1088,7 @@ func _process(real_delta: float) -> void:
 		_apply_cluster_avoidance(cluster, delta)
 		# Centri dei gruppetti senza collisione (2026-09-27): solo i singoli individui scorrono lungo gli ostacoli.
 		cluster.position += cluster.direction * move_speed * delta
+		_push_cluster_out_of_buildings(cluster, delta)
 		_bounce_at_bounds(cluster)
 
 	for i in range(_groups.size()):
@@ -1150,19 +1167,82 @@ func _apply_cluster_avoidance(cluster: AnimalVisualGroup, delta: float) -> void:
 func _run_disturbance_check() -> void:
 	var humans: Array = []
 	var buildings: Array = []
+	_cluster_avoid_buildings = []
 	if disturbance_source.is_valid():
 		var sources: Dictionary = disturbance_source.call()
 		humans = sources.get("humans", [])
 		buildings = sources.get("buildings", [])
+		_cluster_avoid_buildings = sources.get("cluster_buildings", [])
 	if discomfort_radius <= 0.0:
 		humans = []
 	if building_avoidance_radius <= 0.0:
 		buildings = []
+		_cluster_avoid_buildings = []
 	var no_sources := humans.is_empty() and buildings.is_empty()
 	for group in _groups:
 		_evaluate_avoidance(group, humans, buildings, no_sources)
+	# Centri dei gruppetti (2026-10-02): la spinta debole resta solo per gli umani; dagli edifici li allontana
+	# _push_cluster_out_of_buildings.
 	for cluster in _clusters:
-		_evaluate_avoidance(cluster, humans, buildings, no_sources)
+		_evaluate_avoidance(cluster, humans, [], humans.is_empty())
+
+
+# Raggio della zona da evitare per i centri dei gruppetti, in microcelle (0 = nessuna zona).
+func _cluster_building_avoid_distance() -> float:
+	return building_avoidance_radius * CLUSTER_BUILDING_AVOID_MULTIPLIER
+
+
+# Distanza dal centro dell'edificio (tra `buildings`) più vicino a `point`; INF se non ce ne sono.
+func _nearest_building_distance(point: Vector2, buildings: Array) -> float:
+	var nearest := INF
+	for building_position in buildings:
+		nearest = minf(nearest, point.distance_to(building_position))
+	return nearest
+
+
+# Posizione di un nuovo centro: punto casuale nella macrocella fuori dalla zona da evitare, fino a
+# CLUSTER_SPAWN_MAX_ATTEMPTS tentativi; se falliscono tutti, il più lontano dagli edifici tra quelli provati. Gli
+# edifici sono letti al momento da disturbance_source (un centro può nascere prima del primo controllo periodico).
+func _random_cluster_position() -> Vector2:
+	var avoid_distance := _cluster_building_avoid_distance()
+	var buildings: Array = []
+	if avoid_distance > 0.0 and disturbance_source.is_valid():
+		buildings = (disturbance_source.call() as Dictionary).get("cluster_buildings", [])
+	var best_point := Vector2(randf_range(0.0, World.WIDTH), randf_range(0.0, World.HEIGHT))
+	if buildings.is_empty():
+		return best_point
+	var best_distance := _nearest_building_distance(best_point, buildings)
+	var attempts := 1
+	while best_distance <= avoid_distance and attempts < CLUSTER_SPAWN_MAX_ATTEMPTS:
+		var point := Vector2(randf_range(0.0, World.WIDTH), randf_range(0.0, World.HEIGHT))
+		var distance := _nearest_building_distance(point, buildings)
+		if distance > best_distance:
+			best_point = point
+			best_distance = distance
+		attempts += 1
+	return best_point
+
+
+# Centro dentro la zona da evitare: spinto a velocità costante (CLUSTER_BUILDING_PUSH_SPEED) in direzione opposta
+# all'edificio più vicino, con la direzione di vagare girata nello stesso verso, finché non ne esce. I limiti della
+# macrocella li applica _bounce_at_bounds subito dopo.
+func _push_cluster_out_of_buildings(cluster: AnimalVisualGroup, delta: float) -> void:
+	var avoid_distance := _cluster_building_avoid_distance()
+	if avoid_distance <= 0.0 or _cluster_avoid_buildings.is_empty():
+		return
+	var nearest_distance := INF
+	var nearest: Vector2 = Vector2.ZERO
+	for building_position in _cluster_avoid_buildings:
+		var distance: float = cluster.position.distance_to(building_position)
+		if distance < nearest_distance:
+			nearest_distance = distance
+			nearest = building_position
+	if nearest_distance > avoid_distance:
+		return
+	var offset: Vector2 = cluster.position - nearest
+	var away: Vector2 = offset / nearest_distance if nearest_distance > 0.001 else Vector2.RIGHT.rotated(randf_range(0.0, TAU))
+	cluster.direction = away
+	cluster.position += away * minf(CLUSTER_BUILDING_PUSH_SPEED * delta, avoid_distance - nearest_distance + 0.01)
 
 
 # Direzione e intensità del disagio di UN individuo. Umani: solo il più vicino, e solo se entro

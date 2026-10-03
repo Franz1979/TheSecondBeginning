@@ -11,3 +11,4 @@ category = 1
 generation_source = 3
 day_durability = 10
 space_per_unit = 6.0
+prefers_recipe_workstation = true

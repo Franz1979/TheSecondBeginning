@@ -119,6 +119,9 @@ const SPAWN_GRID_SPACING: float = 1.2
 # futura entra automaticamente in questa distribuzione senza toccare questo codice.
 const SEED_SKILL_POINTS_TOTAL: float = 1000.0
 const RANDOM_WEIGHT_MIN: float = 0.01
+# Skill escluse dalla distribuzione casuale (2026-10-02, richiesta utente): partono a 0 e non entrano nella divisione
+# del budget SEED_SKILL_POINTS_TOTAL. La nascita (HumanBirthIndividualService) resta invariata.
+const SEED_EXCLUDED_SKILLS: Array[String] = ["skill_ritual"]
 
 
 # Semina Folk + HumanPopulationGroup + HumanIndividual per il popolo del player, in UNA cella gia'
@@ -645,7 +648,10 @@ func _random_age_in_band(durations_male: Array[float], durations_female: Array[f
 # mai duplicata inline: un solo posto dove l'algoritmo di distribuzione vive. Pubblica e statica dal
 # 2026-09-27: la usa anche VisitorService.materialize_members per i visitatori accolti.
 static func seed_random_skills(individual: HumanIndividual) -> void:
-	var skill_names := individual.get_skill_property_names()
+	var skill_names: Array[String] = []
+	for skill_name in individual.get_skill_property_names():
+		if not SEED_EXCLUDED_SKILLS.has(skill_name):
+			skill_names.append(skill_name)
 	if skill_names.is_empty():
 		return
 	var weights: Array[float] = []

@@ -144,14 +144,18 @@ extends Resource
 # scopre territorio.
 @export var visibility_radius: int = 0
 
-# political_radius/cultural_radius/religious_radius: raggio in MACROCELLE (un edificio proietta il
-# proprio effetto su macrocelle intere attorno a sé, unità diversa da visibility_radius sopra).
-# 0 = solo la propria macrocella, 1 = anche le 8 adiacenti, 2 = un altro anello oltre quello, ecc. —
-# anelli concentrici (distanza di Chebyshev), confermato con l'utente. Nessun consumatore ancora:
-# per ora questi tre campi sono solo il dato che definirà i rispettivi effetti in futuro.
+# political_radius/cultural_radius/religious_radius: raggio in MICROCELLE (2026-10-02, chiarimento utente — prima
+# il commento diceva macrocelle, ma nessun codice li leggeva ancora), stessa unità di visibility_radius sopra e del
+# raggio della fog of war, misurato dal centro della microcella dell'edificio. 0 = nessuna influenza di quel tipo.
+# Raggio BASE: il raggio effettivo (che in futuro potrà crescere) si legge SOLO da InfluenceService.
+# get_effective_radius, mai direttamente da qui. Oggi lo usa solo l'impronta mostrata dal pannello edificio
+# (bottone "Mostra influenza", InfluenceFootprintOverlay); nessun effetto di gioco ancora.
 @export var political_radius: int = 0
 @export var cultural_radius: int = 0
 @export var religious_radius: int = 0
+# Tetto del raggio di influenza CORRENTE (2026-10-02, passo 4c): il raggio cresce con i riti fino a raggio base × questo
+# moltiplicatore e decade da solo verso la base (InfluenceService). Vale per tutti e tre i tipi.
+@export var influence_max_multiplier: float = 2.0
 
 # Vincolo GLOBALE di unicità (2026-09-07, richiesta utente) — al più UN edificio con questo flag
 # true può esistere in tutta la partita, indipendentemente da dove/quante volte si provi a

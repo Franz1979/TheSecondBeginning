@@ -69,6 +69,8 @@ const GROUP_HEADER_HEIGHT: float = 22.0
 # entrambi i gruppi. Usato SOLO per il tetto dello SpinBox e per il segnale, mai per una nuova query
 # a Building/al mondo: stesso principio "mute panel" del commento sopra.
 var _row_entries: Dictionary = {}
+# Testo/icona sostitutivi per riga (vedi open_choice_only_dialog), azzerati a ogni apertura.
+var _row_overrides: Dictionary = {}
 
 # Chiave della riga selezionata (2026-09-18) — "" solo se non ci sono candidati.
 var _selected_key: String = ""
@@ -144,8 +146,11 @@ func open_grouped_dialog(
 const QUANTITY_AND_REPEAT_HEIGHT: float = 64.0
 
 
-func open_choice_only_dialog(dialog_title: String, message: String, available_quantities: Dictionary) -> void:
+# `row_overrides` (2026-10-02, scelta del rito): chiave -> {"text": String, "icon": String} per righe che non sono
+# risorse (testo del pulsante e icona emoji al posto di nome, quantità e icona della risorsa). Vuoto = come sempre.
+func open_choice_only_dialog(dialog_title: String, message: String, available_quantities: Dictionary, row_overrides: Dictionary = {}) -> void:
 	_reset_rows(dialog_title, message, false)
+	_row_overrides = row_overrides
 	_set_quantity_and_repeat_visible(false)
 	for resource_name: String in available_quantities.keys():
 		_add_row(resource_name, resource_name, int(available_quantities[resource_name]))
@@ -168,6 +173,7 @@ func _reset_rows(dialog_title: String, message: String, repeat_default: bool) ->
 		child.queue_free()
 	_resource_row_buttons.clear()
 	_row_entries.clear()
+	_row_overrides = {}
 	_selected_key = ""
 
 
@@ -204,7 +210,8 @@ func _build_resource_row(key: String, resource_name: String, quantity: int) -> C
 	var icon_box := Control.new()
 	icon_box.custom_minimum_size = Vector2(RESOURCE_ROW_ICON_SIZE, RESOURCE_ROW_ICON_SIZE)
 	# "Prendi tutti i prodotti" (2026-09-24): nessuna icona di risorsa, un simbolo generico (sotto).
-	var icon_node: Control = null if resource_name == RetrieveAction.ALL_PRODUCTS else IconRegistry.get_resource_icon_node(resource_name)
+	var override: Dictionary = _row_overrides.get(key, {})
+	var icon_node: Control = null if resource_name == RetrieveAction.ALL_PRODUCTS or not override.is_empty() else IconRegistry.get_resource_icon_node(resource_name)
 	if icon_node != null:
 		icon_box.add_child(icon_node)
 		icon_node.anchor_left = 0.0
@@ -220,6 +227,8 @@ func _build_resource_row(key: String, resource_name: String, quantity: int) -> C
 		var icon_text: String = IconRegistry.get_resource_icon(resource_name)
 		if resource_name == RetrieveAction.ALL_PRODUCTS:
 			icon_text = "📦"
+		elif not override.is_empty():
+			icon_text = String(override.get("icon", ""))
 		fallback_label.text = icon_text if icon_text != "" else resource_name.substr(0, 1).to_upper()
 		fallback_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		fallback_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
@@ -231,6 +240,8 @@ func _build_resource_row(key: String, resource_name: String, quantity: int) -> C
 	var resource_button := Button.new()
 	if resource_name == RetrieveAction.ALL_PRODUCTS:
 		resource_button.text = tr("transport_dialog_take_all_products").format({"quantity": quantity})
+	elif not override.is_empty():
+		resource_button.text = String(override.get("text", resource_name))
 	else:
 		resource_button.text = "%s (%d)" % [IconRegistry.get_resource_display_name(resource_name), quantity]
 	resource_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL

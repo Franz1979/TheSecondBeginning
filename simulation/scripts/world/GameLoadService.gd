@@ -549,6 +549,15 @@ func load_game_from_json(file_path: String) -> LoadedGame:
 			building.is_marked_for_demolition = bool(building_data.get("is_marked_for_demolition", false))
 			building.current_durability = int(building_data.get("current_durability", 0))
 			building.built_year = int(building_data.get("built_year", -1))
+			# Raggio di influenza corrente (2026-10-02, passo 4c): assente nei salvataggi vecchi = raggio base (voce vuota).
+			# JSON salva le chiavi come stringhe: riportate a int (InfluenceService.InfluenceType).
+			# Ultimo rito celebrato qui (2026-10-02): -1 (mai) per i salvataggi precedenti.
+			building.last_rite_absolute_day = int(building_data.get("last_rite_absolute_day", -1))
+			building.influence_radius = {}
+			var saved_influence_radius: Variant = building_data.get("influence_radius", {})
+			if saved_influence_radius is Dictionary:
+				for influence_key in (saved_influence_radius as Dictionary).keys():
+					building.influence_radius[int(influence_key)] = float(saved_influence_radius[influence_key])
 			# stored_resources (2026-09-09, richiesta utente, Step 3 decadimento) — formato cambiato
 			# da resource_name -> int diretto a resource_name -> {"quantity","decay_fraction"} (vedi
 			# BuildingStorageService/Building.gd). _parse_stored_resources sotto gestisce ENTRAMBI i
@@ -744,6 +753,9 @@ func load_game_from_json(file_path: String) -> LoadedGame:
 			individual.max_happiness = float(individual_data.get("max_happiness", HumanIndividual.FALLBACK_MAX_VITAL))
 			individual.current_loyalty = float(individual_data.get("current_loyalty", HumanIndividual.FALLBACK_MAX_VITAL))
 			individual.max_loyalty = float(individual_data.get("max_loyalty", HumanIndividual.FALLBACK_MAX_VITAL))
+			# Faith (2026-10-02): salvataggi più vecchi senza il campo -> 0, come alla nascita.
+			individual.current_faith = float(individual_data.get("current_faith", 0.0))
+			individual.max_faith = float(individual_data.get("max_faith", HumanIndividual.FALLBACK_MAX_VITAL))
 			# 6 nuove skill (2026-09-13, richiesta utente) — .get() con default 0.0: un save precedente
 			# a questi campi non può avere mai avuto una skill diversa da 0.0 (nessuna crescita esiste
 			# ancora), quindi il default è sempre corretto, non solo un ripiego onesto (stesso
@@ -757,6 +769,8 @@ func load_game_from_json(file_path: String) -> LoadedGame:
 			individual.skill_hunting = float(individual_data.get("skill_hunting", 0.0))
 			# skill_crafting (2026-09-24): 0.0 per i save precedenti alla skill.
 			individual.skill_crafting = float(individual_data.get("skill_crafting", 0.0))
+			# skill_ritual (2026-10-02): 0.0 per i save precedenti alla skill.
+			individual.skill_ritual = float(individual_data.get("skill_ritual", 0.0))
 			# Capacità di trasporto (2026-09-08, richiesta utente) — .get() con default "non sta
 			# trasportando nulla": un save precedente a questo campo non può avere mai avuto un
 			# individuo in trasporto (nessun PickUp esiste ancora), quindi il default è sempre

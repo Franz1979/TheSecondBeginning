@@ -864,16 +864,20 @@ func _search_warehouse_for_resource(
 		return
 
 	# Preferenza per la postazione di lavoro (2026-09-27, richiesta utente — Task con CONTEXT_PREFER_RECIPE_WORKSTATION,
-	# oggi la macellazione): se la risorsa è un ingrediente di una ricetta, prima la postazione più vicina che ne
-	# accetta almeno un'unità (la carne al focolare, dove verrà cotta); le altre risorse (pelli, ossa, tendini) non
-	# sono ingredienti e vanno al magazzino come sempre. Il residuo che non entra lo ricolloca UnloadAction con il
-	# re-routing normale, che non considera mai le postazioni.
+	# oggi la macellazione): solo per le risorse con SecondaryResourceRules.prefers_recipe_workstation (oggi la carne),
+	# prima la postazione più vicina che ne è una ricetta e ne accetta almeno un'unità (la carne al focolare, dove verrà
+	# cotta). Le altre (pelli, ossa, tendini) vanno al magazzino con find_best anche se sono ingredienti di ricette del
+	# focolare (2026-10-02, richiesta utente): una Build non preleva mai da una postazione di lavoro. Lo scarico alla
+	# postazione è marcato only_preferred_resources: lì entrano solo le risorse con il flag, il resto dello zaino resta
+	# addosso. Il residuo lo ricolloca UnloadAction con il re-routing normale verso un magazzino.
 	var candidate: Building = null
-	if bool(task.context.get(CONTEXT_PREFER_RECIPE_WORKSTATION, false)):
+	var via_workstation_preference := false
+	if bool(task.context.get(CONTEXT_PREFER_RECIPE_WORKSTATION, false)) and WarehouseSelectionService.prefers_recipe_workstation(resource_name):
 		candidate = WarehouseSelectionService.find_nearest_recipe_workstation(
 			world, individual.position, individual.home_macro_coords, resource_name, 1, excluded_building_ids,
 			PathfindingService.reachability_for(individual)
 		)
+		via_workstation_preference = candidate != null
 	if candidate == null:
 		candidate = WarehouseSelectionService.find_best(
 			world, individual.position, individual.home_macro_coords, resource_name, quantity, excluded_building_ids,
@@ -905,6 +909,7 @@ func _search_warehouse_for_resource(
 		# prima di questo passo, ora reso esplicito invece che dedotto dalla non-nullità dell'argomento.
 		var planned_unload := UnloadAction.new(candidate, UnloadAction.DepositKind.RESOURCE)
 		planned_unload.planned_resources.append(resource_name)
+		planned_unload.only_preferred_resources = via_workstation_preference
 		var new_steps: Array[Action] = [WalkAction.new(candidate_position), planned_unload]
 		if in_supply_round:
 			# Avanzo dello scarico AL CANTIERE (fine del giro): dopo il magazzino il pipottino torna al cantiere e riprende
@@ -1221,7 +1226,8 @@ func _has_butcher_product_destination(individual: HumanIndividual, task: Task, w
 	var reachability := PathfindingService.reachability_for(individual)
 	var prefer_workstation := bool(task.context.get(CONTEXT_PREFER_RECIPE_WORKSTATION, false))
 	for product_name in product_names:
-		if prefer_workstation and WarehouseSelectionService.find_nearest_recipe_workstation(
+		if prefer_workstation and WarehouseSelectionService.prefers_recipe_workstation(product_name) \
+				and WarehouseSelectionService.find_nearest_recipe_workstation(
 			world, individual.position, individual.home_macro_coords, product_name, 1, [], reachability
 		) != null:
 			return true

@@ -250,6 +250,10 @@ var next_work_area_id: int = 1
 # Contatore delle modifiche all'elenco delle zone (runtime, non salvato): alzato da WorkAreaService a ogni
 # creazione/eliminazione, letto dalle viste (overlay del layer "Aree di lavoro", minimappa) per ridisegnarsi.
 var work_areas_revision: int = 0
+# Contatore delle modifiche agli edifici (2026-10-02, runtime, non salvato): alzato da GameScene.
+# _refresh_building_slots_buildable (caricamento, piazzamento, completamento, demolizione), letto dagli overlay dei
+# layer di influenza (InfluenceLayerOverlay) per ridisegnarsi solo quando serve.
+var buildings_revision: int = 0
 
 func allocate_work_area_id() -> int:
 	var id := next_work_area_id

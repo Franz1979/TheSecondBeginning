@@ -641,6 +641,10 @@ func _ready() -> void:
 	tool_storage_dialog = OPTION_CHOICE_DIALOG_SCENE.instantiate()
 	add_child(tool_storage_dialog)
 	tool_storage_dialog.resource_chosen.connect(_on_tool_storage_resource_chosen)
+	# Scelta del rito (2026-10-02, task Rite): altra istanza dedicata dello stesso OptionChoiceDialog.
+	rite_choice_dialog = OPTION_CHOICE_DIALOG_SCENE.instantiate()
+	add_child(rite_choice_dialog)
+	rite_choice_dialog.resource_chosen.connect(_on_rite_chosen)
 	# building_info_panel (Step 5, richiesta utente 2026-09-04) — terzo sibling nella STESSA
 	# SelectionTab, stesso identico principio "componente muto" di vegetation_info_panel/
 	# human_individual_info_panel; zero modifiche a GameInfoTabs per aggiungerlo (già agnostica).
@@ -741,6 +745,12 @@ func _ready() -> void:
 	# Demolisci dal pannello edificio (2026-09-27, richiesta utente — prima era un bottone della BuildBar con una
 	# modalità "scegli bersaglio"): apre DemolishConfirmationDialog sull'edificio mostrato.
 	building_info_panel.demolish_requested.connect(_on_demolish_requested)
+	# Icone di influenza (2026-10-02): impronta temporanea del cerchio del tipo cliccato e anteprima fissa al passaggio
+	# del mouse. Il gruppo di icone vive nell'intestazione della scheda, accanto al 🎯.
+	game_info_tabs.header_actions.add_child(building_info_panel.influence_buttons_box)
+	building_info_panel.influence_footprint_requested.connect(_on_influence_footprint_requested)
+	building_info_panel.influence_preview_started.connect(_on_influence_preview_started)
+	building_info_panel.influence_preview_ended.connect(_clear_influence_preview)
 	# "Assegna demolitore" (2026-09-27): scelta del demolitore; uscire senza scegliere non annulla la demolizione.
 	building_info_panel.demolisher_assign_requested.connect(_enter_demolisher_pick_mode)
 	building_info_panel.demolition_cancel_requested.connect(_on_demolition_cancel_requested)
@@ -1291,6 +1301,7 @@ func _process(delta: float) -> void:
 		_sync_work_area_selection_overlay()
 	_open_pending_visitor_decision()
 	_sync_dropped_weapon_markers()
+	_track_rite_tasks()
 	_sync_ground_pile_views()
 
 	if individual != null:
@@ -1616,7 +1627,7 @@ func _unhandled_input(event: InputEvent) -> void:
 			# _try_assign_hunt_command_on_right_click (2026-09-26, caccia step 2) — provato PER PRIMO: un
 			# animale è un bersaglio esplicito e si muove, non deve essere "rubato" da un sasso o da un
 			# lotto che gli sta sotto.
-			elif not _try_assign_hunt_command_on_right_click(event) and not _try_assign_butcher_command_on_right_click(event) and not _try_assign_pickup_command_on_right_click(event) and not _try_assign_build_command_on_right_click(event) and not _try_assign_transport_command_on_right_click(event):
+			elif not _try_assign_hunt_command_on_right_click(event) and not _try_assign_butcher_command_on_right_click(event) and not _try_assign_pickup_command_on_right_click(event) and not _try_assign_build_command_on_right_click(event) and not _try_assign_rite_command_on_right_click(event) and not _try_assign_transport_command_on_right_click(event):
 				individual_controller.handle_input(event)
 
 	if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_X:
@@ -5050,6 +5061,161 @@ func _try_assign_build_command_on_right_click(event: InputEvent) -> bool:
 	return _assign_resumable_building_task(individual, hit_building)
 
 
+# --- Task Rite (2026-10-02, richiesta utente — comando manuale) ---
+#
+# Destro su un edificio completo che ammette almeno un rito (RiteService), con un pipottino selezionato: popup dei riti
+# ammessi dall'edificio e consentiti da età e skill_ritual del pipottino; scelto il rito, Task rite.tres [Walk → Rite].
+# Un rito alla volta per edificio (_building_has_active_rite): con un rito già assegnato o in corso il comando è
+# rifiutato con un messaggio. Provato dopo la Build (che riguarda solo cantieri ed edifici da demolire) e prima
+# della Transport.
+const RITE_TASK_DEFINITION_PATH := "res://gameplay/scripts/tasks/definitions/rite.tres"
+# Nome della task del rito ORDINATO dal giocatore: solo questa ha icona di comando e avviso "Rito interrotto" (il rito
+# spontaneo, task_leisure_rite_name, no).
+const RITE_TASK_NAME := "task_rite_name"
+# Pipottino ed edificio del popup di scelta aperto, finché il giocatore non conferma (o annulla).
+var _rite_pending: Dictionary = {}
+
+
+func _try_assign_rite_command_on_right_click(event: InputEvent) -> bool:
+	if not (event is InputEventMouseButton) or not event.pressed or event.button_index != MOUSE_BUTTON_RIGHT:
+		return false
+	if individual == null or not individual.is_selected:
+		return false
+	var building_hit := building_selector_controller.try_select(
+		event, live_cells, macro_world.buildings if macro_world != null else [], MOUSE_BUTTON_RIGHT
+	)
+	if building_hit.is_empty():
+		return false
+	var hit_building := _find_building_by_id(int(building_hit["building_id"]))
+	var rites := RiteService.get_rites_for_building(hit_building)
+	if rites.is_empty():
+		return false
+	if _building_has_active_rite(hit_building):
+		_reject_rite_command(individual, hit_building, tr("rite_reject_building_busy"))
+		return true
+	var age_band := _resolve_age_band(individual)
+	# Età della task (rite.tres, allowed_age_bands — 2026-10-02): controllata prima di aprire il popup, stesso motivo
+	# e stesso testo del rifiuto all'assegnazione.
+	var rite_definition := load(RITE_TASK_DEFINITION_PATH) as TaskDefinition
+	if rite_definition != null and not rite_definition.allowed_age_bands.is_empty() and not rite_definition.allowed_age_bands.has(age_band):
+		_report_assign_rejection(individual, HumanIndividual.ASSIGN_REJECT_TOO_YOUNG if age_band < HumanTypes.AgeBand.FERTILE_ADULT else HumanIndividual.ASSIGN_REJECT_AGE_NOT_ALLOWED, "task_activity_rite")
+		_spawn_rite_command_icon(hit_building, "task_rejected")
+		return true
+	var quantities: Dictionary = {}
+	var overrides: Dictionary = {}
+	for rules in rites:
+		if not RiteService.can_celebrate(rules, individual, age_band):
+			continue
+		quantities[rules.id] = 1
+		overrides[rules.id] = {"text": tr(rules.display_name), "icon": IconRegistry.get_command_icon("rite")}
+	if quantities.is_empty():
+		_reject_rite_command(individual, hit_building, tr("rite_reject_none_available").format({"name": individual.name}))
+		return true
+	_rite_pending = {"individual": individual, "building": hit_building}
+	rite_choice_dialog.open_choice_only_dialog(tr("rite_dialog_title"), tr("rite_dialog_message"), quantities, overrides)
+	return true
+
+
+func _on_rite_chosen(rite_id: String, _quantity: int, _repeat: bool) -> void:
+	var pending := _rite_pending
+	_rite_pending = {}
+	if pending.is_empty():
+		return
+	_assign_rite_task(pending["individual"], pending["building"], rite_id)
+
+
+# Costruisce e assegna la Task Rite. Ricontrolla tutto (il mondo può essere cambiato col popup aperto): edificio
+# ancora utilizzabile, nessun altro rito sull'edificio, rito ammesso e consentito al pipottino.
+func _assign_rite_task(worker: HumanIndividual, target_building: Building, rite_id: String) -> void:
+	if worker == null or target_building == null:
+		return
+	var rules := RiteService.get_rules(rite_id)
+	if rules == null or not RiteService.get_rites_for_building(target_building).has(rules):
+		return
+	if _building_has_active_rite(target_building):
+		_reject_rite_command(worker, target_building, tr("rite_reject_building_busy"))
+		return
+	var age_band := _resolve_age_band(worker)
+	if not RiteService.can_celebrate(rules, worker, age_band):
+		_reject_rite_command(worker, target_building, tr("rite_reject_none_available").format({"name": worker.name}))
+		return
+	var definition := load(RITE_TASK_DEFINITION_PATH) as TaskDefinition
+	if definition == null:
+		return
+	var macro_offset: Vector2 = Vector2(Vector2i(target_building.macro_x, target_building.macro_y) - worker.home_macro_coords) * World.WIDTH
+	var task := TaskFactory.build_task(definition, {
+		"target_position": PathfindingService.random_point_in_microcell(Vector2(target_building.micro_x, target_building.micro_y) + macro_offset),
+		"rite_target_building": target_building,
+		"rite_id": rite_id,
+	})
+	task.debug_target_key = "rite:%d" % target_building.id
+	var rejection := worker.get_assign_rejection_reason(task, age_band)
+	if rejection != HumanIndividual.ASSIGN_OK:
+		_report_assign_rejection(worker, rejection, "task_activity_rite")
+		_spawn_rite_command_icon(target_building, "task_rejected")
+		return
+	worker.assign_task(task, age_band)
+	var assigned := worker.current_task == task or worker.task_queue.has(task)
+	if not assigned:
+		_report_failed_assignment(worker, task, "task_activity_rite")
+	_spawn_rite_command_icon(target_building, "rite" if assigned else "task_rejected")
+	_refresh_selected_individual_panel()
+
+
+# Rito interrotto (2026-10-02, richiesta utente): ogni Task di rito ORDINATO (RITE_TASK_NAME, non il rito spontaneo)
+# viene seguita finché resta corrente o in coda del suo pipottino; quando sparisce senza che il rito sia concluso (RiteAction.completed false — bisogno
+# urgente, annullamento, edificio demolito, nuovo ordine) parte l'avviso "Rito interrotto" sul canale degli altri
+# comandi falliti (_report_command_rejection). Nessun avviso se il pipottino non c'è più (morte). Stato solo in
+# memoria: dopo un caricamento le Task di rito in corso vengono riprese a seguire da capo.
+var _tracked_rite_tasks: Dictionary = {}  # Task -> HumanIndividual
+
+func _track_rite_tasks() -> void:
+	for member in human_individuals:
+		var tasks: Array[Task] = []
+		if member.current_task != null and not member.current_task.is_finished():
+			tasks.append(member.current_task)
+		tasks.append_array(member.task_queue)
+		for task in tasks:
+			if task.task_name == RITE_TASK_NAME and not _tracked_rite_tasks.has(task) and _rite_action_of(task) != null:
+				_tracked_rite_tasks[task] = member
+	for task in _tracked_rite_tasks.keys():
+		var member: HumanIndividual = _tracked_rite_tasks[task]
+		if (member.current_task == task and not task.is_finished()) or member.task_queue.has(task):
+			continue
+		_tracked_rite_tasks.erase(task)
+		var rite := _rite_action_of(task)
+		if rite != null and not rite.completed and human_individuals.has(member):
+			_report_command_rejection(member, tr("rite_interrupted").format({"name": member.name}))
+
+
+func _rite_action_of(task: Task) -> RiteAction:
+	for step in task.steps:
+		if step is RiteAction:
+			return step as RiteAction
+	return null
+
+
+func _reject_rite_command(worker: HumanIndividual, target_building: Building, text: String) -> void:
+	_spawn_rite_command_icon(target_building, "task_rejected")
+	_report_command_rejection(worker, text)
+
+
+func _spawn_rite_command_icon(target_building: Building, command_icon_key: String) -> void:
+	var macro_coords := Vector2i(target_building.macro_x, target_building.macro_y)
+	if live_cells.has(macro_coords):
+		_spawn_command_icon_at_microcell(live_cells[macro_coords], Vector2i(target_building.micro_x, target_building.micro_y), command_icon_key)
+
+
+# true se un pipottino ha una Task con un RiteAction su `building`, in corso o in coda (non ancora conclusa).
+func _building_has_active_rite(building: Building) -> bool:
+	return _active_rite_building_ids().has(building.id)
+
+
+# Id degli edifici con un rito assegnato o in corso -> Building (Task correnti e in coda di tutti i pipottini).
+func _active_rite_building_ids() -> Dictionary:
+	return RiteService.get_active_rite_buildings(human_individuals)
+
+
 # Assegna a `worker` la Task di lavoro su `hit_building` (2026-09-27, estratta da _try_assign_build_command_on_right_click
 # per riusarla dalla modalità di scelta del demolitore): Build per un cantiere, Demolish per un edificio "da demolire",
 # via TaskReassignmentService.reassign_task. Icona sul bersaglio e motivo in caso di rifiuto. Ritorna false solo se la
@@ -5847,11 +6013,15 @@ func _try_assign_hunt_command_on_right_click(event: InputEvent) -> bool:
 # centri degli edifici COMPLETI di questa cella e delle 8 vicine}, in coordinate LOCALI di `coords`
 # (microcelle; chi sta in una cella vicina esce da 0..100). Chiamata da ciascun renderer una volta per
 # controllo (1 al secondo): pochi umani e pochi edifici, nessuna cache necessaria.
+# "cluster_buildings" (2026-10-02): gli stessi edifici SENZA quelli di categoria MOVEMENT (terra battuta), per la zona
+# da cui tenere lontani i centri dei gruppetti (AnimalGroupRenderer._push_cluster_out_of_buildings). "buildings"
+# resta invariato per la spinta sui singoli animali.
 func _animal_disturbance_sources(coords: Vector2i) -> Dictionary:
 	var humans: Array = []
 	for member in human_individuals:
 		humans.append(member.position + Vector2(member.home_macro_coords - coords) * World.WIDTH)
 	var buildings: Array = []
+	var cluster_buildings: Array = []
 	if macro_world != null:
 		for building in macro_world.buildings:
 			if not building.is_complete or building.is_demolished:
@@ -5859,8 +6029,11 @@ func _animal_disturbance_sources(coords: Vector2i) -> Dictionary:
 			var building_macro := Vector2i(building.macro_x, building.macro_y)
 			if absi(building_macro.x - coords.x) > 1 or absi(building_macro.y - coords.y) > 1:
 				continue
-			buildings.append(Vector2(building.micro_x, building.micro_y) + Vector2(0.5, 0.5) + Vector2(building_macro - coords) * World.WIDTH)
-	return {"humans": humans, "buildings": buildings}
+			var local_center := Vector2(building.micro_x, building.micro_y) + Vector2(0.5, 0.5) + Vector2(building_macro - coords) * World.WIDTH
+			buildings.append(local_center)
+			if building.rules == null or building.rules.category != BuildingTypes.Category.MOVEMENT:
+				cluster_buildings.append(local_center)
+	return {"humans": humans, "buildings": buildings, "cluster_buildings": cluster_buildings}
 
 
 # Celle delle prede delle cacce in corso o in coda (2026-09-26, caccia step 2), attivate nel _ready
@@ -6234,6 +6407,49 @@ func _sync_map_layer_overlay() -> void:
 	overlay.call("show_cell", cell)
 	_map_layer_overlay = overlay
 	_map_layer_overlay_layer_id = _active_map_layer_id
+
+
+# Impronta dell'influenza di un edificio (2026-10-02, richiesta utente — icone di influenza del pannello edificio): un
+# InfluenceFootprintOverlay con il cerchio del solo tipo cliccato, nel container della macrocella dell'edificio, sopra
+# la fog of war come gli overlay dei layer; si dissolve e si toglie da solo. Una sola impronta alla volta: un nuovo
+# clic sostituisce la precedente. L'anteprima al passaggio del mouse è un secondo overlay, indipendente.
+var _influence_footprint_overlay: InfluenceFootprintOverlay = null
+
+func _on_influence_footprint_requested(building: Building, influence_type: int) -> void:
+	if is_instance_valid(_influence_footprint_overlay):
+		_influence_footprint_overlay.queue_free()
+	_influence_footprint_overlay = _create_influence_overlay(building, influence_type, false)
+
+
+# Anteprima al passaggio del mouse (2026-10-02, richiesta utente): cerchio fisso, senza dissolvenza, finché
+# BuildingInfoPanel non emette influence_preview_ended. Non tocca l'impronta da clic, che finisce i suoi secondi.
+var _influence_preview_overlay: InfluenceFootprintOverlay = null
+
+func _on_influence_preview_started(building: Building, influence_type: int) -> void:
+	_clear_influence_preview()
+	_influence_preview_overlay = _create_influence_overlay(building, influence_type, true)
+
+
+func _clear_influence_preview() -> void:
+	if is_instance_valid(_influence_preview_overlay):
+		_influence_preview_overlay.queue_free()
+	_influence_preview_overlay = null
+
+
+# Overlay con il cerchio del tipo dato nel container della macrocella dell'edificio; null se l'edificio non ha quel
+# raggio o la sua macrocella non è viva.
+func _create_influence_overlay(building: Building, influence_type: int, persistent: bool) -> InfluenceFootprintOverlay:
+	if building == null or InfluenceService.get_effective_radius(building, influence_type) <= 0:
+		return null
+	var cell: LiveMacroCell = live_cells.get(Vector2i(building.macro_x, building.macro_y))
+	if cell == null or cell.container == null:
+		return null
+	var overlay := InfluenceFootprintOverlay.new()
+	overlay.persistent = persistent
+	overlay.z_index = 20
+	cell.container.add_child(overlay)
+	overlay.show_building(building, influence_type)
+	return overlay
 
 
 # Primo gruppo (il più vecchio) nella fase data, o null.
@@ -6773,9 +6989,10 @@ func _update_individual_panel_content(target: HumanIndividual) -> void:
 		target.max_health, target.current_health,
 		target.max_happiness, target.current_happiness,
 		target.max_loyalty, target.current_loyalty,
+		target.max_faith, target.current_faith,
 		target.skill_leadership, target.skill_builder, target.skill_management,
 		target.skill_transporter, target.skill_gathering, target.skill_cognition,
-		target.skill_hunting, target.skill_crafting,
+		target.skill_hunting, target.skill_crafting, target.skill_ritual,
 		queued_task_descriptions
 	)
 	# Titolo header consolidato (2026-09-13, richiesta utente — "perché la riga del center è
@@ -7540,6 +7757,7 @@ const EQUIP_TOOL_TASK_DEFINITION_PATH := "res://gameplay/scripts/tasks/definitio
 const STORE_TOOL_TASK_DEFINITION_PATH := "res://gameplay/scripts/tasks/definitions/store_tool.tres"
 const OPTION_CHOICE_DIALOG_SCENE := preload("res://gameplay/scenes/game/OptionChoiceDialog.tscn")
 var tool_storage_dialog: OptionChoiceDialog
+var rite_choice_dialog: OptionChoiceDialog
 # Richiesta in corso del dialogo attrezzi: {"individual": HumanIndividual, "slot": int}.
 var _tool_storage_request: Dictionary = {}
 
@@ -9900,6 +10118,9 @@ func _building_type_name_for_action(action_id: StringName) -> String:
 			return "burial"
 		&"build_earthwork":
 			return "earthwork"
+		# Pietre impilate (2026-10-02, richiesta utente) — azione cablata in BuildBar._ready.
+		&"build_stacked_stones":
+			return "stacked_stones"
 		_:
 			return ""
 
@@ -10207,6 +10428,9 @@ func _demolish_building(building: Building, salvaged: Dictionary = {}, completin
 # meccanismo da costruire, il ricalcolo qui è già completo/idempotente (rilegge lo stato attuale di
 # completed_ideas ad ogni chiamata, non un delta). Non ancora collegato a nulla in questo passo.
 func _refresh_building_slots_buildable() -> void:
+	# Layer di influenza (2026-10-02): gli overlay si ridisegnano quando cambia questo contatore.
+	if game_data != null:
+		game_data.buildings_revision += 1
 	for building_type_name in BuildingCalculator.list_building_type_names():
 		var rules := BuildingCalculator.get_building_rules(building_type_name)
 		if rules == null:

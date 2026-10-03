@@ -1338,7 +1338,7 @@ var _dirt_ground_speckles_by_variant: Dictionary = {}
 # battuta: dritti verso un edificio completo confinante ("dirt_neighbors", calcolata da GameScene),
 # irregolari verso le celle senza nulla.
 const GROUND_UNDER_BUILDING_TYPES: Array[String] = [
-	"stick_tent", "hide_tent", "pebble_circle", "campfire", "drying_rack", "smokehouse", "burial", "earthwork",
+	"stick_tent", "hide_tent", "pebble_circle", "campfire", "drying_rack", "smokehouse", "burial", "earthwork", "stacked_stones",
 ]
 
 

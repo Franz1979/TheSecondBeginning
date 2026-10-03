@@ -181,6 +181,8 @@ static func find_best(
 # is_recipe_input_of — il solo combustibile non basta) e che ne accetta almeno `min_quantity` unità (can_accept e
 # get_max_depositable). null se nessuna. 2026-09-27, richiesta utente: lo scarico dopo la macellazione porta la carne
 # al focolare, dove verrà cotta, prima che al magazzino.
+#
+# Va chiamata solo per le risorse con prefers_recipe_workstation (vedi sotto): oggi la carne.
 static func find_nearest_recipe_workstation(
 	world: World, origin_position: Vector2, origin_macro_coords: Vector2i, resource_name: String, min_quantity: int = 1,
 	excluded_building_ids: Array[int] = [], reachable: Callable = Callable()
@@ -195,6 +197,13 @@ static func find_nearest_recipe_workstation(
 	return SpatialSelectionService.find_nearest(
 		world.buildings, origin_position, origin_macro_coords, predicate, excluded_building_ids, reachable
 	) as Building
+
+
+# true se `resource_name` va preferibilmente alla postazione di una sua ricetta quando la Task lo chiede
+# (SecondaryResourceRules.prefers_recipe_workstation, 2026-10-02 — oggi solo la carne). false per nomi non risolvibili.
+static func prefers_recipe_workstation(resource_name: String) -> bool:
+	var rules := CaloricCalculator.get_caloric_source_rules(resource_name)
+	return rules != null and rules.prefers_recipe_workstation
 
 
 static func find_source_for_retrieval(

@@ -64,7 +64,10 @@ const BUILDING_SLOT_INDEX_BY_TYPE := {
 	# Tenda di pelli (2026-09-27, richiesta utente) — slot 10, submenu_row.slot_count portato a 12 in BuildBar.tscn;
 	# Hut resta l'ultimo a destra (slot 11).
 	"hide_tent": 10,
-	"hut": 11,
+	# Pietre impilate (2026-10-02, richiesta utente) — slot 11, submenu_row.slot_count portato a 13 in BuildBar.tscn;
+	# Hut resta l'ultimo a destra (slot 12).
+	"stacked_stones": 11,
+	"hut": 12,
 }
 
 enum _ViewState { MINIMIZED, LEVEL_1, LEVEL_2 }
@@ -135,7 +138,7 @@ func _ready() -> void:
 	# _refresh_building_slots_buildable finché manca, come la capanna.
 	submenu_row.configure_slot(5, IconRegistry.get_building_icon("toolmaker_hut"), tr("build_bar_toolmaker_hut_tooltip"), &"build_toolmaker_hut")
 	# Hut, ora slot 6 e sempre ULTIMA a destra (richiesta utente 2026-09-19; slot 6 dal 2026-09-24).
-	for placeholder_type in ["drying_rack", "smokehouse", "burial", "earthwork"]:
+	for placeholder_type in ["drying_rack", "smokehouse", "burial", "earthwork", "stacked_stones"]:
 		submenu_row.configure_slot(
 			BUILDING_SLOT_INDEX_BY_TYPE[placeholder_type], "", tr("build_bar_%s_tooltip" % placeholder_type),
 			StringName("build_%s" % placeholder_type), "", true, IconRegistry.get_building_icon_node(placeholder_type)

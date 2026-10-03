@@ -136,10 +136,14 @@ var _food_bar_fill_body_reserve: StyleBoxFlat = null
 @onready var thirst_bar: ProgressBar = $VitalsBox/VitalsBoxMargin/VitalsBoxContent/ThirstBarMargin/ThirstBar
 @onready var health_label: Label = $VitalsBox/VitalsBoxMargin/VitalsBoxContent/HealthLabel
 @onready var health_bar: ProgressBar = $VitalsBox/VitalsBoxMargin/VitalsBoxContent/HealthBarMargin/HealthBar
-@onready var happiness_label: Label = $VitalsBox/VitalsBoxMargin/VitalsBoxContent/HappinessLabel
-@onready var happiness_bar: ProgressBar = $VitalsBox/VitalsBoxMargin/VitalsBoxContent/HappinessBarMargin/HappinessBar
-@onready var loyalty_label: Label = $VitalsBox/VitalsBoxMargin/VitalsBoxContent/LoyaltyLabel
-@onready var loyalty_bar: ProgressBar = $VitalsBox/VitalsBoxMargin/VitalsBoxContent/LoyaltyBarMargin/LoyaltyBar
+# Riquadro "Animo" (2026-10-02, richiesta utente): happiness/loyalty spostate qui da VitalsBox, più faith.
+@onready var mind_section_label: Label = $MindBox/MindBoxMargin/MindBoxContent/MindSectionLabel
+@onready var happiness_label: Label = $MindBox/MindBoxMargin/MindBoxContent/HappinessLabel
+@onready var happiness_bar: ProgressBar = $MindBox/MindBoxMargin/MindBoxContent/HappinessBarMargin/HappinessBar
+@onready var loyalty_label: Label = $MindBox/MindBoxMargin/MindBoxContent/LoyaltyLabel
+@onready var loyalty_bar: ProgressBar = $MindBox/MindBoxMargin/MindBoxContent/LoyaltyBarMargin/LoyaltyBar
+@onready var faith_label: Label = $MindBox/MindBoxMargin/MindBoxContent/FaithLabel
+@onready var faith_bar: ProgressBar = $MindBox/MindBoxMargin/MindBoxContent/FaithBarMargin/FaithBar
 # Sezione Skills (2026-09-13, richiesta utente) — 7 barre VERTICALI (fill_mode = FILL_BOTTOM_TO_TOP
 # nel .tscn — hunting aggiunta come 7ma dopo le prime 6, stesso trattamento identico), una per
 # skill. Ordine VISIVO qui allineato all'ordine nel .tscn (richiesta utente: management/builder
@@ -172,6 +176,10 @@ var _food_bar_fill_body_reserve: StyleBoxFlat = null
 # crafting (2026-09-24, richiesta utente) — 8a barra, in coda dopo hunting, stesso trattamento.
 @onready var skill_crafting_bar: ProgressBar = $SkillsBox/SkillsBoxMargin/SkillsBoxContent/SkillsRowMargin/SkillsRow/CraftingColumn/CraftingBar
 @onready var skill_crafting_caption: Label = $SkillsBox/SkillsBoxMargin/SkillsBoxContent/SkillsRowMargin/SkillsRow/CraftingColumn/CraftingCaptionWrapper/CraftingCaption
+# ritual (2026-10-02, richiesta utente) — 9a barra, in coda dopo crafting, stesso trattamento. Per farci stare nove
+# colonne senza allargare il pannello, barre e spaziatura di tutte le colonne sono state ristrette nel .tscn.
+@onready var skill_ritual_bar: ProgressBar = $SkillsBox/SkillsBoxMargin/SkillsBoxContent/SkillsRowMargin/SkillsRow/RitualColumn/RitualBar
+@onready var skill_ritual_caption: Label = $SkillsBox/SkillsBoxMargin/SkillsBoxContent/SkillsRowMargin/SkillsRow/RitualColumn/RitualCaptionWrapper/RitualCaption
 @onready var carried_boxes_row: HBoxContainer = $CarryRowMargin/CarryRow/CarriedBoxesRow
 # Primo riquadro (slot 0), in scena: fa anche da modello per gli altri, duplicati in _build_carried_slots.
 @onready var carried_resource_box: ColorRect = $CarryRowMargin/CarryRow/CarriedBoxesRow/CarriedResourceBox
@@ -260,9 +268,10 @@ func show_individual(
 	max_health: float, current_health: float,
 	max_happiness: float, current_happiness: float,
 	max_loyalty: float, current_loyalty: float,
+	max_faith: float, current_faith: float,
 	skill_leadership: float, skill_builder: float, skill_management: float,
 	skill_transporter: float, skill_gathering: float, skill_cognition: float,
-	skill_hunting: float, skill_crafting: float,
+	skill_hunting: float, skill_crafting: float, skill_ritual: float,
 	queued_task_descriptions: Array[String] = []
 ) -> void:
 	visible = true
@@ -346,6 +355,8 @@ func show_individual(
 	health_bar.value = current_health
 	health_bar.tooltip_text = "%d/%d" % [int(current_health), int(max_health)]
 
+	mind_section_label.text = tr("individual_mind_section_label")
+
 	happiness_label.text = tr("individual_happiness_label")
 	happiness_bar.max_value = max_happiness
 	happiness_bar.value = current_happiness
@@ -355,6 +366,11 @@ func show_individual(
 	loyalty_bar.max_value = max_loyalty
 	loyalty_bar.value = current_loyalty
 	loyalty_bar.tooltip_text = "%d/%d" % [int(current_loyalty), int(max_loyalty)]
+
+	faith_label.text = tr("individual_faith_label")
+	faith_bar.max_value = max_faith
+	faith_bar.value = current_faith
+	faith_bar.tooltip_text = "%d/%d" % [int(current_faith), int(max_faith)]
 
 	# Sezione Skills (2026-09-13, richiesta utente) — 6 blocchi identici, stessa forma esatta dei
 	# blocchi vitali sopra (nessuna astrazione condivisa, coerente con lo stile del file). max_value
@@ -403,6 +419,11 @@ func show_individual(
 	skill_crafting_bar.value = skill_crafting
 	skill_crafting_bar.tooltip_text = "%d/1000" % [int(skill_crafting)]
 	skill_crafting_caption.text = tr("skill_crafting_label")
+
+	skill_ritual_bar.max_value = 1000.0
+	skill_ritual_bar.value = skill_ritual
+	skill_ritual_bar.tooltip_text = "%d/1000" % [int(skill_ritual)]
+	skill_ritual_caption.text = tr("skill_ritual_label")
 
 	# Capacità di trasporto (2026-09-13, richiesta utente — spostata in FONDO alle barre, dopo i 5
 	# nuovi parametri vitali: nessun motivo funzionale, solo l'ordine visivo concordato) — la barra

@@ -138,7 +138,7 @@ static func deserialize_task(data: Dictionary, macro_state: MacroCellState, worl
 			continue
 		# Bersaglio non risolvibile (Build/SetupSite/Clear): scarta l'intera Task — vedi il commento sul
 		# valore di ritorno sopra.
-		if (step is BuildAction or step is SetupSiteAction or step is ClearAction or step is ProduceAction) and step.get("target_building") == null:
+		if (step is BuildAction or step is SetupSiteAction or step is ClearAction or step is ProduceAction or step is RiteAction) and step.get("target_building") == null:
 			push_warning("TaskPersistenceService: task '%s' scartata al caricamento — l'edificio target dello step %d non esiste più." % [
 				String(data.get("task_name", "")), i
 			])
@@ -249,6 +249,8 @@ static func _action_type_for_step(step: Action) -> int:
 		return TaskTypes.ActionType.SEARCH_HAUL_ZONE
 	if step is PatrolAreaAction:
 		return TaskTypes.ActionType.PATROL_AREA
+	if step is RiteAction:
+		return TaskTypes.ActionType.RITE
 	push_error("TaskPersistenceService._action_type_for_step: tipo Action sconosciuto (%s)." % step.get_script().get_global_name())
 	return -1
 
@@ -298,6 +300,8 @@ static func _build_step(action_type: int, step_data: Dictionary, macro_state: Ma
 			# planned_resources (2026-09-27): vuoto per i save precedenti = scarico mai saltato, come prima.
 			for planned_name in step_data.get("planned_resources", []):
 				(step as UnloadAction).planned_resources.append(String(planned_name))
+			# only_preferred_resources (2026-10-02): false per i save precedenti = deposita tutto, come prima.
+			(step as UnloadAction).only_preferred_resources = bool(step_data.get("only_preferred_resources", false))
 		TaskTypes.ActionType.PICKUP:
 			var pickup_target := Vector2i(
 				int(step_data.get("target_position_x", 0)), int(step_data.get("target_position_y", 0))
@@ -468,6 +472,12 @@ static func _build_step(action_type: int, step_data: Dictionary, macro_state: Ma
 			if step_data.has("target_building_id"):
 				demolish_target_building = _find_building_by_id(world, int(step_data["target_building_id"]))
 			step = DemolishAction.new(demolish_target_building)
+		TaskTypes.ActionType.RITE:
+			# Edificio e rito (2026-10-02); il tempo già celebrato lo ripristina RiteAction.load_save_data.
+			var rite_target_building: Building = null
+			if step_data.has("target_building_id"):
+				rite_target_building = _find_building_by_id(world, int(step_data["target_building_id"]))
+			step = RiteAction.new(rite_target_building, String(step_data.get("rite_id", "")))
 		TaskTypes.ActionType.RECOVER_WEAPON:
 			# Arma a terra (vive solo in questo step), esito del tiro e bersaglio; il punto di caduta è in
 			# Task.context (HuntService.CONTEXT_WEAPON_DROP), ripristinato con il resto del context.

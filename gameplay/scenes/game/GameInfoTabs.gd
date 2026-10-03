@@ -96,6 +96,9 @@ signal center_requested
 # cosa scrivere — stesso principio di empty_selection_label/center_requested sopra.
 @onready var title_label: Label = $SelectionTab/SelectionTabBody/SelectionHeader/TitleLabel
 @onready var center_button: Button = $SelectionTab/SelectionTabBody/SelectionHeader/CenterButton
+# Pulsanti aggiuntivi di un pannello di selezione, a sinistra del 🎯 (2026-10-02 — le icone di influenza di
+# BuildingInfoPanel): GameScene vi aggiunge il gruppo del pannello, che ne gestisce da sé la visibilità.
+@onready var header_actions: HBoxContainer = $SelectionTab/SelectionTabBody/SelectionHeader/HeaderActions
 @onready var empty_selection_label: Label = $SelectionTab/SelectionTabBody/SelectionScroll/SelectionContent/EmptySelectionLabel
 
 # Scheda su cui si era prima di saltare su SelectionTab — ripristinata da hide_selection_tab().

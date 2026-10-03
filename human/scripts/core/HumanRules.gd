@@ -201,3 +201,17 @@ extends Resource
 @export var base_max_loyalty: float = 5000.0
 @export var loyalty_multiplier_by_age: Array[float] = [1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
 @export var loyalty_multiplier_by_sex: Array[float] = [1.0, 1.0]
+
+# Faith (2026-10-02, richiesta utente) — stesso schema di loyalty sopra. Nessuna regola la modifica ancora.
+@export var base_max_faith: float = 5000.0
+@export var faith_multiplier_by_age: Array[float] = [1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
+@export var faith_multiplier_by_sex: Array[float] = [1.0, 1.0]
+# Perdita giornaliera di fede (2026-10-02, regola 5 di HumanVitalsInteractionService — spostata qui dalle costanti di
+# quel service): senza casa o con la casa fuori dal raggio religioso, e con la casa dentro il raggio ma nessun rito
+# quel giorno. Nel giorno di un rito in un edificio che copre la casa la perdita resta 0.
+@export var faith_daily_loss_uncovered: float = 5.0
+@export var faith_daily_loss_covered: float = 2.0
+# Bonus giornalieri della copertura della casa (2026-10-02, HumanVitalsInteractionService): influenza CULTURAL ->
+# felicità, influenza POLITICAL -> lealtà. Solo bonus: senza casa o con la casa non coperta nessun effetto.
+@export var cultural_coverage_daily_happiness: float = 5.0
+@export var political_coverage_daily_loyalty: float = 5.0

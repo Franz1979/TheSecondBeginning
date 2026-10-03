@@ -393,6 +393,9 @@ func save_game_to_json(
 			"is_marked_for_demolition": building.is_marked_for_demolition,
 			"current_durability": building.current_durability,
 			"built_year": building.built_year,
+			# Raggio di influenza corrente per tipo (2026-10-02, passo 4c): chiavi int -> stringhe in JSON.
+			"influence_radius": building.influence_radius,
+			"last_rite_absolute_day": building.last_rite_absolute_day,
 			"stored_resources": building.stored_resources,
 			# construction_progress (2026-09-10, richiesta utente — preparazione Build Task; primi
 			# consumatori arrivati il 2026-09-11 con BuildAction/SetupSiteAction/ClearAction) — stesso
@@ -582,6 +585,8 @@ func save_game_to_json(
 				"max_happiness": individual.max_happiness,
 				"current_loyalty": individual.current_loyalty,
 				"max_loyalty": individual.max_loyalty,
+				"current_faith": individual.current_faith,
+				"max_faith": individual.max_faith,
 				# 6 nuove skill (2026-09-13, richiesta utente) — nessuna formula base/moltiplicatore
 				# dietro (a differenza dei 5 parametri vitali sopra), ma stesso principio "persisti ORA
 				# insieme alla dichiarazione, non quando arriverà un consumatore": oggi valgono sempre
@@ -595,6 +600,7 @@ func save_game_to_json(
 				"skill_cognition": individual.skill_cognition,
 				"skill_hunting": individual.skill_hunting,
 				"skill_crafting": individual.skill_crafting,
+				"skill_ritual": individual.skill_ritual,
 				# Capacità di trasporto (2026-09-08, richiesta utente) — lo zaino è l'unico stato "posseduto"
 				# da un individuo che sparirebbe silenziosamente al reload senza persistenza (stesso
 				# principio di dependent_child_id sopra: un possesso, non un dato ricalcolabile al volo).

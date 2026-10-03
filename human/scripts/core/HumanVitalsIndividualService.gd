@@ -44,6 +44,7 @@ static func recalculate_vitals(individual: HumanIndividual, game_data: GameData)
 		individual.max_health = HumanIndividual.FALLBACK_MAX_VITAL
 		individual.max_happiness = HumanIndividual.FALLBACK_MAX_VITAL
 		individual.max_loyalty = HumanIndividual.FALLBACK_MAX_VITAL
+		individual.max_faith = HumanIndividual.FALLBACK_MAX_VITAL
 	else:
 		var age := float(game_data.year - individual.birth_year_virtual)
 		var age_band := HumanCalculator.get_age_band(
@@ -54,10 +55,12 @@ static func recalculate_vitals(individual: HumanIndividual, game_data: GameData)
 		individual.max_health = HumanCalculator.get_max_health(human_rules, age_band, individual.sex)
 		individual.max_happiness = HumanCalculator.get_max_happiness(human_rules, age_band, individual.sex)
 		individual.max_loyalty = HumanCalculator.get_max_loyalty(human_rules, age_band, individual.sex)
+		individual.max_faith = HumanCalculator.get_max_faith(human_rules, age_band, individual.sex)
 	individual.current_thirst = _clamp_current_to_range(individual, "thirst", individual.current_thirst, individual.max_thirst)
 	individual.current_health = _clamp_current_to_range(individual, "health", individual.current_health, individual.max_health)
 	individual.current_happiness = _clamp_current_to_range(individual, "happiness", individual.current_happiness, individual.max_happiness)
 	individual.current_loyalty = _clamp_current_to_range(individual, "loyalty", individual.current_loyalty, individual.max_loyalty)
+	individual.current_faith = _clamp_current_to_range(individual, "faith", individual.current_faith, individual.max_faith)
 
 
 # Un solo punto per il clamp+log ripetuto 5 volte sopra (a differenza di

@@ -30,11 +30,17 @@ skill_effects_by_task_name = {
 },
 "task_leisure_rest_name": {},
 "task_leisure_restock_name": {},
+"task_leisure_rite_name": {
+"skill_ritual": 1.0
+},
 "task_play_name": {},
 "task_produce_name": {
 "skill_crafting": 1.0
 },
 "task_rest_name": {},
+"task_rite_name": {
+"skill_ritual": 1.0
+},
 "task_transport_name": {
 "skill_transporter": 1.0
 },
@@ -54,10 +60,12 @@ vital_effects_by_task_name = {
 "task_hunt_zone_name": {},
 "task_leisure_rest_name": {},
 "task_leisure_restock_name": {},
+"task_leisure_rite_name": {},
 "task_play_name": {
 "current_happiness": 40.0
 },
 "task_rest_name": {},
+"task_rite_name": {},
 "task_transport_name": {},
 "task_wander_name": {
 "current_happiness": 10.0

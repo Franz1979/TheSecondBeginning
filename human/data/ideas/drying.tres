@@ -1,4 +1,4 @@
-[gd_resource type="Resource" script_class="Idea" format=3]
+[gd_resource type="Resource" script_class="Idea" format=3 uid="uid://cpab6vmbgd75s"]
 
 [ext_resource type="Script" uid="uid://cqx38hirrk3s1" path="res://human/scripts/core/Idea.gd" id="1_drying"]
 
@@ -8,5 +8,5 @@ id = "drying"
 display_name = "idea_drying"
 summary = "idea_drying_summary"
 description = "idea_drying_description"
-thoughts_cost = 30
+thoughts_cost = 20
 era = "paleolithic"

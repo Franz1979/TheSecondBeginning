@@ -13,6 +13,8 @@ extends RefCounted
 #   - "available": false = segnaposto, in grigio nel menu con il tooltip "In arrivo" (map_layer_coming_soon);
 #   - "map_overlay": script di un Node2D disegnato sulla macrocella corrente, figlio del suo container, con
 #     show_cell(cell: LiveMacroCell) e get_cell() -> LiveMacroCell (null = nessun disegno sulla mappa);
+#   - "overlay_params" (opzionale): {proprietà: valore} assegnati all'overlay appena creato, prima che entri
+#     nell'albero — un solo script per più layer (es. InfluenceLayerOverlay.influence_type);
 #   - "minimap_method": nome di un metodo di QUESTA classe che disegna il layer sulla minimappa, firma
 #     (canvas: Control, cell_px: float, world: World, visible_cells: Dictionary) ("" = nessun disegno).
 
@@ -35,9 +37,25 @@ const LAYERS: Array[Dictionary] = [
 	{"id": "known_zone", "name_key": "map_layer_known_zone", "icon": "👁", "available": false, "map_overlay": null, "minimap_method": ""},
 	{"id": "resources", "name_key": "map_layer_resources", "icon": "🪨", "available": false, "map_overlay": null, "minimap_method": ""},
 	{"id": "fauna", "name_key": "map_layer_fauna", "icon": "🦌", "available": false, "map_overlay": null, "minimap_method": ""},
-	{"id": "cultural_influence", "name_key": "map_layer_cultural_influence", "icon": "🎭", "available": false, "map_overlay": null, "minimap_method": ""},
-	{"id": "political_influence", "name_key": "map_layer_political_influence", "icon": "👑", "available": false, "map_overlay": null, "minimap_method": ""},
-	{"id": "religious_influence", "name_key": "map_layer_religious_influence", "icon": "🔥", "available": false, "map_overlay": null, "minimap_method": ""},
+	# Layer di influenza (2026-10-02): un solo overlay (InfluenceLayerOverlay) parametrizzato dal tipo. Niente minimappa.
+	{
+		"id": "cultural_influence", "name_key": "map_layer_cultural_influence", "icon": "🎭", "available": true,
+		"map_overlay": preload("res://gameplay/scripts/map_layers/InfluenceLayerOverlay.gd"),
+		"overlay_params": {"influence_type": InfluenceService.InfluenceType.CULTURAL},
+		"minimap_method": "",
+	},
+	{
+		"id": "political_influence", "name_key": "map_layer_political_influence", "icon": "👑", "available": true,
+		"map_overlay": preload("res://gameplay/scripts/map_layers/InfluenceLayerOverlay.gd"),
+		"overlay_params": {"influence_type": InfluenceService.InfluenceType.POLITICAL},
+		"minimap_method": "",
+	},
+	{
+		"id": "religious_influence", "name_key": "map_layer_religious_influence", "icon": "🌙", "available": true,
+		"map_overlay": preload("res://gameplay/scripts/map_layers/InfluenceLayerOverlay.gd"),
+		"overlay_params": {"influence_type": InfluenceService.InfluenceType.RELIGIOUS},
+		"minimap_method": "",
+	},
 ]
 
 # Colore delle macrocelle non percorribili (acqua) sulla minimappa, layer Percorribilità — stesso rosso
@@ -68,10 +86,15 @@ static func get_cycle_ids() -> Array[String]:
 
 # Nuovo overlay per la mappa del layer (non ancora aggiunto all'albero), null se il layer non ne ha.
 static func create_map_overlay(layer_id: String) -> Node2D:
-	var overlay_script: Variant = get_layer(layer_id).get("map_overlay", null)
+	var layer := get_layer(layer_id)
+	var overlay_script: Variant = layer.get("map_overlay", null)
 	if overlay_script == null:
 		return null
-	return (overlay_script as Script).new() as Node2D
+	var overlay := (overlay_script as Script).new() as Node2D
+	var params: Dictionary = layer.get("overlay_params", {})
+	for property_name in params.keys():
+		overlay.set(property_name, params[property_name])
+	return overlay
 
 
 # true se il layer disegna qualcosa sulla minimappa.

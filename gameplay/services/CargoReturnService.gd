@@ -96,23 +96,30 @@ static func release_orphan_cargo(individual: HumanIndividual, world: World) -> b
 
 
 # Task [Walk → Unload] verso la destinazione del carico, SENZA assegnarla. Destinazione:
-#   - con `prefer_recipe_workstation` (macellazione): la prima varietà dello zaino che è ingrediente di una ricetta va
-#     alla postazione più vicina che la accetta (WarehouseSelectionService.find_nearest_recipe_workstation);
+#   - con `prefer_recipe_workstation` (macellazione): la prima varietà dello zaino con SecondaryResourceRules.
+#     prefers_recipe_workstation (oggi la carne) che è ingrediente di una ricetta va alla postazione più vicina che la
+#     accetta (WarehouseSelectionService.find_nearest_recipe_workstation);
 #   - altrimenti, o se nessuna postazione va bene: il magazzino più vicino (find_best) per la prima varietà che un
 #     magazzino accetta.
-# L'Unload deposita tutto ciò che la destinazione accetta; il resto segue il re-routing normale di UnloadAction, che
-# con la preferenza nel context del ritorno la rispetta anche lui. null = zaino vuoto o nessuna destinazione.
+# L'Unload deposita tutto ciò che la destinazione accetta — alla postazione scelta per preferenza solo le risorse con
+# prefers_recipe_workstation (UnloadAction.only_preferred_resources, 2026-10-02); il resto segue il re-routing normale
+# di UnloadAction, che con la preferenza nel context del ritorno la rispetta anche lui. null = zaino vuoto o nessuna
+# destinazione.
 static func build_cargo_return_task(individual: HumanIndividual, world: World, prefer_recipe_workstation: bool = false) -> Task:
 	if individual == null or world == null or individual.carried_resources.is_empty():
 		return null
 	var reachable := PathfindingService.reachability_for(individual)
 	var destination: Building = null
+	var via_workstation_preference := false
 	if prefer_recipe_workstation:
 		for raw_name in individual.carried_resources.keys():
+			if not WarehouseSelectionService.prefers_recipe_workstation(String(raw_name)):
+				continue
 			destination = WarehouseSelectionService.find_nearest_recipe_workstation(
 				world, individual.position, individual.home_macro_coords, String(raw_name), 1, [], reachable
 			)
 			if destination != null:
+				via_workstation_preference = true
 				break
 	if destination == null:
 		for raw_name in individual.carried_resources.keys():
@@ -125,9 +132,11 @@ static func build_cargo_return_task(individual: HumanIndividual, world: World, p
 				break
 	if destination == null:
 		return null
+	var unload := UnloadAction.new(destination, UnloadAction.DepositKind.RESOURCE)
+	unload.only_preferred_resources = via_workstation_preference
 	var steps: Array[Action] = [
 		WalkAction.new(MaterialSupplyService.building_point(individual, destination)),
-		UnloadAction.new(destination, UnloadAction.DepositKind.RESOURCE),
+		unload,
 	]
 	var task := Task.new(steps)
 	task.task_name = "task_unload_resource_name"

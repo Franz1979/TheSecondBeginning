@@ -1,0 +1,21 @@
+[gd_resource type="Resource" script_class="BuildingRules" format=3 uid="uid://bug2u20evlnmh"]
+
+[ext_resource type="Script" uid="uid://b8pl3yflicmtn" path="res://simulation/scripts/core/BuildingRules.gd" id="1_stacked_stones"]
+
+[resource]
+script = ExtResource("1_stacked_stones")
+building_name = "building_stacked_stones"
+category = 6
+min_construction_days = 2
+required_labor = 1200
+required_materials = {
+"bone": 10,
+"hide": 5,
+"pebble": 100,
+"stick": 10
+}
+max_durability = 200
+required_space = 1
+has_door = false
+visibility_radius = 1
+religious_radius = 5

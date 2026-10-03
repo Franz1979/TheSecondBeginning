@@ -80,6 +80,11 @@ extends Resource
 # alimentare senza campo esplicito (forage/berry/fruit/fish_meat/bird_meat). Nessuna logica lo
 # consulta ancora.
 @export var category: SecondaryResourceTypes.Category
+# Allo scarico di una Task con CONTEXT_PREFER_RECIPE_WORKSTATION (oggi la macellazione) questa risorsa va prima alla
+# postazione di lavoro di una sua ricetta, poi al magazzino (2026-10-02, richiesta utente). Default false: le altre
+# risorse (pelli, ossa, tendini) vanno al magazzino anche se sono ingredienti di una ricetta. Oggi true solo su meat.
+# Letto da WarehouseSelectionService.prefers_recipe_workstation.
+@export var prefers_recipe_workstation: bool = false
 
 # Id (Idea.id) che deve essere già in Folk.completed_ideas perché questa risorsa sia raccoglibile
 # dagli umani — STESSO campo/STESSO significato di BuildingRules.required_idea_id ("" = sempre

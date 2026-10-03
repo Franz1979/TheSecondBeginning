@@ -1,4 +1,4 @@
-[gd_resource type="Resource" script_class="Idea" format=3]
+[gd_resource type="Resource" script_class="Idea" format=3 uid="uid://c87e4cbo7di5w"]
 
 [ext_resource type="Script" uid="uid://cqx38hirrk3s1" path="res://human/scripts/core/Idea.gd" id="1_advanced_paleolithic_constructions"]
 
@@ -8,6 +8,6 @@ id = "advanced_paleolithic_constructions"
 display_name = "idea_advanced_paleolithic_constructions"
 summary = "idea_advanced_paleolithic_constructions_summary"
 description = "idea_advanced_paleolithic_constructions_description"
-thoughts_cost = 40
+thoughts_cost = 50
 prerequisites = Array[String](["paleolithic_constructions"])
 era = "paleolithic"

@@ -18,7 +18,12 @@ extends RefCounted
 #    current_happiness (si somma alla regola 2: nello stesso giorno la happiness puo' muoversi da -200
 #    a +150).
 # 4. happiness -> loyalty: current_happiness >= max_happiness / 2.0 ? +100.0 : -100.0 su
-#    current_loyalty, sulla happiness GIA' aggiornata dalle regole 2 e 3.
+#    current_loyalty, sulla happiness GIA' aggiornata dalle regole 2 e 3. Fede (2026-10-02): con current_faith >=
+#    max_faith × FAITH_LOYALTY_CUSHION_THRESHOLD la perdita (-100.0) è moltiplicata per FAITH_LOYALTY_LOSS_MULTIPLIER;
+#    il ramo in cui la lealtà sale resta invariato.
+# 4b. faith -> loyalty (2026-10-02): current_faith >= max_faith × FAITH_LOYALTY_BONUS_THRESHOLD ? +FAITH_LOYALTY_DAILY_BONUS
+#    su current_loyalty, qualunque sia la felicità. La fede letta dalle regole 4 e 4b è quella di PRIMA della regola
+#    giornaliera della fede (regola 5, più sotto): la fede dà solo vantaggi, sotto le soglie nulla cambia.
 #
 # Ogni parametro toccato e' limitato a [0, max] DOPO ogni singola regola (2026-09-19, richiesta
 # utente: nessun parametro vitale sotto 0 ne' sopra il proprio massimo), cosi' le soglie delle regole
@@ -39,6 +44,35 @@ const HOME_HEALTH_DELTA: float = 10.0
 const HOME_HAPPINESS_DELTA: float = 5.0
 const HOMELESS_HEALTH_PENALTY: float = 10.0
 const HOMELESS_HAPPINESS_PENALTY: float = 5.0
+
+# Fede -> lealtà (2026-10-02, regole 4 e 4b sopra).
+const FAITH_LOYALTY_CUSHION_THRESHOLD: float = 0.5
+const FAITH_LOYALTY_LOSS_MULTIPLIER: float = 0.5
+const FAITH_LOYALTY_BONUS_THRESHOLD: float = 0.75
+const FAITH_LOYALTY_DAILY_BONUS: float = 20.0
+
+# Quando esisteranno le specializzazioni: chi ha la specializzazione sacerdote non perde fede con questa regola.
+# Fede (2026-10-02, richiesta utente) — regola 5, dopo le altre e indipendente da esse. Ogni giorno:
+#   - nessuna casa, o casa non coperta dall'influenza RELIGIOUS: − HumanRules.faith_daily_loss_uncovered;
+#   - casa coperta, ma nessun rito nel giorno appena concluso in nessuno degli edifici che la coprono:
+#     − HumanRules.faith_daily_loss_covered;
+#   - casa coperta e almeno un rito nel giorno appena concluso in uno di quegli edifici: nessuna perdita.
+# Poi limite a [0, max_faith]. Edifici che coprono la casa: cache di InfluenceService (get_covering_buildings), nessun
+# calcolo di distanza qui. "Giorno appena concluso": questa regola gira in GameTimeService._on_day_advanced, DOPO che
+# GameData.advance_day ha già portato il calendario al giorno nuovo, quindi è get_absolute_day() − 1; un rito
+# completato in quel giorno ha scritto proprio quel valore in Building.last_rite_absolute_day (RiteEffectService).
+# La fede non entra in nessun'altra regola.
+# Ripiego quando HumanRules non è risolvibile (2026-10-02): stessi valori dei default di HumanRules.
+const FALLBACK_FAITH_DAILY_LOSS_COVERED: float = 2.0
+const FALLBACK_FAITH_DAILY_LOSS_UNCOVERED: float = 5.0
+
+# Copertura della casa (2026-10-02): casa coperta dall'influenza CULTURAL -> + HumanRules.
+# cultural_coverage_daily_happiness alla felicità, subito dopo le altre regole sulla felicità (prima di felicità ->
+# lealtà); casa coperta dall'influenza POLITICAL -> + HumanRules.political_coverage_daily_loyalty alla lealtà, dopo le
+# regole esistenti sulla lealtà. Solo bonus; letto da InfluenceService.is_house_covered (cache, nessuna distanza).
+# Ripiego se HumanRules non è risolvibile: stessi valori dei default.
+const FALLBACK_CULTURAL_COVERAGE_DAILY_HAPPINESS: float = 5.0
+const FALLBACK_POLITICAL_COVERAGE_DAILY_LOYALTY: float = 5.0
 
 static func apply_daily_interaction(individual: HumanIndividual) -> void:
 	var health_before := individual.current_health
@@ -66,10 +100,27 @@ static func apply_daily_interaction(individual: HumanIndividual) -> void:
 		individual.current_happiness, 50.0 if individual.current_health > health_threshold else -100.0, individual.max_happiness
 	)
 
+	var human_rules := _resolve_human_rules(individual)
+	if has_home and InfluenceService.is_house_covered(individual.house_id, InfluenceService.InfluenceType.CULTURAL):
+		var happiness_bonus: float = human_rules.cultural_coverage_daily_happiness if human_rules != null else FALLBACK_CULTURAL_COVERAGE_DAILY_HAPPINESS
+		individual.current_happiness = _add_clamped(individual.current_happiness, happiness_bonus, individual.max_happiness)
+
 	var happiness_threshold := individual.max_happiness / 2.0
-	individual.current_loyalty = _add_clamped(
-		individual.current_loyalty, 100.0 if individual.current_happiness >= happiness_threshold else -100.0, individual.max_loyalty
-	)
+	var loyalty_delta: float = 100.0
+	if individual.current_happiness < happiness_threshold:
+		loyalty_delta = -100.0
+		if individual.max_faith > 0.0 and individual.current_faith >= individual.max_faith * FAITH_LOYALTY_CUSHION_THRESHOLD:
+			loyalty_delta *= FAITH_LOYALTY_LOSS_MULTIPLIER
+	individual.current_loyalty = _add_clamped(individual.current_loyalty, loyalty_delta, individual.max_loyalty)
+
+	if individual.max_faith > 0.0 and individual.current_faith >= individual.max_faith * FAITH_LOYALTY_BONUS_THRESHOLD:
+		individual.current_loyalty = _add_clamped(individual.current_loyalty, FAITH_LOYALTY_DAILY_BONUS, individual.max_loyalty)
+
+	if has_home and InfluenceService.is_house_covered(individual.house_id, InfluenceService.InfluenceType.POLITICAL):
+		var loyalty_bonus: float = human_rules.political_coverage_daily_loyalty if human_rules != null else FALLBACK_POLITICAL_COVERAGE_DAILY_LOYALTY
+		individual.current_loyalty = _add_clamped(individual.current_loyalty, loyalty_bonus, individual.max_loyalty)
+
+	individual.current_faith = _add_clamped(individual.current_faith, -_daily_faith_loss(individual, has_home), individual.max_faith)
 
 	if not DebugLogging.ENABLED or not DebugLogging.SHOW_VITALS_INTERACTION_LOGS:
 		return
@@ -79,6 +130,38 @@ static func apply_daily_interaction(individual: HumanIndividual) -> void:
 		health_before, individual.current_health, health_threshold,
 		happiness_before, individual.current_happiness, loyalty_before, individual.current_loyalty
 	])
+
+
+# Perdita di fede del giorno appena concluso (regola 5): valori da HumanRules (faith_daily_loss_uncovered/covered),
+# FALLBACK_FAITH_DAILY_LOSS_* se le regole non sono risolvibili.
+static func _daily_faith_loss(individual: HumanIndividual, has_home: bool) -> float:
+	var loss_uncovered: float = FALLBACK_FAITH_DAILY_LOSS_UNCOVERED
+	var loss_covered: float = FALLBACK_FAITH_DAILY_LOSS_COVERED
+	var human_rules := _resolve_human_rules(individual)
+	if human_rules != null:
+		loss_uncovered = human_rules.faith_daily_loss_uncovered
+		loss_covered = human_rules.faith_daily_loss_covered
+	if not has_home:
+		return loss_uncovered
+	var sources := InfluenceService.get_covering_buildings(individual.house_id, InfluenceService.InfluenceType.RELIGIOUS)
+	if sources.is_empty():
+		return loss_uncovered
+	var game_data: GameData = GameSettings.active_game_data
+	if game_data != null:
+		var concluded_day: int = game_data.get_absolute_day() - 1
+		for source in sources:
+			# >= e non ==: un rito completato nel frame stesso del cambio di giorno, dopo questo calcolo, scrive già il
+			# giorno nuovo e protegge comunque il calcolo successivo.
+			if source.last_rite_absolute_day >= concluded_day:
+				return 0.0
+	return loss_covered
+
+
+# HumanRules dell'individuo (source_group_ref -> folk_ref -> human_rules_ref), null se la catena non è risolvibile.
+static func _resolve_human_rules(individual: HumanIndividual) -> HumanRules:
+	if individual.source_group_ref == null or individual.source_group_ref.folk_ref == null:
+		return null
+	return individual.source_group_ref.folk_ref.human_rules_ref
 
 
 # value + delta limitato a [0, max_value]. max_value negativo (non dovrebbe accadere) e' trattato come 0.

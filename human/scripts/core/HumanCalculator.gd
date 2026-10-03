@@ -262,3 +262,11 @@ static func get_max_loyalty(human_rules: HumanRules, age_band: HumanTypes.AgeBan
 		* human_rules.loyalty_multiplier_by_age[age_band]
 		* human_rules.loyalty_multiplier_by_sex[sex]
 	)
+
+
+static func get_max_faith(human_rules: HumanRules, age_band: HumanTypes.AgeBand, sex: HumanTypes.Sex) -> float:
+	return (
+		human_rules.base_max_faith
+		* human_rules.faith_multiplier_by_age[age_band]
+		* human_rules.faith_multiplier_by_sex[sex]
+	)

@@ -10,6 +10,7 @@ build_bar_toolmaker_hut_tooltip,Toolmaker's hut
 build_bar_drying_rack_tooltip,Drying rack
 build_bar_smokehouse_tooltip,Smokehouse
 build_bar_burial_tooltip,Burial
+build_bar_stacked_stones_tooltip,Ritual stones
 build_bar_earthwork_tooltip,Earthwork
 building_campfire,Campfire
 building_pebble_circle,Pebble circle
@@ -24,6 +25,7 @@ building_category_religious,Religious
 building_drying_rack,Drying rack
 building_smokehouse,Smokehouse
 building_burial,Burial
+building_stacked_stones,Ritual stones
 building_earthwork,Earthwork
 build_bar_dirt_ground_tooltip,Dirt Ground
 building_dirt_ground,Dirt Ground
@@ -157,6 +159,8 @@ individual_thirst_label,Thirst:
 individual_health_label,Health:
 individual_happiness_label,Happiness:
 individual_loyalty_label,Loyalty:
+individual_faith_label,Faith:
+individual_mind_section_label,Mind:
 individual_skills_section_label,Skills:
 skill_leadership_label,Leadership
 skill_builder_label,Builder
@@ -166,6 +170,7 @@ skill_gathering_label,Gathering
 skill_cognition_label,Cognition
 skill_hunting_label,Hunting
 skill_crafting_label,Crafting
+skill_ritual_label,Ritual
 individual_id_label,ID: {id} (Folk {folk}, Group {group})
 individual_mother_id_label,Mother ID: {id}
 individual_father_id_label,Father ID: {id}
@@ -188,6 +193,12 @@ building_status_under_construction,Under construction
 building_status_marked_for_demolition,To be demolished
 building_status_demolition_in_progress,Being demolished
 building_demolish_button,Demolish
+building_influence_political_tooltip,"Political influence: radius {radius}"
+building_influence_political_none_tooltip,No political influence
+building_influence_cultural_tooltip,"Cultural influence: radius {radius}"
+building_influence_cultural_none_tooltip,No cultural influence
+building_influence_religious_tooltip,"Religious influence: radius {radius}"
+building_influence_religious_none_tooltip,No religious influence
 building_cancel_site_button,Cancel construction
 building_assign_demolisher_button,Assign demolisher
 building_cancel_demolition_button,Cancel demolition
@@ -199,6 +210,11 @@ building_not_yet_built,Not yet built
 building_built_year_unknown,Built: year unknown
 building_stored_label,Stored: {entries}
 building_residents_caption,Residents
+building_influence_received_label,"Influence received: {types}"
+building_influence_received_none,none
+influence_type_political,political
+influence_type_cultural,cultural
+influence_type_religious,religious
 building_resident_tooltip,{name} (age {age})
 building_storage_caption,Storage
 statistics_tab_births,Births
@@ -496,3 +512,13 @@ task_unload_resource_step_walk,Going to unload
 task_unload_resource_step_unload,Unloading
 building_site_materials_progress_caption,Material (delivered/required):
 building_production_materials_caption,Production materials (available/required):
+task_rite_name,Rite
+task_rite_step_rite,Celebrating the rite
+task_activity_rite,celebrate a rite
+rite_simple_name,Simple rite
+rite_dialog_title,Rite
+rite_dialog_message,Choose the rite to celebrate:
+rite_reject_building_busy,A rite is already assigned or in progress at this building
+"rite_reject_none_available","{name} cannot celebrate any rite here (age or ritual skill too low)"
+rite_interrupted,Rite interrupted ({name})
+task_leisure_rite_name,Spontaneous rite

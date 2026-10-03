@@ -21,6 +21,11 @@ extends RefCounted
 # NeedTaskAssignmentService: una sola formula, riusata sia dal comando manuale sia da questo
 # fallback automatico, mai due copie indipendenti a rischio di disallinearsi in futuro.
 
+# Rito spontaneo (2026-10-02, richiesta utente): stessi step della task rite (Walk → Rite), escluso a monte se non
+# esiste un edificio dove celebrarlo (RiteService.find_spontaneous_rite_target), stesso principio di daydreaming con
+# l'edificio che accetta pensieri.
+const LEISURE_RITE_TASK_DEFINITION_PATH := "res://gameplay/scripts/tasks/definitions/leisure_rite.tres"
+
 # Elenco CENTRALIZZATO delle Task "perditempo" (2026-09-13, richiesta utente) — pensato per
 # crescere in futuro (nuove Task "per passare il tempo") senza toccare la logica di scelta in
 # assign_idle_fallback sotto: aggiungere un path qui basta perché entri nel tiro a sorte, filtrato
@@ -35,6 +40,7 @@ const IDLE_FALLBACK_TASK_PATHS: Array[String] = [
 	"res://gameplay/scripts/tasks/definitions/leisure_rest.tres",
 	"res://gameplay/scripts/tasks/definitions/daydreaming.tres",
 	"res://gameplay/scripts/tasks/definitions/leisure_restock.tres",
+	LEISURE_RITE_TASK_DEFINITION_PATH,
 ]
 
 # Guard di eleggibilita' di leisure_restock nel sorteggio idle (2026-09-19, richiesta utente): la Task e'
@@ -201,8 +207,23 @@ static func _is_leisure_restock_eligible(individual: HumanIndividual) -> bool:
 # (stessa DEVIAZIONE già documentata altrove nel progetto per lo stesso motivo, es.
 # HumanIndividualActionService.apply_action). Thread-ato da assign_idle_fallback sotto, che lo
 # riceve già come proprio parametro.
-static func _build_idle_task(path: String, individual: HumanIndividual, world: World) -> Task:
+# `age_band` (2026-10-02): serve solo al rito spontaneo (riti celebrabili per età); -1 = non noto.
+static func _build_idle_task(path: String, individual: HumanIndividual, world: World, age_band: int = -1) -> Task:
 	match path:
+		LEISURE_RITE_TASK_DEFINITION_PATH:
+			# Edificio valido più vicino e un rito spontaneo a caso tra quelli celebrabili lì (RiteService).
+			var rite_target := RiteService.find_spontaneous_rite_target(individual, world, age_band, GameSettings.active_human_individuals)
+			if rite_target.is_empty():
+				return null
+			var rite_building: Building = rite_target["building"]
+			var rite_rules: RiteRules = rite_target["rite"]
+			var rite_macro_offset: Vector2 = Vector2(Vector2i(rite_building.macro_x, rite_building.macro_y) - individual.home_macro_coords) * World.WIDTH
+			var rite_definition := load(path) as TaskDefinition
+			return TaskFactory.build_task(rite_definition, {
+				"target_position": PathfindingService.random_point_in_microcell(Vector2(rite_building.micro_x, rite_building.micro_y) + rite_macro_offset),
+				"rite_target_building": rite_building,
+				"rite_id": rite_rules.id,
+			})
 		"res://gameplay/scripts/tasks/definitions/wander.tres":
 			if not WANDER_ENABLED:
 				return null
@@ -327,12 +348,17 @@ static func assign_idle_fallback(individual: HumanIndividual, age_band: HumanTyp
 		# LEISURE_RESTOCK_MIN_FREE_SPACE_RATIO della capacita'): il sorteggio ne pesca un'altra.
 		if path == "res://gameplay/scripts/tasks/definitions/leisure_restock.tres" and not _is_leisure_restock_eligible(individual):
 			continue
+		# Rito spontaneo escluso a monte senza un edificio dove celebrarlo (2026-10-02, vedi LEISURE_RITE_TASK_DEFINITION_PATH).
+		if path == LEISURE_RITE_TASK_DEFINITION_PATH and RiteService.find_spontaneous_rite_target(
+			individual, world, age_band, GameSettings.active_human_individuals
+		).is_empty():
+			continue
 		remaining.append({"path": path, "definition": definition})
 
 	while not remaining.is_empty():
 		var drawn_index := _pick_weighted_index(remaining)
 		var path: String = remaining[drawn_index]["path"]
-		var candidate_task := _build_idle_task(path, individual, world)
+		var candidate_task := _build_idle_task(path, individual, world, age_band)
 		var assigned := candidate_task != null and individual.assign_task(candidate_task, age_band)
 		if assigned:
 			if DebugLogging.ENABLED and DebugLogging.SHOW_IDLE_LOGS:

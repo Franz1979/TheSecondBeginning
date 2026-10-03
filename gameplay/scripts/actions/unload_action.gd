@@ -160,6 +160,14 @@ var unequip_slot_index: int = -1
 # scarico non programmato dalla ricerca (comando manuale, trasporto, consegne): mai saltato. Persistito.
 var planned_resources: Array[String] = []
 
+# Destinazione scelta tramite la preferenza per la postazione di lavoro (2026-10-02, richiesta utente —
+# WarehouseSelectionService.find_nearest_recipe_workstation, scritto da HumanIndividualActionService.
+# _search_warehouse_for_resource e CargoReturnService.build_cargo_return_task): qui si depositano SOLO le risorse con
+# SecondaryResourceRules.prefers_recipe_workstation (la carne); il resto dello zaino resta addosso e segue il
+# re-routing del residuo verso un magazzino (find_best). false = deposita tutto ciò che l'edificio accetta, come
+# sempre (giri di rifornimento, Transport, deposito manuale). Persistito.
+var only_preferred_resources: bool = false
+
 
 func _init(p_target_building: Building = null, p_deposit_kind: DepositKind = DepositKind.THOUGHT, p_unequip_slot_index: int = -1) -> void:
 	target = null
@@ -228,7 +236,8 @@ func activate(individual: Variant, context: Dictionary) -> void:
 		var destination_rejected: bool = _is_completed_site_destination(context)
 		for resource_name in individual.carried_resources.keys():
 			var carried_units: int = individual.get_carried_quantity(String(resource_name))
-			if carried_units <= 0 or destination_rejected or not BuildingStorageService.can_accept(target_building, String(resource_name)):
+			if carried_units <= 0 or destination_rejected or not _is_deposit_allowed(String(resource_name)) \
+					or not BuildingStorageService.can_accept(target_building, String(resource_name)):
 				continue
 			var units_now: int = min(BuildingStorageService.get_max_depositable(target_building, String(resource_name)), carried_units)
 			if units_now <= 0:
@@ -419,7 +428,8 @@ func on_complete(individual: Variant, context: Dictionary) -> void:
 			# deposito, tutto il carico confluisce nel residuo e nel reinstradamento verso un magazzino
 			# qui sotto — stesso esito di una destinazione demolita (can_accept/store ritornano 0).
 			var deposited: int = 0
-			if not _is_completed_site_destination(context):
+			# Risorsa esclusa da only_preferred_resources: nessun deposito, resta nel residuo da reinstradare.
+			if not _is_completed_site_destination(context) and _is_deposit_allowed(String(resource_name)):
 				if ToolInstance.is_tool_resource(String(resource_name)):
 					deposited = _store_carried_tool(individual, String(resource_name), int(carried_entry["quantity"]))
 				else:
@@ -681,7 +691,15 @@ func get_save_data() -> Dictionary:
 	# Risorse programmate (2026-09-27) — letto da TaskPersistenceService._build_step.
 	if not planned_resources.is_empty():
 		data["planned_resources"] = planned_resources.duplicate()
+	if only_preferred_resources:
+		data["only_preferred_resources"] = true
 	return data
+
+
+# false se lo scarico è riservato alle risorse con la preferenza per la postazione (only_preferred_resources) e
+# `resource_name` non ce l'ha.
+func _is_deposit_allowed(resource_name: String) -> bool:
+	return not only_preferred_resources or WarehouseSelectionService.prefers_recipe_workstation(resource_name)
 
 
 # true se nello zaino c'è almeno una delle risorse per cui questo scarico è stato programmato (planned_resources).

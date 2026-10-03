@@ -86,6 +86,25 @@ signal work_cancel_requested(building: Building)
 # demolire".
 signal demolish_requested(building: Building)
 
+# Icone di influenza (2026-10-02, richiesta utente — sostituiscono il bottone "Mostra influenza"): una per tipo
+# (politica, cultura, religione), nell'intestazione della scheda accanto al 🎯. Clic: GameScene mostra per qualche
+# secondo il cerchio del solo tipo cliccato. `influence_type` = InfluenceService.InfluenceType.
+signal influence_footprint_requested(building: Building, influence_type: int)
+# Anteprima al passaggio del mouse (2026-10-02, richiesta utente): con il puntatore su un'icona ABILITATA il cerchio di
+# quel tipo resta visibile fisso; influence_preview_ended lo toglie subito (puntatore uscito, icona disabilitata,
+# pannello nascosto o edificio cambiato). Nessuna anteprima sulle icone disabilitate.
+signal influence_preview_started(building: Building, influence_type: int)
+signal influence_preview_ended
+
+# Icone di influenza: ordine, voce di MapLayerRegistry da cui prendere l'emoji e chiavi dei tooltip per tipo.
+const INFLUENCE_BUTTONS: Array[Dictionary] = [
+	{"type": InfluenceService.InfluenceType.POLITICAL, "layer_id": "political_influence", "tooltip_key": "building_influence_political_tooltip", "none_key": "building_influence_political_none_tooltip"},
+	{"type": InfluenceService.InfluenceType.CULTURAL, "layer_id": "cultural_influence", "tooltip_key": "building_influence_cultural_tooltip", "none_key": "building_influence_cultural_none_tooltip"},
+	{"type": InfluenceService.InfluenceType.RELIGIOUS, "layer_id": "religious_influence", "tooltip_key": "building_influence_religious_tooltip", "none_key": "building_influence_religious_none_tooltip"},
+]
+const INFLUENCE_BUTTON_SIZE := Vector2(22, 22)
+const INFLUENCE_BUTTON_DISABLED_COLOR := Color(0.5, 0.5, 0.5)
+
 # Bottone "Assegna demolitore" (2026-09-27, richiesta utente): visibile per un edificio "da demolire" senza nessuno
 # con la Demolish Task (in corso o in coda); GameScene entra nella modalità di scelta del demolitore.
 signal demolisher_assign_requested(building: Building)
@@ -136,8 +155,6 @@ const STORAGE_SLOT_FILL_BAR_FILL_COLOR := Color(1.0, 1.0, 1.0, 0.85)
 @onready var construction_progress_bar_margin: MarginContainer = $ConstructionProgressBarMargin
 @onready var construction_progress_bar: ProgressBar = $ConstructionProgressBarMargin/ConstructionProgressBar
 @onready var awaiting_material_label: Label = $AwaitingMaterialLabel
-@onready var awaiting_material_build_caption: Label = $AwaitingMaterialBuildCaption
-@onready var awaiting_material_build_grid: HFlowContainer = $AwaitingMaterialBuildGrid
 # Costruttore assegnato di un cantiere (dal 2026-09-27 solo cantiere: il lavoratore di una workstation ha la propria
 # riga, AssignedWorkerLabel, nella sezione Produzione).
 @onready var assigned_builder_label: Label = $AssignedBuilderLabel
@@ -147,6 +164,9 @@ const STORAGE_SLOT_FILL_BAR_FILL_COLOR := Color(1.0, 1.0, 1.0, 0.85)
 @onready var tool_wait_label: Label = $ToolWaitLabel
 # Terza riga dell'intestazione (2026-09-27, richiesta utente): "Costruito anno X · Durabilità A/B" (prima due righe).
 @onready var built_year_label: Label = $BuiltYearLabel
+# "Influenza ricevuta: …" (2026-10-02, richiesta utente): solo per un edificio RESIDENTIAL completo, tipi di influenza
+# che coprono la casa (InfluenceService.get_house_coverage) o "nessuna".
+@onready var influence_received_label: Label = $InfluenceReceivedLabel
 @onready var residents_caption: Label = $ResidentsCaption
 @onready var residents_grid: GridContainer = $ResidentsGrid
 @onready var storage_caption: Label = $StorageCaption
@@ -237,6 +257,9 @@ func _ready() -> void:
 	production_cancel_button.tooltip_text = tr("building_cancel_work_tooltip")
 	production_cancel_button.pressed.connect(func(): work_cancel_requested.emit(_current_building))
 	production_separator.visible = false
+	_build_influence_buttons()
+	# Il gruppo vive fuori dal pannello (intestazione della scheda): si nasconde con lui, e l'anteprima finisce.
+	visibility_changed.connect(_on_visibility_changed_for_influence)
 	demolish_button.pressed.connect(func(): demolish_requested.emit(_current_building))
 	assign_demolisher_button.text = tr("building_assign_demolisher_button")
 	assign_demolisher_button.pressed.connect(func(): demolisher_assign_requested.emit(_current_building))
@@ -282,6 +305,7 @@ func show_building(building: Building, residents_display_data: Array[Dictionary]
 	else:
 		status_label.remove_theme_color_override("font_color")
 	cancel_demolition_button.visible = building.is_marked_for_demolition and not demolition_started
+	_refresh_influence_buttons(building)
 	demolish_button.visible = not building.is_marked_for_demolition
 	# Su un cantiere la conferma annulla il cantiere (2026-09-27): stesso bottone, testo diverso.
 	demolish_button.text = tr("building_demolish_button") if building.is_complete else tr("building_cancel_site_button")
@@ -293,25 +317,15 @@ func show_building(building: Building, residents_display_data: Array[Dictionary]
 	# transizione, questo pannello resta "muto": legge, non decide). Sparisce da sé al prossimo
 	# show_building() successivo alla risoluzione (bonus/deposito manuale sufficiente).
 	#
-	# DUE TESTI POSSIBILI (2026-09-14, richiesta utente — "step 2 della build": BuildAction ora ha un
-	# proprio fabbisogno, potenzialmente PIÙ risorse insieme, a differenza della singola risorsa di
-	# SetupSite) — quale mostrare deciso da _resolve_active_construction_phase (STESSA funzione già
-	# usata da _refresh_construction_progress sopra, un solo punto che decide "in che fase siamo",
-	# mai due copie di quella logica): fase "build" -> lista di TUTTE le risorse ancora mancanti
-	# (_resolve_build_material_shortage, STESSA formula di BuildAction.get_missing_materials, letta
-	# qui perché il pannello non ha un'istanza di BuildAction — solo il Building); qualunque altra
-	# fase (setup_site, o is_awaiting_material rimasto true per una transizione limite) -> messaggio
-	# singolo di prima, invariato. La lista multi-risorsa (2026-09-16, richiesta utente — il vecchio
-	# Label a riga unica non andava a capo, allargando visivamente il pannello oltre la Sidebar a
-	# larghezza fissa) non è più testo: una caption fissa + una griglia di chip icona+quantità (vedi
-	# _refresh_missing_material_grid), che va a capo da sola restando dentro la larghezza del pannello.
+	# Solo per la fase setup_site (o is_awaiting_material rimasto true in una transizione limite): in fase "build" la
+	# riga "Per completare la costruzione servono:" è stata tolta (2026-10-02, richiesta utente) — ripeteva gli stessi
+	# dati (required_materials - stored_resources) della riga "Materiale (consegnato/richiesto):", vedi
+	# _refresh_delivered_materials.
 	var is_build_phase: bool = _resolve_active_construction_phase(building) == "build"
 	# Solo per un cantiere (2026-09-29): una workstation completa può essere "in attesa" per la produzione (rifornimento
 	# automatico, ProduceAction) — il suo fabbisogno è già nella sezione Produzione, non nelle righe del cantiere.
 	var show_site_awaiting: bool = building.is_awaiting_material and not building.is_complete
 	awaiting_material_label.visible = show_site_awaiting and not is_build_phase
-	awaiting_material_build_caption.visible = show_site_awaiting and is_build_phase
-	awaiting_material_build_grid.visible = show_site_awaiting and is_build_phase
 	# Produzione in attesa di materiale (2026-09-23, richiesta utente — Produce Task): su un edificio
 	# completo con una produzione in corso (Building.production_progress) a cui mancano input, stessa
 	# caption+griglia di chip della fase build, con una caption dedicata. Letto da ProductionService,
@@ -319,16 +333,12 @@ func show_building(building: Building, residents_display_data: Array[Dictionary]
 	# con una Task che ci lavora (2026-09-24): quelle sospese hanno la propria riga sotto.
 	# Il fabbisogno della produzione in corso è nella sezione Produzione dal 2026-09-27 (_refresh_production_status).
 	_refresh_suspended_production(building, suspended_recipes)
-	if show_site_awaiting:
-		if is_build_phase:
-			awaiting_material_build_caption.text = tr("building_awaiting_material_build_caption")
-			_refresh_missing_material_grid(_resolve_build_material_shortage(building))
-		else:
-			var shortage := _resolve_setup_site_material_shortage(building)
-			awaiting_material_label.text = tr("building_awaiting_material_label").format({
-				"quantity": shortage["quantity"],
-				"material": shortage["material_display_name"],
-			})
+	if show_site_awaiting and not is_build_phase:
+		var shortage := _resolve_setup_site_material_shortage(building)
+		awaiting_material_label.text = tr("building_awaiting_material_label").format({
+			"quantity": shortage["quantity"],
+			"material": shortage["material_display_name"],
+		})
 
 	# Costruttore assegnato (2026-09-18, richiesta utente — "durante la fase di costruzione... puoi
 	# indicare costruttore assegnato: con il nome? e se non c'è scrivere che è mancante") — visibile
@@ -370,6 +380,7 @@ func show_building(building: Building, residents_display_data: Array[Dictionary]
 	var durability_text: String = tr("building_durability_label").format({"current": building.current_durability, "max": max_durability})
 	built_year_label.text = "%s · %s" % [built_text, durability_text]
 
+	_refresh_influence_received(building)
 	_refresh_residents_grid(building, residents_display_data)
 	_refresh_storage_grid(building)
 	_refresh_output_buffer(building)
@@ -378,8 +389,101 @@ func show_building(building: Building, residents_display_data: Array[Dictionary]
 	_refresh_settings_section(building)
 
 
+# Gruppo delle icone di influenza (2026-10-02): creato qui, aggiunto da GameScene a GameInfoTabs.header_actions.
+var influence_buttons_box: HBoxContainer = null
+var _influence_buttons: Dictionary = {}  # InfluenceService.InfluenceType -> Button
+# Tipo in anteprima (puntatore sopra la sua icona abilitata), -1 = nessuna anteprima.
+var _previewed_influence_type: int = -1
+
+
+func _build_influence_buttons() -> void:
+	influence_buttons_box = HBoxContainer.new()
+	influence_buttons_box.add_theme_constant_override("separation", 2)
+	influence_buttons_box.visible = false
+	for entry in INFLUENCE_BUTTONS:
+		var influence_type: int = entry["type"]
+		var button := Button.new()
+		# Emoji della voce del layer (MapLayerRegistry): non si può tingere, quindi il colore del cerchio va su bordo
+		# e sfondo (_style_influence_button).
+		button.text = String(MapLayerRegistry.get_layer(String(entry["layer_id"])).get("icon", "?"))
+		button.custom_minimum_size = INFLUENCE_BUTTON_SIZE
+		button.add_theme_font_size_override("font_size", 11)
+		button.focus_mode = Control.FOCUS_NONE
+		button.pressed.connect(func(): influence_footprint_requested.emit(_current_building, influence_type))
+		button.mouse_entered.connect(func(): _start_influence_preview(influence_type))
+		button.mouse_exited.connect(_on_influence_button_mouse_exited.bind(influence_type))
+		influence_buttons_box.add_child(button)
+		_influence_buttons[influence_type] = button
+
+
+func _start_influence_preview(influence_type: int) -> void:
+	var button: Button = _influence_buttons.get(influence_type)
+	if button == null or button.disabled or _current_building == null:
+		return
+	_previewed_influence_type = influence_type
+	influence_preview_started.emit(_current_building, influence_type)
+
+
+func _on_influence_button_mouse_exited(influence_type: int) -> void:
+	if _previewed_influence_type == influence_type:
+		_end_influence_preview()
+
+
+func _end_influence_preview() -> void:
+	if _previewed_influence_type < 0:
+		return
+	_previewed_influence_type = -1
+	influence_preview_ended.emit()
+
+
+func _on_visibility_changed_for_influence() -> void:
+	if visible:
+		return
+	influence_buttons_box.visible = false
+	_end_influence_preview()
+
+
+func _style_influence_button(button: Button, color: Color, enabled: bool) -> void:
+	var tint := color if enabled else INFLUENCE_BUTTON_DISABLED_COLOR
+	for state in ["normal", "hover", "pressed", "disabled", "focus"]:
+		var style := StyleBoxFlat.new()
+		style.bg_color = Color(tint.r, tint.g, tint.b, 0.35 if state == "hover" else 0.2)
+		style.border_color = Color(tint.r, tint.g, tint.b, 1.0 if enabled else 0.6)
+		style.set_border_width_all(2)
+		style.set_corner_radius_all(4)
+		button.add_theme_stylebox_override(state, style)
+	# Emoji in grigio e semitrasparente da disabilitata.
+	button.modulate = Color(1, 1, 1, 1) if enabled else Color(0.6, 0.6, 0.6, 0.6)
+
+
+# Gruppo nascosto per un edificio non completo o senza alcun raggio; altrimenti ogni icona attiva solo se l'edificio
+# ha quel raggio (InfluenceService.get_effective_radius), con il raggio nel tooltip. Un'anteprima in corso finisce se
+# il gruppo sparisce o la sua icona diventa disabilitata; altrimenti segue l'edificio mostrato.
+func _refresh_influence_buttons(building: Building) -> void:
+	if influence_buttons_box == null:
+		return
+	influence_buttons_box.visible = building.is_complete and InfluenceService.has_any_influence(building)
+	for entry in INFLUENCE_BUTTONS:
+		var influence_type: int = entry["type"]
+		var button: Button = _influence_buttons[influence_type]
+		var radius := InfluenceService.get_effective_radius(building, influence_type)
+		button.disabled = radius <= 0
+		# Raggio CORRENTE con un decimale (2026-10-02, passo 4c — cresce con i riti); l'abilitazione resta sul raggio
+		# effettivo (parte intera).
+		var current_radius := InfluenceService.get_current_radius(building, influence_type)
+		button.tooltip_text = tr(String(entry["tooltip_key"])).format({"radius": "%.1f" % current_radius}) if radius > 0 else tr(String(entry["none_key"]))
+		_style_influence_button(button, InfluenceFootprintOverlay.COLORS.get(influence_type, Color.WHITE), radius > 0)
+	if _previewed_influence_type >= 0:
+		var previewed_button: Button = _influence_buttons[_previewed_influence_type]
+		if not influence_buttons_box.visible or previewed_button.disabled:
+			_end_influence_preview()
+		else:
+			influence_preview_started.emit(building, _previewed_influence_type)
+
+
 func clear() -> void:
 	visible = false
+	_end_influence_preview()
 	_current_building = null
 	show_ground_pile([])
 
@@ -490,38 +594,6 @@ func _resolve_setup_site_material_shortage(building: Building) -> Dictionary:
 	}
 
 
-# Fabbisogno materiale della fase BUILD (2026-09-14, richiesta utente — "step 2 della build") —
-# STESSA formula di BuildAction.get_missing_materials(), letta direttamente da BuildingRules.
-# required_materials: questo pannello non ha un'istanza di BuildAction a disposizione (solo il
-# Building), nessuna duplicazione di STATO qui, solo della stessa formula pura (unica fonte di
-# verità sul DATO). A DIFFERENZA di _resolve_setup_site_material_shortage sopra (sempre UNA sola
-# risorsa), qui il Dictionary può avere PIÙ voci insieme — required_materials non ha il vincolo "una
-# sola risorsa" di setup_site_material_name. Dictionary VUOTO = nulla manca (stesso significato di
-# BuildAction.get_missing_materials).
-func _resolve_build_material_shortage(building: Building) -> Dictionary:
-	if building.rules == null:
-		return {}
-	var missing: Dictionary = {}
-	for resource_name in building.rules.required_materials.keys():
-		var required: int = int(building.rules.required_materials[resource_name])
-		if required <= 0:
-			continue
-		var stored_entry: Dictionary = building.stored_resources.get(resource_name, {})
-		var stored: int = int(stored_entry.get("quantity", 0))
-		var missing_quantity: int = max(required - stored, 0)
-		if missing_quantity > 0:
-			missing[resource_name] = missing_quantity
-	return missing
-
-
-# Griglia di "chip" (icona + quantità mancante), una per risorsa ancora insufficiente per la fase
-# BUILD (2026-09-16, richiesta utente — sostituisce la vecchia riga di testo unica "40 Rametti, 100
-# Pebble, ...": con più risorse il Label non andava a capo, allargando visivamente il pannello
-# oltre la Sidebar a larghezza fissa). Ricostruita per intero ad ogni show_building, STESSO
-# principio "rebuild da zero" già in uso per StorageGrid/ResidentsGrid in questo stesso file —
-# costo trascurabile, required_materials.size() è sempre piccolo (2-4 voci). HFlowContainer (non
-# GridContainer/HBoxContainer): va a capo da solo quando le chip non entrano più sulla riga,
-# proprio ciò che serve per restare dentro la larghezza fissa del pannello senza contarle a mano.
 # Stato della produzione in corso (2026-09-27, richiesta utente — sezione Produzione della workstation):
 #   - "In produzione:" con un'icona per ricetta con una Produce Task che ci lavora (pezzi ancora dovuti, percentuale
 #     del ciclo nel tooltip) o "nulla", e la X di annullo se qualcuno ci lavora (stessa azione di work_cancel_requested);
@@ -693,7 +765,11 @@ func _refresh_delivered_materials(building: Building) -> void:
 		for resource_name in requirements.keys():
 			var required: int = int(requirements[resource_name])
 			var delivered: int = mini(int(entries.get(resource_name, 0)), required)
-			delivered_materials_grid.add_child(_build_missing_material_chip(resource_name, delivered, "%d/%d" % [delivered, required]))
+			# Materiale completo (2026-10-02, richiesta utente): numero in verde.
+			var quantity_color: Color = MATERIAL_COMPLETE_COLOR if delivered >= required else Color(1, 1, 1, 1)
+			delivered_materials_grid.add_child(
+				_build_missing_material_chip(resource_name, delivered, "%d/%d" % [delivered, required], quantity_color)
+			)
 		return
 	var show_section: bool = (is_workstation and not has_storage) and not entries.is_empty()
 	delivered_materials_caption.visible = show_section
@@ -723,15 +799,6 @@ func _resolve_site_phase_requirements(building: Building) -> Dictionary:
 	return requirements
 
 
-func _refresh_missing_material_grid(missing: Dictionary) -> void:
-	for child in awaiting_material_build_grid.get_children():
-		child.queue_free()
-	# Ordine di iterazione = ordine di inserimento del Dictionary (stabile in GDScript), che per
-	# required_materials coincide con l'ordine dichiarato nel .tres — nessun ordinamento aggiuntivo.
-	for resource_name in missing.keys():
-		awaiting_material_build_grid.add_child(_build_missing_material_chip(resource_name, int(missing[resource_name])))
-
-
 # Chip singola: STESSO schema a 3 livelli (icona disegnata/emoji/iniziale) + sfondo colorato per
 # risorsa + numero in basso a destra già usato da _build_storage_slot sopra — coerenza visiva tra
 # "cosa manca" e "cosa c'è già in magazzino" invece di inventare un terzo stile. Più piccola dello
@@ -741,8 +808,12 @@ func _refresh_missing_material_grid(missing: Dictionary) -> void:
 const MISSING_MATERIAL_CHIP_SIZE: float = 24.0
 
 # `quantity_text` (2026-09-29): testo alternativo alla quantità, es. "11/100" (consegnato/richiesto) — il chip si
-# allarga per contenerlo. "" = la sola quantità, come sempre.
-func _build_missing_material_chip(resource_name: String, quantity: int, quantity_text: String = "") -> Control:
+# allarga per contenerlo. "" = la sola quantità, come sempre. `quantity_color` (2026-10-02): colore del numero.
+const MATERIAL_COMPLETE_COLOR := Color(0.45, 0.95, 0.45, 1.0)
+
+func _build_missing_material_chip(
+	resource_name: String, quantity: int, quantity_text: String = "", quantity_color: Color = Color(1, 1, 1, 1)
+) -> Control:
 	var box := ColorRect.new()
 	var shown_text: String = quantity_text if quantity_text != "" else str(quantity)
 	box.custom_minimum_size = Vector2(maxf(MISSING_MATERIAL_CHIP_SIZE, 6.0 * shown_text.length()), MISSING_MATERIAL_CHIP_SIZE)
@@ -775,7 +846,7 @@ func _build_missing_material_chip(resource_name: String, quantity: int, quantity
 	var quantity_label := Label.new()
 	quantity_label.text = shown_text
 	quantity_label.add_theme_font_size_override("font_size", 8)
-	quantity_label.add_theme_color_override("font_color", Color(1, 1, 1, 1))
+	quantity_label.add_theme_color_override("font_color", quantity_color)
 	quantity_label.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 1))
 	quantity_label.add_theme_constant_override("shadow_offset_x", 1)
 	quantity_label.add_theme_constant_override("shadow_offset_y", 1)
@@ -1118,6 +1189,28 @@ func _build_storage_slot(slot_data: Dictionary) -> Control:
 # BuildingInfoPanel.tscn) — richiesta esplicita utente: "se residential, sopra quello dei
 # residenti" — un edificio come Hut, che ha ENTRAMBE le griglie (storage_slot_count E
 # max_residents valorizzati), le mostra impilate con un caption ciascuna per restare leggibili.
+# Chiave tr() del nome di ogni tipo di influenza nella riga "Influenza ricevuta".
+const INFLUENCE_TYPE_NAME_KEYS := {
+	InfluenceService.InfluenceType.POLITICAL: "influence_type_political",
+	InfluenceService.InfluenceType.CULTURAL: "influence_type_cultural",
+	InfluenceService.InfluenceType.RELIGIOUS: "influence_type_religious",
+}
+
+
+func _refresh_influence_received(building: Building) -> void:
+	var is_house: bool = building.rules != null and building.rules.category == BuildingTypes.Category.RESIDENTIAL \
+		and building.is_complete and not building.is_demolished
+	influence_received_label.visible = is_house
+	if not is_house:
+		return
+	var names: Array[String] = []
+	for influence_type in InfluenceService.get_house_coverage(building.id):
+		names.append(tr(String(INFLUENCE_TYPE_NAME_KEYS.get(influence_type, ""))))
+	influence_received_label.text = tr("building_influence_received_label").format({
+		"types": ", ".join(names) if not names.is_empty() else tr("building_influence_received_none")
+	})
+
+
 func _refresh_residents_grid(building: Building, residents_display_data: Array[Dictionary]) -> void:
 	for child in residents_grid.get_children():
 		child.queue_free()

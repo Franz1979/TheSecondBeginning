@@ -11,7 +11,32 @@ extends RefCounted
 # `scale` = pixel per unità di disegno (1.0 sulla mappa: una microcella = 10 px); `invalid` = anteprima su una
 # posizione non edificabile (tinta rossastra semitrasparente, come le altre sagome di BuildingGhost).
 
-const TYPES: Array[String] = ["drying_rack", "smokehouse", "burial", "earthwork"]
+const TYPES: Array[String] = ["drying_rack", "smokehouse", "burial", "earthwork", "stacked_stones"]
+
+# Pietre rituali (stacked_stones, ridisegnate 2026-10-02 — seconda versione, richiesta utente: un luogo rituale
+# costruito apposta, non un mucchio): vista dall'alto, composizione SIMMETRICA attorno al centro, dal basso in alto —
+# una pelle stesa come base, un piccolo cumulo di 3 pietre al centro, 4 ossa a raggiera sui quattro lati, 4 rametti
+# a raggiera sulle diagonali (tra un osso e l'altro). Niente contorno né ombreggiatura. Colori di pelle, ossa e
+# rametti presi dalle icone delle risorse (HideIcon/BoneIcon/StickIcon), così restano gli stessi del resto del gioco.
+const STACKED_STONES_HIDE_RADIUS: float = 4.1
+const STACKED_STONES_HIDE_VERTICES: int = 12
+# Cumulo: centro (x, y) e raggio (z) di ogni pietra, dalla base alla cima, ognuna un po' più chiara della precedente.
+const STACKED_STONES_PILE: Array[Vector3] = [
+	Vector3(0.0, 0.15, 1.7), Vector3(0.25, -0.15, 1.1), Vector3(-0.1, -0.35, 0.6),
+]
+const STACKED_STONES_PILE_COLORS: Array[Color] = [
+	Color(0.62, 0.60, 0.56, 1.0), Color(0.72, 0.70, 0.66, 1.0), Color(0.81, 0.79, 0.75, 1.0),
+]
+# Ossa (assi cardinali) e rametti (diagonali): da raggio interno a raggio esterno, spessore, e per le ossa il raggio
+# delle due estremità arrotondate.
+const STACKED_STONES_BONE_INNER: float = 2.2
+const STACKED_STONES_BONE_OUTER: float = 3.5
+const STACKED_STONES_BONE_WIDTH: float = 0.45
+const STACKED_STONES_BONE_KNOB_RADIUS: float = 0.32
+const STACKED_STONES_STICK_INNER: float = 2.0
+const STACKED_STONES_STICK_OUTER: float = 3.9
+const STACKED_STONES_STICK_WIDTH: float = 0.35
+const STACKED_STONES_BLOB_VERTICES: int = 9
 
 const WOOD := Color(0.55, 0.38, 0.20, 1.0)
 const WOOD_DARK := Color(0.36, 0.24, 0.12, 1.0)
@@ -66,3 +91,49 @@ static func draw(canvas: CanvasItem, building_type: String, center: Vector2, inv
 				ridge.append(p.call(-4.0 + 8.0 * t, 1.0 - sin(t * PI) * 2.6))
 			canvas.draw_polyline(ridge, tint.call(EARTH), w.call(2.2), true)
 			canvas.draw_polyline(ridge, tint.call(EARTH_DARK), w.call(0.5), true)
+		"stacked_stones":
+			# Dal basso in alto: pelle, cumulo, ossa (assi cardinali), rametti (diagonali). Sagome irregolari
+			# deterministiche (seed fisso), stabili tra un ridisegno e l'altro; disposizione regolare a raggiera.
+			canvas.draw_colored_polygon(
+				_blob_polygon(center, w.call(STACKED_STONES_HIDE_RADIUS), 200, STACKED_STONES_HIDE_VERTICES, 0.9, 1.08),
+				tint.call(HideIcon.HIDE_COLOR)
+			)
+			for i in range(STACKED_STONES_PILE.size()):
+				var stone: Vector3 = STACKED_STONES_PILE[i]
+				canvas.draw_colored_polygon(
+					_blob_polygon(p.call(stone.x, stone.y), w.call(stone.z), i), tint.call(STACKED_STONES_PILE_COLORS[i])
+				)
+			for i in range(4):
+				var bone_dir := Vector2.RIGHT.rotated(TAU * float(i) / 4.0)
+				var bone_inner: Vector2 = p.call(bone_dir.x * STACKED_STONES_BONE_INNER, bone_dir.y * STACKED_STONES_BONE_INNER)
+				var bone_outer: Vector2 = p.call(bone_dir.x * STACKED_STONES_BONE_OUTER, bone_dir.y * STACKED_STONES_BONE_OUTER)
+				canvas.draw_line(bone_inner, bone_outer, tint.call(BoneIcon.BONE_COLOR), w.call(STACKED_STONES_BONE_WIDTH), true)
+				# Estremità doppie dell'osso: due cerchietti affiancati per lato, perpendicolari all'osso.
+				var side: Vector2 = bone_dir.orthogonal() * w.call(STACKED_STONES_BONE_KNOB_RADIUS * 0.7)
+				for end_point in [bone_inner, bone_outer]:
+					canvas.draw_circle(end_point + side, w.call(STACKED_STONES_BONE_KNOB_RADIUS), tint.call(BoneIcon.BONE_COLOR))
+					canvas.draw_circle(end_point - side, w.call(STACKED_STONES_BONE_KNOB_RADIUS), tint.call(BoneIcon.BONE_COLOR))
+			for i in range(4):
+				var stick_dir := Vector2.RIGHT.rotated(TAU * (float(i) + 0.5) / 4.0)
+				canvas.draw_line(
+					p.call(stick_dir.x * STACKED_STONES_STICK_INNER, stick_dir.y * STACKED_STONES_STICK_INNER),
+					p.call(stick_dir.x * STACKED_STONES_STICK_OUTER, stick_dir.y * STACKED_STONES_STICK_OUTER),
+					tint.call(StickIcon.STICK_COLOR_DARK), w.call(STACKED_STONES_STICK_WIDTH), true
+				)
+
+
+# Sagoma irregolare vista dall'alto (pietre e pelle delle pietre rituali): `vertices` vertici con raggio jittered attorno a
+# `center` (stesso principio di MicroCellRenderer._pebble_blob_polygon), RNG locale seedata con `seed_index` così la
+# forma è stabile tra un ridisegno e l'altro.
+static func _blob_polygon(
+	center: Vector2, radius: float, seed_index: int, vertices: int = STACKED_STONES_BLOB_VERTICES,
+	jitter_min: float = 0.8, jitter_max: float = 1.12
+) -> PackedVector2Array:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = seed_index
+	var rotation := rng.randf_range(0.0, TAU)
+	var points := PackedVector2Array()
+	for v in range(vertices):
+		var angle: float = rotation + TAU * float(v) / float(vertices)
+		points.append(center + Vector2(cos(angle), sin(angle)) * radius * rng.randf_range(jitter_min, jitter_max))
+	return points

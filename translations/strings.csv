@@ -172,6 +172,7 @@ building_category_religious,Religioso
 building_drying_rack,Graticcio
 building_smokehouse,Affumicatoio
 building_burial,Sepoltura
+building_stacked_stones,Pietre rituali
 building_earthwork,Vallo di terra
 building_dirt_ground,Terra battuta
 build_bar_pebble_circle_tooltip,Cerchio di sassi
@@ -184,6 +185,7 @@ build_bar_toolmaker_hut_tooltip,Capanna dell'attrezzista
 build_bar_drying_rack_tooltip,Graticcio
 build_bar_smokehouse_tooltip,Affumicatoio
 build_bar_burial_tooltip,Sepoltura
+build_bar_stacked_stones_tooltip,Pietre rituali
 build_bar_earthwork_tooltip,Vallo di terra
 build_bar_dirt_ground_tooltip,Terra battuta
 build_bar_requires_idea_tooltip,Richiede: {idea}
@@ -355,6 +357,8 @@ individual_thirst_label,Sete:
 individual_health_label,Salute:
 individual_happiness_label,Felicità:
 individual_loyalty_label,Lealtà:
+individual_faith_label,Fede:
+individual_mind_section_label,Animo:
 individual_skills_section_label,Skills:
 skill_leadership_label,Leadership
 skill_builder_label,Costruttore
@@ -364,6 +368,7 @@ skill_gathering_label,Raccolta
 skill_cognition_label,Cognizione
 skill_hunting_label,Caccia
 skill_crafting_label,Artigianato
+skill_ritual_label,Ritualità
 individual_id_label,ID: {id} (Folk {folk}, Gruppo {group})
 individual_mother_id_label,ID Madre: {id}
 individual_father_id_label,ID Padre: {id}
@@ -386,6 +391,12 @@ building_status_under_construction,In costruzione
 building_status_marked_for_demolition,Da demolire
 building_status_demolition_in_progress,In demolizione
 building_demolish_button,Demolisci
+building_influence_political_tooltip,"Influenza politica: raggio {radius}"
+building_influence_political_none_tooltip,Nessuna influenza politica
+building_influence_cultural_tooltip,"Influenza culturale: raggio {radius}"
+building_influence_cultural_none_tooltip,Nessuna influenza culturale
+building_influence_religious_tooltip,"Influenza religiosa: raggio {radius}"
+building_influence_religious_none_tooltip,Nessuna influenza religiosa
 building_cancel_site_button,Annulla cantiere
 building_assign_demolisher_button,Assegna demolitore
 building_cancel_demolition_button,Annulla demolizione
@@ -399,6 +410,11 @@ building_not_yet_built,Non ancora costruito
 building_built_year_unknown,Costruito: anno non noto
 building_stored_label,Immagazzinato: {entries}
 building_residents_caption,Residenti
+building_influence_received_label,"Influenza ricevuta: {types}"
+building_influence_received_none,nessuna
+influence_type_political,politica
+influence_type_cultural,culturale
+influence_type_religious,religiosa
 building_resident_tooltip,{name} (età {age})
 building_storage_caption,Magazzino
 building_settings_caption,Impostazioni
@@ -574,3 +590,13 @@ task_build_step_clear_site,Sgomberando il terreno
 task_build_step_build,Costruendo
 building_site_materials_progress_caption,Materiale (consegnato/richiesto):
 building_production_materials_caption,Materiali per la produzione (disponibili/richiesti):
+task_rite_name,Rito
+task_rite_step_rite,Celebrando il rito
+task_activity_rite,celebrare un rito
+rite_simple_name,Rito semplice
+rite_dialog_title,Rito
+rite_dialog_message,Scegli il rito da celebrare:
+rite_reject_building_busy,C'è già un rito assegnato o in corso presso questo edificio
+"rite_reject_none_available","{name} non può celebrare nessun rito qui (età o ritualità insufficienti)"
+rite_interrupted,Rito interrotto ({name})
+task_leisure_rite_name,Rito spontaneo

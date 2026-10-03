@@ -161,6 +161,8 @@ const BUILDING_ICON_NODES := {
 	"smokehouse": preload("res://simulation/scripts/ui/SmokehouseIcon.gd"),
 	"burial": preload("res://simulation/scripts/ui/BurialIcon.gd"),
 	"earthwork": preload("res://simulation/scripts/ui/EarthworkIcon.gd"),
+	# Pietre impilate (2026-10-02, richiesta utente): pila verticale di sassi, stesso disegno della mappa.
+	"stacked_stones": preload("res://simulation/scripts/ui/StackedStonesIcon.gd"),
 }
 
 
@@ -206,6 +208,9 @@ const COMMAND_ICONS := {
 	# "produce" (2026-09-23, richiesta utente — Produce Task): icona provvisoria.
 	"produce": "⚒️",
 	"demolish": "⛏️",
+	# "rite" (2026-10-02, task Rite): sulla mappa vale l'icona disegnata (COMMAND_ICON_NODES, CommandMoonIcon); questa
+	# emoji resta solo per le righe del popup di scelta del rito (interfaccia, non mappa).
+	"rite": "🌙",
 	"task_rejected": "❌",
 }
 
@@ -267,6 +272,8 @@ const COMMAND_ICON_NODES := {
 	"butcher": preload("res://simulation/scripts/ui/CommandKnifeIcon.gd"),
 	# "demolish" (2026-09-27, richiesta utente — Demolish Task): piccone, vedi CommandPickaxeIcon.gd.
 	"demolish": preload("res://simulation/scripts/ui/CommandPickaxeIcon.gd"),
+	# "rite" (2026-10-02, task Rite): falce di luna, vedi CommandMoonIcon.gd.
+	"rite": preload("res://simulation/scripts/ui/CommandMoonIcon.gd"),
 	"task_rejected": preload("res://simulation/scripts/ui/CommandRejectedIcon.gd"),
 }
 

@@ -96,6 +96,16 @@ var current_durability: int = 0
 # usato insieme a rules.lifespan_years per calcolare quando l'edificio scadrà.
 var built_year: int = -1
 
+# Raggio di influenza CORRENTE per tipo (2026-10-02, passo 4c): InfluenceService.InfluenceType (int) -> float, con i
+# decimali. Voce assente = raggio base delle regole (valore iniziale e salvataggi vecchi). Letto e scritto SOLO da
+# InfluenceService (get_current_radius/add_radius/advance_daily_decay); salvato da GameSaveService.
+var influence_radius: Dictionary = {}
+
+# Giorno assoluto (GameData.get_absolute_day) dell'ultimo rito completato presso questo edificio, manuale o spontaneo
+# (2026-10-02 — scritto da RiteEffectService). -1 = mai. Letto dalla regola giornaliera della fede
+# (HumanVitalsInteractionService) per le case coperte da questo edificio.
+var last_rite_absolute_day: int = -1
+
 # Nome risorsa -> {"quantity": int, "decay_fraction": float} (2026-09-09, richiesta utente — Step 3
 # decadimento a lotto unico: PRIMA era resource_name -> int diretto, vedi GameLoadService per la
 # retrocompatibilità con save salvati nel vecchio formato). decay_fraction è una MEDIA PESATA sulla

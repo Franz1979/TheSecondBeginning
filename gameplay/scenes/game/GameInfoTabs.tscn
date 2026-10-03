@@ -52,6 +52,10 @@ size_flags_horizontal = 3
 theme_override_font_sizes/font_size = 11
 vertical_alignment = 1
 
+[node name="HeaderActions" type="HBoxContainer" parent="SelectionTab/SelectionTabBody/SelectionHeader"]
+layout_mode = 2
+theme_override_constants/separation = 2
+
 [node name="CenterButton" type="Button" parent="SelectionTab/SelectionTabBody/SelectionHeader"]
 layout_mode = 2
 text = "🎯"
