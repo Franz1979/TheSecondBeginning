@@ -276,26 +276,56 @@ var vegetation_positions: Dictionary = {} # WorldObjectType -> Array[Vector3i] p
 # batch_active=false, default) ogni setter si comporta ESATTAMENTE come prima — nessun cambiamento
 # per un eventuale futuro chiamante che invochi un setter da solo.
 var _vegetation_batch_active: bool = false
-var _vegetation_batch_dirty: Dictionary = {} # "tree"/"shrub"/"grass" -> true
+var _vegetation_batch_dirty: Dictionary = {} # "tree"/"shrub"/"grass"/"tree_fruit"/"shrub_fruit" -> true
+
+# Solo diagnostica (2026-10-03, richiesta utente — letti da GameScene per la riga [VEG REFRESH TIMING]):
+#   - last_batch_timings_ms: tempo in ms di ogni ricostruzione fatta dall'ultimo end_vegetation_batch, per chiave
+#     "tree"/"shrub"/"grass"/"tree_fruit"/"shrub_fruit" (assente = non rifatta);
+#   - last_fruit_rebuild_paths: per "tree"/"shrub", come sono stati rifatti i frutti nell'ultima ricostruzione dei
+#     frutti: "solo frutti" (percorso nuovo) o "ripiego completo" (elenco delle piante da frutto mancante o non valido).
+var last_batch_timings_ms: Dictionary = {}
+var last_fruit_rebuild_paths: Dictionary = {}
+# Individui la cui geometria è stata ricalcolata o presa dalla memoria nell'ultima ricostruzione di alberi/arbusti
+# (2026-10-03, passo B): "tree"/"shrub" -> {"computed": int, "reused": int}. Solo diagnostica.
+var last_geometry_stats: Dictionary = {}
 
 
 func begin_vegetation_batch() -> void:
 	_vegetation_batch_active = true
 	_vegetation_batch_dirty.clear()
+	last_batch_timings_ms.clear()
+	last_fruit_rebuild_paths.clear()
+	last_geometry_stats.clear()
 
 
 # Esegue UNA SOLA VOLTA per tipo ciascun rebuild segnato "sporco" durante la finestra di batch,
 # nell'ordine originale (tree/shrub/grass) — irrilevante ai fini del risultato (ogni rebuild legge
 # solo il proprio stato già aggiornato dai setter, mai lo stato di un altro tipo), tenuto solo per
 # leggibilità del log. Un solo queue_redraw() finale, non uno per setter.
+#
+# Soli frutti (2026-10-03, richiesta utente): "tree_fruit"/"shrub_fruit" rifanno solo i MultiMesh dei frutti
+# (_rebuild_tree_fruit_multimeshes/_rebuild_shrub_fruit_multimesh); se nello stesso batch il tipo è segnato anche per la
+# ricostruzione completa, vince la completa (che rifà anche i frutti).
 func end_vegetation_batch() -> void:
 	_vegetation_batch_active = false
+	var start_usec := Time.get_ticks_usec()
 	if _vegetation_batch_dirty.get("tree", false):
 		_rebuild_tree_multimeshes()
+		last_batch_timings_ms["tree"] = (Time.get_ticks_usec() - start_usec) / 1000.0
+	elif _vegetation_batch_dirty.get("tree_fruit", false):
+		_rebuild_tree_fruit_multimeshes()
+		last_batch_timings_ms["tree_fruit"] = (Time.get_ticks_usec() - start_usec) / 1000.0
+	start_usec = Time.get_ticks_usec()
 	if _vegetation_batch_dirty.get("shrub", false):
 		_rebuild_shrub_multimeshes()
+		last_batch_timings_ms["shrub"] = (Time.get_ticks_usec() - start_usec) / 1000.0
+	elif _vegetation_batch_dirty.get("shrub_fruit", false):
+		_rebuild_shrub_fruit_multimesh()
+		last_batch_timings_ms["shrub_fruit"] = (Time.get_ticks_usec() - start_usec) / 1000.0
+	start_usec = Time.get_ticks_usec()
 	if _vegetation_batch_dirty.get("grass", false):
 		_rebuild_grass_buffers()
+		last_batch_timings_ms["grass"] = (Time.get_ticks_usec() - start_usec) / 1000.0
 	_vegetation_batch_dirty.clear()
 	queue_redraw()
 
@@ -303,7 +333,10 @@ func end_vegetation_batch() -> void:
 # Usati dai setter sotto al posto della chiamata diretta a _rebuild_*_multimeshes/_rebuild_grass_
 # buffers: dentro una finestra di batch rimandano il rebuild vero a end_vegetation_batch(), fuori
 # (comportamento di sempre) rebuildano subito.
+# Un dato degli alberi/arbusti è cambiato: l'elenco delle piante da frutto non vale più finché la ricostruzione completa
+# (subito o a fine batch) non lo rifà — così il percorso dei soli frutti non usa mai dati vecchi.
 func _defer_or_rebuild_tree() -> void:
+	_tree_fruit_entries_valid = false
 	if _vegetation_batch_active:
 		_vegetation_batch_dirty["tree"] = true
 	else:
@@ -311,10 +344,28 @@ func _defer_or_rebuild_tree() -> void:
 
 
 func _defer_or_rebuild_shrub() -> void:
+	_shrub_fruit_entries_valid = false
 	if _vegetation_batch_active:
 		_vegetation_batch_dirty["shrub"] = true
 	else:
 		_rebuild_shrub_multimeshes()
+
+
+# Cambiato solo il rapporto dei frutti (set_fruit_stock_available_ratio_by_lot): soli frutti, nel batch o subito.
+func _defer_or_rebuild_tree_fruit() -> void:
+	if _vegetation_batch_active:
+		_vegetation_batch_dirty["tree_fruit"] = true
+	else:
+		last_fruit_rebuild_paths.erase("tree")
+		_rebuild_tree_fruit_multimeshes()
+
+
+func _defer_or_rebuild_shrub_fruit() -> void:
+	if _vegetation_batch_active:
+		_vegetation_batch_dirty["shrub_fruit"] = true
+	else:
+		last_fruit_rebuild_paths.erase("shrub")
+		_rebuild_shrub_fruit_multimesh()
 
 
 func _defer_or_rebuild_grass() -> void:
@@ -931,10 +982,12 @@ var fruit_stock_available_ratio_by_lot: Dictionary = {}
 # nella stessa chiamata.
 func set_fruit_stock_available_ratio_by_lot(resource_name: String, object_type: GameTypes.WorldObjectType, ratios: Dictionary) -> void:
 	fruit_stock_available_ratio_by_lot[resource_name] = ratios
+	# Dal 2026-10-03 solo i MultiMesh dei frutti (vedi _rebuild_tree_fruit_multimeshes): dentro il ridisegno completo di
+	# GameScene il tipo è comunque segnato per la ricostruzione completa dagli altri setter, che vince.
 	if object_type == GameTypes.WorldObjectType.TREE:
-		_defer_or_rebuild_tree()
+		_defer_or_rebuild_tree_fruit()
 	else:
-		_defer_or_rebuild_shrub()
+		_defer_or_rebuild_shrub_fruit()
 	queue_redraw()
 
 
@@ -2559,61 +2612,171 @@ func _rebuild_tree_multimeshes() -> void:
 	# altrimenti tagliare un individuo cambierebbe il local_count (quindi il disk-offset) dei suoi
 	# vicini di lotto ancora vivi, spostandoli pur non avendo perso la propria identità.
 	var lot_counts: Dictionary = _lot_extent_counts(GameTypes.WorldObjectType.TREE)
+	_tree_fruit_entries.clear()
 
+	# Geometria in memoria (2026-10-03, passo B — vedi _tree_geometry_cache): ricalcolata solo per gli individui nuovi o
+	# con una firma diversa; il colore della chioma (stagione) e il test dei frutti (rapporto del lotto) si applicano
+	# qui, a ogni ricostruzione, come prima.
+	_check_geometry_cache_globals()
+	var computed_count := 0
+	var reused_count := 0
 	for individual_key in positions:
-		var visual: Dictionary = _compute_tree_visual(individual_key, lot_counts)
-		var ground: Vector2 = visual["ground"]
-		var trunk_width: float = visual["trunk_width"]
-		var trunk_y: float = visual["trunk_y"]
-		var canopy_center: Vector2 = visual["canopy_center"]
-		var canopy_radius: float = visual["canopy_radius"]
-
-		var trunk_transform := Transform2D(0, Vector2.ZERO).scaled(Vector2(trunk_width, visual["trunk_height"]))
-		trunk_transform.origin = Vector2(ground.x - trunk_width / 2.0, trunk_y)
-		trunk_transforms.append(trunk_transform)
-
-		var canopy_transform := Transform2D(0, Vector2.ZERO).scaled(Vector2(canopy_radius, canopy_radius))
-		canopy_transform.origin = canopy_center
-
-		# Ramo esclusivo: un individuo è O conifer (chioma ad abete, sempre verde piena, MAI
-		# frutti) O uno degli altri tre sottotipi (chioma tonda, colore per stagione, idonea al
-		# test frutta) — a differenza del test frutta stesso, qui l'esclusione è intenzionale ed
-		# esplicita, non solo un'approssimazione indipendente (vedi discussione: conifer non deve
-		# mai comparire con ghiande/mele).
-		if visual["is_conifer"]:
-			conifer_canopy_transforms.append(canopy_transform)
+		var signature := _tree_geometry_signature(individual_key, lot_counts)
+		var geometry: Dictionary = _tree_geometry_cache.get(individual_key, {})
+		if geometry.is_empty() or geometry["signature"] != signature:
+			geometry = _compute_tree_geometry(individual_key, lot_counts)
+			geometry["signature"] = signature
+			_tree_geometry_cache[individual_key] = geometry
+			computed_count += 1
 		else:
-			canopy_transforms.append(canopy_transform)
-			canopy_colors.append(deciduous_canopy_color)
-
-			# YOUNG non produce mai frutti (production_coefficient_young = 0.0, stesso
-			# coefficiente usato dal calcolo calorico), stesso gate già applicato alle bacche
-			# shrub — irrilevante per wood_only/conifer, che non entrano mai in questo ramo.
-			if visual["is_fruit_bearing"] and visual["age_band"] != GameTypes.AgeBand.YOUNG:
-				if visual["is_domesticable"]:
-					# "fruit" (2026-09-17, richiesta utente — TREE/domesticable_fruit, terza
-					# risorsa della catena "fruit stock" generica dopo berry/acorn) — STESSO gate
-					# hash-vs-ratio già usato per le ghiande wild_fruit sotto, vedi
-					# _fruit_stock_shows: quando get_fruit_stock_available_at per questo lotto è 0,
-					# gli individui domesticable_fruit di quel lotto smettono di mostrare le mele
-					# fino alla ricrescita stagionale, su una quota proporzionale se più individui
-					# condividono il lotto (mai tutto o niente insieme).
-					if _fruit_stock_shows("fruit", individual_key, visual["jitter_pos"]):
-						domesticable_fruit_transforms.append_array(_build_tree_fruit_transforms(visual["jitter_pos"], canopy_center, canopy_radius))
-				# "acorn" (2026-09-17, richiesta utente — TREE/wild_fruit, seconda risorsa della
-				# catena "fruit stock" generica dopo berry) — STESSO gate hash-vs-ratio già usato
-				# per le bacche shrub, vedi _fruit_stock_shows: quando get_fruit_stock_available_at
-				# per questo lotto è 0, gli individui wild_fruit di quel lotto smettono di mostrare
-				# le ghiande fino alla ricrescita stagionale, su una quota proporzionale se più
-				# individui condividono il lotto (mai tutto o niente insieme).
-				elif _fruit_stock_shows("acorn", individual_key, visual["jitter_pos"]):
-					wild_fruit_transforms.append_array(_build_tree_fruit_transforms(visual["jitter_pos"], canopy_center, canopy_radius))
+			reused_count += 1
+		trunk_transforms.append(geometry["trunk_transform"])
+		# Ramo esclusivo: un individuo è O conifer (chioma ad abete, sempre verde piena, MAI frutti) O uno degli altri
+		# sottotipi (chioma tonda, colore per stagione, idonea al test frutta).
+		if geometry["is_conifer"]:
+			conifer_canopy_transforms.append(geometry["canopy_transform"])
+			continue
+		canopy_transforms.append(geometry["canopy_transform"])
+		canopy_colors.append(deciduous_canopy_color)
+		# "fruit" (domesticable_fruit) o "acorn" (wild_fruit); "" = nessun frutto (non fruttifero o YOUNG). Stesso gate
+		# hash-vs-ratio di sempre (_fruit_stock_shows): con disponibilità 0 nel lotto i frutti spariscono su una quota
+		# proporzionale degli individui.
+		var fruit_resource: String = geometry["fruit_resource"]
+		if fruit_resource == "":
+			continue
+		_tree_fruit_entries.append({
+			"key": individual_key, "lot": Vector2i(individual_key.x, individual_key.y), "jitter_pos": geometry["jitter_pos"],
+			"canopy_center": geometry["canopy_center"], "canopy_radius": geometry["canopy_radius"],
+			"resource_name": fruit_resource,
+		})
+		if _fruit_stock_shows(fruit_resource, individual_key, geometry["jitter_pos"]):
+			if fruit_resource == "fruit":
+				domesticable_fruit_transforms.append_array(geometry["fruit_transforms"])
+			else:
+				wild_fruit_transforms.append_array(geometry["fruit_transforms"])
+	last_geometry_stats["tree"] = {"computed": computed_count, "reused": reused_count}
 
 	_apply_transforms(_tree_trunk_multimesh, trunk_transforms)
 	_apply_transforms(_tree_canopy_multimesh, canopy_transforms)
 	for i in range(canopy_colors.size()):
 		_tree_canopy_multimesh.set_instance_color(i, canopy_colors[i])
 	_apply_transforms(_tree_conifer_canopy_multimesh, conifer_canopy_transforms)
+	_apply_transforms(_tree_fruit_wild_multimesh, wild_fruit_transforms)
+	_apply_transforms(_tree_fruit_domesticable_multimesh, domesticable_fruit_transforms)
+	_tree_fruit_entries_valid = true
+
+
+# MEMORIA DELLA GEOMETRIA (2026-10-03, richiesta utente — passo B: non ricalcolare ciò che non è cambiato, soprattutto
+# nei ridisegni per movimento/nebbia, dove cambia solo QUALI individui sono visibili). Chiave individuo (Vector3i) ->
+# geometria già calcolata + "signature". La geometria di un individuo dipende SOLO da:
+#   - la chiave (lotto e indice: posizione di base, scostamenti, hash);
+#   - il sottotipo (tree/shrub_individual_subtype) e l'anno di nascita (tree/shrub_birth_year_store) -> nella firma
+#     dell'individuo;
+#   - il numero di individui del lotto (vivi visibili + tagliati + morti, _lot_extent_counts: densità e disco) -> nella
+#     firma dell'individuo;
+#   - anno corrente e parametri d'età per sottotipo (fascia d'età e taglia) -> firma globale
+#     (_check_geometry_cache_globals): se cambia, memoria svuotata;
+#   - costanti del file (CELL_SIZE, intervalli, sali degli hash).
+# NON ne dipendono (applicati a ogni ricostruzione): colore stagionale della chioma, test dei frutti per rapporto.
+# GameScene svuota tutto (clear_vegetation_geometry_cache) a ogni rigenerazione delle posizioni
+# (needs_full_vegetation_recompute: checkpoint stagionale, taglio, edificio, attivazione cella) — nel dubbio.
+var _tree_geometry_cache: Dictionary = {}
+var _shrub_geometry_cache: Dictionary = {}
+var _tree_geometry_globals: Array = []
+var _shrub_geometry_globals: Array = []
+
+
+func clear_vegetation_geometry_cache() -> void:
+	_tree_geometry_cache.clear()
+	_shrub_geometry_cache.clear()
+	_tree_geometry_globals = []
+	_shrub_geometry_globals = []
+
+
+# Svuota la memoria di un tipo se anno corrente o parametri d'età sono cambiati dall'ultima ricostruzione.
+func _check_geometry_cache_globals() -> void:
+	var tree_globals: Array = [tree_current_year, tree_age_params.hash()]
+	if tree_globals != _tree_geometry_globals:
+		_tree_geometry_cache.clear()
+		_tree_geometry_globals = tree_globals
+	var shrub_globals: Array = [shrub_current_year, shrub_age_params.hash()]
+	if shrub_globals != _shrub_geometry_globals:
+		_shrub_geometry_cache.clear()
+		_shrub_geometry_globals = shrub_globals
+
+
+func _tree_geometry_signature(individual_key: Vector3i, lot_counts: Dictionary) -> Array:
+	return [
+		tree_individual_subtype.get(individual_key, "wood_only"),
+		tree_birth_year_store.get(individual_key, null),
+		int(lot_counts.get(Vector2i(individual_key.x, individual_key.y), 1)),
+	]
+
+
+func _shrub_geometry_signature(individual_key: Vector3i, lot_counts: Dictionary) -> Array:
+	return [
+		shrub_individual_subtype.get(individual_key, "wood_only"),
+		shrub_birth_year_store.get(individual_key, null),
+		int(lot_counts.get(Vector2i(individual_key.x, individual_key.y), 1)),
+	]
+
+
+# Geometria di un albero: le stesse formule della ricostruzione di prima del passo B (tronco, chioma, frutti).
+func _compute_tree_geometry(individual_key: Vector3i, lot_counts: Dictionary) -> Dictionary:
+	var visual: Dictionary = _compute_tree_visual(individual_key, lot_counts)
+	var ground: Vector2 = visual["ground"]
+	var trunk_width: float = visual["trunk_width"]
+	var trunk_y: float = visual["trunk_y"]
+	var canopy_center: Vector2 = visual["canopy_center"]
+	var canopy_radius: float = visual["canopy_radius"]
+
+	var trunk_transform := Transform2D(0, Vector2.ZERO).scaled(Vector2(trunk_width, visual["trunk_height"]))
+	trunk_transform.origin = Vector2(ground.x - trunk_width / 2.0, trunk_y)
+	var canopy_transform := Transform2D(0, Vector2.ZERO).scaled(Vector2(canopy_radius, canopy_radius))
+	canopy_transform.origin = canopy_center
+
+	# YOUNG non produce mai frutti; conifer non ha mai frutti.
+	var fruit_resource := ""
+	if not visual["is_conifer"] and visual["is_fruit_bearing"] and visual["age_band"] != GameTypes.AgeBand.YOUNG:
+		fruit_resource = "fruit" if visual["is_domesticable"] else "acorn"
+	return {
+		"trunk_transform": trunk_transform, "canopy_transform": canopy_transform, "is_conifer": visual["is_conifer"],
+		"fruit_resource": fruit_resource, "jitter_pos": visual["jitter_pos"],
+		"canopy_center": canopy_center, "canopy_radius": canopy_radius,
+		"fruit_transforms": _build_tree_fruit_transforms(visual["jitter_pos"], canopy_center, canopy_radius) if fruit_resource != "" else [],
+	}
+
+
+# Piante da frutto dell'ultima ricostruzione completa (2026-10-03, richiesta utente — ricostruire solo i frutti):
+# alberi decidui fruttiferi non YOUNG, con quanto serve a ridisegnarne i frutti senza ricalcolare tronchi e chiome —
+# {"key": Vector3i, "lot": Vector2i, "jitter_pos": Vector2i, "canopy_center": Vector2, "canopy_radius": float,
+#  "resource_name": "acorn"/"fruit"}. Svuotato e rifatto a ogni _rebuild_tree_multimeshes; `valid` torna false a ogni
+# cambio dei dati degli alberi (_defer_or_rebuild_tree). Stesso schema per gli arbusti (bacche).
+var _tree_fruit_entries: Array = []
+var _tree_fruit_entries_valid: bool = false
+var _shrub_fruit_entries: Array = []
+var _shrub_fruit_entries_valid: bool = false
+
+
+# Soli MultiMesh dei frutti degli alberi, dall'elenco: stesso test (_fruit_stock_shows) e stesse trasformazioni
+# (_build_tree_fruit_transforms) della ricostruzione completa. Elenco non valido -> ripiego sulla completa.
+func _rebuild_tree_fruit_multimeshes() -> void:
+	if not _tree_fruit_entries_valid or _tree_fruit_wild_multimesh == null or _tree_fruit_domesticable_multimesh == null:
+		last_fruit_rebuild_paths["tree"] = "ripiego completo"
+		_rebuild_tree_multimeshes()
+		return
+	last_fruit_rebuild_paths["tree"] = "solo frutti"
+	var wild_fruit_transforms: Array = []
+	var domesticable_fruit_transforms: Array = []
+	for entry in _tree_fruit_entries:
+		var resource_name: String = entry["resource_name"]
+		if not _fruit_stock_shows(resource_name, entry["key"], entry["jitter_pos"]):
+			continue
+		var transforms := _build_tree_fruit_transforms(entry["jitter_pos"], entry["canopy_center"], entry["canopy_radius"])
+		if resource_name == "fruit":
+			domesticable_fruit_transforms.append_array(transforms)
+		else:
+			wild_fruit_transforms.append_array(transforms)
 	_apply_transforms(_tree_fruit_wild_multimesh, wild_fruit_transforms)
 	_apply_transforms(_tree_fruit_domesticable_multimesh, domesticable_fruit_transforms)
 
@@ -2753,59 +2916,113 @@ func _rebuild_shrub_multimeshes() -> void:
 
 	# Estensione nota (vivi+bloccati), vedi commento in _rebuild_tree_multimeshes.
 	var lot_counts: Dictionary = _lot_extent_counts(GameTypes.WorldObjectType.SHRUB)
+	_shrub_fruit_entries.clear()
 
+	# Geometria in memoria (2026-10-03, passo B — vedi _tree_geometry_cache): lobi (trasformazioni e colori) e bacche
+	# ricalcolati solo per gli individui nuovi o con firma diversa; il test delle bacche si applica a ogni ricostruzione.
+	_check_geometry_cache_globals()
+	var computed_count := 0
+	var reused_count := 0
 	for individual_key in positions:
-		var visual: Dictionary = _compute_shrub_visual(individual_key, lot_counts)
-		var jitter_pos: Vector2i = visual["jitter_pos"]
-		var center: Vector2 = visual["center"]
-		var density_scale: float = visual["density_scale"]
-		var size_multiplier: float = visual["size_multiplier"]
-
-		var blob_count: int = 3 + (hash(jitter_pos) % 2) # 3 o 4 lobi, variabile per shrub
-		for i in range(blob_count):
-			var salt: Vector2i = SHRUB_BLOB_SALTS[i]
-			var angle: float = (float(hash(jitter_pos * salt.x + Vector2i(salt.y, i)) % 1000) / 1000.0) * TAU
-			# distance scala per density_scale (non per size_multiplier pieno, età esclusa): la
-			# COMPATTEZZA del cluster segue quanto il lotto è affollato, non la fascia d'età di
-			# questo singolo individuo — altrimenti un giovane in un lotto affollato avrebbe un
-			# cluster ancora più compresso di un adulto nello stesso lotto, un segnale ridondante
-			# con age_size_multiplier che già scala il raggio dei blob sotto.
-			var distance: float = lerp(0.8, 1.8, float(hash(jitter_pos * salt.y + Vector2i(i, salt.x)) % 1000) / 1000.0) * density_scale
-			var radius: float = lerp(1.4, 2.2, float(hash(jitter_pos * (salt.x + salt.y) + Vector2i(i, i)) % 1000) / 1000.0) * size_multiplier
-			var hue_t: float = float(hash(jitter_pos * (salt.x + salt.y + 41) + Vector2i(i, i + 1)) % 1000) / 1000.0
-			var blob_color: Color = COLOR_SHRUB_GREEN.lerp(COLOR_SHRUB_BROWN, hue_t)
-			var blob_center := center + Vector2(cos(angle), sin(angle)) * distance
-
-			var blob_transform := Transform2D(0, Vector2.ZERO).scaled(Vector2(radius, radius))
-			blob_transform.origin = blob_center
-			blob_transforms.append(blob_transform)
-			blob_colors.append(blob_color)
-
-		# YOUNG non produce mai bacche (production_coefficient_young = 0.0, stesso coefficiente
-		# usato dal calcolo calorico): il test di fruttiferità resta indipendente dalla fascia
-		# età, ma qui viene comunque soppresso per gli individui YOUNG.
-		if visual["is_fruit_bearing"] and visual["age_band"] != GameTypes.AgeBand.YOUNG and _fruit_stock_shows("berry", individual_key, jitter_pos):
-			var berry_count: int = 2 + (hash(jitter_pos * 61 + Vector2i(3, 8)) % 2) # 2 o 3 bacche
-			for i in range(berry_count):
-				var berry_salt: Vector2i = SHRUB_BERRY_SALTS[i % SHRUB_BERRY_SALTS.size()]
-				var berry_angle: float = (float(hash(jitter_pos * berry_salt.x + Vector2i(berry_salt.y, i + 100)) % 1000) / 1000.0) * TAU
-				# distance scala per density_scale, stesso principio della distanza dei blob sopra
-				# (compattezza del cluster legata all'affollamento del lotto, non alla fascia età).
-				var berry_distance: float = lerp(0.6, 1.6, float(hash(jitter_pos * berry_salt.y + Vector2i(i + 100, berry_salt.x)) % 1000) / 1000.0) * density_scale
-				var berry_center := center + Vector2(cos(berry_angle), sin(berry_angle)) * berry_distance
-
-				# Raggio scalato per size_multiplier (età*densità), stesso principio del raggio dei
-				# blob sopra: prima fisso a 0.55, ora proporzionato invece di restare sproporzionato
-				# rispetto a un cluster ormai rimpicciolito.
-				var berry_radius: float = 0.55 * size_multiplier
-				var berry_transform := Transform2D(0, Vector2.ZERO).scaled(Vector2(berry_radius, berry_radius))
-				berry_transform.origin = berry_center
-				berry_transforms.append(berry_transform)
+		var signature := _shrub_geometry_signature(individual_key, lot_counts)
+		var geometry: Dictionary = _shrub_geometry_cache.get(individual_key, {})
+		if geometry.is_empty() or geometry["signature"] != signature:
+			geometry = _compute_shrub_geometry(individual_key, lot_counts)
+			geometry["signature"] = signature
+			_shrub_geometry_cache[individual_key] = geometry
+			computed_count += 1
+		else:
+			reused_count += 1
+		blob_transforms.append_array(geometry["blob_transforms"])
+		blob_colors.append_array(geometry["blob_colors"])
+		# YOUNG non produce mai bacche: il gate è già dentro "has_berries".
+		if geometry["has_berries"]:
+			_shrub_fruit_entries.append({
+				"key": individual_key, "jitter_pos": geometry["jitter_pos"], "center": geometry["center"],
+				"density_scale": geometry["density_scale"], "size_multiplier": geometry["size_multiplier"],
+			})
+			if _fruit_stock_shows("berry", individual_key, geometry["jitter_pos"]):
+				berry_transforms.append_array(geometry["berry_transforms"])
+	last_geometry_stats["shrub"] = {"computed": computed_count, "reused": reused_count}
 
 	_apply_transforms(_shrub_multimesh, blob_transforms)
 	for i in range(blob_colors.size()):
 		_shrub_multimesh.set_instance_color(i, blob_colors[i])
 
+	_apply_transforms(_berry_multimesh, berry_transforms)
+	_shrub_fruit_entries_valid = true
+
+
+# Geometria di un arbusto: le stesse formule della ricostruzione di prima del passo B (lobi con colore, bacche).
+func _compute_shrub_geometry(individual_key: Vector3i, lot_counts: Dictionary) -> Dictionary:
+	var visual: Dictionary = _compute_shrub_visual(individual_key, lot_counts)
+	var jitter_pos: Vector2i = visual["jitter_pos"]
+	var center: Vector2 = visual["center"]
+	var density_scale: float = visual["density_scale"]
+	var size_multiplier: float = visual["size_multiplier"]
+
+	var blob_transforms: Array = []
+	var blob_colors: Array = []
+	var blob_count: int = 3 + (hash(jitter_pos) % 2) # 3 o 4 lobi, variabile per shrub
+	for i in range(blob_count):
+		var salt: Vector2i = SHRUB_BLOB_SALTS[i]
+		var angle: float = (float(hash(jitter_pos * salt.x + Vector2i(salt.y, i)) % 1000) / 1000.0) * TAU
+		# distance scala per density_scale (non per size_multiplier pieno, età esclusa): la COMPATTEZZA del cluster
+		# segue quanto il lotto è affollato, non la fascia d'età di questo singolo individuo.
+		var distance: float = lerp(0.8, 1.8, float(hash(jitter_pos * salt.y + Vector2i(i, salt.x)) % 1000) / 1000.0) * density_scale
+		var radius: float = lerp(1.4, 2.2, float(hash(jitter_pos * (salt.x + salt.y) + Vector2i(i, i)) % 1000) / 1000.0) * size_multiplier
+		var hue_t: float = float(hash(jitter_pos * (salt.x + salt.y + 41) + Vector2i(i, i + 1)) % 1000) / 1000.0
+		var blob_color: Color = COLOR_SHRUB_GREEN.lerp(COLOR_SHRUB_BROWN, hue_t)
+		var blob_center := center + Vector2(cos(angle), sin(angle)) * distance
+
+		var blob_transform := Transform2D(0, Vector2.ZERO).scaled(Vector2(radius, radius))
+		blob_transform.origin = blob_center
+		blob_transforms.append(blob_transform)
+		blob_colors.append(blob_color)
+
+	# YOUNG non produce mai bacche (production_coefficient_young = 0.0, stesso coefficiente usato dal calcolo calorico).
+	var has_berries: bool = visual["is_fruit_bearing"] and visual["age_band"] != GameTypes.AgeBand.YOUNG
+	return {
+		"blob_transforms": blob_transforms, "blob_colors": blob_colors, "has_berries": has_berries,
+		"jitter_pos": jitter_pos, "center": center, "density_scale": density_scale, "size_multiplier": size_multiplier,
+		"berry_transforms": _build_shrub_berry_transforms(jitter_pos, center, density_scale, size_multiplier) if has_berries else [],
+	}
+
+
+# Bacche di un arbusto (estratta il 2026-10-03 da _rebuild_shrub_multimeshes, formula invariata, per riusarla nella
+# ricostruzione dei soli frutti).
+func _build_shrub_berry_transforms(jitter_pos: Vector2i, center: Vector2, density_scale: float, size_multiplier: float) -> Array:
+	var berry_transforms: Array = []
+	var berry_count: int = 2 + (hash(jitter_pos * 61 + Vector2i(3, 8)) % 2) # 2 o 3 bacche
+	for i in range(berry_count):
+		var berry_salt: Vector2i = SHRUB_BERRY_SALTS[i % SHRUB_BERRY_SALTS.size()]
+		var berry_angle: float = (float(hash(jitter_pos * berry_salt.x + Vector2i(berry_salt.y, i + 100)) % 1000) / 1000.0) * TAU
+		# distance scala per density_scale, stesso principio della distanza dei blob (compattezza del cluster legata
+		# all'affollamento del lotto, non alla fascia età).
+		var berry_distance: float = lerp(0.6, 1.6, float(hash(jitter_pos * berry_salt.y + Vector2i(i + 100, berry_salt.x)) % 1000) / 1000.0) * density_scale
+		var berry_center := center + Vector2(cos(berry_angle), sin(berry_angle)) * berry_distance
+		# Raggio scalato per size_multiplier (età*densità), stesso principio del raggio dei blob.
+		var berry_radius: float = 0.55 * size_multiplier
+		var berry_transform := Transform2D(0, Vector2.ZERO).scaled(Vector2(berry_radius, berry_radius))
+		berry_transform.origin = berry_center
+		berry_transforms.append(berry_transform)
+	return berry_transforms
+
+
+# Solo il MultiMesh delle bacche, dall'elenco (stesso schema di _rebuild_tree_fruit_multimeshes). Elenco non valido ->
+# ripiego sulla ricostruzione completa degli arbusti.
+func _rebuild_shrub_fruit_multimesh() -> void:
+	if not _shrub_fruit_entries_valid or _berry_multimesh == null:
+		last_fruit_rebuild_paths["shrub"] = "ripiego completo"
+		_rebuild_shrub_multimeshes()
+		return
+	last_fruit_rebuild_paths["shrub"] = "solo frutti"
+	var berry_transforms: Array = []
+	for entry in _shrub_fruit_entries:
+		if _fruit_stock_shows("berry", entry["key"], entry["jitter_pos"]):
+			berry_transforms.append_array(_build_shrub_berry_transforms(
+				entry["jitter_pos"], entry["center"], entry["density_scale"], entry["size_multiplier"]
+			))
 	_apply_transforms(_berry_multimesh, berry_transforms)
 
 

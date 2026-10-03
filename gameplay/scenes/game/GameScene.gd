@@ -9277,7 +9277,9 @@ func _refresh_resource_visuals(cell: LiveMacroCell, reason: String = "") -> void
 	# MushroomPoolService.refresh_macrocell hardcoded (mushroom/plant_fiber non hanno un rendering
 	# agganciato, richiesta esplicita utente — questo refresh serve comunque a mantenere la loro
 	# capacità fresca per pickup/ispezione microcella).
+	var _lot_capacity_start_usec := Time.get_ticks_usec()
 	LotCapacityService.refresh_all_vegetation_lot_capacities(cell.macro_state, game_data)
+	var _lot_capacity_ms: float = (Time.get_ticks_usec() - _lot_capacity_start_usec) / 1000.0
 	# Insieme "visibile in dettaglio" calcolato UNA SOLA VOLTA per refresh (2026-09-20, richiesta utente —
 	# prima veniva ricalcolato per ognuno dei 6 filtri sotto: stick, pebble, uova, ogni risorsa GRASS_PATCH e
 	# vegetazione, ~12 ms ciascuno perche' compute_visible_positions scandisce le 10.000 celle; nello stesso
@@ -9289,6 +9291,8 @@ func _refresh_resource_visuals(cell: LiveMacroCell, reason: String = "") -> void
 	if cell.fog_of_war_renderer != null:
 		visible_positions = cell.fog_of_war_renderer.compute_visible_positions(game_data.get_absolute_day())
 		cell.last_refresh_visible_version = cell.fog_of_war_renderer.visible_set_version
+	# Tenuto per il ridisegno leggero dopo una raccolta (2026-10-03, _refresh_collected_resource_visuals).
+	cell.last_visible_positions = visible_positions
 	var _fog_visible_set_ms: float = (Time.get_ticks_usec() - _fog_step_start_usec) / 1000.0
 	# Filtro FoW su pebble/stick (2026-09-09, richiesta utente) — stesso filtro già in uso per la
 	# vegetazione (_filter_vegetation_positions_by_visibility sotto): prima d'ora pebble/stick
@@ -9305,13 +9309,12 @@ func _refresh_resource_visuals(cell: LiveMacroCell, reason: String = "") -> void
 	# MacroCellState.lot_registry/lot_capacity_cache, mai più un Dictionary dedicato per risorsa —
 	# STESSO principio già in uso per eggs/wild_vegetables poco più sotto (disponibilità già
 	# risolta dal chiamante, mai un secondo calcolo nel renderer).
+	# Tempo dei MultiMesh di bastoni/sassi (qui) e uova/lotti d'erba (sotto), sommati in "1c_scattered_multimeshes".
+	var _scattered_start_usec := Time.get_ticks_usec()
 	if cell.renderer != null:
-		cell.renderer.set_stick_availability(_filter_positions_by_visibility(
-			cell, _build_lot_availability_map(cell.macro_state, "stick", cell.macro_state.tree_claimed_lots.keys()), visible_positions
-		))
-		cell.renderer.set_pebble_availability(_filter_positions_by_visibility(
-			cell, _build_lot_availability_map(cell.macro_state, "pebble", cell.macro_state.stone_positions), visible_positions
-		))
+		cell.renderer.set_stick_availability(_visible_lot_availability(cell, "stick", cell.macro_state.tree_claimed_lots.keys(), visible_positions))
+		cell.renderer.set_pebble_availability(_visible_lot_availability(cell, "pebble", cell.macro_state.stone_positions, visible_positions))
+	var _scattered_ms: float = (Time.get_ticks_usec() - _scattered_start_usec) / 1000.0
 
 	# TEMPORANEO (diagnostica Proposta 2, vedi DebugLogging.SHOW_VEGETATION_REFRESH_TIMING_LOGS) —
 	# cronometri separati per capire se il costo dell'8.9s/8 celle osservato al checkpoint
@@ -9324,6 +9327,7 @@ func _refresh_resource_visuals(cell: LiveMacroCell, reason: String = "") -> void
 	# nella stessa funzione).
 	var _veg_timings_ms: Dictionary = {}
 	_veg_timings_ms["0_fog_visible_set"] = _fog_visible_set_ms
+	_veg_timings_ms["0b_lot_capacity_refresh"] = _lot_capacity_ms
 	var _veg_refresh_start_usec := Time.get_ticks_usec()
 
 	var occupied: Dictionary = {}
@@ -9349,6 +9353,9 @@ func _refresh_resource_visuals(cell: LiveMacroCell, reason: String = "") -> void
 	# calcolata, saltando del tutto il ricalcolo (~90-190ms/cella misurati).
 	var _step_start_usec := Time.get_ticks_usec()
 	if cell.needs_full_vegetation_recompute:
+		# Posizioni rigenerate: nel dubbio la geometria in memoria del renderer si butta tutta (passo B, 2026-10-03).
+		if cell.renderer != null:
+			cell.renderer.clear_vegetation_geometry_cache()
 		var vegetation_service := VegetationPositionService.new()
 		cell.cached_vegetation_positions = vegetation_service.generate_positions(cell.macro_state, occupied, game_data.year, game_data.current_day, building_positions)
 		# Nidi "eggs" (2026-09-18, richiesta utente — uova raccoglibili per microcella) — ricalcolati
@@ -9383,10 +9390,9 @@ func _refresh_resource_visuals(cell: LiveMacroCell, reason: String = "") -> void
 	# calcolo) — solo le posizioni con disponibilità > 0 entrano nel Dictionary passato al renderer,
 	# così un nido fuori stagione/senza birds/già raccolto semplicemente non compare (mai un'istanza
 	# multimesh sprecata per un nido vuoto).
+	_scattered_start_usec = Time.get_ticks_usec()
 	if cell.renderer != null:
-		cell.renderer.set_egg_nest_availability(_filter_positions_by_visibility(
-			cell, _build_lot_availability_map(cell.macro_state, "eggs", cell.macro_state.egg_nest_positions.keys()), visible_positions
-		))
+		cell.renderer.set_egg_nest_availability(_visible_lot_availability(cell, "eggs", cell.macro_state.egg_nest_positions.keys(), visible_positions))
 
 		# Rendering lotti GRASS_PATCH (2026-09-19) — MIRROR del blocco eggs appena sopra, stesso
 		# helper condiviso (_build_lot_availability_map), ora un loop su OGNI risorsa GRASS_PATCH
@@ -9394,10 +9400,9 @@ func _refresh_resource_visuals(cell: LiveMacroCell, reason: String = "") -> void
 		# La FORMA del marker di ciascuna vive nel renderer (MicroCellRenderer.GRASS_PATCH_MARKER_
 		# SHAPES): una risorsa GRASS_PATCH senza forma lì non viene disegnata (warning nel renderer).
 		for resource_name in LotCapacityService.get_resource_names_for_lot_source(SecondaryResourceTypes.LotSource.GRASS_PATCH):
-			cell.renderer.set_grass_patch_availability(resource_name, _filter_positions_by_visibility(
-				cell, _build_lot_availability_map(cell.macro_state, resource_name, cell.macro_state.lot_capacity_cache.get(resource_name, {}).keys()),
-				visible_positions
-			))
+			cell.renderer.set_grass_patch_availability(resource_name, _visible_lot_availability(cell, resource_name, cell.macro_state.lot_capacity_cache.get(resource_name, {}).keys(), visible_positions))
+	_scattered_ms += (Time.get_ticks_usec() - _scattered_start_usec) / 1000.0
+	_veg_timings_ms["1c_scattered_multimeshes"] = _scattered_ms
 
 	# Proposta 2 (filtro FoW): il renderer riceve solo le posizioni che il FoW mostrerebbe comunque
 	# in dettaglio (vedi FogOfWarRenderer.compute_visible_positions) — una posizione coperta da
@@ -9502,9 +9507,8 @@ func _refresh_resource_visuals(cell: LiveMacroCell, reason: String = "") -> void
 		var signature: Array = TerrainScatteredResourceService.get_fruit_stock_recompute_signature(resource_name, cell.macro_state)
 		if signature == cell.last_berry_signature.get(resource_name, []):
 			continue
-		var ratio_by_lot: Dictionary = {}
-		for lot in TerrainScatteredResourceService.get_fruit_stock_weight_lots(resource_name, cell.macro_state):
-			ratio_by_lot[lot] = TerrainScatteredResourceService.get_fruit_stock_visual_ratio_at(resource_name, cell.macro_state, lot)
+		# Un solo passaggio su scorte e pesi (2026-10-03, passo B), stesso esito del calcolo lotto per lotto.
+		var ratio_by_lot: Dictionary = TerrainScatteredResourceService.get_fruit_stock_visual_ratios_by_lot(resource_name, cell.macro_state)
 		cell.cached_berry_ratio_by_lot[resource_name] = ratio_by_lot
 		cell.last_berry_signature[resource_name] = signature
 		var object_type: GameTypes.WorldObjectType = TerrainScatteredResourceService.FRUIT_STOCK_SOURCES[resource_name]["object_type"]
@@ -9514,6 +9518,9 @@ func _refresh_resource_visuals(cell: LiveMacroCell, reason: String = "") -> void
 	_step_start_usec = Time.get_ticks_usec()
 	cell.renderer.end_vegetation_batch()
 	_veg_timings_ms["6_batched_rebuild"] = (Time.get_ticks_usec() - _step_start_usec) / 1000.0
+	# Dettaglio per tipo dentro batched_rebuild (2026-10-03, solo diagnostica): alberi, arbusti, erba.
+	for rebuilt_kind in cell.renderer.last_batch_timings_ms.keys():
+		_veg_timings_ms["6_rebuild_" + String(rebuilt_kind)] = cell.renderer.last_batch_timings_ms[rebuilt_kind]
 
 	_invalidate_selected_vegetation_if_missing(cell)
 
@@ -9535,6 +9542,12 @@ func _refresh_resource_visuals(cell: LiveMacroCell, reason: String = "") -> void
 			# "_" invece di un substr a indice fisso, così l'etichetta stampata resta pulita
 			# qualunque sia la lunghezza del prefisso.
 			parts.append("%s=%.1fms" % [label.substr(label.find("_") + 1), _veg_timings_ms[label]])
+		# Individui ricalcolati / presi dalla memoria della geometria (passo B, 2026-10-03).
+		for plant_kind in cell.renderer.last_geometry_stats.keys():
+			var stats: Dictionary = cell.renderer.last_geometry_stats[plant_kind]
+			parts.append("geometria_%s=ricalcolati %d, memoria %d" % [
+				"alberi" if plant_kind == "tree" else "arbusti", int(stats["computed"]), int(stats["reused"])
+			])
 		print("[VEG REFRESH TIMING] macrocella (%d,%d) motivo=%s totale=%.1fms | %s" % [
 			cell.macro_x, cell.macro_y, reason if reason != "" else "?", total_ms, ", ".join(parts)
 		])
@@ -9574,6 +9587,93 @@ func _filter_vegetation_positions_by_visibility(cell: LiveMacroCell, positions: 
 # autonoma, come l'altra, invece di introdurre uno stato condiviso tra le due per un risparmio
 # marginale (compute_visible_positions è limitato al raggio di visibilità, non all'intera griglia).
 # `visible_positions`: come per _filter_vegetation_positions_by_visibility sopra (insieme condiviso per refresh).
+# Ridisegno LEGGERO dopo una raccolta da terreno (2026-10-03, richiesta utente — il ridisegno completo,
+# _refresh_resource_visuals, ricostruiva tutta la vegetazione a ogni raccolta). Aggiorna solo ciò che la raccolta può
+# cambiare, per le sole risorse di `collected` (nome -> unità raccolte, PickUpAction.collection_completed):
+#   - disponibilità disegnata di bastoni, sassi, uova e lotti d'erba: stessi setter e stesse mappe del ridisegno
+#     completo, filtrate con l'ULTIMO insieme visibile della nebbia (LiveMacroCell.last_visible_positions, calcolato
+#     dall'ultimo ridisegno completo; ricalcolato qui solo se manca);
+#   - frutti per lotto (bacche, ghiande, frutta): solo se la firma è cambiata, e allora si ricostruisce solo il tipo
+#     interessato (alberi o arbusti) — mai erba né posizioni;
+#   - pannello: _invalidate_selected_vegetation_if_missing e, per la cella centrale, _update_info_panel.
+# NON ricalcola le capacità dei lotti, NON tocca _last_vegetation_refresh_position né last_refresh_visible_version
+# (stato del ridisegno da movimento). Le altre risorse (funghi, fibre, erbe medicinali...) non hanno un disegno: nulla.
+func _refresh_collected_resource_visuals(cell: LiveMacroCell, collected: Dictionary) -> void:
+	if cell.macro_state == null or cell.renderer == null:
+		return
+	var start_usec := Time.get_ticks_usec()
+	var visible_positions: Variant = null
+	if cell.fog_of_war_renderer != null:
+		visible_positions = cell.last_visible_positions
+		if visible_positions == null:
+			visible_positions = cell.fog_of_war_renderer.compute_visible_positions(game_data.get_absolute_day())
+			cell.last_visible_positions = visible_positions
+	var grass_patch_names := LotCapacityService.get_resource_names_for_lot_source(SecondaryResourceTypes.LotSource.GRASS_PATCH)
+	var updated: Array[String] = []
+	# Finestra di batch (2026-10-03): più frutti dello stesso tipo di pianta nello stesso carico (ghiande e frutta)
+	# segnano soltanto "da rifare"; alberi o arbusti si ricostruiscono una volta sola in end_vegetation_batch, dopo
+	# tutti i rapporti. I setter di bastoni/sassi/uova/lotti d'erba non passano dal batch: invariati.
+	cell.renderer.begin_vegetation_batch()
+	for collected_name in collected.keys():
+		var resource_key := String(collected_name)
+		if resource_key == "stick":
+			cell.renderer.set_stick_availability(_visible_lot_availability(cell, "stick", cell.macro_state.tree_claimed_lots.keys(), visible_positions))
+			updated.append(resource_key)
+		elif resource_key == "pebble":
+			cell.renderer.set_pebble_availability(_visible_lot_availability(cell, "pebble", cell.macro_state.stone_positions, visible_positions))
+			updated.append(resource_key)
+		elif resource_key == "eggs":
+			cell.renderer.set_egg_nest_availability(_visible_lot_availability(cell, "eggs", cell.macro_state.egg_nest_positions.keys(), visible_positions))
+			updated.append(resource_key)
+		elif grass_patch_names.has(resource_key):
+			cell.renderer.set_grass_patch_availability(resource_key, _visible_lot_availability(cell, resource_key, cell.macro_state.lot_capacity_cache.get(resource_key, {}).keys(), visible_positions))
+			updated.append(resource_key)
+		# Frutti per lotto: stessa firma del ridisegno completo; set_fruit_stock_available_ratio_by_lot segna da rifare
+		# solo alberi o arbusti (ricostruiti a fine ciclo, end_vegetation_batch).
+		if TerrainScatteredResourceService.FRUIT_STOCK_SOURCES.has(resource_key):
+			var signature: Array = TerrainScatteredResourceService.get_fruit_stock_recompute_signature(resource_key, cell.macro_state)
+			if signature != cell.last_berry_signature.get(resource_key, []):
+				# Tutti i lotti: le scorte della cella scendono con la raccolta, quindi cambia il rapporto di ogni lotto.
+				var ratio_by_lot: Dictionary = TerrainScatteredResourceService.get_fruit_stock_visual_ratios_by_lot(resource_key, cell.macro_state)
+				cell.cached_berry_ratio_by_lot[resource_key] = ratio_by_lot
+				cell.last_berry_signature[resource_key] = signature
+				var object_type: GameTypes.WorldObjectType = TerrainScatteredResourceService.FRUIT_STOCK_SOURCES[resource_key]["object_type"]
+				cell.renderer.set_fruit_stock_available_ratio_by_lot(resource_key, object_type, ratio_by_lot)
+				updated.append("%s (frutti, %s)" % [resource_key, "alberi" if object_type == GameTypes.WorldObjectType.TREE else "arbusti"])
+	cell.renderer.end_vegetation_batch()
+	# Come sono stati rifatti i frutti (percorso nuovo o ripiego), e quanto, per la riga di log.
+	var fruit_paths: Array[String] = []
+	for plant_kind in cell.renderer.last_fruit_rebuild_paths.keys():
+		var fruit_ms: float = float(cell.renderer.last_batch_timings_ms.get(String(plant_kind) + "_fruit", 0.0))
+		fruit_paths.append("%s=%s %.1fms" % [
+			"alberi" if plant_kind == "tree" else "arbusti", cell.renderer.last_fruit_rebuild_paths[plant_kind], fruit_ms
+		])
+	_invalidate_selected_vegetation_if_missing(cell)
+	if cell.macro_x == center_macro_coords.x and cell.macro_y == center_macro_coords.y:
+		_update_info_panel()
+	if DebugLogging.SHOW_VEGETATION_REFRESH_TIMING_LOGS:
+		print("[VEG REFRESH TIMING] macrocella (%d,%d) motivo=raccolta leggera totale=%.1fms | raccolto=%s aggiornato=%s nebbia=%s frutti=%s" % [
+			cell.macro_x, cell.macro_y, (Time.get_ticks_usec() - start_usec) / 1000.0, str(collected),
+			str(updated) if not updated.is_empty() else "niente",
+			"nessuna" if cell.fog_of_war_renderer == null else "insieme in memoria",
+			", ".join(fruit_paths) if not fruit_paths.is_empty() else "non rifatti",
+		])
+
+
+# Disponibilità dei soli lotti visibili (2026-10-03, richiesta utente — passo B): stesso esito di
+# _filter_positions_by_visibility(cell, _build_lot_availability_map(...), visible_positions), ma la disponibilità (una
+# ricerca nel servizio per lotto) si calcola solo per i lotti che il filtro della nebbia terrebbe, non per tutti.
+func _visible_lot_availability(cell: LiveMacroCell, resource_name: String, positions: Array, visible_positions: Variant) -> Dictionary:
+	if cell.fog_of_war_renderer == null:
+		return _build_lot_availability_map(cell.macro_state, resource_name, positions)
+	var visible: Dictionary = visible_positions if visible_positions != null else cell.fog_of_war_renderer.compute_visible_positions(game_data.get_absolute_day())
+	var visible_lots: Array = []
+	for pos in positions:
+		if visible.has(Vector2i(pos.x, pos.y)):
+			visible_lots.append(pos)
+	return _build_lot_availability_map(cell.macro_state, resource_name, visible_lots)
+
+
 func _filter_positions_by_visibility(cell: LiveMacroCell, positions: Dictionary, visible_positions: Variant = null) -> Dictionary:
 	if cell.fog_of_war_renderer == null:
 		return positions
@@ -11848,14 +11948,16 @@ func _connect_daydream_step_appended_listener(task: Task, individual_ref: HumanI
 # davvero (macrocella nel frattempo disattivata) — coerente con _refresh_resource_visuals, che
 # comunque non avrebbe nulla da rinfrescare per una cella non più live.
 func _reconnect_pickup_action_signals(step: PickUpAction) -> void:
-	step.collection_completed.connect(func(_collected: Dictionary) -> void:
+	step.collection_completed.connect(func(collected: Dictionary) -> void:
 		# Raccolta da un mucchio a terra (2026-10-03, richiesta utente): niente ridisegno della vegetazione, il mucchio
 		# ha il suo disegno e il suo pannello, aggiornati a ogni frame da _sync_ground_pile_views (revisione del mucchio).
 		if step.source_kind == PickUpAction.SourceKind.GROUND_PILE:
 			return
+		# Ridisegno LEGGERO (2026-10-03, richiesta utente — il completo costava ~350 ms a raccolta): solo le risorse
+		# raccolte, vedi _refresh_collected_resource_visuals.
 		for cell in live_cells.values():
 			if cell.macro_state == step.macro_state:
-				_refresh_resource_visuals(cell, "raccolta")
+				_refresh_collected_resource_visuals(cell, collected)
 				break
 	)
 	# Ripetizione automatica (2026-09-20): la Task nuova viene generata e accodata da _queue_pickup_repeat.

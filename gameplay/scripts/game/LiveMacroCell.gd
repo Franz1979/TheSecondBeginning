@@ -70,6 +70,10 @@ var needs_full_vegetation_recompute: bool = true
 # cioe' se dall'ultimo refresh e' comparsa almeno una cella visibile nuova (o e' cambiato il giorno). -1 =
 # mai rinfrescata: il primo confronto differisce sempre.
 var last_refresh_visible_version: int = -1
+# Ultimo insieme "visibile in dettaglio" del fog of war calcolato da GameScene._refresh_resource_visuals (2026-10-03,
+# richiesta utente): lo riusa il ridisegno leggero dopo una raccolta (_refresh_collected_resource_visuals) senza
+# ripassare le 10.000 microcelle. null = mai calcolato (o cella senza FogOfWarRenderer).
+var last_visible_positions: Variant = null
 var cached_vegetation_positions: Dictionary = {}
 
 # Cache del ratio disponibilità "fruit stock" per lotto (2026-09-17, richiesta utente —

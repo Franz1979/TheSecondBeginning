@@ -215,6 +215,29 @@ static func get_fruit_stock_visual_ratio_at(resource_name: String, macro_state: 
 # a mano) per mostrare il valore EFFETTIVO già clampato a 0 da MacroCellState.
 # set_secondary_resource_stock, mai un valore teorico che potrebbe differire se quantity superasse
 # lo stock residuo.
+# Rapporto visivo di TUTTI i lotti con peso > 0 in un solo passaggio (2026-10-03, richiesta utente — passo B): stessa
+# formula di get_fruit_stock_visual_ratio_at per ogni lotto di get_fruit_stock_weight_lots, ma scorte, pesi e raccolto
+# letti una volta sola invece che per ogni lotto. Esito identico, lotto per lotto.
+static func get_fruit_stock_visual_ratios_by_lot(resource_name: String, macro_state: MacroCellState) -> Dictionary:
+	var ratios: Dictionary = {}
+	var stock: float = macro_state.get_secondary_resource_stock(resource_name)
+	var weights := _get_fruit_stock_weights(resource_name, macro_state)
+	var total_weight: float = float(weights["total"])
+	var harvested_by_lot: Dictionary = macro_state.berry_harvested_by_lot.get(resource_name, {})
+	var by_lot: Dictionary = weights["by_lot"]
+	for position in by_lot.keys():
+		var lot_weight: float = float(by_lot[position])
+		var nominal: int = 0
+		if stock > 0.0 and total_weight > 0.0 and lot_weight > 0.0:
+			nominal = int(floor(stock * lot_weight / total_weight))
+		if nominal <= 0:
+			ratios[position] = 0.0
+			continue
+		var harvested: int = int(harvested_by_lot.get(position, 0))
+		ratios[position] = float(max(nominal - harvested, 0)) / float(nominal)
+	return ratios
+
+
 static func consume_fruit_stock_at(resource_name: String, macro_state: MacroCellState, position: Vector2i, quantity: int) -> void:
 	var stock_before: float = macro_state.get_secondary_resource_stock(resource_name)
 	macro_state.set_secondary_resource_stock(resource_name, stock_before - float(quantity))
