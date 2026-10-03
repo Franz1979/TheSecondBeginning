@@ -1129,6 +1129,11 @@ func _draw_buildings() -> void:
 		if building_type_name == "stick_tent":
 			TentShapes.draw_stick_tent(self, ground, direction)
 			continue
+		# Capanna di stoccaggio (2026-10-03, richiesta utente): pianta quadrata chiusa, StorageHutShape. Niente griglia
+		# dei mucchietti (solo il sito di deposito la ha).
+		if building_type_name == "storage_hut":
+			StorageHutShape.draw(self, ground, direction)
+			continue
 		# Capanna dell'attrezzista (2026-09-24, richiesta utente) — disegno provvisorio: stessa sagoma
 		# della capanna (porta + recinto, ruota con `direction`), riempimento più scuro e un segno
 		# "attrezzi incrociati" al centro, vedi _draw_toolmaker_hut_mark.

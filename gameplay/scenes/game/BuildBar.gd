@@ -67,7 +67,10 @@ const BUILDING_SLOT_INDEX_BY_TYPE := {
 	# Pietre impilate (2026-10-02, richiesta utente) — slot 11, submenu_row.slot_count portato a 13 in BuildBar.tscn;
 	# Hut resta l'ultimo a destra (slot 12).
 	"stacked_stones": 11,
-	"hut": 12,
+	# Capanna di stoccaggio (2026-10-03, richiesta utente) — slot 12, submenu_row.slot_count portato a 14 in
+	# BuildBar.tscn; Hut resta l'ultimo a destra (slot 13).
+	"storage_hut": 12,
+	"hut": 13,
 }
 
 enum _ViewState { MINIMIZED, LEVEL_1, LEVEL_2 }
@@ -157,6 +160,12 @@ func _ready() -> void:
 	submenu_row.configure_slot(
 		BUILDING_SLOT_INDEX_BY_TYPE["hide_tent"], "", tr("build_bar_hide_tent_tooltip"), &"build_hide_tent", "", true,
 		IconRegistry.get_building_icon_node("hide_tent")
+	)
+	# Capanna di stoccaggio (2026-10-03, richiesta utente): richiede paleolithic_constructions (required_idea_id in
+	# storage_hut.tres), disabilitata da GameScene._refresh_building_slots_buildable finché manca.
+	submenu_row.configure_slot(
+		BUILDING_SLOT_INDEX_BY_TYPE["storage_hut"], "", tr("build_bar_storage_hut_tooltip"), &"build_storage_hut", "", true,
+		IconRegistry.get_building_icon_node("storage_hut")
 	)
 	submenu_row.configure_slot(BUILDING_SLOT_INDEX_BY_TYPE["hut"], IconRegistry.get_building_icon("hut"), tr("build_bar_hut_tooltip"), &"build_hut")
 	main_row.action_pressed.connect(_on_main_row_action_pressed)

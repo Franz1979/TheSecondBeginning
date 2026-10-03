@@ -203,6 +203,7 @@ func show_population(
 		var label := Label.new()
 		label.add_theme_font_size_override("font_size", 10)
 		label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		label.text = "%s — %s, %d (%s)" % [
 			member.name,
 			"F" if member.sex == HumanTypes.Sex.FEMALE else "M",
@@ -242,6 +243,7 @@ func show_population(
 
 		var task_label := Label.new()
 		task_label.add_theme_font_size_override("font_size", 9)
+		task_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		task_label.add_theme_color_override("font_color", COLOR_TASK_DIM)
 		task_label.text = "↳ " + (
 			member.current_task.get_activity_description() if member.current_task != null else IDLE_TASK_TEXT

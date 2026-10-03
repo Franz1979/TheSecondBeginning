@@ -183,14 +183,17 @@ static func find_best(
 # al focolare, dove verrà cotta, prima che al magazzino.
 #
 # Va chiamata solo per le risorse con prefers_recipe_workstation (vedi sotto): oggi la carne.
+# `building_type` (2026-10-03, richiesta utente — la carne è ingrediente anche all'affumicatoio): se non vuoto, solo le
+# postazioni di quel tipo (Building.building_type_name); "" = qualunque postazione, il comportamento di prima.
 static func find_nearest_recipe_workstation(
 	world: World, origin_position: Vector2, origin_macro_coords: Vector2i, resource_name: String, min_quantity: int = 1,
-	excluded_building_ids: Array[int] = [], reachable: Callable = Callable()
+	excluded_building_ids: Array[int] = [], reachable: Callable = Callable(), building_type: String = ""
 ) -> Building:
 	if world == null or min_quantity <= 0:
 		return null
 	var predicate := func(building: Building) -> bool:
-		return building.is_complete and not building.is_marked_for_demolition and building.rules != null and building.rules.is_workstation \
+		return (building_type == "" or building.building_type_name == building_type) \
+			and building.is_complete and not building.is_marked_for_demolition and building.rules != null and building.rules.is_workstation \
 			and ProductionService.is_recipe_input_of(building, resource_name) \
 			and BuildingStorageService.can_accept(building, resource_name) \
 			and BuildingStorageService.get_max_depositable(building, resource_name) >= min_quantity

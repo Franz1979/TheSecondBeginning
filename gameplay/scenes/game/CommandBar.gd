@@ -59,27 +59,32 @@ var _destination_list: VBoxContainer = null
 var _destination_signature: String = ""
 var _destination_options: Array[Dictionary] = []
 const DESTINATION_ICON_SIDE: float = 22.0
-# Gruppi con etichetta (2026-10-03): "Azioni" sopra i comandi, "Opzioni" sopra le opzioni. Un gruppo senza pulsanti
-# visibili sparisce con la sua etichetta; il separatore c'è solo con entrambi i gruppi visibili (_refresh_groups).
+# Gruppi con etichetta per argomento (2026-10-03, prima "Azioni"/"Opzioni" per tipo): "Aree di lavoro" (Raccogli, Caccia
+# nelle zone, separatore sottile, Scegli zona in automatico — solo con l'idea delle zone) e "Caccia" (destinazione dei
+# prodotti della caccia, con la propria condizione). Un gruppo senza pulsanti visibili sparisce con la sua etichetta; il
+# separatore tra i gruppi c'è solo con entrambi visibili (_refresh_groups).
 # Stile condiviso con la riga di titolo della BuildBar (2026-10-03), così le due barre hanno la stessa altezza e i
 # pulsanti sulla stessa linea.
 const GROUP_LABEL_FONT_SIZE: int = 9
 const GROUP_LABEL_COLOR := Color(1.0, 1.0, 1.0, 0.55)
 const GROUP_LABEL_SEPARATION: int = 1
-var _commands_group: VBoxContainer = null
-var _options_group: VBoxContainer = null
-var _options_row: HBoxContainer = null
+var _work_areas_group: VBoxContainer = null
+var _work_areas_row: HBoxContainer = null
+var _hunting_group: VBoxContainer = null
+var _hunting_row: HBoxContainer = null
 var _group_separator: VSeparator = null
 # Raccogli, Caccia nelle zone e Scegli zona in automatico: visibili solo con l'idea delle zone (set_zone_commands_visible).
 var _zone_commands_visible: bool = true
 
 
 func _ready() -> void:
-	_commands_group = _build_group("command_bar_group_actions")
-	add_child(_commands_group)
+	_work_areas_group = _build_group("command_bar_group_work_areas")
+	add_child(_work_areas_group)
+	_work_areas_row = HBoxContainer.new()
+	_work_areas_group.add_child(_work_areas_row)
 	_row = IconButtonRow.new()
 	_row.slot_count = SLOT_COUNT
-	_commands_group.add_child(_row)
+	_work_areas_row.add_child(_row)
 	_row.configure_slot(
 		GATHER_SLOT, "", _with_key(tr("command_bar_gather_tooltip"), GATHER_KEY), GATHER_ACTION, "", true,
 		IconRegistry.get_command_button_icon_node("pickup")
@@ -94,14 +99,8 @@ func _ready() -> void:
 	_row.set_slot_disabled(HUNT_SLOT, true)
 	_row.action_pressed.connect(_on_action_pressed)
 
-	# Separatore tra comandi e opzioni (2026-10-03): linea verticale sottile del tema, con spazio ai lati.
-	_group_separator = VSeparator.new()
-	_group_separator.add_theme_constant_override("separation", GROUP_GAP * 2)
-	add_child(_group_separator)
-	_options_group = _build_group("command_bar_group_options")
-	add_child(_options_group)
-	_options_row = HBoxContainer.new()
-	_options_group.add_child(_options_row)
+	# Dentro il gruppo delle aree di lavoro, separatore sottile tra i due comandi e l'interruttore (2026-10-03).
+	_work_areas_row.add_child(VSeparator.new())
 
 	# Interruttore "Scegli zona in automatico": bottone a due stati (toggle_mode) con icona disegnata che cambia con lo
 	# stato, oltre allo stile "premuto" del tema.
@@ -117,7 +116,16 @@ func _ready() -> void:
 	_auto_zone_icon.active = UserOptions.work_area_auto_zone
 	_auto_zone_button.toggled.connect(_on_auto_zone_toggled)
 	_apply_toggle_style(_auto_zone_button)
-	_options_row.add_child(_auto_zone_button)
+	_work_areas_row.add_child(_auto_zone_button)
+
+	# Separatore tra i gruppi (2026-10-03): linea verticale sottile del tema, con spazio ai lati.
+	_group_separator = VSeparator.new()
+	_group_separator.add_theme_constant_override("separation", GROUP_GAP * 2)
+	add_child(_group_separator)
+	_hunting_group = _build_group("command_bar_group_hunting")
+	add_child(_hunting_group)
+	_hunting_row = HBoxContainer.new()
+	_hunting_group.add_child(_hunting_row)
 
 	_destination_button = TooltipButton.new()
 	_destination_button.custom_minimum_size = TOGGLE_BUTTON_SIZE
@@ -131,7 +139,7 @@ func _ready() -> void:
 	_destination_button.add_child(dropdown_marker)
 	dropdown_marker.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_destination_button.visible = false
-	_options_row.add_child(_destination_button)
+	_hunting_row.add_child(_destination_button)
 	_destination_popup = PopupPanel.new()
 	_destination_list = VBoxContainer.new()
 	_destination_popup.add_child(_destination_list)
@@ -173,11 +181,11 @@ func set_zone_commands_visible(is_shown: bool) -> void:
 
 # Gruppi e separatore seguono i pulsanti visibili.
 func _refresh_groups() -> void:
-	if _commands_group == null:
+	if _work_areas_group == null:
 		return
-	_commands_group.visible = _row.visible
-	_options_group.visible = _auto_zone_button.visible or _destination_button.visible
-	_group_separator.visible = _commands_group.visible and _options_group.visible
+	_work_areas_group.visible = _zone_commands_visible
+	_hunting_group.visible = _destination_button.visible
+	_group_separator.visible = _work_areas_group.visible and _hunting_group.visible
 
 
 # Interruttore a due stati (2026-10-03): bordo luminoso e fondo caldo da acceso (pressed, anche al passaggio del mouse),

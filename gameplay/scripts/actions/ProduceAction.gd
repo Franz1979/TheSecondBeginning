@@ -228,8 +228,8 @@ func _debug_log_block(individual: Variant, message: String) -> void:
 
 
 func _debug_describe_no_record() -> String:
-	return "record assente e coda dell'edificio piena: record %s, capienza %d." % [
-		str(target_building.production_progress.keys()), ProductionService.get_queue_capacity(target_building)]
+	return "record assente e ordini attivi al massimo sull'edificio: record %s, massimo %d." % [
+		str(target_building.production_progress.keys()), ProductionService.get_max_concurrent_orders(target_building)]
 
 
 func _debug_describe_tools() -> String:

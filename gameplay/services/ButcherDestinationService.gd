@@ -17,9 +17,11 @@ extends RefCounted
 # Scarico per destinazione:
 #   - CAMPFIRE: come prima del 2026-10-03 — la carne (prefers_recipe_workstation) alla postazione più vicina che ne ha
 #     una ricetta, il resto al magazzino;
-#   - DRYING_RACK: all'essiccatoio più vicino le risorse che lì sono ingredienti di una ricetta ad avanzamento
-#     automatico (ProductionService.is_auto_progress_input), il resto al magazzino;
-#   - WAREHOUSE (e SMOKEHOUSE, non ancora disponibile): tutto al magazzino.
+#   - DRYING_RACK e SMOKEHOUSE ("postazioni di lavorazione", PROCESSING_DESTINATIONS — stessa logica, 2026-10-03): alla
+#     postazione di quel tipo più vicina che ha posto le risorse che sono ingredienti materiali delle sue ricette
+#     (recipe_inputs, mai il combustibile: is_processing_resource) — oggi carne e pelli —, il resto al magazzino. Nessuna
+#     produzione parte da sola: all'essiccatoio le ricette avanzano da sé, all'affumicatoio la ordina il giocatore;
+#   - WAREHOUSE: tutto al magazzino.
 # Lo scarico alla postazione scelta per preferenza deposita solo quelle risorse (UnloadAction.only_preferred_resources),
 # in ordine di day_durability crescente; il residuo segue il re-routing normale.
 
@@ -46,8 +48,11 @@ const NAME_KEYS := {
 	SMOKEHOUSE: "hunt_destination_smokehouse",
 	WAREHOUSE: "hunt_destination_warehouse",
 }
-# Destinazioni sempre disabilitate per ora (lucchetto, "Non ancora disponibile").
-const NOT_YET_AVAILABLE: Array[String] = [SMOKEHOUSE]
+# Destinazioni sempre disabilitate per ora (lucchetto, "Non ancora disponibile"). Vuoto dal 2026-10-03 (affumicatoio
+# acceso); il meccanismo resta per una destinazione futura.
+const NOT_YET_AVAILABLE: Array[String] = []
+# Postazioni di lavorazione (2026-10-03): ricevono gli ingredienti materiali delle proprie ricette, con la stessa logica.
+const PROCESSING_DESTINATIONS: Array[String] = [DRYING_RACK, SMOKEHOUSE]
 
 
 # Destinazione scritta nel context di una Task (vedi testa del file per i default).
@@ -70,40 +75,57 @@ static func find_preferred_building(
 	match destination:
 		CAMPFIRE:
 			if WarehouseSelectionService.prefers_recipe_workstation(resource_name):
+				# Solo focolari (2026-10-03): la carne è ingrediente anche all'affumicatoio, che non va scelto qui.
 				return WarehouseSelectionService.find_nearest_recipe_workstation(
-					world, origin_position, origin_macro_coords, resource_name, min_quantity, excluded_building_ids, reachable
+					world, origin_position, origin_macro_coords, resource_name, min_quantity, excluded_building_ids, reachable,
+					String(BUILDING_TYPES[CAMPFIRE])
 				)
-		DRYING_RACK:
-			return _find_nearest_auto_progress_station(
-				world, origin_position, origin_macro_coords, resource_name, String(BUILDING_TYPES[DRYING_RACK]),
-				min_quantity, excluded_building_ids, reachable
-			)
+		DRYING_RACK, SMOKEHOUSE:
+			if is_processing_resource(destination, resource_name):
+				return _find_nearest_processing_station(
+					world, origin_position, origin_macro_coords, resource_name, String(BUILDING_TYPES[destination]),
+					min_quantity, excluded_building_ids, reachable
+				)
 	return null
 
 
-# true se `resource_name` dovrebbe andare all'essiccatoio con la destinazione DRYING_RACK: ingrediente di una ricetta ad
-# avanzamento automatico che elenca il tipo dell'essiccatoio (2026-10-03, avviso "essiccatoio pieno" — per tipo, senza
-# un edificio: serve anche quando nessun essiccatoio ha posto).
-static func is_drying_rack_resource(resource_name: String) -> bool:
-	var building_type := String(BUILDING_TYPES[DRYING_RACK])
+# true se `resource_name` dovrebbe andare alla postazione di lavorazione `destination` (PROCESSING_DESTINATIONS):
+# ingrediente materiale (recipe_inputs, non il combustibile) di una ricetta che elenca il tipo dell'edificio, ricette ad
+# avanzamento automatico comprese. Per tipo, senza un edificio: serve anche quando nessuna postazione ha posto (avviso
+# "pieno"). false per ogni altra destinazione.
+static func is_processing_resource(destination: String, resource_name: String) -> bool:
+	if not PROCESSING_DESTINATIONS.has(destination):
+		return false
+	var building_type := String(BUILDING_TYPES[destination])
 	for recipe_name in CaloricCalculator.list_secondary_resource_names():
 		var recipe_rules := CaloricCalculator.get_caloric_source_rules(recipe_name)
-		if recipe_rules != null and recipe_rules.recipe_auto_progress_days > 0 \
-				and recipe_rules.recipe_workstation_types.has(building_type) and recipe_rules.recipe_inputs.has(resource_name):
+		if recipe_rules != null and recipe_rules.recipe_workstation_types.has(building_type) \
+				and recipe_rules.recipe_inputs.has(resource_name):
 			return true
 	return false
 
 
-# Edificio di tipo `building_type` più vicino, completo e non da demolire, per cui `resource_name` è ingrediente di una
-# ricetta ad avanzamento automatico e che ne accetta almeno `min_quantity` unità.
-static func _find_nearest_auto_progress_station(
+# true se uno scarico riservato alle risorse preferite (UnloadAction.only_preferred_resources) può lasciare
+# `resource_name` in `building`: alla postazione di lavorazione di una destinazione i suoi ingredienti materiali
+# (is_processing_resource), altrove — il focolare — solo le risorse con prefers_recipe_workstation (la carne), come
+# prima.
+static func is_preferred_deposit_allowed(building: Building, resource_name: String) -> bool:
+	if building != null:
+		for destination in PROCESSING_DESTINATIONS:
+			if building.building_type_name == String(BUILDING_TYPES[destination]):
+				return is_processing_resource(destination, resource_name)
+	return WarehouseSelectionService.prefers_recipe_workstation(resource_name)
+
+
+# Postazione di tipo `building_type` più vicina, completa e non da demolire, che accetta almeno `min_quantity` unità di
+# `resource_name` (il chiamante ha già verificato che è un suo ingrediente, is_processing_resource).
+static func _find_nearest_processing_station(
 	world: World, origin_position: Vector2, origin_macro_coords: Vector2i, resource_name: String, building_type: String,
 	min_quantity: int, excluded_building_ids: Array[int], reachable: Callable
 ) -> Building:
 	var predicate := func(building: Building) -> bool:
 		return building.building_type_name == building_type and building.is_complete and not building.is_demolished \
 			and not building.is_marked_for_demolition \
-			and ProductionService.is_auto_progress_input(building, resource_name) \
 			and BuildingStorageService.can_accept(building, resource_name) \
 			and BuildingStorageService.get_max_depositable(building, resource_name) >= min_quantity
 	return SpatialSelectionService.find_nearest(

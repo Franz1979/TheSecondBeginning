@@ -1,4 +1,4 @@
-[gd_resource type="Resource" script_class="BuildingRules" format=3]
+[gd_resource type="Resource" script_class="BuildingRules" format=3 uid="uid://0kohsrngkkji"]
 
 [ext_resource type="Script" uid="uid://b8pl3yflicmtn" path="res://simulation/scripts/core/BuildingRules.gd" id="1_smokehouse"]
 
@@ -9,16 +9,21 @@ category = 4
 required_idea_id = "smoking"
 min_construction_days = 4
 required_labor = 1500
+storage_slot_count = 8
+storage_space_per_slot = 100
+accepted_categories = Array[int]([0, 1])
+categories_locked = true
 required_materials = {
-"hide": 2,
+"dried_hide": 10,
+"fiber_rope": 5,
 "pebble": 20,
 "stick": 20
 }
-max_durability = 50
 required_space = 1
 has_door = false
 visibility_radius = 2
 is_workstation = true
-production_output_slots = 4
-production_queue_slots = 1
-production_max_quantity = 5
+production_output_slots = 10
+production_output_to_storage = false
+storage_accepts_recipe_materials_only = true
+production_max_quantity = 10

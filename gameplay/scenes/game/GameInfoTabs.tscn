@@ -1,6 +1,7 @@
 [gd_scene format=3]
 
 [ext_resource type="Script" path="res://gameplay/scenes/game/GameInfoTabs.gd" id="1_tabs"]
+[ext_resource type="Script" path="res://gameplay/scenes/game/WidthClampContainer.gd" id="2_clamp"]
 
 [node name="GameInfoTabs" type="TabContainer"]
 layout_mode = 2
@@ -19,6 +20,11 @@ layout_mode = 2
 size_flags_vertical = 3
 horizontal_scroll_mode = 0
 
+[node name="PopulationClamp" type="Container" parent="PopulationTab/PopulationScroll"]
+layout_mode = 2
+size_flags_horizontal = 3
+script = ExtResource("2_clamp")
+
 [node name="BuildingsTab" type="MarginContainer" parent="."]
 visible = false
 layout_mode = 2
@@ -31,6 +37,11 @@ theme_override_constants/margin_bottom = 4
 layout_mode = 2
 size_flags_vertical = 3
 horizontal_scroll_mode = 0
+
+[node name="BuildingsClamp" type="Container" parent="BuildingsTab/BuildingsScroll"]
+layout_mode = 2
+size_flags_horizontal = 3
+script = ExtResource("2_clamp")
 
 [node name="SelectionTab" type="MarginContainer" parent="."]
 visible = false
@@ -47,6 +58,8 @@ layout_mode = 2
 layout_mode = 2
 
 [node name="TitleLabel" type="Label" parent="SelectionTab/SelectionTabBody/SelectionHeader"]
+clip_text = true
+text_overrun_behavior = 3
 layout_mode = 2
 size_flags_horizontal = 3
 theme_override_font_sizes/font_size = 11
@@ -65,11 +78,16 @@ layout_mode = 2
 size_flags_vertical = 3
 horizontal_scroll_mode = 0
 
-[node name="SelectionContent" type="MarginContainer" parent="SelectionTab/SelectionTabBody/SelectionScroll"]
+[node name="SelectionClamp" type="Container" parent="SelectionTab/SelectionTabBody/SelectionScroll"]
+layout_mode = 2
+size_flags_horizontal = 3
+script = ExtResource("2_clamp")
+
+[node name="SelectionContent" type="MarginContainer" parent="SelectionTab/SelectionTabBody/SelectionScroll/SelectionClamp"]
 layout_mode = 2
 size_flags_horizontal = 3
 
-[node name="EmptySelectionLabel" type="Label" parent="SelectionTab/SelectionTabBody/SelectionScroll/SelectionContent"]
+[node name="EmptySelectionLabel" type="Label" parent="SelectionTab/SelectionTabBody/SelectionScroll/SelectionClamp/SelectionContent"]
 layout_mode = 2
 horizontal_alignment = 1
 vertical_alignment = 1
@@ -86,3 +104,7 @@ theme_override_constants/margin_left = 4
 theme_override_constants/margin_top = 4
 theme_override_constants/margin_right = 4
 theme_override_constants/margin_bottom = 4
+
+[node name="DebugClamp" type="Container" parent="DebugTab"]
+layout_mode = 2
+script = ExtResource("2_clamp")

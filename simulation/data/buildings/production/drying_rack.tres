@@ -9,6 +9,10 @@ category = 4
 required_idea_id = "drying"
 min_construction_days = 2
 required_labor = 800
+storage_slot_count = 4
+storage_space_per_slot = 100
+accepted_categories = Array[int]([1])
+categories_locked = true
 required_materials = {
 "plant_fiber": 20,
 "stick": 80
@@ -17,11 +21,6 @@ max_durability = 30
 required_space = 1
 has_door = false
 visibility_radius = 1
-storage_slot_count = 4
-storage_space_per_slot = 100
-accepted_categories = Array[int]([1])
-categories_locked = true
 is_workstation = true
 storage_accepts_recipe_materials_only = true
-production_output_slots = 0
 production_max_quantity = 5

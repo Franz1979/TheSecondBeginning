@@ -11,7 +11,7 @@ extends RefCounted
 # La ricetta è sulla risorsa PRODOTTA (SecondaryResourceRules gruppo Recipe), la capacità
 # produttiva sull'edificio (BuildingRules gruppo Production). Lo stato delle produzioni in corso
 # vive su Building.production_progress, UN RECORD PER RICETTA (2026-09-24, richiesta utente — più
-# ricette contemporanee): {resource_name: {"labor_accumulated": float}}, al più get_queue_capacity
+# ricette contemporanee): {resource_name: {"labor_accumulated": float}}, al più get_max_concurrent_orders
 # record. Ogni ProduceAction lavora solo sul record della propria ricetta; più individui sulla
 # stessa ricetta sommano il lavoro sullo stesso record. Una ricetta nuova non sovrascrive mai un
 # record esistente: se l'edificio è pieno aspetta (start_production ritorna false) finché
@@ -278,14 +278,14 @@ static func is_recipe_active(building: Building, resource_name: String) -> bool:
 
 # Avvia (o riprende) la produzione di `resource_name`: se il record esiste già il progresso resta
 # invariato (ripresa, o un secondo individuo sulla stessa ricetta); altrimenti ne crea uno nuovo a
-# zero, SOLO se l'edificio ha ancora un record libero (get_queue_capacity). Ritorna true se il record
+# zero, SOLO se l'edificio ha ancora un record libero (get_max_concurrent_orders). Ritorna true se il record
 # c'è (esistente o appena creato), false se l'edificio è pieno: nessun record altrui viene toccato.
 static func start_production(building: Building, resource_name: String) -> bool:
 	if building == null or resource_name == "":
 		return false
 	if building.production_progress.has(resource_name):
 		return true
-	if building.production_progress.size() >= get_queue_capacity(building):
+	if building.production_progress.size() >= get_max_concurrent_orders(building):
 		return false
 	building.production_progress[resource_name] = {"labor_accumulated": 0.0, "units_remaining": 0}
 	return true
@@ -329,7 +329,7 @@ static func make_room_for(building: Building, resource_name: String, claimed_res
 		return false
 	if building.production_progress.has(resource_name):
 		return true
-	var capacity := get_queue_capacity(building)
+	var capacity := get_max_concurrent_orders(building)
 	while building.production_progress.size() >= capacity:
 		var evict_name := ""
 		var evict_labor := INF
@@ -630,19 +630,21 @@ static func is_active_recipe_input(building: Building, input_name: String) -> bo
 	return false
 
 
-# Tetto di Produce Task contemporanee sull'edificio (BuildingRules.production_queue_slots, minimo 1)
-# — 2026-09-24, richiesta utente. Chi conta le Task assegnate è il chiamante (GameScene: questo layer
-# non vede individui/Task); qui solo il confronto, così pannello e assegnazione usano la stessa regola.
-static func get_queue_capacity(building: Building) -> int:
+# Ordini di produzione attivi insieme sull'edificio (BuildingRules.production_concurrent_orders, minimo 1) —
+# 2026-09-24, richiesta utente (rinominata da get_max_concurrent_orders il 2026-10-03). Chi conta le Task assegnate è il
+# chiamante (GameScene: questo layer non vede individui/Task); qui solo il confronto, così pannello e assegnazione usano
+# la stessa regola.
+static func get_max_concurrent_orders(building: Building) -> int:
 	if building == null or building.rules == null:
 		return 1
-	return max(building.rules.production_queue_slots, 1)
+	return max(building.rules.production_concurrent_orders, 1)
 
 
-# true se l'edificio non accetta un'altra Produce Task: `assigned_count` (Task già assegnate, attive
-# o in coda, anche con l'individuo non ancora arrivato) ha raggiunto get_queue_capacity.
-static func is_production_queue_full(building: Building, assigned_count: int) -> bool:
-	return assigned_count >= get_queue_capacity(building)
+# true se l'edificio non accetta un altro ordine (rinominata da is_production_queue_full il 2026-10-03):
+# `assigned_count` (Task già assegnate, attive o sospese nella coda dell'individuo, anche con l'individuo non ancora
+# arrivato) ha raggiunto get_max_concurrent_orders.
+static func has_max_concurrent_orders(building: Building, assigned_count: int) -> bool:
+	return assigned_count >= get_max_concurrent_orders(building)
 
 
 # Pezzi ordinabili con un solo comando (BuildingRules.production_max_quantity, minimo 1).

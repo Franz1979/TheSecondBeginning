@@ -23,6 +23,7 @@ script = ExtResource("1_bld")
 layout_mode = 2
 
 [node name="StatusLabel" type="Label" parent="StatusRow"]
+autowrap_mode = 3
 layout_mode = 2
 size_flags_horizontal = 3
 theme_override_font_sizes/font_size = 11
@@ -44,10 +45,12 @@ flat = true
 text = "✕"
 
 [node name="BuiltYearLabel" type="Label" parent="."]
+autowrap_mode = 3
 layout_mode = 2
 theme_override_font_sizes/font_size = 10
 
 [node name="ConstructionPhaseLabel" type="Label" parent="."]
+autowrap_mode = 3
 layout_mode = 2
 visible = false
 theme_override_font_sizes/font_size = 10
@@ -68,6 +71,7 @@ max_value = 100.0
 show_percentage = false
 
 [node name="AwaitingMaterialLabel" type="Label" parent="."]
+autowrap_mode = 3
 layout_mode = 2
 visible = false
 theme_override_colors/font_color = Color(0.95, 0.75, 0.1, 1)
@@ -123,6 +127,7 @@ theme_override_constants/h_separation = 4
 theme_override_constants/v_separation = 4
 
 [node name="OutputBufferFullLabel" type="Label" parent="."]
+autowrap_mode = 3
 layout_mode = 2
 visible = false
 theme_override_colors/font_color = Color(0.95, 0.75, 0.1, 1)
@@ -237,16 +242,30 @@ theme_override_font_sizes/font_size = 10
 [node name="CategoryTogglesContainer" type="VBoxContainer" parent="."]
 layout_mode = 2
 
-[node name="EmptyAllButton" type="Button" parent="."]
-layout_mode = 2
-
-[node name="DemolishButton" type="Button" parent="."]
-layout_mode = 2
-
 [node name="AssignDemolisherButton" type="Button" parent="."]
 visible = false
 layout_mode = 2
 
-[node name="CancelDemolitionButton" type="Button" parent="."]
+[node name="CommandIconRow" type="HBoxContainer" parent="."]
+visible = false
+layout_mode = 2
+
+[node name="UpgradeButton" type="Button" parent="CommandIconRow"]
+visible = false
+layout_mode = 2
+
+[node name="EmptyAllButton" type="Button" parent="CommandIconRow"]
+visible = false
+layout_mode = 2
+
+[node name="CommandIconSpacer" type="Control" parent="CommandIconRow"]
+custom_minimum_size = Vector2(10, 0)
+layout_mode = 2
+
+[node name="DemolishButton" type="Button" parent="CommandIconRow"]
+visible = false
+layout_mode = 2
+
+[node name="CancelDemolitionButton" type="Button" parent="CommandIconRow"]
 visible = false
 layout_mode = 2

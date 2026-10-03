@@ -1,6 +1,23 @@
 class_name GameInfoPanel
 extends PanelContainer
 
+# REGOLA FISSA DEL PROGETTO (2026-10-03, richiesta utente): l'info panel NON SI ALLARGA MAI, qualunque contenuto
+# mostri. La larghezza è quella della Sidebar di GameScene.tscn (offset_left -300, l'unico punto in cui cambiarla;
+# cresce verso sinistra: ogni aumento della larghezza minima di un figlio la allargherebbe). Prima del 2026-10-03 la
+# larghezza vera la decideva il contenuto più largo (circa questa); ora è fissa e il contenuto deve starci dentro. Per qualunque modifica futura a questo pannello o alle schede
+# di GameInfoTabs (individui, edifici, selezione, debug, altre):
+#   - testi variabili (nomi, stati, valori, elenchi): Label con autowrap_mode (WORD_SMART) — va a capo nella larghezza;
+#     in un HBoxContainer serve anche size_flags_horizontal = EXPAND_FILL, altrimenti si stringe a niente;
+#   - testi che devono restare su una riga (titoli): clip_text + text_overrun_behavior ellissi;
+#   - righe di elementi affiancati (icone, chip): HFlowContainer, o comunque una larghezza totale sicura;
+#   - mai custom_minimum_size.x più largo della scheda.
+# Garanzia strutturale (GameInfoTabs._lock_content_width): il contenuto di ogni scheda sta in un WidthClampContainer,
+# che non propaga la larghezza minima dei figli e li dimensiona esattamente alla larghezza della scheda; quello che non
+# può stringersi viene tagliato a destra, mai allarga il pannello. Gli scroll delle schede hanno lo scorrimento
+# orizzontale disattivato: attivarlo darebbe ai figli la sola larghezza minima (testi a capo larghi zero, un carattere
+# per riga). Un pannello nuovo aggiunto a una scheda va dentro quel contenitore (population_tab, buildings_tab,
+# selection_content, debug_tab lo sono già).
+
 # Pannello sidebar di GameScene (vista player su una singola macrocella). A differenza di
 # WorldInfoPanel/MacroCellDetailPanel/MacroCellInfoPanel — dove le action bar vivono come
 # sibling separati nella Sidebar della scena, non dentro il pannello — qui PrimaryActionsBar/

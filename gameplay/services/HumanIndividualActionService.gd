@@ -44,12 +44,14 @@ signal hunt_ended_with_message(individual: HumanIndividual, message: String)
 # Serie di cacce fino a un limite di carne (2026-10-01): una macellazione della serie è finita sotto il limite; GameScene
 # accoda una nuova caccia nella stessa zona (o chiude la serie se la zona non c'è più o manca il coltello).
 signal hunt_zone_series_continue_requested(individual: HumanIndividual, series: Dictionary)
-# Macellazione con destinazione Essiccatoio (2026-10-03, essiccazione passo 5): nessun essiccatoio ha posto per
-# `resource_name` (carne o pelli) e la risorsa ripiega sul magazzino. Una volta per Task e per risorsa
-# (CONTEXT_DRYING_FULL_NOTIFIED); GameScene mostra il popup.
-signal drying_rack_full(individual: HumanIndividual, resource_name: String)
-# Risorse già segnalate con drying_rack_full in questa Task (Array di nomi, nel context: regge il salvataggio).
-const CONTEXT_DRYING_FULL_NOTIFIED := "drying_full_notified"
+# Macellazione con destinazione una postazione di lavorazione (essiccatoio, affumicatoio — 2026-10-03): nessuna
+# postazione di quel tipo ha posto per `resource_name` (carne o pelli) e la risorsa ripiega sul magazzino. Una volta per
+# Task e per risorsa (CONTEXT_PROCESSING_FULL_NOTIFIED); GameScene mostra il popup con il nome dell'edificio di
+# `destination` (ButcherDestinationService).
+signal processing_station_full(individual: HumanIndividual, resource_name: String, destination: String)
+# Risorse già segnalate con processing_station_full in questa Task (Array di nomi, nel context: regge il salvataggio).
+# Stessa chiave di quando valeva solo per l'essiccatoio, così le Task salvate allora la ritrovano.
+const CONTEXT_PROCESSING_FULL_NOTIFIED := "drying_full_notified"
 const CONTEXT_PENDING_GROUND_PILE_HAUL := "pending_ground_pile_haul"
 
 # Servizio single-responsibility (stesso pattern di HumanIndividualMovementService, stesso
@@ -890,7 +892,7 @@ func _search_warehouse_for_resource(
 			world, individual.position, individual.home_macro_coords, resource_name, quantity, excluded_building_ids,
 			PathfindingService.reachability_for(individual)
 		)
-		_notify_drying_rack_full(individual, task, resource_name, candidate)
+		_notify_processing_station_full(individual, task, resource_name, candidate)
 	if candidate != null:
 		if targeted_building_ids.has(candidate.id):
 			# Stesso magazzino già scelto per un'altra varietà in questa ricerca: la risorsa si aggiunge alle
@@ -1232,20 +1234,21 @@ func _continue_butcher_pile_trips(individual: HumanIndividual, task: Task, world
 		])
 
 
-# Avviso "essiccatoio pieno" (2026-10-03, essiccazione passo 5): con destinazione Essiccatoio, una risorsa che dovrebbe
-# andarci non ha trovato posto in nessun essiccatoio e ripiega su un magazzino (`fallback` non nullo). Solo avviso:
-# lo scarico non cambia. Una volta per Task e per risorsa.
-func _notify_drying_rack_full(individual: HumanIndividual, task: Task, resource_name: String, fallback: Building) -> void:
-	if fallback == null or ButcherDestinationService.get_destination(task.context) != ButcherDestinationService.DRYING_RACK:
+# Avviso "postazione piena" (2026-10-03 — essiccatoio, poi generico per ogni postazione di lavorazione): con una
+# destinazione di lavorazione, una risorsa che dovrebbe andarci non ha trovato posto in nessuna postazione di quel tipo e
+# ripiega su un magazzino (`fallback` non nullo). Solo avviso: lo scarico non cambia. Una volta per Task e per risorsa.
+func _notify_processing_station_full(individual: HumanIndividual, task: Task, resource_name: String, fallback: Building) -> void:
+	if fallback == null:
 		return
-	if not ButcherDestinationService.is_drying_rack_resource(resource_name):
+	var destination := ButcherDestinationService.get_destination(task.context)
+	if not ButcherDestinationService.is_processing_resource(destination, resource_name):
 		return
-	var notified: Array = task.context.get(CONTEXT_DRYING_FULL_NOTIFIED, [])
+	var notified: Array = task.context.get(CONTEXT_PROCESSING_FULL_NOTIFIED, [])
 	if notified.has(resource_name):
 		return
 	notified.append(resource_name)
-	task.context[CONTEXT_DRYING_FULL_NOTIFIED] = notified
-	drying_rack_full.emit(individual, resource_name)
+	task.context[CONTEXT_PROCESSING_FULL_NOTIFIED] = notified
+	processing_station_full.emit(individual, resource_name, destination)
 
 
 # true se almeno un prodotto rimasto ha una destinazione raggiungibile: la workstation della ricetta (se la Task la
@@ -1477,6 +1480,32 @@ static func _resolve_active_food_need_priority(
 	if autonomy_days <= FOOD_AUTONOMY_EMERGENCY_DAYS + FOOD_AUTONOMY_EPSILON:
 		return INTERRUPT_PRIORITY_EMERGENCY_RESTOCK
 	return -1
+
+
+# Tetto di calorie delle provviste al rifornimento (2026-10-03, richiesta utente): HumanRules.restock_autonomy_days x
+# consumo giornaliero dell'individuo, calcolato come per le soglie di autonomia (_resolve_active_food_need_priority:
+# moltiplicatori per età e sesso, allattamento con le regole dell'era corrente). Regole o partita non risolvibili, o
+# consumo nullo -> INF (nessun tetto, solo lo spazio: il comportamento di prima).
+static func get_restock_pouch_calorie_cap(individual: HumanIndividual) -> float:
+	var game_data: GameData = GameSettings.active_game_data
+	if individual == null or game_data == null:
+		return INF
+	var human_rules: HumanRules = null
+	if individual.source_group_ref != null and individual.source_group_ref.folk_ref != null:
+		human_rules = individual.source_group_ref.folk_ref.human_rules_ref
+	if human_rules == null:
+		return INF
+	var age_band := HumanCalculator.get_age_band(
+		game_data.era_effective_age_band_durations_male, game_data.era_effective_age_band_durations_female,
+		individual.sex, float(game_data.year - individual.birth_year_virtual)
+	)
+	var era_rules := EraCalculator.get_era_rules(game_data.current_era_name)
+	var daily_consumption: float = HumanCalculator.get_daily_calorie_consumption(
+		human_rules, age_band, individual.sex, individual.dependent_child_id != -1, era_rules
+	)
+	if daily_consumption <= 0.0:
+		return INF
+	return human_rules.restock_autonomy_days * daily_consumption
 
 
 # Priorita' del bisogno di provviste per `individual` risolvendo regole ed era da soli (2026-09-19):

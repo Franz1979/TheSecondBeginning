@@ -158,7 +158,7 @@ var construction_progress: Dictionary = {}
 # get_stamina_delta, mai cachato sull'istanza, così il progresso sopravvive a interruzioni e
 # salvataggi (serializzato per intero da GameSaveService/GameLoadService). Contenuto:
 #   {resource_name: {"labor_accumulated": float}} — UN RECORD PER RICETTA in corso (2026-09-24,
-#   richiesta utente), al più BuildingRules.production_queue_slots record.
+#   richiesta utente), al più BuildingRules.production_concurrent_orders record.
 # Vuoto = nessuna produzione in corso. Scritto/rimosso SOLO da ProductionService (start_production/
 # add_labor/complete_production/make_room_for). Ogni ricetta con un record = produzione in corso:
 # BuildingStorageService.can_accept restringe i materiali delle ricette in corso alla quantità

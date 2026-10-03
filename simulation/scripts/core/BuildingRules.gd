@@ -111,6 +111,12 @@ extends Resource
 
 @export var max_durability: int = 50
 
+# Miglioramento (2026-10-03, richiesta utente): nome del tipo di edificio (building_type_name, es. "hide_tent") in cui
+# questo può trasformarsi; "" = nessun miglioramento. Una sola destinazione, con lo stesso required_space (un edificio
+# più grande nasce solo da una costruzione: BuildingUpgradeService.warn_space_mismatches avvisa all'avvio). Costo e
+# materiale recuperato: BuildingUpgradeService.get_upgrade_cost.
+@export var upgrades_to: String = ""
+
 # Spazio occupato in microcelle (stessa unità di MacroCellState.TOTAL_SPACE/dedicated_space per la
 # vegetazione) — quanto della macrocella ospitante viene sottratto al budget condiviso quando
 # l'edificio è completo. Non ancora sottratto da nessuna logica reale (nessuna integrazione con
@@ -263,12 +269,12 @@ extends Resource
 # accepted_categories e gli slot; senza il vincolo "quantità esatta mancante" di una workstation senza storage,
 # così si può portare una scorta per più cicli.
 @export var storage_accepts_recipe_materials_only: bool = false
-# Quante ricette diverse possono stare in coda su questo edificio (2026-09-24, richiesta utente) —
-# 1 = nessuna coda, solo la produzione corrente: con una produzione già assegnata (anche con
-# l'individuo ancora in cammino) i pulsanti ricetta si spengono. La coda vera (>1) non è ancora
-# implementata: oggi il valore è usato solo come tetto di Produce Task contemporanee sull'edificio,
-# vedi ProductionService.get_queue_capacity.
-@export var production_queue_slots: int = 1
+# Quanti ordini di produzione possono essere ATTIVI INSIEME su questo edificio (2026-09-24, richiesta utente; rinominato
+# da production_queue_slots il 2026-10-03: non è una coda) — ogni ordine è una Produce Task assegnata, anche con
+# l'individuo ancora in cammino; raggiunto il limite i pulsanti ricetta si spengono ("postazione già impegnata"). 1 =
+# un solo ordine alla volta. Vedi ProductionService.get_max_concurrent_orders. La coda vera (ordini in attesa che
+# partono uno dopo l'altro) non è ancora implementata: avrà un campo suo.
+@export var production_concurrent_orders: int = 1
 # Quanti pezzi si possono ordinare per ricetta con un solo comando (2026-09-24, richiesta utente) —
 # il pannello offre una quantità da 1 a questo valore; la Produce Task ripete il ciclo fino a quel
 # numero di pezzi, vedi ProduceAction.

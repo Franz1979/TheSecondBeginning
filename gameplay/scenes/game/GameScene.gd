@@ -533,6 +533,8 @@ var _pending_leave_action: StringName = &""
 func _ready() -> void:
 	# Eventi di gioco -> suoni (2026-09-26, richiesta utente): nodo figlio che ascolta i segnali di questa scena.
 	add_child(AudioEventListener.new())
+	# Miglioramenti con required_space diverso tra partenza e destinazione: solo un avviso nel log (2026-10-03).
+	BuildingUpgradeService.warn_space_mismatches()
 	# Celle vive per le destinazioni casuali libere del pathfinding (2026-09-27, PathfindingService.pick_free_destination):
 	# stesso Dictionary per tutta la vita della scena (live_cells non viene mai riassegnato, solo modificato).
 	PathfindingService.register_live_cells(live_cells)
@@ -748,6 +750,7 @@ func _ready() -> void:
 	# Demolisci dal pannello edificio (2026-09-27, richiesta utente — prima era un bottone della BuildBar con una
 	# modalità "scegli bersaglio"): apre DemolishConfirmationDialog sull'edificio mostrato.
 	building_info_panel.demolish_requested.connect(_on_demolish_requested)
+	building_info_panel.upgrade_requested.connect(_on_upgrade_requested)
 	# Icone di influenza (2026-10-02): impronta temporanea del cerchio del tipo cliccato e anteprima fissa al passaggio
 	# del mouse. Il gruppo di icone vive nell'intestazione della scheda, accanto al 🎯.
 	game_info_tabs.header_actions.add_child(building_info_panel.influence_buttons_box)
@@ -1346,7 +1349,7 @@ func _process(delta: float) -> void:
 					print("[VEG REFRESH TRIGGER] movimento: cella (%d,%d), spostamento=%.1f microcelle da ultimo refresh" % [
 						center_macro_coords.x, center_macro_coords.y, individual.position.distance_to(_last_vegetation_refresh_position)
 					])
-				_refresh_resource_visuals(center_cell)
+				_refresh_resource_visuals(center_cell, "movimento/nebbia")
 
 	if _building_ghost != null:
 		_building_ghost.global_position = _building_ghost.get_global_mouse_position()
@@ -1938,7 +1941,7 @@ func _debug_test_two_walk_task() -> void:
 	individual.stop()
 	# Stesso refresh pebble/stick di _assign_pickup_task (2026-09-09) — vedi quel commento gemello.
 	pickup.collection_completed.connect(func(_collected: Dictionary) -> void:
-		_refresh_resource_visuals(cell)
+		_refresh_resource_visuals(cell, "debug")
 	)
 	# assign_task (2026-09-09, richiesta utente, Step 4) — sostituisce l'assegnazione manuale
 	# (current_task = Task.new([...]); walk.activate(individual)) diretta di prima: questo hook ora
@@ -2685,7 +2688,7 @@ func _debug_test_haul_resource_task() -> void:
 	individual.stop()
 	# Stesso refresh pebble/stick di _assign_pickup_task (2026-09-09) — vedi quel commento gemello.
 	pickup.collection_completed.connect(func(_collected: Dictionary) -> void:
-		_refresh_resource_visuals(cell)
+		_refresh_resource_visuals(cell, "debug")
 	)
 	individual.assign_task(task, age_band)
 	print("[HAUL TEST] Task haul_resource (2 step iniziali) assegnata a #%d %s verso %s risorsa='%s' — il resto (ricerca magazzino/unload/allontanamento) si costruisce da sé durante l'esecuzione." % [
@@ -3133,9 +3136,29 @@ func _resolve_building_residents_display_data(building: Building) -> Array[Dicti
 # lasciato intatto) cadono a terra davanti all'edificio come un mucchio (GroundPileService.drop_building_contents,
 # stessa funzione pensata per la futura demolizione). Senza una microcella libera l'edificio viene svuotato lo
 # stesso e il contenuto va perso, come prima. Il mucchio compare sulla mappa da sé (_sync_ground_pile_views).
+#
+# CONFERMA (2026-10-03, richiesta utente): l'icona "Svuota tutto" apre prima lo stesso dialog della demolizione
+# (DemolishConfirmationDialog.open_confirmation), con il testo di cosa succede al contenuto; lo svuotamento vero è
+# _empty_building_contents.
 func _on_empty_all_requested(building: Building) -> void:
-	if building == null:
+	if building == null or building.is_demolished:
 		return
+	demolish_confirmation_dialog.open_confirmation(
+		tr("empty_all_confirmation_title"),
+		"\n".join([
+			tr("empty_all_confirmation_text").format({"building": _building_display_name(building), "id": building.id}),
+			tr("empty_all_confirmation_text_ground"),
+			tr("empty_all_confirmation_text_decay"),
+			tr("empty_all_confirmation_text_lost"),
+		]),
+		tr("empty_all_confirmation_confirm"),
+		func():
+			if not building.is_demolished:
+				_empty_building_contents(building)
+	)
+
+
+func _empty_building_contents(building: Building) -> void:
 	var pile := GroundPileService.drop_building_contents(game_data, building, macro_world)
 	building_info_panel.show_building(building, _resolve_building_residents_display_data(building), _resolve_names_working_on_building(building, BUILD_TASK_NAMES), _resolve_names_working_on_building(building, PRODUCE_TASK_NAMES), _resolve_production_claimed_recipes(building), _resolve_production_tool_wait_lines(building), _resolve_names_working_on_building(building, DEMOLISH_TASK_NAMES))
 	building_info_panel.show_ground_pile(_ground_pile_lines_at(Vector2i(building.macro_x, building.macro_y), Vector2i(building.micro_x, building.micro_y)))
@@ -5495,9 +5518,9 @@ const PRODUCE_TASK_DEFINITION_PATH := "res://gameplay/scripts/tasks/definitions/
 
 
 # true se l'edificio ha già tante Produce Task assegnate quante ne ammette (BuildingRules.
-# production_queue_slots, 2026-09-24): stessa regola usata dal pannello per spegnere le ricette.
-func _is_production_queue_full(building: Building) -> bool:
-	return ProductionService.is_production_queue_full(building, _resolve_names_working_on_building(building, PRODUCE_TASK_NAMES).size())
+# production_concurrent_orders, 2026-09-24): stessa regola usata dal pannello per spegnere le ricette.
+func _has_max_concurrent_orders(building: Building) -> bool:
+	return ProductionService.has_max_concurrent_orders(building, _resolve_names_working_on_building(building, PRODUCE_TASK_NAMES).size())
 
 
 # Testo "Corda di fibre" / "Corda di fibre ×3" per banner e log dell'ordine di produzione (2026-09-24).
@@ -5513,7 +5536,7 @@ func _enter_produce_assign_mode(building: Building, resource_name: String, quant
 	# già spento dal pannello, ma il pannello si ricalcola solo a selezione/giorno: se era rimasto
 	# acceso (buffer riempito nel frattempo) lo si aggiorna qui.
 	# Edificio già impegnato da un'altra Produce Task (2026-09-24, richiesta utente): stesso principio.
-	if not ProductionService.has_output_room(building, resource_name) or _is_production_queue_full(building):
+	if not ProductionService.has_output_room(building, resource_name) or _has_max_concurrent_orders(building):
 		_refresh_selected_building_panel()
 		return
 	var order_quantity := clampi(quantity, 1, ProductionService.get_max_order_quantity(building))
@@ -5741,7 +5764,7 @@ func _describe_tool_wait(task: Task) -> String:
 func _assign_produce_task(worker: HumanIndividual, target_building: Building, resource_name: String, quantity: int = 1, deliver_to_warehouse: bool = true) -> void:
 	if worker == null or target_building == null or not ProductionService.can_produce_at(target_building, resource_name):
 		return
-	if not ProductionService.has_output_room(target_building, resource_name) or _is_production_queue_full(target_building):
+	if not ProductionService.has_output_room(target_building, resource_name) or _has_max_concurrent_orders(target_building):
 		return
 	quantity = clampi(quantity, 1, ProductionService.get_max_order_quantity(target_building))
 	var definition := load(PRODUCE_TASK_DEFINITION_PATH) as TaskDefinition
@@ -7607,16 +7630,17 @@ func _on_auto_progress_completed(building: Building, _input_name: String, produc
 	)
 
 
-# Essiccatoio pieno (2026-10-03, essiccazione passo 5 — HumanIndividualActionService.drying_rack_full): la risorsa di
-# una macellazione ripiega sul magazzino. Popup "alert", stesso gate degli altri.
-func _on_drying_rack_full(_individual: HumanIndividual, resource_name: String) -> void:
+# Postazione di lavorazione piena (2026-10-03 — essiccatoio e affumicatoio, HumanIndividualActionService.
+# processing_station_full): la risorsa di una macellazione ripiega sul magazzino. Nome dell'edificio della destinazione
+# dalle traduzioni. Popup "alert", stesso gate degli altri.
+func _on_processing_station_full(_individual: HumanIndividual, resource_name: String, destination: String) -> void:
 	if not UserOptions.show_notification_popups:
 		return
-	var rules := BuildingCalculator.get_building_rules(String(ButcherDestinationService.BUILDING_TYPES[ButcherDestinationService.DRYING_RACK]))
+	var rules := BuildingCalculator.get_building_rules(String(ButcherDestinationService.BUILDING_TYPES.get(destination, "")))
 	notification_popup.enqueue(
-		NotificationTypes.NotificationPopupType.DRYING_RACK_FULL,
-		tr("notification_drying_rack_full").format({
-			"building": tr(rules.building_name) if rules != null else tr("hunt_destination_drying_rack"),
+		NotificationTypes.NotificationPopupType.PROCESSING_STATION_FULL,
+		tr("notification_processing_station_full").format({
+			"building": tr(rules.building_name) if rules != null else tr(String(ButcherDestinationService.NAME_KEYS.get(destination, ""))),
 			"resource": IconRegistry.get_resource_display_name(resource_name),
 		})
 	)
@@ -8144,7 +8168,7 @@ func _on_cut_requested() -> void:
 	# cache posizioni (vedi LiveMacroCell.needs_full_vegetation_recompute), altrimenti il refresh
 	# sotto riuserebbe la lista di ieri e il ceppo appena creato non comparirebbe.
 	cell.needs_full_vegetation_recompute = true
-	_refresh_resource_visuals(cell)
+	_refresh_resource_visuals(cell, "taglio")
 
 
 # Prima chiamata reale a NaturalMortalityVisualService (vedi lì per il criterio di scelta) —
@@ -8307,7 +8331,7 @@ func _activate_live_cell(mx: int, my: int, p_debug_source: String = "unknown") -
 			# verrebbero scartate dal primo rebuild (si autocorregge al refresh successivo, ma
 			# nessun motivo di lasciare quella finestra scorretta quando basta invertire due righe).
 			_refresh_building_visuals(cell)
-			_refresh_resource_visuals(cell)
+			_refresh_resource_visuals(cell, "attivazione cella")
 			# Bugfix reload "bastoncini agli angoli spariti" (2026-09-15) — vedi il commento esteso su
 			# _create_build_site_placeholder_nodes/_restore_build_site_placeholders_for_cell.
 			_restore_build_site_placeholders_for_cell(cell)
@@ -9238,9 +9262,12 @@ func _build_lot_availability_map(macro_state: MacroCellState, resource_name: Str
 	return availability
 
 
-func _refresh_resource_visuals(cell: LiveMacroCell) -> void:
+# `reason` (2026-10-03, richiesta utente — diagnostica): chi ha chiesto il ridisegno, solo per la riga [VEG REFRESH TIMING].
+func _refresh_resource_visuals(cell: LiveMacroCell, reason: String = "") -> void:
 	if cell.macro_state == null:
 		return
+	# Inizio del ridisegno, per il totale della riga [VEG REFRESH TIMING] (tutto, capacità dei lotti comprese).
+	var _refresh_total_start_usec := Time.get_ticks_usec()
 
 	# Pool TREE_INDIVIDUAL/SHRUB_INDIVIDUAL (2026-09-08, richiesta utente — pigro, agganciato qui
 	# perché è esattamente il punto "questa macrocella viene effettivamente ridisegnata", stesso
@@ -9499,7 +9526,7 @@ func _refresh_resource_visuals(cell: LiveMacroCell) -> void:
 		_last_vegetation_refresh_position = individual.position if individual != null else _last_vegetation_refresh_position
 
 	if DebugLogging.SHOW_VEGETATION_REFRESH_TIMING_LOGS:
-		var total_ms: float = (Time.get_ticks_usec() - _veg_refresh_start_usec) / 1000.0
+		var total_ms: float = (Time.get_ticks_usec() - _refresh_total_start_usec) / 1000.0
 		var labels: Array = _veg_timings_ms.keys()
 		labels.sort()
 		var parts: Array = []
@@ -9508,8 +9535,8 @@ func _refresh_resource_visuals(cell: LiveMacroCell) -> void:
 			# "_" invece di un substr a indice fisso, così l'etichetta stampata resta pulita
 			# qualunque sia la lunghezza del prefisso.
 			parts.append("%s=%.1fms" % [label.substr(label.find("_") + 1), _veg_timings_ms[label]])
-		print("[VEG REFRESH TIMING] macrocella (%d,%d) totale=%.1fms | %s" % [
-			cell.macro_x, cell.macro_y, total_ms, ", ".join(parts)
+		print("[VEG REFRESH TIMING] macrocella (%d,%d) motivo=%s totale=%.1fms | %s" % [
+			cell.macro_x, cell.macro_y, reason if reason != "" else "?", total_ms, ", ".join(parts)
 		])
 
 
@@ -10310,6 +10337,9 @@ func _building_type_name_for_action(action_id: StringName) -> String:
 		# cablata in BuildBar._ready.
 		&"build_toolmaker_hut":
 			return "toolmaker_hut"
+		# Capanna di stoccaggio (2026-10-03, richiesta utente) — azione "build_storage_hut" cablata in BuildBar._ready.
+		&"build_storage_hut":
+			return "storage_hut"
 		# Edifici segnaposto (2026-09-26, richiesta utente) — azioni cablate in BuildBar._ready.
 		&"build_drying_rack":
 			return "drying_rack"
@@ -10359,6 +10389,9 @@ func _on_demolish_confirmed(building: Variant) -> void:
 		# Scelta del demolitore subito dopo la conferma (2026-09-27, richiesta utente): uscire senza scegliere
 		# annulla la demolizione.
 		_enter_demolisher_pick_mode(target_building, true)
+	elif BuildingUpgradeService.is_upgrade_site(target_building):
+		# Cantiere di un miglioramento (2026-10-03): torna all'edificio di prima, non sparisce mai.
+		_cancel_building_upgrade(target_building)
 	else:
 		_demolish_building(target_building)
 
@@ -10373,18 +10406,199 @@ func _mark_building_for_demolition(building: Building) -> void:
 	for member in freed:
 		HumanIndividualActionService.resolve_idle_individual(member, _resolve_age_band(member), macro_world)
 	_reconcile_production_units(building)
-	if building.rules != null and building.rules.max_residents > 0:
-		for occupant in human_individuals:
-			if occupant.house_id == building.id:
-				occupant.house_id = -1
-	AssignHouseService.assign_pending_residents(macro_world, human_individuals, game_data.year)
-	_refresh_population_panel()
+	_release_building_residents(building)
 	_refresh_buildings_panel()
 	_refresh_selected_building_panel()
 	_refresh_selected_individual_panel()
 	print("[DEMOLISH] Edificio #%d (%s) segnato da demolire." % [
 		building.id, tr(building.rules.building_name) if building.rules != null else building.building_type_name
 	])
+
+
+# Residenti di `building` fuori casa (2026-10-03, estratto da _mark_building_for_demolition per il miglioramento): casa
+# azzerata per chi ci abita (solo per un edificio residenziale), poi AssignHouseService li ricolloca dove c'è posto e la
+# scheda popolazione si rinfresca. Le Task di riposo in casa non puntano all'edificio (solo a una posizione): finiscono
+# da sole come oggi.
+# Nessun controllo su max_residents (2026-10-03): nel miglioramento si chiama dopo il cambio di regole, e conta solo chi
+# ha davvero questa casa.
+func _release_building_residents(building: Building) -> void:
+	for occupant in human_individuals:
+		if occupant.house_id == building.id:
+			occupant.house_id = -1
+	AssignHouseService.assign_pending_residents(macro_world, human_individuals, game_data.year)
+	_refresh_population_panel()
+
+
+# ============================================================================================
+# Miglioramento di un edificio (2026-10-03, richiesta utente — passo 2; dati e costo: BuildingUpgradeService).
+# "Migliora in …" nel pannello -> scelta del lavoratore col mirino (_on_upgrade_requested) -> alla scelta l'edificio
+# diventa un cantiere del tipo di destinazione (_start_building_upgrade) e il lavoratore riceve la Build normale
+# (_assign_resumable_building_task). Da lì è un cantiere come gli altri; "Annulla cantiere" torna all'edificio di prima
+# (_cancel_building_upgrade); il completamento è quello normale (BuildAction), con la pulizia dei valori salvati in
+# _on_building_construction_completed.
+# ============================================================================================
+
+func _on_upgrade_requested(building: Building) -> void:
+	if not _can_start_building_upgrade(building):
+		_refresh_selected_building_panel()
+		return
+	_enter_upgrade_pick_mode(building)
+
+
+# Scelta del lavoratore per il miglioramento. Idoneità (2026-10-03, richiesta utente): prima di trasformare l'edificio
+# il pipottino scelto deve poter ricevere la Build, con lo stesso controllo dell'assegnazione di una costruzione
+# (_get_upgrade_build_rejection_reason). Se non può: nessuna trasformazione, motivo come per ogni comando rifiutato
+# (X sull'edificio, popup e avviso nel pannello dell'individuo) e la scelta col mirino resta attiva per indicarne un
+# altro (_handle_worker_pick_input l'ha già chiusa prima di chiamare on_pick: qui si riapre).
+func _enter_upgrade_pick_mode(building: Building) -> void:
+	var target := BuildingUpgradeService.get_upgrade_rules(building)
+	var on_pick := func(worker: HumanIndividual) -> void:
+		if not _can_start_building_upgrade(building):
+			_refresh_selected_building_panel()
+			return
+		var rejection := _get_upgrade_build_rejection_reason(worker, building)
+		if rejection != HumanIndividual.ASSIGN_OK:
+			var macro_coords := Vector2i(building.macro_x, building.macro_y)
+			if live_cells.has(macro_coords):
+				_spawn_command_icon_at_microcell(live_cells[macro_coords], Vector2i(building.micro_x, building.micro_y), "task_rejected")
+			_report_assign_rejection(worker, rejection, "task_activity_build")
+			_enter_upgrade_pick_mode(building)
+			return
+		_start_building_upgrade(building)
+		_assign_resumable_building_task(worker, building)
+		_refresh_selected_building_panel()
+	_enter_worker_pick_mode(tr("upgrade_pick_banner_text").format({"building": tr(target.building_name)}), on_pick)
+
+
+# Motivo per cui `worker` non potrebbe ricevere la Build del miglioramento (HumanIndividual.ASSIGN_OK se può): Task di
+# prova costruita come quella vera (build.tres con il contesto dell'edificio, TaskFactory è puro) e mai assegnata,
+# passata allo stesso guard di idoneità di assign_task (get_assign_rejection_reason).
+func _get_upgrade_build_rejection_reason(worker: HumanIndividual, building: Building) -> String:
+	var definition := load("res://gameplay/scripts/tasks/definitions/build.tres") as TaskDefinition
+	if definition == null:
+		return HumanIndividual.ASSIGN_OK
+	var context: Dictionary = building.get_resumable_task_context()
+	context["macro_state"] = macro_world.get_cell_state_at(building.macro_x, building.macro_y) if macro_world != null else null
+	context["is_currently_grass"] = false
+	var probe := TaskFactory.build_task(definition, context)
+	return worker.get_assign_rejection_reason(probe, _resolve_age_band(worker))
+
+
+# Stesse condizioni del pulsante: destinazione valida, edificio completo e non "da demolire", idea della destinazione
+# scoperta, magazzino vuoto (protezione provvisoria).
+func _can_start_building_upgrade(building: Building) -> bool:
+	var target := BuildingUpgradeService.get_upgrade_rules(building)
+	if target == null or building.is_demolished or not building.is_complete or building.is_marked_for_demolition:
+		return false
+	if target.required_idea_id != "" and (human_folk == null or not human_folk.completed_ideas.has(target.required_idea_id)):
+		return false
+	return not BuildingUpgradeService.has_stored_resources(building)
+
+
+# Trasforma l'edificio completo nel cantiere del tipo di destinazione: stesso id, posto e istanza (influenza conservata).
+#   - salva in construction_progress tipo di partenza, durabilità, anno di costruzione e lo sconto usato;
+#   - residenti fuori (stesso innesco della demolizione, _release_building_residents);
+#   - tipo e regole nuovi, cantiere senza allestimento (site_setup_complete) e con lo spazio già riservato (stesso
+#     required_space); lo sconto usato in stored_resources come materiale già consegnato;
+#   - materiale recuperato (sconto non usato) in un mucchio a terra con drop_entries dalla posizione dell'edificio: il
+#     cantiere occupa la sua cella, il mucchio va davanti alla porta o nella microcella libera più vicina;
+#   - viste e contatore degli edifici come dopo una costruzione.
+func _start_building_upgrade(building: Building) -> void:
+	var target := BuildingUpgradeService.get_upgrade_rules(building)
+	if target == null:
+		return
+	var cost := BuildingUpgradeService.get_upgrade_cost(building.rules, target)
+	var from_type := building.building_type_name
+	var from_name := _building_display_name(building)
+	var freed := _close_tasks_working_on_building(building, PRODUCE_TASK_NAMES, null)
+	for member in freed:
+		HumanIndividualActionService.resolve_idle_individual(member, _resolve_age_band(member), macro_world)
+	building.construction_progress = {
+		"space_reserved": true,
+		BuildingUpgradeService.UPGRADE_FROM_TYPE_KEY: from_type,
+		BuildingUpgradeService.UPGRADE_FROM_DURABILITY_KEY: building.current_durability,
+		BuildingUpgradeService.UPGRADE_FROM_BUILT_YEAR_KEY: building.built_year,
+		BuildingUpgradeService.UPGRADE_CREDITED_KEY: (cost["credited"] as Dictionary).duplicate(),
+	}
+	building.building_type_name = from_type if building.rules == null else building.rules.upgrades_to
+	building.rules = target
+	building.is_complete = false
+	building.site_setup_complete = true
+	building.is_awaiting_material = false
+	building.production_progress = {}
+	for material_name in (cost["credited"] as Dictionary).keys():
+		building.stored_resources[String(material_name)] = {"quantity": int(cost["credited"][material_name]), "decay_fraction": 0.0}
+	# Residenti fuori DOPO il passaggio a cantiere (2026-10-03, bugfix): prima li si liberava con l'edificio ancora
+	# completo, e AssignHouseService li rimetteva subito nella stessa tenda (unica casa libera con posto).
+	_release_building_residents(building)
+	var recovered_entries: Dictionary = {}
+	for material_name in (cost["recovered"] as Dictionary).keys():
+		recovered_entries[String(material_name)] = {"quantity": int(cost["recovered"][material_name]), "decay_fraction": 0.0}
+	var pile := GroundPileService.drop_entries(
+		game_data, Vector2i(building.macro_x, building.macro_y),
+		Vector2(float(building.micro_x) + 0.5, float(building.micro_y) + 0.5), recovered_entries, macro_world
+	)
+	_refresh_upgraded_building_views(building)
+	_spawn_build_site_placeholders(building)
+	print("[UPGRADE] Edificio #%d: %s -> %s, materiale recuperato %s." % [
+		building.id, from_name, _building_display_name(building),
+		("a terra nel mucchio #%d" % pile.id) if pile != null else "nessuno"
+	])
+
+
+# Annullamento del cantiere di un miglioramento (ramo dedicato di "Annulla cantiere"): chiude le Build Task sul cantiere,
+# rimette tipo, regole, completezza, durabilità e anno salvati e li cancella; i materiali consegnati oltre lo sconto
+# cadono a terra con drop_entries; il lavoro fatto si perde. Poi residenti ricollocati e contatore degli edifici.
+# L'edificio non sparisce mai.
+func _cancel_building_upgrade(building: Building) -> void:
+	var progress := building.construction_progress
+	var from_type := String(progress.get(BuildingUpgradeService.UPGRADE_FROM_TYPE_KEY, ""))
+	var from_rules := BuildingCalculator.get_building_rules(from_type)
+	if from_rules == null:
+		push_warning("GameScene: annullamento del miglioramento dell'edificio #%d impossibile, tipo di partenza '%s' sconosciuto." % [building.id, from_type])
+		return
+	var freed := _close_tasks_working_on_building(building, BUILD_TASK_NAMES, null)
+	var credited: Dictionary = progress.get(BuildingUpgradeService.UPGRADE_CREDITED_KEY, {})
+	var surplus: Dictionary = {}
+	for resource_name in building.stored_resources.keys():
+		var entry: Dictionary = building.stored_resources[resource_name]
+		var extra: int = int(entry.get("quantity", 0)) - int(credited.get(resource_name, 0))
+		if extra > 0:
+			surplus[String(resource_name)] = {"quantity": extra, "decay_fraction": float(entry.get("decay_fraction", 0.0))}
+	building.stored_resources.clear()
+	building.building_type_name = from_type
+	building.rules = from_rules
+	building.is_complete = true
+	building.site_setup_complete = true
+	building.is_awaiting_material = false
+	building.current_durability = int(progress.get(BuildingUpgradeService.UPGRADE_FROM_DURABILITY_KEY, from_rules.max_durability))
+	building.built_year = int(progress.get(BuildingUpgradeService.UPGRADE_FROM_BUILT_YEAR_KEY, building.built_year))
+	building.construction_progress = {}
+	_remove_build_site_placeholders(building)
+	var pile := GroundPileService.drop_entries(
+		game_data, Vector2i(building.macro_x, building.macro_y),
+		Vector2(float(building.micro_x) + 0.5, float(building.micro_y) + 0.5), surplus, macro_world
+	)
+	for member in freed:
+		HumanIndividualActionService.resolve_idle_individual(member, _resolve_age_band(member), macro_world)
+	AssignHouseService.assign_pending_residents(macro_world, human_individuals, game_data.year)
+	_refresh_population_panel()
+	_refresh_upgraded_building_views(building)
+	_refresh_selected_individual_panel()
+	print("[UPGRADE] Miglioramento dell'edificio #%d annullato: torna %s, materiale %s." % [
+		building.id, _building_display_name(building), ("a terra nel mucchio #%d" % pile.id) if pile != null else "nessuno a terra"
+	])
+
+
+# Viste dopo un cambio di tipo sul posto (miglioramento avviato o annullato): disegno della cella, pannelli e contatore
+# degli edifici (_refresh_building_slots_buildable alza buildings_revision: copertura e layer di influenza).
+func _refresh_upgraded_building_views(building: Building) -> void:
+	var macro_coords := Vector2i(building.macro_x, building.macro_y)
+	if live_cells.has(macro_coords):
+		_refresh_building_visuals(live_cells[macro_coords])
+	_refresh_buildings_panel()
+	_refresh_building_slots_buildable()
+	_refresh_selected_building_panel()
 
 
 # Demolizione annullata (2026-09-27, richiesta utente — uscita senza scelta dalla modalità del demolitore aperta
@@ -10923,7 +11137,7 @@ func _refresh_work_area_fog_floor(coords: Vector2i) -> void:
 		return
 	cell.fog_of_war_renderer.mark_positions_dirty(changed)
 	cell.fog_of_war_renderer.invalidate_visible_set()
-	_refresh_resource_visuals(cell)
+	_refresh_resource_visuals(cell, "zona di lavoro")
 
 
 func _refresh_all_work_area_fog_floors() -> void:
@@ -10953,12 +11167,13 @@ func _cancel_work_area_drag() -> void:
 # anche quando il chiamante (_place_building_at) non la userà mai, per non duplicare la logica in
 # due posti.
 #
-# Primo deposito (2026-09-29, richiesta utente): finché nel mondo non esiste un deposit_site COMPLETO, è disponibile
-# solo il deposit_site — ogni altro tipo resta disabilitato con "Serve prima un deposito". Il primo deposito è anche
+# Primo deposito (2026-09-29, richiesta utente): finché nel mondo non esiste un magazzino (_world_has_storage_building:
+# dal 2026-10-03 per categoria STORAGE, non più per nome), è disponibile solo il deposit_site — ogni altro tipo resta
+# disabilitato con "Serve prima un deposito". Il primo deposito è anche
 # l'unico cantiere che riceve il bonus di partenza sul materiale di setup (HumanIndividualActionService.
 # _resolve_material_shortage). Ricalcolato come il resto a ogni piazzamento, completamento e demolizione.
 func _building_type_availability(rules: BuildingRules, building_type_name: String) -> Dictionary:
-	if building_type_name != FIRST_REQUIRED_BUILDING_TYPE and not _world_has_complete_building_of_type(FIRST_REQUIRED_BUILDING_TYPE):
+	if building_type_name != FIRST_REQUIRED_BUILDING_TYPE and not _world_has_storage_building():
 		return {"is_buildable": false, "disabled_tooltip": tr("build_bar_requires_deposit_site_tooltip")}
 	if rules.is_village_center:
 		var village_center_exists := false
@@ -10982,14 +11197,23 @@ func _building_type_availability(rules: BuildingRules, building_type_name: Strin
 	return {"is_buildable": true, "disabled_tooltip": ""}
 
 
+# L'unico tipo costruibile finché non c'è un magazzino.
 const FIRST_REQUIRED_BUILDING_TYPE := "deposit_site"
 
 
-func _world_has_complete_building_of_type(building_type_name: String) -> bool:
+# true se esiste un edificio di categoria STORAGE completo e non demolito, oppure il cantiere di un miglioramento il cui
+# edificio di partenza era STORAGE (2026-10-03, richiesta utente: migliorare l'unico magazzino non deve bloccare le
+# costruzioni). Prima del 2026-10-03 il controllo era sul solo nome deposit_site, oggi l'unico tipo STORAGE: stesso esito.
+func _world_has_storage_building() -> bool:
 	if macro_world == null:
 		return false
 	for building in macro_world.buildings:
-		if building.building_type_name == building_type_name and building.is_complete and not building.is_demolished:
+		if building.is_demolished:
+			continue
+		if building.is_complete and building.rules != null and building.rules.category == BuildingTypes.Category.STORAGE:
+			return true
+		var from_rules := BuildingUpgradeService.get_upgrade_from_rules(building)
+		if from_rules != null and from_rules.category == BuildingTypes.Category.STORAGE:
 			return true
 	return false
 
@@ -11121,7 +11345,7 @@ func _place_building_at(world_position: Vector2) -> void:
 	# liberati da BuildingSiteClearingService sono cambiati per QUESTA cella — invalida la cache
 	# posizioni (vedi LiveMacroCell.needs_full_vegetation_recompute).
 	target_cell.needs_full_vegetation_recompute = true
-	_refresh_resource_visuals(target_cell)
+	_refresh_resource_visuals(target_cell, "edificio")
 
 	print("[BUILDING] %s #%d piazzata in (%d,%d) — totale edifici: %d" % [
 		_selected_building_type_name, building.id, target_cell.macro_x, target_cell.macro_y, macro_world.buildings.size()
@@ -11344,7 +11568,10 @@ func _create_build_site_placeholder_nodes(building: Building, cell: LiveMacroCel
 	# punto di creazione condiviso anche dal ripristino dopo il caricamento
 	# (_restore_build_site_placeholders_for_cell): controllarlo solo nello spawn li avrebbe fatti
 	# ricomparire dopo un save/load. Vale per QUALUNQUE edificio senza materiale, non solo dirt_ground.
-	if building.rules != null and building.rules.setup_site_material_per_cell * building.rules.required_space <= 0:
+	# Un cantiere di miglioramento ha sempre i rametti (2026-10-03): sono l'unico segno dei lavori sopra il disegno
+	# dell'edificio di partenza.
+	if building.rules != null and building.rules.setup_site_material_per_cell * building.rules.required_space <= 0 \
+			and not BuildingUpgradeService.is_upgrade_site(building):
 		return
 	var cell_origin := Vector2(building.micro_x, building.micro_y) * MicroCellRenderer.CELL_SIZE
 	var corner_offsets: Array[Vector2] = [
@@ -11622,9 +11849,13 @@ func _connect_daydream_step_appended_listener(task: Task, individual_ref: HumanI
 # comunque non avrebbe nulla da rinfrescare per una cella non più live.
 func _reconnect_pickup_action_signals(step: PickUpAction) -> void:
 	step.collection_completed.connect(func(_collected: Dictionary) -> void:
+		# Raccolta da un mucchio a terra (2026-10-03, richiesta utente): niente ridisegno della vegetazione, il mucchio
+		# ha il suo disegno e il suo pannello, aggiornati a ogni frame da _sync_ground_pile_views (revisione del mucchio).
+		if step.source_kind == PickUpAction.SourceKind.GROUND_PILE:
+			return
 		for cell in live_cells.values():
 			if cell.macro_state == step.macro_state:
-				_refresh_resource_visuals(cell)
+				_refresh_resource_visuals(cell, "raccolta")
 				break
 	)
 	# Ripetizione automatica (2026-09-20): la Task nuova viene generata e accodata da _queue_pickup_repeat.
@@ -11672,7 +11903,7 @@ func _on_site_cleared(building: Building) -> void:
 		return
 	var cell: LiveMacroCell = live_cells[macro_coords]
 	cell.needs_full_vegetation_recompute = true
-	_refresh_resource_visuals(cell)
+	_refresh_resource_visuals(cell, "cantiere ripulito")
 	if DebugLogging.ENABLED and DebugLogging.SHOW_TRANSPORT_BUILD_LOGS:
 		print("[BUILD] Cantiere edificio #%d ripulito — vegetazione rimossa, spazio riservato per l'edificio." % building.id)
 
@@ -11820,6 +12051,10 @@ func _on_building_construction_completed(building: Building) -> void:
 	var other_freed := _close_tasks_working_on_building(building, BUILD_TASK_NAMES, _find_completing_individual(building))
 	for freed in other_freed:
 		HumanIndividualActionService.resolve_idle_individual(freed, _resolve_age_band(freed), macro_world)
+	# Miglioramento completato (2026-10-03): durabilità e anno li ha già scritti BuildAction (nuovo tipo, anno di oggi),
+	# i punti di influenza restano sull'istanza; i valori salvati per l'annullamento non servono più.
+	for upgrade_key in BuildingUpgradeService.UPGRADE_KEYS:
+		building.construction_progress.erase(upgrade_key)
 	# built_year NON più scritto qui (2026-09-19, richiesta utente): lo scrive BuildAction.on_complete
 	# insieme a is_complete, così non può restare indietro se questo listener non è collegato.
 	# Log spostato QUI (2026-09-12, richiesta utente — riordino cosmetico, nessuna modifica di
@@ -11946,6 +12181,11 @@ func _buildings_for_cell(cell: LiveMacroCell) -> Array:
 	var dirt_tiles_built := false
 	for building in macro_world.buildings:
 		if building.macro_x == cell.macro_x and building.macro_y == cell.macro_y:
+			# Cantiere di un miglioramento (2026-10-03, richiesta utente): disegnato come l'edificio di partenza completo
+			# (tipo salvato in construction_progress); i rametti del cantiere sono nodi a parte, sopra. Il renderer vede
+			# solo questa entry, quindi tipo e "completo" qui bastano anche per il fondo di terra battuta.
+			var is_upgrade_site := BuildingUpgradeService.is_upgrade_site(building)
+			var drawn_type_name := BuildingUpgradeService.get_drawn_type_name(building)
 			var entry: Dictionary = {
 				"position": Vector2i(building.micro_x, building.micro_y),
 				"rotation": building.rotation,
@@ -11953,13 +12193,13 @@ func _buildings_for_cell(cell: LiveMacroCell) -> Array:
 				# "building_type_name" (2026-09-07, richiesta utente, Pebble Circle) — prima di
 				# questo passo tutti gli edifici erano capanne, quindi MicroCellRenderer._draw_
 				# buildings non aveva bisogno di distinguere: ora sì, vedi lì.
-				"building_type_name": building.building_type_name,
+				"building_type_name": drawn_type_name,
 				# "is_complete"/"site_setup_complete" (2026-09-11, richiesta utente — cartello "work
 				# in progress" sul cantiere non ancora allestito, poi solo bastoncini una volta
 				# allestito, MAI la sagoma vera finché is_complete resta false) — vedi Building.
 				# is_complete/site_setup_complete/MicroCellRenderer._draw_buildings.
-				"is_complete": building.is_complete,
-				"site_setup_complete": building.site_setup_complete,
+				"is_complete": building.is_complete or is_upgrade_site,
+				"site_setup_complete": building.site_setup_complete or is_upgrade_site,
 			}
 			# "slot_breakdown" (2026-09-11, richiesta utente — "sul deposit site... disegna gli
 			# oggetti che ci sono, tipo mucchietti") — SOLO per deposit_site ("solo su questo",
@@ -11968,7 +12208,7 @@ func _buildings_for_cell(cell: LiveMacroCell) -> Array:
 			# get_slot_breakdown), così la griglia disegnata sulla mappa e quella nel pannello non
 			# possono mai disallinearsi. Non aggiunto per gli altri tipi — nessun costo per loro,
 			# nessuna chiave da ignorare.
-			if building.building_type_name == "deposit_site":
+			if drawn_type_name == "deposit_site":
 				entry["slot_breakdown"] = BuildingStorageService.get_slot_breakdown(building)
 			# Terra battuta (2026-09-19, richiesta utente): maschera dei lati che confinano con un altro
 			# edificio completo (bit 1<<lato, ordine N,E,S,W) — il renderer lascia dritti quei lati
@@ -11977,7 +12217,7 @@ func _buildings_for_cell(cell: LiveMacroCell) -> Array:
 			# Dal 2026-09-24 (richiesta utente) vale anche per il fondo di terra battuta sotto tenda,
 			# cerchio di sassolini e focolare (MicroCellRenderer.GROUND_UNDER_BUILDING_TYPES), e il vicino
 			# che rende dritto un lato è QUALUNQUE edificio completo, non più solo la terra battuta.
-			if building.building_type_name == "dirt_ground" or MicroCellRenderer.GROUND_UNDER_BUILDING_TYPES.has(building.building_type_name):
+			if drawn_type_name == "dirt_ground" or MicroCellRenderer.GROUND_UNDER_BUILDING_TYPES.has(drawn_type_name):
 				if not dirt_tiles_built:
 					dirt_tiles = _collect_complete_dirt_tiles()
 					dirt_tiles_built = true
@@ -11992,7 +12232,8 @@ func _buildings_for_cell(cell: LiveMacroCell) -> Array:
 func _collect_complete_dirt_tiles() -> Dictionary:
 	var tiles: Dictionary = {}
 	for other in macro_world.buildings:
-		if other.is_complete and not other.is_demolished:
+		# Un cantiere di miglioramento conta come completo: è disegnato come l'edificio di partenza (2026-10-03).
+		if (other.is_complete or BuildingUpgradeService.is_upgrade_site(other)) and not other.is_demolished:
 			tiles[Vector4i(other.macro_x, other.macro_y, other.micro_x, other.micro_y)] = true
 	return tiles
 
@@ -12352,7 +12593,7 @@ func _setup_clock() -> void:
 	individual_action_service.hunt_ended_with_message.connect(_on_hunt_ended_with_message)
 	individual_action_service.hunt_zone_series_continue_requested.connect(_on_hunt_zone_series_continue_requested)
 	# Essiccatoio pieno durante una macellazione (2026-10-03, essiccazione passo 5).
-	individual_action_service.drying_rack_full.connect(_on_drying_rack_full)
+	individual_action_service.processing_station_full.connect(_on_processing_station_full)
 	individual_action_service.building_material_blocked.connect(_on_building_material_blocked)
 	play_pause_button.pressed.connect(_on_play_pause_pressed)
 	for speed in speed_buttons.keys():
@@ -12520,7 +12761,7 @@ func _on_day_advanced(checkpoint_ran: bool, animals_changed: bool) -> void:
 			# così il rebuild qui sotto li disegna subito, nella stessa chiamata. No-op silenzioso
 			# nei giorni ordinari (il campo è vuoto).
 			_apply_natural_mortality_visuals(cell)
-			_refresh_resource_visuals(cell)
+			_refresh_resource_visuals(cell, "giorno nuovo")
 		# Filtrato ai soli dintorni di un checkpoint stagionale, stesso motivo/helper dei due
 		# blocchi sopra/sotto (richiesta utente, 2026-09-05).
 		if DebugLogging.SHOW_DAILY_TIMING_LOGS and SeasonCalculator.is_near_seasonal_checkpoint(game_data.current_day):

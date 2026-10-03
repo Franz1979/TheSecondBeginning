@@ -58,6 +58,7 @@ const TAB_BUILDINGS := 3
 @onready var population_per_year_chart: LineChart = $MarginContainer/VBoxContainer/TabContainer/PopulationTab/PopulationContent/PopulationPerYearChart
 
 @onready var total_buildings_label: Label = $MarginContainer/VBoxContainer/TabContainer/BuildingsTab/BuildingsContent/TotalBuildingsLabel
+@onready var movement_cells_label: Label = $MarginContainer/VBoxContainer/TabContainer/BuildingsTab/BuildingsContent/MovementCellsLabel
 @onready var buildings_per_year_chart: LineChart = $MarginContainer/VBoxContainer/TabContainer/BuildingsTab/BuildingsContent/BuildingsPerYearChart
 @onready var building_type_distribution_chart: PieChart = $MarginContainer/VBoxContainer/TabContainer/BuildingsTab/BuildingsContent/BuildingTypeDistributionChart
 
@@ -290,8 +291,20 @@ func _refresh_population_tab(
 # chiamante (game_data.building_snapshots) — NON serve _fill_missing_years qui, stesso motivo di
 # population_snapshots in _refresh_population_tab sopra: uno snapshot viene registrato OGNI anno
 # per costruzione (GameScene._on_year_rolled_over), mai un buco da riempire.
+#
+# MOVEMENT escluso (2026-10-03, richiesta utente — per categoria, mai per nome: le celle percorribili, es. terra
+# battuta, falsavano i numeri): "Edifici totali" e la torta contano solo gli altri; le celle MOVEMENT hanno la loro riga
+# "Celle percorribili". Il grafico per anno usa ancora building_snapshots, salvati come totale unico che le comprende.
 func _refresh_buildings_tab(buildings: Array[Building], building_snapshots: Dictionary) -> void:
-	total_buildings_label.text = "Edifici totali: %d" % buildings.size()
+	var counted_buildings: Array[Building] = []
+	var movement_count := 0
+	for building in buildings:
+		if building.rules != null and building.rules.category == BuildingTypes.Category.MOVEMENT:
+			movement_count += 1
+		else:
+			counted_buildings.append(building)
+	total_buildings_label.text = "Edifici totali: %d" % counted_buildings.size()
+	movement_cells_label.text = tr("statistics_movement_cells").format({"count": movement_count})
 
 	# Itera l'ENUM intero (non solo le categorie osservate) — stesso principio già seguito sopra per
 	# cause di morte/fasce d'età: una categoria senza edifici compare comunque a 0, invece di
@@ -299,8 +312,10 @@ func _refresh_buildings_tab(buildings: Array[Building], building_snapshots: Dict
 	# Nomi tradotti (2026-09-26): chiave "building_category_<nome_minuscolo>", una per valore dell'enum.
 	var category_counts := {}
 	for category_name in BuildingTypes.Category.keys():
+		if BuildingTypes.Category[category_name] == BuildingTypes.Category.MOVEMENT:
+			continue
 		category_counts[_building_category_display_name(String(category_name))] = 0
-	for building in buildings:
+	for building in counted_buildings:
 		if building.rules == null:
 			continue
 		var category_name := _building_category_display_name(String(BuildingTypes.Category.keys()[building.rules.category]))

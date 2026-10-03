@@ -1,0 +1,19 @@
+[gd_resource type="Resource" script_class="SecondaryResourceRules" format=3]
+
+[ext_resource type="Script" uid="uid://cu4cyua5y4n1m" path="res://simulation/scripts/core/SecondaryResourceRules.gd" id="1_smoked_hide"]
+
+[resource]
+script = ExtResource("1_smoked_hide")
+secondary_resource_name = "smoked_hide"
+calories_per_unit = 0.0
+category = 3
+generation_source = 2
+day_durability = -1
+space_per_unit = 3.0
+recipe_inputs = {
+"hide": 1
+}
+recipe_labor = 200.0
+recipe_auto_progress_days = 0
+recipe_fuel_required = 4.0
+recipe_workstation_types = Array[String](["smokehouse"])

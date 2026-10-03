@@ -163,6 +163,10 @@ func _draw() -> void:
 	if building_type_name == "stick_tent":
 		TentShapes.draw_stick_tent(self, Vector2.ZERO, rotation_dir, not is_buildable, STICK_TENT_COLOR.a)
 		return
+	# Capanna di stoccaggio (2026-10-03): lo stesso disegno della mappa, semitrasparente come le altre anteprime.
+	if building_type_name == "storage_hut":
+		StorageHutShape.draw(self, Vector2.ZERO, rotation_dir, not is_buildable, COLOR.a)
+		return
 	if building_type_name == "dirt_ground":
 		_draw_dirt_ground(DIRT_GROUND_COLOR if is_buildable else DIRT_GROUND_INVALID_COLOR)
 		return

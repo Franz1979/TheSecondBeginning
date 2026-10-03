@@ -7,6 +7,7 @@ build_bar_hide_tent_tooltip,Hide Tent
 building_hide_tent,Hide Tent
 build_bar_campfire_tooltip,Campfire
 build_bar_toolmaker_hut_tooltip,Toolmaker's hut
+build_bar_storage_hut_tooltip,Storage hut
 build_bar_drying_rack_tooltip,Drying rack
 build_bar_smokehouse_tooltip,Smokehouse
 build_bar_burial_tooltip,Burial
@@ -15,6 +16,7 @@ build_bar_earthwork_tooltip,Earthwork
 building_campfire,Campfire
 building_pebble_circle,Pebble circle
 building_toolmaker_hut,Toolmaker's hut
+building_storage_hut,Storage hut
 building_category_residential,Residential
 building_category_political,Political
 building_category_storage,Storage
@@ -135,6 +137,31 @@ building_ground_pile_caption,Pile on the ground here:
 microcell_inspection_ground_pile_header,Pile on the ground:
 microcell_inspection_unknown_resource,- Unknown resource
 storage_slot_auto_progress_tooltip,Ready in {days} days
+building_upgrade_button,Upgrade to {building}
+building_upgrade_materials,Materials to bring: {items}
+building_upgrade_recovered,Recovered materials: {items}
+building_upgrade_labor,Labor: {labor}
+building_upgrade_residents,Max residents: {from} → {to}
+building_upgrade_rest,Rest: ×{from} → ×{to}
+building_upgrade_nothing,none
+building_upgrade_residents_leave,Residents move out during the works.
+building_upgrade_storage_not_empty,Empty the building's storage first.
+upgrade_pick_banner_text,🔨 Upgrade to {building}: click an individual (Esc to cancel)
+building_status_upgrade_in_progress,Upgrade in progress: from {from} to {to}
+building_settings_empty_all_button,Empty all
+building_command_empty_all_detail,"The storage contents and finished products drop to the ground next to the building, where they decay faster."
+building_command_empty_all_nothing,There is nothing to empty.
+building_command_demolish_detail,The building stops working until a demolisher tears it down.
+building_command_cancel_site_detail,The material already delivered drops to the ground.
+building_command_cancel_upgrade_detail,"The building goes back to how it was before the upgrade; any extra material brought drops to the ground."
+building_command_cancel_demolition_detail,The building starts working again.
+building_command_cancel_demolition_started,The demolition has already started: it can no longer be cancelled.
+empty_all_confirmation_title,Empty building
+empty_all_confirmation_text,Empty {building} #{id}?
+empty_all_confirmation_text_ground,"All storage contents and finished products drop to the ground in a pile next to the building (in front of the door, or on the nearest free microcell)."
+empty_all_confirmation_text_decay,On the ground resources decay twice as fast and the pile disappears after a maximum time.
+empty_all_confirmation_text_lost,"If there is no free microcell, the contents are lost."
+empty_all_confirmation_confirm,Empty all
 hunt_destination_caption,Destination
 hunt_destination_campfire,Campfire
 hunt_destination_drying_rack,Drying rack
@@ -144,8 +171,8 @@ hunt_destination_not_yet_available,Not yet available
 hunt_destination_requires_idea,Requires: {idea}
 hunt_destination_no_building,No {building} built
 command_bar_butcher_destination_tooltip,Destination of hunting products: {name}
-command_bar_group_actions,Actions
-command_bar_group_options,Options
+command_bar_group_work_areas,Work areas
+command_bar_group_hunting,Hunting
 build_bar_title_build,Build
 build_bar_title_buildings,Buildings
 build_bar_title_work_areas,Work areas
@@ -226,7 +253,7 @@ building_influence_no_rite_tooltip,No rite for over a year: −{loss} sanctity p
 notification_influence_religious_level_up,"{building}: religious influence rises to radius {radius}."
 notification_influence_religious_level_down,"{building}: religious influence drops to radius {radius}."
 notification_auto_progress_completed,{building}: {resource} ×{quantity} ready
-notification_drying_rack_full,{building} full: {resource} taken to the warehouse
+notification_processing_station_full,{building} full: {resource} taken to the warehouse
 building_cancel_site_button,Cancel construction
 building_assign_demolisher_button,Assign demolisher
 building_cancel_demolition_button,Cancel demolition
@@ -248,6 +275,7 @@ building_storage_caption,Storage
 statistics_tab_births,Births
 statistics_tab_population,Population
 statistics_tab_buildings,Buildings
+statistics_movement_cells,Walkable cells: {count}
 tech_tree_tooltip,Tech tree
 tech_tree_requires_thought_building_tooltip,"Build a pebble circle: your people will be able to deposit their thoughts and develop ideas."
 map_layers_tooltip,Map layers
@@ -315,6 +343,8 @@ carried_resource_tooltip_meat,Raw meat
 carried_resource_tooltip_cooked_meat,Cooked meat
 carried_resource_tooltip_dried_meat,Dried meat
 carried_resource_tooltip_dried_hide,Dried hide
+carried_resource_tooltip_smoked_meat,Smoked meat
+carried_resource_tooltip_smoked_hide,Smoked hide
 carried_resource_tooltip_hide,Hide
 carried_resource_tooltip_sinew,Sinew
 carried_resource_tooltip_bone,Bones

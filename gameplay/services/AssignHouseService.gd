@@ -23,9 +23,9 @@ extends RefCounted
 # CRITERIO UNICO PER ORA (2026-09-12, richiesta utente esplicita — vedi anche il commento su
 # BuildingRules.residency_assignment_tier): anzianità DECRESCENTE, i più anziani hanno priorità,
 # INDIPENDENTEMENTE dal tier dell'edificio (Stick Tent tier 1 e Hut tier 2 trattati allo STESSO
-# modo qui, nessuna lettura di residency_assignment_tier in questo file). Nessuna preferenza tra
-# tipi di edificio: gli edifici vengono scanditi nell'ordine in cui compaiono in world.buildings
-# (ordine di costruzione) e il primo posto libero trovato viene occupato — quando in futuro tier
+# modo qui, nessuna lettura di residency_assignment_tier in questo file). Edifici scanditi dal moltiplicatore di
+# riposo più alto al più basso, a parità in ordine di costruzione (dal 2026-10-03; prima solo l'ordine di costruzione),
+# e il primo posto libero trovato viene occupato — quando in futuro tier
 # diversi vorranno criteri diversi (es. "famiglia/nucleo" per i tier più alti), quella logica andrà
 # aggiunta QUI, leggendo building.rules.residency_assignment_tier per scegliere quale criterio
 # applicare a QUEL building, non prima.
@@ -73,13 +73,26 @@ static func assign_pending_residents(
 		return (current_year - a.birth_year_virtual) > (current_year - b.birth_year_virtual)
 	)
 
-	# Scandisce world.buildings nell'ordine in cui si trovano (ordine di costruzione, nessuna
-	# priorità Tent/Hut) — per ciascun edificio residenziale COMPLETO con posti liberi, riempie finché
-	# ne ha o finché la coda `unhoused` si svuota. Conteggio occupanti per scansione lineare di
+	# Ordine degli edifici (2026-10-03, richiesta utente — prima l'ordine di costruzione puro): dal moltiplicatore di
+	# riposo (BuildingRules.rest_multiplier) più alto al più basso, così i più anziani finiscono nelle abitazioni dove si
+	# riposa meglio; a parità, l'ordine di costruzione (posizione in world.buildings, sort stabile per indice). Per
+	# ciascun edificio residenziale COMPLETO con posti liberi, riempie finché ne ha o finché la coda `unhoused` si svuota.
+	# Chi ha già una casa non viene spostato (solo `unhoused`). residency_assignment_tier resta non letto. Conteggio occupanti per scansione lineare di
 	# human_individuals ad ogni edificio (O(edifici × individui), stesso principio "numeri piccoli,
 	# costo accettabile" già assunto altrove nel progetto per liste di questa scala, es.
 	# TaskPersistenceService._find_building_by_id) — nessun indice/cache mantenuto a parte.
-	for building in world.buildings:
+	var ordered_buildings: Array[Building] = world.buildings.duplicate()
+	var build_order: Dictionary = {}
+	for index in world.buildings.size():
+		build_order[world.buildings[index]] = index
+	ordered_buildings.sort_custom(func(a: Building, b: Building) -> bool:
+		var rest_a: float = a.rules.rest_multiplier if a.rules != null else 1.0
+		var rest_b: float = b.rules.rest_multiplier if b.rules != null else 1.0
+		if rest_a != rest_b:
+			return rest_a > rest_b
+		return int(build_order[a]) < int(build_order[b])
+	)
+	for building in ordered_buildings:
 		if unhoused.is_empty():
 			break
 		var free_slots: int = get_free_slots(building, human_individuals)

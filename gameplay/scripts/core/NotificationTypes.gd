@@ -46,8 +46,9 @@ enum NotificationPopupType {
 	# Il raggio religioso di un edificio sale o scende di livello (2026-10-03, richiesta utente — punti e soglie,
 	# InfluenceService): stile di default. Aggiunto IN CODA.
 	INFLUENCE_LEVEL_CHANGED,
-	# Essiccazione (2026-10-03, essiccazione passo 5): prodotto pronto (stile di default) ed essiccatoio pieno con
-	# ripiego sul magazzino (stile "alert" giallo). Aggiunti IN CODA.
+	# Essiccazione (2026-10-03, essiccazione passo 5): prodotto pronto (stile di default) e postazione di lavorazione
+	# piena con ripiego sul magazzino (stile "alert" giallo; prima DRYING_RACK_FULL, stesso valore, ora vale anche per
+	# l'affumicatoio). Aggiunti IN CODA.
 	AUTO_PROGRESS_COMPLETED,
-	DRYING_RACK_FULL,
+	PROCESSING_STATION_FULL,
 }

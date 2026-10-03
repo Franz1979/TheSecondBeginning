@@ -85,7 +85,9 @@ const SHOW_DAILY_TIMING_LOGS := false
 # A false (richiesta utente, 2026-09-02 — troppo rumoroso durante l'esplorazione normale, un
 # blocco intero ad ogni ~3 microcelle di movimento): nessun comportamento di simulazione cambia,
 # solo il print viene soppresso. Rimetti a true per riavere tutto il gruppo come prima.
-const SHOW_VEGETATION_REFRESH_TIMING_LOGS := false
+# Riacceso il 2026-10-03 (richiesta utente — diagnostica del rallentamento sulla raccolta): la riga [VEG REFRESH
+# TIMING] ora dice anche chi ha chiesto il ridisegno (motivo=...).
+const SHOW_VEGETATION_REFRESH_TIMING_LOGS := true
 
 # Filtro dedicato per [FOW REDRAW TIMING] (FogOfWarRenderer._draw) — diagnostica per lo Step 4 FoW
 # multi-sorgente (2026-09-02): misura il costo reale del ciclo da 10.000 celle ora che il test di

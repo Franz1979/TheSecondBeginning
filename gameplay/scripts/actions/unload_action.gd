@@ -702,11 +702,11 @@ func get_save_data() -> Dictionary:
 
 
 # false se lo scarico è riservato alle risorse con la preferenza per la postazione (only_preferred_resources) e
-# `resource_name` non ce l'ha: la carne al focolare (prefers_recipe_workstation) o, dal 2026-10-03, un ingrediente di
-# una ricetta ad avanzamento automatico della postazione (l'essiccatoio, ButcherDestinationService).
+# `resource_name` non ce l'ha: la carne al focolare (prefers_recipe_workstation) o, dal 2026-10-03, un ingrediente
+# materiale delle ricette di una postazione di lavorazione (essiccatoio, affumicatoio —
+# ButcherDestinationService.is_preferred_deposit_allowed).
 func _is_deposit_allowed(resource_name: String) -> bool:
-	return not only_preferred_resources or WarehouseSelectionService.prefers_recipe_workstation(resource_name) \
-		or ProductionService.is_auto_progress_input(target_building, resource_name)
+	return not only_preferred_resources or ButcherDestinationService.is_preferred_deposit_allowed(target_building, resource_name)
 
 
 # true se nello zaino c'è almeno una delle risorse per cui questo scarico è stato programmato (planned_resources).

@@ -70,6 +70,9 @@ var _selection: Dictionary = {}
 var _duration: float = 0.0
 var _total_stamina_cost: float = 0.0
 var _elapsed: float = 0.0
+# Tetto di calorie delle provviste applicato in activate() (2026-10-03, HumanIndividualActionService.
+# get_restock_pouch_calorie_cap; INF = nessun tetto), solo per il log.
+var _pouch_calorie_cap: float = INF
 # true dopo load_save_data: activate() non deve ricalcolare la scelta (stessa logica di
 # RetrieveAction._restored_from_save).
 var _restored_from_save: bool = false
@@ -91,12 +94,16 @@ func activate(individual: Variant, context: Dictionary) -> void:
 		return
 	var free_space: float = maxf(individual.food_space_capacity - individual.food_space_used, 0.0)
 	var body_deficit: float = maxf(individual.body_calories_capacity - individual.body_calories, 0.0)
+	# Tetto in giorni di autonomia (2026-10-03, richiesta utente): le provviste ricevono calorie solo fino al tetto,
+	# oltre al limite di spazio. La riserva corporea (body_deficit) resta fuori dal tetto e si aggiunge.
+	_pouch_calorie_cap = HumanIndividualActionService.get_restock_pouch_calorie_cap(individual)
+	var pouch_calorie_room: float = INF if is_inf(_pouch_calorie_cap) else maxf(_pouch_calorie_cap - individual.food_calories_held, 0.0)
 	if source_kind == SourceKind.BACKPACK:
 		_selection = FoodSelectionService.select_food_from_entries(
-			individual.carried_resources, free_space, body_deficit, "zaino di #%d" % individual.id
+			individual.carried_resources, free_space, body_deficit, "zaino di #%d" % individual.id, pouch_calorie_room
 		)
 	else:
-		_selection = FoodSelectionService.select_food(target_building, free_space, body_deficit)
+		_selection = FoodSelectionService.select_food(target_building, free_space, body_deficit, pouch_calorie_room)
 	var space_to_take: float = float(_selection.get("space_used", 0.0))
 	_duration = 0.0
 	_total_stamina_cost = 0.0
@@ -235,13 +242,14 @@ func _log_completion(
 		return
 	var happiness_start: float = individual.current_happiness if is_nan(happiness_before) else happiness_before
 	var health_start: float = individual.current_health if is_nan(health_before) else health_before
-	print("[RESTOCK] #%d %s: rifornimento da %s %s - prelevato=%s spazio %.2f->%.2f (capacita=%.2f) calorie %.2f->%.2f | calorie_riserva=+%.2f (riserva %.2f->%.2f, max=%.2f) calorie_provviste=+%.2f | felicità %+.1f (%.1f → %.1f) · salute %+.1f (%.1f → %.1f)" % [
+	print("[RESTOCK] #%d %s: rifornimento da %s %s - prelevato=%s spazio %.2f->%.2f (capacita=%.2f) calorie %.2f->%.2f (tetto=%s) | calorie_riserva=+%.2f (riserva %.2f->%.2f, max=%.2f) calorie_provviste=+%.2f | felicità %+.1f (%.1f → %.1f) · salute %+.1f (%.1f → %.1f)" % [
 		individual.id, individual.name,
 		"zaino" if source_kind == SourceKind.BACKPACK else (target_building.building_type_name if target_building != null else "(nessun edificio)"),
 		("#%d" % target_building.id) if target_building != null else "",
 		str(withdrawn) if not withdrawn.is_empty() else "niente (nulla da prelevare)",
 		space_before, individual.food_space_used, individual.food_space_capacity,
 		calories_before, individual.food_calories_held,
+		"nessuno" if is_inf(_pouch_calorie_cap) else "%.2f" % _pouch_calorie_cap,
 		body_gain, body_before, individual.body_calories, individual.body_calories_capacity,
 		pouch_calories_added,
 		individual.current_happiness - happiness_start, happiness_start, individual.current_happiness,
@@ -260,6 +268,8 @@ func get_save_data() -> Dictionary:
 		"total_stamina_cost": _total_stamina_cost,
 		"source_kind": int(source_kind),
 	}
+	if not is_inf(_pouch_calorie_cap):
+		data["pouch_calorie_cap"] = _pouch_calorie_cap
 	if target_building != null:
 		data["target_building_id"] = target_building.id
 	return data
@@ -270,4 +280,5 @@ func load_save_data(data: Dictionary) -> void:
 	_duration = float(data.get("duration", 0.0))
 	_elapsed = float(data.get("elapsed", 0.0))
 	_total_stamina_cost = float(data.get("total_stamina_cost", 0.0))
+	_pouch_calorie_cap = float(data.get("pouch_calorie_cap", INF))
 	_restored_from_save = true

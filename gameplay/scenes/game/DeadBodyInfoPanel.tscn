@@ -14,6 +14,7 @@ layout_mode = 2
 theme_override_font_sizes/font_size = 10
 
 [node name="CauseLabel" type="Label" parent="."]
+autowrap_mode = 3
 layout_mode = 2
 theme_override_font_sizes/font_size = 10
 

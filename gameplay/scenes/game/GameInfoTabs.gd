@@ -71,10 +71,11 @@ signal center_requested
 # TabContainer (nativa, mai dentro l'area che scorre) resta così SEMPRE fissa in alto qualunque sia
 # l'altezza del contenuto aggiunto qui dentro — vedi GameInfoTabs.tscn per la struttura
 # MarginContainer > ScrollContainer aggiunta in questo stesso passo.
-@onready var population_tab: Control = $PopulationTab/PopulationScroll
-@onready var buildings_tab: Control = $BuildingsTab/BuildingsScroll
+# Dal 2026-10-03 i pannelli vanno nel WidthClampContainer dentro ciascuno scroll (vedi _lock_content_width).
+@onready var population_tab: Control = $PopulationTab/PopulationScroll/PopulationClamp
+@onready var buildings_tab: Control = $BuildingsTab/BuildingsScroll/BuildingsClamp
 @onready var selection_tab: Control = $SelectionTab
-@onready var debug_tab: Control = $DebugTab
+@onready var debug_tab: Control = $DebugTab/DebugClamp
 # Contenitore in cui GameScene aggiunge/rimuove i pannelli di dettaglio (VegetationInfoPanel/
 # HumanIndividualInfoPanel, in futuro BuildingInfoPanel) — SEPARATO da selection_tab stesso da
 # quando è stato introdotto SelectionHeader (Step 3): selection_tab non può più ospitarli
@@ -85,7 +86,7 @@ signal center_requested
 # sopra) — SelectionHeader (titolo + bottone 🎯) resta un sibling FISSO di SelectionScroll dentro
 # SelectionTabBody, mai dentro l'area che scorre: un pannello di selezione lungo (es. un individuo
 # con molte righe di stato) ora scorre SOTTO l'header, senza mai portarselo via.
-@onready var selection_content: Control = $SelectionTab/SelectionTabBody/SelectionScroll/SelectionContent
+@onready var selection_content: Control = $SelectionTab/SelectionTabBody/SelectionScroll/SelectionClamp/SelectionContent
 @onready var selection_header: Control = $SelectionTab/SelectionTabBody/SelectionHeader
 # Prima riga di identità della selezione corrente ("Name: X"/"Type: X" — richiesta utente,
 # 2026-09-04): vive QUI, sulla stessa riga del bottone "🎯", invece che come prima riga di
@@ -99,7 +100,7 @@ signal center_requested
 # Pulsanti aggiuntivi di un pannello di selezione, a sinistra del 🎯 (2026-10-02 — le icone di influenza di
 # BuildingInfoPanel): GameScene vi aggiunge il gruppo del pannello, che ne gestisce da sé la visibilità.
 @onready var header_actions: HBoxContainer = $SelectionTab/SelectionTabBody/SelectionHeader/HeaderActions
-@onready var empty_selection_label: Label = $SelectionTab/SelectionTabBody/SelectionScroll/SelectionContent/EmptySelectionLabel
+@onready var empty_selection_label: Label = $SelectionTab/SelectionTabBody/SelectionScroll/SelectionClamp/SelectionContent/EmptySelectionLabel
 
 # Scheda su cui si era prima di saltare su SelectionTab — ripristinata da hide_selection_tab().
 # Aggiornato da show_selection_tab() SOLO quando non si è già su SelectionTab (vedi lì): così una
@@ -146,9 +147,27 @@ func _ready() -> void:
 	set_tab_hidden(TAB_DEBUG, not DebugLogging.ENABLED)
 
 	empty_selection_label.text = tr("game_info_selection_empty")
+	_lock_content_width()
 
 	center_button.tooltip_text = tr("center_on_selection_tooltip")
 	center_button.pressed.connect(func() -> void: center_requested.emit())
+
+
+# LARGHEZZA FISSA (2026-10-03, richiesta utente — regola del progetto, vedi GameInfoPanel.gd): nessun contenuto di
+# una scheda può allargare la sidebar. Ribadito qui da codice anche se il .tscn lo imposta già, così una modifica
+# futura alla scena non lo toglie per sbaglio:
+#   - ogni scheda mette il contenuto in un WidthClampContainer (population_tab, buildings_tab, il genitore di
+#     selection_content, debug_tab), che non propaga la larghezza minima dei figli e dà loro esattamente la larghezza
+#     della scheda: le etichette a capo vanno a capo lì, ciò che non può stringersi viene tagliato;
+#   - gli ScrollContainer delle schede hanno lo scorrimento orizzontale DISATTIVATO: così il contenitore riceve la
+#     larghezza dello scroll. NON attivarlo: uno scroll orizzontale dà ai figli senza EXPAND la sola larghezza minima
+#     (un'etichetta a capo riceveva larghezza zero e si scriveva un carattere per riga);
+#   - il titolo della selezione (fuori dallo scroll) tronca con i puntini.
+func _lock_content_width() -> void:
+	for clamp_container in [population_tab, buildings_tab, selection_content.get_parent()]:
+		(clamp_container.get_parent() as ScrollContainer).horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	title_label.clip_text = true
+	title_label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 
 
 # Chiamata da GameScene quando qualcosa viene selezionato sulla mappa (oggi vegetazione/individuo

@@ -99,6 +99,12 @@ extends Resource
 # apply_daily_calorie_consumption.
 @export var base_daily_calorie_consumption: float = 20.0
 
+# Tetto del rifornimento delle provviste, in giorni di autonomia (2026-10-03, richiesta utente): al rifornimento le
+# provviste si riempiono fino a restock_autonomy_days x consumo giornaliero dell'individuo (lo stesso consumo delle
+# soglie di autonomia, HumanCalculator.get_daily_calorie_consumption), oltre al limite di spazio. La riserva corporea
+# non conta. Vedi HumanIndividualActionService.get_restock_pouch_calorie_cap.
+@export var restock_autonomy_days: float = 25.0
+
 @export_group("Mortality")
 # Curva di mortalità età-dipendente: due estremi scalari (non per-fascia come gli array sopra,
 # perché descrivono una curva continua che attraversa MATURE_ADULT e OLD, non un valore fisso per

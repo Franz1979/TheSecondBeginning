@@ -85,6 +85,9 @@ signal work_cancel_requested(building: Building)
 # empty_all_requested, GameScene apre la conferma (DemolishConfirmationDialog). Nascosto per un edificio già "da
 # demolire".
 signal demolish_requested(building: Building)
+# Bottone "Migliora in …" (2026-10-03, richiesta utente — miglioramento): GameScene apre la scelta del lavoratore col
+# mirino (_on_upgrade_requested) e, alla scelta, avvia il miglioramento.
+signal upgrade_requested(building: Building)
 
 # Icone di influenza (2026-10-02, richiesta utente — sostituiscono il bottone "Mostra influenza"): una per tipo
 # (politica, cultura, religione), nell'intestazione della scheda accanto al 🎯. Clic: GameScene mostra per qualche
@@ -104,6 +107,12 @@ const INFLUENCE_BUTTONS: Array[Dictionary] = [
 ]
 const INFLUENCE_BUTTON_SIZE := Vector2(22, 22)
 const INFLUENCE_BUTTON_DISABLED_COLOR := Color(0.5, 0.5, 0.5)
+# Riga comandi (2026-10-03): icone disegnate (BuildingCommandIcon) dentro pulsanti del tema di base, grandi quanto il
+# 🎯 "centra" (misurato da un pulsante di prova con lo stesso testo). Margine dell'icona dal bordo del pulsante, e
+# opacità dell'icona a comando spento (lo sfondo spento è già quello del tema).
+const COMMAND_ICON_SIZE_PROBE_TEXT := "🎯"
+const COMMAND_ICON_INSET: float = 4.0
+const COMMAND_ICON_DISABLED_MODULATE := Color(1, 1, 1, 0.35)
 
 # Bottone "Assegna demolitore" (2026-09-27, richiesta utente): visibile per un edificio "da demolire" senza nessuno
 # con la Demolish Task (in corso o in coda); GameScene entra nella modalità di scelta del demolitore.
@@ -211,10 +220,18 @@ const STORAGE_SLOT_FILL_BAR_FILL_COLOR := Color(1.0, 1.0, 1.0, 0.85)
 @onready var settings_caption: Label = $SettingsCaption
 @onready var accepted_categories_caption: Label = $AcceptedCategoriesCaption
 @onready var category_toggles_container: VBoxContainer = $CategoryTogglesContainer
-@onready var empty_all_button: Button = $EmptyAllButton
-@onready var demolish_button: Button = $DemolishButton
 @onready var assign_demolisher_button: Button = $AssignDemolisherButton
-@onready var cancel_demolition_button: Button = $CancelDemolitionButton
+# Riga dei comandi a icone in fondo al pannello (2026-10-03, richiesta utente — sostituisce i bottoni larghi a testo):
+# tutte a sinistra: Migliora, Svuota tutto, un piccolo spazio fisso, Demolisci per ultimo. "Annulla cantiere" (stesso
+# DemolishButton su un cantiere) e "Annulla demolizione" prendono il posto di Demolisci. Pulsanti come il 🎯 con
+# un'icona disegnata (_setup_command_icon_buttons); il nome del comando è la prima riga del tooltip. Visibili solo quando hanno senso; esistenti ma non disponibili = spenti con il motivo.
+@onready var command_icon_row: HBoxContainer = $CommandIconRow
+@onready var upgrade_button: Button = $CommandIconRow/UpgradeButton
+@onready var empty_all_button: Button = $CommandIconRow/EmptyAllButton
+@onready var demolish_button: Button = $CommandIconRow/DemolishButton
+@onready var cancel_demolition_button: Button = $CommandIconRow/CancelDemolitionButton
+# Pulsante -> la sua BuildingCommandIcon.
+var _command_icons: Dictionary = {}
 
 # Edificio correntemente mostrato (2026-09-09) — MAI esistito prima come campo: show_building
 # riceveva `building` solo come parametro locale, nessun consumatore ne aveva bisogno dopo il
@@ -245,7 +262,6 @@ func _ready() -> void:
 	storage_caption.text = tr("building_storage_caption")
 	settings_caption.text = tr("building_settings_caption")
 	accepted_categories_caption.text = tr("building_settings_accepted_categories_caption")
-	empty_all_button.text = tr("building_settings_empty_all_button")
 	# BUGFIX (2026-09-11, richiesta utente) — il bottone esisteva già (testo/visibilità gestiti da
 	# _refresh_settings_section) ma non era MAI stato collegato a nulla: un puro decoro che non
 	# faceva niente alla pressione. `_current_building` letto FRESCO dentro la lambda (non bindato
@@ -264,10 +280,11 @@ func _ready() -> void:
 	# Il gruppo vive fuori dal pannello (intestazione della scheda): si nasconde con lui, e l'anteprima finisce.
 	visibility_changed.connect(_on_visibility_changed_for_influence)
 	demolish_button.pressed.connect(func(): demolish_requested.emit(_current_building))
+	upgrade_button.pressed.connect(func(): upgrade_requested.emit(_current_building))
 	assign_demolisher_button.text = tr("building_assign_demolisher_button")
 	assign_demolisher_button.pressed.connect(func(): demolisher_assign_requested.emit(_current_building))
-	cancel_demolition_button.text = tr("building_cancel_demolition_button")
 	cancel_demolition_button.pressed.connect(func(): demolition_cancel_requested.emit(_current_building))
+	_setup_command_icon_buttons()
 
 
 # residents_display_data (2026-09-12, richiesta utente — griglia residenti): Array di Dictionary
@@ -302,16 +319,21 @@ func show_building(building: Building, residents_display_data: Array[Dictionary]
 	var demolition_started: bool = building.is_marked_for_demolition and float(building.construction_progress.get(DemolishAction.LABOR_KEY, 0.0)) > 0.0
 	if building.is_marked_for_demolition:
 		status_key = "building_status_demolition_in_progress" if demolition_started else "building_status_marked_for_demolition"
-	status_label.text = tr("building_status_label").format({"status": tr(status_key)})
+	var status_text: String = tr(status_key)
+	# Miglioramento in corso (2026-10-03, richiesta utente): "da <partenza> a <destinazione>" al posto di "in costruzione".
+	var upgrade_from_rules := BuildingUpgradeService.get_upgrade_from_rules(building)
+	if upgrade_from_rules != null and not building.is_marked_for_demolition:
+		status_text = tr("building_status_upgrade_in_progress").format({
+			"from": tr(upgrade_from_rules.building_name),
+			"to": tr(building.rules.building_name) if building.rules != null else building.building_type_name,
+		})
+	status_label.text = tr("building_status_label").format({"status": status_text})
 	if demolition_started:
 		status_label.add_theme_color_override("font_color", DEMOLITION_IN_PROGRESS_STATUS_COLOR)
 	else:
 		status_label.remove_theme_color_override("font_color")
-	cancel_demolition_button.visible = building.is_marked_for_demolition and not demolition_started
 	_refresh_influence_buttons(building)
-	demolish_button.visible = not building.is_marked_for_demolition
-	# Su un cantiere la conferma annulla il cantiere (2026-09-27): stesso bottone, testo diverso.
-	demolish_button.text = tr("building_demolish_button") if building.is_complete else tr("building_cancel_site_button")
+	_refresh_command_icon_row(building, demolition_started)
 	assign_demolisher_button.visible = building.is_marked_for_demolition and demolisher_names.is_empty()
 	_refresh_construction_progress(building)
 	# "In attesa di materiale" (2026-09-14, richiesta utente — segnalazione player per un cantiere
@@ -367,7 +389,9 @@ func show_building(building: Building, residents_display_data: Array[Dictionary]
 	var is_active_workstation: bool = building.is_complete and building.rules != null and building.rules.is_workstation and not is_auto_only
 	# X di annullo accanto allo stato (2026-09-26): dal 2026-09-27 solo per i costruttori di un cantiere; la produzione
 	# ha la propria X nella riga "In produzione:". Con "mancante" resta nascosta: nessuna Task da annullare.
-	cancel_work_button.visible = is_under_construction and not assigned_builder_names.is_empty()
+	# Tolta dal 2026-10-03 (richiesta utente): sul cantiere c'erano due croci, questa e "Annulla cantiere" nella riga dei
+	# comandi. Il nodo resta, sempre nascosto.
+	cancel_work_button.visible = false
 	tool_wait_label.visible = is_active_workstation and not production_tool_wait_lines.is_empty()
 	tool_wait_label.text = "\n".join(production_tool_wait_lines) if tool_wait_label.visible else ""
 	_refresh_production_status(building, is_active_workstation, production_claimed_recipes, production_claimant_names, working_recipes)
@@ -394,6 +418,138 @@ func show_building(building: Building, residents_display_data: Array[Dictionary]
 	_refresh_delivered_materials(building)
 	_refresh_production_recipes(building, production_claimant_names)
 	_refresh_settings_section(building)
+
+
+# Riga dei comandi a icone (2026-10-03, richiesta utente): stato di ogni icona e visibilità della riga (nascosta se
+# nessuna icona è visibile).
+func _refresh_command_icon_row(building: Building, demolition_started: bool) -> void:
+	_refresh_upgrade_button(building)
+	_refresh_empty_all_button(building)
+	# Demolisci / Annulla cantiere (2026-09-27: su un cantiere la conferma annulla il cantiere): stesso bottone, icona
+	# e tooltip diversi. Nascosto per un edificio "da demolire", dove al suo posto c'è Annulla demolizione.
+	demolish_button.visible = not building.is_marked_for_demolition
+	if building.is_complete:
+		(_command_icons[demolish_button] as BuildingCommandIcon).kind = BuildingCommandIcon.KIND_DEMOLISH
+		demolish_button.tooltip_text = "%s\n%s" % [tr("building_demolish_button"), tr("building_command_demolish_detail")]
+	else:
+		var is_upgrade_site := BuildingUpgradeService.is_upgrade_site(building)
+		(_command_icons[demolish_button] as BuildingCommandIcon).kind = BuildingCommandIcon.KIND_CANCEL_UPGRADE if is_upgrade_site else BuildingCommandIcon.KIND_CANCEL_SITE
+		var detail_key := "building_command_cancel_upgrade_detail" if is_upgrade_site else "building_command_cancel_site_detail"
+		demolish_button.tooltip_text = "%s\n%s" % [tr("building_cancel_site_button"), tr(detail_key)]
+	# Annulla demolizione: visibile per tutto il tempo in cui l'edificio è "da demolire"; spento, con il motivo, a
+	# demolizione iniziata (non più annullabile).
+	cancel_demolition_button.visible = building.is_marked_for_demolition
+	cancel_demolition_button.disabled = demolition_started
+	cancel_demolition_button.tooltip_text = "%s\n%s" % [
+		tr("building_cancel_demolition_button"),
+		tr("building_command_cancel_demolition_started") if demolition_started else tr("building_command_cancel_demolition_detail"),
+	]
+	for button in [upgrade_button, empty_all_button, demolish_button, cancel_demolition_button]:
+		_style_command_icon_button(button)
+	command_icon_row.visible = upgrade_button.visible or empty_all_button.visible or demolish_button.visible or cancel_demolition_button.visible
+
+
+# Svuota tutto (2026-10-03, richiesta utente — ora un'icona della riga comandi): su ogni edificio completo con uno
+# storage (storage_slot_count > 0), non solo sui depositi. Spento con il motivo se non c'è nulla da svuotare (né
+# magazzino né prodotti finiti: GroundPileService.drop_building_contents svuota entrambi).
+func _refresh_empty_all_button(building: Building) -> void:
+	empty_all_button.visible = building.rules != null and building.rules.storage_slot_count > 0 and building.is_complete
+	if not empty_all_button.visible:
+		return
+	var has_contents := BuildingUpgradeService.has_stored_resources(building)
+	for output_name in building.production_output.keys():
+		if int(building.production_output[output_name]) > 0:
+			has_contents = true
+	empty_all_button.disabled = not has_contents
+	empty_all_button.tooltip_text = "%s\n%s" % [
+		tr("building_settings_empty_all_button"),
+		tr("building_command_empty_all_detail") if has_contents else tr("building_command_empty_all_nothing"),
+	]
+
+
+# Pulsanti della riga comandi: grandi quanto il 🎯 "centra" (stesso tema di base, quindi stesso sfondo, più chiaro al
+# passaggio del mouse), ciascuno con la sua icona disegnata a tutto riquadro meno COMMAND_ICON_INSET.
+func _setup_command_icon_buttons() -> void:
+	var probe := Button.new()
+	probe.text = COMMAND_ICON_SIZE_PROBE_TEXT
+	add_child(probe)
+	var button_size := probe.get_combined_minimum_size()
+	remove_child(probe)
+	probe.free()
+	var kinds := {
+		upgrade_button: BuildingCommandIcon.KIND_UPGRADE,
+		empty_all_button: BuildingCommandIcon.KIND_EMPTY_ALL,
+		demolish_button: BuildingCommandIcon.KIND_DEMOLISH,
+		cancel_demolition_button: BuildingCommandIcon.KIND_CANCEL_DEMOLITION,
+	}
+	for button: Button in kinds:
+		button.text = ""
+		button.custom_minimum_size = button_size
+		button.focus_mode = Control.FOCUS_NONE
+		var icon := BuildingCommandIcon.new()
+		icon.kind = kinds[button]
+		button.add_child(icon)
+		icon.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+		icon.offset_left = COMMAND_ICON_INSET
+		icon.offset_top = COMMAND_ICON_INSET
+		icon.offset_right = -COMMAND_ICON_INSET
+		icon.offset_bottom = -COMMAND_ICON_INSET
+		_command_icons[button] = icon
+
+
+# Comando spento: icona attenuata (lo sfondo spento lo dà già il tema).
+func _style_command_icon_button(button: Button) -> void:
+	var icon: BuildingCommandIcon = _command_icons.get(button)
+	if icon != null:
+		icon.modulate = COMMAND_ICON_DISABLED_MODULATE if button.disabled else Color(1, 1, 1, 1)
+
+
+# Bottone "Migliora in <destinazione>" (2026-10-03, richiesta utente — miglioramento passo 1): per un edificio completo,
+# non "da demolire", con BuildingRules.upgrades_to. Spento con il motivo se l'idea della destinazione non è scoperta.
+# Tooltip: materiali da portare (già scontati), materiali recuperati, lavoro e, per le abitazioni, residenti massimi e
+# moltiplicatore di riposo prima e dopo (BuildingUpgradeService.get_upgrade_cost).
+func _refresh_upgrade_button(building: Building) -> void:
+	var target := BuildingUpgradeService.get_upgrade_rules(building)
+	upgrade_button.visible = target != null and building.is_complete and not building.is_marked_for_demolition
+	if not upgrade_button.visible:
+		return
+	# Icona dal 2026-10-03: il nome del comando è la prima riga del tooltip.
+	var lines: Array[String] = [tr("building_upgrade_button").format({"building": tr(target.building_name)})]
+	var folk: Folk = GameSettings.active_human_folk
+	var missing_idea := target.required_idea_id != "" and (folk == null or not folk.completed_ideas.has(target.required_idea_id))
+	# Protezione provvisoria (2026-10-03, passo 2): con risorse nel magazzino il miglioramento non parte.
+	var has_storage := BuildingUpgradeService.has_stored_resources(building)
+	upgrade_button.disabled = missing_idea or has_storage
+	if missing_idea:
+		var idea := IdeaCalculator.get_idea(target.required_idea_id)
+		lines.append(tr("tech_tree_requires").format({"ideas": tr(idea.display_name) if idea != null else target.required_idea_id}))
+	if has_storage:
+		lines.append(tr("building_upgrade_storage_not_empty"))
+	var cost := BuildingUpgradeService.get_upgrade_cost(building.rules, target)
+	lines.append(tr("building_upgrade_materials").format({"items": _format_material_list(cost["to_bring"])}))
+	if not (cost["recovered"] as Dictionary).is_empty():
+		lines.append(tr("building_upgrade_recovered").format({"items": _format_material_list(cost["recovered"])}))
+	lines.append(tr("building_upgrade_labor").format({"labor": int(cost["labor"])}))
+	if building.rules.max_residents > 0 or target.max_residents > 0:
+		lines.append(tr("building_upgrade_residents").format({"from": building.rules.max_residents, "to": target.max_residents}))
+		if building.rules.max_residents > 0:
+			lines.append(tr("building_upgrade_residents_leave"))
+		lines.append(tr("building_upgrade_rest").format({
+			"from": "%.1f" % building.rules.rest_multiplier, "to": "%.1f" % target.rest_multiplier,
+		}))
+	upgrade_button.tooltip_text = "\n".join(lines)
+
+
+# "3 Corda di fibre, 20 Pelle" in ordine di nome; "nessuno" se vuoto.
+func _format_material_list(materials: Dictionary) -> String:
+	if materials.is_empty():
+		return tr("building_upgrade_nothing")
+	var names: Array = materials.keys()
+	names.sort()
+	var parts: Array[String] = []
+	for material_name in names:
+		parts.append("%d %s" % [int(materials[material_name]), IconRegistry.get_resource_display_name(String(material_name))])
+	return ", ".join(parts)
 
 
 # Gruppo delle icone di influenza (2026-10-02): creato qui, aggiunto da GameScene a GameInfoTabs.header_actions.
@@ -527,6 +683,7 @@ func show_ground_pile(lines: Array[String]) -> void:
 		var label := Label.new()
 		label.text = line
 		label.add_theme_font_size_override("font_size", 10)
+		label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		ground_pile_container.add_child(label)
 
 
@@ -893,7 +1050,7 @@ func _build_missing_material_chip(
 # scelta del lavoratore con quantity > 0, la chiude con 0. Sotto la griglia la spunta "Consegna al magazzino".
 #
 # Icona spenta (2026-09-24, stesse regole dei vecchi bottoni) con il motivo nel tooltip: postazione già impegnata
-# (Produce Task assegnate arrivate a ProductionService.get_queue_capacity) e/o buffer di uscita senza posto per un
+# (Produce Task assegnate arrivate a ProductionService.get_max_concurrent_orders) e/o buffer di uscita senza posto per un
 # ciclo di QUESTA ricetta. Il tooltip di ogni icona ha nome, ingredienti, combustibile, lavoro e attrezzi richiesti.
 const RECIPE_GRID_COLUMNS: int = 4
 const RECIPE_ICON_SIZE: float = 32.0
@@ -927,10 +1084,10 @@ func _refresh_production_recipes(building: Building, production_claimant_names: 
 	grid.add_theme_constant_override("h_separation", 4)
 	grid.add_theme_constant_override("v_separation", 4)
 	production_recipes_container.add_child(grid)
-	var is_queue_full := ProductionService.is_production_queue_full(building, production_claimant_names.size())
+	var is_busy := ProductionService.has_max_concurrent_orders(building, production_claimant_names.size())
 	for resource_name in producible:
 		var disabled_reasons: Array[String] = []
-		if is_queue_full:
+		if is_busy:
 			disabled_reasons.append(tr("produce_recipe_disabled_busy").format({"workers": ", ".join(production_claimant_names)}))
 		# Buffer di uscita pieno (2026-09-23, richiesta utente): nessuna nuova assegnazione finché il
 		# prodotto non viene ritirato.
@@ -1357,13 +1514,12 @@ func _refresh_settings_section(building: Building) -> void:
 	var has_storage: bool = building.rules != null and building.rules.storage_slot_count > 0 and building.is_complete
 	_refresh_accepted_categories_toggles(building, has_storage)
 
-	# Almeno un blocco visibile -> mostra la "chrome" condivisa (separatore/titolo/bottone
-	# placeholder). Oggi has_storage è l'unica condizione, ma scritta così non richiede modifiche
-	# quando un secondo blocco esisterà (basterà aggiungerlo all'OR).
+	# Almeno un blocco visibile -> mostra la "chrome" condivisa (separatore/titolo). Oggi has_storage è l'unica
+	# condizione, ma scritta così non richiede modifiche quando un secondo blocco esisterà (basterà aggiungerlo
+	# all'OR). "Svuota tutto" è nella riga dei comandi a icone dal 2026-10-03 (_refresh_empty_all_button).
 	var any_section_visible: bool = has_storage
 	settings_separator.visible = any_section_visible
 	settings_caption.visible = any_section_visible
-	empty_all_button.visible = any_section_visible
 
 
 # Toggle CheckBox per Building.enabled_categories (2026-09-09, richiesta utente) — SOLO per edifici

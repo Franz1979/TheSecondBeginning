@@ -72,6 +72,7 @@ func show_buildings(buildings: Array[Building]) -> void:
 		var label := Label.new()
 		label.add_theme_font_size_override("font_size", 10)
 		label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		# Stessa formula tipo/stato già in uso in BuildingInfoPanel.show_building — coerenza tra i
 		# due pannelli (elenco vs dettaglio) per lo stesso concetto.
 		var type_name: String = tr(building.rules.building_name) if building.rules != null else building.building_type_name

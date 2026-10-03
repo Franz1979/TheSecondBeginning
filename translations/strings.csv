@@ -64,6 +64,7 @@ statistics_tab_mortality,Mortalità
 statistics_tab_births,Nascite
 statistics_tab_population,Popolazione
 statistics_tab_buildings,Edifici
+statistics_movement_cells,Celle percorribili: {count}
 tech_tree_tooltip,Albero delle tecnologie
 tech_tree_requires_thought_building_tooltip,"Costruisci un cerchio di sassi: i tuoi abitanti potranno depositare i pensieri e sviluppare idee."
 map_layers_tooltip,Layer della mappa
@@ -165,6 +166,7 @@ building_stick_tent,Tenda di rami
 building_hide_tent,Tenda di pelli
 building_campfire,Focolare
 building_toolmaker_hut,Capanna dell'attrezzista
+building_storage_hut,Capanna di stoccaggio
 building_category_residential,Residenziale
 building_category_political,Politico
 building_category_storage,Magazzino
@@ -185,6 +187,7 @@ build_bar_stick_tent_tooltip,Tenda di rami
 build_bar_hide_tent_tooltip,Tenda di pelli
 build_bar_campfire_tooltip,Focolare
 build_bar_toolmaker_hut_tooltip,Capanna dell'attrezzista
+build_bar_storage_hut_tooltip,Capanna di stoccaggio
 build_bar_drying_rack_tooltip,Graticcio
 build_bar_smokehouse_tooltip,Affumicatoio
 build_bar_burial_tooltip,Sepoltura
@@ -333,6 +336,8 @@ carried_resource_tooltip_meat,Carne cruda
 carried_resource_tooltip_cooked_meat,Carne cotta
 carried_resource_tooltip_dried_meat,Carne essiccata
 carried_resource_tooltip_dried_hide,Pelle essiccata
+carried_resource_tooltip_smoked_meat,Carne affumicata
+carried_resource_tooltip_smoked_hide,Pelle affumicata
 carried_resource_tooltip_hide,Pelle
 carried_resource_tooltip_sinew,Tendini
 carried_resource_tooltip_bone,Ossa
@@ -345,6 +350,30 @@ microcell_inspection_resources_header,Risorse raccoglibili:
 microcell_inspection_resource_line,- {resource}: {quantity}
 microcell_inspection_unknown_resource,- Risorsa sconosciuta
 storage_slot_auto_progress_tooltip,Pronto tra {days} giorni
+building_upgrade_button,Migliora in {building}
+building_upgrade_materials,Materiali da portare: {items}
+building_upgrade_recovered,Materiali recuperati: {items}
+building_upgrade_labor,Lavoro: {labor}
+building_upgrade_residents,Residenti massimi: {from} → {to}
+building_upgrade_rest,Riposo: ×{from} → ×{to}
+building_upgrade_nothing,nessuno
+building_upgrade_residents_leave,I residenti escono durante i lavori.
+building_upgrade_storage_not_empty,Svuota prima il magazzino dell'edificio.
+upgrade_pick_banner_text,🔨 Migliora in {building}: clicca un individuo (Esc per annullare)
+building_status_upgrade_in_progress,Miglioramento in corso: da {from} a {to}
+building_command_empty_all_detail,"Il contenuto del magazzino e i prodotti finiti cadono a terra accanto all'edificio, dove deperiscono più in fretta."
+building_command_empty_all_nothing,Non c'è nulla da svuotare.
+building_command_demolish_detail,"L'edificio smette di funzionare finché un demolitore non lo abbatte."
+building_command_cancel_site_detail,Il materiale già consegnato cade a terra.
+building_command_cancel_upgrade_detail,"L'edificio torna com'era prima del miglioramento; il materiale portato in più cade a terra."
+building_command_cancel_demolition_detail,L'edificio torna a funzionare.
+building_command_cancel_demolition_started,La demolizione è già iniziata: non si può più annullare.
+empty_all_confirmation_title,Svuota edificio
+empty_all_confirmation_text,Svuotare {building} #{id}?
+empty_all_confirmation_text_ground,"Tutto il contenuto del magazzino e i prodotti finiti cadono a terra in un mucchio accanto all'edificio (davanti alla porta, o nella microcella libera più vicina)."
+empty_all_confirmation_text_decay,A terra le risorse deperiscono il doppio più in fretta e il mucchio sparisce dopo un tempo massimo.
+empty_all_confirmation_text_lost,"Se non c'è una microcella libera, il contenuto va perso."
+empty_all_confirmation_confirm,Svuota tutto
 hunt_destination_caption,Destinazione
 hunt_destination_campfire,Focolare
 hunt_destination_drying_rack,Essiccatoio
@@ -354,11 +383,11 @@ hunt_destination_not_yet_available,Non ancora disponibile
 hunt_destination_requires_idea,Richiede: {idea}
 hunt_destination_no_building,Nessun {building} costruito
 command_bar_butcher_destination_tooltip,Destinazione dei prodotti della caccia: {name}
-command_bar_group_actions,Azioni
-command_bar_group_options,Opzioni
+command_bar_group_work_areas,Aree di lavoro
+command_bar_group_hunting,Caccia
 build_bar_title_build,Costruzione
 build_bar_title_buildings,Edifici
-build_bar_title_work_areas,Zone di lavoro
+build_bar_title_work_areas,Aree di lavoro
 building_auto_progress_line,"In essiccazione: {resource} ×{quantity}, pronta tra {days} giorni"
 building_auto_progress_line_ready,"In essiccazione: {resource} ×{quantity}, pronta (in attesa di spazio)"
 building_auto_progress_none,In essiccazione: nulla
@@ -424,7 +453,7 @@ building_influence_no_rite_tooltip,Nessun rito da oltre un anno: −{loss} sacra
 notification_influence_religious_level_up,"{building}: l'influenza religiosa sale a raggio {radius}."
 notification_influence_religious_level_down,"{building}: l'influenza religiosa scende a raggio {radius}."
 notification_auto_progress_completed,{building}: {resource} ×{quantity} pronta
-notification_drying_rack_full,{building} pieno: {resource} portata in magazzino
+notification_processing_station_full,{building} pieno: {resource} portata in magazzino
 building_cancel_site_button,Annulla cantiere
 building_assign_demolisher_button,Assegna demolitore
 building_cancel_demolition_button,Annulla demolizione

@@ -44,16 +44,22 @@ static func is_denser_food_first(ratio_a: float, name_a: String, ratio_b: float,
 #      "calories", che descrivono SOLO cio' che va alle provviste (stesso significato di prima).
 # Il chiamante preleva la somma dei due gruppi.
 #
+# pouch_calorie_room (2026-10-03, richiesta utente — tetto in giorni di autonomia, vedi RestockPouchAction): calorie che
+# le provviste possono ancora ricevere. Nella fase 2 si caricano unita' intere finche' le calorie aggiunte restano sotto
+# questo valore; l'ultima unita' puo' superarlo (chi consuma poco prende comunque almeno un pezzo). Vale insieme allo
+# spazio: quello che arriva prima. INF (default) = nessun tetto, comportamento di prima. Non tocca la fase 1 (riserva).
+#
 # BUFFER DI USCITA (2026-09-27, bug "affamati che girano a vuoto al focolare"): le disponibilita' sono
 # stored_resources PIU' Building.production_output, la stessa somma che WarehouseSelectionService.
 # find_source_for_retrieval considera per scegliere la sorgente e che BuildingStorageService.withdraw
 # preleva davvero. Prima si guardava solo lo storage: un focolare con carne cotta solo nel buffer era
 # una sorgente valida ma la scelta risultava vuota, la task finiva senza prelievo e il bisogno rinasceva.
-static func select_food(building: Building, free_space: float, calorie_target: float = 0.0) -> Dictionary:
+static func select_food(building: Building, free_space: float, calorie_target: float = 0.0, pouch_calorie_room: float = INF) -> Dictionary:
 	if building == null:
-		return select_food_from_entries({}, free_space, calorie_target, "(nessuno)")
+		return select_food_from_entries({}, free_space, calorie_target, "(nessuno)", pouch_calorie_room)
 	return select_food_from_entries(
-		_get_withdrawable_entries(building), free_space, calorie_target, "%s #%d" % [building.building_type_name, building.id]
+		_get_withdrawable_entries(building), free_space, calorie_target, "%s #%d" % [building.building_type_name, building.id],
+		pouch_calorie_room
 	)
 
 
@@ -77,7 +83,9 @@ static func _get_withdrawable_entries(building: Building) -> Dictionary:
 # Stessa scelta di select_food su VOCI GENERICHE (2026-09-26, richiesta utente — rifornirsi dal proprio zaino):
 # resource_name -> {"quantity", ...}, il formato comune di Building.stored_resources e di HumanIndividual.
 # carried_resources. `source_label` serve solo al log. Criterio invariato: calorie/spazio decrescente.
-static func select_food_from_entries(entries: Dictionary, free_space: float, calorie_target: float = 0.0, source_label: String = "") -> Dictionary:
+static func select_food_from_entries(
+	entries: Dictionary, free_space: float, calorie_target: float = 0.0, source_label: String = "", pouch_calorie_room: float = INF
+) -> Dictionary:
 	var result := {"quantities": {}, "space_used": 0.0, "calories": 0.0, "body_quantities": {}, "body_calories": 0.0}
 	if free_space <= 0.0 and calorie_target <= 0.0:
 		_log_selection(source_label, free_space, [], result)
@@ -124,16 +132,23 @@ static func select_food_from_entries(entries: Dictionary, free_space: float, cal
 			body_candidate["available"] = int(body_candidate["available"]) - body_units
 
 	var remaining_space: float = free_space
+	var remaining_room: float = pouch_calorie_room
 	for candidate in candidates:
+		if remaining_room <= 0.0:
+			break
 		var space_per_unit: float = candidate["space"]
 		var units_that_fit: int = int(floor(remaining_space / space_per_unit + UNIT_FIT_EPSILON))
 		var units: int = mini(int(candidate["available"]), units_that_fit)
+		# Tetto di calorie: unita' fino a raggiungerlo, l'ultima puo' superarlo (ceil).
+		if not is_inf(remaining_room):
+			units = mini(units, int(ceil(remaining_room / float(candidate["calories"]) - UNIT_FIT_EPSILON)))
 		if units <= 0:
 			continue
 		result["quantities"][candidate["name"]] = units
 		result["space_used"] += float(units) * space_per_unit
 		result["calories"] += float(units) * float(candidate["calories"])
 		remaining_space -= float(units) * space_per_unit
+		remaining_room -= float(units) * float(candidate["calories"])
 
 	_log_selection(source_label, free_space, candidates, result)
 	return result

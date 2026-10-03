@@ -24,5 +24,5 @@ is_workstation = true
 production_fuel_multiplier = 0.8
 production_labor_multiplier = 0.7
 production_output_slots = 5
-production_queue_slots = 2
+production_concurrent_orders = 2
 production_max_quantity = 10

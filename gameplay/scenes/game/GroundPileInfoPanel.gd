@@ -28,6 +28,7 @@ func show_pile(pile: GroundPile, days_remaining: int, terrain_resources: Array =
 		var carcass_label := Label.new()
 		carcass_label.text = carcass_line
 		carcass_label.add_theme_font_size_override("font_size", 10)
+		carcass_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		resources_container.add_child(carcass_label)
 	for resource_name in pile.get_resource_names():
 		var entry: Dictionary = pile.resources[resource_name]
@@ -47,6 +48,7 @@ func show_pile(pile: GroundPile, days_remaining: int, terrain_resources: Array =
 		var label := Label.new()
 		label.text = line
 		label.add_theme_font_size_override("font_size", 10)
+		label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		resources_container.add_child(label)
 	# Durata del mucchio solo se contiene risorse (2026-09-26): con sole carcasse la sua durata è quella delle
 	# carcasse (già nelle loro righe) e sparisce quando l'ultima è marcita.
@@ -58,6 +60,7 @@ func show_pile(pile: GroundPile, days_remaining: int, terrain_resources: Array =
 	terrain_header_label.text = tr("ground_pile_terrain_header")
 	for terrain_entry in terrain_resources:
 		var terrain_label := Label.new()
+		terrain_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		terrain_label.text = tr("ground_pile_resource_line").format({
 			"name": IconRegistry.get_resource_display_name(String(terrain_entry["resource_name"])),
 			"quantity": int(terrain_entry["quantity"]),

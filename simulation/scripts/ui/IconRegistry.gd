@@ -100,6 +100,9 @@ const RESOURCE_ICON_NODES := {
 	# Prodotti dell'essiccazione (2026-10-03, richiesta utente — icone provvisorie): vedi DriedMeatIcon.gd/DriedHideIcon.gd.
 	"dried_meat": preload("res://simulation/scripts/ui/DriedMeatIcon.gd"),
 	"dried_hide": preload("res://simulation/scripts/ui/DriedHideIcon.gd"),
+	# Prodotti dell'affumicatoio (2026-10-03, richiesta utente — icone provvisorie): vedi SmokedMeatIcon.gd/SmokedHideIcon.gd.
+	"smoked_meat": preload("res://simulation/scripts/ui/SmokedMeatIcon.gd"),
+	"smoked_hide": preload("res://simulation/scripts/ui/SmokedHideIcon.gd"),
 	"sinew": preload("res://simulation/scripts/ui/SinewIcon.gd"),
 	"bone": preload("res://simulation/scripts/ui/BoneIcon.gd"),
 }
@@ -170,6 +173,8 @@ const BUILDING_ICON_NODES := {
 	"earthwork": preload("res://simulation/scripts/ui/EarthworkIcon.gd"),
 	# Pietre impilate (2026-10-02, richiesta utente): pila verticale di sassi, stesso disegno della mappa.
 	"stacked_stones": preload("res://simulation/scripts/ui/StackedStonesIcon.gd"),
+	# Capanna di stoccaggio (2026-10-03, richiesta utente): stesso disegno della mappa (StorageHutShape).
+	"storage_hut": preload("res://simulation/scripts/ui/StorageHutIcon.gd"),
 }
 
 

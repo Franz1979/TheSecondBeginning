@@ -26,7 +26,8 @@ enum IdeaState { COMPLETED, RESEARCHING, AVAILABLE, LOCKED }
 
 const CARD_SIZE := Vector2(220, 136)
 const COLUMN_GAP := 90.0
-const ROW_GAP := 24.0
+# Spazio tra le righe: ci passano le linee che saltano una o più colonne (corsie orizzontali, vedi _build_edges).
+const ROW_GAP := 34.0
 const CANVAS_MARGIN := 24.0
 const WHEEL_SCROLL_STEP := 80
 # Spazio in cima al canvas per il nome dell'era (fascia) sopra i riquadri.
@@ -56,6 +57,13 @@ const COLOR_BAR_ACTIVE := Color(0.95, 0.78, 0.25)
 const COLOR_BAR_DECAYING := Color(0.55, 0.62, 0.75)
 const LINE_COLOR_MET := Color(0.40, 0.80, 0.46)
 const LINE_COLOR_UNMET := Color(0.45, 0.45, 0.50)
+# Linee (2026-10-03, richiesta utente — una linea per ogni coppia prerequisito -> idea, niente tronchi condivisi):
+# distanza tra due punti di attacco sullo stesso lato di un riquadro, spessore normale ed evidenziato, opacità delle linee
+# non collegate al riquadro sotto il mouse.
+const LINE_ATTACH_STEP := 10.0
+const LINE_WIDTH := 2.0
+const LINE_WIDTH_HIGHLIGHT := 3.0
+const LINE_DIMMED_ALPHA := 0.18
 
 @onready var title_label: Label = $Root/MarginContainer/VBoxContainer/HeaderRow/TitleLabel
 @onready var summary_label: Label = $Root/MarginContainer/VBoxContainer/HeaderRow/SummaryLabel
@@ -79,9 +87,11 @@ var _game_data: GameData = null
 # Riquadro evidenziato e mostrato nel pannello di dettaglio (click su un riquadro, qualunque sia il
 # suo stato) — "" = nessuno. Non è l'idea attiva: la ricerca parte solo dal pulsante di dettaglio.
 var _selected_idea_id: String = ""
-# Linee da disegnare, ricostruite ad ogni refresh_content: {"from": Vector2, "to": Vector2, "met": bool}
-# in coordinate locali di tree_canvas (vedi _on_tree_canvas_draw).
+# Linee da disegnare, ricostruite ad ogni refresh_content: {"points": PackedVector2Array, "from_id", "to_id", "met"}
+# in coordinate locali di tree_canvas (vedi _build_edges e _on_tree_canvas_draw).
 var _edges: Array[Dictionary] = []
+# Riquadro sotto il mouse ("" = nessuno): le sue linee in entrata e in uscita si accendono, le altre si attenuano.
+var _hovered_idea_id: String = ""
 # Fasce delle ere, ricostruite ad ogni refresh_content: {"x0": float, "x1": float, "color": Color}
 # (coordinate locali di tree_canvas, altezza = tutto il canvas, vedi _on_tree_canvas_draw).
 var _bands: Array[Dictionary] = []
@@ -194,18 +204,11 @@ func refresh_content() -> void:
 		card.position = card_position
 		tree_canvas.add_child(card)
 
-	# Linee: uscita al centro del lato destro del prerequisito, ingresso al centro del lato sinistro
-	# dell'idea. Prerequisiti non risolvibili (id senza .tres) non hanno riquadro, nessuna linea.
-	# Le linee verso idee coperte restano (richiesta utente).
-	for idea_id in ideas:
-		for prerequisite_id in ideas[idea_id].prerequisites:
-			if not positions.has(prerequisite_id):
-				continue
-			_edges.append({
-				"from": positions[prerequisite_id] + Vector2(CARD_SIZE.x, CARD_SIZE.y * 0.5),
-				"to": positions[idea_id] + Vector2(0.0, CARD_SIZE.y * 0.5),
-				"met": _human_folk.completed_ideas.has(prerequisite_id),
-			})
+	# Linee: una per ogni coppia prerequisito -> idea (vedi _build_edges). Prerequisiti non risolvibili (id senza .tres)
+	# non hanno riquadro, nessuna linea. Le linee verso idee coperte restano (richiesta utente).
+	if not cells.has(_hovered_idea_id):
+		_hovered_idea_id = ""
+	_build_edges(ideas, cells, layout["first_parents"])
 
 	tree_canvas.custom_minimum_size = canvas_size
 	tree_canvas.queue_redraw()
@@ -277,13 +280,15 @@ func _depth_of(
 
 
 # Layout: {"cells": id -> Vector2i(colonna, riga), "bands": [{"era", "era_index", "first_col",
-# "last_col"}]}. L'era è un limite minimo di colonna: le idee di un'era iniziano dopo l'ultima
-# colonna dell'era precedente (che occupa tante colonne quanta la sua profondità locale massima + 1;
-# un'era senza idee non occupa colonne né ha fascia); dentro l'era la colonna segue i prerequisiti.
-# Righe: colonna 0 alfabetica; dalle successive ogni idea cerca la riga MEDIA dei suoi prerequisiti
-# (baricentro), così un'idea figlia sta sulla stessa riga del genitore e i fratelli scendono sotto;
-# le righe possono avere buchi. Sort per (baricentro, id) -> deterministico; riga = max(riga
-# desiderata, riga precedente + 1) per non sovrapporre due riquadri.
+# "last_col"}], "first_parents": id -> id del primo prerequisito ("" = radice)}. L'era è un limite minimo di colonna:
+# le idee di un'era iniziano dopo l'ultima colonna dell'era precedente (che occupa tante colonne quanta la sua profondità
+# locale massima + 1; un'era senza idee non occupa colonne né ha fascia); dentro l'era la colonna segue i prerequisiti.
+# Righe (2026-10-03, richiesta utente — prima il baricentro dei prerequisiti): albero per PRIMO prerequisito (il primo
+# dell'elenco nei dati che ha un riquadro in una colonna precedente, _first_parent). Ogni idea sta sulla riga del primo
+# prerequisito; con più figli dello stesso primo prerequisito (in ordine di id) il primo prende la riga del padre, gli
+# altri le righe libere subito sotto il sottoalbero del fratello precedente, e tutto ciò che segue scala in basso. Le
+# radici (nessun primo prerequisito) in ordine di colonna e poi di id, ognuna con lo spazio per i suoi discendenti
+# (_place_subtree).
 func _layout_ideas(ideas: Dictionary) -> Dictionary:
 	var era_names := EraCalculator.list_era_names()
 	var era_index: Dictionary = {}
@@ -318,31 +323,245 @@ func _layout_ideas(ideas: Dictionary) -> Dictionary:
 		})
 		columns.append_array(era_local_columns)
 
-	var cells: Dictionary = {}
+	var column_of: Dictionary = {}
 	for column_index in columns.size():
-		var column: Array = columns[column_index]
-		var barycenters: Dictionary = {}
-		for idea_id in column:
-			var sum := 0.0
-			var count := 0
-			for prerequisite_id in ideas[idea_id].prerequisites:
-				if cells.has(prerequisite_id):
-					sum += cells[prerequisite_id].y
-					count += 1
-			barycenters[idea_id] = sum / count if count > 0 else 0.0
-		if column_index > 0:
-			column.sort_custom(func(a: String, b: String) -> bool:
-				if barycenters[a] != barycenters[b]:
-					return barycenters[a] < barycenters[b]
-				return a < b
+		for idea_id in columns[column_index]:
+			column_of[idea_id] = column_index
+
+	var first_parents: Dictionary = {}
+	var children: Dictionary = {}
+	var roots: Array[String] = []
+	for idea_id in IdeaCalculator.list_idea_ids():
+		if not column_of.has(idea_id):
+			continue
+		var parent := _first_parent(idea_id, ideas, column_of)
+		first_parents[idea_id] = parent
+		if parent == "":
+			roots.append(idea_id)
+		else:
+			if not children.has(parent):
+				children[parent] = []
+			(children[parent] as Array).append(idea_id)
+	roots.sort_custom(func(a: String, b: String) -> bool:
+		if column_of[a] != column_of[b]:
+			return column_of[a] < column_of[b]
+		return a < b
+	)
+
+	var cells: Dictionary = {}
+	var next_row := 0
+	for root_id in roots:
+		next_row += _place_subtree(root_id, next_row, children, column_of, cells)
+	return {"cells": cells, "bands": bands, "first_parents": first_parents}
+
+
+# Primo prerequisito di `idea_id` che ha un riquadro in una colonna PRECEDENTE (il primo dell'elenco nei dati; un
+# prerequisito senza .tres o di un'era successiva — errore di dati — viene saltato). "" = nessuno: radice.
+func _first_parent(idea_id: String, ideas: Dictionary, column_of: Dictionary) -> String:
+	for prerequisite_id in ideas[idea_id].prerequisites:
+		if column_of.has(prerequisite_id) and column_of[prerequisite_id] < column_of[idea_id]:
+			return prerequisite_id
+	return ""
+
+
+# Mette `idea_id` sulla riga `row` e i suoi figli (idee che l'hanno come primo prerequisito) a partire dalla stessa
+# riga, ognuno sotto il sottoalbero del precedente. Ritorna le righe occupate dal sottoalbero (almeno 1). Il padre è
+# sempre in una colonna precedente (_first_parent), quindi niente cicli; un riquadro già occupato (dati anomali) scende
+# alla prima riga libera della sua colonna.
+func _place_subtree(idea_id: String, row: int, children: Dictionary, column_of: Dictionary, cells: Dictionary) -> int:
+	var column: int = column_of[idea_id]
+	var placed_row := row
+	while _is_cell_taken(cells, column, placed_row):
+		placed_row += 1
+	cells[idea_id] = Vector2i(column, placed_row)
+	var kids: Array = children.get(idea_id, [])
+	kids.sort()
+	var used := 0
+	for kid in kids:
+		used += _place_subtree(String(kid), row + used, children, column_of, cells)
+	return maxi(used, placed_row - row + 1)
+
+
+func _is_cell_taken(cells: Dictionary, column: int, row: int) -> bool:
+	for cell in cells.values():
+		if cell.x == column and cell.y == row:
+			return true
+	return false
+
+
+# Linee (2026-10-03, richiesta utente): una per ogni coppia prerequisito -> idea, mai un tronco condiviso.
+#   - primo prerequisito sulla stessa riga e nessun riquadro in mezzo: linea dritta, al centro dei due lati;
+#   - tutti gli altri casi: gomito. Uscita dal lato destro del prerequisito, discesa/salita in un CANALE verticale proprio
+#     nello spazio dopo la sua colonna, ingresso dal lato sinistro dell'idea. Se l'idea non è nella colonna subito
+#     dopo, la linea attraversa le colonne in mezzo in una CORSIA orizzontale nello spazio sopra o sotto la riga
+#     dell'idea, dalla parte da cui arriva (_lane_key), e
+#     scende/sale in un secondo canale nello spazio prima della sua colonna: mai dietro un riquadro.
+# Niente sovrapposizioni: ogni linea ha un punto di attacco proprio su ciascun lato (passo LINE_ATTACH_STEP attorno al
+# centro, il centro riservato alla linea dritta, in ordine di posizione dell'altro capo), un canale proprio in ogni
+# spazio tra colonne e una corsia propria in ogni spazio tra righe (posizioni distribuite in modo uniforme). Due linee
+# possono incrociarsi ad angolo retto, mai correre sullo stesso tratto.
+func _build_edges(ideas: Dictionary, cells: Dictionary, first_parents: Dictionary) -> void:
+	var raw: Array[Dictionary] = []
+	for idea_id in IdeaCalculator.list_idea_ids():
+		if not cells.has(idea_id):
+			continue
+		var target: Vector2i = cells[idea_id]
+		for prerequisite_id in ideas[idea_id].prerequisites:
+			if not cells.has(prerequisite_id):
+				continue
+			var source: Vector2i = cells[prerequisite_id]
+			if target.x <= source.x:
+				continue
+			var straight: bool = String(first_parents.get(idea_id, "")) == prerequisite_id and source.y == target.y \
+				and not _has_card_between(cells, source, target)
+			raw.append({
+				"from_id": prerequisite_id, "to_id": idea_id, "source": source, "target": target, "straight": straight,
+				"met": _human_folk.completed_ideas.has(prerequisite_id),
+			})
+
+	# Punti di attacco: uscite sul lato destro di ogni prerequisito, entrate sul lato sinistro di ogni idea.
+	var out_offsets := _assign_attach_offsets(raw, "from_id", "source", "target")
+	var in_offsets := _assign_attach_offsets(raw, "to_id", "target", "source")
+
+	# Canali verticali (indice = colonna a sinistra dello spazio) e corsie orizzontali (indice = riga sotto lo spazio).
+	var channel_users: Dictionary = {}
+	var lane_users: Dictionary = {}
+	for edge_index in raw.size():
+		var edge: Dictionary = raw[edge_index]
+		if edge["straight"]:
+			continue
+		var source: Vector2i = edge["source"]
+		var target: Vector2i = edge["target"]
+		_add_user(channel_users, source.x, edge_index)
+		if target.x > source.x + 1:
+			_add_user(lane_users, _lane_key(source, target), edge_index)
+			_add_user(channel_users, target.x - 1, edge_index)
+
+	var step_x := CARD_SIZE.x + COLUMN_GAP
+	var step_y := CARD_SIZE.y + ROW_GAP
+	for edge_index in raw.size():
+		var edge: Dictionary = raw[edge_index]
+		var source: Vector2i = edge["source"]
+		var target: Vector2i = edge["target"]
+		var source_right := CANVAS_MARGIN + source.x * step_x + CARD_SIZE.x
+		var target_left := CANVAS_MARGIN + target.x * step_x
+		var y_out: float = CANVAS_MARGIN + BAND_HEADER_HEIGHT + source.y * step_y + CARD_SIZE.y * 0.5 + out_offsets[edge_index]
+		var y_in: float = CANVAS_MARGIN + BAND_HEADER_HEIGHT + target.y * step_y + CARD_SIZE.y * 0.5 + in_offsets[edge_index]
+		var points := PackedVector2Array()
+		if edge["straight"]:
+			points.append(Vector2(source_right, y_out))
+			points.append(Vector2(target_left, y_out))
+		else:
+			var channel_out := _slot_position(
+				source_right, COLUMN_GAP, channel_users[source.x], edge_index
 			)
-		var last_row := -1
-		for idea_id in column:
-			var desired_row := roundi(barycenters[idea_id]) if column_index > 0 else 0
-			var row := maxi(desired_row, last_row + 1)
-			cells[idea_id] = Vector2i(column_index, row)
-			last_row = row
-	return {"cells": cells, "bands": bands}
+			points.append(Vector2(source_right, y_out))
+			points.append(Vector2(channel_out, y_out))
+			if target.x == source.x + 1:
+				points.append(Vector2(channel_out, y_in))
+			else:
+				var lane_key := _lane_key(source, target)
+				var lane_top: float = CANVAS_MARGIN + BAND_HEADER_HEIGHT + lane_key * step_y - ROW_GAP
+				var lane_y := _slot_position(lane_top, ROW_GAP, lane_users[lane_key], edge_index)
+				var channel_in := _slot_position(
+					target_left - COLUMN_GAP, COLUMN_GAP, channel_users[target.x - 1], edge_index
+				)
+				points.append(Vector2(channel_out, lane_y))
+				points.append(Vector2(channel_in, lane_y))
+				points.append(Vector2(channel_in, y_in))
+			points.append(Vector2(target_left, y_in))
+		_edges.append({"points": points, "from_id": edge["from_id"], "to_id": edge["to_id"], "met": edge["met"]})
+
+
+# Corsia orizzontale di una linea che salta colonne (indice = riga subito sotto lo spazio tra righe): dalla parte da cui
+# arriva la linea, così l'ultimo tratto verticale raggiunge il punto di attacco senza attraversare la linea dritta del
+# riquadro di arrivo (2026-10-03). Da una riga più in alto: lo spazio sopra la riga dell'idea; dalla stessa riga o da
+# più in basso: lo spazio sotto.
+func _lane_key(source: Vector2i, target: Vector2i) -> int:
+	return target.y if source.y < target.y else target.y + 1
+
+
+# true se sulla riga di `source` c'è un riquadro in una colonna tra `source` e `target` (esclusi).
+func _has_card_between(cells: Dictionary, source: Vector2i, target: Vector2i) -> bool:
+	for cell in cells.values():
+		if cell.y == source.y and cell.x > source.x and cell.x < target.x:
+			return true
+	return false
+
+
+# Scostamento verticale dal centro del lato per ogni linea, per lato di riquadro: `card_key` = "from_id" (lato destro,
+# uscite) o "to_id" (lato sinistro, entrate); `own_key`/`other_key` = cella di questo riquadro e dell'altro capo.
+# Regola (2026-10-03, richiesta utente — prima gli scostamenti erano assegnati senza guardare da che parte arriva la
+# linea, e una linea dal basso poteva attaccarsi sopra la dritta, incrociandola):
+#   - la linea dritta tiene il centro;
+#   - una linea che viene da una riga più in ALTO si attacca SOPRA il centro, una da una riga più in BASSO SOTTO;
+#   - sullo stesso lato le linee sono ordinate per distanza: la più vicina al centro è quella della riga più vicina (a
+#     parità, quella della colonna più vicina). Una linea a gomito dalla stessa riga prende il centro se è libero,
+#     altrimenti la prima posizione sotto.
+# Così il tratto verticale nel canale si ferma all'altezza del proprio attacco senza mai superare la linea dritta.
+# Indice = posizione nell'array `raw`.
+func _assign_attach_offsets(raw: Array[Dictionary], card_key: String, own_key: String, other_key: String) -> Dictionary:
+	var by_card: Dictionary = {}
+	for edge_index in raw.size():
+		var card_id := String(raw[edge_index][card_key])
+		if not by_card.has(card_id):
+			by_card[card_id] = []
+		(by_card[card_id] as Array).append(edge_index)
+	var offsets: Dictionary = {}
+	for card_id in by_card:
+		var above: Array = []
+		var below: Array = []
+		var same_row: Array = []
+		var center_taken := false
+		for edge_index in by_card[card_id]:
+			if raw[edge_index]["straight"]:
+				offsets[edge_index] = 0.0
+				center_taken = true
+				continue
+			var own_cell: Vector2i = raw[edge_index][own_key]
+			var other_cell: Vector2i = raw[edge_index][other_key]
+			if other_cell.y < own_cell.y:
+				above.append(edge_index)
+			elif other_cell.y > own_cell.y:
+				below.append(edge_index)
+			else:
+				same_row.append(edge_index)
+		var by_distance := func(a: int, b: int) -> bool:
+			var own_a: Vector2i = raw[a][own_key]
+			var other_a: Vector2i = raw[a][other_key]
+			var own_b: Vector2i = raw[b][own_key]
+			var other_b: Vector2i = raw[b][other_key]
+			var row_a := absi(other_a.y - own_a.y)
+			var row_b := absi(other_b.y - own_b.y)
+			if row_a != row_b:
+				return row_a < row_b
+			return absi(other_a.x - own_a.x) < absi(other_b.x - own_b.x)
+		above.sort_custom(by_distance)
+		below.sort_custom(by_distance)
+		same_row.sort_custom(by_distance)
+		# Stessa riga: il centro se libero, il resto subito sotto, prima delle linee che vengono dal basso.
+		if not same_row.is_empty() and not center_taken:
+			offsets[same_row[0]] = 0.0
+			same_row.remove_at(0)
+		below = same_row + below
+		for i in above.size():
+			offsets[above[i]] = -float(i + 1) * LINE_ATTACH_STEP
+		for i in below.size():
+			offsets[below[i]] = float(i + 1) * LINE_ATTACH_STEP
+	return offsets
+
+
+func _add_user(users: Dictionary, key: int, edge_index: int) -> void:
+	if not users.has(key):
+		users[key] = []
+	(users[key] as Array).append(edge_index)
+
+
+# Posizione della linea `edge_index` nello spazio che parte da `start` largo `width`, condiviso dalle linee `users`:
+# distribuite in modo uniforme, mai sul bordo dei riquadri.
+func _slot_position(start: float, width: float, users: Array, edge_index: int) -> float:
+	var slot := users.find(edge_index)
+	return start + width * float(slot + 1) / float(users.size() + 1)
 
 
 # Idea coperta / filtro sblocchi: logica in IdeaProgressService (condivisa col popup di sblocco).
@@ -395,6 +614,7 @@ func _build_card(idea: Idea) -> PanelContainer:
 	# Ogni riquadro è cliccabile: seleziona (evidenzia + dettaglio), vedi _on_card_gui_input.
 	card.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
 	card.gui_input.connect(_on_card_gui_input.bind(idea.id))
+	_connect_card_hover(card, idea.id)
 
 	var name_label := Label.new()
 	name_label.text = tr(idea.display_name)
@@ -453,6 +673,7 @@ func _build_hidden_card(idea: Idea) -> PanelContainer:
 	card.add_theme_stylebox_override("panel", style)
 	card.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
 	card.gui_input.connect(_on_card_gui_input.bind(idea.id))
+	_connect_card_hover(card, idea.id)
 
 	var question_label := Label.new()
 	question_label.text = "?"
@@ -535,6 +756,19 @@ func _on_research_button_pressed() -> void:
 		refresh_content()
 
 
+# Passaggio del mouse su un riquadro (2026-10-03): le sue linee si accendono, le altre si attenuano.
+func _connect_card_hover(card: Control, idea_id: String) -> void:
+	card.mouse_entered.connect(func() -> void:
+		_hovered_idea_id = idea_id
+		tree_canvas.queue_redraw()
+	)
+	card.mouse_exited.connect(func() -> void:
+		if _hovered_idea_id == idea_id:
+			_hovered_idea_id = ""
+			tree_canvas.queue_redraw()
+	)
+
+
 # Click sinistro su un riquadro (qualunque stato) -> lo seleziona: evidenziato + dettaglio a destra.
 # Non cambia la ricerca (vedi _on_research_button_pressed). refresh_content in deferred: ricostruisce
 # (e libera) i riquadri, incluso quello che sta ancora emettendo questo gui_input.
@@ -547,9 +781,10 @@ func _on_card_gui_input(event: InputEvent, idea_id: String) -> void:
 		refresh_content.call_deferred()
 
 
-# Fasce (sfondo per era) e linee a gomito: orizzontale dal prerequisito, verticale nel varco subito prima dell'idea,
-# orizzontale fino al suo bordo sinistro. Disegnate sul canvas PRIMA dei suoi figli (i riquadri),
-# quindi restano sempre sotto.
+# Fasce (sfondo per era) e linee (percorsi già calcolati da _build_edges). Disegnate sul canvas PRIMA dei suoi figli
+# (i riquadri), quindi restano sempre sotto. Colore per singola linea: verde se quel prerequisito è completato, grigio
+# se no. Con un riquadro sotto il mouse le sue linee (entrata e uscita) sono più spesse e disegnate per ultime, le altre
+# attenuate.
 func _on_tree_canvas_draw() -> void:
 	# Fasce delle ere, dietro a tutto: altezza = l'intero canvas (min size o area visibile).
 	var band_height := maxf(tree_canvas.size.y, tree_canvas.custom_minimum_size.y)
@@ -557,15 +792,18 @@ func _on_tree_canvas_draw() -> void:
 		var band_rect := Rect2(band["x0"], 0.0, band["x1"] - band["x0"], band_height)
 		tree_canvas.draw_rect(band_rect, band["color"])
 		tree_canvas.draw_rect(band_rect, Color(0.3, 0.34, 0.42, 0.6), false, 1.0)
+	var highlighted: Array[Dictionary] = []
 	for edge in _edges:
-		var from: Vector2 = edge["from"]
-		var to: Vector2 = edge["to"]
-		var mid_x := to.x - COLUMN_GAP * 0.5
-		var color := LINE_COLOR_MET if edge["met"] else LINE_COLOR_UNMET
-		tree_canvas.draw_polyline(
-			PackedVector2Array([from, Vector2(mid_x, from.y), Vector2(mid_x, to.y), to]),
-			color, 2.0, true
-		)
+		var color: Color = LINE_COLOR_MET if edge["met"] else LINE_COLOR_UNMET
+		if _hovered_idea_id != "":
+			if edge["from_id"] == _hovered_idea_id or edge["to_id"] == _hovered_idea_id:
+				highlighted.append(edge)
+				continue
+			color.a = LINE_DIMMED_ALPHA
+		tree_canvas.draw_polyline(edge["points"], color, LINE_WIDTH, true)
+	for edge in highlighted:
+		var color: Color = (LINE_COLOR_MET if edge["met"] else LINE_COLOR_UNMET).lightened(0.25)
+		tree_canvas.draw_polyline(edge["points"], color, LINE_WIDTH_HIGHLIGHT, true)
 
 
 # La rotella scorre in orizzontale (l'albero cresce verso destra) finché il contenuto non
