@@ -81,6 +81,9 @@ var last_visible_positions: Variant = null
 var last_render_vegetation_positions: Variant = null
 var last_vegetation_rebuild_day: int = -1
 var last_scattered_availability: Dictionary = {}
+# true dopo aver passato al fog of war la vegetazione sfocata (set_vegetation_presence) con le posizioni correnti; false
+# a ogni rigenerazione completa. Il ridisegno per movimento/nebbia la salta se è true (2026-10-03).
+var vegetation_presence_sent: bool = false
 var cached_vegetation_positions: Dictionary = {}
 
 # Cache del ratio disponibilità "fruit stock" per lotto (2026-09-17, richiesta utente —

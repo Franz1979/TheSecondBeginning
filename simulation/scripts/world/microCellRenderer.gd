@@ -1009,14 +1009,60 @@ func set_tree_age_params(current_year: int, age_params: Dictionary, birth_year_s
 # mozzato / pianta secca), mai i blob vivi (quelli dipendono da vegetation_positions, invariato).
 func set_cut_positions(positions: Dictionary) -> void:
 	cut_positions = positions
+	_cut_dead_signature = []
 	_rebuild_cut_dead_multimeshes()
 	queue_redraw()
 
 
 func set_dead_positions(positions: Dictionary) -> void:
 	dead_positions = positions
+	_cut_dead_signature = []
 	_rebuild_cut_dead_multimeshes()
 	queue_redraw()
+
+
+# Ceppi e piante morte insieme, con il salto (2026-10-04, richiesta utente). Ogni segno dipende SOLO da: la sua voce
+# (chiave, size_multiplier, tipo), il numero di individui del suo lotto (_lot_extent_counts: vivi nell'elenco filtrato
+# per la nebbia + ceppi + morti — è da qui che arriva la dipendenza dalla visibilità) e costanti del file (vedi
+# _build_tree_stump_transform/_build_shrub_stump_transform/_build_dead_tree_transform/_build_dead_marker_transform, che
+# di _compute_*_visual usano solo "ground"/"center"). Firma = voci di ceppi e morti + quel conteggio per i soli lotti che
+# hanno un segno: con `allow_skip` e firma uguale all'ultima ricostruzione, nessuna ricostruzione. Va chiamata DOPO
+# set_vegetation_positions (vegetation_positions già aggiornato). Ritorna true se ha ricostruito.
+func set_cut_dead_positions(cut: Dictionary, dead: Dictionary, allow_skip: bool) -> bool:
+	cut_positions = cut
+	dead_positions = dead
+	var signature: Array = [cut, dead, _cut_dead_lot_counts()]
+	if allow_skip and not _cut_dead_signature.is_empty() and signature == _cut_dead_signature:
+		return false
+	_cut_dead_signature = signature
+	_rebuild_cut_dead_multimeshes()
+	queue_redraw()
+	return true
+
+
+# Firma dell'ultima ricostruzione di ceppi e morti ([] = nessuna o non confrontabile).
+var _cut_dead_signature: Array = []
+
+
+# Stesso conteggio di _lot_extent_counts, solo per i lotti con un ceppo o una pianta morta: tipo -> {lotto: conteggio}.
+func _cut_dead_lot_counts() -> Dictionary:
+	var result: Dictionary = {}
+	for object_type in [GameTypes.WorldObjectType.TREE, GameTypes.WorldObjectType.SHRUB]:
+		var counts: Dictionary = {}
+		for entry in cut_positions.get(object_type, []):
+			var key: Vector3i = entry["key"]
+			counts[Vector2i(key.x, key.y)] = int(counts.get(Vector2i(key.x, key.y), 0)) + 1
+		for entry in dead_positions.get(object_type, []):
+			var key: Vector3i = entry["key"]
+			counts[Vector2i(key.x, key.y)] = int(counts.get(Vector2i(key.x, key.y), 0)) + 1
+		if counts.is_empty():
+			continue
+		for individual_key in vegetation_positions.get(object_type, []):
+			var lot := Vector2i(individual_key.x, individual_key.y)
+			if counts.has(lot):
+				counts[lot] = int(counts[lot]) + 1
+		result[object_type] = counts
+	return result
 
 
 # Il colore dell'erba e quello della chioma degli alberi NON conifer dipendono dalla stagione,
@@ -2611,36 +2657,61 @@ func _rebuild_tree_multimeshes() -> void:
 	# Estensione nota (vivi+bloccati), non il solo conteggio dei vivi — vedi _lot_extent_counts:
 	# altrimenti tagliare un individuo cambierebbe il local_count (quindi il disk-offset) dei suoi
 	# vicini di lotto ancora vivi, spostandoli pur non avendo perso la propria identità.
+	# Misure (2026-10-03, richiesta utente — solo diagnostica, nessun effetto): tree_lot_counts, tree_loop, tree_apply, in
+	# last_batch_timings_ms (tree_append tolta il 2026-10-04: leggeva l'orologio per ogni pianta e gonfiava i tempi).
+	var measure_start_usec := Time.get_ticks_usec()
 	var lot_counts: Dictionary = _lot_extent_counts(GameTypes.WorldObjectType.TREE)
+	last_batch_timings_ms["tree_lot_counts"] = (Time.get_ticks_usec() - measure_start_usec) / 1000.0
 	_tree_fruit_entries.clear()
 
 	# Geometria in memoria (2026-10-03, passo B — vedi _tree_geometry_cache): ricalcolata solo per gli individui nuovi o
 	# con una firma diversa; il colore della chioma (stagione) e il test dei frutti (rapporto del lotto) si applicano
 	# qui, a ogni ricostruzione, come prima.
 	_check_geometry_cache_globals()
+	# Rimontaggio a blocchi di dati (2026-10-03, richiesta utente — passo 2): con il formato del buffer verificato
+	# (_multimesh_buffer_layout_ok) i dati già impacchettati di ogni individuo si concatenano e si assegnano in un colpo
+	# a MultiMesh.buffer; altrimenti il metodo di prima, un'istanza alla volta. Stesso ordine delle istanze in entrambi.
+	var use_buffer := _multimesh_buffer_layout_ok()
+	var trunk_buffer := PackedFloat32Array()
+	var canopy_buffer := PackedFloat32Array()
+	var conifer_buffer := PackedFloat32Array()
+	var wild_fruit_buffer := PackedFloat32Array()
+	var domesticable_fruit_buffer := PackedFloat32Array()
 	var computed_count := 0
 	var reused_count := 0
+	var loop_start_usec := Time.get_ticks_usec()
+	# Campo che una geometria valida per il metodo in uso deve avere: dati impacchettati (buffer) o trasformazioni.
+	var required_field := "trunk_packed" if use_buffer else "trunk_transform"
 	for individual_key in positions:
 		var signature := _tree_geometry_signature(individual_key, lot_counts)
 		var geometry: Dictionary = _tree_geometry_cache.get(individual_key, {})
-		if geometry.is_empty() or geometry["signature"] != signature:
-			geometry = _compute_tree_geometry(individual_key, lot_counts)
+		# Dati del metodo in uso mancanti = geometria non valida: si ricalcola (ripiego per il singolo individuo).
+		if geometry.is_empty() or geometry["signature"] != signature or not geometry.has(required_field):
+			geometry = _compute_tree_geometry(individual_key, lot_counts, use_buffer)
 			geometry["signature"] = signature
 			_tree_geometry_cache[individual_key] = geometry
 			computed_count += 1
 		else:
 			reused_count += 1
-		trunk_transforms.append(geometry["trunk_transform"])
+		if use_buffer:
+			trunk_buffer.append_array(geometry["trunk_packed"])
+		else:
+			trunk_transforms.append(geometry["trunk_transform"])
 		# Ramo esclusivo: un individuo è O conifer (chioma ad abete, sempre verde piena, MAI frutti) O uno degli altri
 		# sottotipi (chioma tonda, colore per stagione, idonea al test frutta).
 		if geometry["is_conifer"]:
-			conifer_canopy_transforms.append(geometry["canopy_transform"])
+			if use_buffer:
+				conifer_buffer.append_array(geometry["canopy_packed"])
+			else:
+				conifer_canopy_transforms.append(geometry["canopy_transform"])
 			continue
-		canopy_transforms.append(geometry["canopy_transform"])
-		canopy_colors.append(deciduous_canopy_color)
+		if use_buffer:
+			canopy_buffer.append_array(_tree_canopy_packed_with_color(geometry, deciduous_canopy_color))
+		else:
+			canopy_transforms.append(geometry["canopy_transform"])
+			canopy_colors.append(deciduous_canopy_color)
 		# "fruit" (domesticable_fruit) o "acorn" (wild_fruit); "" = nessun frutto (non fruttifero o YOUNG). Stesso gate
-		# hash-vs-ratio di sempre (_fruit_stock_shows): con disponibilità 0 nel lotto i frutti spariscono su una quota
-		# proporzionale degli individui.
+		# hash-vs-ratio di sempre (_fruit_stock_shows).
 		var fruit_resource: String = geometry["fruit_resource"]
 		if fruit_resource == "":
 			continue
@@ -2651,19 +2722,149 @@ func _rebuild_tree_multimeshes() -> void:
 		})
 		if _fruit_stock_shows(fruit_resource, individual_key, geometry["jitter_pos"]):
 			if fruit_resource == "fruit":
-				domesticable_fruit_transforms.append_array(geometry["fruit_transforms"])
+				if use_buffer:
+					domesticable_fruit_buffer.append_array(geometry["fruit_packed"])
+				else:
+					domesticable_fruit_transforms.append_array(geometry["fruit_transforms"])
 			else:
-				wild_fruit_transforms.append_array(geometry["fruit_transforms"])
+				if use_buffer:
+					wild_fruit_buffer.append_array(geometry["fruit_packed"])
+				else:
+					wild_fruit_transforms.append_array(geometry["fruit_transforms"])
 	last_geometry_stats["tree"] = {"computed": computed_count, "reused": reused_count}
+	last_batch_timings_ms["tree_loop"] = (Time.get_ticks_usec() - loop_start_usec) / 1000.0
 
-	_apply_transforms(_tree_trunk_multimesh, trunk_transforms)
-	_apply_transforms(_tree_canopy_multimesh, canopy_transforms)
-	for i in range(canopy_colors.size()):
-		_tree_canopy_multimesh.set_instance_color(i, canopy_colors[i])
-	_apply_transforms(_tree_conifer_canopy_multimesh, conifer_canopy_transforms)
-	_apply_transforms(_tree_fruit_wild_multimesh, wild_fruit_transforms)
-	_apply_transforms(_tree_fruit_domesticable_multimesh, domesticable_fruit_transforms)
+	measure_start_usec = Time.get_ticks_usec()
+	if use_buffer:
+		_apply_buffer(_tree_trunk_multimesh, trunk_buffer, BUFFER_STRIDE_TRANSFORM)
+		_apply_buffer(_tree_canopy_multimesh, canopy_buffer, BUFFER_STRIDE_TRANSFORM_COLOR)
+		_apply_buffer(_tree_conifer_canopy_multimesh, conifer_buffer, BUFFER_STRIDE_TRANSFORM)
+		_apply_buffer(_tree_fruit_wild_multimesh, wild_fruit_buffer, BUFFER_STRIDE_TRANSFORM)
+		_apply_buffer(_tree_fruit_domesticable_multimesh, domesticable_fruit_buffer, BUFFER_STRIDE_TRANSFORM)
+	else:
+		_apply_transforms(_tree_trunk_multimesh, trunk_transforms)
+		_apply_transforms(_tree_canopy_multimesh, canopy_transforms)
+		for i in range(canopy_colors.size()):
+			_tree_canopy_multimesh.set_instance_color(i, canopy_colors[i])
+		_apply_transforms(_tree_conifer_canopy_multimesh, conifer_canopy_transforms)
+		_apply_transforms(_tree_fruit_wild_multimesh, wild_fruit_transforms)
+		_apply_transforms(_tree_fruit_domesticable_multimesh, domesticable_fruit_transforms)
+	last_batch_timings_ms["tree_apply"] = (Time.get_ticks_usec() - measure_start_usec) / 1000.0
 	_tree_fruit_entries_valid = true
+
+
+# Chioma decidua impacchettata con il colore della stagione (12 valori: trasformazione + colore). Rifatta solo quando il
+# colore cambia (una volta per stagione per individuo), poi tenuta nella geometria.
+func _tree_canopy_packed_with_color(geometry: Dictionary, color: Color) -> PackedFloat32Array:
+	if not geometry.has("canopy_packed_color") or geometry["canopy_packed_color"] != color:
+		var colored: PackedFloat32Array = (geometry["canopy_packed"] as PackedFloat32Array).duplicate()
+		colored.append_array(PackedFloat32Array([color.r, color.g, color.b, color.a]))
+		geometry["canopy_packed_colored"] = colored
+		geometry["canopy_packed_color"] = color
+	return geometry["canopy_packed_colored"]
+
+
+# FORMATO DEL BUFFER DEI MULTIMESH 2D (2026-10-03, passo 2). Per istanza, in ordine: trasformazione 2D in 8 valori
+# [x.x, y.x, 0, origin.x, x.y, y.y, 0, origin.y] (due righe di una matrice 2x4), poi il colore in 4 valori [r, g, b, a]
+# se use_colors; nessun dato personalizzato (use_custom_data non è mai attivo qui). È la disposizione del motore
+# (RenderingServer.multimesh_set_buffer); non potendola leggere dai sorgenti, la si VERIFICA in gioco alla prima
+# ricostruzione (_multimesh_buffer_layout_ok): se non corrisponde, tutti i rimontaggi usano il metodo di prima.
+const BUFFER_STRIDE_TRANSFORM := 8
+const BUFFER_STRIDE_TRANSFORM_COLOR := 12
+# 0 = non ancora verificato, 1 = formato confermato, -1 = formato diverso (metodo di prima ovunque).
+static var _buffer_layout_state: int = 0
+
+
+static func _packed_transform_2d(transform: Transform2D) -> PackedFloat32Array:
+	return PackedFloat32Array([
+		transform.x.x, transform.y.x, 0.0, transform.origin.x,
+		transform.x.y, transform.y.y, 0.0, transform.origin.y,
+	])
+
+
+static func _packed_transforms(transforms: Array) -> PackedFloat32Array:
+	var packed := PackedFloat32Array()
+	for transform in transforms:
+		packed.append_array(_packed_transform_2d(transform))
+	return packed
+
+
+static func _packed_transforms_with_colors(transforms: Array, colors: Array) -> PackedFloat32Array:
+	var packed := PackedFloat32Array()
+	for i in range(transforms.size()):
+		packed.append_array(_packed_transform_2d(transforms[i]))
+		var color: Color = colors[i]
+		packed.append_array(PackedFloat32Array([color.r, color.g, color.b, color.a]))
+	return packed
+
+
+# "sì" / "no" / "non verificato" — stato della verifica del formato, per il log di GameScene.
+static func buffer_mode_text() -> String:
+	if _buffer_layout_state == 1:
+		return "sì"
+	if _buffer_layout_state == -1:
+		return "no"
+	return "non verificato"
+
+
+static func _apply_buffer(mm: MultiMesh, buffer: PackedFloat32Array, stride: int) -> void:
+	mm.instance_count = buffer.size() / stride
+	if mm.instance_count > 0:
+		mm.buffer = buffer
+
+
+# Verifica in gioco del formato (una volta per sessione): un MultiMesh di prova riceve una trasformazione e un colore
+# con i metodi di sempre, poi si confronta il suo buffer con quello impacchettato qui (lettura); infine si scrive un
+# buffer impacchettato e si rilegge la trasformazione (scrittura). Con e senza colore. Le posizioni di riempimento
+# (indici 2 e 6) non si confrontano.
+static func _multimesh_buffer_layout_ok() -> bool:
+	if _buffer_layout_state != 0:
+		return _buffer_layout_state == 1
+	var transform := Transform2D(Vector2(1.25, -2.5), Vector2(3.75, 0.5), Vector2(-7.0, 11.0))
+	var color := Color(0.1, 0.2, 0.3, 0.4)
+	var ok := _check_buffer_layout(false, transform, color) and _check_buffer_layout(true, transform, color)
+	_buffer_layout_state = 1 if ok else -1
+	if not ok:
+		push_warning("MicroCellRenderer: formato del buffer dei MultiMesh 2D diverso da quello atteso — rimontaggio con il metodo di prima.")
+	return ok
+
+
+static func _check_buffer_layout(with_color: bool, transform: Transform2D, color: Color) -> bool:
+	var stride: int = BUFFER_STRIDE_TRANSFORM_COLOR if with_color else BUFFER_STRIDE_TRANSFORM
+	var expected := _packed_transform_2d(transform)
+	if with_color:
+		expected.append_array(PackedFloat32Array([color.r, color.g, color.b, color.a]))
+	# Lettura: istanza 1 (non 0) per verificare anche il passo tra un'istanza e l'altra.
+	var mm := MultiMesh.new()
+	mm.transform_format = MultiMesh.TRANSFORM_2D
+	mm.use_colors = with_color
+	mm.instance_count = 2
+	mm.set_instance_transform_2d(1, transform)
+	if with_color:
+		mm.set_instance_color(1, color)
+	var read_back: PackedFloat32Array = mm.buffer
+	if read_back.size() != 2 * stride:
+		return false
+	for i in range(stride):
+		if i == 2 or i == 6:
+			continue
+		if absf(read_back[stride + i] - expected[i]) > 0.0001:
+			return false
+	# Scrittura: buffer impacchettato qui, trasformazione e colore riletti con i metodi di sempre.
+	var written := MultiMesh.new()
+	written.transform_format = MultiMesh.TRANSFORM_2D
+	written.use_colors = with_color
+	written.instance_count = 2
+	var buffer := PackedFloat32Array()
+	buffer.resize(stride)
+	buffer.append_array(expected)
+	written.buffer = buffer
+	var back: Transform2D = written.get_instance_transform_2d(1)
+	if not back.is_equal_approx(transform):
+		return false
+	if with_color and not written.get_instance_color(1).is_equal_approx(color):
+		return false
+	return true
 
 
 # MEMORIA DELLA GEOMETRIA (2026-10-03, richiesta utente — passo B: non ricalcolare ciò che non è cambiato, soprattutto
@@ -2722,7 +2923,11 @@ func _shrub_geometry_signature(individual_key: Vector3i, lot_counts: Dictionary)
 
 
 # Geometria di un albero: le stesse formule della ricostruzione di prima del passo B (tronco, chioma, frutti).
-func _compute_tree_geometry(individual_key: Vector3i, lot_counts: Dictionary) -> Dictionary:
+# `packed_only` (2026-10-03, richiesta utente — correzione del ricalcolo completo): con il metodo a buffer si tengono solo
+# i dati impacchettati; le trasformazioni (che servono solo al metodo di prima) si tengono solo senza buffer. Il metodo è
+# deciso una volta per sessione (_multimesh_buffer_layout_ok), e una geometria senza i dati del metodo in uso viene
+# ricalcolata (_rebuild_tree_multimeshes, required_field).
+func _compute_tree_geometry(individual_key: Vector3i, lot_counts: Dictionary, packed_only: bool = false) -> Dictionary:
 	var visual: Dictionary = _compute_tree_visual(individual_key, lot_counts)
 	var ground: Vector2 = visual["ground"]
 	var trunk_width: float = visual["trunk_width"]
@@ -2739,12 +2944,22 @@ func _compute_tree_geometry(individual_key: Vector3i, lot_counts: Dictionary) ->
 	var fruit_resource := ""
 	if not visual["is_conifer"] and visual["is_fruit_bearing"] and visual["age_band"] != GameTypes.AgeBand.YOUNG:
 		fruit_resource = "fruit" if visual["is_domesticable"] else "acorn"
-	return {
-		"trunk_transform": trunk_transform, "canopy_transform": canopy_transform, "is_conifer": visual["is_conifer"],
-		"fruit_resource": fruit_resource, "jitter_pos": visual["jitter_pos"],
+	var fruit_transforms: Array = _build_tree_fruit_transforms(visual["jitter_pos"], canopy_center, canopy_radius) if fruit_resource != "" else []
+	var geometry := {
+		"is_conifer": visual["is_conifer"], "fruit_resource": fruit_resource, "jitter_pos": visual["jitter_pos"],
 		"canopy_center": canopy_center, "canopy_radius": canopy_radius,
-		"fruit_transforms": _build_tree_fruit_transforms(visual["jitter_pos"], canopy_center, canopy_radius) if fruit_resource != "" else [],
 	}
+	if packed_only:
+		# Dati impacchettati nel formato del buffer (passo 2): tronco, chioma senza colore (il colore stagionale si
+		# aggiunge in _tree_canopy_packed_with_color; la chioma conifer non ha colore), puntini dei frutti.
+		geometry["trunk_packed"] = _packed_transform_2d(trunk_transform)
+		geometry["canopy_packed"] = _packed_transform_2d(canopy_transform)
+		geometry["fruit_packed"] = _packed_transforms(fruit_transforms)
+	else:
+		geometry["trunk_transform"] = trunk_transform
+		geometry["canopy_transform"] = canopy_transform
+		geometry["fruit_transforms"] = fruit_transforms
+	return geometry
 
 
 # Piante da frutto dell'ultima ricostruzione completa (2026-10-03, richiesta utente — ricostruire solo i frutti):
@@ -2766,6 +2981,23 @@ func _rebuild_tree_fruit_multimeshes() -> void:
 		_rebuild_tree_multimeshes()
 		return
 	last_fruit_rebuild_paths["tree"] = "solo frutti"
+	# Dalla memoria (2026-10-04, richiesta utente): col metodo a buffer i puntini già impacchettati della geometria in
+	# memoria (passo B) invece di ricalcolarli per ogni albero; ricalcolati solo se la geometria non c'è o non
+	# corrisponde a questa voce (_cached_tree_fruit_packed). Senza buffer, il metodo di prima.
+	if _multimesh_buffer_layout_ok():
+		var wild_fruit_buffer := PackedFloat32Array()
+		var domesticable_fruit_buffer := PackedFloat32Array()
+		for entry in _tree_fruit_entries:
+			var fruit_resource: String = entry["resource_name"]
+			if not _fruit_stock_shows(fruit_resource, entry["key"], entry["jitter_pos"]):
+				continue
+			if fruit_resource == "fruit":
+				domesticable_fruit_buffer.append_array(_cached_tree_fruit_packed(entry))
+			else:
+				wild_fruit_buffer.append_array(_cached_tree_fruit_packed(entry))
+		_apply_buffer(_tree_fruit_wild_multimesh, wild_fruit_buffer, BUFFER_STRIDE_TRANSFORM)
+		_apply_buffer(_tree_fruit_domesticable_multimesh, domesticable_fruit_buffer, BUFFER_STRIDE_TRANSFORM)
+		return
 	var wild_fruit_transforms: Array = []
 	var domesticable_fruit_transforms: Array = []
 	for entry in _tree_fruit_entries:
@@ -2779,6 +3011,16 @@ func _rebuild_tree_fruit_multimeshes() -> void:
 			wild_fruit_transforms.append_array(transforms)
 	_apply_transforms(_tree_fruit_wild_multimesh, wild_fruit_transforms)
 	_apply_transforms(_tree_fruit_domesticable_multimesh, domesticable_fruit_transforms)
+
+
+# Puntini impacchettati di un albero da frutto: dalla geometria in memoria se esiste e ha la stessa chioma della voce
+# (centro e raggio, da cui dipendono i puntini), altrimenti ricalcolati con la formula di sempre.
+func _cached_tree_fruit_packed(entry: Dictionary) -> PackedFloat32Array:
+	var geometry: Dictionary = _tree_geometry_cache.get(entry["key"], {})
+	if geometry.has("fruit_packed") and geometry["canopy_center"] == entry["canopy_center"] \
+			and geometry["canopy_radius"] == entry["canopy_radius"] and geometry["jitter_pos"] == entry["jitter_pos"]:
+		return geometry["fruit_packed"]
+	return _packed_transforms(_build_tree_fruit_transforms(entry["jitter_pos"], entry["canopy_center"], entry["canopy_radius"]))
 
 
 const TREE_FRUIT_SALTS := [
@@ -2921,20 +3163,27 @@ func _rebuild_shrub_multimeshes() -> void:
 	# Geometria in memoria (2026-10-03, passo B — vedi _tree_geometry_cache): lobi (trasformazioni e colori) e bacche
 	# ricalcolati solo per gli individui nuovi o con firma diversa; il test delle bacche si applica a ogni ricostruzione.
 	_check_geometry_cache_globals()
+	# Rimontaggio a blocchi di dati (passo 2, vedi _rebuild_tree_multimeshes).
+	var use_buffer := _multimesh_buffer_layout_ok()
+	var blob_buffer := PackedFloat32Array()
+	var berry_buffer := PackedFloat32Array()
 	var computed_count := 0
 	var reused_count := 0
 	for individual_key in positions:
 		var signature := _shrub_geometry_signature(individual_key, lot_counts)
 		var geometry: Dictionary = _shrub_geometry_cache.get(individual_key, {})
-		if geometry.is_empty() or geometry["signature"] != signature:
-			geometry = _compute_shrub_geometry(individual_key, lot_counts)
+		if geometry.is_empty() or geometry["signature"] != signature or not geometry.has("blob_packed" if use_buffer else "blob_transforms"):
+			geometry = _compute_shrub_geometry(individual_key, lot_counts, use_buffer)
 			geometry["signature"] = signature
 			_shrub_geometry_cache[individual_key] = geometry
 			computed_count += 1
 		else:
 			reused_count += 1
-		blob_transforms.append_array(geometry["blob_transforms"])
-		blob_colors.append_array(geometry["blob_colors"])
+		if use_buffer:
+			blob_buffer.append_array(geometry["blob_packed"])
+		else:
+			blob_transforms.append_array(geometry["blob_transforms"])
+			blob_colors.append_array(geometry["blob_colors"])
 		# YOUNG non produce mai bacche: il gate è già dentro "has_berries".
 		if geometry["has_berries"]:
 			_shrub_fruit_entries.append({
@@ -2942,8 +3191,17 @@ func _rebuild_shrub_multimeshes() -> void:
 				"density_scale": geometry["density_scale"], "size_multiplier": geometry["size_multiplier"],
 			})
 			if _fruit_stock_shows("berry", individual_key, geometry["jitter_pos"]):
-				berry_transforms.append_array(geometry["berry_transforms"])
+				if use_buffer:
+					berry_buffer.append_array(geometry["berry_packed"])
+				else:
+					berry_transforms.append_array(geometry["berry_transforms"])
 	last_geometry_stats["shrub"] = {"computed": computed_count, "reused": reused_count}
+
+	if use_buffer:
+		_apply_buffer(_shrub_multimesh, blob_buffer, BUFFER_STRIDE_TRANSFORM_COLOR)
+		_apply_buffer(_berry_multimesh, berry_buffer, BUFFER_STRIDE_TRANSFORM)
+		_shrub_fruit_entries_valid = true
+		return
 
 	_apply_transforms(_shrub_multimesh, blob_transforms)
 	for i in range(blob_colors.size()):
@@ -2954,7 +3212,8 @@ func _rebuild_shrub_multimeshes() -> void:
 
 
 # Geometria di un arbusto: le stesse formule della ricostruzione di prima del passo B (lobi con colore, bacche).
-func _compute_shrub_geometry(individual_key: Vector3i, lot_counts: Dictionary) -> Dictionary:
+# `packed_only`: stesso schema di _compute_tree_geometry (solo dati impacchettati col metodo a buffer).
+func _compute_shrub_geometry(individual_key: Vector3i, lot_counts: Dictionary, packed_only: bool = false) -> Dictionary:
 	var visual: Dictionary = _compute_shrub_visual(individual_key, lot_counts)
 	var jitter_pos: Vector2i = visual["jitter_pos"]
 	var center: Vector2 = visual["center"]
@@ -2982,11 +3241,20 @@ func _compute_shrub_geometry(individual_key: Vector3i, lot_counts: Dictionary) -
 
 	# YOUNG non produce mai bacche (production_coefficient_young = 0.0, stesso coefficiente usato dal calcolo calorico).
 	var has_berries: bool = visual["is_fruit_bearing"] and visual["age_band"] != GameTypes.AgeBand.YOUNG
-	return {
-		"blob_transforms": blob_transforms, "blob_colors": blob_colors, "has_berries": has_berries,
+	var berry_transforms: Array = _build_shrub_berry_transforms(jitter_pos, center, density_scale, size_multiplier) if has_berries else []
+	var geometry := {
+		"has_berries": has_berries,
 		"jitter_pos": jitter_pos, "center": center, "density_scale": density_scale, "size_multiplier": size_multiplier,
-		"berry_transforms": _build_shrub_berry_transforms(jitter_pos, center, density_scale, size_multiplier) if has_berries else [],
 	}
+	if packed_only:
+		# Dati impacchettati nel formato del buffer (passo 2): lobi con il loro colore (fisso, non stagionale), bacche.
+		geometry["blob_packed"] = _packed_transforms_with_colors(blob_transforms, blob_colors)
+		geometry["berry_packed"] = _packed_transforms(berry_transforms)
+	else:
+		geometry["blob_transforms"] = blob_transforms
+		geometry["blob_colors"] = blob_colors
+		geometry["berry_transforms"] = berry_transforms
+	return geometry
 
 
 # Bacche di un arbusto (estratta il 2026-10-03 da _rebuild_shrub_multimeshes, formula invariata, per riusarla nella
@@ -3017,6 +3285,14 @@ func _rebuild_shrub_fruit_multimesh() -> void:
 		_rebuild_shrub_multimeshes()
 		return
 	last_fruit_rebuild_paths["shrub"] = "solo frutti"
+	# Dalla memoria (2026-10-04): stesso schema degli alberi (_cached_shrub_berry_packed).
+	if _multimesh_buffer_layout_ok():
+		var berry_buffer := PackedFloat32Array()
+		for entry in _shrub_fruit_entries:
+			if _fruit_stock_shows("berry", entry["key"], entry["jitter_pos"]):
+				berry_buffer.append_array(_cached_shrub_berry_packed(entry))
+		_apply_buffer(_berry_multimesh, berry_buffer, BUFFER_STRIDE_TRANSFORM)
+		return
 	var berry_transforms: Array = []
 	for entry in _shrub_fruit_entries:
 		if _fruit_stock_shows("berry", entry["key"], entry["jitter_pos"]):
@@ -3024,6 +3300,16 @@ func _rebuild_shrub_fruit_multimesh() -> void:
 				entry["jitter_pos"], entry["center"], entry["density_scale"], entry["size_multiplier"]
 			))
 	_apply_transforms(_berry_multimesh, berry_transforms)
+
+
+# Bacche impacchettate di un arbusto: dalla geometria in memoria se esiste e ha gli stessi dati della voce (centro,
+# scala di densità, taglia, scostamento), altrimenti ricalcolate con la formula di sempre.
+func _cached_shrub_berry_packed(entry: Dictionary) -> PackedFloat32Array:
+	var geometry: Dictionary = _shrub_geometry_cache.get(entry["key"], {})
+	if geometry.has("berry_packed") and geometry["center"] == entry["center"] and geometry["density_scale"] == entry["density_scale"] \
+			and geometry["size_multiplier"] == entry["size_multiplier"] and geometry["jitter_pos"] == entry["jitter_pos"]:
+		return geometry["berry_packed"]
+	return _packed_transforms(_build_shrub_berry_transforms(entry["jitter_pos"], entry["center"], entry["density_scale"], entry["size_multiplier"]))
 
 
 # Disponibilità residua del LOTTO che ospita `individual_key`, PER RISORSA (2026-09-17, richiesta

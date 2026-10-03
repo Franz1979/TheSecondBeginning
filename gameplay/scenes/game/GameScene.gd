@@ -9370,6 +9370,7 @@ func _refresh_resource_visuals(cell: LiveMacroCell, reason: String = "") -> void
 		cell.last_render_vegetation_positions = null
 		cell.last_vegetation_rebuild_day = -1
 		cell.last_scattered_availability.clear()
+		cell.vegetation_presence_sent = false
 		# Posizioni rigenerate: nel dubbio la geometria in memoria del renderer si butta tutta (passo B, 2026-10-03).
 		if cell.renderer != null:
 			cell.renderer.clear_vegetation_geometry_cache()
@@ -9470,23 +9471,41 @@ func _refresh_resource_visuals(cell: LiveMacroCell, reason: String = "") -> void
 	# ~ogni 3 microcelle mentre si cammina): stesso flag già usato dai log gemelli [VEG REFRESH
 	# TRIGGER]/[VEG REFRESH TIMING] per lo stesso evento, così un solo interruttore silenzia o
 	# riattiva l'intero gruppo insieme.
+	# Fasi prima non misurate (2026-10-03, passo 2): stampe di debug dei conteggi, vegetazione sfocata della nebbia,
+	# ceppi e piante morte.
+	_step_start_usec = Time.get_ticks_usec()
 	if DebugLogging.SHOW_VEGETATION_REFRESH_TIMING_LOGS and not skip_vegetation:
 		_debug_print_individual_counts(cell, vegetation_positions, render_vegetation_positions)
 		_debug_print_dedicated_space(cell)
+		_veg_timings_ms["2b_debug_counts_print"] = (Time.get_ticks_usec() - _step_start_usec) / 1000.0
 	# FogOfWarRenderer disegna la vegetazione "sfocata" (Opzione B, vedi lì) sopra questa stessa
 	# vegetazione VERA — MicroCellRenderer non sa nulla del fog of war, mai più da quando abbiamo
 	# spostato l'Opzione B lì: il ritardo di aggiornamento a checkpoint qui non è un problema (solo
 	# "c'è vegetazione più o meno qui", non l'identità precisa, e le posizioni sono comunque stabili
 	# da un checkpoint all'altro), mentre FogOfWarRenderer resta reattivo giorno per giorno.
+	# Vegetazione sfocata della nebbia (2026-10-03, richiesta utente): dipende solo dalle posizioni NON filtrate
+	# (cached_vegetation_positions), che cambiano solo a una rigenerazione — il "dove" dei suggerimenti sfocati segue la
+	# visibilità per conto suo (FogOfWarRenderer._rebuild_hint_multimesh, rifatto dal fog of war quando cambiano le sue
+	# fasce). Con motivo movimento/nebbia e già inviata dopo l'ultima rigenerazione, si salta.
+	_step_start_usec = Time.get_ticks_usec()
 	if not skip_vegetation:
-		cell.fog_of_war_renderer.set_vegetation_presence(vegetation_positions)
+		if reason == "movimento/nebbia" and not regenerated_now and cell.vegetation_presence_sent:
+			skipped.append("fog_vegetation_presence")
+		else:
+			cell.fog_of_war_renderer.set_vegetation_presence(vegetation_positions)
+			cell.vegetation_presence_sent = true
+			_veg_timings_ms["2c_fog_vegetation_presence"] = (Time.get_ticks_usec() - _step_start_usec) / 1000.0
 	# PRIMA di qualunque altro setter che ricalcola i lotti vivi (set_*_subtypes/set_*_age_params
 	# sotto): quei rebuild leggono cut_positions/dead_positions per calcolare local_count
 	# (vivi+bloccati, vedi MicroCellRenderer._lot_extent_counts) — se arrivassero DOPO, userebbero
 	# ancora i valori dell'anno scorso per quei rebuild intermedi.
+	_step_start_usec = Time.get_ticks_usec()
+	# Ceppi e piante morte (2026-10-04): saltati con motivo movimento/nebbia se voci e conteggi dei loro lotti sono
+	# uguali all'ultima ricostruzione (MicroCellRenderer.set_cut_dead_positions).
 	if not skip_vegetation:
-		cell.renderer.set_cut_positions(_get_cut_positions(cell.macro_state))
-		cell.renderer.set_dead_positions(_get_dead_positions(cell.macro_state))
+		if not cell.renderer.set_cut_dead_positions(_get_cut_positions(cell.macro_state), _get_dead_positions(cell.macro_state), reason == "movimento/nebbia"):
+			skipped.append("cut_dead_markers")
+		_veg_timings_ms["2d_cut_dead_markers"] = (Time.get_ticks_usec() - _step_start_usec) / 1000.0
 
 	_step_start_usec = Time.get_ticks_usec()
 	var fish_positions: Array = []
@@ -9558,6 +9577,7 @@ func _refresh_resource_visuals(cell: LiveMacroCell, reason: String = "") -> void
 		for rebuilt_kind in cell.renderer.last_batch_timings_ms.keys():
 			_veg_timings_ms["6_rebuild_" + String(rebuilt_kind)] = cell.renderer.last_batch_timings_ms[rebuilt_kind]
 
+	_step_start_usec = Time.get_ticks_usec()
 	_invalidate_selected_vegetation_if_missing(cell)
 
 	if cell.macro_x == center_macro_coords.x and cell.macro_y == center_macro_coords.y:
@@ -9567,6 +9587,8 @@ func _refresh_resource_visuals(cell: LiveMacroCell, reason: String = "") -> void
 		# percorsa da qui, altrimenti un refresh arrivato da un'altra causa non "conterebbe" ai fini
 		# del trigger da movimento, che ritriggererebbe subito dopo inutilmente.
 		_last_vegetation_refresh_position = individual.position if individual != null else _last_vegetation_refresh_position
+	# Verifica della selezione e pannello (2026-10-03, passo 2: fase prima non misurata).
+	_veg_timings_ms["7_selection_panel"] = (Time.get_ticks_usec() - _step_start_usec) / 1000.0
 
 	if DebugLogging.SHOW_VEGETATION_REFRESH_TIMING_LOGS:
 		var total_ms: float = (Time.get_ticks_usec() - _refresh_total_start_usec) / 1000.0
@@ -9581,6 +9603,9 @@ func _refresh_resource_visuals(cell: LiveMacroCell, reason: String = "") -> void
 		# Cosa è stato saltato (passo 1): il totale sopra è il tempo del ridisegno, salti compresi.
 		if not skipped.is_empty():
 			parts.append("saltato=%s" % ", ".join(skipped))
+		# Metodo di rimontaggio di alberi e arbusti (passo 2): esito della verifica del formato del buffer.
+		if not skip_vegetation:
+			parts.append("buffer=%s" % MicroCellRenderer.buffer_mode_text())
 		# Individui ricalcolati / presi dalla memoria della geometria (passo B, 2026-10-03). Assenti se saltato.
 		if skip_vegetation:
 			cell.renderer.last_geometry_stats.clear()
