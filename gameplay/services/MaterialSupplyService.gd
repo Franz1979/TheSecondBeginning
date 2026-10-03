@@ -87,7 +87,8 @@ static func get_missing_materials(target_building: Building) -> Dictionary:
 #   {} se non manca nulla (o nulla è depositabile);
 #   altrimenti {"resource_name", "quantity", "source"} — quantity = min(mancante, BuildingStorageService.
 #   get_max_depositable), che il Retrieve limiterà poi allo zaino; source = magazzino più vicino con almeno un'unità
-#   (WarehouseSelectionService.find_source_for_retrieval), escludendo il bersaglio e tutte le workstation. source null
+#   (WarehouseSelectionService.find_source_for_retrieval), escludendo il bersaglio; da una workstation solo i suoi
+#   prodotti, mai i suoi ingredienti (2026-10-03, ProductionService.is_workstation_ingredient). source null
 #   = la risorsa manca ma nessuna sorgente la ha. Con più risorse mancanti vince la prima che ha una sorgente.
 # Combustibile (FUEL_KEY): sorgente = magazzino più vicino con almeno una risorsa con fuel_value > 0
 # (WarehouseSelectionService.FUEL_CRITERION); risorsa = quella con fuel_value più alto in quel magazzino; quantità =
@@ -112,7 +113,7 @@ static func get_supply_need(
 			if quantity <= 0:
 				continue
 			var source := WarehouseSelectionService.find_source_for_retrieval(
-				world, origin_position, origin_macro_coords, String(resource_name), excluded, 1, -1, reachable
+				world, origin_position, origin_macro_coords, String(resource_name), excluded, 1, -1, reachable, true
 			)
 			need = {"resource_name": String(resource_name), "quantity": quantity, "source": source}
 		if need["source"] != null:
@@ -129,7 +130,7 @@ static func _get_fuel_need(
 	excluded: Array[int], reachable: Callable
 ) -> Dictionary:
 	var source := WarehouseSelectionService.find_source_for_retrieval(
-		world, origin_position, origin_macro_coords, WarehouseSelectionService.FUEL_CRITERION, excluded, 1, -1, reachable
+		world, origin_position, origin_macro_coords, WarehouseSelectionService.FUEL_CRITERION, excluded, 1, -1, reachable, true
 	)
 	if source == null:
 		return {"resource_name": FUEL_KEY, "quantity": 0, "source": null}
@@ -149,7 +150,7 @@ static func _get_fuel_need(
 static func _best_fuel_in(building: Building) -> String:
 	var best_name := ""
 	var best_value := 0.0
-	for raw_name in WarehouseSelectionService.get_matching_stock(building, WarehouseSelectionService.FUEL_CRITERION).keys():
+	for raw_name in WarehouseSelectionService.get_matching_stock(building, WarehouseSelectionService.FUEL_CRITERION, 1, true).keys():
 		var candidate := String(raw_name)
 		var value := ProductionService.get_fuel_value(candidate)
 		if value > best_value or (value == best_value and best_name != "" and candidate < best_name):
@@ -158,13 +159,11 @@ static func _best_fuel_in(building: Building) -> String:
 	return best_name
 
 
-# Id esclusi come sorgente: il bersaglio stesso e ogni workstation (il loro storage serve alla produzione).
-static func _get_excluded_source_ids(world: World, target_building: Building) -> Array[int]:
-	var excluded: Array[int] = [target_building.id]
-	for building in world.buildings:
-		if building.rules != null and building.rules.is_workstation and not excluded.has(building.id):
-			excluded.append(building.id)
-	return excluded
+# Id esclusi come sorgente: il solo bersaglio. Le workstation non sono più escluse in blocco (2026-10-03, essiccazione
+# passo 3): sono sorgenti solo per i loro prodotti, filtro applicato dalla ricerca (find_source_for_retrieval con
+# workstation_products_only).
+static func _get_excluded_source_ids(_world: World, target_building: Building) -> Array[int]:
+	return [target_building.id]
 
 
 # ============================================================================================

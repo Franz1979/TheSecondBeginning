@@ -24,7 +24,9 @@ func trigger_events(world: World, game_data: GameData, season: GameTypes.Season)
 
 		var event_count := _roll_event_count(rules.base_probability_per_year)
 		if event_count <= 0:
-			print("[%s] anno=%d: nessun evento" % [GameTypes.NaturalEventType.keys()[event_type], game_data.year])
+			# Dietro SHOW_NATURAL_EVENT_NONE_LOGS (2026-10-03, riordino dei log).
+			if DebugLogging.ENABLED and DebugLogging.SHOW_NATURAL_EVENT_NONE_LOGS:
+				print("[%s] anno=%d: nessun evento" % [GameTypes.NaturalEventType.keys()[event_type], game_data.year])
 
 		for i in range(event_count):
 			var event := _create_event_instance(world, event_type, rules, game_data)

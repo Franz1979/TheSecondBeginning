@@ -167,8 +167,8 @@ func _on_day_advanced(_checkpoint_ran: bool, _animals_changed: bool) -> void:
 	# GroundPileService.advance_daily. I mucchi rimossi spariscono dalla mappa da soli (GameScene li
 	# riallinea ogni frame).
 	GroundPileService.advance_daily(_game_data)
-	# Raggio di influenza degli edifici (2026-10-02, passo 4c): decadimento giornaliero verso la base.
-	InfluenceService.advance_daily_decay(_world, _game_data)
+	# Punti di influenza degli edifici (2026-10-03, punti e soglie): perdita annua senza riti.
+	InfluenceService.advance_daily_neglected_rites(_world, _game_data)
 	# Decadimento giornaliero dei pensieri nelle idee non attive (2026-09-21, richiesta utente) —
 	# INCONDIZIONATO come gli altri _advance_daily_* sopra; IdeaDecayService agisce solo sulle voci
 	# scadute di Folk.idea_decay_due_day. Nessun refresh UI: il TechTreePanel ricalcola tutto ad ogni
@@ -809,8 +809,8 @@ func _run_annual_human_mortality_determination() -> void:
 	# DIAGNOSTICO TEMPORANEO (richiesta utente, 2026-09-05 — verifica numeri reali invece di
 	# continuare a supporre): stampa età/age_band/probabilità calcolata per OGNI individuo (non
 	# solo i marcati), PRIMA della determinazione vera e propria. Da rimuovere quando non serve
-	# più.
-	if DebugLogging.ENABLED:
+	# più. Dietro DEBUG_LOG_MORTALITY (2026-10-03, richiesta utente — riordino dei log): spento con il resto.
+	if DebugLogging.ENABLED and DEBUG_LOG_MORTALITY:
 		for individual in _human_individuals:
 			var age := _game_data.year - individual.birth_year_virtual
 			var age_band := HumanCalculator.get_age_band(durations_male, durations_female, individual.sex, float(age))

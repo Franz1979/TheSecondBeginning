@@ -54,6 +54,8 @@ const DEPOSIT_STORAGE_ICON_DRAW_METHODS := {
 	"meat": "_draw_deposit_storage_meat_icon",
 	"cooked_meat": "_draw_deposit_storage_cooked_meat_icon",
 	"hide": "_draw_deposit_storage_hide_icon",
+	"dried_meat": "_draw_deposit_storage_dried_meat_icon",
+	"dried_hide": "_draw_deposit_storage_dried_hide_icon",
 	"sinew": "_draw_deposit_storage_sinew_icon",
 	"bone": "_draw_deposit_storage_bone_icon",
 }
@@ -520,6 +522,16 @@ static func _draw_deposit_storage_cooked_meat_icon(canvas: CanvasItem, top_left:
 
 static func _draw_deposit_storage_hide_icon(canvas: CanvasItem, top_left: Vector2, side: float) -> void:
 	HideIcon.draw_into(canvas, top_left, Vector2(side, side))
+
+
+# Prodotti dell'essiccazione (2026-10-03, icone provvisorie): stessa geometria delle icone del pannello
+# (DriedMeatIcon/DriedHideIcon.draw_into).
+static func _draw_deposit_storage_dried_meat_icon(canvas: CanvasItem, top_left: Vector2, side: float) -> void:
+	DriedMeatIcon.draw_into(canvas, top_left, Vector2(side, side))
+
+
+static func _draw_deposit_storage_dried_hide_icon(canvas: CanvasItem, top_left: Vector2, side: float) -> void:
+	DriedHideIcon.draw_into(canvas, top_left, Vector2(side, side))
 
 
 static func _draw_deposit_storage_sinew_icon(canvas: CanvasItem, top_left: Vector2, side: float) -> void:

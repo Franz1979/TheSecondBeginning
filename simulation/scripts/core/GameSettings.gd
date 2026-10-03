@@ -74,6 +74,14 @@ var selected_macro_cell_x: int = -1
 var selected_macro_cell_y: int = -1
 var active_world: World = null
 var active_game_data: GameData = null
+# Il raggio effettivo di influenza di un edificio è cambiato di livello (2026-10-03, richiesta utente — punti e soglie):
+# emesso da InfluenceService (servizio statico, senza un nodo proprio da cui emettere), ascoltato da GameScene per il
+# popup. influence_type = InfluenceService.InfluenceType.
+signal influence_level_changed(building: Building, influence_type: int, old_radius: int, new_radius: int)
+# Una voce ad avanzamento automatico si è trasformata nel prodotto (2026-10-03, essiccazione passo 5): emesso da
+# ProductionService.advance_auto_progress (statico, stesso schema di influence_level_changed), ascoltato da GameScene per
+# il popup. `quantity` = unità del prodotto.
+signal auto_progress_completed(building: Building, input_name: String, product_name: String, quantity: int)
 # Canale di handoff per GameScene.fog_of_war_memories (Dictionary[Vector2i, FogOfWarMemory])
 # attraverso un giro andata-ritorno verso WorldScene/MacroCellScene (bottoni debug "🧍") — stesso
 # motivo di active_world/active_game_data sopra: change_scene_to_file distrugge l'intera istanza

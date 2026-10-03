@@ -9,5 +9,4 @@ display_name = "idea_agriculture"
 summary = "idea_agriculture_summary"
 description = "idea_agriculture_description"
 thoughts_cost = 100
-prerequisites = Array[String](["plant_lore"])
 era = "neolithic"

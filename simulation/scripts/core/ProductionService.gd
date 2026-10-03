@@ -55,7 +55,174 @@ static func can_produce_at(building: Building, resource_name: String) -> bool:
 	var recipe_rules := CaloricCalculator.get_caloric_source_rules(resource_name)
 	if recipe_rules == null:
 		return false
+	# Ricette ad avanzamento automatico (recipe_auto_progress_days > 0, 2026-10-03): non si ordinano con la Produce,
+	# escluse qui e quindi da ogni lettore delle ricette producibili (pannello, is_recipe_input_of/is_recipe_material,
+	# WarehouseSelectionService.find_nearest_recipe_workstation). Hanno un meccanismo proprio: vedi AVANZAMENTO
+	# AUTOMATICO sotto.
+	if recipe_rules.recipe_auto_progress_days > 0:
+		return false
 	return recipe_rules.recipe_workstation_types.has(building.building_type_name)
+
+
+# --- AVANZAMENTO AUTOMATICO (2026-10-03, richiesta utente — essiccazione, passo 2) ---
+# Una ricetta con recipe_auto_progress_days > 0 non passa dalla Produce (esclusa da can_produce_at sopra): i suoi
+# ingredienti, depositati nello storage normale di una postazione elencata in recipe_workstation_types, portano nella
+# propria voce di stored_resources una frazione AUTO_PROGRESS_KEY da 0 a 1. Sale ogni giorno di 1 /
+# recipe_auto_progress_days (advance_auto_progress, dal tick giornaliero degli edifici completi in WorldTimeService);
+# a 1 la voce diventa il prodotto (BuildingStorageService.transform_entry). Finché è in avanzamento non deperisce
+# (ResourceDecayService.advance_building_decay). Lo storage riservato agli ingredienti (BuildingRules.
+# storage_accepts_recipe_materials_only) accetta questi ingredienti (BuildingStorageService._free_storage_allows);
+# is_recipe_material/is_recipe_input_of non li contano, quindi la carne macellata va ancora al focolare.
+const AUTO_PROGRESS_KEY := "auto_progress"
+# Tolleranza sulla somma dei passi giornalieri (10 × 0.1 può dare 0.9999999).
+const AUTO_PROGRESS_EPSILON: float = 0.0001
+
+
+# Ricetta ad avanzamento automatico di `building` che ha `input_name` tra gli ingredienti, "" se nessuna. La prima
+# in ordine di nome se più d'una. Guarda solo il tipo dell'edificio (workstation elencata nella ricetta), non il suo
+# stato: completezza e demolizione le controlla chi chiama (il tick gira solo sugli edifici completi).
+static func get_auto_progress_recipe_for_input(building: Building, input_name: String) -> String:
+	if building == null or building.rules == null or not building.rules.is_workstation:
+		return ""
+	for recipe_name in CaloricCalculator.list_secondary_resource_names():
+		var recipe_rules := CaloricCalculator.get_caloric_source_rules(recipe_name)
+		if recipe_rules == null or recipe_rules.recipe_auto_progress_days <= 0:
+			continue
+		if recipe_rules.recipe_workstation_types.has(building.building_type_name) and recipe_rules.recipe_inputs.has(input_name):
+			return recipe_name
+	return ""
+
+
+# true se `resource_name` è ingrediente di una ricetta ad avanzamento automatico di `building`.
+static func is_auto_progress_input(building: Building, resource_name: String) -> bool:
+	return get_auto_progress_recipe_for_input(building, resource_name) != ""
+
+
+# Giorni mancanti alla trasformazione della voce `resource_name` di `building` (per eccesso), -1 se la voce non è in
+# avanzamento automatico.
+static func get_auto_progress_days_left(building: Building, resource_name: String) -> int:
+	var recipe_name := get_auto_progress_recipe_for_input(building, resource_name)
+	if recipe_name == "" or not building.stored_resources.has(resource_name):
+		return -1
+	var recipe_rules := CaloricCalculator.get_caloric_source_rules(recipe_name)
+	var progress: float = float((building.stored_resources[resource_name] as Dictionary).get(AUTO_PROGRESS_KEY, 0.0))
+	return maxi(int(ceil((1.0 - progress) * float(recipe_rules.recipe_auto_progress_days) - AUTO_PROGRESS_EPSILON)), 0)
+
+
+# Avanzamento giornaliero di ogni voce in avanzamento automatico di `building`; a frazione 1 la trasforma nel prodotto
+# della ricetta: cicli = quantità / unità dell'ingrediente per ciclo, prodotto = cicli × recipe_output_quantity, le
+# unità che non fanno un ciclo intero restano e ripartono da 0. Senza slot per il prodotto la voce resta a 1 e ritenta
+# il giorno dopo (push_warning).
+static func advance_auto_progress(building: Building) -> void:
+	if building == null or building.stored_resources.is_empty():
+		return
+	for input_name in building.stored_resources.keys().duplicate():
+		var recipe_name := get_auto_progress_recipe_for_input(building, String(input_name))
+		if recipe_name == "":
+			continue
+		var recipe_rules := CaloricCalculator.get_caloric_source_rules(recipe_name)
+		var entry: Dictionary = building.stored_resources[input_name]
+		var progress: float = minf(float(entry.get(AUTO_PROGRESS_KEY, 0.0)) + 1.0 / float(recipe_rules.recipe_auto_progress_days), 1.0)
+		entry[AUTO_PROGRESS_KEY] = progress
+		if progress < 1.0 - AUTO_PROGRESS_EPSILON:
+			continue
+		var quantity: int = int(entry.get("quantity", 0))
+		var per_cycle: int = maxi(int(recipe_rules.recipe_inputs[input_name]), 1)
+		var cycles: int = quantity / per_cycle
+		if cycles <= 0:
+			continue
+		var produced: int = cycles * maxi(recipe_rules.recipe_output_quantity, 0)
+		if not BuildingStorageService.transform_entry(building, String(input_name), quantity - cycles * per_cycle, recipe_name, produced):
+			push_warning("ProductionService: %s #%d — %d %s pronti ma nessuno slot per %d %s, trasformazione rimandata." % [
+				building.building_type_name, building.id, quantity, input_name, produced, recipe_name
+			])
+		else:
+			if DebugLogging.ENABLED and DebugLogging.SHOW_AUTO_PROGRESS_LOGS:
+				print("[DRYING] %s #%d: %d %s -> %d %s." % [
+					building.building_type_name, building.id, cycles * per_cycle, input_name, produced, recipe_name
+				])
+			# Avviso al giocatore (2026-10-03, essiccazione passo 5): popup in GameScene.
+			GameSettings.auto_progress_completed.emit(building, String(input_name), recipe_name, produced)
+
+
+# true se `building` è una workstation le cui ricette (quelle che elencano il suo tipo) sono TUTTE ad avanzamento
+# automatico, e ce n'è almeno una (2026-10-03 — oggi l'essiccatoio). Il pannello edificio mostra allora le voci in
+# avanzamento al posto delle sezioni della produzione con lavoratore.
+static func has_only_auto_progress_recipes(building: Building) -> bool:
+	if building == null or building.rules == null or not building.rules.is_workstation:
+		return false
+	var found := false
+	for recipe_name in CaloricCalculator.list_secondary_resource_names():
+		var recipe_rules := CaloricCalculator.get_caloric_source_rules(recipe_name)
+		if recipe_rules == null or not recipe_rules.recipe_workstation_types.has(building.building_type_name):
+			continue
+		if recipe_rules.recipe_auto_progress_days <= 0:
+			return false
+		found = true
+	return found
+
+
+# --- INGREDIENTI E PRODOTTI DI UNA POSTAZIONE (2026-10-03, richiesta utente — essiccazione passo 3) ---
+# Criterio UNICO per i rifornimenti automatici (MaterialSupplyService via WarehouseSelectionService) e per i gruppi
+# della scelta del giocatore (GameScene): in una workstation una risorsa è
+# INGREDIENTE se è materiale (recipe_inputs) o combustibile (fuel_value > 0 con recipe_fuel_required > 0) di almeno
+# una ricetta che elenca quel TIPO di edificio in recipe_workstation_types, ricette ad avanzamento automatico comprese
+# — indipendente dallo stato dell'edificio e dagli ordini in corso. Qualunque altra risorsa presente lì, nello storage
+# o nel buffer di uscita, è PRODOTTO. Una risorsa che è sia prodotto sia ingrediente di un'altra ricetta dello stesso
+# edificio conta come ingrediente. Un edificio che non è una workstation non ha ingredienti.
+static func is_workstation_ingredient(building: Building, resource_name: String) -> bool:
+	if building == null or building.rules == null or not building.rules.is_workstation:
+		return false
+	var is_fuel := get_fuel_value(resource_name) > 0.0
+	for recipe_name in CaloricCalculator.list_secondary_resource_names():
+		var recipe_rules := CaloricCalculator.get_caloric_source_rules(recipe_name)
+		if recipe_rules == null or not recipe_rules.recipe_workstation_types.has(building.building_type_name):
+			continue
+		if recipe_rules.recipe_inputs.has(resource_name):
+			return true
+		if is_fuel and recipe_rules.recipe_fuel_required > 0.0:
+			return true
+	return false
+
+
+# Prodotti di una workstation che stanno nel suo STORAGE (stored_resources, non il buffer): {nome: quantità}. Vuoto
+# per un edificio che non è una workstation.
+static func get_stored_product_quantities(building: Building) -> Dictionary:
+	var products: Dictionary = {}
+	if building == null or building.rules == null or not building.rules.is_workstation:
+		return products
+	for resource_name in building.stored_resources.keys():
+		var quantity: int = int((building.stored_resources[resource_name] as Dictionary).get("quantity", 0))
+		if quantity > 0 and not is_workstation_ingredient(building, String(resource_name)):
+			products[String(resource_name)] = quantity
+	return products
+
+
+# Ingredienti di una workstation che stanno nel suo storage: {nome: quantità} (il complemento di
+# get_stored_product_quantities). Per un edificio che non è una workstation, tutto lo storage.
+static func get_stored_ingredient_quantities(building: Building) -> Dictionary:
+	var ingredients: Dictionary = {}
+	if building == null:
+		return ingredients
+	var products := get_stored_product_quantities(building)
+	for resource_name in building.stored_resources.keys():
+		var quantity: int = int((building.stored_resources[resource_name] as Dictionary).get("quantity", 0))
+		if quantity > 0 and not products.has(String(resource_name)):
+			ingredients[String(resource_name)] = quantity
+	return ingredients
+
+
+# Gruppo "Prodotti" della scelta del giocatore su una workstation: l'intero buffer di uscita più i prodotti nello
+# storage (get_stored_product_quantities), sommati per risorsa. {nome: quantità}.
+static func get_all_products_quantities(building: Building) -> Dictionary:
+	var products := get_stored_product_quantities(building)
+	if building == null:
+		return products
+	for output_name in building.production_output.keys():
+		var buffered: int = int(building.production_output[output_name])
+		if buffered > 0:
+			products[String(output_name)] = int(products.get(String(output_name), 0)) + buffered
+	return products
 
 
 # Nomi delle risorse producibili presso `building` (ordine di list_secondary_resource_names). Vuoto se

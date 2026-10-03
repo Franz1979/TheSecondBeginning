@@ -43,4 +43,11 @@ enum NotificationPopupType {
 	# Evento casuale (2026-09-26, richiesta utente — gameplay/events/): stile di default, non di allarme, come le
 	# nascite. Aggiunto IN CODA.
 	RANDOM_EVENT,
+	# Il raggio religioso di un edificio sale o scende di livello (2026-10-03, richiesta utente — punti e soglie,
+	# InfluenceService): stile di default. Aggiunto IN CODA.
+	INFLUENCE_LEVEL_CHANGED,
+	# Essiccazione (2026-10-03, essiccazione passo 5): prodotto pronto (stile di default) ed essiccatoio pieno con
+	# ripiego sul magazzino (stile "alert" giallo). Aggiunti IN CODA.
+	AUTO_PROGRESS_COMPLETED,
+	DRYING_RACK_FULL,
 }

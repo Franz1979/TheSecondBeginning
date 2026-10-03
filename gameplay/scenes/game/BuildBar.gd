@@ -73,6 +73,11 @@ const BUILDING_SLOT_INDEX_BY_TYPE := {
 enum _ViewState { MINIMIZED, LEVEL_1, LEVEL_2 }
 
 var _state: _ViewState = _ViewState.LEVEL_1
+# Riga di titolo (2026-10-03, richiesta utente — stessa altezza della barra dei comandi): etichetta piccola sopra i
+# pulsanti, stesso stile di "Azioni"/"Opzioni" (CommandBar.make_group_label). "Costruzione" a barra chiusa o al primo
+# livello, "Edifici" nel sottomenu, "Zone di lavoro" mentre si disegna una zona (set_work_areas_mode, da GameScene).
+var _title_label: Label = null
+var _work_areas_mode: bool = false
 
 
 func _ready() -> void:
@@ -123,7 +128,11 @@ func _ready() -> void:
 	# _refresh_building_slots_buildable lo conferma sempre disponibile senza bisogno di un caso
 	# speciale qui, stesso principio già valido per deposit_site. Slot 2 (scambiata con Hut,
 	# richiesta utente 2026-09-12 — "inverti la tenda con hut").
-	submenu_row.configure_slot(2, IconRegistry.get_building_icon("stick_tent"), tr("build_bar_stick_tent_tooltip"), &"build_stick_tent")
+	# Icona disegnata (2026-10-03, TentShapes) al posto dell'emoji ⛺.
+	submenu_row.configure_slot(
+		2, "", tr("build_bar_stick_tent_tooltip"), &"build_stick_tent", "", true,
+		IconRegistry.get_building_icon_node("stick_tent")
+	)
 	# Terreno in terra battuta (2026-09-19, richiesta utente) — slot 3, sempre abilitato di default
 	# (nessun required_idea_id/is_village_center in dirt_ground.tres), stesso principio degli altri.
 	submenu_row.configure_slot(
@@ -145,14 +154,53 @@ func _ready() -> void:
 		)
 	# Tenda di pelli (2026-09-27, richiesta utente): richiede paleolithic_constructions (required_idea_id in
 	# hide_tent.tres), disabilitata da GameScene._refresh_building_slots_buildable finché manca.
-	submenu_row.configure_slot(BUILDING_SLOT_INDEX_BY_TYPE["hide_tent"], IconRegistry.get_building_icon("hide_tent"), tr("build_bar_hide_tent_tooltip"), &"build_hide_tent")
+	submenu_row.configure_slot(
+		BUILDING_SLOT_INDEX_BY_TYPE["hide_tent"], "", tr("build_bar_hide_tent_tooltip"), &"build_hide_tent", "", true,
+		IconRegistry.get_building_icon_node("hide_tent")
+	)
 	submenu_row.configure_slot(BUILDING_SLOT_INDEX_BY_TYPE["hut"], IconRegistry.get_building_icon("hut"), tr("build_bar_hut_tooltip"), &"build_hut")
 	main_row.action_pressed.connect(_on_main_row_action_pressed)
 	control_button.pressed.connect(_on_control_button_pressed)
+	_build_title_row()
 	_apply_state()
 
 
-# true se la barra è aperta sugli edifici (livello 2) — GameScene._sync_command_bar nasconde allora i comandi.
+# Mette la riga dei pulsanti sotto un'etichetta di titolo, con la stessa separazione dei gruppi della barra dei comandi:
+# a parità di margini le due barre hanno la stessa altezza e i pulsanti la stessa linea di base.
+func _build_title_row() -> void:
+	var margin: MarginContainer = $Panel/MarginContainer
+	var buttons_row: HBoxContainer = $Panel/MarginContainer/HBoxContainer
+	var column := VBoxContainer.new()
+	column.add_theme_constant_override("separation", CommandBar.GROUP_LABEL_SEPARATION)
+	_title_label = CommandBar.make_group_label("")
+	margin.remove_child(buttons_row)
+	margin.add_child(column)
+	column.add_child(_title_label)
+	column.add_child(buttons_row)
+
+
+# Strumento delle zone di lavoro in uso (disegno di una zona): titolo "Zone di lavoro". Chiamata a ogni frame da
+# GameScene._sync_command_bar; aggiorna solo quando cambia.
+func set_work_areas_mode(active: bool) -> void:
+	if _work_areas_mode == active:
+		return
+	_work_areas_mode = active
+	_refresh_title()
+
+
+func _refresh_title() -> void:
+	if _title_label == null:
+		return
+	if _work_areas_mode:
+		_title_label.text = tr("build_bar_title_work_areas")
+	elif _state == _ViewState.LEVEL_2:
+		_title_label.text = tr("build_bar_title_buildings")
+	else:
+		_title_label.text = tr("build_bar_title_build")
+
+
+# true se la barra è aperta sugli edifici (livello 2). Dal 2026-10-03 i comandi del pipottino restano visibili anche
+# così (GameScene._sync_command_bar).
 func is_build_menu_open() -> bool:
 	return _state == _ViewState.LEVEL_2
 
@@ -228,3 +276,4 @@ func _apply_state() -> void:
 			control_button.text = "▼"
 		_ViewState.LEVEL_2:
 			control_button.text = "←"
+	_refresh_title()

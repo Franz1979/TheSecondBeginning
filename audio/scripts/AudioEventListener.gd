@@ -20,6 +20,8 @@ func _ready() -> void:
 	var game_scene := get_parent()
 	if game_scene.has_signal(&"idea_bulb_shown"):
 		game_scene.idea_bulb_shown.connect(_on_idea_bulb_shown)
+	if game_scene.has_signal(&"rite_effect_shown"):
+		game_scene.rite_effect_shown.connect(_on_rite_effect_shown)
 	if game_scene.has_signal(&"world_object_selected"):
 		game_scene.world_object_selected.connect(_on_world_object_selected)
 	_connect_buttons_in(game_scene)
@@ -34,6 +36,11 @@ func _exit_tree() -> void:
 # Lampadina del daydreaming comparsa sopra l'individuo: suono posizionale nel suo punto.
 func _on_idea_bulb_shown(global_pos: Vector2) -> void:
 	AudioManager.play_event(&"idea_completed", global_pos)
+
+
+# Rito concluso, icona comparsa sull'edificio (2026-10-03): campana posizionale nel punto dell'edificio.
+func _on_rite_effect_shown(global_pos: Vector2) -> void:
+	AudioManager.play_event(&"rite_completed", global_pos)
 
 
 # Oggetto del mondo selezionato con un click: suono di selezione nel punto del click.

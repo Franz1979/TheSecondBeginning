@@ -99,8 +99,11 @@ idea_drying_description,"Stesa al sole e al vento su un graticcio, la carne si c
 idea_smoking,Affumicatura
 idea_smoking_summary,Permette di costruire l'affumicatoio.
 idea_smoking_description,"Il fumo lento di un fuoco coperto conserva la carne e le dà sapore."
-idea_plant_lore_summary,Permette di riconoscere le erbe medicinali.
-idea_plant_lore_description,"Osservando le piante, il gruppo impara quali curano e dove trovarle."
+idea_plant_lore_summary,Il gruppo impara a riconoscere le erbe medicinali.
+idea_plant_lore_description,"Osservando le piante, il gruppo impara a distinguere le erbe medicinali e a trovarle. Ora si possono raccogliere, ma nessuno sa ancora come usarle."
+idea_herbal_medicine,Uso medicinale delle piante
+idea_herbal_medicine_summary,Il gruppo impara a usare le erbe medicinali per curarsi.
+idea_herbal_medicine_description,"Provando e riprovando, il gruppo scopre come preparare le erbe medicinali per curare ferite e malanni."
 idea_work_areas_summary,Sblocca le aree di raccolta del cibo.
 idea_work_areas_description,Il gruppo impara a delimitare zone in cui raccogliere il cibo.
 idea_work_areas_advanced_summary,Sblocca le aree di lavoro per tutte le risorse.
@@ -295,8 +298,6 @@ transport_dialog_title,Trasporta risorsa
 transport_dialog_message,Scegli cosa prelevare da {building}:
 transport_dialog_group_products,Prodotti
 transport_dialog_group_delivered,Materiali consegnati
-transport_dialog_take_all_products,Prendi tutti i prodotti ({quantity})
-transport_all_products_activity,tutti i prodotti
 transport_dialog_quantity_label,Quantità:
 transport_dialog_confirm,Conferma
 transport_dialog_cancel,Annulla
@@ -330,6 +331,8 @@ carried_resource_tooltip_bone_awl,Punteruolo d'osso
 carried_resource_tooltip_hide_bag,Sacca di pelle
 carried_resource_tooltip_meat,Carne cruda
 carried_resource_tooltip_cooked_meat,Carne cotta
+carried_resource_tooltip_dried_meat,Carne essiccata
+carried_resource_tooltip_dried_hide,Pelle essiccata
 carried_resource_tooltip_hide,Pelle
 carried_resource_tooltip_sinew,Tendini
 carried_resource_tooltip_bone,Ossa
@@ -340,6 +343,25 @@ microcell_inspection_empty,Cella senza risorse.
 microcell_inspection_building_occupied,Cella occupata da un edificio — click singolo per i dettagli
 microcell_inspection_resources_header,Risorse raccoglibili:
 microcell_inspection_resource_line,- {resource}: {quantity}
+microcell_inspection_unknown_resource,- Risorsa sconosciuta
+storage_slot_auto_progress_tooltip,Pronto tra {days} giorni
+hunt_destination_caption,Destinazione
+hunt_destination_campfire,Focolare
+hunt_destination_drying_rack,Essiccatoio
+hunt_destination_smokehouse,Affumicatoio
+hunt_destination_warehouse,Magazzino
+hunt_destination_not_yet_available,Non ancora disponibile
+hunt_destination_requires_idea,Richiede: {idea}
+hunt_destination_no_building,Nessun {building} costruito
+command_bar_butcher_destination_tooltip,Destinazione dei prodotti della caccia: {name}
+command_bar_group_actions,Azioni
+command_bar_group_options,Opzioni
+build_bar_title_build,Costruzione
+build_bar_title_buildings,Edifici
+build_bar_title_work_areas,Zone di lavoro
+building_auto_progress_line,"In essiccazione: {resource} ×{quantity}, pronta tra {days} giorni"
+building_auto_progress_line_ready,"In essiccazione: {resource} ×{quantity}, pronta (in attesa di spazio)"
+building_auto_progress_none,In essiccazione: nulla
 microcell_inspection_vegetation_header,Vegetazione presente:
 microcell_inspection_tree,Alberi
 microcell_inspection_shrub,Arbusti
@@ -395,8 +417,14 @@ building_influence_political_tooltip,"Influenza politica: raggio {radius}"
 building_influence_political_none_tooltip,Nessuna influenza politica
 building_influence_cultural_tooltip,"Influenza culturale: raggio {radius}"
 building_influence_cultural_none_tooltip,Nessuna influenza culturale
-building_influence_religious_tooltip,"Influenza religiosa: raggio {radius}"
+building_influence_religious_tooltip,"Influenza religiosa: raggio {radius} · Sacralità {points} / {next}"
 building_influence_religious_none_tooltip,Nessuna influenza religiosa
+building_influence_religious_max_tooltip,"Influenza religiosa: raggio {radius} · Sacralità {points}"
+building_influence_no_rite_tooltip,Nessun rito da oltre un anno: −{loss} sacralità all'anno
+notification_influence_religious_level_up,"{building}: l'influenza religiosa sale a raggio {radius}."
+notification_influence_religious_level_down,"{building}: l'influenza religiosa scende a raggio {radius}."
+notification_auto_progress_completed,{building}: {resource} ×{quantity} pronta
+notification_drying_rack_full,{building} pieno: {resource} portata in magazzino
 building_cancel_site_button,Annulla cantiere
 building_assign_demolisher_button,Assegna demolitore
 building_cancel_demolition_button,Annulla demolizione
@@ -519,7 +547,6 @@ task_activity_demolish,demolire
 task_activity_equip_tool,prendere un attrezzo
 task_activity_store_tool,riporre un attrezzo
 task_reject_transport_not_needed,{name} non può trasportare: {building} non ha bisogno di {resource}.
-task_reject_transport_no_products,{name} non può trasportare: {building} non ha prodotti da ritirare.
 tool_equip_no_source,Nessun magazzino raggiungibile ha {tool}
 tool_category_hunting,caccia
 tool_category_cutting,taglio

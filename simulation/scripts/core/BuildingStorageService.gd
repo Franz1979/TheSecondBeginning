@@ -272,15 +272,20 @@ static func get_slot_breakdown(building: Building) -> Array:
 			continue
 		var space_per_unit: float = resource_rules.space_per_unit
 		var units_per_slot := _units_per_slot(building, space_per_unit)
+		var auto_days_left := ProductionService.get_auto_progress_days_left(building, String(resource_name))
 		var remaining: int = quantity
 		while remaining > 0:
 			var quantity_in_slot: int = min(remaining, units_per_slot) if units_per_slot > 0 else remaining
-			slots.append({
+			var slot := {
 				"resource_name": String(resource_name),
 				"quantity": quantity_in_slot,
 				"space_used": int(round(float(quantity_in_slot) * space_per_unit)),
 				"space_capacity": slot_capacity_space,
-			})
+			}
+			# Giorni mancanti all'avanzamento automatico (2026-10-03, essiccazione passo 2), per il pannello.
+			if auto_days_left >= 0:
+				slot["auto_days_left"] = auto_days_left
+			slots.append(slot)
 			remaining -= quantity_in_slot
 	return slots
 
@@ -327,8 +332,22 @@ static func store(building: Building, resource_name: String, quantity: int, deca
 			float(current_quantity) * current_decay_fraction + float(deposit_amount) * decay_fraction
 		) / float(new_quantity)
 
+	# Avanzamento automatico (2026-10-03, essiccazione passo 2): un ingrediente di una ricetta ad avanzamento
+	# automatico di questo edificio porta la propria frazione, media pesata con le unità nuove a 0 (stesso principio
+	# di decay_fraction sopra). Per ogni altra risorsa la chiave resta assente.
+	var new_auto_progress: float = -1.0
+	var current_auto_progress: float = 0.0
+	if ProductionService.is_auto_progress_input(building, resource_name):
+		current_auto_progress = float(existing_entry.get(ProductionService.AUTO_PROGRESS_KEY, 0.0))
+		new_auto_progress = float(current_quantity) * current_auto_progress / float(new_quantity)
+
 	# Pezzi NUOVI: si sommano a quantity, le eventuali istanze usate già presenti restano (attrezzi).
-	_write_entry(building, resource_name, new_quantity, new_decay_fraction, ToolInstance.get_used_instances(existing_entry))
+	_write_entry(building, resource_name, new_quantity, new_decay_fraction, ToolInstance.get_used_instances(existing_entry), new_auto_progress)
+	if new_auto_progress >= 0.0 and DebugLogging.ENABLED and DebugLogging.SHOW_AUTO_PROGRESS_LOGS:
+		print("[DRYING] %s #%d: +%d %s (totale %d), avanzamento %.2f -> %.2f, pronto tra %d giorni." % [
+			building.building_type_name, building.id, deposit_amount, resource_name, new_quantity,
+			current_auto_progress, new_auto_progress, ProductionService.get_auto_progress_days_left(building, resource_name)
+		])
 	return deposit_amount
 
 
@@ -394,13 +413,49 @@ static func withdraw_tool_units(building: Building, resource_name: String, quant
 
 # Unico punto che (ri)scrive una voce di stored_resources con quantità e decay: quantità 0 = voce
 # rimossa; "used_instances" scritta solo se non vuota, così una voce senza istanze resta nel formato di sempre.
-static func _write_entry(building: Building, resource_name: String, quantity: int, decay_fraction: float, used_instances: Array) -> void:
+# `auto_progress` (2026-10-03, essiccazione passo 2): frazione di avanzamento automatico (ProductionService.
+# AUTO_PROGRESS_KEY), scritta solo se >= 0; -1 = chiave assente, il formato di sempre.
+static func _write_entry(building: Building, resource_name: String, quantity: int, decay_fraction: float, used_instances: Array, auto_progress: float = -1.0) -> void:
 	if quantity <= 0:
 		building.stored_resources.erase(resource_name)
 		return
 	var entry: Dictionary = {"quantity": quantity, "decay_fraction": decay_fraction}
 	ToolInstance.set_used_instances(entry, used_instances)
+	if auto_progress >= 0.0:
+		entry[ProductionService.AUTO_PROGRESS_KEY] = auto_progress
 	building.stored_resources[resource_name] = entry
+
+
+# Trasformazione di un avanzamento automatico concluso (2026-10-03, essiccazione passo 2 — ProductionService.
+# advance_auto_progress): la voce `input_name` scende a `input_left` unità (frazione ripartita da 0) e
+# `product_quantity` unità di `product_name` entrano nello STESSO storage, a deperimento 0, unite all'eventuale voce
+# già presente con la media pesata di store(). Scrittura diretta, senza can_accept: il prodotto non è accettato
+# dall'esterno (storage riservato agli ingredienti), ma nasce qui. Controlla solo gli slot: false (nulla cambia) se
+# dopo la trasformazione le risorse occuperebbero più di storage_slot_count slot.
+static func transform_entry(building: Building, input_name: String, input_left: int, product_name: String, product_quantity: int) -> bool:
+	if building == null or building.rules == null or product_quantity <= 0:
+		return false
+	var input_rules := CaloricCalculator.get_caloric_source_rules(input_name)
+	var product_rules := CaloricCalculator.get_caloric_source_rules(product_name)
+	if input_rules == null or product_rules == null:
+		return false
+	var input_entry: Dictionary = building.stored_resources.get(input_name, {})
+	var product_entry: Dictionary = building.stored_resources.get(product_name, {})
+	var input_units_per_slot := _units_per_slot(building, input_rules.space_per_unit)
+	var product_units_per_slot := _units_per_slot(building, product_rules.space_per_unit)
+	var product_current: int = int(product_entry.get("quantity", 0))
+	var slots_by_others: int = get_slots_used(building) \
+		- _slots_for_quantity(int(input_entry.get("quantity", 0)), input_units_per_slot) \
+		- _slots_for_quantity(product_current, product_units_per_slot)
+	var slots_after: int = slots_by_others + _slots_for_quantity(maxi(input_left, 0), input_units_per_slot) \
+		+ _slots_for_quantity(product_current + product_quantity, product_units_per_slot)
+	if slots_after > building.rules.storage_slot_count:
+		return false
+	_write_entry(building, input_name, maxi(input_left, 0), float(input_entry.get("decay_fraction", 0.0)), [], 0.0)
+	var product_total: int = product_current + product_quantity
+	var product_decay: float = float(product_current) * float(product_entry.get("decay_fraction", 0.0)) / float(product_total)
+	_write_entry(building, product_name, product_total, product_decay, ToolInstance.get_used_instances(product_entry))
+	return true
 
 
 # Prelievo di un attrezzo dal SOLO stored_resources (ToolInstance.take_units_from_entry: prima le istanze
@@ -512,7 +567,10 @@ static func _production_quota(building: Building, resource_name: String) -> int:
 #     (Building.enabled_categories con restricts_categories, salvo categories_locked).
 static func _free_storage_allows(building: Building, resource_name: String, resource_rules: SecondaryResourceRules) -> bool:
 	if building.rules.storage_accepts_recipe_materials_only:
-		if not ProductionService.is_recipe_material(building, resource_name):
+		# Anche gli ingredienti delle ricette ad avanzamento automatico (2026-10-03, essiccazione passo 2): escluse da
+		# is_recipe_material (che segue le ricette ordinabili con la Produce), valgono qui per lo storage riservato.
+		if not ProductionService.is_recipe_material(building, resource_name) \
+				and not ProductionService.is_auto_progress_input(building, resource_name):
 			return false
 	elif ProductionService.is_production_demand(building, resource_name):
 		return false
@@ -591,8 +649,10 @@ static func withdraw_stored(building: Building, resource_name: String, quantity_
 		return 0
 
 	var withdrawn: int = min(quantity_requested, current_quantity)
+	# La frazione di avanzamento automatico, se c'è, resta alle unità rimaste (2026-10-03).
 	_write_entry(
 		building, resource_name, current_quantity - withdrawn,
-		float(existing_entry.get("decay_fraction", 0.0)), []
+		float(existing_entry.get("decay_fraction", 0.0)), [],
+		float(existing_entry.get(ProductionService.AUTO_PROGRESS_KEY, -1.0))
 	)
 	return withdrawn

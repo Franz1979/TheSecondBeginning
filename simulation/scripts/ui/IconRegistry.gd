@@ -97,6 +97,9 @@ const RESOURCE_ICON_NODES := {
 	# "cooked_meat" (2026-09-26, richiesta utente — icona provvisoria): vedi CookedMeatIcon.gd.
 	"cooked_meat": preload("res://simulation/scripts/ui/CookedMeatIcon.gd"),
 	"hide": preload("res://simulation/scripts/ui/HideIcon.gd"),
+	# Prodotti dell'essiccazione (2026-10-03, richiesta utente — icone provvisorie): vedi DriedMeatIcon.gd/DriedHideIcon.gd.
+	"dried_meat": preload("res://simulation/scripts/ui/DriedMeatIcon.gd"),
+	"dried_hide": preload("res://simulation/scripts/ui/DriedHideIcon.gd"),
 	"sinew": preload("res://simulation/scripts/ui/SinewIcon.gd"),
 	"bone": preload("res://simulation/scripts/ui/BoneIcon.gd"),
 }
@@ -148,6 +151,10 @@ const BUILDING_ICONS := {
 # ora (vedi commento su BUILDING_ICONS sopra per il perché non ha un'icona emoji).
 const BUILDING_ICON_NODES := {
 	"pebble_circle": preload("res://simulation/scripts/ui/PebbleCircleIcon.gd"),
+	# Tende (2026-10-03, richiesta utente): icone disegnate con lo stesso disegno della mappa (TentShapes), al posto
+	# dell'emoji ⛺ condivisa — vedi HideTentIcon.gd/StickTentIcon.gd.
+	"hide_tent": preload("res://simulation/scripts/ui/HideTentIcon.gd"),
+	"stick_tent": preload("res://simulation/scripts/ui/StickTentIcon.gd"),
 	# "deposit_site" (2026-09-19, richiesta utente): stessa sagoma, riempimento e bordo dell'edificio
 	# piazzato (DepositSiteShape) + un mucchio di tre sacchi di iuta che la distingue dalla terra
 	# battuta — vedi DepositSiteIcon.
@@ -246,6 +253,28 @@ static func get_building_icon_node(building_type_name: String) -> Control:
 	if not BUILDING_ICON_NODES.has(building_type_name):
 		return null
 	return BUILDING_ICON_NODES[building_type_name].new()
+
+
+# Icona dell'edificio in un riquadro quadrato di lato `side` (2026-10-03 — destinazione della caccia, dialog della caccia
+# a zone e barra dei comandi): quella disegnata se c'è (get_building_icon_node), altrimenti l'emoji. Ignora il mouse.
+static func build_building_icon_box(building_type_name: String, side: float) -> Control:
+	var box := Control.new()
+	box.custom_minimum_size = Vector2(side, side)
+	box.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var icon_node := get_building_icon_node(building_type_name)
+	if icon_node != null:
+		icon_node.set_anchors_preset(Control.PRESET_FULL_RECT)
+		icon_node.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		box.add_child(icon_node)
+	else:
+		var label := Label.new()
+		label.text = get_building_icon(building_type_name)
+		label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		label.set_anchors_preset(Control.PRESET_FULL_RECT)
+		box.add_child(label)
+	return box
 
 
 # "" se command_icon_key non ha un'icona registrata — il chiamante (GameScene._spawn_command_blink_

@@ -87,6 +87,8 @@ func load_game_from_json(file_path: String) -> LoadedGame:
 	# GameData) — "paleolithic"/[] sono gli stessi default della classe (cache vuota finché nessuno
 	# ha mai chiamato set_current_era, esattamente come una partita nuova oggi).
 	game_data.current_era_name = String(data["game"].get("current_era_name", "paleolithic"))
+	# Ultima destinazione della macellazione (2026-10-03): "" (mai scelta) nei salvataggi precedenti.
+	game_data.last_butcher_destination = String(data["game"].get("last_butcher_destination", ""))
 	game_data.era_effective_age_band_durations_male = _float_array_from_json(
 		data["game"].get("era_effective_age_band_durations_male", [])
 	)
@@ -549,15 +551,21 @@ func load_game_from_json(file_path: String) -> LoadedGame:
 			building.is_marked_for_demolition = bool(building_data.get("is_marked_for_demolition", false))
 			building.current_durability = int(building_data.get("current_durability", 0))
 			building.built_year = int(building_data.get("built_year", -1))
-			# Raggio di influenza corrente (2026-10-02, passo 4c): assente nei salvataggi vecchi = raggio base (voce vuota).
-			# JSON salva le chiavi come stringhe: riportate a int (InfluenceService.InfluenceType).
+			# Punti di influenza e giorno dell'ultimo guadagno (2026-10-03, punti e soglie): assenti nei salvataggi vecchi
+			# = punti 0 (il vecchio "influence_radius" del passo 4c è ignorato). JSON salva le chiavi come stringhe:
+			# riportate a int (InfluenceService.InfluenceType).
 			# Ultimo rito celebrato qui (2026-10-02): -1 (mai) per i salvataggi precedenti.
 			building.last_rite_absolute_day = int(building_data.get("last_rite_absolute_day", -1))
-			building.influence_radius = {}
-			var saved_influence_radius: Variant = building_data.get("influence_radius", {})
-			if saved_influence_radius is Dictionary:
-				for influence_key in (saved_influence_radius as Dictionary).keys():
-					building.influence_radius[int(influence_key)] = float(saved_influence_radius[influence_key])
+			building.influence_points = {}
+			var saved_influence_points: Variant = building_data.get("influence_points", {})
+			if saved_influence_points is Dictionary:
+				for influence_key in (saved_influence_points as Dictionary).keys():
+					building.influence_points[int(influence_key)] = float(saved_influence_points[influence_key])
+			building.influence_last_gain_day = {}
+			var saved_last_gain_day: Variant = building_data.get("influence_last_gain_day", {})
+			if saved_last_gain_day is Dictionary:
+				for influence_key in (saved_last_gain_day as Dictionary).keys():
+					building.influence_last_gain_day[int(influence_key)] = int(saved_last_gain_day[influence_key])
 			# stored_resources (2026-09-09, richiesta utente, Step 3 decadimento) — formato cambiato
 			# da resource_name -> int diretto a resource_name -> {"quantity","decay_fraction"} (vedi
 			# BuildingStorageService/Building.gd). _parse_stored_resources sotto gestisce ENTRAMBI i
@@ -973,6 +981,9 @@ func _parse_stored_resources(raw: Dictionary) -> Dictionary:
 				"decay_fraction": float(value.get("decay_fraction", 0.0)),
 			}
 			ToolInstance.set_used_instances(entry, _parse_used_instances(String(resource_name), value, quantity))
+			# Avanzamento automatico (2026-10-03, essiccazione passo 2): solo se salvato, assente nei salvataggi vecchi.
+			if value.has(ProductionService.AUTO_PROGRESS_KEY):
+				entry[ProductionService.AUTO_PROGRESS_KEY] = clampf(float(value[ProductionService.AUTO_PROGRESS_KEY]), 0.0, 1.0)
 			result[resource_name] = entry
 		else:
 			result[resource_name] = {"quantity": int(value), "decay_fraction": 0.0}

@@ -422,7 +422,12 @@ func on_complete(individual: Variant, context: Dictionary) -> void:
 		# sequenza — ognuna vede gli slot già occupati dalle precedenti.
 		var any_deposited: bool = false
 		var deposited_by_resource: Dictionary = {}
-		for resource_name in carried_before_deposit.keys():
+		# Scarico alla postazione scelta per preferenza (2026-10-03, essiccazione passo 4): prima chi deperisce prima
+		# (day_durability crescente), così la carne trova posto prima delle pelli. Ordine invariato negli altri scarichi.
+		var deposit_order: Array = carried_before_deposit.keys()
+		if only_preferred_resources:
+			deposit_order = ButcherDestinationService.sort_by_shortest_durability(deposit_order)
+		for resource_name in deposit_order:
 			var carried_entry: Dictionary = carried_before_deposit[resource_name]
 			# Destinazione non valida (cantiere già completato, vedi _is_completed_site_destination): nessun
 			# deposito, tutto il carico confluisce nel residuo e nel reinstradamento verso un magazzino
@@ -697,9 +702,11 @@ func get_save_data() -> Dictionary:
 
 
 # false se lo scarico è riservato alle risorse con la preferenza per la postazione (only_preferred_resources) e
-# `resource_name` non ce l'ha.
+# `resource_name` non ce l'ha: la carne al focolare (prefers_recipe_workstation) o, dal 2026-10-03, un ingrediente di
+# una ricetta ad avanzamento automatico della postazione (l'essiccatoio, ButcherDestinationService).
 func _is_deposit_allowed(resource_name: String) -> bool:
-	return not only_preferred_resources or WarehouseSelectionService.prefers_recipe_workstation(resource_name)
+	return not only_preferred_resources or WarehouseSelectionService.prefers_recipe_workstation(resource_name) \
+		or ProductionService.is_auto_progress_input(target_building, resource_name)
 
 
 # true se nello zaino c'è almeno una delle risorse per cui questo scarico è stato programmato (planned_resources).

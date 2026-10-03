@@ -135,9 +135,11 @@ static func _clear_type(macro_state: MacroCellState, object_type: GameTypes.Worl
 	if space_removed > 0:
 		macro_state.set_dedicated_space(object_type, space_before - space_removed)
 
-	print("[BUILDING SITE CLEARING] rimossi %d %s in (%d,%d) per far posto a un edificio (spazio liberato: %d)" % [
-		keys_to_erase.size(), GameTypes.WorldObjectType.keys()[object_type], pos.x, pos.y, space_removed
-	])
+	# Dietro SHOW_VEGETATION_REMOVAL_LOGS (2026-10-03, riordino dei log).
+	if DebugLogging.ENABLED and DebugLogging.SHOW_VEGETATION_REMOVAL_LOGS:
+		print("[BUILDING SITE CLEARING] rimossi %d %s in (%d,%d) per far posto a un edificio (spazio liberato: %d)" % [
+			keys_to_erase.size(), GameTypes.WorldObjectType.keys()[object_type], pos.x, pos.y, space_removed
+		])
 
 
 # GRASS non ha identità individuale né posizioni persistite (rigenerata da zero ogni volta, vedi

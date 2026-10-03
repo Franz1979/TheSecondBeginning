@@ -513,7 +513,4 @@ func get_activity_description() -> String:
 			return base_text
 	if resource_name == "":
 		return base_text + progress_suffix
-	# "Prendi tutti i prodotti" (2026-09-24): nessun nome di risorsa singolo da mostrare.
-	if resource_name == RetrieveAction.ALL_PRODUCTS:
-		return "%s (%s)" % [base_text, tr("transport_all_products_activity")]
 	return "%s (%s)%s" % [base_text, IconRegistry.get_resource_display_name(resource_name), progress_suffix]

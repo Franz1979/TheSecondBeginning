@@ -11,8 +11,8 @@ extends RefCounted
 #     non il Folk), ovunque e di qualunque età, che non sia chi celebra né un presente: current_faith + faith_population
 #     × lo stesso fattore skill. Un solo bonus per pipottino e per rito (celebrante, presente o popolazione);
 #   - ogni fede limitata a [0, max_faith];
-#   - raggio RELIGIOUS dell'edificio + radius_gain × fattore skill (InfluenceService.add_radius, 2026-10-02 passo 4c),
-#     applicato DOPO aver contato i presenti, quindi con il raggio di prima del rito;
+#   - punti di influenza RELIGIOUS dell'edificio + influence_gain × fattore skill (InfluenceService.add_points,
+#     2026-10-03 punti e soglie), aggiunti DOPO aver contato i presenti, quindi con il raggio di prima del rito;
 #   - giorno del rito sull'edificio (Building.last_rite_absolute_day), letto dalla regola giornaliera della fede.
 
 
@@ -34,7 +34,7 @@ static func apply_completion(celebrant: HumanIndividual, building: Building, rul
 			member.current_faith = _clamp_faith(member, member.current_faith + rules.faith_present * skill_factor)
 		elif celebrant.source_group_ref != null and member.source_group_ref == celebrant.source_group_ref:
 			member.current_faith = _clamp_faith(member, member.current_faith + rules.faith_population * skill_factor)
-	InfluenceService.add_radius(building, InfluenceService.InfluenceType.RELIGIOUS, rules.radius_gain * skill_factor)
+	InfluenceService.add_points(building, InfluenceService.InfluenceType.RELIGIOUS, rules.influence_gain * skill_factor, game_data)
 
 
 # Posizione del pipottino in microcelle ASSOLUTE del mondo (stessa misura di InfluenceService.building_absolute_center).

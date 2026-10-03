@@ -174,6 +174,9 @@ const STORAGE_SLOT_FILL_BAR_FILL_COLOR := Color(1.0, 1.0, 1.0, 0.85)
 # Buffer di uscita della produzione (2026-09-23, richiesta utente) — caption con pezzi usati/capienza,
 # griglia di chip col contenuto, avviso giallo quando il buffer pieno blocca la produzione. Nascosti
 # per un edificio senza buffer (BuildingRules.production_output_slots <= 0).
+# Voci in avanzamento automatico (2026-10-03, essiccatoio): una riga per risorsa, al posto delle sezioni della produzione
+# con lavoratore — vedi _refresh_auto_progress.
+@onready var auto_progress_label: Label = $AutoProgressLabel
 @onready var output_buffer_caption: Label = $OutputBufferCaption
 @onready var output_buffer_grid: HFlowContainer = $OutputBufferGrid
 @onready var output_buffer_full_label: Label = $OutputBufferFullLabel
@@ -358,7 +361,10 @@ func show_building(building: Building, residents_display_data: Array[Dictionary]
 		)
 	# Workstation completa (2026-09-24; dal 2026-09-27 nella sezione Produzione): "In produzione:" con la X di annullo,
 	# lavoratore assegnato, attesa attrezzi e cosa serve ancora — vedi _refresh_production_status.
-	var is_active_workstation: bool = building.is_complete and building.rules != null and building.rules.is_workstation
+	# Postazione che lavora da sola (2026-10-03, ProductionService.has_only_auto_progress_recipes — l'essiccatoio): niente
+	# "In produzione", lavoratore assegnato e materiali dell'ordine, al loro posto le voci in avanzamento.
+	var is_auto_only: bool = ProductionService.has_only_auto_progress_recipes(building)
+	var is_active_workstation: bool = building.is_complete and building.rules != null and building.rules.is_workstation and not is_auto_only
 	# X di annullo accanto allo stato (2026-09-26): dal 2026-09-27 solo per i costruttori di un cantiere; la produzione
 	# ha la propria X nella riga "In produzione:". Con "mancante" resta nascosta: nessuna Task da annullare.
 	cancel_work_button.visible = is_under_construction and not assigned_builder_names.is_empty()
@@ -383,6 +389,7 @@ func show_building(building: Building, residents_display_data: Array[Dictionary]
 	_refresh_influence_received(building)
 	_refresh_residents_grid(building, residents_display_data)
 	_refresh_storage_grid(building)
+	_refresh_auto_progress(building, building.is_complete and is_auto_only)
 	_refresh_output_buffer(building)
 	_refresh_delivered_materials(building)
 	_refresh_production_recipes(building, production_claimant_names)
@@ -468,10 +475,7 @@ func _refresh_influence_buttons(building: Building) -> void:
 		var button: Button = _influence_buttons[influence_type]
 		var radius := InfluenceService.get_effective_radius(building, influence_type)
 		button.disabled = radius <= 0
-		# Raggio CORRENTE con un decimale (2026-10-02, passo 4c — cresce con i riti); l'abilitazione resta sul raggio
-		# effettivo (parte intera).
-		var current_radius := InfluenceService.get_current_radius(building, influence_type)
-		button.tooltip_text = tr(String(entry["tooltip_key"])).format({"radius": "%.1f" % current_radius}) if radius > 0 else tr(String(entry["none_key"]))
+		button.tooltip_text = _influence_tooltip(building, entry, radius)
 		_style_influence_button(button, InfluenceFootprintOverlay.COLORS.get(influence_type, Color.WHITE), radius > 0)
 	if _previewed_influence_type >= 0:
 		var previewed_button: Button = _influence_buttons[_previewed_influence_type]
@@ -479,6 +483,28 @@ func _refresh_influence_buttons(building: Building) -> void:
 			_end_influence_preview()
 		else:
 			influence_preview_started.emit(building, _previewed_influence_type)
+
+
+# Tooltip di un'icona di influenza. Politica e cultura: solo il raggio. Religiosa (2026-10-03, punti e soglie): raggio,
+# punti (parte intera) e prossima soglia, solo i punti oltre l'ultima soglia; più la perdita annua se da almeno un
+# anno non si celebra un rito (InfluenceService.has_neglected_rites).
+func _influence_tooltip(building: Building, entry: Dictionary, radius: int) -> String:
+	if radius <= 0:
+		return tr(String(entry["none_key"]))
+	var influence_type: int = entry["type"]
+	if influence_type != InfluenceService.InfluenceType.RELIGIOUS:
+		return tr(String(entry["tooltip_key"])).format({"radius": radius})
+	var points := floori(InfluenceService.get_points(building, influence_type))
+	var next_threshold := InfluenceService.get_next_threshold(building, influence_type)
+	var text: String
+	if next_threshold < 0.0:
+		text = tr("building_influence_religious_max_tooltip").format({"radius": radius, "points": points})
+	else:
+		text = tr(String(entry["tooltip_key"])).format({"radius": radius, "points": points, "next": floori(next_threshold)})
+	var game_data: GameData = GameSettings.active_game_data
+	if game_data != null and InfluenceService.has_neglected_rites(building, influence_type, game_data.get_absolute_day()):
+		text += "\n" + tr("building_influence_no_rite_tooltip").format({"loss": roundi(InfluenceService.get_neglected_rites_loss(building, influence_type))})
+	return text
 
 
 func clear() -> void:
@@ -1020,6 +1046,29 @@ func _describe_recipe(building: Building, resource_name: String) -> String:
 # una chip per risorsa (stesso stile delle chip "materiale mancante") e l'avviso di buffer pieno
 # quando blocca la produzione in corso (ProductionService.is_output_blocking). Tutto nascosto per un
 # edificio senza buffer. Ricostruita da zero ad ogni show_building, come le altre griglie.
+# Una riga per ogni voce dello storage in avanzamento automatico, sempre visibile (2026-10-03, essiccatoio): risorsa,
+# quantità e giorni mancanti (ProductionService.get_auto_progress_days_left); "nulla" se non c'è niente.
+func _refresh_auto_progress(building: Building, show_section: bool) -> void:
+	auto_progress_label.visible = show_section
+	if not show_section:
+		return
+	var lines: Array[String] = []
+	for resource_name in building.stored_resources.keys():
+		var days_left := ProductionService.get_auto_progress_days_left(building, String(resource_name))
+		if days_left < 0:
+			continue
+		var quantity: int = int((building.stored_resources[resource_name] as Dictionary).get("quantity", 0))
+		if quantity <= 0:
+			continue
+		var key := "building_auto_progress_line_ready" if days_left <= 0 else "building_auto_progress_line"
+		lines.append(tr(key).format({
+			"resource": IconRegistry.get_resource_display_name(String(resource_name)),
+			"quantity": quantity,
+			"days": days_left,
+		}))
+	auto_progress_label.text = "\n".join(lines) if not lines.is_empty() else tr("building_auto_progress_none")
+
+
 func _refresh_output_buffer(building: Building) -> void:
 	for child in output_buffer_grid.get_children():
 		child.queue_free()
@@ -1103,6 +1152,9 @@ func _build_storage_slot(slot_data: Dictionary) -> Control:
 	# lascia solo il nome della risorsa": lo spazio occupato/capacità restano leggibili dalla barra
 	# di riempimento sotto, non serve più ripeterli anche qui).
 	box.tooltip_text = IconRegistry.get_resource_display_name(resource_name)
+	# Avanzamento automatico (2026-10-03, essiccazione passo 2): giorni mancanti alla trasformazione.
+	if slot_data.has("auto_days_left"):
+		box.tooltip_text += "\n" + tr("storage_slot_auto_progress_tooltip").format({"days": int(slot_data["auto_days_left"])})
 
 	var icon_node: Control = IconRegistry.get_resource_icon_node(resource_name)
 	if icon_node != null:

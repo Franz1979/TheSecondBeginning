@@ -7,6 +7,10 @@ extends Action
 # senza effetti. Se l'edificio non è più utilizzabile (demolito, da demolire) o il rito non esiste più, la Task si
 # chiude (pending_task_abort).
 
+# Emesso al completamento del rito (on_complete, dopo gli effetti), ordinato o spontaneo, con l'edificio in cui si è
+# celebrato (2026-10-03, richiesta utente — effetto visivo e campana). Collegato da GameScene._track_rite_tasks.
+signal rite_completed(building: Building)
+
 const STAMINA_DRAIN_PER_DAY: float = 100.0
 # Chiave di SkillEffectService (skill_action_effects.tres): fattore della skill di chi celebra sulla fede dei presenti.
 const SKILL_EFFECT_KEY := "rite"
@@ -63,6 +67,7 @@ func on_complete(individual: Variant, context: Dictionary) -> void:
 		return
 	RiteEffectService.apply_completion(individual as HumanIndividual, target_building, get_rules(), GameSettings.active_human_individuals)
 	completed = true
+	rite_completed.emit(target_building)
 
 
 # Punto nella microcella dell'edificio (stessa formula di DemolishAction).

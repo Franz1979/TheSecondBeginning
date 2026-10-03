@@ -191,6 +191,7 @@ func _refresh_texts() -> void:
 #   -- Categoria --   Tutto il cibo / Tutti i materiali / Tutti i medicinali
 #   -- Risorsa --     tutte le risorse raccoglibili (TerrainScatteredResourceService.is_pickable), raggruppate per
 #                      categoria nell'ordine di PickUpAction.PRIORITY_CATEGORIES e, dentro, per nome leggibile.
+# Escluse le risorse bloccate (TerrainScatteredResourceService.is_resource_locked).
 # Ogni voce selezionabile porta come metadata {"kind", "category", "resource_name"}; le intestazioni sono
 # separatori (senza metadata). Poi riseleziona la voce salvata in UserOptions.
 func _rebuild_pickup_default_options() -> void:
@@ -211,6 +212,10 @@ func _rebuild_pickup_default_options() -> void:
 			continue
 		var rules := CaloricCalculator.get_caloric_source_rules(resource_name)
 		if rules == null:
+			continue
+		# Risorse ancora bloccate da required_idea_id escluse (2026-10-03, richiesta utente): stessa fonte del blocco
+		# di pickup/ispezione. Il menu si ricostruisce ad ogni apertura, quindi l'idea completata le fa comparire.
+		if TerrainScatteredResourceService.is_resource_locked(resource_name, rules):
 			continue
 		var category: int = int(rules.category)
 		if not names_by_category.has(category):

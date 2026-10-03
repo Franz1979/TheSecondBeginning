@@ -267,7 +267,7 @@ const SHOW_RECONNECT_FACTORY_LOGS := false
 # TASK_LIFECYCLE — [TASK COST] (Task.print_cost_summary), [INTERRUPT DEBUG]/[RESUME WALKBACK]
 # (HumanIndividualActionService), [TASK GUARD]/[TASK SUSPEND] (HumanIndividual), [SKILL GROWTH]
 # (HumanIndividualActionService), [QUEUE OVERFLOW] (TaskQueueService).
-const SHOW_TASK_LIFECYCLE_LOGS := true
+const SHOW_TASK_LIFECYCLE_LOGS := false
 
 # IDLE — [IDLE FALLBACK] (IdleTaskAssignmentService), [REST]/[EMERGENCY REST]
 # (NeedTaskAssignmentService), [WANDER]/[PLAY] (GameScene, trigger manuali tasti G/P per le stesse
@@ -276,7 +276,7 @@ const SHOW_IDLE_LOGS := false
 
 # REST CHOICE — [REST] scelta tra riposo a casa e sul posto (2026-09-27, richiesta utente —
 # NeedTaskAssignmentService.resolve_rest_target): i due tempi, il costo C della camminata e la decisione.
-const SHOW_REST_CHOICE_LOGS := true
+const SHOW_REST_CHOICE_LOGS := false
 
 # TRANSPORT_BUILD — [UNLOAD] (unload_action.gd), [WALK AWAY]/[WAREHOUSE SEARCH]/
 # [THOUGHT TARGET SEARCH]/[BUILD MATERIAL NEEDED]/[BUILD MATERIAL BONUS]/[BUILD MATERIAL RETRY]
@@ -296,15 +296,31 @@ const SHOW_TRANSPORT_BUILD_LOGS := false
 # RecoverWeaponAction), quale Task/step la consuma, la ricezione in GameScene (e il rifiuto se la carcassa ha già
 # una macellazione in corso o in coda), l'accodamento, e [BUTCHER] a macellazione compiuta. Ogni riga ha anno,
 # giorno e frame del motore (HuntService.describe_now).
-const SHOW_HUNT_LOGS := true
+const SHOW_HUNT_LOGS := false
 # Intervallo tra due righe di avvicinamento, in GIORNI DI GIOCO (1 giorno = 8 s reali a 1x): 0.125 =
 # circa una riga al secondo a velocità 1x.
 const HUNT_APPROACH_LOG_INTERVAL_DAYS := 0.125
 # Caccia nelle zone (2026-10-01, diagnosi "il bottone Caccia non fa nulla"): righe [HUNT ZONE] lungo il comando —
 # pressione di bottone/tasto, selezionati, esito di età/stamina/coltello, zone trovate, zona scelta o scelta manuale,
-# creazione e assegnazione della Task, primo passo della pattuglia. Indipendente da ENABLED, acceso per ora.
+# creazione e assegnazione della Task, primo passo della pattuglia. Indipendente da ENABLED. Spento (2026-10-03, riordino dei log).
 # Stampa tramite HuntZoneService.log_event.
-const SHOW_HUNT_ZONE_LOGS := true
+const SHOW_HUNT_ZONE_LOGS := false
+
+# AUTO_PROGRESS — [DRYING] (2026-10-03, richiesta utente — essiccatoio): una riga a ogni deposito in una voce ad
+# avanzamento automatico (BuildingStorageService.store: edificio, risorsa e quantità entrata, totale, avanzamento prima
+# e dopo la media, giorni mancanti) e una alla trasformazione (ProductionService.advance_auto_progress: cosa è diventato
+# cosa e in che quantità). Nessuna riga giornaliera. Solo stampa.
+const SHOW_AUTO_PROGRESS_LOGS := true
+
+# VEGETATION_REMOVAL — [PLAYER HARVEST] (PlayerHarvestService.cut_individual, una riga per pianta tagliata) e
+# [BUILDING SITE CLEARING] (BuildingSiteClearingService, una riga per lotto sgomberato per un edificio) (2026-10-03,
+# richiesta utente — riordino dei log: prima sempre accesi). Solo stampa.
+const SHOW_VEGETATION_REMOVAL_LOGS := false
+
+# NATURAL_EVENT_NONE — righe "[FIRE]/[DROUGHT]/[SEA_FLOOD] anno=N: nessun evento" (NaturalEventService.trigger_events,
+# una per tipo e per anno) (2026-10-03, richiesta utente — riordino dei log). Le righe degli eventi che accadono
+# davvero (FireEventEffectService/DroughtEventEffectService/SeaFloodEventEffectService) restano sempre accese.
+const SHOW_NATURAL_EVENT_NONE_LOGS := false
 
 # TEMPORANEO (2026-09-27, richiesta utente — diagnosi produzione che non avanza): [PRODUCE BLOCK]
 # (ProduceAction._debug_log_block) stampa perché uno step di produzione è fermo — record assente, attrezzi

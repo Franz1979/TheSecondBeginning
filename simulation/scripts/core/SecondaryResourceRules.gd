@@ -92,9 +92,9 @@ extends Resource
 # is_resource_locked (usato a sua volta da get_available e da GameScene._resolve_pickup_candidates
 # per popup di raccolta/ispezione microcella) — MAI dal rendering (i puntini su arbusti/alberi
 # restano disegnati come sempre, indipendentemente dal blocco) né da AnimalConsumptionService (la
-# fauna continua a consumare secondary_resource_stock indipendentemente dalle idee umane). NON
-# impostato su nessuna .tres esistente oggi: ogni risorsa attuale resta sempre disponibile,
-# comportamento invariato.
+# fauna continua a consumare secondary_resource_stock indipendentemente dalle idee umane).
+# Impostato oggi solo su medicinal_herbs.tres ("plant_lore"); ogni altra risorsa resta sempre
+# disponibile.
 @export var required_idea_id: String = ""
 
 # Vedi SecondaryResourceTypes.GenerationSource — PURAMENTE descrittivo (documenta la provenienza
@@ -125,6 +125,12 @@ extends Resource
 # "spazio" astratto su entrambi i lati del calcolo capacità). Solo il dato in questo step:
 # nessuna logica di trasporto/storage esiste ancora, nessuna .tres esistente lo valorizza.
 @export var space_per_unit: float = 1.0
+
+# Effetto del cibo su felicità e salute di chi lo carica (2026-10-03, richiesta utente): punti ogni 100 calorie
+# caricate, applicati SOLO al rifornimento (RestockPouchAction.on_complete, riserva corporea e provviste, sorgente
+# magazzino o zaino), mai alla dotazione iniziale né al consumo giornaliero. Anche negativi; 0.0 = nessun effetto.
+@export var eat_happiness_per_100_calories: float = 0.0
+@export var eat_health_per_100_calories: float = 0.0
 
 # Unità di QUESTA risorsa prodotte da UN individuo maturo (ADULT/OLD, non YOUNG) della vegetazione
 # che la genera — 2026-09-16, richiesta utente: prima una costante hardcoded per tipo
@@ -229,6 +235,12 @@ extends Resource
 @export var recipe_output_quantity: int = 1
 # Lavoro necessario per UN ciclo, stessa unità di BuildingRules.required_labor.
 @export var recipe_labor: float = 0.0
+# Giorni di processo PASSIVO, senza lavoro di un pipottino (2026-10-03, richiesta utente — essiccazione). 0 = ricetta
+# normale. Con valore > 0 la ricetta non si ordina con la Produce (ProductionService.can_produce_at la esclude, quindi
+# anche pannello, is_recipe_input_of/is_recipe_material e WarehouseSelectionService.find_nearest_recipe_workstation):
+# i suoi ingredienti avanzano da soli nello storage della postazione e diventano il prodotto dopo questi giorni (vedi
+# AVANZAMENTO AUTOMATICO in ProductionService).
+@export var recipe_auto_progress_days: int = 0
 # Valore combustibile (somma di fuel_value degli input bruciati) richiesto per UN ciclo — 0.0 =
 # nessun combustibile. Moltiplicato da BuildingRules.production_fuel_multiplier (2026-09-24, vedi
 # ProductionService.get_required_fuel).

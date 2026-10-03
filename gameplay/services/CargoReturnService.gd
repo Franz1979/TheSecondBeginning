@@ -49,8 +49,7 @@ static func release_cargo(individual: HumanIndividual, closed_task: Task, world:
 		return Outcome.NOT_OWNER
 	var return_task: Task = null
 	if not is_cargo_return_task(closed_task):
-		var prefer_workstation := bool(closed_task.context.get(HumanIndividualActionService.CONTEXT_PREFER_RECIPE_WORKSTATION, false))
-		return_task = build_cargo_return_task(individual, world, prefer_workstation)
+		return_task = build_cargo_return_task(individual, world, ButcherDestinationService.get_destination(closed_task.context))
 	if return_task == null:
 		_log(individual, "carico %s a terra (%s)." % [
 			str(individual.carried_resources.keys()),
@@ -83,7 +82,7 @@ static func release_orphan_cargo(individual: HumanIndividual, world: World) -> b
 		return false
 	if individual.current_task != null and not individual.current_task.is_finished():
 		return false
-	var return_task := build_cargo_return_task(individual, world, false)
+	var return_task := build_cargo_return_task(individual, world, ButcherDestinationService.WAREHOUSE)
 	if return_task == null:
 		_log(individual, "libero con il carico %s e nessun magazzino lo accetta — a terra." % str(individual.carried_resources.keys()))
 		individual.discard_carried_resource()
@@ -105,22 +104,22 @@ static func release_orphan_cargo(individual: HumanIndividual, world: World) -> b
 # prefers_recipe_workstation (UnloadAction.only_preferred_resources, 2026-10-02); il resto segue il re-routing normale
 # di UnloadAction, che con la preferenza nel context del ritorno la rispetta anche lui. null = zaino vuoto o nessuna
 # destinazione.
-static func build_cargo_return_task(individual: HumanIndividual, world: World, prefer_recipe_workstation: bool = false) -> Task:
+# `butcher_destination` (2026-10-03, prima un bool "preferisci la postazione"): destinazione della macellazione
+# (ButcherDestinationService) — la postazione preferita per la prima risorsa che ne ha una, in ordine di day_durability
+# crescente. WAREHOUSE = nessuna preferenza.
+static func build_cargo_return_task(individual: HumanIndividual, world: World, butcher_destination: String = ButcherDestinationService.WAREHOUSE) -> Task:
 	if individual == null or world == null or individual.carried_resources.is_empty():
 		return null
 	var reachable := PathfindingService.reachability_for(individual)
 	var destination: Building = null
 	var via_workstation_preference := false
-	if prefer_recipe_workstation:
-		for raw_name in individual.carried_resources.keys():
-			if not WarehouseSelectionService.prefers_recipe_workstation(String(raw_name)):
-				continue
-			destination = WarehouseSelectionService.find_nearest_recipe_workstation(
-				world, individual.position, individual.home_macro_coords, String(raw_name), 1, [], reachable
-			)
-			if destination != null:
-				via_workstation_preference = true
-				break
+	for raw_name in ButcherDestinationService.sort_by_shortest_durability(individual.carried_resources.keys()):
+		destination = ButcherDestinationService.find_preferred_building(
+			world, individual.position, individual.home_macro_coords, String(raw_name), butcher_destination, 1, [], reachable
+		)
+		if destination != null:
+			via_workstation_preference = true
+			break
 	if destination == null:
 		for raw_name in individual.carried_resources.keys():
 			var carried_name := String(raw_name)
@@ -143,8 +142,8 @@ static func build_cargo_return_task(individual: HumanIndividual, world: World, p
 	task.step_descriptions = ["task_unload_resource_step_walk", "task_unload_resource_step_unload"]
 	task.is_suspendable = true
 	task.context[CONTEXT_CARGO_RETURN] = true
-	if prefer_recipe_workstation:
-		task.context[HumanIndividualActionService.CONTEXT_PREFER_RECIPE_WORKSTATION] = true
+	if butcher_destination != ButcherDestinationService.WAREHOUSE:
+		task.context[ButcherDestinationService.CONTEXT_KEY] = butcher_destination
 	return task
 
 

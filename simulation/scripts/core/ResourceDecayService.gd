@@ -83,6 +83,9 @@ static func advance_building_decay(building: Building) -> Array:
 		var resource_rules := CaloricCalculator.get_caloric_source_rules(String(resource_name))
 		if resource_rules == null or resource_rules.day_durability == -1:
 			continue
+		# In avanzamento automatico (2026-10-03, essiccazione passo 2): non deperisce finché non diventa il prodotto.
+		if ProductionService.is_auto_progress_input(building, String(resource_name)):
+			continue
 		var multiplier := _durability_multiplier(building, resource_rules.category)
 		var entry: Dictionary = building.stored_resources[resource_name]
 		var decay_before: float = float(entry.get("decay_fraction", 0.0))

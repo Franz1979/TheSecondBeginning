@@ -214,15 +214,19 @@ static func find_source_for_retrieval(
 	excluded_building_ids: Array[int] = [],
 	min_quantity: int = 1,
 	requesting_individual_id: int = -1,
-	reachable: Callable = Callable()
+	reachable: Callable = Callable(),
+	workstation_products_only: bool = false
 ) -> Building:
 	if world == null:
 		return null
 
+	# `workstation_products_only` (2026-10-03, essiccazione passo 3 — rifornimenti automatici, MaterialSupplyService):
+	# da una workstation conta solo ciò che lì è prodotto, mai un ingrediente (ProductionService.
+	# is_workstation_ingredient). false = comportamento di sempre (provviste, attrezzi).
 	var has_stock := func(building: Building) -> bool:
 		if not building.is_complete or building.is_demolished or building.is_marked_for_demolition:
 			return false
-		return not WarehouseSelectionService._get_matching_stock(building, criterion, min_quantity).is_empty()
+		return not WarehouseSelectionService._get_matching_stock(building, criterion, min_quantity, workstation_products_only).is_empty()
 
 	var source := SpatialSelectionService.find_nearest(
 		world.buildings, origin_position, origin_macro_coords, has_stock, excluded_building_ids, reachable
@@ -249,15 +253,15 @@ const FUEL_CRITERION := "__fuel__"
 
 
 # Accesso pubblico a _get_matching_stock (MaterialSupplyService: quale combustibile prendere dalla sorgente scelta).
-static func get_matching_stock(building: Building, criterion: Variant, min_quantity: int = 1) -> Dictionary:
-	return _get_matching_stock(building, criterion, min_quantity)
+static func get_matching_stock(building: Building, criterion: Variant, min_quantity: int = 1, workstation_products_only: bool = false) -> Dictionary:
+	return _get_matching_stock(building, criterion, min_quantity, workstation_products_only)
 
 
 # nome risorsa -> quantita' delle sole risorse di stored_resources di `building` che soddisfano
 # `criterion` (vedi find_source_for_retrieval: nome, null/"" = qualunque, categoria, FUEL_CRITERION) con quantity >=
 # min_quantity (e comunque > 0). Vuoto = nessuna. Era l'helper del cibo, ora
 # generalizzato.
-static func _get_matching_stock(building: Building, criterion: Variant, min_quantity: int) -> Dictionary:
+static func _get_matching_stock(building: Building, criterion: Variant, min_quantity: int, workstation_products_only: bool = false) -> Dictionary:
 	var matching_stock: Dictionary = {}
 	var minimum: int = maxi(min_quantity, 1)
 	# stored_resources più il buffer di uscita della produzione (2026-09-23): stessa quantità che
@@ -269,6 +273,10 @@ static func _get_matching_stock(building: Building, criterion: Variant, min_quan
 	for resource_name in candidate_names:
 		var quantity: int = BuildingStorageService.get_available_quantity(building, String(resource_name))
 		if quantity < minimum:
+			continue
+		# Solo prodotti da una workstation (2026-10-03): un ingrediente non è una sorgente per i rifornimenti
+		# automatici. Il criterio è per risorsa, quindi la quantità di un prodotto resta tutta (storage + buffer).
+		if workstation_products_only and ProductionService.is_workstation_ingredient(building, String(resource_name)):
 			continue
 		if criterion == null or (criterion is String and criterion == ""):
 			matching_stock[resource_name] = quantity

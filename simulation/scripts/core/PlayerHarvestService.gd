@@ -79,10 +79,12 @@ static func cut_individual(
 		if space_removed > 0:
 			macro_state.set_dedicated_space(object_type, space_before - space_removed)
 
-	print("[PLAYER HARVEST] tagliato %s/%s in (%d,%d,%d): resource_quantity %d->%d, dedicated_space %d->%d (spazio rimosso dal sottotipo: %d)" % [
-		GameTypes.WorldObjectType.keys()[object_type], subtype_name,
-		individual_key.x, individual_key.y, individual_key.z,
-		quantity_before, macro_state.get_resource_quantity(object_type),
-		space_before, macro_state.get_dedicated_space(object_type),
-		space_removed
-	])
+	# Dietro SHOW_VEGETATION_REMOVAL_LOGS (2026-10-03, riordino dei log).
+	if DebugLogging.ENABLED and DebugLogging.SHOW_VEGETATION_REMOVAL_LOGS:
+		print("[PLAYER HARVEST] tagliato %s/%s in (%d,%d,%d): resource_quantity %d->%d, dedicated_space %d->%d (spazio rimosso dal sottotipo: %d)" % [
+			GameTypes.WorldObjectType.keys()[object_type], subtype_name,
+			individual_key.x, individual_key.y, individual_key.z,
+			quantity_before, macro_state.get_resource_quantity(object_type),
+			space_before, macro_state.get_dedicated_space(object_type),
+			space_removed
+		])

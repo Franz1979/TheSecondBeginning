@@ -86,6 +86,8 @@ const DEPOSIT_SITE_HALF_SIDE: float = 4.5
 # Sagoma con angoli smussati diversamente da DepositSiteShape.build_polygon (2026-09-19, richiesta
 # utente) — il vecchio poligono a 8 vertici con jitter (DEPOSIT_SITE_VERTEX_COUNT) non esiste più.
 
+# Dal 2026-10-03 questi colori valgono per l'anteprima della tenda di pelli (TentShapes.draw_hide_tent, il disegno che
+# prima avevano entrambe le tende); la tenda di rami ha il proprio disegno (TentShapes.draw_stick_tent). Storia:
 # Stick Tent (2026-09-12, richiesta utente — collegamento UI/rendering: il .tres/BuildingRules
 # esistevano già da un giro precedente, ma non era ancora disegnabile né come ghost né come
 # edificio piazzato) — placeholder semplice: cerchio pieno color paglia/marrone chiaro, PIÙ PICCOLO
@@ -104,14 +106,8 @@ const STICK_TENT_COLOR := Color(0.78, 0.62, 0.32, 0.75)
 const STICK_TENT_OUTLINE_COLOR := Color(0.45, 0.32, 0.15, 0.85)
 const STICK_TENT_INVALID_COLOR := Color(0.75, 0.15, 0.15, 0.75)
 const STICK_TENT_INVALID_OUTLINE_COLOR := Color(0.4, 0.05, 0.05, 0.85)
-const STICK_TENT_OUTLINE_WIDTH: float = 0.4
-const STICK_TENT_RADIUS: float = 2.0
-# Triangolino "porta" (2026-09-12) — base sul bordo del cerchio, apice verso l'esterno nel verso di
-# `direction`, colore scuro (STICK_TENT_DOOR_MARKER_COLOR, non semitrasparente come il corpo del
-# cerchio: deve restare ben leggibile anche sopra il ramo "non edificabile" rosso).
-const STICK_TENT_DOOR_MARKER_COLOR := Color(0.25, 0.15, 0.06, 1.0)
-const STICK_TENT_DOOR_MARKER_HALF_WIDTH: float = 0.7
-const STICK_TENT_DOOR_MARKER_HEIGHT: float = 1.1
+# Geometria, porta (triangolino scuro, sempre opaco) e disegno della tenda di rami: TentShapes (dal 2026-10-03, lo
+# stesso disegno della mappa). Qui restano i colori dell'anteprima della tenda di pelli.
 
 # Quale sagoma disegnare — valorizzato da GameScene._on_build_submenu_action_pressed subito dopo
 # la creazione (2026-09-07, richiesta utente, Pebble Circle): prima di questo passo l'unico tipo
@@ -157,10 +153,15 @@ func _draw() -> void:
 		_draw_deposit_site(DEPOSIT_SITE_COLOR if is_buildable else DEPOSIT_SITE_INVALID_COLOR,
 			DEPOSIT_SITE_OUTLINE_COLOR if is_buildable else DEPOSIT_SITE_INVALID_OUTLINE_COLOR)
 		return
-	# Tenda di pelli (2026-09-27): grafica provvisoria, la stessa della tenda di rami.
-	if building_type_name == "stick_tent" or building_type_name == "hide_tent":
-		_draw_stick_tent(STICK_TENT_COLOR if is_buildable else STICK_TENT_INVALID_COLOR,
-			STICK_TENT_OUTLINE_COLOR if is_buildable else STICK_TENT_INVALID_OUTLINE_COLOR, rotation_dir)
+	# Tende (2026-10-03, scambio di aspetto — TentShapes, lo stesso disegno della mappa): la tenda di pelli con i colori
+	# semitrasparenti/rossi di sempre, la tenda di rami semitrasparente o rossastra.
+	if building_type_name == "hide_tent":
+		TentShapes.draw_hide_tent(self, Vector2.ZERO, rotation_dir,
+			STICK_TENT_COLOR if is_buildable else STICK_TENT_INVALID_COLOR,
+			STICK_TENT_OUTLINE_COLOR if is_buildable else STICK_TENT_INVALID_OUTLINE_COLOR)
+		return
+	if building_type_name == "stick_tent":
+		TentShapes.draw_stick_tent(self, Vector2.ZERO, rotation_dir, not is_buildable, STICK_TENT_COLOR.a)
 		return
 	if building_type_name == "dirt_ground":
 		_draw_dirt_ground(DIRT_GROUND_COLOR if is_buildable else DIRT_GROUND_INVALID_COLOR)
@@ -321,30 +322,6 @@ func _draw_campfire(buildable: bool) -> void:
 func _draw_deposit_site(color: Color, outline_color: Color) -> void:
 	draw_colored_polygon(DepositSiteShape.get_polygon(DEPOSIT_SITE_HALF_SIDE), color)
 	draw_polyline(DepositSiteShape.get_closed_outline(DEPOSIT_SITE_HALF_SIDE), outline_color, DEPOSIT_SITE_OUTLINE_WIDTH)
-
-
-# Cerchio pieno attorno al punto di ancoraggio (0,0) più un piccolo TRIANGOLO sul bordo, nel verso
-# di `direction` — has_door resta vero per questo tipo (vedi commento su STICK_TENT_COLOR sopra),
-# quindi la rotazione (tasto R) è significativa e va mostrata, anche se non con un vero ritaglio
-# come la capanna (coerente con la forma più semplice di questo placeholder). Stessa funzione
-# (duplicata apposta, vedi commento in testa al file) di MicroCellRenderer._draw_stick_tent, così
-# l'anteprima e l'edificio finito coincidono esattamente.
-func _draw_stick_tent(color: Color, outline_color: Color, direction: GameTypes.Direction) -> void:
-	draw_circle(Vector2.ZERO, STICK_TENT_RADIUS, color)
-	draw_arc(Vector2.ZERO, STICK_TENT_RADIUS, 0.0, TAU, CIRCLE_SEGMENTS, outline_color, STICK_TENT_OUTLINE_WIDTH, true)
-
-	var dir_vector := _direction_vector(direction)
-	var perpendicular := Vector2(-dir_vector.y, dir_vector.x)
-	var base_center: Vector2 = dir_vector * STICK_TENT_RADIUS
-	var apex: Vector2 = dir_vector * (STICK_TENT_RADIUS + STICK_TENT_DOOR_MARKER_HEIGHT)
-	draw_colored_polygon(
-		PackedVector2Array([
-			base_center + perpendicular * STICK_TENT_DOOR_MARKER_HALF_WIDTH,
-			base_center - perpendicular * STICK_TENT_DOOR_MARKER_HALF_WIDTH,
-			apex,
-		]),
-		STICK_TENT_DOOR_MARKER_COLOR
-	)
 
 
 func _direction_vector(direction: GameTypes.Direction) -> Vector2:

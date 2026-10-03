@@ -13,3 +13,5 @@ cycle_start_season = 2
 consuming_depletes_primary = false
 day_durability = 50
 space_per_unit = 4.0
+eat_happiness_per_100_calories = 10.0
+eat_health_per_100_calories = 0.0

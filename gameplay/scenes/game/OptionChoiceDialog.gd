@@ -111,11 +111,9 @@ func open_dialog(dialog_title: String, message: String, available_quantities: Di
 	_popup_with_height(DIALOG_BASE_HEIGHT + float(available_quantities.size()) * RESOURCE_ROW_HEIGHT)
 
 
-# Variante a gruppi per le workstation (2026-09-24, richiesta utente): intestazione "Prodotti"
-# (buffer di uscita) con in cima la voce "Prendi tutti i prodotti" (RetrieveAction.ALL_PRODUCTS),
-# poi intestazione "Materiali consegnati" (stored_resources). Le voci singole funzionano come in
-# open_dialog; un gruppo vuoto non compare. `product_quantities`/`delivered_quantities`:
-# resource_name -> quantità, già risolti dal chiamante.
+# Variante a gruppi per le workstation (2026-09-24, richiesta utente): intestazione "Prodotti", poi intestazione
+# "Materiali consegnati". Le voci funzionano come in open_dialog (una risorsa per viaggio); un gruppo vuoto non
+# compare. `product_quantities`/`delivered_quantities`: resource_name -> quantità, già risolti dal chiamante.
 func open_grouped_dialog(
 	dialog_title: String, message: String, product_quantities: Dictionary, delivered_quantities: Dictionary,
 	repeat_default: bool = false
@@ -124,13 +122,9 @@ func open_grouped_dialog(
 	var height: float = DIALOG_BASE_HEIGHT
 	if not product_quantities.is_empty():
 		resource_list_container.add_child(_build_group_header(tr("transport_dialog_group_products")))
-		var total_products := 0
-		for resource_name: String in product_quantities.keys():
-			total_products += int(product_quantities[resource_name])
-		_add_row("products:" + RetrieveAction.ALL_PRODUCTS, RetrieveAction.ALL_PRODUCTS, total_products)
 		for resource_name: String in product_quantities.keys():
 			_add_row("products:" + resource_name, resource_name, int(product_quantities[resource_name]))
-		height += GROUP_HEADER_HEIGHT + float(product_quantities.size() + 1) * RESOURCE_ROW_HEIGHT
+		height += GROUP_HEADER_HEIGHT + float(product_quantities.size()) * RESOURCE_ROW_HEIGHT
 	if not delivered_quantities.is_empty():
 		resource_list_container.add_child(_build_group_header(tr("transport_dialog_group_delivered")))
 		for resource_name: String in delivered_quantities.keys():
@@ -209,9 +203,8 @@ func _build_resource_row(key: String, resource_name: String, quantity: int) -> C
 
 	var icon_box := Control.new()
 	icon_box.custom_minimum_size = Vector2(RESOURCE_ROW_ICON_SIZE, RESOURCE_ROW_ICON_SIZE)
-	# "Prendi tutti i prodotti" (2026-09-24): nessuna icona di risorsa, un simbolo generico (sotto).
 	var override: Dictionary = _row_overrides.get(key, {})
-	var icon_node: Control = null if resource_name == RetrieveAction.ALL_PRODUCTS or not override.is_empty() else IconRegistry.get_resource_icon_node(resource_name)
+	var icon_node: Control = null if not override.is_empty() else IconRegistry.get_resource_icon_node(resource_name)
 	if icon_node != null:
 		icon_box.add_child(icon_node)
 		icon_node.anchor_left = 0.0
@@ -225,9 +218,7 @@ func _build_resource_row(key: String, resource_name: String, quantity: int) -> C
 	else:
 		var fallback_label := Label.new()
 		var icon_text: String = IconRegistry.get_resource_icon(resource_name)
-		if resource_name == RetrieveAction.ALL_PRODUCTS:
-			icon_text = "📦"
-		elif not override.is_empty():
+		if not override.is_empty():
 			icon_text = String(override.get("icon", ""))
 		fallback_label.text = icon_text if icon_text != "" else resource_name.substr(0, 1).to_upper()
 		fallback_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -238,9 +229,7 @@ func _build_resource_row(key: String, resource_name: String, quantity: int) -> C
 	row.add_child(icon_box)
 
 	var resource_button := Button.new()
-	if resource_name == RetrieveAction.ALL_PRODUCTS:
-		resource_button.text = tr("transport_dialog_take_all_products").format({"quantity": quantity})
-	elif not override.is_empty():
+	if not override.is_empty():
 		resource_button.text = String(override.get("text", resource_name))
 	else:
 		resource_button.text = "%s (%d)" % [IconRegistry.get_resource_display_name(resource_name), quantity]
@@ -281,23 +270,16 @@ func _apply_selected_style(button: Button) -> void:
 
 
 # Marca la riga `key` come selezionata: aggiorna lo stile "pressed" di ogni riga (radio-button-
-# like, mai più di una selezionata) e il tetto/valore dell'UNICA riga quantità condivisa. Con
-# "Prendi tutti i prodotti" (2026-09-24) quantità e "Ripeti" non hanno senso — si prende quanto
-# entra nello zaino, un viaggio solo — e restano disattivati.
+# like, mai più di una selezionata) e il tetto/valore dell'UNICA riga quantità condivisa.
 func _select_resource(key: String) -> void:
 	_selected_key = key
 	for other_key in _resource_row_buttons.keys():
 		_resource_row_buttons[other_key].button_pressed = other_key == key
 	var entry: Dictionary = _row_entries.get(key, {})
 	var max_quantity: int = int(entry.get("quantity", 0))
-	var is_all_products: bool = String(entry.get("resource_name", "")) == RetrieveAction.ALL_PRODUCTS
 	quantity_spin_box.max_value = max_quantity
 	quantity_spin_box.min_value = 1 if max_quantity > 0 else 0
 	quantity_spin_box.value = max_quantity
-	quantity_spin_box.editable = not is_all_products
-	repeat_check_box.disabled = is_all_products
-	if is_all_products:
-		repeat_check_box.button_pressed = false
 
 
 # _selected_key == "" (nessun candidato, mai il caso reale) -> no-op difensivo, mai un segnale con un

@@ -168,8 +168,13 @@ static func get_hunt_rejection(hunter: HumanIndividual) -> String:
 
 # --- Passo 2b (2026-10-01): serie fino a un limite di carne ---
 
-static func make_meat_series(area_id: int, target: int) -> Dictionary:
-	return {"work_area_id": area_id, "target": target, "delivered": 0}
+# `butcher_destination` (2026-10-03): destinazione dei prodotti della macellazione scelta nel dialog
+# (ButcherDestinationService), copiata nel context di ogni caccia della serie (GameScene._build_hunt_zone_task).
+static func make_meat_series(area_id: int, target: int, butcher_destination: String = "") -> Dictionary:
+	var series := {"work_area_id": area_id, "target": target, "delivered": 0}
+	if butcher_destination != "":
+		series["butcher_destination"] = butcher_destination
+	return series
 
 
 # Serie del context ({} se la Task non ne fa parte).

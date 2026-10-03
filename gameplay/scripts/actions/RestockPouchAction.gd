@@ -147,6 +147,8 @@ func on_complete(individual: Variant, context: Dictionary) -> void:
 	var space_before: float = individual.food_space_used
 	var calories_before: float = individual.food_calories_held
 	var body_before: float = individual.body_calories
+	var happiness_before: float = individual.current_happiness
+	var health_before: float = individual.current_health
 	if source_kind == SourceKind.BACKPACK:
 		# Il viaggio al magazzino si valuta comunque dopo lo zaino (anche se lo zaino non ha dato nulla).
 		context[CONTEXT_PENDING_WAREHOUSE_RESTOCK] = true
@@ -165,6 +167,10 @@ func on_complete(individual: Variant, context: Dictionary) -> void:
 	var body_space_taken: float = 0.0
 	var pouch_calories_added: float = 0.0
 	var pouch_space_added: float = 0.0
+	# Effetto del cibo su felicità e salute (2026-10-03, SecondaryResourceRules.eat_*_per_100_calories): sulle calorie
+	# caricate di ogni risorsa, riserva e provviste insieme, per entrambe le sorgenti.
+	var happiness_gain: float = 0.0
+	var health_gain: float = 0.0
 	for resource_name in resource_names:
 		var requested_body: int = int(body_quantities.get(resource_name, 0))
 		var requested_pouch: int = int(pouch_quantities.get(resource_name, 0))
@@ -181,9 +187,16 @@ func on_complete(individual: Variant, context: Dictionary) -> void:
 		body_space_taken += float(body_units) * rules.space_per_unit
 		pouch_calories_added += float(pouch_units) * rules.calories_per_unit
 		pouch_space_added += float(pouch_units) * rules.space_per_unit
+		var loaded_calories: float = float(body_units + pouch_units) * rules.calories_per_unit
+		happiness_gain += loaded_calories * rules.eat_happiness_per_100_calories / 100.0
+		health_gain += loaded_calories * rules.eat_health_per_100_calories / 100.0
 	if withdrawn_quantities.is_empty():
 		_log_completion(individual, {}, space_before, calories_before, body_before, 0.0, 0.0)
 		return
+	if happiness_gain != 0.0:
+		individual.current_happiness = clampf(individual.current_happiness + happiness_gain, 0.0, maxf(individual.max_happiness, 0.0))
+	if health_gain != 0.0:
+		individual.current_health = clampf(individual.current_health + health_gain, 0.0, maxf(individual.max_health, 0.0))
 	var body_deficit: float = maxf(individual.body_calories_capacity - individual.body_calories, 0.0)
 	var body_gain: float = minf(body_calories_taken, body_deficit)
 	individual.body_calories += body_gain
@@ -194,7 +207,7 @@ func on_complete(individual: Variant, context: Dictionary) -> void:
 	individual.food_space_used += pouch_space_added
 	individual.food_calories_held += pouch_calories_added
 	HumanFoodPouchService.clamp_to_capacity(individual)
-	_log_completion(individual, withdrawn_quantities, space_before, calories_before, body_before, body_gain, pouch_calories_added)
+	_log_completion(individual, withdrawn_quantities, space_before, calories_before, body_before, body_gain, pouch_calories_added, happiness_before, health_before)
 	if source_kind == SourceKind.BUILDING:
 		pouch_restocked.emit(target_building, withdrawn_quantities)
 
@@ -210,14 +223,19 @@ func _withdraw_from_source(individual: Variant, resource_name: String, quantity:
 # RESTOCK_LOG_INDIVIDUAL_ID, -1 = tutti): quantita' prelevate per risorsa, spazio e calorie prima/dopo,
 # e (2026-09-19) le calorie andate alla riserva corporea (con la riserva prima/dopo e il massimo) e
 # quelle andate alle provviste. `withdrawn` vuoto = niente prelevato (selezione vuota o stock svuotato
-# nel frattempo).
+# nel frattempo). In coda (2026-10-03) felicità e salute prima/dopo per l'effetto del cibo caricato
+# (SecondaryResourceRules.eat_*_per_100_calories); `happiness_before`/`health_before` NAN = valori correnti (nessun
+# prelievo, quindi nessuna variazione).
 func _log_completion(
 	individual: Variant, withdrawn: Dictionary, space_before: float, calories_before: float,
-	body_before: float, body_gain: float, pouch_calories_added: float
+	body_before: float, body_gain: float, pouch_calories_added: float,
+	happiness_before: float = NAN, health_before: float = NAN
 ) -> void:
 	if not DebugLogging.should_log_restock(int(individual.id)):
 		return
-	print("[RESTOCK] #%d %s: rifornimento da %s %s - prelevato=%s spazio %.2f->%.2f (capacita=%.2f) calorie %.2f->%.2f | calorie_riserva=+%.2f (riserva %.2f->%.2f, max=%.2f) calorie_provviste=+%.2f" % [
+	var happiness_start: float = individual.current_happiness if is_nan(happiness_before) else happiness_before
+	var health_start: float = individual.current_health if is_nan(health_before) else health_before
+	print("[RESTOCK] #%d %s: rifornimento da %s %s - prelevato=%s spazio %.2f->%.2f (capacita=%.2f) calorie %.2f->%.2f | calorie_riserva=+%.2f (riserva %.2f->%.2f, max=%.2f) calorie_provviste=+%.2f | felicità %+.1f (%.1f → %.1f) · salute %+.1f (%.1f → %.1f)" % [
 		individual.id, individual.name,
 		"zaino" if source_kind == SourceKind.BACKPACK else (target_building.building_type_name if target_building != null else "(nessun edificio)"),
 		("#%d" % target_building.id) if target_building != null else "",
@@ -225,7 +243,9 @@ func _log_completion(
 		space_before, individual.food_space_used, individual.food_space_capacity,
 		calories_before, individual.food_calories_held,
 		body_gain, body_before, individual.body_calories, individual.body_calories_capacity,
-		pouch_calories_added
+		pouch_calories_added,
+		individual.current_happiness - happiness_start, happiness_start, individual.current_happiness,
+		individual.current_health - health_start, health_start, individual.current_health,
 	])
 
 

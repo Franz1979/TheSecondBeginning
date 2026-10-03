@@ -13,4 +13,4 @@ allowed_age_bands = Array[int]([])
 faith_celebrant = 200.0
 faith_present = 50.0
 faith_population = 10.0
-radius_gain = 0.2
+influence_gain = 1.0

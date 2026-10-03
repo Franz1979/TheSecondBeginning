@@ -30,6 +30,8 @@ func save_game_to_json(
 			# è persistita insieme al nome invece di essere ricalcolata al caricamento, stesso
 			# principio "non ricalcolare ciò che è già stato cachato" del resto di GameData.
 			"current_era_name": game_data.current_era_name,
+			# Ultima destinazione della macellazione scelta nell'ordine di caccia (2026-10-03).
+			"last_butcher_destination": game_data.last_butcher_destination,
 			"era_effective_age_band_durations_male": game_data.era_effective_age_band_durations_male,
 			"era_effective_age_band_durations_female": game_data.era_effective_age_band_durations_female,
 			# Statistica pura (vedi GameData) — mai riletti da nessuna logica di simulazione.
@@ -393,8 +395,9 @@ func save_game_to_json(
 			"is_marked_for_demolition": building.is_marked_for_demolition,
 			"current_durability": building.current_durability,
 			"built_year": building.built_year,
-			# Raggio di influenza corrente per tipo (2026-10-02, passo 4c): chiavi int -> stringhe in JSON.
-			"influence_radius": building.influence_radius,
+			# Punti di influenza e giorno dell'ultimo guadagno per tipo (2026-10-03, punti e soglie): chiavi int -> stringhe in JSON.
+			"influence_points": building.influence_points,
+			"influence_last_gain_day": building.influence_last_gain_day,
 			"last_rite_absolute_day": building.last_rite_absolute_day,
 			"stored_resources": building.stored_resources,
 			# construction_progress (2026-09-10, richiesta utente — preparazione Build Task; primi

@@ -27,6 +27,9 @@ extends Node2D
 # Emesso quando compare sulla mappa la lampadina di un pensiero depositato (_spawn_idea_deposit_effect),
 # con la posizione globale dell'individuo. Ascoltato da AudioEventListener (2026-09-26, richiesta utente).
 signal idea_bulb_shown(global_pos: Vector2)
+# Emesso quando compare sulla mappa l'icona di un rito concluso (_spawn_rite_completed_effect), con la posizione
+# globale dell'edificio. Ascoltato da AudioEventListener (2026-10-03, richiesta utente — campana).
+signal rite_effect_shown(global_pos: Vector2)
 # Emesso quando un click sinistro del giocatore seleziona un oggetto nel mondo (vegetazione, edificio, corpo
 # morto, pietra, animale o individuo), con la posizione globale del click. Ascoltato da AudioEventListener.
 signal world_object_selected(global_pos: Vector2)
@@ -2293,16 +2296,7 @@ func _assign_transport_task(
 	if individual == null or not individual.is_selected:
 		return
 	var destination_macro_coords := Vector2i(destination_building.macro_x, destination_building.macro_y)
-	var trip_target: int = 0
-	# "Prendi tutti i prodotti" (2026-09-24): nessun fabbisogno per-risorsa da confrontare con la
-	# destinazione — si prende quanto entra nello zaino (RetrieveAction.ALL_PRODUCTS), e all'Unload
-	# quanto la destinazione non accetta segue il normale giro di ricerca magazzino. Obiettivo = tutto
-	# il buffer di uscita della sorgente; 0 se nel frattempo si è svuotato.
-	if resource_name == RetrieveAction.ALL_PRODUCTS:
-		for output_name in source_building.production_output.keys():
-			trip_target += int(source_building.production_output[output_name])
-	else:
-		trip_target = _transport_trip_target(destination_building, resource_name, quantity)
+	var trip_target: int = _transport_trip_target(destination_building, resource_name, quantity)
 	if trip_target <= 0:
 		if live_cells.has(destination_macro_coords):
 			_spawn_command_icon_at_microcell(
@@ -2310,17 +2304,11 @@ func _assign_transport_task(
 				Vector2i(destination_building.micro_x, destination_building.micro_y),
 				"task_rejected"
 			)
-		# Motivo (2026-09-26): la destinazione non ha bisogno di quella risorsa, oppure — "prendi tutti i
-		# prodotti" — la sorgente non ha più prodotti da ritirare.
-		if resource_name == RetrieveAction.ALL_PRODUCTS:
-			_report_command_rejection(individual, tr("task_reject_transport_no_products").format({
-				"name": individual.name, "building": _building_display_name(source_building),
-			}))
-		else:
-			_report_command_rejection(individual, tr("task_reject_transport_not_needed").format({
-				"name": individual.name, "building": _building_display_name(destination_building),
-				"resource": IconRegistry.get_resource_display_name(resource_name),
-			}))
+		# Motivo (2026-09-26): la destinazione non ha bisogno di quella risorsa.
+		_report_command_rejection(individual, tr("task_reject_transport_not_needed").format({
+			"name": individual.name, "building": _building_display_name(destination_building),
+			"resource": IconRegistry.get_resource_display_name(resource_name),
+		}))
 		if DebugLogging.ENABLED and DebugLogging.SHOW_TRANSPORT_BUILD_LOGS:
 			print("[TRANSPORT] rifiutata: %s #%d non ha bisogno di '%s' (obiettivo 0)." % [
 				destination_building.building_type_name, destination_building.id, resource_name
@@ -2566,20 +2554,14 @@ func _try_assign_transport_command_on_right_click(event: InputEvent) -> bool:
 		var display_name: String = tr(hit_building.rules.building_name) if hit_building.rules != null else hit_building.building_type_name
 		var dialog_title: String = tr("transport_dialog_title")
 		var dialog_message: String = tr("transport_dialog_message").format({"building": display_name})
-		# Workstation (2026-09-24, richiesta utente): due gruppi separati — "Prodotti" (buffer di uscita,
-		# con in cima "Prendi tutti i prodotti") e "Materiali consegnati" (stored_resources: materiale e
-		# combustibile portati per la produzione). Gli altri edifici restano con la lista unica.
+		# Workstation (2026-09-24, richiesta utente): due gruppi separati — "Prodotti" e "Materiali consegnati".
+		# Gli altri edifici restano con la lista unica. Dal 2026-10-03 (essiccazione passo 3): "Prodotti" = buffer più i
+		# prodotti nello storage, "Materiali consegnati" = i soli ingredienti nello storage (ProductionService.
+		# is_workstation_ingredient). Una risorsa per viaggio, scelta dall'elenco (la voce "Prendi tutti i prodotti" è
+		# stata tolta il 2026-10-03).
 		if hit_building.rules != null and hit_building.rules.is_workstation:
-			var product_quantities: Dictionary = {}
-			for output_name in hit_building.production_output.keys():
-				var output_quantity: int = int(hit_building.production_output[output_name])
-				if output_quantity > 0:
-					product_quantities[String(output_name)] = output_quantity
-			var delivered_quantities: Dictionary = {}
-			for stored_name in hit_building.stored_resources.keys():
-				var stored_quantity: int = int(hit_building.stored_resources[stored_name].get("quantity", 0))
-				if stored_quantity > 0:
-					delivered_quantities[String(stored_name)] = stored_quantity
+			var product_quantities: Dictionary = ProductionService.get_all_products_quantities(hit_building)
+			var delivered_quantities: Dictionary = ProductionService.get_stored_ingredient_quantities(hit_building)
 			transport_source_dialog.open_grouped_dialog(dialog_title, dialog_message, product_quantities, delivered_quantities, UserOptions.repeat_default)
 			return true
 		# open_dialog (2026-09-17) — titolo/messaggio ora risolti QUI (tr()+format()), non più dentro
@@ -2743,6 +2725,33 @@ func _spawn_idea_deposit_effect(individual: HumanIndividual) -> void:
 	tween.tween_property(label, "position:y", label.position.y - 40.0, 0.9)
 	tween.tween_property(label, "modulate:a", 0.0, 3.0)
 	tween.chain().tween_callback(label.queue_free)
+
+
+# Rito concluso (2026-10-03, richiesta utente): l'icona del comando del rito (IconRegistry.get_command_icon_node("rite"),
+# la stessa disegnata a codice dell'ordine) compare al centro della microcella dell'edificio, sale e svanisce con gli
+# stessi tempi della lampadina del pensiero (_spawn_idea_deposit_effect sopra). Nessun effetto se la macrocella
+# dell'edificio non è viva. Emette rite_effect_shown per la campana (AudioEventListener).
+func _spawn_rite_completed_effect(building: Building) -> void:
+	if building == null:
+		return
+	var macro_coords := Vector2i(building.macro_x, building.macro_y)
+	if not live_cells.has(macro_coords):
+		return
+	var icon_node := IconRegistry.get_command_icon_node("rite")
+	if icon_node == null:
+		return
+	var local_position := (Vector2(building.micro_x, building.micro_y) + Vector2(0.5, 0.5)) * MicroCellRenderer.CELL_SIZE
+	icon_node.z_index = 2
+	icon_node.position = local_position
+	var cell_container: Node2D = live_cells[macro_coords].container
+	cell_container.add_child(icon_node)
+	rite_effect_shown.emit(cell_container.to_global(local_position))
+
+	var tween := create_tween()
+	tween.set_parallel(true)
+	tween.tween_property(icon_node, "position:y", icon_node.position.y - 40.0, 0.9)
+	tween.tween_property(icon_node, "modulate:a", 0.0, 3.0)
+	tween.chain().tween_callback(icon_node.queue_free)
 
 
 # Step 2 del piano "centra generalizzato" (richiesta utente, 2026-09-04) — a differenza di
@@ -3601,10 +3610,13 @@ func _queue_pickup_repeat(owner: HumanIndividual, next_repeat_count: int, zone: 
 
 
 # --- Comandi del pipottino (2026-09-27, richiesta utente — work areas passo 3b) ---
-# CommandBar, pannello a sé (2026-10-01, richiesta utente — prima dentro la BuildBar): centrato in basso subito sopra la
-# BuildBar, nello spazio a sinistra della sidebar. Visibile con almeno un pipottino selezionato e l'idea delle zone
-# completata, nascosto con la BuildBar aperta sugli edifici, col fantasma di costruzione e durante il disegno delle zone
-# (_sync_command_bar, a ogni frame). Ogni comando vale per TUTTI i pipottini selezionati (_get_selected_individuals,
+# CommandBar, pannello a sé (2026-10-01, richiesta utente — prima dentro la BuildBar): a sinistra della BuildBar sulla
+# riga in basso, nello spazio a sinistra della sidebar. Visibile con almeno un pipottino selezionato e almeno un pulsante
+# con motivo di esistere (dal 2026-10-03: comandi delle zone con la loro idea, destinazione della caccia con un
+# essiccatoio), qualunque livello della BuildBar sia aperto (2026-10-03, richiesta utente — prima spariva col sottomenu
+# degli edifici); nascosto col fantasma di costruzione e durante il disegno delle zone (_sync_command_bar, a ogni frame).
+# Se la larghezza non basta per affiancarli, il pannello comandi sale su una riga sopra la BuildBar, allineato al suo
+# bordo sinistro (_layout_bottom_bar_row). Ogni comando vale per TUTTI i pipottini selezionati (_get_selected_individuals,
 # oggi al più uno), così la selezione multipla non richiederà di rifarla.
 var command_bar: CommandBar = null
 # Contenitore del pannello (CenterContainer a tutta larghezza meno la sidebar, che ignora il mouse fuori dal pannello).
@@ -3616,6 +3628,11 @@ const COMMAND_PANEL_COLOR := Color(0.5, 0.33, 0.15, 1.0)
 var _hunt_dialog_hunters: Array[HumanIndividual] = []
 # Spazio tra pannello comandi e BuildBar sulla riga in basso.
 const BOTTOM_ROW_SEPARATION: int = 12
+# Riga in basso a due livelli (2026-10-03): riga dei comandi sopra la BuildBar quando non stanno affiancati.
+var _bottom_bar_row: CenterContainer = null
+var _bottom_bar_main_line: HBoxContainer = null
+var _bottom_bar_top_line: HBoxContainer = null
+var _command_bar_stacked: bool = false
 
 
 # Riga in basso (2026-10-01, richiesta utente): [ comandi ]  [ costruzione ], centrati insieme nello spazio a sinistra
@@ -3638,10 +3655,25 @@ func _setup_command_bar() -> void:
 	bottom_row.offset_top = build_bar.offset_top
 	bottom_row.offset_bottom = 0.0
 	bottom_row.grow_vertical = Control.GROW_DIRECTION_BEGIN
+	# Colonna a due righe (2026-10-03): sopra la riga dei comandi quando non c'è spazio per affiancarli (vuota e nascosta
+	# altrimenti), sotto la riga di sempre. Larga quanto la più larga delle due: la riga sopra, allineata a sinistra,
+	# parte dal bordo sinistro della BuildBar.
+	var column := VBoxContainer.new()
+	column.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	column.add_theme_constant_override("separation", BOTTOM_ROW_SEPARATION / 2)
+	bottom_row.add_child(column)
+	var top_line := HBoxContainer.new()
+	top_line.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	top_line.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
+	top_line.visible = false
+	column.add_child(top_line)
 	var row := HBoxContainer.new()
 	row.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	row.add_theme_constant_override("separation", BOTTOM_ROW_SEPARATION)
-	bottom_row.add_child(row)
+	column.add_child(row)
+	_bottom_bar_row = bottom_row
+	_bottom_bar_main_line = row
+	_bottom_bar_top_line = top_line
 	# Prima della BuildBar nell'ordine dei figli del CanvasLayer: stesso ordine di disegno di prima.
 	canvas_layer.add_child(bottom_row)
 	canvas_layer.move_child(bottom_row, build_bar.get_index())
@@ -3675,6 +3707,7 @@ func _setup_command_bar() -> void:
 	panel.visible = false
 	command_bar.gather_requested.connect(_on_command_bar_gather_requested)
 	command_bar.hunt_requested.connect(_on_command_bar_hunt_requested)
+	command_bar.butcher_destination_chosen.connect(_on_command_bar_butcher_destination_chosen)
 	# Dialog del comando Caccia (2026-10-01): il dialog di Raccogli in modalità caccia, selettore "Carne" della serie.
 	pickup_choice_dialog.hunt_choice_made.connect(_on_hunt_order_confirmed)
 
@@ -3726,7 +3759,8 @@ func _on_command_bar_hunt_requested() -> void:
 	_hunt_dialog_hunters = hunters
 	var opened := pickup_choice_dialog.open_hunt_dialog(
 		tr("hunt_order_dialog_title"), tr("hunt_order_dialog_message"), HuntZoneService.MEAT_TARGET_OPTIONS,
-		UserOptions.hunt_zone_meat_target
+		UserOptions.hunt_zone_meat_target, _build_butcher_destination_options(),
+		ButcherDestinationService.resolve_default(game_data.last_butcher_destination, macro_world, human_folk)
 	)
 	HuntZoneService.log_event(null, "dialog della caccia %s (carne preselezionata %d)." % [
 		"aperto" if opened else "NON aperto", UserOptions.hunt_zone_meat_target
@@ -3735,11 +3769,29 @@ func _on_command_bar_hunt_requested() -> void:
 		_hunt_dialog_hunters = []
 
 
+# Opzioni della sezione "Destinazione" del dialog di Caccia (2026-10-03, ButcherDestinationService): una per
+# destinazione, in ordine, con nome, tipo di edificio per l'icona e motivo di indisponibilità ("" = selezionabile).
+func _build_butcher_destination_options() -> Array[Dictionary]:
+	var options: Array[Dictionary] = []
+	for destination in ButcherDestinationService.ORDER:
+		options.append({
+			"id": destination,
+			"name": tr(String(ButcherDestinationService.NAME_KEYS[destination])),
+			"building_type": String(ButcherDestinationService.BUILDING_TYPES[destination]),
+			"disabled_reason": ButcherDestinationService.get_unavailable_reason(destination, macro_world, human_folk),
+			"locked": ButcherDestinationService.NOT_YET_AVAILABLE.has(destination),
+		})
+	return options
+
+
 # Conferma del dialog di Caccia: valore ricordato, poi la zona come prima — automatica (per ciascuno) o scelta a mano
 # tra le zone con la caccia attiva. Ogni caccia parte con una serie fino a `meat_target` di carne consegnata.
-func _on_hunt_order_confirmed(meat_target: int) -> void:
+# `butcher_destination` (2026-10-03): dove portare i prodotti della macellazione, ricordata nella partita
+# (GameData.last_butcher_destination) e scritta nella serie, che la passa a ogni caccia.
+func _on_hunt_order_confirmed(meat_target: int, butcher_destination: String = ButcherDestinationService.CAMPFIRE) -> void:
 	UserOptions.hunt_zone_meat_target = meat_target
 	UserOptions.save_to_disk()
+	game_data.last_butcher_destination = butcher_destination
 	var hunters: Array[HumanIndividual] = []
 	for hunter in _hunt_dialog_hunters:
 		if human_individuals.has(hunter):
@@ -3757,13 +3809,15 @@ func _on_hunt_order_confirmed(meat_target: int) -> void:
 				_report_command_rejection(hunter, tr("work_area_hunt_no_zone").format({"name": hunter.name}))
 				continue
 			HuntZoneService.log_event(hunter, "zona scelta in automatico: %s #%d." % [area.name, area.id])
-			_assign_work_area_hunt(hunter, area, HuntZoneService.make_meat_series(area.id, meat_target))
+			_assign_work_area_hunt(hunter, area, HuntZoneService.make_meat_series(area.id, meat_target, butcher_destination))
 		return
 	var valid_ids: Array[int] = []
 	for area in areas:
 		valid_ids.append(area.id)
 	HuntZoneService.log_event(null, "scelta manuale della zona tra %s." % str(valid_ids))
-	_enter_work_area_pick_mode(hunters, {"job": HuntZoneService.HUNT_JOB, "meat_target": meat_target}, valid_ids)
+	_enter_work_area_pick_mode(hunters, {
+		"job": HuntZoneService.HUNT_JOB, "meat_target": meat_target, "butcher_destination": butcher_destination,
+	}, valid_ids)
 
 
 # Task di caccia in zona (hunt_zone.tres, inizia con PatrolAreaAction) per la WorkArea `area_id`. La zona resta nel
@@ -3777,6 +3831,9 @@ func _build_hunt_zone_task(area_id: int, series: Dictionary = {}) -> Task:
 	task.context[HuntZoneService.CONTEXT_WORK_AREA_ID] = area_id
 	if not series.is_empty():
 		task.context[HuntZoneService.CONTEXT_MEAT_SERIES] = series
+		# Destinazione della macellazione scelta nel dialog (2026-10-03): vale per ogni caccia della serie.
+		if series.has("butcher_destination"):
+			task.context[ButcherDestinationService.CONTEXT_KEY] = String(series["butcher_destination"])
 	return task
 
 
@@ -3850,15 +3907,76 @@ func _get_selected_individuals() -> Array[HumanIndividual]:
 func _sync_command_bar() -> void:
 	if command_bar == null:
 		return
-	# Nascosto mentre si piazza qualcosa nel mondo (edifici aperti, fantasma, disegno zone); resta durante la scelta
-	# manuale della zona dopo "Raccogli" (_work_area_pick_active), che è un comando in corso.
-	var placing := build_bar.is_build_menu_open() or _building_ghost != null or _work_area_draw_active
-	var bar_visible := _is_work_areas_tool_available() and not _get_selected_individuals().is_empty() and not placing
+	# Nascosto mentre si piazza qualcosa nel mondo (fantasma, disegno zone); resta con qualunque livello della BuildBar
+	# aperto (2026-10-03) e durante la scelta manuale della zona dopo "Raccogli" (_work_area_pick_active), che è un
+	# comando in corso.
+	# Dal 2026-10-03: la barra compare se almeno un suo pulsante ha motivo di esistere — i comandi delle zone (Raccogli,
+	# Caccia, zona automatica) con l'idea delle zone, la destinazione della caccia con la sua condizione
+	# (ButcherDestinationService.has_alternative_processing_destination), anche senza l'idea delle zone.
+	var placing := _building_ghost != null or _work_area_draw_active
+	# Titolo della barra di costruzione (2026-10-03): "Zone di lavoro" mentre si disegna una zona.
+	build_bar.set_work_areas_mode(_work_area_draw_active)
+	var zone_tools := _is_work_areas_tool_available()
+	var destination_shown := ButcherDestinationService.has_alternative_processing_destination(macro_world, human_folk)
+	var bar_visible := not _get_selected_individuals().is_empty() and not placing and (zone_tools or destination_shown)
 	command_panel.visible = bar_visible
 	command_bar.set_bar_visible(bar_visible)
+	_layout_bottom_bar_row(bar_visible)
 	if bar_visible:
-		command_bar.set_gather_available(HaulZoneService.has_haul_work_area(game_data), tr("command_bar_gather_no_zone_tooltip"))
-		command_bar.set_hunt_available(HuntZoneService.has_hunt_work_area(game_data), tr("command_bar_hunt_no_zone_tooltip"))
+		command_bar.set_zone_commands_visible(zone_tools)
+		if zone_tools:
+			command_bar.set_gather_available(HaulZoneService.has_haul_work_area(game_data), tr("command_bar_gather_no_zone_tooltip"))
+			command_bar.set_hunt_available(HuntZoneService.has_hunt_work_area(game_data), tr("command_bar_hunt_no_zone_tooltip"))
+		_sync_butcher_destination_button()
+
+
+# Pulsante della destinazione dei prodotti della caccia (2026-10-03): visibile solo con una destinazione di lavorazione
+# oltre al focolare (ButcherDestinationService.has_alternative_processing_destination); mostra quella che la caccia
+# userebbe adesso (resolve_default: l'ultima scelta se disponibile, altrimenti focolare, poi magazzino) e offre solo le
+# destinazioni disponibili. Lo stesso valore del dialog della caccia a zone (GameData.last_butcher_destination).
+func _sync_butcher_destination_button() -> void:
+	if not ButcherDestinationService.has_alternative_processing_destination(macro_world, human_folk):
+		command_bar.set_butcher_destination(false, {}, [])
+		return
+	var options: Array[Dictionary] = []
+	for destination in ButcherDestinationService.list_available(macro_world, human_folk):
+		options.append(_butcher_destination_entry(destination))
+	var current := ButcherDestinationService.resolve_default(game_data.last_butcher_destination, macro_world, human_folk)
+	command_bar.set_butcher_destination(true, _butcher_destination_entry(current), options)
+
+
+func _butcher_destination_entry(destination: String) -> Dictionary:
+	return {
+		"id": destination,
+		"name": tr(String(ButcherDestinationService.NAME_KEYS.get(destination, ""))),
+		"building_type": String(ButcherDestinationService.BUILDING_TYPES.get(destination, "")),
+	}
+
+
+# Scelta dal pulsante della barra (2026-10-03): vale per le cacce ordinate da adesso; quelle in corso hanno già la
+# loro destinazione nel context.
+func _on_command_bar_butcher_destination_chosen(destination: String) -> void:
+	game_data.last_butcher_destination = destination
+
+
+# Comandi affiancati alla BuildBar se la riga in basso è abbastanza larga, altrimenti su una riga sopra di lei (2026-10-03,
+# richiesta utente). Larghezze minime dei due pannelli (non cambiano spostando il pannello comandi tra le due righe, così
+# non c'è oscillazione); il pannello si sposta solo quando la scelta cambia.
+func _layout_bottom_bar_row(bar_visible: bool) -> void:
+	if _bottom_bar_row == null or command_panel == null:
+		return
+	var needed: float = command_panel.get_combined_minimum_size().x + float(BOTTOM_ROW_SEPARATION) \
+		+ build_bar.get_combined_minimum_size().x
+	var stacked: bool = bar_visible and needed > _bottom_bar_row.size.x
+	if stacked == _command_bar_stacked:
+		return
+	_command_bar_stacked = stacked
+	if stacked:
+		command_panel.reparent(_bottom_bar_top_line, false)
+	else:
+		command_panel.reparent(_bottom_bar_main_line, false)
+		_bottom_bar_main_line.move_child(command_panel, 0)
+	_bottom_bar_top_line.visible = stacked
 
 
 # Comando "Raccogli" (spostato qui dal pannello del pipottino, 3a -> 3b): controllo dell'età per ogni selezionato (i
@@ -4029,7 +4147,8 @@ func _handle_work_area_pick_input(event: InputEvent) -> bool:
 				# Stessa modalità per la caccia in zona (2026-10-01): ordine {"job": "hunt"}.
 				if String(order.get("job", "")) == HuntZoneService.HUNT_JOB:
 					_assign_work_area_hunt(worker, area, HuntZoneService.make_meat_series(
-						area.id, int(order.get("meat_target", HuntZoneService.MEAT_TARGET_DEFAULT))
+						area.id, int(order.get("meat_target", HuntZoneService.MEAT_TARGET_DEFAULT)),
+						String(order.get("butcher_destination", ""))
 					))
 				else:
 					_assign_work_area_gather(worker, area, order)
@@ -4407,13 +4526,12 @@ func _find_pickup_pending_entry(source_kind: int, category: int, resource_name: 
 
 
 # Filtro idea non ancora scoperta (2026-09-17, richiesta utente — SecondaryResourceRules.
-# required_idea_id) — una risorsa bloccata non deve MAI entrare in `candidates`: né il tasto destro
-# (_try_assign_pickup_command_on_right_click) né l'ispezione microcella devono saperne nulla, un
-# lotto dove l'UNICA risorsa presente è bloccata deve risultare "vuoto" a entrambi (candidates.
-# is_empty() sotto), esattamente come un lotto senza alcuna risorsa raccoglibile — per il destro
-# questo significa che il comando ricade sul movimento normale invece di un pickup, per
-# l'ispezione che la risorsa bloccata non viene elencata affatto (richiesta esplicita utente: "se
-# una risorsa è sconosciuta, non scriverla"). TerrainScatteredResourceService.is_resource_locked è
+# required_idea_id) — per il tasto destro (_try_assign_pickup_command_on_right_click) una risorsa
+# bloccata non entra MAI in `candidates`: un lotto dove l'UNICA risorsa presente è bloccata risulta
+# "vuoto" (candidates.is_empty() sotto) e il comando ricade sul movimento normale invece di un pickup.
+# L'ispezione microcella invece (2026-10-03, richiesta utente — sostituisce il precedente "se una
+# risorsa è sconosciuta, non scriverla") la riceve marcata "locked" e mostra "Risorsa sconosciuta",
+# senza nome né quantità — vedi `include_locked`. TerrainScatteredResourceService.is_resource_locked è
 # la STESSA fonte già consultata da get_available, nessun secondo criterio.
 # `require_available` (2026-09-18, richiesta utente — bugfix "pickup offerto/ispezione mostra
 # quantità=0 per eggs, stesso problema per mushroom fuori stagione") — default false, INVARIATO
@@ -4440,8 +4558,21 @@ func _find_pickup_pending_entry(source_kind: int, category: int, resource_name: 
 # REQUIRE_AVAILABLE_PICKUP_RESOURCE_NAMES` invece di un terzo parametro hardcoded per chiamata.
 const REQUIRE_AVAILABLE_PICKUP_RESOURCE_NAMES: Array[String] = ["eggs", "mushroom", "wild_vegetables", "medicinal_herbs"]
 
-func _append_unlocked_pickup_candidate(candidates: Array[Dictionary], resource_name: String, macro_coords: Vector2i, position: Vector2i, require_available: bool = false) -> void:
+# `include_locked` (2026-10-03, richiesta utente — "Risorsa sconosciuta"): solo l'ispezione microcella lo passa
+# true. Una risorsa bloccata entra allora come candidato marcato "locked" (quantità 0), purché sia davvero presente
+# ignorando il blocco (get_available_ignoring_lock, stessa fonte dei marker a terra) quando require_available lo
+# chiede. Il tasto destro lascia il default false: la risorsa bloccata resta fuori da `candidates`, come prima.
+func _append_unlocked_pickup_candidate(candidates: Array[Dictionary], resource_name: String, macro_coords: Vector2i, position: Vector2i, require_available: bool = false, include_locked: bool = false) -> void:
 	if TerrainScatteredResourceService.is_resource_locked(resource_name):
+		if not include_locked:
+			return
+		var locked_cell: LiveMacroCell = live_cells.get(macro_coords)
+		var locked_state: MacroCellState = locked_cell.macro_state if locked_cell != null else null
+		if require_available and (locked_state == null or TerrainScatteredResourceService.get_available_ignoring_lock(locked_state, resource_name, position) <= 0):
+			return
+		var locked_candidate := _build_pickup_candidate(resource_name, macro_coords, position)
+		locked_candidate["locked"] = true
+		candidates.append(locked_candidate)
 		return
 	var candidate := _build_pickup_candidate(resource_name, macro_coords, position)
 	if require_available and int(candidate["available_quantity"]) <= 0:
@@ -4469,7 +4600,8 @@ func _append_unlocked_pickup_candidate(candidates: Array[Dictionary], resource_n
 # Step 4). L'ispezione con doppio click SINISTRO passa MOUSE_BUTTON_LEFT qui: STESSA fonte di verità
 # richiesta esplicitamente dall'utente ("_resolve_pickup_candidates o una sua estrazione comune"),
 # nessuna duplicazione tra "cosa posso raccogliere col destro" e "cosa mostro nell'ispezione".
-func _resolve_pickup_candidates(event: InputEvent, current_absolute_day: int, required_button: int = MOUSE_BUTTON_RIGHT) -> Array[Dictionary]:
+# `include_locked`: vedi _append_unlocked_pickup_candidate — true solo dall'ispezione microcella.
+func _resolve_pickup_candidates(event: InputEvent, current_absolute_day: int, required_button: int = MOUSE_BUTTON_RIGHT, include_locked: bool = false) -> Array[Dictionary]:
 	# Mucchio a terra (2026-09-26, ground drop): il contenuto del mucchio nella microcella del click compare
 	# INSIEME alle risorse naturali (non le nasconde più), ogni candidato con il proprio source_kind — il popup
 	# di scelta li distingue e il giocatore sceglie da dove raccogliere. Prima il mucchio (sta sopra), poi il resto.
@@ -4483,7 +4615,7 @@ func _resolve_pickup_candidates(event: InputEvent, current_absolute_day: int, re
 	if not stone_hit.is_empty():
 		if FogOfWarVerificationService.is_detail_visible(live_cells, stone_hit["macro_coords"], stone_hit["position"], current_absolute_day):
 			for resource_name in LotCapacityService.get_resource_names_for_lot_source(SecondaryResourceTypes.LotSource.STONE_POSITION):
-				_append_unlocked_pickup_candidate(candidates, resource_name, stone_hit["macro_coords"], stone_hit["position"], resource_name in REQUIRE_AVAILABLE_PICKUP_RESOURCE_NAMES)
+				_append_unlocked_pickup_candidate(candidates, resource_name, stone_hit["macro_coords"], stone_hit["position"], resource_name in REQUIRE_AVAILABLE_PICKUP_RESOURCE_NAMES, include_locked)
 		elif DebugLogging.ENABLED and DebugLogging.SHOW_RECONNECT_FACTORY_LOGS:
 			print("[PICKUP CMD DEBUG] stone_hit=%s trovato ma cella non visibile con dettaglio, ignorato." % str(stone_hit))
 
@@ -4497,9 +4629,9 @@ func _resolve_pickup_candidates(event: InputEvent, current_absolute_day: int, re
 	if not stick_lot_hit.is_empty():
 		if FogOfWarVerificationService.is_detail_visible(live_cells, stick_lot_hit["macro_coords"], stick_lot_hit["lot"], current_absolute_day):
 			for resource_name in LotCapacityService.get_resource_names_for_lot_source(SecondaryResourceTypes.LotSource.TREE_INDIVIDUAL):
-				_append_unlocked_pickup_candidate(candidates, resource_name, stick_lot_hit["macro_coords"], stick_lot_hit["lot"], resource_name in REQUIRE_AVAILABLE_PICKUP_RESOURCE_NAMES)
-			_append_unlocked_pickup_candidate(candidates, "acorn", stick_lot_hit["macro_coords"], stick_lot_hit["lot"])
-			_append_unlocked_pickup_candidate(candidates, "fruit", stick_lot_hit["macro_coords"], stick_lot_hit["lot"])
+				_append_unlocked_pickup_candidate(candidates, resource_name, stick_lot_hit["macro_coords"], stick_lot_hit["lot"], resource_name in REQUIRE_AVAILABLE_PICKUP_RESOURCE_NAMES, include_locked)
+			_append_unlocked_pickup_candidate(candidates, "acorn", stick_lot_hit["macro_coords"], stick_lot_hit["lot"], false, include_locked)
+			_append_unlocked_pickup_candidate(candidates, "fruit", stick_lot_hit["macro_coords"], stick_lot_hit["lot"], false, include_locked)
 		elif DebugLogging.ENABLED and DebugLogging.SHOW_RECONNECT_FACTORY_LOGS:
 			print("[PICKUP CMD DEBUG] stick_lot_hit=%s trovato ma cella non visibile con dettaglio, ignorato." % str(stick_lot_hit))
 
@@ -4512,8 +4644,8 @@ func _resolve_pickup_candidates(event: InputEvent, current_absolute_day: int, re
 	if not plant_fiber_lot_hit.is_empty():
 		if FogOfWarVerificationService.is_detail_visible(live_cells, plant_fiber_lot_hit["macro_coords"], plant_fiber_lot_hit["lot"], current_absolute_day):
 			for resource_name in LotCapacityService.get_resource_names_for_lot_source(SecondaryResourceTypes.LotSource.SHRUB_INDIVIDUAL):
-				_append_unlocked_pickup_candidate(candidates, resource_name, plant_fiber_lot_hit["macro_coords"], plant_fiber_lot_hit["lot"], resource_name in REQUIRE_AVAILABLE_PICKUP_RESOURCE_NAMES)
-			_append_unlocked_pickup_candidate(candidates, "berry", plant_fiber_lot_hit["macro_coords"], plant_fiber_lot_hit["lot"])
+				_append_unlocked_pickup_candidate(candidates, resource_name, plant_fiber_lot_hit["macro_coords"], plant_fiber_lot_hit["lot"], resource_name in REQUIRE_AVAILABLE_PICKUP_RESOURCE_NAMES, include_locked)
+			_append_unlocked_pickup_candidate(candidates, "berry", plant_fiber_lot_hit["macro_coords"], plant_fiber_lot_hit["lot"], false, include_locked)
 		elif DebugLogging.ENABLED and DebugLogging.SHOW_RECONNECT_FACTORY_LOGS:
 			print("[PICKUP CMD DEBUG] plant_fiber_lot_hit=%s trovato ma cella non visibile con dettaglio, ignorato." % str(plant_fiber_lot_hit))
 
@@ -4529,7 +4661,7 @@ func _resolve_pickup_candidates(event: InputEvent, current_absolute_day: int, re
 		var egg_cell: LiveMacroCell = live_cells.get(egg_hit["macro_coords"])
 		if egg_cell != null and egg_cell.macro_state != null and egg_cell.macro_state.egg_nest_positions.has(egg_hit["lot"]):
 			if FogOfWarVerificationService.is_detail_visible(live_cells, egg_hit["macro_coords"], egg_hit["lot"], current_absolute_day):
-				_append_unlocked_pickup_candidate(candidates, "eggs", egg_hit["macro_coords"], egg_hit["lot"], true)
+				_append_unlocked_pickup_candidate(candidates, "eggs", egg_hit["macro_coords"], egg_hit["lot"], true, include_locked)
 			elif DebugLogging.ENABLED and DebugLogging.SHOW_RECONNECT_FACTORY_LOGS:
 				print("[PICKUP CMD DEBUG] egg_hit=%s trovato ma cella non visibile con dettaglio, ignorato." % str(egg_hit))
 
@@ -4547,7 +4679,7 @@ func _resolve_pickup_candidates(event: InputEvent, current_absolute_day: int, re
 				if not grass_patch_cell.macro_state.lot_capacity_cache.get(resource_name, {}).has(grass_patch_hit["lot"]):
 					continue
 				if FogOfWarVerificationService.is_detail_visible(live_cells, grass_patch_hit["macro_coords"], grass_patch_hit["lot"], current_absolute_day):
-					_append_unlocked_pickup_candidate(candidates, resource_name, grass_patch_hit["macro_coords"], grass_patch_hit["lot"], true)
+					_append_unlocked_pickup_candidate(candidates, resource_name, grass_patch_hit["macro_coords"], grass_patch_hit["lot"], true, include_locked)
 				elif DebugLogging.ENABLED and DebugLogging.SHOW_RECONNECT_FACTORY_LOGS:
 					print("[PICKUP CMD DEBUG] grass_patch_hit=%s (%s) trovato ma cella non visibile con dettaglio, ignorato." % [str(grass_patch_hit), resource_name])
 
@@ -4632,7 +4764,7 @@ func _handle_microcell_inspection_double_click(event: InputEvent) -> void:
 		_select_microcell({"macro_coords": macro_coords, "lot": lot, "lines": [tr("microcell_inspection_building_occupied")]})
 		return
 
-	var candidates: Array[Dictionary] = _resolve_pickup_candidates(event, current_absolute_day, MOUSE_BUTTON_LEFT)
+	var candidates: Array[Dictionary] = _resolve_pickup_candidates(event, current_absolute_day, MOUSE_BUTTON_LEFT, true)
 	# Filtro difensivo sul lotto esatto (2026-09-16) — _resolve_pickup_candidates cerca già solo
 	# dentro la macrocella/posizione sotto il mouse di QUESTO stesso evento, quindi in pratica ogni
 	# candidato ritornato è già su (macro_coords, lot); questo filtro non cambia mai nulla in
@@ -4683,6 +4815,10 @@ func _handle_microcell_inspection_double_click(event: InputEvent) -> void:
 		var terrain_lines: Array[String] = []
 		var pile_lines: Array[String] = []
 		for candidate in lot_candidates:
+			# Risorsa bloccata da required_idea_id (2026-10-03): riga senza nome né quantità.
+			if candidate.get("locked", false):
+				terrain_lines.append(tr("microcell_inspection_unknown_resource"))
+				continue
 			var line := tr("microcell_inspection_resource_line").format({
 				"resource": IconRegistry.get_resource_display_name(candidate["resource_name"]),
 				"quantity": candidate["available_quantity"],
@@ -5169,6 +5305,9 @@ func _assign_rite_task(worker: HumanIndividual, target_building: Building, rite_
 # memoria: dopo un caricamento le Task di rito in corso vengono riprese a seguire da capo.
 var _tracked_rite_tasks: Dictionary = {}  # Task -> HumanIndividual
 
+# Effetto del rito concluso (2026-10-03): ogni RiteAction vista qui, di un rito ordinato o spontaneo (assegnato da
+# GameScene, da IdleTaskAssignmentService o ripreso da un salvataggio), viene collegata una volta sola a
+# _spawn_rite_completed_effect — stesso ruolo del collegamento di thought_deposited per la lampadina.
 func _track_rite_tasks() -> void:
 	for member in human_individuals:
 		var tasks: Array[Task] = []
@@ -5176,7 +5315,12 @@ func _track_rite_tasks() -> void:
 			tasks.append(member.current_task)
 		tasks.append_array(member.task_queue)
 		for task in tasks:
-			if task.task_name == RITE_TASK_NAME and not _tracked_rite_tasks.has(task) and _rite_action_of(task) != null:
+			var rite := _rite_action_of(task)
+			if rite == null:
+				continue
+			if not rite.rite_completed.is_connected(_spawn_rite_completed_effect):
+				rite.rite_completed.connect(_spawn_rite_completed_effect)
+			if task.task_name == RITE_TASK_NAME and not _tracked_rite_tasks.has(task):
 				_tracked_rite_tasks[task] = member
 	for task in _tracked_rite_tasks.keys():
 		var member: HumanIndividual = _tracked_rite_tasks[task]
@@ -5760,7 +5904,12 @@ func _try_assign_butcher_command_on_right_click(event: InputEvent) -> bool:
 # `cell`): Walk verso il mucchio, Butcher, PickUp di tutto dal mucchio (sorgente GROUND_PILE, criterio ALL), con lo
 # stesso cablaggio di _build_pickup_task (segnali di raccolta e dello scarico accodato). Condivisa dal comando
 # (click destro) e dalla macellazione automatica dopo la caccia. null se la definizione non si carica.
-func _build_butcher_task(worker: HumanIndividual, pile: GroundPile, carcass_id: int, cell: LiveMacroCell) -> Task:
+# `butcher_destination` (2026-10-03, ButcherDestinationService): dove portare i prodotti, nel context della Task. Il
+# comando manuale (click destro sulla carcassa) usa il default, il focolare: il comportamento di prima.
+func _build_butcher_task(
+	worker: HumanIndividual, pile: GroundPile, carcass_id: int, cell: LiveMacroCell,
+	butcher_destination: String = ButcherDestinationService.CAMPFIRE
+) -> Task:
 	var definition := load(BUTCHER_TASK_DEFINITION_PATH) as TaskDefinition
 	if definition == null:
 		return null
@@ -5775,9 +5924,10 @@ func _build_butcher_task(worker: HumanIndividual, pile: GroundPile, carcass_id: 
 		"resource_name": "meat",
 		"pickup_criterion_kind": PickUpAction.CriterionKind.ALL,
 		"pickup_criterion_category": -1,
-		# Scarico (2026-09-27): la carne va prima al focolare più vicino con posto, il resto al magazzino.
-		HumanIndividualActionService.CONTEXT_PREFER_RECIPE_WORKSTATION: true,
 	})
+	# Scarico (2026-09-27; dal 2026-10-03 secondo la destinazione scelta, ButcherDestinationService): focolare = la carne
+	# al focolare più vicino con posto e il resto al magazzino; essiccatoio = carne e pelli all'essiccatoio; magazzino.
+	task.context[ButcherDestinationService.CONTEXT_KEY] = butcher_destination
 	# Più viaggi (2026-10-01): consegnato il carico si torna a questo mucchio finché ha prodotti della macellazione
 	# (HumanIndividualActionService._continue_butcher_pile_trips). Vale per caccia diretta e comando manuale.
 	task.context[ButcherAction.CONTEXT_PILE_TRIPS] = {
@@ -5845,7 +5995,10 @@ func _on_butcher_after_hunt_requested(hunter: HumanIndividual, carcass: Dictiona
 	if hunter.task_queue.size() >= TaskQueueService.MAX_QUEUE_SIZE:
 		HuntService.log_event(hunter, "macellazione non accodata: coda piena, la carcassa resta a terra.")
 		return
-	var task := _build_butcher_task(hunter, pile, carcass_id, cell)
+	# Destinazione scelta nell'ordine di caccia (2026-10-03), passata dalla caccia con la carcassa; senza, il focolare.
+	var task := _build_butcher_task(
+		hunter, pile, carcass_id, cell, String(carcass.get("butcher_destination", ButcherDestinationService.CAMPFIRE))
+	)
 	if task == null:
 		return
 	# Serie di cacce fino a un limite di carne (2026-10-01): la macellazione conta la carne che consegna.
@@ -5937,6 +6090,11 @@ func _try_assign_hunt_command_on_right_click(event: InputEvent) -> bool:
 	# Specie per il pannello individuo (Task.get_activity_description): chiave NON consumata da
 	# TaskFactory (a differenza di "hunt_prey_species"), resta in task.context e nel salvataggio.
 	task.context["hunt_activity_species"] = species
+	# Destinazione della macellazione (2026-10-03): la caccia diretta non ha un dialog, usa l'ultima scelta (o il
+	# focolare/magazzino se non è più disponibile), come la proposta del dialog della caccia nelle zone.
+	task.context[ButcherDestinationService.CONTEXT_KEY] = ButcherDestinationService.resolve_default(
+		game_data.last_butcher_destination, macro_world, human_folk
+	)
 
 	var prey_cell: LiveMacroCell = live_cells.get(prey.macro_coords)
 	# Idoneità PRIMA del gate degli attrezzi (2026-09-26, richiesta utente): il gate sposta davvero l'arma
@@ -7430,6 +7588,49 @@ func _on_random_event_applied(event_id: String, popup_text: String) -> void:
 	if popup_text == "" or not UserOptions.show_notification_popups:
 		return
 	notification_popup.enqueue(NotificationTypes.NotificationPopupType.RANDOM_EVENT, popup_text)
+
+
+# Il raggio religioso di un edificio è salito o sceso di livello (2026-10-03, richiesta utente — punti e soglie):
+# popup di default, stesso gate degli altri. Politica e cultura non hanno avviso.
+# Essiccazione completata (2026-10-03, essiccazione passo 5 — GameSettings.auto_progress_completed): popup con edificio,
+# prodotto e quantità, nomi dalle traduzioni esistenti. Stesso gate degli altri popup.
+func _on_auto_progress_completed(building: Building, _input_name: String, product_name: String, quantity: int) -> void:
+	if building == null or not UserOptions.show_notification_popups:
+		return
+	notification_popup.enqueue(
+		NotificationTypes.NotificationPopupType.AUTO_PROGRESS_COMPLETED,
+		tr("notification_auto_progress_completed").format({
+			"building": _building_display_name(building),
+			"resource": IconRegistry.get_resource_display_name(product_name),
+			"quantity": quantity,
+		})
+	)
+
+
+# Essiccatoio pieno (2026-10-03, essiccazione passo 5 — HumanIndividualActionService.drying_rack_full): la risorsa di
+# una macellazione ripiega sul magazzino. Popup "alert", stesso gate degli altri.
+func _on_drying_rack_full(_individual: HumanIndividual, resource_name: String) -> void:
+	if not UserOptions.show_notification_popups:
+		return
+	var rules := BuildingCalculator.get_building_rules(String(ButcherDestinationService.BUILDING_TYPES[ButcherDestinationService.DRYING_RACK]))
+	notification_popup.enqueue(
+		NotificationTypes.NotificationPopupType.DRYING_RACK_FULL,
+		tr("notification_drying_rack_full").format({
+			"building": tr(rules.building_name) if rules != null else tr("hunt_destination_drying_rack"),
+			"resource": IconRegistry.get_resource_display_name(resource_name),
+		})
+	)
+
+
+func _on_influence_level_changed(building: Building, influence_type: int, old_radius: int, new_radius: int) -> void:
+	if influence_type != InfluenceService.InfluenceType.RELIGIOUS or building == null or not UserOptions.show_notification_popups:
+		return
+	var key := "notification_influence_religious_level_up" if new_radius > old_radius else "notification_influence_religious_level_down"
+	var building_name: String = tr(building.rules.building_name) if building.rules != null else building.building_type_name
+	notification_popup.enqueue(
+		NotificationTypes.NotificationPopupType.INFLUENCE_LEVEL_CHANGED,
+		tr(key).format({"building": building_name, "radius": new_radius})
+	)
 
 
 func _on_individual_started_body_reserve(individual: HumanIndividual) -> void:
@@ -12119,6 +12320,13 @@ func _setup_clock() -> void:
 	game_time_service.individual_born.connect(_on_human_individual_born)
 	# Eventi casuali (2026-09-26): popup non di allarme, stesso gate degli altri popup.
 	game_time_service.random_event_applied.connect(_on_random_event_applied)
+	# Livello del raggio religioso di un edificio (2026-10-03, punti e soglie): segnale dell'autoload, emesso da
+	# InfluenceService (rito completato o anno senza riti); scollegato da solo quando questa scena viene liberata.
+	if not GameSettings.influence_level_changed.is_connected(_on_influence_level_changed):
+		GameSettings.influence_level_changed.connect(_on_influence_level_changed)
+	# Essiccazione completata (2026-10-03): stesso canale dell'autoload, emesso da ProductionService.
+	if not GameSettings.auto_progress_completed.is_connected(_on_auto_progress_completed):
+		GameSettings.auto_progress_completed.connect(_on_auto_progress_completed)
 	# Effetto nato-morto (2026-09-06) — simmetrico a individual_born sopra, stesso schema.
 	game_time_service.human_stillbirth.connect(_on_human_stillbirth)
 	game_time_service.human_population_changed.connect(_on_human_population_changed)
@@ -12143,6 +12351,8 @@ func _setup_clock() -> void:
 	individual_action_service.ground_pile_haul_requested.connect(_on_ground_pile_haul_requested)
 	individual_action_service.hunt_ended_with_message.connect(_on_hunt_ended_with_message)
 	individual_action_service.hunt_zone_series_continue_requested.connect(_on_hunt_zone_series_continue_requested)
+	# Essiccatoio pieno durante una macellazione (2026-10-03, essiccazione passo 5).
+	individual_action_service.drying_rack_full.connect(_on_drying_rack_full)
 	individual_action_service.building_material_blocked.connect(_on_building_material_blocked)
 	play_pause_button.pressed.connect(_on_play_pause_pressed)
 	for speed in speed_buttons.keys():

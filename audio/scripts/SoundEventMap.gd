@@ -15,6 +15,7 @@ const EVENTS: Dictionary = {
 	&"ui_selection": &"ui_select",
 	# Mondo
 	&"idea_completed": &"idea_spark",
+	&"rite_completed": &"church_bell",
 }
 
 

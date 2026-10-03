@@ -44,6 +44,12 @@ signal hunt_ended_with_message(individual: HumanIndividual, message: String)
 # Serie di cacce fino a un limite di carne (2026-10-01): una macellazione della serie è finita sotto il limite; GameScene
 # accoda una nuova caccia nella stessa zona (o chiude la serie se la zona non c'è più o manca il coltello).
 signal hunt_zone_series_continue_requested(individual: HumanIndividual, series: Dictionary)
+# Macellazione con destinazione Essiccatoio (2026-10-03, essiccazione passo 5): nessun essiccatoio ha posto per
+# `resource_name` (carne o pelli) e la risorsa ripiega sul magazzino. Una volta per Task e per risorsa
+# (CONTEXT_DRYING_FULL_NOTIFIED); GameScene mostra il popup.
+signal drying_rack_full(individual: HumanIndividual, resource_name: String)
+# Risorse già segnalate con drying_rack_full in questa Task (Array di nomi, nel context: regge il salvataggio).
+const CONTEXT_DRYING_FULL_NOTIFIED := "drying_full_notified"
 const CONTEXT_PENDING_GROUND_PILE_HAUL := "pending_ground_pile_haul"
 
 # Servizio single-responsibility (stesso pattern di HumanIndividualMovementService, stesso
@@ -870,19 +876,21 @@ func _search_warehouse_for_resource(
 	# focolare (2026-10-02, richiesta utente): una Build non preleva mai da una postazione di lavoro. Lo scarico alla
 	# postazione è marcato only_preferred_resources: lì entrano solo le risorse con il flag, il resto dello zaino resta
 	# addosso. Il residuo lo ricolloca UnloadAction con il re-routing normale verso un magazzino.
-	var candidate: Building = null
-	var via_workstation_preference := false
-	if bool(task.context.get(CONTEXT_PREFER_RECIPE_WORKSTATION, false)) and WarehouseSelectionService.prefers_recipe_workstation(resource_name):
-		candidate = WarehouseSelectionService.find_nearest_recipe_workstation(
-			world, individual.position, individual.home_macro_coords, resource_name, 1, excluded_building_ids,
-			PathfindingService.reachability_for(individual)
-		)
-		via_workstation_preference = candidate != null
+	# Dal 2026-10-03 (essiccazione passo 4) la preferenza segue la destinazione scelta dal giocatore nell'ordine di caccia
+	# (ButcherDestinationService: focolare come sopra, essiccatoio per i suoi ingredienti ad avanzamento automatico,
+	# magazzino = nessuna preferenza).
+	var candidate: Building = ButcherDestinationService.find_preferred_building(
+		world, individual.position, individual.home_macro_coords, resource_name,
+		ButcherDestinationService.get_destination(task.context), 1, excluded_building_ids,
+		PathfindingService.reachability_for(individual)
+	)
+	var via_workstation_preference := candidate != null
 	if candidate == null:
 		candidate = WarehouseSelectionService.find_best(
 			world, individual.position, individual.home_macro_coords, resource_name, quantity, excluded_building_ids,
 			PathfindingService.reachability_for(individual)
 		)
+		_notify_drying_rack_full(individual, task, resource_name, candidate)
 	if candidate != null:
 		if targeted_building_ids.has(candidate.id):
 			# Stesso magazzino già scelto per un'altra varietà in questa ricerca: la risorsa si aggiunge alle
@@ -1071,8 +1079,9 @@ static func _skip_walk_away_with_follow_up(individual: HumanIndividual, task: Ta
 # sparita, bersaglio perso al lancio, tetto dei riavvicinamenti raggiunto).
 const CONTEXT_PENDING_TASK_ABORT := "pending_task_abort"
 # Chiave di task.context (2026-09-27): true = la ricerca del magazzino dopo una raccolta preferisce, per gli
-# ingredienti di una ricetta, la postazione di lavoro più vicina (vedi _search_warehouse_for_resource). Scritta da
-# GameScene._build_butcher_task; resta nel context, quindi sopravvive al salvataggio.
+# ingredienti di una ricetta, la postazione di lavoro più vicina (vedi _search_warehouse_for_resource). Dal 2026-10-03
+# non è più scritta: la sostituisce ButcherDestinationService.CONTEXT_KEY, che la legge ancora come "focolare" per le
+# Task dei salvataggi precedenti.
 const CONTEXT_PREFER_RECIPE_WORKSTATION := "prefer_recipe_workstation"
 
 
@@ -1149,6 +1158,9 @@ func _handle_pending_hunt_butcher(individual: HumanIndividual, task: Task) -> vo
 	var series := HuntZoneService.get_meat_series(task.context)
 	if not series.is_empty():
 		carcass["hunt_zone_series"] = series.duplicate()
+	# Destinazione dei prodotti scelta nell'ordine di caccia (2026-10-03): passa alla macellazione.
+	if task.context.has(ButcherDestinationService.CONTEXT_KEY):
+		carcass["butcher_destination"] = String(task.context[ButcherDestinationService.CONTEXT_KEY])
 	# Diagnosi (2026-09-27, macellazione accodata due volte): quale Task/step consuma la richiesta e quando.
 	var step := task.get_current_action()
 	HuntService.log_event(individual, "richiesta macellazione consumata: carcassa #%d, da %s, Task '%s' (istanza %d) step %d/%d %s (%s)." % [
@@ -1220,15 +1232,30 @@ func _continue_butcher_pile_trips(individual: HumanIndividual, task: Task, world
 		])
 
 
+# Avviso "essiccatoio pieno" (2026-10-03, essiccazione passo 5): con destinazione Essiccatoio, una risorsa che dovrebbe
+# andarci non ha trovato posto in nessun essiccatoio e ripiega su un magazzino (`fallback` non nullo). Solo avviso:
+# lo scarico non cambia. Una volta per Task e per risorsa.
+func _notify_drying_rack_full(individual: HumanIndividual, task: Task, resource_name: String, fallback: Building) -> void:
+	if fallback == null or ButcherDestinationService.get_destination(task.context) != ButcherDestinationService.DRYING_RACK:
+		return
+	if not ButcherDestinationService.is_drying_rack_resource(resource_name):
+		return
+	var notified: Array = task.context.get(CONTEXT_DRYING_FULL_NOTIFIED, [])
+	if notified.has(resource_name):
+		return
+	notified.append(resource_name)
+	task.context[CONTEXT_DRYING_FULL_NOTIFIED] = notified
+	drying_rack_full.emit(individual, resource_name)
+
+
 # true se almeno un prodotto rimasto ha una destinazione raggiungibile: la workstation della ricetta (se la Task la
 # preferisce) o un magazzino — stessa coppia di ricerche di _search_warehouse_for_resource.
 func _has_butcher_product_destination(individual: HumanIndividual, task: Task, world: World, product_names: Array[String]) -> bool:
 	var reachability := PathfindingService.reachability_for(individual)
-	var prefer_workstation := bool(task.context.get(CONTEXT_PREFER_RECIPE_WORKSTATION, false))
+	var destination := ButcherDestinationService.get_destination(task.context)
 	for product_name in product_names:
-		if prefer_workstation and WarehouseSelectionService.prefers_recipe_workstation(product_name) \
-				and WarehouseSelectionService.find_nearest_recipe_workstation(
-			world, individual.position, individual.home_macro_coords, product_name, 1, [], reachability
+		if ButcherDestinationService.find_preferred_building(
+			world, individual.position, individual.home_macro_coords, product_name, destination, 1, [], reachability
 		) != null:
 			return true
 		if WarehouseSelectionService.find_best(

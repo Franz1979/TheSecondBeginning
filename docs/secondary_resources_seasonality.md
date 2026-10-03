@@ -2,7 +2,8 @@
 
 Documento generato il 2026-09-19 — solo documentazione, non è letto da alcun codice del progetto.
 Sostituisce/accompagna `secondary_resources_seasonality.csv` (stessi dati, qui in forma leggibile).
-I valori sono presi a fresco dai `.tres` correnti in `simulation/data/secondary_resources/`: se li
+I valori sono presi a fresco dai `.tres` correnti in `simulation/data/secondary_resources/` (una sottocartella per categoria: `food/`, `raw_materials/`,
+`medicinal/`, `semi_finished/`, `tools/`): se li
 ritocchi, questo documento invecchia — non fidarsene ciecamente, verificare contro il file reale.
 
 Per ogni risorsa, **"Disponibilità"** è `seasonal_availability_multiplier` per stagione: la frazione

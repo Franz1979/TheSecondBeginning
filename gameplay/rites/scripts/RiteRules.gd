@@ -29,6 +29,6 @@ extends Resource
 # trovi e di qualunque età, moltiplicata per lo stesso fattore skill di faith_present. Chi celebra e i presenti non la
 # ricevono: un solo bonus per pipottino e per rito (RiteEffectService).
 @export var faith_population: float = 0.0
-# Crescita del raggio RELIGIOUS dell'edificio al completamento (2026-10-02, passo 4c), moltiplicata per lo stesso
-# fattore skill di faith_present (InfluenceService.add_radius).
-@export var radius_gain: float = 0.0
+# Punti di influenza RELIGIOUS guadagnati dall'edificio al completamento (2026-10-03, punti e soglie — prima
+# radius_gain del passo 4c), moltiplicati per lo stesso fattore skill di faith_present (InfluenceService.add_points).
+@export var influence_gain: float = 0.0

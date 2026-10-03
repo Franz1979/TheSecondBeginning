@@ -1,0 +1,17 @@
+[gd_resource type="Resource" script_class="SecondaryResourceRules" format=3 uid="uid://b21soh6xvhkqm"]
+
+[ext_resource type="Script" uid="uid://cu4cyua5y4n1m" path="res://simulation/scripts/core/SecondaryResourceRules.gd" id="1_dried_hide"]
+
+[resource]
+script = ExtResource("1_dried_hide")
+secondary_resource_name = "dried_hide"
+calories_per_unit = 0.0
+category = 3
+generation_source = 2
+day_durability = 720
+space_per_unit = 3.0
+recipe_inputs = {
+"hide": 1
+}
+recipe_auto_progress_days = 20
+recipe_workstation_types = Array[String](["drying_rack"])

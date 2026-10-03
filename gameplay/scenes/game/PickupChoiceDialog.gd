@@ -39,7 +39,8 @@ extends Window
 # source_kind (2026-09-26, ground drop): PickUpAction.SourceKind della voce scelta (mucchio a terra o terreno).
 signal choice_made(kind: int, category: int, resource_name: String, quantity: int, repeat: bool, source_kind: int)
 # Modalità caccia (2026-10-01, comando Caccia nelle zone — open_hunt_dialog): solo il selettore "Carne", nessun elenco.
-signal hunt_choice_made(meat_target: int)
+# `butcher_destination` (2026-10-03): destinazione dei prodotti della macellazione (ButcherDestinationService).
+signal hunt_choice_made(meat_target: int, butcher_destination: String)
 
 @onready var message_label: Label = $MarginContainer/VBoxContainer/MessageLabel
 @onready var choice_list_container: VBoxContainer = $MarginContainer/VBoxContainer/ChoiceScroll/ChoiceListContainer
@@ -112,6 +113,14 @@ var _meat_option: OptionButton = null
 var _meat_values: Array[int] = []
 # Altezza di partenza in modalità caccia: la finestra poi si adatta al contenuto (_fit_to_content).
 const HUNT_DIALOG_HEIGHT: float = 120.0
+# Sezione "Destinazione" della caccia (2026-10-03): una riga per opzione, a scelta singola.
+const DESTINATION_ICON_SIZE: float = 20.0
+const DESTINATION_LOCK_ICON := "🔒"
+var _destination_section: VBoxContainer = null
+var _destination_rows: VBoxContainer = null
+var _destination_group: ButtonGroup = null
+# Bottone di scelta -> id della destinazione.
+var _destination_ids: Dictionary = {}
 
 
 func _ready() -> void:
@@ -402,8 +411,15 @@ func _select_choice(index: int) -> void:
 # `default_target` o il primo valore) e Conferma/Annulla. Conferma -> hunt_choice_made(valore); Annulla/Esc -> nulla.
 # Ritorna false (dialog NON aperto, nessun pannello lasciato sullo schermo) se la riga non si costruisce o non ci sono
 # valori: il chiamante non deve aspettarsi una risposta.
-func open_hunt_dialog(dialog_title: String, message: String, meat_options: Array[int], default_target: int) -> bool:
+# `destination_options` (2026-10-03): [{"id", "name", "building_type", "disabled_reason", "locked"}] in ordine (vedi
+# GameScene._build_butcher_destination_options); `default_destination` preselezionata, se abilitata.
+func open_hunt_dialog(
+	dialog_title: String, message: String, meat_options: Array[int], default_target: int,
+	destination_options: Array[Dictionary] = [], default_destination: String = ""
+) -> bool:
 	_ensure_meat_row()
+	_ensure_destination_section()
+	_fill_destination_section(destination_options, default_destination)
 	if _meat_option == null or meat_options.is_empty():
 		push_error("PickupChoiceDialog.open_hunt_dialog: riga \"Carne\" non disponibile o nessun valore — dialog non aperto.")
 		hide()
@@ -458,6 +474,8 @@ func _set_hunt_mode(enabled: bool) -> void:
 			_trips_row.visible = false
 	if _meat_row != null:
 		_meat_row.visible = enabled
+	if _destination_section != null:
+		_destination_section.visible = enabled
 
 
 func _ensure_meat_row() -> void:
@@ -485,6 +503,75 @@ func _ensure_meat_row() -> void:
 	_meat_row.visible = false
 
 
+# Sezione "Destinazione" (2026-10-03), creata alla prima apertura in modalità caccia sotto la riga "Carne".
+func _ensure_destination_section() -> void:
+	if _destination_section != null:
+		return
+	_destination_section = VBoxContainer.new()
+	var caption := Label.new()
+	caption.text = tr("hunt_destination_caption")
+	_destination_section.add_child(caption)
+	_destination_rows = VBoxContainer.new()
+	_destination_section.add_child(_destination_rows)
+	var parent := repeat_check_box.get_parent()
+	parent.add_child(_destination_section)
+	var anchor: Node = _meat_row if _meat_row != null else repeat_check_box
+	parent.move_child(_destination_section, anchor.get_index() + 1)
+	_destination_section.visible = false
+
+
+# Una riga per opzione: icona dell'edificio e casella a scelta singola. Un'opzione non disponibile resta visibile ma
+# disabilitata, con il motivo nel tooltip (e il lucchetto per quelle non ancora disponibili). Preselezionata
+# `default_destination` se abilitata, altrimenti la prima abilitata.
+func _fill_destination_section(options: Array[Dictionary], default_destination: String) -> void:
+	for child in _destination_rows.get_children():
+		child.queue_free()
+	_destination_ids = {}
+	_destination_group = ButtonGroup.new()
+	_destination_section.visible = not options.is_empty()
+	var to_select: CheckBox = null
+	var first_enabled: CheckBox = null
+	for option in options:
+		var reason := String(option.get("disabled_reason", ""))
+		var row := HBoxContainer.new()
+		row.tooltip_text = reason
+		row.add_child(_build_destination_icon(String(option.get("building_type", ""))))
+		var choice := CheckBox.new()
+		choice.button_group = _destination_group
+		var text := String(option.get("name", ""))
+		if bool(option.get("locked", false)):
+			text = "%s %s — %s" % [text, DESTINATION_LOCK_ICON, reason]
+		choice.text = text
+		choice.disabled = reason != ""
+		choice.tooltip_text = reason
+		row.add_child(choice)
+		_destination_rows.add_child(row)
+		_destination_ids[choice] = String(option.get("id", ""))
+		if not choice.disabled:
+			if first_enabled == null:
+				first_enabled = choice
+			if String(option.get("id", "")) == default_destination:
+				to_select = choice
+	if to_select == null:
+		to_select = first_enabled
+	if to_select != null:
+		to_select.button_pressed = true
+
+
+# Icona dell'edificio (IconRegistry.build_building_icon_box: disegnata se c'è, altrimenti l'emoji).
+func _build_destination_icon(building_type: String) -> Control:
+	return IconRegistry.build_building_icon_box(building_type, DESTINATION_ICON_SIZE)
+
+
+# Destinazione selezionata, il magazzino se nessuna (sezione vuota).
+func _selected_destination() -> String:
+	if _destination_group != null:
+		var pressed := _destination_group.get_pressed_button()
+		if pressed != null and _destination_ids.has(pressed):
+			return String(_destination_ids[pressed])
+	return ButcherDestinationService.WAREHOUSE
+
+
 func _on_window_input(event: InputEvent) -> void:
 	if visible and event.is_action_pressed("ui_cancel"):
 		set_input_as_handled()
@@ -494,9 +581,10 @@ func _on_window_input(event: InputEvent) -> void:
 func _on_confirm_pressed() -> void:
 	if _hunt_mode:
 		var index := _meat_option.selected if _meat_option != null else -1
+		var destination := _selected_destination()
 		hide()
 		if index >= 0 and index < _meat_values.size():
-			hunt_choice_made.emit(_meat_values[index])
+			hunt_choice_made.emit(_meat_values[index], destination)
 		return
 	if _selected_index < 0 or _selected_index >= _choices.size():
 		return

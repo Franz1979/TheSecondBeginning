@@ -170,23 +170,7 @@ const DEPOSIT_SITE_HALF_SIDE: float = 4.5
 # Sagoma con angoli smussati diversamente da DepositSiteShape.build_polygon (2026-09-19, richiesta
 # utente) — il vecchio poligono a 8 vertici con jitter (DEPOSIT_SITE_VERTEX_COUNT) non esiste più.
 
-# Stick Tent (2026-09-12, richiesta utente — collegamento UI/rendering: il .tres/BuildingRules
-# esistevano già da un giro precedente, ma non era ancora disegnabile) — placeholder semplice:
-# cerchio pieno color paglia/marrone chiaro, PIÙ PICCOLO del corpo della capanna (BUILDING_HUT_
-# RADIUS=2.5, qui 2.0), SENZA recinto (nessun recinto in stick_tent.tres) — "distinguibile da Hut,
-# coerente con tier inferiore" (richiesta utente). has_door RESTA vero (default di BuildingRules,
-# mai impostato a false in stick_tent.tres) — BUGFIX (2026-09-12, richiesta utente — "has_door è
-# vero ma non si vede la porta"): aggiunto un piccolo TRIANGOLO sul bordo nel verso della porta
-# (vedi STICK_TENT_DOOR_MARKER_* sotto), non un vero ritaglio come la capanna. Stessa geometria
-# (duplicata apposta, stesso principio già in uso tra MicroCellRenderer/BuildingGhost) di
-# BuildingGhost._draw_stick_tent, così l'anteprima e l'edificio finito coincidono esattamente.
-const STICK_TENT_COLOR := Color(0.78, 0.62, 0.32, 1.0)
-const STICK_TENT_OUTLINE_COLOR := Color(0.45, 0.32, 0.15, 1.0)
-const STICK_TENT_OUTLINE_WIDTH: float = 0.4
-const STICK_TENT_RADIUS: float = 2.0
-const STICK_TENT_DOOR_MARKER_COLOR := Color(0.25, 0.15, 0.06, 1.0)
-const STICK_TENT_DOOR_MARKER_HALF_WIDTH: float = 0.7
-const STICK_TENT_DOOR_MARKER_HEIGHT: float = 1.1
+# Tende (dal 2026-10-03 in TentShapes, condiviso con BuildingGhost e con le icone della barra di costruzione).
 
 # Griglia di stoccaggio (2026-09-11, richiesta utente iniziale; REVISIONATA 2026-09-12 dopo
 # feedback esplicito: "il modo con cui rappresenti bastoni e pietre è proprio l'opposto di quello
@@ -1137,9 +1121,13 @@ func _draw_buildings() -> void:
 			PlaceholderBuildingShapes.draw(self, building_type_name, ground)
 			continue
 		var direction: GameTypes.Direction = entry["rotation"]
-		# Tenda di pelli (2026-09-27): grafica provvisoria, la stessa della tenda di rami.
-		if building_type_name == "stick_tent" or building_type_name == "hide_tent":
-			_draw_stick_tent(ground, direction)
+		# Tende (2026-10-03, scambio di aspetto — TentShapes): la tenda di pelli ha il disco liscio che prima avevano
+		# entrambe, la tenda di rami la copertura di rami a raggiera.
+		if building_type_name == "hide_tent":
+			TentShapes.draw_hide_tent(self, ground, direction)
+			continue
+		if building_type_name == "stick_tent":
+			TentShapes.draw_stick_tent(self, ground, direction)
 			continue
 		# Capanna dell'attrezzista (2026-09-24, richiesta utente) — disegno provvisorio: stessa sagoma
 		# della capanna (porta + recinto, ruota con `direction`), riempimento più scuro e un segno
@@ -1451,12 +1439,6 @@ func _draw_deposit_site(ground: Vector2) -> void:
 	draw_set_transform(Vector2.ZERO)
 
 
-# Cerchio pieno attorno al centro della microcella più un piccolo TRIANGOLO sul bordo, nel verso
-# di `direction` — has_door resta vero per questo tipo (vedi commento su STICK_TENT_COLOR sopra),
-# quindi la rotazione va mostrata anche se non con un vero ritaglio come la capanna. Stessa funzione
-# (duplicata apposta, vedi commento su STICK_TENT_COLOR sopra) di BuildingGhost._draw_stick_tent.
-# Chiamata SOLO a edificio completo (vedi commento su _draw_pebble_circle sopra) — nessun parametro
-# colore più necessario, solo `direction`.
 # Focolare (2026-09-23, richiesta utente) — forma provvisoria: anello di CAMPFIRE_STONE_COUNT pietre
 # scure attorno a una fiamma (cerchio arancio + nucleo giallo). Più piccolo e più scuro del Pebble
 # Circle (anello di raggio 4 di sassolini chiari), così i due non si confondono. Nessuna porta né
@@ -1477,24 +1459,6 @@ func _draw_campfire(ground: Vector2) -> void:
 		draw_circle(ground + Vector2(cos(angle), sin(angle)) * CAMPFIRE_RING_RADIUS, CAMPFIRE_STONE_RADIUS, CAMPFIRE_STONE_COLOR)
 	draw_circle(ground, CAMPFIRE_FLAME_RADIUS, CAMPFIRE_FLAME_COLOR)
 	draw_circle(ground, CAMPFIRE_FLAME_CORE_RADIUS, CAMPFIRE_FLAME_CORE_COLOR)
-
-
-func _draw_stick_tent(ground: Vector2, direction: GameTypes.Direction) -> void:
-	draw_circle(ground, STICK_TENT_RADIUS, STICK_TENT_COLOR)
-	draw_arc(ground, STICK_TENT_RADIUS, 0.0, TAU, BUILDING_CIRCLE_SEGMENTS, STICK_TENT_OUTLINE_COLOR, STICK_TENT_OUTLINE_WIDTH, true)
-
-	var dir_vector := _direction_vector(direction)
-	var perpendicular := Vector2(-dir_vector.y, dir_vector.x)
-	var base_center: Vector2 = ground + dir_vector * STICK_TENT_RADIUS
-	var apex: Vector2 = ground + dir_vector * (STICK_TENT_RADIUS + STICK_TENT_DOOR_MARKER_HEIGHT)
-	draw_colored_polygon(
-		PackedVector2Array([
-			base_center + perpendicular * STICK_TENT_DOOR_MARKER_HALF_WIDTH,
-			base_center - perpendicular * STICK_TENT_DOOR_MARKER_HALF_WIDTH,
-			apex,
-		]),
-		STICK_TENT_DOOR_MARKER_COLOR
-	)
 
 
 # Un mucchietto per SLOT occupato di `slot_breakdown` (Array di {"resource_name","quantity",

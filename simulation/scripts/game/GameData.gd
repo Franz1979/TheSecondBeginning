@@ -254,6 +254,9 @@ var work_areas_revision: int = 0
 # _refresh_building_slots_buildable (caricamento, piazzamento, completamento, demolizione), letto dagli overlay dei
 # layer di influenza (InfluenceLayerOverlay) per ridisegnarsi solo quando serve.
 var buildings_revision: int = 0
+# Ultima destinazione dei prodotti della macellazione scelta nell'ordine di caccia (2026-10-03, ButcherDestinationService,
+# salvata con la partita): proposta all'apertura del dialog e usata dalla caccia diretta. "" = mai scelta.
+var last_butcher_destination: String = ""
 
 func allocate_work_area_id() -> int:
 	var id := next_work_area_id

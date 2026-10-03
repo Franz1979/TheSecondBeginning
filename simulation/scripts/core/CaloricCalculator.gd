@@ -5,8 +5,19 @@ extends RefCounted
 # vedi SecondaryResourceRules, rinominata da CaloricSourceRules).
 const SECONDARY_RESOURCES_DIR := "res://simulation/data/secondary_resources/"
 
+# Sottocartella -> categoria (2026-10-03, richiesta utente — riorganizzazione per categoria): i .tres stanno in
+# SECONDARY_RESOURCES_DIR/<cartella>/, la cartella segue SecondaryResourceRules.category. Usata da DataFileIndex
+# solo per avvisare se un file è nella cartella sbagliata; la risoluzione resta per nome.
+const SECONDARY_RESOURCE_FOLDER_CATEGORIES := {
+	"food": SecondaryResourceTypes.Category.FOOD,
+	"raw_materials": SecondaryResourceTypes.Category.RAW_MATERIAL,
+	"medicinal": SecondaryResourceTypes.Category.MEDICINAL,
+	"semi_finished": SecondaryResourceTypes.Category.SEMI_FINISHED,
+	"tools": SecondaryResourceTypes.Category.TOOL,
+}
+
 # Nessun vero registro di fonti a stock persistente esiste ancora (nessuna scansione automatica
-# dei .tres in data/secondary_resources/) — solo questo elenco hardcoded delle fonti oggi implementate
+# dei .tres in data/secondary_resources/ e sottocartelle) — solo questo elenco hardcoded delle fonti oggi implementate
 # con la rispettiva risorsa primaria. Aggiungere una nuova fonte a stock persistente richiede una
 # riga qui, a mano. Spostato qui da WorldTimeService (2026-09-05): ora ha un secondo consumatore
 # (LODOrchestrator.set_focus_region, per il catch-up alla prima scoperta di una cella — vedi
@@ -34,16 +45,16 @@ static var _rules_cache: Dictionary = {}
 static func get_caloric_source_rules(resource_name: String) -> SecondaryResourceRules:
 	if _rules_cache.has(resource_name):
 		return _rules_cache[resource_name]
-	var path := SECONDARY_RESOURCES_DIR + resource_name + ".tres"
+	var path := DataFileIndex.resolve_path(SECONDARY_RESOURCES_DIR, resource_name, SECONDARY_RESOURCE_FOLDER_CATEGORIES)
 	var rules: SecondaryResourceRules = null
-	if ResourceLoader.exists(path):
+	if path != "" and ResourceLoader.exists(path):
 		rules = load(path) as SecondaryResourceRules
 	_rules_cache[resource_name] = rules
 	return rules
 
 
 # Elenco per convenzione (un nome per ogni {secondary_resource_name}.tres in
-# SECONDARY_RESOURCES_DIR) — 2026-09-19, richiesta utente: refactor lot_source, "aggiungere una
+# SECONDARY_RESOURCES_DIR o in una sua sottocartella) — 2026-09-19, richiesta utente: refactor lot_source, "aggiungere una
 # risorsa nuova deve costare un .tres, niente altro codice" — STESSO principio/STESSA scansione
 # già in uso per BuildingCalculator.list_building_type_names/AnimalCalculator.list_species_names,
 # qui applicata per la prima volta al dominio SecondaryResourceRules (che finora, a differenza di
@@ -53,22 +64,9 @@ static func get_caloric_source_rules(resource_name: String) -> SecondaryResource
 # consumatore oggi: LotCapacityService.get_resource_names_for_lot_source, che filtra questo elenco
 # per lot_source — un nuovo .tres con lot_source valorizzato compare lì da solo.
 static func list_secondary_resource_names() -> Array[String]:
-	var names: Array[String] = []
-	var dir := DirAccess.open(SECONDARY_RESOURCES_DIR)
-	if dir == null:
-		return names
-	dir.list_dir_begin()
-	var file_name := dir.get_next()
-	while file_name != "":
-		# Build esportate (2026-09-27): le risorse testuali compaiono come "*.tres.remap" — stesso trattamento di
-		# RandomEventService.list_rules. Senza, in una build l'elenco resterebbe vuoto (nessuna ricetta producibile).
-		var resource_file := file_name.trim_suffix(".remap")
-		if not dir.current_is_dir() and resource_file.ends_with(".tres") and not names.has(resource_file.get_basename()):
-			names.append(resource_file.get_basename())
-		file_name = dir.get_next()
-	dir.list_dir_end()
-	names.sort()
-	return names
+	# Scansione ricorsiva delle sottocartelle per categoria (2026-10-03), .remap delle build esportate compresi:
+	# vedi DataFileIndex.
+	return DataFileIndex.list_names(SECONDARY_RESOURCES_DIR, SECONDARY_RESOURCE_FOLDER_CATEGORIES)
 
 
 # Formula generica condivisa da qualsiasi fonte calorica, presente o futura: quantità_base ×

@@ -55,8 +55,11 @@ idea_drying_description,"Laid out in sun and wind on a rack, meat keeps much lon
 idea_smoking,Smoking
 idea_smoking_summary,Allows building the smokehouse.
 idea_smoking_description,"The slow smoke of a covered fire preserves meat and adds flavor."
-idea_plant_lore_summary,Allows recognizing medicinal herbs.
-idea_plant_lore_description,"By observing plants, the group learns which ones heal and where to find them."
+idea_plant_lore_summary,The group learns to recognize medicinal herbs.
+idea_plant_lore_description,"By observing plants, the group learns to tell medicinal herbs apart and where to find them. They can now be gathered, but no one knows yet how to use them."
+idea_herbal_medicine,Herbal Medicine
+idea_herbal_medicine_summary,The group learns to use medicinal herbs to heal itself.
+idea_herbal_medicine_description,"Through trial and error, the group discovers how to prepare medicinal herbs to treat wounds and ailments."
 idea_work_areas_summary,Unlocks food gathering areas.
 idea_work_areas_description,The group learns to mark out zones where food is gathered.
 idea_work_areas_advanced_summary,Unlocks work areas for every resource.
@@ -130,6 +133,25 @@ ground_pile_disappears_label,Disappears in {days} days
 ground_pile_terrain_header,On the ground here
 building_ground_pile_caption,Pile on the ground here:
 microcell_inspection_ground_pile_header,Pile on the ground:
+microcell_inspection_unknown_resource,- Unknown resource
+storage_slot_auto_progress_tooltip,Ready in {days} days
+hunt_destination_caption,Destination
+hunt_destination_campfire,Campfire
+hunt_destination_drying_rack,Drying rack
+hunt_destination_smokehouse,Smokehouse
+hunt_destination_warehouse,Warehouse
+hunt_destination_not_yet_available,Not yet available
+hunt_destination_requires_idea,Requires: {idea}
+hunt_destination_no_building,No {building} built
+command_bar_butcher_destination_tooltip,Destination of hunting products: {name}
+command_bar_group_actions,Actions
+command_bar_group_options,Options
+build_bar_title_build,Build
+build_bar_title_buildings,Buildings
+build_bar_title_work_areas,Work areas
+building_auto_progress_line,"Drying: {resource} ×{quantity}, ready in {days} days"
+building_auto_progress_line_ready,"Drying: {resource} ×{quantity}, ready (waiting for space)"
+building_auto_progress_none,Drying: nothing
 pickup_choice_source_ground_pile,From the pile on the ground
 pickup_choice_source_terrain,From the terrain
 individual_kill_debug_button,Kill (debug)
@@ -197,8 +219,14 @@ building_influence_political_tooltip,"Political influence: radius {radius}"
 building_influence_political_none_tooltip,No political influence
 building_influence_cultural_tooltip,"Cultural influence: radius {radius}"
 building_influence_cultural_none_tooltip,No cultural influence
-building_influence_religious_tooltip,"Religious influence: radius {radius}"
+building_influence_religious_tooltip,"Religious influence: radius {radius} · Sanctity {points} / {next}"
 building_influence_religious_none_tooltip,No religious influence
+building_influence_religious_max_tooltip,"Religious influence: radius {radius} · Sanctity {points}"
+building_influence_no_rite_tooltip,No rite for over a year: −{loss} sanctity per year
+notification_influence_religious_level_up,"{building}: religious influence rises to radius {radius}."
+notification_influence_religious_level_down,"{building}: religious influence drops to radius {radius}."
+notification_auto_progress_completed,{building}: {resource} ×{quantity} ready
+notification_drying_rack_full,{building} full: {resource} taken to the warehouse
 building_cancel_site_button,Cancel construction
 building_assign_demolisher_button,Assign demolisher
 building_cancel_demolition_button,Cancel demolition
@@ -285,6 +313,8 @@ carried_resource_tooltip_bone_awl,Bone awl
 carried_resource_tooltip_hide_bag,Hide bag
 carried_resource_tooltip_meat,Raw meat
 carried_resource_tooltip_cooked_meat,Cooked meat
+carried_resource_tooltip_dried_meat,Dried meat
+carried_resource_tooltip_dried_hide,Dried hide
 carried_resource_tooltip_hide,Hide
 carried_resource_tooltip_sinew,Sinew
 carried_resource_tooltip_bone,Bones
@@ -362,8 +392,6 @@ task_hunt_zone_step_patrol,Patrolling the area
 task_hunt_zone_activity_series,{task} ({zone}) {delivered}/{target} meat
 transport_dialog_group_products,Products
 transport_dialog_group_delivered,Delivered materials
-transport_dialog_take_all_products,Take all products ({quantity})
-transport_all_products_activity,all products
 animal_selection_title,Animal
 animal_species_label,Species: {species}
 animal_age_band_label,Age: {age_band}
@@ -399,7 +427,6 @@ task_activity_demolish,demolish
 task_activity_equip_tool,fetch a tool
 task_activity_store_tool,store a tool
 task_reject_transport_not_needed,{name} can't carry: {building} does not need {resource}.
-task_reject_transport_no_products,{name} can't carry: {building} has no products to collect.
 tool_equip_no_source,No reachable storage building has {tool}
 tool_category_hunting,hunting
 tool_category_cutting,cutting

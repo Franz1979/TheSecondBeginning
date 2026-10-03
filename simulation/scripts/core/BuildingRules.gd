@@ -153,9 +153,13 @@ extends Resource
 @export var political_radius: int = 0
 @export var cultural_radius: int = 0
 @export var religious_radius: int = 0
-# Tetto del raggio di influenza CORRENTE (2026-10-02, passo 4c): il raggio cresce con i riti fino a raggio base × questo
-# moltiplicatore e decade da solo verso la base (InfluenceService). Vale per tutti e tre i tipi.
+# Tetto del raggio di influenza effettivo (2026-10-02; dal 2026-10-03 con punti e soglie): il raggio cresce di +1 per
+# soglia raggiunta fino a raggio base × questo moltiplicatore (InfluenceService). Vale per tutti e tre i tipi.
 @export var influence_max_multiplier: float = 2.0
+# Soglie di punti di influenza (2026-10-03, richiesta utente), in ordine crescente: ognuna raggiunta vale +1 al raggio
+# base, sempre entro influence_max_multiplier; il 10% della soglia superiore della fascia è anche la perdita annua senza
+# riti (InfluenceService). Vale per tutti e tre i tipi.
+@export var influence_level_thresholds: Array[float] = [100.0, 300.0, 600.0, 1000.0, 2000.0]
 
 # Vincolo GLOBALE di unicità (2026-09-07, richiesta utente) — al più UN edificio con questo flag
 # true può esistere in tutta la partita, indipendentemente da dove/quante volte si provi a

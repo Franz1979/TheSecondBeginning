@@ -743,6 +743,9 @@ func _run_daily_building_resource_decay(world: World) -> Array:
 		var lost := ResourceDecayService.advance_building_decay(building)
 		for loss in lost:
 			events.append({"building": building, "resource_name": loss["resource_name"], "quantity": loss["quantity"]})
+		# Avanzamento automatico (2026-10-03, essiccazione passo 2): dopo il deperimento, così il prodotto appena nato
+		# parte da 0 e comincia a deperire dal giorno dopo.
+		ProductionService.advance_auto_progress(building)
 		# Travaso giornaliero del buffer di uscita (2026-09-23, richiesta utente): lo spazio liberato da
 		# decadimento o da un cambio dei filtri di categoria viene riempito dal prodotto in attesa.
 		ProductionService.flush_output_to_storage(building)

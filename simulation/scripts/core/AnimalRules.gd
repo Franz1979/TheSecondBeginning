@@ -46,7 +46,7 @@ extends Resource
 @export_group("Butchering")
 # Resa della macellazione di un individuo ADULTO della specie (2026-09-26, richiesta utente — macellazione,
 # step 1: solo dati, nessuna logica li legge ancora), in unità delle risorse meat/hide/sinew/bone
-# (simulation/data/secondary_resources/). Per le altre fasce d'età si scalano con size_multiplier_by_age
+# (simulation/data/secondary_resources/raw_materials/). Per le altre fasce d'età si scalano con size_multiplier_by_age
 # (adulto = 1.0), come prey_calories. 0 = la specie non rende quella risorsa (es. una pernice non ha una pelle
 # utile). Valori iniziali proporzionali alla taglia (carne ≈ prey_calories / 5), da tarare.
 @export var butcher_meat_units: int = 0
