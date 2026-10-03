@@ -296,6 +296,8 @@ func begin_vegetation_batch() -> void:
 	last_batch_timings_ms.clear()
 	last_fruit_rebuild_paths.clear()
 	last_geometry_stats.clear()
+	last_tree_group_stats.clear()
+	last_shrub_group_stats.clear()
 
 
 # Esegue UNA SOLA VOLTA per tipo ciascun rebuild segnato "sporco" durante la finestra di batch,
@@ -589,6 +591,20 @@ func set_grass_patch_availability(resource_name: String, availability: Dictionar
 	grass_patch_availability[resource_name] = availability
 	_rebuild_grass_patch_multimesh(resource_name)
 	queue_redraw()
+
+
+# Fascia di disegno di una risorsa sparsa per una quantità (2026-10-04, richiesta utente — raccolta leggera per lotto,
+# GameScene._patch_scattered_lot): quante istanze disegnerebbe il rebuild per quel lotto. "stick"/"pebble": le fasce di
+# _stick_tier_count/_pebble_tier_count; "grass_patch": un segno se la quantità è > 0 (come _rebuild_grass_patch_multimesh).
+# Stessa fascia = stesso disegno del lotto (posizioni e forme dipendono solo dal lotto e dall'indice dell'istanza).
+func scattered_availability_tier(kind: String, quantity: int) -> int:
+	match kind:
+		"stick":
+			return _stick_tier_count(quantity)
+		"pebble":
+			return _pebble_tier_count(quantity)
+		_:
+			return 1 if quantity > 0 else 0
 
 
 func set_buildings(buildings_data: Array) -> void:
@@ -2654,6 +2670,16 @@ func _rebuild_tree_multimeshes() -> void:
 
 	var deciduous_canopy_color: Color = TREE_CANOPY_PALETTE_BY_SEASON.get(current_season, VEGETATION_COLORS[GameTypes.WorldObjectType.TREE])
 
+	# Rimontaggio a gruppi (2026-10-04, richiesta utente — vedi _rebuild_tree_multimeshes_grouped): solo col metodo a
+	# buffer e con una disposizione dei gruppi appena passata da GameScene (set_tree_group_layout) e coerente con
+	# l'elenco corrente. La disposizione vale per UNA ricostruzione: qualunque altra ricostruzione usa il giro di sempre.
+	var group_layout_ok: bool = _tree_group_layout_fresh and _tree_group_starts.size() >= 1 \
+		and int(_tree_group_starts[0]) == 0 and int(_tree_group_starts[_tree_group_starts.size() - 1]) == positions.size()
+	_tree_group_layout_fresh = false
+	if group_layout_ok and _multimesh_buffer_layout_ok():
+		_rebuild_tree_multimeshes_grouped(positions, deciduous_canopy_color)
+		return
+
 	# Estensione nota (vivi+bloccati), non il solo conteggio dei vivi — vedi _lot_extent_counts:
 	# altrimenti tagliare un individuo cambierebbe il local_count (quindi il disk-offset) dei suoi
 	# vicini di lotto ancora vivi, spostandoli pur non avendo perso la propria identità.
@@ -2751,6 +2777,166 @@ func _rebuild_tree_multimeshes() -> void:
 		_apply_transforms(_tree_fruit_domesticable_multimesh, domesticable_fruit_transforms)
 	last_batch_timings_ms["tree_apply"] = (Time.get_ticks_usec() - measure_start_usec) / 1000.0
 	_tree_fruit_entries_valid = true
+
+
+# RIMONTAGGIO A GRUPPI DEGLI ALBERI (2026-10-04, richiesta utente). L'elenco NON filtrato degli alberi (posizioni della
+# cella, nell'ordine di sempre) è diviso in gruppi consecutivi di TREE_GROUP_SIZE; l'elenco filtrato per la nebbia, che
+# ne conserva l'ordine, è quindi la concatenazione delle "fette visibili" dei gruppi. GameScene calcola dove comincia la
+# fetta di ogni gruppo nello stesso giro del filtro e la passa qui (set_tree_group_layout). Per ogni gruppo si
+# conservano tronchi, chiome (col colore), chiome conifer, voci dei frutti e puntini dei frutti già concatenati; a ogni
+# rimontaggio si rifanno solo i gruppi da rifare e si concatenano i blocchi nell'ordine dei gruppi: stesso ordine
+# delle istanze del giro di sempre.
+#
+# Un gruppo si rifà se la sua fetta visibile è diversa da quella conservata (confronto nativo di array). Si rifanno
+# TUTTI se cambia anche uno solo di: versione delle posizioni (rigenerazione), anno, parametri d'età, colore stagionale
+# delle chiome, ceppi o piante morte degli alberi (contano nel numero di individui del lotto), numero di gruppi; se il
+# motivo del ridisegno non è movimento/nebbia (allow_reuse false); se la memoria della geometria viene svuotata.
+# I puntini dei frutti di un gruppo si rifanno anche quando cambiano i rapporti dei frutti per lotto (ghiande, frutta).
+const TREE_GROUP_SIZE := 256
+
+var _tree_group_layout_version: int = -1
+var _tree_group_starts: Array = []
+var _tree_group_allow_reuse: bool = false
+var _tree_group_layout_fresh: bool = false
+var _tree_groups: Array = []
+var _tree_groups_globals: Array = []
+var _tree_groups_fruit_stamp: Array = []
+# Diagnostica: {"rebuilt": int, "reused": int} dell'ultimo rimontaggio a gruppi (vuoto = giro di sempre).
+var last_tree_group_stats: Dictionary = {}
+
+
+# Da GameScene prima di set_vegetation_positions: `layout_version` sale a ogni rigenerazione delle posizioni, `starts`
+# ha un inizio per gruppo più la fine (indici nell'elenco filtrato), `allow_reuse` false = rifai tutti i gruppi.
+func set_tree_group_layout(layout_version: int, starts: Array, allow_reuse: bool) -> void:
+	_tree_group_layout_version = layout_version
+	_tree_group_starts = starts
+	_tree_group_allow_reuse = allow_reuse
+	_tree_group_layout_fresh = true
+
+
+func _rebuild_tree_multimeshes_grouped(positions: Array, deciduous_canopy_color: Color) -> void:
+	_check_geometry_cache_globals()
+	var group_count: int = _tree_group_starts.size() - 1
+	var globals: Array = [
+		_tree_group_layout_version, tree_current_year, tree_age_params.hash(), deciduous_canopy_color,
+		cut_positions.get(GameTypes.WorldObjectType.TREE, []), dead_positions.get(GameTypes.WorldObjectType.TREE, []),
+		group_count,
+	]
+	if not _tree_group_allow_reuse or globals != _tree_groups_globals or _tree_groups.size() != group_count:
+		_tree_groups.clear()
+		_tree_groups.resize(group_count)
+		_tree_groups_globals = globals
+		_tree_groups_fruit_stamp = []
+	var fruit_stamp: Array = [
+		fruit_stock_available_ratio_by_lot.get("acorn", {}), fruit_stock_available_ratio_by_lot.get("fruit", {}),
+	]
+	var fruit_changed: bool = fruit_stamp != _tree_groups_fruit_stamp
+	_tree_groups_fruit_stamp = fruit_stamp
+
+	var loop_start_usec := Time.get_ticks_usec()
+	var lot_counts: Variant = null
+	var trunk_buffer := PackedFloat32Array()
+	var canopy_buffer := PackedFloat32Array()
+	var conifer_buffer := PackedFloat32Array()
+	var wild_fruit_buffer := PackedFloat32Array()
+	var domesticable_fruit_buffer := PackedFloat32Array()
+	_tree_fruit_entries.clear()
+	var rebuilt_count := 0
+	var reused_count := 0
+	var computed_individuals := 0
+	var reused_individuals := 0
+	for group_index in range(group_count):
+		var members: Array = positions.slice(int(_tree_group_starts[group_index]), int(_tree_group_starts[group_index + 1]))
+		var group: Variant = _tree_groups[group_index]
+		if group == null or group["members"] != members:
+			if lot_counts == null:
+				var lot_counts_start_usec := Time.get_ticks_usec()
+				lot_counts = _lot_extent_counts(GameTypes.WorldObjectType.TREE)
+				last_batch_timings_ms["tree_lot_counts"] = (Time.get_ticks_usec() - lot_counts_start_usec) / 1000.0
+			group = _build_tree_group(members, lot_counts, deciduous_canopy_color)
+			_tree_groups[group_index] = group
+			rebuilt_count += 1
+			computed_individuals += int(group["computed"])
+			reused_individuals += int(group["reused"])
+		else:
+			reused_count += 1
+			if fruit_changed:
+				_refresh_tree_group_fruit(group)
+		trunk_buffer.append_array(group["trunk"])
+		canopy_buffer.append_array(group["canopy"])
+		conifer_buffer.append_array(group["conifer"])
+		wild_fruit_buffer.append_array(group["wild_fruit"])
+		domesticable_fruit_buffer.append_array(group["domesticable_fruit"])
+		_tree_fruit_entries.append_array(group["fruit_entries"])
+	last_batch_timings_ms["tree_loop"] = (Time.get_ticks_usec() - loop_start_usec) / 1000.0
+	last_geometry_stats["tree"] = {"computed": computed_individuals, "reused": reused_individuals}
+	last_tree_group_stats = {"rebuilt": rebuilt_count, "reused": reused_count}
+
+	var apply_start_usec := Time.get_ticks_usec()
+	_apply_buffer(_tree_trunk_multimesh, trunk_buffer, BUFFER_STRIDE_TRANSFORM)
+	_apply_buffer(_tree_canopy_multimesh, canopy_buffer, BUFFER_STRIDE_TRANSFORM_COLOR)
+	_apply_buffer(_tree_conifer_canopy_multimesh, conifer_buffer, BUFFER_STRIDE_TRANSFORM)
+	_apply_buffer(_tree_fruit_wild_multimesh, wild_fruit_buffer, BUFFER_STRIDE_TRANSFORM)
+	_apply_buffer(_tree_fruit_domesticable_multimesh, domesticable_fruit_buffer, BUFFER_STRIDE_TRANSFORM)
+	last_batch_timings_ms["tree_apply"] = (Time.get_ticks_usec() - apply_start_usec) / 1000.0
+	_tree_fruit_entries_valid = true
+
+
+# Un gruppo da zero: lo stesso corpo del giro di sempre (_rebuild_tree_multimeshes, ramo a buffer) sui soli `members`,
+# con la geometria in memoria del passo B.
+func _build_tree_group(members: Array, lot_counts: Dictionary, deciduous_canopy_color: Color) -> Dictionary:
+	var trunk := PackedFloat32Array()
+	var canopy := PackedFloat32Array()
+	var conifer := PackedFloat32Array()
+	var fruit_entries: Array = []
+	var computed := 0
+	var reused := 0
+	for individual_key in members:
+		var signature := _tree_geometry_signature(individual_key, lot_counts)
+		var geometry: Dictionary = _tree_geometry_cache.get(individual_key, {})
+		if geometry.is_empty() or geometry["signature"] != signature or not geometry.has("trunk_packed"):
+			geometry = _compute_tree_geometry(individual_key, lot_counts, true)
+			geometry["signature"] = signature
+			_tree_geometry_cache[individual_key] = geometry
+			computed += 1
+		else:
+			reused += 1
+		trunk.append_array(geometry["trunk_packed"])
+		if geometry["is_conifer"]:
+			conifer.append_array(geometry["canopy_packed"])
+			continue
+		canopy.append_array(_tree_canopy_packed_with_color(geometry, deciduous_canopy_color))
+		var fruit_resource: String = geometry["fruit_resource"]
+		if fruit_resource == "":
+			continue
+		fruit_entries.append({
+			"key": individual_key, "lot": Vector2i(individual_key.x, individual_key.y), "jitter_pos": geometry["jitter_pos"],
+			"canopy_center": geometry["canopy_center"], "canopy_radius": geometry["canopy_radius"],
+			"resource_name": fruit_resource,
+		})
+	var group := {
+		"members": members, "trunk": trunk, "canopy": canopy, "conifer": conifer, "fruit_entries": fruit_entries,
+		"computed": computed, "reused": reused,
+	}
+	_refresh_tree_group_fruit(group)
+	return group
+
+
+# Puntini dei frutti di un gruppo dalle sue voci: stesso test (_fruit_stock_shows) e stessi dati (_cached_tree_fruit_packed)
+# del giro di sempre, nell'ordine delle voci.
+func _refresh_tree_group_fruit(group: Dictionary) -> void:
+	var wild := PackedFloat32Array()
+	var domesticable := PackedFloat32Array()
+	for entry in group["fruit_entries"]:
+		var fruit_resource: String = entry["resource_name"]
+		if not _fruit_stock_shows(fruit_resource, entry["key"], entry["jitter_pos"]):
+			continue
+		if fruit_resource == "fruit":
+			domesticable.append_array(_cached_tree_fruit_packed(entry))
+		else:
+			wild.append_array(_cached_tree_fruit_packed(entry))
+	group["wild_fruit"] = wild
+	group["domesticable_fruit"] = domesticable
 
 
 # Chioma decidua impacchettata con il colore della stagione (12 valori: trasformazione + colore). Rifatta solo quando il
@@ -2892,6 +3078,12 @@ func clear_vegetation_geometry_cache() -> void:
 	_shrub_geometry_cache.clear()
 	_tree_geometry_globals = []
 	_shrub_geometry_globals = []
+	_tree_groups.clear()
+	_tree_groups_globals = []
+	_tree_groups_fruit_stamp = []
+	_shrub_groups.clear()
+	_shrub_groups_globals = []
+	_shrub_groups_berry_stamp = []
 
 
 # Svuota la memoria di un tipo se anno corrente o parametri d'età sono cambiati dall'ultima ricostruzione.
@@ -3156,6 +3348,15 @@ func _rebuild_shrub_multimeshes() -> void:
 	var blob_colors: Array = []
 	var berry_transforms: Array = []
 
+	# Rimontaggio a gruppi degli arbusti (2026-10-04, richiesta utente — vedi _rebuild_shrub_multimeshes_grouped): stesse
+	# condizioni degli alberi (metodo a buffer, disposizione appena passata e coerente), consumata da questa ricostruzione.
+	var group_layout_ok: bool = _shrub_group_layout_fresh and _shrub_group_starts.size() >= 1 \
+		and int(_shrub_group_starts[0]) == 0 and int(_shrub_group_starts[_shrub_group_starts.size() - 1]) == positions.size()
+	_shrub_group_layout_fresh = false
+	if group_layout_ok and _multimesh_buffer_layout_ok():
+		_rebuild_shrub_multimeshes_grouped(positions)
+		return
+
 	# Estensione nota (vivi+bloccati), vedi commento in _rebuild_tree_multimeshes.
 	var lot_counts: Dictionary = _lot_extent_counts(GameTypes.WorldObjectType.SHRUB)
 	_shrub_fruit_entries.clear()
@@ -3255,6 +3456,119 @@ func _compute_shrub_geometry(individual_key: Vector3i, lot_counts: Dictionary, p
 		geometry["blob_colors"] = blob_colors
 		geometry["berry_transforms"] = berry_transforms
 	return geometry
+
+
+# RIMONTAGGIO A GRUPPI DEGLI ARBUSTI (2026-10-04, richiesta utente) — stesso schema degli alberi (vedi
+# _rebuild_tree_multimeshes_grouped e il commento su TREE_GROUP_SIZE): gruppi di SHRUB_GROUP_SIZE arbusti consecutivi
+# dell'elenco NON filtrato, fette visibili da GameScene (set_shrub_group_layout), per gruppo lobi (con colore), voci
+# delle bacche e bacche già concatenati. Un gruppo si rifà se la sua fetta visibile cambia; tutti se cambiano versione
+# delle posizioni, anno, parametri d'età, ceppi o piante morte degli arbusti, numero di gruppi, se il motivo non è
+# movimento/nebbia o se la memoria della geometria viene svuotata (gli arbusti non hanno colore stagionale). Le bacche
+# dei gruppi riusati si rifanno quando cambiano i rapporti delle bacche per lotto (stessa scelta dei frutti degli alberi).
+const SHRUB_GROUP_SIZE := 256
+
+var _shrub_group_layout_version: int = -1
+var _shrub_group_starts: Array = []
+var _shrub_group_allow_reuse: bool = false
+var _shrub_group_layout_fresh: bool = false
+var _shrub_groups: Array = []
+var _shrub_groups_globals: Array = []
+var _shrub_groups_berry_stamp: Array = []
+# Diagnostica: {"rebuilt": int, "reused": int} dell'ultimo rimontaggio a gruppi degli arbusti (vuoto = giro di sempre).
+var last_shrub_group_stats: Dictionary = {}
+
+
+func set_shrub_group_layout(layout_version: int, starts: Array, allow_reuse: bool) -> void:
+	_shrub_group_layout_version = layout_version
+	_shrub_group_starts = starts
+	_shrub_group_allow_reuse = allow_reuse
+	_shrub_group_layout_fresh = true
+
+
+func _rebuild_shrub_multimeshes_grouped(positions: Array) -> void:
+	_check_geometry_cache_globals()
+	var group_count: int = _shrub_group_starts.size() - 1
+	var globals: Array = [
+		_shrub_group_layout_version, shrub_current_year, shrub_age_params.hash(),
+		cut_positions.get(GameTypes.WorldObjectType.SHRUB, []), dead_positions.get(GameTypes.WorldObjectType.SHRUB, []),
+		group_count,
+	]
+	if not _shrub_group_allow_reuse or globals != _shrub_groups_globals or _shrub_groups.size() != group_count:
+		_shrub_groups.clear()
+		_shrub_groups.resize(group_count)
+		_shrub_groups_globals = globals
+		_shrub_groups_berry_stamp = []
+	var berry_stamp: Array = [fruit_stock_available_ratio_by_lot.get("berry", {})]
+	var berry_changed: bool = berry_stamp != _shrub_groups_berry_stamp
+	_shrub_groups_berry_stamp = berry_stamp
+
+	var lot_counts: Variant = null
+	var blob_buffer := PackedFloat32Array()
+	var berry_buffer := PackedFloat32Array()
+	_shrub_fruit_entries.clear()
+	var rebuilt_count := 0
+	var reused_count := 0
+	var computed_individuals := 0
+	var reused_individuals := 0
+	for group_index in range(group_count):
+		var members: Array = positions.slice(int(_shrub_group_starts[group_index]), int(_shrub_group_starts[group_index + 1]))
+		var group: Variant = _shrub_groups[group_index]
+		if group == null or group["members"] != members:
+			if lot_counts == null:
+				lot_counts = _lot_extent_counts(GameTypes.WorldObjectType.SHRUB)
+			group = _build_shrub_group(members, lot_counts)
+			_shrub_groups[group_index] = group
+			rebuilt_count += 1
+			computed_individuals += int(group["computed"])
+			reused_individuals += int(group["reused"])
+		else:
+			reused_count += 1
+			if berry_changed:
+				_refresh_shrub_group_berries(group)
+		blob_buffer.append_array(group["blobs"])
+		berry_buffer.append_array(group["berries"])
+		_shrub_fruit_entries.append_array(group["fruit_entries"])
+	last_geometry_stats["shrub"] = {"computed": computed_individuals, "reused": reused_individuals}
+	last_shrub_group_stats = {"rebuilt": rebuilt_count, "reused": reused_count}
+	_apply_buffer(_shrub_multimesh, blob_buffer, BUFFER_STRIDE_TRANSFORM_COLOR)
+	_apply_buffer(_berry_multimesh, berry_buffer, BUFFER_STRIDE_TRANSFORM)
+	_shrub_fruit_entries_valid = true
+
+
+# Un gruppo di arbusti da zero: lo stesso corpo del giro di sempre (ramo a buffer) sui soli `members`.
+func _build_shrub_group(members: Array, lot_counts: Dictionary) -> Dictionary:
+	var blobs := PackedFloat32Array()
+	var fruit_entries: Array = []
+	var computed := 0
+	var reused := 0
+	for individual_key in members:
+		var signature := _shrub_geometry_signature(individual_key, lot_counts)
+		var geometry: Dictionary = _shrub_geometry_cache.get(individual_key, {})
+		if geometry.is_empty() or geometry["signature"] != signature or not geometry.has("blob_packed"):
+			geometry = _compute_shrub_geometry(individual_key, lot_counts, true)
+			geometry["signature"] = signature
+			_shrub_geometry_cache[individual_key] = geometry
+			computed += 1
+		else:
+			reused += 1
+		blobs.append_array(geometry["blob_packed"])
+		if geometry["has_berries"]:
+			fruit_entries.append({
+				"key": individual_key, "jitter_pos": geometry["jitter_pos"], "center": geometry["center"],
+				"density_scale": geometry["density_scale"], "size_multiplier": geometry["size_multiplier"],
+			})
+	var group := {"members": members, "blobs": blobs, "fruit_entries": fruit_entries, "computed": computed, "reused": reused}
+	_refresh_shrub_group_berries(group)
+	return group
+
+
+# Bacche di un gruppo dalle sue voci: stesso test e stessi dati del giro di sempre, nell'ordine delle voci.
+func _refresh_shrub_group_berries(group: Dictionary) -> void:
+	var berries := PackedFloat32Array()
+	for entry in group["fruit_entries"]:
+		if _fruit_stock_shows("berry", entry["key"], entry["jitter_pos"]):
+			berries.append_array(_cached_shrub_berry_packed(entry))
+	group["berries"] = berries
 
 
 # Bacche di un arbusto (estratta il 2026-10-03 da _rebuild_shrub_multimeshes, formula invariata, per riusarla nella

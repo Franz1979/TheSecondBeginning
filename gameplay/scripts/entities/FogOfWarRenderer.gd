@@ -108,6 +108,40 @@ var terrain_memory_days: int = 90
 # letture (oggi lo sono: nessuno li modifica a runtime).
 var visible_set_version: int = 0
 
+# ELENCO DELLE MICROCELLE ENTRATE IN VISTA (2026-10-04, richiesta utente — disponibilità di bastoni/sassi/uova/lotti
+# d'erba aggiornate per aggiunta nei ridisegni per movimento, vedi GameScene._refresh_resource_visuals). Ogni volta che
+# visible_set_version sale perché una microcella entra nell'insieme visibile (_mark_seen_and_invalidate), la microcella
+# si aggiunge qui: tra due letture, le microcelle entrate sono la coda dell'elenco. Qualunque altro cambiamento
+# dell'insieme (cambio di giorno: scadenze; pavimento delle zone di lavoro; visibilità degli edifici; cella senza
+# memoria) azzera l'elenco e alza `_newly_visible_epoch`: chi aveva letto prima riceve null e ricalcola tutto.
+# Invariante: visible_set_version == _newly_visible_base_version + _newly_visible_log.size() nella stessa epoca.
+var _newly_visible_log: Array = []
+var _newly_visible_base_version: int = 0
+var _newly_visible_epoch: int = 0
+
+
+func get_newly_visible_epoch() -> int:
+	return _newly_visible_epoch
+
+
+# Microcelle entrate nell'insieme visibile dopo `version` letta nell'epoca `epoch`; null se l'elenco non può dirlo
+# (epoca diversa, versione fuori dall'elenco): il chiamante ricalcola tutto.
+func get_newly_visible_since(epoch: int, version: int) -> Variant:
+	if epoch != _newly_visible_epoch:
+		return null
+	if version < _newly_visible_base_version or version > visible_set_version:
+		return null
+	var start: int = version - _newly_visible_base_version
+	if start > _newly_visible_log.size():
+		return null
+	return _newly_visible_log.slice(start)
+
+
+func _reset_newly_visible_log() -> void:
+	_newly_visible_epoch += 1
+	_newly_visible_log.clear()
+	_newly_visible_base_version = visible_set_version
+
 # Posizioni (Vector2, LOCALI a questo renderer — cioè già nello spazio di QUESTA macrocella, non
 # quello di partenza dell'individuo) di TUTTE le sorgenti di visibilità rilevanti per questa cella
 # — Step 4 FoW multi-sorgente, 2026-09-02: SOSTITUISCE il vecchio singolo campo `individual`
@@ -498,6 +532,9 @@ func set_vegetation_presence(positions: Dictionary) -> void:
 
 
 func set_building_visible_positions(positions: Dictionary) -> void:
+	# Visibilità degli edifici cambiata: l'elenco delle microcelle entrate non vale più (2026-10-04).
+	if positions != _building_visible_positions:
+		_reset_newly_visible_log()
 	_building_visible_positions = positions
 	# Con la memoria le celle nuove entrano nell'insieme animali tramite _mark_seen_and_invalidate
 	# sotto; senza memoria (difensivo) l'insieme è il solo raggio e va ricostruito.
@@ -528,6 +565,7 @@ func set_building_visible_positions(positions: Dictionary) -> void:
 # versione rifà il refresh della vegetazione. Evento raro, nessun ricalcolo qui.
 func invalidate_visible_set() -> void:
 	visible_set_version += 1
+	_reset_newly_visible_log()
 
 
 func mark_positions_dirty(positions: Array[Vector2i]) -> void:
@@ -599,6 +637,7 @@ func update_visibility(current_absolute_day: int, positions: Array[Vector2]) -> 
 		# Cambio giorno: le entry di memoria possono essere scadute (l'insieme visibile puo' ridursi) e la
 		# disponibilita' stagionale delle risorse puo' essere cambiata — vedi visible_set_version.
 		visible_set_version += 1
+		_reset_newly_visible_log()
 		# Stesso motivo per l'insieme animali (dettaglio fresco): ricostruito alla prossima richiesta.
 		_animal_visible_cache_valid = false
 	# Senza memoria l'insieme visibile e' il solo insieme in raggio, che cambia con le posizioni: nessuna
@@ -606,6 +645,7 @@ func update_visibility(current_absolute_day: int, positions: Array[Vector2]) -> 
 	# cella viva ha sempre la sua FogOfWarMemory — vedi GameScene._activate_live_cell).
 	if position_changed and fog_of_war_memory == null:
 		visible_set_version += 1
+		_reset_newly_visible_log()
 		_animal_visible_cache_valid = false
 	# mark_seen per l'insieme in-raggio CORRENTE — SEMPRE quando non c'è early-out (posizione O
 	# giorno cambiati), mai gated da position_changed da solo: una sorgente ferma per più giorni
@@ -664,6 +704,7 @@ func _mark_seen_and_invalidate(pos: Vector2i) -> void:
 	if not _previous_in_radius_positions.has(pos) \
 			and not fog_of_war_memory.is_resource_fresh(pos, _current_absolute_day, resource_memory_days):
 		visible_set_version += 1
+		_newly_visible_log.append(pos)
 	var _mem_start := Time.get_ticks_usec()
 	fog_of_war_memory.mark_seen(pos, _current_absolute_day)
 	_memory_lookup_usec += Time.get_ticks_usec() - _mem_start
@@ -780,6 +821,40 @@ func _rebuild_animal_visible_positions() -> void:
 # placeholder. Con lo Step 4 questo è garantito per costruzione (update_visibility() viene chiamato
 # subito dopo setup(), sempre con le posizioni reali — non esiste più un binding "vuoto/proxy"
 # intermedio come nel vecchio meccanismo a singolo individuo).
+# INSIEME VISIBILE PER AGGIUNTA (2026-10-04, richiesta utente): l'ultimo insieme calcolato si conserva e, se
+# `allow_incremental`, si aggiorna con le sole microcelle entrate in vista dall'ultima volta (get_newly_visible_since —
+# dentro la stessa epoca l'insieme può solo crescere, e cresce esattamente di quelle). Ricalcolo completo con
+# compute_visible_positions se: allow_incremental false, nessun insieme conservato, giorno diverso da quello del
+# calcolo conservato, elenco non utilizzabile (epoca cambiata: cambio di giorno, pavimento delle zone di lavoro,
+# visibilità degli edifici, cella senza memoria). Il Dictionary restituito è quello conservato: le aggiunte successive
+# lo aggiornano sul posto (chi lo tiene, GameScene in LiveMacroCell.last_visible_positions, vede sempre l'ultimo).
+# last_visible_set_mode descrive l'ultimo calcolo, per il log.
+var _cached_visible_positions: Variant = null
+var _cached_visible_day: int = -1
+var _cached_visible_epoch: int = -1
+var _cached_visible_version: int = -1
+var last_visible_set_mode: String = ""
+
+
+func compute_visible_positions_cached(current_absolute_day: int, allow_incremental: bool) -> Dictionary:
+	if allow_incremental and _cached_visible_positions != null and _cached_visible_day == current_absolute_day:
+		var added: Variant = get_newly_visible_since(_cached_visible_epoch, _cached_visible_version)
+		if added != null:
+			var cached: Dictionary = _cached_visible_positions
+			for pos in added:
+				cached[pos] = true
+			_cached_visible_version = visible_set_version
+			last_visible_set_mode = "aggiunta (+%d)" % (added as Array).size()
+			return cached
+	var visible := compute_visible_positions(current_absolute_day)
+	_cached_visible_positions = visible
+	_cached_visible_day = current_absolute_day
+	_cached_visible_epoch = _newly_visible_epoch
+	_cached_visible_version = visible_set_version
+	last_visible_set_mode = "ricalcolato"
+	return visible
+
+
 func compute_visible_positions(current_absolute_day: int) -> Dictionary:
 	var visible: Dictionary = {}
 	for y in range(World.HEIGHT):

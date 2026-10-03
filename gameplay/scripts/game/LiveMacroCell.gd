@@ -84,6 +84,15 @@ var last_scattered_availability: Dictionary = {}
 # true dopo aver passato al fog of war la vegetazione sfocata (set_vegetation_presence) con le posizioni correnti; false
 # a ogni rigenerazione completa. Il ridisegno per movimento/nebbia la salta se è true (2026-10-03).
 var vegetation_presence_sent: bool = false
+# Sale a ogni rigenerazione delle posizioni (2026-10-04): versione dell'elenco degli alberi per il rimontaggio a gruppi
+# (MicroCellRenderer.set_tree_group_layout) — gruppi di una versione diversa si rifanno tutti.
+var vegetation_layout_version: int = 0
+# Disponibilità di bastoni/sassi/uova/lotti d'erba per aggiunta (2026-10-04): giorno assoluto, epoca e versione
+# dell'insieme visibile del fog of war e versione delle posizioni dell'ultimo calcolo (completo o per aggiunta).
+var scattered_cache_day: int = -1
+var scattered_visible_epoch: int = -1
+var scattered_visible_version: int = -1
+var scattered_layout_version: int = -1
 var cached_vegetation_positions: Dictionary = {}
 
 # Cache del ratio disponibilità "fruit stock" per lotto (2026-09-17, richiesta utente —
