@@ -156,6 +156,23 @@ var show_door_marker: bool = false:
 		queue_redraw()
 
 
+# Anteprima di un edificio lineare (2026-10-04 — vallo, generalizzato): lati collegati, lati da tagliare (vicini ad
+# angolo) e scostamento dal punto del mouse al centro della microcella, scritti da GameScene._sync_linear_ghost a ogni
+# fotogramma; ridisegno solo quando cambiano.
+var _linear_mask: int = LinearShape.STRAIGHT_MASK
+var _linear_clip: int = 0
+var _linear_offset: Vector2 = Vector2.ZERO
+
+
+func set_linear_preview(neighbor_mask: int, clip_mask: int, offset: Vector2) -> void:
+	if neighbor_mask == _linear_mask and clip_mask == _linear_clip and offset.is_equal_approx(_linear_offset):
+		return
+	_linear_mask = neighbor_mask
+	_linear_clip = clip_mask
+	_linear_offset = offset
+	queue_redraw()
+
+
 func rotate_clockwise() -> void:
 	rotation_dir = (rotation_dir + 1) % 4
 
@@ -242,6 +259,12 @@ func _draw_shape() -> void:
 	if building_type_name == "storage_hut":
 		StorageHutShape.draw(self, Vector2.ZERO, rotation_dir, not is_buildable, COLOR.a)
 		return
+	# Deposito coperto (2026-10-04): lo spiazzo del sito di deposito con la tettoia della mappa, semitrasparente.
+	if building_type_name == "covered_depot":
+		_draw_deposit_site(DEPOSIT_SITE_COLOR if is_buildable else DEPOSIT_SITE_INVALID_COLOR,
+			DEPOSIT_SITE_OUTLINE_COLOR if is_buildable else DEPOSIT_SITE_INVALID_OUTLINE_COLOR)
+		CoveredDepotShape.draw_cover(self, Vector2.ZERO, not is_buildable, COLOR.a)
+		return
 	if building_type_name == "dirt_ground":
 		_draw_dirt_ground(DIRT_GROUND_COLOR if is_buildable else DIRT_GROUND_INVALID_COLOR)
 		return
@@ -249,6 +272,11 @@ func _draw_shape() -> void:
 		_draw_campfire(is_buildable)
 		return
 	# Edifici segnaposto (2026-09-26, richiesta utente) — stesso disegno provvisorio della mappa.
+	# Vallo difensivo (2026-10-04): lo stesso disegno a pezzi della mappa, con i collegamenti ai pezzi esistenti e
+	# centrato sulla microcella sotto il mouse (set_linear_preview, da GameScene._sync_linear_ghost).
+	if building_type_name == "earthwork":
+		EarthworkShape.draw(self, _linear_offset, _linear_mask, not is_buildable, COLOR.a, 1.0, _linear_clip)
+		return
 	if PlaceholderBuildingShapes.TYPES.has(building_type_name):
 		PlaceholderBuildingShapes.draw(self, building_type_name, Vector2.ZERO, not is_buildable)
 		return

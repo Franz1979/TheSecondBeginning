@@ -10,7 +10,7 @@ build_bar_toolmaker_hut_tooltip,Toolmaker's hut
 build_bar_storage_hut_tooltip,Storage hut
 build_bar_drying_rack_tooltip,Drying rack
 build_bar_smokehouse_tooltip,Smokehouse
-build_bar_burial_tooltip,Burial
+build_bar_burial_tooltip,Burial mound
 build_bar_stacked_stones_tooltip,Ritual stones
 build_bar_earthwork_tooltip,Earthwork
 building_campfire,Campfire
@@ -26,7 +26,7 @@ building_category_military,Military
 building_category_religious,Religious
 building_drying_rack,Drying rack
 building_smokehouse,Smokehouse
-building_burial,Burial
+building_burial,Burial mound
 building_stacked_stones,Ritual stones
 building_earthwork,Earthwork
 build_bar_dirt_ground_tooltip,Dirt Ground
@@ -142,7 +142,7 @@ building_upgrade_materials,Materials to bring: {items}
 building_upgrade_recovered,Recovered materials: {items}
 building_upgrade_labor,Labor: {labor}
 building_upgrade_residents,Max residents: {from} → {to}
-building_upgrade_rest,Rest: ×{from} → ×{to}
+building_upgrade_rest,Rest: {from} → {to}
 building_upgrade_nothing,none
 building_upgrade_residents_leave,Residents move out during the works.
 building_upgrade_storage_not_empty,Empty the building's storage first.
@@ -270,7 +270,7 @@ building_assign_demolisher_button,Assign demolisher
 building_cancel_demolition_button,Cancel demolition
 demolisher_pick_banner_text,⛏️ Select who will demolish: click an individual (Esc to cancel)
 building_awaiting_material_label,This site still needs {quantity} {material} to get started
-building_durability_label,Durability: {current}/{max}
+building_durability_label,Integrity: {current}/{max}
 building_built_year_label,Built: year {year}
 building_not_yet_built,Not yet built
 building_built_year_unknown,Built: year unknown
@@ -332,7 +332,7 @@ building_construction_phase_clear_site,Clearing site
 building_construction_phase_build,Building
 building_awaiting_material_build_label,"Still needed to complete construction: {list}"
 transport_selection_banner_text,"🚚 Transport: select the destination building (H to cancel)"
-debug_idle_fallback_button_tooltip,Toggle automatic assignment of idle-time tasks (Wander/Play/Leisure Rest) to free individuals
+debug_idle_fallback_button_tooltip,"Toggle automatic assignment of idle-time tasks (Wandering, Explore, Playing, Leisure rest, Daydreaming, Restocking, Spontaneous rite) to free individuals"
 random_event_test_name,Test event
 random_event_test_popup,Test event (day {day}): the event system works.
 debug_random_event_apply,Apply event
@@ -590,3 +590,106 @@ rite_reject_building_busy,A rite is already assigned or in progress at this buil
 "rite_reject_none_available","{name} cannot celebrate any rite here (age or ritual skill too low)"
 rite_interrupted,Rite interrupted ({name})
 task_leisure_rite_name,Spontaneous rite
+population_sort_tooltip,Sort by: {option}
+population_sort_age,Age
+population_sort_name,Name
+population_sort_house,House
+individual_mother_label,Mother: {person}
+individual_father_label,Father: {person}
+individual_partner_label,Partner: {person}
+individual_relative_unknown_female,unknown
+individual_relative_unknown_male,unknown
+individual_relative_alive,{name} (#{id})
+individual_relative_dead,{name} † (#{id})
+individual_house_tooltip,House: {name} (#{id})
+individual_no_house,No house
+task_explore_name,Explore
+task_explore_step_walk,Exploring
+task_explore_step_look_around,Looking around
+help_wander_task,"assign the Wandering task to the selected individual: two stops near home or the village, looking around"
+building_covered_depot,Covered depot
+build_bar_covered_depot_tooltip,Covered depot
+build_bar_deposit_site_description,"Open-air yard: stock keeps worse."
+build_bar_covered_depot_description,"Yard with a light roof: same space as the deposit site, stock keeps better."
+build_bar_storage_hut_description,"Closed hut with a door: more slots and more space per slot, stock keeps better."
+building_upgrade_storage,"Capacity: {from_slots} slots of {from_space} ({from_total}) → {to_slots} slots of {to_space} ({to_total})"
+building_upgrade_conservation,Preservation
+building_info_storage,"Capacity: {slots} slots of {space} ({total})"
+building_info_conservation,Preservation
+building_info_residents,Max residents: {count}
+building_info_rest,Rest: {value}
+building_info_concurrent_orders,Concurrent jobs: {count}
+building_info_production_multipliers,"Labor ×{labor}, fuel ×{fuel}"
+building_info_max_durability,Max integrity: {value}
+building_info_political_radius,Political radius: {radius}
+building_info_cultural_radius,Cultural radius: {radius}
+help_explore_task,"assign the Explore task to the selected individual: two legs in a random direction, looking around, then back to the starting point (not for children)"
+task_activity_explore,explore
+help_emergency_rest_task,assign the Emergency rest task to the selected individual
+help_leisure_restock_task,"assign the Restocking task to the selected individual: go to a warehouse to stock up on supplies"
+help_gather_command,Gather in the work areas (command bar, with an individual selected)
+help_hunt_command,Hunt in the work areas (command bar, if an area has hunting enabled)
+help_auto_zone_command,toggle automatic work-area choice (command bar)
+help_cycle_map_layer,switch to the next map layer (including none)
+help_escape_cancel,"cancel the current choice: worker pick, upgrade orientation, drawing or picking an area"
+help_rotate_or_rest,"rotate the door while placing a building or choosing an upgrade's orientation; with no preview active, assign the Rest task to the selected individual"
+help_shortcuts_menu_link,Keyboard shortcuts
+help_shortcuts_title,Keyboard shortcuts
+help_arrow_keys,arrows
+help_pan_camera,move the view
+help_center_camera,center the view on the player
+help_zoom_max,maximum zoom
+help_zoom_min,minimum zoom
+help_instant_build,held while placing: builds the building instantly instead of assigning a task
+help_play_task,assign the Playing task (Run-Jump-Run-Jump, children only) to the selected individual
+help_stop_task,cancel the current command of the selected individual (back to rest)
+help_unload_here_task,held during a right click on a warehouse: unloads there everything the selected individual is carrying
+help_double_click_label,Left double click
+help_double_click_inspect_microcell,"inspect the clicked microcell: gatherable resources and vegetation (works even with no individual selected). A single click only selects precise objects (individuals/buildings/stones/plants), never the whole cell."
+help_debug_clear_backpack,(debug) empty the selected individual's backpack
+building_info_conservation_row,{category}: {value}
+building_upgrade_conservation_row,{category}: {from} → {to}
+building_info_labor_multiplier,Labor: ×{value}
+building_info_fuel_multiplier,Fuel: ×{value}
+building_info_defense,Defense: {value}
+building_info_buried,Buried: {count}/{max}
+rite_memorial_name,Remembrance of the dead
+command_bar_group_actions,Actions
+command_bar_group_options,Options
+task_bury_name,Burial
+task_bury_activity,Burying {name}
+task_bury_activity_carry,Carrying the body of {name}
+task_bury_step_walk_body,Walking to the body
+task_bury_step_pickup_body,Picking up the body
+task_bury_step_carry_body,Carrying the body to the mound
+task_bury_step_put_down_body,Laying the body by the mound
+task_activity_bury,bury a body
+notification_bury_no_mound,{name} laid down the body of {body}: no burial mound with free places
+dead_body_bury_status_pending,To be buried
+dead_body_bury_status_assigned,Burial assigned to {name}
+bury_reject_no_mound,{name} cannot bury {body}: no burial mound with free places.
+bury_reject_already_assigned,The burial of {body} is already assigned to {assignee}.
+rite_funeral_name,Funeral
+task_bury_step_funeral,Celebrating the funeral
+task_bury_activity_funeral,Funeral of {name}
+building_info_burial_capacity,Capacity: {max} buried
+building_buried_entry,{name} · year {year}
+building_sacredness,Sacredness: {points} / {next}
+building_sacredness_max,Sacredness: {points}
+building_sacredness_radius,Radius: {radius} (+{bonus})
+building_info_religious_radius_range,"Religious radius: base {base}, max {max}"
+task_procession_name,Procession
+task_procession_step_follow,Following the procession
+procession_funeral_text,Funeral procession of {name}
+notification_unburied_body,{name} was not given a burial: the village loses faith and happiness.
+notification_unburied_body_warning,The body of {name} awaits burial: {days} days left.
+game_info_tab_pending,Pending
+pending_empty,Nothing pending
+pending_center_tooltip,Center and select
+pending_not_centerable,Outside the loaded area: cannot be centered
+pending_body,{name} · {days} days left
+pending_build,Construction · {building}
+pending_upgrade,Upgrade · {building}
+pending_demolish,Demolition · {building}
+pending_produce,Production · {building} · {product}
+rite_reject_no_buried,No dead to remember

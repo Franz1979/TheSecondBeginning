@@ -1,4 +1,4 @@
-[gd_resource type="Resource" script_class="BuildingRules" format=3]
+[gd_resource type="Resource" script_class="BuildingRules" format=3 uid="uid://d0nlsifppnfjs"]
 
 [ext_resource type="Script" uid="uid://b8pl3yflicmtn" path="res://simulation/scripts/core/BuildingRules.gd" id="1_earthwork"]
 
@@ -7,12 +7,11 @@ script = ExtResource("1_earthwork")
 building_name = "building_earthwork"
 category = 5
 required_idea_id = "paleolithic_constructions"
-min_construction_days = 5
-required_labor = 1800
-required_materials = {
-"stick": 6
-}
+required_labor = 800
+setup_site_material_per_cell = 0
 max_durability = 150
+defense = 100
+is_linear = true
 required_space = 1
 has_door = false
 visibility_radius = 1

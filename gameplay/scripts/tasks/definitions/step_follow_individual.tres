@@ -1,0 +1,9 @@
+[gd_resource type="Resource" script_class="TaskStepDefinition" format=3]
+
+[ext_resource type="Script" uid="uid://d3sri3tos2u4f" path="res://gameplay/scripts/tasks/task_step_definition.gd" id="1_step"]
+
+[resource]
+script = ExtResource("1_step")
+action_type = 27
+context_keys = Array[String](["procession_guide_id", "procession_building_id", "procession_keeper_task_name", "procession_keeper_task", "procession_queue_order"])
+step_description = "task_procession_step_follow"

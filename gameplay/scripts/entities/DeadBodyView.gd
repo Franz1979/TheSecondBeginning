@@ -89,6 +89,9 @@ const SUPINE_SELECTION_RADIUS: float = 1.8
 # (qui non esiste il meccanismo di early-out per-frame della classe base, quindi nessun altro
 # punto lo farebbe scattare da solo).
 var is_selected: bool = false
+# Corpo trascinato da un pipottino (2026-10-04, cumulo sepolcrale passo 3a): posizione e rotazione le muove GameScene
+# (_sync_body_burial) a ogni frame; in spalla il corpo non scade, quindi qui niente controllo di scadenza.
+var is_dragged: bool = false
 
 # Solo appeared_at_year/appeared_at_day servono a ExpiredObjectCalculator.is_expired — stesso
 # Dictionary "record" minimo richiesto dalla sua firma, costruito una volta qui invece che ad ogni
@@ -106,14 +109,19 @@ var _rules: ExpiredObjectRules
 func setup_dead_body(
 	individual_position: Vector2, sex: HumanTypes.Sex, age_at_death: int,
 	hair_color: HumanTypes.HairColor, clothing_color: HumanTypes.ClothingColor,
-	appeared_at_year: int, appeared_at_day: int, p_human_rules: HumanRules, p_game_data: GameData
+	appeared_at_year: int, appeared_at_day: int, p_human_rules: HumanRules, p_game_data: GameData,
+	carried_days_total: int = 0
 ) -> void:
 	position = individual_position * CELL_SIZE
 	rotation = randf() * TAU
 	_sex = sex
 	_hair_color = hair_color
 	_clothing_color = clothing_color
-	_expiry_record = {"appeared_at_year": appeared_at_year, "appeared_at_day": appeared_at_day}
+	# carried_days_total (2026-10-04, cumulo sepolcrale passo 2): giorni passati in spalla, che non contano per la
+	# scadenza (ExpiredObjectCalculator.get_elapsed_days) — un corpo posato dopo un trasporto ha la view ricreata.
+	_expiry_record = {
+		"appeared_at_year": appeared_at_year, "appeared_at_day": appeared_at_day, "carried_days_total": carried_days_total,
+	}
 	game_data = p_game_data
 	human_rules = p_human_rules
 	_rules = ExpiredObjectCalculator.get_object_rules(ExpiredObjectTypes.ExpiredObjectType.DEAD_BODY)
@@ -138,7 +146,7 @@ func setup_dead_body(
 # game_data.expired_objects). queue_free() (non solo visible=false): niente resta da processare
 # per un corpo scaduto, stessa economia di qualunque nodo "usa e getta" rimosso in questo progetto.
 func _process(_delta: float) -> void:
-	if _rules == null or game_data == null:
+	if _rules == null or game_data == null or is_dragged:
 		return
 	if ExpiredObjectCalculator.is_expired(_expiry_record, _rules, game_data.year, game_data.current_day):
 		queue_free()

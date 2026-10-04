@@ -38,9 +38,12 @@ func _on_idea_bulb_shown(global_pos: Vector2) -> void:
 	AudioManager.play_event(&"idea_completed", global_pos)
 
 
-# Rito concluso, icona comparsa sull'edificio (2026-10-03): campana posizionale nel punto dell'edificio.
-func _on_rite_effect_shown(global_pos: Vector2) -> void:
-	AudioManager.play_event(&"rite_completed", global_pos)
+# Rito concluso, icona comparsa sull'edificio (2026-10-03): suono posizionale nel punto dell'edificio. Dal 2026-10-04 il
+# suono lo sceglie la ricetta (RiteRules.completion_sound_id): evento "rite_completed:<id>" di SoundEventMap; vuoto =
+# l'evento predefinito "rite_completed" (rite_paleolithic).
+func _on_rite_effect_shown(global_pos: Vector2, sound_id: StringName) -> void:
+	var event := &"rite_completed" if sound_id == &"" else StringName("rite_completed:" + String(sound_id))
+	AudioManager.play_event(event, global_pos)
 
 
 # Oggetto del mondo selezionato con un click: suono di selezione nel punto del click.

@@ -168,8 +168,19 @@ func _build_shortcuts_text() -> String:
 		"[b]R[/b] — %s" % tr("help_rotate_or_rest"),
 		"[b]G[/b] — %s" % tr("help_wander_task"),
 		"[b]P[/b] — %s" % tr("help_play_task"),
+		"[b]O[/b] — %s" % tr("help_explore_task"),
+		# Tasti dei comandi già esistenti ma assenti da questa lista fino al 2026-10-04 (richiesta utente: "i comandi
+		# da tastiera nel ? insieme agli altri"): E, F, L, i tasti della barra dei comandi (CommandBar.GATHER_KEY/
+		# HUNT_KEY/AUTO_ZONE_KEY) ed Esc.
+		"[b]E[/b] — %s" % tr("help_emergency_rest_task"),
+		"[b]F[/b] — %s" % tr("help_leisure_restock_task"),
 		"[b]H[/b] — %s" % tr("help_stop_task"),
 		"[b]U[/b] — %s" % tr("help_unload_here_task"),
+		"[b]%s[/b] — %s" % [OS.get_keycode_string(CommandBar.GATHER_KEY), tr("help_gather_command")],
+		"[b]%s[/b] — %s" % [OS.get_keycode_string(CommandBar.HUNT_KEY), tr("help_hunt_command")],
+		"[b]%s[/b] — %s" % [OS.get_keycode_string(CommandBar.AUTO_ZONE_KEY), tr("help_auto_zone_command")],
+		"[b]L[/b] — %s" % tr("help_cycle_map_layer"),
+		"[b]Esc[/b] — %s" % tr("help_escape_cancel"),
 		"[b]%s[/b] — %s" % [tr("help_double_click_label"), tr("help_double_click_inspect_microcell")],
 	]
 	# Voci DEBUG (2026-09-09, richiesta utente — "aggiungi anche z, s [H] nell'help"): mostrate

@@ -111,6 +111,24 @@ extends Resource
 
 @export var max_durability: int = 50
 
+# Difesa (2026-10-04, richiesta utente — "Difesa"/"Defense" a schermo, blocco Info dell'edificio). NESSUNA logica la
+# usa ancora: servirà a ridurre i danni degli attacchi agli edifici, insieme alla forza di chi attacca, quando gli
+# attacchi esisteranno (oggi niente danneggia un edificio). 10 di base; il vallo difensivo (earthwork) 100.
+@export var defense: int = 10
+
+# Edificio LINEARE (2026-10-04, richiesta utente — dal vallo difensivo, per futuri mura/strade): pezzi da una microcella
+# che si collegano a vista ai pezzi vicini sui quattro lati (mai in diagonale), finiti o cantieri, anche oltre il bordo di
+# macrocella. I vicini li calcola GameScene (_linear_shape_at, una funzione per qualunque edificio lineare), il disegno è
+# LinearShape con lo stile del tipo. `linear_link_group`: i pezzi si collegano solo a quelli dello stesso gruppo; ""
+# = il nome del tipo (building_type_name), cioè si collegano solo tra loro.
+@export var is_linear: bool = false
+@export var linear_link_group: String = ""
+
+# Sepolture (2026-10-04, richiesta utente — cumulo sepolcrale, passo 1): numero massimo di defunti che l'edificio può
+# accogliere; 0 = non è un luogo di sepoltura. I sepolti stanno in Building.buried; il trasporto dei corpi e il funerale
+# arriveranno nei passi successivi.
+@export var max_buried: int = 0
+
 # Miglioramento (2026-10-03, richiesta utente): nome del tipo di edificio (building_type_name, es. "hide_tent") in cui
 # questo può trasformarsi; "" = nessun miglioramento. Una sola destinazione, con lo stesso required_space (un edificio
 # più grande nasce solo da una costruzione: BuildingUpgradeService.warn_space_mismatches avvisa all'avvio). Costo e

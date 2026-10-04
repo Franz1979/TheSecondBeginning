@@ -1,4 +1,4 @@
-[gd_resource type="Resource" script_class="BuildingRules" format=3]
+[gd_resource type="Resource" script_class="BuildingRules" format=3 uid="uid://ccg2tbfvpyx6n"]
 
 [ext_resource type="Script" uid="uid://b8pl3yflicmtn" path="res://simulation/scripts/core/BuildingRules.gd" id="1_burial"]
 
@@ -8,11 +8,14 @@ building_name = "building_burial"
 category = 6
 required_idea_id = "paleolithic_constructions"
 min_construction_days = 2
-required_labor = 400
+required_labor = 1200
 required_materials = {
-"pebble": 20
+"pebble": 60,
+"stick": 20
 }
 max_durability = 200
+max_buried = 10
 required_space = 1
 has_door = false
 visibility_radius = 1
+religious_radius = 5

@@ -1334,6 +1334,7 @@ func _draw_buildings() -> void:
 	# Terra battuta PRIMA di ogni altro edificio (2026-09-19): è una superficie piatta a livello
 	# del terreno, mai sopra la sagoma di un altro edificio — vedi _rebuild_dirt_ground_mesh.
 	_draw_dirt_ground_tiles()
+	_draw_linear_grounds()
 	for entry in buildings:
 		var pos: Vector2i = entry["position"]
 		var ground := Vector2(pos.x * CELL_SIZE + half, pos.y * CELL_SIZE + half)
@@ -1378,7 +1379,20 @@ func _draw_buildings() -> void:
 			# difensivo già seguito sopra per "building_type_name").
 			_draw_deposit_site_storage_grid(ground, entry.get("slot_breakdown", []))
 			continue
+		# Deposito coperto (2026-10-04, richiesta utente): lo spiazzo e i mucchietti del sito di deposito, con sopra la
+		# tettoia leggera di CoveredDepotShape (pali, graticcio, due pelli) che lascia vedere i mucchi.
+		if building_type_name == "covered_depot":
+			_draw_deposit_site(ground)
+			_draw_deposit_site_storage_grid(ground, entry.get("slot_breakdown", []))
+			CoveredDepotShape.draw_cover(self, ground)
+			continue
 		# Edifici segnaposto (2026-09-26, richiesta utente) — disegno provvisorio condiviso, senza porta.
+		# Vallo difensivo a pezzi uniti (2026-10-04, richiesta utente): cumulo più un braccio verso ogni lato con un altro
+		# pezzo di vallo, finito o cantiere ("linear_neighbors"/"linear_clip", calcolate da GameScene._buildings_for_cell
+		# per ogni edificio lineare; un futuro edificio lineare aggiunge qui il proprio ramo con il proprio stile).
+		if building_type_name == "earthwork":
+			EarthworkShape.draw(self, ground, int(entry.get("linear_neighbors", 0)), false, 1.0, 1.0, int(entry.get("linear_clip", 0)))
+			continue
 		if PlaceholderBuildingShapes.TYPES.has(building_type_name):
 			PlaceholderBuildingShapes.draw(self, building_type_name, ground)
 			continue
@@ -1607,6 +1621,10 @@ func _rebuild_dirt_ground_mesh() -> void:
 		if not entry.get("is_complete", true):
 			continue
 		var building_type_name: String = entry.get("building_type_name", "")
+		# Edifici lineari (2026-10-04): niente quadrato pieno, il fondo è la striscia lungo il tracciato
+		# (_draw_linear_grounds).
+		if bool(entry.get("is_linear", false)):
+			continue
 		if building_type_name == "dirt_ground":
 			_append_dirt_ground_tile(entry["position"], int(entry.get("dirt_neighbors", 0)), vertices, colors)
 		elif GROUND_UNDER_BUILDING_TYPES.has(building_type_name) or bool(entry.get("dirt_ground_under", false)):
@@ -1682,6 +1700,25 @@ func _append_dirt_ground_tile(pos: Vector2i, neighbor_mask: int, vertices: Packe
 			vertices.append(speckle_center + Vector2(cos(angle_b), sin(angle_b)) * radius)
 			for k in range(3):
 				colors.append(speckle_color)
+
+
+# Fondo chiaro sotto gli edifici lineari finiti (2026-10-04, richiesta utente): una striscia lungo il tracciato, del colore
+# di base della terra battuta, più la metà di microcella verso i vicini con il proprio fondo ("linear_ground_fill", da
+# GameScene). Tutti i fondi prima di tutti gli argini, così il fondo di un pezzo non copre l'argine del vicino. Un nuovo
+# edificio lineare aggiunge qui il proprio ramo con il proprio stile.
+func _draw_linear_grounds() -> void:
+	var half: float = CELL_SIZE / 2.0
+	for entry in buildings:
+		if not bool(entry.get("is_linear", false)) or not entry.get("is_complete", true):
+			continue
+		var pos: Vector2i = entry["position"]
+		var ground := Vector2(pos.x * CELL_SIZE + half, pos.y * CELL_SIZE + half)
+		match String(entry.get("building_type_name", "")):
+			"earthwork":
+				EarthworkShape.draw_ground(
+					self, ground, int(entry.get("linear_neighbors", 0)), int(entry.get("linear_clip", 0)),
+					int(entry.get("linear_ground_fill", 0)), DirtGroundPattern.BASE_COLOR
+				)
 
 
 func _draw_dirt_ground_tiles() -> void:

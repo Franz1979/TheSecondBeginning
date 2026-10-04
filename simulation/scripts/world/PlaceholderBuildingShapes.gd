@@ -48,6 +48,20 @@ const EARTH_DARK := Color(0.33, 0.25, 0.16, 1.0)
 const STONE := Color(0.62, 0.61, 0.58, 1.0)
 const OUTLINE := Color(0.18, 0.14, 0.12, 1.0)
 const INVALID_TINT := Color(0.9, 0.25, 0.25, 0.55)
+# Lastra-altare del cumulo sepolcrale (2026-10-04, passo 3a; terra battuta, non pietra): rettangolo in unità di disegno (centro della microcella =
+# 0,0; microcella da -5 a 5), nella striscia libera sotto il tumulo (le pietre del cerchio arrivano a y 2.65).
+const BURIAL_SLAB_RECT := Rect2(-3.0, 2.85, 6.0, 1.95)
+const BURIAL_SLAB_EDGE: float = 0.45
+# Letto di terra battuta (2026-10-04, richiesta utente — prima pietra, ma la pietra non è ancora estraibile né tra i
+# materiali): terra chiara e calda, ben distinta dal fondo verde/bruno sotto l'edificio e più chiara del tumulo (EARTH);
+# il bordo inferiore un tono più scuro.
+const SLAB_TOP := Color(0.68, 0.55, 0.37, 1.0)
+const SLAB_EDGE := Color(0.52, 0.41, 0.27, 1.0)
+
+
+# Centro della lastra in microcelle, relativo all'angolo della microcella del cumulo (0..1): dove si posa il corpo.
+static func burial_slab_center_microcell() -> Vector2:
+	return Vector2(0.5, 0.5) + BURIAL_SLAB_RECT.get_center() / 10.0
 
 
 static func draw(canvas: CanvasItem, building_type: String, center: Vector2, invalid: bool = false, scale: float = 1.0) -> void:
@@ -83,6 +97,13 @@ static func draw(canvas: CanvasItem, building_type: String, center: Vector2, inv
 				var angle := TAU * float(i) / 8.0
 				canvas.draw_circle(p.call(cos(angle) * 3.6, sin(angle) * 2.2), w.call(0.45), tint.call(STONE))
 			canvas.draw_rect(Rect2(p.call(-0.5, -2.8), Vector2(1.0, 2.6) * scale), tint.call(STONE))
+			# Lastra-altare (2026-10-04, cumulo sepolcrale passo 3a): letto di terra battuta, piatto e basso, nella striscia
+			# libera sotto il tumulo — piano chiaro e un bordo inferiore più scuro che ne suggerisce il poco spessore. Il corpo posato
+			# accanto al cumulo ci viene disteso sopra (burial_slab_center_microcell).
+			canvas.draw_rect(Rect2(p.call(BURIAL_SLAB_RECT.position.x, BURIAL_SLAB_RECT.position.y), BURIAL_SLAB_RECT.size * scale), tint.call(SLAB_TOP))
+			canvas.draw_rect(Rect2(
+				p.call(BURIAL_SLAB_RECT.position.x, BURIAL_SLAB_RECT.end.y - BURIAL_SLAB_EDGE), Vector2(BURIAL_SLAB_RECT.size.x, BURIAL_SLAB_EDGE) * scale
+			), tint.call(SLAB_EDGE))
 		"earthwork":
 			# Argine di terra ad arco, con il ciglio più scuro.
 			var ridge := PackedVector2Array()

@@ -138,7 +138,9 @@ static func deserialize_task(data: Dictionary, macro_state: MacroCellState, worl
 			continue
 		# Bersaglio non risolvibile (Build/SetupSite/Clear): scarta l'intera Task — vedi il commento sul
 		# valore di ritorno sopra.
-		if (step is BuildAction or step is SetupSiteAction or step is ClearAction or step is ProduceAction or step is RiteAction) and step.get("target_building") == null:
+		# Un funerale (RiteAction con body_id, 2026-10-04) non ha ancora l'edificio finché il corpo non è sulla lastra.
+		var is_pending_funeral: bool = step is RiteAction and (step as RiteAction).body_id != -1
+		if (step is BuildAction or step is SetupSiteAction or step is ClearAction or step is ProduceAction or step is RiteAction) and step.get("target_building") == null and not is_pending_funeral:
 			push_warning("TaskPersistenceService: task '%s' scartata al caricamento — l'edificio target dello step %d non esiste più." % [
 				String(data.get("task_name", "")), i
 			])
@@ -181,6 +183,15 @@ static func deserialize_task(data: Dictionary, macro_state: MacroCellState, worl
 # vedi _build_step sotto che lo scarta) invece di far fallire l'intero salvataggio per un solo step
 # di tipo sconosciuto.
 static func _action_type_for_step(step: Action) -> int:
+	# CarryBodyAction PRIMA di WalkAction: ne è una sottoclasse (2026-10-04, cumulo sepolcrale passo 2).
+	if step is CarryBodyAction:
+		return TaskTypes.ActionType.CARRY_BODY
+	if step is PickUpBodyAction:
+		return TaskTypes.ActionType.PICKUP_BODY
+	if step is PutDownBodyAction:
+		return TaskTypes.ActionType.PUT_DOWN_BODY
+	if step is FollowIndividualAction:
+		return TaskTypes.ActionType.FOLLOW_INDIVIDUAL
 	if step is WalkAction:
 		return TaskTypes.ActionType.WALK
 	if step is RestAction:
@@ -477,7 +488,20 @@ static func _build_step(action_type: int, step_data: Dictionary, macro_state: Ma
 			var rite_target_building: Building = null
 			if step_data.has("target_building_id"):
 				rite_target_building = _find_building_by_id(world, int(step_data["target_building_id"]))
-			step = RiteAction.new(rite_target_building, String(step_data.get("rite_id", "")))
+			step = RiteAction.new(rite_target_building, String(step_data.get("rite_id", "")), int(step_data.get("body_id", -1)))
+		TaskTypes.ActionType.PICKUP_BODY:
+			step = PickUpBodyAction.new(int(step_data.get("body_id", -1)))
+		TaskTypes.ActionType.CARRY_BODY:
+			step = CarryBodyAction.new(int(step_data.get("body_id", -1)), int(step_data.get("target_building_id", -1)))
+			step.target = Vector2(float(step_data.get("target_x", 0.0)), float(step_data.get("target_y", 0.0)))
+		TaskTypes.ActionType.PUT_DOWN_BODY:
+			step = PutDownBodyAction.new(int(step_data.get("body_id", -1)))
+		TaskTypes.ActionType.FOLLOW_INDIVIDUAL:
+			# Il riferimento alla task della guida non si salva: lo step si riaggancia per nome (keeper_task_name).
+			step = FollowIndividualAction.new(
+				int(step_data.get("guide_id", -1)), int(step_data.get("building_id", -1)), String(step_data.get("keeper_task_name", "")),
+				null, int(step_data.get("queue_order", -1))
+			)
 		TaskTypes.ActionType.RECOVER_WEAPON:
 			# Arma a terra (vive solo in questo step), esito del tiro e bersaglio; il punto di caduta è in
 			# Task.context (HuntService.CONTEXT_WEAPON_DROP), ripristinato con il resto del context.

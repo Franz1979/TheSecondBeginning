@@ -8,6 +8,9 @@ skill_effects_by_task_name = {
 "task_build_name": {
 "skill_builder": 1.0
 },
+"task_bury_name": {
+"skill_ritual": 1.0
+},
 "task_butcher_name": {
 "skill_crafting": 1.0
 },
@@ -44,7 +47,8 @@ skill_effects_by_task_name = {
 "task_transport_name": {
 "skill_transporter": 1.0
 },
-"task_wander_name": {}
+"task_wander_name": {},
+"task_explore_name": {}
 }
 vital_effects_by_task_name = {
 "task_build_name": {},
@@ -68,6 +72,9 @@ vital_effects_by_task_name = {
 "task_rite_name": {},
 "task_transport_name": {},
 "task_wander_name": {
+"current_happiness": 10.0
+},
+"task_explore_name": {
 "current_happiness": 10.0
 }
 }

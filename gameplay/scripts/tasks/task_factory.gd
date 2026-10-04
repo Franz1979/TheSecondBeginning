@@ -203,7 +203,48 @@ static func build_task(definition: TaskDefinition, context: Dictionary) -> Task:
 						or not context.has(step_definition.context_keys[1]):
 					push_error("TaskFactory.build_task: context_keys mancanti/non risolvibili per step RITE di TaskDefinition '%s'." % definition.task_name)
 					continue
-				steps.append(RiteAction.new(context[step_definition.context_keys[0]], String(context[step_definition.context_keys[1]])))
+				# context_keys[2] facoltativo (2026-10-04, funerale in bury.tres): id del corpo da seppellire.
+				var rite_body_id: int = -1
+				if step_definition.context_keys.size() > 2 and context.has(step_definition.context_keys[2]):
+					rite_body_id = int(context[step_definition.context_keys[2]])
+				steps.append(RiteAction.new(context[step_definition.context_keys[0]], String(context[step_definition.context_keys[1]]), rite_body_id))
+				step_descriptions.append(step_definition.step_description)
+			# Task Seppellisci (2026-10-04, cumulo sepolcrale passo 2, vedi bury.tres): context_keys[0] = id del corpo
+			# (record DEAD_BODY), per CARRY_BODY context_keys[1] = cumulo scelto all'assegnazione.
+			TaskTypes.ActionType.PICKUP_BODY, TaskTypes.ActionType.CARRY_BODY, TaskTypes.ActionType.PUT_DOWN_BODY:
+				if step_definition.context_keys.is_empty() or not context.has(step_definition.context_keys[0]):
+					push_error("TaskFactory.build_task: context_keys[0] (id del corpo) mancante per uno step del trasporto del corpo di TaskDefinition '%s'." % definition.task_name)
+					continue
+				var body_id := int(context[step_definition.context_keys[0]])
+				match step_definition.action_type:
+					TaskTypes.ActionType.PICKUP_BODY:
+						steps.append(PickUpBodyAction.new(body_id))
+					TaskTypes.ActionType.CARRY_BODY:
+						var mound_id: int = -1
+						if step_definition.context_keys.size() > 1 and context.has(step_definition.context_keys[1]):
+							mound_id = int(context[step_definition.context_keys[1]])
+						steps.append(CarryBodyAction.new(body_id, mound_id))
+					_:
+						steps.append(PutDownBodyAction.new(body_id))
+				step_descriptions.append(step_definition.step_description)
+			# Corteo (2026-10-04, procession.tres): context_keys = id della guida, id dell'edificio di arrivo, nome della task
+			# della guida e (facoltativo) il suo riferimento, non salvabile, che lo step trattiene.
+			TaskTypes.ActionType.FOLLOW_INDIVIDUAL:
+				if step_definition.context_keys.size() < 3 or not context.has(step_definition.context_keys[0]) \
+						or not context.has(step_definition.context_keys[1]) or not context.has(step_definition.context_keys[2]):
+					push_error("TaskFactory.build_task: context_keys mancanti/non risolvibili per step FOLLOW_INDIVIDUAL di TaskDefinition '%s'." % definition.task_name)
+					continue
+				var keeper_task: Task = null
+				if step_definition.context_keys.size() > 3:
+					keeper_task = context.get(step_definition.context_keys[3]) as Task
+				# context_keys[4] facoltativo (2026-10-04): numero d'ordine nella fila del corteo, -1 = nessuna fila.
+				var queue_order: int = -1
+				if step_definition.context_keys.size() > 4 and context.has(step_definition.context_keys[4]):
+					queue_order = int(context[step_definition.context_keys[4]])
+				steps.append(FollowIndividualAction.new(
+					int(context[step_definition.context_keys[0]]), int(context[step_definition.context_keys[1]]),
+					String(context[step_definition.context_keys[2]]), keeper_task, queue_order
+				))
 				step_descriptions.append(step_definition.step_description)
 			TaskTypes.ActionType.PATROL_AREA:
 				# 1 argomento (id della WorkArea, 2026-10-01): chiave consumata dalla factory — chi crea la Task scrive

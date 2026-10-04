@@ -17,9 +17,8 @@ extends TabContainer
 #
 # PopulationTab ospita HumanPopulationInfoPanel (aggiunto da GameScene, richiesta utente,
 # 2026-09-01 — stesso schema "componente muto, GameScene lo istanzia/popola" di vegetation_info_
-# panel/human_individual_info_panel). PlaceholderTab è un puro placeholder — nessun contenuto,
-# nessun significato assegnato ancora, pronta per una futura sezione senza dover ritoccare la
-# struttura delle tab.
+# panel/human_individual_info_panel). PendingTab (2026-10-04, prima PlaceholderTab, un segnaposto vuoto) ospita
+# PendingPanel, le cose in sospeso — vedi TAB_PENDING.
 #
 # SelectionTab (richiesta utente, 2026-09-01) mostra il dettaglio di QUALUNQUE cosa sia
 # selezionata sulla mappa — oggi solo vegetazione/individuo controllabile (VegetationInfoPanel/
@@ -40,12 +39,19 @@ extends TabContainer
 const TAB_POPULATION := 0
 # BuildingsTab (2026-09-12, richiesta utente — pannello edifici "concettualmente simile a quella
 # population", con etichetta "tra population e la lente di ingrandimento") — inserita in mezzo
-# nell'ordine dei nodi (vedi GameInfoTabs.tscn), TAB_SELECTION/TAB_PLACEHOLDER spostati avanti di
-# uno di conseguenza. PlaceholderTab NON rimossa (resta comunque "pronta per una futura sezione",
-# solo un indice più in là).
+# nell'ordine dei nodi (vedi GameInfoTabs.tscn), TAB_SELECTION e la quarta scheda spostati avanti di
+# uno di conseguenza.
 const TAB_BUILDINGS := 1
 const TAB_SELECTION := 2
-const TAB_PLACEHOLDER := 3
+# Scheda "In sospeso" (2026-10-04, richiesta utente — prima la scheda segnaposto "❔"): ospita PendingPanel
+# (aggiunto da GameScene in pending_tab). Linguetta 🔔 con il numero delle voci (set_pending_count) e lampeggio 🔔/❗
+# quando entra una voce nuova (start_pending_blink), fermato aprendo la scheda.
+const TAB_PENDING := 3
+const PENDING_ICON := "🔔"
+const PENDING_BLINK_ICON := "❗"
+const PENDING_BLINK_TOGGLES: int = 10
+const PENDING_BLINK_INTERVAL_SEC: float = 0.4
+const PENDING_MAX_SHOWN_COUNT: int = 9
 # DebugTab (2026-09-12, richiesta utente — "una tab di debug (colore etichetta del debug) nell'info
 # panel" per TaskDebugPanel, elenco di tutte le Task assegnate in sessione) — AGGIUNTA IN CODA
 # (dopo Placeholder, non prima: nessuna posizione specifica richiesta per questa, a differenza di
@@ -74,6 +80,11 @@ signal center_requested
 # Dal 2026-10-03 i pannelli vanno nel WidthClampContainer dentro ciascuno scroll (vedi _lock_content_width).
 @onready var population_tab: Control = $PopulationTab/PopulationScroll/PopulationClamp
 @onready var buildings_tab: Control = $BuildingsTab/BuildingsScroll/BuildingsClamp
+@onready var pending_tab: Control = $PendingTab/PendingScroll/PendingClamp
+var _pending_count: int = 0
+var _pending_blink_toggles_left: int = 0
+var _pending_blink_on: bool = false
+var _pending_blink_timer: Timer = null
 @onready var selection_tab: Control = $SelectionTab
 @onready var debug_tab: Control = $DebugTab/DebugClamp
 # Contenitore in cui GameScene aggiunge/rimuove i pannelli di dettaglio (VegetationInfoPanel/
@@ -125,7 +136,7 @@ func _ready() -> void:
 	set_tab_title(TAB_POPULATION, "🧍")
 	set_tab_title(TAB_BUILDINGS, "🏠")
 	set_tab_title(TAB_SELECTION, "🔍")
-	set_tab_title(TAB_PLACEHOLDER, "❔")
+	_refresh_pending_title()
 	# 🐞 (2026-09-12, richiesta utente) — icona GIÀ di per sé "colorata/riconoscibile come debug"
 	# (nessuna infrastruttura di per-tab font color in TabBar/TabContainer da costruire apposta per
 	# un'unica scheda) — l'etichetta "DEBUG" vera e propria, in un colore acceso, vive DENTRO il
@@ -137,7 +148,18 @@ func _ready() -> void:
 	tab_bar.set_tab_tooltip(TAB_POPULATION, tr("game_info_tab_population"))
 	tab_bar.set_tab_tooltip(TAB_BUILDINGS, tr("game_info_tab_buildings"))
 	tab_bar.set_tab_tooltip(TAB_SELECTION, tr("game_info_tab_selection"))
-	tab_bar.set_tab_tooltip(TAB_PLACEHOLDER, tr("game_info_tab_placeholder"))
+	tab_bar.set_tab_tooltip(TAB_PENDING, tr("game_info_tab_pending"))
+	# Il numero accanto a 🔔 non deve mai allargare la barra né il pannello (2026-10-04): con clip_tabs la barra delle
+	# linguette non chiede più larghezza delle schede; nel caso limite mostra le frecce di scorrimento invece di allargarsi.
+	clip_tabs = true
+	_pending_blink_timer = Timer.new()
+	_pending_blink_timer.wait_time = PENDING_BLINK_INTERVAL_SEC
+	_pending_blink_timer.timeout.connect(_on_pending_blink_timeout)
+	add_child(_pending_blink_timer, false, Node.INTERNAL_MODE_BACK)
+	tab_changed.connect(func(tab: int) -> void:
+		if tab == TAB_PENDING:
+			_stop_pending_blink()
+	)
 	tab_bar.set_tab_tooltip(TAB_DEBUG, tr("game_info_tab_debug"))
 
 	# Nascosta fuori da DebugLogging.ENABLED (2026-09-12, richiesta utente — implicito, stesso
@@ -164,7 +186,7 @@ func _ready() -> void:
 #     (un'etichetta a capo riceveva larghezza zero e si scriveva un carattere per riga);
 #   - il titolo della selezione (fuori dallo scroll) tronca con i puntini.
 func _lock_content_width() -> void:
-	for clamp_container in [population_tab, buildings_tab, selection_content.get_parent()]:
+	for clamp_container in [population_tab, buildings_tab, selection_content.get_parent(), pending_tab]:
 		(clamp_container.get_parent() as ScrollContainer).horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	title_label.clip_text = true
 	title_label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
@@ -174,6 +196,48 @@ func _lock_content_width() -> void:
 # controllabile). Ripetibile: selezionare qualcos'altro mentre si è già su questa tab non fa altro
 # che aggiornarne il contenuto (già fatto dal chiamante prima di questa chiamata) — qui serve solo
 # a nascondere il messaggio "nessuna selezione" e a saltare sulla tab.
+# Numero delle voci in sospeso accanto a 🔔: niente se zero, "9+" oltre nove.
+func set_pending_count(count: int) -> void:
+	_pending_count = count
+	_refresh_pending_title()
+
+
+# Lampeggio 🔔/❗ per qualche secondo (voce nuova). Nessun effetto se la scheda è già aperta.
+func start_pending_blink() -> void:
+	if current_tab == TAB_PENDING or _pending_blink_timer == null:
+		return
+	_pending_blink_toggles_left = PENDING_BLINK_TOGGLES
+	_pending_blink_on = true
+	_refresh_pending_title()
+	_pending_blink_timer.start()
+
+
+func _on_pending_blink_timeout() -> void:
+	_pending_blink_toggles_left -= 1
+	_pending_blink_on = not _pending_blink_on and _pending_blink_toggles_left > 0
+	_refresh_pending_title()
+	if _pending_blink_toggles_left <= 0:
+		_stop_pending_blink()
+
+
+func _stop_pending_blink() -> void:
+	_pending_blink_toggles_left = 0
+	_pending_blink_on = false
+	if _pending_blink_timer != null:
+		_pending_blink_timer.stop()
+	_refresh_pending_title()
+
+
+func _refresh_pending_title() -> void:
+	var icon := PENDING_BLINK_ICON if _pending_blink_on else PENDING_ICON
+	var count_text := ""
+	if _pending_count > PENDING_MAX_SHOWN_COUNT:
+		count_text = "%d+" % PENDING_MAX_SHOWN_COUNT
+	elif _pending_count > 0:
+		count_text = str(_pending_count)
+	set_tab_title(TAB_PENDING, icon + count_text)
+
+
 func show_selection_tab() -> void:
 	if current_tab != TAB_SELECTION:
 		_tab_before_selection = current_tab

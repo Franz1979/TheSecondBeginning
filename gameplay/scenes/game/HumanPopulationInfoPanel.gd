@@ -67,6 +67,20 @@ const IDLE_TASK_TEXT := "A riposo"
 # l'unica a decidere cosa fare col click (stesso schema di _on_minimap_cell_clicked).
 signal individual_center_requested(individual: HumanIndividual)
 
+# Ordinamento dell'elenco (2026-10-04, richiesta utente): pulsante a icona sulla riga del Folk (MenuButton piatto, stesso
+# stile del 🎯 di riga) con una tendina delle opzioni, quella attiva spuntata. L'opzione scelta vive in
+# GameData.population_list_sort (salvata con la partita): il pannello la riceve in show_population e segnala un cambio
+# con sort_changed, GameScene la salva e ripopola. A parità di criterio ordine per id, così la lista non salta.
+# Nuova opzione (es. famiglia, skill): una voce in SORT_OPTIONS, un caso in _sort_less, la chiave di traduzione.
+signal sort_changed(sort_id: String)
+const SORT_BUTTON_TEXT := "⇅"
+const DEFAULT_SORT_ID := "age"
+const SORT_OPTIONS: Array[Dictionary] = [
+	{"id": "age", "label_key": "population_sort_age"},
+	{"id": "name", "label_key": "population_sort_name"},
+	{"id": "house", "label_key": "population_sort_house"},
+]
+
 @onready var folk_label: Label = $FolkRow/FolkLabel
 @onready var hide_tasks_button: Button = $FolkRow/HideTasksButton
 @onready var group_label: Label = $SummaryRow/GroupLabel
@@ -92,9 +106,39 @@ var _task_rows: Array[Control] = []
 # pannello (custom_minimum_size.x), cosi' la tab popolazione occupa sempre la larghezza che avrebbe con tutto
 # aperto. Vedi show_population.
 var _widest_row: float = 0.0
+var _sort_id: String = DEFAULT_SORT_ID
+var _sort_button: MenuButton = null
+
+# Pulsanti del gruppo "Azioni" sulle righe (2026-10-04, richiesta utente): le stesse azioni della barra dei comandi
+# (CommandBar.ACTIONS, unica fonte: un'azione aggiunta lì compare anche qui), come piccole icone, solo sulla riga sotto
+# il mouse. Lo stato di ogni pulsante (assente/spento/acceso e spiegazione) lo chiede a GameScene
+# (`command_state_provider`, Callable(abitante, action_id) -> {"shown", "enabled", "tooltip"}) nel momento in cui la
+# riga diventa quella sotto il mouse; il clic emette command_requested e GameScene dà l'ordine a quell'abitante con lo
+# stesso flusso della barra.
+# SOVRAPPOSTI (2026-10-04, richiesta utente — prima stavano dentro la riga e ne aumentavano l'altezza): un solo riquadro
+# di pulsanti (_command_overlay, top_level: fuori dal flusso dell'impaginazione) posato sopra la riga sotto il mouse, a
+# destra, a sinistra dell'icona della casa, centrato in verticale sull'intera riga dell'abitante (nome più task). La
+# riga non cambia mai altezza: sotto i pulsanti il testo si tronca con i puntini grazie a due spaziatori (riga del nome e
+# riga del task) che prendono solo la larghezza occupata dai pulsanti. Con i task nascosti la riga è una sola e i
+# pulsanti si riducono alla sua altezza.
+signal command_requested(individual: HumanIndividual, action_id: StringName)
+const COMMAND_BUTTON_SIZE: float = 18.0
+const COMMAND_BUTTON_SEPARATION: int = 1
+const COMMAND_BUTTON_DISABLED_MODULATE := Color(1, 1, 1, 0.35)
+var command_state_provider: Callable = Callable()
+# Una voce per riga: {"member", "wrapper" (blocco nome + task), "name_row", "house_icon" (Control o null),
+# "name_spacer", "task_spacer"}.
+var _command_rows: Array[Dictionary] = []
+var _hovered_command_row: int = -1
+var _command_overlay: HBoxContainer = null
 
 
 func _ready() -> void:
+	_command_overlay = HBoxContainer.new()
+	_command_overlay.top_level = true
+	_command_overlay.add_theme_constant_override("separation", COMMAND_BUTTON_SEPARATION)
+	_command_overlay.visible = false
+	add_child(_command_overlay)
 	male_label.add_theme_color_override("font_color", COLOR_MALE)
 	female_label.add_theme_color_override("font_color", COLOR_FEMALE)
 	expand_button.text = "+"
@@ -108,6 +152,82 @@ func _ready() -> void:
 	# avrebbe alcun effetto visibile: disabled invece di semplicemente nasconderlo, così il player
 	# vede comunque che il controllo esiste ma non è applicabile finché la lista resta chiusa.
 	hide_tasks_button.disabled = not _expanded
+	_build_sort_button()
+
+
+# Pulsante dell'ordinamento, accanto a "Nascondi task" sulla riga del Folk: piatto e stretto come il 🎯 di riga, così
+# sta nello spazio della riga (FolkLabel va a capo prima di allargare il pannello).
+func _build_sort_button() -> void:
+	_sort_button = MenuButton.new()
+	_sort_button.text = SORT_BUTTON_TEXT
+	_sort_button.flat = true
+	_sort_button.add_theme_font_size_override("font_size", 10)
+	_sort_button.custom_minimum_size = Vector2(20, 0)
+	var popup := _sort_button.get_popup()
+	for i in SORT_OPTIONS.size():
+		popup.add_radio_check_item(tr(String(SORT_OPTIONS[i]["label_key"])), i)
+	popup.id_pressed.connect(_on_sort_option_pressed)
+	$FolkRow.add_child(_sort_button)
+	_refresh_sort_button()
+
+
+func _sort_option_index(sort_id: String) -> int:
+	for i in SORT_OPTIONS.size():
+		if SORT_OPTIONS[i]["id"] == sort_id:
+			return i
+	return -1
+
+
+func _refresh_sort_button() -> void:
+	if _sort_button == null:
+		return
+	var active := maxi(_sort_option_index(_sort_id), 0)
+	var popup := _sort_button.get_popup()
+	for i in SORT_OPTIONS.size():
+		popup.set_item_checked(popup.get_item_index(i), i == active)
+	_sort_button.tooltip_text = tr("population_sort_tooltip").format({"option": tr(String(SORT_OPTIONS[active]["label_key"]))})
+
+
+func _on_sort_option_pressed(option_id: int) -> void:
+	if option_id < 0 or option_id >= SORT_OPTIONS.size():
+		return
+	var sort_id: String = SORT_OPTIONS[option_id]["id"]
+	if sort_id == _sort_id:
+		return
+	_sort_id = sort_id
+	_refresh_sort_button()
+	sort_changed.emit(sort_id)
+
+
+# Copia di `individuals` nell'ordine dell'opzione attiva (id sconosciuto = predefinito).
+func _sorted_individuals(individuals: Array[HumanIndividual]) -> Array[HumanIndividual]:
+	var sorted: Array[HumanIndividual] = individuals.duplicate()
+	var sort_id := _sort_id if _sort_option_index(_sort_id) >= 0 else DEFAULT_SORT_ID
+	sorted.sort_custom(func(a: HumanIndividual, b: HumanIndividual) -> bool: return _sort_less(sort_id, a, b))
+	return sorted
+
+
+# true se `a` va prima di `b`. Età: più anziani prima (anno di nascita minore). Nome: alfabetico senza maiuscole/
+# minuscole. Casa: per id di casa, senza casa in fondo, dentro la casa per età. Sempre id a parità.
+func _sort_less(sort_id: String, a: HumanIndividual, b: HumanIndividual) -> bool:
+	match sort_id:
+		"name":
+			var cmp := a.name.naturalnocasecmp_to(b.name)
+			if cmp != 0:
+				return cmp < 0
+		"house":
+			var a_homeless := a.house_id == -1
+			var b_homeless := b.house_id == -1
+			if a_homeless != b_homeless:
+				return b_homeless
+			if a.house_id != b.house_id:
+				return a.house_id < b.house_id
+			if a.birth_year_virtual != b.birth_year_virtual:
+				return a.birth_year_virtual < b.birth_year_virtual
+		_:
+			if a.birth_year_virtual != b.birth_year_virtual:
+				return a.birth_year_virtual < b.birth_year_virtual
+	return a.id < b.id
 
 
 # total_count separato da individuals.size() deliberatamente (anche se oggi coincidono sempre:
@@ -139,8 +259,12 @@ func _ready() -> void:
 func show_population(
 	total_count: int, individuals: Array[HumanIndividual], current_year: int,
 	era_effective_age_band_durations_male: Array[float], era_effective_age_band_durations_female: Array[float],
-	folk_id: int, group_id: int, housing_capacity: int
+	folk_id: int, group_id: int, housing_capacity: int, sort_id: String = DEFAULT_SORT_ID
 ) -> void:
+	# Ordinamento scelto (GameData.population_list_sort, vedi SORT_OPTIONS).
+	if sort_id != _sort_id:
+		_sort_id = sort_id
+		_refresh_sort_button()
 	var male_count := 0
 	var female_count := 0
 	for member in individuals:
@@ -173,7 +297,10 @@ func show_population(
 	for child in list_container.get_children():
 		child.queue_free()
 	_task_rows.clear()
-	for member in individuals:
+	_command_rows.clear()
+	_hovered_command_row = -1
+	_clear_command_overlay()
+	for member in _sorted_individuals(individuals):
 		var age: int = current_year - member.birth_year_virtual
 		var age_band := HumanCalculator.get_age_band(
 			era_effective_age_band_durations_male, era_effective_age_band_durations_female, member.sex, float(age)
@@ -203,7 +330,10 @@ func show_population(
 		var label := Label.new()
 		label.add_theme_font_size_override("font_size", 10)
 		label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		# Su una riga, troncato con i puntini (2026-10-04): sotto i pulsanti delle azioni il testo si accorcia invece di
+		# andare a capo, così la riga non cambia altezza.
+		label.clip_text = true
+		label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 		label.text = "%s — %s, %d (%s)" % [
 			member.name,
 			"F" if member.sex == HumanTypes.Sex.FEMALE else "M",
@@ -211,6 +341,12 @@ func show_population(
 			HumanTypes.AgeBand.keys()[age_band].capitalize(),
 		]
 		row.add_child(label)
+
+		# Spaziatore largo quanto i pulsanti delle azioni quando la riga è sotto il mouse, a sinistra della casa.
+		var name_spacer := Control.new()
+		name_spacer.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		row.add_child(name_spacer)
+		var house_icon_node: Control = null
 
 		# Simbolo casa (2026-09-12, richiesta utente) — SOLO se ha una casa assegnata, nessun
 		# placeholder/spazio vuoto per chi non ce l'ha (stesso principio "assente = niente" già
@@ -221,6 +357,7 @@ func show_population(
 			house_icon.add_theme_font_size_override("font_size", 10)
 			house_icon.tooltip_text = "ID Casa: %d" % member.house_id
 			row.add_child(house_icon)
+			house_icon_node = house_icon
 
 		# Riga task indentata, SOTTO la riga dell'individuo (2026-09-18, richiesta utente) —
 		# row_wrapper (VBoxContainer) tiene insieme le due righe come un solo blocco, così l'ordine
@@ -241,16 +378,32 @@ func show_population(
 		task_margin.add_theme_constant_override("margin_bottom", 2)
 		task_margin.visible = _show_tasks
 
+		# Testo del task su una riga, tagliato con i puntini (2026-10-04): lascia spazio ai pulsanti delle azioni a destra
+		# senza mai allargare il pannello.
+		var task_line := HBoxContainer.new()
+		task_line.add_theme_constant_override("separation", 2)
 		var task_label := Label.new()
 		task_label.add_theme_font_size_override("font_size", 9)
-		task_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		task_label.clip_text = true
+		task_label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+		task_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		task_label.add_theme_color_override("font_color", COLOR_TASK_DIM)
 		task_label.text = "↳ " + (
 			member.current_task.get_activity_description() if member.current_task != null else IDLE_TASK_TEXT
 		)
-		task_margin.add_child(task_label)
+		task_label.tooltip_text = task_label.text
+		task_label.mouse_filter = Control.MOUSE_FILTER_PASS
+		task_line.add_child(task_label)
+		var task_spacer := Control.new()
+		task_spacer.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		task_line.add_child(task_spacer)
+		task_margin.add_child(task_line)
 		row_wrapper.add_child(task_margin)
 		_task_rows.append(task_margin)
+		_command_rows.append({
+			"member": member, "wrapper": row_wrapper, "name_row": row, "house_icon": house_icon_node,
+			"name_spacer": name_spacer, "task_spacer": task_spacer,
+		})
 
 		list_container.add_child(row_wrapper)
 		# Misura DOPO l'inserimento (font/tema risolti dall'albero) e a prescindere dalla visibilita' della lista
@@ -259,6 +412,124 @@ func show_population(
 		_widest_row = maxf(_widest_row, TASK_ROW_INDENT + task_label.get_combined_minimum_size().x)
 
 	custom_minimum_size.x = maxf(custom_minimum_size.x, _widest_row)
+
+
+# Riga sotto il mouse (2026-10-04): solo lei mostra i pulsanti delle azioni. Controllo per posizione, non con i segnali
+# di entrata/uscita del mouse, che i pulsanti sovrapposti interromperebbero. A ogni fotogramma il riquadro segue la riga
+# (la lista può scorrere) e gli spaziatori seguono la larghezza dei pulsanti.
+func _process(_delta: float) -> void:
+	var hovered := -1
+	if visible and list_container.is_visible_in_tree():
+		var mouse := get_global_mouse_position()
+		for i in range(_command_rows.size()):
+			var wrapper: Control = _command_rows[i]["wrapper"]
+			if is_instance_valid(wrapper) and wrapper.get_global_rect().has_point(mouse):
+				hovered = i
+				break
+	if hovered != _hovered_command_row:
+		_set_command_row_buttons(_hovered_command_row, false)
+		_hovered_command_row = hovered
+		_set_command_row_buttons(_hovered_command_row, true)
+	_place_command_overlay()
+
+
+# Mostra (ricostruiti con lo stato attuale) o toglie i pulsanti delle azioni di una riga.
+func _set_command_row_buttons(index: int, shown: bool) -> void:
+	if index < 0 or index >= _command_rows.size():
+		return
+	var entry: Dictionary = _command_rows[index]
+	_clear_command_overlay()
+	_set_spacer_width(entry["name_spacer"], 0.0)
+	_set_spacer_width(entry["task_spacer"], 0.0)
+	if not shown or not command_state_provider.is_valid() or not is_instance_valid(entry["wrapper"]):
+		return
+	var member: HumanIndividual = entry["member"]
+	var side := _command_button_side(entry)
+	for action in CommandBar.ACTIONS:
+		var state: Dictionary = command_state_provider.call(member, action["id"])
+		if not bool(state.get("shown", false)):
+			continue
+		_command_overlay.add_child(_build_command_button(member, action, state, side))
+	var count := _command_overlay.get_child_count()
+	if count == 0:
+		return
+	var overlay_width: float = side * count + COMMAND_BUTTON_SEPARATION * (count - 1)
+	_command_overlay.size = Vector2(overlay_width, side)
+	_command_overlay.visible = true
+	_set_spacer_width(entry["name_spacer"], overlay_width)
+	_place_command_overlay()
+
+
+# Lato dei pulsanti: comodo (COMMAND_BUTTON_SIZE) con nome più task; con i task nascosti, l'altezza della sola riga del
+# nome, così stanno dentro la riga.
+func _command_button_side(entry: Dictionary) -> float:
+	if _show_tasks:
+		return COMMAND_BUTTON_SIZE
+	var name_row: Control = entry["name_row"]
+	return minf(COMMAND_BUTTON_SIZE, maxf(name_row.size.y, 1.0))
+
+
+# Riquadro a destra, con il bordo destro dove inizia l'icona della casa (o alla fine della riga del nome senza casa),
+# centrato in verticale sul blocco nome più task; lo spaziatore della riga del task copre la stessa fascia, così il
+# testo del task si tronca sotto i pulsanti.
+func _place_command_overlay() -> void:
+	if _command_overlay == null or not _command_overlay.visible:
+		return
+	if _hovered_command_row < 0 or _hovered_command_row >= _command_rows.size():
+		_clear_command_overlay()
+		return
+	var entry: Dictionary = _command_rows[_hovered_command_row]
+	var wrapper: Control = entry["wrapper"]
+	var name_row: Control = entry["name_row"]
+	if not is_instance_valid(wrapper) or not is_instance_valid(name_row):
+		_clear_command_overlay()
+		return
+	var house_icon: Variant = entry["house_icon"]
+	var right_edge: float = name_row.get_global_rect().end.x
+	if house_icon != null and is_instance_valid(house_icon):
+		right_edge = (house_icon as Control).get_global_rect().position.x
+	var wrapper_rect := wrapper.get_global_rect()
+	var overlay_size := _command_overlay.size
+	_command_overlay.global_position = Vector2(
+		right_edge - overlay_size.x, wrapper_rect.position.y + (wrapper_rect.size.y - overlay_size.y) * 0.5
+	)
+	if _show_tasks:
+		_set_spacer_width(entry["task_spacer"], maxf(0.0, wrapper_rect.end.x - (right_edge - overlay_size.x)))
+
+
+func _clear_command_overlay() -> void:
+	if _command_overlay == null:
+		return
+	for child in _command_overlay.get_children():
+		_command_overlay.remove_child(child)
+		child.queue_free()
+	_command_overlay.visible = false
+
+
+func _set_spacer_width(spacer: Variant, width: float) -> void:
+	if spacer == null or not is_instance_valid(spacer):
+		return
+	var control := spacer as Control
+	if not is_equal_approx(control.custom_minimum_size.x, width):
+		control.custom_minimum_size = Vector2(width, 0.0)
+
+
+func _build_command_button(member: HumanIndividual, action: Dictionary, state: Dictionary, side: float) -> Button:
+	var button := Button.new()
+	button.flat = true
+	button.focus_mode = Control.FOCUS_NONE
+	button.custom_minimum_size = Vector2(side, side)
+	button.tooltip_text = String(state.get("tooltip", ""))
+	var enabled := bool(state.get("enabled", false))
+	button.disabled = not enabled
+	var icon := IconRegistry.get_command_button_icon_node(String(action["icon"]))
+	icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	button.add_child(icon)
+	icon.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	if not enabled:
+		icon.modulate = COMMAND_BUTTON_DISABLED_MODULATE
+	button.pressed.connect(func(): command_requested.emit(member, action["id"]))
+	return button
 
 
 func _on_center_button_pressed(member: HumanIndividual) -> void:
@@ -280,6 +551,9 @@ func _on_hide_tasks_pressed() -> void:
 	hide_tasks_button.text = "Nascondi task" if _show_tasks else "Mostra task"
 	for task_row in _task_rows:
 		task_row.visible = _show_tasks
+	# Pulsanti della riga sotto il mouse spostati sulla riga giusta (task o nome).
+	if _hovered_command_row >= 0:
+		_set_command_row_buttons(_hovered_command_row, true)
 
 
 # Stessa convenzione di HumanIndividualInfoPanel._format_id: sentinella -1 (non applicabile/non

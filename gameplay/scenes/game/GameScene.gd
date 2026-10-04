@@ -28,8 +28,9 @@ extends Node2D
 # con la posizione globale dell'individuo. Ascoltato da AudioEventListener (2026-09-26, richiesta utente).
 signal idea_bulb_shown(global_pos: Vector2)
 # Emesso quando compare sulla mappa l'icona di un rito concluso (_spawn_rite_completed_effect), con la posizione
-# globale dell'edificio. Ascoltato da AudioEventListener (2026-10-03, richiesta utente — campana).
-signal rite_effect_shown(global_pos: Vector2)
+# globale dell'edificio. Ascoltato da AudioEventListener (2026-10-03, richiesta utente — campana). sound_id (2026-10-04):
+# il suono scelto dalla ricetta del rito (RiteRules.completion_sound_id), &"" = quello di sempre.
+signal rite_effect_shown(global_pos: Vector2, sound_id: StringName)
 # Emesso quando un click sinistro del giocatore seleziona un oggetto nel mondo (vegetazione, edificio, corpo
 # morto, pietra, animale o individuo), con la posizione globale del click. Ascoltato da AudioEventListener.
 signal world_object_selected(global_pos: Vector2)
@@ -182,6 +183,17 @@ var individual_action_service := HumanIndividualActionService.new()
 # consuma) una volta conclusa l'indagine — non è pensato per restare nella build finale.
 const DEBUG_PANEL_REFRESH_INTERVAL_SEC: float = 0.5
 var _debug_panel_refresh_timer: float = 0.0
+# Scheda "In sospeso" (2026-10-04, richiesta utente — vedi _refresh_pending_entries): pannello, timer reale del
+# ricalcolo, orologio in giorni di gioco (somma dei game_delta, non salvato), da quando ogni lavoro è senza nessuno
+# (chiave -> valore dell'orologio; in memoria, non salvato) e chiavi dell'ultimo elenco (per il lampeggio).
+const PENDING_REFRESH_INTERVAL_SEC: float = 1.0
+const PENDING_JOB_WAIT_DAYS: float = 1.0
+var pending_panel: PendingPanel = null
+var _pending_refresh_timer: float = 0.0
+var _pending_clock: float = 0.0
+var _pending_unassigned_since: Dictionary = {}
+var _pending_previous_keys: Dictionary = {}
+var _pending_initialized: bool = false
 # Riepiloghi della DebugBar (animali della cella, celle vive — 2026-10-04, richiesta utente): solo a barra aperta, ogni
 # DEBUG_SUMMARY_REFRESH_INTERVAL_SEC secondi reali, e subito quando la barra viene riaperta (_on_debug_bar_expanded_changed).
 # Prima giravano ogni 0,5 s anche a barra chiusa, e _refresh_debug_animal_summary scorre tutti i gruppi di popolazione.
@@ -351,10 +363,8 @@ var _ground_pile_views: Dictionary = {}  # pile id -> GroundPileView
 # Gruppi di visitatori (2026-09-27, gameplay/visitors/): id del gruppo -> VisitorPartyView. Allineato ogni
 # frame da _sync_visitor_party_views, sullo schema di _ground_pile_views.
 var _visitor_party_views: Dictionary = {}
-# Overlay di debug del pathfinding (2026-09-27, step 1 — tasto N): acceso/spento e nodo attuale (figlio del container
-# della macrocella corrente). Vedi _sync_pathfinding_overlay.
-var _pathfinding_overlay_enabled: bool = false
-var _pathfinding_overlay: PathfindingDebugOverlay = null
+# Overlay di debug del pathfinding col tasto N TOLTO il 2026-10-04 (richiesta utente, tasto N liberato): lo stesso
+# disegno (PathfindingDebugOverlay) resta nel layer della mappa "Percorribilità" (MapLayerRegistry, "walkability").
 # Layer della mappa (2026-09-27, richiesta utente — menu "Layer" della barra in alto, MapLayerRegistry): id del layer
 # attivo (MapLayerRegistry.NONE_ID = nessuno), il suo overlay sulla macrocella corrente e il menu a tendina.
 var _active_map_layer_id: String = MapLayerRegistry.NONE_ID
@@ -647,6 +657,10 @@ func _ready() -> void:
 	# Click destro sugli slot della cintura (2026-09-25, richiesta utente): Task "prendi/riponi attrezzo".
 	human_individual_info_panel.tool_from_storage_requested.connect(_on_tool_from_storage_requested)
 	human_individual_info_panel.tool_to_storage_requested.connect(_on_tool_to_storage_requested)
+	# Icone 🏠 e ℹ dell'individuo (2026-10-04, richiesta utente): nell'intestazione della scheda selezione, a sinistra
+	# del 🎯, come le icone di influenza degli edifici. 🏠 centra la telecamera sulla casa senza cambiare la selezione.
+	game_info_tabs.header_actions.add_child(human_individual_info_panel.header_buttons_box)
+	human_individual_info_panel.house_center_requested.connect(_on_individual_house_center_requested)
 	# Dialogo di scelta dell'attrezzo: una istanza DEDICATA dello stesso OptionChoiceDialog della
 	# Transport (stesso aspetto/impaginazione), mai condivisa con quella (vedi OptionChoiceDialog.gd).
 	tool_storage_dialog = OPTION_CHOICE_DIALOG_SCENE.instantiate()
@@ -713,11 +727,20 @@ func _ready() -> void:
 	human_population_info_panel.individual_center_requested.connect(
 		_on_population_individual_center_requested.bind("population_panel")
 	)
+	human_population_info_panel.sort_changed.connect(_on_population_sort_changed)
+	# Pulsanti del gruppo "Azioni" sulle righe degli abitanti (2026-10-04): stato chiesto al passaggio del mouse, clic
+	# che dà l'ordine a quell'abitante con lo stesso flusso della barra.
+	human_population_info_panel.command_state_provider = _command_state_for
+	human_population_info_panel.command_requested.connect(_on_population_command_requested)
 	# buildings_info_panel vive in BuildingsTab (2026-09-12, richiesta utente) — instanziato qui
 	# insieme al resto, popolato (show_buildings) subito sotto e poi ri-rinfrescato ogni volta che
 	# lo stato di un edificio cambia (vedi _refresh_buildings_panel/i suoi call site).
 	buildings_info_panel = BUILDINGS_INFO_PANEL_SCENE.instantiate()
 	game_info_tabs.buildings_tab.add_child(buildings_info_panel)
+	# Scheda "In sospeso" (2026-10-04): elenco ricalcolato una volta al secondo (_refresh_pending_entries).
+	pending_panel = PendingPanel.new()
+	game_info_tabs.pending_tab.add_child(pending_panel)
+	pending_panel.entry_activated.connect(_on_pending_entry_activated)
 	buildings_info_panel.building_center_requested.connect(_on_buildings_panel_center_requested)
 	# task_debug_panel vive in DebugTab (2026-09-12, richiesta utente) — instanziato SEMPRE (stesso
 	# principio già seguito per SpeedDebugButton: il nodo esiste comunque, solo la TAB che lo ospita
@@ -760,6 +783,8 @@ func _ready() -> void:
 	# Icone di influenza (2026-10-02): impronta temporanea del cerchio del tipo cliccato e anteprima fissa al passaggio
 	# del mouse. Il gruppo di icone vive nell'intestazione della scheda, accanto al 🎯.
 	game_info_tabs.header_actions.add_child(building_info_panel.influence_buttons_box)
+	# Icona ℹ delle caratteristiche dell'edificio (2026-10-04), accanto alle icone di influenza.
+	game_info_tabs.header_actions.add_child(building_info_panel.info_button_box)
 	building_info_panel.influence_footprint_requested.connect(_on_influence_footprint_requested)
 	building_info_panel.influence_preview_started.connect(_on_influence_preview_started)
 	building_info_panel.influence_preview_ended.connect(_clear_influence_preview)
@@ -1235,11 +1260,22 @@ func _process(delta: float) -> void:
 		_residual_cell_cleanup_timer = 0.0
 		_cleanup_residual_live_cells()
 
+	# Scheda "In sospeso" (2026-10-04): orologio di gioco per l'attesa e ricalcolo una volta al secondo, anche a scheda
+	# chiusa (numero e lampeggio della linguetta).
+	_pending_clock += clock.get_game_day_delta(delta) if clock != null else 0.0
+	_pending_refresh_timer += delta
+	if _pending_refresh_timer >= PENDING_REFRESH_INTERVAL_SEC:
+		_pending_refresh_timer = 0.0
+		_refresh_pending_entries()
+
 	_debug_panel_refresh_timer += delta
 	if _debug_panel_refresh_timer >= DEBUG_PANEL_REFRESH_INTERVAL_SEC:
 		_debug_panel_refresh_timer = 0.0
 		_refresh_selected_individual_panel()
 		_validate_selected_animal()
+		# Pannello del corpo (2026-10-04): giorni rimanenti e stato del pulsante "Seppellisci" aggiornati.
+		if selected_dead_body_individual_id != -1:
+			_refresh_dead_body_panel()
 	if debug_bar.is_expanded():
 		_debug_summary_refresh_timer += delta
 		if _debug_summary_refresh_timer >= DEBUG_SUMMARY_REFRESH_INTERVAL_SEC:
@@ -1306,8 +1342,6 @@ func _process(delta: float) -> void:
 	# sono in human_individuals e non passano da movimento/azioni/bisogni del villaggio.
 	_advance_visitor_parties(game_delta)
 	_sync_visitor_party_views()
-	if _pathfinding_overlay_enabled or _pathfinding_overlay != null:
-		_sync_pathfinding_overlay()
 	if _active_map_layer_id != MapLayerRegistry.NONE_ID or _map_layer_overlay != null:
 		_sync_map_layer_overlay()
 	_sync_command_bar()
@@ -1317,6 +1351,10 @@ func _process(delta: float) -> void:
 	_sync_dropped_weapon_markers()
 	_track_rite_tasks()
 	_sync_ground_pile_views()
+	# Corpi in spalla e loro viste (2026-10-04, cumulo sepolcrale passo 2).
+	_sync_body_burial()
+	# Cortei in corso: chiusura, uscite e richiamo periodico (2026-10-04, ProcessionService).
+	ProcessionService.tick(game_delta)
 
 	if individual != null:
 		_update_live_neighbor()
@@ -1367,6 +1405,7 @@ func _process(delta: float) -> void:
 		# vedi il service per lo stato attuale dei criteri. `rules` risolte qui (non passate da
 		# _on_build_submenu_action_pressed) perché il tipo selezionato non cambia mai mentre il
 		# fantasma è attivo — coerente con come _place_building_at le risolve al momento del click.
+		_sync_linear_ghost()
 		var ghost_rules := BuildingCalculator.get_building_rules(_selected_building_type_name)
 		BuildingVerificationService.set_buildable_appearance(
 			_building_ghost,
@@ -1510,6 +1549,9 @@ func _unhandled_input(event: InputEvent) -> void:
 	var dead_body_distance_px: float = (
 		dead_body_hit["distance"] * MicroCellRenderer.CELL_SIZE if not dead_body_hit.is_empty() else INF
 	)
+	# Corpo sulla lastra di un cumulo (2026-10-04, passo 3a): un click sulla sua sagoma vince sempre sul cumulo sotto.
+	if bool(dead_body_hit.get("on_slab", false)):
+		dead_body_distance_px = -1.0
 	_select_timing_mark("ricerca corpi")
 
 	var map_hit: Dictionary = {}
@@ -1668,7 +1710,8 @@ func _unhandled_input(event: InputEvent) -> void:
 			# _try_assign_hunt_command_on_right_click (2026-09-26, caccia step 2) — provato PER PRIMO: un
 			# animale è un bersaglio esplicito e si muove, non deve essere "rubato" da un sasso o da un
 			# lotto che gli sta sotto.
-			elif not _try_assign_hunt_command_on_right_click(event) and not _try_assign_butcher_command_on_right_click(event) and not _try_assign_pickup_command_on_right_click(event) and not _try_assign_build_command_on_right_click(event) and not _try_assign_rite_command_on_right_click(event) and not _try_assign_transport_command_on_right_click(event):
+			# _try_assign_bury_command_on_right_click (2026-10-04) — PRIMA di tutti: sulla sagoma di un cadavere vince sempre.
+			elif not _try_assign_bury_command_on_right_click(event) and not _try_assign_hunt_command_on_right_click(event) and not _try_assign_butcher_command_on_right_click(event) and not _try_assign_pickup_command_on_right_click(event) and not _try_assign_build_command_on_right_click(event) and not _try_assign_rite_command_on_right_click(event) and not _try_assign_transport_command_on_right_click(event):
 				individual_controller.handle_input(event)
 
 	if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_X:
@@ -1724,6 +1767,11 @@ func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_P:
 		_assign_play_task()
 
+	# Explore Task esplicita (2026-10-04, richiesta utente) — tasto O (X, il primo scelto, è già "centra la
+	# telecamera"; O verificato libero come I/J/K/M). Stesso trattamento di G/P, con il motivo del rifiuto a schermo.
+	if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_O:
+		_assign_explore_task()
+
 	# Emergency Rest Task — trigger di TEST MANUALE (2026-09-13, richiesta utente, in preparazione
 	# al sistema di interrupt da stamina critica) — tasto E, mnemonico "Emergency", verificato
 	# libero (nessuna occorrenza di KEY_E in tutto il progetto, stesso controllo di conflitto già
@@ -1763,13 +1811,6 @@ func _unhandled_input(event: InputEvent) -> void:
 	# debug) quando non servirà più a velocizzare i test manuali di PickUp su risorse diverse.
 	if DebugLogging.ENABLED and event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_Z:
 		_debug_clear_selected_individual_backpack()
-
-	# Overlay del pathfinding (2026-09-27, step 1) — tasto N (mnemonico "Navigazione"), verificato libero in tutto il
-	# progetto; stesso gate di T/Y/Z: microcelle bloccate della macrocella corrente in rosso, vedi
-	# _sync_pathfinding_overlay.
-	if DebugLogging.ENABLED and event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_N:
-		_pathfinding_overlay_enabled = not _pathfinding_overlay_enabled
-		_sync_pathfinding_overlay()
 
 	# Layer della mappa (2026-09-27, richiesta utente) — tasto L: passa al layer disponibile successivo, in ordine,
 	# compreso "Nessuno" (MapLayerRegistry.get_cycle_ids). Non è un comando di debug.
@@ -2196,7 +2237,7 @@ func _assign_leisure_restock_task() -> void:
 func _assign_wander_task() -> void:
 	if individual == null or not individual.is_selected:
 		return
-	var target_data: Dictionary = IdleTaskAssignmentService.resolve_wander_targets(individual)
+	var target_data: Dictionary = IdleTaskAssignmentService.resolve_wander_targets(individual, macro_world)
 	var wander_definition := load(WANDER_TASK_DEFINITION_PATH) as TaskDefinition
 	var context: Dictionary = {
 		"wander_target_1": target_data["target_1"],
@@ -2212,6 +2253,26 @@ func _assign_wander_task() -> void:
 		print("[WANDER] Task assegnata a #%d %s: %s -> %s -> %s" % [
 			individual.id, individual.name, target_data["target_1"], target_data["target_2"], target_data["target_3"]
 		])
+
+
+# Trigger tasto O (2026-10-04, richiesta utente): Explore Task all'individuo selezionato, come G per la Wander — stessi
+# punti del sorteggio perditempo (IdleTaskAssignmentService.resolve_explore_targets). Controlli d'età della task
+# (explore.tres, non per i bambini): se rifiutata, motivo a schermo come per gli altri comandi
+# (_report_assign_rejection) e nessun effetto sulla Task in corso.
+func _assign_explore_task() -> void:
+	if individual == null or not individual.is_selected:
+		return
+	var target_data: Dictionary = IdleTaskAssignmentService.resolve_explore_targets(individual)
+	var explore_definition := load(IdleTaskAssignmentService.EXPLORE_TASK_DEFINITION_PATH) as TaskDefinition
+	var task := TaskFactory.build_task(explore_definition, IdleTaskAssignmentService.build_explore_context(target_data))
+	var age_band := _resolve_age_band(individual)
+	var rejection := individual.get_assign_rejection_reason(task, age_band)
+	if rejection != HumanIndividual.ASSIGN_OK:
+		_report_assign_rejection(individual, rejection, "task_activity_explore")
+		return
+	individual.assign_task(task, age_band)
+	if DebugLogging.ENABLED and DebugLogging.SHOW_IDLE_LOGS:
+		print("[EXPLORE] Task assegnata a #%d %s: %s" % [individual.id, individual.name, str(target_data)])
 
 
 # _resolve_play_targets SPOSTATA su IdleTaskAssignmentService.resolve_play_targets (2026-09-13,
@@ -2242,7 +2303,7 @@ func _assign_wander_task() -> void:
 func _assign_play_task() -> void:
 	if individual == null or not individual.is_selected:
 		return
-	var target_data: Dictionary = IdleTaskAssignmentService.resolve_play_targets(individual)
+	var target_data: Dictionary = IdleTaskAssignmentService.resolve_play_targets(individual, macro_world)
 	var play_definition := load(PLAY_TASK_DEFINITION_PATH) as TaskDefinition
 	var context: Dictionary = {
 		"play_target_1": target_data["target_1"],
@@ -2769,9 +2830,11 @@ func _spawn_idea_deposit_effect(individual: HumanIndividual) -> void:
 # la stessa disegnata a codice dell'ordine) compare al centro della microcella dell'edificio, sale e svanisce con gli
 # stessi tempi della lampadina del pensiero (_spawn_idea_deposit_effect sopra). Nessun effetto se la macrocella
 # dell'edificio non è viva. Emette rite_effect_shown per la campana (AudioEventListener).
-func _spawn_rite_completed_effect(building: Building) -> void:
+func _spawn_rite_completed_effect(building: Building, rite_id: String = "") -> void:
 	if building == null:
 		return
+	# Sacralità e sepolti nel pannello dell'edificio aggiornati subito a rito completato (2026-10-04).
+	_refresh_selected_building_panel()
 	var macro_coords := Vector2i(building.macro_x, building.macro_y)
 	if not live_cells.has(macro_coords):
 		return
@@ -2783,7 +2846,8 @@ func _spawn_rite_completed_effect(building: Building) -> void:
 	icon_node.position = local_position
 	var cell_container: Node2D = live_cells[macro_coords].container
 	cell_container.add_child(icon_node)
-	rite_effect_shown.emit(cell_container.to_global(local_position))
+	var rite_rules := RiteService.get_rules(rite_id)
+	rite_effect_shown.emit(cell_container.to_global(local_position), rite_rules.completion_sound_id if rite_rules != null else &"")
 
 	var tween := create_tween()
 	tween.set_parallel(true)
@@ -3871,7 +3935,13 @@ func _setup_command_bar() -> void:
 # scelta a mano tra le zone con la caccia attiva (stessa modalità "scegli la zona" della raccolta, ordine "hunt").
 # Il comando diretto sull'animale (clic destro) resta invariato.
 func _on_command_bar_hunt_requested() -> void:
-	var selected := _get_selected_individuals()
+	_order_hunt(_get_selected_individuals())
+
+
+# Caccia nelle zone per `selected` (2026-10-04: estratto dal comando della barra, usato anche dai pulsanti sulle righe
+# della lista degli abitanti con un solo abitante) — stesso flusso: controlli, dialog della caccia, zona automatica o
+# scelta manuale della zona.
+func _order_hunt(selected: Array[HumanIndividual]) -> void:
 	HuntZoneService.log_event(null, "comando Caccia ricevuto: %d selezionati %s, zona automatica %s." % [
 		selected.size(), str(selected.map(func(member: HumanIndividual) -> String: return member.name)),
 		"accesa" if UserOptions.work_area_auto_zone else "spenta"
@@ -4071,8 +4141,9 @@ func _sync_command_bar() -> void:
 	# Titolo della barra di costruzione (2026-10-03): "Zone di lavoro" mentre si disegna una zona.
 	build_bar.set_work_areas_mode(_work_area_draw_active)
 	var zone_tools := _is_work_areas_tool_available()
-	var destination_shown := ButcherDestinationService.has_alternative_processing_destination(macro_world, human_folk)
-	var bar_visible := not _get_selected_individuals().is_empty() and not placing and (zone_tools or destination_shown)
+	# Dal 2026-10-04 (richiesta utente): tutta la barra solo con l'idea delle zone; la destinazione della caccia è solo
+	# un'opzione dentro la barra, non la fa più comparire da sola.
+	var bar_visible := not _get_selected_individuals().is_empty() and not placing and zone_tools
 	command_panel.visible = bar_visible
 	command_bar.set_bar_visible(bar_visible)
 	_layout_bottom_bar_row(bar_visible)
@@ -4138,8 +4209,14 @@ func _layout_bottom_bar_row(bar_visible: bool) -> void:
 # senza quantità) con le risorse presenti nelle zone con la raccolta abilitata e "Ripeti (fino a 5 volte)"; la scelta
 # arriva a _on_pickup_choice_made -> _on_work_area_gather_choice.
 func _on_command_bar_gather_requested() -> void:
+	_order_gather(_get_selected_individuals())
+
+
+# Raccogli per `candidates` (2026-10-04: estratto dal comando della barra, usato anche dai pulsanti sulle righe della
+# lista degli abitanti con un solo abitante) — stesso flusso: controllo d'età, dialog, poi la scelta della zona.
+func _order_gather(candidates: Array[HumanIndividual]) -> void:
 	var workers: Array[HumanIndividual] = []
-	for member in _get_selected_individuals():
+	for member in candidates:
 		var age_band := _resolve_age_band(member)
 		if age_band == HumanTypes.AgeBand.INFANT or age_band == HumanTypes.AgeBand.CHILD:
 			_report_assign_rejection(member, HumanIndividual.ASSIGN_REJECT_TOO_YOUNG, "task_activity_pickup")
@@ -5379,7 +5456,21 @@ func _try_assign_rite_command_on_right_click(event: InputEvent) -> bool:
 	var hit_building := _find_building_by_id(int(building_hit["building_id"]))
 	var rites := RiteService.get_rites_for_building(hit_building)
 	if rites.is_empty():
-		return false
+		# Edificio completo e utilizzabile che ammette riti per tipo, ma nessuno celebrabile ora (2026-10-04, es. cumulo
+		# senza sepolti): comando rifiutato, il pipottino non si muove. Motivo vero: nessun sepolto se è quello che manca.
+		var type_rites := RiteService.get_type_rites(hit_building)
+		if type_rites.is_empty() or not RiteService.is_building_usable(hit_building):
+			return false
+		var missing_buried := false
+		for rules in type_rites:
+			if hit_building.buried.size() < rules.min_buried:
+				missing_buried = true
+				break
+		if missing_buried:
+			_reject_rite_command(individual, hit_building, tr("rite_reject_no_buried"))
+		else:
+			_reject_rite_command(individual, hit_building, tr("rite_reject_none_available").format({"name": individual.name}))
+		return true
 	if _building_has_active_rite(hit_building):
 		_reject_rite_command(individual, hit_building, tr("rite_reject_building_busy"))
 		return true
@@ -6628,27 +6719,6 @@ func _sync_visitor_party_views() -> void:
 		_visitor_party_views.erase(party_id)
 
 
-# Overlay del pathfinding (2026-09-27, step 1): con il tasto N acceso, un PathfindingDebugOverlay sulla macrocella
-# corrente (center_macro_coords), spostato quando la macrocella corrente cambia; spento o cella non viva = nessun
-# overlay. L'overlay si ridisegna da sé quando la griglia cambia.
-func _sync_pathfinding_overlay() -> void:
-	var cell: LiveMacroCell = live_cells.get(center_macro_coords) if _pathfinding_overlay_enabled else null
-	if _pathfinding_overlay != null and (not is_instance_valid(_pathfinding_overlay) or cell == null or _pathfinding_overlay.get_cell() != cell or _pathfinding_overlay.get_parent() != cell.container):
-		if is_instance_valid(_pathfinding_overlay):
-			_pathfinding_overlay.queue_free()
-		_pathfinding_overlay = null
-	if cell == null or cell.container == null or _pathfinding_overlay != null:
-		return
-	_pathfinding_overlay = PathfindingDebugOverlay.new()
-	_pathfinding_overlay.z_index = 20
-	cell.container.add_child(_pathfinding_overlay)
-	_pathfinding_overlay.show_cell(cell)
-	if DebugLogging.ENABLED and DebugLogging.SHOW_PATHFINDING_LOGS:
-		print("[PATHFINDING] overlay su %s: %d microcelle bloccate, %d regioni." % [
-			center_macro_coords, PathfindingService.count_blocked(cell), PathfindingService.get_region_count(cell)
-		])
-
-
 # --- Layer della mappa (2026-09-27, richiesta utente — menu "Layer") ---
 # Menu a tendina sotto il bottone "Layer" (MapLayersMenu: un PanelContainer nel CanvasLayer dell'interfaccia, accanto
 # al pannello laterale — non più un PopupMenu, che come finestra separata usava tema e misure di default ed era enorme
@@ -6695,7 +6765,7 @@ func _set_active_map_layer(layer_id: String) -> void:
 		minimap_panel.set_layer_drawer(Callable())
 
 
-# Overlay del layer attivo sulla macrocella corrente (center_macro_coords), stesso schema di _sync_pathfinding_overlay:
+# Overlay del layer attivo sulla macrocella corrente (center_macro_coords), stesso schema del vecchio overlay del tasto N (tolto il 2026-10-04):
 # spostato quando la macrocella corrente cambia, ricreato se il layer cambia, tolto con "Nessuno" o cella non viva.
 # L'overlay si ridisegna da sé (vedi il suo script nel registro).
 var _map_layer_overlay_layer_id: String = MapLayerRegistry.NONE_ID
@@ -7099,7 +7169,13 @@ func _refresh_dead_body_panel() -> void:
 	var days_remaining := 0
 	if rules != null:
 		days_remaining = ExpiredObjectCalculator.get_days_remaining(record, rules, game_data.year, game_data.current_day)
-	dead_body_info_panel.show_dead_body(int(data["sex"]), int(data["age_at_death"]), int(data["cause"]), days_remaining)
+	# Stato della sepoltura (2026-10-04): "Da seppellire" o "Sepoltura assegnata a X" (task Seppellisci in corso o in coda).
+	var assignee := BodyBurialService.get_bury_assignee(int(record["individual_id"]), human_individuals)
+	var bury_status := (
+		tr("dead_body_bury_status_assigned").format({"name": assignee.name}) if assignee != null
+		else tr("dead_body_bury_status_pending")
+	)
+	dead_body_info_panel.show_dead_body(int(data["sex"]), int(data["age_at_death"]), int(data["cause"]), days_remaining, bury_status)
 	# Titolo (stessa convenzione di individui/edifici sopra) — nome NON duplicato dentro il pannello.
 	game_info_tabs.set_selection_title(tr("selection_title_name").format({"name": String(data["name"])}))
 
@@ -7122,9 +7198,390 @@ func _find_dead_body_record(individual_id: int) -> Dictionary:
 func _get_dead_body_records() -> Array[Dictionary]:
 	var result: Array[Dictionary] = []
 	for record in game_data.expired_objects:
-		if record["object_type"] == ExpiredObjectTypes.ExpiredObjectType.DEAD_BODY:
+		# Un corpo in spalla (2026-10-04, cumulo sepolcrale passo 2) non è a terra: non si seleziona.
+		if record["object_type"] == ExpiredObjectTypes.ExpiredObjectType.DEAD_BODY and not ExpiredObjectCalculator.is_carried(record):
 			result.append(record)
 	return result
+
+
+# ============================================================================================
+# Seppellisci (2026-10-04, richiesta utente — cumulo sepolcrale passo 2: trasporto del cadavere). Dal 2026-10-04 (sera)
+# comando diretto: con un pipottino selezionato, click destro sulla sagoma di un cadavere (anche sulla lastra di un
+# cumulo) — come la macellazione su una carcassa. La task bury.tres: cammina al corpo, lo prende in spalla, lo porta al
+# cumulo più vicino con un posto libero, lo posa sulla lastra (BodyBurialService, PickUpBodyAction/CarryBodyAction/
+# PutDownBodyAction) e celebra il funerale (RiteAction con il rito funeral_rite, passo 3b), che seppellisce il corpo.
+# Un corpo già sulla lastra passa direttamente al funerale.
+# ============================================================================================
+
+# Click destro sulla sagoma di un cadavere (con un piccolo margine, DeadBodySelectorController.find_body_at_silhouette)
+# con un individuo selezionato. PRIMO nella catena del click destro: sulla sagoma vince sempre il cadavere, anche su
+# risorse da raccogliere, vegetazione, mucchi o il cumulo sotto la lastra. Fuori dalla sagoma: false, la catena
+# prosegue come prima.
+func _try_assign_bury_command_on_right_click(event: InputEvent) -> bool:
+	if not (event is InputEventMouseButton) or not event.pressed or event.button_index != MOUSE_BUTTON_RIGHT:
+		return false
+	if individual == null or not individual.is_selected or not live_cells.has(center_macro_coords):
+		return false
+	var rotation_by_id: Dictionary = {}
+	for body_id in dead_body_views.keys():
+		var view = dead_body_views[body_id]
+		if view != null and is_instance_valid(view):
+			rotation_by_id[body_id] = view.rotation
+	var hit_body_id := dead_body_selector_controller.find_body_at_silhouette(
+		event, live_cells[center_macro_coords].renderer, _get_dead_body_records(), center_macro_coords, rotation_by_id
+	)
+	if hit_body_id == -1:
+		return false
+	_assign_bury_task(individual, hit_body_id)
+	return true
+
+
+# Assegna a `worker` la task Seppellisci del corpo `body_id`, con destinazione il cumulo utilizzabile più vicino al corpo
+# (che da qui ne occupa un posto). Rifiuti con l'icona di comando rifiutato sul corpo e una frase, come per gli altri
+# comandi diretti: corpo già assegnato a un altro, nessun cumulo con posti liberi, età del pipottino. Lo stesso
+# pipottino che ha già la sepoltura di questo corpo: nessuna nuova task.
+func _assign_bury_task(worker: HumanIndividual, body_id: int) -> void:
+	var record := BodyBurialService.find_body_record(body_id)
+	if record.is_empty() or ExpiredObjectCalculator.is_carried(record) or BodyBurialService.is_expired(record):
+		return
+	var body_macro: Vector2i = record["home_macro_coords"]
+	var body_name := BodyBurialService.get_body_name(record)
+	var assignee := BodyBurialService.get_bury_assignee(body_id, human_individuals)
+	if assignee == worker:
+		_spawn_bury_command_icon(record, "rite")
+		return
+	if assignee != null:
+		_spawn_bury_command_icon(record, "task_rejected")
+		_report_command_rejection(worker, tr("bury_reject_already_assigned").format({"body": body_name, "assignee": assignee.name}))
+		return
+	# Corpo già sulla lastra (2026-10-04, funerale): resta quel cumulo, se ancora utilizzabile, e la task passa subito al
+	# rito (BodyBurialService.skip_transport_if_on_slab sotto).
+	var mound: Building = null
+	if BodyBurialService.is_on_slab(record):
+		var slab_mound := BodyBurialService.find_building(int(record.get("mound_id", -1)))
+		if BodyBurialService.is_mound_usable(slab_mound, body_id, human_individuals):
+			mound = slab_mound
+	if mound == null:
+		mound = BodyBurialService.find_nearest_mound(Vector2(record["position"]), body_macro, body_id, human_individuals)
+	if mound == null:
+		_spawn_bury_command_icon(record, "task_rejected")
+		_report_command_rejection(worker, tr("bury_reject_no_mound").format({"name": worker.name, "body": body_name}))
+		return
+	var definition := load(BodyBurialService.BURY_TASK_DEFINITION_PATH) as TaskDefinition
+	if definition == null:
+		push_error("GameScene._assign_bury_task: %s non caricabile." % BodyBurialService.BURY_TASK_DEFINITION_PATH)
+		return
+	var context := {
+		"target_position": BodyBurialService.get_body_position_relative_to(record, worker.home_macro_coords),
+		BodyBurialService.CONTEXT_BODY_ID: body_id,
+		BodyBurialService.CONTEXT_MOUND_ID: mound.id,
+		BodyBurialService.CONTEXT_BODY_NAME: body_name,
+		BodyBurialService.CONTEXT_RITE_BUILDING: null,
+		BodyBurialService.CONTEXT_RITE_ID: BodyBurialService.FUNERAL_RITE_ID,
+	}
+	var task := TaskFactory.build_task(definition, context)
+	BodyBurialService.skip_transport_if_on_slab(task, worker)
+	var rejection := worker.get_assign_rejection_reason(task, _resolve_age_band(worker))
+	if rejection != HumanIndividual.ASSIGN_OK:
+		_spawn_bury_command_icon(record, "task_rejected")
+		_report_assign_rejection(worker, rejection, "task_activity_bury")
+		return
+	if not worker.assign_task(task, _resolve_age_band(worker)) or (worker.current_task != task and not worker.task_queue.has(task)):
+		_spawn_bury_command_icon(record, "task_rejected")
+		_report_failed_assignment(worker, task, "task_activity_bury")
+		return
+	worker.tool_gate_warning = ""
+	_ensure_step_signals(task)
+	_spawn_bury_command_icon(record, "rite")
+	_refresh_selected_individual_panel()
+	if selected_dead_body_individual_id == body_id:
+		_refresh_dead_body_panel()
+
+
+# Icona di comando sul corpo (esito del comando Seppellisci), nel punto esatto in cui è disegnato. Comando accettato:
+# l'icona del rito ("rite", 2026-10-04 — la task finisce con il funerale), non la manina del raccogli.
+func _spawn_bury_command_icon(record: Dictionary, command_icon_key: String) -> void:
+	var cell: LiveMacroCell = live_cells.get(Vector2i(record["home_macro_coords"]))
+	if cell != null:
+		_spawn_command_icon(cell, Vector2(record["position"]), command_icon_key)
+
+
+# Nessun cumulo con posti liberi durante il trasporto (CarryBodyAction.burial_aborted): il corpo è già stato posato e la
+# task annullata; qui solo l'avviso al giocatore.
+func _on_burial_aborted(worker: HumanIndividual, body_name: String) -> void:
+	_report_command_rejection(worker, tr("notification_bury_no_mound").format({"name": worker.name, "body": body_name}))
+
+
+# Ogni frame: invariante del corpo in spalla (BodyBurialService.enforce_carrier — posato se la task che lo porta non è
+# più quella in corso) e viste dei corpi: un corpo in spalla è disegnato trascinato dietro al pipottino
+# (_drag_carried_body_view; la selezione si chiude se era lui), un corpo appena posato ("view_dirty") ha la vista rifatta
+# a terra se la sua macrocella è viva — disteso dritto se è sulla lastra di un cumulo.
+func _sync_body_burial() -> void:
+	for member in human_individuals:
+		if member.carried_body_id != -1:
+			BodyBurialService.enforce_carrier(member)
+	# Corpi consumati dal funerale (2026-10-04, BodyBurialService.bury_body): record sparito -> via la vista.
+	for body_id in dead_body_views.keys():
+		if _find_dead_body_record(int(body_id)).is_empty():
+			_free_dead_body_view(int(body_id))
+	for record in game_data.expired_objects:
+		if record["object_type"] != ExpiredObjectTypes.ExpiredObjectType.DEAD_BODY:
+			continue
+		var body_id := int(record["individual_id"])
+		if ExpiredObjectCalculator.is_carried(record):
+			record.erase("view_dirty")
+			if selected_dead_body_individual_id == body_id:
+				_clear_dead_body_selection()
+			_drag_carried_body_view(record)
+			continue
+		if not bool(record.get("view_dirty", false)):
+			continue
+		record.erase("view_dirty")
+		_free_dead_body_view(body_id)
+		if BodyBurialService.is_expired(record):
+			continue
+		var body_macro: Vector2i = record["home_macro_coords"]
+		if not live_cells.has(body_macro):
+			continue
+		var view := _create_dead_body_view(record, live_cells[body_macro].container)
+		if BodyBurialService.is_on_slab(record):
+			view.rotation = 0.0
+		if selected_dead_body_individual_id == body_id:
+			view.is_selected = true
+			view.queue_redraw()
+
+
+# Corpo trascinato (2026-10-04, cumulo sepolcrale passo 3a): distanza in pixel tra il centro del pipottino e quello del
+# corpo che si tira dietro — con la testa verso di lui, il corpo finisce in parte sotto la sua figura.
+const DRAGGED_BODY_DISTANCE_PX: float = 3.2
+
+
+# Vista del corpo in spalla a un pipottino: trascinato come da una corda lunga DRAGGED_BODY_DISTANCE_PX — se il pipottino
+# si allontana oltre, il corpo viene tirato verso di lui e ruotato lungo la direzione (testa verso il pipottino); se si
+# ferma o gira sul posto, il corpo resta fermo. Così segue con continuità anche le curve. Sotto la figura del pipottino
+# (stesso z, nodo prima del suo nel container), nello stesso container anche dopo un passaggio di macrocella (reparent
+# che mantiene la posizione globale). Non selezionabile (_get_dead_body_records esclude i corpi in spalla). Pipottino
+# senza vista (macrocella non viva): nessuna vista nemmeno per il corpo.
+func _drag_carried_body_view(record: Dictionary) -> void:
+	var body_id := int(record["individual_id"])
+	var carrier: HumanIndividual = null
+	var carrier_view: HumanIndividualView = null
+	var carrier_id := int(record.get("carried_by_id", -1))
+	for i in range(mini(human_individuals.size(), human_individual_views.size())):
+		if human_individuals[i].id == carrier_id:
+			carrier = human_individuals[i]
+			carrier_view = human_individual_views[i]
+			break
+	if carrier_view == null or not is_instance_valid(carrier_view) or carrier_view.get_parent() == null:
+		_free_dead_body_view(body_id)
+		return
+	var container := carrier_view.get_parent()
+	var view = dead_body_views.get(body_id)
+	if view == null or not is_instance_valid(view) or not view.is_dragged:
+		_free_dead_body_view(body_id)
+		view = _create_dead_body_view(record, container)
+		view.is_dragged = true
+		# Parte da dov'era a terra (il pipottino lo ha appena raggiunto), nel riferimento della macrocella del pipottino.
+		view.position = BodyBurialService.get_body_position_relative_to(record, carrier.home_macro_coords) * MicroCellRenderer.CELL_SIZE
+	elif view.get_parent() != container:
+		view.reparent(container)
+	if view.get_index() > carrier_view.get_index():
+		container.move_child(view, carrier_view.get_index())
+	var to_carrier: Vector2 = carrier_view.position - view.position
+	var distance := to_carrier.length()
+	if distance > DRAGGED_BODY_DISTANCE_PX:
+		view.position = carrier_view.position - to_carrier / distance * DRAGGED_BODY_DISTANCE_PX
+		view.rotation = to_carrier.angle() + PI
+
+
+# Nuova DeadBodyView del record sotto `parent`, registrata in dead_body_views.
+func _create_dead_body_view(record: Dictionary, parent: Node) -> DeadBodyView:
+	var data: Dictionary = record["type_specific_data"]
+	var view := DeadBodyView.new()
+	parent.add_child(view)
+	view.setup_dead_body(
+		Vector2(record["position"]), int(data["sex"]), int(data["age_at_death"]), int(data["hair_color"]),
+		int(data["clothing_color"]), int(record["appeared_at_year"]), int(record["appeared_at_day"]),
+		human_folk.human_rules_ref if human_folk != null else null, game_data, int(record.get("carried_days_total", 0))
+	)
+	view.z_index = 1
+	dead_body_views[int(record["individual_id"])] = view
+	return view
+
+
+func _free_dead_body_view(body_id: int) -> void:
+	var old_view = dead_body_views.get(body_id)
+	if old_view != null and is_instance_valid(old_view):
+		old_view.queue_free()
+	dead_body_views.erase(body_id)
+
+
+# ============================================================================================
+# Scheda "In sospeso" (2026-10-04, richiesta utente). Voci, in quest'ordine:
+#   a. corpi a terra che nessuno ha in carico (nessuna task Seppellisci in corso o in coda, non in spalla), dal meno tempo
+#      rimasto — entrano subito;
+#   b. lavori senza nessuno assegnato, né in corso né in coda, dal più vecchio: cantieri, miglioramenti, demolizioni,
+#      ordini di produzione (escluse le ricette ad avanzamento automatico). Entrano solo dopo PENDING_JOB_WAIT_DAYS di
+#      gioco interi senza nessuno; il conto si azzera appena qualcuno li prende (in memoria, non salvato).
+# Chi lavora su cosa: un solo giro sui pipottini (_collect_pending_assignments). Ricalcolo una volta al secondo reale.
+# ============================================================================================
+
+func _refresh_pending_entries() -> void:
+	if pending_panel == null or game_data == null:
+		return
+	var assigned := _collect_pending_assignments()
+	var entries: Array[Dictionary] = []
+	var body_entries: Array[Dictionary] = []
+	for record in game_data.expired_objects:
+		if record["object_type"] != ExpiredObjectTypes.ExpiredObjectType.DEAD_BODY or ExpiredObjectCalculator.is_carried(record):
+			continue
+		var body_id := int(record["individual_id"])
+		if assigned["bodies"].has(body_id) or BodyBurialService.is_expired(record):
+			continue
+		var rules := ExpiredObjectCalculator.get_object_rules(ExpiredObjectTypes.ExpiredObjectType.DEAD_BODY)
+		var days := ExpiredObjectCalculator.get_days_remaining(record, rules, game_data.year, game_data.current_day) if rules != null else 0
+		var body_macro: Vector2i = record["home_macro_coords"]
+		body_entries.append(_pending_entry(
+			"body:%d" % body_id, tr("pending_body").format({"name": BodyBurialService.get_body_name(record), "days": days}),
+			{"kind": "body", "id": body_id, "macro": body_macro, "sort": days}
+		))
+	body_entries.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return int(a["sort"]) < int(b["sort"]))
+	entries.append_array(body_entries)
+
+	var job_entries: Array[Dictionary] = []
+	var seen_job_keys: Dictionary = {}
+	if macro_world != null:
+		for building in macro_world.buildings:
+			if building.is_demolished or building.rules == null:
+				continue
+			var building_name: String = tr(building.rules.building_name)
+			var jobs: Array[Dictionary] = []
+			if building.is_marked_for_demolition:
+				if not assigned["demolish"].has(building.id):
+					jobs.append({"key": "demolish:%d" % building.id, "text": tr("pending_demolish").format({"building": building_name})})
+			elif not building.is_complete:
+				if not assigned["build"].has(building.id):
+					var is_upgrade := BuildingUpgradeService.get_upgrade_from_rules(building) != null
+					jobs.append({
+						"key": "%s:%d" % ["upgrade" if is_upgrade else "build", building.id],
+						"text": tr("pending_upgrade" if is_upgrade else "pending_build").format({"building": building_name}),
+					})
+			elif building.rules.is_workstation:
+				for recipe_name in ProductionService.get_active_resource_names(building):
+					var recipe_rules := CaloricCalculator.get_caloric_source_rules(recipe_name)
+					if recipe_rules != null and recipe_rules.recipe_auto_progress_days > 0:
+						continue
+					if assigned["produce"].has("%d:%s" % [building.id, recipe_name]):
+						continue
+					jobs.append({
+						"key": "produce:%d:%s" % [building.id, recipe_name],
+						"text": tr("pending_produce").format({
+							"building": building_name, "product": IconRegistry.get_resource_display_name(recipe_name),
+						}),
+					})
+			for job in jobs:
+				var key := String(job["key"])
+				seen_job_keys[key] = true
+				if not _pending_unassigned_since.has(key):
+					_pending_unassigned_since[key] = _pending_clock
+				var since := float(_pending_unassigned_since[key])
+				if _pending_clock - since < PENDING_JOB_WAIT_DAYS:
+					continue
+				job_entries.append(_pending_entry(key, String(job["text"]), {
+					"kind": "building", "id": building.id, "macro": Vector2i(building.macro_x, building.macro_y), "sort": since,
+				}))
+	# Lavori presi da qualcuno o spariti: il conto riparte da zero.
+	for key in _pending_unassigned_since.keys():
+		if not seen_job_keys.has(key):
+			_pending_unassigned_since.erase(key)
+	job_entries.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+		if float(a["sort"]) != float(b["sort"]):
+			return float(a["sort"]) < float(b["sort"])
+		return String(a["key"]) < String(b["key"])
+	)
+	entries.append_array(job_entries)
+
+	pending_panel.set_entries(entries)
+	game_info_tabs.set_pending_count(entries.size())
+	var keys: Dictionary = {}
+	var has_new := false
+	for entry in entries:
+		keys[entry["key"]] = true
+		if not _pending_previous_keys.has(entry["key"]):
+			has_new = true
+	if has_new and _pending_initialized:
+		game_info_tabs.start_pending_blink()
+	_pending_previous_keys = keys
+	_pending_initialized = true
+
+
+# Voce dell'elenco con lo stato "si può centrare" (macrocella viva).
+func _pending_entry(key: String, text: String, data: Dictionary) -> Dictionary:
+	var entry := data.duplicate()
+	entry["key"] = key
+	entry["text"] = text
+	entry["enabled"] = live_cells.has(Vector2i(data["macro"]))
+	entry["disabled_reason"] = "" if entry["enabled"] else tr("pending_not_centerable")
+	return entry
+
+
+# Un solo giro sui pipottini (task in corso e in coda): edifici con un costruttore o un demolitore, ordini di produzione
+# con un lavoratore ("id:ricetta"), corpi con una task Seppellisci. Stessi criteri di _task_works_on_building (step dal
+# corrente in poi, esclusa la consegna al magazzino) e di _resolve_production_claimed_recipes.
+func _collect_pending_assignments() -> Dictionary:
+	var result := {"build": {}, "demolish": {}, "produce": {}, "bodies": {}}
+	for member in human_individuals:
+		var tasks: Array = []
+		if member.current_task != null and not member.current_task.is_finished():
+			tasks.append(member.current_task)
+		tasks.append_array(member.task_queue)
+		for task in tasks:
+			var queued := task as Task
+			if queued == null or queued.is_finished():
+				continue
+			if BodyBurialService.is_bury_task(queued):
+				result["bodies"][BodyBurialService.get_task_body_id(queued)] = true
+				continue
+			var bucket := ""
+			if BUILD_TASK_NAMES.has(queued.task_name):
+				bucket = "build"
+			elif DEMOLISH_TASK_NAMES.has(queued.task_name):
+				bucket = "demolish"
+			elif PRODUCE_TASK_NAMES.has(queued.task_name):
+				for step in queued.steps:
+					if step is ProduceAction and step.target_building != null:
+						result["produce"]["%d:%s" % [step.target_building.id, step.resource_name]] = true
+				continue
+			else:
+				continue
+			for step_index in range(queued.current_step_index, queued.steps.size()):
+				var step: Action = queued.steps[step_index]
+				if step is RetrieveAction and (step as RetrieveAction).deliver_to_warehouse:
+					continue
+				if "target_building" in step and step.target_building != null:
+					result[bucket][step.target_building.id] = true
+	return result
+
+
+# Clic su una voce (riga o 🎯): seleziona l'oggetto sulla mappa e centra la visuale, restando nella scheda "In sospeso".
+func _on_pending_entry_activated(entry: Dictionary) -> void:
+	var macro: Vector2i = entry["macro"]
+	if not live_cells.has(macro):
+		return
+	match String(entry["kind"]):
+		"body":
+			if _find_dead_body_record(int(entry["id"])).is_empty():
+				return
+			_select_dead_body({"individual_id": int(entry["id"])})
+		"building":
+			var building := _find_building_by_id(int(entry["id"]))
+			if building == null:
+				return
+			_select_building({"building_id": building.id, "macro_coords": Vector2i(building.macro_x, building.macro_y)})
+		_:
+			return
+	_center_camera_on_selection()
+	game_info_tabs.current_tab = GameInfoTabs.TAB_PENDING
 
 
 func _find_building_by_id(building_id: int) -> Building:
@@ -7324,6 +7781,52 @@ func _update_individual_panel_content(target: HumanIndividual) -> void:
 	game_info_tabs.set_selection_title(tr("individual_identity_line").format({
 		"name": target.name, "sex": identity_sex_text, "age": age, "band": identity_band_text
 	}))
+	human_individual_info_panel.set_identity_details(_resolve_individual_identity_details(target))
+
+
+# Identità, parentela e casa per il pannello individuo (2026-10-04, richiesta utente): nomi di madre, padre e partner
+# cercati tra i vivi (human_individuals) e poi tra i defunti (game_data.death_events, "dead" = true); casa con il nome
+# mostrato altrove (_building_display_name). Forma femminile di "sconosciuto" per la madre, e per il partner di un uomo.
+func _resolve_individual_identity_details(target: HumanIndividual) -> Dictionary:
+	var group := target.source_group_ref
+	var house: Dictionary = {}
+	if target.house_id != -1:
+		var house_building := _find_building_by_id(target.house_id)
+		house = {"id": target.house_id, "name": _building_display_name(house_building) if house_building != null else ""}
+	return {
+		"id": target.id,
+		"folk": group.folk_ref.id if group != null and group.folk_ref != null else -1,
+		"group": group.id if group != null else -1,
+		"mother": _resolve_relative(target.mother_id),
+		"father": _resolve_relative(target.father_id),
+		"partner": _resolve_relative(target.partner_id),
+		"partner_unknown_female": target.sex == HumanTypes.Sex.MALE,
+		"house": house,
+	}
+
+
+func _resolve_relative(relative_id: int) -> Dictionary:
+	if relative_id < 0:
+		return {"id": -1}
+	for member in human_individuals:
+		if member.id == relative_id:
+			return {"id": relative_id, "name": member.name, "dead": false}
+	for event in game_data.death_events:
+		if int(event.get("individual_id", -1)) == relative_id:
+			return {"id": relative_id, "name": String(event.get("name", "")), "dead": true}
+	return {"id": relative_id, "name": "", "dead": false}
+
+
+# 🏠 del pannello individuo (2026-10-04): telecamera sulla casa, selezione invariata. Stessa traduzione
+# cross-macrocella del centramento su un edificio selezionato (_center_camera_on_selection, ramo BUILDING), con il
+# centro della microcella dell'edificio.
+func _on_individual_house_center_requested(building_id: int) -> void:
+	var building := _find_building_by_id(building_id)
+	if building == null:
+		return
+	var local_position := (Vector2(building.micro_x, building.micro_y) + Vector2(0.5, 0.5)) * MicroCellRenderer.CELL_SIZE
+	var macro_offset := Vector2(Vector2i(building.macro_x, building.macro_y) - center_macro_coords) * MACRO_CELL_PIXELS
+	_animate_camera_to(local_position + macro_offset, true)
 
 
 # Ripopola la scheda 👨‍👩‍👧 con i dati correnti — stessa identica chiamata di _ready() (vedi lì),
@@ -7332,8 +7835,14 @@ func _refresh_population_panel() -> void:
 	human_population_info_panel.show_population(
 		human_population_group.total_count, human_individuals, game_data.year,
 		game_data.era_effective_age_band_durations_male, game_data.era_effective_age_band_durations_female,
-		human_folk.id, human_population_group.id, _compute_housing_capacity()
+		human_folk.id, human_population_group.id, _compute_housing_capacity(), game_data.population_list_sort
 	)
+
+
+# Ordinamento dell'elenco cambiato dal pulsante della scheda popolazione (2026-10-04): salvato con la partita.
+func _on_population_sort_changed(sort_id: String) -> void:
+	game_data.population_list_sort = sort_id
+	_refresh_population_panel()
 
 
 # Somma di rules.max_residents sui soli edifici COMPLETI con max_residents > 0 (2026-09-12,
@@ -7740,6 +8249,24 @@ func _run_discovery_close_actions() -> void:
 # provviste. Popup di alert giallo (BODY_RESERVE_IN_USE), stesso gate UserOptions.show_notification_popups.
 # Evento casuale applicato (2026-09-26, richiesta utente — gameplay/events/): popup non di allarme (tipo
 # RANDOM_EVENT, stile delle nascite) con il testo preparato dallo script dell'evento.
+# Un corpo è scaduto senza sepoltura (2026-10-04, GameTimeService._apply_unburied_body_consequences): avviso con il
+# sistema di notifiche esistente, stesso gate degli altri popup.
+func _on_unburied_body_expired(body_name: String) -> void:
+	if not UserOptions.show_notification_popups:
+		return
+	notification_popup.enqueue(NotificationTypes.NotificationPopupType.DEATH, tr("notification_unburied_body").format({"name": body_name}))
+
+
+# Preavviso per un corpo non sepolto (2026-10-04): stesso popup e stesso gate della mancata sepoltura.
+func _on_unburied_body_warning(body_name: String, days_remaining: int) -> void:
+	if not UserOptions.show_notification_popups:
+		return
+	notification_popup.enqueue(
+		NotificationTypes.NotificationPopupType.DEATH,
+		tr("notification_unburied_body_warning").format({"name": body_name, "days": days_remaining})
+	)
+
+
 func _on_random_event_applied(event_id: String, popup_text: String) -> void:
 	if popup_text == "" or not UserOptions.show_notification_popups:
 		return
@@ -10830,6 +11357,9 @@ func _building_type_name_for_action(action_id: StringName) -> String:
 		# Capanna di stoccaggio (2026-10-03, richiesta utente) — azione "build_storage_hut" cablata in BuildBar._ready.
 		&"build_storage_hut":
 			return "storage_hut"
+		# Deposito coperto (2026-10-04, richiesta utente) — azione "build_covered_depot" cablata in BuildBar._ready.
+		&"build_covered_depot":
+			return "covered_depot"
 		# Edifici segnaposto (2026-09-26, richiesta utente) — azioni cablate in BuildBar._ready.
 		&"build_drying_rack":
 			return "drying_rack"
@@ -11514,6 +12044,49 @@ var _work_area_drag_preview: WorkAreaDragPreview = null
 var work_area_draw_banner: PanelContainer
 
 
+# Stato di un'azione del gruppo "Azioni" (CommandBar.ACTIONS) per UN abitante (2026-10-04, pulsanti sulle righe della
+# lista degli abitanti): {"shown": bool, "enabled": bool, "tooltip": String}. Stesse regole della barra — idea delle zone
+# non scoperta = nessun pulsante; nessuna zona valida = spento con la stessa spiegazione della barra — più quelle del
+# singolo abitante: chi non può ricevere il comando per età (bambini) non ha il pulsante; la caccia senza coltello in
+# cintura è spenta, con il motivo che il comando darebbe.
+func _command_state_for(member: HumanIndividual, action_id: StringName) -> Dictionary:
+	var hidden := {"shown": false, "enabled": false, "tooltip": ""}
+	if member == null or not human_individuals.has(member) or not _is_work_areas_tool_available():
+		return hidden
+	var age_band := _resolve_age_band(member)
+	if action_id == CommandBar.GATHER_ACTION:
+		if age_band == HumanTypes.AgeBand.INFANT or age_band == HumanTypes.AgeBand.CHILD:
+			return hidden
+		if not HaulZoneService.has_haul_work_area(game_data):
+			return {"shown": true, "enabled": false, "tooltip": tr("command_bar_gather_no_zone_tooltip")}
+		return {"shown": true, "enabled": true, "tooltip": tr("command_bar_gather_tooltip")}
+	if action_id == CommandBar.HUNT_ACTION:
+		var probe := _build_hunt_zone_task(-1)
+		if probe != null:
+			var rejection := member.get_assign_rejection_reason(probe, age_band)
+			if rejection == HumanIndividual.ASSIGN_REJECT_TOO_YOUNG or rejection == HumanIndividual.ASSIGN_REJECT_AGE_NOT_ALLOWED:
+				return hidden
+		if not HuntZoneService.has_hunt_work_area(game_data):
+			return {"shown": true, "enabled": false, "tooltip": tr("command_bar_hunt_no_zone_tooltip")}
+		var knife_rejection := HuntZoneService.get_hunt_rejection(member)
+		if knife_rejection != "":
+			return {"shown": true, "enabled": false, "tooltip": knife_rejection}
+		return {"shown": true, "enabled": true, "tooltip": tr("command_bar_hunt_tooltip")}
+	return hidden
+
+
+# Clic su un pulsante del gruppo "Azioni" di una riga della lista degli abitanti: l'ordine va solo a quell'abitante, con
+# lo stesso flusso della barra (nessun cambio di scheda).
+func _on_population_command_requested(member: HumanIndividual, action_id: StringName) -> void:
+	if member == null or not human_individuals.has(member):
+		return
+	var single: Array[HumanIndividual] = [member]
+	if action_id == CommandBar.GATHER_ACTION:
+		_order_gather(single)
+	elif action_id == CommandBar.HUNT_ACTION:
+		_order_hunt(single)
+
+
 func _is_work_areas_tool_available() -> bool:
 	return human_folk != null and human_folk.completed_ideas.has(WorkAreaTypes.REQUIRED_IDEA_ID)
 
@@ -12078,6 +12651,10 @@ func _start_building_task_at(world_position: Vector2) -> void:
 		])
 
 	_refresh_building_visuals(target_cell)
+	# Edifici lineari a pezzi uniti (2026-10-04): un cantiere lineare conta come vicino, quindi su un bordo di macrocella
+	# va ridisegnata anche la cella viva accanto (solo disegno, il piazzamento non cambia).
+	if rules.is_linear:
+		_refresh_dirt_ground_neighbor_cells(building)
 
 	if DebugLogging.ENABLED and DebugLogging.SHOW_TRANSPORT_BUILD_LOGS:
 		print("[BUILD] Cantiere per %s #%d avviato in (%d,%d) micro=(%d,%d) — in attesa di assegnazione (click destro su un individuo selezionato)." % [
@@ -12567,6 +13144,9 @@ func _ensure_step_signals(task: Task) -> void:
 	for step in task.steps:
 		_connect_storage_refresh_signals(step)
 		_connect_hunt_signals(step)
+		# Avviso "nessun cumulo con posti liberi" durante il trasporto di un corpo (2026-10-04). Idempotente.
+		if step is CarryBodyAction and not (step as CarryBodyAction).burial_aborted.is_connected(_on_burial_aborted):
+			(step as CarryBodyAction).burial_aborted.connect(_on_burial_aborted)
 
 
 # ThrowAction.target_killed -> _on_target_killed (2026-09-26, caccia — mira e tiro separati). Idempotente
@@ -12712,6 +13292,9 @@ func _on_building_construction_completed(building: Building) -> void:
 		# prossimo rollover d'anno.
 		_refresh_population_panel()
 	_remove_build_site_placeholders(building)
+	# Celle vive accanto (fondi che si saldano, edifici lineari) ridisegnate anche se quella dell'edificio non è viva
+	# (2026-10-04): la loro forma dipende da questo edificio appena completato.
+	_refresh_dirt_ground_neighbor_cells(building)
 	var macro_coords := Vector2i(building.macro_x, building.macro_y)
 	if not live_cells.has(macro_coords):
 		return
@@ -12725,7 +13308,6 @@ func _on_building_construction_completed(building: Building) -> void:
 	# Circle/Deposit Site, finalmente disegnabile ora che is_complete=true) resterebbe invisibile
 	# fino al prossimo trigger di refresh casuale (es. il player che si muove).
 	_refresh_building_visuals(cell)
-	_refresh_dirt_ground_neighbor_cells(building)
 
 
 # Rimuove il gruppo dei 4 rametti spawnati da _spawn_build_site_placeholders per QUESTO edificio
@@ -12798,6 +13380,10 @@ func _buildings_for_cell(cell: LiveMacroCell) -> Array:
 	# il confine di macrocella (vedi _dirt_ground_neighbor_mask).
 	var dirt_tiles: Dictionary = {}
 	var dirt_tiles_built := false
+	# Pezzi degli edifici lineari per gruppo di collegamento (2026-10-04), raccolti una volta per chiamata.
+	var linear_tiles_by_group: Dictionary = {}
+	var ground_tiles: Dictionary = {}
+	var ground_tiles_built := false
 	for building in macro_world.buildings:
 		if building.macro_x == cell.macro_x and building.macro_y == cell.macro_y:
 			# Cantiere di un miglioramento (2026-10-03, richiesta utente): disegnato come l'edificio di partenza completo
@@ -12830,7 +13416,8 @@ func _buildings_for_cell(cell: LiveMacroCell) -> Array:
 			# Cantiere di miglioramento (2026-10-04, richiesta utente): l'edificio di partenza si disegna vuoto — il suo
 			# stored_resources contiene i materiali consegnati per la costruzione, non scorte. Nessun contenuto da
 			# stored_resources nel disegno di un cantiere di miglioramento (oggi l'unico è questa griglia).
-			if drawn_type_name == "deposit_site" and not is_upgrade_site:
+			# Deposito coperto (2026-10-04): stessa griglia dei mucchietti del sito di deposito.
+			if (drawn_type_name == "deposit_site" or drawn_type_name == "covered_depot") and not is_upgrade_site:
 				entry["slot_breakdown"] = BuildingStorageService.get_slot_breakdown(building)
 			# Terra battuta (2026-09-19, richiesta utente): maschera dei lati che confinano con un altro
 			# edificio completo (bit 1<<lato, ordine N,E,S,W) — il renderer lascia dritti quei lati
@@ -12842,15 +13429,150 @@ func _buildings_for_cell(cell: LiveMacroCell) -> Array:
 			# Capanna di stoccaggio (2026-10-04, richiesta utente — solo lei, non una regola generale): fondo di terra battuta
 			# sotto, finita e durante il miglioramento che la sta costruendo (tipo dell'istanza, non quello disegnato:
 			# nel cantiere è disegnato il sito di deposito di partenza).
-			if building.building_type_name == "storage_hut":
+			# Deposito coperto (2026-10-04, richiesta utente): stesso fondo, stessa regola.
+			if building.building_type_name == "storage_hut" or building.building_type_name == "covered_depot":
 				entry["dirt_ground_under"] = true
-			if drawn_type_name == "dirt_ground" or MicroCellRenderer.GROUND_UNDER_BUILDING_TYPES.has(drawn_type_name) 					or building.building_type_name == "storage_hut":
+			if drawn_type_name == "dirt_ground" or MicroCellRenderer.GROUND_UNDER_BUILDING_TYPES.has(drawn_type_name) 					or building.building_type_name == "storage_hut" or building.building_type_name == "covered_depot":
 				if not dirt_tiles_built:
 					dirt_tiles = _collect_complete_dirt_tiles()
 					dirt_tiles_built = true
 				entry["dirt_neighbors"] = _dirt_ground_neighbor_mask(building, dirt_tiles)
+			# Edifici lineari a pezzi uniti (2026-10-04, richiesta utente — dal vallo difensivo, generalizzato): lati che
+			# confinano con un altro pezzo dello stesso gruppo (BuildingRules.is_linear/linear_link_group), finito o
+			# cantiere, e quelli verso un vicino ad angolo (_linear_shape_at). Il cantiere resta disegnato come cantiere;
+			# serve ai pezzi finiti accanto.
+			if building.rules != null and building.rules.is_linear:
+				var link_group := _linear_link_group(building.rules, building.building_type_name)
+				if not linear_tiles_by_group.has(link_group):
+					linear_tiles_by_group[link_group] = _collect_linear_tiles(link_group)
+				var linear_shape := _linear_shape_at(
+					Vector4i(building.macro_x, building.macro_y, building.micro_x, building.micro_y), linear_tiles_by_group[link_group]
+				)
+				entry["linear_neighbors"] = linear_shape.x
+				entry["linear_clip"] = linear_shape.y
+				# Fondo lungo il tracciato (2026-10-04): niente quadrato pieno; la metà di microcella si riempie solo verso un
+				# vicino con il proprio fondo (edificio o terra battuta) che non è già un pezzo dello stesso gruppo.
+				entry["is_linear"] = true
+				if not ground_tiles_built:
+					ground_tiles = _collect_ground_tiles()
+					ground_tiles_built = true
+				entry["linear_ground_fill"] = _linear_neighbor_mask_at(
+					Vector4i(building.macro_x, building.macro_y, building.micro_x, building.micro_y), ground_tiles
+				) & ~linear_shape.x
 			result.append(entry)
 	return result
+
+
+# Microcelle degli edifici finiti (o cantieri di miglioramento) con un fondo di terra disegnato sotto (2026-10-04): terra
+# battuta, i tipi di MicroCellRenderer.GROUND_UNDER_BUILDING_TYPES (compresi gli edifici lineari, che hanno la loro
+# striscia), capanna di stoccaggio e deposito coperto. Stessa chiave Vector4i di _collect_complete_dirt_tiles.
+func _collect_ground_tiles() -> Dictionary:
+	var tiles: Dictionary = {}
+	for other in macro_world.buildings:
+		if other.is_demolished or not (other.is_complete or BuildingUpgradeService.is_upgrade_site(other)):
+			continue
+		var drawn_type := BuildingUpgradeService.get_drawn_type_name(other)
+		if drawn_type == "dirt_ground" or MicroCellRenderer.GROUND_UNDER_BUILDING_TYPES.has(drawn_type) \
+				or other.building_type_name == "storage_hut" or other.building_type_name == "covered_depot" \
+				or (other.rules != null and other.rules.is_linear):
+			tiles[Vector4i(other.macro_x, other.macro_y, other.micro_x, other.micro_y)] = true
+	return tiles
+
+
+# Gruppo di collegamento di un edificio lineare: BuildingRules.linear_link_group, o il nome del tipo se vuoto.
+func _linear_link_group(rules: BuildingRules, building_type_name: String) -> String:
+	return rules.linear_link_group if rules.linear_link_group != "" else building_type_name
+
+
+# Microcelle occupate da un pezzo lineare del gruppo `link_group`, finito o cantiere, non demolito (2026-10-04): stessa
+# chiave Vector4i (macro_x, macro_y, micro_x, micro_y) di _collect_complete_dirt_tiles.
+func _collect_linear_tiles(link_group: String) -> Dictionary:
+	var tiles: Dictionary = {}
+	for other in macro_world.buildings:
+		if other.is_demolished or other.rules == null or not other.rules.is_linear:
+			continue
+		if _linear_link_group(other.rules, other.building_type_name) == link_group:
+			tiles[Vector4i(other.macro_x, other.macro_y, other.micro_x, other.micro_y)] = true
+	return tiles
+
+
+# Forma di un pezzo lineare nella microcella `tile` (Vector4i macro_x, macro_y, micro_x, micro_y) — una funzione per
+# qualunque edificio lineare (2026-10-04): x = lati (N, E, S, W = bit 0..3) che confinano con un altro pezzo di
+# `linear_tiles` (stesso gruppo); y = quelli, tra questi, il cui vicino è a sua volta un pezzo ad angolo
+# (LinearShape.is_corner_mask): lì il tratto diagonale si taglia sul bordo per ricomporsi con quello del vicino (vedi
+# LinearShape). Vale anche per una microcella vuota (anteprima). Solo i quattro lati, anche oltre il bordo di macrocella.
+func _linear_shape_at(tile: Vector4i, linear_tiles: Dictionary) -> Vector2i:
+	var mask := _linear_neighbor_mask_at(tile, linear_tiles)
+	var clip := 0
+	var side_offsets: Array[Vector2i] = [Vector2i(0, -1), Vector2i(1, 0), Vector2i(0, 1), Vector2i(-1, 0)]
+	for side in range(4):
+		if (mask & (1 << side)) == 0:
+			continue
+		var neighbor := _neighbor_tile_key(tile, side_offsets[side].x, side_offsets[side].y)
+		if LinearShape.is_corner_mask(_linear_neighbor_mask_at(neighbor, linear_tiles)):
+			clip |= 1 << side
+	return Vector2i(mask, clip)
+
+
+func _linear_neighbor_mask_at(tile: Vector4i, linear_tiles: Dictionary) -> int:
+	var mask := 0
+	var side_offsets: Array[Vector2i] = [Vector2i(0, -1), Vector2i(1, 0), Vector2i(0, 1), Vector2i(-1, 0)]
+	for side in range(4):
+		if linear_tiles.has(_neighbor_tile_key(tile, side_offsets[side].x, side_offsets[side].y)):
+			mask |= 1 << side
+	return mask
+
+
+# Vicino di `tile` nella direzione (dx, dy), con il passaggio alla macrocella adiacente: stessa aritmetica di
+# _dirt_ground_neighbor_key, a partire da una chiave invece che da un edificio.
+func _neighbor_tile_key(tile: Vector4i, dx: int, dy: int) -> Vector4i:
+	var macro_x: int = tile.x
+	var macro_y: int = tile.y
+	var micro_x: int = tile.z + dx
+	var micro_y: int = tile.w + dy
+	if micro_x < 0:
+		macro_x -= 1
+		micro_x = World.WIDTH - 1
+	elif micro_x >= World.WIDTH:
+		macro_x += 1
+		micro_x = 0
+	if micro_y < 0:
+		macro_y -= 1
+		micro_y = World.HEIGHT - 1
+	elif micro_y >= World.HEIGHT:
+		macro_y += 1
+		micro_y = 0
+	return Vector4i(macro_x, macro_y, micro_x, micro_y)
+
+
+# Anteprima di un edificio lineare (2026-10-04): mentre il fantasma segue il mouse, mostra il pezzo come sarebbe nella
+# microcella sotto il mouse, con i collegamenti ai pezzi esistenti del suo gruppo (finiti o cantieri) e centrato su quella
+# microcella. I pezzi esistenti si rileggono solo quando cambia GameData.buildings_revision (piazzamento, completamento,
+# demolizione) o il tipo selezionato.
+var _ghost_linear_tiles: Dictionary = {}
+var _ghost_linear_tiles_revision: int = -1
+var _ghost_linear_tiles_type: String = ""
+
+
+func _sync_linear_ghost() -> void:
+	if _building_ghost == null or macro_world == null:
+		return
+	var rules := BuildingCalculator.get_building_rules(_selected_building_type_name)
+	if rules == null or not rules.is_linear:
+		return
+	if _ghost_linear_tiles_revision != game_data.buildings_revision or _ghost_linear_tiles_type != _selected_building_type_name:
+		_ghost_linear_tiles = _collect_linear_tiles(_linear_link_group(rules, _selected_building_type_name))
+		_ghost_linear_tiles_revision = game_data.buildings_revision
+		_ghost_linear_tiles_type = _selected_building_type_name
+	var placement := _live_cell_and_micro_position_at(_building_ghost.global_position)
+	if placement.is_empty():
+		_building_ghost.set_linear_preview(LinearShape.STRAIGHT_MASK, 0, Vector2.ZERO)
+		return
+	var cell: LiveMacroCell = placement["cell"]
+	var micro_pos: Vector2i = placement["micro_pos"]
+	var shape := _linear_shape_at(Vector4i(cell.macro_x, cell.macro_y, micro_pos.x, micro_pos.y), _ghost_linear_tiles)
+	var microcell_center: Vector2 = cell.container.to_global((Vector2(micro_pos) + Vector2(0.5, 0.5)) * MicroCellRenderer.CELL_SIZE)
+	_building_ghost.set_linear_preview(shape.x, shape.y, _building_ghost.to_local(microcell_center))
 
 
 # Insieme delle microcelle occupate da un edificio COMPLETO del mondo (2026-09-19, esteso a ogni tipo
@@ -13188,6 +13910,9 @@ func _setup_clock() -> void:
 	game_time_service.individual_born.connect(_on_human_individual_born)
 	# Eventi casuali (2026-09-26): popup non di allarme, stesso gate degli altri popup.
 	game_time_service.random_event_applied.connect(_on_random_event_applied)
+	# Mancata sepoltura (2026-10-04): avviso al giocatore.
+	game_time_service.unburied_body_expired.connect(_on_unburied_body_expired)
+	game_time_service.unburied_body_warning.connect(_on_unburied_body_warning)
 	# Livello del raggio religioso di un edificio (2026-10-03, punti e soglie): segnale dell'autoload, emesso da
 	# InfluenceService (rito completato o anno senza riti); scollegato da solo quando questa scena viene liberata.
 	if not GameSettings.influence_level_changed.is_connected(_on_influence_level_changed):

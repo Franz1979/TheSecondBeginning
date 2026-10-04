@@ -473,6 +473,20 @@ func get_activity_description() -> String:
 		# consumata da TaskFactory (a differenza di "produce_resource_name", che costruisce lo step e
 		# viene quindi ripulita) — resta in context e viene salvata con esso. Assente (save precedente)
 		# = solo il nome della Task.
+		# Task Seppellisci (2026-10-04, cumulo sepolcrale passo 2): "Seppellire X", "Porta il corpo di X" mentre lo ha in
+		# spalla (stato del pipottino, vedi HumanIndividual.carried_body_id).
+		"task_bury_name":
+			var body_name: String = String(context.get(BodyBurialService.CONTEXT_BODY_NAME, ""))
+			if body_name == "":
+				return base_text
+			if get_current_action() is RiteAction:
+				return tr("task_bury_activity_funeral").format({"name": body_name})
+			var carrying := get_current_action() is CarryBodyAction or get_current_action() is PutDownBodyAction
+			return tr("task_bury_activity_carry" if carrying else "task_bury_activity").format({"name": body_name})
+		# Corteo (2026-10-04, ProcessionService): il testo scelto da chi lo ha convocato (es. "Corteo funebre di X").
+		"task_procession_name":
+			var procession_text: String = String(context.get(ProcessionService.CONTEXT_TEXT, ""))
+			return procession_text if procession_text != "" else base_text
 		"task_produce_name":
 			var produced_name: String = String(context.get("production_resource_name", ""))
 			if produced_name == "":

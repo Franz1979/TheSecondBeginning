@@ -48,13 +48,30 @@ static func is_building_usable(building: Building) -> bool:
 		and not building.is_marked_for_demolition
 
 
-# Riti ammessi da `building` (il suo tipo è in RiteRules.building_types); vuoto se l'edificio non è utilizzabile.
+# Riti ammessi da `building` (il suo tipo è in RiteRules.building_types); vuoto se l'edificio non è utilizzabile. Senza
+# i riti riservati alla task Seppellisci (RiteRules.bury_task_only, 2026-10-04 — il funerale): questo elenco alimenta
+# task Rito, popup e riti spontanei.
 static func get_rites_for_building(building: Building) -> Array[RiteRules]:
 	var rites: Array[RiteRules] = []
 	if not is_building_usable(building):
 		return rites
 	for rules in list_rules():
-		if rules.building_types.has(building.building_type_name):
+		# min_buried (2026-10-04): il ricordo dei defunti richiede almeno un sepolto.
+		if rules.building_types.has(building.building_type_name) and not rules.bury_task_only \
+				and building.buried.size() >= rules.min_buried:
+			rites.append(rules)
+	return rites
+
+
+# Riti che il TIPO di `building` ammette per il comando manuale (2026-10-04): in building_types e non riservati alla task
+# Seppellisci, senza guardare lo stato dell'edificio né i sepolti. Serve a distinguere "nessun rito per questo tipo"
+# (il click destro prosegue come un comando qualunque) da "riti ammessi ma nessuno celebrabile ora" (comando rifiutato).
+static func get_type_rites(building: Building) -> Array[RiteRules]:
+	var rites: Array[RiteRules] = []
+	if building == null:
+		return rites
+	for rules in list_rules():
+		if rules.building_types.has(building.building_type_name) and not rules.bury_task_only:
 			rites.append(rules)
 	return rites
 
@@ -98,13 +115,40 @@ static func find_spontaneous_rite_target(individual: HumanIndividual, world: Wor
 		var candidate_building := candidate as Building
 		return candidate_building != null and not busy.has(candidate_building.id) \
 			and not get_spontaneous_rites_for(candidate_building, individual, age_band).is_empty()
+	var reachable := PathfindingService.reachability_for(individual)
+	# Scelta a caso (2026-10-04, richiesta utente): tra gli edifici ammessi e raggiungibili entro
+	# HumanRules.spontaneous_rite_max_distance microcelle in linea d'aria, uno a caso con probabilità uguali; se non ce
+	# n'è nessuno, il più vicino tra i raggiungibili, come prima.
+	var nearby: Array[Building] = []
+	var max_distance := _spontaneous_rite_max_distance(individual)
+	for candidate in world.buildings:
+		if not predicate.call(candidate):
+			continue
+		var macro_offset := Vector2(Vector2i(candidate.macro_x, candidate.macro_y) - individual.home_macro_coords) * World.WIDTH
+		var candidate_position := Vector2(candidate.micro_x, candidate.micro_y) + macro_offset
+		if individual.position.distance_to(candidate_position) > max_distance:
+			continue
+		if reachable.is_valid() and not reachable.call(candidate):
+			continue
+		nearby.append(candidate)
+	if not nearby.is_empty():
+		var chosen: Building = nearby.pick_random()
+		return {"building": chosen, "rite": get_spontaneous_rites_for(chosen, individual, age_band).pick_random()}
 	var building := SpatialSelectionService.find_nearest(
-		world.buildings, individual.position, individual.home_macro_coords, predicate, [],
-		PathfindingService.reachability_for(individual)
+		world.buildings, individual.position, individual.home_macro_coords, predicate, [], reachable
 	) as Building
 	if building == null:
 		return {}
 	return {"building": building, "rite": get_spontaneous_rites_for(building, individual, age_band).pick_random()}
+
+
+# HumanRules.spontaneous_rite_max_distance del popolo dell'individuo; il valore predefinito di HumanRules se le regole non
+# sono risolvibili.
+static func _spontaneous_rite_max_distance(individual: HumanIndividual) -> float:
+	var group := individual.source_group_ref
+	if group == null or group.folk_ref == null or group.folk_ref.human_rules_ref == null:
+		return HumanRules.new().spontaneous_rite_max_distance
+	return group.folk_ref.human_rules_ref.spontaneous_rite_max_distance
 
 
 # true se `individual` (nella fascia `age_band`) può celebrare `rules`: eventuale restrizione di età del rito

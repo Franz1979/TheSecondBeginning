@@ -102,6 +102,10 @@ var built_year: int = -1
 # scritti SOLO da InfluenceService (add_points/advance_daily_neglected_rites); salvati da GameSaveService.
 var influence_points: Dictionary = {}
 var influence_last_gain_day: Dictionary = {}
+# Defunti sepolti in questo edificio (2026-10-04, richiesta utente — cumulo sepolcrale, passo 1): per ora sempre vuoto,
+# lo riempirà la task di sepoltura. Un Dictionary JSON-nativo per defunto, salvato così com'è da GameSaveService.
+# Capienza: BuildingRules.max_buried.
+var buried: Array = []
 
 # Giorno assoluto (GameData.get_absolute_day) dell'ultimo rito completato presso questo edificio, manuale o spontaneo
 # (2026-10-02 — scritto da RiteEffectService). -1 = mai. Letto dalla regola giornaliera della fede

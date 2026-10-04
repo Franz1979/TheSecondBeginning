@@ -257,6 +257,9 @@ var buildings_revision: int = 0
 # Ultima destinazione dei prodotti della macellazione scelta nell'ordine di caccia (2026-10-03, ButcherDestinationService,
 # salvata con la partita): proposta all'apertura del dialog e usata dalla caccia diretta. "" = mai scelta.
 var last_butcher_destination: String = ""
+# Ordinamento dell'elenco dei pipottini nella scheda popolazione (2026-10-04, salvato con la partita): id di
+# HumanPopulationInfoPanel.SORT_OPTIONS ("age", "name", "house"). Un id sconosciuto ricade sul predefinito.
+var population_list_sort: String = "age"
 
 func allocate_work_area_id() -> int:
 	var id := next_work_area_id

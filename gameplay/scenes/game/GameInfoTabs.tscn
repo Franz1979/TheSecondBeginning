@@ -93,9 +93,23 @@ horizontal_alignment = 1
 vertical_alignment = 1
 autowrap_mode = 2
 
-[node name="PlaceholderTab" type="Control" parent="."]
+[node name="PendingTab" type="MarginContainer" parent="."]
 visible = false
 layout_mode = 2
+theme_override_constants/margin_left = 4
+theme_override_constants/margin_top = 4
+theme_override_constants/margin_right = 4
+theme_override_constants/margin_bottom = 4
+
+[node name="PendingScroll" type="ScrollContainer" parent="PendingTab"]
+layout_mode = 2
+size_flags_vertical = 3
+horizontal_scroll_mode = 0
+
+[node name="PendingClamp" type="Container" parent="PendingTab/PendingScroll"]
+layout_mode = 2
+size_flags_horizontal = 3
+script = ExtResource("2_clamp")
 
 [node name="DebugTab" type="MarginContainer" parent="."]
 visible = false

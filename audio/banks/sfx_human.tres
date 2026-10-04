@@ -4,6 +4,8 @@
 [ext_resource type="AudioStream" uid="uid://ccqc3b25jyduk" path="res://audio/assets/sfx/human/idea_spark.wav" id="2_s34pt"]
 [ext_resource type="Script" uid="uid://di7uwrrgk1okb" path="res://audio/scripts/SoundBank.gd" id="3_5vvjm"]
 [ext_resource type="AudioStream" path="res://audio/assets/sfx/human/church_bell.wav" id="4_bell"]
+[ext_resource type="AudioStream" path="res://audio/assets/sfx/human/funeral_paleolithic.wav" id="5_funeral"]
+[ext_resource type="AudioStream" path="res://audio/assets/sfx/human/rite_paleolithic.wav" id="6_rite"]
 
 [sub_resource type="Resource" id="Resource_vhq6q"]
 script = ExtResource("1_abvs6")
@@ -21,6 +23,22 @@ spatial = true
 max_voices = 1
 cooldown_ms = 2500
 
+[sub_resource type="Resource" id="Resource_funeral_paleolithic"]
+script = ExtResource("1_abvs6")
+id = &"funeral_paleolithic"
+streams = Array[AudioStream]([ExtResource("5_funeral")])
+spatial = true
+max_voices = 1
+cooldown_ms = 2500
+
+[sub_resource type="Resource" id="Resource_rite_paleolithic"]
+script = ExtResource("1_abvs6")
+id = &"rite_paleolithic"
+streams = Array[AudioStream]([ExtResource("6_rite")])
+spatial = true
+max_voices = 1
+cooldown_ms = 2500
+
 [resource]
 script = ExtResource("3_5vvjm")
-defs = Array[ExtResource("1_abvs6")]([SubResource("Resource_vhq6q"), SubResource("Resource_church_bell")])
+defs = Array[ExtResource("1_abvs6")]([SubResource("Resource_vhq6q"), SubResource("Resource_church_bell"), SubResource("Resource_funeral_paleolithic"), SubResource("Resource_rite_paleolithic")])

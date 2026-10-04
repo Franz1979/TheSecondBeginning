@@ -34,8 +34,10 @@ const LEISURE_RITE_TASK_DEFINITION_PATH := "res://gameplay/scripts/tasks/definit
 # Task" resta necessariamente per-caso, non genericizzabile senza un'astrazione che oggi non serve
 # per due sole voci — stesso principio "niente genericità prematura" già seguito ovunque in questo
 # progetto, es. TaskFactory.build_task).
+const EXPLORE_TASK_DEFINITION_PATH := "res://gameplay/scripts/tasks/definitions/explore.tres"
 const IDLE_FALLBACK_TASK_PATHS: Array[String] = [
 	"res://gameplay/scripts/tasks/definitions/wander.tres",
+	EXPLORE_TASK_DEFINITION_PATH,
 	"res://gameplay/scripts/tasks/definitions/play.tres",
 	"res://gameplay/scripts/tasks/definitions/leisure_rest.tres",
 	"res://gameplay/scripts/tasks/definitions/daydreaming.tres",
@@ -130,6 +132,56 @@ static var daydream_step_appended_connector: Callable = Callable()
 # principio già in uso prima di questo spostamento (vedi GameScene.gd, ora rimosso da lì).
 const WANDER_LEG_MIN_LENGTH: float = 4.0
 const WANDER_LEG_MAX_LENGTH: float = 8.0
+# Explore (2026-10-04, richiesta utente — il comportamento della vecchia Wander, con tratti più lunghi).
+const EXPLORE_LEG_MIN_LENGTH: float = 5.0
+const EXPLORE_LEG_MAX_LENGTH: float = 10.0
+# Wander attorno all'àncora (2026-10-04): ogni tratto va verso un punto a questa distanza dall'àncora.
+const WANDER_ANCHOR_MIN_DISTANCE: float = 4.0
+const WANDER_ANCHOR_MAX_DISTANCE: float = 10.0
+# Play attorno all'àncora (2026-10-04): ogni corsa va verso un punto entro questa distanza dall'àncora (minimo 1, per
+# non sorteggiare l'àncora stessa).
+const PLAY_ANCHOR_MIN_DISTANCE: float = 1.0
+const PLAY_ANCHOR_MAX_DISTANCE: float = 8.0
+
+
+# Àncora delle perditempo (2026-10-04, richiesta utente): il punto attorno a cui girano Wander e Play, nello spazio
+# locale del pipottino (stessa traduzione cross-macrocella del rito spontaneo in _build_idle_task: microcella + 0,5 più
+# lo scarto di macrocella × World.WIDTH). Ripiego, in ordine: casa del pipottino; centro del villaggio
+# (VisitorService.find_village_center); magazzino completo più vecchio (built_year minimo, a parità id minimo); un
+# edificio completo qualsiasi non MOVEMENT (id minimo). Nessun edificio: null.
+static func resolve_anchor_position(individual: HumanIndividual, world: World) -> Variant:
+	var anchor := _resolve_anchor_building(individual, world)
+	if anchor == null:
+		return null
+	var macro_offset := Vector2(Vector2i(anchor.macro_x, anchor.macro_y) - individual.home_macro_coords) * World.WIDTH
+	return Vector2(float(anchor.micro_x) + 0.5, float(anchor.micro_y) + 0.5) + macro_offset
+
+
+static func _resolve_anchor_building(individual: HumanIndividual, world: World) -> Building:
+	if world == null:
+		return null
+	if individual.house_id != -1:
+		for building in world.buildings:
+			if building.id == individual.house_id and not building.is_demolished:
+				return building
+	var village_center := VisitorService.find_village_center(world)
+	if village_center != null:
+		return village_center
+	var oldest_storage: Building = null
+	var any_building: Building = null
+	for building in world.buildings:
+		if building.is_demolished or not building.is_complete or building.rules == null:
+			continue
+		if building.rules.category == BuildingTypes.Category.MOVEMENT:
+			continue
+		if any_building == null or building.id < any_building.id:
+			any_building = building
+		if building.rules.category == BuildingTypes.Category.STORAGE and (
+			oldest_storage == null or building.built_year < oldest_storage.built_year
+			or (building.built_year == oldest_storage.built_year and building.id < oldest_storage.id)
+		):
+			oldest_storage = building
+	return oldest_storage if oldest_storage != null else any_building
 
 # Distanza/durata BASE della Daydream del fallback (2026-09-16, richiesta utente) — STESSI valori
 # di GameScene._DEBUG_DAYDREAM_AROUND_DISTANCE/_DEBUG_DAYDREAM_THINK_BASE_DURATION (tasto Y), ma
@@ -149,27 +201,100 @@ const DAYDREAM_THINK_BASE_DURATION: float = 2.0
 # nessuno valido = quel tratto resta sul punto precedente. Il secondo è controllato dalla posizione attuale: il primo
 # è raggiungibile da lì, quindi sta nella stessa regione e la risposta è la stessa. Il ritorno (target_3) è la
 # partenza, com'era.
-static func resolve_wander_targets(individual: HumanIndividual) -> Dictionary:
+#
+# ATTORNO ALL'ÀNCORA (2026-10-04, richiesta utente): con un'àncora (resolve_anchor_position) i due tratti vanno verso
+# punti liberi e raggiungibili a WANDER_ANCHOR_MIN..MAX_DISTANCE dall'àncora in una direzione a caso, e non si torna
+# alla partenza: target_3 = target_2 (l'ultimo Walk di wander.tres finisce subito). Il secondo punto, se non si trova,
+# resta il primo. Senza àncora, o se nemmeno il primo punto si trova (àncora fuori dalla macrocella del pipottino, zona
+# irraggiungibile), il comportamento di prima: tratti dalla posizione attuale e ritorno alla partenza. Le Wander salvate
+# prima di questa modifica hanno già i loro bersagli negli step e finiscono come erano.
+static func resolve_wander_targets(individual: HumanIndividual, world: World = null) -> Dictionary:
+	var anchor: Variant = resolve_anchor_position(individual, world)
+	if anchor != null:
+		var anchored_1: Variant = _free_point_around(individual, anchor, WANDER_ANCHOR_MIN_DISTANCE, WANDER_ANCHOR_MAX_DISTANCE)
+		if anchored_1 != null:
+			var anchored_2: Variant = _free_point_around(individual, anchor, WANDER_ANCHOR_MIN_DISTANCE, WANDER_ANCHOR_MAX_DISTANCE)
+			var second: Vector2 = anchored_2 if anchored_2 != null else anchored_1
+			return {"target_1": anchored_1, "target_2": second, "target_3": second}
 	var starting_position: Vector2 = individual.position
 	var target_1: Vector2 = _free_leg_end(individual, starting_position)
 	var target_2: Vector2 = _free_leg_end(individual, target_1)
 	return {"target_1": target_1, "target_2": target_2, "target_3": starting_position}
 
 
-# Fine di un tratto di Wander da `leg_start`: lunghezza WANDER_LEG_MIN..MAX_LENGTH in una direzione a caso, su una
-# microcella libera e raggiungibile; nessun sorteggio valido = `leg_start`.
-static func _free_leg_end(individual: HumanIndividual, leg_start: Vector2) -> Vector2:
+# Explore (2026-10-04, richiesta utente): EXPLORE_LEG_COUNT tratti dalla posizione attuale, lunghi
+# EXPLORE_LEG_MIN..MAX_LENGTH, con "guardarsi intorno" dopo ognuno (explore.tres), poi ritorno alla partenza
+# (target_<EXPLORE_LEG_COUNT + 1>). Direzione coerente: il primo tratto va in una direzione a caso, ogni tratto
+# successivo prosegue la direzione dell'ultimo tratto riuscito con una deviazione di al massimo
+# EXPLORE_MAX_DEVIATION per parte — il pipottino si allontana in linea invece di girare in tondo. Ogni sorteggio di
+# pick_free_destination ritira la deviazione dentro lo stesso limite; nessun punto libero e raggiungibile = il tratto
+# resta sul punto precedente, e la direzione resta quella di prima. Le esplorazioni salvate con due tratti hanno già i
+# loro bersagli negli step e finiscono come erano.
+const EXPLORE_LEG_COUNT: int = 3
+const EXPLORE_MAX_DEVIATION: float = PI / 4.0
+
+static func resolve_explore_targets(individual: HumanIndividual) -> Dictionary:
+	var starting_position: Vector2 = individual.position
+	var targets: Dictionary = {}
+	var leg_start: Vector2 = starting_position
+	var heading: Variant = null # angolo dell'ultimo tratto riuscito; null = nessuno ancora, direzione libera
+	for leg in range(EXPLORE_LEG_COUNT):
+		var start: Vector2 = leg_start
+		var base_heading: Variant = heading
+		var destination: Variant = PathfindingService.pick_free_destination(individual, func() -> Vector2:
+			var angle: float = randf() * TAU if base_heading == null else float(base_heading) + randf_range(-EXPLORE_MAX_DEVIATION, EXPLORE_MAX_DEVIATION)
+			return start + Vector2.from_angle(angle) * randf_range(EXPLORE_LEG_MIN_LENGTH, EXPLORE_LEG_MAX_LENGTH)
+		)
+		if destination != null and (destination as Vector2) != start:
+			heading = ((destination as Vector2) - start).angle()
+			leg_start = destination
+		targets["target_%d" % (leg + 1)] = leg_start
+	targets["target_%d" % (EXPLORE_LEG_COUNT + 1)] = starting_position
+	return targets
+
+
+# Contesto della Explore Task dai punti di resolve_explore_targets (explore_target_1..N, vedi gli step di explore.tres).
+static func build_explore_context(targets: Dictionary) -> Dictionary:
+	var context: Dictionary = {}
+	for i in range(1, EXPLORE_LEG_COUNT + 2):
+		context["explore_target_%d" % i] = targets["target_%d" % i]
+	return context
+
+
+# Fine di un tratto da `leg_start`: lunghezza min..max (predefinita: quella della Wander) in una direzione a caso, su
+# una microcella libera e raggiungibile; nessun sorteggio valido = `leg_start`.
+static func _free_leg_end(
+	individual: HumanIndividual, leg_start: Vector2,
+	min_length: float = WANDER_LEG_MIN_LENGTH, max_length: float = WANDER_LEG_MAX_LENGTH
+) -> Vector2:
 	var destination: Variant = PathfindingService.pick_free_destination(
 		individual,
-		func() -> Vector2: return leg_start + Vector2.from_angle(randf() * TAU) * randf_range(WANDER_LEG_MIN_LENGTH, WANDER_LEG_MAX_LENGTH)
+		func() -> Vector2: return leg_start + Vector2.from_angle(randf() * TAU) * randf_range(min_length, max_length)
 	)
 	return destination if destination != null else leg_start
+
+
+# Punto libero e raggiungibile a min..max da `center`, in una direzione a caso; null se nessun sorteggio è valido.
+static func _free_point_around(individual: HumanIndividual, center: Vector2, min_distance: float, max_distance: float) -> Variant:
+	return PathfindingService.pick_free_destination(
+		individual,
+		func() -> Vector2: return center + Vector2.from_angle(randf() * TAU) * randf_range(min_distance, max_distance)
+	)
 
 
 # Risoluzione dei due target Run della Play Task — STESSA identica logica di GameScene.
 # _resolve_play_targets prima di questo spostamento (vedi doc di testa al file).
 # Pathfinding (2026-09-27, step 3): stessi tratti liberi e raggiungibili di Wander (_free_leg_end).
-static func resolve_play_targets(individual: HumanIndividual) -> Dictionary:
+# Attorno all'àncora (2026-10-04, richiesta utente): con un'àncora le due corse vanno verso punti liberi e raggiungibili
+# entro PLAY_ANCHOR_MAX_DISTANCE da lei (secondo punto mancante = il primo); senza àncora, o se nemmeno il primo punto
+# si trova, come prima.
+static func resolve_play_targets(individual: HumanIndividual, world: World = null) -> Dictionary:
+	var anchor: Variant = resolve_anchor_position(individual, world)
+	if anchor != null:
+		var anchored_1: Variant = _free_point_around(individual, anchor, PLAY_ANCHOR_MIN_DISTANCE, PLAY_ANCHOR_MAX_DISTANCE)
+		if anchored_1 != null:
+			var anchored_2: Variant = _free_point_around(individual, anchor, PLAY_ANCHOR_MIN_DISTANCE, PLAY_ANCHOR_MAX_DISTANCE)
+			return {"target_1": anchored_1, "target_2": anchored_2 if anchored_2 != null else anchored_1}
 	var starting_position: Vector2 = individual.position
 	var target_1: Vector2 = _free_leg_end(individual, starting_position)
 	var target_2: Vector2 = _free_leg_end(individual, target_1)
@@ -227,7 +352,7 @@ static func _build_idle_task(path: String, individual: HumanIndividual, world: W
 		"res://gameplay/scripts/tasks/definitions/wander.tres":
 			if not WANDER_ENABLED:
 				return null
-			var target_data := resolve_wander_targets(individual)
+			var target_data := resolve_wander_targets(individual, world)
 			var definition := load(path) as TaskDefinition
 			var context: Dictionary = {
 				"wander_target_1": target_data["target_1"],
@@ -235,8 +360,12 @@ static func _build_idle_task(path: String, individual: HumanIndividual, world: W
 				"wander_target_3": target_data["target_3"],
 			}
 			return TaskFactory.build_task(definition, context)
+		EXPLORE_TASK_DEFINITION_PATH:
+			var explore_targets := resolve_explore_targets(individual)
+			var explore_definition := load(path) as TaskDefinition
+			return TaskFactory.build_task(explore_definition, build_explore_context(explore_targets))
 		"res://gameplay/scripts/tasks/definitions/play.tres":
-			var target_data := resolve_play_targets(individual)
+			var target_data := resolve_play_targets(individual, world)
 			var definition := load(path) as TaskDefinition
 			var context: Dictionary = {
 				"play_target_1": target_data["target_1"],

@@ -319,7 +319,7 @@ const SHOW_HUNT_ZONE_LOGS := false
 # avanzamento automatico (BuildingStorageService.store: edificio, risorsa e quantità entrata, totale, avanzamento prima
 # e dopo la media, giorni mancanti) e una alla trasformazione (ProductionService.advance_auto_progress: cosa è diventato
 # cosa e in che quantità). Nessuna riga giornaliera. Solo stampa.
-const SHOW_AUTO_PROGRESS_LOGS := true
+const SHOW_AUTO_PROGRESS_LOGS := false
 
 # VEGETATION_REMOVAL — [PLAYER HARVEST] (PlayerHarvestService.cut_individual, una riga per pianta tagliata) e
 # [BUILDING SITE CLEARING] (BuildingSiteClearingService, una riga per lotto sgomberato per un edificio) (2026-10-03,
@@ -349,7 +349,7 @@ const SHOW_RESOURCE_DECAY_LOGS := false
 # (giorno RandomEventService.ROLL_DAY_OF_YEAR), una riga per evento: probabilità base (fascia di popolazione),
 # moltiplicatori del villaggio e dell'evento, probabilità risultante, tiro, se è stato estratto e per quale giorno;
 # per un evento non idoneo, il motivo. Solo stampa, nessun effetto sul sorteggio.
-const SHOW_RANDOM_EVENT_ROLL_LOGS := true
+const SHOW_RANDOM_EVENT_ROLL_LOGS := false
 
 # PATHFINDING — [PATHFINDING] (2026-09-27, pathfinding step 1, PathfindingService): tempo di costruzione della griglia di
 # una macrocella (con microcelle bloccate e numero di regioni connesse) e, a ogni costruzione/demolizione di edificio,
@@ -393,3 +393,8 @@ const SHOW_FOW_DIAG_LOGS := false
 # WATCH_TASK_INDIVIDUAL_ID (-1 = disattivato). Solo print: rimuovere costanti, chiamata in _process e funzione insieme.
 const WATCH_TASK_INDIVIDUAL_ID := -1
 const WATCH_TASK_INTERVAL_SECONDS := 1.0
+
+# Riti (2026-10-04, richiesta utente): [RITE] a ogni rito completato, funerale compreso (RiteEffectService.
+# apply_completion) — intestazione (rito, edificio, celebrante, ritualità, moltiplicatore, defunto), una riga per ogni
+# pipottino che riceve fede (quantità, prima/dopo, motivo) e i punti di influenza dati all'edificio. Solo log.
+const SHOW_RITE_LOGS := false

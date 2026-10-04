@@ -175,6 +175,8 @@ const BUILDING_ICON_NODES := {
 	"stacked_stones": preload("res://simulation/scripts/ui/StackedStonesIcon.gd"),
 	# Capanna di stoccaggio (2026-10-03, richiesta utente): stesso disegno della mappa (StorageHutShape).
 	"storage_hut": preload("res://simulation/scripts/ui/StorageHutIcon.gd"),
+	# Deposito coperto (2026-10-04, richiesta utente): spiazzo del sito di deposito con la tettoia (CoveredDepotShape).
+	"covered_depot": preload("res://simulation/scripts/ui/CoveredDepotIcon.gd"),
 }
 
 

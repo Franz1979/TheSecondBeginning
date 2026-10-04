@@ -1749,6 +1749,8 @@ static func activate_resumed_task(individual: HumanIndividual, resumed_task: Tas
 	# ridondante con la classe base di get_required_position (WalkAction non la sovrascrive,
 	# tornerebbe comunque null), ma reso esplicito per chiarezza e per non dipendere in futuro da
 	# quell'omissione se mai qualcuno la aggiungesse per errore.
+	# Seppellisci (2026-10-04, funerale): corpo già sulla lastra -> si salta il trasporto e si rifà il rito.
+	BodyBurialService.skip_transport_if_on_slab(resumed_task)
 	var resumed_action := resumed_task.get_current_action()
 	if not (resumed_action is WalkAction):
 		var required_position: Variant = resumed_action.get_required_position(individual, resumed_task.context)

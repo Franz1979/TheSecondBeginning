@@ -370,6 +370,12 @@ var stamina_age_band: int = -1
 const MAX_CARRIED_VARIETIES: int = 4
 var carried_resources: Dictionary = {}
 
+# Corpo in spalla (2026-10-04, cumulo sepolcrale passo 2 — stato "porta il corpo X"): individual_id del record
+# DEAD_BODY in game_data.expired_objects, -1 = nessuno. NON occupa lo zaino (get_carried_space resta quello delle
+# risorse), ma il cammino costa come a pieno carico (get_walk_load_space). Scritto solo da BodyBurialService.
+# PERSISTITO (GameSaveService/GameLoadService, -1 per i save precedenti).
+var carried_body_id: int = -1
+
 # Cintura degli attrezzi (2026-09-25, richiesta utente — sostituisce il vecchio campo
 # equipped_tool_count, sempre 0): HumanRules.tool_slot_count posti (5 dal 2026-09-27, prima 4), ciascuno "" (vuoto) oppure il
 # nome di una risorsa attrezzo (SecondaryResourceRules.tool_categories non vuoto). Dimensionata da
@@ -835,6 +841,11 @@ func assign_task(task: Task, age_band: HumanTypes.AgeBand, is_interrupt_transiti
 	# scatta quindi sempre PRIMA di qualunque log [HAUL DISCARD]/altro side-effect, mai dopo.
 	if not can_assign_task(task, age_band):
 		return false
+	# Corteo (2026-10-04, richiesta utente): non usa lo zaino, quindi le regole dello zaino occupato qui sotto non lo
+	# fermano — interrompe la task in corso come qualunque comando (sospendibile -> in coda con il suo carico, ripresa
+	# dopo il corteo), il partecipante cammina con lo zaino in spalla e il carico non viene mai rilasciato né scaricato.
+	# Solo per il Corteo: per ogni altra task le regole dello zaino restano com'erano.
+	var ignores_backpack: bool = task.task_name == ProcessionService.PROCESSION_TASK_NAME
 
 	# Zaino occupato + Task NON-bisogno (2026-09-13, richiesta utente; MOTIVO AGGIORNATO 2026-09-20). Il
 	# blocco serve a NON INTERROMPERE UN TRASPORTO A META': chi ha qualcosa in spalla sta portando un carico
@@ -890,7 +901,7 @@ func assign_task(task: Task, age_band: HumanTypes.AgeBand, is_interrupt_transiti
 	# entrare in questo ramo (che la lascerebbe proseguire indisturbata mettendo `task` in coda
 	# dietro di lei): cade invece nel ramo generico più sotto (~riga 806+, guardato allo stesso
 	# modo), che la scarta con un log invece di trattarla come ancora in corso.
-	if task.interrupt_priority == -1 and not carried_resources.is_empty() and current_task != null and not current_task.is_finished() and current_task.is_suspendable:
+	if not ignores_backpack and task.interrupt_priority == -1 and not carried_resources.is_empty() and current_task != null and not current_task.is_finished() and current_task.is_suspendable:
 		# Giro di rifornimento con lo zaino carico (2026-09-29, richiesta utente): il pipottino finisce solo la
 		# consegna in corso, poi la Build va in coda e parte l'ordine — vedi _queue_order_after_supply_delivery.
 		if MaterialSupplyService.is_in_supply_round(current_task):
@@ -944,7 +955,7 @@ func assign_task(task: Task, age_band: HumanTypes.AgeBand, is_interrupt_transiti
 	# aggiunto: una current_task GIÀ CONCLUSA va trattata come assente/non sospendibile ai fini di
 	# questa ricerca del "proprietario del carico" — stesso principio del guard gemello sopra: non
 	# è mai lei la legittima proprietaria di un carico ancora da consegnare.
-	if task.interrupt_priority == -1 and not carried_resources.is_empty() and (current_task == null or not current_task.is_suspendable or current_task.is_finished()):
+	if not ignores_backpack and task.interrupt_priority == -1 and not carried_resources.is_empty() and (current_task == null or not current_task.is_suspendable or current_task.is_finished()):
 		var cargo_owner_task := TaskQueueService.pop_suspended_task(self)
 		# Bersaglio non più valido (2026-09-21, richiesta utente): la task in coda viene scartata pulita,
 		# non ripresa — si prova la successiva, o nessuna.
@@ -1028,7 +1039,7 @@ func assign_task(task: Task, age_band: HumanTypes.AgeBand, is_interrupt_transiti
 			print("[ZOMBIE GUARD] Individuo #%d %s: current_task '%s' (step %d/%d) già conclusa — scartata invece di sospesa in coda, HumanIndividual.assign_task (ramo generico)." % [
 				id, name, current_task.task_name, current_task.current_step_index, current_task.steps.size()
 			])
-		if not is_interrupt_transition and not resuming_cargo_owner:
+		if not is_interrupt_transition and not resuming_cargo_owner and not ignores_backpack:
 			cargo_return_task = _release_orphan_cargo_for_order()
 	elif current_task != null and current_task.is_suspendable:
 		if HuntService.is_hunt_task(current_task):
@@ -1041,7 +1052,9 @@ func assign_task(task: Task, age_band: HumanTypes.AgeBand, is_interrupt_transiti
 				id, name, current_task.task_name, task.task_name
 			])
 	elif not is_interrupt_transition and not resuming_cargo_owner:
-		cargo_return_task = _release_orphan_cargo_for_order()
+		# Corteo: il carico resta in spalla, nessun riporto al magazzino prima di partire.
+		if not ignores_backpack:
+			cargo_return_task = _release_orphan_cargo_for_order()
 		# Daydream scartata a metà (2026-09-16, richiesta utente, "Daydreaming nel fallback
 		# perditempo") — pending_thought azzerato QUI: senza questo, un Think già completato prima
 		# dello scarto (individual.pending_thought=true, vedi ThinkAction.on_complete) resterebbe
@@ -1282,6 +1295,15 @@ func get_carried_decay_fraction(resource_name: String) -> float:
 # Spazio occupato dallo zaino: somma di quantity × SecondaryResourceRules.space_per_unit di ogni
 # varietà (2026-09-20 — UNICA formula, prima duplicata in PickUp/Retrieve/Walk/Run/GameScene). Una
 # varietà con .tres non risolvibile non conta (stesso trattamento di prima: spazio 0).
+# Carico che pesa sul cammino (2026-10-04, cumulo sepolcrale passo 2): con un corpo in spalla si cammina come a
+# pieno carico (max_carry_capacity), qualunque cosa ci sia nello zaino; altrimenti lo spazio occupato dallo zaino.
+# Letto da WalkAction/RunAction al posto di get_carried_space per la stamina.
+func get_walk_load_space() -> float:
+	if carried_body_id != -1:
+		return maxf(max_carry_capacity, get_carried_space())
+	return get_carried_space()
+
+
 func get_carried_space() -> float:
 	var total := 0.0
 	for resource_name in carried_resources.keys():

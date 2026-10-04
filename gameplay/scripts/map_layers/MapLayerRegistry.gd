@@ -23,7 +23,7 @@ const NONE_ID := ""
 const LAYERS: Array[Dictionary] = [
 	{
 		"id": "walkability", "name_key": "map_layer_walkability", "icon": "🚧", "available": true,
-		# Stesso disegno dell'overlay di debug del tasto N (microcelle bloccate della griglia del pathfinding).
+		# Stesso disegno del vecchio overlay di debug del tasto N (tolto il 2026-10-04) (microcelle bloccate della griglia del pathfinding).
 		"map_overlay": preload("res://gameplay/scripts/entities/PathfindingDebugOverlay.gd"),
 		"minimap_method": "_draw_walkability_minimap",
 	},

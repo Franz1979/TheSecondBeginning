@@ -1,7 +1,7 @@
 class_name PathfindingDebugOverlay
 extends Node2D
 
-# Overlay di debug del pathfinding (2026-09-27, step 1 — tasto N in GameScene): microcelle bloccate della griglia
+# Overlay di debug del pathfinding (2026-09-27, step 1; tasto N tolto il 2026-10-04 — oggi usato solo dal layer della mappa "Percorribilità"): microcelle bloccate della griglia
 # (LiveMacroCell.path_grid) in rosso semitrasparente. Figlio del container della cella, coordinate locali. Si
 # ridisegna da sé quando la griglia cambia (path_grid_version). Le microcelle bloccate consecutive di una riga
 # diventano un solo rettangolo, così una macrocella d'acqua è 100 rettangoli invece di 10000.

@@ -1,0 +1,22 @@
+[gd_resource type="Resource" script_class="RiteRules" format=3 uid="uid://bc2u2s658ffmx"]
+
+[ext_resource type="Script" uid="uid://f30qq2arhmga" path="res://gameplay/rites/scripts/RiteRules.gd" id="1_rite"]
+
+[resource]
+script = ExtResource("1_rite")
+id = "funeral_rite"
+display_name = "rite_funeral_name"
+building_types = Array[String](["burial"])
+duration_days = 0.3
+allowed_age_bands = Array[int]([3, 4, 5])
+spontaneous = false
+bury_task_only = true
+faith_celebrant = 400.0
+faith_present = 100.0
+faith_population = 40.0
+faith_relatives = 200.0
+procession_max_distance = 40.0
+procession_full_leadership = 1000.0
+procession_recall_interval_days = 0.25
+influence_gain = 20.0
+completion_sound_id = &"funeral_paleolithic"

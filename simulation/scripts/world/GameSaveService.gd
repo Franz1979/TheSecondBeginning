@@ -32,6 +32,8 @@ func save_game_to_json(
 			"current_era_name": game_data.current_era_name,
 			# Ultima destinazione della macellazione scelta nell'ordine di caccia (2026-10-03).
 			"last_butcher_destination": game_data.last_butcher_destination,
+			# Ordinamento dell'elenco dei pipottini nella scheda popolazione (2026-10-04).
+			"population_list_sort": game_data.population_list_sort,
 			"era_effective_age_band_durations_male": game_data.era_effective_age_band_durations_male,
 			"era_effective_age_band_durations_female": game_data.era_effective_age_band_durations_female,
 			# Statistica pura (vedi GameData) — mai riletti da nessuna logica di simulazione.
@@ -398,6 +400,8 @@ func save_game_to_json(
 			# Punti di influenza e giorno dell'ultimo guadagno per tipo (2026-10-03, punti e soglie): chiavi int -> stringhe in JSON.
 			"influence_points": building.influence_points,
 			"influence_last_gain_day": building.influence_last_gain_day,
+			# Sepolti (2026-10-04, cumulo sepolcrale): elenco di Dictionary JSON-nativi.
+			"buried": building.buried,
 			"last_rite_absolute_day": building.last_rite_absolute_day,
 			"stored_resources": building.stored_resources,
 			# construction_progress (2026-09-10, richiesta utente — preparazione Build Task; primi
@@ -615,6 +619,8 @@ func save_game_to_json(
 				# varietà) — sostituisce i tre campi mono-risorsa carried_resource_name/carried_quantity/
 				# carried_decay_fraction, che GameLoadService continua a leggere per i salvataggi vecchi.
 				"carried_resources": individual.carried_resources.duplicate(true),
+				# Corpo in spalla (2026-10-04, cumulo sepolcrale passo 2): individual_id del record DEAD_BODY, -1 = nessuno.
+				"carried_body_id": individual.carried_body_id,
 				# Cintura degli attrezzi (2026-09-25, richiesta utente): un nome risorsa per slot, "" =
 				# vuoto (vedi HumanIndividual.equipped_tools).
 				"equipped_tools": Array(individual.equipped_tools),
@@ -675,5 +681,14 @@ func _expired_objects_to_json(expired_objects: Array[Dictionary]) -> Array:
 			# questo livello generico non deve saperlo — un futuro BUILDING_RUIN metterebbe altri
 			# campi qui dentro senza mai toccare questa funzione.
 			"type_specific_data": record["type_specific_data"],
+			# Trasporto del corpo (2026-10-04, cumulo sepolcrale passo 2, vedi BodyBurialService): chi lo porta (-1 =
+			# a terra), da quale giorno assoluto, i giorni già passati in spalla e il cumulo accanto a cui è stato posato.
+			"carried_by_id": int(record.get("carried_by_id", -1)),
+			"carried_since_absolute_day": int(record.get("carried_since_absolute_day", 0)),
+			"carried_days_total": int(record.get("carried_days_total", 0)),
+			"mound_id": int(record.get("mound_id", -1)),
+			# Mancata sepoltura già valutata (2026-10-04, GameTimeService._apply_unburied_body_consequences).
+			"unburied_applied": bool(record.get("unburied_applied", false)),
+			"unburied_warned": bool(record.get("unburied_warned", false)),
 		})
 	return result

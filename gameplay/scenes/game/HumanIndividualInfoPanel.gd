@@ -69,9 +69,8 @@ extends VBoxContainer
 # imposta (game_info_tabs.set_selection_title) subito insieme a questa show_individual, con la
 # stessa identica stringa che sarebbe finita qui.
 #
-# KillButton (Step 9d del piano mortalità, 2026-09-05; bottone TOLTO dal pannello il 2026-09-27, richiesta utente —
-# segnale, gestore GameScene._on_kill_requested e chiave tr() individual_kill_debug_button restano per poterlo
-# rimettere) — tasto di DEBUG per velocizzare i test ("Kill (debug)", non una vera meccanica di gioco): emetteva
+# KillButton (Step 9d del piano mortalità, 2026-09-05; bottone TOLTO dal pannello il 2026-09-27, RIMESSO il 2026-10-04
+# solo in modalità debug, vedi _build_kill_debug_button) — tasto di DEBUG per velocizzare i test ("Kill (debug)", non una vera meccanica di gioco): emetteva
 # kill_requested con l'individuo
 # attualmente mostrato (_current_individual, salvato da show_individual — stesso principio di
 # HumanPopulationInfoPanel.individual_center_requested, che porta il payload direttamente nel
@@ -208,11 +207,28 @@ var _carried_icon_nodes: Array[Control] = []
 # Copia di ToolSlot0 presa in _ready, prima che vi finiscano icone o barre degli usi: modello degli slot aggiunti.
 var _tool_slot_template: Control = null
 @onready var tool_warning_label: Label = $ToolWarningLabel
-@onready var id_label: Label = $IdLabel
-@onready var mother_label: Label = $MotherLabel
-@onready var father_label: Label = $FatherLabel
-@onready var partner_label: Label = $PartnerLabel
-@onready var house_label: Label = $HouseLabel
+# Identità e parentela (2026-10-04, richiesta utente): non più righe in fondo al pannello ma il blocco Info in cima
+# (InfoBlock, chiuso di default, aperto/chiuso dall'icona ℹ dell'intestazione) e il tooltip della stessa icona. La casa
+# vive solo nell'icona 🏠 dell'intestazione (HouseLabel tolta). Ordine dei blocchi dall'alto (.tscn): Info, task in corso
+# e coda, carico e cintura (con l'avviso attrezzi), parametri vitali, animo, skill.
+@onready var info_block: PanelContainer = $InfoBlock
+@onready var id_label: Label = $InfoBlock/InfoBlockMargin/InfoBlockContent/IdLabel
+@onready var mother_label: Label = $InfoBlock/InfoBlockMargin/InfoBlockContent/MotherLabel
+@onready var father_label: Label = $InfoBlock/InfoBlockMargin/InfoBlockContent/FatherLabel
+@onready var partner_label: Label = $InfoBlock/InfoBlockMargin/InfoBlockContent/PartnerLabel
+
+# Icone 🏠 e ℹ nell'intestazione della scheda selezione, a sinistra del 🎯 (stesso schema delle icone di influenza di
+# BuildingInfoPanel): gruppo creato qui, aggiunto da GameScene a GameInfoTabs.header_actions, visibile solo mentre
+# questo pannello mostra un individuo. Il titolo dell'intestazione tronca con i puntini, le icone restano visibili.
+signal house_center_requested(building_id: int)
+const HOUSE_BUTTON_TEXT := "🏠"
+const INFO_BUTTON_TEXT := "ℹ"
+var header_buttons_box: HBoxContainer = null
+var _house_button: Button = null
+var _info_button: Button = null
+var _house_building_id: int = -1
+# Blocco Info aperto o chiuso: parte chiuso, poi resta com'è passando da un individuo all'altro nella sessione.
+var _info_open: bool = false
 
 var _current_individual: HumanIndividual
 
@@ -220,6 +236,7 @@ var _current_individual: HumanIndividual
 func _ready() -> void:
 	cancel_task_button.tooltip_text = tr("individual_cancel_task_tooltip")
 	cancel_task_button.pressed.connect(func(): cancel_task_requested.emit(_current_individual))
+	_build_kill_debug_button()
 	# Layout riga tool (2026-09-08, semplificata 2026-09-13 quando il quadratino trasporto è
 	# uscito da questa riga) — ricalcolato ad ogni resize del pannello (larghezza sidebar, non
 	# fissa) oltre che una volta qui subito: vedi _layout_tools_row.
@@ -229,7 +246,114 @@ func _ready() -> void:
 	_build_carried_slots()
 	_connect_tool_belt_clicks()
 	_ensure_tool_slot_boxes(HumanIndividual.DEFAULT_TOOL_SLOT_COUNT)
+	_build_header_buttons()
 	clear()
+
+
+func _build_header_buttons() -> void:
+	header_buttons_box = HBoxContainer.new()
+	header_buttons_box.add_theme_constant_override("separation", 2)
+	header_buttons_box.visible = false
+	_house_button = Button.new()
+	_house_button.text = HOUSE_BUTTON_TEXT
+	_house_button.focus_mode = Control.FOCUS_NONE
+	_house_button.pressed.connect(_on_house_pressed)
+	header_buttons_box.add_child(_house_button)
+	_info_button = Button.new()
+	_info_button.text = INFO_BUTTON_TEXT
+	_info_button.focus_mode = Control.FOCUS_NONE
+	_info_button.toggle_mode = true
+	_info_button.toggled.connect(_on_info_toggled)
+	header_buttons_box.add_child(_info_button)
+	info_block.visible = _info_open
+	# Icone visibili esattamente quando lo è il pannello, qualunque sia la via che lo nasconde.
+	visibility_changed.connect(func(): header_buttons_box.visible = visible)
+
+
+func _on_house_pressed() -> void:
+	if _house_building_id != -1:
+		house_center_requested.emit(_house_building_id)
+
+
+# KillButton rimesso (2026-10-04, richiesta utente) — SOLO in modalità debug (DebugLogging.ENABLED, lo stesso flag del
+# pulsante della velocità debug): nel gioco normale non viene nemmeno creato. Piccolo "💀" sovrapposto all'angolo in alto
+# a destra del blocco Info (figlio della riga dell'id, ancorato a destra, fuori dal flusso dei container: non sposta né
+# allarga nulla), visibile quando il blocco è aperto dall'icona ℹ. Emette kill_requested come prima: GameScene.
+# _on_kill_requested -> GameTimeService.kill_individual_now, il percorso normale di morte (cadavere e record completi).
+const KILL_DEBUG_BUTTON_SIZE: float = 16.0
+
+
+func _build_kill_debug_button() -> void:
+	if not DebugLogging.ENABLED:
+		return
+	var kill_button := Button.new()
+	kill_button.text = "💀"
+	kill_button.flat = true
+	kill_button.focus_mode = Control.FOCUS_NONE
+	kill_button.add_theme_font_size_override("font_size", 9)
+	kill_button.tooltip_text = tr("individual_kill_debug_button")
+	kill_button.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+	id_label.add_child(kill_button)
+	kill_button.set_anchors_preset(Control.PRESET_TOP_RIGHT)
+	kill_button.offset_left = -KILL_DEBUG_BUTTON_SIZE
+	kill_button.offset_right = 0.0
+	kill_button.offset_top = 0.0
+	kill_button.offset_bottom = KILL_DEBUG_BUTTON_SIZE
+	kill_button.pressed.connect(func():
+		if _current_individual != null:
+			kill_requested.emit(_current_individual)
+	)
+
+
+func _on_info_toggled(pressed: bool) -> void:
+	_info_open = pressed
+	info_block.visible = _info_open
+
+
+# Identità, parentela e casa già risolte da GameScene (2026-10-04, richiesta utente — il pannello resta muto: non
+# conosce gli altri individui, i defunti né gli edifici). `details`:
+#   "id", "folk", "group": int (-1 = non applicabile);
+#   "mother", "father", "partner": {"id": int, "name": String, "dead": bool} ("id" -1 = non noto);
+#   "partner_unknown_female": bool — quale forma di "sconosciuto" usare per il partner;
+#   "house": {"id": int, "name": String} o {} senza casa.
+# Stesse righe nel blocco Info e nel tooltip dell'icona ℹ; la casa solo nell'icona 🏠.
+func set_identity_details(details: Dictionary) -> void:
+	var id_text: String = tr("individual_id_label").format({
+		"id": int(details.get("id", -1)), "folk": _format_id(int(details.get("folk", -1))), "group": _format_id(int(details.get("group", -1)))
+	})
+	var mother_text: String = tr("individual_mother_label").format({"person": _format_relative(details.get("mother", {}), true)})
+	var father_text: String = tr("individual_father_label").format({"person": _format_relative(details.get("father", {}), false)})
+	var partner_text: String = tr("individual_partner_label").format({
+		"person": _format_relative(details.get("partner", {}), bool(details.get("partner_unknown_female", false)))
+	})
+	id_label.text = id_text
+	mother_label.text = mother_text
+	father_label.text = father_text
+	partner_label.text = partner_text
+	_info_button.tooltip_text = "\n".join([id_text, mother_text, father_text, partner_text])
+	_info_button.set_pressed_no_signal(_info_open)
+	info_block.visible = _info_open
+	var house: Dictionary = details.get("house", {})
+	_house_building_id = int(house.get("id", -1)) if not house.is_empty() else -1
+	_house_button.disabled = _house_building_id == -1
+	_house_button.tooltip_text = tr("individual_no_house") if _house_building_id == -1 else tr("individual_house_tooltip").format({
+		"name": String(house.get("name", "")), "id": _house_building_id
+	})
+	header_buttons_box.visible = visible
+
+
+# "Wenna (#4)", con il segno del defunto se morto; "sconosciuta"/"sconosciuto" se l'id non è noto; "#4" se l'id è
+# noto ma il nome non si trova.
+func _format_relative(relative: Dictionary, unknown_female: bool) -> String:
+	var relative_id := int(relative.get("id", -1))
+	if relative_id < 0:
+		return tr("individual_relative_unknown_female") if unknown_female else tr("individual_relative_unknown_male")
+	var relative_name := String(relative.get("name", ""))
+	if relative_name == "":
+		return "#%d" % relative_id
+	if bool(relative.get("dead", false)):
+		return tr("individual_relative_dead").format({"name": relative_name, "id": relative_id})
+	return tr("individual_relative_alive").format({"name": relative_name, "id": relative_id})
 
 
 # Prende l'HumanIndividual intero (non piu' i soli name/sex, richiesta utente 2026-09-02: servono
@@ -459,21 +583,17 @@ func show_individual(
 	# questo frame, quando tools_row.size.x riflette finalmente la larghezza vera.
 	call_deferred("_layout_tools_row")
 
-	var group := individual.source_group_ref
-	var folk_id: int = group.folk_ref.id if group != null and group.folk_ref != null else -1
-	var group_id: int = group.id if group != null else -1
-	id_label.text = tr("individual_id_label").format({"id": individual.id, "folk": _format_id(folk_id), "group": _format_id(group_id)})
-	mother_label.text = tr("individual_mother_id_label").format({"id": _format_id(individual.mother_id)})
-	father_label.text = tr("individual_father_id_label").format({"id": _format_id(individual.father_id)})
-	partner_label.text = tr("individual_partner_id_label").format({"id": _format_id(individual.partner_id)})
-	# house_id (2026-09-12, richiesta utente: "metti id house nell'info panel di individual") —
-	# STESSO trattamento/STESSA sentinella -1 -> "—" di mother/father/partner sopra (_format_id).
-	house_label.text = tr("individual_house_id_label").format({"id": _format_id(individual.house_id)})
+	# Identità, parentela e casa (2026-10-04): da set_identity_details, chiamata da GameScene subito dopo questa
+	# funzione (servono nomi di altri individui, anche defunti, e il nome della casa, che questo pannello non conosce).
+	if header_buttons_box != null:
+		header_buttons_box.visible = true
 
 
 func clear() -> void:
 	visible = false
 	_current_individual = null
+	if header_buttons_box != null:
+		header_buttons_box.visible = false
 
 
 # Sentinella -1 (genitore/gruppo/partner sconosciuto o non applicabile, vedi HumanIndividual) resa

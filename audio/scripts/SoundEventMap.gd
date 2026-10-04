@@ -15,7 +15,11 @@ const EVENTS: Dictionary = {
 	&"ui_selection": &"ui_select",
 	# Mondo
 	&"idea_completed": &"idea_spark",
-	&"rite_completed": &"church_bell",
+	# Suono predefinito dei riti completati (2026-10-04, richiesta utente — prima church_bell, che resta nel banco per
+	# usi futuri): quello di una ricetta con RiteRules.completion_sound_id vuoto.
+	&"rite_completed": &"rite_paleolithic",
+	# Suoni di rito scelti dalla ricetta (RiteRules.completion_sound_id, 2026-10-04): evento "rite_completed:<id>".
+	&"rite_completed:funeral_paleolithic": &"funeral_paleolithic",
 }
 
 

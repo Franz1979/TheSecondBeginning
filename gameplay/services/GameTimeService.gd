@@ -52,6 +52,11 @@ signal individual_died(
 # individual_died mostrava ancora i dati vecchi, perché a quel punto la rimozione non era ancora
 # avvenuta. Non emesso nei giorni senza morti (nessun refresh inutile).
 signal human_population_changed
+# Un corpo è scaduto senza sepoltura e il villaggio ne ha subito le conseguenze (2026-10-04, funerale — vedi
+# _apply_unburied_body_consequences): GameScene mostra l'avviso.
+signal unburied_body_expired(body_name: String)
+# Preavviso (2026-10-04): un corpo non sepolto scadrà tra `days_remaining` giorni (ExpiredObjectRules.unburied_warning_days).
+signal unburied_body_warning(body_name: String, days_remaining: int)
 # Step 4 del piano riproduzione (2026-09-06) — stesso schema simmetrico di individual_died sopra:
 # emesso DOPO che il neonato è già stato aggiunto a _human_individuals (HumanBirthIndividualService
 # lo appende direttamente, vedi _run_annual_human_births sotto), non prima — GameScene lo ascolta
@@ -193,6 +198,9 @@ func _on_day_advanced(_checkpoint_ran: bool, _animals_changed: bool) -> void:
 	# meccanismo DIVERSO (checkpoint stagionale via _run_seasonal_checkpoints/SeasonCalculator, non
 	# un semplice "if giorno == X" dentro un tick giornaliero) — non pertinente da riusare qui, si
 	# segue invece il pattern esplicito richiesto.
+	# Mancata sepoltura (2026-10-04): ogni giorno, PRIMA della pulizia annuale qui sotto, così un corpo scaduto ha
+	# sempre le sue conseguenze prima di sparire dai dati.
+	_apply_unburied_body_consequences()
 	if _game_data.current_day == 10:
 		_cleanup_expired_objects()
 	# Step 3 del piano coupling (2026-09-05): giorno 15 fisso, stesso pattern/motivazione del
@@ -521,6 +529,80 @@ func _cleanup_expired_objects() -> void:
 		print("[EXPIRED OBJECTS CLEANUP] anno=%d, giorno=%d: %d record rimossi (rimasti: %d)" % [
 			_game_data.year, _game_data.current_day, removed_count, _game_data.expired_objects.size()
 		])
+
+
+# Mancata sepoltura (2026-10-04, richiesta utente — funerale, ultimo passo): ogni corpo (DEAD_BODY) appena scaduto senza
+# essere stato sepolto, ovunque si trovi (anche sulla lastra accanto al cumulo), viene valutato UNA volta sola (flag
+# "unburied_applied" nel record, salvato). Se il popolo ha già scoperto l'idea che sblocca il cumulo sepolcrale, tutti i
+# vivi del villaggio perdono ExpiredObjectRules.unburied_faith_loss di fede e unburied_happiness_loss di felicità; i
+# parenti del morto (partner, genitori, figli — BodyBurialService.get_relative_ids) le perdono moltiplicate per
+# unburied_relatives_multiplier al posto di quelle. Valori limitati tra 0 e il massimo. Prima della scoperta: nessun
+# effetto, e il corpo resta segnato come valutato (la scoperta successiva non lo punisce a posteriori). Il villaggio è
+# la popolazione del giocatore (_human_individuals), quella a cui il morto apparteneva.
+func _apply_unburied_body_consequences() -> void:
+	var rules := ExpiredObjectCalculator.get_object_rules(ExpiredObjectTypes.ExpiredObjectType.DEAD_BODY)
+	if rules == null:
+		return
+	for record in _game_data.expired_objects:
+		if record["object_type"] != ExpiredObjectTypes.ExpiredObjectType.DEAD_BODY or bool(record.get("unburied_applied", false)):
+			continue
+		if not ExpiredObjectCalculator.is_expired(record, rules, _game_data.year, _game_data.current_day):
+			_warn_unburied_body(record, rules)
+			continue
+		record["unburied_applied"] = true
+		if not _is_burial_idea_discovered():
+			continue
+		_apply_unburied_penalty(record, rules)
+		unburied_body_expired.emit(BodyBurialService.get_body_name(record))
+
+
+# Preavviso (2026-10-04, richiesta utente): un corpo a terra (non in spalla) a cui restano al massimo
+# ExpiredObjectRules.unburied_warning_days giorni, una volta sola (flag "unburied_warned" nel record, salvato), solo dopo
+# la scoperta dell'idea del cumulo. Prima della scoperta il corpo non viene segnato: può essere avvisato più tardi.
+func _warn_unburied_body(record: Dictionary, rules: ExpiredObjectRules) -> void:
+	if rules.unburied_warning_days <= 0 or bool(record.get("unburied_warned", false)) or ExpiredObjectCalculator.is_carried(record):
+		return
+	var days_remaining := ExpiredObjectCalculator.get_days_remaining(record, rules, _game_data.year, _game_data.current_day)
+	if days_remaining > rules.unburied_warning_days or not _is_burial_idea_discovered():
+		return
+	record["unburied_warned"] = true
+	unburied_body_warning.emit(BodyBurialService.get_body_name(record), days_remaining)
+
+
+# true se il popolo ha scoperto l'idea che sblocca il cumulo sepolcrale (BuildingRules.required_idea_id di "burial";
+# nessuna idea richiesta = scoperta).
+func _is_burial_idea_discovered() -> bool:
+	var burial_rules := BuildingCalculator.get_building_rules("burial")
+	if burial_rules == null:
+		return false
+	if burial_rules.required_idea_id == "":
+		return true
+	return _human_folk != null and _human_folk.completed_ideas.has(burial_rules.required_idea_id)
+
+
+func _apply_unburied_penalty(record: Dictionary, rules: ExpiredObjectRules) -> void:
+	var relative_ids := BodyBurialService.get_relative_ids(record, _human_individuals)
+	var log_enabled := DebugLogging.ENABLED and DebugLogging.SHOW_RITE_LOGS
+	if log_enabled:
+		print("[RITE] mancata sepoltura di %s: -%.0f fede e -%.0f felicità al villaggio, x%.1f ai parenti." % [
+			BodyBurialService.get_body_name(record), rules.unburied_faith_loss, rules.unburied_happiness_loss,
+			rules.unburied_relatives_multiplier
+		])
+	for individual in _human_individuals:
+		var is_relative := relative_ids.has(individual.id)
+		var multiplier := rules.unburied_relatives_multiplier if is_relative else 1.0
+		var faith_before := individual.current_faith
+		var happiness_before := individual.current_happiness
+		individual.current_faith = clampf(individual.current_faith - rules.unburied_faith_loss * multiplier, 0.0, maxf(individual.max_faith, 0.0))
+		individual.current_happiness = clampf(
+			individual.current_happiness - rules.unburied_happiness_loss * multiplier, 0.0, maxf(individual.max_happiness, 0.0)
+		)
+		if log_enabled:
+			print("[RITE]   #%d %s%s: fede %.1f -> %.1f, felicità %.1f -> %.1f." % [
+				individual.id, individual.name,
+				" (parente: %s)" % RiteEffectService._relative_kind_text(relative_ids[individual.id]) if is_relative else "",
+				faith_before, individual.current_faith, happiness_before, individual.current_happiness
+			])
 
 
 # Step 3 del piano coupling (2026-09-05): formazione coppie FERTILE_ADULT/senza-partner, chiamata
@@ -931,6 +1013,9 @@ func _kill_individual(
 	# dependent_child_id e' ancora leggibile e l'individuo e' ancora nel roster (il padre e' cercato li').
 	# Se il padre non puo' prenderlo in carico il bambino resta orfano, vedi _apply_daily_starvation.
 	_transfer_or_orphan_dependent_child(individual)
+	# Corpo in spalla (2026-10-04, cumulo sepolcrale passo 2): chi muore mentre porta un corpo lo posa dove si trova,
+	# prima di diventare a sua volta un corpo.
+	BodyBurialService.put_down_carried_body(individual)
 	_game_data.death_events.append({
 		"individual_id": individual.id,
 		"name": individual.name,
@@ -986,6 +1071,15 @@ func _kill_individual(
 			# pilotata per-individuo, esattamente come per un individuo vivo — innocuo finché
 			# HumanTypes.SkinColor ha un solo membro possibile.
 			"skin_color": individual.skin_color,
+			# Parentela (2026-10-04, cumulo sepolcrale passo 2): id di genitori e partner al momento della morte, -1 =
+			# nessuno (stessa convenzione di HumanIndividual). L'id del defunto è "individual_id" del record. I record
+			# precedenti restano senza queste chiavi: chi le legge usa .get(chiave, -1).
+			"mother_id": individual.mother_id,
+			"father_id": individual.father_id,
+			"partner_id": individual.partner_id,
+			# Leadership al momento della morte (2026-10-04, corteo funebre esteso): quanti abitanti oltre ai parenti
+			# vengono convocati (BodyBurialService.convoke_funeral_procession). Record precedenti: .get(..., 0.0).
+			"skill_leadership": individual.skill_leadership,
 		},
 	})
 	# Log di verifica, stesso stile/scopo di "[DEATH LOG]" sopra per death_events — conferma che il

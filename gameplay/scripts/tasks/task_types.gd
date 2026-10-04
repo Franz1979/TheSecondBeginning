@@ -101,6 +101,14 @@ enum ActionType {
 	# AGGIUNTO IN CODA (i .tres salvano il valore numerico, 23). TaskFactory.build_task e TaskPersistenceService lo
 	# supportano entrambi.
 	RITE,
+	# Trasporto dei corpi al cumulo sepolcrale (2026-10-04, cumulo sepolcrale passo 2 — PickUpBodyAction,
+	# CarryBodyAction, PutDownBodyAction, vedi bury.tres). AGGIUNTI IN CODA (24, 25, 26). TaskFactory.build_task e
+	# TaskPersistenceService li supportano entrambi.
+	PICKUP_BODY,
+	CARRY_BODY,
+	PUT_DOWN_BODY,
+	# Corteo (2026-10-04, FollowIndividualAction, vedi procession.tres): segue un pipottino. AGGIUNTO IN CODA (27).
+	FOLLOW_INDIVIDUAL,
 }
 
 # Categorie di tool richiedibili da un'Action (2026-09-08, richiesta utente — SOLO struttura dati,

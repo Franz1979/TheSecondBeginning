@@ -30,11 +30,28 @@ static func get_object_rules(object_type: ExpiredObjectTypes.ExpiredObjectType) 
 # days_to_expire=182 scade al giorno assoluto 300+182=482, cioè giorno 117 dell'anno successivo
 # (482 - 365), mai un giorno >365 inesistente.
 static func is_expired(record: Dictionary, rules: ExpiredObjectRules, current_year: int, current_day: int) -> bool:
+	if is_carried(record):
+		return false
+	return get_elapsed_days(record, current_year, current_day) >= rules.days_to_expire
+
+
+# Giorni "a terra" trascorsi dalla comparsa (2026-10-04, cumulo sepolcrale passo 2): i giorni passati in spalla a un
+# pipottino non contano — quelli già conclusi in "carried_days_total", quello in corso da "carried_since_absolute_day".
+# Record senza questi campi (precedenti, o mai trasportati): stessa formula di prima.
+static func get_elapsed_days(record: Dictionary, current_year: int, current_day: int) -> int:
 	var appeared_absolute_day: int = (
 		int(record["appeared_at_year"]) * GameData.DAYS_PER_YEAR + int(record["appeared_at_day"])
 	)
 	var current_absolute_day := current_year * GameData.DAYS_PER_YEAR + current_day
-	return current_absolute_day - appeared_absolute_day >= rules.days_to_expire
+	var carried_days := int(record.get("carried_days_total", 0))
+	if is_carried(record):
+		carried_days += current_absolute_day - int(record.get("carried_since_absolute_day", current_absolute_day))
+	return current_absolute_day - appeared_absolute_day - carried_days
+
+
+# true se il corpo è in spalla a un pipottino (2026-10-04, cumulo sepolcrale passo 2): non è a terra e non scade.
+static func is_carried(record: Dictionary) -> bool:
+	return int(record.get("carried_by_id", -1)) != -1
 
 
 # Step 6 (2026-09-05): giorni interi rimanenti prima di is_expired sopra — per un pannello info
@@ -43,8 +60,4 @@ static func is_expired(record: Dictionary, rules: ExpiredObjectRules, current_ye
 # fisicamente rimosso (la pulizia annuale, Step 4, gira solo al giorno 10) deve mostrare 0, mai un
 # numero negativo privo di senso per chi legge il pannello.
 static func get_days_remaining(record: Dictionary, rules: ExpiredObjectRules, current_year: int, current_day: int) -> int:
-	var appeared_absolute_day: int = (
-		int(record["appeared_at_year"]) * GameData.DAYS_PER_YEAR + int(record["appeared_at_day"])
-	)
-	var current_absolute_day := current_year * GameData.DAYS_PER_YEAR + current_day
-	return maxi(0, rules.days_to_expire - (current_absolute_day - appeared_absolute_day))
+	return maxi(0, rules.days_to_expire - get_elapsed_days(record, current_year, current_day))

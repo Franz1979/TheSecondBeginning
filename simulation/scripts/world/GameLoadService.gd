@@ -89,6 +89,8 @@ func load_game_from_json(file_path: String) -> LoadedGame:
 	game_data.current_era_name = String(data["game"].get("current_era_name", "paleolithic"))
 	# Ultima destinazione della macellazione (2026-10-03): "" (mai scelta) nei salvataggi precedenti.
 	game_data.last_butcher_destination = String(data["game"].get("last_butcher_destination", ""))
+	# Ordinamento dell'elenco dei pipottini (2026-10-04): "age" (predefinito) nei salvataggi precedenti.
+	game_data.population_list_sort = String(data["game"].get("population_list_sort", "age"))
 	game_data.era_effective_age_band_durations_male = _float_array_from_json(
 		data["game"].get("era_effective_age_band_durations_male", [])
 	)
@@ -561,6 +563,11 @@ func load_game_from_json(file_path: String) -> LoadedGame:
 			if saved_influence_points is Dictionary:
 				for influence_key in (saved_influence_points as Dictionary).keys():
 					building.influence_points[int(influence_key)] = float(saved_influence_points[influence_key])
+			# Sepolti (2026-10-04, cumulo sepolcrale): [] nei salvataggi precedenti.
+			building.buried = []
+			for buried_entry in building_data.get("buried", []):
+				if buried_entry is Dictionary:
+					building.buried.append(buried_entry)
 			building.influence_last_gain_day = {}
 			var saved_last_gain_day: Variant = building_data.get("influence_last_gain_day", {})
 			if saved_last_gain_day is Dictionary:
@@ -789,6 +796,8 @@ func load_game_from_json(file_path: String) -> LoadedGame:
 			# default 0.0): se "carried_resources" manca e il vecchio nome non è vuoto con quantità > 0, si
 			# converte in UNA voce del dizionario. Le entry con quantity <= 0 vengono scartate (invariante
 			# del modello: mai una entry vuota).
+			# Corpo in spalla (2026-10-04, cumulo sepolcrale passo 2): -1 per i save precedenti.
+			individual.carried_body_id = int(individual_data.get("carried_body_id", -1))
 			individual.carried_resources = {}
 			if individual_data.has("carried_resources"):
 				var saved_carried: Dictionary = individual_data["carried_resources"]
@@ -951,6 +960,13 @@ func _expired_objects_from_json(raw: Array) -> Array[Dictionary]:
 			# type-specific/opzionale per costruzione (non tutti gli ExpiredObjectType futuri
 			# potrebbero averne bisogno), oltre a coprire i save precedenti a questo campo.
 			"type_specific_data": entry.get("type_specific_data", {}) as Dictionary,
+			# Trasporto del corpo (2026-10-04, vedi GameSaveService._expired_objects_to_json): assenti nei save precedenti.
+			"carried_by_id": int(entry.get("carried_by_id", -1)),
+			"carried_since_absolute_day": int(entry.get("carried_since_absolute_day", 0)),
+			"carried_days_total": int(entry.get("carried_days_total", 0)),
+			"mound_id": int(entry.get("mound_id", -1)),
+			"unburied_applied": bool(entry.get("unburied_applied", false)),
+			"unburied_warned": bool(entry.get("unburied_warned", false)),
 		})
 	return result
 

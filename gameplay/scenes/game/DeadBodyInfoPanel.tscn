@@ -21,3 +21,10 @@ theme_override_font_sizes/font_size = 10
 [node name="DaysRemainingLabel" type="Label" parent="."]
 layout_mode = 2
 theme_override_font_sizes/font_size = 10
+
+[node name="BuryStatusLabel" type="Label" parent="."]
+layout_mode = 2
+mouse_filter = 0
+theme_override_font_sizes/font_size = 10
+clip_text = true
+text_overrun_behavior = 3

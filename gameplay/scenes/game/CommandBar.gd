@@ -27,6 +27,13 @@ const HUNT_ACTION := &"command_hunt"
 const GATHER_SLOT: int = 0
 const HUNT_SLOT: int = 1
 const SLOT_COUNT: int = 2
+# Azioni del gruppo "Azioni" (2026-10-04, richiesta utente): UNICA fonte per la barra e per i pulsanti sulle righe della
+# lista degli abitanti (HumanPopulationInfoPanel) — un'azione aggiunta qui compare in entrambi i posti. Indice = slot
+# della barra. "icon" = chiave di IconRegistry.get_command_button_icon_node; "tooltip_key" = nome del comando.
+const ACTIONS: Array[Dictionary] = [
+	{"id": GATHER_ACTION, "icon": "pickup", "tooltip_key": "command_bar_gather_tooltip", "key": GATHER_KEY},
+	{"id": HUNT_ACTION, "icon": "hunt", "tooltip_key": "command_bar_hunt_tooltip", "key": HUNT_KEY},
+]
 
 # Tasti rapidi, liberi nel resto del gioco (2026-09-27).
 const GATHER_KEY := KEY_Q
@@ -36,9 +43,9 @@ const AUTO_ZONE_KEY := KEY_V
 # Stesso lato degli slot di IconButtonRow.
 const TOGGLE_BUTTON_SIZE := Vector2(32, 32)
 
-# Aspetto (2026-10-03, richiesta utente — comandi e opzioni distinguibili): prima i comandi (Raccogli, Caccia), poi un
-# separatore verticale sottile con un po' di spazio, poi le opzioni (interruttore zona automatica, destinazione della
-# caccia). Le opzioni a scelta hanno il triangolino ▾ (DropdownMarker); l'interruttore ha un bordo luminoso da acceso e
+# Aspetto (2026-10-03, richiesta utente — comandi e opzioni distinguibili; ripristinato il 2026-10-04): prima il gruppo
+# "Azioni" (Raccogli, Caccia), poi un separatore verticale con un po' di spazio, poi il gruppo "Opzioni" (interruttore
+# zona automatica, destinazione della caccia). Le opzioni a scelta hanno il triangolino ▾ (DropdownMarker); l'interruttore ha un bordo luminoso da acceso e
 # un aspetto neutro da spento. Solo aspetto: i comportamenti non cambiano.
 const GROUP_GAP: int = 6
 const TOGGLE_ON_BORDER_COLOR := Color(1.0, 0.85, 0.35, 1.0)
@@ -59,48 +66,50 @@ var _destination_list: VBoxContainer = null
 var _destination_signature: String = ""
 var _destination_options: Array[Dictionary] = []
 const DESTINATION_ICON_SIDE: float = 22.0
-# Gruppi con etichetta per argomento (2026-10-03, prima "Azioni"/"Opzioni" per tipo): "Aree di lavoro" (Raccogli, Caccia
-# nelle zone, separatore sottile, Scegli zona in automatico — solo con l'idea delle zone) e "Caccia" (destinazione dei
-# prodotti della caccia, con la propria condizione). Un gruppo senza pulsanti visibili sparisce con la sua etichetta; il
-# separatore tra i gruppi c'è solo con entrambi visibili (_refresh_groups).
+# Gruppi con etichetta (2026-10-04, richiesta utente — torna la disposizione del 2026-10-03 pomeriggio, commit 997e6a9):
+# a sinistra "Azioni" (Raccogli, Caccia nelle zone: CommandBar.ACTIONS), un separatore, a destra "Opzioni" (Scegli zona
+# in automatico, destinazione dei prodotti della caccia). Tutta la barra compare solo con l'idea delle zone di lavoro
+# (GameScene._sync_command_bar); con l'idea, "Azioni" e la zona automatica sono sempre visibili, la destinazione della
+# caccia solo con una destinazione di lavorazione oltre al focolare (set_butcher_destination). Nessun separatore interno.
 # Stile condiviso con la riga di titolo della BuildBar (2026-10-03), così le due barre hanno la stessa altezza e i
 # pulsanti sulla stessa linea.
 const GROUP_LABEL_FONT_SIZE: int = 9
 const GROUP_LABEL_COLOR := Color(1.0, 1.0, 1.0, 0.55)
 const GROUP_LABEL_SEPARATION: int = 1
-var _work_areas_group: VBoxContainer = null
-var _work_areas_row: HBoxContainer = null
-var _hunting_group: VBoxContainer = null
-var _hunting_row: HBoxContainer = null
+var _actions_group: VBoxContainer = null
+var _options_group: VBoxContainer = null
+var _options_row: HBoxContainer = null
 var _group_separator: VSeparator = null
-# Raccogli, Caccia nelle zone e Scegli zona in automatico: visibili solo con l'idea delle zone (set_zone_commands_visible).
+# Comandi delle zone visibili (idea delle zone, set_zone_commands_visible): senza, la barra non si vede comunque.
 var _zone_commands_visible: bool = true
 
 
 func _ready() -> void:
-	_work_areas_group = _build_group("command_bar_group_work_areas")
-	add_child(_work_areas_group)
-	_work_areas_row = HBoxContainer.new()
-	_work_areas_group.add_child(_work_areas_row)
+	_actions_group = _build_group("command_bar_group_actions")
+	add_child(_actions_group)
 	_row = IconButtonRow.new()
 	_row.slot_count = SLOT_COUNT
-	_work_areas_row.add_child(_row)
-	_row.configure_slot(
-		GATHER_SLOT, "", _with_key(tr("command_bar_gather_tooltip"), GATHER_KEY), GATHER_ACTION, "", true,
-		IconRegistry.get_command_button_icon_node("pickup")
-	)
-	# Configurato ACCESO e poi spento (2026-10-01, bugfix "Caccia non fa nulla"): IconButtonRow.configure_slot con
-	# enabled=false non collega mai `pressed`, quindi riaccenderlo con set_slot_disabled non bastava. Lo stato vero lo
-	# decide GameScene (set_hunt_available).
-	_row.configure_slot(
-		HUNT_SLOT, "", _with_key(tr("command_bar_hunt_tooltip"), HUNT_KEY), HUNT_ACTION, "", true,
-		IconRegistry.get_command_button_icon_node("hunt")
-	)
+	_actions_group.add_child(_row)
+	# Pulsanti dal solo elenco ACTIONS. Tutti configurati ACCESI (2026-10-01, bugfix "Caccia non fa nulla":
+	# IconButtonRow.configure_slot con enabled=false non collega mai `pressed`); lo stato vero lo decide GameScene
+	# (set_gather_available/set_hunt_available).
+	for slot in range(ACTIONS.size()):
+		var action: Dictionary = ACTIONS[slot]
+		_row.configure_slot(
+			slot, "", _with_key(tr(String(action["tooltip_key"])), action["key"]), action["id"], "", true,
+			IconRegistry.get_command_button_icon_node(String(action["icon"]))
+		)
 	_row.set_slot_disabled(HUNT_SLOT, true)
 	_row.action_pressed.connect(_on_action_pressed)
 
-	# Dentro il gruppo delle aree di lavoro, separatore sottile tra i due comandi e l'interruttore (2026-10-03).
-	_work_areas_row.add_child(VSeparator.new())
+	# Separatore tra i gruppi (2026-10-03): linea verticale sottile del tema, con spazio ai lati.
+	_group_separator = VSeparator.new()
+	_group_separator.add_theme_constant_override("separation", GROUP_GAP * 2)
+	add_child(_group_separator)
+	_options_group = _build_group("command_bar_group_options")
+	add_child(_options_group)
+	_options_row = HBoxContainer.new()
+	_options_group.add_child(_options_row)
 
 	# Interruttore "Scegli zona in automatico": bottone a due stati (toggle_mode) con icona disegnata che cambia con lo
 	# stato, oltre allo stile "premuto" del tema.
@@ -116,16 +125,7 @@ func _ready() -> void:
 	_auto_zone_icon.active = UserOptions.work_area_auto_zone
 	_auto_zone_button.toggled.connect(_on_auto_zone_toggled)
 	_apply_toggle_style(_auto_zone_button)
-	_work_areas_row.add_child(_auto_zone_button)
-
-	# Separatore tra i gruppi (2026-10-03): linea verticale sottile del tema, con spazio ai lati.
-	_group_separator = VSeparator.new()
-	_group_separator.add_theme_constant_override("separation", GROUP_GAP * 2)
-	add_child(_group_separator)
-	_hunting_group = _build_group("command_bar_group_hunting")
-	add_child(_hunting_group)
-	_hunting_row = HBoxContainer.new()
-	_hunting_group.add_child(_hunting_row)
+	_options_row.add_child(_auto_zone_button)
 
 	_destination_button = TooltipButton.new()
 	_destination_button.custom_minimum_size = TOGGLE_BUTTON_SIZE
@@ -139,7 +139,7 @@ func _ready() -> void:
 	_destination_button.add_child(dropdown_marker)
 	dropdown_marker.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_destination_button.visible = false
-	_hunting_row.add_child(_destination_button)
+	_options_row.add_child(_destination_button)
 	_destination_popup = PopupPanel.new()
 	_destination_list = VBoxContainer.new()
 	_destination_popup.add_child(_destination_list)
@@ -168,24 +168,22 @@ static func make_group_label(text: String) -> Label:
 	return label
 
 
-# Raccogli, Caccia nelle zone e Scegli zona in automatico visibili o no (2026-10-03: solo con l'idea delle zone, la
-# decide GameScene). Il pulsante della destinazione ha la propria visibilità (set_butcher_destination).
+# Comandi delle zone visibili o no (l'idea delle zone, la decide GameScene). Dal 2026-10-04 senza l'idea la barra intera
+# è nascosta (GameScene._sync_command_bar): qui resta solo per i tasti rapidi e per coerenza dei gruppi.
 func set_zone_commands_visible(is_shown: bool) -> void:
 	if _zone_commands_visible == is_shown:
 		return
 	_zone_commands_visible = is_shown
-	_row.visible = is_shown
-	_auto_zone_button.visible = is_shown
 	_refresh_groups()
 
 
-# Gruppi e separatore seguono i pulsanti visibili.
+# "Azioni" e "Opzioni" (con la zona automatica sempre presente) seguono l'idea delle zone; separatore tra i due.
 func _refresh_groups() -> void:
-	if _work_areas_group == null:
+	if _actions_group == null:
 		return
-	_work_areas_group.visible = _zone_commands_visible
-	_hunting_group.visible = _destination_button.visible
-	_group_separator.visible = _work_areas_group.visible and _hunting_group.visible
+	_actions_group.visible = _zone_commands_visible
+	_options_group.visible = _zone_commands_visible
+	_group_separator.visible = _zone_commands_visible
 
 
 # Interruttore a due stati (2026-10-03): bordo luminoso e fondo caldo da acceso (pressed, anche al passaggio del mouse),

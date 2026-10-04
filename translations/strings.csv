@@ -35,8 +35,8 @@ help_center_camera,centra la visuale sul player
 help_zoom_max,zoom massimo
 help_zoom_min,zoom minimo
 help_instant_build,tenuto premuto durante il piazzamento: costruisce l'edificio istantaneamente invece di assegnare una Task
-help_rotate_or_rest,ruota la porta della capanna durante il piazzamento; se nessuna anteprima è attiva assegna la Task Riposo all'individuo selezionato
-help_wander_task,assegna la Task Vagabondare (Walk-Guarda in giro-Walk-Guarda in giro-Walk) all'individuo selezionato
+help_rotate_or_rest,"ruota la porta durante il piazzamento o la scelta dell'orientamento di un miglioramento; se nessuna anteprima è attiva assegna la Task Riposo all'individuo selezionato"
+help_wander_task,"assegna la Task Passeggiata all'individuo selezionato: due tappe vicino alla casa o al villaggio, guardandosi intorno"
 help_play_task,assegna la Task Gioco (Corri-Salta-Corri-Salta, solo bambini) all'individuo selezionato
 help_stop_task,annulla il comando corrente dell'individuo selezionato (torna a riposo)
 help_unload_here_task,tenuto premuto durante un click destro su un deposito: scarica lì tutto ciò che l'individuo selezionato porta in spalla
@@ -176,7 +176,7 @@ building_category_military,Militare
 building_category_religious,Religioso
 building_drying_rack,Graticcio
 building_smokehouse,Affumicatoio
-building_burial,Sepoltura
+building_burial,Cumulo sepolcrale
 building_stacked_stones,Pietre rituali
 building_earthwork,Vallo di terra
 building_dirt_ground,Terra battuta
@@ -190,7 +190,7 @@ build_bar_toolmaker_hut_tooltip,Capanna dell'attrezzista
 build_bar_storage_hut_tooltip,Capanna di stoccaggio
 build_bar_drying_rack_tooltip,Graticcio
 build_bar_smokehouse_tooltip,Affumicatoio
-build_bar_burial_tooltip,Sepoltura
+build_bar_burial_tooltip,Cumulo sepolcrale
 build_bar_stacked_stones_tooltip,Pietre rituali
 build_bar_earthwork_tooltip,Vallo di terra
 build_bar_dirt_ground_tooltip,Terra battuta
@@ -355,7 +355,7 @@ building_upgrade_materials,Materiali da portare: {items}
 building_upgrade_recovered,Materiali recuperati: {items}
 building_upgrade_labor,Lavoro: {labor}
 building_upgrade_residents,Residenti massimi: {from} → {to}
-building_upgrade_rest,Riposo: ×{from} → ×{to}
+building_upgrade_rest,Riposo: {from} → {to}
 building_upgrade_nothing,nessuno
 building_upgrade_residents_leave,I residenti escono durante i lavori.
 building_upgrade_storage_not_empty,Svuota prima il magazzino dell'edificio.
@@ -472,7 +472,7 @@ demolisher_pick_banner_text,⛏️ Seleziona chi demolirà: clicca un individuo 
 building_awaiting_material_label,Per allestire il cantiere servono ancora {quantity} {material}
 building_assigned_builder_label,Costruttore assegnato: {names}
 building_assigned_builder_missing,Costruttore assegnato: mancante
-building_durability_label,Durabilità: {current}/{max}
+building_durability_label,Integrità: {current}/{max}
 building_built_year_label,Costruito: anno {year}
 building_not_yet_built,Non ancora costruito
 building_built_year_unknown,Costruito: anno non noto
@@ -506,7 +506,7 @@ building_construction_phase_clear_site,Pulizia del terreno
 building_construction_phase_build,Costruzione
 building_awaiting_material_build_caption,Per completare la costruzione servono:
 transport_selection_banner_text,"🚚 Trasporto: seleziona l'edificio di destinazione (H per annullare)"
-debug_idle_fallback_button_tooltip,Attiva/disattiva l'assegnazione automatica di task perditempo (Wander/Play/Leisure Rest) agli individui liberi
+debug_idle_fallback_button_tooltip,"Attiva/disattiva l'assegnazione automatica di task perditempo (Passeggiata, Esplorazione, Gioco, Oziare, Sognare a occhi aperti, Rifornirsi, Rito spontaneo) agli individui liberi"
 random_event_test_name,Evento di prova
 random_event_test_popup,Evento di prova (giorno {day}): il sistema degli eventi funziona.
 debug_random_event_apply,Applica evento
@@ -667,3 +667,90 @@ rite_reject_building_busy,C'è già un rito assegnato o in corso presso questo e
 "rite_reject_none_available","{name} non può celebrare nessun rito qui (età o ritualità insufficienti)"
 rite_interrupted,Rito interrotto ({name})
 task_leisure_rite_name,Rito spontaneo
+population_sort_tooltip,Ordina per: {option}
+population_sort_age,Età
+population_sort_name,Nome
+population_sort_house,Casa
+individual_mother_label,Madre: {person}
+individual_father_label,Padre: {person}
+individual_partner_label,Partner: {person}
+individual_relative_unknown_female,sconosciuta
+individual_relative_unknown_male,sconosciuto
+individual_relative_alive,{name} (#{id})
+individual_relative_dead,{name} † (#{id})
+individual_house_tooltip,Casa: {name} (#{id})
+individual_no_house,Senza casa
+task_explore_name,Esplorazione
+task_explore_step_walk,Esplorando
+task_explore_step_look_around,Guardandosi intorno
+building_covered_depot,Deposito coperto
+build_bar_covered_depot_tooltip,Deposito coperto
+build_bar_deposit_site_description,"Spiazzo all'aperto: le scorte si conservano peggio."
+build_bar_covered_depot_description,"Spiazzo con tettoia: stesso spazio del sito di deposito, scorte conservate meglio."
+build_bar_storage_hut_description,"Capanna chiusa con porta: più slot e più spazio per slot, scorte conservate meglio."
+building_upgrade_storage,"Capienza: {from_slots} slot da {from_space} ({from_total}) → {to_slots} slot da {to_space} ({to_total})"
+building_upgrade_conservation,Conservazione
+building_info_storage,"Capienza: {slots} slot da {space} ({total})"
+building_info_conservation,Conservazione
+building_info_residents,Residenti massimi: {count}
+building_info_rest,Riposo: {value}
+building_info_concurrent_orders,Lavori contemporanei: {count}
+building_info_production_multipliers,"Lavoro ×{labor}, combustibile ×{fuel}"
+building_info_max_durability,Integrità massima: {value}
+building_info_political_radius,Raggio politico: {radius}
+building_info_cultural_radius,Raggio culturale: {radius}
+help_explore_task,"assegna la Task Esplorazione all'individuo selezionato: due tratti in direzione casuale, guardandosi intorno, e ritorno al punto di partenza (non per i bambini)"
+task_activity_explore,esplorare
+help_emergency_rest_task,assegna la Task Riposo d'emergenza all'individuo selezionato
+help_leisure_restock_task,"assegna la Task Rifornirsi all'individuo selezionato: va a un magazzino a fare provviste"
+help_gather_command,Raccogli nelle zone di lavoro (barra dei comandi, con un individuo selezionato)
+help_hunt_command,Caccia nelle zone di lavoro (barra dei comandi, se c'è una zona con la caccia attiva)
+help_auto_zone_command,attiva/disattiva la scelta automatica della zona di lavoro (barra dei comandi)
+help_cycle_map_layer,passa al layer della mappa successivo (compreso nessuno)
+help_escape_cancel,"annulla la scelta in corso: lavoratore col mirino, orientamento del miglioramento, disegno o scelta di una zona"
+building_info_conservation_row,{category}: {value}
+building_upgrade_conservation_row,{category}: {from} → {to}
+building_info_labor_multiplier,Lavoro: ×{value}
+building_info_fuel_multiplier,Combustibile: ×{value}
+building_info_defense,Difesa: {value}
+building_info_buried,Sepolti: {count}/{max}
+rite_memorial_name,Ricordo dei defunti
+command_bar_group_actions,Azioni
+command_bar_group_options,Opzioni
+task_bury_name,Sepoltura
+task_bury_activity,Seppellire {name}
+task_bury_activity_carry,Porta il corpo di {name}
+task_bury_step_walk_body,Andando dal corpo
+task_bury_step_pickup_body,Prendendo il corpo
+task_bury_step_carry_body,Portando il corpo al cumulo
+task_bury_step_put_down_body,Posando il corpo accanto al cumulo
+task_activity_bury,seppellire un corpo
+notification_bury_no_mound,{name} ha posato il corpo di {body}: nessun cumulo sepolcrale con posti liberi
+dead_body_bury_status_pending,Da seppellire
+dead_body_bury_status_assigned,Sepoltura assegnata a {name}
+bury_reject_no_mound,{name} non può seppellire {body}: nessun cumulo sepolcrale con posti liberi.
+bury_reject_already_assigned,La sepoltura di {body} è già assegnata a {assignee}.
+rite_funeral_name,Funerale
+task_bury_step_funeral,Celebrando il funerale
+task_bury_activity_funeral,Funerale di {name}
+building_info_burial_capacity,Capienza: {max} sepolti
+building_buried_entry,{name} · anno {year}
+building_sacredness,Sacralità: {points} / {next}
+building_sacredness_max,Sacralità: {points}
+building_sacredness_radius,Raggio: {radius} (+{bonus})
+building_info_religious_radius_range,"Raggio religioso: base {base}, massimo {max}"
+task_procession_name,Corteo
+task_procession_step_follow,Seguendo il corteo
+procession_funeral_text,Corteo funebre di {name}
+notification_unburied_body,{name} non ha ricevuto sepoltura: il villaggio perde fede e felicità.
+notification_unburied_body_warning,Il corpo di {name} attende sepoltura: restano {days} giorni.
+game_info_tab_pending,In sospeso
+pending_empty,Niente in sospeso
+pending_center_tooltip,Centra e seleziona
+pending_not_centerable,Fuori dalla zona caricata: non si può centrare
+pending_body,{name} · restano {days} giorni
+pending_build,Cantiere · {building}
+pending_upgrade,Miglioramento · {building}
+pending_demolish,Demolizione · {building}
+pending_produce,Produzione · {building} · {product}
+rite_reject_no_buried,Nessun defunto da ricordare

@@ -1,0 +1,25 @@
+[gd_resource type="Resource" script_class="BuildingRules" format=3 uid="uid://ddakng2s54vf8"]
+
+[ext_resource type="Script" uid="uid://b8pl3yflicmtn" path="res://simulation/scripts/core/BuildingRules.gd" id="1_covered_depot"]
+
+[resource]
+script = ExtResource("1_covered_depot")
+building_name = "building_covered_depot"
+category = 2
+required_idea_id = "paleolithic_constructions"
+required_labor = 2400
+storage_slot_count = 9
+storage_space_per_slot = 100
+durability_multiplier_by_category = Array[float]([1.2, 1.3, 1.2, 1.2, 1.2])
+required_materials = {
+"dried_hide": 10,
+"fiber_rope": 8,
+"pebble": 30,
+"plant_fiber": 30,
+"stick": 80
+}
+max_durability = 40
+upgrades_to = "storage_hut"
+required_space = 1
+has_door = false
+visibility_radius = 2

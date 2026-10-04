@@ -121,7 +121,7 @@ func get_stamina_delta(individual: Variant, context: Dictionary, delta: float) -
 # allo stesso modo ma verso un bersaglio mobile). Ritorna il delta (negativo). `debug_label` = nome
 # dell'azione nella riga di MovementStaminaDebugLog.
 static func compute_walk_stamina_delta(individual: Variant, distance: float, debug_label: String) -> float:
-	var used_carry_space: float = individual.get_carried_space()
+	var used_carry_space: float = individual.get_walk_load_space()
 	var cost_per_microcell: float = get_walk_cost_per_microcell(individual)
 	if DebugLogging.ENABLED and DebugLogging.SHOW_MOVEMENT_STAMINA_LOGS:
 		MovementStaminaDebugLog.record(
@@ -140,7 +140,7 @@ static func compute_walk_stamina_delta(individual: Variant, distance: float, deb
 # fattore — vale per la camminata vera (compute_walk_stamina_delta) e per la stima del riposo
 # (NeedTaskAssignmentService._should_rest_at_home).
 static func get_walk_cost_per_microcell(individual: Variant) -> float:
-	var used_carry_space: float = individual.get_carried_space()
+	var used_carry_space: float = individual.get_walk_load_space()
 	var base_cost: float = STAMINA_DRAIN_PER_MICROCELL_BASE * individual.terrain_stamina_multiplier + used_carry_space * CARRY_STAMINA_MULTIPLIER + STAMINA_DRAIN_PER_TOOL * float(individual.equipped_tool_count)
 	return base_cost / SkillEffectService.get_factor(walk_skill_effect_key(individual), individual)
 
@@ -180,7 +180,7 @@ func get_skill_effect_key(individual: Variant, context: Dictionary) -> String:
 # Chiave dell'effetto skill di una camminata di `individual` in questo istante: "walk_loaded" con lo zaino carico
 # (carried_resources non vuoto), "" altrimenti. Statica: la usa anche get_walk_cost_per_microcell.
 static func walk_skill_effect_key(individual: Variant) -> String:
-	return "walk_loaded" if not individual.carried_resources.is_empty() else ""
+	return "walk_loaded" if not individual.carried_resources.is_empty() or individual.carried_body_id != -1 else ""
 
 
 # Solo il flag "allontanati" (2026-09-27): il target lo salva già TaskPersistenceService. Letto da

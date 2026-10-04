@@ -256,7 +256,32 @@ var _last_production_claimant_names: Array[String] = []
 var _order_deliver: bool = true
 
 
+# Elenco dei sepolti di un cumulo (2026-10-04, cumulo sepolcrale passo 3b): nel corpo del pannello, subito sotto lo stato
+# — intestazione "Sepolti: N/max", poi un nome per riga con l'anno di sepoltura (Building.buried). Creato in codice;
+# righe su una sola riga tagliate con i puntini (testo intero nel tooltip): il pannello non si allarga mai.
+const BURIED_FONT_SIZE: int = 10
+const BURIED_ROW_INDENT: int = 8
+var _buried_box: VBoxContainer = null
+
+# Sacralità (2026-10-04, richiesta utente): punti di influenza religiosa nel corpo del pannello, sotto lo stato e sopra
+# l'elenco dei sepolti, per gli edifici completi con raggio religioso — "Sacralità: 20 / 100" (punti e soglia
+# successiva), una barra sottile dalla soglia precedente alla successiva, "Raggio: 5 (+0)" (base più bonus delle soglie).
+# Oltre l'ultima soglia: solo il valore, senza barra. Il tooltip dell'icona dell'influenza religiosa resta com'è.
+const SACREDNESS_BAR_HEIGHT: float = 4.0
+var _sacredness_box: VBoxContainer = null
+var _sacredness_label: Label = null
+var _sacredness_bar: ProgressBar = null
+var _sacredness_radius_label: Label = null
+
+
 func _ready() -> void:
+	_build_sacredness_box()
+	add_child(_sacredness_box)
+	move_child(_sacredness_box, $StatusRow.get_index() + 1)
+	_buried_box = VBoxContainer.new()
+	_buried_box.add_theme_constant_override("separation", 0)
+	add_child(_buried_box)
+	move_child(_buried_box, _sacredness_box.get_index() + 1)
 	clear()
 	residents_caption.text = tr("building_residents_caption")
 	storage_caption.text = tr("building_storage_caption")
@@ -279,6 +304,7 @@ func _ready() -> void:
 	_build_influence_buttons()
 	# Il gruppo vive fuori dal pannello (intestazione della scheda): si nasconde con lui, e l'anteprima finisce.
 	visibility_changed.connect(_on_visibility_changed_for_influence)
+	_build_info_button()
 	demolish_button.pressed.connect(func(): demolish_requested.emit(_current_building))
 	upgrade_button.pressed.connect(func(): upgrade_requested.emit(_current_building))
 	assign_demolisher_button.text = tr("building_assign_demolisher_button")
@@ -333,6 +359,9 @@ func show_building(building: Building, residents_display_data: Array[Dictionary]
 	else:
 		status_label.remove_theme_color_override("font_color")
 	_refresh_influence_buttons(building)
+	_refresh_sacredness(building)
+	_refresh_buried_list(building)
+	_refresh_info(building)
 	_refresh_command_icon_row(building, demolition_started)
 	assign_demolisher_button.visible = building.is_marked_for_demolition and demolisher_names.is_empty()
 	_refresh_construction_progress(building)
@@ -541,9 +570,48 @@ func _refresh_upgrade_button(building: Building) -> void:
 		if building.rules.max_residents > 0:
 			lines.append(tr("building_upgrade_residents_leave"))
 		lines.append(tr("building_upgrade_rest").format({
-			"from": "%.1f" % building.rules.rest_multiplier, "to": "%.1f" % target.rest_multiplier,
+			"from": _format_percent_bonus(building.rules.rest_multiplier), "to": _format_percent_bonus(target.rest_multiplier),
 		}))
+	# Magazzini (2026-10-04, richiesta utente): capienza (slot × spazio per slot, e il totale) e conservazione per
+	# categoria, prima → dopo, come residenti e riposo per le abitazioni.
+	if building.rules.storage_slot_count > 0 or target.storage_slot_count > 0:
+		lines.append(tr("building_upgrade_storage").format({
+			"from_slots": building.rules.storage_slot_count, "from_space": building.rules.storage_space_per_slot,
+			"from_total": building.rules.storage_slot_count * building.rules.storage_space_per_slot,
+			"to_slots": target.storage_slot_count, "to_space": target.storage_space_per_slot,
+			"to_total": target.storage_slot_count * target.storage_space_per_slot,
+		}))
+		# Conservazione in percentuale (2026-10-04): intestazione e una riga per categoria, prima → dopo.
+		lines.append(tr("building_info_conservation"))
+		for category_index in SecondaryResourceTypes.Category.size():
+			lines.append(INFO_TOOLTIP_INDENT + tr("building_upgrade_conservation_row").format({
+				"category": _category_display_name(category_index),
+				"from": _format_percent_bonus(_durability_multiplier(building.rules, category_index)),
+				"to": _format_percent_bonus(_durability_multiplier(target, category_index)),
+			}))
 	upgrade_button.tooltip_text = "\n".join(lines)
+
+
+# Moltiplicatore di conservazione di una categoria (BuildingRules.durability_multiplier_by_category, indice = categoria);
+# 1.0 se l'elenco è più corto.
+func _durability_multiplier(rules: BuildingRules, category_index: int) -> float:
+	if rules == null or category_index >= rules.durability_multiplier_by_category.size():
+		return 1.0
+	return rules.durability_multiplier_by_category[category_index]
+
+
+# Un decimale, come il moltiplicatore di riposo ("1.2").
+func _format_multiplier(value: float) -> String:
+	return "%.1f" % value
+
+
+# Moltiplicatore come scarto percentuale (2026-10-04, richiesta utente — conservazione dei magazzini e riposo delle
+# abitazioni): ×1.1 -> "+10%", ×1.0 -> "—", ×0.9 -> "−10%".
+func _format_percent_bonus(multiplier: float) -> String:
+	var percent := roundi((multiplier - 1.0) * 100.0)
+	if percent == 0:
+		return "—"
+	return ("+%d%%" % percent) if percent > 0 else ("−%d%%" % -percent)
 
 
 # "3 Corda di fibre, 20 Pelle" in ordine di nome; "nessuno" se vuoto.
@@ -669,7 +737,240 @@ func _influence_tooltip(building: Building, entry: Dictionary, radius: int) -> S
 	return text
 
 
+# Icona ℹ delle caratteristiche dell'edificio (2026-10-04, richiesta utente — stesso schema del pannello dell'individuo):
+# nell'intestazione della scheda selezione accanto alle icone di influenza e al 🎯 (GameScene aggiunge info_button_box a
+# GameInfoTabs.header_actions), visibile quando lo è il pannello. Tooltip con le caratteristiche; al clic apre e chiude
+# il blocco _info_block in cima al pannello, chiuso di base, che resta aperto o chiuso passando da un edificio all'altro.
+# Le righe vengono dalle regole del tipo (_build_info_lines): magazzini, abitazioni, postazioni di lavoro, e per tutti
+# durabilità massima e raggi di influenza di base.
+#
+# Impaginazione (2026-10-04, richiesta utente): riquadro con lo stesso stile dei riquadri dei parametri vitali del
+# pannello dell'individuo (INFO_BOX_COLOR, angoli 4, margini 6); una voce per riga senza andare a capo (etichette che
+# tagliano con i puntini, così non allargano mai il pannello; il testo intero resta nel tooltip dell'icona); la
+# conservazione su un'intestazione e una riga rientrata per categoria, in percentuale (_format_percent_bonus).
+const INFO_BUTTON_TEXT := "ℹ"
+const INFO_BOX_COLOR := Color(0.28, 0.42, 0.6, 1)
+const INFO_BOX_MARGIN: int = 6
+const INFO_ROW_INDENT: int = 10
+const INFO_TOOLTIP_INDENT := "    "
+var info_button_box: HBoxContainer = null
+var _info_button: Button = null
+var _info_block: PanelContainer = null
+var _info_rows: VBoxContainer = null
+var _info_open: bool = false
+
+
+func _build_info_button() -> void:
+	info_button_box = HBoxContainer.new()
+	info_button_box.visible = false
+	_info_button = Button.new()
+	_info_button.text = INFO_BUTTON_TEXT
+	_info_button.focus_mode = Control.FOCUS_NONE
+	_info_button.toggle_mode = true
+	_info_button.toggled.connect(_on_info_toggled)
+	info_button_box.add_child(_info_button)
+	_info_block = PanelContainer.new()
+	var box_style := StyleBoxFlat.new()
+	box_style.bg_color = INFO_BOX_COLOR
+	box_style.set_corner_radius_all(4)
+	_info_block.add_theme_stylebox_override("panel", box_style)
+	var margin := MarginContainer.new()
+	for side in ["margin_left", "margin_top", "margin_right", "margin_bottom"]:
+		margin.add_theme_constant_override(side, INFO_BOX_MARGIN)
+	_info_block.add_child(margin)
+	_info_rows = VBoxContainer.new()
+	_info_rows.add_theme_constant_override("separation", 0)
+	margin.add_child(_info_rows)
+	_info_block.visible = false
+	add_child(_info_block)
+	move_child(_info_block, 0)
+	visibility_changed.connect(func(): info_button_box.visible = visible)
+
+
+func _on_info_toggled(pressed: bool) -> void:
+	_info_open = pressed
+	_info_block.visible = _info_open
+
+
+func _refresh_info(building: Building) -> void:
+	if _info_block == null:
+		return
+	var rows := _build_info_lines(building.rules, building)
+	var tooltip_lines: Array[String] = []
+	for child in _info_rows.get_children():
+		_info_rows.remove_child(child)
+		child.queue_free()
+	for row in rows:
+		var indented: bool = bool(row["indent"])
+		tooltip_lines.append((INFO_TOOLTIP_INDENT if indented else "") + String(row["text"]))
+		var label := Label.new()
+		label.text = String(row["text"])
+		label.clip_text = true
+		label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+		label.add_theme_font_size_override("font_size", 10)
+		if indented:
+			var indent := MarginContainer.new()
+			indent.add_theme_constant_override("margin_left", INFO_ROW_INDENT)
+			indent.add_child(label)
+			_info_rows.add_child(indent)
+		else:
+			_info_rows.add_child(label)
+	_info_button.tooltip_text = "\n".join(tooltip_lines)
+	_info_button.set_pressed_no_signal(_info_open)
+	_info_block.visible = _info_open
+	info_button_box.visible = visible
+
+
+# Righe del blocco Info: {"text": String, "indent": bool} (rientrate le categorie della conservazione).
+func _build_info_lines(rules: BuildingRules, building: Building = null) -> Array[Dictionary]:
+	var rows: Array[Dictionary] = []
+	if rules == null:
+		return rows
+	var add_row := func(text: String, indent: bool) -> void:
+		rows.append({"text": text, "indent": indent})
+	if rules.storage_slot_count > 0:
+		add_row.call(tr("building_info_storage").format({
+			"slots": rules.storage_slot_count, "space": rules.storage_space_per_slot,
+			"total": rules.storage_slot_count * rules.storage_space_per_slot,
+		}), false)
+		add_row.call(tr("building_info_conservation"), false)
+		for category_index in SecondaryResourceTypes.Category.size():
+			add_row.call(tr("building_info_conservation_row").format({
+				"category": _category_display_name(category_index),
+				"value": _format_percent_bonus(_durability_multiplier(rules, category_index)),
+			}), true)
+	if rules.max_residents > 0:
+		add_row.call(tr("building_info_residents").format({"count": rules.max_residents}), false)
+		add_row.call(tr("building_info_rest").format({"value": _format_percent_bonus(rules.rest_multiplier)}), false)
+	# Capienza del cumulo sepolcrale (2026-10-04): "Capienza: 10 sepolti". L'elenco dei sepolti sta nel corpo del pannello
+	# (_refresh_buried_list).
+	if rules.max_buried > 0:
+		add_row.call(tr("building_info_burial_capacity").format({"max": rules.max_buried}), false)
+	if rules.is_workstation:
+		add_row.call(tr("building_info_concurrent_orders").format({"count": rules.production_concurrent_orders}), false)
+		add_row.call(tr("building_info_labor_multiplier").format({"value": _format_multiplier(rules.production_labor_multiplier)}), false)
+		add_row.call(tr("building_info_fuel_multiplier").format({"value": _format_multiplier(rules.production_fuel_multiplier)}), false)
+	add_row.call(tr("building_info_max_durability").format({"value": rules.max_durability}), false)
+	# Difesa (2026-10-04): ancora senza effetti in gioco, vedi BuildingRules.defense.
+	add_row.call(tr("building_info_defense").format({"value": rules.defense}), false)
+	for entry in [
+		["building_info_political_radius", rules.political_radius],
+		["building_info_cultural_radius", rules.cultural_radius],
+	]:
+		if int(entry[1]) > 0:
+			add_row.call(tr(String(entry[0])).format({"radius": int(entry[1])}), false)
+	# Raggio religioso (2026-10-04): dato del tipo, base e massimo raggiungibile con tutte le soglie di sacralità
+	# (_max_religious_radius, dalla tabella delle soglie). Il raggio attuale della singola istanza sta nel corpo.
+	if rules.religious_radius > 0:
+		add_row.call(tr("building_info_religious_radius_range").format({
+			"base": rules.religious_radius, "max": _max_religious_radius(rules),
+		}), false)
+	return rows
+
+
+# Raggio religioso massimo di un tipo di edificio: base + una unità per ogni soglia di
+# BuildingRules.influence_level_thresholds, entro il tetto base × influence_max_multiplier — la stessa regola di
+# InfluenceService.get_effective_radius con tutte le soglie raggiunte.
+static func _max_religious_radius(rules: BuildingRules) -> int:
+	var base := maxi(rules.religious_radius, 0)
+	var cap := maxi(base, floori(maxf(float(base), float(base) * rules.influence_max_multiplier)))
+	return clampi(base + rules.influence_level_thresholds.size(), base, cap)
+
+
+func _build_sacredness_box() -> void:
+	_sacredness_box = VBoxContainer.new()
+	_sacredness_box.add_theme_constant_override("separation", 1)
+	_sacredness_box.visible = false
+	_sacredness_label = _build_sacredness_label()
+	_sacredness_box.add_child(_sacredness_label)
+	_sacredness_bar = ProgressBar.new()
+	_sacredness_bar.show_percentage = false
+	_sacredness_bar.custom_minimum_size = Vector2(0, SACREDNESS_BAR_HEIGHT)
+	_sacredness_bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_sacredness_box.add_child(_sacredness_bar)
+	_sacredness_radius_label = _build_sacredness_label()
+	_sacredness_box.add_child(_sacredness_radius_label)
+
+
+func _build_sacredness_label() -> Label:
+	var label := Label.new()
+	label.mouse_filter = Control.MOUSE_FILTER_PASS
+	label.add_theme_font_size_override("font_size", BURIED_FONT_SIZE)
+	label.clip_text = true
+	label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	return label
+
+
+# Sacralità e raggio religioso attuali (vedi _sacredness_box): solo edifici completi con raggio religioso di base.
+func _refresh_sacredness(building: Building) -> void:
+	var religious := InfluenceService.InfluenceType.RELIGIOUS
+	var base := InfluenceService.get_base_radius(building, religious)
+	_sacredness_box.visible = building != null and building.is_complete and not building.is_demolished and base > 0
+	if not _sacredness_box.visible:
+		return
+	var points := InfluenceService.get_points(building, religious)
+	var next_threshold := InfluenceService.get_next_threshold(building, religious)
+	if next_threshold < 0.0:
+		_sacredness_label.text = tr("building_sacredness_max").format({"points": floori(points)})
+		_sacredness_bar.visible = false
+	else:
+		_sacredness_label.text = tr("building_sacredness").format({"points": floori(points), "next": floori(next_threshold)})
+		var previous_threshold := 0.0
+		for threshold in InfluenceService.get_thresholds(building):
+			if threshold <= points:
+				previous_threshold = threshold
+		_sacredness_bar.visible = true
+		_sacredness_bar.min_value = 0.0
+		_sacredness_bar.max_value = maxf(next_threshold - previous_threshold, 0.001)
+		_sacredness_bar.value = clampf(points - previous_threshold, 0.0, _sacredness_bar.max_value)
+	_sacredness_label.tooltip_text = _sacredness_label.text
+	var radius := InfluenceService.get_effective_radius(building, religious)
+	_sacredness_radius_label.text = tr("building_sacredness_radius").format({"radius": radius, "bonus": radius - base})
+	_sacredness_radius_label.tooltip_text = _sacredness_radius_label.text
+
+
+# Elenco dei sepolti (vedi _buried_box): solo per un cumulo (BuildingRules.max_buried > 0).
+func _refresh_buried_list(building: Building) -> void:
+	for child in _buried_box.get_children():
+		_buried_box.remove_child(child)
+		child.queue_free()
+	var rules: BuildingRules = building.rules if building != null else null
+	_buried_box.visible = rules != null and rules.max_buried > 0
+	if not _buried_box.visible:
+		return
+	_buried_box.add_child(_build_buried_label(
+		tr("building_info_buried").format({"count": building.buried.size(), "max": rules.max_buried}), 0
+	))
+	for entry in building.buried:
+		var buried_entry: Dictionary = entry if entry is Dictionary else {}
+		_buried_box.add_child(_build_buried_label(tr("building_buried_entry").format({
+			"name": String(buried_entry.get("name", "?")), "year": int(buried_entry.get("year", 0)),
+		}), BURIED_ROW_INDENT))
+
+
+func _build_buried_label(text: String, indent: int) -> Control:
+	var label := Label.new()
+	label.text = text
+	label.tooltip_text = text
+	label.mouse_filter = Control.MOUSE_FILTER_PASS
+	label.add_theme_font_size_override("font_size", BURIED_FONT_SIZE)
+	label.clip_text = true
+	label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	if indent <= 0:
+		return label
+	var margin := MarginContainer.new()
+	margin.add_theme_constant_override("margin_left", indent)
+	margin.add_child(label)
+	return margin
+
+
 func clear() -> void:
+	if _buried_box != null:
+		_buried_box.visible = false
+	if _sacredness_box != null:
+		_sacredness_box.visible = false
 	visible = false
 	_end_influence_preview()
 	_current_building = null

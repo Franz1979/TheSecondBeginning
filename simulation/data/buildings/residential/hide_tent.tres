@@ -8,11 +8,11 @@ building_name = "building_hide_tent"
 required_idea_id = "paleolithic_constructions"
 required_labor = 2200
 required_materials = {
-"dried_hide": 1,
-"fiber_rope": 1,
-"pebble": 1,
-"plant_fiber": 1,
-"stick": 1
+"dried_hide": 20,
+"fiber_rope": 5,
+"pebble": 20,
+"plant_fiber": 20,
+"stick": 50
 }
 max_durability = 35
 upgrades_to = "hut"

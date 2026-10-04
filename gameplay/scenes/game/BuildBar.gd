@@ -72,8 +72,11 @@ const BUILDING_SLOT_INDEX_BY_TYPE := {
 	"stacked_stones": 11,
 	# Capanna di stoccaggio (2026-10-03, richiesta utente) — slot 12, submenu_row.slot_count portato a 14 in
 	# BuildBar.tscn; Hut resta l'ultimo a destra (slot 13).
-	"storage_hut": 12,
-	"hut": 13,
+	# Deposito coperto (2026-10-04, richiesta utente) — slot 12, prima della capanna di stoccaggio (ora 13);
+	# submenu_row.slot_count portato a 15 in BuildBar.tscn; Hut resta l'ultimo a destra (slot 14).
+	"covered_depot": 12,
+	"storage_hut": 13,
+	"hut": 14,
 }
 
 enum _ViewState { MINIMIZED, LEVEL_1, LEVEL_2 }
@@ -136,7 +139,7 @@ func _ready() -> void:
 	# riscriverla a mano) — chiavi = building_type_name, stessa convenzione di
 	# BUILDING_SLOT_INDEX_BY_TYPE sopra.
 	submenu_row.configure_slot(
-		1, "", tr("build_bar_deposit_site_tooltip"), &"build_deposit_site", "", true,
+		1, "", _storage_tooltip("deposit_site"), &"build_deposit_site", "", true,
 		IconRegistry.get_building_icon_node("deposit_site")
 	)
 	# Stick Tent (2026-09-12, richiesta utente) — stesso schema emoji-inline di deposit_site sopra
@@ -179,8 +182,14 @@ func _ready() -> void:
 	)
 	# Capanna di stoccaggio (2026-10-03, richiesta utente): richiede paleolithic_constructions (required_idea_id in
 	# storage_hut.tres), disabilitata da GameScene._refresh_building_slots_buildable finché manca.
+	# Deposito coperto (2026-10-04, richiesta utente): richiede paleolithic_constructions; la capanna di stoccaggio ora
+	# richiede advanced_paleolithic_constructions. Disabilitati da GameScene._refresh_building_slots_buildable finché manca.
 	submenu_row.configure_slot(
-		BUILDING_SLOT_INDEX_BY_TYPE["storage_hut"], "", tr("build_bar_storage_hut_tooltip"), &"build_storage_hut", "", true,
+		BUILDING_SLOT_INDEX_BY_TYPE["covered_depot"], "", _storage_tooltip("covered_depot"), &"build_covered_depot", "", true,
+		IconRegistry.get_building_icon_node("covered_depot")
+	)
+	submenu_row.configure_slot(
+		BUILDING_SLOT_INDEX_BY_TYPE["storage_hut"], "", _storage_tooltip("storage_hut"), &"build_storage_hut", "", true,
 		IconRegistry.get_building_icon_node("storage_hut")
 	)
 	submenu_row.configure_slot(BUILDING_SLOT_INDEX_BY_TYPE["hut"], IconRegistry.get_building_icon("hut"), tr("build_bar_hut_tooltip"), &"build_hut")
@@ -189,6 +198,13 @@ func _ready() -> void:
 	_build_title_row()
 	_build_orientation_hint_row()
 	_apply_state()
+
+
+# Tooltip dei tre magazzini (2026-10-04, richiesta utente): il nome e, sotto, una riga che dice in cosa si distingue
+# (chiave "build_bar_<tipo>_description").
+func _storage_tooltip(building_type_name: String) -> String:
+	return "%s
+%s" % [tr("build_bar_%s_tooltip" % building_type_name), tr("build_bar_%s_description" % building_type_name)]
 
 
 # Mette la riga dei pulsanti sotto un'etichetta di titolo, con la stessa separazione dei gruppi della barra dei comandi:
