@@ -182,6 +182,11 @@ var individual_action_service := HumanIndividualActionService.new()
 # consuma) una volta conclusa l'indagine — non è pensato per restare nella build finale.
 const DEBUG_PANEL_REFRESH_INTERVAL_SEC: float = 0.5
 var _debug_panel_refresh_timer: float = 0.0
+# Riepiloghi della DebugBar (animali della cella, celle vive — 2026-10-04, richiesta utente): solo a barra aperta, ogni
+# DEBUG_SUMMARY_REFRESH_INTERVAL_SEC secondi reali, e subito quando la barra viene riaperta (_on_debug_bar_expanded_changed).
+# Prima giravano ogni 0,5 s anche a barra chiusa, e _refresh_debug_animal_summary scorre tutti i gruppi di popolazione.
+const DEBUG_SUMMARY_REFRESH_INTERVAL_SEC: float = 2.0
+var _debug_summary_refresh_timer: float = 0.0
 # Spegnimento periodico delle celle vive residue (2026-09-26) — secondi REALI tra due controlli, vedi
 # _cleanup_residual_live_cells. Non serve reattività: una cella residua accesa qualche secondo in più
 # costa solo il suo aggiornamento.
@@ -575,6 +580,7 @@ func _ready() -> void:
 	# Ritorno del carico al magazzino (2026-09-29, CargoReturnService): segnali degli Unload delle Task di ritorno.
 	CargoReturnService.unload_signal_connector = Callable(self, "_reconnect_unload_action_signals")
 	debug_bar.action_pressed.connect(_on_debug_action_pressed)
+	debug_bar.expanded_changed.connect(_on_debug_bar_expanded_changed)
 	# Eventi casuali scatenati a mano dalla barra di debug (2026-09-26) — stesso percorso dell'applicazione programmata.
 	debug_bar.random_event_trigger_requested.connect(func(event_id: String) -> void: game_time_service.trigger_random_event_now(event_id))
 	game_info_panel.primary_actions_bar.action_pressed.connect(_on_primary_action_pressed)
@@ -1233,9 +1239,11 @@ func _process(delta: float) -> void:
 	if _debug_panel_refresh_timer >= DEBUG_PANEL_REFRESH_INTERVAL_SEC:
 		_debug_panel_refresh_timer = 0.0
 		_refresh_selected_individual_panel()
-		_refresh_debug_animal_summary()
-		_refresh_debug_live_cells()
 		_validate_selected_animal()
+	if debug_bar.is_expanded():
+		_debug_summary_refresh_timer += delta
+		if _debug_summary_refresh_timer >= DEBUG_SUMMARY_REFRESH_INTERVAL_SEC:
+			_refresh_debug_summaries()
 
 	# Ciclo su TUTTI gli individui con una Task attiva (2026-09-12, richiesta utente — piano
 	# multi-individuo, Step 2: GENERALIZZA il refactor "loop-readiness" del 2026-09-10 — quello
@@ -1371,6 +1379,9 @@ func _process(delta: float) -> void:
 
 
 func _unhandled_input(event: InputEvent) -> void:
+	# Scelta dell'orientamento di un miglioramento (2026-10-04): prima di ogni altro uso del mouse e di R.
+	if _upgrade_orientation_building != null and _handle_upgrade_orientation_input(event):
+		return
 	# Mentre l'anteprima capanna è attiva, il click e il tasto R prendono priorità assoluta su
 	# tutto il resto (vegetazione/player) — altrimenti click sinistro finirebbe per selezionare/
 	# deselezionare vegetazione invece di piazzare, e l'unico modo per uscire dal "modo
@@ -1451,18 +1462,24 @@ func _unhandled_input(event: InputEvent) -> void:
 	# candidato ricade comunque nel proprio raggio di click — vedi _is_player_closer_to_click
 	# (confronta sempre e solo il bersaglio corrente, non l'intero human_individuals: la priorità
 	# non è stata estesa a tutti i membri del gruppo in questo step).
+	# [SELECT TIMING] (2026-10-04): misura solo i clic sinistri premuti, vedi _select_timing_begin.
+	_select_timing_begin(event)
 	var vegetation_hit := vegetation_selector_controller.try_select(event, live_cells)
+	_select_timing_mark("ricerca vegetazione")
 	var building_hit := building_selector_controller.try_select(
 		event, live_cells, macro_world.buildings if macro_world != null else []
 	)
+	_select_timing_mark("ricerca edifici")
 	# STONE (2026-09-08, richiesta utente) — stessa unità/stesso schema di vegetation_hit/
 	# building_hit (distanza in PIXEL, spazio locale della cella del match), compete alla pari nel
 	# confronto map_hit sotto, nessun trattamento speciale.
 	var stone_hit := stone_selector_controller.try_select(event, live_cells)
+	_select_timing_mark("ricerca sassi")
 	# Animale (2026-09-25, richiesta utente) — stessa unità (PIXEL locali della cella) e stesso
 	# confronto alla pari di vegetazione/edifici/pietre; solo animali visibili (vedi
 	# AnimalSelectorController), con tolleranza ampia come per gli umani.
 	var animal_hit := animal_selector_controller.try_select(event, live_cells)
+	_select_timing_mark("ricerca animali")
 	# stick_lot_hit (click SINISTRO) RIMOSSO (2026-09-16, richiesta utente — "va tolto il click
 	# singolo sulla cella"): calcolava il lotto sotto il click SOLO per il ciclo click-ripetuto e il
 	# fallback "nessun oggetto preciso -> seleziona il lotto" più sotto, entrambi rimossi in questo
@@ -1493,6 +1510,7 @@ func _unhandled_input(event: InputEvent) -> void:
 	var dead_body_distance_px: float = (
 		dead_body_hit["distance"] * MicroCellRenderer.CELL_SIZE if not dead_body_hit.is_empty() else INF
 	)
+	_select_timing_mark("ricerca corpi")
 
 	var map_hit: Dictionary = {}
 	var map_hit_kind := SelectionKind.NONE
@@ -1522,6 +1540,7 @@ func _unhandled_input(event: InputEvent) -> void:
 	# dell'edificio e perderebbe sempre il pareggio; lì vince il mucchio quando il click cade sulle sue icone
 	# (entro GROUND_PILE_OVER_WALKABLE_RADIUS_PX), mentre il resto del sentiero seleziona l'edificio.
 	var ground_pile_hit := _try_select_ground_pile(event)
+	_select_timing_mark("ricerca mucchi")
 	var pile_over_walkable_building: bool = (
 		not ground_pile_hit.is_empty() and map_hit_kind == SelectionKind.BUILDING
 		and _is_walkable_building_id(int(map_hit["building_id"]))
@@ -1539,7 +1558,10 @@ func _unhandled_input(event: InputEvent) -> void:
 	# superato dall'ispezione con doppio click (mostra risorse E vegetazione insieme, un solo
 	# gesto, in qualunque cella). Il click singolo ora seleziona SOLO il vincitore normale tra
 	# vegetazione/edificio/corpo morto/sasso (map_hit_kind, calcolato sopra, invariato).
-	if not map_hit.is_empty() and not _is_player_closer_to_click(best_map_distance_px):
+	var player_closer := not map_hit.is_empty() and _is_player_closer_to_click(best_map_distance_px)
+	_select_timing_mark("altro")
+	if not map_hit.is_empty() and not player_closer:
+		_select_timing_request_draw()
 		match map_hit_kind:
 			SelectionKind.VEGETATION:
 				_select_vegetation(map_hit)
@@ -1553,9 +1575,14 @@ func _unhandled_input(event: InputEvent) -> void:
 				_select_animal(map_hit)
 			SelectionKind.GROUND_PILE:
 				_select_ground_pile(map_hit)
+		# Per i tipi senza misure interne (corpo, sasso, animale, mucchio) l'intera chiamata finisce qui.
+		_select_timing_mark("selezione e pannello")
 		world_object_selected.emit(get_global_mouse_position())
+		_select_timing_mark("suono")
+		_select_timing_end(_select_timing_kind_name(map_hit_kind))
 	else:
 		if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
+			_select_timing_request_draw()
 			_clear_vegetation_selection()
 			_clear_building_selection()
 			_clear_dead_body_selection()
@@ -1572,20 +1599,28 @@ func _unhandled_input(event: InputEvent) -> void:
 			# (_set_movement_target, Step 2 del piano movimento indipendente) — un click a vuoto
 			# invece deseleziona senza toccare il bersaglio, che resta ancorato all'ultimo individuo
 			# selezionato (richiesta utente, 2026-09-02, punto 3).
+			_select_timing_mark("deselezione")
 			var hit_individual: HumanIndividual = human_individual_selector_controller.try_select(
 				event, live_cells[center_macro_coords].renderer, human_individuals, center_macro_coords
 			)
+			_select_timing_mark("ricerca pipottini")
 			_deselect_all_human_individuals()
 			if hit_individual != null:
 				hit_individual.is_selected = true
 				_selection_kind = SelectionKind.INDIVIDUAL
+				_select_timing_mark("deselezione")
 				_select_individual(hit_individual)
 				_set_movement_target(hit_individual)
+				_select_timing_mark("bersaglio movimento")
 				world_object_selected.emit(get_global_mouse_position())
+				_select_timing_mark("suono")
+				_select_timing_end("pipottino")
 			else:
 				# Le zone di lavoro NON si selezionano da qui (2026-09-27, richiesta utente): il layer "Aree di lavoro"
 				# è solo in lettura, le zone si gestiscono solo dalla modalità zone (_finish_work_area_drag).
 				_clear_individual_selection()
+				_select_timing_mark("deselezione")
+				_select_timing_end("niente")
 				# Fallback "seleziona il lotto/la cella" RIMOSSO (2026-09-16, richiesta utente — vedi
 				# il commento esteso sopra su map_hit_kind): un click sinistro che non colpisce nessun
 				# oggetto preciso ora si limita a deselezionare (righe sopra), mai più una selezione
@@ -2948,6 +2983,95 @@ func _on_population_individual_center_requested(target: HumanIndividual, source:
 
 
 # ============================================================================================
+# [SELECT TIMING] (2026-10-04, richiesta utente — scattino al clic): tempi del clic sinistro di selezione, attivi solo
+# con DebugLogging.SHOW_SELECTION_TIMING_LOGS. _select_timing_begin all'inizio della cascata di _unhandled_input;
+# _select_timing_mark("fase") attribuisce alla fase il tempo trascorso dall'ultimo segno (la stessa fase può ricevere
+# più tratti, si sommano); _select_timing_add_sub registra sotto-misure del pannello; _select_timing_end stampa la riga.
+# _select_timing_request_draw chiede ai MicroCellRenderer vivi la riga "draw" del ridisegno che segue nel fotogramma.
+# Solo misure: nessun effetto sul comportamento.
+# ============================================================================================
+var _select_timing_active: bool = false
+var _select_timing_start_usec: int = 0
+var _select_timing_last_usec: int = 0
+var _select_timing_phases: Dictionary = {}
+var _select_timing_subs: Dictionary = {}
+
+
+func _select_timing_begin(event: InputEvent) -> void:
+	_select_timing_active = DebugLogging.SHOW_SELECTION_TIMING_LOGS and event is InputEventMouseButton \
+		and event.pressed and event.button_index == MOUSE_BUTTON_LEFT
+	if not _select_timing_active:
+		return
+	_select_timing_start_usec = Time.get_ticks_usec()
+	_select_timing_last_usec = _select_timing_start_usec
+	_select_timing_phases.clear()
+	_select_timing_subs.clear()
+
+
+func _select_timing_mark(phase: String) -> void:
+	if not _select_timing_active:
+		return
+	var now := Time.get_ticks_usec()
+	_select_timing_phases[phase] = float(_select_timing_phases.get(phase, 0.0)) + (now - _select_timing_last_usec) / 1000.0
+	_select_timing_last_usec = now
+
+
+func _select_timing_add_sub(label: String, start_usec: int) -> void:
+	if _select_timing_active:
+		_select_timing_add_sub_ms(label, (Time.get_ticks_usec() - start_usec) / 1000.0)
+
+
+func _select_timing_add_sub_ms(label: String, ms: float) -> void:
+	if _select_timing_active:
+		_select_timing_subs[label] = float(_select_timing_subs.get(label, 0.0)) + ms
+
+
+func _select_timing_request_draw() -> void:
+	if not _select_timing_active:
+		return
+	var frame := Engine.get_process_frames()
+	for coords in live_cells:
+		var cell: LiveMacroCell = live_cells[coords]
+		if cell.renderer != null:
+			cell.renderer.debug_selection_draw_frame = frame
+			cell.renderer.debug_selection_draw_coords = coords
+
+
+func _select_timing_end(kind: String) -> void:
+	if not _select_timing_active:
+		return
+	_select_timing_active = false
+	var total_ms: float = (Time.get_ticks_usec() - _select_timing_start_usec) / 1000.0
+	var parts: PackedStringArray = []
+	for phase in _select_timing_phases:
+		parts.append("%s=%.2fms" % [phase, float(_select_timing_phases[phase])])
+	var line := "[SELECT TIMING] %s totale=%.2fms | %s" % [kind, total_ms, ", ".join(parts)]
+	if not _select_timing_subs.is_empty():
+		var subs: PackedStringArray = []
+		for label in _select_timing_subs:
+			subs.append("%s=%.2fms" % [label, float(_select_timing_subs[label])])
+		line += " | pannello: " + ", ".join(subs)
+	print(line)
+
+
+func _select_timing_kind_name(kind: SelectionKind) -> String:
+	match kind:
+		SelectionKind.VEGETATION:
+			return "pianta"
+		SelectionKind.BUILDING:
+			return "edificio"
+		SelectionKind.ANIMAL:
+			return "animale"
+		SelectionKind.STONE:
+			return "sasso"
+		SelectionKind.DEAD_BODY:
+			return "corpo"
+		SelectionKind.GROUND_PILE:
+			return "mucchio"
+	return "altro"
+
+
+# ============================================================================================
 # Selezione di un individuo di vegetazione — vedi VegetationSelectorController/selected_vegetation.
 # ============================================================================================
 
@@ -2995,8 +3119,11 @@ func _select_vegetation(hit: Dictionary) -> void:
 	_clear_work_area_selection()
 	selected_vegetation = hit
 	_selection_kind = SelectionKind.VEGETATION
+	_select_timing_mark("selezione e deselezione")
 	_refresh_vegetation_panel()
+	_select_timing_mark("pannello")
 	game_info_tabs.show_selection_tab()
+	_select_timing_mark("scheda")
 
 
 func _clear_vegetation_selection() -> void:
@@ -3041,8 +3168,11 @@ func _select_building(hit: Dictionary) -> void:
 	_clear_work_area_selection()
 	selected_building = hit
 	_selection_kind = SelectionKind.BUILDING
+	_select_timing_mark("selezione e deselezione")
 	_refresh_building_panel()
+	_select_timing_mark("pannello")
 	game_info_tabs.show_selection_tab()
+	_select_timing_mark("scheda")
 
 
 func _clear_building_selection() -> void:
@@ -3936,7 +4066,8 @@ func _sync_command_bar() -> void:
 	# Dal 2026-10-03: la barra compare se almeno un suo pulsante ha motivo di esistere — i comandi delle zone (Raccogli,
 	# Caccia, zona automatica) con l'idea delle zone, la destinazione della caccia con la sua condizione
 	# (ButcherDestinationService.has_alternative_processing_destination), anche senza l'idea delle zone.
-	var placing := _building_ghost != null or _work_area_draw_active
+	# Scelta dell'orientamento di un miglioramento (2026-10-04): come un piazzamento, la riga in basso è della BuildBar.
+	var placing := _building_ghost != null or _work_area_draw_active or _upgrade_orientation_building != null
 	# Titolo della barra di costruzione (2026-10-03): "Zone di lavoro" mentre si disegna una zona.
 	build_bar.set_work_areas_mode(_work_area_draw_active)
 	var zone_tools := _is_work_areas_tool_available()
@@ -7064,7 +7195,9 @@ func _deselect_all_human_individuals() -> void:
 # passo, solo una coincidenza attuale.
 func _select_individual(target: HumanIndividual) -> void:
 	_update_individual_panel_content(target)
+	_select_timing_mark("pannello")
 	game_info_tabs.show_selection_tab()
+	_select_timing_mark("scheda")
 
 
 # Fascia d'età CORRENTE di un individuo, risolta al volo (2026-09-12, richiesta utente —
@@ -7756,7 +7889,14 @@ func _on_year_rolled_over() -> void:
 	# population_snapshots, ma scritto QUI (non lì): GameTimeService non possiede macro_world/
 	# buildings (vedi i suoi campi, solo human_individuals/folk/population_group), mentre GameScene
 	# li ha già a portata di mano per _refresh_buildings_panel appena sopra.
-	game_data.building_snapshots[game_data.year] = macro_world.buildings.size() if macro_world != null else 0
+	# Esclusi gli edifici di categoria MOVEMENT (2026-10-04, richiesta utente — stesso criterio di "Edifici totali"
+	# in StatisticsPanel): i salvataggi precedenti restano con totali che li comprendono, accettato dall'utente.
+	var building_count := 0
+	if macro_world != null:
+		for building in macro_world.buildings:
+			if building.rules == null or building.rules.category != BuildingTypes.Category.MOVEMENT:
+				building_count += 1
+	game_data.building_snapshots[game_data.year] = building_count
 
 
 # Sposta il bersaglio di movimento/streaming (il campo "individual", vedi il commento lì) su
@@ -7817,10 +7957,17 @@ func _set_movement_target(target: HumanIndividual) -> void:
 	# perché è stato rimosso del tutto (non solo "svuotato", proprio eliminato — nessun `if target !=
 	# individual` residuo): cambiare selezione non deve avere ALCUN effetto collaterale sullo stato
 	# di movimento/Task di chi si sta deselezionando, ora che _process lo avanza comunque.
+	# Cambio di pipottino nella stessa macrocella (2026-10-04, richiesta utente — scattino al clic): la distanza del
+	# ridisegno per movimento/nebbia (_process, VEGETATION_REFRESH_MOVE_THRESHOLD) riparte dal nuovo pipottino, altrimenti
+	# veniva misurata dalla posizione del precedente e il solo cambio di selezione faceva partire il ridisegno. Da un'altra
+	# macrocella (ricentratura sotto) invariato.
+	var same_cell_switch: bool = target != individual and target.home_macro_coords == center_macro_coords
 	_recenter_live_cells_on(target.home_macro_coords)
 
 	individual = target
 	individual_controller.setup(individual, live_cells[center_macro_coords].renderer, game_data)
+	if same_cell_switch:
+		_last_vegetation_refresh_position = target.position
 
 
 # Estratta da _set_movement_target sopra (2026-09-12, richiesta utente — pannello edifici, bottone
@@ -7885,8 +8032,15 @@ func _refresh_vegetation_panel() -> void:
 	# dipende solo da object_type) — impostato qui una volta sola invece che duplicato in entrambi.
 	game_info_tabs.set_selection_title(tr("selection_title_type").format({"type": GameTypes.WorldObjectType.keys()[object_type].capitalize()}))
 
-	if cell.renderer.has_individual(object_type, individual_key):
+	# [SELECT TIMING] (2026-10-04): sotto-fasi del pannello pianta, solo durante un clic misurato.
+	var _timing_usec := Time.get_ticks_usec()
+	var is_alive := cell.renderer.has_individual(object_type, individual_key)
+	_select_timing_add_sub("has_individual", _timing_usec)
+	if is_alive:
+		_timing_usec = Time.get_ticks_usec()
 		var info := cell.renderer.get_individual_info(object_type, individual_key)
+		_select_timing_add_sub("get_individual_info", _timing_usec)
+		_select_timing_add_sub_ms("di cui _lot_extent_counts", cell.renderer.debug_last_lot_extent_counts_ms)
 		vegetation_info_panel.show_vegetation(object_type, info["subtype_name"], info["age_band"], info["years_lived"])
 		return
 
@@ -8536,11 +8690,24 @@ func _refresh_lod_focus_region() -> void:
 	minimap_panel.update_visibility(focus_live_cells, center_macro_coords)
 
 
+# Riepiloghi della DebugBar (vedi DEBUG_SUMMARY_REFRESH_INTERVAL_SEC): aggiornati insieme, timer azzerato.
+func _refresh_debug_summaries() -> void:
+	_debug_summary_refresh_timer = 0.0
+	_refresh_debug_animal_summary()
+	_refresh_debug_live_cells()
+
+
+# Barra riaperta: riepiloghi aggiornati subito invece di mostrare quelli di quando era stata chiusa.
+func _on_debug_bar_expanded_changed(expanded: bool) -> void:
+	if expanded:
+		_refresh_debug_summaries()
+
+
 # DEBUG — riepilogo animali della macrocella del giocatore (center_macro_coords) in DebugBar:
 # per ogni specie con quota > 0 nella cella, quota della cella (PopulationGroup.
 # get_population_by_cell, stessa fonte di _refresh_animal_individuals) contro individui
 # effettivamente istanziati dal renderer di quella specie. Chiamata dal timer di debug in _process
-# (ogni DEBUG_PANEL_REFRESH_INTERVAL_SEC secondi reali), così segue sia i cambi di cella del
+# (via _refresh_debug_summaries: solo a barra aperta, ogni DEBUG_SUMMARY_REFRESH_INTERVAL_SEC secondi reali), così segue sia i cambi di cella del
 # giocatore sia i cambi di popolazione senza agganci dedicati.
 func _refresh_debug_animal_summary() -> void:
 	var entries: Array = []
@@ -10761,11 +10928,30 @@ func _release_building_residents(building: Building) -> void:
 # _on_building_construction_completed.
 # ============================================================================================
 
+# Con scorte (2026-10-04, richiesta utente): prima della scelta col mirino, la conferma generica (stesso dialog della
+# demolizione) avvisa che finiranno a terra; magazzino vuoto: diretti al mirino come prima.
 func _on_upgrade_requested(building: Building) -> void:
 	if not _can_start_building_upgrade(building):
 		_refresh_selected_building_panel()
 		return
-	_enter_upgrade_pick_mode(building)
+	if not BuildingUpgradeService.has_contents_to_drop(building):
+		_continue_upgrade_after_confirmation(building)
+		return
+	var target := BuildingUpgradeService.get_upgrade_rules(building)
+	demolish_confirmation_dialog.open_confirmation(
+		tr("upgrade_contents_confirmation_title"),
+		"\n".join([
+			tr("upgrade_contents_confirmation_text").format({
+				"building": _building_display_name(building), "id": building.id, "target": tr(target.building_name),
+			}),
+			tr("upgrade_contents_confirmation_text_ground"),
+			tr("upgrade_contents_confirmation_text_warehouse"),
+		]),
+		tr("upgrade_contents_confirmation_confirm"),
+		func():
+			if _can_start_building_upgrade(building):
+				_continue_upgrade_after_confirmation(building)
+	)
 
 
 # Scelta del lavoratore per il miglioramento. Idoneità (2026-10-03, richiesta utente): prima di trasformare l'edificio
@@ -10773,7 +10959,100 @@ func _on_upgrade_requested(building: Building) -> void:
 # (_get_upgrade_build_rejection_reason). Se non può: nessuna trasformazione, motivo come per ogni comando rifiutato
 # (X sull'edificio, popup e avviso nel pannello dell'individuo) e la scelta col mirino resta attiva per indicarne un
 # altro (_handle_worker_pick_input l'ha già chiusa prima di chiamare on_pick: qui si riapre).
-func _enter_upgrade_pick_mode(building: Building) -> void:
+# SCELTA DELL'ORIENTAMENTO NEL MIGLIORAMENTO (2026-10-04, richiesta utente). Verso un edificio CON porta (es. sito di
+# deposito -> capanna di stoccaggio), dopo l'eventuale conferma delle scorte e prima del mirino: sulla cella
+# compare l'anteprima dell'edificio di destinazione (BuildingGhost, ferma sulla cella), R ruota come nel piazzamento,
+# un clic sinistro conferma e passa al mirino con l'orientamento scelto; destro o Esc annullano senza cambiare nulla.
+# PER TUTTI I MIGLIORAMENTI (2026-10-04, richiesta utente): la scelta compare ogni volta che l'edificio di destinazione
+# ha la porta, anche se quello di partenza l'ha già; l'anteprima parte con l'orientamento dell'edificio di partenza, o
+# con quello predefinito (SOUTH, come il piazzamento) se quello non ha porta — chi non vuole cambiare conferma con un clic.
+# Destinazione senza porta: nessuna domanda, si va al mirino e l'orientamento resta quello di prima. Gesti uguali per
+# tutti: Migliora, eventuale conferma delle scorte, orientamento, mirino. I comandi stanno nella barra di costruzione
+# (BuildBar.set_upgrade_orientation_mode), non più nella striscia gialla in alto.
+var _upgrade_orientation_building: Building = null
+var _upgrade_orientation_ghost: BuildingGhost = null
+const UPGRADE_ORIENTATION_GHOST_ALPHA: float = 0.7
+
+
+func _upgrade_needs_orientation(building: Building) -> bool:
+	var target := BuildingUpgradeService.get_upgrade_rules(building)
+	return building != null and building.rules != null and target != null and target.has_door
+
+
+func _continue_upgrade_after_confirmation(building: Building) -> void:
+	if _upgrade_needs_orientation(building):
+		_enter_upgrade_orientation_mode(building)
+	else:
+		_enter_upgrade_pick_mode(building)
+
+
+func _enter_upgrade_orientation_mode(building: Building) -> void:
+	_exit_upgrade_orientation_mode()
+	var cell: LiveMacroCell = live_cells.get(Vector2i(building.macro_x, building.macro_y))
+	var target := BuildingUpgradeService.get_upgrade_rules(building)
+	if cell == null or cell.container == null or target == null:
+		# Nessuna cella viva su cui mostrare l'anteprima: mirino diretto, orientamento invariato.
+		_enter_upgrade_pick_mode(building)
+		return
+	var ghost := BuildingGhost.new()
+	ghost.building_type_name = building.rules.upgrades_to
+	ghost.is_buildable = true
+	ghost.rotation_dir = building.rotation if building.rules.has_door else GameTypes.Direction.SOUTH
+	ghost.position = (Vector2(building.micro_x, building.micro_y) + Vector2(0.5, 0.5)) * MicroCellRenderer.CELL_SIZE
+	ghost.z_index = 5
+	# Anteprima, non edificio finito (2026-10-04, richiesta utente): ferma sopra l'edificio di partenza la semitrasparenza
+	# del piazzamento da sola sembrava già costruita; più trasparente, così quello sotto resta visibile, freccia chiara
+	# sul lato della porta e, oltre, il segno della rotazione (freccia curva con la R) — BuildingGhost.show_door_marker.
+	ghost.self_modulate = Color(1.0, 1.0, 1.0, UPGRADE_ORIENTATION_GHOST_ALPHA)
+	ghost.show_door_marker = true
+	cell.container.add_child(ghost)
+	_upgrade_orientation_ghost = ghost
+	_upgrade_orientation_building = building
+	build_bar.set_upgrade_orientation_mode(true, tr(target.building_name))
+
+
+func _exit_upgrade_orientation_mode() -> void:
+	if _upgrade_orientation_ghost != null and is_instance_valid(_upgrade_orientation_ghost):
+		_upgrade_orientation_ghost.queue_free()
+	_upgrade_orientation_ghost = null
+	_upgrade_orientation_building = null
+	build_bar.set_upgrade_orientation_mode(false)
+
+
+# Input della scelta dell'orientamento (chiamata per prima da _unhandled_input). true = evento consumato.
+func _handle_upgrade_orientation_input(event: InputEvent) -> bool:
+	if _upgrade_orientation_ghost == null or not is_instance_valid(_upgrade_orientation_ghost):
+		_exit_upgrade_orientation_mode()
+		return false
+	if event is InputEventKey and event.pressed and not event.echo:
+		if event.keycode == KEY_R:
+			_upgrade_orientation_ghost.rotate_clockwise()
+			return true
+		if event.keycode == KEY_ESCAPE:
+			_exit_upgrade_orientation_mode()
+			_refresh_selected_building_panel()
+			return true
+		return false
+	if event is InputEventMouseButton and event.pressed:
+		if event.button_index == MOUSE_BUTTON_RIGHT:
+			_exit_upgrade_orientation_mode()
+			_refresh_selected_building_panel()
+			return true
+		if event.button_index == MOUSE_BUTTON_LEFT:
+			var building := _upgrade_orientation_building
+			var chosen_rotation: int = int(_upgrade_orientation_ghost.rotation_dir)
+			_exit_upgrade_orientation_mode()
+			if building != null and _can_start_building_upgrade(building):
+				_enter_upgrade_pick_mode(building, chosen_rotation)
+			else:
+				_refresh_selected_building_panel()
+			return true
+	return false
+
+
+# `chosen_rotation` (2026-10-04): orientamento scelto in _enter_upgrade_orientation_mode (GameTypes.Direction), -1 =
+# nessuna scelta (resta quello dell'edificio). Applicato solo all'avvio dei lavori (_start_building_upgrade).
+func _enter_upgrade_pick_mode(building: Building, chosen_rotation: int = -1) -> void:
 	var target := BuildingUpgradeService.get_upgrade_rules(building)
 	var on_pick := func(worker: HumanIndividual) -> void:
 		if not _can_start_building_upgrade(building):
@@ -10785,9 +11064,9 @@ func _enter_upgrade_pick_mode(building: Building) -> void:
 			if live_cells.has(macro_coords):
 				_spawn_command_icon_at_microcell(live_cells[macro_coords], Vector2i(building.micro_x, building.micro_y), "task_rejected")
 			_report_assign_rejection(worker, rejection, "task_activity_build")
-			_enter_upgrade_pick_mode(building)
+			_enter_upgrade_pick_mode(building, chosen_rotation)
 			return
-		_start_building_upgrade(building)
+		_start_building_upgrade(building, chosen_rotation)
 		_assign_resumable_building_task(worker, building)
 		_refresh_selected_building_panel()
 	_enter_worker_pick_mode(tr("upgrade_pick_banner_text").format({"building": tr(target.building_name)}), on_pick)
@@ -10808,14 +11087,14 @@ func _get_upgrade_build_rejection_reason(worker: HumanIndividual, building: Buil
 
 
 # Stesse condizioni del pulsante: destinazione valida, edificio completo e non "da demolire", idea della destinazione
-# scoperta, magazzino vuoto (protezione provvisoria).
+# scoperta. Le scorte non bloccano più (2026-10-04): finiscono a terra all'avvio (_start_building_upgrade).
 func _can_start_building_upgrade(building: Building) -> bool:
 	var target := BuildingUpgradeService.get_upgrade_rules(building)
 	if target == null or building.is_demolished or not building.is_complete or building.is_marked_for_demolition:
 		return false
 	if target.required_idea_id != "" and (human_folk == null or not human_folk.completed_ideas.has(target.required_idea_id)):
 		return false
-	return not BuildingUpgradeService.has_stored_resources(building)
+	return true
 
 
 # Trasforma l'edificio completo nel cantiere del tipo di destinazione: stesso id, posto e istanza (influenza conservata).
@@ -10826,7 +11105,7 @@ func _can_start_building_upgrade(building: Building) -> bool:
 #   - materiale recuperato (sconto non usato) in un mucchio a terra con drop_entries dalla posizione dell'edificio: il
 #     cantiere occupa la sua cella, il mucchio va davanti alla porta o nella microcella libera più vicina;
 #   - viste e contatore degli edifici come dopo una costruzione.
-func _start_building_upgrade(building: Building) -> void:
+func _start_building_upgrade(building: Building, chosen_rotation: int = -1) -> void:
 	var target := BuildingUpgradeService.get_upgrade_rules(building)
 	if target == null:
 		return
@@ -10836,13 +11115,26 @@ func _start_building_upgrade(building: Building) -> void:
 	var freed := _close_tasks_working_on_building(building, PRODUCE_TASK_NAMES, null)
 	for member in freed:
 		HumanIndividualActionService.resolve_idle_individual(member, _resolve_age_band(member), macro_world)
+	# Scorte a terra (2026-10-04, richiesta utente): PRIMA della trasformazione in cantiere e prima di caricare lo sconto
+	# come materiale consegnato, magazzino e prodotti finiti vanno in un mucchio con le regole di sempre
+	# (GroundPileService.drop_building_contents: davanti alla porta o nella microcella libera più vicina, mai sopra un
+	# edificio). Senza una microcella libera vengono persi, come per "Svuota tutto".
+	var contents_pile := GroundPileService.drop_building_contents(game_data, building, macro_world)
+	if contents_pile != null:
+		print("[UPGRADE] Edificio #%d: scorte a terra nel mucchio #%d, microcella %s." % [building.id, contents_pile.id, str(contents_pile.microcell)])
 	building.construction_progress = {
 		"space_reserved": true,
 		BuildingUpgradeService.UPGRADE_FROM_TYPE_KEY: from_type,
 		BuildingUpgradeService.UPGRADE_FROM_DURABILITY_KEY: building.current_durability,
 		BuildingUpgradeService.UPGRADE_FROM_BUILT_YEAR_KEY: building.built_year,
+		BuildingUpgradeService.UPGRADE_FROM_ROTATION_KEY: int(building.rotation),
 		BuildingUpgradeService.UPGRADE_CREDITED_KEY: (cost["credited"] as Dictionary).duplicate(),
 	}
+	# Orientamento scelto (2026-10-04, ogni destinazione con porta): vale per cantiere ed edificio finito
+	# (porta disegnata, punto di accesso, posizione dei mucchi). Le scorte sono già a terra, posate con l'orientamento di
+	# prima.
+	if chosen_rotation >= 0:
+		building.rotation = chosen_rotation as GameTypes.Direction
 	building.building_type_name = from_type if building.rules == null else building.rules.upgrades_to
 	building.rules = target
 	building.is_complete = false
@@ -10896,6 +11188,8 @@ func _cancel_building_upgrade(building: Building) -> void:
 	building.is_awaiting_material = false
 	building.current_durability = int(progress.get(BuildingUpgradeService.UPGRADE_FROM_DURABILITY_KEY, from_rules.max_durability))
 	building.built_year = int(progress.get(BuildingUpgradeService.UPGRADE_FROM_BUILT_YEAR_KEY, building.built_year))
+	# Orientamento di prima (2026-10-04); assente nei salvataggi precedenti: resta quello attuale.
+	building.rotation = int(progress.get(BuildingUpgradeService.UPGRADE_FROM_ROTATION_KEY, int(building.rotation))) as GameTypes.Direction
 	building.construction_progress = {}
 	_remove_build_site_placeholders(building)
 	var pile := GroundPileService.drop_entries(
@@ -12533,7 +12827,10 @@ func _buildings_for_cell(cell: LiveMacroCell) -> Array:
 			# get_slot_breakdown), così la griglia disegnata sulla mappa e quella nel pannello non
 			# possono mai disallinearsi. Non aggiunto per gli altri tipi — nessun costo per loro,
 			# nessuna chiave da ignorare.
-			if drawn_type_name == "deposit_site":
+			# Cantiere di miglioramento (2026-10-04, richiesta utente): l'edificio di partenza si disegna vuoto — il suo
+			# stored_resources contiene i materiali consegnati per la costruzione, non scorte. Nessun contenuto da
+			# stored_resources nel disegno di un cantiere di miglioramento (oggi l'unico è questa griglia).
+			if drawn_type_name == "deposit_site" and not is_upgrade_site:
 				entry["slot_breakdown"] = BuildingStorageService.get_slot_breakdown(building)
 			# Terra battuta (2026-09-19, richiesta utente): maschera dei lati che confinano con un altro
 			# edificio completo (bit 1<<lato, ordine N,E,S,W) — il renderer lascia dritti quei lati
@@ -12542,7 +12839,12 @@ func _buildings_for_cell(cell: LiveMacroCell) -> Array:
 			# Dal 2026-09-24 (richiesta utente) vale anche per il fondo di terra battuta sotto tenda,
 			# cerchio di sassolini e focolare (MicroCellRenderer.GROUND_UNDER_BUILDING_TYPES), e il vicino
 			# che rende dritto un lato è QUALUNQUE edificio completo, non più solo la terra battuta.
-			if drawn_type_name == "dirt_ground" or MicroCellRenderer.GROUND_UNDER_BUILDING_TYPES.has(drawn_type_name):
+			# Capanna di stoccaggio (2026-10-04, richiesta utente — solo lei, non una regola generale): fondo di terra battuta
+			# sotto, finita e durante il miglioramento che la sta costruendo (tipo dell'istanza, non quello disegnato:
+			# nel cantiere è disegnato il sito di deposito di partenza).
+			if building.building_type_name == "storage_hut":
+				entry["dirt_ground_under"] = true
+			if drawn_type_name == "dirt_ground" or MicroCellRenderer.GROUND_UNDER_BUILDING_TYPES.has(drawn_type_name) 					or building.building_type_name == "storage_hut":
 				if not dirt_tiles_built:
 					dirt_tiles = _collect_complete_dirt_tiles()
 					dirt_tiles_built = true

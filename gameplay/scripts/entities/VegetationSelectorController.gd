@@ -49,29 +49,40 @@ func try_select(event: InputEvent, live_cells: Dictionary) -> Dictionary:
 		var click_lot := Vector2i(int(floor(local_mouse.x / CELL_SIZE)), int(floor(local_mouse.y / CELL_SIZE)))
 
 		for object_type in CANDIDATE_TYPES:
-			# Candidati vivi (vegetation_positions, Array[Vector3i]) E slot bloccati (cut_positions/
-			# dead_positions, Array[Dictionary] — vedi IndividualVegetationService.get_cut_positions/
-			# get_dead_positions) insieme: un ceppo/rovo cliccabile è altrettanto un "individuo" ai
-			# fini della selezione, solo con uno stato diverso (GameScene lo rideriva da sé via
-			# has_individual/has_blocked_marker, non serve propagarlo qui).
-			var candidate_keys: Array = cell.renderer.vegetation_positions.get(object_type, []).duplicate()
-			for entry in cell.renderer.cut_positions.get(object_type, []):
-				candidate_keys.append(entry["key"])
-			for entry in cell.renderer.dead_positions.get(object_type, []):
-				candidate_keys.append(entry["key"])
-
-			for individual_key in candidate_keys:
-				# Solo il lotto cliccato + gli 8 adiacenti: canopy/offset possono sconfinare
-				# visivamente nel lotto vicino (jitter/disk-offset + raggio chioma), un individuo
-				# ancorato altrove non può comunque risultare il più vicino entro CLICK_RADIUS_PX.
-				var lot_pos := Vector2i(individual_key.x, individual_key.y)
-				if abs(lot_pos.x - click_lot.x) > 1 or abs(lot_pos.y - click_lot.y) > 1:
-					continue
-
-				var screen_pos: Vector2 = cell.renderer.get_individual_screen_position(object_type, individual_key)
+			# Candidati del lotto cliccato e degli 8 adiacenti, dall'indice per lotto del renderer (2026-10-04, richiesta
+			# utente — prima si copiava e scorreva l'intero elenco della cella a ogni clic): stesso insieme, stesso ordine,
+			# stesse posizioni del metodo completo. null = indice non valido per gli elenchi correnti: metodo completo.
+			var candidates: Variant = cell.renderer.find_selection_candidates(object_type, click_lot)
+			if candidates == null:
+				candidates = _full_scan_candidates(cell.renderer, object_type, click_lot)
+			for candidate in candidates:
+				var individual_key: Vector3i = candidate[0]
+				var screen_pos: Vector2 = candidate[1]
 				var distance: float = local_mouse.distance_to(screen_pos)
 				if distance < best_distance:
 					best_distance = distance
 					best = {"macro_coords": coords, "object_type": object_type, "individual_key": individual_key, "distance": distance}
 
 	return best
+
+
+# Metodo completo (quello di sempre), usato solo se l'indice per lotto del renderer non vale. Candidati vivi
+# (vegetation_positions, Array[Vector3i]) E slot bloccati (cut_positions/dead_positions, Array[Dictionary] — vedi
+# IndividualVegetationService.get_cut_positions/get_dead_positions) insieme: un ceppo/rovo cliccabile è altrettanto un
+# "individuo" ai fini della selezione, solo con uno stato diverso (GameScene lo rideriva da sé via
+# has_individual/has_blocked_marker, non serve propagarlo qui). Solo il lotto cliccato + gli 8 adiacenti: canopy/offset
+# possono sconfinare visivamente nel lotto vicino (jitter/disk-offset + raggio chioma), un individuo ancorato altrove non
+# può comunque risultare il più vicino entro CLICK_RADIUS_PX. Ritorna [individual_key, posizione a schermo] in ordine.
+func _full_scan_candidates(renderer: MicroCellRenderer, object_type: GameTypes.WorldObjectType, click_lot: Vector2i) -> Array:
+	var candidate_keys: Array = renderer.vegetation_positions.get(object_type, []).duplicate()
+	for entry in renderer.cut_positions.get(object_type, []):
+		candidate_keys.append(entry["key"])
+	for entry in renderer.dead_positions.get(object_type, []):
+		candidate_keys.append(entry["key"])
+	var result: Array = []
+	for individual_key in candidate_keys:
+		var lot_pos := Vector2i(individual_key.x, individual_key.y)
+		if abs(lot_pos.x - click_lot.x) > 1 or abs(lot_pos.y - click_lot.y) > 1:
+			continue
+		result.append([individual_key, renderer.get_individual_screen_position(object_type, individual_key)])
+	return result

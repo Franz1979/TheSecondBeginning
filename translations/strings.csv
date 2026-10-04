@@ -64,7 +64,7 @@ statistics_tab_mortality,Mortalità
 statistics_tab_births,Nascite
 statistics_tab_population,Popolazione
 statistics_tab_buildings,Edifici
-statistics_movement_cells,Celle percorribili: {count}
+statistics_movement_cells,Vie di passaggio: {count} celle
 tech_tree_tooltip,Albero delle tecnologie
 tech_tree_requires_thought_building_tooltip,"Costruisci un cerchio di sassi: i tuoi abitanti potranno depositare i pensieri e sviluppare idee."
 map_layers_tooltip,Layer della mappa
@@ -359,7 +359,18 @@ building_upgrade_rest,Riposo: ×{from} → ×{to}
 building_upgrade_nothing,nessuno
 building_upgrade_residents_leave,I residenti escono durante i lavori.
 building_upgrade_storage_not_empty,Svuota prima il magazzino dell'edificio.
+building_upgrade_contents_to_ground,"Le scorte dell'edificio finiranno a terra in un mucchio all'avvio dei lavori."
+upgrade_contents_confirmation_title,Migliora edificio
+upgrade_contents_confirmation_text,Migliorare {building} #{id} in {target}?
+upgrade_contents_confirmation_text_ground,"All'avvio dei lavori tutte le scorte del magazzino finiranno a terra in un mucchio accanto all'edificio, dove deperiscono più in fretta."
+upgrade_contents_confirmation_text_warehouse,Conviene avere un altro magazzino dove portarle.
+upgrade_contents_confirmation_confirm,Migliora
 upgrade_pick_banner_text,🔨 Migliora in {building}: clicca un individuo (Esc per annullare)
+build_bar_title_upgrade_orientation,{building} — Orientamento della porta
+build_bar_orientation_rotate,ruota
+build_bar_orientation_key_click,Clic
+build_bar_orientation_confirm,conferma
+build_bar_orientation_cancel,annulla
 building_status_upgrade_in_progress,Miglioramento in corso: da {from} a {to}
 building_command_empty_all_detail,"Il contenuto del magazzino e i prodotti finiti cadono a terra accanto all'edificio, dove deperiscono più in fretta."
 building_command_empty_all_nothing,Non c'è nulla da svuotare.

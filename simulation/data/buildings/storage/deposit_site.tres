@@ -12,6 +12,7 @@ storage_slot_count = 9
 storage_space_per_slot = 100
 durability_multiplier_by_category = Array[float]([1.0, 1.1, 1.0, 1.0, 1.0])
 max_durability = 60
+upgrades_to = "storage_hut"
 required_space = 1
 has_door = false
 visibility_radius = 2

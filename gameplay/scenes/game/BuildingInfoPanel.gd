@@ -407,6 +407,11 @@ func show_building(building: Building, residents_display_data: Array[Dictionary]
 	else:
 		built_text = tr("building_not_yet_built")
 	var max_durability: int = building.rules.max_durability if building.rules != null else 0
+	# Cantiere di miglioramento (2026-10-04, richiesta utente): finché i lavori non sono finiti la durabilità è quella
+	# dell'edificio di partenza, quindi anche il massimo è il suo (prima: valore vecchio sul massimo nuovo, es. 60/50).
+	var upgrade_from_rules_for_durability := BuildingUpgradeService.get_upgrade_from_rules(building)
+	if upgrade_from_rules_for_durability != null:
+		max_durability = upgrade_from_rules_for_durability.max_durability
 	var durability_text: String = tr("building_durability_label").format({"current": building.current_durability, "max": max_durability})
 	built_year_label.text = "%s · %s" % [built_text, durability_text]
 
@@ -517,14 +522,15 @@ func _refresh_upgrade_button(building: Building) -> void:
 	var lines: Array[String] = [tr("building_upgrade_button").format({"building": tr(target.building_name)})]
 	var folk: Folk = GameSettings.active_human_folk
 	var missing_idea := target.required_idea_id != "" and (folk == null or not folk.completed_ideas.has(target.required_idea_id))
-	# Protezione provvisoria (2026-10-03, passo 2): con risorse nel magazzino il miglioramento non parte.
-	var has_storage := BuildingUpgradeService.has_stored_resources(building)
-	upgrade_button.disabled = missing_idea or has_storage
+	# Scorte (2026-10-04, richiesta utente — prima bloccavano il miglioramento): non lo bloccano più; all'avvio finiscono a
+	# terra in un mucchio (GameScene._start_building_upgrade), e il tooltip lo dice.
+	var has_contents := BuildingUpgradeService.has_contents_to_drop(building)
+	upgrade_button.disabled = missing_idea
 	if missing_idea:
 		var idea := IdeaCalculator.get_idea(target.required_idea_id)
 		lines.append(tr("tech_tree_requires").format({"ideas": tr(idea.display_name) if idea != null else target.required_idea_id}))
-	if has_storage:
-		lines.append(tr("building_upgrade_storage_not_empty"))
+	if has_contents:
+		lines.append(tr("building_upgrade_contents_to_ground"))
 	var cost := BuildingUpgradeService.get_upgrade_cost(building.rules, target)
 	lines.append(tr("building_upgrade_materials").format({"items": _format_material_list(cost["to_bring"])}))
 	if not (cost["recovered"] as Dictionary).is_empty():

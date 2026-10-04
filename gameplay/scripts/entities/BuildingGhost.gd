@@ -137,11 +137,86 @@ var rotation_dir: GameTypes.Direction = GameTypes.Direction.SOUTH:
 		queue_redraw()
 
 
+# Freccia chiara fuori dal lato della porta (2026-10-04, richiesta utente — scelta dell'orientamento nel miglioramento):
+# l'anteprima sta ferma sopra l'edificio di partenza (es. la terra battuta del sito di deposito), dove la porta scura
+# si confonde col terreno; sul prato del piazzamento non serve, quindi spenta di default. Accanto, il segno della
+# rotazione (_draw_rotate_hint).
+const DOOR_MARKER_FILL := Color(0.98, 0.93, 0.75, 1.0)
+const DOOR_MARKER_OUTLINE := Color(0.25, 0.18, 0.10, 1.0)
+const DOOR_MARKER_BASE: float = 3.4
+const DOOR_MARKER_TIP: float = 4.7
+const DOOR_MARKER_HALF_WIDTH: float = 1.1
+const DOOR_MARKER_OUTLINE_WIDTH: float = 0.3
+
+var show_door_marker: bool = false:
+	set(value):
+		if show_door_marker == value:
+			return
+		show_door_marker = value
+		queue_redraw()
+
+
 func rotate_clockwise() -> void:
 	rotation_dir = (rotation_dir + 1) % 4
 
 
 func _draw() -> void:
+	_draw_shape()
+	if show_door_marker:
+		_draw_door_marker()
+
+
+func _draw_door_marker() -> void:
+	var forward := _direction_vector(rotation_dir)
+	var side := Vector2(-forward.y, forward.x)
+	var points := PackedVector2Array([
+		forward * DOOR_MARKER_BASE + side * DOOR_MARKER_HALF_WIDTH,
+		forward * DOOR_MARKER_TIP,
+		forward * DOOR_MARKER_BASE - side * DOOR_MARKER_HALF_WIDTH,
+	])
+	draw_colored_polygon(points, DOOR_MARKER_FILL)
+	var outline := points.duplicate()
+	outline.append(points[0])
+	draw_polyline(outline, DOOR_MARKER_OUTLINE, DOOR_MARKER_OUTLINE_WIDTH, true)
+	_draw_rotate_hint(forward * ROTATE_HINT_FORWARD + side * ROTATE_HINT_SIDE)
+
+
+# Segno della rotazione (2026-10-04, richiesta utente): freccia curva in senso orario con la lettera R, accanto alla
+# freccia della porta, al posto di un testo sulla mappa. Tutto a tratti (anche la R): resta nitido a ogni zoom, dove un
+# testo di pochi pixel sarebbe sfocato. La lettera resta dritta qualunque sia l'orientamento.
+const ROTATE_HINT_FORWARD: float = 4.2
+const ROTATE_HINT_SIDE: float = 3.6
+const ROTATE_HINT_BG := Color(0.0, 0.0, 0.0, 0.45)
+const ROTATE_HINT_BG_RADIUS: float = 1.8
+const ROTATE_HINT_ARC_RADIUS: float = 1.35
+const ROTATE_HINT_ARC_START: float = -PI * 0.35
+const ROTATE_HINT_ARC_SWEEP: float = PI * 1.5
+const ROTATE_HINT_ARROW_SIZE: float = 0.55
+const ROTATE_HINT_WIDTH: float = 0.22
+
+func _draw_rotate_hint(center: Vector2) -> void:
+	draw_circle(center, ROTATE_HINT_BG_RADIUS, ROTATE_HINT_BG)
+	var end_angle: float = ROTATE_HINT_ARC_START + ROTATE_HINT_ARC_SWEEP
+	draw_arc(center, ROTATE_HINT_ARC_RADIUS, ROTATE_HINT_ARC_START, end_angle, 16, DOOR_MARKER_FILL, ROTATE_HINT_WIDTH, true)
+	# Punta della freccia alla fine dell'arco, lungo la tangente (verso orario: angolo crescente con y verso il basso).
+	var tip := center + Vector2(cos(end_angle), sin(end_angle)) * ROTATE_HINT_ARC_RADIUS
+	var tangent := Vector2(-sin(end_angle), cos(end_angle))
+	var normal := Vector2(cos(end_angle), sin(end_angle))
+	draw_colored_polygon(PackedVector2Array([
+		tip + tangent * ROTATE_HINT_ARROW_SIZE,
+		tip - tangent * ROTATE_HINT_ARROW_SIZE * 0.3 + normal * ROTATE_HINT_ARROW_SIZE * 0.6,
+		tip - tangent * ROTATE_HINT_ARROW_SIZE * 0.3 - normal * ROTATE_HINT_ARROW_SIZE * 0.6,
+	]), DOOR_MARKER_FILL)
+	# Lettera R: asta, occhiello, gamba.
+	var r := func(x: float, y: float) -> Vector2: return center + Vector2(x, y)
+	draw_line(r.call(-0.35, -0.6), r.call(-0.35, 0.6), DOOR_MARKER_FILL, ROTATE_HINT_WIDTH, true)
+	draw_polyline(PackedVector2Array([
+		r.call(-0.35, -0.6), r.call(0.1, -0.6), r.call(0.3, -0.45), r.call(0.3, -0.15), r.call(0.1, 0.0), r.call(-0.35, 0.0),
+	]), DOOR_MARKER_FILL, ROTATE_HINT_WIDTH, true)
+	draw_line(r.call(0.0, 0.0), r.call(0.38, 0.6), DOOR_MARKER_FILL, ROTATE_HINT_WIDTH, true)
+
+
+func _draw_shape() -> void:
 	# Smistamento per tipo (2026-09-07, richiesta utente, Pebble Circle) — nessuna porta/rotazione
 	# da mostrare per questo tipo (has_door=false), quindi un ramo completamente separato invece di
 	# infilare un altro if dentro la geometria della capanna sotto.

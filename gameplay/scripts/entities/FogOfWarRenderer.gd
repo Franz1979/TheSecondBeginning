@@ -925,10 +925,9 @@ func _draw() -> void:
 		_redraw_count_window_start_msec = _now_msec
 
 	# Step 3.3 — il cuore del dirty-tracking: due percorsi mutuamente esclusivi.
-	#   - _full_flush_pending (SOLO cambio giorno dal passo 3.4 in poi — vedi update_visibility,
-	#     il refresh vegetazione non lo imposta più): riscrive tutte le 10.000 celle, esattamente
-	#     come nei passi 3.1/3.2 — evento raro, il costo resta accettabile (vedi Step 2,
-	#     discussione con l'utente sull'upload texture comunque fisso).
+	#   - _full_flush_pending (cambio giorno, e primo disegno di un renderer appena creato): riscrive tutta
+	#     l'immagine — dal 2026-10-04 velo pieno in un colpo e _flush_position solo sulle microcelle in memoria o
+	#     in raggio (_flush_all_seen_positions), stesso risultato.
 	#   - altrimenti: itera SOLO _dirty_positions (il delta in-raggio calcolato da
 	#     _update_in_radius_dirty_delta, più le eventuali posizioni potate da mark_positions_dirty)
 	#     — il caso comune durante un movimento continuo, quello che questo passo rende economico.
@@ -936,6 +935,16 @@ func _draw() -> void:
 	# (trasparente se in-raggio, altrimenti cache hit/miss sul cascade dei tre tier) — UNA sola
 	# definizione, mai duplicata tra i due rami.
 	var _cells_processed := 0
+	# PASSO B RIMANDATO (2026-10-04, richiesta utente). Oggi a ogni cambio di giorno questo flush ripassa tutte le
+	# microcelle viste almeno una volta (passo A, _flush_all_seen_positions), anche se quasi tutte restano nello stesso
+	# livello di velo. Passo successivo: aggiornare solo quelle che in quel giorno superano una soglia di freschezza
+	# (ultima visita esattamente detail/resource/terrain_memory_days + 1 giorni fa, per ogni giorno trascorso), tramite un
+	# indice inverso in FogOfWarMemory (giorno dell'ultima visita -> posizioni), aggiornato in mark_seen (solo quando il
+	# giorno cambia davvero), in prune_stale e al caricamento; al posto di svuotare _cell_color_cache e del flush pieno,
+	# quelle microcelle andrebbero in _dirty_positions. Da fare quando le microcelle elaborate al cambio di giorno
+	# (celle_processate di [FOW REDRAW TIMING]) superano circa 6.000-7.000, o se torna lo scatto a ogni giorno. Alla prima
+	# implementazione serve una verifica temporanea che confronti il risultato con il flush completo (stesso colore per
+	# ogni microcella) prima di togliere quest'ultimo.
 	if _full_flush_pending:
 		# DEBUG TEMPORANEO [FOW DIAG] — rimuovere (requisito 2: "ad ogni flush pieno... macrocella
 		# del renderer, numero di sorgenti ricevute e le prime 3 posizioni tradotte, più la
@@ -955,10 +964,7 @@ func _draw() -> void:
 				])
 			if source_positions.is_empty():
 				print("[FOW DIAG] FLUSH PIENO macrocella=%s | sorgenti=0 (nessuna sorgente ricevuta — sospetto candidato per il nero)" % str(_debug_macro_coords))
-		for y in range(World.HEIGHT):
-			for x in range(World.WIDTH):
-				_flush_position(Vector2i(x, y))
-				_cells_processed += 1
+		_cells_processed = _flush_all_seen_positions()
 		_full_flush_pending = false
 	else:
 		for pos in _dirty_positions:
@@ -989,6 +995,40 @@ func _draw() -> void:
 		# stampa deve riflettere il lavoro svolto dall'ultima stampa, ovunque sia avvenuto
 		# (update_visibility/set_building_visible_positions incluse), non solo dentro _draw().
 		_memory_lookup_usec = 0
+
+
+# Flush pieno senza ripassare le 10.000 microcelle (2026-10-04, richiesta utente — passo A): una microcella fuori raggio
+# senza voce in last_seen_by_position esce da _flush_position sempre col velo pieno (detail/resource/terrain falliscono
+# tutti, il pavimento conta solo se già vista, vedi FogOfWarMemory._is_floor), quindi l'immagine si riempie di
+# OVERLAY_COLOR in un colpo solo (Image.fill, nativo) e _flush_position gira solo sulle microcelle in memoria e su quelle
+# nel raggio di pipottini ed edifici. Le microcelle non più in memoria escono da _frozen_tier_positions (prima ci
+# pensava il ricalcolo del colore) e dalla cache dei colori, così un loro ricalcolo successivo riparte da zero. Senza
+# memoria (difensivo): velo pieno ovunque tranne il raggio, come _flush_position. Ritorna le microcelle passate.
+func _flush_all_seen_positions() -> int:
+	_fog_image.fill(OVERLAY_COLOR)
+	var last_seen: Dictionary = fog_of_war_memory.last_seen_by_position if fog_of_war_memory != null else {}
+	var unseen_frozen: Array[Vector2i] = []
+	for pos in _frozen_tier_positions:
+		if not last_seen.has(pos):
+			unseen_frozen.append(pos)
+	for pos in unseen_frozen:
+		_frozen_tier_positions.erase(pos)
+		_cell_color_cache.erase(pos)
+	if not unseen_frozen.is_empty():
+		_hint_layer_dirty = true
+	var processed := 0
+	for pos in last_seen:
+		_flush_position(pos)
+		processed += 1
+	for pos in _source_visible_positions:
+		if not last_seen.has(pos):
+			_flush_position(pos)
+			processed += 1
+	for pos in _building_visible_positions:
+		if not last_seen.has(pos) and not _source_visible_positions.has(pos):
+			_flush_position(pos)
+			processed += 1
+	return processed
 
 
 # Step 3.3 — logica per-cella condivisa dai due percorsi di _draw() sopra (flush pieno o solo

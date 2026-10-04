@@ -58,7 +58,6 @@ const TAB_BUILDINGS := 3
 @onready var population_per_year_chart: LineChart = $MarginContainer/VBoxContainer/TabContainer/PopulationTab/PopulationContent/PopulationPerYearChart
 
 @onready var total_buildings_label: Label = $MarginContainer/VBoxContainer/TabContainer/BuildingsTab/BuildingsContent/TotalBuildingsLabel
-@onready var movement_cells_label: Label = $MarginContainer/VBoxContainer/TabContainer/BuildingsTab/BuildingsContent/MovementCellsLabel
 @onready var buildings_per_year_chart: LineChart = $MarginContainer/VBoxContainer/TabContainer/BuildingsTab/BuildingsContent/BuildingsPerYearChart
 @onready var building_type_distribution_chart: PieChart = $MarginContainer/VBoxContainer/TabContainer/BuildingsTab/BuildingsContent/BuildingTypeDistributionChart
 
@@ -293,8 +292,9 @@ func _refresh_population_tab(
 # per costruzione (GameScene._on_year_rolled_over), mai un buco da riempire.
 #
 # MOVEMENT escluso (2026-10-03, richiesta utente — per categoria, mai per nome: le celle percorribili, es. terra
-# battuta, falsavano i numeri): "Edifici totali" e la torta contano solo gli altri; le celle MOVEMENT hanno la loro riga
-# "Celle percorribili". Il grafico per anno usa ancora building_snapshots, salvati come totale unico che le comprende.
+# battuta, falsavano i numeri): "Edifici totali", la torta e il grafico per anno contano solo gli altri (building_snapshots
+# li esclude dal 2026-10-04, vedi GameScene._on_year_rolled_over). Le celle MOVEMENT compaiono solo come nota tenue sotto
+# la legenda della torta ("Vie di passaggio", PieChart.set_footer), volutamente non in evidenza.
 func _refresh_buildings_tab(buildings: Array[Building], building_snapshots: Dictionary) -> void:
 	var counted_buildings: Array[Building] = []
 	var movement_count := 0
@@ -304,7 +304,7 @@ func _refresh_buildings_tab(buildings: Array[Building], building_snapshots: Dict
 		else:
 			counted_buildings.append(building)
 	total_buildings_label.text = "Edifici totali: %d" % counted_buildings.size()
-	movement_cells_label.text = tr("statistics_movement_cells").format({"count": movement_count})
+	building_type_distribution_chart.set_footer(tr("statistics_movement_cells").format({"count": movement_count}))
 
 	# Itera l'ENUM intero (non solo le categorie osservate) — stesso principio già seguito sopra per
 	# cause di morte/fasce d'età: una categoria senza edifici compare comunque a 0, invece di

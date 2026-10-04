@@ -20,6 +20,9 @@ extends CenterContainer
 
 @onready var control_button: Button = $Panel/MarginContainer/HBoxContainer/ControlButton
 @onready var content_container: HBoxContainer = $Panel/MarginContainer/HBoxContainer/ContentContainer
+# Riferimenti presi prima di _build_title_row, che sposta la riga dei pulsanti (i percorsi $ sotto non varrebbero più).
+@onready var buttons_row: HBoxContainer = $Panel/MarginContainer/HBoxContainer
+@onready var control_separator: VSeparator = $Panel/MarginContainer/HBoxContainer/VSeparator
 @onready var main_row: IconButtonRow = $Panel/MarginContainer/HBoxContainer/ContentContainer/MainRow
 @onready var submenu_row: IconButtonRow = $Panel/MarginContainer/HBoxContainer/ContentContainer/SubmenuRow
 # I comandi del pipottino (CommandBar) non stanno più qui (2026-10-01, richiesta utente): pannello a sé alla sinistra di
@@ -81,6 +84,19 @@ var _state: _ViewState = _ViewState.LEVEL_1
 # livello, "Edifici" nel sottomenu, "Zone di lavoro" mentre si disegna una zona (set_work_areas_mode, da GameScene).
 var _title_label: Label = null
 var _work_areas_mode: bool = false
+# Scelta dell'orientamento di un miglioramento (2026-10-04, richiesta utente — sostituisce la striscia gialla in alto):
+# titolo "<edificio> — Orientamento della porta" e, al posto di pulsante di controllo e icone, i tre comandi (R ruota,
+# clic conferma, Esc annulla). Stesso pannello, stessa altezza (_orientation_hint_row alta quanto gli slot). Accesa e
+# spenta da GameScene (set_upgrade_orientation_mode); spenta, la barra torna esattamente nello stato di prima.
+const ORIENTATION_HINT_HEIGHT: float = 32.0
+const ORIENTATION_HINT_FONT_SIZE: int = 12
+const ORIENTATION_KEY_FONT_SIZE: int = 11
+const ORIENTATION_HINT_COLOR := Color(1.0, 1.0, 1.0, 0.9)
+const ORIENTATION_KEY_BG := Color(0.0, 0.0, 0.0, 0.3)
+const ORIENTATION_KEY_BORDER := Color(1.0, 1.0, 1.0, 0.55)
+var _orientation_mode: bool = false
+var _orientation_building_name: String = ""
+var _orientation_hint_row: HBoxContainer = null
 
 
 func _ready() -> void:
@@ -171,6 +187,7 @@ func _ready() -> void:
 	main_row.action_pressed.connect(_on_main_row_action_pressed)
 	control_button.pressed.connect(_on_control_button_pressed)
 	_build_title_row()
+	_build_orientation_hint_row()
 	_apply_state()
 
 
@@ -178,7 +195,6 @@ func _ready() -> void:
 # a parità di margini le due barre hanno la stessa altezza e i pulsanti la stessa linea di base.
 func _build_title_row() -> void:
 	var margin: MarginContainer = $Panel/MarginContainer
-	var buttons_row: HBoxContainer = $Panel/MarginContainer/HBoxContainer
 	var column := VBoxContainer.new()
 	column.add_theme_constant_override("separation", CommandBar.GROUP_LABEL_SEPARATION)
 	_title_label = CommandBar.make_group_label("")
@@ -186,6 +202,63 @@ func _build_title_row() -> void:
 	margin.add_child(column)
 	column.add_child(_title_label)
 	column.add_child(buttons_row)
+
+
+# Riga dei tre comandi della scelta dell'orientamento, accanto (nascosta) a ContentContainer nella stessa riga dei pulsanti.
+func _build_orientation_hint_row() -> void:
+	_orientation_hint_row = HBoxContainer.new()
+	_orientation_hint_row.custom_minimum_size.y = ORIENTATION_HINT_HEIGHT
+	_orientation_hint_row.add_theme_constant_override("separation", 14)
+	_orientation_hint_row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_orientation_hint_row.visible = false
+	_orientation_hint_row.add_child(_make_orientation_hint("R", tr("build_bar_orientation_rotate")))
+	_orientation_hint_row.add_child(_make_orientation_hint(tr("build_bar_orientation_key_click"), tr("build_bar_orientation_confirm")))
+	_orientation_hint_row.add_child(_make_orientation_hint("Esc", tr("build_bar_orientation_cancel")))
+	buttons_row.add_child(_orientation_hint_row)
+
+
+# Un comando: il tasto in un riquadro bordato, poi l'azione.
+func _make_orientation_hint(key_text: String, action_text: String) -> HBoxContainer:
+	var item := HBoxContainer.new()
+	item.add_theme_constant_override("separation", 5)
+	item.alignment = BoxContainer.ALIGNMENT_CENTER
+	item.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var key_style := StyleBoxFlat.new()
+	key_style.bg_color = ORIENTATION_KEY_BG
+	key_style.border_color = ORIENTATION_KEY_BORDER
+	key_style.set_border_width_all(1)
+	key_style.set_corner_radius_all(3)
+	key_style.content_margin_left = 5
+	key_style.content_margin_right = 5
+	key_style.content_margin_top = 1
+	key_style.content_margin_bottom = 1
+	var key_panel := PanelContainer.new()
+	key_panel.add_theme_stylebox_override("panel", key_style)
+	key_panel.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	key_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var key_label := Label.new()
+	key_label.text = key_text
+	key_label.add_theme_font_size_override("font_size", ORIENTATION_KEY_FONT_SIZE)
+	key_label.add_theme_color_override("font_color", ORIENTATION_HINT_COLOR)
+	key_panel.add_child(key_label)
+	item.add_child(key_panel)
+	var action_label := Label.new()
+	action_label.text = action_text
+	action_label.add_theme_font_size_override("font_size", ORIENTATION_HINT_FONT_SIZE)
+	action_label.add_theme_color_override("font_color", ORIENTATION_HINT_COLOR)
+	action_label.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	item.add_child(action_label)
+	return item
+
+
+# Scelta dell'orientamento di un miglioramento in corso o finita (GameScene._enter/_exit_upgrade_orientation_mode).
+# `building_name` = nome già tradotto dell'edificio di destinazione.
+func set_upgrade_orientation_mode(active: bool, building_name: String = "") -> void:
+	if _orientation_mode == active and _orientation_building_name == building_name:
+		return
+	_orientation_mode = active
+	_orientation_building_name = building_name
+	_apply_state()
 
 
 # Strumento delle zone di lavoro in uso (disegno di una zona): titolo "Zone di lavoro". Chiamata a ogni frame da
@@ -200,7 +273,9 @@ func set_work_areas_mode(active: bool) -> void:
 func _refresh_title() -> void:
 	if _title_label == null:
 		return
-	if _work_areas_mode:
+	if _orientation_mode:
+		_title_label.text = tr("build_bar_title_upgrade_orientation").format({"building": _orientation_building_name})
+	elif _work_areas_mode:
 		_title_label.text = tr("build_bar_title_work_areas")
 	elif _state == _ViewState.LEVEL_2:
 		_title_label.text = tr("build_bar_title_buildings")
@@ -275,7 +350,12 @@ func _on_control_button_pressed() -> void:
 
 
 func _apply_state() -> void:
-	content_container.visible = _state != _ViewState.MINIMIZED
+	# Scelta dell'orientamento: solo i tre comandi; lo stato di menu (_state) non cambia e torna visibile all'uscita.
+	control_button.visible = not _orientation_mode
+	control_separator.visible = not _orientation_mode
+	if _orientation_hint_row != null:
+		_orientation_hint_row.visible = _orientation_mode
+	content_container.visible = _state != _ViewState.MINIMIZED and not _orientation_mode
 	main_row.visible = _state == _ViewState.LEVEL_1
 	submenu_row.visible = _state == _ViewState.LEVEL_2
 	match _state:

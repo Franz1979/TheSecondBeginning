@@ -615,6 +615,7 @@ func set_buildings(buildings_data: Array) -> void:
 
 func set_vegetation_positions(positions: Dictionary) -> void:
 	vegetation_positions = positions
+	_rebuild_selection_lot_index(SELECTION_SOURCE_LIVE)
 	_defer_or_rebuild_tree()
 	_defer_or_rebuild_shrub()
 	_defer_or_rebuild_grass()
@@ -646,6 +647,113 @@ func get_individual_screen_position(object_type: GameTypes.WorldObjectType, indi
 			return Vector2.ZERO
 
 
+# ============================================================================================
+# Indice per lotto della selezione col clic (2026-10-04, richiesta utente — la ricerca della vegetazione al clic costava
+# 38-220 ms: VegetationSelectorController copiava l'intero elenco di ogni tipo e, per ogni candidato vicino, rifaceva
+# _lot_extent_counts e has_individual sull'intera cella). Per TREE/SHRUB e per ogni fonte (vivi, ceppi, morti):
+# lotto -> indici nell'elenco della fonte, ricostruito nei setter delle posizioni (set_vegetation_positions,
+# set_cut_positions, set_dead_positions, set_cut_dead_positions), mai al clic. Ricorda gli elenchi da cui è stato
+# costruito: se l'elenco corrente non è più lo stesso oggetto o ha cambiato lunghezza, l'indice non vale e il chiamante
+# ripiega sul metodo completo (find_selection_candidates ritorna null).
+# ============================================================================================
+const SELECTION_SOURCE_LIVE := 0
+const SELECTION_SOURCE_CUT := 1
+const SELECTION_SOURCE_DEAD := 2
+const SELECTION_INDEX_TYPES: Array[GameTypes.WorldObjectType] = [
+	GameTypes.WorldObjectType.TREE, GameTypes.WorldObjectType.SHRUB,
+]
+# [fonte][WorldObjectType] -> {"list": Array o null, "size": int, "lots": Dictionary Vector2i -> Array[int]}
+var _selection_lot_index: Array = [{}, {}, {}]
+
+
+func _selection_source_list(source: int, object_type: GameTypes.WorldObjectType) -> Variant:
+	var by_type: Dictionary = vegetation_positions if source == SELECTION_SOURCE_LIVE else (
+		cut_positions if source == SELECTION_SOURCE_CUT else dead_positions
+	)
+	return by_type.get(object_type, null)
+
+
+func _rebuild_selection_lot_index(source: int) -> void:
+	var index: Dictionary = {}
+	for object_type in SELECTION_INDEX_TYPES:
+		var list: Variant = _selection_source_list(source, object_type)
+		var lots: Dictionary = {}
+		if list != null:
+			var entries: Array = list
+			for i in range(entries.size()):
+				# Vivi: Vector3i; ceppi e morti: Dictionary con "key" (vedi cut_positions/dead_positions).
+				var key: Vector3i = entries[i] if source == SELECTION_SOURCE_LIVE else entries[i]["key"]
+				var lot := Vector2i(key.x, key.y)
+				if lots.has(lot):
+					(lots[lot] as Array).append(i)
+				else:
+					lots[lot] = [i]
+		index[object_type] = {"list": list, "size": (list as Array).size() if list != null else 0, "lots": lots}
+	_selection_lot_index[source] = index
+
+
+func _selection_index_entry_valid(source: int, object_type: GameTypes.WorldObjectType) -> bool:
+	var entry: Dictionary = (_selection_lot_index[source] as Dictionary).get(object_type, {})
+	if entry.is_empty():
+		return false
+	var current: Variant = _selection_source_list(source, object_type)
+	if current == null or entry["list"] == null:
+		return current == null and entry["list"] == null
+	return is_same(current, entry["list"]) and (current as Array).size() == int(entry["size"])
+
+
+# Candidati alla selezione di `object_type` nei 3x3 lotti attorno a `click_lot`, come Array di [individual_key, posizione
+# a schermo], nello STESSO ordine del metodo completo (vivi nell'ordine del loro elenco, poi ceppi, poi morti: a parità di
+# distanza vince il primo, come prima) e con la STESSA posizione di get_individual_screen_position — _compute_*_visual
+# legge di lot_counts solo il lotto dell'individuo, quindi basta il conteggio di quel lotto (vivi + ceppi + morti, lo
+# stesso di _lot_extent_counts), e "vivo" (chioma o ceppo per TREE) è la presenza nell'elenco dei vivi di quel lotto,
+# l'unico dove la chiave può stare. null se l'indice non vale per questi elenchi: il chiamante usa il metodo completo.
+func find_selection_candidates(object_type: GameTypes.WorldObjectType, click_lot: Vector2i) -> Variant:
+	for source in [SELECTION_SOURCE_LIVE, SELECTION_SOURCE_CUT, SELECTION_SOURCE_DEAD]:
+		if not _selection_index_entry_valid(source, object_type):
+			return null
+	var found: Array = [] # [fonte, indice, chiave]
+	for dy in range(-1, 2):
+		for dx in range(-1, 2):
+			var lot := click_lot + Vector2i(dx, dy)
+			for source in [SELECTION_SOURCE_LIVE, SELECTION_SOURCE_CUT, SELECTION_SOURCE_DEAD]:
+				var entry: Dictionary = _selection_lot_index[source][object_type]
+				var indices: Array = (entry["lots"] as Dictionary).get(lot, [])
+				if indices.is_empty():
+					continue
+				var list: Array = entry["list"]
+				for i in indices:
+					var key: Vector3i = list[i] if source == SELECTION_SOURCE_LIVE else list[i]["key"]
+					found.append([source, int(i), key])
+	found.sort_custom(func(a: Array, b: Array) -> bool:
+		return int(a[0]) < int(b[0]) or (int(a[0]) == int(b[0]) and int(a[1]) < int(b[1])))
+	var result: Array = []
+	for item in found:
+		var key: Vector3i = item[2]
+		var lot := Vector2i(key.x, key.y)
+		var local_count := 0
+		var alive := false
+		for source in [SELECTION_SOURCE_LIVE, SELECTION_SOURCE_CUT, SELECTION_SOURCE_DEAD]:
+			var entry: Dictionary = _selection_lot_index[source][object_type]
+			var indices: Array = (entry["lots"] as Dictionary).get(lot, [])
+			local_count += indices.size()
+			if source == SELECTION_SOURCE_LIVE and not alive:
+				var live_list: Array = entry["list"]
+				for i in indices:
+					if live_list[i] == key:
+						alive = true
+						break
+		var lot_counts := {lot: local_count}
+		var screen_pos: Vector2
+		if object_type == GameTypes.WorldObjectType.TREE:
+			var visual := _compute_tree_visual(key, lot_counts)
+			screen_pos = visual["canopy_center"] if alive else visual["ground"]
+		else:
+			screen_pos = _compute_shrub_visual(key, lot_counts)["center"]
+		result.append([key, screen_pos])
+	return result
+
+
 # Posizione a schermo del centro visivo di UNA pietra in `pos` — stessa formula di jitter (2026-09-08,
 # richiesta utente, click su STONE) già usata da _rebuild_stone_multimeshes per posizionare il
 # blob: estratta qui in modo che StoneSelectorController possa confrontare il click con l'esatto
@@ -667,15 +775,30 @@ func get_stone_screen_position(pos: Vector2i) -> Vector2:
 # dovrebbe aver già verificato has_individual prima di arrivare qui). Per uno slot bloccato
 # (tagliato/morto) vedi get_blocked_marker_info sotto, non questa.
 func get_individual_info(object_type: GameTypes.WorldObjectType, individual_key: Vector3i) -> Dictionary:
+	debug_last_lot_extent_counts_ms = 0.0
 	match object_type:
 		GameTypes.WorldObjectType.TREE:
-			var visual := _compute_tree_visual(individual_key, _lot_extent_counts(GameTypes.WorldObjectType.TREE))
+			var counts_start_usec := Time.get_ticks_usec()
+			var lot_counts := _lot_extent_counts(GameTypes.WorldObjectType.TREE)
+			debug_last_lot_extent_counts_ms = (Time.get_ticks_usec() - counts_start_usec) / 1000.0
+			var visual := _compute_tree_visual(individual_key, lot_counts)
 			return {"subtype_name": visual["subtype_name"], "age_band": visual["age_band"], "years_lived": visual["years_lived"], "size_multiplier": visual["size_multiplier"]}
 		GameTypes.WorldObjectType.SHRUB:
-			var visual := _compute_shrub_visual(individual_key, _lot_extent_counts(GameTypes.WorldObjectType.SHRUB))
+			var counts_start_usec := Time.get_ticks_usec()
+			var lot_counts := _lot_extent_counts(GameTypes.WorldObjectType.SHRUB)
+			debug_last_lot_extent_counts_ms = (Time.get_ticks_usec() - counts_start_usec) / 1000.0
+			var visual := _compute_shrub_visual(individual_key, lot_counts)
 			return {"subtype_name": visual["subtype_name"], "age_band": visual["age_band"], "years_lived": visual["years_lived"], "size_multiplier": visual["size_multiplier"]}
 		_:
 			return {}
+
+
+# [SELECT TIMING] (2026-10-04, solo diagnostica — vedi DebugLogging.SHOW_SELECTION_TIMING_LOGS): durata dell'ultimo
+# _lot_extent_counts di get_individual_info, letta da GameScene._refresh_vegetation_panel; frame del clic di selezione
+# che chiede la riga "draw" del prossimo _draw (-1 = nessuna richiesta) e coordinate della macrocella per la riga.
+var debug_last_lot_extent_counts_ms: float = 0.0
+var debug_selection_draw_frame: int = -1
+var debug_selection_draw_coords: Vector2i = Vector2i(-1, -1)
 
 
 # Dati per il pannello informativo di uno slot BLOCCATO (tagliato o morto) selezionato — {} se non
@@ -1025,6 +1148,7 @@ func set_tree_age_params(current_year: int, age_params: Dictionary, birth_year_s
 # mozzato / pianta secca), mai i blob vivi (quelli dipendono da vegetation_positions, invariato).
 func set_cut_positions(positions: Dictionary) -> void:
 	cut_positions = positions
+	_rebuild_selection_lot_index(SELECTION_SOURCE_CUT)
 	_cut_dead_signature = []
 	_rebuild_cut_dead_multimeshes()
 	queue_redraw()
@@ -1032,6 +1156,7 @@ func set_cut_positions(positions: Dictionary) -> void:
 
 func set_dead_positions(positions: Dictionary) -> void:
 	dead_positions = positions
+	_rebuild_selection_lot_index(SELECTION_SOURCE_DEAD)
 	_cut_dead_signature = []
 	_rebuild_cut_dead_multimeshes()
 	queue_redraw()
@@ -1047,6 +1172,8 @@ func set_dead_positions(positions: Dictionary) -> void:
 func set_cut_dead_positions(cut: Dictionary, dead: Dictionary, allow_skip: bool) -> bool:
 	cut_positions = cut
 	dead_positions = dead
+	_rebuild_selection_lot_index(SELECTION_SOURCE_CUT)
+	_rebuild_selection_lot_index(SELECTION_SOURCE_DEAD)
 	var signature: Array = [cut, dead, _cut_dead_lot_counts()]
 	if allow_skip and not _cut_dead_signature.is_empty() and signature == _cut_dead_signature:
 		return false
@@ -1096,6 +1223,12 @@ func set_season(season: GameTypes.Season) -> void:
 func _draw() -> void:
 	if world == null:
 		return
+	# [SELECT TIMING] (2026-10-04): ridisegno chiesto da un clic di selezione (debug_selection_draw_frame, scritto da
+	# GameScene._select_timing_request_draw) — misura il tempo di script di questo _draw e dei due contorni.
+	var _sel_timing: bool = DebugLogging.SHOW_SELECTION_TIMING_LOGS and debug_selection_draw_frame >= 0
+	var _sel_start_usec: int = Time.get_ticks_usec() if _sel_timing else 0
+	var _sel_individual_outline_usec: int = 0
+	var _sel_building_outline_usec: int = 0
 
 	_debug_draw_primitive_count = 0
 
@@ -1126,14 +1259,28 @@ func _draw() -> void:
 	_draw_selected_stick_lot_highlight()
 	_draw_selected_microcell_highlight()
 	_draw_vegetation_positions()
+	var _sel_outline_start_usec := Time.get_ticks_usec()
 	_draw_selected_individual_highlight()
+	_sel_individual_outline_usec = Time.get_ticks_usec() - _sel_outline_start_usec
 	_draw_fish_positions()
 	_draw_buildings()
+	_sel_outline_start_usec = Time.get_ticks_usec()
 	_draw_selected_building_highlight()
+	_sel_building_outline_usec = Time.get_ticks_usec() - _sel_outline_start_usec
 	_draw_neighbor_previews(grid_size)
 	_draw_boundary(grid_size)
 
 	#print("[DEBUG RENDER] primitive stone+grass+shrub+tree+bacche in questo _draw(): ", _debug_draw_primitive_count)
+	if _sel_timing:
+		# Solo il ridisegno dello stesso fotogramma del clic (o del successivo): un flag rimasto da un clic che non ha
+		# fatto ridisegnare questa cella non deve attribuire al clic un ridisegno arrivato dopo per altri motivi.
+		if Engine.get_process_frames() - debug_selection_draw_frame <= 1:
+			print("[SELECT TIMING] draw macrocella=(%d,%d) _draw=%.2fms | contorno pianta=%.2fms, contorno edificio=%.2fms" % [
+				debug_selection_draw_coords.x, debug_selection_draw_coords.y,
+				(Time.get_ticks_usec() - _sel_start_usec) / 1000.0,
+				_sel_individual_outline_usec / 1000.0, _sel_building_outline_usec / 1000.0,
+			])
+		debug_selection_draw_frame = -1
 
 
 # Terreno uniforme (vedi _terrain_uniform/_is_world_uniform sopra): UN rettangolo con il colore comune a
@@ -1462,7 +1609,9 @@ func _rebuild_dirt_ground_mesh() -> void:
 		var building_type_name: String = entry.get("building_type_name", "")
 		if building_type_name == "dirt_ground":
 			_append_dirt_ground_tile(entry["position"], int(entry.get("dirt_neighbors", 0)), vertices, colors)
-		elif GROUND_UNDER_BUILDING_TYPES.has(building_type_name):
+		elif GROUND_UNDER_BUILDING_TYPES.has(building_type_name) or bool(entry.get("dirt_ground_under", false)):
+			# "dirt_ground_under" (2026-10-04): fondo chiesto dalla voce stessa (oggi solo la capanna di stoccaggio, vedi
+			# GameScene._buildings_for_cell), fuori dalla lista per tipo.
 			_append_dirt_ground_tile(entry["position"], int(entry.get("dirt_neighbors", 0)), vertices, colors)
 	if _dirt_ground_mesh != null:
 		_dirt_ground_mesh.clear_surfaces()

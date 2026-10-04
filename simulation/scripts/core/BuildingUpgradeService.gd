@@ -22,8 +22,12 @@ const UPGRADE_FROM_BUILT_YEAR_KEY := "upgrade_from_built_year"
 # Sconto usato dalla destinazione, segnato come materiale già consegnato: all'annullamento resta all'edificio di
 # partenza, solo l'eccedenza va a terra.
 const UPGRADE_CREDITED_KEY := "upgrade_credited"
+# Orientamento dell'edificio di partenza (2026-10-04): rimesso all'annullamento — il miglioramento da un edificio senza
+# porta a uno con porta può avere cambiato Building.rotation con la scelta dell'orientamento.
+const UPGRADE_FROM_ROTATION_KEY := "upgrade_from_rotation"
 const UPGRADE_KEYS: Array[String] = [
 	UPGRADE_FROM_TYPE_KEY, UPGRADE_FROM_DURABILITY_KEY, UPGRADE_FROM_BUILT_YEAR_KEY, UPGRADE_CREDITED_KEY,
+	UPGRADE_FROM_ROTATION_KEY,
 ]
 
 
@@ -57,6 +61,20 @@ static func has_stored_resources(building: Building) -> bool:
 		return false
 	for resource_name in building.stored_resources.keys():
 		if int((building.stored_resources[resource_name] as Dictionary).get("quantity", 0)) > 0:
+			return true
+	return false
+
+
+# true se `building` ha qualcosa da posare a terra all'avvio di un miglioramento (2026-10-04, richiesta utente): almeno
+# un'unità nel magazzino (stored_resources) o nei prodotti finiti (production_output) — lo stesso contenuto che
+# GroundPileService.drop_building_contents svuota. Decide la conferma e la riga del tooltip di "Migliora".
+static func has_contents_to_drop(building: Building) -> bool:
+	if building == null:
+		return false
+	if has_stored_resources(building):
+		return true
+	for output_name in building.production_output.keys():
+		if int(building.production_output[output_name]) > 0:
 			return true
 	return false
 

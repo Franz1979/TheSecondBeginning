@@ -29,8 +29,14 @@ const LABEL_FONT_SIZE: int = 11
 const LEGEND_SWATCH_SIZE: float = 10.0
 const LEGEND_ROW_HEIGHT: float = 16.0
 const PADDING: float = 8.0
+# Nota opzionale sotto la legenda (set_footer): staccata da una riga sottile, più piccola e tenue della legenda.
+const FOOTER_COLOR := Color(0.6, 0.6, 0.6, 1.0)
+const FOOTER_SEPARATOR_COLOR := Color(0.5, 0.5, 0.5, 0.5)
+const FOOTER_FONT_SIZE: int = 9
+const FOOTER_GAP: float = 6.0
 
 var _data: Dictionary = {}
+var _footer_text: String = ""
 
 
 func _ready() -> void:
@@ -43,7 +49,24 @@ func _ready() -> void:
 # sono gestiti in _draw() senza eccezioni/divisioni per zero (vedi il controllo su `total` sotto).
 func set_data(data: Dictionary) -> void:
 	_data = data
+	_update_minimum_height()
 	queue_redraw()
+
+
+# Testo secondario disegnato sotto la legenda, separato da una riga sottile ("" = nessuna nota).
+# Nessuna logica di dominio: il chiamante decide cosa scriverci.
+func set_footer(text: String) -> void:
+	_footer_text = text
+	_update_minimum_height()
+	queue_redraw()
+
+
+# Altezza minima abbastanza per legenda + nota, mai sotto i 140 di base.
+func _update_minimum_height() -> void:
+	var needed := PADDING * 2.0 + _data.size() * LEGEND_ROW_HEIGHT
+	if _footer_text != "":
+		needed += FOOTER_GAP * 2.0 + FOOTER_FONT_SIZE
+	custom_minimum_size.y = maxf(140.0, needed)
 
 
 func _draw() -> void:
@@ -60,6 +83,8 @@ func _draw() -> void:
 	# stesso placeholder di LineChart con zero punti, nessuna torta vuota disegnata.
 	if keys.is_empty() or total <= 0.0:
 		_draw_placeholder_text(font, "Dati insufficienti")
+		# La nota resta visibile anche senza torta (es. solo vie di passaggio, nessun edificio contato).
+		_draw_footer(font, PADDING, size.y - PADDING - FOOTER_GAP * 1.5 - FOOTER_FONT_SIZE)
 		return
 
 	# Torta = quadrato a sinistra (mai più larga della metà del Control, mai più alta dell'altezza
@@ -85,6 +110,18 @@ func _draw() -> void:
 		# senza individui) — stesso principio già seguito da StatisticsPanel per le cause di morte:
 		# una categoria a zero compare comunque, invece di sparire silenziosamente dalla lista.
 		legend_y = _draw_legend_row(font, legend_x, legend_y, color, key, value, fraction)
+	_draw_footer(font, legend_x, legend_y)
+
+
+func _draw_footer(font: Font, x: float, y: float) -> void:
+	if _footer_text == "":
+		return
+	var line_y := y + FOOTER_GAP * 0.5
+	draw_line(Vector2(x, line_y), Vector2(size.x - PADDING, line_y), FOOTER_SEPARATOR_COLOR, 1.0)
+	draw_string(
+		font, Vector2(x, line_y + FOOTER_GAP + FOOTER_FONT_SIZE), _footer_text,
+		HORIZONTAL_ALIGNMENT_LEFT, -1, FOOTER_FONT_SIZE, FOOTER_COLOR
+	)
 
 
 func _draw_pie_slice(center: Vector2, radius: float, start_angle: float, slice_angle: float, color: Color) -> void:

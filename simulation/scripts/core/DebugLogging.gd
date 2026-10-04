@@ -86,8 +86,9 @@ const SHOW_DAILY_TIMING_LOGS := false
 # blocco intero ad ogni ~3 microcelle di movimento): nessun comportamento di simulazione cambia,
 # solo il print viene soppresso. Rimetti a true per riavere tutto il gruppo come prima.
 # Riacceso il 2026-10-03 (richiesta utente — diagnostica del rallentamento sulla raccolta): la riga [VEG REFRESH
-# TIMING] ora dice anche chi ha chiesto il ridisegno (motivo=...).
-const SHOW_VEGETATION_REFRESH_TIMING_LOGS := true
+# TIMING] ora dice anche chi ha chiesto il ridisegno (motivo=...). Rispento il 2026-10-04 (richiesta utente): il codice
+# delle misure resta, basta rimettere true.
+const SHOW_VEGETATION_REFRESH_TIMING_LOGS := false
 
 # Filtro dedicato per [FOW REDRAW TIMING] (FogOfWarRenderer._draw) — diagnostica per lo Step 4 FoW
 # multi-sorgente (2026-09-02): misura il costo reale del ciclo da 10.000 celle ora che il test di
@@ -162,6 +163,12 @@ const SHOW_VITALS_INTERACTION_LOGS := false
 # comportamento di simulazione cambia (il refresh gira comunque ogni giorno), solo il print viene
 # soppresso.
 const SHOW_SELECTED_PANEL_REFRESH_LOGS := false
+
+# [SELECT TIMING] (2026-10-04, richiesta utente — scattino al clic di selezione): una riga per ogni clic sinistro di
+# selezione in GameScene._unhandled_input (tipo selezionato, totale, fasi: ricerca per selettore, selezione/deselezione,
+# pannello, scheda, suono, altro) e una riga "draw" dal MicroCellRenderer che ridisegna per quella selezione (tempo di
+# _draw e del contorno). Solo misura e stampa, nessun effetto sul comportamento.
+const SHOW_SELECTION_TIMING_LOGS := false
 
 # ---------------------------------------------------------------------------------------------
 # CATEGORIE (2026-09-16, richiesta utente — "riordino dei log di debug") — SOSTITUISCONO i flag

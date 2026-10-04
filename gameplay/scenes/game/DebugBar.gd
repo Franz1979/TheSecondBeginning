@@ -49,8 +49,15 @@ var _last_fps: int = -1
 signal action_pressed(action_id: StringName)
 # Evento casuale da scatenare subito (id di RandomEventRules), dal menu a tendina degli eventi.
 signal random_event_trigger_requested(event_id: String)
+# Barra aperta o chiusa dal suo pulsante (2026-10-04): GameScene aggiorna i riepiloghi di debug solo a barra aperta e
+# subito alla riapertura.
+signal expanded_changed(expanded: bool)
 
 var _expanded: bool = true
+
+
+func is_expanded() -> bool:
+	return _expanded
 
 
 func _ready() -> void:
@@ -120,6 +127,7 @@ func _process(_delta: float) -> void:
 func _on_control_button_pressed() -> void:
 	_expanded = not _expanded
 	_apply_state()
+	expanded_changed.emit(_expanded)
 
 
 func _apply_state() -> void:

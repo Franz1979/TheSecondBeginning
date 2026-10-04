@@ -146,7 +146,18 @@ building_upgrade_rest,Rest: ×{from} → ×{to}
 building_upgrade_nothing,none
 building_upgrade_residents_leave,Residents move out during the works.
 building_upgrade_storage_not_empty,Empty the building's storage first.
+building_upgrade_contents_to_ground,The building's stock will be dropped on the ground in a pile when work starts.
+upgrade_contents_confirmation_title,Upgrade building
+upgrade_contents_confirmation_text,Upgrade {building} #{id} to {target}?
+upgrade_contents_confirmation_text_ground,"When work starts, all the storage stock will be dropped on the ground in a pile next to the building, where it decays faster."
+upgrade_contents_confirmation_text_warehouse,It is best to have another warehouse to carry it to.
+upgrade_contents_confirmation_confirm,Upgrade
 upgrade_pick_banner_text,🔨 Upgrade to {building}: click an individual (Esc to cancel)
+build_bar_title_upgrade_orientation,{building} — Door orientation
+build_bar_orientation_rotate,rotate
+build_bar_orientation_key_click,Click
+build_bar_orientation_confirm,confirm
+build_bar_orientation_cancel,cancel
 building_status_upgrade_in_progress,Upgrade in progress: from {from} to {to}
 building_settings_empty_all_button,Empty all
 building_command_empty_all_detail,"The storage contents and finished products drop to the ground next to the building, where they decay faster."
@@ -275,7 +286,7 @@ building_storage_caption,Storage
 statistics_tab_births,Births
 statistics_tab_population,Population
 statistics_tab_buildings,Buildings
-statistics_movement_cells,Walkable cells: {count}
+statistics_movement_cells,Pathways: {count} cells
 tech_tree_tooltip,Tech tree
 tech_tree_requires_thought_building_tooltip,"Build a pebble circle: your people will be able to deposit their thoughts and develop ideas."
 map_layers_tooltip,Map layers
