@@ -42,6 +42,15 @@ var active_growth_bonuses: Dictionary = {} # NaturalEventType -> {multiplier: fl
 var pending_migration_surplus: Dictionary = {}
 var stone_positions: Array = [] # Array[Vector2i], posizioni microcella occupate da stone (100x100)
 var stone_positions_generated: bool = false # separato dall'array vuoto: distingue "mai aperta" da "aperta ma senza stone"
+# Roccia tolta (2026-10-05, richiesta utente — Quarry): Vector2i (posizione della roccia) -> unità di ROCK tolte da
+# RockStoneService.extract, solo le rocce toccate. La stessa quantità è già sottratta da resource_quantity[ROCK]; la
+# quota iniziale di ogni roccia non si salva: la ricava RockStoneService dalla posizione, sul totale ricostruito
+# (quantità attuale + somma di questo campo). PERSISTITO (GameSaveService/GameLoadService, chiave assente se vuoto).
+var quarried_stone_by_position: Dictionary = {}
+# Cache RUNTIME della pietra iniziale per roccia (RockStoneService): Vector2i -> int, costruita alla prima richiesta e
+# mai invalidata (posizioni e resource_quantity[ROCK] non cambiano). MAI persistita.
+var rock_stone_cache: Dictionary = {}
+var rock_stone_cache_built: bool = false
 # Guadi (2026-09-27, pathfinding step 1): microcelle di fiume attraversabili a piedi, Array[Vector2i]. Per ora sempre
 # vuoto (nessuna logica li genera); letto da PathfindingService. Salvato come stone_positions (chiave assente se vuoto).
 var ford_positions: Array = []
@@ -100,6 +109,11 @@ var grass_seed_baseline: int = -1
 # PlayerHarvestService.cut_individual (unico chiamante che scrive qui, tramite il bottone "Cut" di
 # VegetationInfoPanel in GameScene).
 var vegetation_cut_exceptions: Dictionary = {}
+# Lavoro di taglio già fatto su una pianta (2026-10-04, richiesta utente — task Cut): chiave CutAction.progress_key
+# ("tipo|x|y|indice", String così si salva così com'è in JSON) -> lavoro accumulato, in giorni-base. Vive qui e non
+# nell'azione, così una task interrotta e ridata riparte da dove era. Tolta quando la pianta viene abbattuta. Dal
+# 2026-10-05 anche il lavoro di estrazione su una roccia (QuarryAction, tipo ROCK, indice 0), tolto a estrazione fatta.
+var cut_work_progress: Dictionary = {}
 # Vector3i (x, y lotto + indice individuo locale) -> anno di nascita virtuale. Fatto storico reale
 # una volta fissato (stesso principio di vegetation_cut_exceptions sopra): il congelamento avviene
 # in IndividualVegetationService._freeze_new_individual (nascita dell'individuo — stima con
@@ -139,13 +153,11 @@ var shrub_claimed_lots: Dictionary = {}
 # Dictionary ANNIDATO per resource_name: resource_name -> Dictionary[Vector2i, int], STESSO stile
 # "annidato per risorsa" già in uso per berry_harvested_by_lot/FRUIT_STOCK_SOURCES qui sotto.
 # SIGNIFICATO del valore intero dipende dal SecondaryResourceRules.lot_source della risorsa (letto
-# SOLO da LotCapacityService/TerrainScatteredResourceService, mai qui): quantità RESIDUA per
-# STONE_POSITION (pebble — nessuna "capacity" separata, la generazione iniziale non è
-# deterministica, quindi il valore va persistito com'è, mutato in loco dal consumo, esattamente
-# come il vecchio pebble_quantities); RACCOLTO quest'anno/quest'epoch per TREE_INDIVIDUAL/
-# SHRUB_INDIVIDUAL/GRASS_PATCH (stick/plant_fiber/mushroom/wild_vegetables — la "capacity" di
-# questi quattro vive invece in lot_capacity_cache sotto, una cache RUNTIME mai persistita, perché
-# sempre ri-derivabile deterministicamente da micro_seed+stato). PERSISTITO in GameSaveService/
+# SOLO da LotCapacityService/TerrainScatteredResourceService, mai qui): RACCOLTO per STONE_POSITION
+# (pebble, dal 2026-10-05: solo le rocce toccate, mai azzerato, negativo = pebble in più) e RACCOLTO
+# quest'anno/quest'epoch per TREE_INDIVIDUAL/SHRUB_INDIVIDUAL/GRASS_PATCH (stick/plant_fiber/mushroom/
+# wild_vegetables) — la "capacity" vive in lot_capacity_cache sotto, una cache RUNTIME mai persistita,
+# perché sempre ri-derivabile deterministicamente da micro_seed+stato. PERSISTITO in GameSaveService/
 # GameLoadService (chiave "lot_registry", UN SOLO loop su LotCapacityService.
 # get_all_lot_capacity_resource_names() invece di un blocco per risorsa — stesso principio già
 # seguito per berry_harvested_by_lot/FRUIT_STOCK_SOURCES).
@@ -157,9 +169,9 @@ var lot_registry: Dictionary = {}
 # tree_virtual_birth_year (o l'equivalente shrub_*, per TREE_INDIVIDUAL/SHRUB_INDIVIDUAL, via
 # VegetationPoolService) o da micro_seed+dedicated_space(GRASS) (per GRASS_PATCH, via
 # LotCapacityService.refresh_grass_patch_lot_capacity) — entrambi già persistiti/deterministici a
-# monte. Dictionary ANNIDATO per resource_name: resource_name -> Dictionary[Vector2i, int]. STONE_
-# POSITION (pebble) non ne ha bisogno: la sua "capacity" è il valore in lot_registry stesso (non
-# ri-derivabile, vedi sopra), quindi questo Dictionary resta semplicemente senza entry per "pebble".
+# monte. Dictionary ANNIDATO per resource_name: resource_name -> Dictionary[Vector2i, int]. Dal 2026-10-05 anche
+# STONE_POSITION (pebble): capacità di ogni roccia da RockStoneService.compute_pebble_capacities, costruita una volta
+# per macrocella e mai invalidata.
 var lot_capacity_cache: Dictionary = {}
 # Firma di freschezza RUNTIME per TREE_INDIVIDUAL/SHRUB_INDIVIDUAL SOLO (stick/plant_fiber/
 # mushroom) — resource_name -> giorno assoluto dell'ultimo checkpoint growth per cui

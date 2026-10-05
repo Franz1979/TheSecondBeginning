@@ -35,6 +35,12 @@ static func get_base_density(resource_type: GameTypes.WorldObjectType) -> float:
 	return rules.base_density if rules != null else 1.0
 
 
+# Regole di densità complete di un tipo (2026-10-05, Quarry — RockStoneService legge il gruppo Extraction), dalla stessa
+# cache di _get_density_rules. null se il tipo non ha un *_density.tres.
+static func get_density_rules(resource_type: GameTypes.WorldObjectType) -> ResourceDensityRules:
+	return _get_density_rules(resource_type)
+
+
 static func get_max_density(
 	resource_type: GameTypes.WorldObjectType,
 	terrain: GameTypes.TerrainBase,

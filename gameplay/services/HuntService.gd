@@ -120,8 +120,10 @@ static func choose_weapon(individual: Variant, category: TaskTypes.ToolCategory,
 		var tool_name: String = individual.get_equipped_tool(slot)
 		if tool_name == "" or not ToolGateService._tool_categories(tool_name).has(category):
 			continue
-		var rules := CaloricCalculator.get_caloric_source_rules(tool_name)
-		var chance := compute_hit_chance(rules.attack_power if rules != null else 0.0, skill_factor, species, age_band)
+		# Armi a munizioni (2026-10-04): senza la sua munizione in cintura non è sceglibile; la forza è quella della munizione.
+		if not ToolGateService.has_required_ammo(individual, tool_name):
+			continue
+		var chance := compute_hit_chance(get_attack_power(individual, tool_name), skill_factor, species, age_band)
 		var uses: int = individual.get_equipped_tool_uses(slot)
 		if chance > best_chance + 0.000001 or (absf(chance - best_chance) <= 0.000001 and uses > best_uses):
 			best_name = tool_name
@@ -134,7 +136,7 @@ static func choose_weapon(individual: Variant, category: TaskTypes.ToolCategory,
 # (salvata nel context, con un log se cambia). "" = nessuna arma della categoria in cintura.
 static func resolve_weapon(individual: Variant, context: Dictionary, category: TaskTypes.ToolCategory, species: String, age_band: int) -> String:
 	var saved: String = String(context.get(CONTEXT_HUNT_WEAPON, ""))
-	if saved != "" and find_weapon_slot(individual, saved) != -1:
+	if saved != "" and find_weapon_slot(individual, saved) != -1 and ToolGateService.has_required_ammo(individual, saved):
 		return saved
 	var chosen := choose_weapon(individual, category, species, age_band)
 	if chosen == "":
@@ -178,6 +180,57 @@ static func find_weapon_slot(individual: Variant, weapon_name: String) -> int:
 # portata, consuma un uso, ma l'arma resta in cintura — nessuna caduta, nessun recupero, mai persa con l'animale.
 static func is_melee_weapon(weapon_name: String) -> bool:
 	return compute_weapon_reach(weapon_name) <= MELEE_MAX_REACH
+
+
+# Arma scagliata al tiro (2026-10-04): un'arma a distanza (non da mischia) con SecondaryResourceRules.thrown_on_attack
+# vero — il default, quindi tutte le armi di prima. Falso (es. l'arco) = resta in cintura, niente caduta né recupero.
+static func is_thrown_weapon(weapon_name: String) -> bool:
+	if is_melee_weapon(weapon_name):
+		return false
+	var rules := CaloricCalculator.get_caloric_source_rules(weapon_name)
+	return rules == null or rules.thrown_on_attack
+
+
+# Forza d'attacco di un tiro con `weapon_name` (2026-10-04): quella della munizione in uso se l'arma ne richiede una
+# (la più consumata in cintura), altrimenti quella dell'arma. 0 se la munizione manca.
+static func get_attack_power(individual: Variant, weapon_name: String) -> float:
+	var rules := CaloricCalculator.get_caloric_source_rules(weapon_name)
+	if rules == null:
+		return 0.0
+	if rules.required_ammo_category < 0:
+		return rules.attack_power
+	var ammo_slot := ToolGateService.find_ammo_slot(individual, rules.required_ammo_category)
+	if ammo_slot == -1:
+		return 0.0
+	var ammo_rules := CaloricCalculator.get_caloric_source_rules(individual.get_equipped_tool(ammo_slot))
+	return ammo_rules.attack_power if ammo_rules != null else 0.0
+
+
+# Consuma un uso della munizione dell'arma (la più consumata in cintura). Ritorna il nome della munizione se si è rotta
+# (a zero usi sparisce come ogni attrezzo), "" altrimenti o se l'arma non usa munizioni.
+static func consume_ammo(individual: Variant, weapon_name: String) -> String:
+	var rules := CaloricCalculator.get_caloric_source_rules(weapon_name)
+	if rules == null or rules.required_ammo_category < 0:
+		return ""
+	var ammo_slot := ToolGateService.find_ammo_slot(individual, rules.required_ammo_category)
+	if ammo_slot == -1:
+		return ""
+	var ammo_name: String = individual.get_equipped_tool(ammo_slot)
+	return ammo_name if individual.consume_equipped_tool_use(ammo_slot, null) else ""
+
+
+# Prima arma da caccia (cintura o zaino) che c'è ma non ha la sua munizione in cintura; "" se nessuna. Per il messaggio
+# di rifiuto "mancano le munizioni" quando nessun'altra arma è disponibile.
+static func find_weapon_missing_ammo(individual: HumanIndividual) -> String:
+	for slot in range(individual.get_tool_slot_count()):
+		var tool_name := individual.get_equipped_tool(slot)
+		if tool_name != "" and ToolGateService._tool_categories(tool_name).has(TaskTypes.ToolCategory.HUNTING) \
+				and not ToolGateService.has_required_ammo(individual, tool_name):
+			return tool_name
+	for tool_name in ToolGateService.get_tools_covering(TaskTypes.ToolCategory.HUNTING):
+		if individual.get_carried_quantity(tool_name) > 0 and not ToolGateService.has_required_ammo(individual, tool_name):
+			return tool_name
+	return ""
 
 
 # Cambio d'arma (2026-10-01, regole delle armi): l'arma in uso si è rotta, è stata persa o non c'è più in cintura. Con
@@ -231,10 +284,11 @@ static func write_weapon_drop(context: Dictionary, macro_coords: Vector2i, local
 
 # true se l'individuo ha ancora un'arma di caccia in cintura o nello zaino (dopo che quella scagliata si è rotta).
 static func has_hunting_weapon_available(individual: HumanIndividual) -> bool:
+	# Armi a munizioni (2026-10-04): find_belt_slot_for salta già quelle senza munizione; nello zaino idem.
 	if ToolGateService.find_belt_slot_for(individual, TaskTypes.ToolCategory.HUNTING) != -1:
 		return true
 	for tool_name in ToolGateService.get_tools_covering(TaskTypes.ToolCategory.HUNTING):
-		if individual.get_carried_quantity(tool_name) > 0:
+		if individual.get_carried_quantity(tool_name) > 0 and ToolGateService.has_required_ammo(individual, tool_name):
 			return true
 	return false
 

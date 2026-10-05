@@ -7,8 +7,8 @@ script = ExtResource("1_burial")
 building_name = "building_burial"
 category = 6
 required_idea_id = "paleolithic_constructions"
-min_construction_days = 2
-required_labor = 1200
+min_construction_days = 3
+required_labor = 1600
 required_materials = {
 "pebble": 60,
 "stick": 20

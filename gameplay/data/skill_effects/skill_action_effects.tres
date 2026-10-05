@@ -10,6 +10,16 @@ effects_by_action_key = {
 "skill": "skill_builder",
 "skill_max": 1000.0
 },
+"cut": {
+"bonus": 0.25,
+"skill": "skill_gathering",
+"skill_max": 1000.0
+},
+"quarry": {
+"bonus": 0.25,
+"skill": "skill_gathering",
+"skill_max": 1000.0
+},
 "butcher": {
 "bonus": 0.25,
 "skill": "skill_crafting",

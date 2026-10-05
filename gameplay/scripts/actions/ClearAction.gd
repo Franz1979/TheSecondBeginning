@@ -31,10 +31,9 @@ extends Action
 # differenza di PickUpAction/UnloadAction: qui non c'è nulla che possa legittimamente cambiare tra
 # costruzione ed attivazione da riverificare — la composizione della microcella al momento in cui
 # la Task viene creata è quella che conta), ispezionando la SOLA microcella del cantiere (coerente
-# col limite monocella attuale degli edifici): 1gg fisso se la microcella ha grass, + 1gg per ogni
-# TREE presente (individui, non lotti: un lotto può ospitarne più di uno per densità, vedi
-# BuildingSiteClearingService._clear_type/MacroCellState.tree_individual_subtype) + 0.5gg per ogni
-# SHRUB presente, sommati (es. grass + 2 tree = 1 + 2 = 3gg).
+# col limite monocella attuale degli edifici): 1gg fisso se la microcella ha grass, + 0.5gg per ogni
+# ceppo d'albero (2026-10-04, TREE_STUMP_CLEAR_DAYS). Alberi e arbusti vivi non si abbattono più qui
+# (task Cut): fermano la pulizia, vedi has_live_plants.
 #
 # STAMINA_DRAIN_PER_DAY — STESSO valore di SetupSiteAction.STAMINA_DRAIN_PER_DAY/ThinkAction.
 # STAMINA_DRAIN_PER_DAY (10.0), nessun valore migliore noto per "ripulire un cantiere" oggi, stesso
@@ -92,10 +91,9 @@ func _init(
 	_is_currently_grass = p_is_currently_grass
 	_position = Vector2i(p_target_building.micro_x, p_target_building.micro_y) if p_target_building != null else Vector2i.ZERO
 	_duration = _compute_duration()
-	# Alberi o cespugli sulla microcella (2026-09-28, richiesta utente): categorie da VegetationClearingService (la
-	# regola unica condivisa col piazzamento). Solo erba o microcella vuota: nessun requisito. Controllo a ogni tick
-	# in get_stamina_delta: senza attrezzo lo step resta in attesa e riparte da solo.
-	required_tool_categories = VegetationClearingService.get_required_tool_categories(_macro_state, _position)
+	# Nessun attrezzo e nessuna pianta viva abbattuta (2026-10-04, richiesta utente — task Cut): qui si tolgono solo erba,
+	# ceppi e piante morte. Una pianta viva nel lotto (nata dopo il piazzamento, o cantiere di un salvataggio piazzato su
+	# piante vive) ferma la pulizia finché non viene tagliata con la Cut (has_live_plants, vedi get_stamina_delta).
 	# Persistita su Building.construction_progress["clear_duration_days"] (2026-09-14, richiesta
 	# utente — barra di avanzamento nel pannello edificio) — a differenza di clear_days_done
 	# (progresso, sempre scritto dal vivo su Building), _duration è la SOGLIA target: PRIMA viveva
@@ -106,7 +104,9 @@ func _init(
 	# vegetazione non cambia finché ClearAction non completa (on_complete la rimuove), quindi ogni
 	# ricostruzione produrrebbe comunque lo stesso valore — il guard "solo se assente" evita solo una
 	# scrittura ridondante, non un valore diverso.
-	if target_building != null and not target_building.construction_progress.has("clear_duration_days"):
+	# Riscritta a ogni costruzione (2026-10-04): senza più il tempo delle piante vive, un cantiere di un salvataggio
+	# vecchio avrebbe altrimenti la soglia di prima nella barra del pannello.
+	if target_building != null:
 		target_building.construction_progress["clear_duration_days"] = _duration
 
 
@@ -141,30 +141,38 @@ func _get_space_reserved() -> bool:
 	return bool(target_building.construction_progress.get("space_reserved", false))
 
 
+# Ceppi d'albero (2026-10-04, richiesta utente): mezzo giorno ciascuno. Ceppi di arbusto e piante morte non
+# aggiungono tempo (si tolgono comunque, vedi BuildingSiteClearingService._clear_exceptions_at_lot).
+const TREE_STUMP_CLEAR_DAYS: float = 0.5
+
+
 func _compute_duration() -> float:
 	var duration: float = 0.0
 	if _is_currently_grass:
 		duration += 1.0
 	if _macro_state != null:
-		duration += float(_count_individuals_at(GameTypes.WorldObjectType.TREE)) * 1.0
-		duration += float(_count_individuals_at(GameTypes.WorldObjectType.SHRUB)) * 0.5
+		duration += float(_count_tree_stumps_at()) * TREE_STUMP_CLEAR_DAYS
 	return duration
 
 
-# Conta gli individui di `object_type` presenti ESATTAMENTE in _position — stessa scansione lineare
-# di BuildingSiteClearingService._clear_type (subtype_store.keys() filtrate per x/y), duplicata
-# apposta invece di riusare quel service qui: quella funzione RIMUOVE mentre conta (side-effect su
-# birth_year_store/subtype_store/dedicated_space), questa deve solo CONTARE senza toccare nulla (la
-# rimozione vera avviene più tardi, in on_complete) — nessuna astrazione condivisa introdotta per
-# due usi con contratti diversi (uno muta stato, l'altro no), stesso principio "non un'astrazione
-# anticipata" già seguito nel progetto.
-func _count_individuals_at(object_type: GameTypes.WorldObjectType) -> int:
-	var subtype_store: Dictionary = _macro_state.tree_individual_subtype if object_type == GameTypes.WorldObjectType.TREE else _macro_state.shrub_individual_subtype
+# Ceppi d'albero in _position: tagli d'albero ancora nella finestra di rientro (dopo, lo slot non mostra più il ceppo).
+func _count_tree_stumps_at() -> int:
+	var current_year: int = GameSettings.active_game_data.year if GameSettings.active_game_data != null else 0
+	var reentry_years: int = int(IndividualVegetationService.REENTRY_YEARS_BY_TYPE.get(GameTypes.WorldObjectType.TREE, 0))
 	var count := 0
-	for key in subtype_store.keys():
-		if key.x == _position.x and key.y == _position.y:
+	for key in _macro_state.vegetation_cut_exceptions.keys():
+		if key.x != _position.x or key.y != _position.y:
+			continue
+		var entry: Dictionary = _macro_state.vegetation_cut_exceptions[key]
+		if int(entry.get("origin_type", -1)) == GameTypes.WorldObjectType.TREE and current_year - int(entry.get("cut_year", 0)) < reentry_years:
 			count += 1
 	return count
+
+
+# Alberi o arbusti vivi nel lotto del cantiere (2026-10-04): la pulizia non parte finché ci sono, il pannello del
+# cantiere lo dice (BuildingInfoPanel, "Taglia prima alberi e arbusti").
+func has_live_plants() -> bool:
+	return BuildingSiteClearingService.has_woody_vegetation(_macro_state, _position)
 
 
 # _duration<=0.0 (microcella già completamente sgombra: nessuna grass/tree/shrub) ritorna 0.0 SENZA
@@ -174,21 +182,23 @@ func _count_individuals_at(object_type: GameTypes.WorldObjectType) -> int:
 # construction_progress ad ogni drain (2026-09-11) — STESSO pattern di BuildAction.get_stamina_delta/
 # SetupSiteAction.get_stamina_delta: nessun accumulatore interno, lettura+scrittura sempre dal vivo.
 func get_stamina_delta(individual: Variant, context: Dictionary, delta: float) -> float:
+	if _is_clear_log_on() and target_building != null and not _get_space_reserved():
+		_add_clear_log_value(CLEAR_LOG_STEP_DAYS_KEY, delta)
 	if _duration <= 0.0 or target_building == null:
 		return 0.0
 	if _get_clear_days_done() >= _duration:
 		return 0.0
-	# ensure_required_tools per primo: sposta l'attrezzo in cintura e aggiorna lo stato di attesa mostrato nel
-	# pannello; poi la regola unica, così un requisito futuro oltre agli attrezzi vale anche qui.
-	if not required_tool_categories.is_empty():
-		if not ensure_required_tools(individual) or not VegetationClearingService.can_clear_vegetation(individual):
-			return 0.0
+	# Pianta viva nel lotto: il costruttore resta in attesa, riparte da solo quando è stata tagliata.
+	if has_live_plants():
+		return 0.0
 	target_building.construction_progress["clear_days_done"] = _get_clear_days_done() + delta
+	if _is_clear_log_on():
+		_add_clear_log_value(CLEAR_LOG_STAMINA_KEY, STAMINA_DRAIN_PER_DAY * delta)
 	return -STAMINA_DRAIN_PER_DAY * delta
 
 
 func is_complete(individual: Variant, context: Dictionary) -> bool:
-	return _get_clear_days_done() >= _duration
+	return _get_clear_days_done() >= _duration and not has_live_plants()
 
 
 # get_required_position (2026-09-13, richiesta utente — fix "Walk di ritorno alla ripresa", vedi
@@ -221,6 +231,7 @@ func get_required_position(individual: Variant, context: Dictionary) -> Variant:
 # disattivarla dopo il test.
 func activate(individual: Variant, context: Dictionary) -> void:
 	super(individual, context)
+	_log_clear_start(individual)
 	if DebugLogging.ENABLED and DebugLogging.SHOW_TRANSPORT_BUILD_LOGS and _macro_state != null:
 		print("[OCCUPIED SPACE DEBUG] ClearAction.activate (PRIMA del clear) in (%d,%d): get_empty_space()=%d, dedicated_space[BUILDING]=%d" % [
 			_position.x, _position.y,
@@ -237,8 +248,11 @@ func activate(individual: Variant, context: Dictionary) -> void:
 func on_complete(individual: Variant, context: Dictionary) -> void:
 	if target_building == null or _macro_state == null:
 		return
+	if not _get_space_reserved():
+		_log_clear_end(individual)
 
-	BuildingSiteClearingService.clear_microcell(_macro_state, _position, _is_currently_grass)
+	# Solo erba, ceppi e piante morte (2026-10-04): is_complete garantisce che non ci siano piante vive.
+	BuildingSiteClearingService.clear_ground(_macro_state, _position, _is_currently_grass)
 
 	# Spazio riservato (2026-09-11, richiesta utente, punto 2) — STESSA formula di GameScene.
 	# _place_building_at, spostata QUI così la microcella non risulta mai libera per la crescita
@@ -267,6 +281,83 @@ func on_complete(individual: Variant, context: Dictionary) -> void:
 		])
 
 	site_cleared.emit(target_building)
+
+
+# --- Log [CLEAR] (2026-10-04, richiesta utente — DebugLogging.SHOW_CLEAR_LOGS). Solo log: i tre contatori stanno su
+# construction_progress (scritti solo a log acceso) così sopravvivono a interruzioni e salvataggi; nessuna logica li legge.
+const CLEAR_LOG_START_DAY_KEY := "clear_log_start_day"
+const CLEAR_LOG_STEP_DAYS_KEY := "clear_log_step_days"
+const CLEAR_LOG_STAMINA_KEY := "clear_log_stamina"
+
+
+func _is_clear_log_on() -> bool:
+	return DebugLogging.ENABLED and DebugLogging.SHOW_CLEAR_LOGS
+
+
+func _add_clear_log_value(key: String, amount: float) -> void:
+	target_building.construction_progress[key] = float(target_building.construction_progress.get(key, 0.0)) + amount
+
+
+func _count_exceptions_at(exceptions: Dictionary, origin_type: int, active_only: bool) -> int:
+	var current_year: int = GameSettings.active_game_data.year if GameSettings.active_game_data != null else 0
+	var reentry_years: int = int(IndividualVegetationService.REENTRY_YEARS_BY_TYPE.get(origin_type, 0))
+	var count := 0
+	for key in exceptions.keys():
+		if key.x != _position.x or key.y != _position.y:
+			continue
+		var entry: Dictionary = exceptions[key]
+		if origin_type >= 0 and int(entry.get("origin_type", -1)) != origin_type:
+			continue
+		if active_only and current_year - int(entry.get("cut_year", 0)) >= reentry_years:
+			continue
+		count += 1
+	return count
+
+
+func _count_live_plants_at() -> int:
+	var count := 0
+	for subtype_store in [_macro_state.tree_individual_subtype, _macro_state.shrub_individual_subtype]:
+		for key in subtype_store.keys():
+			if key.x == _position.x and key.y == _position.y:
+				count += 1
+	return count
+
+
+# Riga d'inizio: solo la prima volta che la pulizia di questo cantiere parte (non alle riprese dopo un'interruzione).
+func _log_clear_start(individual: Variant) -> void:
+	if not _is_clear_log_on() or target_building == null or _macro_state == null or _get_space_reserved():
+		return
+	if target_building.construction_progress.has(CLEAR_LOG_START_DAY_KEY):
+		return
+	var game_data: GameData = GameSettings.active_game_data
+	target_building.construction_progress[CLEAR_LOG_START_DAY_KEY] = game_data.get_absolute_day() if game_data != null else 0
+	var grass_days: float = 1.0 if _is_currently_grass else 0.0
+	var tree_stumps := _count_tree_stumps_at()
+	var shrub_stumps := _count_exceptions_at(_macro_state.vegetation_cut_exceptions, GameTypes.WorldObjectType.SHRUB, true)
+	var dead_plants := _count_exceptions_at(_macro_state.vegetation_death_exceptions, -1, false)
+	var live_plants := _count_live_plants_at()
+	var building_name: String = tr(target_building.rules.building_name) if target_building.rules != null else target_building.building_type_name
+	print("[CLEAR] inizio pulizia: %s #%d, macrocella (%d,%d) microcella (%d,%d), %s | erba %.1fg + %d ceppi d'albero × %.1fg = %.1fg totali | %d ceppi di arbusto e %d piante morte (0g)%s" % [
+		building_name, target_building.id, target_building.macro_x, target_building.macro_y, _position.x, _position.y,
+		String(individual.name) if individual != null else "?",
+		grass_days, tree_stumps, TREE_STUMP_CLEAR_DAYS, _duration, shrub_stumps, dead_plants,
+		(" | %d piante vive nel lotto: pulizia in attesa del taglio" % live_plants) if live_plants > 0 else "",
+	])
+
+
+func _log_clear_end(individual: Variant) -> void:
+	if not _is_clear_log_on() or target_building == null:
+		return
+	var game_data: GameData = GameSettings.active_game_data
+	var progress := target_building.construction_progress
+	var calendar_days := "?"
+	if game_data != null and progress.has(CLEAR_LOG_START_DAY_KEY):
+		calendar_days = str(game_data.get_absolute_day() - int(progress[CLEAR_LOG_START_DAY_KEY]))
+	var building_name: String = tr(target_building.rules.building_name) if target_building.rules != null else target_building.building_type_name
+	print("[CLEAR] fine pulizia: %s #%d, %s | giorni di gioco dall'inizio: %s (tempo sullo step %.2fg) | stamina consumata: %.1f" % [
+		building_name, target_building.id, String(individual.name) if individual != null else "?",
+		calendar_days, float(progress.get(CLEAR_LOG_STEP_DAYS_KEY, 0.0)), float(progress.get(CLEAR_LOG_STAMINA_KEY, 0.0)),
+	])
 
 
 # Persistenza (2026-09-11, richiesta utente, punto 4 del giro precedente; SEMPLIFICATA lo stesso

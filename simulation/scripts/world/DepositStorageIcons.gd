@@ -15,7 +15,17 @@ extends RefCounted
 
 # Disegna l'icona magazzino di `resource_name` su `canvas`. Ritorna false (senza disegnare nulla) se la risorsa
 # non ha un'icona dedicata: il chiamante disegna il proprio ripiego (pallino nel colore della risorsa).
+# Precedenza (2026-10-04, richiesta utente): se c'è un'immagine in IconRegistry.ICON_TEXTURE_DIR la disegna nel
+# quadrato (proporzioni mantenute, centrata), altrimenti la funzione di disegno — stessa regola dei pannelli
+# (IconRegistry.get_resource_icon_node).
 static func draw_icon(canvas: CanvasItem, resource_name: String, top_left: Vector2, side: float) -> bool:
+	var texture := IconRegistry.get_icon_texture(resource_name)
+	if texture != null:
+		var texture_size := texture.get_size()
+		var scale: float = side / maxf(maxf(texture_size.x, texture_size.y), 1.0)
+		var drawn_size := texture_size * scale
+		canvas.draw_texture_rect(texture, Rect2(top_left + (Vector2(side, side) - drawn_size) * 0.5, drawn_size), false)
+		return true
 	var method: String = DEPOSIT_STORAGE_ICON_DRAW_METHODS.get(resource_name, "")
 	if method == "":
 		return false
@@ -48,9 +58,14 @@ const DEPOSIT_STORAGE_ICON_DRAW_METHODS := {
 	"medicinal_herbs": "_draw_deposit_storage_medicinal_herbs_icon",
 	"fiber_rope": "_draw_deposit_storage_fiber_rope_icon",
 	"wooden_spear": "_draw_deposit_storage_wooden_spear_icon",
+	"stone_spear": "_draw_deposit_storage_stone_spear_icon",
+	"bow": "_draw_deposit_storage_bow_icon",
+	"stone_axe": "_draw_deposit_storage_stone_axe_icon",
+	"arrow_bundle": "_draw_deposit_storage_arrow_bundle_icon",
 	"stone_knife": "_draw_deposit_storage_stone_knife_icon",
 	"bone_awl": "_draw_deposit_storage_bone_awl_icon",
 	"hide_bag": "_draw_deposit_storage_hide_bag_icon",
+	"dried_hide_bag": "_draw_deposit_storage_dried_hide_bag_icon",
 	"meat": "_draw_deposit_storage_meat_icon",
 	"cooked_meat": "_draw_deposit_storage_cooked_meat_icon",
 	"hide": "_draw_deposit_storage_hide_icon",
@@ -510,6 +525,31 @@ static func _draw_deposit_storage_bone_awl_icon(canvas: CanvasItem, top_left: Ve
 # Sacca di pelle (2026-09-27): stessa geometria dell'icona del pannello (HideBagIcon.draw_into).
 static func _draw_deposit_storage_hide_bag_icon(canvas: CanvasItem, top_left: Vector2, side: float) -> void:
 	HideBagIcon.draw_into(canvas, top_left, Vector2(side, side))
+
+
+# Lancia con punta di pietra (2026-10-04): stessa geometria dell'icona del pannello (StoneSpearIcon.draw_into); la usa
+# anche il segnaposto dell'arma lanciata a terra (DroppedWeaponMarker).
+static func _draw_deposit_storage_stone_spear_icon(canvas: CanvasItem, top_left: Vector2, side: float) -> void:
+	StoneSpearIcon.draw_into(canvas, top_left, Vector2(side, side))
+
+
+# Accetta rudimentale (2026-10-04): stessa geometria dell'icona del pannello (StoneAxeIcon.draw_into).
+static func _draw_deposit_storage_stone_axe_icon(canvas: CanvasItem, top_left: Vector2, side: float) -> void:
+	StoneAxeIcon.draw_into(canvas, top_left, Vector2(side, side))
+
+
+# Arco e mazzo di frecce (2026-10-04): stessa geometria delle icone del pannello (BowIcon/ArrowBundleIcon.draw_into).
+static func _draw_deposit_storage_bow_icon(canvas: CanvasItem, top_left: Vector2, side: float) -> void:
+	BowIcon.draw_into(canvas, top_left, Vector2(side, side))
+
+
+static func _draw_deposit_storage_arrow_bundle_icon(canvas: CanvasItem, top_left: Vector2, side: float) -> void:
+	ArrowBundleIcon.draw_into(canvas, top_left, Vector2(side, side))
+
+
+# Sacca di pelle essiccata (2026-10-04): stessa geometria dell'icona del pannello (DriedHideBagIcon.draw_into).
+static func _draw_deposit_storage_dried_hide_bag_icon(canvas: CanvasItem, top_left: Vector2, side: float) -> void:
+	DriedHideBagIcon.draw_into(canvas, top_left, Vector2(side, side))
 
 
 # Prodotti della macellazione (2026-09-26, icone provvisorie): stessa geometria delle icone del pannello

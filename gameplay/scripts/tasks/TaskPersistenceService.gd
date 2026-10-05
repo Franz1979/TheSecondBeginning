@@ -262,6 +262,10 @@ static func _action_type_for_step(step: Action) -> int:
 		return TaskTypes.ActionType.PATROL_AREA
 	if step is RiteAction:
 		return TaskTypes.ActionType.RITE
+	if step is CutAction:
+		return TaskTypes.ActionType.CUT
+	if step is QuarryAction:
+		return TaskTypes.ActionType.QUARRY
 	push_error("TaskPersistenceService._action_type_for_step: tipo Action sconosciuto (%s)." % step.get_script().get_global_name())
 	return -1
 
@@ -391,6 +395,8 @@ static func _build_step(action_type: int, step_data: Dictionary, macro_state: Ma
 				float(step_data.get("tool_multiplier", 1.0)),
 				int(step_data.get("quantity", 1))
 			)
+			# Ordini separati (2026-10-04): chiave dell'ordine dell'edificio, "" per i save precedenti.
+			(step as ProduceAction).order_key = String(step_data.get("order_key", ""))
 		TaskTypes.ActionType.LOOK_AROUND:
 			# Nessun argomento — LookAroundAction._init non prende parametri (2026-09-12, richiesta
 			# utente, Wander Task). elapsed/i due flag di cambio direzione arrivano da load_save_data
@@ -489,6 +495,19 @@ static func _build_step(action_type: int, step_data: Dictionary, macro_state: Ma
 			if step_data.has("target_building_id"):
 				rite_target_building = _find_building_by_id(world, int(step_data["target_building_id"]))
 			step = RiteAction.new(rite_target_building, String(step_data.get("rite_id", "")), int(step_data.get("body_id", -1)))
+		TaskTypes.ActionType.CUT:
+			# Solo la pianta (2026-10-04): il lavoro già fatto vive su MacroCellState.cut_work_progress (vedi CutAction).
+			var cut_object_type: GameTypes.WorldObjectType = int(step_data.get("cut_object_type", GameTypes.WorldObjectType.TREE))
+			step = CutAction.new(
+				Vector2i(int(step_data.get("cut_macro_x", 0)), int(step_data.get("cut_macro_y", 0))), cut_object_type,
+				Vector3i(int(step_data.get("cut_x", 0)), int(step_data.get("cut_y", 0)), int(step_data.get("cut_i", 0)))
+			)
+		TaskTypes.ActionType.QUARRY:
+			# Solo la roccia (2026-10-05): il lavoro già fatto vive su MacroCellState.cut_work_progress (vedi QuarryAction).
+			step = QuarryAction.new(
+				Vector2i(int(step_data.get("quarry_macro_x", 0)), int(step_data.get("quarry_macro_y", 0))),
+				Vector2i(int(step_data.get("quarry_x", 0)), int(step_data.get("quarry_y", 0)))
+			)
 		TaskTypes.ActionType.PICKUP_BODY:
 			step = PickUpBodyAction.new(int(step_data.get("body_id", -1)))
 		TaskTypes.ActionType.CARRY_BODY:

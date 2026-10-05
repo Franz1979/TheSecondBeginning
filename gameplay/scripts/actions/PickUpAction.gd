@@ -126,6 +126,11 @@ var _plan: Array[Dictionary] = []
 # "quantita' richiesta raggiunta", "niente altro disponibile", anche piu' d'una separate da virgola. Risolto
 # insieme al piano in activate() e persistito con lui.
 var _stop_reason: String = ""
+# Risorse del mucchio senza un deposito con posto (2026-10-04, solo SourceKind.GROUND_PILE): escluse dal piano in activate.
+var _no_storage_names: Array[String] = []
+# Risorse saltate dal piano perché nemmeno un'unità entra nello spazio libero (2026-10-05, _resolve_plan): con un
+# mucchio e un piano vuoto diventano il messaggio "non ha spazio per trasportare".
+var _no_room_names: Array[String] = []
 
 # Stesso schema esatto di ThinkAction.duration/_elapsed (richiesta esplicita utente, "non
 # reinventarla") — _duration in FRAZIONI DI GIORNO DI GIOCO, stessa unità di `delta` in
@@ -186,7 +191,26 @@ func activate(individual: Variant, context: Dictionary) -> void:
 	if _restored_from_save:
 		return
 
+	# Da un mucchio a terra (2026-10-04, richiesta utente — bugfix "raccoglie, non trova deposito, rimette a terra e
+	# ricomincia"): si prendono solo le risorse che un deposito può accettare. Se nessuna, niente raccolta: la Task si
+	# chiude dopo questo step, senza ripetizioni, con il messaggio al giocatore. Un deposito con posto non cambia nulla.
+	_no_storage_names = []
+	if source_kind == SourceKind.GROUND_PILE:
+		var pile_names: Array[String] = []
+		for candidate in _build_candidates():
+			pile_names.append(String(candidate["name"]))
+		var storable := HumanIndividualActionService.names_with_storage(individual, pile_names, context)
+		for pile_name in pile_names:
+			if not storable.has(pile_name):
+				_no_storage_names.append(pile_name)
+		if not pile_names.is_empty() and storable.is_empty():
+			HumanIndividualActionService.request_no_storage_abort(individual, context, pile_names)
+
 	var space_collected: float = _resolve_plan(individual)
+	# Da un mucchio, nulla caricato perché non c'è spazio (2026-10-05): chiusura con il messaggio, come per il deposito.
+	var nothing_fits := _plan.is_empty() and not _no_room_names.is_empty()
+	if source_kind == SourceKind.GROUND_PILE and nothing_fits and not context.has(HumanIndividualActionService.CONTEXT_PENDING_TASK_ABORT):
+		HumanIndividualActionService.request_no_room_abort(individual, context, _no_room_names)
 	_duration = 0.0
 	_total_stamina_cost = 0.0
 	if space_collected > 0.0 and individual.max_carry_capacity > 0.0:
@@ -296,6 +320,7 @@ static func build_candidates_at(
 #   - nessun motivo di stop vale "niente altro disponibile": tutto cio' che c'era e' stato preso.
 func _resolve_plan(individual: Variant) -> float:
 	_plan = []
+	_no_room_names = []
 	var candidates: Array[Dictionary] = _build_candidates()
 	var free_space: float = individual.max_carry_capacity - individual.get_carried_space()
 	var variety_count: int = individual.carried_resources.size()
@@ -305,11 +330,14 @@ func _resolve_plan(individual: Variant) -> float:
 	var space_collected: float = 0.0
 	for candidate in candidates:
 		var candidate_name: String = candidate["name"]
+		if _no_storage_names.has(candidate_name):
+			continue
 		var space_per_unit: float = candidate["space"]
 		var available: int = candidate["available"]
 		var fit_units: int = int(floor(free_space / space_per_unit + FoodSelectionService.UNIT_FIT_EPSILON))
 		if fit_units <= 0:
 			space_limited = true
+			_no_room_names.append(candidate_name)
 			continue
 		var is_new_variety: bool = not individual.carried_resources.has(candidate_name)
 		if is_new_variety and variety_count >= HumanIndividual.MAX_CARRIED_VARIETIES:

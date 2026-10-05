@@ -413,7 +413,8 @@ func print_cost_summary(individual: Variant) -> void:
 func get_activity_description() -> String:
 	var base_text: String = tr(task_name) if task_name != "" else tr("task_debug_panel_unnamed_task")
 	var resource_name: String = ""
-	# Progresso dei viaggi della raccolta in zona (2026-10-01): " 2/5", aggiunto in coda all'etichetta.
+	# Progresso dei viaggi (2026-10-01 per le work areas, dal 2026-10-05 anche per click diretto e trasporto): " 2/3",
+	# aggiunto in coda all'etichetta. Vuoto con un viaggio solo e per la consegna "fino a mucchio vuoto" del taglio.
 	var progress_suffix: String = ""
 	match task_name:
 		"task_haul_resource_name":
@@ -423,10 +424,9 @@ func get_activity_description() -> String:
 			# (chiave category_name_<categoria>, come il pannello edificio); con "tutto" resta il solo nome della Task.
 			var haul_category: int = -1
 			var haul_zone := HaulZoneService.get_zone(context)
-			# Viaggio corrente / viaggi scelti, solo per le zone di lavoro (il clic su una cella resta com'era).
-			if HaulZoneService.is_work_area_zone(haul_zone):
-				var total_trips: int = HaulZoneService.get_max_repeats(haul_zone) + 1 if TaskRepeatRules.is_enabled(context) else 1
-				progress_suffix = " %d/%d" % [mini(TaskRepeatRules.get_count(context) + 1, total_trips), total_trips]
+			# Viaggio corrente / viaggi in tutto (zona di lavoro o zona 1×1 del clic).
+			if not haul_zone.is_empty() and TaskRepeatRules.is_enabled(context) and not HaulZoneService.is_until_empty(haul_zone):
+				progress_suffix = _trip_progress_suffix(HaulZoneService.get_max_repeats(haul_zone) + 1)
 			if not haul_zone.is_empty():
 				match HaulZoneService.get_criterion_kind(haul_zone):
 					PickUpAction.CriterionKind.NAME:
@@ -448,6 +448,8 @@ func get_activity_description() -> String:
 				var category_key: String = SecondaryResourceTypes.Category.keys()[haul_category]
 				return "%s (%s)%s" % [base_text, tr("category_name_%s" % category_key.to_lower()), progress_suffix]
 		"task_transport_name":
+			if TaskRepeatRules.is_enabled(context):
+				progress_suffix = _trip_progress_suffix(TaskRepeatRules.MAX_TRIPS)
 			for step in steps:
 				if step is RetrieveAction:
 					resource_name = (step as RetrieveAction).resource_name
@@ -528,3 +530,10 @@ func get_activity_description() -> String:
 	if resource_name == "":
 		return base_text + progress_suffix
 	return "%s (%s)%s" % [base_text, IconRegistry.get_resource_display_name(resource_name), progress_suffix]
+
+
+# " n/N" per una task che ripete (viaggio corrente su viaggi in tutto, contatore in context); "" con un viaggio solo.
+func _trip_progress_suffix(total_trips: int) -> String:
+	if total_trips <= 1:
+		return ""
+	return " %d/%d" % [mini(TaskRepeatRules.get_count(context) + 1, total_trips), total_trips]

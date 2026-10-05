@@ -168,6 +168,14 @@ var construction_progress: Dictionary = {}
 # BuildingStorageService.can_accept restringe i materiali delle ricette in corso alla quantità
 # esatta mancante (vedi ProductionService.get_missing_inputs, che somma i fabbisogni).
 var production_progress: Dictionary = {}
+# Ordini separati (2026-10-04, ProductionService "ORDINI SEPARATI"): production_progress è chiave d'ordine -> record;
+# production_suspended è ricetta -> lavoro del ciclo interrotto da un ordine annullato (il più alto);
+# production_order_counter genera le chiavi d'ordine ("o<n>"), mai riusate. Tutti salvati.
+var production_suspended: Dictionary = {}
+var production_order_counter: int = 0
+# Attrezzeria (2026-10-04, BuildingToolkitService): nome attrezzo -> {"quantity", "used_instances"}, come il magazzino
+# per gli attrezzi. Separata da stored_resources. Salvata; vuota per i save precedenti.
+var toolkit: Dictionary = {}
 
 # Buffer di uscita della produzione (2026-09-23, richiesta utente) — nome risorsa -> quantità (int),
 # SEPARATO da stored_resources: qui finisce il prodotto al completamento di un ciclo

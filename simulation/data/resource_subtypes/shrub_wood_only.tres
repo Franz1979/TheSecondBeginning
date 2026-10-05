@@ -31,3 +31,5 @@ initial_age_ratio = {
 2: 0.0
 }
 size_multiplier_by_age = Array[float]([0.6, 1.1, 1.3])
+cut_yield_resource_name = "stick"
+cut_yield_base = 2

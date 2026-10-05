@@ -12,14 +12,11 @@ extends RefCounted
 # mai un nome di risorsa hardcoded.
 #
 # Quattro formule di derivazione lotti+capacità (una per SecondaryResourceTypes.LotSource, vedi
-# quell'enum per la spiegazione estesa), MA solo DUE forme di lettura/scrittura disponibilità:
-#   - STONE_POSITION: lot_registry[resource_name][pos] È DIRETTAMENTE la quantità residua (nessuna
-#     "capacity" separata — la generazione iniziale usa randf_range, non un hash, quindi non è
-#     ri-derivabile: il valore va persistito e mutato in loco, esattamente come il vecchio
-#     pebble_quantities).
-#   - TREE_INDIVIDUAL/SHRUB_INDIVIDUAL/GRASS_PATCH: lot_capacity_cache[resource_name][pos] è la
-#     capacità (runtime, ri-derivabile, mai persistita) e lot_registry[resource_name][pos] è
-#     quanto già raccolto — disponibilità = capacità scontata dalla stagione meno raccolto.
+# quell'enum per la spiegazione estesa), e una sola forma di lettura/scrittura disponibilità (dal 2026-10-05 anche
+# per STONE_POSITION, che prima salvava il residuo di ogni roccia): lot_capacity_cache[resource_name][pos] è la
+# capacità (runtime, ri-derivabile, mai persistita) e lot_registry[resource_name][pos] è quanto già raccolto, solo
+# per i lotti toccati — disponibilità = capacità scontata dalla stagione meno raccolto. Per STONE_POSITION la cache non
+# si invalida mai e il raccolto non si azzera mai (i pebble non ricrescono: i reset di stagione sotto non la elencano).
 #
 # MacroCellState.lot_registry è l'UNICO Dictionary persistito da GameSaveService/GameLoadService
 # per questa intera famiglia (vedi quei due file — un solo loop su get_all_lot_capacity_resource_
@@ -161,32 +158,30 @@ static func refresh_grass_patch_lot_capacity(macro_state: MacroCellState, resour
 	macro_state.lot_capacity_cache[resource_name] = lots
 
 
-# STONE_POSITION (pebble) — chiamata UNA SOLA volta per macrocella, subito dopo che
-# StonePositionService.generate_if_needed ha popolato stone_positions (stessa guardia one-shot
-# `stone_positions_generated`, verificata dal chiamante). Formula/costanti IDENTICHE al vecchio
-# StonePositionService.generate_if_needed (base PEBBLE × density_factor di ROCK per questa
-# macrocella × disturbance ±20% indipendente per posizione) — GENERALIZZATA solo nel "per quali
-# resource_name" (ogni risorsa STONE_POSITION registrata, non solo "pebble" hardcoded): una
-# seconda risorsa in questo lot_source riceverebbe oggi la STESSA quantità di pebble a parità di
-# posizione/disturbance (nessun campo .tres distingue ancora una base quantity per risorsa in
-# questo lot_source — limite noto, non richiesto da questo passo, l'unica risorsa STONE_POSITION
-# esistente è pebble).
-const STONE_LOT_BASE_QUANTITY: float = 100.0
-const STONE_LOT_DISTURBANCE_MIN: float = 0.8
-const STONE_LOT_DISTURBANCE_MAX: float = 1.2
-
+# STONE_POSITION (pebble) — RIVISTO 2026-10-05 (richiesta utente, stesso schema di stick/fibra/erba): la quantità
+# iniziale di ogni roccia è una capacità RICAVATA dalla posizione (RockStoneService.compute_pebble_capacities, hash con
+# sale micro_seed), mai salvata; lot_registry[resource_name] tiene solo il raccolto delle rocce toccate. Chiamata da
+# StonePositionService.generate_if_needed alla prima visita, quando la geografia della cella è già in mano: prepara
+# solo la cache, nessuna scrittura nel registro. Dopo un caricamento la cache si ricostruisce alla prima richiesta
+# (_ensure_stone_capacity).
 static func seed_stone_lot_capacity(macro_state: MacroCellState, cell: MacroCellData) -> void:
-	var rock_base_density := ResourceCalculator.get_base_density(GameTypes.WorldObjectType.ROCK)
-	var rock_max_density := ResourceCalculator.get_max_density(
-		GameTypes.WorldObjectType.ROCK, cell.terrain_base, cell.biome, cell.coast_type
-	)
-	var density_factor: float = rock_max_density / rock_base_density if rock_base_density > 0.0 else 0.0
 	for resource_name in get_resource_names_for_lot_source(SecondaryResourceTypes.LotSource.STONE_POSITION):
-		var registry: Dictionary = {}
-		for pos in macro_state.stone_positions:
-			var disturbance := randf_range(STONE_LOT_DISTURBANCE_MIN, STONE_LOT_DISTURBANCE_MAX)
-			registry[pos] = int(round(STONE_LOT_BASE_QUANTITY * density_factor * disturbance))
-		macro_state.lot_registry[resource_name] = registry
+		macro_state.lot_capacity_cache[resource_name] = RockStoneService.compute_pebble_capacities(macro_state, cell, resource_name)
+
+
+# Cache delle capacità STONE_POSITION: costruita una volta per macrocella alla prima richiesta e mai invalidata
+# (posizioni e geografia non cambiano), mai salvata. false se non si può costruire ancora (posizioni non generate o
+# cella sconosciuta): disponibilità 0, senza mettere in cache un risultato vuoto.
+static func _ensure_stone_capacity(macro_state: MacroCellState, resource_name: String) -> bool:
+	if macro_state.lot_capacity_cache.has(resource_name):
+		return true
+	if not macro_state.stone_positions_generated or GameSettings.active_world == null:
+		return false
+	var cell: MacroCellData = GameSettings.active_world.get_cell_at(macro_state.x, macro_state.y)
+	if cell == null:
+		return false
+	macro_state.lot_capacity_cache[resource_name] = RockStoneService.compute_pebble_capacities(macro_state, cell, resource_name)
+	return true
 
 
 # ============================================================================================
@@ -206,13 +201,9 @@ static func get_available(macro_state: MacroCellState, resource_name: String, po
 		return 0
 	match resolved_rules.lot_source:
 		SecondaryResourceTypes.LotSource.STONE_POSITION:
-			var remaining: int = int(macro_state.lot_registry.get(resource_name, {}).get(position, 0))
-			if remaining <= 0:
+			if not _ensure_stone_capacity(macro_state, resource_name):
 				return 0
-			var seasonal_remaining := _apply_seasonal_availability_to_capacity(resolved_rules, remaining)
-			if DebugLogging.ENABLED and DebugLogging.SHOW_LOT_CAPACITY_LOGS:
-				_log_lot_capacity(macro_state, resource_name, position, resolved_rules, remaining, seasonal_remaining, -1, seasonal_remaining)
-			return seasonal_remaining
+			return _capacity_minus_harvested(macro_state, resource_name, position, resolved_rules)
 		SecondaryResourceTypes.LotSource.TREE_INDIVIDUAL, SecondaryResourceTypes.LotSource.SHRUB_INDIVIDUAL:
 			if not _is_vegetation_cache_fresh(macro_state, resource_name):
 				return 0
@@ -232,10 +223,9 @@ static func consume(macro_state: MacroCellState, resource_name: String, position
 	if resolved_rules == null:
 		return
 	match resolved_rules.lot_source:
-		SecondaryResourceTypes.LotSource.STONE_POSITION:
-			var remaining: int = int(macro_state.lot_registry.get(resource_name, {}).get(position, 0)) - quantity
-			_set_registry_value(macro_state, resource_name, position, max(remaining, 0))
-		SecondaryResourceTypes.LotSource.TREE_INDIVIDUAL, SecondaryResourceTypes.LotSource.SHRUB_INDIVIDUAL, SecondaryResourceTypes.LotSource.GRASS_PATCH:
+		SecondaryResourceTypes.LotSource.STONE_POSITION, SecondaryResourceTypes.LotSource.TREE_INDIVIDUAL, SecondaryResourceTypes.LotSource.SHRUB_INDIVIDUAL, SecondaryResourceTypes.LotSource.GRASS_PATCH:
+			if resolved_rules.lot_source == SecondaryResourceTypes.LotSource.STONE_POSITION and not _ensure_stone_capacity(macro_state, resource_name):
+				return
 			var capacity: int = int(macro_state.lot_capacity_cache.get(resource_name, {}).get(position, 0))
 			var harvested: int = int(macro_state.lot_registry.get(resource_name, {}).get(position, 0))
 			_set_registry_value(macro_state, resource_name, position, min(harvested + quantity, capacity))
@@ -259,10 +249,12 @@ static func _is_vegetation_cache_fresh(macro_state: MacroCellState, resource_nam
 # capacity invece di lasciargliela ri-risolvere.
 static func _capacity_minus_harvested(macro_state: MacroCellState, resource_name: String, position: Vector2i, rules: SecondaryResourceRules) -> int:
 	var capacity: int = int(macro_state.lot_capacity_cache.get(resource_name, {}).get(position, 0))
-	if capacity <= 0:
-		return 0
-	var seasonal_capacity := _apply_seasonal_availability_to_capacity(rules, capacity)
 	var harvested: int = int(macro_state.lot_registry.get(resource_name, {}).get(position, 0))
+	# Un raccolto negativo sono unità in più (add_extra_units, 2026-10-04 — stick lasciati da un albero abbattuto):
+	# restano raccoglibili anche su un lotto senza più capacità.
+	if capacity <= 0 and harvested >= 0:
+		return 0
+	var seasonal_capacity := _apply_seasonal_availability_to_capacity(rules, maxi(capacity, 0))
 	var available: int = max(seasonal_capacity - harvested, 0)
 	if DebugLogging.ENABLED and DebugLogging.SHOW_LOT_CAPACITY_LOGS:
 		_log_lot_capacity(macro_state, resource_name, position, rules, capacity, seasonal_capacity, harvested, available)
@@ -273,8 +265,7 @@ static func _capacity_minus_harvested(macro_state: MacroCellState, resource_name
 # del lotto, moltiplicatore stagionale, capacita' stagionale (floor(base x moltiplicatore), la stessa
 # di _apply_seasonal_availability_to_capacity), raccolto e disponibilita' finale. Il moltiplicatore e'
 # ricalcolato qui (stessa lettura di _apply_seasonal_availability_to_capacity, con lo stesso fail-open
-# a 1.0 senza game_data) e NON e' usato dalla simulazione. `harvested` = -1 per STONE_POSITION (il
-# registro e' gia' la quantita' residua, nessun raccolto separato). Dedup: un lotto viene stampato solo
+# a 1.0 senza game_data) e NON e' usato dalla simulazione. Dedup: un lotto viene stampato solo
 # alla prima lettura e quando cambiano stagione/capacita'/raccolto/risultato, perche' get_available
 # gira per ogni posizione ad ogni refresh.
 #
@@ -323,6 +314,19 @@ static func _log_lot_capacity(
 		macro_state.x, macro_state.y, resource_name, position.x, position.y, season_text, day_text,
 		base_capacity, multiplier, seasonal_capacity, str(harvested) if harvested >= 0 else "n/a", available
 	])
+
+
+# Unità raccoglibili in più su un lotto (2026-10-04, richiesta utente — task Cut: un albero abbattuto lascia 3 stick):
+# il conto del raccolto scende di `quantity`, anche sotto zero, così la disponibilità (capacità − raccolto) sale della
+# stessa quantità. Nessun sistema nuovo: spariscono quando il registro di quella risorsa viene azzerato (fine primavera
+# per le risorse senza stagionalità come stick, reset_harvests_for_resources_without_seasonal_rise; inizio della
+# stagione in cui il moltiplicatore sale per le altre). Per STONE_POSITION (pebble in più su una roccia, 2026-10-05 —
+# RockStoneService.add_pebbles) restano per sempre, perché quel registro non si azzera mai.
+static func add_extra_units(macro_state: MacroCellState, resource_name: String, position: Vector2i, quantity: int) -> void:
+	if macro_state == null or quantity <= 0:
+		return
+	var harvested: int = int(macro_state.lot_registry.get(resource_name, {}).get(position, 0))
+	_set_registry_value(macro_state, resource_name, position, harvested - quantity)
 
 
 static func _set_registry_value(macro_state: MacroCellState, resource_name: String, position: Vector2i, value: int) -> void:

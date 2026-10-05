@@ -14,8 +14,9 @@ extends RefCounted
 # taglio) — così, se l'edificio viene demolito in futuro, il lotto torna semplicemente eleggibile
 # per un nuovo individuo alla prossima crescita, senza bisogno di alcuna resurrezione esplicita.
 # true se la microcella ha almeno un TREE o SHRUB vivo, cioè ciò che clear_microcell rimuoverebbe con
-# _clear_type (2026-09-28, richiesta utente — serve uno strumento CHOPPING per liberarla, vedi
-# BuildingVerificationService criterio 10 e ClearAction). Sola lettura. L'erba non conta: si toglie a mano.
+# _clear_type (2026-09-28, richiesta utente; dal 2026-10-04 blocca sempre il piazzamento, le piante vive si abbattono
+# solo con la task Cut — vedi BuildingVerificationService criterio 10). Sola lettura. Erba, ceppi e piante morte non
+# contano.
 static func has_woody_vegetation(macro_state: MacroCellState, pos: Vector2i) -> bool:
 	if macro_state == null:
 		return false
@@ -33,6 +34,13 @@ static func has_woody_vegetation(macro_state: MacroCellState, pos: Vector2i) -> 
 static func clear_microcell(macro_state: MacroCellState, pos: Vector2i, is_currently_grass: bool) -> void:
 	_clear_type(macro_state, GameTypes.WorldObjectType.TREE, pos)
 	_clear_type(macro_state, GameTypes.WorldObjectType.SHRUB, pos)
+	clear_ground(macro_state, pos, is_currently_grass)
+
+
+# Pulizia del cantiere SENZA abbattere piante vive (2026-10-04, richiesta utente — ClearAction: le piante vive si
+# abbattono solo con la task Cut): erba, ceppi, piante morte e i registri dei lotti di questa microcella. Il resto di
+# clear_microcell, che la chiama dopo aver tolto alberi e arbusti (piazzamento istantaneo di debug).
+static func clear_ground(macro_state: MacroCellState, pos: Vector2i, is_currently_grass: bool) -> void:
 	if is_currently_grass:
 		_clear_grass(macro_state)
 	_clear_exceptions_at_lot(macro_state, pos)

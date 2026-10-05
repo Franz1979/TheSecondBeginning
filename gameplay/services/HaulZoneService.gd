@@ -14,8 +14,11 @@ extends RefCounted
 # tornano float da JSON.
 
 const CONTEXT_KEY := "haul_zone"
-# Ripetizioni massime della zona 1×1 del clic: il valore di sempre.
+# Ripetizioni massime della zona 1×1 del clic: TaskRepeatRules.MAX_REPEATS (MAX_TRIPS viaggi in tutto).
 const CLICK_MAX_REPEATS: int = TaskRepeatRules.MAX_REPEATS
+# Consegna "fino a mucchio vuoto" (taglio, 2026-10-04): ripetizioni pari alle unità del mucchio, nessun numero fisso di
+# viaggi da mostrare (Task.get_activity_description salta il contatore). Assente nelle altre zone.
+const UNTIL_EMPTY_KEY := "until_empty"
 
 
 static func make_zone(
@@ -84,6 +87,10 @@ static func get_source_kind(zone: Dictionary) -> int:
 
 static func get_max_repeats(zone: Dictionary) -> int:
 	return int(zone.get("max_repeats", CLICK_MAX_REPEATS))
+
+
+static func is_until_empty(zone: Dictionary) -> bool:
+	return bool(zone.get(UNTIL_EMPTY_KEY, false))
 
 
 # Cella bersaglio della raccolta dentro la zona, null se nessuna cella ha qualcosa per il filtro. Una zona 1×1 dà

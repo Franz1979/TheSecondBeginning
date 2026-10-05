@@ -209,6 +209,22 @@ static func build_task(definition: TaskDefinition, context: Dictionary) -> Task:
 					rite_body_id = int(context[step_definition.context_keys[2]])
 				steps.append(RiteAction.new(context[step_definition.context_keys[0]], String(context[step_definition.context_keys[1]]), rite_body_id))
 				step_descriptions.append(step_definition.step_description)
+			TaskTypes.ActionType.CUT:
+				# 3 argomenti (macrocella, tipo, chiave dell'individuo) — 2026-10-04, CutAction (cut.tres).
+				if step_definition.context_keys.size() < 3 or not context.has(step_definition.context_keys[0]) 						or not context.has(step_definition.context_keys[1]) or not context.has(step_definition.context_keys[2]):
+					push_error("TaskFactory.build_task: context_keys mancanti/non risolvibili per step CUT di TaskDefinition '%s'." % definition.task_name)
+					continue
+				steps.append(CutAction.new(
+					context[step_definition.context_keys[0]], context[step_definition.context_keys[1]], context[step_definition.context_keys[2]]
+				))
+				step_descriptions.append(step_definition.step_description)
+			TaskTypes.ActionType.QUARRY:
+				# 2 argomenti (macrocella, posizione della roccia) — 2026-10-05, QuarryAction (quarry.tres).
+				if step_definition.context_keys.size() < 2 or not context.has(step_definition.context_keys[0]) 						or not context.has(step_definition.context_keys[1]):
+					push_error("TaskFactory.build_task: context_keys mancanti/non risolvibili per step QUARRY di TaskDefinition '%s'." % definition.task_name)
+					continue
+				steps.append(QuarryAction.new(context[step_definition.context_keys[0]], context[step_definition.context_keys[1]]))
+				step_descriptions.append(step_definition.step_description)
 			# Task Seppellisci (2026-10-04, cumulo sepolcrale passo 2, vedi bury.tres): context_keys[0] = id del corpo
 			# (record DEAD_BODY), per CARRY_BODY context_keys[1] = cumulo scelto all'assegnazione.
 			TaskTypes.ActionType.PICKUP_BODY, TaskTypes.ActionType.CARRY_BODY, TaskTypes.ActionType.PUT_DOWN_BODY:

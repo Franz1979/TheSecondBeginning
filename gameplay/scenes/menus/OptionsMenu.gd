@@ -169,7 +169,7 @@ func _refresh_texts() -> void:
 	discovery_hints_label.text = tr("options_show_discovery_hints")
 	language_label.text = tr("options_language")
 	pickup_default_label.text = tr("options_pickup_default")
-	repeat_label.text = tr("options_repeat_default").format({"count": TaskRepeatRules.MAX_REPEATS})
+	repeat_label.text = tr("options_repeat_default").format({"count": TaskRepeatRules.MAX_TRIPS})
 	delivery_label.text = tr("options_production_delivery_default")
 	_rebuild_pickup_default_options()
 	# "close_and_save" (non "close_menu", richiesta utente 2026-09-05): stesso identico

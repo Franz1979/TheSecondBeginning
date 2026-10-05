@@ -5,11 +5,13 @@ extends RefCounted
 # 2026-09-20, richiesta utente: generalizzata dal solo pickup. Punto neutro per la costante e per le chiavi di
 # context, cosi' nessuna delle due task "possiede" la regola.
 #
-# Regola: la prima esecuzione piu' al massimo MAX_REPEATS ripetizioni. Il flag ("ripeti") e il contatore delle
-# ripetizioni gia' fatte viaggiano in Task.context (chiavi NON consumate da TaskFactory, quindi restano per la
-# vita della Task e vengono salvate col context).
+# Regola: al massimo MAX_TRIPS viaggi in tutto, cioe' la prima esecuzione piu' MAX_REPEATS ripetizioni (2026-10-05,
+# richiesta utente: il numero mostrato conta i viaggi, come nelle work areas — prima erano 1 + 3). Il flag ("ripeti")
+# e il contatore delle ripetizioni gia' fatte viaggiano in Task.context (chiavi NON consumate da TaskFactory, quindi
+# restano per la vita della Task e vengono salvate col context).
 
-const MAX_REPEATS: int = 3
+const MAX_TRIPS: int = 3
+const MAX_REPEATS: int = MAX_TRIPS - 1
 
 const CONTEXT_ENABLED := "repeat_enabled"
 const CONTEXT_COUNT := "repeat_count"

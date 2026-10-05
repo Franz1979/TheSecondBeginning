@@ -1,0 +1,23 @@
+[gd_resource type="Resource" script_class="SecondaryResourceRules" format=3]
+
+[ext_resource type="Script" uid="uid://cu4cyua5y4n1m" path="res://simulation/scripts/core/SecondaryResourceRules.gd" id="1_stone_spear"]
+
+[resource]
+script = ExtResource("1_stone_spear")
+secondary_resource_name = "stone_spear"
+calories_per_unit = 0.0
+category = 4
+generation_source = 2
+space_per_unit = 8.0
+recipe_inputs = {
+"pebble": 1,
+"sinew": 1,
+"stick": 1
+}
+recipe_labor = 400.0
+recipe_workstation_types = Array[String](["toolmaker_hut"])
+recipe_required_tool_categories = Array[int]([1])
+tool_categories = Array[int]([0])
+max_uses = 60
+attack_power = 18.0
+max_range = 3.0

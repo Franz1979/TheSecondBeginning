@@ -398,3 +398,9 @@ const WATCH_TASK_INTERVAL_SECONDS := 1.0
 # apply_completion) — intestazione (rito, edificio, celebrante, ritualità, moltiplicatore, defunto), una riga per ogni
 # pipottino che riceve fede (quantità, prima/dopo, motivo) e i punti di influenza dati all'edificio. Solo log.
 const SHOW_RITE_LOGS := false
+
+# Pulizia del cantiere (2026-10-04, richiesta utente): [CLEAR] all'inizio della pulizia (edificio, cella, pipottino,
+# conto del tempo: erba, ceppi d'albero × mezzo giorno, totale; ceppi di arbusto e piante morte a tempo zero; piante
+# vive che la tengono in attesa del taglio) e alla fine (giorni di gioco dall'inizio, tempo sullo step, stamina
+# consumata). Solo log (ClearAction).
+const SHOW_CLEAR_LOGS := true

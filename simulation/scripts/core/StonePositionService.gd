@@ -24,7 +24,8 @@ const NOISE_THRESHOLD: float = 0.4
 # seed_stone_lot_capacity (2026-09-19, refactor lot_source) — resta comunque chiamato allo STESSO
 # istante, subito dopo che stone_positions è popolato per questa macrocella (richiesta esplicita
 # originale: non un servizio a sé con una propria schedulazione), solo il codice che lo fa vive
-# ora nel servizio generico "capacità per lotto" invece che qui.
+# ora nel servizio generico "capacità per lotto" invece che qui. Dal 2026-10-05 prepara solo la cache delle capacità
+# (ricavate dalla posizione), non scrive più nulla nel registro salvato.
 func generate_if_needed(macro_state: MacroCellState, cell: MacroCellData) -> void:
 	if macro_state.stone_positions_generated:
 		return

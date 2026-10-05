@@ -82,8 +82,11 @@ static func drop_building_contents(game_data: GameData, building: Building, worl
 	var entries: Dictionary = building.stored_resources.duplicate(true)
 	_merge_fresh_entries(entries, building.production_output)
 	_merge_fresh_entries(entries, extra_fresh)
+	# Attrezzeria (2026-10-04): segue la sorte del magazzino, con gli usi rimasti dei pezzi usati.
+	_merge_tool_entries(entries, building.toolkit)
 	building.stored_resources.clear()
 	building.production_output.clear()
+	building.toolkit.clear()
 	if entries.is_empty():
 		return null
 	var building_position := Vector2(float(building.micro_x) + 0.5, float(building.micro_y) + 0.5)
@@ -92,6 +95,23 @@ static func drop_building_contents(game_data: GameData, building: Building, worl
 
 # Somma a `entries` (formato magazzino) le quantità fresche di `fresh` (nome -> int, decay_fraction 0.0): una risorsa
 # già presente si somma alla sua voce con la media pesata del deperimento.
+# Voci a istanze (Attrezzeria) sommate a `entries`: quantità sommate, istanze usate accodate.
+static func _merge_tool_entries(entries: Dictionary, tool_entries: Dictionary) -> void:
+	for tool_name in tool_entries.keys():
+		var tool_entry: Dictionary = tool_entries[tool_name]
+		var quantity: int = int(tool_entry.get("quantity", 0))
+		if quantity <= 0:
+			continue
+		var existing: Dictionary = (entries.get(tool_name, {}) as Dictionary).duplicate(true)
+		var existing_quantity: int = int(existing.get("quantity", 0))
+		var used: Array = ToolInstance.get_used_instances(existing).duplicate()
+		used.append_array(ToolInstance.get_used_instances(tool_entry))
+		existing["quantity"] = existing_quantity + quantity
+		existing["decay_fraction"] = float(existing.get("decay_fraction", 0.0)) * float(existing_quantity) / float(existing_quantity + quantity)
+		ToolInstance.set_used_instances(existing, used)
+		entries[tool_name] = existing
+
+
 static func _merge_fresh_entries(entries: Dictionary, fresh: Dictionary) -> void:
 	for output_name in fresh.keys():
 		var output_quantity: int = int(fresh[output_name])

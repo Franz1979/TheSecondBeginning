@@ -71,9 +71,8 @@ enum GenerationSource {
 #     capacità da un hash indipendente in [patch_capacity_min, patch_capacity_max], scalata per
 #     dedicated_space(GRASS)/TOTAL_SPACE (wild_vegetables).
 #   - STONE_POSITION: un lotto per ogni posizione di MacroCellState.stone_positions (generate UNA
-#     SOLA volta, mai rideterminate — la capacità stessa è il valore persistito, non una cache
-#     runtime, perché la generazione non è deterministica — randf_range, non hash — vedi
-#     LotCapacityService.seed_stone_lot_capacity) (pebble).
+#     SOLA volta), capacità ricavata dalla posizione con un hash (RockStoneService.compute_pebble_
+#     capacities, dal 2026-10-05), raccolto mai azzerato: non ricresce (pebble).
 enum LotSource {
 	NONE,
 	TREE_INDIVIDUAL,

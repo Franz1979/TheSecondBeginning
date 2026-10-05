@@ -80,3 +80,15 @@ extends Resource
 @export var presence_water_multiplier_sea: float = 1.0
 @export var presence_water_multiplier_lake: float = 1.0
 @export var presence_water_multiplier_river: float = 1.0
+
+@export_group("Extraction")
+# Estrazione (2026-10-05, richiesta utente — Quarry): cosa rende togliere un pezzo di questa risorsa primaria, gemello di
+# SubtypeRules.cut_yield_* per il taglio. Letto da RockStoneService.extract (oggi solo ROCK, rock_density.tres).
+# Risorsa vuota = la risorsa non si estrae. Ogni estrazione dà extraction_units_per_extraction unità di
+# extraction_yield_resource_name, togliendo extraction_primary_per_unit unità di primaria per unità ottenuta, e lascia
+# extraction_waste_per_extraction unità di extraction_waste_resource_name sul posto.
+@export var extraction_yield_resource_name: String = ""
+@export var extraction_primary_per_unit: int = 1
+@export var extraction_units_per_extraction: int = 1
+@export var extraction_waste_resource_name: String = ""
+@export var extraction_waste_per_extraction: int = 0

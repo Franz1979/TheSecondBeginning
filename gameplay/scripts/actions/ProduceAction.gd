@@ -30,6 +30,12 @@ extends Action
 # buffer: se mancano, lo step resta fermo come per il primo ciclo. produced_count conta PEZZI
 # (recipe_output_quantity per ciclo), quindi con un'uscita > 1 per ciclo l'ultimo ciclo può superare
 # di poco la quantità ordinata.
+#
+# ORDINI SEPARATI (2026-10-04, richiesta utente — ProductionService "ORDINI SEPARATI"): lo step lavora sul PROPRIO
+# ordine (order_key), creato da GameScene all'assegnazione: lavoro, ciclo e pezzi dovuti sono di quell'ordine, mai
+# sommati a quelli di un altro ordine della stessa ricetta. Ordine sparito (annullato dal pannello o liberato per far
+# posto) = lo step si chiude e la Task con lui. Step di un salvataggio vecchio, senza chiave: si crea il proprio ordine
+# al primo tick, se l'edificio ha posto (_adopt_legacy_order), altrimenti aspetta.
 
 # Stesso ordine di grandezza di BuildAction.STAMINA_DRAIN_PER_DAY — da bilanciare in seguito.
 const STAMINA_DRAIN_PER_DAY: float = 150
@@ -47,6 +53,11 @@ var tool_multiplier: float = 1.0
 # Pezzi ordinati (minimo 1) e pezzi già prodotti da questo step — vedi QUANTITÀ in testa al file.
 var quantity: int = 1
 var produced_count: int = 0
+# Ordine dell'edificio su cui lavora questo step (ProductionService, chiave in Building.production_progress); "" = step
+# di un salvataggio precedenti agli ordini separati. Salvato.
+var order_key: String = ""
+# true se l'ordine non c'è più: lo step si chiude (is_complete) e la Task con lui. Non salvato.
+var _order_lost: bool = false
 # DEBUG TEMPORANEO [PRODUCE BLOCK] (2026-09-27): ultimo messaggio stampato, per stampare solo i cambiamenti.
 # Non salvato. Vedi DebugLogging.SHOW_PRODUCTION_BLOCK_LOGS.
 var _debug_last_block_message: String = ""
@@ -80,7 +91,10 @@ func _init(
 # Validità (vedi Action.is_target_valid): edificio nullo, demolito o non più una workstation valida
 # per questa ricetta (incompleto, is_workstation false, tipo non in recipe_workstation_types).
 func is_target_valid() -> bool:
-	return target_building != null and not target_building.is_demolished and ProductionService.can_produce_at(target_building, resource_name)
+	if target_building == null or target_building.is_demolished or not ProductionService.can_produce_at(target_building, resource_name):
+		return false
+	# Ordine annullato mentre la Task era in coda: la Task si scarta alla ripresa.
+	return order_key == "" or ProductionService.has_order(target_building, order_key)
 
 
 # Fabbisogno materiale per la ricetta di resource_name — {resource_name: missing_quantity}, stessa
@@ -89,21 +103,23 @@ func get_missing_materials() -> Dictionary:
 	return ProductionService.get_missing_inputs_for(target_building, resource_name)
 
 
-# Registra la produzione sull'edificio (ProductionService.start_production: record della propria
-# ricetta ripreso se esiste già, creato se c'è un record libero) — da qui in poi can_accept accetta
-# gli input della ricetta fino alla quantità mancante. Se l'edificio è pieno lo step aspetta e
-# riprova a ogni giorno (get_stamina_delta), senza toccare i record delle altre ricette.
+# L'ordine esiste già dall'assegnazione (ORDINI SEPARATI, 2026-10-04): activate non crea più record.
 func activate(individual: Variant, context: Dictionary) -> void:
 	super(individual, context)
 	_material_shortage_reported = false
-	if is_target_valid():
-		ProductionService.start_production(target_building, resource_name)
 
 
-# true se il record della propria ricetta esiste; altrimenti prova a crearlo (dopo l'ultimo ciclo di un
-# altro individuo sulla stessa ricetta, che lo rimuove, o se all'activate l'edificio era pieno).
-func _ensure_own_record() -> bool:
-	return ProductionService.start_production(target_building, resource_name)
+# true se il proprio ordine c'è. Step di un salvataggio vecchio (order_key ""): prova a crearsi l'ordine per i pezzi che
+# gli mancano (ProductionService.create_order, riparte dalla produzione sospesa della ricetta); edificio pieno = aspetta.
+func _ensure_order(individual: Variant) -> bool:
+	if order_key == "":
+		_adopt_legacy_order(individual)
+	return ProductionService.has_order(target_building, order_key)
+
+
+func _adopt_legacy_order(individual: Variant) -> void:
+	var worker_id: int = int(individual.id) if individual is HumanIndividual else -1
+	order_key = ProductionService.create_order(target_building, resource_name, maxi(quantity - produced_count, 1), worker_id)
 
 
 func get_stamina_delta(individual: Variant, context: Dictionary, delta: float) -> float:
@@ -113,7 +129,12 @@ func get_stamina_delta(individual: Variant, context: Dictionary, delta: float) -
 	if not is_target_valid():
 		_debug_log_block(individual, "edificio non valido (demolito, incompleto o non più workstation per la ricetta)")
 		return 0.0
-	if not _ensure_own_record():
+	if order_key != "" and not ProductionService.has_order(target_building, order_key):
+		# Ordine annullato o liberato per far posto: lo step si chiude, la Task con lui.
+		_order_lost = true
+		context[HumanIndividualActionService.CONTEXT_PENDING_TASK_ABORT] = "ordine di produzione %s annullato" % order_key
+		return 0.0
+	if not _ensure_order(individual):
 		_debug_log_block(individual, _debug_describe_no_record())
 		return 0.0
 	# Attrezzi (2026-09-25): come per il materiale mancante, lo step resta fermo (zero stamina, zero
@@ -140,11 +161,11 @@ func get_stamina_delta(individual: Variant, context: Dictionary, delta: float) -
 	if target_building.is_awaiting_material:
 		target_building.is_awaiting_material = false
 	var required_labor := ProductionService.get_required_labor(target_building, resource_name)
-	var labor_accumulated := ProductionService.get_labor_accumulated(target_building, resource_name)
+	var labor_accumulated := ProductionService.get_labor_accumulated(target_building, order_key)
 	var stamina_spent_this_day: float = 0.0
 	if labor_accumulated < required_labor:
 		stamina_spent_this_day = STAMINA_DRAIN_PER_DAY * delta
-		ProductionService.add_labor(target_building, resource_name, stamina_spent_this_day * _get_labor_scale(individual, context) * tool_multiplier)
+		ProductionService.add_labor(target_building, order_key, stamina_spent_this_day * _get_labor_scale(individual, context) * tool_multiplier)
 	_try_complete_cycle(individual)
 	return -stamina_spent_this_day
 
@@ -187,22 +208,19 @@ func _get_labor_scale(individual: Variant, context: Dictionary) -> float:
 
 
 # Conclude un ciclo appena lavoro, input e posto nel buffer lo consentono (ProductionService.
-# complete_production: consumo esatto, prodotto nel buffer, rimozione del SOLO record di questa
-# ricetta; 0 = non ancora possibile). Se mancano ancora pezzi all'ordine, ricrea subito il record
-# (start_production, il posto appena liberato è il suo) così il ciclo successivo riparte da zero e
-# can_accept continua ad accettarne gli input.
+# complete_production sul proprio ordine: consumo esatto, prodotto nel buffer, lavoro azzerato per il ciclo
+# successivo; 0 = non ancora possibile).
 func _try_complete_cycle(individual: Variant) -> void:
-	if ProductionService.get_labor_accumulated(target_building, resource_name) < ProductionService.get_required_labor(target_building, resource_name):
+	if ProductionService.get_labor_accumulated(target_building, order_key) < ProductionService.get_required_labor(target_building, resource_name):
 		return
-	var produced := ProductionService.complete_production(target_building, resource_name)
+	# L'ordine resta (lavoro azzerato) finché ha pezzi dovuti, poi sparisce: nessun record da ricreare.
+	var produced := ProductionService.complete_production(target_building, order_key)
 	if produced <= 0:
 		return
 	produced_count += produced
 	_consume_tools_for_cycle(individual)
 	if DebugLogging.ENABLED and DebugLogging.SHOW_TRANSPORT_BUILD_LOGS:
 		print("[PRODUCE] Building #%d: prodotte %d unità di '%s' (%d/%d)." % [target_building.id, produced, resource_name, produced_count, quantity])
-	if produced_count < quantity:
-		ProductionService.start_production(target_building, resource_name)
 
 
 # --- DEBUG TEMPORANEO [PRODUCE BLOCK] (2026-09-27, richiesta utente) — rimuovere insieme al flag ---
@@ -221,14 +239,14 @@ func _debug_log_block(individual: Variant, message: String) -> void:
 		if previous != "":
 			print("[PRODUCE BLOCK] %s edificio #%d '%s' (%d/%d): ripresa, lavoro %.1f/%.1f." % [
 				who, building_id, resource_name, produced_count, quantity,
-				ProductionService.get_labor_accumulated(target_building, resource_name),
+				ProductionService.get_labor_accumulated(target_building, order_key),
 				ProductionService.get_required_labor(target_building, resource_name)])
 		return
 	print("[PRODUCE BLOCK] %s edificio #%d '%s' (%d/%d): FERMO — %s" % [who, building_id, resource_name, produced_count, quantity, message])
 
 
 func _debug_describe_no_record() -> String:
-	return "record assente e ordini attivi al massimo sull'edificio: record %s, massimo %d." % [
+	return "ordine assente e ordini al massimo sull'edificio: ordini %s, massimo %d." % [
 		str(target_building.production_progress.keys()), ProductionService.get_max_concurrent_orders(target_building)]
 
 
@@ -287,10 +305,29 @@ func _debug_describe_fuel() -> String:
 # rimette in cintura un attrezzo di scorta dallo zaino, oppure lascia lo step in attesa (MISSING_TOOLS)
 # — stesso percorso di quando gli attrezzi mancano fin dall'inizio. game_data null: lo step non lo
 # possiede (capacità corretta del solo bonus dello slot liberato, come per l'equipaggiamento automatico).
+# Attrezzeria (2026-10-04): ogni categoria richiesta si cerca prima nell'Attrezzeria dell'edificio — lì si consuma un uso
+# sul pezzo più usato dell'attrezzo che la copre (un uso per attrezzo, anche se copre più categorie) — e solo le
+# categorie che l'Attrezzeria non copre si consumano sulla cintura del pipottino, come prima.
+func get_tool_categories_for_individual() -> Array[TaskTypes.ToolCategory]:
+	return BuildingToolkitService.filter_uncovered(target_building, ToolGateService.get_action_required_categories(self))
+
+
 func _consume_tools_for_cycle(individual: Variant) -> void:
 	if not (individual is HumanIndividual):
 		return
-	var broken := ToolGateService.consume_tool_uses(individual, ToolGateService.get_action_required_categories(self), null)
+	var broken: Array[String] = []
+	var toolkit_tools: Array[String] = []
+	var belt_categories: Array[TaskTypes.ToolCategory] = []
+	for category in ToolGateService.get_action_required_categories(self):
+		var toolkit_tool := BuildingToolkitService.find_tool_for(target_building, category)
+		if toolkit_tool == "":
+			belt_categories.append(category)
+		elif not toolkit_tools.has(toolkit_tool):
+			toolkit_tools.append(toolkit_tool)
+	for toolkit_tool in toolkit_tools:
+		if BuildingToolkitService.consume_use(target_building, toolkit_tool):
+			broken.append(toolkit_tool)
+	broken.append_array(ToolGateService.consume_tool_uses(individual, belt_categories, null))
 	if broken.is_empty():
 		return
 	report_broken_tools(individual, broken)
@@ -303,7 +340,7 @@ func _consume_tools_for_cycle(individual: Variant) -> void:
 # annulla la Task (H). Nessuna altra ricetta può più far terminare questo step (2026-09-24: un
 # record per ricetta, mai sovrascritto).
 func is_complete(individual: Variant, context: Dictionary) -> bool:
-	return produced_count >= quantity
+	return produced_count >= quantity or _order_lost
 
 
 # Stessa formula di BuildAction.get_required_position: ritorno esatto all'edificio alla ripresa dopo
@@ -333,6 +370,7 @@ func get_save_data() -> Dictionary:
 		"tool_multiplier": tool_multiplier,
 		"quantity": quantity,
 		"produced_count": produced_count,
+		"order_key": order_key,
 	}
 	if target_building != null:
 		data["target_building_id"] = target_building.id

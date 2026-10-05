@@ -11,15 +11,15 @@ options_pickup_default_group_category,Categoria
 options_pickup_default_group_resource,Risorsa
 minimap_show_tooltip,Mostra la minimappa
 minimap_hide_tooltip,Nascondi la minimappa
-options_repeat_default,Raccolta e trasporto: ripeti fino a {count} volte
-options_production_delivery_default,Produzione: consegna al magazzino
+options_repeat_default,Raccolta e trasporto: ripeti fino a {count} viaggi
+options_production_delivery_default,Produzione: porta al deposito
 options_volume_master,Volume generale
 options_volume_music,Volume musica
 options_volume_ambience,Volume ambiente
 options_volume_sfx,Volume effetti
 options_volume_ui,Volume interfaccia
-task_repeat_checkbox,Ripeti (fino a {count} volte)
-produce_deliver_checkbox,Consegna al magazzino
+task_repeat_checkbox,Ripeti (fino a {count} viaggi)
+produce_deliver_checkbox,Porta al deposito
 language_none,Predefinita (sistema)
 language_italian,Italiano
 language_english,Inglese
@@ -228,10 +228,8 @@ sex_male_short,M
 vegetation_cut_button,Taglia
 vegetation_subtype_label,Sottotipo: {subtype}
 vegetation_age_label,Età: {age_band} ({years} anni)
-stone_zone_aggregate_label,Pietra: {quantity}
 stone_selection_title,Roccia
 stick_lot_available_here_label,Bastoni qui: {quantity}
-stick_lot_wood_label,Legno: non ancora disponibile
 stick_lot_selection_title,Terreno boschivo
 vegetation_cut_years_ago,Tagliato {years} anni fa
 vegetation_dead_plant,Pianta morta
@@ -342,7 +340,6 @@ carried_resource_tooltip_hide,Pelle
 carried_resource_tooltip_sinew,Tendini
 carried_resource_tooltip_bone,Ossa
 microcell_inspection_title,Microcella ({x}; {y})
-microcell_inspection_not_visible,Cella non esplorata o non visibile.
 microcell_inspection_only_grass,Contiene solo erba.
 microcell_inspection_empty,Cella senza risorse.
 microcell_inspection_building_occupied,Cella occupata da un edificio — click singolo per i dettagli
@@ -426,7 +423,7 @@ skill_leadership_label,Leadership
 skill_builder_label,Costruttore
 skill_management_label,Gestione
 skill_transporter_label,Trasportatore
-skill_gathering_label,Raccolta
+skill_gathering_label,Lavori manuali
 skill_cognition_label,Cognizione
 skill_hunting_label,Caccia
 skill_crafting_label,Artigianato
@@ -640,7 +637,7 @@ discovery_first_thought_building_p2,"Scegli dall'albero delle idee quale ricerca
 discovery_first_thought_building_gift_title,La prima idea del villaggio: {idea}
 discovery_first_thought_building_gift_p1,"Accumulando i primi pensieri, il villaggio ha avuto la sua prima idea, in dono."
 discovery_first_thought_building_gift_p2,Ora puoi disegnare sulla mappa un'area di raccolta e mandarci un abitante: sceglierà da solo dove e quanto cibo raccogliere.
-build_blocked_no_cutting_tool,"Senza uno strumento per abbattere non si può liberare il terreno da alberi e cespugli."
+build_blocked_cut_trees_first,Taglia prima alberi e arbusti
 task_rest_name,Riposo
 task_rest_step_rest,Riposando
 task_rest_step_walk_away,Allontanandosi
@@ -710,8 +707,8 @@ help_cycle_map_layer,passa al layer della mappa successivo (compreso nessuno)
 help_escape_cancel,"annulla la scelta in corso: lavoratore col mirino, orientamento del miglioramento, disegno o scelta di una zona"
 building_info_conservation_row,{category}: {value}
 building_upgrade_conservation_row,{category}: {from} → {to}
-building_info_labor_multiplier,Lavoro: ×{value}
-building_info_fuel_multiplier,Combustibile: ×{value}
+building_info_labor_multiplier,Lavoro richiesto: {value}
+building_info_fuel_multiplier,Combustibile richiesto: {value}
 building_info_defense,Difesa: {value}
 building_info_buried,Sepolti: {count}/{max}
 rite_memorial_name,Ricordo dei defunti
@@ -754,3 +751,60 @@ pending_upgrade,Miglioramento · {building}
 pending_demolish,Demolizione · {building}
 pending_produce,Produzione · {building} · {product}
 rite_reject_no_buried,Nessun defunto da ricordare
+building_cancel_production_order_tooltip,Annulla questo ordine
+produce_reject_orders_full,{building}: ordini al completo (massimo {max}).
+building_assign_production_worker_button,Assegna
+building_assign_production_worker_tooltip,Scegli chi riprenderà questo ordine
+produce_keep_for_building_checkbox,Tieni per l'edificio
+produce_keep_for_building_tooltip,"Gli attrezzi prodotti vanno nell'Attrezzeria dell'edificio, se c'è posto"
+toolkit_caption,Attrezzeria ({used}/{types} tipi)
+toolkit_empty,vuota
+toolkit_click_to_return,Clic: rimetti nel magazzino
+toolkit_click_to_store,Clic: sposta un pezzo nell'Attrezzeria
+toolkit_reject_full,Nell'Attrezzeria non c'è posto per {tool}.
+toolkit_reject_storage_full,Nel magazzino non c'è posto per {tool}.
+building_info_toolkit,"Attrezzeria: {types} tipi di attrezzo, {units} pezzi ciascuno"
+building_info_toolkit_usage,Chi lavora qui usa gli attrezzi dell'edificio
+toolkit_tooltip_count_one,{name} · 1 pezzo
+toolkit_tooltip_count,{name} · {count} pezzi
+toolkit_tooltip_in_use,In uso: {uses} su {max}
+toolkit_tooltip_spare,Di scorta: {count} ({uses})
+toolkit_tooltip_uses_of,{uses} su {max}
+toolkit_click_to_return_spare,Clic: rimetti nel magazzino un pezzo di scorta
+carried_resource_tooltip_dried_hide_bag,Sacca di pelle essiccata
+carried_resource_tooltip_stone_spear,Lancia con punta di pietra
+carried_resource_tooltip_bow,Arco
+carried_resource_tooltip_arrow_bundle,Mazzo di frecce
+tool_category_ammo,munizioni
+tool_gate_hunt_no_ammo,{name}: mancano le munizioni per {weapon}
+carried_resource_tooltip_stone_axe,Accetta rudimentale
+carried_resource_tooltip_wood,Tronco
+task_cut_name,Taglio
+task_cut_step_cut,Tagliando la pianta
+task_activity_cut,tagliare una pianta
+cut_choice_dialog_title,Pianta
+cut_choice_dialog_message,Cosa vuoi fare con questa pianta?
+cut_choice_gather,Raccogli
+cut_choice_cut,Taglia
+cut_reject_reserved,Questa pianta è già nel lavoro di {name}.
+cut_reject_queue_full,{name} ha già troppi lavori in coda.
+pickup_no_storage_for_resource,{name}: nessun deposito ha posto per {resource}
+stone_rock_label,Pietra estraibile: {quantity}
+carried_resource_tooltip_stone,Pietra
+carried_resource_tooltip_bone_pick,Piccone d'osso
+task_quarry_name,Estrazione
+task_quarry_step_quarry,Estraendo la pietra
+task_activity_quarry,estrarre la pietra
+quarry_choice_dialog_title,Roccia
+quarry_choice_dialog_message,Cosa vuoi fare con questa roccia?
+quarry_choice_gather,Raccogli sassi
+quarry_choice_quarry,Estrai pietra
+quarry_reject_reserved,Questa roccia è già nel lavoro di {name}.
+quarry_reject_exhausted,Roccia esaurita
+building_info_output_to_storage,Prodotti finiti: nel magazzino
+building_info_output_to_collect,Prodotti finiti: da ritirare (max {max})
+microcell_inspection_unexplored,Cella non esplorata
+microcell_inspection_nothing_remembered,Nessun oggetto ricordato
+pickup_no_room_for_resource,{name} non ha spazio per trasportare {resource}
+vegetation_type_tree,Albero
+vegetation_type_shrub,Arbusto

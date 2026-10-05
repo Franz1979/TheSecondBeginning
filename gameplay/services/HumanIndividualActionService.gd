@@ -53,6 +53,12 @@ signal processing_station_full(individual: HumanIndividual, resource_name: Strin
 # Stessa chiave di quando valeva solo per l'essiccatoio, così le Task salvate allora la ritrovano.
 const CONTEXT_PROCESSING_FULL_NOTIFIED := "drying_full_notified"
 const CONTEXT_PENDING_GROUND_PILE_HAUL := "pending_ground_pile_haul"
+# Messaggio da mostrare al giocatore quando la Task si chiude per CONTEXT_PENDING_TASK_ABORT (2026-10-04 — raccolta da un
+# mucchio senza deposito con posto): testo già tradotto, consumato insieme all'abort e mostrato con task_message_requested.
+const CONTEXT_PENDING_PLAYER_MESSAGE := "pending_player_message"
+# Messaggio per il giocatore da una Task chiusa (2026-10-04, CONTEXT_PENDING_PLAYER_MESSAGE): GameScene lo mostra come i
+# rifiuti dei comandi.
+signal task_message_requested(individual: HumanIndividual, message: String)
 
 # Servizio single-responsibility (stesso pattern di HumanIndividualMovementService, stesso
 # livello/cartella): applica lo step ATTIVO della Task corrente di un HumanIndividual
@@ -265,6 +271,10 @@ func finish_current_step(individual: HumanIndividual, task: Task, world: World, 
 	if task.context.has(CONTEXT_PENDING_TASK_ABORT):
 		var abort_reason := String(task.context[CONTEXT_PENDING_TASK_ABORT])
 		task.context.erase(CONTEXT_PENDING_TASK_ABORT)
+		if task.context.has(CONTEXT_PENDING_PLAYER_MESSAGE):
+			var player_message := String(task.context[CONTEXT_PENDING_PLAYER_MESSAGE])
+			task.context.erase(CONTEXT_PENDING_PLAYER_MESSAGE)
+			task_message_requested.emit(individual, player_message)
 		# Caccia senza più armi (2026-10-01): messaggio e chiusura, anche in zona (niente pattuglia).
 		var stopped_without_weapon := _report_hunt_without_weapon(individual, task)
 		# Caccia in zona (2026-10-01): una preda persa durante l'inseguimento riporta alla pattuglia (step successivi
@@ -666,6 +676,76 @@ static func _find_building_by_id(world: World, building_id: int) -> Building:
 # PickUp) e accoda Walk + PickUp verso di lei, costruiti come li costruiva GameScene._build_pickup_task (stesso jitter
 # sul punto d'arrivo, stessa PickUpAction con filtro e sorgente della zona, stesse descrizioni degli step). Nessuna
 # cella = nessuno step: la Task si chiude. I segnali del PickUp li collega chi ha creato la Task (step_appended).
+# Deposito con posto (2026-10-04, richiesta utente — bugfix del mucchio senza deposito): true se un edificio può
+# accettare almeno un'unità di `resource_name` per `individual`. Stessa ricerca di _search_warehouse_for_resource (prima
+# la postazione preferita del context, poi il magazzino migliore), cioè quella che oggi, fallendo, finisce in
+# [HAUL DISCARD]. Senza mondo nessun controllo (true).
+static func has_storage_for(individual: HumanIndividual, resource_name: String, context: Dictionary = {}) -> bool:
+	var world: World = GameSettings.active_world
+	if world == null or individual == null:
+		return true
+	var reachable := PathfindingService.reachability_for(individual)
+	if ButcherDestinationService.find_preferred_building(
+		world, individual.position, individual.home_macro_coords, resource_name, ButcherDestinationService.get_destination(context),
+		1, [], reachable
+	) != null:
+		return true
+	return WarehouseSelectionService.find_best(
+		world, individual.position, individual.home_macro_coords, resource_name, 1, [], reachable
+	) != null
+
+
+# Le risorse di `names` per cui esiste un deposito con posto (has_storage_for).
+static func names_with_storage(individual: HumanIndividual, names: Array[String], context: Dictionary = {}) -> Array[String]:
+	var result: Array[String] = []
+	for resource_name in names:
+		if has_storage_for(individual, resource_name, context):
+			result.append(resource_name)
+	return result
+
+
+# "<nome>: nessun deposito ha posto per <risorse>" (testo tradotto).
+static func no_storage_message(individual: HumanIndividual, names: Array[String]) -> String:
+	var display_names: PackedStringArray = []
+	for resource_name in names:
+		display_names.append(IconRegistry.get_resource_display_name(resource_name))
+	return TranslationServer.translate("pickup_no_storage_for_resource").format({
+		"name": individual.name if individual != null else "?", "resource": ", ".join(display_names),
+	})
+
+
+# "<nome> non ha spazio per trasportare <risorse>" (testo tradotto, 2026-10-05) — stesso canale e stesso stile di
+# no_storage_message.
+static func no_room_message(individual: HumanIndividual, names: Array[String]) -> String:
+	var display_names: PackedStringArray = []
+	for resource_name in names:
+		display_names.append(IconRegistry.get_resource_display_name(resource_name))
+	return TranslationServer.translate("pickup_no_room_for_resource").format({
+		"name": individual.name if individual != null else "?", "resource": ", ".join(display_names),
+	})
+
+
+# Chiusura della Task perché nessuna unità entra nel carico del pipottino (2026-10-05): stesso schema di
+# request_no_storage_abort.
+static func request_no_room_abort(individual: HumanIndividual, context: Dictionary, names: Array[String]) -> void:
+	context[CONTEXT_PENDING_TASK_ABORT] = "nessuno spazio per trasportare %s" % ", ".join(names)
+	context[CONTEXT_PENDING_PLAYER_MESSAGE] = no_room_message(individual, names)
+	if DebugLogging.ENABLED and DebugLogging.SHOW_PICKUP_LOGS:
+		print("[PICKUP] #%d %s: nessuno spazio per trasportare %s — raccolta chiusa." % [
+			individual.id, individual.name, str(names)
+		])
+
+
+# Chiusura della Task per mancanza di deposito: abort (gestito dopo lo step corrente) e messaggio al giocatore.
+static func request_no_storage_abort(individual: HumanIndividual, context: Dictionary, names: Array[String]) -> void:
+	context[CONTEXT_PENDING_TASK_ABORT] = "nessun deposito con posto per %s" % ", ".join(names)
+	context[CONTEXT_PENDING_PLAYER_MESSAGE] = no_storage_message(individual, names)
+	if DebugLogging.ENABLED and DebugLogging.SHOW_PICKUP_LOGS:
+		print("[PICKUP] #%d %s: nessun deposito ha posto per %s — viaggio non partito, raccolta chiusa." % [
+			individual.id, individual.name, str(names)
+		])
+
+
 func _handle_pending_haul_zone_search(individual: HumanIndividual, task: Task, world: World) -> void:
 	if not task.context.has(SearchHaulZoneAction.CONTEXT_PENDING):
 		return
@@ -688,6 +768,29 @@ func _handle_pending_haul_zone_search(individual: HumanIndividual, task: Task, w
 			])
 		return
 	var target_cell: Vector2i = found
+	# Da un mucchio a terra (2026-10-04, richiesta utente — bugfix "raccoglie, non trova deposito, rimette a terra e
+	# ricomincia"): il viaggio parte solo se un deposito può accettare almeno un'unità di una delle risorse da prendere.
+	# Altrimenti la Task si chiude qui (niente Walk, niente raccolta, niente ripetizioni) con il messaggio al giocatore.
+	if HaulZoneService.get_source_kind(zone) == PickUpAction.SourceKind.GROUND_PILE:
+		var pile_names: Array[String] = []
+		for candidate in PickUpAction.build_candidates_at(
+			macro_state, target_cell, PickUpAction.SourceKind.GROUND_PILE, HaulZoneService.get_criterion_kind(zone),
+			HaulZoneService.get_criterion_category(zone),
+			PickUpAction.list_candidate_names(HaulZoneService.get_criterion_kind(zone), HaulZoneService.get_resource_name(zone))
+		):
+			pile_names.append(String(candidate["name"]))
+		var storable := names_with_storage(individual, pile_names, task.context)
+		if not pile_names.is_empty() and storable.is_empty():
+			request_no_storage_abort(individual, task.context, pile_names)
+			return
+		# Spazio (2026-10-05): il viaggio parte solo se almeno un'unità di una risorsa con deposito entra a carico vuoto.
+		var carriable: Array[String] = []
+		for pile_name in storable:
+			if individual.can_carry_one_unit_when_empty(pile_name):
+				carriable.append(pile_name)
+		if not storable.is_empty() and carriable.is_empty():
+			request_no_room_abort(individual, task.context, storable)
+			return
 	var target_position_jitter: Vector2 = Vector2(randf_range(0.15, 0.85), randf_range(0.15, 0.85))
 	var pickup := PickUpAction.new(
 		target_cell, macro_state, HaulZoneService.get_resource_name(zone), HaulZoneService.get_quantity_requested(zone),

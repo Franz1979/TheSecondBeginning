@@ -1,0 +1,23 @@
+[gd_resource type="Resource" script_class="SecondaryResourceRules" format=3 uid="uid://bcyubyj7am0yi"]
+
+[ext_resource type="Script" uid="uid://cu4cyua5y4n1m" path="res://simulation/scripts/core/SecondaryResourceRules.gd" id="1_bow"]
+
+[resource]
+script = ExtResource("1_bow")
+secondary_resource_name = "bow"
+calories_per_unit = 0.0
+category = 4
+generation_source = 2
+space_per_unit = 6.0
+recipe_inputs = {
+"sinew": 2,
+"stick": 1
+}
+recipe_labor = 500.0
+recipe_workstation_types = Array[String](["toolmaker_hut"])
+recipe_required_tool_categories = Array[int]([1])
+tool_categories = Array[int]([0])
+max_uses = 80
+max_range = 6.0
+thrown_on_attack = false
+required_ammo_category = 9

@@ -1608,6 +1608,8 @@ var _dirt_ground_speckles_by_variant: Dictionary = {}
 # irregolari verso le celle senza nulla.
 const GROUND_UNDER_BUILDING_TYPES: Array[String] = [
 	"stick_tent", "hide_tent", "pebble_circle", "campfire", "drying_rack", "smokehouse", "burial", "earthwork", "stacked_stones",
+	# Capanna dell'attrezzista (2026-10-04, richiesta utente: si vedeva il verde sotto, come gli altri edifici).
+	"toolmaker_hut",
 ]
 
 

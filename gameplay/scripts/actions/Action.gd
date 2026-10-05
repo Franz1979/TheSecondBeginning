@@ -242,7 +242,7 @@ func is_target_valid() -> bool:
 # capacità di trasporto viene corretta del solo bonus dello slot occupato (HumanIndividual.
 # _recalculate_carry_capacity_after_tool_change).
 func ensure_required_tools(individual: Variant) -> bool:
-	var required := ToolGateService.get_action_required_categories(self)
+	var required := get_tool_categories_for_individual()
 	if required.is_empty() or individual == null:
 		tool_wait_result = ToolGateService.Result.OK
 		tool_wait_missing_categories = []
@@ -255,6 +255,12 @@ func ensure_required_tools(individual: Variant) -> bool:
 	if DebugLogging.ENABLED and DebugLogging.SHOW_TRANSPORT_BUILD_LOGS and not outcome["equipped"].is_empty():
 		print("[TOOLS] #%d: attrezzi spostati in cintura per %s: %s." % [individual.id, get_script().get_global_name(), str(outcome["equipped"])])
 	return tool_wait_result == ToolGateService.Result.OK
+
+
+# Categorie che il PIPOTTINO deve coprire con cintura o zaino (2026-10-04): di base tutte quelle richieste dallo step;
+# ProduceAction toglie quelle coperte dall'Attrezzeria dell'edificio (BuildingToolkitService).
+func get_tool_categories_for_individual() -> Array[TaskTypes.ToolCategory]:
+	return ToolGateService.get_action_required_categories(self)
 
 
 func is_waiting_for_tools() -> bool:
@@ -273,3 +279,34 @@ func report_broken_tools(individual: Variant, broken: Array[String]) -> void:
 	individual.tool_gate_warning = tr("tool_broken_warning").format({
 		"name": individual.name, "tool": ", ".join(tool_names),
 	})
+
+
+# Efficienza dell'attrezzo della categoria `category` in cintura (SecondaryResourceRules.work_efficiency), 1.0 senza
+# attrezzo o con un valore non positivo (2026-10-05, spostata qui da CutAction: condivisa da taglio ed estrazione).
+func get_tool_efficiency(individual: Variant, category: TaskTypes.ToolCategory) -> float:
+	var slot := ToolGateService.find_belt_slot_for(individual, category)
+	if slot == -1:
+		return 1.0
+	var rules := CaloricCalculator.get_caloric_source_rules(individual.get_equipped_tool(slot))
+	if rules == null or rules.work_efficiency <= 0.0:
+		return 1.0
+	return rules.work_efficiency
+
+
+# Resa di un ricavo (taglio, estrazione — 2026-10-05, spostata qui da CutAction) in un mucchio a terra vicino a
+# `position` (GroundPileService.drop_entries sceglie una microcella libera) e, se il mucchio c'è, consegna al magazzino
+# accodata allo stesso pipottino (HumanIndividualActionService.CONTEXT_PENDING_GROUND_PILE_HAUL con "until_empty",
+# tutti i viaggi finché il mucchio è vuoto). `yield_data` = {"resource_name", "quantity"}; {} = nessuna resa.
+# Ritorna il mucchio, null se non è nato.
+func drop_yield_and_queue_haul(context: Dictionary, game_data: GameData, macro_coords: Vector2i, position: Vector2, yield_data: Dictionary) -> GroundPile:
+	if yield_data.is_empty() or game_data == null:
+		return null
+	var entries := {String(yield_data["resource_name"]): {"quantity": int(yield_data["quantity"]), "decay_fraction": 0.0}}
+	var pile := GroundPileService.drop_entries(game_data, macro_coords, position, entries)
+	if pile != null:
+		context[HumanIndividualActionService.CONTEXT_PENDING_GROUND_PILE_HAUL] = {
+			"macro_x": pile.macro_coords.x, "macro_y": pile.macro_coords.y,
+			"micro_x": pile.microcell.x, "micro_y": pile.microcell.y,
+			"until_empty": true,
+		}
+	return pile

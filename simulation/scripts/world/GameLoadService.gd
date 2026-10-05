@@ -246,6 +246,9 @@ func load_game_from_json(file_path: String) -> LoadedGame:
 
 	world.cell_states.clear()
 	if world_data.has("cell_states"):
+		# Pebble (2026-10-05): vedi lo scarto del registro vecchio nel ciclo di lot_registry sotto.
+		var pebble_registry_is_harvest: bool = bool(data.get("pebble_registry_is_harvest", false))
+		var stone_position_names := LotCapacityService.get_resource_names_for_lot_source(SecondaryResourceTypes.LotSource.STONE_POSITION)
 		for state_data in world_data["cell_states"]:
 			var state := MacroCellState.new(
 				int(state_data["x"]),
@@ -312,6 +315,14 @@ func load_game_from_json(file_path: String) -> LoadedGame:
 				# PEBBLE — nasce/vive insieme a stone_positions (vedi GameSaveService), ora
 				# ricaricato dal registro unificato "lot_registry" sotto, non più da una sezione
 				# dedicata.
+			# Lavoro di taglio già fatto (2026-10-04, task Cut) — assente nei salvataggi precedenti.
+			var cut_progress_data: Variant = state_data.get("cut_work_progress", {})
+			if cut_progress_data is Dictionary:
+				for progress_key in cut_progress_data.keys():
+					state.cut_work_progress[String(progress_key)] = float(cut_progress_data[progress_key])
+			# Pietra tolta dalle rocce (2026-10-05, Quarry) — assente nei salvataggi precedenti.
+			for quarried_data in state_data.get("quarried_stone_by_position", []):
+				state.quarried_stone_by_position[Vector2i(int(quarried_data["x"]), int(quarried_data["y"]))] = int(quarried_data["amount"])
 			for pos_data in state_data.get("vegetation_cut_exceptions", []):
 				var cut_key := Vector3i(int(pos_data["x"]), int(pos_data["y"]), int(pos_data["i"]))
 				state.vegetation_cut_exceptions[cut_key] = {
@@ -350,6 +361,10 @@ func load_game_from_json(file_path: String) -> LoadedGame:
 			for resource_entry in state_data.get("lot_registry", []):
 				var lot_resource_name: String = String(resource_entry.get("resource_name", ""))
 				if lot_resource_name == "":
+					continue
+				# Pebble (2026-10-05): nei salvataggi senza "pebble_registry_is_harvest" il registro era il residuo di
+				# ogni roccia, non il raccolto — scartato, le rocce ripartono piene.
+				if not pebble_registry_is_harvest and stone_position_names.has(lot_resource_name):
 					continue
 				var lot_registry_per_lot: Dictionary = {}
 				for pos_data in resource_entry.get("lots", []):
@@ -596,7 +611,13 @@ func load_game_from_json(file_path: String) -> LoadedGame:
 			# construction_progress sopra, vuoto per i save precedenti al campo. Un record per ricetta dal
 			# 2026-09-24: ProductionService.normalize_progress converte il vecchio record singolo
 			# ({"resource_name", "labor_accumulated"}) senza perdere il progresso.
-			building.production_progress = ProductionService.normalize_progress(building_data.get("production_progress", {}))
+			# Ordini separati (2026-10-04): i formati vecchi diventano produzioni sospese (ProductionService.load_production_state).
+			ProductionService.load_production_state(
+				building, building_data.get("production_progress", {}) as Dictionary,
+				building_data.get("production_suspended", {}) as Dictionary, int(building_data.get("production_order_counter", 0))
+			)
+			# Attrezzeria (2026-10-04): vuota per i save precedenti.
+			building.toolkit = BuildingToolkitService.load_toolkit(building_data.get("toolkit", {}) as Dictionary)
 			# production_output (2026-09-23, buffer di uscita): int() per voce, JSON rende ogni numero float.
 			var production_output: Dictionary = {}
 			var raw_production_output: Dictionary = building_data.get("production_output", {})

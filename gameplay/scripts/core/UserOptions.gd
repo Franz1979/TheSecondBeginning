@@ -48,7 +48,7 @@ var pickup_default_kind: int = PickUpAction.CriterionKind.ALL
 var pickup_default_category: int = -1
 var pickup_default_resource: String = ""
 # Ripetizione automatica di raccolta E trasporto (2026-09-20, richiesta utente; era solo "pickup"): default del
-# flag "Ripeti fino a TaskRepeatRules.MAX_REPEATS volte" dei dialog di raccolta e di trasporto. Vale anche quando il
+# flag "Ripeti fino a TaskRepeatRules.MAX_TRIPS viaggi" dei dialog di raccolta e di trasporto. Vale anche quando il
 # dialog di raccolta non compare (cella con una sola risorsa). Chiave in options.cfg: "repeat_default" (con lettura
 # di ripiego della vecchia "pickup_repeat_default").
 var repeat_default: bool = false

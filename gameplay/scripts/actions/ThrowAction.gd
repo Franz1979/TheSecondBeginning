@@ -91,21 +91,29 @@ func _resolve(individual: Variant, context: Dictionary) -> bool:
 
 	# L'arma parte: uso consumato, arma fuori dalla cintura se integra, fuga, esito.
 	var weapon_display := IconRegistry.get_resource_display_name(weapon_name)
-	var weapon_rules := CaloricCalculator.get_caloric_source_rules(weapon_name)
-	var attack_power: float = weapon_rules.attack_power if weapon_rules != null else 0.0
+	# Forza del tiro (2026-10-04): quella della munizione in uso per un'arma a munizioni, altrimenti quella dell'arma.
+	var attack_power: float = HuntService.get_attack_power(individual, weapon_name)
 	# Usura dello slot dell'arma scelta (non del primo attrezzo della categoria in cintura).
 	var weapon_slot := HuntService.find_weapon_slot(individual, weapon_name)
 	var broken: Array[String] = []
 	if weapon_slot != -1 and individual.consume_equipped_tool_use(weapon_slot, null):
 		broken.append(weapon_name)
+	# Munizione (2026-10-04): un uso anche della munizione in cintura; a zero sparisce come gli altri attrezzi.
+	var ammo_broken := HuntService.consume_ammo(individual, weapon_name)
+	if ammo_broken != "":
+		broken.append(ammo_broken)
 	if not broken.is_empty():
 		report_broken_tools(individual, broken)
 		HuntService.log_event(individual, "arma rotta dopo il lancio: %s." % str(broken))
 	# Arma integra = ancora nel suo slot dopo il consumo. Arma da lancio integra: lascia la cintura, da qui esiste solo
 	# nel recupero. Arma da mischia (HuntService.is_melee_weapon, 2026-10-01): mai lanciata, resta in cintura.
-	var weapon_intact: bool = weapon_slot != -1 and individual.get_equipped_tool(weapon_slot) == weapon_name
+	# Munizioni finite (2026-10-04): l'arma resta in cintura ma non può più tirare — stesso percorso dell'arma rotta
+	# (cambio d'arma o chiusura della caccia).
+	var weapon_intact: bool = weapon_slot != -1 and individual.get_equipped_tool(weapon_slot) == weapon_name \
+		and ToolGateService.has_required_ammo(individual, weapon_name)
 	var melee := HuntService.is_melee_weapon(weapon_name)
-	var weapon_thrown: bool = weapon_intact and not melee
+	# Scagliata solo se lo dice l'arma (HuntService.is_thrown_weapon: a distanza e thrown_on_attack, il default).
+	var weapon_thrown: bool = weapon_intact and HuntService.is_thrown_weapon(weapon_name)
 	var weapon_uses := 0
 	if weapon_thrown:
 		weapon_uses = individual.get_equipped_tool_uses(weapon_slot)
@@ -117,7 +125,7 @@ func _resolve(individual: Variant, context: Dictionary) -> bool:
 		context.erase(HuntService.CONTEXT_WEAPON_DROP)
 	AnimalGroupRenderer.trigger_flee(animal.macro_coords, animal.position, individual.home_macro_coords, individual.position)
 	HuntService.log_event(individual, "%s di %s su %s (distanza %.2f): gli animali entro il raggio di fuga scappano." % [
-		"colpo in mischia" if melee else "lancio", weapon_display, combat_target.describe(), distance
+		"colpo in mischia" if melee else ("lancio" if weapon_thrown else "tiro"), weapon_display, combat_target.describe(), distance
 	])
 
 	var skill_factor := SkillEffectService.get_factor_for_action(self, individual, context)

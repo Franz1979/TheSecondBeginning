@@ -1,0 +1,22 @@
+[gd_resource type="Resource" script_class="SecondaryResourceRules" format=3 uid="uid://cxdsy3quodndv"]
+
+[ext_resource type="Script" uid="uid://cu4cyua5y4n1m" path="res://simulation/scripts/core/SecondaryResourceRules.gd" id="1_arrow_bundle"]
+
+[resource]
+script = ExtResource("1_arrow_bundle")
+secondary_resource_name = "arrow_bundle"
+calories_per_unit = 0.0
+category = 4
+generation_source = 2
+space_per_unit = 2.0
+recipe_inputs = {
+"pebble": 2,
+"sinew": 1,
+"stick": 2
+}
+recipe_labor = 150.0
+recipe_workstation_types = Array[String](["toolmaker_hut"])
+recipe_required_tool_categories = Array[int]([1])
+tool_categories = Array[int]([9])
+max_uses = 6
+attack_power = 15.0

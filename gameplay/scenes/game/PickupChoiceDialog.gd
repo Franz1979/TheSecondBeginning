@@ -125,7 +125,7 @@ var _destination_ids: Dictionary = {}
 
 func _ready() -> void:
 	quantity_label.text = tr("transport_dialog_quantity_label")
-	repeat_check_box.text = tr("task_repeat_checkbox").format({"count": TaskRepeatRules.MAX_REPEATS})
+	repeat_check_box.text = tr("task_repeat_checkbox").format({"count": TaskRepeatRules.MAX_TRIPS})
 	confirm_button.text = tr("transport_dialog_confirm")
 	cancel_button.text = tr("transport_dialog_cancel")
 	confirm_button.pressed.connect(_on_confirm_pressed)
@@ -139,7 +139,7 @@ func _ready() -> void:
 # "source_kind": PickUpAction.SourceKind (facoltativo, default TERRAIN)} — SOLO
 # quelle realmente presenti nella microcella. `default_choice`: {"kind": PickUpAction.CriterionKind,
 # "category": int, "resource_name": String}; vuoto o senza "kind" = "Tutto" (il default fisso di oggi).
-# `repeat_default`: stato iniziale del flag "Ripeti fino a N volte" (2026-09-20: UserOptions.repeat_default).
+# `repeat_default`: stato iniziale del flag "Ripeti fino a N viaggi" (2026-09-20: UserOptions.repeat_default).
 # repeat_max/quantity_enabled (2026-09-27, work areas passo 3a): ripetizioni mostrate nella spunta (3 per il clic su una
 # cella, 5 per la raccolta nelle zone) e scelta della quantità (spenta per le zone).
 func open_dialog(
@@ -150,7 +150,8 @@ func open_dialog(
 	title = dialog_title
 	message_label.text = message
 	repeat_check_box.button_pressed = repeat_default
-	repeat_check_box.text = tr("task_repeat_checkbox").format({"count": repeat_max})
+	# Il testo conta i viaggi in tutto (2026-10-05): il primo più repeat_max ripetizioni.
+	repeat_check_box.text = tr("task_repeat_checkbox").format({"count": repeat_max + 1})
 	_trips_mode = trips > 0
 	repeat_check_box.visible = not _trips_mode
 	_ensure_trips_row()

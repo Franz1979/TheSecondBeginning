@@ -1317,6 +1317,16 @@ func get_carried_space() -> float:
 	return total
 
 
+# Vero se almeno un'unità di `resource_name` entra a carico vuoto, con la capienza massima e la cintura attuali
+# (max_carry_capacity) — 2026-10-05, messaggio "non ha spazio per trasportare". Stessa tolleranza di PickUpAction.
+# Una risorsa senza regole o senza ingombro conta come trasportabile.
+func can_carry_one_unit_when_empty(resource_name: String) -> bool:
+	var resource_rules := CaloricCalculator.get_caloric_source_rules(resource_name)
+	if resource_rules == null or resource_rules.space_per_unit <= 0.0:
+		return true
+	return int(floor(max_carry_capacity / resource_rules.space_per_unit + FoodSelectionService.UNIT_FIT_EPSILON)) >= 1
+
+
 # Vero se una varietà può ENTRARE nello zaino quanto a numero di varietà: già presente (si fonde) oppure
 # c'è ancora posto sotto MAX_CARRIED_VARIETIES. Non guarda lo spazio in unità — quello resta al
 # chiamante (free space / space_per_unit).

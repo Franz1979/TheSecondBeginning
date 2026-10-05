@@ -226,7 +226,7 @@ skill_leadership_label,Leadership
 skill_builder_label,Builder
 skill_management_label,Management
 skill_transporter_label,Transporter
-skill_gathering_label,Gathering
+skill_gathering_label,Manual labor
 skill_cognition_label,Cognition
 skill_hunting_label,Hunting
 skill_crafting_label,Crafting
@@ -378,15 +378,15 @@ transport_dialog_cancel,Cancel
 options_pickup_default,Pick-up: default choice
 options_pickup_default_group_category,Category
 options_pickup_default_group_resource,Resource
-options_repeat_default,Pick-up and transport: repeat up to {count} times
-options_production_delivery_default,Production: deliver to warehouse
+options_repeat_default,Pick-up and transport: repeat up to {count} trips
+options_production_delivery_default,Production: deliver to storage
 options_volume_master,Master volume
 options_volume_music,Music volume
 options_volume_ambience,Ambience volume
 options_volume_sfx,Effects volume
 options_volume_ui,Interface volume
-task_repeat_checkbox,Repeat (up to {count} times)
-produce_deliver_checkbox,Deliver to warehouse
+task_repeat_checkbox,Repeat (up to {count} trips)
+produce_deliver_checkbox,Deliver to storage
 minimap_show_tooltip,Show the minimap
 minimap_hide_tooltip,Hide the minimap
 building_awaiting_fuel_production_label,"Missing fuel: {amount} ({fuels})"
@@ -552,7 +552,7 @@ discovery_first_thought_building_p2,"Pick which idea to research from the idea t
 discovery_first_thought_building_gift_title,The village's first idea: {idea}
 discovery_first_thought_building_gift_p1,"As its first thoughts accumulated, the village received its first idea, as a gift."
 discovery_first_thought_building_gift_p2,You can now draw a gathering area on the map and send a villager there: they will decide on their own where and how much food to gather.
-build_blocked_no_cutting_tool,"Without a chopping tool the ground can't be cleared of trees and shrubs."
+build_blocked_cut_trees_first,Cut down trees and shrubs first
 task_rest_name,Rest
 task_rest_step_rest,Resting
 task_rest_step_walk_away,Moving away
@@ -649,8 +649,8 @@ help_double_click_inspect_microcell,"inspect the clicked microcell: gatherable r
 help_debug_clear_backpack,(debug) empty the selected individual's backpack
 building_info_conservation_row,{category}: {value}
 building_upgrade_conservation_row,{category}: {from} → {to}
-building_info_labor_multiplier,Labor: ×{value}
-building_info_fuel_multiplier,Fuel: ×{value}
+building_info_labor_multiplier,Labor required: {value}
+building_info_fuel_multiplier,Fuel required: {value}
 building_info_defense,Defense: {value}
 building_info_buried,Buried: {count}/{max}
 rite_memorial_name,Remembrance of the dead
@@ -693,3 +693,64 @@ pending_upgrade,Upgrade · {building}
 pending_demolish,Demolition · {building}
 pending_produce,Production · {building} · {product}
 rite_reject_no_buried,No dead to remember
+building_cancel_production_order_tooltip,Cancel this order
+produce_reject_orders_full,{building}: orders full (maximum {max}).
+building_assign_production_worker_button,Assign
+building_assign_production_worker_tooltip,Choose who will resume this order
+produce_keep_for_building_checkbox,Keep for the building
+produce_keep_for_building_tooltip,"Produced tools go to the building's toolkit, if there is room"
+toolkit_caption,Toolkit ({used}/{types} types)
+toolkit_empty,empty
+toolkit_click_to_return,Click: put it back in storage
+toolkit_click_to_store,Click: move one piece to the toolkit
+toolkit_reject_full,There is no room in the toolkit for {tool}.
+toolkit_reject_storage_full,There is no room in storage for {tool}.
+building_info_toolkit,"Toolkit: {types} tool types, {units} pieces each"
+building_info_toolkit_usage,Whoever works here uses the building's tools
+toolkit_tooltip_count_one,{name} · 1 piece
+toolkit_tooltip_count,{name} · {count} pieces
+toolkit_tooltip_in_use,In use: {uses} of {max}
+toolkit_tooltip_spare,Spare: {count} ({uses})
+toolkit_tooltip_uses_of,{uses} of {max}
+toolkit_click_to_return_spare,Click: put a spare piece back in storage
+carried_resource_tooltip_dried_hide_bag,Dried hide bag
+carried_resource_tooltip_stone_spear,Stone-tipped spear
+carried_resource_tooltip_bow,Bow
+carried_resource_tooltip_arrow_bundle,Bundle of arrows
+tool_category_ammo,ammunition
+tool_gate_hunt_no_ammo,{name}: no ammunition for {weapon}
+carried_resource_tooltip_stone_axe,Crude axe
+carried_resource_tooltip_wood,Log
+task_cut_name,Cut
+task_cut_step_cut,Cutting the plant
+task_activity_cut,cut a plant
+cut_choice_dialog_title,Plant
+cut_choice_dialog_message,What do you want to do with this plant?
+cut_choice_gather,Gather
+cut_choice_cut,Cut
+cut_reject_reserved,This plant is already in {name}'s work.
+cut_reject_queue_full,{name} already has too many jobs queued.
+pickup_no_storage_for_resource,{name}: no storage has room for {resource}
+stone_rock_label,Extractable stone: {quantity}
+carried_resource_tooltip_stone,Stone
+stone_selection_title,Rock
+carried_resource_tooltip_bone_pick,Bone pick
+task_quarry_name,Quarry
+task_quarry_step_quarry,Quarrying stone
+task_activity_quarry,quarry stone
+quarry_choice_dialog_title,Rock
+quarry_choice_dialog_message,What do you want to do with this rock?
+quarry_choice_gather,Gather pebbles
+quarry_choice_quarry,Quarry stone
+quarry_reject_reserved,This rock is already in {name}'s work.
+quarry_reject_exhausted,Rock exhausted
+building_info_output_to_storage,Finished products: to storage
+building_info_output_to_collect,Finished products: to collect (max {max})
+microcell_inspection_unexplored,Unexplored cell
+microcell_inspection_nothing_remembered,Nothing remembered
+microcell_inspection_tree,Trees
+microcell_inspection_shrub,Shrubs
+microcell_inspection_grass,Grass
+pickup_no_room_for_resource,{name} has no room to carry {resource}
+vegetation_type_tree,Tree
+vegetation_type_shrub,Shrub

@@ -268,6 +268,10 @@ extends Resource
 # conta il bonus più alto tra gli attrezzi in cintura, non la somma (HumanCalculator.get_equipped_carry_bonus).
 # 0.0 = nessun bonus.
 @export var carry_capacity_bonus: float = 0.0
+# Efficienza di lavoro dell'attrezzo (2026-10-04, richiesta utente — generico): la durata del lavoro che lo usa si
+# divide per questo valore (2.0 = metà tempo). 1.0 = neutro. Oggi lo leggono CutAction e QuarryAction
+# (Action.get_tool_efficiency).
+@export var work_efficiency: float = 1.0
 # Quanto fa male se usato per colpire (caccia/combattimento). 0.0 = non è un'arma.
 @export var attack_power: float = 0.0
 # Distanza massima, in microcelle, entro cui l'attrezzo può colpire (2026-09-26, richiesta utente —
@@ -275,3 +279,12 @@ extends Resource
 # contatto). Scala di riferimento: un umano adulto misura ~0.22 microcelle, quindi 1 microcella ≈ 7-8 m.
 # wooden_spear 3.0 (lancio efficace ~20-25 m), stone_knife 1.0 (lancio ravvicinato, ~7-8 m).
 @export var max_range: float = 0.0
+# Armi a munizioni (2026-10-04, richiesta utente — generico, oggi l'arco): `thrown_on_attack` vero = un'arma a distanza
+# (gittata oltre la portata di mischia) viene scagliata, cade a terra e va recuperata, come le lance; falso = resta in
+# cintura (niente caduta, niente recupero). Il default vero lascia identiche tutte le armi esistenti; un'arma da mischia
+# non viene mai lanciata comunque (HuntService.is_thrown_weapon).
+@export var thrown_on_attack: bool = true
+# Categoria d'attrezzo (TaskTypes.ToolCategory) della munizione che l'arma richiede in cintura; -1 = nessuna. Con una
+# munizione richiesta l'arma funziona solo se in cintura c'è un attrezzo di quella categoria: a ogni tiro consuma un uso
+# suo e uno della munizione, e probabilità di colpire e danno usano la forza d'attacco della munizione (HuntService).
+@export var required_ammo_category: int = -1

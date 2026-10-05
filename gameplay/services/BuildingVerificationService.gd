@@ -72,10 +72,10 @@ extends RefCounted
 # `rotation` di default/SOUTH veniva letta come se fosse una porta vera anche con has_door=false).
 
 #
-# Criterio 10 (2026-09-28, richiesta utente): alberi e cespugli (TREE/SHRUB vivi sulla microcella dell'edificio,
-# BuildingSiteClearingService.has_woody_vegetation) si possono liberare solo con uno strumento per abbattere (CHOPPING): con
-# can_cut = false (nessuno può tagliare, lo decide il chiamante — GameScene._can_tribe_cut) la microcella non è
-# edificabile. Erba e microcelle vuote restano edificabili. Solo la microcella dell'edificio, non quella davanti
+# Criterio 10 (2026-09-28, richiesta utente; dal 2026-10-04 sempre attivo nel piazzamento della Build Task — le piante
+# vive si abbattono solo con la task Cut): alberi e cespugli VIVI sulla microcella dell'edificio
+# (BuildingSiteClearingService.has_woody_vegetation; ceppi e piante morte non contano) la rendono non edificabile con
+# can_cut = false, che GameScene passa sempre per anteprima e conferma. Erba e microcelle vuote restano edificabili. Solo la microcella dell'edificio, non quella davanti
 # alla porta (la pulizia del cantiere non la tocca). Default true = criterio disattivato. Per sapere se il rifiuto
 # dipende SOLO da questo criterio basta richiamare con can_cut = true (vedi GameScene._report_woody_vegetation_block).
 

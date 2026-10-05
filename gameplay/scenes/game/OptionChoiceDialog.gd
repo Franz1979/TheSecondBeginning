@@ -87,7 +87,7 @@ func _ready() -> void:
 	# "transport_" nella chiave di traduzione — invariate per non toccare il CSV per un rinominare
 	# puramente cosmetico, nessuna differenza di testo visibile tra i due usi.
 	quantity_label.text = tr("transport_dialog_quantity_label")
-	repeat_check_box.text = tr("task_repeat_checkbox").format({"count": TaskRepeatRules.MAX_REPEATS})
+	repeat_check_box.text = tr("task_repeat_checkbox").format({"count": TaskRepeatRules.MAX_TRIPS})
 	confirm_button.text = tr("transport_dialog_confirm")
 	cancel_button.text = tr("transport_dialog_cancel")
 	confirm_button.pressed.connect(_on_confirm_pressed)

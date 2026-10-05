@@ -297,3 +297,7 @@ extends Resource
 # il pannello offre una quantità da 1 a questo valore; la Produce Task ripete il ciclo fino a quel
 # numero di pezzi, vedi ProduceAction.
 @export var production_max_quantity: int = 1
+# Attrezzeria (2026-10-04, richiesta utente — BuildingToolkitService): quanti tipi di attrezzo tiene l'edificio
+# (0 = nessuna Attrezzeria) e quanti pezzi per tipo. Chi produce qui usa questi attrezzi prima dei propri.
+@export var toolkit_tool_types: int = 0
+@export var toolkit_units_per_type: int = 0

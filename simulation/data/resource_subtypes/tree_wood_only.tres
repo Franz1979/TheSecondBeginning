@@ -32,3 +32,5 @@ initial_age_ratio = {
 2: 0.0
 }
 size_multiplier_by_age = Array[float]([0.6, 1.0, 1.2])
+cut_yield_resource_name = "wood"
+cut_yield_base = 3

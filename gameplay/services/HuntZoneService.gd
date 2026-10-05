@@ -298,4 +298,3 @@ static func reset_to_patrol_on_suspend(task: Task) -> void:
 	var patrol: Array[Action] = [PatrolAreaAction.new(area_id)]
 	task.append_steps(patrol)
 	task.step_descriptions[task.step_descriptions.size() - 1] = "task_hunt_zone_step_patrol"
-

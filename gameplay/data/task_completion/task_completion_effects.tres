@@ -17,6 +17,12 @@ skill_effects_by_task_name = {
 "task_daydream_name": {
 "skill_cognition": 1.0
 },
+"task_cut_name": {
+"skill_gathering": 1.0
+},
+"task_quarry_name": {
+"skill_gathering": 1.0
+},
 "task_demolish_name": {
 "skill_builder": 1.0
 },
@@ -56,6 +62,8 @@ vital_effects_by_task_name = {
 "task_daydream_name": {
 "current_happiness": 20.0
 },
+"task_cut_name": {},
+"task_quarry_name": {},
 "task_demolish_name": {},
 "task_emergency_rest_name": {},
 "task_emergency_restock_name": {},

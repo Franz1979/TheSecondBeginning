@@ -65,6 +65,11 @@ extends Resource
 # [1.0, 1.0, 1.0] neutro: default per i sottotipi con track_age_bands=false, dove nessuna
 # fascia viene mai calcolata.
 @export var size_multiplier_by_age: Array[float] = [1.0, 1.0, 1.0]
+# Taglio (2026-10-04, richiesta utente — task Cut): risorsa che rende l'abbattimento di un individuo di questo
+# sottotipo e resa di base. Resa = base × size_multiplier_by_age della sua fascia d'età, arrotondata, minimo 1
+# (PlantCutService.compute_yield). Risorsa vuota o base 0 = il taglio non rende nulla.
+@export var cut_yield_resource_name: String = ""
+@export var cut_yield_base: int = 0
 
 
 func is_suitable_for(biome: GameTypes.Biome, terrain: GameTypes.TerrainBase) -> bool:

@@ -458,6 +458,15 @@ static func transform_entry(building: Building, input_name: String, input_left: 
 	return true
 
 
+# Un pezzo di un attrezzo tolto dal solo magazzino (il più usato per primo), come istanza; {} se non ce n'è. Usata per
+# spostarlo nell'Attrezzeria dell'edificio (2026-10-04, BuildingToolkitService).
+static func take_stored_tool_unit(building: Building, resource_name: String) -> Dictionary:
+	if building == null or not ToolInstance.is_tool_resource(resource_name):
+		return {}
+	var units := _take_stored_tool_units(building, resource_name, 1)
+	return units[0] if not units.is_empty() else {}
+
+
 # Prelievo di un attrezzo dal SOLO stored_resources (ToolInstance.take_units_from_entry: prima le istanze
 # più consumate, poi i pezzi nuovi). Ritorna le unità prelevate come istanze (i nuovi a usi pieni).
 # decay_fraction della voce invariata, stesso principio "lotto unico" di withdraw_stored.

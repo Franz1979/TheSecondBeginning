@@ -122,7 +122,8 @@ static func try_satisfy(individual: HumanIndividual, required: Array[TaskTypes.T
 
 
 # L'individuo ha un attrezzo che copre la categoria, in cintura o nello zaino (2026-09-28, richiesta utente —
-# edificabilità su alberi/cespugli, vedi GameScene._can_tribe_cut). Sola lettura: nessuno spostamento in cintura.
+# nato per l'edificabilità su alberi/cespugli; oggi la usa il comando Taglia, GameScene._try_assign_cut_command_on_right_click).
+# Sola lettura: nessuno spostamento in cintura.
 static func has_tool_for(individual: HumanIndividual, category: TaskTypes.ToolCategory) -> bool:
 	if individual == null:
 		return false
@@ -144,9 +145,35 @@ static func _belt_covers(individual: HumanIndividual, category: TaskTypes.ToolCa
 static func find_belt_slot_for(individual: HumanIndividual, category: TaskTypes.ToolCategory) -> int:
 	for slot in range(individual.get_tool_slot_count()):
 		var tool_name := individual.get_equipped_tool(slot)
-		if tool_name != "" and _tool_categories(tool_name).has(category):
+		if tool_name != "" and _tool_categories(tool_name).has(category) and has_required_ammo(individual, tool_name):
 			return slot
 	return -1
+
+
+# Armi a munizioni (2026-10-04, SecondaryResourceRules.required_ammo_category): true se `tool_name` non richiede munizioni
+# oppure in cintura c'è un attrezzo della categoria richiesta. Un'arma senza la sua munizione non copre la propria
+# categoria (find_belt_slot_for), non è sceglibile né disponibile per la caccia (HuntService).
+static func has_required_ammo(individual: HumanIndividual, tool_name: String) -> bool:
+	var rules := CaloricCalculator.get_caloric_source_rules(tool_name)
+	if rules == null or rules.required_ammo_category < 0:
+		return true
+	return find_ammo_slot(individual, rules.required_ammo_category) != -1
+
+
+# Slot di cintura con una munizione della categoria `ammo_category`: se ce n'è più d'una, la più consumata (meno usi
+# rimasti), quella che si usa per prima. -1 se nessuna.
+static func find_ammo_slot(individual: HumanIndividual, ammo_category: int) -> int:
+	var best_slot := -1
+	var best_uses := 1 << 30
+	for slot in range(individual.get_tool_slot_count()):
+		var tool_name := individual.get_equipped_tool(slot)
+		if tool_name == "" or not _tool_categories(tool_name).has(ammo_category):
+			continue
+		var uses: int = individual.get_equipped_tool_uses(slot)
+		if uses < best_uses:
+			best_uses = uses
+			best_slot = slot
+	return best_slot
 
 
 # Gittata massima (SecondaryResourceRules.max_range, microcelle) tra gli attrezzi in cintura che coprono
@@ -215,6 +242,8 @@ static func _find_backpack_tool_for(
 		var candidate := String(resource_name)
 		if already_planned.has(candidate) or individual.get_carried_quantity(candidate) <= 0:
 			continue
-		if HumanIndividual.is_tool_resource(candidate) and _tool_categories(candidate).has(category):
+		# Un'arma a munizioni nello zaino conta solo con la sua munizione già in cintura (2026-10-04).
+		if HumanIndividual.is_tool_resource(candidate) and _tool_categories(candidate).has(category) \
+				and has_required_ammo(individual, candidate):
 			return candidate
 	return ""

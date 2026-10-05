@@ -1,0 +1,22 @@
+[gd_resource type="Resource" script_class="SecondaryResourceRules" format=3]
+
+[ext_resource type="Script" uid="uid://cu4cyua5y4n1m" path="res://simulation/scripts/core/SecondaryResourceRules.gd" id="1_bone_pick"]
+
+[resource]
+script = ExtResource("1_bone_pick")
+secondary_resource_name = "bone_pick"
+calories_per_unit = 0.0
+category = 4
+generation_source = 2
+space_per_unit = 5.0
+recipe_inputs = {
+"bone": 2,
+"fiber_rope": 1,
+"stick": 1
+}
+recipe_labor = 350.0
+recipe_workstation_types = Array[String](["toolmaker_hut"])
+recipe_required_tool_categories = Array[int]([1])
+tool_categories = Array[int]([2])
+max_uses = 40
+work_efficiency = 1.0

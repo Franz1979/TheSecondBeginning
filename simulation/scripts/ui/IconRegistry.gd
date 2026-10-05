@@ -86,11 +86,20 @@ const RESOURCE_ICON_NODES := {
 	# moderno): bastone appuntito con punta indurita al fuoco, e scheggia di selce senza manico — vedi
 	# WoodenSpearIcon.gd/StoneKnifeIcon.gd.
 	"wooden_spear": preload("res://simulation/scripts/ui/WoodenSpearIcon.gd"),
+	# Lancia con punta di pietra (2026-10-04): modello migliore di wooden_spear, punta di pietra ben visibile.
+	"stone_spear": preload("res://simulation/scripts/ui/StoneSpearIcon.gd"),
+	# Accetta rudimentale (2026-10-04): manico in diagonale, testa di pietra legata.
+	"stone_axe": preload("res://simulation/scripts/ui/StoneAxeIcon.gd"),
+	# Arco e mazzo di frecce (2026-10-04).
+	"bow": preload("res://simulation/scripts/ui/BowIcon.gd"),
+	"arrow_bundle": preload("res://simulation/scripts/ui/ArrowBundleIcon.gd"),
 	"stone_knife": preload("res://simulation/scripts/ui/StoneKnifeIcon.gd"),
 	# Punteruolo d'osso (2026-09-27, richiesta utente): scheggia d'osso sottile e appuntita — vedi BoneAwlIcon.gd.
 	"bone_awl": preload("res://simulation/scripts/ui/BoneAwlIcon.gd"),
 	# Sacca di pelle (2026-09-27, richiesta utente): sacchetto di cuoio chiuso da un laccio — vedi HideBagIcon.gd.
 	"hide_bag": preload("res://simulation/scripts/ui/HideBagIcon.gd"),
+	# Sacca di pelle essiccata (2026-10-04): modello migliore di hide_bag, stessa sagoma nel colore della pelle essiccata.
+	"dried_hide_bag": preload("res://simulation/scripts/ui/DriedHideBagIcon.gd"),
 	# Prodotti della macellazione (2026-09-26, richiesta utente — icone provvisorie): carne, pelle, tendini,
 	# ossa — vedi MeatIcon.gd/HideIcon.gd/SinewIcon.gd/BoneIcon.gd.
 	"meat": preload("res://simulation/scripts/ui/MeatIcon.gd"),
@@ -225,6 +234,10 @@ const COMMAND_ICONS := {
 	# "rite" (2026-10-02, task Rite): sulla mappa vale l'icona disegnata (COMMAND_ICON_NODES, CommandMoonIcon); questa
 	# emoji resta solo per le righe del popup di scelta del rito (interfaccia, non mappa).
 	"rite": "🌙",
+	# "cut" (2026-10-04, task Cut): sulla mappa vale l'icona disegnata (CommandAxeIcon); questa per le righe del popup.
+	"cut": "🪓",
+	# "quarry" (2026-10-05, task Quarry): sulla mappa vale l'icona disegnata (CommandPickaxeIcon); questa per le righe del popup.
+	"quarry": "⛏️",
 	"task_rejected": "❌",
 }
 
@@ -235,12 +248,16 @@ static func get_resource_icon(resource_name: String) -> String:
 	return RESOURCE_ICONS.get(resource_name, "")
 
 
-# null se resource_name non ha un'icona disegnata registrata — il chiamante prova prima questa
-# (icona vera), poi get_resource_icon sopra (emoji), poi il proprio fallback testuale, in
-# quest'ordine (vedi HumanIndividualInfoPanel._update_carried_resource_box e
+# null se resource_name non ha un'icona disegnata registrata né un'immagine in ICON_TEXTURE_DIR — il
+# chiamante prova prima questa (icona vera), poi get_resource_icon sopra (emoji), poi il proprio fallback
+# testuale, in quest'ordine (vedi HumanIndividualInfoPanel._update_carried_resource_box e
 # BuildingInfoPanel._build_storage_slot, gli stessi tre livelli in entrambi). Istanza NUOVA ad ogni
-# chiamata (vedi commento su RESOURCE_ICON_NODES sopra) — mai cachata qui.
+# chiamata (vedi commento su RESOURCE_ICON_NODES sopra) — mai cachata qui. Precedenza (2026-10-04, richiesta
+# utente): l'immagine in ICON_TEXTURE_DIR, se c'è, vince sull'icona disegnata, che resta il ripiego.
 static func get_resource_icon_node(resource_name: String) -> Control:
+	var texture_node := get_icon_texture_node(resource_name)
+	if texture_node != null:
+		return texture_node
 	if not RESOURCE_ICON_NODES.has(resource_name):
 		return null
 	return RESOURCE_ICON_NODES[resource_name].new()
@@ -310,6 +327,10 @@ const COMMAND_ICON_NODES := {
 	"demolish": preload("res://simulation/scripts/ui/CommandPickaxeIcon.gd"),
 	# "rite" (2026-10-02, task Rite): falce di luna, vedi CommandMoonIcon.gd.
 	"rite": preload("res://simulation/scripts/ui/CommandMoonIcon.gd"),
+	# "cut" (2026-10-04, task Cut): accetta, vedi CommandAxeIcon.gd.
+	"cut": preload("res://simulation/scripts/ui/CommandAxeIcon.gd"),
+	# "quarry" (2026-10-05, task Quarry): piccone, lo stesso disegno della demolizione (CommandPickaxeIcon.gd).
+	"quarry": preload("res://simulation/scripts/ui/CommandPickaxeIcon.gd"),
 	"task_rejected": preload("res://simulation/scripts/ui/CommandRejectedIcon.gd"),
 }
 
@@ -376,6 +397,23 @@ const ICON_TEXTURE_DIR := "res://simulation/assets/icons/"
 const ICON_TEXTURE_EXTENSIONS := ["png", "jpg", "jpeg", "webp"]
 
 
+# Texture dell'immagine di `name` in ICON_TEXTURE_DIR, null se non c'è (2026-10-04). Ricordata per nome,
+# anche l'assenza: la chiamano anche i _draw della mappa (DepositStorageIcons.draw_icon), più volte per
+# fotogramma, e non devono ricontrollare il disco ogni volta.
+static var _icon_texture_cache: Dictionary = {}
+
+
+static func get_icon_texture(name: String) -> Texture2D:
+	if _icon_texture_cache.has(name):
+		return _icon_texture_cache[name]
+	var texture: Texture2D = null
+	var path := _find_icon_texture_path(name)
+	if path != "":
+		texture = load(path) as Texture2D
+	_icon_texture_cache[name] = texture
+	return texture
+
+
 static func _find_icon_texture_path(name: String) -> String:
 	for extension in ICON_TEXTURE_EXTENSIONS:
 		var path := "%s%s.%s" % [ICON_TEXTURE_DIR, name, extension]
@@ -392,14 +430,14 @@ static func _find_icon_texture_path(name: String) -> String:
 # per non deformare l'immagine qualunque sia la sua proporzione originale, mouse_filter=IGNORE
 # stesso motivo di PebbleCircleIcon/PebbleIcon/StickIcon (i click devono raggiungere il Button sotto).
 static func get_icon_texture_node(name: String) -> Control:
-	var path := _find_icon_texture_path(name)
-	if path == "":
-		return null
-	var texture: Texture2D = load(path)
+	var texture := get_icon_texture(name)
 	if texture == null:
 		return null
 	var texture_rect := TextureRect.new()
 	texture_rect.texture = texture
+	# EXPAND_IGNORE_SIZE (2026-10-04): la dimensione minima non è quella dell'immagine — il riquadro
+	# (ancorato a tutto lo slot dal chiamante) decide la misura e il pannello non si allarga mai.
+	texture_rect.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	texture_rect.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	texture_rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	return texture_rect

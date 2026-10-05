@@ -10,7 +10,8 @@ extends RefCounted
 #
 # La ricetta è sulla risorsa PRODOTTA (SecondaryResourceRules gruppo Recipe), la capacità
 # produttiva sull'edificio (BuildingRules gruppo Production). Lo stato delle produzioni in corso
-# vive su Building.production_progress, UN RECORD PER RICETTA (2026-09-24, richiesta utente — più
+# vive su Building.production_progress — DAL 2026-10-04 UN RECORD PER ORDINE (vedi "ORDINI SEPARATI" più sotto, che
+# sostituisce quanto segue sui record per ricetta); storico: UN RECORD PER RICETTA (2026-09-24, richiesta utente — più
 # ricette contemporanee): {resource_name: {"labor_accumulated": float}}, al più get_max_concurrent_orders
 # record. Ogni ProduceAction lavora solo sul record della propria ricetta; più individui sulla
 # stessa ricetta sommano il lavoro sullo stesso record. Una ricetta nuova non sovrascrive mai un
@@ -235,35 +236,164 @@ static func get_producible_resources(building: Building) -> Array[String]:
 	return names
 
 
-# Converte production_progress letto da un salvataggio nel formato a record per ricetta. Il vecchio
-# formato a record singolo ({"resource_name": String, "labor_accumulated": float}, save precedenti
-# al 2026-09-24) diventa {resource_name: {"labor_accumulated": ...}} senza perdere il progresso.
-# Voci non-Dictionary scartate; labor_accumulated sempre float (JSON non distingue int/float).
-static func normalize_progress(raw: Dictionary) -> Dictionary:
-	var progress: Dictionary = {}
-	if raw.has("resource_name") and not (raw["resource_name"] is Dictionary):
-		var legacy_name := String(raw["resource_name"])
-		if legacy_name != "":
-			progress[legacy_name] = {"labor_accumulated": float(raw.get("labor_accumulated", 0.0)), "units_remaining": 0}
-		return progress
-	for resource_name in raw.keys():
-		var record: Variant = raw[resource_name]
-		if record is Dictionary:
-			# units_remaining (2026-09-26): 0 per i save precedenti — GameScene lo ricalcola dalle Task vive.
-			progress[String(resource_name)] = {
-				"labor_accumulated": float(record.get("labor_accumulated", 0.0)),
-				"units_remaining": int(record.get("units_remaining", 0)),
-			}
-	return progress
+# --- ORDINI SEPARATI (2026-10-04, richiesta utente) ---
+# Building.production_progress è un dizionario di ORDINI: chiave d'ordine ("o<n>", da Building.production_order_counter)
+# -> {"resource_name": ricetta, "labor_accumulated": lavoro del ciclo in corso, "units_remaining": pezzi ancora dovuti,
+# "worker_id": pipottino che lo ha ricevuto}. Ogni ordine è una cosa a sé: due ordini della stessa ricetta restano due
+# ordini, ciascuno con il suo avanzamento e la sua ProduceAction (ProduceAction.order_key). Al più
+# get_max_concurrent_orders ordini per edificio; un ordine nasce all'assegnazione (create_order, occupa subito il posto)
+# e sparisce a ordine evaso (complete_production) o annullato (cancel_order).
+# Produzioni SOSPESE: Building.production_suspended, ricetta -> lavoro del ciclo interrotto, lasciato da un ordine
+# annullato (se due ordini della stessa ricetta lasciano un avanzamento si tiene il più alto). Non occupano posti; un
+# nuovo ordine della stessa ricetta riparte da lì (create_order).
+const ORDER_KEY_PREFIX := "o"
 
 
-# Ricette con un record di produzione sull'edificio (ordine di inserimento).
+# Stato della produzione letto da un salvataggio: ordini nel formato attuale, e produzioni sospese. Formati vecchi
+# (un record per ricetta, 2026-09-24; record singolo, prima): nessun ordine — il lavoro accumulato diventa una produzione
+# sospesa della sua ricetta (il più alto), e le ProduceAction dei save vecchi, senza chiave d'ordine, si ricreano il
+# proprio ordine al primo tick (ProduceAction._adopt_legacy_order). Voci non riconosciute scartate.
+static func load_production_state(building: Building, raw_progress: Dictionary, raw_suspended: Dictionary, order_counter: int) -> void:
+	var orders: Dictionary = {}
+	var suspended: Dictionary = {}
+	for raw_key in raw_suspended.keys():
+		var labor := float(raw_suspended[raw_key])
+		if labor > 0.0:
+			suspended[String(raw_key)] = labor
+	var max_index := 0
+	if raw_progress.has("resource_name") and not (raw_progress["resource_name"] is Dictionary):
+		_merge_suspended(suspended, String(raw_progress["resource_name"]), float(raw_progress.get("labor_accumulated", 0.0)))
+	else:
+		for raw_key in raw_progress.keys():
+			var record: Variant = raw_progress[raw_key]
+			if not (record is Dictionary):
+				continue
+			var key := String(raw_key)
+			if (record as Dictionary).has("resource_name"):
+				orders[key] = {
+					"resource_name": String(record["resource_name"]),
+					"labor_accumulated": float(record.get("labor_accumulated", 0.0)),
+					"units_remaining": int(record.get("units_remaining", 0)),
+					"worker_id": int(record.get("worker_id", -1)),
+					"keep_for_building": bool(record.get("keep_for_building", false)),
+				}
+				if key.begins_with(ORDER_KEY_PREFIX) and key.substr(ORDER_KEY_PREFIX.length()).is_valid_int():
+					max_index = maxi(max_index, int(key.substr(ORDER_KEY_PREFIX.length())))
+			else:
+				_merge_suspended(suspended, key, float(record.get("labor_accumulated", 0.0)))
+	building.production_progress = orders
+	building.production_suspended = suspended
+	building.production_order_counter = maxi(order_counter, max_index)
+
+
+static func _merge_suspended(suspended: Dictionary, resource_name: String, labor: float) -> void:
+	if resource_name == "" or labor <= 0.0:
+		return
+	suspended[resource_name] = maxf(float(suspended.get(resource_name, 0.0)), labor)
+
+
+# Chiavi degli ordini dell'edificio (ordine di inserimento).
+static func get_order_keys(building: Building) -> Array[String]:
+	var keys: Array[String] = []
+	if building == null:
+		return keys
+	for key in building.production_progress.keys():
+		keys.append(String(key))
+	return keys
+
+
+static func has_order(building: Building, order_key: String) -> bool:
+	return building != null and order_key != "" and building.production_progress.has(order_key)
+
+
+static func get_order_recipe(building: Building, order_key: String) -> String:
+	if not has_order(building, order_key):
+		return ""
+	return String((building.production_progress[order_key] as Dictionary).get("resource_name", ""))
+
+
+static func get_order_worker_id(building: Building, order_key: String) -> int:
+	if not has_order(building, order_key):
+		return -1
+	return int((building.production_progress[order_key] as Dictionary).get("worker_id", -1))
+
+
+# Pezzi ancora dovuti dall'ordine (0 se l'ordine non c'è).
+static func get_order_units(building: Building, order_key: String) -> int:
+	if not has_order(building, order_key):
+		return 0
+	return int((building.production_progress[order_key] as Dictionary).get("units_remaining", 0))
+
+
+# Pipottino dell'ordine (riassegnazione di un ordine rimasto senza lavoratore, 2026-10-04).
+static func set_order_worker_id(building: Building, order_key: String, worker_id: int) -> void:
+	if has_order(building, order_key):
+		(building.production_progress[order_key] as Dictionary)["worker_id"] = worker_id
+
+
+static func set_order_units(building: Building, order_key: String, units: int) -> void:
+	if has_order(building, order_key):
+		(building.production_progress[order_key] as Dictionary)["units_remaining"] = maxi(units, 0)
+
+
+# Nuovo ordine di `quantity` pezzi di `resource_name` per il pipottino `worker_id`. "" se l'edificio ha già tutti gli
+# ordini (get_max_concurrent_orders). Riparte dall'eventuale produzione sospesa della stessa ricetta.
+# `keep_for_building` (2026-10-04, Attrezzeria): i pezzi finiti che sono attrezzi vanno nell'Attrezzeria se c'è posto.
+static func create_order(building: Building, resource_name: String, quantity: int, worker_id: int, keep_for_building: bool = false) -> String:
+	if building == null or resource_name == "" or building.production_progress.size() >= get_max_concurrent_orders(building):
+		return ""
+	building.production_order_counter += 1
+	var key := "%s%d" % [ORDER_KEY_PREFIX, building.production_order_counter]
+	var labor := float(building.production_suspended.get(resource_name, 0.0))
+	building.production_suspended.erase(resource_name)
+	building.production_progress[key] = {
+		"resource_name": resource_name, "labor_accumulated": labor, "units_remaining": maxi(quantity, 1), "worker_id": worker_id,
+		"keep_for_building": keep_for_building,
+	}
+	return key
+
+
+# Annulla l'ordine: il lavoro del ciclo interrotto diventa produzione sospesa della sua ricetta (il più alto tra quelli
+# già sospesi), poi l'ordine sparisce.
+static func cancel_order(building: Building, order_key: String) -> void:
+	if not has_order(building, order_key):
+		return
+	var record: Dictionary = building.production_progress[order_key]
+	_merge_suspended(building.production_suspended, String(record.get("resource_name", "")), float(record.get("labor_accumulated", 0.0)))
+	building.production_progress.erase(order_key)
+
+
+# Libera posti annullando gli ordini che nessuno sta più lavorando (non in `claimed_keys`: chiave -> true), quello con
+# meno lavoro per primo, finché l'edificio non ha un posto libero. true se c'è posto.
+static func free_slot_from_unclaimed(building: Building, claimed_keys: Dictionary) -> bool:
+	if building == null:
+		return false
+	var capacity := get_max_concurrent_orders(building)
+	while building.production_progress.size() >= capacity:
+		var evict_key := ""
+		var evict_labor := INF
+		for key in building.production_progress.keys():
+			if claimed_keys.has(String(key)):
+				continue
+			var labor := get_labor_accumulated(building, String(key))
+			if labor < evict_labor:
+				evict_labor = labor
+				evict_key = String(key)
+		if evict_key == "":
+			return false
+		cancel_order(building, evict_key)
+	return true
+
+
+# Ricette con almeno un ordine sull'edificio, senza doppioni (ordine di inserimento) — fabbisogno, magazzino, avvisi.
 static func get_active_resource_names(building: Building) -> Array[String]:
 	var names: Array[String] = []
 	if building == null:
 		return names
-	for resource_name in building.production_progress.keys():
-		names.append(String(resource_name))
+	for record in building.production_progress.values():
+		var recipe := String((record as Dictionary).get("resource_name", ""))
+		if recipe != "" and not names.has(recipe):
+			names.append(recipe)
 	return names
 
 
@@ -271,104 +401,61 @@ static func has_active_production(building: Building) -> bool:
 	return building != null and not building.production_progress.is_empty()
 
 
-# true se `resource_name` ha un record di produzione su `building`.
+# true se almeno un ordine dell'edificio è della ricetta `resource_name`.
 static func is_recipe_active(building: Building, resource_name: String) -> bool:
-	return building != null and building.production_progress.has(resource_name)
+	return get_active_resource_names(building).has(resource_name)
 
 
-# Avvia (o riprende) la produzione di `resource_name`: se il record esiste già il progresso resta
-# invariato (ripresa, o un secondo individuo sulla stessa ricetta); altrimenti ne crea uno nuovo a
-# zero, SOLO se l'edificio ha ancora un record libero (get_max_concurrent_orders). Ritorna true se il record
-# c'è (esistente o appena creato), false se l'edificio è pieno: nessun record altrui viene toccato.
-static func start_production(building: Building, resource_name: String) -> bool:
-	if building == null or resource_name == "":
-		return false
-	if building.production_progress.has(resource_name):
-		return true
-	if building.production_progress.size() >= get_max_concurrent_orders(building):
-		return false
-	building.production_progress[resource_name] = {"labor_accumulated": 0.0, "units_remaining": 0}
-	return true
-
-
-# --- Ordine intero (2026-09-26) ---
-
-# Pezzi ancora dovuti sul record di `resource_name` (0 = record assente o nessuna Task lo lavora più).
+# Pezzi ancora dovuti per la ricetta, sommati su tutti i suoi ordini.
 static func get_units_remaining(building: Building, resource_name: String) -> int:
-	if building == null:
-		return 0
-	var record: Dictionary = building.production_progress.get(resource_name, {})
-	return int(record.get("units_remaining", 0))
+	var units := 0
+	for key in get_order_keys(building):
+		if get_order_recipe(building, key) == resource_name:
+			units += get_order_units(building, key)
+	return units
 
 
-# Scrive i pezzi dovuti sul record (no-op se il record non esiste). Chiamata da GameScene._reconcile_production_units.
-static func set_units_remaining(building: Building, resource_name: String, units: int) -> void:
-	if building == null or not building.production_progress.has(resource_name):
-		return
-	(building.production_progress[resource_name] as Dictionary)["units_remaining"] = maxi(units, 0)
-
-
-# Cicli ancora dovuti per la ricetta: pezzi dovuti / pezzi per ciclo (per eccesso); almeno 1 (un record sospeso,
-# senza pezzi dovuti, conta come un ciclo — il comportamento di prima).
+# Cicli ancora dovuti per la ricetta, sommati sui suoi ordini (ciascuno: pezzi dovuti / pezzi per ciclo, per eccesso,
+# almeno 1); 1 se la ricetta non ha ordini (il comportamento di prima per un ciclo isolato).
 static func get_cycles_due(building: Building, resource_name: String) -> int:
-	var units := get_units_remaining(building, resource_name)
-	if units <= 0:
-		return 1
 	var recipe_rules := CaloricCalculator.get_caloric_source_rules(resource_name)
 	var per_cycle: int = maxi(recipe_rules.recipe_output_quantity, 1) if recipe_rules != null else 1
-	return maxi(int(ceil(float(units) / float(per_cycle))), 1)
+	var cycles := 0
+	for key in get_order_keys(building):
+		if get_order_recipe(building, key) != resource_name:
+			continue
+		cycles += maxi(int(ceil(float(get_order_units(building, key)) / float(per_cycle))), 1)
+	return maxi(cycles, 1)
 
 
-# Libera posto per `resource_name` quando l'edificio ha già tutti i record occupati: rimuove record di
-# ricette NON in `claimed_resource_names` (nessuna Produce Task assegnata le sta più lavorando — es.
-# resti di una Task annullata), a partire da quello con meno lavoro accumulato, finché non c'è un
-# record libero. I record in claimed_resource_names non vengono mai toccati. Chi conosce le Task
-# assegnate è il chiamante (GameScene). Ritorna true se c'è posto (o il record esiste già).
-static func make_room_for(building: Building, resource_name: String, claimed_resource_names: Array[String]) -> bool:
-	if building == null:
-		return false
-	if building.production_progress.has(resource_name):
-		return true
-	var capacity := get_max_concurrent_orders(building)
-	while building.production_progress.size() >= capacity:
-		var evict_name := ""
-		var evict_labor := INF
-		for active_name in building.production_progress.keys():
-			if claimed_resource_names.has(String(active_name)):
-				continue
-			var labor := get_labor_accumulated(building, String(active_name))
-			if labor < evict_labor:
-				evict_labor = labor
-				evict_name = String(active_name)
-		if evict_name == "":
-			return false
-		building.production_progress.erase(evict_name)
-	return true
-
-
-# Avanzamento del ciclo in corso di `resource_name`, 0.0..1.0 (lavoro accumulato / richiesto) — 0.0
-# se il record non esiste o la ricetta non richiede lavoro. Letto dal pannello per le produzioni
-# sospese (2026-09-24).
-static func get_cycle_progress(building: Building, resource_name: String) -> float:
-	var required := get_required_labor(building, resource_name)
+# Avanzamento del ciclo in corso dell'ordine, 0.0..1.0 (lavoro accumulato / richiesto).
+static func get_order_cycle_progress(building: Building, order_key: String) -> float:
+	var required := get_required_labor(building, get_order_recipe(building, order_key))
 	if required <= 0.0:
 		return 0.0
-	return clampf(get_labor_accumulated(building, resource_name) / required, 0.0, 1.0)
+	return clampf(get_labor_accumulated(building, order_key) / required, 0.0, 1.0)
 
 
-# Lavoro accumulato sul record di `resource_name` (0.0 se il record non esiste).
-static func get_labor_accumulated(building: Building, resource_name: String) -> float:
-	if building == null:
+# Avanzamento della produzione sospesa della ricetta, 0.0..1.0 (pannello, "Produzione sospesa").
+static func get_suspended_progress(building: Building, resource_name: String) -> float:
+	var required := get_required_labor(building, resource_name)
+	if building == null or required <= 0.0:
 		return 0.0
-	var record: Dictionary = building.production_progress.get(resource_name, {})
-	return float(record.get("labor_accumulated", 0.0))
+	return clampf(float(building.production_suspended.get(resource_name, 0.0)) / required, 0.0, 1.0)
 
 
-# Aggiunge `amount` di lavoro al record di `resource_name`; no-op se il record non esiste.
-static func add_labor(building: Building, resource_name: String, amount: float) -> void:
-	if building == null or not building.production_progress.has(resource_name):
+# Lavoro accumulato sull'ordine (0.0 se l'ordine non c'è).
+static func get_labor_accumulated(building: Building, order_key: String) -> float:
+	if not has_order(building, order_key):
+		return 0.0
+	return float((building.production_progress[order_key] as Dictionary).get("labor_accumulated", 0.0))
+
+
+# Aggiunge `amount` di lavoro all'ordine; no-op se l'ordine non c'è.
+static func add_labor(building: Building, order_key: String, amount: float) -> void:
+	if not has_order(building, order_key):
 		return
-	var record: Dictionary = building.production_progress[resource_name]
+	var record: Dictionary = building.production_progress[order_key]
 	record["labor_accumulated"] = float(record.get("labor_accumulated", 0.0)) + amount
 
 
@@ -623,8 +710,8 @@ static func is_recipe_material(building: Building, resource_name: String) -> boo
 static func is_active_recipe_input(building: Building, input_name: String) -> bool:
 	if building == null:
 		return false
-	for active_name in building.production_progress.keys():
-		var recipe_rules := CaloricCalculator.get_caloric_source_rules(String(active_name))
+	for active_name in get_active_resource_names(building):
+		var recipe_rules := CaloricCalculator.get_caloric_source_rules(active_name)
 		if recipe_rules != null and recipe_rules.recipe_inputs.has(input_name):
 			return true
 	return false
@@ -738,9 +825,11 @@ static func withdraw_output(building: Building, resource_name: String, quantity_
 # (0 se non c'era nulla da concludere: nessun record per la ricetta, ricetta irrisolvibile, materiali
 # insufficienti per QUESTA ricetta, combustibile non coperto o buffer pieno — mai un consumo
 # parziale). Il combustibile si brucia dopo i materiali (_consume_fuel).
-static func complete_production(building: Building, active_name: String) -> int:
-	if not is_recipe_active(building, active_name):
+# Ordini separati (2026-10-04): conclude un ciclo dell'ORDINE `order_key` (la ricetta è quella dell'ordine).
+static func complete_production(building: Building, order_key: String) -> int:
+	if not has_order(building, order_key):
 		return 0
+	var active_name := get_order_recipe(building, order_key)
 	var recipe_rules := CaloricCalculator.get_caloric_source_rules(active_name)
 	if recipe_rules == null or not get_missing_inputs_for(building, active_name).is_empty() or not has_output_room(building, active_name):
 		return 0
@@ -755,14 +844,24 @@ static func complete_production(building: Building, active_name: String) -> int:
 	_consume_fuel(building, get_required_fuel(building, active_name))
 
 	var produced: int = max(recipe_rules.recipe_output_quantity, 0)
-	if produced > 0:
-		building.production_output[active_name] = int(building.production_output.get(active_name, 0)) + produced
+	# "Tieni per l'edificio" (2026-10-04, Attrezzeria): ogni pezzo che è un attrezzo va nell'Attrezzeria se c'è posto,
+	# controllato a pezzo; gli altri seguono la strada normale (prodotti finiti, poi travaso).
+	var to_output := produced
+	if bool((building.production_progress[order_key] as Dictionary).get("keep_for_building", false)):
+		var new_piece := ToolInstance.create(ToolInstance.get_max_uses(active_name))
+		while to_output > 0 and BuildingToolkitService.add_unit(building, active_name, new_piece):
+			to_output -= 1
+	if to_output > 0:
+		building.production_output[active_name] = int(building.production_output.get(active_name, 0)) + to_output
 	# Ordine intero (2026-09-26): il record resta, con lavoro azzerato, finché ci sono pezzi dovuti; sparisce
 	# solo a ordine concluso (o se nessuna Task lo reclamava: units_remaining 0, il comportamento di prima).
-	var units_left := get_units_remaining(building, active_name) - produced
+	# Ordini separati (2026-10-04): l'ordine resta, con lavoro azzerato, finché ha pezzi dovuti; poi sparisce.
+	var units_left := get_order_units(building, order_key) - produced
 	if units_left > 0:
-		building.production_progress[active_name] = {"labor_accumulated": 0.0, "units_remaining": units_left}
+		var record: Dictionary = building.production_progress[order_key]
+		record["labor_accumulated"] = 0.0
+		record["units_remaining"] = units_left
 	else:
-		building.production_progress.erase(active_name)
+		building.production_progress.erase(order_key)
 	flush_output_to_storage(building)
 	return produced

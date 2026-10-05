@@ -1,0 +1,22 @@
+[gd_resource type="Resource" script_class="SecondaryResourceRules" format=3]
+
+[ext_resource type="Script" uid="uid://cu4cyua5y4n1m" path="res://simulation/scripts/core/SecondaryResourceRules.gd" id="1_dried_hide_bag"]
+
+[resource]
+script = ExtResource("1_dried_hide_bag")
+secondary_resource_name = "dried_hide_bag"
+calories_per_unit = 0.0
+category = 4
+generation_source = 2
+space_per_unit = 4.0
+recipe_inputs = {
+"dried_hide": 5,
+"fiber_rope": 2,
+"sinew": 3
+}
+recipe_labor = 400.0
+recipe_workstation_types = Array[String](["toolmaker_hut"])
+recipe_required_tool_categories = Array[int]([6])
+tool_categories = Array[int]([7])
+max_uses = 200
+carry_capacity_bonus = 25.0

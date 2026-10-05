@@ -4,7 +4,7 @@
 
 [resource]
 script = ExtResource("1_n1hxv")
-base_density = 10.0
+base_density = 100.0
 presence_chance = 0.4
 terrain_multiplier_mountain = 1.1
 terrain_multiplier_water = 0.0
@@ -18,4 +18,9 @@ presence_biome_multiplier_rocky = 1.5
 presence_coast_multiplier_beach = 0.5
 presence_coast_multiplier_semi_cliff = 1.2
 presence_coast_multiplier_cliff = 1.5
+extraction_yield_resource_name = "stone"
+extraction_primary_per_unit = 1
+extraction_units_per_extraction = 1
+extraction_waste_resource_name = "pebble"
+extraction_waste_per_extraction = 5
 metadata/_custom_type_script = "uid://b5ivfujr7buwk"

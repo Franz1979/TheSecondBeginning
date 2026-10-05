@@ -23,6 +23,9 @@ func save_game_to_json(
 ) -> void:
 	var data := {
 		"file_type": "game_save",
+		# Registro dei pebble come RACCOLTO delle sole rocce toccate (2026-10-05): senza questo segnale il caricamento lo
+		# scarta, perché nei salvataggi precedenti era il residuo di ogni roccia (vedi GameLoadService).
+		"pebble_registry_is_harvest": true,
 		"game": {
 			"year": game_data.year,
 			"current_day": game_data.current_day,
@@ -174,11 +177,8 @@ func save_game_to_json(
 			for pos in state.stone_positions:
 				stone_positions_data.append({"x": pos.x, "y": pos.y})
 			state_data["stone_positions"] = stone_positions_data
-			# PEBBLE — nasce/vive insieme a stone_positions (stessa guardia one-shot in
-			# StonePositionService.generate_if_needed): quando stone_positions_generated è true,
-			# lot_registry["pebble"] ha sempre esattamente una entry per ogni posizione in
-			# stone_positions. Persistito ora nel registro unificato sotto (lot_registry), non più
-			# in una sezione dedicata — vedi quel blocco.
+			# PEBBLE (RIVISTO 2026-10-05): la quantità iniziale di ogni roccia si ricava dalla posizione e non si salva;
+			# il raccolto delle sole rocce toccate sta nel registro unificato sotto (lot_registry).
 		# Assente se vuoto (nessun meccanismo di taglio esiste ancora, sempre il caso oggi), stesso
 		# principio di stone_positions sopra — non appesantire il salvataggio per un campo mai
 		# popolato. Chiave Vector3i (x, y lotto + "i" indice individuo): "i" va salvato insieme a
@@ -196,6 +196,15 @@ func save_game_to_json(
 					"size_multiplier": float(entry.get("size_multiplier", 1.0))
 				})
 			state_data["vegetation_cut_exceptions"] = cut_exceptions_data
+		# Lavoro di taglio già fatto (2026-10-04, task Cut): chiavi String, valori in giorni-base. Assente se vuoto.
+		if not state.cut_work_progress.is_empty():
+			state_data["cut_work_progress"] = state.cut_work_progress.duplicate()
+		# Pietra tolta dalle rocce (2026-10-05, Quarry): solo le rocce toccate, {x,y,amount}. Assente se vuoto.
+		if not state.quarried_stone_by_position.is_empty():
+			var quarried_data: Array = []
+			for pos in state.quarried_stone_by_position.keys():
+				quarried_data.append({"x": pos.x, "y": pos.y, "amount": int(state.quarried_stone_by_position[pos])})
+			state_data["quarried_stone_by_position"] = quarried_data
 		# Stesso principio sopra: assenti se vuote. Popolate solo dopo che MicroCellRenderer ha
 		# disegnato la cella almeno una volta (vedi MacroCellState.tree_virtual_birth_year). Chiave
 		# Vector3i (x, y lotto + "i" indice individuo locale): "i" va salvato insieme a x/y,
@@ -244,7 +253,7 @@ func save_game_to_json(
 		# diversi, con UN SOLO loop su LotCapacityService.get_all_lot_capacity_resource_names() —
 		# stesso principio già in uso per FRUIT_STOCK_SOURCES/berry_harvested_by_lot sotto. "v" =
 		# il valore intero grezzo di MacroCellState.lot_registry[resource_name][pos]: quantità
-		# RESIDUA per pebble (STONE_POSITION), raccolto per stick/plant_fiber/mushroom/
+		# RACCOLTA per pebble (STONE_POSITION, dal 2026-10-05) come per stick/plant_fiber/mushroom/
 		# wild_vegetables (TREE_INDIVIDUAL/SHRUB_INDIVIDUAL/GRASS_PATCH) — il significato dipende
 		# dal lot_source della risorsa, mai da questo blocco (che si limita a salvare il Dictionary
 		# così com'è). La "capacity" delle quattro non-STONE_POSITION vive invece in lot_capacity_
@@ -419,6 +428,11 @@ func save_game_to_json(
 			# 2026-09-24, {resource_name: {"labor_accumulated": float}}): stesso trattamento
 			# wholesale di construction_progress sopra.
 			"production_progress": building.production_progress,
+			# Ordini separati (2026-10-04): produzioni sospese e contatore delle chiavi d'ordine.
+			"production_suspended": building.production_suspended,
+			"production_order_counter": building.production_order_counter,
+			# Attrezzeria (2026-10-04): stesso formato a istanze del magazzino per gli attrezzi.
+			"toolkit": building.toolkit.duplicate(true),
 			"production_output": building.production_output,
 			# enabled_categories (2026-09-09, richiesta utente) — filtro categorie PER-ISTANZA (vedi
 			# Building.gd), Array[SecondaryResourceTypes.Category] serializzato come Array[int]

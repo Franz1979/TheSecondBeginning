@@ -33,7 +33,18 @@ const CANDIDATE_TYPES: Array[GameTypes.WorldObjectType] = [
 func try_select(event: InputEvent, live_cells: Dictionary) -> Dictionary:
 	if not (event is InputEventMouseButton) or not event.pressed or event.button_index != MOUSE_BUTTON_LEFT:
 		return {}
+	return find_at_mouse(live_cells)
 
+
+# Pianta VIVA più vicina al mouse (2026-10-04, richiesta utente — comando Taglia, click destro): stessa ricerca di
+# try_select ma senza ceppi e piante morte (anno di nascita e sottotipo ancora in MacroCellState). {} se nessuna.
+func find_live_at_mouse(live_cells: Dictionary) -> Dictionary:
+	return find_at_mouse(live_cells, true)
+
+
+# Ricerca comune di try_select/find_live_at_mouse: individuo più vicino al mouse entro CLICK_RADIUS_PX, in qualunque
+# cella viva. `live_only` scarta ceppi e piante morte.
+func find_at_mouse(live_cells: Dictionary, live_only: bool = false) -> Dictionary:
 	var best: Dictionary = {}
 	var best_distance: float = CLICK_RADIUS_PX
 
@@ -57,6 +68,8 @@ func try_select(event: InputEvent, live_cells: Dictionary) -> Dictionary:
 				candidates = _full_scan_candidates(cell.renderer, object_type, click_lot)
 			for candidate in candidates:
 				var individual_key: Vector3i = candidate[0]
+				if live_only and not PlantCutService.is_individual_alive(cell.macro_state, object_type, individual_key):
+					continue
 				var screen_pos: Vector2 = candidate[1]
 				var distance: float = local_mouse.distance_to(screen_pos)
 				if distance < best_distance:

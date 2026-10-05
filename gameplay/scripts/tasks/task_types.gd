@@ -109,6 +109,10 @@ enum ActionType {
 	PUT_DOWN_BODY,
 	# Corteo (2026-10-04, FollowIndividualAction, vedi procession.tres): segue un pipottino. AGGIUNTO IN CODA (27).
 	FOLLOW_INDIVIDUAL,
+	# Taglio di una pianta (2026-10-04, CutAction, vedi cut.tres). AGGIUNTO IN CODA (28).
+	CUT,
+	# Estrazione della pietra da una roccia (2026-10-05, QuarryAction, vedi quarry.tres). AGGIUNTO IN CODA (29).
+	QUARRY,
 }
 
 # Categorie di tool richiedibili da un'Action (2026-09-08, richiesta utente — SOLO struttura dati,
@@ -132,7 +136,10 @@ enum ToolCategory {
 	# Nessuna Action la richiede: la sacca non si usura (max_uses = 0).
 	CARRYING,
 	# CHOPPING (2026-09-28, richiesta utente) aggiunto IN FONDO, stesso motivo: abbattere/sgrossare legno — più
-	# specifica di CUTTING (che il coltello copre). Richiesta per liberare alberi e cespugli, vedi
-	# VegetationClearingService. Nessun .tres la possiede ancora.
+	# specifica di CUTTING (che il coltello copre). Richiesta dalla task Cut per abbattere alberi e
+	# arbusti (CutAction, dal 2026-10-04 l'unico modo: piazzamento e pulizia del cantiere non la usano più).
 	CHOPPING,
+	# AMMO (2026-10-04, richiesta utente — mazzo di frecce, arrow_bundle.tres) aggiunto IN FONDO, stesso motivo: le
+	# munizioni di un'arma che non si lancia (l'arco). Nessuna logica la legge ancora: la caccia con l'arco arriva dopo.
+	AMMO,
 }

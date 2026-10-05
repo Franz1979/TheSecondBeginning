@@ -10,24 +10,19 @@ extends VBoxContainer
 # pickup/consumo, richiesta esplicita di non implementarlo in questo passo): puramente
 # informativo.
 #
-# Una sola granularità (RIVISTO 2026-09-16, richiesta utente — "se clicco singolo su stone mi esce
-# sassi qui e pietra nella zona, togli sassi qui"): il click SINGOLO mostra solo l'aggregato di
-# ZONA (MacroCellState.resource_quantity[ROCK]) — la quantità ESATTA della singola posizione
-# cliccata (MacroCellState.pebble_quantities) resta comunque visibile, ma SOLO tramite l'ispezione
-# a DOPPIO click (MicroCellInspectionPanel, che la mostra già tra i candidati raccoglibili) — due
-# gesti diversi, due domande diverse ("quanta pietra c'è in questa zona" vs "cosa raccolgo qui"),
-# non più sovrapposte nello stesso pannello.
+# Una riga (RIVISTO 2026-10-05, richiesta utente — Quarry): pietra estraibile, cioè rimasta, di questa roccia
+# (RockStoneService); il tipo "Roccia" è nel titolo della scheda. Valore già risolto da GameScene._refresh_stone_panel.
 
-@onready var zone_stone_label: Label = $ZoneStoneLabel
+@onready var rock_stone_label: Label = $RockStoneLabel
 
 
 func _ready() -> void:
 	clear()
 
 
-func show_stone(zone_stone_quantity: int) -> void:
+func show_stone(rock_stone_quantity: int) -> void:
 	visible = true
-	zone_stone_label.text = tr("stone_zone_aggregate_label").format({"quantity": NumberFormatter.format_int(zone_stone_quantity)})
+	rock_stone_label.text = tr("stone_rock_label").format({"quantity": NumberFormatter.format_int(rock_stone_quantity)})
 
 
 func clear() -> void:

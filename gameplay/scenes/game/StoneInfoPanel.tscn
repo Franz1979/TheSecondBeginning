@@ -5,7 +5,7 @@
 [node name="StoneInfoPanel" type="VBoxContainer"]
 script = ExtResource("1_stone")
 
-[node name="ZoneStoneLabel" type="Label" parent="."]
+[node name="RockStoneLabel" type="Label" parent="."]
 layout_mode = 2
 theme_override_font_sizes/font_size = 11
 autowrap_mode = 2
