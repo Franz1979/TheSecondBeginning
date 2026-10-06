@@ -1,0 +1,97 @@
+class_name CountChoiceDialog
+extends Window
+
+# Piccolo popup "quanti" (2026-10-05, Quarry in zona — "Pietre da estrarre" del comando Estrai): messaggio, una riga
+# etichetta + selettore intero, Conferma/Annulla. Stesso stile del popup della caccia in zona (PickupChoiceDialog in
+# modalità caccia): margini 10, messaggio a capo, separatore sopra i bottoni, larghezza minima 320 e altezza adattata al
+# contenuto. Costruito in codice, "pannello muto": riceve testi e limiti già risolti, emette solo il valore confermato.
+# Annulla, X o Esc chiudono senza segnale.
+
+signal count_chosen(value: int)
+
+const DIALOG_WIDTH: int = 320
+const DIALOG_HEIGHT: int = 140
+
+var _content: Control = null
+var _message_label: Label = null
+var _count_label: Label = null
+var _spin_box: SpinBox = null
+var _confirm_button: Button = null
+var _cancel_button: Button = null
+
+
+func _ready() -> void:
+	visible = false
+	var margin := MarginContainer.new()
+	margin.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	for side in ["margin_left", "margin_top", "margin_right", "margin_bottom"]:
+		margin.add_theme_constant_override(side, 10)
+	add_child(margin)
+	_content = margin
+	var box := VBoxContainer.new()
+	margin.add_child(box)
+	_message_label = Label.new()
+	_message_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	box.add_child(_message_label)
+	var row := HBoxContainer.new()
+	row.alignment = BoxContainer.ALIGNMENT_CENTER
+	_count_label = Label.new()
+	row.add_child(_count_label)
+	_spin_box = SpinBox.new()
+	_spin_box.step = 1
+	_spin_box.rounded = true
+	row.add_child(_spin_box)
+	box.add_child(row)
+	box.add_child(HSeparator.new())
+	var buttons := HBoxContainer.new()
+	_confirm_button = Button.new()
+	_confirm_button.text = tr("transport_dialog_confirm")
+	_confirm_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_confirm_button.pressed.connect(_on_confirm_pressed)
+	buttons.add_child(_confirm_button)
+	_cancel_button = Button.new()
+	_cancel_button.text = tr("transport_dialog_cancel")
+	_cancel_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_cancel_button.pressed.connect(hide)
+	buttons.add_child(_cancel_button)
+	box.add_child(buttons)
+	close_requested.connect(hide)
+	window_input.connect(_on_window_input)
+
+
+func open_dialog(dialog_title: String, message: String, count_label: String, min_value: int, max_value: int, default_value: int) -> void:
+	title = dialog_title
+	_message_label.text = message
+	_count_label.text = count_label
+	_spin_box.min_value = min_value
+	_spin_box.max_value = max_value
+	_spin_box.value = clampi(default_value, min_value, max_value)
+	exclusive = true
+	popup_centered(Vector2i(DIALOG_WIDTH, DIALOG_HEIGHT))
+	_fit_to_content.call_deferred()
+
+
+# Stesso adattamento di PickupChoiceDialog._fit_to_content: dopo il primo layout, mai più piccolo del contenuto.
+func _fit_to_content() -> void:
+	await get_tree().process_frame
+	if not visible:
+		return
+	if _content == null:
+		return
+	var min_size := _content.get_combined_minimum_size()
+	var fitted := Vector2i(maxi(DIALOG_WIDTH, ceili(min_size.x)), maxi(DIALOG_HEIGHT, ceili(min_size.y)))
+	if fitted != size:
+		size = fitted
+		move_to_center()
+
+
+func _on_window_input(event: InputEvent) -> void:
+	if visible and event.is_action_pressed("ui_cancel"):
+		set_input_as_handled()
+		hide()
+
+
+func _on_confirm_pressed() -> void:
+	var value := int(_spin_box.value)
+	hide()
+	count_chosen.emit(value)

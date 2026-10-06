@@ -99,7 +99,18 @@ func on_complete(individual: Variant, context: Dictionary) -> void:
 		report_broken_tools(individual, broken)
 	var yield_data := RockStoneService.extract(macro_state, rock_position)
 	macro_state.cut_work_progress.erase(_progress_key())
-	drop_yield_and_queue_haul(context, game_data, macro_coords, Vector2(rock_position) + Vector2(0.5, 0.5), yield_data)
+	drop_yield_and_queue_haul(context, game_data, macro_coords, Vector2(rock_position) + Vector2(0.5, 0.5), yield_data, "task_quarry_name")
+	# Serie in zona (2026-10-05): un'estrazione in più, ultima roccia; passa al mucchio e da lì alla consegna, alla cui
+	# chiusura nasce l'estrazione successiva. Senza mucchio (nessuna consegna) la serie si chiude qui.
+	var series := QuarryZoneService.get_series(context)
+	if not series.is_empty():
+		series = series.duplicate()
+		series["done"] = int(series.get("done", 0)) + 1
+		series["rock_x"] = rock_position.x
+		series["rock_y"] = rock_position.y
+		context[QuarryZoneService.CONTEXT_SERIES] = series
+		if context.has(HumanIndividualActionService.CONTEXT_PENDING_GROUND_PILE_HAUL):
+			context[HumanIndividualActionService.CONTEXT_PENDING_GROUND_PILE_HAUL][QuarryZoneService.SERIES_ZONE_KEY] = series
 	if DebugLogging.ENABLED and DebugLogging.SHOW_TRANSPORT_BUILD_LOGS:
 		print("[QUARRY] #%d %s: estratta la roccia %s in %s -> %s%s." % [
 			individual.id, individual.name, str(rock_position), str(macro_coords),

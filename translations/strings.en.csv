@@ -231,7 +231,7 @@ skill_cognition_label,Cognition
 skill_hunting_label,Hunting
 skill_crafting_label,Crafting
 skill_ritual_label,Ritual
-individual_id_label,ID: {id} (Folk {folk}, Group {group})
+individual_id_label,"ID: {id} (Folk {folk}, Group {group})"
 individual_mother_id_label,Mother ID: {id}
 individual_father_id_label,Father ID: {id}
 individual_partner_id_label,Partner ID: {id}
@@ -307,7 +307,7 @@ tech_tree_no_active_idea,No research in progress
 tech_tree_debug_add_thought,+1 Thought
 fertile_women_list,Fertile women
 death_list,Death list
-notification_birth,{name} was born, {mother}'s {offspring_word}
+notification_birth,"{name} was born, {mother}'s {offspring_word}"
 notification_stillbirth,{mother} lost the child during childbirth
 notification_idea_completed,New idea completed: {idea}
 notification_building_material_needed,Material needed to start construction of {building}
@@ -627,8 +627,8 @@ help_explore_task,"assign the Explore task to the selected individual: two legs 
 task_activity_explore,explore
 help_emergency_rest_task,assign the Emergency rest task to the selected individual
 help_leisure_restock_task,"assign the Restocking task to the selected individual: go to a warehouse to stock up on supplies"
-help_gather_command,Gather in the work areas (command bar, with an individual selected)
-help_hunt_command,Hunt in the work areas (command bar, if an area has hunting enabled)
+help_gather_command,"Gather in the work areas (command bar, with an individual selected)"
+help_hunt_command,"Hunt in the work areas (command bar, if an area has hunting enabled)"
 help_auto_zone_command,toggle automatic work-area choice (command bar)
 help_cycle_map_layer,switch to the next map layer (including none)
 help_escape_cancel,"cancel the current choice: worker pick, upgrade orientation, drawing or picking an area"
@@ -641,7 +641,7 @@ help_center_camera,center the view on the player
 help_zoom_max,maximum zoom
 help_zoom_min,minimum zoom
 help_instant_build,held while placing: builds the building instantly instead of assigning a task
-help_play_task,assign the Playing task (Run-Jump-Run-Jump, children only) to the selected individual
+help_play_task,"assign the Playing task (Run-Jump-Run-Jump, children only) to the selected individual"
 help_stop_task,cancel the current command of the selected individual (back to rest)
 help_unload_here_task,held during a right click on a warehouse: unloads there everything the selected individual is carrying
 help_double_click_label,Left double click
@@ -754,3 +754,77 @@ microcell_inspection_grass,Grass
 pickup_no_room_for_resource,{name} has no room to carry {resource}
 vegetation_type_tree,Tree
 vegetation_type_shrub,Shrub
+plant_name_tree_wood_only,Tree
+plant_name_tree_wood_only_gender,m
+plant_name_tree_wild_fruit,Acorn tree
+plant_name_tree_wild_fruit_gender,m
+plant_name_tree_domesticable_fruit,Fruit tree
+plant_name_tree_domesticable_fruit_gender,m
+plant_name_tree_conifer,Conifer
+plant_name_tree_conifer_gender,m
+plant_name_shrub_wood_only,Shrub
+plant_name_shrub_wood_only_gender,m
+plant_name_shrub_fruit_bearing,Berry bush
+plant_name_shrub_fruit_bearing_gender,m
+plant_age_young_m,young
+plant_age_young_f,young
+plant_age_adult_m,adult
+plant_age_adult_f,adult
+plant_age_old_m,old
+plant_age_old_f,old
+cut_plant_reserved_note,(already being cut)
+resource_plural_wood,Logs
+resource_plural_stick,Sticks
+work_area_job_quarry,Quarrying
+command_bar_quarry_tooltip,Quarry
+command_bar_quarry_no_zone_tooltip,No work area with quarrying enabled
+command_bar_job_locked_tooltip,Requires the idea “{idea}”
+work_area_quarry_no_rock,No rock with stone available in the area
+unlock_job_hunt,Hunting in work areas
+unlock_job_quarry,Quarrying in work areas
+quarry_order_dialog_title,Quarrying in work areas
+quarry_order_dialog_message,How many stones to quarry before stopping?
+quarry_order_dialog_count,Stones to quarry
+quarry_series_stopped,"{name}: quarrying stopped at {done}/{total}: {reason}"
+series_stop_no_storage,no storage has room for {resource}
+series_stop_no_room,has no room to carry {resource}
+series_stop_no_tool,missing the tool for {tools}
+series_stop_no_rock,no rock with stone in the area
+series_stop_zone_gone,the area is no longer available
+individual_family_tooltip,Family
+human_type_title,"{band}, {sex}"
+age_band_infant_male,Infant
+age_band_infant_female,Infant
+age_band_child_male,Child
+age_band_child_female,Child
+age_band_teenager_male,Teenager
+age_band_teenager_female,Teenager
+age_band_fertile_adult_male,Fertile adult
+age_band_fertile_adult_female,Fertile adult
+age_band_mature_adult_male,Mature adult
+age_band_mature_adult_female,Mature adult
+age_band_old_male,Elder
+age_band_old_female,Elder
+human_type_age_range,"Age: {from} to {to} years"
+human_type_age_from,Age: {from} years and over
+human_type_desc_infant,Newborn: fully dependent on the mother and does no work.
+human_type_desc_child,Grows and learns through play; cannot work yet.
+human_type_desc_teenager,Almost an adult: helps with everyday work but does not hunt yet.
+human_type_desc_fertile_adult,In full strength: can do any job and have children.
+human_type_desc_mature_adult,Experienced adult: does any job but no longer has children.
+human_type_desc_old,Advanced in age: strength declines but can still be useful.
+human_type_carry,Carry capacity: {value}
+human_type_size_factors,"size by age {age}, by sex {sex}"
+human_type_tool_slot_bonus,"+{bonus} for each empty tool slot ({slots} slots)"
+human_type_food_space,Supplies: {value}
+human_type_calories,Daily consumption: {value} calories
+human_type_stamina,Max energy: {value}
+human_type_thirst,Max thirst: {value}
+human_type_health,Max health: {value}
+human_type_happiness,Max happiness: {value}
+human_type_loyalty,Max loyalty: {value}
+human_type_faith,Max faith: {value}
+human_type_can_have_children,Can have children
+human_type_cannot_have_children,Cannot have children
+human_type_jobs_allowed,Can: {jobs}
+human_type_jobs_forbidden,Cannot: {jobs}

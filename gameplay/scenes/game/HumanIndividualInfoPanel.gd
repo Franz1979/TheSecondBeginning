@@ -222,13 +222,20 @@ var _tool_slot_template: Control = null
 # questo pannello mostra un individuo. Il titolo dell'intestazione tronca con i puntini, le icone restano visibili.
 signal house_center_requested(building_id: int)
 const HOUSE_BUTTON_TEXT := "🏠"
+# Famiglia (2026-10-05: era l'icona ℹ): apre lo stesso blocco di identità e parentela di prima (InfoBlock).
+const FAMILY_BUTTON_TEXT := "👪"
+# ℹ del tipo (2026-10-05, come la ℹ degli edifici): scheda della fascia d'età e del sesso del pipottino, non del singolo
+# pipottino, nel riquadro comune InfoCardBlock; righe da HumanTypeInfoService, risolte da GameScene (set_type_info).
 const INFO_BUTTON_TEXT := "ℹ"
 var header_buttons_box: HBoxContainer = null
 var _house_button: Button = null
 var _info_button: Button = null
+var _type_button: Button = null
+var _type_block: InfoCardBlock = null
 var _house_building_id: int = -1
-# Blocco Info aperto o chiuso: parte chiuso, poi resta com'è passando da un individuo all'altro nella sessione.
+# Blocchi aperti o chiusi: partono chiusi, poi restano come sono passando da un individuo all'altro nella sessione.
 var _info_open: bool = false
+var _type_open: bool = false
 
 var _current_individual: HumanIndividual
 
@@ -260,12 +267,25 @@ func _build_header_buttons() -> void:
 	_house_button.pressed.connect(_on_house_pressed)
 	header_buttons_box.add_child(_house_button)
 	_info_button = Button.new()
-	_info_button.text = INFO_BUTTON_TEXT
+	_info_button.text = FAMILY_BUTTON_TEXT
+	_info_button.tooltip_text = tr("individual_family_tooltip")
 	_info_button.focus_mode = Control.FOCUS_NONE
 	_info_button.toggle_mode = true
 	_info_button.toggled.connect(_on_info_toggled)
 	header_buttons_box.add_child(_info_button)
 	info_block.visible = _info_open
+	_type_button = Button.new()
+	_type_button.text = INFO_BUTTON_TEXT
+	_type_button.focus_mode = Control.FOCUS_NONE
+	_type_button.toggle_mode = true
+	_type_button.toggled.connect(_on_type_toggled)
+	header_buttons_box.add_child(_type_button)
+	# Nascosto (2026-10-05, richiesta utente): la scheda del tipo resta pronta (set_type_info), il bottone non si mostra.
+	_type_button.visible = false
+	_type_block = InfoCardBlock.new()
+	_type_block.visible = _type_open
+	add_child(_type_block)
+	move_child(_type_block, 0)
 	# Icone visibili esattamente quando lo è il pannello, qualunque sia la via che lo nasconde.
 	visibility_changed.connect(func(): header_buttons_box.visible = visible)
 
@@ -305,9 +325,31 @@ func _build_kill_debug_button() -> void:
 	)
 
 
+# Famiglia e scheda del tipo sono alternative (2026-10-05): aprirne una chiude l'altra.
 func _on_info_toggled(pressed: bool) -> void:
 	_info_open = pressed
 	info_block.visible = _info_open
+	if pressed and _type_open:
+		_type_open = false
+		_type_button.set_pressed_no_signal(false)
+		_type_block.visible = false
+
+
+func _on_type_toggled(pressed: bool) -> void:
+	_type_open = pressed
+	_type_block.visible = _type_open
+	if pressed and _info_open:
+		_info_open = false
+		_info_button.set_pressed_no_signal(false)
+		info_block.visible = false
+
+
+# Scheda del tipo (2026-10-05): righe già risolte da GameScene (HumanTypeInfoService), stesso tooltip delle righe come
+# la ℹ degli edifici.
+func set_type_info(rows: Array[Dictionary]) -> void:
+	_type_button.tooltip_text = _type_block.set_rows(rows)
+	_type_button.set_pressed_no_signal(_type_open)
+	_type_block.visible = _type_open
 
 
 # Identità, parentela e casa già risolte da GameScene (2026-10-04, richiesta utente — il pannello resta muto: non
@@ -330,7 +372,6 @@ func set_identity_details(details: Dictionary) -> void:
 	mother_label.text = mother_text
 	father_label.text = father_text
 	partner_label.text = partner_text
-	_info_button.tooltip_text = "\n".join([id_text, mother_text, father_text, partner_text])
 	_info_button.set_pressed_no_signal(_info_open)
 	info_block.visible = _info_open
 	var house: Dictionary = details.get("house", {})

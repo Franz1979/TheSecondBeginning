@@ -787,14 +787,12 @@ func _influence_tooltip(building: Building, entry: Dictionary, radius: int) -> S
 # tagliano con i puntini, così non allargano mai il pannello; il testo intero resta nel tooltip dell'icona); la
 # conservazione su un'intestazione e una riga rientrata per categoria, in percentuale (_format_percent_bonus).
 const INFO_BUTTON_TEXT := "ℹ"
-const INFO_BOX_COLOR := Color(0.28, 0.42, 0.6, 1)
-const INFO_BOX_MARGIN: int = 6
-const INFO_ROW_INDENT: int = 10
+# Riquadro e righe dal componente comune InfoCardBlock (2026-10-05, estratto da qui, condiviso con la scheda del tipo
+# dei pipottini): stesso aspetto di prima.
 const INFO_TOOLTIP_INDENT := "    "
 var info_button_box: HBoxContainer = null
 var _info_button: Button = null
-var _info_block: PanelContainer = null
-var _info_rows: VBoxContainer = null
+var _info_block: InfoCardBlock = null
 var _info_open: bool = false
 
 
@@ -807,18 +805,7 @@ func _build_info_button() -> void:
 	_info_button.toggle_mode = true
 	_info_button.toggled.connect(_on_info_toggled)
 	info_button_box.add_child(_info_button)
-	_info_block = PanelContainer.new()
-	var box_style := StyleBoxFlat.new()
-	box_style.bg_color = INFO_BOX_COLOR
-	box_style.set_corner_radius_all(4)
-	_info_block.add_theme_stylebox_override("panel", box_style)
-	var margin := MarginContainer.new()
-	for side in ["margin_left", "margin_top", "margin_right", "margin_bottom"]:
-		margin.add_theme_constant_override(side, INFO_BOX_MARGIN)
-	_info_block.add_child(margin)
-	_info_rows = VBoxContainer.new()
-	_info_rows.add_theme_constant_override("separation", 0)
-	margin.add_child(_info_rows)
+	_info_block = InfoCardBlock.new()
 	_info_block.visible = false
 	add_child(_info_block)
 	move_child(_info_block, 0)
@@ -834,26 +821,7 @@ func _refresh_info(building: Building) -> void:
 	if _info_block == null:
 		return
 	var rows := _build_info_lines(building.rules, building)
-	var tooltip_lines: Array[String] = []
-	for child in _info_rows.get_children():
-		_info_rows.remove_child(child)
-		child.queue_free()
-	for row in rows:
-		var indented: bool = bool(row["indent"])
-		tooltip_lines.append((INFO_TOOLTIP_INDENT if indented else "") + String(row["text"]))
-		var label := Label.new()
-		label.text = String(row["text"])
-		label.clip_text = true
-		label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
-		label.add_theme_font_size_override("font_size", 10)
-		if indented:
-			var indent := MarginContainer.new()
-			indent.add_theme_constant_override("margin_left", INFO_ROW_INDENT)
-			indent.add_child(label)
-			_info_rows.add_child(indent)
-		else:
-			_info_rows.add_child(label)
-	_info_button.tooltip_text = "\n".join(tooltip_lines)
+	_info_button.tooltip_text = _info_block.set_rows(rows)
 	_info_button.set_pressed_no_signal(_info_open)
 	_info_block.visible = _info_open
 	info_button_box.visible = visible

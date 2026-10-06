@@ -399,7 +399,47 @@ var equipped_tool_uses: Array[int] = []
 # pannello individuo; "" = nessun avviso. Scritto da GameScene quando un'assegnazione viene rifiutata
 # per mancanza di attrezzi, azzerato alla prima assegnazione che lo supera. Transitorio, non salvato.
 # Stesso canale per l'avviso di rottura di un attrezzo (2026-09-26, step 3 — scritto da ProduceAction).
-var tool_gate_warning: String = ""
+#
+# Durata del messaggio (2026-10-05, richiesta utente — regola unica per tutti i messaggi del pannello dell'abitante):
+# ogni scrittura passa da questo setter, che fa ripartire il conto e scioglie il legame con una task. Di base il
+# messaggio scade PANEL_MESSAGE_DURATION_DAYS giorni di gioco dopo essere comparso (task rifiutata, fallita o chiusa);
+# un avviso dato al comando su una task che parte lo stesso si lega invece a quella task (bind_panel_message_to_task) e
+# resta finché la task è in corso o in coda. La scadenza la applica GameScene._expire_panel_messages, con l'orologio di
+# gioco della scena (panel_message_shown_at = -1: conto non ancora partito). Gli stati ancora veri (attesa di attrezzo o
+# di materiale) non passano da qui.
+const PANEL_MESSAGE_DURATION_DAYS: float = 0.25
+var tool_gate_warning: String = "":
+	set(value):
+		tool_gate_warning = value
+		panel_message_task = null
+		panel_message_shown_at = -1.0
+var panel_message_task: Task = null
+var panel_message_shown_at: float = -1.0
+
+
+# Lega il messaggio attuale a `task` (avviso al comando su una task che parte lo stesso): sparisce quando la task non è
+# più in corso né in coda, invece che dopo PANEL_MESSAGE_DURATION_DAYS.
+func bind_panel_message_to_task(task: Task) -> void:
+	panel_message_task = task
+
+
+# Toglie il messaggio se è scaduto (`now_days` = orologio di gioco in giorni). true se lo ha tolto.
+func expire_panel_message(now_days: float) -> bool:
+	if tool_gate_warning == "":
+		return false
+	if panel_message_task != null:
+		var running := current_task == panel_message_task and not panel_message_task.is_finished()
+		if running or task_queue.has(panel_message_task):
+			return false
+		tool_gate_warning = ""
+		return true
+	if panel_message_shown_at < 0.0:
+		panel_message_shown_at = now_days
+		return false
+	if now_days - panel_message_shown_at < PANEL_MESSAGE_DURATION_DAYS:
+		return false
+	tool_gate_warning = ""
+	return true
 # Numero di attrezzi in cintura — RICAVATO da equipped_tools, non più un campo a sé. Stessi lettori
 # di prima: HumanCalculator.get_max_carry_capacity (bonus per slot vuoto) e WalkAction/RunAction
 # (stamina per attrezzo).

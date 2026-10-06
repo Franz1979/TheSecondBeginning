@@ -150,7 +150,7 @@ static func _run_conception_in_group(
 			continue
 		var woman_age := current_year - woman.birth_year_virtual
 		var woman_age_band := HumanCalculator.get_age_band(durations_male, durations_female, woman.sex, float(woman_age))
-		if woman_age_band != HumanTypes.AgeBand.FERTILE_ADULT:
+		if not HumanTypes.FERTILE_AGE_BANDS.has(woman_age_band):
 			excluded_self_not_fertile.append(woman)
 			continue
 		var partner := _find_by_id(individuals, woman.partner_id)
@@ -162,7 +162,7 @@ static func _run_conception_in_group(
 			continue
 		var partner_age := current_year - partner.birth_year_virtual
 		var partner_age_band := HumanCalculator.get_age_band(durations_male, durations_female, partner.sex, float(partner_age))
-		if partner_age_band != HumanTypes.AgeBand.FERTILE_ADULT:
+		if not HumanTypes.FERTILE_AGE_BANDS.has(partner_age_band):
 			excluded_partner_not_fertile.append(woman)
 			continue
 		eligible_women.append(woman)

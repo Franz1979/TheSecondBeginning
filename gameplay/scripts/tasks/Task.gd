@@ -418,6 +418,10 @@ func get_activity_description() -> String:
 	var progress_suffix: String = ""
 	match task_name:
 		"task_haul_resource_name":
+			# Consegna dopo un taglio o un'estrazione (2026-10-05): l'etichetta resta quella del lavoro.
+			var delivery_label := _delivery_activity_label(HaulZoneService.get_zone(context))
+			if delivery_label != "":
+				return delivery_label
 			# Raccolta su zona (2026-09-27, work areas passo 2): prima della ricerca il PickUp non esiste ancora (es.
 			# ripetizione in coda) — la risorsa si legge dal filtro della zona, stessa regola "solo con NAME".
 			# Filtro per CATEGORIA (2026-09-29, richiesta utente): "Raccolta (Cibo)", nome della categoria tradotto
@@ -513,6 +517,21 @@ func get_activity_description() -> String:
 			return tr("task_hunt_activity").format({"species": tr("animal_species_" + prey_species)})
 		# Caccia in zona (2026-10-01): "Caccia (Zona 1)", nome della WorkArea dal context. Zona eliminata = solo il nome
 		# della Task.
+		# Estrazione in una zona (2026-10-05): "Estrazione (Zona 1)", come la caccia; col clic destro solo il nome.
+		"task_quarry_name":
+			var quarry_area_id := int(context.get(QuarryZoneService.CONTEXT_WORK_AREA_ID, -1))
+			if quarry_area_id == -1:
+				return base_text
+			var quarry_area: WorkArea = WorkAreaService.find_by_id(GameSettings.active_game_data, quarry_area_id)
+			if quarry_area == null:
+				return base_text
+			# Serie (2026-10-05): "Estrazione (Zona 1) 2/5" — estrazione corrente su totale; con un'estrazione sola niente.
+			var quarry_series := QuarryZoneService.get_series(context)
+			var quarry_target := int(quarry_series.get("target", 1))
+			if quarry_target > 1:
+				var quarry_current := mini(int(quarry_series.get("done", 0)) + 1, quarry_target)
+				return "%s (%s) %d/%d" % [base_text, quarry_area.name, quarry_current, quarry_target]
+			return "%s (%s)" % [base_text, quarry_area.name]
 		"task_hunt_zone_name":
 			var hunt_area := HuntZoneService.resolve_task_area(self)
 			if hunt_area == null:
@@ -530,6 +549,26 @@ func get_activity_description() -> String:
 	if resource_name == "":
 		return base_text + progress_suffix
 	return "%s (%s)%s" % [base_text, IconRegistry.get_resource_display_name(resource_name), progress_suffix]
+
+
+# Etichetta di una consegna fino a mucchio vuoto (2026-10-05): "" se la zona non viene da un lavoro (raccolta normale).
+# Estrazione in zona: "Estrazione (Zona 1) 2/5" — l'estrazione appena fatta su totale (la serie è già aggiornata); col
+# clic destro "Estrazione"; taglio "Taglio".
+func _delivery_activity_label(zone: Dictionary) -> String:
+	var label_task_name := HaulZoneService.get_label_task_name(zone) if not zone.is_empty() else ""
+	if label_task_name == "":
+		return ""
+	var text := tr(label_task_name)
+	var series: Variant = zone.get(QuarryZoneService.SERIES_ZONE_KEY, {})
+	if not (series is Dictionary) or (series as Dictionary).is_empty():
+		return text
+	var area: WorkArea = WorkAreaService.find_by_id(GameSettings.active_game_data, int(series.get("work_area_id", -1)))
+	if area == null:
+		return text
+	var target := int(series.get("target", 1))
+	if target > 1:
+		return "%s (%s) %d/%d" % [text, area.name, mini(int(series.get("done", 1)), target), target]
+	return "%s (%s)" % [text, area.name]
 
 
 # " n/N" per una task che ripete (viaggio corrente su viaggi in tutto, contatore in context); "" con un viaggio solo.

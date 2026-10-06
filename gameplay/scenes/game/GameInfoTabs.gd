@@ -108,7 +108,7 @@ var _pending_blink_timer: Timer = null
 # cosa scrivere — stesso principio di empty_selection_label/center_requested sopra.
 @onready var title_label: Label = $SelectionTab/SelectionTabBody/SelectionHeader/TitleLabel
 @onready var center_button: Button = $SelectionTab/SelectionTabBody/SelectionHeader/CenterButton
-# Pulsanti aggiuntivi di un pannello di selezione, a sinistra del 🎯 (2026-10-02 — le icone di influenza di
+# Pulsanti aggiuntivi di un pannello di selezione, a destra del 🎯 (2026-10-02 — le icone di influenza di
 # BuildingInfoPanel): GameScene vi aggiunge il gruppo del pannello, che ne gestisce da sé la visibilità.
 @onready var header_actions: HBoxContainer = $SelectionTab/SelectionTabBody/SelectionHeader/HeaderActions
 @onready var empty_selection_label: Label = $SelectionTab/SelectionTabBody/SelectionScroll/SelectionClamp/SelectionContent/EmptySelectionLabel
@@ -173,6 +173,9 @@ func _ready() -> void:
 
 	center_button.tooltip_text = tr("center_on_selection_tooltip")
 	center_button.pressed.connect(func() -> void: center_requested.emit())
+	# 🎯 a sinistra dei pulsanti del pannello (2026-10-05, richiesta utente): da destra a sinistra ℹ, poi gli altri pulsanti
+	# del pannello (abitante: famiglia, casa), poi 🎯.
+	center_button.get_parent().move_child(center_button, header_actions.get_index())
 
 
 # LARGHEZZA FISSA (2026-10-03, richiesta utente — regola del progetto, vedi GameInfoPanel.gd): nessun contenuto di
@@ -184,12 +187,15 @@ func _ready() -> void:
 #   - gli ScrollContainer delle schede hanno lo scorrimento orizzontale DISATTIVATO: così il contenitore riceve la
 #     larghezza dello scroll. NON attivarlo: uno scroll orizzontale dà ai figli senza EXPAND la sola larghezza minima
 #     (un'etichetta a capo riceveva larghezza zero e si scriveva un carattere per riga);
-#   - il titolo della selezione (fuori dallo scroll) tronca con i puntini.
+#   - il titolo della selezione (fuori dallo scroll) va a capo (2026-10-05, nomi lunghi delle piante come "Tipo: Albero
+#     da ghiande"; prima troncava con i puntini): sta in un HBoxContainer con EXPAND, quindi riceve la larghezza
+#     restante della riga e non allarga mai il pannello.
 func _lock_content_width() -> void:
 	for clamp_container in [population_tab, buildings_tab, selection_content.get_parent(), pending_tab]:
 		(clamp_container.get_parent() as ScrollContainer).horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	title_label.clip_text = true
-	title_label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	title_label.clip_text = false
+	title_label.text_overrun_behavior = TextServer.OVERRUN_NO_TRIMMING
+	title_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 
 
 # Chiamata da GameScene quando qualcosa viene selezionato sulla mappa (oggi vegetazione/individuo

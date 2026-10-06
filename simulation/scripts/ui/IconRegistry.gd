@@ -363,6 +363,27 @@ static func get_command_button_icon_node(command_icon_key: String) -> Control:
 # static function" — tr() è un metodo di Object/Node, richiede un'istanza; TranslationServer è il
 # singleton globale che tr() stesso richiama sotto il cofano, chiamabile ovunque senza self,
 # stesso identico risultato/stesso identico fallback "ritorna la chiave se non trovata").
+# Nome leggibile di una pianta (2026-10-05, punto unico per l'elenco del taglio e il titolo del pannello della pianta):
+# nome del sottotipo, chiave tr() "plant_name_<tipo>_<sottotipo>" ("Albero da ghiande", "Conifera"); senza sottotipo
+# noto (ceppo, pianta morta) o senza traduzione, il nome del tipo ("vegetation_type_<tipo>": "Albero"/"Arbusto").
+static func get_plant_display_name(object_type: GameTypes.WorldObjectType, subtype_name: String) -> String:
+	var type_name: String = GameTypes.WorldObjectType.keys()[object_type].to_lower()
+	if subtype_name != "":
+		var name_key := "plant_name_%s_%s" % [type_name, subtype_name]
+		var translated := TranslationServer.translate(name_key)
+		if translated != name_key:
+			return translated
+	return TranslationServer.translate("vegetation_type_%s" % type_name)
+
+
+# Genere grammaticale del nome di get_plant_display_name ("m"/"f", chiave tr() "plant_name_<tipo>_<sottotipo>_gender"),
+# per concordare la fascia d'età; "m" se non c'è.
+static func get_plant_name_gender(object_type: GameTypes.WorldObjectType, subtype_name: String) -> String:
+	var gender_key := "plant_name_%s_%s_gender" % [GameTypes.WorldObjectType.keys()[object_type].to_lower(), subtype_name]
+	var gender := TranslationServer.translate(gender_key)
+	return "m" if gender == gender_key or subtype_name == "" else gender
+
+
 static func get_resource_display_name(resource_name: String) -> String:
 	var key := "carried_resource_tooltip_%s" % resource_name
 	var translated := TranslationServer.translate(key)

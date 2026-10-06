@@ -7,10 +7,10 @@ script = ExtResource("1_stick_tent")
 building_name = "building_stick_tent"
 required_labor = 1600
 required_materials = {
-"fiber_rope": 5,
+"fiber_rope": 3,
 "pebble": 20,
 "plant_fiber": 20,
-"stick": 50
+"stick": 40
 }
 max_durability = 35
 upgrades_to = "hide_tent"

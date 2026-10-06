@@ -19,6 +19,14 @@ const CLICK_MAX_REPEATS: int = TaskRepeatRules.MAX_REPEATS
 # Consegna "fino a mucchio vuoto" (taglio, 2026-10-04): ripetizioni pari alle unità del mucchio, nessun numero fisso di
 # viaggi da mostrare (Task.get_activity_description salta il contatore). Assente nelle altre zone.
 const UNTIL_EMPTY_KEY := "until_empty"
+# Etichetta della consegna fino a mucchio vuoto (2026-10-05): nome della task del lavoro che ha lasciato il mucchio
+# ("task_cut_name", "task_quarry_name"); Task.get_activity_description la mostra al posto di "Raccolta". Assente nelle
+# altre zone (raccolta, anche da un mucchio ordinata a mano).
+const LABEL_TASK_KEY := "label_task_name"
+
+
+static func get_label_task_name(zone: Dictionary) -> String:
+	return String(zone.get(LABEL_TASK_KEY, ""))
 
 
 static func make_zone(

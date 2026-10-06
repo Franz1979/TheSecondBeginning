@@ -297,8 +297,9 @@ func get_tool_efficiency(individual: Variant, category: TaskTypes.ToolCategory) 
 # `position` (GroundPileService.drop_entries sceglie una microcella libera) e, se il mucchio c'è, consegna al magazzino
 # accodata allo stesso pipottino (HumanIndividualActionService.CONTEXT_PENDING_GROUND_PILE_HAUL con "until_empty",
 # tutti i viaggi finché il mucchio è vuoto). `yield_data` = {"resource_name", "quantity"}; {} = nessuna resa.
-# Ritorna il mucchio, null se non è nato.
-func drop_yield_and_queue_haul(context: Dictionary, game_data: GameData, macro_coords: Vector2i, position: Vector2, yield_data: Dictionary) -> GroundPile:
+# `label_task_name`: nome della task del lavoro, mostrato come etichetta anche durante la consegna. Ritorna il mucchio,
+# null se non è nato.
+func drop_yield_and_queue_haul(context: Dictionary, game_data: GameData, macro_coords: Vector2i, position: Vector2, yield_data: Dictionary, label_task_name: String = "") -> GroundPile:
 	if yield_data.is_empty() or game_data == null:
 		return null
 	var entries := {String(yield_data["resource_name"]): {"quantity": int(yield_data["quantity"]), "decay_fraction": 0.0}}
@@ -309,4 +310,8 @@ func drop_yield_and_queue_haul(context: Dictionary, game_data: GameData, macro_c
 			"micro_x": pile.microcell.x, "micro_y": pile.microcell.y,
 			"until_empty": true,
 		}
+		# Etichetta della consegna (2026-10-05): quella del lavoro che l'ha generata (es. "task_cut_name"), vedi
+		# HaulZoneService.LABEL_TASK_KEY.
+		if label_task_name != "":
+			context[HumanIndividualActionService.CONTEXT_PENDING_GROUND_PILE_HAUL][HaulZoneService.LABEL_TASK_KEY] = label_task_name
 	return pile

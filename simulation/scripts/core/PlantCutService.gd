@@ -45,6 +45,17 @@ static func get_subtype_name(macro_state: MacroCellState, object_type: GameTypes
 	return String(_subtype_store(macro_state, object_type).get(individual_key, ""))
 
 
+# Fascia d'età dell'individuo (GameTypes.AgeBand), -1 se il sottotipo non ha fasce d'età o manca l'anno di nascita
+# (2026-10-05, elenco delle piante da tagliare). Stessa regola di get_age_size_factor.
+static func get_age_band(macro_state: MacroCellState, object_type: GameTypes.WorldObjectType, individual_key: Vector3i, current_year: int) -> int:
+	var rule := ResourceCalculator.get_subtype_rule(object_type, get_subtype_name(macro_state, object_type, individual_key))
+	var birth_year_store := _birth_year_store(macro_state, object_type)
+	if rule == null or not rule.track_age_bands or not birth_year_store.has(individual_key):
+		return -1
+	var years_lived: int = current_year - int(birth_year_store[individual_key])
+	return AgeBandVisualService.band_for_age(years_lived, rule.youth_duration_years, rule.adult_duration_years)
+
+
 # Fattore d'età del sottotipo (size_multiplier_by_age della fascia), stessa regola del renderer
 # (MicroCellRenderer._resolve_age_band_and_size): 1.0 per un sottotipo senza fasce d'età.
 static func get_age_size_factor(macro_state: MacroCellState, object_type: GameTypes.WorldObjectType, individual_key: Vector3i, current_year: int) -> float:

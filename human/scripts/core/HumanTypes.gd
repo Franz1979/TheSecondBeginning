@@ -37,6 +37,10 @@ enum AgeBand {
 	OLD,
 }
 
+# Fasce d'età in cui si concepiscono figli (2026-10-05): usata dal concepimento (HumanConceptionIndividualService) e
+# mostrata nella scheda del tipo del pannello dell'abitante (HumanTypeInfoService). Stesso valore di prima.
+const FERTILE_AGE_BANDS: Array[AgeBand] = [AgeBand.FERTILE_ADULT]
+
 # Occupazione corrente di un HumanIndividual materializzato — solo NONE per ora (nessuna AI/
 # assegnazione compiti implementata), valori futuri (es. FORAGING, BUILDING, GUARDING) aggiunti
 # qui quando quella logica arriverà, stesso pattern di GameTypes.WorldObjectType/ResourceType

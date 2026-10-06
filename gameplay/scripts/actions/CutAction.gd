@@ -107,7 +107,7 @@ func on_complete(individual: Variant, context: Dictionary) -> void:
 		report_broken_tools(individual, broken)
 	var yield_data := PlantCutService.cut(macro_state, object_type, individual_key, current_year)
 	macro_state.cut_work_progress.erase(progress_key(object_type, individual_key))
-	drop_yield_and_queue_haul(context, game_data, macro_coords, Vector2(individual_key.x, individual_key.y) + Vector2(0.5, 0.5), yield_data)
+	drop_yield_and_queue_haul(context, game_data, macro_coords, Vector2(individual_key.x, individual_key.y) + Vector2(0.5, 0.5), yield_data, "task_cut_name")
 	if DebugLogging.ENABLED and DebugLogging.SHOW_TRANSPORT_BUILD_LOGS:
 		print("[CUT] #%d %s: abbattuto %s %s in %s -> %s%s." % [
 			individual.id, individual.name, GameTypes.WorldObjectType.keys()[object_type], str(individual_key), str(macro_coords),

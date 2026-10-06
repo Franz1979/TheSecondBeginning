@@ -44,6 +44,9 @@ signal hunt_ended_with_message(individual: HumanIndividual, message: String)
 # Serie di cacce fino a un limite di carne (2026-10-01): una macellazione della serie è finita sotto il limite; GameScene
 # accoda una nuova caccia nella stessa zona (o chiude la serie se la zona non c'è più o manca il coltello).
 signal hunt_zone_series_continue_requested(individual: HumanIndividual, series: Dictionary)
+# Serie di estrazioni in zona (2026-10-05): la consegna dell'ultima estrazione è finita e il mucchio è vuoto — GameScene
+# accoda l'estrazione successiva (o chiude la serie se non può partire).
+signal quarry_zone_series_continue_requested(individual: HumanIndividual, series: Dictionary)
 # Macellazione con destinazione una postazione di lavorazione (essiccatoio, affumicatoio — 2026-10-03): nessuna
 # postazione di quel tipo ha posto per `resource_name` (carne o pelli) e la risorsa ripiega sul magazzino. Una volta per
 # Task e per risorsa (CONTEXT_PROCESSING_FULL_NOTIFIED); GameScene mostra il popup con il nome dell'edificio di
@@ -286,6 +289,7 @@ func finish_current_step(individual: HumanIndividual, task: Task, world: World, 
 				print("[TASK ABORT] Individuo #%d %s: Task '%s' chiusa — %s." % [individual.id, individual.name, task.task_name, abort_reason])
 			# Stessa chiusura di un bersaglio non più valido (sotto): nessun effetto di completamento.
 			_continue_hunt_zone_series(individual, task)
+			_continue_quarry_zone_series(individual, task, game_data)
 			_handle_task_completion_need_and_queue(individual, task, world, game_data)
 			return
 	task.advance_to_next_step()
@@ -323,6 +327,8 @@ func finish_current_step(individual: HumanIndividual, task: Task, world: World, 
 		TaskCompletionEffectService.apply_effects(individual, task)
 		# Serie di cacce (2026-10-01): prima di bisogno/coda, così la nuova caccia accodata è già lì.
 		_continue_hunt_zone_series(individual, task)
+		# Serie di estrazioni in zona (2026-10-05): stesso punto, stesso motivo.
+		_continue_quarry_zone_series(individual, task, game_data)
 		# Bisogno/coda (2026-09-13, richiesta utente, Punto 5) — PRIMA di considerare
 		# l'individuo libero: se un bisogno stamina è ANCORA attivo, assegna la Task-bisogno
 		# corrispondente; altrimenti riprende l'ultima Task sospesa in coda (se presente);
@@ -714,6 +720,38 @@ static func no_storage_message(individual: HumanIndividual, names: Array[String]
 	})
 
 
+# Serie di lavoro interrotta (2026-10-05, punto unico per le serie in zona — estrazione oggi, taglio domani):
+# "<nome>: estrazione interrotta a <fatte>/<totale>: <motivo>". `message_key` = chiave tr() del lavoro (con {name},
+# {done}, {total}, {reason}, es. QuarryZoneService.SERIES_STOPPED_KEY); `series` = {"done", "target"}; `reason` già
+# tradotto (series_stop_reason_* sotto). Stesso canale degli altri messaggi dell'abitante.
+static func series_stopped_message(individual: HumanIndividual, message_key: String, series: Dictionary, reason: String) -> String:
+	return TranslationServer.translate(message_key).format({
+		"name": individual.name if individual != null else "?",
+		"done": int(series.get("done", 0)), "total": int(series.get("target", 0)), "reason": reason,
+	})
+
+
+# Motivi tradotti delle serie interrotte, con i nomi tradotti delle risorse.
+static func series_stop_reason_no_storage(names: Array[String]) -> String:
+	return TranslationServer.translate("series_stop_no_storage").format({"resource": _display_names(names)})
+
+
+static func series_stop_reason_no_room(names: Array[String]) -> String:
+	return TranslationServer.translate("series_stop_no_room").format({"resource": _display_names(names)})
+
+
+static func _display_names(names: Array[String]) -> String:
+	var display_names: PackedStringArray = []
+	for resource_name in names:
+		display_names.append(IconRegistry.get_resource_display_name(resource_name))
+	return ", ".join(display_names)
+
+
+# Motivo dell'interruzione di una serie scritto da una consegna che si chiude (deposito, spazio): letto da
+# _continue_quarry_zone_series, al posto del messaggio normale (un solo messaggio per interruzione).
+const CONTEXT_SERIES_STOP_REASON := "series_stop_reason"
+
+
 # "<nome> non ha spazio per trasportare <risorse>" (testo tradotto, 2026-10-05) — stesso canale e stesso stile di
 # no_storage_message.
 static func no_room_message(individual: HumanIndividual, names: Array[String]) -> String:
@@ -729,7 +767,11 @@ static func no_room_message(individual: HumanIndividual, names: Array[String]) -
 # request_no_storage_abort.
 static func request_no_room_abort(individual: HumanIndividual, context: Dictionary, names: Array[String]) -> void:
 	context[CONTEXT_PENDING_TASK_ABORT] = "nessuno spazio per trasportare %s" % ", ".join(names)
-	context[CONTEXT_PENDING_PLAYER_MESSAGE] = no_room_message(individual, names)
+	# Consegna di una serie in zona: il motivo va nel messaggio della serie, non in uno a parte.
+	if not QuarryZoneService.get_delivery_series_from_context(context).is_empty():
+		context[CONTEXT_SERIES_STOP_REASON] = series_stop_reason_no_room(names)
+	else:
+		context[CONTEXT_PENDING_PLAYER_MESSAGE] = no_room_message(individual, names)
 	if DebugLogging.ENABLED and DebugLogging.SHOW_PICKUP_LOGS:
 		print("[PICKUP] #%d %s: nessuno spazio per trasportare %s — raccolta chiusa." % [
 			individual.id, individual.name, str(names)
@@ -739,7 +781,11 @@ static func request_no_room_abort(individual: HumanIndividual, context: Dictiona
 # Chiusura della Task per mancanza di deposito: abort (gestito dopo lo step corrente) e messaggio al giocatore.
 static func request_no_storage_abort(individual: HumanIndividual, context: Dictionary, names: Array[String]) -> void:
 	context[CONTEXT_PENDING_TASK_ABORT] = "nessun deposito con posto per %s" % ", ".join(names)
-	context[CONTEXT_PENDING_PLAYER_MESSAGE] = no_storage_message(individual, names)
+	# Consegna di una serie in zona: il motivo va nel messaggio della serie, non in uno a parte.
+	if not QuarryZoneService.get_delivery_series_from_context(context).is_empty():
+		context[CONTEXT_SERIES_STOP_REASON] = series_stop_reason_no_storage(names)
+	else:
+		context[CONTEXT_PENDING_PLAYER_MESSAGE] = no_storage_message(individual, names)
 	if DebugLogging.ENABLED and DebugLogging.SHOW_PICKUP_LOGS:
 		print("[PICKUP] #%d %s: nessun deposito ha posto per %s — viaggio non partito, raccolta chiusa." % [
 			individual.id, individual.name, str(names)
@@ -1380,6 +1426,43 @@ func _log_butcher_trips_end(individual: HumanIndividual, reason: String) -> void
 # chiusa in anticipo). Solo per una macellazione della serie (la caccia passa la serie alla macellazione all'uccisione:
 # una caccia che finisce senza preda non ha seguito). Sotto il limite: GameScene accoda una nuova caccia nella stessa
 # zona; raggiunto: la serie è conclusa. L'annullamento del giocatore (H) non passa da qui: chiude la serie.
+# Serie di estrazioni in zona (2026-10-05, passo 2): chiamata quando una Task si chiude (completata o chiusa in anticipo,
+# negli stessi due punti della serie di cacce). Solo per una consegna fino a mucchio vuoto che porta la serie nella sua
+# zona. Si aspetta l'ultima consegna: se un'altra Task della stessa serie è ancora in corso o in coda (la ripetizione
+# della consegna, accodata dal PickUp prima che questa si chiuda), niente. Mucchio ancora pieno = consegna non riuscita:
+# la serie si chiude. Mucchio vuoto e serie non finita: GameScene accoda l'estrazione successiva. L'annullamento del
+# giocatore (H) non passa da qui: chiude la serie.
+func _continue_quarry_zone_series(individual: HumanIndividual, task: Task, game_data: GameData) -> void:
+	var series := QuarryZoneService.get_delivery_series(task)
+	if series.is_empty():
+		return
+	var series_id := String(series.get("id", ""))
+	var others: Array = individual.task_queue.duplicate()
+	if individual.current_task != null and individual.current_task != task and not individual.current_task.is_finished():
+		others.append(individual.current_task)
+	for other in others:
+		if other == task:
+			continue
+		var other_series := QuarryZoneService.get_delivery_series(other)
+		if other_series.is_empty():
+			other_series = QuarryZoneService.get_series(other.context)
+		if String(other_series.get("id", "")) == series_id:
+			return
+	var zone := HaulZoneService.get_zone(task.context)
+	var data: GameData = game_data if game_data != null else GameSettings.active_game_data
+	var pile := GroundPileService.find_at(data, HaulZoneService.get_macro_coords(zone), HaulZoneService.get_rect(zone).position) if data != null else null
+	if pile != null and not pile.resources.is_empty():
+		# Consegna non riuscita: la serie si chiude, col motivo scritto dalla consegna (deposito, spazio) se c'è.
+		if task.context.has(CONTEXT_SERIES_STOP_REASON) and not QuarryZoneService.is_series_complete(series):
+			task_message_requested.emit(individual, series_stopped_message(
+				individual, QuarryZoneService.SERIES_STOPPED_KEY, series, String(task.context[CONTEXT_SERIES_STOP_REASON])
+			))
+		return
+	if QuarryZoneService.is_series_complete(series):
+		return
+	quarry_zone_series_continue_requested.emit(individual, series.duplicate())
+
+
 func _continue_hunt_zone_series(individual: HumanIndividual, task: Task) -> void:
 	if HuntZoneService.is_zone_hunt_task(task):
 		return

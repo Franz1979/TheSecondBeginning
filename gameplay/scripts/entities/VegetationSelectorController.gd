@@ -42,6 +42,33 @@ func find_live_at_mouse(live_cells: Dictionary) -> Dictionary:
 	return find_at_mouse(live_cells, true)
 
 
+# Piante VIVE (alberi e arbusti, niente ceppi né piante morte) ancorate al lotto `lot` della cella viva `macro_coords`
+# (2026-10-05, scelta della pianta da tagliare), dalla più vicina al mouse. Stessa forma dei risultati di
+# find_at_mouse: {"macro_coords", "object_type", "individual_key", "distance"}. [] se la cella non è viva.
+func list_live_in_lot(live_cells: Dictionary, macro_coords: Vector2i, lot: Vector2i) -> Array[Dictionary]:
+	var result: Array[Dictionary] = []
+	var cell: LiveMacroCell = live_cells.get(macro_coords)
+	if cell == null or cell.renderer == null or cell.macro_state == null:
+		return result
+	var local_mouse: Vector2 = cell.renderer.get_local_mouse_position()
+	for object_type in CANDIDATE_TYPES:
+		var candidates: Variant = cell.renderer.find_selection_candidates(object_type, lot)
+		if candidates == null:
+			candidates = _full_scan_candidates(cell.renderer, object_type, lot)
+		for candidate in candidates:
+			var individual_key: Vector3i = candidate[0]
+			if individual_key.x != lot.x or individual_key.y != lot.y:
+				continue
+			if not PlantCutService.is_individual_alive(cell.macro_state, object_type, individual_key):
+				continue
+			result.append({
+				"macro_coords": macro_coords, "object_type": object_type, "individual_key": individual_key,
+				"distance": local_mouse.distance_to(candidate[1]),
+			})
+	result.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return float(a["distance"]) < float(b["distance"]))
+	return result
+
+
 # Ricerca comune di try_select/find_live_at_mouse: individuo più vicino al mouse entro CLICK_RADIUS_PX, in qualunque
 # cella viva. `live_only` scarta ceppi e piante morte.
 func find_at_mouse(live_cells: Dictionary, live_only: bool = false) -> Dictionary:

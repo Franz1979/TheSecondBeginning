@@ -142,21 +142,26 @@ func refresh() -> void:
 		_rebuild()
 
 
-# Lavori abilitati e, per ciascuno abilitato, i suoi filtri. Caccia e filtro specie compaiono solo con l'idea "Aree di
-# lavoro" completata (HuntZoneService.is_hunt_job_unlocked, 2026-10-01); senza, il dato salvato resta intatto.
+# Lavori abilitati e, per ciascuno abilitato, i suoi filtri. Una spunta per lavoro di WorkAreaTypes.JOBS, nell'ordine,
+# solo se sbloccato (WorkAreaTypes.is_job_unlocked, 2026-10-05 — prima la sola caccia, con l'idea "Aree di lavoro");
+# senza, il dato salvato resta intatto. Filtri: raccolta (categorie e risorse), caccia (specie); l'estrazione non ne ha.
 func _build_jobs() -> void:
 	add_child(_label(tr("work_area_jobs_caption"), CAPTION_FONT_SIZE))
-	add_child(_job_check_box(HAUL_JOB))
-	if _area.enabled_jobs.has(HAUL_JOB):
-		_build_haul_filters()
-	if HuntZoneService.is_hunt_job_unlocked():
-		add_child(_job_check_box(HUNT_JOB))
-		if _area.enabled_jobs.has(HUNT_JOB):
-			_build_hunt_filters()
+	for job_id in WorkAreaTypes.JOBS.keys():
+		if not WorkAreaTypes.is_job_unlocked(String(job_id)):
+			continue
+		add_child(_job_check_box(String(job_id)))
+		if not _area.enabled_jobs.has(job_id):
+			continue
+		match String(job_id):
+			HAUL_JOB:
+				_build_haul_filters()
+			HUNT_JOB:
+				_build_hunt_filters()
 
 
 func _job_check_box(job_id: String) -> CheckBox:
-	var check_box := _check_box(tr(String(WorkAreaTypes.JOBS[job_id])), _area.enabled_jobs.has(job_id))
+	var check_box := _check_box(tr(WorkAreaTypes.get_job_name_key(job_id)), _area.enabled_jobs.has(job_id))
 	check_box.toggled.connect(func(pressed: bool) -> void:
 		if pressed and not _area.enabled_jobs.has(job_id):
 			_area.enabled_jobs.append(job_id)

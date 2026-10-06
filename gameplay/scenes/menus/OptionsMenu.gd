@@ -200,7 +200,7 @@ func _rebuild_pickup_default_options() -> void:
 
 	pickup_default_option_button.add_separator(tr("options_pickup_default_group_category"))
 	for category in PickUpAction.PRIORITY_CATEGORIES:
-		var text_keys: Array = PickupChoiceDialog.CATEGORY_TEXT_KEYS.get(category, ["", ""])
+		var text_keys: Array = PickupChoiceMenu.CATEGORY_TEXT_KEYS.get(category, ["", ""])
 		if text_keys[1] == "":
 			continue
 		_add_pickup_default_item(tr(text_keys[1]), PickUpAction.CriterionKind.CATEGORY, int(category), "")

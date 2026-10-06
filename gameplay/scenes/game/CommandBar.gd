@@ -12,11 +12,11 @@ extends HBoxContainer
 # con una destinazione di lavorazione oltre al focolare.
 # Comandi: Raccogli (tasto GATHER_KEY), Caccia nelle zone (HUNT_KEY, accesa con almeno una zona con la caccia attiva), interruttore "Scegli zona in automatico"
 # (AUTO_ZONE_KEY, icona AutoZoneIcon), impostazione unica salvata in UserOptions.work_area_auto_zone. Stato acceso/spento
-# e motivi li decide GameScene (set_gather_available), come per gli slot della BuildBar.
+# e motivi li decide GameScene (set_action_available), come per gli slot della BuildBar. Dal 2026-10-05 anche Estrai
 
-signal gather_requested
-# Caccia nelle zone (2026-10-01): acceso solo con almeno una zona con la caccia attiva (set_hunt_available).
-signal hunt_requested
+# Un comando del gruppo "Azioni" (2026-10-05: prima un segnale per comando, gather_requested/hunt_requested): l'id della
+# voce di ACTIONS. GameScene._on_command_bar_action_requested smista.
+signal action_requested(action_id: StringName)
 signal auto_zone_changed(enabled: bool)
 # Destinazione dei prodotti della caccia scelta dal pulsante (2026-10-03, ButcherDestinationService): GameScene la
 # scrive in GameData.last_butcher_destination.
@@ -24,20 +24,50 @@ signal butcher_destination_chosen(destination: String)
 
 const GATHER_ACTION := &"command_gather"
 const HUNT_ACTION := &"command_hunt"
-const GATHER_SLOT: int = 0
-const HUNT_SLOT: int = 1
-const SLOT_COUNT: int = 2
+const QUARRY_ACTION := &"command_quarry"
 # Azioni del gruppo "Azioni" (2026-10-04, richiesta utente): UNICA fonte per la barra e per i pulsanti sulle righe della
 # lista degli abitanti (HumanPopulationInfoPanel) — un'azione aggiunta qui compare in entrambi i posti. Indice = slot
 # della barra. "icon" = chiave di IconRegistry.get_command_button_icon_node; "tooltip_key" = nome del comando.
+# Attrezzi richiesti (2026-10-05, regola unica per i comandi che li richiedono — GameScene._command_tool_rejection, usato
+# da barra e lista): "tool_categories" = categorie che il pipottino deve possedere (vuoto/assente = nessun attrezzo),
+# "tool_belt_only" = conta solo la cintura (altrimenti cintura o zaino, ToolGateService.has_tool_for),
+# "tool_missing_tooltip_key" = testo proprio del motivo (altrimenti quello generico con gli attrezzi che coprono le
+# categorie mancanti). Un nuovo comando con attrezzo (taglio: CHOPPING, estrazione: DIGGING) basta dichiararlo qui.
+# Zona e sblocco (2026-10-05): "job" = lavoro della zona (WorkAreaTypes.JOBS) che il comando usa — il suo sblocco
+# (WorkAreaTypes.is_job_unlocked) e l'esistenza di una zona con quel lavoro decidono se il bottone è acceso; senza una
+# zona il tooltip è "no_zone_tooltip_key". I posti della barra e i bottoni delle righe degli abitanti nascono da questo
+# elenco, nell'ordine: un comando nuovo si aggiunge solo qui (più il suo smistamento in GameScene).
 const ACTIONS: Array[Dictionary] = [
-	{"id": GATHER_ACTION, "icon": "pickup", "tooltip_key": "command_bar_gather_tooltip", "key": GATHER_KEY},
-	{"id": HUNT_ACTION, "icon": "hunt", "tooltip_key": "command_bar_hunt_tooltip", "key": HUNT_KEY},
+	{
+		"id": GATHER_ACTION, "icon": "pickup", "tooltip_key": "command_bar_gather_tooltip", "key": GATHER_KEY,
+		"job": "haul", "no_zone_tooltip_key": "command_bar_gather_no_zone_tooltip",
+	},
+	{
+		"id": HUNT_ACTION, "icon": "hunt", "tooltip_key": "command_bar_hunt_tooltip", "key": HUNT_KEY,
+		"job": "hunt", "no_zone_tooltip_key": "command_bar_hunt_no_zone_tooltip",
+		# Coltello in cintura per la macellazione, come HuntZoneService.get_hunt_rejection (stesso testo).
+		"tool_categories": [TaskTypes.ToolCategory.BUTCHERING], "tool_belt_only": true,
+		"tool_missing_tooltip_key": "work_area_hunt_needs_knife",
+	},
+	{
+		"id": QUARRY_ACTION, "icon": "quarry", "tooltip_key": "command_bar_quarry_tooltip", "key": QUARRY_KEY,
+		"job": "quarry", "no_zone_tooltip_key": "command_bar_quarry_no_zone_tooltip",
+		"tool_categories": [TaskTypes.ToolCategory.DIGGING],
+	},
 ]
+
+
+# Voce di ACTIONS con questo id, {} se non c'è.
+static func get_action(action_id: StringName) -> Dictionary:
+	for action in ACTIONS:
+		if action["id"] == action_id:
+			return action
+	return {}
 
 # Tasti rapidi, liberi nel resto del gioco (2026-09-27).
 const GATHER_KEY := KEY_Q
 const HUNT_KEY := KEY_C
+const QUARRY_KEY := KEY_J
 const AUTO_ZONE_KEY := KEY_V
 
 # Stesso lato degli slot di IconButtonRow.
@@ -88,7 +118,7 @@ func _ready() -> void:
 	_actions_group = _build_group("command_bar_group_actions")
 	add_child(_actions_group)
 	_row = IconButtonRow.new()
-	_row.slot_count = SLOT_COUNT
+	_row.slot_count = ACTIONS.size()
 	_actions_group.add_child(_row)
 	# Pulsanti dal solo elenco ACTIONS. Tutti configurati ACCESI (2026-10-01, bugfix "Caccia non fa nulla":
 	# IconButtonRow.configure_slot con enabled=false non collega mai `pressed`); lo stato vero lo decide GameScene
@@ -99,7 +129,9 @@ func _ready() -> void:
 			slot, "", _with_key(tr(String(action["tooltip_key"])), action["key"]), action["id"], "", true,
 			IconRegistry.get_command_button_icon_node(String(action["icon"]))
 		)
-	_row.set_slot_disabled(HUNT_SLOT, true)
+	# Spenti finché GameScene non decide (come prima la sola Caccia); Raccogli resta acceso come sempre.
+	for slot in range(1, ACTIONS.size()):
+		_row.set_slot_disabled(slot, true)
 	_row.action_pressed.connect(_on_action_pressed)
 
 	# Separatore tra i gruppi (2026-10-03): linea verticale sottile del tema, con spazio ai lati.
@@ -211,24 +243,25 @@ func set_bar_visible(bar_visible: bool) -> void:
 		visible = bar_visible
 
 
-# Raccogli acceso o spento, con il motivo nel tooltip (stesso schema di BuildBar.set_building_buildable).
-func set_gather_available(is_available: bool, disabled_tooltip: String = "") -> void:
-	_row.set_slot_disabled(GATHER_SLOT, not is_available, disabled_tooltip if not is_available else "")
+# Comando `action_id` acceso o spento, con il motivo nel tooltip (stesso schema di BuildBar.set_building_buildable;
+# 2026-10-05: prima set_gather_available/set_hunt_available).
+func set_action_available(action_id: StringName, is_available: bool, disabled_tooltip: String = "") -> void:
+	var slot := _slot_of(action_id)
+	if slot != -1:
+		_row.set_slot_disabled(slot, not is_available, disabled_tooltip if not is_available else "")
 
 
-func is_gather_available() -> bool:
-	var button := _row.get_slot_button(GATHER_SLOT) as BaseButton
+func is_action_available(action_id: StringName) -> bool:
+	var slot := _slot_of(action_id)
+	var button := _row.get_slot_button(slot) as BaseButton if slot != -1 else null
 	return button != null and not button.disabled
 
 
-# Caccia accesa o spenta, con il motivo nel tooltip (stesso schema di set_gather_available).
-func set_hunt_available(is_available: bool, disabled_tooltip: String = "") -> void:
-	_row.set_slot_disabled(HUNT_SLOT, not is_available, disabled_tooltip if not is_available else "")
-
-
-func is_hunt_available() -> bool:
-	var button := _row.get_slot_button(HUNT_SLOT) as BaseButton
-	return button != null and not button.disabled
+func _slot_of(action_id: StringName) -> int:
+	for slot in range(ACTIONS.size()):
+		if ACTIONS[slot]["id"] == action_id:
+			return slot
+	return -1
 
 
 # Pulsante della destinazione (2026-10-03): `is_shown` = mostrarlo; `current` = destinazione che la caccia userebbe
@@ -289,11 +322,9 @@ func _on_destination_option_pressed(destination: String) -> void:
 
 
 func _on_action_pressed(action_id: StringName) -> void:
-	if action_id == GATHER_ACTION:
-		gather_requested.emit()
-	elif action_id == HUNT_ACTION:
+	if action_id == HUNT_ACTION:
 		HuntZoneService.log_event(null, "bottone Caccia premuto.")
-		hunt_requested.emit()
+	action_requested.emit(action_id)
 
 
 func _on_auto_zone_toggled(pressed: bool) -> void:
@@ -310,21 +341,23 @@ func _unhandled_input(event: InputEvent) -> void:
 	# Senza l'idea delle zone (2026-10-03) la barra può mostrare solo la destinazione: i tasti delle zone non valgono.
 	if not _zone_commands_visible:
 		return
-	match (event as InputEventKey).keycode:
-		GATHER_KEY:
-			if is_gather_available():
-				get_viewport().set_input_as_handled()
-				gather_requested.emit()
-		HUNT_KEY:
+	var keycode := (event as InputEventKey).keycode
+	if keycode == AUTO_ZONE_KEY:
+		get_viewport().set_input_as_handled()
+		_auto_zone_button.button_pressed = not _auto_zone_button.button_pressed
+		return
+	for action in ACTIONS:
+		if keycode != action["key"]:
+			continue
+		var action_id: StringName = action["id"]
+		if action_id == HUNT_ACTION:
 			HuntZoneService.log_event(null, "tasto %s premuto (Caccia %s)." % [
-				OS.get_keycode_string(HUNT_KEY), "accesa" if is_hunt_available() else "spenta: ignorato"
+				OS.get_keycode_string(HUNT_KEY), "accesa" if is_action_available(action_id) else "spenta: ignorato"
 			])
-			if is_hunt_available():
-				get_viewport().set_input_as_handled()
-				hunt_requested.emit()
-		AUTO_ZONE_KEY:
+		if is_action_available(action_id):
 			get_viewport().set_input_as_handled()
-			_auto_zone_button.button_pressed = not _auto_zone_button.button_pressed
+			action_requested.emit(action_id)
+		return
 
 
 func _with_key(text: String, keycode: Key) -> String:

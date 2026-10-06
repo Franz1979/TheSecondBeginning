@@ -673,7 +673,15 @@ func _ready() -> void:
 	# Scelta "Raccogli" / "Taglia" (2026-10-04, task Cut): altra istanza dedicata dello stesso OptionChoiceDialog.
 	extraction_choice_dialog = OPTION_CHOICE_DIALOG_SCENE.instantiate()
 	add_child(extraction_choice_dialog)
+	# "Pietre da estrarre" del comando Estrai nelle zone (2026-10-05, Quarry in zona passo 2).
+	quarry_count_dialog = CountChoiceDialog.new()
+	add_child(quarry_count_dialog)
+	quarry_count_dialog.count_chosen.connect(_on_quarry_count_chosen)
 	extraction_choice_dialog.resource_chosen.connect(_on_extraction_choice_made)
+	# Elenco delle piante sotto "Taglia" (2026-10-05): contorno sulla mappa e ripristino della selezione alla chiusura.
+	extraction_choice_dialog.option_hovered.connect(_on_extraction_option_hovered)
+	extraction_choice_dialog.option_selected.connect(_on_extraction_option_selected)
+	extraction_choice_dialog.visibility_changed.connect(_on_extraction_choice_visibility_changed)
 	# building_info_panel (Step 5, richiesta utente 2026-09-04) — terzo sibling nella STESSA
 	# SelectionTab, stesso identico principio "componente muto" di vegetation_info_panel/
 	# human_individual_info_panel; zero modifiche a GameInfoTabs per aggiungerlo (già agnostica).
@@ -1277,6 +1285,7 @@ func _process(delta: float) -> void:
 	if _pending_refresh_timer >= PENDING_REFRESH_INTERVAL_SEC:
 		_pending_refresh_timer = 0.0
 		_refresh_pending_entries()
+		_expire_panel_messages()
 
 	_debug_panel_refresh_timer += delta
 	if _debug_panel_refresh_timer >= DEBUG_PANEL_REFRESH_INTERVAL_SEC:
@@ -4020,8 +4029,7 @@ func _setup_command_bar() -> void:
 	panel.custom_minimum_size.y = height
 	# Nascosto finché _sync_command_bar non lo mostra (dopo il calcolo dell'altezza, che lo vuole visibile).
 	panel.visible = false
-	command_bar.gather_requested.connect(_on_command_bar_gather_requested)
-	command_bar.hunt_requested.connect(_on_command_bar_hunt_requested)
+	command_bar.action_requested.connect(_on_command_bar_action_requested)
 	command_bar.butcher_destination_chosen.connect(_on_command_bar_butcher_destination_chosen)
 	# Dialog del comando Caccia (2026-10-01): il dialog di Raccogli in modalità caccia, selettore "Carne" della serie.
 	pickup_choice_dialog.hunt_choice_made.connect(_on_hunt_order_confirmed)
@@ -4248,9 +4256,74 @@ func _sync_command_bar() -> void:
 	if bar_visible:
 		command_bar.set_zone_commands_visible(zone_tools)
 		if zone_tools:
-			command_bar.set_gather_available(HaulZoneService.has_haul_work_area(game_data), tr("command_bar_gather_no_zone_tooltip"))
-			command_bar.set_hunt_available(HuntZoneService.has_hunt_work_area(game_data), tr("command_bar_hunt_no_zone_tooltip"))
+			# Per ogni comando (CommandBar.ACTIONS): sblocco del lavoro, zona con quel lavoro, poi attrezzo (2026-10-05,
+			# stesso controllo della lista degli abitanti): acceso se almeno un selezionato ha l'attrezzo del comando,
+			# altrimenti spento col motivo del primo.
+			for action in CommandBar.ACTIONS:
+				var action_id: StringName = action["id"]
+				var reason := _command_zone_rejection(action_id)
+				if reason == "":
+					reason = _command_bar_tool_rejection(action_id)
+				command_bar.set_action_available(action_id, reason == "", reason)
 		_sync_butcher_destination_button()
+
+
+# Controllo condiviso degli attrezzi di un comando del gruppo "Azioni" (2026-10-05, regola unica per barra e lista degli
+# abitanti): "" se `member` possiede l'attrezzo richiesto (CommandBar.ACTIONS: tool_categories/tool_belt_only), altrimenti
+# il testo del tooltip con quello che manca. Nessun attrezzo richiesto = "".
+func _command_tool_rejection(member: HumanIndividual, action_id: StringName) -> String:
+	var action := CommandBar.get_action(action_id)
+	var categories: Array = action.get("tool_categories", [])
+	if member == null or categories.is_empty():
+		return ""
+	var belt_only := bool(action.get("tool_belt_only", false))
+	var missing: Array = []
+	for category in categories:
+		var owned: bool = ToolGateService.find_belt_slot_for(member, category) != -1 if belt_only else ToolGateService.has_tool_for(member, category)
+		if not owned:
+			missing.append(category)
+	if missing.is_empty():
+		return ""
+	var tooltip_key := String(action.get("tool_missing_tooltip_key", ""))
+	if tooltip_key != "":
+		return tr(tooltip_key).format({"name": member.name})
+	return tr("tool_gate_missing_tools").format({"name": member.name, "tools": _describe_missing_tool_categories(missing)})
+
+
+# Sblocco del lavoro e zona del comando (2026-10-05, regola unica per barra e lista degli abitanti): "" se il lavoro
+# (CommandBar.ACTIONS "job") è sbloccato e c'è almeno una zona con quel lavoro attivo, altrimenti il tooltip: idea che
+# manca ("Serve l'idea «…»") oppure "no_zone_tooltip_key". Nessun giro sulle risorse o sulle rocce: basta la zona.
+func _command_zone_rejection(action_id: StringName) -> String:
+	var action := CommandBar.get_action(action_id)
+	var job := String(action.get("job", ""))
+	if job == "":
+		return ""
+	if not WorkAreaTypes.is_job_unlocked(job):
+		var idea_id := WorkAreaTypes.get_job_required_idea_id(job)
+		var idea := IdeaCalculator.get_idea(idea_id)
+		return tr("command_bar_job_locked_tooltip").format({"idea": tr(idea.display_name) if idea != null else idea_id})
+	var has_zone := false
+	match job:
+		HaulZoneService.HAUL_JOB:
+			has_zone = HaulZoneService.has_haul_work_area(game_data)
+		HuntZoneService.HUNT_JOB:
+			has_zone = HuntZoneService.has_hunt_work_area(game_data)
+		QuarryZoneService.QUARRY_JOB:
+			has_zone = QuarryZoneService.has_quarry_work_area(game_data)
+	return "" if has_zone else tr(String(action.get("no_zone_tooltip_key", "")))
+
+
+# Barra dei comandi (più pipottini selezionati): "" se almeno uno ha l'attrezzo del comando, altrimenti il motivo del
+# primo selezionato.
+func _command_bar_tool_rejection(action_id: StringName) -> String:
+	var first_reason := ""
+	for member in _get_selected_individuals():
+		var reason := _command_tool_rejection(member, action_id)
+		if reason == "":
+			return ""
+		if first_reason == "":
+			first_reason = reason
+	return first_reason
 
 
 # Pulsante della destinazione dei prodotti della caccia (2026-10-03): visibile solo con una destinazione di lavorazione
@@ -4308,6 +4381,148 @@ func _layout_bottom_bar_row(bar_visible: bool) -> void:
 # arriva a _on_pickup_choice_made -> _on_work_area_gather_choice.
 func _on_command_bar_gather_requested() -> void:
 	_order_gather(_get_selected_individuals())
+
+
+# Comando della barra (CommandBar.action_requested, 2026-10-05): a tutti i pipottini selezionati.
+func _on_command_bar_action_requested(action_id: StringName) -> void:
+	_order_command(action_id, _get_selected_individuals())
+
+
+# --- Estrazione nelle zone (2026-10-05, Quarry in zona passo 1) ---
+# Per ogni pipottino: età e attrezzo (stessi controlli del bottone, come sicurezza), poi la zona: automatica
+# (QuarryZoneService.choose_work_area, per ciascuno) o scelta a mano tra le zone con l'estrazione attiva e almeno una
+# roccia disponibile (stessa modalità "scegli la zona" di raccolta e caccia, ordine {"job": "quarry"}). Nella zona una
+# sola estrazione sulla roccia scelta (_assign_work_area_quarry).
+func _order_quarry(selected: Array[HumanIndividual]) -> void:
+	var workers: Array[HumanIndividual] = []
+	for member in selected:
+		var age_band := _resolve_age_band(member)
+		if age_band == HumanTypes.AgeBand.INFANT or age_band == HumanTypes.AgeBand.CHILD:
+			_report_assign_rejection(member, HumanIndividual.ASSIGN_REJECT_TOO_YOUNG, "task_activity_quarry")
+			continue
+		var tool_rejection := _command_tool_rejection(member, CommandBar.QUARRY_ACTION)
+		if tool_rejection != "":
+			_report_command_rejection(member, tool_rejection)
+			continue
+		workers.append(member)
+	if workers.is_empty():
+		return
+	if QuarryZoneService.list_quarry_work_areas(game_data).is_empty():
+		for worker in workers:
+			_report_command_rejection(worker, tr("command_bar_quarry_no_zone_tooltip"))
+		return
+	# "Pietre da estrarre" (2026-10-05, passo 2): la zona segue alla conferma (_on_quarry_count_chosen).
+	_quarry_dialog_workers = workers
+	quarry_count_dialog.open_dialog(
+		tr("quarry_order_dialog_title"), tr("quarry_order_dialog_message"), tr("quarry_order_dialog_count"),
+		QuarryZoneService.COUNT_MIN, QuarryZoneService.COUNT_MAX, UserOptions.work_area_quarry_count
+	)
+
+
+# Conferma di "Pietre da estrarre": valore ricordato, poi la zona come per gli altri comandi — automatica (per
+# ciascuno) o scelta a mano tra le zone con l'estrazione attiva e almeno una roccia disponibile. Ogni pipottino parte con
+# una serie di `count` estrazioni (QuarryZoneService.make_series).
+func _on_quarry_count_chosen(count: int) -> void:
+	UserOptions.work_area_quarry_count = count
+	UserOptions.save_to_disk()
+	var workers: Array[HumanIndividual] = []
+	for worker in _quarry_dialog_workers:
+		if human_individuals.has(worker):
+			workers.append(worker)
+	_quarry_dialog_workers = []
+	var areas := QuarryZoneService.list_quarry_work_areas(game_data)
+	if workers.is_empty() or areas.is_empty():
+		return
+	var reserved := QuarryZoneService.collect_reserved_rocks(human_individuals)
+	if UserOptions.work_area_auto_zone:
+		for worker in workers:
+			var area := QuarryZoneService.choose_work_area(game_data, macro_world, worker, reserved)
+			if area == null:
+				_report_command_rejection(worker, tr("work_area_quarry_no_rock"))
+				continue
+			_assign_work_area_quarry(worker, area, count)
+			reserved = QuarryZoneService.collect_reserved_rocks(human_individuals)
+		return
+	var valid_ids: Array[int] = []
+	for area in areas:
+		var macro_state := macro_world.get_cell_state_at(area.macro_coords.x, area.macro_coords.y)
+		for worker in workers:
+			if not QuarryZoneService.list_available_rocks(area, macro_state, worker, reserved).is_empty():
+				valid_ids.append(area.id)
+				break
+	if valid_ids.is_empty():
+		for worker in workers:
+			_report_command_rejection(worker, tr("work_area_quarry_no_rock"))
+		return
+	_enter_work_area_pick_mode(workers, {"job": QuarryZoneService.QUARRY_JOB, "count": count}, valid_ids)
+
+
+# Una estrazione nella zona `area`: la roccia migliore per `worker` (QuarryZoneService.choose_rock: pietra rimasta,
+# raggiungibile, non prenotata), poi le stesse funzioni dell'estrazione col clic destro (_assign_quarry_task), con la
+# zona nel context per l'etichetta. Nessuna roccia: messaggio, il comando non parte.
+# `count` (2026-10-05, passo 2): estrazioni della serie (QuarryZoneService.make_series), questa è la prima.
+func _assign_work_area_quarry(worker: HumanIndividual, area: WorkArea, count: int = 1) -> void:
+	if worker == null or area == null or not human_individuals.has(worker):
+		return
+	var macro_state := macro_world.get_cell_state_at(area.macro_coords.x, area.macro_coords.y)
+	var rock: Variant = QuarryZoneService.choose_rock(area, macro_state, worker, QuarryZoneService.collect_reserved_rocks(human_individuals))
+	if rock == null:
+		_report_command_rejection(worker, tr("work_area_quarry_no_rock"))
+		return
+	_assign_quarry_task(worker, {"macro_coords": area.macro_coords, "position": rock}, area.id, QuarryZoneService.make_series(area.id, count))
+
+
+# Serie di estrazioni interrotta (2026-10-05, passo 3): messaggio "<nome>: estrazione interrotta a <fatte>/<totale>:
+# <motivo>" (HumanIndividualActionService.series_stopped_message) sul canale dei messaggi dell'abitante.
+func _report_series_stopped(worker: HumanIndividual, series: Dictionary, reason: String) -> void:
+	_report_command_rejection(worker, HumanIndividualActionService.series_stopped_message(worker, QuarryZoneService.SERIES_STOPPED_KEY, series, reason))
+
+
+# Consegna non accodata per una serie in zona: messaggio della serie al posto di quello normale. false se il mucchio non
+# viene da una serie (nessun messaggio scritto qui).
+func _report_quarry_series_stopped(worker: HumanIndividual, pile_ref: Dictionary, reason: String) -> bool:
+	var series: Variant = pile_ref.get(QuarryZoneService.SERIES_ZONE_KEY, {})
+	if not (series is Dictionary) or (series as Dictionary).is_empty():
+		return false
+	if not QuarryZoneService.is_series_complete(series):
+		_report_series_stopped(worker, series, reason)
+		return true
+	return false
+
+
+# Estrazione successiva della serie (QuarryZoneService, HumanIndividualActionService.quarry_zone_series_continue_requested:
+# consegna finita a mucchio vuoto). Stessa roccia finché ha pietra e nessun altro la prenota, altrimenti un'altra della
+# zona (QuarryZoneService.choose_rock). Accodata come la caccia successiva (parte appena il pipottino è libero, dopo
+# eventuali bisogni). La serie si chiude senza attese se la zona non è più valida, il piccone non c'è più o non resta una
+# roccia con pietra (messaggi nel passo 3).
+func _on_quarry_zone_series_continue_requested(worker: HumanIndividual, series: Dictionary) -> void:
+	if worker == null or not human_individuals.has(worker) or QuarryZoneService.is_series_complete(series):
+		return
+	var area := WorkAreaService.find_by_id(game_data, int(series.get("work_area_id", -1)))
+	if area == null or not QuarryZoneService.list_quarry_work_areas(game_data).has(area):
+		_report_series_stopped(worker, series, tr("series_stop_zone_gone"))
+		return
+	if not ToolGateService.has_tool_for(worker, TaskTypes.ToolCategory.DIGGING):
+		_report_series_stopped(worker, series, tr("series_stop_no_tool").format({
+			"tools": _describe_missing_tool_categories([TaskTypes.ToolCategory.DIGGING]),
+		}))
+		return
+	var macro_state := macro_world.get_cell_state_at(area.macro_coords.x, area.macro_coords.y)
+	var reserved := QuarryZoneService.collect_reserved_rocks(human_individuals)
+	var available := QuarryZoneService.list_available_rocks(area, macro_state, worker, reserved)
+	var last_rock := Vector2i(int(series.get("rock_x", -1)), int(series.get("rock_y", -1)))
+	var rock: Variant = last_rock if available.has(last_rock) else QuarryZoneService.choose_rock(area, macro_state, worker, reserved)
+	if rock == null:
+		_report_series_stopped(worker, series, tr("series_stop_no_rock"))
+		return
+	var task := _build_quarry_task(worker, area.macro_coords, rock, area.id, series)
+	if task == null:
+		return
+	for step in task.steps:
+		_reconnect_build_task_signals(step)
+	TaskQueueService.push_suspended_task(worker, task)
+	if worker == individual:
+		_refresh_selected_individual_panel()
 
 
 # Raccogli per `candidates` (2026-10-04: estratto dal comando della barra, usato anche dai pulsanti sulle righe della
@@ -4479,6 +4694,9 @@ func _handle_work_area_pick_input(event: InputEvent) -> bool:
 						area.id, int(order.get("meat_target", HuntZoneService.MEAT_TARGET_DEFAULT)),
 						String(order.get("butcher_destination", ""))
 					))
+				elif String(order.get("job", "")) == QuarryZoneService.QUARRY_JOB:
+					# Estrazione in zona (2026-10-05): serie di "count" estrazioni, la prima sulla roccia scelta.
+					_assign_work_area_quarry(worker, area, int(order.get("count", QuarryZoneService.COUNT_DEFAULT)))
 				else:
 					_assign_work_area_gather(worker, area, order)
 		return true
@@ -4730,7 +4948,10 @@ func _try_assign_pickup_command_on_right_click(event: InputEvent) -> bool:
 # Decisione del comando di raccolta su candidati già risolti (2026-10-04, estratta da
 # _try_assign_pickup_command_on_right_click per riusarla dalla scelta "Raccogli" del comando Taglia, che risolve i
 # candidati al click e decide dopo il popup): età, poi 0/1/più candidati con scorta, come prima.
-func _dispatch_pickup_candidates(candidates: Array[Dictionary]) -> void:
+# `repeat_override` (2026-10-05, spunta "Ripeti" del popup delle rocce): -1 = opzione globale (come sempre), 0/1 = il
+# valore confermato nel popup, per questa sola raccolta.
+func _dispatch_pickup_candidates(candidates: Array[Dictionary], repeat_override: int = -1) -> void:
+	var repeat_enabled: bool = UserOptions.repeat_default if repeat_override < 0 else repeat_override == 1
 	# Guard età PRIMA di qualunque popup/assegnazione (2026-09-17, richiesta utente — bugfix UX: con
 	# 2+ risorse un CHILD/INFANT vedeva comunque pickup_choice_dialog, negato solo DOPO la scelta —
 	# STESSO fix già adottato da _try_assign_transport_command_on_right_click per lo stesso
@@ -4767,7 +4988,7 @@ func _dispatch_pickup_candidates(candidates: Array[Dictionary]) -> void:
 			print("[PICKUP CMD DEBUG] _try_assign_pickup_command_on_right_click: ritorna TRUE — tutti i candidati a scorta 0, fallback su %s_hit=%s" % [chosen["resource_name"], str(chosen)])
 		_assign_pickup_task(
 			chosen["macro_coords"], chosen["position"], chosen["resource_name"], -1,
-			PickUpAction.CriterionKind.NAME, -1, UserOptions.repeat_default, 0,
+			PickUpAction.CriterionKind.NAME, -1, repeat_enabled, 0,
 			int(chosen.get("source_kind", PickUpAction.SourceKind.TERRAIN))
 		)
 		return
@@ -4780,7 +5001,7 @@ func _dispatch_pickup_candidates(candidates: Array[Dictionary]) -> void:
 			print("[PICKUP CMD DEBUG] _try_assign_pickup_command_on_right_click: ritorna TRUE — unico candidato con scorta reale, %s_hit=%s" % [chosen["resource_name"], str(chosen)])
 		_assign_pickup_task(
 			chosen["macro_coords"], chosen["position"], chosen["resource_name"], -1,
-			PickUpAction.CriterionKind.NAME, -1, UserOptions.repeat_default, 0,
+			PickUpAction.CriterionKind.NAME, -1, repeat_enabled, 0,
 			int(chosen.get("source_kind", PickUpAction.SourceKind.TERRAIN))
 		)
 		return
@@ -4792,9 +5013,25 @@ func _dispatch_pickup_candidates(candidates: Array[Dictionary]) -> void:
 	# Ogni voce porta sorgente (mucchio o terreno, 2026-09-26) e posizione del proprio candidato: il popup
 	# raggruppa per sorgente e _on_pickup_choice_made usa la posizione della voce scelta.
 	var available_quantities: Dictionary = {}
-	var pending_resources: Array = []
 	for candidate in available_candidates:
 		available_quantities[candidate["resource_name"]] = candidate["available_quantity"]
+	var pending_resources := _build_pickup_pending_resources(available_candidates)
+	_pickup_pending_resources = pending_resources
+	if DebugLogging.ENABLED and DebugLogging.SHOW_RECONNECT_FACTORY_LOGS:
+		print("[DBG_PICKUP] %d candidati con scorta reale alla stessa posizione: %s — apro pickup_choice_dialog." % [
+			available_candidates.size(), str(available_quantities)
+		])
+	_pickup_dialog_work_area_workers = []
+	pickup_choice_dialog.open_dialog(tr("pickup_choice_dialog_title"), tr("pickup_choice_dialog_message"), pending_resources, UserOptions.get_pickup_default_choice(), repeat_enabled, HaulZoneService.CLICK_MAX_REPEATS)
+	return
+
+
+# Voci del menu della raccolta (PickupChoiceMenu) per i candidati con scorta reale: risorsa, categoria, quantità,
+# sorgente e posizione del candidato (letta da _on_pickup_choice_made). Condivisa dal popup della raccolta e dalla voce
+# "Raccogli" del popup del taglio (2026-10-05).
+func _build_pickup_pending_resources(available_candidates: Array[Dictionary]) -> Array:
+	var pending_resources: Array = []
+	for candidate in available_candidates:
 		var candidate_rules := CaloricCalculator.get_caloric_source_rules(candidate["resource_name"])
 		pending_resources.append({
 			"resource_name": candidate["resource_name"],
@@ -4804,14 +5041,7 @@ func _dispatch_pickup_candidates(candidates: Array[Dictionary]) -> void:
 			"macro_coords": candidate["macro_coords"],
 			"position": candidate["position"],
 		})
-	_pickup_pending_resources = pending_resources
-	if DebugLogging.ENABLED and DebugLogging.SHOW_RECONNECT_FACTORY_LOGS:
-		print("[DBG_PICKUP] %d candidati con scorta reale alla stessa posizione: %s — apro pickup_choice_dialog." % [
-			available_candidates.size(), str(available_quantities)
-		])
-	_pickup_dialog_work_area_workers = []
-	pickup_choice_dialog.open_dialog(tr("pickup_choice_dialog_title"), tr("pickup_choice_dialog_message"), pending_resources, UserOptions.get_pickup_default_choice(), UserOptions.repeat_default, HaulZoneService.CLICK_MAX_REPEATS)
-	return
+	return pending_resources
 
 
 # --- Comandi di ricavo: Taglia (2026-10-04, task Cut) ed Estrai (2026-10-05, task Quarry) ---
@@ -4828,6 +5058,11 @@ var extraction_choice_dialog: OptionChoiceDialog
 # Popup aperto: {"individual", "candidates" (della raccolta, risolti al click)} più "plant" (risultato di
 # find_live_at_mouse) per il taglio o "rock" (risultato di StoneSelectorController.try_select) per l'estrazione.
 var _extraction_pending: Dictionary = {}
+# Popup "Pietre da estrarre" del comando Estrai nelle zone e pipottini in attesa della sua conferma (2026-10-05).
+var quarry_count_dialog: CountChoiceDialog
+var _quarry_dialog_workers: Array[HumanIndividual] = []
+# true se l'elenco delle piante ha spostato il contorno della selezione (da rimettere alla chiusura del popup).
+var _extraction_outline_touched: bool = false
 
 
 # Click destro su una pianta viva con un pipottino selezionato:
@@ -4854,15 +5089,123 @@ func _try_assign_cut_command_on_right_click(event: InputEvent) -> bool:
 		if int(candidate["available_quantity"]) > 0:
 			has_something = true
 			break
-	if not has_something:
+	# Piante tra cui scegliere (2026-10-05): con nulla da raccogliere e una sola pianta, taglio subito come prima;
+	# altrimenti popup con l'elenco sotto "Taglia" (e "Raccogli" solo se c'è qualcosa da raccogliere).
+	var plant_choice := _build_cut_plant_choice(plant)
+	if not has_something and plant_choice["items"].size() <= 1:
 		_assign_cut_task(individual, plant)
 		return true
-	_extraction_pending = {"individual": individual, "plant": plant, "candidates": candidates}
+	_extraction_pending = {"individual": individual, "plant": plant, "plants": plant_choice["plants"], "candidates": candidates}
+	var cut_options := {EXTRACTION_CHOICE_CUT: {"type": "list", "items": plant_choice["items"], "selected": plant_choice["selected"]}}
+	# Sotto "Raccogli" (2026-10-05): lo stesso menu del popup della raccolta (PickupChoiceMenu), con gli stessi dati e
+	# default di _dispatch_pickup_candidates; alla conferma passa da _on_pickup_choice_made. Il secondo popup non si apre.
+	if has_something:
+		var available_candidates: Array[Dictionary] = []
+		for candidate in candidates:
+			if int(candidate["available_quantity"]) > 0:
+				available_candidates.append(candidate)
+		var pickup_resources := _build_pickup_pending_resources(available_candidates)
+		_extraction_pending["pickup_resources"] = pickup_resources
+		cut_options[EXTRACTION_CHOICE_GATHER] = {
+			"type": "pickup", "resources": pickup_resources, "default_choice": UserOptions.get_pickup_default_choice(),
+			"repeat_default": UserOptions.repeat_default, "repeat_max": HaulZoneService.CLICK_MAX_REPEATS,
+			"single_row": pickup_resources.size() == 1,
+		}
 	_open_extraction_choice(
 		EXTRACTION_CHOICE_CUT, tr("cut_choice_dialog_title"), tr("cut_choice_dialog_message"), tr("cut_choice_gather"),
-		tr("cut_choice_cut"), "cut"
+		tr("cut_choice_cut"), "cut", has_something, cut_options
 	)
 	return true
+
+
+# Elenco delle piante vive tra cui scegliere quella da tagliare (2026-10-05): quelle della microcella cliccata, dalla
+# più vicina al mouse, più `nearest` (la pianta che il click trova oggi, find_live_at_mouse) se sta in una cella vicina.
+# Ritorna {"items": righe per OptionChoiceDialog ({"key", "text", "enabled"}), "plants": key -> pianta, "selected":
+# key della più vicina, o della prima libera se quella è già nel lavoro di qualcuno, "" se nessuna è libera}.
+func _build_cut_plant_choice(nearest: Dictionary) -> Dictionary:
+	var plants: Array[Dictionary] = []
+	var clicked := _resolve_microcell_at_click()
+	if not clicked.is_empty() and FogOfWarVerificationService.is_detail_visible(
+		live_cells, clicked["macro_coords"], clicked["lot"], game_data.get_absolute_day()
+	):
+		plants = vegetation_selector_controller.list_live_in_lot(live_cells, clicked["macro_coords"], clicked["lot"])
+	var nearest_key := _cut_plant_key(nearest)
+	var has_nearest := false
+	for candidate in plants:
+		if _cut_plant_key(candidate) == nearest_key:
+			has_nearest = true
+			break
+	if not has_nearest:
+		plants.push_front(nearest)
+	var items: Array = []
+	var by_key: Dictionary = {}
+	var first_free := ""
+	var nearest_free := false
+	for candidate in plants:
+		var key := _cut_plant_key(candidate)
+		var macro_coords: Vector2i = candidate["macro_coords"]
+		var object_type: GameTypes.WorldObjectType = candidate["object_type"]
+		var individual_key: Vector3i = candidate["individual_key"]
+		var reserved := _find_target_holder(func(step: Action) -> bool:
+			return step is CutAction and (step as CutAction).is_same_plant(macro_coords, int(object_type), individual_key)
+		) != null
+		# Icona del tipo di pianta (2026-10-05, PlantIcon: forme e colori della mappa), dal suo sottotipo.
+		var plant_cell: LiveMacroCell = live_cells.get(macro_coords)
+		var subtype_name := PlantCutService.get_subtype_name(plant_cell.macro_state, object_type, individual_key) \
+			if plant_cell != null and plant_cell.macro_state != null else ""
+		items.append({
+			"key": key, "text": _cut_plant_item_text(candidate, reserved), "enabled": not reserved,
+			"icon_node": PlantIcon.create(object_type, subtype_name),
+		})
+		by_key[key] = candidate
+		if not reserved:
+			if first_free == "":
+				first_free = key
+			if key == nearest_key:
+				nearest_free = true
+	return {"items": items, "plants": by_key, "selected": nearest_key if nearest_free else first_free}
+
+
+func _cut_plant_key(plant: Dictionary) -> String:
+	var macro_coords: Vector2i = plant["macro_coords"]
+	var individual_key: Vector3i = plant["individual_key"]
+	return "%d|%d|%s" % [macro_coords.x, macro_coords.y, CutAction.progress_key(int(plant["object_type"]), individual_key)]
+
+
+# "Albero da ghiande adulto → 3 Tronchi" (2026-10-05): nome della pianta (IconRegistry.get_plant_display_name, lo stesso
+# del titolo del pannello della pianta), fascia d'età concordata col genere del nome (plant_age_<fascia>_<genere>, solo
+# se il sottotipo ha fasce d'età) e resa del taglio (PlantCutService.compute_yield); "(già in taglio)" se un pipottino
+# l'ha già in lavoro.
+func _cut_plant_item_text(plant: Dictionary, reserved: bool) -> String:
+	var cell: LiveMacroCell = live_cells.get(plant["macro_coords"])
+	if cell == null or cell.macro_state == null:
+		return ""
+	var object_type: GameTypes.WorldObjectType = plant["object_type"]
+	var individual_key: Vector3i = plant["individual_key"]
+	var subtype_name := PlantCutService.get_subtype_name(cell.macro_state, object_type, individual_key)
+	var text := IconRegistry.get_plant_display_name(object_type, subtype_name)
+	var gender := IconRegistry.get_plant_name_gender(object_type, subtype_name)
+	var age_band := PlantCutService.get_age_band(cell.macro_state, object_type, individual_key, game_data.year)
+	if age_band >= 0:
+		text += " " + tr("plant_age_%s_%s" % [GameTypes.AgeBand.keys()[age_band].to_lower(), gender])
+	var yield_data := PlantCutService.compute_yield(cell.macro_state, object_type, individual_key, game_data.year)
+	if not yield_data.is_empty():
+		var quantity := int(yield_data["quantity"])
+		text += " → %d %s" % [quantity, _resource_count_name(String(yield_data["resource_name"]), quantity)]
+	if reserved:
+		text += " " + tr("cut_plant_reserved_note")
+	return text
+
+
+# Nome della risorsa per una quantità (2026-10-05): plurale tradotto (resource_plural_<risorsa>) se la quantità non è 1
+# e la chiave esiste, altrimenti il nome di sempre (IconRegistry.get_resource_display_name).
+func _resource_count_name(resource_name: String, quantity: int) -> String:
+	if quantity != 1:
+		var plural_key := "resource_plural_%s" % resource_name
+		var plural := tr(plural_key)
+		if plural != plural_key:
+			return plural
+	return IconRegistry.get_resource_display_name(resource_name)
 
 
 # Click destro su una roccia con un pipottino selezionato (2026-10-05, task Quarry), stessa forma del taglio:
@@ -4895,21 +5238,34 @@ func _try_assign_quarry_command_on_right_click(event: InputEvent) -> bool:
 		_assign_quarry_task(individual, rock)
 		return true
 	_extraction_pending = {"individual": individual, "rock": rock, "candidates": candidates}
+	# Spunta "Ripeti" sotto "Raccogli sassi" (2026-10-05): parte dall'opzione globale, il valore confermato vale per quella
+	# raccolta.
+	var gather_options := {EXTRACTION_CHOICE_GATHER: {
+		"type": "check", "text": tr("task_repeat_checkbox").format({"count": TaskRepeatRules.MAX_TRIPS}),
+		"value": UserOptions.repeat_default,
+	}}
 	_open_extraction_choice(
 		EXTRACTION_CHOICE_QUARRY, tr("quarry_choice_dialog_title"), tr("quarry_choice_dialog_message"),
-		tr("quarry_choice_gather"), tr("quarry_choice_quarry"), "quarry"
+		tr("quarry_choice_gather"), tr("quarry_choice_quarry"), "quarry", true, gather_options
 	)
 	return true
 
 
 # Popup "Raccogli" / lavoro (`work_choice`: EXTRACTION_CHOICE_CUT o EXTRACTION_CHOICE_QUARRY) con le icone dei due
-# comandi.
-func _open_extraction_choice(work_choice: String, title: String, message: String, gather_text: String, work_text: String, work_icon_key: String) -> void:
-	var overrides := {
-		EXTRACTION_CHOICE_GATHER: {"text": gather_text, "icon": IconRegistry.get_command_icon("pickup")},
-		work_choice: {"text": work_text, "icon": IconRegistry.get_command_icon(work_icon_key)},
-	}
-	extraction_choice_dialog.open_choice_only_dialog(title, message, {EXTRACTION_CHOICE_GATHER: 1, work_choice: 1}, overrides)
+# comandi. `include_gather` false = solo la voce del lavoro (taglio con più piante e niente da raccogliere);
+# `row_options` = opzioni sotto le voci (OptionChoiceDialog.open_choice_only_dialog).
+func _open_extraction_choice(
+	work_choice: String, title: String, message: String, gather_text: String, work_text: String, work_icon_key: String,
+	include_gather: bool = true, row_options: Dictionary = {}
+) -> void:
+	var overrides := {work_choice: {"text": work_text, "icon": IconRegistry.get_command_icon(work_icon_key)}}
+	var rows := {}
+	if include_gather:
+		overrides[EXTRACTION_CHOICE_GATHER] = {"text": gather_text, "icon": IconRegistry.get_command_icon("pickup")}
+		rows[EXTRACTION_CHOICE_GATHER] = 1
+	rows[work_choice] = 1
+	# Azioni affiancate in alto, con il pannello dell'azione scelta sotto (2026-10-05).
+	extraction_choice_dialog.open_choice_only_dialog(title, message, rows, overrides, row_options, true)
 
 
 func _on_extraction_choice_made(choice: String, _quantity: int, _repeat: bool) -> void:
@@ -4919,13 +5275,77 @@ func _on_extraction_choice_made(choice: String, _quantity: int, _repeat: bool) -
 		return
 	var worker: HumanIndividual = pending["individual"]
 	if choice == EXTRACTION_CHOICE_CUT:
-		_assign_cut_task(worker, pending["plant"])
+		# Pianta scelta nell'elenco; nessuna libera = la più vicina, che _assign_cut_task rifiuta col messaggio di sempre.
+		var chosen_key: Variant = extraction_choice_dialog.get_option_value(EXTRACTION_CHOICE_CUT)
+		var plants: Dictionary = pending.get("plants", {})
+		_assign_cut_task(worker, plants.get(String(chosen_key) if chosen_key != null else "", pending["plant"]))
 	elif choice == EXTRACTION_CHOICE_QUARRY:
 		_assign_quarry_task(worker, pending["rock"])
+	elif choice == EXTRACTION_CHOICE_GATHER and worker == individual and pending.has("pickup_resources"):
+		# Menu della raccolta dentro il popup del taglio (2026-10-05): stessa conferma di PickupChoiceDialog.
+		var pickup_choice: Variant = extraction_choice_dialog.get_option_value(EXTRACTION_CHOICE_GATHER)
+		if not (pickup_choice is Dictionary) or (pickup_choice as Dictionary).is_empty():
+			return
+		_pickup_pending_resources = pending["pickup_resources"]
+		_pickup_dialog_work_area_workers = []
+		_on_pickup_choice_made(
+			int(pickup_choice["kind"]), int(pickup_choice["category"]), String(pickup_choice["resource_name"]),
+			int(pickup_choice["quantity"]), bool(pickup_choice["repeat"]), int(pickup_choice["source_kind"])
+		)
 	elif choice == EXTRACTION_CHOICE_GATHER and worker == individual:
-		# Stessa decisione del click destro di raccolta, sui candidati del click (il mouse ora è sul popup), ripetizione
-		# dell'opzione globale compresa.
-		_dispatch_pickup_candidates(pending["candidates"])
+		# Stessa decisione del click destro di raccolta, sui candidati del click (il mouse ora è sul popup). Ripetizione:
+		# la spunta del popup delle rocce se c'è, altrimenti l'opzione globale.
+		var repeat_value: Variant = extraction_choice_dialog.get_option_value(EXTRACTION_CHOICE_GATHER)
+		_dispatch_pickup_candidates(pending["candidates"], -1 if repeat_value == null else (1 if bool(repeat_value) else 0))
+
+
+# Contorno sulla mappa della pianta sotto il mouse nell'elenco di "Taglia" (2026-10-05); mouse uscito = la riga scelta.
+func _on_extraction_option_hovered(row_key: String, item_key: String) -> void:
+	if row_key != EXTRACTION_CHOICE_CUT or not _extraction_pending.has("plants"):
+		return
+	if item_key == "":
+		var chosen: Variant = extraction_choice_dialog.get_option_value(EXTRACTION_CHOICE_CUT)
+		item_key = String(chosen) if chosen != null else ""
+	_outline_cut_plant(item_key)
+
+
+# Voce o riga scelta: contorno sulla pianta scelta sotto "Taglia", nessun contorno sulle altre voci.
+func _on_extraction_option_selected(row_key: String, item_key: String) -> void:
+	if not _extraction_pending.has("plants"):
+		return
+	_outline_cut_plant(item_key if row_key == EXTRACTION_CHOICE_CUT else "")
+
+
+# Contorno rosso della selezione (MicroCellRenderer.set_selected_individual) sulla pianta `key` dell'elenco aperto,
+# tolto da ogni altra cella; key sconosciuta = nessun contorno.
+func _outline_cut_plant(key: String) -> void:
+	if _extraction_pending.is_empty():
+		return
+	var plant: Dictionary = _extraction_pending.get("plants", {}).get(key, {})
+	_extraction_outline_touched = true
+	for coords in live_cells:
+		var cell: LiveMacroCell = live_cells[coords]
+		if cell.renderer == null:
+			continue
+		if not plant.is_empty() and coords == plant["macro_coords"]:
+			cell.renderer.set_selected_individual(plant["object_type"], plant["individual_key"])
+		else:
+			cell.renderer.clear_selected_individual()
+
+
+# Popup chiuso (Conferma, Annulla o X): torna il contorno della selezione che c'era prima, se l'elenco l'aveva cambiato.
+func _on_extraction_choice_visibility_changed() -> void:
+	if extraction_choice_dialog.visible or not _extraction_outline_touched:
+		return
+	_extraction_outline_touched = false
+	for coords in live_cells:
+		var cell: LiveMacroCell = live_cells[coords]
+		if cell.renderer == null:
+			continue
+		if not selected_vegetation.is_empty() and selected_vegetation["macro_coords"] == coords:
+			cell.renderer.set_selected_individual(selected_vegetation["object_type"], selected_vegetation["individual_key"])
+		else:
+			cell.renderer.clear_selected_individual()
 
 
 # Costruisce e assegna la Task Cut (Walk + Cut) su `plant`. Rifiuto con messaggio se la pianta è già nel lavoro di un
@@ -4964,7 +5384,9 @@ func _assign_cut_task(worker: HumanIndividual, plant: Dictionary) -> void:
 # Costruisce e assegna la Task Quarry (Walk + Quarry) sulla roccia `rock` ({"macro_coords", "position"}). Rifiuto con
 # messaggio se la roccia non ha più pietra o è già nel lavoro di un pipottino (in corso o in coda); il resto in
 # _assign_extraction_task.
-func _assign_quarry_task(worker: HumanIndividual, rock: Dictionary) -> void:
+# `work_area_id` (2026-10-05, estrazione in zona): zona della roccia, scritta nel context per l'etichetta della task;
+# -1 = comando col clic destro. `series` (passo 2): serie di estrazioni in zona ({} = estrazione singola).
+func _assign_quarry_task(worker: HumanIndividual, rock: Dictionary, work_area_id: int = -1, series: Dictionary = {}) -> void:
 	if worker == null or rock.is_empty():
 		return
 	var macro_coords: Vector2i = rock["macro_coords"]
@@ -4983,18 +5405,31 @@ func _assign_quarry_task(worker: HumanIndividual, rock: Dictionary) -> void:
 		_spawn_command_icon_at_microcell(cell, rock_position, "task_rejected")
 		_report_command_rejection(worker, tr("quarry_reject_reserved").format({"name": holder.name}))
 		return
+	var task := _build_quarry_task(worker, macro_coords, rock_position, work_area_id, series)
+	if task == null:
+		return
+	var rock_rules := ResourceCalculator.get_density_rules(GameTypes.WorldObjectType.ROCK)
+	var quarry_product: String = rock_rules.extraction_yield_resource_name if rock_rules != null else ""
+	_assign_extraction_task(worker, task, cell, rock_position, "task_activity_quarry", "quarry", quarry_product)
+
+
+# Task Quarry (Walk + Quarry) sulla roccia `rock_position` della macrocella `macro_coords`, senza assegnarla; zona e serie
+# nel context (vedi _assign_quarry_task). null se la definizione non si carica.
+func _build_quarry_task(worker: HumanIndividual, macro_coords: Vector2i, rock_position: Vector2i, work_area_id: int = -1, series: Dictionary = {}) -> Task:
 	var definition := load(QUARRY_TASK_DEFINITION_PATH) as TaskDefinition
 	if definition == null:
-		return
+		return null
 	var macro_offset: Vector2 = Vector2(macro_coords - worker.home_macro_coords) * World.WIDTH
 	var task := TaskFactory.build_task(definition, {
 		"target_position": PathfindingService.random_point_in_microcell(Vector2(rock_position) + macro_offset),
 		"quarry_macro_coords": macro_coords,
 		"quarry_position": rock_position,
 	})
-	var rock_rules := ResourceCalculator.get_density_rules(GameTypes.WorldObjectType.ROCK)
-	var quarry_product: String = rock_rules.extraction_yield_resource_name if rock_rules != null else ""
-	_assign_extraction_task(worker, task, cell, rock_position, "task_activity_quarry", "quarry", quarry_product)
+	if work_area_id != -1:
+		task.context[QuarryZoneService.CONTEXT_WORK_AREA_ID] = work_area_id
+	if not series.is_empty():
+		task.context[QuarryZoneService.CONTEXT_SERIES] = series.duplicate()
+	return task
 
 
 # Assegnazione comune di una Task di ricavo già costruita (taglio, estrazione): segnali, idoneità, poi coda. Se `worker`
@@ -5027,6 +5462,8 @@ func _assign_extraction_task(worker: HumanIndividual, task: Task, cell: LiveMacr
 	_spawn_command_icon_at_microcell(cell, lot, icon_key if assigned else "task_rejected")
 	if assigned and product_name != "" and not worker.can_carry_one_unit_when_empty(product_name):
 		_report_command_rejection(worker, HumanIndividualActionService.no_room_message(worker, [product_name]))
+		# Avviso su una task che parte lo stesso: resta finché la task è in corso o in coda.
+		worker.bind_panel_message_to_task(task)
 	if worker == individual:
 		_refresh_selected_individual_panel()
 
@@ -8037,6 +8474,18 @@ func _refresh_pending_entries() -> void:
 	_pending_initialized = true
 
 
+# Scadenza dei messaggi del pannello dell'abitante (2026-10-05, regola unica — vedi HumanIndividual.tool_gate_warning),
+# una volta al secondo reale con l'orologio di gioco della scena (_pending_clock, giorni di gioco). Ridisegna il
+# pannello solo se il messaggio tolto era dell'abitante selezionato.
+func _expire_panel_messages() -> void:
+	var selected_changed := false
+	for member in human_individuals:
+		if member.expire_panel_message(_pending_clock) and member == individual:
+			selected_changed = true
+	if selected_changed:
+		_refresh_selected_individual_panel()
+
+
 # Voce dell'elenco con lo stato "si può centrare" (macrocella viva).
 func _pending_entry(key: String, text: String, data: Dictionary) -> Dictionary:
 	var entry := data.duplicate()
@@ -8305,6 +8754,14 @@ func _update_individual_panel_content(target: HumanIndividual) -> void:
 		"name": target.name, "sex": identity_sex_text, "age": age, "band": identity_band_text
 	}))
 	human_individual_info_panel.set_identity_details(_resolve_individual_identity_details(target))
+	# Scheda del tipo (2026-10-05): fascia d'età e sesso, regole del suo popolo (HumanTypeInfoService, in cache).
+	var type_rules: HumanRules = null
+	if target.source_group_ref != null and target.source_group_ref.folk_ref != null:
+		type_rules = target.source_group_ref.folk_ref.human_rules_ref
+	human_individual_info_panel.set_type_info(HumanTypeInfoService.build_rows(
+		type_rules, game_data.era_effective_age_band_durations_male, game_data.era_effective_age_band_durations_female,
+		age_band, target.sex
+	))
 
 
 # Identità, parentela e casa per il pannello individuo (2026-10-04, richiesta utente): nomi di madre, padre e partner
@@ -9080,9 +9537,12 @@ func _refresh_vegetation_panel() -> void:
 	var individual_key: Vector3i = selected_vegetation["individual_key"]
 	# Titolo (Step 6, richiesta utente 2026-09-04): identico nei due rami sotto (vivo/bloccato,
 	# dipende solo da object_type) — impostato qui una volta sola invece che duplicato in entrambi.
-	# Nome tradotto del tipo (2026-10-05): chiave vegetation_type_<tipo> ("Albero"/"Arbusto"), non più il nome interno.
-	var type_key: String = "vegetation_type_%s" % GameTypes.WorldObjectType.keys()[object_type].to_lower()
-	game_info_tabs.set_selection_title(tr("selection_title_type").format({"type": tr(type_key)}))
+	# Nome della pianta (2026-10-05): lo stesso dell'elenco del taglio (IconRegistry.get_plant_display_name), dal sottotipo
+	# della pianta viva; ceppi e piante morte, che non hanno più un sottotipo, restano "Albero"/"Arbusto".
+	var plant_name := IconRegistry.get_plant_display_name(
+		object_type, PlantCutService.get_subtype_name(cell.macro_state, object_type, individual_key) if cell.macro_state != null else ""
+	)
+	game_info_tabs.set_selection_title(tr("selection_title_type").format({"type": plant_name}))
 	# Cella non visibile adesso (2026-10-05): solo il titolo, niente dati della pianta.
 	if not _is_selection_detail_visible(selected_vegetation["macro_coords"], Vector2i(individual_key.x, individual_key.y)):
 		vegetation_info_panel.clear()
@@ -12366,7 +12826,9 @@ func _on_ground_pile_haul_requested(carrier: HumanIndividual, pile_ref: Dictiona
 		# Consegna della Cut (2026-10-04, richiesta utente): il mucchio resta accanto al ceppo e il giocatore lo sa. La
 		# demolizione resta silenziosa come prima.
 		if bool(pile_ref.get("until_empty", false)):
-			_report_command_rejection(carrier, HumanIndividualActionService.no_storage_message(carrier, resource_names))
+			# Serie di estrazioni in zona (2026-10-05): un solo messaggio, quello della serie interrotta.
+			if not _report_quarry_series_stopped(carrier, pile_ref, HumanIndividualActionService.series_stop_reason_no_storage(resource_names)):
+				_report_command_rejection(carrier, HumanIndividualActionService.no_storage_message(carrier, resource_names))
 		return
 	# Spazio (2026-10-05, solo consegna di taglio ed estrazione, come l'avviso del deposito): se nessuna di quelle risorse
 	# ha un'unità che entra a carico vuoto, la consegna non parte e il giocatore lo sa. La demolizione resta com'era.
@@ -12377,7 +12839,8 @@ func _on_ground_pile_haul_requested(carrier: HumanIndividual, pile_ref: Dictiona
 				carriable = true
 				break
 		if not carriable:
-			_report_command_rejection(carrier, HumanIndividualActionService.no_room_message(carrier, with_destination))
+			if not _report_quarry_series_stopped(carrier, pile_ref, HumanIndividualActionService.series_stop_reason_no_room(with_destination)):
+				_report_command_rejection(carrier, HumanIndividualActionService.no_room_message(carrier, with_destination))
 			return
 	# "until_empty" (2026-10-04, task Cut): la consegna continua con la ripetizione automatica della raccolta finché il
 	# mucchio è vuoto — zona 1×1 sul mucchio con tante ripetizioni quante le unità (ogni viaggio ne porta almeno una; la
@@ -12397,6 +12860,12 @@ func _on_ground_pile_haul_requested(carrier: HumanIndividual, pile_ref: Dictiona
 			PickUpAction.SourceKind.GROUND_PILE, maxi(pile_units, 1)
 		)
 		until_empty_zone[HaulZoneService.UNTIL_EMPTY_KEY] = true
+		# Serie di estrazioni in zona (2026-10-05): viaggia con la zona, duplicata a ogni ripetizione della consegna.
+		if pile_ref.has(QuarryZoneService.SERIES_ZONE_KEY):
+			until_empty_zone[QuarryZoneService.SERIES_ZONE_KEY] = pile_ref[QuarryZoneService.SERIES_ZONE_KEY]
+		# Etichetta del lavoro (taglio, estrazione) anche durante la consegna.
+		if pile_ref.has(HaulZoneService.LABEL_TASK_KEY):
+			until_empty_zone[HaulZoneService.LABEL_TASK_KEY] = pile_ref[HaulZoneService.LABEL_TASK_KEY]
 		task.context[HaulZoneService.CONTEXT_KEY] = until_empty_zone
 	var carrier_age_band := _resolve_age_band(carrier)
 	for step in task.steps:
@@ -12616,25 +13085,27 @@ func _command_state_for(member: HumanIndividual, action_id: StringName) -> Dicti
 	if member == null or not human_individuals.has(member) or not _is_work_areas_tool_available():
 		return hidden
 	var age_band := _resolve_age_band(member)
-	if action_id == CommandBar.GATHER_ACTION:
-		if age_band == HumanTypes.AgeBand.INFANT or age_band == HumanTypes.AgeBand.CHILD:
-			return hidden
-		if not HaulZoneService.has_haul_work_area(game_data):
-			return {"shown": true, "enabled": false, "tooltip": tr("command_bar_gather_no_zone_tooltip")}
-		return {"shown": true, "enabled": true, "tooltip": tr("command_bar_gather_tooltip")}
+	var action := CommandBar.get_action(action_id)
+	if action.is_empty():
+		return hidden
+	# Età: chi non può ricevere il comando non ha il pulsante (raccolta ed estrazione: neonati e bambini; caccia: le
+	# regole d'età della sua Task).
 	if action_id == CommandBar.HUNT_ACTION:
 		var probe := _build_hunt_zone_task(-1)
 		if probe != null:
 			var rejection := member.get_assign_rejection_reason(probe, age_band)
 			if rejection == HumanIndividual.ASSIGN_REJECT_TOO_YOUNG or rejection == HumanIndividual.ASSIGN_REJECT_AGE_NOT_ALLOWED:
 				return hidden
-		if not HuntZoneService.has_hunt_work_area(game_data):
-			return {"shown": true, "enabled": false, "tooltip": tr("command_bar_hunt_no_zone_tooltip")}
-		var knife_rejection := HuntZoneService.get_hunt_rejection(member)
-		if knife_rejection != "":
-			return {"shown": true, "enabled": false, "tooltip": knife_rejection}
-		return {"shown": true, "enabled": true, "tooltip": tr("command_bar_hunt_tooltip")}
-	return hidden
+	elif age_band == HumanTypes.AgeBand.INFANT or age_band == HumanTypes.AgeBand.CHILD:
+		return hidden
+	# Sblocco e zona, poi attrezzo (2026-10-05): stessi controlli della barra (_command_zone_rejection,
+	# _command_tool_rejection).
+	var reason := _command_zone_rejection(action_id)
+	if reason == "":
+		reason = _command_tool_rejection(member, action_id)
+	if reason != "":
+		return {"shown": true, "enabled": false, "tooltip": reason}
+	return {"shown": true, "enabled": true, "tooltip": tr(String(action["tooltip_key"]))}
 
 
 # Clic su un pulsante del gruppo "Azioni" di una riga della lista degli abitanti: l'ordine va solo a quell'abitante, con
@@ -12643,10 +13114,18 @@ func _on_population_command_requested(member: HumanIndividual, action_id: String
 	if member == null or not human_individuals.has(member):
 		return
 	var single: Array[HumanIndividual] = [member]
-	if action_id == CommandBar.GATHER_ACTION:
-		_order_gather(single)
-	elif action_id == CommandBar.HUNT_ACTION:
-		_order_hunt(single)
+	_order_command(action_id, single)
+
+
+# Smistamento di un comando del gruppo "Azioni" (2026-10-05): barra (tutti i selezionati) e righe della lista.
+func _order_command(action_id: StringName, members: Array[HumanIndividual]) -> void:
+	match action_id:
+		CommandBar.GATHER_ACTION:
+			_order_gather(members)
+		CommandBar.HUNT_ACTION:
+			_order_hunt(members)
+		CommandBar.QUARRY_ACTION:
+			_order_quarry(members)
 
 
 func _is_work_areas_tool_available() -> bool:
@@ -14501,6 +14980,7 @@ func _setup_clock() -> void:
 	# Task chiusa con un messaggio per il giocatore (2026-10-04: raccolta da un mucchio senza deposito con posto).
 	individual_action_service.task_message_requested.connect(_on_hunt_ended_with_message)
 	individual_action_service.hunt_zone_series_continue_requested.connect(_on_hunt_zone_series_continue_requested)
+	individual_action_service.quarry_zone_series_continue_requested.connect(_on_quarry_zone_series_continue_requested)
 	# Essiccatoio pieno durante una macellazione (2026-10-03, essiccazione passo 5).
 	individual_action_service.processing_station_full.connect(_on_processing_station_full)
 	individual_action_service.building_material_blocked.connect(_on_building_material_blocked)

@@ -81,6 +81,12 @@ static func _collect_tools(idea_id: String) -> Array[Dictionary]:
 		var tool: Dictionary = TOOLS[tool_id]
 		if String(tool["required_idea_id"]) == idea_id:
 			entries.append({"id": String(tool_id), "display_name": TranslationServer.translate(String(tool["name_key"]))})
+	# Lavori delle zone sbloccati dall'idea (2026-10-05): derivati da WorkAreaTypes.JOBS ("Caccia nelle zone",
+	# "Estrazione nelle zone"), un lavoro nuovo compare da solo.
+	for job_id in WorkAreaTypes.JOBS.keys():
+		var job: Dictionary = WorkAreaTypes.JOBS[job_id]
+		if String(job.get("required_idea_id", "")) == idea_id and job.has("unlock_name_key"):
+			entries.append({"id": "work_area_job_%s" % job_id, "display_name": TranslationServer.translate(String(job["unlock_name_key"]))})
 	return entries
 
 

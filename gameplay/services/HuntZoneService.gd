@@ -59,9 +59,10 @@ static func log_event(individual: Variant, text: String) -> void:
 
 # La caccia nelle zone richiede l'idea "Aree di lavoro" (WorkAreaTypes.ADVANCED_REQUIRED_IDEA_ID). Folk letto da
 # GameSettings.active_human_folk, come HaulZoneService.is_food_only_limit_active.
+# Sblocco della caccia nelle zone (2026-10-05: dal controllo unico dei lavori, WorkAreaTypes.is_job_unlocked — stessa
+# idea work_areas_advanced di prima).
 static func is_hunt_job_unlocked() -> bool:
-	var folk := GameSettings.active_human_folk
-	return folk != null and folk.completed_ideas.has(WorkAreaTypes.ADVANCED_REQUIRED_IDEA_ID)
+	return WorkAreaTypes.is_job_unlocked(HUNT_JOB)
 
 
 # true se la zona caccia questa specie: idea completata, caccia abilitata e filtro della zona ("all" o specie spuntata).
