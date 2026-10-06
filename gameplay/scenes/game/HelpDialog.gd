@@ -178,6 +178,8 @@ func _build_shortcuts_text() -> String:
 		"[b]U[/b] — %s" % tr("help_unload_here_task"),
 		"[b]%s[/b] — %s" % [OS.get_keycode_string(CommandBar.GATHER_KEY), tr("help_gather_command")],
 		"[b]%s[/b] — %s" % [OS.get_keycode_string(CommandBar.HUNT_KEY), tr("help_hunt_command")],
+		"[b]%s[/b] — %s" % [OS.get_keycode_string(CommandBar.CUT_KEY), tr("help_cut_command")],
+		"[b]%s[/b] — %s" % [OS.get_keycode_string(CommandBar.QUARRY_KEY), tr("help_quarry_command")],
 		"[b]%s[/b] — %s" % [OS.get_keycode_string(CommandBar.AUTO_ZONE_KEY), tr("help_auto_zone_command")],
 		"[b]L[/b] — %s" % tr("help_cycle_map_layer"),
 		"[b]Esc[/b] — %s" % tr("help_escape_cancel"),

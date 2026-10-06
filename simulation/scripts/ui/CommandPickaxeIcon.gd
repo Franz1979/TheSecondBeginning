@@ -12,14 +12,20 @@ const OUTLINE_WIDTH_PX: float = 0.3
 const HEAD_THICKNESS_PX: float = 0.8
 const HEAD_SEGMENTS: int = 8
 
+# Fattore applicato a coordinate e spessori (2026-10-06, come CrosshairIcon/CommandHandIcon): 1 sulla mappa (pixel di
+# cella, come sempre); nel bottone della barra dei comandi (CommandButtonIcon) il disegno avviene direttamente alla
+# dimensione reale invece di ingrandire il nodo con `scale`, che sfocava i bordi antialiasati.
+var icon_scale: float = 1.0
+
 
 func _draw() -> void:
+	var s := icon_scale
 	# Manico: dal basso a sinistra verso l'alto a destra, come il martello.
 	var handle_axis := Vector2(1.0, -1.0).normalized()
-	var handle_start: Vector2 = -handle_axis * 3.0
-	var handle_end: Vector2 = handle_axis * 1.9
-	draw_line(handle_start, handle_end, OUTLINE, 0.7 + OUTLINE_WIDTH_PX * 2.0, true)
-	draw_line(handle_start, handle_end, WOOD, 0.7, true)
+	var handle_start: Vector2 = -handle_axis * 3.0 * s
+	var handle_end: Vector2 = handle_axis * 1.9 * s
+	draw_line(handle_start, handle_end, OUTLINE, (0.7 + OUTLINE_WIDTH_PX * 2.0) * s, true)
+	draw_line(handle_start, handle_end, WOOD, 0.7 * s, true)
 	# Testa: arco perpendicolare al manico, centrato sulla sua estremità, con le punte piegate verso il basso
 	# (verso l'impugnatura).
 	var head_axis := handle_axis.orthogonal()
@@ -29,6 +35,6 @@ func _draw() -> void:
 	var points := PackedVector2Array()
 	for i in range(HEAD_SEGMENTS + 1):
 		var t: float = lerpf(-1.0, 1.0, float(i) / float(HEAD_SEGMENTS))
-		points.append(head_center + head_axis * (t * half_length) - handle_axis * (bend * t * t))
-	draw_polyline(points, OUTLINE, HEAD_THICKNESS_PX + OUTLINE_WIDTH_PX * 2.0, true)
-	draw_polyline(points, METAL, HEAD_THICKNESS_PX, true)
+		points.append((head_center + head_axis * (t * half_length) - handle_axis * (bend * t * t)) * s)
+	draw_polyline(points, OUTLINE, (HEAD_THICKNESS_PX + OUTLINE_WIDTH_PX * 2.0) * s, true)
+	draw_polyline(points, METAL, HEAD_THICKNESS_PX * s, true)

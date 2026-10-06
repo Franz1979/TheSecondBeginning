@@ -70,6 +70,8 @@ var work_area_auto_zone: bool = true
 var work_area_gather_trips: int = 5
 # Pietre da estrarre del comando Estrai nelle zone (2026-10-05), QuarryZoneService.COUNT_MIN..COUNT_MAX, la prima volta 3.
 var work_area_quarry_count: int = 3
+# Piante da tagliare del comando Taglia nelle zone (2026-10-06), CutZoneService.COUNT_MIN..COUNT_MAX, la prima volta 2.
+var work_area_cut_count: int = 2
 var hunt_zone_meat_target: int = 10
 
 # Volumi audio (2026-09-21, richiesta utente): lineari 0-1, default 0.8, uno per bus (vedi
@@ -121,6 +123,7 @@ func load_from_disk() -> void:
 	# Letti così come sono: i dialog li riportano nei valori ammessi (PickupChoiceDialog, anche in modalità caccia).
 	work_area_gather_trips = int(config.get_value(SECTION, "work_area_gather_trips", 5))
 	work_area_quarry_count = int(config.get_value(SECTION, "work_area_quarry_count", 3))
+	work_area_cut_count = int(config.get_value(SECTION, "work_area_cut_count", 2))
 	hunt_zone_meat_target = int(config.get_value(SECTION, "hunt_zone_meat_target", 10))
 	for field in VOLUME_BUSES.keys():
 		set(field, clampf(float(config.get_value(SECTION, field, DEFAULT_VOLUME)), 0.0, 1.0))
@@ -142,6 +145,7 @@ func save_to_disk() -> void:
 	config.set_value(SECTION, "work_area_auto_zone", work_area_auto_zone)
 	config.set_value(SECTION, "work_area_gather_trips", work_area_gather_trips)
 	config.set_value(SECTION, "work_area_quarry_count", work_area_quarry_count)
+	config.set_value(SECTION, "work_area_cut_count", work_area_cut_count)
 	config.set_value(SECTION, "hunt_zone_meat_target", hunt_zone_meat_target)
 	for field in VOLUME_BUSES.keys():
 		config.set_value(SECTION, field, get(field))

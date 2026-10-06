@@ -216,6 +216,8 @@ var _tool_slot_template: Control = null
 @onready var mother_label: Label = $InfoBlock/InfoBlockMargin/InfoBlockContent/MotherLabel
 @onready var father_label: Label = $InfoBlock/InfoBlockMargin/InfoBlockContent/FatherLabel
 @onready var partner_label: Label = $InfoBlock/InfoBlockMargin/InfoBlockContent/PartnerLabel
+# Figli (2026-10-06): una sola Label che va a capo, come le altre righe del blocco (autowrap, larghezza del pannello).
+@onready var children_label: Label = $InfoBlock/InfoBlockMargin/InfoBlockContent/ChildrenLabel
 
 # Icone 🏠 e ℹ nell'intestazione della scheda selezione, a sinistra del 🎯 (stesso schema delle icone di influenza di
 # BuildingInfoPanel): gruppo creato qui, aggiunto da GameScene a GameInfoTabs.header_actions, visibile solo mentre
@@ -357,6 +359,7 @@ func set_type_info(rows: Array[Dictionary]) -> void:
 #   "id", "folk", "group": int (-1 = non applicabile);
 #   "mother", "father", "partner": {"id": int, "name": String, "dead": bool} ("id" -1 = non noto);
 #   "partner_unknown_female": bool — quale forma di "sconosciuto" usare per il partner;
+#   "children": Array di {"id", "name", "dead", "age": int} già ordinato dal più grande ("age" -1 = non nota);
 #   "house": {"id": int, "name": String} o {} senza casa.
 # Stesse righe nel blocco Info e nel tooltip dell'icona ℹ; la casa solo nell'icona 🏠.
 func set_identity_details(details: Dictionary) -> void:
@@ -372,6 +375,7 @@ func set_identity_details(details: Dictionary) -> void:
 	mother_label.text = mother_text
 	father_label.text = father_text
 	partner_label.text = partner_text
+	children_label.text = tr("individual_children_label").format({"children": _format_children(details.get("children", []))})
 	_info_button.set_pressed_no_signal(_info_open)
 	info_block.visible = _info_open
 	var house: Dictionary = details.get("house", {})
@@ -395,6 +399,19 @@ func _format_relative(relative: Dictionary, unknown_female: bool) -> String:
 	if bool(relative.get("dead", false)):
 		return tr("individual_relative_dead").format({"name": relative_name, "id": relative_id})
 	return tr("individual_relative_alive").format({"name": relative_name, "id": relative_id})
+
+
+# "Wenna (#4), 12 anni; Tob † (#9), 3 anni" — stesso _format_relative dei genitori, più l'età (alla morte per i
+# defunti) quando nota; "nessuno" senza figli. Separatore ";" perché la virgola è già dentro ogni voce.
+func _format_children(children: Array) -> String:
+	if children.is_empty():
+		return tr("individual_children_none")
+	var entries: Array[String] = []
+	for child in children:
+		var person := _format_relative(child, false)
+		var age := int(child.get("age", -1))
+		entries.append(person if age < 0 else tr("individual_child_entry").format({"person": person, "age": age}))
+	return "; ".join(entries)
 
 
 # Prende l'HumanIndividual intero (non piu' i soli name/sex, richiesta utente 2026-09-02: servono

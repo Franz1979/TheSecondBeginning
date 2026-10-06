@@ -638,6 +638,7 @@ discovery_first_thought_building_gift_title,La prima idea del villaggio: {idea}
 discovery_first_thought_building_gift_p1,"Accumulando i primi pensieri, il villaggio ha avuto la sua prima idea, in dono."
 discovery_first_thought_building_gift_p2,Ora puoi disegnare sulla mappa un'area di raccolta e mandarci un abitante: sceglierà da solo dove e quanto cibo raccogliere.
 build_blocked_cut_trees_first,Taglia prima alberi e arbusti
+build_blocked_clear_ground_pile_first,Libera prima il mucchio a terra
 task_rest_name,Riposo
 task_rest_step_rest,Riposando
 task_rest_step_walk_away,Allontanandosi
@@ -675,6 +676,9 @@ individual_relative_unknown_female,sconosciuta
 individual_relative_unknown_male,sconosciuto
 individual_relative_alive,{name} (#{id})
 individual_relative_dead,{name} † (#{id})
+individual_children_label,Figli: {children}
+individual_children_none,nessuno
+individual_child_entry,"{person}, {age} anni"
 individual_house_tooltip,Casa: {name} (#{id})
 individual_no_house,Senza casa
 task_explore_name,Esplorazione
@@ -702,6 +706,8 @@ help_emergency_rest_task,assegna la Task Riposo d'emergenza all'individuo selezi
 help_leisure_restock_task,"assegna la Task Rifornirsi all'individuo selezionato: va a un magazzino a fare provviste"
 help_gather_command,"Raccogli nelle zone di lavoro (barra dei comandi, con un individuo selezionato)"
 help_hunt_command,"Caccia nelle zone di lavoro (barra dei comandi, se c'è una zona con la caccia attiva)"
+help_cut_command,"Taglia nelle zone di lavoro (barra dei comandi, se c'è una zona con il taglio attivo)"
+help_quarry_command,"Estrai nelle zone di lavoro (barra dei comandi, se c'è una zona con l'estrazione attiva)"
 help_auto_zone_command,attiva/disattiva la scelta automatica della zona di lavoro (barra dei comandi)
 help_cycle_map_layer,passa al layer della mappa successivo (compreso nessuno)
 help_escape_cancel,"annulla la scelta in corso: lavoratore col mirino, orientamento del miglioramento, disegno o scelta di una zona"
@@ -808,7 +814,7 @@ microcell_inspection_nothing_remembered,Nessun oggetto ricordato
 pickup_no_room_for_resource,{name} non ha spazio per trasportare {resource}
 vegetation_type_tree,Albero
 vegetation_type_shrub,Arbusto
-plant_name_tree_wood_only,Albero
+plant_name_tree_wood_only,Albero da legna
 plant_name_tree_wood_only_gender,m
 plant_name_tree_wild_fruit,Albero da ghiande
 plant_name_tree_wild_fruit_gender,m
@@ -830,12 +836,20 @@ cut_plant_reserved_note,(già in taglio)
 resource_plural_wood,Tronchi
 resource_plural_stick,Rametti
 work_area_job_quarry,Estrazione
+work_area_job_cut,Taglio
+work_area_filter_all_plants,Tutte le piante
+work_area_cut_group_tree,Alberi
+work_area_cut_group_shrub,Arbusti
 command_bar_quarry_tooltip,Estrai
 command_bar_quarry_no_zone_tooltip,Nessuna zona di lavoro con l'estrazione abilitata
 command_bar_job_locked_tooltip,Serve l'idea «{idea}»
 work_area_quarry_no_rock,Nessuna roccia con pietra disponibile nella zona
+command_bar_cut_tooltip,Taglia
+command_bar_cut_no_zone_tooltip,Nessuna zona di lavoro con il taglio abilitato
+work_area_cut_no_plant,Nessuna pianta da tagliare nella zona
 unlock_job_hunt,Caccia nelle zone
 unlock_job_quarry,Estrazione nelle zone
+unlock_job_cut,Taglio nelle zone
 quarry_order_dialog_title,Estrazione nelle zone
 quarry_order_dialog_message,Quante pietre estrarre prima di fermarsi?
 quarry_order_dialog_count,Pietre da estrarre
@@ -845,6 +859,13 @@ series_stop_no_room,non ha spazio per trasportare {resource}
 series_stop_no_tool,manca l'attrezzo per {tools}
 series_stop_no_rock,nessuna roccia con pietra nella zona
 series_stop_zone_gone,la zona non è più disponibile
+cut_order_dialog_title,Taglio nelle zone
+cut_order_dialog_message,Quante piante tagliare prima di fermarsi?
+cut_order_dialog_count,Piante da tagliare
+cut_series_stopped,"{name}: taglio interrotto a {done}/{total}: {reason}"
+series_stop_no_plant,nessuna pianta da tagliare nella zona
+cut_all_plants_item,Tutte le piante ({count})
+cut_all_plants_none,Nessuna pianta libera da tagliare in questa cella
 individual_family_tooltip,Famiglia
 human_type_title,"{band}, {sex}"
 age_band_infant_male,Neonato

@@ -677,6 +677,10 @@ func _ready() -> void:
 	quarry_count_dialog = CountChoiceDialog.new()
 	add_child(quarry_count_dialog)
 	quarry_count_dialog.count_chosen.connect(_on_quarry_count_chosen)
+	# "Piante da tagliare" del comando Taglia nelle zone (2026-10-06, Cut in zona passo 3).
+	cut_count_dialog = CountChoiceDialog.new()
+	add_child(cut_count_dialog)
+	cut_count_dialog.count_chosen.connect(_on_cut_count_chosen)
 	extraction_choice_dialog.resource_chosen.connect(_on_extraction_choice_made)
 	# Elenco delle piante sotto "Taglia" (2026-10-05): contorno sulla mappa e ripristino della selezione alla chiusura.
 	extraction_choice_dialog.option_hovered.connect(_on_extraction_option_hovered)
@@ -4310,6 +4314,8 @@ func _command_zone_rejection(action_id: StringName) -> String:
 			has_zone = HuntZoneService.has_hunt_work_area(game_data)
 		QuarryZoneService.QUARRY_JOB:
 			has_zone = QuarryZoneService.has_quarry_work_area(game_data)
+		CutZoneService.CUT_JOB:
+			has_zone = CutZoneService.has_cut_work_area(game_data)
 	return "" if has_zone else tr(String(action.get("no_zone_tooltip_key", "")))
 
 
@@ -4525,6 +4531,165 @@ func _on_quarry_zone_series_continue_requested(worker: HumanIndividual, series: 
 		_refresh_selected_individual_panel()
 
 
+# --- Taglio nelle zone (2026-10-06, Cut in zona passi 2-3) ---
+# Come _order_quarry: per ogni pipottino età e attrezzo (stessi controlli del bottone, come sicurezza), poi "Piante da
+# tagliare" (CountChoiceDialog) e alla conferma la zona (_on_cut_count_chosen): automatica (CutZoneService.
+# choose_work_area, per ciascuno) o scelta a mano tra le zone con il taglio attivo e almeno una pianta disponibile
+# (modalità "scegli la zona", ordine {"job": "cut", "count"}). Nella zona una serie di tagli, il primo sulla pianta scelta
+# (_assign_work_area_cut). Le piante si guardano solo qui, mai per lo stato del bottone.
+func _order_cut(selected: Array[HumanIndividual]) -> void:
+	var workers: Array[HumanIndividual] = []
+	for member in selected:
+		var age_band := _resolve_age_band(member)
+		if age_band == HumanTypes.AgeBand.INFANT or age_band == HumanTypes.AgeBand.CHILD:
+			_report_assign_rejection(member, HumanIndividual.ASSIGN_REJECT_TOO_YOUNG, "task_activity_cut")
+			continue
+		var tool_rejection := _command_tool_rejection(member, CommandBar.CUT_ACTION)
+		if tool_rejection != "":
+			_report_command_rejection(member, tool_rejection)
+			continue
+		workers.append(member)
+	if workers.is_empty():
+		return
+	if CutZoneService.list_cut_work_areas(game_data).is_empty():
+		for worker in workers:
+			_report_command_rejection(worker, tr("command_bar_cut_no_zone_tooltip"))
+		return
+	_cut_dialog_workers = workers
+	cut_count_dialog.open_dialog(
+		tr("cut_order_dialog_title"), tr("cut_order_dialog_message"), tr("cut_order_dialog_count"),
+		CutZoneService.COUNT_MIN, CutZoneService.COUNT_MAX, UserOptions.work_area_cut_count
+	)
+
+
+# Conferma di "Piante da tagliare": valore ricordato, poi la zona come per l'estrazione. Ogni pipottino parte con una
+# serie di `count` tagli (CutZoneService.make_series).
+func _on_cut_count_chosen(count: int) -> void:
+	UserOptions.work_area_cut_count = count
+	UserOptions.save_to_disk()
+	var workers: Array[HumanIndividual] = []
+	for worker in _cut_dialog_workers:
+		if human_individuals.has(worker):
+			workers.append(worker)
+	_cut_dialog_workers = []
+	var areas := CutZoneService.list_cut_work_areas(game_data)
+	if workers.is_empty() or areas.is_empty():
+		return
+	var reserved := CutZoneService.collect_reserved_plants(human_individuals)
+	if UserOptions.work_area_auto_zone:
+		for worker in workers:
+			var area := CutZoneService.choose_work_area(game_data, live_cells, worker, reserved)
+			if area == null:
+				_report_command_rejection(worker, tr("work_area_cut_no_plant"))
+				continue
+			_assign_work_area_cut(worker, area, count)
+			reserved = CutZoneService.collect_reserved_plants(human_individuals)
+		return
+	var valid_ids: Array[int] = []
+	for area in areas:
+		for worker in workers:
+			if not CutZoneService.list_available_plants(area, live_cells, worker, reserved).is_empty():
+				valid_ids.append(area.id)
+				break
+	if valid_ids.is_empty():
+		for worker in workers:
+			_report_command_rejection(worker, tr("work_area_cut_no_plant"))
+		return
+	_enter_work_area_pick_mode(workers, {"job": CutZoneService.CUT_JOB, "count": count}, valid_ids)
+
+
+# Un taglio nella zona `area`: la pianta migliore per `worker` (CutZoneService.choose_plant: viva, ammessa dal filtro,
+# raggiungibile, non prenotata), poi la stessa funzione del taglio col clic destro (_assign_cut_task), con la zona nel
+# context per l'etichetta. Nessuna pianta: messaggio, il comando non parte.
+# `count` (2026-10-06, passo 3): tagli della serie (CutZoneService.make_series), questo è il primo.
+func _assign_work_area_cut(worker: HumanIndividual, area: WorkArea, count: int = 1) -> void:
+	if worker == null or area == null or not human_individuals.has(worker):
+		return
+	var plant := CutZoneService.choose_plant(area, live_cells, worker, CutZoneService.collect_reserved_plants(human_individuals))
+	if plant.is_empty():
+		_report_command_rejection(worker, tr("work_area_cut_no_plant"))
+		return
+	_assign_cut_task(worker, plant, area.id, CutZoneService.make_series(area.id, count))
+
+
+# Serie di tagli interrotta (2026-10-06, passo 3): "<nome>: taglio interrotto a <fatte>/<totale>: <motivo>"
+# (HumanIndividualActionService.series_stopped_message) sul canale dei messaggi dell'abitante.
+func _report_cut_series_stopped(worker: HumanIndividual, series: Dictionary, reason: String) -> void:
+	_report_command_rejection(worker, HumanIndividualActionService.series_stopped_message(worker, CutZoneService.SERIES_STOPPED_KEY, series, reason))
+
+
+# Consegna non accodata per una serie di tagli: messaggio della serie al posto di quello normale. false se il mucchio
+# non viene da una serie di tagli (nessun messaggio scritto qui).
+func _report_cut_pile_series_stopped(worker: HumanIndividual, pile_ref: Dictionary, reason: String) -> bool:
+	var series: Variant = pile_ref.get(CutZoneService.SERIES_ZONE_KEY, {})
+	if not (series is Dictionary) or (series as Dictionary).is_empty():
+		return false
+	if not CutZoneService.is_series_complete(series):
+		_report_cut_series_stopped(worker, series, reason)
+		return true
+	return false
+
+
+# Taglio successivo della serie (CutZoneService, HumanIndividualActionService.cut_zone_series_continue_requested:
+# consegna finita a mucchio vuoto). Pianta scelta ogni volta con CutZoneService.choose_plant (la più vicina tra quelle
+# ammesse e non prenotate). Accodato come l'estrazione successiva (parte appena il pipottino è libero, dopo eventuali
+# bisogni). La serie si chiude con un messaggio se la zona non è più valida, l'accetta non c'è più o non resta una
+# pianta da tagliare.
+func _on_cut_zone_series_continue_requested(worker: HumanIndividual, series: Dictionary) -> void:
+	if worker == null or not human_individuals.has(worker) or CutZoneService.is_series_complete(series):
+		return
+	# Serie su una microcella ("Tutte le piante", 2026-10-07): stessa prosecuzione, senza zona.
+	if CutZoneService.is_cell_series(series):
+		_continue_cut_cell_series(worker, series)
+		return
+	var area := WorkAreaService.find_by_id(game_data, int(series.get("work_area_id", -1)))
+	if area == null or not CutZoneService.list_cut_work_areas(game_data).has(area):
+		_report_cut_series_stopped(worker, series, tr("series_stop_zone_gone"))
+		return
+	if not ToolGateService.has_tool_for(worker, TaskTypes.ToolCategory.CHOPPING):
+		_report_cut_series_stopped(worker, series, tr("series_stop_no_tool").format({
+			"tools": _describe_missing_tool_categories([TaskTypes.ToolCategory.CHOPPING]),
+		}))
+		return
+	var plant := CutZoneService.choose_plant(area, live_cells, worker, CutZoneService.collect_reserved_plants(human_individuals))
+	if plant.is_empty():
+		_report_cut_series_stopped(worker, series, tr("series_stop_no_plant"))
+		return
+	var task := _build_cut_task(worker, plant, area.id, series)
+	if task == null:
+		return
+	for step in task.steps:
+		_reconnect_build_task_signals(step)
+	TaskQueueService.push_suspended_task(worker, task)
+	if worker == individual:
+		_refresh_selected_individual_panel()
+
+
+# Taglio successivo di una serie su microcella ("Tutte le piante", 2026-10-07): la pianta viva e libera della stessa
+# microcella (CutZoneService.choose_plant_in_lot); nessuna = cella libera, serie completata senza messaggi (anche se il
+# conteggio non arriva al totale perché altri ne hanno tagliate). Accetta mancante: messaggio della serie.
+func _continue_cut_cell_series(worker: HumanIndividual, series: Dictionary) -> void:
+	var plant := CutZoneService.choose_plant_in_lot(
+		live_cells, CutZoneService.get_cell_series_macro_coords(series), CutZoneService.get_cell_series_lot(series),
+		worker, CutZoneService.collect_reserved_plants(human_individuals)
+	)
+	if plant.is_empty():
+		return
+	if not ToolGateService.has_tool_for(worker, TaskTypes.ToolCategory.CHOPPING):
+		_report_cut_series_stopped(worker, series, tr("series_stop_no_tool").format({
+			"tools": _describe_missing_tool_categories([TaskTypes.ToolCategory.CHOPPING]),
+		}))
+		return
+	var task := _build_cut_task(worker, plant, -1, series)
+	if task == null:
+		return
+	for step in task.steps:
+		_reconnect_build_task_signals(step)
+	TaskQueueService.push_suspended_task(worker, task)
+	if worker == individual:
+		_refresh_selected_individual_panel()
+
+
 # Raccogli per `candidates` (2026-10-04: estratto dal comando della barra, usato anche dai pulsanti sulle righe della
 # lista degli abitanti con un solo abitante) — stesso flusso: controllo d'età, dialog, poi la scelta della zona.
 func _order_gather(candidates: Array[HumanIndividual]) -> void:
@@ -4697,6 +4862,9 @@ func _handle_work_area_pick_input(event: InputEvent) -> bool:
 				elif String(order.get("job", "")) == QuarryZoneService.QUARRY_JOB:
 					# Estrazione in zona (2026-10-05): serie di "count" estrazioni, la prima sulla roccia scelta.
 					_assign_work_area_quarry(worker, area, int(order.get("count", QuarryZoneService.COUNT_DEFAULT)))
+				elif String(order.get("job", "")) == CutZoneService.CUT_JOB:
+					# Taglio in zona (2026-10-06): serie di "count" tagli, il primo sulla pianta scelta.
+					_assign_work_area_cut(worker, area, int(order.get("count", CutZoneService.COUNT_DEFAULT)))
 				else:
 					_assign_work_area_gather(worker, area, order)
 		return true
@@ -5052,6 +5220,8 @@ const CUT_TASK_DEFINITION_PATH := "res://gameplay/scripts/tasks/definitions/cut.
 const QUARRY_TASK_DEFINITION_PATH := "res://gameplay/scripts/tasks/definitions/quarry.tres"
 const EXTRACTION_CHOICE_GATHER := "gather"
 const EXTRACTION_CHOICE_CUT := "cut"
+# Riga "Tutte le piante (N)" in testa all'elenco sotto "Taglia" (2026-10-07): serie su tutta la microcella cliccata.
+const CUT_ALL_PLANTS_KEY := "all_plants"
 const EXTRACTION_CHOICE_QUARRY := "quarry"
 # Popup condiviso da taglio ed estrazione (solo scelta, niente quantità né ripetizione).
 var extraction_choice_dialog: OptionChoiceDialog
@@ -5061,6 +5231,9 @@ var _extraction_pending: Dictionary = {}
 # Popup "Pietre da estrarre" del comando Estrai nelle zone e pipottini in attesa della sua conferma (2026-10-05).
 var quarry_count_dialog: CountChoiceDialog
 var _quarry_dialog_workers: Array[HumanIndividual] = []
+# Popup "Piante da tagliare" del comando Taglia nelle zone e pipottini in attesa della sua conferma (2026-10-06).
+var cut_count_dialog: CountChoiceDialog
+var _cut_dialog_workers: Array[HumanIndividual] = []
 # true se l'elenco delle piante ha spostato il contorno della selezione (da rimettere alla chiusura del popup).
 var _extraction_outline_touched: bool = false
 
@@ -5095,7 +5268,10 @@ func _try_assign_cut_command_on_right_click(event: InputEvent) -> bool:
 	if not has_something and plant_choice["items"].size() <= 1:
 		_assign_cut_task(individual, plant)
 		return true
-	_extraction_pending = {"individual": individual, "plant": plant, "plants": plant_choice["plants"], "candidates": candidates}
+	_extraction_pending = {
+		"individual": individual, "plant": plant, "plants": plant_choice["plants"], "candidates": candidates,
+		"all_plants": plant_choice["all_plants"],
+	}
 	var cut_options := {EXTRACTION_CHOICE_CUT: {"type": "list", "items": plant_choice["items"], "selected": plant_choice["selected"]}}
 	# Sotto "Raccogli" (2026-10-05): lo stesso menu del popup della raccolta (PickupChoiceMenu), con gli stessi dati e
 	# default di _dispatch_pickup_candidates; alla conferma passa da _on_pickup_choice_made. Il secondo popup non si apre.
@@ -5163,7 +5339,24 @@ func _build_cut_plant_choice(nearest: Dictionary) -> Dictionary:
 				first_free = key
 			if key == nearest_key:
 				nearest_free = true
-	return {"items": items, "plants": by_key, "selected": nearest_key if nearest_free else first_free}
+	# "Tutte le piante (N)" (2026-10-07): con due o più piante vive e libere nella microcella cliccata (mai quelle
+	# vicine), in testa; selezionata resta la pianta più vicina. Nessuna voce in "plants": nessun contorno sulla mappa.
+	var all_plants := {}
+	if not clicked.is_empty() and FogOfWarVerificationService.is_detail_visible(
+		live_cells, clicked["macro_coords"], clicked["lot"], game_data.get_absolute_day()
+	):
+		var free_in_lot := CutZoneService.list_available_plants_in_lot(
+			live_cells, clicked["macro_coords"], clicked["lot"], null, CutZoneService.collect_reserved_plants(human_individuals)
+		)
+		if free_in_lot.size() >= 2:
+			all_plants = {"macro_coords": clicked["macro_coords"], "lot": clicked["lot"], "count": free_in_lot.size()}
+			items.push_front({
+				"key": CUT_ALL_PLANTS_KEY, "text": tr("cut_all_plants_item").format({"count": free_in_lot.size()}),
+				"enabled": true, "icon": "",
+			})
+	return {
+		"items": items, "plants": by_key, "selected": nearest_key if nearest_free else first_free, "all_plants": all_plants,
+	}
 
 
 func _cut_plant_key(plant: Dictionary) -> String:
@@ -5277,6 +5470,9 @@ func _on_extraction_choice_made(choice: String, _quantity: int, _repeat: bool) -
 	if choice == EXTRACTION_CHOICE_CUT:
 		# Pianta scelta nell'elenco; nessuna libera = la più vicina, che _assign_cut_task rifiuta col messaggio di sempre.
 		var chosen_key: Variant = extraction_choice_dialog.get_option_value(EXTRACTION_CHOICE_CUT)
+		if chosen_key != null and String(chosen_key) == CUT_ALL_PLANTS_KEY:
+			_assign_cut_all_plants(worker, pending.get("all_plants", {}))
+			return
 		var plants: Dictionary = pending.get("plants", {})
 		_assign_cut_task(worker, plants.get(String(chosen_key) if chosen_key != null else "", pending["plant"]))
 	elif choice == EXTRACTION_CHOICE_QUARRY:
@@ -5297,6 +5493,23 @@ func _on_extraction_choice_made(choice: String, _quantity: int, _repeat: bool) -
 		# la spunta del popup delle rocce se c'è, altrimenti l'opzione globale.
 		var repeat_value: Variant = extraction_choice_dialog.get_option_value(EXTRACTION_CHOICE_GATHER)
 		_dispatch_pickup_candidates(pending["candidates"], -1 if repeat_value == null else (1 if bool(repeat_value) else 0))
+
+
+# "Tutte le piante" confermato (2026-10-07): serie di tagli sulla microcella cliccata (CutZoneService.make_cell_series,
+# totale = piante vive e libere all'ordine), il primo sulla pianta scelta da CutZoneService.choose_plant_in_lot, poi
+# la stessa funzione del taglio col clic destro (_assign_cut_task: prenotazione, coda, avvisi).
+func _assign_cut_all_plants(worker: HumanIndividual, all_plants: Dictionary) -> void:
+	if worker == null or all_plants.is_empty():
+		return
+	var macro_coords: Vector2i = all_plants["macro_coords"]
+	var lot: Vector2i = all_plants["lot"]
+	var reserved := CutZoneService.collect_reserved_plants(human_individuals)
+	var target := CutZoneService.list_available_plants_in_lot(live_cells, macro_coords, lot, null, reserved).size()
+	var plant := CutZoneService.choose_plant_in_lot(live_cells, macro_coords, lot, worker, reserved)
+	if plant.is_empty():
+		_report_command_rejection(worker, tr("cut_all_plants_none"))
+		return
+	_assign_cut_task(worker, plant, -1, CutZoneService.make_cell_series(macro_coords, lot, target))
 
 
 # Contorno sulla mappa della pianta sotto il mouse nell'elenco di "Taglia" (2026-10-05); mouse uscito = la riga scelta.
@@ -5350,7 +5563,9 @@ func _on_extraction_choice_visibility_changed() -> void:
 
 # Costruisce e assegna la Task Cut (Walk + Cut) su `plant`. Rifiuto con messaggio se la pianta è già nel lavoro di un
 # pipottino (in corso o in coda); il resto in _assign_extraction_task.
-func _assign_cut_task(worker: HumanIndividual, plant: Dictionary) -> void:
+# `work_area_id` (2026-10-06, taglio in zona): zona della pianta, scritta nel context per l'etichetta della task e della
+# consegna; -1 = comando col clic destro. `series` (passo 3): serie di tagli in zona ({} = taglio singolo).
+func _assign_cut_task(worker: HumanIndividual, plant: Dictionary, work_area_id: int = -1, series: Dictionary = {}) -> void:
 	if worker == null or plant.is_empty():
 		return
 	var macro_coords: Vector2i = plant["macro_coords"]
@@ -5367,18 +5582,34 @@ func _assign_cut_task(worker: HumanIndividual, plant: Dictionary) -> void:
 		_spawn_command_icon_at_microcell(cell, lot, "task_rejected")
 		_report_command_rejection(worker, tr("cut_reject_reserved").format({"name": holder.name}))
 		return
+	var task := _build_cut_task(worker, plant, work_area_id, series)
+	if task == null:
+		return
+	var cut_yield := PlantCutService.compute_yield(cell.macro_state, object_type, individual_key, game_data.year)
+	_assign_extraction_task(worker, task, cell, lot, "task_activity_cut", "cut", String(cut_yield.get("resource_name", "")))
+
+
+# Task Cut (Walk + Cut) su `plant` ({"macro_coords", "object_type", "individual_key"}), senza assegnarla; zona e serie
+# nel context (vedi _assign_cut_task). null se la definizione non si carica.
+func _build_cut_task(worker: HumanIndividual, plant: Dictionary, work_area_id: int = -1, series: Dictionary = {}) -> Task:
 	var definition := load(CUT_TASK_DEFINITION_PATH) as TaskDefinition
 	if definition == null:
-		return
+		return null
+	var macro_coords: Vector2i = plant["macro_coords"]
+	var individual_key: Vector3i = plant["individual_key"]
+	var lot := Vector2i(individual_key.x, individual_key.y)
 	var macro_offset: Vector2 = Vector2(macro_coords - worker.home_macro_coords) * World.WIDTH
 	var task := TaskFactory.build_task(definition, {
 		"target_position": PathfindingService.random_point_in_microcell(Vector2(lot) + macro_offset),
 		"cut_macro_coords": macro_coords,
-		"cut_object_type": object_type,
+		"cut_object_type": plant["object_type"],
 		"cut_individual_key": individual_key,
 	})
-	var cut_yield := PlantCutService.compute_yield(cell.macro_state, object_type, individual_key, game_data.year)
-	_assign_extraction_task(worker, task, cell, lot, "task_activity_cut", "cut", String(cut_yield.get("resource_name", "")))
+	if work_area_id != -1:
+		task.context[CutZoneService.CONTEXT_WORK_AREA_ID] = work_area_id
+	if not series.is_empty():
+		task.context[CutZoneService.CONTEXT_SERIES] = series.duplicate()
+	return task
 
 
 # Costruisce e assegna la Task Quarry (Walk + Quarry) sulla roccia `rock` ({"macro_coords", "position"}). Rifiuto con
@@ -8781,7 +9012,62 @@ func _resolve_individual_identity_details(target: HumanIndividual) -> Dictionary
 		"father": _resolve_relative(target.father_id),
 		"partner": _resolve_relative(target.partner_id),
 		"partner_unknown_female": target.sex == HumanTypes.Sex.MALE,
+		"children": _resolve_children(target.id),
 		"house": house,
+	}
+
+
+# Figli di `parent_id` (2026-10-06, richiesta utente), dal più grande al più piccolo: i vivi con mother_id o father_id
+# uguale, i morti dal registro delle morti (mother_id/father_id nel record) o, per i record salvati prima che li
+# contenesse, da birth_events. Stessa forma di _resolve_relative più "age": l'età attuale, o quella alla morte (-1 se
+# non nota).
+func _resolve_children(parent_id: int) -> Array[Dictionary]:
+	var children: Array[Dictionary] = []
+	if parent_id < 0:
+		return children
+	var seen: Dictionary = {}
+	for member in human_individuals:
+		if member.mother_id == parent_id or member.father_id == parent_id:
+			seen[member.id] = true
+			children.append({
+				"id": member.id, "name": member.name, "dead": false,
+				"age": game_data.year - member.birth_year_virtual, "birth_year": member.birth_year_virtual,
+			})
+	var deaths_by_id: Dictionary = {}
+	for event in game_data.death_events:
+		var dead_id := int(event.get("individual_id", -1))
+		deaths_by_id[dead_id] = event
+		if dead_id < 0 or seen.has(dead_id):
+			continue
+		if int(event.get("mother_id", -1)) == parent_id or int(event.get("father_id", -1)) == parent_id:
+			seen[dead_id] = true
+			children.append(_dead_child_entry(dead_id, event))
+	for birth in game_data.birth_events:
+		var child_id := int(birth.get("individual_id", -1))
+		if child_id < 0 or seen.has(child_id):
+			continue
+		if int(birth.get("mother_id", -1)) != parent_id and int(birth.get("father_id", -1)) != parent_id:
+			continue
+		seen[child_id] = true
+		if deaths_by_id.has(child_id):
+			children.append(_dead_child_entry(child_id, deaths_by_id[child_id]))
+		else:
+			children.append({
+				"id": child_id, "name": "", "dead": false, "age": -1, "birth_year": int(birth.get("year", 0)),
+			})
+	children.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+		if int(a["birth_year"]) != int(b["birth_year"]):
+			return int(a["birth_year"]) < int(b["birth_year"])
+		return int(a["id"]) < int(b["id"])
+	)
+	return children
+
+
+func _dead_child_entry(child_id: int, death_event: Dictionary) -> Dictionary:
+	var age_at_death := int(death_event.get("age_at_death", -1))
+	return {
+		"id": child_id, "name": String(death_event.get("name", "")), "dead": true, "age": age_at_death,
+		"birth_year": int(death_event.get("year", 0)) - maxi(age_at_death, 0),
 	}
 
 
@@ -12796,12 +13082,20 @@ func _on_demolition_completed(building: Building, demolisher: Variant, context: 
 # GROUND_PILE e criterio ALL, _build_pickup_task) — dopo il PickUp la catena di sempre cerca il magazzino e accoda
 # Walk + Unload. Non si accoda nulla (il mucchio resta a terra) se il mucchio non c'è più, la sua cella non è viva,
 # la coda è piena, l'età non lo consente o nessun magazzino raggiungibile accetta almeno una delle sue risorse.
-# Icona "pickup" sul mucchio, come per il comando di raccolta.
+# Icona "pickup" sul mucchio, come per il comando di raccolta; nessuna icona per la consegna di un taglio o di
+# un'estrazione (mucchio con l'etichetta del lavoro, HaulZoneService.LABEL_TASK_KEY).
 func _on_ground_pile_haul_requested(carrier: HumanIndividual, pile_ref: Dictionary) -> void:
 	var macro_coords := Vector2i(int(pile_ref.get("macro_x", 0)), int(pile_ref.get("macro_y", 0)))
 	var microcell := Vector2i(int(pile_ref.get("micro_x", 0)), int(pile_ref.get("micro_y", 0)))
 	var pile := GroundPileService.find_at(game_data, macro_coords, microcell)
 	var cell: LiveMacroCell = live_cells.get(macro_coords)
+	# Serie di tagli (2026-10-06): mucchio già vuoto o sparito (portato via da altri) = consegna riuscita, il taglio
+	# successivo parte subito, senza messaggi.
+	if (pile == null or pile.resources.is_empty()) and pile_ref.has(CutZoneService.SERIES_ZONE_KEY):
+		var emptied_series: Variant = pile_ref[CutZoneService.SERIES_ZONE_KEY]
+		if emptied_series is Dictionary:
+			_on_cut_zone_series_continue_requested(carrier, (emptied_series as Dictionary).duplicate())
+		return
 	if pile == null or pile.resources.is_empty() or cell == null or cell.macro_state == null:
 		return
 	if carrier.task_queue.size() >= TaskQueueService.MAX_QUEUE_SIZE:
@@ -12827,7 +13121,9 @@ func _on_ground_pile_haul_requested(carrier: HumanIndividual, pile_ref: Dictiona
 		# demolizione resta silenziosa come prima.
 		if bool(pile_ref.get("until_empty", false)):
 			# Serie di estrazioni in zona (2026-10-05): un solo messaggio, quello della serie interrotta.
-			if not _report_quarry_series_stopped(carrier, pile_ref, HumanIndividualActionService.series_stop_reason_no_storage(resource_names)):
+			var no_storage_reason := HumanIndividualActionService.series_stop_reason_no_storage(resource_names)
+			if not _report_quarry_series_stopped(carrier, pile_ref, no_storage_reason) \
+					and not _report_cut_pile_series_stopped(carrier, pile_ref, no_storage_reason):
 				_report_command_rejection(carrier, HumanIndividualActionService.no_storage_message(carrier, resource_names))
 		return
 	# Spazio (2026-10-05, solo consegna di taglio ed estrazione, come l'avviso del deposito): se nessuna di quelle risorse
@@ -12839,7 +13135,9 @@ func _on_ground_pile_haul_requested(carrier: HumanIndividual, pile_ref: Dictiona
 				carriable = true
 				break
 		if not carriable:
-			if not _report_quarry_series_stopped(carrier, pile_ref, HumanIndividualActionService.series_stop_reason_no_room(with_destination)):
+			var no_room_reason := HumanIndividualActionService.series_stop_reason_no_room(with_destination)
+			if not _report_quarry_series_stopped(carrier, pile_ref, no_room_reason) \
+					and not _report_cut_pile_series_stopped(carrier, pile_ref, no_room_reason):
 				_report_command_rejection(carrier, HumanIndividualActionService.no_room_message(carrier, with_destination))
 			return
 	# "until_empty" (2026-10-04, task Cut): la consegna continua con la ripetizione automatica della raccolta finché il
@@ -12863,6 +13161,12 @@ func _on_ground_pile_haul_requested(carrier: HumanIndividual, pile_ref: Dictiona
 		# Serie di estrazioni in zona (2026-10-05): viaggia con la zona, duplicata a ogni ripetizione della consegna.
 		if pile_ref.has(QuarryZoneService.SERIES_ZONE_KEY):
 			until_empty_zone[QuarryZoneService.SERIES_ZONE_KEY] = pile_ref[QuarryZoneService.SERIES_ZONE_KEY]
+		# Serie di tagli in zona (2026-10-06): come quella dell'estrazione, viaggia con la zona.
+		if pile_ref.has(CutZoneService.SERIES_ZONE_KEY):
+			until_empty_zone[CutZoneService.SERIES_ZONE_KEY] = pile_ref[CutZoneService.SERIES_ZONE_KEY]
+		# Zona del taglio (2026-10-06): "Taglio (Zona 1)" anche durante la consegna (Task._delivery_activity_label).
+		if pile_ref.has(CutZoneService.CONTEXT_WORK_AREA_ID):
+			until_empty_zone[CutZoneService.CONTEXT_WORK_AREA_ID] = pile_ref[CutZoneService.CONTEXT_WORK_AREA_ID]
 		# Etichetta del lavoro (taglio, estrazione) anche durante la consegna.
 		if pile_ref.has(HaulZoneService.LABEL_TASK_KEY):
 			until_empty_zone[HaulZoneService.LABEL_TASK_KEY] = pile_ref[HaulZoneService.LABEL_TASK_KEY]
@@ -12872,7 +13176,11 @@ func _on_ground_pile_haul_requested(carrier: HumanIndividual, pile_ref: Dictiona
 		if step.disallowed_age_bands.has(carrier_age_band):
 			return
 	TaskQueueService.push_suspended_task(carrier, task)
-	_spawn_command_icon_at_microcell(cell, microcell, "pickup")
+	# Nessuna icona per la consegna di un taglio o di un'estrazione (2026-10-07, richiesta utente): l'icona conferma solo
+	# un ordine dato con un clic sulla mappa, e questa consegna parte da sola. La manina resta per gli altri mucchi
+	# (demolizione), com'era.
+	if not pile_ref.has(HaulZoneService.LABEL_TASK_KEY):
+		_spawn_command_icon_at_microcell(cell, microcell, "pickup")
 	if DebugLogging.ENABLED and DebugLogging.SHOW_TRANSPORT_BUILD_LOGS:
 		print("[GROUND PILE HAUL] #%d %s: trasporto del mucchio #%d al magazzino accodato (coda ora %d)." % [
 			carrier.id, carrier.name, pile.id, carrier.task_queue.size()
@@ -13126,6 +13434,8 @@ func _order_command(action_id: StringName, members: Array[HumanIndividual]) -> v
 			_order_hunt(members)
 		CommandBar.QUARRY_ACTION:
 			_order_quarry(members)
+		CommandBar.CUT_ACTION:
+			_order_cut(members)
 
 
 func _is_work_areas_tool_available() -> bool:
@@ -13461,13 +13771,26 @@ func _is_placement_buildable_or_report(world_position: Vector2, rules: BuildingR
 		game_data.get_absolute_day(), macro_world, _building_ghost.rotation_dir, rules, false
 	):
 		return true
+	# Mucchio a terra (2026-10-07, richiesta utente): stesso canale e stesso stile, "Libera prima il mucchio a terra".
+	# Rifiuto che dipende solo da piante vive e/o mucchio: un messaggio per ciascuno dei due presenti.
 	if BuildingVerificationService.is_position_buildable(
 		live_cells, MACRO_CELL_PIXELS, MicroCellRenderer.CELL_SIZE, world_position,
-		game_data.get_absolute_day(), macro_world, _building_ghost.rotation_dir, rules, true
+		game_data.get_absolute_day(), macro_world, _building_ghost.rotation_dir, rules, true, true
 	):
 		var selected := _get_selected_individuals()
-		_report_command_rejection(selected[0] if not selected.is_empty() else null, tr("build_blocked_cut_trees_first"))
+		var reporter: HumanIndividual = selected[0] if not selected.is_empty() else null
 		var placement := _live_cell_and_micro_position_at(world_position)
+		var has_woody := true
+		var has_pile := false
+		if not placement.is_empty():
+			var placement_cell: LiveMacroCell = placement["cell"]
+			var micro_pos: Vector2i = placement["micro_pos"]
+			has_woody = BuildingSiteClearingService.has_woody_vegetation(placement_cell.macro_state, micro_pos)
+			has_pile = GroundPileService.find_at(game_data, Vector2i(placement_cell.macro_x, placement_cell.macro_y), micro_pos) != null
+		if has_woody:
+			_report_command_rejection(reporter, tr("build_blocked_cut_trees_first"))
+		if has_pile:
+			_report_command_rejection(reporter, tr("build_blocked_clear_ground_pile_first"))
 		if not placement.is_empty():
 			_spawn_command_icon_at_microcell(placement["cell"], placement["micro_pos"], "task_rejected")
 	return false
@@ -14981,6 +15304,7 @@ func _setup_clock() -> void:
 	individual_action_service.task_message_requested.connect(_on_hunt_ended_with_message)
 	individual_action_service.hunt_zone_series_continue_requested.connect(_on_hunt_zone_series_continue_requested)
 	individual_action_service.quarry_zone_series_continue_requested.connect(_on_quarry_zone_series_continue_requested)
+	individual_action_service.cut_zone_series_continue_requested.connect(_on_cut_zone_series_continue_requested)
 	# Essiccatoio pieno durante una macellazione (2026-10-03, essiccazione passo 5).
 	individual_action_service.processing_station_full.connect(_on_processing_station_full)
 	individual_action_service.building_material_blocked.connect(_on_building_material_blocked)

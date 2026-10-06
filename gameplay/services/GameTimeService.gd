@@ -1025,6 +1025,10 @@ func _kill_individual(
 		"year": _game_data.year,
 		"day": day,
 		"spouse_id": individual.partner_id,
+		# Genitori (2026-10-06, riga Figli del pannello individuo): i figli morti si ritrovano dal registro delle morti.
+		# Assenti nei record salvati prima di questa data: lì il ripiego è birth_events (GameScene._resolve_children).
+		"mother_id": individual.mother_id,
+		"father_id": individual.father_id,
 	})
 	# Log di verifica SEPARATO dal riepilogo "[HUMAN DEATH]" (mai toccato, richiesta esplicita) —
 	# conferma che l'evento è stato davvero registrato in game_data.death_events e mostra il

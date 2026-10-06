@@ -532,6 +532,25 @@ func get_activity_description() -> String:
 				var quarry_current := mini(int(quarry_series.get("done", 0)) + 1, quarry_target)
 				return "%s (%s) %d/%d" % [base_text, quarry_area.name, quarry_current, quarry_target]
 			return "%s (%s)" % [base_text, quarry_area.name]
+		# Taglio in una zona (2026-10-06): "Taglio (Zona 1)", come l'estrazione; col clic destro solo il nome.
+		"task_cut_name":
+			var cut_area: WorkArea = WorkAreaService.find_by_id(
+				GameSettings.active_game_data, int(context.get(CutZoneService.CONTEXT_WORK_AREA_ID, -1))
+			)
+			if cut_area == null:
+				# Serie su una microcella ("Tutte le piante", 2026-10-07): "Taglio 3/7", senza zona.
+				var cell_series := CutZoneService.get_series(context)
+				var cell_target := int(cell_series.get("target", 1))
+				if CutZoneService.is_cell_series(cell_series) and cell_target > 1:
+					return "%s %d/%d" % [base_text, mini(int(cell_series.get("done", 0)) + 1, cell_target), cell_target]
+				return base_text
+			# Serie (2026-10-06, passo 3): "Taglio (Zona 1) 2/5" — taglio corrente su totale; con un taglio solo niente.
+			var cut_series := CutZoneService.get_series(context)
+			var cut_target := int(cut_series.get("target", 1))
+			if cut_target > 1:
+				var cut_current := mini(int(cut_series.get("done", 0)) + 1, cut_target)
+				return "%s (%s) %d/%d" % [base_text, cut_area.name, cut_current, cut_target]
+			return "%s (%s)" % [base_text, cut_area.name]
 		"task_hunt_zone_name":
 			var hunt_area := HuntZoneService.resolve_task_area(self)
 			if hunt_area == null:
@@ -559,6 +578,24 @@ func _delivery_activity_label(zone: Dictionary) -> String:
 	if label_task_name == "":
 		return ""
 	var text := tr(label_task_name)
+	# Taglio in zona (2026-10-06): "Taglio (Zona 1)", zona portata dal mucchio (CutZoneService.CONTEXT_WORK_AREA_ID).
+	if zone.has(CutZoneService.CONTEXT_WORK_AREA_ID):
+		var cut_area: WorkArea = WorkAreaService.find_by_id(GameSettings.active_game_data, int(zone[CutZoneService.CONTEXT_WORK_AREA_ID]))
+		if cut_area == null:
+			return text
+		# Serie (2026-10-06, passo 3): il taglio appena fatto su totale (la serie è già aggiornata); con uno solo niente.
+		var cut_series: Dictionary = CutZoneService.get_delivery_series_from_context(context)
+		var cut_target := int(cut_series.get("target", 1))
+		if cut_target > 1:
+			return "%s (%s) %d/%d" % [text, cut_area.name, mini(int(cut_series.get("done", 1)), cut_target), cut_target]
+		return "%s (%s)" % [text, cut_area.name]
+	# Serie su una microcella ("Tutte le piante", 2026-10-07): "Taglio 3/7", il taglio appena fatto, senza zona.
+	var cell_series: Dictionary = CutZoneService.get_delivery_series_from_context(context)
+	if CutZoneService.is_cell_series(cell_series):
+		var cell_target := int(cell_series.get("target", 1))
+		if cell_target > 1:
+			return "%s %d/%d" % [text, mini(int(cell_series.get("done", 1)), cell_target), cell_target]
+		return text
 	var series: Variant = zone.get(QuarryZoneService.SERIES_ZONE_KEY, {})
 	if not (series is Dictionary) or (series as Dictionary).is_empty():
 		return text

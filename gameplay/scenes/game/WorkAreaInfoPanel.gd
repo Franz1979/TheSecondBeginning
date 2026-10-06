@@ -13,10 +13,14 @@ extends VBoxContainer
 # parziale. Il filtro salvato è sempre la forma normalizzata di ciò che si vede (_save_haul_selection/_save_hunt_selection):
 #   - "haul" (Raccolta): {"all": bool, "categories": [int SecondaryResourceTypes.Category] (categorie spuntate per
 #     intero), "resources": [String] (risorse spuntate nelle categorie parziali)} — "all" = tutto spuntato, liste vuote;
-#   - "hunt" (Caccia): {"all": bool, "species": [String]}.
+#   - "hunt" (Caccia): {"all": bool, "species": [String]};
+#   - "cut" (Taglio, 2026-10-06): {"all": bool, "groups": [String] ("tree"/"shrub" spuntati per intero), "plants":
+#     [String] (CutZoneService.plant_key, piante spuntate nei tipi parziali)} — radice "Tutte le piante" -> Alberi/Arbusti
+#     -> sottotipi, stesse funzioni dell'albero della Raccolta.
 # La Raccolta propone solo ciò che la PickUpAction raccoglie da terra (TerrainScatteredResourceService.is_pickable:
 # lotti del terreno e frutti/uova): niente carni, caccia, pesca, produzione, né "forage" (pascolo aggregato degli
-# animali, non raccoglibile). Un lavoro appena abilitato parte con "all": true.
+# animali, non raccoglibile). Un lavoro appena abilitato parte col filtro iniziale del lavoro
+# (WorkAreaTypes.get_default_filters: oggi "all": true per tutti).
 
 signal area_changed(area: WorkArea)
 signal redraw_requested(area: WorkArea)
@@ -28,10 +32,13 @@ const CAPTION_FONT_SIZE: int = 11
 const SWATCH_SIZE: float = 20.0
 const HAUL_JOB := "haul"
 const HUNT_JOB := "hunt"
+const CUT_JOB := CutZoneService.CUT_JOB
 # Albero dei filtri: rientro per livello e larghezza del bottone [+]/[−].
 const TREE_INDENT: float = 14.0
 const EXPAND_BUTTON_WIDTH: float = 20.0
 const HUNT_ROOT_KEY := "hunt:root"
+const HAUL_ROOT_KEY := "haul:root"
+const CUT_ROOT_KEY := "cut:root"
 
 var _area: WorkArea = null
 var _delete_confirm_visible: bool = false
@@ -158,6 +165,8 @@ func _build_jobs() -> void:
 				_build_haul_filters()
 			HUNT_JOB:
 				_build_hunt_filters()
+			CUT_JOB:
+				_build_cut_filters()
 
 
 func _job_check_box(job_id: String) -> CheckBox:
@@ -166,7 +175,7 @@ func _job_check_box(job_id: String) -> CheckBox:
 		if pressed and not _area.enabled_jobs.has(job_id):
 			_area.enabled_jobs.append(job_id)
 			if not _area.filters.has(job_id):
-				_area.filters[job_id] = {"all": true}
+				_area.filters[job_id] = WorkAreaTypes.get_default_filters(job_id)
 		elif not pressed:
 			_area.enabled_jobs.erase(job_id)
 		area_changed.emit(_area)
@@ -185,12 +194,16 @@ func _build_haul_filters() -> void:
 	var all_names: Array[String] = []
 	for category in tree.keys():
 		all_names.append_array(tree[category])
-	box.add_child(_tree_row(0, "", tr("work_area_filter_all"), _state_of(all_names, checked), func(pressed: bool) -> void:
+	# Radice apribile (2026-10-06, come la Caccia): chiusa mostra solo la propria riga, con il conteggio.
+	var root_text := "%s (%d/%d)" % [tr("work_area_filter_all"), _count_checked(all_names, checked), all_names.size()]
+	box.add_child(_tree_row(0, HAUL_ROOT_KEY, root_text, _state_of(all_names, checked), func(pressed: bool) -> void:
 		for resource_name in all_names:
 			_set_checked(checked, resource_name, pressed)
 		_save_haul_selection(filters, tree, checked)
 	))
 	for category in tree.keys():
+		if not _expanded.has(HAUL_ROOT_KEY):
+			break
 		var names: Array[String] = tree[category]
 		var expand_key := "haul:%d" % category
 		var category_name := tr("category_name_%s" % String(SecondaryResourceTypes.Category.keys()[category]).to_lower())
@@ -323,6 +336,94 @@ func _save_hunt_selection(filters: Dictionary, species_names: Array[String], che
 	_rebuild()
 
 
+# --- Taglio: "Tutte le piante" -> Alberi/Arbusti -> sottotipi (2026-10-06) ---
+
+func _build_cut_filters() -> void:
+	var filters := _job_filters(CUT_JOB)
+	var tree := _cut_tree()
+	var checked := _cut_checked(filters, tree)
+	var box := _indented_box()
+	var all_keys: Array[String] = []
+	for object_type in tree.keys():
+		all_keys.append_array(tree[object_type])
+	var root_text := "%s (%d/%d)" % [tr("work_area_filter_all_plants"), _count_checked(all_keys, checked), all_keys.size()]
+	box.add_child(_tree_row(0, CUT_ROOT_KEY, root_text, _state_of(all_keys, checked), func(pressed: bool) -> void:
+		for plant in all_keys:
+			_set_checked(checked, plant, pressed)
+		_save_cut_selection(filters, tree, checked)
+	))
+	if not _expanded.has(CUT_ROOT_KEY):
+		return
+	for object_type in tree.keys():
+		var plants: Array[String] = tree[object_type]
+		var group := CutZoneService.group_key(object_type)
+		var expand_key := "cut:%s" % group
+		var group_text := "%s (%d/%d)" % [tr("work_area_cut_group_%s" % group), _count_checked(plants, checked), plants.size()]
+		box.add_child(_tree_row(1, expand_key, group_text, _state_of(plants, checked), func(pressed: bool) -> void:
+			for plant in plants:
+				_set_checked(checked, plant, pressed)
+			_save_cut_selection(filters, tree, checked)
+		))
+		if not _expanded.has(expand_key):
+			continue
+		for subtype_name in CutZoneService.list_subtype_names(object_type):
+			var leaf_plant := CutZoneService.plant_key(object_type, subtype_name)
+			var leaf_text := IconRegistry.get_plant_display_name(object_type, subtype_name)
+			box.add_child(_tree_row(2, "", leaf_text, 2 if checked.has(leaf_plant) else 0, func(pressed: bool) -> void:
+				_set_checked(checked, leaf_plant, pressed)
+				_save_cut_selection(filters, tree, checked)
+			))
+
+
+# Tipo di pianta (GameTypes.WorldObjectType, ordine di CutZoneService.PLANT_OBJECT_TYPES) -> chiavi delle sue piante
+# (CutZoneService.plant_key), nell'ordine dei sottotipi dei dati. Solo tipi con almeno un sottotipo.
+func _cut_tree() -> Dictionary:
+	var tree: Dictionary = {}
+	for object_type in CutZoneService.PLANT_OBJECT_TYPES:
+		var plants: Array[String] = []
+		for subtype_name in CutZoneService.list_subtype_names(object_type):
+			plants.append(CutZoneService.plant_key(object_type, subtype_name))
+		if not plants.is_empty():
+			tree[object_type] = plants
+	return tree
+
+
+# Piante dell'albero spuntate secondo il filtro salvato (stessa regola di CutZoneService.work_area_accepts_plant).
+func _cut_checked(filters: Dictionary, tree: Dictionary) -> Dictionary:
+	var checked: Dictionary = {}
+	var all := bool(filters.get("all", false))
+	var groups: Array = filters.get("groups", [])
+	var saved_plants: Array = filters.get("plants", [])
+	for object_type in tree.keys():
+		var group_full := all or groups.has(CutZoneService.group_key(object_type))
+		for plant in tree[object_type]:
+			if group_full or saved_plants.has(plant):
+				checked[plant] = true
+	return checked
+
+
+# Filtro normalizzato da ciò che si vede, come _save_haul_selection: tutto spuntato = "all"; altrimenti i tipi spuntati
+# per intero e le singole piante dei tipi parziali.
+func _save_cut_selection(filters: Dictionary, tree: Dictionary, checked: Dictionary) -> void:
+	var full_groups: Array = []
+	var partial_plants: Array = []
+	var everything := true
+	for object_type in tree.keys():
+		var plants: Array[String] = tree[object_type]
+		if _count_checked(plants, checked) == plants.size():
+			full_groups.append(CutZoneService.group_key(object_type))
+			continue
+		everything = false
+		for plant in plants:
+			if checked.has(plant):
+				partial_plants.append(plant)
+	filters["all"] = everything
+	filters["groups"] = [] if everything else full_groups
+	filters["plants"] = [] if everything else partial_plants
+	area_changed.emit(_area)
+	_rebuild()
+
+
 # --- Albero: righe, stati, spunta parziale ---
 
 # Riga dell'albero: rientro per `level`, bottone [+]/[−] se `expand_key` non è vuoto (altrimenti uno spazio della
@@ -446,10 +547,10 @@ func _build_actions() -> void:
 	add_child(row)
 
 
-# Filtri del lavoro (creati con "all": true se mancano), modificati sul posto.
+# Filtri del lavoro (creati col filtro iniziale del lavoro se mancano), modificati sul posto.
 func _job_filters(job_id: String) -> Dictionary:
 	if not _area.filters.has(job_id) or not (_area.filters[job_id] is Dictionary):
-		_area.filters[job_id] = {"all": true}
+		_area.filters[job_id] = WorkAreaTypes.get_default_filters(job_id)
 	return _area.filters[job_id]
 
 

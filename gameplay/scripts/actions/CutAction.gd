@@ -108,6 +108,18 @@ func on_complete(individual: Variant, context: Dictionary) -> void:
 	var yield_data := PlantCutService.cut(macro_state, object_type, individual_key, current_year)
 	macro_state.cut_work_progress.erase(progress_key(object_type, individual_key))
 	drop_yield_and_queue_haul(context, game_data, macro_coords, Vector2(individual_key.x, individual_key.y) + Vector2(0.5, 0.5), yield_data, "task_cut_name")
+	# Taglio in zona (2026-10-06): la zona passa al mucchio e da lì alla consegna, per l'etichetta "Taglio (Zona 1)".
+	if context.has(CutZoneService.CONTEXT_WORK_AREA_ID) and context.has(HumanIndividualActionService.CONTEXT_PENDING_GROUND_PILE_HAUL):
+		context[HumanIndividualActionService.CONTEXT_PENDING_GROUND_PILE_HAUL][CutZoneService.CONTEXT_WORK_AREA_ID] = context[CutZoneService.CONTEXT_WORK_AREA_ID]
+	# Serie in zona (2026-10-06, passo 3, come QuarryAction): un taglio in più; passa al mucchio e da lì alla consegna,
+	# alla cui chiusura nasce il taglio successivo.
+	var series := CutZoneService.get_series(context)
+	if not series.is_empty():
+		series = series.duplicate()
+		series["done"] = int(series.get("done", 0)) + 1
+		context[CutZoneService.CONTEXT_SERIES] = series
+		if context.has(HumanIndividualActionService.CONTEXT_PENDING_GROUND_PILE_HAUL):
+			context[HumanIndividualActionService.CONTEXT_PENDING_GROUND_PILE_HAUL][CutZoneService.SERIES_ZONE_KEY] = series
 	if DebugLogging.ENABLED and DebugLogging.SHOW_TRANSPORT_BUILD_LOGS:
 		print("[CUT] #%d %s: abbattuto %s %s in %s -> %s%s." % [
 			individual.id, individual.name, GameTypes.WorldObjectType.keys()[object_type], str(individual_key), str(macro_coords),

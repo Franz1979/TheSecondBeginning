@@ -47,6 +47,8 @@ signal hunt_zone_series_continue_requested(individual: HumanIndividual, series: 
 # Serie di estrazioni in zona (2026-10-05): la consegna dell'ultima estrazione è finita e il mucchio è vuoto — GameScene
 # accoda l'estrazione successiva (o chiude la serie se non può partire).
 signal quarry_zone_series_continue_requested(individual: HumanIndividual, series: Dictionary)
+# Serie di tagli in zona (2026-10-06): taglio successivo dopo l'ultima consegna a mucchio vuoto (_continue_cut_zone_series).
+signal cut_zone_series_continue_requested(individual: HumanIndividual, series: Dictionary)
 # Macellazione con destinazione una postazione di lavorazione (essiccatoio, affumicatoio — 2026-10-03): nessuna
 # postazione di quel tipo ha posto per `resource_name` (carne o pelli) e la risorsa ripiega sul magazzino. Una volta per
 # Task e per risorsa (CONTEXT_PROCESSING_FULL_NOTIFIED); GameScene mostra il popup con il nome dell'edificio di
@@ -290,6 +292,7 @@ func finish_current_step(individual: HumanIndividual, task: Task, world: World, 
 			# Stessa chiusura di un bersaglio non più valido (sotto): nessun effetto di completamento.
 			_continue_hunt_zone_series(individual, task)
 			_continue_quarry_zone_series(individual, task, game_data)
+			_continue_cut_zone_series(individual, task, game_data)
 			_handle_task_completion_need_and_queue(individual, task, world, game_data)
 			return
 	task.advance_to_next_step()
@@ -329,6 +332,8 @@ func finish_current_step(individual: HumanIndividual, task: Task, world: World, 
 		_continue_hunt_zone_series(individual, task)
 		# Serie di estrazioni in zona (2026-10-05): stesso punto, stesso motivo.
 		_continue_quarry_zone_series(individual, task, game_data)
+		# Serie di tagli in zona (2026-10-06): stesso punto, stesso motivo.
+		_continue_cut_zone_series(individual, task, game_data)
 		# Bisogno/coda (2026-09-13, richiesta utente, Punto 5) — PRIMA di considerare
 		# l'individuo libero: se un bisogno stamina è ANCORA attivo, assegna la Task-bisogno
 		# corrispondente; altrimenti riprende l'ultima Task sospesa in coda (se presente);
@@ -768,7 +773,7 @@ static func no_room_message(individual: HumanIndividual, names: Array[String]) -
 static func request_no_room_abort(individual: HumanIndividual, context: Dictionary, names: Array[String]) -> void:
 	context[CONTEXT_PENDING_TASK_ABORT] = "nessuno spazio per trasportare %s" % ", ".join(names)
 	# Consegna di una serie in zona: il motivo va nel messaggio della serie, non in uno a parte.
-	if not QuarryZoneService.get_delivery_series_from_context(context).is_empty():
+	if not QuarryZoneService.get_delivery_series_from_context(context).is_empty() 			or not CutZoneService.get_delivery_series_from_context(context).is_empty():
 		context[CONTEXT_SERIES_STOP_REASON] = series_stop_reason_no_room(names)
 	else:
 		context[CONTEXT_PENDING_PLAYER_MESSAGE] = no_room_message(individual, names)
@@ -782,7 +787,7 @@ static func request_no_room_abort(individual: HumanIndividual, context: Dictiona
 static func request_no_storage_abort(individual: HumanIndividual, context: Dictionary, names: Array[String]) -> void:
 	context[CONTEXT_PENDING_TASK_ABORT] = "nessun deposito con posto per %s" % ", ".join(names)
 	# Consegna di una serie in zona: il motivo va nel messaggio della serie, non in uno a parte.
-	if not QuarryZoneService.get_delivery_series_from_context(context).is_empty():
+	if not QuarryZoneService.get_delivery_series_from_context(context).is_empty() 			or not CutZoneService.get_delivery_series_from_context(context).is_empty():
 		context[CONTEXT_SERIES_STOP_REASON] = series_stop_reason_no_storage(names)
 	else:
 		context[CONTEXT_PENDING_PLAYER_MESSAGE] = no_storage_message(individual, names)
@@ -1461,6 +1466,41 @@ func _continue_quarry_zone_series(individual: HumanIndividual, task: Task, game_
 	if QuarryZoneService.is_series_complete(series):
 		return
 	quarry_zone_series_continue_requested.emit(individual, series.duplicate())
+
+
+# Serie di tagli in zona (2026-10-06, passo 3): copia di _continue_quarry_zone_series con i dati del taglio
+# (CutZoneService), stessi due punti di chiamata. Si aspetta l'ultima consegna della serie; mucchio ancora pieno =
+# consegna non riuscita: la serie si chiude, col messaggio del motivo scritto dalla consegna. Mucchio vuoto o sparito
+# (anche svuotato da un altro pipottino) = consegna riuscita: GameScene accoda il taglio successivo, se la serie non è
+# finita. L'annullamento del giocatore (H) non passa da qui: chiude la serie.
+func _continue_cut_zone_series(individual: HumanIndividual, task: Task, game_data: GameData) -> void:
+	var series := CutZoneService.get_delivery_series(task)
+	if series.is_empty():
+		return
+	var series_id := String(series.get("id", ""))
+	var others: Array = individual.task_queue.duplicate()
+	if individual.current_task != null and individual.current_task != task and not individual.current_task.is_finished():
+		others.append(individual.current_task)
+	for other in others:
+		if other == task:
+			continue
+		var other_series := CutZoneService.get_delivery_series(other)
+		if other_series.is_empty():
+			other_series = CutZoneService.get_series(other.context)
+		if String(other_series.get("id", "")) == series_id:
+			return
+	var zone := HaulZoneService.get_zone(task.context)
+	var data: GameData = game_data if game_data != null else GameSettings.active_game_data
+	var pile := GroundPileService.find_at(data, HaulZoneService.get_macro_coords(zone), HaulZoneService.get_rect(zone).position) if data != null else null
+	if pile != null and not pile.resources.is_empty():
+		if task.context.has(CONTEXT_SERIES_STOP_REASON) and not CutZoneService.is_series_complete(series):
+			task_message_requested.emit(individual, series_stopped_message(
+				individual, CutZoneService.SERIES_STOPPED_KEY, series, String(task.context[CONTEXT_SERIES_STOP_REASON])
+			))
+		return
+	if CutZoneService.is_series_complete(series):
+		return
+	cut_zone_series_continue_requested.emit(individual, series.duplicate())
 
 
 func _continue_hunt_zone_series(individual: HumanIndividual, task: Task) -> void:

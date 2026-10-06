@@ -217,8 +217,10 @@ static func work_area_accepts(area: WorkArea, resource_name: String) -> bool:
 	var rules := CaloricCalculator.get_caloric_source_rules(resource_name)
 	if is_food_only_limit_active() and (rules == null or int(rules.category) != int(SecondaryResourceTypes.Category.FOOD)):
 		return false
-	var filters: Variant = area.filters.get(HAUL_JOB, {})
-	if not (filters is Dictionary) or bool(filters.get("all", true)):
+	var filters: Variant = area.filters.get(HAUL_JOB, null)
+	if not (filters is Dictionary):
+		filters = WorkAreaTypes.get_default_filters(HAUL_JOB)
+	if bool(filters.get("all", true)):
 		return true
 	var categories: Array = filters.get("categories", [])
 	if rules != null and categories.has(int(rules.category)):

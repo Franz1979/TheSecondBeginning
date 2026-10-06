@@ -553,6 +553,7 @@ discovery_first_thought_building_gift_title,The village's first idea: {idea}
 discovery_first_thought_building_gift_p1,"As its first thoughts accumulated, the village received its first idea, as a gift."
 discovery_first_thought_building_gift_p2,You can now draw a gathering area on the map and send a villager there: they will decide on their own where and how much food to gather.
 build_blocked_cut_trees_first,Cut down trees and shrubs first
+build_blocked_clear_ground_pile_first,Clear the ground pile first
 task_rest_name,Rest
 task_rest_step_rest,Resting
 task_rest_step_walk_away,Moving away
@@ -601,6 +602,9 @@ individual_relative_unknown_female,unknown
 individual_relative_unknown_male,unknown
 individual_relative_alive,{name} (#{id})
 individual_relative_dead,{name} † (#{id})
+individual_children_label,Children: {children}
+individual_children_none,none
+individual_child_entry,"{person}, age {age}"
 individual_house_tooltip,House: {name} (#{id})
 individual_no_house,No house
 task_explore_name,Explore
@@ -629,6 +633,8 @@ help_emergency_rest_task,assign the Emergency rest task to the selected individu
 help_leisure_restock_task,"assign the Restocking task to the selected individual: go to a warehouse to stock up on supplies"
 help_gather_command,"Gather in the work areas (command bar, with an individual selected)"
 help_hunt_command,"Hunt in the work areas (command bar, if an area has hunting enabled)"
+help_cut_command,"Cut in the work areas (command bar, if an area has cutting enabled)"
+help_quarry_command,"Quarry in the work areas (command bar, if an area has quarrying enabled)"
 help_auto_zone_command,toggle automatic work-area choice (command bar)
 help_cycle_map_layer,switch to the next map layer (including none)
 help_escape_cancel,"cancel the current choice: worker pick, upgrade orientation, drawing or picking an area"
@@ -754,7 +760,7 @@ microcell_inspection_grass,Grass
 pickup_no_room_for_resource,{name} has no room to carry {resource}
 vegetation_type_tree,Tree
 vegetation_type_shrub,Shrub
-plant_name_tree_wood_only,Tree
+plant_name_tree_wood_only,Timber tree
 plant_name_tree_wood_only_gender,m
 plant_name_tree_wild_fruit,Acorn tree
 plant_name_tree_wild_fruit_gender,m
@@ -776,12 +782,20 @@ cut_plant_reserved_note,(already being cut)
 resource_plural_wood,Logs
 resource_plural_stick,Sticks
 work_area_job_quarry,Quarrying
+work_area_job_cut,Cutting
+work_area_filter_all_plants,All plants
+work_area_cut_group_tree,Trees
+work_area_cut_group_shrub,Shrubs
 command_bar_quarry_tooltip,Quarry
 command_bar_quarry_no_zone_tooltip,No work area with quarrying enabled
 command_bar_job_locked_tooltip,Requires the idea “{idea}”
 work_area_quarry_no_rock,No rock with stone available in the area
+command_bar_cut_tooltip,Cut
+command_bar_cut_no_zone_tooltip,No work area with cutting enabled
+work_area_cut_no_plant,No plant to cut in the area
 unlock_job_hunt,Hunting in work areas
 unlock_job_quarry,Quarrying in work areas
+unlock_job_cut,Cutting in work areas
 quarry_order_dialog_title,Quarrying in work areas
 quarry_order_dialog_message,How many stones to quarry before stopping?
 quarry_order_dialog_count,Stones to quarry
@@ -791,6 +805,13 @@ series_stop_no_room,has no room to carry {resource}
 series_stop_no_tool,missing the tool for {tools}
 series_stop_no_rock,no rock with stone in the area
 series_stop_zone_gone,the area is no longer available
+cut_order_dialog_title,Cutting in work areas
+cut_order_dialog_message,How many plants to cut before stopping?
+cut_order_dialog_count,Plants to cut
+cut_series_stopped,"{name}: cutting stopped at {done}/{total}: {reason}"
+series_stop_no_plant,no plant to cut in the area
+cut_all_plants_item,All plants ({count})
+cut_all_plants_none,No free plant to cut in this cell
 individual_family_tooltip,Family
 human_type_title,"{band}, {sex}"
 age_band_infant_male,Infant

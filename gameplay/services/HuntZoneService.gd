@@ -69,8 +69,10 @@ static func is_hunt_job_unlocked() -> bool:
 static func work_area_accepts_species(area: WorkArea, species: String) -> bool:
 	if area == null or not is_hunt_job_unlocked() or not area.enabled_jobs.has(HUNT_JOB):
 		return false
-	var filters: Variant = area.filters.get(HUNT_JOB, {})
-	if not (filters is Dictionary) or bool(filters.get("all", true)):
+	var filters: Variant = area.filters.get(HUNT_JOB, null)
+	if not (filters is Dictionary):
+		filters = WorkAreaTypes.get_default_filters(HUNT_JOB)
+	if bool(filters.get("all", true)):
 		return true
 	return (filters.get("species", []) as Array).has(species)
 

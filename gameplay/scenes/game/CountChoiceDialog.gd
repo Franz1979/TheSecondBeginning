@@ -92,6 +92,9 @@ func _on_window_input(event: InputEvent) -> void:
 
 
 func _on_confirm_pressed() -> void:
+	# Numero scritto a mano e non ancora confermato con Invio (2026-10-06, bugfix): senza apply() il valore restava quello
+	# di prima (es. scritto 2 sopra il 3 ricordato -> serie di 3). apply() equivale a Invio nel campo del selettore.
+	_spin_box.apply()
 	var value := int(_spin_box.value)
 	hide()
 	count_chosen.emit(value)

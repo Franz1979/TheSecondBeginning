@@ -17,10 +17,23 @@ const ADVANCED_REQUIRED_IDEA_ID := "work_areas_advanced"
 # prima solo la chiave del nome). "name_key" = nome (spunta del pannello della zona); "required_idea_id" = idea che lo
 # sblocca ("" = nessuna oltre a quella delle zone); "unlock_name_key" = voce tra gli sblocchi dell'idea nell'albero
 # (IdeaUnlocksService). Un lavoro nuovo si aggiunge qui; is_job_unlocked è l'unico controllo dello sblocco.
+# "default_filters" (2026-10-06) = filtro iniziale del lavoro (WorkArea.filters[id]): scritto quando si spunta il
+# lavoro, creato dal pannello se manca, usato dai servizi quando la zona non ne ha uno — vedi get_default_filters.
+# Oggi tutti i lavori partono da "tutto" (taglio compreso, dal 2026-10-06 sera).
 const JOBS := {
-	"haul": {"name_key": "work_area_job_haul", "required_idea_id": ""},
-	"hunt": {"name_key": "work_area_job_hunt", "required_idea_id": ADVANCED_REQUIRED_IDEA_ID, "unlock_name_key": "unlock_job_hunt"},
-	"quarry": {"name_key": "work_area_job_quarry", "required_idea_id": ADVANCED_REQUIRED_IDEA_ID, "unlock_name_key": "unlock_job_quarry"},
+	"haul": {"name_key": "work_area_job_haul", "required_idea_id": "", "default_filters": {"all": true}},
+	"hunt": {
+		"name_key": "work_area_job_hunt", "required_idea_id": ADVANCED_REQUIRED_IDEA_ID, "unlock_name_key": "unlock_job_hunt",
+		"default_filters": {"all": true},
+	},
+	"quarry": {
+		"name_key": "work_area_job_quarry", "required_idea_id": ADVANCED_REQUIRED_IDEA_ID, "unlock_name_key": "unlock_job_quarry",
+		"default_filters": {"all": true},
+	},
+	"cut": {
+		"name_key": "work_area_job_cut", "required_idea_id": ADVANCED_REQUIRED_IDEA_ID, "unlock_name_key": "unlock_job_cut",
+		"default_filters": {"all": true},
+	},
 }
 
 
@@ -44,6 +57,13 @@ static func get_job_name_key(job_id: String) -> String:
 # Idea che sblocca il lavoro ("" = nessuna).
 static func get_job_required_idea_id(job_id: String) -> String:
 	return String(JOBS.get(job_id, {}).get("required_idea_id", ""))
+
+
+# Filtro iniziale del lavoro, copia nuova a ogni chiamata (chi la riceve la modifica sul posto). {"all": true} per un
+# lavoro che non lo dichiara.
+static func get_default_filters(job_id: String) -> Dictionary:
+	var defaults: Variant = JOBS.get(job_id, {}).get("default_filters", {"all": true})
+	return (defaults as Dictionary).duplicate(true) if defaults is Dictionary else {"all": true}
 
 # Colori assegnati a rotazione alle zone nuove (WorkAreaService.create): ben distinguibili tra loro e dal terreno.
 const PALETTE: Array[Color] = [

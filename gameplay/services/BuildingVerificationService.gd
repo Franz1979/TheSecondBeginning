@@ -82,7 +82,7 @@ extends RefCounted
 static func is_position_buildable(
 	live_cells: Dictionary, macro_cell_pixels: int, cell_size: int, world_position: Vector2,
 	current_absolute_day: int, macro_world: World, direction: GameTypes.Direction, rules: BuildingRules,
-	can_cut: bool = true
+	can_cut: bool = true, ignore_ground_pile: bool = false
 ) -> bool:
 	var resolved := _resolve_cell_and_microcell(live_cells, macro_cell_pixels, cell_size, world_position)
 	if resolved.is_empty():
@@ -96,7 +96,9 @@ static func is_position_buildable(
 
 	# Criterio 9 (2026-09-26, ground drop): non si costruisce sopra un mucchio a terra. Vale solo per la
 	# microcella dell'edificio: davanti alla porta un mucchio non è un ostacolo (ci si cammina sopra).
-	if GroundPileService.find_at(
+	# `ignore_ground_pile` (2026-10-07): solo per sapere se il rifiuto dipende da piante e mucchio (messaggio al giocatore,
+	# GameScene._is_placement_buildable_or_report); il piazzamento lo passa sempre false.
+	if not ignore_ground_pile and GroundPileService.find_at(
 		GameSettings.active_game_data, Vector2i(resolved["cell"].macro_x, resolved["cell"].macro_y), resolved["microcell"]
 	) != null:
 		return false
