@@ -14,6 +14,10 @@ extends Window
 # help significa: una nuova costante PAGE_*, una riga [url=...] in _build_main_menu_text, e un
 # nuovo _build_*_text/branch nel match di _show_page.
 
+# Dimensione della finestra e margine minimo dai bordi della finestra di gioco (open_dialog).
+const DIALOG_SIZE := Vector2i(700, 550)
+const DIALOG_SCREEN_MARGIN: int = 20
+
 @onready var content_label: RichTextLabel = $MarginContainer/VBoxContainer/ContentLabel
 @onready var back_button: Button = $MarginContainer/VBoxContainer/BackButton
 @onready var close_button: Button = $MarginContainer/VBoxContainer/CloseButton
@@ -23,6 +27,11 @@ const PAGE_SHORTCUTS := "shortcuts"
 const PAGE_FOG_OF_WAR := "fog_of_war"
 const PAGE_ERA_ADVANCEMENT := "era_advancement"
 const PAGE_BUILDING_MATERIALS := "building_materials"
+# Pagina "Edifici" (2026-10-07): elenco dei tipi costruibili, e scheda di un tipo con la pagina
+# BUILDING_PAGE_PREFIX + <tipo> (es. "building:hut").
+const PAGE_BUILDINGS := "buildings"
+const BUILDING_PAGE_PREFIX := "building:"
+const INFO_ROW_INDENT := "    "
 
 var _current_page: String = PAGE_MAIN
 
@@ -38,7 +47,7 @@ func _ready() -> void:
 	add_theme_icon_override("close", transparent)
 	add_theme_icon_override("close_pressed", transparent)
 	back_button.text = tr("back")
-	back_button.pressed.connect(_show_page.bind(PAGE_MAIN))
+	back_button.pressed.connect(_on_back_pressed)
 
 	content_label.bbcode_enabled = true
 	content_label.meta_clicked.connect(_on_meta_clicked)
@@ -51,11 +60,24 @@ func open_dialog() -> void:
 	# (il contenuto era sempre lo stesso ad ogni apertura).
 	_show_page(PAGE_MAIN)
 	exclusive = true
-	popup_centered(Vector2i(420, 400))
+	# 700 × 550 (2026-10-07, richiesta utente — era 420 × 400), mai più grande della finestra di gioco (con un margine):
+	# così resta tutta visibile anche su schermi piccoli. Il testo va a capo sulla larghezza vera (RichTextLabel a tutta
+	# larghezza).
+	var screen_size := Vector2i(get_tree().root.get_visible_rect().size)
+	var dialog_size := Vector2i(
+		mini(DIALOG_SIZE.x, maxi(screen_size.x - DIALOG_SCREEN_MARGIN * 2, 1)),
+		mini(DIALOG_SIZE.y, maxi(screen_size.y - DIALOG_SCREEN_MARGIN * 2, 1))
+	)
+	popup_centered(dialog_size)
 
 
 func _on_meta_clicked(meta: Variant) -> void:
 	_show_page(str(meta))
+
+
+# Indietro (2026-10-07): dalla scheda di un edificio all'elenco degli edifici, da ogni altra pagina all'indice.
+func _on_back_pressed() -> void:
+	_show_page(PAGE_BUILDINGS if _current_page.begins_with(BUILDING_PAGE_PREFIX) else PAGE_MAIN)
 
 
 func _show_page(page: String) -> void:
@@ -70,8 +92,14 @@ func _show_page(page: String) -> void:
 			content_label.text = _build_era_advancement_text()
 		PAGE_BUILDING_MATERIALS:
 			content_label.text = _build_building_materials_text()
+		PAGE_BUILDINGS:
+			content_label.text = _build_buildings_list_text()
 		_:
-			content_label.text = _build_main_menu_text()
+			if page.begins_with(BUILDING_PAGE_PREFIX):
+				content_label.text = _build_building_page_text(page.substr(BUILDING_PAGE_PREFIX.length()))
+			else:
+				content_label.text = _build_main_menu_text()
+	content_label.scroll_to_line(0)
 
 
 func _build_main_menu_text() -> String:
@@ -82,6 +110,7 @@ func _build_main_menu_text() -> String:
 		"[url=%s]%s[/url]" % [PAGE_FOG_OF_WAR, tr("help_fog_of_war_menu_link")],
 		"[url=%s]%s[/url]" % [PAGE_ERA_ADVANCEMENT, tr("help_era_advancement_menu_link")],
 		"[url=%s]%s[/url]" % [PAGE_BUILDING_MATERIALS, tr("help_building_materials_menu_link")],
+		"[url=%s]%s[/url]" % [PAGE_BUILDINGS, tr("help_buildings_menu_link")],
 	]
 	return "\n".join(lines)
 
@@ -195,4 +224,94 @@ func _build_shortcuts_text() -> String:
 	# duratura. U non è più tra questi (vedi sopra): è ora un comando vero, elencato incondizionatamente.
 	if DebugLogging.ENABLED:
 		lines.append("[b]Z[/b] — %s" % tr("help_debug_clear_backpack"))
+	return "\n".join(lines)
+
+
+# --- Pagina "Edifici" (2026-10-07, richiesta utente) ---
+# Elenco dei tipi che il giocatore può costruire dalla barra edifici (BuildBar.BUILDING_SLOT_INDEX_BY_TYPE, nell'ordine
+# dei bottoni) o ottenere con un miglioramento (BuildingRules.upgrades_to), anche se non ancora scoperti, letti dai
+# dati (BuildingCalculator). Raggruppati per catena di miglioramento: ogni edificio di partenza (uno che non è la
+# destinazione di un miglioramento di un altro dell'elenco) seguito, rientrati, da quelli in cui si migliora.
+func _build_buildings_list_text() -> String:
+	var lines: Array[String] = ["[b]%s[/b]" % tr("help_buildings_title"), ""]
+	for chain in _building_upgrade_chains():
+		for index in range(chain.size()):
+			var rules := BuildingCalculator.get_building_rules(chain[index])
+			var link := "[url=%s%s]%s[/url]" % [BUILDING_PAGE_PREFIX, chain[index], tr(rules.building_name)]
+			lines.append((INFO_ROW_INDENT.repeat(index) + "→ " + link) if index > 0 else link)
+	return "\n".join(lines)
+
+
+# Catene di miglioramento dei tipi elencati: [[partenza, migliorato, migliorato del migliorato, ...], ...].
+func _building_upgrade_chains() -> Array:
+	var known := BuildingCalculator.list_building_type_names()
+	var types: Array[String] = []
+	var bar_order: Array = BuildBar.BUILDING_SLOT_INDEX_BY_TYPE.keys()
+	bar_order.sort_custom(func(a: Variant, b: Variant) -> bool:
+		return int(BuildBar.BUILDING_SLOT_INDEX_BY_TYPE[a]) < int(BuildBar.BUILDING_SLOT_INDEX_BY_TYPE[b])
+	)
+	for type_name in bar_order:
+		if known.has(String(type_name)) and not types.has(String(type_name)):
+			types.append(String(type_name))
+	# Destinazioni dei miglioramenti, anche fuori dalla barra (seguendo le catene).
+	var index := 0
+	while index < types.size():
+		var rules := BuildingCalculator.get_building_rules(types[index])
+		if rules != null and rules.upgrades_to != "" and known.has(rules.upgrades_to) and not types.has(rules.upgrades_to):
+			types.append(rules.upgrades_to)
+		index += 1
+	var targets: Dictionary = {}
+	for type_name in types:
+		var rules := BuildingCalculator.get_building_rules(type_name)
+		if rules != null and rules.upgrades_to != "":
+			targets[rules.upgrades_to] = true
+	var chains: Array = []
+	for type_name in types:
+		if targets.has(type_name):
+			continue
+		var chain: Array[String] = [type_name]
+		var rules := BuildingCalculator.get_building_rules(type_name)
+		while rules != null and rules.upgrades_to != "" and known.has(rules.upgrades_to) and not chain.has(rules.upgrades_to):
+			chain.append(rules.upgrades_to)
+			rules = BuildingCalculator.get_building_rules(rules.upgrades_to)
+		chains.append(chain)
+	return chains
+
+
+# Scheda di un tipo di edificio: nome e descrizione breve (se c'è, BuildingCostTooltip.get_short_description); costo
+# (materiali e lavoro, gli stessi dati del tooltip di costo, BuildingCostTooltip.get_build_materials — come testo: le
+# icone del tooltip sono nodi disegnati che il testo dell'aiuto non può contenere); le righe Info del tipo
+# (BuildingInfoLines.build); l'idea richiesta, se c'è; "Si migliora in: X", se c'è, che apre la scheda di X.
+func _build_building_page_text(type_name: String) -> String:
+	var rules := BuildingCalculator.get_building_rules(type_name)
+	if rules == null:
+		return _build_buildings_list_text()
+	var lines: Array[String] = ["[b]%s[/b]" % tr(rules.building_name)]
+	var description := BuildingCostTooltip.get_short_description(type_name)
+	if description != "":
+		lines.append(description)
+	lines.append("")
+	var materials := BuildingCostTooltip.get_build_materials(rules)
+	var material_names: Array = materials.keys()
+	material_names.sort()
+	var material_parts: Array[String] = []
+	for material_name in material_names:
+		material_parts.append("%d %s" % [int(materials[material_name]), IconRegistry.get_resource_display_name(String(material_name))])
+	lines.append(tr("help_buildings_materials").format({
+		"items": ", ".join(material_parts) if not material_parts.is_empty() else tr("building_upgrade_nothing"),
+	}))
+	lines.append(tr("building_upgrade_labor").format({"labor": rules.required_labor}))
+	lines.append("")
+	for row in BuildingInfoLines.build(rules):
+		lines.append((INFO_ROW_INDENT if bool(row.get("indent", false)) else "") + String(row["text"]))
+	if rules.required_idea_id != "":
+		var idea := IdeaCalculator.get_idea(rules.required_idea_id)
+		lines.append("")
+		lines.append(tr("tech_tree_requires").format({"ideas": tr(idea.display_name) if idea != null else rules.required_idea_id}))
+	var upgrade_rules := BuildingCalculator.get_building_rules(rules.upgrades_to) if rules.upgrades_to != "" else null
+	if upgrade_rules != null:
+		lines.append("")
+		lines.append(tr("help_buildings_upgrades_to").format({
+			"building": "[url=%s%s]%s[/url]" % [BUILDING_PAGE_PREFIX, rules.upgrades_to, tr(upgrade_rules.building_name)],
+		}))
 	return "\n".join(lines)

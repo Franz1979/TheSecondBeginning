@@ -73,6 +73,13 @@ var work_area_quarry_count: int = 3
 # Piante da tagliare del comando Taglia nelle zone (2026-10-06), CutZoneService.COUNT_MIN..COUNT_MAX, la prima volta 2.
 var work_area_cut_count: int = 2
 var hunt_zone_meat_target: int = 10
+# Attesa prima dell'assegnazione automatica della lista dei lavori (2026-10-07, impostazioni del cassetto
+# "Assegnazione compiti"): secondi scelti dal giocatore; -1 = mai scelto, vale JobBoardService.MANUAL_ASSIGN_WINDOW_SECONDS.
+# I limiti li applica JobBoardService.get_manual_assign_window_seconds. Chiave in options.cfg con lo stesso nome.
+var job_board_manual_assign_seconds: int = -1
+# Regola "Ritira i mucchi abbandonati" (2026-10-07, regole di assegnazione del cassetto): accesa, i mucchi a terra che
+# nessuno porta via entrano nella lista dei lavori. Chiave in options.cfg con lo stesso nome.
+var job_board_collect_piles: bool = true
 
 # Volumi audio (2026-09-21, richiesta utente): lineari 0-1, default 0.8, uno per bus (vedi
 # audio/buses/default_bus_layout.tres). Applicati ai bus con apply_volumes(), al load e ad ogni modifica.
@@ -125,6 +132,8 @@ func load_from_disk() -> void:
 	work_area_quarry_count = int(config.get_value(SECTION, "work_area_quarry_count", 3))
 	work_area_cut_count = int(config.get_value(SECTION, "work_area_cut_count", 2))
 	hunt_zone_meat_target = int(config.get_value(SECTION, "hunt_zone_meat_target", 10))
+	job_board_manual_assign_seconds = int(config.get_value(SECTION, "job_board_manual_assign_seconds", -1))
+	job_board_collect_piles = bool(config.get_value(SECTION, "job_board_collect_piles", true))
 	for field in VOLUME_BUSES.keys():
 		set(field, clampf(float(config.get_value(SECTION, field, DEFAULT_VOLUME)), 0.0, 1.0))
 
@@ -147,6 +156,8 @@ func save_to_disk() -> void:
 	config.set_value(SECTION, "work_area_quarry_count", work_area_quarry_count)
 	config.set_value(SECTION, "work_area_cut_count", work_area_cut_count)
 	config.set_value(SECTION, "hunt_zone_meat_target", hunt_zone_meat_target)
+	config.set_value(SECTION, "job_board_manual_assign_seconds", job_board_manual_assign_seconds)
+	config.set_value(SECTION, "job_board_collect_piles", job_board_collect_piles)
 	for field in VOLUME_BUSES.keys():
 		config.set_value(SECTION, field, get(field))
 	config.save(OPTIONS_FILE_PATH)

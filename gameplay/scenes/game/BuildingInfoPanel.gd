@@ -236,7 +236,7 @@ const STORAGE_SLOT_FILL_BAR_FILL_COLOR := Color(1.0, 1.0, 1.0, 0.85)
 # DemolishButton su un cantiere) e "Annulla demolizione" prendono il posto di Demolisci. Pulsanti come il 🎯 con
 # un'icona disegnata (_setup_command_icon_buttons); il nome del comando è la prima riga del tooltip. Visibili solo quando hanno senso; esistenti ma non disponibili = spenti con il motivo.
 @onready var command_icon_row: HBoxContainer = $CommandIconRow
-@onready var upgrade_button: Button = $CommandIconRow/UpgradeButton
+@onready var upgrade_button: TooltipButton = $CommandIconRow/UpgradeButton
 @onready var empty_all_button: Button = $CommandIconRow/EmptyAllButton
 @onready var demolish_button: Button = $CommandIconRow/DemolishButton
 @onready var cancel_demolition_button: Button = $CommandIconRow/CancelDemolitionButton
@@ -582,56 +582,45 @@ func _style_command_icon_button(button: Button) -> void:
 
 # Bottone "Migliora in <destinazione>" (2026-10-03, richiesta utente — miglioramento passo 1): per un edificio completo,
 # non "da demolire", con BuildingRules.upgrades_to. Spento con il motivo se l'idea della destinazione non è scoperta.
-# Tooltip: materiali da portare (già scontati), materiali recuperati, lavoro e, per le abitazioni, residenti massimi e
-# moltiplicatore di riposo prima e dopo (BuildingUpgradeService.get_upgrade_cost).
+# Tooltip (2026-10-07, richiesta utente): stesso formato dei bottoni della barra degli edifici (BuildingCostTooltip) —
+# "Migliora in <edificio>", descrizione breve della destinazione, materiali da portare (già scontati,
+# BuildingUpgradeService.get_upgrade_cost), lavoro, poi l'eventuale motivo per cui è spento. Costruito al passaggio
+# del mouse (_upgrade_tooltip). Capienza, conservazione, residenti e riposo non stanno più qui (blocco Info e help).
 func _refresh_upgrade_button(building: Building) -> void:
 	var target := BuildingUpgradeService.get_upgrade_rules(building)
 	upgrade_button.visible = target != null and building.is_complete and not building.is_marked_for_demolition
 	if not upgrade_button.visible:
 		return
-	# Icona dal 2026-10-03: il nome del comando è la prima riga del tooltip.
-	var lines: Array[String] = [tr("building_upgrade_button").format({"building": tr(target.building_name)})]
-	var folk: Folk = GameSettings.active_human_folk
-	var missing_idea := target.required_idea_id != "" and (folk == null or not folk.completed_ideas.has(target.required_idea_id))
-	# Scorte (2026-10-04, richiesta utente — prima bloccavano il miglioramento): non lo bloccano più; all'avvio finiscono a
-	# terra in un mucchio (GameScene._start_building_upgrade), e il tooltip lo dice.
-	var has_contents := BuildingUpgradeService.has_contents_to_drop(building)
-	upgrade_button.disabled = missing_idea
-	if missing_idea:
-		var idea := IdeaCalculator.get_idea(target.required_idea_id)
-		lines.append(tr("tech_tree_requires").format({"ideas": tr(idea.display_name) if idea != null else target.required_idea_id}))
-	if has_contents:
-		lines.append(tr("building_upgrade_contents_to_ground"))
+	upgrade_button.disabled = _get_upgrade_missing_idea_line(target) != ""
+	# Testo semplice di riserva (e perché il tooltip compaia): il nome del comando.
+	upgrade_button.tooltip_text = tr("building_upgrade_button").format({"building": tr(target.building_name)})
+	if not upgrade_button.tooltip_builder.is_valid():
+		upgrade_button.tooltip_builder = _upgrade_tooltip
+
+
+func _upgrade_tooltip(_for_text: String) -> Control:
+	var building := _current_building
+	var target := BuildingUpgradeService.get_upgrade_rules(building) if building != null else null
+	if target == null:
+		return null
 	var cost := BuildingUpgradeService.get_upgrade_cost(building.rules, target)
-	lines.append(tr("building_upgrade_materials").format({"items": _format_material_list(cost["to_bring"])}))
-	if not (cost["recovered"] as Dictionary).is_empty():
-		lines.append(tr("building_upgrade_recovered").format({"items": _format_material_list(cost["recovered"])}))
-	lines.append(tr("building_upgrade_labor").format({"labor": int(cost["labor"])}))
-	if building.rules.max_residents > 0 or target.max_residents > 0:
-		lines.append(tr("building_upgrade_residents").format({"from": building.rules.max_residents, "to": target.max_residents}))
-		if building.rules.max_residents > 0:
-			lines.append(tr("building_upgrade_residents_leave"))
-		lines.append(tr("building_upgrade_rest").format({
-			"from": _format_percent_bonus(building.rules.rest_multiplier), "to": _format_percent_bonus(target.rest_multiplier),
-		}))
-	# Magazzini (2026-10-04, richiesta utente): capienza (slot × spazio per slot, e il totale) e conservazione per
-	# categoria, prima → dopo, come residenti e riposo per le abitazioni.
-	if building.rules.storage_slot_count > 0 or target.storage_slot_count > 0:
-		lines.append(tr("building_upgrade_storage").format({
-			"from_slots": building.rules.storage_slot_count, "from_space": building.rules.storage_space_per_slot,
-			"from_total": building.rules.storage_slot_count * building.rules.storage_space_per_slot,
-			"to_slots": target.storage_slot_count, "to_space": target.storage_space_per_slot,
-			"to_total": target.storage_slot_count * target.storage_space_per_slot,
-		}))
-		# Conservazione in percentuale (2026-10-04): intestazione e una riga per categoria, prima → dopo.
-		lines.append(tr("building_info_conservation"))
-		for category_index in SecondaryResourceTypes.Category.size():
-			lines.append(INFO_TOOLTIP_INDENT + tr("building_upgrade_conservation_row").format({
-				"category": _category_display_name(category_index),
-				"from": _format_percent_bonus(_durability_multiplier(building.rules, category_index)),
-				"to": _format_percent_bonus(_durability_multiplier(target, category_index)),
-			}))
-	upgrade_button.tooltip_text = "\n".join(lines)
+	var extra_lines: Array[String] = []
+	var missing_idea_line := _get_upgrade_missing_idea_line(target)
+	if missing_idea_line != "":
+		extra_lines.append(missing_idea_line)
+	return BuildingCostTooltip.build(
+		tr("building_upgrade_button").format({"building": tr(target.building_name)}), building.rules.upgrades_to,
+		cost["to_bring"], int(cost["labor"]), extra_lines
+	)
+
+
+# "Serve l'idea «…»" se l'idea della destinazione non è scoperta, altrimenti "".
+func _get_upgrade_missing_idea_line(target: BuildingRules) -> String:
+	var folk: Folk = GameSettings.active_human_folk
+	if target.required_idea_id == "" or (folk != null and folk.completed_ideas.has(target.required_idea_id)):
+		return ""
+	var idea := IdeaCalculator.get_idea(target.required_idea_id)
+	return tr("tech_tree_requires").format({"ideas": tr(idea.display_name) if idea != null else target.required_idea_id})
 
 
 # Moltiplicatore di conservazione di una categoria (BuildingRules.durability_multiplier_by_category, indice = categoria);
@@ -820,81 +809,17 @@ func _on_info_toggled(pressed: bool) -> void:
 func _refresh_info(building: Building) -> void:
 	if _info_block == null:
 		return
-	var rows := _build_info_lines(building.rules, building)
+	var rows := _build_info_lines(building.rules)
 	_info_button.tooltip_text = _info_block.set_rows(rows)
 	_info_button.set_pressed_no_signal(_info_open)
 	_info_block.visible = _info_open
 	info_button_box.visible = visible
 
 
-# Righe del blocco Info: {"text": String, "indent": bool} (rientrate le categorie della conservazione).
-func _build_info_lines(rules: BuildingRules, building: Building = null) -> Array[Dictionary]:
-	var rows: Array[Dictionary] = []
-	if rules == null:
-		return rows
-	var add_row := func(text: String, indent: bool) -> void:
-		rows.append({"text": text, "indent": indent})
-	if rules.storage_slot_count > 0:
-		add_row.call(tr("building_info_storage").format({
-			"slots": rules.storage_slot_count, "space": rules.storage_space_per_slot,
-			"total": rules.storage_slot_count * rules.storage_space_per_slot,
-		}), false)
-		add_row.call(tr("building_info_conservation"), false)
-		for category_index in SecondaryResourceTypes.Category.size():
-			add_row.call(tr("building_info_conservation_row").format({
-				"category": _category_display_name(category_index),
-				"value": _format_percent_bonus(_durability_multiplier(rules, category_index)),
-			}), true)
-	if rules.max_residents > 0:
-		add_row.call(tr("building_info_residents").format({"count": rules.max_residents}), false)
-		add_row.call(tr("building_info_rest").format({"value": _format_percent_bonus(rules.rest_multiplier)}), false)
-	# Capienza del cumulo sepolcrale (2026-10-04): "Capienza: 10 sepolti". L'elenco dei sepolti sta nel corpo del pannello
-	# (_refresh_buried_list).
-	if rules.max_buried > 0:
-		add_row.call(tr("building_info_burial_capacity").format({"max": rules.max_buried}), false)
-	# Attrezzeria (2026-10-04): letta dai dati, su ogni edificio che ce l'ha; con la regola d'uso.
-	if rules.toolkit_tool_types > 0 and rules.toolkit_units_per_type > 0:
-		add_row.call(tr("building_info_toolkit").format({"types": rules.toolkit_tool_types, "units": rules.toolkit_units_per_type}), false)
-		add_row.call(tr("building_info_toolkit_usage"), true)
-	if rules.is_workstation:
-		add_row.call(tr("building_info_concurrent_orders").format({"count": rules.production_concurrent_orders}), false)
-		# Solo se diversi da 1,0 (2026-10-04, richiesta utente): un moltiplicatore neutro non si mostra.
-		if not is_equal_approx(rules.production_labor_multiplier, 1.0):
-			add_row.call(tr("building_info_labor_multiplier").format({"value": _format_percent_bonus(rules.production_labor_multiplier)}), false)
-		if not is_equal_approx(rules.production_fuel_multiplier, 1.0):
-			add_row.call(tr("building_info_fuel_multiplier").format({"value": _format_percent_bonus(rules.production_fuel_multiplier)}), false)
-	# Dove finiscono i prodotti (2026-10-05, richiesta utente), stessa regola di ProductionService.flush_output_to_storage:
-	# nel magazzino se l'edificio ne ha uno e ci travasa i prodotti, altrimenti restano nei posti dei prodotti finiti.
-	if rules.production_output_slots > 0:
-		if rules.production_output_to_storage and rules.storage_slot_count > 0:
-			add_row.call(tr("building_info_output_to_storage"), false)
-		else:
-			add_row.call(tr("building_info_output_to_collect").format({"max": rules.production_output_slots}), false)
-	add_row.call(tr("building_info_max_durability").format({"value": rules.max_durability}), false)
-	# Difesa (2026-10-04): ancora senza effetti in gioco, vedi BuildingRules.defense.
-	add_row.call(tr("building_info_defense").format({"value": rules.defense}), false)
-	for entry in [
-		["building_info_political_radius", rules.political_radius],
-		["building_info_cultural_radius", rules.cultural_radius],
-	]:
-		if int(entry[1]) > 0:
-			add_row.call(tr(String(entry[0])).format({"radius": int(entry[1])}), false)
-	# Raggio religioso (2026-10-04): dato del tipo, base e massimo raggiungibile con tutte le soglie di sacralità
-	# (_max_religious_radius, dalla tabella delle soglie). Il raggio attuale della singola istanza sta nel corpo.
-	if rules.religious_radius > 0:
-		add_row.call(tr("building_info_religious_radius_range").format({
-			"base": rules.religious_radius, "max": _max_religious_radius(rules),
-		}), false)
-	return rows
-
-
-# Raggio religioso massimo di un tipo di edificio: base + una unità per ogni soglia di
-# BuildingRules.influence_level_thresholds, entro il tetto base × influence_max_multiplier — la stessa regola di
-# InfluenceService.get_effective_radius con tutte le soglie raggiunte.
-static func _max_religious_radius(rules: BuildingRules) -> int:
-	var base := maxi(rules.religious_radius, 0)
-	var cap := maxi(base, floori(maxf(float(base), float(base) * rules.influence_max_multiplier)))
-	return clampi(base + rules.influence_level_thresholds.size(), base, cap)
+# Righe del blocco Info: dal tipo dell'edificio (BuildingInfoLines.build, condivisa — 2026-10-07, spostata da qui per
+# usarla anche dove l'edificio non esiste in mappa). Nessuna riga dipende dall'edificio costruito.
+func _build_info_lines(rules: BuildingRules) -> Array[Dictionary]:
+	return BuildingInfoLines.build(rules)
 
 
 func _build_sacredness_box() -> void:

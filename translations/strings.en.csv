@@ -80,11 +80,26 @@ unlock_tool_work_areas_advanced,Work areas for all resources
 unlock_tool_task_assignment,Task assignment
 task_assignment_tooltip,Assignment
 task_assignment_dialog_title,Task assignment
-task_assignment_list_section,In the list
-task_assignment_list_empty,No tasks in the list
+task_assignment_list_section,Queued
+task_assignment_list_empty,No queued tasks
 task_assignment_lock,Lock
 task_assignment_unlock,Unlock
 task_assignment_locked,Locked
+task_assignment_waiting,Awaiting assignment
+task_assignment_requeue,Back to queue
+task_assignment_requeue_tooltip,Takes the job away from whoever is doing it and puts it back in the queue.
+task_assignment_burial_cannot_cancel,A burial cannot be cancelled.
+task_assignment_pile_cannot_cancel,A pile cannot be cancelled.
+task_assignment_pile_no_storage,No storage accepts it
+task_assignment_setting_collect_piles,Collect abandoned piles
+task_assignment_setting_collect_piles_tooltip,Piles on the ground that no one is carrying away enter the queue and are taken to storage by whoever is free.
+pending_pile,Pile · {resources}
+task_assignment_in_progress_section,In progress
+task_assignment_in_progress_empty,No tasks in progress
+task_assignment_settings,⚙ Assignment rules
+task_assignment_rules_save_close,Save and close
+task_assignment_setting_wait,Delay before automatic assignment
+task_assignment_setting_wait_tooltip,"For these seconds a new job is not taken by anyone: you can assign it yourself with a right-click. With 0 it starts right away."
 population_hide_tasks,Hide tasks
 population_show_tasks,Show tasks
 task_assignment_coming_soon,Coming soon
@@ -252,6 +267,10 @@ selection_title_type,Type: {type}
 game_info_tab_buildings,Buildings
 buildings_panel_summary_label,"Buildings: {total} ({complete} complete, {under_construction} under construction)"
 buildings_panel_center_button_tooltip,Center and select
+buildings_panel_group_complete,{count} complete
+buildings_panel_group_under_construction,{count} under construction
+buildings_panel_group_marked_for_demolition,{count} to be demolished
+buildings_panel_group_demolition_in_progress,{count} being demolished
 game_info_tab_debug,Debug: Tasks
 task_debug_panel_header,Debug: Tasks
 task_debug_panel_clear_button,Clear
@@ -331,6 +350,10 @@ birth_verb_female,born
 offspring_word_male,son
 offspring_word_female,daughter
 help_building_materials_menu_link,Buildings and materials
+help_buildings_menu_link,Buildings
+help_buildings_title,Buildings
+help_buildings_materials,Materials: {items}
+help_buildings_upgrades_to,Upgrades to: {building}
 help_building_materials_title,Buildings and materials
 help_building_materials_setup_vs_construction,"Building a structure requires material in two separate phases: first setting up the construction site (a fixed amount of sticks per microcell the building occupies), then the actual construction, which will require its own materials in the future."
 help_building_materials_manual,"Right now the game never creates a Task on its own to fetch this material: if it's missing, the site simply waits. You have to bring it there yourself, by manually commanding an individual (gather the material and deposit it at the site)."
@@ -704,7 +727,8 @@ game_info_tab_pending,Pending
 pending_empty,Nothing pending
 pending_center_tooltip,Center and select
 pending_not_centerable,Outside the loaded area: cannot be centered
-pending_body,{name} · {days} days left
+pending_body_days,{days} days left to bury
+pending_body,Burial · {name} · {days} days left
 pending_build,Construction · {building}
 pending_upgrade,Upgrade · {building}
 pending_demolish,Demolition · {building}

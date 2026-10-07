@@ -1296,6 +1296,9 @@ func _process(delta: float) -> void:
 	# Scheda "In sospeso" (2026-10-04): orologio di gioco per l'attesa e ricalcolo una volta al secondo, anche a scheda
 	# chiusa (numero e lampeggio della linguetta).
 	_pending_clock += clock.get_game_day_delta(delta) if clock != null else 0.0
+	# Attesa per l'assegnazione a mano della lista dei lavori (2026-10-07): secondi reali, solo a gioco in corso.
+	if clock != null and clock.is_playing:
+		_job_board_clock += delta
 	_pending_refresh_timer += delta
 	if _pending_refresh_timer >= PENDING_REFRESH_INTERVAL_SEC:
 		_pending_refresh_timer = 0.0
@@ -2875,7 +2878,8 @@ func _spawn_rite_completed_effect(building: Building, rite_id: String = "") -> v
 	var macro_coords := Vector2i(building.macro_x, building.macro_y)
 	if not live_cells.has(macro_coords):
 		return
-	var icon_node := IconRegistry.get_command_icon_node("rite")
+	# Funerale (rito della task Seppellisci, 2026-10-07): il teschio della sepoltura; ogni altro rito la luna.
+	var icon_node := IconRegistry.get_command_icon_node("bury" if rite_id == BodyBurialService.FUNERAL_RITE_ID else "rite")
 	if icon_node == null:
 		return
 	var local_position := (Vector2(building.micro_x, building.micro_y) + Vector2(0.5, 0.5)) * MicroCellRenderer.CELL_SIZE
@@ -2996,6 +3000,14 @@ func _center_camera_on_selection(animated: bool = true) -> void:
 			var stick_lot_local_position := Vector2(lot.x * MicroCellRenderer.CELL_SIZE + half, lot.y * MicroCellRenderer.CELL_SIZE + half)
 			var stick_lot_macro_offset := Vector2(stick_lot_macro_coords - center_macro_coords) * MACRO_CELL_PIXELS
 			_animate_camera_to(stick_lot_local_position + stick_lot_macro_offset, animated)
+		# Mucchio a terra (2026-10-07, clic su una riga della lista dei lavori): centro della sua microcella.
+		SelectionKind.GROUND_PILE:
+			var selected_pile := GroundPileService.find_by_id(game_data, selected_ground_pile_id)
+			if selected_pile == null:
+				return
+			var pile_local_position := (Vector2(selected_pile.microcell) + Vector2(0.5, 0.5)) * MicroCellRenderer.CELL_SIZE
+			var pile_macro_offset := Vector2(selected_pile.macro_coords - center_macro_coords) * MACRO_CELL_PIXELS
+			_animate_camera_to(pile_local_position + pile_macro_offset, animated)
 		_:
 			pass
 
@@ -5001,6 +5013,18 @@ const COMMAND_BLINK_EFFECT_VISUAL_OFFSET: Vector2 = Vector2(-4.0, -5.0)
 func _spawn_command_blink_effect(cell: LiveMacroCell, target_position: Vector2i, icon: String) -> void:
 	if icon == "":
 		return
+	var label := _make_command_blink_label(target_position, icon)
+	cell.container.add_child(label)
+
+	var tween := create_tween()
+	tween.set_loops(COMMAND_BLINK_EFFECT_BLINK_COUNT)
+	tween.tween_property(label, "modulate:a", 0.15, COMMAND_BLINK_EFFECT_BLINK_HALF_DURATION)
+	tween.tween_property(label, "modulate:a", 1.0, COMMAND_BLINK_EFFECT_BLINK_HALF_DURATION)
+	tween.chain().tween_callback(label.queue_free)
+
+
+# Etichetta dell'emoji di _spawn_command_blink_effect (estratta il 2026-10-07 per l'icona dell'attesa della lista).
+func _make_command_blink_label(target_position: Vector2i, icon: String) -> Label:
 	var label := Label.new()
 	label.text = icon
 	label.z_index = 2
@@ -5010,13 +5034,27 @@ func _spawn_command_blink_effect(cell: LiveMacroCell, target_position: Vector2i,
 	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	label.size = Vector2(MicroCellRenderer.CELL_SIZE, MicroCellRenderer.CELL_SIZE)
 	label.position = Vector2(target_position) * MicroCellRenderer.CELL_SIZE + COMMAND_BLINK_EFFECT_VISUAL_OFFSET
-	cell.container.add_child(label)
+	return label
 
-	var tween := create_tween()
-	tween.set_loops(COMMAND_BLINK_EFFECT_BLINK_COUNT)
-	tween.tween_property(label, "modulate:a", 0.15, COMMAND_BLINK_EFFECT_BLINK_HALF_DURATION)
-	tween.tween_property(label, "modulate:a", 1.0, COMMAND_BLINK_EFFECT_BLINK_HALF_DURATION)
-	tween.chain().tween_callback(label.queue_free)
+
+# Stessa icona e stesso lampeggio di _spawn_command_icon_at_microcell, ma senza fine (2026-10-07, attesa della lista dei
+# lavori): resta finché chi l'ha creata non la libera (o la cella viva sparisce). null se la chiave non ha icona.
+func _spawn_persistent_command_icon_at_microcell(cell: LiveMacroCell, microcell: Vector2i, command_icon_key: String) -> CanvasItem:
+	var icon_node: CanvasItem = IconRegistry.get_command_icon_node(command_icon_key)
+	if icon_node != null:
+		icon_node.z_index = 2
+		(icon_node as Node2D).position = (Vector2(microcell) + Vector2(0.5, 0.5)) * MicroCellRenderer.CELL_SIZE
+	else:
+		var icon := IconRegistry.get_command_icon(command_icon_key)
+		if icon == "":
+			return null
+		icon_node = _make_command_blink_label(microcell, icon)
+	cell.container.add_child(icon_node)
+	var tween := icon_node.create_tween()
+	tween.set_loops()
+	tween.tween_property(icon_node, "modulate:a", 0.15, COMMAND_BLINK_EFFECT_BLINK_HALF_DURATION)
+	tween.tween_property(icon_node, "modulate:a", 1.0, COMMAND_BLINK_EFFECT_BLINK_HALF_DURATION)
+	return icon_node
 
 
 # Icona di comando per chiave (2026-09-26, richiesta utente — mirino della caccia): se IconRegistry ha
@@ -5264,6 +5302,10 @@ func _try_assign_cut_command_on_right_click(event: InputEvent) -> bool:
 		return false
 	if not ToolGateService.has_tool_for(individual, TaskTypes.ToolCategory.CHOPPING):
 		return false
+	# Clic su un cantiere o su un edificio "da demolire" (2026-10-07, bugfix): è per la Costruisci/Demolisci
+	# (_try_assign_build_command_on_right_click), non per una pianta vicina.
+	if _has_resumable_building_under_click(event):
+		return false
 	var plant := vegetation_selector_controller.find_live_at_mouse(live_cells)
 	if plant.is_empty():
 		return false
@@ -5426,6 +5468,9 @@ func _try_assign_quarry_command_on_right_click(event: InputEvent) -> bool:
 	if individual == null or not individual.is_selected:
 		return false
 	if not ToolGateService.has_tool_for(individual, TaskTypes.ToolCategory.DIGGING):
+		return false
+	# Stesso bugfix della Cut (2026-10-07): il clic su un cantiere o un edificio "da demolire" non diventa un'estrazione.
+	if _has_resumable_building_under_click(event):
 		return false
 	var rock := stone_selector_controller.try_select(event, live_cells, MOUSE_BUTTON_RIGHT)
 	if rock.is_empty():
@@ -6548,6 +6593,18 @@ func _reconcile_all_production_units() -> void:
 # "is_currently_grass" (il renderer live, layer di gameplay/rendering) — STESSA identica query di
 # _start_building_task_at per lo stesso scopo (vedi lì per il motivo: GRASS non ha posizioni proprie
 # in MacroCellState).
+# true se il clic destro `event` cade su un edificio con un lavoro da riprendere (cantiere o "da demolire"): stesso
+# hit-test di _try_assign_build_command_on_right_click, senza assegnare nulla.
+func _has_resumable_building_under_click(event: InputEvent) -> bool:
+	var building_hit := building_selector_controller.try_select(
+		event, live_cells, macro_world.buildings if macro_world != null else [], MOUSE_BUTTON_RIGHT
+	)
+	if building_hit.is_empty():
+		return false
+	var hit_building := _find_building_by_id(int(building_hit["building_id"]))
+	return hit_building != null and hit_building.has_resumable_task()
+
+
 func _try_assign_build_command_on_right_click(event: InputEvent) -> bool:
 	if not (event is InputEventMouseButton) or not event.pressed or event.button_index != MOUSE_BUTTON_RIGHT:
 		return false
@@ -6827,6 +6884,9 @@ func _assign_resumable_building_task(worker: HumanIndividual, hit_building: Buil
 		_report_failed_assignment(worker, task, "task_activity_demolish" if is_demolition else "task_activity_build")
 		return true
 
+	# Lavoro assegnato: esce dalla lista; se ci tornerà, l'attesa per l'assegnazione a mano ripartirà da capo.
+	_forget_job_board_wait(_building_job_keys(hit_building))
+
 	# Collegamento signal SetupSiteAction.site_setup_completed / ClearAction.site_cleared (vedi
 	# _reconnect_build_task_signals) — STESSO principio già in uso da _start_building_task_at prima
 	# di questa riscrittura: resta qui (non in TaskReassignmentService, generico) perché è un
@@ -6862,6 +6922,9 @@ func _assign_resumable_building_task(worker: HumanIndividual, hit_building: Buil
 # stile di quello della Transport) e cursore a cerchietto rosso. _worker_pick_on_pick valido = modalità attiva.
 var _worker_pick_on_pick: Callable = Callable()
 var _worker_pick_on_cancel: Callable = Callable()
+# Edificio del mirino del demolitore aperto (2026-10-07, lista dei lavori): finché il mirino è aperto resta fuori dalla
+# lista (_take_listed_job_for, cassetto), così nessuno lo prende da solo mentre il giocatore sceglie. null = nessuno.
+var _demolisher_pick_building: Building = null
 # true mentre la scelta del lavoratore attiva è quella della produzione (2026-09-27): la griglia delle ricette la chiude
 # quando l'ordine torna a 0, senza toccare quella del demolitore.
 var _produce_pick_active: bool = false
@@ -6968,11 +7031,13 @@ func _enter_demolisher_pick_mode(building: Building, cancel_demolition_on_exit: 
 		_assign_resumable_building_task(worker, building)
 		_refresh_selected_building_panel()
 	_enter_worker_pick_mode(tr("demolisher_pick_banner_text"), on_pick, on_cancel)
+	_demolisher_pick_building = building
 
 
 func _enter_worker_pick_mode(banner_text: String, on_pick: Callable, on_cancel: Callable = Callable()) -> void:
 	# La produzione lo rimette a true subito dopo (_enter_produce_assign_mode); ogni altra scelta lo lascia false.
 	_produce_pick_active = false
+	_demolisher_pick_building = null
 	_worker_pick_on_pick = on_pick
 	_worker_pick_on_cancel = on_cancel
 	if worker_pick_banner_label != null:
@@ -6986,6 +7051,7 @@ func _enter_worker_pick_mode(banner_text: String, on_pick: Callable, on_cancel: 
 func _exit_worker_pick_mode() -> void:
 	_worker_pick_on_pick = Callable()
 	_worker_pick_on_cancel = Callable()
+	_demolisher_pick_building = null
 	_produce_pick_active = false
 	if worker_pick_banner != null:
 		worker_pick_banner.visible = false
@@ -8444,66 +8510,85 @@ func _try_assign_bury_command_on_right_click(event: InputEvent) -> bool:
 # (che da qui ne occupa un posto). Rifiuti con l'icona di comando rifiutato sul corpo e una frase, come per gli altri
 # comandi diretti: corpo già assegnato a un altro, nessun cumulo con posti liberi, età del pipottino. Lo stesso
 # pipottino che ha già la sepoltura di questo corpo: nessuna nuova task.
-func _assign_bury_task(worker: HumanIndividual, body_id: int) -> void:
+# `silent` (2026-10-07, lista dei lavori): nessuna icona di rifiuto né messaggio — la lista ha già controllato prima.
+func _assign_bury_task(worker: HumanIndividual, body_id: int, silent: bool = false) -> void:
 	var record := BodyBurialService.find_body_record(body_id)
 	if record.is_empty() or ExpiredObjectCalculator.is_carried(record) or BodyBurialService.is_expired(record):
 		return
-	var body_macro: Vector2i = record["home_macro_coords"]
 	var body_name := BodyBurialService.get_body_name(record)
 	var assignee := BodyBurialService.get_bury_assignee(body_id, human_individuals)
 	if assignee == worker:
-		_spawn_bury_command_icon(record, "rite")
+		_spawn_bury_command_icon(record, "bury")
 		return
 	if assignee != null:
-		_spawn_bury_command_icon(record, "task_rejected")
-		_report_command_rejection(worker, tr("bury_reject_already_assigned").format({"body": body_name, "assignee": assignee.name}))
+		if not silent:
+			_spawn_bury_command_icon(record, "task_rejected")
+			_report_command_rejection(worker, tr("bury_reject_already_assigned").format({"body": body_name, "assignee": assignee.name}))
 		return
-	# Corpo già sulla lastra (2026-10-04, funerale): resta quel cumulo, se ancora utilizzabile, e la task passa subito al
-	# rito (BodyBurialService.skip_transport_if_on_slab sotto).
-	var mound: Building = null
-	if BodyBurialService.is_on_slab(record):
-		var slab_mound := BodyBurialService.find_building(int(record.get("mound_id", -1)))
-		if BodyBurialService.is_mound_usable(slab_mound, body_id, human_individuals):
-			mound = slab_mound
+	var mound := _resolve_bury_mound(record, body_id)
 	if mound == null:
-		mound = BodyBurialService.find_nearest_mound(Vector2(record["position"]), body_macro, body_id, human_individuals)
-	if mound == null:
-		_spawn_bury_command_icon(record, "task_rejected")
-		_report_command_rejection(worker, tr("bury_reject_no_mound").format({"name": worker.name, "body": body_name}))
+		if not silent:
+			_spawn_bury_command_icon(record, "task_rejected")
+			_report_command_rejection(worker, tr("bury_reject_no_mound").format({"name": worker.name, "body": body_name}))
 		return
-	var definition := load(BodyBurialService.BURY_TASK_DEFINITION_PATH) as TaskDefinition
-	if definition == null:
-		push_error("GameScene._assign_bury_task: %s non caricabile." % BodyBurialService.BURY_TASK_DEFINITION_PATH)
+	var task := _make_bury_task(worker, record, body_id, mound)
+	if task == null:
 		return
-	var context := {
-		"target_position": BodyBurialService.get_body_position_relative_to(record, worker.home_macro_coords),
-		BodyBurialService.CONTEXT_BODY_ID: body_id,
-		BodyBurialService.CONTEXT_MOUND_ID: mound.id,
-		BodyBurialService.CONTEXT_BODY_NAME: body_name,
-		BodyBurialService.CONTEXT_RITE_BUILDING: null,
-		BodyBurialService.CONTEXT_RITE_ID: BodyBurialService.FUNERAL_RITE_ID,
-	}
-	var task := TaskFactory.build_task(definition, context)
-	BodyBurialService.skip_transport_if_on_slab(task, worker)
 	var rejection := worker.get_assign_rejection_reason(task, _resolve_age_band(worker))
 	if rejection != HumanIndividual.ASSIGN_OK:
-		_spawn_bury_command_icon(record, "task_rejected")
-		_report_assign_rejection(worker, rejection, "task_activity_bury")
+		if not silent:
+			_spawn_bury_command_icon(record, "task_rejected")
+			_report_assign_rejection(worker, rejection, "task_activity_bury")
 		return
 	if not worker.assign_task(task, _resolve_age_band(worker)) or (worker.current_task != task and not worker.task_queue.has(task)):
-		_spawn_bury_command_icon(record, "task_rejected")
-		_report_failed_assignment(worker, task, "task_activity_bury")
+		if not silent:
+			_spawn_bury_command_icon(record, "task_rejected")
+			_report_failed_assignment(worker, task, "task_activity_bury")
 		return
+	# Lavoro assegnato: esce dalla lista; se ci tornerà, l'attesa per l'assegnazione a mano ripartirà da capo.
+	var job_keys: Array[String] = ["body:%d" % body_id]
+	_forget_job_board_wait(job_keys)
 	worker.tool_gate_warning = ""
 	_ensure_step_signals(task)
-	_spawn_bury_command_icon(record, "rite")
+	_spawn_bury_command_icon(record, "bury")
 	_refresh_selected_individual_panel()
 	if selected_dead_body_individual_id == body_id:
 		_refresh_dead_body_panel()
 
 
+# Cumulo di destinazione della sepoltura di `record` (estratto il 2026-10-07 da _assign_bury_task, condiviso con la lista
+# dei lavori): un corpo già sulla lastra resta su quel cumulo, se ancora utilizzabile (la task passa subito al rito);
+# altrimenti il cumulo utilizzabile più vicino al corpo. null se nessuno.
+func _resolve_bury_mound(record: Dictionary, body_id: int) -> Building:
+	if BodyBurialService.is_on_slab(record):
+		var slab_mound := BodyBurialService.find_building(int(record.get("mound_id", -1)))
+		if BodyBurialService.is_mound_usable(slab_mound, body_id, human_individuals):
+			return slab_mound
+	return BodyBurialService.find_nearest_mound(Vector2(record["position"]), Vector2i(record["home_macro_coords"]), body_id, human_individuals)
+
+
+# Task Seppellisci di `worker` per il corpo `record` verso `mound` (estratta il 2026-10-07 da _assign_bury_task, usata
+# anche come task di prova dalla lista dei lavori). null se bury.tres non si carica.
+func _make_bury_task(worker: HumanIndividual, record: Dictionary, body_id: int, mound: Building) -> Task:
+	var definition := load(BodyBurialService.BURY_TASK_DEFINITION_PATH) as TaskDefinition
+	if definition == null:
+		push_error("GameScene._make_bury_task: %s non caricabile." % BodyBurialService.BURY_TASK_DEFINITION_PATH)
+		return null
+	var context := {
+		"target_position": BodyBurialService.get_body_position_relative_to(record, worker.home_macro_coords),
+		BodyBurialService.CONTEXT_BODY_ID: body_id,
+		BodyBurialService.CONTEXT_MOUND_ID: mound.id,
+		BodyBurialService.CONTEXT_BODY_NAME: BodyBurialService.get_body_name(record),
+		BodyBurialService.CONTEXT_RITE_BUILDING: null,
+		BodyBurialService.CONTEXT_RITE_ID: BodyBurialService.FUNERAL_RITE_ID,
+	}
+	var task := TaskFactory.build_task(definition, context)
+	BodyBurialService.skip_transport_if_on_slab(task, worker)
+	return task
+
+
 # Icona di comando sul corpo (esito del comando Seppellisci), nel punto esatto in cui è disegnato. Comando accettato:
-# l'icona del rito ("rite", 2026-10-04 — la task finisce con il funerale), non la manina del raccogli.
+# l'icona della sepoltura ("bury", il teschio — dal 2026-10-07; prima la luna del rito), non la manina del raccogli.
 func _spawn_bury_command_icon(record: Dictionary, command_icon_key: String) -> void:
 	var cell: LiveMacroCell = live_cells.get(Vector2i(record["home_macro_coords"]))
 	if cell != null:
@@ -8629,8 +8714,9 @@ func _free_dead_body_view(body_id: int) -> void:
 #      gioco interi senza nessuno; il conto si azzera appena qualcuno li prende (in memoria, non salvato).
 # Chi lavora su cosa: un solo giro sui pipottini (_collect_pending_assignments). Ricalcolo una volta al secondo reale.
 # Lista dei lavori (2026-10-07, assegnazione compiti passo A — JobBoardService): con l'idea dell'assegnazione completata,
-# lo stesso giro prepara anche l'elenco della sezione "In lista" del cassetto (se è aperto): tutti i lavori dei tipi
-# gestiti dalla lista (oggi i cantieri di edifici nuovi, "build:<id>") senza nessuno assegnato, attivi o bloccati, subito.
+# lo stesso giro prepara anche le righe "In coda" e "In corso" del cassetto (se è aperto), dai lavori generici della lista
+# (_collect_job_board_jobs: oggi cantieri nuovi "build:<id>", di miglioramento "upgrade:<id>", demolizioni
+# "demolish:<id>").
 # Lo stato della lista NON tocca questa scheda: qui le voci restano quelle di sempre, con o senza l'idea.
 # ============================================================================================
 
@@ -8649,6 +8735,7 @@ func _refresh_pending_entries() -> void:
 		var rules := ExpiredObjectCalculator.get_object_rules(ExpiredObjectTypes.ExpiredObjectType.DEAD_BODY)
 		var days := ExpiredObjectCalculator.get_days_remaining(record, rules, game_data.year, game_data.current_day) if rules != null else 0
 		var body_macro: Vector2i = record["home_macro_coords"]
+		# Stesso schema delle altre voci, tutto a dimensione normale (2026-10-07): "Sepoltura · <nome> · restano N gg".
 		body_entries.append(_pending_entry(
 			"body:%d" % body_id, tr("pending_body").format({"name": BodyBurialService.get_body_name(record), "days": days}),
 			{"kind": "body", "id": body_id, "macro": body_macro, "sort": days}
@@ -8658,10 +8745,16 @@ func _refresh_pending_entries() -> void:
 
 	var job_entries: Array[Dictionary] = []
 	var listed_entries: Array[Dictionary] = []
+	# Lavori della lista con almeno un lavoratore (2026-10-07, sezione "In corso" del cassetto), solo a cassetto aperto.
+	var in_progress_entries: Array[Dictionary] = []
+	var drawer_open := _task_assignment_panel != null and is_instance_valid(_task_assignment_panel)
 	var seen_job_keys: Dictionary = {}
 	# Lavori gestiti dalla lista ancora da fare, assegnati o no (JobBoardService.forget_missing).
 	var board_job_keys: Dictionary = {}
 	var board_enabled := JobBoardService.is_enabled(human_folk)
+	# Lavori della lista (generici, _collect_job_board_jobs): attese e icone, poi le righe del cassetto (sotto).
+	var board_jobs := _collect_job_board_jobs(assigned)
+	_update_job_board_waits(board_jobs)
 	if macro_world != null:
 		for building in macro_world.buildings:
 			if building.is_demolished or building.rules == null:
@@ -8673,8 +8766,6 @@ func _refresh_pending_entries() -> void:
 					jobs.append({"key": "demolish:%d" % building.id, "text": tr("pending_demolish").format({"building": building_name})})
 			elif not building.is_complete:
 				var is_upgrade := BuildingUpgradeService.get_upgrade_from_rules(building) != null
-				if not is_upgrade:
-					board_job_keys["build:%d" % building.id] = true
 				if not assigned["build"].has(building.id):
 					jobs.append({
 						"key": "%s:%d" % ["upgrade" if is_upgrade else "build", building.id],
@@ -8696,13 +8787,6 @@ func _refresh_pending_entries() -> void:
 					})
 			for job in jobs:
 				var key := String(job["key"])
-				# Lista dei lavori del cassetto: subito, attivi o bloccati; la voce di questa scheda segue sotto come sempre.
-				if board_enabled and JobBoardService.is_managed(key):
-					listed_entries.append(_pending_entry(key, String(job["text"]), {
-						"kind": "building", "id": building.id, "macro": Vector2i(building.macro_x, building.macro_y),
-						"sort": float(building.id), "building_type": building.building_type_name, "building_name": building_name,
-						"locked": JobBoardService.get_state(game_data, key) == JobBoardService.STATE_LOCKED,
-					}))
 				seen_job_keys[key] = true
 				if not _pending_unassigned_since.has(key):
 					_pending_unassigned_since[key] = _pending_clock
@@ -8722,10 +8806,23 @@ func _refresh_pending_entries() -> void:
 		return String(a["key"]) < String(b["key"])
 	)
 	entries.append_array(job_entries)
+	# Righe del cassetto (2026-10-07), solo con l'idea: "In coda" i lavori senza nessuno (subito, attivi o bloccati, non
+	# nascosti), "In corso" quelli con almeno un lavoratore (solo a cassetto aperto, i nomi costano un giro).
+	for job in board_jobs:
+		board_job_keys[String(job["key"])] = true
+		if not board_enabled:
+			continue
+		if not bool(job["assigned"]):
+			if not bool(job["hidden"]):
+				listed_entries.append(_job_board_drawer_entry(job, false))
+		elif drawer_open:
+			in_progress_entries.append(_job_board_drawer_entry(job, true))
 	JobBoardService.forget_missing(game_data, board_job_keys)
 	listed_entries.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return float(a["sort"]) < float(b["sort"]))
 	if _task_assignment_panel != null and is_instance_valid(_task_assignment_panel):
 		_task_assignment_panel.set_listed_entries(listed_entries)
+		in_progress_entries.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return float(a["sort"]) < float(b["sort"]))
+		_task_assignment_panel.set_in_progress_entries(in_progress_entries)
 
 	pending_panel.set_entries(entries)
 	game_info_tabs.set_pending_count(entries.size())
@@ -8808,77 +8905,745 @@ func _on_pending_entry_activated(entry: Dictionary) -> void:
 		game_info_tabs.current_tab = GameInfoTabs.TAB_PENDING
 
 
+# ============================================================================================
+# Lista dei lavori — parte generica (2026-10-07, richiesta utente — rifacimento: prima ragionava solo per edifici).
+# Un lavoro della lista è una voce (Dictionary) costruita da un "fornitore" del suo tipo (_job_board_providers):
+#   "key"          chiave della lista e della scheda "In sospeso" ("build:12"), stato in GameData.job_board_states;
+#   "kind"         tipo (JobBoardService.get_kind della chiave): punteggio, icona sulla mappa, stato iniziale;
+#   "name"         nome della riga del cassetto; "name_detail" (facoltativo) testo piccolo accanto al nome (es. i giorni
+#                  rimasti di un corpo); "text" testo lungo (tooltip, come la voce di "In sospeso");
+#   "log_name"     nome nel log [JOB BOARD];
+#   "icon"         icona della riga (TaskAssignmentPanel._build_entry_icon);
+#   "macro", "microcell"  dove sta il bersaglio (icona dell'attesa, punteggio); "reach_target" per
+#                  PathfindingService.reachability_for (oggetto con macro_x/macro_y/micro_x/micro_y);
+#   "entry_kind", "id"    cosa selezionare al clic sul nome (_activate_job_entry: "building", "body");
+#   "sort"         ordine delle righe; "assigned" true se almeno uno ci lavora (in corso o in coda);
+#   "hidden"       true = fuori dalla lista per ora (es. mirino del demolitore aperto) ma lo stato resta;
+#   "blocked_reason" (facoltativo) lavoro visibile in coda ma impossibile per ora, con il motivo mostrato al posto
+#                  dell'attesa (es. un mucchio che nessun magazzino accetta): non si prende, niente attesa né icona;
+#   "target"       l'oggetto del tipo (per gli edifici il Building); "provider" il fornitore.
+# Tutto il resto (coda, attesa in secondi veri, icona lampeggiante, Blocca/Sblocca, Rimetti in coda, X, righe "In coda"
+# e "In corso", presa dalla lista) è scritto qui una volta sola sulla voce. Un tipo nuovo = un fornitore nuovo.
+# ============================================================================================
+
+# Fornitori dei lavori della lista. Ognuno: "collect" (provider, assigned) -> Array[Dictionary] di voci, assegnate e no;
+# "probe_key" (job) -> String: lavori con la stessa chiave condividono la task di prova; "rejection" (worker, job) ->
+# String: motivo per cui `worker` non potrebbe riceverla (HumanIndividual.ASSIGN_OK se può), in silenzio; "assign"
+# (worker, job): l'assegnazione vera (la stessa del comando a mano); "workers" (job) -> Array[HumanIndividual] di chi ci
+# lavora; "cancel_fields" (job) -> {"cancel_disabled", "cancel_tooltip"} della X; "cancel" (job): cosa fa la X;
+# "release" (job): toglie il lavoro a chi lo fa (Rimetti in coda, Blocca), con l'effetto di H.
+var _job_board_provider_list: Array[Dictionary] = []
+
+
+func _job_board_providers() -> Array[Dictionary]:
+	if _job_board_provider_list.is_empty():
+		_job_board_provider_list.append({
+			"collect": _building_jobs_collect,
+			"probe_key": func(job: Dictionary) -> String: return (job["target"] as Building).get_resumable_task_definition_path(),
+			"rejection": _building_job_rejection,
+			"assign": func(worker: HumanIndividual, job: Dictionary) -> void: _assign_resumable_building_task(worker, job["target"]),
+			"workers": _building_job_workers,
+			"cancel_fields": _building_job_cancel_fields,
+			"cancel": _building_job_cancel,
+			"release": _building_job_release,
+		})
+		_job_board_provider_list.append({
+			"collect": _body_jobs_collect,
+			"probe_key": func(_job: Dictionary) -> String: return BodyBurialService.BURY_TASK_DEFINITION_PATH,
+			"rejection": _body_job_rejection,
+			"assign": func(worker: HumanIndividual, job: Dictionary) -> void: _assign_bury_task(worker, int(job["id"]), true),
+			"workers": _body_job_workers,
+			"cancel_fields": _body_job_cancel_fields,
+			"cancel": func(_job: Dictionary) -> void: pass,
+			"release": _body_job_release,
+		})
+		_job_board_provider_list.append({
+			"collect": _pile_jobs_collect,
+			"probe_key": func(job: Dictionary) -> String: return "pile:%d" % int(job["id"]),
+			"rejection": _pile_job_rejection,
+			"assign": _assign_pile_job,
+			"workers": _pile_job_workers,
+			"cancel_fields": _pile_job_cancel_fields,
+			"cancel": func(_job: Dictionary) -> void: pass,
+			"release": _pile_job_release,
+		})
+	return _job_board_provider_list
+
+
+# Tutti i lavori della lista, assegnati e no, di tutti i fornitori.
+func _collect_job_board_jobs(assigned: Dictionary) -> Array[Dictionary]:
+	var jobs: Array[Dictionary] = []
+	if game_data == null or macro_world == null:
+		return jobs
+	for provider in _job_board_providers():
+		jobs.append_array(provider["collect"].call(provider, assigned))
+	return jobs
+
+
+# Lavori gestiti dalla lista senza nessuno assegnato e non nascosti, bloccati compresi: chiave -> voce. Fuori i lavori
+# impossibili per ora ("blocked_reason", es. un mucchio che nessun magazzino accetta): restano visibili nel cassetto ma
+# non entrano nell'attesa né si prendono; quando tornano possibili entrano come un lavoro nuovo (parte l'attesa).
+func _collect_job_board_candidates(jobs: Array[Dictionary]) -> Dictionary:
+	var candidates: Dictionary = {}
+	for job in jobs:
+		if not bool(job["assigned"]) and not bool(job["hidden"]) and String(job.get("blocked_reason", "")) == "":
+			candidates[String(job["key"])] = job
+	return candidates
+
+
+# La voce con chiave `job_key`, {} se il lavoro non c'è più.
+func _find_job_board_job(job_key: String) -> Dictionary:
+	for job in _collect_job_board_jobs(_collect_pending_assignments()):
+		if String(job["key"]) == job_key:
+			return job
+	return {}
+
+
+# Riga del cassetto di un lavoro: "In coda" (stato, attesa) o "In corso" (nomi di chi lo fa), più i campi della X.
+func _job_board_drawer_entry(job: Dictionary, in_progress: bool) -> Dictionary:
+	var key := String(job["key"])
+	var data := {
+		"kind": job["entry_kind"], "id": job["id"], "macro": job["macro"], "sort": job["sort"],
+		"icon": job["icon"], "building_name": job["name"], "name_detail": String(job.get("name_detail", "")),
+	}
+	if in_progress:
+		var names: Array[String] = []
+		for member in job["provider"]["workers"].call(job):
+			names.append((member as HumanIndividual).name)
+		data["workers"] = ", ".join(names)
+	else:
+		data["locked"] = JobBoardService.get_state(game_data, key) == JobBoardService.STATE_LOCKED
+		var blocked_reason := String(job.get("blocked_reason", ""))
+		if blocked_reason != "":
+			# Lavoro impossibile per ora: il motivo al posto di "In attesa di assegnazione", senza conto alla rovescia.
+			data["waiting"] = false
+			data["status_text"] = blocked_reason
+		else:
+			# In attesa di assegnazione (2026-10-07): ogni riga non assegnata; secondi interi rimasti dell'attesa per
+			# l'assegnazione a mano (0 = finita).
+			data["waiting"] = true
+			data["wait_seconds"] = ceili(_get_job_board_wait_seconds(key))
+	return _pending_entry(key, String(job["text"]), data).merged(job["provider"]["cancel_fields"].call(job))
+
+
 # "Blocca" / "Sblocca" su un lavoro della lista del cassetto (2026-10-07, JobBoardService): cambia lo stato e ricalcola
 # subito l'elenco.
 func _on_job_board_state_requested(entry: Dictionary, state: String) -> void:
-	JobBoardService.set_state(game_data, String(entry.get("key", "")), state)
+	var key := String(entry.get("key", ""))
+	JobBoardService.set_state(game_data, key, state)
+	# Blocca con qualcuno al lavoro (2026-10-07; dal cassetto oggi solo le righe in coda hanno Blocca, quindi di norma
+	# nessuno): lo toglie a chi lo fa, con l'effetto di H; resta bloccato.
+	if state == JobBoardService.STATE_LOCKED:
+		var locked_job := _find_job_board_job(key)
+		if not locked_job.is_empty():
+			locked_job["provider"]["release"].call(locked_job)
+	# Sblocca: subito prendibile, nessuna attesa (2026-10-07).
+	if state == JobBoardService.STATE_LISTED and _job_board_waiting_since.has(key):
+		_job_board_waiting_since[key] = _job_board_clock - JobBoardService.get_manual_assign_window_seconds()
+	_refresh_pending_entries()
+
+
+# X premuta (2026-10-07): cosa fa lo decide il fornitore del tipo (per gli edifici il comando del pannello edificio).
+func _on_job_board_cancel_requested(entry: Dictionary) -> void:
+	var job := _find_job_board_job(String(entry.get("key", "")))
+	if not job.is_empty():
+		job["provider"]["cancel"].call(job)
+	_refresh_pending_entries()
+
+
+# "Rimetti in coda" su una riga in corso (2026-10-07, richiesta utente): toglie il lavoro a chi lo fa, con l'effetto di
+# H, senza bloccarlo: torna in coda libero e, come ogni lavoro che rientra in lista, riparte l'attesa per l'assegnazione
+# a mano.
+func _on_job_board_requeue_requested(entry: Dictionary) -> void:
+	var job := _find_job_board_job(String(entry.get("key", "")))
+	if job.is_empty():
+		return
+	job["provider"]["release"].call(job)
 	_refresh_pending_entries()
 
 
 # Lista dei lavori, passo B (2026-10-07, JobBoardService.job_taker, chiamato SOLO da resolve_idle_individual tra una
-# task e l'altra): con l'idea dell'assegnazione completata, `worker` prende il cantiere attivo più adatto. Candidati:
-# i cantieri di edifici nuovi senza nessun costruttore, in corso o in coda (stesso giro della scheda "In sospeso",
-# _collect_pending_assignments), e non bloccati. Controlli dell'assegnazione a mano fatti PRIMA, in silenzio, su una
-# task di prova (HumanIndividual.get_assign_rejection_reason: età, energia sopra la soglia del riposo d'emergenza) e la
-# raggiungibilità (PathfindingService.reachability_for); poi il punteggio (JobBoardService.score_job) e la stessa
-# funzione dell'assegnazione a mano (_assign_resumable_building_task). true = preso. Un rifiuto non viene ritentato:
-# resolve_idle_individual passa alle attività di ripiego. Due pipottini liberati insieme non prendono lo stesso cantiere:
-# le chiamate sono una dopo l'altra e il primo ha già la task quando il secondo rifà il giro dei costruttori.
+# task e l'altra): con l'idea dell'assegnazione completata, `worker` prende il lavoro attivo più adatto. Candidati: i
+# lavori senza nessuno assegnato, in corso o in coda (_collect_job_board_candidates), non bloccati e fuori dall'attesa
+# per l'assegnazione a mano. Controlli dell'assegnazione a mano fatti PRIMA, in silenzio, su una task di prova per tipo
+# di task ("rejection" del fornitore: età, energia sopra la soglia del riposo d'emergenza) e la raggiungibilità
+# (PathfindingService.reachability_for); poi il punteggio (JobBoardService.score_job) e la stessa funzione
+# dell'assegnazione a mano ("assign" del fornitore). true = preso. Un rifiuto non viene ritentato: resolve_idle_individual
+# passa alle attività di ripiego. Due pipottini liberati insieme non prendono lo stesso lavoro: le chiamate sono una dopo
+# l'altra e il primo ha già la task quando il secondo rifà il giro.
 func _take_listed_job_for(worker: HumanIndividual) -> bool:
 	if worker == null or game_data == null or macro_world == null or not JobBoardService.is_enabled(human_folk):
 		return false
-	var assigned := _collect_pending_assignments()
-	var open_jobs: Array[Building] = []
+	var candidates := _collect_job_board_candidates(_collect_job_board_jobs(_collect_pending_assignments()))
+	_sync_job_board_waits(candidates)
+	var open_jobs: Array[Dictionary] = []
 	var locked_count := 0
-	for building in macro_world.buildings:
-		if building.is_demolished or building.rules == null or building.is_complete or building.is_marked_for_demolition:
-			continue
-		if BuildingUpgradeService.get_upgrade_from_rules(building) != null or assigned["build"].has(building.id):
-			continue
-		if JobBoardService.get_state(game_data, "build:%d" % building.id) == JobBoardService.STATE_LOCKED:
+	# Lavori ancora nell'attesa per l'assegnazione a mano (2026-10-07): non prendibili dalla lista.
+	var waiting_count := 0
+	for job_key in candidates.keys():
+		if JobBoardService.get_state(game_data, job_key) == JobBoardService.STATE_LOCKED:
 			locked_count += 1
 			continue
-		open_jobs.append(building)
-	var found_text := "%d in lista (%d bloccati)" % [open_jobs.size() + locked_count, locked_count]
+		if _get_job_board_wait_seconds(job_key) > 0.0:
+			waiting_count += 1
+			continue
+		open_jobs.append(candidates[job_key])
+	var found_text := "%d in lista (%d bloccati, %d in attesa)" % [open_jobs.size() + locked_count + waiting_count, locked_count, waiting_count]
 	if open_jobs.is_empty():
-		_log_job_board(worker, "%s — nessuno preso: %s." % [found_text, "lista vuota" if locked_count == 0 else "tutti bloccati"])
+		# Lista vuota: nessuna riga (2026-10-07, riempiva la console senza dire niente).
+		if waiting_count > 0:
+			_log_job_board(worker, "%s — nessuno preso: solo lavori in attesa di assegnazione." % found_text)
+		elif locked_count > 0:
+			_log_job_board(worker, "%s — nessuno preso: tutti bloccati." % found_text)
 		return false
-	# Task di prova (mai assegnata): età ed energia dipendono dal pipottino e dal tipo di task, non dal cantiere.
-	var definition := load(open_jobs[0].get_resumable_task_definition_path()) as TaskDefinition
-	if definition == null:
-		return false
-	# Stesso contesto della costruzione vera (_assign_resumable_building_task), così la task di prova ha tutti i passi.
-	var probe_context := open_jobs[0].get_resumable_task_context()
-	probe_context["macro_state"] = macro_world.get_cell_state_at(open_jobs[0].macro_x, open_jobs[0].macro_y)
-	probe_context["is_currently_grass"] = false
-	var probe := TaskFactory.build_task(definition, probe_context)
-	var rejection := worker.get_assign_rejection_reason(probe, _resolve_age_band(worker))
-	if rejection != HumanIndividual.ASSIGN_OK:
-		_log_job_board(worker, "%s — nessuno preso: non adatto (%s)." % [found_text, rejection])
+	# Idoneità con una task di prova (mai assegnata) per tipo di task (2026-10-07): età ed energia dipendono dal pipottino
+	# e dalla task, non dal singolo lavoro. I lavori di una task rifiutata vengono scartati.
+	var rejection_by_probe: Dictionary = {}
+	var suitable_jobs: Array[Dictionary] = []
+	for job in open_jobs:
+		var probe_key := String(job["provider"]["probe_key"].call(job))
+		if not rejection_by_probe.has(probe_key):
+			rejection_by_probe[probe_key] = String(job["provider"]["rejection"].call(worker, job))
+		if String(rejection_by_probe[probe_key]) == HumanIndividual.ASSIGN_OK:
+			suitable_jobs.append(job)
+	if suitable_jobs.is_empty():
+		var reasons: Array[String] = []
+		for probe_key in rejection_by_probe.keys():
+			reasons.append(String(rejection_by_probe[probe_key]))
+		_log_job_board(worker, "%s — nessuno preso: non adatto (%s)." % [found_text, ", ".join(reasons)])
 		return false
 	var reachable := PathfindingService.reachability_for(worker)
-	var best: Building = null
+	var best: Dictionary = {}
 	var best_score := -1.0
-	for building in open_jobs:
-		if not reachable.call(building):
+	for job in suitable_jobs:
+		if not reachable.call(job["reach_target"]):
 			continue
-		var score := JobBoardService.score_job(worker, "build", Vector2i(building.macro_x, building.macro_y), Vector2i(building.micro_x, building.micro_y))
+		var score := JobBoardService.score_job(worker, String(job["kind"]), job["macro"], job["microcell"])
 		if score > best_score:
 			best_score = score
-			best = building
-	if best == null:
-		_log_job_board(worker, "%s — nessuno preso: non adatto (nessun cantiere raggiungibile)." % found_text)
+			best = job
+	if best.is_empty():
+		_log_job_board(worker, "%s — nessuno preso: non adatto (nessun lavoro raggiungibile)." % found_text)
 		return false
 	var task_before := worker.current_task
 	var queue_size_before := worker.task_queue.size()
-	_assign_resumable_building_task(worker, best)
+	best["provider"]["assign"].call(worker, best)
 	var taken := (worker.current_task != null and worker.current_task != task_before) or worker.task_queue.size() > queue_size_before
-	var building_text := "build:%d %s" % [best.id, tr(best.rules.building_name)]
+	var job_text := "%s %s" % [String(best["key"]), String(best["log_name"])]
 	if taken:
-		_log_job_board(worker, "%s — preso %s (punteggio %.4f)." % [found_text, building_text, best_score])
+		_log_job_board(worker, "%s — preso %s (punteggio %.4f)." % [found_text, job_text, best_score])
 	else:
-		_log_job_board(worker, "%s — scelto %s (punteggio %.4f) ma rifiutato: passa alle attività di ripiego." % [found_text, building_text, best_score])
+		_log_job_board(worker, "%s — scelto %s (punteggio %.4f) ma rifiutato: passa alle attività di ripiego." % [found_text, job_text, best_score])
 	return taken
+
+
+# --- Attesa per l'assegnazione a mano (2026-10-07, richiesta utente — JobBoardService.get_manual_assign_window_seconds()) ---
+# Ogni lavoro della lista senza nessuno assegnato (bloccato o no) ha in _job_board_waiting_since il momento
+# (_job_board_clock: secondi reali a gioco in corso) in cui è entrato in lista. Entra quando compare tra i candidati
+# (nato senza lavoratore, tornato in lista, mirino del demolitore chiuso); esce quando non c'è più (assegnato, finito,
+# sparito) o subito all'assegnazione (_forget_job_board_wait), così un ritorno in lista fa ripartire l'attesa. Durante
+# l'attesa la lista non lo dà a nessuno e, se non è bloccato, sul bersaglio lampeggia l'icona del tipo di lavoro. Mai
+# salvato: alla prima lettura (anche dopo un caricamento o all'arrivo dell'idea) i lavori già in lista sono subito
+# prendibili. Solo con l'idea dell'assegnazione.
+var _job_board_clock: float = 0.0
+var _job_board_waiting_since: Dictionary = {}  # chiave del lavoro -> _job_board_clock all'ingresso in lista
+var _job_board_wait_icons: Dictionary = {}  # chiave del lavoro -> icona lampeggiante sul bersaglio
+var _job_board_waits_initialized: bool = false
+
+
+# Aggiornamento una volta al secondo (_refresh_pending_entries): senza l'idea niente attese né icone.
+func _update_job_board_waits(jobs: Array[Dictionary]) -> void:
+	if not JobBoardService.is_enabled(human_folk):
+		for key in _job_board_wait_icons.keys():
+			_free_job_board_wait_icon(key)
+		_job_board_waiting_since.clear()
+		_job_board_waits_initialized = false
+		return
+	_sync_job_board_waits(_collect_job_board_candidates(jobs))
+
+
+# Ingressi e uscite dalla lista rispetto all'ultima lettura, poi le icone lampeggianti. `candidates`: chiave -> voce.
+func _sync_job_board_waits(candidates: Dictionary) -> void:
+	for key in _job_board_waiting_since.keys():
+		if not candidates.has(key):
+			_job_board_waiting_since.erase(key)
+	for key in candidates.keys():
+		if not _job_board_waiting_since.has(key):
+			_job_board_waiting_since[key] = _job_board_clock if _job_board_waits_initialized else _job_board_clock - JobBoardService.get_manual_assign_window_seconds()
+	_job_board_waits_initialized = true
+	for key in _job_board_wait_icons.keys():
+		if not candidates.has(key):
+			_free_job_board_wait_icon(key)
+	for key in candidates.keys():
+		var job: Dictionary = candidates[key]
+		var macro_coords: Vector2i = job["macro"]
+		var show_icon := _get_job_board_wait_seconds(key) > 0.0 \
+			and JobBoardService.get_state(game_data, key) != JobBoardService.STATE_LOCKED and live_cells.has(macro_coords)
+		var icon: Variant = _job_board_wait_icons.get(key)
+		var has_icon := icon != null and is_instance_valid(icon)
+		if show_icon and not has_icon:
+			var icon_key := String(JobBoardService.ICON_KEY_BY_KIND.get(String(job["kind"]), ""))
+			var spawned := _spawn_persistent_command_icon_at_microcell(live_cells[macro_coords], job["microcell"], icon_key)
+			if spawned != null:
+				_job_board_wait_icons[key] = spawned
+		elif not show_icon and icon != null:
+			_free_job_board_wait_icon(key)
+
+
+# Secondi reali che mancano alla fine dell'attesa di `job_key`; 0 se finita o se il lavoro non è in lista.
+func _get_job_board_wait_seconds(job_key: String) -> float:
+	if not _job_board_waiting_since.has(job_key):
+		return 0.0
+	return maxf(0.0, JobBoardService.get_manual_assign_window_seconds() - (_job_board_clock - float(_job_board_waiting_since[job_key])))
+
+
+# Lavoro appena assegnato (`job_keys`: tutte le sue chiavi possibili): fuori dal conto e niente icona.
+func _forget_job_board_wait(job_keys: Array[String]) -> void:
+	for key in job_keys:
+		_job_board_waiting_since.erase(key)
+		_free_job_board_wait_icon(key)
+
+
+func _free_job_board_wait_icon(job_key: String) -> void:
+	var icon: Variant = _job_board_wait_icons.get(job_key)
+	if icon != null and is_instance_valid(icon):
+		(icon as Node).queue_free()
+	_job_board_wait_icons.erase(job_key)
+
+
+# ============================================================================================
+# Fornitore "edifici" della lista dei lavori (2026-10-07): cantieri nuovi (build:<id>), cantieri di miglioramento
+# (upgrade:<id>) ed edifici da demolire (demolish:<id>). Tutto ciò che è specifico degli edifici sta qui.
+# ============================================================================================
+
+# Un lavoro per edificio che ne ha uno: da demolire -> demolish (lavoratori: le task Demolisci); cantiere -> upgrade se è
+# un miglioramento, altrimenti build (lavoratori: le task Costruisci). Nome della riga: quello dell'edificio per un
+# cantiere nuovo, la voce di "In sospeso" ("Miglioramento · …", "Demolizione · …") per gli altri, così si distinguono.
+# Nascosto: l'edificio del mirino del demolitore aperto.
+func _building_jobs_collect(provider: Dictionary, assigned: Dictionary) -> Array[Dictionary]:
+	var jobs: Array[Dictionary] = []
+	for building in macro_world.buildings:
+		if building.is_demolished or building.rules == null:
+			continue
+		var building_name: String = tr(building.rules.building_name)
+		var kind := ""
+		var text := ""
+		var is_assigned := false
+		if building.is_marked_for_demolition:
+			kind = "demolish"
+			text = tr("pending_demolish").format({"building": building_name})
+			is_assigned = assigned["demolish"].has(building.id)
+		elif not building.is_complete:
+			var is_upgrade := BuildingUpgradeService.get_upgrade_from_rules(building) != null
+			kind = "upgrade" if is_upgrade else "build"
+			text = tr("pending_upgrade" if is_upgrade else "pending_build").format({"building": building_name})
+			is_assigned = assigned["build"].has(building.id)
+		else:
+			continue
+		jobs.append({
+			"key": "%s:%d" % [kind, building.id], "kind": kind,
+			"name": building_name if kind == "build" else text, "text": text, "log_name": building_name,
+			"icon": {"building_command": BuildingCommandIcon.KIND_DEMOLISH} if kind == "demolish" else {"building_type": building.building_type_name},
+			"macro": Vector2i(building.macro_x, building.macro_y), "microcell": Vector2i(building.micro_x, building.micro_y),
+			"reach_target": building, "entry_kind": "building", "id": building.id, "sort": float(building.id),
+			"assigned": is_assigned, "hidden": building == _demolisher_pick_building,
+			"target": building, "provider": provider,
+		})
+	return jobs
+
+
+# Tutte le chiavi possibili dei lavori di `building` (per _forget_job_board_wait all'assegnazione).
+func _building_job_keys(building: Building) -> Array[String]:
+	var keys: Array[String] = []
+	for kind in ["build", "upgrade", "demolish"]:
+		keys.append("%s:%d" % [kind, building.id])
+	return keys
+
+
+func _building_job_task_names(job: Dictionary) -> Array[String]:
+	return DEMOLISH_TASK_NAMES if String(job["kind"]) == "demolish" else BUILD_TASK_NAMES
+
+
+# Motivo per cui `worker` non potrebbe ricevere la task del lavoro (HumanIndividual.ASSIGN_OK se può): task di prova
+# costruita con lo stesso contesto dell'assegnazione vera (_assign_resumable_building_task — per la Costruisci anche
+# macro_state ed erba, per la Demolisci il solo contesto dell'edificio), mai assegnata.
+func _building_job_rejection(worker: HumanIndividual, job: Dictionary) -> String:
+	var building: Building = job["target"]
+	var definition := load(building.get_resumable_task_definition_path()) as TaskDefinition
+	if definition == null:
+		return "definizione mancante"
+	var probe_context := building.get_resumable_task_context()
+	if not building.is_marked_for_demolition:
+		probe_context["macro_state"] = macro_world.get_cell_state_at(building.macro_x, building.macro_y)
+		probe_context["is_currently_grass"] = false
+	var probe := TaskFactory.build_task(definition, probe_context)
+	return worker.get_assign_rejection_reason(probe, _resolve_age_band(worker))
+
+
+# Chi ci lavora: task Costruisci o Demolisci sull'edificio, in corso o in coda.
+func _building_job_workers(job: Dictionary) -> Array[HumanIndividual]:
+	return _resolve_individuals_working_on_building(job["target"], _building_job_task_names(job))
+
+
+# X: stato e tooltip del comando del pannello edificio che cancella quel lavoro, con le stesse condizioni
+# (BuildingInfoPanel._refresh_command_icon_row): da demolire -> "Annulla demolizione", spenta a demolizione iniziata;
+# cantiere di un miglioramento -> "Annulla cantiere" che riporta l'edificio di prima; cantiere nuovo -> "Annulla cantiere".
+func _building_job_cancel_fields(job: Dictionary) -> Dictionary:
+	var building: Building = job["target"]
+	if building.is_marked_for_demolition:
+		var demolition_started: bool = float(building.construction_progress.get(DemolishAction.LABOR_KEY, 0.0)) > 0.0
+		return {
+			"cancel_disabled": demolition_started,
+			"cancel_tooltip": "%s\n%s" % [
+				tr("building_cancel_demolition_button"),
+				tr("building_command_cancel_demolition_started") if demolition_started else tr("building_command_cancel_demolition_detail"),
+			],
+		}
+	var detail_key := "building_command_cancel_upgrade_detail" if BuildingUpgradeService.is_upgrade_site(building) else "building_command_cancel_site_detail"
+	return {"cancel_disabled": false, "cancel_tooltip": "%s\n%s" % [tr("building_cancel_site_button"), tr(detail_key)]}
+
+
+# X premuta: lo stesso comando del pannello edificio, con le sue condizioni e la sua conferma — "Annulla demolizione"
+# (_on_demolition_cancel_requested) per un edificio da demolire, altrimenti "Annulla cantiere" (_on_demolish_requested:
+# conferma, poi _demolish_building o _cancel_building_upgrade).
+func _building_job_cancel(job: Dictionary) -> void:
+	var building: Building = job["target"]
+	if building.is_demolished:
+		return
+	if building.is_marked_for_demolition:
+		_on_demolition_cancel_requested(building)
+	elif not building.is_complete:
+		_on_demolish_requested(building)
+
+
+# Toglie il lavoro a tutti quelli che lo fanno (Rimetti in coda, Blocca), con l'effetto di H su ciascuno: chiusura con
+# la regola del carico (_close_tasks_working_on_building, come _stop_selected_individual_task), il flag "salta la lista
+# una volta" per chi lo aveva come task corrente, e la ripresa con resolve_idle_individual. Le copie in coda vengono tolte.
+func _building_job_release(job: Dictionary) -> void:
+	var building: Building = job["target"]
+	if building.is_demolished:
+		return
+	var task_names := _building_job_task_names(job)
+	for member in _resolve_individuals_working_on_building(building, task_names):
+		if _task_works_on_building(member.current_task, building, task_names):
+			member.skip_job_board_once = true
+	var freed := _close_tasks_working_on_building(building, task_names, null)
+	for member in freed:
+		HumanIndividualActionService.resolve_idle_individual(member, _resolve_age_band(member), macro_world)
+	_refresh_selected_individual_panel()
+	_refresh_selected_building_panel()
+
+
+# ============================================================================================
+# Fornitore "corpi" della lista dei lavori (2026-10-07, richiesta utente): corpi da seppellire (body:<id>). Tutto ciò che
+# è specifico della sepoltura sta qui; la task e l'assegnazione sono quelle del clic destro sul corpo (_assign_bury_task).
+# ============================================================================================
+
+# Corpi prima degli edifici nelle righe del cassetto, i più vicini alla scadenza in cima (come in "In sospeso").
+const BODY_JOB_SORT_OFFSET: float = 1000000.0
+
+
+# Un lavoro per corpo non ancora sepolto e non scaduto (a terra, sulla lastra, o in spalla se qualcuno lo sta già
+# portando). Riga: il nome del morto e, accanto più in piccolo, "restano N gg per la sepoltura"; tooltip: la voce di
+# "In sospeso". Nascosto (fuori dalla coda, solo "In sospeso"): nessun cumulo
+# sepolcrale finito con un posto libero (_resolve_bury_mound), lavoro impossibile.
+func _body_jobs_collect(provider: Dictionary, assigned: Dictionary) -> Array[Dictionary]:
+	var jobs: Array[Dictionary] = []
+	var rules := ExpiredObjectCalculator.get_object_rules(ExpiredObjectTypes.ExpiredObjectType.DEAD_BODY)
+	for record in game_data.expired_objects:
+		if record["object_type"] != ExpiredObjectTypes.ExpiredObjectType.DEAD_BODY or BodyBurialService.is_expired(record):
+			continue
+		var body_id := int(record["individual_id"])
+		var is_assigned: bool = assigned["bodies"].has(body_id)
+		if ExpiredObjectCalculator.is_carried(record) and not is_assigned:
+			continue
+		var days := ExpiredObjectCalculator.get_days_remaining(record, rules, game_data.year, game_data.current_day) if rules != null else 0
+		var body_name := BodyBurialService.get_body_name(record)
+		var days_text := tr("pending_body_days").format({"days": days})
+		var text := tr("pending_body").format({"name": body_name, "days": days})
+		var macro: Vector2i = record["home_macro_coords"]
+		var position := Vector2(record["position"])
+		var microcell := Vector2i(floori(position.x), floori(position.y))
+		jobs.append({
+			"key": "body:%d" % body_id, "kind": "body", "name": body_name, "name_detail": days_text, "text": text, "log_name": body_name,
+			# Icona della riga: il 💀 del bottone del riquadro "Famiglia" del pannello dell'abitante (2026-10-07).
+			"icon": {"text": IconRegistry.get_command_icon("bury")}, "macro": macro, "microcell": microcell,
+			"reach_target": {"macro_x": macro.x, "macro_y": macro.y, "micro_x": microcell.x, "micro_y": microcell.y},
+			"entry_kind": "body", "id": body_id, "sort": float(days) - BODY_JOB_SORT_OFFSET,
+			"assigned": is_assigned, "hidden": not is_assigned and _resolve_bury_mound(record, body_id) == null,
+			"target": record, "provider": provider,
+		})
+	return jobs
+
+
+# Motivo per cui `worker` non potrebbe ricevere la sepoltura (HumanIndividual.ASSIGN_OK se può): la stessa task del clic
+# destro (_make_bury_task), mai assegnata.
+func _body_job_rejection(worker: HumanIndividual, job: Dictionary) -> String:
+	var record: Dictionary = job["target"]
+	var body_id := int(job["id"])
+	var mound := _resolve_bury_mound(record, body_id)
+	if mound == null:
+		return "nessun cumulo"
+	var task := _make_bury_task(worker, record, body_id, mound)
+	if task == null:
+		return "definizione mancante"
+	return worker.get_assign_rejection_reason(task, _resolve_age_band(worker))
+
+
+# Lavoratore: solo chi ha la task Seppellisci del corpo (i partecipanti al corteo no).
+func _body_job_workers(job: Dictionary) -> Array[HumanIndividual]:
+	var workers: Array[HumanIndividual] = []
+	var assignee := BodyBurialService.get_bury_assignee(int(job["id"]), human_individuals)
+	if assignee != null:
+		workers.append(assignee)
+	return workers
+
+
+# X: sempre spenta, una sepoltura non si cancella.
+func _body_job_cancel_fields(_job: Dictionary) -> Dictionary:
+	return {"cancel_disabled": true, "cancel_tooltip": tr("task_assignment_burial_cannot_cancel")}
+
+
+# Rimetti in coda / Blocca: ferma la task Seppellisci del corpo con l'effetto di H (regola del carico, flag "salta la
+# lista una volta", ripresa con resolve_idle_individual); il corpo in spalla viene posato dov'è
+# (BodyBurialService.enforce_carrier, come dopo H). Le copie in coda vengono tolte.
+func _body_job_release(job: Dictionary) -> void:
+	var body_id := int(job["id"])
+	for member in human_individuals:
+		var current_closed := false
+		var current := member.current_task
+		if BodyBurialService.is_bury_task(current) and not current.is_finished() and BodyBurialService.get_task_body_id(current) == body_id:
+			member.skip_job_board_once = true
+			if CargoReturnService.release_cargo(member, current, macro_world) != CargoReturnService.Outcome.RETURNING:
+				member.stop(false)
+				current_closed = true
+		for queued in member.task_queue.duplicate():
+			if BodyBurialService.is_bury_task(queued) and BodyBurialService.get_task_body_id(queued) == body_id:
+				member.task_queue.erase(queued)
+		BodyBurialService.enforce_carrier(member)
+		if current_closed:
+			HumanIndividualActionService.resolve_idle_individual(member, _resolve_age_band(member), macro_world)
+	_refresh_selected_individual_panel()
+	if selected_dead_body_individual_id == body_id:
+		_refresh_dead_body_panel()
+
+
+# ============================================================================================
+# Fornitore "mucchi" della lista dei lavori (2026-10-07, richiesta utente): mucchi a terra abbandonati (pile:<id>).
+# Conta lo stato, non l'origine: un mucchio è "di qualcuno" (assegnato) se un pipottino ha, come task in corso o in coda,
+# una task che lo porta via (_collect_pile_claims). Fuori dalla lista: i mucchi con una carcassa (lavoro della
+# macellazione) e quelli senza risorse. Tutta la lista dei mucchi si spegne con la regola "Ritira i mucchi abbandonati"
+# (UserOptions.job_board_collect_piles). Mucchio che nessun magazzino accetta (_pile_has_storage, dalla posizione del
+# mucchio, indipendente dal pipottino): visibile in coda ma non prendibile ("blocked_reason"), senza attesa né icona.
+# ============================================================================================
+
+# Mucchi dopo corpi ed edifici nelle righe del cassetto.
+const PILE_JOB_SORT_OFFSET: float = 1000000.0
+
+
+func _pile_jobs_collect(provider: Dictionary, _assigned: Dictionary) -> Array[Dictionary]:
+	var jobs: Array[Dictionary] = []
+	if not UserOptions.job_board_collect_piles:
+		return jobs
+	var claims := _collect_pile_claims()
+	for pile in game_data.ground_piles:
+		if pile.resources.is_empty() or not pile.carcasses.is_empty():
+			continue
+		var claim_key := _pile_claim_key(pile.macro_coords, pile.microcell)
+		var is_assigned := claims.has(claim_key)
+		var pile_name := _pile_job_name(pile)
+		jobs.append({
+			"key": "pile:%d" % pile.id, "kind": "pile", "name": pile_name, "text": pile_name, "log_name": "mucchio #%d" % pile.id,
+			"icon": {"command": "pickup"}, "macro": pile.macro_coords, "microcell": pile.microcell,
+			"reach_target": {
+				"macro_x": pile.macro_coords.x, "macro_y": pile.macro_coords.y, "micro_x": pile.microcell.x, "micro_y": pile.microcell.y,
+			},
+			"entry_kind": "ground_pile", "id": pile.id, "sort": float(pile.id) + PILE_JOB_SORT_OFFSET,
+			"assigned": is_assigned, "hidden": false,
+			"blocked_reason": "" if is_assigned or _pile_has_storage(pile) else tr("task_assignment_pile_no_storage"),
+			"target": pile, "provider": provider, "claimers": claims.get(claim_key, []),
+		})
+	return jobs
+
+
+# "Mucchio · Rametti, Pietre…": le prime due risorse contenute, con i puntini se ce ne sono altre.
+func _pile_job_name(pile: GroundPile) -> String:
+	var names := pile.get_resource_names()
+	var shown: Array[String] = []
+	for resource_name in names.slice(0, 2):
+		shown.append(IconRegistry.get_resource_display_name(resource_name))
+	return tr("pending_pile").format({"resources": ", ".join(shown) + ("…" if names.size() > 2 else "")})
+
+
+func _pile_claim_key(macro_coords: Vector2i, microcell: Vector2i) -> String:
+	return "%d:%d:%d:%d" % [macro_coords.x, macro_coords.y, microcell.x, microcell.y]
+
+
+# Chi ha in carico quale mucchio: microcella del mucchio (_pile_claim_key) -> Array[HumanIndividual]. Un pipottino ha in
+# carico un mucchio se una sua task, in corso o in coda e non conclusa:
+#   - ha ancora da fare (dal passo corrente in poi) un raccogli (PickUpAction) con sorgente "mucchio" su quella
+#     microcella (clic destro, consegna dopo una demolizione, consegna presa dalla lista);
+#   - porta nel context una zona di raccolta con sorgente "mucchio" che la contiene (HaulZoneService.CONTEXT_KEY): è il
+#     caso delle consegne "fino a mucchio vuoto" e delle serie di taglio o estrazione — tra uno scarico e il viaggio
+#     successivo il viaggio dopo è già in coda con la stessa zona, quindi il mucchio resta suo;
+#   - ha nel context la consegna ancora da accodare (HumanIndividualActionService.CONTEXT_PENDING_GROUND_PILE_HAUL),
+#     chiesta da un taglio/estrazione/demolizione appena finiti.
+func _collect_pile_claims() -> Dictionary:
+	var claims: Dictionary = {}
+	for member in human_individuals:
+		var tasks: Array = []
+		if member.current_task != null and not member.current_task.is_finished():
+			tasks.append(member.current_task)
+		tasks.append_array(member.task_queue)
+		for raw_task in tasks:
+			var task := raw_task as Task
+			if task == null or task.is_finished():
+				continue
+			for key in _task_pile_claim_keys(task):
+				if not claims.has(key):
+					claims[key] = []
+				if not (claims[key] as Array).has(member):
+					(claims[key] as Array).append(member)
+	return claims
+
+
+func _task_pile_claim_keys(task: Task) -> Array[String]:
+	var keys: Array[String] = []
+	for step_index in range(task.current_step_index, task.steps.size()):
+		var step: Action = task.steps[step_index]
+		if step is PickUpAction and (step as PickUpAction).source_kind == PickUpAction.SourceKind.GROUND_PILE:
+			var pickup := step as PickUpAction
+			var macro := Vector2i(pickup.macro_state.x, pickup.macro_state.y) if pickup.macro_state != null else Vector2i.ZERO
+			keys.append(_pile_claim_key(macro, pickup.target_position))
+	var zone := HaulZoneService.get_zone(task.context)
+	if not zone.is_empty() and int(zone.get("source_kind", -1)) == PickUpAction.SourceKind.GROUND_PILE:
+		var zone_macro := Vector2i(int(zone.get("macro_x", 0)), int(zone.get("macro_y", 0)))
+		var rect := Rect2i(int(zone.get("rect_x", 0)), int(zone.get("rect_y", 0)), int(zone.get("rect_w", 0)), int(zone.get("rect_h", 0)))
+		for pile in game_data.ground_piles:
+			if pile.macro_coords == zone_macro and rect.has_point(pile.microcell):
+				keys.append(_pile_claim_key(pile.macro_coords, pile.microcell))
+	var pending: Variant = task.context.get(HumanIndividualActionService.CONTEXT_PENDING_GROUND_PILE_HAUL)
+	if pending is Dictionary:
+		var pile_ref := pending as Dictionary
+		keys.append(_pile_claim_key(
+			Vector2i(int(pile_ref.get("macro_x", 0)), int(pile_ref.get("macro_y", 0))),
+			Vector2i(int(pile_ref.get("micro_x", 0)), int(pile_ref.get("micro_y", 0)))
+		))
+	return keys
+
+
+# Almeno una risorsa del mucchio ha un magazzino che la accetta, cercato dalla posizione del mucchio (nessun pipottino,
+# nessun controllo di raggiungibilità: quello si rifà alla presa, _pile_job_rejection).
+func _pile_has_storage(pile: GroundPile) -> bool:
+	var origin := Vector2(pile.microcell) + Vector2(0.5, 0.5)
+	for resource_name in pile.get_resource_names():
+		if pile.get_quantity(resource_name) > 0 and WarehouseSelectionService.find_best(
+			macro_world, origin, pile.macro_coords, resource_name, 1, []
+		) != null:
+			return true
+	return false
+
+
+# Idoneità alla presa: la consegna di prova (_build_pile_job_task, mai assegnata) passa il controllo di idoneità, e dal
+# pipottino un magazzino raggiungibile accetta almeno una risorsa che gli entra a carico vuoto (lo stesso controllo
+# della consegna automatica, _on_ground_pile_haul_requested).
+func _pile_job_rejection(worker: HumanIndividual, job: Dictionary) -> String:
+	var pile: GroundPile = job["target"]
+	var task := _build_pile_job_task(worker, pile)
+	if task == null:
+		return "mucchio non raggiungibile"
+	var rejection := worker.get_assign_rejection_reason(task, _resolve_age_band(worker))
+	if rejection != HumanIndividual.ASSIGN_OK:
+		return rejection
+	var reachable := PathfindingService.reachability_for(worker)
+	for resource_name in pile.get_resource_names():
+		if pile.get_quantity(resource_name) > 0 and worker.can_carry_one_unit_when_empty(resource_name) \
+				and WarehouseSelectionService.find_best(macro_world, worker.position, worker.home_macro_coords, resource_name, 1, [], reachable) != null:
+			return HumanIndividual.ASSIGN_OK
+	return "nessun magazzino raggiungibile"
+
+
+# Consegna del mucchio "fino a mucchio vuoto", come quella automatica dopo un taglio o un'estrazione
+# (_on_ground_pile_haul_requested con until_empty, senza serie né etichetta del lavoro): raccogli di tutto dal mucchio,
+# poi la catena di sempre (magazzino, cammino, scarico), ripetuta finché il mucchio ha qualcosa. null se la cella del
+# mucchio non è viva.
+func _build_pile_job_task(worker: HumanIndividual, pile: GroundPile) -> Task:
+	var cell: LiveMacroCell = live_cells.get(pile.macro_coords)
+	if cell == null or cell.macro_state == null:
+		return null
+	var resource_names := pile.get_resource_names()
+	if resource_names.is_empty():
+		return null
+	var task := _build_pickup_task(
+		cell, pile.microcell, resource_names[0], -1, PickUpAction.CriterionKind.ALL, -1, true, 0, worker,
+		PickUpAction.SourceKind.GROUND_PILE
+	)
+	if task == null:
+		return null
+	var pile_units := 0
+	for resource_name in resource_names:
+		pile_units += pile.get_quantity(resource_name)
+	var zone := HaulZoneService.make_zone(
+		pile.macro_coords, Rect2i(pile.microcell, Vector2i.ONE), PickUpAction.CriterionKind.ALL, -1, resource_names[0], -1,
+		PickUpAction.SourceKind.GROUND_PILE, maxi(pile_units, 1)
+	)
+	zone[HaulZoneService.UNTIL_EMPTY_KEY] = true
+	task.context[HaulZoneService.CONTEXT_KEY] = zone
+	return task
+
+
+# Assegnazione dalla lista: la consegna come task corrente del pipottino libero, in silenzio (nessuna icona di rifiuto
+# né messaggio). Riuscita: la manina sul mucchio, come per l'ordine a mano, e il mucchio esce dall'attesa.
+func _assign_pile_job(worker: HumanIndividual, job: Dictionary) -> void:
+	var pile: GroundPile = job["target"]
+	var task := _build_pile_job_task(worker, pile)
+	if task == null:
+		return
+	if not worker.assign_task(task, _resolve_age_band(worker)) or (worker.current_task != task and not worker.task_queue.has(task)):
+		return
+	var job_keys: Array[String] = ["pile:%d" % pile.id]
+	_forget_job_board_wait(job_keys)
+	_ensure_step_signals(task)
+	var cell: LiveMacroCell = live_cells.get(pile.macro_coords)
+	if cell != null:
+		_spawn_command_icon_at_microcell(cell, pile.microcell, "pickup")
+	if worker == individual:
+		_refresh_selected_individual_panel()
+
+
+func _pile_job_workers(job: Dictionary) -> Array[HumanIndividual]:
+	var workers: Array[HumanIndividual] = []
+	for member in job.get("claimers", []):
+		workers.append(member as HumanIndividual)
+	return workers
+
+
+# X: sempre spenta, un mucchio non si cancella.
+func _pile_job_cancel_fields(_job: Dictionary) -> Dictionary:
+	return {"cancel_disabled": true, "cancel_tooltip": tr("task_assignment_pile_cannot_cancel")}
+
+
+# Rimetti in coda / Blocca: ferma le task che hanno in carico il mucchio con l'effetto di H (regola del carico: il carico
+# di una task chiusa torna al magazzino; flag "salta la lista una volta" per chi l'aveva come task corrente; ripresa con
+# resolve_idle_individual). Le copie in coda vengono tolte. Quello che resta a terra torna in coda.
+func _pile_job_release(job: Dictionary) -> void:
+	var pile: GroundPile = job["target"]
+	var claim_key := _pile_claim_key(pile.macro_coords, pile.microcell)
+	for member in human_individuals:
+		var current_closed := false
+		var current := member.current_task
+		if current != null and not current.is_finished() and _task_pile_claim_keys(current).has(claim_key):
+			member.skip_job_board_once = true
+			if CargoReturnService.release_cargo(member, current, macro_world) != CargoReturnService.Outcome.RETURNING:
+				member.stop(false)
+				current_closed = true
+		for queued in member.task_queue.duplicate():
+			if _task_pile_claim_keys(queued).has(claim_key):
+				if CargoReturnService.release_cargo(member, queued, macro_world) != CargoReturnService.Outcome.RETURNING:
+					member.task_queue.erase(queued)
+		if current_closed:
+			HumanIndividualActionService.resolve_idle_individual(member, _resolve_age_band(member), macro_world)
+	_refresh_selected_individual_panel()
 
 
 func _log_job_board(worker: HumanIndividual, text: String) -> void:
@@ -8902,6 +9667,12 @@ func _activate_job_entry(entry: Dictionary) -> bool:
 			if building == null:
 				return false
 			_select_building({"building_id": building.id, "macro_coords": Vector2i(building.macro_x, building.macro_y)})
+		# Mucchio a terra (2026-10-07, lista dei lavori).
+		"ground_pile":
+			var pile := GroundPileService.find_by_id(game_data, int(entry["id"]))
+			if pile == null:
+				return false
+			_select_ground_pile({"pile_id": pile.id, "macro_coords": pile.macro_coords})
 		_:
 			return false
 	_center_camera_on_selection()
@@ -12798,6 +13569,11 @@ func _on_demolish_confirmed(building: Variant) -> void:
 		return
 	if target_building.is_complete:
 		_mark_building_for_demolition(target_building)
+		# Con l'idea dell'assegnazione (2026-10-07, richiesta utente): nessun mirino, l'edificio "da demolire" nasce senza
+		# demolitore ed entra subito nella lista dei lavori (demolish:<id>, con l'attesa per l'assegnazione a mano).
+		if JobBoardService.is_enabled(human_folk):
+			_refresh_pending_entries()
+			return
 		# Scelta del demolitore subito dopo la conferma (2026-09-27, richiesta utente): uscire senza scegliere
 		# annulla la demolizione.
 		_enter_demolisher_pick_mode(target_building, true)
@@ -12975,6 +13751,15 @@ func _handle_upgrade_orientation_input(event: InputEvent) -> bool:
 # `chosen_rotation` (2026-10-04): orientamento scelto in _enter_upgrade_orientation_mode (GameTypes.Direction), -1 =
 # nessuna scelta (resta quello dell'edificio). Applicato solo all'avvio dei lavori (_start_building_upgrade).
 func _enter_upgrade_pick_mode(building: Building, chosen_rotation: int = -1) -> void:
+	# Con l'idea dell'assegnazione (2026-10-07, richiesta utente): nessun mirino, il miglioramento parte subito senza
+	# costruttore (avviso sulle scorte e orientamento già passati) ed entra nella lista dei lavori (upgrade:<id>, con
+	# l'attesa per l'assegnazione a mano).
+	if JobBoardService.is_enabled(human_folk):
+		if _can_start_building_upgrade(building):
+			_start_building_upgrade(building, chosen_rotation)
+			_refresh_pending_entries()
+		_refresh_selected_building_panel()
+		return
 	var target := BuildingUpgradeService.get_upgrade_rules(building)
 	var on_pick := func(worker: HumanIndividual) -> void:
 		if not _can_start_building_upgrade(building):
@@ -13551,6 +14336,8 @@ func _toggle_task_assignment_drawer() -> void:
 		_task_assignment_panel.unlock_requested.connect(func(entry: Dictionary) -> void:
 			_on_job_board_state_requested(entry, JobBoardService.STATE_LISTED)
 		)
+		_task_assignment_panel.cancel_requested.connect(_on_job_board_cancel_requested)
+		_task_assignment_panel.requeue_requested.connect(_on_job_board_requeue_requested)
 		side_drawer.show_content(TaskAssignmentPanel.DRAWER_CONTENT_ID, tr("task_assignment_dialog_title"), _task_assignment_panel)
 		# Elenco subito, senza aspettare il ricalcolo del secondo successivo.
 		_refresh_pending_entries()

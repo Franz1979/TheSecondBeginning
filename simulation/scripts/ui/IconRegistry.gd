@@ -230,10 +230,12 @@ const COMMAND_ICONS := {
 	"transport": "📦",
 	# "produce" (2026-09-23, richiesta utente — Produce Task): icona provvisoria.
 	"produce": "⚒️",
-	"demolish": "⛏️",
+	"demolish": "🧨",
 	# "rite" (2026-10-02, task Rite): sulla mappa vale l'icona disegnata (COMMAND_ICON_NODES, CommandMoonIcon); questa
 	# emoji resta solo per le righe del popup di scelta del rito (interfaccia, non mappa).
 	"rite": "🌙",
+	# "bury" (2026-10-07, sepoltura — prima usava la luna del rito): sulla mappa vale l'icona disegnata (CommandSkullIcon).
+	"bury": "💀",
 	# "cut" (2026-10-04, task Cut): sulla mappa vale l'icona disegnata (CommandAxeIcon); questa per le righe del popup.
 	"cut": "🪓",
 	# "quarry" (2026-10-05, task Quarry): sulla mappa vale l'icona disegnata (CommandPickaxeIcon); questa per le righe del popup.
@@ -323,10 +325,13 @@ const COMMAND_ICON_NODES := {
 	"produce": preload("res://simulation/scripts/ui/CommandProduceIcon.gd"),
 	# "butcher" (2026-09-26, richiesta utente — macellazione): coltello, vedi CommandKnifeIcon.gd.
 	"butcher": preload("res://simulation/scripts/ui/CommandKnifeIcon.gd"),
-	# "demolish" (2026-09-27, richiesta utente — Demolish Task): piccone, vedi CommandPickaxeIcon.gd.
-	"demolish": preload("res://simulation/scripts/ui/CommandPickaxeIcon.gd"),
+	# "demolish" (2026-09-27, richiesta utente — Demolish Task): dal 2026-10-07 la dinamite del bottone "Demolisci"
+	# (CommandDynamiteIcon.gd), non più il piccone, che resta a "quarry".
+	"demolish": preload("res://simulation/scripts/ui/CommandDynamiteIcon.gd"),
 	# "rite" (2026-10-02, task Rite): falce di luna, vedi CommandMoonIcon.gd.
 	"rite": preload("res://simulation/scripts/ui/CommandMoonIcon.gd"),
+	# "bury" (2026-10-07, sepoltura): teschio, vedi CommandSkullIcon.gd.
+	"bury": preload("res://simulation/scripts/ui/CommandSkullIcon.gd"),
 	# "cut" (2026-10-04, task Cut): accetta, vedi CommandAxeIcon.gd.
 	"cut": preload("res://simulation/scripts/ui/CommandAxeIcon.gd"),
 	# "quarry" (2026-10-05, task Quarry): piccone, lo stesso disegno della demolizione (CommandPickaxeIcon.gd).

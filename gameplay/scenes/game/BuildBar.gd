@@ -139,7 +139,7 @@ func _ready() -> void:
 	# riscriverla a mano) — chiavi = building_type_name, stessa convenzione di
 	# BUILDING_SLOT_INDEX_BY_TYPE sopra.
 	submenu_row.configure_slot(
-		1, "", _storage_tooltip("deposit_site"), &"build_deposit_site", "", true,
+		1, "", tr("build_bar_deposit_site_tooltip"), &"build_deposit_site", "", true,
 		IconRegistry.get_building_icon_node("deposit_site")
 	)
 	# Stick Tent (2026-09-12, richiesta utente) — stesso schema emoji-inline di deposit_site sopra
@@ -185,14 +185,19 @@ func _ready() -> void:
 	# Deposito coperto (2026-10-04, richiesta utente): richiede paleolithic_constructions; la capanna di stoccaggio ora
 	# richiede advanced_paleolithic_constructions. Disabilitati da GameScene._refresh_building_slots_buildable finché manca.
 	submenu_row.configure_slot(
-		BUILDING_SLOT_INDEX_BY_TYPE["covered_depot"], "", _storage_tooltip("covered_depot"), &"build_covered_depot", "", true,
+		BUILDING_SLOT_INDEX_BY_TYPE["covered_depot"], "", tr("build_bar_covered_depot_tooltip"), &"build_covered_depot", "", true,
 		IconRegistry.get_building_icon_node("covered_depot")
 	)
 	submenu_row.configure_slot(
-		BUILDING_SLOT_INDEX_BY_TYPE["storage_hut"], "", _storage_tooltip("storage_hut"), &"build_storage_hut", "", true,
+		BUILDING_SLOT_INDEX_BY_TYPE["storage_hut"], "", tr("build_bar_storage_hut_tooltip"), &"build_storage_hut", "", true,
 		IconRegistry.get_building_icon_node("storage_hut")
 	)
 	submenu_row.configure_slot(BUILDING_SLOT_INDEX_BY_TYPE["hut"], IconRegistry.get_building_icon("hut"), tr("build_bar_hut_tooltip"), &"build_hut")
+	# Tooltip degli edifici (2026-10-07, richiesta utente): formato unico di BuildingCostTooltip, uguale a "Migliora".
+	for building_type_name in BUILDING_SLOT_INDEX_BY_TYPE.keys():
+		var slot_button := submenu_row.get_slot_button(BUILDING_SLOT_INDEX_BY_TYPE[building_type_name]) as TooltipButton
+		if slot_button != null:
+			slot_button.tooltip_builder = _building_tooltip.bind(String(building_type_name), slot_button)
 	main_row.action_pressed.connect(_on_main_row_action_pressed)
 	control_button.pressed.connect(_on_control_button_pressed)
 	_build_title_row()
@@ -200,11 +205,18 @@ func _ready() -> void:
 	_apply_state()
 
 
-# Tooltip dei tre magazzini (2026-10-04, richiesta utente): il nome e, sotto, una riga che dice in cosa si distingue
-# (chiave "build_bar_<tipo>_description").
-func _storage_tooltip(building_type_name: String) -> String:
-	return "%s
-%s" % [tr("build_bar_%s_tooltip" % building_type_name), tr("build_bar_%s_description" % building_type_name)]
+# Tooltip di un bottone edificio (BuildingCostTooltip): nome, descrizione breve, materiali (allestimento + costruzione),
+# lavoro. Bottone spento: in fondo il motivo (`for_text` = tooltip di set_building_buildable, se diverso dal nome).
+func _building_tooltip(for_text: String, building_type_name: String, slot_button: TooltipButton) -> Control:
+	var title := tr("build_bar_%s_tooltip" % building_type_name)
+	var rules := BuildingCalculator.get_building_rules(building_type_name)
+	var extra_lines: Array[String] = []
+	if slot_button.disabled and for_text != title:
+		extra_lines.append(for_text)
+	return BuildingCostTooltip.build(
+		title, building_type_name, BuildingCostTooltip.get_build_materials(rules),
+		rules.required_labor if rules != null else 0, extra_lines
+	)
 
 
 # Mette la riga dei pulsanti sotto un'etichetta di titolo, con la stessa separazione dei gruppi della barra dei comandi:

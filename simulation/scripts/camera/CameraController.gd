@@ -22,6 +22,8 @@ const EDGE_PAN_ACTIVATION_DELAY: float = 0.3
 @export var max_zoom: float = 3.0
 
 var _edge_pan_hover_time: float = 0.0
+# Gruppo dei Control che, visibili, coprono il bordo destro della mappa (_get_map_rect).
+const RIGHT_EDGE_COVER_GROUP := &"camera_right_edge_cover"
 
 # Quando true la camera ignora ogni input (pan WASD/frecce, edge-pan, drag centrale, zoom a rotella
 # e da tastiera) — impostato da GameScene mentre un popup bloccante è aperto (vedi
@@ -68,6 +70,12 @@ func _get_map_rect() -> Rect2:
 	var sidebar := get_parent().get_node_or_null("CanvasLayer/Sidebar")
 	if sidebar is Control and sidebar.visible:
 		rect.size.x = sidebar.get_global_rect().position.x
+
+	# Pannelli aperti che coprono il bordo destro della mappa (2026-10-07, es. il cassetto laterale SideDrawer): il
+	# bordo destro della mappa visibile diventa il loro fianco sinistro. Chiusi (nascosti) non contano.
+	for cover in get_tree().get_nodes_in_group(RIGHT_EDGE_COVER_GROUP):
+		if cover is Control and (cover as Control).is_visible_in_tree():
+			rect.size.x = minf(rect.size.x, (cover as Control).get_global_rect().position.x)
 
 	return rect
 

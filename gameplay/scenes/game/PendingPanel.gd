@@ -6,8 +6,8 @@ extends VBoxContainer
 # già calcolate e ordinate da GameScene (set_entries) e segnala solo il clic (entry_activated); creato in codice.
 #
 # Riga sul modello della lista degli abitanti: a sinistra il tasto 🎯, poi il testo su una riga, troncato con i puntini
-# (intero nel tooltip), così la scheda non allarga mai il pannello. Clic sulla riga o sul 🎯: stessa azione. Voce che non
-# si può centrare: riga spenta, spiegazione nel tooltip. Le righe vengono rifatte solo quando l'elenco cambia davvero.
+# (intero nel tooltip), così la scheda non allarga mai il pannello. Solo il 🎯 centra e seleziona (dal 2026-10-07 il
+# testo non è più cliccabile). Voce che non si può centrare: riga spenta, spiegazione nel tooltip. Le righe vengono rifatte solo quando l'elenco cambia davvero.
 #
 # Voce: {"key": String univoca, "text": String, "enabled": bool, "disabled_reason": String, ...dati per il chiamante}.
 
@@ -15,6 +15,8 @@ signal entry_activated(entry: Dictionary)
 
 const CENTER_BUTTON_TEXT := "🎯"
 const FONT_SIZE: int = 10
+# Testo di dettaglio accanto al nome: come le righe di stato del cassetto (TaskAssignmentPanel.LIST_FONT_SIZE - 2).
+const DETAIL_FONT_SIZE: int = 9
 const DISABLED_MODULATE := Color(1, 1, 1, 0.45)
 
 var _signature: String = "-"
@@ -60,18 +62,27 @@ func _build_row(entry: Dictionary) -> Control:
 	center_button.tooltip_text = tr("pending_center_tooltip") if enabled else String(entry.get("disabled_reason", ""))
 	center_button.pressed.connect(func(): entry_activated.emit(entry))
 	row.add_child(center_button)
-	var label := _make_label(String(entry["text"]))
+	# Il testo non è cliccabile (2026-10-07, richiesta utente): il gesto è solo il 🎯. Resta il tooltip.
+	# Voce con "name" e "name_detail" (2026-10-07, corpi da seppellire): il nome a dimensione normale e accanto, più in
+	# piccolo, il testo di dettaglio, che si accorcia lui con i puntini se manca lo spazio. Altrimenti il testo intero.
+	var name_detail := String(entry.get("name_detail", ""))
+	var label := _make_label(String(entry.get("name", entry["text"])) if name_detail != "" else String(entry["text"]))
 	label.tooltip_text = tooltip
-	label.mouse_filter = Control.MOUSE_FILTER_STOP
-	if enabled:
-		label.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
-		label.gui_input.connect(func(event: InputEvent) -> void:
-			if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
-				entry_activated.emit(entry)
-		)
-	else:
+	label.mouse_filter = Control.MOUSE_FILTER_PASS
+	if not enabled:
 		label.modulate = DISABLED_MODULATE
 	row.add_child(label)
+	if name_detail != "":
+		label.size_flags_horizontal = Control.SIZE_FILL
+		label.clip_text = false
+		label.text_overrun_behavior = TextServer.OVERRUN_NO_TRIMMING
+		var detail_label := _make_label(name_detail)
+		detail_label.add_theme_font_size_override("font_size", DETAIL_FONT_SIZE)
+		detail_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		detail_label.tooltip_text = tooltip
+		detail_label.mouse_filter = Control.MOUSE_FILTER_PASS
+		detail_label.modulate = label.modulate
+		row.add_child(detail_label)
 	return row
 
 

@@ -39,7 +39,6 @@ const COLOR_HOUSING_ALERT := Color(0.9, 0.3, 0.3)
 # di saltare direttamente a un individuo specifico dalla lista). Stessa icona del bottone
 # generale (vedi GameScene._center_camera_on_individual/PrimaryActionsBar) per coerenza visiva —
 # stesso concetto, non un'icona nuova da imparare.
-const CENTER_BUTTON_TEXT := "🎯"
 
 # Simbolo "ha una casa" per riga (2026-09-12, richiesta utente) — stessa icona già in uso per la
 # scheda 🏠/BuildingsInfoPanel, coerenza visiva: lo stesso glifo identifica "casa" ovunque nel
@@ -66,6 +65,8 @@ const IDLE_TASK_TEXT := "A riposo"
 # selezione/camera, si limita a segnalare "l'utente ha chiesto questo individuo" — GameScene resta
 # l'unica a decidere cosa fare col click (stesso schema di _on_minimap_cell_clicked).
 signal individual_center_requested(individual: HumanIndividual)
+# Tornato il 2026-10-07 (richiesta utente: la riga cliccabile si è rivelata poco intuitiva negli elenchi dell'info panel).
+const CENTER_BUTTON_TEXT := "🎯"
 
 # Ordinamento dell'elenco (2026-10-04, richiesta utente): pulsante a icona sulla riga del Folk (MenuButton piatto, stesso
 # stile del 🎯 di riga) con una tendina delle opzioni, quella attiva spuntata. L'opzione scelta vive in
@@ -356,6 +357,8 @@ func show_population(
 			house_icon.text = HOUSE_ICON_TEXT
 			house_icon.add_theme_font_size_override("font_size", 10)
 			house_icon.tooltip_text = "ID Casa: %d" % member.house_id
+			# Tiene il suo clic (2026-10-07): un clic sulla casa non seleziona la riga.
+			house_icon.mouse_filter = Control.MOUSE_FILTER_STOP
 			row.add_child(house_icon)
 			house_icon_node = house_icon
 

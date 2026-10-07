@@ -4,7 +4,7 @@
 
 [node name="HelpDialog" type="Window"]
 visible = false
-size = Vector2i(420, 400)
+size = Vector2i(700, 550)
 script = ExtResource("1_help")
 
 [node name="MarginContainer" type="MarginContainer" parent="."]

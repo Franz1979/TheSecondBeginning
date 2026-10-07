@@ -1,6 +1,7 @@
 [gd_scene format=3]
 
 [ext_resource type="Script" path="res://gameplay/scenes/game/BuildingInfoPanel.gd" id="1_bld"]
+[ext_resource type="Script" path="res://simulation/scripts/ui/TooltipButton.gd" id="2_tooltip_button"]
 
 [sub_resource type="StyleBoxFlat" id="StyleBoxFlat_construction_bg"]
 bg_color = Color(0.35, 0.35, 0.35, 1)
@@ -253,6 +254,7 @@ layout_mode = 2
 [node name="UpgradeButton" type="Button" parent="CommandIconRow"]
 visible = false
 layout_mode = 2
+script = ExtResource("2_tooltip_button")
 
 [node name="EmptyAllButton" type="Button" parent="CommandIconRow"]
 visible = false

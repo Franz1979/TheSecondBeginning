@@ -123,11 +123,26 @@ unlock_tool_work_areas_advanced,Aree di lavoro per tutte le risorse
 unlock_tool_task_assignment,Assegnazione compiti
 task_assignment_tooltip,Assegnazione
 task_assignment_dialog_title,Assegnazione compiti
-task_assignment_list_section,In lista
-task_assignment_list_empty,Nessun compito in lista
+task_assignment_list_section,In coda
+task_assignment_list_empty,Nessun compito in coda
 task_assignment_lock,Blocca
 task_assignment_unlock,Sblocca
 task_assignment_locked,Bloccato
+task_assignment_waiting,In attesa di assegnazione
+task_assignment_requeue,Rimetti in coda
+task_assignment_requeue_tooltip,Toglie il lavoro a chi lo sta facendo e lo rimette in coda.
+task_assignment_burial_cannot_cancel,Una sepoltura non si può cancellare.
+task_assignment_pile_cannot_cancel,Un mucchio non si può cancellare.
+task_assignment_pile_no_storage,Nessun magazzino lo accetta
+task_assignment_setting_collect_piles,Ritira i mucchi abbandonati
+task_assignment_setting_collect_piles_tooltip,I mucchi a terra che nessuno sta portando via entrano in coda e vengono portati al magazzino da chi è libero.
+pending_pile,Mucchio · {resources}
+task_assignment_in_progress_section,In corso
+task_assignment_in_progress_empty,Nessun compito in corso
+task_assignment_settings,⚙ Regole di assegnazione
+task_assignment_rules_save_close,Salva e chiudi
+task_assignment_setting_wait,Attesa prima dell'assegnazione automatica
+task_assignment_setting_wait_tooltip,"Per questi secondi un lavoro nuovo non viene preso da nessuno: puoi assegnarlo tu col clic destro. Con 0 parte subito."
 population_hide_tasks,Nascondi compiti
 population_show_tasks,Mostra compiti
 task_assignment_coming_soon,In arrivo
@@ -449,6 +464,10 @@ selection_title_type,Tipo: {type}
 game_info_tab_buildings,Edifici
 buildings_panel_summary_label,"Edifici: {total} ({complete} completi, {under_construction} in costruzione)"
 buildings_panel_center_button_tooltip,Centra e seleziona
+buildings_panel_group_complete,{count} completi
+buildings_panel_group_under_construction,{count} in costruzione
+buildings_panel_group_marked_for_demolition,{count} da demolire
+buildings_panel_group_demolition_in_progress,{count} in demolizione
 game_info_tab_debug,Debug: Task
 task_debug_panel_header,Debug: Task
 task_debug_panel_clear_button,Svuota
@@ -502,6 +521,10 @@ category_name_medicinal,Medicinali
 category_name_semi_finished,Semilavorati
 category_name_tool,Strumenti
 help_building_materials_menu_link,Costruzioni e materiali
+help_buildings_menu_link,Edifici
+help_buildings_title,Edifici
+help_buildings_materials,Materiali: {items}
+help_buildings_upgrades_to,Si migliora in: {building}
 help_building_materials_title,Costruzioni e materiali
 help_building_materials_setup_vs_construction,"Costruire un edificio richiede materiale in due fasi distinte: prima l'allestimento del cantiere (una quantità fissa di legnetti per ogni microcella occupata dall'edificio), poi la costruzione vera e propria, che in futuro richiederà i propri materiali."
 help_building_materials_manual,"Oggi il gioco non genera da sé nessun compito per procurare questo materiale: se manca, il cantiere resta semplicemente in attesa. Sei tu a doverlo portare sul posto, comandando a mano un individuo (raccogli il materiale e depositalo sul cantiere)."
@@ -762,7 +785,8 @@ game_info_tab_pending,In sospeso
 pending_empty,Niente in sospeso
 pending_center_tooltip,Centra e seleziona
 pending_not_centerable,Fuori dalla zona caricata: non si può centrare
-pending_body,{name} · restano {days} giorni
+pending_body_days,restano {days} gg per la sepoltura
+pending_body,Sepoltura · {name} · restano {days} gg
 pending_build,Cantiere · {building}
 pending_upgrade,Miglioramento · {building}
 pending_demolish,Demolizione · {building}

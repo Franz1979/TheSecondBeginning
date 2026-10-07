@@ -38,6 +38,10 @@ var _has_measured_top: bool = false
 func _init() -> void:
 	visible = false
 	mouse_filter = Control.MOUSE_FILTER_STOP
+	# Aperto copre il bordo destro della mappa: lo scorrimento col mouse al bordo destro va lungo il suo fianco sinistro
+	# (CameraController._get_map_rect, 2026-10-07).
+	# Stesso nome di CameraController.RIGHT_EDGE_COVER_GROUP (lo script della camera non ha class_name).
+	add_to_group(&"camera_right_edge_cover")
 
 
 func _ready() -> void:

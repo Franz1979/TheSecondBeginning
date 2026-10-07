@@ -7,8 +7,13 @@ extends Button
 # ritorna null e Godot mostra il tooltip di default a una riga — nessuna differenza per i
 # bottoni che non la impostano.
 var tooltip_description: String = ""
+# Tooltip costruito da chi configura il bottone (2026-10-07, es. BuildingCostTooltip): Callable(for_text: String) ->
+# Control, chiamato a ogni comparsa del tooltip; vince su tooltip_description. tooltip_text deve restare non vuoto.
+var tooltip_builder: Callable = Callable()
 
 func _make_custom_tooltip(for_text: String) -> Object:
+	if tooltip_builder.is_valid():
+		return tooltip_builder.call(for_text)
 	if tooltip_description.is_empty():
 		return null
 

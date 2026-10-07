@@ -8,7 +8,9 @@ extends RefCounted
 #
 # Stato in un punto unico, GameData.job_board_states (salvato), con le chiavi della scheda "In sospeso" ("build:<id>",
 # in futuro "upgrade:", "demolish:", "produce:", "body:"). Oggi il solo tipo gestito è il cantiere di un edificio nuovo
-# ("build"): un tipo nuovo si aggiunge a DEFAULT_STATE_BY_KIND (e a SKILL_KEY_BY_KIND per il punteggio).
+# ("build"), dal 2026-10-07 il cantiere di un miglioramento ("upgrade", stesse regole: è un cantiere normale) e
+# l'edificio "da demolire" senza demolitore ("demolish", fuori lista finché è aperto il suo mirino): un tipo
+# nuovo si aggiunge a DEFAULT_STATE_BY_KIND (e a SKILL_KEY_BY_KIND per il punteggio).
 #
 # Passo B (2026-10-07): un pipottino libero prende da solo il lavoro attivo più adatto (try_take_job), chiamato SOLO da
 # HumanIndividualActionService.resolve_idle_individual tra una task e l'altra — dopo bisogni, coda personale e
@@ -16,18 +18,38 @@ extends RefCounted
 # l'assegnazione (stessa funzione dell'assegnazione a mano) le fa GameScene, che registra qui `job_taker`; il punteggio
 # è score_job. Stateless, funzioni statiche (job_taker è l'unico dato, un aggancio, mai salvato).
 
+# Attesa per l'assegnazione a mano (2026-10-07, richiesta utente): secondi reali (uguali a ogni velocità, fermi in pausa)
+# dopo l'ingresso di un lavoro in lista (nato senza lavoratore o tornato in lista) durante i quali nessuno può prenderlo
+# dalla lista; l'assegnazione a mano resta sempre possibile. 0 = nessuna attesa. Il conto lo tiene GameScene, mai salvato.
+# Valore iniziale: dal 2026-10-07 il giocatore lo sceglie nelle impostazioni del cassetto (UserOptions.
+# job_board_manual_assign_seconds, tra MIN e MAX); leggere sempre get_manual_assign_window_seconds().
+const MANUAL_ASSIGN_WINDOW_SECONDS := 5.0
+const MANUAL_ASSIGN_WINDOW_MIN_SECONDS := 0.0
+const MANUAL_ASSIGN_WINDOW_MAX_SECONDS := 30.0
+
 const STATE_LISTED := "listed"
 const STATE_LOCKED := "locked"
 # Tipi di lavoro gestiti dalla lista -> stato iniziale (chiave assente in GameData.job_board_states).
-const DEFAULT_STATE_BY_KIND := {"build": STATE_LISTED}
+# "body" (2026-10-07): corpi da seppellire; "pile" (2026-10-07): mucchi a terra abbandonati.
+const DEFAULT_STATE_BY_KIND := {"build": STATE_LISTED, "upgrade": STATE_LISTED, "demolish": STATE_LISTED, "body": STATE_LISTED, "pile": STATE_LISTED}
 # Tipo di lavoro -> chiave di SkillEffectService (skill_action_effects.tres) del suo fattore di skill nel punteggio.
-const SKILL_KEY_BY_KIND := {"build": "build"}
+const SKILL_KEY_BY_KIND := {"build": "build", "upgrade": "build", "demolish": "build", "body": RiteAction.SKILL_EFFECT_KEY, "pile": "pickup"}
+# Tipo di lavoro -> icona di comando (IconRegistry) che lampeggia sull'edificio durante l'attesa per l'assegnazione a mano.
+const ICON_KEY_BY_KIND := {"build": "build", "upgrade": "build", "demolish": "demolish", "body": "bury", "pile": "pickup"}
 # Stesso scarto della distanza della scelta delle zone di lavoro (HaulZoneService).
 const SCORE_DISTANCE_OFFSET: float = HaulZoneService.ZONE_DISTANCE_OFFSET
 
 # Callable(individual: HumanIndividual) -> bool, registrato da GameScene: guarda la lista e prova a far prendere a
 # `individual` il lavoro più adatto; true = preso (ha una task nuova). Non valido fuori dalla scena di gioco.
 static var job_taker: Callable = Callable()
+
+
+# Attesa per l'assegnazione a mano in uso: l'impostazione del giocatore (UserOptions), nei limiti; mai scelta = il valore
+# iniziale MANUAL_ASSIGN_WINDOW_SECONDS.
+static func get_manual_assign_window_seconds() -> float:
+	if UserOptions.job_board_manual_assign_seconds < 0:
+		return MANUAL_ASSIGN_WINDOW_SECONDS
+	return clampf(float(UserOptions.job_board_manual_assign_seconds), MANUAL_ASSIGN_WINDOW_MIN_SECONDS, MANUAL_ASSIGN_WINDOW_MAX_SECONDS)
 
 
 # true con l'idea dell'assegnazione completata dal popolo del giocatore.
