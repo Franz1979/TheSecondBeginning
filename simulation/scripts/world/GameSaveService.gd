@@ -104,6 +104,8 @@ func save_game_to_json(
 			"scheduled_random_events": game_data.scheduled_random_events,
 			# Raffreddamento per categoria di eventi (2026-09-27): id categoria -> anno, già JSON-nativo.
 			"random_event_category_last_year": game_data.random_event_category_last_year,
+			# Stato dei lavori senza nessuno assegnato (2026-10-07, JobBoardService): chiave -> stato, già JSON-nativo.
+			"job_board_states": game_data.job_board_states,
 			# Gruppi di visitatori (2026-09-27): VisitorParty.to_save_data è già JSON-nativo.
 			"visitor_parties": game_data.visitor_parties.map(func(party: VisitorParty) -> Dictionary: return party.to_save_data()),
 			"next_visitor_party_id": game_data.next_visitor_party_id,

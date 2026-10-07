@@ -72,6 +72,8 @@ static func _sources() -> Array[Dictionary]:
 const TOOLS := {
 	"work_areas": {"name_key": "unlock_tool_work_areas", "required_idea_id": WorkAreaTypes.REQUIRED_IDEA_ID},
 	"work_areas_advanced": {"name_key": "unlock_tool_work_areas_advanced", "required_idea_id": WorkAreaTypes.ADVANCED_REQUIRED_IDEA_ID},
+	# Assegnazione delle task (2026-10-07): bottone della riga del governo del villaggio (GameInfoPanel).
+	"task_assignment": {"name_key": "unlock_tool_task_assignment", "required_idea_id": TaskAssignmentPanel.REQUIRED_IDEA_ID},
 }
 
 

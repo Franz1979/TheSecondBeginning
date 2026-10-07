@@ -34,10 +34,10 @@ help_pan_camera,sposta la visuale
 help_center_camera,centra la visuale sul player
 help_zoom_max,zoom massimo
 help_zoom_min,zoom minimo
-help_instant_build,tenuto premuto durante il piazzamento: costruisce l'edificio istantaneamente invece di assegnare una Task
-help_rotate_or_rest,"ruota la porta durante il piazzamento o la scelta dell'orientamento di un miglioramento; se nessuna anteprima è attiva assegna la Task Riposo all'individuo selezionato"
-help_wander_task,"assegna la Task Passeggiata all'individuo selezionato: due tappe vicino alla casa o al villaggio, guardandosi intorno"
-help_play_task,"assegna la Task Gioco (Corri-Salta-Corri-Salta, solo bambini) all'individuo selezionato"
+help_instant_build,tenuto premuto durante il piazzamento: costruisce l'edificio istantaneamente invece di assegnare un compito
+help_rotate_or_rest,"ruota la porta durante il piazzamento o la scelta dell'orientamento di un miglioramento; se nessuna anteprima è attiva assegna il compito Riposo all'individuo selezionato"
+help_wander_task,"assegna il compito Passeggiata all'individuo selezionato: due tappe vicino alla casa o al villaggio, guardandosi intorno"
+help_play_task,"assegna il compito Gioco (Corri-Salta-Corri-Salta, solo bambini) all'individuo selezionato"
 help_stop_task,annulla il comando corrente dell'individuo selezionato (torna a riposo)
 help_unload_here_task,tenuto premuto durante un click destro su un deposito: scarica lì tutto ciò che l'individuo selezionato porta in spalla
 help_double_click_label,Doppio click sinistro
@@ -120,6 +120,17 @@ unlock_kind_tool,Nuove funzioni
 unlock_next_ideas,Prossima idea da ricercare
 unlock_tool_work_areas,Aree di raccolta per il cibo
 unlock_tool_work_areas_advanced,Aree di lavoro per tutte le risorse
+unlock_tool_task_assignment,Assegnazione compiti
+task_assignment_tooltip,Assegnazione
+task_assignment_dialog_title,Assegnazione compiti
+task_assignment_list_section,In lista
+task_assignment_list_empty,Nessun compito in lista
+task_assignment_lock,Blocca
+task_assignment_unlock,Sblocca
+task_assignment_locked,Bloccato
+population_hide_tasks,Nascondi compiti
+population_show_tasks,Mostra compiti
+task_assignment_coming_soon,In arrivo
 build_bar_work_areas_tooltip,Zone di lavoro
 work_area_draw_banner_text,Trascina per disegnare una zona di lavoro (Esc o clic destro per uscire)
 work_area_default_name,Zona {n}
@@ -493,9 +504,9 @@ category_name_tool,Strumenti
 help_building_materials_menu_link,Costruzioni e materiali
 help_building_materials_title,Costruzioni e materiali
 help_building_materials_setup_vs_construction,"Costruire un edificio richiede materiale in due fasi distinte: prima l'allestimento del cantiere (una quantità fissa di legnetti per ogni microcella occupata dall'edificio), poi la costruzione vera e propria, che in futuro richiederà i propri materiali."
-help_building_materials_manual,"Oggi il gioco non genera da sé nessuna Task per procurare questo materiale: se manca, il cantiere resta semplicemente in attesa. Sei tu a doverlo portare sul posto, comandando a mano un individuo (raccogli il materiale e depositalo sul cantiere)."
+help_building_materials_manual,"Oggi il gioco non genera da sé nessun compito per procurare questo materiale: se manca, il cantiere resta semplicemente in attesa. Sei tu a doverlo portare sul posto, comandando a mano un individuo (raccogli il materiale e depositalo sul cantiere)."
 help_building_materials_deposit_bonus,"Unica eccezione: il primissimo Deposito che costruisci, quando nel villaggio non esiste ancora nessun altro edificio con vero spazio di stoccaggio, riceve il proprio materiale di allestimento gratuitamente, così puoi sempre iniziare anche senza scorte."
-help_building_materials_future,"Questa fornitura manuale sarà necessaria finché non scoprirai i futuri sistemi di gestione delle Task e dei magazzini: da quel momento in poi il gioco potrà occuparsene in autonomia."
+help_building_materials_future,"Questa fornitura manuale sarà necessaria finché non scoprirai i futuri sistemi di gestione dei compiti e dei magazzini: da quel momento in poi il gioco potrà occuparsene in autonomia."
 notification_build_capacity_full,"Questo edificio è già in costruzione da {current} individui su un massimo di {max}."
 building_construction_phase_label,{phase}: {percent}%
 building_construction_phase_setup_site,Allestimento cantiere
@@ -700,10 +711,10 @@ building_info_production_multipliers,"Lavoro ×{labor}, combustibile ×{fuel}"
 building_info_max_durability,Integrità massima: {value}
 building_info_political_radius,Raggio politico: {radius}
 building_info_cultural_radius,Raggio culturale: {radius}
-help_explore_task,"assegna la Task Esplorazione all'individuo selezionato: due tratti in direzione casuale, guardandosi intorno, e ritorno al punto di partenza (non per i bambini)"
+help_explore_task,"assegna il compito Esplorazione all'individuo selezionato: due tratti in direzione casuale, guardandosi intorno, e ritorno al punto di partenza (non per i bambini)"
 task_activity_explore,esplorare
-help_emergency_rest_task,assegna la Task Riposo d'emergenza all'individuo selezionato
-help_leisure_restock_task,"assegna la Task Rifornirsi all'individuo selezionato: va a un magazzino a fare provviste"
+help_emergency_rest_task,assegna il compito Riposo d'emergenza all'individuo selezionato
+help_leisure_restock_task,"assegna il compito Rifornirsi all'individuo selezionato: va a un magazzino a fare provviste"
 help_gather_command,"Raccogli nelle zone di lavoro (barra dei comandi, con un individuo selezionato)"
 help_hunt_command,"Caccia nelle zone di lavoro (barra dei comandi, se c'è una zona con la caccia attiva)"
 help_cut_command,"Taglia nelle zone di lavoro (barra dei comandi, se c'è una zona con il taglio attivo)"

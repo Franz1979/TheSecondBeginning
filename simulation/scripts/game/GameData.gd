@@ -221,6 +221,13 @@ var ground_piles: Array[GroundPile] = []
 # evento {"id": String, "absolute_day": int, "params": Dictionary}, solo tipi JSON-nativi. Salvati da
 # GameSaveService ("scheduled_random_events"), applicati e rimossi da GameTimeService il giorno previsto.
 var scheduled_random_events: Array[Dictionary] = []
+
+# Stato dei lavori senza nessuno assegnato (2026-10-07, assegnazione compiti passo A — JobBoardService): chiave del lavoro,
+# la stessa della scheda "In sospeso" (es. "build:12") -> "listed" (attivo, disponibile per chiunque) o "locked"
+# (bloccato, fermo finché il giocatore non lo sblocca). Una chiave assente vale lo stato iniziale del suo tipo. Lo stato resta mentre
+# qualcuno ci lavora, così un lavoro abbandonato torna dov'era; la voce si toglie quando il lavoro finisce o sparisce.
+# Salvato da GameSaveService ("job_board_states"), solo String.
+var job_board_states: Dictionary = {}
 # Anno dell'ultimo evento avvenuto per ogni CATEGORIA di eventi casuali (2026-09-27, richiesta utente —
 # raffreddamento condiviso, vedi RandomEventCategoryRules): id categoria (String) -> anno (int). Scritto da
 # RandomEventService.apply_event, letto dal sorteggio. Salvato da GameSaveService ("random_event_category_last_year").

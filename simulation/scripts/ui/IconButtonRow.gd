@@ -91,6 +91,69 @@ func set_slot_toggled(index: int, is_active: bool) -> void:
 # riabilitazione (disabled=false) il tooltip torna a quello "normale" passato a configure_slot
 # (BUGFIX 2026-09-07: la prima versione non lo ripristinava mai, un edificio che tornava
 # disponibile restava con la spiegazione del blocco precedente scritta sopra).
+# Mostra/nasconde uno slot (2026-10-07, riga del governo del villaggio di GameInfoPanel: i bottoni non ancora sbloccati
+# non si vedono). Un HBoxContainer non lascia spazio per i figli nascosti: nessun buco.
+func set_slot_visible(index: int, is_visible: bool) -> void:
+	if index >= 0 and index < _slots.size():
+		_slots[index].visible = is_visible
+
+
+# Evidenzia uno slot come "premuto" (2026-10-07, bottone che apre un pannello: resta evidenziato finché è aperto). Lo
+# stato lo decide il chiamante; il clic emette action_pressed come sempre.
+func set_slot_highlighted(index: int, is_highlighted: bool) -> void:
+	if index < 0 or index >= _slots.size():
+		return
+	_slots[index].toggle_mode = true
+	_slots[index].set_pressed_no_signal(is_highlighted)
+
+
+# Stacco tra due gruppi di slot (2026-10-07, barra in basso di GameInfoPanel): dopo lo slot `index` lo spazio tra i
+# due bottoni diventa `gap_factor` volte quello normale (separation del contenitore); la riga resta centrata, come
+# gruppo unico.
+func add_group_gap_after(index: int, gap_factor: float = 3.0) -> void:
+	if index < 0 or index >= _slots.size() - 1:
+		return
+	var separation := float(get_theme_constant("separation"))
+	var spacer := Control.new()
+	spacer.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	# Lo spaziatore porta con sé due separazioni (una per lato): ne aggiunge quanto manca al totale voluto.
+	spacer.custom_minimum_size = Vector2(maxf(0.0, separation * gap_factor - separation * 2.0), 0.0)
+	add_child(spacer)
+	move_child(spacer, _slots[index].get_index() + 1)
+
+
+# Colonne esterne (2026-10-07, riga del governo di GameInfoPanel allineata alle schede sotto): `leading_width` di spazio
+# vuoto prima del primo slot, poi ogni slot largo quanto `slot_widths[i]` (gli slot oltre l'elenco restano larghi 32),
+# senza spaziatura tra slot. Le larghezze le misura il chiamante; solo ciò che cambia viene riassegnato.
+var _leading_spacer: Control = null
+
+
+func align_to_columns(leading_width: float, slot_widths: Array[float]) -> void:
+	alignment = ALIGNMENT_BEGIN
+	if not is_equal_approx(float(get_theme_constant("separation")), 0.0):
+		add_theme_constant_override("separation", 0)
+	if _leading_spacer == null:
+		_leading_spacer = Control.new()
+		_leading_spacer.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		add_child(_leading_spacer)
+		move_child(_leading_spacer, 0)
+	var leading := maxf(0.0, leading_width)
+	if not is_equal_approx(_leading_spacer.custom_minimum_size.x, leading):
+		_leading_spacer.custom_minimum_size = Vector2(leading, 0.0)
+	for i in range(_slots.size()):
+		var width: float = slot_widths[i] if i < slot_widths.size() else 32.0
+		if not is_equal_approx(_slots[i].custom_minimum_size.x, width):
+			_slots[i].custom_minimum_size = Vector2(width, _slots[i].custom_minimum_size.y)
+
+
+# true se almeno uno slot è visibile.
+func has_visible_slots() -> bool:
+	for slot in _slots:
+		if slot.visible:
+			return true
+	return false
+
+
 func set_slot_disabled(index: int, disabled: bool, disabled_tooltip: String = "") -> void:
 	var slot := _slots[index]
 	slot.disabled = disabled

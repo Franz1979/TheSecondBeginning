@@ -53,6 +53,9 @@ func open(active_layer_id: String, anchor_rect: Rect2, bounds: Rect2, panel_styl
 	x = maxf(x, bounds.position.x)
 	x = clampf(x, 0.0, maxf(viewport_size.x - menu_size.x, 0.0))
 	var y: float = anchor_rect.end.y + 2.0
+	# Bottone in fondo al pannello (2026-10-07, barra in basso dell'info panel): senza posto sotto si apre sopra.
+	if y + menu_size.y > viewport_size.y:
+		y = anchor_rect.position.y - menu_size.y - 2.0
 	y = clampf(y, 0.0, maxf(viewport_size.y - menu_size.y, 0.0))
 	position = Vector2(x, y)
 	size = menu_size

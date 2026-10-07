@@ -144,7 +144,7 @@ func _ready() -> void:
 	expand_button.text = "+"
 	expand_button.pressed.connect(_on_expand_pressed)
 	list_container.visible = false
-	hide_tasks_button.text = "Nascondi task" if _show_tasks else "Mostra task"
+	hide_tasks_button.text = tr("population_hide_tasks") if _show_tasks else tr("population_show_tasks")
 	hide_tasks_button.pressed.connect(_on_hide_tasks_pressed)
 	# Disabilitato quando la lista pipottini è compattata (2026-09-19, richiesta utente: "se il
 	# button + è raggruppato, spegni il pulsante mostra/nascondi task, tanto non funziona") — con
@@ -155,7 +155,7 @@ func _ready() -> void:
 	_build_sort_button()
 
 
-# Pulsante dell'ordinamento, accanto a "Nascondi task" sulla riga del Folk: piatto e stretto come il 🎯 di riga, così
+# Pulsante dell'ordinamento, accanto a "Nascondi compiti" sulla riga del Folk: piatto e stretto come il 🎯 di riga, così
 # sta nello spazio della riga (FolkLabel va a capo prima di allargare il pannello).
 func _build_sort_button() -> void:
 	_sort_button = MenuButton.new()
@@ -548,7 +548,7 @@ func _on_expand_pressed() -> void:
 # button" al singolare), su _task_rows così non serve ricostruire l'intera lista solo per questo.
 func _on_hide_tasks_pressed() -> void:
 	_show_tasks = not _show_tasks
-	hide_tasks_button.text = "Nascondi task" if _show_tasks else "Mostra task"
+	hide_tasks_button.text = tr("population_hide_tasks") if _show_tasks else tr("population_show_tasks")
 	for task_row in _task_rows:
 		task_row.visible = _show_tasks
 	# Pulsanti della riga sotto il mouse spostati sulla riga giusta (task o nome).

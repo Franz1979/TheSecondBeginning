@@ -193,6 +193,12 @@ func load_game_from_json(file_path: String) -> LoadedGame:
 	if raw_category_years is Dictionary:
 		for category in raw_category_years.keys():
 			game_data.random_event_category_last_year[String(category)] = int(raw_category_years[category])
+	# Stato dei lavori senza nessuno assegnato (2026-10-07, JobBoardService) — .get(key, {}) per i salvataggi precedenti.
+	game_data.job_board_states.clear()
+	var raw_job_states = data["game"].get("job_board_states", {})
+	if raw_job_states is Dictionary:
+		for job_key in raw_job_states.keys():
+			game_data.job_board_states[String(job_key)] = String(raw_job_states[job_key])
 	# Gruppi di visitatori (2026-09-27) — .get(key, []) per i salvataggi precedenti; voci non valide scartate.
 	# Il prossimo id non scende mai sotto quello di un gruppo caricato.
 	game_data.visitor_parties.clear()

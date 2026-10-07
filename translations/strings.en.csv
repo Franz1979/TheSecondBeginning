@@ -77,6 +77,17 @@ unlock_kind_tool,New features
 unlock_next_ideas,Next idea to research
 unlock_tool_work_areas,Food gathering areas
 unlock_tool_work_areas_advanced,Work areas for all resources
+unlock_tool_task_assignment,Task assignment
+task_assignment_tooltip,Assignment
+task_assignment_dialog_title,Task assignment
+task_assignment_list_section,In the list
+task_assignment_list_empty,No tasks in the list
+task_assignment_lock,Lock
+task_assignment_unlock,Unlock
+task_assignment_locked,Locked
+population_hide_tasks,Hide tasks
+population_show_tasks,Show tasks
+task_assignment_coming_soon,Coming soon
 build_bar_work_areas_tooltip,Work areas
 work_area_draw_banner_text,Drag to draw a work area (Esc or right click to exit)
 work_area_default_name,Area {n}

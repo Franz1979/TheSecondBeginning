@@ -1882,6 +1882,7 @@ static func resolve_idle_individual(individual: HumanIndividual, age_band: Human
 			])
 		resumed_task = TaskQueueService.pop_suspended_task(individual)
 	if resumed_task != null:
+		individual.skip_job_board_once = false
 		if DebugLogging.ENABLED and DebugLogging.SHOW_TASK_LIFECYCLE_LOGS:
 			print("[INTERRUPT DEBUG] #%d %s: individuo libero, nessun bisogno attivo — riprende '%s' dalla coda." % [
 				individual.id, individual.name, resumed_task.task_name
@@ -1896,6 +1897,17 @@ static func resolve_idle_individual(individual: HumanIndividual, age_band: Human
 	# torna al magazzino invece di cadere a terra (prima lo scartava il fallback perditempo, assegnato con assign_task,
 	# o lo stop() finale). A terra solo se nessun magazzino lo accetta.
 	if CargoReturnService.release_orphan_cargo(individual, world):
+		return
+
+	# Lista dei lavori (2026-10-07, assegnazione compiti passo B — JobBoardService): con l'idea dell'assegnazione
+	# completata, il lavoro attivo più adatto della lista; solo qui, tra una task e l'altra, mai sopra una task o
+	# un'attività di ripiego in corso. Nessun lavoro preso: attività di ripiego come sempre.
+	# Dopo un annullo con H del giocatore (skip_job_board_once) la lista si salta una volta: dritto al ripiego.
+	if individual.skip_job_board_once:
+		individual.skip_job_board_once = false
+		if DebugLogging.ENABLED and DebugLogging.SHOW_JOB_BOARD_LOGS:
+			print("[JOB BOARD] #%d %s: lista saltata una volta (annullo del giocatore)." % [individual.id, individual.name])
+	elif JobBoardService.try_take_job(individual):
 		return
 
 	if IdleTaskAssignmentService.assign_idle_fallback(individual, age_band, world):

@@ -404,3 +404,7 @@ const SHOW_RITE_LOGS := false
 # vive che la tengono in attesa del taglio) e alla fine (giorni di gioco dall'inizio, tempo sullo step, stamina
 # consumata). Solo log (ClearAction).
 const SHOW_CLEAR_LOGS := true
+
+# Lista dei lavori (2026-10-07, assegnazione compiti passo B — JobBoardService): una riga ogni volta che un pipottino
+# libero guarda la lista (lavori trovati, scelto con il punteggio, o perché nessuno). Solo log.
+const SHOW_JOB_BOARD_LOGS := true

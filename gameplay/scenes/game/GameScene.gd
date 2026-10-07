@@ -520,6 +520,11 @@ var _pending_leave_action: StringName = &""
 @onready var help_dialog: HelpDialog = $HelpDialog
 @onready var options_menu: OptionsMenu = $OptionsMenu
 @onready var statistics_panel: StatisticsPanel = $StatisticsPanel
+# Cassetto laterale accanto alla sidebar (2026-10-07): un contenuto alla volta, oggi l'assegnazione delle task. Creato
+# in _ready (_setup_side_drawer).
+var side_drawer: SideDrawer
+# Contenuto dell'assegnazione aperto nel cassetto (null se chiuso): _refresh_pending_entries gli passa la lista.
+var _task_assignment_panel: TaskAssignmentPanel = null
 @onready var tech_tree_panel: TechTreePanel = $TechTreePanel
 @onready var demolish_confirmation_dialog: DemolishConfirmationDialog = $DemolishConfirmationDialog
 @onready var transport_source_dialog: OptionChoiceDialog = $TransportSourceDialog
@@ -611,6 +616,8 @@ func _ready() -> void:
 	# vegetazione/minimappa/selezione.
 	game_info_tabs = GAME_INFO_TABS_SCENE.instantiate()
 	game_info_panel.body_container.add_child(game_info_tabs)
+	# Riga del governo del villaggio in colonna con le linguette delle schede (2026-10-07).
+	game_info_panel.align_governance_bar_to_tabs(game_info_tabs.get_tab_bar())
 	# Larghezza della sidebar MAI ridotta (2026-09-20, richiesta utente: "si allarga e rimpicciolisce, non mi
 	# piace"): la sidebar e' un PanelContainer ancorato a destra la cui larghezza segue il contenuto; qui si tiene
 	# come minimo la piu' larga mai raggiunta (crescente, nella sessione). Con la tab popolazione che riporta sempre
@@ -782,6 +789,10 @@ func _ready() -> void:
 	save_confirmation_dialog.option_selected.connect(_on_save_confirmation_option_selected)
 	save_confirmation_dialog.visibility_changed.connect(_on_blocking_dialog_visibility_changed.bind(save_confirmation_dialog))
 	help_dialog.visibility_changed.connect(_on_blocking_dialog_visibility_changed.bind(help_dialog))
+	# Cassetto laterale (2026-10-07): non è un dialogo bloccante, il gioco continua.
+	_setup_side_drawer()
+	# Lista dei lavori, passo B (2026-10-07): il pipottino libero prende da qui il lavoro attivo più adatto.
+	JobBoardService.job_taker = _take_listed_job_for
 	options_menu.visibility_changed.connect(_on_blocking_dialog_visibility_changed.bind(options_menu))
 	statistics_panel.visibility_changed.connect(_on_blocking_dialog_visibility_changed.bind(statistics_panel))
 	tech_tree_panel.visibility_changed.connect(_on_blocking_dialog_visibility_changed.bind(tech_tree_panel))
@@ -1957,6 +1968,10 @@ func _stop_selected_individual_task() -> void:
 		return
 	if HuntService.is_hunt_task(individual.current_task):
 		HuntService.log_event(individual, "caccia chiusa: annullata a mano (X o tasto H).")
+	# Annullo del giocatore con l'assegnazione attiva (2026-10-07): al prossimo momento libero il pipottino salta una
+	# volta la lista dei lavori, altrimenti riprenderebbe subito il lavoro appena annullato.
+	if individual.current_task != null and JobBoardService.is_enabled(human_folk):
+		individual.skip_job_board_once = true
 	var stopped_produce_building: Building = null
 	if individual.current_task != null and individual.current_task.task_name == "task_produce_name":
 		for step in individual.current_task.steps:
@@ -7922,7 +7937,7 @@ func _open_map_layers_menu() -> void:
 	if _map_layers_menu.visible:
 		_map_layers_menu.close()
 		return
-	var button: Control = game_info_panel.primary_actions_bar.get_slot_button(GameInfoPanel.MAP_LAYERS_SLOT_INDEX)
+	var button: Control = game_info_panel.secondary_actions_bar.get_slot_button(GameInfoPanel.MAP_LAYERS_SLOT_INDEX)
 	var anchor_rect := button.get_global_rect() if button != null else Rect2()
 	var sidebar := $CanvasLayer/Sidebar as Control
 	var bounds := sidebar.get_global_rect() if sidebar != null else get_viewport().get_visible_rect()
@@ -8613,6 +8628,10 @@ func _free_dead_body_view(body_id: int) -> void:
 #      ordini di produzione (escluse le ricette ad avanzamento automatico). Entrano solo dopo PENDING_JOB_WAIT_DAYS di
 #      gioco interi senza nessuno; il conto si azzera appena qualcuno li prende (in memoria, non salvato).
 # Chi lavora su cosa: un solo giro sui pipottini (_collect_pending_assignments). Ricalcolo una volta al secondo reale.
+# Lista dei lavori (2026-10-07, assegnazione compiti passo A — JobBoardService): con l'idea dell'assegnazione completata,
+# lo stesso giro prepara anche l'elenco della sezione "In lista" del cassetto (se è aperto): tutti i lavori dei tipi
+# gestiti dalla lista (oggi i cantieri di edifici nuovi, "build:<id>") senza nessuno assegnato, attivi o bloccati, subito.
+# Lo stato della lista NON tocca questa scheda: qui le voci restano quelle di sempre, con o senza l'idea.
 # ============================================================================================
 
 func _refresh_pending_entries() -> void:
@@ -8638,7 +8657,11 @@ func _refresh_pending_entries() -> void:
 	entries.append_array(body_entries)
 
 	var job_entries: Array[Dictionary] = []
+	var listed_entries: Array[Dictionary] = []
 	var seen_job_keys: Dictionary = {}
+	# Lavori gestiti dalla lista ancora da fare, assegnati o no (JobBoardService.forget_missing).
+	var board_job_keys: Dictionary = {}
+	var board_enabled := JobBoardService.is_enabled(human_folk)
 	if macro_world != null:
 		for building in macro_world.buildings:
 			if building.is_demolished or building.rules == null:
@@ -8649,8 +8672,10 @@ func _refresh_pending_entries() -> void:
 				if not assigned["demolish"].has(building.id):
 					jobs.append({"key": "demolish:%d" % building.id, "text": tr("pending_demolish").format({"building": building_name})})
 			elif not building.is_complete:
+				var is_upgrade := BuildingUpgradeService.get_upgrade_from_rules(building) != null
+				if not is_upgrade:
+					board_job_keys["build:%d" % building.id] = true
 				if not assigned["build"].has(building.id):
-					var is_upgrade := BuildingUpgradeService.get_upgrade_from_rules(building) != null
 					jobs.append({
 						"key": "%s:%d" % ["upgrade" if is_upgrade else "build", building.id],
 						"text": tr("pending_upgrade" if is_upgrade else "pending_build").format({"building": building_name}),
@@ -8671,6 +8696,13 @@ func _refresh_pending_entries() -> void:
 					})
 			for job in jobs:
 				var key := String(job["key"])
+				# Lista dei lavori del cassetto: subito, attivi o bloccati; la voce di questa scheda segue sotto come sempre.
+				if board_enabled and JobBoardService.is_managed(key):
+					listed_entries.append(_pending_entry(key, String(job["text"]), {
+						"kind": "building", "id": building.id, "macro": Vector2i(building.macro_x, building.macro_y),
+						"sort": float(building.id), "building_type": building.building_type_name, "building_name": building_name,
+						"locked": JobBoardService.get_state(game_data, key) == JobBoardService.STATE_LOCKED,
+					}))
 				seen_job_keys[key] = true
 				if not _pending_unassigned_since.has(key):
 					_pending_unassigned_since[key] = _pending_clock
@@ -8690,6 +8722,10 @@ func _refresh_pending_entries() -> void:
 		return String(a["key"]) < String(b["key"])
 	)
 	entries.append_array(job_entries)
+	JobBoardService.forget_missing(game_data, board_job_keys)
+	listed_entries.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return float(a["sort"]) < float(b["sort"]))
+	if _task_assignment_panel != null and is_instance_valid(_task_assignment_panel):
+		_task_assignment_panel.set_listed_entries(listed_entries)
 
 	pending_panel.set_entries(entries)
 	game_info_tabs.set_pending_count(entries.size())
@@ -8768,23 +8804,108 @@ func _collect_pending_assignments() -> Dictionary:
 
 # Clic su una voce (riga o 🎯): seleziona l'oggetto sulla mappa e centra la visuale, restando nella scheda "In sospeso".
 func _on_pending_entry_activated(entry: Dictionary) -> void:
+	if _activate_job_entry(entry):
+		game_info_tabs.current_tab = GameInfoTabs.TAB_PENDING
+
+
+# "Blocca" / "Sblocca" su un lavoro della lista del cassetto (2026-10-07, JobBoardService): cambia lo stato e ricalcola
+# subito l'elenco.
+func _on_job_board_state_requested(entry: Dictionary, state: String) -> void:
+	JobBoardService.set_state(game_data, String(entry.get("key", "")), state)
+	_refresh_pending_entries()
+
+
+# Lista dei lavori, passo B (2026-10-07, JobBoardService.job_taker, chiamato SOLO da resolve_idle_individual tra una
+# task e l'altra): con l'idea dell'assegnazione completata, `worker` prende il cantiere attivo più adatto. Candidati:
+# i cantieri di edifici nuovi senza nessun costruttore, in corso o in coda (stesso giro della scheda "In sospeso",
+# _collect_pending_assignments), e non bloccati. Controlli dell'assegnazione a mano fatti PRIMA, in silenzio, su una
+# task di prova (HumanIndividual.get_assign_rejection_reason: età, energia sopra la soglia del riposo d'emergenza) e la
+# raggiungibilità (PathfindingService.reachability_for); poi il punteggio (JobBoardService.score_job) e la stessa
+# funzione dell'assegnazione a mano (_assign_resumable_building_task). true = preso. Un rifiuto non viene ritentato:
+# resolve_idle_individual passa alle attività di ripiego. Due pipottini liberati insieme non prendono lo stesso cantiere:
+# le chiamate sono una dopo l'altra e il primo ha già la task quando il secondo rifà il giro dei costruttori.
+func _take_listed_job_for(worker: HumanIndividual) -> bool:
+	if worker == null or game_data == null or macro_world == null or not JobBoardService.is_enabled(human_folk):
+		return false
+	var assigned := _collect_pending_assignments()
+	var open_jobs: Array[Building] = []
+	var locked_count := 0
+	for building in macro_world.buildings:
+		if building.is_demolished or building.rules == null or building.is_complete or building.is_marked_for_demolition:
+			continue
+		if BuildingUpgradeService.get_upgrade_from_rules(building) != null or assigned["build"].has(building.id):
+			continue
+		if JobBoardService.get_state(game_data, "build:%d" % building.id) == JobBoardService.STATE_LOCKED:
+			locked_count += 1
+			continue
+		open_jobs.append(building)
+	var found_text := "%d in lista (%d bloccati)" % [open_jobs.size() + locked_count, locked_count]
+	if open_jobs.is_empty():
+		_log_job_board(worker, "%s — nessuno preso: %s." % [found_text, "lista vuota" if locked_count == 0 else "tutti bloccati"])
+		return false
+	# Task di prova (mai assegnata): età ed energia dipendono dal pipottino e dal tipo di task, non dal cantiere.
+	var definition := load(open_jobs[0].get_resumable_task_definition_path()) as TaskDefinition
+	if definition == null:
+		return false
+	# Stesso contesto della costruzione vera (_assign_resumable_building_task), così la task di prova ha tutti i passi.
+	var probe_context := open_jobs[0].get_resumable_task_context()
+	probe_context["macro_state"] = macro_world.get_cell_state_at(open_jobs[0].macro_x, open_jobs[0].macro_y)
+	probe_context["is_currently_grass"] = false
+	var probe := TaskFactory.build_task(definition, probe_context)
+	var rejection := worker.get_assign_rejection_reason(probe, _resolve_age_band(worker))
+	if rejection != HumanIndividual.ASSIGN_OK:
+		_log_job_board(worker, "%s — nessuno preso: non adatto (%s)." % [found_text, rejection])
+		return false
+	var reachable := PathfindingService.reachability_for(worker)
+	var best: Building = null
+	var best_score := -1.0
+	for building in open_jobs:
+		if not reachable.call(building):
+			continue
+		var score := JobBoardService.score_job(worker, "build", Vector2i(building.macro_x, building.macro_y), Vector2i(building.micro_x, building.micro_y))
+		if score > best_score:
+			best_score = score
+			best = building
+	if best == null:
+		_log_job_board(worker, "%s — nessuno preso: non adatto (nessun cantiere raggiungibile)." % found_text)
+		return false
+	var task_before := worker.current_task
+	var queue_size_before := worker.task_queue.size()
+	_assign_resumable_building_task(worker, best)
+	var taken := (worker.current_task != null and worker.current_task != task_before) or worker.task_queue.size() > queue_size_before
+	var building_text := "build:%d %s" % [best.id, tr(best.rules.building_name)]
+	if taken:
+		_log_job_board(worker, "%s — preso %s (punteggio %.4f)." % [found_text, building_text, best_score])
+	else:
+		_log_job_board(worker, "%s — scelto %s (punteggio %.4f) ma rifiutato: passa alle attività di ripiego." % [found_text, building_text, best_score])
+	return taken
+
+
+func _log_job_board(worker: HumanIndividual, text: String) -> void:
+	if DebugLogging.ENABLED and DebugLogging.SHOW_JOB_BOARD_LOGS:
+		print("[JOB BOARD] #%d %s: %s" % [worker.id, worker.name, text])
+
+
+# Seleziona l'oggetto della voce e centra la visuale (righe di "In sospeso" e della lista del cassetto). false se non si
+# può (macrocella non viva, oggetto sparito).
+func _activate_job_entry(entry: Dictionary) -> bool:
 	var macro: Vector2i = entry["macro"]
 	if not live_cells.has(macro):
-		return
+		return false
 	match String(entry["kind"]):
 		"body":
 			if _find_dead_body_record(int(entry["id"])).is_empty():
-				return
+				return false
 			_select_dead_body({"individual_id": int(entry["id"])})
 		"building":
 			var building := _find_building_by_id(int(entry["id"]))
 			if building == null:
-				return
+				return false
 			_select_building({"building_id": building.id, "macro_coords": Vector2i(building.macro_x, building.macro_y)})
 		_:
-			return
+			return false
 	_center_camera_on_selection()
-	game_info_tabs.current_tab = GameInfoTabs.TAB_PENDING
+	return true
 
 
 func _find_building_by_id(building_id: int) -> Building:
@@ -12521,21 +12642,17 @@ func _on_save_game_file_selected(path: String) -> void:
 # utente 2026-09-04 — vedi game_info_tabs.center_requested in _ready). Slot 0 di primary_actions_bar
 # era il placeholder "statistiche" disabilitato — attivato (Step A del piano statistiche,
 # 2026-09-05): apre StatisticsPanel, ancora vuoto (solo struttura tab, nessun contenuto).
+# Riga del governo del villaggio (2026-10-07): Idee e Assegnazione. Statistiche e Livelli sono nella barra in basso
+# (_on_secondary_action_pressed).
 func _on_primary_action_pressed(action_id: StringName) -> void:
 	match action_id:
-		&"statistics":
-			# buildings (2026-09-12, richiesta utente — tab Statistiche/Edifici) — macro_world.buildings
-			# già Array[Building], stesso principio "dati già pronti" di _refresh_buildings_panel.
-			statistics_panel.open_dialog(
-				game_data, human_individuals, macro_world.buildings if macro_world != null else []
-			)
-		# Slot 1, accanto alle statistiche (2026-09-07, richiesta utente) — 💡, apre TechTreePanel.
+		# 💡, apre TechTreePanel.
 		&"tech_tree":
 			if _is_tech_tree_available():
 				tech_tree_panel.open_dialog(human_folk, game_data)
-		# Slot 2 (2026-09-27): menu a tendina dei layer della mappa.
-		&"map_layers":
-			_open_map_layers_menu()
+		# 📋 (2026-10-07): apre e richiude il cassetto dell'assegnazione delle task, per ora vuoto.
+		&"task_assignment":
+			_toggle_task_assignment_drawer()
 
 
 # toggle_animals_visibility/toggle_flora_updates/world_debug/macro_cell_debug — vissuti prima
@@ -13365,6 +13482,90 @@ func _refresh_tech_tree_button() -> void:
 	game_info_panel.primary_actions_bar.set_slot_disabled(
 		GameInfoPanel.TECH_TREE_SLOT_INDEX, not _is_tech_tree_available(), tr("tech_tree_requires_thought_building_tooltip")
 	)
+	_refresh_task_assignment_button()
+
+
+# Bottone dell'assegnazione delle task (2026-10-07): sempre visibile; spento finché l'idea
+# TaskAssignmentPanel.REQUIRED_IDEA_ID non è completata, con "Serve l'idea «…»" (stessa regola e stesso testo dei
+# comandi Caccia, Taglia ed Estrai). Ricalcolato insieme al bottone delle idee (caricamento, idea completata, edifici
+# completati o demoliti).
+func _is_task_assignment_available() -> bool:
+	return human_folk != null and human_folk.completed_ideas.has(TaskAssignmentPanel.REQUIRED_IDEA_ID)
+
+
+func _refresh_task_assignment_button() -> void:
+	var available := _is_task_assignment_available()
+	var idea := IdeaCalculator.get_idea(TaskAssignmentPanel.REQUIRED_IDEA_ID)
+	var locked_tooltip := tr("command_bar_job_locked_tooltip").format({
+		"idea": tr(idea.display_name) if idea != null else TaskAssignmentPanel.REQUIRED_IDEA_ID
+	})
+	game_info_panel.primary_actions_bar.set_slot_disabled(GameInfoPanel.TASK_ASSIGNMENT_SLOT_INDEX, not available, locked_tooltip)
+	if not available and side_drawer != null and side_drawer.is_showing(TaskAssignmentPanel.DRAWER_CONTENT_ID):
+		side_drawer.close()
+	_sync_task_assignment_highlight()
+
+
+# Cassetto laterale (2026-10-07): figlio del CanvasLayer (fuori dalla sidebar, non la allarga), stile della sidebar,
+# posizionato accanto al suo fianco sinistro e alto quanto l'info panel; riposizionato quando l'info panel o la finestra
+# cambiano.
+func _setup_side_drawer() -> void:
+	side_drawer = SideDrawer.new()
+	$CanvasLayer.add_child(side_drawer)
+	# Stessa struttura dell'info panel (2026-10-07): cornice azzurra della sidebar, area interna del pannello dell'info panel.
+	var sidebar := $CanvasLayer/Sidebar as Control
+	side_drawer.set_styles(
+		sidebar.get_theme_stylebox("panel") if sidebar != null else null, game_info_panel.get_theme_stylebox("panel")
+	)
+	side_drawer.closed.connect(func(content_id: StringName) -> void:
+		if content_id == TaskAssignmentPanel.DRAWER_CONTENT_ID:
+			_task_assignment_panel = null
+		_sync_task_assignment_highlight()
+	)
+	game_info_panel.item_rect_changed.connect(_layout_side_drawer)
+	get_viewport().size_changed.connect(_layout_side_drawer)
+
+
+func _layout_side_drawer() -> void:
+	if side_drawer == null:
+		return
+	# Area scura del cassetto = area scura dell'info panel (GameInfoPanel); cornice fino al bordo della sidebar (2026-10-07).
+	var sidebar := $CanvasLayer/Sidebar as Control
+	var panel_rect := game_info_panel.get_global_rect()
+	var sidebar_rect := sidebar.get_global_rect() if sidebar != null else panel_rect
+	side_drawer.place(sidebar_rect.position.x, panel_rect.position.y, panel_rect.end.y, sidebar_rect.end.y)
+
+
+# Bottone 📋: apre il cassetto con l'assegnazione delle task, o lo richiude se la mostra già.
+func _toggle_task_assignment_drawer() -> void:
+	if side_drawer == null:
+		return
+	if side_drawer.is_showing(TaskAssignmentPanel.DRAWER_CONTENT_ID):
+		side_drawer.close()
+	elif _is_task_assignment_available():
+		_layout_side_drawer()
+		_task_assignment_panel = TaskAssignmentPanel.new()
+		_task_assignment_panel.entry_activated.connect(func(entry: Dictionary) -> void: _activate_job_entry(entry))
+		_task_assignment_panel.lock_requested.connect(func(entry: Dictionary) -> void:
+			_on_job_board_state_requested(entry, JobBoardService.STATE_LOCKED)
+		)
+		_task_assignment_panel.unlock_requested.connect(func(entry: Dictionary) -> void:
+			_on_job_board_state_requested(entry, JobBoardService.STATE_LISTED)
+		)
+		side_drawer.show_content(TaskAssignmentPanel.DRAWER_CONTENT_ID, tr("task_assignment_dialog_title"), _task_assignment_panel)
+		# Elenco subito, senza aspettare il ricalcolo del secondo successivo.
+		_refresh_pending_entries()
+		# Di nuovo dopo il titolo: la fascia in alto ha la sua altezza vera solo con il testo.
+		_layout_side_drawer()
+		# Bordo alto dell'area scura sulla y reale della fascia in alto dell'info panel (GameInfoPanel), letta a
+		# disposizione assestata (un frame dopo).
+		side_drawer.align_top_to(game_info_panel)
+	_sync_task_assignment_highlight()
+
+
+# Bottone 📋 evidenziato finché il cassetto mostra l'assegnazione.
+func _sync_task_assignment_highlight() -> void:
+	var showing := side_drawer != null and side_drawer.is_showing(TaskAssignmentPanel.DRAWER_CONTENT_ID)
+	game_info_panel.primary_actions_bar.set_slot_highlighted(GameInfoPanel.TASK_ASSIGNMENT_SLOT_INDEX, showing)
 
 
 # --- Zone di lavoro (2026-09-27, richiesta utente — work areas, passo 1a) ---
@@ -15069,6 +15270,16 @@ func _sync_build_site_placeholders(cell: LiveMacroCell) -> void:
 
 func _on_secondary_action_pressed(action_id: StringName) -> void:
 	match action_id:
+		# Statistiche e Livelli (2026-10-07: spostati qui dalla riga in alto, stesso comportamento).
+		&"statistics":
+			# buildings (2026-09-12, richiesta utente — tab Statistiche/Edifici) — macro_world.buildings
+			# già Array[Building], stesso principio "dati già pronti" di _refresh_buildings_panel.
+			statistics_panel.open_dialog(
+				game_data, human_individuals, macro_world.buildings if macro_world != null else []
+			)
+		# Menu a tendina dei layer della mappa (2026-09-27).
+		&"map_layers":
+			_open_map_layers_menu()
 		&"help":
 			help_dialog.open_dialog()
 		&"menu":

@@ -415,6 +415,11 @@ var tool_gate_warning: String = "":
 		panel_message_shown_at = -1.0
 var panel_message_task: Task = null
 var panel_message_shown_at: float = -1.0
+# Lista dei lavori saltata una volta (2026-10-07, richiesta utente): acceso da GameScene quando il giocatore annulla con
+# H la task corrente (solo con l'idea dell'assegnazione), così il pipottino non riprende subito il lavoro appena lasciato.
+# Spento da resolve_idle_individual al primo controllo della lista (saltato), o prima se il pipottino riceve una task
+# (assign_task non di bisogno) o ne riprende una dalla coda personale. Mai salvato.
+var skip_job_board_once: bool = false
 
 
 # Lega il messaggio attuale a `task` (avviso al comando su una task che parte lo stesso): sparisce quando la task non è
@@ -881,6 +886,9 @@ func assign_task(task: Task, age_band: HumanTypes.AgeBand, is_interrupt_transiti
 	# scatta quindi sempre PRIMA di qualunque log [HAUL DISCARD]/altro side-effect, mai dopo.
 	if not can_assign_task(task, age_band):
 		return false
+	# Una task ricevuta (non un bisogno) annulla il salto della lista dopo un H del giocatore.
+	if not is_interrupt_transition:
+		skip_job_board_once = false
 	# Corteo (2026-10-04, richiesta utente): non usa lo zaino, quindi le regole dello zaino occupato qui sotto non lo
 	# fermano — interrompe la task in corso come qualunque comando (sospendibile -> in coda con il suo carico, ripresa
 	# dopo il corteo), il partecipante cammina con lo zaino in spalla e il carico non viene mai rilasciato né scaricato.

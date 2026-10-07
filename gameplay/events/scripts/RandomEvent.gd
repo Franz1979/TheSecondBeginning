@@ -26,3 +26,10 @@ func get_popup_text(context: RandomEventContext) -> String:
 # dipendono dall'evento stesso (es. posti liberi per la dimensione del gruppo in arrivo). 1.0 = nessun effetto.
 func get_probability_multiplier(context: RandomEventContext) -> float:
 	return 1.0
+
+
+# Parametri da salvare nell'appuntamento se l'evento viene estratto (2026-10-07): chiesti dal sorteggio alla STESSA
+# istanza subito dopo get_probability_multiplier, scritti in GameData.scheduled_random_events (salvati con la
+# partita) e restituiti all'arrivo in RandomEventContext.params. Solo tipi JSON-nativi. {} = nessun parametro.
+func get_schedule_params() -> Dictionary:
+	return {}

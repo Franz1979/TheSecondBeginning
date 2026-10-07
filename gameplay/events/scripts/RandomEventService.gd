@@ -200,7 +200,11 @@ static func _schedule_drawn_event(game_data: GameData, rules: RandomEventRules, 
 		return
 	entry["drawn"] = true
 	entry["absolute_day"] = candidate_days[randi() % candidate_days.size()]
-	game_data.scheduled_random_events.append({"id": rules.id, "absolute_day": entry["absolute_day"], "params": {}})
+	var params: Variant = entry.get("schedule_params", {})
+	game_data.scheduled_random_events.append({
+		"id": rules.id, "absolute_day": entry["absolute_day"],
+		"params": (params as Dictionary).duplicate(true) if params is Dictionary else {},
+	})
 
 
 # Toglie dalla lista e restituisce gli eventi programmati per oggi o per giorni già passati.
@@ -248,7 +252,8 @@ static func get_probability_breakdown(rules: RandomEventRules, context: RandomEv
 	var population := context.human_individuals.size() if context != null else 0
 	var base_probability := rules.get_base_annual_probability(population)
 	var village_multiplier := _get_probability_multiplier(rules, context)
-	var event_multiplier := _get_event_probability_multiplier(rules, context)
+	var event_data := _get_event_probability_data(rules, context)
+	var event_multiplier: float = event_data["multiplier"]
 	var cooldown_multiplier := _get_cooldown_multiplier(rules, context)
 	return {
 		"population": population,
@@ -257,18 +262,22 @@ static func get_probability_breakdown(rules: RandomEventRules, context: RandomEv
 		"event_multiplier": event_multiplier,
 		"cooldown_multiplier": cooldown_multiplier,
 		"probability": clampf(base_probability * village_multiplier * event_multiplier * cooldown_multiplier, 0.0, 1.0),
+		# Parametri dell'appuntamento se l'evento viene estratto (RandomEvent.get_schedule_params, 2026-10-07).
+		"schedule_params": event_data["params"],
 	}
 
 
 # Moltiplicatore proprio dell'evento: istanza temporanea del suo script (come apply_event) che risponde
-# get_probability_multiplier. 1.0 se lo script manca o non estende RandomEvent.
-static func _get_event_probability_multiplier(rules: RandomEventRules, context: RandomEventContext) -> float:
+# get_probability_multiplier, poi (stessa istanza, 2026-10-07) get_schedule_params. {"multiplier": float, "params":
+# Dictionary}; 1.0 e {} se lo script manca o non estende RandomEvent.
+static func _get_event_probability_data(rules: RandomEventRules, context: RandomEventContext) -> Dictionary:
 	if rules.event_script == null or context == null:
-		return 1.0
+		return {"multiplier": 1.0, "params": {}}
 	var event := rules.event_script.new() as RandomEvent
 	if event == null:
-		return 1.0
-	return event.get_probability_multiplier(context)
+		return {"multiplier": 1.0, "params": {}}
+	var multiplier := event.get_probability_multiplier(context)
+	return {"multiplier": multiplier, "params": event.get_schedule_params()}
 
 
 # Punto di applicazione dei moltiplicatori futuri della probabilità (2026-09-27, richiesta utente): benessere,
