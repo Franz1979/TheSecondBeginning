@@ -22,6 +22,8 @@ func _ready() -> void:
 		game_scene.idea_bulb_shown.connect(_on_idea_bulb_shown)
 	if game_scene.has_signal(&"rite_effect_shown"):
 		game_scene.rite_effect_shown.connect(_on_rite_effect_shown)
+	if game_scene.has_signal(&"coordinator_called"):
+		game_scene.coordinator_called.connect(_on_coordinator_called)
 	if game_scene.has_signal(&"world_object_selected"):
 		game_scene.world_object_selected.connect(_on_world_object_selected)
 	if game_scene.has_signal(&"pending_entry_added"):
@@ -38,6 +40,11 @@ func _exit_tree() -> void:
 # Lampadina del daydreaming comparsa sopra l'individuo: suono posizionale nel suo punto.
 func _on_idea_bulb_shown(global_pos: Vector2) -> void:
 	AudioManager.play_event(&"idea_completed", global_pos)
+
+
+# Richiamo del coordinatore (2026-10-09): "hey" posizionale alla sua posizione.
+func _on_coordinator_called(global_pos: Vector2) -> void:
+	AudioManager.play_event(&"coordinator_call", global_pos)
 
 
 # Rito concluso, icona comparsa sull'edificio (2026-10-03): suono posizionale nel punto dell'edificio. Dal 2026-10-04 il

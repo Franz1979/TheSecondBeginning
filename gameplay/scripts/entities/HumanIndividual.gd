@@ -420,6 +420,10 @@ var panel_message_shown_at: float = -1.0
 # Spento da resolve_idle_individual al primo controllo della lista (saltato), o prima se il pipottino riceve una task
 # (assign_task non di bisogno) o ne riprende una dalla coda personale. Mai salvato.
 var skip_job_board_once: bool = false
+# Arrivato al punto di assegnazione con "Cerca lavoro" (2026-10-09, WaitAtPointAction.on_complete): al prossimo
+# resolve_idle_individual prende il lavoro dalla lista (o va allo svago), senza ripartire con un'altra "Cerca lavoro".
+# Letto e spento all'inizio di resolve_idle_individual (un bisogno che arriva prima lo fa perdere). Mai salvato.
+var job_seek_arrived: bool = false
 
 
 # Lega il messaggio attuale a `task` (avviso al comando su una task che parte lo stesso): sparisce quando la task non è

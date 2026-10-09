@@ -20,3 +20,4 @@ political_radius = 5
 cultural_radius = 4
 is_village_center = true
 accepts_thoughts = true
+is_assignment_point = true

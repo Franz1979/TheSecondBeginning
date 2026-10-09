@@ -291,6 +291,81 @@ static func sort_for_display(game_data: GameData, jobs: Array) -> void:
 		jobs.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return _is_older(game_data, a, b))
 
 
+# --- Punto di assegnazione e "Cerca lavoro" (2026-10-09, coordinatore passo 1) ---
+# Con un punto di assegnazione (BuildingRules.is_assignment_point, completo e non da demolire) raggiungibile e almeno un
+# lavoro della lista che l'individuo può prendere (job_available_checker, gli stessi filtri della presa), l'individuo
+# libero riceve "Cerca lavoro" verso il punto più vicino; arrivato, prende il lavoro con try_take_job come prima.
+
+const SEEK_JOB_TASK_PATH := "res://gameplay/scripts/tasks/definitions/seek_job.tres"
+const SEEK_JOB_TASK_NAME := "task_seek_job_name"
+
+# Esito di try_seek_job: NO_POINT = nessun punto di assegnazione raggiungibile (presa diretta come prima); STARTED =
+# "Cerca lavoro" assegnata; NOTHING = punto c'è, ma nessun lavoro per lui (o assegnazione fallita): svago.
+enum SeekOutcome { NO_POINT, STARTED, NOTHING }
+
+# Callable(individual: HumanIndividual) -> bool, registrato da GameScene: c'è almeno un lavoro della lista che
+# `individual` può prendere adesso (stessi controlli della presa, senza prenderlo).
+static var job_available_checker: Callable = Callable()
+# Callable() -> bool, registrato da GameScene (2026-10-09, coordinatore): la coda ha almeno un lavoro non bloccato.
+static var queue_has_jobs_checker: Callable = Callable()
+
+
+static func queue_has_jobs() -> bool:
+	return queue_has_jobs_checker.is_valid() and bool(queue_has_jobs_checker.call())
+
+
+# Callable() -> int, registrato da GameScene (2026-10-09, richiamo del coordinatore): lavori della coda prendibili adesso
+# (senza nessuno, non bloccati, fuori dall'attesa per l'assegnazione a mano).
+static var open_jobs_counter: Callable = Callable()
+
+
+static func open_jobs_count() -> int:
+	return int(open_jobs_counter.call()) if open_jobs_counter.is_valid() else 0
+
+
+# Punto di assegnazione completo, non da demolire e raggiungibile più vicino a `individual`; null se nessuno.
+static func find_assignment_point(individual: HumanIndividual, world: World) -> Building:
+	if individual == null or world == null:
+		return null
+	var is_point := func(building: Building) -> bool:
+		return building.rules != null and building.rules.is_assignment_point and building.is_complete \
+			and not building.is_demolished and not building.is_marked_for_demolition
+	return SpatialSelectionService.find_nearest(
+		world.buildings, individual.position, individual.home_macro_coords, is_point, [],
+		PathfindingService.reachability_for(individual)
+	) as Building
+
+
+static func try_seek_job(individual: HumanIndividual, age_band: HumanTypes.AgeBand, world: World) -> SeekOutcome:
+	var point := find_assignment_point(individual, world)
+	if point == null:
+		return SeekOutcome.NO_POINT
+	if not job_available_checker.is_valid() or not bool(job_available_checker.call(individual)):
+		return SeekOutcome.NOTHING
+	return SeekOutcome.STARTED if start_seek_job(individual, age_band, point) else SeekOutcome.NOTHING
+
+
+# "Cerca lavoro" verso il punto `point` (2026-10-09: estratto da try_seek_job, usato anche dal richiamo del
+# coordinatore). Nessun controllo sui lavori: lo fa il chiamante. true = assegnata.
+static func start_seek_job(individual: HumanIndividual, age_band: HumanTypes.AgeBand, point: Building) -> bool:
+	var definition := load(SEEK_JOB_TASK_PATH) as TaskDefinition
+	if definition == null or point == null:
+		return false
+	var macro_offset := Vector2(Vector2i(point.macro_x, point.macro_y) - individual.home_macro_coords) * World.WIDTH
+	# Punto nel context (2026-10-09): lì aspetta il coordinatore (CoordinatorService), senza tetto di attesa.
+	var task := TaskFactory.build_task(definition, {
+		"target_position": PathfindingService.random_point_in_microcell(Vector2(point.micro_x, point.micro_y) + macro_offset),
+		CoordinatorService.CONTEXT_POINT_ID: point.id,
+	})
+	if not individual.assign_task(task, age_band):
+		return false
+	if DebugLogging.ENABLED and DebugLogging.SHOW_JOB_BOARD_LOGS:
+		print("[JOB BOARD] #%d %s: c'è un lavoro per lui — va a cercarlo al punto di assegnazione %s #%d." % [
+			individual.id, individual.name, point.building_type_name, point.id
+		])
+	return true
+
+
 # Punto d'ingresso di resolve_idle_individual: true se `individual` ha preso un lavoro dalla lista.
 static func try_take_job(individual: HumanIndividual) -> bool:
 	if individual == null or not job_taker.is_valid():

@@ -27,6 +27,8 @@ extends Node2D
 # Emesso quando compare sulla mappa la lampadina di un pensiero depositato (_spawn_idea_deposit_effect),
 # con la posizione globale dell'individuo. Ascoltato da AudioEventListener (2026-09-26, richiesta utente).
 signal idea_bulb_shown(global_pos: Vector2)
+# Richiamo del coordinatore (2026-10-09, CoordinatorService): suono "hey" alla sua posizione (AudioEventListener).
+signal coordinator_called(global_pos: Vector2)
 # Emesso quando nella campanella "In sospeso" compare almeno una riga NUOVA (chiave mai vista al giro prima), una volta
 # per giro anche se ne compaiono più insieme; mai al primo giro (apertura o caricamento di una partita), né quando una
 # riga esistente cambia testo. Stesso momento del lampeggio della scheda (_refresh_pending_entries). Ascoltato da
@@ -801,6 +803,18 @@ func _ready() -> void:
 	_setup_side_drawer()
 	# Lista dei lavori, passo B (2026-10-07): il pipottino libero prende da qui il lavoro attivo più adatto.
 	JobBoardService.job_taker = _take_listed_job_for
+	# "Cerca lavoro" (2026-10-09): c'è un lavoro per lui, senza prenderlo.
+	JobBoardService.job_available_checker = _has_listed_job_for
+	# Coordinatore (2026-10-09): la coda ha almeno un lavoro non bloccato.
+	JobBoardService.queue_has_jobs_checker = _job_board_has_open_jobs
+	# Coordinatore (2026-10-09): età per assegnare "Coordina" e momento di gioco per il log, usati dagli eventi delle azioni.
+	CoordinatorService.age_band_resolver = _resolve_age_band
+	CoordinatorService.now_provider = _job_board_now
+	# Scena pronta per le decisioni del coordinatore (2026-10-09): niente decisioni durante il caricamento.
+	CoordinatorService.scene_ready_checker = _is_coordinator_scene_ready
+	# Richiamo (2026-10-09): suono alla posizione del coordinatore e conteggio dei lavori prendibili.
+	CoordinatorService.call_sound_emitter = _emit_coordinator_called
+	JobBoardService.open_jobs_counter = _job_board_open_job_count
 	options_menu.visibility_changed.connect(_on_blocking_dialog_visibility_changed.bind(options_menu))
 	statistics_panel.visibility_changed.connect(_on_blocking_dialog_visibility_changed.bind(statistics_panel))
 	tech_tree_panel.visibility_changed.connect(_on_blocking_dialog_visibility_changed.bind(tech_tree_panel))
@@ -1273,6 +1287,9 @@ func _debug_describe_task(watched: HumanIndividual, task: Task, detailed: bool) 
 # l'utente). Non tocca in alcun modo il pipeline giorno/anno di WorldTimeService.
 func _process(delta: float) -> void:
 	_debug_watch_task(delta)
+	# Fotogrammi già girati (2026-10-09): il coordinatore decide solo a scena pronta (_is_coordinator_scene_ready).
+	if _coordinator_frames < 2:
+		_coordinator_frames += 1
 	# Scelta della destinazione del trasporto rimasta senza il suo individuo (2026-10-09).
 	_check_transport_selection()
 	# Aggancio al tempo di gioco (2026-09-07, richiesta utente) — movimento e azioni ora scalano
@@ -2054,6 +2071,8 @@ func _stop_member_task(member: HumanIndividual) -> void:
 		return
 	if HuntService.is_hunt_task(member.current_task):
 		HuntService.log_event(member, "caccia chiusa: annullata a mano (X o tasto H).")
+	# Coordinatore fermato con H (2026-10-09): il posto si libera, con il motivo nel log.
+	CoordinatorService.end_shift_by_player(game_data, member)
 	# Annullo del giocatore con l'assegnazione attiva (2026-10-07): al prossimo momento libero il pipottino salta una
 	# volta la lista dei lavori, altrimenti riprenderebbe subito il lavoro appena annullato.
 	if member.current_task != null and JobBoardService.is_enabled(human_folk):
@@ -9065,9 +9084,15 @@ func _refresh_pending_entries() -> void:
 	# Ordini "Taglia" del cassetto (2026-10-09): quelli presi che nessuno porta più tornano in coda (o spariscono a serie
 	# finita) prima di raccogliere i lavori.
 	_settle_drawer_cut_orders()
+	# Coordinatori ai punti di assegnazione (2026-10-09, CoordinatorService): un giro al secondo.
+	if game_data != null and macro_world != null and JobBoardService.is_enabled(human_folk):
+		CoordinatorService.tick(game_data, macro_world, human_individuals, _job_board_now(), _resolve_age_band)
 	# Lavori della lista (generici, _collect_job_board_jobs): attese e icone, poi le righe del cassetto (sotto).
 	var board_jobs := _collect_job_board_jobs(assigned)
 	_update_job_board_waits(board_jobs)
+	# Richiamo del coordinatore (2026-10-09): un lavoro diventato prendibile (nuovo in coda o finita la sua attesa) è
+	# un evento per i coordinatori che aspettano senza fila.
+	_notify_coordinator_new_open_jobs(board_jobs)
 	if macro_world != null:
 		for building in macro_world.buildings:
 			if building.is_demolished or building.rules == null:
@@ -9155,7 +9180,14 @@ func _refresh_pending_entries() -> void:
 		_task_assignment_panel.set_produce_available(_has_drawer_produce_building())
 		_sync_drawer_cut_available()
 		_task_assignment_panel.set_listed_entries(listed_entries)
-		in_progress_entries.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return float(a["sort"]) < float(b["sort"]))
+		# Righe "Automatico" ("Cerca lavoro", 2026-10-09) sempre in fondo; le altre nell'ordine di sempre.
+		in_progress_entries.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+			var automatic_a := bool(a.get("automatic", false))
+			var automatic_b := bool(b.get("automatic", false))
+			if automatic_a != automatic_b:
+				return automatic_b
+			return float(a["sort"]) < float(b["sort"])
+		)
 		_task_assignment_panel.set_in_progress_entries(in_progress_entries)
 		# Carico di lavoro sul titolo "In corso" (2026-10-09), solo con l'idea (come le righe).
 		if board_enabled:
@@ -9562,8 +9594,106 @@ func _on_job_board_requeue_requested(entry: Dictionary) -> void:
 # passa alle attività di ripiego. Due pipottini liberati insieme non prendono lo stesso lavoro: le chiamate sono una dopo
 # l'altra e il primo ha già la task quando il secondo rifà il giro.
 func _take_listed_job_for(worker: HumanIndividual) -> bool:
-	if worker == null or game_data == null or macro_world == null or not JobBoardService.is_enabled(human_folk):
+	var found := _takeable_jobs_for(worker, true)
+	var takeable_jobs: Array[Dictionary] = []
+	takeable_jobs.assign(found.get("jobs", []))
+	if takeable_jobs.is_empty():
 		return false
+	var found_text := String(found["found_text"])
+	# Scelta secondo il modo di priorità del giocatore (2026-10-08): {"job", "reason"} (motivo per il log).
+	var pick := JobBoardService.pick_job(game_data, worker, takeable_jobs)
+	var best: Dictionary = pick["job"]
+	var task_before := worker.current_task
+	var queue_size_before := worker.task_queue.size()
+	best["provider"]["assign"].call(worker, best)
+	var taken := (worker.current_task != null and worker.current_task != task_before) or worker.task_queue.size() > queue_size_before
+	var job_text := "%s %s" % [String(best["key"]), String(best["log_name"])]
+	if taken:
+		_log_job_board(worker, "%s — preso %s — %s." % [found_text, job_text, String(pick["reason"])])
+	else:
+		_log_job_board(worker, "%s — scelto %s — %s, ma rifiutato: passa alle attività di ripiego." % [found_text, job_text, String(pick["reason"])])
+	return taken
+
+
+# C'è almeno un lavoro della lista che `worker` può prendere adesso (2026-10-09, "Cerca lavoro"): stessi filtri della
+# presa, senza prenderlo e senza righe di log.
+# Scena pronta per le decisioni del coordinatore (2026-10-09): almeno due fotogrammi girati dopo _ready (caricamento
+# finito), mondo e partita presenti.
+var _coordinator_frames: int = 0
+
+
+func _is_coordinator_scene_ready() -> bool:
+	return _coordinator_frames >= 2 and is_inside_tree() and macro_world != null and game_data != null
+
+
+# Lavori prendibili all'ultimo giro della lista (chiave -> true), per accorgersi di quelli nuovi (2026-10-09).
+var _coordinator_open_job_keys: Dictionary = {}
+
+
+# Chiavi dei lavori della lista prendibili adesso: senza nessuno, non bloccati, fuori dall'attesa per l'assegnazione a mano.
+func _open_job_keys(candidates: Dictionary) -> Dictionary:
+	var keys: Dictionary = {}
+	for job_key in candidates.keys():
+		if JobBoardService.get_state(game_data, job_key) == JobBoardService.STATE_LOCKED:
+			continue
+		if _get_job_board_wait_seconds(job_key) > 0.0:
+			continue
+		keys[job_key] = true
+	return keys
+
+
+func _notify_coordinator_new_open_jobs(board_jobs: Array[Dictionary]) -> void:
+	if game_data == null or not JobBoardService.is_enabled(human_folk):
+		_coordinator_open_job_keys.clear()
+		return
+	var open_keys := _open_job_keys(_collect_job_board_candidates(board_jobs))
+	var has_new := false
+	for job_key in open_keys.keys():
+		if not _coordinator_open_job_keys.has(job_key):
+			has_new = true
+			break
+	_coordinator_open_job_keys = open_keys
+	if has_new:
+		CoordinatorService.on_jobs_available()
+
+
+# Quanti lavori della lista sono prendibili adesso (CoordinatorService, richiamo).
+func _job_board_open_job_count() -> int:
+	if game_data == null or macro_world == null or not JobBoardService.is_enabled(human_folk):
+		return 0
+	return _open_job_keys(_collect_job_board_candidates(_collect_job_board_jobs(_collect_pending_assignments()))).size()
+
+
+# Suono del richiamo alla posizione del coordinatore (solo se la sua macrocella è attiva).
+func _emit_coordinator_called(member: HumanIndividual) -> void:
+	if member == null or not live_cells.has(member.home_macro_coords):
+		return
+	var cell_container: Node2D = live_cells[member.home_macro_coords].container
+	coordinator_called.emit(cell_container.to_global(member.position * MicroCellRenderer.CELL_SIZE))
+
+
+# La coda ha almeno un lavoro senza nessuno, non bloccato (2026-10-09, CoordinatorService: fine del turno).
+func _job_board_has_open_jobs() -> bool:
+	if game_data == null or macro_world == null or not JobBoardService.is_enabled(human_folk):
+		return false
+	var candidates := _collect_job_board_candidates(_collect_job_board_jobs(_collect_pending_assignments()))
+	for job_key in candidates.keys():
+		if JobBoardService.get_state(game_data, job_key) != JobBoardService.STATE_LOCKED:
+			return true
+	return false
+
+
+func _has_listed_job_for(worker: HumanIndividual) -> bool:
+	return not (_takeable_jobs_for(worker, false).get("jobs", []) as Array).is_empty()
+
+
+# Lavori della lista che `worker` può prendere adesso (2026-10-09, estratto da _take_listed_job_for, invariato):
+# {"jobs": Array[Dictionary], "found_text": testo per il log}; "jobs" vuoto = nessuno. Filtri: bloccati, attesa per
+# l'assegnazione a mano, idoneità con la task di prova ("rejection" del fornitore), raggiungibilità. `log_reasons`: le
+# righe [JOB BOARD] del "nessuno preso".
+func _takeable_jobs_for(worker: HumanIndividual, log_reasons: bool) -> Dictionary:
+	if worker == null or game_data == null or macro_world == null or not JobBoardService.is_enabled(human_folk):
+		return {}
 	var candidates := _collect_job_board_candidates(_collect_job_board_jobs(_collect_pending_assignments()))
 	_sync_job_board_waits(candidates)
 	# Età (2026-10-08): un lavoro comparso dopo l'ultimo giro del cassetto viene segnato qui, prima della scelta.
@@ -9584,10 +9714,12 @@ func _take_listed_job_for(worker: HumanIndividual) -> bool:
 	if open_jobs.is_empty():
 		# Lista vuota: nessuna riga (2026-10-07, riempiva la console senza dire niente).
 		if waiting_count > 0:
-			_log_job_board(worker, "%s — nessuno preso: solo lavori in attesa di assegnazione." % found_text)
+			if log_reasons:
+				_log_job_board(worker, "%s — nessuno preso: solo lavori in attesa di assegnazione." % found_text)
 		elif locked_count > 0:
-			_log_job_board(worker, "%s — nessuno preso: tutti bloccati." % found_text)
-		return false
+			if log_reasons:
+				_log_job_board(worker, "%s — nessuno preso: tutti bloccati." % found_text)
+		return {}
 	# Idoneità con una task di prova (mai assegnata) per tipo di task (2026-10-07): età ed energia dipendono dal pipottino
 	# e dalla task, non dal singolo lavoro. I lavori di una task rifiutata vengono scartati.
 	var rejection_by_probe: Dictionary = {}
@@ -9602,29 +9734,19 @@ func _take_listed_job_for(worker: HumanIndividual) -> bool:
 		var reasons: Array[String] = []
 		for probe_key in rejection_by_probe.keys():
 			reasons.append(String(rejection_by_probe[probe_key]))
-		_log_job_board(worker, "%s — nessuno preso: non adatto (%s)." % [found_text, ", ".join(reasons)])
-		return false
+		if log_reasons:
+			_log_job_board(worker, "%s — nessuno preso: non adatto (%s)." % [found_text, ", ".join(reasons)])
+		return {}
 	var reachable := PathfindingService.reachability_for(worker)
 	var takeable_jobs: Array[Dictionary] = []
 	for job in suitable_jobs:
 		if reachable.call(job["reach_target"]):
 			takeable_jobs.append(job)
 	if takeable_jobs.is_empty():
-		_log_job_board(worker, "%s — nessuno preso: non adatto (nessun lavoro raggiungibile)." % found_text)
-		return false
-	# Scelta secondo il modo di priorità del giocatore (2026-10-08): {"job", "reason"} (motivo per il log).
-	var pick := JobBoardService.pick_job(game_data, worker, takeable_jobs)
-	var best: Dictionary = pick["job"]
-	var task_before := worker.current_task
-	var queue_size_before := worker.task_queue.size()
-	best["provider"]["assign"].call(worker, best)
-	var taken := (worker.current_task != null and worker.current_task != task_before) or worker.task_queue.size() > queue_size_before
-	var job_text := "%s %s" % [String(best["key"]), String(best["log_name"])]
-	if taken:
-		_log_job_board(worker, "%s — preso %s — %s." % [found_text, job_text, String(pick["reason"])])
-	else:
-		_log_job_board(worker, "%s — scelto %s — %s, ma rifiutato: passa alle attività di ripiego." % [found_text, job_text, String(pick["reason"])])
-	return taken
+		if log_reasons:
+			_log_job_board(worker, "%s — nessuno preso: non adatto (nessun lavoro raggiungibile)." % found_text)
+		return {}
+	return {"jobs": takeable_jobs, "found_text": found_text}
 
 
 # Momento di gioco per l'età dei lavori della lista (2026-10-08): giorni assoluti più la frazione del giorno in corso.
@@ -11745,6 +11867,16 @@ func _collect_direct_command_entries(board_jobs: Array[Dictionary]) -> Array[Dic
 			continue
 		var text := task.get_activity_description()
 		var icon_key := String(DIRECT_COMMAND_ICON_BY_TASK.get(task.task_name, ""))
+		# "Cerca lavoro" (2026-10-09, coordinatore passo 2) e "Coordina" (passo 3): riga "Automatico" (partita da sola,
+		# nessuna X), in fondo.
+		if task.task_name == JobBoardService.SEEK_JOB_TASK_NAME or CoordinatorService.is_coordinate_task(task):
+			entries.append(_pending_entry("%s%d" % [DIRECT_COMMAND_KEY_PREFIX, member.id], text, {
+				"kind": "individual", "id": member.id, "macro": member.home_macro_coords,
+				"sort": float(member.id) + DIRECT_COMMAND_SORT_OFFSET,
+				"icon": {"text": ""}, "building_name": text, "workers": member.name, "direct": true, "automatic": true,
+				"cancel_disabled": true, "cancel_tooltip": "",
+			}))
+			continue
 		var entry := _pending_entry("%s%d" % [DIRECT_COMMAND_KEY_PREFIX, member.id], text, {
 			"kind": "individual", "id": member.id, "macro": member.home_macro_coords,
 			"sort": float(member.id) + DIRECT_COMMAND_SORT_OFFSET,
@@ -11864,6 +11996,8 @@ func _task_creator_text(task: Task) -> String:
 # Carico di lavoro del villaggio (2026-10-09, richiesta utente — titolo e barra di "In corso"), sugli individui in età da
 # lavoro (_is_working_age). Ognuno conta in una sola voce, in quest'ordine:
 #   - al lavoro: ha una riga in "In corso" (lavoro della coda di cui è tra chi lo fa, o comando diretto);
+#   - in cerca di lavoro (2026-10-09): task "Cerca lavoro" (riga "Automatico", non conta tra "al lavoro");
+#   - coordina (2026-10-09): task "Coordina" (riga "Automatico", non conta tra "al lavoro");
 #   - bisogni: la task attiva è un bisogno (riposo, riposo d'emergenza, rifornimento urgente);
 #   - svago: tutti gli altri — task di svago (is_idle_activity, o oziare, rifornirsi, rito spontaneo, passeggiata, gioco,
 #     sogni a occhi aperti, esplorazione) e, se capita, nessuna task (2026-10-09: niente più voce "Liberi").
@@ -11878,22 +12012,34 @@ func _sync_drawer_workload(board_jobs: Array[Dictionary], in_progress_entries: A
 		for member in job["provider"]["workers"].call(job):
 			at_work_ids[(member as HumanIndividual).id] = true
 	for entry in in_progress_entries:
-		if bool(entry.get("direct", false)):
+		if bool(entry.get("direct", false)) and not bool(entry.get("automatic", false)):
 			at_work_ids[int(entry["id"])] = true
 	var at_work := 0
 	var needs := 0
 	var leisure := 0
+	var seeking := 0
+	var coordinating := 0
 	for member in human_individuals:
 		if not _is_working_age(member):
 			continue
 		var task := member.current_task
 		if at_work_ids.has(member.id):
 			at_work += 1
+		elif task != null and not task.is_finished() and task.task_name == JobBoardService.SEEK_JOB_TASK_NAME:
+			seeking += 1
+		elif task != null and not task.is_finished() and CoordinatorService.is_coordinate_task(task):
+			coordinating += 1
 		elif task != null and not task.is_finished() and WORKLOAD_NEED_TASK_NAMES.has(task.task_name):
 			needs += 1
 		else:
 			leisure += 1
-	_task_assignment_panel.set_workload(at_work, needs, leisure)
+	# Righe in più del tooltip, dopo "Al lavoro" (2026-10-09): "In cerca di lavoro"; allo step dopo "Coordina" allo stesso
+	# modo (una voce in più qui, contata nel totale ma non tra "al lavoro").
+	var extra_rows: Array[Dictionary] = [
+		{"key": "task_assignment_workload_seeking", "count": seeking},
+		{"key": "task_assignment_workload_coordinating", "count": coordinating},
+	]
+	_task_assignment_panel.set_workload(at_work, needs, leisure, extra_rows)
 
 
 # In età da lavoro: chi può fare almeno un lavoro. Neonati e bambini (INFANT, CHILD) sono esclusi da tutte le action di

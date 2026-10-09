@@ -207,6 +207,11 @@ extends Resource
 # (hut/deposit_site) è toccato.
 @export var accepts_thoughts: bool = false
 
+# Punto di assegnazione (2026-10-09, coordinatore passo 1): l'edificio dove gli individui liberi vanno a cercare lavoro
+# (task "Cerca lavoro", seek_job.tres). Vale solo se l'edificio è completo e non da demolire
+# (JobBoardService.find_assignment_point). Oggi il cerchio di sassi.
+@export var is_assignment_point: bool = false
+
 # Numero massimo di individui che possono lavorare CONTEMPORANEAMENTE alla costruzione di questo
 # edificio (2026-09-10, richiesta utente — preparazione Build Task, Step 1: SOLO il dato, nessuna
 # logica di condivisione lavoro/assegnazione multipla ancora — arriverà con un giro successivo).

@@ -1928,6 +1928,9 @@ static func _resolve_age_band(individual: HumanIndividual, game_data: GameData) 
 # on_task_closed(null) è già un caso esplicitamente previsto — "individuo appena creato, mai
 # assegnato" — vedi TaskDebugRegistry.gd; discard_carried_resource() no-op su zaino già vuoto).
 static func resolve_idle_individual(individual: HumanIndividual, age_band: HumanTypes.AgeBand, world: World) -> void:
+	# "Cerca lavoro" appena finita al punto di assegnazione (2026-10-09): letto e spento qui, prima di tutto.
+	var arrived_at_assignment_point := individual.job_seek_arrived
+	individual.job_seek_arrived = false
 	var needed_priority := _resolve_active_stamina_need_priority(individual)
 	if needed_priority != -1:
 		if DebugLogging.ENABLED and DebugLogging.SHOW_TASK_LIFECYCLE_LOGS:
@@ -2002,12 +2005,25 @@ static func resolve_idle_individual(individual: HumanIndividual, age_band: Human
 	# completata, il lavoro attivo più adatto della lista; solo qui, tra una task e l'altra, mai sopra una task o
 	# un'attività di ripiego in corso. Nessun lavoro preso: attività di ripiego come sempre.
 	# Dopo un annullo con H del giocatore (skip_job_board_once) la lista si salta una volta: dritto al ripiego.
+	# Punto di assegnazione (2026-10-09, coordinatore passo 1): con un punto raggiungibile e un lavoro della lista che può
+	# prendere, l'individuo va prima al punto ("Cerca lavoro") e lì lo prende, come oggi; arrivato senza più niente per
+	# lui, va allo svago (niente seconda "Cerca lavoro"). Senza punto di assegnazione, presa diretta come prima.
 	if individual.skip_job_board_once:
 		individual.skip_job_board_once = false
 		if DebugLogging.ENABLED and DebugLogging.SHOW_JOB_BOARD_LOGS:
 			print("[JOB BOARD] #%d %s: lista saltata una volta (annullo del giocatore)." % [individual.id, individual.name])
-	elif JobBoardService.try_take_job(individual):
-		return
+	elif arrived_at_assignment_point:
+		if JobBoardService.try_take_job(individual):
+			var received: Task = individual.current_task if individual.current_task != null else (individual.task_queue.back() if not individual.task_queue.is_empty() else null)
+			CoordinatorService.report_departure(individual, received.get_activity_description() if received != null else "?")
+			return
+		CoordinatorService.report_departure(individual, "")
+	else:
+		var seek_outcome := JobBoardService.try_seek_job(individual, age_band, world)
+		if seek_outcome == JobBoardService.SeekOutcome.STARTED:
+			return
+		if seek_outcome == JobBoardService.SeekOutcome.NO_POINT and JobBoardService.try_take_job(individual):
+			return
 
 	if IdleTaskAssignmentService.assign_idle_fallback(individual, age_band, world):
 		return

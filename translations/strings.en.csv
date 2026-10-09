@@ -987,9 +987,13 @@ task_pile_pickup_activity_resource,Pile pickup ({resource})
 task_assignment_direct,Direct
 task_assignment_direct_tooltip,"Assigned directly to this individual: it cannot be put back in the queue."
 task_assignment_direct_cancel_tooltip,Stop this individual's work (like the H key)
+task_assignment_automatic,Automatic
+task_assignment_automatic_tooltip,Set off on its own: there is queued work for them
 task_assignment_in_progress_tooltip,All work in progress. Needs and rest are not shown here.
 task_assignment_in_progress_workload,In progress · {working} working out of {total}
 task_assignment_workload_working,Working: {count}
+task_assignment_workload_seeking,Looking for work: {count}
+task_assignment_workload_coordinating,Coordinating: {count}
 task_assignment_workload_leisure,Leisure: {count}
 task_assignment_workload_needs,Personal needs: {count}
 task_assignment_kind_quarry,Quarrying
@@ -1009,6 +1013,10 @@ drawer_order_cut_progress_row,Cut plants · {done}/{total}
 drawer_order_quarry_progress_row,Quarry stones · {done}/{total}
 drawer_order_gather_progress_row,Gather {target} · {done}/{total}
 drawer_order_zone_suffix,{row} · {zone}
+task_seek_job_name,Looking for work
+task_seek_job_step_wait,Waiting at the assignment point
+task_coordinate_name,Coordinating
+task_coordinate_step,Assigning work at the assignment point
 drawer_hunt_title,Hunt
 drawer_hunt_button_tooltip,Hunting in the work areas: a free individual with a knife takes it from the queue
 drawer_hunt_no_zone,No hunting area

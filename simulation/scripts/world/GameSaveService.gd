@@ -113,6 +113,8 @@ func save_game_to_json(
 			# Ordini creati dal cassetto (2026-10-09): già JSON-nativi.
 			"drawer_orders": game_data.drawer_orders,
 			"next_drawer_order_id": game_data.next_drawer_order_id,
+			# Posti dei coordinatori (2026-10-09): già JSON-nativi.
+			"coordinator_posts": game_data.coordinator_posts,
 			# Gruppi di visitatori (2026-09-27): VisitorParty.to_save_data è già JSON-nativo.
 			"visitor_parties": game_data.visitor_parties.map(func(party: VisitorParty) -> Dictionary: return party.to_save_data()),
 			"next_visitor_party_id": game_data.next_visitor_party_id,

@@ -266,6 +266,9 @@ static func _action_type_for_step(step: Action) -> int:
 		return TaskTypes.ActionType.CUT
 	if step is QuarryAction:
 		return TaskTypes.ActionType.QUARRY
+	# WAIT_AT_POINT (2026-10-09, WaitAtPointAction, seek_job.tres), aggiunta insieme al proprio case in _build_step.
+	if step is WaitAtPointAction:
+		return TaskTypes.ActionType.WAIT_AT_POINT
 	push_error("TaskPersistenceService._action_type_for_step: tipo Action sconosciuto (%s)." % step.get_script().get_global_name())
 	return -1
 
@@ -508,6 +511,9 @@ static func _build_step(action_type: int, step_data: Dictionary, macro_state: Ma
 				Vector2i(int(step_data.get("quarry_macro_x", 0)), int(step_data.get("quarry_macro_y", 0))),
 				Vector2i(int(step_data.get("quarry_x", 0)), int(step_data.get("quarry_y", 0)))
 			)
+		TaskTypes.ActionType.WAIT_AT_POINT:
+			# Tetto dell'attesa; il tempo trascorso arriva da load_save_data (solo per lo step corrente).
+			step = WaitAtPointAction.new(float(step_data.get("max_wait_days", -1.0)))
 		TaskTypes.ActionType.PICKUP_BODY:
 			step = PickUpBodyAction.new(int(step_data.get("body_id", -1)))
 		TaskTypes.ActionType.CARRY_BODY:

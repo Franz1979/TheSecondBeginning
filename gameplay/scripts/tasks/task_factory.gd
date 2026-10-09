@@ -262,6 +262,14 @@ static func build_task(definition: TaskDefinition, context: Dictionary) -> Task:
 					String(context[step_definition.context_keys[2]]), keeper_task, queue_order
 				))
 				step_descriptions.append(step_definition.step_description)
+			TaskTypes.ActionType.WAIT_AT_POINT:
+				# Attesa al punto di assegnazione (2026-10-09, seek_job.tres e coordinate.tres): context_keys[0] facoltativo,
+				# tetto in giorni (assente = nessun tetto: finisce quando CoordinatorService la rilascia).
+				var max_wait_days := -1.0
+				if not step_definition.context_keys.is_empty() and context.has(step_definition.context_keys[0]):
+					max_wait_days = float(context[step_definition.context_keys[0]])
+				steps.append(WaitAtPointAction.new(max_wait_days))
+				step_descriptions.append(step_definition.step_description)
 			TaskTypes.ActionType.PATROL_AREA:
 				# 1 argomento (id della WorkArea, 2026-10-01): chiave consumata dalla factory — chi crea la Task scrive
 				# anche HuntZoneService.CONTEXT_WORK_AREA_ID, che resta nel context.

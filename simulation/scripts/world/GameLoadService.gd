@@ -228,6 +228,23 @@ func load_game_from_json(file_path: String) -> LoadedGame:
 			game_data.drawer_orders.append(order)
 			next_order_id = maxi(next_order_id, int(order["id"]) + 1)
 	game_data.next_drawer_order_id = next_order_id
+	# Posti dei coordinatori (2026-10-09) — .get(key, {}) per i salvataggi precedenti; i numeri tornano a int. Se chi
+	# coordinava non ha più "Coordina", CoordinatorService libera il posto al primo giro.
+	game_data.coordinator_posts.clear()
+	var raw_posts = data["game"].get("coordinator_posts", {})
+	if raw_posts is Dictionary:
+		for post_key in (raw_posts as Dictionary).keys():
+			var raw_post = raw_posts[post_key]
+			if not (raw_post is Dictionary):
+				continue
+			var queue: Array = []
+			for raw_id in (raw_post as Dictionary).get("queue", []):
+				queue.append(int(raw_id))
+			game_data.coordinator_posts[String(post_key)] = {
+				"coordinator_id": int((raw_post as Dictionary).get("coordinator_id", -1)), "queue": queue,
+				"serving_id": int((raw_post as Dictionary).get("serving_id", -1)),
+				"serving_since": float((raw_post as Dictionary).get("serving_since", 0.0)),
+			}
 	# Gruppi di visitatori (2026-09-27) — .get(key, []) per i salvataggi precedenti; voci non valide scartate.
 	# Il prossimo id non scende mai sotto quello di un gruppo caricato.
 	game_data.visitor_parties.clear()

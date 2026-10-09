@@ -463,7 +463,7 @@ func _entries_signature(entries: Array[Dictionary]) -> String:
 		parts.append("%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s" % [
 			entry["key"], entry.get("building_name", ""), entry.get("name_detail", ""), str(entry.get("icon", {})), str(entry.get("enabled", true)), str(entry.get("locked", false)),
 			str(entry.get("waiting", false)), str(entry.get("wait_seconds", 0)), entry.get("workers", ""),
-			str(entry.get("cancel_disabled", false)), entry.get("cancel_tooltip", "") + "|" + String(entry.get("status_text", "")) + "|" + str(entry.get("direct", false)),
+			str(entry.get("cancel_disabled", false)), entry.get("cancel_tooltip", "") + "|" + String(entry.get("status_text", "")) + "|" + str(entry.get("direct", false)) + str(entry.get("automatic", false)),
 		])
 	return "\n".join(parts)
 
@@ -586,8 +586,10 @@ func _build_list_row(entry: Dictionary, in_progress: bool) -> Control:
 		direct_holder.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 		direct_holder.add_child(state_button)
 		var direct_label := Label.new()
-		direct_label.text = tr("task_assignment_direct")
-		direct_label.tooltip_text = tr("task_assignment_direct_tooltip")
+		# "Automatico" (2026-10-09, "Cerca lavoro"): partito da solo, stesso stile di "Diretto".
+		var automatic := bool(entry.get("automatic", false))
+		direct_label.text = tr("task_assignment_automatic") if automatic else tr("task_assignment_direct")
+		direct_label.tooltip_text = tr("task_assignment_automatic_tooltip") if automatic else tr("task_assignment_direct_tooltip")
 		direct_label.mouse_filter = Control.MOUSE_FILTER_STOP
 		direct_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		direct_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
@@ -622,6 +624,12 @@ func _build_list_row(entry: Dictionary, in_progress: bool) -> Control:
 	cancel_button.disabled = bool(entry.get("cancel_disabled", false))
 	cancel_button.tooltip_text = String(entry.get("cancel_tooltip", ""))
 	cancel_button.pressed.connect(func() -> void: cancel_requested.emit(entry))
+	# Riga "Automatico" (2026-10-09): niente X — resta solo il suo posto, invisibile, per l'allineamento delle colonne.
+	if bool(entry.get("automatic", false)):
+		cancel_button.modulate = Color(1, 1, 1, 0)
+		cancel_button.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		cancel_button.disabled = true
+		cancel_button.tooltip_text = ""
 	row.add_child(cancel_button)
 	# Riga intera cliccabile (2026-10-07, prima solo il nome): centra e seleziona (entry_activated), illuminata al
 	# passaggio del mouse; i bottoni tengono il loro clic. Spenta se la voce non si può centrare.
@@ -1558,23 +1566,30 @@ func _build_workload_bar() -> void:
 	right_gap.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	row.add_child(right_gap)
 	if not _pending_workload.is_empty():
-		set_workload(int(_pending_workload[0]), int(_pending_workload[1]), int(_pending_workload[2]))
+		var pending_extra: Array[Dictionary] = []
+		pending_extra.assign(_pending_workload[3])
+		set_workload(int(_pending_workload[0]), int(_pending_workload[1]), int(_pending_workload[2]), pending_extra)
 
 
-# `at_work` + `needs` + `leisure` = individui in età da lavoro.
-func set_workload(at_work: int, needs: int, leisure: int) -> void:
-	_pending_workload = [at_work, needs, leisure]
+# `at_work` + `needs` + `leisure` + le voci di `extra_rows` = individui in età da lavoro. `extra_rows` (2026-10-09):
+# [{"key": chiave tr() con {count}, "count": int}] — righe del tooltip subito dopo "Al lavoro" (es. "In cerca di lavoro",
+# poi "Coordina"), contate nel totale ma non tra "al lavoro".
+func set_workload(at_work: int, needs: int, leisure: int, extra_rows: Array[Dictionary] = []) -> void:
+	_pending_workload = [at_work, needs, leisure, extra_rows]
 	if _in_progress_title == null or _workload_bar == null:
 		return
 	var total := at_work + needs + leisure
+	for extra in extra_rows:
+		total += int(extra.get("count", 0))
 	_in_progress_title.text = tr("task_assignment_in_progress_workload").format({"working": at_work, "total": total})
 	var percent: int = roundi(100.0 * float(at_work) / float(total)) if total > 0 else 0
 	_workload_percent.text = "%d%%" % percent
-	var tooltip := "\n".join([
-		tr("task_assignment_workload_working").format({"count": at_work}),
-		tr("task_assignment_workload_leisure").format({"count": leisure}),
-		tr("task_assignment_workload_needs").format({"count": needs}),
-	])
+	var tooltip_lines: Array[String] = [tr("task_assignment_workload_working").format({"count": at_work})]
+	for extra in extra_rows:
+		tooltip_lines.append(tr(String(extra.get("key", ""))).format({"count": int(extra.get("count", 0))}))
+	tooltip_lines.append(tr("task_assignment_workload_leisure").format({"count": leisure}))
+	tooltip_lines.append(tr("task_assignment_workload_needs").format({"count": needs}))
+	var tooltip := "\n".join(tooltip_lines)
 	_in_progress_title.tooltip_text = tooltip
 	_workload_bar.tooltip_text = tooltip
 	_workload_percent.tooltip_text = tooltip

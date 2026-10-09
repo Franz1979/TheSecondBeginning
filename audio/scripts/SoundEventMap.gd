@@ -18,6 +18,8 @@ const EVENTS: Dictionary = {
 	# Mondo
 	# Thoughts (2026-10-08): file nuovo thought.wav al posto di idea_spark.wav, che non c'è più.
 	&"idea_completed": &"thought",
+	# Richiamo del coordinatore (2026-10-09, GameScene.coordinator_called): "hey" alla sua posizione.
+	&"coordinator_call": &"hey",
 	# Suono predefinito dei riti completati (2026-10-04, richiesta utente — prima church_bell, che resta nel banco per
 	# usi futuri): quello di una ricetta con RiteRules.completion_sound_id vuoto.
 	&"rite_completed": &"rite_paleolithic",

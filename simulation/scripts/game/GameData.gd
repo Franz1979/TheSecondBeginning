@@ -243,6 +243,13 @@ var job_board_kind_order: Array[String] = []
 # "next_drawer_order_id").
 var drawer_orders: Array[Dictionary] = []
 var next_drawer_order_id: int = 1
+# Posti dei coordinatori (2026-10-09, CoordinatorService): id del punto di assegnazione (String, chiave JSON) ->
+# {"coordinator_id": int (-1 = nessuno), "queue": [id di chi aspetta, in ordine di arrivo], "serving_id": int (chi sta
+# ricevendo le istruzioni, -1 = nessuno; il coordinatore stesso = autoassegnazione), "serving_since": float (giorni di
+# gioco)}. Solo tipi JSON-nativi; salvati da GameSaveService ("coordinator_posts").
+var coordinator_posts: Dictionary = {}
+# Primo giro di CoordinatorService su questa partita già fatto (posti caricati controllati). Mai salvato.
+var coordinator_posts_checked: bool = false
 # Anno dell'ultimo evento avvenuto per ogni CATEGORIA di eventi casuali (2026-09-27, richiesta utente —
 # raffreddamento condiviso, vedi RandomEventCategoryRules): id categoria (String) -> anno (int). Scritto da
 # RandomEventService.apply_event, letto dal sorteggio. Salvato da GameSaveService ("random_event_category_last_year").

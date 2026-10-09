@@ -416,3 +416,8 @@ const SHOW_IN_PROGRESS_LOGS := false
 # Finestra Aiuto (2026-10-09, richiesta utente — "Indietro" che serviva premere due volte): una riga [HELP] a ogni cambio
 # di pagina e a ogni "Indietro", con la pagina e la cronologia intera. Solo log (HelpDialog).
 const SHOW_HELP_DIALOG_LOGS := false
+
+# Coordinatore dei lavori (2026-10-09, CoordinatorService): una riga [COORDINATORE] solo quando succede qualcosa — arrivo
+# in fila, nuovo coordinatore, inizio di un'assegnazione, lavoro ricevuto o svago, autoassegnazione, fine del turno con
+# il motivo, posto liberato al caricamento. Solo log.
+const SHOW_COORDINATOR_LOGS := true

@@ -113,6 +113,8 @@ enum ActionType {
 	CUT,
 	# Estrazione della pietra da una roccia (2026-10-05, QuarryAction, vedi quarry.tres). AGGIUNTO IN CODA (29).
 	QUARRY,
+	# Attesa al punto di assegnazione (2026-10-09, WaitAtPointAction, vedi seek_job.tres). AGGIUNTO IN CODA (30).
+	WAIT_AT_POINT,
 }
 
 # Categorie di tool richiedibili da un'Action (2026-09-08, richiesta utente — SOLO struttura dati,

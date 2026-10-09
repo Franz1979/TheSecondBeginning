@@ -1041,9 +1041,13 @@ task_pile_pickup_activity_resource,Ritiro mucchio ({resource})
 task_assignment_direct,Diretto
 task_assignment_direct_tooltip,"Assegnato direttamente a questo individuo: non si può rimettere in coda."
 task_assignment_direct_cancel_tooltip,Ferma il lavoro di questo individuo (come il tasto H)
+task_assignment_automatic,Automatico
+task_assignment_automatic_tooltip,Partito da solo: c'è lavoro in coda per lui
 task_assignment_in_progress_tooltip,Tutto il lavoro in corso. Bisogni e riposo non compaiono qui.
 task_assignment_in_progress_workload,In corso · {working} al lavoro su {total}
 task_assignment_workload_working,Al lavoro: {count}
+task_assignment_workload_seeking,In cerca di lavoro: {count}
+task_assignment_workload_coordinating,Coordina: {count}
 task_assignment_workload_leisure,Svago: {count}
 task_assignment_workload_needs,Bisogni personali: {count}
 task_assignment_kind_quarry,Estrazione
@@ -1063,6 +1067,10 @@ drawer_order_cut_progress_row,Taglia piante · {done}/{total}
 drawer_order_quarry_progress_row,Estrai pietre · {done}/{total}
 drawer_order_gather_progress_row,Raccogli {target} · {done}/{total}
 drawer_order_zone_suffix,{row} · {zone}
+task_seek_job_name,Cerca lavoro
+task_seek_job_step_wait,Aspetta al punto di assegnazione
+task_coordinate_name,Coordina
+task_coordinate_step,Assegna i lavori al punto di assegnazione
 drawer_hunt_title,Caccia
 drawer_hunt_button_tooltip,Caccia nelle zone di lavoro: la prende in coda un individuo libero con il coltello
 drawer_hunt_no_zone,Nessuna zona di caccia
