@@ -9,14 +9,22 @@ extends RefCounted
 # Stato in un punto unico, GameData.job_board_states (salvato), con le chiavi della scheda "In sospeso" ("build:<id>",
 # in futuro "upgrade:", "demolish:", "produce:", "body:"). Oggi il solo tipo gestito è il cantiere di un edificio nuovo
 # ("build"), dal 2026-10-07 il cantiere di un miglioramento ("upgrade", stesse regole: è un cantiere normale) e
-# l'edificio "da demolire" senza demolitore ("demolish", fuori lista finché è aperto il suo mirino): un tipo
-# nuovo si aggiunge a DEFAULT_STATE_BY_KIND (e a SKILL_KEY_BY_KIND per il punteggio).
+# l'edificio "da demolire" senza demolitore ("demolish", fuori lista finché è aperto il suo mirino), dal 2026-10-09 gli
+# ordini di produzione senza lavoratore ("produce:<id>:<ordine>", GameScene._produce_jobs_collect): un tipo
+# nuovo si aggiunge a DEFAULT_STATE_BY_KIND (e a SKILL_KEY_BY_KIND per "Più adatto", KIND_NAME_KEYS per il nome).
 #
 # Passo B (2026-10-07): un pipottino libero prende da solo il lavoro attivo più adatto (try_take_job), chiamato SOLO da
 # HumanIndividualActionService.resolve_idle_individual tra una task e l'altra — dopo bisogni, coda personale e
 # rilascio del carico, prima delle attività di ripiego — mai durante una task o un'attività di ripiego. La scelta e
-# l'assegnazione (stessa funzione dell'assegnazione a mano) le fa GameScene, che registra qui `job_taker`; il punteggio
-# è score_job. Stateless, funzioni statiche (job_taker è l'unico dato, un aggancio, mai salvato).
+# l'assegnazione (stessa funzione dell'assegnazione a mano) le fa GameScene, che registra qui `job_taker`; la scelta tra
+# i lavori prendibili è pick_job. Stateless, funzioni statiche (job_taker è l'unico dato, un aggancio, mai salvato).
+#
+# Priorità (2026-10-08, richiesta utente — sostituisce il vecchio punteggio bravura / (distanza + 10): la distanza non
+# conta più, resta solo l'esclusione dei lavori irraggiungibili). Il giocatore sceglie un modo (PRIORITY_*) e, per
+# "Personalizzata", l'ordine dei tipi; entrambi in GameData (salvati con la partita, non nelle preferenze). L'età di un
+# lavoro è il momento di gioco (giorni assoluti con la frazione del giorno) in cui è entrato in coda la prima volta,
+# GameData.job_board_entered_at, scritto da stamp_entered e tolto solo quando il lavoro non esiste più (forget_missing):
+# "Rimetti in coda", un'interruzione o un ritorno in coda non lo azzerano.
 
 # Attesa per l'assegnazione a mano (2026-10-07, richiesta utente): secondi reali (uguali a ogni velocità, fermi in pausa)
 # dopo l'ingresso di un lavoro in lista (nato senza lavoratore o tornato in lista) durante i quali nessuno può prenderlo
@@ -31,13 +39,46 @@ const STATE_LISTED := "listed"
 const STATE_LOCKED := "locked"
 # Tipi di lavoro gestiti dalla lista -> stato iniziale (chiave assente in GameData.job_board_states).
 # "body" (2026-10-07): corpi da seppellire; "pile" (2026-10-07): mucchi a terra abbandonati.
-const DEFAULT_STATE_BY_KIND := {"build": STATE_LISTED, "upgrade": STATE_LISTED, "demolish": STATE_LISTED, "body": STATE_LISTED, "pile": STATE_LISTED}
-# Tipo di lavoro -> chiave di SkillEffectService (skill_action_effects.tres) del suo fattore di skill nel punteggio.
-const SKILL_KEY_BY_KIND := {"build": "build", "upgrade": "build", "demolish": "build", "body": RiteAction.SKILL_EFFECT_KEY, "pile": "pickup"}
+# "output" (2026-10-08): Prodotti finiti pieni che fermano un ordine, da consegnare a magazzino.
+# "produce" (2026-10-09): ordini di produzione senza lavoratore ("produce:<id edificio>:<chiave ordine>").
+# "cut" (2026-10-09): ordini di taglio del cassetto ("order:<id>", tipo della voce; GameScene._drawer_cut_job).
+const DEFAULT_STATE_BY_KIND := {"build": STATE_LISTED, "upgrade": STATE_LISTED, "demolish": STATE_LISTED, "body": STATE_LISTED, "pile": STATE_LISTED, "output": STATE_LISTED, "produce": STATE_LISTED, "cut": STATE_LISTED}
+# Tipo di lavoro -> chiave di SkillEffectService (skill_action_effects.tres) della sua skill (modo "Più adatto").
+const SKILL_KEY_BY_KIND := {"build": "build", "upgrade": "build", "demolish": "build", "body": RiteAction.SKILL_EFFECT_KEY, "pile": "pickup", "output": "pickup", "produce": "produce", "cut": "cut"}
 # Tipo di lavoro -> icona di comando (IconRegistry) che lampeggia sull'edificio durante l'attesa per l'assegnazione a mano.
-const ICON_KEY_BY_KIND := {"build": "build", "upgrade": "build", "demolish": "demolish", "body": "bury", "pile": "pickup"}
-# Stesso scarto della distanza della scelta delle zone di lavoro (HaulZoneService).
-const SCORE_DISTANCE_OFFSET: float = HaulZoneService.ZONE_DISTANCE_OFFSET
+const ICON_KEY_BY_KIND := {"build": "build", "upgrade": "build", "demolish": "demolish", "body": "bury", "pile": "pickup", "output": "transport", "produce": "produce", "cut": "cut"}
+
+# Modi di priorità (valori salvati in GameData.job_board_priority_mode, mai cambiarli).
+const PRIORITY_BEST_FIT := "best_fit"
+const PRIORITY_OLDEST := "oldest"
+const PRIORITY_NEWEST := "newest"
+const PRIORITY_CUSTOM := "custom"
+# Ordine dei modi nello strato delle regole.
+const PRIORITY_MODES: Array[String] = [PRIORITY_BEST_FIT, PRIORITY_OLDEST, PRIORITY_NEWEST, PRIORITY_CUSTOM]
+const DEFAULT_PRIORITY_MODE := PRIORITY_BEST_FIT
+# Modo -> chiave tr() del nome (strato delle regole e log); il tooltip è la stessa chiave con "_tooltip".
+const PRIORITY_NAME_KEYS := {
+	PRIORITY_BEST_FIT: "task_assignment_priority_best_fit",
+	PRIORITY_OLDEST: "task_assignment_priority_oldest",
+	PRIORITY_NEWEST: "task_assignment_priority_newest",
+	PRIORITY_CUSTOM: "task_assignment_priority_custom",
+}
+# Ordine iniziale dei tipi per "Personalizzata". Un tipo nuovo di DEFAULT_STATE_BY_KIND che non è qui (né nell'ordine
+# salvato) entra in fondo (get_kind_order).
+const DEFAULT_KIND_ORDER: Array[String] = ["body", "build", "upgrade", "demolish", "pile", "output", "produce", "cut"]
+# Tipo -> chiave tr() del nome nell'elenco dei tipi e nel log.
+const KIND_NAME_KEYS := {
+	"body": "task_assignment_kind_body",
+	"build": "task_assignment_kind_build",
+	"upgrade": "task_assignment_kind_upgrade",
+	"demolish": "task_assignment_kind_demolish",
+	"pile": "task_assignment_kind_pile",
+	"output": "task_assignment_kind_output",
+	"produce": "task_assignment_kind_produce",
+	"cut": "task_assignment_kind_cut",
+}
+# Due skill uguali entro questo scarto contano come pari (poi decide l'età).
+const SKILL_TIE_EPSILON: float = 0.0001
 
 # Callable(individual: HumanIndividual) -> bool, registrato da GameScene: guarda la lista e prova a far prendere a
 # `individual` il lavoro più adatto; true = preso (ha una task nuova). Non valido fuori dalla scena di gioco.
@@ -62,13 +103,25 @@ static func get_kind(job_key: String) -> String:
 	return job_key.get_slice(":", 0)
 
 
+# Ordini creati dal cassetto (2026-10-09, GameData.drawer_orders): chiave "order:<id>". Il prefisso non è un tipo: il
+# tipo della voce (priorità, skill, "Più adatto") lo dà l'ordine (es. "produce", lo stesso degli ordini dei pannelli).
+# Stato iniziale: attivo.
+const DRAWER_ORDER_KEY_PREFIX := "order"
+
+
+static func drawer_order_key(order_id: int) -> String:
+	return "%s:%d" % [DRAWER_ORDER_KEY_PREFIX, order_id]
+
+
 # true se il tipo del lavoro passa dalla lista.
 static func is_managed(job_key: String) -> bool:
-	return DEFAULT_STATE_BY_KIND.has(get_kind(job_key))
+	var kind := get_kind(job_key)
+	return DEFAULT_STATE_BY_KIND.has(kind) or kind == DRAWER_ORDER_KEY_PREFIX
 
 
 static func get_state(game_data: GameData, job_key: String) -> String:
-	var default_state := String(DEFAULT_STATE_BY_KIND.get(get_kind(job_key), STATE_LOCKED))
+	var kind := get_kind(job_key)
+	var default_state := STATE_LISTED if kind == DRAWER_ORDER_KEY_PREFIX else String(DEFAULT_STATE_BY_KIND.get(kind, STATE_LOCKED))
 	if game_data == null:
 		return default_state
 	var state := String(game_data.job_board_states.get(job_key, default_state))
@@ -82,15 +135,155 @@ static func set_state(game_data: GameData, job_key: String, state: String) -> vo
 	game_data.job_board_states[job_key] = state
 
 
-# Punteggio di un lavoro per `individual` (più alto = più adatto): fattore della skill del tipo di lavoro
-# (SkillEffectService.get_factor, 1.0 se il tipo non ne ha) diviso (distanza + SCORE_DISTANCE_OFFSET). `job_macro_coords`
-# e `job_microcell` = dove si fa il lavoro; la distanza è quella delle zone di lavoro (posizione dell'individuo, locale
-# alla sua macrocella di casa, e scostamento HaulZoneService.macro_offset_for della macrocella del lavoro).
-static func score_job(individual: HumanIndividual, job_kind: String, job_macro_coords: Vector2i, job_microcell: Vector2i) -> float:
+# Skill di `individual` per un tipo di lavoro: fattore di SkillEffectService della chiave SKILL_KEY_BY_KIND (1.0 se il
+# tipo non ne ha).
+static func get_job_skill(individual: HumanIndividual, job_kind: String) -> float:
 	var skill_key := String(SKILL_KEY_BY_KIND.get(job_kind, ""))
-	var skill_factor := SkillEffectService.get_factor(skill_key, individual) if skill_key != "" else 1.0
-	var job_position := Vector2(job_microcell) + Vector2(0.5, 0.5) + HaulZoneService.macro_offset_for(individual, job_macro_coords)
-	return skill_factor / (individual.position.distance_to(job_position) + SCORE_DISTANCE_OFFSET)
+	return SkillEffectService.get_factor(skill_key, individual) if skill_key != "" else 1.0
+
+
+# --- Priorità (2026-10-08) ---
+
+static func get_priority_mode(game_data: GameData) -> String:
+	if game_data == null or not PRIORITY_MODES.has(game_data.job_board_priority_mode):
+		return DEFAULT_PRIORITY_MODE
+	return game_data.job_board_priority_mode
+
+
+static func set_priority_mode(game_data: GameData, mode: String) -> void:
+	if game_data != null and PRIORITY_MODES.has(mode):
+		game_data.job_board_priority_mode = mode
+
+
+# Ordine dei tipi per "Personalizzata": quello salvato (solo tipi esistenti, senza doppioni), poi i tipi mancanti
+# nell'ordine iniziale, poi qualunque tipo gestito ancora assente (un tipo aggiunto in futuro entra in fondo).
+static func get_kind_order(game_data: GameData) -> Array[String]:
+	var order: Array[String] = []
+	if game_data != null:
+		for kind in game_data.job_board_kind_order:
+			if DEFAULT_STATE_BY_KIND.has(kind) and not order.has(kind):
+				order.append(kind)
+	for kind in DEFAULT_KIND_ORDER:
+		if not order.has(kind):
+			order.append(kind)
+	for kind in DEFAULT_STATE_BY_KIND.keys():
+		if not order.has(String(kind)):
+			order.append(String(kind))
+	return order
+
+
+static func set_kind_order(game_data: GameData, order: Array[String]) -> void:
+	if game_data == null:
+		return
+	game_data.job_board_kind_order = order.duplicate()
+
+
+static func get_priority_name(mode: String) -> String:
+	return TranslationServer.translate(String(PRIORITY_NAME_KEYS.get(mode, mode)))
+
+
+static func get_kind_name(kind: String) -> String:
+	return TranslationServer.translate(String(KIND_NAME_KEYS.get(kind, kind)))
+
+
+# Età: segna l'ingresso in coda dei lavori di `jobs` (voci con "key") che non l'hanno ancora, al momento `now` (giorni
+# assoluti di gioco con la frazione). Mai prima dell'ingresso più recente già segnato: dopo un caricamento la frazione
+# del giorno riparte da zero, e un lavoro nuovo non deve risultare più vecchio di uno già in coda.
+static func stamp_entered(game_data: GameData, jobs: Array, now: float) -> void:
+	if game_data == null:
+		return
+	var stamp := now
+	for value in game_data.job_board_entered_at.values():
+		stamp = maxf(stamp, float(value))
+	for job in jobs:
+		var key := String(job["key"])
+		if not game_data.job_board_entered_at.has(key):
+			game_data.job_board_entered_at[key] = stamp
+
+
+# Momento d'ingresso in coda di `job_key`; INF se non è mai stato segnato (conta come il più recente).
+static func get_entered_at(game_data: GameData, job_key: String) -> float:
+	if game_data == null:
+		return INF
+	return float(game_data.job_board_entered_at.get(job_key, INF))
+
+
+# true se `a` è entrato in coda prima di `b` (a parità, decide la chiave: ordine stabile).
+static func _is_older(game_data: GameData, a: Dictionary, b: Dictionary) -> bool:
+	var entered_a := get_entered_at(game_data, String(a["key"]))
+	var entered_b := get_entered_at(game_data, String(b["key"]))
+	if entered_a != entered_b:
+		return entered_a < entered_b
+	return String(a["key"]) < String(b["key"])
+
+
+static func _oldest(game_data: GameData, jobs: Array) -> Dictionary:
+	var best: Dictionary = {}
+	for job in jobs:
+		if best.is_empty() or _is_older(game_data, job, best):
+			best = job
+	return best
+
+
+static func _newest(game_data: GameData, jobs: Array) -> Dictionary:
+	var best: Dictionary = {}
+	for job in jobs:
+		if best.is_empty() or _is_older(game_data, best, job):
+			best = job
+	return best
+
+
+# Scelta tra i lavori PRENDIBILI di `individual` (esclusioni già fatte dal chiamante: bloccati, attesa, non adatto,
+# irraggiungibili, impossibili per ora), secondo il modo attivo:
+#   - "Più adatto": skill più alta (get_job_skill), a parità il più vecchio;
+#   - "Prima i più vecchi" / "Prima i più recenti": per età;
+#   - "Personalizzata": il primo tipo dell'ordine con almeno un lavoro, dentro il tipo il più vecchio.
+# Ritorna {"job": voce scelta, "reason": testo per il log}; {} se `jobs` è vuoto.
+static func pick_job(game_data: GameData, individual: HumanIndividual, jobs: Array) -> Dictionary:
+	if jobs.is_empty():
+		return {}
+	var mode := get_priority_mode(game_data)
+	var mode_name := get_priority_name(mode)
+	match mode:
+		PRIORITY_OLDEST:
+			return {"job": _oldest(game_data, jobs), "reason": mode_name}
+		PRIORITY_NEWEST:
+			return {"job": _newest(game_data, jobs), "reason": mode_name}
+		PRIORITY_CUSTOM:
+			for kind in get_kind_order(game_data):
+				var of_kind: Array = jobs.filter(func(job: Dictionary) -> bool: return String(job["kind"]) == kind)
+				if not of_kind.is_empty():
+					return {"job": _oldest(game_data, of_kind), "reason": "%s, %s" % [mode_name, get_kind_name(kind)]}
+			return {"job": _oldest(game_data, jobs), "reason": mode_name}
+	var best: Dictionary = {}
+	var best_skill := 0.0
+	for job in jobs:
+		var skill := get_job_skill(individual, String(job["kind"]))
+		if best.is_empty() or skill > best_skill + SKILL_TIE_EPSILON \
+				or (absf(skill - best_skill) <= SKILL_TIE_EPSILON and _is_older(game_data, job, best)):
+			best = job
+			best_skill = skill
+	return {"job": best, "reason": "%s, skill %s" % [mode_name, str(snappedf(best_skill, 0.01))]}
+
+
+# Ordine delle righe "In coda" del cassetto secondo il modo attivo (in place): "Più adatto" e "Prima i più vecchi" dal
+# più vecchio, "Prima i più recenti" dal più recente, "Personalizzata" per tipo (ordine del giocatore) e poi dal più
+# vecchio.
+static func sort_for_display(game_data: GameData, jobs: Array) -> void:
+	var mode := get_priority_mode(game_data)
+	if mode == PRIORITY_NEWEST:
+		jobs.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return _is_older(game_data, b, a))
+	elif mode == PRIORITY_CUSTOM:
+		var order := get_kind_order(game_data)
+		jobs.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+			var index_a := order.find(String(a["kind"]))
+			var index_b := order.find(String(b["kind"]))
+			if index_a != index_b:
+				return index_a < index_b
+			return _is_older(game_data, a, b)
+		)
+	else:
+		jobs.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return _is_older(game_data, a, b))
 
 
 # Punto d'ingresso di resolve_idle_individual: true se `individual` ha preso un lavoro dalla lista.
@@ -108,3 +301,7 @@ static func forget_missing(game_data: GameData, existing_keys: Dictionary) -> vo
 	for job_key in game_data.job_board_states.keys():
 		if not existing_keys.has(job_key):
 			game_data.job_board_states.erase(job_key)
+	# Età (2026-10-08): resta finché il lavoro esiste, anche mentre qualcuno lo fa.
+	for job_key in game_data.job_board_entered_at.keys():
+		if not existing_keys.has(job_key):
+			game_data.job_board_entered_at.erase(job_key)

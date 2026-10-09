@@ -224,8 +224,8 @@ static func find_source_for_retrieval(
 		return null
 
 	# `workstation_products_only` (2026-10-03, essiccazione passo 3 — rifornimenti automatici, MaterialSupplyService):
-	# da una workstation conta solo ciò che lì è prodotto, mai un ingrediente (ProductionService.
-	# is_workstation_ingredient). false = comportamento di sempre (provviste, attrezzi).
+	# da una workstation contano solo i suoi Prodotti finiti, mai il magazzino (2026-10-08, vedi _get_matching_stock).
+	# false = comportamento di sempre (provviste, attrezzi).
 	var has_stock := func(building: Building) -> bool:
 		if not building.is_complete or building.is_demolished or building.is_marked_for_demolition:
 			return false
@@ -269,17 +269,20 @@ static func _get_matching_stock(building: Building, criterion: Variant, min_quan
 	var minimum: int = maxi(min_quantity, 1)
 	# stored_resources più il buffer di uscita della produzione (2026-09-23): stessa quantità che
 	# BuildingStorageService.withdraw può prelevare.
+	# Rifornimenti automatici (workstation_products_only, 2026-10-08 — criterio per CONTENITORE, non più per nome): da una
+	# workstation contano solo i Prodotti finiti, tutti (anche un ingrediente di una sua ricetta, es. la corda del
+	# focolare); il suo magazzino mai. Workstation senza Prodotti finiti (0 posti, es. il graticcio): il magazzino, ma solo
+	# per ciò che non è ingrediente né combustibile delle sue ricette. Stessa quantità che
+	# BuildingStorageService.withdraw_auto può davvero prelevare (get_auto_available_quantity decide i due casi).
+	var auto_rules := workstation_products_only and BuildingStorageService.is_workstation_source(building)
 	var candidate_names: Array = building.stored_resources.keys()
 	for output_name in building.production_output.keys():
 		if not candidate_names.has(output_name):
 			candidate_names.append(output_name)
 	for resource_name in candidate_names:
-		var quantity: int = BuildingStorageService.get_available_quantity(building, String(resource_name))
+		var quantity: int = BuildingStorageService.get_auto_available_quantity(building, String(resource_name)) if auto_rules \
+			else BuildingStorageService.get_available_quantity(building, String(resource_name))
 		if quantity < minimum:
-			continue
-		# Solo prodotti da una workstation (2026-10-03): un ingrediente non è una sorgente per i rifornimenti
-		# automatici. Il criterio è per risorsa, quindi la quantità di un prodotto resta tutta (storage + buffer).
-		if workstation_products_only and ProductionService.is_workstation_ingredient(building, String(resource_name)):
 			continue
 		if criterion == null or (criterion is String and criterion == ""):
 			matching_stock[resource_name] = quantity

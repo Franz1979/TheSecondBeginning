@@ -81,6 +81,12 @@ func setup(world: World, game_data: GameData) -> void:
 # gli stessi secondi/giorno della velocità corrente. _process stesso NON chiama questo metodo —
 # resta un calcolo duplicato apposta, per non introdurre qui una dipendenza a un side-effect (il
 # calcolo di _process avanza anche _day_progress, cosa che questo metodo deliberatamente non fa).
+# Frazione (0..1) del giorno in corso (2026-10-08) — per datare un evento dentro il giorno (età dei lavori della lista,
+# JobBoardService.stamp_entered). Non salvata: dopo un caricamento riparte da zero.
+func get_day_progress() -> float:
+	return _day_progress
+
+
 func get_game_day_delta(real_delta: float) -> float:
 	if not is_playing:
 		return 0.0

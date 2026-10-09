@@ -13,8 +13,11 @@ const EVENTS: Dictionary = {
 	# Interfaccia
 	&"ui_click": &"ui_click",
 	&"ui_selection": &"ui_select",
+	# Riga nuova nella campanella "In sospeso" (2026-10-08, GameScene.pending_entry_added).
+	&"pending_entry_added": &"bell",
 	# Mondo
-	&"idea_completed": &"idea_spark",
+	# Thoughts (2026-10-08): file nuovo thought.wav al posto di idea_spark.wav, che non c'è più.
+	&"idea_completed": &"thought",
 	# Suono predefinito dei riti completati (2026-10-04, richiesta utente — prima church_bell, che resta nel banco per
 	# usi futuri): quello di una ricetta con RiteRules.completion_sound_id vuoto.
 	&"rite_completed": &"rite_paleolithic",

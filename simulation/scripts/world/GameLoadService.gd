@@ -199,6 +199,35 @@ func load_game_from_json(file_path: String) -> LoadedGame:
 	if raw_job_states is Dictionary:
 		for job_key in raw_job_states.keys():
 			game_data.job_board_states[String(job_key)] = String(raw_job_states[job_key])
+	# Priorità della lista (2026-10-08, JobBoardService) — partite precedenti: nessuna età, "Più adatto", ordine iniziale.
+	game_data.job_board_entered_at.clear()
+	var raw_entered_at = data["game"].get("job_board_entered_at", {})
+	if raw_entered_at is Dictionary:
+		for job_key in raw_entered_at.keys():
+			game_data.job_board_entered_at[String(job_key)] = float(raw_entered_at[job_key])
+	game_data.job_board_priority_mode = String(data["game"].get("job_board_priority_mode", JobBoardService.DEFAULT_PRIORITY_MODE))
+	game_data.job_board_kind_order.clear()
+	var raw_kind_order = data["game"].get("job_board_kind_order", [])
+	if raw_kind_order is Array:
+		for kind in raw_kind_order:
+			game_data.job_board_kind_order.append(String(kind))
+	# Ordini creati dal cassetto (2026-10-09) — .get(key, []) per i salvataggi precedenti; voci senza id o tipo scartate.
+	# I numeri del JSON tornano float: id e quantità riportati a int. Il prossimo id non scende mai sotto uno caricato.
+	game_data.drawer_orders.clear()
+	var next_order_id := int(data["game"].get("next_drawer_order_id", 1))
+	var raw_drawer_orders = data["game"].get("drawer_orders", [])
+	if raw_drawer_orders is Array:
+		for raw_order in raw_drawer_orders:
+			if not (raw_order is Dictionary) or not (raw_order as Dictionary).has("id") or String((raw_order as Dictionary).get("type", "")) == "":
+				continue
+			var order := (raw_order as Dictionary).duplicate(true)
+			order["id"] = int(order["id"])
+			order["type"] = String(order["type"])
+			if order.has("quantity"):
+				order["quantity"] = int(order["quantity"])
+			game_data.drawer_orders.append(order)
+			next_order_id = maxi(next_order_id, int(order["id"]) + 1)
+	game_data.next_drawer_order_id = next_order_id
 	# Gruppi di visitatori (2026-09-27) — .get(key, []) per i salvataggi precedenti; voci non valide scartate.
 	# Il prossimo id non scende mai sotto quello di un gruppo caricato.
 	game_data.visitor_parties.clear()

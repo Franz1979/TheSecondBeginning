@@ -246,6 +246,10 @@ static func get_producible_resources(building: Building) -> Array[String]:
 # Produzioni SOSPESE: Building.production_suspended, ricetta -> lavoro del ciclo interrotto, lasciato da un ordine
 # annullato (se due ordini della stessa ricetta lasciano un avanzamento si tiene il più alto). Non occupano posti; un
 # nuovo ordine della stessa ricetta riparte da lì (create_order).
+# Ordini in coda (2026-10-09, richiesta utente — con l'idea dell'assegnazione): un ordine può nascere senza lavoratore
+# (worker_id -1) anche oltre get_max_concurrent_orders, fino a get_max_orders ordini in tutto (create_order con
+# allow_over_limit); get_max_concurrent_orders vale allora solo per gli ordini con un lavoratore (lo controlla GameScene). "deliver_to_warehouse" (stesso giorno): la spunta "Porta al
+# deposito" dell'ordine, salvata con lui, così un ordine rimasto senza lavoratore la conserva alla riassegnazione.
 const ORDER_KEY_PREFIX := "o"
 
 
@@ -276,6 +280,8 @@ static func load_production_state(building: Building, raw_progress: Dictionary, 
 					"units_remaining": int(record.get("units_remaining", 0)),
 					"worker_id": int(record.get("worker_id", -1)),
 					"keep_for_building": bool(record.get("keep_for_building", false)),
+					# Save di prima del 2026-10-09: la riassegnazione consegnava sempre al magazzino.
+					"deliver_to_warehouse": bool(record.get("deliver_to_warehouse", true)),
 				}
 				if key.begins_with(ORDER_KEY_PREFIX) and key.substr(ORDER_KEY_PREFIX.length()).is_valid_int():
 					max_index = maxi(max_index, int(key.substr(ORDER_KEY_PREFIX.length())))
@@ -339,8 +345,14 @@ static func set_order_units(building: Building, order_key: String, units: int) -
 # Nuovo ordine di `quantity` pezzi di `resource_name` per il pipottino `worker_id`. "" se l'edificio ha già tutti gli
 # ordini (get_max_concurrent_orders). Riparte dall'eventuale produzione sospesa della stessa ricetta.
 # `keep_for_building` (2026-10-04, Attrezzeria): i pezzi finiti che sono attrezzi vanno nell'Attrezzeria se c'è posto.
-static func create_order(building: Building, resource_name: String, quantity: int, worker_id: int, keep_for_building: bool = false) -> String:
-	if building == null or resource_name == "" or building.production_progress.size() >= get_max_concurrent_orders(building):
+# `deliver_to_warehouse` (2026-10-09): spunta "Porta al deposito" dell'ordine. `allow_over_limit` (2026-10-09, ordini in
+# coda, solo con l'idea dell'assegnazione): il tetto è get_max_orders (in lavorazione + in coda) invece di
+# get_max_concurrent_orders.
+static func create_order(building: Building, resource_name: String, quantity: int, worker_id: int, keep_for_building: bool = false, deliver_to_warehouse: bool = true, allow_over_limit: bool = false) -> String:
+	if building == null or resource_name == "":
+		return ""
+	var limit := get_max_orders(building) if allow_over_limit else get_max_concurrent_orders(building)
+	if building.production_progress.size() >= limit:
 		return ""
 	building.production_order_counter += 1
 	var key := "%s%d" % [ORDER_KEY_PREFIX, building.production_order_counter]
@@ -348,9 +360,30 @@ static func create_order(building: Building, resource_name: String, quantity: in
 	building.production_suspended.erase(resource_name)
 	building.production_progress[key] = {
 		"resource_name": resource_name, "labor_accumulated": labor, "units_remaining": maxi(quantity, 1), "worker_id": worker_id,
-		"keep_for_building": keep_for_building,
+		"keep_for_building": keep_for_building, "deliver_to_warehouse": deliver_to_warehouse and not keep_for_building,
 	}
 	return key
+
+
+# Spunte dell'ordine (2026-10-09): "Porta al deposito" e "Tieni per l'edificio" (esclusive: la seconda vince).
+static func get_order_deliver_to_warehouse(building: Building, order_key: String) -> bool:
+	if not has_order(building, order_key):
+		return true
+	return bool((building.production_progress[order_key] as Dictionary).get("deliver_to_warehouse", true))
+
+
+static func get_order_keep_for_building(building: Building, order_key: String) -> bool:
+	if not has_order(building, order_key):
+		return false
+	return bool((building.production_progress[order_key] as Dictionary).get("keep_for_building", false))
+
+
+static func set_order_delivery(building: Building, order_key: String, deliver_to_warehouse: bool, keep_for_building: bool) -> void:
+	if not has_order(building, order_key):
+		return
+	var record: Dictionary = building.production_progress[order_key]
+	record["keep_for_building"] = keep_for_building
+	record["deliver_to_warehouse"] = deliver_to_warehouse and not keep_for_building
 
 
 # Annulla l'ordine: il lavoro del ciclo interrotto diventa produzione sospesa della sua ricetta (il più alto tra quelli
@@ -732,6 +765,21 @@ static func get_max_concurrent_orders(building: Building) -> int:
 # arrivato) ha raggiunto get_max_concurrent_orders.
 static func has_max_concurrent_orders(building: Building, assigned_count: int) -> bool:
 	return assigned_count >= get_max_concurrent_orders(building)
+
+
+# Ordini in tutto sull'edificio, in lavorazione più in coda senza lavoratore (BuildingRules.production_max_orders,
+# 2026-10-09): mai meno di get_max_concurrent_orders; non impostato (0) = get_max_concurrent_orders, nessuna coda in più.
+# Vale solo con l'idea dell'assegnazione (ordini in coda): senza, il tetto resta get_max_concurrent_orders.
+static func get_max_orders(building: Building) -> int:
+	var concurrent := get_max_concurrent_orders(building)
+	if building == null or building.rules == null:
+		return concurrent
+	return maxi(building.rules.production_max_orders, concurrent)
+
+
+# true se l'edificio ha già get_max_orders ordini (2026-10-09, coda dell'edificio piena).
+static func has_max_orders(building: Building) -> bool:
+	return building != null and building.production_progress.size() >= get_max_orders(building)
 
 
 # Pezzi ordinabili con un solo comando (BuildingRules.production_max_quantity, minimo 1).

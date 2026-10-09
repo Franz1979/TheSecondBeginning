@@ -11,5 +11,6 @@ required_labor = 600
 setup_site_material_per_cell = 0
 required_space = 1
 has_door = false
+visibility_radius = 1
 movement_stamina_multiplier = 0.95
 defense = 0

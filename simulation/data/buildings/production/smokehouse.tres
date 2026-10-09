@@ -14,16 +14,16 @@ storage_space_per_slot = 100
 accepted_categories = Array[int]([0, 1])
 categories_locked = true
 required_materials = {
-"dried_hide": 10,
-"fiber_rope": 5,
-"pebble": 20,
-"stick": 20
+"stick": 20,
+"stone": 10,
+"wood": 4
 }
 required_space = 1
 has_door = false
-visibility_radius = 2
+visibility_radius = 3
 is_workstation = true
 production_output_slots = 10
 production_output_to_storage = false
 storage_accepts_recipe_materials_only = true
 production_max_quantity = 10
+production_max_orders = 2

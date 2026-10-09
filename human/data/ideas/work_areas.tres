@@ -8,5 +8,4 @@ id = "work_areas"
 display_name = "idea_work_areas"
 summary = "idea_work_areas_summary"
 description = "idea_work_areas_description"
-thoughts_cost = 30
 era = "paleolithic"

@@ -228,6 +228,21 @@ var scheduled_random_events: Array[Dictionary] = []
 # qualcuno ci lavora, così un lavoro abbandonato torna dov'era; la voce si toglie quando il lavoro finisce o sparisce.
 # Salvato da GameSaveService ("job_board_states"), solo String.
 var job_board_states: Dictionary = {}
+# Priorità della lista dei lavori (2026-10-08, JobBoardService): momento d'ingresso in coda di ogni lavoro (chiave ->
+# giorni assoluti con la frazione, float), modo scelto (JobBoardService.PRIORITY_*) e ordine dei tipi per
+# "Personalizzata" (vuoto = ordine iniziale). Salvati da GameSaveService ("job_board_entered_at",
+# "job_board_priority_mode", "job_board_kind_order"); una partita senza questi dati parte da "Più adatto".
+var job_board_entered_at: Dictionary = {}
+var job_board_priority_mode: String = "best_fit"
+var job_board_kind_order: Array[String] = []
+# Ordini creati dal cassetto "Assegnazione compiti" (2026-10-09, richiesta utente): lavori in coda senza destinatario,
+# chi li prende lo decide la coda (chiave della lista "order:<id>", GameScene._drawer_order_jobs_collect). Una voce per
+# ordine, solo tipi JSON-nativi: {"id": int stabile, "type": String, ...campi del tipo}. Oggi il solo tipo "produce":
+# "recipe" (String), "quantity" (int), "deliver_to_warehouse" (bool); senza edificio, scelto alla presa. Pensato
+# generico: i lavori di zona entreranno qui con un "type" loro. Salvati da GameSaveService ("drawer_orders",
+# "next_drawer_order_id").
+var drawer_orders: Array[Dictionary] = []
+var next_drawer_order_id: int = 1
 # Anno dell'ultimo evento avvenuto per ogni CATEGORIA di eventi casuali (2026-09-27, richiesta utente —
 # raffreddamento condiviso, vedi RandomEventCategoryRules): id categoria (String) -> anno (int). Scritto da
 # RandomEventService.apply_event, letto dal sorteggio. Salvato da GameSaveService ("random_event_category_last_year").

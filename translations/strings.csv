@@ -388,7 +388,6 @@ upgrade_contents_confirmation_text,Migliorare {building} #{id} in {target}?
 upgrade_contents_confirmation_text_ground,"All'avvio dei lavori tutte le scorte del magazzino finiranno a terra in un mucchio accanto all'edificio, dove deperiscono più in fretta."
 upgrade_contents_confirmation_text_warehouse,Conviene avere un altro magazzino dove portarle.
 upgrade_contents_confirmation_confirm,Migliora
-upgrade_pick_banner_text,🔨 Migliora in {building}: clicca un individuo (Esc per annullare)
 build_bar_title_upgrade_orientation,{building} — Orientamento della porta
 build_bar_orientation_rotate,ruota
 build_bar_orientation_key_click,Clic
@@ -493,9 +492,7 @@ notification_influence_religious_level_down,"{building}: l'influenza religiosa s
 notification_auto_progress_completed,{building}: {resource} ×{quantity} pronta
 notification_processing_station_full,{building} pieno: {resource} portata in magazzino
 building_cancel_site_button,Annulla cantiere
-building_assign_demolisher_button,Assegna demolitore
 building_cancel_demolition_button,Annulla demolizione
-demolisher_pick_banner_text,⛏️ Seleziona chi demolirà: clicca un individuo (Esc per annullare)
 building_awaiting_material_label,Per allestire il cantiere servono ancora {quantity} {material}
 building_assigned_builder_label,Costruttore assegnato: {names}
 building_assigned_builder_missing,Costruttore assegnato: mancante
@@ -525,6 +522,28 @@ help_buildings_menu_link,Edifici
 help_buildings_title,Edifici
 help_buildings_materials,Materiali: {items}
 help_buildings_upgrades_to,Si migliora in: {building}
+help_resources_menu_link,Risorse
+help_resources_title,Risorse
+help_tools_menu_link,Attrezzi
+help_tools_title,Attrezzi
+help_buildings_recipes,Ricette: {items}
+help_resource_space,Spazio occupato: {value}
+help_resource_durability,Si conserva per {days} giorni
+help_resource_calories,Calorie: {value}
+help_resource_happiness,Felicità: {value} ogni 100 calorie
+help_resource_health,Salute: {value} ogni 100 calorie
+help_resource_fuel,Valore come combustibile: {value}
+help_tool_ammo,Munizione: {ammo}
+help_tool_efficiency,Efficienza di lavoro: ×{value}
+help_recipe_output,Quantità prodotta: {count}
+help_recipe_title,Ricetta
+help_recipe_auto_days,Si fa da sé in {days} giorni
+help_recipe_made_in,Si produce in: {buildings}
+help_tool_categories,Serve per: {categories}
+help_tool_uses,Usi: {uses}
+help_tool_attack,Potenza: {value}
+help_tool_range,Portata: {value} microcelle
+help_tool_carry_bonus,Capacità di trasporto: +{value}
 help_building_materials_title,Costruzioni e materiali
 help_building_materials_setup_vs_construction,"Costruire un edificio richiede materiale in due fasi distinte: prima l'allestimento del cantiere (una quantità fissa di legnetti per ogni microcella occupata dall'edificio), poi la costruzione vera e propria, che in futuro richiederà i propri materiali."
 help_building_materials_manual,"Oggi il gioco non genera da sé nessun compito per procurare questo materiale: se manca, il cantiere resta semplicemente in attesa. Sei tu a doverlo portare sul posto, comandando a mano un individuo (raccogli il materiale e depositalo sul cantiere)."
@@ -938,3 +957,86 @@ human_type_can_have_children,Può avere figli
 human_type_cannot_have_children,Non può avere figli
 human_type_jobs_allowed,Può: {jobs}
 human_type_jobs_forbidden,Non può: {jobs}
+building_woodshed,Legnaia
+build_bar_woodshed_tooltip,Legnaia
+build_bar_woodshed_description,Qui si depositano e si spaccano i tronchi.
+task_assignment_priority_section,Priorità
+task_assignment_priority_best_fit,Più adatto
+task_assignment_priority_best_fit_tooltip,"Chi è libero prende il lavoro in cui è più bravo; a parità, il più vecchio."
+task_assignment_priority_oldest,Prima i più vecchi
+task_assignment_priority_oldest_tooltip,Chi è libero prende il lavoro in coda da più tempo.
+task_assignment_priority_newest,Prima i più recenti
+task_assignment_priority_newest_tooltip,Chi è libero prende il lavoro entrato in coda per ultimo.
+task_assignment_priority_custom,Personalizzata
+task_assignment_priority_custom_tooltip,"Chi è libero prende un lavoro del primo tipo dell'elenco che ne ha; dentro il tipo, il più vecchio."
+task_assignment_kind_body,Sepolture
+task_assignment_kind_build,Cantieri
+task_assignment_kind_upgrade,Miglioramenti
+task_assignment_kind_demolish,Demolizioni
+task_assignment_kind_pile,Mucchi
+task_assignment_kind_move_up,Sposta su
+task_assignment_kind_move_down,Sposta giù
+produce_output_full_warning,Uscita piena: si fermerà dopo {count}
+toolkit_reject_not_used,{tool} non serve alle ricette di questo edificio: non entra nell'Attrezzeria.
+pending_output_delivery,Consegna · {building} ({used}/{capacity})
+task_assignment_kind_output,Consegna finiti a magazzino
+task_assignment_setting_empty_outputs,Consegna finiti a magazzino quando la produzione si ferma
+task_assignment_setting_empty_outputs_tooltip,"Quando un ordine si ferma perché i Prodotti finiti sono pieni, un individuo libero ne porta un carico al magazzino."
+task_assignment_output_cannot_cancel,Niente da annullare: si svuotano solo i Prodotti finiti.
+task_deliver_output_name,Consegna finiti
+pending_material_fuel,combustibile
+options_pending_bell_sound,Suono degli avvisi (campanella)
+task_assignment_kind_produce,Ordini di produzione
+task_assignment_produce_row,{recipe} ×{quantity} · {building}
+task_assignment_produce_building_busy,Edificio occupato
+building_info_concurrent_orders_max,"Lavori contemporanei: {count}, fino a {max} ordini in coda"
+produce_recipe_disabled_queue_full,Coda dell'edificio piena
+produce_reject_queue_full,{building}: coda dell'edificio piena (massimo {max} ordini).
+building_assign_production_worker_busy,Edificio occupato
+drawer_produce_button,Produci
+drawer_produce_button_tooltip,"Ordine di produzione senza edificio: l'edificio lo sceglie la coda quando un individuo lo prende."
+drawer_produce_no_building,Nessun edificio di produzione
+drawer_produce_dialog_title,Produci
+drawer_order_produce_row,Produci {recipe} ×{quantity}
+drawer_order_no_free_building,Nessun edificio libero
+drawer_order_cancel_tooltip,Annulla l'ordine
+task_assignment_nobody_has_tool,Nessuno ha {tools}
+building_assign_hint_site_manual,Per assegnarlo: seleziona un individuo e fai clic destro sul cantiere.
+building_assign_hint_site_queued,In coda: lo prenderà un individuo libero. Per sceglierlo tu: seleziona un individuo e fai clic destro sul cantiere.
+building_assign_hint_site_locked,Bloccato in coda. Per sceglierlo tu: seleziona un individuo e fai clic destro sul cantiere.
+building_assign_hint_demolition_manual,Per assegnarla: seleziona un individuo e fai clic destro sull'edificio.
+building_assign_hint_demolition_queued,In coda: la prenderà un individuo libero. Per sceglierlo tu: seleziona un individuo e fai clic destro sull'edificio.
+building_assign_hint_demolition_locked,Bloccato in coda. Per sceglierlo tu: seleziona un individuo e fai clic destro sull'edificio.
+drawer_produce_overlay_hint,"Clic sinistro: +1. Clic destro: −1. ""Invia in coda"" crea un ordine per ogni ricetta preparata; dopo l'invio si toglie solo con la X della sua riga in coda."
+drawer_produce_submit,Invia in coda
+pending_title,In sospeso
+pending_body_name,Sepoltura · {name}
+pending_worker_work,{name} · {work}
+pending_reason_body,Restano {days} gg per la sepoltura
+pending_reason_builder_missing,Manca il costruttore
+pending_reason_demolisher_missing,Manca il demolitore
+pending_reason_producer_missing,Manca chi lo produce
+pending_reason_material,In attesa di {materials} in un magazzino
+pending_reason_tool,In attesa di {tools}
+side_drawer_mode_overlay_tooltip,Sovrapponi all'info panel
+side_drawer_mode_side_tooltip,Affianca all'info panel
+task_assignment_kind_cut,Taglio
+drawer_cut_button_tooltip,Taglio nelle zone di lavoro: lo prende in coda un individuo libero con l'accetta
+drawer_cut_no_zone,Nessuna zona di taglio
+drawer_cut_nobody_has_axe,Nessuno ha l'accetta
+drawer_cut_title,Taglia
+drawer_cut_pick_zone,Scegli zona
+drawer_cut_zone_label,Zona: {zone}
+drawer_cut_zone_auto,Zona automatica
+drawer_cut_zone_none,da scegliere
+drawer_cut_zone_gone,zona eliminata
+drawer_order_cut_row,Taglia {count} piante · {zone}
+drawer_order_cut_row_one,Taglia 1 pianta · {zone}
+drawer_cut_no_valid_zone,Nessuna zona valida
+task_assignment_place_decided_later,Il luogo si decide quando qualcuno prende il lavoro
+task_pile_pickup_activity,Ritiro mucchio
+task_pile_pickup_activity_resource,Ritiro mucchio ({resource})
+task_assignment_direct,Diretto
+task_assignment_direct_tooltip,"Assegnato direttamente a questo individuo, non viene dalla coda."
+task_assignment_direct_cancel_tooltip,Ferma il lavoro di questo individuo (come il tasto H)
+task_assignment_in_progress_tooltip,Tutto il lavoro in corso. Bisogni e riposo non compaiono qui.

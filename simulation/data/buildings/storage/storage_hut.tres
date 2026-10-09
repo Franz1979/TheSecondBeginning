@@ -17,8 +17,8 @@ required_materials = {
 "pebble": 40,
 "stick": 100,
 "stone": 40,
-"wood": 20
+"wood": 30
 }
 max_durability = 40
 required_space = 1
-visibility_radius = 2
+visibility_radius = 4

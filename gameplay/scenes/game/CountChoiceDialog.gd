@@ -18,6 +18,11 @@ var _count_label: Label = null
 var _spin_box: SpinBox = null
 var _confirm_button: Button = null
 var _cancel_button: Button = null
+# Posizione accanto a un pannello (2026-10-09, richiesta utente — Taglia ed Estrai dalla lista degli individui): se prima
+# di open_dialog il chiamante imposta `popup_anchor` (vedi DialogPlacement.place), la finestra resta identica ma compare
+# accanto all'info panel invece che al centro. Vale per quell'apertura sola; {} = al centro come sempre.
+var popup_anchor: Dictionary = {}
+var _anchor: Dictionary = {}
 
 
 func _ready() -> void:
@@ -66,8 +71,11 @@ func open_dialog(dialog_title: String, message: String, count_label: String, min
 	_spin_box.min_value = min_value
 	_spin_box.max_value = max_value
 	_spin_box.value = clampi(default_value, min_value, max_value)
+	_anchor = popup_anchor
+	popup_anchor = {}
 	exclusive = true
 	popup_centered(Vector2i(DIALOG_WIDTH, DIALOG_HEIGHT))
+	DialogPlacement.place(self, _anchor)
 	_fit_to_content.call_deferred()
 
 
@@ -82,7 +90,7 @@ func _fit_to_content() -> void:
 	var fitted := Vector2i(maxi(DIALOG_WIDTH, ceili(min_size.x)), maxi(DIALOG_HEIGHT, ceili(min_size.y)))
 	if fitted != size:
 		size = fitted
-		move_to_center()
+		DialogPlacement.place(self, _anchor)
 
 
 func _on_window_input(event: InputEvent) -> void:

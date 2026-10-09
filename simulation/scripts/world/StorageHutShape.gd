@@ -11,6 +11,10 @@ extends RefCounted
 # al retro, e una porta di assi chiusa sul lato `direction`, piena e con la traversa.
 
 const HALF_SIZE: float = 2.6
+# Ingrandimento sulla mappa e nell'anteprima di piazzamento (2026-10-08, richiesta utente — era troppo piccola): stessa
+# forma, scalata finché la porta (il punto più sporgente, HALF_SIZE + DOOR_OUTSIDE = 3.05) arriva a ~4.6 su 5, cioè
+# quasi tutta la microcella con un piccolo margine. L'icona della barra non lo usa (ha la sua scala, DRAWING_SPAN).
+const MAP_SCALE: float = 1.5
 const ROOF_LIGHT := Color(0.74, 0.58, 0.36, 1.0)
 const ROOF_DARK := Color(0.60, 0.45, 0.27, 1.0)
 const OUTLINE := Color(0.30, 0.22, 0.12, 1.0)

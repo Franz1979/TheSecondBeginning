@@ -640,6 +640,85 @@ static func get_available_quantity(building: Building, resource_name: String) ->
 	return int(stored_entry.get("quantity", 0)) + int(building.production_output.get(resource_name, 0))
 
 
+# --- PRELIEVI AUTOMATICI (2026-10-08, richiesta utente — regola unica degli edifici di produzione) ---
+# Il magazzino di una workstation contiene solo ingredienti e combustibile delle sue ricette e lo usano in automatico solo
+# quelle ricette (ProductionService._consume_input); i Prodotti finiti (production_output) li può prelevare chiunque.
+# Quindi un prelievo AUTOMATICO (rifornimento di cantieri e produzioni, "Porta al deposito") da una workstation tocca solo
+# i Prodotti finiti, qualunque sia la risorsa (anche un ingrediente di una sua ricetta). Da un edificio che non è una
+# workstation: tutto, come withdraw/get_available_quantity. A mano (pannello) si usano sempre withdraw e
+# get_available_quantity: si preleva tutto, come prima.
+#
+# Workstation SENZA Prodotti finiti (2026-10-08, bugfix — 0 posti in uscita, ProductionService.get_output_capacity; oggi
+# il graticcio, dove il prodotto prende il posto dell'ingrediente nello stesso slot del magazzino): il magazzino resta
+# sorgente automatica, ma solo per le risorse che NON sono ingredienti né combustibile delle sue ricette
+# (ProductionService.is_workstation_ingredient, il criterio per nome di prima, usato solo qui). Decide il numero di posti
+# in uscita, mai il tipo di edificio.
+
+# true se `building` è una workstation: i suoi prelievi automatici seguono le regole sopra.
+static func is_workstation_source(building: Building) -> bool:
+	return building != null and building.rules != null and building.rules.is_workstation
+
+
+# true se da `building` i prelievi automatici prendono solo dai Prodotti finiti (workstation con posti in uscita).
+static func is_output_only_source(building: Building) -> bool:
+	return is_workstation_source(building) and ProductionService.get_output_capacity(building) > 0
+
+
+# true se `resource_name` NON si può prelevare in automatico da una workstation senza Prodotti finiti (è un suo
+# ingrediente o combustibile).
+static func _is_reserved_in_storage_only_workstation(building: Building, resource_name: String) -> bool:
+	return ProductionService.is_workstation_ingredient(building, resource_name)
+
+
+# Quantità prelevabile in automatico (vedi sopra).
+static func get_auto_available_quantity(building: Building, resource_name: String) -> int:
+	if not is_workstation_source(building):
+		return get_available_quantity(building, resource_name)
+	if building.is_marked_for_demolition:
+		return 0
+	if is_output_only_source(building):
+		return int(building.production_output.get(resource_name, 0))
+	if _is_reserved_in_storage_only_workstation(building, resource_name):
+		return 0
+	return get_available_quantity(building, resource_name)
+
+
+# Prelievo automatico per nome (vedi sopra). Ritorna quanto è stato prelevato.
+static func withdraw_auto(building: Building, resource_name: String, quantity_requested: int) -> int:
+	if not is_workstation_source(building):
+		return withdraw(building, resource_name, quantity_requested)
+	if quantity_requested <= 0 or building.is_marked_for_demolition:
+		return 0
+	if not is_output_only_source(building):
+		if _is_reserved_in_storage_only_workstation(building, resource_name):
+			return 0
+		return withdraw(building, resource_name, quantity_requested)
+	var withdrawn := ProductionService.withdraw_output(building, resource_name, quantity_requested)
+	if withdrawn > 0:
+		ProductionService.flush_output_to_storage(building)
+	return withdrawn
+
+
+# Prelievo automatico di attrezzi come istanze (vedi sopra): dai Prodotti finiti escono sempre pezzi nuovi.
+static func withdraw_tool_units_auto(building: Building, resource_name: String, quantity_requested: int) -> Array:
+	if not is_workstation_source(building):
+		return withdraw_tool_units(building, resource_name, quantity_requested)
+	if not is_output_only_source(building):
+		if _is_reserved_in_storage_only_workstation(building, resource_name):
+			return []
+		return withdraw_tool_units(building, resource_name, quantity_requested)
+	var units: Array = []
+	if quantity_requested <= 0 or not ToolInstance.is_tool_resource(resource_name) or building.is_marked_for_demolition:
+		return units
+	var from_output := ProductionService.withdraw_output(building, resource_name, quantity_requested)
+	var max_uses: int = ToolInstance.get_max_uses(resource_name)
+	for i in range(from_output):
+		units.append(ToolInstance.create(max_uses))
+	if not units.is_empty():
+		ProductionService.flush_output_to_storage(building)
+	return units
+
+
 # Prelievo dal SOLO stored_resources — il corpo originale di withdraw() (vedi il commento sopra
 # withdraw per il contratto), estratto il 2026-09-23 per ProductionService.complete_production, che
 # consuma gli input senza mai toccare il buffer di uscita né innescarne il travaso.

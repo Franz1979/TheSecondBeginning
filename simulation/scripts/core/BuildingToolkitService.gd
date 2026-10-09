@@ -61,15 +61,58 @@ static func get_remaining_uses_list(building: Building, tool_name: String) -> Ar
 	return uses
 
 
-# true se c'è posto per un pezzo di `tool_name`: è un attrezzo, il suo tipo ha meno pezzi del massimo, oppure è un tipo
-# nuovo e l'Attrezzeria ha ancora un tipo libero.
-static func can_add(building: Building, tool_name: String) -> bool:
+# Regola (2026-10-08, richiesta utente): nell'Attrezzeria vanno solo gli attrezzi che servono alle ricette dell'edificio,
+# cioè con almeno una categoria d'uso (SecondaryResourceRules.tool_categories) richiesta da una ricetta che elenca il
+# suo tipo (recipe_required_tool_categories). Armi e attrezzi che nessuna sua ricetta usa restano fuori. Controllata da
+# can_add, quindi vale per ogni strada (spunta "Tieni per l'edificio", fine pezzo, spostamento a mano dal pannello).
+static func is_accepted_tool(building: Building, tool_name: String) -> bool:
 	if not has_toolkit(building) or not ToolInstance.is_tool_resource(tool_name):
+		return false
+	var rules := CaloricCalculator.get_caloric_source_rules(tool_name)
+	if rules == null:
+		return false
+	var needed := get_recipe_tool_categories(building)
+	for category in rules.tool_categories:
+		if needed.has(int(category)):
+			return true
+	return false
+
+
+# Categorie d'attrezzo richieste dalle ricette che elencano il tipo di `building` (int, senza doppioni).
+static func get_recipe_tool_categories(building: Building) -> Array[int]:
+	var categories: Array[int] = []
+	if building == null:
+		return categories
+	for recipe_name in CaloricCalculator.list_secondary_resource_names():
+		var recipe_rules := CaloricCalculator.get_caloric_source_rules(recipe_name)
+		if recipe_rules == null or not recipe_rules.recipe_workstation_types.has(building.building_type_name):
+			continue
+		for category in recipe_rules.recipe_required_tool_categories:
+			if not categories.has(int(category)):
+				categories.append(int(category))
+	return categories
+
+
+# true se c'è posto per un pezzo di `tool_name`: è un attrezzo che serve alle ricette dell'edificio (is_accepted_tool),
+# il suo tipo ha meno pezzi del massimo, oppure è un tipo nuovo e l'Attrezzeria ha ancora un tipo libero.
+static func can_add(building: Building, tool_name: String) -> bool:
+	if not is_accepted_tool(building, tool_name):
 		return false
 	var quantity := get_quantity(building, tool_name)
 	if quantity > 0:
 		return quantity < get_units_per_type(building)
 	return get_tool_names(building).size() < get_type_capacity(building)
+
+
+# Pezzi di `tool_name` che l'Attrezzeria può ancora ricevere (2026-10-08, avviso dell'ordine nel pannello): posti liberi
+# del suo tipo se è già presente, un tipo intero se c'è un tipo libero, altrimenti 0 (0 anche se non è un attrezzo).
+static func get_free_units_for(building: Building, tool_name: String) -> int:
+	if not is_accepted_tool(building, tool_name):
+		return 0
+	var quantity := get_quantity(building, tool_name)
+	if quantity > 0:
+		return maxi(get_units_per_type(building) - quantity, 0)
+	return get_units_per_type(building) if get_tool_names(building).size() < get_type_capacity(building) else 0
 
 
 # Aggiunge un pezzo (istanza; usi pieni = pezzo nuovo). false se non c'è posto o il pezzo è rotto.

@@ -220,6 +220,26 @@ static func sync_buildings(cell: LiveMacroCell, macro_world: World) -> void:
 		])
 
 
+# Roccia esaurita dall'estrazione (2026-10-08, RockStoneService.is_depleted): la sua microcella esce dagli ostacoli e,
+# se nient'altro la blocca, diventa calpestabile per pipottini e animali; un cambio di blocco segna le regioni da rifare,
+# come sync_buildings. Senza griglia non fa nulla: la prossima rebuild salta già le rocce esaurite.
+static func release_stone(cell: LiveMacroCell, position: Vector2i) -> void:
+	if cell == null or cell.path_grid == null or cell.path_obstacles == null:
+		return
+	if not cell.path_obstacles.stones.erase(position) or not _in_bounds(position):
+		return
+	var solid := cell.path_solid
+	var blocked := _is_blocked_by_rule(cell, position)
+	var index := _index(position)
+	if (solid[index] == 1) != blocked:
+		solid[index] = 1 if blocked else 0
+		cell.path_grid.set_point_solid(position, blocked)
+		cell.path_solid = solid
+		cell.path_regions_dirty = true
+		cell.path_block_version += 1
+	cell.path_grid_version += 1
+
+
 # true se la microcella è bloccata (o fuori dalla macrocella, o griglia non ancora costruita).
 static func is_blocked(cell: LiveMacroCell, microcell: Vector2i) -> bool:
 	if cell == null or cell.path_grid == null or not _in_bounds(microcell):

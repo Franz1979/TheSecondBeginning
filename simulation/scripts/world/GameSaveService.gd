@@ -106,6 +106,13 @@ func save_game_to_json(
 			"random_event_category_last_year": game_data.random_event_category_last_year,
 			# Stato dei lavori senza nessuno assegnato (2026-10-07, JobBoardService): chiave -> stato, già JSON-nativo.
 			"job_board_states": game_data.job_board_states,
+			# Priorità della lista (2026-10-08): età dei lavori (chiave -> float), modo e ordine dei tipi, già JSON-nativi.
+			"job_board_entered_at": game_data.job_board_entered_at,
+			"job_board_priority_mode": game_data.job_board_priority_mode,
+			"job_board_kind_order": game_data.job_board_kind_order,
+			# Ordini creati dal cassetto (2026-10-09): già JSON-nativi.
+			"drawer_orders": game_data.drawer_orders,
+			"next_drawer_order_id": game_data.next_drawer_order_id,
 			# Gruppi di visitatori (2026-09-27): VisitorParty.to_save_data è già JSON-nativo.
 			"visitor_parties": game_data.visitor_parties.map(func(party: VisitorParty) -> Dictionary: return party.to_save_data()),
 			"next_visitor_party_id": game_data.next_visitor_party_id,

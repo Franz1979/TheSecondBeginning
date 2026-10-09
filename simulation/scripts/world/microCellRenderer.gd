@@ -255,6 +255,7 @@ var river_shape: GameTypes.RiverShape = GameTypes.RiverShape.NONE
 var river_thickness_ratio: float = 0.0 # river_space / MacroCellState.TOTAL_SPACE
 
 var stone_positions: Array = [] # Array[Vector2i]
+var depleted_stone_positions: Dictionary = {} # Vector2i -> true, vedi set_depleted_stone_positions
 # Edifici già piazzati in QUESTA macrocella — Array[Dictionary], ciascuna {"position": Vector2i,
 # "rotation": GameTypes.Direction, "id": int, "building_type_name": String} ("id" aggiunto Step 4,
 # richiesta utente 2026-09-04 — vedi set_selected_building/get_building_screen_position sotto;
@@ -537,6 +538,14 @@ func clear_river() -> void:
 	is_river = false
 	river_shape = GameTypes.RiverShape.NONE
 	river_thickness_ratio = 0.0
+	queue_redraw()
+
+
+# Rocce esaurite (2026-10-08, RockStoneService.get_depleted_positions): microcella -> true. Non si disegnano né si
+# evidenziano; restano in stone_positions perché i loro pebble si disegnano ancora lì.
+func set_depleted_stone_positions(positions: Dictionary) -> void:
+	depleted_stone_positions = positions
+	_rebuild_stone_multimeshes()
 	queue_redraw()
 
 
@@ -1010,7 +1019,7 @@ func clear_selected_stone() -> void:
 func _draw_selected_stone_highlight() -> void:
 	if _selected_stone_position == Vector2i(-1, -1):
 		return
-	if not stone_positions.has(_selected_stone_position):
+	if not stone_positions.has(_selected_stone_position) or depleted_stone_positions.has(_selected_stone_position):
 		return
 	var center := get_stone_screen_position(_selected_stone_position)
 	# Raggio della roccia ridisegnata (2026-09-27): STONE_MAX_EXTENT invece del vecchio 7,5 fisso.
@@ -1408,7 +1417,7 @@ func _draw_buildings() -> void:
 		# Capanna di stoccaggio (2026-10-03, richiesta utente): pianta quadrata chiusa, StorageHutShape. Niente griglia
 		# dei mucchietti (solo il sito di deposito la ha).
 		if building_type_name == "storage_hut":
-			StorageHutShape.draw(self, ground, direction)
+			StorageHutShape.draw(self, ground, direction, false, 1.0, StorageHutShape.MAP_SCALE)
 			continue
 		# Capanna dell'attrezzista (2026-09-24, richiesta utente) — disegno provvisorio: stessa sagoma
 		# della capanna (porta + recinto, ruota con `direction`), riempimento più scuro e un segno
@@ -1610,6 +1619,8 @@ const GROUND_UNDER_BUILDING_TYPES: Array[String] = [
 	"stick_tent", "hide_tent", "pebble_circle", "campfire", "drying_rack", "smokehouse", "burial", "earthwork", "stacked_stones",
 	# Capanna dell'attrezzista (2026-10-04, richiesta utente: si vedeva il verde sotto, come gli altri edifici).
 	"toolmaker_hut",
+	# Legnaia (2026-10-08, richiesta utente — segnaposto): stesso fondo degli altri edifici segnaposto.
+	"woodshed",
 ]
 
 
@@ -1892,6 +1903,9 @@ func _rebuild_stone_multimeshes() -> void:
 		buckets.append([]) # Array[Transform2D]
 
 	for pos in stone_positions:
+		# Roccia esaurita (2026-10-08): non si disegna più.
+		if depleted_stone_positions.has(pos):
+			continue
 		var variant: int = posmod(hash(pos), STONE_VARIANT_COUNT)
 
 		# Stesso identico centro-con-jitter di get_stone_screen_position (2026-09-08, estratta lì

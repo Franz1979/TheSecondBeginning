@@ -467,6 +467,8 @@ func _ready() -> void:
 
 			var stone_service := StonePositionService.new()
 			stone_service.generate_if_needed(macro_state, macro_cell)
+			# Rocce esaurite (2026-10-08, RockStoneService.is_depleted): non si disegnano.
+			renderer.set_depleted_stone_positions(RockStoneService.get_depleted_positions(macro_state))
 			renderer.set_stone_positions(macro_state.stone_positions)
 			# Pebble (2026-09-08, richiesta utente) — stessa fonte/stesso momento delle posizioni
 			# stone appena sopra. Registro unificato (2026-09-19, refactor lot_source): pebble vive
@@ -559,8 +561,11 @@ func _refresh_resource_visuals() -> void:
 	# freschi per pickup/ispezione microcella.
 
 	var occupied: Dictionary = {}
+	# Rocce esaurite (2026-10-08): non più vietate alla vegetazione, come in GameScene._refresh_resource_visuals.
+	var depleted_rocks := RockStoneService.get_depleted_positions(macro_state)
 	for pos in macro_state.stone_positions:
-		occupied[pos] = true
+		if not depleted_rocks.has(pos):
+			occupied[pos] = true
 	for pos in river_positions:
 		occupied[pos] = true
 

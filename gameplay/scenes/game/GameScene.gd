@@ -27,6 +27,11 @@ extends Node2D
 # Emesso quando compare sulla mappa la lampadina di un pensiero depositato (_spawn_idea_deposit_effect),
 # con la posizione globale dell'individuo. Ascoltato da AudioEventListener (2026-09-26, richiesta utente).
 signal idea_bulb_shown(global_pos: Vector2)
+# Emesso quando nella campanella "In sospeso" compare almeno una riga NUOVA (chiave mai vista al giro prima), una volta
+# per giro anche se ne compaiono più insieme; mai al primo giro (apertura o caricamento di una partita), né quando una
+# riga esistente cambia testo. Stesso momento del lampeggio della scheda (_refresh_pending_entries). Ascoltato da
+# AudioEventListener (2026-10-08, suono "bell").
+signal pending_entry_added
 # Emesso quando compare sulla mappa l'icona di un rito concluso (_spawn_rite_completed_effect), con la posizione
 # globale dell'edificio. Ascoltato da AudioEventListener (2026-10-03, richiesta utente — campana). sound_id (2026-10-04):
 # il suono scelto dalla ricetta del rito (RiteRules.completion_sound_id), &"" = quello di sempre.
@@ -821,8 +826,6 @@ func _ready() -> void:
 	building_info_panel.influence_footprint_requested.connect(_on_influence_footprint_requested)
 	building_info_panel.influence_preview_started.connect(_on_influence_preview_started)
 	building_info_panel.influence_preview_ended.connect(_clear_influence_preview)
-	# "Assegna demolitore" (2026-09-27): scelta del demolitore; uscire senza scegliere non annulla la demolizione.
-	building_info_panel.demolisher_assign_requested.connect(_enter_demolisher_pick_mode)
 	building_info_panel.demolition_cancel_requested.connect(_on_demolition_cancel_requested)
 	# idea_completed(idea_id) (2026-09-07, richiesta utente) — DUE ascoltatori separati, non uno
 	# solo con più responsabilità: _refresh_building_slots_buildable per lo sblocco edifici (stesso
@@ -1969,38 +1972,46 @@ func _stop_selected_individual_task() -> void:
 		if transport_selection_banner != null:
 			transport_selection_banner.visible = false
 		return
-	if HuntService.is_hunt_task(individual.current_task):
-		HuntService.log_event(individual, "caccia chiusa: annullata a mano (X o tasto H).")
+	_stop_member_task(individual)
+
+
+# Effetto di H su `member` (2026-10-09, estratto da _stop_selected_individual_task per la X delle righe "Diretto" del
+# cassetto): stessa chiusura della task corrente, regola del carico, "salta la lista una volta" e ripresa.
+func _stop_member_task(member: HumanIndividual) -> void:
+	if member == null:
+		return
+	if HuntService.is_hunt_task(member.current_task):
+		HuntService.log_event(member, "caccia chiusa: annullata a mano (X o tasto H).")
 	# Annullo del giocatore con l'assegnazione attiva (2026-10-07): al prossimo momento libero il pipottino salta una
 	# volta la lista dei lavori, altrimenti riprenderebbe subito il lavoro appena annullato.
-	if individual.current_task != null and JobBoardService.is_enabled(human_folk):
-		individual.skip_job_board_once = true
+	if member.current_task != null and JobBoardService.is_enabled(human_folk):
+		member.skip_job_board_once = true
 	var stopped_produce_building: Building = null
-	if individual.current_task != null and individual.current_task.task_name == "task_produce_name":
-		for step in individual.current_task.steps:
+	if member.current_task != null and member.current_task.task_name == "task_produce_name":
+		for step in member.current_task.steps:
 			if step is ProduceAction:
 				stopped_produce_building = (step as ProduceAction).target_building
 				break
 	# Regola unica del carico (2026-09-29, CargoReturnService.release_cargo): se la Task annullata possiede il carico,
 	# il pipottino lo riporta al magazzino più vicino (a terra solo se nessun magazzino lo accetta); H su una Task di
 	# ritorno la ferma davvero, con il carico a terra. Con un carico di un'altra Task lo zaino resta com'è.
-	var cargo_outcome := CargoReturnService.release_cargo(individual, individual.current_task, macro_world)
+	var cargo_outcome := CargoReturnService.release_cargo(member, member.current_task, macro_world)
 	if cargo_outcome != CargoReturnService.Outcome.RETURNING:
-		individual.stop(false)
+		member.stop(false)
 	# Ordine intero (2026-09-26): la produzione annullata non conta più nel fabbisogno dell'edificio.
 	if stopped_produce_building != null:
 		_reconcile_production_units(stopped_produce_building)
 	# Ritorno al magazzino già attivo come Task corrente: niente da risolvere.
 	if cargo_outcome == CargoReturnService.Outcome.RETURNING:
 		return
-	# Bugfix (2026-09-14, richiesta utente) — individual.stop() da solo azzera SOLO current_task,
+	# Bugfix (2026-09-14, richiesta utente) — member.stop() da solo azzera SOLO current_task,
 	# senza mai toccare task_queue né richiamare resolve_idle_individual: un individuo con una o più
 	# Task sospese in coda (es. interrotto prima da un bisogno stamina) restava bloccato per sempre
 	# con current_task null e la coda intatta, perché resolve_idle_individual (bisogno -> riprendi
 	# dalla coda -> fallback perditempo -> stop, vedi HumanIndividualActionService.gd) non era mai
 	# raggiunta da questo comando — solo da completamento naturale/seeding/nascita/load. STESSA
 	# chiamata già usata per quei tre casi (es. riga ~781 sopra).
-	HumanIndividualActionService.resolve_idle_individual(individual, _resolve_age_band(individual), macro_world)
+	HumanIndividualActionService.resolve_idle_individual(member, _resolve_age_band(member), macro_world)
 
 
 # TEST TEMPORANEO (2026-09-07, richiesta utente) — verifica che una Task a PIÙ step avanzi da sola
@@ -3315,6 +3326,7 @@ func _refresh_building_panel() -> void:
 		return
 	# Fabbisogno dell'ordine intero aggiornato prima di mostrarlo (2026-09-26).
 	_reconcile_production_units(building)
+	_sync_production_queue_mode(building)
 	building_info_panel.show_building(building, _resolve_building_residents_display_data(building), _resolve_names_working_on_building(building, BUILD_TASK_NAMES), _resolve_production_claimant_names(building), _resolve_production_orders(building), _resolve_production_tool_wait_lines(building), _resolve_names_working_on_building(building, DEMOLISH_TASK_NAMES))
 	building_info_panel.show_ground_pile(_ground_pile_lines_at(Vector2i(building.macro_x, building.macro_y), Vector2i(building.micro_x, building.micro_y)))
 	# Titolo (Step 6, richiesta utente 2026-09-04) — stessa formula già in BuildingInfoPanel. Dal 2026-09-27 (richiesta
@@ -3403,6 +3415,7 @@ func _on_empty_all_requested(building: Building) -> void:
 
 func _empty_building_contents(building: Building) -> void:
 	var pile := GroundPileService.drop_building_contents(game_data, building, macro_world)
+	_sync_production_queue_mode(building)
 	building_info_panel.show_building(building, _resolve_building_residents_display_data(building), _resolve_names_working_on_building(building, BUILD_TASK_NAMES), _resolve_production_claimant_names(building), _resolve_production_orders(building), _resolve_production_tool_wait_lines(building), _resolve_names_working_on_building(building, DEMOLISH_TASK_NAMES))
 	building_info_panel.show_ground_pile(_ground_pile_lines_at(Vector2i(building.macro_x, building.macro_y), Vector2i(building.micro_x, building.micro_y)))
 	var macro_coords := Vector2i(building.macro_x, building.macro_y)
@@ -3448,6 +3461,11 @@ func _empty_building_contents(building: Building) -> void:
 # prodotti finiti (true) — un pezzo passa nell'Attrezzeria, con i suoi usi rimasti; senza posto per quel tipo, rifiuto.
 func _on_toolkit_deposit_requested(building: Building, tool_name: String, from_output: bool) -> void:
 	if building == null or not BuildingToolkitService.has_toolkit(building):
+		return
+	# Attrezzo che nessuna ricetta dell'edificio usa (2026-10-08, BuildingToolkitService.is_accepted_tool): rifiuto col
+	# suo motivo, distinto da "non c'è posto".
+	if not BuildingToolkitService.is_accepted_tool(building, tool_name):
+		_report_command_rejection(null, tr("toolkit_reject_not_used").format({"tool": IconRegistry.get_resource_display_name(tool_name)}))
 		return
 	if not BuildingToolkitService.can_add(building, tool_name):
 		_report_command_rejection(null, tr("toolkit_reject_full").format({"tool": IconRegistry.get_resource_display_name(tool_name)}))
@@ -4117,6 +4135,7 @@ func _order_hunt(selected: Array[HumanIndividual]) -> void:
 	# Il dialog è condiviso con Raccogli: nessuna raccolta in attesa mentre è aperto per la caccia.
 	_pickup_dialog_work_area_workers = []
 	_hunt_dialog_hunters = hunters
+	pickup_choice_dialog.popup_anchor = _popup_anchor
 	var opened := pickup_choice_dialog.open_hunt_dialog(
 		tr("hunt_order_dialog_title"), tr("hunt_order_dialog_message"), HuntZoneService.MEAT_TARGET_OPTIONS,
 		UserOptions.hunt_zone_meat_target, _build_butcher_destination_options(),
@@ -4446,6 +4465,7 @@ func _order_quarry(selected: Array[HumanIndividual]) -> void:
 		return
 	# "Pietre da estrarre" (2026-10-05, passo 2): la zona segue alla conferma (_on_quarry_count_chosen).
 	_quarry_dialog_workers = workers
+	quarry_count_dialog.popup_anchor = _popup_anchor
 	quarry_count_dialog.open_dialog(
 		tr("quarry_order_dialog_title"), tr("quarry_order_dialog_message"), tr("quarry_order_dialog_count"),
 		QuarryZoneService.COUNT_MIN, QuarryZoneService.COUNT_MAX, UserOptions.work_area_quarry_count
@@ -4583,6 +4603,7 @@ func _order_cut(selected: Array[HumanIndividual]) -> void:
 			_report_command_rejection(worker, tr("command_bar_cut_no_zone_tooltip"))
 		return
 	_cut_dialog_workers = workers
+	cut_count_dialog.popup_anchor = _popup_anchor
 	cut_count_dialog.open_dialog(
 		tr("cut_order_dialog_title"), tr("cut_order_dialog_message"), tr("cut_order_dialog_count"),
 		CutZoneService.COUNT_MIN, CutZoneService.COUNT_MAX, UserOptions.work_area_cut_count
@@ -4642,6 +4663,9 @@ func _assign_work_area_cut(worker: HumanIndividual, area: WorkArea, count: int =
 # Serie di tagli interrotta (2026-10-06, passo 3): "<nome>: taglio interrotto a <fatte>/<totale>: <motivo>"
 # (HumanIndividualActionService.series_stopped_message) sul canale dei messaggi dell'abitante.
 func _report_cut_series_stopped(worker: HumanIndividual, series: Dictionary, reason: String) -> void:
+	# Ordine "Taglia" del cassetto (2026-10-09): tagli fatti annotati; senza più chi lo porta torna in coda con le piante
+	# che restano (_settle_drawer_cut_orders).
+	_note_drawer_cut_progress(series)
 	_report_command_rejection(worker, HumanIndividualActionService.series_stopped_message(worker, CutZoneService.SERIES_STOPPED_KEY, series, reason))
 
 
@@ -4663,6 +4687,13 @@ func _report_cut_pile_series_stopped(worker: HumanIndividual, pile_ref: Dictiona
 # bisogni). La serie si chiude con un messaggio se la zona non è più valida, l'accetta non c'è più o non resta una
 # pianta da tagliare.
 func _on_cut_zone_series_continue_requested(worker: HumanIndividual, series: Dictionary) -> void:
+	# Ordine "Taglia" del cassetto (2026-10-09): tagli fatti annotati, serie finita = ordine tolto; ordine rimesso in coda
+	# (Rimetti in coda) o annullato nel frattempo = la serie si ferma qui, senza messaggi.
+	if series.has(DRAWER_ORDER_SERIES_KEY):
+		_note_drawer_cut_progress(series)
+		var drawer_order := _find_drawer_order(int(series[DRAWER_ORDER_SERIES_KEY]))
+		if drawer_order.is_empty() or not bool(drawer_order.get("taken", false)):
+			return
 	if worker == null or not human_individuals.has(worker) or CutZoneService.is_series_complete(series):
 		return
 	# Serie su una microcella ("Tutte le piante", 2026-10-07): stessa prosecuzione, senza zona.
@@ -4737,6 +4768,8 @@ func _order_gather(candidates: Array[HumanIndividual]) -> void:
 	_pickup_pending_resources = []
 	_pickup_dialog_work_area_workers = workers
 	_hunt_dialog_hunters = []
+	# Dalla lista degli individui: accanto all'info panel (2026-10-09, _popup_anchor); dalla mappa {} = al centro.
+	pickup_choice_dialog.popup_anchor = _popup_anchor
 	pickup_choice_dialog.open_dialog(
 		tr("work_area_gather_dialog_title"), tr("work_area_gather_dialog_message"), entries,
 		UserOptions.get_pickup_default_choice(), false, HaulZoneService.WORK_AREA_MAX_REPEATS, false,
@@ -4850,6 +4883,11 @@ func _enter_work_area_pick_mode(workers: Array[HumanIndividual], order: Dictiona
 
 
 func _exit_work_area_pick_mode() -> void:
+	# Scelta della zona dello strato "Taglia" finita (con o senza zona): lo strato torna a rispondere a Esc.
+	if _drawer_cut_zone_picking:
+		_drawer_cut_zone_picking = false
+		if _task_assignment_panel != null and is_instance_valid(_task_assignment_panel):
+			_task_assignment_panel.end_cut_zone_pick()
 	_work_area_pick_active = false
 	_work_area_pick_workers = []
 	_work_area_pick_order = {}
@@ -4876,6 +4914,11 @@ func _handle_work_area_pick_input(event: InputEvent) -> bool:
 		var workers := _work_area_pick_workers
 		var order := _work_area_pick_order
 		_exit_work_area_pick_mode()
+		# Scelta per un ordine del cassetto (2026-10-09, strato "Taglia"): la zona va a chi l'ha chiesta, nessun ordine qui.
+		if order.has("on_pick"):
+			if area != null:
+				(order["on_pick"] as Callable).call(area)
+			return true
 		if String(order.get("job", "")) == HuntZoneService.HUNT_JOB:
 			HuntZoneService.log_event(null, "scelta manuale: %s." % ("zona %s #%d" % [area.name, area.id] if area != null else "nessuna zona valida sotto il mouse"))
 		if area != null:
@@ -5625,7 +5668,8 @@ func _on_extraction_choice_visibility_changed() -> void:
 # pipottino (in corso o in coda); il resto in _assign_extraction_task.
 # `work_area_id` (2026-10-06, taglio in zona): zona della pianta, scritta nel context per l'etichetta della task e della
 # consegna; -1 = comando col clic destro. `series` (passo 3): serie di tagli in zona ({} = taglio singolo).
-func _assign_cut_task(worker: HumanIndividual, plant: Dictionary, work_area_id: int = -1, series: Dictionary = {}) -> void:
+# `silent` (2026-10-09, presa dalla lista dei lavori — ordini "Taglia" del cassetto): nessun avviso, popup né X.
+func _assign_cut_task(worker: HumanIndividual, plant: Dictionary, work_area_id: int = -1, series: Dictionary = {}, silent: bool = false) -> void:
 	if worker == null or plant.is_empty():
 		return
 	var macro_coords: Vector2i = plant["macro_coords"]
@@ -5639,6 +5683,8 @@ func _assign_cut_task(worker: HumanIndividual, plant: Dictionary, work_area_id: 
 		return step is CutAction and (step as CutAction).is_same_plant(macro_coords, int(object_type), individual_key)
 	)
 	if holder != null:
+		if silent:
+			return
 		_spawn_command_icon_at_microcell(cell, lot, "task_rejected")
 		_report_command_rejection(worker, tr("cut_reject_reserved").format({"name": holder.name}))
 		return
@@ -5646,7 +5692,7 @@ func _assign_cut_task(worker: HumanIndividual, plant: Dictionary, work_area_id: 
 	if task == null:
 		return
 	var cut_yield := PlantCutService.compute_yield(cell.macro_state, object_type, individual_key, game_data.year)
-	_assign_extraction_task(worker, task, cell, lot, "task_activity_cut", "cut", String(cut_yield.get("resource_name", "")))
+	_assign_extraction_task(worker, task, cell, lot, "task_activity_cut", "cut", String(cut_yield.get("resource_name", "")), silent)
 
 
 # Task Cut (Walk + Cut) su `plant` ({"macro_coords", "object_type", "individual_key"}), senza assegnarla; zona e serie
@@ -5729,18 +5775,23 @@ func _build_quarry_task(worker: HumanIndividual, macro_coords: Vector2i, rock_po
 # come gli altri comandi. `activity_key` per i messaggi di rifiuto, `icon_key` per l'icona del comando.
 # `product_name` (2026-10-05): resa principale; se nemmeno un'unità entra a carico vuoto, avviso "non ha spazio per
 # trasportare" — il comando parte lo stesso.
-func _assign_extraction_task(worker: HumanIndividual, task: Task, cell: LiveMacroCell, lot: Vector2i, activity_key: String, icon_key: String, product_name: String = "") -> void:
+# `silent` (2026-10-09, presa dalla lista dei lavori): nessun avviso, popup né X; l'icona del comando solo se riuscita.
+func _assign_extraction_task(worker: HumanIndividual, task: Task, cell: LiveMacroCell, lot: Vector2i, activity_key: String, icon_key: String, product_name: String = "", silent: bool = false) -> void:
 	for step in task.steps:
 		_reconnect_build_task_signals(step)
 	var age_band := _resolve_age_band(worker)
 	var rejection := worker.get_assign_rejection_reason(task, age_band)
 	if rejection != HumanIndividual.ASSIGN_OK:
+		if silent:
+			return
 		_report_assign_rejection(worker, rejection, activity_key)
 		_spawn_command_icon_at_microcell(cell, lot, "task_rejected")
 		return
 	var assigned := false
 	if _is_extraction_chain_task(worker.current_task):
 		if worker.task_queue.size() >= TaskQueueService.MAX_QUEUE_SIZE - 1:
+			if silent:
+				return
 			_spawn_command_icon_at_microcell(cell, lot, "task_rejected")
 			_report_command_rejection(worker, tr("cut_reject_queue_full").format({"name": worker.name}))
 			return
@@ -5748,10 +5799,11 @@ func _assign_extraction_task(worker: HumanIndividual, task: Task, cell: LiveMacr
 		assigned = true
 	else:
 		assigned = worker.assign_task(task, age_band)
-	if not assigned:
+	if not assigned and not silent:
 		_report_failed_assignment(worker, task, activity_key)
-	_spawn_command_icon_at_microcell(cell, lot, icon_key if assigned else "task_rejected")
-	if assigned and product_name != "" and not worker.can_carry_one_unit_when_empty(product_name):
+	if assigned or not silent:
+		_spawn_command_icon_at_microcell(cell, lot, icon_key if assigned else "task_rejected")
+	if assigned and not silent and product_name != "" and not worker.can_carry_one_unit_when_empty(product_name):
 		_report_command_rejection(worker, HumanIndividualActionService.no_room_message(worker, [product_name]))
 		# Avviso su una task che parte lo stesso: resta finché la task è in corso o in coda.
 		worker.bind_panel_message_to_task(task)
@@ -5806,7 +5858,18 @@ func _on_rock_quarried(macro_coords: Vector2i, rock_position: Vector2i) -> void:
 	if cell == null:
 		return
 	_refresh_collected_resource_visuals(cell, {RockStoneService.PEBBLE_RESOURCE_NAME: 1}, rock_position)
-	if not selected_stone.is_empty() and selected_stone["macro_coords"] == macro_coords and selected_stone["position"] == rock_position:
+	var is_selected: bool = not selected_stone.is_empty() and selected_stone["macro_coords"] == macro_coords \
+		and selected_stone["position"] == rock_position
+	# Roccia esaurita (2026-10-08, RockStoneService.is_depleted): sparisce dal disegno, libera la microcella nella griglia
+	# dei percorsi (la costruzione rilegge già gli ostacoli a ogni verifica) e, se selezionata, esce dalla selezione.
+	if RockStoneService.is_depleted(cell.macro_state, rock_position):
+		if cell.renderer != null:
+			cell.renderer.set_depleted_stone_positions(RockStoneService.get_depleted_positions(cell.macro_state))
+		PathfindingService.release_stone(cell, rock_position)
+		if is_selected:
+			_clear_stone_selection()
+		return
+	if is_selected:
 		_refresh_stone_panel()
 
 
@@ -6085,7 +6148,7 @@ func _remembered_microcell_lines(macro_coords: Vector2i, lot: Vector2i) -> Array
 	var building := _find_building_at_microcell(macro_coords, lot)
 	if building != null and building.rules != null:
 		types.append(tr(building.rules.building_name))
-	if cell.macro_state.stone_positions.has(lot):
+	if RockStoneService.is_standing_rock(cell.macro_state, lot):
 		types.append(tr("stone_selection_title"))
 	if not _build_vegetation_lot_breakdown(cell, GameTypes.WorldObjectType.TREE, lot).is_empty():
 		types.append(tr("microcell_inspection_tree"))
@@ -6160,7 +6223,8 @@ func _handle_microcell_inspection_double_click(event: InputEvent) -> void:
 	var shrub_present: bool = not shrub_breakdown.is_empty()
 	var grass_present: bool = vegetation_positions.get(GameTypes.WorldObjectType.GRASS, []).has(lot)
 	# Roccia sulla cella (2026-10-05, Quarry): riga "Pietra: N" (pietra rimasta) tra le risorse raccoglibili.
-	var rock_present: bool = cell != null and cell.macro_state != null and cell.macro_state.stone_positions.has(lot)
+	# Una roccia esaurita (2026-10-08) non conta più: niente riga "Pietra: 0".
+	var rock_present: bool = cell != null and RockStoneService.is_standing_rock(cell.macro_state, lot)
 
 	var lines: Array[String] = []
 	if lot_candidates.is_empty() and not rock_present and not tree_present and not shrub_present and grass_present:
@@ -6922,9 +6986,6 @@ func _assign_resumable_building_task(worker: HumanIndividual, hit_building: Buil
 # stile di quello della Transport) e cursore a cerchietto rosso. _worker_pick_on_pick valido = modalità attiva.
 var _worker_pick_on_pick: Callable = Callable()
 var _worker_pick_on_cancel: Callable = Callable()
-# Edificio del mirino del demolitore aperto (2026-10-07, lista dei lavori): finché il mirino è aperto resta fuori dalla
-# lista (_take_listed_job_for, cassetto), così nessuno lo prende da solo mentre il giocatore sceglie. null = nessuno.
-var _demolisher_pick_building: Building = null
 # true mentre la scelta del lavoratore attiva è quella della produzione (2026-09-27): la griglia delle ricette la chiude
 # quando l'ordine torna a 0, senza toccare quella del demolitore.
 var _produce_pick_active: bool = false
@@ -6944,7 +7005,8 @@ const PRODUCE_TASK_DEFINITION_PATH := "res://gameplay/scripts/tasks/definitions/
 
 # true se l'edificio ha già tante Produce Task assegnate quante ne ammette (BuildingRules.
 # production_concurrent_orders, 2026-09-24): stessa regola usata dal pannello per spegnere le ricette.
-# Ordini separati (2026-10-04): contano gli ordini con un lavoratore; quelli senza vengono liberati per far posto.
+# Ordini separati (2026-10-04): contano gli ordini con un lavoratore; quelli senza vengono liberati per far posto (con
+# l'idea dell'assegnazione, dal 2026-10-09, mai: restano in coda).
 # true se `task` è una Produce Task non conclusa con un passo di produzione su `building`.
 func _works_on_production_at(task: Task, building: Building) -> bool:
 	if task == null or task.is_finished() or not PRODUCE_TASK_NAMES.has(task.task_name):
@@ -7005,6 +7067,9 @@ func _enter_produce_assign_mode(building: Building, resource_name: String, quant
 # aggiorna, con la quantità nuova) la scelta del lavoratore della produzione; 0 = la chiude, se è quella della
 # produzione. Se la produzione non può partire (buffer pieno, postazione impegnata) l'ordine torna a 0.
 func _on_production_order_changed(building: Building, resource_name: String, quantity: int, deliver_to_warehouse: bool, keep_for_building: bool = false) -> void:
+	if JobBoardService.is_enabled(human_folk):
+		_queue_production_order(building, resource_name, quantity, deliver_to_warehouse, keep_for_building)
+		return
 	if quantity <= 0:
 		if _produce_pick_active:
 			_exit_worker_pick_mode()
@@ -7014,30 +7079,81 @@ func _on_production_order_changed(building: Building, resource_name: String, qua
 		building_info_panel.reset_production_order()
 
 
-# Scelta del demolitore (2026-09-27, richiesta utente) per un edificio "da demolire": l'individuo scelto riceve la
-# Demolish Task come con il click destro (_assign_resumable_building_task). cancel_demolition_on_exit: true subito
-# dopo la conferma della demolizione (uscire senza scegliere annulla la demolizione, _cancel_building_demolition);
-# false dal bottone "Assegna demolitore" del pannello (uscire lascia l'edificio "da demolire").
-func _enter_demolisher_pick_mode(building: Building, cancel_demolition_on_exit: bool = false) -> void:
-	if building == null or building.is_demolished or not building.is_marked_for_demolition:
+# Ordini in coda (2026-10-09, richiesta utente — con l'idea dell'assegnazione): il clic sulla ricetta non apre il mirino,
+# crea subito l'ordine sull'edificio senza lavoratore (lo stesso stato di un ordine con "Assegna") ed entra nella lista dei
+# lavori ("produce:<id>:<ordine>", _produce_jobs_collect: attesa, icona, Blocca/Sblocca, priorità...). Finché nessuno lo
+# prende, l'ultimo ordine creato dal pannello resta "in preparazione" (_production_queue_draft): altri clic sulla stessa
+# ricetta ne cambiano la quantità (0 = annullato, come la X), le spunte ne cambiano la consegna. Preso da un pipottino,
+# annullato o cambiata ricetta, il clic successivo crea un ordine nuovo. Gli ordini oltre production_concurrent_orders
+# nascono lo stesso (in coda come "Edificio occupato").
+var _production_queue_draft: Dictionary = {}  # {"building_id", "order_key"} dell'ordine in preparazione; {} = nessuno
+
+
+func _queue_production_order(building: Building, resource_name: String, quantity: int, deliver_to_warehouse: bool, keep_for_building: bool) -> void:
+	if building == null:
 		return
-	var on_cancel := Callable()
-	if cancel_demolition_on_exit:
-		on_cancel = func() -> void:
-			_cancel_building_demolition(building)
-	var on_pick := func(worker: HumanIndividual) -> void:
-		if building.is_demolished or not building.is_marked_for_demolition:
-			return
-		_assign_resumable_building_task(worker, building)
+	if keep_for_building and not BuildingToolkitService.can_add(building, resource_name):
+		keep_for_building = false
+	var draft_key := _get_production_queue_draft_key(building)
+	if draft_key != "" and ProductionService.get_order_recipe(building, draft_key) != resource_name:
+		draft_key = ""
+	if quantity <= 0:
+		if draft_key != "":
+			_production_queue_draft = {}
+			_on_production_order_cancel_requested(building, draft_key)
+		_refresh_pending_entries()
 		_refresh_selected_building_panel()
-	_enter_worker_pick_mode(tr("demolisher_pick_banner_text"), on_pick, on_cancel)
-	_demolisher_pick_building = building
+		return
+	var units := clampi(quantity, 1, ProductionService.get_max_order_quantity(building))
+	if draft_key != "":
+		ProductionService.set_order_units(building, draft_key, units)
+		ProductionService.set_order_delivery(building, draft_key, deliver_to_warehouse, keep_for_building)
+	# Coda dell'edificio piena (2026-10-09, production_max_orders): create_order non ne crea un altro.
+	elif ProductionService.can_produce_at(building, resource_name) and ProductionService.has_output_room(building, resource_name) \
+			and not ProductionService.has_max_orders(building):
+		var order_key := ProductionService.create_order(building, resource_name, units, -1, keep_for_building, deliver_to_warehouse, true)
+		if order_key != "":
+			_production_queue_draft = {"building_id": building.id, "order_key": order_key}
+			if DebugLogging.ENABLED and DebugLogging.SHOW_TRANSPORT_BUILD_LOGS:
+				print("[PRODUCE] Ordine '%s' x%d in coda presso l'edificio #%d (%s)." % [resource_name, units, building.id, order_key])
+	_refresh_pending_entries()
+	_refresh_selected_building_panel()
+
+
+# Chiave dell'ordine in preparazione di `building` se esiste ancora e nessuno lo lavora; "" altrimenti.
+func _get_production_queue_draft_key(building: Building) -> String:
+	if building == null or _production_queue_draft.is_empty() or int(_production_queue_draft["building_id"]) != building.id:
+		return ""
+	var order_key := String(_production_queue_draft["order_key"])
+	if not ProductionService.has_order(building, order_key) or _production_order_workers(building).has(order_key):
+		_production_queue_draft = {}
+		return ""
+	return order_key
+
+
+# Prima di ogni show_building (2026-10-09): il pannello sa se l'idea c'è e mostra nella griglia l'ordine in preparazione.
+func _sync_production_queue_mode(building: Building) -> void:
+	# Suggerimento "come assegnarlo" del pannello (2026-10-09): idea dell'assegnazione e stato del lavoro dell'edificio
+	# nella coda (cantiere build/upgrade o demolizione, chiavi di _building_jobs_collect).
+	var job_kind := "demolish" if building.is_marked_for_demolition else (
+		"upgrade" if BuildingUpgradeService.get_upgrade_from_rules(building) != null else "build"
+	)
+	building_info_panel.set_assign_hint_state(
+		JobBoardService.is_enabled(human_folk),
+		JobBoardService.get_state(game_data, "%s:%d" % [job_kind, building.id]) == JobBoardService.STATE_LOCKED
+	)
+	if not JobBoardService.is_enabled(human_folk):
+		building_info_panel.set_production_queue_mode(false)
+		return
+	var draft_key := _get_production_queue_draft_key(building)
+	building_info_panel.set_production_queue_mode(
+		true, building.id, ProductionService.get_order_recipe(building, draft_key), ProductionService.get_order_units(building, draft_key)
+	)
 
 
 func _enter_worker_pick_mode(banner_text: String, on_pick: Callable, on_cancel: Callable = Callable()) -> void:
 	# La produzione lo rimette a true subito dopo (_enter_produce_assign_mode); ogni altra scelta lo lascia false.
 	_produce_pick_active = false
-	_demolisher_pick_building = null
 	_worker_pick_on_pick = on_pick
 	_worker_pick_on_cancel = on_cancel
 	if worker_pick_banner_label != null:
@@ -7051,7 +7167,6 @@ func _enter_worker_pick_mode(banner_text: String, on_pick: Callable, on_cancel: 
 func _exit_worker_pick_mode() -> void:
 	_worker_pick_on_pick = Callable()
 	_worker_pick_on_cancel = Callable()
-	_demolisher_pick_building = null
 	_produce_pick_active = false
 	if worker_pick_banner != null:
 		worker_pick_banner.visible = false
@@ -7214,8 +7329,17 @@ func _describe_tool_wait(task: Task) -> String:
 # della Build: icona di comando se assegnata (o accodata), X se rifiutata.
 # `existing_order_key` (2026-10-04, riassegnazione): ordine già sull'edificio rimasto senza lavoratore — niente
 # controllo dei posti né nuovo ordine; la produzione si lega a quell'ordine, con i pezzi che gli mancano.
-func _assign_produce_task(worker: HumanIndividual, target_building: Building, resource_name: String, quantity: int = 1, deliver_to_warehouse: bool = true, existing_order_key: String = "", keep_for_building: bool = false) -> void:
-	# "Tieni per l'edificio" e "Consegna al magazzino" si escludono (2026-10-04, Attrezzeria).
+# Dal 2026-10-09 (ordini in coda) la riassegnazione usa la consegna salvata nell'ordine e, con l'edificio al completo
+# (ordini con un lavoratore = production_concurrent_orders), viene rifiutata come un ordine nuovo. `silent` (2026-10-09,
+# presa dalla lista dei lavori): nessun avviso, popup né X; i controlli li ha già fatti _produce_job_rejection.
+func _assign_produce_task(worker: HumanIndividual, target_building: Building, resource_name: String, quantity: int = 1, deliver_to_warehouse: bool = true, existing_order_key: String = "", keep_for_building: bool = false, silent: bool = false) -> void:
+	if existing_order_key != "":
+		deliver_to_warehouse = ProductionService.get_order_deliver_to_warehouse(target_building, existing_order_key)
+	# "Tieni per l'edificio" vale solo se il prodotto è un attrezzo e l'Attrezzeria ha posto per lui (2026-10-08,
+	# BuildingToolkitService.can_add); altrimenti si ignora e "Consegna al magazzino" resta com'è. Le due si escludono
+	# (2026-10-04, Attrezzeria). Riassegnazione di un ordine esistente: vale la scelta già salvata nell'ordine.
+	if keep_for_building and existing_order_key == "" and not BuildingToolkitService.can_add(target_building, resource_name):
+		keep_for_building = false
 	if keep_for_building:
 		deliver_to_warehouse = false
 	if worker == null or target_building == null or not ProductionService.can_produce_at(target_building, resource_name):
@@ -7223,35 +7347,17 @@ func _assign_produce_task(worker: HumanIndividual, target_building: Building, re
 	var is_reassignment := existing_order_key != ""
 	if is_reassignment and not ProductionService.has_order(target_building, existing_order_key):
 		return
-	if not is_reassignment and _has_max_concurrent_orders(target_building):
-		_report_production_orders_full(worker, target_building)
-		_refresh_selected_building_panel()
+	if _has_max_concurrent_orders(target_building):
+		if not silent:
+			_report_production_orders_full(worker, target_building)
+			_refresh_selected_building_panel()
 		return
 	if not is_reassignment and not ProductionService.has_output_room(target_building, resource_name):
 		return
 	quantity = clampi(quantity, 1, ProductionService.get_max_order_quantity(target_building))
-	var definition := load(PRODUCE_TASK_DEFINITION_PATH) as TaskDefinition
-	if definition == null:
+	var task := _build_produce_task(worker, target_building, resource_name, quantity, deliver_to_warehouse)
+	if task == null:
 		return
-
-	# Stessa formula cross-macrocella di _resolve_transport_context, più il jitter interno alla cella
-	# di Building.get_resumable_task_context (lavoratori diversi non si fermano nello stesso punto).
-	var macro_offset: Vector2 = Vector2(Vector2i(target_building.macro_x, target_building.macro_y) - worker.home_macro_coords) * World.WIDTH
-	var jitter := Vector2(randf_range(0.15, 0.85), randf_range(0.15, 0.85))
-	var target_position: Vector2 = Vector2(target_building.micro_x, target_building.micro_y) + jitter + macro_offset
-	var task := TaskFactory.build_task(definition, {
-		"target_position": target_position,
-		"target_building": target_building,
-		"produce_resource_name": resource_name,
-		"produce_quantity": quantity,
-	})
-	task.debug_target_key = "production:%d" % target_building.id
-	# Nome del prodotto per il pannello individuo (Task.get_activity_description): chiave NON consumata
-	# da TaskFactory, resta in task.context per tutta la vita della Task (e nel salvataggio).
-	task.context["production_resource_name"] = resource_name
-	task.context["production_quantity"] = quantity
-	# Consegna al magazzino a ordine finito (2026-09-26): letta dallo step di consegna (RetrieveAction), salvata col context.
-	task.context[RetrieveAction.CONTEXT_DELIVER_TO_WAREHOUSE] = deliver_to_warehouse
 
 	var building_macro_coords := Vector2i(target_building.macro_x, target_building.macro_y)
 	# Idoneità PRIMA del gate degli attrezzi (2026-09-26, richiesta utente): il gate sposta davvero gli
@@ -7259,6 +7365,8 @@ func _assign_produce_task(worker: HumanIndividual, target_building: Building, re
 	# insufficiente, ...) va rifiutato prima, senza toccare zaino né cintura. X rossa + popup col motivo.
 	var rejection := worker.get_assign_rejection_reason(task, _resolve_age_band(worker))
 	if rejection != HumanIndividual.ASSIGN_OK:
+		if silent:
+			return
 		_report_assign_rejection(worker, rejection, "task_activity_produce")
 		if live_cells.has(building_macro_coords):
 			_spawn_command_icon_at_microcell(
@@ -7282,7 +7390,7 @@ func _assign_produce_task(worker: HumanIndividual, target_building: Building, re
 		worker, BuildingToolkitService.filter_uncovered(target_building, ToolGateService.get_required_categories(task)), game_data
 	)
 	if tool_gate["result"] == ToolGateService.Result.MISSING_TOOLS:
-		if UserOptions.show_notification_popups:
+		if UserOptions.show_notification_popups and not silent:
 			notification_popup.enqueue(
 				NotificationTypes.NotificationPopupType.TOOL_REQUIRED,
 				tr("tool_gate_assigned_waiting").format({
@@ -7291,6 +7399,8 @@ func _assign_produce_task(worker: HumanIndividual, target_building: Building, re
 				})
 			)
 	elif tool_gate["result"] != ToolGateService.Result.OK:
+		if silent:
+			return
 		_report_tool_gate_failure(worker, tool_gate)
 		if live_cells.has(building_macro_coords):
 			_spawn_command_icon_at_microcell(
@@ -7313,11 +7423,21 @@ func _assign_produce_task(worker: HumanIndividual, target_building: Building, re
 	var order_key := existing_order_key
 	if is_reassignment:
 		ProductionService.set_order_worker_id(target_building, order_key, worker.id)
+	elif JobBoardService.is_enabled(human_folk):
+		# Ordini in coda (2026-10-09): con l'idea gli ordini senza lavoratore non vengono mai cancellati per fare posto;
+		# il limite vale per gli ordini con un lavoratore, già controllato sopra.
+		order_key = ProductionService.create_order(target_building, resource_name, quantity, worker.id, keep_for_building, deliver_to_warehouse, true)
 	else:
 		ProductionService.free_slot_from_unclaimed(target_building, _production_order_workers(target_building))
-		order_key = ProductionService.create_order(target_building, resource_name, quantity, worker.id, keep_for_building)
+		order_key = ProductionService.create_order(target_building, resource_name, quantity, worker.id, keep_for_building, deliver_to_warehouse)
 	if order_key == "":
-		_report_production_orders_full(worker, target_building)
+		# Con l'idea il limite toccato è quello degli ordini in tutto (coda dell'edificio piena, 2026-10-09).
+		if JobBoardService.is_enabled(human_folk):
+			_report_command_rejection(worker, tr("produce_reject_queue_full").format({
+				"building": _building_display_name(target_building), "max": ProductionService.get_max_orders(target_building),
+			}))
+		else:
+			_report_production_orders_full(worker, target_building)
 		if live_cells.has(building_macro_coords):
 			_spawn_command_icon_at_microcell(live_cells[building_macro_coords], Vector2i(target_building.micro_x, target_building.micro_y), "task_rejected")
 		_refresh_selected_building_panel()
@@ -7336,9 +7456,14 @@ func _assign_produce_task(worker: HumanIndividual, target_building: Building, re
 		# Una riassegnazione fallita lascia l'ordine com'era, senza lavoratore.
 		if not is_reassignment:
 			ProductionService.cancel_order(target_building, order_key)
-		_report_failed_assignment(worker, task, "task_activity_produce")
+		if not silent:
+			_report_failed_assignment(worker, task, "task_activity_produce")
+	else:
+		# Lavoro assegnato (2026-10-09): esce dalla lista; se ci tornerà, l'attesa per l'assegnazione a mano riparte.
+		var job_keys: Array[String] = ["produce:%d:%s" % [target_building.id, order_key]]
+		_forget_job_board_wait(job_keys)
 	_reconcile_production_units(target_building)
-	if live_cells.has(building_macro_coords):
+	if live_cells.has(building_macro_coords) and (assigned or not silent):
 		_spawn_command_icon_at_microcell(
 			live_cells[building_macro_coords],
 			Vector2i(target_building.micro_x, target_building.micro_y),
@@ -7348,6 +7473,34 @@ func _assign_produce_task(worker: HumanIndividual, target_building: Building, re
 	_refresh_selected_building_panel()
 	if assigned and DebugLogging.ENABLED and DebugLogging.SHOW_TRANSPORT_BUILD_LOGS:
 		print("[PRODUCE] Task di produzione '%s' x%d assegnata a #%d %s presso l'edificio #%d." % [resource_name, quantity, worker.id, worker.name, target_building.id])
+
+
+# Produce Task [Walk → Produce] di `quantity` pezzi di `resource_name` presso `target_building` (mai assegnata qui): la
+# stessa dell'assegnazione a mano, usata anche come task di prova dalla lista dei lavori (_produce_job_rejection). null se
+# la definizione non si carica.
+func _build_produce_task(worker: HumanIndividual, target_building: Building, resource_name: String, quantity: int, deliver_to_warehouse: bool) -> Task:
+	var definition := load(PRODUCE_TASK_DEFINITION_PATH) as TaskDefinition
+	if definition == null:
+		return null
+	# Stessa formula cross-macrocella di _resolve_transport_context, più il jitter interno alla cella
+	# di Building.get_resumable_task_context (lavoratori diversi non si fermano nello stesso punto).
+	var macro_offset: Vector2 = Vector2(Vector2i(target_building.macro_x, target_building.macro_y) - worker.home_macro_coords) * World.WIDTH
+	var jitter := Vector2(randf_range(0.15, 0.85), randf_range(0.15, 0.85))
+	var target_position: Vector2 = Vector2(target_building.micro_x, target_building.micro_y) + jitter + macro_offset
+	var task := TaskFactory.build_task(definition, {
+		"target_position": target_position,
+		"target_building": target_building,
+		"produce_resource_name": resource_name,
+		"produce_quantity": quantity,
+	})
+	task.debug_target_key = "production:%d" % target_building.id
+	# Nome del prodotto per il pannello individuo (Task.get_activity_description): chiave NON consumata
+	# da TaskFactory, resta in task.context per tutta la vita della Task (e nel salvataggio).
+	task.context["production_resource_name"] = resource_name
+	task.context["production_quantity"] = quantity
+	# Consegna al magazzino a ordine finito (2026-09-26): letta dallo step di consegna (RetrieveAction), salvata col context.
+	task.context[RetrieveAction.CONTEXT_DELIVER_TO_WAREHOUSE] = deliver_to_warehouse
+	return task
 
 
 # ============================================================================================
@@ -8735,10 +8888,12 @@ func _refresh_pending_entries() -> void:
 		var rules := ExpiredObjectCalculator.get_object_rules(ExpiredObjectTypes.ExpiredObjectType.DEAD_BODY)
 		var days := ExpiredObjectCalculator.get_days_remaining(record, rules, game_data.year, game_data.current_day) if rules != null else 0
 		var body_macro: Vector2i = record["home_macro_coords"]
-		# Stesso schema delle altre voci, tutto a dimensione normale (2026-10-07): "Sepoltura · <nome> · restano N gg".
+		# Due livelli (2026-10-09, richiesta utente — PendingPanel): "Sepoltura · <nome>", sotto "Restano N gg per la sepoltura".
 		body_entries.append(_pending_entry(
 			"body:%d" % body_id, tr("pending_body").format({"name": BodyBurialService.get_body_name(record), "days": days}),
-			{"kind": "body", "id": body_id, "macro": body_macro, "sort": days}
+			{"kind": "body", "id": body_id, "macro": body_macro, "sort": days,
+				"name": tr("pending_body_name").format({"name": BodyBurialService.get_body_name(record)}),
+				"detail": tr("pending_reason_body").format({"days": days})}
 		))
 	body_entries.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return int(a["sort"]) < int(b["sort"]))
 	entries.append_array(body_entries)
@@ -8752,6 +8907,9 @@ func _refresh_pending_entries() -> void:
 	# Lavori gestiti dalla lista ancora da fare, assegnati o no (JobBoardService.forget_missing).
 	var board_job_keys: Dictionary = {}
 	var board_enabled := JobBoardService.is_enabled(human_folk)
+	# Ordini "Taglia" del cassetto (2026-10-09): quelli presi che nessuno porta più tornano in coda (o spariscono a serie
+	# finita) prima di raccogliere i lavori.
+	_settle_drawer_cut_orders()
 	# Lavori della lista (generici, _collect_job_board_jobs): attese e icone, poi le righe del cassetto (sotto).
 	var board_jobs := _collect_job_board_jobs(assigned)
 	_update_job_board_waits(board_jobs)
@@ -8763,13 +8921,15 @@ func _refresh_pending_entries() -> void:
 			var jobs: Array[Dictionary] = []
 			if building.is_marked_for_demolition:
 				if not assigned["demolish"].has(building.id):
-					jobs.append({"key": "demolish:%d" % building.id, "text": tr("pending_demolish").format({"building": building_name})})
+					jobs.append({"key": "demolish:%d" % building.id, "text": tr("pending_demolish").format({"building": building_name}),
+						"detail": tr("pending_reason_demolisher_missing")})
 			elif not building.is_complete:
 				var is_upgrade := BuildingUpgradeService.get_upgrade_from_rules(building) != null
 				if not assigned["build"].has(building.id):
 					jobs.append({
 						"key": "%s:%d" % ["upgrade" if is_upgrade else "build", building.id],
 						"text": tr("pending_upgrade" if is_upgrade else "pending_build").format({"building": building_name}),
+						"detail": tr("pending_reason_builder_missing"),
 					})
 			elif building.rules.is_workstation:
 				for order_key in ProductionService.get_order_keys(building):
@@ -8784,6 +8944,7 @@ func _refresh_pending_entries() -> void:
 						"text": tr("pending_produce").format({
 							"building": building_name, "product": IconRegistry.get_resource_display_name(recipe_name),
 						}),
+						"detail": tr("pending_reason_producer_missing"),
 					})
 			for job in jobs:
 				var key := String(job["key"])
@@ -8795,6 +8956,7 @@ func _refresh_pending_entries() -> void:
 					continue
 				job_entries.append(_pending_entry(key, String(job["text"]), {
 					"kind": "building", "id": building.id, "macro": Vector2i(building.macro_x, building.macro_y), "sort": since,
+					"name": String(job["text"]), "detail": String(job["detail"]),
 				}))
 	# Lavori presi da qualcuno o spariti: il conto riparte da zero.
 	for key in _pending_unassigned_since.keys():
@@ -8806,20 +8968,35 @@ func _refresh_pending_entries() -> void:
 		return String(a["key"]) < String(b["key"])
 	)
 	entries.append_array(job_entries)
+	# Pipottini fermi in attesa di materiale che nessun magazzino ha (2026-10-08), con o senza l'idea dell'assegnazione.
+	entries.append_array(_collect_material_wait_entries())
+	# Pipottini fermi perché manca l'attrezzo richiesto dalla task (2026-10-09), con o senza l'idea dell'assegnazione.
+	entries.append_array(_collect_tool_wait_entries())
 	# Righe del cassetto (2026-10-07), solo con l'idea: "In coda" i lavori senza nessuno (subito, attivi o bloccati, non
 	# nascosti), "In corso" quelli con almeno un lavoratore (solo a cassetto aperto, i nomi costano un giro).
+	var listed_jobs: Array[Dictionary] = []
 	for job in board_jobs:
 		board_job_keys[String(job["key"])] = true
 		if not board_enabled:
 			continue
 		if not bool(job["assigned"]):
 			if not bool(job["hidden"]):
-				listed_entries.append(_job_board_drawer_entry(job, false))
+				listed_jobs.append(job)
 		elif drawer_open:
 			in_progress_entries.append(_job_board_drawer_entry(job, true))
+	# Età dei lavori (2026-10-08, JobBoardService.stamp_entered): segnata al primo ingresso in coda, mai azzerata.
+	JobBoardService.stamp_entered(game_data, listed_jobs, _job_board_now())
 	JobBoardService.forget_missing(game_data, board_job_keys)
-	listed_entries.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return float(a["sort"]) < float(b["sort"]))
+	# Righe "In coda" nell'ordine del modo di priorità attivo (2026-10-08).
+	JobBoardService.sort_for_display(game_data, listed_jobs)
+	for job in listed_jobs:
+		listed_entries.append(_job_board_drawer_entry(job, false))
+	# Comandi diretti in corso (2026-10-09, richiesta utente): "In corso" mostra tutto il lavoro del villaggio.
+	if board_enabled and drawer_open:
+		in_progress_entries.append_array(_collect_direct_command_entries(board_jobs))
 	if _task_assignment_panel != null and is_instance_valid(_task_assignment_panel):
+		_task_assignment_panel.set_produce_available(_has_drawer_produce_building())
+		_sync_drawer_cut_available()
 		_task_assignment_panel.set_listed_entries(listed_entries)
 		in_progress_entries.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return float(a["sort"]) < float(b["sort"]))
 		_task_assignment_panel.set_in_progress_entries(in_progress_entries)
@@ -8834,6 +9011,7 @@ func _refresh_pending_entries() -> void:
 			has_new = true
 	if has_new and _pending_initialized:
 		game_info_tabs.start_pending_blink()
+		pending_entry_added.emit()
 	_pending_previous_keys = keys
 	_pending_initialized = true
 
@@ -8848,6 +9026,101 @@ func _expire_panel_messages() -> void:
 			selected_changed = true
 	if selected_changed:
 		_refresh_selected_individual_panel()
+
+
+# Attesa di materiale (2026-10-08, richiesta utente — righe della campanella): un pipottino la cui task è ferma sullo step
+# che chiede materiale (allestimento e costruzione di un cantiere, miglioramenti compresi; produzione: ingredienti e
+# combustibile) perché il rifornimento automatico non ha trovato nessuna sorgente. Stesso criterio del ritentativo
+# giornaliero (HumanIndividualActionService.retry_blocked_material_shortages) più Building.is_awaiting_material, che
+# _resolve_material_shortage accende solo dopo il tentativo fallito e che gli step spengono appena ripartono: la riga
+# sparisce da sola quando il materiale arriva e il pipottino riparte, o quando la task viene annullata. Riga su due
+# livelli (nome e lavoro, sotto il motivo), 🎯 = seleziona il pipottino e centra.
+func _collect_material_wait_entries() -> Array[Dictionary]:
+	var entries: Array[Dictionary] = []
+	for member in human_individuals:
+		var task := member.current_task
+		if task == null or task.is_finished():
+			continue
+		var wait := _material_wait_of(task)
+		if wait.is_empty():
+			continue
+		var materials: Array[String] = []
+		for resource_name in (wait["missing"] as Dictionary).keys():
+			if String(resource_name) == MaterialSupplyService.FUEL_KEY:
+				materials.append(tr("pending_material_fuel"))
+			else:
+				materials.append(IconRegistry.get_resource_display_name(String(resource_name)).to_lower())
+		# Due livelli (2026-10-09): "<nome> · <lavoro>", sotto "In attesa di <materiali> in un magazzino".
+		var row_name := tr("pending_worker_work").format({"name": member.name, "work": wait["work"]})
+		var detail := tr("pending_reason_material").format({"materials": ", ".join(materials)})
+		var entry := _pending_entry("material_wait:%d" % member.id, "%s\n%s" % [row_name, detail], {
+			"kind": "individual", "id": member.id, "macro": member.home_macro_coords, "sort": float(member.id),
+			"name": row_name, "detail": detail,
+		})
+		entries.append(entry)
+	return entries
+
+
+# Attesa di attrezzi (2026-10-09, richiesta utente — righe della campanella, come l'attesa di materiale): un pipottino la
+# cui task è ferma sullo step corrente perché gli manca l'attrezzo richiesto, né in cintura né nello zaino (stato
+# tool_wait_* dello step, ToolGateService.Result.MISSING_TOOLS, ricalcolato a ogni tick: la riga sparisce da sola quando
+# l'attrezzo arriva o la task viene annullata). Cintura piena o attrezzo che non entra in cintura non contano: l'attrezzo
+# c'è. Riga su due livelli (nome e lavoro, sotto il motivo), 🎯 = seleziona il pipottino e centra.
+func _collect_tool_wait_entries() -> Array[Dictionary]:
+	var entries: Array[Dictionary] = []
+	for member in human_individuals:
+		var task := member.current_task
+		if task == null or task.is_finished():
+			continue
+		var step := task.get_current_action()
+		if step == null or step.tool_wait_result != ToolGateService.Result.MISSING_TOOLS or step.tool_wait_missing_categories.is_empty():
+			continue
+		var work := ""
+		if step is ProduceAction:
+			work = IconRegistry.get_resource_display_name((step as ProduceAction).resource_name)
+		else:
+			work = tr(task.task_name)
+		# Due livelli (2026-10-09): "<nome> · <lavoro>", sotto "In attesa di <attrezzo>".
+		var row_name := tr("pending_worker_work").format({"name": member.name, "work": work})
+		var detail := tr("pending_reason_tool").format({"tools": _describe_missing_tool_categories(step.tool_wait_missing_categories)})
+		var entry := _pending_entry("tool_wait:%d" % member.id, "%s\n%s" % [row_name, detail], {
+			"kind": "individual", "id": member.id, "macro": member.home_macro_coords, "sort": float(member.id),
+			"name": row_name, "detail": detail,
+		})
+		entries.append(entry)
+	return entries
+
+
+# {"missing": {risorsa (o MaterialSupplyService.FUEL_KEY): quantità}, "work": nome del lavoro} se lo step corrente di
+# `task` è fermo in attesa di materiale che nessuna sorgente ha; {} altrimenti.
+func _material_wait_of(task: Task) -> Dictionary:
+	var action := task.get_current_action()
+	var building: Building = null
+	var missing: Dictionary = {}
+	var work := ""
+	if action is SetupSiteAction:
+		var setup_action := action as SetupSiteAction
+		building = setup_action.target_building
+		var missing_quantity := setup_action.get_missing_material_quantity()
+		if building != null and building.rules != null and missing_quantity > 0:
+			missing[building.rules.setup_site_material_name] = missing_quantity
+	elif action is BuildAction:
+		building = (action as BuildAction).target_building
+		if building != null:
+			missing = (action as BuildAction).get_missing_materials()
+	elif action is ProduceAction:
+		var produce_action := action as ProduceAction
+		building = produce_action.target_building
+		if building != null and produce_action.is_blocked_by_materials():
+			missing = MaterialSupplyService.get_missing_materials(building)
+			work = IconRegistry.get_resource_display_name(produce_action.resource_name)
+	if building == null or building.rules == null or building.is_demolished or missing.is_empty() or not building.is_awaiting_material:
+		return {}
+	if building.is_complete and not (action is ProduceAction):
+		return {}
+	if work == "":
+		work = tr(building.rules.building_name)
+	return {"missing": missing, "work": work}
 
 
 # Voce dell'elenco con lo stato "si può centrare" (macrocella viva).
@@ -8918,7 +9191,7 @@ func _on_pending_entry_activated(entry: Dictionary) -> void:
 #                  PathfindingService.reachability_for (oggetto con macro_x/macro_y/micro_x/micro_y);
 #   "entry_kind", "id"    cosa selezionare al clic sul nome (_activate_job_entry: "building", "body");
 #   "sort"         ordine delle righe; "assigned" true se almeno uno ci lavora (in corso o in coda);
-#   "hidden"       true = fuori dalla lista per ora (es. mirino del demolitore aperto) ma lo stato resta;
+#   "hidden"       true = fuori dalla lista per ora (es. un corpo senza cumulo libero) ma lo stato resta;
 #   "blocked_reason" (facoltativo) lavoro visibile in coda ma impossibile per ora, con il motivo mostrato al posto
 #                  dell'attesa (es. un mucchio che nessun magazzino accetta): non si prende, niente attesa né icona;
 #   "target"       l'oggetto del tipo (per gli edifici il Building); "provider" il fornitore.
@@ -8967,6 +9240,39 @@ func _job_board_providers() -> Array[Dictionary]:
 			"cancel": func(_job: Dictionary) -> void: pass,
 			"release": _pile_job_release,
 		})
+		# Uscite piene (2026-10-08): consegna dei Prodotti finiti a magazzino, vedi _output_jobs_collect.
+		_job_board_provider_list.append({
+			"collect": _output_jobs_collect,
+			"probe_key": func(job: Dictionary) -> String: return String(job["key"]),
+			"rejection": _output_job_rejection,
+			"assign": _assign_output_job,
+			"workers": _output_job_workers,
+			"cancel_fields": _output_job_cancel_fields,
+			"cancel": func(_job: Dictionary) -> void: pass,
+			"release": _output_job_release,
+		})
+		# Ordini di produzione (2026-10-09): ordini senza lavoratore delle workstation, vedi _produce_jobs_collect.
+		_job_board_provider_list.append({
+			"collect": _produce_jobs_collect,
+			"probe_key": func(job: Dictionary) -> String: return String(job["key"]),
+			"rejection": _produce_job_rejection,
+			"assign": _assign_produce_job,
+			"workers": _produce_job_workers,
+			"cancel_fields": func(_job: Dictionary) -> Dictionary: return {"cancel_disabled": false, "cancel_tooltip": tr("building_cancel_production_order_tooltip")},
+			"cancel": func(job: Dictionary) -> void: _on_production_order_cancel_requested(job["target"], String(job["order_key"])),
+			"release": _produce_job_release,
+		})
+		# Ordini creati dal cassetto (2026-10-09): GameData.drawer_orders, vedi _drawer_order_jobs_collect.
+		_job_board_provider_list.append({
+			"collect": _drawer_order_jobs_collect,
+			"probe_key": func(job: Dictionary) -> String: return String(job["key"]),
+			"rejection": _drawer_order_job_rejection,
+			"assign": _assign_drawer_order_job,
+			"workers": _drawer_order_job_workers,
+			"cancel_fields": func(_job: Dictionary) -> Dictionary: return {"cancel_disabled": false, "cancel_tooltip": tr("drawer_order_cancel_tooltip")},
+			"cancel": _drawer_order_job_cancel,
+			"release": _drawer_order_job_release,
+		})
 	return _job_board_provider_list
 
 
@@ -9008,9 +9314,18 @@ func _job_board_drawer_entry(job: Dictionary, in_progress: bool) -> Dictionary:
 	}
 	if in_progress:
 		var names: Array[String] = []
+		var first_worker: HumanIndividual = null
 		for member in job["provider"]["workers"].call(job):
 			names.append((member as HumanIndividual).name)
+			if first_worker == null:
+				first_worker = member as HumanIndividual
 		data["workers"] = ", ".join(names)
+		# Clic su una riga "In corso" (2026-10-09, richiesta utente): seleziona e centra chi fa il lavoro (il primo se più
+		# d'uno), non il bersaglio.
+		if first_worker != null:
+			data["kind"] = "individual"
+			data["id"] = first_worker.id
+			data["macro"] = first_worker.home_macro_coords
 	else:
 		data["locked"] = JobBoardService.get_state(game_data, key) == JobBoardService.STATE_LOCKED
 		var blocked_reason := String(job.get("blocked_reason", ""))
@@ -9023,7 +9338,13 @@ func _job_board_drawer_entry(job: Dictionary, in_progress: bool) -> Dictionary:
 			# l'assegnazione a mano (0 = finita).
 			data["waiting"] = true
 			data["wait_seconds"] = ceili(_get_job_board_wait_seconds(key))
-	return _pending_entry(key, String(job["text"]), data).merged(job["provider"]["cancel_fields"].call(job))
+	var entry := _pending_entry(key, String(job["text"]), data).merged(job["provider"]["cancel_fields"].call(job))
+	# Lavoro in coda senza un posto ("Produci" dal cassetto, "Taglia" con la zona automatica, 2026-10-09): non cliccabile,
+	# con il motivo vero invece di "Fuori dalla zona caricata".
+	if not in_progress and Vector2i(job["macro"]) == Vector2i(-1, -1):
+		entry["enabled"] = false
+		entry["disabled_reason"] = tr("task_assignment_place_decided_later")
+	return entry
 
 
 # "Blocca" / "Sblocca" su un lavoro della lista del cassetto (2026-10-07, JobBoardService): cambia lo stato e ricalcola
@@ -9044,7 +9365,16 @@ func _on_job_board_state_requested(entry: Dictionary, state: String) -> void:
 
 
 # X premuta (2026-10-07): cosa fa lo decide il fornitore del tipo (per gli edifici il comando del pannello edificio).
+# Riga di un comando diretto (2026-10-09, "direct:<id individuo>"): esattamente H su quell'individuo.
 func _on_job_board_cancel_requested(entry: Dictionary) -> void:
+	var entry_key := String(entry.get("key", ""))
+	if entry_key.begins_with(DIRECT_COMMAND_KEY_PREFIX):
+		var member := _find_human_individual_by_id(int(entry_key.substr(DIRECT_COMMAND_KEY_PREFIX.length())))
+		if member != null:
+			_stop_member_task(member)
+			_refresh_selected_individual_panel()
+		_refresh_pending_entries()
+		return
 	var job := _find_job_board_job(String(entry.get("key", "")))
 	if not job.is_empty():
 		job["provider"]["cancel"].call(job)
@@ -9067,8 +9397,8 @@ func _on_job_board_requeue_requested(entry: Dictionary) -> void:
 # lavori senza nessuno assegnato, in corso o in coda (_collect_job_board_candidates), non bloccati e fuori dall'attesa
 # per l'assegnazione a mano. Controlli dell'assegnazione a mano fatti PRIMA, in silenzio, su una task di prova per tipo
 # di task ("rejection" del fornitore: età, energia sopra la soglia del riposo d'emergenza) e la raggiungibilità
-# (PathfindingService.reachability_for); poi il punteggio (JobBoardService.score_job) e la stessa funzione
-# dell'assegnazione a mano ("assign" del fornitore). true = preso. Un rifiuto non viene ritentato: resolve_idle_individual
+# (PathfindingService.reachability_for); poi la scelta secondo il modo di priorità del giocatore (JobBoardService.pick_job,
+# 2026-10-08: la distanza non conta più) e la stessa funzione dell'assegnazione a mano ("assign" del fornitore). true = preso. Un rifiuto non viene ritentato: resolve_idle_individual
 # passa alle attività di ripiego. Due pipottini liberati insieme non prendono lo stesso lavoro: le chiamate sono una dopo
 # l'altra e il primo ha già la task quando il secondo rifà il giro.
 func _take_listed_job_for(worker: HumanIndividual) -> bool:
@@ -9076,6 +9406,8 @@ func _take_listed_job_for(worker: HumanIndividual) -> bool:
 		return false
 	var candidates := _collect_job_board_candidates(_collect_job_board_jobs(_collect_pending_assignments()))
 	_sync_job_board_waits(candidates)
+	# Età (2026-10-08): un lavoro comparso dopo l'ultimo giro del cassetto viene segnato qui, prima della scelta.
+	JobBoardService.stamp_entered(game_data, candidates.values(), _job_board_now())
 	var open_jobs: Array[Dictionary] = []
 	var locked_count := 0
 	# Lavori ancora nell'attesa per l'assegnazione a mano (2026-10-07): non prendibili dalla lista.
@@ -9113,34 +9445,39 @@ func _take_listed_job_for(worker: HumanIndividual) -> bool:
 		_log_job_board(worker, "%s — nessuno preso: non adatto (%s)." % [found_text, ", ".join(reasons)])
 		return false
 	var reachable := PathfindingService.reachability_for(worker)
-	var best: Dictionary = {}
-	var best_score := -1.0
+	var takeable_jobs: Array[Dictionary] = []
 	for job in suitable_jobs:
-		if not reachable.call(job["reach_target"]):
-			continue
-		var score := JobBoardService.score_job(worker, String(job["kind"]), job["macro"], job["microcell"])
-		if score > best_score:
-			best_score = score
-			best = job
-	if best.is_empty():
+		if reachable.call(job["reach_target"]):
+			takeable_jobs.append(job)
+	if takeable_jobs.is_empty():
 		_log_job_board(worker, "%s — nessuno preso: non adatto (nessun lavoro raggiungibile)." % found_text)
 		return false
+	# Scelta secondo il modo di priorità del giocatore (2026-10-08): {"job", "reason"} (motivo per il log).
+	var pick := JobBoardService.pick_job(game_data, worker, takeable_jobs)
+	var best: Dictionary = pick["job"]
 	var task_before := worker.current_task
 	var queue_size_before := worker.task_queue.size()
 	best["provider"]["assign"].call(worker, best)
 	var taken := (worker.current_task != null and worker.current_task != task_before) or worker.task_queue.size() > queue_size_before
 	var job_text := "%s %s" % [String(best["key"]), String(best["log_name"])]
 	if taken:
-		_log_job_board(worker, "%s — preso %s (punteggio %.4f)." % [found_text, job_text, best_score])
+		_log_job_board(worker, "%s — preso %s — %s." % [found_text, job_text, String(pick["reason"])])
 	else:
-		_log_job_board(worker, "%s — scelto %s (punteggio %.4f) ma rifiutato: passa alle attività di ripiego." % [found_text, job_text, best_score])
+		_log_job_board(worker, "%s — scelto %s — %s, ma rifiutato: passa alle attività di ripiego." % [found_text, job_text, String(pick["reason"])])
 	return taken
+
+
+# Momento di gioco per l'età dei lavori della lista (2026-10-08): giorni assoluti più la frazione del giorno in corso.
+func _job_board_now() -> float:
+	if game_data == null:
+		return 0.0
+	return float(game_data.get_absolute_day()) + (clock.get_day_progress() if clock != null else 0.0)
 
 
 # --- Attesa per l'assegnazione a mano (2026-10-07, richiesta utente — JobBoardService.get_manual_assign_window_seconds()) ---
 # Ogni lavoro della lista senza nessuno assegnato (bloccato o no) ha in _job_board_waiting_since il momento
 # (_job_board_clock: secondi reali a gioco in corso) in cui è entrato in lista. Entra quando compare tra i candidati
-# (nato senza lavoratore, tornato in lista, mirino del demolitore chiuso); esce quando non c'è più (assegnato, finito,
+# (nato senza lavoratore o tornato in lista); esce quando non c'è più (assegnato, finito,
 # sparito) o subito all'assegnazione (_forget_job_board_wait), così un ritorno in lista fa ripartire l'attesa. Durante
 # l'attesa la lista non lo dà a nessuno e, se non è bloccato, sul bersaglio lampeggia l'icona del tipo di lavoro. Mai
 # salvato: alla prima lettura (anche dopo un caricamento o all'arrivo dell'idea) i lavori già in lista sono subito
@@ -9219,7 +9556,6 @@ func _free_job_board_wait_icon(job_key: String) -> void:
 # Un lavoro per edificio che ne ha uno: da demolire -> demolish (lavoratori: le task Demolisci); cantiere -> upgrade se è
 # un miglioramento, altrimenti build (lavoratori: le task Costruisci). Nome della riga: quello dell'edificio per un
 # cantiere nuovo, la voce di "In sospeso" ("Miglioramento · …", "Demolizione · …") per gli altri, così si distinguono.
-# Nascosto: l'edificio del mirino del demolitore aperto.
 func _building_jobs_collect(provider: Dictionary, assigned: Dictionary) -> Array[Dictionary]:
 	var jobs: Array[Dictionary] = []
 	for building in macro_world.buildings:
@@ -9246,7 +9582,7 @@ func _building_jobs_collect(provider: Dictionary, assigned: Dictionary) -> Array
 			"icon": {"building_command": BuildingCommandIcon.KIND_DEMOLISH} if kind == "demolish" else {"building_type": building.building_type_name},
 			"macro": Vector2i(building.macro_x, building.macro_y), "microcell": Vector2i(building.micro_x, building.micro_y),
 			"reach_target": building, "entry_kind": "building", "id": building.id, "sort": float(building.id),
-			"assigned": is_assigned, "hidden": building == _demolisher_pick_building,
+			"assigned": is_assigned, "hidden": false,
 			"target": building, "provider": provider,
 		})
 	return jobs
@@ -9446,10 +9782,15 @@ func _pile_jobs_collect(provider: Dictionary, _assigned: Dictionary) -> Array[Di
 	if not UserOptions.job_board_collect_piles:
 		return jobs
 	var claims := _collect_pile_claims()
+	var job_delivery_keys := _collect_job_delivery_pile_keys()
 	for pile in game_data.ground_piles:
 		if pile.resources.is_empty() or not pile.carcasses.is_empty():
 			continue
 		var claim_key := _pile_claim_key(pile.macro_coords, pile.microcell)
+		# Mucchio consegnato come parte di un taglio, un'estrazione o una demolizione in corso (2026-10-09, richiesta
+		# utente): non è un lavoro "Mucchio", resta solo la riga del lavoro vero. Interrotto quel lavoro, torna qui.
+		if job_delivery_keys.has(claim_key):
+			continue
 		var is_assigned := claims.has(claim_key)
 		var pile_name := _pile_job_name(pile)
 		jobs.append({
@@ -9505,6 +9846,31 @@ func _collect_pile_claims() -> Dictionary:
 				if not (claims[key] as Array).has(member):
 					(claims[key] as Array).append(member)
 	return claims
+
+
+# Mucchi (chiavi di _pile_claim_key) portati via come parte di un lavoro in corso: una task, in corso o in coda, che ha
+# ancora da accodare la consegna (taglio, estrazione o demolizione appena finiti, CONTEXT_PENDING_GROUND_PILE_HAUL),
+# oppure è la consegna stessa (zona con l'etichetta del lavoro — taglio, estrazione — o HaulZoneService.JOB_DELIVERY_KEY,
+# messo da _on_ground_pile_haul_requested, anche dopo una demolizione).
+func _collect_job_delivery_pile_keys() -> Dictionary:
+	var keys: Dictionary = {}
+	for member in human_individuals:
+		for task in _member_open_tasks(member):
+			var is_job_delivery := bool(task.context.get(HaulZoneService.JOB_DELIVERY_KEY, false))
+			var zone := HaulZoneService.get_zone(task.context)
+			if not zone.is_empty() and HaulZoneService.get_label_task_name(zone) != "":
+				is_job_delivery = true
+			var pending: Variant = task.context.get(HumanIndividualActionService.CONTEXT_PENDING_GROUND_PILE_HAUL, null)
+			if pending is Dictionary:
+				var pending_ref := pending as Dictionary
+				keys[_pile_claim_key(
+					Vector2i(int(pending_ref.get("macro_x", 0)), int(pending_ref.get("macro_y", 0))),
+					Vector2i(int(pending_ref.get("micro_x", 0)), int(pending_ref.get("micro_y", 0)))
+				)] = true
+			if is_job_delivery:
+				for key in _task_pile_claim_keys(task):
+					keys[key] = true
+	return keys
 
 
 func _task_pile_claim_keys(task: Task) -> Array[String]:
@@ -9588,6 +9954,8 @@ func _build_pile_job_task(worker: HumanIndividual, pile: GroundPile) -> Task:
 		PickUpAction.SourceKind.GROUND_PILE, maxi(pile_units, 1)
 	)
 	zone[HaulZoneService.UNTIL_EMPTY_KEY] = true
+	# "Ritiro mucchio (<risorsa>)" nella riga dell'individuo (2026-10-09): la risorsa se è una sola.
+	zone[HaulZoneService.PILE_RESOURCE_KEY] = resource_names[0] if resource_names.size() == 1 else ""
 	task.context[HaulZoneService.CONTEXT_KEY] = zone
 	return task
 
@@ -9646,6 +10014,1015 @@ func _pile_job_release(job: Dictionary) -> void:
 	_refresh_selected_individual_panel()
 
 
+# ============================================================================================
+# Fornitore "uscite piene" della lista dei lavori (2026-10-08, richiesta utente): consegna dei Prodotti finiti a
+# magazzino (output:<id edificio>). In coda quando una workstation con Prodotti finiti (posti > 0) ha un ordine fermo
+# perché non c'è posto per il prossimo pezzo (ProductionService.is_output_blocking, lo stesso blocco dell'avviso "Prodotti
+# finiti pieni"); esce appena l'ordine può ripartire o sparisce. Tutta la lista si spegne con la regola "Svuota le uscite
+# piene" (UserOptions.job_board_empty_full_outputs). Chi lo prende (un pipottino libero qualunque) fa la task
+# deliver_output.tres: cammino all'edificio e lo stesso step di consegna di "Porta al deposito" (RetrieveAction in
+# modalità deliver_to_warehouse: solo dai Prodotti finiti, un carico pieno di UNA risorsa, quella con più pezzi), poi
+# la ricerca del magazzino di sempre accoda cammino e scarico. Se dopo il viaggio l'ordine è ancora fermo, il lavoro
+# rientra in coda da solo (ricalcolo a ogni giro). Assegnato = una task, in corso o in coda, con
+# CONTEXT_OUTPUT_JOB_BUILDING_ID di quell'edificio. Nascosto mentre il pipottino dell'ordine fa già la sua consegna a
+# metà ordine (ProduceAction.CONTEXT_OUTPUT_DELIVERY_ROUND). Nessun magazzino che accetta il prodotto (cercato dalla
+# posizione dell'edificio): visibile ma non prendibile, come i mucchi.
+# ============================================================================================
+
+# Uscite piene dopo corpi, edifici e mucchi nelle righe del cassetto.
+const OUTPUT_JOB_SORT_OFFSET: float = 2000000.0
+const DELIVER_OUTPUT_TASK_DEFINITION_PATH := "res://gameplay/scripts/tasks/definitions/deliver_output.tres"
+# Id dell'edificio della consegna nel context della task (salvato con lei).
+const CONTEXT_OUTPUT_JOB_BUILDING_ID := "output_job_building_id"
+
+
+func _output_jobs_collect(provider: Dictionary, _assigned: Dictionary) -> Array[Dictionary]:
+	var jobs: Array[Dictionary] = []
+	if not UserOptions.job_board_empty_full_outputs or macro_world == null:
+		return jobs
+	var claims := _collect_output_job_claims()
+	var self_delivering := _collect_output_delivery_rounds()
+	for building in macro_world.buildings:
+		if not _is_output_job_needed(building):
+			continue
+		var is_assigned := claims.has(building.id)
+		var resource_name := _output_job_resource(building)
+		var job_name := tr("pending_output_delivery").format({
+			"building": tr(building.rules.building_name),
+			"used": ProductionService.get_output_used(building), "capacity": ProductionService.get_output_capacity(building),
+		})
+		jobs.append({
+			"key": "output:%d" % building.id, "kind": "output", "name": job_name, "text": job_name,
+			"log_name": "uscita di %s #%d" % [building.building_type_name, building.id],
+			"icon": {"command": "transport"}, "macro": Vector2i(building.macro_x, building.macro_y),
+			"microcell": Vector2i(building.micro_x, building.micro_y), "reach_target": building,
+			"entry_kind": "building", "id": building.id, "sort": float(building.id) + OUTPUT_JOB_SORT_OFFSET,
+			"assigned": is_assigned, "hidden": not is_assigned and self_delivering.has(building.id),
+			"blocked_reason": "" if is_assigned or _output_has_storage(building, resource_name) else tr("task_assignment_pile_no_storage"),
+			"target": building, "provider": provider, "claimers": claims.get(building.id, []), "resource_name": resource_name,
+		})
+	return jobs
+
+
+# Workstation completa con Prodotti finiti (posti > 0), un ordine in corso e nessun posto per il prossimo pezzo.
+func _is_output_job_needed(building: Building) -> bool:
+	if building == null or building.rules == null or building.is_demolished or building.is_marked_for_demolition:
+		return false
+	if not building.is_complete or not building.rules.is_workstation or ProductionService.get_output_capacity(building) <= 0:
+		return false
+	return ProductionService.has_active_production(building) and ProductionService.is_output_blocking(building)
+
+
+# Risorsa da portare via: quella con più pezzi nei Prodotti finiti (a parità, in ordine di nome).
+func _output_job_resource(building: Building) -> String:
+	var best_name := ""
+	var best_count := 0
+	for raw_name in building.production_output.keys():
+		var count := int(building.production_output[raw_name])
+		if count > best_count or (count == best_count and count > 0 and String(raw_name) < best_name):
+			best_count = count
+			best_name = String(raw_name)
+	return best_name
+
+
+# Un magazzino (diverso dall'edificio) accetta almeno un pezzo della risorsa, cercato dalla posizione dell'edificio
+# (nessun pipottino né raggiungibilità: quelli si rifanno alla presa, _output_job_rejection).
+func _output_has_storage(building: Building, resource_name: String) -> bool:
+	if resource_name == "":
+		return false
+	var excluded_ids: Array[int] = [building.id]
+	return WarehouseSelectionService.find_best(
+		macro_world, Vector2(building.micro_x, building.micro_y) + Vector2(0.5, 0.5), Vector2i(building.macro_x, building.macro_y),
+		resource_name, 1, excluded_ids
+	) != null
+
+
+# Chi ha in carico quale uscita: id edificio -> Array[HumanIndividual], dalle task (in corso o in coda, non concluse)
+# con CONTEXT_OUTPUT_JOB_BUILDING_ID.
+func _collect_output_job_claims() -> Dictionary:
+	var claims: Dictionary = {}
+	for member in human_individuals:
+		for task in _member_open_tasks(member):
+			if not task.context.has(CONTEXT_OUTPUT_JOB_BUILDING_ID):
+				continue
+			var building_id := int(task.context[CONTEXT_OUTPUT_JOB_BUILDING_ID])
+			if not claims.has(building_id):
+				claims[building_id] = []
+			if not (claims[building_id] as Array).has(member):
+				(claims[building_id] as Array).append(member)
+	return claims
+
+
+# Edifici la cui uscita sta già venendo svuotata dal pipottino dell'ordine (consegna a metà ordine): id -> true.
+func _collect_output_delivery_rounds() -> Dictionary:
+	var rounds: Dictionary = {}
+	for member in human_individuals:
+		for task in _member_open_tasks(member):
+			if task.context.has(ProduceAction.CONTEXT_OUTPUT_DELIVERY_ROUND):
+				rounds[int(task.context[ProduceAction.CONTEXT_OUTPUT_DELIVERY_ROUND])] = true
+	return rounds
+
+
+# Task in corso e in coda non concluse di `member`.
+func _member_open_tasks(member: HumanIndividual) -> Array[Task]:
+	var tasks: Array[Task] = []
+	if member.current_task != null and not member.current_task.is_finished():
+		tasks.append(member.current_task)
+	for queued in member.task_queue:
+		var task := queued as Task
+		if task != null and not task.is_finished():
+			tasks.append(task)
+	return tasks
+
+
+# Task di consegna (mai assegnata qui): cammino all'edificio, poi lo step di consegna di "Porta al deposito" per
+# `resource_name`, fino a tutti i pezzi che ha nei Prodotti finiti (lo step si limita da sé a zaino e magazzino). null se
+# l'edificio non è in una macrocella attiva o la definizione non si carica.
+func _build_output_job_task(worker: HumanIndividual, building: Building, resource_name: String) -> Task:
+	var macro_coords := Vector2i(building.macro_x, building.macro_y)
+	if not live_cells.has(macro_coords) or resource_name == "":
+		return null
+	var definition := load(DELIVER_OUTPUT_TASK_DEFINITION_PATH) as TaskDefinition
+	if definition == null:
+		return null
+	var macro_offset: Vector2 = Vector2(macro_coords - worker.home_macro_coords) * World.WIDTH
+	var task := TaskFactory.build_task(definition, {
+		"transport_source_position": PathfindingService.random_point_in_microcell(Vector2(building.micro_x, building.micro_y) + macro_offset),
+		"target_building": building,
+		"produce_resource_name": resource_name,
+		"produce_quantity": maxi(int(building.production_output.get(resource_name, 0)), 1),
+		"produce_delivery_step": true,
+	})
+	task.context[CONTEXT_OUTPUT_JOB_BUILDING_ID] = building.id
+	task.debug_target_key = "output:%d" % building.id
+	return task
+
+
+# Idoneità alla presa: edificio in una macrocella attiva, la consegna di prova passa il controllo di idoneità, e dal
+# pipottino un magazzino raggiungibile accetta la risorsa (lo stesso controllo dello step di consegna).
+func _output_job_rejection(worker: HumanIndividual, job: Dictionary) -> String:
+	var building: Building = job["target"]
+	var resource_name := String(job.get("resource_name", ""))
+	var task := _build_output_job_task(worker, building, resource_name)
+	if task == null:
+		return "edificio non in una macrocella attiva"
+	var rejection := worker.get_assign_rejection_reason(task, _resolve_age_band(worker))
+	if rejection != HumanIndividual.ASSIGN_OK:
+		return rejection
+	var excluded_ids: Array[int] = [building.id]
+	if not worker.can_carry_one_unit_when_empty(resource_name) or WarehouseSelectionService.find_best(
+		macro_world, worker.position, worker.home_macro_coords, resource_name, 1, excluded_ids, PathfindingService.reachability_for(worker)
+	) == null:
+		return "nessun magazzino raggiungibile"
+	return HumanIndividual.ASSIGN_OK
+
+
+# Assegnazione dalla lista: la consegna come task del pipottino libero, in silenzio. Riuscita: l'icona del trasporto
+# sull'edificio e il lavoro esce dall'attesa.
+func _assign_output_job(worker: HumanIndividual, job: Dictionary) -> void:
+	var building: Building = job["target"]
+	var task := _build_output_job_task(worker, building, String(job.get("resource_name", "")))
+	if task == null:
+		return
+	if not worker.assign_task(task, _resolve_age_band(worker)) or (worker.current_task != task and not worker.task_queue.has(task)):
+		return
+	var job_keys: Array[String] = ["output:%d" % building.id]
+	_forget_job_board_wait(job_keys)
+	_ensure_step_signals(task)
+	var cell: LiveMacroCell = live_cells.get(Vector2i(building.macro_x, building.macro_y))
+	if cell != null:
+		_spawn_command_icon_at_microcell(cell, Vector2i(building.micro_x, building.micro_y), "transport")
+	if worker == individual:
+		_refresh_selected_individual_panel()
+
+
+func _output_job_workers(job: Dictionary) -> Array[HumanIndividual]:
+	var workers: Array[HumanIndividual] = []
+	for member in job.get("claimers", []):
+		workers.append(member as HumanIndividual)
+	return workers
+
+
+# X: sempre spenta, non c'è niente da annullare.
+func _output_job_cancel_fields(_job: Dictionary) -> Dictionary:
+	return {"cancel_disabled": true, "cancel_tooltip": tr("task_assignment_output_cannot_cancel")}
+
+
+# Rimetti in coda / Blocca: ferma le consegne di quell'edificio con l'effetto di H (regola del carico come per i mucchi:
+# CargoReturnService; flag "salta la lista una volta"; ripresa con resolve_idle_individual). Le copie in coda vengono tolte.
+func _output_job_release(job: Dictionary) -> void:
+	var building: Building = job["target"]
+	for member in human_individuals:
+		var current_closed := false
+		var current := member.current_task
+		if current != null and not current.is_finished() and int(current.context.get(CONTEXT_OUTPUT_JOB_BUILDING_ID, -1)) == building.id:
+			member.skip_job_board_once = true
+			if CargoReturnService.release_cargo(member, current, macro_world) != CargoReturnService.Outcome.RETURNING:
+				member.stop(false)
+				current_closed = true
+		for queued in member.task_queue.duplicate():
+			var queued_task := queued as Task
+			if queued_task != null and int(queued_task.context.get(CONTEXT_OUTPUT_JOB_BUILDING_ID, -1)) == building.id:
+				if CargoReturnService.release_cargo(member, queued_task, macro_world) != CargoReturnService.Outcome.RETURNING:
+					member.task_queue.erase(queued)
+		if current_closed:
+			HumanIndividualActionService.resolve_idle_individual(member, _resolve_age_band(member), macro_world)
+	_refresh_selected_individual_panel()
+
+
+# ============================================================================================
+# Fornitore "ordini di produzione" della lista dei lavori (2026-10-09, richiesta utente): un lavoro per ogni ordine di una
+# workstation (produce:<id edificio>:<chiave ordine>), "In coda" se nessuno lo lavora, "In corso" altrimenti. Escluse le
+# ricette ad avanzamento automatico (come la scheda "In sospeso"). Con l'edificio al completo (ordini con un lavoratore =
+# production_concurrent_orders) gli ordini senza lavoratore restano visibili ma non prendibili ("Edificio occupato"),
+# finché un ordine dell'edificio non finisce. Chi lo prende: la stessa riassegnazione del bottone "Assegna" del pannello
+# (_assign_produce_task con la chiave dell'ordine), in silenzio. Attrezzi controllati prima e in sola lettura
+# (_produce_job_rejection); il materiale mancante no (c'è già l'avviso nella campanella).
+# ============================================================================================
+
+# Ordini di produzione dopo corpi, edifici, mucchi e uscite piene nelle righe del cassetto.
+const PRODUCE_JOB_SORT_OFFSET: float = 3000000.0
+
+
+func _produce_jobs_collect(provider: Dictionary, assigned: Dictionary) -> Array[Dictionary]:
+	var jobs: Array[Dictionary] = []
+	# Ordini con un lavoratore per edificio (id -> quanti), dalle stesse chiavi "id:ordine" di _collect_pending_assignments.
+	var busy_counts: Dictionary = {}
+	for claimed_key in assigned["produce"].keys():
+		var building_id := int(String(claimed_key).get_slice(":", 0))
+		busy_counts[building_id] = int(busy_counts.get(building_id, 0)) + 1
+	for building in macro_world.buildings:
+		if building.is_demolished or building.rules == null or building.is_marked_for_demolition:
+			continue
+		if not building.is_complete or not building.rules.is_workstation or building.production_progress.is_empty():
+			continue
+		var building_name: String = tr(building.rules.building_name)
+		var is_full := ProductionService.has_max_concurrent_orders(building, int(busy_counts.get(building.id, 0)))
+		var order_index := 0
+		for order_key in ProductionService.get_order_keys(building):
+			order_index += 1
+			var recipe := ProductionService.get_order_recipe(building, order_key)
+			var recipe_rules := CaloricCalculator.get_caloric_source_rules(recipe)
+			if recipe_rules != null and recipe_rules.recipe_auto_progress_days > 0:
+				continue
+			var units := maxi(ProductionService.get_order_units(building, order_key), 1)
+			var is_assigned: bool = assigned["produce"].has("%d:%s" % [building.id, order_key])
+			var recipe_name := IconRegistry.get_resource_display_name(recipe)
+			var blocked_reason := ""
+			if not is_assigned:
+				if is_full:
+					blocked_reason = tr("task_assignment_produce_building_busy")
+				else:
+					# Attrezzo che l'Attrezzeria non copre e nessun adulto ha (2026-10-09): visibile ma non prendibile.
+					var nobody_has := _tool_categories_nobody_has(BuildingToolkitService.filter_uncovered(building, _recipe_tool_categories(recipe)))
+					if not nobody_has.is_empty():
+						blocked_reason = tr("task_assignment_nobody_has_tool").format({"tools": _describe_missing_tool_categories(nobody_has)})
+			jobs.append({
+				"key": "produce:%d:%s" % [building.id, order_key], "kind": "produce",
+				"name": tr("task_assignment_produce_row").format({"recipe": recipe_name, "quantity": units, "building": building_name}),
+				"text": tr("pending_produce").format({"building": building_name, "product": recipe_name}),
+				"log_name": "%s ×%d @ %s #%d" % [recipe, units, building.building_type_name, building.id],
+				"icon": {"resource": recipe}, "macro": Vector2i(building.macro_x, building.macro_y),
+				"microcell": Vector2i(building.micro_x, building.micro_y), "reach_target": building,
+				"entry_kind": "building", "id": building.id, "sort": float(building.id) + PRODUCE_JOB_SORT_OFFSET + order_index * 0.001,
+				"assigned": is_assigned, "hidden": false,
+				"blocked_reason": blocked_reason,
+				"target": building, "provider": provider, "order_key": order_key, "recipe": recipe,
+			})
+	return jobs
+
+
+# Idoneità alla presa, in silenzio: la stessa Produce Task dell'assegnazione (mai assegnata) passa il controllo di
+# idoneità, e ogni categoria di attrezzo che l'Attrezzeria dell'edificio non copre il pipottino ce l'ha già, in cintura o
+# nello zaino (ToolGateService.has_tool_for: sola lettura, nessuno spostamento). Senza l'attrezzo il lavoro resta in coda
+# per un altro pipottino.
+func _produce_job_rejection(worker: HumanIndividual, job: Dictionary) -> String:
+	var building: Building = job["target"]
+	var order_key := String(job["order_key"])
+	var task := _build_produce_task(
+		worker, building, String(job["recipe"]), maxi(ProductionService.get_order_units(building, order_key), 1),
+		ProductionService.get_order_deliver_to_warehouse(building, order_key)
+	)
+	if task == null:
+		return "definizione mancante"
+	var rejection := worker.get_assign_rejection_reason(task, _resolve_age_band(worker))
+	if rejection != HumanIndividual.ASSIGN_OK:
+		return rejection
+	for category in BuildingToolkitService.filter_uncovered(building, ToolGateService.get_required_categories(task)):
+		if not ToolGateService.has_tool_for(worker, category):
+			return "attrezzo mancante"
+	return HumanIndividual.ASSIGN_OK
+
+
+# Assegnazione dalla lista: la riassegnazione dell'ordine (la stessa del bottone "Assegna"), in silenzio.
+func _assign_produce_job(worker: HumanIndividual, job: Dictionary) -> void:
+	var building: Building = job["target"]
+	var order_key := String(job["order_key"])
+	_assign_produce_task(worker, building, String(job["recipe"]), maxi(ProductionService.get_order_units(building, order_key), 1), true, order_key, false, true)
+
+
+func _produce_job_workers(job: Dictionary) -> Array[HumanIndividual]:
+	var workers: Array[HumanIndividual] = []
+	var worker: Variant = _production_order_workers(job["target"]).get(String(job["order_key"]))
+	if worker != null:
+		workers.append(worker as HumanIndividual)
+	return workers
+
+
+# Rimetti in coda / Blocca: toglie l'ordine a chi lo fa senza annullarlo, con l'effetto di H (regola del carico come la X
+# dell'ordine, _on_production_order_cancel_requested; flag "salta la lista una volta"; ripresa con
+# resolve_idle_individual). L'ordine resta sull'edificio senza lavoratore e torna in coda. Le copie in coda vengono tolte.
+func _produce_job_release(job: Dictionary) -> void:
+	var building: Building = job["target"]
+	var order_key := String(job["order_key"])
+	if building.is_demolished or not ProductionService.has_order(building, order_key):
+		return
+	var freed: Array[HumanIndividual] = []
+	for member in human_individuals:
+		if _task_has_production_order(member.current_task, order_key, building):
+			member.skip_job_board_once = true
+			if CargoReturnService.release_cargo(member, member.current_task, macro_world) != CargoReturnService.Outcome.RETURNING:
+				member.stop(false)
+				freed.append(member)
+		for queued_task in member.task_queue.duplicate():
+			if _task_has_production_order(queued_task, order_key, building) \
+					and CargoReturnService.release_cargo(member, queued_task, macro_world) != CargoReturnService.Outcome.RETURNING:
+				member.task_queue.erase(queued_task)
+	ProductionService.set_order_worker_id(building, order_key, -1)
+	for member in freed:
+		HumanIndividualActionService.resolve_idle_individual(member, _resolve_age_band(member), macro_world)
+	_reconcile_production_units(building)
+	_refresh_selected_building_panel()
+	_refresh_selected_individual_panel()
+
+
+# ============================================================================================
+# Ordini creati dal cassetto "Assegnazione compiti" (2026-10-09, richiesta utente — primo caso: "Produci" senza edificio).
+# Solo con l'idea dell'assegnazione. Il bottone "Produci" del cassetto apre lo strato "Produci" dentro il cassetto
+# (TaskAssignmentPanel.open_produce_overlay, 2026-10-09 — prima un popup a parte): ricette producibili in almeno un
+# edificio esistente, per categoria, e "Porta al deposito". Clic sinistro +1 / destro −1 preparano le quantità nello
+# strato (fino al massimo per ordine più alto tra gli edifici che fanno la ricetta); "Invia in coda" crea un ordine per
+# ricetta preparata (_on_drawer_produce_submitted). Dopo l'invio l'ordine non si modifica più dallo strato: si toglie solo
+# con la X della sua riga. L'ordine sta in GameData.drawer_orders ed entra nella lista dei lavori con chiave "order:<id>"
+# (JobBoardService.drawer_order_key), tipo "produce" (priorità "Ordini di produzione", skill produce). Nessun posto sulla
+# mappa: niente icona lampeggiante, 🎯 spento. L'edificio si sceglie al momento della presa (_choose_drawer_produce_building,
+# lo stesso per ogni pipottino): la presa crea l'ordine sull'edificio e lo assegna in silenzio con la riassegnazione di
+# sempre (_assign_produce_task con la chiave dell'ordine), poi toglie la voce dall'elenco del cassetto; se l'assegnazione
+# fallisce l'ordine creato sull'edificio viene tolto e la voce resta. Da lì è un ordine normale dell'edificio.
+# ============================================================================================
+
+const DRAWER_ORDER_TYPE_PRODUCE := "produce"
+# Ordini del cassetto dopo tutti gli altri lavori nell'ordine delle righe.
+const DRAWER_ORDER_JOB_SORT_OFFSET: float = 4000000.0
+
+
+# Ricette producibili in almeno un edificio esistente: {"name", "category" (SecondaryResourceRules.category, per i gruppi
+# dello strato), "max_quantity" (massimo per ordine più alto tra gli edifici che la fanno)}, in ordine di nome visualizzato.
+# "disabled_reason" (2026-10-09): ricetta che chiede un attrezzo che nessun adulto ha e che nessuna Attrezzeria di un
+# edificio che può farla copre: "Nessuno ha <attrezzo>" (lo strato la spegne). Il materiale mancante non spegne nulla.
+func _list_drawer_produce_recipes() -> Array[Dictionary]:
+	var max_by_recipe: Dictionary = {}
+	var buildings_by_recipe: Dictionary = {}
+	if macro_world != null:
+		for building in macro_world.buildings:
+			if building.is_demolished or building.rules == null or not building.rules.is_workstation or not building.is_complete:
+				continue
+			for recipe in ProductionService.get_producible_resources(building):
+				max_by_recipe[recipe] = maxi(int(max_by_recipe.get(recipe, 0)), ProductionService.get_max_order_quantity(building))
+				if not buildings_by_recipe.has(recipe):
+					buildings_by_recipe[recipe] = []
+				(buildings_by_recipe[recipe] as Array).append(building)
+	var recipes: Array[Dictionary] = []
+	for recipe in max_by_recipe.keys():
+		var recipe_rules := CaloricCalculator.get_caloric_source_rules(String(recipe))
+		var disabled_reason := ""
+		var nobody_has := _tool_categories_nobody_has(_recipe_tool_categories(String(recipe)))
+		if not nobody_has.is_empty():
+			var covered := false
+			for building in buildings_by_recipe.get(recipe, []):
+				var missing: Array[TaskTypes.ToolCategory] = []
+				missing.assign(nobody_has)
+				if BuildingToolkitService.filter_uncovered(building, missing).is_empty():
+					covered = true
+					break
+			if not covered:
+				disabled_reason = tr("task_assignment_nobody_has_tool").format({"tools": _describe_missing_tool_categories(nobody_has)})
+		recipes.append({
+			"name": String(recipe), "category": int(recipe_rules.category) if recipe_rules != null else -1,
+			"max_quantity": int(max_by_recipe[recipe]), "disabled_reason": disabled_reason,
+		})
+	recipes.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+		return IconRegistry.get_resource_display_name(String(a["name"])) < IconRegistry.get_resource_display_name(String(b["name"]))
+	)
+	return recipes
+
+
+# Esiste un edificio completo dove si può fare almeno una ricetta (stato del bottone "Produci", una volta al secondo).
+func _has_drawer_produce_building() -> bool:
+	if macro_world == null:
+		return false
+	for building in macro_world.buildings:
+		if building.is_demolished or building.rules == null or not building.rules.is_workstation or not building.is_complete:
+			continue
+		if not ProductionService.get_producible_resources(building).is_empty():
+			return true
+	return false
+
+
+func _on_drawer_produce_requested() -> void:
+	if not JobBoardService.is_enabled(human_folk) or _task_assignment_panel == null or not is_instance_valid(_task_assignment_panel):
+		return
+	var recipes := _list_drawer_produce_recipes()
+	if recipes.is_empty():
+		return
+	_task_assignment_panel.open_produce_overlay(recipes, UserOptions.production_delivery_default)
+
+
+# "Invia in coda" dello strato "Produci" (2026-10-09): un ordine del cassetto per ricetta preparata, tutti con la spunta
+# "Porta al deposito" del momento dell'invio. Quantità ricontrollate sul massimo attuale della ricetta.
+func _on_drawer_produce_submitted(orders: Array[Dictionary], deliver_to_warehouse: bool) -> void:
+	if game_data == null or not JobBoardService.is_enabled(human_folk):
+		return
+	var max_by_recipe: Dictionary = {}
+	for entry in _list_drawer_produce_recipes():
+		max_by_recipe[String(entry["name"])] = int(entry["max_quantity"])
+	for order in orders:
+		var recipe := String(order.get("recipe", ""))
+		var max_quantity := int(max_by_recipe.get(recipe, 0))
+		if recipe == "" or max_quantity <= 0:
+			continue
+		_create_drawer_produce_order(recipe, clampi(int(order.get("quantity", 1)), 1, max_quantity), deliver_to_warehouse)
+	_refresh_pending_entries()
+
+
+# Nuovo ordine "Produci" nell'elenco del cassetto; ritorna il suo id.
+func _create_drawer_produce_order(recipe: String, quantity: int, deliver_to_warehouse: bool) -> int:
+	var order_id := game_data.next_drawer_order_id
+	game_data.next_drawer_order_id += 1
+	game_data.drawer_orders.append({
+		"id": order_id, "type": DRAWER_ORDER_TYPE_PRODUCE, "recipe": recipe, "quantity": maxi(quantity, 1),
+		"deliver_to_warehouse": deliver_to_warehouse,
+	})
+	if DebugLogging.ENABLED and DebugLogging.SHOW_JOB_BOARD_LOGS:
+		print("[JOB BOARD] Ordine del cassetto #%d: produci '%s' x%d (porta al deposito: %s)." % [order_id, recipe, quantity, str(deliver_to_warehouse)])
+	return order_id
+
+
+func _find_drawer_order(order_id: int) -> Dictionary:
+	if game_data == null:
+		return {}
+	for order in game_data.drawer_orders:
+		if int(order["id"]) == order_id:
+			return order
+	return {}
+
+
+func _remove_drawer_order(order_id: int) -> void:
+	if game_data == null:
+		return
+	for index in range(game_data.drawer_orders.size()):
+		if int(game_data.drawer_orders[index]["id"]) == order_id:
+			game_data.drawer_orders.remove_at(index)
+			return
+
+
+# Edificio per un ordine "Produci" del cassetto (lo stesso per ogni pipottino; la vicinanza non conta): tra quelli dove
+# ProductionService.can_produce_at vale, che fanno tutta la `quantity` in un ordine (production_max_quantity, 2026-10-09:
+# niente più riduzione), non occupati (ordini in lavorazione < production_concurrent_orders), con la
+# coda non piena (production_max_orders) e posto in uscita per un ciclo: 1) il più libero (meno ordini, in corso + in
+# coda); 2) a parità, se la ricetta chiede un attrezzo, quello la cui Attrezzeria lo copre; 3) a parità, il primo.
+# `busy_counts`: id edificio -> ordini in lavorazione (dalle chiavi "id:ordine" di _collect_pending_assignments). null se
+# nessuno. `covering_only` (2026-10-09): solo gli edifici la cui Attrezzeria copre tutti gli attrezzi della ricetta (quando
+# nessun pipottino adulto li ha: altrimenti nessuno potrebbe prendere l'ordine).
+func _choose_drawer_produce_building(recipe: String, quantity: int, busy_counts: Dictionary, covering_only: bool = false) -> Building:
+	var categories := _recipe_tool_categories(recipe)
+	var best: Building = null
+	var best_orders := 0
+	var best_covered := false
+	for building in macro_world.buildings:
+		if not ProductionService.can_produce_at(building, recipe) or ProductionService.get_max_order_quantity(building) < quantity:
+			continue
+		if ProductionService.has_max_concurrent_orders(building, int(busy_counts.get(building.id, 0))):
+			continue
+		if ProductionService.has_max_orders(building) or not ProductionService.has_output_room(building, recipe):
+			continue
+		var orders := building.production_progress.size()
+		var covered := not categories.is_empty() and BuildingToolkitService.filter_uncovered(building, categories).is_empty()
+		if covering_only and not covered:
+			continue
+		if best == null or orders < best_orders or (orders == best_orders and covered and not best_covered):
+			best = building
+			best_orders = orders
+			best_covered = covered
+	return best
+
+
+func _drawer_order_jobs_collect(provider: Dictionary, assigned: Dictionary) -> Array[Dictionary]:
+	var jobs: Array[Dictionary] = []
+	if game_data.drawer_orders.is_empty():
+		return jobs
+	var busy_counts: Dictionary = {}
+	for claimed_key in assigned["produce"].keys():
+		var building_id := int(String(claimed_key).get_slice(":", 0))
+		busy_counts[building_id] = int(busy_counts.get(building_id, 0)) + 1
+	var cut_claims := _collect_drawer_cut_claims()
+	for order in game_data.drawer_orders:
+		if String(order.get("type", "")) == DRAWER_ORDER_TYPE_CUT:
+			jobs.append(_drawer_cut_job(provider, order, cut_claims))
+			continue
+		if String(order.get("type", "")) != DRAWER_ORDER_TYPE_PRODUCE:
+			continue
+		var order_id := int(order["id"])
+		var recipe := String(order.get("recipe", ""))
+		var quantity := maxi(int(order.get("quantity", 1)), 1)
+		var building := _choose_drawer_produce_building(recipe, quantity, busy_counts)
+		var blocked_reason := "" if building != null else tr("drawer_order_no_free_building")
+		# Attrezzo che nessun adulto ha (2026-10-09): serve un edificio candidato la cui Attrezzeria lo copra; nessuno =
+		# visibile ma non prendibile, "Nessuno ha <attrezzo>".
+		if building != null:
+			var nobody_has := _tool_categories_nobody_has(_recipe_tool_categories(recipe))
+			if not nobody_has.is_empty():
+				building = _choose_drawer_produce_building(recipe, quantity, busy_counts, true)
+				if building == null:
+					blocked_reason = tr("task_assignment_nobody_has_tool").format({"tools": _describe_missing_tool_categories(nobody_has)})
+		var row_name := tr("drawer_order_produce_row").format({"recipe": IconRegistry.get_resource_display_name(recipe), "quantity": quantity})
+		var building_text := (" @ %s #%d" % [building.building_type_name, building.id]) if building != null else ""
+		jobs.append({
+			"key": JobBoardService.drawer_order_key(order_id), "kind": "produce", "name": row_name, "text": row_name,
+			"log_name": "ordine del cassetto #%d %s ×%d%s" % [order_id, recipe, quantity, building_text],
+			"icon": {"resource": recipe},
+			# Nessun posto sulla mappa: macrocella fuori dal mondo = 🎯 spento e nessuna icona lampeggiante.
+			"macro": Vector2i(-1, -1), "microcell": Vector2i(-1, -1), "reach_target": building,
+			"entry_kind": "drawer_order", "id": order_id, "sort": float(order_id) + DRAWER_ORDER_JOB_SORT_OFFSET,
+			"assigned": false, "hidden": false,
+			"blocked_reason": blocked_reason,
+			"target": building, "provider": provider, "order": order, "recipe": recipe, "quantity": quantity,
+		})
+	return jobs
+
+
+# Attrezzi richiesti dalla ricetta (SecondaryResourceRules.recipe_required_tool_categories), vuoto se nessuno.
+func _recipe_tool_categories(recipe: String) -> Array[TaskTypes.ToolCategory]:
+	var categories: Array[TaskTypes.ToolCategory] = []
+	var recipe_rules := CaloricCalculator.get_caloric_source_rules(recipe)
+	if recipe_rules != null:
+		categories.assign(recipe_rules.recipe_required_tool_categories)
+	return categories
+
+
+# Categorie di `categories` che nessun pipottino adulto (non neonato né bambino, le fasce escluse dalla Produce) ha in
+# cintura o nello zaino (ToolGateService.has_tool_for, sola lettura) — 2026-10-09, ordini di produzione in coda.
+func _tool_categories_nobody_has(categories: Array) -> Array:
+	var missing: Array = []
+	for category in categories:
+		var owned := false
+		for member in human_individuals:
+			var age_band := _resolve_age_band(member)
+			if age_band == HumanTypes.AgeBand.INFANT or age_band == HumanTypes.AgeBand.CHILD:
+				continue
+			if ToolGateService.has_tool_for(member, category):
+				owned = true
+				break
+		if not owned:
+			missing.append(category)
+	return missing
+
+
+# "Produci": mai nessuno (alla presa l'ordine diventa un ordine dell'edificio ed esce dall'elenco). "Taglia": chi porta
+# la serie dell'ordine (taglio o consegna, in corso o in coda).
+func _drawer_order_job_workers(job: Dictionary) -> Array[HumanIndividual]:
+	var workers: Array[HumanIndividual] = []
+	if String((job["order"] as Dictionary).get("type", "")) == DRAWER_ORDER_TYPE_CUT:
+		for member in _collect_drawer_cut_claims().get(int((job["order"] as Dictionary)["id"]), {}).get("members", []):
+			workers.append(member as HumanIndividual)
+	return workers
+
+
+# X: toglie l'ordine dall'elenco; un "Taglia" preso viene prima tolto a chi lo fa (come Rimetti in coda).
+func _drawer_order_job_cancel(job: Dictionary) -> void:
+	var order: Dictionary = job["order"]
+	if String(order.get("type", "")) == DRAWER_ORDER_TYPE_CUT and bool(order.get("taken", false)):
+		_drawer_order_job_release(job)
+	_remove_drawer_order(int(order["id"]))
+
+
+# Rimetti in coda / Blocca su un "Taglia" preso: la serie viene tolta a chi la porta con l'effetto di H (regola del
+# carico, "salta la lista una volta", ripresa con resolve_idle_individual) e l'ordine torna in coda con le piante che
+# restano e la stessa zona. "Produci": niente da togliere.
+func _drawer_order_job_release(job: Dictionary) -> void:
+	var order: Dictionary = job["order"]
+	if String(order.get("type", "")) != DRAWER_ORDER_TYPE_CUT or not bool(order.get("taken", false)):
+		return
+	var order_id := int(order["id"])
+	var claim: Dictionary = _collect_drawer_cut_claims().get(order_id, {})
+	order["done_seen"] = maxi(int(order.get("done_seen", 0)), int(claim.get("done", 0)))
+	_return_drawer_cut_order(order)
+	for member in human_individuals:
+		var current_closed := false
+		var current := member.current_task
+		if current != null and not current.is_finished() and _drawer_cut_order_of(current) == order_id:
+			member.skip_job_board_once = true
+			if CargoReturnService.release_cargo(member, current, macro_world) != CargoReturnService.Outcome.RETURNING:
+				member.stop(false)
+				current_closed = true
+		for queued in member.task_queue.duplicate():
+			var queued_task := queued as Task
+			if queued_task != null and _drawer_cut_order_of(queued_task) == order_id:
+				if CargoReturnService.release_cargo(member, queued_task, macro_world) != CargoReturnService.Outcome.RETURNING:
+					member.task_queue.erase(queued)
+		if current_closed:
+			HumanIndividualActionService.resolve_idle_individual(member, _resolve_age_band(member), macro_world)
+	_refresh_selected_individual_panel()
+
+
+# Idoneità come gli ordini dei pannelli (_produce_job_rejection): la Produce Task di prova sull'edificio scelto passa il
+# controllo di età/energia, e ogni attrezzo che l'Attrezzeria di quell'edificio non copre il pipottino ce l'ha in
+# cintura o nello zaino (sola lettura).
+func _drawer_order_job_rejection(worker: HumanIndividual, job: Dictionary) -> String:
+	if String((job["order"] as Dictionary).get("type", "")) == DRAWER_ORDER_TYPE_CUT:
+		return _drawer_cut_job_rejection(worker, job)
+	var building: Building = job["target"]
+	if building == null:
+		return "nessun edificio libero"
+	var quantity := int(job["quantity"])
+	var task := _build_produce_task(worker, building, String(job["recipe"]), quantity, bool((job["order"] as Dictionary).get("deliver_to_warehouse", true)))
+	if task == null:
+		return "definizione mancante"
+	var rejection := worker.get_assign_rejection_reason(task, _resolve_age_band(worker))
+	if rejection != HumanIndividual.ASSIGN_OK:
+		return rejection
+	for category in BuildingToolkitService.filter_uncovered(building, ToolGateService.get_required_categories(task)):
+		if not ToolGateService.has_tool_for(worker, category):
+			return "attrezzo mancante"
+	return HumanIndividual.ASSIGN_OK
+
+
+# Presa: ordine creato sull'edificio scelto (tutta la quantità, "Porta al deposito" dell'ordine del
+# cassetto), assegnato in silenzio come la riassegnazione di un ordine del pannello; riuscita = voce tolta dall'elenco
+# del cassetto. Assegnazione fallita: l'ordine creato sull'edificio viene tolto (il lavoro sospeso preso da create_order
+# torna sospeso) e la voce resta in coda.
+func _assign_drawer_order_job(worker: HumanIndividual, job: Dictionary) -> void:
+	if String((job["order"] as Dictionary).get("type", "")) == DRAWER_ORDER_TYPE_CUT:
+		_assign_drawer_cut_job(worker, job)
+		return
+	var building: Building = job["target"]
+	var order_id := int((job["order"] as Dictionary)["id"])
+	if building == null or _find_drawer_order(order_id).is_empty():
+		return
+	var recipe := String(job["recipe"])
+	var deliver := bool((job["order"] as Dictionary).get("deliver_to_warehouse", true))
+	# Tutta la quantità (2026-10-09): l'edificio scelto la copre (_choose_drawer_produce_building), mai ridotta.
+	var quantity := int(job["quantity"])
+	if quantity > ProductionService.get_max_order_quantity(building):
+		return
+	var order_key := ProductionService.create_order(building, recipe, quantity, -1, false, deliver, true)
+	if order_key == "":
+		return
+	_assign_produce_task(worker, building, recipe, quantity, deliver, order_key, false, true)
+	if _production_order_workers(building).get(order_key) == worker:
+		_remove_drawer_order(order_id)
+		var job_keys: Array[String] = [String(job["key"])]
+		_forget_job_board_wait(job_keys)
+	else:
+		ProductionService.cancel_order(building, order_key)
+		_reconcile_production_units(building)
+	_refresh_selected_building_panel()
+
+
+# ============================================================================================
+# Ordini "Taglia" del cassetto (2026-10-09, richiesta utente — secondo tipo di ordine del cassetto, taglio nelle zone di
+# lavoro "a chiunque"). Voce di GameData.drawer_orders: {"id", "type": "cut", "count": piante (quelle che restano, se
+# l'ordine è tornato in coda), "zone_id": zona fissata (-1 = zona automatica), "taken": preso da qualcuno, "done_seen":
+# tagli già fatti della serie in corso}. Stessa chiave "order:<id>" e stesso fornitore di "Produci", tipo "cut"
+# (priorità "Taglio", skill cut). Presa: il comando Taglia di oggi in silenzio (zona automatica = CutZoneService.
+# choose_work_area per chi lo prende, poi choose_plant e make_series con la chiave dell'ordine nella serie,
+# DRAWER_ORDER_SERIES_KEY); riuscita = ordine "preso" (resta nell'elenco, riga "In corso"). La serie viaggia nel taglio
+# e nella consegna come sempre: chi la porta è al lavoro sull'ordine (_collect_drawer_cut_claims). Serie finita =
+# ordine tolto (_on_cut_zone_series_continue_requested). Nessuno la porta più (H, interruzione senza ripresa, serie
+# fermata) o "Rimetti in coda" = l'ordine torna in coda con le piante che restano e la stessa zona
+# (_settle_drawer_cut_orders, _drawer_order_job_release).
+# ============================================================================================
+
+const DRAWER_ORDER_TYPE_CUT := "cut"
+# Id dell'ordine del cassetto nella serie di tagli (salvato con lei).
+const DRAWER_ORDER_SERIES_KEY := "drawer_order_id"
+# Righe dei tagli dopo quelle di "Produci".
+const DRAWER_CUT_JOB_SORT_OFFSET: float = 4500000.0
+
+
+func _cut_tool_categories() -> Array:
+	return CommandBar.get_action(CommandBar.CUT_ACTION).get("tool_categories", [])
+
+
+# Stato del bottone "Taglia" del cassetto: almeno una zona con il taglio e un adulto con l'accetta.
+func _sync_drawer_cut_available() -> void:
+	if _task_assignment_panel == null or not is_instance_valid(_task_assignment_panel):
+		return
+	if CutZoneService.list_cut_work_areas(game_data).is_empty():
+		_task_assignment_panel.set_cut_available(false, tr("drawer_cut_no_zone"))
+	elif not _tool_categories_nobody_has(_cut_tool_categories()).is_empty():
+		_task_assignment_panel.set_cut_available(false, tr("drawer_cut_nobody_has_axe"))
+	else:
+		_task_assignment_panel.set_cut_available(true)
+
+
+func _on_drawer_cut_requested() -> void:
+	if not JobBoardService.is_enabled(human_folk) or _task_assignment_panel == null or not is_instance_valid(_task_assignment_panel):
+		return
+	_task_assignment_panel.open_cut_overlay(
+		CutZoneService.COUNT_MIN, CutZoneService.COUNT_MAX, UserOptions.work_area_cut_count, UserOptions.work_area_auto_zone
+	)
+
+
+# "Scegli zona" dello strato: la scelta della zona sulla mappa di sempre, tra le zone con il taglio e almeno una pianta
+# disponibile; la zona scelta torna allo strato (set_cut_zone). Nessuna zona valida: niente scelta.
+var _drawer_cut_zone_picking: bool = false
+
+
+func _on_drawer_cut_zone_pick_requested() -> void:
+	var reserved := CutZoneService.collect_reserved_plants(human_individuals)
+	var valid_ids: Array[int] = []
+	for area in CutZoneService.list_cut_work_areas(game_data):
+		if not CutZoneService.list_available_plants(area, live_cells, null, reserved).is_empty():
+			valid_ids.append(area.id)
+	if valid_ids.is_empty():
+		if _task_assignment_panel != null and is_instance_valid(_task_assignment_panel):
+			_task_assignment_panel.end_cut_zone_pick()
+		return
+	var workers: Array[HumanIndividual] = []
+	_enter_work_area_pick_mode(workers, {"job": "drawer_cut", "on_pick": func(area: WorkArea) -> void:
+		if _task_assignment_panel != null and is_instance_valid(_task_assignment_panel):
+			_task_assignment_panel.set_cut_zone(area.id, area.name)
+	}, valid_ids)
+	_drawer_cut_zone_picking = true
+
+
+# "Invia in coda" dello strato: nuovo ordine "Taglia" (valore ricordato come nel popup del comando).
+func _on_drawer_cut_submitted(count: int, zone_id: int) -> void:
+	if game_data == null or not JobBoardService.is_enabled(human_folk):
+		return
+	UserOptions.work_area_cut_count = clampi(count, CutZoneService.COUNT_MIN, CutZoneService.COUNT_MAX)
+	UserOptions.save_to_disk()
+	var order_id := game_data.next_drawer_order_id
+	game_data.next_drawer_order_id += 1
+	game_data.drawer_orders.append({
+		"id": order_id, "type": DRAWER_ORDER_TYPE_CUT, "count": clampi(count, CutZoneService.COUNT_MIN, CutZoneService.COUNT_MAX),
+		"zone_id": zone_id, "taken": false, "done_seen": 0,
+	})
+	if DebugLogging.ENABLED and DebugLogging.SHOW_JOB_BOARD_LOGS:
+		print("[JOB BOARD] Ordine del cassetto #%d: taglia %d piante (zona %s)." % [order_id, count, "automatica" if zone_id < 0 else "#%d" % zone_id])
+	_refresh_pending_entries()
+
+
+# Id dell'ordine del cassetto portato da `task` (taglio o consegna della sua serie); -1 se nessuno.
+func _drawer_cut_order_of(task: Task) -> int:
+	if task == null:
+		return -1
+	var series := CutZoneService.get_series(task.context)
+	if series.is_empty():
+		series = CutZoneService.get_delivery_series(task)
+	return int(series.get(DRAWER_ORDER_SERIES_KEY, -1)) if not series.is_empty() else -1
+
+
+# Chi porta le serie degli ordini "Taglia": id ordine -> {"members": [HumanIndividual], "done": tagli fatti (il più alto)}.
+func _collect_drawer_cut_claims() -> Dictionary:
+	var claims: Dictionary = {}
+	for member in human_individuals:
+		for task in _member_open_tasks(member):
+			var order_id := _drawer_cut_order_of(task)
+			if order_id < 0:
+				continue
+			var series := CutZoneService.get_series(task.context)
+			if series.is_empty():
+				series = CutZoneService.get_delivery_series(task)
+			if not claims.has(order_id):
+				claims[order_id] = {"members": [], "done": 0}
+			var claim: Dictionary = claims[order_id]
+			if not (claim["members"] as Array).has(member):
+				(claim["members"] as Array).append(member)
+			claim["done"] = maxi(int(claim["done"]), int(series.get("done", 0)))
+	return claims
+
+
+# Tagli fatti di una serie con ordine del cassetto: annotati sull'ordine; serie finita = ordine tolto.
+func _note_drawer_cut_progress(series: Dictionary) -> void:
+	if not series.has(DRAWER_ORDER_SERIES_KEY):
+		return
+	var order := _find_drawer_order(int(series[DRAWER_ORDER_SERIES_KEY]))
+	if order.is_empty() or not bool(order.get("taken", false)):
+		return
+	order["done_seen"] = maxi(int(order.get("done_seen", 0)), int(series.get("done", 0)))
+	if CutZoneService.is_series_complete(series):
+		_remove_drawer_order(int(order["id"]))
+
+
+# Ordini "Taglia" presi che nessuno porta più: tornano in coda con le piante che restano, o spariscono se finiti.
+func _settle_drawer_cut_orders() -> void:
+	if game_data == null:
+		return
+	var claims := _collect_drawer_cut_claims()
+	for order in game_data.drawer_orders.duplicate():
+		if String(order.get("type", "")) != DRAWER_ORDER_TYPE_CUT or not bool(order.get("taken", false)):
+			continue
+		var order_id := int(order["id"])
+		if claims.has(order_id):
+			order["done_seen"] = maxi(int(order.get("done_seen", 0)), int(claims[order_id]["done"]))
+			continue
+		_return_drawer_cut_order(order)
+
+
+func _return_drawer_cut_order(order: Dictionary) -> void:
+	var remaining := int(order.get("count", 1)) - int(order.get("done_seen", 0))
+	if remaining <= 0:
+		_remove_drawer_order(int(order["id"]))
+		return
+	order["count"] = remaining
+	order["taken"] = false
+	order["done_seen"] = 0
+
+
+# Riga di un ordine "Taglia": "Taglia N piante · Zona automatica" / "· <zona>", icona del taglio; 🎯 sulla zona fissata.
+func _drawer_cut_job(provider: Dictionary, order: Dictionary, claims: Dictionary) -> Dictionary:
+	var order_id := int(order["id"])
+	var zone_id := int(order.get("zone_id", -1))
+	var area: WorkArea = WorkAreaService.find_by_id(game_data, zone_id) if zone_id >= 0 else null
+	var claim: Dictionary = claims.get(order_id, {})
+	var is_assigned := bool(order.get("taken", false)) and not claim.is_empty()
+	var remaining := maxi(int(order.get("count", 1)) - (int(claim.get("done", 0)) if is_assigned else 0), 1)
+	var zone_text := tr("drawer_cut_zone_auto")
+	if zone_id >= 0:
+		zone_text = area.name if area != null else tr("drawer_cut_zone_gone")
+	var row_name := tr("drawer_order_cut_row_one" if remaining == 1 else "drawer_order_cut_row").format({"count": remaining, "zone": zone_text})
+	var macro := Vector2i(-1, -1)
+	var microcell := Vector2i(-1, -1)
+	if area != null:
+		macro = area.macro_coords
+		microcell = area.rect.position + area.rect.size / 2
+	return {
+		"key": JobBoardService.drawer_order_key(order_id), "kind": "cut", "name": row_name, "text": row_name,
+		"log_name": "ordine del cassetto #%d taglio ×%d (%s)" % [order_id, remaining, "zona automatica" if zone_id < 0 else "zona #%d" % zone_id],
+		"icon": {"command": "cut"}, "macro": macro, "microcell": microcell,
+		# Raggiungibilità vera nel controllo di idoneità (zona e pianta per chi lo prende, CutZoneService): qui un bersaglio
+		# fuori dalla macrocella, che PathfindingService.reachability_for dà sempre per raggiungibile.
+		"reach_target": {"macro_x": -1, "macro_y": -1, "micro_x": 0, "micro_y": 0},
+		"entry_kind": "work_area" if area != null else "drawer_order", "id": area.id if area != null else order_id,
+		"sort": float(order_id) + DRAWER_CUT_JOB_SORT_OFFSET,
+		"assigned": is_assigned, "hidden": false,
+		"blocked_reason": "" if is_assigned else _drawer_cut_blocked_reason(zone_id, area),
+		"target": area, "provider": provider, "order": order,
+	}
+
+
+# Motivo per cui nessuno può prendere l'ordine ora ("" = prendibile): nessun adulto con l'accetta; nessuna zona valida
+# (zona fissata sparita, senza il taglio o senza piante; con la zona automatica nessuna zona con piante).
+func _drawer_cut_blocked_reason(zone_id: int, area: WorkArea) -> String:
+	if not _tool_categories_nobody_has(_cut_tool_categories()).is_empty():
+		return tr("drawer_cut_nobody_has_axe")
+	var areas := CutZoneService.list_cut_work_areas(game_data)
+	var reserved := CutZoneService.collect_reserved_plants(human_individuals)
+	if zone_id >= 0:
+		if area == null or not areas.has(area) or CutZoneService.list_available_plants(area, live_cells, null, reserved).is_empty():
+			return tr("drawer_cut_no_valid_zone")
+		return ""
+	for candidate in areas:
+		if not CutZoneService.list_available_plants(candidate, live_cells, null, reserved).is_empty():
+			return ""
+	return tr("drawer_cut_no_valid_zone")
+
+
+# Zona e pianta per `worker` ({"area", "plant"}; {} se nessuna): zona fissata (se ha ancora il taglio) o automatica
+# (CutZoneService.choose_work_area per lui), poi la pianta come il comando (choose_plant: viva, ammessa, raggiungibile,
+# non prenotata). Le piante stanno solo nelle macrocelle attive.
+func _drawer_cut_pick(worker: HumanIndividual, job: Dictionary) -> Dictionary:
+	var order: Dictionary = job["order"]
+	var zone_id := int(order.get("zone_id", -1))
+	var reserved := CutZoneService.collect_reserved_plants(human_individuals)
+	var area: WorkArea = null
+	if zone_id >= 0:
+		area = WorkAreaService.find_by_id(game_data, zone_id)
+		if area == null or not CutZoneService.list_cut_work_areas(game_data).has(area):
+			return {}
+	else:
+		area = CutZoneService.choose_work_area(game_data, live_cells, worker, reserved)
+	if area == null:
+		return {}
+	var plant := CutZoneService.choose_plant(area, live_cells, worker, reserved)
+	if plant.is_empty():
+		return {}
+	return {"area": area, "plant": plant}
+
+
+# Idoneità come il comando Taglia: età, attrezzo da taglio (in cintura o nello zaino, _command_tool_rejection), una zona e
+# una pianta per lui, e la task di prova passa il controllo di età/energia.
+func _drawer_cut_job_rejection(worker: HumanIndividual, job: Dictionary) -> String:
+	var age_band := _resolve_age_band(worker)
+	if age_band == HumanTypes.AgeBand.INFANT or age_band == HumanTypes.AgeBand.CHILD:
+		return HumanIndividual.ASSIGN_REJECT_TOO_YOUNG
+	if _command_tool_rejection(worker, CommandBar.CUT_ACTION) != "":
+		return "attrezzo mancante"
+	var pick := _drawer_cut_pick(worker, job)
+	if pick.is_empty():
+		return "nessuna zona valida"
+	var task := _build_cut_task(worker, pick["plant"], (pick["area"] as WorkArea).id)
+	if task == null:
+		return "definizione mancante"
+	return worker.get_assign_rejection_reason(task, age_band)
+
+
+# Presa: la serie di tagli del comando di oggi, in silenzio, con l'id dell'ordine nella serie; solo se il pipottino ha
+# davvero la task l'ordine diventa "preso".
+func _assign_drawer_cut_job(worker: HumanIndividual, job: Dictionary) -> void:
+	var order: Dictionary = job["order"]
+	var order_id := int(order["id"])
+	if _find_drawer_order(order_id).is_empty() or bool(order.get("taken", false)):
+		return
+	var pick := _drawer_cut_pick(worker, job)
+	if pick.is_empty():
+		return
+	var area: WorkArea = pick["area"]
+	var series := CutZoneService.make_series(area.id, maxi(int(order.get("count", 1)), 1))
+	series[DRAWER_ORDER_SERIES_KEY] = order_id
+	_assign_cut_task(worker, pick["plant"], area.id, series, true)
+	for task in _member_open_tasks(worker):
+		if String(CutZoneService.get_series(task.context).get("id", "")) == String(series["id"]):
+			order["taken"] = true
+			order["done_seen"] = 0
+			var job_keys: Array[String] = [String(job["key"])]
+			_forget_job_board_wait(job_keys)
+			return
+
+
+# ============================================================================================
+# Comandi diretti in "In corso" (2026-10-09, richiesta utente): oltre ai lavori della coda, una riga per ogni individuo
+# la cui task ATTIVA è un comando dato a mano (raccolta, trasporto, taglio, estrazione, caccia, macellazione,
+# costruzione, produzione, sepoltura, rito, attrezzi...). Fuori: nessuna task, bisogni e idle (task con
+# is_idle_activity — oziare, passeggiata, gioco, sogni a occhi aperti, esplorazione — e DIRECT_COMMAND_EXCLUDED_TASK_NAMES),
+# le task in coda personale non attive, e le task già rappresentate da una riga della coda (_is_task_on_board: mai due
+# righe per lo stesso lavoro). Riga: la scritta della lista della popolazione (Task.get_activity_description), sotto il
+# nome dell'individuo, icona dell'azione; "Diretto" al posto di "Rimetti in coda"; X = H su quell'individuo; clic =
+# seleziona e centra l'individuo.
+# ============================================================================================
+
+const DIRECT_COMMAND_KEY_PREFIX := "direct:"
+const DIRECT_COMMAND_SORT_OFFSET: float = 9000000.0
+# Bisogni non marcati come idle (riposo e rifornimenti).
+const DIRECT_COMMAND_EXCLUDED_TASK_NAMES: Array[String] = [
+	"task_rest_name", "task_emergency_rest_name", "task_emergency_restock_name", "task_leisure_rest_name",
+	"task_leisure_restock_name", "task_leisure_rite_name", "task_wander_name", "task_play_name", "task_daydream_name",
+	"task_explore_name",
+]
+# Icona dell'azione per nome della task (IconRegistry.COMMAND_ICON_NODES); assente = nessuna icona.
+const DIRECT_COMMAND_ICON_BY_TASK := {
+	"task_haul_resource_name": "pickup", "task_transport_name": "transport", "task_cut_name": "cut",
+	"task_quarry_name": "quarry", "task_hunt_name": "hunt", "task_hunt_zone_name": "hunt", "task_butcher_name": "butcher",
+	"task_build_name": "build", "task_demolish_name": "demolish", "task_produce_name": "produce", "task_bury_name": "bury",
+	"task_rite_name": "rite", "task_deliver_output_name": "transport",
+}
+
+
+func _collect_direct_command_entries(board_jobs: Array[Dictionary]) -> Array[Dictionary]:
+	var entries: Array[Dictionary] = []
+	# Mucchi elencati come lavoro "Mucchio": chi li sta portando via è già nella loro riga.
+	var pile_job_keys: Dictionary = {}
+	for job in board_jobs:
+		if String(job["kind"]) == "pile" and job["target"] is GroundPile:
+			var pile: GroundPile = job["target"]
+			pile_job_keys[_pile_claim_key(pile.macro_coords, pile.microcell)] = true
+	for member in human_individuals:
+		var task := member.current_task
+		if task == null or task.is_finished() or task.is_idle_activity or DIRECT_COMMAND_EXCLUDED_TASK_NAMES.has(task.task_name):
+			continue
+		if _is_task_on_board(task, pile_job_keys):
+			continue
+		var text := task.get_activity_description()
+		var icon_key := String(DIRECT_COMMAND_ICON_BY_TASK.get(task.task_name, ""))
+		var entry := _pending_entry("%s%d" % [DIRECT_COMMAND_KEY_PREFIX, member.id], text, {
+			"kind": "individual", "id": member.id, "macro": member.home_macro_coords,
+			"sort": float(member.id) + DIRECT_COMMAND_SORT_OFFSET,
+			"icon": {"command": icon_key} if icon_key != "" else {"text": ""},
+			"building_name": text, "workers": member.name, "direct": true,
+			"cancel_disabled": false, "cancel_tooltip": tr("task_assignment_direct_cancel_tooltip"),
+		})
+		entries.append(entry)
+	return entries
+
+
+# true se `task` è già rappresentata da una riga della coda: cantieri, miglioramenti e demolizioni (ogni edificio con un
+# lavoro ha la sua riga), produzione (ordini delle workstation), sepoltura, consegna dei finiti, ordini "Taglia" del
+# cassetto, ritiro di un mucchio elencato come lavoro "Mucchio".
+func _is_task_on_board(task: Task, pile_job_keys: Dictionary) -> bool:
+	if BUILD_TASK_NAMES.has(task.task_name) or DEMOLISH_TASK_NAMES.has(task.task_name) or PRODUCE_TASK_NAMES.has(task.task_name):
+		return true
+	if BodyBurialService.is_bury_task(task) or task.context.has(CONTEXT_OUTPUT_JOB_BUILDING_ID):
+		return true
+	if _drawer_cut_order_of(task) >= 0:
+		return true
+	for key in _task_pile_claim_keys(task):
+		if pile_job_keys.has(key):
+			return true
+	return false
+
+
 func _log_job_board(worker: HumanIndividual, text: String) -> void:
 	if DebugLogging.ENABLED and DebugLogging.SHOW_JOB_BOARD_LOGS:
 		print("[JOB BOARD] #%d %s: %s" % [worker.id, worker.name, text])
@@ -9673,6 +11050,19 @@ func _activate_job_entry(entry: Dictionary) -> bool:
 			if pile == null:
 				return false
 			_select_ground_pile({"pile_id": pile.id, "macro_coords": pile.macro_coords})
+		# Zona di lavoro (2026-10-09, ordini "Taglia" del cassetto con la zona fissata).
+		"work_area":
+			var area := WorkAreaService.find_by_id(game_data, int(entry["id"]))
+			if area == null:
+				return false
+			_select_work_area(area)
+		# Pipottino (2026-10-08, attesa di materiale): stessa selezione e centratura del 🎯 della lista degli abitanti.
+		"individual":
+			var member := _find_human_individual_by_id(int(entry["id"]))
+			if member == null:
+				return false
+			_on_population_individual_center_requested(member, "pending")
+			return true
 		_:
 			return false
 	_center_camera_on_selection()
@@ -11161,6 +12551,7 @@ func _activate_live_cell(mx: int, my: int, p_debug_source: String = "unknown") -
 
 			var stone_service := StonePositionService.new()
 			stone_service.generate_if_needed(cell.macro_state, cell.macro_cell)
+			cell.renderer.set_depleted_stone_positions(RockStoneService.get_depleted_positions(cell.macro_state))
 			cell.renderer.set_stone_positions(cell.macro_state.stone_positions)
 			# Pebble (2026-09-08, richiesta utente) — NON più sincronizzato qui a parte (2026-09-09,
 			# richiesta utente, bugfix "pebble/stick restano disegnati dopo la raccolta"): la prima
@@ -12215,8 +13606,12 @@ func _refresh_resource_visuals(cell: LiveMacroCell, reason: String = "") -> void
 	var _veg_refresh_start_usec := Time.get_ticks_usec()
 
 	var occupied: Dictionary = {}
+	# Rocce esaurite (2026-10-08, RockStoneService.is_depleted): non più vietate alla vegetazione, così col tempo ci
+	# nascono piante nuove (alberi/arbusti già nati restano nei loro lotti). Restano in stone_positions per le quote.
+	var depleted_rocks := RockStoneService.get_depleted_positions(cell.macro_state)
 	for pos in cell.macro_state.stone_positions:
-		occupied[pos] = true
+		if not depleted_rocks.has(pos):
+			occupied[pos] = true
 	for pos in cell.river_positions:
 		occupied[pos] = true
 	# Le microcelle edificate vanno escluse esattamente come stone/river — GRASS si affida solo a
@@ -13535,6 +14930,9 @@ func _building_type_name_for_action(action_id: StringName) -> String:
 		# Pietre impilate (2026-10-02, richiesta utente) — azione cablata in BuildBar._ready.
 		&"build_stacked_stones":
 			return "stacked_stones"
+		# Legnaia (2026-10-08, richiesta utente — segnaposto) — azione cablata in BuildBar._ready.
+		&"build_woodshed":
+			return "woodshed"
 		_:
 			return ""
 
@@ -13568,15 +14966,12 @@ func _on_demolish_confirmed(building: Variant) -> void:
 	if target_building == null or target_building.is_demolished or target_building.is_marked_for_demolition:
 		return
 	if target_building.is_complete:
+		# Nessun mirino (2026-10-09, richiesta utente — prima solo con l'idea dell'assegnazione): l'edificio "da demolire"
+		# nasce senza demolitore, come una demolizione interrotta. Si assegna col clic destro con un individuo selezionato
+		# (suggerimento arancione nel pannello); con l'idea entra anche nella lista dei lavori (demolish:<id>, con l'attesa
+		# per l'assegnazione a mano). Si annulla con "Annulla demolizione".
 		_mark_building_for_demolition(target_building)
-		# Con l'idea dell'assegnazione (2026-10-07, richiesta utente): nessun mirino, l'edificio "da demolire" nasce senza
-		# demolitore ed entra subito nella lista dei lavori (demolish:<id>, con l'attesa per l'assegnazione a mano).
-		if JobBoardService.is_enabled(human_folk):
-			_refresh_pending_entries()
-			return
-		# Scelta del demolitore subito dopo la conferma (2026-09-27, richiesta utente): uscire senza scegliere
-		# annulla la demolizione.
-		_enter_demolisher_pick_mode(target_building, true)
+		_refresh_pending_entries()
 	elif BuildingUpgradeService.is_upgrade_site(target_building):
 		# Cantiere di un miglioramento (2026-10-03): torna all'edificio di prima, non sparisce mai.
 		_cancel_building_upgrade(target_building)
@@ -13652,20 +15047,19 @@ func _on_upgrade_requested(building: Building) -> void:
 	)
 
 
-# Scelta del lavoratore per il miglioramento. Idoneità (2026-10-03, richiesta utente): prima di trasformare l'edificio
-# il pipottino scelto deve poter ricevere la Build, con lo stesso controllo dell'assegnazione di una costruzione
-# (_get_upgrade_build_rejection_reason). Se non può: nessuna trasformazione, motivo come per ogni comando rifiutato
-# (X sull'edificio, popup e avviso nel pannello dell'individuo) e la scelta col mirino resta attiva per indicarne un
-# altro (_handle_worker_pick_input l'ha già chiusa prima di chiamare on_pick: qui si riapre).
+# Avvio del miglioramento (2026-10-09, richiesta utente — nessun mirino, prima solo con l'idea dell'assegnazione): dopo
+# l'eventuale conferma delle scorte e l'orientamento, il miglioramento parte come cantiere senza costruttore
+# (_start_upgrade_without_builder), come un miglioramento il cui costruttore è stato interrotto. Si assegna col clic destro
+# con un individuo selezionato (suggerimento arancione nel pannello); con l'idea entra anche nella lista dei lavori.
 # SCELTA DELL'ORIENTAMENTO NEL MIGLIORAMENTO (2026-10-04, richiesta utente). Verso un edificio CON porta (es. sito di
-# deposito -> capanna di stoccaggio), dopo l'eventuale conferma delle scorte e prima del mirino: sulla cella
+# deposito -> capanna di stoccaggio), dopo l'eventuale conferma delle scorte e prima dell'avvio: sulla cella
 # compare l'anteprima dell'edificio di destinazione (BuildingGhost, ferma sulla cella), R ruota come nel piazzamento,
-# un clic sinistro conferma e passa al mirino con l'orientamento scelto; destro o Esc annullano senza cambiare nulla.
+# un clic sinistro conferma e avvia il miglioramento con l'orientamento scelto; destro o Esc annullano senza cambiare nulla.
 # PER TUTTI I MIGLIORAMENTI (2026-10-04, richiesta utente): la scelta compare ogni volta che l'edificio di destinazione
 # ha la porta, anche se quello di partenza l'ha già; l'anteprima parte con l'orientamento dell'edificio di partenza, o
 # con quello predefinito (SOUTH, come il piazzamento) se quello non ha porta — chi non vuole cambiare conferma con un clic.
-# Destinazione senza porta: nessuna domanda, si va al mirino e l'orientamento resta quello di prima. Gesti uguali per
-# tutti: Migliora, eventuale conferma delle scorte, orientamento, mirino. I comandi stanno nella barra di costruzione
+# Destinazione senza porta: nessuna domanda, si avvia subito e l'orientamento resta quello di prima. Gesti uguali per
+# tutti: Migliora, eventuale conferma delle scorte, orientamento, avvio. I comandi stanno nella barra di costruzione
 # (BuildBar.set_upgrade_orientation_mode), non più nella striscia gialla in alto.
 var _upgrade_orientation_building: Building = null
 var _upgrade_orientation_ghost: BuildingGhost = null
@@ -13681,7 +15075,7 @@ func _continue_upgrade_after_confirmation(building: Building) -> void:
 	if _upgrade_needs_orientation(building):
 		_enter_upgrade_orientation_mode(building)
 	else:
-		_enter_upgrade_pick_mode(building)
+		_start_upgrade_without_builder(building)
 
 
 func _enter_upgrade_orientation_mode(building: Building) -> void:
@@ -13689,8 +15083,8 @@ func _enter_upgrade_orientation_mode(building: Building) -> void:
 	var cell: LiveMacroCell = live_cells.get(Vector2i(building.macro_x, building.macro_y))
 	var target := BuildingUpgradeService.get_upgrade_rules(building)
 	if cell == null or cell.container == null or target == null:
-		# Nessuna cella viva su cui mostrare l'anteprima: mirino diretto, orientamento invariato.
-		_enter_upgrade_pick_mode(building)
+		# Nessuna cella viva su cui mostrare l'anteprima: avvio diretto, orientamento invariato.
+		_start_upgrade_without_builder(building)
 		return
 	var ghost := BuildingGhost.new()
 	ghost.building_type_name = building.rules.upgrades_to
@@ -13741,7 +15135,7 @@ func _handle_upgrade_orientation_input(event: InputEvent) -> bool:
 			var chosen_rotation: int = int(_upgrade_orientation_ghost.rotation_dir)
 			_exit_upgrade_orientation_mode()
 			if building != null and _can_start_building_upgrade(building):
-				_enter_upgrade_pick_mode(building, chosen_rotation)
+				_start_upgrade_without_builder(building, chosen_rotation)
 			else:
 				_refresh_selected_building_panel()
 			return true
@@ -13749,48 +15143,15 @@ func _handle_upgrade_orientation_input(event: InputEvent) -> bool:
 
 
 # `chosen_rotation` (2026-10-04): orientamento scelto in _enter_upgrade_orientation_mode (GameTypes.Direction), -1 =
-# nessuna scelta (resta quello dell'edificio). Applicato solo all'avvio dei lavori (_start_building_upgrade).
-func _enter_upgrade_pick_mode(building: Building, chosen_rotation: int = -1) -> void:
-	# Con l'idea dell'assegnazione (2026-10-07, richiesta utente): nessun mirino, il miglioramento parte subito senza
-	# costruttore (avviso sulle scorte e orientamento già passati) ed entra nella lista dei lavori (upgrade:<id>, con
-	# l'attesa per l'assegnazione a mano).
-	if JobBoardService.is_enabled(human_folk):
-		if _can_start_building_upgrade(building):
-			_start_building_upgrade(building, chosen_rotation)
-			_refresh_pending_entries()
-		_refresh_selected_building_panel()
-		return
-	var target := BuildingUpgradeService.get_upgrade_rules(building)
-	var on_pick := func(worker: HumanIndividual) -> void:
-		if not _can_start_building_upgrade(building):
-			_refresh_selected_building_panel()
-			return
-		var rejection := _get_upgrade_build_rejection_reason(worker, building)
-		if rejection != HumanIndividual.ASSIGN_OK:
-			var macro_coords := Vector2i(building.macro_x, building.macro_y)
-			if live_cells.has(macro_coords):
-				_spawn_command_icon_at_microcell(live_cells[macro_coords], Vector2i(building.micro_x, building.micro_y), "task_rejected")
-			_report_assign_rejection(worker, rejection, "task_activity_build")
-			_enter_upgrade_pick_mode(building, chosen_rotation)
-			return
+# nessuna scelta (resta quello dell'edificio). Applicato all'avvio dei lavori (_start_building_upgrade).
+# Senza mirino (2026-10-09, richiesta utente — prima solo con l'idea dell'assegnazione): il miglioramento parte subito
+# senza costruttore (avviso sulle scorte e orientamento già passati); con l'idea entra nella lista dei lavori
+# (upgrade:<id>, con l'attesa per l'assegnazione a mano).
+func _start_upgrade_without_builder(building: Building, chosen_rotation: int = -1) -> void:
+	if _can_start_building_upgrade(building):
 		_start_building_upgrade(building, chosen_rotation)
-		_assign_resumable_building_task(worker, building)
-		_refresh_selected_building_panel()
-	_enter_worker_pick_mode(tr("upgrade_pick_banner_text").format({"building": tr(target.building_name)}), on_pick)
-
-
-# Motivo per cui `worker` non potrebbe ricevere la Build del miglioramento (HumanIndividual.ASSIGN_OK se può): Task di
-# prova costruita come quella vera (build.tres con il contesto dell'edificio, TaskFactory è puro) e mai assegnata,
-# passata allo stesso guard di idoneità di assign_task (get_assign_rejection_reason).
-func _get_upgrade_build_rejection_reason(worker: HumanIndividual, building: Building) -> String:
-	var definition := load("res://gameplay/scripts/tasks/definitions/build.tres") as TaskDefinition
-	if definition == null:
-		return HumanIndividual.ASSIGN_OK
-	var context: Dictionary = building.get_resumable_task_context()
-	context["macro_state"] = macro_world.get_cell_state_at(building.macro_x, building.macro_y) if macro_world != null else null
-	context["is_currently_grass"] = false
-	var probe := TaskFactory.build_task(definition, context)
-	return worker.get_assign_rejection_reason(probe, _resolve_age_band(worker))
+		_refresh_pending_entries()
+	_refresh_selected_building_panel()
 
 
 # Stesse condizioni del pulsante: destinazione valida, edificio completo e non "da demolire", idea della destinazione
@@ -13926,8 +15287,8 @@ func _refresh_upgraded_building_views(building: Building) -> void:
 	_refresh_selected_building_panel()
 
 
-# Demolizione annullata (2026-09-27, richiesta utente — uscita senza scelta dalla modalità del demolitore aperta
-# dalla conferma): il flag "da demolire" si toglie e l'edificio torna a funzionare (depositi, prelievi, produzione,
+# Demolizione annullata (2026-09-27, richiesta utente; dal 2026-10-09 solo da "Annulla demolizione", il mirino del
+# demolitore non c'è più): il flag "da demolire" si toglie e l'edificio torna a funzionare (depositi, prelievi, produzione,
 # ricerche dei magazzini). I residenti liberati alla marcatura vengono ricollocati da AssignHouseService come al
 # solito (anche in altri edifici); le Produce Task chiuse alla marcatura non vengono ripristinate.
 func _cancel_building_demolition(building: Building) -> void:
@@ -13943,7 +15304,7 @@ func _cancel_building_demolition(building: Building) -> void:
 
 # "Annulla demolizione" dal pannello (2026-09-27, richiesta utente): solo finché il lavoro non è iniziato. Chiude le
 # Demolish Task su questo edificio di tutti (correnti e in coda) con la stessa chiusura di _demolish_building, poi
-# annulla come dalla modalità di scelta del demolitore (_cancel_building_demolition).
+# toglie il flag "da demolire" (_cancel_building_demolition).
 func _on_demolition_cancel_requested(building: Building) -> void:
 	if building == null or building.is_demolished or not building.is_marked_for_demolition:
 		return
@@ -14073,6 +15434,10 @@ func _on_ground_pile_haul_requested(carrier: HumanIndividual, pile_ref: Dictiona
 		if pile_ref.has(HaulZoneService.LABEL_TASK_KEY):
 			until_empty_zone[HaulZoneService.LABEL_TASK_KEY] = pile_ref[HaulZoneService.LABEL_TASK_KEY]
 		task.context[HaulZoneService.CONTEXT_KEY] = until_empty_zone
+	# Consegna di un lavoro (2026-10-09): il mucchio non è un lavoro "Mucchio" della lista mentre questa task esiste
+	# (_collect_job_delivery_pile_keys); dopo una demolizione la riga dell'individuo dice "Ritiro mucchio (<risorsa>)".
+	task.context[HaulZoneService.JOB_DELIVERY_KEY] = true
+	task.context[HaulZoneService.PILE_RESOURCE_KEY] = resource_names[0] if resource_names.size() == 1 else ""
 	var carrier_age_band := _resolve_age_band(carrier)
 	for step in task.steps:
 		if step.disallowed_age_bands.has(carrier_age_band):
@@ -14301,6 +15666,12 @@ func _setup_side_drawer() -> void:
 	side_drawer.set_styles(
 		sidebar.get_theme_stylebox("panel") if sidebar != null else null, game_info_panel.get_theme_stylebox("panel")
 	)
+	# Bottone della posizione (2026-10-09): scelta salvata tra le partite, cassetto subito spostato.
+	side_drawer.overlay_mode_requested.connect(func(overlay: bool) -> void:
+		UserOptions.side_drawer_overlay = overlay
+		UserOptions.save_to_disk()
+		_layout_side_drawer()
+	)
 	side_drawer.closed.connect(func(content_id: StringName) -> void:
 		if content_id == TaskAssignmentPanel.DRAWER_CONTENT_ID:
 			_task_assignment_panel = null
@@ -14314,10 +15685,16 @@ func _layout_side_drawer() -> void:
 	if side_drawer == null:
 		return
 	# Area scura del cassetto = area scura dell'info panel (GameInfoPanel); cornice fino al bordo della sidebar (2026-10-07).
+	# Posizione (2026-10-09, UserOptions.side_drawer_overlay): "Affiancato" = lato destro sul fianco sinistro della sidebar;
+	# "Sopra" = lato destro sul bordo destro della sidebar (quello dello schermo), sopra l'info panel, che copre tutto
+	# (380 px contro 300) sporgendo a sinistra. Lo scorrimento della mappa al bordo segue da solo il fianco sinistro del
+	# cassetto (CameraController._get_map_rect, gruppo camera_right_edge_cover).
 	var sidebar := $CanvasLayer/Sidebar as Control
 	var panel_rect := game_info_panel.get_global_rect()
 	var sidebar_rect := sidebar.get_global_rect() if sidebar != null else panel_rect
-	side_drawer.place(sidebar_rect.position.x, panel_rect.position.y, panel_rect.end.y, sidebar_rect.end.y)
+	var right_edge := sidebar_rect.end.x if UserOptions.side_drawer_overlay else sidebar_rect.position.x
+	side_drawer.set_overlay_mode(UserOptions.side_drawer_overlay)
+	side_drawer.place(right_edge, panel_rect.position.y, panel_rect.end.y, sidebar_rect.end.y)
 
 
 # Bottone 📋: apre il cassetto con l'assegnazione delle task, o lo richiude se la mostra già.
@@ -14338,6 +15715,25 @@ func _toggle_task_assignment_drawer() -> void:
 		)
 		_task_assignment_panel.cancel_requested.connect(_on_job_board_cancel_requested)
 		_task_assignment_panel.requeue_requested.connect(_on_job_board_requeue_requested)
+		# Bottone "Produci" (2026-10-09): stato subito, poi a ogni ricalcolo dell'elenco.
+		_task_assignment_panel.set_produce_available(_has_drawer_produce_building())
+		_task_assignment_panel.produce_order_requested.connect(_on_drawer_produce_requested)
+		_task_assignment_panel.produce_orders_submitted.connect(_on_drawer_produce_submitted)
+		# "Taglia" (2026-10-09): stato subito, poi a ogni ricalcolo dell'elenco.
+		_sync_drawer_cut_available()
+		_task_assignment_panel.cut_order_requested.connect(_on_drawer_cut_requested)
+		_task_assignment_panel.cut_zone_pick_requested.connect(_on_drawer_cut_zone_pick_requested)
+		_task_assignment_panel.cut_order_submitted.connect(_on_drawer_cut_submitted)
+		# Priorità (2026-10-08): valori della partita (GameData), applicati subito; le righe "In coda" si riordinano.
+		_task_assignment_panel.set_priority_settings(JobBoardService.get_priority_mode(game_data), JobBoardService.get_kind_order(game_data))
+		_task_assignment_panel.priority_mode_changed.connect(func(mode: String) -> void:
+			JobBoardService.set_priority_mode(game_data, mode)
+			_refresh_pending_entries()
+		)
+		_task_assignment_panel.kind_order_changed.connect(func(order: Array[String]) -> void:
+			JobBoardService.set_kind_order(game_data, order)
+			_refresh_pending_entries()
+		)
 		side_drawer.show_content(TaskAssignmentPanel.DRAWER_CONTENT_ID, tr("task_assignment_dialog_title"), _task_assignment_panel)
 		# Elenco subito, senza aspettare il ricalcolo del secondo successivo.
 		_refresh_pending_entries()
@@ -14405,12 +15801,23 @@ func _command_state_for(member: HumanIndividual, action_id: StringName) -> Dicti
 
 
 # Clic su un pulsante del gruppo "Azioni" di una riga della lista degli abitanti: l'ordine va solo a quell'abitante, con
-# lo stesso flusso della barra (nessun cambio di scheda).
+# lo stesso flusso della barra (nessun cambio di scheda). Dal 2026-10-09 (richiesta utente) i popup del comando (Raccogli
+# nelle zone di lavoro, Caccia, Taglia, Estrai) restano le finestre di sempre ma compaiono accanto all'info panel
+# (_popup_anchor, DialogPlacement.place) invece che al centro dello schermo.
 func _on_population_command_requested(member: HumanIndividual, action_id: StringName) -> void:
 	if member == null or not human_individuals.has(member):
 		return
 	var single: Array[HumanIndividual] = [member]
+	# Lato destro sul bordino azzurro interno dell'info panel (il bordo destro della sua area scura, game_info_panel),
+	# all'altezza della riga cliccata (il clic è sul bottone della riga).
+	_popup_anchor = {"right": game_info_panel.get_global_rect().end.x, "top": get_viewport().get_mouse_position().y - 12.0}
 	_order_command(action_id, single)
+	_popup_anchor = {}
+
+
+# Posizione dei popup del comando in corso (popup_anchor di PickupChoiceDialog e CountChoiceDialog, DialogPlacement):
+# {} = al centro (comandi dalla mappa). Impostata solo per la durata di un comando dalla lista degli individui.
+var _popup_anchor: Dictionary = {}
 
 
 # Smistamento di un comando del gruppo "Azioni" (2026-10-05): barra (tutti i selezionati) e righe della lista.

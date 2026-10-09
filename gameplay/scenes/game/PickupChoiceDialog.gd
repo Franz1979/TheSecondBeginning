@@ -89,6 +89,12 @@ var _destination_rows: VBoxContainer = null
 var _destination_group: ButtonGroup = null
 # Bottone di scelta -> id della destinazione.
 var _destination_ids: Dictionary = {}
+# Posizione accanto a un pannello (2026-10-09, richiesta utente — "Raccogli nelle zone di lavoro" e Caccia dalla lista
+# degli individui): se prima di open_dialog / open_hunt_dialog il chiamante imposta `popup_anchor` (vedi
+# DialogPlacement.place), la finestra resta identica ma compare accanto all'info panel invece che al centro. Vale per
+# quell'apertura sola; {} = al centro come sempre.
+var popup_anchor: Dictionary = {}
+var _anchor: Dictionary = {}
 
 
 func _ready() -> void:
@@ -116,6 +122,8 @@ func open_dialog(
 	dialog_title: String, message: String, resources: Array, default_choice: Dictionary = {}, repeat_default: bool = false,
 	repeat_max: int = TaskRepeatRules.MAX_REPEATS, quantity_enabled: bool = true, trips: int = 0, trips_max: int = 0
 ) -> void:
+	_anchor = popup_anchor
+	popup_anchor = {}
 	_set_hunt_mode(false)
 	title = dialog_title
 	message_label.text = message
@@ -165,6 +173,7 @@ func open_hunt_dialog(
 	_ensure_destination_section()
 	_fill_destination_section(destination_options, default_destination)
 	if _meat_option == null or meat_options.is_empty():
+		popup_anchor = {}
 		push_error("PickupChoiceDialog.open_hunt_dialog: riga \"Carne\" non disponibile o nessun valore — dialog non aperto.")
 		hide()
 		return false
@@ -179,6 +188,8 @@ func open_hunt_dialog(
 		if _meat_values[i] == default_target:
 			selected_index = i
 	_meat_option.select(selected_index)
+	_anchor = popup_anchor
+	popup_anchor = {}
 	exclusive = true
 	_popup_fitted(HUNT_DIALOG_HEIGHT)
 	return true
@@ -190,7 +201,13 @@ func open_hunt_dialog(
 # l'altezza calcolata dalle righe se è maggiore (l'elenco scorre).
 func _popup_fitted(desired_height: float) -> void:
 	popup_centered(Vector2i(DIALOG_WIDTH, int(desired_height)))
+	_place()
 	_fit_to_content.call_deferred(desired_height)
+
+
+# Al centro, oppure accanto al pannello se l'apertura ha una posizione (_anchor, DialogPlacement.place).
+func _place() -> void:
+	DialogPlacement.place(self, _anchor)
 
 
 func _fit_to_content(desired_height: float) -> void:
@@ -204,7 +221,7 @@ func _fit_to_content(desired_height: float) -> void:
 	var fitted := Vector2i(maxi(DIALOG_WIDTH, ceili(min_size.x)), maxi(int(desired_height), ceili(min_size.y)))
 	if fitted != size:
 		size = fitted
-		move_to_center()
+		_place()
 
 
 # Mostra solo ciò che serve alla modalità: elenco/casella/quantità/viaggi per la raccolta, riga "Carne" per la caccia.

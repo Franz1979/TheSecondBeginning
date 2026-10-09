@@ -422,6 +422,11 @@ func get_activity_description() -> String:
 			var delivery_label := _delivery_activity_label(HaulZoneService.get_zone(context))
 			if delivery_label != "":
 				return delivery_label
+			# Ritiro di un mucchio "fino a vuoto" (2026-10-09, richiesta utente): preso dalla lista come "Mucchio" o dopo una
+			# demolizione — "Ritiro mucchio (<risorsa>)", solo "Ritiro mucchio" se il mucchio ha più risorse.
+			var pile_label := _pile_pickup_label(HaulZoneService.get_zone(context))
+			if pile_label != "":
+				return pile_label
 			# Raccolta su zona (2026-09-27, work areas passo 2): prima della ricerca il PickUp non esiste ancora (es.
 			# ripetizione in coda) — la risorsa si legge dal filtro della zona, stessa regola "solo con NAME".
 			# Filtro per CATEGORIA (2026-09-29, richiesta utente): "Raccolta (Cibo)", nome della categoria tradotto
@@ -568,6 +573,25 @@ func get_activity_description() -> String:
 	if resource_name == "":
 		return base_text + progress_suffix
 	return "%s (%s)%s" % [base_text, IconRegistry.get_resource_display_name(resource_name), progress_suffix]
+
+
+# Etichetta del ritiro di un mucchio (2026-10-09): zona "fino a vuoto" dal mucchio senza etichetta di lavoro (lavoro
+# "Mucchio" preso dalla lista) o consegna dopo una demolizione (HaulZoneService.JOB_DELIVERY_KEY senza zona). "" altrimenti
+# (raccolta normale, anche da un mucchio ordinata a mano).
+func _pile_pickup_label(zone: Dictionary) -> String:
+	var resource_name := ""
+	if not zone.is_empty():
+		if HaulZoneService.get_source_kind(zone) != PickUpAction.SourceKind.GROUND_PILE or not HaulZoneService.is_until_empty(zone) \
+				or HaulZoneService.get_label_task_name(zone) != "":
+			return ""
+		resource_name = String(zone.get(HaulZoneService.PILE_RESOURCE_KEY, ""))
+	elif bool(context.get(HaulZoneService.JOB_DELIVERY_KEY, false)):
+		resource_name = String(context.get(HaulZoneService.PILE_RESOURCE_KEY, ""))
+	else:
+		return ""
+	if resource_name == "":
+		return tr("task_pile_pickup_activity")
+	return tr("task_pile_pickup_activity_resource").format({"resource": IconRegistry.get_resource_display_name(resource_name)})
 
 
 # Etichetta di una consegna fino a mucchio vuoto (2026-10-05): "" se la zona non viene da un lavoro (raccolta normale).

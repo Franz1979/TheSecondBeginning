@@ -7,7 +7,7 @@ extends RefCounted
 # di tr()). Il pannello edificio (BuildingInfoPanel._refresh_info) le passa a InfoCardBlock come prima.
 
 
-# Righe del blocco Info: {"text": String, "indent": bool} (rientrate le categorie della conservazione e la regola d'uso
+# Righe del blocco Info: {"text": String, "indent": bool, "wrap" facoltativo: va a capo} (rientrate le categorie della conservazione e la regola d'uso
 # dell'attrezzeria). Vuoto se `rules` è null.
 static func build(rules: BuildingRules) -> Array[Dictionary]:
 	var rows: Array[Dictionary] = []
@@ -38,7 +38,15 @@ static func build(rules: BuildingRules) -> Array[Dictionary]:
 		add_row.call(_tr("building_info_toolkit").format({"types": rules.toolkit_tool_types, "units": rules.toolkit_units_per_type}), false)
 		add_row.call(_tr("building_info_toolkit_usage"), true)
 	if rules.is_workstation:
-		add_row.call(_tr("building_info_concurrent_orders").format({"count": rules.production_concurrent_orders}), false)
+		# Ordini in tutto (2026-10-09, BuildingRules.production_max_orders, ordini in coda): accanto ai lavori
+		# contemporanei solo se l'edificio ne tiene di più.
+		var concurrent := maxi(rules.production_concurrent_orders, 1)
+		var max_orders := maxi(rules.production_max_orders, concurrent)
+		if max_orders > concurrent:
+			# Riga lunga: va a capo nel blocco Info (InfoCardBlock, "wrap") invece di essere tagliata.
+			rows.append({"text": _tr("building_info_concurrent_orders_max").format({"count": concurrent, "max": max_orders}), "indent": false, "wrap": true})
+		else:
+			add_row.call(_tr("building_info_concurrent_orders").format({"count": rules.production_concurrent_orders}), false)
 		# Solo se diversi da 1,0 (2026-10-04, richiesta utente): un moltiplicatore neutro non si mostra.
 		if not is_equal_approx(rules.production_labor_multiplier, 1.0):
 			add_row.call(_tr("building_info_labor_multiplier").format({"value": format_percent_bonus(rules.production_labor_multiplier)}), false)

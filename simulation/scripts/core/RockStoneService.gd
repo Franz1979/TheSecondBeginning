@@ -15,8 +15,15 @@ extends RefCounted
 #
 # Estrazione (2026-10-05, Quarry — ricavo, gemello del taglio): extract toglie roccia dalla quota della roccia
 # (quarried_stone_by_position) e la primaria cala davvero (resource_quantity[ROCK]), come cut_individual per gli alberi.
-# Resa e scarto dal gruppo Extraction di rock_density.tres (ResourceDensityRules). dedicated_space[ROCK] e la sparizione
-# della roccia esaurita restano per un passo a parte.
+# Resa e scarto dal gruppo Extraction di rock_density.tres (ResourceDensityRules). dedicated_space[ROCK] resta per un
+# passo a parte.
+#
+# Roccia esaurita (2026-10-08, richiesta utente): toccata dall'estrazione (voce in quarried_stone_by_position, già
+# salvata) e con la pietra a zero. Sparisce: non si disegna, non blocca camminata (MicrocellObstacles/
+# PathfindingService) né costruzione, non si seleziona. La posizione RESTA in stone_positions apposta: da lì si
+# ricavano le quote delle altre rocce (cache sopra) e i pebble della roccia, che restano raccoglibili; anche la
+# vegetazione continua a evitarla (layout invariato). Nessun dato nuovo da salvare: lo stato si ricava da quello che
+# c'è già, quindi ricaricando la roccia resta esaurita e le rocce mai toccate non cambiano.
 
 const WEIGHT_MIN: float = 0.6
 const WEIGHT_MAX: float = 1.4
@@ -41,6 +48,30 @@ static func get_quarried_stone(macro_state: MacroCellState, position: Vector2i) 
 # Pietra rimasta nella roccia in `position`: iniziale meno tolta, mai sotto zero.
 static func get_remaining_stone(macro_state: MacroCellState, position: Vector2i) -> int:
 	return maxi(get_initial_stone(macro_state, position) - get_quarried_stone(macro_state, position), 0)
+
+
+# true se la roccia in `position` è esaurita (vedi in testa): toccata dall'estrazione e senza più pietra. Una roccia
+# mai toccata non è mai esaurita, anche con quota 0.
+static func is_depleted(macro_state: MacroCellState, position: Vector2i) -> bool:
+	if macro_state == null or not macro_state.quarried_stone_by_position.has(position):
+		return false
+	return get_remaining_stone(macro_state, position) <= 0
+
+
+# Rocce esaurite della macrocella: microcella -> true. Solo le rocce toccate sono candidate, quindi un giro corto.
+static func get_depleted_positions(macro_state: MacroCellState) -> Dictionary:
+	var result: Dictionary = {}
+	if macro_state == null:
+		return result
+	for position in macro_state.quarried_stone_by_position.keys():
+		if is_depleted(macro_state, position):
+			result[position] = true
+	return result
+
+
+# true se in `position` c'è una roccia ancora in piedi (in stone_positions e non esaurita).
+static func is_standing_rock(macro_state: MacroCellState, position: Vector2i) -> bool:
+	return macro_state != null and macro_state.stone_positions.has(position) and not is_depleted(macro_state, position)
 
 
 # Pietra rimasta nella zona (macrocella): resource_quantity[ROCK] attuale, che l'estrazione abbassa.

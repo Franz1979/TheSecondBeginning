@@ -257,7 +257,7 @@ func _draw_shape() -> void:
 		return
 	# Capanna di stoccaggio (2026-10-03): lo stesso disegno della mappa, semitrasparente come le altre anteprime.
 	if building_type_name == "storage_hut":
-		StorageHutShape.draw(self, Vector2.ZERO, rotation_dir, not is_buildable, COLOR.a)
+		StorageHutShape.draw(self, Vector2.ZERO, rotation_dir, not is_buildable, COLOR.a, StorageHutShape.MAP_SCALE)
 		return
 	# Deposito coperto (2026-10-04): lo spiazzo del sito di deposito con la tettoia della mappa, semitrasparente.
 	if building_type_name == "covered_depot":

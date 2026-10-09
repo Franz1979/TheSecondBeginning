@@ -24,6 +24,8 @@ func _ready() -> void:
 		game_scene.rite_effect_shown.connect(_on_rite_effect_shown)
 	if game_scene.has_signal(&"world_object_selected"):
 		game_scene.world_object_selected.connect(_on_world_object_selected)
+	if game_scene.has_signal(&"pending_entry_added"):
+		game_scene.pending_entry_added.connect(_on_pending_entry_added)
 	_connect_buttons_in(game_scene)
 	get_tree().node_added.connect(_on_node_added)
 
@@ -44,6 +46,14 @@ func _on_idea_bulb_shown(global_pos: Vector2) -> void:
 func _on_rite_effect_shown(global_pos: Vector2, sound_id: StringName) -> void:
 	var event := &"rite_completed" if sound_id == &"" else StringName("rite_completed:" + String(sound_id))
 	AudioManager.play_event(event, global_pos)
+
+
+# Riga nuova nella campanella "In sospeso" (2026-10-08): suono "bell" sul canale UI, non posizionale.
+func _on_pending_entry_added() -> void:
+	# Opzione "Suono degli avvisi (campanella)" (2026-10-08): spenta, nessun suono.
+	if not UserOptions.pending_bell_sound:
+		return
+	AudioManager.play_event(&"pending_entry_added")
 
 
 # Oggetto del mondo selezionato con un click: suono di selezione nel punto del click.

@@ -8,6 +8,6 @@ id = "task_assignment"
 display_name = "idea_task_assignment"
 summary = "idea_task_assignment_summary"
 description = "idea_task_assignment_description"
-thoughts_cost = 40
+thoughts_cost = 30
 prerequisites = Array[String](["work_areas_advanced"])
 era = "paleolithic"

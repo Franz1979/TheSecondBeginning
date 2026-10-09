@@ -11,11 +11,12 @@ storage_slot_count = 4
 storage_space_per_slot = 50
 durability_multiplier_by_category = Array[float]([1.1, 1.1, 1.0, 1.0, 1.0])
 required_materials = {
-"stick": 4,
-"wood": 0
+"fiber_rope": 6,
+"stick": 30,
+"wood": 24
 }
 required_space = 1
-visibility_radius = 3
+visibility_radius = 4
 rest_multiplier = 1.6
 max_residents = 6
 residency_assignment_tier = 2

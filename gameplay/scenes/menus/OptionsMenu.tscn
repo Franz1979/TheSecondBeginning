@@ -154,6 +154,16 @@ max_value = 1.0
 step = 0.01
 value = 0.8
 
+[node name="AlertSoundRow" type="HBoxContainer" parent="MarginContainer/VBoxContainer"]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="MarginContainer/VBoxContainer/AlertSoundRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="CheckBox" type="CheckBox" parent="MarginContainer/VBoxContainer/AlertSoundRow"]
+layout_mode = 2
+
 [node name="HSeparator" type="HSeparator" parent="MarginContainer/VBoxContainer"]
 layout_mode = 2
 

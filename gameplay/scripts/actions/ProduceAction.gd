@@ -68,6 +68,19 @@ var _debug_last_block_message: String = ""
 # dopo un caricamento il primo tick bloccato riscrive la richiesta.
 var _blocked_by_materials: bool = false
 var _material_shortage_reported: bool = false
+
+# CONSEGNA A METÀ ORDINE (2026-10-08, richiesta utente): con "Porta al deposito" accesa e i Prodotti finiti senza posto
+# per il prossimo pezzo, lo step chiede (CONTEXT_PENDING_OUTPUT_DELIVERY) di portarli al deposito.
+# HumanIndividualActionService._handle_pending_output_delivery inserisce prima di questo step lo stesso step di consegna
+# di fine ordine (RetrieveAction in modalità deliver_to_warehouse, solo dai Prodotti finiti); la ricerca del magazzino
+# (_search_warehouse_for_resource) mette subito dopo cammino e scarico e il ritorno all'edificio, poi questo step torna
+# corrente e riprende l'ordine da dove era (lavoro e pezzi vivono sull'ordine). CONTEXT_OUTPUT_DELIVERY_ROUND = id
+# dell'edificio mentre il giro è in corso, tolto quando lo step torna corrente (activate). Nessun deposito che accetta:
+# blocco di sempre, nuova richiesta dal giorno dopo (CONTEXT_OUTPUT_DELIVERY_RETRY_DAY, giorno assoluto). Tutto nel
+# context della Task, quindi salvato con lei.
+const CONTEXT_PENDING_OUTPUT_DELIVERY := "pending_output_delivery"
+const CONTEXT_OUTPUT_DELIVERY_ROUND := "output_delivery_round"
+const CONTEXT_OUTPUT_DELIVERY_RETRY_DAY := "output_delivery_retry_day"
 # Attesa degli attrezzi (2026-09-25, "task in attesa invece di rifiuto"): stato tool_wait_* e
 # ensure_required_tools vivono nella classe base Action dal 2026-09-26 (condivisi con la caccia).
 
@@ -107,6 +120,8 @@ func get_missing_materials() -> Dictionary:
 func activate(individual: Variant, context: Dictionary) -> void:
 	super(individual, context)
 	_material_shortage_reported = false
+	# Di nuovo corrente: l'eventuale giro di consegna a metà ordine è finito (o non è partito).
+	context.erase(CONTEXT_OUTPUT_DELIVERY_ROUND)
 
 
 # true se il proprio ordine c'è. Step di un salvataggio vecchio (order_key ""): prova a crearsi l'ordine per i pezzi che
@@ -149,6 +164,7 @@ func get_stamina_delta(individual: Variant, context: Dictionary, delta: float) -
 		return 0.0
 	if not ProductionService.has_output_room(target_building, resource_name):
 		_debug_log_block(individual, _debug_describe_output_buffer())
+		_request_output_delivery(context)
 		return 0.0
 	# Combustibile mancante (2026-09-24): fermo come per i materiali.
 	if ProductionService.get_missing_fuel_for(target_building, resource_name) > 0.0:
@@ -168,6 +184,17 @@ func get_stamina_delta(individual: Variant, context: Dictionary, delta: float) -
 		ProductionService.add_labor(target_building, order_key, stamina_spent_this_day * _get_labor_scale(individual, context) * tool_multiplier)
 	_try_complete_cycle(individual)
 	return -stamina_spent_this_day
+
+
+# Consegna a metà ordine (vedi CONSEGNA A METÀ ORDINE sopra): solo con "Porta al deposito" accesa, una richiesta per
+# blocco (la consuma subito HumanIndividualActionService) e non prima del giorno di nuovo tentativo.
+func _request_output_delivery(context: Dictionary) -> void:
+	if not bool(context.get(RetrieveAction.CONTEXT_DELIVER_TO_WAREHOUSE, false)) or context.has(CONTEXT_PENDING_OUTPUT_DELIVERY):
+		return
+	var game_data: GameData = GameSettings.active_game_data
+	if game_data != null and game_data.get_absolute_day() < int(context.get(CONTEXT_OUTPUT_DELIVERY_RETRY_DAY, -1)):
+		return
+	context[CONTEXT_PENDING_OUTPUT_DELIVERY] = true
 
 
 # Materiale o combustibile mancanti (2026-09-29, rifornimento automatico): stessa richiesta della Build

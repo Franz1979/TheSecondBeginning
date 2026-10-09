@@ -88,7 +88,7 @@ static func get_missing_materials(target_building: Building) -> Dictionary:
 #   altrimenti {"resource_name", "quantity", "source"} — quantity = min(mancante, BuildingStorageService.
 #   get_max_depositable), che il Retrieve limiterà poi allo zaino; source = magazzino più vicino con almeno un'unità
 #   (WarehouseSelectionService.find_source_for_retrieval), escludendo il bersaglio; da una workstation solo i suoi
-#   prodotti, mai i suoi ingredienti (2026-10-03, ProductionService.is_workstation_ingredient). source null
+#   Prodotti finiti, mai il suo magazzino (2026-10-08, BuildingStorageService.withdraw_auto). source null
 #   = la risorsa manca ma nessuna sorgente la ha. Con più risorse mancanti vince la prima che ha una sorgente.
 # Combustibile (FUEL_KEY): sorgente = magazzino più vicino con almeno una risorsa con fuel_value > 0
 # (WarehouseSelectionService.FUEL_CRITERION); risorsa = quella con fuel_value più alto in quel magazzino; quantità =
@@ -160,8 +160,8 @@ static func _best_fuel_in(building: Building) -> String:
 
 
 # Id esclusi come sorgente: il solo bersaglio. Le workstation non sono più escluse in blocco (2026-10-03, essiccazione
-# passo 3): sono sorgenti solo per i loro prodotti, filtro applicato dalla ricerca (find_source_for_retrieval con
-# workstation_products_only).
+# passo 3): sono sorgenti solo per i loro Prodotti finiti, filtro applicato dalla ricerca (find_source_for_retrieval
+# con workstation_products_only) e dal prelievo (RetrieveAction material_supply -> BuildingStorageService.withdraw_auto).
 static func _get_excluded_source_ids(_world: World, target_building: Building) -> Array[int]:
 	return [target_building.id]
 

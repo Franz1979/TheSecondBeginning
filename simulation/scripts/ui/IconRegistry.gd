@@ -186,6 +186,8 @@ const BUILDING_ICON_NODES := {
 	"storage_hut": preload("res://simulation/scripts/ui/StorageHutIcon.gd"),
 	# Deposito coperto (2026-10-04, richiesta utente): spiazzo del sito di deposito con la tettoia (CoveredDepotShape).
 	"covered_depot": preload("res://simulation/scripts/ui/CoveredDepotIcon.gd"),
+	# Legnaia (2026-10-08, richiesta utente — segnaposto): stesso disegno della mappa (PlaceholderBuildingShapes).
+	"woodshed": preload("res://simulation/scripts/ui/WoodshedIcon.gd"),
 }
 
 

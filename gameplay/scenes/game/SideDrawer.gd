@@ -15,6 +15,13 @@ const TOP_ALIGN_OFFSET_PX := 0
 
 # Contenuto chiuso (X o di nuovo il suo bottone): GameScene spegne l'evidenziazione del bottone.
 signal closed(content_id: StringName)
+# Bottone della posizione nella barra del titolo (2026-10-09, richiesta utente): il giocatore chiede di passare da
+# "Affiancato" a "Sopra" o viceversa (`overlay` = la modalità nuova). GameScene la salva (UserOptions.side_drawer_overlay)
+# e rifà place; il bottone si aggiorna con set_overlay_mode.
+signal overlay_mode_requested(overlay: bool)
+# Icone del bottone: la modalità in cui si passa con un clic.
+const OVERLAY_ICON := "⇥"
+const SIDE_ICON := "⇤"
 
 const WIDTH: float = 380.0
 const TITLE_FONT_SIZE: int = 13
@@ -33,6 +40,9 @@ var _alignment: Dictionary = {}
 # Bordo superiore del cassetto misurato da align_top_to (coordinate del CanvasLayer); finché manca, place lo stima.
 var _measured_top: float = 0.0
 var _has_measured_top: bool = false
+# Modalità di posizione mostrata dal bottone (set_overlay_mode): false = "Affiancato", true = "Sopra".
+var _overlay_mode: bool = false
+var _mode_button: Button = null
 
 
 func _init() -> void:
@@ -63,6 +73,14 @@ func _ready() -> void:
 	_title_label.add_theme_font_size_override("font_size", TITLE_FONT_SIZE)
 	_title_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	header.add_child(_title_label)
+	# Posizione del cassetto (2026-10-09): Affiancato <-> Sopra, accanto alla X.
+	_mode_button = Button.new()
+	_mode_button.flat = true
+	_mode_button.focus_mode = Control.FOCUS_NONE
+	_mode_button.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	_mode_button.pressed.connect(func() -> void: overlay_mode_requested.emit(not _overlay_mode))
+	header.add_child(_mode_button)
+	_apply_mode_button()
 	var close_button := Button.new()
 	close_button.text = "✕"
 	close_button.flat = true
@@ -115,6 +133,19 @@ func show_content(content_id: StringName, title: String, content: Control) -> vo
 	visible = true
 
 
+# Modalità di posizione mostrata dal bottone (la posizione vera la decide GameScene con place).
+func set_overlay_mode(overlay: bool) -> void:
+	_overlay_mode = overlay
+	_apply_mode_button()
+
+
+func _apply_mode_button() -> void:
+	if _mode_button == null:
+		return
+	_mode_button.text = SIDE_ICON if _overlay_mode else OVERLAY_ICON
+	_mode_button.tooltip_text = tr("side_drawer_mode_side_tooltip") if _overlay_mode else tr("side_drawer_mode_overlay_tooltip")
+
+
 func close() -> void:
 	if not visible:
 		return
@@ -131,7 +162,8 @@ func is_showing(content_id: StringName) -> bool:
 
 # Allineamento all'info panel (2026-10-07, coordinate del CanvasLayer): il bordo inferiore dell'area scura è
 # `content_bottom` (quello dell'area scura dell'info panel); la cornice finisce in basso a `frame_bottom` (il bordo della
-# sidebar), con lo stesso margine. Il cassetto sta accanto al bordo sinistro `left_edge_x`. Il bordo superiore è quello
+# sidebar), con lo stesso margine. Il cassetto sta accanto al bordo sinistro `left_edge_x` (il suo lato destro lì): in
+# modalità "Affiancato" GameScene passa il fianco sinistro della sidebar, in "Sopra" il bordo destro dello schermo. Il bordo superiore è quello
 # misurato da align_top_to; prima della misura è stimato da `content_top` e dalle dimensioni minime della fascia del titolo.
 func place(left_edge_x: float, content_top: float, content_bottom: float, frame_bottom: float) -> void:
 	_alignment = {"left": left_edge_x, "content_top": content_top, "content_bottom": content_bottom, "frame_bottom": frame_bottom}

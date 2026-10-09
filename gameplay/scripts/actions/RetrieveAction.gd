@@ -42,7 +42,8 @@ signal resource_retrieved(resource_name: String, building: Building, quantity: i
 # Produce -> Retrieve sullo stesso edificio). Con deliver_to_warehouse = true lo step:
 #   - parte a ordine finito (è dopo ProduceAction, che si completa solo a ordine intero) e preleva SOLO la risorsa
 #     prodotta, fino ai pezzi prodotti dall'ordine (context[CONTEXT_PRODUCED_COUNT], scritto da
-#     ProduceAction.on_complete), da stored_resources + buffer di uscita come il prelievo per nome di sempre;
+#     ProduceAction.on_complete), SOLO dai Prodotti finiti, mai dal magazzino dell'edificio (2026-10-08,
+#     BuildingStorageService.withdraw_auto: il magazzino è riservato agli ingredienti delle ricette);
 #   - NON richiede lo zaino vuoto: basta che la varietà possa entrare (MAX_CARRIED_VARIETIES) e lo spazio libero;
 #   - prima di prelevare verifica che un magazzino (WarehouseSelectionService.find_best, edificio di produzione
 #     escluso) possa ricevere tutto quanto si trasporterà di quella risorsa: se non c'è, non preleva nulla e il
@@ -147,8 +148,9 @@ func activate(individual: Variant, context: Dictionary) -> void:
 	var available: int = 0
 	if target_building != null:
 		# Include il buffer di uscita della produzione (2026-09-23): BuildingStorageService.withdraw
-		# preleva da entrambi.
-		available = BuildingStorageService.get_available_quantity(target_building, resource_name)
+		# preleva da entrambi. Rifornimento automatico (2026-10-08): da una workstation solo i Prodotti finiti.
+		available = BuildingStorageService.get_auto_available_quantity(target_building, resource_name) if _is_automatic() \
+			else BuildingStorageService.get_available_quantity(target_building, resource_name)
 
 	_quantity_to_retrieve = 0
 	if individual.carried_resources.is_empty() and space_per_unit > 0.0:
@@ -181,7 +183,8 @@ func _activate_delivery(individual: Variant, context: Dictionary, free_space: fl
 	if space_per_unit <= 0.0 or not individual.can_carry_variety(resource_name):
 		return
 	var wanted: int = int(context.get(CONTEXT_PRODUCED_COUNT, quantity_requested))
-	var available: int = BuildingStorageService.get_available_quantity(target_building, resource_name)
+	# Solo dai Prodotti finiti, mai dal magazzino dell'edificio (2026-10-08, BuildingStorageService.withdraw_auto).
+	var available: int = BuildingStorageService.get_auto_available_quantity(target_building, resource_name)
 	var quantity: int = mini(mini(wanted, available), int(floor(free_space / space_per_unit)))
 	if quantity <= 0:
 		return
@@ -292,6 +295,12 @@ func on_complete(individual: Variant, context: Dictionary) -> void:
 		supply_target_building.is_awaiting_material = false
 
 
+# Prelievo automatico (2026-10-08): rifornimento di un cantiere o di una produzione, o "Porta al deposito". Da una
+# workstation prende solo dai Prodotti finiti (BuildingStorageService.withdraw_auto); gli altri prelievi (a mano) tutto.
+func _is_automatic() -> bool:
+	return material_supply or deliver_to_warehouse
+
+
 func _complete_retrieve(individual: Variant, context: Dictionary) -> void:
 	if _quantity_to_retrieve <= 0 or target_building == null:
 		return
@@ -313,7 +322,14 @@ func _complete_named_retrieve(individual: Variant) -> void:
 	var stored_entry: Dictionary = target_building.stored_resources.get(resource_name, {})
 	var stored_quantity: int = int(stored_entry.get("quantity", 0))
 	var stored_decay_fraction: float = float(stored_entry.get("decay_fraction", 0.0))
-	var withdrawn: int = BuildingStorageService.withdraw(target_building, resource_name, _quantity_to_retrieve)
+	var withdrawn: int = 0
+	if _is_automatic():
+		# Prelievo automatico (2026-10-08): da una workstation solo i Prodotti finiti, sempre freschi.
+		if BuildingStorageService.is_output_only_source(target_building):
+			stored_quantity = 0
+		withdrawn = BuildingStorageService.withdraw_auto(target_building, resource_name, _quantity_to_retrieve)
+	else:
+		withdrawn = BuildingStorageService.withdraw(target_building, resource_name, _quantity_to_retrieve)
 	if withdrawn <= 0:
 		return
 	# withdraw preleva prima da stored_resources, poi dal buffer di uscita (2026-09-23), dove il prodotto
@@ -366,7 +382,9 @@ func _complete_equip(individual: Variant) -> void:
 # deperiscono. Un'unità che lo zaino rifiutasse (varietà piena, caso non atteso: activate ha già
 # verificato) torna nel magazzino, mai persa.
 func _complete_tool_retrieve(individual: Variant) -> void:
-	var units: Array = BuildingStorageService.withdraw_tool_units(target_building, resource_name, _quantity_to_retrieve)
+	# Prelievo automatico (2026-10-08): da una workstation solo i Prodotti finiti (BuildingStorageService.withdraw_auto).
+	var units: Array = BuildingStorageService.withdraw_tool_units_auto(target_building, resource_name, _quantity_to_retrieve) if _is_automatic() \
+		else BuildingStorageService.withdraw_tool_units(target_building, resource_name, _quantity_to_retrieve)
 	var carried := 0
 	for unit in units:
 		if individual.add_carried_tool_instance(resource_name, unit):

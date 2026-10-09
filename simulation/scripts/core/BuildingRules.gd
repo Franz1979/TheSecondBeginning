@@ -290,9 +290,14 @@ extends Resource
 # Quanti ordini di produzione possono essere ATTIVI INSIEME su questo edificio (2026-09-24, richiesta utente; rinominato
 # da production_queue_slots il 2026-10-03: non è una coda) — ogni ordine è una Produce Task assegnata, anche con
 # l'individuo ancora in cammino; raggiunto il limite i pulsanti ricetta si spengono ("postazione già impegnata"). 1 =
-# un solo ordine alla volta. Vedi ProductionService.get_max_concurrent_orders. La coda vera (ordini in attesa che
-# partono uno dopo l'altro) non è ancora implementata: avrà un campo suo.
+# un solo ordine alla volta. Vedi ProductionService.get_max_concurrent_orders. La coda (ordini senza lavoratore in attesa,
+# solo con l'idea dell'assegnazione) ha il suo limite, production_max_orders qui sotto.
 @export var production_concurrent_orders: int = 1
+# Quanti ordini può avere l'edificio IN TUTTO (2026-10-09, richiesta utente): in lavorazione più quelli in coda senza
+# lavoratore. Vale solo con l'idea dell'assegnazione (ordini in coda); raggiunto il limite le ricette si spengono ("Coda
+# dell'edificio piena") e nessuna strada crea un ordine in più. 0 = non impostato: vale production_concurrent_orders
+# (nessuna coda in più). Vedi ProductionService.get_max_orders.
+@export var production_max_orders: int = 0
 # Quanti pezzi si possono ordinare per ricetta con un solo comando (2026-09-24, richiesta utente) —
 # il pannello offre una quantità da 1 a questo valore; la Produce Task ripete il ciclo fino a quel
 # numero di pezzi, vedi ProduceAction.

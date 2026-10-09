@@ -178,7 +178,6 @@ upgrade_contents_confirmation_text,Upgrade {building} #{id} to {target}?
 upgrade_contents_confirmation_text_ground,"When work starts, all the storage stock will be dropped on the ground in a pile next to the building, where it decays faster."
 upgrade_contents_confirmation_text_warehouse,It is best to have another warehouse to carry it to.
 upgrade_contents_confirmation_confirm,Upgrade
-upgrade_pick_banner_text,🔨 Upgrade to {building}: click an individual (Esc to cancel)
 build_bar_title_upgrade_orientation,{building} — Door orientation
 build_bar_orientation_rotate,rotate
 build_bar_orientation_key_click,Click
@@ -296,9 +295,7 @@ notification_influence_religious_level_down,"{building}: religious influence dro
 notification_auto_progress_completed,{building}: {resource} ×{quantity} ready
 notification_processing_station_full,{building} full: {resource} taken to the warehouse
 building_cancel_site_button,Cancel construction
-building_assign_demolisher_button,Assign demolisher
 building_cancel_demolition_button,Cancel demolition
-demolisher_pick_banner_text,⛏️ Select who will demolish: click an individual (Esc to cancel)
 building_awaiting_material_label,This site still needs {quantity} {material} to get started
 building_durability_label,Integrity: {current}/{max}
 building_built_year_label,Built: year {year}
@@ -354,6 +351,28 @@ help_buildings_menu_link,Buildings
 help_buildings_title,Buildings
 help_buildings_materials,Materials: {items}
 help_buildings_upgrades_to,Upgrades to: {building}
+help_resources_menu_link,Resources
+help_resources_title,Resources
+help_tools_menu_link,Tools
+help_tools_title,Tools
+help_buildings_recipes,Recipes: {items}
+help_resource_space,Space taken: {value}
+help_resource_durability,Keeps for {days} days
+help_resource_calories,Calories: {value}
+help_resource_happiness,Happiness: {value} per 100 calories
+help_resource_health,Health: {value} per 100 calories
+help_resource_fuel,Fuel value: {value}
+help_tool_ammo,Ammunition: {ammo}
+help_tool_efficiency,Work efficiency: ×{value}
+help_recipe_output,Quantity produced: {count}
+help_recipe_title,Recipe
+help_recipe_auto_days,Ready by itself in {days} days
+help_recipe_made_in,Made in: {buildings}
+help_tool_categories,Used for: {categories}
+help_tool_uses,Uses: {uses}
+help_tool_attack,Power: {value}
+help_tool_range,Range: {value} microcells
+help_tool_carry_bonus,Carrying capacity: +{value}
 help_building_materials_title,Buildings and materials
 help_building_materials_setup_vs_construction,"Building a structure requires material in two separate phases: first setting up the construction site (a fixed amount of sticks per microcell the building occupies), then the actual construction, which will require its own materials in the future."
 help_building_materials_manual,"Right now the game never creates a Task on its own to fetch this material: if it's missing, the site simply waits. You have to bring it there yourself, by manually commanding an individual (gather the material and deposit it at the site)."
@@ -884,3 +903,86 @@ human_type_can_have_children,Can have children
 human_type_cannot_have_children,Cannot have children
 human_type_jobs_allowed,Can: {jobs}
 human_type_jobs_forbidden,Cannot: {jobs}
+building_woodshed,Woodshed
+build_bar_woodshed_tooltip,Woodshed
+build_bar_woodshed_description,Logs are stored and split here.
+task_assignment_priority_section,Priority
+task_assignment_priority_best_fit,Best fit
+task_assignment_priority_best_fit_tooltip,"Whoever is free takes the job they are most skilled at; on a tie, the oldest."
+task_assignment_priority_oldest,Oldest first
+task_assignment_priority_oldest_tooltip,Whoever is free takes the job that has been queued the longest.
+task_assignment_priority_newest,Newest first
+task_assignment_priority_newest_tooltip,Whoever is free takes the job that entered the queue last.
+task_assignment_priority_custom,Custom
+task_assignment_priority_custom_tooltip,"Whoever is free takes a job of the first type in the list that has one; within that type, the oldest."
+task_assignment_kind_body,Burials
+task_assignment_kind_build,Construction sites
+task_assignment_kind_upgrade,Upgrades
+task_assignment_kind_demolish,Demolitions
+task_assignment_kind_pile,Piles
+task_assignment_kind_move_up,Move up
+task_assignment_kind_move_down,Move down
+produce_output_full_warning,Output full: will stop after {count}
+toolkit_reject_not_used,{tool} is not used by this building's recipes: it does not go in the toolkit.
+pending_output_delivery,Delivery · {building} ({used}/{capacity})
+task_assignment_kind_output,Deliver finished goods to storage
+task_assignment_setting_empty_outputs,Deliver finished goods to storage when production stops
+task_assignment_setting_empty_outputs_tooltip,"When an order stops because the finished products are full, a free individual carries a load of them to storage."
+task_assignment_output_cannot_cancel,Nothing to cancel: only the finished products are emptied.
+task_deliver_output_name,Deliver finished goods
+pending_material_fuel,fuel
+options_pending_bell_sound,Alert sound (bell)
+task_assignment_kind_produce,Production orders
+task_assignment_produce_row,{recipe} ×{quantity} · {building}
+task_assignment_produce_building_busy,Building busy
+building_info_concurrent_orders_max,"Concurrent jobs: {count}, up to {max} orders queued"
+produce_recipe_disabled_queue_full,Building queue full
+produce_reject_queue_full,{building}: building queue full (maximum {max} orders).
+building_assign_production_worker_busy,Building busy
+drawer_produce_button,Produce
+drawer_produce_button_tooltip,"Production order without a building: the queue picks the building when an individual takes it."
+drawer_produce_no_building,No production building
+drawer_produce_dialog_title,Produce
+drawer_order_produce_row,Produce {recipe} ×{quantity}
+drawer_order_no_free_building,No free building
+drawer_order_cancel_tooltip,Cancel the order
+task_assignment_nobody_has_tool,Nobody has {tools}
+building_assign_hint_site_manual,To assign it: select an individual and right-click the construction site.
+building_assign_hint_site_queued,Queued: a free individual will take it. To choose one yourself: select an individual and right-click the construction site.
+building_assign_hint_site_locked,Locked in the queue. To choose one yourself: select an individual and right-click the construction site.
+building_assign_hint_demolition_manual,To assign it: select an individual and right-click the building.
+building_assign_hint_demolition_queued,Queued: a free individual will take it. To choose one yourself: select an individual and right-click the building.
+building_assign_hint_demolition_locked,Locked in the queue. To choose one yourself: select an individual and right-click the building.
+drawer_produce_overlay_hint,"Left click: +1. Right click: −1. ""Send to queue"" creates an order for each prepared recipe; once sent, it can only be removed with the X on its queue row."
+drawer_produce_submit,Send to queue
+pending_title,Pending
+pending_body_name,Burial · {name}
+pending_worker_work,{name} · {work}
+pending_reason_body,{days} days left for the burial
+pending_reason_builder_missing,No builder
+pending_reason_demolisher_missing,No demolisher
+pending_reason_producer_missing,Nobody is producing it
+pending_reason_material,Waiting for {materials} in a storage
+pending_reason_tool,Waiting for {tools}
+side_drawer_mode_overlay_tooltip,Place over the info panel
+side_drawer_mode_side_tooltip,Place beside the info panel
+task_assignment_kind_cut,Cutting
+drawer_cut_button_tooltip,Cutting in the work areas: a free individual with an axe takes it from the queue
+drawer_cut_no_zone,No cutting area
+drawer_cut_nobody_has_axe,Nobody has an axe
+drawer_cut_title,Cut
+drawer_cut_pick_zone,Choose area
+drawer_cut_zone_label,Area: {zone}
+drawer_cut_zone_auto,Automatic area
+drawer_cut_zone_none,to be chosen
+drawer_cut_zone_gone,area deleted
+drawer_order_cut_row,Cut {count} plants · {zone}
+drawer_order_cut_row_one,Cut 1 plant · {zone}
+drawer_cut_no_valid_zone,No valid area
+task_assignment_place_decided_later,The place is decided when someone takes the job
+task_pile_pickup_activity,Pile pickup
+task_pile_pickup_activity_resource,Pile pickup ({resource})
+task_assignment_direct,Direct
+task_assignment_direct_tooltip,"Assigned directly to this individual, it does not come from the queue."
+task_assignment_direct_cancel_tooltip,Stop this individual's work (like the H key)
+task_assignment_in_progress_tooltip,All work in progress. Needs and rest are not shown here.

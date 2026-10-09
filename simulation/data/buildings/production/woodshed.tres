@@ -1,0 +1,17 @@
+[gd_resource type="Resource" script_class="BuildingRules" format=3]
+
+[ext_resource type="Script" uid="uid://b8pl3yflicmtn" path="res://simulation/scripts/core/BuildingRules.gd" id="1_woodshed"]
+
+[resource]
+script = ExtResource("1_woodshed")
+building_name = "building_woodshed"
+category = 4
+required_idea_id = "advanced_paleolithic_constructions"
+required_labor = 2400
+required_materials = {
+"stick": 20,
+"wood": 4
+}
+required_space = 1
+has_door = false
+visibility_radius = 2

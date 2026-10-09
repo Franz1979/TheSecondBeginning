@@ -173,6 +173,8 @@ func apply_action(individual: HumanIndividual, delta: float, world: World = null
 	# resto di questo frame non riguarda più `task`.
 	if individual.current_task != task:
 		return
+	# Prodotti finiti pieni a metà ordine con "Porta al deposito" (2026-10-08, ProduceAction): giro di consegna.
+	_handle_pending_output_delivery(individual, task, world)
 
 	var action := task.get_current_action()
 	var stamina_delta := action.get_stamina_delta(individual, task.context, delta)
@@ -919,6 +921,81 @@ func _end_work_area_trip(
 		(finishing_step as PickUpAction).repeat_requested.emit(individual, repeats_done + 1, zone.duplicate(true))
 
 
+# Consuma task.context[ProduceAction.CONTEXT_PENDING_OUTPUT_DELIVERY] (2026-10-08, consegna a metà ordine — vedi
+# ProduceAction, CONSEGNA A METÀ ORDINE). Lo step corrente è la ProduceAction ferma per i Prodotti finiti pieni: prima di
+# lei entra lo stesso step di consegna di fine ordine (RetrieveAction in modalità deliver_to_warehouse, solo dai
+# Prodotti finiti, quanti ne entrano nello zaino), attivato subito. Il resto lo fa il meccanismo di sempre: a prelievo
+# fatto la ricerca del magazzino (_search_warehouse_for_resource, con CONTEXT_OUTPUT_DELIVERY_ROUND) mette cammino e
+# scarico subito dopo e il ritorno all'edificio; poi la ProduceAction torna corrente e riprende. Stessi controlli
+# preventivi dello step di consegna (zaino, magazzino che accetta): se non passano, niente giro, il blocco resta con il
+# suo messaggio e la richiesta si ripete dal giorno dopo.
+func _handle_pending_output_delivery(individual: HumanIndividual, task: Task, world: World) -> void:
+	if not task.context.has(ProduceAction.CONTEXT_PENDING_OUTPUT_DELIVERY):
+		return
+	task.context.erase(ProduceAction.CONTEXT_PENDING_OUTPUT_DELIVERY)
+	var produce := task.get_current_action() as ProduceAction
+	if produce == null or produce.target_building == null or world == null:
+		return
+	var building := produce.target_building
+	var resource_name := _pick_output_resource_to_deliver(building, produce.resource_name)
+	var units := 0
+	var resource_rules := CaloricCalculator.get_caloric_source_rules(resource_name)
+	if resource_rules != null and resource_rules.space_per_unit > 0.0 and individual.can_carry_variety(resource_name):
+		var free_space: float = individual.max_carry_capacity - individual.get_carried_space()
+		units = mini(BuildingStorageService.get_auto_available_quantity(building, resource_name), int(floor(free_space / resource_rules.space_per_unit)))
+	var destination: Building = null
+	if units > 0:
+		var excluded_ids: Array[int] = [building.id]
+		destination = WarehouseSelectionService.find_best(
+			world, individual.position, individual.home_macro_coords, resource_name,
+			units + individual.get_carried_quantity(resource_name), excluded_ids, PathfindingService.reachability_for(individual)
+		)
+	if destination == null:
+		var game_data: GameData = GameSettings.active_game_data
+		task.context[ProduceAction.CONTEXT_OUTPUT_DELIVERY_RETRY_DAY] = game_data.get_absolute_day() + 1 if game_data != null else 0
+		if DebugLogging.ENABLED and DebugLogging.SHOW_TRANSPORT_BUILD_LOGS:
+			print("[PRODUCE DELIVERY] #%d %s: Prodotti finiti pieni a %s #%d ma nessun deposito accetta '%s' (o zaino pieno) — resta fermo, nuovo tentativo domani." % [
+				individual.id, individual.name, building.building_type_name, building.id, resource_name
+			])
+		return
+	task.context[ProduceAction.CONTEXT_OUTPUT_DELIVERY_ROUND] = building.id
+	var new_steps: Array[Action] = [RetrieveAction.new(building, resource_name, units, -1, true)]
+	var descriptions: Array[String] = ["task_produce_step_deliver"]
+	task.insert_steps_before_current(new_steps, descriptions)
+	task.get_current_action().activate(individual, task.context)
+	if DebugLogging.ENABLED and DebugLogging.SHOW_TRANSPORT_BUILD_LOGS:
+		print("[PRODUCE DELIVERY] #%d %s: Prodotti finiti pieni a %s #%d — porta %d '%s' al deposito e poi riprende l'ordine." % [
+			individual.id, individual.name, building.building_type_name, building.id, units, resource_name
+		])
+
+
+# Risorsa da portare via dai Prodotti finiti a metà ordine: il prodotto dell'ordine se c'è, altrimenti quella con più
+# pezzi (a parità, in ordine di nome), così il posto si libera anche se l'uscita è piena di altro.
+static func _pick_output_resource_to_deliver(building: Building, order_resource_name: String) -> String:
+	if int(building.production_output.get(order_resource_name, 0)) > 0:
+		return order_resource_name
+	var best_name := ""
+	var best_count := 0
+	for raw_name in building.production_output.keys():
+		var count := int(building.production_output[raw_name])
+		if count > best_count or (count == best_count and count > 0 and String(raw_name) < best_name):
+			best_count = count
+			best_name = String(raw_name)
+	return best_name if best_name != "" else order_resource_name
+
+
+# Edificio di produzione del giro di consegna a metà ordine in corso (ProduceAction.CONTEXT_OUTPUT_DELIVERY_ROUND), o
+# null se nessun giro è in corso: la ProduceAction della Task con quell'edificio.
+static func _get_output_delivery_round_building(task: Task) -> Building:
+	if not task.context.has(ProduceAction.CONTEXT_OUTPUT_DELIVERY_ROUND):
+		return null
+	var building_id := int(task.context[ProduceAction.CONTEXT_OUTPUT_DELIVERY_ROUND])
+	for step in task.steps:
+		if step is ProduceAction and (step as ProduceAction).target_building != null and (step as ProduceAction).target_building.id == building_id:
+			return (step as ProduceAction).target_building
+	return null
+
+
 func _handle_pending_warehouse_search(individual: HumanIndividual, task: Task, world: World) -> void:
 	if not task.context.has("pending_warehouse_search"):
 		return
@@ -1017,7 +1094,10 @@ func _search_warehouse_for_resource(
 	# fondo alla Task, dopo la Build, dove l'avanzo resterebbe nello zaino finché la Build è ferma. Per lo stesso motivo
 	# non conta uno scarico programmato più avanti nella Task (sarebbe comunque dopo la Build).
 	var in_supply_round := MaterialSupplyService.is_in_supply_round(task)
-	var already_planned: UnloadAction = null if in_supply_round else _find_later_planned_unload(task, resource_name)
+	# Consegna a metà ordine (2026-10-08, _handle_pending_output_delivery): come il giro di rifornimento, cammino e scarico
+	# subito dopo lo step corrente e poi il ritorno all'edificio di produzione, prima della ProduceAction ferma.
+	var output_round_building := _get_output_delivery_round_building(task)
+	var already_planned: UnloadAction = null if in_supply_round or output_round_building != null else _find_later_planned_unload(task, resource_name)
 	if already_planned != null:
 		if DebugLogging.ENABLED and DebugLogging.SHOW_TRANSPORT_BUILD_LOGS:
 			print("[WAREHOUSE SEARCH] '%s': già in programma uno scarico più avanti (edificio id=%s) — nessun Walk+Unload aggiuntivo." % [
@@ -1083,6 +1163,13 @@ func _search_warehouse_for_resource(
 			var current_unload := task.get_current_action() as UnloadAction
 			if site != null and current_unload != null and current_unload.target_building == site and targeted_building_ids.size() == 1:
 				new_steps.append(WalkAction.new(MaterialSupplyService.building_point(individual, site)))
+			task.insert_steps_after_current(new_steps)
+		elif output_round_building != null:
+			# Il ritorno all'edificio solo dopo il prelievo della consegna (non per un re-routing da magazzino pieno, che si
+			# inserisce prima del ritorno già in programma) e una volta sola.
+			var current_retrieve := task.get_current_action() as RetrieveAction
+			if current_retrieve != null and current_retrieve.deliver_to_warehouse and targeted_building_ids.size() == 1:
+				new_steps.append(WalkAction.new(MaterialSupplyService.building_point(individual, output_round_building)))
 			task.insert_steps_after_current(new_steps)
 		else:
 			task.append_steps(new_steps)

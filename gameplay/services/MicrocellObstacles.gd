@@ -9,7 +9,7 @@ extends RefCounted
 # La regola "microcella libera" (is_free) è quella di sempre dei Criteri 3-6 del piazzamento edifici:
 #   3. acqua: la macrocella intera è WATER;
 #   4. fiume: la microcella è nella fascia fluviale;
-#   5. roccia: la microcella è in MacroCellState.stone_positions;
+#   5. roccia: la microcella è in MacroCellState.stone_positions e la roccia non è esaurita (RockStoneService.is_depleted);
 #   6. edificio: un edificio del mondo sta su quella microcella (quelli MOVEMENT, calpestabili, contano o no a scelta).
 # Alberi, vegetazione e mucchi a terra non sono ostacoli qui.
 
@@ -39,8 +39,11 @@ static func build(
 		for position in river_positions:
 			obstacles.river[position] = true
 	if macro_state != null:
+		# Rocce esaurite (2026-10-08): non sono più ostacoli (RockStoneService.is_depleted).
+		var depleted := RockStoneService.get_depleted_positions(macro_state)
 		for position in macro_state.stone_positions:
-			obstacles.stones[position] = true
+			if not depleted.has(position):
+				obstacles.stones[position] = true
 	obstacles.refresh_buildings(macro_coords, macro_world)
 	return obstacles
 

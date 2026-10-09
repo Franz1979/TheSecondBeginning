@@ -243,10 +243,6 @@ theme_override_font_sizes/font_size = 10
 [node name="CategoryTogglesContainer" type="VBoxContainer" parent="."]
 layout_mode = 2
 
-[node name="AssignDemolisherButton" type="Button" parent="."]
-visible = false
-layout_mode = 2
-
 [node name="CommandIconRow" type="HBoxContainer" parent="."]
 visible = false
 layout_mode = 2

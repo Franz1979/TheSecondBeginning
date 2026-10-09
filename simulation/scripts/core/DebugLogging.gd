@@ -408,3 +408,7 @@ const SHOW_CLEAR_LOGS := true
 # Lista dei lavori (2026-10-07, assegnazione compiti passo B — JobBoardService): una riga ogni volta che un pipottino
 # libero guarda la lista (lavori trovati, scelto con il punteggio, o perché nessuno). Solo log.
 const SHOW_JOB_BOARD_LOGS := true
+
+# Finestra Aiuto (2026-10-09, richiesta utente — "Indietro" che serviva premere due volte): una riga [HELP] a ogni cambio
+# di pagina e a ogni "Indietro", con la pagina e la cronologia intera. Solo log (HelpDialog).
+const SHOW_HELP_DIALOG_LOGS := true

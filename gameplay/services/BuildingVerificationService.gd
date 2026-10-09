@@ -37,7 +37,8 @@ extends RefCounted
 # ALCUNE microcelle di una macrocella PLAIN, non l'intera cella. SPECIFICO DEL TIPO: saltato se
 # rules.buildable_on_river.
 # Criterio 5: la microcella non dev'essere occupata da una roccia (cell.macro_state.
-# stone_positions) — ostacolo permanente, mai rimovibile (a differenza della vegetazione, che può
+# stone_positions) — ostacolo permanente finché non viene esaurita dall'estrazione (2026-10-08, vedi
+# RockStoneService.is_depleted e MicrocellObstacles), mai rimovibile altrimenti (a differenza della vegetazione, che può
 # essere tagliata per far posto — vedi BuildingSiteClearingService, mai consultato qui). SPECIFICO
 # DEL TIPO: saltato se rules.buildable_on_stone (es. una futura cava).
 # Criterio 6: la microcella non dev'essere già occupata da un altro edificio (macro_world.

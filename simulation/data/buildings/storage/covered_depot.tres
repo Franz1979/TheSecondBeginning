@@ -16,10 +16,11 @@ required_materials = {
 "fiber_rope": 8,
 "pebble": 30,
 "plant_fiber": 30,
-"stick": 80
+"stick": 80,
+"wood": 4
 }
 max_durability = 40
 upgrades_to = "storage_hut"
 required_space = 1
 has_door = false
-visibility_radius = 2
+visibility_radius = 3

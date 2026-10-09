@@ -8,6 +8,6 @@ id = "warehouse_management"
 display_name = "idea_warehouse_management"
 summary = "idea_warehouse_management_summary"
 description = "idea_warehouse_management_description"
-thoughts_cost = 50
+thoughts_cost = 40
 prerequisites = Array[String](["task_assignment"])
 era = "paleolithic"

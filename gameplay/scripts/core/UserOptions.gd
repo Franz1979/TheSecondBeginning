@@ -55,6 +55,10 @@ var repeat_default: bool = false
 # Consegna al magazzino dopo la produzione (2026-09-26, richiesta utente): default della spunta "Consegna al
 # magazzino" del pannello di produzione. Chiave in options.cfg: "production_delivery_default".
 var production_delivery_default: bool = true
+# Suono degli avvisi della campanella (2026-10-08): accesa = la "bell" suona quando compare una riga nuova in "In
+# sospeso" (AudioEventListener). Spenta: nessun suono, lampeggio della scheda invariato. Chiave in options.cfg:
+# "pending_bell_sound".
+var pending_bell_sound: bool = true
 # Minimappa della sidebar chiusa (2026-09-20, richiesta utente): true = nascosta, resta solo il bottone per
 # riaprirla; false (default) = visibile. Salvato a ogni click sul bottone.
 var minimap_collapsed: bool = false
@@ -80,6 +84,13 @@ var job_board_manual_assign_seconds: int = -1
 # Regola "Ritira i mucchi abbandonati" (2026-10-07, regole di assegnazione del cassetto): accesa, i mucchi a terra che
 # nessuno porta via entrano nella lista dei lavori. Chiave in options.cfg con lo stesso nome.
 var job_board_collect_piles: bool = true
+# Regola "Svuota le uscite piene" (2026-10-08): Prodotti finiti pieni che fermano un ordine entrano in coda come lavoro di
+# consegna a magazzino (GameScene._output_jobs_collect). Spenta: niente lavori di questo tipo.
+var job_board_empty_full_outputs: bool = true
+# Posizione del cassetto laterale (2026-10-09, richiesta utente — SideDrawer): false = "Affiancato" (a sinistra dell'info
+# panel, il default), true = "Sopra" (sopra l'info panel, allineato al bordo destro dello schermo). Si cambia dal bottone
+# nella barra del titolo del cassetto. Chiave in options.cfg con lo stesso nome.
+var side_drawer_overlay: bool = false
 
 # Volumi audio (2026-09-21, richiesta utente): lineari 0-1, default 0.8, uno per bus (vedi
 # audio/buses/default_bus_layout.tres). Applicati ai bus con apply_volumes(), al load e ad ogni modifica.
@@ -125,6 +136,7 @@ func load_from_disk() -> void:
 	pickup_default_resource = String(config.get_value(SECTION, "pickup_default_resource", ""))
 	repeat_default = bool(config.get_value(SECTION, "repeat_default", config.get_value(SECTION, "pickup_repeat_default", false)))
 	production_delivery_default = bool(config.get_value(SECTION, "production_delivery_default", true))
+	pending_bell_sound = bool(config.get_value(SECTION, "pending_bell_sound", true))
 	minimap_collapsed = bool(config.get_value(SECTION, "minimap_collapsed", false))
 	work_area_auto_zone = bool(config.get_value(SECTION, "work_area_auto_zone", true))
 	# Letti così come sono: i dialog li riportano nei valori ammessi (PickupChoiceDialog, anche in modalità caccia).
@@ -134,6 +146,8 @@ func load_from_disk() -> void:
 	hunt_zone_meat_target = int(config.get_value(SECTION, "hunt_zone_meat_target", 10))
 	job_board_manual_assign_seconds = int(config.get_value(SECTION, "job_board_manual_assign_seconds", -1))
 	job_board_collect_piles = bool(config.get_value(SECTION, "job_board_collect_piles", true))
+	job_board_empty_full_outputs = bool(config.get_value(SECTION, "job_board_empty_full_outputs", true))
+	side_drawer_overlay = bool(config.get_value(SECTION, "side_drawer_overlay", false))
 	for field in VOLUME_BUSES.keys():
 		set(field, clampf(float(config.get_value(SECTION, field, DEFAULT_VOLUME)), 0.0, 1.0))
 
@@ -150,6 +164,7 @@ func save_to_disk() -> void:
 	config.set_value(SECTION, "pickup_default_resource", pickup_default_resource)
 	config.set_value(SECTION, "repeat_default", repeat_default)
 	config.set_value(SECTION, "production_delivery_default", production_delivery_default)
+	config.set_value(SECTION, "pending_bell_sound", pending_bell_sound)
 	config.set_value(SECTION, "minimap_collapsed", minimap_collapsed)
 	config.set_value(SECTION, "work_area_auto_zone", work_area_auto_zone)
 	config.set_value(SECTION, "work_area_gather_trips", work_area_gather_trips)
@@ -158,6 +173,8 @@ func save_to_disk() -> void:
 	config.set_value(SECTION, "hunt_zone_meat_target", hunt_zone_meat_target)
 	config.set_value(SECTION, "job_board_manual_assign_seconds", job_board_manual_assign_seconds)
 	config.set_value(SECTION, "job_board_collect_piles", job_board_collect_piles)
+	config.set_value(SECTION, "job_board_empty_full_outputs", job_board_empty_full_outputs)
+	config.set_value(SECTION, "side_drawer_overlay", side_drawer_overlay)
 	for field in VOLUME_BUSES.keys():
 		config.set_value(SECTION, field, get(field))
 	config.save(OPTIONS_FILE_PATH)

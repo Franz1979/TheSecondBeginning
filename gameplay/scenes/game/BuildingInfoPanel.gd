@@ -124,9 +124,6 @@ const COMMAND_ICON_SIZE_PROBE_TEXT := "🎯"
 const COMMAND_ICON_INSET: float = 4.0
 const COMMAND_ICON_DISABLED_MODULATE := Color(1, 1, 1, 0.35)
 
-# Bottone "Assegna demolitore" (2026-09-27, richiesta utente): visibile per un edificio "da demolire" senza nessuno
-# con la Demolish Task (in corso o in coda); GameScene entra nella modalità di scelta del demolitore.
-signal demolisher_assign_requested(building: Building)
 
 # Bottone "Annulla demolizione" (2026-09-27, richiesta utente): visibile per un edificio "da demolire" finché il
 # lavoro di demolizione non è iniziato (DemolishAction.LABOR_KEY a 0); GameScene chiude le Demolish Task e toglie
@@ -230,7 +227,6 @@ const STORAGE_SLOT_FILL_BAR_FILL_COLOR := Color(1.0, 1.0, 1.0, 0.85)
 @onready var settings_caption: Label = $SettingsCaption
 @onready var accepted_categories_caption: Label = $AcceptedCategoriesCaption
 @onready var category_toggles_container: VBoxContainer = $CategoryTogglesContainer
-@onready var assign_demolisher_button: Button = $AssignDemolisherButton
 # Riga dei comandi a icone in fondo al pannello (2026-10-03, richiesta utente — sostituisce i bottoni larghi a testo):
 # tutte a sinistra: Migliora, Svuota tutto, un piccolo spazio fisso, Demolisci per ultimo. "Annulla cantiere" (stesso
 # DemolishButton su un cantiere) e "Annulla demolizione" prendono il posto di Demolisci. Pulsanti come il 🎯 con
@@ -265,6 +261,23 @@ var _last_production_claimant_names: Array[String] = []
 # la quantità; il cambio vale per gli ordini di questo pannello (stesso schema di "Ripeti" nei dialog).
 var _order_deliver: bool = true
 var _order_keep_for_building: bool = false
+# Ordini in coda (2026-10-09, richiesta utente — con l'idea dell'assegnazione, set_production_queue_mode): la griglia
+# non prepara più un ordine per il mirino, ma mostra l'ordine appena messo in coda da questo pannello (GameScene ne tiene
+# la chiave) e le ricette restano accese anche a edificio al completo (gli ordini in più aspettano in coda).
+var _production_queue_mode: bool = false
+# Suggerimento "come assegnarlo" (2026-10-09, richiesta utente): sotto "Costruttore assegnato: mancante" di un cantiere
+# (anche di miglioramento) e, per un edificio da demolire senza demolitore, sopra la riga dei comandi a icone (dove
+# c'era il bottone "Assegna demolitore", tolto lo stesso giorno: resta il clic destro con un individuo selezionato);
+# arancione come gli altri avvisi, va a capo (il pannello resta largo 300 px). Il testo dipende dall'idea
+# dell'assegnazione e dallo stato del lavoro in coda, passati da GameScene prima di ogni show_building
+# (set_assign_hint_state). Sparisce appena c'è un lavoratore.
+var _assign_hint_label: Label = null
+var _assign_hint_queue_enabled: bool = false
+var _assign_hint_locked: bool = false
+# Riga "Uscita piena: si fermerà dopo N" sotto le spunte dell'ordine (2026-10-08, _update_order_output_warning).
+var _order_output_warning_label: Label = null
+# Stesso colore dell'avviso "Prodotti finiti pieni" (OutputBufferFullLabel nella scena).
+const ORDER_OUTPUT_WARNING_COLOR := Color(0.95, 0.75, 0.1, 1.0)
 # Sezione "Attrezzeria" nel corpo (2026-10-04): creata in codice, sotto i prodotti finiti. Visibile su ogni edificio
 # completo con l'Attrezzeria (BuildingToolkitService.has_toolkit), nessun tipo di edificio nominato.
 var _toolkit_box: VBoxContainer = null
@@ -291,6 +304,13 @@ var _sacredness_radius_label: Label = null
 
 
 func _ready() -> void:
+	_assign_hint_label = Label.new()
+	_assign_hint_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_assign_hint_label.custom_minimum_size.x = 0.0
+	_assign_hint_label.add_theme_font_size_override("font_size", 10)
+	_assign_hint_label.add_theme_color_override("font_color", ORDER_OUTPUT_WARNING_COLOR)
+	_assign_hint_label.visible = false
+	add_child(_assign_hint_label)
 	# Righe degli ordini (2026-10-04, ordini separati) subito sotto "In produzione:".
 	_production_orders_box = VBoxContainer.new()
 	_production_orders_box.add_theme_constant_override("separation", 2)
@@ -343,8 +363,6 @@ func _ready() -> void:
 	_build_info_button()
 	demolish_button.pressed.connect(func(): demolish_requested.emit(_current_building))
 	upgrade_button.pressed.connect(func(): upgrade_requested.emit(_current_building))
-	assign_demolisher_button.text = tr("building_assign_demolisher_button")
-	assign_demolisher_button.pressed.connect(func(): demolisher_assign_requested.emit(_current_building))
 	cancel_demolition_button.pressed.connect(func(): demolition_cancel_requested.emit(_current_building))
 	_setup_command_icon_buttons()
 
@@ -367,7 +385,8 @@ func _ready() -> void:
 # production_progress la cui ricetta non è qui è SOSPESO: il pannello lo segnala come tale e non ne
 # mostra il fabbisogno di materiale/combustibile come se qualcuno ci stesse lavorando.
 # demolisher_names (2026-09-27): "Nome (#id)" di chi ha la Demolish Task su questo edificio (in corso o in coda) —
-# vuoto su un edificio "da demolire" = bottone "Assegna demolitore".
+# vuoto su un edificio "da demolire" = suggerimento "come assegnarla" (dal 2026-10-09, prima il bottone "Assegna
+# demolitore").
 func show_building(building: Building, residents_display_data: Array[Dictionary] = [], assigned_builder_names: Array[String] = [], production_claimant_names: Array[String] = [], production_orders: Array[Dictionary] = [], production_tool_wait_lines: Array[String] = [], demolisher_names: Array[String] = []) -> void:
 	visible = true
 	_current_building = building
@@ -404,7 +423,6 @@ func show_building(building: Building, residents_display_data: Array[Dictionary]
 	_refresh_buried_list(building)
 	_refresh_info(building)
 	_refresh_command_icon_row(building, demolition_started)
-	assign_demolisher_button.visible = building.is_marked_for_demolition and demolisher_names.is_empty()
 	_refresh_construction_progress(building)
 	# "In attesa di materiale" (2026-09-14, richiesta utente — segnalazione player per un cantiere
 	# bloccato per mancanza di materiale) — SOLO visibile/valorizzata mentre building.is_awaiting_
@@ -451,6 +469,22 @@ func show_building(building: Building, residents_display_data: Array[Dictionary]
 			if not assigned_builder_names.is_empty()
 			else tr("building_assigned_builder_missing")
 		)
+	# Suggerimento "come assegnarlo" (2026-10-09): cantiere senza costruttore sotto "Costruttore assegnato: mancante";
+	# edificio da demolire senza demolitore sopra la riga dei comandi a icone.
+	var hint_key := ""
+	if building.is_marked_for_demolition:
+		if demolisher_names.is_empty():
+			hint_key = "demolition"
+	elif is_under_construction and assigned_builder_names.is_empty():
+		hint_key = "site"
+	_assign_hint_label.visible = hint_key != ""
+	if hint_key != "":
+		var state := "locked" if _assign_hint_queue_enabled and _assign_hint_locked else ("queued" if _assign_hint_queue_enabled else "manual")
+		_assign_hint_label.text = tr("building_assign_hint_%s_%s" % [hint_key, state])
+		if hint_key == "site":
+			move_child(_assign_hint_label, assigned_builder_label.get_index() + 1)
+		else:
+			move_child(_assign_hint_label, command_icon_row.get_index())
 	# Workstation completa (2026-09-24; dal 2026-09-27 nella sezione Produzione): "In produzione:" con la X di annullo,
 	# lavoratore assegnato, attesa attrezzi e cosa serve ancora — vedi _refresh_production_status.
 	# Postazione che lavora da sola (2026-10-03, ProductionService.has_only_auto_progress_recipes — l'essiccatoio): niente
@@ -1050,7 +1084,9 @@ func _resolve_setup_site_material_shortage(building: Building) -> Dictionary:
 var _production_orders_box: VBoxContainer = null
 
 
-func _build_production_order_row(building: Building, order: Dictionary) -> Control:
+# `is_full` (2026-10-09): edificio con già production_concurrent_orders ordini in lavorazione — "Assegna" spento con il
+# motivo nel tooltip, invece di aprire il mirino e poi rifiutare.
+func _build_production_order_row(building: Building, order: Dictionary, is_full: bool = false) -> Control:
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 4)
 	var recipe := String(order["recipe"])
@@ -1078,6 +1114,9 @@ func _build_production_order_row(building: Building, order: Dictionary) -> Contr
 		var assign_button := Button.new()
 		assign_button.text = tr("building_assign_production_worker_button")
 		assign_button.tooltip_text = tr("building_assign_production_worker_tooltip")
+		if is_full:
+			assign_button.disabled = true
+			assign_button.tooltip_text = tr("building_assign_production_worker_busy")
 		assign_button.focus_mode = Control.FOCUS_NONE
 		assign_button.add_theme_font_size_override("font_size", 10)
 		assign_button.size_flags_vertical = Control.SIZE_SHRINK_CENTER
@@ -1125,8 +1164,14 @@ func _refresh_production_status(
 		none_label.text = tr("building_production_status_none")
 		none_label.add_theme_font_size_override("font_size", 10)
 		production_status_items.add_child(none_label)
+	# "Assegna" spento con l'edificio al completo (2026-10-09): ordini con un lavoratore = production_concurrent_orders.
+	var working_count := 0
 	for order in production_orders:
-		_production_orders_box.add_child(_build_production_order_row(building, order))
+		if String(order["worker_name"]) != "":
+			working_count += 1
+	var is_full := ProductionService.has_max_concurrent_orders(building, working_count)
+	for order in production_orders:
+		_production_orders_box.add_child(_build_production_order_row(building, order, is_full))
 	# Disponibili/richiesti per l'ordine intero (2026-09-29, richiesta utente — prima solo il mancante): ogni input delle
 	# ricette in lavorazione (input × cicli ancora dovuti, disponibile = deposito + buffer, get_input_available) e il
 	# combustibile, anche quando sono già coperti — la sezione resta visibile finché c'è una produzione in lavorazione
@@ -1393,7 +1438,7 @@ func _refresh_production_recipes(building: Building, production_claimant_names: 
 	grid.add_theme_constant_override("h_separation", 4)
 	grid.add_theme_constant_override("v_separation", 4)
 	production_recipes_container.add_child(grid)
-	var is_busy := ProductionService.has_max_concurrent_orders(building, production_claimant_names.size())
+	var is_busy := not _production_queue_mode and ProductionService.has_max_concurrent_orders(building, production_claimant_names.size())
 	for resource_name in producible:
 		var disabled_reasons: Array[String] = []
 		if is_busy:
@@ -1407,6 +1452,11 @@ func _refresh_production_recipes(building: Building, production_claimant_names: 
 		# prodotto non viene ritirato.
 		if not ProductionService.has_output_room(building, resource_name):
 			disabled_reasons.append(tr("produce_recipe_disabled_output_full"))
+		# Coda dell'edificio piena (2026-10-09, solo con l'idea): production_max_orders ordini in tutto. Resta accesa la
+		# ricetta dell'ordine in preparazione, i cui clic ne cambiano la quantità senza crearne un altro.
+		if _production_queue_mode and ProductionService.has_max_orders(building) \
+				and not (resource_name == _order_recipe and _order_quantity > 0):
+			disabled_reasons.append(tr("produce_recipe_disabled_queue_full"))
 		var quantity: int = _order_quantity if resource_name == _order_recipe else 0
 		grid.add_child(_build_recipe_icon(building, resource_name, quantity, max_quantity, disabled_reasons))
 
@@ -1426,9 +1476,12 @@ func _refresh_production_recipes(building: Building, production_claimant_names: 
 			production_order_changed.emit(_current_building, _order_recipe, _order_quantity, _order_deliver, _order_keep_for_building)
 	)
 	production_recipes_container.add_child(deliver_check_box)
-	# "Tieni per l'edificio" (2026-10-04, Attrezzeria): solo su un edificio con l'Attrezzeria; i pezzi finiti che sono
-	# attrezzi vanno nell'Attrezzeria se c'è posto. Esclusiva con "Consegna al magazzino".
-	keep_check_box.visible = BuildingToolkitService.has_toolkit(building)
+	# "Tieni per l'edificio" (2026-10-04, Attrezzeria): i pezzi finiti che sono attrezzi vanno nell'Attrezzeria se c'è
+	# posto. Esclusiva con "Consegna al magazzino". Dal 2026-10-08 compare solo se la ricetta scelta fa un attrezzo E
+	# l'Attrezzeria ha posto per lui (BuildingToolkitService.can_add: tipo presente con pezzi liberi, o tipo libero) e, dal
+	# 2026-10-08, solo se l'attrezzo serve a una ricetta dell'edificio (is_accepted_tool, controllo dentro can_add);
+	# nascosta = spenta, "Porta al deposito" resta com'è.
+	keep_check_box.visible = BuildingToolkitService.can_add(building, _order_recipe)
 	keep_check_box.text = tr("produce_keep_for_building_checkbox")
 	keep_check_box.tooltip_text = tr("produce_keep_for_building_tooltip")
 	keep_check_box.add_theme_font_size_override("font_size", 10)
@@ -1442,8 +1495,59 @@ func _refresh_production_recipes(building: Building, production_claimant_names: 
 			deliver_check_box.set_pressed_no_signal(false)
 		if _order_quantity > 0 and _current_building != null:
 			production_order_changed.emit(_current_building, _order_recipe, _order_quantity, _order_deliver, _order_keep_for_building)
+		_update_order_output_warning(building)
 	)
 	production_recipes_container.add_child(keep_check_box)
+	# Avviso dell'ordine (2026-10-08): va a capo, il pannello non si allarga.
+	_order_output_warning_label = Label.new()
+	_order_output_warning_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_order_output_warning_label.custom_minimum_size.x = 0.0
+	_order_output_warning_label.add_theme_font_size_override("font_size", 10)
+	_order_output_warning_label.add_theme_color_override("font_color", ORDER_OUTPUT_WARNING_COLOR)
+	production_recipes_container.add_child(_order_output_warning_label)
+	deliver_check_box.toggled.connect(func(_pressed: bool) -> void: _update_order_output_warning(building))
+	_update_order_output_warning(building)
+
+
+# Avviso "Uscita piena: si fermerà dopo N" (2026-10-08, richiesta utente): con "Porta al deposito" spenta e i pezzi
+# ordinati oltre i posti liberi nei Prodotti finiti (più, con "Tieni per l'edificio" accesa, i posti liberi
+# nell'Attrezzeria per quell'attrezzo). Solo un avviso: l'ordine si può dare lo stesso. Con "Porta al deposito" accesa il
+# pipottino porta via i pezzi a metà ordine (ProduceAction, consegna a metà ordine): nessun avviso.
+func _update_order_output_warning(building: Building) -> void:
+	if _order_output_warning_label == null or not is_instance_valid(_order_output_warning_label):
+		return
+	var should_warn := false
+	var free_places := 0
+	if building != null and _order_recipe != "" and _order_quantity > 0 and not _order_deliver:
+		free_places = maxi(ProductionService.get_output_capacity(building) - ProductionService.get_output_used(building), 0)
+		if _order_keep_for_building:
+			free_places += BuildingToolkitService.get_free_units_for(building, _order_recipe)
+		should_warn = _order_quantity > free_places
+	_order_output_warning_label.visible = should_warn
+	_order_output_warning_label.text = tr("produce_output_full_warning").format({"count": free_places}) if should_warn else ""
+
+
+# Ordini in coda (2026-10-09): chiamata da GameScene prima di ogni show_building. `enabled` = idea dell'assegnazione
+# completata; con lei la ricetta e la quantità della griglia sono quelle dell'ordine in coda creato da questo pannello
+# per `building_id` (`recipe` "" / `units` 0 = nessuno, o già preso da un pipottino). Cambiando edificio le spunte
+# ripartono dal default, come senza l'idea.
+func set_production_queue_mode(enabled: bool, building_id: int = -1, recipe: String = "", units: int = 0) -> void:
+	_production_queue_mode = enabled
+	if not enabled:
+		return
+	if _order_quantity_building_id != building_id:
+		_order_deliver = UserOptions.production_delivery_default
+		_order_keep_for_building = false
+	_order_quantity_building_id = building_id
+	_order_recipe = recipe if units > 0 else ""
+	_order_quantity = maxi(units, 0) if recipe != "" else 0
+
+
+# Suggerimento "come assegnarlo" (2026-10-09): `queue_enabled` = idea dell'assegnazione completata; `locked` = il lavoro
+# dell'edificio (cantiere, miglioramento o demolizione) è bloccato in coda. Chiamata da GameScene prima di show_building.
+func set_assign_hint_state(queue_enabled: bool, locked: bool) -> void:
+	_assign_hint_queue_enabled = queue_enabled
+	_assign_hint_locked = locked
 
 
 # Riporta l'ordine in preparazione a 0 (2026-09-27): chiamata da GameScene dopo l'assegnazione o quando si esce dalla
@@ -1509,6 +1613,9 @@ func _change_production_order(building: Building, resource_name: String, delta: 
 	_order_quantity = clampi(_order_quantity + delta, 0, max_quantity)
 	if _order_quantity == 0:
 		_order_recipe = ""
+	# "Tieni per l'edificio" vale solo per un attrezzo con posto nell'Attrezzeria (2026-10-08): spenta prima di avvisare.
+	if not BuildingToolkitService.can_add(building, _order_recipe):
+		_order_keep_for_building = false
 	production_order_changed.emit(building, resource_name, _order_quantity, _order_deliver, _order_keep_for_building)
 	_refresh_production_recipes(building, _last_production_claimant_names)
 
@@ -1735,7 +1842,9 @@ func _build_storage_slot(slot_data: Dictionary) -> Control:
 # cliccabile (clic sinistro, prima nessuna azione su queste icone): un pezzo passa nell'Attrezzeria. Riga nel tooltip.
 func _make_toolkit_deposit_target(box: Control, resource_name: String, from_output: bool) -> void:
 	var building := _current_building
-	if not BuildingToolkitService.has_toolkit(building) or not ToolInstance.is_tool_resource(resource_name):
+	# Solo gli attrezzi che servono alle ricette dell'edificio (2026-10-08, BuildingToolkitService.is_accepted_tool): gli
+	# altri (armi, attrezzi che nessuna sua ricetta usa) non diventano cliccabili.
+	if not BuildingToolkitService.is_accepted_tool(building, resource_name):
 		return
 	box.tooltip_text += "\n" + tr("toolkit_click_to_store")
 	box.mouse_filter = Control.MOUSE_FILTER_STOP

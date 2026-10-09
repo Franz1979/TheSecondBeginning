@@ -58,6 +58,9 @@ func try_select(event: InputEvent, live_cells: Dictionary, required_button: int 
 			# motivo già usato da VegetationSelectorController per chioma/offset.
 			if abs(pos.x - click_lot.x) > 1 or abs(pos.y - click_lot.y) > 1:
 				continue
+			# Roccia esaurita (2026-10-08): non c'è più, il clic passa ai sassi rimasti e al resto.
+			if RockStoneService.is_depleted(cell.macro_state, pos):
+				continue
 
 			var screen_pos: Vector2 = cell.renderer.get_stone_screen_position(pos)
 			var distance: float = local_mouse.distance_to(screen_pos)
