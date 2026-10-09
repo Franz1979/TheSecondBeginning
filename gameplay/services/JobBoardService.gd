@@ -41,12 +41,13 @@ const STATE_LOCKED := "locked"
 # "body" (2026-10-07): corpi da seppellire; "pile" (2026-10-07): mucchi a terra abbandonati.
 # "output" (2026-10-08): Prodotti finiti pieni che fermano un ordine, da consegnare a magazzino.
 # "produce" (2026-10-09): ordini di produzione senza lavoratore ("produce:<id edificio>:<chiave ordine>").
-# "cut" (2026-10-09): ordini di taglio del cassetto ("order:<id>", tipo della voce; GameScene._drawer_cut_job).
-const DEFAULT_STATE_BY_KIND := {"build": STATE_LISTED, "upgrade": STATE_LISTED, "demolish": STATE_LISTED, "body": STATE_LISTED, "pile": STATE_LISTED, "output": STATE_LISTED, "produce": STATE_LISTED, "cut": STATE_LISTED}
+# "cut" / "quarry" / "gather" (2026-10-09): ordini di taglio / estrazione / raccolta del cassetto ("order:<id>", tipo della voce;
+# GameScene._drawer_cut_job).
+const DEFAULT_STATE_BY_KIND := {"build": STATE_LISTED, "upgrade": STATE_LISTED, "demolish": STATE_LISTED, "body": STATE_LISTED, "pile": STATE_LISTED, "output": STATE_LISTED, "produce": STATE_LISTED, "cut": STATE_LISTED, "quarry": STATE_LISTED, "gather": STATE_LISTED, "hunt": STATE_LISTED}
 # Tipo di lavoro -> chiave di SkillEffectService (skill_action_effects.tres) della sua skill (modo "Più adatto").
-const SKILL_KEY_BY_KIND := {"build": "build", "upgrade": "build", "demolish": "build", "body": RiteAction.SKILL_EFFECT_KEY, "pile": "pickup", "output": "pickup", "produce": "produce", "cut": "cut"}
+const SKILL_KEY_BY_KIND := {"build": "build", "upgrade": "build", "demolish": "build", "body": RiteAction.SKILL_EFFECT_KEY, "pile": "pickup", "output": "pickup", "produce": "produce", "cut": "cut", "quarry": "quarry", "gather": "pickup", "hunt": HuntService.SKILL_EFFECT_KEY}
 # Tipo di lavoro -> icona di comando (IconRegistry) che lampeggia sull'edificio durante l'attesa per l'assegnazione a mano.
-const ICON_KEY_BY_KIND := {"build": "build", "upgrade": "build", "demolish": "demolish", "body": "bury", "pile": "pickup", "output": "transport", "produce": "produce", "cut": "cut"}
+const ICON_KEY_BY_KIND := {"build": "build", "upgrade": "build", "demolish": "demolish", "body": "bury", "pile": "pickup", "output": "transport", "produce": "produce", "cut": "cut", "quarry": "quarry", "gather": "pickup", "hunt": "hunt"}
 
 # Modi di priorità (valori salvati in GameData.job_board_priority_mode, mai cambiarli).
 const PRIORITY_BEST_FIT := "best_fit"
@@ -65,7 +66,8 @@ const PRIORITY_NAME_KEYS := {
 }
 # Ordine iniziale dei tipi per "Personalizzata". Un tipo nuovo di DEFAULT_STATE_BY_KIND che non è qui (né nell'ordine
 # salvato) entra in fondo (get_kind_order).
-const DEFAULT_KIND_ORDER: Array[String] = ["body", "build", "upgrade", "demolish", "pile", "output", "produce", "cut"]
+# "hunt" (2026-10-09): ordini di caccia del cassetto, in fondo.
+const DEFAULT_KIND_ORDER: Array[String] = ["body", "build", "upgrade", "demolish", "pile", "output", "produce", "cut", "quarry", "gather", "hunt"]
 # Tipo -> chiave tr() del nome nell'elenco dei tipi e nel log.
 const KIND_NAME_KEYS := {
 	"body": "task_assignment_kind_body",
@@ -76,6 +78,9 @@ const KIND_NAME_KEYS := {
 	"output": "task_assignment_kind_output",
 	"produce": "task_assignment_kind_produce",
 	"cut": "task_assignment_kind_cut",
+	"quarry": "task_assignment_kind_quarry",
+	"gather": "task_assignment_kind_gather",
+	"hunt": "task_assignment_kind_hunt",
 }
 # Due skill uguali entro questo scarto contano come pari (poi decide l'età).
 const SKILL_TIE_EPSILON: float = 0.0001

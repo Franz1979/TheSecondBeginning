@@ -8,7 +8,7 @@ extends Action
 #   - preda avvistata: scrive la preda nel context (HuntZoneService.write_prey_context) e chiede l'inserimento degli
 #     step di caccia di sempre — ApproachPrey → Aim → Throw — subito dopo di sé (HuntZoneService.CONTEXT_PENDING_PREY,
 #     consumato da HumanIndividualActionService._handle_pending_hunt_zone_prey). L'inseguimento può uscire dalla zona;
-#   - MAX_UNSIGHTED_DAYS di gioco passati DENTRO la zona senza avvistamenti: l'uscita finisce (chiusura anticipata,
+#   - PATROL_DAYS_WITHOUT_PREY_LIMIT giorni di gioco passati DENTRO la zona senza avvistamenti: l'uscita finisce (chiusura anticipata,
 #     nessun effetto di completamento). Il contatore (HuntZoneService.CONTEXT_UNSIGHTED_DAYS, nel context: salvato con
 #     la Task) riparte da zero a ogni avvistamento; il tragitto fino alla zona non conta;
 #   - zona eliminata o irraggiungibile: l'uscita finisce.
@@ -18,8 +18,9 @@ extends Action
 # Ogni quanto (giorni di gioco) si cerca una preda: abbastanza spesso da non "mancare" un animale che attraversa il
 # raggio di vista, senza scorrere gli animali della macrocella a ogni frame.
 const CHECK_INTERVAL_DAYS: float = 0.01
-# Un giorno di gioco intero dentro la zona senza avvistamenti chiude l'uscita.
-const MAX_UNSIGHTED_DAYS: float = 1.0
+# Giorni di gioco di pattuglia dentro la zona senza avvistamenti dopo cui l'uscita finisce (comando Caccia nelle zone e
+# ordine "Caccia" del cassetto). 2026-10-09: da 1 a 2 giorni.
+const PATROL_DAYS_WITHOUT_PREY_LIMIT: float = 2.0
 # Distanza (microcelle) entro cui un punto di pattuglia è raggiunto e se ne sceglie un altro.
 const WAYPOINT_REACH: float = 0.3
 # Punti di pattuglia irraggiungibili di fila prima di considerare la zona irraggiungibile.
@@ -97,7 +98,7 @@ func get_stamina_delta(individual: Variant, context: Dictionary, delta: float) -
 	if area.contains(individual.home_macro_coords, Vector2i(individual.position.floor())):
 		var unsighted: float = float(context.get(HuntZoneService.CONTEXT_UNSIGHTED_DAYS, 0.0)) + delta
 		context[HuntZoneService.CONTEXT_UNSIGHTED_DAYS] = unsighted
-		if unsighted >= MAX_UNSIGHTED_DAYS:
+		if unsighted >= PATROL_DAYS_WITHOUT_PREY_LIMIT:
 			_timed_out = true
 			_finish(individual)
 			return stamina_delta
@@ -138,7 +139,9 @@ func on_complete(individual: Variant, context: Dictionary) -> void:
 	elif _zone_unreachable:
 		abort_task_unreachable(individual, context, "zona di caccia irraggiungibile")
 	elif _timed_out:
-		context[HumanIndividualActionService.CONTEXT_PENDING_TASK_ABORT] = "nessuna preda avvistata per %.0f giorno di pattuglia" % MAX_UNSIGHTED_DAYS
+		context[HumanIndividualActionService.CONTEXT_PENDING_TASK_ABORT] = "nessuna preda avvistata per %.1f giorni di pattuglia" % PATROL_DAYS_WITHOUT_PREY_LIMIT
+		# Per chi segue la serie (2026-10-09, ordini di caccia del cassetto): uscita finita senza prede.
+		context[HuntZoneService.CONTEXT_NO_PREY] = true
 
 
 func get_save_data() -> Dictionary:

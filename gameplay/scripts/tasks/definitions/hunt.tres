@@ -1,4 +1,4 @@
-[gd_resource type="Resource" script_class="TaskDefinition" format=3]
+[gd_resource type="Resource" script_class="TaskDefinition" format=3 uid="uid://3apxp5mc0rxl"]
 
 [ext_resource type="Script" uid="uid://1t46mu8mn6hq" path="res://gameplay/scripts/tasks/task_definition.gd" id="1_def"]
 [ext_resource type="Resource" path="res://gameplay/scripts/tasks/definitions/step_walk_hunt.tres" id="2_approach"]
@@ -9,3 +9,4 @@
 script = ExtResource("1_def")
 task_name = "task_hunt_name"
 steps = [ExtResource("2_approach"), ExtResource("3_aim"), ExtResource("4_throw")]
+allowed_age_bands = Array[int]([3, 4])

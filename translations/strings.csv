@@ -297,7 +297,7 @@ hunt_order_dialog_title,Caccia nelle zone di lavoro
 hunt_order_dialog_message,Il cacciatore pattuglia la zona e torna a cacciare finché non raggiunge la quantità scelta.
 hunt_order_dialog_stop_prefix,Fermati dopo aver portato a casa
 hunt_order_dialog_stop_suffix,di carne
-work_area_hunt_needs_knife,{name} non può cacciare nelle zone: serve un coltello in cintura.
+work_area_hunt_needs_knife,{name} non può cacciare nelle zone: serve un coltello.
 work_area_hunt_no_zone,{name}: nessuna zona di lavoro con la caccia abilitata.
 hunt_no_weapon_left,"{name}: nessuna arma da caccia rimasta, la caccia si interrompe."
 hunt_no_knife_carcass_left,"{name}: nessun coltello, la carcassa resterà a terra"
@@ -416,6 +416,7 @@ hunt_destination_not_yet_available,Non ancora disponibile
 hunt_destination_requires_idea,Richiede: {idea}
 hunt_destination_no_building,Nessun {building} costruito
 command_bar_butcher_destination_tooltip,Destinazione dei prodotti della caccia: {name}
+hunt_destination_button_label,Destinazione dei prodotti della caccia
 command_bar_group_work_areas,Aree di lavoro
 command_bar_group_hunting,Caccia
 build_bar_title_build,Costruzione
@@ -473,6 +474,7 @@ task_debug_panel_clear_button,Svuota
 task_debug_panel_refresh_button_tooltip,Aggiorna elenco
 task_debug_panel_unnamed_task,(senza nome)
 individual_queued_tasks_label,Azioni in coda:
+individual_queued_task_paused_with_cargo,{task} · in pausa, con carico
 building_status_label,Stato: {status}
 building_status_complete,Completo
 building_status_under_construction,In costruzione
@@ -1030,13 +1032,44 @@ drawer_cut_zone_label,Zona: {zone}
 drawer_cut_zone_auto,Zona automatica
 drawer_cut_zone_none,da scegliere
 drawer_cut_zone_gone,zona eliminata
-drawer_order_cut_row,Taglia {count} piante · {zone}
-drawer_order_cut_row_one,Taglia 1 pianta · {zone}
+drawer_order_cut_row,Taglia {count} piante
+drawer_order_cut_row_one,Taglia 1 pianta
 drawer_cut_no_valid_zone,Nessuna zona valida
 task_assignment_place_decided_later,Il luogo si decide quando qualcuno prende il lavoro
 task_pile_pickup_activity,Ritiro mucchio
 task_pile_pickup_activity_resource,Ritiro mucchio ({resource})
 task_assignment_direct,Diretto
-task_assignment_direct_tooltip,"Assegnato direttamente a questo individuo, non viene dalla coda."
+task_assignment_direct_tooltip,"Assegnato direttamente a questo individuo: non si può rimettere in coda."
 task_assignment_direct_cancel_tooltip,Ferma il lavoro di questo individuo (come il tasto H)
 task_assignment_in_progress_tooltip,Tutto il lavoro in corso. Bisogni e riposo non compaiono qui.
+task_assignment_in_progress_workload,In corso · {working} al lavoro su {total}
+task_assignment_workload_working,Al lavoro: {count}
+task_assignment_workload_leisure,Svago: {count}
+task_assignment_workload_needs,Bisogni personali: {count}
+task_assignment_kind_quarry,Estrazione
+drawer_quarry_button_tooltip,Estrazione nelle zone di lavoro: la prende in coda un individuo libero con il piccone
+drawer_quarry_no_zone,Nessuna zona di estrazione
+drawer_quarry_nobody_has_pickaxe,Nessuno ha il piccone
+drawer_quarry_title,Estrai
+drawer_order_quarry_row,Estrai {count} pietre
+drawer_order_quarry_row_one,Estrai 1 pietra
+task_assignment_kind_gather,Raccolta
+drawer_gather_button_tooltip,Raccolta nelle zone di lavoro: la prende in coda un individuo libero
+drawer_gather_no_zone,Nessuna zona di raccolta
+drawer_gather_title,Raccogli
+drawer_order_gather_row,Raccogli {target} · {count} viaggi
+drawer_order_gather_row_one,Raccogli {target} · 1 viaggio
+drawer_order_cut_progress_row,Taglia piante · {done}/{total}
+drawer_order_quarry_progress_row,Estrai pietre · {done}/{total}
+drawer_order_gather_progress_row,Raccogli {target} · {done}/{total}
+drawer_order_zone_suffix,{row} · {zone}
+drawer_hunt_title,Caccia
+drawer_hunt_button_tooltip,Caccia nelle zone di lavoro: la prende in coda un individuo libero con il coltello
+drawer_hunt_no_zone,Nessuna zona di caccia
+drawer_hunt_nobody_has_knife,Nessuno ha il coltello
+drawer_hunt_meat_label,Carne da portare a casa
+drawer_order_hunt_row,Caccia · {count} carne
+drawer_order_hunt_row_one,Caccia · 1 carne
+drawer_order_hunt_progress_row,Caccia · {done}/{total}
+task_assignment_kind_hunt,Caccia
+pending_hunt_no_prey,Caccia: nessuna preda in {zone}

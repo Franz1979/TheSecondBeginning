@@ -44,6 +44,9 @@ signal hunt_ended_with_message(individual: HumanIndividual, message: String)
 # Serie di cacce fino a un limite di carne (2026-10-01): una macellazione della serie è finita sotto il limite; GameScene
 # accoda una nuova caccia nella stessa zona (o chiude la serie se la zona non c'è più o manca il coltello).
 signal hunt_zone_series_continue_requested(individual: HumanIndividual, series: Dictionary)
+# Serie di cacce finita (2026-10-09, per gli ordini di caccia del cassetto): `reason` HuntZoneService.SERIES_END_COMPLETE
+# (carne consegnata fino al limite, a fine macellazione) o SERIES_END_NO_PREY (uscita finita dopo PatrolAreaAction.PATROL_DAYS_WITHOUT_PREY_LIMIT giorni senza prede).
+signal hunt_zone_series_ended(individual: HumanIndividual, series: Dictionary, reason: String)
 # Serie di estrazioni in zona (2026-10-05): la consegna dell'ultima estrazione è finita e il mucchio è vuoto — GameScene
 # accoda l'estrazione successiva (o chiude la serie se non può partire).
 signal quarry_zone_series_continue_requested(individual: HumanIndividual, series: Dictionary)
@@ -1400,7 +1403,10 @@ func _handle_pending_hunt_butcher(individual: HumanIndividual, task: Task) -> vo
 	# Serie di cacce (2026-10-01): passa alla macellazione, che conta la carne consegnata.
 	var series := HuntZoneService.get_meat_series(task.context)
 	if not series.is_empty():
-		carcass["hunt_zone_series"] = series.duplicate()
+		# Preda catturata (2026-10-09): le zone provate a vuoto si azzerano.
+		var carried_series := series.duplicate()
+		carried_series.erase(HuntZoneService.SERIES_TRIED_ZONES_KEY)
+		carcass["hunt_zone_series"] = carried_series
 	# Destinazione dei prodotti scelta nell'ordine di caccia (2026-10-03): passa alla macellazione.
 	if task.context.has(ButcherDestinationService.CONTEXT_KEY):
 		carcass["butcher_destination"] = String(task.context[ButcherDestinationService.CONTEXT_KEY])
@@ -1592,6 +1598,11 @@ func _continue_cut_zone_series(individual: HumanIndividual, task: Task, game_dat
 
 func _continue_hunt_zone_series(individual: HumanIndividual, task: Task) -> void:
 	if HuntZoneService.is_zone_hunt_task(task):
+		# Uscita finita senza prede (2026-10-09): avviso a chi segue la serie.
+		if bool(task.context.get(HuntZoneService.CONTEXT_NO_PREY, false)):
+			var no_prey_series := HuntZoneService.get_meat_series(task.context)
+			if not no_prey_series.is_empty():
+				hunt_zone_series_ended.emit(individual, no_prey_series.duplicate(), HuntZoneService.SERIES_END_NO_PREY)
 		return
 	var series := HuntZoneService.get_meat_series(task.context)
 	if series.is_empty():
@@ -1600,6 +1611,7 @@ func _continue_hunt_zone_series(individual: HumanIndividual, task: Task) -> void
 		HuntZoneService.log_event(individual, "serie di caccia conclusa: %d/%d carne consegnata." % [
 			int(series.get("delivered", 0)), int(series.get("target", 0))
 		])
+		hunt_zone_series_ended.emit(individual, series.duplicate(), HuntZoneService.SERIES_END_COMPLETE)
 		return
 	HuntZoneService.log_event(individual, "macellazione finita con %d/%d carne: si continua a cacciare." % [
 		int(series.get("delivered", 0)), int(series.get("target", 0))

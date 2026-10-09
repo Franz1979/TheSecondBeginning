@@ -373,12 +373,69 @@ static func build_restock_task(individual: HumanIndividual, world: World, defini
 # Assegnazione comune delle Task di rifornimento: build_restock_task + can_assign_task + assign_task,
 # con il log [RESTOCK] dell'esito. NON chiama individual.stop() (scarterebbe lo zaino: rifornirsi deve
 # poter avvenire anche mentre si trasporta qualcosa).
-# Magazzino da cui rifornirsi: il più vicino con cibo (stessa ricerca di sempre). null se non ce n'è.
+# Scelta del magazzino del rifornimento (2026-10-09, richiesta utente — provviste normali e d'emergenza): D = distanza
+# del magazzino raggiungibile con cibo prelevabile più vicino; contano solo i magazzini con cibo entro
+# max(D × FOOD_SOURCE_MAX_DISTANCE_RATIO, D + FOOD_SOURCE_MIN_EXTRA_CELLS) microcelle (in linea d'aria, la stessa misura
+# della ricerca del più vicino, SpatialSelectionService.find_nearest).
+const FOOD_SOURCE_MAX_DISTANCE_RATIO: float = 3.0
+const FOOD_SOURCE_MIN_EXTRA_CELLS: float = 15.0
+
+
+# Magazzino da cui rifornirsi (2026-10-09): tra quelli con cibo prelevabile entro il limite di distanza qui sopra, quello
+# che contiene il cibo con il miglior rapporto calorie/spazio (lo stesso rapporto di FoodSelectionService); a parità il
+# più vicino. Stessi filtri di sempre su cosa si può prelevare (WarehouseSelectionService: edificio completo, non da
+# demolire, cibo in stored_resources o nel buffer di uscita) e raggiungibilità. Dentro il magazzino la scelta del cibo
+# resta quella di FoodSelectionService. null se nessun magazzino ha cibo.
 static func find_restock_source(individual: HumanIndividual, world: World) -> Building:
-	return WarehouseSelectionService.find_source_for_retrieval(
+	var reachable := PathfindingService.reachability_for(individual)
+	var nearest := WarehouseSelectionService.find_source_for_retrieval(
 		world, individual.position, individual.home_macro_coords, SecondaryResourceTypes.Category.FOOD,
-		[], 1, individual.id, PathfindingService.reachability_for(individual)
+		[], 1, individual.id, reachable
 	)
+	if nearest == null:
+		return null
+	var origin := individual.position
+	var nearest_distance := origin.distance_to(SpatialSelectionService._position_relative_to(nearest, individual.home_macro_coords))
+	var max_distance := maxf(nearest_distance * FOOD_SOURCE_MAX_DISTANCE_RATIO, nearest_distance + FOOD_SOURCE_MIN_EXTRA_CELLS)
+	var best: Building = nearest
+	var best_ratio := _best_food_ratio(nearest)
+	var best_distance := nearest_distance
+	for building in world.buildings:
+		if building == nearest or not building.is_complete or building.is_demolished or building.is_marked_for_demolition:
+			continue
+		var stock := WarehouseSelectionService.get_matching_stock(building, SecondaryResourceTypes.Category.FOOD, 1)
+		if stock.is_empty():
+			continue
+		var distance := origin.distance_to(SpatialSelectionService._position_relative_to(building, individual.home_macro_coords))
+		if distance > max_distance:
+			continue
+		var ratio := _best_food_ratio(building)
+		var better := ratio > best_ratio + 0.000001 or (absf(ratio - best_ratio) <= 0.000001 and distance < best_distance)
+		if not better:
+			continue
+		if reachable.is_valid() and not reachable.call(building):
+			continue
+		best = building
+		best_ratio = ratio
+		best_distance = distance
+	if DebugLogging.should_log_restock(individual.id) and best != nearest:
+		print("[RESTOCK] #%d %s: magazzino %s #%d (calorie/spazio %.1f, distanza %.1f) al posto del più vicino #%d (%.1f, distanza %.1f)." % [
+			individual.id, individual.name, best.building_type_name, best.id, best_ratio, best_distance,
+			nearest.id, _best_food_ratio(nearest), nearest_distance
+		])
+	return best
+
+
+# Miglior rapporto calorie/spazio tra i cibi prelevabili di `building` (stesse regole di FoodSelectionService: calorie e
+# spazio per unità > 0); 0 se nessuno.
+static func _best_food_ratio(building: Building) -> float:
+	var best := 0.0
+	for resource_name in WarehouseSelectionService.get_matching_stock(building, SecondaryResourceTypes.Category.FOOD, 1).keys():
+		var rules := CaloricCalculator.get_caloric_source_rules(String(resource_name))
+		if rules == null or rules.calories_per_unit <= 0.0 or rules.space_per_unit <= 0.0:
+			continue
+		best = maxf(best, rules.calories_per_unit / rules.space_per_unit)
+	return best
 
 
 static func _assign_restock_task(

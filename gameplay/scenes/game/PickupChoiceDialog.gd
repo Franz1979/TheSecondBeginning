@@ -41,6 +41,9 @@ signal choice_made(kind: int, category: int, resource_name: String, quantity: in
 # Modalità caccia (2026-10-01, comando Caccia nelle zone — open_hunt_dialog): solo il selettore "Carne", nessun elenco.
 # `butcher_destination` (2026-10-03): destinazione dei prodotti della macellazione (ButcherDestinationService).
 signal hunt_choice_made(meat_target: int, butcher_destination: String)
+# Scelta dal pulsante della destinazione (2026-10-09, ButcherDestinationButton: lo stesso della barra dei comandi, stessa
+# impostazione condivisa): GameScene la scrive subito in GameData.last_butcher_destination, come dalla barra.
+signal butcher_destination_chosen(destination: String)
 
 @onready var message_label: Label = $MarginContainer/VBoxContainer/MessageLabel
 @onready var choice_list_container: VBoxContainer = $MarginContainer/VBoxContainer/ChoiceScroll/ChoiceListContainer
@@ -81,20 +84,22 @@ var _meat_option: OptionButton = null
 var _meat_values: Array[int] = []
 # Altezza di partenza in modalità caccia: la finestra poi si adatta al contenuto (_fit_to_content).
 const HUNT_DIALOG_HEIGHT: float = 120.0
-# Sezione "Destinazione" della caccia (2026-10-03): una riga per opzione, a scelta singola.
-const DESTINATION_ICON_SIZE: float = 20.0
-const DESTINATION_LOCK_ICON := "🔒"
-var _destination_section: VBoxContainer = null
-var _destination_rows: VBoxContainer = null
-var _destination_group: ButtonGroup = null
-# Bottone di scelta -> id della destinazione.
-var _destination_ids: Dictionary = {}
+# Destinazione della caccia (2026-10-09): la vecchia sezione da spuntare è stata tolta; resta il pulsante condiviso
+# con la barra e il cassetto (_hunt_destination_button), che vale subito.
 # Posizione accanto a un pannello (2026-10-09, richiesta utente — "Raccogli nelle zone di lavoro" e Caccia dalla lista
 # degli individui): se prima di open_dialog / open_hunt_dialog il chiamante imposta `popup_anchor` (vedi
 # DialogPlacement.place), la finestra resta identica ma compare accanto all'info panel invece che al centro. Vale per
 # quell'apertura sola; {} = al centro come sempre.
 var popup_anchor: Dictionary = {}
 var _anchor: Dictionary = {}
+# Interruttore della zona automatica (2026-10-09): visibile in "Raccogli nelle zone di lavoro" (modalità viaggi) e nella
+# caccia, non nella raccolta da una cella.
+var _auto_zone_row: HBoxContainer = null
+# Riga "Destinazione dei prodotti [pulsante]" nella caccia (2026-10-09), sopra quella della zona automatica: il pulsante
+# della barra dei comandi, visibile negli stessi casi (set_butcher_destination, da GameScene).
+var _hunt_destination_row: HBoxContainer = null
+var _hunt_destination_button: ButcherDestinationButton = null
+var _hunt_destination_state: Dictionary = {"shown": false, "current": {}, "options": []}
 
 
 func _ready() -> void:
@@ -134,6 +139,7 @@ func open_dialog(
 	repeat_check_box.visible = not _trips_mode
 	_ensure_trips_row()
 	_trips_row.visible = _trips_mode
+	_show_auto_zone_row(_trips_mode)
 	selected_trips = 0
 	if _trips_mode:
 		_trips_spin_box.max_value = maxi(trips_max, 1)
@@ -163,21 +169,18 @@ func _on_menu_selection_changed(is_resource: bool, max_quantity: int) -> void:
 # `default_target` o il primo valore) e Conferma/Annulla. Conferma -> hunt_choice_made(valore); Annulla/Esc -> nulla.
 # Ritorna false (dialog NON aperto, nessun pannello lasciato sullo schermo) se la riga non si costruisce o non ci sono
 # valori: il chiamante non deve aspettarsi una risposta.
-# `destination_options` (2026-10-03): [{"id", "name", "building_type", "disabled_reason", "locked"}] in ordine (vedi
-# GameScene._build_butcher_destination_options); `default_destination` preselezionata, se abilitata.
-func open_hunt_dialog(
-	dialog_title: String, message: String, meat_options: Array[int], default_target: int,
-	destination_options: Array[Dictionary] = [], default_destination: String = ""
-) -> bool:
+# La destinazione è quella del pulsante (impostazione condivisa, GameScene.set_butcher_destination): hunt_choice_made
+# la passa vuota e GameScene usa quella attuale.
+func open_hunt_dialog(dialog_title: String, message: String, meat_options: Array[int], default_target: int) -> bool:
 	_ensure_meat_row()
-	_ensure_destination_section()
-	_fill_destination_section(destination_options, default_destination)
 	if _meat_option == null or meat_options.is_empty():
 		popup_anchor = {}
 		push_error("PickupChoiceDialog.open_hunt_dialog: riga \"Carne\" non disponibile o nessun valore — dialog non aperto.")
 		hide()
 		return false
 	_set_hunt_mode(true)
+	_show_auto_zone_row(true)
+	_show_hunt_destination_row()
 	title = dialog_title
 	message_label.text = message
 	_meat_values = meat_options.duplicate()
@@ -235,8 +238,8 @@ func _set_hunt_mode(enabled: bool) -> void:
 			_trips_row.visible = false
 	if _meat_row != null:
 		_meat_row.visible = enabled
-	if _destination_section != null:
-		_destination_section.visible = enabled
+	if _hunt_destination_row != null and not enabled:
+		_hunt_destination_row.visible = false
 
 
 func _ensure_meat_row() -> void:
@@ -264,75 +267,6 @@ func _ensure_meat_row() -> void:
 	_meat_row.visible = false
 
 
-# Sezione "Destinazione" (2026-10-03), creata alla prima apertura in modalità caccia sotto la riga "Carne".
-func _ensure_destination_section() -> void:
-	if _destination_section != null:
-		return
-	_destination_section = VBoxContainer.new()
-	var caption := Label.new()
-	caption.text = tr("hunt_destination_caption")
-	_destination_section.add_child(caption)
-	_destination_rows = VBoxContainer.new()
-	_destination_section.add_child(_destination_rows)
-	var parent := repeat_check_box.get_parent()
-	parent.add_child(_destination_section)
-	var anchor: Node = _meat_row if _meat_row != null else repeat_check_box
-	parent.move_child(_destination_section, anchor.get_index() + 1)
-	_destination_section.visible = false
-
-
-# Una riga per opzione: icona dell'edificio e casella a scelta singola. Un'opzione non disponibile resta visibile ma
-# disabilitata, con il motivo nel tooltip (e il lucchetto per quelle non ancora disponibili). Preselezionata
-# `default_destination` se abilitata, altrimenti la prima abilitata.
-func _fill_destination_section(options: Array[Dictionary], default_destination: String) -> void:
-	for child in _destination_rows.get_children():
-		child.queue_free()
-	_destination_ids = {}
-	_destination_group = ButtonGroup.new()
-	_destination_section.visible = not options.is_empty()
-	var to_select: CheckBox = null
-	var first_enabled: CheckBox = null
-	for option in options:
-		var reason := String(option.get("disabled_reason", ""))
-		var row := HBoxContainer.new()
-		row.tooltip_text = reason
-		row.add_child(_build_destination_icon(String(option.get("building_type", ""))))
-		var choice := CheckBox.new()
-		choice.button_group = _destination_group
-		var text := String(option.get("name", ""))
-		if bool(option.get("locked", false)):
-			text = "%s %s — %s" % [text, DESTINATION_LOCK_ICON, reason]
-		choice.text = text
-		choice.disabled = reason != ""
-		choice.tooltip_text = reason
-		row.add_child(choice)
-		_destination_rows.add_child(row)
-		_destination_ids[choice] = String(option.get("id", ""))
-		if not choice.disabled:
-			if first_enabled == null:
-				first_enabled = choice
-			if String(option.get("id", "")) == default_destination:
-				to_select = choice
-	if to_select == null:
-		to_select = first_enabled
-	if to_select != null:
-		to_select.button_pressed = true
-
-
-# Icona dell'edificio (IconRegistry.build_building_icon_box: disegnata se c'è, altrimenti l'emoji).
-func _build_destination_icon(building_type: String) -> Control:
-	return IconRegistry.build_building_icon_box(building_type, DESTINATION_ICON_SIZE)
-
-
-# Destinazione selezionata, il magazzino se nessuna (sezione vuota).
-func _selected_destination() -> String:
-	if _destination_group != null:
-		var pressed := _destination_group.get_pressed_button()
-		if pressed != null and _destination_ids.has(pressed):
-			return String(_destination_ids[pressed])
-	return ButcherDestinationService.WAREHOUSE
-
-
 func _on_window_input(event: InputEvent) -> void:
 	if visible and event.is_action_pressed("ui_cancel"):
 		set_input_as_handled()
@@ -342,10 +276,9 @@ func _on_window_input(event: InputEvent) -> void:
 func _on_confirm_pressed() -> void:
 	if _hunt_mode:
 		var index := _meat_option.selected if _meat_option != null else -1
-		var destination := _selected_destination()
 		hide()
 		if index >= 0 and index < _meat_values.size():
-			hunt_choice_made.emit(_meat_values[index], destination)
+			hunt_choice_made.emit(_meat_values[index], "")
 		return
 	var choice: Dictionary = _menu.get_selected()
 	if choice.is_empty():
@@ -377,6 +310,71 @@ func _ensure_trips_row() -> void:
 	var parent := repeat_check_box.get_parent()
 	parent.add_child(_trips_row)
 	parent.move_child(_trips_row, repeat_check_box.get_index() + 1)
+
+
+# Stato del pulsante della destinazione (stessi argomenti di CommandBar.set_butcher_destination), aggiornato da GameScene
+# insieme a quello della barra; applicato subito se la riga esiste.
+func set_butcher_destination(is_shown: bool, current: Dictionary, options: Array[Dictionary]) -> void:
+	_hunt_destination_state = {"shown": is_shown, "current": current, "options": options}
+	if _hunt_destination_button != null:
+		_hunt_destination_button.set_destination(is_shown, current, options)
+		_hunt_destination_row.visible = _hunt_mode and is_shown
+
+
+func _show_hunt_destination_row() -> void:
+	if _hunt_destination_row == null:
+		_hunt_destination_row = HBoxContainer.new()
+		_hunt_destination_row.add_theme_constant_override("separation", 6)
+		var label := Label.new()
+		label.text = tr("hunt_destination_button_label")
+		label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		_hunt_destination_row.add_child(label)
+		_hunt_destination_button = ButcherDestinationButton.new()
+		_hunt_destination_button.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		_hunt_destination_button.destination_chosen.connect(_on_hunt_destination_button_chosen)
+		_hunt_destination_row.add_child(_hunt_destination_button)
+		var box := _auto_zone_row.get_parent()
+		box.add_child(_hunt_destination_row)
+		box.move_child(_hunt_destination_row, _auto_zone_row.get_index())
+	var options: Array[Dictionary] = []
+	options.assign(_hunt_destination_state["options"])
+	set_butcher_destination(bool(_hunt_destination_state["shown"]), _hunt_destination_state["current"], options)
+
+
+# Scelta dal pulsante: impostazione condivisa (GameScene), vale anche per questa caccia.
+func _on_hunt_destination_button_chosen(destination: String) -> void:
+	butcher_destination_chosen.emit(destination)
+
+
+func _show_auto_zone_row(shown: bool) -> void:
+	if _auto_zone_row == null:
+		if not shown:
+			return
+		var box := $MarginContainer/VBoxContainer as VBoxContainer
+		_auto_zone_row = _ensure_auto_zone_row(box, $MarginContainer/VBoxContainer/HSeparator)
+	_auto_zone_row.visible = shown
+
+
+# Riga "Scegli zona in automatico [interruttore]" (2026-10-09, AutoZoneToggle: lo stesso della barra dei comandi, legato a
+# UserOptions.work_area_auto_zone, letto alla conferma da GameScene), creata alla prima apertura sopra il separatore dei
+# bottoni.
+func _ensure_auto_zone_row(box: VBoxContainer, separator: Control) -> HBoxContainer:
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 6)
+	var label := Label.new()
+	label.text = tr("command_bar_auto_zone")
+	label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	row.add_child(label)
+	var toggle := AutoZoneToggle.new()
+	toggle.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	row.add_child(toggle)
+	box.add_child(row)
+	box.move_child(row, separator.get_index())
+	return row
 
 
 # Nessun segnale all'annullamento (stesso principio di OptionChoiceDialog): il chiamante non ha ancora impostato

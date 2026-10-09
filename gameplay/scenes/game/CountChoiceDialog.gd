@@ -23,6 +23,11 @@ var _cancel_button: Button = null
 # accanto all'info panel invece che al centro. Vale per quell'apertura sola; {} = al centro come sempre.
 var popup_anchor: Dictionary = {}
 var _anchor: Dictionary = {}
+# Interruttore della zona automatica (2026-10-09): mostrato se il chiamante lo chiede (Taglia ed Estrai nelle zone).
+var show_auto_zone_toggle: bool = false
+var _auto_zone_row: HBoxContainer = null
+var _box: VBoxContainer = null
+var _separator: HSeparator = null
 
 
 func _ready() -> void:
@@ -47,7 +52,9 @@ func _ready() -> void:
 	_spin_box.rounded = true
 	row.add_child(_spin_box)
 	box.add_child(row)
-	box.add_child(HSeparator.new())
+	_box = box
+	_separator = HSeparator.new()
+	box.add_child(_separator)
 	var buttons := HBoxContainer.new()
 	_confirm_button = Button.new()
 	_confirm_button.text = tr("transport_dialog_confirm")
@@ -71,6 +78,10 @@ func open_dialog(dialog_title: String, message: String, count_label: String, min
 	_spin_box.min_value = min_value
 	_spin_box.max_value = max_value
 	_spin_box.value = clampi(default_value, min_value, max_value)
+	if show_auto_zone_toggle and _auto_zone_row == null:
+		_auto_zone_row = _ensure_auto_zone_row(_box, _separator)
+	if _auto_zone_row != null:
+		_auto_zone_row.visible = show_auto_zone_toggle
 	_anchor = popup_anchor
 	popup_anchor = {}
 	exclusive = true
@@ -91,6 +102,26 @@ func _fit_to_content() -> void:
 	if fitted != size:
 		size = fitted
 		DialogPlacement.place(self, _anchor)
+
+
+# Riga "Scegli zona in automatico [interruttore]" (2026-10-09, AutoZoneToggle: lo stesso della barra dei comandi, legato a
+# UserOptions.work_area_auto_zone, letto alla conferma da GameScene), creata alla prima apertura sopra il separatore dei
+# bottoni.
+func _ensure_auto_zone_row(box: VBoxContainer, separator: Control) -> HBoxContainer:
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 6)
+	var label := Label.new()
+	label.text = tr("command_bar_auto_zone")
+	label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	row.add_child(label)
+	var toggle := AutoZoneToggle.new()
+	toggle.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	row.add_child(toggle)
+	box.add_child(row)
+	box.move_child(row, separator.get_index())
+	return row
 
 
 func _on_window_input(event: InputEvent) -> void:

@@ -42,6 +42,18 @@ const ZONE_CROWDING_FACTOR: float = 0.7
 const MEAT_TARGET_OPTIONS: Array[int] = [5, 10, 15, 20]
 const MEAT_TARGET_DEFAULT: int = 10
 const CONTEXT_MEAT_SERIES := "hunt_zone_meat_series"
+# Uscita della caccia in zona finita senza prede (PatrolAreaAction.PATROL_DAYS_WITHOUT_PREY_LIMIT giorni) (2026-10-09, PatrolAreaAction): letto alla chiusura della
+# Task per avvisare chi segue la serie (HumanIndividualActionService.hunt_zone_series_ended, ordini del cassetto).
+const CONTEXT_NO_PREY := "hunt_zone_no_prey"
+# Motivi di hunt_zone_series_ended.
+const SERIES_END_COMPLETE := "complete"
+const SERIES_END_NO_PREY := "no_prey"
+# Zona automatica (2026-10-09): la serie nata con la zona scelta in automatico (comando con l'interruttore acceso, ordine
+# del cassetto senza zona fissata) può cambiare zona dopo un'uscita a vuoto (GameScene._try_switch_hunt_zone). Zone già
+# provate a vuoto in questo giro (Array di id, salvato con la serie): ognuna al massimo una volta; si azzera alla cattura
+# di una preda (la serie passa alla macellazione senza) e quando l'ordine torna in coda (la serie nuova nasce senza).
+const SERIES_AUTO_ZONE_KEY := "auto_zone"
+const SERIES_TRIED_ZONES_KEY := "tried_zone_ids"
 const MEAT_RESOURCE := "meat"
 # Raggio di vista se nessun FogOfWarRenderer vivo è disponibile (stesso default di FogOfWarRenderer.visibility_radius).
 const FALLBACK_VISIBILITY_RADIUS: float = 6.0
@@ -158,14 +170,23 @@ static func get_hunter_visibility_radius(hunter: HumanIndividual, live_cells: Di
 	return FALLBACK_VISIBILITY_RADIUS
 
 
-# Requisito della caccia in zona: un attrezzo BUTCHERING in cintura (il coltello, che vale anche come arma da caccia),
-# così la preda si può macellare sul posto senza tornare a prenderlo. "" se va bene, altrimenti il messaggio di rifiuto
-# già tradotto. La caccia diretta non lo richiede (resta il gate HUNTING di sempre, ToolGateService).
+# Requisito della caccia in zona: un attrezzo BUTCHERING (il coltello, che vale anche come arma da caccia), così la preda
+# si può macellare sul posto senza tornare a prenderlo. Dal 2026-10-09 la regola generale degli attrezzi
+# (ToolGateService): in cintura va bene; nello zaino va bene se la cintura ha posto (lo sposta in cintura chi assegna la
+# caccia, GameScene._prepare_hunt_knife); nello zaino con la cintura piena, o da nessuna parte, no. Sola lettura: "" se
+# va bene, altrimenti il messaggio di rifiuto già tradotto. La caccia diretta non lo richiede (resta il gate HUNTING).
 static func get_hunt_rejection(hunter: HumanIndividual) -> String:
 	if hunter == null:
 		return ""
-	if ToolGateService.find_belt_slot_for(hunter, TaskTypes.ToolCategory.BUTCHERING) == -1:
+	if ToolGateService.find_belt_slot_for(hunter, TaskTypes.ToolCategory.BUTCHERING) != -1:
+		return ""
+	var backpack_knife := ToolGateService._find_backpack_tool_for(hunter, TaskTypes.ToolCategory.BUTCHERING, [])
+	if backpack_knife == "":
 		return TranslationServer.translate("work_area_hunt_needs_knife").format({"name": hunter.name})
+	if hunter.equipped_tool_count >= hunter.get_tool_slot_count():
+		return TranslationServer.translate("tool_gate_belt_full").format({
+			"name": hunter.name, "tool": IconRegistry.get_resource_display_name(backpack_knife),
+		})
 	return ""
 
 
@@ -173,11 +194,24 @@ static func get_hunt_rejection(hunter: HumanIndividual) -> String:
 
 # `butcher_destination` (2026-10-03): destinazione dei prodotti della macellazione scelta nel dialog
 # (ButcherDestinationService), copiata nel context di ogni caccia della serie (GameScene._build_hunt_zone_task).
-static func make_meat_series(area_id: int, target: int, butcher_destination: String = "") -> Dictionary:
+# `auto_zone` (2026-10-09): zona scelta in automatico, la serie può cambiare zona (SERIES_AUTO_ZONE_KEY).
+static func make_meat_series(area_id: int, target: int, butcher_destination: String = "", auto_zone: bool = false) -> Dictionary:
 	var series := {"work_area_id": area_id, "target": target, "delivered": 0}
 	if butcher_destination != "":
 		series["butcher_destination"] = butcher_destination
+	if auto_zone:
+		series[SERIES_AUTO_ZONE_KEY] = true
 	return series
+
+
+# Zone già provate a vuoto della serie, come interi (il context passa da JSON: gli id tornano float).
+static func get_tried_zone_ids(series: Dictionary) -> Array[int]:
+	var ids: Array[int] = []
+	var raw: Variant = series.get(SERIES_TRIED_ZONES_KEY, [])
+	if raw is Array:
+		for value in raw:
+			ids.append(int(value))
+	return ids
 
 
 # Serie del context ({} se la Task non ne fa parte).
@@ -216,21 +250,37 @@ static func list_hunt_work_areas(game_data: GameData) -> Array[WorkArea]:
 	return areas
 
 
-# Scelta automatica della zona di caccia per `hunter`: la più vicina, penalizzata per ogni altro cacciatore che caccia
-# già lì. null se nessuna zona con la caccia attiva.
-static func choose_work_area(game_data: GameData, hunter: HumanIndividual) -> WorkArea:
+# Scelta automatica della zona di caccia per `hunter` (2026-10-09, rivista): prima le prede — la zona con più prede
+# ammesse dal suo filtro presenti adesso (list_prey_in_area, solo macrocelle attive in `live_cells`), penalizzate per
+# ogni altro cacciatore che caccia già lì (ZONE_CROWDING_FACTOR); la distanza (1 / (distanza + ZONE_DISTANCE_OFFSET),
+# con la stessa penalità) decide solo a parità. Se nessuna zona ha prede: come prima, la più vicina con la penalità.
+# `excluded_ids`: zone da non considerare (già provate a vuoto); `require_prey`: null se nessuna zona ha prede.
+# null se nessuna zona con la caccia attiva.
+static func choose_work_area(
+	game_data: GameData, hunter: HumanIndividual, live_cells: Dictionary = {}, excluded_ids: Array[int] = [],
+	require_prey: bool = false
+) -> WorkArea:
 	if hunter == null:
 		return null
 	var best: WorkArea = null
-	var best_score := -1.0
+	var best_prey := -1.0
+	var best_distance_score := -1.0
 	for area in list_hunt_work_areas(game_data):
+		if excluded_ids.has(area.id):
+			continue
 		var center := Vector2(area.rect.position) + Vector2(area.rect.size) * 0.5 + Vector2(area.macro_coords - hunter.home_macro_coords) * World.WIDTH
-		var score := 1.0 / (hunter.position.distance_to(center) + ZONE_DISTANCE_OFFSET)
+		var crowding := 1.0
 		for other in GameSettings.active_human_individuals:
 			if other != hunter and is_zone_hunt_task(other.current_task) and int(other.current_task.context.get(CONTEXT_WORK_AREA_ID, -1)) == area.id:
-				score *= ZONE_CROWDING_FACTOR
-		if score > best_score:
-			best_score = score
+				crowding *= ZONE_CROWDING_FACTOR
+		var prey_count := list_prey_in_area(area, live_cells).size()
+		if require_prey and prey_count == 0:
+			continue
+		var prey_score := float(prey_count) * crowding
+		var distance_score := crowding / (hunter.position.distance_to(center) + ZONE_DISTANCE_OFFSET)
+		if prey_score > best_prey + 0.000001 or (absf(prey_score - best_prey) <= 0.000001 and distance_score > best_distance_score):
+			best_prey = prey_score
+			best_distance_score = distance_score
 			best = area
 	return best
 

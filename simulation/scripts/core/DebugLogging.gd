@@ -409,6 +409,10 @@ const SHOW_CLEAR_LOGS := true
 # libero guarda la lista (lavori trovati, scelto con il punteggio, o perché nessuno). Solo log.
 const SHOW_JOB_BOARD_LOGS := true
 
+# "In corso" del cassetto (2026-10-09, richiesta utente — righe "Diretto" non attese): una riga [IN CORSO] per individuo
+# quando la sua riga compare o cambia (task attiva, testo, coda o diretto e perché, chiavi del context). Solo log.
+const SHOW_IN_PROGRESS_LOGS := false
+
 # Finestra Aiuto (2026-10-09, richiesta utente — "Indietro" che serviva premere due volte): una riga [HELP] a ogni cambio
 # di pagina e a ogni "Indietro", con la pagina e la cronologia intera. Solo log (HelpDialog).
-const SHOW_HELP_DIALOG_LOGS := true
+const SHOW_HELP_DIALOG_LOGS := false

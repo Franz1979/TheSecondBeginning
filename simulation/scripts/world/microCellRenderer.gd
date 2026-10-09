@@ -3223,7 +3223,10 @@ static func _check_buffer_layout(with_color: bool, transform: Transform2D, color
 	if with_color:
 		expected.append_array(PackedFloat32Array([color.r, color.g, color.b, color.a]))
 	# Lettura: istanza 1 (non 0) per verificare anche il passo tra un'istanza e l'altra.
+	# Una mesh qualunque (2026-10-09): senza, il motore segnala "multimesh->mesh.is_null()" (innocuo, solo rumore).
+	var probe_mesh := QuadMesh.new()
 	var mm := MultiMesh.new()
+	mm.mesh = probe_mesh
 	mm.transform_format = MultiMesh.TRANSFORM_2D
 	mm.use_colors = with_color
 	mm.instance_count = 2
@@ -3240,6 +3243,7 @@ static func _check_buffer_layout(with_color: bool, transform: Transform2D, color
 			return false
 	# Scrittura: buffer impacchettato qui, trasformazione e colore riletti con i metodi di sempre.
 	var written := MultiMesh.new()
+	written.mesh = probe_mesh
 	written.transform_format = MultiMesh.TRANSFORM_2D
 	written.use_colors = with_color
 	written.instance_count = 2

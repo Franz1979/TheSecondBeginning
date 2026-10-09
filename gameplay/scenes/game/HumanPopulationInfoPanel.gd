@@ -405,7 +405,7 @@ func show_population(
 		_task_rows.append(task_margin)
 		_command_rows.append({
 			"member": member, "wrapper": row_wrapper, "name_row": row, "house_icon": house_icon_node,
-			"name_spacer": name_spacer, "task_spacer": task_spacer,
+			"name_spacer": name_spacer, "task_spacer": task_spacer, "task_label": task_label,
 		})
 
 		list_container.add_child(row_wrapper)
@@ -415,6 +415,22 @@ func show_population(
 		_widest_row = maxf(_widest_row, TASK_ROW_INDENT + task_label.get_combined_minimum_size().x)
 
 	custom_minimum_size.x = maxf(custom_minimum_size.x, _widest_row)
+
+
+# Testo dell'attività di ogni riga riallineato alla task attiva (2026-10-09, bugfix "la lista mostra un'attività
+# vecchia"): la lista si ricostruisce solo a eventi e una volta al giorno di gioco; questo aggiorna le sole scritte,
+# senza ricostruire le righe (pulsanti della riga sotto il mouse e scorrimento restano), chiamato da GameScene una volta
+# al secondo con la scheda visibile.
+func refresh_task_texts() -> void:
+	for row_data in _command_rows:
+		var member: HumanIndividual = row_data["member"]
+		var task_label: Label = row_data.get("task_label")
+		if not is_instance_valid(member) or task_label == null or not is_instance_valid(task_label):
+			continue
+		var text := "↳ " + (member.current_task.get_activity_description() if member.current_task != null else IDLE_TASK_TEXT)
+		if task_label.text != text:
+			task_label.text = text
+			task_label.tooltip_text = text
 
 
 # Riga sotto il mouse (2026-10-04): solo lei mostra i pulsanti delle azioni. Controllo per posizione, non con i segnali

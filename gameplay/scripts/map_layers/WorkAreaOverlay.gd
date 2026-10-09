@@ -55,10 +55,10 @@ func _process(_delta: float) -> void:
 		return
 	if game_data.work_areas_revision != _drawn_revision or selected_area_id != _drawn_selected_id or _pick_signature() != _drawn_pick_signature:
 		queue_redraw()
-	# Nomi in spazio schermo: seguono la camera a ogni frame.
+	# Nomi in spazio schermo: seguono la camera a ogni frame. Sotto il nome (2026-10-09) le icone dei lavori attivi.
 	var items: Array = []
 	for area in _areas_to_draw(game_data):
-		items.append({"text": area.name, "rect": rect_to_pixels(area.rect)})
+		items.append({"text": area.name, "rect": rect_to_pixels(area.rect), "icons": job_icon_keys(area)})
 	_screen_labels.update_labels(items)
 
 
@@ -93,6 +93,17 @@ func _areas_to_draw(game_data: GameData) -> Array[WorkArea]:
 		elif area.id == selected_area_id:
 			selected.append(area)
 	return selected
+
+
+# Icone dei lavori attivi della zona (2026-10-09): le icone dei comandi (CommandBar.ACTIONS, "job" -> "icon"), nell'ordine
+# della barra — raccolta, caccia, estrazione, taglio.
+static func job_icon_keys(area: WorkArea) -> Array[String]:
+	var keys: Array[String] = []
+	for action in CommandBar.ACTIONS:
+		var job := String(action.get("job", ""))
+		if job != "" and area.enabled_jobs.has(job):
+			keys.append(String(action["icon"]))
+	return keys
 
 
 # Rettangolo di una zona (microcelle locali) in pixel locali della cella.

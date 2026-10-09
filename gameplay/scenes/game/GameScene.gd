@@ -689,10 +689,13 @@ func _ready() -> void:
 	quarry_count_dialog = CountChoiceDialog.new()
 	add_child(quarry_count_dialog)
 	quarry_count_dialog.count_chosen.connect(_on_quarry_count_chosen)
+	# Interruttore della zona automatica nel popup (2026-10-09, AutoZoneToggle): la zona si legge alla conferma.
+	quarry_count_dialog.show_auto_zone_toggle = true
 	# "Piante da tagliare" del comando Taglia nelle zone (2026-10-06, Cut in zona passo 3).
 	cut_count_dialog = CountChoiceDialog.new()
 	add_child(cut_count_dialog)
 	cut_count_dialog.count_chosen.connect(_on_cut_count_chosen)
+	cut_count_dialog.show_auto_zone_toggle = true
 	extraction_choice_dialog.resource_chosen.connect(_on_extraction_choice_made)
 	# Elenco delle piante sotto "Taglia" (2026-10-05): contorno sulla mappa e ripristino della selezione alla chiusura.
 	extraction_choice_dialog.option_hovered.connect(_on_extraction_option_hovered)
@@ -1270,6 +1273,8 @@ func _debug_describe_task(watched: HumanIndividual, task: Task, detailed: bool) 
 # l'utente). Non tocca in alcun modo il pipeline giorno/anno di WorldTimeService.
 func _process(delta: float) -> void:
 	_debug_watch_task(delta)
+	# Scelta della destinazione del trasporto rimasta senza il suo individuo (2026-10-09).
+	_check_transport_selection()
 	# Aggancio al tempo di gioco (2026-09-07, richiesta utente) — movimento e azioni ora scalano
 	# con la velocità 1x/2x/4x/X8/DEBUG e si fermano in pausa, invece di girare a tempo reale
 	# grezzo: game_delta è una FRAZIONE DI GIORNO (stesso calcolo di GameClockController._process,
@@ -1307,6 +1312,10 @@ func _process(delta: float) -> void:
 		_pending_refresh_timer = 0.0
 		_refresh_pending_entries()
 		_expire_panel_messages()
+		# Attività della lista della popolazione (2026-10-09): le scritte seguono la task attiva, non solo una volta al
+		# giorno.
+		if game_info_tabs.current_tab == GameInfoTabs.TAB_POPULATION:
+			human_population_info_panel.refresh_task_texts()
 
 	_debug_panel_refresh_timer += delta
 	if _debug_panel_refresh_timer >= DEBUG_PANEL_REFRESH_INTERVAL_SEC:
@@ -1493,6 +1502,12 @@ func _unhandled_input(event: InputEvent) -> void:
 			_building_ghost.rotate_clockwise()
 			return
 
+	# Scelta della destinazione del trasporto (2026-10-09): Esc e H la chiudono sempre.
+	if _transport_source_building != null and event is InputEventKey and event.pressed and not event.echo \
+			and (event.keycode == KEY_ESCAPE or event.keycode == KEY_H):
+		_cancel_transport_selection("tasto Esc" if event.keycode == KEY_ESCAPE else "tasto H")
+		get_viewport().set_input_as_handled()
+		return
 	# Modalità "scegli il lavoratore" (2026-09-23 Produce, generica dal 2026-09-27) — stessa priorità del blocco
 	# sopra: finché è attiva, i click servono solo a scegliere l'individuo (o ad annullare).
 	if _worker_pick_on_pick.is_valid() and _handle_worker_pick_input(event):
@@ -1944,6 +1959,11 @@ func _center_camera_on_individual(animated: bool = true) -> void:
 # annullare — la sola quantità "prenotata" (il piano di PickUpAction) resta nell'istanza scartata,
 # innocua.
 func _stop_selected_individual_task() -> void:
+	# Scelta della destinazione del trasporto aperta (2026-10-09): H la chiude sempre, anche se l'individuo non è più
+	# selezionato o non c'è più.
+	if _transport_source_building != null:
+		_cancel_transport_selection("tasto H")
+		return
 	if individual == null or not individual.is_selected:
 		return
 	# Annulla selezione Transport a metà (2026-09-14, richiesta utente — "H cancella una task se in
@@ -1975,10 +1995,62 @@ func _stop_selected_individual_task() -> void:
 	_stop_member_task(individual)
 
 
+# Annulla la scelta della destinazione del trasporto (2026-10-09): stato azzerato e banner nascosto.
+func _cancel_transport_selection(reason: String) -> void:
+	if _transport_source_building == null and _transport_pending_source_building == null:
+		return
+	if DebugLogging.ENABLED and DebugLogging.SHOW_TRANSPORT_BUILD_LOGS:
+		print("[TRANSPORT] Selezione sorgente/destinazione annullata (%s)." % reason)
+	_transport_source_building = null
+	_transport_pending_source_building = null
+	_transport_member = null
+	_transport_member_task = null
+	_transport_resource_name = ""
+	_transport_quantity = 0
+	_transport_repeat = false
+	if transport_selection_banner != null:
+		transport_selection_banner.visible = false
+
+
+# Ogni fotogramma (2026-10-09): la scelta della destinazione si annulla da sola se l'individuo a cui era destinata non
+# esiste più, non è più selezionato (selezionato un altro individuo o un oggetto) o ha cambiato task.
+func _check_transport_selection() -> void:
+	if _transport_source_building == null:
+		return
+	var member := _transport_member
+	if member == null or not is_instance_valid(member) or not human_individuals.has(member):
+		_cancel_transport_selection("individuo non più presente")
+	elif not member.is_selected or _selection_kind != SelectionKind.INDIVIDUAL or individual != member:
+		_cancel_transport_selection("selezione cambiata")
+	elif member.current_task != _transport_member_task:
+		_cancel_transport_selection("task cambiata")
+
+
+# Chiude ogni scelta sulla mappa ancora aperta (2026-10-09): destinazione del trasporto, scelta della zona, mirino di
+# assegnazione (con il suo annullo). Chiamata all'avvio di un altro comando, all'apertura di uno strato del cassetto e di
+# un popup bloccante.
+func _cancel_map_picks() -> void:
+	_cancel_transport_selection("altro comando o popup")
+	if _work_area_pick_active:
+		_exit_work_area_pick_mode()
+	if _worker_pick_on_pick.is_valid():
+		var on_cancel := _worker_pick_on_cancel
+		_exit_worker_pick_mode()
+		if on_cancel.is_valid():
+			on_cancel.call()
+
+
 # Effetto di H su `member` (2026-10-09, estratto da _stop_selected_individual_task per la X delle righe "Diretto" del
 # cassetto): stessa chiusura della task corrente, regola del carico, "salta la lista una volta" e ripresa.
 func _stop_member_task(member: HumanIndividual) -> void:
 	if member == null:
+		return
+	# Ordine di zona del cassetto (2026-10-09, richiesta utente): H su chi lo porta fa come "Rimetti in coda" — carico
+	# riportato con la regola di sempre, ma l'ordine non resta nella coda personale (ripetizioni dei viaggi, consegne,
+	# tagli successivi): torna subito in "In coda" con quello che resta, la stessa scelta e la stessa zona.
+	var zone_order := _find_drawer_order(_drawer_cut_order_of(member.current_task))
+	if _is_zone_order_type(String(zone_order.get("type", ""))) and bool(zone_order.get("taken", false)):
+		_release_drawer_zone_order(zone_order)
 		return
 	if HuntService.is_hunt_task(member.current_task):
 		HuntService.log_event(member, "caccia chiusa: annullata a mano (X o tasto H).")
@@ -1995,9 +2067,13 @@ func _stop_member_task(member: HumanIndividual) -> void:
 	# Regola unica del carico (2026-09-29, CargoReturnService.release_cargo): se la Task annullata possiede il carico,
 	# il pipottino lo riporta al magazzino più vicino (a terra solo se nessun magazzino lo accetta); H su una Task di
 	# ritorno la ferma davvero, con il carico a terra. Con un carico di un'altra Task lo zaino resta com'è.
+	# Ritiro di un mucchio della coda (2026-10-09): il ritorno del carico che lo sostituisce non è una riga "Diretto".
+	var stopped_board_pile := member.current_task != null and _is_board_pile_task(member.current_task)
 	var cargo_outcome := CargoReturnService.release_cargo(member, member.current_task, macro_world)
 	if cargo_outcome != CargoReturnService.Outcome.RETURNING:
 		member.stop(false)
+	elif stopped_board_pile:
+		_mark_board_cargo_return(member.current_task)
 	# Ordine intero (2026-09-26): la produzione annullata non conta più nel fabbisogno dell'edificio.
 	if stopped_produce_building != null:
 		_reconcile_production_units(stopped_produce_building)
@@ -2620,6 +2696,11 @@ func _on_transport_delivered(owner: HumanIndividual, context: Dictionary, delive
 # debug hook di questo file.
 var _transport_source_building: Building = null
 var _transport_pending_source_building: Building = null
+# Chi aspetta la destinazione e la sua task di allora (2026-10-09, bugfix "scelta della destinazione incagliata"): se
+# l'individuo non c'è più, non è più selezionato o ha cambiato task, la scelta si annulla da sola
+# (_check_transport_selection, ogni fotogramma).
+var _transport_member: HumanIndividual = null
+var _transport_member_task: Task = null
 var _transport_resource_name: String = ""
 var _transport_quantity: int = 0
 # Casella "Ripeti" scelta nel TransportSourceDialog (2026-09-20, TaskRepeatRules).
@@ -2744,6 +2825,8 @@ func _on_transport_source_resource_chosen(resource_name: String, quantity: int, 
 		return
 	_transport_source_building = _transport_pending_source_building
 	_transport_pending_source_building = null
+	_transport_member = individual
+	_transport_member_task = individual.current_task if individual != null else null
 	_transport_resource_name = resource_name
 	_transport_quantity = quantity
 	_transport_repeat = repeat
@@ -4082,10 +4165,12 @@ func _setup_command_bar() -> void:
 	command_bar.butcher_destination_chosen.connect(_on_command_bar_butcher_destination_chosen)
 	# Dialog del comando Caccia (2026-10-01): il dialog di Raccogli in modalità caccia, selettore "Carne" della serie.
 	pickup_choice_dialog.hunt_choice_made.connect(_on_hunt_order_confirmed)
+	# Pulsante della destinazione anche nel popup della caccia (2026-10-09): stessa impostazione della barra.
+	pickup_choice_dialog.butcher_destination_chosen.connect(_on_command_bar_butcher_destination_chosen)
 
 
 # Comando "Caccia" nelle zone (2026-10-01, passo 2a — ricalca "Raccogli"). Per ogni pipottino selezionato: idoneità
-# della Task (età, stamina: get_assign_rejection_reason) e coltello in cintura (HuntZoneService.get_hunt_rejection), con
+# della Task (età, stamina: get_assign_rejection_reason) e coltello in cintura o nello zaino con posto in cintura (HuntZoneService.get_hunt_rejection), con
 # il messaggio di rifiuto per chi non va. Poi la zona: automatica (HuntZoneService.choose_work_area, per ciascuno) o
 # scelta a mano tra le zone con la caccia attiva (stessa modalità "scegli la zona" della raccolta, ordine "hunt").
 # Il comando diretto sull'animale (clic destro) resta invariato.
@@ -4136,10 +4221,10 @@ func _order_hunt(selected: Array[HumanIndividual]) -> void:
 	_pickup_dialog_work_area_workers = []
 	_hunt_dialog_hunters = hunters
 	pickup_choice_dialog.popup_anchor = _popup_anchor
+	_sync_butcher_destination_button()
 	var opened := pickup_choice_dialog.open_hunt_dialog(
 		tr("hunt_order_dialog_title"), tr("hunt_order_dialog_message"), HuntZoneService.MEAT_TARGET_OPTIONS,
-		UserOptions.hunt_zone_meat_target, _build_butcher_destination_options(),
-		ButcherDestinationService.resolve_default(game_data.last_butcher_destination, macro_world, human_folk)
+		UserOptions.hunt_zone_meat_target
 	)
 	HuntZoneService.log_event(null, "dialog della caccia %s (carne preselezionata %d)." % [
 		"aperto" if opened else "NON aperto", UserOptions.hunt_zone_meat_target
@@ -4167,9 +4252,12 @@ func _build_butcher_destination_options() -> Array[Dictionary]:
 # tra le zone con la caccia attiva. Ogni caccia parte con una serie fino a `meat_target` di carne consegnata.
 # `butcher_destination` (2026-10-03): dove portare i prodotti della macellazione, ricordata nella partita
 # (GameData.last_butcher_destination) e scritta nella serie, che la passa a ogni caccia.
-func _on_hunt_order_confirmed(meat_target: int, butcher_destination: String = ButcherDestinationService.CAMPFIRE) -> void:
+func _on_hunt_order_confirmed(meat_target: int, butcher_destination: String = "") -> void:
 	UserOptions.hunt_zone_meat_target = meat_target
 	UserOptions.save_to_disk()
+	# Dal 2026-10-09 il popup non sceglie più: vale la destinazione condivisa del pulsante.
+	if butcher_destination == "":
+		butcher_destination = ButcherDestinationService.resolve_default(game_data.last_butcher_destination, macro_world, human_folk)
 	game_data.last_butcher_destination = butcher_destination
 	var hunters: Array[HumanIndividual] = []
 	for hunter in _hunt_dialog_hunters:
@@ -4182,13 +4270,13 @@ func _on_hunt_order_confirmed(meat_target: int, butcher_destination: String = Bu
 		return
 	if UserOptions.work_area_auto_zone:
 		for hunter in hunters:
-			var area := HuntZoneService.choose_work_area(game_data, hunter)
+			var area := HuntZoneService.choose_work_area(game_data, hunter, live_cells)
 			if area == null:
 				HuntZoneService.log_event(hunter, "nessuna zona scelta in automatico.")
 				_report_command_rejection(hunter, tr("work_area_hunt_no_zone").format({"name": hunter.name}))
 				continue
 			HuntZoneService.log_event(hunter, "zona scelta in automatico: %s #%d." % [area.name, area.id])
-			_assign_work_area_hunt(hunter, area, HuntZoneService.make_meat_series(area.id, meat_target, butcher_destination))
+			_assign_work_area_hunt(hunter, area, HuntZoneService.make_meat_series(area.id, meat_target, butcher_destination, true))
 		return
 	var valid_ids: Array[int] = []
 	for area in areas:
@@ -4216,7 +4304,8 @@ func _build_hunt_zone_task(area_id: int, series: Dictionary = {}) -> Task:
 	return task
 
 
-func _assign_work_area_hunt(hunter: HumanIndividual, area: WorkArea, series: Dictionary = {}) -> void:
+# `silent` (2026-10-09, ordini di caccia del cassetto): nessun messaggio né icona, come le prese degli altri ordini.
+func _assign_work_area_hunt(hunter: HumanIndividual, area: WorkArea, series: Dictionary = {}, silent: bool = false) -> void:
 	if hunter == null or area == null or not human_individuals.has(hunter):
 		return
 	var task := _build_hunt_zone_task(area.id, series)
@@ -4228,19 +4317,38 @@ func _assign_work_area_hunt(hunter: HumanIndividual, area: WorkArea, series: Dic
 	var icon_position: Vector2i = area.rect.position + area.rect.size / 2
 	var rejection := hunter.get_assign_rejection_reason(task, _resolve_age_band(hunter))
 	if rejection != HumanIndividual.ASSIGN_OK:
-		_report_assign_rejection(hunter, rejection, "task_activity_hunt")
-		if icon_cell != null:
+		if not silent:
+			_report_assign_rejection(hunter, rejection, "task_activity_hunt")
+			if icon_cell != null:
+				_spawn_command_icon_at_microcell(icon_cell, icon_position, "task_rejected")
+		return
+	# Coltello (2026-10-09, regola generale degli attrezzi): dallo zaino in cintura prima di partire; cintura piena = no.
+	if not _prepare_hunt_knife(hunter, silent):
+		if not silent and icon_cell != null:
 			_spawn_command_icon_at_microcell(icon_cell, icon_position, "task_rejected")
 		return
 	var assigned := hunter.assign_task(task, _resolve_age_band(hunter))
-	if not assigned:
+	if not assigned and not silent:
 		_report_failed_assignment(hunter, task, "task_activity_hunt")
-	if icon_cell != null:
+	if icon_cell != null and not silent:
 		_spawn_command_icon_at_microcell(icon_cell, icon_position, "hunt" if assigned else "task_rejected")
 	HuntZoneService.log_event(hunter, "assegnazione della caccia nella zona %s #%d: %s (Task corrente: '%s')." % [
 		area.name, area.id, "riuscita" if assigned else "FALLITA",
 		hunter.current_task.task_name if hunter.current_task != null else "nessuna"
 	])
+
+
+# Coltello per la caccia in zona (2026-10-09, regola generale degli attrezzi, ToolGateService.try_satisfy): in cintura va
+# bene; nello zaino viene spostato in cintura; cintura piena o nessun coltello = false, con il messaggio di sempre se non
+# `silent`. Così la macellazione accodata dopo l'uccisione lo trova in cintura.
+func _prepare_hunt_knife(hunter: HumanIndividual, silent: bool) -> bool:
+	var required: Array[TaskTypes.ToolCategory] = [TaskTypes.ToolCategory.BUTCHERING]
+	var gate := ToolGateService.try_satisfy(hunter, required, game_data)
+	if gate["result"] == ToolGateService.Result.OK:
+		return true
+	if not silent:
+		_report_tool_gate_failure(hunter, gate)
+	return false
 
 
 # Caccia interrotta con un messaggio, per esempio senza più armi (HumanIndividualActionService.hunt_ended_with_message).
@@ -4255,6 +4363,14 @@ func _on_hunt_ended_with_message(hunter: HumanIndividual, message: String) -> vo
 func _on_hunt_zone_series_continue_requested(hunter: HumanIndividual, series: Dictionary) -> void:
 	if hunter == null or not human_individuals.has(hunter):
 		return
+	# Ordine di caccia del cassetto (2026-10-09): carne consegnata annotata sull'ordine; ordine tolto o rimesso in coda nel
+	# frattempo = niente seguito.
+	var drawer_order_id := int(series.get(DRAWER_ORDER_SERIES_KEY, -1))
+	if drawer_order_id >= 0:
+		var order := _find_drawer_order(drawer_order_id)
+		if order.is_empty() or not bool(order.get("taken", false)):
+			return
+		order["done_seen"] = maxi(int(order.get("done_seen", 0)), int(series.get("delivered", 0)))
 	var area := WorkAreaService.find_by_id(game_data, int(series.get("work_area_id", -1)))
 	if area == null or not HuntZoneService.list_hunt_work_areas(game_data).has(area):
 		HuntZoneService.log_event(hunter, "serie di caccia chiusa: zona non più disponibile per la caccia.")
@@ -4266,6 +4382,9 @@ func _on_hunt_zone_series_continue_requested(hunter: HumanIndividual, series: Di
 		return
 	var task := _build_hunt_zone_task(area.id, series)
 	if task == null:
+		return
+	# Coltello dallo zaino in cintura (2026-10-09, regola generale degli attrezzi).
+	if not _prepare_hunt_knife(hunter, false):
 		return
 	TaskQueueService.push_suspended_task(hunter, task)
 	HuntZoneService.log_event(hunter, "nuova caccia della serie accodata in %s #%d (%d/%d carne)." % [
@@ -4382,15 +4501,23 @@ func _command_bar_tool_rejection(action_id: StringName) -> String:
 # oltre al focolare (ButcherDestinationService.has_alternative_processing_destination); mostra quella che la caccia
 # userebbe adesso (resolve_default: l'ultima scelta se disponibile, altrimenti focolare, poi magazzino) e offre solo le
 # destinazioni disponibili. Lo stesso valore del dialog della caccia a zone (GameData.last_butcher_destination).
+# Dal 2026-10-09 lo stesso stato va anche al pulsante del popup della caccia (PickupChoiceDialog), aggiornato anche
+# all'apertura del popup (la barra può essere nascosta).
 func _sync_butcher_destination_button() -> void:
-	if not ButcherDestinationService.has_alternative_processing_destination(macro_world, human_folk):
-		command_bar.set_butcher_destination(false, {}, [])
-		return
-	var options: Array[Dictionary] = []
-	for destination in ButcherDestinationService.list_available(macro_world, human_folk):
-		options.append(_butcher_destination_entry(destination))
-	var current := ButcherDestinationService.resolve_default(game_data.last_butcher_destination, macro_world, human_folk)
-	command_bar.set_butcher_destination(true, _butcher_destination_entry(current), options)
+	# Anche allo strato "Caccia" del cassetto (2026-10-09), se è aperto. Dal 2026-10-09 (tolta la sezione del popup della
+	# caccia) l'elenco ha tutte le destinazioni, quelle non disponibili spente con il motivo; nel popup e nello strato il
+	# pulsante c'è sempre, nella barra solo con una destinazione di lavorazione oltre al focolare (come prima).
+	var drawer_panel_open := _task_assignment_panel != null and is_instance_valid(_task_assignment_panel)
+	var options := _build_butcher_destination_options()
+	var current := _butcher_destination_entry(
+		ButcherDestinationService.resolve_default(game_data.last_butcher_destination, macro_world, human_folk)
+	)
+	command_bar.set_butcher_destination(
+		ButcherDestinationService.has_alternative_processing_destination(macro_world, human_folk), current, options
+	)
+	pickup_choice_dialog.set_butcher_destination(true, current, options)
+	if drawer_panel_open:
+		_task_assignment_panel.set_butcher_destination(true, current, options)
 
 
 func _butcher_destination_entry(destination: String) -> Dictionary:
@@ -4405,6 +4532,8 @@ func _butcher_destination_entry(destination: String) -> Dictionary:
 # loro destinazione nel context.
 func _on_command_bar_butcher_destination_chosen(destination: String) -> void:
 	game_data.last_butcher_destination = destination
+	# Subito su entrambi i pulsanti (barra e popup della caccia), anche con la barra nascosta.
+	_sync_butcher_destination_button()
 
 
 # Comandi affiancati alla BuildBar se la riga in basso è abbastanza larga, altrimenti su una riga sopra di lei (2026-10-03,
@@ -4437,6 +4566,8 @@ func _on_command_bar_gather_requested() -> void:
 
 # Comando della barra (CommandBar.action_requested, 2026-10-05): a tutti i pipottini selezionati.
 func _on_command_bar_action_requested(action_id: StringName) -> void:
+	# Un altro comando chiude le scelte sulla mappa ancora aperte (2026-10-09).
+	_cancel_map_picks()
 	_order_command(action_id, _get_selected_individuals())
 
 
@@ -4528,6 +4659,9 @@ func _assign_work_area_quarry(worker: HumanIndividual, area: WorkArea, count: in
 # Serie di estrazioni interrotta (2026-10-05, passo 3): messaggio "<nome>: estrazione interrotta a <fatte>/<totale>:
 # <motivo>" (HumanIndividualActionService.series_stopped_message) sul canale dei messaggi dell'abitante.
 func _report_series_stopped(worker: HumanIndividual, series: Dictionary, reason: String) -> void:
+	# Ordine "Estrai" del cassetto (2026-10-09): estrazioni fatte annotate; senza più chi lo porta torna in coda con le
+	# pietre che restano (_settle_drawer_cut_orders).
+	_note_drawer_cut_progress(series)
 	_report_command_rejection(worker, HumanIndividualActionService.series_stopped_message(worker, QuarryZoneService.SERIES_STOPPED_KEY, series, reason))
 
 
@@ -4549,6 +4683,13 @@ func _report_quarry_series_stopped(worker: HumanIndividual, pile_ref: Dictionary
 # eventuali bisogni). La serie si chiude senza attese se la zona non è più valida, il piccone non c'è più o non resta una
 # roccia con pietra (messaggi nel passo 3).
 func _on_quarry_zone_series_continue_requested(worker: HumanIndividual, series: Dictionary) -> void:
+	# Ordine "Estrai" del cassetto (2026-10-09, come "Taglia"): estrazioni fatte annotate, serie finita = ordine tolto;
+	# ordine rimesso in coda o annullato nel frattempo = la serie si ferma qui, senza messaggi.
+	if series.has(DRAWER_ORDER_SERIES_KEY):
+		_note_drawer_cut_progress(series)
+		var drawer_order := _find_drawer_order(int(series[DRAWER_ORDER_SERIES_KEY]))
+		if drawer_order.is_empty() or not bool(drawer_order.get("taken", false)):
+			return
 	if worker == null or not human_individuals.has(worker) or QuarryZoneService.is_series_complete(series):
 		return
 	var area := WorkAreaService.find_by_id(game_data, int(series.get("work_area_id", -1)))
@@ -4822,7 +4963,10 @@ func _on_work_area_gather_choice(workers: Array[HumanIndividual], kind: int, cat
 # Ordine di raccolta nella zona `area` (`order`: kind/category/resource_name/repeat). La Task è quella della raccolta su
 # zona (_build_haul_zone_task) con work_area_id e il filtro dell'ordine nel context; stessi controlli di idoneità e
 # icona del clic su una cella (sul centro della zona, se la sua macrocella è viva).
-func _assign_work_area_gather(worker: HumanIndividual, area: WorkArea, order: Dictionary) -> void:
+# `silent` (2026-10-09, presa dalla lista dei lavori — ordini "Raccogli" del cassetto): nessun avviso, popup né X.
+# `drawer_order_id` (stesso giorno): ordine del cassetto, scritto nella zona (viaggia con le ripetizioni) per sapere chi ci
+# lavora (GameScene._task_drawer_zone_info); -1 = comando.
+func _assign_work_area_gather(worker: HumanIndividual, area: WorkArea, order: Dictionary, silent: bool = false, drawer_order_id: int = -1) -> void:
 	if worker == null or area == null or not human_individuals.has(worker):
 		return
 	var kind := int(order["kind"])
@@ -4832,19 +4976,23 @@ func _assign_work_area_gather(worker: HumanIndividual, area: WorkArea, order: Di
 	# Viaggi scelti (2026-10-01): N viaggi = il primo + N - 1 ripetizioni.
 	var trips := int(order.get("trips", HaulZoneService.WORK_AREA_MAX_REPEATS + 1))
 	var zone := HaulZoneService.make_work_area_zone(area.id, kind, order_category, order_resource, maxi(trips - 1, 0))
+	if drawer_order_id >= 0:
+		zone[DRAWER_ORDER_SERIES_KEY] = drawer_order_id
 	var task := _build_haul_zone_task(zone, repeat, 0, worker)
 	var icon_cell: LiveMacroCell = live_cells.get(area.macro_coords)
 	var icon_position: Vector2i = area.rect.position + area.rect.size / 2
 	var rejection := worker.get_assign_rejection_reason(task, _resolve_age_band(worker))
 	if rejection != HumanIndividual.ASSIGN_OK:
+		if silent:
+			return
 		_report_assign_rejection(worker, rejection, "task_activity_pickup")
 		if icon_cell != null:
 			_spawn_command_icon_at_microcell(icon_cell, icon_position, "task_rejected")
 		return
 	var assigned := worker.assign_task(task, _resolve_age_band(worker))
-	if not assigned:
+	if not assigned and not silent:
 		_report_failed_assignment(worker, task, "task_activity_pickup")
-	if icon_cell != null:
+	if icon_cell != null and (assigned or not silent):
 		_spawn_command_icon_at_microcell(icon_cell, icon_position, "pickup" if assigned else "task_rejected")
 	if DebugLogging.ENABLED and DebugLogging.SHOW_PICKUP_LOGS:
 		print("[PICKUP] #%d %s: raccolta nella zona %s (#%d), criterio %d/%d/'%s', ripeti=%s." % [
@@ -4887,7 +5035,7 @@ func _exit_work_area_pick_mode() -> void:
 	if _drawer_cut_zone_picking:
 		_drawer_cut_zone_picking = false
 		if _task_assignment_panel != null and is_instance_valid(_task_assignment_panel):
-			_task_assignment_panel.end_cut_zone_pick()
+			_task_assignment_panel.end_zone_pick()
 	_work_area_pick_active = false
 	_work_area_pick_workers = []
 	_work_area_pick_order = {}
@@ -4901,7 +5049,8 @@ func _exit_work_area_pick_mode() -> void:
 # Consuma l'evento mentre la modalità è attiva (chiamata SOLO da _unhandled_input). Gli eventi non di clic/Esc (camera,
 # tasti) passano oltre.
 func _handle_work_area_pick_input(event: InputEvent) -> bool:
-	if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_ESCAPE:
+	# Esc o H (2026-10-09: H chiude tutte le scelte sulla mappa).
+	if event is InputEventKey and event.pressed and not event.echo and (event.keycode == KEY_ESCAPE or event.keycode == KEY_H):
 		_exit_work_area_pick_mode()
 		return true
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_RIGHT and event.pressed:
@@ -5723,7 +5872,8 @@ func _build_cut_task(worker: HumanIndividual, plant: Dictionary, work_area_id: i
 # _assign_extraction_task.
 # `work_area_id` (2026-10-05, estrazione in zona): zona della roccia, scritta nel context per l'etichetta della task;
 # -1 = comando col clic destro. `series` (passo 2): serie di estrazioni in zona ({} = estrazione singola).
-func _assign_quarry_task(worker: HumanIndividual, rock: Dictionary, work_area_id: int = -1, series: Dictionary = {}) -> void:
+# `silent` (2026-10-09, presa dalla lista dei lavori — ordini "Estrai" del cassetto): nessun avviso, popup né X.
+func _assign_quarry_task(worker: HumanIndividual, rock: Dictionary, work_area_id: int = -1, series: Dictionary = {}, silent: bool = false) -> void:
 	if worker == null or rock.is_empty():
 		return
 	var macro_coords: Vector2i = rock["macro_coords"]
@@ -5732,6 +5882,8 @@ func _assign_quarry_task(worker: HumanIndividual, rock: Dictionary, work_area_id
 	if cell == null or cell.macro_state == null:
 		return
 	if RockStoneService.get_remaining_stone(cell.macro_state, rock_position) <= 0:
+		if silent:
+			return
 		_spawn_command_icon_at_microcell(cell, rock_position, "task_rejected")
 		_report_command_rejection(worker, tr("quarry_reject_exhausted"))
 		return
@@ -5739,6 +5891,8 @@ func _assign_quarry_task(worker: HumanIndividual, rock: Dictionary, work_area_id
 		return step is QuarryAction and (step as QuarryAction).is_same_rock(macro_coords, rock_position)
 	)
 	if holder != null:
+		if silent:
+			return
 		_spawn_command_icon_at_microcell(cell, rock_position, "task_rejected")
 		_report_command_rejection(worker, tr("quarry_reject_reserved").format({"name": holder.name}))
 		return
@@ -5747,7 +5901,7 @@ func _assign_quarry_task(worker: HumanIndividual, rock: Dictionary, work_area_id
 		return
 	var rock_rules := ResourceCalculator.get_density_rules(GameTypes.WorldObjectType.ROCK)
 	var quarry_product: String = rock_rules.extraction_yield_resource_name if rock_rules != null else ""
-	_assign_extraction_task(worker, task, cell, rock_position, "task_activity_quarry", "quarry", quarry_product)
+	_assign_extraction_task(worker, task, cell, rock_position, "task_activity_quarry", "quarry", quarry_product, silent)
 
 
 # Task Quarry (Walk + Quarry) sulla roccia `rock_position` della macrocella `macro_coords`, senza assegnarla; zona e serie
@@ -7200,7 +7354,8 @@ func _get_worker_pick_cursor() -> ImageTexture:
 # chiamare la callback.
 func _handle_worker_pick_input(event: InputEvent) -> bool:
 	var picked: HumanIndividual = null
-	if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_ESCAPE:
+	# Esc o H (2026-10-09: H chiude tutte le scelte sulla mappa).
+	if event is InputEventKey and event.pressed and not event.echo and (event.keycode == KEY_ESCAPE or event.keycode == KEY_H):
 		pass
 	elif event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
 		if live_cells.has(center_macro_coords):
@@ -8972,6 +9127,8 @@ func _refresh_pending_entries() -> void:
 	entries.append_array(_collect_material_wait_entries())
 	# Pipottini fermi perché manca l'attrezzo richiesto dalla task (2026-10-09), con o senza l'idea dell'assegnazione.
 	entries.append_array(_collect_tool_wait_entries())
+	# Ordini di caccia del cassetto senza prede (2026-10-09).
+	entries.append_array(_collect_hunt_no_prey_entries())
 	# Righe del cassetto (2026-10-07), solo con l'idea: "In coda" i lavori senza nessuno (subito, attivi o bloccati, non
 	# nascosti), "In corso" quelli con almeno un lavoratore (solo a cassetto aperto, i nomi costano un giro).
 	var listed_jobs: Array[Dictionary] = []
@@ -9000,6 +9157,9 @@ func _refresh_pending_entries() -> void:
 		_task_assignment_panel.set_listed_entries(listed_entries)
 		in_progress_entries.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return float(a["sort"]) < float(b["sort"]))
 		_task_assignment_panel.set_in_progress_entries(in_progress_entries)
+		# Carico di lavoro sul titolo "In corso" (2026-10-09), solo con l'idea (come le righe).
+		if board_enabled:
+			_sync_drawer_workload(board_jobs, in_progress_entries)
 
 	pending_panel.set_entries(entries)
 	game_info_tabs.set_pending_count(entries.size())
@@ -9783,16 +9943,21 @@ func _pile_jobs_collect(provider: Dictionary, _assigned: Dictionary) -> Array[Di
 		return jobs
 	var claims := _collect_pile_claims()
 	var job_delivery_keys := _collect_job_delivery_pile_keys()
+	var listed_keys: Dictionary = {}
 	for pile in game_data.ground_piles:
 		if pile.resources.is_empty() or not pile.carcasses.is_empty():
 			continue
 		var claim_key := _pile_claim_key(pile.macro_coords, pile.microcell)
-		# Mucchio consegnato come parte di un taglio, un'estrazione o una demolizione in corso (2026-10-09, richiesta
-		# utente): non è un lavoro "Mucchio", resta solo la riga del lavoro vero. Interrotto quel lavoro, torna qui.
+		# Mucchio consegnato come parte di un taglio o di un'estrazione in corso, o che una demolizione appena finita deve
+		# ancora accodare (2026-10-09, richiesta utente): non è un lavoro "Mucchio", resta solo la riga del lavoro vero.
+		# Interrotto quel lavoro, torna qui. La consegna dopo una demolizione, una volta accodata, è un lavoro "Mucchio"
+		# (la demolizione è finita, non ha più una riga).
 		if job_delivery_keys.has(claim_key):
 			continue
 		var is_assigned := claims.has(claim_key)
 		var pile_name := _pile_job_name(pile)
+		listed_keys[claim_key] = true
+		_pile_job_memory[claim_key] = {"id": pile.id, "name": pile_name, "macro": pile.macro_coords, "microcell": pile.microcell}
 		jobs.append({
 			"key": "pile:%d" % pile.id, "kind": "pile", "name": pile_name, "text": pile_name, "log_name": "mucchio #%d" % pile.id,
 			"icon": {"command": "pickup"}, "macro": pile.macro_coords, "microcell": pile.microcell,
@@ -9804,7 +9969,70 @@ func _pile_jobs_collect(provider: Dictionary, _assigned: Dictionary) -> Array[Di
 			"blocked_reason": "" if is_assigned or _pile_has_storage(pile) else tr("task_assignment_pile_no_storage"),
 			"target": pile, "provider": provider, "claimers": claims.get(claim_key, []),
 		})
+	jobs.append_array(_emptied_pile_jobs(provider, listed_keys))
 	return jobs
+
+
+# Mucchio svuotato dall'ultima raccolta con la consegna ancora in corso (2026-10-09, richiesta utente): la riga "Mucchio"
+# resta in "In corso" (stessa chiave e stesso testo di quando era elencato, stesso individuo) finché chi porta il carico
+# non l'ha consegnato; poi sparisce. Vale per i mucchi presi dalla coda e per la consegna dopo una demolizione
+# (_is_board_pile_task). Chiave del mucchio -> {"id", "name", "macro", "microcell"} dell'ultima volta che era elencato.
+var _pile_job_memory: Dictionary = {}
+
+
+func _emptied_pile_jobs(provider: Dictionary, listed_keys: Dictionary) -> Array[Dictionary]:
+	var jobs: Array[Dictionary] = []
+	var existing: Dictionary = {}
+	for pile in game_data.ground_piles:
+		if not pile.resources.is_empty():
+			existing[_pile_claim_key(pile.macro_coords, pile.microcell)] = true
+	var carriers: Dictionary = {}
+	for member in human_individuals:
+		for task in _member_open_tasks(member):
+			if not _is_board_pile_task(task):
+				continue
+			var key := _board_pile_task_claim_key(task)
+			if key == "" or listed_keys.has(key) or existing.has(key) or not _pile_job_memory.has(key):
+				continue
+			if not carriers.has(key):
+				carriers[key] = []
+			if not (carriers[key] as Array).has(member):
+				(carriers[key] as Array).append(member)
+	for key in _pile_job_memory.keys():
+		if not listed_keys.has(key) and not carriers.has(key):
+			_pile_job_memory.erase(key)
+	for key in carriers:
+		var memory: Dictionary = _pile_job_memory[key]
+		var macro: Vector2i = memory["macro"]
+		var microcell: Vector2i = memory["microcell"]
+		var first_carrier := (carriers[key] as Array)[0] as HumanIndividual
+		jobs.append({
+			"key": "pile:%d" % int(memory["id"]), "kind": "pile", "name": String(memory["name"]), "text": String(memory["name"]),
+			"log_name": "mucchio #%d (svuotato, consegna in corso)" % int(memory["id"]),
+			"icon": {"command": "pickup"}, "macro": macro, "microcell": microcell,
+			"reach_target": {"macro_x": macro.x, "macro_y": macro.y, "micro_x": microcell.x, "micro_y": microcell.y},
+			# Clic sulla riga: il mucchio non c'è più, si seleziona chi porta il carico.
+			"entry_kind": "individual", "id": first_carrier.id, "sort": float(int(memory["id"])) + PILE_JOB_SORT_OFFSET,
+			"assigned": true, "hidden": false, "blocked_reason": "",
+			"target": null, "emptied_pile_key": key, "provider": provider, "claimers": carriers[key],
+		})
+	return jobs
+
+
+# Chiave del mucchio di un ritiro della coda (_is_board_pile_task), anche a mucchio sparito: la zona 1×1 sul mucchio, o
+# lo step di raccolta dal mucchio (anche già fatto). "" se nessuna.
+func _board_pile_task_claim_key(task: Task) -> String:
+	var zone := HaulZoneService.get_zone(task.context)
+	if not zone.is_empty():
+		return _pile_claim_key(
+			Vector2i(int(zone.get("macro_x", 0)), int(zone.get("macro_y", 0))), Vector2i(int(zone.get("rect_x", 0)), int(zone.get("rect_y", 0)))
+		)
+	for step in task.steps:
+		if step is PickUpAction and (step as PickUpAction).source_kind == PickUpAction.SourceKind.GROUND_PILE:
+			var pickup := step as PickUpAction
+			var macro := Vector2i(pickup.macro_state.x, pickup.macro_state.y) if pickup.macro_state != null else Vector2i.ZERO
+			return _pile_claim_key(macro, pickup.target_position)
+	return ""
 
 
 # "Mucchio · Rametti, Pietre…": le prime due risorse contenute, con i puntini se ce ne sono altre.
@@ -9850,13 +10078,14 @@ func _collect_pile_claims() -> Dictionary:
 
 # Mucchi (chiavi di _pile_claim_key) portati via come parte di un lavoro in corso: una task, in corso o in coda, che ha
 # ancora da accodare la consegna (taglio, estrazione o demolizione appena finiti, CONTEXT_PENDING_GROUND_PILE_HAUL),
-# oppure è la consegna stessa (zona con l'etichetta del lavoro — taglio, estrazione — o HaulZoneService.JOB_DELIVERY_KEY,
-# messo da _on_ground_pile_haul_requested, anche dopo una demolizione).
+# oppure è la consegna di un taglio o di un'estrazione (zona con l'etichetta del lavoro). La consegna dopo una
+# demolizione (HaulZoneService.JOB_DELIVERY_KEY senza etichetta, 2026-10-09) no: la demolizione è già finita e senza riga,
+# il mucchio resta un lavoro "Mucchio" con il portatore tra chi lo fa (mai una riga "Diretto").
 func _collect_job_delivery_pile_keys() -> Dictionary:
 	var keys: Dictionary = {}
 	for member in human_individuals:
 		for task in _member_open_tasks(member):
-			var is_job_delivery := bool(task.context.get(HaulZoneService.JOB_DELIVERY_KEY, false))
+			var is_job_delivery := false
 			var zone := HaulZoneService.get_zone(task.context)
 			if not zone.is_empty() and HaulZoneService.get_label_task_name(zone) != "":
 				is_job_delivery = true
@@ -9914,6 +10143,8 @@ func _pile_has_storage(pile: GroundPile) -> bool:
 # pipottino un magazzino raggiungibile accetta almeno una risorsa che gli entra a carico vuoto (lo stesso controllo
 # della consegna automatica, _on_ground_pile_haul_requested).
 func _pile_job_rejection(worker: HumanIndividual, job: Dictionary) -> String:
+	if not (job["target"] is GroundPile):
+		return "mucchio svuotato"
 	var pile: GroundPile = job["target"]
 	var task := _build_pile_job_task(worker, pile)
 	if task == null:
@@ -9963,6 +10194,8 @@ func _build_pile_job_task(worker: HumanIndividual, pile: GroundPile) -> Task:
 # Assegnazione dalla lista: la consegna come task corrente del pipottino libero, in silenzio (nessuna icona di rifiuto
 # né messaggio). Riuscita: la manina sul mucchio, come per l'ordine a mano, e il mucchio esce dall'attesa.
 func _assign_pile_job(worker: HumanIndividual, job: Dictionary) -> void:
+	if not (job["target"] is GroundPile):
+		return
 	var pile: GroundPile = job["target"]
 	var task := _build_pile_job_task(worker, pile)
 	if task == null:
@@ -9995,6 +10228,9 @@ func _pile_job_cancel_fields(_job: Dictionary) -> Dictionary:
 # di una task chiusa torna al magazzino; flag "salta la lista una volta" per chi l'aveva come task corrente; ripresa con
 # resolve_idle_individual). Le copie in coda vengono tolte. Quello che resta a terra torna in coda.
 func _pile_job_release(job: Dictionary) -> void:
+	if job.has("emptied_pile_key"):
+		_emptied_pile_job_release(String(job["emptied_pile_key"]))
+		return
 	var pile: GroundPile = job["target"]
 	var claim_key := _pile_claim_key(pile.macro_coords, pile.microcell)
 	for member in human_individuals:
@@ -10012,6 +10248,40 @@ func _pile_job_release(job: Dictionary) -> void:
 		if current_closed:
 			HumanIndividualActionService.resolve_idle_individual(member, _resolve_age_band(member), macro_world)
 	_refresh_selected_individual_panel()
+
+
+# Mucchio svuotato (2026-10-09): non c'è più niente da rimettere in coda — chi porta il carico lo riporta con la regola
+# del carico (come H), le ripetizioni in coda vengono tolte, e la riga sparisce (il ritorno del carico non è una riga
+# "Diretto", _mark_board_cargo_return).
+func _emptied_pile_job_release(claim_key: String) -> void:
+	for member in human_individuals:
+		var current_closed := false
+		var current := member.current_task
+		if current != null and not current.is_finished() and _is_board_pile_task(current) and _board_pile_task_claim_key(current) == claim_key:
+			member.skip_job_board_once = true
+			if CargoReturnService.release_cargo(member, current, macro_world) != CargoReturnService.Outcome.RETURNING:
+				member.stop(false)
+				current_closed = true
+			else:
+				_mark_board_cargo_return(member.current_task)
+		for queued in member.task_queue.duplicate():
+			var queued_task := queued as Task
+			if queued_task != null and _is_board_pile_task(queued_task) and _board_pile_task_claim_key(queued_task) == claim_key:
+				var queue_index := member.task_queue.find(queued)
+				if CargoReturnService.release_cargo(member, queued_task, macro_world) != CargoReturnService.Outcome.RETURNING:
+					member.task_queue.erase(queued)
+				elif queue_index >= 0 and queue_index < member.task_queue.size():
+					_mark_board_cargo_return(member.task_queue[queue_index] as Task)
+		if current_closed:
+			HumanIndividualActionService.resolve_idle_individual(member, _resolve_age_band(member), macro_world)
+	_refresh_selected_individual_panel()
+
+
+# Ritorno del carico nato fermando un lavoro della coda (ordine di zona tolto, mucchio svuotato): niente riga "Diretto"
+# (DRAWER_ORDER_CARGO_KEY, letto da _collect_direct_command_entries).
+func _mark_board_cargo_return(task: Task) -> void:
+	if task != null and CargoReturnService.is_cargo_return_task(task):
+		task.context[DRAWER_ORDER_CARGO_KEY] = true
 
 
 # ============================================================================================
@@ -10432,6 +10702,7 @@ func _has_drawer_produce_building() -> bool:
 func _on_drawer_produce_requested() -> void:
 	if not JobBoardService.is_enabled(human_folk) or _task_assignment_panel == null or not is_instance_valid(_task_assignment_panel):
 		return
+	_cancel_map_picks()
 	var recipes := _list_drawer_produce_recipes()
 	if recipes.is_empty():
 		return
@@ -10527,7 +10798,7 @@ func _drawer_order_jobs_collect(provider: Dictionary, assigned: Dictionary) -> A
 		busy_counts[building_id] = int(busy_counts.get(building_id, 0)) + 1
 	var cut_claims := _collect_drawer_cut_claims()
 	for order in game_data.drawer_orders:
-		if String(order.get("type", "")) == DRAWER_ORDER_TYPE_CUT:
+		if _is_zone_order_type(String(order.get("type", ""))):
 			jobs.append(_drawer_cut_job(provider, order, cut_claims))
 			continue
 		if String(order.get("type", "")) != DRAWER_ORDER_TYPE_PRODUCE:
@@ -10592,7 +10863,7 @@ func _tool_categories_nobody_has(categories: Array) -> Array:
 # la serie dell'ordine (taglio o consegna, in corso o in coda).
 func _drawer_order_job_workers(job: Dictionary) -> Array[HumanIndividual]:
 	var workers: Array[HumanIndividual] = []
-	if String((job["order"] as Dictionary).get("type", "")) == DRAWER_ORDER_TYPE_CUT:
+	if _is_zone_order_type(String((job["order"] as Dictionary).get("type", ""))):
 		for member in _collect_drawer_cut_claims().get(int((job["order"] as Dictionary)["id"]), {}).get("members", []):
 			workers.append(member as HumanIndividual)
 	return workers
@@ -10601,7 +10872,7 @@ func _drawer_order_job_workers(job: Dictionary) -> Array[HumanIndividual]:
 # X: toglie l'ordine dall'elenco; un "Taglia" preso viene prima tolto a chi lo fa (come Rimetti in coda).
 func _drawer_order_job_cancel(job: Dictionary) -> void:
 	var order: Dictionary = job["order"]
-	if String(order.get("type", "")) == DRAWER_ORDER_TYPE_CUT and bool(order.get("taken", false)):
+	if _is_zone_order_type(String(order.get("type", ""))) and bool(order.get("taken", false)):
 		_drawer_order_job_release(job)
 	_remove_drawer_order(int(order["id"]))
 
@@ -10611,8 +10882,16 @@ func _drawer_order_job_cancel(job: Dictionary) -> void:
 # restano e la stessa zona. "Produci": niente da togliere.
 func _drawer_order_job_release(job: Dictionary) -> void:
 	var order: Dictionary = job["order"]
-	if String(order.get("type", "")) != DRAWER_ORDER_TYPE_CUT or not bool(order.get("taken", false)):
+	if not _is_zone_order_type(String(order.get("type", ""))) or not bool(order.get("taken", false)):
 		return
+	_release_drawer_zone_order(order)
+
+
+# Toglie un ordine di zona preso a chi lo porta (Rimetti in coda, Blocca, X, H): la Task in corso con
+# l'effetto di H (regola del carico, "salta la lista una volta", ripresa con resolve_idle_individual), quelle in coda
+# tolte (o sostituite dal ritorno del carico, se lo possiedono); l'ordine torna in coda con quello che resta, la stessa
+# scelta e la stessa zona. I ritorni del carico nati qui sono marcati (DRAWER_ORDER_CARGO_KEY): niente riga "Diretto".
+func _release_drawer_zone_order(order: Dictionary) -> void:
 	var order_id := int(order["id"])
 	var claim: Dictionary = _collect_drawer_cut_claims().get(order_id, {})
 	order["done_seen"] = maxi(int(order.get("done_seen", 0)), int(claim.get("done", 0)))
@@ -10625,11 +10904,16 @@ func _drawer_order_job_release(job: Dictionary) -> void:
 			if CargoReturnService.release_cargo(member, current, macro_world) != CargoReturnService.Outcome.RETURNING:
 				member.stop(false)
 				current_closed = true
+			elif member.current_task != null:
+				member.current_task.context[DRAWER_ORDER_CARGO_KEY] = true
 		for queued in member.task_queue.duplicate():
 			var queued_task := queued as Task
 			if queued_task != null and _drawer_cut_order_of(queued_task) == order_id:
+				var queue_index := member.task_queue.find(queued)
 				if CargoReturnService.release_cargo(member, queued_task, macro_world) != CargoReturnService.Outcome.RETURNING:
 					member.task_queue.erase(queued)
+				elif queue_index >= 0 and queue_index < member.task_queue.size() and member.task_queue[queue_index] != null:
+					(member.task_queue[queue_index] as Task).context[DRAWER_ORDER_CARGO_KEY] = true
 		if current_closed:
 			HumanIndividualActionService.resolve_idle_individual(member, _resolve_age_band(member), macro_world)
 	_refresh_selected_individual_panel()
@@ -10639,7 +10923,7 @@ func _drawer_order_job_release(job: Dictionary) -> void:
 # controllo di età/energia, e ogni attrezzo che l'Attrezzeria di quell'edificio non copre il pipottino ce l'ha in
 # cintura o nello zaino (sola lettura).
 func _drawer_order_job_rejection(worker: HumanIndividual, job: Dictionary) -> String:
-	if String((job["order"] as Dictionary).get("type", "")) == DRAWER_ORDER_TYPE_CUT:
+	if _is_zone_order_type(String((job["order"] as Dictionary).get("type", ""))):
 		return _drawer_cut_job_rejection(worker, job)
 	var building: Building = job["target"]
 	if building == null:
@@ -10662,7 +10946,7 @@ func _drawer_order_job_rejection(worker: HumanIndividual, job: Dictionary) -> St
 # del cassetto. Assegnazione fallita: l'ordine creato sull'edificio viene tolto (il lavoro sospeso preso da create_order
 # torna sospeso) e la voce resta in coda.
 func _assign_drawer_order_job(worker: HumanIndividual, job: Dictionary) -> void:
-	if String((job["order"] as Dictionary).get("type", "")) == DRAWER_ORDER_TYPE_CUT:
+	if _is_zone_order_type(String((job["order"] as Dictionary).get("type", ""))):
 		_assign_drawer_cut_job(worker, job)
 		return
 	var building: Building = job["target"]
@@ -10690,121 +10974,335 @@ func _assign_drawer_order_job(worker: HumanIndividual, job: Dictionary) -> void:
 
 
 # ============================================================================================
-# Ordini "Taglia" del cassetto (2026-10-09, richiesta utente — secondo tipo di ordine del cassetto, taglio nelle zone di
-# lavoro "a chiunque"). Voce di GameData.drawer_orders: {"id", "type": "cut", "count": piante (quelle che restano, se
-# l'ordine è tornato in coda), "zone_id": zona fissata (-1 = zona automatica), "taken": preso da qualcuno, "done_seen":
-# tagli già fatti della serie in corso}. Stessa chiave "order:<id>" e stesso fornitore di "Produci", tipo "cut"
-# (priorità "Taglio", skill cut). Presa: il comando Taglia di oggi in silenzio (zona automatica = CutZoneService.
-# choose_work_area per chi lo prende, poi choose_plant e make_series con la chiave dell'ordine nella serie,
-# DRAWER_ORDER_SERIES_KEY); riuscita = ordine "preso" (resta nell'elenco, riga "In corso"). La serie viaggia nel taglio
-# e nella consegna come sempre: chi la porta è al lavoro sull'ordine (_collect_drawer_cut_claims). Serie finita =
-# ordine tolto (_on_cut_zone_series_continue_requested). Nessuno la porta più (H, interruzione senza ripresa, serie
-# fermata) o "Rimetti in coda" = l'ordine torna in coda con le piante che restano e la stessa zona
-# (_settle_drawer_cut_orders, _drawer_order_job_release).
+# Ordini di zona del cassetto (2026-10-09, richiesta utente): "Taglia" (secondo tipo di ordine del cassetto) ed "Estrai"
+# (terzo tipo, stesso codice): taglio o estrazione nelle zone di lavoro "a chiunque". Voce di GameData.drawer_orders:
+# {"id", "type": "cut" | "quarry", "count": piante / pietre (quelle che restano, se l'ordine è tornato in coda),
+# "zone_id": zona fissata (-1 = zona automatica), "taken": preso da qualcuno, "done_seen": tagli / estrazioni già fatti
+# della serie in corso}. Stessa chiave "order:<id>" e stesso fornitore di "Produci"; tipo "cut" / "quarry" (priorità
+# "Taglio" / "Estrazione", skill cut / quarry). Presa: il comando Taglia / Estrai di oggi in silenzio (zona automatica =
+# CutZoneService / QuarryZoneService.choose_work_area per chi lo prende, poi choose_plant / choose_rock e make_series con
+# la chiave dell'ordine nella serie, DRAWER_ORDER_SERIES_KEY); riuscita = ordine "preso" (resta nell'elenco, riga "In
+# corso"). La serie viaggia nel lavoro e nella consegna come sempre (la consegna non è un lavoro "Mucchio"): chi la porta
+# è al lavoro sull'ordine (_collect_drawer_cut_claims). Serie finita = ordine tolto (prosecuzione della serie). Nessuno la
+# porta più (H, interruzione senza ripresa, serie fermata) o "Rimetti in coda" = l'ordine torna in coda con quello che
+# resta e la stessa zona (_settle_drawer_cut_orders, _drawer_order_job_release).
 # ============================================================================================
 
 const DRAWER_ORDER_TYPE_CUT := "cut"
-# Id dell'ordine del cassetto nella serie di tagli (salvato con lei).
+const DRAWER_ORDER_TYPE_QUARRY := "quarry"
+# "Raccogli" (2026-10-09, quarto tipo): campi in più nella voce "criterion_kind", "criterion_category", "resource_name"
+# (cosa raccogliere, come il popup) e "count" = viaggi. L'id dell'ordine sta nella zona della raccolta (si duplica a ogni
+# viaggio); fatti = viaggi conclusi (ripetizioni già fatte, più quello in corso se la raccolta è avvenuta).
+const DRAWER_ORDER_TYPE_GATHER := "gather"
+# "Caccia" (2026-10-09, quinto tipo): "count" = carne da portare a casa (quella che manca, se l'ordine è tornato in
+# coda), "butcher_destination" = destinazione dei prodotti scelta alla creazione. L'id dell'ordine sta nella serie di
+# carne (HuntZoneService.CONTEXT_MEAT_SERIES), che passa da caccia a macellazione a caccia successiva; fatti = carne
+# consegnata ("delivered", può superare l'obiettivo). Fine: carne consegnata fino all'obiettivo
+# (HumanIndividualActionService.hunt_zone_series_ended). Uscita senza prede (PatrolAreaAction.PATROL_DAYS_WITHOUT_PREY_LIMIT giorni): zona automatica = torna in coda con
+# l'avviso "Caccia: nessuna preda in <zona>" nella campanella; zona scelta = l'ordine finisce, con lo stesso avviso.
+const DRAWER_ORDER_TYPE_HUNT := "hunt"
+# Id dell'ordine del cassetto nella serie (salvato con lei) o nella zona della raccolta.
 const DRAWER_ORDER_SERIES_KEY := "drawer_order_id"
-# Righe dei tagli dopo quelle di "Produci".
-const DRAWER_CUT_JOB_SORT_OFFSET: float = 4500000.0
+# Marca nel context del ritorno del carico nato togliendo un ordine di zona (_release_drawer_zone_order): fuori dalle
+# righe "Diretto" di "In corso".
+const DRAWER_ORDER_CARGO_KEY := "drawer_order_cargo"
+# Interruzione da bisogno (2026-10-09, decisione presa): l'ordine resta a chi lo porta, nella sua coda personale, e lo
+# riprende dopo il bisogno come gli altri lavori della lista. In coda tornano solo con H e "Rimetti in coda".
+# Righe dei tagli, delle estrazioni e delle raccolte dopo quelle di "Produci".
+const DRAWER_ZONE_JOB_SORT_OFFSET := {
+	DRAWER_ORDER_TYPE_CUT: 4500000.0, DRAWER_ORDER_TYPE_QUARRY: 4700000.0, DRAWER_ORDER_TYPE_GATHER: 4300000.0,
+	DRAWER_ORDER_TYPE_HUNT: 4900000.0,
+}
 
 
-func _cut_tool_categories() -> Array:
-	return CommandBar.get_action(CommandBar.CUT_ACTION).get("tool_categories", [])
+func _is_zone_order_type(order_type: String) -> bool:
+	return order_type == DRAWER_ORDER_TYPE_CUT or order_type == DRAWER_ORDER_TYPE_QUARRY or order_type == DRAWER_ORDER_TYPE_GATHER \
+		or order_type == DRAWER_ORDER_TYPE_HUNT
 
 
-# Stato del bottone "Taglia" del cassetto: almeno una zona con il taglio e un adulto con l'accetta.
+func _zone_order_action(order_type: String) -> StringName:
+	match order_type:
+		DRAWER_ORDER_TYPE_QUARRY:
+			return CommandBar.QUARRY_ACTION
+		DRAWER_ORDER_TYPE_GATHER:
+			return CommandBar.GATHER_ACTION
+		DRAWER_ORDER_TYPE_HUNT:
+			return CommandBar.HUNT_ACTION
+	return CommandBar.CUT_ACTION
+
+
+func _zone_order_tool_categories(order_type: String) -> Array:
+	return CommandBar.get_action(_zone_order_action(order_type)).get("tool_categories", [])
+
+
+func _zone_order_areas(order_type: String) -> Array[WorkArea]:
+	if order_type == DRAWER_ORDER_TYPE_HUNT:
+		return HuntZoneService.list_hunt_work_areas(game_data)
+	if order_type == DRAWER_ORDER_TYPE_QUARRY:
+		return QuarryZoneService.list_quarry_work_areas(game_data)
+	if order_type == DRAWER_ORDER_TYPE_GATHER:
+		var areas: Array[WorkArea] = []
+		if game_data != null:
+			for area in game_data.work_areas:
+				if area.enabled_jobs.has(HaulZoneService.HAUL_JOB):
+					areas.append(area)
+		return areas
+	return CutZoneService.list_cut_work_areas(game_data)
+
+
+func _zone_order_reserved(order_type: String) -> Dictionary:
+	if order_type == DRAWER_ORDER_TYPE_QUARRY:
+		return QuarryZoneService.collect_reserved_rocks(human_individuals)
+	if order_type == DRAWER_ORDER_TYPE_GATHER or order_type == DRAWER_ORDER_TYPE_HUNT:
+		return {}
+	return CutZoneService.collect_reserved_plants(human_individuals)
+
+
+# La zona ha ancora piante (taglio) o rocce con pietra (estrazione) non prenotate, o risorse da raccogliere per la scelta
+# dell'ordine `order` (raccolta: criterion_kind/criterion_category/resource_name; senza, "Tutto"); con `individual`,
+# raggiungibili da lui. Solo macrocelle attive.
+func _zone_order_area_has_targets(order_type: String, area: WorkArea, individual: HumanIndividual, reserved: Dictionary, order: Dictionary = {}) -> bool:
+	if area == null:
+		return false
+	# Caccia: basta la macrocella attiva (le prede si cercano pattugliando, fino a PatrolAreaAction.PATROL_DAYS_WITHOUT_PREY_LIMIT giorni).
+	if order_type == DRAWER_ORDER_TYPE_HUNT:
+		return live_cells.has(area.macro_coords)
+	if order_type == DRAWER_ORDER_TYPE_GATHER:
+		if not live_cells.has(area.macro_coords):
+			return false
+		var names := HaulZoneService.allowed_names_for(
+			area, int(order.get("criterion_kind", PickUpAction.CriterionKind.ALL)), int(order.get("criterion_category", -1)),
+			String(order.get("resource_name", ""))
+		)
+		var gather_state := macro_world.get_cell_state_at(area.macro_coords.x, area.macro_coords.y)
+		return HaulZoneService.count_available(area, gather_state, names, individual) > 0
+	if order_type == DRAWER_ORDER_TYPE_QUARRY:
+		if not live_cells.has(area.macro_coords):
+			return false
+		var macro_state := macro_world.get_cell_state_at(area.macro_coords.x, area.macro_coords.y)
+		return not QuarryZoneService.list_available_rocks(area, macro_state, individual, reserved).is_empty()
+	return not CutZoneService.list_available_plants(area, live_cells, individual, reserved).is_empty()
+
+
+# Stato dei bottoni "Taglia" ed "Estrai" del cassetto: almeno una zona con il lavoro e un individuo in età da lavoro con
+# l'attrezzo (in cintura o nello zaino).
 func _sync_drawer_cut_available() -> void:
 	if _task_assignment_panel == null or not is_instance_valid(_task_assignment_panel):
 		return
-	if CutZoneService.list_cut_work_areas(game_data).is_empty():
-		_task_assignment_panel.set_cut_available(false, tr("drawer_cut_no_zone"))
-	elif not _tool_categories_nobody_has(_cut_tool_categories()).is_empty():
-		_task_assignment_panel.set_cut_available(false, tr("drawer_cut_nobody_has_axe"))
-	else:
-		_task_assignment_panel.set_cut_available(true)
+	for order_type in [DRAWER_ORDER_TYPE_CUT, DRAWER_ORDER_TYPE_QUARRY, DRAWER_ORDER_TYPE_GATHER, DRAWER_ORDER_TYPE_HUNT]:
+		var is_quarry: bool = order_type == DRAWER_ORDER_TYPE_QUARRY
+		# Caccia (2026-10-09): una zona con la caccia attiva e qualcuno in età da caccia con il coltello (cintura o zaino).
+		if order_type == DRAWER_ORDER_TYPE_HUNT:
+			if _zone_order_areas(order_type).is_empty():
+				_task_assignment_panel.set_zone_order_available(order_type, false, tr("drawer_hunt_no_zone"))
+			elif _hunt_nobody_has_knife():
+				_task_assignment_panel.set_zone_order_available(order_type, false, tr("drawer_hunt_nobody_has_knife"))
+			else:
+				_task_assignment_panel.set_zone_order_available(order_type, true)
+			continue
+		if _zone_order_areas(order_type).is_empty():
+			var no_zone_key := "drawer_gather_no_zone" if order_type == DRAWER_ORDER_TYPE_GATHER else ("drawer_quarry_no_zone" if is_quarry else "drawer_cut_no_zone")
+			_task_assignment_panel.set_zone_order_available(order_type, false, tr(no_zone_key))
+		elif not _tool_categories_nobody_has(_zone_order_tool_categories(order_type)).is_empty():
+			_task_assignment_panel.set_zone_order_available(order_type, false, tr("drawer_quarry_nobody_has_pickaxe" if is_quarry else "drawer_cut_nobody_has_axe"))
+		else:
+			_task_assignment_panel.set_zone_order_available(order_type, true)
+	# Pulsante della destinazione dello strato "Caccia": aggiornato anche con la barra dei comandi nascosta.
+	_sync_butcher_destination_button()
 
 
-func _on_drawer_cut_requested() -> void:
+# Nessuno in età da caccia (età della task hunt_zone.tres) ha il coltello, in cintura o nello zaino.
+func _hunt_nobody_has_knife() -> bool:
+	var definition := load(HuntZoneService.TASK_DEFINITION_PATH) as TaskDefinition
+	for member in human_individuals:
+		if definition != null and not definition.allowed_age_bands.is_empty() \
+				and not definition.allowed_age_bands.has(int(_resolve_age_band(member))):
+			continue
+		if ToolGateService.has_tool_for(member, TaskTypes.ToolCategory.BUTCHERING):
+			return false
+	return true
+
+
+# Bottone "Taglia" / "Estrai": lo strato dell'ordine con i limiti del popup del comando e il valore ricordato.
+var _drawer_zone_order_kind: String = DRAWER_ORDER_TYPE_CUT
+# Passo della carne nello strato "Caccia" (i valori del popup, HuntZoneService.MEAT_TARGET_OPTIONS: 5, 10, 15, 20).
+const DRAWER_HUNT_MEAT_STEP := 5
+
+
+func _on_drawer_zone_order_requested(kind: String) -> void:
 	if not JobBoardService.is_enabled(human_folk) or _task_assignment_panel == null or not is_instance_valid(_task_assignment_panel):
 		return
-	_task_assignment_panel.open_cut_overlay(
-		CutZoneService.COUNT_MIN, CutZoneService.COUNT_MAX, UserOptions.work_area_cut_count, UserOptions.work_area_auto_zone
-	)
+	_cancel_map_picks()
+	_drawer_zone_order_kind = kind
+	if kind == DRAWER_ORDER_TYPE_HUNT:
+		# Carne da portare a casa come nel popup (valori fissi, passo 5, stesso valore ricordato) e la destinazione.
+		_sync_butcher_destination_button()
+		_task_assignment_panel.open_zone_order_overlay(
+			kind, tr("drawer_hunt_title"), tr("drawer_hunt_meat_label"), int(HuntZoneService.MEAT_TARGET_OPTIONS.min()),
+			int(HuntZoneService.MEAT_TARGET_OPTIONS.max()), UserOptions.hunt_zone_meat_target, UserOptions.work_area_auto_zone,
+			[], {}, DRAWER_HUNT_MEAT_STEP
+		)
+	elif kind == DRAWER_ORDER_TYPE_GATHER:
+		# La stessa scelta del popup "Raccogli nelle zone di lavoro" (risorse presenti nelle zone con la raccolta), poi i viaggi.
+		_task_assignment_panel.open_zone_order_overlay(
+			kind, tr("drawer_gather_title"), tr("work_area_gather_trips_label"), 1, HaulZoneService.WORK_AREA_MAX_TRIPS,
+			UserOptions.work_area_gather_trips, UserOptions.work_area_auto_zone,
+			HaulZoneService.list_work_area_resources(game_data, macro_world), UserOptions.get_pickup_default_choice()
+		)
+	elif kind == DRAWER_ORDER_TYPE_QUARRY:
+		_task_assignment_panel.open_zone_order_overlay(
+			kind, tr("drawer_quarry_title"), tr("quarry_order_dialog_count"), QuarryZoneService.COUNT_MIN,
+			QuarryZoneService.COUNT_MAX, UserOptions.work_area_quarry_count, UserOptions.work_area_auto_zone
+		)
+	else:
+		_task_assignment_panel.open_zone_order_overlay(
+			kind, tr("drawer_cut_title"), tr("cut_order_dialog_count"), CutZoneService.COUNT_MIN,
+			CutZoneService.COUNT_MAX, UserOptions.work_area_cut_count, UserOptions.work_area_auto_zone
+		)
 
 
-# "Scegli zona" dello strato: la scelta della zona sulla mappa di sempre, tra le zone con il taglio e almeno una pianta
-# disponibile; la zona scelta torna allo strato (set_cut_zone). Nessuna zona valida: niente scelta.
+# "Scegli zona" dello strato: la scelta della zona sulla mappa di sempre, tra le zone con il lavoro e almeno una pianta
+# o roccia disponibile; la zona scelta torna allo strato (set_order_zone). Nessuna zona valida: niente scelta.
 var _drawer_cut_zone_picking: bool = false
 
 
-func _on_drawer_cut_zone_pick_requested() -> void:
-	var reserved := CutZoneService.collect_reserved_plants(human_individuals)
+func _on_drawer_zone_pick_requested() -> void:
+	var kind := _drawer_zone_order_kind
+	var reserved := _zone_order_reserved(kind)
+	# Raccolta: le zone con qualcosa per la scelta fatta nello strato (o per "Tutto", se non ancora scelta).
+	var gather_order := _drawer_gather_order_fields(_task_assignment_panel.get_gather_choice()) if kind == DRAWER_ORDER_TYPE_GATHER else {}
 	var valid_ids: Array[int] = []
-	for area in CutZoneService.list_cut_work_areas(game_data):
-		if not CutZoneService.list_available_plants(area, live_cells, null, reserved).is_empty():
+	for area in _zone_order_areas(kind):
+		if _zone_order_area_has_targets(kind, area, null, reserved, gather_order):
 			valid_ids.append(area.id)
 	if valid_ids.is_empty():
 		if _task_assignment_panel != null and is_instance_valid(_task_assignment_panel):
-			_task_assignment_panel.end_cut_zone_pick()
+			_task_assignment_panel.end_zone_pick()
 		return
 	var workers: Array[HumanIndividual] = []
-	_enter_work_area_pick_mode(workers, {"job": "drawer_cut", "on_pick": func(area: WorkArea) -> void:
+	_enter_work_area_pick_mode(workers, {"job": "drawer_zone_order", "on_pick": func(area: WorkArea) -> void:
 		if _task_assignment_panel != null and is_instance_valid(_task_assignment_panel):
-			_task_assignment_panel.set_cut_zone(area.id, area.name)
+			_task_assignment_panel.set_order_zone(area.id, area.name)
 	}, valid_ids)
 	_drawer_cut_zone_picking = true
 
 
-# "Invia in coda" dello strato: nuovo ordine "Taglia" (valore ricordato come nel popup del comando).
-func _on_drawer_cut_submitted(count: int, zone_id: int) -> void:
-	if game_data == null or not JobBoardService.is_enabled(human_folk):
+# "Invia in coda" dello strato: nuovo ordine di zona (valore ricordato come nel popup del comando).
+func _on_drawer_zone_order_submitted(kind: String, count: int, zone_id: int) -> void:
+	if game_data == null or not JobBoardService.is_enabled(human_folk) or not _is_zone_order_type(kind):
 		return
-	UserOptions.work_area_cut_count = clampi(count, CutZoneService.COUNT_MIN, CutZoneService.COUNT_MAX)
+	var clamped := 0
+	var extra: Dictionary = {}
+	if kind == DRAWER_ORDER_TYPE_HUNT:
+		# Uno dei valori del popup; destinazione quella condivisa di adesso (salvata nell'ordine).
+		clamped = clampi(
+			snappedi(count, DRAWER_HUNT_MEAT_STEP), int(HuntZoneService.MEAT_TARGET_OPTIONS.min()), int(HuntZoneService.MEAT_TARGET_OPTIONS.max())
+		)
+		UserOptions.hunt_zone_meat_target = clamped
+		extra = {"butcher_destination": ButcherDestinationService.resolve_default(game_data.last_butcher_destination, macro_world, human_folk)}
+	elif kind == DRAWER_ORDER_TYPE_GATHER:
+		var choice: Dictionary = _task_assignment_panel.get_gather_choice() if _task_assignment_panel != null and is_instance_valid(_task_assignment_panel) else {}
+		if choice.is_empty():
+			return
+		extra = _drawer_gather_order_fields(choice)
+		clamped = clampi(count, 1, HaulZoneService.WORK_AREA_MAX_TRIPS)
+		UserOptions.work_area_gather_trips = clamped
+	elif kind == DRAWER_ORDER_TYPE_QUARRY:
+		clamped = clampi(count, QuarryZoneService.COUNT_MIN, QuarryZoneService.COUNT_MAX)
+		UserOptions.work_area_quarry_count = clamped
+	else:
+		clamped = clampi(count, CutZoneService.COUNT_MIN, CutZoneService.COUNT_MAX)
+		UserOptions.work_area_cut_count = clamped
 	UserOptions.save_to_disk()
 	var order_id := game_data.next_drawer_order_id
 	game_data.next_drawer_order_id += 1
-	game_data.drawer_orders.append({
-		"id": order_id, "type": DRAWER_ORDER_TYPE_CUT, "count": clampi(count, CutZoneService.COUNT_MIN, CutZoneService.COUNT_MAX),
-		"zone_id": zone_id, "taken": false, "done_seen": 0,
-	})
+	# "total": quanto chiesto all'inizio; "done_before": fatto nelle prese precedenti (interruzioni, riprese da altri);
+	# "started": preso almeno una volta (2026-10-09, avanzamento dell'ordine intero nella riga).
+	var new_order := {
+		"id": order_id, "type": kind, "count": clamped, "zone_id": zone_id, "taken": false, "done_seen": 0,
+		"total": clamped, "done_before": 0, "started": false,
+	}
+	new_order.merge(extra)
+	game_data.drawer_orders.append(new_order)
 	if DebugLogging.ENABLED and DebugLogging.SHOW_JOB_BOARD_LOGS:
-		print("[JOB BOARD] Ordine del cassetto #%d: taglia %d piante (zona %s)." % [order_id, count, "automatica" if zone_id < 0 else "#%d" % zone_id])
+		print("[JOB BOARD] Ordine del cassetto #%d: %s ×%d (zona %s)." % [order_id, kind, clamped, "automatica" if zone_id < 0 else "#%d" % zone_id])
 	_refresh_pending_entries()
 
 
-# Id dell'ordine del cassetto portato da `task` (taglio o consegna della sua serie); -1 se nessuno.
-func _drawer_cut_order_of(task: Task) -> int:
+# Campi della voce "Raccogli" dalla scelta del menu (PickupChoiceMenu.get_selected()); vuota = "Tutto".
+func _drawer_gather_order_fields(choice: Dictionary) -> Dictionary:
+	return {
+		"criterion_kind": int(choice.get("kind", PickUpAction.CriterionKind.ALL)),
+		"criterion_category": int(choice.get("category", -1)),
+		"resource_name": String(choice.get("resource_name", "")),
+	}
+
+
+# Ordine di zona del cassetto portato da `task` e lavoro fatto: {"order_id", "done"}; {} se nessuno. Taglio ed
+# estrazione: dalla serie (il lavoro o la sua consegna). Raccolta: dalla zona della raccolta (viaggi conclusi =
+# ripetizioni già fatte, più questo se la raccolta del viaggio è già avvenuta).
+func _task_drawer_zone_info(task: Task) -> Dictionary:
 	if task == null:
-		return -1
+		return {}
+	var series := _task_zone_series(task)
+	if not series.is_empty() and series.has(DRAWER_ORDER_SERIES_KEY):
+		# Caccia: fatti = carne consegnata ("delivered").
+		return {
+			"order_id": int(series[DRAWER_ORDER_SERIES_KEY]), "done": int(series.get("done", series.get("delivered", 0))),
+			"series_id": String(series.get("id", "")),
+		}
+	var zone := HaulZoneService.get_zone(task.context)
+	if not zone.is_empty() and zone.has(DRAWER_ORDER_SERIES_KEY):
+		var done := TaskRepeatRules.get_count(task.context)
+		for step_index in range(mini(task.current_step_index, task.steps.size())):
+			if task.steps[step_index] is PickUpAction:
+				done += 1
+				break
+		return {"order_id": int(zone[DRAWER_ORDER_SERIES_KEY]), "done": done}
+	return {}
+
+
+# Serie di taglio o di estrazione portata da `task` (il lavoro o la sua consegna), o serie di carne della caccia (la caccia
+# o la macellazione nata da lei, 2026-10-09); {} se nessuna.
+func _task_zone_series(task: Task) -> Dictionary:
+	if task == null:
+		return {}
 	var series := CutZoneService.get_series(task.context)
 	if series.is_empty():
 		series = CutZoneService.get_delivery_series(task)
-	return int(series.get(DRAWER_ORDER_SERIES_KEY, -1)) if not series.is_empty() else -1
+	if series.is_empty():
+		series = QuarryZoneService.get_series(task.context)
+	if series.is_empty():
+		series = QuarryZoneService.get_delivery_series(task)
+	if series.is_empty():
+		series = HuntZoneService.get_meat_series(task.context)
+	return series
 
 
-# Chi porta le serie degli ordini "Taglia": id ordine -> {"members": [HumanIndividual], "done": tagli fatti (il più alto)}.
+# Id dell'ordine di zona del cassetto portato da `task`; -1 se nessuno.
+func _drawer_cut_order_of(task: Task) -> int:
+	return int(_task_drawer_zone_info(task).get("order_id", -1))
+
+
+# Chi porta le serie degli ordini di zona: id ordine -> {"members": [HumanIndividual], "done": fatti (il più alto)}.
 func _collect_drawer_cut_claims() -> Dictionary:
 	var claims: Dictionary = {}
 	for member in human_individuals:
 		for task in _member_open_tasks(member):
-			var order_id := _drawer_cut_order_of(task)
-			if order_id < 0:
+			var info := _task_drawer_zone_info(task)
+			if info.is_empty():
 				continue
-			var series := CutZoneService.get_series(task.context)
-			if series.is_empty():
-				series = CutZoneService.get_delivery_series(task)
+			var order_id := int(info["order_id"])
 			if not claims.has(order_id):
 				claims[order_id] = {"members": [], "done": 0}
 			var claim: Dictionary = claims[order_id]
 			if not (claim["members"] as Array).has(member):
 				(claim["members"] as Array).append(member)
-			claim["done"] = maxi(int(claim["done"]), int(series.get("done", 0)))
+			claim["done"] = maxi(int(claim["done"]), int(info["done"]))
 	return claims
 
 
-# Tagli fatti di una serie con ordine del cassetto: annotati sull'ordine; serie finita = ordine tolto.
+# Fatti di una serie con ordine del cassetto: annotati sull'ordine; serie finita = ordine tolto.
 func _note_drawer_cut_progress(series: Dictionary) -> void:
 	if not series.has(DRAWER_ORDER_SERIES_KEY):
 		return
@@ -10812,127 +11310,350 @@ func _note_drawer_cut_progress(series: Dictionary) -> void:
 	if order.is_empty() or not bool(order.get("taken", false)):
 		return
 	order["done_seen"] = maxi(int(order.get("done_seen", 0)), int(series.get("done", 0)))
-	if CutZoneService.is_series_complete(series):
+	if int(series.get("done", 0)) >= int(series.get("target", 0)):
 		_remove_drawer_order(int(order["id"]))
 
 
-# Ordini "Taglia" presi che nessuno porta più: tornano in coda con le piante che restano, o spariscono se finiti.
+# --- Ordini di caccia del cassetto: fine della serie (2026-10-09) ---
+# Avviso "Caccia: nessuna preda in <zona>": sull'ordine tornato in coda (zona automatica: {"zone", "macro_x", "macro_y",
+# "area_id"}, salvato con l'ordine) finché non riprende o viene tolto; per l'ordine finito (zona scelta) in memoria per
+# DRAWER_HUNT_NO_PREY_ALERT_DAYS di gioco.
+const DRAWER_HUNT_NO_PREY_KEY := "no_prey_alert"
+const DRAWER_HUNT_NO_PREY_ALERT_DAYS: float = 1.0
+var _drawer_hunt_no_prey_alerts: Array[Dictionary] = []
+
+
+# HumanIndividualActionService.hunt_zone_series_ended: carne consegnata fino all'obiettivo = ordine tolto; un'uscita senza
+# prede = zona automatica: l'ordine torna in coda con la carne che manca (chi cacciava salta una volta la lista) e
+# l'avviso; zona scelta: l'ordine finisce, con lo stesso avviso.
+func _on_hunt_zone_series_ended(hunter: HumanIndividual, series: Dictionary, reason: String) -> void:
+	# Zona automatica (2026-10-09): dopo un'uscita a vuoto si prova un'altra zona con prede, prima di arrendersi.
+	if reason == HuntZoneService.SERIES_END_NO_PREY and _try_switch_hunt_zone(hunter, series):
+		return
+	if not series.has(DRAWER_ORDER_SERIES_KEY) or game_data == null:
+		return
+	var order := _find_drawer_order(int(series[DRAWER_ORDER_SERIES_KEY]))
+	if order.is_empty() or not bool(order.get("taken", false)):
+		return
+	order["done_seen"] = maxi(int(order.get("done_seen", 0)), int(series.get("delivered", 0)))
+	if reason == HuntZoneService.SERIES_END_COMPLETE:
+		_remove_drawer_order(int(order["id"]))
+		return
+	var area := WorkAreaService.find_by_id(game_data, int(series.get("work_area_id", -1)))
+	var alert := {
+		"zone": area.name if area != null else tr("drawer_cut_zone_gone"),
+		"area_id": area.id if area != null else -1,
+		"macro_x": area.macro_coords.x if area != null else -1, "macro_y": area.macro_coords.y if area != null else -1,
+	}
+	if int(order.get("zone_id", -1)) >= 0:
+		alert["order_id"] = int(order["id"])
+		alert["until"] = _job_board_now() + DRAWER_HUNT_NO_PREY_ALERT_DAYS
+		_drawer_hunt_no_prey_alerts.append(alert)
+		_remove_drawer_order(int(order["id"]))
+		return
+	order[DRAWER_HUNT_NO_PREY_KEY] = alert
+	_return_drawer_cut_order(order)
+	if hunter != null:
+		hunter.skip_job_board_once = true
+
+
+# Cambio di zona dopo un'uscita a vuoto (2026-10-09, solo serie con la zona automatica — comando o ordine del cassetto
+# senza zona fissata): la zona appena pattugliata si segna come provata e la caccia riparte, in coda (subito dopo la
+# chiusura di questa uscita), nella zona migliore tra quelle non ancora provate in questo giro e con prede adesso
+# (HuntZoneService.choose_work_area con require_prey). false = nessuna zona così, o ordine non più di chi caccia, o
+# coltello non preparabile: la serie finisce come prima (ordine in coda con l'avviso, o fine del comando).
+func _try_switch_hunt_zone(hunter: HumanIndividual, series: Dictionary) -> bool:
+	if game_data == null or hunter == null or not human_individuals.has(hunter):
+		return false
+	if not bool(series.get(HuntZoneService.SERIES_AUTO_ZONE_KEY, false)):
+		return false
+	if series.has(DRAWER_ORDER_SERIES_KEY):
+		var order := _find_drawer_order(int(series[DRAWER_ORDER_SERIES_KEY]))
+		if order.is_empty() or not bool(order.get("taken", false)) or int(order.get("zone_id", -1)) >= 0:
+			return false
+	var tried := HuntZoneService.get_tried_zone_ids(series)
+	var current_area_id := int(series.get("work_area_id", -1))
+	if current_area_id >= 0 and not tried.has(current_area_id):
+		tried.append(current_area_id)
+	var next_area := HuntZoneService.choose_work_area(game_data, hunter, live_cells, tried, true)
+	if next_area == null:
+		HuntZoneService.log_event(hunter, "nessuna altra zona con prede (provate %s): la serie finisce." % str(tried))
+		return false
+	var next_series := series.duplicate(true)
+	next_series["work_area_id"] = next_area.id
+	next_series[HuntZoneService.SERIES_TRIED_ZONES_KEY] = tried
+	var task := _build_hunt_zone_task(next_area.id, next_series)
+	if task == null or not _prepare_hunt_knife(hunter, true):
+		return false
+	TaskQueueService.push_suspended_task(hunter, task)
+	HuntZoneService.log_event(hunter, "nessuna preda dopo %.1f giorni: si passa alla zona %s #%d (provate %s)." % [
+		PatrolAreaAction.PATROL_DAYS_WITHOUT_PREY_LIMIT, next_area.name, next_area.id, str(tried)
+	])
+	if hunter == individual:
+		_refresh_selected_individual_panel()
+	return true
+
+
+func _collect_hunt_no_prey_entries() -> Array[Dictionary]:
+	var entries: Array[Dictionary] = []
+	if game_data == null:
+		return entries
+	for order in game_data.drawer_orders:
+		if String(order.get("type", "")) != DRAWER_ORDER_TYPE_HUNT or bool(order.get("taken", false)):
+			continue
+		var alert: Variant = order.get(DRAWER_HUNT_NO_PREY_KEY, null)
+		if alert is Dictionary:
+			entries.append(_hunt_no_prey_entry(int(order["id"]), alert as Dictionary))
+	var now := _job_board_now()
+	for alert in _drawer_hunt_no_prey_alerts.duplicate():
+		if now >= float(alert["until"]):
+			_drawer_hunt_no_prey_alerts.erase(alert)
+			continue
+		entries.append(_hunt_no_prey_entry(int(alert["order_id"]), alert))
+	return entries
+
+
+# Riga dell'avviso: clic = la zona selezionata e centrata.
+func _hunt_no_prey_entry(order_id: int, alert: Dictionary) -> Dictionary:
+	var text := tr("pending_hunt_no_prey").format({"zone": String(alert.get("zone", ""))})
+	return _pending_entry("hunt_no_prey:%d" % order_id, text, {
+		"kind": "work_area", "id": int(alert.get("area_id", -1)),
+		"macro": Vector2i(int(alert.get("macro_x", -1)), int(alert.get("macro_y", -1))), "sort": float(order_id),
+		"name": text,
+	})
+
+
+# Ordini di zona presi che nessuno porta più: tornano in coda con quello che resta, o spariscono se finiti.
 func _settle_drawer_cut_orders() -> void:
 	if game_data == null:
 		return
 	var claims := _collect_drawer_cut_claims()
 	for order in game_data.drawer_orders.duplicate():
-		if String(order.get("type", "")) != DRAWER_ORDER_TYPE_CUT or not bool(order.get("taken", false)):
+		if not _is_zone_order_type(String(order.get("type", ""))) or not bool(order.get("taken", false)):
 			continue
 		var order_id := int(order["id"])
 		if claims.has(order_id):
 			order["done_seen"] = maxi(int(order.get("done_seen", 0)), int(claims[order_id]["done"]))
 			continue
-		_return_drawer_cut_order(order)
+		_return_drawer_cut_order(order, true)
 
 
-func _return_drawer_cut_order(order: Dictionary) -> void:
+# `end_if_zone_exhausted` (serie chiusa da sola, 2026-10-09): con la zona scelta dal giocatore senza più risorse (o
+# sparita) l'ordine finisce, come il comando diretto; con la zona automatica torna in coda (un'altra zona può averla).
+func _return_drawer_cut_order(order: Dictionary, end_if_zone_exhausted: bool = false) -> void:
 	var remaining := int(order.get("count", 1)) - int(order.get("done_seen", 0))
-	if remaining <= 0:
+	if remaining <= 0 or (end_if_zone_exhausted and _drawer_order_fixed_zone_exhausted(order)):
 		_remove_drawer_order(int(order["id"]))
 		return
+	order["total"] = _drawer_order_total(order)
+	order["done_before"] = int(order.get("done_before", 0)) + int(order.get("done_seen", 0))
 	order["count"] = remaining
 	order["taken"] = false
 	order["done_seen"] = 0
 
 
-# Riga di un ordine "Taglia": "Taglia N piante · Zona automatica" / "· <zona>", icona del taglio; 🎯 sulla zona fissata.
+# Totale chiesto all'inizio (ordini salvati prima di "total": quello che resta più quello già fatto).
+func _drawer_order_total(order: Dictionary) -> int:
+	return int(order.get("total", int(order.get("count", 1)) + int(order.get("done_before", 0))))
+
+
+# Zona fissata dell'ordine sparita, senza più il lavoro o senza più risorse (non prenotate, per la scelta dell'ordine);
+# macrocella non attiva = non si sa, non esaurita.
+func _drawer_order_fixed_zone_exhausted(order: Dictionary) -> bool:
+	var zone_id := int(order.get("zone_id", -1))
+	if zone_id < 0:
+		return false
+	var order_type := String(order.get("type", DRAWER_ORDER_TYPE_CUT))
+	var area: WorkArea = WorkAreaService.find_by_id(game_data, zone_id)
+	if area == null or not _zone_order_areas(order_type).has(area):
+		return true
+	if not live_cells.has(area.macro_coords):
+		return false
+	return not _zone_order_area_has_targets(order_type, area, null, _zone_order_reserved(order_type), order)
+
+
+# Riga di un ordine di zona: "Taglia N piante · …" / "Estrai N pietre · …" con "Zona automatica" o il nome della zona,
+# icona del lavoro; 🎯 sulla zona fissata.
 func _drawer_cut_job(provider: Dictionary, order: Dictionary, claims: Dictionary) -> Dictionary:
+	var order_type := String(order.get("type", DRAWER_ORDER_TYPE_CUT))
+	var is_quarry := order_type == DRAWER_ORDER_TYPE_QUARRY
 	var order_id := int(order["id"])
 	var zone_id := int(order.get("zone_id", -1))
 	var area: WorkArea = WorkAreaService.find_by_id(game_data, zone_id) if zone_id >= 0 else null
 	var claim: Dictionary = claims.get(order_id, {})
 	var is_assigned := bool(order.get("taken", false)) and not claim.is_empty()
 	var remaining := maxi(int(order.get("count", 1)) - (int(claim.get("done", 0)) if is_assigned else 0), 1)
-	var zone_text := tr("drawer_cut_zone_auto")
+	# Riga (2026-10-09): appena creato "<quanti>"; una volta preso, l'avanzamento dell'ordine intero "fatti/totale" (anche
+	# attraverso interruzioni e riprese da altri). Zona: solo quella scelta dal giocatore.
+	var total := _drawer_order_total(order)
+	var done := int(order.get("done_before", 0)) + (int(claim.get("done", 0)) if is_assigned else 0)
+	# La carne consegnata può superare l'obiettivo (l'ultima preda porta tutta la sua); gli altri tipi no.
+	if order_type != DRAWER_ORDER_TYPE_HUNT:
+		done = mini(done, total)
+	var started := bool(order.get("started", false)) or is_assigned or done > 0
+	var row_key := "drawer_order_quarry_row" if is_quarry else "drawer_order_cut_row"
+	var icon_key := "quarry" if is_quarry else "cut"
+	var row_args := {"count": total, "done": done, "total": total}
+	if order_type == DRAWER_ORDER_TYPE_GATHER:
+		row_key = "drawer_order_gather_row"
+		row_args["target"] = _drawer_gather_target_text(order)
+		icon_key = "pickup"
+	elif order_type == DRAWER_ORDER_TYPE_HUNT:
+		row_key = "drawer_order_hunt_row"
+		icon_key = "hunt"
+	if started:
+		row_key = row_key.replace("_row", "_progress_row")
+	elif total == 1:
+		row_key += "_one"
+	var row_name := tr(row_key).format(row_args)
 	if zone_id >= 0:
-		zone_text = area.name if area != null else tr("drawer_cut_zone_gone")
-	var row_name := tr("drawer_order_cut_row_one" if remaining == 1 else "drawer_order_cut_row").format({"count": remaining, "zone": zone_text})
+		row_name = tr("drawer_order_zone_suffix").format({
+			"row": row_name, "zone": area.name if area != null else tr("drawer_cut_zone_gone"),
+		})
 	var macro := Vector2i(-1, -1)
 	var microcell := Vector2i(-1, -1)
 	if area != null:
 		macro = area.macro_coords
 		microcell = area.rect.position + area.rect.size / 2
 	return {
-		"key": JobBoardService.drawer_order_key(order_id), "kind": "cut", "name": row_name, "text": row_name,
-		"log_name": "ordine del cassetto #%d taglio ×%d (%s)" % [order_id, remaining, "zona automatica" if zone_id < 0 else "zona #%d" % zone_id],
-		"icon": {"command": "cut"}, "macro": macro, "microcell": microcell,
-		# Raggiungibilità vera nel controllo di idoneità (zona e pianta per chi lo prende, CutZoneService): qui un bersaglio
-		# fuori dalla macrocella, che PathfindingService.reachability_for dà sempre per raggiungibile.
+		"key": JobBoardService.drawer_order_key(order_id), "kind": order_type, "name": row_name, "text": row_name,
+		"log_name": "ordine del cassetto #%d %s ×%d (%s)" % [order_id, order_type, remaining, "zona automatica" if zone_id < 0 else "zona #%d" % zone_id],
+		"icon": {"command": icon_key}, "macro": macro, "microcell": microcell,
+		# Raggiungibilità vera nel controllo di idoneità (zona e bersaglio per chi lo prende): qui un bersaglio fuori dalla
+		# macrocella, che PathfindingService.reachability_for dà sempre per raggiungibile.
 		"reach_target": {"macro_x": -1, "macro_y": -1, "micro_x": 0, "micro_y": 0},
 		"entry_kind": "work_area" if area != null else "drawer_order", "id": area.id if area != null else order_id,
-		"sort": float(order_id) + DRAWER_CUT_JOB_SORT_OFFSET,
+		"sort": float(order_id) + float(DRAWER_ZONE_JOB_SORT_OFFSET.get(order_type, 4500000.0)),
 		"assigned": is_assigned, "hidden": false,
-		"blocked_reason": "" if is_assigned else _drawer_cut_blocked_reason(zone_id, area),
+		"blocked_reason": "" if is_assigned else _drawer_cut_blocked_reason(order_type, zone_id, area, order),
 		"target": area, "provider": provider, "order": order,
 	}
 
 
-# Motivo per cui nessuno può prendere l'ordine ora ("" = prendibile): nessun adulto con l'accetta; nessuna zona valida
-# (zona fissata sparita, senza il taglio o senza piante; con la zona automatica nessuna zona con piante).
-func _drawer_cut_blocked_reason(zone_id: int, area: WorkArea) -> String:
-	if not _tool_categories_nobody_has(_cut_tool_categories()).is_empty():
-		return tr("drawer_cut_nobody_has_axe")
-	var areas := CutZoneService.list_cut_work_areas(game_data)
-	var reserved := CutZoneService.collect_reserved_plants(human_individuals)
+# Cosa raccogliere, per la riga di "Raccogli": la risorsa, "Tutto il cibo" / "Tutti i materiali" o "Tutto" (gli stessi
+# testi del popup).
+func _drawer_gather_target_text(order: Dictionary) -> String:
+	match int(order.get("criterion_kind", PickUpAction.CriterionKind.ALL)):
+		PickUpAction.CriterionKind.NAME:
+			return IconRegistry.get_resource_display_name(String(order.get("resource_name", "")))
+		PickUpAction.CriterionKind.CATEGORY:
+			var keys: Array = PickupChoiceMenu.CATEGORY_TEXT_KEYS.get(int(order.get("criterion_category", -1)), ["", ""])
+			if String(keys[1]) != "":
+				return tr(String(keys[1]))
+	return tr("pickup_choice_all")
+
+
+# Motivo per cui nessuno può prendere l'ordine ora ("" = prendibile): nessuno in età da lavoro con l'attrezzo; nessuna
+# zona valida (zona fissata sparita, senza il lavoro o senza piante / rocce / risorse da raccogliere; con la zona
+# automatica nessuna zona adatta).
+func _drawer_cut_blocked_reason(order_type: String, zone_id: int, area: WorkArea, order: Dictionary = {}) -> String:
+	if order_type == DRAWER_ORDER_TYPE_HUNT:
+		if _hunt_nobody_has_knife():
+			return tr("drawer_hunt_nobody_has_knife")
+	elif not _tool_categories_nobody_has(_zone_order_tool_categories(order_type)).is_empty():
+		return tr("drawer_quarry_nobody_has_pickaxe" if order_type == DRAWER_ORDER_TYPE_QUARRY else "drawer_cut_nobody_has_axe")
+	var areas := _zone_order_areas(order_type)
+	var reserved := _zone_order_reserved(order_type)
 	if zone_id >= 0:
-		if area == null or not areas.has(area) or CutZoneService.list_available_plants(area, live_cells, null, reserved).is_empty():
+		if area == null or not areas.has(area) or not _zone_order_area_has_targets(order_type, area, null, reserved, order):
 			return tr("drawer_cut_no_valid_zone")
 		return ""
 	for candidate in areas:
-		if not CutZoneService.list_available_plants(candidate, live_cells, null, reserved).is_empty():
+		if _zone_order_area_has_targets(order_type, candidate, null, reserved, order):
 			return ""
 	return tr("drawer_cut_no_valid_zone")
 
 
-# Zona e pianta per `worker` ({"area", "plant"}; {} se nessuna): zona fissata (se ha ancora il taglio) o automatica
-# (CutZoneService.choose_work_area per lui), poi la pianta come il comando (choose_plant: viva, ammessa, raggiungibile,
-# non prenotata). Le piante stanno solo nelle macrocelle attive.
+# Zona e bersaglio per `worker` ({"area", "plant"} per il taglio, {"area", "rock"} per l'estrazione; {} se nessuno): zona
+# fissata (se ha ancora il lavoro) o automatica (choose_work_area per lui), poi il bersaglio come il comando
+# (choose_plant / choose_rock). Solo macrocelle attive.
 func _drawer_cut_pick(worker: HumanIndividual, job: Dictionary) -> Dictionary:
 	var order: Dictionary = job["order"]
+	var order_type := String(order.get("type", DRAWER_ORDER_TYPE_CUT))
 	var zone_id := int(order.get("zone_id", -1))
-	var reserved := CutZoneService.collect_reserved_plants(human_individuals)
+	var reserved := _zone_order_reserved(order_type)
 	var area: WorkArea = null
 	if zone_id >= 0:
 		area = WorkAreaService.find_by_id(game_data, zone_id)
-		if area == null or not CutZoneService.list_cut_work_areas(game_data).has(area):
+		if area == null or not _zone_order_areas(order_type).has(area):
 			return {}
+	elif order_type == DRAWER_ORDER_TYPE_HUNT:
+		area = HuntZoneService.choose_work_area(game_data, worker, live_cells)
+	elif order_type == DRAWER_ORDER_TYPE_QUARRY:
+		area = QuarryZoneService.choose_work_area(game_data, macro_world, worker, reserved)
+	elif order_type == DRAWER_ORDER_TYPE_GATHER:
+		area = HaulZoneService.choose_work_area(
+			game_data, macro_world, worker, int(order.get("criterion_kind", PickUpAction.CriterionKind.ALL)),
+			int(order.get("criterion_category", -1)), String(order.get("resource_name", ""))
+		)
 	else:
 		area = CutZoneService.choose_work_area(game_data, live_cells, worker, reserved)
 	if area == null:
 		return {}
+	# Caccia: la zona, in una macrocella attiva.
+	if order_type == DRAWER_ORDER_TYPE_HUNT:
+		return {"area": area} if live_cells.has(area.macro_coords) else {}
+	if order_type == DRAWER_ORDER_TYPE_GATHER:
+		# Zona con qualcosa per la scelta, raggiungibile da lui, in una macrocella attiva.
+		if not _zone_order_area_has_targets(order_type, area, worker, reserved, order):
+			return {}
+		return {"area": area}
+	if order_type == DRAWER_ORDER_TYPE_QUARRY:
+		if not live_cells.has(area.macro_coords):
+			return {}
+		var macro_state := macro_world.get_cell_state_at(area.macro_coords.x, area.macro_coords.y)
+		var rock: Variant = QuarryZoneService.choose_rock(area, macro_state, worker, reserved)
+		if rock == null:
+			return {}
+		return {"area": area, "rock": {"macro_coords": area.macro_coords, "position": rock}}
 	var plant := CutZoneService.choose_plant(area, live_cells, worker, reserved)
 	if plant.is_empty():
 		return {}
 	return {"area": area, "plant": plant}
 
 
-# Idoneità come il comando Taglia: età, attrezzo da taglio (in cintura o nello zaino, _command_tool_rejection), una zona e
-# una pianta per lui, e la task di prova passa il controllo di età/energia.
+# Idoneità come il comando Taglia / Estrai: età, attrezzo (in cintura o nello zaino, _command_tool_rejection), una zona e
+# un bersaglio per lui, e la task di prova passa il controllo di età/energia.
 func _drawer_cut_job_rejection(worker: HumanIndividual, job: Dictionary) -> String:
+	var order_type := String((job["order"] as Dictionary).get("type", DRAWER_ORDER_TYPE_CUT))
 	var age_band := _resolve_age_band(worker)
 	if age_band == HumanTypes.AgeBand.INFANT or age_band == HumanTypes.AgeBand.CHILD:
 		return HumanIndividual.ASSIGN_REJECT_TOO_YOUNG
-	if _command_tool_rejection(worker, CommandBar.CUT_ACTION) != "":
+	if _command_tool_rejection(worker, _zone_order_action(order_type)) != "":
 		return "attrezzo mancante"
+	# Caccia: coltello in cintura, o nello zaino con posto in cintura (regola generale degli attrezzi).
+	if order_type == DRAWER_ORDER_TYPE_HUNT and HuntZoneService.get_hunt_rejection(worker) != "":
+		return "coltello mancante o cintura piena"
 	var pick := _drawer_cut_pick(worker, job)
 	if pick.is_empty():
 		return "nessuna zona valida"
-	var task := _build_cut_task(worker, pick["plant"], (pick["area"] as WorkArea).id)
+	var area: WorkArea = pick["area"]
+	var task: Task = null
+	if order_type == DRAWER_ORDER_TYPE_GATHER:
+		var order: Dictionary = job["order"]
+		var trips := maxi(int(order.get("count", 1)), 1)
+		var zone := HaulZoneService.make_work_area_zone(
+			area.id, int(order.get("criterion_kind", PickUpAction.CriterionKind.ALL)), int(order.get("criterion_category", -1)),
+			String(order.get("resource_name", "")), maxi(trips - 1, 0)
+		)
+		task = _build_haul_zone_task(zone, trips > 1, 0, worker)
+	elif order_type == DRAWER_ORDER_TYPE_HUNT:
+		task = _build_hunt_zone_task(area.id)
+	elif order_type == DRAWER_ORDER_TYPE_QUARRY:
+		var rock: Dictionary = pick["rock"]
+		task = _build_quarry_task(worker, rock["macro_coords"], rock["position"], area.id)
+	else:
+		task = _build_cut_task(worker, pick["plant"], area.id)
 	if task == null:
 		return "definizione mancante"
 	return worker.get_assign_rejection_reason(task, age_band)
 
 
-# Presa: la serie di tagli del comando di oggi, in silenzio, con l'id dell'ordine nella serie; solo se il pipottino ha
-# davvero la task l'ordine diventa "preso".
+# Presa: la serie del comando di oggi, in silenzio, con l'id dell'ordine nella serie; solo se il pipottino ha davvero la
+# task l'ordine diventa "preso".
 func _assign_drawer_cut_job(worker: HumanIndividual, job: Dictionary) -> void:
 	var order: Dictionary = job["order"]
+	var order_type := String(order.get("type", DRAWER_ORDER_TYPE_CUT))
 	var order_id := int(order["id"])
 	if _find_drawer_order(order_id).is_empty() or bool(order.get("taken", false)):
 		return
@@ -10940,13 +11661,36 @@ func _assign_drawer_cut_job(worker: HumanIndividual, job: Dictionary) -> void:
 	if pick.is_empty():
 		return
 	var area: WorkArea = pick["area"]
-	var series := CutZoneService.make_series(area.id, maxi(int(order.get("count", 1)), 1))
-	series[DRAWER_ORDER_SERIES_KEY] = order_id
-	_assign_cut_task(worker, pick["plant"], area.id, series, true)
+	var series: Dictionary = {}
+	if order_type == DRAWER_ORDER_TYPE_GATHER:
+		var trips := maxi(int(order.get("count", 1)), 1)
+		_assign_work_area_gather(worker, area, {
+			"kind": int(order.get("criterion_kind", PickUpAction.CriterionKind.ALL)),
+			"category": int(order.get("criterion_category", -1)), "resource_name": String(order.get("resource_name", "")),
+			"repeat": trips > 1, "trips": trips,
+		}, true, order_id)
+	elif order_type == DRAWER_ORDER_TYPE_HUNT:
+		series = HuntZoneService.make_meat_series(
+			area.id, maxi(int(order.get("count", 1)), 1), String(order.get("butcher_destination", "")),
+			int(order.get("zone_id", -1)) < 0
+		)
+		series[DRAWER_ORDER_SERIES_KEY] = order_id
+		_assign_work_area_hunt(worker, area, series, true)
+	elif order_type == DRAWER_ORDER_TYPE_QUARRY:
+		series = QuarryZoneService.make_series(area.id, maxi(int(order.get("count", 1)), 1))
+		series[DRAWER_ORDER_SERIES_KEY] = order_id
+		_assign_quarry_task(worker, pick["rock"], area.id, series, true)
+	else:
+		series = CutZoneService.make_series(area.id, maxi(int(order.get("count", 1)), 1))
+		series[DRAWER_ORDER_SERIES_KEY] = order_id
+		_assign_cut_task(worker, pick["plant"], area.id, series, true)
 	for task in _member_open_tasks(worker):
-		if String(CutZoneService.get_series(task.context).get("id", "")) == String(series["id"]):
+		if _drawer_cut_order_of(task) == order_id:
 			order["taken"] = true
+			order["started"] = true
 			order["done_seen"] = 0
+			# L'avviso "nessuna preda" sparisce quando l'ordine riprende.
+			order.erase(DRAWER_HUNT_NO_PREY_KEY)
 			var job_keys: Array[String] = [String(job["key"])]
 			_forget_job_board_wait(job_keys)
 			return
@@ -10988,9 +11732,14 @@ func _collect_direct_command_entries(board_jobs: Array[Dictionary]) -> Array[Dic
 		if String(job["kind"]) == "pile" and job["target"] is GroundPile:
 			var pile: GroundPile = job["target"]
 			pile_job_keys[_pile_claim_key(pile.macro_coords, pile.microcell)] = true
+	if DebugLogging.ENABLED and DebugLogging.SHOW_IN_PROGRESS_LOGS:
+		_log_in_progress_rows(board_jobs, pile_job_keys)
 	for member in human_individuals:
 		var task := member.current_task
 		if task == null or task.is_finished() or task.is_idle_activity or DIRECT_COMMAND_EXCLUDED_TASK_NAMES.has(task.task_name):
+			continue
+		# Ritorno del carico di un ordine di zona tolto (2026-10-09): non è un comando diretto.
+		if bool(task.context.get(DRAWER_ORDER_CARGO_KEY, false)):
 			continue
 		if _is_task_on_board(task, pile_job_keys):
 			continue
@@ -11011,16 +11760,153 @@ func _collect_direct_command_entries(board_jobs: Array[Dictionary]) -> Array[Dic
 # lavoro ha la sua riga), produzione (ordini delle workstation), sepoltura, consegna dei finiti, ordini "Taglia" del
 # cassetto, ritiro di un mucchio elencato come lavoro "Mucchio".
 func _is_task_on_board(task: Task, pile_job_keys: Dictionary) -> bool:
+	return _task_board_reason(task, pile_job_keys) != ""
+
+
+# Perché `task` è un lavoro della coda ("" = no, comando diretto). Il ritiro di un mucchio della coda resta della coda
+# anche dopo l'ultima raccolta (2026-10-09): il mucchio vuoto sparisce con la sua riga, e il cammino fino al magazzino
+# non diventa una riga "Diretto".
+func _task_board_reason(task: Task, pile_job_keys: Dictionary) -> String:
 	if BUILD_TASK_NAMES.has(task.task_name) or DEMOLISH_TASK_NAMES.has(task.task_name) or PRODUCE_TASK_NAMES.has(task.task_name):
-		return true
-	if BodyBurialService.is_bury_task(task) or task.context.has(CONTEXT_OUTPUT_JOB_BUILDING_ID):
-		return true
+		return "costruzione, demolizione o produzione"
+	if BodyBurialService.is_bury_task(task):
+		return "sepoltura"
+	if task.context.has(CONTEXT_OUTPUT_JOB_BUILDING_ID):
+		return "uscita piena"
 	if _drawer_cut_order_of(task) >= 0:
-		return true
+		return "ordine del cassetto"
 	for key in _task_pile_claim_keys(task):
 		if pile_job_keys.has(key):
-			return true
-	return false
+			return "mucchio della coda"
+	if _is_board_pile_task(task):
+		return "ritiro di un mucchio della coda (mucchio vuoto o fuori elenco)"
+	return ""
+
+
+# Ritiro di un mucchio come lavoro della coda: lavoro "Mucchio" preso dalla lista (zona "fino a vuoto" sul mucchio senza
+# etichetta di lavoro) o consegna dopo una demolizione (HaulZoneService.JOB_DELIVERY_KEY senza etichetta di lavoro). Le
+# consegne di taglio ed estrazione hanno l'etichetta: fanno parte del loro lavoro (ordine del cassetto o comando diretto).
+func _is_board_pile_task(task: Task) -> bool:
+	var zone := HaulZoneService.get_zone(task.context)
+	if not zone.is_empty() and HaulZoneService.get_label_task_name(zone) != "":
+		return false
+	if bool(task.context.get(HaulZoneService.JOB_DELIVERY_KEY, false)):
+		return true
+	return not zone.is_empty() and HaulZoneService.get_source_kind(zone) == PickUpAction.SourceKind.GROUND_PILE \
+			and HaulZoneService.is_until_empty(zone)
+
+
+# Log [IN CORSO] (2026-10-09, solo con il debug attivo): una riga per individuo quando la sua riga in "In corso" compare
+# o cambia. Id individuo -> ultima firma scritta (solo in memoria).
+var _in_progress_log_signatures: Dictionary = {}
+
+
+func _log_in_progress_rows(board_jobs: Array[Dictionary], pile_job_keys: Dictionary) -> void:
+	var seen: Dictionary = {}
+	for member in human_individuals:
+		var task := member.current_task
+		if task == null or task.is_finished() or task.is_idle_activity or DIRECT_COMMAND_EXCLUDED_TASK_NAMES.has(task.task_name):
+			continue
+		var origin := "diretto"
+		var why := "nessun lavoro della coda la riconosce"
+		var shown := task.get_activity_description()
+		if bool(task.context.get(DRAWER_ORDER_CARGO_KEY, false)):
+			origin = "nessuna riga"
+			why = "ritorno del carico di un lavoro della coda fermato"
+		else:
+			var reason := _task_board_reason(task, pile_job_keys)
+			if reason != "":
+				origin = "coda"
+				why = reason
+				shown = "(nessuna riga della coda)"
+				for job in board_jobs:
+					if not bool(job["assigned"]) or bool(job["hidden"]):
+						continue
+					if (job["provider"]["workers"].call(job) as Array).has(member):
+						shown = String(job["text"])
+						break
+		var zone := HaulZoneService.get_zone(task.context)
+		var keys := "ordine cassetto=%d, mucchio=%s, consegna lavoro=%s, etichetta=%s, ritorno carico=%s, crea=%s" % [
+			_drawer_cut_order_of(task), str(_task_pile_claim_keys(task)),
+			str(bool(task.context.get(HaulZoneService.JOB_DELIVERY_KEY, false))),
+			HaulZoneService.get_label_task_name(zone) if not zone.is_empty() else "",
+			str(CargoReturnService.is_cargo_return_task(task)), _task_creator_text(task),
+		]
+		var signature := "%s|%s|%s|%s|%s" % [task.task_name, shown, origin, why, keys]
+		seen[member.id] = true
+		if String(_in_progress_log_signatures.get(member.id, "")) == signature:
+			continue
+		_in_progress_log_signatures[member.id] = signature
+		print("[IN CORSO] #%d %s: task '%s', riga \"%s\", %s (%s) — %s" % [
+			member.id, member.name, task.task_name, shown, origin, why, keys
+		])
+	for member_id in _in_progress_log_signatures.keys():
+		if not seen.has(member_id):
+			_in_progress_log_signatures.erase(member_id)
+
+
+# Chi ha creato la task, dedotto dal context (nessun campo "creata da" nella Task).
+func _task_creator_text(task: Task) -> String:
+	if CargoReturnService.is_cargo_return_task(task):
+		return "regola del carico"
+	if _drawer_cut_order_of(task) >= 0:
+		return "ordine del cassetto"
+	var zone := HaulZoneService.get_zone(task.context)
+	if bool(task.context.get(HaulZoneService.JOB_DELIVERY_KEY, false)):
+		return "consegna di un lavoro (%s)" % (HaulZoneService.get_label_task_name(zone) if not zone.is_empty() and HaulZoneService.get_label_task_name(zone) != "" else "demolizione")
+	if _is_board_pile_task(task):
+		return "lavoro Mucchio della lista"
+	if task.context.has(CONTEXT_OUTPUT_JOB_BUILDING_ID):
+		return "lavoro uscita piena della lista"
+	return "comando o altro (non deducibile)"
+
+
+# Carico di lavoro del villaggio (2026-10-09, richiesta utente — titolo e barra di "In corso"), sugli individui in età da
+# lavoro (_is_working_age). Ognuno conta in una sola voce, in quest'ordine:
+#   - al lavoro: ha una riga in "In corso" (lavoro della coda di cui è tra chi lo fa, o comando diretto);
+#   - bisogni: la task attiva è un bisogno (riposo, riposo d'emergenza, rifornimento urgente);
+#   - svago: tutti gli altri — task di svago (is_idle_activity, o oziare, rifornirsi, rito spontaneo, passeggiata, gioco,
+#     sogni a occhi aperti, esplorazione) e, se capita, nessuna task (2026-10-09: niente più voce "Liberi").
+const WORKLOAD_NEED_TASK_NAMES: Array[String] = ["task_rest_name", "task_emergency_rest_name", "task_emergency_restock_name"]
+
+
+func _sync_drawer_workload(board_jobs: Array[Dictionary], in_progress_entries: Array[Dictionary]) -> void:
+	var at_work_ids: Dictionary = {}
+	for job in board_jobs:
+		if not bool(job["assigned"]) or bool(job["hidden"]):
+			continue
+		for member in job["provider"]["workers"].call(job):
+			at_work_ids[(member as HumanIndividual).id] = true
+	for entry in in_progress_entries:
+		if bool(entry.get("direct", false)):
+			at_work_ids[int(entry["id"])] = true
+	var at_work := 0
+	var needs := 0
+	var leisure := 0
+	for member in human_individuals:
+		if not _is_working_age(member):
+			continue
+		var task := member.current_task
+		if at_work_ids.has(member.id):
+			at_work += 1
+		elif task != null and not task.is_finished() and WORKLOAD_NEED_TASK_NAMES.has(task.task_name):
+			needs += 1
+		else:
+			leisure += 1
+	_task_assignment_panel.set_workload(at_work, needs, leisure)
+
+
+# In età da lavoro: chi può fare almeno un lavoro. Neonati e bambini (INFANT, CHILD) sono esclusi da tutte le action di
+# lavoro (PickUp, Retrieve, Unload, Build, Produce, Cut, Quarry, Butcher... — Action.disallowed_age_bands, controllato da
+# HumanIndividual.get_assign_rejection_reason). Gli altri limiti stringono solo singoli lavori e non cambiano questo
+# conteggio: gli adolescenti (TEENAGER) non possono cacciare, seppellire, celebrare riti né pensare; gli adulti fertili
+# (FERTILE_ADULT) non possono celebrare riti tranne il funerale (RiteRules.allowed_age_bands); la caccia è solo per adulti
+# fertili e maturi (hunt.tres / hunt_zone.tres, allowed_age_bands).
+const WORK_DISALLOWED_AGE_BANDS: Array[HumanTypes.AgeBand] = [HumanTypes.AgeBand.INFANT, HumanTypes.AgeBand.CHILD]
+
+
+func _is_working_age(member: HumanIndividual) -> bool:
+	return member != null and not WORK_DISALLOWED_AGE_BANDS.has(_resolve_age_band(member))
 
 
 func _log_job_board(worker: HumanIndividual, text: String) -> void:
@@ -11226,10 +12112,16 @@ func _update_individual_panel_content(target: HumanIndividual) -> void:
 	# ha ancora gli stessi `steps` di quando era attiva (haul_resource/transport mostrano quindi la
 	# propria risorsa anche qui, vedi Task.gd), e Task.id (vedi commento su activity_text) permette
 	# di distinguere in coda due Task con lo stesso nome/stessa risorsa.
+	# Task sospesa a metà con il carico addosso (2026-10-09, richiesta utente): la proprietaria del carico in coda
+	# (TaskQueueService.get_cargo_owner) porta " · in pausa, con carico", così non sembra un doppione del viaggio dopo.
+	var queued_cargo_owner := TaskQueueService.get_cargo_owner(target)
 	var queued_task_descriptions: Array[String] = []
 	for i in range(target.task_queue.size() - 1, -1, -1):
 		var queued_task: Task = target.task_queue[i]
-		queued_task_descriptions.append("%s [#%d]" % [queued_task.get_activity_description(), queued_task.id])
+		var queued_text := queued_task.get_activity_description()
+		if queued_task == queued_cargo_owner and queued_task.current_step_index > 0:
+			queued_text = tr("individual_queued_task_paused_with_cargo").format({"task": queued_text})
+		queued_task_descriptions.append("%s [#%d]" % [queued_text, queued_task.id])
 	# Consumo calorico giornaliero (2026-09-19): serve al pannello per decidere se la barra delle provviste
 	# passa alla riserva corporea (solo se l'individuo consuma calorie, non per un INFANT). Stessa formula
 	# del consumo reale (HumanVitalsIndividualService.apply_daily_calorie_consumption).
@@ -11440,6 +12332,9 @@ func _refresh_buildings_panel() -> void:
 func _on_game_info_tab_changed(tab: int) -> void:
 	if tab == GameInfoTabs.TAB_DEBUG:
 		task_debug_panel.refresh()
+	# Lista della popolazione (2026-10-09): non si aggiorna a scheda nascosta, quindi tornandoci si ricostruisce.
+	elif tab == GameInfoTabs.TAB_POPULATION:
+		_refresh_population_panel()
 
 
 # Ripopola la scheda selezione SOLO se un individuo è davvero selezionato ora (_selection_kind ==
@@ -15721,9 +16616,11 @@ func _toggle_task_assignment_drawer() -> void:
 		_task_assignment_panel.produce_orders_submitted.connect(_on_drawer_produce_submitted)
 		# "Taglia" (2026-10-09): stato subito, poi a ogni ricalcolo dell'elenco.
 		_sync_drawer_cut_available()
-		_task_assignment_panel.cut_order_requested.connect(_on_drawer_cut_requested)
-		_task_assignment_panel.cut_zone_pick_requested.connect(_on_drawer_cut_zone_pick_requested)
-		_task_assignment_panel.cut_order_submitted.connect(_on_drawer_cut_submitted)
+		_task_assignment_panel.zone_order_requested.connect(_on_drawer_zone_order_requested)
+		_task_assignment_panel.zone_pick_requested.connect(_on_drawer_zone_pick_requested)
+		_task_assignment_panel.zone_order_submitted.connect(_on_drawer_zone_order_submitted)
+		# Pulsante della destinazione nello strato "Caccia" (2026-10-09): stessa impostazione della barra.
+		_task_assignment_panel.butcher_destination_chosen.connect(_on_command_bar_butcher_destination_chosen)
 		# Priorità (2026-10-08): valori della partita (GameData), applicati subito; le righe "In coda" si riordinano.
 		_task_assignment_panel.set_priority_settings(JobBoardService.get_priority_mode(game_data), JobBoardService.get_kind_order(game_data))
 		_task_assignment_panel.priority_mode_changed.connect(func(mode: String) -> void:
@@ -15807,6 +16704,7 @@ func _command_state_for(member: HumanIndividual, action_id: StringName) -> Dicti
 func _on_population_command_requested(member: HumanIndividual, action_id: StringName) -> void:
 	if member == null or not human_individuals.has(member):
 		return
+	_cancel_map_picks()
 	var single: Array[HumanIndividual] = [member]
 	# Lato destro sul bordino azzurro interno dell'info panel (il bordo destro della sua area scura, game_info_panel),
 	# all'altezza della riga cliccata (il clic è sul bottone della riga).
@@ -17482,6 +18380,9 @@ func _on_secondary_action_pressed(action_id: StringName) -> void:
 # `dialog` è un Node (non Window): TechTreePanel è ora un CanvasLayer overlay, stesso segnale
 # visibility_changed e stessa proprietà `visible` delle Window.
 func _on_blocking_dialog_visibility_changed(dialog: Node) -> void:
+	# Un popup che si apre chiude le scelte sulla mappa ancora aperte (2026-10-09).
+	if dialog.get("visible"):
+		_cancel_map_picks()
 	_adjust_blocking_dialog_count(1 if dialog.get("visible") else -1)
 
 
@@ -17708,6 +18609,7 @@ func _setup_clock() -> void:
 	# Task chiusa con un messaggio per il giocatore (2026-10-04: raccolta da un mucchio senza deposito con posto).
 	individual_action_service.task_message_requested.connect(_on_hunt_ended_with_message)
 	individual_action_service.hunt_zone_series_continue_requested.connect(_on_hunt_zone_series_continue_requested)
+	individual_action_service.hunt_zone_series_ended.connect(_on_hunt_zone_series_ended)
 	individual_action_service.quarry_zone_series_continue_requested.connect(_on_quarry_zone_series_continue_requested)
 	individual_action_service.cut_zone_series_continue_requested.connect(_on_cut_zone_series_continue_requested)
 	# Essiccatoio pieno durante una macellazione (2026-10-03, essiccazione passo 5).

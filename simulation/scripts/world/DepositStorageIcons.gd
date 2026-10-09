@@ -334,6 +334,11 @@ static func _draw_deposit_storage_fruit_leaf(canvas: CanvasItem, stem_tip: Vecto
 		var t: float = float(i) / float(DEPOSIT_STORAGE_FRUIT_CURVE_SEGMENTS)
 		var one_minus_t: float = 1.0 - t
 		points.append(tip * (one_minus_t * one_minus_t) + ctrl_bottom * (2.0 * one_minus_t * t) + base * (t * t))
+	# Icona piccola (2026-10-09, errore "Invalid polygon data, triangulation failed"): con pochi pixel i punti della foglia
+	# quasi coincidono e la triangolazione fallisce — si disegna solo se il poligono si triangola, altrimenti una lineetta.
+	if Geometry2D.triangulate_polygon(points).is_empty():
+		canvas.draw_line(base, tip, DEPOSIT_STORAGE_FRUIT_COLOR_LEAF, maxf(radius * 0.12, 1.0), true)
+		return
 	canvas.draw_colored_polygon(points, DEPOSIT_STORAGE_FRUIT_COLOR_LEAF)
 
 

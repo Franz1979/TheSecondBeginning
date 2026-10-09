@@ -207,6 +207,7 @@ hunt_destination_not_yet_available,Not yet available
 hunt_destination_requires_idea,Requires: {idea}
 hunt_destination_no_building,No {building} built
 command_bar_butcher_destination_tooltip,Destination of hunting products: {name}
+hunt_destination_button_label,Destination of hunting products
 command_bar_group_work_areas,Work areas
 command_bar_group_hunting,Hunting
 build_bar_title_build,Build
@@ -276,6 +277,7 @@ task_debug_panel_clear_button,Clear
 task_debug_panel_refresh_button_tooltip,Refresh list
 task_debug_panel_unnamed_task,(unnamed)
 individual_queued_tasks_label,Queued actions:
+individual_queued_task_paused_with_cargo,{task} · paused, carrying cargo
 building_status_label,Status: {status}
 building_status_complete,Complete
 building_status_under_construction,Under construction
@@ -579,7 +581,7 @@ hunt_order_dialog_title,Hunt in work areas
 hunt_order_dialog_message,The hunter patrols the area and keeps hunting until the chosen amount is reached.
 hunt_order_dialog_stop_prefix,Stop after bringing home
 hunt_order_dialog_stop_suffix,meat
-work_area_hunt_needs_knife,{name} can't hunt in work areas: a knife on the belt is needed.
+work_area_hunt_needs_knife,{name} can't hunt in work areas: a knife is needed.
 work_area_hunt_no_zone,{name}: no work area with hunting enabled.
 hunt_no_weapon_left,"{name}: no hunting weapon left, the hunt stops."
 hunt_no_knife_carcass_left,"{name}: no knife, the carcass will stay on the ground"
@@ -976,13 +978,44 @@ drawer_cut_zone_label,Area: {zone}
 drawer_cut_zone_auto,Automatic area
 drawer_cut_zone_none,to be chosen
 drawer_cut_zone_gone,area deleted
-drawer_order_cut_row,Cut {count} plants · {zone}
-drawer_order_cut_row_one,Cut 1 plant · {zone}
+drawer_order_cut_row,Cut {count} plants
+drawer_order_cut_row_one,Cut 1 plant
 drawer_cut_no_valid_zone,No valid area
 task_assignment_place_decided_later,The place is decided when someone takes the job
 task_pile_pickup_activity,Pile pickup
 task_pile_pickup_activity_resource,Pile pickup ({resource})
 task_assignment_direct,Direct
-task_assignment_direct_tooltip,"Assigned directly to this individual, it does not come from the queue."
+task_assignment_direct_tooltip,"Assigned directly to this individual: it cannot be put back in the queue."
 task_assignment_direct_cancel_tooltip,Stop this individual's work (like the H key)
 task_assignment_in_progress_tooltip,All work in progress. Needs and rest are not shown here.
+task_assignment_in_progress_workload,In progress · {working} working out of {total}
+task_assignment_workload_working,Working: {count}
+task_assignment_workload_leisure,Leisure: {count}
+task_assignment_workload_needs,Personal needs: {count}
+task_assignment_kind_quarry,Quarrying
+drawer_quarry_button_tooltip,Quarrying in the work areas: a free individual with a pickaxe takes it from the queue
+drawer_quarry_no_zone,No quarrying area
+drawer_quarry_nobody_has_pickaxe,Nobody has a pickaxe
+drawer_quarry_title,Quarry
+drawer_order_quarry_row,Quarry {count} stones
+drawer_order_quarry_row_one,Quarry 1 stone
+task_assignment_kind_gather,Gathering
+drawer_gather_button_tooltip,Gathering in the work areas: a free individual takes it from the queue
+drawer_gather_no_zone,No gathering area
+drawer_gather_title,Gather
+drawer_order_gather_row,Gather {target} · {count} trips
+drawer_order_gather_row_one,Gather {target} · 1 trip
+drawer_order_cut_progress_row,Cut plants · {done}/{total}
+drawer_order_quarry_progress_row,Quarry stones · {done}/{total}
+drawer_order_gather_progress_row,Gather {target} · {done}/{total}
+drawer_order_zone_suffix,{row} · {zone}
+drawer_hunt_title,Hunt
+drawer_hunt_button_tooltip,Hunting in the work areas: a free individual with a knife takes it from the queue
+drawer_hunt_no_zone,No hunting area
+drawer_hunt_nobody_has_knife,Nobody has a knife
+drawer_hunt_meat_label,Meat to bring home
+drawer_order_hunt_row,Hunt · {count} meat
+drawer_order_hunt_row_one,Hunt · 1 meat
+drawer_order_hunt_progress_row,Hunt · {done}/{total}
+task_assignment_kind_hunt,Hunting
+pending_hunt_no_prey,Hunt: no prey in {zone}

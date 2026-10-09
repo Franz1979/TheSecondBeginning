@@ -1,4 +1,4 @@
-[gd_resource type="Resource" script_class="TaskDefinition" format=3]
+[gd_resource type="Resource" script_class="TaskDefinition" format=3 uid="uid://dhgnhgm0fymms"]
 
 [ext_resource type="Script" uid="uid://1t46mu8mn6hq" path="res://gameplay/scripts/tasks/task_definition.gd" id="1_def"]
 [ext_resource type="Resource" path="res://gameplay/scripts/tasks/definitions/step_patrol_area.tres" id="2_patrol"]
@@ -7,4 +7,5 @@
 script = ExtResource("1_def")
 task_name = "task_hunt_zone_name"
 steps = [ExtResource("2_patrol")]
+allowed_age_bands = Array[int]([3, 4])
 is_suspendable = true

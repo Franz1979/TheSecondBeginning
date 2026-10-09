@@ -49,12 +49,16 @@ signal kind_order_changed(order: Array[String])
 # `deliver_to_warehouse` = la spunta "Porta al deposito" al momento dell'invio.
 signal produce_order_requested
 signal produce_orders_submitted(orders: Array[Dictionary], deliver_to_warehouse: bool)
-# Bottone "Taglia" (2026-10-09, ordini del cassetto, secondo tipo): GameScene risponde con open_cut_overlay. Nello strato,
-# "Scegli zona" = cut_zone_pick_requested (scelta sulla mappa, poi set_cut_zone); "Invia in coda" = cut_order_submitted
+# Bottoni "Taglia" ed "Estrai" (2026-10-09, ordini del cassetto di zona — `kind` "cut" / "quarry"): GameScene risponde con
+# open_zone_order_overlay. Nello strato, "Scegli zona" = zone_pick_requested (scelta sulla mappa, poi set_order_zone);
+# "Invia in coda" = zone_order_submitted
 # (`zone_id` -1 = zona automatica).
-signal cut_order_requested
-signal cut_zone_pick_requested
-signal cut_order_submitted(count: int, zone_id: int)
+signal zone_order_requested(kind: String)
+signal zone_pick_requested
+signal zone_order_submitted(kind: String, count: int, zone_id: int)
+# Pulsante della destinazione della caccia nello strato "Caccia" (2026-10-09, ButcherDestinationButton condiviso con la
+# barra dei comandi): GameScene la scrive subito in GameData.last_butcher_destination.
+signal butcher_destination_chosen(destination: String)
 
 const LIST_FONT_SIZE: int = 11
 const LIST_ICON_SIDE: float = 20.0
@@ -126,18 +130,48 @@ var _produce_quantities: Dictionary = {}
 # comportamento dello strato "Produci" (in alto, modale, chiusura con il secondo clic su "Taglia", Annulla, Esc). Dentro:
 # piante da tagliare (limiti del popup del comando), zona ("Zona automatica" con l'opzione accesa, altrimenti "Scegli
 # zona" sulla mappa e la zona scelta), in fondo "Invia in coda" (spento finché manca la zona, se serve) e "Annulla".
+# Strato condiviso da "Taglia" ed "Estrai" (2026-10-09): `_zone_kind` dice quale ordine sta preparando; titolo e voce
+# del numero cambiano a ogni apertura. Bottone, stato e motivo per tipo.
+const ZONE_KIND_CUT := "cut"
+const ZONE_KIND_QUARRY := "quarry"
+# "Raccogli" (2026-10-09, quarto tipo): stesso strato, più la scelta di cosa raccogliere (il menu del popup "Raccogli
+# nelle zone di lavoro", PickupChoiceMenu) e i viaggi al posto del numero.
+const ZONE_KIND_GATHER := "gather"
+# "Caccia" (2026-10-09, quinto tipo): carne da portare a casa (5/10/15/20) al posto del numero, e la riga del pulsante
+# della destinazione (visibile come quello della barra dei comandi, set_butcher_destination).
+const ZONE_KIND_HUNT := "hunt"
+var _hunt_button: Button = null
+var _hunt_destination_row: HBoxContainer = null
+var _hunt_destination_button: ButcherDestinationButton = null
+var _hunt_destination_shown: bool = false
+var _zone_kind: String = ZONE_KIND_CUT
 var _cut_button: Button = null
-var _cut_available: bool = false
-var _cut_unavailable_reason: String = ""
+var _quarry_button: Button = null
+var _gather_button: Button = null
+var _gather_section: VBoxContainer = null
+var _gather_list: VBoxContainer = null
+var _gather_menu: PickupChoiceMenu = null
+var _gather_chosen: bool = false
+var _zone_available: Dictionary = {}  # tipo -> bool
+var _zone_unavailable_reason: Dictionary = {}  # tipo -> motivo
+var _cut_title_label: Label = null
+var _cut_count_label: Label = null
 var _cut_overlay: PanelContainer = null
 var _cut_box: VBoxContainer = null
 var _cut_footer: HBoxContainer = null
 var _cut_count_spin: SpinBox = null
 var _cut_zone_label: Label = null
 var _cut_zone_button: Button = null
+# Riga della zona scelta a mano (2026-10-09): sotto "Scegli zona in automatico [interruttore]", visibile a interruttore
+# spento — la zona scelta (o "nessuna") a sinistra, "Scegli zona" a destra.
+var _cut_zone_pick_row: HBoxContainer = null
+# Interruttore della zona automatica (2026-10-09, AutoZoneToggle: lo stesso della barra dei comandi, legato a
+# UserOptions.work_area_auto_zone): acceso = zona automatica, niente scelta; spento = "Scegli zona".
+var _cut_auto_zone_toggle: AutoZoneToggle = null
 var _cut_submit_button: Button = null
 var _cut_auto_zone: bool = true
 var _cut_zone_id: int = -1
+var _cut_zone_name: String = ""
 # true mentre il giocatore sceglie la zona sulla mappa (Esc lo annulla lì, non chiude lo strato).
 var _cut_zone_picking: bool = false
 # Strati modali (2026-10-09, richiesta utente): con "Regole" o "Produci" aperto il resto del cassetto si scurisce e non
@@ -167,16 +201,32 @@ func _build_new_task_section() -> void:
 	for action in CommandBar.ACTIONS:
 		var command_button := _build_command_button(action)
 		row.add_child(command_button)
-		# "Taglia" (2026-10-09): apre lo strato del taglio (ordini del cassetto); gli altri tre restano senza effetto.
+		# "Taglia" ed "Estrai" (2026-10-09): aprono lo strato dell'ordine di zona (ordini del cassetto); un secondo clic sullo
+		# stesso bottone lo richiude. Gli altri due restano senza effetto.
+		var zone_kind := ""
 		if action["id"] == CommandBar.CUT_ACTION:
+			zone_kind = ZONE_KIND_CUT
 			_cut_button = command_button
-			_cut_button.pressed.connect(func() -> void:
-				if _cut_overlay != null and _cut_overlay.visible:
+		elif action["id"] == CommandBar.QUARRY_ACTION:
+			zone_kind = ZONE_KIND_QUARRY
+			_quarry_button = command_button
+		elif action["id"] == CommandBar.GATHER_ACTION:
+			zone_kind = ZONE_KIND_GATHER
+			_gather_button = command_button
+		elif action["id"] == CommandBar.HUNT_ACTION:
+			zone_kind = ZONE_KIND_HUNT
+			_hunt_button = command_button
+		if zone_kind != "":
+			command_button.pressed.connect(func() -> void:
+				if _cut_overlay != null and _cut_overlay.visible and _zone_kind == zone_kind:
 					close_cut_overlay()
 				else:
-					cut_order_requested.emit()
+					zone_order_requested.emit(zone_kind)
 			)
-	_apply_cut_available()
+	_apply_zone_available(ZONE_KIND_CUT)
+	_apply_zone_available(ZONE_KIND_QUARRY)
+	_apply_zone_available(ZONE_KIND_GATHER)
+	_apply_zone_available(ZONE_KIND_HUNT)
 	# Quinto bottone "Produci" (2026-10-09): stessa forma, la riga si divide la larghezza.
 	_produce_button = _build_command_button({"icon": "produce", "tooltip_key": "drawer_produce_button"})
 	_produce_button.pressed.connect(func() -> void:
@@ -189,20 +239,34 @@ func _build_new_task_section() -> void:
 	_apply_produce_available()
 
 
-# Stato del bottone "Taglia" (2026-10-09): acceso con almeno una zona di taglio e un adulto con l'accetta; spento con
-# il motivo nel tooltip (`reason`).
-func set_cut_available(available: bool, reason: String = "") -> void:
-	_cut_available = available
-	_cut_unavailable_reason = reason
-	_apply_cut_available()
+# Stato del bottone "Taglia" / "Estrai" (2026-10-09, `kind` ZONE_KIND_*): acceso con almeno una zona del lavoro e un
+# individuo in età da lavoro con l'attrezzo; spento con il motivo nel tooltip (`reason`).
+func set_zone_order_available(kind: String, available: bool, reason: String = "") -> void:
+	_zone_available[kind] = available
+	_zone_unavailable_reason[kind] = reason
+	_apply_zone_available(kind)
 
 
-func _apply_cut_available() -> void:
-	if _cut_button == null:
+func _zone_button(kind: String) -> Button:
+	match kind:
+		ZONE_KIND_QUARRY:
+			return _quarry_button
+		ZONE_KIND_GATHER:
+			return _gather_button
+		ZONE_KIND_HUNT:
+			return _hunt_button
+	return _cut_button
+
+
+func _apply_zone_available(kind: String) -> void:
+	var button := _zone_button(kind)
+	if button == null:
 		return
-	_cut_button.disabled = not _cut_available
-	_cut_button.tooltip_text = tr("drawer_cut_button_tooltip") if _cut_available else _cut_unavailable_reason
-	if not _cut_available:
+	var available := bool(_zone_available.get(kind, false))
+	button.disabled = not available
+	var button_tooltip_key: String = String({ZONE_KIND_QUARRY: "drawer_quarry_button_tooltip", ZONE_KIND_GATHER: "drawer_gather_button_tooltip", ZONE_KIND_HUNT: "drawer_hunt_button_tooltip"}.get(kind, "drawer_cut_button_tooltip"))
+	button.tooltip_text = tr(button_tooltip_key) if available else String(_zone_unavailable_reason.get(kind, ""))
+	if not available and _cut_overlay != null and _cut_overlay.visible and _zone_kind == kind:
 		close_cut_overlay()
 
 
@@ -279,6 +343,7 @@ func _build_list_section() -> void:
 	_in_progress_box = _build_section(
 		sections, tr("task_assignment_in_progress_section"), IN_PROGRESS_STRETCH, tr("task_assignment_in_progress_tooltip")
 	)
+	_build_workload_bar()
 	# Strato ancorato in basso, alto quanto il suo contenuto (_fit_settings_overlay).
 	_settings_overlay = PanelContainer.new()
 	_settings_overlay.anchor_left = 0.0
@@ -1003,7 +1068,7 @@ func _update_modal_state() -> void:
 			var control := child as Control
 			if control == null:
 				continue
-			var active := not modal or (produce_open and control == _produce_button) or (cut_open and control == _cut_button)
+			var active := not modal or (produce_open and control == _produce_button) or (cut_open and control == _zone_button(_zone_kind))
 			control.mouse_filter = Control.MOUSE_FILTER_STOP if active else Control.MOUSE_FILTER_IGNORE
 			control.modulate = Color(1, 1, 1, 1) if active else MODAL_DIM_MODULATE
 	if _settings_toggle != null:
@@ -1160,14 +1225,35 @@ func _build_cut_overlay(area: Control) -> void:
 	var content := VBoxContainer.new()
 	content.add_theme_constant_override("separation", SETTINGS_CONTENT_SEPARATION)
 	_cut_overlay.add_child(content)
+	# Il contenuto scorre (2026-10-09: il menu di "Raccogli" può essere lungo); i bottoni in fondo restano fuori.
+	var cut_scroll := ScrollContainer.new()
+	cut_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	cut_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	cut_scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_AUTO
+	content.add_child(cut_scroll)
 	_cut_box = VBoxContainer.new()
 	_cut_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_cut_box.add_theme_constant_override("separation", 4)
-	content.add_child(_cut_box)
-	_cut_box.add_child(_section_title(tr("drawer_cut_title")))
+	cut_scroll.add_child(_cut_box)
+	_cut_title_label = _section_title(tr("drawer_cut_title"))
+	_cut_box.add_child(_cut_title_label)
+	# Cosa raccogliere (solo "Raccogli"): lo stesso menu del popup, testi più piccoli e tagliati per stare nel cassetto.
+	_gather_section = VBoxContainer.new()
+	_gather_section.add_theme_constant_override("separation", 2)
+	_gather_section.visible = false
+	_cut_box.add_child(_gather_section)
+	_gather_list = VBoxContainer.new()
+	_gather_list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_gather_section.add_child(_gather_list)
+	_gather_menu = PickupChoiceMenu.new()
+	_gather_menu.selection_changed.connect(func(_is_resource: bool, _max_quantity: int) -> void:
+		_gather_chosen = true
+		_refresh_cut_zone(_cut_zone_name)
+	)
 	var count_row := HBoxContainer.new()
 	count_row.add_theme_constant_override("separation", 6)
 	var count_label := Label.new()
+	_cut_count_label = count_label
 	count_label.text = tr("cut_order_dialog_count")
 	count_label.add_theme_font_size_override("font_size", LIST_FONT_SIZE)
 	count_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -1180,14 +1266,50 @@ func _build_cut_overlay(area: Control) -> void:
 	_cut_count_spin.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	count_row.add_child(_cut_count_spin)
 	_cut_box.add_child(count_row)
+	# Destinazione dei prodotti (solo "Caccia"): il pulsante della barra dei comandi, stessa impostazione.
+	_hunt_destination_row = HBoxContainer.new()
+	_hunt_destination_row.add_theme_constant_override("separation", 6)
+	_hunt_destination_row.visible = false
+	var destination_label := Label.new()
+	destination_label.text = tr("hunt_destination_button_label")
+	destination_label.add_theme_font_size_override("font_size", LIST_FONT_SIZE)
+	destination_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	destination_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	destination_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	_hunt_destination_row.add_child(destination_label)
+	_hunt_destination_button = ButcherDestinationButton.new()
+	_hunt_destination_button.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	_hunt_destination_button.destination_chosen.connect(func(destination: String) -> void: butcher_destination_chosen.emit(destination))
+	_hunt_destination_row.add_child(_hunt_destination_button)
+	_cut_box.add_child(_hunt_destination_row)
+	# "Scegli zona in automatico" a sinistra e l'interruttore a destra (2026-10-09, come nel popup della caccia).
 	var zone_row := HBoxContainer.new()
 	zone_row.add_theme_constant_override("separation", 6)
+	var auto_zone_label := Label.new()
+	auto_zone_label.text = tr("command_bar_auto_zone")
+	auto_zone_label.add_theme_font_size_override("font_size", LIST_FONT_SIZE)
+	auto_zone_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	auto_zone_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	auto_zone_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	zone_row.add_child(auto_zone_label)
+	_cut_auto_zone_toggle = AutoZoneToggle.new()
+	_cut_auto_zone_toggle.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	_cut_auto_zone_toggle.auto_zone_changed.connect(func(enabled: bool) -> void:
+		_cut_auto_zone = enabled
+		_cut_zone_pick_row.visible = not enabled
+		_refresh_cut_zone(_cut_zone_name)
+		_fit_cut_overlay.call_deferred()
+	)
+	zone_row.add_child(_cut_auto_zone_toggle)
+	_cut_box.add_child(zone_row)
+	_cut_zone_pick_row = HBoxContainer.new()
+	_cut_zone_pick_row.add_theme_constant_override("separation", 6)
 	_cut_zone_label = Label.new()
 	_cut_zone_label.add_theme_font_size_override("font_size", LIST_FONT_SIZE)
 	_cut_zone_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_cut_zone_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_cut_zone_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	zone_row.add_child(_cut_zone_label)
+	_cut_zone_pick_row.add_child(_cut_zone_label)
 	_cut_zone_button = Button.new()
 	_cut_zone_button.text = tr("drawer_cut_pick_zone")
 	_cut_zone_button.focus_mode = Control.FOCUS_NONE
@@ -1195,10 +1317,10 @@ func _build_cut_overlay(area: Control) -> void:
 	_cut_zone_button.add_theme_font_size_override("font_size", LIST_FONT_SIZE)
 	_cut_zone_button.pressed.connect(func() -> void:
 		_cut_zone_picking = true
-		cut_zone_pick_requested.emit()
+		zone_pick_requested.emit()
 	)
-	zone_row.add_child(_cut_zone_button)
-	_cut_box.add_child(zone_row)
+	_cut_zone_pick_row.add_child(_cut_zone_button)
+	_cut_box.add_child(_cut_zone_pick_row)
 	# Fuori dal contenuto, sempre visibile: "Invia in coda" e "Annulla" a destra.
 	_cut_footer = HBoxContainer.new()
 	_cut_footer.add_theme_constant_override("separation", 6)
@@ -1220,21 +1342,38 @@ func _build_cut_overlay(area: Control) -> void:
 	_cut_box.minimum_size_changed.connect(_fit_cut_overlay)
 
 
-# Apre lo strato "Taglia": piante da `min_count` a `max_count` (parte da `default_count`); `auto_zone` = opzione "zona
-# automatica" accesa (niente scelta della zona). Chiude gli altri strati.
-func open_cut_overlay(min_count: int, max_count: int, default_count: int, auto_zone: bool) -> void:
+# Apre lo strato dell'ordine di zona `kind` (ZONE_KIND_CUT "Taglia" / ZONE_KIND_QUARRY "Estrai") con `title` e la voce del
+# numero `count_label`: da `min_count` a `max_count` (parte da `default_count`); `auto_zone` = opzione "zona automatica"
+# accesa (niente scelta della zona). Chiude gli altri strati.
+# `gather_resources` (solo "Raccogli"): le voci del menu, come per il popup ({"resource_name", "category", "quantity",
+# "source_kind"}, HaulZoneService.list_work_area_resources); `gather_default` la voce preselezionata, la stessa del popup
+# (UserOptions.get_pickup_default_choice, ripiego come lui). `count_step`: passo del numero (5 per la carne della caccia).
+func open_zone_order_overlay(kind: String, title: String, count_label: String, min_count: int, max_count: int, default_count: int, auto_zone: bool, gather_resources: Array = [], gather_default: Dictionary = {}, count_step: int = 1) -> void:
 	if _cut_overlay == null:
 		return
 	if _settings_toggle != null and _settings_toggle.button_pressed:
 		_settings_toggle.button_pressed = false
 	close_produce_overlay()
+	_zone_kind = kind
+	_gather_section.visible = kind == ZONE_KIND_GATHER
+	_gather_chosen = false
+	if kind == ZONE_KIND_GATHER:
+		_gather_menu.build(_gather_list, gather_resources, gather_default)
+		_gather_chosen = not _gather_menu.get_selected().is_empty()
+		_compact_gather_rows(_gather_list)
+	_cut_title_label.text = title
+	_cut_count_label.text = count_label
+	_cut_count_spin.step = maxi(count_step, 1)
 	_cut_count_spin.min_value = min_count
 	_cut_count_spin.max_value = max_count
 	_cut_count_spin.value = clampi(default_count, min_count, max_count)
-	_cut_auto_zone = auto_zone
+	_hunt_destination_row.visible = kind == ZONE_KIND_HUNT
+	# Zona automatica: quella dell'opzione (l'interruttore la mostra e la cambia, anche per gli altri posti).
+	_cut_auto_zone = UserOptions.work_area_auto_zone if _cut_auto_zone_toggle != null else auto_zone
 	_cut_zone_id = -1
+	_cut_zone_name = ""
 	_cut_zone_picking = false
-	_cut_zone_button.visible = not auto_zone
+	_cut_zone_pick_row.visible = not _cut_auto_zone
 	_refresh_cut_zone("")
 	_cut_overlay.visible = true
 	_update_modal_state()
@@ -1242,17 +1381,27 @@ func open_cut_overlay(min_count: int, max_count: int, default_count: int, auto_z
 	_fit_cut_overlay.call_deferred()
 
 
-# Zona scelta sulla mappa (GameScene, dopo cut_zone_pick_requested): `zone_id` -1 = nessuna (scelta annullata).
-func set_cut_zone(zone_id: int, zone_name: String) -> void:
+# Stato del pulsante della destinazione nello strato (stessi argomenti di CommandBar.set_butcher_destination): la riga
+# compare nella "Caccia", sempre (2026-10-09: anche senza essiccatoio, con le destinazioni non disponibili spente).
+func set_butcher_destination(is_shown: bool, current: Dictionary, options: Array[Dictionary]) -> void:
+	_hunt_destination_shown = is_shown
+	if _hunt_destination_button == null:
+		return
+	_hunt_destination_button.set_destination(is_shown, current, options)
+
+
+# Zona scelta sulla mappa (GameScene, dopo zone_pick_requested): `zone_id` -1 = nessuna (scelta annullata).
+func set_order_zone(zone_id: int, zone_name: String) -> void:
 	_cut_zone_picking = false
 	if zone_id < 0:
 		return
 	_cut_zone_id = zone_id
+	_cut_zone_name = zone_name
 	_refresh_cut_zone(zone_name)
 
 
 # Fine della scelta sulla mappa senza zona (Esc, clic destro, clic fuori): lo strato resta com'era.
-func end_cut_zone_pick() -> void:
+func end_zone_pick() -> void:
 	_cut_zone_picking = false
 
 
@@ -1263,24 +1412,49 @@ func close_cut_overlay() -> void:
 	_update_modal_state()
 
 
+# Testi del menu della raccolta a misura di cassetto: carattere della lista e bottoni che si accorciano con i puntini.
+func _compact_gather_rows(node: Node) -> void:
+	for child in node.get_children():
+		if child is Button:
+			(child as Button).clip_text = true
+			(child as Button).text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+			(child as Button).tooltip_text = (child as Button).text
+			(child as Control).add_theme_font_size_override("font_size", LIST_FONT_SIZE)
+		elif child is Label:
+			(child as Control).add_theme_font_size_override("font_size", LIST_FONT_SIZE)
+		_compact_gather_rows(child)
+
+
+# Cosa raccogliere scelto nello strato ({"kind", "category", "resource_name", ...} di PickupChoiceMenu.get_selected();
+# {} se nessuna voce).
+func get_gather_choice() -> Dictionary:
+	if _gather_menu == null or not _gather_chosen:
+		return {}
+	return _gather_menu.get_selected()
+
+
 func _refresh_cut_zone(zone_name: String) -> void:
+	# Acceso: l'interruttore dice già "zona automatica", nessuna scritta accanto.
+	_cut_zone_label.visible = not _cut_auto_zone
 	if _cut_auto_zone:
-		_cut_zone_label.text = tr("drawer_cut_zone_label").format({"zone": tr("drawer_cut_zone_auto")})
+		_cut_zone_label.text = ""
 	elif _cut_zone_id >= 0:
 		_cut_zone_label.text = tr("drawer_cut_zone_label").format({"zone": zone_name})
 	else:
 		_cut_zone_label.text = tr("drawer_cut_zone_label").format({"zone": tr("drawer_cut_zone_none")})
-	_cut_submit_button.disabled = not _cut_auto_zone and _cut_zone_id < 0
+	_cut_submit_button.disabled = (not _cut_auto_zone and _cut_zone_id < 0) or (_zone_kind == ZONE_KIND_GATHER and not _gather_chosen)
 
 
 func _on_cut_submit_pressed() -> void:
 	if not _cut_auto_zone and _cut_zone_id < 0:
 		return
+	if _zone_kind == ZONE_KIND_GATHER and not _gather_chosen:
+		return
 	_cut_count_spin.apply()
 	var count := int(_cut_count_spin.value)
 	var zone_id := -1 if _cut_auto_zone else _cut_zone_id
 	close_cut_overlay()
-	cut_order_submitted.emit(count, zone_id)
+	zone_order_submitted.emit(_zone_kind, count, zone_id)
 
 
 # Altezza dello strato: contenuto + bottoni + margini, al massimo la zona delle due sezioni.
@@ -1294,6 +1468,126 @@ func _fit_cut_overlay() -> void:
 	var height := minf(wanted, _sections_area.size.y)
 	if not is_equal_approx(_cut_overlay.offset_bottom, height):
 		_cut_overlay.offset_bottom = height
+
+
+# --- Carico di lavoro sul titolo "In corso" (2026-10-09, richiesta utente) ---
+# Riga del titolo "In corso" (2026-10-09, rivista lo stesso giorno: sotto il titolo sembrava una riga divisoria): a
+# sinistra "In corso · 3 al lavoro su 6" (mai a capo), a destra la barra nello spazio rimasto e dopo la percentuale al
+# lavoro ("50%"). La barra (2026-10-09, rivista: non più a parti colorate) è un riempimento unico della percentuale al
+# lavoro sullo sfondo scuro, con bordo sottile e angoli arrotondati; colore secondo il carico: verde sotto
+# WORKLOAD_ORANGE_FROM_PERCENT, arancione fino a WORKLOAD_RED_FROM_PERCENT escluso, rosso da lì in su. Senza spazio la
+# barra si accorcia fino a WORKLOAD_BAR_MIN_WIDTH; WORKLOAD_BAR_RIGHT_GAP la tiene un po' più corta dello spazio rimasto.
+# Stesso tooltip su titolo, barra e percentuale: solo i conteggi (al lavoro, svago, bisogni personali), su tre righe.
+# Valori da GameScene (set_workload) a ogni ricalcolo della lista.
+const WORKLOAD_BAR_HEIGHT: float = 16.0
+const WORKLOAD_BAR_MIN_WIDTH: float = 40.0
+const WORKLOAD_BAR_RIGHT_GAP: float = 20.0
+const WORKLOAD_BAR_BG_COLOR := Color(0.08, 0.09, 0.11, 1.0)
+const WORKLOAD_BAR_BORDER_COLOR := Color(0.75, 0.85, 1.0, 0.45)
+# Soglie del colore del riempimento (percentuale al lavoro).
+const WORKLOAD_ORANGE_FROM_PERCENT: int = 60
+const WORKLOAD_RED_FROM_PERCENT: int = 85
+const WORKLOAD_GREEN := Color(0.35, 0.75, 0.35, 1.0)
+const WORKLOAD_ORANGE := Color(0.9, 0.6, 0.2, 1.0)
+const WORKLOAD_RED := Color(0.85, 0.25, 0.25, 1.0)
+var _in_progress_title: Label = null
+var _workload_bar: PanelContainer = null
+var _workload_percent: Label = null
+var _workload_fill: ColorRect = null
+var _workload_empty: Control = null
+var _pending_workload: Array = []
+
+
+func _build_workload_bar() -> void:
+	var section := _in_progress_box.get_parent().get_parent() as VBoxContainer
+	if section == null:
+		return
+	_in_progress_title = section.get_child(0) as Label
+	if _in_progress_title == null:
+		return
+	# Il titolo passa in una riga orizzontale, al suo posto: titolo, barra, percentuale.
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 6)
+	section.add_child(row)
+	section.move_child(row, _in_progress_title.get_index())
+	section.remove_child(_in_progress_title)
+	_in_progress_title.autowrap_mode = TextServer.AUTOWRAP_OFF
+	_in_progress_title.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
+	_in_progress_title.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	row.add_child(_in_progress_title)
+	_workload_bar = PanelContainer.new()
+	_workload_bar.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_workload_bar.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	_workload_bar.custom_minimum_size = Vector2(WORKLOAD_BAR_MIN_WIDTH, WORKLOAD_BAR_HEIGHT)
+	_workload_bar.mouse_filter = Control.MOUSE_FILTER_STOP
+	_workload_bar.clip_contents = true
+	var style := StyleBoxFlat.new()
+	style.bg_color = WORKLOAD_BAR_BG_COLOR
+	style.border_color = WORKLOAD_BAR_BORDER_COLOR
+	style.set_border_width_all(1)
+	style.set_corner_radius_all(3)
+	style.content_margin_left = 1
+	style.content_margin_right = 1
+	style.content_margin_top = 1
+	style.content_margin_bottom = 1
+	_workload_bar.add_theme_stylebox_override("panel", style)
+	row.add_child(_workload_bar)
+	# Riempimento e parte vuota divisi in proporzione alla percentuale (stretch ratio).
+	var fill_box := HBoxContainer.new()
+	fill_box.add_theme_constant_override("separation", 0)
+	fill_box.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_workload_bar.add_child(fill_box)
+	_workload_fill = ColorRect.new()
+	_workload_fill.color = WORKLOAD_GREEN
+	_workload_fill.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_workload_fill.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_workload_fill.visible = false
+	fill_box.add_child(_workload_fill)
+	_workload_empty = Control.new()
+	_workload_empty.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_workload_empty.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	fill_box.add_child(_workload_empty)
+	_workload_percent = Label.new()
+	_workload_percent.add_theme_font_size_override("font_size", SECTION_FONT_SIZE)
+	_workload_percent.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	_workload_percent.mouse_filter = Control.MOUSE_FILTER_STOP
+	row.add_child(_workload_percent)
+	# Barra un po' più corta dello spazio rimasto.
+	var right_gap := Control.new()
+	right_gap.custom_minimum_size = Vector2(WORKLOAD_BAR_RIGHT_GAP, 0.0)
+	right_gap.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	row.add_child(right_gap)
+	if not _pending_workload.is_empty():
+		set_workload(int(_pending_workload[0]), int(_pending_workload[1]), int(_pending_workload[2]))
+
+
+# `at_work` + `needs` + `leisure` = individui in età da lavoro.
+func set_workload(at_work: int, needs: int, leisure: int) -> void:
+	_pending_workload = [at_work, needs, leisure]
+	if _in_progress_title == null or _workload_bar == null:
+		return
+	var total := at_work + needs + leisure
+	_in_progress_title.text = tr("task_assignment_in_progress_workload").format({"working": at_work, "total": total})
+	var percent: int = roundi(100.0 * float(at_work) / float(total)) if total > 0 else 0
+	_workload_percent.text = "%d%%" % percent
+	var tooltip := "\n".join([
+		tr("task_assignment_workload_working").format({"count": at_work}),
+		tr("task_assignment_workload_leisure").format({"count": leisure}),
+		tr("task_assignment_workload_needs").format({"count": needs}),
+	])
+	_in_progress_title.tooltip_text = tooltip
+	_workload_bar.tooltip_text = tooltip
+	_workload_percent.tooltip_text = tooltip
+	_workload_fill.visible = percent > 0
+	_workload_empty.visible = percent < 100
+	_workload_fill.size_flags_stretch_ratio = maxf(float(percent), 0.001)
+	_workload_empty.size_flags_stretch_ratio = maxf(float(100 - percent), 0.001)
+	if percent >= WORKLOAD_RED_FROM_PERCENT:
+		_workload_fill.color = WORKLOAD_RED
+	elif percent >= WORKLOAD_ORANGE_FROM_PERCENT:
+		_workload_fill.color = WORKLOAD_ORANGE
+	else:
+		_workload_fill.color = WORKLOAD_GREEN
 
 
 func _section_title(text: String) -> Label:
