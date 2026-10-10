@@ -126,7 +126,8 @@ static func log_decay_line(where: String, resource_name: String, quantity: int, 
 # produrrebbe una divisione per zero o un decadimento all'indietro in advance_building_decay sopra,
 # nessuno dei due ha senso — trattato come "non configurato", mai propagato).
 static func _durability_multiplier(building: Building, category: int) -> float:
-	if building.rules == null:
+	# Danneggiato (2026-10-10): conservazione senza bonus.
+	if building.rules == null or building.is_damaged():
 		return 1.0
 	var multipliers := building.rules.durability_multiplier_by_category
 	if category < 0 or category >= multipliers.size():

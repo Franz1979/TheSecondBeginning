@@ -51,7 +51,8 @@ static func get_base_radius(building: Building, influence_type: InfluenceType) -
 		InfluenceType.CULTURAL:
 			return maxi(building.rules.cultural_radius, 0)
 		InfluenceType.RELIGIOUS:
-			return maxi(building.rules.religious_radius, 0)
+			# Danneggiato (2026-10-10, effetti passo 4): raggio religioso a metà (per difetto, mai sotto 1).
+			return building.get_effective_capacity(maxi(building.rules.religious_radius, 0))
 	return 0
 
 
@@ -63,11 +64,22 @@ static func get_max_radius(building: Building, influence_type: InfluenceType) ->
 	return maxf(base, base * building.rules.influence_max_multiplier)
 
 
-# Punti di influenza accumulati (0 se nessuno).
+# Punti di influenza accumulati (0 se nessuno): i punti SALVATI, mai dimezzati — su di loro lavorano l'aggiunta
+# (add_points) e la perdita per riti trascurati.
 static func get_points(building: Building, influence_type: InfluenceType) -> float:
 	if building == null:
 		return 0.0
 	return float(building.influence_points.get(int(influence_type), 0.0))
+
+
+# Punti EFFETTIVI per gli effetti (2026-10-10, effetti dello stato "Danneggiato" — passo 4): sacralità a metà per un
+# edificio danneggiato, solo per l'influenza religiosa; i punti salvati restano interi, quindi riparando non si perde
+# niente. Letti da get_level (soglie raggiunte, quindi raggio) e dal pannello.
+static func get_effective_points(building: Building, influence_type: InfluenceType) -> float:
+	var points := get_points(building, influence_type)
+	if building != null and influence_type == InfluenceType.RELIGIOUS and building.is_damaged():
+		return points * 0.5
+	return points
 
 
 # Soglie dell'edificio (BuildingRules.influence_level_thresholds, in ordine crescente), vuote senza regole.
@@ -79,7 +91,7 @@ static func get_thresholds(building: Building) -> Array[float]:
 
 # Numero di soglie raggiunte dai punti (senza il tetto del raggio massimo).
 static func get_level(building: Building, influence_type: InfluenceType) -> int:
-	var points := get_points(building, influence_type)
+	var points := get_effective_points(building, influence_type)
 	var level := 0
 	for threshold in get_thresholds(building):
 		if points >= threshold:
@@ -87,9 +99,11 @@ static func get_level(building: Building, influence_type: InfluenceType) -> int:
 	return level
 
 
-# Prima soglia non ancora raggiunta, -1.0 se i punti sono già oltre l'ultima.
-static func get_next_threshold(building: Building, influence_type: InfluenceType) -> float:
-	var points := get_points(building, influence_type)
+# Prima soglia non ancora raggiunta, -1.0 se i punti sono già oltre l'ultima. `points` < 0 = i punti salvati (perdita
+# per riti trascurati); il pannello passa quelli effettivi (get_effective_points, 2026-10-10).
+static func get_next_threshold(building: Building, influence_type: InfluenceType, points: float = -1.0) -> float:
+	if points < 0.0:
+		points = get_points(building, influence_type)
 	for threshold in get_thresholds(building):
 		if points < threshold:
 			return threshold

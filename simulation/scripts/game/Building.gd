@@ -55,6 +55,20 @@ var is_demolished: bool = false
 # residente (AssignHouseService.get_free_slots) — ma resta in world.buildings e resta un ostacolo. Salvato.
 var is_marked_for_demolition: bool = false
 
+# Riparazione richiesta dal giocatore con l'idea dell'assegnazione (2026-10-10, richiesta utente): il lavoro "repair:<id>"
+# entra nella coda dei lavori (GameScene._repair_jobs_collect). Si chiude da sola a Integrità piena, o se l'edificio va in
+# demolizione o in miglioramento (GameScene._settle_repair_requests); la X del cassetto la toglie. Salvata con l'edificio.
+var repair_requested: bool = false
+# Escluso dalla riparazione automatica (2026-10-10): la X del cassetto su una riga di riparazione lo accende; si spegne
+# con il martello (riparazione chiesta a mano) o a Integrità piena. Salvato con l'edificio.
+var repair_auto_excluded: bool = false
+# Macerie (2026-10-10, crollo): building_type_name dell'edificio crollato da cui sono nate ("" per ogni altro edificio).
+# Salvato con l'edificio.
+var rubble_source_name: String = ""
+# Macerie escluse dallo sgombero automatico (2026-10-10): lo sgombero annullato dal giocatore (X del cassetto o "Annulla
+# sgombero") lo accende; "Sgombera" lo spegne. Salvato con l'edificio.
+var rubble_auto_excluded: bool = false
+
 # true quando questo cantiere (SetupSiteAction) è bloccato perché nessuna sorgente ha materiale da
 # costruzione disponibile (2026-09-14, richiesta utente — segnalazione player) — valorizzato/
 # azzerato ESCLUSIVAMENTE da HumanIndividualActionService._resolve_material_shortage: true alla
@@ -89,8 +103,51 @@ var is_awaiting_material: bool = false
 var site_setup_complete: bool = false
 
 # Valorizzata al completamento (= rules.max_durability), mai prima — scende per attacchi (futuro,
-# non ancora implementato) e/o degrado da rules.lifespan_years (anch'esso non ancora applicato).
-var current_durability: int = 0
+# non ancora implementato) e ogni giorno per il degrado da rules.lifespan_years (2026-10-10:
+# WorldTimeService._advance_building_durability_decay). Float perché il calo giornaliero è frazionario;
+# a schermo va mostrata arrotondata.
+var current_durability: float = 0.0
+
+# Soglie dell'Integrità come frazione di rules.max_durability (2026-10-10, richiesta utente). Sotto
+# DURABILITY_REPAIRABLE_RATIO l'edificio si può riparare (comando "Ripara"), sotto DURABILITY_DAMAGED_RATIO è
+# "danneggiato". Le usano la barra del pannello (verde/giallo/rosso) e il comando "Ripara"; DAMAGED servirà per lo stato
+# "Danneggiato".
+const DURABILITY_REPAIRABLE_RATIO: float = 0.7
+const DURABILITY_DAMAGED_RATIO: float = 0.3
+
+
+# Macerie di un edificio crollato (2026-10-10): tipo della categoria RUINS ("rubble"), da sgomberare con la Demolish.
+func is_rubble() -> bool:
+	return rules != null and rules.category == BuildingTypes.Category.RUINS
+
+
+# Effetti dello stato "Danneggiato" (2026-10-10, richiesta utente — passo 1): regola unica, capienze a metà per difetto e
+# mai sotto 1, moltiplicatori a 1; sopra la soglia tutto torna normale. BuildingRules non si tocca: i service restituiscono
+# il valore effettivo passando da qui.
+func get_effective_capacity(value: int) -> int:
+	if value <= 0 or not is_damaged():
+		return value
+	return maxi(value / 2, 1)
+
+
+func get_effective_multiplier(value: float) -> float:
+	return 1.0 if is_damaged() else value
+
+
+# Difesa effettiva (oggi solo da mostrare): a metà se danneggiato.
+func get_effective_defense() -> int:
+	return get_effective_capacity(rules.defense) if rules != null else 0
+
+
+# Stato "Danneggiato" (2026-10-10, richiesta utente): edificio completo, non "da demolire" né demolito, con l'Integrità
+# sotto DURABILITY_DAMAGED_RATIO — stesso criterio che colora di rosso la barra del pannello (percentuale intera per
+# difetto). Cantieri e miglioramenti in corso (is_complete == false) non lo sono mai. Punto unico: pannello, campanella e,
+# più avanti, i malus.
+func is_damaged() -> bool:
+	if not is_complete or is_demolished or is_marked_for_demolition or rules == null or rules.max_durability <= 0:
+		return false
+	var percent: int = floori(clampf(current_durability / float(rules.max_durability), 0.0, 1.0) * 100.0 + 0.000001)
+	return percent < roundi(DURABILITY_DAMAGED_RATIO * 100.0)
 
 # -1 = non ancora completato. Anno di GIOCO (GameData.year) in cui la costruzione è terminata,
 # usato insieme a rules.lifespan_years per calcolare quando l'edificio scadrà.
@@ -185,6 +242,19 @@ var toolkit: Dictionary = {}
 # preleva da stored_resources e poi da qui). Nessun decadimento mentre resta nel buffer: il prodotto
 # riparte da decay_fraction 0.0 quando ne esce.
 var production_output: Dictionary = {}
+
+# Materiali della riparazione (2026-10-10, richiesta utente — materiali della Ripara, passo 1: solo il contenitore) —
+# nome risorsa -> quantità (int), SEPARATO da stored_resources come production_output e toolkit: riservato ai materiali
+# portati per la riparazione, mai visto da scorte, prelievi, ricerca del magazzino e depositi normali. Oggi nessuno ci
+# scrive; lo legge solo il pannello dell'edificio. Salvato con l'edificio (vuoto per i salvataggi precedenti).
+var repair_materials: Dictionary = {}
+# Piano dei materiali della riparazione in corso (2026-10-10, passo 2 — vedi RepairAction, chiavi PLAN_*): fissato alla
+# prima unità di lavoro, cancellato alla fine o all'abbandono della riparazione; {} = nessun piano. Salvato con l'edificio.
+var repair_plan: Dictionary = {}
+# Riparazione ferma perché un materiale del piano non si trova in nessun magazzino (2026-10-10, passo 4): acceso da
+# HumanIndividualActionService quando il rifornimento non trova sorgenti, spento appena parte un giro, il lavoro riprende o
+# la riparazione finisce. Letto da campanella e pannello. Non salvato: dopo un caricamento lo riaccende il primo tentativo.
+var repair_awaiting_material: bool = false
 
 # Restrizione PER-ISTANZA delle categorie accettate (2026-09-09, richiesta utente) — DIVERSO da
 # BuildingRules.accepted_categories: quello è per TIPO (condiviso — vedi BuildingCalculator.

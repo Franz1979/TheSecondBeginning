@@ -76,6 +76,26 @@ static func drop_entries(game_data: GameData, macro_coords: Vector2i, position: 
 # l'edificio era vuoto o non c'era posto.
 # `extra_fresh` (2026-09-27, Demolish Task): nome risorsa -> quantità (int) aggiunte allo STESSO mucchio come i pezzi
 # del buffer (fresche, sommate con la media pesata) — i materiali recuperati dalla demolizione.
+# Materiali della riparazione a terra (2026-10-10, materiali della Ripara — passo 5): il contenitore Building.repair_materials
+# va in un mucchio con le stesse regole di drop_building_contents (davanti alla porta o nella microcella libera più vicina,
+# mai sopra un edificio; senza posto, persi), e si chiudono il piano e la richiesta di riparazione. Usata quando l'edificio
+# viene segnato da demolire, all'avvio di un miglioramento e per gli avanzi a riparazione finita. null se il contenitore
+# era vuoto o non c'era posto.
+static func drop_repair_materials(game_data: GameData, building: Building, world: World = null) -> GroundPile:
+	if building == null:
+		return null
+	var entries: Dictionary = {}
+	_merge_fresh_entries(entries, building.repair_materials)
+	building.repair_materials.clear()
+	building.repair_plan = {}
+	building.repair_requested = false
+	building.repair_awaiting_material = false
+	if entries.is_empty():
+		return null
+	var building_position := Vector2(float(building.micro_x) + 0.5, float(building.micro_y) + 0.5)
+	return drop_entries(game_data, Vector2i(building.macro_x, building.macro_y), building_position, entries, world)
+
+
 static func drop_building_contents(game_data: GameData, building: Building, world: World = null, extra_fresh: Dictionary = {}) -> GroundPile:
 	if building == null:
 		return null

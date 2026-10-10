@@ -30,7 +30,16 @@ const CONTEXT_REAPPROACH_COUNT := "hunt_reapproach_count"
 # Valori di CONTEXT_PENDING_REAPPROACH: quale step lo chiede, quindi quali step aggiungere.
 const REAPPROACH_AFTER_AIM := "after_aim"       # mira interrotta: [Approach, Aim] (il Throw già in coda resta)
 const REAPPROACH_AFTER_THROW_NOT_STARTED := "after_throw_not_started" # lancio non partito: [Approach, Aim, Throw]
-const REAPPROACH_AFTER_THROW := "after_throw"   # tiro a vuoto (dopo il recupero dell'arma): [Approach, Aim, Throw], senza tetto
+const REAPPROACH_AFTER_THROW := "after_throw"   # tiro a vuoto (dopo il recupero dell'arma): [Approach, Aim, Throw], tetto MAX_MISSED_THROWS_PER_PREY
+
+# --- Tetto dei tiri a vuoto (2026-10-10, contro il loop della preda imprendibile) ---
+# Tiri a vuoto sulla stessa preda dopo cui la si lascia: finito il recupero dell'arma, invece di tornare ad avvicinarsi
+# la preda è "persa" (HumanIndividualActionService._handle_pending_hunt_reapproach) — caccia diretta chiusa, caccia in
+# zona di nuovo in pattuglia con la preda ignorata per il resto dell'uscita (HuntZoneService.CONTEXT_IGNORED_PREY_IDS).
+const MAX_MISSED_THROWS_PER_PREY: int = 5
+# Contatore in Task.context (salvato con la Task): {"prey_id", "count"}. Contato da ThrowAction a ogni tiro a vuoto;
+# riparte da zero su una preda diversa, tolto all'uccisione.
+const CONTEXT_MISSED_THROWS := "hunt_missed_throws"
 
 # --- Recupero dell'arma scagliata (2026-09-26, richiesta utente) — vedi RecoverWeaponAction ---
 # Punto di caduta dell'arma: dove si trovava il bersaglio al momento del tiro. Scritto da ThrowAction, letto
@@ -250,6 +259,21 @@ static func continue_with_other_weapon_or_stop(individual: Variant, context: Dic
 static func compute_weapon_reach(weapon_name: String) -> float:
 	var rules: SecondaryResourceRules = CaloricCalculator.get_caloric_source_rules(weapon_name) if weapon_name != "" else null
 	return maxf(rules.max_range if rules != null else 0.0, ApproachPreyAction.MELEE_REACH)
+
+
+# Tiri a vuoto sulla preda `prey_id` (CONTEXT_MISSED_THROWS): 0 se il contatore è di un'altra preda.
+static func get_missed_throws(context: Dictionary, prey_id: int) -> int:
+	var missed: Variant = context.get(CONTEXT_MISSED_THROWS, {})
+	if not (missed is Dictionary) or int(missed.get("prey_id", -1)) != prey_id:
+		return 0
+	return int(missed.get("count", 0))
+
+
+# Un tiro a vuoto in più sulla preda `prey_id` (una preda diversa riparte da 1). Ritorna il nuovo conteggio.
+static func register_missed_throw(context: Dictionary, prey_id: int) -> int:
+	var count := get_missed_throws(context, prey_id) + 1
+	context[CONTEXT_MISSED_THROWS] = {"prey_id": prey_id, "count": count}
+	return count
 
 
 # Step da aggiungere per tornare ad avvicinarsi al bersaglio (vedi le costanti REAPPROACH_*). Oggi il

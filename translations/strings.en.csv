@@ -920,7 +920,7 @@ task_assignment_priority_custom_tooltip,"Whoever is free takes a job of the firs
 task_assignment_kind_body,Burials
 task_assignment_kind_build,Construction sites
 task_assignment_kind_upgrade,Upgrades
-task_assignment_kind_demolish,Demolitions
+task_assignment_kind_demolish,Demolitions and clearing
 task_assignment_kind_pile,Piles
 task_assignment_kind_move_up,Move up
 task_assignment_kind_move_down,Move down
@@ -1027,3 +1027,63 @@ drawer_order_hunt_row_one,Hunt · 1 meat
 drawer_order_hunt_progress_row,Hunt · {done}/{total}
 task_assignment_kind_hunt,Hunting
 pending_hunt_no_prey,Hunt: no prey in {zone}
+pending_hunt_order_ended,Hunt ended: no prey left in the zones ({done}/{total} meat delivered)
+pending_carcass_not_butchered,Carcass not butchered
+task_assignment_cargo_return,Returning cargo
+task_assignment_cargo_return_tooltip,Returning the cancelled job's cargo to storage (press H again to drop it)
+task_assignment_cargo_generic,Cargo
+building_integrity_percent_label,Integrity: {percent}%
+task_repair_name,Repair
+task_repair_step_repair,Repairing
+task_activity_repair,repair
+building_repair_button,Repair
+building_command_repair_labor,Work needed: {labor}
+building_command_repair_threshold,Available below {percent}% integrity
+building_command_repair_in_progress,Repair already in progress
+building_command_repair_marked_for_demolition,Not available on a building marked for demolition
+building_repair_in_progress_label,Repair in progress: {names}
+repair_assign_banner_text,🔨 Repair {building}: click an individual (Esc to cancel)
+repair_reject_already_repairing,An individual is already repairing {building}
+pending_repair,Repair · {building}
+task_assignment_kind_repair,Repairs
+repair_cancel_request_tooltip,Remove the repair request (integrity already restored is kept)
+building_repair_waiting_label,Repair waiting for assignment
+building_command_repair_already_requested,Repair already requested
+task_assignment_setting_auto_repair,Repair when Integrity is below
+task_assignment_setting_auto_repair_tooltip,"Below this integrity a building's repair enters the queue by itself. With 0 it never starts."
+building_repair_auto_excluded_label,Excluded from automatic repair
+building_status_damaged,Damaged
+pending_building_damaged,{building}: damaged
+building_rubble,Rubble
+building_category_ruins,Ruins
+building_status_collapsed,Collapsed
+building_status_rubble_marked,To be cleared
+building_status_rubble_clearing,Clearing in progress
+building_rubble_source_label,Collapse of {building}
+building_clear_rubble_button,Clear
+building_command_clear_rubble_detail,Work needed: {labor}
+building_cancel_clear_rubble_button,Cancel clearing
+building_command_cancel_clear_rubble_detail,The rubble stays where it is.
+building_command_cancel_clear_rubble_started,Clearing has already started: it can no longer be cancelled.
+task_clear_rubble_name,Clearing
+pending_clear_rubble,Clearing ({building})
+pending_rubble,Rubble: collapse of {building}
+notification_building_collapsed,Collapse: {building}
+notification_building_lost,Building lost: {building}
+clear_rubble_assign_banner_text,Clear {building}: click an individual (Esc to cancel)
+pending_no_assignment_point,No assignment point: jobs can only be assigned by hand
+pending_no_assignment_point_detail,Build a Pebble circle to reactivate the job queue.
+command_bar_job_no_point_tooltip,"Requires a completed assignment point (Pebble circle): without one, jobs can only be assigned by hand."
+building_assign_hint_rubble_manual,To assign the clearing: select an individual and right-click the rubble.
+building_assign_hint_rubble_queued,Queued: a free individual will take the clearing. To choose yourself: select an individual and right-click the rubble.
+building_assign_hint_rubble_locked,Clearing locked in the queue. To choose yourself: select an individual and right-click the rubble.
+task_assignment_setting_auto_clear_rubble,Always clear rubble
+task_assignment_setting_auto_clear_rubble_tooltip,"When checked, rubble enters the queue by itself."
+pending_building_damaged_to_repair,"{building}: damaged, needs repair"
+pending_building_damaged_repair_queued,"{building}: damaged, repair queued"
+pending_building_damaged_repair_in_progress,"{building}: damaged, repair in progress"
+building_repair_materials_caption,Materials for the repair
+building_repair_waiting_material_label,Repair stopped: no {materials} in any storage
+building_damaged_effects_label,"Capacities halved, bonuses cancelled"
+storage_slot_over_capacity_tooltip,"Over capacity: the building is damaged and accepts nothing more until space is freed"
+notification_house_eviction,{building} damaged: {count} individuals without a home

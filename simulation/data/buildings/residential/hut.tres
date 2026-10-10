@@ -4,6 +4,9 @@
 
 [resource]
 script = ExtResource("1_hut")
+lifespan_years = 20
+max_durability = 140
+defense = 40
 building_name = "building_hut"
 required_idea_id = "advanced_paleolithic_constructions"
 required_labor = 3000

@@ -98,6 +98,10 @@ signal demolish_requested(building: Building)
 # Bottone "Migliora in …" (2026-10-03, richiesta utente — miglioramento): GameScene apre la scelta del lavoratore col
 # mirino (_on_upgrade_requested) e, alla scelta, avvia il miglioramento.
 signal upgrade_requested(building: Building)
+# "Ripara" (2026-10-10, richiesta utente): GameScene apre il mirino per scegliere chi ripara (_on_repair_requested).
+signal repair_requested(building: Building)
+# "Sgombera" (2026-10-10, macerie): GameScene avvia lo sgombero (_on_clear_rubble_requested).
+signal clear_rubble_requested(building: Building)
 
 # Icone di influenza (2026-10-02, richiesta utente — sostituiscono il bottone "Mostra influenza"): una per tipo
 # (politica, cultura, religione), nell'intestazione della scheda accanto al 🎯. Clic: GameScene mostra per qualche
@@ -162,6 +166,8 @@ const OCCUPIED_RESIDENT_SLOT_COLOR := Color(0.72, 0.62, 0.48, 1.0)
 const STORAGE_SLOT_FILL_BAR_WIDTH: float = 4.0
 const STORAGE_SLOT_FILL_BAR_TRACK_COLOR := Color(0.0, 0.0, 0.0, 0.5)
 const STORAGE_SLOT_FILL_BAR_FILL_COLOR := Color(1.0, 1.0, 1.0, 0.85)
+# Slot oltre la capienza di un edificio danneggiato (2026-10-10): tinta rossastra.
+const STORAGE_SLOT_OVER_CAPACITY_MODULATE := Color(1.0, 0.5, 0.5, 0.75)
 
 @onready var status_label: Label = $StatusRow/StatusLabel
 # X accanto a "Stato" (2026-09-26, richiesta utente): annulla il lavoro in corso sull'edificio
@@ -178,13 +184,16 @@ const STORAGE_SLOT_FILL_BAR_FILL_COLOR := Color(1.0, 1.0, 1.0, 0.85)
 # parte, arancione, sotto "Lavoratore assegnato" — testi già risolti da GameScene
 # (_resolve_production_tool_wait_lines), nascosta se non ce ne sono.
 @onready var tool_wait_label: Label = $ToolWaitLabel
-# Terza riga dell'intestazione (2026-09-27, richiesta utente): "Costruito anno X · Durabilità A/B" (prima due righe).
+# Terza riga dell'intestazione (2026-09-27, richiesta utente): "Costruito anno X" (prima due righe; l'Integrità dal
+# 2026-10-10 ha la propria riga con barra, vedi _durability_label).
 @onready var built_year_label: Label = $BuiltYearLabel
 # "Influenza ricevuta: …" (2026-10-02, richiesta utente): solo per un edificio RESIDENTIAL completo, tipi di influenza
 # che coprono la casa (InfluenceService.get_house_coverage) o "nessuna".
 @onready var influence_received_label: Label = $InfluenceReceivedLabel
 @onready var residents_caption: Label = $ResidentsCaption
-@onready var residents_grid: GridContainer = $ResidentsGrid
+# Residenti in fila (2026-10-10, richiesta utente — prima una griglia quadrata, es. 2×2): da sinistra a destra, a capo
+# da sola quando non ci stanno più in larghezza. Nome del nodo invariato.
+@onready var residents_grid: HFlowContainer = $ResidentsGrid
 @onready var storage_caption: Label = $StorageCaption
 @onready var storage_grid: GridContainer = $StorageGrid
 # Buffer di uscita della produzione (2026-09-23, richiesta utente) — caption con pezzi usati/capienza,
@@ -227,7 +236,8 @@ const STORAGE_SLOT_FILL_BAR_FILL_COLOR := Color(1.0, 1.0, 1.0, 0.85)
 @onready var settings_caption: Label = $SettingsCaption
 @onready var accepted_categories_caption: Label = $AcceptedCategoriesCaption
 @onready var category_toggles_container: VBoxContainer = $CategoryTogglesContainer
-# Riga dei comandi a icone in fondo al pannello (2026-10-03, richiesta utente — sostituisce i bottoni larghi a testo):
+# Riga dei comandi a icone (2026-10-03, richiesta utente — sostituisce i bottoni larghi a testo; dal 2026-10-10 in alto,
+# fuori dallo scroll, vedi _mount_command_bar):
 # tutte a sinistra: Migliora, Svuota tutto, un piccolo spazio fisso, Demolisci per ultimo. "Annulla cantiere" (stesso
 # DemolishButton su un cantiere) e "Annulla demolizione" prendono il posto di Demolisci. Pulsanti come il 🎯 con
 # un'icona disegnata (_setup_command_icon_buttons); il nome del comando è la prima riga del tooltip. Visibili solo quando hanno senso; esistenti ma non disponibili = spenti con il motivo.
@@ -238,6 +248,21 @@ const STORAGE_SLOT_FILL_BAR_FILL_COLOR := Color(1.0, 1.0, 1.0, 0.85)
 @onready var cancel_demolition_button: Button = $CommandIconRow/CancelDemolitionButton
 # Pulsante -> la sua BuildingCommandIcon.
 var _command_icons: Dictionary = {}
+# Spaziatore elastico della riga comandi (2026-10-10): separa i comandi a sinistra da Demolisci a destra.
+var _command_icon_spacer: Control = null
+# "Ripara" (2026-10-10, richiesta utente): creato in codice subito dopo Migliora (_build_repair_controls), stesso stile
+# delle altre icone. Riga di stato "Riparazione in corso: Nome (#id)" sotto lo stato, mentre qualcuno ha la Task.
+var repair_button: TooltipButton = null
+# "Sgombera" (2026-10-10, richiesta utente — macerie): l'unico comando del pannello delle macerie, a sinistra, creato in
+# codice come Ripara (_build_repair_controls). Su ogni altro edificio resta nascosto.
+var clear_rubble_button: Button = null
+var _repair_status_label: Label = null
+# Riparazione ferma per materiale (2026-10-10, passo 4): riga arancione subito sotto _repair_status_label.
+var _repair_wait_label: Label = null
+# Effetti dello stato "Danneggiato" (2026-10-10): riga breve sotto lo stato.
+var _damaged_effects_label: Label = null
+# "Nome (#id)" di chi ha la Repair Task su questo edificio (in corso o in coda), da show_building.
+var _repairer_names: Array[String] = []
 
 # Edificio correntemente mostrato (2026-09-09) — MAI esistito prima come campo: show_building
 # riceveva `building` solo come parametro locale, nessun consumatore ne aveva bisogno dopo il
@@ -302,6 +327,17 @@ var _sacredness_label: Label = null
 var _sacredness_bar: ProgressBar = null
 var _sacredness_radius_label: Label = null
 
+# Integrità (2026-10-10, richiesta utente): solo per un edificio completo, sotto "Costruito: anno N" — "Integrità: 90%"
+# e una barra con lo stile e le dimensioni di quella della costruzione, colorata per soglie (Building.DURABILITY_*_RATIO).
+# Tooltip con i punti interi "54/60". Creata in codice.
+const DURABILITY_FILL_COLOR_GOOD := Color(0.3, 0.68, 0.3, 1)
+const DURABILITY_FILL_COLOR_DAMAGED := Color(0.85, 0.72, 0.2, 1)
+const DURABILITY_FILL_COLOR_CRITICAL := Color(0.82, 0.25, 0.2, 1)
+var _durability_label: Label = null
+var _durability_bar_margin: MarginContainer = null
+var _durability_bar: ProgressBar = null
+var _durability_fill_style: StyleBoxFlat = null
+
 
 func _ready() -> void:
 	_assign_hint_label = Label.new()
@@ -338,6 +374,8 @@ func _ready() -> void:
 	_buried_box.add_theme_constant_override("separation", 0)
 	add_child(_buried_box)
 	move_child(_buried_box, _sacredness_box.get_index() + 1)
+	_build_durability_rows()
+	_build_repair_materials_rows()
 	clear()
 	residents_caption.text = tr("building_residents_caption")
 	storage_caption.text = tr("building_storage_caption")
@@ -364,7 +402,11 @@ func _ready() -> void:
 	demolish_button.pressed.connect(func(): demolish_requested.emit(_current_building))
 	upgrade_button.pressed.connect(func(): upgrade_requested.emit(_current_building))
 	cancel_demolition_button.pressed.connect(func(): demolition_cancel_requested.emit(_current_building))
+	_build_repair_controls()
 	_setup_command_icon_buttons()
+	visibility_changed.connect(_update_command_bar_visibility)
+	# Dopo l'ingresso in scena: il genitore dello scroll può essere ancora occupato a sistemare i propri figli.
+	_mount_command_bar.call_deferred()
 
 
 # residents_display_data (2026-09-12, richiesta utente — griglia residenti): Array di Dictionary
@@ -387,9 +429,11 @@ func _ready() -> void:
 # demolisher_names (2026-09-27): "Nome (#id)" di chi ha la Demolish Task su questo edificio (in corso o in coda) —
 # vuoto su un edificio "da demolire" = suggerimento "come assegnarla" (dal 2026-10-09, prima il bottone "Assegna
 # demolitore").
-func show_building(building: Building, residents_display_data: Array[Dictionary] = [], assigned_builder_names: Array[String] = [], production_claimant_names: Array[String] = [], production_orders: Array[Dictionary] = [], production_tool_wait_lines: Array[String] = [], demolisher_names: Array[String] = []) -> void:
+# repairer_names (2026-10-10): stesso formato per la Repair Task — riga "Riparazione in corso" e "Ripara" spento.
+func show_building(building: Building, residents_display_data: Array[Dictionary] = [], assigned_builder_names: Array[String] = [], production_claimant_names: Array[String] = [], production_orders: Array[Dictionary] = [], production_tool_wait_lines: Array[String] = [], demolisher_names: Array[String] = [], repairer_names: Array[String] = []) -> void:
 	visible = true
 	_current_building = building
+	_repairer_names = repairer_names
 	# Ordini separati (2026-10-04): ricette degli ordini con un lavoratore (fabbisogno "Materiali per la produzione") e
 	# produzioni sospese dagli ordini annullati (Building.production_suspended).
 	var working_recipes: Array[String] = []
@@ -401,10 +445,18 @@ func show_building(building: Building, residents_display_data: Array[Dictionary]
 		suspended_recipes.append(String(suspended_name))
 	# "Da demolire" (2026-09-27, Building.is_marked_for_demolition) prima di completo/in costruzione.
 	var status_key: String = "building_status_complete" if building.is_complete else "building_status_under_construction"
+	# Danneggiato (2026-10-10, Building.is_damaged): al posto di "Completo".
+	if building.is_damaged():
+		status_key = "building_status_damaged"
 	# Demolizione iniziata (2026-09-27, richiesta utente): "In demolizione" in arancio, non più annullabile.
 	var demolition_started: bool = building.is_marked_for_demolition and float(building.construction_progress.get(DemolishAction.LABOR_KEY, 0.0)) > 0.0
 	if building.is_marked_for_demolition:
 		status_key = "building_status_demolition_in_progress" if demolition_started else "building_status_marked_for_demolition"
+	# Macerie (2026-10-10): "Crollato", poi "Da sgomberare" / "Sgombero in corso" al posto delle voci della demolizione.
+	if building.is_rubble():
+		status_key = "building_status_collapsed"
+		if building.is_marked_for_demolition:
+			status_key = "building_status_rubble_clearing" if demolition_started else "building_status_rubble_marked"
 	var status_text: String = tr(status_key)
 	# Miglioramento in corso (2026-10-03, richiesta utente): "da <partenza> a <destinazione>" al posto di "in costruzione".
 	var upgrade_from_rules := BuildingUpgradeService.get_upgrade_from_rules(building)
@@ -423,6 +475,25 @@ func show_building(building: Building, residents_display_data: Array[Dictionary]
 	_refresh_buried_list(building)
 	_refresh_info(building)
 	_refresh_command_icon_row(building, demolition_started)
+	# Riparazione richiesta e non ancora assegnata (2026-10-10, coda dei lavori): "Riparazione in attesa di assegnazione".
+	var repair_waiting: bool = repairer_names.is_empty() and building.repair_requested
+	# Escluso dalla riparazione automatica (2026-10-10, X del cassetto): riga breve, solo se non c'è altro da dire.
+	var repair_excluded: bool = repairer_names.is_empty() and not building.repair_requested and building.repair_auto_excluded
+	_repair_status_label.visible = (not repairer_names.is_empty() or repair_waiting or repair_excluded) and building.is_complete
+	if _repair_status_label.visible:
+		if repair_excluded:
+			_repair_status_label.text = tr("building_repair_auto_excluded_label")
+		else:
+			_repair_status_label.text = tr("building_repair_waiting_label") if repair_waiting else tr("building_repair_in_progress_label").format({"names": ", ".join(repairer_names)})
+	_damaged_effects_label.visible = building.is_damaged()
+	# Riparazione ferma per materiale (2026-10-10, passo 4): riga arancione sotto lo stato della riparazione.
+	var repair_missing := RepairAction.get_supply_missing(building) if building.repair_awaiting_material and not repairer_names.is_empty() else {}
+	_repair_wait_label.visible = not repair_missing.is_empty()
+	if _repair_wait_label.visible:
+		var material_names: Array[String] = []
+		for material_name in repair_missing.keys():
+			material_names.append(IconRegistry.get_resource_display_name(String(material_name)).to_lower())
+		_repair_wait_label.text = tr("building_repair_waiting_material_label").format({"materials": ", ".join(material_names)})
 	_refresh_construction_progress(building)
 	# "In attesa di materiale" (2026-09-14, richiesta utente — segnalazione player per un cantiere
 	# bloccato per mancanza di materiale) — SOLO visibile/valorizzata mentre building.is_awaiting_
@@ -474,7 +545,8 @@ func show_building(building: Building, residents_display_data: Array[Dictionary]
 	var hint_key := ""
 	if building.is_marked_for_demolition:
 		if demolisher_names.is_empty():
-			hint_key = "demolition"
+			# Macerie (2026-10-10): il suggerimento parla di sgombero.
+			hint_key = "rubble" if building.is_rubble() else "demolition"
 	elif is_under_construction and assigned_builder_names.is_empty():
 		hint_key = "site"
 	_assign_hint_label.visible = hint_key != ""
@@ -484,7 +556,8 @@ func show_building(building: Building, residents_display_data: Array[Dictionary]
 		if hint_key == "site":
 			move_child(_assign_hint_label, assigned_builder_label.get_index() + 1)
 		else:
-			move_child(_assign_hint_label, command_icon_row.get_index())
+			# Dal 2026-10-10 la riga dei comandi è in alto, fuori dal pannello: il suggerimento va subito sotto lo stato.
+			move_child(_assign_hint_label, $StatusRow.get_index() + 1)
 	# Workstation completa (2026-09-24; dal 2026-09-27 nella sezione Produzione): "In produzione:" con la X di annullo,
 	# lavoratore assegnato, attesa attrezzi e cosa serve ancora — vedi _refresh_production_status.
 	# Postazione che lavora da sola (2026-10-03, ProductionService.has_only_auto_progress_recipes — l'essiccatoio): niente
@@ -500,7 +573,7 @@ func show_building(building: Building, residents_display_data: Array[Dictionary]
 	tool_wait_label.text = "\n".join(production_tool_wait_lines) if tool_wait_label.visible else ""
 	_refresh_production_status(building, is_active_workstation, production_orders, working_recipes)
 
-	# Terza riga dell'intestazione (2026-09-27): "Costruito anno X · Durabilità A/B". "Non ancora costruito" SOLO per
+	# Terza riga dell'intestazione (2026-09-27): "Costruito anno X". "Non ancora costruito" SOLO per
 	# un edificio non completo; completo ma senza anno registrato (built_year < 0, es. salvataggio vecchio) -> "anno non
 	# noto", mai la contraddizione con "Stato: Completo".
 	var built_text: String
@@ -510,14 +583,15 @@ func show_building(building: Building, residents_display_data: Array[Dictionary]
 		built_text = tr("building_built_year_unknown")
 	else:
 		built_text = tr("building_not_yet_built")
-	var max_durability: int = building.rules.max_durability if building.rules != null else 0
-	# Cantiere di miglioramento (2026-10-04, richiesta utente): finché i lavori non sono finiti la durabilità è quella
-	# dell'edificio di partenza, quindi anche il massimo è il suo (prima: valore vecchio sul massimo nuovo, es. 60/50).
-	var upgrade_from_rules_for_durability := BuildingUpgradeService.get_upgrade_from_rules(building)
-	if upgrade_from_rules_for_durability != null:
-		max_durability = upgrade_from_rules_for_durability.max_durability
-	var durability_text: String = tr("building_durability_label").format({"current": building.current_durability, "max": max_durability})
-	built_year_label.text = "%s · %s" % [built_text, durability_text]
+	# Macerie (2026-10-10): "Crollo di <edificio>" al posto dell'anno di costruzione.
+	if building.is_rubble():
+		var source_rules := BuildingCalculator.get_building_rules(building.rubble_source_name) if building.rubble_source_name != "" else null
+		built_text = tr("building_rubble_source_label").format({
+			"building": tr(source_rules.building_name) if source_rules != null else building.rubble_source_name,
+		})
+	# Dal 2026-10-10 l'Integrità non è più su questa riga: ha la propria riga con barra sotto (_refresh_durability).
+	built_year_label.text = built_text
+	_refresh_durability(building)
 
 	_refresh_influence_received(building)
 	_refresh_residents_grid(building, residents_display_data)
@@ -526,6 +600,7 @@ func show_building(building: Building, residents_display_data: Array[Dictionary]
 	_refresh_output_buffer(building)
 	_refresh_toolkit(building)
 	_refresh_delivered_materials(building)
+	_refresh_repair_materials(building)
 	_refresh_production_recipes(building, production_claimant_names)
 	_refresh_settings_section(building)
 
@@ -537,7 +612,12 @@ func _refresh_command_icon_row(building: Building, demolition_started: bool) -> 
 	_refresh_empty_all_button(building)
 	# Demolisci / Annulla cantiere (2026-09-27: su un cantiere la conferma annulla il cantiere): stesso bottone, icona
 	# e tooltip diversi. Nascosto per un edificio "da demolire", dove al suo posto c'è Annulla demolizione.
-	demolish_button.visible = not building.is_marked_for_demolition
+	# Macerie (2026-10-10): niente Demolisci, al suo posto "Sgombera" a sinistra.
+	demolish_button.visible = not building.is_marked_for_demolition and not building.is_rubble()
+	clear_rubble_button.visible = building.is_rubble() and not building.is_marked_for_demolition
+	clear_rubble_button.tooltip_text = "%s\n%s" % [tr("building_clear_rubble_button"), tr("building_command_clear_rubble_detail").format({
+		"labor": roundi(float(building.rules.required_labor) * DemolishAction.LABOR_FRACTION_OF_BUILD) if building.rules != null else 0,
+	})]
 	if building.is_complete:
 		(_command_icons[demolish_button] as BuildingCommandIcon).kind = BuildingCommandIcon.KIND_DEMOLISH
 		demolish_button.tooltip_text = "%s\n%s" % [tr("building_demolish_button"), tr("building_command_demolish_detail")]
@@ -549,14 +629,155 @@ func _refresh_command_icon_row(building: Building, demolition_started: bool) -> 
 	# Annulla demolizione: visibile per tutto il tempo in cui l'edificio è "da demolire"; spento, con il motivo, a
 	# demolizione iniziata (non più annullabile).
 	cancel_demolition_button.visible = building.is_marked_for_demolition
+	# Macerie (2026-10-10): la pala barrata al posto della dinamite barrata.
+	(_command_icons[cancel_demolition_button] as BuildingCommandIcon).kind = \
+		BuildingCommandIcon.KIND_CANCEL_CLEAR_RUBBLE if building.is_rubble() else BuildingCommandIcon.KIND_CANCEL_DEMOLITION
 	cancel_demolition_button.disabled = demolition_started
 	cancel_demolition_button.tooltip_text = "%s\n%s" % [
 		tr("building_cancel_demolition_button"),
 		tr("building_command_cancel_demolition_started") if demolition_started else tr("building_command_cancel_demolition_detail"),
 	]
-	for button in [upgrade_button, empty_all_button, demolish_button, cancel_demolition_button]:
+	# Sgombero delle macerie (2026-10-10): stesso bottone, testi dello sgombero.
+	if building.is_rubble():
+		cancel_demolition_button.tooltip_text = "%s\n%s" % [
+			tr("building_cancel_clear_rubble_button"),
+			tr("building_command_cancel_clear_rubble_started") if demolition_started else tr("building_command_cancel_clear_rubble_detail"),
+		]
+	# Demolisci da solo a destra (2026-10-10): dopo lo spaziatore elastico; come "Annulla cantiere"/"Annulla miglioramento"
+	# lo stesso bottone torna a sinistra con gli altri comandi.
+	var spacer_index := _command_icon_spacer.get_index()
+	if building.is_complete:
+		command_icon_row.move_child(demolish_button, command_icon_row.get_child_count() - 1)
+	elif demolish_button.get_index() > spacer_index:
+		command_icon_row.move_child(demolish_button, spacer_index)
+	_refresh_repair_button(building)
+	for button in [upgrade_button, repair_button, clear_rubble_button, empty_all_button, demolish_button, cancel_demolition_button]:
 		_style_command_icon_button(button)
-	command_icon_row.visible = upgrade_button.visible or empty_all_button.visible or demolish_button.visible or cancel_demolition_button.visible
+	command_icon_row.visible = upgrade_button.visible or repair_button.visible or clear_rubble_button.visible or empty_all_button.visible \
+		or demolish_button.visible or cancel_demolition_button.visible
+	_update_command_bar_visibility()
+
+
+# Riga dei comandi in alto (2026-10-10, richiesta utente): subito sotto la riga del nome, prima di "Stato", con una linea
+# sottile sotto, sempre in quel punto. Non scorre con il contenuto: se il pannello sta dentro uno ScrollContainer (la
+# scheda Selezione), la riga e la linea vanno nel genitore dello scroll, subito prima di lui (sotto l'intestazione col
+# nome, che è già fuori dallo scroll); altrimenti in cima al pannello. Visibile solo col pannello visibile e almeno un
+# comando visibile: niente riga vuota né linea da sola.
+var _command_bar: VBoxContainer = null
+
+
+func _mount_command_bar() -> void:
+	if _command_bar != null:
+		return
+	_command_bar = VBoxContainer.new()
+	_command_bar.add_theme_constant_override("separation", 2)
+	_command_bar.visible = false
+	command_icon_row.get_parent().remove_child(command_icon_row)
+	_command_bar.add_child(command_icon_row)
+	_command_bar.add_child(HSeparator.new())
+	var scroll := _find_ancestor_scroll()
+	if scroll != null and scroll.get_parent() != null:
+		var host := scroll.get_parent()
+		host.add_child(_command_bar)
+		host.move_child(_command_bar, scroll.get_index())
+		# Il pannello non è più il genitore della barra: se sparisce lui, sparisce anche lei.
+		tree_exiting.connect(func() -> void:
+			if is_instance_valid(_command_bar):
+				_command_bar.queue_free()
+		)
+	else:
+		add_child(_command_bar)
+		move_child(_command_bar, 0)
+	_update_command_bar_visibility()
+
+
+func _find_ancestor_scroll() -> ScrollContainer:
+	var node := get_parent()
+	while node != null:
+		if node is ScrollContainer:
+			return node
+		node = node.get_parent()
+	return null
+
+
+func _update_command_bar_visibility() -> void:
+	if _command_bar != null and is_instance_valid(_command_bar):
+		_command_bar.visible = visible and command_icon_row.visible
+
+
+# "Ripara" e la riga di stato della riparazione (2026-10-10), creati una volta in _ready. Il pulsante sta subito dopo
+# Migliora; la riga subito sotto lo stato, a capo se lunga (il pannello non si allarga).
+func _build_repair_controls() -> void:
+	# TooltipButton (2026-10-10, materiali della riparazione): tooltip con le icone dei materiali, come Migliora.
+	repair_button = TooltipButton.new()
+	repair_button.visible = false
+	command_icon_row.add_child(repair_button)
+	command_icon_row.move_child(repair_button, upgrade_button.get_index() + 1)
+	repair_button.pressed.connect(func(): repair_requested.emit(_current_building))
+	# Sgombera (2026-10-10): primo della riga, a sinistra.
+	clear_rubble_button = Button.new()
+	clear_rubble_button.visible = false
+	command_icon_row.add_child(clear_rubble_button)
+	command_icon_row.move_child(clear_rubble_button, 0)
+	clear_rubble_button.pressed.connect(func(): clear_rubble_requested.emit(_current_building))
+	_repair_status_label = Label.new()
+	_repair_status_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_repair_status_label.custom_minimum_size.x = 0.0
+	_repair_status_label.add_theme_font_size_override("font_size", 10)
+	_repair_status_label.visible = false
+	add_child(_repair_status_label)
+	move_child(_repair_status_label, $StatusRow.get_index() + 1)
+	_damaged_effects_label = Label.new()
+	_damaged_effects_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_damaged_effects_label.custom_minimum_size.x = 0.0
+	_damaged_effects_label.add_theme_font_size_override("font_size", 10)
+	_damaged_effects_label.add_theme_color_override("font_color", ORDER_OUTPUT_WARNING_COLOR)
+	_damaged_effects_label.text = tr("building_damaged_effects_label")
+	_damaged_effects_label.visible = false
+	add_child(_damaged_effects_label)
+	move_child(_damaged_effects_label, $StatusRow.get_index() + 1)
+	_repair_wait_label = Label.new()
+	_repair_wait_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_repair_wait_label.custom_minimum_size.x = 0.0
+	_repair_wait_label.add_theme_font_size_override("font_size", 10)
+	_repair_wait_label.add_theme_color_override("font_color", ORDER_OUTPUT_WARNING_COLOR)
+	_repair_wait_label.visible = false
+	add_child(_repair_wait_label)
+	move_child(_repair_wait_label, _repair_status_label.get_index() + 1)
+
+
+# Ripara (2026-10-10, richiesta utente): visibile su un edificio completo con Integrità; acceso solo se non è "da
+# demolire", nessuno lo sta già riparando e l'Integrità è sotto Building.DURABILITY_REPAIRABLE_RATIO. Tooltip: il
+# comando e il lavoro che serve ora (intero), o il motivo per cui è spento.
+func _refresh_repair_button(building: Building) -> void:
+	repair_button.visible = building.is_complete and building.rules != null and building.rules.max_durability > 0
+	if not repair_button.visible:
+		return
+	var ratio: float = building.current_durability / float(building.rules.max_durability)
+	var reason := ""
+	if building.is_marked_for_demolition:
+		reason = tr("building_command_repair_marked_for_demolition")
+	elif not _repairer_names.is_empty():
+		reason = tr("building_command_repair_in_progress")
+	elif building.repair_requested:
+		reason = tr("building_command_repair_already_requested")
+	elif ratio >= Building.DURABILITY_REPAIRABLE_RATIO:
+		reason = tr("building_command_repair_threshold").format({"percent": roundi(Building.DURABILITY_REPAIRABLE_RATIO * 100.0)})
+	repair_button.disabled = reason != ""
+	var detail := reason if reason != "" else tr("building_command_repair_labor").format({"labor": ceili(RepairAction.get_labor_to_full(building))})
+	repair_button.tooltip_text = "%s\n%s" % [tr("building_repair_button"), detail]
+	# Acceso (2026-10-10): tooltip con i materiali che servirebbero adesso (icone come nei tooltip di costruzione) e il
+	# lavoro; spento: il testo semplice sopra, con il motivo.
+	repair_button.tooltip_builder = _repair_tooltip if reason == "" else Callable()
+
+
+func _repair_tooltip(_for_text: String) -> Control:
+	var building := _current_building
+	if building == null:
+		return null
+	return BuildingCostTooltip.build(
+		tr("building_repair_button"), "", RepairAction.compute_plan_materials(building), ceili(RepairAction.get_labor_to_full(building))
+	)
 
 
 # Svuota tutto (2026-10-03, richiesta utente — ora un'icona della riga comandi): su ogni edificio completo con uno
@@ -577,9 +798,17 @@ func _refresh_empty_all_button(building: Building) -> void:
 	]
 
 
-# Pulsanti della riga comandi: grandi quanto il 🎯 "centra" (stesso tema di base, quindi stesso sfondo, più chiaro al
-# passaggio del mouse), ciascuno con la sua icona disegnata a tutto riquadro meno COMMAND_ICON_INSET.
+# Pulsanti della riga comandi: grandi quanto il 🎯 "centra" (misurato col tema di base), ciascuno con la sua icona
+# disegnata a tutto riquadro meno COMMAND_ICON_INSET. Aspetto da tasto (2026-10-10): IconButtonStyle, stessa dimensione.
+# Disposizione (2026-10-10, richiesta utente): i comandi a sinistra, attaccati (un comando nascosto non occupa posto);
+# CommandIconSpacer, prima un vuoto fisso di 10 px, ora si allarga e spinge Demolisci tutto a destra
+# (_refresh_command_icon_row). "Annulla demolizione" sta a sinistra, prima dello spaziatore.
 func _setup_command_icon_buttons() -> void:
+	_command_icon_spacer = $CommandIconRow/CommandIconSpacer
+	_command_icon_spacer.custom_minimum_size = Vector2.ZERO
+	_command_icon_spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_command_icon_spacer.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	command_icon_row.move_child(cancel_demolition_button, _command_icon_spacer.get_index())
 	var probe := Button.new()
 	probe.text = COMMAND_ICON_SIZE_PROBE_TEXT
 	add_child(probe)
@@ -588,6 +817,8 @@ func _setup_command_icon_buttons() -> void:
 	probe.free()
 	var kinds := {
 		upgrade_button: BuildingCommandIcon.KIND_UPGRADE,
+		repair_button: BuildingCommandIcon.KIND_REPAIR,
+		clear_rubble_button: BuildingCommandIcon.KIND_CLEAR_RUBBLE,
 		empty_all_button: BuildingCommandIcon.KIND_EMPTY_ALL,
 		demolish_button: BuildingCommandIcon.KIND_DEMOLISH,
 		cancel_demolition_button: BuildingCommandIcon.KIND_CANCEL_DEMOLITION,
@@ -596,6 +827,7 @@ func _setup_command_icon_buttons() -> void:
 		button.text = ""
 		button.custom_minimum_size = button_size
 		button.focus_mode = Control.FOCUS_NONE
+		IconButtonStyle.apply(button)
 		var icon := BuildingCommandIcon.new()
 		icon.kind = kinds[button]
 		button.add_child(icon)
@@ -607,7 +839,7 @@ func _setup_command_icon_buttons() -> void:
 		_command_icons[button] = icon
 
 
-# Comando spento: icona attenuata (lo sfondo spento lo dà già il tema).
+# Comando spento: icona attenuata (fondo e bordo spenti li dà IconButtonStyle).
 func _style_command_icon_button(button: Button) -> void:
 	var icon: BuildingCommandIcon = _command_icons.get(button)
 	if icon != null:
@@ -785,8 +1017,10 @@ func _influence_tooltip(building: Building, entry: Dictionary, radius: int) -> S
 	var influence_type: int = entry["type"]
 	if influence_type != InfluenceService.InfluenceType.RELIGIOUS:
 		return tr(String(entry["tooltip_key"])).format({"radius": radius})
-	var points := floori(InfluenceService.get_points(building, influence_type))
-	var next_threshold := InfluenceService.get_next_threshold(building, influence_type)
+	# Valori effettivi (2026-10-10): sacralità a metà su un edificio danneggiato.
+	var effective_points := InfluenceService.get_effective_points(building, influence_type)
+	var points := floori(effective_points)
+	var next_threshold := InfluenceService.get_next_threshold(building, influence_type, effective_points)
 	var text: String
 	if next_threshold < 0.0:
 		text = tr("building_influence_religious_max_tooltip").format({"radius": radius, "points": points})
@@ -881,6 +1115,96 @@ func _build_sacredness_label() -> Label:
 	return label
 
 
+# Riga "Integrità: N%" e barra (vedi _durability_label): stessi parametri di ConstructionPhaseLabel/
+# ConstructionProgressBarMargin del .tscn (font 10, a capo, margini 4, altezza 14, sfondo e angoli della barra della
+# costruzione); il riempimento è una copia dello stile della costruzione, ricolorata in _refresh_durability.
+func _build_durability_rows() -> void:
+	_durability_label = Label.new()
+	_durability_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_durability_label.add_theme_font_size_override("font_size", 10)
+	_durability_label.mouse_filter = Control.MOUSE_FILTER_PASS
+	_durability_label.visible = false
+	add_child(_durability_label)
+	move_child(_durability_label, built_year_label.get_index() + 1)
+	_durability_bar_margin = MarginContainer.new()
+	_durability_bar_margin.add_theme_constant_override("margin_left", 4)
+	_durability_bar_margin.add_theme_constant_override("margin_right", 4)
+	_durability_bar_margin.visible = false
+	_durability_bar = ProgressBar.new()
+	_durability_bar.custom_minimum_size = construction_progress_bar.custom_minimum_size
+	_durability_bar.min_value = 0.0
+	_durability_bar.max_value = 100.0
+	_durability_bar.show_percentage = false
+	_durability_bar.mouse_filter = Control.MOUSE_FILTER_PASS
+	_durability_bar.add_theme_stylebox_override("background", construction_progress_bar.get_theme_stylebox("background"))
+	_durability_fill_style = construction_progress_bar.get_theme_stylebox("fill").duplicate() as StyleBoxFlat
+	if _durability_fill_style != null:
+		_durability_bar.add_theme_stylebox_override("fill", _durability_fill_style)
+	_durability_bar_margin.add_child(_durability_bar)
+	add_child(_durability_bar_margin)
+	move_child(_durability_bar_margin, _durability_label.get_index() + 1)
+
+
+# Materiali per la riparazione (2026-10-10, Building.repair_materials): didascalia e chip delle risorse presenti con la
+# quantità, nello stile di "Materiali consegnati" (stessa didascalia e stessa griglia a capo, duplicate dal .tscn), subito
+# sotto la barra dell'Integrità. Visibili solo con il contenitore non vuoto.
+var _repair_materials_caption: Label = null
+var _repair_materials_grid: HFlowContainer = null
+
+
+func _build_repair_materials_rows() -> void:
+	_repair_materials_caption = delivered_materials_caption.duplicate() as Label
+	_repair_materials_caption.visible = false
+	add_child(_repair_materials_caption)
+	move_child(_repair_materials_caption, _durability_bar_margin.get_index() + 1)
+	_repair_materials_grid = delivered_materials_grid.duplicate() as HFlowContainer
+	_repair_materials_grid.visible = false
+	add_child(_repair_materials_grid)
+	move_child(_repair_materials_grid, _repair_materials_caption.get_index() + 1)
+
+
+func _refresh_repair_materials(building: Building) -> void:
+	for child in _repair_materials_grid.get_children():
+		child.queue_free()
+	var entries: Dictionary = {}
+	for resource_name in building.repair_materials.keys():
+		var quantity: int = int(building.repair_materials[resource_name])
+		if quantity > 0:
+			entries[String(resource_name)] = quantity
+	_repair_materials_caption.visible = not entries.is_empty()
+	_repair_materials_grid.visible = not entries.is_empty()
+	if entries.is_empty():
+		return
+	_repair_materials_caption.text = tr("building_repair_materials_caption")
+	for resource_name in entries.keys():
+		_repair_materials_grid.add_child(_build_missing_material_chip(resource_name, int(entries[resource_name])))
+
+
+# Integrità dell'edificio completo (cantieri e upgrade in corso: nascosta). Percentuale per difetto, così non segna
+# 100% prima di essere davvero intatto; il colore segue il numero mostrato (69,6% -> "69%", giallo).
+func _refresh_durability(building: Building) -> void:
+	var max_durability: int = building.rules.max_durability if building.rules != null else 0
+	var show := building.is_complete and max_durability > 0
+	_durability_label.visible = show
+	_durability_bar_margin.visible = show
+	if not show:
+		return
+	var ratio: float = clampf(building.current_durability / float(max_durability), 0.0, 1.0)
+	var percent: int = floori(ratio * 100.0 + 0.000001)
+	_durability_label.text = tr("building_integrity_percent_label").format({"percent": percent})
+	var points_text: String = "%d/%d" % [roundi(building.current_durability), max_durability]
+	_durability_label.tooltip_text = points_text
+	_durability_bar.tooltip_text = points_text
+	_durability_bar.value = percent
+	if _durability_fill_style != null:
+		var fill_color := DURABILITY_FILL_COLOR_GOOD
+		if percent < roundi(Building.DURABILITY_DAMAGED_RATIO * 100.0):
+			fill_color = DURABILITY_FILL_COLOR_CRITICAL
+		elif percent < roundi(Building.DURABILITY_REPAIRABLE_RATIO * 100.0):
+			fill_color = DURABILITY_FILL_COLOR_DAMAGED
+		_durability_fill_style.bg_color = fill_color
+
+
 # Sacralità e raggio religioso attuali (vedi _sacredness_box): solo edifici completi con raggio religioso di base.
 func _refresh_sacredness(building: Building) -> void:
 	var religious := InfluenceService.InfluenceType.RELIGIOUS
@@ -888,8 +1212,9 @@ func _refresh_sacredness(building: Building) -> void:
 	_sacredness_box.visible = building != null and building.is_complete and not building.is_demolished and base > 0
 	if not _sacredness_box.visible:
 		return
-	var points := InfluenceService.get_points(building, religious)
-	var next_threshold := InfluenceService.get_next_threshold(building, religious)
+	# Valori effettivi (2026-10-10): sacralità a metà su un edificio danneggiato (i punti salvati restano interi).
+	var points := InfluenceService.get_effective_points(building, religious)
+	var next_threshold := InfluenceService.get_next_threshold(building, religious, points)
 	if next_threshold < 0.0:
 		_sacredness_label.text = tr("building_sacredness_max").format({"points": floori(points)})
 		_sacredness_bar.visible = false
@@ -1719,10 +2044,17 @@ func _refresh_storage_grid(building: Building) -> void:
 	# allargava troppo il pannello: tolta.)
 	storage_grid.columns = max(int(ceil(sqrt(float(slot_count)))), 1)
 
+	# Danneggiato (2026-10-10, passo 2): slot effettivi (BuildingStorageService.get_slot_count); quelli oltre che contengono
+	# ancora qualcosa restano visibili, segnati come fuori capienza. Colonne sempre dagli slot del tipo: la griglia non
+	# cambia forma né si allarga.
+	var effective_slots: int = BuildingStorageService.get_slot_count(building)
 	var breakdown: Array = BuildingStorageService.get_slot_breakdown(building)
-	for i in range(slot_count):
+	for i in range(maxi(effective_slots, mini(breakdown.size(), slot_count))):
 		var slot_data: Dictionary = breakdown[i] if i < breakdown.size() else {}
-		storage_grid.add_child(_build_storage_slot(slot_data))
+		var slot := _build_storage_slot(slot_data)
+		if i >= effective_slots:
+			_mark_slot_over_capacity(slot)
+		storage_grid.add_child(slot)
 
 
 # slot_data vuoto ({}) = slot libero — riquadro grigio spento, nessuna icona/testo/tooltip. Slot
@@ -1742,6 +2074,13 @@ func _refresh_storage_grid(building: Building) -> void:
 # riempimento a colpo d'occhio senza dover leggere numeri — vedi sotto per l'ordine esatto in cui
 # questi elementi vengono aggiunti a `box` (il numero è ristretto di STORAGE_SLOT_FILL_BAR_WIDTH sul
 # lato destro apposta per non finire coperto dalla barra, disegnata per ultima/sopra).
+# Slot oltre la capienza effettiva (edificio danneggiato): tinta rossastra e motivo nel tooltip.
+func _mark_slot_over_capacity(slot: Control) -> void:
+	slot.modulate = STORAGE_SLOT_OVER_CAPACITY_MODULATE
+	slot.tooltip_text = ("%s\n%s" % [slot.tooltip_text, tr("storage_slot_over_capacity_tooltip")]) if slot.tooltip_text != "" \
+		else tr("storage_slot_over_capacity_tooltip")
+
+
 func _build_storage_slot(slot_data: Dictionary) -> Control:
 	var box := ColorRect.new()
 	box.custom_minimum_size = Vector2(STORAGE_SLOT_SIZE, STORAGE_SLOT_SIZE)
@@ -2000,7 +2339,10 @@ func _refresh_residents_grid(building: Building, residents_display_data: Array[D
 	for child in residents_grid.get_children():
 		child.queue_free()
 
-	var max_residents: int = building.rules.max_residents if building.rules != null else 0
+	# Posti effettivi (2026-10-10): a metà se la casa è danneggiata; chi è ancora in più fino allo sfratto del giorno resta
+	# visibile.
+	var max_residents: int = maxi(AssignHouseService.get_max_residents(building), residents_display_data.size()) \
+		if building.rules != null and building.rules.max_residents > 0 else 0
 	if max_residents <= 0:
 		residents_caption.visible = false
 		residents_grid.visible = false
@@ -2008,7 +2350,6 @@ func _refresh_residents_grid(building: Building, residents_display_data: Array[D
 
 	residents_caption.visible = true
 	residents_grid.visible = true
-	residents_grid.columns = max(int(ceil(sqrt(float(max_residents)))), 1)
 
 	for i in range(max_residents):
 		var resident_data: Dictionary = residents_display_data[i] if i < residents_display_data.size() else {}

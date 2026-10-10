@@ -206,6 +206,10 @@ func load_game_from_json(file_path: String) -> LoadedGame:
 		for job_key in raw_entered_at.keys():
 			game_data.job_board_entered_at[String(job_key)] = float(raw_entered_at[job_key])
 	game_data.job_board_priority_mode = String(data["game"].get("job_board_priority_mode", JobBoardService.DEFAULT_PRIORITY_MODE))
+	# Soglia della riparazione automatica (2026-10-10) — 50 per i salvataggi precedenti.
+	JobBoardService.set_auto_repair_percent(game_data, int(data["game"].get("job_board_auto_repair_percent", JobBoardService.AUTO_REPAIR_DEFAULT_PERCENT)))
+	# Sgombero automatico delle macerie (2026-10-10) — spento per i salvataggi precedenti.
+	game_data.job_board_auto_clear_rubble = bool(data["game"].get("job_board_auto_clear_rubble", false))
 	game_data.job_board_kind_order.clear()
 	var raw_kind_order = data["game"].get("job_board_kind_order", [])
 	if raw_kind_order is Array:
@@ -618,7 +622,14 @@ func load_game_from_json(file_path: String) -> LoadedGame:
 			building.site_setup_complete = bool(building_data.get("site_setup_complete", building.is_complete))
 			# Edificio "da demolire" (2026-09-27, Demolish Task) — false per i salvataggi precedenti.
 			building.is_marked_for_demolition = bool(building_data.get("is_marked_for_demolition", false))
-			building.current_durability = int(building_data.get("current_durability", 0))
+			# Riparazione richiesta (2026-10-10) — false per i salvataggi precedenti.
+			building.repair_requested = bool(building_data.get("repair_requested", false))
+			# Escluso dalla riparazione automatica (2026-10-10) — false per i salvataggi precedenti.
+			building.repair_auto_excluded = bool(building_data.get("repair_auto_excluded", false))
+			# Macerie (2026-10-10) — "" per i salvataggi precedenti.
+			building.rubble_source_name = String(building_data.get("rubble_source_name", ""))
+			building.rubble_auto_excluded = bool(building_data.get("rubble_auto_excluded", false))
+			building.current_durability = float(building_data.get("current_durability", 0.0))
 			building.built_year = int(building_data.get("built_year", -1))
 			# Punti di influenza e giorno dell'ultimo guadagno (2026-10-03, punti e soglie): assenti nei salvataggi vecchi
 			# = punti 0 (il vecchio "influence_radius" del passo 4c è ignorato). JSON salva le chiavi come stringhe:
@@ -676,6 +687,18 @@ func load_game_from_json(file_path: String) -> LoadedGame:
 			for output_name in raw_production_output.keys():
 				production_output[String(output_name)] = int(raw_production_output[output_name])
 			building.production_output = production_output
+			# Materiali della riparazione (2026-10-10): int() per voce come production_output; vuoto per i salvataggi
+			# precedenti.
+			var repair_materials: Dictionary = {}
+			var raw_repair_materials: Dictionary = building_data.get("repair_materials", {})
+			for material_name in raw_repair_materials.keys():
+				var material_quantity: int = int(raw_repair_materials[material_name])
+				if material_quantity > 0:
+					repair_materials[String(material_name)] = material_quantity
+			building.repair_materials = repair_materials
+			# Piano dei materiali della riparazione (2026-10-10) — {} per i salvataggi precedenti.
+			var raw_repair_plan: Variant = building_data.get("repair_plan", {})
+			building.repair_plan = (raw_repair_plan as Dictionary).duplicate(true) if raw_repair_plan is Dictionary else {}
 			# enabled_categories (2026-09-09, richiesta utente) — .get(key, []) per compatibilità
 			# con save precedenti l'introduzione del campo, stesso principio già usato per ogni
 			# altro campo opzionale in questo file. int() esplicito per voce (non un .assign()

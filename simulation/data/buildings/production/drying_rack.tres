@@ -4,6 +4,9 @@
 
 [resource]
 script = ExtResource("1_drying_rack")
+lifespan_years = 10
+max_durability = 100
+defense = 20
 building_name = "building_drying_rack"
 category = 4
 required_idea_id = "drying"
@@ -17,7 +20,6 @@ required_materials = {
 "plant_fiber": 20,
 "stick": 80
 }
-max_durability = 30
 required_space = 1
 has_door = false
 visibility_radius = 2

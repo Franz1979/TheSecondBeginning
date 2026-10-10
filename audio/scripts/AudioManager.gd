@@ -170,7 +170,62 @@ func stop_music(fade: float = 2.0) -> void:
 	)
 
 
+# Riproduce `stream` UNA volta sola (2026-10-09, MusicController — musica di sottofondo), con lo stesso crossfade di
+# play_music ma su una copia dello stream senza loop: play_music e la risorsa originale restano come sono (loop forzato
+# per gli altri usi). Lo stop a fine brano (con la sua dissolvenza) lo decide il chiamante (stop_music).
+func play_music_once(stream: AudioStream, fade: float = 2.0) -> void:
+	if stream == null:
+		return
+	var once := stream.duplicate() as AudioStream
+	if once is AudioStreamOggVorbis:
+		(once as AudioStreamOggVorbis).loop = false
+	elif once is AudioStreamMP3:
+		(once as AudioStreamMP3).loop = false
+	elif once is AudioStreamWAV:
+		(once as AudioStreamWAV).loop_mode = AudioStreamWAV.LOOP_DISABLED
+	var outgoing := _music_players[_active_music_index]
+	var incoming_index := 1 - _active_music_index
+	var incoming := _music_players[incoming_index]
+	_kill_tween(_music_tween)
+	incoming.stream = once
+	incoming.volume_db = SILENT_DB if fade > 0.0 else 0.0
+	incoming.play()
+	_active_music_index = incoming_index
+	if fade <= 0.0:
+		outgoing.stop()
+		outgoing.volume_db = SILENT_DB
+		return
+	_music_tween = create_tween().set_parallel(true)
+	_music_tween.tween_property(incoming, "volume_db", 0.0, fade)
+	if outgoing.playing:
+		_music_tween.tween_property(outgoing, "volume_db", SILENT_DB, fade)
+	_music_tween.chain().tween_callback(outgoing.stop)
+
+
 # --- Ambience ---
+
+# Attenuazione dell'ambience mentre suona la musica (2026-10-09, MusicController): un fattore SEPARATO, applicato con un
+# AudioEffectAmplify aggiunto in coda al bus Ambience alla prima richiesta. Non tocca il volume del bus (volume utente,
+# UserOptions) né i volumi dei layer stagionali. `factor` lineare (1.0 = nessuna attenuazione), raggiunto in `fade`
+# secondi.
+var _ambience_duck_effect: AudioEffectAmplify = null
+var _ambience_duck_tween: Tween = null
+
+
+func set_ambience_duck(factor: float, fade: float = 2.0) -> void:
+	if _ambience_duck_effect == null:
+		var bus_index := AudioServer.get_bus_index(BUS_AMBIENCE)
+		if bus_index < 0:
+			return
+		_ambience_duck_effect = AudioEffectAmplify.new()
+		AudioServer.add_bus_effect(bus_index, _ambience_duck_effect)
+	_kill_tween(_ambience_duck_tween)
+	var target_db := _linear_to_db_safe(factor)
+	if fade <= 0.0:
+		_ambience_duck_effect.volume_db = target_db
+		return
+	_ambience_duck_tween = create_tween()
+	_ambience_duck_tween.tween_property(_ambience_duck_effect, "volume_db", target_db, fade)
 
 # Un layer per id, ciascuno con il proprio player sul bus Ambience. Crea il layer se manca, altrimenti ne
 # aggiorna stream/volume (relativo, lineare 0-1; il volume utente è sul bus). Il livello raggiunge

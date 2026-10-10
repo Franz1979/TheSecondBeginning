@@ -30,7 +30,10 @@ const MAX_QUEUE_SIZE: int = 3
 #
 # Zaino (2026-09-29, regola unica del carico — sostituisce lo scarto a terra del 2026-09-26): la task proprietaria
 # del carico (get_cargo_owner) non viene mai espulsa, vedi il corpo sotto.
-static func push_suspended_task(individual: HumanIndividual, task: Task) -> void:
+# `interrupted_by_need` (2026-10-10): la task in corso sospesa da un bisogno automatico (HumanIndividual.assign_task con
+# is_interrupt_transition). Non si espelle niente: rientra in coda anche oltre MAX_QUEUE_SIZE (come i seguiti,
+# push_follow_up_task), con una riga [QUEUE]. Gli ordini nuovi del giocatore restano con il tetto e l'espulsione.
+static func push_suspended_task(individual: HumanIndividual, task: Task, interrupted_by_need: bool = false) -> void:
 	# ZOMBIE GUARD (2026-09-16, richiesta utente, fix "task zombie") — ultima linea di difesa,
 	# indipendente dal chiamante: una task già conclusa (current_step_index >= steps.size()) non
 	# deve MAI entrare in coda, qualunque sia il percorso che ha portato fin qui — difesa in
@@ -49,7 +52,12 @@ static func push_suspended_task(individual: HumanIndividual, task: Task) -> void
 	# Caccia in zona sospesa durante l'inseguimento (2026-10-01): la preda si perde, alla ripresa si riparte dalla
 	# pattuglia. Unico punto da cui passa ogni Task che va in coda.
 	HuntZoneService.reset_to_patrol_on_suspend(task)
-	if individual.task_queue.size() >= MAX_QUEUE_SIZE:
+	if interrupted_by_need and individual.task_queue.size() >= MAX_QUEUE_SIZE:
+		if DebugLogging.ENABLED and DebugLogging.SHOW_TASK_LIFECYCLE_LOGS:
+			print("[QUEUE] Individuo #%d %s: '%s' interrotta da un bisogno rientra in coda oltre il limite (%d/%d), nessuna task espulsa." % [
+				individual.id, individual.name, task.task_name, individual.task_queue.size() + 1, MAX_QUEUE_SIZE
+			])
+	elif individual.task_queue.size() >= MAX_QUEUE_SIZE:
 		# Regola unica del carico (2026-09-29, CargoReturnService — prima veniva espulsa comunque la più vecchia, con lo
 		# zaino a terra se era la proprietaria del carico): la proprietaria del carico non viene MAI espulsa, esce la
 		# più vecchia tra le altre. Letta PRIMA di toccare la coda.
@@ -94,6 +102,16 @@ static func get_cargo_owner(individual: HumanIndividual) -> Task:
 	if individual.task_queue.is_empty():
 		return null
 	return individual.task_queue.back()
+
+
+# Seguito di una catena di lavoro (2026-10-10, caccia — macellazione dopo l'uccisione, nuova uscita della serie di caccia
+# nelle zone): non è un ordine nuovo, quindi entra in coda SENZA il tetto MAX_QUEUE_SIZE e senza espellere nulla. In fondo:
+# pop_suspended_task lo riprende per primo appena l'individuo si libera (alla chiusura della Task che lo ha generato, o
+# dopo un bisogno già attivo in quel momento); le task già in coda restano dove sono.
+static func push_follow_up_task(individual: HumanIndividual, task: Task) -> void:
+	if task.is_finished():
+		return
+	individual.task_queue.append(task)
 
 
 static func pop_suspended_task(individual: HumanIndividual) -> Task:

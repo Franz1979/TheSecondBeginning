@@ -269,6 +269,9 @@ static func _action_type_for_step(step: Action) -> int:
 	# WAIT_AT_POINT (2026-10-09, WaitAtPointAction, seek_job.tres), aggiunta insieme al proprio case in _build_step.
 	if step is WaitAtPointAction:
 		return TaskTypes.ActionType.WAIT_AT_POINT
+	# REPAIR (2026-10-10, RepairAction, repair.tres), aggiunta insieme al proprio case in _build_step.
+	if step is RepairAction:
+		return TaskTypes.ActionType.REPAIR
 	push_error("TaskPersistenceService._action_type_for_step: tipo Action sconosciuto (%s)." % step.get_script().get_global_name())
 	return -1
 
@@ -483,8 +486,8 @@ static func _build_step(action_type: int, step_data: Dictionary, macro_state: Ma
 			# Nessun dato proprio (2026-09-27): la zona è nel context della Task, salvato con lei.
 			step = SearchHaulZoneAction.new()
 		TaskTypes.ActionType.PATROL_AREA:
-			# Solo la zona (2026-10-01); il tempo senza avvistamenti è nel context della Task
-			# (HuntZoneService.CONTEXT_UNSIGHTED_DAYS), salvato con lei.
+			# Solo la zona (2026-10-01); i giorni senza catture sono nel context della Task
+			# (HuntZoneService.CONTEXT_UNSIGHTED_DAYS e CONTEXT_CAPTURE_CLOCK_STARTED), salvati con lei.
 			step = PatrolAreaAction.new(int(step_data.get("work_area_id", -1)))
 		TaskTypes.ActionType.DEMOLISH:
 			# Solo l'edificio: il progresso vive su Building.construction_progress (vedi DemolishAction).
@@ -511,6 +514,12 @@ static func _build_step(action_type: int, step_data: Dictionary, macro_state: Ma
 				Vector2i(int(step_data.get("quarry_macro_x", 0)), int(step_data.get("quarry_macro_y", 0))),
 				Vector2i(int(step_data.get("quarry_x", 0)), int(step_data.get("quarry_y", 0)))
 			)
+		TaskTypes.ActionType.REPAIR:
+			# Solo l'edificio: il progresso è Building.current_durability (vedi RepairAction).
+			var repair_target_building: Building = null
+			if step_data.has("target_building_id"):
+				repair_target_building = _find_building_by_id(world, int(step_data["target_building_id"]))
+			step = RepairAction.new(repair_target_building)
 		TaskTypes.ActionType.WAIT_AT_POINT:
 			# Tetto dell'attesa; il tempo trascorso arriva da load_save_data (solo per lo step corrente).
 			step = WaitAtPointAction.new(float(step_data.get("max_wait_days", -1.0)))

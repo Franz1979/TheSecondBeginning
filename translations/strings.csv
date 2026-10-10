@@ -974,7 +974,7 @@ task_assignment_priority_custom_tooltip,"Chi è libero prende un lavoro del prim
 task_assignment_kind_body,Sepolture
 task_assignment_kind_build,Cantieri
 task_assignment_kind_upgrade,Miglioramenti
-task_assignment_kind_demolish,Demolizioni
+task_assignment_kind_demolish,Demolizioni e sgomberi
 task_assignment_kind_pile,Mucchi
 task_assignment_kind_move_up,Sposta su
 task_assignment_kind_move_down,Sposta giù
@@ -1081,3 +1081,63 @@ drawer_order_hunt_row_one,Caccia · 1 carne
 drawer_order_hunt_progress_row,Caccia · {done}/{total}
 task_assignment_kind_hunt,Caccia
 pending_hunt_no_prey,Caccia: nessuna preda in {zone}
+pending_hunt_order_ended,Caccia finita: nessuna preda nelle zone ({done}/{total} carne portate)
+pending_carcass_not_butchered,Carcassa non macellata
+task_assignment_cargo_return,Riporta il carico
+task_assignment_cargo_return_tooltip,Riporta al magazzino il carico del lavoro annullato (premi H di nuovo per posarlo a terra)
+task_assignment_cargo_generic,Carico
+building_integrity_percent_label,Integrità: {percent}%
+task_repair_name,Riparazione
+task_repair_step_repair,Riparando
+task_activity_repair,riparare
+building_repair_button,Ripara
+building_command_repair_labor,Lavoro necessario: {labor}
+building_command_repair_threshold,Disponibile sotto il {percent}% di Integrità
+building_command_repair_in_progress,Riparazione già in corso
+building_command_repair_marked_for_demolition,Non disponibile su un edificio da demolire
+building_repair_in_progress_label,Riparazione in corso: {names}
+repair_assign_banner_text,🔨 Ripara {building}: clicca un individuo (Esc per annullare)
+repair_reject_already_repairing,C'è già un individuo che ripara {building}
+pending_repair,Riparazione · {building}
+task_assignment_kind_repair,Riparazioni
+repair_cancel_request_tooltip,Togli la richiesta di riparazione (l'Integrità già recuperata resta)
+building_repair_waiting_label,Riparazione in attesa di assegnazione
+building_command_repair_already_requested,Riparazione già richiesta
+task_assignment_setting_auto_repair,Ripara con Integrità sotto il
+task_assignment_setting_auto_repair_tooltip,"Sotto questa Integrità la riparazione di un edificio entra in coda da sola. Con 0 non parte mai."
+building_repair_auto_excluded_label,Escluso dalla riparazione automatica
+building_status_damaged,Danneggiato
+pending_building_damaged,{building}: danneggiato
+building_rubble,Macerie
+building_category_ruins,Macerie
+building_status_collapsed,Crollato
+building_status_rubble_marked,Da sgomberare
+building_status_rubble_clearing,Sgombero in corso
+building_rubble_source_label,Crollo di {building}
+building_clear_rubble_button,Sgombera
+building_command_clear_rubble_detail,Lavoro necessario: {labor}
+building_cancel_clear_rubble_button,Annulla sgombero
+building_command_cancel_clear_rubble_detail,Le macerie restano dove sono.
+building_command_cancel_clear_rubble_started,Lo sgombero è già iniziato: non si può più annullare.
+task_clear_rubble_name,Sgombero
+pending_clear_rubble,Sgombero ({building})
+pending_rubble,Macerie: crollo di {building}
+notification_building_collapsed,Crollo: {building}
+notification_building_lost,Edificio perso: {building}
+clear_rubble_assign_banner_text,Sgombera {building}: clicca un individuo (Esc per annullare)
+pending_no_assignment_point,Nessun punto di assegnazione: i lavori si assegnano solo a mano
+pending_no_assignment_point_detail,Costruisci un Cerchio di sassi per riattivare la coda dei lavori.
+command_bar_job_no_point_tooltip,"Serve un punto di assegnazione completo (Cerchio di sassi): senza, i lavori si assegnano solo a mano."
+building_assign_hint_rubble_manual,Per assegnare lo sgombero: seleziona un individuo e fai clic destro sulle macerie.
+building_assign_hint_rubble_queued,In coda: lo sgombero lo prenderà un individuo libero. Per sceglierlo tu: seleziona un individuo e fai clic destro sulle macerie.
+building_assign_hint_rubble_locked,Sgombero bloccato in coda. Per sceglierlo tu: seleziona un individuo e fai clic destro sulle macerie.
+task_assignment_setting_auto_clear_rubble,Sgombera sempre le macerie
+task_assignment_setting_auto_clear_rubble_tooltip,Con la spunta le macerie entrano in coda da sole.
+pending_building_damaged_to_repair,"{building}: danneggiato, da riparare"
+pending_building_damaged_repair_queued,"{building}: danneggiato, riparazione in coda"
+pending_building_damaged_repair_in_progress,"{building}: danneggiato, riparazione in corso"
+building_repair_materials_caption,Materiali per la riparazione
+building_repair_waiting_material_label,Riparazione ferma: manca {materials} in un magazzino
+building_damaged_effects_label,"Capienze a metà, bonus annullati"
+storage_slot_over_capacity_tooltip,"Fuori capienza: l'edificio è danneggiato, non accetta altro finché non si libera spazio"
+notification_house_eviction,{building} danneggiato: {count} individui senza casa

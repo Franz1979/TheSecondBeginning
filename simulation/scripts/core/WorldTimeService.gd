@@ -740,6 +740,7 @@ func _run_daily_building_resource_decay(world: World) -> Array:
 		# resta, solo a edificio completo (is_complete == true), cioe' quando e' un vero magazzino.
 		if not building.is_complete:
 			continue
+		_advance_building_durability_decay(building)
 		var lost := ResourceDecayService.advance_building_decay(building)
 		for loss in lost:
 			events.append({"building": building, "resource_name": loss["resource_name"], "quantity": loss["quantity"]})
@@ -750,6 +751,25 @@ func _run_daily_building_resource_decay(world: World) -> Array:
 		# decadimento o da un cambio dei filtri di categoria viene riempito dal prodotto in attesa.
 		ProductionService.flush_output_to_storage(building)
 	return events
+
+
+# Moltiplicatore del calo giornaliero dell'Integrità, solo per le prove (2026-10-10, richiesta utente): 1.0 = velocità
+# normale, da cambiare a mano nel codice.
+const BUILDING_DECAY_DEBUG_MULTIPLIER: float = 180.0
+
+
+# Deperimento dell'Integrità nel tempo (2026-10-10, richiesta utente, primo step): ogni giorno un edificio completo perde
+# max_durability / (lifespan_years × DAYS_PER_YEAR), cioè arriva a 0 in lifespan_years anni. lifespan_years <= 0 = non
+# deperisce. I cantieri (e gli upgrade in corso, che hanno is_complete == false) sono già esclusi dal chiamante; qui si
+# escludono gli edifici da demolire. A 0 si ferma: nessun crollo né altro effetto (arriveranno dopo).
+func _advance_building_durability_decay(building: Building) -> void:
+	if building.is_marked_for_demolition or building.rules == null:
+		return
+	var lifespan_years: int = building.rules.lifespan_years
+	if lifespan_years <= 0 or building.current_durability <= 0.0:
+		return
+	var daily_loss: float = float(building.rules.max_durability) / float(lifespan_years * GameData.DAYS_PER_YEAR) * BUILDING_DECAY_DEBUG_MULTIPLIER
+	building.current_durability = maxf(building.current_durability - daily_loss, 0.0)
 
 
 func _run_migration_checkpoint(world: World, game_data: GameData) -> void:

@@ -77,9 +77,8 @@ static func resolve_rest_target(individual: HumanIndividual, world: World, choos
 				Vector2i(house.macro_x, house.macro_y) - individual.home_macro_coords
 			) * World.WIDTH
 			var house_position: Vector2 = Vector2(house.micro_x, house.micro_y) + macro_offset + _random_point_near_cell_border()
-			var house_rest_multiplier: float = 1.0
-			if house.rules != null:
-				house_rest_multiplier = house.rules.rest_multiplier
+			# Danneggiata (2026-10-10): riposo a 1 (AssignHouseService.get_rest_multiplier).
+			var house_rest_multiplier: float = AssignHouseService.get_rest_multiplier(house)
 			return {
 				"target_position": house_position,
 				"rest_multiplier": house_rest_multiplier,
@@ -109,7 +108,7 @@ static func _should_rest_at_home(individual: HumanIndividual, house: Building) -
 		return true
 	var stamina: float = individual.current_stamina
 	var regen_per_day: float = RestAction.STAMINA_REGEN_PERCENT_PER_DAY * max_stamina
-	var house_multiplier: float = house.rules.rest_multiplier if house.rules != null else 1.0
+	var house_multiplier: float = AssignHouseService.get_rest_multiplier(house)
 	var site_time: float = (max_stamina - stamina) / regen_per_day
 
 	var walk_length: float = _walk_length_to_house(individual, house)

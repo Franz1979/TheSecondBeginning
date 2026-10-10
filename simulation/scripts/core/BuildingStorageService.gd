@@ -75,10 +75,21 @@ static func world_has_any_storage_building(world: World) -> bool:
 	return false
 
 
+# Slot effettivi del magazzino (2026-10-10, effetti dello stato "Danneggiato" — passo 2): a metà per difetto, mai sotto 1,
+# se l'edificio è danneggiato (Building.get_effective_capacity); lo spazio per slot non cambia, quindi la capienza è la
+# metà. Quello che c'è già resta anche oltre: gli slot liberi e il depositabile non scendono sotto zero, quindi non entra
+# altro finché non si torna sotto. Tutte le letture "quanti slot ha" passano da qui (ricerca del magazzino compresa,
+# via get_max_depositable).
+static func get_slot_count(building: Building) -> int:
+	if building == null or building.rules == null:
+		return 0
+	return building.get_effective_capacity(building.rules.storage_slot_count)
+
+
 static func get_capacity(building: Building) -> int:
 	if building == null or building.rules == null:
 		return 0
-	return building.rules.storage_slot_count * building.rules.storage_space_per_slot
+	return get_slot_count(building) * building.rules.storage_space_per_slot
 
 
 static func get_used_space(building: Building) -> float:
@@ -150,7 +161,7 @@ static func get_slots_used(building: Building) -> int:
 static func get_free_slots(building: Building) -> int:
 	if building == null or building.rules == null:
 		return 0
-	return max(building.rules.storage_slot_count - get_slots_used(building), 0)
+	return max(get_slot_count(building) - get_slots_used(building), 0)
 
 
 # DUE livelli, ENTRAMBI devono passare (2026-09-09, richiesta utente — Building.enabled_
@@ -449,7 +460,7 @@ static func transform_entry(building: Building, input_name: String, input_left: 
 		- _slots_for_quantity(product_current, product_units_per_slot)
 	var slots_after: int = slots_by_others + _slots_for_quantity(maxi(input_left, 0), input_units_per_slot) \
 		+ _slots_for_quantity(product_current + product_quantity, product_units_per_slot)
-	if slots_after > building.rules.storage_slot_count:
+	if slots_after > get_slot_count(building):
 		return false
 	_write_entry(building, input_name, maxi(input_left, 0), float(input_entry.get("decay_fraction", 0.0)), [], 0.0)
 	var product_total: int = product_current + product_quantity
@@ -554,7 +565,7 @@ static func get_max_depositable(building: Building, resource_name: String) -> in
 		return production_quota
 	var slots_used_by_this_resource: int = _slots_for_quantity(current_quantity, units_per_slot)
 	var slots_used_by_others: int = get_slots_used(building) - slots_used_by_this_resource
-	var max_slots_for_this_resource: int = max(building.rules.storage_slot_count - slots_used_by_others, 0)
+	var max_slots_for_this_resource: int = max(get_slot_count(building) - slots_used_by_others, 0)
 	var max_units_reachable: int = max_slots_for_this_resource * units_per_slot
 	return maxi(max(max_units_reachable - current_quantity, 0), production_quota)
 

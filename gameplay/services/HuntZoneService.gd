@@ -20,10 +20,21 @@ const CONTEXT_PREY_ID := "hunt_prey_id"
 const CONTEXT_PREY_SPECIES := "hunt_prey_species"
 const CONTEXT_PREY_MACRO_X := "hunt_prey_macro_x"
 const CONTEXT_PREY_MACRO_Y := "hunt_prey_macro_y"
+# Prede lasciate dopo HuntService.MAX_MISSED_THROWS_PER_PREY tiri a vuoto (2026-10-10): Array di id nel context
+# dell'uscita (salvato con la Task, non passa alla caccia successiva della serie), saltate da choose_prey.
+const CONTEXT_IGNORED_PREY_IDS := "hunt_zone_ignored_prey_ids"
 # Richiesta di PatrolAreaAction: preda avvistata, inserire gli step di caccia (HumanIndividualActionService).
 const CONTEXT_PENDING_PREY := "pending_hunt_zone_prey"
-# Giorni di gioco passati dentro la zona senza avvistamenti (PatrolAreaAction), azzerati a ogni avvistamento.
+# Giorni di gioco dell'uscita senza catture (2026-10-10, contro il loop della preda visibile ma imprendibile — prima:
+# giorni di pattuglia dentro la zona senza avvistamenti, azzerati a ogni avvistamento). Conta tutto il tempo in cui la
+# Task è quella corrente (pattuglia, tragitto, avvicinamento, mira, tiri, recuperi: HumanIndividualActionService.
+# apply_action), non il tempo dei bisogni (Task in coda); lo azzera solo un'uccisione (ThrowAction). Raggiunto
+# PatrolAreaAction.PATROL_DAYS_WITHOUT_PREY_LIMIT l'uscita finisce come "nessuna preda" (CONTEXT_NO_PREY). Stessa chiave
+# di prima: i salvataggi la leggono così com'è.
 const CONTEXT_UNSIGHTED_DAYS := "hunt_zone_unsighted_days"
+# Il contatore qui sopra parte (2026-10-10) solo quando il cacciatore arriva nella zona durante la pattuglia (o avvista
+# una preda, se la vede prima di entrarci): il tragitto verso la zona non conta. Da lì conta tutto, anche fuori zona.
+const CONTEXT_CAPTURE_CLOCK_STARTED := "hunt_zone_capture_clock_started"
 # Task della caccia in zona (hunt_zone.tres) e chiave consumata da TaskFactory per lo step di pattuglia.
 const TASK_NAME := "task_hunt_zone_name"
 const TASK_DEFINITION_PATH := "res://gameplay/scripts/tasks/definitions/hunt_zone.tres"
@@ -137,8 +148,9 @@ static func find_sighted_prey(area: WorkArea, hunter: HumanIndividual, live_cell
 
 
 # Preda da puntare: tra le avvistate, la più vicina non già puntata da un altro cacciatore della stessa zona (Task di
-# caccia in corso con CONTEXT_WORK_AREA_ID == area.id). null se nessuna.
-static func choose_prey(area: WorkArea, hunter: HumanIndividual, live_cells: Dictionary) -> AnimalVisualGroup:
+# caccia in corso con CONTEXT_WORK_AREA_ID == area.id) e non lasciata in questa uscita (`ignored_ids`,
+# CONTEXT_IGNORED_PREY_IDS). null se nessuna.
+static func choose_prey(area: WorkArea, hunter: HumanIndividual, live_cells: Dictionary, ignored_ids: Array[int] = []) -> AnimalVisualGroup:
 	if area == null or hunter == null:
 		return null
 	var targeted: Dictionary = {}
@@ -151,7 +163,7 @@ static func choose_prey(area: WorkArea, hunter: HumanIndividual, live_cells: Dic
 	var best: AnimalVisualGroup = null
 	var best_distance_sq := INF
 	for animal in find_sighted_prey(area, hunter, live_cells):
-		if targeted.has(animal.id):
+		if targeted.has(animal.id) or ignored_ids.has(animal.id):
 			continue
 		var distance_sq := hunter.position.distance_squared_to(ApproachPreyAction.prey_position_for(hunter, animal))
 		if distance_sq < best_distance_sq:
@@ -239,6 +251,37 @@ static func is_zone_hunt_task(task: Task) -> bool:
 	return task != null and task.task_name == TASK_NAME
 
 
+# Giorni senza catture dell'uscita (CONTEXT_UNSIGHTED_DAYS, vedi sopra).
+static func get_days_without_capture(context: Dictionary) -> float:
+	return float(context.get(CONTEXT_UNSIGHTED_DAYS, 0.0))
+
+
+# Avvio del contatore (CONTEXT_CAPTURE_CLOCK_STARTED). Un contatore già sopra zero (salvataggi precedenti) vale avviato.
+static func start_capture_clock(context: Dictionary) -> void:
+	context[CONTEXT_CAPTURE_CLOCK_STARTED] = true
+
+
+static func is_capture_clock_started(context: Dictionary) -> bool:
+	return bool(context.get(CONTEXT_CAPTURE_CLOCK_STARTED, false)) or get_days_without_capture(context) > 0.0
+
+
+static func add_days_without_capture(context: Dictionary, delta: float) -> float:
+	var days := get_days_without_capture(context) + delta
+	context[CONTEXT_UNSIGHTED_DAYS] = days
+	return days
+
+
+static func is_no_capture_limit_reached(context: Dictionary) -> bool:
+	return get_days_without_capture(context) >= PatrolAreaAction.PATROL_DAYS_WITHOUT_PREY_LIMIT
+
+
+# Riga di log della fine dell'uscita per il limite senza catture (pattuglia o inseguimento).
+static func log_no_capture_end(individual: Variant, context: Dictionary, during: String) -> void:
+	log_event(individual, "uscita finita: %.2f giorni senza catture (limite %.1f), durante %s." % [
+		get_days_without_capture(context), PatrolAreaAction.PATROL_DAYS_WITHOUT_PREY_LIMIT, during
+	])
+
+
 # Zone con la caccia attiva (ordine di GameData.work_areas). Vuoto senza l'idea.
 static func list_hunt_work_areas(game_data: GameData) -> Array[WorkArea]:
 	var areas: Array[WorkArea] = []
@@ -290,6 +333,23 @@ static func resolve_task_area(task: Task) -> WorkArea:
 	if not is_zone_hunt_task(task):
 		return null
 	return WorkAreaService.find_by_id(GameSettings.active_game_data, int(task.context.get(CONTEXT_WORK_AREA_ID, -1)))
+
+
+# Prede lasciate in questa uscita (CONTEXT_IGNORED_PREY_IDS), come interi (il context passa da JSON).
+static func get_ignored_prey_ids(context: Dictionary) -> Array[int]:
+	var ids: Array[int] = []
+	var raw: Variant = context.get(CONTEXT_IGNORED_PREY_IDS, [])
+	if raw is Array:
+		for value in raw:
+			ids.append(int(value))
+	return ids
+
+
+static func ignore_prey(context: Dictionary, prey_id: int) -> void:
+	var ids := get_ignored_prey_ids(context)
+	if not ids.has(prey_id):
+		ids.append(prey_id)
+	context[CONTEXT_IGNORED_PREY_IDS] = ids
 
 
 static func write_prey_context(context: Dictionary, prey: AnimalVisualGroup) -> void:

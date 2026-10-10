@@ -44,6 +44,10 @@ signal requeue_requested(entry: Dictionary)
 # GameScene li scrive nella partita (GameData) e riordina le righe.
 signal priority_mode_changed(mode: String)
 signal kind_order_changed(order: Array[String])
+# Soglia della riparazione automatica cambiata (2026-10-10, dato della partita): GameScene la scrive in GameData.
+signal auto_repair_percent_changed(percent: int)
+# Spunta "Sgombera sempre le macerie" cambiata (2026-10-10, dato della partita): GameScene la scrive in GameData.
+signal auto_clear_rubble_changed(enabled: bool)
 # Bottone "Produci" (2026-10-09, ordini creati dal cassetto): GameScene risponde con open_produce_overlay (le ricette).
 # "Invia in coda" nello strato = produce_orders_submitted: `orders` = [{"recipe", "quantity"}] delle ricette preparate,
 # `deliver_to_warehouse` = la spunta "Porta al deposito" al momento dell'invio.
@@ -96,6 +100,10 @@ var _settings_toggle: Button = null
 var _settings_save_button: Button = null
 # Casella dell'attesa (Salva e chiudi applica anche il numero scritto a mano e non confermato).
 var _wait_spin: SpinBox = null
+# Soglia della riparazione automatica (2026-10-10), stessa forma della voce dell'attesa.
+var _auto_repair_spin: SpinBox = null
+var _auto_repair_percent: int = JobBoardService.AUTO_REPAIR_DEFAULT_PERCENT
+var _auto_clear_rubble: bool = false
 # Priorità (2026-10-08): valori passati da GameScene prima di _ready (set_priority_settings), elenco dei tipi visibile solo
 # con "Personalizzata".
 var _priority_mode: String = JobBoardService.DEFAULT_PRIORITY_MODE
@@ -463,7 +471,7 @@ func _entries_signature(entries: Array[Dictionary]) -> String:
 		parts.append("%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s" % [
 			entry["key"], entry.get("building_name", ""), entry.get("name_detail", ""), str(entry.get("icon", {})), str(entry.get("enabled", true)), str(entry.get("locked", false)),
 			str(entry.get("waiting", false)), str(entry.get("wait_seconds", 0)), entry.get("workers", ""),
-			str(entry.get("cancel_disabled", false)), entry.get("cancel_tooltip", "") + "|" + String(entry.get("status_text", "")) + "|" + str(entry.get("direct", false)) + str(entry.get("automatic", false)),
+			str(entry.get("cancel_disabled", false)), entry.get("cancel_tooltip", "") + "|" + String(entry.get("status_text", "")) + "|" + str(entry.get("direct", false)) + str(entry.get("automatic", false)) + str(entry.get("cargo_return", false)),
 		])
 	return "\n".join(parts)
 
@@ -590,6 +598,10 @@ func _build_list_row(entry: Dictionary, in_progress: bool) -> Control:
 		var automatic := bool(entry.get("automatic", false))
 		direct_label.text = tr("task_assignment_automatic") if automatic else tr("task_assignment_direct")
 		direct_label.tooltip_text = tr("task_assignment_automatic_tooltip") if automatic else tr("task_assignment_direct_tooltip")
+		# "Riporta il carico" (2026-10-10): carico della task annullata riportato al magazzino, stesso stile.
+		if bool(entry.get("cargo_return", false)):
+			direct_label.text = tr("task_assignment_cargo_return")
+			direct_label.tooltip_text = tr("task_assignment_cargo_return_tooltip")
 		direct_label.mouse_filter = Control.MOUSE_FILTER_STOP
 		direct_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		direct_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
@@ -625,7 +637,7 @@ func _build_list_row(entry: Dictionary, in_progress: bool) -> Control:
 	cancel_button.tooltip_text = String(entry.get("cancel_tooltip", ""))
 	cancel_button.pressed.connect(func() -> void: cancel_requested.emit(entry))
 	# Riga "Automatico" (2026-10-09): niente X — resta solo il suo posto, invisibile, per l'allineamento delle colonne.
-	if bool(entry.get("automatic", false)):
+	if bool(entry.get("automatic", false)) or bool(entry.get("cargo_return", false)):
 		cancel_button.modulate = Color(1, 1, 1, 0)
 		cancel_button.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		cancel_button.disabled = true
@@ -724,6 +736,8 @@ func _build_settings_section() -> void:
 	_settings_box.add_theme_constant_override("separation", 4)
 	scroll.add_child(_settings_box)
 	_settings_box.add_child(_build_wait_setting_row())
+	_settings_box.add_child(_build_auto_repair_setting_row())
+	_settings_box.add_child(_build_auto_clear_rubble_setting_row())
 	_settings_box.add_child(_build_collect_piles_setting_row())
 	_settings_box.add_child(_build_empty_outputs_setting_row())
 	_build_priority_setting(_settings_box)
@@ -746,6 +760,8 @@ func _build_settings_section() -> void:
 func _on_settings_save_pressed() -> void:
 	if _wait_spin != null:
 		_wait_spin.apply()
+	if _auto_repair_spin != null:
+		_auto_repair_spin.apply()
 	_settings_toggle.button_pressed = false
 
 
@@ -805,6 +821,76 @@ func _build_wait_setting_row() -> Control:
 	line_edit.text_submitted.connect(func(_text: String) -> void: spin.apply())
 	line_edit.focus_exited.connect(func() -> void: spin.apply())
 	return row
+
+
+# Riparazione automatica (2026-10-10, JobBoardService.get_auto_repair_percent): "Ripara gli edifici sotto il …%", da 0 a
+# 70 a passi di 10, stessa riga della voce dell'attesa. Dato della partita (GameData), come la priorità: il valore arriva
+# da GameScene (set_auto_repair_percent, prima di _ready) e ogni cambio esce con auto_repair_percent_changed; GameScene se
+# ne accorge al giro successivo della coda e ricontrolla subito gli edifici.
+func set_auto_repair_percent(percent: int) -> void:
+	_auto_repair_percent = JobBoardService.clamp_auto_repair_percent(percent)
+
+
+func _build_auto_repair_setting_row() -> Control:
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 6)
+	var label := Label.new()
+	label.text = tr("task_assignment_setting_auto_repair")
+	label.tooltip_text = tr("task_assignment_setting_auto_repair_tooltip")
+	label.mouse_filter = Control.MOUSE_FILTER_STOP
+	label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	label.add_theme_font_size_override("font_size", LIST_FONT_SIZE)
+	row.add_child(label)
+	var spin := SpinBox.new()
+	spin.min_value = JobBoardService.AUTO_REPAIR_MIN_PERCENT
+	spin.max_value = JobBoardService.AUTO_REPAIR_MAX_PERCENT
+	spin.step = JobBoardService.AUTO_REPAIR_STEP_PERCENT
+	spin.rounded = true
+	spin.suffix = "%"
+	spin.value = _auto_repair_percent
+	spin.tooltip_text = tr("task_assignment_setting_auto_repair_tooltip")
+	spin.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	row.add_child(spin)
+	_auto_repair_spin = spin
+	spin.value_changed.connect(func(value: float) -> void: _store_auto_repair_setting(int(value)))
+	var line_edit := spin.get_line_edit()
+	line_edit.text_submitted.connect(func(_text: String) -> void: spin.apply())
+	line_edit.focus_exited.connect(func() -> void: spin.apply())
+	return row
+
+
+func _store_auto_repair_setting(percent: int) -> void:
+	var clamped := JobBoardService.clamp_auto_repair_percent(percent)
+	if _auto_repair_percent == clamped:
+		return
+	_auto_repair_percent = clamped
+	auto_repair_percent_changed.emit(clamped)
+
+
+# Regola "Sgombera sempre le macerie" (2026-10-10): spunta, spenta all'inizio. Dato della partita come la soglia della
+# riparazione: il valore arriva da GameScene (set_auto_clear_rubble, prima di _ready) e ogni cambio esce con
+# auto_clear_rubble_changed, subito (come le altre spunte).
+func set_auto_clear_rubble(enabled: bool) -> void:
+	_auto_clear_rubble = enabled
+
+
+func _build_auto_clear_rubble_setting_row() -> Control:
+	var check := CheckBox.new()
+	check.text = tr("task_assignment_setting_auto_clear_rubble")
+	check.tooltip_text = tr("task_assignment_setting_auto_clear_rubble_tooltip")
+	check.focus_mode = Control.FOCUS_NONE
+	check.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	check.add_theme_font_size_override("font_size", LIST_FONT_SIZE)
+	check.button_pressed = _auto_clear_rubble
+	check.toggled.connect(func(pressed: bool) -> void:
+		if _auto_clear_rubble == pressed:
+			return
+		_auto_clear_rubble = pressed
+		auto_clear_rubble_changed.emit(pressed)
+	)
+	return check
 
 
 # Regola "Ritira i mucchi abbandonati" (2026-10-07): spunta, accesa all'inizio; salvata in UserOptions appena cambia.
@@ -910,8 +996,8 @@ func _rebuild_kind_order_rows() -> void:
 		label.add_theme_font_size_override("font_size", LIST_FONT_SIZE)
 		label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-		label.clip_text = true
-		label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+		# A capo se il nome non ci sta (2026-10-10, "Demolizioni e sgomberi"): il cassetto resta largo 380 px.
+		label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		row.add_child(label)
 		row.add_child(_build_kind_move_button("▲", tr("task_assignment_kind_move_up"), index, -1))
 		row.add_child(_build_kind_move_button("▼", tr("task_assignment_kind_move_down"), index, 1))

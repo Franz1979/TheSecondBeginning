@@ -22,8 +22,9 @@ static func has_toolkit(building: Building) -> bool:
 	return building != null and building.rules != null and building.rules.toolkit_tool_types > 0 		and building.rules.toolkit_units_per_type > 0
 
 
+# Danneggiato (2026-10-10): posti (tipi di attrezzo) a metà; gli attrezzi già dentro restano.
 static func get_type_capacity(building: Building) -> int:
-	return maxi(building.rules.toolkit_tool_types, 0) if has_toolkit(building) else 0
+	return building.get_effective_capacity(maxi(building.rules.toolkit_tool_types, 0)) if has_toolkit(building) else 0
 
 
 static func get_units_per_type(building: Building) -> int:

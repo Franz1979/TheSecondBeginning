@@ -1,0 +1,70 @@
+[gd_resource type="Resource" script_class="SoundBank" format=3]
+
+[ext_resource type="Script" uid="uid://b3kx6e6vf3lj5" path="res://audio/scripts/SoundDef.gd" id="1_def"]
+[ext_resource type="Script" uid="uid://di7uwrrgk1okb" path="res://audio/scripts/SoundBank.gd" id="2_bank"]
+[ext_resource type="AudioStream" path="res://audio/assets/sfx/world/cut.wav" id="3_cut"]
+[ext_resource type="AudioStream" path="res://audio/assets/sfx/world/quarry.mp3" id="4_quarry"]
+[ext_resource type="AudioStream" path="res://audio/assets/sfx/world/kids.wav" id="5_kids"]
+[ext_resource type="AudioStream" path="res://audio/assets/sfx/world/hunt.wav" id="6_hunt"]
+[ext_resource type="AudioStream" path="res://audio/assets/sfx/world/crowd.wav" id="7_crowd"]
+[ext_resource type="AudioStream" path="res://audio/assets/sfx/world/knapping.mp3" id="8_knapping"]
+[ext_resource type="AudioStream" path="res://audio/assets/sfx/world/kids_2.mp3" id="9_kids_2"]
+[ext_resource type="AudioStream" path="res://audio/assets/sfx/world/build.wav" id="10_build"]
+[ext_resource type="AudioStream" path="res://audio/assets/sfx/world/build_2.wav" id="11_build_2"]
+[ext_resource type="AudioStream" path="res://audio/assets/sfx/world/build_3.wav" id="12_build_3"]
+
+[sub_resource type="Resource" id="Resource_cut"]
+script = ExtResource("1_def")
+id = &"cut"
+streams = Array[AudioStream]([ExtResource("3_cut")])
+spatial = true
+max_voices = 4
+
+[sub_resource type="Resource" id="Resource_quarry"]
+script = ExtResource("1_def")
+id = &"quarry"
+streams = Array[AudioStream]([ExtResource("4_quarry")])
+spatial = true
+max_voices = 4
+
+[sub_resource type="Resource" id="Resource_kids"]
+script = ExtResource("1_def")
+id = &"kids"
+streams = Array[AudioStream]([ExtResource("5_kids"), ExtResource("9_kids_2")])
+volume_db = -10.0
+spatial = true
+max_voices = 1
+
+[sub_resource type="Resource" id="Resource_hunt"]
+script = ExtResource("1_def")
+id = &"hunt"
+streams = Array[AudioStream]([ExtResource("6_hunt")])
+spatial = true
+max_voices = 1
+
+[sub_resource type="Resource" id="Resource_crowd"]
+script = ExtResource("1_def")
+id = &"crowd"
+streams = Array[AudioStream]([ExtResource("7_crowd")])
+volume_db = 8.0
+spatial = true
+max_voices = 1
+
+[sub_resource type="Resource" id="Resource_knapping"]
+script = ExtResource("1_def")
+id = &"knapping"
+streams = Array[AudioStream]([ExtResource("8_knapping")])
+spatial = true
+max_voices = 4
+
+[sub_resource type="Resource" id="Resource_build"]
+script = ExtResource("1_def")
+id = &"build"
+streams = Array[AudioStream]([ExtResource("10_build"), ExtResource("11_build_2"), ExtResource("12_build_3")])
+volume_db = 6.0
+spatial = true
+max_voices = 4
+
+[resource]
+script = ExtResource("2_bank")
+defs = Array[ExtResource("1_def")]([SubResource("Resource_cut"), SubResource("Resource_quarry"), SubResource("Resource_kids"), SubResource("Resource_hunt"), SubResource("Resource_crowd"), SubResource("Resource_knapping"), SubResource("Resource_build")])

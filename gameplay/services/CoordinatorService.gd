@@ -38,11 +38,11 @@ const CALL_RADIUS_LEADERSHIP_BONUS: float = 1.0
 # sua WaitAtPointAction (idle_timeout_days); allo scadere si autoassegna se c'è un lavoro per lui, altrimenti chiude il
 # turno.
 const SELF_ASSIGN_WAIT_DAYS: float = 1.0
-# Crescita della Leadership (2026-10-09, passo 6): il coordinatore guadagna questo valore su skill_leadership (0–1000)
-# ogni volta che un ALTRO individuo riceve il lavoro alla fine di un'istruzione; niente per l'autoassegnazione né per chi
-# viene istruito senza ricevere un lavoro.
+# Crescita della Leadership (2026-10-09, passo 6): il coordinatore guadagna questo valore su skill_leadership (fino al
+# tetto comune HumanIndividual.SKILL_MAX, 2026-10-10 — prima un LEADERSHIP_MAX proprio a 1000) ogni volta che un ALTRO
+# individuo riceve il lavoro alla fine di un'istruzione; niente per l'autoassegnazione né per chi viene istruito senza
+# ricevere un lavoro.
 const LEADERSHIP_GAIN_PER_ASSIGNMENT: float = 1.0
-const LEADERSHIP_MAX: float = 1000.0
 
 const COORDINATE_TASK_PATH := "res://gameplay/scripts/tasks/definitions/coordinate.tres"
 const COORDINATE_TASK_NAME := "task_coordinate_name"
@@ -202,6 +202,11 @@ static func tick(game_data: GameData, world: World, individuals: Array[HumanIndi
 		if not points.has(point_id):
 			if task.get_current_action() is WaitAtPointAction:
 				_release(member)
+			elif age_band_resolver.is_valid():
+				# Ancora in cammino verso il punto sparito (2026-10-10): smette subito; libero, cerca un altro punto o va allo
+				# svago (senza punti la coda non è attiva).
+				member.stop(false)
+				HumanIndividualActionService.resolve_idle_individual(member, age_band_resolver.call(member), world)
 			continue
 		waiting_points[point_id] = true
 	# Posti di punti spariti: il coordinatore finisce il turno.
@@ -379,6 +384,9 @@ static func _call_idle_individuals(
 	if needed <= 0:
 		return 0
 	var radius := CALL_RADIUS_BASE * (1.0 + CALL_RADIUS_LEADERSHIP_BONUS * coordinator.skill_leadership / 1000.0)
+	# Punto di assegnazione danneggiato (2026-10-10): raggio di richiamo a metà; resta comunque punto di assegnazione.
+	if point != null and point.is_damaged():
+		radius *= 0.5
 	var candidates: Array[Dictionary] = []
 	for member in individuals:
 		if member == coordinator:
@@ -545,14 +553,14 @@ static func report_departure(member: HumanIndividual, received_text: String) -> 
 	_forget(member.id)
 
 
-# Crescita della Leadership del coordinatore `coordinator_id` (LEADERSHIP_GAIN_PER_ASSIGNMENT, tetto LEADERSHIP_MAX):
+# Crescita della Leadership del coordinatore `coordinator_id` (LEADERSHIP_GAIN_PER_ASSIGNMENT, tetto HumanIndividual.SKILL_MAX):
 # somma diretta, come le altre skill (TaskCompletionEffectService), più il tetto. Testo per il log ("" se non c'è più).
 static func _grant_leadership(coordinator_id: int) -> String:
 	var coordinator := _find(GameSettings.active_human_individuals, coordinator_id)
 	if coordinator == null:
 		return ""
 	var before := coordinator.skill_leadership
-	coordinator.skill_leadership = minf(before + LEADERSHIP_GAIN_PER_ASSIGNMENT, LEADERSHIP_MAX)
+	coordinator.skill_leadership = minf(before + LEADERSHIP_GAIN_PER_ASSIGNMENT, maxf(HumanIndividual.SKILL_MAX, before))
 	return "Leadership di %s %d → %d" % [coordinator.name, roundi(before), roundi(coordinator.skill_leadership)]
 
 

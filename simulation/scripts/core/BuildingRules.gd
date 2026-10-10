@@ -40,6 +40,8 @@ extends Resource
 # il floor che comunque si applica). Presuppone una popolazione di lavoratori assegnabile che oggi
 # non esiste ancora (solo l'HumanIndividual del player, nessuna popolazione NPC umana) — per ora è solo
 # il dato, non consultato da nessuna logica, stesso principio degli altri campi "futuri" qui sotto.
+# Macerie (rubble.tres, 2026-10-10): non si costruiscono mai, ma hanno required_labor = 600 apposta — lo sgombero è una
+# Demolish, che costa sempre metà del lavoro di costruzione (DemolishAction.get_required_labor), quindi 300.
 @export var required_labor: int = 0
 
 # -1 = non degrada mai (nessuna scadenza per età) — mai 0, che si leggerebbe come "degrada subito".
@@ -110,6 +112,10 @@ extends Resource
 @export var setup_site_material_per_cell: int = 4
 
 @export var max_durability: int = 50
+
+# Crollo (2026-10-10, richiesta utente): a Integrità zero l'edificio crolla; true = al suo posto restano le macerie
+# (edificio "rubble", da sgomberare), false = sparisce e la cella torna libera (oggi solo la terra battuta).
+@export var leaves_rubble: bool = true
 
 # Difesa (2026-10-04, richiesta utente — "Difesa"/"Defense" a schermo, blocco Info dell'edificio). NESSUNA logica la
 # usa ancora: servirà a ridurre i danni degli attacchi agli edifici, insieme alla forza di chi attacca, quando gli

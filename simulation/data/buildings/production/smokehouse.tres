@@ -4,6 +4,9 @@
 
 [resource]
 script = ExtResource("1_smokehouse")
+lifespan_years = 20
+max_durability = 140
+defense = 40
 building_name = "building_smokehouse"
 category = 4
 required_idea_id = "smoking"

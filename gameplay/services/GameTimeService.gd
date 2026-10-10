@@ -798,6 +798,18 @@ func _run_annual_human_births() -> void:
 		var mother: HumanIndividual = entry["mother"]
 		var newborn: HumanIndividual = entry["newborn"]
 		if newborn != null:
+			# Nascita (2026-10-10, richiesta utente — evento di felicità): tutto il villaggio guadagna felicità, i genitori di
+			# più al posto del valore del villaggio. Il neonato no.
+			var birth_rules := HumanVitalsInteractionService.get_human_rules(mother)
+			if birth_rules != null:
+				var parent_ids := {}
+				for parent_id in [newborn.mother_id, newborn.father_id]:
+					if int(parent_id) != -1:
+						parent_ids[int(parent_id)] = true
+				HumanVitalsInteractionService.apply_happiness_event(
+					_human_individuals, birth_rules.birth_village_happiness_gain, parent_ids,
+					birth_rules.birth_parent_happiness_gain, newborn.id, "nascita di %s" % newborn.name
+				)
 			individual_born.emit(newborn)
 		else:
 			human_stillbirth.emit(mother)
@@ -1092,6 +1104,16 @@ func _kill_individual(
 		print("[DEAD BODY LOG] registrato: %s (totale oggetti scaduti finora: %d)" % [
 			_game_data.expired_objects[-1], _game_data.expired_objects.size()
 		])
+	# Morte (2026-10-10, richiesta utente — evento di felicità): tutto il villaggio perde felicità, i parenti (partner,
+	# genitori, figli, dal record del corpo appena registrato) di più al posto del valore del villaggio. Si somma
+	# all'eventuale calo successivo per il corpo rimasto insepolto (_apply_unburied_penalty).
+	var death_rules := HumanVitalsInteractionService.get_human_rules(individual)
+	if death_rules != null:
+		HumanVitalsInteractionService.apply_happiness_event(
+			_human_individuals, -death_rules.death_village_happiness_loss,
+			BodyBurialService.get_relative_ids(_game_data.expired_objects[-1], _human_individuals),
+			-death_rules.death_relative_happiness_loss, individual.id, "morte di %s" % individual.name
+		)
 	var partner_freed := _free_partner_if_any(individual)
 	# EMESSO PRIMA della rimozione sotto, con l'indice ancora valido — vedi commento sul signal
 	# per il perché (GameScene.human_individual_views parallelo per indice).

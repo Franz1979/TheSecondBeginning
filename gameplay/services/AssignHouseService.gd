@@ -29,6 +29,22 @@ extends RefCounted
 # diversi vorranno criteri diversi (es. "famiglia/nucleo" per i tier più alti), quella logica andrà
 # aggiunta QUI, leggendo building.rules.residency_assignment_tier per scegliere quale criterio
 # applicare a QUEL building, non prima.
+# Posti effettivi di un edificio (2026-10-10, effetti dello stato "Danneggiato" — passo 5): rules.max_residents, a metà
+# (per difetto, mai sotto 1) se la casa è danneggiata. Punto unico per tutti i conteggi dei posti; i controlli "è
+# residenziale" (max_residents > 0) restano sul dato del tipo.
+static func get_max_residents(building: Building) -> int:
+	if building == null or building.rules == null:
+		return 0
+	return building.get_effective_capacity(building.rules.max_residents)
+
+
+# Moltiplicatore del riposo effettivo (2026-10-10, passo 5): 1 se la casa è danneggiata.
+static func get_rest_multiplier(building: Building) -> float:
+	if building == null or building.rules == null:
+		return 1.0
+	return building.get_effective_multiplier(building.rules.rest_multiplier)
+
+
 # Posti liberi di un edificio (2026-09-27, estratto da assign_pending_residents per condividerlo con il
 # conteggio dei posti del villaggio): rules.max_residents meno i residenti assegnati (house_id == building.id).
 # 0 per un edificio non residenziale (max_residents <= 0), non completo o "da demolire" (2026-09-27), mai negativo.
@@ -39,7 +55,7 @@ static func get_free_slots(building: Building, human_individuals: Array[HumanInd
 	for individual in human_individuals:
 		if individual.house_id == building.id:
 			occupied_count += 1
-	return maxi(building.rules.max_residents - occupied_count, 0)
+	return maxi(get_max_residents(building) - occupied_count, 0)
 
 
 # Posti liberi nelle abitazioni di tutto il villaggio: somma di get_free_slots sugli edifici del mondo (2026-09-27 —
@@ -86,8 +102,8 @@ static func assign_pending_residents(
 	for index in world.buildings.size():
 		build_order[world.buildings[index]] = index
 	ordered_buildings.sort_custom(func(a: Building, b: Building) -> bool:
-		var rest_a: float = a.rules.rest_multiplier if a.rules != null else 1.0
-		var rest_b: float = b.rules.rest_multiplier if b.rules != null else 1.0
+		var rest_a: float = get_rest_multiplier(a)
+		var rest_b: float = get_rest_multiplier(b)
 		if rest_a != rest_b:
 			return rest_a > rest_b
 		return int(build_order[a]) < int(build_order[b])

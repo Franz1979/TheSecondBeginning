@@ -262,6 +262,13 @@ static func build_task(definition: TaskDefinition, context: Dictionary) -> Task:
 					String(context[step_definition.context_keys[2]]), keeper_task, queue_order
 				))
 				step_descriptions.append(step_definition.step_description)
+			TaskTypes.ActionType.REPAIR:
+				# 1 argomento (target_building: Building) — stesso schema di DEMOLISH (2026-10-10, repair.tres).
+				if step_definition.context_keys.is_empty() or not context.has(step_definition.context_keys[0]):
+					push_error("TaskFactory.build_task: context_keys[0] mancante/non risolvibile per step REPAIR di TaskDefinition '%s'." % definition.task_name)
+					continue
+				steps.append(RepairAction.new(context[step_definition.context_keys[0]]))
+				step_descriptions.append(step_definition.step_description)
 			TaskTypes.ActionType.WAIT_AT_POINT:
 				# Attesa al punto di assegnazione (2026-10-09, seek_job.tres e coordinate.tres): context_keys[0] facoltativo,
 				# tetto in giorni (assente = nessun tetto: finisce quando CoordinatorService la rilascia).

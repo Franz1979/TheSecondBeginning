@@ -10,7 +10,7 @@ category = 0
 generation_source = 2
 day_durability = 360
 space_per_unit = 4.0
-eat_happiness_per_100_calories = 30.0
+eat_happiness_per_100_calories = 15.0
 eat_health_per_100_calories = 20.0
 recipe_inputs = {
 "meat": 1

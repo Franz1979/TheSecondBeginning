@@ -14,6 +14,9 @@ const KIND_DEMOLISH := "demolish"
 const KIND_CANCEL_SITE := "cancel_site"
 const KIND_CANCEL_UPGRADE := "cancel_upgrade"
 const KIND_CANCEL_DEMOLITION := "cancel_demolition"
+const KIND_REPAIR := "repair"
+const KIND_CLEAR_RUBBLE := "clear_rubble"
+const KIND_CANCEL_CLEAR_RUBBLE := "cancel_clear_rubble"
 
 # Il disegno è pensato in un quadrato di DRAWING_SPAN unità, scalato al lato minore del rettangolo.
 const DRAWING_SPAN: float = 20.0
@@ -35,6 +38,11 @@ const SPARK_INNER := Color(1.0, 0.92, 0.45, 1.0)
 const CROSS_RED := Color(0.95, 0.32, 0.28, 1.0)
 const STAKE_WOOD := Color(0.88, 0.72, 0.48, 1.0)
 const STAKE_ROPE := Color(0.92, 0.88, 0.76, 1.0)
+const HAMMER_HANDLE := Color(0.86, 0.66, 0.40, 1.0)
+const HAMMER_HEAD := Color(0.72, 0.74, 0.78, 1.0)
+const HAMMER_HEAD_FACE := Color(0.88, 0.90, 0.93, 1.0)
+const SHOVEL_BLADE := Color(0.70, 0.72, 0.76, 1.0)
+const SHOVEL_HANDLE := HAMMER_HANDLE
 
 var kind: String = KIND_UPGRADE:
 	set(value):
@@ -67,6 +75,13 @@ func _draw() -> void:
 			_draw_cancel_cross()
 		KIND_CANCEL_DEMOLITION:
 			_draw_demolish()
+			_draw_cancel_cross()
+		KIND_REPAIR:
+			_draw_repair()
+		KIND_CLEAR_RUBBLE:
+			_draw_clear_rubble()
+		KIND_CANCEL_CLEAR_RUBBLE:
+			_draw_clear_rubble()
 			_draw_cancel_cross()
 
 
@@ -104,6 +119,39 @@ func _draw_demolish() -> void:
 		draw_line(spark + direction * 1.4 * _scale, spark + direction * 2.6 * _scale, SPARK_OUTER, 0.7 * _scale, true)
 	draw_circle(spark, 1.5 * _scale, SPARK_OUTER)
 	draw_circle(spark, 0.8 * _scale, SPARK_INNER)
+
+
+# Ripara (2026-10-10): martello inclinato, manico di legno dal basso a sinistra, testa di pietra in alto a destra.
+func _draw_repair() -> void:
+	var angle: float = PI / 4.0
+	var pivot := Vector2(10.0, 10.0)
+	var handle: Array = [Vector2(-1.1, -2.0), Vector2(1.1, -2.0), Vector2(1.1, 10.5), Vector2(-1.1, 10.5)]
+	var head: Array = [Vector2(-5.8, -6.2), Vector2(4.2, -6.2), Vector2(4.2, -1.6), Vector2(-5.8, -1.6)]
+	var face: Array = [Vector2(4.2, -6.2), Vector2(6.0, -6.6), Vector2(6.0, -1.2), Vector2(4.2, -1.6)]
+	_shape(_rotated(handle, angle, pivot), HAMMER_HANDLE)
+	_shape(_rotated(head, angle, pivot), HAMMER_HEAD)
+	_shape(_rotated(face, angle, pivot), HAMMER_HEAD_FACE)
+
+
+# Sgombera (2026-10-10, macerie): pala inclinata, manico di legno con la maniglia in alto a destra, lama di pietra in
+# basso a sinistra.
+func _draw_clear_rubble() -> void:
+	var angle: float = PI / 4.0
+	var pivot := Vector2(10.0, 10.0)
+	var handle: Array = [Vector2(-0.8, -9.0), Vector2(0.8, -9.0), Vector2(0.8, 3.0), Vector2(-0.8, 3.0)]
+	var grip: Array = [Vector2(-2.4, -10.2), Vector2(2.4, -10.2), Vector2(2.4, -8.6), Vector2(-2.4, -8.6)]
+	var blade: Array = [Vector2(-3.0, 2.6), Vector2(3.0, 2.6), Vector2(3.0, 7.4), Vector2(0.0, 9.6), Vector2(-3.0, 7.4)]
+	_shape(_rotated(handle, angle, pivot), SHOVEL_HANDLE)
+	_shape(_rotated(grip, angle, pivot), SHOVEL_HANDLE)
+	_shape(_rotated(blade, angle, pivot), SHOVEL_BLADE)
+
+
+# Punti ruotati di `angle` attorno all'origine e spostati in `pivot`, in unità del disegno.
+func _rotated(points: Array, angle: float, pivot: Vector2) -> Array:
+	var result: Array = []
+	for point: Vector2 in points:
+		result.append(point.rotated(angle) + pivot)
+	return result
 
 
 # Paletti del cantiere: quattro rametti piantati agli angoli di un riquadro visto di sbieco, uniti da una corda.

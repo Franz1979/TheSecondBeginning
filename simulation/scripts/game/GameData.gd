@@ -235,6 +235,13 @@ var job_board_states: Dictionary = {}
 var job_board_entered_at: Dictionary = {}
 var job_board_priority_mode: String = "best_fit"
 var job_board_kind_order: Array[String] = []
+# Soglia della riparazione automatica (2026-10-10, regole di assegnazione: "Ripara gli edifici sotto il …%"): dato della
+# partita, salvato da GameSaveService ("job_board_auto_repair_percent"); partita nuova e salvataggi vecchi: 50
+# (JobBoardService.AUTO_REPAIR_DEFAULT_PERCENT). Letto e scritto da JobBoardService.get/set_auto_repair_percent.
+var job_board_auto_repair_percent: int = 50
+# Sgombero automatico delle macerie (2026-10-10, regole di assegnazione: "Sgombera sempre le macerie"): dato della partita,
+# salvato da GameSaveService ("job_board_auto_clear_rubble"); partita nuova e salvataggi vecchi: spento.
+var job_board_auto_clear_rubble: bool = false
 # Ordini creati dal cassetto "Assegnazione compiti" (2026-10-09, richiesta utente): lavori in coda senza destinatario,
 # chi li prende lo decide la coda (chiave della lista "order:<id>", GameScene._drawer_order_jobs_collect). Una voce per
 # ordine, solo tipi JSON-nativi: {"id": int stabile, "type": String, ...campi del tipo}. Oggi il solo tipo "produce":

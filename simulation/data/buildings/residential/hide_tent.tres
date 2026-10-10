@@ -4,6 +4,9 @@
 
 [resource]
 script = ExtResource("1_hide_tent")
+lifespan_years = 15
+max_durability = 120
+defense = 30
 building_name = "building_hide_tent"
 required_idea_id = "paleolithic_constructions"
 required_labor = 2200
@@ -14,7 +17,6 @@ required_materials = {
 "plant_fiber": 20,
 "stick": 50
 }
-max_durability = 35
 upgrades_to = "hut"
 required_space = 1
 visibility_radius = 3

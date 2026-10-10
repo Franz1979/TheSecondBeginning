@@ -4,6 +4,9 @@
 
 [resource]
 script = ExtResource("1_woodshed")
+lifespan_years = 15
+max_durability = 75
+defense = 20
 building_name = "building_woodshed"
 category = 4
 required_idea_id = "advanced_paleolithic_constructions"

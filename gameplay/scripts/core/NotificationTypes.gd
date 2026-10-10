@@ -51,4 +51,10 @@ enum NotificationPopupType {
 	# l'affumicatoio). Aggiunti IN CODA.
 	AUTO_PROGRESS_COMPLETED,
 	PROCESSING_STATION_FULL,
+	# Crollo di un edificio a Integrità zero (2026-10-10, richiesta utente): "Crollo: <edificio>" o, senza macerie,
+	# "Edificio perso: <edificio>". Stile di default. Aggiunto IN CODA.
+	BUILDING_COLLAPSED,
+	# Sfratto da una casa danneggiata (2026-10-10, effetti dello stato "Danneggiato" — passo 5): "<edificio> danneggiato:
+	# N individui senza casa". Stile di default. Aggiunto IN CODA.
+	HOUSE_EVICTION,
 }

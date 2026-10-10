@@ -78,7 +78,11 @@ signal transport_delivered(individual: Variant, context: Dictionary, delivered: 
 # BuildingStorageService), THOUGHT = ramo PENSIERO (IdeaProgressService.add_thoughts). Sostituisce
 # la deduzione implicita da `target_building != null` usata prima di questo passo — activate()/
 # on_complete() sotto controllano SEMPRE questo campo, mai più la nullità di target_building.
-enum DepositKind { RESOURCE, THOUGHT }
+# REPAIR (2026-10-10, materiali della riparazione — passo 3): ramo FISICO che scarica nel contenitore dei materiali della
+# riparazione (Building.repair_materials), MAI nel magazzino delle scorte, e solo fino a quanto la riparazione chiede
+# ancora (RepairAction.get_supply_missing). Usato solo dal giro di rifornimento della riparazione (MaterialSupplyService).
+# AGGIUNTO IN CODA: i valori sono salvati come interi.
+enum DepositKind { RESOURCE, THOUGHT, REPAIR }
 
 # THOUGHT di default (2026-09-10) — stesso comportamento implicito di prima di questo passo per
 # qualunque chiamante che costruisca UnloadAction senza specificare nulla (equivalente al vecchio
@@ -213,6 +217,25 @@ func _init(p_target_building: Building = null, p_deposit_kind: DepositKind = Dep
 # se lo zaino è già vuoto (nulla da ricollocare) — _duration/_total_stamina_cost restano a 0.0
 # (resettati incondizionatamente qui sotto prima di ogni ramo), quindi is_complete()/get_stamina_
 # delta() sotto restano "istantanei, costo zero" per quei casi, esattamente come per il pensiero.
+# Ramo FISICO: scarico nel magazzino (RESOURCE) o nel contenitore della riparazione (REPAIR, 2026-10-10).
+func _is_physical() -> bool:
+	return deposit_kind == DepositKind.RESOURCE or deposit_kind == DepositKind.REPAIR
+
+
+# Unità di `resource_name` che il contenitore della riparazione accetta ancora (DepositKind.REPAIR).
+func _repair_room(resource_name: String) -> int:
+	return int(RepairAction.get_supply_missing(target_building).get(resource_name, 0))
+
+
+# Scarico nel contenitore della riparazione: fino a quanto chiede ancora; ritorna le unità depositate.
+func _store_repair_material(resource_name: String, quantity: int) -> int:
+	var units: int = mini(quantity, _repair_room(resource_name))
+	if units <= 0:
+		return 0
+	target_building.repair_materials[resource_name] = int(target_building.repair_materials.get(resource_name, 0)) + units
+	return units
+
+
 func activate(individual: Variant, context: Dictionary) -> void:
 	super(individual, context)
 	if _restored_from_save:
@@ -223,7 +246,7 @@ func activate(individual: Variant, context: Dictionary) -> void:
 	if unequip_slot_index >= 0:
 		_activate_unequip(individual)
 		return
-	if deposit_kind == DepositKind.RESOURCE and target_building != null and not individual.carried_resources.is_empty():
+	if _is_physical() and target_building != null and not individual.carried_resources.is_empty():
 		# Zaino multi-risorsa (2026-09-20, richiesta utente): deposita TUTTO quello che l'edificio accetta.
 		# Costo/durata = somma, per ogni varietà accettata, di min(get_max_depositable, quantità in spalla) —
 		# STESSA formula di PickUpAction.activate applicata a ciò che entrerà davvero questo giro (2026-09-14:
@@ -236,10 +259,13 @@ func activate(individual: Variant, context: Dictionary) -> void:
 		var destination_rejected: bool = _is_completed_site_destination(context)
 		for resource_name in individual.carried_resources.keys():
 			var carried_units: int = individual.get_carried_quantity(String(resource_name))
-			if carried_units <= 0 or destination_rejected or not _is_deposit_allowed(String(resource_name)) \
-					or not BuildingStorageService.can_accept(target_building, String(resource_name)):
+			if carried_units <= 0 or destination_rejected or not _is_deposit_allowed(String(resource_name)):
 				continue
-			var units_now: int = min(BuildingStorageService.get_max_depositable(target_building, String(resource_name)), carried_units)
+			var units_now: int = 0
+			if deposit_kind == DepositKind.REPAIR:
+				units_now = mini(_repair_room(String(resource_name)), carried_units)
+			elif BuildingStorageService.can_accept(target_building, String(resource_name)):
+				units_now = min(BuildingStorageService.get_max_depositable(target_building, String(resource_name)), carried_units)
 			if units_now <= 0:
 				continue
 			var resource_rules := CaloricCalculator.get_caloric_source_rules(String(resource_name))
@@ -268,7 +294,7 @@ func activate(individual: Variant, context: Dictionary) -> void:
 	# Task "Scaricare risorsa", che è [Walk, Unload]) si DICHIARA COMPLETO immediatamente, zero
 	# costo, nessun deposito tentato — mai un errore/blocco. Log dedicato per diagnosticare il caso
 	# (prima silenzioso, nessun ramo lo intercettava esplicitamente).
-	elif deposit_kind == DepositKind.RESOURCE and target_building != null and individual.carried_resources.is_empty():
+	elif _is_physical() and target_building != null and individual.carried_resources.is_empty():
 		if DebugLogging.ENABLED and DebugLogging.SHOW_TRANSPORT_BUILD_LOGS:
 			print("[UNLOAD] activate: zaino già vuoto all'arrivo (target_building id=%d) — nulla da scaricare, step dichiarato completo istantaneamente, nessun costo." % target_building.id)
 	# Riverifica ramo PENSIERO (2026-09-12, richiesta utente — bugfix "deposito nel vuoto") — STESSO
@@ -286,7 +312,7 @@ func activate(individual: Variant, context: Dictionary) -> void:
 			print("[UNLOAD] activate: target_building id=%d demolito nel frattempo — pending_thought azzerato, pensiero perso." % target_building.id)
 	if not (DebugLogging.ENABLED and DebugLogging.SHOW_TRANSPORT_BUILD_LOGS):
 		return
-	if deposit_kind != DepositKind.RESOURCE:
+	if not _is_physical():
 		print("[UNLOAD] activate: deposit_kind=THOUGHT (ramo PENSIERO) | target_building=%s | zaino=%s" % [
 			(str(target_building.id) if target_building != null else "null"), str(individual.carried_resources)
 		])
@@ -354,7 +380,7 @@ func is_complete(individual: Variant, context: Dictionary) -> bool:
 # vedi la nota in testa al file). Stessa formula/stesso commento esteso di RetrieveAction.
 # get_required_position per il ramo fisico.
 func get_required_position(individual: Variant, context: Dictionary) -> Variant:
-	if deposit_kind != DepositKind.RESOURCE or target_building == null:
+	if not _is_physical() or target_building == null:
 		return null
 	var macro_offset: Vector2 = Vector2(Vector2i(target_building.macro_x, target_building.macro_y) - individual.home_macro_coords) * World.WIDTH
 	# Punto casuale dentro la microcella, mai l'angolo esatto (2026-09-27, PathfindingService.random_point_in_microcell).
@@ -388,7 +414,7 @@ func on_complete(individual: Variant, context: Dictionary) -> void:
 	if unequip_slot_index >= 0:
 		_complete_unequip(individual, context)
 		return
-	if deposit_kind == DepositKind.RESOURCE:
+	if _is_physical():
 		if DebugLogging.ENABLED and DebugLogging.SHOW_TRANSPORT_BUILD_LOGS:
 			print("[UNLOAD] on_complete: ramo FISICO (target_building id=%s)" % (str(target_building.id) if target_building != null else "null"))
 		if target_building == null:
@@ -434,7 +460,10 @@ func on_complete(individual: Variant, context: Dictionary) -> void:
 			# qui sotto — stesso esito di una destinazione demolita (can_accept/store ritornano 0).
 			var deposited: int = 0
 			# Risorsa esclusa da only_preferred_resources: nessun deposito, resta nel residuo da reinstradare.
-			if not _is_completed_site_destination(context) and _is_deposit_allowed(String(resource_name)):
+			if deposit_kind == DepositKind.REPAIR:
+				# Contenitore della riparazione (2026-10-10): mai il magazzino, solo fino a quanto chiede ancora.
+				deposited = _store_repair_material(String(resource_name), int(carried_entry["quantity"]))
+			elif not _is_completed_site_destination(context) and _is_deposit_allowed(String(resource_name)):
 				if ToolInstance.is_tool_resource(String(resource_name)):
 					deposited = _store_carried_tool(individual, String(resource_name), int(carried_entry["quantity"]))
 				else:

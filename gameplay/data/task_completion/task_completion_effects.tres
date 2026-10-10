@@ -24,7 +24,10 @@ skill_effects_by_task_name = {
 "skill_gathering": 1.0
 },
 "task_demolish_name": {
-"skill_builder": 1.0
+"skill_builder": 0.5
+},
+"task_repair_name": {
+"skill_builder": 0.5
 },
 "task_emergency_rest_name": {},
 "task_emergency_restock_name": {},
@@ -60,11 +63,12 @@ vital_effects_by_task_name = {
 "task_build_name": {},
 "task_butcher_name": {},
 "task_daydream_name": {
-"current_happiness": 20.0
+"current_happiness": 10.0
 },
 "task_cut_name": {},
 "task_quarry_name": {},
 "task_demolish_name": {},
+"task_repair_name": {},
 "task_emergency_rest_name": {},
 "task_emergency_restock_name": {},
 "task_haul_resource_name": {},
@@ -74,15 +78,15 @@ vital_effects_by_task_name = {
 "task_leisure_restock_name": {},
 "task_leisure_rite_name": {},
 "task_play_name": {
-"current_happiness": 40.0
+"current_happiness": 20.0
 },
 "task_rest_name": {},
 "task_rite_name": {},
 "task_transport_name": {},
 "task_wander_name": {
-"current_happiness": 10.0
+"current_happiness": 5.0
 },
 "task_explore_name": {
-"current_happiness": 10.0
+"current_happiness": 5.0
 }
 }

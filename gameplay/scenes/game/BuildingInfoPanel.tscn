@@ -94,11 +94,10 @@ autowrap_mode = 3
 layout_mode = 2
 theme_override_font_sizes/font_size = 10
 
-[node name="ResidentsGrid" type="GridContainer" parent="."]
+[node name="ResidentsGrid" type="HFlowContainer" parent="."]
 layout_mode = 2
 theme_override_constants/h_separation = 4
 theme_override_constants/v_separation = 4
-columns = 3
 
 [node name="StorageCaption" type="Label" parent="."]
 layout_mode = 2

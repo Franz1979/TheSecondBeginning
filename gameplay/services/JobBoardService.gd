@@ -35,6 +35,15 @@ const MANUAL_ASSIGN_WINDOW_SECONDS := 5.0
 const MANUAL_ASSIGN_WINDOW_MIN_SECONDS := 0.0
 const MANUAL_ASSIGN_WINDOW_MAX_SECONDS := 30.0
 
+# Riparazione automatica (2026-10-10, regole di assegnazione del cassetto; dato della partita, GameData.
+# job_board_auto_repair_percent): sotto questa Integrità (%) un edificio che deperisce riceve da solo la richiesta di
+# riparazione (GameScene._auto_request_repairs). 0 = mai. Da 0 a 70 (la soglia del martello, Building.
+# DURABILITY_REPAIRABLE_RATIO) a passi di 10. Partita nuova e salvataggi vecchi: AUTO_REPAIR_DEFAULT_PERCENT.
+const AUTO_REPAIR_DEFAULT_PERCENT := 50
+const AUTO_REPAIR_MIN_PERCENT := 0
+const AUTO_REPAIR_MAX_PERCENT := 70
+const AUTO_REPAIR_STEP_PERCENT := 10
+
 const STATE_LISTED := "listed"
 const STATE_LOCKED := "locked"
 # Tipi di lavoro gestiti dalla lista -> stato iniziale (chiave assente in GameData.job_board_states).
@@ -43,11 +52,12 @@ const STATE_LOCKED := "locked"
 # "produce" (2026-10-09): ordini di produzione senza lavoratore ("produce:<id edificio>:<chiave ordine>").
 # "cut" / "quarry" / "gather" (2026-10-09): ordini di taglio / estrazione / raccolta del cassetto ("order:<id>", tipo della voce;
 # GameScene._drawer_cut_job).
-const DEFAULT_STATE_BY_KIND := {"build": STATE_LISTED, "upgrade": STATE_LISTED, "demolish": STATE_LISTED, "body": STATE_LISTED, "pile": STATE_LISTED, "output": STATE_LISTED, "produce": STATE_LISTED, "cut": STATE_LISTED, "quarry": STATE_LISTED, "gather": STATE_LISTED, "hunt": STATE_LISTED}
+# "repair" (2026-10-10): riparazioni richieste dal pannello edificio ("repair:<id edificio>", Building.repair_requested).
+const DEFAULT_STATE_BY_KIND := {"build": STATE_LISTED, "upgrade": STATE_LISTED, "demolish": STATE_LISTED, "body": STATE_LISTED, "pile": STATE_LISTED, "output": STATE_LISTED, "produce": STATE_LISTED, "cut": STATE_LISTED, "quarry": STATE_LISTED, "gather": STATE_LISTED, "hunt": STATE_LISTED, "repair": STATE_LISTED}
 # Tipo di lavoro -> chiave di SkillEffectService (skill_action_effects.tres) della sua skill (modo "Più adatto").
-const SKILL_KEY_BY_KIND := {"build": "build", "upgrade": "build", "demolish": "build", "body": RiteAction.SKILL_EFFECT_KEY, "pile": "pickup", "output": "pickup", "produce": "produce", "cut": "cut", "quarry": "quarry", "gather": "pickup", "hunt": HuntService.SKILL_EFFECT_KEY}
+const SKILL_KEY_BY_KIND := {"build": "build", "upgrade": "build", "demolish": "build", "body": RiteAction.SKILL_EFFECT_KEY, "pile": "pickup", "output": "pickup", "produce": "produce", "cut": "cut", "quarry": "quarry", "gather": "pickup", "hunt": HuntService.SKILL_EFFECT_KEY, "repair": "build"}
 # Tipo di lavoro -> icona di comando (IconRegistry) che lampeggia sull'edificio durante l'attesa per l'assegnazione a mano.
-const ICON_KEY_BY_KIND := {"build": "build", "upgrade": "build", "demolish": "demolish", "body": "bury", "pile": "pickup", "output": "transport", "produce": "produce", "cut": "cut", "quarry": "quarry", "gather": "pickup", "hunt": "hunt"}
+const ICON_KEY_BY_KIND := {"build": "build", "upgrade": "build", "demolish": "demolish", "body": "bury", "pile": "pickup", "output": "transport", "produce": "produce", "cut": "cut", "quarry": "quarry", "gather": "pickup", "hunt": "hunt", "repair": "build"}
 
 # Modi di priorità (valori salvati in GameData.job_board_priority_mode, mai cambiarli).
 const PRIORITY_BEST_FIT := "best_fit"
@@ -66,8 +76,8 @@ const PRIORITY_NAME_KEYS := {
 }
 # Ordine iniziale dei tipi per "Personalizzata". Un tipo nuovo di DEFAULT_STATE_BY_KIND che non è qui (né nell'ordine
 # salvato) entra in fondo (get_kind_order).
-# "hunt" (2026-10-09): ordini di caccia del cassetto, in fondo.
-const DEFAULT_KIND_ORDER: Array[String] = ["body", "build", "upgrade", "demolish", "pile", "output", "produce", "cut", "quarry", "gather", "hunt"]
+# "hunt" (2026-10-09): ordini di caccia del cassetto, in fondo. "repair" (2026-10-10): riparazioni richieste, in fondo.
+const DEFAULT_KIND_ORDER: Array[String] = ["body", "build", "upgrade", "demolish", "pile", "output", "produce", "cut", "quarry", "gather", "hunt", "repair"]
 # Tipo -> chiave tr() del nome nell'elenco dei tipi e nel log.
 const KIND_NAME_KEYS := {
 	"body": "task_assignment_kind_body",
@@ -81,6 +91,7 @@ const KIND_NAME_KEYS := {
 	"quarry": "task_assignment_kind_quarry",
 	"gather": "task_assignment_kind_gather",
 	"hunt": "task_assignment_kind_hunt",
+	"repair": "task_assignment_kind_repair",
 }
 # Due skill uguali entro questo scarto contano come pari (poi decide l'età).
 const SKILL_TIE_EPSILON: float = 0.0001
@@ -98,9 +109,49 @@ static func get_manual_assign_window_seconds() -> float:
 	return clampf(float(UserOptions.job_board_manual_assign_seconds), MANUAL_ASSIGN_WINDOW_MIN_SECONDS, MANUAL_ASSIGN_WINDOW_MAX_SECONDS)
 
 
-# true con l'idea dell'assegnazione completata dal popolo del giocatore.
+# Soglia della riparazione automatica della partita (%), nei limiti e a passi di 10; senza partita il valore iniziale.
+static func get_auto_repair_percent(game_data: GameData) -> int:
+	if game_data == null:
+		return AUTO_REPAIR_DEFAULT_PERCENT
+	return clamp_auto_repair_percent(game_data.job_board_auto_repair_percent)
+
+
+static func set_auto_repair_percent(game_data: GameData, percent: int) -> void:
+	if game_data != null:
+		game_data.job_board_auto_repair_percent = clamp_auto_repair_percent(percent)
+
+
+static func clamp_auto_repair_percent(percent: int) -> int:
+	return clampi(snappedi(percent, AUTO_REPAIR_STEP_PERCENT), AUTO_REPAIR_MIN_PERCENT, AUTO_REPAIR_MAX_PERCENT)
+
+
+# Coda dell'assegnazione ATTIVA (2026-10-10, richiesta utente — punto unico): idea dell'assegnazione completata E almeno un
+# punto di assegnazione completo e in funzione (CoordinatorService.is_valid_point: oggi il cerchio di sassi; cantieri,
+# miglioramenti in corso ed edifici da demolire non contano). Altrimenti il gioco si comporta come senza l'idea: nessuno
+# prende lavori da solo, niente riparazione automatica, assegnazione solo a mano. Tutti i controlli "con l'idea" ai fini
+# dell'assegnazione passano da qui; la sola idea è is_idea_completed.
 static func is_enabled(folk: Folk) -> bool:
+	return is_idea_completed(folk) and has_assignment_point()
+
+
+# true con l'idea dell'assegnazione completata dal popolo del giocatore (con o senza punto di assegnazione).
+static func is_idea_completed(folk: Folk) -> bool:
 	return folk != null and folk.completed_ideas.has(TaskAssignmentPanel.REQUIRED_IDEA_ID)
+
+
+# Callable() -> World, registrato da GameScene: il mondo in cui cercare i punti di assegnazione.
+static var world_provider: Callable = Callable()
+
+
+# true se nel mondo c'è almeno un punto di assegnazione completo e in funzione.
+static func has_assignment_point() -> bool:
+	var world: World = world_provider.call() if world_provider.is_valid() else null
+	if world == null:
+		return false
+	for building in world.buildings:
+		if CoordinatorService.is_valid_point(building):
+			return true
+	return false
 
 
 # Tipo del lavoro dalla chiave ("build:12" -> "build").

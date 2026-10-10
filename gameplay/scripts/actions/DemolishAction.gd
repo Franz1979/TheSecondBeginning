@@ -37,6 +37,8 @@ func is_target_valid() -> bool:
 	return target_building != null and not target_building.is_demolished and target_building.is_marked_for_demolition
 
 
+# Sempre metà del lavoro di costruzione, per ogni edificio. Sgombero delle macerie (2026-10-10): rubble.tres ha
+# required_labor = 600 solo perché lo sgombero costi 300 (le macerie non si costruiscono mai).
 func get_required_labor() -> float:
 	if target_building == null or target_building.rules == null:
 		return 0.0

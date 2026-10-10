@@ -1,0 +1,16 @@
+[gd_resource type="Resource" script_class="BuildingRules" format=3]
+
+[ext_resource type="Script" uid="uid://b8pl3yflicmtn" path="res://simulation/scripts/core/BuildingRules.gd" id="1_rubble"]
+
+[resource]
+script = ExtResource("1_rubble")
+lifespan_years = -1
+max_durability = 0
+leaves_rubble = false
+defense = 0
+building_name = "building_rubble"
+category = 7
+required_labor = 600
+setup_site_material_per_cell = 0
+required_space = 1
+has_door = false

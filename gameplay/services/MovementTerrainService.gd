@@ -43,7 +43,9 @@ static func rebuild(cell: LiveMacroCell, macro_world: World) -> void:
 				continue
 			if not building.is_complete or building.is_demolished or building.rules == null:
 				continue
-			var stamina: float = building.rules.movement_stamina_multiplier
+			# Danneggiato (2026-10-10): niente risparmio di stamina (la mappa si ricostruisce quando lo stato cambia,
+			# GameScene._sync_damaged_buildings).
+			var stamina: float = building.get_effective_multiplier(building.rules.movement_stamina_multiplier)
 			var speed: float = building.rules.movement_speed_multiplier
 			if is_equal_approx(stamina, 1.0) and is_equal_approx(speed, 1.0):
 				continue

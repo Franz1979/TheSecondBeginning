@@ -28,15 +28,17 @@ static func apply_effects(individual: HumanIndividual, task: Task) -> void:
 	_apply_vital_effects(individual, task, effects.vital_effects_by_task_name.get(task.task_name, {}))
 
 
-# Somma l'incremento a ciascuna property skill_* indicata. Nessun tetto (le skill non hanno ancora un
-# massimo enforced, a differenza dei parametri vitali). Property inesistente -> push_warning, saltata.
+# Somma l'incremento a ciascuna property skill_* indicata, con il tetto HumanIndividual.SKILL_MAX (2026-10-10; un
+# valore già sopra il tetto non viene abbassato). Property inesistente -> push_warning, saltata.
 static func _apply_skill_effects(individual: HumanIndividual, task: Task, skill_effects: Dictionary) -> void:
 	for property_name in skill_effects.keys():
 		var value_before: Variant = individual.get(property_name)
 		if value_before == null:
 			push_warning("TaskCompletionEffectService: '%s' non e' una property di HumanIndividual (task '%s')." % [property_name, task.task_name])
 			continue
-		var value_after: float = float(value_before) + float(skill_effects[property_name])
+		var value_after: float = minf(
+			float(value_before) + float(skill_effects[property_name]), maxf(HumanIndividual.SKILL_MAX, float(value_before))
+		)
 		individual.set(property_name, value_after)
 		if DebugLogging.ENABLED and DebugLogging.SHOW_TASK_LIFECYCLE_LOGS:
 			print("[SKILL GROWTH] #%d %s: Task '%s' completata -> %s %.1f -> %.1f" % [

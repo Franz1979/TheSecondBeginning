@@ -11,7 +11,22 @@ extends RefCounted
 # `scale` = pixel per unità di disegno (1.0 sulla mappa: una microcella = 10 px); `invalid` = anteprima su una
 # posizione non edificabile (tinta rossastra semitrasparente, come le altre sagome di BuildingGhost).
 
-const TYPES: Array[String] = ["drying_rack", "smokehouse", "burial", "earthwork", "stacked_stones", "woodshed"]
+const TYPES: Array[String] = ["drying_rack", "smokehouse", "burial", "earthwork", "stacked_stones", "woodshed", "rubble"]
+
+# Macerie (rubble, 2026-10-10, richiesta utente — crollo): mucchio basso di detriti visto dall'alto, sagome irregolari di
+# terra e pietre (stessa _blob_polygon delle pietre rituali, seed fissi) con qualche trave spezzata sopra.
+# Centro (x, y) e raggio (z) di ogni detrito, dal fondo in su; colori nello stesso ordine.
+const RUBBLE_CHUNKS: Array[Vector3] = [
+	Vector3(0.0, 0.6, 3.9), Vector3(-1.9, 0.9, 1.6), Vector3(1.8, 1.3, 1.4), Vector3(0.6, -1.2, 1.5),
+	Vector3(-1.2, -1.0, 1.1), Vector3(2.4, -0.6, 0.9), Vector3(-0.3, 2.3, 0.9),
+]
+const RUBBLE_CHUNK_COLORS: Array[Color] = [
+	Color(0.45, 0.37, 0.28, 1.0), Color(0.58, 0.57, 0.54, 1.0), Color(0.52, 0.50, 0.47, 1.0), Color(0.66, 0.64, 0.60, 1.0),
+	Color(0.50, 0.42, 0.33, 1.0), Color(0.62, 0.60, 0.57, 1.0), Color(0.55, 0.53, 0.50, 1.0),
+]
+# Travi spezzate: estremi (x1, y1, x2, y2).
+const RUBBLE_BEAMS: Array[Vector4] = [Vector4(-3.4, -2.2, -0.4, 0.2), Vector4(0.8, 2.9, 3.6, 0.8), Vector4(-0.6, -2.9, 1.7, -2.0)]
+const RUBBLE_BEAM_WIDTH: float = 0.55
 
 # Legnaia (woodshed, 2026-10-08, richiesta utente — segnaposto): vista di fronte come graticcio e affumicatoio, una
 # tettoia di legno inclinata su due pali con sotto una catasta di tronchi a piramide (3-2-1), visti di testa: corteccia
@@ -148,6 +163,16 @@ static func draw(canvas: CanvasItem, building_type: String, center: Vector2, inv
 			var roof_outline := roof.duplicate()
 			roof_outline.append(roof[0])
 			canvas.draw_polyline(roof_outline, tint.call(OUTLINE), w.call(0.3), true)
+		"rubble":
+			# Detriti dal fondo in su, poi le travi spezzate sopra (con il contorno scuro sotto il legno).
+			for i in range(RUBBLE_CHUNKS.size()):
+				var chunk: Vector3 = RUBBLE_CHUNKS[i]
+				canvas.draw_colored_polygon(
+					_blob_polygon(p.call(chunk.x, chunk.y), w.call(chunk.z), 300 + i), tint.call(RUBBLE_CHUNK_COLORS[i])
+				)
+			for beam in RUBBLE_BEAMS:
+				canvas.draw_line(p.call(beam.x, beam.y), p.call(beam.z, beam.w), tint.call(OUTLINE), w.call(RUBBLE_BEAM_WIDTH + 0.3), true)
+				canvas.draw_line(p.call(beam.x, beam.y), p.call(beam.z, beam.w), tint.call(WOOD), w.call(RUBBLE_BEAM_WIDTH), true)
 		"stacked_stones":
 			# Dal basso in alto: pelle, cumulo, ossa (assi cardinali), rametti (diagonali). Sagome irregolari
 			# deterministiche (seed fisso), stabili tra un ridisegno e l'altro; disposizione regolare a raggiera.

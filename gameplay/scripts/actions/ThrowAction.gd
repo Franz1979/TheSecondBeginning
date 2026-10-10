@@ -132,7 +132,11 @@ func _resolve(individual: Variant, context: Dictionary) -> bool:
 	var hit_chance := HuntService.compute_hit_chance(attack_power, skill_factor, combat_target.label, animal.age_band)
 	var roll := randf()
 	if roll >= hit_chance:
-		HuntService.log_event(individual, "tiro a VUOTO su %s (probabilità %.0f%%, tiro %.2f)." % [combat_target.describe(), hit_chance * 100.0, roll])
+		# Tetto dei tiri a vuoto (2026-10-10): contati qui, decisi alla ripresa dell'avvicinamento (dopo il recupero).
+		var missed := HuntService.register_missed_throw(context, combat_target.target_id)
+		HuntService.log_event(individual, "tiro a VUOTO su %s (probabilità %.0f%%, tiro %.2f) — %d/%d a vuoto su questa preda." % [
+			combat_target.describe(), hit_chance * 100.0, roll, missed, HuntService.MAX_MISSED_THROWS_PER_PREY
+		])
 		if weapon_thrown:
 			_request_recovery(context, weapon_name, weapon_uses, false)
 		elif weapon_intact:
@@ -151,6 +155,12 @@ func _resolve(individual: Variant, context: Dictionary) -> bool:
 		HuntService.log_event(individual, "%s UCCISO (fascia %s)." % [
 			combat_target.describe(), String(GameTypes.AgeBand.keys()[animal.age_band])
 		])
+		# Caccia in zona (2026-10-10): un'uccisione azzera i giorni senza catture dell'uscita (HuntZoneService.
+		# CONTEXT_UNSIGHTED_DAYS), così il recupero dell'arma dopo l'uccisione non viene chiuso dal limite.
+		if context.has(HuntZoneService.CONTEXT_WORK_AREA_ID):
+			context[HuntZoneService.CONTEXT_UNSIGHTED_DAYS] = 0.0
+		# Tiri a vuoto (2026-10-10): l'uccisione azzera il contatore.
+		context.erase(HuntService.CONTEXT_MISSED_THROWS)
 		# Carcassa a terra nel punto della preda (2026-09-26 — prima la creava GameScene._on_prey_killed), con la
 		# regola di posa dei mucchi; il riferimento resta nel context per la macellazione dopo la caccia.
 		var carcass_pile := GroundPileService.drop_carcass(

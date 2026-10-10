@@ -13,10 +13,10 @@ extends RefCounted
 #    GameScene._demolish_building, riporta gia' house_id a -1 per i residenti).
 # 1. riserva corporea -> health: body_calories < body_calories_capacity (riserva non al massimo) ?
 #    -100.0 : +50.0 su current_health.
-# 2. stamina -> happiness: current_stamina >= max_stamina / 2.0 ? +100.0 : -100.0 su current_happiness.
-# 3. health -> happiness: current_health > max_health * 2/3 (strettamente) ? +50.0 : -100.0 su
-#    current_happiness (si somma alla regola 2: nello stesso giorno la happiness puo' muoversi da -200
-#    a +150).
+# 2. stamina -> happiness: current_stamina >= max_stamina / 2.0 ? +gain : -loss su current_happiness (dal 2026-10-10
+#    HumanRules.stamina_daily_happiness_gain/loss, 30/30; prima +100/-100 fissi).
+# 3. health -> happiness: current_health > max_health * 2/3 (strettamente) ? +gain : -loss su current_happiness (dal
+#    2026-10-10 HumanRules.health_daily_happiness_gain/loss, 10/20; prima +50/-100 fissi). Si somma alla regola 2.
 # 4. happiness -> loyalty: current_happiness >= max_happiness / 2.0 ? +100.0 : -100.0 su
 #    current_loyalty, sulla happiness GIA' aggiornata dalle regole 2 e 3. Fede (2026-10-02): con current_faith >=
 #    max_faith × FAITH_LOYALTY_CUSHION_THRESHOLD la perdita (-100.0) è moltiplicata per FAITH_LOYALTY_LOSS_MULTIPLIER;
@@ -72,6 +72,11 @@ const FALLBACK_FAITH_DAILY_LOSS_UNCOVERED: float = 5.0
 # regole esistenti sulla lealtà. Solo bonus; letto da InfluenceService.is_house_covered (cache, nessuna distanza).
 # Ripiego se HumanRules non è risolvibile: stessi valori dei default.
 const FALLBACK_CULTURAL_COVERAGE_DAILY_HAPPINESS: float = 5.0
+# Regole 2 e 3 senza HumanRules risolvibile: gli stessi valori di partenza dei campi di HumanRules.
+const FALLBACK_STAMINA_DAILY_HAPPINESS_GAIN: float = 30.0
+const FALLBACK_STAMINA_DAILY_HAPPINESS_LOSS: float = 30.0
+const FALLBACK_HEALTH_DAILY_HAPPINESS_GAIN: float = 10.0
+const FALLBACK_HEALTH_DAILY_HAPPINESS_LOSS: float = 20.0
 const FALLBACK_POLITICAL_COVERAGE_DAILY_LOYALTY: float = 5.0
 
 static func apply_daily_interaction(individual: HumanIndividual) -> void:
@@ -90,17 +95,22 @@ static func apply_daily_interaction(individual: HumanIndividual) -> void:
 	var body_reserve_full: bool = individual.body_calories >= individual.body_calories_capacity - BODY_RESERVE_FULL_EPSILON
 	individual.current_health = _add_clamped(individual.current_health, 50.0 if body_reserve_full else -100.0, individual.max_health)
 
+	var human_rules := _resolve_human_rules(individual)
+	var stamina_gain: float = human_rules.stamina_daily_happiness_gain if human_rules != null else FALLBACK_STAMINA_DAILY_HAPPINESS_GAIN
+	var stamina_loss: float = human_rules.stamina_daily_happiness_loss if human_rules != null else FALLBACK_STAMINA_DAILY_HAPPINESS_LOSS
+	var health_gain: float = human_rules.health_daily_happiness_gain if human_rules != null else FALLBACK_HEALTH_DAILY_HAPPINESS_GAIN
+	var health_loss: float = human_rules.health_daily_happiness_loss if human_rules != null else FALLBACK_HEALTH_DAILY_HAPPINESS_LOSS
+
 	var stamina_threshold := individual.max_stamina / 2.0
 	individual.current_happiness = _add_clamped(
-		individual.current_happiness, 100.0 if individual.current_stamina >= stamina_threshold else -100.0, individual.max_happiness
+		individual.current_happiness, stamina_gain if individual.current_stamina >= stamina_threshold else -stamina_loss, individual.max_happiness
 	)
 
 	var health_threshold := individual.max_health * 2.0 / 3.0
 	individual.current_happiness = _add_clamped(
-		individual.current_happiness, 50.0 if individual.current_health > health_threshold else -100.0, individual.max_happiness
+		individual.current_happiness, health_gain if individual.current_health > health_threshold else -health_loss, individual.max_happiness
 	)
 
-	var human_rules := _resolve_human_rules(individual)
 	if has_home and InfluenceService.is_house_covered(individual.house_id, InfluenceService.InfluenceType.CULTURAL):
 		var happiness_bonus: float = human_rules.cultural_coverage_daily_happiness if human_rules != null else FALLBACK_CULTURAL_COVERAGE_DAILY_HAPPINESS
 		individual.current_happiness = _add_clamped(individual.current_happiness, happiness_bonus, individual.max_happiness)
@@ -155,6 +165,34 @@ static func _daily_faith_loss(individual: HumanIndividual, has_home: bool) -> fl
 			if source.last_rite_absolute_day >= concluded_day:
 				return 0.0
 	return loss_covered
+
+
+# Evento di felicità una tantum (2026-10-10, richiesta utente — sul modello di GameTimeService._apply_unburied_penalty):
+# `village_delta` a ogni individuo di `individuals`, `special_delta` AL POSTO suo a chi è in `special_ids` (id -> qualunque
+# valore: parenti, genitori); `excluded_id` saltato (il morto, il neonato). Limite tra 0 e il massimo. `label` per il log.
+static func apply_happiness_event(
+	individuals: Array, village_delta: float, special_ids: Dictionary = {}, special_delta: float = 0.0, excluded_id: int = -1,
+	label: String = ""
+) -> void:
+	var log_enabled := DebugLogging.ENABLED and DebugLogging.SHOW_VITALS_INTERACTION_LOGS
+	if log_enabled:
+		print("[HAPPINESS EVENT] %s: %+.0f al villaggio, %+.0f a %d individui speciali." % [label, village_delta, special_delta, special_ids.size()])
+	for member in individuals:
+		var individual := member as HumanIndividual
+		if individual == null or individual.id == excluded_id:
+			continue
+		var delta: float = special_delta if special_ids.has(individual.id) else village_delta
+		if delta == 0.0:
+			continue
+		var before := individual.current_happiness
+		individual.current_happiness = clampf(individual.current_happiness + delta, 0.0, maxf(individual.max_happiness, 0.0))
+		if log_enabled:
+			print("[HAPPINESS EVENT]   #%d %s: felicità %.1f -> %.1f." % [individual.id, individual.name, before, individual.current_happiness])
+
+
+# HumanRules di `individual` per chi sta fuori da questo service (eventi di felicità), null se non risolvibile.
+static func get_human_rules(individual: HumanIndividual) -> HumanRules:
+	return _resolve_human_rules(individual) if individual != null else null
 
 
 # HumanRules dell'individuo (source_group_ref -> folk_ref -> human_rules_ref), null se la catena non è risolvibile.

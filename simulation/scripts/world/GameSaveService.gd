@@ -110,6 +110,10 @@ func save_game_to_json(
 			"job_board_entered_at": game_data.job_board_entered_at,
 			"job_board_priority_mode": game_data.job_board_priority_mode,
 			"job_board_kind_order": game_data.job_board_kind_order,
+			# Soglia della riparazione automatica (2026-10-10).
+			"job_board_auto_repair_percent": game_data.job_board_auto_repair_percent,
+			# Sgombero automatico delle macerie (2026-10-10).
+			"job_board_auto_clear_rubble": game_data.job_board_auto_clear_rubble,
 			# Ordini creati dal cassetto (2026-10-09): già JSON-nativi.
 			"drawer_orders": game_data.drawer_orders,
 			"next_drawer_order_id": game_data.next_drawer_order_id,
@@ -415,6 +419,12 @@ func save_game_to_json(
 			"site_setup_complete": building.site_setup_complete,
 			# Edificio "da demolire" (2026-09-27, Demolish Task), vedi Building.is_marked_for_demolition.
 			"is_marked_for_demolition": building.is_marked_for_demolition,
+			# Riparazione richiesta (2026-10-10), vedi Building.repair_requested.
+			"repair_requested": building.repair_requested,
+			"repair_auto_excluded": building.repair_auto_excluded,
+			# Macerie (2026-10-10): tipo dell'edificio crollato.
+			"rubble_source_name": building.rubble_source_name,
+			"rubble_auto_excluded": building.rubble_auto_excluded,
 			"current_durability": building.current_durability,
 			"built_year": building.built_year,
 			# Punti di influenza e giorno dell'ultimo guadagno per tipo (2026-10-03, punti e soglie): chiavi int -> stringhe in JSON.
@@ -445,6 +455,10 @@ func save_game_to_json(
 			# Attrezzeria (2026-10-04): stesso formato a istanze del magazzino per gli attrezzi.
 			"toolkit": building.toolkit.duplicate(true),
 			"production_output": building.production_output,
+			# Materiali della riparazione (2026-10-10): nome -> quantità, già JSON-nativo.
+			"repair_materials": building.repair_materials,
+			# Piano dei materiali della riparazione (2026-10-10): già JSON-nativo (i numeri tornano float, letti con int()/float()).
+			"repair_plan": building.repair_plan.duplicate(true),
 			# enabled_categories (2026-09-09, richiesta utente) — filtro categorie PER-ISTANZA (vedi
 			# Building.gd), Array[SecondaryResourceTypes.Category] serializzato come Array[int]
 			# grezzo (JSON non ha un concetto di array tipizzato Godot, gli enum sono int sotto il

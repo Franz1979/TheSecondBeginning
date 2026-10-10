@@ -4,6 +4,9 @@
 
 [resource]
 script = ExtResource("1_dirt_ground")
+lifespan_years = 20
+max_durability = 40
+defense = 10
 building_name = "building_dirt_ground"
 category = 3
 min_construction_days = 1
@@ -11,6 +14,6 @@ required_labor = 600
 setup_site_material_per_cell = 0
 required_space = 1
 has_door = false
+leaves_rubble = false
 visibility_radius = 1
 movement_stamina_multiplier = 0.95
-defense = 0

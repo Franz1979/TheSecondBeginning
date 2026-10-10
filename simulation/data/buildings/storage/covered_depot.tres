@@ -4,6 +4,9 @@
 
 [resource]
 script = ExtResource("1_covered_depot")
+lifespan_years = 15
+max_durability = 90
+defense = 30
 building_name = "building_covered_depot"
 category = 2
 required_idea_id = "paleolithic_constructions"
@@ -19,7 +22,6 @@ required_materials = {
 "stick": 80,
 "wood": 4
 }
-max_durability = 40
 upgrades_to = "storage_hut"
 required_space = 1
 has_door = false

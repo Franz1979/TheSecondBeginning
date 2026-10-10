@@ -22,6 +22,11 @@ enum Outcome {
 # Marca nel context delle Task di ritorno (salvata con il context). Chiudere una Task di ritorno scarta a terra invece
 # di crearne un'altra: il secondo H "ferma davvero" e non c'è mai un ciclo infinito di ritorni.
 const CONTEXT_CARGO_RETURN := "cargo_return"
+# Task annullata che il ritorno sta chiudendo (2026-10-10, riga di "In corso" del cassetto): scritta del lavoro com'era
+# alla chiusura (Task.get_activity_description, es. "Taglio (Zona 1)") e nome della Task (icona). Solo con release_cargo:
+# un carico senza proprietario non ce l'ha (riga generica "Carico"). Salvate con il context.
+const CONTEXT_ORIGIN_TEXT := "cargo_return_origin_text"
+const CONTEXT_ORIGIN_TASK_NAME := "cargo_return_origin_task_name"
 
 # Collegamento dei segnali degli Unload della Task di ritorno (refresh della griglia di stoccaggio e simili), registrato
 # da GameScene in _ready — stesso schema di IdleTaskAssignmentService.daydream_step_appended_connector: questo service
@@ -57,6 +62,9 @@ static func release_cargo(individual: HumanIndividual, closed_task: Task, world:
 		])
 		individual.discard_carried_resource()
 		return Outcome.DISCARDED
+	# Task annullata (2026-10-10): letta ora, prima che venga chiusa.
+	return_task.context[CONTEXT_ORIGIN_TEXT] = closed_task.get_activity_description()
+	return_task.context[CONTEXT_ORIGIN_TASK_NAME] = closed_task.task_name
 	if individual.current_task == closed_task:
 		individual.stop(false)
 		_assign_as_current(individual, return_task)

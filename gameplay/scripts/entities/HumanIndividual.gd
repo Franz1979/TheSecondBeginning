@@ -472,6 +472,10 @@ var equipped_tool_count: int:
 # (HumanBirthIndividualService) — nessuna distinzione fra i due casi, nessuna ereditarietà dai
 # genitori (arriverà in un giro successivo). Solo il dato dichiarato/persistito in questo passo:
 # nessuna crescita da Task completate, nessuna influenza sull'efficacia delle azioni.
+# Tetto unico delle skill, uguale alla scala delle formule degli effetti (2026-10-10): la crescita
+# (TaskCompletionEffectService, Leadership in CoordinatorService) si ferma qui; le barre del pannello dell'individuo vanno
+# fino a qui.
+const SKILL_MAX: float = 1000.0
 var skill_leadership: float = 0.0
 var skill_builder: float = 0.0
 var skill_management: float = 0.0
@@ -1098,7 +1102,8 @@ func assign_task(task: Task, age_band: HumanTypes.AgeBand, is_interrupt_transiti
 			HuntService.log_event(self, "caccia sospesa e messa in coda: sostituita da '%s'%s." % [
 				task.task_name, " (bisogno urgente)" if is_interrupt_transition else ""
 			])
-		TaskQueueService.push_suspended_task(self, current_task)
+		# Interrotta da un bisogno automatico (2026-10-10): rientra in coda anche oltre il limite, nessuna espulsione.
+		TaskQueueService.push_suspended_task(self, current_task, is_interrupt_transition)
 		if DebugLogging.ENABLED and DebugLogging.SHOW_TASK_LIFECYCLE_LOGS:
 			print("[TASK SUSPEND] Individuo #%d %s: Task '%s' sospesa e messa in coda (sostituita da '%s')." % [
 				id, name, current_task.task_name, task.task_name

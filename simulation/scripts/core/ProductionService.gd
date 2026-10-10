@@ -99,6 +99,19 @@ static func is_auto_progress_input(building: Building, resource_name: String) ->
 	return get_auto_progress_recipe_for_input(building, resource_name) != ""
 
 
+# Giorni effettivi di una ricetta ad avanzamento automatico presso `building` (2026-10-10, effetti dello stato
+# "Danneggiato" — passo 3): recipe_auto_progress_days, raddoppiati se l'edificio è danneggiato (lavora a metà velocità).
+# Punto unico per il tempo: l'avanzamento salvato è una frazione da 0 a 1, quindi entrare o uscire dallo stato cambia solo
+# la velocità da quel momento, senza salti. I controlli "è una ricetta ad avanzamento automatico" (> 0) restano sul dato.
+static func get_auto_progress_days(building: Building, recipe_rules: SecondaryResourceRules) -> int:
+	if recipe_rules == null:
+		return 0
+	var days: int = recipe_rules.recipe_auto_progress_days
+	if days > 0 and building != null and building.is_damaged():
+		return days * 2
+	return days
+
+
 # Giorni mancanti alla trasformazione della voce `resource_name` di `building` (per eccesso), -1 se la voce non è in
 # avanzamento automatico.
 static func get_auto_progress_days_left(building: Building, resource_name: String) -> int:
@@ -107,7 +120,7 @@ static func get_auto_progress_days_left(building: Building, resource_name: Strin
 		return -1
 	var recipe_rules := CaloricCalculator.get_caloric_source_rules(recipe_name)
 	var progress: float = float((building.stored_resources[resource_name] as Dictionary).get(AUTO_PROGRESS_KEY, 0.0))
-	return maxi(int(ceil((1.0 - progress) * float(recipe_rules.recipe_auto_progress_days) - AUTO_PROGRESS_EPSILON)), 0)
+	return maxi(int(ceil((1.0 - progress) * float(get_auto_progress_days(building, recipe_rules)) - AUTO_PROGRESS_EPSILON)), 0)
 
 
 # Avanzamento giornaliero di ogni voce in avanzamento automatico di `building`; a frazione 1 la trasforma nel prodotto
@@ -123,7 +136,7 @@ static func advance_auto_progress(building: Building) -> void:
 			continue
 		var recipe_rules := CaloricCalculator.get_caloric_source_rules(recipe_name)
 		var entry: Dictionary = building.stored_resources[input_name]
-		var progress: float = minf(float(entry.get(AUTO_PROGRESS_KEY, 0.0)) + 1.0 / float(recipe_rules.recipe_auto_progress_days), 1.0)
+		var progress: float = minf(float(entry.get(AUTO_PROGRESS_KEY, 0.0)) + 1.0 / float(get_auto_progress_days(building, recipe_rules)), 1.0)
 		entry[AUTO_PROGRESS_KEY] = progress
 		if progress < 1.0 - AUTO_PROGRESS_EPSILON:
 			continue
@@ -498,7 +511,8 @@ static func get_required_labor(building: Building, resource_name: String) -> flo
 	var recipe_rules := CaloricCalculator.get_caloric_source_rules(resource_name)
 	if recipe_rules == null:
 		return 0.0
-	var multiplier: float = building.rules.production_labor_multiplier if building != null and building.rules != null else 1.0
+	# Danneggiato (2026-10-10): moltiplicatore a 1 (Building.get_effective_multiplier).
+	var multiplier: float = building.get_effective_multiplier(building.rules.production_labor_multiplier) if building != null and building.rules != null else 1.0
 	return recipe_rules.recipe_labor * multiplier
 
 
@@ -588,7 +602,8 @@ static func get_required_fuel(building: Building, resource_name: String) -> floa
 	var recipe_rules := CaloricCalculator.get_caloric_source_rules(resource_name)
 	if recipe_rules == null or recipe_rules.recipe_fuel_required <= 0.0:
 		return 0.0
-	var multiplier: float = building.rules.production_fuel_multiplier if building != null and building.rules != null else 1.0
+	# Danneggiato (2026-10-10): moltiplicatore a 1 (Building.get_effective_multiplier).
+	var multiplier: float = building.get_effective_multiplier(building.rules.production_fuel_multiplier) if building != null and building.rules != null else 1.0
 	return recipe_rules.recipe_fuel_required * multiplier
 
 
@@ -786,14 +801,16 @@ static func has_max_orders(building: Building) -> bool:
 static func get_max_order_quantity(building: Building) -> int:
 	if building == null or building.rules == null:
 		return 1
-	return max(building.rules.production_max_quantity, 1)
+	# Danneggiato (2026-10-10): a metà, solo per gli ordini nuovi o modificati (quelli già creati finiscono così).
+	return building.get_effective_capacity(max(building.rules.production_max_quantity, 1))
 
 
 # Capienza del buffer di uscita, in pezzi (BuildingRules.production_output_slots).
 static func get_output_capacity(building: Building) -> int:
 	if building == null or building.rules == null:
 		return 0
-	return max(building.rules.production_output_slots, 0)
+	# Danneggiato (2026-10-10): a metà; quello che c'è già resta, le nuove entrate si fermano (uscita piena).
+	return building.get_effective_capacity(max(building.rules.production_output_slots, 0))
 
 
 # Pezzi attualmente nel buffer di uscita (somma di tutte le risorse).

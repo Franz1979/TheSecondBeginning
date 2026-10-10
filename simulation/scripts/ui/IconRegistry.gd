@@ -188,6 +188,8 @@ const BUILDING_ICON_NODES := {
 	"covered_depot": preload("res://simulation/scripts/ui/CoveredDepotIcon.gd"),
 	# Legnaia (2026-10-08, richiesta utente — segnaposto): stesso disegno della mappa (PlaceholderBuildingShapes).
 	"woodshed": preload("res://simulation/scripts/ui/WoodshedIcon.gd"),
+	# Macerie (2026-10-10, richiesta utente — crollo): stesso disegno della mappa (PlaceholderBuildingShapes).
+	"rubble": preload("res://simulation/scripts/ui/RubbleIcon.gd"),
 }
 
 
@@ -330,6 +332,8 @@ const COMMAND_ICON_NODES := {
 	# "demolish" (2026-09-27, richiesta utente — Demolish Task): dal 2026-10-07 la dinamite del bottone "Demolisci"
 	# (CommandDynamiteIcon.gd), non più il piccone, che resta a "quarry".
 	"demolish": preload("res://simulation/scripts/ui/CommandDynamiteIcon.gd"),
+	# "clear_rubble" (2026-10-10, sgombero delle macerie): la pala, vedi CommandShovelIcon.gd.
+	"clear_rubble": preload("res://simulation/scripts/ui/CommandShovelIcon.gd"),
 	# "rite" (2026-10-02, task Rite): falce di luna, vedi CommandMoonIcon.gd.
 	"rite": preload("res://simulation/scripts/ui/CommandMoonIcon.gd"),
 	# "bury" (2026-10-07, sepoltura): teschio, vedi CommandSkullIcon.gd.

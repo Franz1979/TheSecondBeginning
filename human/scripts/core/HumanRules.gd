@@ -220,6 +220,26 @@ extends Resource
 # Bonus giornalieri della copertura della casa (2026-10-02, HumanVitalsInteractionService): influenza CULTURAL ->
 # felicità, influenza POLITICAL -> lealtà. Solo bonus: senza casa o con la casa non coperta nessun effetto.
 @export var cultural_coverage_daily_happiness: float = 5.0
+# Regole giornaliere stamina -> felicità e salute -> felicità (2026-10-10, richiesta utente — prima numeri fissi in
+# HumanVitalsInteractionService): stamina almeno a metà del massimo -> +gain, altrimenti -loss; salute sopra i 2/3 del
+# massimo -> +gain, altrimenti -loss. Le perdite sono valori positivi, sottratti dal service.
+@export var stamina_daily_happiness_gain: float = 30.0
+@export var stamina_daily_happiness_loss: float = 30.0
+@export var health_daily_happiness_gain: float = 10.0
+@export var health_daily_happiness_loss: float = 20.0
+# Eventi di felicità una tantum (2026-10-10, richiesta utente — HumanVitalsInteractionService.apply_happiness_event).
+# Valori positivi: le perdite sono sottratte, i guadagni sommati; limite tra 0 e il massimo come gli altri.
+# Morte di un individuo (GameTimeService._kill_individual): a tutto il villaggio, ai parenti (partner, genitori, figli)
+# il valore dei parenti AL POSTO di quello del villaggio.
+@export var death_village_happiness_loss: float = 250.0
+@export var death_relative_happiness_loss: float = 500.0
+# Nascita di un nato vivo (GameTimeService, individual_born): a tutto il villaggio, ai genitori il loro valore al posto.
+@export var birth_village_happiness_gain: float = 50.0
+@export var birth_parent_happiness_gain: float = 100.0
+# Casa persa per demolizione o crollo (GameScene): a chi ci abitava. Non per il miglioramento.
+@export var home_lost_happiness_loss: float = 200.0
+# Crollo di un edificio che lascia macerie (GameScene._collapse_building): a tutto il villaggio.
+@export var collapse_village_happiness_loss: float = 100.0
 @export var political_coverage_daily_loyalty: float = 5.0
 # Rito spontaneo tra le idle (2026-10-04, richiesta utente — RiteService.find_spontaneous_rite_target): distanza massima in
 # microcelle, in linea d'aria dal pipottino, entro cui l'edificio del rito si sceglie A CASO tra quelli ammessi; se

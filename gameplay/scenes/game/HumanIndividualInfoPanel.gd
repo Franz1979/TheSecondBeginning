@@ -556,55 +556,55 @@ func show_individual(
 
 	# Sezione Skills (2026-09-13, richiesta utente) — 6 blocchi identici, stessa forma esatta dei
 	# blocchi vitali sopra (nessuna astrazione condivisa, coerente con lo stile del file). max_value
-	# = 1000.0 FISSO (non un parametro ricevuto: le skill non hanno un massimo variabile come i
-	# vitali, vedi HumanIndividual.gd). Didascalie (LDR/BLD/...) tr()-ate qui insieme al resto,
+	# = HumanIndividual.SKILL_MAX FISSO (2026-10-10, prima 1000.0; non un parametro ricevuto: le skill non hanno un
+	# massimo variabile come i vitali). Didascalie (LDR/BLD/...) tr()-ate qui insieme al resto,
 	# anche se il loro testo non dipende dai dati dell'individuo — stesso trattamento "ririsolto ad
 	# ogni show_individual" già riservato a carry_label/stamina_label sopra, per coerenza.
 	skills_section_label.text = tr("individual_skills_section_label")
 
-	skill_leadership_bar.max_value = 1000.0
+	skill_leadership_bar.max_value = HumanIndividual.SKILL_MAX
 	skill_leadership_bar.value = skill_leadership
-	skill_leadership_bar.tooltip_text = "%d/1000" % [int(skill_leadership)]
+	skill_leadership_bar.tooltip_text = "%d/%d" % [int(skill_leadership), int(HumanIndividual.SKILL_MAX)]
 	skill_leadership_caption.text = tr("skill_leadership_label")
 
-	skill_builder_bar.max_value = 1000.0
+	skill_builder_bar.max_value = HumanIndividual.SKILL_MAX
 	skill_builder_bar.value = skill_builder
-	skill_builder_bar.tooltip_text = "%d/1000" % [int(skill_builder)]
+	skill_builder_bar.tooltip_text = "%d/%d" % [int(skill_builder), int(HumanIndividual.SKILL_MAX)]
 	skill_builder_caption.text = tr("skill_builder_label")
 
-	skill_management_bar.max_value = 1000.0
+	skill_management_bar.max_value = HumanIndividual.SKILL_MAX
 	skill_management_bar.value = skill_management
-	skill_management_bar.tooltip_text = "%d/1000" % [int(skill_management)]
+	skill_management_bar.tooltip_text = "%d/%d" % [int(skill_management), int(HumanIndividual.SKILL_MAX)]
 	skill_management_caption.text = tr("skill_management_label")
 
-	skill_transporter_bar.max_value = 1000.0
+	skill_transporter_bar.max_value = HumanIndividual.SKILL_MAX
 	skill_transporter_bar.value = skill_transporter
-	skill_transporter_bar.tooltip_text = "%d/1000" % [int(skill_transporter)]
+	skill_transporter_bar.tooltip_text = "%d/%d" % [int(skill_transporter), int(HumanIndividual.SKILL_MAX)]
 	skill_transporter_caption.text = tr("skill_transporter_label")
 
-	skill_gathering_bar.max_value = 1000.0
+	skill_gathering_bar.max_value = HumanIndividual.SKILL_MAX
 	skill_gathering_bar.value = skill_gathering
-	skill_gathering_bar.tooltip_text = "%d/1000" % [int(skill_gathering)]
+	skill_gathering_bar.tooltip_text = "%d/%d" % [int(skill_gathering), int(HumanIndividual.SKILL_MAX)]
 	skill_gathering_caption.text = tr("skill_gathering_label")
 
-	skill_cognition_bar.max_value = 1000.0
+	skill_cognition_bar.max_value = HumanIndividual.SKILL_MAX
 	skill_cognition_bar.value = skill_cognition
-	skill_cognition_bar.tooltip_text = "%d/1000" % [int(skill_cognition)]
+	skill_cognition_bar.tooltip_text = "%d/%d" % [int(skill_cognition), int(HumanIndividual.SKILL_MAX)]
 	skill_cognition_caption.text = tr("skill_cognition_label")
 
-	skill_hunting_bar.max_value = 1000.0
+	skill_hunting_bar.max_value = HumanIndividual.SKILL_MAX
 	skill_hunting_bar.value = skill_hunting
-	skill_hunting_bar.tooltip_text = "%d/1000" % [int(skill_hunting)]
+	skill_hunting_bar.tooltip_text = "%d/%d" % [int(skill_hunting), int(HumanIndividual.SKILL_MAX)]
 	skill_hunting_caption.text = tr("skill_hunting_label")
 
-	skill_crafting_bar.max_value = 1000.0
+	skill_crafting_bar.max_value = HumanIndividual.SKILL_MAX
 	skill_crafting_bar.value = skill_crafting
-	skill_crafting_bar.tooltip_text = "%d/1000" % [int(skill_crafting)]
+	skill_crafting_bar.tooltip_text = "%d/%d" % [int(skill_crafting), int(HumanIndividual.SKILL_MAX)]
 	skill_crafting_caption.text = tr("skill_crafting_label")
 
-	skill_ritual_bar.max_value = 1000.0
+	skill_ritual_bar.max_value = HumanIndividual.SKILL_MAX
 	skill_ritual_bar.value = skill_ritual
-	skill_ritual_bar.tooltip_text = "%d/1000" % [int(skill_ritual)]
+	skill_ritual_bar.tooltip_text = "%d/%d" % [int(skill_ritual), int(HumanIndividual.SKILL_MAX)]
 	skill_ritual_caption.text = tr("skill_ritual_label")
 
 	# Capacità di trasporto (2026-09-13, richiesta utente — spostata in FONDO alle barre, dopo i 5

@@ -115,6 +115,8 @@ enum ActionType {
 	QUARRY,
 	# Attesa al punto di assegnazione (2026-10-09, WaitAtPointAction, vedi seek_job.tres). AGGIUNTO IN CODA (30).
 	WAIT_AT_POINT,
+	# Riparazione di un edificio completo (2026-10-10, RepairAction, vedi repair.tres). AGGIUNTO IN CODA (31).
+	REPAIR,
 }
 
 # Categorie di tool richiedibili da un'Action (2026-09-08, richiesta utente — SOLO struttura dati,

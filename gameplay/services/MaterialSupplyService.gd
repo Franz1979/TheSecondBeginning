@@ -93,14 +93,20 @@ static func get_missing_materials(target_building: Building) -> Dictionary:
 # Combustibile (FUEL_KEY): sorgente = magazzino più vicino con almeno una risorsa con fuel_value > 0
 # (WarehouseSelectionService.FUEL_CRITERION); risorsa = quella con fuel_value più alto in quel magazzino; quantità =
 # combustibile mancante / fuel_value arrotondato per eccesso, limitata da get_max_depositable.
+# `for_repair` (2026-10-10, materiali della riparazione): fabbisogno = RepairAction.get_supply_missing (piano meno
+# consumato meno contenitore), nessuna sorgente esclusa (chi ripara un deposito può prendere dalle sue stesse scorte) e
+# quantità non limitata dal magazzino del bersaglio (si scarica nel contenitore della riparazione).
 static func get_supply_need(
 	world: World, target_building: Building, origin_position: Vector2, origin_macro_coords: Vector2i,
-	reachable: Callable = Callable()
+	reachable: Callable = Callable(), for_repair: bool = false
 ) -> Dictionary:
-	var missing := get_missing_materials(target_building)
+	var missing := RepairAction.get_supply_missing(target_building) if for_repair else get_missing_materials(target_building)
 	if missing.is_empty() or world == null:
 		return {}
-	var excluded := _get_excluded_source_ids(world, target_building)
+	# Mai un'espressione ternaria con [] qui: il letterale non è tipizzato e l'assegnazione a Array[int] fallisce a runtime.
+	var excluded: Array[int] = []
+	if not for_repair:
+		excluded = _get_excluded_source_ids(world, target_building)
 	var first_need: Dictionary = {}
 	for resource_name in missing.keys():
 		var need: Dictionary
@@ -109,7 +115,8 @@ static func get_supply_need(
 			if need.is_empty():
 				continue
 		else:
-			var quantity: int = mini(int(missing[resource_name]), BuildingStorageService.get_max_depositable(target_building, String(resource_name)))
+			var quantity: int = int(missing[resource_name]) if for_repair \
+				else mini(int(missing[resource_name]), BuildingStorageService.get_max_depositable(target_building, String(resource_name)))
 			if quantity <= 0:
 				continue
 			var source := WarehouseSelectionService.find_source_for_retrieval(
@@ -185,7 +192,10 @@ static func try_supply_at_level_zero(individual: HumanIndividual, task: Task, wo
 		task.context.erase(CONTEXT_SUPPLY_FAILED)
 		_log(individual, target_building, "l'ultimo prelievo di rifornimento non ha portato nulla — nessun nuovo giro, attesa.")
 		return false
-	var missing := get_missing_materials(target_building)
+	# Riparazione (2026-10-10, passo 3): fabbisogno del piano, scarico dedicato nel contenitore della riparazione.
+	var for_repair: bool = task.get_current_action() is RepairAction
+	var deposit_kind := UnloadAction.DepositKind.REPAIR if for_repair else UnloadAction.DepositKind.RESOURCE
+	var missing := RepairAction.get_supply_missing(target_building) if for_repair else get_missing_materials(target_building)
 	if missing.is_empty():
 		return false
 
@@ -194,13 +204,13 @@ static func try_supply_at_level_zero(individual: HumanIndividual, task: Task, wo
 
 	for resource_name in missing.keys():
 		if _is_carrying_for(individual, target_building, String(resource_name)):
-			_append_walk_and_unload(individual, target_building, new_steps, descriptions)
+			_append_walk_and_unload(individual, target_building, new_steps, descriptions, deposit_kind)
 			_insert_and_activate(individual, task, new_steps, descriptions)
 			_log(individual, target_building, "ha già '%s' nello zaino — lo scarica al cantiere." % resource_name)
 			return true
 
 	var reachable := PathfindingService.reachability_for(individual)
-	var need := get_supply_need(world, target_building, individual.position, individual.home_macro_coords, reachable)
+	var need := get_supply_need(world, target_building, individual.position, individual.home_macro_coords, reachable, for_repair)
 	if need.is_empty() or need["source"] == null:
 		_log(individual, target_building, "nessun magazzino ha %s — attesa." % str(missing))
 		return false
@@ -224,7 +234,7 @@ static func try_supply_at_level_zero(individual: HumanIndividual, task: Task, wo
 	descriptions.append("task_transport_step_walk_to_source")
 	new_steps.append(RetrieveAction.new(source, need_resource_name, quantity, -1, false, true, target_building))
 	descriptions.append("task_transport_step_retrieve")
-	_append_walk_and_unload(individual, target_building, new_steps, descriptions)
+	_append_walk_and_unload(individual, target_building, new_steps, descriptions, deposit_kind)
 	_insert_and_activate(individual, task, new_steps, descriptions)
 	_log(individual, target_building, "va a prendere %d '%s' da %s #%d (%d step inseriti)." % [
 		quantity, need_resource_name, source.building_type_name, source.id, new_steps.size()
@@ -252,14 +262,15 @@ static func _is_carrying_for(individual: HumanIndividual, target_building: Build
 
 # true se `action` è uno step che il rifornimento sa sbloccare (2026-09-29: setup site e costruzione). Unico punto da
 # allargare per nuove fasi — i controlli in HumanIndividualActionService passano da qui.
+# Riparazione (2026-10-10, materiali della riparazione — passo 3): RepairAction, con lo scarico dedicato.
 static func is_supplied_step(action: Action) -> bool:
-	return action is SetupSiteAction or action is BuildAction or action is ProduceAction
+	return action is SetupSiteAction or action is BuildAction or action is ProduceAction or action is RepairAction
 
 
 # Step di lavoro sul cantiere (setup, sgombero, costruzione): un giro di rifornimento sta sempre prima di uno di questi,
 # mai a cavallo — _find_round_end_index si ferma al primo che incontra.
 static func _is_site_work_step(action: Action) -> bool:
-	return action is SetupSiteAction or action is ClearAction or action is BuildAction or action is ProduceAction
+	return action is SetupSiteAction or action is ClearAction or action is BuildAction or action is ProduceAction or action is RepairAction
 
 # Accessi pubblici per HumanIndividualActionService (avanzo di fine giro: Walk di ritorno al cantiere).
 static func get_supply_target(task: Task) -> Building:
@@ -290,7 +301,9 @@ static func _find_round_end_index(task: Task) -> int:
 		return -1
 	for i in range(task.current_step_index, task.steps.size()):
 		var step: Action = task.steps[i]
-		if step is UnloadAction and (step as UnloadAction).deposit_kind == UnloadAction.DepositKind.RESOURCE \
+		# Scarico al bersaglio: nel magazzino del cantiere o, per la riparazione, nel suo contenitore (2026-10-10).
+		if step is UnloadAction and ((step as UnloadAction).deposit_kind == UnloadAction.DepositKind.RESOURCE \
+				or (step as UnloadAction).deposit_kind == UnloadAction.DepositKind.REPAIR) \
 				and (step as UnloadAction).target_building == site:
 			return i
 		if _is_site_work_step(step):
@@ -322,10 +335,13 @@ static func drop_pending_supply_round(task: Task) -> bool:
 	return true
 
 
-static func _append_walk_and_unload(individual: HumanIndividual, building: Building, steps: Array[Action], descriptions: Array[String]) -> void:
+static func _append_walk_and_unload(
+	individual: HumanIndividual, building: Building, steps: Array[Action], descriptions: Array[String],
+	deposit_kind: UnloadAction.DepositKind = UnloadAction.DepositKind.RESOURCE
+) -> void:
 	steps.append(WalkAction.new(_building_point(individual, building)))
 	descriptions.append("task_transport_step_walk_to_destination")
-	steps.append(UnloadAction.new(building, UnloadAction.DepositKind.RESOURCE))
+	steps.append(UnloadAction.new(building, deposit_kind))
 	descriptions.append("task_transport_step_unload")
 
 

@@ -206,6 +206,9 @@ func apply_action(individual: HumanIndividual, delta: float, world: World = null
 	# ritorno, return immediato se ha sostituito individual.current_task.
 	if _handle_food_interrupt(individual, task, world, game_data):
 		return
+	# Caccia in zona (2026-10-10): giorni senza catture dell'uscita, con la chiusura durante l'inseguimento.
+	if _tick_zone_hunt_without_capture(individual, task, action, delta, world, game_data):
+		return
 
 	# Accumulo costo per-step (2026-09-07, richiesta utente; happiness aggiunta 2026-09-13) — stessi
 	# stamina_delta/happiness_delta/delta appena applicati sopra, nessun ricalcolo: vedi Task.
@@ -251,6 +254,12 @@ func finish_current_step(individual: HumanIndividual, task: Task, world: World, 
 	# (es. ThinkAction -> individual.pending_thought = true) deve essere scritto mentre quello
 	# step è ancora "il current" per costruzione, non dopo che la Task è già passata oltre.
 	action.on_complete(individual, task.context)
+	# Riparazione finita (2026-10-10, materiali della Ripara — passo 5): il contenitore deve restare vuoto; un avanzo va a
+	# terra (GroundPileService.drop_repair_materials). Non a un abbandono: lì materiali e piano restano sull'edificio.
+	if action is RepairAction and (action as RepairAction).target_building != null and action.is_target_valid() \
+			and not (action as RepairAction).target_building.repair_materials.is_empty() \
+			and not task.context.has(CONTEXT_PENDING_TASK_ABORT):
+		GroundPileService.drop_repair_materials(game_data, (action as RepairAction).target_building, world)
 	# Ricerca magazzino (2026-09-09, richiesta utente — nata come re-routing UnloadAction su
 	# magazzino pieno, poi GENERALIZZATA per servire anche la ricerca iniziale post-PickUp di
 	# haul_resource, stesso canale/stesso Dictionary per entrambe, vedi _handle_pending_
@@ -466,6 +475,13 @@ func _handle_pending_material_shortage(individual: HumanIndividual, task: Task, 
 	# step corrente); se non è possibile, comportamento di prima (bonus deposit_site, attesa, popup).
 	if MaterialSupplyService.is_supplied_step(task.get_current_action()) and MaterialSupplyService.try_supply_at_level_zero(individual, task, world, target_building):
 		return
+	# Riparazione senza sorgente (2026-10-10, materiali della riparazione — passo 3): resta in attesa, ferma dove finiscono
+	# i materiali, senza il percorso dei cantieri (bonus, avviso). Avviso e ritentativi arrivano nel passo 4.
+	if task.get_current_action() is RepairAction:
+		_mark_repair_awaiting_material(target_building, missing)
+		if task.context.has(MaterialSupplyService.CONTEXT_YIELD_AFTER_DELIVERY):
+			_yield_after_supply_delivery(individual, task, world, game_data)
+		return
 	_resolve_material_shortage(world, target_building, missing)
 	# Ordine del giocatore in attesa di una consegna (CONTEXT_YIELD_AFTER_DELIVERY) ma nessun nuovo giro possibile:
 	# la Build resterebbe ferma in attesa con l'ordine bloccato in coda — va in coda subito e parte l'ordine.
@@ -619,7 +635,7 @@ func retry_blocked_material_shortages(world: World, all_individuals: Array[Human
 		return
 	for individual in all_individuals:
 		var task := individual.current_task
-		if task == null or not (task.task_name == "task_build_name" or task.task_name == "task_produce_name"):
+		if task == null or not (task.task_name == "task_build_name" or task.task_name == "task_produce_name" or task.task_name == "task_repair_name"):
 			continue
 		var action := task.get_current_action()
 		# ESTESO a BuildAction (2026-09-14, richiesta utente — "step 2 della build", il quarto step
@@ -645,6 +661,19 @@ func retry_blocked_material_shortages(world: World, all_individuals: Array[Human
 			target_building = produce_action.target_building
 			if produce_action.is_blocked_by_materials():
 				missing = MaterialSupplyService.get_missing_materials(target_building)
+		elif action is RepairAction:
+			# Riparazione ferma per materiale (2026-10-10, passo 4): stesso ritentativo, solo il rifornimento (niente bonus
+			# né avvisi dei cantieri); se ancora nulla, resta in attesa.
+			var repair_building: Building = (action as RepairAction).target_building
+			if repair_building == null or not repair_building.repair_awaiting_material or not RepairAction.is_building_repairable(repair_building):
+				continue
+			var repair_missing := RepairAction.get_supply_missing(repair_building)
+			if repair_missing.is_empty():
+				repair_building.repair_awaiting_material = false
+				continue
+			if MaterialSupplyService.try_supply_at_level_zero(individual, task, world, repair_building):
+				repair_building.repair_awaiting_material = false
+			continue
 		if target_building == null:
 			continue
 		# Edificio demolito o già completo (2026-09-21, richiesta utente): niente retry, niente popup né
@@ -660,6 +689,15 @@ func retry_blocked_material_shortages(world: World, all_individuals: Array[Human
 		if MaterialSupplyService.is_supplied_step(action) and MaterialSupplyService.try_supply_at_level_zero(individual, task, world, target_building):
 			continue
 		_resolve_material_shortage(world, target_building, missing)
+
+
+# Riparazione ferma per materiale (2026-10-10, passo 4): stato letto da campanella e pannello, con un log alla transizione.
+static func _mark_repair_awaiting_material(target_building: Building, missing: Dictionary) -> void:
+	if target_building == null or target_building.repair_awaiting_material:
+		return
+	target_building.repair_awaiting_material = true
+	if DebugLogging.ENABLED and DebugLogging.SHOW_TRANSPORT_BUILD_LOGS:
+		print("[REPAIR MATERIAL NEEDED] Building #%d: manca ancora %s — riparazione ferma in attesa." % [target_building.id, str(missing)])
 
 
 static func _is_workstation(building: Building) -> bool:
@@ -1354,6 +1392,18 @@ func _handle_pending_hunt_reapproach(individual: HumanIndividual, task: Task) ->
 		combat_target = (requesting_action as RecoverWeaponAction).combat_target
 	if combat_target == null:
 		return
+	# Tetto dei tiri a vuoto (2026-10-10, HuntService.MAX_MISSED_THROWS_PER_PREY): qui il recupero dell'arma è già
+	# concluso (o l'arma non era scagliata), quindi si può lasciare la preda senza perderla. Chiusura come per preda persa:
+	# caccia diretta chiusa, caccia in zona di nuovo in pattuglia (_redirect_zone_hunt_to_patrol) con la preda ignorata.
+	if mode == HuntService.REAPPROACH_AFTER_THROW \
+			and HuntService.get_missed_throws(task.context, combat_target.target_id) >= HuntService.MAX_MISSED_THROWS_PER_PREY:
+		HuntService.log_event(individual, "%d tiri a vuoto su %s, preda lasciata." % [HuntService.MAX_MISSED_THROWS_PER_PREY, combat_target.describe()])
+		if HuntZoneService.is_zone_hunt_task(task):
+			HuntZoneService.ignore_prey(task.context, combat_target.target_id)
+		task.context[CONTEXT_PENDING_TASK_ABORT] = "%d tiri a vuoto su %s, preda lasciata" % [
+			HuntService.MAX_MISSED_THROWS_PER_PREY, combat_target.describe()
+		]
+		return
 	if mode != HuntService.REAPPROACH_AFTER_THROW:
 		var count: int = int(task.context.get(HuntService.CONTEXT_REAPPROACH_COUNT, 0)) + 1
 		task.context[HuntService.CONTEXT_REAPPROACH_COUNT] = count
@@ -1596,6 +1646,38 @@ func _continue_cut_zone_series(individual: HumanIndividual, task: Task, game_dat
 	cut_zone_series_continue_requested.emit(individual, series.duplicate())
 
 
+# Giorni senza catture della caccia in zona (2026-10-10, HuntZoneService.CONTEXT_UNSIGHTED_DAYS): avanzano per ogni frame
+# in cui l'uscita è la Task corrente, dall'arrivo nella zona in poi (HuntZoneService.CONTEXT_CAPTURE_CLOCK_STARTED) —
+# qualunque step, dopo i controlli dei bisogni (il tempo in coda non conta) — e li
+# azzera solo un'uccisione (ThrowAction). Raggiunto il limite (PatrolAreaAction.PATROL_DAYS_WITHOUT_PREY_LIMIT):
+#   - in pattuglia la chiusura la fa PatrolAreaAction stessa (stesso esito di prima);
+#   - durante avvicinamento o mira l'uscita si chiude qui, come per "nessuna preda" (CONTEXT_NO_PREY: cambio di zona,
+#     fine del comando, ordine del cassetto come prima), senza on_complete dello step interrotto;
+#   - lancio e recupero dell'arma non vengono interrotti (l'arma scagliata vive solo nello step di recupero): dopo di
+#     loro si torna ad avvicinarsi o a pattugliare, e lì il limite chiude.
+# true = Task chiusa, il resto del frame non la riguarda più.
+func _tick_zone_hunt_without_capture(
+	individual: HumanIndividual, task: Task, action: Action, delta: float, world: World, game_data: GameData
+) -> bool:
+	# Il tragitto verso la zona non conta: si parte all'arrivo nella zona (PatrolAreaAction) o al primo avvistamento.
+	if not HuntZoneService.is_zone_hunt_task(task) or not HuntZoneService.is_capture_clock_started(task.context):
+		return false
+	HuntZoneService.add_days_without_capture(task.context, delta)
+	if not HuntZoneService.is_no_capture_limit_reached(task.context):
+		return false
+	if not (action is ApproachPreyAction or action is AimAction):
+		return false
+	task.context[HuntZoneService.CONTEXT_NO_PREY] = true
+	individual.clear_path()
+	individual.target_position = individual.position
+	individual.is_moving = false
+	HuntZoneService.log_no_capture_end(individual, task.context, "l'avvicinamento" if action is ApproachPreyAction else "la mira")
+	HuntService.log_event(individual, "caccia chiusa: nessuna cattura per %.1f giorni." % PatrolAreaAction.PATROL_DAYS_WITHOUT_PREY_LIMIT)
+	_continue_hunt_zone_series(individual, task)
+	_handle_task_completion_need_and_queue(individual, task, world, game_data)
+	return true
+
+
 func _continue_hunt_zone_series(individual: HumanIndividual, task: Task) -> void:
 	if HuntZoneService.is_zone_hunt_task(task):
 		# Uscita finita senza prede (2026-10-09): avviso a chi segue la serie.
@@ -1728,7 +1810,8 @@ static func is_empty_cargo_delivery(individual: HumanIndividual, task: Task) -> 
 	var has_unload := false
 	for i in range(task.current_step_index, task.steps.size()):
 		var step: Action = task.steps[i]
-		if step is UnloadAction and (step as UnloadAction).deposit_kind == UnloadAction.DepositKind.RESOURCE:
+		if step is UnloadAction and ((step as UnloadAction).deposit_kind == UnloadAction.DepositKind.RESOURCE \
+				or (step as UnloadAction).deposit_kind == UnloadAction.DepositKind.REPAIR):
 			has_unload = true
 			continue
 		if step is WalkAction:
@@ -2022,8 +2105,8 @@ static func resolve_idle_individual(individual: HumanIndividual, age_band: Human
 		var seek_outcome := JobBoardService.try_seek_job(individual, age_band, world)
 		if seek_outcome == JobBoardService.SeekOutcome.STARTED:
 			return
-		if seek_outcome == JobBoardService.SeekOutcome.NO_POINT and JobBoardService.try_take_job(individual):
-			return
+		# Senza punto di assegnazione nessuno prende lavori dalla coda (2026-10-10, richiesta utente — tolto il ripiego della
+		# presa diretta): la coda non è attiva (JobBoardService.is_enabled).
 
 	if IdleTaskAssignmentService.assign_idle_fallback(individual, age_band, world):
 		return

@@ -467,16 +467,19 @@ func get_activity_description() -> String:
 		# raccolta. Edificio letto dal primo step che ha un target_building (SetupSite/Clear/Build),
 		# nome tradotto da BuildingRules.building_name. Nessun edificio risolvibile = solo il nome
 		# della Task.
-		# Demolizione (2026-09-27): stesso formato, "Demolizione (Capanna)".
+		# Demolizione (2026-09-27): stesso formato, "Demolizione (Capanna)". Riparazione (2026-10-10): "Riparazione (Capanna)".
 		# Solo gli step di lavoro sul cantiere (2026-09-29, bugfix): i Retrieve/Unload inseriti dal rifornimento automatico
 		# (MaterialSupplyService) hanno anch'essi un target_building — il magazzino sorgente — e l'etichetta mostrava quello.
-		"task_build_name", "task_demolish_name":
+		"task_build_name", "task_demolish_name", "task_repair_name":
 			for step in steps:
-				if not (step is SetupSiteAction or step is ClearAction or step is BuildAction or step is DemolishAction):
+				if not (step is SetupSiteAction or step is ClearAction or step is BuildAction or step is DemolishAction or step is RepairAction):
 					continue
 				if step.get("target_building") != null:
 					var building: Building = step.get("target_building")
 					var building_display_name: String = tr(building.rules.building_name) if building.rules != null else building.building_type_name
+					# Sgombero delle macerie (2026-10-10): "Sgombero (Macerie)", non "Demolizione".
+					if step is DemolishAction and building.is_rubble():
+						return "%s (%s)" % [tr("task_clear_rubble_name"), building_display_name]
 					return "%s (%s)" % [base_text, building_display_name]
 			return base_text
 		# Produzione (2026-09-23, richiesta utente): "Produzione: Corda di fibre". Letta da context

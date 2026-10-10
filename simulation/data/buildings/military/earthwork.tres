@@ -4,13 +4,14 @@
 
 [resource]
 script = ExtResource("1_earthwork")
+lifespan_years = 20
+max_durability = 250
+defense = 100
 building_name = "building_earthwork"
 category = 5
 required_idea_id = "paleolithic_constructions"
 required_labor = 800
 setup_site_material_per_cell = 0
-max_durability = 150
-defense = 100
 is_linear = true
 required_space = 1
 has_door = false
