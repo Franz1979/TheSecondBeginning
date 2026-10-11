@@ -77,6 +77,8 @@ signal human_stillbirth(mother: HumanIndividual)
 # disaccoppiamento di individual_died/individual_born sopra: questa classe non sa nulla di popup/
 # UI, si limita a segnalare il FATTO, GameScene decide come mostrarlo.
 signal individual_resource_decayed(individual: HumanIndividual, resource_name: String, quantity: int)
+# Capo di vestiario indossato arrivato a 0 giorni di consumo e sparito (2026-10-11), stesso principio del segnale sopra.
+signal individual_apparel_worn_out(individual: HumanIndividual, resource_name: String)
 
 # Emesso il giorno in cui un individuo finisce le provviste e comincia a consumare la riserva corporea
 # (2026-09-19, richiesta utente): una volta per inizio di consumo, vedi body_reserve_in_use. GameScene
@@ -503,6 +505,12 @@ func _advance_daily_individual_resource_decay() -> void:
 		# Una emissione per varietà deperita (zaino multi-risorsa, 2026-09-20).
 		for lost in ResourceDecayService.advance_individual_decay(individual):
 			individual_resource_decayed.emit(individual, lost["resource_name"], lost["quantity"])
+		# Consumo del vestiario indossato (2026-10-11, richiesta utente): un giorno in meno a ogni capo addosso, dopo i suoi
+		# bonus del giorno (HumanVitalsInteractionService, regola 0b, già applicata); a 0 il capo sparisce.
+		for slot_index in range(individual.equipped_apparel.size()):
+			var apparel_name: String = individual.get_equipped_apparel(slot_index)
+			if apparel_name != "" and individual.consume_apparel_day(slot_index):
+				individual_apparel_worn_out.emit(individual, apparel_name)
 
 
 # Step 4 del sistema oggetti-scaduti (2026-09-05): rimuove da game_data.expired_objects i record
@@ -1081,6 +1089,9 @@ func _kill_individual(
 			"cause": cause,
 			"hair_color": individual.hair_color,
 			"clothing_color": individual.clothing_color,
+			# Colore del busto al momento della morte (2026-10-11, vestiario — HumanIndividualView.body_draw_color): il corpo
+			# a terra resta del colore che aveva in vita. Stringa html; i record precedenti ne sono privi (ricade sul tratto).
+			"body_color": HumanIndividualView.body_draw_color_now(individual, _game_data).to_html(),
 			# Carnagione (2026-09-06) — stesso trattamento di hair_color/clothing_color sopra, per
 			# completezza dello snapshot. Nessun consumo visivo ancora: SKIN_COLOR in
 			# HumanIndividualView (ereditato da DeadBodyView) resta oggi una costante fissa, non

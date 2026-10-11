@@ -11,7 +11,7 @@ generation_source = 2
 day_durability = 20
 space_per_unit = 5.0
 eat_happiness_per_100_calories = 10.0
-eat_health_per_100_calories = 20.0
+eat_health_per_100_calories = 5.0
 recipe_inputs = {
 "meat": 1
 }

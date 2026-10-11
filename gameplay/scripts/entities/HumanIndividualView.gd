@@ -243,6 +243,62 @@ var game_data: GameData
 # colore, e perché l'early-out sotto deve sapere quando cambia (un individuo che diventa OLD deve
 # ridisegnare i capelli, anche se walk_phase/is_selected non sono cambiati in quel frame).
 var _current_age_band: HumanTypes.AgeBand = HumanTypes.AgeBand.FERTILE_ADULT
+# Vestiario disegnato all'ultimo redraw (nomi dei capi del corpo e della testa): un capo tolto o indossato fa ridisegnare.
+var _last_drawn_apparel: String = ""
+
+# --- Colori del vestiario (2026-10-11, richiesta utente) ---
+# Il tratto clothing_color resta sull'individuo ma non colora più il busto finché non esistono capi tinti: chi indossa un
+# capo si disegna con il colore del capo (SecondaryResourceRules.apparel_color, o il tratto se apparel_dyed), chi ha il
+# corpo vuoto color pelle, i bambini (INFANT/CHILD, vestiti di recupero — HumanIndividual.is_apparel_age_band) con
+# RECYCLED_CLOTHES_COLOR. Il copricapo è una calotta del suo colore sulla testa (HEAD_CAP_*), sopra i capelli.
+# Funzioni statiche condivise con DeadBodyView (colore salvato alla morte) e VisitorPartyView.
+const RECYCLED_CLOTHES_COLOR := Color(0.36, 0.30, 0.24, 1.0)
+const HEAD_CAP_RADIUS_SCALE: float = 0.85
+const HEAD_CAP_OFFSET_BACK: float = 0.12
+
+
+# Colore di disegno di un capo: apparel_color, o il colore personale `clothing_trait` se il capo è tinto.
+static func apparel_draw_color(apparel_name: String, clothing_trait: int) -> Color:
+	var rules := CaloricCalculator.get_caloric_source_rules(apparel_name)
+	if rules == null:
+		return SKIN_COLOR
+	if rules.apparel_dyed:
+		return CLOTHING_COLOR_BY_TRAIT.get(clothing_trait, CLOTHING_COLOR_BY_TRAIT[HumanTypes.ClothingColor.TAN])
+	return rules.apparel_color
+
+
+# Colore del busto (e di spalle e pancia) per un individuo della fascia `age_band`.
+static func body_draw_color(target: HumanIndividual, age_band: HumanTypes.AgeBand) -> Color:
+	if not HumanIndividual.is_apparel_age_band(age_band):
+		return RECYCLED_CLOTHES_COLOR
+	var body_name := target.get_equipped_apparel(HumanIndividual.ApparelSlot.BODY)
+	return SKIN_COLOR if body_name == "" else apparel_draw_color(body_name, target.clothing_color)
+
+
+# Colore del busto con la fascia d'età calcolata da game_data (per chi non la tiene già, es. la morte).
+static func body_draw_color_now(target: HumanIndividual, p_game_data: GameData) -> Color:
+	if p_game_data == null:
+		return body_draw_color(target, HumanTypes.AgeBand.FERTILE_ADULT)
+	var age := float(p_game_data.year - target.birth_year_virtual)
+	return body_draw_color(target, HumanCalculator.get_age_band(
+		p_game_data.era_effective_age_band_durations_male, p_game_data.era_effective_age_band_durations_female, target.sex, age
+	))
+
+
+# Calotta del copricapo sulla testa (centro all'indietro rispetto al viso, raggio un po' minore della testa): il viso
+# resta scoperto. Nessun disegno se `color` è trasparente.
+func _draw_head_cap(color: Color) -> void:
+	if color.a <= 0.0:
+		return
+	draw_circle(Vector2(-HEAD_RADIUS * HEAD_CAP_OFFSET_BACK, 0.0), HEAD_RADIUS * HEAD_CAP_RADIUS_SCALE, color)
+
+
+# Colore della calotta: il copricapo indossato; trasparente se non c'è o per i bambini.
+static func head_cap_color(target: HumanIndividual, age_band: HumanTypes.AgeBand) -> Color:
+	if not HumanIndividual.is_apparel_age_band(age_band):
+		return Color(0, 0, 0, 0)
+	var head_name := target.get_equipped_apparel(HumanIndividual.ApparelSlot.HEAD)
+	return Color(0, 0, 0, 0) if head_name == "" else apparel_draw_color(head_name, target.clothing_color)
 
 # Step 4 (2026-09-04): fase del ciclo passo — resta qui (mai su HumanIndividual), è pura
 # animazione senza significato di simulazione, a differenza di HumanIndividual.facing_direction
@@ -378,16 +434,23 @@ func _process(delta: float) -> void:
 		or walk_phase != _last_drawn_walk_phase \
 		or individual.is_selected != _last_drawn_is_selected \
 		or _current_age_band != _last_drawn_age_band \
-		or individual.is_pregnant != _last_drawn_is_pregnant
+		or individual.is_pregnant != _last_drawn_is_pregnant \
+		or _apparel_signature() != _last_drawn_apparel
 	_process_usec_accum += Time.get_ticks_usec() - _process_start_usec
 	if needs_redraw:
 		_last_drawn_walk_phase = walk_phase
 		_last_drawn_is_selected = individual.is_selected
 		_last_drawn_age_band = _current_age_band
 		_last_drawn_is_pregnant = individual.is_pregnant
+		_last_drawn_apparel = _apparel_signature()
 		_has_drawn_once = true
 		queue_redraw()
 	_maybe_print_timing_window()
+
+
+# Nomi dei capi del corpo e della testa: cambia quando un capo viene tolto, indossato o consumato.
+func _apparel_signature() -> String:
+	return individual.get_equipped_apparel(HumanIndividual.ApparelSlot.BODY) + "|" + individual.get_equipped_apparel(HumanIndividual.ApparelSlot.HEAD)
 
 
 # Stampa+reset UNA VOLTA per finestra di un secondo (vedi accumulatori static sopra) — chiamata da
@@ -431,7 +494,8 @@ func _draw() -> void:
 	# fallback a BROWN/TAN solo per robustezza (un valore fuori enum non dovrebbe mai capitare, ma
 	# non deve rompere il disegno).
 	var hair_color: Color = HAIR_COLOR_BY_TRAIT.get(individual.hair_color, HAIR_COLOR_BY_TRAIT[HumanTypes.HairColor.BROWN])
-	var clothing_color: Color = CLOTHING_COLOR_BY_TRAIT.get(individual.clothing_color, CLOTHING_COLOR_BY_TRAIT[HumanTypes.ClothingColor.TAN])
+	# Vestiario (2026-10-11): colore del capo indossato, pelle se nudo, vestiti di recupero per i bambini (vedi sopra).
+	var clothing_color: Color = body_draw_color(individual, _current_age_band)
 	# Step 4 — capelli grigi per gli anziani: override SOLO qui (il colore disegnato), MAI
 	# individual.hair_color (vedi GRAY_HAIR_COLOR sopra per il perché). _current_age_band È
 	# tracciato nell'early-out (vedi _last_drawn_age_band), quindi il cambio a OLD forza comunque
@@ -476,6 +540,8 @@ func _draw() -> void:
 	# Testa DOPO tutto il resto nell'ordine di disegno — centrata (vedi HEAD_RADIUS sopra), quindi
 	# sempre in cima, mai coperta.
 	draw_circle(Vector2.ZERO, HEAD_RADIUS, hair_color)
+	# Copricapo (2026-10-11): calotta sopra i capelli, prima del viso che resta scoperto.
+	_draw_head_cap(head_cap_color(individual, _current_age_band))
 	# Faccia + naso DOPO la testa (vedi FACE_*/NOSE_* sopra) — unico segnale di direzione visibile
 	# anche da fermo, sempre nella stessa posizione locale (+X), ruota col resto via `rotation`.
 	# Faccia = lente (intersezione dei due cerchi, vedi _draw_circle_lens sotto), mai un cerchio

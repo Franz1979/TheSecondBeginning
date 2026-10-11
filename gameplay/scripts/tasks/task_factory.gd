@@ -269,6 +269,13 @@ static func build_task(definition: TaskDefinition, context: Dictionary) -> Task:
 					continue
 				steps.append(RepairAction.new(context[step_definition.context_keys[0]]))
 				step_descriptions.append(step_definition.step_description)
+			TaskTypes.ActionType.INVENTORY:
+				# 1 argomento (target_building: Building, il deposito) — stesso schema di REPAIR (2026-10-11, inventory.tres).
+				if step_definition.context_keys.is_empty() or not context.has(step_definition.context_keys[0]):
+					push_error("TaskFactory.build_task: context_keys[0] mancante/non risolvibile per step INVENTORY di TaskDefinition '%s'." % definition.task_name)
+					continue
+				steps.append(InventoryAction.new(context[step_definition.context_keys[0]]))
+				step_descriptions.append(step_definition.step_description)
 			TaskTypes.ActionType.WAIT_AT_POINT:
 				# Attesa al punto di assegnazione (2026-10-09, seek_job.tres e coordinate.tres): context_keys[0] facoltativo,
 				# tetto in giorni (assente = nessun tetto: finisce quando CoordinatorService la rilascia).
@@ -400,7 +407,13 @@ static func build_task(definition: TaskDefinition, context: Dictionary) -> Task:
 				var unload_unequip_slot: int = -1
 				if step_definition.context_keys.size() >= 2 and context.has(step_definition.context_keys[1]):
 					unload_unequip_slot = int(context[step_definition.context_keys[1]])
-				steps.append(UnloadAction.new(context[step_definition.context_keys[0]], UnloadAction.DepositKind.RESOURCE, unload_unequip_slot))
+				# Terza chiave FACOLTATIVA (2026-10-11, vestiario): lo slot è del vestiario (UnloadAction.unequip_apparel).
+				var unload_unequip_apparel: bool = false
+				if step_definition.context_keys.size() >= 3:
+					unload_unequip_apparel = bool(context.get(step_definition.context_keys[2], false))
+				steps.append(UnloadAction.new(
+					context[step_definition.context_keys[0]], UnloadAction.DepositKind.RESOURCE, unload_unequip_slot, unload_unequip_apparel
+				))
 				step_descriptions.append(step_definition.step_description)
 			TaskTypes.ActionType.RUN:
 				# 1 argomento (target: Vector2) — stesso schema di WALK sopra, RunAction.new(target).

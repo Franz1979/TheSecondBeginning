@@ -8,11 +8,13 @@ extends RefCounted
 # 0. casa -> health e happiness (2026-09-20, richiesta utente): house_id != -1 ? +HOME_HEALTH_DELTA /
 #    +HOME_HAPPINESS_DELTA : -HOMELESS_HEALTH_PENALTY / -HOMELESS_HAPPINESS_PENALTY (+10/+5 con casa,
 #    -10/-5 senza) su current_health/current_happiness. Applicata PER PRIMA, cosi' le regole 1-4
-#    (soglie su health/happiness) leggono i valori gia' toccati dalla casa. Il service non ha `world`:
+#    (soglie su health/happiness) leggono i valori gia' toccati dalla casa. Subito dopo, regola 0b (2026-10-11):
+#    bonus/malus per stagione dei capi di vestiario indossati (vedi _apply_apparel_bonuses). Il service non ha `world`:
 #    "ha casa" = house_id != -1, senza verificare che il Building esista ancora (la demolizione, vedi
 #    GameScene._demolish_building, riporta gia' house_id a -1 per i residenti).
 # 1. riserva corporea -> health: body_calories < body_calories_capacity (riserva non al massimo) ?
-#    -100.0 : +50.0 su current_health.
+#    -BODY_RESERVE_NOT_FULL_HEALTH_PENALTY : +BODY_RESERVE_FULL_HEALTH_DELTA su current_health (dal 2026-10-11 -20/+10,
+#    richiesta utente: prima -100/+50, troppo forti rispetto alle altre regole, es. il vestiario).
 # 2. stamina -> happiness: current_stamina >= max_stamina / 2.0 ? +gain : -loss su current_happiness (dal 2026-10-10
 #    HumanRules.stamina_daily_happiness_gain/loss, 30/30; prima +100/-100 fissi).
 # 3. health -> happiness: current_health > max_health * 2/3 (strettamente) ? +gain : -loss su current_happiness (dal
@@ -40,6 +42,10 @@ extends RefCounted
 # rifornimento la somma in virgola mobile puo' fermarsi un soffio sotto il massimo.
 const BODY_RESERVE_FULL_EPSILON: float = 0.001
 
+# Regola 1, riserva corporea -> salute (2026-10-11, richiesta utente: prima +50/-100).
+const BODY_RESERVE_FULL_HEALTH_DELTA: float = 10.0
+const BODY_RESERVE_NOT_FULL_HEALTH_PENALTY: float = 20.0
+
 const HOME_HEALTH_DELTA: float = 10.0
 const HOME_HAPPINESS_DELTA: float = 5.0
 const HOMELESS_HEALTH_PENALTY: float = 10.0
@@ -56,15 +62,17 @@ const FAITH_LOYALTY_DAILY_BONUS: float = 20.0
 #   - nessuna casa, o casa non coperta dall'influenza RELIGIOUS: − HumanRules.faith_daily_loss_uncovered;
 #   - casa coperta, ma nessun rito nel giorno appena concluso in nessuno degli edifici che la coprono:
 #     − HumanRules.faith_daily_loss_covered;
-#   - casa coperta e almeno un rito nel giorno appena concluso in uno di quegli edifici: nessuna perdita.
+#   - casa coperta e almeno un rito nel giorno appena concluso in uno di quegli edifici: + HumanRules.faith_daily_gain_rite
+#     (2026-10-11, prima nessuna perdita).
 # Poi limite a [0, max_faith]. Edifici che coprono la casa: cache di InfluenceService (get_covering_buildings), nessun
 # calcolo di distanza qui. "Giorno appena concluso": questa regola gira in GameTimeService._on_day_advanced, DOPO che
 # GameData.advance_day ha già portato il calendario al giorno nuovo, quindi è get_absolute_day() − 1; un rito
 # completato in quel giorno ha scritto proprio quel valore in Building.last_rite_absolute_day (RiteEffectService).
 # La fede non entra in nessun'altra regola.
 # Ripiego quando HumanRules non è risolvibile (2026-10-02): stessi valori dei default di HumanRules.
-const FALLBACK_FAITH_DAILY_LOSS_COVERED: float = 2.0
-const FALLBACK_FAITH_DAILY_LOSS_UNCOVERED: float = 5.0
+const FALLBACK_FAITH_DAILY_LOSS_COVERED: float = 1.0
+const FALLBACK_FAITH_DAILY_LOSS_UNCOVERED: float = 3.0
+const FALLBACK_FAITH_DAILY_GAIN_RITE: float = 10.0
 
 # Copertura della casa (2026-10-02): casa coperta dall'influenza CULTURAL -> + HumanRules.
 # cultural_coverage_daily_happiness alla felicità, subito dopo le altre regole sulla felicità (prima di felicità ->
@@ -78,6 +86,9 @@ const FALLBACK_STAMINA_DAILY_HAPPINESS_LOSS: float = 30.0
 const FALLBACK_HEALTH_DAILY_HAPPINESS_GAIN: float = 10.0
 const FALLBACK_HEALTH_DAILY_HAPPINESS_LOSS: float = 20.0
 const FALLBACK_POLITICAL_COVERAGE_DAILY_LOYALTY: float = 5.0
+# Senza vestiario, senza HumanRules risolvibile: gli stessi default dei campi di HumanRules.
+const FALLBACK_MISSING_BODY_APPAREL_DELTA: Array[float] = [-4.0, 0.0, 0.0, -2.0]
+const FALLBACK_MISSING_HEAD_APPAREL_DELTA: Array[float] = [-1.0, 0.0, 0.0, 0.0]
 
 static func apply_daily_interaction(individual: HumanIndividual) -> void:
 	var health_before := individual.current_health
@@ -92,8 +103,12 @@ static func apply_daily_interaction(individual: HumanIndividual) -> void:
 		individual.current_happiness, HOME_HAPPINESS_DELTA if has_home else -HOMELESS_HAPPINESS_PENALTY, individual.max_happiness
 	)
 
+	var apparel_delta := _apply_apparel_bonuses(individual)
+
 	var body_reserve_full: bool = individual.body_calories >= individual.body_calories_capacity - BODY_RESERVE_FULL_EPSILON
-	individual.current_health = _add_clamped(individual.current_health, 50.0 if body_reserve_full else -100.0, individual.max_health)
+	individual.current_health = _add_clamped(
+		individual.current_health, BODY_RESERVE_FULL_HEALTH_DELTA if body_reserve_full else -BODY_RESERVE_NOT_FULL_HEALTH_PENALTY, individual.max_health
+	)
 
 	var human_rules := _resolve_human_rules(individual)
 	var stamina_gain: float = human_rules.stamina_daily_happiness_gain if human_rules != null else FALLBACK_STAMINA_DAILY_HAPPINESS_GAIN
@@ -134,23 +149,71 @@ static func apply_daily_interaction(individual: HumanIndividual) -> void:
 
 	if not DebugLogging.ENABLED or not DebugLogging.SHOW_VITALS_INTERACTION_LOGS:
 		return
-	print("[VITALS INTERACTION] #%d %s: casa=%s | riserva_corpo=%.1f/%.1f | stamina=%.1f/soglia=%.1f | health %.1f -> %.1f (soglia=%.1f) | happiness %.1f -> %.1f | loyalty %.1f -> %.1f" % [
-		individual.id, individual.name, str(has_home), individual.body_calories, individual.body_calories_capacity,
+	print("[VITALS INTERACTION] #%d %s: casa=%s | vestiario: salute %+.1f, felicità %+.1f | riserva_corpo=%.1f/%.1f | stamina=%.1f/soglia=%.1f | health %.1f -> %.1f (soglia=%.1f) | happiness %.1f -> %.1f | loyalty %.1f -> %.1f" % [
+		individual.id, individual.name, str(has_home), apparel_delta.x, apparel_delta.y, individual.body_calories, individual.body_calories_capacity,
 		individual.current_stamina, stamina_threshold,
 		health_before, individual.current_health, health_threshold,
 		happiness_before, individual.current_happiness, loyalty_before, individual.current_loyalty
 	])
 
 
-# Perdita di fede del giorno appena concluso (regola 5): valori da HumanRules (faith_daily_loss_uncovered/covered),
-# FALLBACK_FAITH_DAILY_LOSS_* se le regole non sono risolvibili.
+# Regola 0b, vestiario (2026-10-11, richiesta utente): per ogni capo INDOSSATO (HumanIndividual.equipped_apparel; riposto
+# in zaino o magazzino non conta) somma il suo SecondaryResourceRules.health_delta_by_season/happiness_delta_by_season
+# della stagione del giorno appena concluso (stesso giorno della regola 5 della fede). Subito dopo la casa e con la
+# stessa logica: le soglie delle regole successive leggono valori già toccati dal vestiario (una pelliccia d'estate
+# abbassa la felicità, e con essa può calare la lealtà). Limite a [0, max] dopo ogni capo.
+# Ritorna la variazione effettiva (x = salute, y = felicità, dopo i limiti) per il log.
+static func _apply_apparel_bonuses(individual: HumanIndividual) -> Vector2:
+	var game_data: GameData = GameSettings.active_game_data
+	# Bambini (INFANT/CHILD): vestiti di recupero, nessun bonus né malus dal vestiario (HumanIndividual.is_apparel_age_band).
+	if game_data == null or not individual.uses_village_apparel(game_data):
+		return Vector2.ZERO
+	var health_start := individual.current_health
+	var happiness_start := individual.current_happiness
+	var concluded_day: int = posmod(game_data.get_absolute_day() - 1, GameData.DAYS_PER_YEAR)
+	var season: int = SeasonCalculator.get_season_for_day(concluded_day)
+	for apparel_name in individual.equipped_apparel:
+		if apparel_name == "":
+			continue
+		var rules := CaloricCalculator.get_caloric_source_rules(apparel_name)
+		if rules == null:
+			continue
+		individual.current_health = _add_clamped(individual.current_health, _season_value(rules.health_delta_by_season, season), individual.max_health)
+		individual.current_happiness = _add_clamped(
+			individual.current_happiness, _season_value(rules.happiness_delta_by_season, season), individual.max_happiness
+		)
+	# Senza vestito / senza copricapo (2026-10-11, richiesta utente): HumanRules.missing_*_apparel_daily_delta_by_season,
+	# lo stesso valore a salute e felicità.
+	var human_rules := _resolve_human_rules(individual)
+	var missing_body: Array[float] = human_rules.missing_body_apparel_daily_delta_by_season if human_rules != null else FALLBACK_MISSING_BODY_APPAREL_DELTA
+	var missing_head: Array[float] = human_rules.missing_head_apparel_daily_delta_by_season if human_rules != null else FALLBACK_MISSING_HEAD_APPAREL_DELTA
+	var missing_delta := 0.0
+	if individual.get_equipped_apparel(HumanIndividual.ApparelSlot.BODY) == "":
+		missing_delta += _season_value(missing_body, season)
+	if individual.get_equipped_apparel(HumanIndividual.ApparelSlot.HEAD) == "":
+		missing_delta += _season_value(missing_head, season)
+	if missing_delta != 0.0:
+		individual.current_health = _add_clamped(individual.current_health, missing_delta, individual.max_health)
+		individual.current_happiness = _add_clamped(individual.current_happiness, missing_delta, individual.max_happiness)
+	return Vector2(individual.current_health - health_start, individual.current_happiness - happiness_start)
+
+
+# Valore della stagione da un array indicizzato da GameTypes.Season, 0 se l'array non la copre.
+static func _season_value(values: Array[float], season: int) -> float:
+	return values[season] if season >= 0 and season < values.size() else 0.0
+
+
+# Perdita di fede del giorno appena concluso (regola 5): valori da HumanRules (faith_daily_loss_uncovered/covered,
+# faith_daily_gain_rite), FALLBACK_FAITH_DAILY_* se le regole non sono risolvibili. Negativa (guadagno) con il rito.
 static func _daily_faith_loss(individual: HumanIndividual, has_home: bool) -> float:
 	var loss_uncovered: float = FALLBACK_FAITH_DAILY_LOSS_UNCOVERED
 	var loss_covered: float = FALLBACK_FAITH_DAILY_LOSS_COVERED
+	var gain_rite: float = FALLBACK_FAITH_DAILY_GAIN_RITE
 	var human_rules := _resolve_human_rules(individual)
 	if human_rules != null:
 		loss_uncovered = human_rules.faith_daily_loss_uncovered
 		loss_covered = human_rules.faith_daily_loss_covered
+		gain_rite = human_rules.faith_daily_gain_rite
 	if not has_home:
 		return loss_uncovered
 	var sources := InfluenceService.get_covering_buildings(individual.house_id, InfluenceService.InfluenceType.RELIGIOUS)
@@ -163,7 +226,7 @@ static func _daily_faith_loss(individual: HumanIndividual, has_home: bool) -> fl
 			# >= e non ==: un rito completato nel frame stesso del cambio di giorno, dopo questo calcolo, scrive già il
 			# giorno nuovo e protegge comunque il calcolo successivo.
 			if source.last_rite_absolute_day >= concluded_day:
-				return 0.0
+				return -gain_rite
 	return loss_covered
 
 

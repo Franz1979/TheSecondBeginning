@@ -88,6 +88,7 @@ const PRIORITY_CATEGORIES: Array = [
 	SecondaryResourceTypes.Category.MEDICINAL,
 	SecondaryResourceTypes.Category.SEMI_FINISHED,
 	SecondaryResourceTypes.Category.TOOL,
+	SecondaryResourceTypes.Category.APPAREL,
 ]
 
 var target_position: Vector2i

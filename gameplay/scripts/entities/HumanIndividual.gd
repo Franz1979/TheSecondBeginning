@@ -395,6 +395,33 @@ var equipped_tools: Array[String] = []
 # vecchi). Calano di uno a ogni ciclo di produzione in cui l'attrezzo serve (step 3, vedi
 # consume_equipped_tool_use): a 0 l'attrezzo si rompe e lo slot si svuota.
 var equipped_tool_uses: Array[int] = []
+
+# Slot del vestiario (2026-10-11, richiesta utente — vestiti, scarpe, monili, sul modello della cintura degli attrezzi).
+# Posti FISSI e tipizzati, indicizzati da ApparelSlot: ciascuno accetta solo i capi (categoria APPAREL) del suo
+# SecondaryResourceRules.apparel_kind (APPAREL_SLOT_KIND). Due array paralleli come la cintura, ma qui l'istanza
+# (ToolInstance) resta INTERA, con i suoi due stati indipendenti: il consumo (remaining_uses, GIORNI indossato: ne cala
+# uno al giorno, a 0 il capo sparisce — consume_apparel_day) e il deperimento da riposto (decay_fraction), congelato
+# finché il capo è addosso e ripreso da lì quando torna nello zaino o in un magazzino. Indipendenti dalla cintura:
+# nessun effetto su capacità di trasporto o stamina. Gli effetti del vestiario (salute, felicità, ...) arriveranno
+# dopo. Scritti SOLO da _set_apparel_slot. PERSISTITI (GameSaveService/GameLoadService, vuoti per i save vecchi).
+# HEAD (copricapo) aggiunto in fondo: gli slot si salvano per indice, non riordinare.
+enum ApparelSlot { BODY, FEET, NECK, WRIST_LEFT, WRIST_RIGHT, HEAD }
+const APPAREL_SLOT_KIND := {
+	ApparelSlot.BODY: SecondaryResourceTypes.ApparelKind.BODY,
+	ApparelSlot.FEET: SecondaryResourceTypes.ApparelKind.FEET,
+	ApparelSlot.NECK: SecondaryResourceTypes.ApparelKind.NECK,
+	ApparelSlot.WRIST_LEFT: SecondaryResourceTypes.ApparelKind.WRIST,
+	ApparelSlot.WRIST_RIGHT: SecondaryResourceTypes.ApparelKind.WRIST,
+	ApparelSlot.HEAD: SecondaryResourceTypes.ApparelKind.HEAD,
+}
+# Capi nuovi con cui parte un pipottino della partita iniziale (HumanSeedingService) o di una famiglia in arrivo
+# (VisitorService), ApparelSlot -> nome risorsa (equip_starting_apparel). I nati non ne ricevono.
+const STARTING_APPAREL := {
+	ApparelSlot.BODY: "fur_dress",
+	ApparelSlot.HEAD: "fur_cap",
+}
+var equipped_apparel: Array[String] = []
+var equipped_apparel_instances: Array[Dictionary] = []
 # Ultimo avviso del controllo attrezzi (ToolGateService, 2026-09-25): testo già tradotto, mostrato nel
 # pannello individuo; "" = nessun avviso. Scritto da GameScene quando un'assegnazione viene rifiutata
 # per mancanza di attrezzi, azzerato alla prima assegnazione che lo supera. Transitorio, non salvato.
@@ -1408,11 +1435,8 @@ func add_carried_resource(resource_name: String, quantity: int, decay_fraction: 
 		return 0
 	var current_quantity: int = get_carried_quantity(resource_name)
 	var new_quantity: int = current_quantity + quantity
-	var new_decay_fraction: float = decay_fraction
-	if current_quantity > 0:
-		new_decay_fraction = (
-			float(current_quantity) * get_carried_decay_fraction(resource_name) + float(quantity) * decay_fraction
-		) / float(new_quantity)
+	# Media sui soli pezzi nuovi (2026-10-11, vedi ToolInstance.merged_lot_decay).
+	var new_decay_fraction: float = ToolInstance.merged_lot_decay(carried_resources.get(resource_name, {}), quantity, decay_fraction)
 	var entry: Dictionary = {"quantity": new_quantity, "decay_fraction": new_decay_fraction}
 	ToolInstance.set_used_instances(entry, ToolInstance.get_used_instances(carried_resources.get(resource_name, {})))
 	carried_resources[resource_name] = entry
@@ -1424,17 +1448,18 @@ func add_carried_resource(resource_name: String, quantity: int, decay_fraction: 
 # quantity + 1 e l'istanza in used_instances. Rifiutato (false) se non è un attrezzo, se è rotto (0 usi)
 # o se non c'è posto per la varietà (MAX_CARRIED_VARIETIES). Lo SPAZIO resta a carico del chiamante,
 # come per add_carried_resource.
+# Deperimento (2026-10-11, vestiario): un pezzo a usi pieni entra nel lotto dei nuovi con il proprio deperimento
+# (media di add_carried_resource); un pezzo parziale resta un'istanza con il suo, fuori dalla media.
 func add_carried_tool_instance(resource_name: String, instance: Dictionary) -> bool:
-	if not ToolInstance.is_tool_resource(resource_name) or not can_carry_variety(resource_name):
+	if not ToolInstance.uses_instances(resource_name) or not can_carry_variety(resource_name):
 		return false
 	if ToolInstance.is_full(instance, ToolInstance.get_max_uses(resource_name)):
-		return add_carried_resource(resource_name, 1, 0.0) == 1
+		return add_carried_resource(resource_name, 1, ToolInstance.get_decay_fraction(instance)) == 1
 	if not ToolInstance.is_usable(instance):
 		return false
 	var entry: Dictionary = (carried_resources.get(resource_name, {}) as Dictionary).duplicate(true)
-	var current_quantity: int = int(entry.get("quantity", 0))
-	# Stessa media pesata di add_carried_resource, con decay 0.0 in arrivo (attrezzi: day_durability -1).
-	entry["decay_fraction"] = float(current_quantity) * float(entry.get("decay_fraction", 0.0)) / float(current_quantity + 1)
+	if not entry.has("decay_fraction"):
+		entry["decay_fraction"] = 0.0
 	ToolInstance.add_instance_to_entry(entry, instance)
 	carried_resources[resource_name] = entry
 	return true
@@ -1445,7 +1470,7 @@ func add_carried_tool_instance(resource_name: String, instance: Dictionary) -> b
 # stesso ordine del magazzino (ToolInstance.take_units_from_entry). La voce sparisce a quantità 0.
 # Array vuoto se la risorsa non è un attrezzo o non è nello zaino.
 func take_carried_tool_units(resource_name: String, quantity: int) -> Array:
-	if quantity <= 0 or not ToolInstance.is_tool_resource(resource_name) or not carried_resources.has(resource_name):
+	if quantity <= 0 or not ToolInstance.uses_instances(resource_name) or not carried_resources.has(resource_name):
 		return []
 	var entry: Dictionary = (carried_resources[resource_name] as Dictionary).duplicate(true)
 	var units: Array = ToolInstance.take_units_from_entry(entry, quantity, ToolInstance.get_max_uses(resource_name))
@@ -1666,10 +1691,177 @@ func _recalculate_carry_capacity_after_tool_change(game_data: GameData, empty_sl
 		max_carry_capacity += HumanCalculator.get_equipped_carry_bonus(equipped_tools) - tool_bonus_before
 
 
+# --- Vestiario (2026-10-11, richiesta utente) — vedi equipped_apparel ---
+
+# Porta i due array a ApparelSlot.size() posti, senza toccare quelli già occupati. Un posto pieno senza istanza
+# (non dovrebbe capitare) riparte da capo nuovo.
+func _ensure_apparel_slots() -> void:
+	var slot_count: int = ApparelSlot.size()
+	if equipped_apparel.size() != slot_count:
+		equipped_apparel.resize(slot_count)
+	if equipped_apparel_instances.size() != slot_count:
+		var previous_size: int = equipped_apparel_instances.size()
+		equipped_apparel_instances.resize(slot_count)
+		for slot_index in range(previous_size, slot_count):
+			var apparel_name: String = equipped_apparel[slot_index]
+			equipped_apparel_instances[slot_index] = ToolInstance.create(ToolInstance.get_max_uses(apparel_name)) if apparel_name != "" else {}
+
+
+static func is_apparel_resource(resource_name: String) -> bool:
+	var resource_rules := CaloricCalculator.get_caloric_source_rules(resource_name)
+	return resource_rules != null and resource_rules.category == SecondaryResourceTypes.Category.APPAREL
+
+
+# Il capo `resource_name` va in questo slot (apparel_kind giusto), a prescindere che lo slot sia libero.
+static func can_wear_in_slot(resource_name: String, slot_index: int) -> bool:
+	if not is_apparel_resource(resource_name) or not APPAREL_SLOT_KIND.has(slot_index):
+		return false
+	var resource_rules := CaloricCalculator.get_caloric_source_rules(resource_name)
+	return int(resource_rules.apparel_kind) == int(APPAREL_SLOT_KIND[slot_index])
+
+
+# Nome del capo nello slot, "" se vuoto o fuori range.
+func get_equipped_apparel(slot_index: int) -> String:
+	_ensure_apparel_slots()
+	if slot_index < 0 or slot_index >= equipped_apparel.size():
+		return ""
+	return equipped_apparel[slot_index]
+
+
+# Istanza del capo nello slot (copia indipendente, con consumo e deperimento congelato), {} se vuoto.
+func get_equipped_apparel_instance(slot_index: int) -> Dictionary:
+	if get_equipped_apparel(slot_index) == "":
+		return {}
+	return ToolInstance.normalized(equipped_apparel_instances[slot_index])
+
+
+# Unico punto che scrive uno slot del vestiario (nome + istanza insieme). `instance` vuota = capo nuovo (consumo
+# pieno, deperimento 0). resource_name "" = svuota lo slot. Chiamare dopo _ensure_apparel_slots, slot già validato.
+func _set_apparel_slot(slot_index: int, resource_name: String, instance: Dictionary = {}) -> void:
+	equipped_apparel[slot_index] = resource_name
+	if resource_name == "":
+		equipped_apparel_instances[slot_index] = {}
+	elif instance.is_empty():
+		equipped_apparel_instances[slot_index] = ToolInstance.create(ToolInstance.get_max_uses(resource_name))
+	else:
+		equipped_apparel_instances[slot_index] = ToolInstance.normalized(instance)
+
+
+# Slot in cui il capo può entrare: `preferred_slot` se è del tipo giusto e libero, altrimenti il primo slot libero
+# del tipo giusto (per i polsi il primo dei due libero); -1 se nessuno.
+func find_apparel_slot_for(resource_name: String, preferred_slot: int = -1) -> int:
+	_ensure_apparel_slots()
+	if preferred_slot >= 0 and preferred_slot < equipped_apparel.size() \
+			and equipped_apparel[preferred_slot] == "" and can_wear_in_slot(resource_name, preferred_slot):
+		return preferred_slot
+	for slot_index in range(equipped_apparel.size()):
+		if equipped_apparel[slot_index] == "" and can_wear_in_slot(resource_name, slot_index):
+			return slot_index
+	return -1
+
+
+# Indossa UN capo preso dallo zaino (il più consumato per primo, come per gli attrezzi) nel suo slot, con il suo
+# stato: consumo invariato (pieno se nuovo) e deperimento congelato. Togliere un capo dallo zaino libera solo spazio:
+# nessun controllo di capacità. Ritorna true se è avvenuto.
+func equip_apparel_from_backpack(resource_name: String, preferred_slot: int = -1) -> bool:
+	if get_carried_quantity(resource_name) <= 0:
+		return false
+	var slot_index: int = find_apparel_slot_for(resource_name, preferred_slot)
+	if slot_index == -1:
+		return false
+	var units: Array = take_carried_tool_units(resource_name, 1)
+	if units.is_empty():
+		return false
+	_set_apparel_slot(slot_index, resource_name, units[0])
+	return true
+
+
+# Toglie il capo dello slot e lo rimette nello zaino con il suo stato (il deperimento riparte da dove era congelato).
+# Controlli: varietà e spazio nello zaino. Ritorna true se è avvenuto.
+func unequip_apparel_to_backpack(slot_index: int) -> bool:
+	var resource_name: String = get_equipped_apparel(slot_index)
+	if resource_name == "" or not can_carry_variety(resource_name):
+		return false
+	var resource_rules := CaloricCalculator.get_caloric_source_rules(resource_name)
+	var space_per_unit: float = resource_rules.space_per_unit if resource_rules != null else 0.0
+	if get_carried_space() + space_per_unit > max_carry_capacity:
+		return false
+	if not add_carried_tool_instance(resource_name, get_equipped_apparel_instance(slot_index)):
+		return false
+	_set_apparel_slot(slot_index, "")
+	return true
+
+
+# Indossa un capo arrivato direttamente da un magazzino (RetrieveAction in modalità vestiario, passo successivo).
+# Slot libero e del tipo giusto. `instance` vuota = capo nuovo.
+func equip_apparel_direct(resource_name: String, slot_index: int, instance: Dictionary = {}) -> bool:
+	if get_equipped_apparel(slot_index) != "" or not can_wear_in_slot(resource_name, slot_index):
+		return false
+	_set_apparel_slot(slot_index, resource_name, instance)
+	return true
+
+
+# Toglie il capo dallo slot SENZA metterlo nello zaino (il chiamante lo ha già depositato altrove, leggendone prima
+# l'istanza con get_equipped_apparel_instance). Ritorna il nome tolto, "" se lo slot era vuoto.
+func take_equipped_apparel(slot_index: int) -> String:
+	var resource_name: String = get_equipped_apparel(slot_index)
+	if resource_name != "":
+		_set_apparel_slot(slot_index, "")
+	return resource_name
+
+
+# Toglie UN giorno di consumo al capo dello slot (una volta al giorno, servizio dell'usura). A 0 il capo è consumato:
+# sparisce senza lasciare nulla. Ritorna true se si è consumato. No-op per uno slot vuoto o un capo con max_uses <= 0.
+func consume_apparel_day(slot_index: int) -> bool:
+	var resource_name: String = get_equipped_apparel(slot_index)
+	if resource_name == "" or ToolInstance.get_max_uses(resource_name) <= 0:
+		return false
+	var instance: Dictionary = equipped_apparel_instances[slot_index]
+	instance[ToolInstance.KEY_REMAINING_USES] = ToolInstance.get_remaining_uses(instance) - 1
+	if ToolInstance.is_usable(instance):
+		return false
+	_set_apparel_slot(slot_index, "")
+	return true
+
+
+# Bambini e vestiario (2026-10-11, richiesta utente): INFANT e CHILD si danno per vestiti "di recupero" (vestiti vecchi,
+# pelli riciclate) — non ricevono capi di partenza, non hanno bonus né malus dal vestiario, non compaiono nella campanella
+# "Senza vestito" e nel pannello la figura del vestiario è attenuata. Il vestiario del villaggio si usa
+# dall'adolescenza in su. Fascia d'età dalle durate dell'era, come altrove (HumanCalculator.get_age_band).
+static func is_apparel_age_band(age_band: HumanTypes.AgeBand) -> bool:
+	return age_band != HumanTypes.AgeBand.INFANT and age_band != HumanTypes.AgeBand.CHILD
+
+
+func uses_village_apparel_at(durations_male: Array[float], durations_female: Array[float], current_year: int) -> bool:
+	var age := float(current_year - birth_year_virtual)
+	return is_apparel_age_band(HumanCalculator.get_age_band(durations_male, durations_female, sex, age))
+
+
+# Stessa domanda con le durate e l'anno della partita; true se game_data manca (nessuna esenzione senza dati).
+func uses_village_apparel(game_data: GameData) -> bool:
+	if game_data == null:
+		return true
+	return uses_village_apparel_at(
+		game_data.era_effective_age_band_durations_male, game_data.era_effective_age_band_durations_female, game_data.year
+	)
+
+
+# Capi di partenza (STARTING_APPAREL), nuovi, negli slot ancora liberi: pipottini della partita iniziale e famiglie in
+# arrivo, solo dall'adolescenza in su (i bambini hanno vestiti di recupero, vedi is_apparel_age_band).
+func equip_starting_apparel(durations_male: Array[float], durations_female: Array[float], current_year: int) -> void:
+	if not uses_village_apparel_at(durations_male, durations_female, current_year):
+		return
+	_ensure_apparel_slots()
+	for slot_index in STARTING_APPAREL:
+		var resource_name := String(STARTING_APPAREL[slot_index])
+		if equipped_apparel[slot_index] == "" and can_wear_in_slot(resource_name, slot_index):
+			_set_apparel_slot(slot_index, resource_name)
+
+
 # Attrezzi (2026-09-26, step 2): stesso ordine di take_carried_tool_units (prima le istanze più consumate),
 # ma lo stato delle unità tolte va perso — chi deve conservarlo usa take_carried_tool_units.
 func remove_carried_resource(resource_name: String, quantity: int) -> int:
-	if ToolInstance.is_tool_resource(resource_name):
+	if ToolInstance.uses_instances(resource_name):
 		return take_carried_tool_units(resource_name, quantity).size()
 	var current_quantity: int = get_carried_quantity(resource_name)
 	if quantity <= 0 or current_quantity <= 0:

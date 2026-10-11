@@ -292,3 +292,24 @@ extends Resource
 # munizione richiesta l'arma funziona solo se in cintura c'è un attrezzo di quella categoria: a ogni tiro consuma un uso
 # suo e uno della munizione, e probabilità di colpire e danno usano la forza d'attacco della munizione (HuntService).
 @export var required_ammo_category: int = -1
+
+@export_group("Apparel")
+# Campi del vestiario (2026-10-11, richiesta utente — vestiti, scarpe, monili; category APPAREL). La durata di un capo
+# INDOSSATO riusa max_uses (gruppo Tool sopra), contata in GIORNI: ogni giorno indossato toglie un uso
+# (HumanApparelWearIndividualService), a 0 il capo è consumato e sparisce. Riposto in magazzino o nello zaino segue
+# invece il normale deperimento a lotto di day_durability, come ogni altra risorsa.
+# Slot in cui si indossa (SecondaryResourceTypes.ApparelKind). Letto solo per category APPAREL.
+@export var apparel_kind: SecondaryResourceTypes.ApparelKind = SecondaryResourceTypes.ApparelKind.BODY
+# Colore con cui il capo indossato si disegna sul pipottino (HumanIndividualView).
+@export var apparel_color: Color = Color(0.55, 0.40, 0.25, 1.0)
+# Capo tinto (2026-10-11, richiesta utente — per la futura tintoria): true = si disegna con il colore personale di chi lo
+# indossa (HumanIndividual.clothing_color) invece che con apparel_color. Nel Paleolitico nessun capo è tinto.
+@export var apparel_dyed: bool = false
+# Effetto del capo indossato su salute e felicità, per stagione (2026-10-11, richiesta utente — valori, non
+# moltiplicatori: un vestito di pelliccia è buono d'inverno e fastidioso d'estate, es. inverno +5/+5, estate 0/-10).
+# Delta GIORNALIERI additivi, stessa scala di HumanVitalsInteractionService (casa +10 salute / +5 felicità al giorno),
+# indicizzati da GameTypes.Season (WINTER, SPRING, SUMMER, AUTUMN). 0 = nessun effetto. Vestiti e scarpe agiranno
+# soprattutto sulla salute, i monili anche sulla felicità. Valgono SOLO mentre il capo è indossato (riposto in zaino o
+# magazzino non dà nulla). Solo il dato per ora: nessuna logica li legge ancora.
+@export var health_delta_by_season: Array[float] = [0.0, 0.0, 0.0, 0.0]
+@export var happiness_delta_by_season: Array[float] = [0.0, 0.0, 0.0, 0.0]

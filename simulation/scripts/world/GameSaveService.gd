@@ -119,6 +119,12 @@ func save_game_to_json(
 			"stock_min_food_days": game_data.stock_min_food_days,
 			"stock_excess_meat_destination": game_data.stock_excess_meat_destination,
 			"job_board_return_borrowed_tools": game_data.job_board_return_borrowed_tools,
+			"inventory_interval_hours": game_data.inventory_interval_hours,
+			"last_inventory_end": game_data.last_inventory_end,
+			"last_inventory_by": game_data.last_inventory_by,
+			"stock_snapshot": game_data.stock_snapshot,
+			"stock_snapshot_fill": game_data.stock_snapshot_fill,
+			"stock_snapshot_time": game_data.stock_snapshot_time,
 			# Ordini creati dal cassetto (2026-10-09): già JSON-nativi.
 			"drawer_orders": game_data.drawer_orders,
 			"next_drawer_order_id": game_data.next_drawer_order_id,
@@ -674,6 +680,10 @@ func save_game_to_json(
 				# equipped_tool_uses), parallelo a equipped_tools. Lo zaino sopra porta già le istanze
 				# usate dentro le proprie voci ("used_instances"), salvate con il duplicate(true).
 				"equipped_tool_uses": Array(individual.equipped_tool_uses),
+				# Slot del vestiario (2026-10-11, vedi HumanIndividual.equipped_apparel): un nome per slot ("" = vuoto) e
+				# l'istanza intera del capo (consumo e deperimento congelato), parallela.
+				"equipped_apparel": Array(individual.equipped_apparel),
+				"equipped_apparel_instances": individual.equipped_apparel_instances.duplicate(true),
 				# Task/Action in corso (2026-09-08, richiesta utente — "salva anche lo stato della
 				# sua action") — null se l'individuo non ha una Task attiva (Rest implicito, vedi
 				# HumanIndividualActionService.apply_action), altrimenti l'intera sequenza di step

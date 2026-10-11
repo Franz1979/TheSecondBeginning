@@ -28,8 +28,9 @@ const DRAWER_CONTENT_ID := &"task_assignment"
 
 const SECTION_FONT_SIZE: int = 12
 const BUTTON_LABEL_FONT_SIZE: int = 10
-const BUTTON_HEIGHT: float = 58.0
-const BUTTON_ICON_SIDE: float = 30.0
+# Più bassi (2026-10-11, cassetto largo 300): restano circa quadrati.
+const BUTTON_HEIGHT: float = 46.0
+const BUTTON_ICON_SIDE: float = 24.0
 const BUTTON_SEPARATION: int = 4
 
 # Clic su una riga della lista (centra la visuale) e bottoni "Blocca" / "Sblocca": GameScene decide cosa fare.
@@ -71,8 +72,13 @@ const LIST_ICON_SIDE: float = 20.0
 const DISABLED_MODULATE := Color(1, 1, 1, 0.45)
 const LOCKED_MODULATE := Color(1, 1, 1, 0.55)
 const WAITING_MODULATE := Color(1, 1, 1, 0.7)
-# Stacco tra "Blocca"/"Sblocca" e la X della riga.
-const CANCEL_BUTTON_GAP: float = 10.0
+# Stacco tra "Blocca"/"Sblocca" e la X della riga (2026-10-11: 2 px più le separazioni della riga, prima 10).
+const CANCEL_BUTTON_GAP: float = 2.0
+# Bottone di stato compatto (2026-10-11, cassetto largo 300): margine interno orizzontale e verticale (px).
+const COMPACT_BUTTON_PADDING_X: float = 4.0
+const COMPACT_BUTTON_PADDING_Y: float = 1.0
+# Stili compatti già fatti (stato del bottone -> StyleBox), riusati a ogni ricostruzione dell'elenco.
+var _compact_styles: Dictionary = {}
 # Parti dello spazio libero delle due sezioni (circa 60% "In coda", 40% "In corso").
 const QUEUED_STRETCH: float = 3.0
 const IN_PROGRESS_STRETCH: float = 2.0
@@ -566,6 +572,10 @@ func _build_list_row(entry: Dictionary, in_progress: bool) -> Control:
 	elif not locked and bool(entry.get("waiting", false)):
 		var wait_seconds := int(entry.get("wait_seconds", 0))
 		status_text = tr("task_assignment_waiting") + ((" (%d)" % wait_seconds) if wait_seconds > 0 else "")
+	# Avanzamento dell'ordine (2026-10-11, "progress", es. "1/5"): nella seconda riga, accanto a chi lo fa o allo stato.
+	var progress := String(entry.get("progress", ""))
+	if progress != "":
+		status_text = progress if status_text == "" else "%s · %s" % [status_text, progress]
 	if status_text != "":
 		var status_label := Label.new()
 		status_label.text = status_text
@@ -587,7 +597,8 @@ func _build_list_row(entry: Dictionary, in_progress: bool) -> Control:
 	# In coda: Blocca/Sblocca. In corso (2026-10-07): "Rimetti in coda" — larghezza intera, è il nome a accorciarsi.
 	var state_button := Button.new()
 	state_button.focus_mode = Control.FOCUS_NONE
-	state_button.add_theme_font_size_override("font_size", LIST_FONT_SIZE - 1)
+	state_button.add_theme_font_size_override("font_size", LIST_FONT_SIZE - 2)
+	_make_compact(state_button)
 	if in_progress and bool(entry.get("direct", false)):
 		# Comando diretto (2026-10-09): "Diretto" piccolo, non cliccabile, largo quanto "Rimetti in coda" (il bottone resta
 		# sotto, invisibile e senza mouse, solo per dare la larghezza).
@@ -655,6 +666,24 @@ func _build_list_row(entry: Dictionary, in_progress: bool) -> Control:
 	clickable_row.add_child(row)
 	clickable_row.clicked.connect(func() -> void: entry_activated.emit(entry))
 	return clickable_row
+
+
+# Bottone più piccolo (2026-10-11): gli stili del tema con margini interni ridotti, letti quando entra nell'albero.
+func _make_compact(button: Button) -> void:
+	button.ready.connect(func() -> void:
+		for state in ["normal", "hover", "pressed", "hover_pressed", "disabled"]:
+			if not _compact_styles.has(state):
+				var style := button.get_theme_stylebox(state)
+				if style == null:
+					continue
+				var compact := style.duplicate() as StyleBox
+				compact.content_margin_left = COMPACT_BUTTON_PADDING_X
+				compact.content_margin_right = COMPACT_BUTTON_PADDING_X
+				compact.content_margin_top = COMPACT_BUTTON_PADDING_Y
+				compact.content_margin_bottom = COMPACT_BUTTON_PADDING_Y
+				_compact_styles[state] = compact
+			button.add_theme_stylebox_override(state, _compact_styles[state])
+	)
 
 
 # Icona della riga, decisa dal tipo di lavoro (2026-10-07, generica — GameScene._job_board_drawer_entry, chiave "icon"):
@@ -979,7 +1008,7 @@ func _build_empty_outputs_setting_row() -> Control:
 	var check := CheckBox.new()
 	check.text = tr("task_assignment_setting_empty_outputs")
 	check.tooltip_text = tr("task_assignment_setting_empty_outputs_tooltip")
-	# Testo lungo (2026-10-08): va a capo, il cassetto resta largo 380 px.
+	# Testo lungo (2026-10-08): va a capo, il cassetto resta largo SideDrawer.WIDTH.
 	check.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	check.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	check.focus_mode = Control.FOCUS_NONE
@@ -1058,7 +1087,7 @@ func _rebuild_kind_order_rows() -> void:
 		label.add_theme_font_size_override("font_size", LIST_FONT_SIZE)
 		label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-		# A capo se il nome non ci sta (2026-10-10, "Demolizioni e sgomberi"): il cassetto resta largo 380 px.
+		# A capo se il nome non ci sta (2026-10-10, "Demolizioni e sgomberi"): il cassetto resta largo SideDrawer.WIDTH.
 		label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		row.add_child(label)
 		row.add_child(_build_kind_move_button("▲", tr("task_assignment_kind_move_up"), index, -1))

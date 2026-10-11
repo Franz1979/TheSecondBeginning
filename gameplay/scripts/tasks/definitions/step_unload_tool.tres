@@ -5,5 +5,5 @@
 [resource]
 script = ExtResource("1_unload_tool")
 action_type = 3
-context_keys = Array[String](["tool_building", "tool_slot_index"])
+context_keys = Array[String](["tool_building", "tool_slot_index", "tool_is_apparel"])
 step_description = "task_store_tool_step_unload"

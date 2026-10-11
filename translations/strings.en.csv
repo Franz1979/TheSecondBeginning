@@ -1120,3 +1120,60 @@ warehouse_food_days_auto_tooltip,"Minimum days of autonomy: below this value the
 warehouse_level_derived,from products
 warehouse_meat_level_derived_tooltip,"Raw meat has no level of its own: hunting is driven by cooked, smoked and dried meat. Set the level on those."
 pending_output_delivery_rack,{building} full: bring the ready products to storage
+task_inventory_name,Inventory
+task_inventory_step_count,Counts the stock
+task_assignment_kind_inventory,Inventory
+task_assignment_inventory_tooltip,"Warehouse inventory: the stock is counted at the nearest storage; at the end the warehouse orders are issued."
+pending_inventory_overdue,Warehouse inventory waiting for {hours} h
+warehouse_inventory_off,Stock management off: a storage is needed
+warehouse_inventory_running,Inventory in progress · {name}
+warehouse_inventory_due,Inventory due
+warehouse_inventory_next,Next inventory: in {time}
+warehouse_inventory_last,"Values of the inventory of {time} ({ago} ago) — {name}."
+warehouse_inventory_never,No inventory done yet.
+warehouse_inventory_interval_hint,Change the frequency in Storage rules.
+warehouse_rule_inventory_interval,Inventory frequency
+warehouse_rule_inventory_interval_tooltip,"How often the warehouse inventory is done: more often keeps more people busy but orders start sooner."
+warehouse_inventory_every_hours,every {hours} h
+warehouse_inventory_every_days,every {days} d
+warehouse_inventory_late,Inventory due · late by {time}
+game_time_format,"day {day}, year {year}, {time}"
+duration_hours,{hours} h
+duration_days_hours,{days} d {hours} h
+duration_less_than_hour,less than 1 h
+drawer_order_gather_all_food,every food
+drawer_order_cut_started_row,Cut plants
+drawer_order_quarry_started_row,Quarry stones
+drawer_order_gather_started_row,Gather {target}
+drawer_order_hunt_started_row,Hunt
+category_name_apparel,Apparel
+pickup_choice_category_apparel,Apparel
+pickup_choice_all_apparel,All apparel
+apparel_section_title,Apparel
+apparel_slot_body,Body
+apparel_slot_feet,Feet
+apparel_slot_neck,Neck
+apparel_slot_wrist_left,Left wrist
+apparel_slot_wrist_right,Right wrist
+apparel_slot_empty_tooltip,"{slot}: empty — right click: take an item from a storage"
+apparel_slot_full_tooltip,"{slot}: {apparel} — left click: back to the backpack; right click: store in a storage"
+apparel_slot_days_line,Days left: {days}/{max}
+apparel_slot_decay_line,Storage decay: {percent}%
+apparel_slot_head,Head
+carried_resource_tooltip_fur_dress,Fur dress
+carried_resource_tooltip_fur_cap,Fur cap
+carried_resource_tooltip_worked_hide_dress,Worked hide dress
+carried_resource_tooltip_worked_hide_cap,Worked hide cap
+building_clothing_hut,Clothing hut
+build_bar_clothing_hut_tooltip,Clothing hut
+build_bar_clothing_hut_description,Worked hide clothes are sewn here.
+notification_apparel_worn_out,{name}: {resource} is completely worn out
+task_activity_equip_apparel,fetch an item to wear
+task_activity_store_apparel,store an item of clothing
+apparel_equip_no_source,No reachable storage building has {apparel}
+apparel_storage_menu_empty,No items for this slot in storage
+apparel_store_no_storage,No storage building can accept {apparel}
+apparel_storage_dialog_title,Fetch an item to wear
+apparel_storage_dialog_message,Choose the item to fetch from the nearest storage and wear:
+pending_reason_naked,No clothes
+apparel_children_tooltip,Hand-me-downs: children do not use the village clothing

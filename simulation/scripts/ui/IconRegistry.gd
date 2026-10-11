@@ -100,6 +100,12 @@ const RESOURCE_ICON_NODES := {
 	"hide_bag": preload("res://simulation/scripts/ui/HideBagIcon.gd"),
 	# Sacca di pelle essiccata (2026-10-04): modello migliore di hide_bag, stessa sagoma nel colore della pelle essiccata.
 	"dried_hide_bag": preload("res://simulation/scripts/ui/DriedHideBagIcon.gd"),
+	# Vestiario (2026-10-11, richiesta utente): pelliccia di base (pelle col pelo, toni grigi) e, per il secondo livello,
+	# pelli lavorate — vedi FurDressIcon/FurCapIcon/WorkedHideDressIcon/WorkedHideCapIcon. Gli altri capi usano ApparelIcon.
+	"fur_dress": preload("res://simulation/scripts/ui/FurDressIcon.gd"),
+	"fur_cap": preload("res://simulation/scripts/ui/FurCapIcon.gd"),
+	"worked_hide_dress": preload("res://simulation/scripts/ui/WorkedHideDressIcon.gd"),
+	"worked_hide_cap": preload("res://simulation/scripts/ui/WorkedHideCapIcon.gd"),
 	# Prodotti della macellazione (2026-09-26, richiesta utente — icone provvisorie): carne, pelle, tendini,
 	# ossa — vedi MeatIcon.gd/HideIcon.gd/SinewIcon.gd/BoneIcon.gd.
 	"meat": preload("res://simulation/scripts/ui/MeatIcon.gd"),
@@ -188,6 +194,8 @@ const BUILDING_ICON_NODES := {
 	"covered_depot": preload("res://simulation/scripts/ui/CoveredDepotIcon.gd"),
 	# Legnaia (2026-10-08, richiesta utente — segnaposto): stesso disegno della mappa (PlaceholderBuildingShapes).
 	"woodshed": preload("res://simulation/scripts/ui/WoodshedIcon.gd"),
+	# Capanna del vestiario (2026-10-11, segnaposto): stesso schema della legnaia.
+	"clothing_hut": preload("res://simulation/scripts/ui/ClothingHutIcon.gd"),
 	# Macerie (2026-10-10, richiesta utente — crollo): stesso disegno della mappa (PlaceholderBuildingShapes).
 	"rubble": preload("res://simulation/scripts/ui/RubbleIcon.gd"),
 }
@@ -264,9 +272,15 @@ static func get_resource_icon_node(resource_name: String) -> Control:
 	var texture_node := get_icon_texture_node(resource_name)
 	if texture_node != null:
 		return texture_node
-	if not RESOURCE_ICON_NODES.has(resource_name):
-		return null
-	return RESOURCE_ICON_NODES[resource_name].new()
+	if RESOURCE_ICON_NODES.has(resource_name):
+		return RESOURCE_ICON_NODES[resource_name].new()
+	# Vestiario (2026-10-11, richiesta utente): ogni capo senza icona propria usa l'icona generica del suo slot.
+	var rules := CaloricCalculator.get_caloric_source_rules(resource_name)
+	if rules != null and rules.category == SecondaryResourceTypes.Category.APPAREL:
+		var apparel_icon := ApparelIcon.new()
+		apparel_icon.resource_name = resource_name
+		return apparel_icon
+	return null
 
 
 # "" se building_type_name non ha ancora un'icona emoji qui (es. "pebble_circle", che ne ha una

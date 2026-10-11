@@ -257,6 +257,10 @@ extends Resource
 # progetto per campi di TIPO ancora privi di consumatori differenziati. Default 1 = valore neutro di
 # partenza. Valorizzato su stick_tent.tres (1) e hut.tres (2) — solo per marcare una futura gerarchia
 # di qualità, NESSUN effetto di gioco oggi.
+# DA FARE (2026-10-11, decisione dell'utente — vestiario automatico): chi abita in una casa di tier >= 2 (oggi la Capanna)
+# si veste, spoglia e cambia da solo (cambio di stagione, capo consumato, passaggio ad adolescente), prendendo i capi dal
+# guardaroba di casa o dai magazzini e riponendo i propri SOLO in casa, con deperimento bassissimo per APPAREL. Sotto il
+# tier 2 resta manuale. Nessuna idea nuova: è un dono della Capanna.
 @export var residency_assignment_tier: int = 1
 
 # Moltiplicatori di movimento per chi cammina su una microcella occupata da un edificio COMPLETO di

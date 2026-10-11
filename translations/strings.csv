@@ -1174,3 +1174,60 @@ warehouse_food_days_auto_tooltip,"Giorni di autonomia minimi: sotto questo valor
 warehouse_level_derived,da prodotti
 warehouse_meat_level_derived_tooltip,"La carne cruda non ha un livello proprio: si caccia per carne cotta, affumicata ed essiccata. Metti il livello su quelle."
 pending_output_delivery_rack,{building} pieno: porta i prodotti pronti al deposito
+task_inventory_name,Inventario
+task_inventory_step_count,Conta le scorte
+task_assignment_kind_inventory,Inventario
+task_assignment_inventory_tooltip,"Inventario del magazzino: al deposito più vicino si contano le scorte; alla fine escono gli ordini del magazzino."
+pending_inventory_overdue,Inventario del magazzino in attesa da {hours} h
+warehouse_inventory_off,Gestione scorte spenta: serve un deposito
+warehouse_inventory_running,Inventario in corso · {name}
+warehouse_inventory_due,Inventario da fare
+warehouse_inventory_next,Prossimo inventario: tra {time}
+warehouse_inventory_last,"Valori dell'inventario del {time} ({ago} fa) — {name}."
+warehouse_inventory_never,Nessun inventario ancora fatto.
+warehouse_inventory_interval_hint,La frequenza si cambia in Regole di stoccaggio.
+warehouse_rule_inventory_interval,Frequenza dell'inventario
+warehouse_rule_inventory_interval_tooltip,"Ogni quanto si fa l'inventario del magazzino: più spesso occupa più persone ma gli ordini partono prima."
+warehouse_inventory_every_hours,ogni {hours} h
+warehouse_inventory_every_days,ogni {days} g
+warehouse_inventory_late,Inventario da fare · in ritardo di {time}
+game_time_format,"giorno {day}, anno {year}, ore {time}"
+duration_hours,{hours} h
+duration_days_hours,{days} g {hours} h
+duration_less_than_hour,meno di 1 h
+drawer_order_gather_all_food,ogni cibo
+drawer_order_cut_started_row,Taglia piante
+drawer_order_quarry_started_row,Estrai pietre
+drawer_order_gather_started_row,Raccogli {target}
+drawer_order_hunt_started_row,Caccia
+category_name_apparel,Vestiario
+pickup_choice_category_apparel,Vestiario
+pickup_choice_all_apparel,Tutto il vestiario
+apparel_section_title,Vestiario
+apparel_slot_body,Corpo
+apparel_slot_feet,Piedi
+apparel_slot_neck,Collo
+apparel_slot_wrist_left,Polso sx
+apparel_slot_wrist_right,Polso dx
+apparel_slot_empty_tooltip,"{slot}: vuoto — click destro: prendi un capo da un magazzino"
+apparel_slot_full_tooltip,"{slot}: {apparel} — click sinistro: rimetti nello zaino; click destro: riponi in un magazzino"
+apparel_slot_days_line,Giorni residui: {days}/{max}
+apparel_slot_decay_line,Deperimento da riposto: {percent}%
+apparel_slot_head,Testa
+carried_resource_tooltip_fur_dress,Vestito di pelliccia
+carried_resource_tooltip_fur_cap,Copricapo di pelliccia
+carried_resource_tooltip_worked_hide_dress,Vestito di pelli lavorate
+carried_resource_tooltip_worked_hide_cap,Cappello di pelli lavorate
+building_clothing_hut,Capanna del vestiario
+build_bar_clothing_hut_tooltip,Capanna del vestiario
+build_bar_clothing_hut_description,Qui si cuciono i vestiti di pelli lavorate.
+notification_apparel_worn_out,{name}: {resource} si è consumato del tutto
+task_activity_equip_apparel,prendere un capo da indossare
+task_activity_store_apparel,riporre un capo
+apparel_equip_no_source,Nessun magazzino raggiungibile ha {apparel}
+apparel_storage_menu_empty,Nessun capo per questo slot nei magazzini
+apparel_store_no_storage,Nessun magazzino può accettare {apparel}
+apparel_storage_dialog_title,Prendi un capo
+apparel_storage_dialog_message,Scegli il capo da prendere dal magazzino più vicino e indossare:
+pending_reason_naked,Senza vestito
+apparel_children_tooltip,Vestiti di recupero: i bambini non usano il vestiario del villaggio

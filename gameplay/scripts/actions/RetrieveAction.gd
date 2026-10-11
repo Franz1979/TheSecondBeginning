@@ -221,7 +221,7 @@ func _activate_equip(individual: Variant) -> void:
 	_elapsed = 0.0
 	if target_building == null or BuildingStorageService.get_available_quantity(target_building, resource_name) <= 0:
 		return
-	if individual.find_slot_for_direct_equip(resource_name, equip_slot_index) == -1:
+	if _find_equip_slot(individual) == -1:
 		return
 	_quantity_to_retrieve = 1
 	var resource_rules := CaloricCalculator.get_caloric_source_rules(resource_name)
@@ -310,7 +310,7 @@ func _complete_retrieve(individual: Variant, context: Dictionary) -> void:
 	if equip_slot_index >= 0:
 		_complete_equip(individual)
 		return
-	if ToolInstance.is_tool_resource(resource_name):
+	if ToolInstance.uses_instances(resource_name):
 		_complete_tool_retrieve(individual)
 		return
 	_complete_named_retrieve(individual)
@@ -348,7 +348,7 @@ func _complete_named_retrieve(individual: Variant) -> void:
 # con l'edificio di produzione escluso.
 func _complete_delivery(individual: Variant, context: Dictionary) -> void:
 	var carried_before: int = individual.get_carried_quantity(resource_name)
-	if ToolInstance.is_tool_resource(resource_name):
+	if ToolInstance.uses_instances(resource_name):
 		_complete_tool_retrieve(individual)
 	else:
 		_complete_named_retrieve(individual)
@@ -362,7 +362,7 @@ func _complete_delivery(individual: Variant, context: Dictionary) -> void:
 
 
 func _complete_equip(individual: Variant) -> void:
-	var slot: int = individual.find_slot_for_direct_equip(resource_name, equip_slot_index)
+	var slot: int = _find_equip_slot(individual)
 	if slot == -1:
 		return
 	# Usi residui conservati (2026-09-26, attrezzi come istanze): esce l'unità più consumata del
@@ -370,10 +370,24 @@ func _complete_equip(individual: Variant) -> void:
 	var units: Array = BuildingStorageService.withdraw_tool_units(target_building, resource_name, 1)
 	if units.is_empty():
 		return
-	if not individual.equip_tool_direct(resource_name, slot, null, units[0]):
+	var equipped: bool = individual.equip_apparel_direct(resource_name, slot, units[0]) if _is_apparel() \
+		else individual.equip_tool_direct(resource_name, slot, null, units[0])
+	if not equipped:
 		BuildingStorageService.store_tool_instance(target_building, resource_name, units[0])
 		return
 	resource_retrieved.emit(resource_name, target_building, units.size())
+
+
+# Modalità "addosso" (2026-10-11, vestiario): se la risorsa è un capo, equip_slot_index è uno slot del vestiario
+# (HumanIndividual.ApparelSlot) e il capo prelevato si indossa; altrimenti è uno slot della cintura, come sempre.
+func _is_apparel() -> bool:
+	return HumanIndividual.is_apparel_resource(resource_name)
+
+
+func _find_equip_slot(individual: Variant) -> int:
+	if _is_apparel():
+		return individual.find_apparel_slot_for(resource_name, equip_slot_index)
+	return individual.find_slot_for_direct_equip(resource_name, equip_slot_index)
 
 
 # Prelievo normale (nello zaino) di un attrezzo (2026-09-26, attrezzi come istanze): stesse quantità

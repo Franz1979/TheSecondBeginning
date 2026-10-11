@@ -1,0 +1,38 @@
+[gd_resource type="Resource" script_class="BuildingRules" format=3]
+
+[ext_resource type="Script" uid="uid://b8pl3yflicmtn" path="res://simulation/scripts/core/BuildingRules.gd" id="1_clothing_hut"]
+
+[resource]
+script = ExtResource("1_clothing_hut")
+lifespan_years = 20
+max_durability = 140
+defense = 40
+building_name = "building_clothing_hut"
+category = 4
+required_idea_id = "advanced_paleolithic_constructions"
+min_construction_days = 6
+required_labor = 2800
+storage_slot_count = 10
+storage_space_per_slot = 80
+accepted_categories = Array[int]([1, 3])
+categories_locked = true
+durability_multiplier_by_category = Array[float]([1.0, 1.1, 1.0, 1.1, 1.1, 1.1])
+required_materials = {
+"dried_hide": 2,
+"stick": 20,
+"wood": 4
+}
+required_space = 1
+has_door = false
+visibility_radius = 4
+is_workstation = true
+production_fuel_multiplier = 1.0
+production_labor_multiplier = 1.0
+production_output_slots = 10
+production_output_to_storage = false
+storage_accepts_recipe_materials_only = true
+production_concurrent_orders = 2
+production_max_quantity = 5
+production_max_orders = 4
+toolkit_tool_types = 4
+toolkit_units_per_type = 5

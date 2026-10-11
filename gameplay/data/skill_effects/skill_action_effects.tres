@@ -49,5 +49,10 @@ effects_by_action_key = {
 "bonus": 0.25,
 "skill": "skill_transporter",
 "skill_max": 1000.0
+},
+"inventory": {
+"bonus": 0.5,
+"skill": "skill_management",
+"skill_max": 1000.0
 }
 }

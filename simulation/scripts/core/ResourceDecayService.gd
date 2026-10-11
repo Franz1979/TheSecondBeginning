@@ -49,12 +49,15 @@ static func advance_individual_decay(individual: HumanIndividual) -> Array:
 		var resource_rules := CaloricCalculator.get_caloric_source_rules(String(resource_name))
 		if resource_rules == null or resource_rules.day_durability == -1:
 			continue
-		var new_fraction: float = individual.get_carried_decay_fraction(String(resource_name)) + 1.0 / float(resource_rules.day_durability)
-		if new_fraction < 1.0:
-			individual.carried_resources[resource_name] = {"quantity": quantity, "decay_fraction": new_fraction}
-			continue
-		expired_names.append(String(resource_name))
-		lost.append({"resource_name": String(resource_name), "quantity": quantity})
+		# Lotto dei nuovi e istanze usate ciascuna per sé (2026-10-11, vestiario: ToolInstance.advance_entry_decay).
+		var entry: Dictionary = (individual.carried_resources[resource_name] as Dictionary).duplicate(true)
+		var lost_quantity: int = ToolInstance.advance_entry_decay(entry, 1.0 / float(resource_rules.day_durability))
+		if lost_quantity > 0:
+			lost.append({"resource_name": String(resource_name), "quantity": lost_quantity})
+		if int(entry.get("quantity", 0)) <= 0:
+			expired_names.append(String(resource_name))
+		else:
+			individual.carried_resources[resource_name] = entry
 	for expired_name in expired_names:
 		individual.carried_resources.erase(expired_name)
 	return lost
@@ -94,11 +97,13 @@ static func advance_building_decay(building: Building) -> Array:
 		if DebugLogging.ENABLED and DebugLogging.SHOW_RESOURCE_DECAY_LOGS:
 			log_decay_line("edificio #%d %s" % [building.id, building.building_type_name], String(resource_name),
 				int(entry.get("quantity", 0)), decay_before, decay_fraction, daily_step)
-		if decay_fraction >= 1.0:
+		# Lotto dei nuovi e istanze usate ciascuna per sé (2026-10-11, vestiario: ToolInstance.advance_entry_decay).
+		var lost_quantity: int = ToolInstance.advance_entry_decay(entry, daily_step)
+		if lost_quantity > 0:
+			lost.append({"resource_name": String(resource_name), "quantity": lost_quantity})
+		if int(entry.get("quantity", 0)) <= 0:
 			keys_to_erase.append(resource_name)
-			lost.append({"resource_name": String(resource_name), "quantity": int(entry.get("quantity", 0))})
 			continue
-		entry["decay_fraction"] = decay_fraction
 		building.stored_resources[resource_name] = entry
 	for resource_name in keys_to_erase:
 		building.stored_resources.erase(resource_name)

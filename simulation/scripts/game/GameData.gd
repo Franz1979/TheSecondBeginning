@@ -257,6 +257,17 @@ var stock_excess_meat_destination: String = "warehouse"
 # ordine della coda tornano in deposito quando l'individuo è libero (HumanIndividual.borrowed_tools). Salvata da
 # GameSaveService ("job_board_return_borrowed_tools"); partita nuova e salvataggi vecchi: accesa.
 var job_board_return_borrowed_tools: bool = true
+# Inventario del magazzino (2026-10-11, gestore del magazzino — GameScene._inventory_*): frequenza scelta dal giocatore
+# (ore di gioco tra la fine di un inventario e la richiesta del successivo), fine dell'ultimo inventario (giorni assoluti
+# con la frazione del giorno, -1 = mai), chi l'ha fatto, e la "foto" delle scorte presa all'inizio dell'ultimo
+# inventario (il cassetto Scorte mostra quella, non i valori in tempo reale): risorsa -> quantità, [occupato, capienza]
+# dei depositi. Salvati da GameSaveService.
+var inventory_interval_hours: int = 24
+var last_inventory_end: float = -1.0
+var last_inventory_by: String = ""
+var stock_snapshot: Dictionary = {}
+var stock_snapshot_fill: Array = []
+var stock_snapshot_time: float = -1.0
 # Ordini creati dal cassetto "Assegnazione compiti" (2026-10-09, richiesta utente): lavori in coda senza destinatario,
 # chi li prende lo decide la coda (chiave della lista "order:<id>", GameScene._drawer_order_jobs_collect). Una voce per
 # ordine, solo tipi JSON-nativi: {"id": int stabile, "type": String, ...campi del tipo}. Oggi il solo tipo "produce":

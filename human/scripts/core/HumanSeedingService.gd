@@ -348,6 +348,7 @@ func _create_adult(
 	individual.assign_hair_color()
 	individual.assign_skin_color()
 	individual.assign_random_clothing()
+	individual.equip_starting_apparel(durations_male, durations_female, current_year)
 	seed_random_skills(individual)
 	return individual
 
@@ -411,6 +412,7 @@ func _create_unpaired_fertile_group(
 			individual.assign_hair_color()
 			individual.assign_skin_color()
 			individual.assign_random_clothing()
+			individual.equip_starting_apparel(durations_male, durations_female, current_year)
 			seed_random_skills(individual)
 			individuals.append(individual)
 			local_index += 1
@@ -457,6 +459,7 @@ func _create_coordinated_couple(
 	father.assign_hair_color()
 	father.assign_skin_color()
 	father.assign_random_clothing()
+	father.equip_starting_apparel(durations_male, durations_female, current_year)
 	seed_random_skills(father)
 	used_names.append(father.name)
 
@@ -481,6 +484,7 @@ func _create_coordinated_couple(
 	mother.assign_hair_color()
 	mother.assign_skin_color()
 	mother.assign_random_clothing()
+	mother.equip_starting_apparel(durations_male, durations_female, current_year)
 	seed_random_skills(mother)
 	used_names.append(mother.name)
 
@@ -549,6 +553,7 @@ func _create_family_children(
 		child.assign_hair_color(mother, father)
 		child.assign_skin_color(mother, father)
 		child.assign_random_clothing()
+		child.equip_starting_apparel(durations_male, durations_female, current_year)
 		seed_random_skills(child)
 		used_names.append(child.name)
 		children.append(child)
@@ -612,6 +617,7 @@ func _create_child(
 	individual.assign_hair_color(mother, father)
 	individual.assign_skin_color(mother, father)
 	individual.assign_random_clothing()
+	individual.equip_starting_apparel(durations_male, durations_female, current_year)
 	seed_random_skills(individual)
 	used_names.append(individual.name)
 	return individual

@@ -361,6 +361,10 @@ static func materialize_members(
 		individual.hair_color = member.get("hair_color", HumanTypes.HairColor.BROWN)
 		individual.skin_color = member.get("skin_color", HumanTypes.SkinColor.LIGHT)
 		individual.clothing_color = member.get("clothing_color", HumanTypes.ClothingColor.TAN)
+		# Dotazione di vestiario di chi arriva (2026-10-11, richiesta utente): la stessa dell'inizio partita.
+		individual.equip_starting_apparel(
+			game_data.era_effective_age_band_durations_male, game_data.era_effective_age_band_durations_female, game_data.year
+		)
 		HumanSeedingService.seed_random_skills(individual)
 		individual.source_group_ref = group
 		individual.home_macro_coords = party.macro_coords

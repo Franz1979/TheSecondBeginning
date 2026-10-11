@@ -117,6 +117,8 @@ enum ActionType {
 	WAIT_AT_POINT,
 	# Riparazione di un edificio completo (2026-10-10, RepairAction, vedi repair.tres). AGGIUNTO IN CODA (31).
 	REPAIR,
+	# INVENTORY (2026-10-11, gestore del magazzino — InventoryAction, inventory.tres) — AGGIUNTO IN CODA (32).
+	INVENTORY,
 }
 
 # Categorie di tool richiedibili da un'Action (2026-09-08, richiesta utente — SOLO struttura dati,

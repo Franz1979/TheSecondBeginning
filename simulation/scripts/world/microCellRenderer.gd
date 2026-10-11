@@ -1621,6 +1621,8 @@ const GROUND_UNDER_BUILDING_TYPES: Array[String] = [
 	"toolmaker_hut",
 	# Legnaia (2026-10-08, richiesta utente — segnaposto): stesso fondo degli altri edifici segnaposto.
 	"woodshed",
+	# Capanna del vestiario (2026-10-11, segnaposto).
+	"clothing_hut",
 ]
 
 

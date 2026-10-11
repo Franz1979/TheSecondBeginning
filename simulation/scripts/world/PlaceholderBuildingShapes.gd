@@ -11,7 +11,7 @@ extends RefCounted
 # `scale` = pixel per unità di disegno (1.0 sulla mappa: una microcella = 10 px); `invalid` = anteprima su una
 # posizione non edificabile (tinta rossastra semitrasparente, come le altre sagome di BuildingGhost).
 
-const TYPES: Array[String] = ["drying_rack", "smokehouse", "burial", "earthwork", "stacked_stones", "woodshed", "rubble"]
+const TYPES: Array[String] = ["drying_rack", "smokehouse", "burial", "earthwork", "stacked_stones", "woodshed", "clothing_hut", "rubble"]
 
 # Macerie (rubble, 2026-10-10, richiesta utente — crollo): mucchio basso di detriti visto dall'alto, sagome irregolari di
 # terra e pietre (stessa _blob_polygon delle pietre rituali, seed fissi) con qualche trave spezzata sopra.
@@ -38,6 +38,11 @@ const WOODSHED_LOGS: Array[Vector2] = [
 	Vector2(0.0, -0.65),
 ]
 const WOODSHED_ROOF: Array[Vector2] = [Vector2(-4.3, -3.9), Vector2(4.3, -2.5), Vector2(4.3, -1.7), Vector2(-4.3, -3.1)]
+# Capanna del vestiario (clothing_hut, 2026-10-11, richiesta utente — segnaposto): vista di fronte, una capanna a
+# punta di pelli grigio-brune con l'ingresso scuro e, a destra, una pelle tesa ad asciugare su un telaio di due pali.
+const CLOTHING_HUT_HIDE := Color(0.52, 0.48, 0.43, 1.0)
+const CLOTHING_HUT_HIDE_DARK := Color(0.38, 0.35, 0.32, 1.0)
+const CLOTHING_HUT_DOOR := Color(0.16, 0.13, 0.11, 1.0)
 const LOG_BARK := Color(0.36, 0.24, 0.12, 1.0)
 const LOG_END := Color(0.80, 0.64, 0.42, 1.0)
 const LOG_RING := Color(0.60, 0.45, 0.27, 1.0)
@@ -163,6 +168,25 @@ static func draw(canvas: CanvasItem, building_type: String, center: Vector2, inv
 			var roof_outline := roof.duplicate()
 			roof_outline.append(roof[0])
 			canvas.draw_polyline(roof_outline, tint.call(OUTLINE), w.call(0.3), true)
+		"clothing_hut":
+			# Telaio con la pelle tesa (dietro), poi la capanna a punta con l'ingresso e le cuciture.
+			canvas.draw_line(p.call(2.4, 3.8), p.call(2.4, -1.6), tint.call(WOOD_DARK), w.call(0.45), true)
+			canvas.draw_line(p.call(4.4, 3.8), p.call(4.4, -1.6), tint.call(WOOD_DARK), w.call(0.45), true)
+			canvas.draw_colored_polygon(PackedVector2Array([
+				p.call(2.5, -1.2), p.call(4.3, -1.2), p.call(4.1, 1.6), p.call(2.7, 1.6),
+			]), tint.call(CLOTHING_HUT_HIDE_DARK))
+			var hut := PackedVector2Array([p.call(-1.0, -4.0), p.call(2.0, 3.8), p.call(-4.2, 3.8)])
+			canvas.draw_colored_polygon(hut, tint.call(CLOTHING_HUT_HIDE))
+			canvas.draw_colored_polygon(PackedVector2Array([
+				p.call(-1.1, 0.6), p.call(0.1, 3.8), p.call(-2.3, 3.8),
+			]), tint.call(CLOTHING_HUT_DOOR))
+			canvas.draw_line(p.call(-1.0, -4.0), p.call(-2.6, -0.2), tint.call(CLOTHING_HUT_HIDE_DARK), w.call(0.25), true)
+			canvas.draw_line(p.call(-1.0, -4.0), p.call(0.6, -0.2), tint.call(CLOTHING_HUT_HIDE_DARK), w.call(0.25), true)
+			canvas.draw_line(p.call(-1.0, -4.0), p.call(-1.2, -5.0), tint.call(WOOD_DARK), w.call(0.4), true)
+			canvas.draw_line(p.call(-1.0, -4.0), p.call(-0.5, -4.9), tint.call(WOOD_DARK), w.call(0.4), true)
+			var hut_outline := hut.duplicate()
+			hut_outline.append(hut[0])
+			canvas.draw_polyline(hut_outline, tint.call(OUTLINE), w.call(0.3), true)
 		"rubble":
 			# Detriti dal fondo in su, poi le travi spezzate sopra (con il contorno scuro sotto il legno).
 			for i in range(RUBBLE_CHUNKS.size()):

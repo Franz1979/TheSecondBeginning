@@ -527,9 +527,11 @@ var _pending_leave_action: StringName = &""
 @onready var help_dialog: HelpDialog = $HelpDialog
 @onready var options_menu: OptionsMenu = $OptionsMenu
 @onready var statistics_panel: StatisticsPanel = $StatisticsPanel
-# Cassetto laterale accanto alla sidebar (2026-10-07): un contenuto alla volta, oggi l'assegnazione delle task. Creato
-# in _ready (_setup_side_drawer).
+# Cassetto laterale accanto alla sidebar (2026-10-07): l'assegnazione delle task. Creato in _ready (_setup_side_drawer).
 var side_drawer: SideDrawer
+# Cassetto delle Scorte (2026-10-11, richiesta utente): istanza propria, così si apre insieme all'Assegnazione, affiancato
+# alla sua sinistra (_layout_side_drawer). Creato in _setup_side_drawer.
+var warehouse_drawer: SideDrawer
 # Contenuto dell'assegnazione aperto nel cassetto (null se chiuso): _refresh_pending_entries gli passa la lista.
 var _task_assignment_panel: TaskAssignmentPanel = null
 # Contenuto del cassetto "Gestione scorte" mentre è aperto (2026-10-10), null altrimenti — vedi _refresh_warehouse_panel.
@@ -668,6 +670,11 @@ func _ready() -> void:
 	# Cintura degli attrezzi (2026-09-25, richiesta utente) — stesso schema di kill_requested.
 	human_individual_info_panel.equip_tool_requested.connect(_on_equip_tool_requested)
 	human_individual_info_panel.unequip_tool_requested.connect(_on_unequip_tool_requested)
+	# Slot del vestiario (2026-10-11): indossa/togli dallo zaino. Le task da/verso un magazzino arriveranno dopo.
+	human_individual_info_panel.apparel_equip_requested.connect(_on_apparel_equip_requested)
+	human_individual_info_panel.apparel_unequip_requested.connect(_on_apparel_unequip_requested)
+	human_individual_info_panel.apparel_from_storage_requested.connect(_on_apparel_from_storage_requested)
+	human_individual_info_panel.apparel_to_storage_requested.connect(_on_apparel_to_storage_requested)
 	# X accanto all'attività nel pannello (2026-09-25, richiesta utente) — stessa funzione del tasto H.
 	human_individual_info_panel.cancel_task_requested.connect(_on_cancel_task_requested)
 	# Click destro sugli slot della cintura (2026-09-25, richiesta utente): Task "prendi/riponi attrezzo".
@@ -807,6 +814,9 @@ func _ready() -> void:
 	JobBoardService.job_taker = _take_listed_job_for
 	# Riempimento dello zaino nelle raccolte del magazzino (2026-10-11): nomi chiesti dal magazzino all'ultimo giro.
 	HaulZoneService.stock_fill_names_provider = func() -> Array: return _stock_fill_names
+	# Inventario del magazzino (2026-10-11): il conteggio all'inizio e l'uscita degli ordini alla fine.
+	InventoryAction.on_started = _on_inventory_started
+	InventoryAction.on_finished = _on_inventory_finished
 	# Coda attiva solo con un punto di assegnazione (2026-10-10, JobBoardService.is_enabled): il mondo dove cercarlo.
 	JobBoardService.world_provider = func() -> World: return macro_world
 	# "Cerca lavoro" (2026-10-09): c'è un lavoro per lui, senza prenderlo.
@@ -1332,12 +1342,6 @@ func _process(delta: float) -> void:
 	# Attesa per l'assegnazione a mano della lista dei lavori (2026-10-07): secondi reali, solo a gioco in corso.
 	if clock != null and clock.is_playing:
 		_job_board_clock += delta
-	# Controllo del magazzino (2026-10-11, PROVVISORIO — vedi STOCK_CHECK_INTERVAL_SEC): secondi reali, solo a gioco in corso.
-	if clock != null and clock.is_playing:
-		_stock_check_timer += delta
-		if _stock_check_timer >= STOCK_CHECK_INTERVAL_SEC:
-			_stock_check_timer = 0.0
-			_auto_request_stock()
 	_pending_refresh_timer += delta
 	if _pending_refresh_timer >= PENDING_REFRESH_INTERVAL_SEC:
 		_pending_refresh_timer = 0.0
@@ -9276,7 +9280,8 @@ func _create_dead_body_view(record: Dictionary, parent: Node) -> DeadBodyView:
 	view.setup_dead_body(
 		Vector2(record["position"]), int(data["sex"]), int(data["age_at_death"]), int(data["hair_color"]),
 		int(data["clothing_color"]), int(record["appeared_at_year"]), int(record["appeared_at_day"]),
-		human_folk.human_rules_ref if human_folk != null else null, game_data, int(record.get("carried_days_total", 0))
+		human_folk.human_rules_ref if human_folk != null else null, game_data, int(record.get("carried_days_total", 0)),
+		Color.html(String(data["body_color"])) if String(data.get("body_color", "")) != "" else Color(0, 0, 0, 0)
 	)
 	view.z_index = 1
 	dead_body_views[int(record["individual_id"])] = view
@@ -9426,10 +9431,14 @@ func _refresh_pending_entries() -> void:
 	entries.append_array(_collect_material_wait_entries())
 	# Pipottini fermi perché manca l'attrezzo richiesto dalla task (2026-10-09), con o senza l'idea dell'assegnazione.
 	entries.append_array(_collect_tool_wait_entries())
+	# Pipottini senza vestito (2026-10-11, vestiario), esclusi i neonati.
+	entries.append_array(_collect_naked_entries())
 	# Ordini del magazzino bloccati (2026-10-11): nessuno ha l'attrezzo o nessuna zona valida.
 	entries.append_array(_collect_stock_blocked_entries())
 	# Essiccatoio del magazzino (2026-10-11): manca l'ingrediente, essiccatoio pieno o assente.
 	entries.append_array(_collect_stock_dry_entries())
+	# Inventario del magazzino scaduto da più di un'ora e nessuno che lo fa (2026-10-11).
+	entries.append_array(_collect_inventory_entries())
 	# Ordini di caccia del cassetto senza prede (2026-10-09).
 	entries.append_array(_collect_hunt_no_prey_entries())
 	# Carcasse della caccia rimaste senza macellazione (2026-10-10).
@@ -9573,6 +9582,25 @@ func _collect_tool_wait_entries() -> Array[Dictionary]:
 			"name": row_name, "detail": detail,
 		})
 		entries.append(entry)
+	return entries
+
+
+# Senza vestito (2026-10-11, richiesta utente — vestiario): un pipottino con lo slot Corpo vuoto, perché il vestito si è
+# consumato o perché non ne ha mai avuto uno, esclusi i bambini (INFANT e CHILD). Solo il corpo: copricapo e altri slot
+# vuoti non danno righe. La riga sparisce da sola appena indossa un vestito. Due livelli come l'attesa di attrezzi.
+func _collect_naked_entries() -> Array[Dictionary]:
+	var entries: Array[Dictionary] = []
+	for member in human_individuals:
+		if member.get_equipped_apparel(HumanIndividual.ApparelSlot.BODY) != "":
+			continue
+		# Bambini (INFANT e CHILD): vestiti di recupero, nessuna riga (HumanIndividual.is_apparel_age_band).
+		if not HumanIndividual.is_apparel_age_band(_resolve_age_band(member)):
+			continue
+		var detail := tr("pending_reason_naked")
+		entries.append(_pending_entry("naked:%d" % member.id, "%s\n%s" % [member.name, detail], {
+			"kind": "individual", "id": member.id, "macro": member.home_macro_coords, "sort": float(member.id),
+			"name": member.name, "detail": detail,
+		}))
 	return entries
 
 
@@ -9783,6 +9811,17 @@ func _job_board_providers() -> Array[Dictionary]:
 			"cancel": _drawer_order_job_cancel,
 			"release": _drawer_order_job_release,
 		})
+		# Inventario del magazzino (2026-10-11): un lavoro alla volta quando è scaduto, vedi _inventory_jobs_collect.
+		_job_board_provider_list.append({
+			"collect": _inventory_jobs_collect,
+			"probe_key": func(_job: Dictionary) -> String: return INVENTORY_TASK_DEFINITION_PATH,
+			"rejection": _inventory_job_rejection,
+			"assign": _assign_inventory_job,
+			"workers": func(_job: Dictionary) -> Array[HumanIndividual]: return _inventory_workers(),
+			"cancel_fields": func(_job: Dictionary) -> Dictionary: return {"cancel_disabled": true, "cancel_tooltip": ""},
+			"cancel": func(_job: Dictionary) -> void: pass,
+			"release": _inventory_job_release,
+		})
 	return _job_board_provider_list
 
 
@@ -9821,7 +9860,7 @@ func _job_board_drawer_entry(job: Dictionary, in_progress: bool) -> Dictionary:
 	var data := {
 		"kind": job["entry_kind"], "id": job["id"], "macro": job["macro"], "sort": job["sort"],
 		"icon": job["icon"], "building_name": job["name"], "name_detail": String(job.get("name_detail", "")),
-		"warehouse": bool(job.get("warehouse", false)),
+		"warehouse": bool(job.get("warehouse", false)), "progress": String(job.get("progress", "")),
 	}
 	if in_progress:
 		var names: Array[String] = []
@@ -10107,7 +10146,9 @@ func _sync_job_board_waits(candidates: Dictionary) -> void:
 			_job_board_waiting_since.erase(key)
 	for key in candidates.keys():
 		if not _job_board_waiting_since.has(key):
-			_job_board_waiting_since[key] = _job_board_clock if _job_board_waits_initialized else _job_board_clock - JobBoardService.get_manual_assign_window_seconds()
+			# Inventario (2026-10-11, richiesta utente): niente attesa per l'assegnazione a mano, subito prendibile.
+			var no_wait := not _job_board_waits_initialized or String(candidates[key].get("kind", "")) == "inventory"
+			_job_board_waiting_since[key] = _job_board_clock - JobBoardService.get_manual_assign_window_seconds() if no_wait else _job_board_clock
 	_job_board_waits_initialized = true
 	for key in _job_board_wait_icons.keys():
 		if not candidates.has(key):
@@ -11432,6 +11473,7 @@ func _create_drawer_produce_order(recipe: String, quantity: int, deliver_to_ware
 	new_order.merge(extra)
 	if extra.has(StockRequestService.ORDER_KEY):
 		new_order[STOCK_CREATED_AT_KEY] = _job_board_now()
+		_mark_inventory_pending(new_order)
 	game_data.drawer_orders.append(new_order)
 	if DebugLogging.ENABLED and DebugLogging.SHOW_JOB_BOARD_LOGS:
 		print("[JOB BOARD] Ordine del cassetto #%d: produci '%s' x%d (porta al deposito: %s)." % [order_id, recipe, quantity, str(deliver_to_warehouse)])
@@ -11497,6 +11539,9 @@ func _drawer_order_jobs_collect(provider: Dictionary, assigned: Dictionary) -> A
 		busy_counts[building_id] = int(busy_counts.get(building_id, 0)) + 1
 	var cut_claims := _collect_drawer_cut_claims()
 	for order in game_data.drawer_orders:
+		# Ordini decisi da un inventario ancora in corso (2026-10-11): escono alla fine del conteggio.
+		if bool(order.get(INVENTORY_PENDING_KEY, false)):
+			continue
 		if _is_zone_order_type(String(order.get("type", ""))):
 			jobs.append(_drawer_cut_job(provider, order, cut_claims))
 			continue
@@ -12225,6 +12270,7 @@ func _create_drawer_zone_order(kind: String, count: int, zone_id: int, extra: Di
 	new_order.merge(extra)
 	if extra.has(StockRequestService.ORDER_KEY):
 		new_order[STOCK_CREATED_AT_KEY] = _job_board_now()
+		_mark_inventory_pending(new_order)
 	game_data.drawer_orders.append(new_order)
 	if DebugLogging.ENABLED and DebugLogging.SHOW_JOB_BOARD_LOGS:
 		print("[JOB BOARD] Ordine del cassetto #%d: %s ×%d (zona %s)%s." % [
@@ -12545,8 +12591,11 @@ func _drawer_cut_job(provider: Dictionary, order: Dictionary, claims: Dictionary
 	elif order_type == DRAWER_ORDER_TYPE_HUNT:
 		row_key = "drawer_order_hunt_row"
 		icon_key = "hunt"
+	# Avviato (2026-10-11): il nome senza conto, "fatti/totale" va nella seconda riga della voce ("progress").
+	var progress := ""
 	if started:
-		row_key = row_key.replace("_row", "_progress_row")
+		row_key = row_key.replace("_row", "_started_row")
+		progress = "%d/%d" % [done, total]
 	elif total == 1:
 		row_key += "_one"
 	var row_name := tr(row_key).format(row_args)
@@ -12563,7 +12612,7 @@ func _drawer_cut_job(provider: Dictionary, order: Dictionary, claims: Dictionary
 	var from_warehouse := order.has(StockRequestService.ORDER_KEY)
 	return {
 		"key": JobBoardService.drawer_order_key(order_id), "kind": order_type, "name": row_name,
-		"warehouse": from_warehouse,
+		"warehouse": from_warehouse, "progress": progress,
 		"text": (row_name + "\n" + tr("task_assignment_warehouse_tag_tooltip")) if from_warehouse else row_name,
 		"log_name": "ordine del cassetto #%d %s ×%d (%s)" % [order_id, order_type, remaining, "zona automatica" if zone_id < 0 else "zona #%d" % zone_id],
 		"icon": {"command": icon_key}, "macro": macro, "microcell": microcell,
@@ -12585,6 +12634,9 @@ func _drawer_gather_target_text(order: Dictionary) -> String:
 		PickUpAction.CriterionKind.NAME:
 			return IconRegistry.get_resource_display_name(String(order.get("resource_name", "")))
 		PickUpAction.CriterionKind.CATEGORY:
+			# "ogni cibo" (2026-10-11, richiesta utente) nella riga, al posto di "Tutto il cibo" del popup.
+			if int(order.get("criterion_category", -1)) == SecondaryResourceTypes.Category.FOOD:
+				return tr("drawer_order_gather_all_food")
 			var keys: Array = PickupChoiceMenu.CATEGORY_TEXT_KEYS.get(int(order.get("criterion_category", -1)), ["", ""])
 			if String(keys[1]) != "":
 				return tr(String(keys[1]))
@@ -12867,6 +12919,8 @@ func _task_board_reason(task: Task, pile_job_keys: Dictionary) -> String:
 		return "ordine del cassetto"
 	if task.context.has(ZONE_ORDER_TOOL_FETCH_KEY):
 		return "attrezzo per un ordine della coda"
+	if task.task_name == INVENTORY_TASK_NAME:
+		return "inventario del magazzino"
 	for key in _task_pile_claim_keys(task):
 		if pile_job_keys.has(key):
 			return "mucchio della coda"
@@ -13526,7 +13580,8 @@ func _on_human_individual_died(
 		live_cells[individual.home_macro_coords].container.add_child(dead_body_view)
 		dead_body_view.setup_dead_body(
 			individual.position, individual.sex, age_at_death, individual.hair_color, individual.clothing_color,
-			game_data.year, day, human_folk.human_rules_ref if human_folk != null else null, game_data
+			game_data.year, day, human_folk.human_rules_ref if human_folk != null else null, game_data, 0,
+			HumanIndividualView.body_draw_color_now(individual, game_data)
 		)
 		dead_body_view.z_index = 1
 		# Bugfix, 2026-09-05: serve per accendere il cerchiolino di selezione sulla view giusta se
@@ -13898,6 +13953,20 @@ func _on_individual_resource_decayed(individual: HumanIndividual, resource_name:
 	)
 
 
+# Capo di vestiario consumato addosso (2026-10-11): stesso popup del deperimento, testo dedicato; il pannello si rinfresca
+# se l'individuo è quello selezionato.
+func _on_individual_apparel_worn_out(individual: HumanIndividual, resource_name: String) -> void:
+	_refresh_selected_individual_panel()
+	if not UserOptions.show_notification_popups:
+		return
+	notification_popup.enqueue(
+		NotificationTypes.NotificationPopupType.RESOURCE_DECAYED,
+		tr("notification_apparel_worn_out").format({
+			"name": individual.name, "resource": IconRegistry.get_resource_display_name(resource_name),
+		})
+	)
+
+
 # Gemella della funzione sopra, per il decadimento storage edifici (2026-09-09) — collegata a
 # clock.building_resources_decayed (WorldTimeService, non GameTimeService: gli edifici decadono
 # nel tick di scala mondo, vedi WorldTimeService._run_daily_building_resource_decay). Un ENQUEUE
@@ -14209,6 +14278,26 @@ func _on_unequip_tool_requested(individual: HumanIndividual, slot_index: int) ->
 		])
 
 
+# Slot del vestiario (2026-10-11, richiesta utente): stesso schema della cintura sopra — controlli e spostamento in
+# HumanIndividual (equip_apparel_from_backpack/unequip_apparel_to_backpack), qui la chiamata e il refresh.
+func _on_apparel_equip_requested(individual: HumanIndividual, resource_name: String) -> void:
+	if individual == null:
+		return
+	if individual.equip_apparel_from_backpack(resource_name):
+		_refresh_selected_individual_panel()
+	elif DebugLogging.ENABLED:
+		print("[APPAREL] #%d %s: '%s' non indossato (nessuno slot libero del suo tipo)." % [individual.id, individual.name, resource_name])
+
+
+func _on_apparel_unequip_requested(individual: HumanIndividual, slot_index: int) -> void:
+	if individual == null:
+		return
+	if individual.unequip_apparel_to_backpack(slot_index):
+		_refresh_selected_individual_panel()
+	elif DebugLogging.ENABLED:
+		print("[APPAREL] #%d %s: slot %d non rimesso nello zaino (varietà o spazio insufficienti)." % [individual.id, individual.name, slot_index])
+
+
 # ============================================================================================
 # Task di equipaggiamento dal pannello individuo (2026-09-25, richiesta utente): click destro su uno
 # slot della cintura. Riusano gli step esistenti in modalità "cintura":
@@ -14275,6 +14364,72 @@ func _on_tool_from_storage_requested(target: HumanIndividual, slot_index: int) -
 	)
 
 
+# Capi di vestiario del tipo `kind` (SecondaryResourceTypes.ApparelKind) disponibili in tutti i magazzini, stesso conteggio
+# di _collect_tools_in_storage (2026-10-11): nome risorsa -> quantità totale.
+func _collect_apparel_in_storage(kind: int) -> Dictionary:
+	var totals: Dictionary = {}
+	if macro_world == null:
+		return totals
+	for building in macro_world.buildings:
+		if not building.is_complete or building.is_demolished:
+			continue
+		var names: Array = building.stored_resources.keys()
+		for output_name in building.production_output.keys():
+			if not names.has(output_name):
+				names.append(output_name)
+		for raw_name in names:
+			var resource_name := String(raw_name)
+			if not HumanIndividual.is_apparel_resource(resource_name):
+				continue
+			var rules := CaloricCalculator.get_caloric_source_rules(resource_name)
+			if int(rules.apparel_kind) != kind:
+				continue
+			var quantity: int = BuildingStorageService.get_available_quantity(building, resource_name)
+			if quantity > 0:
+				totals[resource_name] = int(totals.get(resource_name, 0)) + quantity
+	return totals
+
+
+# Click destro su uno slot vuoto del vestiario (2026-10-11): stessa finestra di scelta degli attrezzi, con i soli capi
+# del tipo dello slot; la scelta passa da _on_tool_storage_resource_chosen -> _assign_equip_tool_task, e RetrieveAction
+# riconosce da sola che la risorsa è un capo da indossare.
+func _on_apparel_from_storage_requested(target: HumanIndividual, slot_index: int) -> void:
+	if target == null or not HumanIndividual.APPAREL_SLOT_KIND.has(slot_index):
+		return
+	var available := _collect_apparel_in_storage(int(HumanIndividual.APPAREL_SLOT_KIND[slot_index]))
+	if available.is_empty():
+		if UserOptions.show_notification_popups:
+			notification_popup.enqueue(NotificationTypes.NotificationPopupType.TOOL_REQUIRED, tr("apparel_storage_menu_empty"))
+		return
+	var apparel_names: Array = available.keys()
+	apparel_names.sort()
+	var ordered: Dictionary = {}
+	for apparel_name in apparel_names:
+		ordered[apparel_name] = available[apparel_name]
+	_tool_storage_request = {"individual": target, "slot": slot_index}
+	tool_storage_dialog.open_choice_only_dialog(
+		tr("apparel_storage_dialog_title"), tr("apparel_storage_dialog_message"), ordered
+	)
+
+
+# Click destro su uno slot pieno del vestiario (2026-10-11): come _on_tool_to_storage_requested, verso il magazzino
+# più vicino che accetta il capo.
+func _on_apparel_to_storage_requested(target: HumanIndividual, slot_index: int) -> void:
+	if target == null:
+		return
+	var apparel_name := target.get_equipped_apparel(slot_index)
+	if apparel_name == "":
+		return
+	var destination := WarehouseSelectionService.find_best(
+		macro_world, target.position, target.home_macro_coords, apparel_name, 1, [],
+		PathfindingService.reachability_for(target)
+	)
+	if destination == null:
+		_report_command_rejection(target, tr("apparel_store_no_storage").format({"apparel": IconRegistry.get_resource_display_name(apparel_name)}))
+		return
+	_assign_tool_task(target, STORE_TOOL_TASK_DEFINITION_PATH, apparel_name, destination, slot_index, "transport", "task_activity_store_apparel", true)
+
+
 # resource_chosen dello stesso OptionChoiceDialog: quantità e "Ripeti" non servono qui (una sola unità).
 func _on_tool_storage_resource_chosen(resource_name: String, _quantity: int, _repeat: bool) -> void:
 	var request := _tool_storage_request
@@ -14308,11 +14463,18 @@ func _assign_equip_tool_task(target: HumanIndividual, slot_index: int, tool_name
 		macro_world, target.position, target.home_macro_coords, tool_name, [], 1, -1,
 		PathfindingService.reachability_for(target)
 	)
+	var is_apparel := HumanIndividual.is_apparel_resource(tool_name)
 	if source == null:
 		# Prima un return silenzioso (2026-09-26): ora il motivo — nessun magazzino raggiungibile ha l'attrezzo.
-		_report_command_rejection(target, tr("tool_equip_no_source").format({"tool": IconRegistry.get_resource_display_name(tool_name)}))
+		if is_apparel:
+			_report_command_rejection(target, tr("apparel_equip_no_source").format({"apparel": IconRegistry.get_resource_display_name(tool_name)}))
+		else:
+			_report_command_rejection(target, tr("tool_equip_no_source").format({"tool": IconRegistry.get_resource_display_name(tool_name)}))
 		return
-	_assign_tool_task(target, EQUIP_TOOL_TASK_DEFINITION_PATH, tool_name, source, slot_index, "pickup", "task_activity_equip_tool")
+	_assign_tool_task(
+		target, EQUIP_TOOL_TASK_DEFINITION_PATH, tool_name, source, slot_index, "pickup",
+		"task_activity_equip_apparel" if is_apparel else "task_activity_equip_tool"
+	)
 
 
 # Task equip_tool (Walk + prelievo in cintura nello slot `slot_index`) senza assegnarla: per gli ordini di zona
@@ -14323,7 +14485,11 @@ func _build_equip_tool_task(target: HumanIndividual, building: Building, tool_na
 
 # Task di prelievo o riposizione di un attrezzo (equip_tool.tres/store_tool.tres) costruita, non assegnata; null se la
 # definizione non si carica (estratta da _assign_tool_task, 2026-10-11).
-func _build_tool_task(target: HumanIndividual, definition_path: String, tool_name: String, building: Building, slot_index: int) -> Task:
+# `is_apparel` (2026-10-11): lo slot da svuotare è del vestiario (store_tool.tres -> UnloadAction.unequip_apparel). Il
+# prelievo non ne ha bisogno: RetrieveAction riconosce i capi dalla risorsa.
+func _build_tool_task(
+	target: HumanIndividual, definition_path: String, tool_name: String, building: Building, slot_index: int, is_apparel: bool = false
+) -> Task:
 	var definition := load(definition_path) as TaskDefinition
 	if definition == null:
 		return null
@@ -14335,6 +14501,7 @@ func _build_tool_task(target: HumanIndividual, definition_path: String, tool_nam
 		"tool_resource_name": tool_name,
 		"tool_quantity": 1,
 		"tool_slot_index": slot_index,
+		"tool_is_apparel": is_apparel,
 	})
 	if task == null:
 		return null
@@ -14356,9 +14523,9 @@ func _build_tool_task(target: HumanIndividual, definition_path: String, tool_nam
 # ("prendere un attrezzo" / "riporre un attrezzo").
 func _assign_tool_task(
 	target: HumanIndividual, definition_path: String, tool_name: String, building: Building, slot_index: int, icon_key: String,
-	activity_key: String
+	activity_key: String, is_apparel: bool = false
 ) -> void:
-	var task := _build_tool_task(target, definition_path, tool_name, building, slot_index)
+	var task := _build_tool_task(target, definition_path, tool_name, building, slot_index, is_apparel)
 	if task == null:
 		return
 	var task_name: String = task.task_name
@@ -16956,6 +17123,9 @@ func _building_type_name_for_action(action_id: StringName) -> String:
 		# Legnaia (2026-10-08, richiesta utente — segnaposto) — azione cablata in BuildBar._ready.
 		&"build_woodshed":
 			return "woodshed"
+		# Capanna del vestiario (2026-10-11, richiesta utente — segnaposto) — azione cablata in BuildBar._ready.
+		&"build_clothing_hut":
+			return "clothing_hut"
 		_:
 			return ""
 
@@ -17885,18 +18055,18 @@ func _refresh_warehouse_button() -> void:
 		"idea": tr(idea.display_name) if idea != null else WarehousePanel.REQUIRED_IDEA_ID
 	})
 	game_info_panel.primary_actions_bar.set_slot_disabled(GameInfoPanel.WAREHOUSE_SLOT_INDEX, not available, locked_tooltip)
-	if not available and side_drawer != null and side_drawer.is_showing(WarehousePanel.DRAWER_CONTENT_ID):
-		side_drawer.close()
+	if not available and warehouse_drawer != null and warehouse_drawer.is_showing(WarehousePanel.DRAWER_CONTENT_ID):
+		warehouse_drawer.close()
 	_sync_warehouse_highlight()
 
 
-# Bottone "Scorte": apre il cassetto, o lo richiude se lo mostra già. Un solo cassetto alla volta: show_content sostituisce
-# l'Assegnazione se era aperta (e viceversa), con il segnale closed per quello di prima.
+# Bottone "Scorte": apre il cassetto, o lo richiude se lo mostra già. Cassetto proprio (warehouse_drawer, 2026-10-11): può
+# stare aperto insieme all'Assegnazione, alla sua sinistra.
 func _toggle_warehouse_drawer() -> void:
-	if side_drawer == null:
+	if warehouse_drawer == null:
 		return
-	if side_drawer.is_showing(WarehousePanel.DRAWER_CONTENT_ID):
-		side_drawer.close()
+	if warehouse_drawer.is_showing(WarehousePanel.DRAWER_CONTENT_ID):
+		warehouse_drawer.close()
 	elif human_folk != null and human_folk.completed_ideas.has(WarehousePanel.REQUIRED_IDEA_ID):
 		_layout_side_drawer()
 		_warehouse_panel = WarehousePanel.new()
@@ -17915,8 +18085,15 @@ func _toggle_warehouse_drawer() -> void:
 			game_data.stock_excess_meat_destination = destination
 			_sync_excess_meat_destination()
 		)
-		side_drawer.show_content(WarehousePanel.DRAWER_CONTENT_ID, tr("warehouse_dialog_title"), _warehouse_panel)
-		side_drawer.align_top_to(game_info_panel)
+		# Frequenza dell'inventario (2026-10-11): dato della partita.
+		_warehouse_panel.set_inventory_interval(game_data.inventory_interval_hours)
+		_warehouse_panel.inventory_interval_changed.connect(func(hours: int) -> void:
+			game_data.inventory_interval_hours = hours
+			_refresh_warehouse_panel()
+		)
+		warehouse_drawer.show_content(WarehousePanel.DRAWER_CONTENT_ID, tr("warehouse_dialog_title"), _warehouse_panel)
+		_layout_side_drawer()
+		warehouse_drawer.align_top_to(game_info_panel)
 		# Numeri subito, senza aspettare il ricalcolo del secondo successivo.
 		_refresh_warehouse_panel()
 	_sync_warehouse_highlight()
@@ -17929,9 +18106,33 @@ func _toggle_warehouse_drawer() -> void:
 func _refresh_warehouse_panel() -> void:
 	if _warehouse_panel == null or not is_instance_valid(_warehouse_panel) or macro_world == null:
 		return
-	_warehouse_panel.refresh_stock(
-		VillageStockService.get_village_stock(macro_world), _village_daily_calorie_need(), VillageStockService.get_storage_fill(macro_world)
-	)
+	# Numeri dell'ultimo inventario (2026-10-11, GameData.stock_snapshot), non in tempo reale.
+	_warehouse_panel.refresh_stock(game_data.stock_snapshot, _village_daily_calorie_need(), game_data.stock_snapshot_fill)
+	_warehouse_panel.set_inventory_info(_inventory_info_text(), _inventory_info_tooltip())
+
+
+# Riga dell'inventario nel cassetto Scorte: spento senza deposito; in corso (chi); da fare; prossimo (quando).
+func _inventory_info_text() -> String:
+	if not _stock_manager_enabled():
+		return tr("warehouse_inventory_off")
+	var workers := _inventory_workers()
+	if not workers.is_empty():
+		return tr("warehouse_inventory_running").format({"name": workers[0].name})
+	if _inventory_due():
+		var late := _job_board_now() - _next_inventory_time()
+		if game_data.last_inventory_end >= 0.0 and late * 24.0 >= _inventory_overdue_hours():
+			return tr("warehouse_inventory_late").format({"time": _format_duration_days(late)})
+		return tr("warehouse_inventory_due")
+	return tr("warehouse_inventory_next").format({"time": _format_duration_days(_next_inventory_time() - _job_board_now())})
+
+
+func _inventory_info_tooltip() -> String:
+	var tooltip := tr("warehouse_inventory_never") if game_data.stock_snapshot_time < 0.0 else tr("warehouse_inventory_last").format({
+		"time": _format_game_time(game_data.stock_snapshot_time),
+		"ago": _format_duration_days(_job_board_now() - game_data.stock_snapshot_time),
+		"name": game_data.last_inventory_by,
+	})
+	return tooltip + "\n" + tr("warehouse_inventory_interval_hint")
 
 
 # Consumo giornaliero di calorie di tutti gli individui, con la stessa formula del consumo reale
@@ -17956,12 +18157,228 @@ func _village_daily_calorie_need() -> float:
 # come ogni altro ordine. Ordini non presi diventati di troppo (livello raggiunto o tolto) si tolgono; quelli presi
 # finiscono la loro serie. Nessun dato nuovo da salvare: gli ordini stanno in GameData.drawer_orders.
 #
-# PROVVISORIO: il controllo gira ogni STOCK_CHECK_INTERVAL_SEC secondi reali. In futuro lo farà una task di "gestione
-# magazzino", e l'efficienza di chi la fa deciderà quanto spesso (come l'efficienza del coordinatore per le
-# assegnazioni): la cadenza vive solo qui e nel timer di _process, la logica sta in _auto_request_stock.
+# Cadenza (2026-10-11): il controllo gira SOLO all'inizio di un inventario (_on_inventory_started, InventoryAction): gli
+# ordini decisi lì restano nascosti (INVENTORY_PENDING_KEY) ed escono in coda alla fine del conteggio.
 # ============================================================================================
-const STOCK_CHECK_INTERVAL_SEC: float = 1.0
-var _stock_check_timer: float = 0.0
+
+
+# ============================================================================================
+# Inventario del magazzino (2026-10-11, richiesta utente — gestore del magazzino). Il magazzino è acceso con l'idea
+# WarehousePanel.REQUIRED_IDEA_ID, la coda dei lavori attiva (punto di assegnazione) e almeno un deposito (edificio di
+# categoria Stoccaggio completo): senza deposito è spento, come la coda senza punto di assegnazione. Ogni
+# GameData.inventory_interval_hours ore di gioco dalla fine dell'ultimo inventario entra in coda il lavoro "Inventario"
+# (uno alla volta), assegnato come gli altri (Più adatto = skill Gestione). Chi lo prende va al deposito più vicino
+# (InventoryAction): all'arrivo il magazzino conta (foto delle scorte in GameData.stock_snapshot, mostrata dal cassetto
+# Scorte) e decide gli ordini (_auto_request_stock, gli annullamenti subito e gratis, i nuovi nascosti con
+# INVENTORY_PENDING_KEY); durata (1 h + 1 h per ordine nuovo) / fattore della Gestione; alla fine gli ordini escono in coda
+# e parte l'intervallo per il prossimo. La Gestione cresce a ogni inventario (task_completion_effects.tres).
+# ============================================================================================
+const INVENTORY_TASK_DEFINITION_PATH := "res://gameplay/scripts/tasks/definitions/inventory.tres"
+const INVENTORY_TASK_NAME := "task_inventory_name"
+const INVENTORY_PENDING_KEY := "inventory_pending"
+const INVENTORY_INTERVAL_OPTIONS: Array[int] = [6, 12, 24, 48, 72, 120]
+# Ritardo dell'inventario (2026-10-11, richiesta utente): campanella e "in ritardo" nel cassetto solo dopo un intero
+# intervallo in coda (ogni 3 g → dopo 3 g), vedi _inventory_overdue_hours.
+var _stock_inventory_pending: bool = false
+var _stock_inventory_new_orders: int = 0
+
+
+func _stock_manager_enabled() -> bool:
+	if game_data == null or macro_world == null or human_folk == null:
+		return false
+	if not human_folk.completed_ideas.has(WarehousePanel.REQUIRED_IDEA_ID) or not JobBoardService.is_enabled(human_folk):
+		return false
+	return _first_storage_building() != null
+
+
+func _is_storage_building(building: Building) -> bool:
+	return building != null and building.rules != null and building.rules.category == BuildingTypes.Category.STORAGE \
+		and building.is_complete and not building.is_demolished and not building.is_marked_for_demolition
+
+
+func _first_storage_building() -> Building:
+	for building in macro_world.buildings:
+		if _is_storage_building(building):
+			return building
+	return null
+
+
+func _nearest_storage_building(worker: HumanIndividual) -> Building:
+	return SpatialSelectionService.find_nearest(
+		macro_world.buildings, worker.position, worker.home_macro_coords, _is_storage_building, [],
+		PathfindingService.reachability_for(worker)
+	) as Building
+
+
+# Inventario scaduto: mai fatto, o passate inventory_interval_hours ore dalla fine dell'ultimo.
+func _inventory_due() -> bool:
+	if game_data.last_inventory_end < 0.0:
+		return true
+	return _job_board_now() >= _next_inventory_time()
+
+
+func _next_inventory_time() -> float:
+	return game_data.last_inventory_end + float(game_data.inventory_interval_hours) / 24.0
+
+
+func _inventory_workers() -> Array[HumanIndividual]:
+	var workers: Array[HumanIndividual] = []
+	for member in human_individuals:
+		for task in _member_open_tasks(member):
+			if task.task_name == INVENTORY_TASK_NAME:
+				workers.append(member)
+				break
+	return workers
+
+
+func _mark_inventory_pending(order: Dictionary) -> void:
+	if _stock_inventory_pending:
+		order[INVENTORY_PENDING_KEY] = true
+		_stock_inventory_new_orders += 1
+
+
+func _inventory_jobs_collect(provider: Dictionary, _assigned: Dictionary) -> Array[Dictionary]:
+	var jobs: Array[Dictionary] = []
+	if not _stock_manager_enabled():
+		return jobs
+	var workers := _inventory_workers()
+	if workers.is_empty() and not _inventory_due():
+		return jobs
+	var depot := _first_storage_building()
+	var job_name := tr("task_inventory_name")
+	jobs.append({
+		"key": "inventory:0", "kind": "inventory", "name": job_name, "text": tr("task_assignment_inventory_tooltip"),
+		"log_name": "inventario del magazzino", "icon": {"building_type": depot.building_type_name},
+		"macro": Vector2i(depot.macro_x, depot.macro_y), "microcell": Vector2i(depot.micro_x, depot.micro_y),
+		"reach_target": depot, "entry_kind": "building", "id": depot.id, "sort": -1.0,
+		"assigned": not workers.is_empty(), "hidden": false, "blocked_reason": "",
+		"target": depot, "provider": provider,
+	})
+	return jobs
+
+
+func _build_inventory_task(worker: HumanIndividual, depot: Building) -> Task:
+	var definition := load(INVENTORY_TASK_DEFINITION_PATH) as TaskDefinition
+	if definition == null or depot == null:
+		return null
+	var macro_offset: Vector2 = Vector2(Vector2i(depot.macro_x, depot.macro_y) - worker.home_macro_coords) * World.WIDTH
+	return TaskFactory.build_task(definition, {
+		"target_position": PathfindingService.random_point_in_microcell(Vector2(depot.micro_x, depot.micro_y) + macro_offset),
+		"target_building": depot,
+	})
+
+
+func _inventory_job_rejection(worker: HumanIndividual, _job: Dictionary) -> String:
+	var age_band := _resolve_age_band(worker)
+	if age_band == HumanTypes.AgeBand.INFANT or age_band == HumanTypes.AgeBand.CHILD:
+		return HumanIndividual.ASSIGN_REJECT_TOO_YOUNG
+	var depot := _nearest_storage_building(worker)
+	if depot == null:
+		return "nessun deposito raggiungibile"
+	var task := _build_inventory_task(worker, depot)
+	if task == null:
+		return "definizione mancante"
+	return worker.get_assign_rejection_reason(task, age_band)
+
+
+func _assign_inventory_job(worker: HumanIndividual, _job: Dictionary) -> void:
+	if not _inventory_workers().is_empty():
+		return
+	var depot := _nearest_storage_building(worker)
+	var task := _build_inventory_task(worker, depot)
+	if task == null:
+		return
+	worker.assign_task(task, _resolve_age_band(worker))
+	if worker == individual:
+		_refresh_selected_individual_panel()
+
+
+# Rimetti in coda / Blocca: l'inventario si ferma con l'effetto di H; gli ordini già decisi restano nascosti e li farà
+# uscire il prossimo inventario (che li conta come già aperti).
+func _inventory_job_release(_job: Dictionary) -> void:
+	for member in _inventory_workers():
+		if member.current_task != null and member.current_task.task_name == INVENTORY_TASK_NAME:
+			member.skip_job_board_once = true
+			_stop_member_task(member)
+
+
+# Inizio del conteggio (InventoryAction.on_started): foto delle scorte e ordini decisi (i nuovi nascosti). Ritorna
+# quanti ordini nuovi usciranno alla fine.
+func _on_inventory_started(_worker: Variant, _depot: Variant) -> int:
+	if game_data == null or macro_world == null:
+		return 0
+	game_data.stock_snapshot = VillageStockService.get_village_stock(macro_world)
+	game_data.stock_snapshot_fill = VillageStockService.get_storage_fill(macro_world)
+	game_data.stock_snapshot_time = _job_board_now()
+	_stock_inventory_pending = true
+	_stock_inventory_new_orders = 0
+	_auto_request_stock()
+	_stock_inventory_pending = false
+	if DebugLogging.ENABLED and DebugLogging.SHOW_JOB_BOARD_LOGS:
+		print("[JOB BOARD] Inventario iniziato da %s: %d ordini nuovi da emettere." % [
+			(_worker as HumanIndividual).name if _worker is HumanIndividual else "?", _stock_inventory_new_orders
+		])
+	return _stock_inventory_new_orders
+
+
+# Fine del conteggio (InventoryAction.on_finished): gli ordini decisi escono in coda, parte l'intervallo per il prossimo.
+func _on_inventory_finished(worker: Variant, _depot: Variant) -> void:
+	if game_data == null:
+		return
+	var released := 0
+	for order in game_data.drawer_orders:
+		if order.has(INVENTORY_PENDING_KEY):
+			order.erase(INVENTORY_PENDING_KEY)
+			released += 1
+	game_data.last_inventory_end = _job_board_now()
+	game_data.last_inventory_by = (worker as HumanIndividual).name if worker is HumanIndividual else ""
+	if DebugLogging.ENABLED and DebugLogging.SHOW_JOB_BOARD_LOGS:
+		print("[JOB BOARD] Inventario finito da %s: %d ordini in coda; prossimo inventario a %s." % [
+			game_data.last_inventory_by, released, _format_game_time(_next_inventory_time())
+		])
+	_refresh_pending_entries()
+
+
+# "giorno 196, anno 3, ore 15:00" da un tempo in giorni assoluti con la frazione del giorno — stessa numerazione del
+# calendario della sidebar (_update_calendar_display: current_day + 1, year).
+func _format_game_time(time_days: float) -> String:
+	var absolute_day := int(floor(time_days))
+	var minutes := int(floor((time_days - floor(time_days)) * 24.0 * 60.0))
+	return tr("game_time_format").format({
+		"day": absolute_day % GameData.DAYS_PER_YEAR + 1, "year": absolute_day / GameData.DAYS_PER_YEAR,
+		"time": "%02d:%02d" % [floori(minutes / 60.0), minutes % 60],
+	})
+
+
+# "2 g 4 h" / "5 h" / "meno di 1 h" da una durata in giorni.
+func _format_duration_days(duration_days: float) -> String:
+	var hours := int(floor(maxf(duration_days, 0.0) * 24.0))
+	if hours < 1:
+		return tr("duration_less_than_hour")
+	if hours < 24:
+		return tr("duration_hours").format({"hours": hours})
+	return tr("duration_days_hours").format({"days": hours / 24, "hours": hours % 24})
+
+
+# Ore di ritardo oltre le quali l'inventario è "in ritardo": un intero intervallo (GameData.inventory_interval_hours).
+func _inventory_overdue_hours() -> float:
+	return float(game_data.inventory_interval_hours)
+
+
+# Campanella: inventario in coda da almeno un intervallo (_inventory_overdue_hours) e nessuno che lo fa.
+func _collect_inventory_entries() -> Array[Dictionary]:
+	var entries: Array[Dictionary] = []
+	if not _stock_manager_enabled() or not _inventory_due() or not _inventory_workers().is_empty():
+		return entries
+	if game_data.last_inventory_end >= 0.0:
+		var overdue_hours := (_job_board_now() - _next_inventory_time()) * 24.0
+		if overdue_hours < _inventory_overdue_hours():
+			return entries
+		var text := tr("pending_inventory_overdue").format({"hours": int(floor(overdue_hours))})
+		var entry := _pending_entry("inventory_overdue", text, {"kind": "none", "id": -1, "macro": Vector2i(-1, -1), "sort": 0.0, "name": text})
+		entry["disabled_reason"] = tr("pending_stock_blocked_detail")
+		entries.append(entry)
+	return entries
 
 
 # Nomi che il magazzino sta chiedendo (aggiornati a ogni giro): risorse raccoglibili sotto il loro livello e, se mancano
@@ -17972,7 +18389,7 @@ var _stock_fill_names: Array[String] = []
 func _auto_request_stock() -> void:
 	if game_data == null or macro_world == null or human_folk == null:
 		return
-	if not human_folk.completed_ideas.has(WarehousePanel.REQUIRED_IDEA_ID) or not JobBoardService.is_enabled(human_folk):
+	if not _stock_manager_enabled():
 		return
 	var stock := VillageStockService.get_village_stock(macro_world)
 	var claims := _collect_drawer_cut_claims()
@@ -18020,7 +18437,7 @@ func _auto_request_stock() -> void:
 			if bool(order.get("taken", false)):
 				continue
 			var coverage := int(coverages[int(order["id"])])
-			if StockRequestService.is_order_surplus(level, quantity, total_coverage, coverage, unit_yield) \
+			if StockRequestService.is_order_surplus(level, quantity, total_coverage, coverage, int(_stock_margin(unit_yield))) \
 					and not _stock_order_too_young(order, level):
 				total_coverage -= coverage
 				_remove_drawer_order(int(order["id"]))
@@ -18107,7 +18524,7 @@ func _auto_request_hunt(stock: Dictionary, claims: Dictionary, orders: Array) ->
 		if bool(order.get("taken", false)):
 			continue
 		var coverage := int(coverages[int(order["id"])])
-		if StockRequestService.is_order_surplus(demand, 0, total_coverage, coverage, StockRequestService.HUNT_MEAT_STEP) \
+		if StockRequestService.is_order_surplus(demand, 0, total_coverage, coverage, int(_stock_margin(StockRequestService.HUNT_MEAT_STEP))) \
 				and not _stock_order_too_young(order, demand):
 			total_coverage -= coverage
 			_remove_drawer_order(int(order["id"]))
@@ -18178,8 +18595,8 @@ func _collect_stock_blocked_entries() -> Array[Dictionary]:
 		if not order.has(StockRequestService.ORDER_KEY) or bool(order.get("taken", false)):
 			continue
 		var order_type := String(order.get("type", ""))
-		# L'essiccatoio ha i suoi avvisi (_collect_stock_dry_entries).
-		if order_type == DRAWER_ORDER_TYPE_DRY:
+		# L'essiccatoio ha i suoi avvisi (_collect_stock_dry_entries); gli ordini dell'inventario in corso non sono ancora usciti.
+		if order_type == DRAWER_ORDER_TYPE_DRY or bool(order.get(INVENTORY_PENDING_KEY, false)):
 			continue
 		var reason := ""
 		if order_type == DRAWER_ORDER_TYPE_PRODUCE:
@@ -18216,10 +18633,19 @@ const STOCK_MISSING_KEY := "stock_missing"
 # si toglie subito. Chi mangia dal deposito e chi consegna fanno salire e scendere la scorta di continuo.
 const STOCK_CREATED_AT_KEY := "stock_created_at"
 const STOCK_ORDER_MIN_AGE_DAYS: float = 1.0
+# Interruttore delle difese contro l'oscillazione (2026-10-11, prova): con gli ordini decisi solo all'inventario non c'è
+# più il ricalcolo continuo che le rendeva necessarie, quindi spente — età minima (_stock_order_too_young) e margine di
+# un'unità nel giudizio "di troppo" (_stock_margin). true = comportamento di prima.
+const STOCK_ANTI_OSCILLATION: bool = false
+
+
+# Margine di un'unità contro l'oscillazione: il valore se STOCK_ANTI_OSCILLATION, altrimenti 0.
+func _stock_margin(value: float) -> float:
+	return value if STOCK_ANTI_OSCILLATION else 0.0
 
 
 func _stock_order_too_young(order: Dictionary, level: float) -> bool:
-	if level <= 0 or not order.has(STOCK_CREATED_AT_KEY):
+	if not STOCK_ANTI_OSCILLATION or level <= 0 or not order.has(STOCK_CREATED_AT_KEY):
 		return false
 	return _job_board_now() - float(order[STOCK_CREATED_AT_KEY]) < STOCK_ORDER_MIN_AGE_DAYS
 
@@ -18263,7 +18689,7 @@ func _auto_request_produce(stock: Dictionary) -> bool:
 		for index in range(wm_orders.size() - 1, -1, -1):
 			var order: Dictionary = wm_orders[index]
 			var order_quantity := maxi(int(order.get("quantity", 1)), 1)
-			if StockRequestService.is_order_surplus(level, quantity, coverage, order_quantity, 1) \
+			if StockRequestService.is_order_surplus(level, quantity, coverage, order_quantity, int(_stock_margin(1))) \
 					and not _stock_order_too_young(order, level):
 				coverage -= order_quantity
 				_remove_drawer_order(int(order["id"]))
@@ -18413,7 +18839,7 @@ func _auto_request_dry(stock: Dictionary) -> bool:
 		for order in open_orders.duplicate():
 			if not order.has(StockRequestService.ORDER_KEY):
 				continue
-			var surplus := covered_without >= level + 1 and not _stock_order_too_young(order, level)
+			var surplus := covered_without >= level + _stock_margin(1) and not _stock_order_too_young(order, level)
 			if surplus or _dry_pick(null, order).is_empty():
 				_remove_drawer_order(int(order["id"]))
 				open_orders.erase(order)
@@ -18438,10 +18864,12 @@ func _auto_request_dry(stock: Dictionary) -> bool:
 		var quantity := mini(level - covered, mini(available, room))
 		var order_id := game_data.next_drawer_order_id
 		game_data.next_drawer_order_id += 1
-		game_data.drawer_orders.append({
+		var dry_order := {
 			"id": order_id, "type": DRAWER_ORDER_TYPE_DRY, "recipe": recipe, "resource": ingredient, "quantity": quantity,
 			StockRequestService.ORDER_KEY: recipe, STOCK_CREATED_AT_KEY: _job_board_now(),
-		})
+		}
+		_mark_inventory_pending(dry_order)
+		game_data.drawer_orders.append(dry_order)
 		changed = true
 		if DebugLogging.ENABLED and DebugLogging.SHOW_JOB_BOARD_LOGS:
 			print("[JOB BOARD] Ordine del cassetto #%d: porta %d %s all'essiccatoio, dal magazzino per %s." % [order_id, quantity, ingredient, recipe])
@@ -18605,8 +19033,7 @@ func _update_stock_fill_names(stock: Dictionary) -> void:
 		if int(stock.get(name, 0)) < int(game_data.stock_min_levels[resource_name]):
 			fill.append(name)
 	if game_data.stock_min_food_days > 0:
-		var target := float(game_data.stock_min_food_days) * _village_daily_calorie_need()
-		if VillageStockService.get_food_calories(stock) < target:
+		if VillageStockService.get_food_calories(stock) < _food_days_target_calories(game_data.stock_min_food_days):
 			for name in CaloricCalculator.list_secondary_resource_names():
 				if _is_food(name) and TerrainScatteredResourceService.is_pickable(name) and not fill.has(name):
 					fill.append(name)
@@ -18655,7 +19082,7 @@ func _auto_request_food_days(stock: Dictionary) -> bool:
 				_remove_drawer_order(int(order["id"]))
 				changed = true
 		return changed
-	var target := float(days) * _village_daily_calorie_need()
+	var target := _food_days_target_calories(days)
 	var covered := VillageStockService.get_food_calories(stock) + _food_orders_arriving(claims, kcal_per_trip)
 	# Di troppo: i non presi, dal più nuovo, finché senza di loro i giorni restano coperti.
 	var candidates: Array = days_orders + meat_orders
@@ -18669,7 +19096,7 @@ func _auto_request_food_days(stock: Dictionary) -> bool:
 		if String(order.get("type", "")) == DRAWER_ORDER_TYPE_PRODUCE:
 			var unit_rules := CaloricCalculator.get_caloric_source_rules(String(order.get("recipe", "")))
 			unit_calories = unit_rules.calories_per_unit if unit_rules != null else 0.0
-		if covered - order_calories >= target + unit_calories and not _stock_order_too_young(order, days):
+		if covered - order_calories >= target + _stock_margin(unit_calories) and not _stock_order_too_young(order, days):
 			covered -= order_calories
 			_remove_drawer_order(int(order["id"]))
 			days_orders.erase(order)
@@ -18713,13 +19140,21 @@ func _auto_request_food_days(stock: Dictionary) -> bool:
 		return changed
 	var trips_needed := ceili(missing / kcal_per_trip)
 	var counts := StockRequestService.compute_new_order_counts(
-		trips_needed, 0, 0, days_orders.size(), 1, HaulZoneService.WORK_AREA_MAX_TRIPS
+		trips_needed, 0, 0, days_orders.size(), 1, HaulZoneService.WORK_AREA_MAX_TRIPS, StockRequestService.MAX_FOOD_DAYS_ORDERS
 	)
 	counts = _stock_limit_if_blocked(counts, days_orders.size(), DRAWER_ORDER_TYPE_GATHER, extra)
 	for count in counts:
 		_create_drawer_zone_order(DRAWER_ORDER_TYPE_GATHER, count, -1, extra.duplicate())
 		changed = true
 	return changed
+
+
+# Calorie da avere per i giorni di autonomia (2026-10-11, richiesta utente): giorni minimi più il consumo fino al prossimo
+# inventario (la frequenza), così a fine giro si è ancora al minimo e non sotto.
+func _food_days_target_calories(days: int) -> float:
+	if days <= 0:
+		return 0.0
+	return (float(days) + float(game_data.inventory_interval_hours) / 24.0) * _village_daily_calorie_need()
 
 
 # Calorie stimate di un viaggio "tutto il cibo": zaino × la densità calorica (calorie per spazio) più bassa tra i cibi
@@ -18953,7 +19388,7 @@ func _stock_average_carry_capacity() -> float:
 
 # Bottone "Scorte" evidenziato finché il cassetto mostra le scorte.
 func _sync_warehouse_highlight() -> void:
-	var showing := side_drawer != null and side_drawer.is_showing(WarehousePanel.DRAWER_CONTENT_ID)
+	var showing := warehouse_drawer != null and warehouse_drawer.is_showing(WarehousePanel.DRAWER_CONTENT_ID)
 	game_info_panel.primary_actions_bar.set_slot_highlighted(GameInfoPanel.WAREHOUSE_SLOT_INDEX, showing)
 
 
@@ -18961,29 +19396,38 @@ func _sync_warehouse_highlight() -> void:
 # posizionato accanto al suo fianco sinistro e alto quanto l'info panel; riposizionato quando l'info panel o la finestra
 # cambiano.
 func _setup_side_drawer() -> void:
-	side_drawer = SideDrawer.new()
-	$CanvasLayer.add_child(side_drawer)
+	side_drawer = _create_side_drawer()
+	warehouse_drawer = _create_side_drawer()
+	game_info_panel.item_rect_changed.connect(_layout_side_drawer)
+	get_viewport().size_changed.connect(_layout_side_drawer)
+
+
+# Un cassetto (2026-10-11: due istanze, Assegnazione e Scorte), con stili, bottone della posizione e chiusura comuni.
+func _create_side_drawer() -> SideDrawer:
+	var drawer := SideDrawer.new()
+	$CanvasLayer.add_child(drawer)
 	# Stessa struttura dell'info panel (2026-10-07): cornice azzurra della sidebar, area interna del pannello dell'info panel.
 	var sidebar := $CanvasLayer/Sidebar as Control
-	side_drawer.set_styles(
+	drawer.set_styles(
 		sidebar.get_theme_stylebox("panel") if sidebar != null else null, game_info_panel.get_theme_stylebox("panel")
 	)
-	# Bottone della posizione (2026-10-09): scelta salvata tra le partite, cassetto subito spostato.
-	side_drawer.overlay_mode_requested.connect(func(overlay: bool) -> void:
+	# Bottone della posizione (2026-10-09): scelta salvata tra le partite, comune ai due cassetti, subito spostati.
+	drawer.overlay_mode_requested.connect(func(overlay: bool) -> void:
 		UserOptions.side_drawer_overlay = overlay
 		UserOptions.save_to_disk()
 		_layout_side_drawer()
 	)
-	side_drawer.closed.connect(func(content_id: StringName) -> void:
+	drawer.closed.connect(func(content_id: StringName) -> void:
 		if content_id == TaskAssignmentPanel.DRAWER_CONTENT_ID:
 			_task_assignment_panel = null
 		if content_id == WarehousePanel.DRAWER_CONTENT_ID:
 			_warehouse_panel = null
 		_sync_task_assignment_highlight()
 		_sync_warehouse_highlight()
+		# Le Scorte tornano contro il bordo quando l'Assegnazione si chiude.
+		_layout_side_drawer()
 	)
-	game_info_panel.item_rect_changed.connect(_layout_side_drawer)
-	get_viewport().size_changed.connect(_layout_side_drawer)
+	return drawer
 
 
 func _layout_side_drawer() -> void:
@@ -18992,7 +19436,7 @@ func _layout_side_drawer() -> void:
 	# Area scura del cassetto = area scura dell'info panel (GameInfoPanel); cornice fino al bordo della sidebar (2026-10-07).
 	# Posizione (2026-10-09, UserOptions.side_drawer_overlay): "Affiancato" = lato destro sul fianco sinistro della sidebar;
 	# "Sopra" = lato destro sul bordo destro della sidebar (quello dello schermo), sopra l'info panel, che copre tutto
-	# (380 px contro 300) sporgendo a sinistra. Lo scorrimento della mappa al bordo segue da solo il fianco sinistro del
+	# (SideDrawer.WIDTH) sporgendo a sinistra. Lo scorrimento della mappa al bordo segue da solo il fianco sinistro del
 	# cassetto (CameraController._get_map_rect, gruppo camera_right_edge_cover).
 	var sidebar := $CanvasLayer/Sidebar as Control
 	var panel_rect := game_info_panel.get_global_rect()
@@ -19000,6 +19444,11 @@ func _layout_side_drawer() -> void:
 	var right_edge := sidebar_rect.end.x if UserOptions.side_drawer_overlay else sidebar_rect.position.x
 	side_drawer.set_overlay_mode(UserOptions.side_drawer_overlay)
 	side_drawer.place(right_edge, panel_rect.position.y, panel_rect.end.y, sidebar_rect.end.y)
+	# Scorte (2026-10-11): alla sinistra dell'Assegnazione se aperta, altrimenti contro lo stesso bordo.
+	if warehouse_drawer != null:
+		var warehouse_edge := right_edge - SideDrawer.WIDTH if side_drawer.visible else right_edge
+		warehouse_drawer.set_overlay_mode(UserOptions.side_drawer_overlay)
+		warehouse_drawer.place(warehouse_edge, panel_rect.position.y, panel_rect.end.y, sidebar_rect.end.y)
 
 
 # Bottone 📋: apre il cassetto con l'assegnazione delle task, o lo richiude se la mostra già.
@@ -21027,6 +21476,7 @@ func _setup_clock() -> void:
 	# sopra); building_resources_decayed vive invece su clock (WorldTimeService, non GameTimeService,
 	# gestisce il decadimento edifici — vedi WorldTimeService._run_daily_building_resource_decay).
 	game_time_service.individual_resource_decayed.connect(_on_individual_resource_decayed)
+	game_time_service.individual_apparel_worn_out.connect(_on_individual_apparel_worn_out)
 	# Inizio consumo della riserva corporea (2026-09-19, richiesta utente) - alert giallo, stesso gate.
 	game_time_service.individual_started_body_reserve.connect(_on_individual_started_body_reserve)
 	clock.building_resources_decayed.connect(_on_building_resources_decayed)

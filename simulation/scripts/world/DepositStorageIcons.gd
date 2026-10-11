@@ -28,7 +28,8 @@ static func draw_icon(canvas: CanvasItem, resource_name: String, top_left: Vecto
 		return true
 	var method: String = DEPOSIT_STORAGE_ICON_DRAW_METHODS.get(resource_name, "")
 	if method == "":
-		return false
+		# Vestiario (2026-10-11): icona generica del suo slot (ApparelIcon), false per ogni altra risorsa.
+		return ApparelIcon.draw_resource_into(canvas, resource_name, top_left, Vector2(side, side))
 	_dispatcher().call(method, canvas, top_left, side)
 	return true
 
@@ -66,6 +67,11 @@ const DEPOSIT_STORAGE_ICON_DRAW_METHODS := {
 	"bone_awl": "_draw_deposit_storage_bone_awl_icon",
 	"hide_bag": "_draw_deposit_storage_hide_bag_icon",
 	"dried_hide_bag": "_draw_deposit_storage_dried_hide_bag_icon",
+	# Vestiario (2026-10-11): pelliccia di base e pelli lavorate (secondo livello).
+	"fur_dress": "_draw_deposit_storage_fur_dress_icon",
+	"fur_cap": "_draw_deposit_storage_fur_cap_icon",
+	"worked_hide_dress": "_draw_deposit_storage_worked_hide_dress_icon",
+	"worked_hide_cap": "_draw_deposit_storage_worked_hide_cap_icon",
 	"meat": "_draw_deposit_storage_meat_icon",
 	"cooked_meat": "_draw_deposit_storage_cooked_meat_icon",
 	"hide": "_draw_deposit_storage_hide_icon",
@@ -555,6 +561,23 @@ static func _draw_deposit_storage_arrow_bundle_icon(canvas: CanvasItem, top_left
 # Sacca di pelle essiccata (2026-10-04): stessa geometria dell'icona del pannello (DriedHideBagIcon.draw_into).
 static func _draw_deposit_storage_dried_hide_bag_icon(canvas: CanvasItem, top_left: Vector2, side: float) -> void:
 	DriedHideBagIcon.draw_into(canvas, top_left, Vector2(side, side))
+
+
+# Vestiario (2026-10-11): stessa geometria delle icone del pannello.
+static func _draw_deposit_storage_fur_dress_icon(canvas: CanvasItem, top_left: Vector2, side: float) -> void:
+	FurDressIcon.draw_into(canvas, top_left, Vector2(side, side))
+
+
+static func _draw_deposit_storage_fur_cap_icon(canvas: CanvasItem, top_left: Vector2, side: float) -> void:
+	FurCapIcon.draw_into(canvas, top_left, Vector2(side, side))
+
+
+static func _draw_deposit_storage_worked_hide_dress_icon(canvas: CanvasItem, top_left: Vector2, side: float) -> void:
+	WorkedHideDressIcon.draw_into(canvas, top_left, Vector2(side, side))
+
+
+static func _draw_deposit_storage_worked_hide_cap_icon(canvas: CanvasItem, top_left: Vector2, side: float) -> void:
+	WorkedHideCapIcon.draw_into(canvas, top_left, Vector2(side, side))
 
 
 # Prodotti della macellazione (2026-09-26, icone provvisorie): stessa geometria delle icone del pannello

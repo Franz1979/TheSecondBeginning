@@ -221,6 +221,19 @@ func load_game_from_json(file_path: String) -> LoadedGame:
 	game_data.stock_min_food_days = maxi(int(data["game"].get("stock_min_food_days", 0)), 0)
 	game_data.stock_excess_meat_destination = String(data["game"].get("stock_excess_meat_destination", "warehouse"))
 	game_data.job_board_return_borrowed_tools = bool(data["game"].get("job_board_return_borrowed_tools", true))
+	# Inventario del magazzino (2026-10-11): salvataggi precedenti = mai fatto (il primo entra subito in coda).
+	game_data.inventory_interval_hours = maxi(int(data["game"].get("inventory_interval_hours", 24)), 1)
+	game_data.last_inventory_end = float(data["game"].get("last_inventory_end", -1.0))
+	game_data.last_inventory_by = String(data["game"].get("last_inventory_by", ""))
+	game_data.stock_snapshot.clear()
+	var raw_snapshot = data["game"].get("stock_snapshot", {})
+	if raw_snapshot is Dictionary:
+		for snapshot_name in (raw_snapshot as Dictionary).keys():
+			game_data.stock_snapshot[String(snapshot_name)] = int(raw_snapshot[snapshot_name])
+	game_data.stock_snapshot_fill = []
+	for fill_value in data["game"].get("stock_snapshot_fill", []):
+		game_data.stock_snapshot_fill.append(float(fill_value))
+	game_data.stock_snapshot_time = float(data["game"].get("stock_snapshot_time", -1.0))
 	game_data.job_board_kind_order.clear()
 	var raw_kind_order = data["game"].get("job_board_kind_order", [])
 	if raw_kind_order is Array:
@@ -957,6 +970,23 @@ func load_game_from_json(file_path: String) -> LoadedGame:
 					if slot_uses <= 0:
 						slot_uses = ToolInstance.get_max_uses(slot_tool)
 				individual.equipped_tool_uses.append(slot_uses)
+			# Slot del vestiario (2026-10-11): salvataggi precedenti = nessun capo. Un capo non più valido per il suo slot
+			# (risorsa sparita o di altro tipo) viene scartato; un'istanza mancante o consumata riparte da capo nuovo.
+			var saved_apparel: Array = individual_data.get("equipped_apparel", [])
+			var saved_apparel_instances: Array = individual_data.get("equipped_apparel_instances", [])
+			individual.equipped_apparel.clear()
+			individual.equipped_apparel_instances.clear()
+			for slot_index in range(HumanIndividual.ApparelSlot.size()):
+				var apparel_name: String = String(saved_apparel[slot_index]) if slot_index < saved_apparel.size() and saved_apparel[slot_index] != null else ""
+				if apparel_name != "" and not HumanIndividual.can_wear_in_slot(apparel_name, slot_index):
+					apparel_name = ""
+				var apparel_instance: Dictionary = {}
+				if apparel_name != "":
+					var raw_instance = saved_apparel_instances[slot_index] if slot_index < saved_apparel_instances.size() else null
+					apparel_instance = ToolInstance.normalized(raw_instance) if raw_instance is Dictionary and ToolInstance.is_usable(raw_instance) \
+						else ToolInstance.create(ToolInstance.get_max_uses(apparel_name))
+				individual.equipped_apparel.append(apparel_name)
+				individual.equipped_apparel_instances.append(apparel_instance)
 			# Task/Action in corso (2026-09-08, richiesta utente) — "current_task" assente (save
 			# precedente a questo campo) o esplicitamente null (individuo a Rest implicito al
 			# momento del salvataggio) lasciano individual.current_task al default null, nessuna
@@ -1126,7 +1156,7 @@ func _parse_stored_resources(raw: Dictionary) -> Dictionary:
 func _parse_used_instances(resource_name: String, raw_entry: Dictionary, quantity: int) -> Array:
 	var used_instances: Array = []
 	var raw_instances = raw_entry.get(ToolInstance.KEY_USED_INSTANCES, [])
-	if not (raw_instances is Array) or not ToolInstance.is_tool_resource(resource_name):
+	if not (raw_instances is Array) or not ToolInstance.uses_instances(resource_name):
 		return used_instances
 	for raw_instance in raw_instances:
 		if used_instances.size() >= quantity:

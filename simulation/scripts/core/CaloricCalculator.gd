@@ -14,6 +14,7 @@ const SECONDARY_RESOURCE_FOLDER_CATEGORIES := {
 	"medicinal": SecondaryResourceTypes.Category.MEDICINAL,
 	"semi_finished": SecondaryResourceTypes.Category.SEMI_FINISHED,
 	"tools": SecondaryResourceTypes.Category.TOOL,
+	"apparel": SecondaryResourceTypes.Category.APPAREL,
 }
 
 # Nessun vero registro di fonti a stock persistente esiste ancora (nessuna scansione automatica

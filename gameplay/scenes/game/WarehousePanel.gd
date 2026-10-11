@@ -45,7 +45,7 @@ const FILL_RED := Color(0.85, 0.25, 0.25, 1.0)
 const TAB_ORDER: Array[int] = [
 	SecondaryResourceTypes.Category.FOOD, SecondaryResourceTypes.Category.RAW_MATERIAL,
 	SecondaryResourceTypes.Category.SEMI_FINISHED, SecondaryResourceTypes.Category.TOOL,
-	SecondaryResourceTypes.Category.MEDICINAL,
+	SecondaryResourceTypes.Category.MEDICINAL, SecondaryResourceTypes.Category.APPAREL,
 ]
 
 # Livello minimo (2026-10-10, richiesta utente): campo − [numero] + a destra della quantità, passo 1,
@@ -65,6 +65,14 @@ signal min_food_days_changed(days: int)
 # (ButcherDestinationButton). Stato e opzioni li passa GameScene (set_excess_meat_destination), la scelta esce con
 # excess_meat_destination_changed. Aperta o chiusa resta per la sessione (_rules_open).
 signal excess_meat_destination_changed(destination: String)
+# Inventario (2026-10-11): riga in cima al cassetto con il prossimo inventario (o chi lo sta facendo), dati da GameScene
+# (set_inventory_info); i numeri del cassetto sono quelli dell'ultimo inventario, non in tempo reale. Frequenza nelle
+# Regole di stoccaggio (ore tra un inventario e l'altro), esce con inventory_interval_changed.
+signal inventory_interval_changed(hours: int)
+const INVENTORY_INTERVAL_OPTIONS: Array[int] = [6, 12, 24, 48, 72, 120]
+var _inventory_label: Label = null
+var _inventory_info: Array = []
+var _inventory_interval: int = 24
 const QUANTITY_COLUMN_WIDTH: float = 46.0
 const LEVEL_BUTTON_WIDTH: float = 16.0
 const LEVEL_EDIT_WIDTH: float = 38.0
@@ -110,8 +118,16 @@ var _fill_percent: Label = null
 func _ready() -> void:
 	size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_inventory_label = Label.new()
+	_inventory_label.add_theme_font_size_override("font_size", LIST_FONT_SIZE)
+	_inventory_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_inventory_label.custom_minimum_size.x = 0.0
+	_inventory_label.mouse_filter = Control.MOUSE_FILTER_STOP
+	add_child(_inventory_label)
+	if _inventory_info.size() == 2:
+		set_inventory_info(String(_inventory_info[0]), String(_inventory_info[1]))
 	_build_tabs()
-	# Elenco che scorre in altezza dentro il cassetto, mai in larghezza (il cassetto resta di 380 px).
+	# Elenco che scorre in altezza dentro il cassetto, mai in larghezza (il cassetto resta largo SideDrawer.WIDTH).
 	var scroll := ScrollContainer.new()
 	scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -145,6 +161,19 @@ func refresh_stock(stock: Dictionary, daily_calorie_need: float, storage_fill: A
 		_set_fill(float(storage_fill[0]), float(storage_fill[1]))
 
 
+# Riga dell'inventario: testo e tooltip (GameScene, a ogni aggiornamento del cassetto).
+func set_inventory_info(text: String, tooltip: String) -> void:
+	_inventory_info = [text, tooltip]
+	if _inventory_label != null:
+		_inventory_label.text = text
+		_inventory_label.tooltip_text = tooltip
+
+
+# Frequenza dell'inventario della partita (GameScene, prima di _ready).
+func set_inventory_interval(hours: int) -> void:
+	_inventory_interval = hours
+
+
 # Valori della partita (GameScene, prima di aggiungere il pannello al cassetto).
 func set_min_levels(levels: Dictionary, food_days: int) -> void:
 	_min_levels = levels.duplicate()
@@ -159,6 +188,37 @@ func set_excess_meat_destination(is_shown: bool, current: Dictionary, options: A
 	_excess_meat_state = [is_shown, current, options]
 	if _excess_meat_button != null:
 		_excess_meat_button.set_destination(is_shown, current, options)
+
+
+# Regola "Frequenza dell'inventario" (2026-10-11): ogni 6 h, 12 h, 1, 2, 3 o 5 giorni.
+func _build_inventory_interval_row() -> Control:
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 6)
+	row.tooltip_text = tr("warehouse_rule_inventory_interval_tooltip")
+	var label := Label.new()
+	label.text = tr("warehouse_rule_inventory_interval")
+	label.tooltip_text = row.tooltip_text
+	label.mouse_filter = Control.MOUSE_FILTER_PASS
+	label.add_theme_font_size_override("font_size", LIST_FONT_SIZE)
+	label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	row.add_child(label)
+	var picker := OptionButton.new()
+	picker.focus_mode = Control.FOCUS_NONE
+	picker.add_theme_font_size_override("font_size", LIST_FONT_SIZE)
+	picker.tooltip_text = row.tooltip_text
+	for hours in INVENTORY_INTERVAL_OPTIONS:
+		var text := tr("warehouse_inventory_every_hours").format({"hours": hours}) if hours < 24 \
+			else tr("warehouse_inventory_every_days").format({"days": hours / 24})
+		picker.add_item(text, hours)
+	picker.select(maxi(INVENTORY_INTERVAL_OPTIONS.find(_inventory_interval), 0))
+	picker.item_selected.connect(func(index: int) -> void:
+		_inventory_interval = picker.get_item_id(index)
+		inventory_interval_changed.emit(_inventory_interval)
+	)
+	row.add_child(picker)
+	return row
 
 
 func _build_rules_section() -> void:
@@ -197,6 +257,7 @@ func _build_rules_section() -> void:
 	_excess_meat_button.destination_chosen.connect(func(destination: String) -> void: excess_meat_destination_changed.emit(destination))
 	row.add_child(_excess_meat_button)
 	_rules_box.add_child(row)
+	_rules_box.add_child(_build_inventory_interval_row())
 	if _excess_meat_state.size() == 3:
 		var options: Array[Dictionary] = []
 		options.assign(_excess_meat_state[2])

@@ -334,14 +334,11 @@ static func store(building: Building, resource_name: String, quantity: int, deca
 
 	var existing_entry: Dictionary = building.stored_resources.get(resource_name, {})
 	var current_quantity: int = int(existing_entry.get("quantity", 0))
-	var current_decay_fraction: float = float(existing_entry.get("decay_fraction", 0.0))
 
 	var new_quantity: int = current_quantity + deposit_amount
-	var new_decay_fraction: float = decay_fraction
-	if current_quantity > 0:
-		new_decay_fraction = (
-			float(current_quantity) * current_decay_fraction + float(deposit_amount) * decay_fraction
-		) / float(new_quantity)
+	# Media pesata sui soli pezzi nuovi già presenti (2026-10-11): le istanze usate hanno ciascuna il proprio
+	# deperimento (ToolInstance.merged_lot_decay); senza istanze è la media sulla quantità di sempre.
+	var new_decay_fraction: float = ToolInstance.merged_lot_decay(existing_entry, deposit_amount, decay_fraction)
 
 	# Avanzamento automatico (2026-10-03, essiccazione passo 2): un ingrediente di una ricetta ad avanzamento
 	# automatico di questo edificio porta la propria frazione, media pesata con le unità nuove a 0 (stesso principio
@@ -368,20 +365,21 @@ static func store(building: Building, resource_name: String, quantity: int, deca
 # max_uses <= 0, che non si usura: sempre "pieno"). Istanza parziale: quantity + 1 e l'istanza (copia)
 # si aggiunge a used_instances. Rifiutata (false) se la risorsa non è un attrezzo o se l'istanza è rotta
 # (0 usi) — guardia: un attrezzo che si rompe sparisce e non deve mai arrivare qui.
+# Deperimento (2026-10-11, vestiario): un pezzo a usi pieni rientra nel lotto dei nuovi con il proprio deperimento
+# (media pesata di store()); un pezzo parziale resta un'istanza con il suo, fuori dalla media del lotto.
 static func store_tool_instance(building: Building, resource_name: String, instance: Dictionary) -> bool:
-	if not ToolInstance.is_tool_resource(resource_name):
+	if not ToolInstance.uses_instances(resource_name):
 		return false
 	if ToolInstance.is_full(instance, ToolInstance.get_max_uses(resource_name)):
-		return store(building, resource_name, 1, 0.0) == 1
+		return store(building, resource_name, 1, ToolInstance.get_decay_fraction(instance)) == 1
 	if not ToolInstance.is_usable(instance):
 		return false
 	if not can_accept(building, resource_name) or get_max_depositable(building, resource_name) < 1:
 		return false
 
 	var entry: Dictionary = (building.stored_resources.get(resource_name, {}) as Dictionary).duplicate(true)
-	var current_quantity: int = int(entry.get("quantity", 0))
-	# Stessa media pesata di store(), con decay 0.0 in arrivo (gli attrezzi non deperiscono, day_durability -1).
-	entry["decay_fraction"] = float(current_quantity) * float(entry.get("decay_fraction", 0.0)) / float(current_quantity + 1)
+	if not entry.has("decay_fraction"):
+		entry["decay_fraction"] = 0.0
 	ToolInstance.add_instance_to_entry(entry, instance)
 	building.stored_resources[resource_name] = entry
 	return true
@@ -408,7 +406,7 @@ static func store_tool_units(building: Building, resource_name: String, units: A
 # Array vuoto se la risorsa non è un attrezzo o non c'è nulla da prelevare.
 static func withdraw_tool_units(building: Building, resource_name: String, quantity_requested: int) -> Array:
 	var units: Array = []
-	if building == null or quantity_requested <= 0 or not ToolInstance.is_tool_resource(resource_name):
+	if building == null or quantity_requested <= 0 or not ToolInstance.uses_instances(resource_name):
 		return units
 	if building.is_marked_for_demolition:
 		return units
@@ -472,7 +470,7 @@ static func transform_entry(building: Building, input_name: String, input_left: 
 # Un pezzo di un attrezzo tolto dal solo magazzino (il più usato per primo), come istanza; {} se non ce n'è. Usata per
 # spostarlo nell'Attrezzeria dell'edificio (2026-10-04, BuildingToolkitService).
 static func take_stored_tool_unit(building: Building, resource_name: String) -> Dictionary:
-	if building == null or not ToolInstance.is_tool_resource(resource_name):
+	if building == null or not ToolInstance.uses_instances(resource_name):
 		return {}
 	var units := _take_stored_tool_units(building, resource_name, 1)
 	return units[0] if not units.is_empty() else {}
@@ -719,7 +717,7 @@ static func withdraw_tool_units_auto(building: Building, resource_name: String, 
 			return []
 		return withdraw_tool_units(building, resource_name, quantity_requested)
 	var units: Array = []
-	if quantity_requested <= 0 or not ToolInstance.is_tool_resource(resource_name) or building.is_marked_for_demolition:
+	if quantity_requested <= 0 or not ToolInstance.uses_instances(resource_name) or building.is_marked_for_demolition:
 		return units
 	var from_output := ProductionService.withdraw_output(building, resource_name, quantity_requested)
 	var max_uses: int = ToolInstance.get_max_uses(resource_name)
@@ -740,7 +738,7 @@ static func withdraw_tool_units_auto(building: Building, resource_name: String, 
 static func withdraw_stored(building: Building, resource_name: String, quantity_requested: int) -> int:
 	if building == null or quantity_requested <= 0:
 		return 0
-	if ToolInstance.is_tool_resource(resource_name):
+	if ToolInstance.uses_instances(resource_name):
 		return _take_stored_tool_units(building, resource_name, quantity_requested).size()
 	var existing_entry: Dictionary = building.stored_resources.get(resource_name, {})
 	var current_quantity: int = int(existing_entry.get("quantity", 0))

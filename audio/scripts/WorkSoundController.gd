@@ -18,7 +18,7 @@ extends Node
 #     "end_fade_sec" che finisce lì. Varianti hunt_2, hunt_3… nel banco. La prima scansione registra lo stato senza
 #     suonare;
 #   - "loop" (crowd): sorgente fissa sul centro del villaggio (VisitorService.find_village_center), in loop (import
-#     con loop), con dissolvenza in entrata e in uscita; solo con almeno CROWD_MIN_PEOPLE persone entro
+#     con loop), con dissolvenza in entrata e in uscita; solo con almeno CROWD_MIN_PEOPLE persone (neonati e bambini esclusi) entro
 #     CROWD_RADIUS_MICROCELLS dal centro, e con il centro nell'area visibile. Senza centro, nessun suono.
 #
 # Regole comuni: sorgente fuori (action finita, uscita dalle attive) o gioco in pausa = il suono sfuma ("fade_out_sec");
@@ -62,8 +62,9 @@ const VISIBLE_MARGIN_RATIO: float = 0.2
 const FIRST_START_MAX_DELAY_SEC: float = 2.0
 # Hunt: almeno questo tempo tra un suono di caccia e il successivo (secondi reali).
 const HUNT_MIN_INTERVAL_SEC: float = 15.0
-# Crowd: persone minime entro il raggio (microcelle) dal centro del villaggio.
-const CROWD_MIN_PEOPLE: int = 3
+# Crowd: persone minime entro il raggio (microcelle) dal centro del villaggio (2026-10-11, richiesta utente: 5, prima 3;
+# neonati e bambini non contano).
+const CROWD_MIN_PEOPLE: int = 5
 const CROWD_RADIUS_MICROCELLS: float = 8.0
 # Attenuazione con la distanza dal centro dello schermo (AudioStreamPlayer2D.attenuation: 1.0 = lineare).
 const DISTANCE_ATTENUATION: float = 1.0
@@ -237,6 +238,9 @@ func _scan_crowd(individuals: Array, live_cells: Dictionary, visible: Rect2) -> 
 	if center_position != null and visible.has_point(center_position):
 		var people := 0
 		for member in individuals:
+			var age_band := int(_game_scene.call("_resolve_age_band", member))
+			if age_band == HumanTypes.AgeBand.INFANT or age_band == HumanTypes.AgeBand.CHILD:
+				continue
 			var center_local := SpatialSelectionService._position_relative_to(village_center, member.home_macro_coords) + Vector2(0.5, 0.5)
 			if member.position.distance_to(center_local) <= CROWD_RADIUS_MICROCELLS:
 				people += 1

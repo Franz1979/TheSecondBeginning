@@ -2,9 +2,10 @@ class_name ToolInstance
 extends RefCounted
 
 # Istanza individuale di un attrezzo USATO (2026-09-26, richiesta utente — attrezzi come istanze,
-# step 1: il magazzino). Modello: gli attrezzi NUOVI restano una semplice quantità; solo un pezzo
+# step 1: il magazzino). Dal 2026-10-11 anche di un capo di vestiario (uses_instances), i cui "usi" sono giorni
+# indossato. Modello: gli attrezzi NUOVI restano una semplice quantità; solo un pezzo
 # parzialmente consumato diventa un'istanza, perché non è più intercambiabile con uno nuovo. Vale
-# SOLO per le risorse di categoria SecondaryResourceTypes.Category.TOOL (vedi is_tool_resource).
+# SOLO per le risorse di categoria TOOL o APPAREL (vedi uses_instances).
 #
 # L'istanza è un Dictionary estensibile, serializzabile in JSON così com'è (stesso principio di
 # Building.stored_resources, salvato senza conversioni da GameSaveService): oggi solo
@@ -16,14 +17,34 @@ extends RefCounted
 # equipped_tool_uses, dove l'istanza si riduce ai soli usi residui dello slot). Stateless, funzioni statiche.
 
 const KEY_REMAINING_USES := "remaining_uses"
+# Deperimento da stock DEL SINGOLO PEZZO (2026-10-11, richiesta utente — vestiario): un capo ha due stati
+# indipendenti, il consumo (remaining_uses, giorni indossato) e il deperimento da riposto (questa frazione 0..1).
+# Il deperimento avanza solo mentre il pezzo è riposto (advance_entry_decay) e resta congelato mentre è indossato:
+# tolto di dosso riparte dal valore che aveva. Chiave scritta solo se > 0, quindi gli attrezzi (che non deperiscono)
+# restano nel formato di sempre.
+const KEY_DECAY_FRACTION := "decay_fraction"
 
 
-static func create(remaining_uses: int) -> Dictionary:
-	return {KEY_REMAINING_USES: remaining_uses}
+static func create(remaining_uses: int, decay_fraction: float = 0.0) -> Dictionary:
+	var instance := {KEY_REMAINING_USES: remaining_uses}
+	if decay_fraction > 0.0:
+		instance[KEY_DECAY_FRACTION] = decay_fraction
+	return instance
 
 
 static func get_remaining_uses(instance: Dictionary) -> int:
 	return int(instance.get(KEY_REMAINING_USES, 0))
+
+
+static func get_decay_fraction(instance: Dictionary) -> float:
+	return float(instance.get(KEY_DECAY_FRACTION, 0.0))
+
+
+static func set_decay_fraction(instance: Dictionary, decay_fraction: float) -> void:
+	if decay_fraction > 0.0:
+		instance[KEY_DECAY_FRACTION] = decay_fraction
+	else:
+		instance.erase(KEY_DECAY_FRACTION)
 
 
 # Utilizzabile = almeno un uso residuo. Un attrezzo a 0 usi è rotto: sparisce, non si stocca.
@@ -43,6 +64,7 @@ static func is_full(instance: Dictionary, max_uses: int) -> bool:
 static func normalized(instance: Dictionary) -> Dictionary:
 	var copy: Dictionary = instance.duplicate(true)
 	copy[KEY_REMAINING_USES] = get_remaining_uses(instance)
+	set_decay_fraction(copy, clampf(get_decay_fraction(instance), 0.0, 1.0))
 	return copy
 
 
@@ -103,17 +125,21 @@ static func take_units_from_entry(entry: Dictionary, quantity_requested: int, ma
 	for index in taken_indices:
 		used_instances.remove_at(index)
 
+	# I pezzi nuovi escono con il deperimento del loro lotto (la decay_fraction della voce), che da qui in poi
+	# viaggia con il pezzo (vestiario, 2026-10-11).
 	var new_taken: int = mini(quantity_requested - units.size(), new_available)
+	var lot_decay: float = float(entry.get("decay_fraction", 0.0))
 	for i in range(new_taken):
-		units.append(create(max_uses))
+		units.append(create(max_uses, lot_decay))
 
 	entry["quantity"] = current_quantity - units.size()
 	set_used_instances(entry, used_instances)
 	return units
 
 
-# Aggiunge UN pezzo usato alla voce: quantity + 1 e copia dell'istanza in used_instances. Nessun
-# controllo qui (pieno/rotto/spazio): li fa il chiamante prima (store_tool_instance/add_carried_tool_instance).
+# Aggiunge UN pezzo usato alla voce: quantity + 1 e copia dell'istanza in used_instances (con il suo
+# deperimento: non entra nella media del lotto). Nessun controllo qui (pieno/rotto/spazio): li fa il
+# chiamante prima (store_tool_instance/add_carried_tool_instance).
 static func add_instance_to_entry(entry: Dictionary, instance: Dictionary) -> void:
 	entry["quantity"] = int(entry.get("quantity", 0)) + 1
 	var used_instances: Array = get_used_instances(entry).duplicate()
@@ -121,11 +147,67 @@ static func add_instance_to_entry(entry: Dictionary, instance: Dictionary) -> vo
 	set_used_instances(entry, used_instances)
 
 
-# Unico criterio "questa risorsa segue il modello a istanze": categoria TOOL. Ogni altra risorsa
-# resta quantità + decay_fraction media per lotto, invariata.
+# Pezzi NUOVI della voce (quantity - istanze usate): sono loro, e solo loro, ad avere la decay_fraction della voce.
+static func get_new_quantity(entry: Dictionary) -> int:
+	return maxi(int(entry.get("quantity", 0)) - get_used_instances(entry).size(), 0)
+
+
+# decay_fraction della voce dopo l'arrivo di `incoming_quantity` pezzi nuovi a `incoming_decay`: media pesata sui
+# soli pezzi NUOVI già presenti (2026-10-11 — le istanze usate hanno ciascuna il proprio deperimento). Per una voce
+# senza istanze coincide con la media sulla quantità di sempre.
+static func merged_lot_decay(entry: Dictionary, incoming_quantity: int, incoming_decay: float) -> float:
+	var current_new: int = get_new_quantity(entry)
+	var total: int = current_new + incoming_quantity
+	if total <= 0:
+		return 0.0
+	return (float(current_new) * float(entry.get("decay_fraction", 0.0)) + float(incoming_quantity) * incoming_decay) / float(total)
+
+
+# Deperimento giornaliero di una voce (2026-10-11, unico punto per zaino, magazzini e mucchi): il lotto dei pezzi
+# nuovi avanza di `daily_step` sulla decay_fraction della voce, ogni istanza usata sulla propria. A 1.0 il lotto dei
+# nuovi sparisce per intero, un'istanza sparisce da sola. MUTA `entry` (quantity, decay_fraction, used_instances);
+# ritorna quanti pezzi sono andati persi. La voce a quantità 0 va rimossa dal chiamante.
+static func advance_entry_decay(entry: Dictionary, daily_step: float) -> int:
+	var lost: int = 0
+	var new_quantity: int = get_new_quantity(entry)
+	if new_quantity > 0:
+		var lot_decay: float = float(entry.get("decay_fraction", 0.0)) + daily_step
+		if lot_decay >= 1.0:
+			lost += new_quantity
+			new_quantity = 0
+			entry["decay_fraction"] = 0.0
+		else:
+			entry["decay_fraction"] = lot_decay
+	var kept: Array = []
+	for instance in get_used_instances(entry):
+		var instance_decay: float = get_decay_fraction(instance) + daily_step
+		if instance_decay >= 1.0:
+			lost += 1
+			continue
+		var updated: Dictionary = (instance as Dictionary).duplicate(true)
+		set_decay_fraction(updated, instance_decay)
+		kept.append(updated)
+	entry["quantity"] = new_quantity + kept.size()
+	set_used_instances(entry, kept)
+	return lost
+
+
+# Categoria TOOL: un attrezzo vero (oggi lo chiede solo l'Attrezzeria, BuildingToolkitService). Per decidere se una
+# risorsa segue il modello a istanze usare uses_instances, che copre anche il vestiario.
 static func is_tool_resource(resource_name: String) -> bool:
 	var resource_rules := CaloricCalculator.get_caloric_source_rules(resource_name)
 	return resource_rules != null and resource_rules.category == SecondaryResourceTypes.Category.TOOL
+
+
+# Unico criterio "questa risorsa segue il modello a istanze" (magazzino, zaino, mucchi a terra, salvataggi): categoria
+# TOOL o APPAREL (2026-10-11, vestiario — un capo indossato si consuma come un attrezzo, vedi SecondaryResourceRules.
+# apparel_kind). Ogni altra risorsa resta quantità + decay_fraction media per lotto, invariata.
+static func uses_instances(resource_name: String) -> bool:
+	var resource_rules := CaloricCalculator.get_caloric_source_rules(resource_name)
+	return resource_rules != null and (
+		resource_rules.category == SecondaryResourceTypes.Category.TOOL
+		or resource_rules.category == SecondaryResourceTypes.Category.APPAREL
+	)
 
 
 # SecondaryResourceRules.max_uses della risorsa, 0 se non risolvibile.

@@ -16,6 +16,11 @@ var clock: GameClockController = null
 var walk_phase: float = 0.0
 # Scala di disegno per membro (età fissa e sesso: non cambia finché il gruppo esiste), calcolata in setup.
 var _member_scales: Array[float] = []
+# Colori del vestiario per membro (2026-10-11), calcolati in setup: il vestiario di partenza che riceveranno
+# all'accoglienza (HumanIndividual.STARTING_APPAREL) dall'adolescenza in su, i vestiti di recupero per i bambini
+# (HumanIndividualView.RECYCLED_CLOTHES_COLOR); calotta trasparente = nessun copricapo.
+var _member_body_colors: Array[Color] = []
+var _member_cap_colors: Array[Color] = []
 
 
 func setup(p_party: VisitorParty, p_game_data: GameData, p_human_rules: HumanRules) -> void:
@@ -23,8 +28,11 @@ func setup(p_party: VisitorParty, p_game_data: GameData, p_human_rules: HumanRul
 	game_data = p_game_data
 	human_rules = p_human_rules
 	_member_scales.clear()
+	_member_body_colors.clear()
+	_member_cap_colors.clear()
 	for member in party.members:
 		_member_scales.append(_resolve_member_scale(member))
+		_resolve_member_apparel_colors(member)
 	queue_redraw()
 
 
@@ -38,6 +46,24 @@ func _resolve_member_scale(member: Dictionary) -> float:
 		sex, float(member.get("age", 0))
 	)
 	return draw_scale * human_rules.size_multiplier_by_age[age_band] * human_rules.size_multiplier_by_sex[sex]
+
+
+func _resolve_member_apparel_colors(member: Dictionary) -> void:
+	var adult := true
+	if game_data != null:
+		adult = HumanIndividual.is_apparel_age_band(HumanCalculator.get_age_band(
+			game_data.era_effective_age_band_durations_male, game_data.era_effective_age_band_durations_female,
+			member.get("sex", HumanTypes.Sex.MALE), float(member.get("age", 0))
+		))
+	var trait_color := int(member.get("clothing_color", HumanTypes.ClothingColor.TAN))
+	if not adult:
+		_member_body_colors.append(HumanIndividualView.RECYCLED_CLOTHES_COLOR)
+		_member_cap_colors.append(Color(0, 0, 0, 0))
+		return
+	var body_name := String(HumanIndividual.STARTING_APPAREL.get(HumanIndividual.ApparelSlot.BODY, ""))
+	var head_name := String(HumanIndividual.STARTING_APPAREL.get(HumanIndividual.ApparelSlot.HEAD, ""))
+	_member_body_colors.append(HumanIndividualView.SKIN_COLOR if body_name == "" else HumanIndividualView.apparel_draw_color(body_name, trait_color))
+	_member_cap_colors.append(Color(0, 0, 0, 0) if head_name == "" else HumanIndividualView.apparel_draw_color(head_name, trait_color))
 
 
 func _process(delta: float) -> void:
@@ -60,20 +86,18 @@ func _draw() -> void:
 		var member: Dictionary = party.members[i]
 		var member_scale: float = _member_scales[i] if i < _member_scales.size() else HumanIndividualView.BASE_DRAW_SCALE
 		draw_set_transform(VisitorService.get_member_position(party, i) * CELL_SIZE, angle, Vector2.ONE * member_scale)
-		_draw_member(member, phase)
+		_draw_member(member, phase, i)
 	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 
 
 # Stesse forme di HumanIndividualView._draw (gambe, busto, capelli lunghi per le donne, spalle, testa, viso,
 # naso), senza gravidanza né selezione.
-func _draw_member(member: Dictionary, phase: float) -> void:
+func _draw_member(member: Dictionary, phase: float, index: int) -> void:
 	var skin := HumanIndividualView.SKIN_COLOR
 	var hair_color: Color = HumanIndividualView.HAIR_COLOR_BY_TRAIT.get(
 		member.get("hair_color", HumanTypes.HairColor.BROWN), HumanIndividualView.HAIR_COLOR_BY_TRAIT[HumanTypes.HairColor.BROWN]
 	)
-	var clothing_color: Color = HumanIndividualView.CLOTHING_COLOR_BY_TRAIT.get(
-		member.get("clothing_color", HumanTypes.ClothingColor.TAN), HumanIndividualView.CLOTHING_COLOR_BY_TRAIT[HumanTypes.ClothingColor.TAN]
-	)
+	var clothing_color: Color = _member_body_colors[index] if index < _member_body_colors.size() else HumanIndividualView.SKIN_COLOR
 	var is_female: bool = member.get("sex", HumanTypes.Sex.MALE) == HumanTypes.Sex.FEMALE
 	var leg_offset := _swing(phase, HumanIndividualView.LEG_SWING_FORWARD_AMPLITUDE, HumanIndividualView.LEG_SWING_BACKWARD_AMPLITUDE)
 	var leg_offset_other := _swing(-phase, HumanIndividualView.LEG_SWING_FORWARD_AMPLITUDE, HumanIndividualView.LEG_SWING_BACKWARD_AMPLITUDE)
@@ -92,6 +116,12 @@ func _draw_member(member: Dictionary, phase: float) -> void:
 	draw_circle(Vector2(_swing(-phase, arm_amp_f, arm_amp_b), -HumanIndividualView.SHOULDER_SIDE_OFFSET), HumanIndividualView.SHOULDER_RADIUS, clothing_color)
 	draw_circle(Vector2(_swing(phase, arm_amp_f, arm_amp_b), HumanIndividualView.SHOULDER_SIDE_OFFSET), HumanIndividualView.SHOULDER_RADIUS, clothing_color)
 	draw_circle(Vector2.ZERO, HumanIndividualView.HEAD_RADIUS, hair_color)
+	# Copricapo (2026-10-11): stessa calotta di HumanIndividualView._draw_head_cap.
+	if index < _member_cap_colors.size() and _member_cap_colors[index].a > 0.0:
+		draw_circle(
+			Vector2(-HumanIndividualView.HEAD_RADIUS * HumanIndividualView.HEAD_CAP_OFFSET_BACK, 0.0),
+			HumanIndividualView.HEAD_RADIUS * HumanIndividualView.HEAD_CAP_RADIUS_SCALE, _member_cap_colors[index]
+		)
 	# Viso: un ovale di pelle sul davanti della testa (approssima la lente testa/viso di HumanIndividualView).
 	_draw_ellipse(Vector2(HumanIndividualView.HEAD_RADIUS * 0.55, 0.0), HumanIndividualView.HEAD_RADIUS * 0.4,
 		HumanIndividualView.HEAD_RADIUS * 0.55, skin)

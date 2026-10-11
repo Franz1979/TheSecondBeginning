@@ -91,6 +91,12 @@ signal cancel_task_requested(individual: HumanIndividual)
 # GameScene crea la Task "riponi attrezzo" verso il magazzino più vicino che lo accetta.
 signal tool_from_storage_requested(individual: HumanIndividual, slot_index: int)
 signal tool_to_storage_requested(individual: HumanIndividual, slot_index: int)
+# Slot del vestiario (2026-10-11, richiesta utente — ApparelFigure): stesso schema della cintura. Click su un capo
+# nello zaino = indossalo; sinistro su uno slot pieno = rimettilo nello zaino; destro = da/verso un magazzino.
+signal apparel_equip_requested(individual: HumanIndividual, resource_name: String)
+signal apparel_unequip_requested(individual: HumanIndividual, slot_index: int)
+signal apparel_from_storage_requested(individual: HumanIndividual, slot_index: int)
+signal apparel_to_storage_requested(individual: HumanIndividual, slot_index: int)
 
 # identity_label RIMOSSA (2026-09-13, richiesta utente — "perché la riga del center è vuota"):
 # nome/sesso/età/fascia vivono ORA solo nell'header di GameInfoTabs (title_label, sulla STESSA
@@ -255,8 +261,63 @@ func _ready() -> void:
 	_build_carried_slots()
 	_connect_tool_belt_clicks()
 	_ensure_tool_slot_boxes(HumanIndividual.DEFAULT_TOOL_SLOT_COUNT)
+	_build_apparel_section()
 	_build_header_buttons()
 	clear()
+
+
+# Vestiario (2026-10-11, richiesta utente — "occupa troppo spazio"): l'omino con gli slot (ApparelFigure) sta A FIANCO
+# di zaino, barra del carico e cintura, che passano in una colonna a sinistra larga quanto le icone dello zaino (la
+# barra non si allunga più fino al bordo). La figura si adatta all'altezza di quella colonna, senza scendere sotto la
+# cintura; per darle un po' più di altezza la colonna ha spazi verticali più ampi (INVENTORY_*_GAP). Costruita da
+# codice, spostando i nodi della scena, come i pulsanti dell'intestazione.
+const INVENTORY_BAR_GAP: int = 12
+const INVENTORY_TOOLS_GAP: int = 16
+const INVENTORY_FIGURE_GAP: int = 8
+var apparel_figure: ApparelFigure = null
+
+
+func _build_apparel_section() -> void:
+	var carry_row_margin: Control = carry_bar.get_parent().get_parent()
+	var tools_row_margin: Control = tools_row.get_parent()
+	(carry_bar.get_parent() as VBoxContainer).add_theme_constant_override("separation", INVENTORY_BAR_GAP)
+	tools_row_margin.add_theme_constant_override("margin_top", 0)
+
+	var inventory_row := HBoxContainer.new()
+	inventory_row.name = "InventoryRow"
+	inventory_row.add_theme_constant_override("separation", INVENTORY_FIGURE_GAP)
+	carry_row_margin.add_sibling(inventory_row)
+	var left_column := VBoxContainer.new()
+	left_column.name = "InventoryColumn"
+	left_column.add_theme_constant_override("separation", INVENTORY_TOOLS_GAP)
+	inventory_row.add_child(left_column)
+	for moved in [carry_row_margin, tools_row_margin]:
+		moved.get_parent().remove_child(moved)
+		left_column.add_child(moved)
+
+	apparel_figure = ApparelFigure.new()
+	apparel_figure.name = "ApparelFigure"
+	apparel_figure.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	apparel_figure.slot_input.connect(_on_apparel_slot_input)
+	inventory_row.add_child(apparel_figure)
+
+
+# Sinistro su slot pieno: di nuovo nello zaino, subito. Destro: verso/da un magazzino (stesso schema della cintura).
+func _on_apparel_slot_input(slot: int, event: InputEvent) -> void:
+	if _current_individual == null or not (event is InputEventMouseButton) or not event.pressed:
+		return
+	var slot_is_empty: bool = _current_individual.get_equipped_apparel(slot) == ""
+	if event.button_index == MOUSE_BUTTON_LEFT:
+		if slot_is_empty:
+			return
+		accept_event()
+		apparel_unequip_requested.emit(_current_individual, slot)
+	elif event.button_index == MOUSE_BUTTON_RIGHT:
+		accept_event()
+		if slot_is_empty:
+			apparel_from_storage_requested.emit(_current_individual, slot)
+		else:
+			apparel_to_storage_requested.emit(_current_individual, slot)
 
 
 func _build_header_buttons() -> void:
@@ -621,6 +682,8 @@ func show_individual(
 
 	_update_carried_resource_boxes(individual.carried_resources)
 	_update_tool_slots(individual)
+	if apparel_figure != null:
+		apparel_figure.update_from(individual, individual.uses_village_apparel(GameSettings.active_game_data))
 	# Ultimo avviso del controllo attrezzi (2026-09-25, richiesta utente — vedi ToolGateService e
 	# HumanIndividual.tool_gate_warning): testo già tradotto da GameScene, nascosto se vuoto.
 	tool_warning_label.text = individual.tool_gate_warning
@@ -650,6 +713,8 @@ func show_individual(
 func clear() -> void:
 	visible = false
 	_current_individual = null
+	if apparel_figure != null and apparel_figure.is_node_ready():
+		apparel_figure.update_from(null)
 	if header_buttons_box != null:
 		header_buttons_box.visible = false
 
@@ -759,7 +824,8 @@ func _update_carried_resource_boxes(carried_resources: Dictionary) -> void:
 			_carried_slot_names.append(carried_name)
 			# Manina solo sugli attrezzi: sono gli unici riquadri che un click sposta nella cintura.
 			_carried_boxes[slot].mouse_default_cursor_shape = (
-				Control.CURSOR_POINTING_HAND if HumanIndividual.is_tool_resource(carried_name) else Control.CURSOR_ARROW
+				Control.CURSOR_POINTING_HAND if HumanIndividual.is_tool_resource(carried_name) or HumanIndividual.is_apparel_resource(carried_name) \
+					else Control.CURSOR_ARROW
 			)
 		else:
 			_update_carried_resource_box(slot, "", 0)
@@ -795,6 +861,10 @@ func _on_carried_box_gui_input(event: InputEvent, slot: int) -> void:
 	if slot >= _carried_slot_names.size() or _carried_slot_names[slot] == "":
 		return
 	accept_event()
+	# Un capo di vestiario va negli slot del vestiario, non nella cintura (2026-10-11).
+	if HumanIndividual.is_apparel_resource(_carried_slot_names[slot]):
+		apparel_equip_requested.emit(_current_individual, _carried_slot_names[slot])
+		return
 	equip_tool_requested.emit(_current_individual, _carried_slot_names[slot])
 
 

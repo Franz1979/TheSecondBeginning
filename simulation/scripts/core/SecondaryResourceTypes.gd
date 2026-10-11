@@ -27,12 +27,28 @@ class_name SecondaryResourceTypes
 # aggiunti IN FONDO per lo stesso motivo: risorse prodotte presso una workstation (es. corda) e
 # strumenti. SEMI_FINISHED: fiber_rope (consumata come materiale da costruzione, es. stick_tent).
 # TOOL: stone_knife, wooden_spear (prodotti, ma nessuna logica di equipaggiamento li usa ancora).
+#
+# APPAREL (2026-10-11, richiesta utente — vestiario: vestiti, scarpe, monili) aggiunto IN FONDO per lo stesso
+# motivo. Segue il modello a istanze degli attrezzi (ToolInstance.uses_instances) e si indossa negli slot vestiario
+# del pipottino (HumanIndividual.ApparelSlot), ognuno dei quali accetta un solo ApparelKind (sotto).
 enum Category {
 	FOOD,
 	RAW_MATERIAL,
 	MEDICINAL,
 	SEMI_FINISHED,
 	TOOL,
+	APPAREL,
+}
+
+# Dove si indossa un capo di vestiario (2026-10-11, richiesta utente) — SecondaryResourceRules.apparel_kind.
+# WRIST copre entrambi i polsi (HumanIndividual.ApparelSlot.WRIST_LEFT/WRIST_RIGHT). HEAD = copricapo (aggiunto in
+# fondo). Salvato come int: non riordinare.
+enum ApparelKind {
+	BODY,
+	FEET,
+	NECK,
+	WRIST,
+	HEAD,
 }
 
 # Provenienza dello stock (2026-09-08, richiesta utente) — PURAMENTE descrittivo, nessuna logica

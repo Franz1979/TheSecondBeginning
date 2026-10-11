@@ -156,6 +156,9 @@ var _restored_from_save: bool = false
 # deposit_kind RESOURCE. -1 (default) = deposito normale dallo zaino. Persistito (get_save_data, letto
 # da TaskPersistenceService._build_step).
 var unequip_slot_index: int = -1
+# Modalità "addosso" (2026-10-11, vestiario): con unequip_slot_index >= 0, true = lo slot è uno slot del vestiario
+# (HumanIndividual.ApparelSlot) e il capo si toglie di dosso; false = slot della cintura, come sempre. Persistito.
+var unequip_apparel: bool = false
 
 # Risorse per cui la ricerca del magazzino ha programmato QUESTO scarico (2026-09-27, richiesta utente — viaggi
 # doppi dopo la macellazione): scritto da HumanIndividualActionService._search_warehouse_for_resource. Serve a (1)
@@ -173,11 +176,15 @@ var planned_resources: Array[String] = []
 var only_preferred_resources: bool = false
 
 
-func _init(p_target_building: Building = null, p_deposit_kind: DepositKind = DepositKind.THOUGHT, p_unequip_slot_index: int = -1) -> void:
+func _init(
+	p_target_building: Building = null, p_deposit_kind: DepositKind = DepositKind.THOUGHT, p_unequip_slot_index: int = -1,
+	p_unequip_apparel: bool = false
+) -> void:
 	target = null
 	target_building = p_target_building
 	deposit_kind = p_deposit_kind
 	unequip_slot_index = p_unequip_slot_index
+	unequip_apparel = p_unequip_apparel
 	# INFANT non può eseguire questa Action (2026-09-12, richiesta utente — collegamento AgeBand.
 	# INFANT al gameplay, vedi Action.disallowed_age_bands). CHILD aggiunto 2026-09-13 (richiesta
 	# utente).
@@ -464,7 +471,7 @@ func on_complete(individual: Variant, context: Dictionary) -> void:
 				# Contenitore della riparazione (2026-10-10): mai il magazzino, solo fino a quanto chiede ancora.
 				deposited = _store_repair_material(String(resource_name), int(carried_entry["quantity"]))
 			elif not _is_completed_site_destination(context) and _is_deposit_allowed(String(resource_name)):
-				if ToolInstance.is_tool_resource(String(resource_name)):
+				if ToolInstance.uses_instances(String(resource_name)):
 					deposited = _store_carried_tool(individual, String(resource_name), int(carried_entry["quantity"]))
 				else:
 					deposited = BuildingStorageService.store(
@@ -478,7 +485,7 @@ func on_complete(individual: Variant, context: Dictionary) -> void:
 			if deposited > 0:
 				any_deposited = true
 				# Gli attrezzi sono già usciti dallo zaino dentro _store_carried_tool (con il loro stato).
-				if not ToolInstance.is_tool_resource(String(resource_name)):
+				if not ToolInstance.uses_instances(String(resource_name)):
 					individual.remove_carried_resource(String(resource_name), deposited)
 		if any_deposited:
 			# resource_deposited (2026-09-12) — emesso SOLO se qualcosa è stato depositato (una volta per
@@ -637,7 +644,7 @@ func on_complete(individual: Variant, context: Dictionary) -> void:
 # UNA unità dell'attrezzo dello slot; nulla da fare (durata 0) se lo slot è vuoto o il magazzino non
 # lo accetta più.
 func _activate_unequip(individual: Variant) -> void:
-	var tool_name: String = individual.get_equipped_tool(unequip_slot_index)
+	var tool_name: String = _unequip_resource_name(individual)
 	if tool_name == "" or target_building == null or BuildingStorageService.get_max_depositable(target_building, tool_name) <= 0:
 		return
 	var resource_rules := CaloricCalculator.get_caloric_source_rules(tool_name)
@@ -653,20 +660,33 @@ func _activate_unequip(individual: Variant) -> void:
 # capacità corretta del solo bonus dello slot (vedi HumanIndividual._recalculate_carry_capacity_after_
 # tool_change).
 func _complete_unequip(individual: Variant, context: Dictionary) -> void:
-	var tool_name: String = individual.get_equipped_tool(unequip_slot_index)
+	var tool_name: String = _unequip_resource_name(individual)
 	if tool_name == "" or target_building == null:
 		return
 	if BuildingStorageService.get_max_depositable(target_building, tool_name) <= 0:
 		return
 	# Usi residui conservati (2026-09-26, attrezzi come istanze): l'attrezzo entra nel magazzino con il
-	# suo stato (tra i nuovi se a usi pieni, come istanza se consumato).
-	if not BuildingStorageService.store_tool_instance(target_building, tool_name, individual.get_equipped_tool_instance(unequip_slot_index)):
+	# suo stato (tra i nuovi se a usi pieni, come istanza se consumato). Un capo di vestiario (2026-10-11) entra con
+	# il suo consumo e il deperimento che aveva quando è stato indossato.
+	var instance: Dictionary = individual.get_equipped_apparel_instance(unequip_slot_index) if unequip_apparel \
+		else individual.get_equipped_tool_instance(unequip_slot_index)
+	if not BuildingStorageService.store_tool_instance(target_building, tool_name, instance):
 		return
-	individual.take_equipped_tool(unequip_slot_index, null)
+	if unequip_apparel:
+		individual.take_equipped_apparel(unequip_slot_index)
+	else:
+		individual.take_equipped_tool(unequip_slot_index, null)
 	resource_deposited.emit(target_building)
 	var macro_offset: Vector2 = Vector2(Vector2i(target_building.macro_x, target_building.macro_y) - individual.home_macro_coords) * World.WIDTH
 	var building_position: Vector2 = Vector2(target_building.micro_x, target_building.micro_y) + macro_offset + Vector2(0.5, 0.5)
 	context["pending_walk_away_position"] = _walk_away_destination(individual, building_position, PHYSICAL_WALK_AWAY_DISTANCE)
+
+
+# Nome di ciò che lo slot da svuotare contiene: capo di vestiario o attrezzo della cintura (vedi unequip_apparel).
+func _unequip_resource_name(individual: Variant) -> String:
+	if unequip_apparel:
+		return individual.get_equipped_apparel(unequip_slot_index)
+	return individual.get_equipped_tool(unequip_slot_index)
 
 
 # Usura della sacca (2026-09-27, richiesta utente): 1 uso all'attrezzo CARRYING in cintura a ogni viaggio carico
@@ -719,6 +739,7 @@ func get_save_data() -> Dictionary:
 		"deposit_kind": deposit_kind,
 		# Modalità "cintura" (2026-09-25) — letta da TaskPersistenceService._build_step.
 		"unequip_slot_index": unequip_slot_index,
+		"unequip_apparel": unequip_apparel,
 	}
 	if target_building != null:
 		data["target_building_id"] = target_building.id

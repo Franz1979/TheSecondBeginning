@@ -341,7 +341,7 @@ static func take(game_data: GameData, macro_coords: Vector2i, microcell: Vector2
 		return result
 	var entry: Dictionary = pile.resources[resource_name]
 	result["decay_fraction"] = float(entry.get("decay_fraction", 0.0))
-	if ToolInstance.is_tool_resource(resource_name):
+	if ToolInstance.uses_instances(resource_name):
 		var units: Array = ToolInstance.take_units_from_entry(entry, quantity, ToolInstance.get_max_uses(resource_name))
 		result["units"] = units
 		result["quantity"] = units.size()
@@ -429,10 +429,11 @@ static func _advance_pile_decay(pile: GroundPile) -> void:
 			ResourceDecayService.log_decay_line("mucchio #%d %s/%s" % [pile.id, pile.macro_coords, pile.microcell], String(resource_name),
 				int(entry.get("quantity", 0)), decay_before, decay_fraction, daily_step)
 		changed = true
-		if decay_fraction >= 1.0:
+		# Lotto dei nuovi e istanze usate ciascuna per sé (2026-10-11, vestiario: ToolInstance.advance_entry_decay).
+		ToolInstance.advance_entry_decay(entry, daily_step)
+		if int(entry.get("quantity", 0)) <= 0:
 			expired_names.append(resource_name)
 			continue
-		entry["decay_fraction"] = decay_fraction
 		pile.resources[resource_name] = entry
 	for resource_name in expired_names:
 		pile.resources.erase(resource_name)
@@ -450,10 +451,8 @@ static func _merge_entry(pile: GroundPile, resource_name: String, incoming: Dict
 	var entry: Dictionary = (pile.resources.get(resource_name, {}) as Dictionary).duplicate(true)
 	var current_quantity: int = int(entry.get("quantity", 0))
 	var new_quantity: int = current_quantity + incoming_quantity
-	entry["decay_fraction"] = (
-		float(current_quantity) * float(entry.get("decay_fraction", 0.0))
-		+ float(incoming_quantity) * float(incoming.get("decay_fraction", 0.0))
-	) / float(new_quantity)
+	# Media sui soli pezzi nuovi (2026-10-11): le istanze usate portano ciascuna il proprio deperimento.
+	entry["decay_fraction"] = ToolInstance.merged_lot_decay(entry, ToolInstance.get_new_quantity(incoming), float(incoming.get("decay_fraction", 0.0)))
 	entry["quantity"] = new_quantity
 	var used_instances: Array = ToolInstance.get_used_instances(entry).duplicate()
 	for instance in ToolInstance.get_used_instances(incoming):

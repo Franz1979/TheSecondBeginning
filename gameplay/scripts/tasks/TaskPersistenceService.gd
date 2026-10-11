@@ -272,6 +272,9 @@ static func _action_type_for_step(step: Action) -> int:
 	# REPAIR (2026-10-10, RepairAction, repair.tres), aggiunta insieme al proprio case in _build_step.
 	if step is RepairAction:
 		return TaskTypes.ActionType.REPAIR
+	# INVENTORY (2026-10-11, InventoryAction, inventory.tres), aggiunta insieme al proprio case in _build_step.
+	if step is InventoryAction:
+		return TaskTypes.ActionType.INVENTORY
 	push_error("TaskPersistenceService._action_type_for_step: tipo Action sconosciuto (%s)." % step.get_script().get_global_name())
 	return -1
 
@@ -317,7 +320,10 @@ static func _build_step(action_type: int, step_data: Dictionary, macro_state: Ma
 			# salvati prima di questo campo.
 			var deposit_kind: UnloadAction.DepositKind = int(step_data.get("deposit_kind", UnloadAction.DepositKind.THOUGHT))
 			# unequip_slot_index (2026-09-25, modalità "cintura"): -1 per i save precedenti.
-			step = UnloadAction.new(target_building, deposit_kind, int(step_data.get("unequip_slot_index", -1)))
+			# unequip_apparel (2026-10-11, vestiario): false per i save precedenti.
+			step = UnloadAction.new(
+				target_building, deposit_kind, int(step_data.get("unequip_slot_index", -1)), bool(step_data.get("unequip_apparel", false))
+			)
 			# planned_resources (2026-09-27): vuoto per i save precedenti = scarico mai saltato, come prima.
 			for planned_name in step_data.get("planned_resources", []):
 				(step as UnloadAction).planned_resources.append(String(planned_name))
@@ -520,6 +526,12 @@ static func _build_step(action_type: int, step_data: Dictionary, macro_state: Ma
 			if step_data.has("target_building_id"):
 				repair_target_building = _find_building_by_id(world, int(step_data["target_building_id"]))
 			step = RepairAction.new(repair_target_building)
+		TaskTypes.ActionType.INVENTORY:
+			# L'edificio; durata ed elapsed arrivano da load_save_data (solo per lo step corrente).
+			var inventory_building: Building = null
+			if step_data.has("target_building_id"):
+				inventory_building = _find_building_by_id(world, int(step_data["target_building_id"]))
+			step = InventoryAction.new(inventory_building)
 		TaskTypes.ActionType.WAIT_AT_POINT:
 			# Tetto dell'attesa; il tempo trascorso arriva da load_save_data (solo per lo step corrente).
 			step = WaitAtPointAction.new(float(step_data.get("max_wait_days", -1.0)))

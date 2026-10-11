@@ -18,6 +18,9 @@ extends RefCounted
 # Chiave nell'ordine del cassetto: nome della risorsa per cui il magazzino l'ha creato.
 const ORDER_KEY := "stock_resource"
 const MAX_ORDERS_PER_RESOURCE: int = 3
+# Tetto degli ordini "Raccogli ogni cibo" per i giorni di autonomia (2026-10-11, richiesta utente): più alto, il cibo
+# serve a tutti e con l'inventario gli ordini nascono una volta per giro.
+const MAX_FOOD_DAYS_ORDERS: int = 5
 
 const SOURCE_GATHER := "gather"
 const SOURCE_CUT := "cut"
@@ -176,14 +179,15 @@ static func snap_hunt_count(meat: int) -> int:
 # attuale, `open_coverage` unità già coperte dagli ordini aperti, `open_orders` quanti sono, `unit_yield` unità per
 # viaggio / pianta / estrazione, `series_max` tetto della serie.
 static func compute_new_order_counts(
-	level: int, stock: int, open_coverage: int, open_orders: int, unit_yield: int, series_max: int
+	level: int, stock: int, open_coverage: int, open_orders: int, unit_yield: int, series_max: int,
+	max_orders: int = MAX_ORDERS_PER_RESOURCE
 ) -> Array[int]:
 	var counts: Array[int] = []
 	if level <= 0 or unit_yield <= 0 or series_max <= 0:
 		return counts
 	var uncovered := level - stock - open_coverage
 	var orders := open_orders
-	while uncovered > 0 and orders < MAX_ORDERS_PER_RESOURCE:
+	while uncovered > 0 and orders < max_orders:
 		var count := mini(ceili(float(uncovered) / float(unit_yield)), series_max)
 		counts.append(count)
 		uncovered -= count * unit_yield

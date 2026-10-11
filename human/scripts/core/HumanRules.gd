@@ -208,21 +208,28 @@ extends Resource
 @export var loyalty_multiplier_by_age: Array[float] = [1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
 @export var loyalty_multiplier_by_sex: Array[float] = [1.0, 1.0]
 
-# Faith (2026-10-02, richiesta utente) — stesso schema di loyalty sopra. Nessuna regola la modifica ancora.
+# Faith (2026-10-02, richiesta utente) — stesso schema di loyalty sopra; regola giornaliera in HumanVitalsInteractionService.
 @export var base_max_faith: float = 5000.0
 @export var faith_multiplier_by_age: Array[float] = [1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
 @export var faith_multiplier_by_sex: Array[float] = [1.0, 1.0]
 # Perdita giornaliera di fede (2026-10-02, regola 5 di HumanVitalsInteractionService — spostata qui dalle costanti di
 # quel service): senza casa o con la casa fuori dal raggio religioso, e con la casa dentro il raggio ma nessun rito
-# quel giorno. Nel giorno di un rito in un edificio che copre la casa la perdita resta 0.
-@export var faith_daily_loss_uncovered: float = 5.0
-@export var faith_daily_loss_covered: float = 2.0
+# quel giorno (2026-10-11, richiesta utente: 3 e 1, prima 5 e 2). Conta la casa dell'abitante, non dove si trova.
+@export var faith_daily_loss_uncovered: float = 3.0
+@export var faith_daily_loss_covered: float = 1.0
+# Guadagno nel giorno di un rito in un edificio che copre la casa (2026-10-11, richiesta utente; prima 0).
+@export var faith_daily_gain_rite: float = 10.0
 # Bonus giornalieri della copertura della casa (2026-10-02, HumanVitalsInteractionService): influenza CULTURAL ->
 # felicità, influenza POLITICAL -> lealtà. Solo bonus: senza casa o con la casa non coperta nessun effetto.
 @export var cultural_coverage_daily_happiness: float = 5.0
 # Regole giornaliere stamina -> felicità e salute -> felicità (2026-10-10, richiesta utente — prima numeri fissi in
 # HumanVitalsInteractionService): stamina almeno a metà del massimo -> +gain, altrimenti -loss; salute sopra i 2/3 del
 # massimo -> +gain, altrimenti -loss. Le perdite sono valori positivi, sottratti dal service.
+# Senza vestiario (2026-10-11, richiesta utente): delta GIORNALIERO di salute E felicità (lo stesso valore a entrambe)
+# per chi ha vuoto lo slot del corpo / della testa, indicizzato da GameTypes.Season (WINTER, SPRING, SUMMER, AUTUMN).
+# Applicato da HumanVitalsInteractionService insieme ai bonus dei capi indossati (regola 0b). 0 = nessun effetto.
+@export var missing_body_apparel_daily_delta_by_season: Array[float] = [-4.0, 0.0, 0.0, -2.0]
+@export var missing_head_apparel_daily_delta_by_season: Array[float] = [-1.0, 0.0, 0.0, 0.0]
 @export var stamina_daily_happiness_gain: float = 30.0
 @export var stamina_daily_happiness_loss: float = 30.0
 @export var health_daily_happiness_gain: float = 10.0

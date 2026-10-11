@@ -29,6 +29,9 @@ skill_effects_by_task_name = {
 "task_repair_name": {
 "skill_builder": 0.5
 },
+"task_inventory_name": {
+"skill_management": 1.0
+},
 "task_emergency_rest_name": {},
 "task_emergency_restock_name": {},
 "task_haul_resource_name": {
@@ -69,6 +72,7 @@ vital_effects_by_task_name = {
 "task_quarry_name": {},
 "task_demolish_name": {},
 "task_repair_name": {},
+"task_inventory_name": {},
 "task_emergency_rest_name": {},
 "task_emergency_restock_name": {},
 "task_haul_resource_name": {},

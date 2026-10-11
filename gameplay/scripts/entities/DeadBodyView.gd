@@ -39,6 +39,8 @@ extends HumanIndividualView
 var _sex: HumanTypes.Sex
 var _hair_color: HumanTypes.HairColor
 var _clothing_color: HumanTypes.ClothingColor
+# Colore del busto salvato alla morte (2026-10-11, vestiario); trasparente = record vecchio, si usa il tratto.
+var _body_color: Color = Color(0, 0, 0, 0)
 
 # Layout disteso lungo l'asse locale X (fix, 2026-09-05) — testa a un'estremità, busto subito
 # dopo, gambe che proseguono l'asse verso l'estremità opposta. Valori scelti per un lieve
@@ -110,9 +112,10 @@ func setup_dead_body(
 	individual_position: Vector2, sex: HumanTypes.Sex, age_at_death: int,
 	hair_color: HumanTypes.HairColor, clothing_color: HumanTypes.ClothingColor,
 	appeared_at_year: int, appeared_at_day: int, p_human_rules: HumanRules, p_game_data: GameData,
-	carried_days_total: int = 0
+	carried_days_total: int = 0, body_color: Color = Color(0, 0, 0, 0)
 ) -> void:
 	position = individual_position * CELL_SIZE
+	_body_color = body_color
 	rotation = randf() * TAU
 	_sex = sex
 	_hair_color = hair_color
@@ -154,7 +157,8 @@ func _process(_delta: float) -> void:
 
 func _draw() -> void:
 	var hair_color: Color = HAIR_COLOR_BY_TRAIT.get(_hair_color, HAIR_COLOR_BY_TRAIT[HumanTypes.HairColor.BROWN])
-	var clothing_color: Color = CLOTHING_COLOR_BY_TRAIT.get(_clothing_color, CLOTHING_COLOR_BY_TRAIT[HumanTypes.ClothingColor.TAN])
+	var clothing_color: Color = _body_color if _body_color.a > 0.0 \
+		else CLOTHING_COLOR_BY_TRAIT.get(_clothing_color, CLOTHING_COLOR_BY_TRAIT[HumanTypes.ClothingColor.TAN])
 	# Gambe: proseguono l'asse oltre il busto, verso l'estremità opposta alla testa
 	# (SUPINE_LEG_AXIS_OFFSET) — stesso LEG_SIDE_OFFSET laterale della classe base (già "leggermente
 	# divaricate" lì), mai sovrapposte (2*LEG_RADIUS_SIDE < 2*LEG_SIDE_OFFSET). Nessuna oscillazione:

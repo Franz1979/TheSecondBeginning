@@ -10,9 +10,6 @@ extends PanelContainer
 # titolo e X nella fascia in alto, poi l'area interna scura (lo stile del pannello dell'info panel) col contenuto.
 # Costruito in codice, figlio del CanvasLayer di GameScene: fuori dalla sidebar, non può allargarla.
 
-# Correzione manuale (px, + = più in basso) sommata alla y misurata in align_top_to: per uno scarto residuo.
-const TOP_ALIGN_OFFSET_PX := 0
-
 # Contenuto chiuso (X o di nuovo il suo bottone): GameScene spegne l'evidenziazione del bottone.
 signal closed(content_id: StringName)
 # Bottone della posizione nella barra del titolo (2026-10-09, richiesta utente): il giocatore chiede di passare da
@@ -23,7 +20,8 @@ signal overlay_mode_requested(overlay: bool)
 const OVERLAY_ICON := "⇥"
 const SIDE_ICON := "⇤"
 
-const WIDTH: float = 380.0
+# 300 px (2026-10-11, prova richiesta dall'utente; prima 380): Assegnazione e Scorte possono stare aperti affiancati.
+const WIDTH: float = 300.0
 const TITLE_FONT_SIZE: int = 13
 
 var _title_label: Label = null
@@ -40,9 +38,6 @@ const FRAME_MARGIN: int = 10
 var _content_id: StringName = &""
 # Ultimo allineamento chiesto (place): ripetuto quando align_top_to ha misurato il bordo superiore vero.
 var _alignment: Dictionary = {}
-# Bordo superiore del cassetto misurato da align_top_to (coordinate del CanvasLayer); finché manca, place lo stima.
-var _measured_top: float = 0.0
-var _has_measured_top: bool = false
 # Modalità di posizione mostrata dal bottone (set_overlay_mode): false = "Affiancato", true = "Sopra".
 var _overlay_mode: bool = false
 var _mode_button: Button = null
@@ -166,14 +161,17 @@ func is_showing(content_id: StringName) -> bool:
 # Allineamento all'info panel (2026-10-07, coordinate del CanvasLayer): il bordo inferiore dell'area scura è
 # `content_bottom` (quello dell'area scura dell'info panel); la cornice finisce in basso a `frame_bottom` (il bordo della
 # sidebar), con lo stesso margine. Il cassetto sta accanto al bordo sinistro `left_edge_x` (il suo lato destro lì): in
-# modalità "Affiancato" GameScene passa il fianco sinistro della sidebar, in "Sopra" il bordo destro dello schermo. Il bordo superiore è quello
-# misurato da align_top_to; prima della misura è stimato da `content_top` e dalle dimensioni minime della fascia del titolo.
+# modalità "Affiancato" GameScene passa il fianco sinistro della sidebar, in "Sopra" il bordo destro dello schermo. Il bordo superiore è
+# `content_top`, il bordo alto dell'info panel.
 func place(left_edge_x: float, content_top: float, content_bottom: float, frame_bottom: float) -> void:
 	_alignment = {"left": left_edge_x, "content_top": content_top, "content_bottom": content_bottom, "frame_bottom": frame_bottom}
 	var bottom_margin := int(round(maxf(0.0, frame_bottom - content_bottom)))
 	if _frame_margin != null and _frame_margin.get_theme_constant("margin_bottom") != bottom_margin:
 		_frame_margin.add_theme_constant_override("margin_bottom", bottom_margin)
-	var top := _measured_top if _has_measured_top else content_top - _estimated_content_top_offset()
+	# Bordo superiore (2026-10-11, richiesta utente): il cassetto intero parte dal bordo alto dell'info panel, sotto la barra
+	# della stagione, così non copre i bottoni del tempo (prima l'area scura era allineata a quella dell'info panel e la
+	# fascia del titolo saliva sopra). La misura di align_top_to non serve più.
+	var top := content_top
 	var target_position := Vector2(left_edge_x - WIDTH, top)
 	var target_size := Vector2(WIDTH, frame_bottom - top)
 	if not position.is_equal_approx(target_position):
@@ -182,26 +180,13 @@ func place(left_edge_x: float, content_top: float, content_bottom: float, frame_
 		size = target_size
 
 
-# Allineamento in alto per misura (2026-10-07, richiesta utente): un frame dopo l'apertura, a disposizione assestata,
-# legge la y reale del bordo superiore di `reference` (il nodo che disegna la fascia scura in alto dell'info panel) e
-# quella dell'area scura del cassetto, e sposta il cassetto perché coincidano (+ TOP_ALIGN_OFFSET_PX). Il bordo inferiore
-# resta su `frame_bottom` (place). Basta all'apertura: quella fascia non si sposta.
-func align_top_to(reference: Control) -> void:
+# Riallineamento un frame dopo l'apertura (2026-10-07; dal 2026-10-11 il bordo alto è quello dell'info panel, vedi
+# place): ripete l'ultimo place a disposizione assestata. `reference` resta per i chiamanti, non serve più.
+func align_top_to(_reference: Control) -> void:
 	await get_tree().process_frame
-	if not visible or reference == null or not is_instance_valid(reference) or _alignment.is_empty():
+	if not visible or _alignment.is_empty():
 		return
-	var inner_offset := _content_panel.global_position.y - global_position.y
-	_measured_top = reference.global_position.y + float(TOP_ALIGN_OFFSET_PX) - inner_offset
-	_has_measured_top = true
 	place(float(_alignment["left"]), float(_alignment["content_top"]), float(_alignment["content_bottom"]), float(_alignment["frame_bottom"]))
-
-
-# Stima (prima della misura) della distanza tra il bordo superiore del cassetto e quello dell'area scura.
-func _estimated_content_top_offset() -> float:
-	var header_height := 0.0
-	if _header != null and _frame_box != null:
-		header_height = _header.get_combined_minimum_size().y + float(_frame_box.get_theme_constant("separation"))
-	return float(FRAME_MARGIN) + header_height
 
 
 # Mette `extra` nella riga del titolo, subito dopo il titolo (2026-10-10). Il contenuto che lo chiede lo fornisce; sparisce

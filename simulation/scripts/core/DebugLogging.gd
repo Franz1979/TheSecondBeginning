@@ -154,7 +154,7 @@ const SHOW_VITALS_RECALC_LOGS := false
 # due regole scatta comunque in un verso o nell'altro, quindi la riga è sempre stampata per ognuno,
 # non solo quando cambia qualcosa). A false: nessun comportamento di simulazione cambia, solo il
 # print viene soppresso.
-const SHOW_VITALS_INTERACTION_LOGS := false
+const SHOW_VITALS_INTERACTION_LOGS := true
 
 # Filtro dedicato per [SELECTED PANEL REFRESH] (GameScene._on_day_advanced, refresh giornaliero del
 # pannello individuo selezionato) — riga diretta (stesso stile di SHOW_STAMINA_RECALC_LOGS sopra:
@@ -403,11 +403,11 @@ const SHOW_RITE_LOGS := false
 # conto del tempo: erba, ceppi d'albero × mezzo giorno, totale; ceppi di arbusto e piante morte a tempo zero; piante
 # vive che la tengono in attesa del taglio) e alla fine (giorni di gioco dall'inizio, tempo sullo step, stamina
 # consumata). Solo log (ClearAction).
-const SHOW_CLEAR_LOGS := true
+const SHOW_CLEAR_LOGS := false
 
 # Lista dei lavori (2026-10-07, assegnazione compiti passo B — JobBoardService): una riga ogni volta che un pipottino
 # libero guarda la lista (lavori trovati, scelto con il punteggio, o perché nessuno). Solo log.
-const SHOW_JOB_BOARD_LOGS := true
+const SHOW_JOB_BOARD_LOGS := false
 
 # "In corso" del cassetto (2026-10-09, richiesta utente — righe "Diretto" non attese): una riga [IN CORSO] per individuo
 # quando la sua riga compare o cambia (task attiva, testo, coda o diretto e perché, chiavi del context). Solo log.
@@ -420,4 +420,4 @@ const SHOW_HELP_DIALOG_LOGS := false
 # Coordinatore dei lavori (2026-10-09, CoordinatorService): una riga [COORDINATORE] solo quando succede qualcosa — arrivo
 # in fila, nuovo coordinatore, inizio di un'assegnazione, lavoro ricevuto o svago, autoassegnazione, fine del turno con
 # il motivo, posto liberato al caricamento. Solo log.
-const SHOW_COORDINATOR_LOGS := true
+const SHOW_COORDINATOR_LOGS := false
