@@ -253,6 +253,10 @@ var stock_min_food_days: int = 0
 # caccia del magazzino (ButcherDestinationService, stessi valori della caccia manuale). Salvata da GameSaveService
 # ("stock_excess_meat_destination"); partita nuova e salvataggi vecchi: il magazzino.
 var stock_excess_meat_destination: String = "warehouse"
+# Regola di assegnazione "Riponi gli attrezzi presi per un lavoro" (2026-10-11): gli attrezzi presi in deposito per un
+# ordine della coda tornano in deposito quando l'individuo è libero (HumanIndividual.borrowed_tools). Salvata da
+# GameSaveService ("job_board_return_borrowed_tools"); partita nuova e salvataggi vecchi: accesa.
+var job_board_return_borrowed_tools: bool = true
 # Ordini creati dal cassetto "Assegnazione compiti" (2026-10-09, richiesta utente): lavori in coda senza destinatario,
 # chi li prende lo decide la coda (chiave della lista "order:<id>", GameScene._drawer_order_jobs_collect). Una voce per
 # ordine, solo tipi JSON-nativi: {"id": int stabile, "type": String, ...campi del tipo}. Oggi il solo tipo "produce":

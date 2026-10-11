@@ -982,8 +982,8 @@ produce_output_full_warning,Uscita piena: si fermerà dopo {count}
 toolkit_reject_not_used,{tool} non serve alle ricette di questo edificio: non entra nell'Attrezzeria.
 pending_output_delivery,Consegna · {building} ({used}/{capacity})
 task_assignment_kind_output,Consegna finiti a magazzino
-task_assignment_setting_empty_outputs,Consegna finiti a magazzino quando la produzione si ferma
-task_assignment_setting_empty_outputs_tooltip,"Quando un ordine si ferma perché i Prodotti finiti sono pieni, un individuo libero ne porta un carico al magazzino."
+task_assignment_setting_empty_outputs,Consegna finiti a magazzino quando la produzione o l'essiccatoio si fermano
+task_assignment_setting_empty_outputs_tooltip,"Quando un ordine si ferma perché i Prodotti finiti sono pieni, o un essiccatoio è pieno con prodotti pronti, un individuo libero ne porta un carico al magazzino."
 task_assignment_output_cannot_cancel,Niente da annullare: si svuotano solo i Prodotti finiti.
 task_deliver_output_name,Consegna finiti
 pending_material_fuel,combustibile
@@ -1154,3 +1154,23 @@ warehouse_min_level_auto_tooltip,"Livello minimo: sotto questo valore il magazzi
 warehouse_rules,⚙ Regole di stoccaggio
 warehouse_rule_excess_meat,Carne e pelli in eccesso
 warehouse_rule_excess_meat_tooltip,"Dove vanno carne e pelli delle cacce del magazzino quando sono già sopra il loro livello (come nella caccia manuale: il focolare prende la carne, essiccatoio e affumicatoio carne e pelli). Se servono, vanno sempre al magazzino. Tendini e ossa vanno sempre al magazzino."
+warehouse_food_ingredients_title,Da cucinare o lavorare
+warehouse_food_ingredients_note,"Non contano nelle calorie: vanno prima cucinate o lavorate."
+pending_stock_blocked,Magazzino · {resource}
+pending_stock_blocked_detail,Ordine fermo nella coda delle task
+drawer_hunt_nobody_has_weapon,Nessuno ha un'arma da caccia
+drawer_order_nobody_has_belt_room,Nessuno ha posto in cintura per {tools}
+work_area_hunt_needs_weapon,{name} non può cacciare nelle zone: serve un'arma da caccia (lancia o arco con le frecce).
+task_assignment_setting_return_borrowed_tools,Riponi gli attrezzi presi per un lavoro
+task_assignment_setting_return_borrowed_tools_tooltip,"Chi va a prendere un attrezzo in deposito per un lavoro della coda lo riporta quando è libero (dove l'ha preso, se c'è posto). Gli attrezzi che aveva già o che gli hai dato tu restano in cintura."
+drawer_order_missing_materials,Mancano: {materials}
+drawer_order_dry_row,Essiccatoio: porta {quantity} {resource}
+pending_stock_dry_no_rack,Nessun essiccatoio
+pending_stock_dry_rack_full,Essiccatoio pieno
+pending_stock_dry_missing,Manca: {resource}
+pending_stock_dry_blocked,Nessun essiccatoio con posto o niente da portare
+warehouse_food_days_name,Cibo
+warehouse_food_days_auto_tooltip,"Giorni di autonomia minimi: sotto questo valore il magazzino fa cuocere la carne cruda in deposito e poi raccogliere qualsiasi cibo nelle zone di lavoro."
+warehouse_level_derived,da prodotti
+warehouse_meat_level_derived_tooltip,"La carne cruda non ha un livello proprio: si caccia per carne cotta, affumicata ed essiccata. Metti il livello su quelle."
+pending_output_delivery_rack,{building} pieno: porta i prodotti pronti al deposito

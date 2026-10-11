@@ -220,6 +220,7 @@ func load_game_from_json(file_path: String) -> LoadedGame:
 				game_data.stock_min_levels[String(resource_name)] = level
 	game_data.stock_min_food_days = maxi(int(data["game"].get("stock_min_food_days", 0)), 0)
 	game_data.stock_excess_meat_destination = String(data["game"].get("stock_excess_meat_destination", "warehouse"))
+	game_data.job_board_return_borrowed_tools = bool(data["game"].get("job_board_return_borrowed_tools", true))
 	game_data.job_board_kind_order.clear()
 	var raw_kind_order = data["game"].get("job_board_kind_order", [])
 	if raw_kind_order is Array:
@@ -936,6 +937,13 @@ func load_game_from_json(file_path: String) -> LoadedGame:
 			individual.equipped_tools.clear()
 			for saved_tool in individual_data.get("equipped_tools", []):
 				individual.equipped_tools.append(String(saved_tool) if saved_tool != null else "")
+			# Attrezzi in prestito (2026-10-11): salvataggi precedenti = nessuno; id degli edifici di nuovo interi.
+			individual.borrowed_tools.clear()
+			for raw_borrowed in individual_data.get("borrowed_tools", []):
+				if raw_borrowed is Dictionary:
+					individual.borrowed_tools.append({
+						"tool_name": String(raw_borrowed.get("tool_name", "")), "building_id": int(raw_borrowed.get("building_id", -1)),
+					})
 			# Usi residui per slot (2026-09-26, attrezzi come istanze): parallelo a equipped_tools. Save
 			# precedenti (chiave assente) o valore mancante/non valido per uno slot pieno = usi pieni;
 			# slot vuoto = 0. Stessa regola di HumanIndividual._ensure_tool_slots.

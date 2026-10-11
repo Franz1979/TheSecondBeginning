@@ -182,14 +182,17 @@ static func get_hunter_visibility_radius(hunter: HumanIndividual, live_cells: Di
 	return FALLBACK_VISIBILITY_RADIUS
 
 
-# Requisito della caccia in zona: un attrezzo BUTCHERING (il coltello, che vale anche come arma da caccia), così la preda
-# si può macellare sul posto senza tornare a prenderlo. Dal 2026-10-09 la regola generale degli attrezzi
-# (ToolGateService): in cintura va bene; nello zaino va bene se la cintura ha posto (lo sposta in cintura chi assegna la
-# caccia, GameScene._prepare_hunt_knife); nello zaino con la cintura piena, o da nessuna parte, no. Sola lettura: "" se
-# va bene, altrimenti il messaggio di rifiuto già tradotto. La caccia diretta non lo richiede (resta il gate HUNTING).
+# Requisito della caccia in zona: un attrezzo BUTCHERING (il coltello), così la preda si può macellare sul posto senza
+# tornare a prenderlo, e dal 2026-10-11 un'arma da caccia (HUNTING, HuntService.has_hunting_weapon_available: in cintura,
+# o nello zaino con le munizioni se servono): il coltello non è più un'arma da caccia. Dal 2026-10-09 la regola generale
+# degli attrezzi (ToolGateService): in cintura va bene; nello zaino va bene se la cintura ha posto (lo sposta in cintura chi
+# assegna la caccia, GameScene._prepare_hunt_knife); nello zaino con la cintura piena, o da nessuna parte, no. Sola
+# lettura: "" se va bene, altrimenti il messaggio di rifiuto già tradotto.
 static func get_hunt_rejection(hunter: HumanIndividual) -> String:
 	if hunter == null:
 		return ""
+	if not HuntService.has_hunting_weapon_available(hunter):
+		return TranslationServer.translate("work_area_hunt_needs_weapon").format({"name": hunter.name})
 	if ToolGateService.find_belt_slot_for(hunter, TaskTypes.ToolCategory.BUTCHERING) != -1:
 		return ""
 	var backpack_knife := ToolGateService._find_backpack_tool_for(hunter, TaskTypes.ToolCategory.BUTCHERING, [])

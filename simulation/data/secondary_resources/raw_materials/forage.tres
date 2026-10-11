@@ -5,5 +5,7 @@
 [resource]
 script = ExtResource("1_forage")
 secondary_resource_name = "forage"
+category = 1
 calories_per_unit = 2.0
 seasonal_availability_multiplier = Array[float]([0.6, 1.0, 1.0, 1.0])
+required_idea_id = "placeholder_unavailable"

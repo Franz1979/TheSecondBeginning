@@ -926,6 +926,34 @@ func _continue_work_area_haul(individual: HumanIndividual, task: Task, world: Wo
 			task.step_descriptions[description_count - 2] = "task_haul_resource_step_walk"
 			task.step_descriptions[description_count - 1] = "task_haul_resource_step_pickup"
 			return
+		# Raccolta del magazzino (2026-10-11, HaulZoneService.STOCK_FILL_KEY): finita la risorsa dell'ordine, lo zaino si
+		# riempie nella stessa zona con quello che il magazzino sta chiedendo.
+		if bool(zone.get(HaulZoneService.STOCK_FILL_KEY, false)) and HaulZoneService.stock_fill_names_provider.is_valid():
+			var fill_names: Array[String] = []
+			for fill_name in HaulZoneService.stock_fill_names_provider.call():
+				var candidate := String(fill_name)
+				if names.has(candidate) or not HaulZoneService.work_area_accepts(area, candidate):
+					continue
+				if TerrainScatteredResourceService.is_resource_locked(candidate):
+					continue
+				fill_names.append(candidate)
+			var fill_fitting := HaulZoneService.fitting_names(individual, fill_names)
+			var fill_found: Variant = HaulZoneService.find_work_area_target_cell(area, macro_state, fill_fitting, individual) \
+				if not fill_fitting.is_empty() else null
+			if fill_found != null:
+				var fill_cell: Vector2i = fill_found
+				var fill_jitter: Vector2 = Vector2(randf_range(0.15, 0.85), randf_range(0.15, 0.85))
+				var fill_pickup := PickUpAction.new(
+					fill_cell, macro_state, "", -1, PickUpAction.CriterionKind.ALL, -1, PickUpAction.SourceKind.TERRAIN
+				)
+				fill_pickup.restricted_names = fill_names
+				var fill_walk_target: Vector2 = Vector2(fill_cell) + fill_jitter + HaulZoneService.macro_offset_for(individual, area.macro_coords)
+				var fill_steps: Array[Action] = [WalkAction.new(fill_walk_target), fill_pickup]
+				task.append_steps(fill_steps)
+				var fill_count := task.step_descriptions.size()
+				task.step_descriptions[fill_count - 2] = "task_haul_resource_step_walk"
+				task.step_descriptions[fill_count - 1] = "task_haul_resource_step_pickup"
+				return
 	_end_work_area_trip(individual, task, zone, area, macro_state, names)
 
 

@@ -420,6 +420,11 @@ var panel_message_shown_at: float = -1.0
 # Spento da resolve_idle_individual al primo controllo della lista (saltato), o prima se il pipottino riceve una task
 # (assign_task non di bisogno) o ne riprende una dalla coda personale. Mai salvato.
 var skip_job_board_once: bool = false
+# Attrezzi in prestito (2026-10-11, ordini della coda): presi in deposito per un lavoro (GameScene.
+# _start_zone_order_tool_fetch), [{"tool_name", "building_id"}]. Con la regola "Riponi gli attrezzi presi per un lavoro"
+# vengono riposti appena l'individuo è libero (GameScene._return_borrowed_tools). Quelli già suoi o messi dal giocatore
+# non ci sono mai. Salvato da GameSaveService ("borrowed_tools").
+var borrowed_tools: Array = []
 # Arrivato al punto di assegnazione con "Cerca lavoro" (2026-10-09, WaitAtPointAction.on_complete): al prossimo
 # resolve_idle_individual prende il lavoro dalla lista (o va allo svago), senza ripartire con un'altra "Cerca lavoro".
 # Letto e spento all'inizio di resolve_idle_individual (un bisogno che arriva prima lo fa perdere). Mai salvato.

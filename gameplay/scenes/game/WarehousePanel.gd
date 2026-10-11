@@ -87,6 +87,9 @@ var _list_box: VBoxContainer = null
 var _category_boxes: Dictionary = {}
 # Nome risorsa -> Label della quantità (aggiornata a ogni refresh_stock).
 var _quantity_labels: Dictionary = {}
+# Nome risorsa -> Array di LineEdit del suo livello: una risorsa può avere più righe (la carne cruda in Materie prime e in
+# "Da cucinare o lavorare" del Cibo), con lo stesso livello tenuto allineato (_sync_level_edits).
+var _level_edits: Dictionary = {}
 var _food_summary_label: Label = null
 # Livelli minimi (copia locale dei valori della partita) e ultimi dati ricevuti, per ricolorare subito a un cambio.
 var _min_levels: Dictionary = {}
@@ -145,6 +148,9 @@ func refresh_stock(stock: Dictionary, daily_calorie_need: float, storage_fill: A
 # Valori della partita (GameScene, prima di aggiungere il pannello al cassetto).
 func set_min_levels(levels: Dictionary, food_days: int) -> void:
 	_min_levels = levels.duplicate()
+	# Risorse senza livello proprio (2026-10-11, StockRequestService.DERIVED_LEVEL_RESOURCES: la carne cruda).
+	for derived_name in StockRequestService.DERIVED_LEVEL_RESOURCES:
+		_min_levels.erase(derived_name)
 	_min_food_days = maxi(food_days, 0)
 
 
@@ -202,13 +208,13 @@ func _apply_quantities() -> void:
 	for resource_name in _quantity_labels.keys():
 		var quantity: int = int(_last_stock.get(resource_name, 0))
 		var level: int = int(_min_levels.get(resource_name, 0))
-		var label: Label = _quantity_labels[resource_name]
-		label.text = str(quantity)
-		label.modulate = Color(1, 1, 1, 1)
-		if level > 0 and quantity < level:
-			label.modulate = BELOW_LEVEL_COLOR
-		elif quantity <= 0:
-			label.modulate = ZERO_QUANTITY_COLOR
+		for label in _quantity_labels[resource_name]:
+			label.text = str(quantity)
+			label.modulate = Color(1, 1, 1, 1)
+			if level > 0 and quantity < level:
+				label.modulate = BELOW_LEVEL_COLOR
+			elif quantity <= 0:
+				label.modulate = ZERO_QUANTITY_COLOR
 	if _food_days_label != null:
 		_food_days_label.text = tr("warehouse_food_days_infinite") if _last_days < 0.0 else "%.1f" % _last_days
 		var below := _min_food_days > 0 and _last_days >= 0.0 and _last_days < float(_min_food_days)
@@ -281,8 +287,17 @@ func _on_resource_level_changed(resource_name: String, level: int) -> void:
 		_min_levels[resource_name] = level
 	else:
 		_min_levels.erase(resource_name)
+	_sync_level_edits(resource_name, level)
 	_apply_quantities()
 	min_level_changed.emit(resource_name, level)
+
+
+# Stesso livello su tutte le righe della risorsa (quella appena cambiata è già a posto).
+func _sync_level_edits(resource_name: String, level: int) -> void:
+	for edit in _level_edits.get(resource_name, []):
+		if is_instance_valid(edit) and int(edit.get_meta("level")) != level:
+			edit.set_meta("level", level)
+			edit.text = _level_text(level)
 
 
 func _on_food_days_level_changed(days: int) -> void:
@@ -363,12 +378,18 @@ func _show_selected_category() -> void:
 
 # --- Elenco ---
 
-# Risorse da mostrare, nell'ordine dell'elenco del gioco: tutte tranne quelle non ancora scoperte.
+# Risorse da mostrare, in ordine alfabetico: solo quelle ottenibili (2026-10-11, regola unica): ogni risorsa
+# che dipende da una scoperta dichiara la sua idea in SecondaryResourceRules.required_idea_id e compare solo con l'idea
+# completata (es. erbe medicinali con "plant_lore", fish_meat con la futura "fishing").
 func _visible_resource_names() -> Array[String]:
 	var names: Array[String] = []
 	for resource_name in CaloricCalculator.list_secondary_resource_names():
 		if not TerrainScatteredResourceService.is_resource_locked(resource_name):
 			names.append(resource_name)
+	# In ordine alfabetico del nome mostrato, nella lingua scelta (2026-10-11, richiesta utente).
+	names.sort_custom(func(a: String, b: String) -> bool:
+		return IconRegistry.get_resource_display_name(a).naturalnocasecmp_to(IconRegistry.get_resource_display_name(b)) < 0
+	)
 	return names
 
 
@@ -378,6 +399,7 @@ func _rebuild_rows(names: Array[String]) -> void:
 		child.queue_free()
 	_category_boxes.clear()
 	_quantity_labels.clear()
+	_level_edits.clear()
 	_food_summary_label = null
 	_food_days_label = null
 	_shown_names = names.duplicate()
@@ -399,13 +421,18 @@ func _rebuild_rows(names: Array[String]) -> void:
 			food_row.add_child(_food_summary_label)
 			_food_days_label = _quantity_column_label()
 			food_row.add_child(_food_days_label)
-			food_row.add_child(_build_level_field(_min_food_days, _on_food_days_level_changed))
+			food_row.add_child(_build_level_field(_min_food_days, _on_food_days_level_changed, "warehouse_food_days_auto_tooltip"))
 			box.add_child(food_row)
 			box.add_child(HSeparator.new())
 		for resource_name in names:
 			var rules := CaloricCalculator.get_caloric_source_rules(resource_name)
+			# Senza livello proprio (la carne cruda, 2026-10-11): solo in "Da cucinare o lavorare" del Cibo.
+			if StockRequestService.DERIVED_LEVEL_RESOURCES.has(resource_name):
+				continue
 			if rules != null and rules.category == category:
 				box.add_child(_build_row(resource_name))
+		if category == SecondaryResourceTypes.Category.FOOD:
+			_add_food_ingredients_section(box, names)
 	_show_selected_category()
 	_apply_quantities()
 
@@ -424,11 +451,72 @@ func _build_row(resource_name: String) -> Control:
 	row.add_child(name_label)
 	var quantity_label := _quantity_column_label()
 	row.add_child(quantity_label)
-	_quantity_labels[resource_name] = quantity_label
+	if not _quantity_labels.has(resource_name):
+		_quantity_labels[resource_name] = []
+	(_quantity_labels[resource_name] as Array).append(quantity_label)
 	var tooltip_key := "warehouse_min_level_auto_tooltip" if StockRequestService.source_kind_for(resource_name) != "" else "warehouse_min_level_tooltip"
+	# Senza livello proprio (2026-10-11, la carne cruda): al posto del campo una scritta della stessa larghezza.
+	if StockRequestService.DERIVED_LEVEL_RESOURCES.has(resource_name):
+		# Contenitore che riceve il mouse (il tooltip sta qui), la scritta dentro non lo prende.
+		var holder := MarginContainer.new()
+		holder.custom_minimum_size = Vector2(LEVEL_BUTTON_WIDTH * 2.0 + LEVEL_EDIT_WIDTH, 0.0)
+		holder.mouse_filter = Control.MOUSE_FILTER_STOP
+		holder.tooltip_text = tr("warehouse_meat_level_derived_tooltip")
+		var derived := Label.new()
+		derived.text = tr("warehouse_level_derived")
+		derived.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		derived.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		derived.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		derived.add_theme_font_size_override("font_size", LIST_FONT_SIZE - 2)
+		derived.modulate = ZERO_QUANTITY_COLOR
+		holder.add_child(derived)
+		row.add_child(holder)
+		return row
 	var on_change := func(level: int) -> void: _on_resource_level_changed(resource_name, level)
-	row.add_child(_build_level_field(int(_min_levels.get(resource_name, 0)), on_change, tooltip_key))
+	var field := _build_level_field(int(_min_levels.get(resource_name, 0)), on_change, tooltip_key)
+	row.add_child(field)
+	if not _level_edits.has(resource_name):
+		_level_edits[resource_name] = []
+	(_level_edits[resource_name] as Array).append(field.get_child(1))
 	return row
+
+
+# "Da cucinare o lavorare" (2026-10-11, richiesta utente) in fondo al Cibo: le risorse visibili NON di categoria cibo che
+# sono ingrediente di una ricetta di categoria cibo (oggi la carne cruda: carne cotta, essiccata, affumicata), con la
+# stessa riga della loro linguetta (stessa quantità, stesso livello). Non contano nelle calorie: lo dice la scritta.
+func _add_food_ingredients_section(box: VBoxContainer, names: Array[String]) -> void:
+	var ingredients := _food_ingredient_names(names)
+	if ingredients.is_empty():
+		return
+	box.add_child(HSeparator.new())
+	var title := Label.new()
+	title.text = tr("warehouse_food_ingredients_title")
+	title.add_theme_font_size_override("font_size", SECTION_FONT_SIZE)
+	box.add_child(title)
+	var note := Label.new()
+	note.text = tr("warehouse_food_ingredients_note")
+	note.add_theme_font_size_override("font_size", LIST_FONT_SIZE - 1)
+	note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	note.custom_minimum_size.x = 0.0
+	note.modulate = ZERO_QUANTITY_COLOR
+	box.add_child(note)
+	for resource_name in ingredients:
+		box.add_child(_build_row(resource_name))
+
+
+func _food_ingredient_names(names: Array[String]) -> Array[String]:
+	var inputs: Dictionary = {}
+	for recipe_name in CaloricCalculator.list_secondary_resource_names():
+		var recipe_rules := CaloricCalculator.get_caloric_source_rules(recipe_name)
+		if recipe_rules != null and recipe_rules.category == SecondaryResourceTypes.Category.FOOD:
+			for input_name in recipe_rules.recipe_inputs.keys():
+				inputs[String(input_name)] = true
+	var result: Array[String] = []
+	for resource_name in names:
+		var rules := CaloricCalculator.get_caloric_source_rules(resource_name)
+		if inputs.has(resource_name) and rules != null and rules.category != SecondaryResourceTypes.Category.FOOD:
+			result.append(resource_name)
+	return result
 
 
 # Icona della risorsa sul suo colore, come le righe del cassetto dell'Assegnazione (TaskAssignmentPanel._build_entry_icon,

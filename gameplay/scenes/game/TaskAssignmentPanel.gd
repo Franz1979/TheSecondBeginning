@@ -48,6 +48,8 @@ signal kind_order_changed(order: Array[String])
 signal auto_repair_percent_changed(percent: int)
 # Spunta "Sgombera sempre le macerie" cambiata (2026-10-10, dato della partita): GameScene la scrive in GameData.
 signal auto_clear_rubble_changed(enabled: bool)
+# Regola "Riponi gli attrezzi presi per un lavoro" (2026-10-11, GameData.job_board_return_borrowed_tools).
+signal return_borrowed_tools_changed(enabled: bool)
 # Bottone "Produci" (2026-10-09, ordini creati dal cassetto): GameScene risponde con open_produce_overlay (le ricette).
 # "Invia in coda" nello strato = produce_orders_submitted: `orders` = [{"recipe", "quantity"}] delle ricette preparate,
 # `deliver_to_warehouse` = la spunta "Porta al deposito" al momento dell'invio.
@@ -104,6 +106,7 @@ var _wait_spin: SpinBox = null
 var _auto_repair_spin: SpinBox = null
 var _auto_repair_percent: int = JobBoardService.AUTO_REPAIR_DEFAULT_PERCENT
 var _auto_clear_rubble: bool = false
+var _return_borrowed_tools: bool = true
 # Priorità (2026-10-08): valori passati da GameScene prima di _ready (set_priority_settings), elenco dei tipi visibile solo
 # con "Personalizzata".
 var _priority_mode: String = JobBoardService.DEFAULT_PRIORITY_MODE
@@ -771,6 +774,7 @@ func _build_settings_section() -> void:
 	_settings_box.add_child(_build_wait_setting_row())
 	_settings_box.add_child(_build_auto_repair_setting_row())
 	_settings_box.add_child(_build_auto_clear_rubble_setting_row())
+	_settings_box.add_child(_build_return_borrowed_tools_setting_row())
 	_settings_box.add_child(_build_collect_piles_setting_row())
 	_settings_box.add_child(_build_empty_outputs_setting_row())
 	_build_priority_setting(_settings_box)
@@ -922,6 +926,31 @@ func _build_auto_clear_rubble_setting_row() -> Control:
 			return
 		_auto_clear_rubble = pressed
 		auto_clear_rubble_changed.emit(pressed)
+	)
+	return check
+
+
+# Regola "Riponi gli attrezzi presi per un lavoro" (2026-10-11): spunta, accesa all'inizio. Dato della partita come lo
+# sgombero delle macerie: il valore arriva da GameScene (set_return_borrowed_tools, prima di _ready), ogni cambio esce con
+# return_borrowed_tools_changed. Accesa: gli attrezzi presi in deposito per un ordine della coda tornano in deposito
+# quando chi li ha preso è libero (GameScene._return_borrowed_tools).
+func set_return_borrowed_tools(enabled: bool) -> void:
+	_return_borrowed_tools = enabled
+
+
+func _build_return_borrowed_tools_setting_row() -> Control:
+	var check := CheckBox.new()
+	check.text = tr("task_assignment_setting_return_borrowed_tools")
+	check.tooltip_text = tr("task_assignment_setting_return_borrowed_tools_tooltip")
+	check.focus_mode = Control.FOCUS_NONE
+	check.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	check.add_theme_font_size_override("font_size", LIST_FONT_SIZE)
+	check.button_pressed = _return_borrowed_tools
+	check.toggled.connect(func(pressed: bool) -> void:
+		if _return_borrowed_tools == pressed:
+			return
+		_return_borrowed_tools = pressed
+		return_borrowed_tools_changed.emit(pressed)
 	)
 	return check
 

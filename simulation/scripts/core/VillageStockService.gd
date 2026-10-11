@@ -4,7 +4,8 @@ extends RefCounted
 # Scorte del villaggio (2026-10-10, richiesta utente — cassetto "Gestione scorte", sola lettura). Stateless, stesso
 # pattern degli altri *Service. Contano, per ogni edificio COMPLETO e non demolito:
 #   - le scorte (Building.stored_resources) degli edifici che NON sono postazioni di lavoro: depositi e case;
-#   - i prodotti finiti (Building.production_output) delle postazioni di lavoro.
+#   - i prodotti finiti (Building.production_output) delle postazioni di lavoro;
+#   - nelle postazioni senza uscita (l'essiccatoio, dal 2026-10-11) i prodotti pronti nel loro magazzino.
 # Non contano: ingredienti e combustibile nel magazzino delle postazioni di lavoro (le loro stored_resources), l'Attrezzeria,
 # i materiali di cantieri (edifici non completi) e riparazioni (Building.repair_materials, contenitore a parte), quello
 # che gli individui hanno addosso e i mucchi a terra.
@@ -21,6 +22,15 @@ static func get_village_stock(world: World) -> Dictionary:
 		if building.rules.is_workstation:
 			for output_name in building.production_output.keys():
 				_add(totals, String(output_name), int(building.production_output[output_name]))
+			# Postazioni senza uscita (2026-10-11, l'essiccatoio): il prodotto resta nel loro magazzino al posto
+			# dell'ingrediente; contano le risorse che non sono loro ingredienti né combustibile (lo stesso criterio dei
+			# prelievi automatici, BuildingStorageService.get_auto_available_quantity).
+			if building.rules.production_output_slots <= 0:
+				for resource_name in building.stored_resources.keys():
+					if ProductionService.is_workstation_ingredient(building, String(resource_name)):
+						continue
+					var stored: Dictionary = building.stored_resources[resource_name]
+					_add(totals, String(resource_name), int(stored.get("quantity", 0)))
 		else:
 			for resource_name in building.stored_resources.keys():
 				var entry: Dictionary = building.stored_resources[resource_name]

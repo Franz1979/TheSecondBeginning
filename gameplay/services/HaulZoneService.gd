@@ -31,6 +31,12 @@ const JOB_DELIVERY_KEY := "job_pile_delivery"
 # del ritiro "fino a vuoto" preso dalla lista (duplicata a ogni viaggio) o nel context della consegna dopo una demolizione;
 # Task.get_activity_description scrive "Ritiro mucchio (<risorsa>)".
 const PILE_RESOURCE_KEY := "pile_resource_name"
+# Riempimento dello zaino per le raccolte del magazzino (2026-10-11, richiesta utente): nella zona con questa chiave, finita
+# la risorsa dell'ordine, il viaggio continua con le risorse che il magazzino sta chiedendo (stock_fill_names_provider,
+# impostato da GameScene: nomi sotto livello e cibo se mancano giorni di autonomia), finché lo zaino è pieno o non c'è più
+# niente di utile. Le raccolte ordinate a mano non hanno la chiave e restano come prima.
+const STOCK_FILL_KEY := "stock_fill"
+static var stock_fill_names_provider: Callable = Callable()
 
 
 static func get_label_task_name(zone: Dictionary) -> String:

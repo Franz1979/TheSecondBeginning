@@ -49,9 +49,9 @@ const ACTIONS: Array[Dictionary] = [
 		"id": HUNT_ACTION, "icon": "hunt", "tooltip_key": "command_bar_hunt_tooltip", "key": HUNT_KEY,
 		"job": "hunt", "no_zone_tooltip_key": "command_bar_hunt_no_zone_tooltip",
 		# Coltello per la macellazione, in cintura o nello zaino (2026-10-09, regola generale degli attrezzi: dallo zaino
-		# va in cintura alla partenza; cintura piena = rifiuto del comando, HuntZoneService.get_hunt_rejection).
-		"tool_categories": [TaskTypes.ToolCategory.BUTCHERING],
-		"tool_missing_tooltip_key": "work_area_hunt_needs_knife",
+		# va in cintura alla partenza; cintura piena = rifiuto del comando, HuntZoneService.get_hunt_rejection). Dal
+		# 2026-10-11 anche un'arma da caccia (HUNTING): il coltello non lo è più, serve solo a macellare.
+		"tool_categories": [TaskTypes.ToolCategory.BUTCHERING, TaskTypes.ToolCategory.HUNTING],
 	},
 	# Taglio nelle zone (2026-10-06, passo 2): accetta (CHOPPING), lavoro "cut".
 	{

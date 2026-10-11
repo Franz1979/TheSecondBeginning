@@ -93,8 +93,12 @@ extends Resource
 # per popup di raccolta/ispezione microcella) — MAI dal rendering (i puntini su arbusti/alberi
 # restano disegnati come sempre, indipendentemente dal blocco) né da AnimalConsumptionService (la
 # fauna continua a consumare secondary_resource_stock indipendentemente dalle idee umane).
-# Impostato oggi solo su medicinal_herbs.tres ("plant_lore"); ogni altra risorsa resta sempre
-# disponibile.
+# Impostato oggi su medicinal_herbs.tres ("plant_lore"), fish_meat.tres ("fishing", idea non ancora creata: resta
+# bloccata finché non esisterà la pesca) e forage.tres ("placeholder_unavailable", id segnaposto che non corrisponde a
+# nessuna idea: è l'erba da pascolo della fauna, materia prima non commestibile per gli umani; tornerà con l'allevamento); ogni altra risorsa resta sempre
+# disponibile. Dal 2026-10-11 nasconde la risorsa
+# anche dal cassetto Scorte (WarehousePanel._visible_resource_names): regola unica per le risorse future da scoperta
+# (grano, birra...).
 @export var required_idea_id: String = ""
 
 # Vedi SecondaryResourceTypes.GenerationSource — PURAMENTE descrittivo (documenta la provenienza

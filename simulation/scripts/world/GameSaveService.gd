@@ -118,6 +118,7 @@ func save_game_to_json(
 			"stock_min_levels": game_data.stock_min_levels,
 			"stock_min_food_days": game_data.stock_min_food_days,
 			"stock_excess_meat_destination": game_data.stock_excess_meat_destination,
+			"job_board_return_borrowed_tools": game_data.job_board_return_borrowed_tools,
 			# Ordini creati dal cassetto (2026-10-09): già JSON-nativi.
 			"drawer_orders": game_data.drawer_orders,
 			"next_drawer_order_id": game_data.next_drawer_order_id,
@@ -667,6 +668,8 @@ func save_game_to_json(
 				# Cintura degli attrezzi (2026-09-25, richiesta utente): un nome risorsa per slot, "" =
 				# vuoto (vedi HumanIndividual.equipped_tools).
 				"equipped_tools": Array(individual.equipped_tools),
+				# Attrezzi in prestito (2026-10-11, vedi HumanIndividual.borrowed_tools).
+				"borrowed_tools": individual.borrowed_tools.duplicate(true),
 				# Usi residui per slot (2026-09-26, attrezzi come istanze — vedi HumanIndividual.
 				# equipped_tool_uses), parallelo a equipped_tools. Lo zaino sopra porta già le istanze
 				# usate dentro le proprie voci ("used_instances"), salvate con il duplicate(true).

@@ -29,6 +29,22 @@ const SOURCE_HUNT := "hunt"
 const HUNT_GROUP_KEY := "meat"
 const HUNT_MEAT_STEP: int = 5
 const STOCK_HUNT_MAX_MEAT: int = 10
+# Produzione (2026-10-11): prodotti con ricetta (non ad avanzamento automatico), ordini "Produci" del cassetto. Gli ordini
+# NON procurano mai i propri ingredienti: la catena la organizza il giocatore con i livelli delle materie prime.
+const SOURCE_PRODUCE := "produce"
+# Essiccatoio (2026-10-11): prodotti ad avanzamento automatico (recipe_auto_progress_days > 0, carne e pelle essiccate):
+# il magazzino trasporta l'ingrediente crudo dal deposito all'essiccatoio (GameScene._auto_request_dry).
+const SOURCE_DRY := "dry"
+# Nome del combustibile nel dizionario dei mancanti (missing_for_recipe).
+const FUEL_KEY := "__fuel__"
+# Giorni di autonomia del cibo (2026-10-11, GameScene._auto_request_food_days): ORDER_KEY degli ordini "Raccogli tutto il
+# cibo" e marca (FOOD_DAYS_KEY) degli ordini "Produci carne cotta" nati per i giorni.
+const FOOD_DAYS_ORDER_KEY := "food_days"
+const FOOD_DAYS_KEY := "food_days_order"
+# Unica eccezione alla regola "la catena la organizza il giocatore" (2026-10-11, richiesta utente): queste risorse non hanno
+# un livello minimo proprio; il loro fabbisogno nasce dai livelli dei prodotti che le usano (la carne cruda: carne cotta,
+# affumicata ed essiccata — GameScene._derived_meat_level). Il cassetto Scorte non mostra il loro campo del livello.
+const DERIVED_LEVEL_RESOURCES: Array[String] = ["meat"]
 
 
 # Come si procura la risorsa: SOURCE_GATHER (raccoglibile a terra, lot_source), SOURCE_CUT (resa del taglio di un
@@ -36,7 +52,17 @@ const STOCK_HUNT_MAX_MEAT: int = 10
 # (cibo, prodotti animali, semilavorati, risorse sconosciute). La raccolta vince sul taglio (stick: si raccoglie).
 static func source_kind_for(resource_name: String) -> String:
 	var rules := CaloricCalculator.get_caloric_source_rules(resource_name)
-	if rules == null or rules.category != SecondaryResourceTypes.Category.RAW_MATERIAL:
+	if rules == null:
+		return ""
+	if not rules.recipe_inputs.is_empty() and rules.recipe_auto_progress_days > 0:
+		return SOURCE_DRY
+	if not rules.recipe_inputs.is_empty():
+		return SOURCE_PRODUCE
+	# Raccoglibile a terra di qualunque categoria (2026-10-11: cibi raccolti, erbe medicinali), non solo materie prime.
+	if rules.generation_source != SecondaryResourceTypes.GenerationSource.ANIMAL_DERIVED \
+			and TerrainScatteredResourceService.is_pickable(resource_name):
+		return SOURCE_GATHER
+	if rules.category != SecondaryResourceTypes.Category.RAW_MATERIAL:
 		return ""
 	if rules.generation_source == SecondaryResourceTypes.GenerationSource.ANIMAL_DERIVED:
 		return SOURCE_HUNT if get_meat_per_unit(resource_name) > 0.0 else ""
@@ -114,6 +140,33 @@ static func get_meat_per_unit(resource_name: String) -> float:
 	return total / float(count) if count > 0 else 0.0
 
 
+# Cosa manca per `quantity` cicli della ricetta `recipe` con le scorte `stock`: nome -> unità mancanti; il combustibile
+# (FUEL_KEY) in valore di combustibile mancante (fuel_per_cycle × quantity meno la somma di quantità × fuel_value delle
+# scorte che bruciano). Vuoto = si può fare tutto.
+static func missing_for_recipe(recipe: String, quantity: int, stock: Dictionary, fuel_per_cycle: float) -> Dictionary:
+	var missing: Dictionary = {}
+	var rules := CaloricCalculator.get_caloric_source_rules(recipe)
+	if rules == null:
+		return missing
+	for input_name in rules.recipe_inputs.keys():
+		var needed := int(rules.recipe_inputs[input_name]) * quantity
+		var have := int(stock.get(String(input_name), 0))
+		if have < needed:
+			missing[String(input_name)] = needed - have
+	if fuel_per_cycle > 0.0:
+		var fuel_needed := fuel_per_cycle * float(quantity)
+		var fuel_have := 0.0
+		for name in stock.keys():
+			if rules.recipe_inputs.has(name):
+				continue
+			var fuel_rules := CaloricCalculator.get_caloric_source_rules(String(name))
+			if fuel_rules != null and fuel_rules.fuel_value > 0.0:
+				fuel_have += float(stock[name]) * fuel_rules.fuel_value
+		if fuel_have + 0.0001 < fuel_needed:
+			missing[FUEL_KEY] = fuel_needed - fuel_have
+	return missing
+
+
 # Carne di un ordine di caccia: per eccesso al passo HUNT_MEAT_STEP, tra HUNT_MEAT_STEP e STOCK_HUNT_MAX_MEAT.
 static func snap_hunt_count(meat: int) -> int:
 	return clampi(ceili(float(meat) / float(HUNT_MEAT_STEP)) * HUNT_MEAT_STEP, HUNT_MEAT_STEP, STOCK_HUNT_MAX_MEAT)
@@ -139,6 +192,10 @@ static func compute_new_order_counts(
 
 
 # true se un ordine non preso con copertura `order_coverage` è di troppo: senza di lui scorta e copertura degli altri
-# ordini aperti (`total_open_coverage` lo comprende) arrivano già al livello. Livello tolto (0) = sempre di troppo.
-static func is_order_surplus(level: int, stock: int, total_open_coverage: int, order_coverage: int) -> bool:
-	return stock + total_open_coverage - order_coverage >= level
+# ordini aperti (`total_open_coverage` lo comprende) arrivano già al livello più `margin`. Livello tolto (0) = sempre di
+# troppo. `margin` (2026-10-11, contro l'oscillazione: un ordine creato e tolto a ogni scarico perché la stima "in arrivo"
+# sale e scende di poco) = la resa di un'unità dell'ordine (un viaggio, una pianta, un pezzo, un passo di carne).
+static func is_order_surplus(level: int, stock: int, total_open_coverage: int, order_coverage: int, margin: int = 0) -> bool:
+	if level <= 0:
+		return true
+	return stock + total_open_coverage - order_coverage >= level + margin

@@ -8,3 +8,4 @@ secondary_resource_name = "fish_meat"
 calories_per_unit = 6.0
 day_durability = 10
 space_per_unit = 5.0
+required_idea_id = "fishing"
