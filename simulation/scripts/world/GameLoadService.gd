@@ -210,6 +210,16 @@ func load_game_from_json(file_path: String) -> LoadedGame:
 	JobBoardService.set_auto_repair_percent(game_data, int(data["game"].get("job_board_auto_repair_percent", JobBoardService.AUTO_REPAIR_DEFAULT_PERCENT)))
 	# Sgombero automatico delle macerie (2026-10-10) — spento per i salvataggi precedenti.
 	game_data.job_board_auto_clear_rubble = bool(data["game"].get("job_board_auto_clear_rubble", false))
+	# Livelli minimi delle scorte (2026-10-10) — nessuno per i salvataggi precedenti; i numeri del JSON tornano float.
+	game_data.stock_min_levels.clear()
+	var raw_min_levels = data["game"].get("stock_min_levels", {})
+	if raw_min_levels is Dictionary:
+		for resource_name in raw_min_levels.keys():
+			var level := int(raw_min_levels[resource_name])
+			if level > 0:
+				game_data.stock_min_levels[String(resource_name)] = level
+	game_data.stock_min_food_days = maxi(int(data["game"].get("stock_min_food_days", 0)), 0)
+	game_data.stock_excess_meat_destination = String(data["game"].get("stock_excess_meat_destination", "warehouse"))
 	game_data.job_board_kind_order.clear()
 	var raw_kind_order = data["game"].get("job_board_kind_order", [])
 	if raw_kind_order is Array:

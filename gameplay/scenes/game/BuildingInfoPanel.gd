@@ -1163,21 +1163,34 @@ func _build_repair_materials_rows() -> void:
 	move_child(_repair_materials_grid, _repair_materials_caption.get_index() + 1)
 
 
+# Dal 2026-10-10 (ritocco): "portati / richiesti" per ogni risorsa del piano, come i materiali dei cantieri — portati =
+# nel contenitore + già consumati dalla riparazione; richiesti = il piano (Building.repair_plan) o, se nessuno ha ancora
+# cominciato, lo stesso calcolo del tooltip di "Ripara" (RepairAction.compute_plan_materials). Visibile da quando la
+# riparazione è richiesta o in corso fino alla chiusura; nascosta se la riparazione non chiede materiali.
 func _refresh_repair_materials(building: Building) -> void:
 	for child in _repair_materials_grid.get_children():
 		child.queue_free()
-	var entries: Dictionary = {}
-	for resource_name in building.repair_materials.keys():
-		var quantity: int = int(building.repair_materials[resource_name])
-		if quantity > 0:
-			entries[String(resource_name)] = quantity
-	_repair_materials_caption.visible = not entries.is_empty()
-	_repair_materials_grid.visible = not entries.is_empty()
-	if entries.is_empty():
+	var repair_active: bool = building.is_complete and (building.repair_requested or not _repairer_names.is_empty())
+	var required: Dictionary = {}
+	var consumed: Dictionary = {}
+	if repair_active:
+		if not building.repair_plan.is_empty():
+			required = building.repair_plan.get(RepairAction.PLAN_MATERIALS, {})
+			consumed = building.repair_plan.get(RepairAction.PLAN_CONSUMED, {})
+		else:
+			required = RepairAction.compute_plan_materials(building)
+	_repair_materials_caption.visible = not required.is_empty()
+	_repair_materials_grid.visible = not required.is_empty()
+	if required.is_empty():
 		return
 	_repair_materials_caption.text = tr("building_repair_materials_caption")
-	for resource_name in entries.keys():
-		_repair_materials_grid.add_child(_build_missing_material_chip(resource_name, int(entries[resource_name])))
+	for resource_name in required.keys():
+		var needed: int = int(required[resource_name])
+		var brought: int = mini(int(consumed.get(resource_name, 0)) + int(building.repair_materials.get(resource_name, 0)), needed)
+		var quantity_color: Color = MATERIAL_COMPLETE_COLOR if brought >= needed else Color(1, 1, 1, 1)
+		_repair_materials_grid.add_child(
+			_build_missing_material_chip(String(resource_name), brought, "%d/%d" % [brought, needed], quantity_color)
+		)
 
 
 # Integrità dell'edificio completo (cantieri e upgrade in corso: nascosta). Percentuale per difetto, così non segna

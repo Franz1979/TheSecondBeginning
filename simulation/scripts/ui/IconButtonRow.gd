@@ -140,8 +140,14 @@ func align_to_columns(leading_width: float, slot_widths: Array[float]) -> void:
 	var leading := maxf(0.0, leading_width)
 	if not is_equal_approx(_leading_spacer.custom_minimum_size.x, leading):
 		_leading_spacer.custom_minimum_size = Vector2(leading, 0.0)
+	# Solo gli slot visibili prendono le colonne, nell'ordine (2026-10-10: uno slot nascosto in mezzo, come Scorte prima
+	# dell'idea, non sposta le colonne di quelli dopo).
+	var column := 0
 	for i in range(_slots.size()):
-		var width: float = slot_widths[i] if i < slot_widths.size() else 32.0
+		if not _slots[i].visible:
+			continue
+		var width: float = slot_widths[column] if column < slot_widths.size() else 32.0
+		column += 1
 		if not is_equal_approx(_slots[i].custom_minimum_size.x, width):
 			_slots[i].custom_minimum_size = Vector2(width, _slots[i].custom_minimum_size.y)
 

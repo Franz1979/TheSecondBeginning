@@ -242,6 +242,17 @@ var job_board_auto_repair_percent: int = 50
 # Sgombero automatico delle macerie (2026-10-10, regole di assegnazione: "Sgombera sempre le macerie"): dato della partita,
 # salvato da GameSaveService ("job_board_auto_clear_rubble"); partita nuova e salvataggi vecchi: spento.
 var job_board_auto_clear_rubble: bool = false
+# Livelli minimi delle scorte (2026-10-10, cassetto "Gestione scorte"): nome risorsa -> livello (int > 0; assente =
+# nessun livello) e livello del cibo in giorni di autonomia (0 = nessuno). Salvati da GameSaveService
+# ("stock_min_levels", "stock_min_food_days"); partita nuova e salvataggi vecchi: nessun livello. Dal 2026-10-11 i
+# livelli dei materiali grezzi raccolti, tagliati o estratti fanno nascere ordini (GameScene._auto_request_stock, ordini
+# in drawer_orders con la chiave StockRequestService.ORDER_KEY); gli altri e i giorni del cibo restano solo visivi.
+var stock_min_levels: Dictionary = {}
+var stock_min_food_days: int = 0
+# Regole di stoccaggio (2026-10-11, cassetto "Gestione scorte"): destinazione di carne e pelli in eccesso negli ordini di
+# caccia del magazzino (ButcherDestinationService, stessi valori della caccia manuale). Salvata da GameSaveService
+# ("stock_excess_meat_destination"); partita nuova e salvataggi vecchi: il magazzino.
+var stock_excess_meat_destination: String = "warehouse"
 # Ordini creati dal cassetto "Assegnazione compiti" (2026-10-09, richiesta utente): lavori in coda senza destinatario,
 # chi li prende lo decide la coda (chiave della lista "order:<id>", GameScene._drawer_order_jobs_collect). Una voce per
 # ordine, solo tipi JSON-nativi: {"id": int stabile, "type": String, ...campi del tipo}. Oggi il solo tipo "produce":

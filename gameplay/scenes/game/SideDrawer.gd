@@ -32,6 +32,9 @@ var _content_panel: PanelContainer = null
 var _frame_margin: MarginContainer = null
 var _frame_box: VBoxContainer = null
 var _header: HBoxContainer = null
+# Elemento facoltativo del contenuto accanto al titolo (2026-10-10, es. la barra di riempimento dei depositi di
+# WarehousePanel): messo da set_header_extra, liberato con il contenuto.
+var _header_extra: Control = null
 # Margine della cornice attorno a fascia del titolo e area scura: quello della sidebar attorno all'info panel.
 const FRAME_MARGIN: int = 10
 var _content_id: StringName = &""
@@ -201,7 +204,27 @@ func _estimated_content_top_offset() -> float:
 	return float(FRAME_MARGIN) + header_height
 
 
+# Mette `extra` nella riga del titolo, subito dopo il titolo (2026-10-10). Il contenuto che lo chiede lo fornisce; sparisce
+# quando il contenuto cambia o il cassetto si chiude (_clear_content).
+func set_header_extra(extra: Control) -> void:
+	if _header == null or extra == null:
+		return
+	_free_header_extra()
+	_header_extra = extra
+	_header.add_child(extra)
+	_header.move_child(extra, _title_label.get_index() + 1)
+
+
+func _free_header_extra() -> void:
+	if _header_extra != null and is_instance_valid(_header_extra):
+		if _header_extra.get_parent() != null:
+			_header_extra.get_parent().remove_child(_header_extra)
+		_header_extra.queue_free()
+	_header_extra = null
+
+
 func _clear_content() -> void:
+	_free_header_extra()
 	if _content_holder == null:
 		return
 	for child in _content_holder.get_children():

@@ -1141,3 +1141,16 @@ building_repair_waiting_material_label,Riparazione ferma: manca {materials} in u
 building_damaged_effects_label,"Capienze a metà, bonus annullati"
 storage_slot_over_capacity_tooltip,"Fuori capienza: l'edificio è danneggiato, non accetta altro finché non si libera spazio"
 notification_house_eviction,{building} danneggiato: {count} individui senza casa
+warehouse_tooltip,Gestione scorte
+warehouse_dialog_title,Gestione scorte
+warehouse_food_summary,"Totale: {calories} calorie, {days} giorni di autonomia"
+warehouse_food_days_infinite,∞
+warehouse_storage_fill_tooltip,"Depositi: {used} occupato su {capacity} di spazio"
+warehouse_min_level_tooltip,"Livello minimo (per ora solo indicativo: nessun ordine automatico)"
+warehouse_food_total_label,"Totale: {calories} calorie, giorni di autonomia"
+task_assignment_warehouse_tag_tooltip,"Ordine creato dalla gestione scorte: la risorsa è sotto il livello minimo."
+drawer_order_stock_cancel_tooltip,"Annulla l'ordine. Se la risorsa resta sotto il livello minimo il magazzino ne crea un altro: per fermarlo togli il livello o blocca l'ordine."
+warehouse_min_level_auto_tooltip,"Livello minimo: sotto questo valore il magazzino crea ordini di raccolta, taglio o estrazione nelle zone di lavoro."
+warehouse_rules,⚙ Regole di stoccaggio
+warehouse_rule_excess_meat,Carne e pelli in eccesso
+warehouse_rule_excess_meat_tooltip,"Dove vanno carne e pelli delle cacce del magazzino quando sono già sopra il loro livello (come nella caccia manuale: il focolare prende la carne, essiccatoio e affumicatoio carne e pelli). Se servono, vanno sempre al magazzino. Tendini e ossa vanno sempre al magazzino."

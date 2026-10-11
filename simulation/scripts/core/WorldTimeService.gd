@@ -755,7 +755,7 @@ func _run_daily_building_resource_decay(world: World) -> Array:
 
 # Moltiplicatore del calo giornaliero dell'Integrità, solo per le prove (2026-10-10, richiesta utente): 1.0 = velocità
 # normale, da cambiare a mano nel codice.
-const BUILDING_DECAY_DEBUG_MULTIPLIER: float = 180.0
+const BUILDING_DECAY_DEBUG_MULTIPLIER: float = 1
 
 
 # Deperimento dell'Integrità nel tempo (2026-10-10, richiesta utente, primo step): ogni giorno un edificio completo perde

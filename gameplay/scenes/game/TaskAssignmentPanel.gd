@@ -471,7 +471,7 @@ func _entries_signature(entries: Array[Dictionary]) -> String:
 		parts.append("%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s" % [
 			entry["key"], entry.get("building_name", ""), entry.get("name_detail", ""), str(entry.get("icon", {})), str(entry.get("enabled", true)), str(entry.get("locked", false)),
 			str(entry.get("waiting", false)), str(entry.get("wait_seconds", 0)), entry.get("workers", ""),
-			str(entry.get("cancel_disabled", false)), entry.get("cancel_tooltip", "") + "|" + String(entry.get("status_text", "")) + "|" + str(entry.get("direct", false)) + str(entry.get("automatic", false)) + str(entry.get("cargo_return", false)),
+			str(entry.get("cancel_disabled", false)), entry.get("cancel_tooltip", "") + "|" + String(entry.get("status_text", "")) + "|" + str(entry.get("direct", false)) + str(entry.get("automatic", false)) + str(entry.get("cargo_return", false)) + str(entry.get("warehouse", false)),
 		])
 	return "\n".join(parts)
 
@@ -506,6 +506,8 @@ func _build_list_row(entry: Dictionary, in_progress: bool) -> Control:
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 4)
 	var icon := _build_entry_icon(entry)
+	if bool(entry.get("warehouse", false)):
+		icon = _with_warehouse_badge(icon)
 	if locked:
 		icon.modulate = LOCKED_MODULATE
 	row.add_child(icon)
@@ -656,6 +658,37 @@ func _build_list_row(entry: Dictionary, in_progress: bool) -> Control:
 # {"building_command": BuildingCommandIcon.KIND_*} = icona disegnata del pannello edificio (la dinamite per la
 # demolizione); {"command": chiave di IconRegistry.COMMAND_ICON_NODES} = icona di comando; altrimenti
 # {"building_type": tipo} = l'edificio.
+# Ordine creato dal magazzino (2026-10-11, GameScene._auto_request_stock): l'icona del lavoro con un piccolo magazzino
+# (WarehouseIcon) nell'angolo in basso a destra, su un riquadro scuro; il tooltip spiega da dove viene l'ordine.
+const WAREHOUSE_BADGE_RATIO: float = 0.6
+const WAREHOUSE_BADGE_BG := Color(0.08, 0.09, 0.11, 0.9)
+
+
+func _with_warehouse_badge(icon: Control) -> Control:
+	var holder := Control.new()
+	holder.custom_minimum_size = Vector2(LIST_ICON_SIDE, LIST_ICON_SIDE)
+	holder.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	holder.mouse_filter = Control.MOUSE_FILTER_PASS
+	holder.tooltip_text = tr("task_assignment_warehouse_tag_tooltip")
+	icon.set_anchors_preset(Control.PRESET_FULL_RECT)
+	icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	holder.add_child(icon)
+	var side := LIST_ICON_SIDE * WAREHOUSE_BADGE_RATIO
+	var badge := Panel.new()
+	var style := StyleBoxFlat.new()
+	style.bg_color = WAREHOUSE_BADGE_BG
+	style.set_corner_radius_all(2)
+	badge.add_theme_stylebox_override("panel", style)
+	badge.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	badge.position = Vector2(LIST_ICON_SIDE - side + 2.0, LIST_ICON_SIDE - side + 2.0)
+	badge.size = Vector2(side, side)
+	var crates := WarehouseIcon.new()
+	crates.set_anchors_preset(Control.PRESET_FULL_RECT)
+	badge.add_child(crates)
+	holder.add_child(badge)
+	return holder
+
+
 func _build_entry_icon(entry: Dictionary) -> Control:
 	var icon_spec: Dictionary = entry.get("icon", {})
 	# {"text": emoji} (2026-10-07, es. il 💀 dei corpi): il simbolo centrato nel riquadro dell'icona.

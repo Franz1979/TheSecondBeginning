@@ -114,6 +114,10 @@ func save_game_to_json(
 			"job_board_auto_repair_percent": game_data.job_board_auto_repair_percent,
 			# Sgombero automatico delle macerie (2026-10-10).
 			"job_board_auto_clear_rubble": game_data.job_board_auto_clear_rubble,
+			# Livelli minimi delle scorte (2026-10-10): già JSON-nativi.
+			"stock_min_levels": game_data.stock_min_levels,
+			"stock_min_food_days": game_data.stock_min_food_days,
+			"stock_excess_meat_destination": game_data.stock_excess_meat_destination,
 			# Ordini creati dal cassetto (2026-10-09): già JSON-nativi.
 			"drawer_orders": game_data.drawer_orders,
 			"next_drawer_order_id": game_data.next_drawer_order_id,

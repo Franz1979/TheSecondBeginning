@@ -532,6 +532,8 @@ var _pending_leave_action: StringName = &""
 var side_drawer: SideDrawer
 # Contenuto dell'assegnazione aperto nel cassetto (null se chiuso): _refresh_pending_entries gli passa la lista.
 var _task_assignment_panel: TaskAssignmentPanel = null
+# Contenuto del cassetto "Gestione scorte" mentre è aperto (2026-10-10), null altrimenti — vedi _refresh_warehouse_panel.
+var _warehouse_panel: WarehousePanel = null
 @onready var tech_tree_panel: TechTreePanel = $TechTreePanel
 @onready var demolish_confirmation_dialog: DemolishConfirmationDialog = $DemolishConfirmationDialog
 @onready var transport_source_dialog: OptionChoiceDialog = $TransportSourceDialog
@@ -1328,6 +1330,12 @@ func _process(delta: float) -> void:
 	# Attesa per l'assegnazione a mano della lista dei lavori (2026-10-07): secondi reali, solo a gioco in corso.
 	if clock != null and clock.is_playing:
 		_job_board_clock += delta
+	# Controllo del magazzino (2026-10-11, PROVVISORIO — vedi STOCK_CHECK_INTERVAL_SEC): secondi reali, solo a gioco in corso.
+	if clock != null and clock.is_playing:
+		_stock_check_timer += delta
+		if _stock_check_timer >= STOCK_CHECK_INTERVAL_SEC:
+			_stock_check_timer = 0.0
+			_auto_request_stock()
 	_pending_refresh_timer += delta
 	if _pending_refresh_timer >= PENDING_REFRESH_INTERVAL_SEC:
 		_pending_refresh_timer = 0.0
@@ -4542,6 +4550,26 @@ func _sync_butcher_destination_button() -> void:
 	pickup_choice_dialog.set_butcher_destination(true, current, options)
 	if drawer_panel_open:
 		_task_assignment_panel.set_butcher_destination(true, current, options)
+	_sync_excess_meat_destination()
+
+
+# Pulsante della regola "Carne e pelli in eccesso" del cassetto Scorte (2026-10-11), se è aperto: la scelta salvata, o il
+# magazzino se non è più disponibile (la stessa che userebbe _auto_request_hunt).
+func _sync_excess_meat_destination() -> void:
+	if _warehouse_panel == null or not is_instance_valid(_warehouse_panel) or game_data == null:
+		return
+	_warehouse_panel.set_excess_meat_destination(
+		true, _butcher_destination_entry(_stock_excess_meat_destination()), _build_butcher_destination_options()
+	)
+
+
+# Destinazione di carne e pelli in eccesso per gli ordini di caccia del magazzino: la regola, se disponibile; altrimenti
+# il magazzino.
+func _stock_excess_meat_destination() -> String:
+	var destination := game_data.stock_excess_meat_destination
+	if ButcherDestinationService.ORDER.has(destination) and ButcherDestinationService.is_available(destination, macro_world, human_folk):
+		return destination
+	return ButcherDestinationService.WAREHOUSE
 
 
 func _butcher_destination_entry(destination: String) -> Dictionary:
@@ -4874,7 +4902,10 @@ func _on_cut_zone_series_continue_requested(worker: HumanIndividual, series: Dic
 			"tools": _describe_missing_tool_categories([TaskTypes.ToolCategory.CHOPPING]),
 		}))
 		return
-	var plant := CutZoneService.choose_plant(area, live_cells, worker, CutZoneService.collect_reserved_plants(human_individuals))
+	var plant := CutZoneService.choose_plant(
+		area, live_cells, worker, CutZoneService.collect_reserved_plants(human_individuals),
+		String(series.get(CutZoneService.SERIES_YIELD_KEY, ""))
+	)
 	if plant.is_empty():
 		_report_cut_series_stopped(worker, series, tr("series_stop_no_plant"))
 		return
@@ -9294,6 +9325,8 @@ func _refresh_pending_entries() -> void:
 	# Lavori della lista con almeno un lavoratore (2026-10-07, sezione "In corso" del cassetto), solo a cassetto aperto.
 	var in_progress_entries: Array[Dictionary] = []
 	var drawer_open := _task_assignment_panel != null and is_instance_valid(_task_assignment_panel)
+	# Cassetto "Gestione scorte" aperto (2026-10-10): numeri aggiornati allo stesso ritmo.
+	_refresh_warehouse_panel()
 	var seen_job_keys: Dictionary = {}
 	# Lavori gestiti dalla lista ancora da fare, assegnati o no (JobBoardService.forget_missing).
 	var board_job_keys: Dictionary = {}
@@ -9727,7 +9760,10 @@ func _job_board_providers() -> Array[Dictionary]:
 			"rejection": _drawer_order_job_rejection,
 			"assign": _assign_drawer_order_job,
 			"workers": _drawer_order_job_workers,
-			"cancel_fields": func(_job: Dictionary) -> Dictionary: return {"cancel_disabled": false, "cancel_tooltip": tr("drawer_order_cancel_tooltip")},
+			"cancel_fields": func(job: Dictionary) -> Dictionary: return {
+				"cancel_disabled": false,
+				"cancel_tooltip": tr("drawer_order_stock_cancel_tooltip") if (job["order"] as Dictionary).has(StockRequestService.ORDER_KEY) else tr("drawer_order_cancel_tooltip"),
+			},
 			"cancel": _drawer_order_job_cancel,
 			"release": _drawer_order_job_release,
 		})
@@ -9769,6 +9805,7 @@ func _job_board_drawer_entry(job: Dictionary, in_progress: bool) -> Dictionary:
 	var data := {
 		"kind": job["entry_kind"], "id": job["id"], "macro": job["macro"], "sort": job["sort"],
 		"icon": job["icon"], "building_name": job["name"], "name_detail": String(job.get("name_detail", "")),
+		"warehouse": bool(job.get("warehouse", false)),
 	}
 	if in_progress:
 		var names: Array[String] = []
@@ -11676,7 +11713,7 @@ func _zone_order_area_has_targets(order_type: String, area: WorkArea, individual
 			return false
 		var macro_state := macro_world.get_cell_state_at(area.macro_coords.x, area.macro_coords.y)
 		return not QuarryZoneService.list_available_rocks(area, macro_state, individual, reserved).is_empty()
-	return not CutZoneService.list_available_plants(area, live_cells, individual, reserved).is_empty()
+	return not CutZoneService.list_available_plants(area, live_cells, individual, reserved, _drawer_order_cut_yield(order)).is_empty()
 
 
 # Stato dei bottoni "Taglia" ed "Estrai" del cassetto: almeno una zona con il lavoro e un individuo in età da lavoro con
@@ -11809,19 +11846,28 @@ func _on_drawer_zone_order_submitted(kind: String, count: int, zone_id: int) -> 
 		clamped = clampi(count, CutZoneService.COUNT_MIN, CutZoneService.COUNT_MAX)
 		UserOptions.work_area_cut_count = clamped
 	UserOptions.save_to_disk()
+	_create_drawer_zone_order(kind, clamped, zone_id, extra)
+	_refresh_pending_entries()
+
+
+# Nuovo ordine di zona in coda (dal cassetto o dal magazzino, _auto_request_stock); `extra` = campi del tipo. Ritorna l'id.
+func _create_drawer_zone_order(kind: String, count: int, zone_id: int, extra: Dictionary = {}) -> int:
 	var order_id := game_data.next_drawer_order_id
 	game_data.next_drawer_order_id += 1
 	# "total": quanto chiesto all'inizio; "done_before": fatto nelle prese precedenti (interruzioni, riprese da altri);
 	# "started": preso almeno una volta (2026-10-09, avanzamento dell'ordine intero nella riga).
 	var new_order := {
-		"id": order_id, "type": kind, "count": clamped, "zone_id": zone_id, "taken": false, "done_seen": 0,
-		"total": clamped, "done_before": 0, "started": false,
+		"id": order_id, "type": kind, "count": count, "zone_id": zone_id, "taken": false, "done_seen": 0,
+		"total": count, "done_before": 0, "started": false,
 	}
 	new_order.merge(extra)
 	game_data.drawer_orders.append(new_order)
 	if DebugLogging.ENABLED and DebugLogging.SHOW_JOB_BOARD_LOGS:
-		print("[JOB BOARD] Ordine del cassetto #%d: %s ×%d (zona %s)." % [order_id, kind, clamped, "automatica" if zone_id < 0 else "#%d" % zone_id])
-	_refresh_pending_entries()
+		print("[JOB BOARD] Ordine del cassetto #%d: %s ×%d (zona %s)%s." % [
+			order_id, kind, count, "automatica" if zone_id < 0 else "#%d" % zone_id,
+			(" dal magazzino per %s" % String(extra[StockRequestService.ORDER_KEY])) if extra.has(StockRequestService.ORDER_KEY) else "",
+		])
+	return order_id
 
 
 # Campi della voce "Raccogli" dalla scelta del menu (PickupChoiceMenu.get_selected()); vuota = "Tutto".
@@ -11963,6 +12009,9 @@ func _on_hunt_zone_series_ended(hunter: HumanIndividual, series: Dictionary, rea
 			_drawer_hunt_no_prey_alerts.append(alert)
 		if DebugLogging.ENABLED and DebugLogging.SHOW_JOB_BOARD_LOGS:
 			print("[JOB BOARD] Ordine del cassetto #%d finito: nessuna preda in nessuna zona (%d/%d carne)." % [int(order["id"]), done, total])
+		# Ordine del magazzino (2026-10-11): niente nuove cacce automatiche per un giorno, invece di ricrearne una al secondo.
+		if order.has(StockRequestService.ORDER_KEY):
+			_stock_hunt_pause_until = _job_board_now() + DRAWER_HUNT_NO_PREY_ALERT_DAYS
 		_remove_drawer_order(int(order["id"]))
 		return
 	order[DRAWER_HUNT_NO_PREY_KEY] = alert
@@ -12146,8 +12195,12 @@ func _drawer_cut_job(provider: Dictionary, order: Dictionary, claims: Dictionary
 	if area != null:
 		macro = area.macro_coords
 		microcell = area.rect.position + area.rect.size / 2
+	# Ordine creato dal magazzino (2026-10-11, _auto_request_stock): magazzino nell'angolo dell'icona della riga.
+	var from_warehouse := order.has(StockRequestService.ORDER_KEY)
 	return {
-		"key": JobBoardService.drawer_order_key(order_id), "kind": order_type, "name": row_name, "text": row_name,
+		"key": JobBoardService.drawer_order_key(order_id), "kind": order_type, "name": row_name,
+		"warehouse": from_warehouse,
+		"text": (row_name + "\n" + tr("task_assignment_warehouse_tag_tooltip")) if from_warehouse else row_name,
 		"log_name": "ordine del cassetto #%d %s ×%d (%s)" % [order_id, order_type, remaining, "zona automatica" if zone_id < 0 else "zona #%d" % zone_id],
 		"icon": {"command": icon_key}, "macro": macro, "microcell": microcell,
 		# Raggiungibilità vera nel controllo di idoneità (zona e bersaglio per chi lo prende): qui un bersaglio fuori dalla
@@ -12218,7 +12271,7 @@ func _drawer_cut_pick(worker: HumanIndividual, job: Dictionary) -> Dictionary:
 			int(order.get("criterion_category", -1)), String(order.get("resource_name", ""))
 		)
 	else:
-		area = CutZoneService.choose_work_area(game_data, live_cells, worker, reserved)
+		area = CutZoneService.choose_work_area(game_data, live_cells, worker, reserved, _drawer_order_cut_yield(order))
 	if area == null:
 		return {}
 	# Caccia: la zona, in una macrocella attiva.
@@ -12237,10 +12290,18 @@ func _drawer_cut_pick(worker: HumanIndividual, job: Dictionary) -> Dictionary:
 		if rock == null:
 			return {}
 		return {"area": area, "rock": {"macro_coords": area.macro_coords, "position": rock}}
-	var plant := CutZoneService.choose_plant(area, live_cells, worker, reserved)
+	var plant := CutZoneService.choose_plant(area, live_cells, worker, reserved, _drawer_order_cut_yield(order))
 	if plant.is_empty():
 		return {}
 	return {"area": area, "plant": plant}
+
+
+# Risorsa voluta da un ordine di taglio del magazzino (solo le piante che la danno, CutZoneService.SERIES_YIELD_KEY); ""
+# per gli ordini del giocatore (qualunque pianta ammessa dalla zona).
+func _drawer_order_cut_yield(order: Dictionary) -> String:
+	if String(order.get("type", "")) != DRAWER_ORDER_TYPE_CUT:
+		return ""
+	return String(order.get(StockRequestService.ORDER_KEY, ""))
 
 
 # Idoneità come il comando Taglia / Estrai: età, attrezzo (in cintura o nello zaino, _command_tool_rejection), una zona e
@@ -12314,6 +12375,8 @@ func _assign_drawer_cut_job(worker: HumanIndividual, job: Dictionary) -> void:
 	else:
 		series = CutZoneService.make_series(area.id, maxi(int(order.get("count", 1)), 1))
 		series[DRAWER_ORDER_SERIES_KEY] = order_id
+		if _drawer_order_cut_yield(order) != "":
+			series[CutZoneService.SERIES_YIELD_KEY] = _drawer_order_cut_yield(order)
 		_assign_cut_task(worker, pick["plant"], area.id, series, true)
 	for task in _member_open_tasks(worker):
 		if _drawer_cut_order_of(task) == order_id:
@@ -16390,6 +16453,9 @@ func _on_primary_action_pressed(action_id: StringName) -> void:
 		# 📋 (2026-10-07): apre e richiude il cassetto dell'assegnazione delle task, per ora vuoto.
 		&"task_assignment":
 			_toggle_task_assignment_drawer()
+		# Scorte (2026-10-10): apre e richiude il cassetto della gestione dei magazzini, per ora vuoto.
+		&"warehouse":
+			_toggle_warehouse_drawer()
 
 
 # toggle_animals_visibility/toggle_flora_updates/world_debug/macro_cell_debug — vissuti prima
@@ -17420,6 +17486,284 @@ func _refresh_task_assignment_button() -> void:
 	if not available and side_drawer != null and side_drawer.is_showing(TaskAssignmentPanel.DRAWER_CONTENT_ID):
 		side_drawer.close()
 	_sync_task_assignment_highlight()
+	_refresh_warehouse_button()
+
+
+# Bottone "Gestione scorte" (2026-10-10, richiesta utente): come l'Assegnazione — sempre visibile, spento con "Serve
+# l'idea «…»" (command_bar_job_locked_tooltip, stesso testo) finché l'idea WarehousePanel.REQUIRED_IDEA_ID non è completata
+# (nessun altro requisito). Ricalcolato insieme al bottone dell'assegnazione; senza l'idea il cassetto, se aperto, si chiude.
+func _refresh_warehouse_button() -> void:
+	var available := human_folk != null and human_folk.completed_ideas.has(WarehousePanel.REQUIRED_IDEA_ID)
+	var idea := IdeaCalculator.get_idea(WarehousePanel.REQUIRED_IDEA_ID)
+	var locked_tooltip := tr("command_bar_job_locked_tooltip").format({
+		"idea": tr(idea.display_name) if idea != null else WarehousePanel.REQUIRED_IDEA_ID
+	})
+	game_info_panel.primary_actions_bar.set_slot_disabled(GameInfoPanel.WAREHOUSE_SLOT_INDEX, not available, locked_tooltip)
+	if not available and side_drawer != null and side_drawer.is_showing(WarehousePanel.DRAWER_CONTENT_ID):
+		side_drawer.close()
+	_sync_warehouse_highlight()
+
+
+# Bottone "Scorte": apre il cassetto, o lo richiude se lo mostra già. Un solo cassetto alla volta: show_content sostituisce
+# l'Assegnazione se era aperta (e viceversa), con il segnale closed per quello di prima.
+func _toggle_warehouse_drawer() -> void:
+	if side_drawer == null:
+		return
+	if side_drawer.is_showing(WarehousePanel.DRAWER_CONTENT_ID):
+		side_drawer.close()
+	elif human_folk != null and human_folk.completed_ideas.has(WarehousePanel.REQUIRED_IDEA_ID):
+		_layout_side_drawer()
+		_warehouse_panel = WarehousePanel.new()
+		# Livelli minimi (2026-10-10): dati della partita, come la soglia della riparazione.
+		_warehouse_panel.set_min_levels(game_data.stock_min_levels, game_data.stock_min_food_days)
+		_warehouse_panel.min_level_changed.connect(func(resource_name: String, level: int) -> void:
+			if level > 0:
+				game_data.stock_min_levels[resource_name] = level
+			else:
+				game_data.stock_min_levels.erase(resource_name)
+		)
+		_warehouse_panel.min_food_days_changed.connect(func(days: int) -> void: game_data.stock_min_food_days = days)
+		# Regola "Carne e pelli in eccesso" (2026-10-11): dato della partita, pulsante delle destinazioni della caccia.
+		_sync_excess_meat_destination()
+		_warehouse_panel.excess_meat_destination_changed.connect(func(destination: String) -> void:
+			game_data.stock_excess_meat_destination = destination
+			_sync_excess_meat_destination()
+		)
+		side_drawer.show_content(WarehousePanel.DRAWER_CONTENT_ID, tr("warehouse_dialog_title"), _warehouse_panel)
+		side_drawer.align_top_to(game_info_panel)
+		# Numeri subito, senza aspettare il ricalcolo del secondo successivo.
+		_refresh_warehouse_panel()
+	_sync_warehouse_highlight()
+	_sync_task_assignment_highlight()
+
+
+# Numeri del cassetto "Gestione scorte" (2026-10-10), solo a cassetto aperto: scorte del villaggio (VillageStockService) e
+# consumo giornaliero di calorie di tutti gli individui, con la stessa formula del consumo reale
+# (HumanCalculator.get_daily_calorie_consumption: regole umane, fascia d'età, sesso, allattamento, era).
+func _refresh_warehouse_panel() -> void:
+	if _warehouse_panel == null or not is_instance_valid(_warehouse_panel) or macro_world == null:
+		return
+	var daily_need := 0.0
+	if human_folk != null and human_folk.human_rules_ref != null and game_data != null:
+		var era_rules := EraCalculator.get_era_rules(game_data.current_era_name)
+		for member in human_individuals:
+			daily_need += HumanCalculator.get_daily_calorie_consumption(
+				human_folk.human_rules_ref, _resolve_age_band(member), member.sex, member.dependent_child_id != -1, era_rules
+			)
+	_warehouse_panel.refresh_stock(VillageStockService.get_village_stock(macro_world), daily_need, VillageStockService.get_storage_fill(macro_world))
+
+
+# ============================================================================================
+# Richieste del magazzino (2026-10-11, richiesta utente — gestione scorte, primo passo: materiali grezzi). Con l'idea
+# WarehousePanel.REQUIRED_IDEA_ID e la coda dei lavori attiva, ogni risorsa con un livello minimo (GameData.
+# stock_min_levels) che si procura con raccolta, taglio o estrazione (StockRequestService.source_kind_for) e sta sotto il
+# livello genera ordini di zona del cassetto in zona automatica, marcati StockRequestService.ORDER_KEY (etichetta
+# "Magazzino" nella riga). Il magazzino GENERA soltanto: li assegna la coda dei lavori, con le priorità dell'assegnazione,
+# come ogni altro ordine. Ordini non presi diventati di troppo (livello raggiunto o tolto) si tolgono; quelli presi
+# finiscono la loro serie. Nessun dato nuovo da salvare: gli ordini stanno in GameData.drawer_orders.
+#
+# PROVVISORIO: il controllo gira ogni STOCK_CHECK_INTERVAL_SEC secondi reali. In futuro lo farà una task di "gestione
+# magazzino", e l'efficienza di chi la fa deciderà quanto spesso (come l'efficienza del coordinatore per le
+# assegnazioni): la cadenza vive solo qui e nel timer di _process, la logica sta in _auto_request_stock.
+# ============================================================================================
+const STOCK_CHECK_INTERVAL_SEC: float = 1.0
+var _stock_check_timer: float = 0.0
+
+
+func _auto_request_stock() -> void:
+	if game_data == null or macro_world == null or human_folk == null:
+		return
+	if not human_folk.completed_ideas.has(WarehousePanel.REQUIRED_IDEA_ID) or not JobBoardService.is_enabled(human_folk):
+		return
+	var stock := VillageStockService.get_village_stock(macro_world)
+	var claims := _collect_drawer_cut_claims()
+	var carry_capacity := _stock_average_carry_capacity()
+	# Ordini del magazzino ancora aperti, per risorsa.
+	var open_by_resource: Dictionary = {}
+	for order in game_data.drawer_orders:
+		if order.has(StockRequestService.ORDER_KEY):
+			var resource_name := String(order[StockRequestService.ORDER_KEY])
+			if not open_by_resource.has(resource_name):
+				open_by_resource[resource_name] = []
+			(open_by_resource[resource_name] as Array).append(order)
+	var names: Array = game_data.stock_min_levels.keys()
+	for resource_name in open_by_resource.keys():
+		if not names.has(resource_name):
+			names.append(resource_name)
+	var changed := false
+	for resource_name in names:
+		var source_kind := StockRequestService.source_kind_for(String(resource_name))
+		# Caccia: una domanda sola per carne, pelle, tendini e ossa (_auto_request_hunt, sotto).
+		if source_kind == "" or source_kind == StockRequestService.SOURCE_HUNT:
+			continue
+		var unit_yield := _stock_unit_yield(String(resource_name), source_kind, carry_capacity)
+		var level := int(game_data.stock_min_levels.get(resource_name, 0))
+		var quantity := int(stock.get(resource_name, 0))
+		var orders: Array = open_by_resource.get(resource_name, [])
+		var coverages: Dictionary = {}
+		var total_coverage := 0
+		var any_taken := false
+		for order in orders:
+			var coverage := _stock_order_coverage(order, claims, String(resource_name), unit_yield)
+			coverages[int(order["id"])] = coverage
+			total_coverage += coverage
+			any_taken = any_taken or bool(order.get("taken", false))
+		# Taglio ed estrazione: la resa cade in un mucchio a terra e arriva al magazzino dopo (consegna della serie). Con un
+		# ordine in corso i mucchi della risorsa contano come coperti, altrimenti in quell'attesa nascerebbe un ordine doppio.
+		if any_taken and source_kind != StockRequestService.SOURCE_GATHER:
+			for pile in game_data.ground_piles:
+				total_coverage += pile.get_quantity(String(resource_name))
+		# Di troppo: i non presi, dal più nuovo, finché senza di loro il livello resta coperto.
+		for index in range(orders.size() - 1, -1, -1):
+			var order: Dictionary = orders[index]
+			if bool(order.get("taken", false)):
+				continue
+			var coverage := int(coverages[int(order["id"])])
+			if StockRequestService.is_order_surplus(level, quantity, total_coverage, coverage):
+				total_coverage -= coverage
+				_remove_drawer_order(int(order["id"]))
+				orders.remove_at(index)
+				changed = true
+				if DebugLogging.ENABLED and DebugLogging.SHOW_JOB_BOARD_LOGS:
+					print("[JOB BOARD] Magazzino: ordine #%d per %s tolto (livello %d coperto)." % [int(order["id"]), resource_name, level])
+		var counts := StockRequestService.compute_new_order_counts(
+			level, quantity, total_coverage, orders.size(), unit_yield, StockRequestService.get_series_max(source_kind)
+		)
+		for count in counts:
+			var extra := {StockRequestService.ORDER_KEY: String(resource_name)}
+			if source_kind == StockRequestService.SOURCE_GATHER:
+				extra["criterion_kind"] = PickUpAction.CriterionKind.NAME
+				extra["criterion_category"] = -1
+				extra["resource_name"] = String(resource_name)
+			_create_drawer_zone_order(source_kind, count, -1, extra)
+			changed = true
+	if _auto_request_hunt(stock, claims, open_by_resource.get(StockRequestService.HUNT_GROUP_KEY, [])):
+		changed = true
+	if changed:
+		_refresh_pending_entries()
+
+
+# Caccia del magazzino (2026-10-11). Per ogni prodotto della caccia con un livello: scoperto = livello − scorta − in arrivo
+# (mucchi e carcasse a terra, con una caccia del magazzino in corso), tradotto in carne
+# (StockRequestService.get_meat_per_unit); la domanda è il MASSIMO, perché la stessa preda li dà tutti. Ordini "hunt" in
+# zona automatica da 5 a STOCK_HUNT_MAX_MEAT carne, chiave HUNT_GROUP_KEY. Destinazione: carne o pelle che servono = il
+# magazzino (solo lì entrano nelle scorte); altrimenti la regola "Carne e pelli in eccesso"
+# (_stock_excess_meat_destination). Dopo un ordine finito senza prede, pausa fino a _stock_hunt_pause_until. true se ha
+# creato o tolto ordini.
+var _stock_hunt_pause_until: float = -1.0
+
+
+func _auto_request_hunt(stock: Dictionary, claims: Dictionary, orders: Array) -> bool:
+	if not ButcherDestinationService.is_available(ButcherDestinationService.WAREHOUSE, macro_world, human_folk):
+		return false
+	var any_taken := false
+	var coverages: Dictionary = {}
+	var total_coverage := 0
+	for order in orders:
+		var coverage := _stock_order_coverage(order, claims, HuntZoneService.MEAT_RESOURCE, 1)
+		coverages[int(order["id"])] = coverage
+		total_coverage += coverage
+		any_taken = any_taken or bool(order.get("taken", false))
+	var arriving := _stock_hunt_arriving() if any_taken else {}
+	var demand := 0
+	var demand_by_resource: Dictionary = {}
+	for resource_name in game_data.stock_min_levels.keys():
+		if StockRequestService.source_kind_for(String(resource_name)) != StockRequestService.SOURCE_HUNT:
+			continue
+		var uncovered := int(game_data.stock_min_levels[resource_name]) - int(stock.get(resource_name, 0)) - int(arriving.get(resource_name, 0))
+		if uncovered <= 0:
+			continue
+		var meat := ceili(float(uncovered) * StockRequestService.get_meat_per_unit(String(resource_name)))
+		demand_by_resource[resource_name] = meat
+		demand = maxi(demand, meat)
+	var changed := false
+	for index in range(orders.size() - 1, -1, -1):
+		var order: Dictionary = orders[index]
+		if bool(order.get("taken", false)):
+			continue
+		var coverage := int(coverages[int(order["id"])])
+		if StockRequestService.is_order_surplus(demand, 0, total_coverage, coverage):
+			total_coverage -= coverage
+			_remove_drawer_order(int(order["id"]))
+			orders.remove_at(index)
+			changed = true
+			if DebugLogging.ENABLED and DebugLogging.SHOW_JOB_BOARD_LOGS:
+				print("[JOB BOARD] Magazzino: ordine di caccia #%d tolto (domanda %d carne coperta)." % [int(order["id"]), demand])
+	if _job_board_now() < _stock_hunt_pause_until:
+		return changed
+	var counts := StockRequestService.compute_new_order_counts(
+		demand, 0, total_coverage, orders.size(), 1, StockRequestService.STOCK_HUNT_MAX_MEAT
+	)
+	if counts.is_empty():
+		return changed
+	# Carne o pelle ancora scoperte dopo gli ordini già aperti: tutto al magazzino.
+	var needs_meat_or_hide := int(demand_by_resource.get(HuntZoneService.MEAT_RESOURCE, 0)) > total_coverage 		or int(demand_by_resource.get("hide", 0)) > total_coverage
+	var destination := ButcherDestinationService.WAREHOUSE if needs_meat_or_hide else _stock_excess_meat_destination()
+	for count in counts:
+		_create_drawer_zone_order(DRAWER_ORDER_TYPE_HUNT, StockRequestService.snap_hunt_count(count), -1, {
+			StockRequestService.ORDER_KEY: StockRequestService.HUNT_GROUP_KEY, "butcher_destination": destination,
+		})
+		changed = true
+	return changed
+
+
+# Prodotti della caccia già a terra: risorse dei mucchi e resa delle carcasse non ancora macellate (ButcherAction.
+# compute_yields). Nome -> quantità.
+func _stock_hunt_arriving() -> Dictionary:
+	var arriving: Dictionary = {}
+	for pile in game_data.ground_piles:
+		for resource_name in pile.resources.keys():
+			arriving[resource_name] = int(arriving.get(resource_name, 0)) + pile.get_quantity(String(resource_name))
+		for carcass in pile.carcasses:
+			var yields := ButcherAction.compute_yields(String(carcass.get("species", "")), int(carcass.get("age_band", -1)))
+			for resource_name in yields.keys():
+				arriving[resource_name] = int(arriving.get(resource_name, 0)) + int(yields[resource_name])
+	return arriving
+
+
+# Unità coperte da un ordine del magazzino: quello che resta della serie × resa, più quanto della risorsa portano già
+# nello zaino i suoi lavoratori (raccolto ma non ancora scaricato: altrimenti nel viaggio verso il magazzino il deficit
+# sembrerebbe scoperto e nascerebbe un ordine doppio).
+func _stock_order_coverage(order: Dictionary, claims: Dictionary, resource_name: String, unit_yield: int) -> int:
+	var claim: Dictionary = claims.get(int(order["id"]), {})
+	var taken := bool(order.get("taken", false)) and not claim.is_empty()
+	var remaining := maxi(int(order.get("count", 1)) - (int(claim.get("done", 0)) if taken else 0), 0)
+	var coverage := remaining * unit_yield
+	if taken:
+		for member in claim.get("members", []):
+			coverage += (member as HumanIndividual).get_carried_quantity(resource_name)
+	return coverage
+
+
+# Resa di un'unità dell'ordine: viaggio (zaino medio), pianta tagliata o estrazione.
+func _stock_unit_yield(resource_name: String, source_kind: String, carry_capacity: float) -> int:
+	match source_kind:
+		StockRequestService.SOURCE_GATHER:
+			return StockRequestService.get_gather_units_per_trip(resource_name, carry_capacity)
+		StockRequestService.SOURCE_CUT:
+			return StockRequestService.get_cut_yield_per_plant(resource_name)
+		StockRequestService.SOURCE_QUARRY:
+			return StockRequestService.get_quarry_yield_per_extraction()
+	return 0
+
+
+# Zaino medio di chi può raccogliere (non neonati né bambini), per stimare un viaggio; 0 se nessuno.
+func _stock_average_carry_capacity() -> float:
+	var total := 0.0
+	var count := 0
+	for member in human_individuals:
+		var age_band := _resolve_age_band(member)
+		if age_band == HumanTypes.AgeBand.INFANT or age_band == HumanTypes.AgeBand.CHILD or member.max_carry_capacity <= 0.0:
+			continue
+		total += member.max_carry_capacity
+		count += 1
+	return total / float(count) if count > 0 else 0.0
+
+
+# Bottone "Scorte" evidenziato finché il cassetto mostra le scorte.
+func _sync_warehouse_highlight() -> void:
+	var showing := side_drawer != null and side_drawer.is_showing(WarehousePanel.DRAWER_CONTENT_ID)
+	game_info_panel.primary_actions_bar.set_slot_highlighted(GameInfoPanel.WAREHOUSE_SLOT_INDEX, showing)
 
 
 # Cassetto laterale (2026-10-07): figlio del CanvasLayer (fuori dalla sidebar, non la allarga), stile della sidebar,
@@ -17442,7 +17786,10 @@ func _setup_side_drawer() -> void:
 	side_drawer.closed.connect(func(content_id: StringName) -> void:
 		if content_id == TaskAssignmentPanel.DRAWER_CONTENT_ID:
 			_task_assignment_panel = null
+		if content_id == WarehousePanel.DRAWER_CONTENT_ID:
+			_warehouse_panel = null
 		_sync_task_assignment_highlight()
+		_sync_warehouse_highlight()
 	)
 	game_info_panel.item_rect_changed.connect(_layout_side_drawer)
 	get_viewport().size_changed.connect(_layout_side_drawer)

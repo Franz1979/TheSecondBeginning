@@ -38,6 +38,9 @@ const CONTEXT_SERIES := "cut_zone_series"
 const SERIES_ZONE_KEY := "cut_series"
 # Messaggio di serie interrotta (chiave tr() di HumanIndividualActionService.series_stopped_message).
 const SERIES_STOPPED_KEY := "cut_series_stopped"
+# Risorsa voluta dalla serie (2026-10-11, ordini del magazzino — StockRequestService): solo le piante il cui taglio la dà
+# (SubtypeRules.cut_yield_resource_name), es. "wood" = solo alberi. Assente = qualunque pianta ammessa dalla zona.
+const SERIES_YIELD_KEY := "yield_resource"
 
 
 static func make_series(area_id: int, target: int) -> Dictionary:
@@ -183,7 +186,10 @@ static func collect_reserved_plants(individuals: Array) -> Dictionary:
 # della cella viva, lo stesso insieme in cui il clic destro trova la pianta), vive, ammesse dal filtro, raggiungibili e
 # non prenotate. Macrocella non viva = nessuna pianta (il taglio richiede la cella viva, come il clic destro).
 # Array di {"macro_coords": Vector2i, "object_type": WorldObjectType, "individual_key": Vector3i, "subtype": String}.
-static func list_available_plants(area: WorkArea, live_cells: Dictionary, individual: HumanIndividual, reserved: Dictionary) -> Array[Dictionary]:
+# `yield_resource` (facoltativo, SERIES_YIELD_KEY): solo le piante il cui taglio dà quella risorsa.
+static func list_available_plants(
+	area: WorkArea, live_cells: Dictionary, individual: HumanIndividual, reserved: Dictionary, yield_resource: String = ""
+) -> Array[Dictionary]:
 	var plants: Array[Dictionary] = []
 	if area == null:
 		return plants
@@ -203,6 +209,8 @@ static func list_available_plants(area: WorkArea, live_cells: Dictionary, indivi
 			var subtype_name := PlantCutService.get_subtype_name(cell.macro_state, object_type, individual_key)
 			if not work_area_accepts_plant(area, object_type, subtype_name):
 				continue
+			if yield_resource != "" and not plant_yields(object_type, subtype_name, yield_resource):
+				continue
 			if individual != null and not HaulZoneService.is_cell_reachable(individual, area.macro_coords, lot):
 				continue
 			plants.append({
@@ -214,8 +222,10 @@ static func list_available_plants(area: WorkArea, live_cells: Dictionary, indivi
 
 # Pianta per `individual` nella zona: tra quelle disponibili, la più vicina con la penalità di affollamento (piante
 # prenotate da altri nello stesso lotto o in quelli accanto, come per le rocce); {} se nessuna.
-static func choose_plant(area: WorkArea, live_cells: Dictionary, individual: HumanIndividual, reserved: Dictionary) -> Dictionary:
-	var available := list_available_plants(area, live_cells, individual, reserved)
+static func choose_plant(
+	area: WorkArea, live_cells: Dictionary, individual: HumanIndividual, reserved: Dictionary, yield_resource: String = ""
+) -> Dictionary:
+	var available := list_available_plants(area, live_cells, individual, reserved, yield_resource)
 	if available.is_empty():
 		return {}
 	var reserved_by_lot: Dictionary = {}
@@ -243,13 +253,15 @@ static func choose_plant(area: WorkArea, live_cells: Dictionary, individual: Hum
 # Scelta automatica della zona: valide le zone con il taglio attivo e almeno una pianta disponibile per `individual`;
 # punteggio come l'estrazione (piante disponibili / (distanza dal centro + offset) × fattore per ogni altro pipottino
 # che taglia già lì). null se nessuna.
-static func choose_work_area(game_data: GameData, live_cells: Dictionary, individual: HumanIndividual, reserved: Dictionary) -> WorkArea:
+static func choose_work_area(
+	game_data: GameData, live_cells: Dictionary, individual: HumanIndividual, reserved: Dictionary, yield_resource: String = ""
+) -> WorkArea:
 	if game_data == null or individual == null:
 		return null
 	var best: WorkArea = null
 	var best_score := -1.0
 	for area in list_cut_work_areas(game_data):
-		var available := list_available_plants(area, live_cells, individual, reserved).size()
+		var available := list_available_plants(area, live_cells, individual, reserved, yield_resource).size()
 		if available <= 0:
 			continue
 		var center := Vector2(area.rect.position) + Vector2(area.rect.size) * 0.5 + HaulZoneService.macro_offset_for(individual, area.macro_coords)
@@ -264,6 +276,12 @@ static func choose_work_area(game_data: GameData, live_cells: Dictionary, indivi
 
 
 # true se l'individuo ha un taglio in corso nella zona `area_id`.
+# true se il taglio di questa pianta dà `resource_name` (SubtypeRules.cut_yield_resource_name del sottotipo).
+static func plant_yields(object_type: GameTypes.WorldObjectType, subtype_name: String, resource_name: String) -> bool:
+	var rule := ResourceCalculator.get_subtype_rule(object_type, subtype_name)
+	return rule != null and rule.cut_yield_resource_name == resource_name and rule.cut_yield_base > 0
+
+
 static func is_cutting_in(individual: HumanIndividual, area_id: int) -> bool:
 	if individual == null or individual.current_task == null or individual.current_task.is_finished():
 		return false

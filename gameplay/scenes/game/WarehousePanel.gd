@@ -1,0 +1,525 @@
+class_name WarehousePanel
+extends VBoxContainer
+
+# Cassetto "Gestione scorte" (2026-10-10, richiesta utente — gestione dei magazzini). Contenuto del SideDrawer come
+# TaskAssignmentPanel: stesso posto (accanto all'info panel), stessa larghezza (SideDrawer.WIDTH), il tempo non si ferma.
+# Lo apre e lo richiude il bottone della riga del governo (GameInfoPanel.WAREHOUSE_SLOT_INDEX, GameScene.
+# _toggle_warehouse_drawer), acceso solo con l'idea REQUIRED_IDEA_ID completata.
+#
+# Elenco in sola lettura delle risorse del villaggio (VillageStockService.get_village_stock): una riga per risorsa con
+# icona, nome e quantità totale; anche le risorse a zero (sbiadite), fuori solo quelle non ancora scoperte
+# (TerrainScatteredResourceService.is_resource_locked). Dal 2026-10-10 (ritocco) una linguetta per categoria
+# (SecondaryResourceTypes.Category, solo icona e nome nel tooltip, stile delle linguette dell'info panel): sotto solo
+# l'elenco della categoria scelta, all'apertura il Cibo, poi l'ultima scelta (_last_category, per la sessione). In testa
+# al Cibo il totale in calorie e i giorni di autonomia. Accanto al titolo del cassetto la barra di riempimento dei
+# depositi (SideDrawer.set_header_extra). I dati li passa GameScene (refresh_stock), una volta al secondo a cassetto
+# aperto come l'Assegnazione; le righe si ricostruiscono solo quando cambia l'elenco delle risorse visibili.
+
+# Idea che accende il bottone (dopo l'assegnazione delle task nell'albero delle idee).
+const REQUIRED_IDEA_ID := "warehouse_management"
+# Id del contenuto nel SideDrawer.
+const DRAWER_CONTENT_ID := &"warehouse"
+
+# Stesse misure delle righe del cassetto dell'Assegnazione (TaskAssignmentPanel).
+const SECTION_FONT_SIZE: int = 12
+const LIST_FONT_SIZE: int = 11
+const LIST_ICON_SIDE: float = 20.0
+const ZERO_QUANTITY_COLOR := Color(1.0, 1.0, 1.0, 0.45)
+
+# Linguette: icona disegnata (StockCategoryIcon) resa una volta in un SubViewport e usata come texture, come le icone
+# disegnate dell'Aiuto (HelpDialog._drawn_icon_texture).
+const TAB_ICON_SIDE: int = 18
+const TAB_ICON_RENDER_SIDE: int = 48
+
+# Barra di riempimento dei depositi: stesso stile della barra del carico di lavoro dell'Assegnazione
+# (TaskAssignmentPanel, WORKLOAD_*), riempimento di un solo colore: verde, rosso da FILL_RED_FROM_PERCENT.
+const FILL_BAR_HEIGHT: float = 16.0
+const FILL_BAR_MIN_WIDTH: float = 60.0
+const FILL_BAR_BG_COLOR := Color(0.08, 0.09, 0.11, 1.0)
+const FILL_BAR_BORDER_COLOR := Color(0.75, 0.85, 1.0, 0.45)
+const FILL_RED_FROM_PERCENT: int = 85
+const FILL_GREEN := Color(0.35, 0.75, 0.35, 1.0)
+const FILL_RED := Color(0.85, 0.25, 0.25, 1.0)
+
+# Ordine delle linguette, da sinistra a destra (2026-10-10, richiesta utente).
+const TAB_ORDER: Array[int] = [
+	SecondaryResourceTypes.Category.FOOD, SecondaryResourceTypes.Category.RAW_MATERIAL,
+	SecondaryResourceTypes.Category.SEMI_FINISHED, SecondaryResourceTypes.Category.TOOL,
+	SecondaryResourceTypes.Category.MEDICINAL,
+]
+
+# Livello minimo (2026-10-10, richiesta utente): campo − [numero] + a destra della quantità, passo 1,
+# scrivibile; 0 = nessun livello (trattino). Quantità sotto il livello: numero in rosso (vince sullo sbiadito delle risorse
+# a zero). Sul totale del cibo lo stesso campo in giorni di autonomia. Colonne di larghezza fissa, uguali su tutte le
+# righe: quantità e campo restano allineati, il nome si tronca. Valori della partita (GameData.stock_min_levels /
+# stock_min_food_days): arrivano da GameScene (set_min_levels, prima di _ready) e ogni cambio esce con min_level_changed /
+# min_food_days_changed. L'aggiornamento di ogni secondo tocca solo le quantità, mai i campi: niente testo né focus persi.
+# Dal 2026-10-11 (gestione scorte, primo passo) il livello dei materiali grezzi che si raccolgono, tagliano o estraggono
+# (StockRequestService.source_kind_for) fa nascere ordini nella coda dei lavori (GameScene._auto_request_stock), con il
+# suo tooltip (warehouse_min_level_auto_tooltip); per le altre risorse e per i giorni del cibo resta solo indicativo.
+signal min_level_changed(resource_name: String, level: int)
+signal min_food_days_changed(days: int)
+# Regole di stoccaggio (2026-10-11): riga "⚙ Regole di stoccaggio" in fondo al cassetto che apre e chiude le regole,
+# come "Regole di assegnazione" del cassetto delle task. Per ora una regola: destinazione di carne e pelli in eccesso negli
+# ordini di caccia del magazzino (GameData.stock_excess_meat_destination), con il pulsante delle destinazioni della caccia
+# (ButcherDestinationButton). Stato e opzioni li passa GameScene (set_excess_meat_destination), la scelta esce con
+# excess_meat_destination_changed. Aperta o chiusa resta per la sessione (_rules_open).
+signal excess_meat_destination_changed(destination: String)
+const QUANTITY_COLUMN_WIDTH: float = 46.0
+const LEVEL_BUTTON_WIDTH: float = 16.0
+const LEVEL_EDIT_WIDTH: float = 38.0
+const LEVEL_MAX: int = 99999
+const BELOW_LEVEL_COLOR := Color(0.95, 0.35, 0.3, 1.0)
+const LEVEL_NONE_TEXT := "—"
+
+# Ultima linguetta scelta (per tutta la sessione): all'apertura successiva il cassetto riparte da qui.
+static var _last_category: int = SecondaryResourceTypes.Category.FOOD
+static var _rules_open: bool = false
+
+var _rules_box: VBoxContainer = null
+var _excess_meat_button: ButcherDestinationButton = null
+# Ultimo stato ricevuto prima che il pulsante esistesse (set_excess_meat_destination prima di _ready).
+var _excess_meat_state: Array = []
+
+var _tab_bar: TabBar = null
+var _list_box: VBoxContainer = null
+# Categoria -> VBoxContainer con le sue righe (solo quella scelta è visibile).
+var _category_boxes: Dictionary = {}
+# Nome risorsa -> Label della quantità (aggiornata a ogni refresh_stock).
+var _quantity_labels: Dictionary = {}
+var _food_summary_label: Label = null
+# Livelli minimi (copia locale dei valori della partita) e ultimi dati ricevuti, per ricolorare subito a un cambio.
+var _min_levels: Dictionary = {}
+var _min_food_days: int = 0
+var _last_stock: Dictionary = {}
+var _last_days: float = -1.0
+var _food_days_label: Label = null
+# Elenco delle risorse mostrate all'ultima ricostruzione (per accorgersi di una risorsa appena scoperta).
+var _shown_names: Array[String] = []
+
+var _fill_row: HBoxContainer = null
+var _fill_bar: PanelContainer = null
+var _fill: ColorRect = null
+var _fill_empty: Control = null
+var _fill_percent: Label = null
+
+
+func _ready() -> void:
+	size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_build_tabs()
+	# Elenco che scorre in altezza dentro il cassetto, mai in larghezza (il cassetto resta di 380 px).
+	var scroll := ScrollContainer.new()
+	scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	add_child(scroll)
+	_list_box = VBoxContainer.new()
+	_list_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_list_box.add_theme_constant_override("separation", 3)
+	scroll.add_child(_list_box)
+	_build_rules_section()
+	_build_fill_bar()
+	_mount_fill_bar.call_deferred()
+
+
+# Dati del villaggio (GameScene, una volta al secondo a cassetto aperto): `stock` nome -> quantità
+# (VillageStockService.get_village_stock), `daily_calorie_need` = consumo giornaliero di tutti gli individui,
+# `storage_fill` = [spazio occupato, spazio totale] dei depositi (VillageStockService.get_storage_fill).
+func refresh_stock(stock: Dictionary, daily_calorie_need: float, storage_fill: Array = []) -> void:
+	if _list_box == null:
+		return
+	var names := _visible_resource_names()
+	if names != _shown_names:
+		_rebuild_rows(names)
+	_last_stock = stock
+	var calories := VillageStockService.get_food_calories(stock)
+	_last_days = -1.0 if daily_calorie_need <= 0.0 else calories / daily_calorie_need
+	if _food_summary_label != null:
+		_food_summary_label.text = tr("warehouse_food_total_label").format({"calories": roundi(calories)})
+	_apply_quantities()
+	if storage_fill.size() >= 2:
+		_set_fill(float(storage_fill[0]), float(storage_fill[1]))
+
+
+# Valori della partita (GameScene, prima di aggiungere il pannello al cassetto).
+func set_min_levels(levels: Dictionary, food_days: int) -> void:
+	_min_levels = levels.duplicate()
+	_min_food_days = maxi(food_days, 0)
+
+
+# Stato del pulsante della regola "Carne e pelli in eccesso" (stessi argomenti di ButcherDestinationButton.set_destination).
+func set_excess_meat_destination(is_shown: bool, current: Dictionary, options: Array[Dictionary]) -> void:
+	_excess_meat_state = [is_shown, current, options]
+	if _excess_meat_button != null:
+		_excess_meat_button.set_destination(is_shown, current, options)
+
+
+func _build_rules_section() -> void:
+	add_child(HSeparator.new())
+	var toggle := Button.new()
+	toggle.text = tr("warehouse_rules")
+	toggle.flat = true
+	toggle.toggle_mode = true
+	toggle.button_pressed = _rules_open
+	toggle.focus_mode = Control.FOCUS_NONE
+	toggle.alignment = HORIZONTAL_ALIGNMENT_LEFT
+	toggle.add_theme_font_size_override("font_size", SECTION_FONT_SIZE)
+	add_child(toggle)
+	_rules_box = VBoxContainer.new()
+	_rules_box.add_theme_constant_override("separation", 4)
+	_rules_box.visible = _rules_open
+	add_child(_rules_box)
+	toggle.toggled.connect(func(pressed: bool) -> void:
+		_rules_open = pressed
+		_rules_box.visible = pressed
+	)
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 6)
+	row.tooltip_text = tr("warehouse_rule_excess_meat_tooltip")
+	var label := Label.new()
+	label.text = tr("warehouse_rule_excess_meat")
+	label.tooltip_text = row.tooltip_text
+	label.mouse_filter = Control.MOUSE_FILTER_PASS
+	label.add_theme_font_size_override("font_size", LIST_FONT_SIZE)
+	label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	row.add_child(label)
+	_excess_meat_button = ButcherDestinationButton.new()
+	_excess_meat_button.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	_excess_meat_button.destination_chosen.connect(func(destination: String) -> void: excess_meat_destination_changed.emit(destination))
+	row.add_child(_excess_meat_button)
+	_rules_box.add_child(row)
+	if _excess_meat_state.size() == 3:
+		var options: Array[Dictionary] = []
+		options.assign(_excess_meat_state[2])
+		_excess_meat_button.set_destination(bool(_excess_meat_state[0]), _excess_meat_state[1], options)
+
+
+# Numeri e colori delle quantità e dei giorni di autonomia dagli ultimi dati ricevuti e dai livelli.
+func _apply_quantities() -> void:
+	for resource_name in _quantity_labels.keys():
+		var quantity: int = int(_last_stock.get(resource_name, 0))
+		var level: int = int(_min_levels.get(resource_name, 0))
+		var label: Label = _quantity_labels[resource_name]
+		label.text = str(quantity)
+		label.modulate = Color(1, 1, 1, 1)
+		if level > 0 and quantity < level:
+			label.modulate = BELOW_LEVEL_COLOR
+		elif quantity <= 0:
+			label.modulate = ZERO_QUANTITY_COLOR
+	if _food_days_label != null:
+		_food_days_label.text = tr("warehouse_food_days_infinite") if _last_days < 0.0 else "%.1f" % _last_days
+		var below := _min_food_days > 0 and _last_days >= 0.0 and _last_days < float(_min_food_days)
+		_food_days_label.modulate = BELOW_LEVEL_COLOR if below else Color(1, 1, 1, 1)
+
+
+# --- Campo del livello minimo: − [numero] + ---
+
+# `on_change(value)` alla conferma di un valore nuovo (bottoni, Invio o uscita dal campo).
+func _build_level_field(initial: int, on_change: Callable, tooltip_key: String = "warehouse_min_level_tooltip") -> Control:
+	var tooltip := tr(tooltip_key)
+	var field := HBoxContainer.new()
+	field.add_theme_constant_override("separation", 0)
+	field.tooltip_text = tooltip
+	field.mouse_filter = Control.MOUSE_FILTER_PASS
+	var edit := LineEdit.new()
+	var minus := _level_button("−", tooltip)
+	var plus := _level_button("+", tooltip)
+	edit.custom_minimum_size = Vector2(LEVEL_EDIT_WIDTH, 0.0)
+	edit.alignment = HORIZONTAL_ALIGNMENT_CENTER
+	edit.add_theme_font_size_override("font_size", LIST_FONT_SIZE)
+	edit.tooltip_text = tooltip
+	edit.context_menu_enabled = false
+	edit.set_meta("level", initial)
+	edit.text = _level_text(initial)
+	var commit := func(value: int) -> void:
+		var clamped := clampi(value, 0, LEVEL_MAX)
+		edit.text = _level_text(clamped)
+		if clamped == int(edit.get_meta("level")):
+			return
+		edit.set_meta("level", clamped)
+		on_change.call(clamped)
+	minus.pressed.connect(func() -> void: commit.call(int(edit.get_meta("level")) - 1))
+	plus.pressed.connect(func() -> void: commit.call(int(edit.get_meta("level")) + 1))
+	edit.focus_entered.connect(func() -> void:
+		if int(edit.get_meta("level")) <= 0:
+			edit.text = ""
+		edit.select_all.call_deferred()
+	)
+	edit.text_submitted.connect(func(text: String) -> void:
+		commit.call(int(text) if text.strip_edges().is_valid_int() else 0)
+		edit.release_focus()
+	)
+	edit.focus_exited.connect(func() -> void:
+		commit.call(int(edit.text) if edit.text.strip_edges().is_valid_int() else 0)
+	)
+	field.add_child(minus)
+	field.add_child(edit)
+	field.add_child(plus)
+	return field
+
+
+func _level_button(text: String, tooltip: String) -> Button:
+	var button := Button.new()
+	button.text = text
+	button.flat = true
+	button.focus_mode = Control.FOCUS_NONE
+	button.custom_minimum_size = Vector2(LEVEL_BUTTON_WIDTH, 0.0)
+	button.add_theme_font_size_override("font_size", LIST_FONT_SIZE)
+	button.tooltip_text = tooltip
+	return button
+
+
+func _level_text(level: int) -> String:
+	return LEVEL_NONE_TEXT if level <= 0 else str(level)
+
+
+func _on_resource_level_changed(resource_name: String, level: int) -> void:
+	if level > 0:
+		_min_levels[resource_name] = level
+	else:
+		_min_levels.erase(resource_name)
+	_apply_quantities()
+	min_level_changed.emit(resource_name, level)
+
+
+func _on_food_days_level_changed(days: int) -> void:
+	_min_food_days = days
+	_apply_quantities()
+	min_food_days_changed.emit(days)
+
+
+# Etichetta della colonna della quantità: larghezza fissa, allineata a destra.
+func _quantity_column_label() -> Label:
+	var label := Label.new()
+	label.add_theme_font_size_override("font_size", LIST_FONT_SIZE)
+	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	label.custom_minimum_size = Vector2(QUANTITY_COLUMN_WIDTH, 0.0)
+	label.clip_text = true
+	return label
+
+
+# --- Linguette per categoria ---
+
+func _build_tabs() -> void:
+	_tab_bar = TabBar.new()
+	_tab_bar.clip_tabs = false
+	_tab_bar.add_theme_constant_override("h_separation", 0)
+	add_child(_tab_bar)
+	for category in TAB_ORDER:
+		var tab_index := _tab_bar.tab_count
+		_tab_bar.add_tab("", _category_icon_texture(int(category)))
+		_tab_bar.set_tab_icon_max_width(tab_index, TAB_ICON_SIDE)
+		_tab_bar.set_tab_tooltip(tab_index, _category_name(int(category)))
+		_tab_bar.set_tab_metadata(tab_index, int(category))
+	_tab_bar.current_tab = clampi(_tab_index_of(_last_category), 0, _tab_bar.tab_count - 1)
+	_tab_bar.tab_changed.connect(func(tab: int) -> void:
+		_last_category = int(_tab_bar.get_tab_metadata(tab))
+		_show_selected_category()
+	)
+	# Le icone sono pronte solo dopo il fotogramma in cui i SubViewport le disegnano.
+	_redraw_tabs_after_render.call_deferred()
+
+
+func _tab_index_of(category: int) -> int:
+	for tab_index in range(_tab_bar.tab_count):
+		if int(_tab_bar.get_tab_metadata(tab_index)) == category:
+			return tab_index
+	return 0
+
+
+func _redraw_tabs_after_render() -> void:
+	await get_tree().process_frame
+	if is_instance_valid(_tab_bar):
+		_tab_bar.queue_redraw()
+
+
+func _category_icon_texture(category: int) -> Texture2D:
+	var viewport := SubViewport.new()
+	viewport.size = Vector2i(TAB_ICON_RENDER_SIDE, TAB_ICON_RENDER_SIDE)
+	viewport.transparent_bg = true
+	viewport.disable_3d = true
+	viewport.render_target_update_mode = SubViewport.UPDATE_ONCE
+	var icon := StockCategoryIcon.new()
+	icon.category = category
+	icon.position = Vector2.ZERO
+	icon.size = Vector2(TAB_ICON_RENDER_SIDE, TAB_ICON_RENDER_SIDE)
+	viewport.add_child(icon)
+	add_child(viewport)
+	return viewport.get_texture()
+
+
+func _category_name(category: int) -> String:
+	return tr("category_name_%s" % String(SecondaryResourceTypes.Category.keys()[category]).to_lower())
+
+
+func _show_selected_category() -> void:
+	for category in _category_boxes.keys():
+		(_category_boxes[category] as Control).visible = int(category) == _last_category
+
+
+# --- Elenco ---
+
+# Risorse da mostrare, nell'ordine dell'elenco del gioco: tutte tranne quelle non ancora scoperte.
+func _visible_resource_names() -> Array[String]:
+	var names: Array[String] = []
+	for resource_name in CaloricCalculator.list_secondary_resource_names():
+		if not TerrainScatteredResourceService.is_resource_locked(resource_name):
+			names.append(resource_name)
+	return names
+
+
+func _rebuild_rows(names: Array[String]) -> void:
+	for child in _list_box.get_children():
+		_list_box.remove_child(child)
+		child.queue_free()
+	_category_boxes.clear()
+	_quantity_labels.clear()
+	_food_summary_label = null
+	_food_days_label = null
+	_shown_names = names.duplicate()
+	for category in SecondaryResourceTypes.Category.values():
+		var box := VBoxContainer.new()
+		box.add_theme_constant_override("separation", 3)
+		_list_box.add_child(box)
+		_category_boxes[int(category)] = box
+		if category == SecondaryResourceTypes.Category.FOOD:
+			# Riga del totale: testo (calorie), giorni di autonomia nella colonna della quantità, livello in giorni.
+			var food_row := HBoxContainer.new()
+			food_row.add_theme_constant_override("separation", 6)
+			_food_summary_label = Label.new()
+			_food_summary_label.add_theme_font_size_override("font_size", LIST_FONT_SIZE)
+			_food_summary_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+			_food_summary_label.custom_minimum_size.x = 0.0
+			_food_summary_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			_food_summary_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+			food_row.add_child(_food_summary_label)
+			_food_days_label = _quantity_column_label()
+			food_row.add_child(_food_days_label)
+			food_row.add_child(_build_level_field(_min_food_days, _on_food_days_level_changed))
+			box.add_child(food_row)
+			box.add_child(HSeparator.new())
+		for resource_name in names:
+			var rules := CaloricCalculator.get_caloric_source_rules(resource_name)
+			if rules != null and rules.category == category:
+				box.add_child(_build_row(resource_name))
+	_show_selected_category()
+	_apply_quantities()
+
+
+func _build_row(resource_name: String) -> Control:
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 6)
+	row.add_child(_build_resource_chip(resource_name))
+	var name_label := Label.new()
+	name_label.text = IconRegistry.get_resource_display_name(resource_name)
+	name_label.add_theme_font_size_override("font_size", LIST_FONT_SIZE)
+	name_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	name_label.clip_text = true
+	name_label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	name_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	row.add_child(name_label)
+	var quantity_label := _quantity_column_label()
+	row.add_child(quantity_label)
+	_quantity_labels[resource_name] = quantity_label
+	var tooltip_key := "warehouse_min_level_auto_tooltip" if StockRequestService.source_kind_for(resource_name) != "" else "warehouse_min_level_tooltip"
+	var on_change := func(level: int) -> void: _on_resource_level_changed(resource_name, level)
+	row.add_child(_build_level_field(int(_min_levels.get(resource_name, 0)), on_change, tooltip_key))
+	return row
+
+
+# Icona della risorsa sul suo colore, come le righe del cassetto dell'Assegnazione (TaskAssignmentPanel._build_entry_icon,
+# ramo "resource"); senza icona disegnata l'emoji o l'iniziale.
+func _build_resource_chip(resource_name: String) -> Control:
+	var chip := ColorRect.new()
+	chip.color = IconRegistry.get_resource_color(resource_name)
+	chip.custom_minimum_size = Vector2(LIST_ICON_SIDE, LIST_ICON_SIDE)
+	chip.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	chip.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var resource_icon: Control = IconRegistry.get_resource_icon_node(resource_name)
+	if resource_icon == null:
+		var initial := Label.new()
+		var emoji := IconRegistry.get_resource_icon(resource_name)
+		initial.text = emoji if emoji != "" else resource_name.substr(0, 1).to_upper()
+		initial.add_theme_font_size_override("font_size", LIST_FONT_SIZE)
+		initial.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		initial.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		resource_icon = initial
+	resource_icon.set_anchors_preset(Control.PRESET_FULL_RECT)
+	resource_icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	chip.add_child(resource_icon)
+	return chip
+
+
+# --- Barra di riempimento dei depositi (accanto al titolo del cassetto) ---
+
+func _build_fill_bar() -> void:
+	_fill_row = HBoxContainer.new()
+	_fill_row.add_theme_constant_override("separation", 6)
+	_fill_row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_fill_bar = PanelContainer.new()
+	_fill_bar.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_fill_bar.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	_fill_bar.custom_minimum_size = Vector2(FILL_BAR_MIN_WIDTH, FILL_BAR_HEIGHT)
+	_fill_bar.mouse_filter = Control.MOUSE_FILTER_STOP
+	_fill_bar.clip_contents = true
+	var style := StyleBoxFlat.new()
+	style.bg_color = FILL_BAR_BG_COLOR
+	style.border_color = FILL_BAR_BORDER_COLOR
+	style.set_border_width_all(1)
+	style.set_corner_radius_all(3)
+	style.content_margin_left = 1
+	style.content_margin_right = 1
+	style.content_margin_top = 1
+	style.content_margin_bottom = 1
+	_fill_bar.add_theme_stylebox_override("panel", style)
+	_fill_row.add_child(_fill_bar)
+	# Riempimento e parte vuota divisi in proporzione alla percentuale (stretch ratio), come il carico di lavoro.
+	var fill_box := HBoxContainer.new()
+	fill_box.add_theme_constant_override("separation", 0)
+	fill_box.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_fill_bar.add_child(fill_box)
+	_fill = ColorRect.new()
+	_fill.color = FILL_GREEN
+	_fill.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_fill.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_fill.visible = false
+	fill_box.add_child(_fill)
+	_fill_empty = Control.new()
+	_fill_empty.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_fill_empty.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	fill_box.add_child(_fill_empty)
+	_fill_percent = Label.new()
+	_fill_percent.add_theme_font_size_override("font_size", SECTION_FONT_SIZE)
+	_fill_percent.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	_fill_percent.mouse_filter = Control.MOUSE_FILTER_STOP
+	_fill_row.add_child(_fill_percent)
+	_set_fill(0.0, 0.0)
+
+
+# La barra va nella riga del titolo del cassetto che contiene questo pannello (SideDrawer.set_header_extra), che la
+# libera insieme al contenuto.
+func _mount_fill_bar() -> void:
+	var node := get_parent()
+	while node != null and not (node is SideDrawer):
+		node = node.get_parent()
+	if node != null and _fill_row != null:
+		(node as SideDrawer).set_header_extra(_fill_row)
+
+
+func _set_fill(used: float, capacity: float) -> void:
+	if _fill_bar == null:
+		return
+	var percent: int = clampi(roundi(100.0 * used / capacity), 0, 100) if capacity > 0.0 else 0
+	_fill_percent.text = "%d%%" % percent
+	var tooltip := tr("warehouse_storage_fill_tooltip").format({"used": roundi(used), "capacity": roundi(capacity)})
+	_fill_bar.tooltip_text = tooltip
+	_fill_percent.tooltip_text = tooltip
+	_fill.visible = percent > 0
+	_fill_empty.visible = percent < 100
+	_fill.size_flags_stretch_ratio = maxf(float(percent), 0.001)
+	_fill_empty.size_flags_stretch_ratio = maxf(float(100 - percent), 0.001)
+	_fill.color = FILL_RED if percent >= FILL_RED_FROM_PERCENT else FILL_GREEN

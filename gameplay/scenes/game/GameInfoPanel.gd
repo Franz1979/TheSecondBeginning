@@ -79,12 +79,16 @@ extends PanelContainer
 # La riga in alto è allineata in colonna alle linguette delle schede (align_governance_bar_to_tabs): il primo posto,
 # sopra la scheda degli abitanti, resta vuoto; Idee sopra la seconda scheda, Assegnazione sopra la terza, i posti
 # successivi sopra le schede seguenti.
-# Slot 0 di primary_actions_bar: albero delle idee (GameScene._refresh_tech_tree_button lo abilita/disabilita, regola di
-# sempre: resta visibile).
-const TECH_TREE_SLOT_INDEX := 0
-# Slot 1 di primary_actions_bar: Assegnazione delle task (cassetto SideDrawer con TaskAssignmentPanel), spento finché
+# Ordine della riga (2026-10-10, richiesta utente): Assegnazione, Scorte, Idee, da sinistra a destra.
+# Slot 0 di primary_actions_bar: Assegnazione delle task (cassetto SideDrawer con TaskAssignmentPanel), spento finché
 # l'idea TaskAssignmentPanel.REQUIRED_IDEA_ID non è completata (GameScene._refresh_task_assignment_button).
-const TASK_ASSIGNMENT_SLOT_INDEX := 1
+const TASK_ASSIGNMENT_SLOT_INDEX := 0
+# Slot 1: Gestione scorte (2026-10-10, cassetto SideDrawer con WarehousePanel): come l'Assegnazione, sempre visibile e
+# spento con "Serve l'idea «…»" finché l'idea WarehousePanel.REQUIRED_IDEA_ID non è completata
+# (GameScene._refresh_warehouse_button); dipende solo dall'idea.
+const WAREHOUSE_SLOT_INDEX := 1
+# Slot 2: albero delle idee (GameScene._refresh_tech_tree_button lo abilita/disabilita, regola di sempre: resta visibile).
+const TECH_TREE_SLOT_INDEX := 2
 # Slot della barra in basso.
 const STATISTICS_SLOT_INDEX := 0
 # Bottone "Layer" (2026-09-27, richiesta utente — menu dei layer della mappa): dal 2026-10-07 nella barra in basso.
@@ -119,8 +123,10 @@ func _ready() -> void:
 	# in .tscn) restano liberi e nascosti per i bottoni futuri.
 	primary_actions_bar.configure_slot(TECH_TREE_SLOT_INDEX, "💡", tr("tech_tree_tooltip"), &"tech_tree")
 	primary_actions_bar.configure_slot(TASK_ASSIGNMENT_SLOT_INDEX, "📋", tr("task_assignment_tooltip"), &"task_assignment")
+	# Gestione scorte (2026-10-10): icona disegnata (WarehouseIcon), visibile e spenta finché l'idea non è completata.
+	primary_actions_bar.configure_slot(WAREHOUSE_SLOT_INDEX, "", tr("warehouse_tooltip"), &"warehouse", "", true, WarehouseIcon.new())
 	for slot_index in range(primary_actions_bar.slot_count):
-		if slot_index != TECH_TREE_SLOT_INDEX and slot_index != TASK_ASSIGNMENT_SLOT_INDEX:
+		if slot_index != TECH_TREE_SLOT_INDEX and slot_index != TASK_ASSIGNMENT_SLOT_INDEX and slot_index != WAREHOUSE_SLOT_INDEX:
 			primary_actions_bar.set_slot_visible(slot_index, false)
 	refresh_governance_bar()
 
@@ -173,3 +179,5 @@ func refresh_governance_bar() -> void:
 	primary_actions_bar.visible = any_visible
 	if _governance_separator != null:
 		_governance_separator.visible = any_visible
+	# Uno slot comparso o nascosto (2026-10-10, Scorte): le colonne si riallineano sui soli slot visibili.
+	_align_governance_bar()
