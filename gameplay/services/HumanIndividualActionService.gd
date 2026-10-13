@@ -1927,8 +1927,8 @@ static func get_restock_pouch_calorie_cap(individual: HumanIndividual) -> float:
 	if individual == null or game_data == null:
 		return INF
 	var human_rules: HumanRules = null
-	if individual.source_group_ref != null and individual.source_group_ref.folk_ref != null:
-		human_rules = individual.source_group_ref.folk_ref.human_rules_ref
+	if individual.folk_ref != null:
+		human_rules = individual.folk_ref.human_rules_ref
 	if human_rules == null:
 		return INF
 	var age_band := HumanCalculator.get_age_band(
@@ -1945,13 +1945,13 @@ static func get_restock_pouch_calorie_cap(individual: HumanIndividual) -> float:
 
 
 # Priorita' del bisogno di provviste per `individual` risolvendo regole ed era da soli (2026-09-19):
-# HumanRules dalla catena source_group_ref -> folk_ref -> human_rules_ref, EraRules da
+# HumanRules dalla catena folk_ref -> human_rules_ref, EraRules da
 # GameSettings.active_game_data (resolve_idle_individual e' statica e non riceve game_data). Usa
 # _resolve_active_food_need_priority (20 o -1). Regole non risolvibili -> -1.
 static func _active_food_need_priority(individual: HumanIndividual, age_band: HumanTypes.AgeBand) -> int:
 	var human_rules: HumanRules = null
-	if individual.source_group_ref != null and individual.source_group_ref.folk_ref != null:
-		human_rules = individual.source_group_ref.folk_ref.human_rules_ref
+	if individual.folk_ref != null:
+		human_rules = individual.folk_ref.human_rules_ref
 	var era_rules: EraRules = null
 	if GameSettings.active_game_data != null:
 		era_rules = EraCalculator.get_era_rules(GameSettings.active_game_data.current_era_name)

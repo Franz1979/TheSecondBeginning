@@ -43,8 +43,14 @@ func _draw() -> void:
 
 static func draw_into(canvas: CanvasItem, origin: Vector2, area: Vector2) -> void:
 	var rect := ApparelIcon.fit_aspect(origin, area, 1.0)
+	if ApparelIcon.is_small(rect):
+		rect = ApparelIcon.shrink(rect, ApparelIcon.SMALL_HEADWEAR_SCALE)
 	var unit: float = rect.size.x / DESIGN_SIZE.x
 	var outline := ApparelIcon.quad_outline(OUTLINE_START, OUTLINE_SEGMENTS, DESIGN_SIZE, rect)
+	# Piccola (magazzini, mucchi): sagoma e contorno netto (ApparelIcon.is_small).
+	if ApparelIcon.is_small(rect):
+		ApparelIcon.draw_silhouette(canvas, outline, FUR_COLOR, OUTLINE_COLOR)
+		return
 	canvas.draw_colored_polygon(outline, FUR_COLOR)
 	ApparelIcon.draw_strokes(canvas, DARK_TUFTS, DESIGN_SIZE, rect, DARK_TUFT_COLOR, maxf(2.0 * unit, 1.0))
 	var closed := outline.duplicate()

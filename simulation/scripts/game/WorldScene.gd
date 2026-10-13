@@ -27,7 +27,6 @@ var fog_of_war_memories: Dictionary = {}
 # di nuovo su disco se si salva da qui). null/null/[] finché resta una partita nuova mai passata
 # da GameScene — stesso default "mai valorizzato" del resto.
 var human_folk: Folk = null
-var human_population_group: HumanPopulationGroup = null
 var human_individuals: Array[HumanIndividual] = []
 var renderer: WorldRenderer
 var game_controller: CellSelectorController
@@ -119,7 +118,6 @@ func _ready() -> void:
 		game_data = GameSettings.active_game_data
 		fog_of_war_memories = GameSettings.active_fog_of_war_memories
 		human_folk = GameSettings.active_human_folk
-		human_population_group = GameSettings.active_human_population_group
 		human_individuals = GameSettings.active_human_individuals
 	else:
 		is_new_game = _load_world()
@@ -128,7 +126,7 @@ func _ready() -> void:
 	# ESISTENTE appena caricato con successo (vedi _loaded_existing_save sopra): in entrambi i
 	# casi il player deve aprire subito GameScene, non piu' WorldScene — per un salvataggio
 	# esistente, GameData.player_macro_cell_x/y e il popolo umano persistito (human_folk/
-	# human_population_group/human_individuals, propagato sotto) sono gia' valorizzati da
+	# human_individuals, propagato sotto) sono gia' valorizzati da
 	# GameLoadService, quindi GameScene riprende esattamente da dove il player aveva lasciato la
 	# partita invece di sceglierne una nuova. Un caricamento FALLITO (fallback su mondo vuoto,
 	# _loaded_existing_save resta false in quel ramo) continua invece a mostrare WorldScene come
@@ -181,7 +179,6 @@ func _load_world() -> bool:
 		game_data = loaded_game.game_data
 		fog_of_war_memories = loaded_game.fog_of_war_memories
 		human_folk = loaded_game.human_folk
-		human_population_group = loaded_game.human_population_group
 		human_individuals = loaded_game.human_individuals
 		_loaded_existing_save = true
 		return false
@@ -227,6 +224,7 @@ func _populate_new_world(target_world: World) -> void:
 	game_data.starting_exclude_predator_territories = GameSettings.selected_exclude_predator_territories
 	game_data.starting_resource_richness_preference = GameSettings.selected_resource_richness_preference
 	game_data.starting_group_size_preference = GameSettings.selected_group_size_preference
+	game_data.starting_folk_name = GameSettings.selected_folk_name
 	game_data.starting_guarantee_animal_presence = GameSettings.selected_guarantee_animal_presence
 	game_data.starting_guarantee_stone_presence = GameSettings.selected_guarantee_stone_presence
 	game_data.starting_difficulty_ratio = DifficultyCalculator.compute_difficulty_ratio(
@@ -310,7 +308,6 @@ func _redirect_to_game_scene() -> void:
 	# questo ramo, GameScene semina fresco), il contenuto di un salvataggio appena caricato
 	# altrimenti.
 	GameSettings.active_human_folk = human_folk
-	GameSettings.active_human_population_group = human_population_group
 	GameSettings.active_human_individuals = human_individuals
 	GameSettings.active_clock_is_playing = false
 	GameSettings.active_clock_speed = GameClockController.Speed.X1
@@ -390,7 +387,6 @@ func _on_save_game_file_selected(path: String) -> void:
 		path,
 		fog_of_war_memories,
 		human_folk,
-		human_population_group,
 		human_individuals
 	)
 
@@ -412,7 +408,6 @@ func _on_game_view_pressed() -> void:
 	GameSettings.active_game_data = game_data
 	GameSettings.active_fog_of_war_memories = fog_of_war_memories
 	GameSettings.active_human_folk = human_folk
-	GameSettings.active_human_population_group = human_population_group
 	GameSettings.active_human_individuals = human_individuals
 	GameSettings.returning_to_player_view = true
 	if clock != null:

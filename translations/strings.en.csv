@@ -74,7 +74,7 @@ unlock_kind_idea,You can now research
 unlock_kind_building,Unlocks buildings
 unlock_kind_resource,Unlocks resources
 unlock_kind_tool,New features
-unlock_next_ideas,Next idea to research
+unlock_next_ideas,Suggested idea
 unlock_tool_work_areas,Food gathering areas
 unlock_tool_work_areas_advanced,Work areas for all resources
 unlock_tool_task_assignment,Task assignment
@@ -257,7 +257,8 @@ skill_cognition_label,Cognition
 skill_hunting_label,Hunting
 skill_crafting_label,Crafting
 skill_ritual_label,Ritual
-individual_id_label,"ID: {id} (Folk {folk}, Group {group})"
+individual_id_label,Folk: {folk} · Village: {village}
+individual_village_none,none
 individual_mother_id_label,Mother ID: {id}
 individual_father_id_label,Father ID: {id}
 individual_partner_id_label,Partner ID: {id}
@@ -602,6 +603,7 @@ carried_resource_tooltip_stick,Sticks
 discovery_popup_title,Discovery
 options_show_discovery_hints,Show discovery explanations
 discovery_first_thought_building_title,The village center
+discovery_first_thought_building_village,"Your people have gathered around the Pebble circle: your first village is born."
 discovery_first_thought_building_p1,"Your people bring their thoughts here: as they accumulate, the village develops new ideas."
 discovery_first_thought_building_p2,"Pick which idea to research from the idea tree: each completed idea unlocks buildings, resources or new features."
 discovery_first_thought_building_gift_title,The village's first idea: {idea}
@@ -1177,3 +1179,14 @@ apparel_storage_dialog_title,Fetch an item to wear
 apparel_storage_dialog_message,Choose the item to fetch from the nearest storage and wear:
 pending_reason_naked,No clothes
 apparel_children_tooltip,Hand-me-downs: children do not use the village clothing
+folk_name_label,Your people
+folk_name_placeholder,Leave empty for a random name
+folk_name_random_tooltip,Random name
+notification_village_founded,"A settlement has formed around {building}: {village}"
+notification_village_center_restored,{village} has a center again
+notification_village_center_lost,{village} has lost its center
+pending_village_without_center,{village}: no center
+pending_village_without_center_detail,Build a new Pebble circle to restore it.
+statistics_scope_label,Show:
+statistics_scope_folk,{folk} (whole people)
+statistics_tab_influence,Influence

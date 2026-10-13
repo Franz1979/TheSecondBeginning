@@ -417,15 +417,18 @@ func set_type_info(rows: Array[Dictionary]) -> void:
 
 # Identità, parentela e casa già risolte da GameScene (2026-10-04, richiesta utente — il pannello resta muto: non
 # conosce gli altri individui, i defunti né gli edifici). `details`:
-#   "id", "folk", "group": int (-1 = non applicabile);
+#   "id": int; "folk", "village": String — nomi mostrati ("" = nessun villaggio);
 #   "mother", "father", "partner": {"id": int, "name": String, "dead": bool} ("id" -1 = non noto);
 #   "partner_unknown_female": bool — quale forma di "sconosciuto" usare per il partner;
 #   "children": Array di {"id", "name", "dead", "age": int} già ordinato dal più grande ("age" -1 = non nota);
 #   "house": {"id": int, "name": String} o {} senza casa.
 # Stesse righe nel blocco Info e nel tooltip dell'icona ℹ; la casa solo nell'icona 🏠.
 func set_identity_details(details: Dictionary) -> void:
+	# Nomi di popolo e villaggio (2026-10-12, richiesta utente), non più gli id; villaggio vuoto = "nessuno".
+	var village_name := String(details.get("village", ""))
 	var id_text: String = tr("individual_id_label").format({
-		"id": int(details.get("id", -1)), "folk": _format_id(int(details.get("folk", -1))), "group": _format_id(int(details.get("group", -1)))
+		"folk": String(details.get("folk", "")),
+		"village": village_name if village_name != "" else tr("individual_village_none"),
 	})
 	var mother_text: String = tr("individual_mother_label").format({"person": _format_relative(details.get("mother", {}), true)})
 	var father_text: String = tr("individual_father_label").format({"person": _format_relative(details.get("father", {}), false)})
@@ -476,7 +479,7 @@ func _format_children(children: Array) -> String:
 
 
 # Prende l'HumanIndividual intero (non piu' i soli name/sex, richiesta utente 2026-09-02: servono
-# anche id/mother_id/father_id/partner_id/source_group_ref, tutti gia' sull'oggetto). age/age_band
+# anche id/mother_id/father_id/partner_id/folk_ref, tutti gia' sull'oggetto). age/age_band
 # NON sono più parametri di questa funzione (rimossi 2026-09-13, richiesta utente): restano
 # calcolati dal chiamante (richiedono current_year/HumanRules, che questo pannello non conosce),
 # ma solo per comporre l'header di GameInfoTabs (vedi GameScene._update_individual_panel_content),
@@ -717,13 +720,6 @@ func clear() -> void:
 		apparel_figure.update_from(null)
 	if header_buttons_box != null:
 		header_buttons_box.visible = false
-
-
-# Sentinella -1 (genitore/gruppo/partner sconosciuto o non applicabile, vedi HumanIndividual) resa
-# come "—" invece del numero grezzo — poco leggibile per chi guarda il pannello, "-1" sembra un
-# errore piu' che un "non applicabile".
-func _format_id(value: int) -> String:
-	return "—" if value < 0 else str(value)
 
 
 # Dimensioni/spaziatura NATURALI degli slot della cintura (2026-09-08, richiesta utente) — usate come punto

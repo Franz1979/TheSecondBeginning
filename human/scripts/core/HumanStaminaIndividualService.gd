@@ -27,7 +27,7 @@ extends RefCounted
 # _run_annual_human_births) — serve solo per il ramo "figlio a carico" di HumanCalculator.
 # get_max_stamina.
 #
-# Fallback HumanIndividual.FALLBACK_MAX_STAMINA quando la catena source_group_ref->folk_ref->
+# Fallback HumanIndividual.FALLBACK_MAX_STAMINA quando la catena folk_ref->
 # human_rules_ref non è risolvibile — stesso criterio già usato da
 # HumanIndividual._resolve_initial_max_stamina alla creazione (mai un secondo fallback diverso).
 #
@@ -35,7 +35,7 @@ extends RefCounted
 # max_stamina scende sotto l'attuale current_stamina, quest'ultima viene tagliata al nuovo tetto;
 # MAI il contrario (un max_stamina che sale non "rabbocca" mai current_stamina, che resta quella
 # che era). Copre sia il caso odierno (fallback 5000.0 corretto al primo ricalcolo reale, appena
-# la catena source_group_ref diventa risolvibile) sia casi futuri in cui max_stamina scenda per
+# la catena folk_ref diventa risolvibile) sia casi futuri in cui max_stamina scenda per
 # altri motivi (gravidanza, quando arriverà un vero consumo). Verificato che nessun altro punto del
 # codebase scrive/clampa current_stamina — solo HumanIndividual._init() (assegnazione iniziale) e
 # HumanIndividualActionService.apply_action (drain/recharge, deliberatamente SENZA clamp, task
@@ -43,8 +43,8 @@ extends RefCounted
 static func recalculate_max_stamina(individual: HumanIndividual, game_data: GameData, era_rules: EraRules, world: World = null) -> void:
 	var human_rules: HumanRules = null
 	var changed_to_band: int = -1
-	if individual.source_group_ref != null and individual.source_group_ref.folk_ref != null:
-		human_rules = individual.source_group_ref.folk_ref.human_rules_ref
+	if individual.folk_ref != null:
+		human_rules = individual.folk_ref.human_rules_ref
 	var max_before: float = individual.max_stamina
 	if human_rules == null:
 		individual.max_stamina = HumanIndividual.FALLBACK_MAX_STAMINA

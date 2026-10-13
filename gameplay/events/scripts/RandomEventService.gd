@@ -280,14 +280,14 @@ static func _get_event_probability_data(rules: RandomEventRules, context: Random
 	return {"multiplier": multiplier, "params": event.get_schedule_params()}
 
 
-# Punto di applicazione dei moltiplicatori futuri della probabilità (2026-09-27, richiesta utente): benessere,
-# cultura, attrattiva del villaggio. Oggi tutti inattivi (1.0): quando arriveranno, ciascuno sarà un fattore
-# qui, eventualmente pesato per evento da nuovi campi di RandomEventRules.
-static func _get_probability_multiplier(_rules: RandomEventRules, _context: RandomEventContext) -> float:
-	var wellbeing_multiplier := 1.0
-	var culture_multiplier := 1.0
-	var attractiveness_multiplier := 1.0
-	return wellbeing_multiplier * culture_multiplier * attractiveness_multiplier
+# Moltiplicatore del villaggio (benessere × cultura × attrattiva): calcolato tutto da VillageAttractivenessService
+# (2026-10-13), qui solo la scelta del villaggio, quello del centro. 1.0 senza popolo o senza villaggio.
+static func _get_probability_multiplier(rules: RandomEventRules, context: RandomEventContext) -> float:
+	if context == null or context.human_folk == null:
+		return 1.0
+	var center := VisitorService.find_village_center(context.world)
+	var village := VillageService.find_village_by_center(context.human_folk, center.id if center != null else -1)
+	return VillageAttractivenessService.get_probability_multiplier(village, rules)
 
 
 # Vincoli del sorteggio automatico (RandomEventRules gruppo Constraints): "" se l'evento è idoneo, altrimenti il

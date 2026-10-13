@@ -6,7 +6,7 @@
 script = ExtResource("1_rules")
 id = "first_thought_building"
 title_key = "discovery_first_thought_building_title"
-paragraph_keys = Array[String](["discovery_first_thought_building_p1", "discovery_first_thought_building_p2"])
+paragraph_keys = Array[String](["discovery_first_thought_building_village", "discovery_first_thought_building_p1", "discovery_first_thought_building_p2"])
 trigger_type = 1
 close_action = 1
 grant_idea_id = "work_areas"

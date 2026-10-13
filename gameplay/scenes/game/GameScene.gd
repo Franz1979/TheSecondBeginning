@@ -292,7 +292,6 @@ const TRANSPORT_TASK_DEFINITION_PATH := "res://gameplay/scripts/tasks/definition
 # TaskReassignmentService al momento del click destro, identico sia alla primissima assegnazione
 # sia a una riassegnazione dopo interruzione (vedi quella funzione sotto).
 var human_folk: Folk
-var human_population_group: HumanPopulationGroup
 var human_individuals: Array[HumanIndividual] = []
 # Segnaposto delle armi scagliate a terra in attesa di recupero (2026-09-26): id del cacciatore ->
 # DroppedWeaponMarker. Allineato ogni frame da _sync_dropped_weapon_markers.
@@ -957,7 +956,7 @@ func _ready() -> void:
 					macro_world, chosen, AnimalSeedingService.population_size_from_string(game_data.starting_population_size)
 				)
 
-	# Semina Folk + HumanPopulationGroup + HumanIndividual (coppie fondatrici + figli) — vedi
+	# Semina Folk + HumanIndividual (coppie fondatrici + figli) — vedi
 	# HumanSeedingService per l'algoritmo di composizione/eta'/nomi — OPPURE ricostruisce un popolo
 	# già persistito (richiesta utente, 2026-09-02): GameSettings.active_human_individuals non
 	# vuoto significa che esiste già un popolo, sia perché si ritorna da un giro debug verso
@@ -988,7 +987,6 @@ func _ready() -> void:
 		# verità in nessun punto di ingresso.
 		game_data.set_current_era(game_data.current_era_name, human_rules)
 		human_folk = GameSettings.active_human_folk
-		human_population_group = GameSettings.active_human_population_group
 		human_individuals = GameSettings.active_human_individuals
 		# human_rules_ref (Resource) non è mai serializzato/propagato dentro il popolo stesso —
 		# path fisso di competenza di GameScene, vedi sopra — va ri-assegnato qui ad ogni
@@ -1031,18 +1029,17 @@ func _ready() -> void:
 		# l'Era di partenza della partita.
 		game_data.set_current_era(game_data.current_era_name, human_rules)
 		var seeding_result := HumanSeedingService.new().seed_player_start(
-			start_macro_coords, game_data.starting_group_size_preference, human_rules, "Player Folk", game_data.year,
+			start_macro_coords, game_data.starting_group_size_preference, human_rules,
+			game_data.starting_folk_name if game_data.starting_folk_name != "" else Folk.pick_random_name(), game_data.year,
 			game_data.era_effective_age_band_durations_male, game_data.era_effective_age_band_durations_female, game_data
 		)
 		human_folk = seeding_result.folk
-		human_population_group = seeding_result.group
 		human_individuals = seeding_result.individuals
 		# Pubblicati subito anche in GameSettings (2026-10-01): i servizi statici li leggono da lì
 		# (HaulZoneService.is_food_only_limit_active, TerrainScatteredResourceService.is_resource_locked,
 		# HaulZoneService con active_human_individuals). Prima restavano null/[] per tutta la prima sessione di una
 		# partita nuova, fino al primo cambio scena: stessi oggetti, nessuna copia.
 		GameSettings.active_human_folk = human_folk
-		GameSettings.active_human_population_group = human_population_group
 		GameSettings.active_human_individuals = human_individuals
 		# Tutto il gruppo nasce nella stessa macrocella (vedi HumanIndividual.home_macro_coords) —
 		# valorizzato qui, prima di qualunque view (vedi sotto, dopo l'attivazione della cella
@@ -1072,6 +1069,10 @@ func _ready() -> void:
 		# stesso motivo (_on_year_rolled_over non gira mai per l'anno 0, che non "rotola").
 		game_data.building_snapshots[0] = 0
 
+	# Villaggi (2026-10-12): centri completi senza villaggio collegati in silenzio — partite salvate prima dei villaggi
+	# e, in futuro, partite che iniziano con un centro già costruito. Idempotente, nessun avviso.
+	VillageService.sync_with_existing_centers(human_folk, macro_world, human_individuals)
+
 	# Bugfix (richiesta utente, 2026-09-07): current_stamina/max_stamina di OGNI individuo restavano
 	# al fallback HumanIndividual.FALLBACK_MAX_STAMINA (5000.0 — coincide col default di HumanRules.
 	# base_max_stamina, quindi per un FERTILE_ADULT maschio il numero sembra "giusto per caso": il
@@ -1079,20 +1080,20 @@ func _ready() -> void:
 	# mostrava il max_stamina corretto — vedi _update_individual_panel_content, che lo ricalcola
 	# sempre al volo, MAI dal campo) fino al primo ricalcolo giornaliero (HumanStaminaIndividualService,
 	# agganciato a GameTimeService._on_day_advanced). Causa: HumanIndividual._init() (che chiama
-	# _resolve_initial_max_stamina) gira SEMPRE prima che source_group_ref sia assegnato — sia in
+	# _resolve_initial_max_stamina) gira SEMPRE prima che folk_ref sia assegnato — sia in
 	# HumanSeedingService (nuova partita) sia in GameLoadService (caricamento salvataggio), per
 	# costruzione (l'oggetto va creato prima di poter puntare al gruppo che lo contiene) — quindi la
-	# catena source_group_ref->folk_ref->human_rules_ref non è mai risolvibile a quel punto, e
+	# catena folk_ref->human_rules_ref non è mai risolvibile a quel punto, e
 	# individual.max_stamina/current_stamina restano al fallback fino a quando non passa un giorno
 	# di gioco intero. Corretto qui in UN SOLO passaggio, sulla STESSA funzione già usata dal
 	# ricalcolo giornaliero (nessuna logica duplicata): a questo punto human_individuals è già
-	# finalizzato ED ha già source_group_ref valorizzato in ENTRAMBI i rami sopra (seeding nuovo o
+	# finalizzato ED ha già folk_ref valorizzato in ENTRAMBI i rami sopra (seeding nuovo o
 	# ripristino/caricamento), quindi copre entrambi i casi in un colpo solo, subito all'ingresso in
 	# scena invece che al primo avanzamento giorno.
 	var era_rules := EraCalculator.get_era_rules(game_data.current_era_name)
 	for member in human_individuals:
 		HumanStaminaIndividualService.recalculate_max_stamina(member, game_data, era_rules)
-		# Stesso identico bug/fix di max_stamina sopra, stessa causa (source_group_ref non ancora
+		# Stesso identico bug/fix di max_stamina sopra, stessa causa (folk_ref non ancora
 		# assegnato quando HumanIndividual._init() chiama _resolve_initial_max_carry_capacity) —
 		# richiesta utente 2026-09-08, riscontrato dopo l'introduzione della capacità di trasporto:
 		# la barra "Capacità di trasporto" restava al fallback (30.0, HumanIndividual.
@@ -3455,7 +3456,13 @@ func _refresh_building_panel() -> void:
 	# Titolo (Step 6, richiesta utente 2026-09-04) — stessa formula già in BuildingInfoPanel. Dal 2026-09-27 (richiesta
 	# utente, riorganizzazione del pannello edificio) sulla riga del titolo c'è anche l'ID, prima in fondo al pannello.
 	var type_name: String = tr(building.rules.building_name) if building.rules != null else building.building_type_name
-	game_info_tabs.set_selection_title(tr("building_selection_title").format({"type": type_name, "id": building.id}))
+	var title := tr("building_selection_title").format({"type": type_name, "id": building.id})
+	# Seconda riga del titolo (2026-10-12, passo 3 Folk/Village): solo il nome del villaggio, niente se non ne ha.
+	var village: Village = human_folk.find_village(building.village_id) if human_folk != null else null
+	if village != null:
+		title += "
+" + village.get_display_name()
+	game_info_tabs.set_selection_title(title)
 
 
 # Dati di presentazione per la griglia residenti del pannello edificio (2026-09-12, richiesta
@@ -8125,6 +8132,25 @@ func _collect_rubble_entries() -> Array[Dictionary]:
 	return entries
 
 
+# Voci "<villaggio>: senza centro" della campanella (2026-10-12, passo 2 Folk/Village): una per villaggio con
+# center_building_id -1 (centro demolito o crollato). Nessun posto da centrare, come "nessun punto di assegnazione":
+# 🎯 spento con il suggerimento. Sparisce quando un nuovo centro completato ricollega il villaggio.
+func _collect_village_without_center_entries() -> Array[Dictionary]:
+	var entries: Array[Dictionary] = []
+	if human_folk == null:
+		return entries
+	for village in human_folk.villages:
+		if village.center_building_id != -1:
+			continue
+		var text := tr("pending_village_without_center").format({"village": village.get_display_name()})
+		var entry := _pending_entry("village_without_center:%d" % village.id, text, {
+			"kind": "none", "id": -1, "macro": Vector2i(-1, -1), "sort": float(village.id), "name": text,
+		})
+		entry["disabled_reason"] = tr("pending_village_without_center_detail")
+		entries.append(entry)
+	return entries
+
+
 func _task_butchers_carcass(task: Task, carcass_id: int) -> bool:
 	if task == null or task.is_finished():
 		return false
@@ -8777,8 +8803,8 @@ func _on_event_decision_chosen(option_index: int, context: Variant) -> void:
 			print("[VISITORS] Gruppo #%d rifiutato: se ne va verso %s." % [party.id, str(party.exit_point)])
 
 
-# Accoglienza: i membri diventano HumanIndividual veri del gruppo del villaggio, con lo stesso percorso delle
-# nascite (assegnazione casa, vista, conteggio del gruppo) e stamina, provviste e riserva piene. Le provviste
+# Accoglienza: i membri diventano HumanIndividual veri del Folk del player, con lo stesso percorso delle
+# nascite (assegnazione casa, vista) e stamina, provviste e riserva piene. Le provviste
 # e la riserva si riempiono al primo ricalcolo della capacità da regole vere (HumanCarryCapacityIndividualService),
 # come per ogni individuo appena creato; la stamina viene portata al massimo qui. Chi porta una dote la riceve
 # nello zaino e va prima a depositarla (_give_visitor_dowry); gli altri passano subito dall'idle.
@@ -8786,7 +8812,10 @@ func _welcome_visitor_party(party: VisitorParty) -> void:
 	var used_names: Array[String] = []
 	for member in human_individuals:
 		used_names.append(member.name)
-	var newcomers := VisitorService.materialize_members(party, game_data, human_population_group, used_names)
+	# Entrano nel villaggio del centro che li ha attirati (2026-10-12, passo 2 Folk/Village).
+	var center := VisitorService.find_village_center(macro_world)
+	var village := VillageService.find_village_by_center(human_folk, center.id if center != null else -1)
+	var newcomers := VisitorService.materialize_members(party, game_data, human_folk, village, used_names)
 	var era_rules := EraCalculator.get_era_rules(game_data.current_era_name)
 	for newcomer in newcomers:
 		HumanStaminaIndividualService.recalculate_max_stamina(newcomer, game_data, era_rules, macro_world)
@@ -8794,8 +8823,13 @@ func _welcome_visitor_party(party: VisitorParty) -> void:
 		HumanVitalsIndividualService.recalculate_vitals(newcomer, game_data)
 		newcomer.current_stamina = newcomer.max_stamina
 		human_individuals.append(newcomer)
-	human_population_group.total_count = human_individuals.size()
 	game_data.visitor_parties.erase(party)
+	# Valore politico del villaggio che li accoglie (2026-10-12, passo 4 Folk/Village): + per ogni adulto.
+	var adult_count := 0
+	for newcomer in newcomers:
+		if _resolve_age_band(newcomer) >= HumanTypes.AgeBand.FERTILE_ADULT:
+			adult_count += 1
+	VillageInfluenceService.add_accepted_adults(human_folk, village, adult_count)
 	AssignHouseService.assign_pending_residents(macro_world, human_individuals, game_data.year)
 	# newcomers è nello stesso ordine di party.members (VisitorService.materialize_members): l'indice serve alla dote.
 	for i in range(newcomers.size()):
@@ -9456,6 +9490,8 @@ func _refresh_pending_entries() -> void:
 		entries.append(no_point_entry)
 	# Macerie da sgomberare (2026-10-10, crollo).
 	entries.append_array(_collect_rubble_entries())
+	# Villaggi rimasti senza centro (2026-10-12, passo 2 Folk/Village).
+	entries.append_array(_collect_village_without_center_entries())
 	# Righe del cassetto (2026-10-07), solo con l'idea: "In coda" i lavori senza nessuno (subito, attivi o bloccati, non
 	# nascosti), "In corso" quelli con almeno un lavoratore (solo a cassetto aperto, i nomi costano un giro).
 	var listed_jobs: Array[Dictionary] = []
@@ -13324,8 +13360,8 @@ func _update_individual_panel_content(target: HumanIndividual) -> void:
 	human_individual_info_panel.set_identity_details(_resolve_individual_identity_details(target))
 	# Scheda del tipo (2026-10-05): fascia d'età e sesso, regole del suo popolo (HumanTypeInfoService, in cache).
 	var type_rules: HumanRules = null
-	if target.source_group_ref != null and target.source_group_ref.folk_ref != null:
-		type_rules = target.source_group_ref.folk_ref.human_rules_ref
+	if target.folk_ref != null:
+		type_rules = target.folk_ref.human_rules_ref
 	human_individual_info_panel.set_type_info(HumanTypeInfoService.build_rows(
 		type_rules, game_data.era_effective_age_band_durations_male, game_data.era_effective_age_band_durations_female,
 		age_band, target.sex
@@ -13336,15 +13372,14 @@ func _update_individual_panel_content(target: HumanIndividual) -> void:
 # cercati tra i vivi (human_individuals) e poi tra i defunti (game_data.death_events, "dead" = true); casa con il nome
 # mostrato altrove (_building_display_name). Forma femminile di "sconosciuto" per la madre, e per il partner di un uomo.
 func _resolve_individual_identity_details(target: HumanIndividual) -> Dictionary:
-	var group := target.source_group_ref
 	var house: Dictionary = {}
 	if target.house_id != -1:
 		var house_building := _find_building_by_id(target.house_id)
 		house = {"id": target.house_id, "name": _building_display_name(house_building) if house_building != null else ""}
 	return {
 		"id": target.id,
-		"folk": group.folk_ref.id if group != null and group.folk_ref != null else -1,
-		"group": group.id if group != null else -1,
+		"folk": target.folk_ref.name if target.folk_ref != null else "",
+		"village": target.village_ref.get_display_name() if target.village_ref != null else "",
 		"mother": _resolve_relative(target.mother_id),
 		"father": _resolve_relative(target.father_id),
 		"partner": _resolve_relative(target.partner_id),
@@ -13435,10 +13470,13 @@ func _on_individual_house_center_requested(building_id: int) -> void:
 # Ripopola la scheda 👨‍👩‍👧 con i dati correnti — stessa identica chiamata di _ready() (vedi lì),
 # estratta per essere riusabile anche da _on_year_rolled_over sotto.
 func _refresh_population_panel() -> void:
+	# Un solo villaggio possibile per ora (2026-10-12): il primo del Folk, se esiste.
+	var village: Village = human_folk.villages[0] if not human_folk.villages.is_empty() else null
 	human_population_info_panel.show_population(
-		human_population_group.total_count, human_individuals, game_data.year,
+		human_folk.count_members(human_individuals), human_individuals, game_data.year,
 		game_data.era_effective_age_band_durations_male, game_data.era_effective_age_band_durations_female,
-		human_folk.id, human_population_group.id, _compute_housing_capacity(), game_data.population_list_sort
+		human_folk.name, village.get_display_name() if village != null else "", village.count_inhabitants(human_individuals) if village != null else 0,
+		_compute_housing_capacity(), game_data.population_list_sort
 	)
 
 
@@ -14028,6 +14066,18 @@ func _on_human_population_changed() -> void:
 # sincronizzati i due pannelli umani col passare degli anni, non solo su un nuovo popolamento/una
 # nuova selezione manuale.
 func _on_year_rolled_over() -> void:
+	# Valori assoluti R/C/P dei villaggi (2026-10-12, passo 4 — regola 1): + somma dei raggi effettivi di questo momento.
+	VillageInfluenceService.apply_annual_growth(human_folk, macro_world)
+	# Storia dei valori per la scheda Influenza delle statistiche (2026-10-12): un punto per villaggio, tipo e anno.
+	if human_folk != null:
+		for village in human_folk.villages:
+			if not game_data.village_influence_snapshots.has(village.id):
+				game_data.village_influence_snapshots[village.id] = {}
+			var by_type: Dictionary = game_data.village_influence_snapshots[village.id]
+			for influence_type in InfluenceService.InfluenceType.values():
+				if not by_type.has(influence_type):
+					by_type[influence_type] = {}
+				by_type[influence_type][game_data.year] = village.get_influence_value(influence_type)
 	_refresh_population_panel()
 	_refresh_selected_individual_panel()
 	# Rete di sicurezza periodica per la scheda 🏠 (2026-09-12, richiesta utente) — stesso principio
@@ -14041,11 +14091,25 @@ func _on_year_rolled_over() -> void:
 	# Esclusi gli edifici di categoria MOVEMENT (2026-10-04, richiesta utente — stesso criterio di "Edifici totali"
 	# in StatisticsPanel): i salvataggi precedenti restano con totali che li comprendono, accettato dall'utente.
 	var building_count := 0
+	# Stessa serie per villaggio (2026-10-12, statistiche filtrabili per villaggio): Village.id -> conteggio.
+	var village_building_counts: Dictionary = {}
+	if human_folk != null:
+		for village in human_folk.villages:
+			village_building_counts[village.id] = 0
 	if macro_world != null:
 		for building in macro_world.buildings:
+			# Solo edifici completi, macerie escluse (2026-10-12): stesso criterio di "Edifici totali" in StatisticsPanel.
+			if not building.is_complete or building.is_demolished or building.is_rubble():
+				continue
 			if building.rules == null or building.rules.category != BuildingTypes.Category.MOVEMENT:
 				building_count += 1
+				if village_building_counts.has(building.village_id):
+					village_building_counts[building.village_id] += 1
 	game_data.building_snapshots[game_data.year] = building_count
+	for village_id in village_building_counts:
+		if not game_data.village_building_snapshots.has(village_id):
+			game_data.village_building_snapshots[village_id] = {}
+		game_data.village_building_snapshots[village_id][game_data.year] = village_building_counts[village_id]
 
 
 # Sposta il bersaglio di movimento/streaming (il campo "individual", vedi il commento lì) su
@@ -16980,7 +17044,7 @@ func _on_save_game_file_selected(path: String) -> void:
 	_sync_animal_individuals_to_game_data()
 	var save_service := GameSaveService.new()
 	save_service.save_game_to_json(
-		macro_world, game_data, path, fog_of_war_memories, human_folk, human_population_group, human_individuals
+		macro_world, game_data, path, fog_of_war_memories, human_folk, human_individuals
 	)
 	# Lo snapshot serve solo al file appena scritto: tenuto in game_data, un rientro in GameScene
 	# nella stessa sessione (senza caricare) ricostruirebbe individui ormai vecchi. Il contatore
@@ -17682,6 +17746,7 @@ func _spawn_rubble(source_type: String, macro_coords: Vector2i, microcell: Vecto
 	rubble.id = macro_world.allocate_building_id()
 	rubble.micro_x = microcell.x
 	rubble.micro_y = microcell.y
+	_assign_building_village(rubble)
 	rubble.is_complete = true
 	rubble.site_setup_complete = true
 	rubble.current_durability = rules.max_durability
@@ -17918,6 +17983,7 @@ func _demolish_building(building: Building, salvaged: Dictionary = {}, completin
 	# diretto che resta valido anche dopo che l'edificio sparisce da questa lista).
 	building.is_demolished = true
 	macro_world.buildings.erase(building)
+	_on_village_center_removed(building)
 	# Contenuto e materiali recuperati a terra in un unico mucchio (GroundPileService.drop_building_contents).
 	var pile := GroundPileService.drop_building_contents(game_data, building, macro_world, salvaged)
 	# Individui rimasti senza task per la demolizione (step 1): riprendono dalla coda o vanno in
@@ -20024,6 +20090,7 @@ func _place_building_at(world_position: Vector2) -> void:
 	building.id = macro_world.allocate_building_id()
 	building.micro_x = micro_pos.x
 	building.micro_y = micro_pos.y
+	_assign_building_village(building)
 	building.is_complete = true
 	# Nessuna fase "cantiere in attesa" per il piazzamento istantaneo (2026-09-11, richiesta utente,
 	# resa grayscale del cantiere non ancora allestito) — vedi Building.site_setup_complete.
@@ -20035,6 +20102,7 @@ func _place_building_at(world_position: Vector2) -> void:
 	# Rinfresca la scheda 🏠 (2026-09-12, richiesta utente) — nuovo edificio in lista, già completo
 	# per questo piazzamento istantaneo (B+click).
 	_refresh_buildings_panel()
+	_on_village_center_completed(building)
 
 	# Sottrae lo spazio dell'edificio dal budget vegetazione della macrocella — stesso meccanismo
 	# generico già usato per ROCK (MacroCellState.dedicated_space), mai un campo dedicato a parte
@@ -20157,6 +20225,7 @@ func _start_building_task_at(world_position: Vector2) -> void:
 	building.id = macro_world.allocate_building_id()
 	building.micro_x = micro_pos.x
 	building.micro_y = micro_pos.y
+	_assign_building_village(building)
 	building.is_complete = false
 	building.rotation = _building_ghost.rotation_dir
 	macro_world.buildings.append(building)
@@ -20793,6 +20862,7 @@ func _on_building_construction_completed(building: Building) -> void:
 	_refresh_buildings_panel()
 	# Il primo deposito completo sblocca gli altri edifici nella BuildBar (2026-09-29, _building_type_availability).
 	_refresh_building_slots_buildable()
+	_on_village_center_completed(building)
 	# Scoperte BUILDING_COMPLETED (2026-09-28 — sostituisce il vecchio "primo edificio con accepts_thoughts apre
 	# l'albero idee", ora il .tres first_thought_building con azione OPEN_TECH_TREE). Popup e azioni partono a
 	# fine frame (_flush_discoveries, deferred): questo handler gira in pieno tick di simulazione.
@@ -20834,6 +20904,52 @@ func _on_building_construction_completed(building: Building) -> void:
 	# Circle/Deposit Site, finalmente disegnabile ora che is_complete=true) resterebbe invisibile
 	# fino al prossimo trigger di refresh casuale (es. il player che si muove).
 	_refresh_building_visuals(cell)
+
+
+# Village center completato (2026-10-12, passo 2 Folk/Village): fonda un villaggio o ricollega quello rimasto senza
+# centro (VillageService), poi avviso e scheda popolazione. No-op per edifici che non sono centri.
+func _on_village_center_completed(building: Building) -> void:
+	if building.rules == null or not building.rules.is_village_center:
+		return
+	var result := VillageService.on_village_center_completed(human_folk, macro_world, building, human_individuals)
+	var village: Village = result["village"]
+	match result["outcome"]:
+		VillageService.CenterOutcome.FOUNDED:
+			# Primo villaggio (2026-10-12): la nascita la racconta già la scoperta del Cerchio di sassi
+			# (first_thought_building.tres, paragrafo discovery_first_thought_building_village), niente avviso doppio.
+			if human_folk.villages.size() == 1:
+				_refresh_population_panel()
+				return
+			_notify_village_center_changed(tr("notification_village_founded").format({
+				"village": village.get_display_name(), "building": _building_display_name(building),
+			}))
+		VillageService.CenterOutcome.RECONNECTED:
+			_notify_village_center_changed(tr("notification_village_center_restored").format({"village": village.get_display_name()}))
+		_:
+			return
+	_refresh_population_panel()
+
+
+# Villaggio di un edificio appena piazzato (2026-10-12, passo 3 Folk/Village): quello del centro più vicino; nessuno
+# (-1) se non esiste ancora un villaggio — lo adotterà il primo centro completato (VillageService.adopt_orphan_buildings).
+func _assign_building_village(building: Building) -> void:
+	var village := VillageService.find_village_for_building(human_folk, macro_world, building)
+	building.village_id = village.id if village != null else -1
+
+
+# Village center demolito o crollato: il villaggio resta in vita senza centro (VillageService).
+func _on_village_center_removed(building: Building) -> void:
+	if building.rules == null or not building.rules.is_village_center:
+		return
+	var village := VillageService.on_village_center_removed(human_folk, building)
+	if village != null:
+		_notify_village_center_changed(tr("notification_village_center_lost").format({"village": village.get_display_name()}))
+
+
+func _notify_village_center_changed(text: String) -> void:
+	print("[VILLAGE] %s" % text)
+	if UserOptions.show_notification_popups:
+		notification_popup.enqueue(NotificationTypes.NotificationPopupType.VILLAGE_CENTER_CHANGED, text)
 
 
 # Rimuove il gruppo dei 4 rametti spawnati da _spawn_build_site_placeholders per QUESTO edificio
@@ -21243,7 +21359,7 @@ func _on_secondary_action_pressed(action_id: StringName) -> void:
 			# buildings (2026-09-12, richiesta utente — tab Statistiche/Edifici) — macro_world.buildings
 			# già Array[Building], stesso principio "dati già pronti" di _refresh_buildings_panel.
 			statistics_panel.open_dialog(
-				game_data, human_individuals, macro_world.buildings if macro_world != null else []
+				game_data, human_individuals, macro_world.buildings if macro_world != null else [], human_folk
 			)
 		# Menu a tendina dei layer della mappa (2026-09-27).
 		&"map_layers":
@@ -21436,12 +21552,12 @@ func _setup_clock() -> void:
 	work_sound_controller.start(self, clock)
 	# Primo aggancio gameplay-side ai checkpoint classificati (richiesta utente, 2026-09-05) — vedi
 	# GameTimeService per il perché l'istanza va tenuta in un campo, non usa-e-getta.
-	# human_individuals/human_folk/human_population_group passati per riferimento (Step 5/6 piano
+	# human_individuals/human_folk passati per riferimento (Step 5/6 piano
 	# mortalità, 2026-09-05): GameTimeService li usa per agganciare HumanMortalityIndividualService.
 	# check_mortality a year_rolled_over e la rimozione reale a day_advanced — sempre gli STESSI
 	# oggetti di GameScene, mai una copia.
 	game_time_service = GameTimeService.new()
-	game_time_service.connect_to_clock(clock, game_data, human_individuals, human_folk, human_population_group, macro_world, individual_action_service)
+	game_time_service.connect_to_clock(clock, game_data, human_individuals, human_folk, macro_world, individual_action_service)
 	# Step 6 piano mortalità (2026-09-05): GameTimeService rimuove l'individuo morto da
 	# human_individuals (stesso array, per riferimento) ma non sa nulla di human_individual_views
 	# (rendering, di competenza esclusiva di GameScene) — questo segnale, emesso PRIMA della
@@ -21782,7 +21898,6 @@ func _on_world_debug_pressed() -> void:
 	_sync_individual_state_to_game_data()
 	GameSettings.active_fog_of_war_memories = fog_of_war_memories
 	GameSettings.active_human_folk = human_folk
-	GameSettings.active_human_population_group = human_population_group
 	GameSettings.active_human_individuals = human_individuals
 	GameSettings.returning_to_world_scene = true
 	if clock != null and macro_world != null:
@@ -21800,7 +21915,6 @@ func _on_macro_cell_debug_pressed() -> void:
 	_sync_individual_state_to_game_data()
 	GameSettings.active_fog_of_war_memories = fog_of_war_memories
 	GameSettings.active_human_folk = human_folk
-	GameSettings.active_human_population_group = human_population_group
 	GameSettings.active_human_individuals = human_individuals
 	GameSettings.selected_macro_cell_x = game_data.player_macro_cell_x
 	GameSettings.selected_macro_cell_y = game_data.player_macro_cell_y

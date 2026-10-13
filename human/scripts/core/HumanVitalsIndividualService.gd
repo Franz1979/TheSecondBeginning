@@ -27,7 +27,7 @@ extends RefCounted
 # alcun consumatore reale che ne giustifichi uno.
 #
 # Fallback HumanIndividual.FALLBACK_MAX_VITAL (UNICO per tutti e 5, vedi quel campo) quando la
-# catena source_group_ref->folk_ref->human_rules_ref non è risolvibile — stesso criterio già usato
+# catena folk_ref->human_rules_ref non è risolvibile — stesso criterio già usato
 # da HumanIndividual._resolve_initial_max_thirst/health/happiness/loyalty.
 #
 # Clamp SOLO verso il basso su ciascun current_* (2026-09-13, stesso principio di
@@ -37,8 +37,8 @@ extends RefCounted
 # azione/evento, non per questo ricalcolo — stesso principio già stabilito per current_stamina.
 static func recalculate_vitals(individual: HumanIndividual, game_data: GameData) -> void:
 	var human_rules: HumanRules = null
-	if individual.source_group_ref != null and individual.source_group_ref.folk_ref != null:
-		human_rules = individual.source_group_ref.folk_ref.human_rules_ref
+	if individual.folk_ref != null:
+		human_rules = individual.folk_ref.human_rules_ref
 	if human_rules == null:
 		individual.max_thirst = HumanIndividual.FALLBACK_MAX_VITAL
 		individual.max_health = HumanIndividual.FALLBACK_MAX_VITAL
@@ -109,8 +109,8 @@ static func _clamp_current_to_range(individual: HumanIndividual, vital_name: Str
 # started_using_reserve): il chiamante (GameTimeService) lo trasforma in un segnale per l'avviso.
 static func apply_daily_calorie_consumption(individual: HumanIndividual, game_data: GameData, era_rules: EraRules = null) -> bool:
 	var human_rules: HumanRules = null
-	if individual.source_group_ref != null and individual.source_group_ref.folk_ref != null:
-		human_rules = individual.source_group_ref.folk_ref.human_rules_ref
+	if individual.folk_ref != null:
+		human_rules = individual.folk_ref.human_rules_ref
 	if human_rules == null:
 		return false
 	var calories_before: float = individual.food_calories_held

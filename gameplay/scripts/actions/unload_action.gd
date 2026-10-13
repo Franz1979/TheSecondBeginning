@@ -381,7 +381,7 @@ func is_complete(individual: Variant, context: Dictionary) -> bool:
 
 # get_required_position (2026-09-13, richiesta utente — fix "Walk di ritorno alla ripresa", vedi
 # Action.get_required_position) — SOLO ramo FISICO (deposit_kind == RESOURCE): il ramo PENSIERO
-# non ha alcun vincolo di posizione reale (deposita su un Folk via source_group_ref, non su una
+# non ha alcun vincolo di posizione reale (deposita su un Folk via folk_ref, non su una
 # cella — vedi on_complete sotto), quindi ritorna sempre null per quel ramo, indipendentemente da
 # target_building (che per il pensiero può essere valorizzato ma non è consumato come posizione,
 # vedi la nota in testa al file). Stessa formula/stesso commento esteso di RetrieveAction.
@@ -410,9 +410,9 @@ func get_required_position(individual: Variant, context: Dictionary) -> Variant:
 # call site reale lo produce oggi, vedi call site aggiornati) — return anticipato, mai un crash.
 #
 # Ramo PENSIERO (deposit_kind == THOUGHT, invariato nella logica dal rename DepositAction->
-# UnloadAction) — risolve Folk dalla stessa catena già in uso altrove (individual.source_group_ref.
+# UnloadAction) — risolve Folk dalla stessa catena già in uso altrove (individual.
 # folk_ref, vedi HumanStaminaIndividualService per il precedente), poi IdeaProgressService.
-# add_thoughts(folk, 1). Guardie difensive su source_group_ref/folk_ref null (stesso trattamento già
+# add_thoughts(folk, 1). Guardie difensive su folk_ref null (stesso trattamento già
 # visto altrove per questa catena, es. HumanStaminaIndividualService.recalculate_max_stamina) — non
 # dovrebbero mai essere null con dati coerenti, ma questa azione non deve fallire rumorosamente se
 # lo sono. target_building può essere valorizzato anche qui (vedi nota sul campo, in testa al file)
@@ -588,12 +588,14 @@ func on_complete(individual: Variant, context: Dictionary) -> void:
 		print("[UNLOAD] on_complete: ramo PENSIERO (deposit_kind=THOUGHT) — pending_thought=%s" % individual.pending_thought)
 	if not individual.pending_thought:
 		return
-	if individual.source_group_ref == null or individual.source_group_ref.folk_ref == null:
+	if individual.folk_ref == null:
 		return
-	var folk: Folk = individual.source_group_ref.folk_ref
+	var folk: Folk = individual.folk_ref
 	individual.pending_thought = false
 	thought_deposited.emit()
 	if IdeaProgressService.add_thoughts(folk, 1):
+		# Cultura del villaggio dell'edificio dell'ultimo pensiero (2026-10-12, passo 4 Folk/Village).
+		VillageInfluenceService.add_idea_culture(folk, target_building, folk.completed_ideas[-1])
 		idea_completed.emit(folk.completed_ideas[-1])
 
 	# "Cammina via" (2026-09-10, richiesta utente — Step 1b del refactor Daydream via TaskFactory,

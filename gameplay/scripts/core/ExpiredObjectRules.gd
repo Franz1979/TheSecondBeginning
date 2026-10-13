@@ -27,6 +27,9 @@ extends Resource
 @export var unburied_faith_loss: float = 0.0
 @export var unburied_happiness_loss: float = 0.0
 @export var unburied_relatives_multiplier: float = 1.0
+# Mancata sepoltura (2026-10-12, passo 4 Folk/Village): perdita del valore assoluto R del villaggio del morto, allo stesso
+# momento e alle stesse condizioni della perdita di fede/felicità sopra; anche senza centro, mai sotto 0. 0 = nessuna.
+@export var unburied_village_religion_loss: float = 0.0
 # Preavviso (2026-10-04): quanti giorni prima della scadenza di un corpo non sepolto avvisare il giocatore, una volta
 # sola per corpo (GameTimeService._apply_unburied_body_consequences). 0 = nessun preavviso.
 @export var unburied_warning_days: int = 0

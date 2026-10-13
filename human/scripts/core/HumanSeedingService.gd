@@ -8,12 +8,12 @@ extends RefCounted
 # iniziale nasce in UNA cella gia' scelta da FirstStartMacroCellSelectionService (mai toccato da
 # questa classe), non serve alcuna ricerca di celle candidate su tutta la mappa.
 #
-# DEBITO NOTO: nessuna persistenza reale ancora — Folk/HumanPopulationGroup/HumanIndividual
+# DEBITO NOTO: nessuna persistenza reale ancora — Folk/HumanIndividual
 # creati qui vengono riseminati da zero ad ogni chiamata (stessa convenzione gia' in uso per
 # HumanIndividual.new() in GameScene prima di questo passo). Quando arriveranno
 # GameSaveService/GameLoadService per il lato umano, questo andra' rivisto.
 #
-# DEBITO NOTO: Folk/HumanPopulationGroup restano fissi a id=1 per singola chiamata — nessun
+# DEBITO NOTO: Folk restano fissi a id=1 per singola chiamata — nessun
 # allocatore globale ancora (equivalente umano di World.allocate_population_group_id()),
 # rimandato a quando esistera' un vero "mondo umano" con piu' insediamenti contemporaneamente.
 # HumanIndividual.id INVECE non e' piu' locale (bugfix, 2026-09-06, prerequisito del futuro
@@ -124,7 +124,7 @@ const RANDOM_WEIGHT_MIN: float = 0.01
 const SEED_EXCLUDED_SKILLS: Array[String] = ["skill_ritual"]
 
 
-# Semina Folk + HumanPopulationGroup + HumanIndividual per il popolo del player, in UNA cella gia'
+# Semina Folk + HumanIndividual (nessun Village: nasce col village center) per il popolo del player, in UNA cella gia'
 # scelta altrove (macro_coords, tipicamente il risultato di FirstStartMacroCellSelectionService —
 # mai richiamato da qui). group_size_preference sconosciuta/vuota -> fallback
 # DEFAULT_GROUP_SIZE_PREFERENCE (stesso principio "default neutro" gia' in uso ovunque nel
@@ -161,7 +161,7 @@ const SEED_EXCLUDED_SKILLS: Array[String] = ["skill_ritual"]
 # figli a età distinte), COUPLE si ferma alla coppia (nessun figlio, mai chiamata _create_family_
 # children). _create_adult/_create_child restano infrastruttura generica non più chiamata da nessuno dei
 # tre tipi attuali — tenuta per seed_indigenous_settlement sotto, che la cita esplicitamente come
-# possibile riuso futuro. source_group_ref/posizione in griglia sono condivisi da tutti e tre,
+# possibile riuso futuro. folk_ref/posizione in griglia sono condivisi da tutti e tre,
 # applicati DOPO in un unico passaggio qui sotto.
 func seed_player_start(
 	macro_coords: Vector2i,
@@ -179,11 +179,6 @@ func seed_player_start(
 	result.folk.id = 1
 	result.folk.name = folk_name
 	result.folk.human_rules_ref = human_rules
-
-	result.group = HumanPopulationGroup.new()
-	result.group.id = 1
-	result.group.folk_ref = result.folk
-	result.group.home_macro_coords = macro_coords
 
 	var resolved_preference := (
 		group_size_preference if VALID_GROUP_SIZE_PREFERENCES.has(group_size_preference) else DEFAULT_GROUP_SIZE_PREFERENCE
@@ -244,11 +239,10 @@ func seed_player_start(
 		individuals.append(mother)
 		individuals.append(father)
 
-	# source_group_ref — condiviso da entrambi i modelli sopra, spostato qui (era assegnato inline
-	# nel solo ramo coppie+figli prima di questo passo) per non doverlo duplicare dentro
-	# _create_unpaired_fertile_group, che non conosce/non deve conoscere HumanPopulationGroup.
+	# folk_ref — condiviso da tutti i modelli sopra, assegnato qui in un unico passaggio. Nessun village_ref
+	# (2026-10-12): il villaggio nasce solo col village center, non con la semina.
 	for individual in individuals:
-		individual.source_group_ref = result.group
+		individual.folk_ref = result.folk
 
 	# Posizione iniziale in griglia ORDINATA per OGNI individuo, fondatore incluso (richiesta
 	# utente, 2026-09-01, Passo 2 — sostituisce il primo tentativo a sparpagliamento casuale,
@@ -261,7 +255,6 @@ func seed_player_start(
 		individuals[i].position = _grid_spawn_position(i, individuals.size())
 
 	result.individuals = individuals
-	result.group.total_count = individuals.size()
 	return result
 
 

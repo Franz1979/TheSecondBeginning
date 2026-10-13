@@ -62,6 +62,11 @@ static func draw_into(canvas: CanvasItem, origin: Vector2, area: Vector2) -> voi
 	var rect := ApparelIcon.fit_aspect(origin, area, DESIGN_SIZE.x / DESIGN_SIZE.y)
 	var unit: float = rect.size.x / DESIGN_SIZE.x
 	var outline := ApparelIcon.quad_outline(OUTLINE_START, OUTLINE_SEGMENTS, DESIGN_SIZE, rect)
+	# Piccola (magazzini, mucchi): sagoma, contorno netto e il laccio in vita (ApparelIcon.is_small).
+	if ApparelIcon.is_small(rect):
+		ApparelIcon.draw_silhouette(canvas, outline, FUR_COLOR, OUTLINE_COLOR)
+		canvas.draw_line(ApparelIcon.map_point(CORD_START, DESIGN_SIZE, rect), ApparelIcon.map_point(Vector2(88, 100), DESIGN_SIZE, rect), CORD_COLOR, 1.0, false)
+		return
 	canvas.draw_colored_polygon(outline, FUR_COLOR)
 	ApparelIcon.draw_strokes(canvas, DARK_TUFTS, DESIGN_SIZE, rect, DARK_TUFT_COLOR, maxf(2.0 * unit, 1.0))
 	var closed := outline.duplicate()

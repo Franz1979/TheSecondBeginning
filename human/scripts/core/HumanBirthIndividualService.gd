@@ -2,10 +2,10 @@ class_name HumanBirthIndividualService
 extends RefCounted
 
 # Risoluzione annuale delle gravidanze in corso (day 20, ~9 mesi dopo il concepimento di
-# HumanConceptionIndividualService al day 110 dell'anno precedente), per HumanPopulationGroup —
+# HumanConceptionIndividualService al day 110 dell'anno precedente), per Folk —
 # stesso principio di HumanCouplingIndividualService/HumanConceptionIndividualService: un
 # *Service RefCounted stateless, un metodo statico che opera su un Array[HumanIndividual],
-# raggruppando internamente per source_group_ref (stesso schema di raggruppamento di
+# raggruppando internamente per folk_ref (stesso schema di raggruppamento di
 # HumanCouplingIndividualService.form_couples/HumanConceptionIndividualService.run_conception).
 #
 # STEP 3 (2026-09-06): il tiro sopravvivenza FIGLIO ha ora un effetto reale — se fallisce, nessun
@@ -51,7 +51,7 @@ extends RefCounted
 const DEPENDENT_CHILD_SIDE_OFFSET: float = 0.2
 
 
-# Entry point annuale (day 20): per ciascun HumanPopulationGroup rappresentato in `individuals`,
+# Entry point annuale (day 20): per ciascun Folk rappresentato in `individuals`,
 # risolve ogni gravidanza in corso creando il neonato (o registrando un nato-morto, vedi sotto) e
 # resettando lo stato della madre. Il neonato viene aggiunto DIRETTAMENTE a `individuals` (Array
 # passato per riferimento in GDScript — stesso oggetto di GameTimeService._human_individuals/
@@ -75,7 +75,7 @@ static func run_births(
 ) -> Dictionary:
 	var groups: Dictionary = {}
 	for individual in individuals:
-		var group_key: HumanPopulationGroup = individual.source_group_ref
+		var group_key: Folk = individual.folk_ref
 		if not groups.has(group_key):
 			groups[group_key] = [] as Array[HumanIndividual]
 		groups[group_key].append(individual)
@@ -147,7 +147,7 @@ static func _roll_childbirth_survival(human_rules: HumanRules, era_rules: EraRul
 
 
 # Costruisce il nuovo HumanIndividual per `mother` — id/mother_id/father_id/partner_id/sex/
-# birth_year_virtual/name/hair_color/skin_color/clothing_color/source_group_ref/position/
+# birth_year_virtual/name/hair_color/skin_color/clothing_color/folk_ref/position/
 # home_macro_coords, in quest'ordine (sex PRIMA di assign_random_name: quella funzione legge
 # self.sex per scegliere la lista nomi maschile/femminile, stesso ordine già usato da
 # HumanSeedingService._create_family_children/_create_child).
@@ -173,7 +173,8 @@ static func _create_newborn(mother: HumanIndividual, game_data: GameData, all_in
 	newborn.hair_color = mother.pending_child_hair_color
 	newborn.skin_color = mother.pending_child_skin_color
 	newborn.assign_random_clothing()
-	newborn.source_group_ref = mother.source_group_ref
+	newborn.folk_ref = mother.folk_ref
+	newborn.village_ref = mother.village_ref
 	# Nasce ACCANTO alla madre (mai esattamente sovrapposto, vedi DEPENDENT_CHILD_SIDE_OFFSET sopra
 	# per il perché), non dove si trova lei in senso stretto — dato di simulazione, non di
 	# rendering: GameScene legge questi due campi già valorizzati per parentare/posizionare la
@@ -194,6 +195,8 @@ static func _create_newborn(mother: HumanIndividual, game_data: GameData, all_in
 	game_data.birth_events.append({
 		"individual_id": newborn.id,
 		"mother_id": mother.id,
+		# Villaggio della madre (2026-10-12, statistiche per villaggio), -1 = nessuno.
+		"village_id": mother.village_ref.id if mother.village_ref != null else -1,
 		"father_id": newborn.father_id,
 		"sex": newborn.sex,
 		"year": game_data.year,
@@ -250,6 +253,7 @@ static func _record_stillbirth_event(mother: HumanIndividual, game_data: GameDat
 	game_data.birth_events.append({
 		"individual_id": -1,
 		"mother_id": mother.id,
+		"village_id": mother.village_ref.id if mother.village_ref != null else -1,
 		"father_id": mother.pending_child_father_id,
 		"year": game_data.year,
 		"day": game_data.current_day,

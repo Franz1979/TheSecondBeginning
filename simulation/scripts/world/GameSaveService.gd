@@ -10,15 +10,14 @@ func save_game_to_json(
 	# da un caricamento precedente (vedi WorldScene.fog_of_war_memories). GameScene è l'unico
 	# chiamante che ne ha sempre una reale da passare.
 	fog_of_war_memories: Dictionary = {},
-	# Folk/HumanPopulationGroup/HumanIndividual (richiesta utente, 2026-09-02 — persistenza umana)
+	# Folk/HumanIndividual (richiesta utente, 2026-09-02 — persistenza umana; i Village stanno nel Folk)
 	# — default null/[] per lo stesso motivo di fog_of_war_memories sopra: WorldScene/MacroCellScene
 	# non generano mai popolazione umana propria, solo la propagano se ricevuta da GameScene tramite
-	# GameSettings.active_human_* (vedi WorldScene.human_folk/human_population_group/
-	# human_individuals). human_folk/human_population_group possono restare null (nessuna sezione
+	# GameSettings.active_human_* (vedi WorldScene.human_folk/
+	# human_individuals). human_folk può restare null (nessuna sezione
 	# "human" scritta in quel caso, vedi sotto) se il salvataggio avviene prima che una partita
 	# abbia mai seminato un popolo — non dovrebbe succedere in pratica ma resta difensivo.
 	human_folk: Folk = null,
-	human_population_group: HumanPopulationGroup = null,
 	human_individuals: Array[HumanIndividual] = []
 ) -> void:
 	var data := {
@@ -88,6 +87,10 @@ func save_game_to_json(
 			# vedi GameData.building_snapshots) — STESSO trattamento di population_snapshots appena
 			# sopra: scritto così com'è, JSON.stringify converte da solo le chiavi int in stringhe.
 			"building_snapshots": game_data.building_snapshots,
+			# Serie per villaggio (2026-10-12): stesso trattamento, un livello di chiavi in più.
+			"village_population_snapshots": game_data.village_population_snapshots,
+			"village_building_snapshots": game_data.village_building_snapshots,
+			"village_influence_snapshots": game_data.village_influence_snapshots,
 			# Istanze oggetti-scaduti (Step 2, vedi GameData.expired_objects) — A DIFFERENZA di
 			# death_events sopra, "position" è un Vector2 (non JSON-nativo): _expired_objects_to_json
 			# appiattisce ogni record in position_x/position_y, stessa convenzione già usata per
@@ -438,6 +441,8 @@ func save_game_to_json(
 			"rubble_auto_excluded": building.rubble_auto_excluded,
 			"current_durability": building.current_durability,
 			"built_year": building.built_year,
+			# Villaggio di appartenenza (2026-10-12), -1 = nessuno.
+			"village_id": building.village_id,
 			# Punti di influenza e giorno dell'ultimo guadagno per tipo (2026-10-03, punti e soglie): chiavi int -> stringhe in JSON.
 			"influence_points": building.influence_points,
 			"influence_last_gain_day": building.influence_last_gain_day,
@@ -514,11 +519,11 @@ func save_game_to_json(
 			"last_seen": last_seen_data
 		})
 
-	# Popolo umano del player (Folk/HumanPopulationGroup/HumanIndividual, richiesta utente,
+	# Popolo umano del player (Folk con i suoi Village/HumanIndividual, richiesta utente,
 	# 2026-09-02) — sezione assente (nessuna chiave "human") se human_folk è null, stesso principio
 	# "non appesantire/non scrivere dati inesistenti" già usato altrove in questo file. human_rules_ref
-	# (Folk)/folk_ref (HumanPopulationGroup)/source_group_ref (HumanIndividual) non sono mai
-	# serializzati: sono ricollegati da GameLoadService dopo la ricostruzione (un solo Folk/gruppo
+	# (Folk)/folk_ref (Village)/folk_ref+village_ref (HumanIndividual) non sono mai serializzati come oggetti
+	# (village_id per individuo): sono ricollegati da GameLoadService dopo la ricostruzione (un solo Folk
 	# esiste oggi, human_rules_ref si ricarica dal path fisso come fa già GameScene al seeding).
 	# is_moving/target_position/path di ogni individuo NON sono persistiti (richiesta utente,
 	# confermato 2026-09-02): un movimento in corso al salvataggio viene scartato, l'individuo
@@ -541,13 +546,10 @@ func save_game_to_json(
 				"thoughts_invested": human_folk.thoughts_invested,
 				"completed_ideas": human_folk.completed_ideas,
 				# Giorno assoluto del prossimo decadimento per idea (vedi Folk/IdeaDecayService).
-				"idea_decay_due_day": human_folk.idea_decay_due_day
-			},
-			"group": {
-				"id": human_population_group.id,
-				"home_macro_x": human_population_group.home_macro_coords.x,
-				"home_macro_y": human_population_group.home_macro_coords.y,
-				"total_count": human_population_group.total_count
+				"idea_decay_due_day": human_folk.idea_decay_due_day,
+				# Villaggi del Folk (2026-10-12): abitanti mai salvati, si ricavano da village_id degli individui.
+				"next_village_id": human_folk.next_village_id,
+				"villages": _serialize_villages(human_folk)
 			},
 			"individuals": []
 		}
@@ -567,6 +569,8 @@ func save_game_to_json(
 				"mother_id": individual.mother_id,
 				"father_id": individual.father_id,
 				"partner_id": individual.partner_id,
+				# Villaggio di appartenenza (2026-10-12), -1 = nessuno.
+				"village_id": individual.village_ref.id if individual.village_ref != null else -1,
 				# Campo base Rest Task esplicita (2026-09-12, richiesta utente) — vedi HumanIndividual.
 				# house_id per il commento esteso, -1 = nessuna casa assegnata.
 				"house_id": individual.house_id,
@@ -746,5 +750,19 @@ func _expired_objects_to_json(expired_objects: Array[Dictionary]) -> Array:
 			# Mancata sepoltura già valutata (2026-10-04, GameTimeService._apply_unburied_body_consequences).
 			"unburied_applied": bool(record.get("unburied_applied", false)),
 			"unburied_warned": bool(record.get("unburied_warned", false)),
+		})
+	return result
+
+
+# Villaggi del Folk (2026-10-12): solo identità e centro, gli abitanti si ricavano dagli individui.
+func _serialize_villages(folk: Folk) -> Array:
+	var result: Array = []
+	for village in folk.villages:
+		result.append({
+			"id": village.id,
+			"name": village.name,
+			"center_building_id": village.center_building_id,
+			# Valori assoluti R/C/P (2026-10-12): chiavi int -> stringhe in JSON.
+			"influence_values": village.influence_values,
 		})
 	return result

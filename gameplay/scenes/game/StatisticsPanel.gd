@@ -34,9 +34,22 @@ const TAB_BIRTHS := 1
 const TAB_POPULATION := 2
 # Quarto tab (2026-09-12, richiesta utente) — stessa identica convenzione dei tre sopra.
 const TAB_BUILDINGS := 3
+# Quinta scheda (2026-10-12, richiesta utente): valori assoluti P/C/R del popolo o del villaggio scelto.
+const TAB_INFLUENCE := 4
+# Colori delle tre serie e ordine di visualizzazione P, C, R.
+const INFLUENCE_DISPLAY := [
+	{"type": InfluenceService.InfluenceType.POLITICAL, "name": "Politico", "color": Color(0.9, 0.45, 0.35)},
+	{"type": InfluenceService.InfluenceType.CULTURAL, "name": "Culturale", "color": Color(0.95, 0.8, 0.3)},
+	{"type": InfluenceService.InfluenceType.RELIGIOUS, "name": "Religioso", "color": Color(0.6, 0.5, 0.95)},
+]
+# Voce "tutto il popolo" del selettore (2026-10-12): Village.id parte da 1, quindi 0 è libero.
+const SCOPE_ALL := 0
 
 @onready var tab_container: TabContainer = $MarginContainer/VBoxContainer/TabContainer
 @onready var close_button: Button = $MarginContainer/VBoxContainer/CloseButton
+# Selettore dell'ambito (2026-10-12, richiesta utente): tutto il popolo o un villaggio. Filtra ogni scheda.
+@onready var scope_label: Label = $MarginContainer/VBoxContainer/ScopeRow/ScopeLabel
+@onready var scope_selector: OptionButton = $MarginContainer/VBoxContainer/ScopeRow/ScopeSelector
 @onready var total_label: Label = $MarginContainer/VBoxContainer/TabContainer/MortalityTab/MortalityContent/TotalLabel
 @onready var average_age_label: Label = $MarginContainer/VBoxContainer/TabContainer/MortalityTab/MortalityContent/AverageAgeLabel
 @onready var cause_distribution_chart: PieChart = $MarginContainer/VBoxContainer/TabContainer/MortalityTab/MortalityContent/CauseDistributionChart
@@ -61,6 +74,38 @@ const TAB_BUILDINGS := 3
 @onready var buildings_per_year_chart: LineChart = $MarginContainer/VBoxContainer/TabContainer/BuildingsTab/BuildingsContent/BuildingsPerYearChart
 @onready var building_type_distribution_chart: PieChart = $MarginContainer/VBoxContainer/TabContainer/BuildingsTab/BuildingsContent/BuildingTypeDistributionChart
 
+@onready var influence_value_labels: Array[Label] = [
+	$MarginContainer/VBoxContainer/TabContainer/InfluenceTab/InfluenceContent/PoliticalValueLabel,
+	$MarginContainer/VBoxContainer/TabContainer/InfluenceTab/InfluenceContent/CulturalValueLabel,
+	$MarginContainer/VBoxContainer/TabContainer/InfluenceTab/InfluenceContent/ReligiousValueLabel,
+]
+@onready var influence_checks: Array[CheckBox] = [
+	$MarginContainer/VBoxContainer/TabContainer/InfluenceTab/InfluenceContent/SeriesRow/PoliticalCheck,
+	$MarginContainer/VBoxContainer/TabContainer/InfluenceTab/InfluenceContent/SeriesRow/CulturalCheck,
+	$MarginContainer/VBoxContainer/TabContainer/InfluenceTab/InfluenceContent/SeriesRow/ReligiousCheck,
+]
+@onready var influence_per_year_chart: LineChart = $MarginContainer/VBoxContainer/TabContainer/InfluenceTab/InfluenceContent/InfluencePerYearChart
+@onready var influence_pies_container: VBoxContainer = $MarginContainer/VBoxContainer/TabContainer/InfluenceTab/InfluenceContent/PiesContainer
+@onready var influence_pies_caption: Label = $MarginContainer/VBoxContainer/TabContainer/InfluenceTab/InfluenceContent/PiesContainer/PiesCaption
+@onready var influence_pie_captions: Array[Label] = [
+	$MarginContainer/VBoxContainer/TabContainer/InfluenceTab/InfluenceContent/PiesContainer/PoliticalPieCaption,
+	$MarginContainer/VBoxContainer/TabContainer/InfluenceTab/InfluenceContent/PiesContainer/CulturalPieCaption,
+	$MarginContainer/VBoxContainer/TabContainer/InfluenceTab/InfluenceContent/PiesContainer/ReligiousPieCaption,
+]
+@onready var influence_pie_charts: Array[PieChart] = [
+	$MarginContainer/VBoxContainer/TabContainer/InfluenceTab/InfluenceContent/PiesContainer/PoliticalPieChart,
+	$MarginContainer/VBoxContainer/TabContainer/InfluenceTab/InfluenceContent/PiesContainer/CulturalPieChart,
+	$MarginContainer/VBoxContainer/TabContainer/InfluenceTab/InfluenceContent/PiesContainer/ReligiousPieChart,
+]
+
+# Input dell'ultima apertura, tenuti per ricalcolare le schede al cambio di ambito (mai modificati qui).
+var _game_data: GameData = null
+var _human_individuals: Array[HumanIndividual] = []
+var _buildings: Array[Building] = []
+# SCOPE_ALL o un Village.id; resta tra un'apertura e l'altra finché il villaggio esiste.
+var _scope_village_id: int = SCOPE_ALL
+var _folk: Folk = null
+
 
 func _ready() -> void:
 	title = tr("statistics_tooltip")
@@ -68,6 +113,14 @@ func _ready() -> void:
 	tab_container.set_tab_title(TAB_BIRTHS, tr("statistics_tab_births"))
 	tab_container.set_tab_title(TAB_POPULATION, tr("statistics_tab_population"))
 	tab_container.set_tab_title(TAB_BUILDINGS, tr("statistics_tab_buildings"))
+	tab_container.set_tab_title(TAB_INFLUENCE, tr("statistics_tab_influence"))
+	for i in range(INFLUENCE_DISPLAY.size()):
+		influence_checks[i].text = INFLUENCE_DISPLAY[i]["name"]
+		influence_checks[i].add_theme_color_override("font_color", INFLUENCE_DISPLAY[i]["color"])
+		influence_checks[i].toggled.connect(func(_pressed: bool) -> void: _refresh_influence_chart())
+		influence_pie_captions[i].text = INFLUENCE_DISPLAY[i]["name"]
+	influence_pies_caption.text = "Ripartizione tra i villaggi"
+	influence_per_year_chart.set_axis_labels("Anno", "Valore")
 	# Titoli lista donne fertili/lista morti (richiesta utente, 2026-09-06) — tr(), non hardcoded
 	# come il resto del CONTENUTO dati di questo pannello: sono più simili alla "chrome" strutturale
 	# (titolo di una sezione, come i tab) che a un dato calcolato, stessa eccezione esplicitamente
@@ -75,6 +128,8 @@ func _ready() -> void:
 	fertile_women_list_caption.text = tr("fertile_women_list")
 	death_list_caption.text = tr("death_list")
 	close_button.text = tr("close_menu")
+	scope_label.text = tr("statistics_scope_label")
+	scope_selector.item_selected.connect(_on_scope_selected)
 	close_button.pressed.connect(hide)
 	# close_requested NON collegato a hide() + X nascosta (stesso motivo/meccanismo di
 	# SystemMenuDialog._hide_native_close_button): si chiude solo dal CloseButton esplicito.
@@ -92,17 +147,15 @@ func _ready() -> void:
 # buildings (2026-09-12, richiesta utente — quarto tab Edifici) — NUOVO parametro, stesso
 # principio di human_individuals sopra: Array[Building] già risolto dal chiamante (GameScene ha
 # macro_world.buildings a portata di mano), questo pannello resta di sola lettura/presentazione.
-func open_dialog(game_data: GameData, human_individuals: Array[HumanIndividual], buildings: Array[Building]) -> void:
-	_refresh_mortality_tab(game_data.death_events)
-	_refresh_births_tab(
-		game_data.birth_events, human_individuals, game_data.year,
-		game_data.era_effective_age_band_durations_male, game_data.era_effective_age_band_durations_female
-	)
-	_refresh_population_tab(
-		human_individuals, game_data.population_snapshots, game_data.year,
-		game_data.era_effective_age_band_durations_male, game_data.era_effective_age_band_durations_female
-	)
-	_refresh_buildings_tab(buildings, game_data.building_snapshots)
+#
+# folk (2026-10-12): popola il selettore dell'ambito (tutto il popolo + i suoi villaggi).
+func open_dialog(game_data: GameData, human_individuals: Array[HumanIndividual], buildings: Array[Building], folk: Folk) -> void:
+	_game_data = game_data
+	_human_individuals = human_individuals
+	_buildings = buildings
+	_folk = folk
+	_fill_scope_selector(folk)
+	_refresh_all_tabs()
 	# Bugfix (richiesta utente, 2026-09-06 — "solo la tab Nascite ha il tasto chiudi"): NON più
 	# size = get_contents_minimum_size() (calcolato una volta sola sul tab ATTIVO in quel momento —
 	# passare a un tab più alto travolgeva la finestra già dimensionata, spingendo CloseButton fuori
@@ -113,6 +166,80 @@ func open_dialog(game_data: GameData, human_individuals: Array[HumanIndividual],
 	# scorre per conto suo, la finestra non deve più sapere quanto è alto nessun tab specifico.
 	exclusive = true
 	popup_centered()
+
+
+# Voci del selettore: "<popolo> (tutto il popolo)" e un villaggio per riga. Se il villaggio scelto non esiste più si
+# torna a tutto il popolo.
+func _fill_scope_selector(folk: Folk) -> void:
+	scope_selector.clear()
+	scope_selector.add_item(tr("statistics_scope_folk").format({"folk": folk.name if folk != null else ""}), SCOPE_ALL)
+	var has_selected := false
+	if folk != null:
+		for village in folk.villages:
+			scope_selector.add_item(village.get_display_name(), village.id)
+			has_selected = has_selected or village.id == _scope_village_id
+	if not has_selected:
+		_scope_village_id = SCOPE_ALL
+	scope_selector.select(scope_selector.get_item_index(_scope_village_id))
+
+
+func _on_scope_selected(index: int) -> void:
+	_scope_village_id = scope_selector.get_item_id(index)
+	_refresh_all_tabs()
+
+
+# Ogni scheda ricalcolata sull'ambito scelto: individui ed edifici del villaggio, eventi registrati in quel villaggio
+# (village_id; quelli precedenti al campo contano solo per tutto il popolo), serie annuali del villaggio.
+func _refresh_all_tabs() -> void:
+	if _game_data == null:
+		return
+	var individuals := _scoped_individuals()
+	var population_series: Dictionary = _game_data.population_snapshots
+	var building_series: Dictionary = _game_data.building_snapshots
+	if _scope_village_id != SCOPE_ALL:
+		population_series = _game_data.village_population_snapshots.get(_scope_village_id, {})
+		building_series = _game_data.village_building_snapshots.get(_scope_village_id, {})
+	_refresh_mortality_tab(_scoped_events(_game_data.death_events))
+	_refresh_births_tab(
+		_scoped_events(_game_data.birth_events), individuals, _game_data.year,
+		_game_data.era_effective_age_band_durations_male, _game_data.era_effective_age_band_durations_female
+	)
+	_refresh_population_tab(
+		individuals, population_series, _game_data.year,
+		_game_data.era_effective_age_band_durations_male, _game_data.era_effective_age_band_durations_female
+	)
+	_refresh_buildings_tab(_scoped_buildings(), building_series)
+	_refresh_influence_tab()
+
+
+func _scoped_individuals() -> Array[HumanIndividual]:
+	if _scope_village_id == SCOPE_ALL:
+		return _human_individuals
+	var result: Array[HumanIndividual] = []
+	for individual in _human_individuals:
+		if individual.village_ref != null and individual.village_ref.id == _scope_village_id:
+			result.append(individual)
+	return result
+
+
+func _scoped_buildings() -> Array[Building]:
+	if _scope_village_id == SCOPE_ALL:
+		return _buildings
+	var result: Array[Building] = []
+	for building in _buildings:
+		if building.village_id == _scope_village_id:
+			result.append(building)
+	return result
+
+
+func _scoped_events(events: Array[Dictionary]) -> Array[Dictionary]:
+	if _scope_village_id == SCOPE_ALL:
+		return events
+	var result: Array[Dictionary] = []
+	for event in events:
+		if int(event.get("village_id", -1)) == _scope_village_id:
+			result.append(event)
+	return result
 
 
 func _refresh_mortality_tab(death_events: Array[Dictionary]) -> void:
@@ -295,10 +422,15 @@ func _refresh_population_tab(
 # battuta, falsavano i numeri): "Edifici totali", la torta e il grafico per anno contano solo gli altri (building_snapshots
 # li esclude dal 2026-10-04, vedi GameScene._on_year_rolled_over). Le celle MOVEMENT compaiono solo come nota tenue sotto
 # la legenda della torta ("Vie di passaggio", PieChart.set_footer), volutamente non in evidenza.
+#
+# Solo edifici completi (2026-10-12, richiesta utente): i cantieri non contano; le macerie (categoria RUINS) non sono
+# edifici e non compaiono né nel totale né nella torta.
 func _refresh_buildings_tab(buildings: Array[Building], building_snapshots: Dictionary) -> void:
 	var counted_buildings: Array[Building] = []
 	var movement_count := 0
 	for building in buildings:
+		if not building.is_complete or building.is_demolished or building.is_rubble():
+			continue
 		if building.rules != null and building.rules.category == BuildingTypes.Category.MOVEMENT:
 			movement_count += 1
 		else:
@@ -312,7 +444,7 @@ func _refresh_buildings_tab(buildings: Array[Building], building_snapshots: Dict
 	# Nomi tradotti (2026-09-26): chiave "building_category_<nome_minuscolo>", una per valore dell'enum.
 	var category_counts := {}
 	for category_name in BuildingTypes.Category.keys():
-		if BuildingTypes.Category[category_name] == BuildingTypes.Category.MOVEMENT:
+		if BuildingTypes.Category[category_name] in [BuildingTypes.Category.MOVEMENT, BuildingTypes.Category.RUINS]:
 			continue
 		category_counts[_building_category_display_name(String(category_name))] = 0
 	for building in counted_buildings:
@@ -328,6 +460,67 @@ func _refresh_buildings_tab(buildings: Array[Building], building_snapshots: Dict
 	# "un futuro consumatore con semantica diversa" (vedi LineChart.gd).
 	buildings_per_year_chart.set_axis_labels("Anno", "Edifici")
 	buildings_per_year_chart.set_data(building_snapshots)
+
+
+# Scheda Influenza (2026-10-12, richiesta utente): per l'ambito scelto (popolo = somma dei villaggi) il valore attuale di
+# P/C/R arrotondato con l'incremento previsto a fine anno (VillageInfluenceService.compute_annual_gains, raggi di adesso;
+# gli eventi dell'anno non sono prevedibili), il grafico per anno delle serie spuntate e, solo per il popolo, una torta
+# per tipo con la ripartizione tra i villaggi.
+func _refresh_influence_tab() -> void:
+	var villages := _scoped_villages()
+	for i in range(INFLUENCE_DISPLAY.size()):
+		var influence_type: int = INFLUENCE_DISPLAY[i]["type"]
+		var value := 0.0
+		var projected := 0
+		for village in villages:
+			value += village.get_influence_value(influence_type)
+			projected += int(VillageInfluenceService.compute_annual_gains(village, _buildings)[influence_type])
+		influence_value_labels[i].text = "%s: %d (+%d a fine anno)" % [INFLUENCE_DISPLAY[i]["name"], roundi(value), projected]
+		influence_value_labels[i].add_theme_color_override("font_color", INFLUENCE_DISPLAY[i]["color"])
+	_refresh_influence_chart()
+	influence_pies_container.visible = _scope_village_id == SCOPE_ALL
+	if not influence_pies_container.visible:
+		return
+	for i in range(INFLUENCE_DISPLAY.size()):
+		var shares := {}
+		for village in villages:
+			shares[village.get_display_name()] = roundi(village.get_influence_value(INFLUENCE_DISPLAY[i]["type"]))
+		influence_pie_charts[i].set_data(shares)
+
+
+# Solo le serie spuntate. Storia: i valori registrati a ogni cambio d'anno (GameData.village_influence_snapshots),
+# sommati sui villaggi dell'ambito; l'anno in corso mostra il valore di adesso, così i guadagni dell'anno si vedono subito.
+func _refresh_influence_chart() -> void:
+	if _game_data == null:
+		return
+	var villages := _scoped_villages()
+	var series: Array = []
+	for i in range(INFLUENCE_DISPLAY.size()):
+		if not influence_checks[i].button_pressed:
+			continue
+		var influence_type: int = INFLUENCE_DISPLAY[i]["type"]
+		var by_year := {}
+		var current := 0.0
+		for village in villages:
+			var history: Dictionary = (_game_data.village_influence_snapshots.get(village.id, {}) as Dictionary).get(influence_type, {})
+			for year in history:
+				by_year[year] = float(by_year.get(year, 0.0)) + float(history[year])
+			current += village.get_influence_value(influence_type)
+		if not villages.is_empty():
+			by_year[_game_data.year] = current
+		series.append({"data": by_year, "color": INFLUENCE_DISPLAY[i]["color"], "label": INFLUENCE_DISPLAY[i]["name"]})
+	influence_per_year_chart.set_series(series)
+
+
+# Villaggi dell'ambito: tutti quelli del popolo o solo quello scelto.
+func _scoped_villages() -> Array[Village]:
+	var result: Array[Village] = []
+	if _folk == null:
+		return result
+	for village in _folk.villages:
+		if _scope_village_id == SCOPE_ALL or village.id == _scope_village_id:
+			result.append(village)
+	return result
 
 
 func _building_category_display_name(enum_key: String) -> String:

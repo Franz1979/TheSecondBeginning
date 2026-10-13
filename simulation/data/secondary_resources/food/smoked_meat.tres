@@ -1,4 +1,4 @@
-[gd_resource type="Resource" script_class="SecondaryResourceRules" format=3]
+[gd_resource type="Resource" script_class="SecondaryResourceRules" format=3 uid="uid://dp0qam32v8gr"]
 
 [ext_resource type="Script" uid="uid://cu4cyua5y4n1m" path="res://simulation/scripts/core/SecondaryResourceRules.gd" id="1_smoked_meat"]
 
@@ -6,7 +6,6 @@
 script = ExtResource("1_smoked_meat")
 secondary_resource_name = "smoked_meat"
 calories_per_unit = 100.0
-category = 0
 generation_source = 2
 day_durability = 360
 space_per_unit = 4.0
@@ -16,6 +15,5 @@ recipe_inputs = {
 "meat": 1
 }
 recipe_labor = 100.0
-recipe_auto_progress_days = 0
 recipe_fuel_required = 5.0
 recipe_workstation_types = Array[String](["smokehouse"])

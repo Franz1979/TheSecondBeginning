@@ -41,7 +41,7 @@ static func format_lines(idea_id: String, is_hidden: Callable = Callable()) -> A
 	return lines
 
 
-# Sola riga delle idee successive, "Prossima idea da ricercare: <nome>, <nome>" (2026-10-01 — sezione dell'idea
+# Sola riga delle idee successive, "Idea consigliata: <nome>, <nome>" (un consiglio, non un obbligo) (2026-10-01 — sezione dell'idea
 # regalata nel popup, GameScene._on_idea_completed). Stesso is_hidden di format_lines. "" se non apre altre idee.
 static func format_next_ideas_line(idea_id: String, is_hidden: Callable = Callable()) -> String:
 	var names: Array[String] = []

@@ -12,7 +12,7 @@ required_idea_id = "advanced_paleolithic_constructions"
 required_labor = 3000
 storage_slot_count = 4
 storage_space_per_slot = 50
-durability_multiplier_by_category = Array[float]([1.1, 1.1, 1.0, 1.0, 1.0])
+durability_multiplier_by_category = Array[float]([1.1, 1.1, 1.0, 1.0, 1.0, 1.8])
 required_materials = {
 "fiber_rope": 6,
 "stick": 30,

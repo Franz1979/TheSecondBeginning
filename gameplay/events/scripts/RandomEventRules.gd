@@ -48,6 +48,10 @@ extends Resource
 # camminano fino al centro del villaggio).
 @export var requires_village_center: bool = false
 
+# Quanto la cultura del villaggio rende più probabile l'evento (2026-10-13, richiesta utente — VillageAttractivenessService):
+# 0 = per niente (default), 1 = in pieno. Il villaggio è quello del centro (VisitorService.find_village_center).
+@export var culture_sensitivity: float = 0.0
+
 
 # Probabilità annua PRIMA dei moltiplicatori: dalle fasce di popolazione se definite, altrimenti annual_probability.
 # Fasce incoerenti (array di lunghezza diversa) -> errore e annual_probability.

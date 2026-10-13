@@ -70,6 +70,9 @@ var selected_resource_richness_preference: String = "NORMAL"
 # GROUP_SIZE_COMPOSITIONS) oltre che da DifficultyCalculator. Default "GROUP" (valore centrale dei
 # tre), coerente col default degli altri gruppi a 3 vie.
 var selected_group_size_preference: String = "GROUP"
+# Nome del popolo scelto nelle opzioni di nuova partita (2026-10-12, richiesta utente) — "" = nome casuale
+# estratto alla semina (Folk.pick_random_name).
+var selected_folk_name: String = ""
 var selected_macro_cell_x: int = -1
 var selected_macro_cell_y: int = -1
 var active_world: World = null
@@ -92,7 +95,7 @@ signal auto_progress_completed(building: Building, input_name: String, product_n
 # stesso processo. Persistito solo per la sessione corrente (non nei save su disco), stesso
 # trattamento di returning_to_player_view sotto.
 var active_fog_of_war_memories: Dictionary = {}
-# Canale di handoff per il popolo umano del player (Folk/HumanPopulationGroup/HumanIndividual,
+# Canale di handoff per il popolo umano del player (Folk (con i Village)/HumanIndividual,
 # richiesta utente, 2026-09-02 — persistenza) — STESSO identico schema/motivo/momenti di lettura-
 # scrittura di active_fog_of_war_memories sopra (letto SOLO nel ramo returning_to_player_view di
 # GameScene._ready(), MAI per un ingresso "vero" da partita nuova — WorldScene._redirect_to_game_
@@ -102,7 +105,6 @@ var active_fog_of_war_memories: Dictionary = {}
 # active_game_data sopra (stesso oggetto, mai ricreato lungo il giro andata-ritorno) — un secondo
 # canale qui sarebbe stato ridondante.
 var active_human_folk: Folk = null
-var active_human_population_group: HumanPopulationGroup = null
 var active_human_individuals: Array[HumanIndividual] = []
 var returning_to_world_scene: bool = false
 # Stesso schema di returning_to_world_scene sopra, per il canale MacroCellScene/WorldScene ->

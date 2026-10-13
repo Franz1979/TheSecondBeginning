@@ -252,3 +252,10 @@ extends Resource
 # microcelle, in linea d'aria dal pipottino, entro cui l'edificio del rito si sceglie A CASO tra quelli ammessi; se
 # entro questa distanza non ce n'è nessuno, il più vicino tra i raggiungibili.
 @export var spontaneous_rite_max_distance: float = 40.0
+# Cultura dalle idee (2026-10-12, passo 4 Folk/Village): allo sblocco di un'idea, questa frazione del suo thoughts_cost va
+# al valore assoluto C del villaggio dell'edificio dove è stato depositato l'ultimo pensiero, se ha un centro
+# (VillageInfluenceService.add_idea_culture).
+@export var idea_culture_gain_fraction: float = 0.5
+# Politica dagli arrivi (2026-10-12, passo 4 Folk/Village): valore assoluto P guadagnato dal villaggio per ogni adulto
+# (fascia da FERTILE_ADULT in su) accolto (GameScene._welcome_visitor_party, VillageInfluenceService.add_accepted_adults).
+@export var accepted_adult_political_gain: float = 10.0

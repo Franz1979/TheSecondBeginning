@@ -44,11 +44,11 @@ signal individual_died(
 	individual: HumanIndividual, index: int, age_at_death: int, partner_freed: bool,
 	cause: DeathTypes.DeathCause, day: int
 )
-# Emesso UNA VOLTA a fine giornata, DOPO che tutte le rimozioni/aggiornamenti di total_count del
+# Emesso UNA VOLTA a fine giornata, DOPO che tutte le rimozioni/aggiornamenti di il totale del
 # giorno sono completati — a differenza di individual_died sopra (emesso PRIMA di ogni singola
 # rimozione, con l'indice ancora valido per human_individual_views), questo è il punto giusto per
 # rinfrescare pannelli che leggono lo stato AGGIORNATO (es. la scheda 👨‍👩‍👧, che mostra anche
-# total_count) — bugfix, richiesta utente, 2026-09-05: collegare il refresh direttamente dentro
+# il totale) — bugfix, richiesta utente, 2026-09-05: collegare il refresh direttamente dentro
 # individual_died mostrava ancora i dati vecchi, perché a quel punto la rimozione non era ancora
 # avvenuta. Non emesso nei giorni senza morti (nessun refresh inutile).
 signal human_population_changed
@@ -91,7 +91,7 @@ signal individual_started_body_reserve(individual: HumanIndividual)
 const STARVATION_DAYS: int = 5
 
 var _game_data: GameData
-# Riferimenti (non copie) allo STESSO Array/Folk/HumanPopulationGroup che GameScene possiede —
+# Riferimenti (non copie) allo STESSO Array/Folk che GameScene possiede —
 # un Array in GDScript è per riferimento, quindi la rimozione reale (Step 6, vedi
 # _apply_scheduled_human_deaths sotto) fatta qui resta visibile a GameScene senza dover ripassare
 # nulla ad ogni chiamata. _human_folk (non solo human_rules_ref preso una volta sola) perché
@@ -115,10 +115,6 @@ var _world: World
 # può più richiamarli per nome di classe: deve girare sulla STESSA istanza a cui GameScene è già
 # collegato per quel segnale.
 var _individual_action_service: HumanIndividualActionService
-# Serve SOLO per tenere total_count allineato a _human_individuals.size() dopo una rimozione
-# (Step 6) — HumanPopulationInfoPanel.show_population riceve i due dati separatamente, mai
-# ricalcolato da _human_individuals.size() al volo.
-var _human_population_group: HumanPopulationGroup
 
 
 # Connessione UNA TANTUM (richiesta utente, 2026-09-05) — chiamata da GameScene._setup_clock
@@ -127,21 +123,18 @@ var _human_population_group: HumanPopulationGroup
 #
 # human_individuals/human_folk (Step 5 del piano mortalità): servono per agganciare
 # HumanMortalityIndividualService.check_mortality a year_rolled_over — vedi _on_year_rolled_over
-# sotto. human_population_group (Step 6): serve per tenere total_count allineato dopo una
-# rimozione reale — vedi _apply_scheduled_human_deaths.
+# sotto.
 func connect_to_clock(
 	clock: GameClockController,
 	game_data: GameData,
 	human_individuals: Array[HumanIndividual],
 	human_folk: Folk,
-	human_population_group: HumanPopulationGroup,
 	world: World,
 	individual_action_service: HumanIndividualActionService
 ) -> void:
 	_game_data = game_data
 	_human_individuals = human_individuals
 	_human_folk = human_folk
-	_human_population_group = human_population_group
 	_world = world
 	_individual_action_service = individual_action_service
 	clock.day_advanced.connect(_on_day_advanced)
@@ -310,8 +303,8 @@ func _log_daily_food_need() -> void:
 		if individual.id != DebugLogging.FOOD_NEED_LOG_INDIVIDUAL_ID:
 			continue
 		var human_rules: HumanRules = null
-		if individual.source_group_ref != null and individual.source_group_ref.folk_ref != null:
-			human_rules = individual.source_group_ref.folk_ref.human_rules_ref
+		if individual.folk_ref != null:
+			human_rules = individual.folk_ref.human_rules_ref
 		if human_rules == null:
 			return
 		var era_rules := EraCalculator.get_era_rules(_game_data.current_era_name)
@@ -596,6 +589,17 @@ func _apply_unburied_penalty(record: Dictionary, rules: ExpiredObjectRules) -> v
 			BodyBurialService.get_body_name(record), rules.unburied_faith_loss, rules.unburied_happiness_loss,
 			rules.unburied_relatives_multiplier
 		])
+	# Valore assoluto R del villaggio del morto (2026-10-12, passo 4 Folk/Village): anche senza centro (una perdita, non
+	# un guadagno); mai sotto 0 (Village.add_influence_value).
+	var dead_village_id := int((record.get("type_specific_data", {}) as Dictionary).get("village_id", -1))
+	var dead_village: Village = _human_folk.find_village(dead_village_id) if _human_folk != null else null
+	if dead_village != null and rules.unburied_village_religion_loss > 0.0:
+		dead_village.add_influence_value(InfluenceService.InfluenceType.RELIGIOUS, -rules.unburied_village_religion_loss)
+		if log_enabled:
+			print("[RITE]   valore religioso di %s: -%.0f (totale %.2f)." % [
+				dead_village.get_display_name(), rules.unburied_village_religion_loss,
+				dead_village.get_influence_value(InfluenceService.InfluenceType.RELIGIOUS)
+			])
 	for individual in _human_individuals:
 		var is_relative := relative_ids.has(individual.id)
 		var multiplier := rules.unburied_relatives_multiplier if is_relative else 1.0
@@ -761,9 +765,7 @@ func _format_individuals(individuals: Array[HumanIndividual]) -> String:
 # morte materna (tiro sopravvivenza madre, 2026-09-06) sono entrambi ORA reali e completamente
 # indipendenti l'uno dall'altro — vedi il ciclo su birth_results sotto.
 #
-# total_count (stesso trattamento di _apply_scheduled_human_deaths, che lo tiene allineato dopo
-# una RIMOZIONE): qui va tenuto allineato dopo un'AGGIUNTA — ricalcolato da
-# _human_individuals.size(), non incrementato a mano, stessa formula. individual_born emesso DOPO
+# individual_born emesso DOPO
 # che il neonato è già in _human_individuals (append fatto dentro HumanBirthIndividualService
 # stesso, array condiviso per riferimento) — GameScene crea la view in risposta.
 #
@@ -788,8 +790,6 @@ func _run_annual_human_births() -> void:
 		if DebugLogging.ENABLED:
 			print("[HUMAN BIRTH] anno=%d: nessuna gravidanza da risolvere" % _game_data.year)
 		return
-	if _human_population_group != null:
-		_human_population_group.total_count = _human_individuals.size()
 	# individual_born per i nati VIVI, human_stillbirth per i nati morti (entry["newborn"] == null
 	# — vedi HumanBirthIndividualService._run_births_in_group) — Step 2 dell'effetto nato-morto,
 	# 2026-09-06. Effetto morte materna (STEP 2/3, 2026-09-06): DOPO il segnale sul figlio (nato
@@ -831,7 +831,7 @@ func _run_annual_human_births() -> void:
 					mother, mother_index, DeathTypes.DeathCause.CHILDBIRTH, _game_data.current_day, mother_age_at_death
 				)
 	# Stesso motivo/meccanismo di _apply_scheduled_human_deaths: la scheda 👨‍👩‍👧 mostra
-	# total_count, appena cambiato sopra — senza questo resterebbe coi dati vecchi fino al
+	# il totale, appena cambiato sopra — senza questo resterebbe coi dati vecchi fino al
 	# prossimo rollover d'anno. _kill_individual (se chiamata sopra) lo aggiorna già da sé ad ogni
 	# morte materna, questo emit resta comunque necessario per il caso "solo nascite, nessuna
 	# morte materna quest'anno".
@@ -884,6 +884,12 @@ func _on_year_rolled_over() -> void:
 	# GameData.advance_day prima che questo segnale scattasse), prima che qualunque logica di
 	# quest'anno (determinazione mortalità, coupling, concepimento, parto) la tocchi.
 	_game_data.population_snapshots[_game_data.year] = _human_individuals.size()
+	# Stessa serie per villaggio (2026-10-12, statistiche filtrabili per villaggio).
+	if _human_folk != null:
+		for village in _human_folk.villages:
+			if not _game_data.village_population_snapshots.has(village.id):
+				_game_data.village_population_snapshots[village.id] = {}
+			_game_data.village_population_snapshots[village.id][_game_data.year] = village.count_inhabitants(_human_individuals)
 	_run_annual_human_mortality_determination()
 
 
@@ -940,7 +946,7 @@ func _run_annual_human_mortality_determination() -> void:
 
 # Step 6 del piano mortalità (2026-09-05): applicazione REALE delle morti programmate dallo
 # Step 5 (HumanIndividual.scheduled_death_day) — rimozione da _human_individuals/allineamento
-# di total_count, pulizia partner_id del coniuge superstite (vedi _free_partner_if_any sotto).
+# di il totale, pulizia partner_id del coniuge superstite (vedi _free_partner_if_any sotto).
 #
 # Step 9 (2026-09-05): il corpo per-singolo-individuo è stato estratto in _kill_individual sotto —
 # condiviso con kill_individual_now (morte immediata di debug, causa MURDER, mai passa da
@@ -982,7 +988,7 @@ func _apply_scheduled_human_deaths() -> void:
 	# stampa sempre) — evita spam giornaliero, richiesta utente.
 	if DebugLogging.ENABLED and not removed_log_lines.is_empty():
 		print("[HUMAN DEATH] giorno=%d: %s" % [today, ", ".join(removed_log_lines)])
-	# Solo ora (dopo TUTTE le rimozioni/total_count del giorno) — vedi commento sul signal.
+	# Solo ora (dopo TUTTE le rimozioni/il totale del giorno) — vedi commento sul signal.
 	human_population_changed.emit()
 
 
@@ -1049,6 +1055,8 @@ func _kill_individual(
 		# Assenti nei record salvati prima di questa data: lì il ripiego è birth_events (GameScene._resolve_children).
 		"mother_id": individual.mother_id,
 		"father_id": individual.father_id,
+		# Villaggio al momento della morte (2026-10-12, statistiche per villaggio), -1 = nessuno. Non ricostruibile dopo.
+		"village_id": individual.village_ref.id if individual.village_ref != null else -1,
 	})
 	# Log di verifica SEPARATO dal riepilogo "[HUMAN DEATH]" (mai toccato, richiesta esplicita) —
 	# conferma che l'evento è stato davvero registrato in game_data.death_events e mostra il
@@ -1084,6 +1092,9 @@ func _kill_individual(
 		# (String, anch'esso già JSON-nativo).
 		"type_specific_data": {
 			"name": individual.name,
+			# Villaggio al momento della morte (2026-10-12, passo 4 Folk/Village): a chi togliere il valore R per la
+			# mancata sepoltura (_apply_unburied_penalty). -1 = nessuno; assente nei record precedenti.
+			"village_id": individual.village_ref.id if individual.village_ref != null else -1,
 			"sex": individual.sex,
 			"age_at_death": age_at_death,
 			"cause": cause,
@@ -1130,8 +1141,6 @@ func _kill_individual(
 	# per il perché (GameScene.human_individual_views parallelo per indice).
 	individual_died.emit(individual, index, age_at_death, partner_freed, cause, day)
 	_human_individuals.remove_at(index)
-	if _human_population_group != null:
-		_human_population_group.total_count = _human_individuals.size()
 	return partner_freed
 
 

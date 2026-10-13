@@ -154,7 +154,7 @@ const SHOW_VITALS_RECALC_LOGS := false
 # due regole scatta comunque in un verso o nell'altro, quindi la riga è sempre stampata per ognuno,
 # non solo quando cambia qualcosa). A false: nessun comportamento di simulazione cambia, solo il
 # print viene soppresso.
-const SHOW_VITALS_INTERACTION_LOGS := true
+const SHOW_VITALS_INTERACTION_LOGS := false
 
 # Filtro dedicato per [SELECTED PANEL REFRESH] (GameScene._on_day_advanced, refresh giornaliero del
 # pannello individuo selezionato) — riga diretta (stesso stile di SHOW_STAMINA_RECALC_LOGS sopra:
@@ -349,7 +349,7 @@ const SHOW_RESOURCE_DECAY_LOGS := false
 # (giorno RandomEventService.ROLL_DAY_OF_YEAR), una riga per evento: probabilità base (fascia di popolazione),
 # moltiplicatori del villaggio e dell'evento, probabilità risultante, tiro, se è stato estratto e per quale giorno;
 # per un evento non idoneo, il motivo. Solo stampa, nessun effetto sul sorteggio.
-const SHOW_RANDOM_EVENT_ROLL_LOGS := false
+const SHOW_RANDOM_EVENT_ROLL_LOGS := true
 
 # PATHFINDING — [PATHFINDING] (2026-09-27, pathfinding step 1, PathfindingService): tempo di costruzione della griglia di
 # una macrocella (con microcelle bloccate e numero di regioni connesse) e, a ogni costruzione/demolizione di edificio,

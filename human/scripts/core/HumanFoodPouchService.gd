@@ -44,7 +44,7 @@ static func clamp_to_capacity(individual: HumanIndividual) -> void:
 
 # Chiamata da HumanCarryCapacityIndividualService dopo aver ricalcolato food_space_capacity.
 # `from_rules`: true se la capacita' viene da HumanRules reali, false se dal fallback (catena
-# source_group_ref -> folk_ref -> human_rules_ref non risolvibile). La PRIMA volta che la capacita'
+# folk_ref -> human_rules_ref non risolvibile). La PRIMA volta che la capacita'
 # vera e' nota (food_pouch_resolved ancora false: individuo appena creato — l'_init non conosce le
 # regole, un neonato riceve il gruppo solo dopo — o caricato senza le chiavi del contenuto) la
 # saccoccia viene riempita di nuovo con la capacita' vera, cosi' le unita' intere sono quelle

@@ -16,7 +16,7 @@ storage_slot_count = 10
 storage_space_per_slot = 80
 accepted_categories = Array[int]([1, 3])
 categories_locked = true
-durability_multiplier_by_category = Array[float]([1.0, 1.1, 1.0, 1.1, 1.1])
+durability_multiplier_by_category = Array[float]([1.0, 1.1, 1.0, 1.1, 1.1, 1.0])
 required_materials = {
 "dried_hide": 1,
 "fiber_rope": 1,

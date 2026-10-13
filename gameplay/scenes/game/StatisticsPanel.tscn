@@ -6,7 +6,7 @@
 
 [node name="StatisticsPanel" type="Window"]
 visible = false
-size = Vector2i(480, 600)
+size = Vector2i(480, 640)
 script = ExtResource("1_stats")
 
 [node name="MarginContainer" type="MarginContainer" parent="."]
@@ -20,6 +20,17 @@ theme_override_constants/margin_bottom = 10
 
 [node name="VBoxContainer" type="VBoxContainer" parent="MarginContainer"]
 layout_mode = 2
+
+[node name="ScopeRow" type="HBoxContainer" parent="MarginContainer/VBoxContainer"]
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="ScopeLabel" type="Label" parent="MarginContainer/VBoxContainer/ScopeRow"]
+layout_mode = 2
+
+[node name="ScopeSelector" type="OptionButton" parent="MarginContainer/VBoxContainer/ScopeRow"]
+layout_mode = 2
+size_flags_horizontal = 3
 
 [node name="TabContainer" type="TabContainer" parent="MarginContainer/VBoxContainer"]
 custom_minimum_size = Vector2(460, 540)
@@ -167,6 +178,70 @@ layout_mode = 2
 text = "Distribuzione per tipo"
 
 [node name="BuildingTypeDistributionChart" type="Control" parent="MarginContainer/VBoxContainer/TabContainer/BuildingsTab/BuildingsContent"]
+layout_mode = 2
+script = ExtResource("3_pie")
+
+[node name="InfluenceTab" type="ScrollContainer" parent="MarginContainer/VBoxContainer/TabContainer"]
+visible = false
+layout_mode = 2
+
+[node name="InfluenceContent" type="VBoxContainer" parent="MarginContainer/VBoxContainer/TabContainer/InfluenceTab"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="PoliticalValueLabel" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/InfluenceTab/InfluenceContent"]
+layout_mode = 2
+
+[node name="CulturalValueLabel" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/InfluenceTab/InfluenceContent"]
+layout_mode = 2
+
+[node name="ReligiousValueLabel" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/InfluenceTab/InfluenceContent"]
+layout_mode = 2
+
+[node name="SeriesRow" type="HBoxContainer" parent="MarginContainer/VBoxContainer/TabContainer/InfluenceTab/InfluenceContent"]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="PoliticalCheck" type="CheckBox" parent="MarginContainer/VBoxContainer/TabContainer/InfluenceTab/InfluenceContent/SeriesRow"]
+layout_mode = 2
+button_pressed = true
+
+[node name="CulturalCheck" type="CheckBox" parent="MarginContainer/VBoxContainer/TabContainer/InfluenceTab/InfluenceContent/SeriesRow"]
+layout_mode = 2
+button_pressed = true
+
+[node name="ReligiousCheck" type="CheckBox" parent="MarginContainer/VBoxContainer/TabContainer/InfluenceTab/InfluenceContent/SeriesRow"]
+layout_mode = 2
+button_pressed = true
+
+[node name="InfluencePerYearChart" type="Control" parent="MarginContainer/VBoxContainer/TabContainer/InfluenceTab/InfluenceContent"]
+layout_mode = 2
+script = ExtResource("2_chart")
+
+[node name="PiesContainer" type="VBoxContainer" parent="MarginContainer/VBoxContainer/TabContainer/InfluenceTab/InfluenceContent"]
+layout_mode = 2
+
+[node name="PiesCaption" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/InfluenceTab/InfluenceContent/PiesContainer"]
+layout_mode = 2
+
+[node name="PoliticalPieCaption" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/InfluenceTab/InfluenceContent/PiesContainer"]
+layout_mode = 2
+
+[node name="PoliticalPieChart" type="Control" parent="MarginContainer/VBoxContainer/TabContainer/InfluenceTab/InfluenceContent/PiesContainer"]
+layout_mode = 2
+script = ExtResource("3_pie")
+
+[node name="CulturalPieCaption" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/InfluenceTab/InfluenceContent/PiesContainer"]
+layout_mode = 2
+
+[node name="CulturalPieChart" type="Control" parent="MarginContainer/VBoxContainer/TabContainer/InfluenceTab/InfluenceContent/PiesContainer"]
+layout_mode = 2
+script = ExtResource("3_pie")
+
+[node name="ReligiousPieCaption" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/InfluenceTab/InfluenceContent/PiesContainer"]
+layout_mode = 2
+
+[node name="ReligiousPieChart" type="Control" parent="MarginContainer/VBoxContainer/TabContainer/InfluenceTab/InfluenceContent/PiesContainer"]
 layout_mode = 2
 script = ExtResource("3_pie")
 

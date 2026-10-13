@@ -258,11 +258,11 @@ static func get_human_rules(individual: HumanIndividual) -> HumanRules:
 	return _resolve_human_rules(individual) if individual != null else null
 
 
-# HumanRules dell'individuo (source_group_ref -> folk_ref -> human_rules_ref), null se la catena non è risolvibile.
+# HumanRules dell'individuo (folk_ref -> human_rules_ref), null se la catena non è risolvibile.
 static func _resolve_human_rules(individual: HumanIndividual) -> HumanRules:
-	if individual.source_group_ref == null or individual.source_group_ref.folk_ref == null:
+	if individual.folk_ref == null:
 		return null
-	return individual.source_group_ref.folk_ref.human_rules_ref
+	return individual.folk_ref.human_rules_ref
 
 
 # value + delta limitato a [0, max_value]. max_value negativo (non dovrebbe accadere) e' trattato come 0.

@@ -53,6 +53,9 @@ var starting_resource_richness_preference: String = ""
 # la partita (modulo player, non ancora implementato), leggera' questo valore invece di
 # ricalcolarlo. Oggi alimenta solo DifficultyCalculator, nessuna differenza pratica.
 var starting_group_size_preference: String = ""
+# Nome del popolo scelto a inizio partita (2026-10-12) — "" = casuale. Non salvato: serve solo alla semina, poi
+# vive in Folk.name (già persistito).
+var starting_folk_name: String = ""
 # A differenza dei campi puramente statistici sopra, questo alimenta DAVVERO
 # FirstStartMacroCellSelectionService (vedi GameScene._ready()), esattamente come
 # starting_exclude_hostile_start/starting_exclude_predator_territories/
@@ -76,7 +79,7 @@ var player_macro_cell_y: int = -1
 
 # Id dell'HumanIndividual che era il bersaglio di movimento/streaming corrente (GameScene.
 # individual) al momento del salvataggio/cambio-scena — richiesta utente, 2026-09-02 (persistenza
-# Folk/HumanPopulationGroup/HumanIndividual). Sostituisce player_micro_x/y (RIMOSSI, ridondanti
+# Folk/HumanIndividual). Sostituisce player_micro_x/y (RIMOSSI, ridondanti
 # ora: la posizione di OGNI individuo, bersaglio incluso, viaggia già dentro l'array persistito di
 # HumanIndividual — vedi GameSaveService/GameLoadService, sezione "human"). -1 = nessun individuo
 # umano persistito in questa partita (mai il caso oggi che il player esista, ma sentinella comunque
@@ -180,6 +183,16 @@ var population_snapshots: Dictionary = {}
 # stesso punto). ATTENZIONE persistenza — stessa nota di population_snapshots: chiavi int
 # convertite a String da JSON.stringify al salvataggio, riconvertite esplicitamente al caricamento.
 var building_snapshots: Dictionary = {}
+
+# Le stesse due serie per villaggio (2026-10-12, statistiche filtrabili per villaggio): Village.id (int) -> {anno (int) ->
+# conteggio}. Scritte negli stessi punti delle serie totali sopra, a partire dall'anno in cui il villaggio esiste;
+# stesse note di persistenza (chiavi int convertite a String da JSON, riconvertite al caricamento).
+var village_population_snapshots: Dictionary = {}
+var village_building_snapshots: Dictionary = {}
+# Valori assoluti R/C/P per villaggio a ogni cambio d'anno, dopo la crescita annuale (2026-10-12, scheda Influenza delle
+# statistiche): Village.id (int) -> {InfluenceService.InfluenceType (int) -> {anno (int) -> valore (float)}}. Il popolo
+# è la somma dei villaggi, calcolata dal pannello. Stesse note di persistenza (chiavi int -> String in JSON).
+var village_influence_snapshots: Dictionary = {}
 
 # Istanze runtime del futuro sistema oggetti-scaduti (Step 2, 2026-09-05, res://gameplay/scripts/
 # core/ExpiredObjectRules.gd — oggi solo DEAD_BODY) — un Dictionary per istanza nel mondo:

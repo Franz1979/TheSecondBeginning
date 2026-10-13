@@ -8,5 +8,6 @@ days_to_expire = 182
 unburied_faith_loss = 200.0
 unburied_happiness_loss = 250.0
 unburied_relatives_multiplier = 2.0
+unburied_village_religion_loss = 10.0
 unburied_warning_days = 30
 required_work_to_remove = 50.0

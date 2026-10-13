@@ -16,7 +16,7 @@ extends RefCounted
 # durations_male/female), MAI human_rules.age_band_durations_male/female direttamente — stesso
 # principio già fissato ovunque nel dominio umano (vedi HumanStaminaIndividualService).
 #
-# Fallback HumanIndividual.FALLBACK_MAX_CARRY_CAPACITY quando la catena source_group_ref->
+# Fallback HumanIndividual.FALLBACK_MAX_CARRY_CAPACITY quando la catena folk_ref ->
 # folk_ref->human_rules_ref non è risolvibile — stesso criterio di HumanStaminaIndividualService/
 # HumanIndividual._resolve_initial_max_carry_capacity (mai un secondo fallback diverso).
 #
@@ -28,8 +28,8 @@ extends RefCounted
 # implementerà quel sistema, non anticipata qui senza un consumatore reale.
 static func recalculate_max_carry_capacity(individual: HumanIndividual, game_data: GameData) -> void:
 	var human_rules: HumanRules = null
-	if individual.source_group_ref != null and individual.source_group_ref.folk_ref != null:
-		human_rules = individual.source_group_ref.folk_ref.human_rules_ref
+	if individual.folk_ref != null:
+		human_rules = individual.folk_ref.human_rules_ref
 	if human_rules == null:
 		individual.max_carry_capacity = HumanIndividual.FALLBACK_MAX_CARRY_CAPACITY
 		individual.food_space_capacity = HumanIndividual.FALLBACK_MAX_FOOD_SPACE

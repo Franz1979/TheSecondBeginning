@@ -12,3 +12,4 @@ faith_celebrant = 200.0
 faith_present = 50.0
 faith_population = 10.0
 influence_gain = 1.0
+village_religion_gain = 1.0

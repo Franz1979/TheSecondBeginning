@@ -7,8 +7,8 @@ extends RefCounted
 #   - presenti: ogni altro pipottino, di qualunque età, che in quell'istante si trova entro InfluenceService.
 #     get_effective_radius(edificio, RELIGIOUS) dal centro dell'edificio: current_faith + faith_present × fattore
 #     skill di chi celebra (SkillEffectService, chiave RiteAction.SKILL_EFFECT_KEY);
-#   - popolazione (2026-10-02): ogni altro pipottino dello stesso HumanPopulationGroup di chi celebra (source_group_ref,
-#     non il Folk), ovunque e di qualunque età, che non sia chi celebra né un presente: current_faith + faith_population
+#   - popolazione (2026-10-02): ogni altro pipottino dello stesso Folk di chi celebra (folk_ref,
+#     2026-10-12: prima era il gruppo, che coincideva col Folk), ovunque e di qualunque età, che non sia chi celebra né un presente: current_faith + faith_population
 #     × lo stesso fattore skill. Un solo bonus per pipottino e per rito (celebrante, presente o popolazione);
 #   - ogni fede limitata a [0, max_faith];
 #   - punti di influenza RELIGIOUS dell'edificio + influence_gain × fattore skill (InfluenceService.add_points,
@@ -58,7 +58,7 @@ static func apply_completion(
 			member.current_faith = _clamp_faith(member, member.current_faith + present_faith * skill_factor)
 			if log_enabled:
 				_log_faith(member, before, "parente presente (%s)" % _relative_kind_text(relative_ids[member.id]) if is_relative else "presente nel raggio")
-		elif celebrant.source_group_ref != null and member.source_group_ref == celebrant.source_group_ref:
+		elif celebrant.folk_ref != null and member.folk_ref == celebrant.folk_ref:
 			member.current_faith = _clamp_faith(member, member.current_faith + rules.faith_population * skill_factor)
 			if log_enabled:
 				var reason := "popolazione"
@@ -75,6 +75,17 @@ static func apply_completion(
 		print("[RITE]   influenza religiosa all'edificio: +%.1f punti (totale %.1f)." % [
 			influence_amount, InfluenceService.get_points(building, InfluenceService.InfluenceType.RELIGIOUS)
 		])
+	# Valore assoluto R del villaggio dell'edificio (2026-10-12, passo 4 Folk/Village): solo con un villaggio che ha un
+	# centro, come la crescita annuale (VillageInfluenceService).
+	var folk: Folk = GameSettings.active_human_folk
+	var village: Village = folk.find_village(building.village_id) if folk != null else null
+	if village != null and village.center_building_id != -1 and rules.village_religion_gain != 0.0:
+		var village_amount := rules.village_religion_gain * skill_factor
+		village.add_influence_value(InfluenceService.InfluenceType.RELIGIOUS, village_amount)
+		if log_enabled:
+			print("[RITE]   valore religioso di %s: +%.2f (totale %.2f)." % [
+				village.get_display_name(), village_amount, village.get_influence_value(InfluenceService.InfluenceType.RELIGIOUS)
+			])
 
 
 static func _log_faith(member: HumanIndividual, before: float, reason: String) -> void:

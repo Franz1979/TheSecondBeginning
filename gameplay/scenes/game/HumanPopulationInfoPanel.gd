@@ -84,7 +84,7 @@ const SORT_OPTIONS: Array[Dictionary] = [
 
 @onready var folk_label: Label = $FolkRow/FolkLabel
 @onready var hide_tasks_button: Button = $FolkRow/HideTasksButton
-@onready var group_label: Label = $SummaryRow/GroupLabel
+@onready var village_label: Label = $SummaryRow/GroupLabel
 @onready var male_label: Label = $SummaryRow/MaleLabel
 @onready var female_label: Label = $SummaryRow/FemaleLabel
 @onready var expand_button: Button = $SummaryRow/ExpandButton
@@ -231,20 +231,12 @@ func _sort_less(sort_id: String, a: HumanIndividual, b: HumanIndividual) -> bool
 	return a.id < b.id
 
 
-# total_count separato da individuals.size() deliberatamente (anche se oggi coincidono sempre:
-# ogni individuo generato dal seeding è materializzato) — total_count è il dato di GRUPPO
-# (HumanPopulationGroup, equivalente umano di PopulationGroup.population lato animale), la fonte
-# di verità concettualmente corretta per "quanti sono in totale"; individuals resta necessario
-# comunque per il conteggio maschi/femmine e l'elenco, dati che il gruppo non tiene ancora.
+# total_count = abitanti del Folk, contati da GameScene (Folk.count_members).
 #
-# folk_id/group_id (richiesta utente, 2026-09-02: "come quando clicchi sul pipottino" — stesso dato
-# di HumanIndividualInfoPanel.show_individual, "Folk %s, Group %s", passati qui già risolti da
-# GameScene invece dell'intero Folk/HumanPopulationGroup: questo pannello, come gli altri, riceve
-# solo dati già pronti, mai gli oggetti di gioco stessi). Due righe (richiesta utente, 2026-09-02):
-# prima riga solo "Folk %s" (FolkLabel, da sé — un solo Folk esiste ancora, niente altro da
-# affiancargli); seconda riga "Group %s: total %d" insieme a ♂/♀ e al bottone +/- (GroupLabel,
-# stessa riga di prima, solo rinominata da TotalLabel — il totale/le indicazioni di genere/il
-# bottone d'espansione restano tutti insieme, il totale si è solo spostato da "Folk" a "Group").
+# folk_name/village_name/village_count (2026-10-12, sostituiscono folk_id/group_id): già risolti da GameScene, questo pannello
+# riceve solo dati pronti, mai gli oggetti di gioco. Prima riga "<nome popolo>: total %d" (FolkLabel); seconda riga di
+# stato "<nome villaggio>: total %d" — "No village" con village_name vuoto — insieme a ♂/♀ e al bottone +/- (nodo
+# GroupLabel).
 #
 # era_effective_age_band_durations_male/female (bugfix, richiesta utente 2026-09-04 — sostituisce
 # il precedente parametro human_rules: HumanRules, usato SOLO per HumanCalculator.get_age_band, che
@@ -260,7 +252,7 @@ func _sort_less(sort_id: String, a: HumanIndividual, b: HumanIndividual) -> bool
 func show_population(
 	total_count: int, individuals: Array[HumanIndividual], current_year: int,
 	era_effective_age_band_durations_male: Array[float], era_effective_age_band_durations_female: Array[float],
-	folk_id: int, group_id: int, housing_capacity: int, sort_id: String = DEFAULT_SORT_ID
+	folk_name: String, village_name: String, village_count: int, housing_capacity: int, sort_id: String = DEFAULT_SORT_ID
 ) -> void:
 	# Ordinamento scelto (GameData.population_list_sort, vedi SORT_OPTIONS).
 	if sort_id != _sort_id:
@@ -273,8 +265,10 @@ func show_population(
 			male_count += 1
 		else:
 			female_count += 1
-	folk_label.text = "Folk %s" % _format_id(folk_id)
-	group_label.text = "Group %s: total %d" % [_format_id(group_id), total_count]
+	folk_label.text = "%s: total %d" % [folk_name, total_count]
+	# Riga di stato del villaggio (2026-10-12): "No village" finché non esiste (nasce col village center).
+	# TODO col secondo villaggio: sostituirla con un selettore Tutti/Village N/Senza villaggio che filtra elenco e ♂/♀.
+	village_label.text = "%s: total %d" % [village_name, village_count] if village_name != "" else "No village"
 	male_label.text = "♂ " + str(male_count)
 	female_label.text = "♀ " + str(female_count)
 	# "🏠 10/4" = 10 pipottini vivi in totale contro 4 posti letto disponibili (somma rules.
@@ -573,9 +567,3 @@ func _on_hide_tasks_pressed() -> void:
 	# Pulsanti della riga sotto il mouse spostati sulla riga giusta (task o nome).
 	if _hovered_command_row >= 0:
 		_set_command_row_buttons(_hovered_command_row, true)
-
-
-# Stessa convenzione di HumanIndividualInfoPanel._format_id: sentinella -1 (non applicabile/non
-# ancora valorizzato) resa come "—" invece del numero grezzo.
-func _format_id(value: int) -> String:
-	return "—" if value < 0 else str(value)

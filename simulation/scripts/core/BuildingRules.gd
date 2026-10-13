@@ -79,7 +79,7 @@ extends Resource
 # accesso fuori range (una futura categoria aggiunta senza aggiornare questo array) va trattato dal
 # chiamante come "nessun moltiplicatore" (1.0), non un crash — vedi ResourceDecayService per la
 # guardia.
-@export var durability_multiplier_by_category: Array[float] = [1.0, 1.0, 1.0, 1.0, 1.0]
+@export var durability_multiplier_by_category: Array[float] = [1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
 
 # Nome risorsa (stringa libera per ora, es. "wood"/"stick"/"stone"/"iron" — nessun enum dedicato
 # finché non esiste un vero inventario/economia) -> quantità richiesta per completare la

@@ -1,4 +1,4 @@
-[gd_resource type="Resource" script_class="SecondaryResourceRules" format=3]
+[gd_resource type="Resource" script_class="SecondaryResourceRules" format=3 uid="uid://dx0cxwabe3fv0"]
 
 [ext_resource type="Script" uid="uid://cu4cyua5y4n1m" path="res://simulation/scripts/core/SecondaryResourceRules.gd" id="1_fur_dress"]
 
@@ -8,7 +8,7 @@ secondary_resource_name = "fur_dress"
 calories_per_unit = 0.0
 category = 5
 generation_source = 2
-day_durability = 1500
+day_durability = 3000
 space_per_unit = 10.0
 recipe_inputs = {
 "fiber_rope": 2,
@@ -18,8 +18,7 @@ recipe_inputs = {
 recipe_labor = 1000.0
 recipe_workstation_types = Array[String](["campfire", "toolmaker_hut"])
 recipe_required_tool_categories = Array[int]([1, 6])
-max_uses = 1500
-apparel_kind = 0
+max_uses = 3000
 apparel_color = Color(0.46, 0.42, 0.38, 1)
 health_delta_by_season = Array[float]([0.0, 0.0, -4.0, 0.0])
 happiness_delta_by_season = Array[float]([5.0, 0.0, -10.0, 0.0])

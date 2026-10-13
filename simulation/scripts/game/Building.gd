@@ -153,6 +153,10 @@ func is_damaged() -> bool:
 # usato insieme a rules.lifespan_years per calcolare quando l'edificio scadrà.
 var built_year: int = -1
 
+# Villaggio di appartenenza (2026-10-12, passo 3 Folk/Village): Village.id, -1 = nessuno (edificio piazzato prima del
+# primo village center). Scritto da VillageService (piazzamento e adozione alla fondazione), mai da questa classe.
+var village_id: int = -1
+
 # Punti di influenza per tipo (2026-10-03, richiesta utente — sostituiscono il raggio corrente del passo 4c):
 # InfluenceService.InfluenceType (int) -> float. Voce assente = 0 (valore iniziale e salvataggi vecchi). Con loro il
 # giorno assoluto dell'ultimo guadagno di punti per tipo (int -> int, assente = mai), da cui parte la perdita annua senza riti. Letti e

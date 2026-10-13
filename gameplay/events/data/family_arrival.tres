@@ -13,4 +13,5 @@ population_band_upper_limits = Array[int]([5, 10, 20, 30, 50])
 population_band_probabilities = Array[float]([0.3, 0.2, 0.1, 0.05, 0.01])
 probability_above_last_band = 0.0
 requires_village_center = true
+culture_sensitivity = 1.0
 category = "visitors"

@@ -1,4 +1,4 @@
-[gd_resource type="Resource" script_class="SecondaryResourceRules" format=3]
+[gd_resource type="Resource" script_class="SecondaryResourceRules" format=3 uid="uid://d142ha75odyjh"]
 
 [ext_resource type="Script" uid="uid://cu4cyua5y4n1m" path="res://simulation/scripts/core/SecondaryResourceRules.gd" id="1_worked_hide_cap"]
 
@@ -9,7 +9,7 @@ calories_per_unit = 0.0
 category = 5
 required_idea_id = "advanced_paleolithic_constructions"
 generation_source = 2
-day_durability = 2000
+day_durability = 3000
 space_per_unit = 5.0
 recipe_inputs = {
 "fiber_rope": 1,

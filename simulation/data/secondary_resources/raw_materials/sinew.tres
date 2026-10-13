@@ -9,4 +9,4 @@ calories_per_unit = 0.0
 consuming_depletes_primary = false
 category = 1
 generation_source = 3
-day_durability = 120
+day_durability = 240

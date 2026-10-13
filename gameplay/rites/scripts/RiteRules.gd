@@ -32,7 +32,7 @@ extends Resource
 # Fede guadagnata da ogni presente entro il raggio religioso dell'edificio, moltiplicata per il fattore skill di chi
 # celebra (SkillEffectService, chiave RiteAction.SKILL_EFFECT_KEY).
 @export var faith_present: float = 0.0
-# Fede guadagnata da ogni altro pipottino dello stesso HumanPopulationGroup di chi celebra (2026-10-02), ovunque si
+# Fede guadagnata da ogni altro pipottino dello stesso Folk di chi celebra (2026-10-02), ovunque si
 # trovi e di qualunque età, moltiplicata per lo stesso fattore skill di faith_present. Chi celebra e i presenti non la
 # ricevono: un solo bonus per pipottino e per rito (RiteEffectService).
 @export var faith_population: float = 0.0
@@ -55,6 +55,11 @@ extends Resource
 # Punti di influenza RELIGIOUS guadagnati dall'edificio al completamento (2026-10-03, punti e soglie — prima
 # radius_gain del passo 4c), moltiplicati per lo stesso fattore skill di faith_present (InfluenceService.add_points).
 @export var influence_gain: float = 0.0
+# Da NON confondere con influence_gain sopra (punti dell'EDIFICIO, che ne alzano il raggio): valore assoluto del
+# VILLAGGIO dell'edificio (2026-10-12, passo 4 Folk/Village — Village.influence_values), aggiunto al completamento
+# × lo stesso fattore skill, solo se il villaggio ha un centro (RiteEffectService). Sempre il valore R: i riti sono solo
+# religiosi, eventi politici/culturali avranno regole proprie.
+@export var village_religion_gain: float = 0.0
 # Suono a rito completato (2026-10-04, richiesta utente): id sonoro di un banco (audio/banks/*.tres), suonato tramite
 # l'evento "rite_completed:<id>" di SoundEventMap. Vuoto = il suono predefinito dei riti (evento "rite_completed", rite_paleolithic dal 2026-10-04).
 @export var completion_sound_id: StringName = &""

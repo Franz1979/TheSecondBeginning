@@ -84,6 +84,11 @@ const DISABLED_PANEL_ALPHA := 0.4
 @onready var normal_richness_button: Button = $RootColumn/MainRow/ScrollContainer/VBoxContainer/ResourceRichnessPanel/MarginContainer/VBoxContainer/NormalRichnessButton
 @onready var poor_button: Button = $RootColumn/MainRow/ScrollContainer/VBoxContainer/ResourceRichnessPanel/MarginContainer/VBoxContainer/PoorButton
 
+# Nome del popolo (2026-10-12, richiesta utente): vuoto = casuale alla semina, 🎲 propone un nome dalla lista.
+@onready var folk_name_header_label: Label = $RootColumn/MainRow/ScrollContainer/VBoxContainer/FolkNamePanel/MarginContainer/VBoxContainer/FolkNameHeaderLabel
+@onready var folk_name_edit: LineEdit = $RootColumn/MainRow/ScrollContainer/VBoxContainer/FolkNamePanel/MarginContainer/VBoxContainer/HBoxContainer/FolkNameEdit
+@onready var random_folk_name_button: Button = $RootColumn/MainRow/ScrollContainer/VBoxContainer/FolkNamePanel/MarginContainer/VBoxContainer/HBoxContainer/RandomFolkNameButton
+
 @onready var group_size_panel: PanelContainer = $RootColumn/MainRow/ScrollContainer/VBoxContainer/GroupSizePanel
 @onready var group_size_header_label: Label = $RootColumn/MainRow/ScrollContainer/VBoxContainer/GroupSizePanel/MarginContainer/VBoxContainer/GroupSizeHeaderLabel
 @onready var couple_button: Button = $RootColumn/MainRow/ScrollContainer/VBoxContainer/GroupSizePanel/MarginContainer/VBoxContainer/CoupleButton
@@ -122,9 +127,9 @@ const DIFFICULTY_COLOR_STOPS: Array[Color] = [
 
 # Rispecchiano SEMPRE il bottone attualmente premuto nel rispettivo ButtonGroup — aggiornati solo
 # dai tre handler _on_*_toggled, mai letti/scritti altrove. Inizializzati per coincidere coi
-# default reali di GameSettings (selected_world_age_mode="CLASSIC", selected_animal_density=
+# default preselezionati in _ready() (selected_world_age_mode="OLD", selected_animal_density=
 # "MEDIUM", selected_population_size="NORMAL") anche nell'istante prima che _ready() giri.
-var _selected_world_age_mode: String = "CLASSIC"
+var _selected_world_age_mode: String = "OLD"
 var _selected_animal_density: String = "MEDIUM"
 var _selected_population_size: String = "NORMAL"
 var _selected_exclude_hostile_start: bool = false
@@ -147,6 +152,11 @@ func _ready() -> void:
 
 	debug_warning_label.text = tr("world_age_classic_warning")
 	debug_warning_label.add_theme_color_override("font_color", Color(1.0, 0.55, 0.15))
+
+	folk_name_header_label.text = tr("folk_name_label")
+	folk_name_edit.placeholder_text = tr("folk_name_placeholder")
+	random_folk_name_button.tooltip_text = tr("folk_name_random_tooltip")
+	random_folk_name_button.pressed.connect(_on_random_folk_name_pressed)
 
 	density_header_label.text = tr("animal_density_label")
 	few_button.text = tr("animal_density_few")
@@ -193,13 +203,12 @@ func _ready() -> void:
 	difficulty_bar.min_value = 0.0
 	difficulty_bar.max_value = 100.0
 
-	# "Classic (debug)" preselezionato: DEVE corrispondere al default reale di
-	# GameSettings.selected_world_age_mode ("CLASSIC") — se l'utente preme "Avvia partita" senza
-	# toccare nulla, deve ottenere esattamente cio' che vede selezionato. Stesso principio per
+	# "Vecchio" preselezionato (2026-10-12, richiesta utente — prima "Classic (debug)"): Avvia partita scrive comunque
+	# in GameSettings ciò che è selezionato, quindi si ottiene esattamente ciò che si vede. Stesso principio per
 	# "Medi" <-> selected_animal_density ("MEDIUM") e "Normale" <-> selected_population_size
 	# ("NORMAL").
-	classic_button.button_pressed = true
-	_on_age_button_toggled(true, "CLASSIC")
+	old_button.button_pressed = true
+	_on_age_button_toggled(true, "OLD")
 	medium_button.button_pressed = true
 	_on_density_button_toggled(true, "MEDIUM")
 	normal_button.button_pressed = true
@@ -418,9 +427,14 @@ func _on_start_pressed() -> void:
 	GameSettings.selected_exclude_predator_territories = _selected_exclude_predator_territories
 	GameSettings.selected_resource_richness_preference = _selected_resource_richness_preference
 	GameSettings.selected_group_size_preference = _selected_group_size_preference
+	GameSettings.selected_folk_name = folk_name_edit.text.strip_edges()
 	GameSettings.selected_guarantee_animal_presence = _selected_guarantee_animal_presence
 	GameSettings.selected_guarantee_stone_presence = _selected_guarantee_stone_presence
 	get_tree().change_scene_to_file("res://simulation/scenes/game/WorldScene.tscn")
+
+
+func _on_random_folk_name_pressed() -> void:
+	folk_name_edit.text = Folk.pick_random_name()
 
 
 func _on_back_pressed() -> void:

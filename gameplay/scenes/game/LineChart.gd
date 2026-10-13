@@ -69,7 +69,10 @@ const GRID_LABEL_TARGET_COUNT: int = 4
 var _x_axis_label: String = "Year"
 var _y_axis_label: String = "People"
 
-var _data: Dictionary = {}
+# Serie disegnate (2026-10-12, più serie insieme — scheda Influenza delle statistiche): ognuna {"data": Dictionary
+# chiave(int)->valore, "color": Color, "label": String}. set_data() ne imposta una sola, con l'aspetto di sempre
+# (LINE_COLOR, punti POINT_COLOR); set_series() più d'una, ognuna col suo colore anche per i punti.
+var _series: Array[Dictionary] = []
 
 # Stato hover (richiesta utente, 2026-09-06: "se passo con mouse degli anni, mi dica come hoover,
 # year e il valore") — null = nessun hover attivo. Aggiornato solo da _gui_input/_notification,
@@ -88,9 +91,28 @@ func _ready() -> void:
 # componente. `data` può essere vuoto (nessun evento ancora) o avere una sola chiave (un solo
 # anno con dati): entrambi i casi sono gestiti in _draw() senza eccezioni/divisioni per zero.
 func set_data(data: Dictionary) -> void:
-	_data = data
+	set_series([{"data": data, "color": LINE_COLOR, "label": "", "point_color": POINT_COLOR}])
+
+
+# Più serie sullo stesso grafico (2026-10-12): stesso asse X (chiavi) e stessa scala Y (massimo tra tutte). Elenco vuoto
+# o serie tutte vuote = "Dati insufficienti". Nel riquadro hover una riga "<label>: <valore>" per serie.
+func set_series(series: Array) -> void:
+	_series.clear()
+	for entry in series:
+		_series.append(entry)
 	_hover_key = null
 	queue_redraw()
+
+
+# Chiavi presenti in almeno una serie, ordinate.
+func _all_keys() -> Array:
+	var seen := {}
+	for entry in _series:
+		for key in (entry["data"] as Dictionary).keys():
+			seen[key] = true
+	var keys := seen.keys()
+	keys.sort()
+	return keys
 
 
 # Sovrascrive i titoli di default degli assi ("Year"/"People", vedi sopra) — mai richiamato dai
@@ -119,16 +141,15 @@ func _notification(what: int) -> void:
 
 
 func _update_hover(mouse_position: Vector2) -> void:
-	if _data.size() < 2:
+	var keys := _all_keys()
+	if keys.size() < 2:
 		# Con 0 o 1 sola chiave non c'è nulla su cui "muoversi": 1 chiave resta comunque
 		# raggiungibile al passaggio del mouse ovunque sul riquadro, gestita come caso singolo qui.
-		var new_hover_key = _data.keys()[0] if _data.size() == 1 else null
+		var new_hover_key = keys[0] if keys.size() == 1 else null
 		if new_hover_key != _hover_key:
 			_hover_key = new_hover_key
 			queue_redraw()
 		return
-	var keys := _data.keys()
-	keys.sort()
 	var min_key: float = float(keys[0])
 	var max_key: float = float(keys[keys.size() - 1])
 	var plot_left := PADDING_LEFT
@@ -137,7 +158,7 @@ func _update_hover(mouse_position: Vector2) -> void:
 	var key_estimate := min_key + x_fraction * (max_key - min_key)
 	var nearest_key: int = int(round(key_estimate))
 	nearest_key = clampi(nearest_key, int(min_key), int(max_key))
-	if not _data.has(nearest_key):
+	if not keys.has(nearest_key):
 		return
 	if nearest_key != _hover_key:
 		_hover_key = nearest_key
@@ -149,12 +170,10 @@ func _draw() -> void:
 		return
 	var font := ThemeDB.fallback_font
 
-	if _data.is_empty():
+	var keys := _all_keys()
+	if keys.is_empty():
 		_draw_placeholder_text("Dati insufficienti")
 		return
-
-	var keys := _data.keys()
-	keys.sort()
 
 	var plot_rect := Rect2(
 		PADDING_LEFT, PADDING_TOP,
@@ -170,8 +189,10 @@ func _draw() -> void:
 	# il minimo osservato resta visibile di proposito — comunica quanto i dati sono lontani da
 	# zero, non un difetto da correggere.
 	var max_value := 0.0
-	for key in keys:
-		max_value = maxf(max_value, float(_data[key]))
+	for entry in _series:
+		var series_data: Dictionary = entry["data"]
+		for key in series_data:
+			max_value = maxf(max_value, float(series_data[key]))
 
 	var single_key := keys.size() == 1
 	# Caso degenere residuo (l'unico rimasto, ora che l'origine è fissa a 0): TUTTI i valori sono
@@ -202,23 +223,29 @@ func _draw() -> void:
 		AXIS_COLOR, 1.0
 	)
 
-	var points := PackedVector2Array()
-	for key in keys:
-		var value := float(_data[key])
-		var x_fraction := 0.5 if single_key else (float(key) - min_key) / (max_key - min_key)
-		var y_fraction := 0.0 if all_zero else value / max_value
-		points.append(Vector2(
-			plot_rect.position.x + x_fraction * plot_rect.size.x,
-			baseline_y - y_fraction * plot_rect.size.y
-		))
-
-	if points.size() >= 2:
-		draw_polyline(points, LINE_COLOR, LINE_WIDTH, true)
-	for point in points:
-		draw_circle(point, POINT_RADIUS, POINT_COLOR)
+	for entry in _series:
+		var series_data: Dictionary = entry["data"]
+		var series_keys := series_data.keys()
+		series_keys.sort()
+		var points := PackedVector2Array()
+		for key in series_keys:
+			points.append(_point_for(key, float(series_data[key]), min_key, max_key, max_value, plot_rect, baseline_y, single_key, all_zero))
+		if points.size() >= 2:
+			draw_polyline(points, entry["color"], LINE_WIDTH, true)
+		for point in points:
+			draw_circle(point, POINT_RADIUS, entry.get("point_color", entry["color"]))
 
 	_draw_axis_labels(font, keys, max_value, plot_rect, baseline_y, single_key, all_zero)
-	_draw_hover(font, keys, points, plot_rect, baseline_y)
+	_draw_hover(font, min_key, max_key, max_value, plot_rect, baseline_y, single_key, all_zero)
+
+
+func _point_for(
+	key: Variant, value: float, min_key: float, max_key: float, max_value: float, plot_rect: Rect2, baseline_y: float,
+	single_key: bool, all_zero: bool
+) -> Vector2:
+	var x_fraction := 0.5 if single_key else (float(key) - min_key) / (max_key - min_key)
+	var y_fraction := 0.0 if all_zero else value / max_value
+	return Vector2(plot_rect.position.x + x_fraction * plot_rect.size.x, baseline_y - y_fraction * plot_rect.size.y)
 
 
 # Griglia di riferimento leggera (richiesta utente, 2026-09-06) — SEPARATA dalle etichette
@@ -292,19 +319,34 @@ func _compute_nice_step(max_value: float) -> float:
 # "{x_axis_label}: {chiave}   {y_axis_label}: {valore}" — posizionato sopra il punto, ma con la X
 # vincolata (clamp) a restare dentro il Control: altrimenti su un anno vicino al bordo destro il
 # riquadro uscirebbe parzialmente dall'area visibile.
-func _draw_hover(font: Font, keys: Array, points: PackedVector2Array, plot_rect: Rect2, baseline_y: float) -> void:
+# Più serie (2026-10-12): un punto evidenziato per ogni serie che ha la chiave, e nel riquadro "<label>: <valore>" per
+# ciascuna al posto del titolo dell'asse Y; con una sola serie il riquadro resta quello di sempre.
+func _draw_hover(
+	font: Font, min_key: float, max_key: float, max_value: float, plot_rect: Rect2, baseline_y: float,
+	single_key: bool, all_zero: bool
+) -> void:
 	if _hover_key == null:
 		return
-	var index := keys.find(_hover_key)
-	if index < 0:
+	var value_parts: Array[String] = []
+	var top_point := Vector2(INF, INF)
+	for entry in _series:
+		var series_data: Dictionary = entry["data"]
+		if not series_data.has(_hover_key):
+			continue
+		var value := float(series_data[_hover_key])
+		var series_point := _point_for(_hover_key, value, min_key, max_key, max_value, plot_rect, baseline_y, single_key, all_zero)
+		if series_point.y < top_point.y:
+			top_point = series_point
+		draw_circle(series_point, HOVER_POINT_RADIUS, HOVER_POINT_COLOR)
+		var series_label: String = entry.get("label", "")
+		value_parts.append("%s: %s" % [series_label if series_label != "" else _y_axis_label, _format_value(value)])
+	if value_parts.is_empty():
 		return
-	var point: Vector2 = points[index]
-	var value := float(_data[_hover_key])
+	var point := top_point
 
 	draw_line(Vector2(point.x, plot_rect.position.y), Vector2(point.x, baseline_y), HOVER_LINE_COLOR, 1.0)
-	draw_circle(point, HOVER_POINT_RADIUS, HOVER_POINT_COLOR)
 
-	var label_text := "%s: %s   %s: %s" % [_x_axis_label, str(_hover_key), _y_axis_label, _format_value(value)]
+	var label_text := "%s: %s   %s" % [_x_axis_label, str(_hover_key), "   ".join(value_parts)]
 	var text_size := font.get_string_size(label_text, HORIZONTAL_ALIGNMENT_LEFT, -1, LABEL_FONT_SIZE)
 	var box_padding := Vector2(5.0, 3.0)
 	var box_size := text_size + box_padding * 2.0

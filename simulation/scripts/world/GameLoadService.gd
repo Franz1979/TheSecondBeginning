@@ -157,6 +157,10 @@ func load_game_from_json(file_path: String) -> LoadedGame:
 	# default della classe. Riusa _population_snapshots_from_json (stesso identico schema chiave
 	# int -> valore int, nessuna seconda funzione identica da mantenere in parallelo).
 	game_data.building_snapshots = _population_snapshots_from_json(data["game"].get("building_snapshots", {}))
+	# Serie per villaggio (2026-10-12) — {} per i salvataggi precedenti.
+	game_data.village_population_snapshots = _village_snapshots_from_json(data["game"].get("village_population_snapshots", {}))
+	game_data.village_building_snapshots = _village_snapshots_from_json(data["game"].get("village_building_snapshots", {}))
+	game_data.village_influence_snapshots = _village_influence_snapshots_from_json(data["game"].get("village_influence_snapshots", {}))
 	# .get(key, []) per compatibilità con save precedenti l'introduzione degli oggetti-scaduti
 	# (Step 2, vedi GameData.expired_objects) — [] è lo stesso default della classe.
 	game_data.expired_objects = _expired_objects_from_json(data["game"].get("expired_objects", []))
@@ -655,6 +659,8 @@ func load_game_from_json(file_path: String) -> LoadedGame:
 			building.rubble_auto_excluded = bool(building_data.get("rubble_auto_excluded", false))
 			building.current_durability = float(building_data.get("current_durability", 0.0))
 			building.built_year = int(building_data.get("built_year", -1))
+			# Villaggio di appartenenza (2026-10-12) — -1 per i salvataggi precedenti (VillageService.sync li adotta).
+			building.village_id = int(building_data.get("village_id", -1))
 			# Punti di influenza e giorno dell'ultimo guadagno (2026-10-03, punti e soglie): assenti nei salvataggi vecchi
 			# = punti 0 (il vecchio "influence_radius" del passo 4c è ignorato). JSON salva le chiavi come stringhe:
 			# riportate a int (InfluenceService.InfluenceType).
@@ -775,7 +781,6 @@ func load_game_from_json(file_path: String) -> LoadedGame:
 	# ancora il caso), il chiamante lo assegna dopo aver ricevuto questo Folk esattamente come fa
 	# già per un Folk appena seminato.
 	var human_folk: Folk = null
-	var human_population_group: HumanPopulationGroup = null
 	var human_individuals: Array[HumanIndividual] = []
 	if data.has("human"):
 		var human_data: Dictionary = data["human"]
@@ -798,13 +803,19 @@ func load_game_from_json(file_path: String) -> LoadedGame:
 		for decay_idea_id in decay_due_day:
 			human_folk.idea_decay_due_day[String(decay_idea_id)] = int(decay_due_day[decay_idea_id])
 
-		human_population_group = HumanPopulationGroup.new()
-		human_population_group.id = int(human_data["group"]["id"])
-		human_population_group.folk_ref = human_folk
-		human_population_group.home_macro_coords = Vector2i(
-			int(human_data["group"]["home_macro_x"]), int(human_data["group"]["home_macro_y"])
-		)
-		human_population_group.total_count = int(human_data["group"]["total_count"])
+		# Villaggi del Folk (2026-10-12): default vuoto, i save precedenti avevano un "group" che viene ignorato.
+		human_folk.next_village_id = int(human_data["folk"].get("next_village_id", 1))
+		for village_data in human_data["folk"].get("villages", []):
+			var village := Village.new()
+			village.id = int(village_data["id"])
+			village.folk_ref = human_folk
+			village.name = String(village_data.get("name", ""))
+			village.center_building_id = int(village_data.get("center_building_id", -1))
+			# Valori assoluti R/C/P (2026-10-12): chiavi riportate a int, {} per i salvataggi precedenti.
+			var influence_values: Dictionary = village_data.get("influence_values", {})
+			for influence_key in influence_values:
+				village.influence_values[int(influence_key)] = float(influence_values[influence_key])
+			human_folk.villages.append(village)
 
 		for individual_data in human_data["individuals"]:
 			var individual := HumanIndividual.new()
@@ -850,7 +861,8 @@ func load_game_from_json(file_path: String) -> LoadedGame:
 			# Piano "trasporto neonati" (2026-09-06) — accesso diretto, nessuna retrocompatibilità
 			# richiesta, stesso trattamento dei campi pending_child_* sopra.
 			individual.dependent_child_id = int(individual_data["dependent_child_id"])
-			individual.source_group_ref = human_population_group
+			individual.folk_ref = human_folk
+			individual.village_ref = human_folk.find_village(int(individual_data.get("village_id", -1)))
 			# Stamina (2026-09-08, richiesta utente) — .get() con i vecchi fallback di classe come
 			# default (FALLBACK_MAX_STAMINA per entrambi, stesso valore usato da _init/
 			# HumanStaminaIndividualService quando la catena Rules non è risolvibile): un save
@@ -1047,7 +1059,6 @@ func load_game_from_json(file_path: String) -> LoadedGame:
 	loaded_game.game_data = game_data
 	loaded_game.fog_of_war_memories = fog_of_war_memories
 	loaded_game.human_folk = human_folk
-	loaded_game.human_population_group = human_population_group
 	loaded_game.human_individuals = human_individuals
 	print("Game loaded from JSON: ", file_path)
 	return loaded_game
@@ -1079,6 +1090,28 @@ func _population_snapshots_from_json(raw: Dictionary) -> Dictionary:
 	var result: Dictionary = {}
 	for year_key in raw.keys():
 		result[int(year_key)] = int(raw[year_key])
+	return result
+
+
+# Valori R/C/P per villaggio (2026-10-12): Village.id -> tipo -> anno, chiavi riportate a int, valori float.
+func _village_influence_snapshots_from_json(raw: Dictionary) -> Dictionary:
+	var result: Dictionary = {}
+	for village_key in raw.keys():
+		var by_type: Dictionary = {}
+		for type_key in (raw[village_key] as Dictionary).keys():
+			var by_year: Dictionary = {}
+			for year_key in (raw[village_key][type_key] as Dictionary).keys():
+				by_year[int(year_key)] = float(raw[village_key][type_key][year_key])
+			by_type[int(type_key)] = by_year
+		result[int(village_key)] = by_type
+	return result
+
+
+# Serie per villaggio (2026-10-12): Village.id -> serie annuale, entrambi i livelli di chiavi riportati a int.
+func _village_snapshots_from_json(raw: Dictionary) -> Dictionary:
+	var result: Dictionary = {}
+	for village_key in raw.keys():
+		result[int(village_key)] = _population_snapshots_from_json(raw[village_key])
 	return result
 
 

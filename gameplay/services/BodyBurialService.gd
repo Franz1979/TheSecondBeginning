@@ -339,8 +339,8 @@ static func convoke_funeral_procession(carrier: HumanIndividual, record: Diction
 	# Corteo esteso dalla leadership del morto (2026-10-04): dopo i parenti, in fila dietro di loro, una quota degli
 	# abitanti candidati — candidati × leadership ÷ procession_full_leadership, arrotondato, mai oltre i candidati — i
 	# più vicini alla guida. Candidati: vivi, della stessa popolazione (stesso criterio della fede del rito a tutta la
-	# popolazione: source_group_ref di chi celebra, qui il portatore), non parenti, da adolescenti in su, convocabili.
-	if rules.procession_full_leadership <= 0.0 or carrier.source_group_ref == null:
+	# popolazione: folk_ref di chi celebra, qui il portatore), non parenti, da adolescenti in su, convocabili.
+	if rules.procession_full_leadership <= 0.0 or carrier.folk_ref == null:
 		return
 	var game_data: GameData = GameSettings.active_game_data
 	if game_data == null:
@@ -349,7 +349,7 @@ static func convoke_funeral_procession(carrier: HumanIndividual, record: Diction
 	var candidates: Array = []
 	for member in individuals:
 		var individual := member as HumanIndividual
-		if individual == null or individual.source_group_ref != carrier.source_group_ref or relative_ids.has(individual.id):
+		if individual == null or individual.folk_ref != carrier.folk_ref or relative_ids.has(individual.id):
 			continue
 		if HumanIndividualActionService._resolve_age_band(individual, game_data) < HumanTypes.AgeBand.TEENAGER:
 			continue

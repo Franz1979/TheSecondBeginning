@@ -2,9 +2,9 @@ class_name HumanConceptionIndividualService
 extends RefCounted
 
 # Concepimento annuale (SOLO concepimento — il parto/nascita è un task separato, non ancora
-# scritto), per HumanPopulationGroup — stesso principio di HumanCouplingIndividualService/
+# scritto), per Folk — stesso principio di HumanCouplingIndividualService/
 # HumanMortalityIndividualService: un *Service RefCounted stateless, un metodo statico che opera su
-# un Array[HumanIndividual], raggruppando internamente per source_group_ref (vedi
+# un Array[HumanIndividual], raggruppando internamente per folk_ref (vedi
 # HumanCouplingIndividualService.form_couples per lo stesso schema di raggruppamento, riusato identico qui).
 #
 # durations_male/durations_female/human_rules/era_rules sono tutti GIA' RISOLTI dal chiamante
@@ -44,8 +44,8 @@ static func _find_by_id(individuals: Array[HumanIndividual], id: int) -> HumanIn
 	return null
 
 
-# Entry point annuale (day 110): concepimento per ciascun HumanPopulationGroup rappresentato in
-# `individuals`, separatamente — stesso raggruppamento via source_group_ref di
+# Entry point annuale (day 110): concepimento per ciascun Folk rappresentato in
+# `individuals`, separatamente — stesso raggruppamento via folk_ref di
 # HumanCouplingIndividualService.form_couples. Ritorna un Dictionary con, oltre a
 # "newly_pregnant"/"query_time_usec" di prima:
 #   "eligible_women": Array[HumanIndividual] — passate il filtro (A) (sesso/gravidanza/partner/
@@ -71,7 +71,7 @@ static func run_conception(
 ) -> Dictionary:
 	var groups: Dictionary = {}
 	for individual in individuals:
-		var group_key: HumanPopulationGroup = individual.source_group_ref
+		var group_key: Folk = individual.folk_ref
 		if not groups.has(group_key):
 			groups[group_key] = [] as Array[HumanIndividual]
 		groups[group_key].append(individual)

@@ -1,7 +1,7 @@
 class_name HumanCouplingIndividualService
 extends RefCounted
 
-# Formazione annuale di coppie tra FERTILE_ADULT senza partner, per HumanPopulationGroup — stesso
+# Formazione annuale di coppie tra FERTILE_ADULT senza partner, per Folk — stesso
 # principio di separazione già seguito da HumanMortalityIndividualService (un *Service RefCounted
 # stateless, un metodo statico che opera su un Array[HumanIndividual]). Step 1: la funzione di
 # esclusione incesto, isolata perché testabile a sé. Step 2 (questo): pool/matching veri e propri
@@ -30,7 +30,7 @@ static func is_incestuous_pair(a: HumanIndividual, b: HumanIndividual) -> bool:
 
 
 # Entry point annuale: forma coppie tra FERTILE_ADULT senza partner, separatamente per ciascun
-# HumanPopulationGroup rappresentato in `individuals` (raggruppamento via source_group_ref — vedi
+# Folk rappresentato in `individuals` (raggruppamento via folk_ref — vedi
 # HumanIndividual — non un Array pre-diviso dal chiamante: oggi esiste un solo gruppo/Folk nel
 # progetto, ma questo resta corretto anche quando ce ne sarà più di uno, senza che il chiamante
 # debba occuparsene). "Stesso Folk" è quindi implicito: due individui di gruppi diversi non
@@ -51,7 +51,7 @@ static func form_couples(
 ) -> Array[Dictionary]:
 	var groups: Dictionary = {}
 	for individual in individuals:
-		var group_key: HumanPopulationGroup = individual.source_group_ref
+		var group_key: Folk = individual.folk_ref
 		if not groups.has(group_key):
 			groups[group_key] = [] as Array[HumanIndividual]
 		groups[group_key].append(individual)

@@ -14,3 +14,4 @@ faith_present = 50.0
 faith_population = 10.0
 faith_relatives = 75.0
 influence_gain = 1.0
+village_religion_gain = 1.0

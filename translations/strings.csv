@@ -117,7 +117,7 @@ unlock_kind_idea,Ora puoi ricercare
 unlock_kind_building,Sblocca edifici
 unlock_kind_resource,Sblocca risorse
 unlock_kind_tool,Nuove funzioni
-unlock_next_ideas,Prossima idea da ricercare
+unlock_next_ideas,Idea consigliata
 unlock_tool_work_areas,Aree di raccolta per il cibo
 unlock_tool_work_areas_advanced,Aree di lavoro per tutte le risorse
 unlock_tool_task_assignment,Assegnazione compiti
@@ -454,7 +454,8 @@ skill_cognition_label,Cognizione
 skill_hunting_label,Caccia
 skill_crafting_label,Artigianato
 skill_ritual_label,Ritualità
-individual_id_label,"ID: {id} (Folk {folk}, Gruppo {group})"
+individual_id_label,Popolo: {folk} · Villaggio: {village}
+individual_village_none,nessuno
 individual_mother_id_label,ID Madre: {id}
 individual_father_id_label,ID Padre: {id}
 individual_partner_id_label,ID Partner: {id}
@@ -687,6 +688,7 @@ random_event_family_arrival_name,Arrivo di una famiglia
 discovery_popup_title,Scoperta
 options_show_discovery_hints,Mostra spiegazioni delle scoperte
 discovery_first_thought_building_title,Il centro del villaggio
+discovery_first_thought_building_village,"Attorno al Cerchio di sassi i tuoi abitanti si sono riuniti: è nato il vostro primo villaggio."
 discovery_first_thought_building_p1,"Qui i tuoi abitanti depositano i pensieri: accumulandoli, il villaggio sviluppa nuove idee."
 discovery_first_thought_building_p2,"Scegli dall'albero delle idee quale ricercare: ogni idea completata sblocca edifici, risorse o nuove funzioni."
 discovery_first_thought_building_gift_title,La prima idea del villaggio: {idea}
@@ -1231,3 +1233,14 @@ apparel_storage_dialog_title,Prendi un capo
 apparel_storage_dialog_message,Scegli il capo da prendere dal magazzino più vicino e indossare:
 pending_reason_naked,Senza vestito
 apparel_children_tooltip,Vestiti di recupero: i bambini non usano il vestiario del villaggio
+folk_name_label,Il tuo popolo
+folk_name_placeholder,Lascia vuoto per un nome casuale
+folk_name_random_tooltip,Nome casuale
+notification_village_founded,"Attorno a {building} è nato un insediamento: {village}"
+notification_village_center_restored,{village} ha di nuovo un centro
+notification_village_center_lost,{village} ha perso il suo centro
+pending_village_without_center,{village}: senza centro
+pending_village_without_center_detail,Costruisci un nuovo Cerchio di sassi per ripristinarlo.
+statistics_scope_label,Mostra:
+statistics_scope_folk,{folk} (tutto il popolo)
+statistics_tab_influence,Influenza

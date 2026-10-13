@@ -7,5 +7,4 @@ extends RefCounted
 # quando la forma e' fissa e nota in anticipo.
 
 var folk: Folk = null
-var group: HumanPopulationGroup = null
 var individuals: Array[HumanIndividual] = []

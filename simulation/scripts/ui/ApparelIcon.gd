@@ -52,6 +52,34 @@ static func draw_into(canvas: CanvasItem, origin: Vector2, area: Vector2, kind: 
 
 # --- Helper condivisi con le icone dedicate dei capi (FurDressIcon, FurCapIcon, WorkedHide*Icon) ---
 
+# Livello di dettaglio (2026-10-11, richiesta utente: sul magazzino il vestito era una macchia sfocata): sotto questa
+# larghezza disegnata (px) le icone dedicate disegnano solo sagoma, contorno netto di 1 px e un segno (cintura/tesa),
+# senza ciuffi, cuciture e zigzag, che a quella scala diventano un alone.
+const DETAIL_MIN_WIDTH_PX: float = 24.0
+
+
+static func is_small(rect: Rect2) -> bool:
+	return rect.size.x < DETAIL_MIN_WIDTH_PX
+
+
+# Cappelli piccoli (2026-10-11, richiesta utente): disegno quadrato, riempirebbe tutto il quadratino del magazzino;
+# ridotti a questa frazione, centrati, in proporzione alle altre icone.
+const SMALL_HEADWEAR_SCALE: float = 0.7
+
+
+# `rect` ridotto di `scale`, con lo stesso centro.
+static func shrink(rect: Rect2, scale: float) -> Rect2:
+	var size := rect.size * scale
+	return Rect2(rect.position + (rect.size - size) * 0.5, size)
+
+
+# Sagoma piena con contorno netto (1 px, senza antialiasing): il disegno piccolo delle icone dedicate.
+static func draw_silhouette(canvas: CanvasItem, outline: PackedVector2Array, fill: Color, outline_color: Color) -> void:
+	canvas.draw_colored_polygon(outline, fill)
+	var closed := outline.duplicate()
+	closed.append(outline[0])
+	canvas.draw_polyline(closed, outline_color, 1.0, false)
+
 # Rettangolo (origin, size) con proporzioni `aspect` (larghezza/altezza), il più grande che sta in (origin, area),
 # centrato: le vesti alte restano della loro forma anche nei riquadri quadrati di zaino e magazzini.
 static func fit_aspect(origin: Vector2, area: Vector2, aspect: float) -> Rect2:

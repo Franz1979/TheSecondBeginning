@@ -166,10 +166,11 @@ var pending_child_father_id: int = -1
 # mother_id/father_id/partner_id/pending_child_father_id sopra.
 var dependent_child_id: int = -1
 var name: String = ""
-# Collegamento inverso al gruppo/insediamento di appartenenza — nullable (un HumanIndividual
-# potrebbe in teoria esistere senza un gruppo, es. durante la costruzione incrementale di questo
-# sistema), valorizzato dal chiamante che crea l'individuo, mai da questa classe stessa.
-var source_group_ref: HumanPopulationGroup = null
+# Popolo e villaggio di appartenenza (2026-10-12, richiesta utente — sostituiscono source_group_ref): folk_ref
+# sempre valorizzato per gli individui del player, village_ref null finché non esiste un villaggio (nasce col
+# village center). Valorizzati dal chiamante che crea l'individuo (semina, nascita, visitatori, caricamento).
+var folk_ref: Folk = null
+var village_ref: Village = null
 
 # Tratti d'aspetto (2026-09-04, richiesta utente) — vedi HumanTypes.HairColor/ClothingColor per il
 # perché sono enum e non Color diretti qui. Assegnati UNA volta alla creazione (vedi
@@ -227,7 +228,7 @@ var pending_thought: bool = false
 # persistito (al caricamento riparte da -1 e si rivaluta subito).
 var food_need_last_check_day: int = -1
 
-# Fallback usato da _resolve_initial_max_stamina sotto quando la catena source_group_ref->
+# Fallback usato da _resolve_initial_max_stamina sotto quando la catena folk_ref ->
 # folk_ref->human_rules_ref non è ancora risolvibile — stesso valore del nuovo default di
 # HumanRules.base_max_stamina, deliberatamente (un fallback "onesto": nessun consumatore reale
 # esiste ancora, quindi qualunque numero coerente col resto del sistema va bene).
@@ -236,14 +237,14 @@ const FALLBACK_MAX_STAMINA: float = 5000.0
 # Stamina attuale e massima — entrambe inizializzate SUBITO alla creazione, allo STESSO valore
 # (vedi _init/_resolve_initial_max_stamina sotto), chiamando HumanCalculator.get_max_stamina() con
 # i dati anagrafici già noti su self (sex/is_pregnant/dependent_child_id) e gli HumanRules risolti
-# tramite source_group_ref.folk_ref.human_rules_ref. Nessun sistema di consumo/reset reale esiste
+# tramite folk_ref.human_rules_ref. Nessun sistema di consumo/reset reale esiste
 # ancora per current_stamina (arriverà con Walk/Rest collegati a un service esterno, step
 # successivo) — questo campo parte semplicemente già pieno. max_stamina invece (2026-09-06,
 # richiesta utente) viene già RICALCOLATO ogni giorno da HumanStaminaIndividualService (vedi
 # human/scripts/core/HumanStaminaIndividualService.gd, agganciato a GameTimeService._on_day_
 # advanced) — soluzione temporanea, vedi commento lì per il perché.
 #
-# TODO (limite noto, non risolto in questo passo): source_group_ref/sex/birth_year_virtual — come
+# TODO (limite noto, non risolto in questo passo): folk_ref/sex/birth_year_virtual — come
 # OGNI altro campo anagrafico di questa classe — vengono sempre valorizzati dal CHIAMANTE DOPO
 # HumanIndividual.new() (vedi HumanSeedingService/HumanBirthIndividualService, mai passati a un
 # costruttore), quindi _init() qui sotto vede quasi sempre la catena ancora null e ricade sul
@@ -290,7 +291,7 @@ var max_faith: float = 0.0
 # --- Capacità di trasporto (2026-09-08, richiesta utente) ---
 #
 # Stesso fallback/schema di FALLBACK_MAX_STAMINA sopra — usato da _resolve_initial_max_carry_
-# capacity sotto quando la catena source_group_ref->folk_ref->human_rules_ref non è ancora
+# capacity sotto quando la catena folk_ref->human_rules_ref non è ancora
 # risolvibile alla creazione. Stesso valore del nuovo default di HumanRules.base_carry_capacity,
 # deliberatamente (un fallback "onesto", stesso principio di FALLBACK_MAX_STAMINA).
 const FALLBACK_MAX_CARRY_CAPACITY: float = 30.0
@@ -579,8 +580,8 @@ func _init() -> void:
 # (comunque quasi sempre false a questo punto, vedi TODO sopra).
 func _resolve_initial_max_stamina() -> float:
 	var human_rules: HumanRules = null
-	if source_group_ref != null and source_group_ref.folk_ref != null:
-		human_rules = source_group_ref.folk_ref.human_rules_ref
+	if folk_ref != null:
+		human_rules = folk_ref.human_rules_ref
 	if human_rules == null:
 		return FALLBACK_MAX_STAMINA
 	return HumanCalculator.get_max_stamina(
@@ -593,8 +594,8 @@ func _resolve_initial_max_stamina() -> float:
 # motivo (fascia di riferimento, moltiplicatore 1.0 sia per età che per sesso).
 func _resolve_initial_max_carry_capacity() -> float:
 	var human_rules: HumanRules = null
-	if source_group_ref != null and source_group_ref.folk_ref != null:
-		human_rules = source_group_ref.folk_ref.human_rules_ref
+	if folk_ref != null:
+		human_rules = folk_ref.human_rules_ref
 	if human_rules == null:
 		return FALLBACK_MAX_CARRY_CAPACITY
 	return HumanCalculator.get_max_carry_capacity(human_rules, HumanTypes.AgeBand.FERTILE_ADULT, sex, equipped_tool_count, 1.0, equipped_tools)
@@ -602,15 +603,15 @@ func _resolve_initial_max_carry_capacity() -> float:
 
 # 5 risoluzioni "al volo" per i nuovi parametri vitali (2026-09-13) — STESSO identico
 # pattern/STESSI identici limiti di _resolve_initial_max_stamina/_resolve_initial_max_carry_
-# capacity sopra (vedi quei commenti per il TODO su source_group_ref quasi sempre null a questo
+# capacity sopra (vedi quei commenti per il TODO su folk_ref quasi sempre null a questo
 # punto): FERTILE_ADULT come default deliberato (fascia di riferimento, moltiplicatore 1.0 per
 # ogni asse su tutti e 5 i nuovi parametri, vedi HumanRules.gd). Cinque funzioni separate, non una
 # generica parametrizzata su un Callable — stessa scelta stilistica già fatta qui per stamina/carry
 # capacity (mai unificate in un helper condiviso), nessun nuovo pattern di indirizione introdotto.
 func _resolve_initial_food_space_capacity() -> float:
 	var human_rules: HumanRules = null
-	if source_group_ref != null and source_group_ref.folk_ref != null:
-		human_rules = source_group_ref.folk_ref.human_rules_ref
+	if folk_ref != null:
+		human_rules = folk_ref.human_rules_ref
 	if human_rules == null:
 		return FALLBACK_MAX_FOOD_SPACE
 	return HumanCalculator.get_max_food_space(human_rules, HumanTypes.AgeBand.FERTILE_ADULT, sex)
@@ -618,8 +619,8 @@ func _resolve_initial_food_space_capacity() -> float:
 
 func _resolve_initial_max_thirst() -> float:
 	var human_rules: HumanRules = null
-	if source_group_ref != null and source_group_ref.folk_ref != null:
-		human_rules = source_group_ref.folk_ref.human_rules_ref
+	if folk_ref != null:
+		human_rules = folk_ref.human_rules_ref
 	if human_rules == null:
 		return FALLBACK_MAX_VITAL
 	return HumanCalculator.get_max_thirst(human_rules, HumanTypes.AgeBand.FERTILE_ADULT, sex)
@@ -627,8 +628,8 @@ func _resolve_initial_max_thirst() -> float:
 
 func _resolve_initial_max_health() -> float:
 	var human_rules: HumanRules = null
-	if source_group_ref != null and source_group_ref.folk_ref != null:
-		human_rules = source_group_ref.folk_ref.human_rules_ref
+	if folk_ref != null:
+		human_rules = folk_ref.human_rules_ref
 	if human_rules == null:
 		return FALLBACK_MAX_VITAL
 	return HumanCalculator.get_max_health(human_rules, HumanTypes.AgeBand.FERTILE_ADULT, sex)
@@ -636,8 +637,8 @@ func _resolve_initial_max_health() -> float:
 
 func _resolve_initial_max_happiness() -> float:
 	var human_rules: HumanRules = null
-	if source_group_ref != null and source_group_ref.folk_ref != null:
-		human_rules = source_group_ref.folk_ref.human_rules_ref
+	if folk_ref != null:
+		human_rules = folk_ref.human_rules_ref
 	if human_rules == null:
 		return FALLBACK_MAX_VITAL
 	return HumanCalculator.get_max_happiness(human_rules, HumanTypes.AgeBand.FERTILE_ADULT, sex)
@@ -647,8 +648,8 @@ func _resolve_initial_max_happiness() -> float:
 # per lo stesso avvertimento.
 func _resolve_initial_max_loyalty() -> float:
 	var human_rules: HumanRules = null
-	if source_group_ref != null and source_group_ref.folk_ref != null:
-		human_rules = source_group_ref.folk_ref.human_rules_ref
+	if folk_ref != null:
+		human_rules = folk_ref.human_rules_ref
 	if human_rules == null:
 		return FALLBACK_MAX_VITAL
 	return HumanCalculator.get_max_loyalty(human_rules, HumanTypes.AgeBand.FERTILE_ADULT, sex)
@@ -656,8 +657,8 @@ func _resolve_initial_max_loyalty() -> float:
 
 func _resolve_initial_max_faith() -> float:
 	var human_rules: HumanRules = null
-	if source_group_ref != null and source_group_ref.folk_ref != null:
-		human_rules = source_group_ref.folk_ref.human_rules_ref
+	if folk_ref != null:
+		human_rules = folk_ref.human_rules_ref
 	if human_rules == null:
 		return FALLBACK_MAX_VITAL
 	return HumanCalculator.get_max_faith(human_rules, HumanTypes.AgeBand.FERTILE_ADULT, sex)
@@ -686,7 +687,7 @@ const FEMALE_NAMES_PATH := "res://human/data/names/female_names.txt"
 # l'individuo senza nome: meglio un nome ripetuto per davvero esaurita la lista che nessun nome.
 func assign_random_name(excluded_names: Array[String] = []) -> void:
 	var path := FEMALE_NAMES_PATH if sex == HumanTypes.Sex.FEMALE else MALE_NAMES_PATH
-	var pool := _load_name_pool(path)
+	var pool := load_name_pool(path)
 	if pool.is_empty():
 		return
 	var available := pool.filter(func(candidate: String) -> bool: return not excluded_names.has(candidate))
@@ -783,7 +784,8 @@ func assign_random_clothing() -> void:
 	clothing_color = clothing_colors[randi() % clothing_colors.size()]
 
 
-func _load_name_pool(path: String) -> Array[String]:
+# Statica (2026-10-12): riusata anche per i nomi dei popoli (Folk.pick_random_name).
+static func load_name_pool(path: String) -> Array[String]:
 	var pool: Array[String] = []
 	var file := FileAccess.open(path, FileAccess.READ)
 	if file == null:
@@ -1486,8 +1488,8 @@ func take_carried_tool_units(resource_name: String, quantity: int) -> Array:
 # --- Cintura degli attrezzi (2026-09-25, richiesta utente) — vedi equipped_tools ---
 
 func _get_human_rules() -> HumanRules:
-	if source_group_ref != null and source_group_ref.folk_ref != null:
-		return source_group_ref.folk_ref.human_rules_ref
+	if folk_ref != null:
+		return folk_ref.human_rules_ref
 	return null
 
 

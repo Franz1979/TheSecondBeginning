@@ -343,11 +343,11 @@ static func dismiss(party: VisitorParty, world: World) -> bool:
 
 # Accoglienza: crea gli HumanIndividual veri dei membri (id nuovi, anno di nascita dall'età fissa, nome non
 # già in uso, tratti d'aspetto della descrizione, skill iniziali, relazioni dagli indici), nella posizione
-# attuale di ciascun membro. NON li aggiunge a nulla: vitali, gruppo, viste e casa sono del chiamante
+# attuale di ciascun membro. NON li aggiunge a nulla: vitali, viste e casa sono del chiamante
 # (GameScene._welcome_visitor_party). Un INFANT viene affidato alla madre (dependent_child_id), come nel
 # seeding iniziale.
 static func materialize_members(
-	party: VisitorParty, game_data: GameData, group: HumanPopulationGroup, used_names: Array[String]
+	party: VisitorParty, game_data: GameData, folk: Folk, village: Village, used_names: Array[String]
 ) -> Array[HumanIndividual]:
 	var created: Array[HumanIndividual] = []
 	for i in range(party.members.size()):
@@ -366,7 +366,8 @@ static func materialize_members(
 			game_data.era_effective_age_band_durations_male, game_data.era_effective_age_band_durations_female, game_data.year
 		)
 		HumanSeedingService.seed_random_skills(individual)
-		individual.source_group_ref = group
+		individual.folk_ref = folk
+		individual.village_ref = village
 		individual.home_macro_coords = party.macro_coords
 		individual.position = get_member_position(party, i)
 		individual.target_position = individual.position

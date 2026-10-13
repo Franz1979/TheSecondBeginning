@@ -57,4 +57,7 @@ enum NotificationPopupType {
 	# Sfratto da una casa danneggiata (2026-10-10, effetti dello stato "Danneggiato" — passo 5): "<edificio> danneggiato:
 	# N individui senza casa". Stile di default. Aggiunto IN CODA.
 	HOUSE_EVICTION,
+	# Villaggio fondato, centro ripristinato o perso (2026-10-12, passo 2 Folk/Village — VillageService). Stile di
+	# default. Aggiunto IN CODA.
+	VILLAGE_CENTER_CHANGED,
 }

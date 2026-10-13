@@ -43,6 +43,12 @@ static func draw_into(canvas: CanvasItem, origin: Vector2, area: Vector2) -> voi
 	var outline := PackedVector2Array()
 	for point in OUTLINE_POINTS:
 		outline.append(ApparelIcon.map_point(point, DESIGN_SIZE, rect))
+	# Piccola (magazzini, mucchi): sagoma, contorno netto e la cintura (ApparelIcon.is_small).
+	if ApparelIcon.is_small(rect):
+		ApparelIcon.draw_silhouette(canvas, outline, HIDE_COLOR, OUTLINE_COLOR)
+		var belt_y := BELT_RECT.position.y + BELT_RECT.size.y * 0.5
+		canvas.draw_line(ApparelIcon.map_point(Vector2(BELT_RECT.position.x, belt_y), DESIGN_SIZE, rect), ApparelIcon.map_point(Vector2(BELT_RECT.end.x, belt_y), DESIGN_SIZE, rect), BELT_COLOR, 1.0, false)
+		return
 	canvas.draw_colored_polygon(outline, HIDE_COLOR)
 	ApparelIcon.draw_strokes(canvas, STITCHES, DESIGN_SIZE, rect, STITCH_COLOR, maxf(2.0 * unit, 1.0))
 	var closed := outline.duplicate()

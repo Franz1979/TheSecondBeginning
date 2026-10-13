@@ -145,10 +145,10 @@ static func find_spontaneous_rite_target(individual: HumanIndividual, world: Wor
 # HumanRules.spontaneous_rite_max_distance del popolo dell'individuo; il valore predefinito di HumanRules se le regole non
 # sono risolvibili.
 static func _spontaneous_rite_max_distance(individual: HumanIndividual) -> float:
-	var group := individual.source_group_ref
-	if group == null or group.folk_ref == null or group.folk_ref.human_rules_ref == null:
+	var folk := individual.folk_ref
+	if folk == null or folk.human_rules_ref == null:
 		return HumanRules.new().spontaneous_rite_max_distance
-	return group.folk_ref.human_rules_ref.spontaneous_rite_max_distance
+	return folk.human_rules_ref.spontaneous_rite_max_distance
 
 
 # true se `individual` (nella fascia `age_band`) può celebrare `rules`: eventuale restrizione di età del rito
