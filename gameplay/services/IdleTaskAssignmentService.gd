@@ -43,6 +43,9 @@ const IDLE_FALLBACK_TASK_PATHS: Array[String] = [
 	"res://gameplay/scripts/tasks/definitions/daydreaming.tres",
 	"res://gameplay/scripts/tasks/definitions/leisure_restock.tres",
 	LEISURE_RITE_TASK_DEFINITION_PATH,
+	# Talk (2026-10-13, socialità): non passa da _build_idle_task — la costruisce e la assegna TalkService.start_talk
+	# insieme a quella del partner (vedi assign_idle_fallback). Senza partner nel raggio si ripesca.
+	TalkService.TALK_TASK_DEFINITION_PATH,
 ]
 
 # Guard di eleggibilita' di leisure_restock nel sorteggio idle (2026-09-19, richiesta utente): la Task e'
@@ -487,12 +490,16 @@ static func assign_idle_fallback(individual: HumanIndividual, age_band: HumanTyp
 	while not remaining.is_empty():
 		var drawn_index := _pick_weighted_index(remaining)
 		var path: String = remaining[drawn_index]["path"]
-		var candidate_task := _build_idle_task(path, individual, world, age_band)
-		var assigned := candidate_task != null and individual.assign_task(candidate_task, age_band)
+		var assigned := false
+		if path == TalkService.TALK_TASK_DEFINITION_PATH:
+			assigned = bool(TalkService.start_talk(individual, age_band)["ok"])
+		else:
+			var candidate_task := _build_idle_task(path, individual, world, age_band)
+			assigned = candidate_task != null and individual.assign_task(candidate_task, age_band)
 		if assigned:
 			if DebugLogging.ENABLED and DebugLogging.SHOW_IDLE_LOGS:
 				print("[IDLE FALLBACK] #%d %s: nessuna Task/bisogno/coda attivi — assegnata '%s'." % [
-					individual.id, individual.name, candidate_task.task_name
+					individual.id, individual.name, individual.current_task.task_name if individual.current_task != null else path
 				])
 			return true
 		remaining.remove_at(drawn_index)

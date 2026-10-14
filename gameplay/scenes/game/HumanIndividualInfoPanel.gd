@@ -185,6 +185,10 @@ var _food_bar_fill_body_reserve: StyleBoxFlat = null
 # colonne senza allargare il pannello, barre e spaziatura di tutte le colonne sono state ristrette nel .tscn.
 @onready var skill_ritual_bar: ProgressBar = $SkillsBox/SkillsBoxMargin/SkillsBoxContent/SkillsRowMargin/SkillsRow/RitualColumn/RitualBar
 @onready var skill_ritual_caption: Label = $SkillsBox/SkillsBoxMargin/SkillsBoxContent/SkillsRowMargin/SkillsRow/RitualColumn/RitualCaptionWrapper/RitualCaption
+# social (2026-10-13, richiesta utente) — 10a barra, in coda dopo ritual, stesso trattamento. Spaziatura della riga
+# ridotta da 6 a 4 nel .tscn per non allargare il pannello.
+@onready var skill_social_bar: ProgressBar = $SkillsBox/SkillsBoxMargin/SkillsBoxContent/SkillsRowMargin/SkillsRow/SocialColumn/SocialBar
+@onready var skill_social_caption: Label = $SkillsBox/SkillsBoxMargin/SkillsBoxContent/SkillsRowMargin/SkillsRow/SocialColumn/SocialCaptionWrapper/SocialCaption
 @onready var carried_boxes_row: HBoxContainer = $CarryRowMargin/CarryRow/CarriedBoxesRow
 # Primo riquadro (slot 0), in scena: fa anche da modello per gli altri, duplicati in _build_carried_slots.
 @onready var carried_resource_box: ColorRect = $CarryRowMargin/CarryRow/CarriedBoxesRow/CarriedResourceBox
@@ -517,7 +521,7 @@ func show_individual(
 	max_faith: float, current_faith: float,
 	skill_leadership: float, skill_builder: float, skill_management: float,
 	skill_transporter: float, skill_gathering: float, skill_cognition: float,
-	skill_hunting: float, skill_crafting: float, skill_ritual: float,
+	skill_hunting: float, skill_crafting: float, skill_ritual: float, skill_social: float,
 	queued_task_descriptions: Array[String] = []
 ) -> void:
 	visible = true
@@ -670,6 +674,11 @@ func show_individual(
 	skill_ritual_bar.value = skill_ritual
 	skill_ritual_bar.tooltip_text = "%d/%d" % [int(skill_ritual), int(HumanIndividual.SKILL_MAX)]
 	skill_ritual_caption.text = tr("skill_ritual_label")
+
+	skill_social_bar.max_value = HumanIndividual.SKILL_MAX
+	skill_social_bar.value = skill_social
+	skill_social_bar.tooltip_text = "%d/%d" % [int(skill_social), int(HumanIndividual.SKILL_MAX)]
+	skill_social_caption.text = tr("skill_social_label")
 
 	# Capacità di trasporto (2026-09-13, richiesta utente — spostata in FONDO alle barre, dopo i 5
 	# nuovi parametri vitali: nessun motivo funzionale, solo l'ordine visivo concordato) — la barra

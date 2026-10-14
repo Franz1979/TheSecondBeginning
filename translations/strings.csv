@@ -94,6 +94,12 @@ idea_paleolithic_constructions_summary,Permette di costruire i primi ripari.
 idea_paleolithic_constructions_description,"Rami, pelli e pietre diventano strutture in cui ripararsi e riposare."
 idea_advanced_paleolithic_constructions_summary,Permette di costruire la capanna.
 idea_advanced_paleolithic_constructions_description,"Pali robusti, intrecci e coperture solide danno ripari più grandi e duraturi."
+idea_oral_teaching,Insegnamento orale
+idea_oral_teaching_summary,Gli anziani tramandano ai bambini ciò che sanno fare meglio.
+idea_oral_teaching_description,"Racconti e gesti ripetuti passano il sapere da una generazione all'altra."
+idea_tribal_organization,Organizzazione tribale
+idea_tribal_organization_summary,Il villaggio impara a riunirsi e a decidere insieme.
+idea_tribal_organization_description,"Gli anziani e i più esperti siedono in cerchio, e la loro parola guida la tribù."
 idea_drying,Essiccazione
 idea_drying_summary,Permette di costruire il graticcio per essiccare la carne.
 idea_drying_description,"Stesa al sole e al vento su un graticcio, la carne si conserva molto più a lungo."
@@ -409,8 +415,12 @@ empty_all_confirmation_text_lost,"Se non c'è una microcella libera, il contenut
 empty_all_confirmation_confirm,Svuota tutto
 hunt_destination_caption,Destinazione
 hunt_destination_campfire,Focolare
-hunt_destination_drying_rack,Essiccatoio
-hunt_destination_smokehouse,Affumicatoio
+hunt_destination_drying_rack,Essiccatoio – carne e pelli
+hunt_destination_drying_rack_meat,Essiccatoio – solo carne
+hunt_destination_drying_rack_hide,Essiccatoio – solo pelli
+hunt_destination_smokehouse,Affumicatoio – carne e pelli
+hunt_destination_smokehouse_meat,Affumicatoio – solo carne
+hunt_destination_smokehouse_hide,Affumicatoio – solo pelli
 hunt_destination_warehouse,Magazzino
 hunt_destination_not_yet_available,Non ancora disponibile
 hunt_destination_requires_idea,Richiede: {idea}
@@ -454,6 +464,7 @@ skill_cognition_label,Cognizione
 skill_hunting_label,Caccia
 skill_crafting_label,Artigianato
 skill_ritual_label,Ritualità
+skill_social_label,Socialità
 individual_id_label,Popolo: {folk} · Villaggio: {village}
 individual_village_none,nessuno
 individual_mother_id_label,ID Madre: {id}
@@ -741,6 +752,9 @@ individual_no_house,Senza casa
 task_explore_name,Esplorazione
 task_explore_step_walk,Esplorando
 task_explore_step_look_around,Guardandosi intorno
+task_talk_name,Chiacchierata
+task_talk_step_walk,Va a chiacchierare
+task_talk_step_talk,Chiacchierando
 building_covered_depot,Deposito coperto
 build_bar_covered_depot_tooltip,Deposito coperto
 build_bar_deposit_site_description,"Spiazzo all'aperto: le scorte si conservano peggio."
@@ -759,6 +773,9 @@ building_info_political_radius,Raggio politico: {radius}
 building_info_cultural_radius,Raggio culturale: {radius}
 help_explore_task,"assegna il compito Esplorazione all'individuo selezionato: due tratti in direzione casuale, guardandosi intorno, e ritorno al punto di partenza (non per i bambini)"
 task_activity_explore,esplorare
+task_activity_talk,chiacchierare
+talk_reject_no_partner,{name} non ha nessuno con cui chiacchierare qui vicino.
+talk_reject_backpack,{name} ha lo zaino carico e non può fermarsi a chiacchierare.
 help_emergency_rest_task,assegna il compito Riposo d'emergenza all'individuo selezionato
 help_leisure_restock_task,"assegna il compito Rifornirsi all'individuo selezionato: va a un magazzino a fare provviste"
 help_gather_command,"Raccogli nelle zone di lavoro (barra dei comandi, con un individuo selezionato)"

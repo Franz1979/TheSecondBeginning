@@ -662,6 +662,7 @@ func save_game_to_json(
 				"skill_hunting": individual.skill_hunting,
 				"skill_crafting": individual.skill_crafting,
 				"skill_ritual": individual.skill_ritual,
+				"skill_social": individual.skill_social,
 				# Capacità di trasporto (2026-09-08, richiesta utente) — lo zaino è l'unico stato "posseduto"
 				# da un individuo che sparirebbe silenziosamente al reload senza persistenza (stesso
 				# principio di dependent_child_id sopra: un possesso, non un dato ricalcolabile al volo).

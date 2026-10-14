@@ -918,6 +918,8 @@ func load_game_from_json(file_path: String) -> LoadedGame:
 			individual.skill_crafting = float(individual_data.get("skill_crafting", 0.0))
 			# skill_ritual (2026-10-02): 0.0 per i save precedenti alla skill.
 			individual.skill_ritual = float(individual_data.get("skill_ritual", 0.0))
+			# skill_social (2026-10-13): 0.0 per i save precedenti alla skill.
+			individual.skill_social = float(individual_data.get("skill_social", 0.0))
 			# Capacità di trasporto (2026-09-08, richiesta utente) — .get() con default "non sta
 			# trasportando nulla": un save precedente a questo campo non può avere mai avuto un
 			# individuo in trasporto (nessun PickUp esiste ancora), quindi il default è sempre

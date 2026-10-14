@@ -51,6 +51,12 @@ idea_paleolithic_constructions_summary,Allows building the first shelters.
 idea_paleolithic_constructions_description,"Branches, hides and stones become structures to shelter and rest in."
 idea_advanced_paleolithic_constructions_summary,Allows building the hut.
 idea_advanced_paleolithic_constructions_description,"Sturdy poles, weaving and solid roofs make larger, longer-lasting shelters."
+idea_oral_teaching,Oral teaching
+idea_oral_teaching_summary,Elders pass on to children what they do best.
+idea_oral_teaching_description,"Stories and repeated gestures carry knowledge from one generation to the next."
+idea_tribal_organization,Tribal organization
+idea_tribal_organization_summary,The village learns to gather and decide together.
+idea_tribal_organization_description,"Elders and the most skilled sit in a circle, and their word guides the tribe."
 idea_drying,Drying
 idea_drying_summary,Allows building the drying rack to dry meat.
 idea_drying_description,"Laid out in sun and wind on a rack, meat keeps much longer."
@@ -200,8 +206,12 @@ empty_all_confirmation_text_lost,"If there is no free microcell, the contents ar
 empty_all_confirmation_confirm,Empty all
 hunt_destination_caption,Destination
 hunt_destination_campfire,Campfire
-hunt_destination_drying_rack,Drying rack
-hunt_destination_smokehouse,Smokehouse
+hunt_destination_drying_rack,Drying rack – meat and hides
+hunt_destination_drying_rack_meat,Drying rack – meat only
+hunt_destination_drying_rack_hide,Drying rack – hides only
+hunt_destination_smokehouse,Smokehouse – meat and hides
+hunt_destination_smokehouse_meat,Smokehouse – meat only
+hunt_destination_smokehouse_hide,Smokehouse – hides only
 hunt_destination_warehouse,Warehouse
 hunt_destination_not_yet_available,Not yet available
 hunt_destination_requires_idea,Requires: {idea}
@@ -257,6 +267,7 @@ skill_cognition_label,Cognition
 skill_hunting_label,Hunting
 skill_crafting_label,Crafting
 skill_ritual_label,Ritual
+skill_social_label,Sociality
 individual_id_label,Folk: {folk} · Village: {village}
 individual_village_none,none
 individual_mother_id_label,Mother ID: {id}
@@ -667,6 +678,9 @@ individual_no_house,No house
 task_explore_name,Explore
 task_explore_step_walk,Exploring
 task_explore_step_look_around,Looking around
+task_talk_name,Chat
+task_talk_step_walk,Going to chat
+task_talk_step_talk,Chatting
 help_wander_task,"assign the Wandering task to the selected individual: two stops near home or the village, looking around"
 building_covered_depot,Covered depot
 build_bar_covered_depot_tooltip,Covered depot
@@ -686,6 +700,9 @@ building_info_political_radius,Political radius: {radius}
 building_info_cultural_radius,Cultural radius: {radius}
 help_explore_task,"assign the Explore task to the selected individual: two legs in a random direction, looking around, then back to the starting point (not for children)"
 task_activity_explore,explore
+task_activity_talk,chat
+talk_reject_no_partner,{name} has nobody nearby to chat with.
+talk_reject_backpack,{name} is carrying a load and cannot stop to chat.
 help_emergency_rest_task,assign the Emergency rest task to the selected individual
 help_leisure_restock_task,"assign the Restocking task to the selected individual: go to a warehouse to stock up on supplies"
 help_gather_command,"Gather in the work areas (command bar, with an individual selected)"

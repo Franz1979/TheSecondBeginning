@@ -525,6 +525,10 @@ var skill_crafting: float = 0.0
 # ritual (2026-10-02, richiesta utente — 9a skill, riti presso gli edifici religiosi): stesso trattamento/default
 # delle altre. Nessuna azione la usa né la fa crescere ancora (arriverà con la task Rito).
 var skill_ritual: float = 0.0
+# social (2026-10-13, richiesta utente — 10a skill, socialità): stesso trattamento/default delle altre, inclusa
+# nella semina iniziale (dote innata, non esclusa come ritual). Nessuna azione la usa né la fa crescere ancora
+# (arriverà con la task talk; poi feste e riunioni).
+var skill_social: float = 0.0
 
 
 # Nomi di TUTTE le property skill_* dell'istanza, raccolti via reflection (2026-09-13, richiesta

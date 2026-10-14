@@ -20,6 +20,11 @@ const EVENTS: Dictionary = {
 	&"idea_completed": &"thought",
 	# Richiamo del coordinatore (2026-10-09, GameScene.coordinator_called): "hey" alla sua posizione.
 	&"coordinator_call": &"hey",
+	# Talk (2026-10-13, GameScene.talk_sound_requested): chi chiama, chi risponde, poi uno a testa a inizio conversazione.
+	&"talk_call": &"hey_2",
+	&"talk_answer": &"yeah",
+	&"talk_caller": &"talk_1",
+	&"talk_partner": &"talk_2",
 	# Suono predefinito dei riti completati (2026-10-04, richiesta utente — prima church_bell, che resta nel banco per
 	# usi futuri): quello di una ricetta con RiteRules.completion_sound_id vuoto.
 	&"rite_completed": &"rite_paleolithic",

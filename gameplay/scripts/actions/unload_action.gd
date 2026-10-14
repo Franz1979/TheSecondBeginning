@@ -174,6 +174,9 @@ var planned_resources: Array[String] = []
 # re-routing del residuo verso un magazzino (find_best). false = deposita tutto ciò che l'edificio accetta, come
 # sempre (giri di rifornimento, Transport, deposito manuale). Persistito.
 var only_preferred_resources: bool = false
+# Destinazione della caccia che ha programmato questo scarico (2026-10-13, ButcherDestinationService — "solo carne"/"solo
+# pelli"): con only_preferred_resources decide quali risorse lasciare alla postazione. "" = come prima.
+var preferred_destination: String = ""
 
 
 func _init(
@@ -750,6 +753,8 @@ func get_save_data() -> Dictionary:
 		data["planned_resources"] = planned_resources.duplicate()
 	if only_preferred_resources:
 		data["only_preferred_resources"] = true
+	if preferred_destination != "":
+		data["preferred_destination"] = preferred_destination
 	return data
 
 
@@ -758,7 +763,7 @@ func get_save_data() -> Dictionary:
 # materiale delle ricette di una postazione di lavorazione (essiccatoio, affumicatoio —
 # ButcherDestinationService.is_preferred_deposit_allowed).
 func _is_deposit_allowed(resource_name: String) -> bool:
-	return not only_preferred_resources or ButcherDestinationService.is_preferred_deposit_allowed(target_building, resource_name)
+	return not only_preferred_resources or ButcherDestinationService.is_preferred_deposit_allowed(target_building, resource_name, preferred_destination)
 
 
 # true se nello zaino c'è almeno una delle risorse per cui questo scarico è stato programmato (planned_resources).

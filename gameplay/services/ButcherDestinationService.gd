@@ -21,6 +21,10 @@ extends RefCounted
 #     postazione di quel tipo più vicina che ha posto le risorse che sono ingredienti materiali delle sue ricette
 #     (recipe_inputs, mai il combustibile: is_processing_resource) — oggi carne e pelli —, il resto al magazzino. Nessuna
 #     produzione parte da sola: all'essiccatoio le ricette avanzano da sé, all'affumicatoio la ordina il giocatore;
+#   - DRYING_RACK_MEAT/_HIDE e SMOKEHOUSE_MEAT/_HIDE (2026-10-13, richiesta utente — "carne all'essiccatoio, pelli al
+#     magazzino"): come la voce "carne e pelli" del proprio edificio, ma solo gli ingredienti delle ricette il cui
+#     prodotto è cibo (_MEAT) o non è cibo (_HIDE) — PROCESSING_OUTPUT_FILTER; il resto al magazzino. Ossa e tendini
+#     non sono ingredienti di nessuna ricetta dei due edifici: vanno sempre al magazzino;
 #   - WAREHOUSE: tutto al magazzino.
 # Lo scarico alla postazione scelta per preferenza deposita solo quelle risorse (UnloadAction.only_preferred_resources),
 # in ordine di day_durability crescente; il residuo segue il re-routing normale.
@@ -31,28 +35,50 @@ const CAMPFIRE := "campfire"
 const DRYING_RACK := "drying_rack"
 const SMOKEHOUSE := "smokehouse"
 const WAREHOUSE := "warehouse"
+const DRYING_RACK_MEAT := "drying_rack_meat"
+const DRYING_RACK_HIDE := "drying_rack_hide"
+const SMOKEHOUSE_MEAT := "smokehouse_meat"
+const SMOKEHOUSE_HIDE := "smokehouse_hide"
 
 # Ordine delle opzioni nel dialog.
-const ORDER: Array[String] = [CAMPFIRE, DRYING_RACK, SMOKEHOUSE, WAREHOUSE]
+const ORDER: Array[String] = [
+	CAMPFIRE, DRYING_RACK, DRYING_RACK_MEAT, DRYING_RACK_HIDE, SMOKEHOUSE, SMOKEHOUSE_MEAT, SMOKEHOUSE_HIDE, WAREHOUSE,
+]
 # Tipo di edificio di ogni destinazione (icona, idea richiesta, esistenza di un edificio completo).
 const BUILDING_TYPES := {
 	CAMPFIRE: "campfire",
 	DRYING_RACK: "drying_rack",
+	DRYING_RACK_MEAT: "drying_rack",
+	DRYING_RACK_HIDE: "drying_rack",
 	SMOKEHOUSE: "smokehouse",
+	SMOKEHOUSE_MEAT: "smokehouse",
+	SMOKEHOUSE_HIDE: "smokehouse",
 	WAREHOUSE: "deposit_site",
 }
 # Chiavi tr() dei nomi delle opzioni.
 const NAME_KEYS := {
 	CAMPFIRE: "hunt_destination_campfire",
 	DRYING_RACK: "hunt_destination_drying_rack",
+	DRYING_RACK_MEAT: "hunt_destination_drying_rack_meat",
+	DRYING_RACK_HIDE: "hunt_destination_drying_rack_hide",
 	SMOKEHOUSE: "hunt_destination_smokehouse",
+	SMOKEHOUSE_MEAT: "hunt_destination_smokehouse_meat",
+	SMOKEHOUSE_HIDE: "hunt_destination_smokehouse_hide",
 	WAREHOUSE: "hunt_destination_warehouse",
 }
 # Destinazioni sempre disabilitate per ora (lucchetto, "Non ancora disponibile"). Vuoto dal 2026-10-03 (affumicatoio
 # acceso); il meccanismo resta per una destinazione futura.
 const NOT_YET_AVAILABLE: Array[String] = []
 # Postazioni di lavorazione (2026-10-03): ricevono gli ingredienti materiali delle proprie ricette, con la stessa logica.
-const PROCESSING_DESTINATIONS: Array[String] = [DRYING_RACK, SMOKEHOUSE]
+const PROCESSING_DESTINATIONS: Array[String] = [
+	DRYING_RACK, DRYING_RACK_MEAT, DRYING_RACK_HIDE, SMOKEHOUSE, SMOKEHOUSE_MEAT, SMOKEHOUSE_HIDE,
+]
+# Filtro sul prodotto della ricetta (2026-10-13): true = solo ricette che producono cibo, false = solo quelle che
+# producono altro. Destinazione assente = nessun filtro (carne e pelli). Sul prodotto e non sull'ingrediente perché carne
+# e pelle sono entrambe materie prime.
+const PROCESSING_OUTPUT_FILTER := {
+	DRYING_RACK_MEAT: true, DRYING_RACK_HIDE: false, SMOKEHOUSE_MEAT: true, SMOKEHOUSE_HIDE: false,
+}
 
 
 # Destinazione scritta nel context di una Task (vedi testa del file per i default).
@@ -80,7 +106,7 @@ static func find_preferred_building(
 					world, origin_position, origin_macro_coords, resource_name, min_quantity, excluded_building_ids, reachable,
 					String(BUILDING_TYPES[CAMPFIRE])
 				)
-		DRYING_RACK, SMOKEHOUSE:
+		DRYING_RACK, DRYING_RACK_MEAT, DRYING_RACK_HIDE, SMOKEHOUSE, SMOKEHOUSE_MEAT, SMOKEHOUSE_HIDE:
 			if is_processing_resource(destination, resource_name):
 				return _find_nearest_processing_station(
 					world, origin_position, origin_macro_coords, resource_name, String(BUILDING_TYPES[destination]),
@@ -99,9 +125,11 @@ static func is_processing_resource(destination: String, resource_name: String) -
 	var building_type := String(BUILDING_TYPES[destination])
 	for recipe_name in CaloricCalculator.list_secondary_resource_names():
 		var recipe_rules := CaloricCalculator.get_caloric_source_rules(recipe_name)
-		if recipe_rules != null and recipe_rules.recipe_workstation_types.has(building_type) \
-				and recipe_rules.recipe_inputs.has(resource_name):
-			return true
+		if recipe_rules == null or not recipe_rules.recipe_workstation_types.has(building_type) 				or not recipe_rules.recipe_inputs.has(resource_name):
+			continue
+		if PROCESSING_OUTPUT_FILTER.has(destination) 				and bool(PROCESSING_OUTPUT_FILTER[destination]) != (recipe_rules.category == SecondaryResourceTypes.Category.FOOD):
+			continue
+		return true
 	return false
 
 
@@ -109,7 +137,12 @@ static func is_processing_resource(destination: String, resource_name: String) -
 # `resource_name` in `building`: alla postazione di lavorazione di una destinazione i suoi ingredienti materiali
 # (is_processing_resource), altrove — il focolare — solo le risorse con prefers_recipe_workstation (la carne), come
 # prima.
-static func is_preferred_deposit_allowed(building: Building, resource_name: String) -> bool:
+# `task_destination` (2026-10-13): la destinazione della Task che ha programmato lo scarico; se è una postazione di
+# lavorazione dello stesso tipo dell'edificio vale il suo filtro (solo carne / solo pelli). "" = come prima (scarichi
+# salvati prima di questo campo).
+static func is_preferred_deposit_allowed(building: Building, resource_name: String, task_destination: String = "") -> bool:
+	if building != null and PROCESSING_DESTINATIONS.has(task_destination) 			and building.building_type_name == String(BUILDING_TYPES[task_destination]):
+		return is_processing_resource(task_destination, resource_name)
 	if building != null:
 		for destination in PROCESSING_DESTINATIONS:
 			if building.building_type_name == String(BUILDING_TYPES[destination]):
@@ -170,7 +203,8 @@ static func get_unavailable_reason(destination: String, world: World, folk: Folk
 		return TranslationServer.translate("hunt_destination_requires_idea").format({"idea": idea_name})
 	if not _has_complete_building(world, building_type):
 		return TranslationServer.translate("hunt_destination_no_building").format({
-			"building": TranslationServer.translate(String(NAME_KEYS.get(destination, ""))).to_lower(),
+			# Nome dell'edificio (2026-10-13): le voci del menu ora dicono anche cosa portare ("– solo carne").
+			"building": TranslationServer.translate(rules.building_name if rules != null else String(NAME_KEYS.get(destination, ""))).to_lower(),
 		})
 	return ""
 

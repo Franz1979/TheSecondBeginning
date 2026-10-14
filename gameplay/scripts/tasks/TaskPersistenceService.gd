@@ -275,6 +275,9 @@ static func _action_type_for_step(step: Action) -> int:
 	# INVENTORY (2026-10-11, InventoryAction, inventory.tres), aggiunta insieme al proprio case in _build_step.
 	if step is InventoryAction:
 		return TaskTypes.ActionType.INVENTORY
+	# TALK (2026-10-13, TalkAction, talk.tres), aggiunta insieme al proprio case in _build_step.
+	if step is TalkAction:
+		return TaskTypes.ActionType.TALK
 	push_error("TaskPersistenceService._action_type_for_step: tipo Action sconosciuto (%s)." % step.get_script().get_global_name())
 	return -1
 
@@ -329,6 +332,8 @@ static func _build_step(action_type: int, step_data: Dictionary, macro_state: Ma
 				(step as UnloadAction).planned_resources.append(String(planned_name))
 			# only_preferred_resources (2026-10-02): false per i save precedenti = deposita tutto, come prima.
 			(step as UnloadAction).only_preferred_resources = bool(step_data.get("only_preferred_resources", false))
+			# preferred_destination (2026-10-13): "" per i save precedenti = filtro di prima.
+			(step as UnloadAction).preferred_destination = String(step_data.get("preferred_destination", ""))
 		TaskTypes.ActionType.PICKUP:
 			var pickup_target := Vector2i(
 				int(step_data.get("target_position_x", 0)), int(step_data.get("target_position_y", 0))
@@ -535,6 +540,9 @@ static func _build_step(action_type: int, step_data: Dictionary, macro_state: Ma
 		TaskTypes.ActionType.WAIT_AT_POINT:
 			# Tetto dell'attesa; il tempo trascorso arriva da load_save_data (solo per lo step corrente).
 			step = WaitAtPointAction.new(float(step_data.get("max_wait_days", -1.0)))
+		TaskTypes.ActionType.TALK:
+			# Nessun argomento: il partner è nel context della Task, attesa e conversazione da load_save_data.
+			step = TalkAction.new()
 		TaskTypes.ActionType.PICKUP_BODY:
 			step = PickUpBodyAction.new(int(step_data.get("body_id", -1)))
 		TaskTypes.ActionType.CARRY_BODY:

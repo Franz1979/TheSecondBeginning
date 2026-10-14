@@ -119,6 +119,8 @@ enum ActionType {
 	REPAIR,
 	# INVENTORY (2026-10-11, gestore del magazzino — InventoryAction, inventory.tres) — AGGIUNTO IN CODA (32).
 	INVENTORY,
+	# TALK (2026-10-13, socialità — TalkAction, talk.tres) — AGGIUNTO IN CODA (33).
+	TALK,
 }
 
 # Categorie di tool richiedibili da un'Action (2026-09-08, richiesta utente — SOLO struttura dati,

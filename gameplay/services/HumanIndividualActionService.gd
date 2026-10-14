@@ -1223,6 +1223,8 @@ func _search_warehouse_for_resource(
 		var planned_unload := UnloadAction.new(candidate, UnloadAction.DepositKind.RESOURCE)
 		planned_unload.planned_resources.append(resource_name)
 		planned_unload.only_preferred_resources = via_workstation_preference
+		if via_workstation_preference:
+			planned_unload.preferred_destination = ButcherDestinationService.get_destination(task.context)
 		var new_steps: Array[Action] = [WalkAction.new(candidate_position), planned_unload]
 		if in_supply_round:
 			# Avanzo dello scarico AL CANTIERE (fine del giro): dopo il magazzino il pipottino torna al cantiere e riprende

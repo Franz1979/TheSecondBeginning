@@ -9,7 +9,7 @@ calories_per_unit = 0.0
 category = 5
 required_idea_id = "advanced_paleolithic_constructions"
 generation_source = 2
-day_durability = 3000
+day_durability = 6000
 space_per_unit = 10.0
 recipe_inputs = {
 "fiber_rope": 2,
@@ -19,7 +19,7 @@ recipe_inputs = {
 recipe_labor = 1200.0
 recipe_workstation_types = Array[String](["clothing_hut"])
 recipe_required_tool_categories = Array[int]([1, 6])
-max_uses = 2500
+max_uses = 6000
 apparel_color = Color(0.52, 0.48, 0.43, 1)
 health_delta_by_season = Array[float]([0.0, 0.0, -4.0, 0.0])
 happiness_delta_by_season = Array[float]([5.0, 0.0, -10.0, 0.0])

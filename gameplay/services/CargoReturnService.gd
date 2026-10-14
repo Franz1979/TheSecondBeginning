@@ -141,6 +141,8 @@ static func build_cargo_return_task(individual: HumanIndividual, world: World, b
 		return null
 	var unload := UnloadAction.new(destination, UnloadAction.DepositKind.RESOURCE)
 	unload.only_preferred_resources = via_workstation_preference
+	if via_workstation_preference:
+		unload.preferred_destination = butcher_destination
 	var steps: Array[Action] = [
 		WalkAction.new(MaterialSupplyService.building_point(individual, destination)),
 		unload,

@@ -29,6 +29,9 @@ extends Node2D
 signal idea_bulb_shown(global_pos: Vector2)
 # Richiamo del coordinatore (2026-10-09, CoordinatorService): suono "hey" alla sua posizione (AudioEventListener).
 signal coordinator_called(global_pos: Vector2)
+# Talk (2026-10-13): suono alla posizione di un pipottino — evento di SoundEventMap "talk_call" (chi chiama), "talk_answer"
+# (chi risponde), "talk_caller"/"talk_partner" (inizio della conversazione). Ascoltato da AudioEventListener.
+signal talk_sound_requested(global_pos: Vector2, event: StringName)
 # Emesso quando nella campanella "In sospeso" compare almeno una riga NUOVA (chiave mai vista al giro prima), una volta
 # per giro anche se ne compaiono più insieme; mai al primo giro (apertura o caricamento di una partita), né quando una
 # riga esistente cambia testo. Stesso momento del lampeggio della scheda (_refresh_pending_entries). Ascoltato da
@@ -1435,6 +1438,7 @@ func _process(delta: float) -> void:
 	_open_pending_visitor_decision()
 	_sync_dropped_weapon_markers()
 	_track_rite_tasks()
+	_track_talk_tasks()
 	_sync_ground_pile_views()
 	# Corpi in spalla e loro viste (2026-10-04, cumulo sepolcrale passo 2).
 	_sync_body_burial()
@@ -7186,6 +7190,55 @@ func _track_rite_tasks() -> void:
 		var rite := _rite_action_of(task)
 		if rite != null and not rite.completed and human_individuals.has(member):
 			_report_command_rejection(member, tr("rite_interrupted").format({"name": member.name}))
+
+
+# Talk (2026-10-13, socialità): ogni Task talk nuova vista qui fa sentire la chiamata ("hey" a chi chiama, "yeah" a chi
+# risponde) e la sua TalkAction viene collegata a _spawn_talk_effect (fumetto e suono all'inizio della conversazione).
+# Solo presentazione: la logica è in TalkService/TalkAction. Stato solo in memoria (dopo un caricamento la chiamata di
+# una talk in corso si risente).
+var _tracked_talk_tasks: Dictionary = {}  # Task -> true
+
+
+func _track_talk_tasks() -> void:
+	var current: Dictionary = {}
+	for member in human_individuals:
+		var task := member.current_task
+		if not TalkService.is_talk_task(task) or task.is_finished():
+			continue
+		current[task] = true
+		if _tracked_talk_tasks.has(task):
+			continue
+		for step in task.steps:
+			if step is TalkAction and not (step as TalkAction).talk_started.is_connected(_spawn_talk_effect):
+				(step as TalkAction).talk_started.connect(_spawn_talk_effect)
+		_emit_talk_sound(member, &"talk_call" if TalkService.is_caller(task) else &"talk_answer")
+	_tracked_talk_tasks = current
+
+
+# Inizio della conversazione: fumetto che sale e svanisce sopra il pipottino (stessi tempi della lampadina del pensiero,
+# _spawn_idea_deposit_effect) e il suo suono (talk_1 per chi ha chiamato, talk_2 per l'altro).
+func _spawn_talk_effect(member: HumanIndividual, is_caller: bool) -> void:
+	_emit_talk_sound(member, &"talk_caller" if is_caller else &"talk_partner")
+	if member == null or not live_cells.has(member.home_macro_coords):
+		return
+	var label := Label.new()
+	label.text = "💬"
+	label.z_index = 2
+	label.add_theme_font_size_override("font_size", 6)
+	label.position = member.position * MicroCellRenderer.CELL_SIZE + Vector2(-3, -12)
+	live_cells[member.home_macro_coords].container.add_child(label)
+	var tween := create_tween()
+	tween.set_parallel(true)
+	tween.tween_property(label, "position:y", label.position.y - 40.0, 0.9)
+	tween.tween_property(label, "modulate:a", 0.0, 3.0)
+	tween.chain().tween_callback(label.queue_free)
+
+
+func _emit_talk_sound(member: HumanIndividual, event: StringName) -> void:
+	if member == null or not live_cells.has(member.home_macro_coords):
+		return
+	var cell_container: Node2D = live_cells[member.home_macro_coords].container
+	talk_sound_requested.emit(cell_container.to_global(member.position * MicroCellRenderer.CELL_SIZE), event)
 
 
 func _rite_action_of(task: Task) -> RiteAction:
@@ -13339,7 +13392,7 @@ func _update_individual_panel_content(target: HumanIndividual) -> void:
 		target.max_faith, target.current_faith,
 		target.skill_leadership, target.skill_builder, target.skill_management,
 		target.skill_transporter, target.skill_gathering, target.skill_cognition,
-		target.skill_hunting, target.skill_crafting, target.skill_ritual,
+		target.skill_hunting, target.skill_crafting, target.skill_ritual, target.skill_social,
 		queued_task_descriptions
 	)
 	# Titolo header consolidato (2026-09-13, richiesta utente — "perché la riga del center è
@@ -18609,18 +18662,19 @@ func _auto_request_hunt(stock: Dictionary, claims: Dictionary, orders: Array) ->
 	if counts.is_empty():
 		return changed
 	# Carne o pelle ancora scoperte dopo gli ordini già aperti: tutto al magazzino. Eccezione (2026-10-11, richiesta utente):
-	# carne che serve solo per la carne essiccata e pelle che non serve = direttamente all'essiccatoio (le pelli ci vanno
-	# anche loro e diventano pelle essiccata), senza il trasporto successivo dal deposito. Essiccatoio pieno all'arrivo =
-	# ripiego sul deposito (ButcherDestinationService.find_preferred_building), poi il trasporto del magazzino.
+	# carne che serve solo per la carne essiccata = direttamente all'essiccatoio, senza il trasporto successivo dal
+	# deposito. Dal 2026-10-13 con "Essiccatoio – solo carne": le pelli vanno al magazzino, anche quando servono anche
+	# loro (prima, con pelli richieste, tutto al magazzino; senza, anche le pelli all'essiccatoio). Essiccatoio pieno
+	# all'arrivo = ripiego sul deposito (ButcherDestinationService.find_preferred_building), poi il trasporto del magazzino.
 	var needs_meat := int(demand_by_resource.get(HuntZoneService.MEAT_RESOURCE, 0)) > total_coverage
 	var needs_hide := int(demand_by_resource.get("hide", 0)) > total_coverage
 	var destination := _stock_excess_meat_destination()
 	if needs_meat or needs_hide:
 		destination = ButcherDestinationService.WAREHOUSE
 		var breakdown := _derived_meat_breakdown(stock)
-		if needs_meat and not needs_hide and int(breakdown["dry"]) > 0 and int(breakdown["other"]) <= 0 \
-				and ButcherDestinationService.is_available(ButcherDestinationService.DRYING_RACK, macro_world, human_folk):
-			destination = ButcherDestinationService.DRYING_RACK
+		if needs_meat and int(breakdown["dry"]) > 0 and int(breakdown["other"]) <= 0 \
+				and ButcherDestinationService.is_available(ButcherDestinationService.DRYING_RACK_MEAT, macro_world, human_folk):
+			destination = ButcherDestinationService.DRYING_RACK_MEAT
 	for count in counts:
 		_create_drawer_zone_order(DRAWER_ORDER_TYPE_HUNT, StockRequestService.snap_hunt_count(count), -1, {
 			StockRequestService.ORDER_KEY: StockRequestService.HUNT_GROUP_KEY, "butcher_destination": destination,

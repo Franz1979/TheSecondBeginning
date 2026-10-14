@@ -421,3 +421,8 @@ const SHOW_HELP_DIALOG_LOGS := false
 # in fila, nuovo coordinatore, inizio di un'assegnazione, lavoro ricevuto o svago, autoassegnazione, fine del turno con
 # il motivo, posto liberato al caricamento. Solo log.
 const SHOW_COORDINATOR_LOGS := false
+
+# Talk (2026-10-13, socialità — TalkService/TalkAction): una riga [TALK] per chiamata (partner, raggio, punti
+# d'incontro), nessun partner, inizio e fine della conversazione, chiusura senza effetti con il motivo. Acceso su
+# richiesta per le prime prove.
+const SHOW_TALK_LOGS := true

@@ -284,6 +284,10 @@ static func build_task(definition: TaskDefinition, context: Dictionary) -> Task:
 					max_wait_days = float(context[step_definition.context_keys[0]])
 				steps.append(WaitAtPointAction.new(max_wait_days))
 				step_descriptions.append(step_definition.step_description)
+			TaskTypes.ActionType.TALK:
+				# Nessun argomento (2026-10-13, talk.tres): il partner resta nel context (TalkService.CONTEXT_PARTNER_ID).
+				steps.append(TalkAction.new())
+				step_descriptions.append(step_definition.step_description)
 			TaskTypes.ActionType.PATROL_AREA:
 				# 1 argomento (id della WorkArea, 2026-10-01): chiave consumata dalla factory — chi crea la Task scrive
 				# anche HuntZoneService.CONTEXT_WORK_AREA_ID, che resta nel context.
