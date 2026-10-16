@@ -599,6 +599,11 @@ func on_complete(individual: Variant, context: Dictionary) -> void:
 	if IdeaProgressService.add_thoughts(folk, 1):
 		# Cultura del villaggio dell'edificio dell'ultimo pensiero (2026-10-12, passo 4 Folk/Village).
 		VillageInfluenceService.add_idea_culture(folk, target_building, folk.completed_ideas[-1])
+		# Coesione dello stesso villaggio (2026-10-14).
+		VillageCohesionService.add(
+			folk.find_village(target_building.village_id) if target_building != null else null,
+			VillageCohesionService.IDEA_GAIN, "idea '%s' scoperta" % folk.completed_ideas[-1]
+		)
 		idea_completed.emit(folk.completed_ideas[-1])
 
 	# "Cammina via" (2026-09-10, richiesta utente — Step 1b del refactor Daydream via TaskFactory,

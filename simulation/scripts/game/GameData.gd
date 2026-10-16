@@ -193,6 +193,13 @@ var village_building_snapshots: Dictionary = {}
 # statistiche): Village.id (int) -> {InfluenceService.InfluenceType (int) -> {anno (int) -> valore (float)}}. Il popolo
 # è la somma dei villaggi, calcolata dal pannello. Stesse note di persistenza (chiavi int -> String in JSON).
 var village_influence_snapshots: Dictionary = {}
+# Coesione per villaggio a ogni cambio d'anno, dopo il calo annuale (2026-10-14, VillageCohesionService): Village.id (int)
+# -> {anno (int) -> valore (float)}. La popolazione è la media dei villaggi, calcolata dal pannello. Stesse note di
+# persistenza (chiavi int -> String in JSON).
+var village_cohesion_snapshots: Dictionary = {}
+# Riti sociali in corso (2026-10-14, SocialRiteService — un record per edificio, formato in testa a SocialRiteService).
+# Salvati; la chiave "_frame" è solo di sessione.
+var active_social_rites: Array[Dictionary] = []
 
 # Istanze runtime del futuro sistema oggetti-scaduti (Step 2, 2026-09-05, res://gameplay/scripts/
 # core/ExpiredObjectRules.gd — oggi solo DEAD_BODY) — un Dictionary per istanza nel mondo:
@@ -266,6 +273,11 @@ var stock_min_food_days: int = 0
 # caccia del magazzino (ButcherDestinationService, stessi valori della caccia manuale). Salvata da GameSaveService
 # ("stock_excess_meat_destination"); partita nuova e salvataggi vecchi: il magazzino.
 var stock_excess_meat_destination: String = "warehouse"
+# Regola "Combustibile negli edifici che lo usano" (2026-10-16, FuelStockService): accesa/spenta e minimo per tipo di
+# edificio (nome tipo -> combustibile in fuel_value) cambiato nel cassetto; un tipo assente usa BuildingRules.fuel_stock_min.
+# Salvati da GameSaveService ("stock_fuel_rule_enabled", "stock_fuel_min_by_type"); partita nuova: spenta, nessun cambio.
+var stock_fuel_rule_enabled: bool = false
+var stock_fuel_min_by_type: Dictionary = {}
 # Regola di assegnazione "Riponi gli attrezzi presi per un lavoro" (2026-10-11): gli attrezzi presi in deposito per un
 # ordine della coda tornano in deposito quando l'individuo è libero (HumanIndividual.borrowed_tools). Salvata da
 # GameSaveService ("job_board_return_borrowed_tools"); partita nuova e salvataggi vecchi: accesa.

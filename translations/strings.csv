@@ -146,7 +146,6 @@ pending_pile,Mucchio · {resources}
 task_assignment_in_progress_section,In corso
 task_assignment_in_progress_empty,Nessun compito in corso
 task_assignment_settings,⚙ Regole di assegnazione
-task_assignment_rules_save_close,Salva e chiudi
 task_assignment_setting_wait,Attesa prima dell'assegnazione automatica
 task_assignment_setting_wait_tooltip,"Per questi secondi un lavoro nuovo non viene preso da nessuno: puoi assegnarlo tu col clic destro. Con 0 parte subito."
 population_hide_tasks,Nascondi compiti
@@ -490,8 +489,10 @@ individual_queued_task_paused_with_cargo,{task} · in pausa, con carico
 building_status_label,Stato: {status}
 building_status_complete,Completo
 building_status_under_construction,In costruzione
-building_status_marked_for_demolition,Da demolire
+building_status_marked_for_demolition,Da demolire (pianificata)
 building_status_demolition_in_progress,In demolizione
+build_bar_demolish_tooltip,Demolisci: scegli un edificio sulla mappa. Resta in funzione finché un pipottino non inizia a demolirlo (clic destro con un pipottino selezionato).
+demolish_pick_banner_text,🧨 Demolisci: clicca un edificio (Esc per annullare)
 building_demolish_button,Demolisci
 building_influence_political_tooltip,"Influenza politica: raggio {radius}"
 building_influence_political_none_tooltip,Nessuna influenza politica
@@ -727,9 +728,26 @@ task_rite_name,Rito
 task_rite_step_rite,Celebrando il rito
 task_activity_rite,celebrare un rito
 rite_simple_name,Rito semplice
+rite_paleolithic_banquet_name,Banchetto paleolitico
+task_social_rite_name,Rito sociale
+task_social_rite_step_walk,Va al rito
+task_social_rite_step_attend,Al rito
+social_rite_reject_adults,Servono almeno {n} abitanti adulti nel villaggio
+banquet_reject_meat,Servono almeno {n} carni crude nel focolare
+banquet_reject_fuel,Combustibile insufficiente per cuocere almeno {n} carni
 rite_dialog_title,Rito
 rite_dialog_message,Scegli il rito da celebrare:
 rite_reject_building_busy,C'è già un rito assegnato o in corso presso questo edificio
+rite_reject_no_celebrant,Nel villaggio nessuno ha l'età o l'esperienza per celebrare questo rito
+rite_reject_none_available_panel,Questo rito non si può celebrare qui adesso
+building_rites_caption,Riti
+building_rite_button_tooltip,Ordina questo rito: scegli chi lo celebra (o va in coda con l'assegnazione dei compiti)
+building_rite_order_label,Rito: {rite}
+building_rite_preparing,in preparazione
+building_rite_awaiting_material,in attesa di materiale
+building_assign_rite_tooltip,Scegli chi celebra il rito
+building_cancel_rite_order_tooltip,Annulla il rito ordinato
+rite_assign_banner_text,🌙 Celebra {rite}: clicca un individuo (Esc per annullare)
 "rite_reject_none_available","{name} non può celebrare nessun rito qui (età o ritualità insufficienti)"
 rite_interrupted,Rito interrotto ({name})
 task_leisure_rite_name,Rito spontaneo
@@ -1118,7 +1136,9 @@ building_repair_in_progress_label,Riparazione in corso: {names}
 repair_assign_banner_text,🔨 Ripara {building}: clicca un individuo (Esc per annullare)
 repair_reject_already_repairing,C'è già un individuo che ripara {building}
 pending_repair,Riparazione · {building}
+pending_rite,{rite} · {building}
 task_assignment_kind_repair,Riparazioni
+task_assignment_kind_rite,Riti
 repair_cancel_request_tooltip,Togli la richiesta di riparazione (l'Integrità già recuperata resta)
 building_repair_waiting_label,Riparazione in attesa di assegnazione
 building_command_repair_already_requested,Riparazione già richiesta
@@ -1171,8 +1191,9 @@ task_assignment_warehouse_tag_tooltip,"Ordine creato dalla gestione scorte: la r
 drawer_order_stock_cancel_tooltip,"Annulla l'ordine. Se la risorsa resta sotto il livello minimo il magazzino ne crea un altro: per fermarlo togli il livello o blocca l'ordine."
 warehouse_min_level_auto_tooltip,"Livello minimo: sotto questo valore il magazzino crea ordini di raccolta, taglio o estrazione nelle zone di lavoro."
 warehouse_rules,⚙ Regole di stoccaggio
-warehouse_rule_excess_meat,Carne e pelli in eccesso
-warehouse_rule_excess_meat_tooltip,"Dove vanno carne e pelli delle cacce del magazzino quando sono già sopra il loro livello (come nella caccia manuale: il focolare prende la carne, essiccatoio e affumicatoio carne e pelli). Se servono, vanno sempre al magazzino. Tendini e ossa vanno sempre al magazzino."
+warehouse_rule_excess_meat,Destinazione carne e pelli in eccesso
+warehouse_rule_excess_meat_tooltip,"Cacce del magazzino: carne e pelli che servono vanno sempre al magazzino. Quelle in più (già sopra il loro livello) vanno qui. Ciò che la destinazione non prende (pelli col focolare; tendini e ossa sempre) e ciò che non trova posto va al magazzino."
+warehouse_rule_excess_meat_button_tooltip,Carne e pelli in eccesso: {name}
 warehouse_food_ingredients_title,Da cucinare o lavorare
 warehouse_food_ingredients_note,"Non contano nelle calorie: vanno prima cucinate o lavorate."
 pending_stock_blocked,Magazzino · {resource}
@@ -1189,9 +1210,8 @@ pending_stock_dry_rack_full,Essiccatoio pieno
 pending_stock_dry_missing,Manca: {resource}
 pending_stock_dry_blocked,Nessun essiccatoio con posto o niente da portare
 warehouse_food_days_name,Cibo
-warehouse_food_days_auto_tooltip,"Giorni di autonomia minimi: sotto questo valore il magazzino fa cuocere la carne cruda in deposito e poi raccogliere qualsiasi cibo nelle zone di lavoro."
-warehouse_level_derived,da prodotti
-warehouse_meat_level_derived_tooltip,"La carne cruda non ha un livello proprio: si caccia per carne cotta, affumicata ed essiccata. Metti il livello su quelle."
+warehouse_food_days_auto_tooltip,"Giorni di autonomia minimi: sotto questo valore il magazzino fa cuocere la carne cruda libera (oltre la riserva di carne cruda e oltre quella per le lavorazioni) e poi raccogliere qualsiasi cibo nelle zone di lavoro. Il cibo già in lavorazione conta come in arrivo."
+warehouse_meat_level_tooltip,"Carne cruda da tenere in più, oltre a quella che serve per carne cotta, affumicata ed essiccata. Prima si lavora, poi si riempie questa riserva."
 pending_output_delivery_rack,{building} pieno: porta i prodotti pronti al deposito
 task_inventory_name,Inventario
 task_inventory_step_count,Conta le scorte
@@ -1261,3 +1281,8 @@ pending_village_without_center_detail,Costruisci un nuovo Cerchio di sassi per r
 statistics_scope_label,Mostra:
 statistics_scope_folk,{folk} (tutto il popolo)
 statistics_tab_influence,Influenza
+warehouse_rule_fuel,Combustibile negli edifici che lo usano
+warehouse_rule_fuel_tooltip,"Tieni del combustibile nel deposito di ogni edificio che lo brucia (focolare, affumicatoio…). Il minimo si sceglie per tipo di edificio; sotto il minimo, all'inventario parte un trasporto dal magazzino del combustibile migliore disponibile."
+warehouse_rule_fuel_type_tooltip,"Combustibile minimo per ogni edificio di questo tipo (in valore di combustibile: un rametto vale 1). 0 = questo tipo non viene rifornito."
+drawer_order_fuel_row,{building}: porta {quantity} {resource}
+pending_stock_fuel_blocked,Edificio non disponibile o niente combustibile da portare

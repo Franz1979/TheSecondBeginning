@@ -196,6 +196,10 @@ func _lock_content_width() -> void:
 	title_label.clip_text = false
 	title_label.text_overrun_behavior = TextServer.OVERRUN_NO_TRIMMING
 	title_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	# Pulsanti allineati in alto (2026-10-16, richiesta utente): col FILL di default si stiravano in altezza quando il
+	# titolo andava a capo su più righe (es. "Cumulo sepolcrale ID: 87").
+	header_actions.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
+	center_button.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
 
 
 # Chiamata da GameScene quando qualcosa viene selezionato sulla mappa (oggi vegetazione/individuo

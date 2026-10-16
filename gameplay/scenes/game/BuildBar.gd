@@ -7,7 +7,9 @@ extends CenterContainer
 # controllo (niente back separato, deciso con l'utente) il cui significato/icona cambia in base al
 # livello corrente: ▼ minimizza (da livello 1), ▲ riespande (da minimizzato), ← torna indietro (da
 # livello 2) — sempre "un passo indietro nella gerarchia", mai un secondo bottone dedicato.
-# (Il bottone 🧨 Demolisci di main_row è stato tolto il 2026-09-27: la demolizione parte dal pannello edificio.)
+# (Il bottone 🧨 Demolisci di main_row, tolto il 2026-09-27, è tornato il 2026-10-14 accanto al martello: scegli
+# l'edificio sulla mappa, confermi, l'edificio resta "da demolire" finché non assegni un demolitore. Resta anche il
+# pulsante nel pannello edificio.)
 #
 # Radice CenterContainer apposta: ancorata a tutta larghezza in basso (vedi .tscn), pannello vero
 # ricentrato automaticamente ad ogni cambio di contenuto (livello di menu attivo/minimizzazione)
@@ -34,7 +36,11 @@ const OPEN_BUILD_MENU_ACTION := &"open_build_menu"
 # action_pressed(WORK_AREAS_ACTION), ascoltato da GameScene (modalità "disegna area"); acceso solo a idea completata
 # (set_work_areas_available, chiamata da GameScene come set_building_buildable).
 const WORK_AREAS_ACTION := &"work_areas"
-const WORK_AREAS_MAIN_ROW_SLOT_INDEX := 1
+const WORK_AREAS_MAIN_ROW_SLOT_INDEX := 2
+# Demolisci (2026-10-14, richiesta utente): slot 1 di main_row, accanto al martello. Il clic emette
+# action_pressed(DEMOLISH_PICK_ACTION), ascoltato da GameScene (modalità "scegli l'edificio da demolire").
+const DEMOLISH_PICK_ACTION := &"demolish_pick"
+const DEMOLISH_MAIN_ROW_SLOT_INDEX := 1
 
 # Indice slot in submenu_row per ogni tipo edificio (2026-09-07, richiesta utente — GENERALIZZATO
 # da PEBBLE_CIRCLE_SLOT_INDEX: un solo indice bastava finché il controllo di disponibilità
@@ -110,6 +116,13 @@ var _orientation_hint_row: HBoxContainer = null
 
 func _ready() -> void:
 	main_row.configure_slot(0, "🔨", tr("build_bar_build_tooltip"), OPEN_BUILD_MENU_ACTION)
+	var demolish_icon := BuildingCommandIcon.new()
+	demolish_icon.kind = BuildingCommandIcon.KIND_DEMOLISH
+	demolish_icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	demolish_icon.set_anchors_preset(Control.PRESET_FULL_RECT)
+	main_row.configure_slot(
+		DEMOLISH_MAIN_ROW_SLOT_INDEX, "", tr("build_bar_demolish_tooltip"), DEMOLISH_PICK_ACTION, "", true, demolish_icon
+	)
 	main_row.configure_slot(
 		WORK_AREAS_MAIN_ROW_SLOT_INDEX, "", tr("build_bar_work_areas_tooltip"), WORK_AREAS_ACTION, "", true, WorkAreaIcon.new()
 	)

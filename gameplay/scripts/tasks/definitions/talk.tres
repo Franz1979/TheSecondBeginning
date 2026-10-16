@@ -11,4 +11,4 @@ steps = [ExtResource("2_walk"), ExtResource("3_talk")]
 allowed_age_bands = Array[int]([2, 3, 4, 5])
 is_suspendable = false
 is_idle_activity = true
-idle_weight = 1.0
+idle_weight = 0.5

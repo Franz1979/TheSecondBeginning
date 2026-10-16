@@ -1273,6 +1273,7 @@ func _draw() -> void:
 	_sel_individual_outline_usec = Time.get_ticks_usec() - _sel_outline_start_usec
 	_draw_fish_positions()
 	_draw_buildings()
+	_draw_job_markers()
 	_sel_outline_start_usec = Time.get_ticks_usec()
 	_draw_selected_building_highlight()
 	_sel_building_outline_usec = Time.get_ticks_usec() - _sel_outline_start_usec
@@ -1461,6 +1462,49 @@ func _draw_toolmaker_hut_mark(ground: Vector2) -> void:
 # Cartello "work in progress" — vedi il commento esteso su WIP_SIGN_POST_COLOR sopra per il perché.
 # Palo sottile verticale + cartello triangolare giallo/nero con punto esclamativo, ancorato al
 # centro della microcella (stesso ancoraggio `ground` di ogni altra sagoma edificio qui).
+# Segnali dei lavori in attesa sugli edifici (2026-10-14, richiesta utente): stessa famiglia del cartello del cantiere
+# (_draw_construction_wip_marker, stesse misure WIP_SIGN_*), nell'angolo in alto a destra della microcella per non coprire
+# la sagoma. Da demolire (Building.is_marked_for_demolition, macerie da sgomberare comprese): targa rossa con una X; in
+# miglioramento: targa verde con una freccia in su. Durano quanto il lavoro (entry "marked_for_demolition"/"upgrading",
+# GameScene._buildings_for_cell).
+const JOB_MARKER_DEMOLISH_PLATE_COLOR := Color(0.85, 0.2, 0.15, 1.0)
+const JOB_MARKER_UPGRADE_PLATE_COLOR := Color(0.25, 0.7, 0.3, 1.0)
+const JOB_MARKER_SYMBOL_COLOR := Color(1.0, 1.0, 1.0, 1.0)
+const JOB_MARKER_OFFSET := Vector2(3.2, 1.0)
+
+
+func _draw_job_markers() -> void:
+	var half: float = CELL_SIZE / 2.0
+	for entry in buildings:
+		var demolish: bool = bool(entry.get("marked_for_demolition", false))
+		var upgrade: bool = bool(entry.get("upgrading", false))
+		if not demolish and not upgrade:
+			continue
+		var pos: Vector2i = entry["position"]
+		var ground := Vector2(pos.x * CELL_SIZE + half, pos.y * CELL_SIZE + half) + JOB_MARKER_OFFSET
+		var post_top: Vector2 = ground + Vector2(0, -WIP_SIGN_POST_HEIGHT)
+		draw_line(ground, post_top, WIP_SIGN_POST_COLOR, WIP_SIGN_POST_WIDTH)
+		var plate_center: Vector2 = post_top + Vector2(0, -WIP_SIGN_PLATE_RADIUS * 0.3)
+		var triangle := PackedVector2Array([
+			plate_center + Vector2(0.0, -WIP_SIGN_PLATE_RADIUS),
+			plate_center + Vector2(WIP_SIGN_PLATE_RADIUS * 0.9, WIP_SIGN_PLATE_RADIUS * 0.75),
+			plate_center + Vector2(-WIP_SIGN_PLATE_RADIUS * 0.9, WIP_SIGN_PLATE_RADIUS * 0.75),
+		])
+		draw_colored_polygon(triangle, JOB_MARKER_DEMOLISH_PLATE_COLOR if demolish else JOB_MARKER_UPGRADE_PLATE_COLOR)
+		var outline := triangle.duplicate()
+		outline.append(triangle[0])
+		draw_polyline(outline, WIP_SIGN_PLATE_OUTLINE_COLOR, WIP_SIGN_PLATE_OUTLINE_WIDTH)
+		var symbol_center: Vector2 = plate_center + Vector2(0.0, WIP_SIGN_PLATE_RADIUS * 0.2)
+		var arm: float = WIP_SIGN_PLATE_RADIUS * 0.35
+		if demolish:
+			draw_line(symbol_center + Vector2(-arm, -arm), symbol_center + Vector2(arm, arm), JOB_MARKER_SYMBOL_COLOR, WIP_SIGN_MARK_WIDTH)
+			draw_line(symbol_center + Vector2(-arm, arm), symbol_center + Vector2(arm, -arm), JOB_MARKER_SYMBOL_COLOR, WIP_SIGN_MARK_WIDTH)
+		else:
+			draw_line(symbol_center + Vector2(0.0, arm), symbol_center + Vector2(0.0, -arm), JOB_MARKER_SYMBOL_COLOR, WIP_SIGN_MARK_WIDTH)
+			draw_line(symbol_center + Vector2(0.0, -arm), symbol_center + Vector2(-arm * 0.8, -arm * 0.1), JOB_MARKER_SYMBOL_COLOR, WIP_SIGN_MARK_WIDTH)
+			draw_line(symbol_center + Vector2(0.0, -arm), symbol_center + Vector2(arm * 0.8, -arm * 0.1), JOB_MARKER_SYMBOL_COLOR, WIP_SIGN_MARK_WIDTH)
+
+
 func _draw_construction_wip_marker(ground: Vector2) -> void:
 	var post_top: Vector2 = ground + Vector2(0, -WIP_SIGN_POST_HEIGHT)
 	draw_line(ground, post_top, WIP_SIGN_POST_COLOR, WIP_SIGN_POST_WIDTH)

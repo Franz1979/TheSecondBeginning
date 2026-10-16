@@ -199,7 +199,7 @@ static func count_reserved_places(building: Building, excluding_body_id: int, in
 # true se il cumulo può accogliere il corpo `body_id`: completo, non demolito né da demolire, con un posto libero
 # (il posto eventualmente già preso da questo stesso corpo conta come suo).
 static func is_mound_usable(building: Building, body_id: int, individuals: Array) -> bool:
-	if not is_mound(building) or not building.is_complete or building.is_demolished or building.is_marked_for_demolition:
+	if not is_mound(building) or not building.is_complete or building.is_demolished or building.is_out_of_service():
 		return false
 	return building.buried.size() + count_reserved_places(building, body_id, individuals) < building.rules.max_buried
 
@@ -301,7 +301,7 @@ static func get_relative_ids(record: Dictionary, individuals: Array) -> Dictiona
 static func convoke_funeral_procession(carrier: HumanIndividual, record: Dictionary) -> void:
 	if carrier == null or record.is_empty() or not is_bury_task(carrier.current_task):
 		return
-	var rules := RiteService.get_rules(FUNERAL_RITE_ID)
+	var rules := RiteService.get_rules(FUNERAL_RITE_ID) as ReligiousRiteRules
 	if rules == null or rules.procession_max_distance <= 0.0:
 		return
 	var mound := find_building(get_task_mound_id(carrier.current_task))
@@ -334,7 +334,7 @@ static func convoke_funeral_procession(carrier: HumanIndividual, record: Diction
 		for result in results:
 			var relative: HumanIndividual = result["individual"]
 			print("[RITE]   #%d %s (%s): %s." % [
-				relative.id, relative.name, RiteEffectService._relative_kind_text(relative_ids[relative.id]), result["outcome"]
+				relative.id, relative.name, ReligiousRiteEffectService._relative_kind_text(relative_ids[relative.id]), result["outcome"]
 			])
 	# Corteo esteso dalla leadership del morto (2026-10-04): dopo i parenti, in fila dietro di loro, una quota degli
 	# abitanti candidati — candidati × leadership ÷ procession_full_leadership, arrotondato, mai oltre i candidati — i

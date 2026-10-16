@@ -50,8 +50,11 @@ static func get_missing_materials(target_building: Building) -> Dictionary:
 	var missing: Dictionary = {}
 	if target_building == null or target_building.rules == null:
 		return missing
-	if target_building.is_demolished or target_building.is_marked_for_demolition:
+	if target_building.is_demolished or target_building.is_out_of_service():
 		return missing
+	# Rito sociale in preparazione (2026-10-16, banchetto): prima il combustibile, poi la carne (SocialRiteService).
+	if SocialRiteService.is_preparing(target_building):
+		return SocialRiteService.get_preparation_missing(target_building)
 	if target_building.is_complete:
 		if not target_building.rules.is_workstation:
 			return missing
@@ -141,7 +144,7 @@ static func _get_fuel_need(
 	)
 	if source == null:
 		return {"resource_name": FUEL_KEY, "quantity": 0, "source": null}
-	var fuel_name := _best_fuel_in(source)
+	var fuel_name := best_fuel_in(source)
 	var fuel_value := ProductionService.get_fuel_value(fuel_name)
 	if fuel_name == "" or fuel_value <= 0.0:
 		return {}
@@ -154,7 +157,7 @@ static func _get_fuel_need(
 
 # Risorsa con fuel_value più alto tra quelle disponibili in `building` (a parità, in ordine di nome — stesso ordine
 # di ProductionService._consume_fuel); "" se nessuna.
-static func _best_fuel_in(building: Building) -> String:
+static func best_fuel_in(building: Building) -> String:
 	var best_name := ""
 	var best_value := 0.0
 	for raw_name in WarehouseSelectionService.get_matching_stock(building, WarehouseSelectionService.FUEL_CRITERION, 1, true).keys():
@@ -263,14 +266,17 @@ static func _is_carrying_for(individual: HumanIndividual, target_building: Build
 # true se `action` è uno step che il rifornimento sa sbloccare (2026-09-29: setup site e costruzione). Unico punto da
 # allargare per nuove fasi — i controlli in HumanIndividualActionService passano da qui.
 # Riparazione (2026-10-10, materiali della riparazione — passo 3): RepairAction, con lo scarico dedicato.
+# Rito sociale (2026-10-16): SocialRiteAttendAction dell'organizzatore in preparazione.
 static func is_supplied_step(action: Action) -> bool:
-	return action is SetupSiteAction or action is BuildAction or action is ProduceAction or action is RepairAction
+	return action is SetupSiteAction or action is BuildAction or action is ProduceAction or action is RepairAction \
+		or action is SocialRiteAttendAction
 
 
 # Step di lavoro sul cantiere (setup, sgombero, costruzione): un giro di rifornimento sta sempre prima di uno di questi,
 # mai a cavallo — _find_round_end_index si ferma al primo che incontra.
 static func _is_site_work_step(action: Action) -> bool:
-	return action is SetupSiteAction or action is ClearAction or action is BuildAction or action is ProduceAction or action is RepairAction
+	return action is SetupSiteAction or action is ClearAction or action is BuildAction or action is ProduceAction or action is RepairAction \
+		or action is SocialRiteAttendAction
 
 # Accessi pubblici per HumanIndividualActionService (avanzo di fine giro: Walk di ritorno al cantiere).
 static func get_supply_target(task: Task) -> Building:

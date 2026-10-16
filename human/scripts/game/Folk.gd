@@ -65,6 +65,11 @@ func find_village(village_id: int) -> Village:
 
 
 # Valore assoluto di influenza del popolo (2026-10-12, passo 4): somma dei suoi villaggi, mai salvato a parte.
+# Coesione della popolazione (2026-10-14): media semplice dei villaggi, mai salvata.
+func get_cohesion() -> float:
+	return VillageCohesionService.get_folk_cohesion(self)
+
+
 func get_influence_value(influence_type: InfluenceService.InfluenceType) -> float:
 	var total := 0.0
 	for village in villages:

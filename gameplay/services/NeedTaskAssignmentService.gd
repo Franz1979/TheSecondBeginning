@@ -400,7 +400,7 @@ static func find_restock_source(individual: HumanIndividual, world: World) -> Bu
 	var best_ratio := _best_food_ratio(nearest)
 	var best_distance := nearest_distance
 	for building in world.buildings:
-		if building == nearest or not building.is_complete or building.is_demolished or building.is_marked_for_demolition:
+		if building == nearest or not building.is_complete or building.is_demolished or building.is_out_of_service():
 			continue
 		var stock := WarehouseSelectionService.get_matching_stock(building, SecondaryResourceTypes.Category.FOOD, 1)
 		if stock.is_empty():

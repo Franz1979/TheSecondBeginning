@@ -43,6 +43,22 @@ Per aggiungerne uno, copia il blocco "Modello" e compilalo.
 - Scaricato il: 10/10/2026
 - Note: registrato su Content ID; i video YouTube con questo brano possono ricevere un reclamo, che l'autore rimuove su richiesta
 
+## Tribal Drum
+- File: audio/assets/music/theme6_tribal_drums.mp3
+- Autore: Stereo_Color
+- Fonte: https://pixabay.com/music/percussion-tribal-drum-493731/
+- Licenza: Pixabay Content License (nessun credito richiesto; vietato rivendere il file da solo)
+- Scaricato il: 14/10/2026
+- Note: registrato su Content ID; i video YouTube con questo brano possono ricevere un reclamo
+
+## Ethnic Flute | Samurai Relaxing Cinematic Ambient Meditation Music
+- File: audio/assets/music/theme7_flute.mp3
+- Autore: Onetent
+- Fonte: https://pixabay.com/music/ambient-ethnic-flute-samurai-relaxing-cinematic-ambient-meditation-music-248252/
+- Licenza: Pixabay Content License (nessun credito richiesto; vietato rivendere il file da solo)
+- Scaricato il: 14/10/2026
+- Note: nella descrizione l'autore chiede di contattarlo via email per uso commerciale (shakibmusicinc@gmail.com), richiesta che va oltre la Pixabay Content License: da chiarire prima di un'eventuale uscita commerciale
+
 ## Modello
 - File:
 - Autore:

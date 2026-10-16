@@ -1,4 +1,6 @@
-class_name RiteEffectService
+class_name ReligiousRiteEffectService
+
+# Rinominato da RiteEffectService (2026-10-14, richiesta utente — nomi espliciti): effetti dei soli riti religiosi.
 extends RefCounted
 
 # Effetti del COMPLETAMENTO di un rito (2026-10-02, richiesta utente — task Rite, punto 3). Stateless, chiamato da
@@ -24,7 +26,7 @@ extends RefCounted
 
 
 static func apply_completion(
-	celebrant: HumanIndividual, building: Building, rules: RiteRules, individuals: Array, relative_ids: Dictionary = {},
+	celebrant: HumanIndividual, building: Building, rules: ReligiousRiteRules, individuals: Array, relative_ids: Dictionary = {},
 	deceased_name: String = ""
 ) -> void:
 	if celebrant == null or building == null or rules == null:

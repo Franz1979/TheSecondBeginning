@@ -16,6 +16,8 @@ var center_building_id: int = -1
 # voce assente = 0. Senza tetto, con i decimali (mostrati arrotondati). Crescita annuale: VillageInfluenceService;
 # gli altri incrementi/decrementi arriveranno dagli eventi, sempre tramite add_influence_value. Mai sotto 0.
 var influence_values: Dictionary = {}
+# Coesione 0–100 (2026-10-14): modificata solo da VillageCohesionService. Salvata; 50 anche per i salvataggi precedenti.
+var cohesion: float = VillageCohesionService.INITIAL_COHESION
 
 
 # Nome mostrato: quello scelto dal giocatore, altrimenti il provvisorio "Village <id>" (2026-10-12, richiesta utente).

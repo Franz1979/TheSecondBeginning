@@ -161,6 +161,20 @@ func load_game_from_json(file_path: String) -> LoadedGame:
 	game_data.village_population_snapshots = _village_snapshots_from_json(data["game"].get("village_population_snapshots", {}))
 	game_data.village_building_snapshots = _village_snapshots_from_json(data["game"].get("village_building_snapshots", {}))
 	game_data.village_influence_snapshots = _village_influence_snapshots_from_json(data["game"].get("village_influence_snapshots", {}))
+	# Coesione per villaggio (2026-10-14): {} per i salvataggi precedenti.
+	game_data.village_cohesion_snapshots = _village_cohesion_snapshots_from_json(data["game"].get("village_cohesion_snapshots", {}))
+	# Riti sociali in corso (2026-10-14): [] per i salvataggi precedenti; numeri JSON riportati a int dove servono.
+	game_data.active_social_rites.clear()
+	for raw_rite in data["game"].get("active_social_rites", []):
+		var social_rite: Dictionary = (raw_rite as Dictionary).duplicate(true)
+		social_rite.erase("_frame")
+		for int_key in ["building_id", "organizer_id", "cooked", "meat_units"]:
+			social_rite[int_key] = int(social_rite.get(int_key, 0 if int_key in ["cooked", "meat_units"] else -1))
+		var convoked: Array = []
+		for raw_id in social_rite.get("convoked", []):
+			convoked.append(int(raw_id))
+		social_rite["convoked"] = convoked
+		game_data.active_social_rites.append(social_rite)
 	# .get(key, []) per compatibilità con save precedenti l'introduzione degli oggetti-scaduti
 	# (Step 2, vedi GameData.expired_objects) — [] è lo stesso default della classe.
 	game_data.expired_objects = _expired_objects_from_json(data["game"].get("expired_objects", []))
@@ -224,6 +238,13 @@ func load_game_from_json(file_path: String) -> LoadedGame:
 				game_data.stock_min_levels[String(resource_name)] = level
 	game_data.stock_min_food_days = maxi(int(data["game"].get("stock_min_food_days", 0)), 0)
 	game_data.stock_excess_meat_destination = String(data["game"].get("stock_excess_meat_destination", "warehouse"))
+	# Regola del combustibile: il primo salvataggio (un solo N per tutti, "stock_fuel_min_per_building") la accende soltanto.
+	game_data.stock_fuel_rule_enabled = bool(data["game"].get("stock_fuel_rule_enabled", int(data["game"].get("stock_fuel_min_per_building", 0)) > 0))
+	game_data.stock_fuel_min_by_type.clear()
+	var raw_fuel_mins = data["game"].get("stock_fuel_min_by_type", {})
+	if raw_fuel_mins is Dictionary:
+		for type_name in raw_fuel_mins.keys():
+			game_data.stock_fuel_min_by_type[String(type_name)] = maxi(int(raw_fuel_mins[type_name]), 0)
 	game_data.job_board_return_borrowed_tools = bool(data["game"].get("job_board_return_borrowed_tools", true))
 	# Inventario del magazzino (2026-10-11): salvataggi precedenti = mai fatto (il primo entra subito in coda).
 	game_data.inventory_interval_hours = maxi(int(data["game"].get("inventory_interval_hours", 24)), 1)
@@ -255,6 +276,14 @@ func load_game_from_json(file_path: String) -> LoadedGame:
 			var order := (raw_order as Dictionary).duplicate(true)
 			order["id"] = int(order["id"])
 			order["type"] = String(order["type"])
+			# Ordine "dry" rinominato "transport" (2026-10-16); quelli del combustibile senza fuel_amount (primo formato)
+			# si scartano: li ricrea il prossimo inventario.
+			if order["type"] == "dry":
+				order["type"] = "transport"
+			if order.has("fuel_target_id"):
+				if not order.has("fuel_amount"):
+					continue
+				order["fuel_target_id"] = int(order["fuel_target_id"])
 			if order.has("quantity"):
 				order["quantity"] = int(order["quantity"])
 			game_data.drawer_orders.append(order)
@@ -654,6 +683,8 @@ func load_game_from_json(file_path: String) -> LoadedGame:
 			building.repair_requested = bool(building_data.get("repair_requested", false))
 			# Escluso dalla riparazione automatica (2026-10-10) — false per i salvataggi precedenti.
 			building.repair_auto_excluded = bool(building_data.get("repair_auto_excluded", false))
+			# Rito ordinato dal pannello (2026-10-14) — "" per i salvataggi precedenti.
+			building.requested_rite_id = String(building_data.get("requested_rite_id", ""))
 			# Macerie (2026-10-10) — "" per i salvataggi precedenti.
 			building.rubble_source_name = String(building_data.get("rubble_source_name", ""))
 			building.rubble_auto_excluded = bool(building_data.get("rubble_auto_excluded", false))
@@ -815,6 +846,8 @@ func load_game_from_json(file_path: String) -> LoadedGame:
 			var influence_values: Dictionary = village_data.get("influence_values", {})
 			for influence_key in influence_values:
 				village.influence_values[int(influence_key)] = float(influence_values[influence_key])
+			# Coesione (2026-10-14): 50 per i salvataggi precedenti.
+			village.cohesion = float(village_data.get("cohesion", VillageCohesionService.INITIAL_COHESION))
 			human_folk.villages.append(village)
 
 		for individual_data in human_data["individuals"]:
@@ -1106,6 +1139,17 @@ func _village_influence_snapshots_from_json(raw: Dictionary) -> Dictionary:
 				by_year[int(year_key)] = float(raw[village_key][type_key][year_key])
 			by_type[int(type_key)] = by_year
 		result[int(village_key)] = by_type
+	return result
+
+
+# Coesione per villaggio (2026-10-14): Village.id -> {anno -> valore}, chiavi riportate a int, valori float.
+func _village_cohesion_snapshots_from_json(raw: Dictionary) -> Dictionary:
+	var result: Dictionary = {}
+	for village_key in raw.keys():
+		var by_year: Dictionary = {}
+		for year_key in (raw[village_key] as Dictionary).keys():
+			by_year[int(year_key)] = float(raw[village_key][year_key])
+		result[int(village_key)] = by_year
 	return result
 
 

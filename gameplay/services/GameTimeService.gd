@@ -612,7 +612,7 @@ func _apply_unburied_penalty(record: Dictionary, rules: ExpiredObjectRules) -> v
 		if log_enabled:
 			print("[RITE]   #%d %s%s: fede %.1f -> %.1f, felicità %.1f -> %.1f." % [
 				individual.id, individual.name,
-				" (parente: %s)" % RiteEffectService._relative_kind_text(relative_ids[individual.id]) if is_relative else "",
+				" (parente: %s)" % ReligiousRiteEffectService._relative_kind_text(relative_ids[individual.id]) if is_relative else "",
 				faith_before, individual.current_faith, happiness_before, individual.current_happiness
 			])
 
@@ -890,6 +890,9 @@ func _on_year_rolled_over() -> void:
 			if not _game_data.village_population_snapshots.has(village.id):
 				_game_data.village_population_snapshots[village.id] = {}
 			_game_data.village_population_snapshots[village.id][_game_data.year] = village.count_inhabitants(_human_individuals)
+	# Coesione (2026-10-14): calo annuale, poi il punto di fine anno per le statistiche.
+	VillageCohesionService.apply_annual_decay(_human_folk)
+	VillageCohesionService.record_snapshots(_human_folk, _game_data)
 	_run_annual_human_mortality_determination()
 
 

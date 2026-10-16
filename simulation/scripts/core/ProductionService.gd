@@ -51,7 +51,7 @@ extends RefCounted
 static func can_produce_at(building: Building, resource_name: String) -> bool:
 	if building == null or building.rules == null:
 		return false
-	if building.is_demolished or building.is_marked_for_demolition or not building.is_complete or not building.rules.is_workstation:
+	if building.is_demolished or building.is_out_of_service() or not building.is_complete or not building.rules.is_workstation:
 		return false
 	var recipe_rules := CaloricCalculator.get_caloric_source_rules(resource_name)
 	if recipe_rules == null:
@@ -296,6 +296,9 @@ static func load_production_state(building: Building, raw_progress: Dictionary, 
 					# Save di prima del 2026-10-09: la riassegnazione consegnava sempre al magazzino.
 					"deliver_to_warehouse": bool(record.get("deliver_to_warehouse", true)),
 				}
+				# Ordine riservato a un rito sociale (2026-10-14, RESERVED_FOR_KEY): assente nei save precedenti.
+				if String(record.get(RESERVED_FOR_KEY, "")) != "":
+					orders[key][RESERVED_FOR_KEY] = String(record[RESERVED_FOR_KEY])
 				if key.begins_with(ORDER_KEY_PREFIX) and key.substr(ORDER_KEY_PREFIX.length()).is_valid_int():
 					max_index = maxi(max_index, int(key.substr(ORDER_KEY_PREFIX.length())))
 			else:
@@ -411,6 +414,21 @@ static func cancel_order(building: Building, order_key: String) -> void:
 
 # Libera posti annullando gli ordini che nessuno sta più lavorando (non in `claimed_keys`: chiave -> true), quello con
 # meno lavoro per primo, finché l'edificio non ha un posto libero. true se c'è posto.
+# Ordine riservato (2026-10-14, riti sociali — la cottura del banchetto, SocialRiteService): lo lavora il rito, non una
+# Produce Task. Fuori dalla coda dei lavori, dalle righe d'ordine del pannello e mai liberato come "senza lavoratore".
+# Il campo si salva con l'ordine (Building.production_progress).
+const RESERVED_FOR_KEY := "reserved_for"
+
+
+static func mark_order_reserved(building: Building, order_key: String, reserved_for: String) -> void:
+	if has_order(building, order_key):
+		(building.production_progress[order_key] as Dictionary)[RESERVED_FOR_KEY] = reserved_for
+
+
+static func is_order_reserved(building: Building, order_key: String) -> bool:
+	return has_order(building, order_key) and String((building.production_progress[order_key] as Dictionary).get(RESERVED_FOR_KEY, "")) != ""
+
+
 static func free_slot_from_unclaimed(building: Building, claimed_keys: Dictionary) -> bool:
 	if building == null:
 		return false
@@ -419,7 +437,7 @@ static func free_slot_from_unclaimed(building: Building, claimed_keys: Dictionar
 		var evict_key := ""
 		var evict_labor := INF
 		for key in building.production_progress.keys():
-			if claimed_keys.has(String(key)):
+			if claimed_keys.has(String(key)) or is_order_reserved(building, String(key)):
 				continue
 			var labor := get_labor_accumulated(building, String(key))
 			if labor < evict_labor:

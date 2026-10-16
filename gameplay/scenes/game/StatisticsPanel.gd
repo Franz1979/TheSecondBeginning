@@ -85,6 +85,9 @@ const SCOPE_ALL := 0
 	$MarginContainer/VBoxContainer/TabContainer/InfluenceTab/InfluenceContent/SeriesRow/ReligiousCheck,
 ]
 @onready var influence_per_year_chart: LineChart = $MarginContainer/VBoxContainer/TabContainer/InfluenceTab/InfluenceContent/InfluencePerYearChart
+# Coesione (2026-10-14, VillageCohesionService): stessa scheda, grafico a parte (scala 0–100, media e non somma).
+@onready var cohesion_value_label: Label = $MarginContainer/VBoxContainer/TabContainer/InfluenceTab/InfluenceContent/CohesionValueLabel
+@onready var cohesion_per_year_chart: LineChart = $MarginContainer/VBoxContainer/TabContainer/InfluenceTab/InfluenceContent/CohesionPerYearChart
 @onready var influence_pies_container: VBoxContainer = $MarginContainer/VBoxContainer/TabContainer/InfluenceTab/InfluenceContent/PiesContainer
 @onready var influence_pies_caption: Label = $MarginContainer/VBoxContainer/TabContainer/InfluenceTab/InfluenceContent/PiesContainer/PiesCaption
 @onready var influence_pie_captions: Array[Label] = [
@@ -121,6 +124,8 @@ func _ready() -> void:
 		influence_pie_captions[i].text = INFLUENCE_DISPLAY[i]["name"]
 	influence_pies_caption.text = "Ripartizione tra i villaggi"
 	influence_per_year_chart.set_axis_labels("Anno", "Valore")
+	cohesion_per_year_chart.set_axis_labels("Anno", "Coesione")
+	cohesion_per_year_chart.min_axis_max = VillageCohesionService.MAX_COHESION
 	# Titoli lista donne fertili/lista morti (richiesta utente, 2026-09-06) — tr(), non hardcoded
 	# come il resto del CONTENUTO dati di questo pannello: sono più simili alla "chrome" strutturale
 	# (titolo di una sezione, come i tab) che a un dato calcolato, stessa eccezione esplicitamente
@@ -478,6 +483,7 @@ func _refresh_influence_tab() -> void:
 		influence_value_labels[i].text = "%s: %d (+%d a fine anno)" % [INFLUENCE_DISPLAY[i]["name"], roundi(value), projected]
 		influence_value_labels[i].add_theme_color_override("font_color", INFLUENCE_DISPLAY[i]["color"])
 	_refresh_influence_chart()
+	_refresh_cohesion()
 	influence_pies_container.visible = _scope_village_id == SCOPE_ALL
 	if not influence_pies_container.visible:
 		return
@@ -510,6 +516,40 @@ func _refresh_influence_chart() -> void:
 			by_year[_game_data.year] = current
 		series.append({"data": by_year, "color": INFLUENCE_DISPLAY[i]["color"], "label": INFLUENCE_DISPLAY[i]["name"]})
 	influence_per_year_chart.set_series(series)
+
+
+# Coesione dell'ambito (2026-10-14): valore attuale (popolo = media dei villaggi) e grafico per anno con una linea per
+# villaggio più, per il popolo, la media. Storia: GameData.village_cohesion_snapshots (valore di fine anno, dopo il calo);
+# l'anno in corso mostra il valore di adesso, come il grafico delle influenze.
+func _refresh_cohesion() -> void:
+	if _game_data == null:
+		return
+	var villages := _scoped_villages()
+	var current := 0.0
+	for village in villages:
+		current += village.cohesion
+	if not villages.is_empty():
+		current /= float(villages.size())
+	cohesion_value_label.text = "Coesione: %.1f" % current if not villages.is_empty() else "Coesione: nessun villaggio"
+	var series: Array = []
+	var average_by_year := {}
+	var count_by_year := {}
+	for i in range(villages.size()):
+		var village := villages[i]
+		var by_year: Dictionary = (_game_data.village_cohesion_snapshots.get(village.id, {}) as Dictionary).duplicate()
+		by_year[_game_data.year] = village.cohesion
+		for year in by_year:
+			average_by_year[year] = float(average_by_year.get(year, 0.0)) + float(by_year[year])
+			count_by_year[year] = int(count_by_year.get(year, 0)) + 1
+		series.append({
+			"data": by_year, "color": Color.from_hsv(fmod(0.08 + 0.17 * float(i), 1.0), 0.55, 0.9),
+			"label": village.get_display_name(),
+		})
+	if _scope_village_id == SCOPE_ALL and villages.size() > 1:
+		for year in average_by_year:
+			average_by_year[year] = float(average_by_year[year]) / float(count_by_year[year])
+		series.append({"data": average_by_year, "color": Color(0.95, 0.95, 0.95), "label": "Popolazione"})
+	cohesion_per_year_chart.set_series(series)
 
 
 # Villaggi dell'ambito: tutti quelli del popolo o solo quello scelto.

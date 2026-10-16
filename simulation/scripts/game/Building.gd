@@ -54,6 +54,19 @@ var is_demolished: bool = false
 # funziona più — niente depositi, prelievi o produzione (BuildingStorageService/ProductionService), nessun
 # residente (AssignHouseService.get_free_slots) — ma resta in world.buildings e resta un ostacolo. Salvato.
 var is_marked_for_demolition: bool = false
+# Demolizione pianificata (2026-10-14, richiesta utente): segnato "da demolire" l'edificio continua a funzionare
+# (residenti, deposito, produzione, riti…); diventa inagibile solo quando la demolizione inizia davvero, cioè al primo
+# lavoro del demolitore (DemolishAction.demolition_started). I controlli "non più utilizzabile" usano is_out_of_service.
+
+
+# true se la demolizione è iniziata: segnato e con lavoro di demolizione già fatto.
+func is_demolition_started() -> bool:
+	return is_marked_for_demolition and float(construction_progress.get(DemolishAction.LABOR_KEY, 0.0)) > 0.0
+
+
+# true se l'edificio non funziona più per la demolizione in corso (non solo pianificata).
+func is_out_of_service() -> bool:
+	return is_demolition_started()
 
 # Riparazione richiesta dal giocatore con l'idea dell'assegnazione (2026-10-10, richiesta utente): il lavoro "repair:<id>"
 # entra nella coda dei lavori (GameScene._repair_jobs_collect). Si chiude da sola a Integrità piena, o se l'edificio va in
@@ -62,6 +75,10 @@ var repair_requested: bool = false
 # Escluso dalla riparazione automatica (2026-10-10): la X del cassetto su una riga di riparazione lo accende; si spegne
 # con il martello (riparazione chiesta a mano) o a Integrità piena. Salvato con l'edificio.
 var repair_auto_excluded: bool = false
+# Rito ordinato dal pannello dell'edificio (2026-10-14, richiesta utente — come un ordine di produzione): id del rito
+# (RiteRules.id), "" = nessuno. Resta finché il rito non è celebrato davvero (RiteAction.on_complete) o annullato con la X;
+# se chi lo celebra lo abbandona torna "mancante" (e in coda con l'idea dell'assegnazione). Salvato con l'edificio.
+var requested_rite_id: String = ""
 # Macerie (2026-10-10, crollo): building_type_name dell'edificio crollato da cui sono nate ("" per ogni altro edificio).
 # Salvato con l'edificio.
 var rubble_source_name: String = ""
@@ -169,7 +186,7 @@ var influence_last_gain_day: Dictionary = {}
 var buried: Array = []
 
 # Giorno assoluto (GameData.get_absolute_day) dell'ultimo rito completato presso questo edificio, manuale o spontaneo
-# (2026-10-02 — scritto da RiteEffectService). -1 = mai. Letto dalla regola giornaliera della fede
+# (2026-10-02 — scritto da ReligiousRiteEffectService). -1 = mai. Letto dalla regola giornaliera della fede
 # (HumanVitalsInteractionService) per le case coperte da questo edificio.
 var last_rite_absolute_day: int = -1
 

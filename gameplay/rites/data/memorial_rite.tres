@@ -1,6 +1,6 @@
-[gd_resource type="Resource" script_class="RiteRules" format=3 uid="uid://y6mwrpl0ocr4"]
+[gd_resource type="Resource" script_class="ReligiousRiteRules" format=3 uid="uid://y6mwrpl0ocr4"]
 
-[ext_resource type="Script" uid="uid://f30qq2arhmga" path="res://gameplay/rites/scripts/RiteRules.gd" id="1_rite"]
+[ext_resource type="Script" path="res://gameplay/rites/scripts/ReligiousRiteRules.gd" id="1_rite"]
 
 [resource]
 script = ExtResource("1_rite")

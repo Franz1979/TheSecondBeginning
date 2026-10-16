@@ -14,6 +14,9 @@ extends Action
 # magazzino (HumanIndividualActionService.CONTEXT_PENDING_GROUND_PILE_HAUL).
 
 signal demolition_completed(building: Building, individual: Variant, context: Dictionary)
+# Primo lavoro sull'edificio (2026-10-14, demolizione pianificata): da qui l'edificio è inagibile (Building.
+# is_out_of_service). Collegato da GameScene._reconnect_build_task_signals.
+signal demolition_started(building: Building)
 
 const LABOR_KEY := "demolition_labor_accumulated"
 # Stesso drain della costruzione (BuildAction.STAMINA_DRAIN_PER_DAY), costante propria come ogni Action.
@@ -59,7 +62,10 @@ func get_stamina_delta(individual: Variant, context: Dictionary, delta: float) -
 	var stamina_spent: float = STAMINA_DRAIN_PER_DAY * delta
 	# Lavoro richiesto diviso per il fattore della skill, realizzato moltiplicando il lavoro aggiunto (come BuildAction).
 	var skill_factor := SkillEffectService.get_factor_for_action(self, individual, context)
+	var was_started := _get_labor_accumulated() > 0.0
 	target_building.construction_progress[LABOR_KEY] = _get_labor_accumulated() + stamina_spent * skill_factor
+	if not was_started and _get_labor_accumulated() > 0.0:
+		demolition_started.emit(target_building)
 	return -stamina_spent
 
 

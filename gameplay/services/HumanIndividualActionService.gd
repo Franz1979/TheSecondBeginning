@@ -635,7 +635,8 @@ func retry_blocked_material_shortages(world: World, all_individuals: Array[Human
 		return
 	for individual in all_individuals:
 		var task := individual.current_task
-		if task == null or not (task.task_name == "task_build_name" or task.task_name == "task_produce_name" or task.task_name == "task_repair_name"):
+		if task == null or not (task.task_name == "task_build_name" or task.task_name == "task_produce_name" or task.task_name == "task_repair_name" \
+				or task.task_name == SocialRiteService.TASK_NAME):
 			continue
 		var action := task.get_current_action()
 		# ESTESO a BuildAction (2026-09-14, richiesta utente — "step 2 della build", il quarto step
@@ -661,6 +662,12 @@ func retry_blocked_material_shortages(world: World, all_individuals: Array[Human
 			target_building = produce_action.target_building
 			if produce_action.is_blocked_by_materials():
 				missing = MaterialSupplyService.get_missing_materials(target_building)
+		elif action is SocialRiteAttendAction:
+			# Preparazione di un rito sociale ferma per materiale (2026-10-16, banchetto): stesso ritentativo della Produce.
+			var rite_action := action as SocialRiteAttendAction
+			target_building = rite_action.target_building
+			if rite_action.is_blocked_by_materials():
+				missing = MaterialSupplyService.get_missing_materials(target_building)
 		elif action is RepairAction:
 			# Riparazione ferma per materiale (2026-10-10, passo 4): stesso ritentativo, solo il rifornimento (niente bonus
 			# né avvisi dei cantieri); se ancora nulla, resta in attesa.
@@ -679,7 +686,7 @@ func retry_blocked_material_shortages(world: World, all_individuals: Array[Human
 		# Edificio demolito o già completo (2026-09-21, richiesta utente): niente retry, niente popup né
 		# bonus di partenza — solo pulizia dello stato di attesa. Prima di `missing.is_empty()`: un
 		# cantiere completato risulta "con materiali mancanti" (il completamento li consuma).
-		if target_building.is_demolished or (target_building.is_complete and not (action is ProduceAction)):
+		if target_building.is_demolished or (target_building.is_complete and not (action is ProduceAction) and not (action is SocialRiteAttendAction)):
 			target_building.is_awaiting_material = false
 			continue
 		if missing.is_empty():

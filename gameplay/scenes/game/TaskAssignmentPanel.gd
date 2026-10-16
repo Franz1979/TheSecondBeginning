@@ -84,12 +84,10 @@ const QUEUED_STRETCH: float = 3.0
 const IN_PROGRESS_STRETCH: float = 2.0
 # Fondo dello strato delle regole se il colore del cassetto non si può leggere.
 const SETTINGS_OVERLAY_FALLBACK_COLOR := Color(0.12, 0.14, 0.18, 1.0)
-# Spazio tra le voci e "Salva e chiudi" nello strato.
+# Spazio tra le voci e il bottone in fondo negli strati "Produci" e "Taglia".
 const SETTINGS_CONTENT_SEPARATION: int = 6
 # Bordo del riquadro dello strato, che lo stacca dalle sezioni sotto.
 const SETTINGS_OVERLAY_BORDER_WIDTH: int = 1
-# Larghezza minima di "Salva e chiudi" (centrato, non a tutta riga).
-const SETTINGS_SAVE_BUTTON_MIN_WIDTH: float = 140.0
 const SETTINGS_OVERLAY_BORDER_COLOR := Color(0.75, 0.85, 1.0, 0.6)
 
 var _list_box: VBoxContainer = null
@@ -104,9 +102,7 @@ var _settings_overlay: PanelContainer = null
 # Zona delle due sezioni (limite d'altezza dello strato), riga in basso e sua freccia.
 var _sections_area: Control = null
 var _settings_toggle: Button = null
-# "Salva e chiudi" in fondo allo strato, fuori dallo scorrimento delle voci.
-var _settings_save_button: Button = null
-# Casella dell'attesa (Salva e chiudi applica anche il numero scritto a mano e non confermato).
+# Casella dell'attesa (alla chiusura dello strato si applica anche il numero scritto a mano e non confermato).
 var _wait_spin: SpinBox = null
 # Soglia della riparazione automatica (2026-10-10), stessa forma della voce dell'attesa.
 var _auto_repair_spin: SpinBox = null
@@ -771,12 +767,11 @@ func _build_entry_icon(entry: Dictionary) -> Control:
 
 # Regole di assegnazione (2026-10-07, richiesta utente — era "Impostazioni"): riga "⚙ Regole di assegnazione" in fondo
 # al cassetto, chiusa all'apertura del cassetto; un clic apre lo strato (_settings_overlay), un secondo lo richiude. Lo
-# strato parte dalla riga in basso e sale solo quanto serve al suo contenuto (le voci, poi "Salva e chiudi"), al massimo
-# fino alla zona delle due sezioni: oltre, scorrono solo le voci e il bottone resta sempre visibile in fondo. Sopra, il
-# resto delle due sezioni resta visibile e fermo. Una voce = una riga in _settings_box (attesa, mucchi, priorità). Attesa
-# e mucchi in UserOptions, la priorità nella partita (2026-10-08, via GameScene), tutto applicato appena cambia (nessuna
-# modifica persa se lo strato si chiude in un altro modo); "Salva e chiudi" applica anche il numero scritto e non
-# confermato, poi chiude.
+# strato parte dalla riga in basso e sale solo quanto serve alle voci, al massimo fino alla zona delle due sezioni:
+# oltre, le voci scorrono. Sopra, il resto delle due sezioni resta visibile e fermo. Una voce = una riga in _settings_box
+# (attesa, mucchi, priorità). Attesa e mucchi in UserOptions, la priorità nella partita (2026-10-08, via GameScene), tutto
+# applicato appena cambia. Niente "Salva e chiudi" (2026-10-16, richiesta utente — doppione della riga ⚙, e le Regole di
+# stoccaggio non l'hanno): si chiude dalla riga o con Esc, e la chiusura applica anche il numero scritto e non confermato.
 func _build_settings_section() -> void:
 	add_child(HSeparator.new())
 	var toggle := Button.new()
@@ -788,14 +783,11 @@ func _build_settings_section() -> void:
 	toggle.add_theme_font_size_override("font_size", SECTION_FONT_SIZE)
 	add_child(toggle)
 	_settings_toggle = toggle
-	var content := VBoxContainer.new()
-	content.add_theme_constant_override("separation", SETTINGS_CONTENT_SEPARATION)
-	_settings_overlay.add_child(content)
 	var scroll := ScrollContainer.new()
 	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_AUTO
-	content.add_child(scroll)
+	_settings_overlay.add_child(scroll)
 	_settings_box = VBoxContainer.new()
 	_settings_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_settings_box.add_theme_constant_override("separation", 4)
@@ -807,31 +799,24 @@ func _build_settings_section() -> void:
 	_settings_box.add_child(_build_collect_piles_setting_row())
 	_settings_box.add_child(_build_empty_outputs_setting_row())
 	_build_priority_setting(_settings_box)
-	# Bottone di conferma come quelli dei dialog (CountChoiceDialog): fuori dallo scorrimento, sempre visibile.
-	_settings_save_button = Button.new()
-	_settings_save_button.text = tr("task_assignment_rules_save_close")
-	_settings_save_button.focus_mode = Control.FOCUS_NONE
-	# Non a tutta riga (2026-10-07, richiesta utente): largo quanto il testo più un po' di margine, centrato.
-	_settings_save_button.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
-	_settings_save_button.custom_minimum_size.x = SETTINGS_SAVE_BUTTON_MIN_WIDTH
-	_settings_save_button.pressed.connect(_on_settings_save_pressed)
-	content.add_child(_settings_save_button)
 	toggle.toggled.connect(_on_settings_toggled)
 	_sections_area.resized.connect(_fit_settings_overlay)
 	_settings_box.minimum_size_changed.connect(_fit_settings_overlay)
 
 
-# Salva e chiudi: applica anche il numero scritto a mano e non ancora confermato (apply(), come Invio — il salvataggio
-# avviene in value_changed, _store_wait_setting), poi chiude lo strato come un clic sulla riga in basso.
-func _on_settings_save_pressed() -> void:
-	if _wait_spin != null:
-		_wait_spin.apply()
-	if _auto_repair_spin != null:
-		_auto_repair_spin.apply()
+# Chiude lo strato come un clic sulla riga in basso (Esc).
+func _close_settings_overlay() -> void:
 	_settings_toggle.button_pressed = false
 
 
 func _on_settings_toggled(pressed: bool) -> void:
+	if not pressed:
+		# Il numero scritto a mano e non ancora confermato vale anche chiudendo (apply(), come Invio — il salvataggio
+		# avviene in value_changed, _store_wait_setting).
+		if _wait_spin != null:
+			_wait_spin.apply()
+		if _auto_repair_spin != null:
+			_auto_repair_spin.apply()
 	_settings_overlay.visible = pressed
 	if pressed:
 		# Un solo strato alla volta (2026-10-09): le regole chiudono "Produci" e "Taglia".
@@ -843,14 +828,13 @@ func _on_settings_toggled(pressed: bool) -> void:
 	_update_modal_state()
 
 
-# Altezza dello strato: voci + "Salva e chiudi" + margini del fondo, al massimo l'altezza della zona delle due sezioni.
+# Altezza dello strato: voci + margini del fondo, al massimo l'altezza della zona delle due sezioni.
 func _fit_settings_overlay() -> void:
 	if _settings_overlay == null or _sections_area == null or not _settings_overlay.visible:
 		return
 	var style := _settings_overlay.get_theme_stylebox("panel")
 	var margins := style.get_minimum_size().y if style != null else 0.0
-	var wanted := margins + _settings_box.get_combined_minimum_size().y + float(SETTINGS_CONTENT_SEPARATION) \
-		+ _settings_save_button.get_combined_minimum_size().y
+	var wanted := margins + _settings_box.get_combined_minimum_size().y
 	var height := minf(wanted, _sections_area.size.y)
 	if not is_equal_approx(_settings_overlay.offset_top, -height):
 		_settings_overlay.offset_top = -height
@@ -1276,8 +1260,8 @@ func _unhandled_input(event: InputEvent) -> void:
 		close_produce_overlay()
 		get_viewport().set_input_as_handled()
 	elif _settings_overlay != null and _settings_overlay.visible:
-		# Esc chiude anche le regole (2026-10-09, strati modali): come "Salva e chiudi", applica il numero scritto.
-		_on_settings_save_pressed()
+		# Esc chiude anche le regole (2026-10-09, strati modali): come la riga ⚙, applica il numero scritto.
+		_close_settings_overlay()
 		get_viewport().set_input_as_handled()
 
 

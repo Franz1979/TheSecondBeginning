@@ -395,4 +395,6 @@ static func materialize_members(
 		)
 		if age_band == HumanTypes.AgeBand.INFANT and created[mother_index].dependent_child_id == -1:
 			created[mother_index].dependent_child_id = child.id
+	# Coesione del villaggio che li accoglie (2026-10-14): i nuovi arrivati la diluiscono (VillageCohesionService).
+	VillageCohesionService.add_newcomers(village, created, GameSettings.active_human_individuals, game_data)
 	return created

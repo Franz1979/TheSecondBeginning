@@ -285,6 +285,10 @@ extends Resource
 # Moltiplicatore del combustibile richiesto (SecondaryResourceRules.recipe_fuel_required) quando si
 # produce in questo edificio — < 1.0 = consuma meno combustibile, 1.0 = neutro.
 @export var production_fuel_multiplier: float = 1.0
+# Combustibile minimo nel deposito (2026-10-16, regola del gestore scorte "Combustibile negli edifici che lo usano",
+# FuelStockService), in unità di fuel_value. Solo il valore di partenza: nel cassetto Gestione scorte si cambia per tipo
+# (GameData.stock_fuel_min_by_type). Conta solo per i tipi con una ricetta che brucia combustibile.
+@export var fuel_stock_min: int = 0
 # Moltiplicatore del lavoro richiesto (SecondaryResourceRules.recipe_labor) quando si produce in
 # questo edificio — < 1.0 = serve meno lavoro, 1.0 = neutro.
 @export var production_labor_multiplier: float = 1.0

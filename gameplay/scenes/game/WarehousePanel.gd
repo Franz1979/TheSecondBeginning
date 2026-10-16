@@ -69,6 +69,14 @@ signal excess_meat_destination_changed(destination: String)
 # (set_inventory_info); i numeri del cassetto sono quelli dell'ultimo inventario, non in tempo reale. Frequenza nelle
 # Regole di stoccaggio (ore tra un inventario e l'altro), esce con inventory_interval_changed.
 signal inventory_interval_changed(hours: int)
+# Regola "Combustibile negli edifici che lo usano" (2026-10-16, FuelStockService): una casella accesa/spenta
+# (GameData.stock_fuel_rule_enabled) e sotto una riga per tipo di edificio con il suo minimo (− [N] +,
+# GameData.stock_fuel_min_by_type). Stato e righe da GameScene (set_fuel_rule, prima di _ready); i cambi escono con
+# fuel_rule_toggled / fuel_min_changed.
+signal fuel_rule_toggled(enabled: bool)
+signal fuel_min_changed(type_name: String, level: int)
+var _fuel_rule_enabled: bool = false
+var _fuel_rows: Array[Dictionary] = []
 const INVENTORY_INTERVAL_OPTIONS: Array[int] = [6, 12, 24, 48, 72, 120]
 var _inventory_label: Label = null
 var _inventory_info: Array = []
@@ -177,10 +185,55 @@ func set_inventory_interval(hours: int) -> void:
 # Valori della partita (GameScene, prima di aggiungere il pannello al cassetto).
 func set_min_levels(levels: Dictionary, food_days: int) -> void:
 	_min_levels = levels.duplicate()
-	# Risorse senza livello proprio (2026-10-11, StockRequestService.DERIVED_LEVEL_RESOURCES: la carne cruda).
-	for derived_name in StockRequestService.DERIVED_LEVEL_RESOURCES:
-		_min_levels.erase(derived_name)
 	_min_food_days = maxi(food_days, 0)
+
+
+# `rows`: [{"type", "name" (chiave tr), "level"}] (FuelStockService.get_rule_rows).
+func set_fuel_rule(enabled: bool, rows: Array[Dictionary]) -> void:
+	_fuel_rule_enabled = enabled
+	_fuel_rows = rows.duplicate()
+
+
+# Regola del combustibile: casella accesa/spenta, poi per ogni tipo icona, nome e campo − [N] + (spenti con la regola).
+func _build_fuel_rule_rows() -> Control:
+	var box := VBoxContainer.new()
+	box.add_theme_constant_override("separation", 2)
+	var toggle := CheckBox.new()
+	toggle.text = tr("warehouse_rule_fuel")
+	toggle.tooltip_text = tr("warehouse_rule_fuel_tooltip")
+	toggle.button_pressed = _fuel_rule_enabled
+	toggle.focus_mode = Control.FOCUS_NONE
+	toggle.add_theme_font_size_override("font_size", LIST_FONT_SIZE)
+	box.add_child(toggle)
+	var types_box := VBoxContainer.new()
+	types_box.add_theme_constant_override("separation", 2)
+	types_box.visible = _fuel_rule_enabled
+	box.add_child(types_box)
+	toggle.toggled.connect(func(pressed: bool) -> void:
+		_fuel_rule_enabled = pressed
+		types_box.visible = pressed
+		fuel_rule_toggled.emit(pressed)
+	)
+	for entry in _fuel_rows:
+		var type_name := String(entry.get("type", ""))
+		var row := HBoxContainer.new()
+		row.add_theme_constant_override("separation", 6)
+		row.tooltip_text = tr("warehouse_rule_fuel_type_tooltip")
+		row.add_child(IconRegistry.build_building_icon_box(type_name, LIST_ICON_SIDE))
+		var label := Label.new()
+		label.text = tr(String(entry.get("name", type_name)))
+		label.tooltip_text = row.tooltip_text
+		label.mouse_filter = Control.MOUSE_FILTER_PASS
+		label.add_theme_font_size_override("font_size", LIST_FONT_SIZE)
+		label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		row.add_child(label)
+		row.add_child(_build_level_field(int(entry.get("level", 0)), func(level: int) -> void:
+			entry["level"] = level
+			fuel_min_changed.emit(type_name, level)
+		, "warehouse_rule_fuel_type_tooltip"))
+		types_box.add_child(row)
+	return box
 
 
 # Stato del pulsante della regola "Carne e pelli in eccesso" (stessi argomenti di ButcherDestinationButton.set_destination).
@@ -254,9 +307,11 @@ func _build_rules_section() -> void:
 	row.add_child(label)
 	_excess_meat_button = ButcherDestinationButton.new()
 	_excess_meat_button.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	_excess_meat_button.tooltip_key = "warehouse_rule_excess_meat_button_tooltip"
 	_excess_meat_button.destination_chosen.connect(func(destination: String) -> void: excess_meat_destination_changed.emit(destination))
 	row.add_child(_excess_meat_button)
 	_rules_box.add_child(row)
+	_rules_box.add_child(_build_fuel_rule_rows())
 	_rules_box.add_child(_build_inventory_interval_row())
 	if _excess_meat_state.size() == 3:
 		var options: Array[Dictionary] = []
@@ -487,7 +542,7 @@ func _rebuild_rows(names: Array[String]) -> void:
 			box.add_child(HSeparator.new())
 		for resource_name in names:
 			var rules := CaloricCalculator.get_caloric_source_rules(resource_name)
-			# Senza livello proprio (la carne cruda, 2026-10-11): solo in "Da cucinare o lavorare" del Cibo.
+			# La carne cruda (2026-10-11): solo in "Da cucinare o lavorare" del Cibo.
 			if StockRequestService.DERIVED_LEVEL_RESOURCES.has(resource_name):
 				continue
 			if rules != null and rules.category == category:
@@ -516,23 +571,10 @@ func _build_row(resource_name: String) -> Control:
 		_quantity_labels[resource_name] = []
 	(_quantity_labels[resource_name] as Array).append(quantity_label)
 	var tooltip_key := "warehouse_min_level_auto_tooltip" if StockRequestService.source_kind_for(resource_name) != "" else "warehouse_min_level_tooltip"
-	# Senza livello proprio (2026-10-11, la carne cruda): al posto del campo una scritta della stessa larghezza.
+	# Carne cruda (2026-10-16, richiesta utente): livello proprio, la riserva in più oltre al fabbisogno dei prodotti
+	# (StockRequestService.DERIVED_LEVEL_RESOURCES); tooltip suo.
 	if StockRequestService.DERIVED_LEVEL_RESOURCES.has(resource_name):
-		# Contenitore che riceve il mouse (il tooltip sta qui), la scritta dentro non lo prende.
-		var holder := MarginContainer.new()
-		holder.custom_minimum_size = Vector2(LEVEL_BUTTON_WIDTH * 2.0 + LEVEL_EDIT_WIDTH, 0.0)
-		holder.mouse_filter = Control.MOUSE_FILTER_STOP
-		holder.tooltip_text = tr("warehouse_meat_level_derived_tooltip")
-		var derived := Label.new()
-		derived.text = tr("warehouse_level_derived")
-		derived.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		derived.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		derived.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-		derived.add_theme_font_size_override("font_size", LIST_FONT_SIZE - 2)
-		derived.modulate = ZERO_QUANTITY_COLOR
-		holder.add_child(derived)
-		row.add_child(holder)
-		return row
+		tooltip_key = "warehouse_meat_level_tooltip"
 	var on_change := func(level: int) -> void: _on_resource_level_changed(resource_name, level)
 	var field := _build_level_field(int(_min_levels.get(resource_name, 0)), on_change, tooltip_key)
 	row.add_child(field)

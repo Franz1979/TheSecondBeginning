@@ -91,6 +91,9 @@ func save_game_to_json(
 			"village_population_snapshots": game_data.village_population_snapshots,
 			"village_building_snapshots": game_data.village_building_snapshots,
 			"village_influence_snapshots": game_data.village_influence_snapshots,
+			"village_cohesion_snapshots": game_data.village_cohesion_snapshots,
+			# Riti sociali in corso (2026-10-14, SocialRiteService).
+			"active_social_rites": game_data.active_social_rites,
 			# Istanze oggetti-scaduti (Step 2, vedi GameData.expired_objects) — A DIFFERENZA di
 			# death_events sopra, "position" è un Vector2 (non JSON-nativo): _expired_objects_to_json
 			# appiattisce ogni record in position_x/position_y, stessa convenzione già usata per
@@ -121,6 +124,8 @@ func save_game_to_json(
 			"stock_min_levels": game_data.stock_min_levels,
 			"stock_min_food_days": game_data.stock_min_food_days,
 			"stock_excess_meat_destination": game_data.stock_excess_meat_destination,
+			"stock_fuel_rule_enabled": game_data.stock_fuel_rule_enabled,
+			"stock_fuel_min_by_type": game_data.stock_fuel_min_by_type,
 			"job_board_return_borrowed_tools": game_data.job_board_return_borrowed_tools,
 			"inventory_interval_hours": game_data.inventory_interval_hours,
 			"last_inventory_end": game_data.last_inventory_end,
@@ -436,6 +441,8 @@ func save_game_to_json(
 			# Riparazione richiesta (2026-10-10), vedi Building.repair_requested.
 			"repair_requested": building.repair_requested,
 			"repair_auto_excluded": building.repair_auto_excluded,
+			# Rito ordinato dal pannello (2026-10-14), vedi Building.requested_rite_id.
+			"requested_rite_id": building.requested_rite_id,
 			# Macerie (2026-10-10): tipo dell'edificio crollato.
 			"rubble_source_name": building.rubble_source_name,
 			"rubble_auto_excluded": building.rubble_auto_excluded,
@@ -765,5 +772,7 @@ func _serialize_villages(folk: Folk) -> Array:
 			"center_building_id": village.center_building_id,
 			# Valori assoluti R/C/P (2026-10-12): chiavi int -> stringhe in JSON.
 			"influence_values": village.influence_values,
+			# Coesione (2026-10-14).
+			"cohesion": village.cohesion,
 		})
 	return result

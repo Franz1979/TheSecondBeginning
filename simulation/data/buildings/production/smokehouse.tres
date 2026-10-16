@@ -25,6 +25,7 @@ required_space = 1
 has_door = false
 visibility_radius = 3
 is_workstation = true
+fuel_stock_min = 20
 production_output_slots = 10
 production_output_to_storage = false
 storage_accepts_recipe_materials_only = true

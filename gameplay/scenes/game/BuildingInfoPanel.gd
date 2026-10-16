@@ -90,6 +90,12 @@ signal work_cancel_requested(building: Building)
 signal production_order_cancel_requested(building: Building, order_key: String)
 # "Assegna" su una riga di un ordine senza lavoratore (2026-10-04): GameScene._on_production_order_assign_requested.
 signal production_order_assign_requested(building: Building, order_key: String)
+# Riti dal pannello (2026-10-14, richiesta utente — come gli ordini di produzione): clic su un rito della sezione "Riti",
+# "Assegna" e X sulla riga del rito ordinato. GameScene: _on_rite_requested / _on_rite_order_assign_requested /
+# _on_rite_order_cancel_requested.
+signal rite_requested(building: Building, rite_id: String)
+signal rite_order_assign_requested(building: Building)
+signal rite_order_cancel_requested(building: Building)
 
 # Bottone "Demolisci" (2026-09-27, richiesta utente — prima era un bottone della BuildBar): stesso principio "muto" di
 # empty_all_requested, GameScene apre la conferma (DemolishConfirmationDialog). Nascosto per un edificio già "da
@@ -602,6 +608,7 @@ func show_building(building: Building, residents_display_data: Array[Dictionary]
 	_refresh_delivered_materials(building)
 	_refresh_repair_materials(building)
 	_refresh_production_recipes(building, production_claimant_names)
+	_refresh_rite_section(building)
 	_refresh_settings_section(building)
 
 
@@ -2438,6 +2445,89 @@ func _resident_icon(sex: int, is_child: bool) -> String:
 # nascondere SOLO i propri nodi — mai un blocco che nasconde ciò che un altro ha appena mostrato.
 # Nessun edificio con capacità da configurare oggi -> l'intera sezione (separatore+titolo compresi)
 # resta nascosta, stesso principio già seguito da StorageGrid per storage_slot_count<=0.
+# Sezione "Riti" (2026-10-14, richiesta utente — avvio dei riti dal pannello, come la produzione): costruita da codice,
+# subito prima delle impostazioni. Per un edificio il cui tipo ammette riti (RiteService.get_type_rites, funerale escluso):
+#   - un pulsante per rito; spento con il motivo nel tooltip se ora non si può ordinare (RiteService.get_order_rejection_key);
+#   - con un rito ordinato (Building.requested_rite_id) la sua riga: nome, chi lo celebra o "mancante" con "Assegna", X.
+# Chi lo celebra lo dice la Task del rito ordinato in corso o in coda (RiteService.get_ordered_rite_workers).
+var _rite_section: VBoxContainer = null
+
+
+func _refresh_rite_section(building: Building) -> void:
+	if _rite_section == null:
+		_rite_section = VBoxContainer.new()
+		_rite_section.add_theme_constant_override("separation", 4)
+		add_child(_rite_section)
+		move_child(_rite_section, settings_separator.get_index())
+	for child in _rite_section.get_children():
+		_rite_section.remove_child(child)
+		child.queue_free()
+	var type_rites := RiteService.get_type_rites(building)
+	_rite_section.visible = building.is_complete and not type_rites.is_empty()
+	if not _rite_section.visible:
+		return
+	_rite_section.add_child(HSeparator.new())
+	var caption := Label.new()
+	caption.text = tr("building_rites_caption")
+	_rite_section.add_child(caption)
+	var buttons := HFlowContainer.new()
+	buttons.add_theme_constant_override("h_separation", 4)
+	_rite_section.add_child(buttons)
+	var busy := RiteService.get_active_rite_buildings(GameSettings.active_human_individuals)
+	for rules in type_rites:
+		var button := Button.new()
+		button.text = tr(rules.display_name)
+		button.focus_mode = Control.FOCUS_NONE
+		button.add_theme_font_size_override("font_size", 10)
+		var rejection_key := RiteService.get_order_rejection_key(building, rules.id, busy)
+		button.disabled = rejection_key != ""
+		button.tooltip_text = tr(rejection_key) if rejection_key != "" else tr("building_rite_button_tooltip")
+		var rite_id := rules.id
+		button.pressed.connect(func(): rite_requested.emit(building, rite_id))
+		buttons.add_child(button)
+	if building.requested_rite_id == "":
+		return
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 4)
+	var ordered := RiteService.get_rules(building.requested_rite_id)
+	var rite_label := Label.new()
+	rite_label.text = tr("building_rite_order_label").format({"rite": tr(ordered.display_name) if ordered != null else building.requested_rite_id})
+	# Rito sociale in preparazione (2026-10-16): l'organizzatore porta il materiale, oppure aspetta che ce ne sia.
+	if SocialRiteService.is_preparing(building):
+		rite_label.text += " — " + tr("building_rite_awaiting_material" if building.is_awaiting_material else "building_rite_preparing")
+	rite_label.add_theme_font_size_override("font_size", 10)
+	row.add_child(rite_label)
+	var workers := RiteService.get_ordered_rite_workers(building, GameSettings.active_human_individuals)
+	var names: Array[String] = []
+	for worker in workers:
+		names.append(worker.name)
+	var name_label := Label.new()
+	name_label.text = ", ".join(names) if not names.is_empty() else tr("building_assigned_worker_missing")
+	name_label.tooltip_text = name_label.text
+	name_label.mouse_filter = Control.MOUSE_FILTER_PASS
+	name_label.add_theme_font_size_override("font_size", 10)
+	name_label.clip_text = true
+	name_label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	name_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	name_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	row.add_child(name_label)
+	if workers.is_empty():
+		var assign_button := Button.new()
+		assign_button.text = tr("building_assign_production_worker_button")
+		assign_button.tooltip_text = tr("building_assign_rite_tooltip")
+		assign_button.focus_mode = Control.FOCUS_NONE
+		assign_button.add_theme_font_size_override("font_size", 10)
+		assign_button.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		assign_button.pressed.connect(func(): rite_order_assign_requested.emit(building))
+		row.add_child(assign_button)
+	var cancel_button := production_cancel_button.duplicate(0) as Button
+	cancel_button.visible = true
+	cancel_button.tooltip_text = tr("building_cancel_rite_order_tooltip")
+	cancel_button.pressed.connect(func(): rite_order_cancel_requested.emit(building))
+	row.add_child(cancel_button)
+	_rite_section.add_child(row)
+
+
 func _refresh_settings_section(building: Building) -> void:
 	# Solo a edificio completo (2026-09-27, richiesta utente): su un cantiere "Svuota tutto" e le categorie
 	# accettate non hanno senso (stored_resources contiene solo il materiale da costruzione).

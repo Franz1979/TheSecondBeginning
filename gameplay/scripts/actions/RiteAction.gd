@@ -3,14 +3,14 @@ extends Action
 
 # Step "celebra il rito" della Task Rite (2026-10-02, richiesta utente — rite.tres: Walk → Rite). Presso un edificio
 # che ammette il rito (RiteService), dura RiteRules.duration_days giorni di gioco consumando STAMINA_DRAIN_PER_DAY; al
-# completamento applica gli effetti (RiteEffectService). La Task non è sospendibile: interrotta o annullata si chiude
+# completamento applica gli effetti (ReligiousRiteEffectService). La Task non è sospendibile: interrotta o annullata si chiude
 # senza effetti. Se l'edificio non è più utilizzabile (demolito, da demolire) o il rito non esiste più, la Task si
 # chiude (pending_task_abort).
 #
 # Funerale (2026-10-04, cumulo sepolcrale passo 3b — ultimo step di bury.tres, `body_id` != -1): il rito si celebra
 # presso il cumulo sulla cui lastra giace il corpo (target_building risolto dal record, "mound_id"; finché il corpo non è
 # sulla lastra lo step resta valido e in attesa del trasporto). Il celebrante sta nella microcella accanto
-# (BodyBurialService.get_put_down_point). Al completamento: effetti con i parenti del defunto (RiteEffectService,
+# (BodyBurialService.get_put_down_point). Al completamento: effetti con i parenti del defunto (ReligiousRiteEffectService,
 # relative_ids) e il corpo consumato, cioè sepolto nel cumulo (BodyBurialService.bury_body).
 #
 # Regola generale (2026-10-04): dentro una Task SOSPENDIBILE il rito obbedisce alla Task — interrotto, la Task va in
@@ -109,16 +109,21 @@ func on_complete(individual: Variant, context: Dictionary) -> void:
 	if body_id != -1:
 		body_record = BodyBurialService.find_body_record(body_id)
 		relative_ids = BodyBurialService.get_relative_ids(body_record, GameSettings.active_human_individuals)
-	elif get_rules() != null and get_rules().faith_relatives > 0.0:
+	elif get_rules() is ReligiousRiteRules and (get_rules() as ReligiousRiteRules).faith_relatives > 0.0:
 		# Rito senza defunto con fede ai parenti (2026-10-04, ricordo dei defunti): i parenti dei sepolti nell'edificio.
 		relative_ids = BodyBurialService.get_buried_relative_ids(target_building, GameSettings.active_human_individuals)
-	RiteEffectService.apply_completion(
-		individual as HumanIndividual, target_building, get_rules(), GameSettings.active_human_individuals, relative_ids,
-		BodyBurialService.get_body_name(body_record)
-	)
+	# Solo i riti religiosi hanno effetti qui (2026-10-14: gli altri tipi hanno i propri servizi).
+	if get_rules() is ReligiousRiteRules:
+		ReligiousRiteEffectService.apply_completion(
+			individual as HumanIndividual, target_building, get_rules() as ReligiousRiteRules,
+			GameSettings.active_human_individuals, relative_ids, BodyBurialService.get_body_name(body_record)
+		)
 	if body_id != -1:
 		BodyBurialService.bury_body(body_record, target_building)
 	completed = true
+	# Rito ordinato dal pannello e celebrato davvero (2026-10-14): l'ordine dell'edificio è evaso.
+	if bool(context.get(RiteService.CONTEXT_ORDERED, false)) and target_building.requested_rite_id == rite_id:
+		target_building.requested_rite_id = ""
 	rite_completed.emit(target_building, rite_id)
 
 

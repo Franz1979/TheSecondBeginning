@@ -116,7 +116,7 @@ static func find_best(
 	# degli ingredienti, preferenza di scarico della macellazione — find_nearest_recipe_workstation sotto).
 	# Edificio "da demolire" escluso (2026-09-27, Building.is_marked_for_demolition): non funziona più.
 	var has_capacity := func(building: Building) -> bool:
-		return building.is_complete and not building.is_marked_for_demolition and building.rules != null and not building.rules.is_workstation \
+		return building.is_complete and not building.is_out_of_service() and building.rules != null and not building.rules.is_workstation \
 			and BuildingStorageService.can_accept(building, resource_name) \
 			and BuildingStorageService.get_max_depositable(building, resource_name) >= 1
 
@@ -193,7 +193,7 @@ static func find_nearest_recipe_workstation(
 		return null
 	var predicate := func(building: Building) -> bool:
 		return (building_type == "" or building.building_type_name == building_type) \
-			and building.is_complete and not building.is_marked_for_demolition and building.rules != null and building.rules.is_workstation \
+			and building.is_complete and not building.is_out_of_service() and building.rules != null and building.rules.is_workstation \
 			and ProductionService.is_recipe_input_of(building, resource_name) \
 			and BuildingStorageService.can_accept(building, resource_name) \
 			and BuildingStorageService.get_max_depositable(building, resource_name) >= min_quantity
@@ -227,7 +227,7 @@ static func find_source_for_retrieval(
 	# da una workstation contano solo i suoi Prodotti finiti, mai il magazzino (2026-10-08, vedi _get_matching_stock).
 	# false = comportamento di sempre (provviste, attrezzi).
 	var has_stock := func(building: Building) -> bool:
-		if not building.is_complete or building.is_demolished or building.is_marked_for_demolition:
+		if not building.is_complete or building.is_demolished or building.is_out_of_service():
 			return false
 		return not WarehouseSelectionService._get_matching_stock(building, criterion, min_quantity, workstation_products_only).is_empty()
 

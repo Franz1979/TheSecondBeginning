@@ -70,6 +70,9 @@ func on_complete(individual: Variant, context: Dictionary) -> void:
 	if _aborted:
 		return
 	completed = true
+	# Coesione del villaggio (2026-10-14): una volta per talk, dal lato di chi l'ha lanciata.
+	if bool(context.get(TalkService.CONTEXT_IS_CALLER, false)):
+		VillageCohesionService.add((individual as HumanIndividual).village_ref, VillageCohesionService.TALK_GAIN, "talk")
 	# Gli effetti arrivano subito dopo, a fine Task (task_completion_effects.tres): qui i valori di partenza.
 	TalkService.log_event(individual, "conversazione finita (%.2f giorni, attesa %.2f) — felicità %.0f e socialità %.0f prima degli effetti." % [
 		_talk_elapsed, _wait_elapsed, individual.current_happiness, individual.skill_social

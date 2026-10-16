@@ -67,7 +67,7 @@ const FAITH_LOYALTY_DAILY_BONUS: float = 20.0
 # Poi limite a [0, max_faith]. Edifici che coprono la casa: cache di InfluenceService (get_covering_buildings), nessun
 # calcolo di distanza qui. "Giorno appena concluso": questa regola gira in GameTimeService._on_day_advanced, DOPO che
 # GameData.advance_day ha già portato il calendario al giorno nuovo, quindi è get_absolute_day() − 1; un rito
-# completato in quel giorno ha scritto proprio quel valore in Building.last_rite_absolute_day (RiteEffectService).
+# completato in quel giorno ha scritto proprio quel valore in Building.last_rite_absolute_day (ReligiousRiteEffectService).
 # La fede non entra in nessun'altra regola.
 # Ripiego quando HumanRules non è risolvibile (2026-10-02): stessi valori dei default di HumanRules.
 const FALLBACK_FAITH_DAILY_LOSS_COVERED: float = 1.0

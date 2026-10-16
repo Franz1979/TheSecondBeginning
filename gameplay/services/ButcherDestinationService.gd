@@ -133,6 +133,24 @@ static func is_processing_resource(destination: String, resource_name: String) -
 	return false
 
 
+# Risorse che `destination` porta alla sua postazione di lavorazione (2026-10-14, piccole icone sul pulsante della
+# destinazione: carne, pelle o entrambe), in ordine di nome; vuoto per focolare e magazzino.
+static func get_processing_resources(destination: String) -> Array[String]:
+	var result: Array[String] = []
+	if not PROCESSING_DESTINATIONS.has(destination):
+		return result
+	var building_type := String(BUILDING_TYPES[destination])
+	for recipe_name in CaloricCalculator.list_secondary_resource_names():
+		var recipe_rules := CaloricCalculator.get_caloric_source_rules(recipe_name)
+		if recipe_rules == null or not recipe_rules.recipe_workstation_types.has(building_type):
+			continue
+		for input_name in recipe_rules.recipe_inputs.keys():
+			if not result.has(String(input_name)) and is_processing_resource(destination, String(input_name)):
+				result.append(String(input_name))
+	result.sort()
+	return result
+
+
 # true se uno scarico riservato alle risorse preferite (UnloadAction.only_preferred_resources) può lasciare
 # `resource_name` in `building`: alla postazione di lavorazione di una destinazione i suoi ingredienti materiali
 # (is_processing_resource), altrove — il focolare — solo le risorse con prefers_recipe_workstation (la carne), come
@@ -158,7 +176,7 @@ static func _find_nearest_processing_station(
 ) -> Building:
 	var predicate := func(building: Building) -> bool:
 		return building.building_type_name == building_type and building.is_complete and not building.is_demolished \
-			and not building.is_marked_for_demolition \
+			and not building.is_out_of_service() \
 			and BuildingStorageService.can_accept(building, resource_name) \
 			and BuildingStorageService.get_max_depositable(building, resource_name) >= min_quantity
 	return SpatialSelectionService.find_nearest(
@@ -246,6 +264,6 @@ static func _has_complete_building(world: World, building_type: String) -> bool:
 		return false
 	for building in world.buildings:
 		if building.building_type_name == building_type and building.is_complete and not building.is_demolished \
-				and not building.is_marked_for_demolition:
+				and not building.is_out_of_service():
 			return true
 	return false

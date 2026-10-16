@@ -278,6 +278,9 @@ static func _action_type_for_step(step: Action) -> int:
 	# TALK (2026-10-13, TalkAction, talk.tres), aggiunta insieme al proprio case in _build_step.
 	if step is TalkAction:
 		return TaskTypes.ActionType.TALK
+	# SOCIAL_RITE_ATTEND (2026-10-14, SocialRiteAttendAction), aggiunta insieme al proprio case in _build_step.
+	if step is SocialRiteAttendAction:
+		return TaskTypes.ActionType.SOCIAL_RITE_ATTEND
 	push_error("TaskPersistenceService._action_type_for_step: tipo Action sconosciuto (%s)." % step.get_script().get_global_name())
 	return -1
 
@@ -543,6 +546,9 @@ static func _build_step(action_type: int, step_data: Dictionary, macro_state: Ma
 		TaskTypes.ActionType.TALK:
 			# Nessun argomento: il partner è nel context della Task, attesa e conversazione da load_save_data.
 			step = TalkAction.new()
+		TaskTypes.ActionType.SOCIAL_RITE_ATTEND:
+			# Solo l'edificio: lo stato del rito è in GameData.active_social_rites.
+			step = SocialRiteAttendAction.new(_find_building_by_id(world, int(step_data.get("target_building_id", -1))))
 		TaskTypes.ActionType.PICKUP_BODY:
 			step = PickUpBodyAction.new(int(step_data.get("body_id", -1)))
 		TaskTypes.ActionType.CARRY_BODY:

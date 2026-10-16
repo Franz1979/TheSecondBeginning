@@ -71,7 +71,7 @@ static func can_coordinate(_individual: HumanIndividual) -> bool:
 
 static func is_valid_point(building: Building) -> bool:
 	return building != null and building.rules != null and building.rules.is_assignment_point and building.is_complete \
-		and not building.is_demolished and not building.is_marked_for_demolition
+		and not building.is_demolished and not building.is_out_of_service()
 
 
 static func is_coordinate_task(task: Task) -> bool:

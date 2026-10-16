@@ -190,8 +190,8 @@ static func can_accept(building: Building, resource_name: String) -> bool:
 	# meno) non deve mai accettare nulla da nessun percorso. Un individuo con una Task già in corso
 	# verso questo edificio (Walk+Unload) tiene un riferimento diretto che resta valido anche dopo la
 	# demolizione (vedi Building.is_demolished per il perché). Stesso rifiuto per un edificio "da demolire"
-	# (2026-09-27, Building.is_marked_for_demolition): non funziona più, nessun nuovo deposito.
-	if building.is_demolished or building.is_marked_for_demolition:
+	# (2026-09-27; dal 2026-10-14 solo a demolizione iniziata, Building.is_out_of_service): non funziona più.
+	if building.is_demolished or building.is_out_of_service():
 		return false
 	var resource_rules := CaloricCalculator.get_caloric_source_rules(resource_name)
 	if resource_rules == null:
@@ -408,7 +408,7 @@ static func withdraw_tool_units(building: Building, resource_name: String, quant
 	var units: Array = []
 	if building == null or quantity_requested <= 0 or not ToolInstance.uses_instances(resource_name):
 		return units
-	if building.is_marked_for_demolition:
+	if building.is_out_of_service():
 		return units
 	units = _take_stored_tool_units(building, resource_name, quantity_requested)
 	var from_output: int = ProductionService.withdraw_output(building, resource_name, quantity_requested - units.size())
@@ -507,7 +507,7 @@ static func get_max_depositable(building: Building, resource_name: String) -> in
 	# UnloadAction.activate, vedi lì) — un edificio demolito deve risultare "senza posto" da
 	# QUALUNQUE punto lo interroghi. Anche un edificio "da demolire" (2026-09-27): fuori da find_best e
 	# dalle ricerche di postazioni di lavoro, che leggono questo valore.
-	if building.is_demolished or building.is_marked_for_demolition:
+	if building.is_demolished or building.is_out_of_service():
 		return 0
 	var resource_rules := CaloricCalculator.get_caloric_source_rules(resource_name)
 	if resource_rules == null:
@@ -630,7 +630,7 @@ static func _free_storage_allows(building: Building, resource_name: String, reso
 # il travaso del buffer nello storage (ProductionService.flush_output_to_storage).
 static func withdraw(building: Building, resource_name: String, quantity_requested: int) -> int:
 	# Edificio "da demolire" (2026-09-27): niente prelievi, il contenuto cade a terra alla demolizione.
-	if building == null or quantity_requested <= 0 or building.is_marked_for_demolition:
+	if building == null or quantity_requested <= 0 or building.is_out_of_service():
 		return 0
 	var withdrawn := withdraw_stored(building, resource_name, quantity_requested)
 	withdrawn += ProductionService.withdraw_output(building, resource_name, quantity_requested - withdrawn)
@@ -643,7 +643,7 @@ static func withdraw(building: Building, resource_name: String, quantity_request
 # produzione (2026-09-23) — stessa somma che withdraw() sopra può davvero prelevare. 0 per un edificio
 # "da demolire" (2026-09-27): niente prelievi, quindi nemmeno sorgente di ricerche e comandi di prelievo.
 static func get_available_quantity(building: Building, resource_name: String) -> int:
-	if building == null or building.is_marked_for_demolition:
+	if building == null or building.is_out_of_service():
 		return 0
 	var stored_entry: Dictionary = building.stored_resources.get(resource_name, {})
 	return int(stored_entry.get("quantity", 0)) + int(building.production_output.get(resource_name, 0))
@@ -683,7 +683,7 @@ static func _is_reserved_in_storage_only_workstation(building: Building, resourc
 static func get_auto_available_quantity(building: Building, resource_name: String) -> int:
 	if not is_workstation_source(building):
 		return get_available_quantity(building, resource_name)
-	if building.is_marked_for_demolition:
+	if building.is_out_of_service():
 		return 0
 	if is_output_only_source(building):
 		return int(building.production_output.get(resource_name, 0))
@@ -696,7 +696,7 @@ static func get_auto_available_quantity(building: Building, resource_name: Strin
 static func withdraw_auto(building: Building, resource_name: String, quantity_requested: int) -> int:
 	if not is_workstation_source(building):
 		return withdraw(building, resource_name, quantity_requested)
-	if quantity_requested <= 0 or building.is_marked_for_demolition:
+	if quantity_requested <= 0 or building.is_out_of_service():
 		return 0
 	if not is_output_only_source(building):
 		if _is_reserved_in_storage_only_workstation(building, resource_name):
@@ -717,7 +717,7 @@ static func withdraw_tool_units_auto(building: Building, resource_name: String, 
 			return []
 		return withdraw_tool_units(building, resource_name, quantity_requested)
 	var units: Array = []
-	if quantity_requested <= 0 or not ToolInstance.uses_instances(resource_name) or building.is_marked_for_demolition:
+	if quantity_requested <= 0 or not ToolInstance.uses_instances(resource_name) or building.is_out_of_service():
 		return units
 	var from_output := ProductionService.withdraw_output(building, resource_name, quantity_requested)
 	var max_uses: int = ToolInstance.get_max_uses(resource_name)

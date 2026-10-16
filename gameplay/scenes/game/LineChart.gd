@@ -73,6 +73,9 @@ var _y_axis_label: String = "People"
 # chiave(int)->valore, "color": Color, "label": String}. set_data() ne imposta una sola, con l'aspetto di sempre
 # (LINE_COLOR, punti POINT_COLOR); set_series() più d'una, ognuna col suo colore anche per i punti.
 var _series: Array[Dictionary] = []
+# Tetto minimo dell'asse Y (2026-10-14, grafico Coesione 0–100): l'asse arriva almeno qui anche con valori più bassi.
+# 0 = scala automatica di sempre.
+var min_axis_max: float = 0.0
 
 # Stato hover (richiesta utente, 2026-09-06: "se passo con mouse degli anni, mi dica come hoover,
 # year e il valore") — null = nessun hover attivo. Aggiornato solo da _gui_input/_notification,
@@ -188,7 +191,7 @@ func _draw() -> void:
 	# dati: se tutti i valori sono ben sopra zero (es. popolazione 10-14), lo spazio vuoto tra 0 e
 	# il minimo osservato resta visibile di proposito — comunica quanto i dati sono lontani da
 	# zero, non un difetto da correggere.
-	var max_value := 0.0
+	var max_value := min_axis_max
 	for entry in _series:
 		var series_data: Dictionary = entry["data"]
 		for key in series_data:

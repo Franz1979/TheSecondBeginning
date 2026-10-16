@@ -939,7 +939,8 @@ func assign_task(task: Task, age_band: HumanTypes.AgeBand, is_interrupt_transiti
 	# fermano — interrompe la task in corso come qualunque comando (sospendibile -> in coda con il suo carico, ripresa
 	# dopo il corteo), il partecipante cammina con lo zaino in spalla e il carico non viene mai rilasciato né scaricato.
 	# Solo per il Corteo: per ogni altra task le regole dello zaino restano com'erano.
-	var ignores_backpack: bool = task.task_name == ProcessionService.PROCESSION_TASK_NAME
+	# Rito sociale (2026-10-14, richiesta utente — come il corteo funebre): stessa eccezione.
+	var ignores_backpack: bool = task.task_name == ProcessionService.PROCESSION_TASK_NAME or task.task_name == SocialRiteService.TASK_NAME
 
 	# Zaino occupato + Task NON-bisogno (2026-09-13, richiesta utente; MOTIVO AGGIORNATO 2026-09-20). Il
 	# blocco serve a NON INTERROMPERE UN TRASPORTO A META': chi ha qualcosa in spalla sta portando un carico

@@ -121,6 +121,9 @@ enum ActionType {
 	INVENTORY,
 	# TALK (2026-10-13, socialità — TalkAction, talk.tres) — AGGIUNTO IN CODA (33).
 	TALK,
+	# SOCIAL_RITE_ATTEND (2026-10-14, riti sociali — SocialRiteAttendAction, task costruita da SocialRiteService; nato come
+	# BANQUET_ATTEND, stesso valore) — IN CODA (34).
+	SOCIAL_RITE_ATTEND,
 }
 
 # Categorie di tool richiedibili da un'Action (2026-09-08, richiesta utente — SOLO struttura dati,

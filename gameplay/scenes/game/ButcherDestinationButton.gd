@@ -17,6 +17,9 @@ extends TooltipButton
 signal destination_chosen(destination: String)
 
 const ICON_SIDE: float = 22.0
+# Icone piccole di cosa va alla postazione (2026-10-14, richiesta utente — "Essiccatoio – solo carne" e simili si
+# distinguono senza aprire la scelta): in alto a sinistra sopra l'icona dell'edificio.
+const BADGE_SIDE: float = 10.0
 const LOCK_ICON := "🔒"
 
 var _icon_holder: Control = null
@@ -25,6 +28,9 @@ var _list: VBoxContainer = null
 # Ultimo stato applicato: [attuale, disponibili come "id:nome|..."] — evita di ricostruire icona e scelta a ogni frame.
 var _signature: String = ""
 var _options: Array[Dictionary] = []
+# Chiave tr() del tooltip, con {name} = destinazione attuale (2026-10-16, richiesta utente): la regola "Carne e pelli in
+# eccesso" del cassetto Scorte (WarehousePanel) ne usa una sua, perché lì non decide la destinazione di tutti i prodotti.
+var tooltip_key: String = "command_bar_butcher_destination_tooltip"
 
 
 func _init() -> void:
@@ -69,8 +75,8 @@ func set_destination(is_shown: bool, current: Dictionary, options: Array[Diction
 	_options = options.duplicate()
 	for child in _icon_holder.get_children():
 		child.queue_free()
-	_icon_holder.add_child(IconRegistry.build_building_icon_box(String(current.get("building_type", "")), ICON_SIDE))
-	tooltip_text = tr("command_bar_butcher_destination_tooltip").format({"name": String(current.get("name", ""))})
+	_icon_holder.add_child(_build_destination_icon(current))
+	tooltip_text = tr(tooltip_key).format({"name": String(current.get("name", ""))})
 	return visibility_changed
 
 
@@ -90,7 +96,7 @@ func _open_popup() -> void:
 		var reason := String(option.get("disabled_reason", ""))
 		var row := HBoxContainer.new()
 		row.tooltip_text = reason
-		row.add_child(IconRegistry.build_building_icon_box(String(option.get("building_type", "")), ICON_SIDE))
+		row.add_child(_build_destination_icon(option))
 		var choice := Button.new()
 		choice.text = String(option.get("name", ""))
 		if bool(option.get("locked", false)):
@@ -109,6 +115,42 @@ func _open_popup() -> void:
 	# incorporate (default del progetto), anche dentro un popup incorporato; lo schermo altrimenti.
 	var screen_position := Vector2i(get_screen_position())
 	_popup.popup(Rect2i(screen_position - Vector2i(0, content_size.y), content_size))
+
+
+# Icona dell'edificio della destinazione con, per le postazioni di lavorazione, le icone piccole delle risorse che ci
+# vanno (ButcherDestinationService.get_processing_resources): carne, pelle o entrambe.
+func _build_destination_icon(entry: Dictionary) -> Control:
+	var box := IconRegistry.build_building_icon_box(String(entry.get("building_type", "")), ICON_SIDE)
+	var resources := ButcherDestinationService.get_processing_resources(String(entry.get("id", "")))
+	if resources.is_empty():
+		return box
+	var badges := HBoxContainer.new()
+	badges.add_theme_constant_override("separation", 0)
+	badges.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	for resource_name in resources:
+		var badge := Control.new()
+		badge.custom_minimum_size = Vector2(BADGE_SIDE, BADGE_SIDE)
+		badge.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		var icon_node := IconRegistry.get_resource_icon_node(resource_name)
+		if icon_node != null:
+			icon_node.set_anchors_preset(Control.PRESET_FULL_RECT)
+			icon_node.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			badge.add_child(icon_node)
+		else:
+			var label := Label.new()
+			label.text = IconRegistry.get_resource_icon(resource_name)
+			label.add_theme_font_size_override("font_size", 7)
+			label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+			label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+			label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			label.set_anchors_preset(Control.PRESET_FULL_RECT)
+			badge.add_child(label)
+		badges.add_child(badge)
+	box.add_child(badges)
+	# In alto a sinistra (2026-10-14): in basso a destra c'è la freccina che apre la scelta (DropdownMarker).
+	badges.set_anchors_and_offsets_preset(Control.PRESET_TOP_LEFT, Control.PRESET_MODE_MINSIZE)
+	badges.position -= Vector2(3, 3)
+	return box
 
 
 func _on_option_pressed(destination: String) -> void:

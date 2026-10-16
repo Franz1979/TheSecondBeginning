@@ -103,7 +103,6 @@ pending_pile,Pile · {resources}
 task_assignment_in_progress_section,In progress
 task_assignment_in_progress_empty,No tasks in progress
 task_assignment_settings,⚙ Assignment rules
-task_assignment_rules_save_close,Save and close
 task_assignment_setting_wait,Delay before automatic assignment
 task_assignment_setting_wait_tooltip,"For these seconds a new job is not taken by anyone: you can assign it yourself with a right-click. With 0 it starts right away."
 population_hide_tasks,Hide tasks
@@ -293,8 +292,10 @@ individual_queued_task_paused_with_cargo,{task} · paused, carrying cargo
 building_status_label,Status: {status}
 building_status_complete,Complete
 building_status_under_construction,Under construction
-building_status_marked_for_demolition,To be demolished
+building_status_marked_for_demolition,To be demolished (planned)
 building_status_demolition_in_progress,Being demolished
+build_bar_demolish_tooltip,Demolish: pick a building on the map. It keeps working until an individual starts demolishing it (right-click with an individual selected).
+demolish_pick_banner_text,🧨 Demolish: click a building (Esc to cancel)
 building_demolish_button,Demolish
 building_influence_political_tooltip,"Political influence: radius {radius}"
 building_influence_political_none_tooltip,No political influence
@@ -653,9 +654,26 @@ task_rite_name,Rite
 task_rite_step_rite,Celebrating the rite
 task_activity_rite,celebrate a rite
 rite_simple_name,Simple rite
+rite_paleolithic_banquet_name,Paleolithic banquet
+task_social_rite_name,Social rite
+task_social_rite_step_walk,Going to the rite
+task_social_rite_step_attend,At the rite
+social_rite_reject_adults,At least {n} adult inhabitants are needed in the village
+banquet_reject_meat,At least {n} raw meat are needed in the campfire
+banquet_reject_fuel,Not enough fuel to cook at least {n} meat
 rite_dialog_title,Rite
 rite_dialog_message,Choose the rite to celebrate:
 rite_reject_building_busy,A rite is already assigned or in progress at this building
+rite_reject_no_celebrant,Nobody in the village is old or skilled enough to celebrate this rite
+rite_reject_none_available_panel,This rite cannot be celebrated here right now
+building_rites_caption,Rites
+building_rite_button_tooltip,Order this rite: choose who celebrates it (or it is queued with task assignment)
+building_rite_order_label,Rite: {rite}
+building_rite_preparing,being prepared
+building_rite_awaiting_material,waiting for materials
+building_assign_rite_tooltip,Choose who celebrates the rite
+building_cancel_rite_order_tooltip,Cancel the ordered rite
+rite_assign_banner_text,🌙 Celebrate {rite}: click an individual (Esc to cancel)
 "rite_reject_none_available","{name} cannot celebrate any rite here (age or ritual skill too low)"
 rite_interrupted,Rite interrupted ({name})
 task_leisure_rite_name,Spontaneous rite
@@ -1064,7 +1082,9 @@ building_repair_in_progress_label,Repair in progress: {names}
 repair_assign_banner_text,🔨 Repair {building}: click an individual (Esc to cancel)
 repair_reject_already_repairing,An individual is already repairing {building}
 pending_repair,Repair · {building}
+pending_rite,{rite} · {building}
 task_assignment_kind_repair,Repairs
+task_assignment_kind_rite,Rites
 repair_cancel_request_tooltip,Remove the repair request (integrity already restored is kept)
 building_repair_waiting_label,Repair waiting for assignment
 building_command_repair_already_requested,Repair already requested
@@ -1117,8 +1137,9 @@ task_assignment_warehouse_tag_tooltip,"Order created by stock management: the re
 drawer_order_stock_cancel_tooltip,"Cancel the order. If the resource stays below its minimum level the warehouse creates a new one: to stop it, remove the level or lock the order."
 warehouse_min_level_auto_tooltip,"Minimum level: below this value the warehouse creates gather, cut or quarry orders in the work areas."
 warehouse_rules,⚙ Storage rules
-warehouse_rule_excess_meat,Excess meat and hides
-warehouse_rule_excess_meat_tooltip,"Where meat and hides from warehouse hunts go when they are already above their level (as in manual hunts: the campfire takes meat, drying rack and smokehouse take meat and hides). When needed, they always go to the warehouse. Sinew and bone always go to the warehouse."
+warehouse_rule_excess_meat,Excess meat and hides destination
+warehouse_rule_excess_meat_tooltip,"Warehouse hunts: meat and hides that are needed always go to the warehouse. Extra ones (already above their level) go here. Whatever the destination does not take (hides with the campfire; sinew and bone always) and whatever finds no room goes to the warehouse."
+warehouse_rule_excess_meat_button_tooltip,Excess meat and hides: {name}
 warehouse_food_ingredients_title,To cook or process
 warehouse_food_ingredients_note,"Not counted in calories: they must be cooked or processed first."
 pending_stock_blocked,Warehouse · {resource}
@@ -1135,9 +1156,8 @@ pending_stock_dry_rack_full,Drying rack full
 pending_stock_dry_missing,Missing: {resource}
 pending_stock_dry_blocked,No drying rack with room or nothing to bring
 warehouse_food_days_name,Food
-warehouse_food_days_auto_tooltip,"Minimum days of autonomy: below this value the warehouse has raw meat in storage cooked, then any food gathered in the work areas."
-warehouse_level_derived,from products
-warehouse_meat_level_derived_tooltip,"Raw meat has no level of its own: hunting is driven by cooked, smoked and dried meat. Set the level on those."
+warehouse_food_days_auto_tooltip,"Minimum days of autonomy: below this value the warehouse has free raw meat cooked (beyond the raw meat reserve and what processing needs), then any food gathered in the work areas. Food already being processed counts as arriving."
+warehouse_meat_level_tooltip,"Raw meat to keep in addition to what is needed for cooked, smoked and dried meat. Processing comes first, then this reserve is filled."
 pending_output_delivery_rack,{building} full: bring the ready products to storage
 task_inventory_name,Inventory
 task_inventory_step_count,Counts the stock
@@ -1207,3 +1227,8 @@ pending_village_without_center_detail,Build a new Pebble circle to restore it.
 statistics_scope_label,Show:
 statistics_scope_folk,{folk} (whole people)
 statistics_tab_influence,Influence
+warehouse_rule_fuel,Fuel in buildings that use it
+warehouse_rule_fuel_tooltip,"Keep fuel in the storage of every building that burns it (campfire, smokehouse…). The minimum is set per building type; below it, the inventory starts a transport of the best available fuel from the warehouse."
+warehouse_rule_fuel_type_tooltip,"Minimum fuel for each building of this type (in fuel value: a stick is worth 1). 0 = this type is not supplied."
+drawer_order_fuel_row,{building}: bring {quantity} {resource}
+pending_stock_fuel_blocked,Building not available or no fuel to bring

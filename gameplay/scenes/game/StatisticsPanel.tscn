@@ -218,6 +218,13 @@ button_pressed = true
 layout_mode = 2
 script = ExtResource("2_chart")
 
+[node name="CohesionValueLabel" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/InfluenceTab/InfluenceContent"]
+layout_mode = 2
+
+[node name="CohesionPerYearChart" type="Control" parent="MarginContainer/VBoxContainer/TabContainer/InfluenceTab/InfluenceContent"]
+layout_mode = 2
+script = ExtResource("2_chart")
+
 [node name="PiesContainer" type="VBoxContainer" parent="MarginContainer/VBoxContainer/TabContainer/InfluenceTab/InfluenceContent"]
 layout_mode = 2
 

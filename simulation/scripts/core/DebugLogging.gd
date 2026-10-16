@@ -426,3 +426,11 @@ const SHOW_COORDINATOR_LOGS := false
 # d'incontro), nessun partner, inizio e fine della conversazione, chiusura senza effetti con il motivo. Acceso su
 # richiesta per le prime prove.
 const SHOW_TALK_LOGS := true
+
+# Coesione (2026-10-14, VillageCohesionService): una riga [COESIONE] a ogni variazione — talk, idea, nuovi arrivati,
+# calo annuale — con valore prima e dopo. Acceso per le prime prove.
+const SHOW_COHESION_LOGS := true
+
+# Riti sociali (2026-10-14, SocialRiteService — es. il banchetto): una riga [RITO SOCIALE] per organizzazione, arrivi,
+# inizio, cottura, fine o annullo. Acceso per le prime prove.
+const SHOW_SOCIAL_RITE_LOGS := true

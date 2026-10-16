@@ -44,9 +44,10 @@ const FUEL_KEY := "__fuel__"
 # cibo" e marca (FOOD_DAYS_KEY) degli ordini "Produci carne cotta" nati per i giorni.
 const FOOD_DAYS_ORDER_KEY := "food_days"
 const FOOD_DAYS_KEY := "food_days_order"
-# Unica eccezione alla regola "la catena la organizza il giocatore" (2026-10-11, richiesta utente): queste risorse non hanno
-# un livello minimo proprio; il loro fabbisogno nasce dai livelli dei prodotti che le usano (la carne cruda: carne cotta,
-# affumicata ed essiccata — GameScene._derived_meat_level). Il cassetto Scorte non mostra il loro campo del livello.
+# Unica eccezione alla regola "la catena la organizza il giocatore" (2026-10-11, richiesta utente): il fabbisogno di queste
+# risorse nasce anche dai livelli dei prodotti che le usano (la carne cruda: carne cotta, affumicata ed essiccata —
+# GameScene._derived_meat_level). Dal 2026-10-16 hanno anche un livello proprio, che si somma: la riserva in più (es. per
+# i banchetti), riempita dopo le lavorazioni. Il cassetto Scorte le mostra in "Da cucinare o lavorare".
 const DERIVED_LEVEL_RESOURCES: Array[String] = ["meat"]
 
 
