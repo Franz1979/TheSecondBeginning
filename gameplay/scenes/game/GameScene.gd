@@ -235,19 +235,8 @@ var human_individual_selector_controller := HumanIndividualSelectorController.ne
 # distinzione "indice 0 a parte" era solo un residuo del vecchio concetto di leader e rendeva quel
 # lookup inutilmente speciale).
 const PLAYER_HUMAN_RULES_PATH := "res://human/data/human_rules/player_human_rules.tres"
-# TaskDefinition "haul_resource" (2026-09-10, richiesta utente — estensione TaskFactory per PICKUP)
-# — stesso pattern/stesso trattamento di PLAYER_HUMAN_RULES_PATH sopra: un path const, caricato via
-# load() al punto d'uso (vedi _assign_pickup_task), non preload() (riservato alle .tscn in questo
-# file, vedi le costanti *_SCENE sotto). Copre solo i primi due step [Walk, PickUp] — il resto della
-# catena (ricerca magazzino/Unload/cammina-via) resta costruito a runtime da
-# HumanIndividualActionService, invariato.
-const HAUL_RESOURCE_TASK_DEFINITION_PATH := "res://gameplay/scripts/tasks/definitions/haul_resource.tres"
-# Raccolta su zona (2026-09-27, work areas passo 2): stessa Task "haul_resource" (stesso nome), primo step "cerca nella
-# zona" (SearchHaulZoneAction) che accoda Walk + PickUp. Usata dal comando di raccolta e dalla sua ripetizione;
-# HAUL_RESOURCE_TASK_DEFINITION_PATH resta per il trasporto del mucchio a terra (_build_pickup_task).
-const HAUL_RESOURCE_ZONE_TASK_DEFINITION_PATH := "res://gameplay/scripts/tasks/definitions/haul_resource_zone.tres"
 # TaskDefinition "daydreaming" (2026-09-10, richiesta utente — refactor Daydream via TaskFactory,
-# secondo/ultimo prompt) — stesso identico trattamento di HAUL_RESOURCE_TASK_DEFINITION_PATH sopra:
+# secondo/ultimo prompt) — stesso identico trattamento di TaskBuilderService.HAUL_RESOURCE_TASK_DEFINITION_PATH:
 # copre solo i primi due step [Walk, Think] (vedi daydreaming.tres) — il resto della catena
 # (ricerca edificio-pensieri/Unload/cammina-via) resta costruito a runtime da
 # HumanIndividualActionService._handle_pending_thought_target_search/_handle_pending_walk_away,
@@ -274,14 +263,6 @@ const WANDER_TASK_DEFINITION_PATH := "res://gameplay/scripts/tasks/definitions/w
 # vedi Task.allowed_age_bands), non su RunAction/JumpAction (restano generiche per età, vedi
 # RunAction.gd/JumpAction.gd) — verificato da HumanIndividual.assign_task().
 const PLAY_TASK_DEFINITION_PATH := "res://gameplay/scripts/tasks/definitions/play.tres"
-# TaskDefinition "transport" (2026-09-12, richiesta utente — Transport Task: Walk->source→Retrieve→
-# Walk->destination→Unload) — SEMPRE 4 step fissi (vedi transport.tres): nessuna logica
-# condizionale sul numero di step qui, source/destination/resource_name/quantity sono risolti PRIMA
-# della costruzione da _resolve_transport_context (vedi sotto), stesso schema già in uso per Rest/
-# Wander. source_building/destination_building arrivano dal trigger a due click destri
-# (_try_assign_transport_command_on_right_click, vedi sotto); resource_name/quantity dalla
-# scelta del player nel TransportSourceDialog aperto dallo stesso trigger.
-const TRANSPORT_TASK_DEFINITION_PATH := "res://gameplay/scripts/tasks/definitions/transport.tres"
 # TaskDefinition "emergency_rest" — stesso trattamento di "rest" sopra: path/risoluzione target/
 # costruzione+assegnazione SPOSTATI su NeedTaskAssignmentService (2026-09-13, richiesta utente,
 # sistema di interrupt/coda da stamina critica — ORA collegato: soglia 5%/20% dentro
@@ -2376,7 +2357,6 @@ func _assign_emergency_rest_task() -> void:
 	NeedTaskAssignmentService.assign_emergency_rest_task(individual, _resolve_age_band(individual))
 
 
-
 # Leisure Restock (2026-09-19, richiesta utente): tasto F sull'individuo selezionato - vedi
 # NeedTaskAssignmentService.assign_leisure_restock_task (la Task non nasce se nessun magazzino ha cibo).
 func _assign_leisure_restock_task() -> void:
@@ -2508,50 +2488,6 @@ func _assign_play_task() -> void:
 		])
 
 
-# Risoluzione del context della Transport Task, PRIMA della costruzione (2026-09-12, richiesta
-# utente — "stesso pattern già usato per _resolve_rest_target/_resolve_wander_targets") — ritorna
-# SEMPRE un Dictionary con le sei chiavi lette da TaskFactory.build_task per i 4 step fissi
-# [Walk->source, Retrieve, Walk->destination, Unload] (vedi transport.tres), mai null.
-# source_building/destination_building/resource_name/quantity arrivano GIÀ RISOLTI dal chiamante
-# (source/destination dal trigger a due click destri, resource_name/quantity dalla scelta del
-# player nel TransportSourceDialog — vedi _try_assign_transport_command_on_right_click/
-# _on_transport_source_resource_chosen sotto): questa funzione si limita a tradurre le posizioni dei
-# due edifici nello spazio locale di `target_individual` e a impacchettare tutto nelle chiavi che
-# transport.tres si aspetta.
-#
-# Posizioni tradotte con la STESSA formula cross-macrocella già in uso ovunque nel progetto per
-# questo scopo (es. _resolve_rest_target/_try_assign_unload_command_on_right_click/
-# _debug_test_daydream_task): building.macro_x/y sono locali alla macrocella OSPITANTE l'edificio,
-# non necessariamente quella HOME dell'individuo (offset zero, no-op, se coincidono).
-func _resolve_transport_context(
-	target_individual: HumanIndividual, source_building: Building, destination_building: Building,
-	resource_name: String, quantity: int
-) -> Dictionary:
-	# Jitter — STESSO principio di _handle_pending_warehouse_search/Building.get_resumable_task_context
-	# (2026-09-17, richiesta utente, bugfix "angolo in alto a sinistra"/sovrapposizione): un offset
-	# INDIPENDENTE per sorgente e destinazione, non lo stesso valore riusato per entrambe.
-	var source_macro_offset: Vector2 = Vector2(
-		Vector2i(source_building.macro_x, source_building.macro_y) - target_individual.home_macro_coords
-	) * World.WIDTH
-	var source_position_jitter: Vector2 = Vector2(randf_range(0.15, 0.85), randf_range(0.15, 0.85))
-	var source_position: Vector2 = Vector2(source_building.micro_x, source_building.micro_y) + source_macro_offset + source_position_jitter
-
-	var destination_macro_offset: Vector2 = Vector2(
-		Vector2i(destination_building.macro_x, destination_building.macro_y) - target_individual.home_macro_coords
-	) * World.WIDTH
-	var destination_position_jitter: Vector2 = Vector2(randf_range(0.15, 0.85), randf_range(0.15, 0.85))
-	var destination_position: Vector2 = Vector2(destination_building.micro_x, destination_building.micro_y) + destination_macro_offset + destination_position_jitter
-
-	return {
-		"transport_source_position": source_position,
-		"transport_source_building": source_building,
-		"transport_resource_name": resource_name,
-		"transport_quantity": quantity,
-		"transport_destination_position": destination_position,
-		"transport_destination_building": destination_building,
-	}
-
-
 # Assegna la Transport Task completa [Walk, Retrieve, Walk, Unload] all'individuo selezionato (2026-09-12,
 # richiesta utente) — chiamata SOLO dal trigger a due click destri sotto. resource_name/quantity arrivano GIA'
 # SCELTI dal player nel TransportSourceDialog (vedi _on_transport_source_resource_chosen), `repeat_enabled`
@@ -2591,7 +2527,7 @@ func _assign_transport_task(
 				destination_building.building_type_name, destination_building.id, resource_name
 			])
 		return
-	var task := _build_transport_task(
+	var task := TaskBuilderService.build_transport_task(
 		individual, source_building, destination_building, resource_name, trip_target, quantity, repeat_enabled, 0
 	)
 	var age_band := _resolve_age_band(individual)
@@ -2655,29 +2591,6 @@ func _transport_trip_target(destination_building: Building, resource_name: Strin
 	return mini(remaining_quantity, BuildingStorageService.get_max_depositable(destination_building, resource_name))
 
 
-# Costruisce la Transport Task SENZA assegnarla ne' collegare i segnali (2026-09-20, estratta per riusarla nella
-# ripetizione). `trip_target` = quanto RECUPERARE in questo viaggio (transport_quantity di RetrieveAction);
-# `requested_remaining` = quanto il player voleva ancora che arrivasse (la quantita' chiesta meno il gia'
-# consegnato). Le chiavi transport_source_id/transport_destination_id/transport_delivery_resource/
-# transport_requested_remaining NON sono nei context_keys di transport.tres: restano in task.context (salvate) e
-# servono a UnloadAction.transport_delivered / _on_transport_delivered.
-func _build_transport_task(
-	owner: HumanIndividual, source_building: Building, destination_building: Building, resource_name: String,
-	trip_target: int, requested_remaining: int, repeat_enabled: bool, repeat_count: int
-) -> Task:
-	var context: Dictionary = _resolve_transport_context(owner, source_building, destination_building, resource_name, trip_target)
-	context["transport_source_id"] = source_building.id
-	context["transport_destination_id"] = destination_building.id
-	# Vero se alla creazione la destinazione è un cantiere: se sarà completata prima dell'Unload,
-	# UnloadAction la tratta come destinazione non valida (vedi _is_completed_site_destination).
-	context["transport_destination_is_site"] = not destination_building.is_complete
-	context["transport_delivery_resource"] = resource_name
-	context["transport_requested_remaining"] = requested_remaining
-	TaskRepeatRules.write(context, repeat_enabled, repeat_count)
-	var transport_definition := load(TRANSPORT_TASK_DEFINITION_PATH) as TaskDefinition
-	return TaskFactory.build_task(transport_definition, context)
-
-
 # Segnali degli step della Transport (2026-09-12): il deposito/prelievo fisico muta comunque
 # stored_resources (la mutazione vive in BuildingStorageService), i segnali servono alla UI (griglia di
 # stoccaggio) e, dal 2026-09-20, alla ripetizione (UnloadAction.transport_delivered, collegato in
@@ -2726,7 +2639,7 @@ func _on_transport_delivered(owner: HumanIndividual, context: Dictionary, delive
 				owner.id, owner.name, repeats_done + 1, TaskQueueService.MAX_QUEUE_SIZE
 			])
 		return
-	var repeat_task := _build_transport_task(
+	var repeat_task := TaskBuilderService.build_transport_task(
 		owner, source_building, destination_building, resource_name, trip_target, remaining, true, repeats_done + 1
 	)
 	# Trasporto del magazzino verso l'essiccatoio (2026-10-11): la marca passa al viaggio successivo.
@@ -3951,14 +3864,15 @@ func _assign_pickup_task(
 	if cell == null or cell.macro_state == null:
 		return
 	# Zona 1×1 sulla cella cliccata (2026-09-27, work areas passo 2): la Task cerca nella zona e accoda Walk + PickUp
-	# verso quella cella — stesso risultato di prima. Costruita da _build_haul_zone_task, condivisa con la
+	# verso quella cella — stesso risultato di prima. Costruita da TaskBuilderService.build_haul_zone_task, condivisa con la
 	# ripetizione automatica (_queue_pickup_repeat). Non entra in GameData.work_areas. `individual` e' il
 	# proprietario della Task (qui, l'individuo selezionato).
 	var zone := HaulZoneService.make_zone(
 		macro_coords, Rect2i(target_position, Vector2i.ONE), criterion_kind, criterion_category, resource_name,
 		quantity_requested, source_kind, HaulZoneService.CLICK_MAX_REPEATS
 	)
-	var task := _build_haul_zone_task(zone, repeat_enabled, repeat_count, individual)
+	var task := TaskBuilderService.build_haul_zone_task(zone, repeat_enabled, repeat_count)
+	_connect_haul_zone_step_appended(task, individual)
 
 	# Icona letta da IconRegistry (2026-09-11, richiesta utente — generalizzazione del meccanismo di
 	# lampeggio: prima "✋" era hardcoded dentro _spawn_pickup_command_effect, ora vive nel registro
@@ -3982,125 +3896,26 @@ func _assign_pickup_task(
 	_spawn_command_icon_at_microcell(cell, target_position, command_icon_key)
 
 
-# Costruisce la Task di raccolta (Walk + PickUp) senza assegnarla (2026-09-20, estratta da _assign_pickup_task per
-# riusarla nella ripetizione automatica). `owner` e' l'individuo proprietario della Task: serve al collegamento
-# dei segnali di Unload. Ritorna la Task gia' cablata.
-func _build_pickup_task(
-	cell: LiveMacroCell, target_position: Vector2i, resource_name: String, quantity_requested: int,
-	criterion_kind: int, criterion_category: int, repeat_enabled: bool, repeat_count: int, owner: HumanIndividual,
-	source_kind: int = PickUpAction.SourceKind.TERRAIN
-) -> Task:
-
-	# TaskFactory.build_task (2026-09-10, richiesta utente — estensione TaskFactory per PICKUP)
-	# SOSTITUISCE la costruzione manuale [WalkAction, PickUpAction] di prima: task_name/
-	# step_descriptions/action_type per step arrivano ora da HAUL_RESOURCE_TASK_DEFINITION_PATH
-	# (.tres, vedi gameplay/scripts/tasks/definitions/haul_resource.tres) invece che hardcoded qui —
-	# stesse identiche chiavi tr() già in uso prima ("task_haul_resource_name"/_step_walk/_step_pickup,
-	# vedi translations/strings.csv), solo la loro fonte cambia. La risoluzione del TARGET (qual è la
-	# posizione pebble/stick, risolta dal chiamante di questa funzione) resta invariata, fuori da
-	# questa funzione — TaskFactory non risolve target, solo costruisce Action dai valori già decisi
-	# che gli vengono passati in `context`.
-	#
-	# Solo i primi due step [Walk, PickUp] nascono qui — invariato rispetto a prima: il resto della
-	# catena (ricerca magazzino/Unload/"cammina via") continua a crescere a runtime via
-	# Task.append_steps, guidato da context["pending_warehouse_search"]/["pending_walk_away_position"]
-	# (vedi HumanIndividualActionService._handle_pending_warehouse_search/_handle_pending_walk_away) —
-	# NON toccato da questo passo, funziona identico sia che i primi due step vengano da qui sia da
-	# TaskFactory: quel meccanismo legge/scrive solo task.context, ignaro di come i suoi step siano
-	# nati.
-	var haul_resource_definition := load(HAUL_RESOURCE_TASK_DEFINITION_PATH) as TaskDefinition
-	# DUE chiavi separate per la STESSA posizione logica (2026-09-10) — WalkAction._init vuole un
-	# Vector2 (target), PickUpAction._init vuole un Vector2i (target_position): TaskFactory è
-	# generica e passa context[chiave] così com'è al costruttore, senza conversioni implicite (e
-	# GDScript non converte automaticamente Vector2i<->Vector2 su un parametro tipizzato) — una sola
-	# chiave condivisa con un solo tipo concreto avrebbe fatto fallire la costruzione di uno dei due
-	# step. "target_position" (Vector2) per WALK, "pickup_position" (Vector2i, il parametro originale
-	# invariato) per PICKUP — vedi step_walk_to_position.tres/step_pickup_from_position.tres per
-	# quale step legge quale chiave.
-	#
-	# Nessun erase() manuale qui dopo la chiamata a build_task (2026-09-10 — PRIMA di questo passo
-	# c'era, vedi git blame): TaskFactory.build_task ora ripulisce DA SÉ, dopo la costruzione, tutte
-	# le chiavi elencate nei context_keys dei propri step (vedi task_factory.gd, consumed_context_
-	# keys) — struttura spostata lì così ogni futuro chiamante di build_task la ottiene gratis, senza
-	# doversene ricordare (era il rischio esplicito di questa versione precedente: un erase() lato
-	# chiamante, facile da dimenticare in una nuova Task futura).
-	# Jitter sul punto di arrivo del Walk (2026-09-17, richiesta utente — bugfix "i pipottini si
-	# fermano sempre nell'angolo in alto a sinistra della microcella", sovrapposti quando più
-	# individui raccolgono nella stessa cella/lotto): offset casuale interno alla cella (evita i
-	# bordi, mai esattamente sull'angolo), applicato SOLO al target del WalkAction — "pickup_position"
-	# sotto resta il Vector2i ESATTO della cella, invariato: è la chiave che indicizza davvero il pool
-	# della risorsa (TerrainScatteredResourceService), mai un dato "visivo".
-	var target_position_jitter: Vector2 = Vector2(randf_range(0.15, 0.85), randf_range(0.15, 0.85))
-	var context: Dictionary = {
-		"target_position": Vector2(target_position) + target_position_jitter,
-		"pickup_position": target_position,
-		"macro_state": cell.macro_state,
-		"resource_name": resource_name,
-	}
-	# "pickup_requested_quantity" (2026-09-18) — SOLO se il chiamante ne ha passata una reale
-	# (>= 0): omesso del tutto altrimenti, così TaskFactory.build_task risolve il proprio default
-	# -1 "nessun tetto" (vedi task_factory.gd, ramo PICKUP) esattamente come se questa chiave non
-	# esistesse in step_pickup_from_position.tres.
-	if quantity_requested >= 0:
-		context["pickup_requested_quantity"] = quantity_requested
-	# Criterio (2026-09-20): scritto SOLO se non e' il default NAME — omesso, TaskFactory risolve NAME/-1 come
-	# prima (stesso schema di pickup_requested_quantity).
-	if criterion_kind != PickUpAction.CriterionKind.NAME:
-		context["pickup_criterion_kind"] = criterion_kind
-		context["pickup_criterion_category"] = criterion_category
-	# Ripetizione automatica (2026-09-20, richiesta utente): le chiavi di TaskRepeatRules NON sono
-	# in context_keys di step_pickup_from_position.tres, quindi TaskFactory non le consuma e restano in
-	# task.context per tutta la vita della Task (PickUpAction.on_complete li legge da li', e vengono salvati col
-	# context).
-	if repeat_enabled:
-		TaskRepeatRules.write(context, true, repeat_count)
-	var task := TaskFactory.build_task(haul_resource_definition, context)
-
-	# task.step_appended (2026-09-12, richiesta utente — bugfix "il mucchietto non si aggiorna in
-	# automatico quando viene fatto il deposito"): STESSO pattern di _debug_test_daydream_task sopra
-	# (che copre solo la Task Daydream/ramo pensiero) — qui per la VERA catena di produzione
-	# haul_resource, il cui UnloadAction (ramo FISICO, DepositKind.RESOURCE) non esiste ancora a
-	# questo punto: nasce più tardi, dinamicamente, quando PickUpAction completa e
-	# HumanIndividualActionService._handle_pending_warehouse_search lo accoda alla Task — vedi lì per
-	# la costruzione `UnloadAction.new(candidate, UnloadAction.DepositKind.RESOURCE)`. Senza questo
-	# listener, resource_deposited (vedi unload_action.gd) non avrebbe mai un ascoltatore per il
-	# percorso di gioco reale, solo per il comando manuale "scarica qui"
-	# (_try_assign_unload_command_on_right_click) — la griglia di stoccaggio del deposit site non si
-	# sarebbe mai rinfrescata da sola dopo un haul_resource completo.
+# Segnali della raccolta costruita da TaskBuilderService.build_pickup_task/build_pile_job_task (2026-10-17, refactoring
+# GameScene blocco 1 — estratto da _build_pickup_task, stessi collegamenti di prima). Da chiamare subito dopo la
+# costruzione, solo per una Task che verrà davvero usata (non per le task di prova delle idoneità).
+# - task.step_appended (2026-09-12, bugfix "il mucchietto non si aggiorna in automatico quando viene fatto il deposito"):
+#   l'UnloadAction della catena nasce più tardi, quando PickUpAction completa e
+#   HumanIndividualActionService._handle_pending_warehouse_search lo accoda; senza questo listener resource_deposited
+#   non avrebbe ascoltatori e la griglia di stoccaggio non si rinfrescherebbe da sola.
+# - PickUp: refresh della cella appena la raccolta avviene e ripetizione automatica, con la stessa funzione usata dopo
+#   un reload (_reconnect_pickup_action_signals), così i due punti non possono disallinearsi.
+func _wire_pickup_task(task: Task, owner: HumanIndividual) -> void:
+	if task == null:
+		return
 	task.step_appended.connect(func(action: Action) -> void:
 		if action is UnloadAction:
 			_reconnect_unload_action_signals(action as UnloadAction, owner)
 	)
-
-	# Rinfresca pebble/stick di QUESTA cella non appena la raccolta è davvero avvenuta (2026-09-09,
-	# richiesta utente, bugfix "restano disegnati dopo la raccolta") — stesso principio già in uso
-	# per UnloadAction.idea_completed/thought_deposited: PickUpAction non conosce il renderer, si
-	# limita a segnalare l'evento, chi ha creato la Task (qui) decide come reagire. Rebuild
-	# dell'intera macrocella (non solo la posizione raccolta — _refresh_resource_visuals non supporta
-	# un aggiornamento per singola posizione), ma economico: poche decine di posizioni pebble/stick
-	# per macrocella, stesso principio già accettato per il rebuild vegetazione (VegetationPosition
-	# Service), solo su un numero di individui molto più piccolo.
-	#
-	# La PickUpAction non è più una variabile locale creata qui (nasce dentro TaskFactory.build_task)
-	# — recuperata dagli step della Task risultante per tipo, non per indice fisso: più robusto se in
-	# futuro haul_resource.tres guadagnasse step opzionali prima del PickUp (nessun caso oggi, ma
-	# nessuna assunzione fragile sull'indice 1 necessaria per ottenere lo stesso risultato).
-	#
-	# _reconnect_pickup_action_signals riusata TALE E QUALE (2026-09-11, richiesta utente — chiudere
-	# il gap gemello di SetupSite/Clear/Unload: "dopo un reload i signal non vengono ricollegati")
-	# invece di connettere qui un lambda che catturi `cell`: `cell` NON è bindato al momento della
-	# creazione, la funzione condivisa lo risolve da sé (da step.macro_state) al momento in cui
-	# resource_collected emette DAVVERO, così questo stesso punto e _reconnect_loaded_task_signals
-	# (dopo un reload, dove `cell` non sarebbe nemmeno disponibile: live_cells non è ancora popolato
-	# dentro _ready()) non possono disallinearsi.
 	for step in task.steps:
 		if step is PickUpAction:
-			# Sorgente (2026-09-26, ground drop): impostata qui, dopo TaskFactory, così haul_resource.tres resta
-			# invariata (vedi PickUpAction.SourceKind).
-			(step as PickUpAction).source_kind = source_kind as PickUpAction.SourceKind
 			_reconnect_pickup_action_signals(step as PickUpAction)
 			break
-	return task
 
 
 # Ripetizione automatica della raccolta (2026-09-20, richiesta utente): PickUpAction.repeat_requested. Genera una
@@ -4124,7 +3939,8 @@ func _queue_pickup_repeat(owner: HumanIndividual, next_repeat_count: int, zone: 
 				owner.id, owner.name, next_repeat_count, TaskQueueService.MAX_QUEUE_SIZE
 			])
 		return
-	var repeat_task := _build_haul_zone_task(zone, true, next_repeat_count, owner)
+	var repeat_task := TaskBuilderService.build_haul_zone_task(zone, true, next_repeat_count)
+	_connect_haul_zone_step_appended(repeat_task, owner)
 	TaskQueueService.push_suspended_task(owner, repeat_task)
 
 
@@ -4251,7 +4067,7 @@ func _order_hunt(selected: Array[HumanIndividual]) -> void:
 	])
 	var hunters: Array[HumanIndividual] = []
 	for member in selected:
-		var probe := _build_hunt_zone_task(-1)
+		var probe := TaskBuilderService.build_hunt_zone_task(-1)
 		if probe == null:
 			HuntZoneService.log_event(member, "Task di prova NON creata (%s non caricabile) — controllo di età/stamina saltato." % HuntZoneService.TASK_DEFINITION_PATH)
 		else:
@@ -4350,30 +4166,13 @@ func _on_hunt_order_confirmed(meat_target: int, butcher_destination: String = ""
 	}, valid_ids)
 
 
-# Task di caccia in zona (hunt_zone.tres, inizia con PatrolAreaAction) per la WorkArea `area_id`. La zona resta nel
-# context (HuntZoneService.CONTEXT_WORK_AREA_ID) per etichetta, scelta della preda e ritorno alla pattuglia.
-# `series` (2026-10-01, passo 2b): serie fino a un limite di carne ({} = una sola caccia).
-func _build_hunt_zone_task(area_id: int, series: Dictionary = {}) -> Task:
-	var definition := load(HuntZoneService.TASK_DEFINITION_PATH) as TaskDefinition
-	if definition == null:
-		return null
-	var task := TaskFactory.build_task(definition, {HuntZoneService.FACTORY_WORK_AREA_KEY: area_id})
-	task.context[HuntZoneService.CONTEXT_WORK_AREA_ID] = area_id
-	if not series.is_empty():
-		task.context[HuntZoneService.CONTEXT_MEAT_SERIES] = series
-		# Destinazione della macellazione scelta nel dialog (2026-10-03): vale per ogni caccia della serie.
-		if series.has("butcher_destination"):
-			task.context[ButcherDestinationService.CONTEXT_KEY] = String(series["butcher_destination"])
-	return task
-
-
 # `silent` (2026-10-09, ordini di caccia del cassetto): nessun messaggio né icona, come le prese degli altri ordini.
 # `tools_from_storage` (2026-10-11, ordini di zona della coda): chi parte va prima a prendere in deposito il coltello o
 # l'arma che non ha (_start_zone_order_tool_fetch, subito dopo): niente controllo del coltello qui.
 func _assign_work_area_hunt(hunter: HumanIndividual, area: WorkArea, series: Dictionary = {}, silent: bool = false, tools_from_storage: bool = false) -> void:
 	if hunter == null or area == null or not human_individuals.has(hunter):
 		return
-	var task := _build_hunt_zone_task(area.id, series)
+	var task := TaskBuilderService.build_hunt_zone_task(area.id, series)
 	if task == null:
 		HuntZoneService.log_event(hunter, "Task NON creata per la zona %s #%d." % [area.name, area.id])
 		return
@@ -4445,7 +4244,7 @@ func _on_hunt_zone_series_continue_requested(hunter: HumanIndividual, series: Di
 		HuntZoneService.log_event(hunter, "serie di caccia chiusa: %s" % knife_rejection)
 		_report_command_rejection(hunter, knife_rejection)
 		return
-	var task := _build_hunt_zone_task(area.id, series)
+	var task := TaskBuilderService.build_hunt_zone_task(area.id, series)
 	if task == null:
 		return
 	# Coltello dallo zaino in cintura (2026-10-09, regola generale degli attrezzi).
@@ -4795,7 +4594,7 @@ func _on_quarry_zone_series_continue_requested(worker: HumanIndividual, series: 
 	if rock == null:
 		_report_series_stopped(worker, series, tr("series_stop_no_rock"))
 		return
-	var task := _build_quarry_task(worker, area.macro_coords, rock, area.id, series)
+	var task := TaskBuilderService.build_quarry_task(worker, area.macro_coords, rock, area.id, series)
 	if task == null:
 		return
 	for step in task.steps:
@@ -4943,7 +4742,7 @@ func _on_cut_zone_series_continue_requested(worker: HumanIndividual, series: Dic
 	if plant.is_empty():
 		_report_cut_series_stopped(worker, series, tr("series_stop_no_plant"))
 		return
-	var task := _build_cut_task(worker, plant, area.id, series)
+	var task := TaskBuilderService.build_cut_task(worker, plant, area.id, series)
 	if task == null:
 		return
 	for step in task.steps:
@@ -4968,7 +4767,7 @@ func _continue_cut_cell_series(worker: HumanIndividual, series: Dictionary) -> v
 			"tools": _describe_missing_tool_categories([TaskTypes.ToolCategory.CHOPPING]),
 		}))
 		return
-	var task := _build_cut_task(worker, plant, -1, series)
+	var task := TaskBuilderService.build_cut_task(worker, plant, -1, series)
 	if task == null:
 		return
 	for step in task.steps:
@@ -5050,7 +4849,7 @@ func _on_work_area_gather_choice(workers: Array[HumanIndividual], kind: int, cat
 
 
 # Ordine di raccolta nella zona `area` (`order`: kind/category/resource_name/repeat). La Task è quella della raccolta su
-# zona (_build_haul_zone_task) con work_area_id e il filtro dell'ordine nel context; stessi controlli di idoneità e
+# zona (TaskBuilderService.build_haul_zone_task) con work_area_id e il filtro dell'ordine nel context; stessi controlli di idoneità e
 # icona del clic su una cella (sul centro della zona, se la sua macrocella è viva).
 # `silent` (2026-10-09, presa dalla lista dei lavori — ordini "Raccogli" del cassetto): nessun avviso, popup né X.
 # `drawer_order_id` (stesso giorno): ordine del cassetto, scritto nella zona (viaggia con le ripetizioni) per sapere chi ci
@@ -5070,7 +4869,8 @@ func _assign_work_area_gather(worker: HumanIndividual, area: WorkArea, order: Di
 	# Raccolta del magazzino (2026-10-11): lo zaino si riempie con quello che serve (HaulZoneService.STOCK_FILL_KEY).
 	if bool(order.get("stock_fill", false)):
 		zone[HaulZoneService.STOCK_FILL_KEY] = true
-	var task := _build_haul_zone_task(zone, repeat, 0, worker)
+	var task := TaskBuilderService.build_haul_zone_task(zone, repeat, 0)
+	_connect_haul_zone_step_appended(task, worker)
 	var icon_cell: LiveMacroCell = live_cells.get(area.macro_coords)
 	var icon_position: Vector2i = area.rect.position + area.rect.size / 2
 	var rejection := worker.get_assign_rejection_reason(task, _resolve_age_band(worker))
@@ -5197,23 +4997,8 @@ func _pick_valid_work_area_at_mouse() -> WorkArea:
 	return best
 
 
-# Costruisce la Task di raccolta su zona senza assegnarla (2026-09-27, work areas passo 2): primo step "cerca nella
-# zona" (HAUL_RESOURCE_ZONE_TASK_DEFINITION_PATH), la zona (HaulZoneService) e la ripetizione nel context. Walk e
-# PickUp nascono a runtime dalla ricerca: i loro segnali (e quelli dell'Unload che seguirà) si collegano via
-# step_appended (_connect_haul_zone_step_appended). `owner` e' l'individuo proprietario della Task.
-func _build_haul_zone_task(zone: Dictionary, repeat_enabled: bool, repeat_count: int, owner: HumanIndividual) -> Task:
-	var definition := load(HAUL_RESOURCE_ZONE_TASK_DEFINITION_PATH) as TaskDefinition
-	var context: Dictionary = {HaulZoneService.CONTEXT_KEY: zone}
-	# Chiavi di TaskRepeatRules nel context per tutta la vita della Task, come in _build_pickup_task.
-	if repeat_enabled:
-		TaskRepeatRules.write(context, true, repeat_count)
-	var task := TaskFactory.build_task(definition, context)
-	_connect_haul_zone_step_appended(task, owner)
-	return task
-
-
 # Segnali degli step accodati alla raccolta su zona: PickUp (refresh della cella e ripetizione) e Unload, gli stessi
-# che _build_pickup_task collega. Anche dopo un reload, per una raccolta che non ha ancora fatto la ricerca
+# che _wire_pickup_task collega. Anche dopo un reload, per una raccolta che non ha ancora fatto la ricerca
 # (_haul_zone_task_awaits_search, vedi _reconnect_loaded_task_signals).
 func _connect_haul_zone_step_appended(task: Task, owner: HumanIndividual) -> void:
 	task.step_appended.connect(func(action: Action) -> void:
@@ -5235,7 +5020,6 @@ func _haul_zone_task_awaits_search(task: Task) -> bool:
 		if step is PickUpAction:
 			return false
 	return true
-
 
 
 # Numero di lampeggi e durata di ciascuna metà-ciclo (buio->chiaro o chiaro->buio) dell'effetto
@@ -5553,8 +5337,6 @@ func _build_pickup_pending_resources(available_candidates: Array[Dictionary]) ->
 # Stessa forma per i due: click destro sul bersaglio con l'attrezzo giusto, popup "Raccogli" / lavoro quando nel punto
 # c'è anche qualcosa da raccogliere, un solo pipottino per bersaglio (_find_target_holder), coda dietro i lavori dello
 # stesso tipo (_assign_extraction_task) e consegna della resa "fino a mucchio vuoto" (Action.drop_yield_and_queue_haul).
-const CUT_TASK_DEFINITION_PATH := "res://gameplay/scripts/tasks/definitions/cut.tres"
-const QUARRY_TASK_DEFINITION_PATH := "res://gameplay/scripts/tasks/definitions/quarry.tres"
 const EXTRACTION_CHOICE_GATHER := "gather"
 const EXTRACTION_CHOICE_CUT := "cut"
 # Riga "Tutte le piante (N)" in testa all'elenco sotto "Taglia" (2026-10-07): serie su tutta la microcella cliccata.
@@ -5929,34 +5711,11 @@ func _assign_cut_task(worker: HumanIndividual, plant: Dictionary, work_area_id: 
 		_spawn_command_icon_at_microcell(cell, lot, "task_rejected")
 		_report_command_rejection(worker, tr("cut_reject_reserved").format({"name": holder.name}))
 		return
-	var task := _build_cut_task(worker, plant, work_area_id, series)
+	var task := TaskBuilderService.build_cut_task(worker, plant, work_area_id, series)
 	if task == null:
 		return
 	var cut_yield := PlantCutService.compute_yield(cell.macro_state, object_type, individual_key, game_data.year)
 	_assign_extraction_task(worker, task, cell, lot, "task_activity_cut", "cut", String(cut_yield.get("resource_name", "")), silent)
-
-
-# Task Cut (Walk + Cut) su `plant` ({"macro_coords", "object_type", "individual_key"}), senza assegnarla; zona e serie
-# nel context (vedi _assign_cut_task). null se la definizione non si carica.
-func _build_cut_task(worker: HumanIndividual, plant: Dictionary, work_area_id: int = -1, series: Dictionary = {}) -> Task:
-	var definition := load(CUT_TASK_DEFINITION_PATH) as TaskDefinition
-	if definition == null:
-		return null
-	var macro_coords: Vector2i = plant["macro_coords"]
-	var individual_key: Vector3i = plant["individual_key"]
-	var lot := Vector2i(individual_key.x, individual_key.y)
-	var macro_offset: Vector2 = Vector2(macro_coords - worker.home_macro_coords) * World.WIDTH
-	var task := TaskFactory.build_task(definition, {
-		"target_position": PathfindingService.random_point_in_microcell(Vector2(lot) + macro_offset),
-		"cut_macro_coords": macro_coords,
-		"cut_object_type": plant["object_type"],
-		"cut_individual_key": individual_key,
-	})
-	if work_area_id != -1:
-		task.context[CutZoneService.CONTEXT_WORK_AREA_ID] = work_area_id
-	if not series.is_empty():
-		task.context[CutZoneService.CONTEXT_SERIES] = series.duplicate()
-	return task
 
 
 # Costruisce e assegna la Task Quarry (Walk + Quarry) sulla roccia `rock` ({"macro_coords", "position"}). Rifiuto con
@@ -5988,31 +5747,12 @@ func _assign_quarry_task(worker: HumanIndividual, rock: Dictionary, work_area_id
 		_spawn_command_icon_at_microcell(cell, rock_position, "task_rejected")
 		_report_command_rejection(worker, tr("quarry_reject_reserved").format({"name": holder.name}))
 		return
-	var task := _build_quarry_task(worker, macro_coords, rock_position, work_area_id, series)
+	var task := TaskBuilderService.build_quarry_task(worker, macro_coords, rock_position, work_area_id, series)
 	if task == null:
 		return
 	var rock_rules := ResourceCalculator.get_density_rules(GameTypes.WorldObjectType.ROCK)
 	var quarry_product: String = rock_rules.extraction_yield_resource_name if rock_rules != null else ""
 	_assign_extraction_task(worker, task, cell, rock_position, "task_activity_quarry", "quarry", quarry_product, silent)
-
-
-# Task Quarry (Walk + Quarry) sulla roccia `rock_position` della macrocella `macro_coords`, senza assegnarla; zona e serie
-# nel context (vedi _assign_quarry_task). null se la definizione non si carica.
-func _build_quarry_task(worker: HumanIndividual, macro_coords: Vector2i, rock_position: Vector2i, work_area_id: int = -1, series: Dictionary = {}) -> Task:
-	var definition := load(QUARRY_TASK_DEFINITION_PATH) as TaskDefinition
-	if definition == null:
-		return null
-	var macro_offset: Vector2 = Vector2(macro_coords - worker.home_macro_coords) * World.WIDTH
-	var task := TaskFactory.build_task(definition, {
-		"target_position": PathfindingService.random_point_in_microcell(Vector2(rock_position) + macro_offset),
-		"quarry_macro_coords": macro_coords,
-		"quarry_position": rock_position,
-	})
-	if work_area_id != -1:
-		task.context[QuarryZoneService.CONTEXT_WORK_AREA_ID] = work_area_id
-	if not series.is_empty():
-		task.context[QuarryZoneService.CONTEXT_SERIES] = series.duplicate()
-	return task
 
 
 # Assegnazione comune di una Task di ricavo già costruita (taglio, estrazione): segnali, idoneità, poi coda. Se `worker`
@@ -6660,7 +6400,6 @@ const DEMOLISH_TASK_NAMES: Array[String] = ["task_demolish_name"]
 const BUILD_AND_DEMOLISH_TASK_NAMES: Array[String] = ["task_build_name", "task_demolish_name"]
 # Riparazione (2026-10-10, repair.tres) — vedi _on_repair_requested.
 const REPAIR_TASK_NAMES: Array[String] = ["task_repair_name"]
-const REPAIR_TASK_DEFINITION_PATH := "res://gameplay/scripts/tasks/definitions/repair.tres"
 
 
 # "Ripara" dal pannello edificio (2026-10-10, richiesta utente). Senza l'idea dell'assegnazione: mirino rosso per scegliere
@@ -6711,24 +6450,6 @@ func _can_assign_repair(building: Building) -> bool:
 	return _resolve_individuals_working_on_building(building, REPAIR_TASK_NAMES).is_empty()
 
 
-# Repair Task per `worker` su `building` (Walk fino a un punto della microcella, poi Repair), mai assegnata qui.
-func _build_repair_task(worker: HumanIndividual, building: Building) -> Task:
-	var definition := load(REPAIR_TASK_DEFINITION_PATH) as TaskDefinition
-	if definition == null:
-		return null
-	# Stessa formula cross-macrocella e jitter di _build_produce_task.
-	var macro_coords := Vector2i(building.macro_x, building.macro_y)
-	var macro_offset: Vector2 = Vector2(macro_coords - worker.home_macro_coords) * World.WIDTH
-	var jitter := Vector2(randf_range(0.15, 0.85), randf_range(0.15, 0.85))
-	var task := TaskFactory.build_task(definition, {
-		"target_position": Vector2(building.micro_x, building.micro_y) + jitter + macro_offset,
-		"target_building": building,
-	})
-	if task != null:
-		task.debug_target_key = "repair:%d" % building.id
-	return task
-
-
 # Repair Task (Walk -> Repair) per `worker` su `building`: un solo riparatore per edificio; rifiuti con la X sul
 # bersaglio e il motivo, come gli altri comandi. Assegnata: martello sull'edificio, come la Build.
 func _assign_repair_task(worker: HumanIndividual, building: Building) -> void:
@@ -6743,7 +6464,7 @@ func _assign_repair_task(worker: HumanIndividual, building: Building) -> void:
 				_spawn_command_icon_at_microcell(live_cells[macro_coords], microcell, "task_rejected")
 		_refresh_selected_building_panel()
 		return
-	var task := _build_repair_task(worker, building)
+	var task := TaskBuilderService.build_repair_task(worker, building)
 	if task == null:
 		return
 	var rejection := worker.get_assign_rejection_reason(task, _resolve_age_band(worker))
@@ -7066,8 +6787,7 @@ func _try_assign_build_command_on_right_click(event: InputEvent) -> bool:
 # il rito diventa Building.requested_rite_id e il lavoro "rite:<id>" entra in coda (_rite_jobs_collect), con "Assegna"
 # (mirino) e X sulla riga del rito nel pannello. Il destro su edificio con un pipottino selezionato non avvia più riti
 # (sul focolare è il trasporto). Un rito alla volta per edificio (_building_has_active_rite / requested_rite_id).
-# Task rite.tres [Walk → Rite]; il funerale resta nella task Seppellisci.
-const RITE_TASK_DEFINITION_PATH := "res://gameplay/scripts/tasks/definitions/rite.tres"
+# Task rite.tres [Walk → Rite]: TaskBuilderService.build_rite_task; il funerale resta nella task Seppellisci.
 # Nome della task del rito ORDINATO dal giocatore: solo questa ha icona di comando e avviso "Rito interrotto" (il rito
 # spontaneo, task_leisure_rite_name, no).
 const RITE_TASK_NAME := "task_rite_name"
@@ -7103,18 +6823,10 @@ func _assign_rite_task(worker: HumanIndividual, target_building: Building, rite_
 			_refresh_selected_individual_panel()
 		_refresh_selected_building_panel()
 		return
-	var definition := load(RITE_TASK_DEFINITION_PATH) as TaskDefinition
-	if definition == null:
-		return
-	var macro_offset: Vector2 = Vector2(Vector2i(target_building.macro_x, target_building.macro_y) - worker.home_macro_coords) * World.WIDTH
-	var task := TaskFactory.build_task(definition, {
-		"target_position": PathfindingService.random_point_in_microcell(Vector2(target_building.micro_x, target_building.micro_y) + macro_offset),
-		"rite_target_building": target_building,
-		"rite_id": rite_id,
-	})
 	# Rito ordinato (2026-10-14): al completamento evade l'ordine dell'edificio (RiteAction.on_complete).
-	task.context[RiteService.CONTEXT_ORDERED] = true
-	task.debug_target_key = "rite:%d" % target_building.id
+	var task := TaskBuilderService.build_rite_task(worker, target_building, rite_id)
+	if task == null:
+		return
 	var rejection := worker.get_assign_rejection_reason(task, age_band)
 	if rejection != HumanIndividual.ASSIGN_OK:
 		_report_assign_rejection(worker, rejection, "task_activity_rite")
@@ -7487,8 +7199,6 @@ const WORKER_PICK_CURSOR_COLOR := Color(0.9, 0.15, 0.15, 1.0)
 var _worker_pick_cursor: ImageTexture = null
 var worker_pick_banner: PanelContainer
 var worker_pick_banner_label: Label
-
-const PRODUCE_TASK_DEFINITION_PATH := "res://gameplay/scripts/tasks/definitions/produce.tres"
 
 
 # true se l'edificio ha già tante Produce Task assegnate quante ne ammette (BuildingRules.
@@ -7890,7 +7600,7 @@ func _assign_produce_task(worker: HumanIndividual, target_building: Building, re
 	if not is_reassignment and not ProductionService.has_output_room(target_building, resource_name):
 		return
 	quantity = clampi(quantity, 1, ProductionService.get_max_order_quantity(target_building))
-	var task := _build_produce_task(worker, target_building, resource_name, quantity, deliver_to_warehouse)
+	var task := TaskBuilderService.build_produce_task(worker, target_building, resource_name, quantity, deliver_to_warehouse)
 	if task == null:
 		return
 
@@ -8010,42 +7720,11 @@ func _assign_produce_task(worker: HumanIndividual, target_building: Building, re
 		print("[PRODUCE] Task di produzione '%s' x%d assegnata a #%d %s presso l'edificio #%d." % [resource_name, quantity, worker.id, worker.name, target_building.id])
 
 
-# Produce Task [Walk → Produce] di `quantity` pezzi di `resource_name` presso `target_building` (mai assegnata qui): la
-# stessa dell'assegnazione a mano, usata anche come task di prova dalla lista dei lavori (_produce_job_rejection). null se
-# la definizione non si carica.
-func _build_produce_task(worker: HumanIndividual, target_building: Building, resource_name: String, quantity: int, deliver_to_warehouse: bool) -> Task:
-	var definition := load(PRODUCE_TASK_DEFINITION_PATH) as TaskDefinition
-	if definition == null:
-		return null
-	# Stessa formula cross-macrocella di _resolve_transport_context, più il jitter interno alla cella
-	# di Building.get_resumable_task_context (lavoratori diversi non si fermano nello stesso punto).
-	var macro_offset: Vector2 = Vector2(Vector2i(target_building.macro_x, target_building.macro_y) - worker.home_macro_coords) * World.WIDTH
-	var jitter := Vector2(randf_range(0.15, 0.85), randf_range(0.15, 0.85))
-	var target_position: Vector2 = Vector2(target_building.micro_x, target_building.micro_y) + jitter + macro_offset
-	var task := TaskFactory.build_task(definition, {
-		"target_position": target_position,
-		"target_building": target_building,
-		"produce_resource_name": resource_name,
-		"produce_quantity": quantity,
-	})
-	task.debug_target_key = "production:%d" % target_building.id
-	# Nome del prodotto per il pannello individuo (Task.get_activity_description): chiave NON consumata
-	# da TaskFactory, resta in task.context per tutta la vita della Task (e nel salvataggio).
-	task.context["production_resource_name"] = resource_name
-	task.context["production_quantity"] = quantity
-	# Consegna al magazzino a ordine finito (2026-09-26): letta dallo step di consegna (RetrieveAction), salvata col context.
-	task.context[RetrieveAction.CONTEXT_DELIVER_TO_WAREHOUSE] = deliver_to_warehouse
-	return task
-
-
 # ============================================================================================
 # Caccia (2026-09-26, richiesta utente — caccia, step 2: avvicinamento alla preda)
 # ============================================================================================
 
 const HUNT_TASK_DEFINITION_PATH := "res://gameplay/scripts/tasks/definitions/hunt.tres"
-# Macellazione (2026-09-26, richiesta utente): Walk verso la carcassa -> Butcher -> PickUp dal mucchio. Vedi
-# _try_assign_butcher_command_on_right_click.
-const BUTCHER_TASK_DEFINITION_PATH := "res://gameplay/scripts/tasks/definitions/butcher.tres"
 
 
 # Comando "macella" (2026-09-26, richiesta utente): click destro su una carcassa a terra con un individuo
@@ -8067,7 +7746,8 @@ func _try_assign_butcher_command_on_right_click(event: InputEvent) -> bool:
 	var cell: LiveMacroCell = live_cells.get(pile.macro_coords)
 	if cell == null or cell.macro_state == null:
 		return false
-	var task := _build_butcher_task(individual, pile, int(pile.carcasses[0]["id"]), cell)
+	var task := TaskBuilderService.build_butcher_task(individual, pile, int(pile.carcasses[0]["id"]), cell.macro_state)
+	_wire_butcher_task(task, individual)
 	if task == null:
 		return false
 
@@ -8093,47 +7773,16 @@ func _try_assign_butcher_command_on_right_click(event: InputEvent) -> bool:
 	return true
 
 
-# Task di macellazione (butcher.tres) per `worker` sulla carcassa `carcass_id` del mucchio `pile` (cella viva
-# `cell`): Walk verso il mucchio, Butcher, PickUp di tutto dal mucchio (sorgente GROUND_PILE, criterio ALL), con lo
-# stesso cablaggio di _build_pickup_task (segnali di raccolta e dello scarico accodato). Condivisa dal comando
-# (click destro) e dalla macellazione automatica dopo la caccia. null se la definizione non si carica.
-# `butcher_destination` (2026-10-03, ButcherDestinationService): dove portare i prodotti, nel context della Task. Il
-# comando manuale (click destro sulla carcassa) usa il default, il focolare: il comportamento di prima.
-func _build_butcher_task(
-	worker: HumanIndividual, pile: GroundPile, carcass_id: int, cell: LiveMacroCell,
-	butcher_destination: String = ButcherDestinationService.CAMPFIRE
-) -> Task:
-	var definition := load(BUTCHER_TASK_DEFINITION_PATH) as TaskDefinition
-	if definition == null:
-		return null
-	var macro_offset: Vector2 = Vector2(pile.macro_coords - worker.home_macro_coords) * World.WIDTH
-	var task := TaskFactory.build_task(definition, {
-		"target_position": pile.get_position() + macro_offset,
-		"butcher_macro_coords": pile.macro_coords,
-		"butcher_microcell": pile.microcell,
-		"butcher_carcass_id": carcass_id,
-		"pickup_position": pile.microcell,
-		"macro_state": cell.macro_state,
-		"resource_name": "meat",
-		"pickup_criterion_kind": PickUpAction.CriterionKind.ALL,
-		"pickup_criterion_category": -1,
-	})
-	# Scarico (2026-09-27; dal 2026-10-03 secondo la destinazione scelta, ButcherDestinationService): focolare = la carne
-	# al focolare più vicino con posto e il resto al magazzino; essiccatoio = carne e pelli all'essiccatoio; magazzino.
-	task.context[ButcherDestinationService.CONTEXT_KEY] = butcher_destination
-	# Più viaggi (2026-10-01): consegnato il carico si torna a questo mucchio finché ha prodotti della macellazione
-	# (HumanIndividualActionService._continue_butcher_pile_trips). Vale per caccia diretta e comando manuale.
-	task.context[ButcherAction.CONTEXT_PILE_TRIPS] = {
-		"macro_x": pile.macro_coords.x, "macro_y": pile.macro_coords.y,
-		"micro_x": pile.microcell.x, "micro_y": pile.microcell.y,
-		"last_total": -1,
-	}
-	_connect_butcher_step_appended(task, worker)
+# Segnali della macellazione costruita da TaskBuilderService.build_butcher_task (2026-10-17, refactoring GameScene
+# blocco 1 — estratto da _build_butcher_task, stessi collegamenti di prima): step accodati a runtime
+# (_connect_butcher_step_appended) e PickUp dal mucchio, come per la raccolta.
+func _wire_butcher_task(task: Task, owner: HumanIndividual) -> void:
+	if task == null:
+		return
+	_connect_butcher_step_appended(task, owner)
 	for step in task.steps:
 		if step is PickUpAction:
-			(step as PickUpAction).source_kind = PickUpAction.SourceKind.GROUND_PILE
 			_reconnect_pickup_action_signals(step as PickUpAction)
-	return task
 
 
 # Step aggiunti a runtime alla Task di macellazione: Walk + Unload del giro di consegna e, dal 2026-10-01, Walk + PickUp
@@ -8192,9 +7841,10 @@ func _on_butcher_after_hunt_requested(hunter: HumanIndividual, carcass: Dictiona
 		_note_unbutchered_carcass(macro_coords, microcell, carcass_id)
 		return
 	# Destinazione scelta nell'ordine di caccia (2026-10-03), passata dalla caccia con la carcassa; senza, il focolare.
-	var task := _build_butcher_task(
-		hunter, pile, carcass_id, cell, String(carcass.get("butcher_destination", ButcherDestinationService.CAMPFIRE))
+	var task := TaskBuilderService.build_butcher_task(
+		hunter, pile, carcass_id, cell.macro_state, String(carcass.get("butcher_destination", ButcherDestinationService.CAMPFIRE))
 	)
+	_wire_butcher_task(task, hunter)
 	if task == null:
 		HuntService.log_event(hunter, "macellazione non accodata: task non creata, la carcassa #%d resta a terra." % carcass_id)
 		_note_unbutchered_carcass(macro_coords, microcell, carcass_id)
@@ -9070,16 +8720,12 @@ func _give_visitor_dowry(party: VisitorParty, member_index: int, newcomer: Human
 		)
 	var assigned := false
 	if warehouse != null:
-		var macro_offset: Vector2 = Vector2(Vector2i(warehouse.macro_x, warehouse.macro_y) - newcomer.home_macro_coords) * World.WIDTH
-		# Punto casuale dentro la microcella del magazzino, mai l'angolo esatto (2026-09-27).
-		var walk := WalkAction.new(PathfindingService.random_point_in_microcell(Vector2(warehouse.micro_x, warehouse.micro_y) + macro_offset))
-		var unload := UnloadAction.new(warehouse, UnloadAction.DepositKind.RESOURCE)
-		_reconnect_unload_action_signals(unload, newcomer)
-		var task := Task.new([walk, unload])
-		task.task_name = "task_unload_resource_name"
-		task.step_descriptions = ["task_unload_resource_step_walk", "task_unload_resource_step_unload"]
-		task.is_suspendable = true
-		assigned = newcomer.assign_task(task, _resolve_age_band(newcomer))
+		var task := TaskBuilderService.build_unload_resource_task(newcomer, warehouse)
+		if task != null:
+			for step in task.steps:
+				if step is UnloadAction:
+					_reconnect_unload_action_signals(step as UnloadAction, newcomer)
+			assigned = newcomer.assign_task(task, _resolve_age_band(newcomer))
 	var added := newcomer.add_carried_resource(resource_name, quantity)
 	if DebugLogging.ENABLED:
 		print("[VISITORS] Dote di #%d %s: %d %s nello zaino, %s." % [
@@ -9349,7 +8995,7 @@ func _assign_bury_task(worker: HumanIndividual, body_id: int, silent: bool = fal
 			_spawn_bury_command_icon(record, "task_rejected")
 			_report_command_rejection(worker, tr("bury_reject_no_mound").format({"name": worker.name, "body": body_name}))
 		return
-	var task := _make_bury_task(worker, record, body_id, mound)
+	var task := BodyBurialService.build_bury_task(worker, record, body_id, mound)
 	if task == null:
 		return
 	var rejection := worker.get_assign_rejection_reason(task, _resolve_age_band(worker))
@@ -9383,26 +9029,6 @@ func _resolve_bury_mound(record: Dictionary, body_id: int) -> Building:
 		if BodyBurialService.is_mound_usable(slab_mound, body_id, human_individuals):
 			return slab_mound
 	return BodyBurialService.find_nearest_mound(Vector2(record["position"]), Vector2i(record["home_macro_coords"]), body_id, human_individuals)
-
-
-# Task Seppellisci di `worker` per il corpo `record` verso `mound` (estratta il 2026-10-07 da _assign_bury_task, usata
-# anche come task di prova dalla lista dei lavori). null se bury.tres non si carica.
-func _make_bury_task(worker: HumanIndividual, record: Dictionary, body_id: int, mound: Building) -> Task:
-	var definition := load(BodyBurialService.BURY_TASK_DEFINITION_PATH) as TaskDefinition
-	if definition == null:
-		push_error("GameScene._make_bury_task: %s non caricabile." % BodyBurialService.BURY_TASK_DEFINITION_PATH)
-		return null
-	var context := {
-		"target_position": BodyBurialService.get_body_position_relative_to(record, worker.home_macro_coords),
-		BodyBurialService.CONTEXT_BODY_ID: body_id,
-		BodyBurialService.CONTEXT_MOUND_ID: mound.id,
-		BodyBurialService.CONTEXT_BODY_NAME: BodyBurialService.get_body_name(record),
-		BodyBurialService.CONTEXT_RITE_BUILDING: null,
-		BodyBurialService.CONTEXT_RITE_ID: BodyBurialService.FUNERAL_RITE_ID,
-	}
-	var task := TaskFactory.build_task(definition, context)
-	BodyBurialService.skip_transport_if_on_slab(task, worker)
-	return task
 
 
 # Icona di comando sul corpo (esito del comando Seppellisci), nel punto esatto in cui è disegnato. Comando accettato:
@@ -10046,7 +9672,7 @@ func _job_board_providers() -> Array[Dictionary]:
 		# Riparazioni richieste (2026-10-10): edifici con Building.repair_requested, vedi _repair_jobs_collect.
 		_job_board_provider_list.append({
 			"collect": _repair_jobs_collect,
-			"probe_key": func(_job: Dictionary) -> String: return REPAIR_TASK_DEFINITION_PATH,
+			"probe_key": func(_job: Dictionary) -> String: return TaskBuilderService.REPAIR_TASK_DEFINITION_PATH,
 			"rejection": _repair_job_rejection,
 			"assign": func(worker: HumanIndividual, job: Dictionary) -> void: _assign_repair_task(worker, job["target"]),
 			"workers": func(job: Dictionary) -> Array[HumanIndividual]: return _resolve_individuals_working_on_building(job["target"], REPAIR_TASK_NAMES),
@@ -10104,7 +9730,7 @@ func _job_board_providers() -> Array[Dictionary]:
 		# Inventario del magazzino (2026-10-11): un lavoro alla volta quando è scaduto, vedi _inventory_jobs_collect.
 		_job_board_provider_list.append({
 			"collect": _inventory_jobs_collect,
-			"probe_key": func(_job: Dictionary) -> String: return INVENTORY_TASK_DEFINITION_PATH,
+			"probe_key": func(_job: Dictionary) -> String: return TaskBuilderService.INVENTORY_TASK_DEFINITION_PATH,
 			"rejection": _inventory_job_rejection,
 			"assign": _assign_inventory_job,
 			"workers": func(_job: Dictionary) -> Array[HumanIndividual]: return _inventory_workers(),
@@ -10716,7 +10342,7 @@ func _rite_job_rejection(worker: HumanIndividual, job: Dictionary) -> String:
 	if rules is SocialRiteRules:
 		var social_rejection := SocialRiteService.get_start_rejection(building, rules as SocialRiteRules, human_individuals, game_data)
 		return social_rejection if social_rejection != "" else HumanIndividual.ASSIGN_OK
-	var definition := load(RITE_TASK_DEFINITION_PATH) as TaskDefinition
+	var definition := load(TaskBuilderService.RITE_TASK_DEFINITION_PATH) as TaskDefinition
 	if definition == null:
 		return "definizione mancante"
 	var probe := TaskFactory.build_task(definition, {
@@ -10745,7 +10371,7 @@ func _repair_job_keys(building: Building) -> Array[String]:
 
 # Motivo per cui `worker` non potrebbe ricevere la Repair Task (HumanIndividual.ASSIGN_OK se può), su una task di prova.
 func _repair_job_rejection(worker: HumanIndividual, job: Dictionary) -> String:
-	var probe := _build_repair_task(worker, job["target"])
+	var probe := TaskBuilderService.build_repair_task(worker, job["target"])
 	if probe == null:
 		return "definizione mancante"
 	return worker.get_assign_rejection_reason(probe, _resolve_age_band(worker))
@@ -10949,14 +10575,14 @@ func _body_jobs_collect(provider: Dictionary, assigned: Dictionary) -> Array[Dic
 
 
 # Motivo per cui `worker` non potrebbe ricevere la sepoltura (HumanIndividual.ASSIGN_OK se può): la stessa task del clic
-# destro (_make_bury_task), mai assegnata.
+# destro (BodyBurialService.build_bury_task), mai assegnata.
 func _body_job_rejection(worker: HumanIndividual, job: Dictionary) -> String:
 	var record: Dictionary = job["target"]
 	var body_id := int(job["id"])
 	var mound := _resolve_bury_mound(record, body_id)
 	if mound == null:
 		return "nessun cumulo"
-	var task := _make_bury_task(worker, record, body_id, mound)
+	var task := BodyBurialService.build_bury_task(worker, record, body_id, mound)
 	if task == null:
 		return "definizione mancante"
 	return worker.get_assign_rejection_reason(task, _resolve_age_band(worker))
@@ -11215,14 +10841,14 @@ func _pile_has_storage(pile: GroundPile) -> bool:
 	return false
 
 
-# Idoneità alla presa: la consegna di prova (_build_pile_job_task, mai assegnata) passa il controllo di idoneità, e dal
+# Idoneità alla presa: la consegna di prova (TaskBuilderService.build_pile_job_task, mai assegnata) passa il controllo di idoneità, e dal
 # pipottino un magazzino raggiungibile accetta almeno una risorsa che gli entra a carico vuoto (lo stesso controllo
 # della consegna automatica, _on_ground_pile_haul_requested).
 func _pile_job_rejection(worker: HumanIndividual, job: Dictionary) -> String:
 	if not (job["target"] is GroundPile):
 		return "mucchio svuotato"
 	var pile: GroundPile = job["target"]
-	var task := _build_pile_job_task(worker, pile)
+	var task := TaskBuilderService.build_pile_job_task(worker, pile, _live_macro_state(pile.macro_coords))
 	if task == null:
 		return "mucchio non raggiungibile"
 	var rejection := worker.get_assign_rejection_reason(task, _resolve_age_band(worker))
@@ -11236,44 +10862,14 @@ func _pile_job_rejection(worker: HumanIndividual, job: Dictionary) -> String:
 	return "nessun magazzino raggiungibile"
 
 
-# Consegna del mucchio "fino a mucchio vuoto", come quella automatica dopo un taglio o un'estrazione
-# (_on_ground_pile_haul_requested con until_empty, senza serie né etichetta del lavoro): raccogli di tutto dal mucchio,
-# poi la catena di sempre (magazzino, cammino, scarico), ripetuta finché il mucchio ha qualcosa. null se la cella del
-# mucchio non è viva.
-func _build_pile_job_task(worker: HumanIndividual, pile: GroundPile) -> Task:
-	var cell: LiveMacroCell = live_cells.get(pile.macro_coords)
-	if cell == null or cell.macro_state == null:
-		return null
-	var resource_names := pile.get_resource_names()
-	if resource_names.is_empty():
-		return null
-	var task := _build_pickup_task(
-		cell, pile.microcell, resource_names[0], -1, PickUpAction.CriterionKind.ALL, -1, true, 0, worker,
-		PickUpAction.SourceKind.GROUND_PILE
-	)
-	if task == null:
-		return null
-	var pile_units := 0
-	for resource_name in resource_names:
-		pile_units += pile.get_quantity(resource_name)
-	var zone := HaulZoneService.make_zone(
-		pile.macro_coords, Rect2i(pile.microcell, Vector2i.ONE), PickUpAction.CriterionKind.ALL, -1, resource_names[0], -1,
-		PickUpAction.SourceKind.GROUND_PILE, maxi(pile_units, 1)
-	)
-	zone[HaulZoneService.UNTIL_EMPTY_KEY] = true
-	# "Ritiro mucchio (<risorsa>)" nella riga dell'individuo (2026-10-09): la risorsa se è una sola.
-	zone[HaulZoneService.PILE_RESOURCE_KEY] = resource_names[0] if resource_names.size() == 1 else ""
-	task.context[HaulZoneService.CONTEXT_KEY] = zone
-	return task
-
-
 # Assegnazione dalla lista: la consegna come task corrente del pipottino libero, in silenzio (nessuna icona di rifiuto
 # né messaggio). Riuscita: la manina sul mucchio, come per l'ordine a mano, e il mucchio esce dall'attesa.
 func _assign_pile_job(worker: HumanIndividual, job: Dictionary) -> void:
 	if not (job["target"] is GroundPile):
 		return
 	var pile: GroundPile = job["target"]
-	var task := _build_pile_job_task(worker, pile)
+	var task := TaskBuilderService.build_pile_job_task(worker, pile, _live_macro_state(pile.macro_coords))
+	_wire_pickup_task(task, worker)
 	if task == null:
 		return
 	if not worker.assign_task(task, _resolve_age_band(worker)) or (worker.current_task != task and not worker.task_queue.has(task)):
@@ -11370,16 +10966,13 @@ func _mark_board_cargo_return(task: Task) -> void:
 # modalità deliver_to_warehouse: solo dai Prodotti finiti, un carico pieno di UNA risorsa, quella con più pezzi), poi
 # la ricerca del magazzino di sempre accoda cammino e scarico. Se dopo il viaggio l'ordine è ancora fermo, il lavoro
 # rientra in coda da solo (ricalcolo a ogni giro). Assegnato = una task, in corso o in coda, con
-# CONTEXT_OUTPUT_JOB_BUILDING_ID di quell'edificio. Nascosto mentre il pipottino dell'ordine fa già la sua consegna a
-# metà ordine (ProduceAction.CONTEXT_OUTPUT_DELIVERY_ROUND). Nessun magazzino che accetta il prodotto (cercato dalla
-# posizione dell'edificio): visibile ma non prendibile, come i mucchi.
+# TaskBuilderService.CONTEXT_OUTPUT_JOB_BUILDING_ID di quell'edificio. Nascosto mentre il pipottino dell'ordine fa
+# già la sua consegna a metà ordine (ProduceAction.CONTEXT_OUTPUT_DELIVERY_ROUND). Nessun magazzino che accetta il
+# prodotto (cercato dalla posizione dell'edificio): visibile ma non prendibile, come i mucchi.
 # ============================================================================================
 
 # Uscite piene dopo corpi, edifici e mucchi nelle righe del cassetto.
 const OUTPUT_JOB_SORT_OFFSET: float = 2000000.0
-const DELIVER_OUTPUT_TASK_DEFINITION_PATH := "res://gameplay/scripts/tasks/definitions/deliver_output.tres"
-# Id dell'edificio della consegna nel context della task (salvato con lei).
-const CONTEXT_OUTPUT_JOB_BUILDING_ID := "output_job_building_id"
 
 
 func _output_jobs_collect(provider: Dictionary, _assigned: Dictionary) -> Array[Dictionary]:
@@ -11484,14 +11077,14 @@ func _output_has_storage(building: Building, resource_name: String) -> bool:
 
 
 # Chi ha in carico quale uscita: id edificio -> Array[HumanIndividual], dalle task (in corso o in coda, non concluse)
-# con CONTEXT_OUTPUT_JOB_BUILDING_ID.
+# con TaskBuilderService.CONTEXT_OUTPUT_JOB_BUILDING_ID.
 func _collect_output_job_claims() -> Dictionary:
 	var claims: Dictionary = {}
 	for member in human_individuals:
 		for task in _member_open_tasks(member):
-			if not task.context.has(CONTEXT_OUTPUT_JOB_BUILDING_ID):
+			if not task.context.has(TaskBuilderService.CONTEXT_OUTPUT_JOB_BUILDING_ID):
 				continue
-			var building_id := int(task.context[CONTEXT_OUTPUT_JOB_BUILDING_ID])
+			var building_id := int(task.context[TaskBuilderService.CONTEXT_OUTPUT_JOB_BUILDING_ID])
 			if not claims.has(building_id):
 				claims[building_id] = []
 			if not (claims[building_id] as Array).has(member):
@@ -11521,38 +11114,14 @@ func _member_open_tasks(member: HumanIndividual) -> Array[Task]:
 	return tasks
 
 
-# Task di consegna (mai assegnata qui): cammino all'edificio, poi lo step di consegna di "Porta al deposito" per
-# `resource_name`, fino a tutti i pezzi che ha nei Prodotti finiti (lo step si limita da sé a zaino e magazzino). null se
-# l'edificio non è in una macrocella attiva o la definizione non si carica.
-func _build_output_job_task(worker: HumanIndividual, building: Building, resource_name: String) -> Task:
-	var macro_coords := Vector2i(building.macro_x, building.macro_y)
-	if not live_cells.has(macro_coords) or resource_name == "":
-		return null
-	var definition := load(DELIVER_OUTPUT_TASK_DEFINITION_PATH) as TaskDefinition
-	if definition == null:
-		return null
-	var macro_offset: Vector2 = Vector2(macro_coords - worker.home_macro_coords) * World.WIDTH
-	var task := TaskFactory.build_task(definition, {
-		"transport_source_position": PathfindingService.random_point_in_microcell(Vector2(building.micro_x, building.micro_y) + macro_offset),
-		"target_building": building,
-		"produce_resource_name": resource_name,
-		"produce_quantity": maxi(
-			BuildingStorageService.get_auto_available_quantity(building, resource_name) if ProductionService.get_output_capacity(building) <= 0
-			else int(building.production_output.get(resource_name, 0)), 1
-		),
-		"produce_delivery_step": true,
-	})
-	task.context[CONTEXT_OUTPUT_JOB_BUILDING_ID] = building.id
-	task.debug_target_key = "output:%d" % building.id
-	return task
-
-
 # Idoneità alla presa: edificio in una macrocella attiva, la consegna di prova passa il controllo di idoneità, e dal
 # pipottino un magazzino raggiungibile accetta la risorsa (lo stesso controllo dello step di consegna).
 func _output_job_rejection(worker: HumanIndividual, job: Dictionary) -> String:
 	var building: Building = job["target"]
 	var resource_name := String(job.get("resource_name", ""))
-	var task := _build_output_job_task(worker, building, resource_name)
+	var task: Task = null
+	if live_cells.has(Vector2i(building.macro_x, building.macro_y)):
+		task = TaskBuilderService.build_output_job_task(worker, building, resource_name)
 	if task == null:
 		return "edificio non in una macrocella attiva"
 	var rejection := worker.get_assign_rejection_reason(task, _resolve_age_band(worker))
@@ -11570,7 +11139,9 @@ func _output_job_rejection(worker: HumanIndividual, job: Dictionary) -> String:
 # sull'edificio e il lavoro esce dall'attesa.
 func _assign_output_job(worker: HumanIndividual, job: Dictionary) -> void:
 	var building: Building = job["target"]
-	var task := _build_output_job_task(worker, building, String(job.get("resource_name", "")))
+	if not live_cells.has(Vector2i(building.macro_x, building.macro_y)):
+		return
+	var task := TaskBuilderService.build_output_job_task(worker, building, String(job.get("resource_name", "")))
 	if task == null:
 		return
 	if not worker.assign_task(task, _resolve_age_band(worker)) or (worker.current_task != task and not worker.task_queue.has(task)):
@@ -11604,14 +11175,14 @@ func _output_job_release(job: Dictionary) -> void:
 	for member in human_individuals:
 		var current_closed := false
 		var current := member.current_task
-		if current != null and not current.is_finished() and int(current.context.get(CONTEXT_OUTPUT_JOB_BUILDING_ID, -1)) == building.id:
+		if current != null and not current.is_finished() and int(current.context.get(TaskBuilderService.CONTEXT_OUTPUT_JOB_BUILDING_ID, -1)) == building.id:
 			member.skip_job_board_once = true
 			if CargoReturnService.release_cargo(member, current, macro_world) != CargoReturnService.Outcome.RETURNING:
 				member.stop(false)
 				current_closed = true
 		for queued in member.task_queue.duplicate():
 			var queued_task := queued as Task
-			if queued_task != null and int(queued_task.context.get(CONTEXT_OUTPUT_JOB_BUILDING_ID, -1)) == building.id:
+			if queued_task != null and int(queued_task.context.get(TaskBuilderService.CONTEXT_OUTPUT_JOB_BUILDING_ID, -1)) == building.id:
 				if CargoReturnService.release_cargo(member, queued_task, macro_world) != CargoReturnService.Outcome.RETURNING:
 					member.task_queue.erase(queued)
 		if current_closed:
@@ -11696,7 +11267,7 @@ func _produce_jobs_collect(provider: Dictionary, assigned: Dictionary) -> Array[
 func _produce_job_rejection(worker: HumanIndividual, job: Dictionary) -> String:
 	var building: Building = job["target"]
 	var order_key := String(job["order_key"])
-	var task := _build_produce_task(
+	var task := TaskBuilderService.build_produce_task(
 		worker, building, String(job["recipe"]), maxi(ProductionService.get_order_units(building, order_key), 1),
 		ProductionService.get_order_deliver_to_warehouse(building, order_key)
 	)
@@ -12080,7 +11651,7 @@ func _drawer_order_job_rejection(worker: HumanIndividual, job: Dictionary) -> St
 	if building == null:
 		return "nessun edificio libero"
 	var quantity := int(job["quantity"])
-	var task := _build_produce_task(worker, building, String(job["recipe"]), quantity, bool((job["order"] as Dictionary).get("deliver_to_warehouse", true)))
+	var task := TaskBuilderService.build_produce_task(worker, building, String(job["recipe"]), quantity, bool((job["order"] as Dictionary).get("deliver_to_warehouse", true)))
 	if task == null:
 		return "definizione mancante"
 	var rejection := worker.get_assign_rejection_reason(task, _resolve_age_band(worker))
@@ -12470,7 +12041,7 @@ func _start_zone_order_tool_fetch(worker: HumanIndividual, plan: Array[Dictionar
 	for fetch in plan:
 		var building: Building = fetch["building"]
 		var tool_name := String(fetch["tool_name"])
-		var task := _build_equip_tool_task(worker, building, tool_name, int(fetch["slot"]))
+		var task := TaskBuilderService.build_equip_tool_task(worker, building, tool_name, int(fetch["slot"]))
 		if task == null:
 			continue
 		task.context[ZONE_ORDER_TOOL_FETCH_KEY] = int(fetch["category"])
@@ -12517,7 +12088,7 @@ func _return_borrowed_tools() -> void:
 			if slot == -1 or destination == null:
 				remaining.append(entry)
 				continue
-			var task := _build_tool_task(member, STORE_TOOL_TASK_DEFINITION_PATH, tool_name, destination, slot)
+			var task := TaskBuilderService.build_tool_task(member, TaskBuilderService.STORE_TOOL_TASK_DEFINITION_PATH, tool_name, destination, slot)
 			if task == null:
 				remaining.append(entry)
 				continue
@@ -12850,7 +12421,7 @@ func _try_switch_hunt_zone(hunter: HumanIndividual, series: Dictionary) -> bool:
 	var next_series := series.duplicate(true)
 	next_series["work_area_id"] = next_area.id
 	next_series[HuntZoneService.SERIES_TRIED_ZONES_KEY] = tried
-	var task := _build_hunt_zone_task(next_area.id, next_series)
+	var task := TaskBuilderService.build_hunt_zone_task(next_area.id, next_series)
 	if task == null or not _prepare_hunt_knife(hunter, true):
 		return false
 	# Nuova uscita della serie (2026-10-10): seguito della catena, fuori dal tetto della coda.
@@ -13140,14 +12711,14 @@ func _drawer_cut_job_rejection(worker: HumanIndividual, job: Dictionary) -> Stri
 			area.id, int(order.get("criterion_kind", PickUpAction.CriterionKind.ALL)), int(order.get("criterion_category", -1)),
 			String(order.get("resource_name", "")), maxi(trips - 1, 0)
 		)
-		task = _build_haul_zone_task(zone, trips > 1, 0, worker)
+		task = TaskBuilderService.build_haul_zone_task(zone, trips > 1, 0)
 	elif order_type == DRAWER_ORDER_TYPE_HUNT:
-		task = _build_hunt_zone_task(area.id)
+		task = TaskBuilderService.build_hunt_zone_task(area.id)
 	elif order_type == DRAWER_ORDER_TYPE_QUARRY:
 		var rock: Dictionary = pick["rock"]
-		task = _build_quarry_task(worker, rock["macro_coords"], rock["position"], area.id)
+		task = TaskBuilderService.build_quarry_task(worker, rock["macro_coords"], rock["position"], area.id)
 	else:
-		task = _build_cut_task(worker, pick["plant"], area.id)
+		task = TaskBuilderService.build_cut_task(worker, pick["plant"], area.id)
 	if task == null:
 		return "definizione mancante"
 	return worker.get_assign_rejection_reason(task, age_band)
@@ -13311,7 +12882,7 @@ func _task_board_reason(task: Task, pile_job_keys: Dictionary) -> String:
 		for step in task.steps:
 			if step is RepairAction and (step as RepairAction).target_building != null and (step as RepairAction).target_building.repair_requested:
 				return "riparazione richiesta"
-	if task.context.has(CONTEXT_OUTPUT_JOB_BUILDING_ID):
+	if task.context.has(TaskBuilderService.CONTEXT_OUTPUT_JOB_BUILDING_ID):
 		return "uscita piena"
 	if _drawer_cut_order_of(task) >= 0:
 		return "ordine del cassetto"
@@ -13403,7 +12974,7 @@ func _task_creator_text(task: Task) -> String:
 		return "consegna di un lavoro (%s)" % (HaulZoneService.get_label_task_name(zone) if not zone.is_empty() and HaulZoneService.get_label_task_name(zone) != "" else "demolizione")
 	if _is_board_pile_task(task):
 		return "lavoro Mucchio della lista"
-	if task.context.has(CONTEXT_OUTPUT_JOB_BUILDING_ID):
+	if task.context.has(TaskBuilderService.CONTEXT_OUTPUT_JOB_BUILDING_ID):
 		return "lavoro uscita piena della lista"
 	return "comando o altro (non deducibile)"
 
@@ -14753,9 +14324,6 @@ func _on_apparel_unequip_requested(individual: HumanIndividual, slot_index: int)
 # Sono Task normali (is_suspendable): si accodano, si sospendono e si annullano come le altre.
 # ============================================================================================
 
-# TaskDefinition delle due Task (2026-09-25 — allineate allo schema .tres + TaskFactory delle altre).
-const EQUIP_TOOL_TASK_DEFINITION_PATH := "res://gameplay/scripts/tasks/definitions/equip_tool.tres"
-const STORE_TOOL_TASK_DEFINITION_PATH := "res://gameplay/scripts/tasks/definitions/store_tool.tres"
 const OPTION_CHOICE_DIALOG_SCENE := preload("res://gameplay/scenes/game/OptionChoiceDialog.tscn")
 var tool_storage_dialog: OptionChoiceDialog
 # Richiesta in corso del dialogo attrezzi: {"individual": HumanIndividual, "slot": int}.
@@ -14870,7 +14438,7 @@ func _on_apparel_to_storage_requested(target: HumanIndividual, slot_index: int) 
 	if destination == null:
 		_report_command_rejection(target, tr("apparel_store_no_storage").format({"apparel": IconRegistry.get_resource_display_name(apparel_name)}))
 		return
-	_assign_tool_task(target, STORE_TOOL_TASK_DEFINITION_PATH, apparel_name, destination, slot_index, "transport", "task_activity_store_apparel", true)
+	_assign_tool_task(target, TaskBuilderService.STORE_TOOL_TASK_DEFINITION_PATH, apparel_name, destination, slot_index, "transport", "task_activity_store_apparel", true)
 
 
 # resource_chosen dello stesso OptionChoiceDialog: quantità e "Ripeti" non servono qui (una sola unità).
@@ -14896,7 +14464,7 @@ func _on_tool_to_storage_requested(target: HumanIndividual, slot_index: int) -> 
 		# Canale comune dei rifiuti (2026-09-26): popup + avviso nel pannello dell'individuo.
 		_report_command_rejection(target, tr("tool_store_no_storage").format({"tool": IconRegistry.get_resource_display_name(tool_name)}))
 		return
-	_assign_tool_task(target, STORE_TOOL_TASK_DEFINITION_PATH, tool_name, destination, slot_index, "transport", "task_activity_store_tool")
+	_assign_tool_task(target, TaskBuilderService.STORE_TOOL_TASK_DEFINITION_PATH, tool_name, destination, slot_index, "transport", "task_activity_store_tool")
 
 
 func _assign_equip_tool_task(target: HumanIndividual, slot_index: int, tool_name: String) -> void:
@@ -14915,45 +14483,9 @@ func _assign_equip_tool_task(target: HumanIndividual, slot_index: int, tool_name
 			_report_command_rejection(target, tr("tool_equip_no_source").format({"tool": IconRegistry.get_resource_display_name(tool_name)}))
 		return
 	_assign_tool_task(
-		target, EQUIP_TOOL_TASK_DEFINITION_PATH, tool_name, source, slot_index, "pickup",
+		target, TaskBuilderService.EQUIP_TOOL_TASK_DEFINITION_PATH, tool_name, source, slot_index, "pickup",
 		"task_activity_equip_apparel" if is_apparel else "task_activity_equip_tool"
 	)
-
-
-# Task equip_tool (Walk + prelievo in cintura nello slot `slot_index`) senza assegnarla: per gli ordini di zona
-# (_start_zone_order_tool_fetch, 2026-10-11).
-func _build_equip_tool_task(target: HumanIndividual, building: Building, tool_name: String, slot_index: int) -> Task:
-	return _build_tool_task(target, EQUIP_TOOL_TASK_DEFINITION_PATH, tool_name, building, slot_index)
-
-
-# Task di prelievo o riposizione di un attrezzo (equip_tool.tres/store_tool.tres) costruita, non assegnata; null se la
-# definizione non si carica (estratta da _assign_tool_task, 2026-10-11).
-# `is_apparel` (2026-10-11): lo slot da svuotare è del vestiario (store_tool.tres -> UnloadAction.unequip_apparel). Il
-# prelievo non ne ha bisogno: RetrieveAction riconosce i capi dalla risorsa.
-func _build_tool_task(
-	target: HumanIndividual, definition_path: String, tool_name: String, building: Building, slot_index: int, is_apparel: bool = false
-) -> Task:
-	var definition := load(definition_path) as TaskDefinition
-	if definition == null:
-		return null
-	var macro_offset: Vector2 = Vector2(Vector2i(building.macro_x, building.macro_y) - target.home_macro_coords) * World.WIDTH
-	var jitter := Vector2(randf_range(0.15, 0.85), randf_range(0.15, 0.85))
-	var task := TaskFactory.build_task(definition, {
-		"target_position": Vector2(building.micro_x, building.micro_y) + macro_offset + jitter,
-		"tool_building": building,
-		"tool_resource_name": tool_name,
-		"tool_quantity": 1,
-		"tool_slot_index": slot_index,
-		"tool_is_apparel": is_apparel,
-	})
-	if task == null:
-		return null
-	# TaskFactory rimuove dal context le chiavi consumate dagli step (tool_resource_name compresa):
-	# la si rimette per Task.get_activity_description ("Prendi attrezzo (Coltello di pietra)"), stesso
-	# schema di production_resource_name in _assign_produce_task.
-	task.context["tool_resource_name"] = tool_name
-	task.debug_target_key = "tool:%d" % building.id
-	return task
 
 
 # Prepara il context per la TaskDefinition (equip_tool.tres/store_tool.tres: [step_walk_to_position,
@@ -14968,7 +14500,7 @@ func _assign_tool_task(
 	target: HumanIndividual, definition_path: String, tool_name: String, building: Building, slot_index: int, icon_key: String,
 	activity_key: String, is_apparel: bool = false
 ) -> void:
-	var task := _build_tool_task(target, definition_path, tool_name, building, slot_index, is_apparel)
+	var task := TaskBuilderService.build_tool_task(target, definition_path, tool_name, building, slot_index, is_apparel)
 	if task == null:
 		return
 	var task_name: String = task.task_name
@@ -17031,8 +16563,6 @@ func _get_dead_positions(macro_state: MacroCellState) -> Dictionary:
 	}
 
 
-
-
 # ============================================================================================
 # AnimalGroupRenderer di una cella viva — UNO PER SPECIE PRESENTE (2026-09-26, richiesta utente: prima
 # se ne creavano sempre 10, uno per ogni specie del gioco, anche se assenti dalla cella). Creati al volo
@@ -18187,7 +17717,7 @@ func _on_clear_rubble_requested(building: Building) -> void:
 
 # "Porta il mucchio al magazzino" (2026-09-27, richiesta utente — generico, HumanIndividualActionService.
 # ground_pile_haul_requested): accoda a `carrier` la raccolta di tutto il mucchio (haul_resource.tres con sorgente
-# GROUND_PILE e criterio ALL, _build_pickup_task) — dopo il PickUp la catena di sempre cerca il magazzino e accoda
+# GROUND_PILE e criterio ALL, TaskBuilderService.build_pickup_task) — dopo il PickUp la catena di sempre cerca il magazzino e accoda
 # Walk + Unload. Non si accoda nulla (il mucchio resta a terra) se il mucchio non c'è più, la sua cella non è viva,
 # la coda è piena, l'età non lo consente o nessun magazzino raggiungibile accetta almeno una delle sue risorse.
 # Icona "pickup" sul mucchio, come per il comando di raccolta; nessuna icona per la consegna di un taglio o di
@@ -18253,10 +17783,11 @@ func _on_ground_pile_haul_requested(carrier: HumanIndividual, pile_ref: Dictiona
 	# ripetizione si ferma da sola quando il mucchio non ha più nulla, PickUpAction._request_repeat_if_needed). Senza la
 	# chiave (demolizione) un solo viaggio, come prima.
 	var until_empty: bool = bool(pile_ref.get("until_empty", false))
-	var task := _build_pickup_task(
-		cell, microcell, resource_names[0], -1, PickUpAction.CriterionKind.ALL, -1, until_empty, 0, carrier,
+	var task := TaskBuilderService.build_pickup_task(
+		cell.macro_state, microcell, resource_names[0], -1, PickUpAction.CriterionKind.ALL, -1, until_empty, 0,
 		PickUpAction.SourceKind.GROUND_PILE
 	)
+	_wire_pickup_task(task, carrier)
 	if until_empty:
 		var pile_units := 0
 		for resource_name in resource_names:
@@ -18644,7 +18175,6 @@ func _village_daily_calorie_need() -> float:
 # INVENTORY_PENDING_KEY); durata (1 h + 1 h per ordine nuovo) / fattore della Gestione; alla fine gli ordini escono in coda
 # e parte l'intervallo per il prossimo. La Gestione cresce a ogni inventario (task_completion_effects.tres).
 # ============================================================================================
-const INVENTORY_TASK_DEFINITION_PATH := "res://gameplay/scripts/tasks/definitions/inventory.tres"
 const INVENTORY_TASK_NAME := "task_inventory_name"
 const INVENTORY_PENDING_KEY := "inventory_pending"
 const INVENTORY_INTERVAL_OPTIONS: Array[int] = [6, 12, 24, 48, 72, 120]
@@ -18728,17 +18258,6 @@ func _inventory_jobs_collect(provider: Dictionary, _assigned: Dictionary) -> Arr
 	return jobs
 
 
-func _build_inventory_task(worker: HumanIndividual, depot: Building) -> Task:
-	var definition := load(INVENTORY_TASK_DEFINITION_PATH) as TaskDefinition
-	if definition == null or depot == null:
-		return null
-	var macro_offset: Vector2 = Vector2(Vector2i(depot.macro_x, depot.macro_y) - worker.home_macro_coords) * World.WIDTH
-	return TaskFactory.build_task(definition, {
-		"target_position": PathfindingService.random_point_in_microcell(Vector2(depot.micro_x, depot.micro_y) + macro_offset),
-		"target_building": depot,
-	})
-
-
 func _inventory_job_rejection(worker: HumanIndividual, _job: Dictionary) -> String:
 	var age_band := _resolve_age_band(worker)
 	if age_band == HumanTypes.AgeBand.INFANT or age_band == HumanTypes.AgeBand.CHILD:
@@ -18746,7 +18265,7 @@ func _inventory_job_rejection(worker: HumanIndividual, _job: Dictionary) -> Stri
 	var depot := _nearest_storage_building(worker)
 	if depot == null:
 		return "nessun deposito raggiungibile"
-	var task := _build_inventory_task(worker, depot)
+	var task := TaskBuilderService.build_inventory_task(worker, depot)
 	if task == null:
 		return "definizione mancante"
 	return worker.get_assign_rejection_reason(task, age_band)
@@ -18756,7 +18275,7 @@ func _assign_inventory_job(worker: HumanIndividual, _job: Dictionary) -> void:
 	if not _inventory_workers().is_empty():
 		return
 	var depot := _nearest_storage_building(worker)
-	var task := _build_inventory_task(worker, depot)
+	var task := TaskBuilderService.build_inventory_task(worker, depot)
 	if task == null:
 		return
 	worker.assign_task(task, _resolve_age_band(worker))
@@ -19504,7 +19023,7 @@ func _transport_order_task(worker: HumanIndividual, order: Dictionary, pick: Dic
 	var trip_target := _transport_trip_target(target, resource_name, quantity)
 	if trip_target <= 0:
 		return null
-	var task := _build_transport_task(worker, pick["source"], target, resource_name, trip_target, quantity, true, 0)
+	var task := TaskBuilderService.build_transport_task(worker, pick["source"], target, resource_name, trip_target, quantity, true, 0)
 	if task != null and order.has(FuelStockService.FUEL_TARGET_KEY):
 		task.context[FuelStockService.FUEL_TARGET_KEY] = int(order[FuelStockService.FUEL_TARGET_KEY])
 	elif task != null:
@@ -20127,7 +19646,7 @@ func _command_state_for(member: HumanIndividual, action_id: StringName) -> Dicti
 	# Età: chi non può ricevere il comando non ha il pulsante (raccolta ed estrazione: neonati e bambini; caccia: le
 	# regole d'età della sua Task).
 	if action_id == CommandBar.HUNT_ACTION:
-		var probe := _build_hunt_zone_task(-1)
+		var probe := TaskBuilderService.build_hunt_zone_task(-1)
 		if probe != null:
 			var rejection := member.get_assign_rejection_reason(probe, age_band)
 			if rejection == HumanIndividual.ASSIGN_REJECT_TOO_YOUNG or rejection == HumanIndividual.ASSIGN_REJECT_AGE_NOT_ALLOWED:
@@ -21874,6 +21393,13 @@ func _refresh_building_visuals(cell: LiveMacroCell) -> void:
 	if cell.fog_of_war_renderer != null:
 		cell.fog_of_war_renderer.set_building_visible_positions(_building_visible_positions_for_cell(cell))
 	_sync_build_site_placeholders(cell)
+
+
+# MacroCellState della macrocella `macro_coords` se è viva (caricata nella scena), altrimenti null (2026-10-17,
+# refactoring GameScene blocco 1): per passare ai builder di TaskBuilderService lo stato della cella senza la cella viva.
+func _live_macro_state(macro_coords: Vector2i) -> MacroCellState:
+	var cell: LiveMacroCell = live_cells.get(macro_coords)
+	return cell.macro_state if cell != null else null
 
 
 # Esegue gli effetti di presentazione restituiti da un servizio (2026-10-17, refactoring GameScene blocco 0 — vedi

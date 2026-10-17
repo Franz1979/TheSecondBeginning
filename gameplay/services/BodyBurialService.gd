@@ -432,6 +432,27 @@ static func bury_body(record: Dictionary, building: Building) -> void:
 		])
 
 
+# Task Seppellisci di `worker` per il corpo `record` verso `mound`, mai assegnata qui (2026-10-07, estratta da
+# GameScene._assign_bury_task e usata anche come task di prova dalla lista dei lavori; spostata qui da
+# GameScene._make_bury_task il 2026-10-17, refactoring GameScene blocco 1). null se bury.tres non si carica.
+static func build_bury_task(worker: HumanIndividual, record: Dictionary, body_id: int, mound: Building) -> Task:
+	var definition := load(BURY_TASK_DEFINITION_PATH) as TaskDefinition
+	if definition == null:
+		push_error("BodyBurialService.build_bury_task: %s non caricabile." % BURY_TASK_DEFINITION_PATH)
+		return null
+	var context := {
+		"target_position": get_body_position_relative_to(record, worker.home_macro_coords),
+		CONTEXT_BODY_ID: body_id,
+		CONTEXT_MOUND_ID: mound.id,
+		CONTEXT_BODY_NAME: get_body_name(record),
+		CONTEXT_RITE_BUILDING: null,
+		CONTEXT_RITE_ID: FUNERAL_RITE_ID,
+	}
+	var task := TaskFactory.build_task(definition, context)
+	skip_transport_if_on_slab(task, worker)
+	return task
+
+
 # Corpo già sulla lastra (2026-10-04, funerale): la task Seppellisci salta il trasporto e passa direttamente al rito —
 # a un nuovo comando su un corpo già posato e alla ripresa dalla coda. `walker` != null: inserisce anche il cammino fino
 # accanto al cumulo (assegnazione nuova; alla ripresa ci pensa il ritorno automatico al punto richiesto dallo step).

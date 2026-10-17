@@ -336,7 +336,7 @@ func activate(individual: Variant, context: Dictionary) -> void:
 
 
 # Destinazione di una Transport che alla creazione era un CANTIERE (context["transport_destination_is_site"],
-# scritto da GameScene._build_transport_task) ed è stata completata nel frattempo (2026-09-21, richiesta
+# scritto da TaskBuilderService.build_transport_task) ed è stata completata nel frattempo (2026-09-21, richiesta
 # utente): il materiale per costruirla non serve più e non va depositato nell'edificio finito — trattata
 # come destinazione non valida, con il reinstradamento esistente verso un magazzino (come per una
 # destinazione demolita). Una Transport verso un magazzino vero non ha il flag: nessun effetto.

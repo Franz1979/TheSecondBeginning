@@ -123,9 +123,17 @@ Ordine attuale dei tick:
   puro e il collegamento resta nella scena in un unico `_wire_task_signals(task, owner)`.
 - Dote dei visitatori (8859): oggi è l'unica task costruita a mano; si sostituisce con un `.tres`
   "unload_resource".
-- Le circa 10 copie dello schema `_assign_*` (rifiuto → icona → `assign_task` → errore → refresh) diventano
-  un solo helper `_assign_with_feedback`. Il motivo del rifiuto arriva dal servizio, l'icona la mette la
-  scena.
+- ~~Le circa 10 copie dello schema `_assign_*` diventano un solo helper `_assign_with_feedback`.~~ Rimandato
+  al blocco 5 (2026-10-17): le copie differiscono troppo (dove va l'icona, comportamento "silenzioso" della
+  bacheca, coda speciale di taglio/estrazione, pannelli aggiornati); sono la risoluzione dei comandi e vanno
+  ripensate con i servizi di comando.
+
+**Stato (2026-10-17):** fatto. `gameplay/jobs/scripts/TaskBuilderService.gd` contiene transport, hunt zone,
+cut, quarry, repair, produce, output, tool/equip, inventory, pickup, haul zone, pile job, butcher, unload
+resource (dote dei visitatori, nuovo `unload_resource.tres`) e rite; bury è in
+`BodyBurialService.build_bury_task`. I segnali li collega la scena dopo la costruzione (`_wire_pickup_task`,
+`_wire_butcher_task`, `_connect_haul_zone_step_appended`), solo per le task usate davvero. Resta in scena
+`_transport_order_task` (ordini di trasporto del magazzino): dipende dalle regole delle scorte, va col blocco 4.
 
 ### Blocco 2 — Bacheca lavori, cassetto ordini, attrezzi → `gameplay/jobs/`
 - **Nucleo** (9768–10227): `_takeable_jobs_for`, `_take_listed_job_for`, `_open_job_keys`,
@@ -177,7 +185,8 @@ Ordine attuale dei tick:
 ### Blocco 5 — In coda, da decidere più avanti
 - Il ciclo per fotogramma degli individui (`_process`, 1307), `human_individuals` e `human_folk` passano
   dentro `GameSimulation`.
-- La risoluzione dei comandi da clic destro (`_try_assign_*`) passa in servizi di comando.
+- La risoluzione dei comandi da clic destro (`_try_assign_*`) passa in servizi di comando, insieme allo
+  schema ripetuto delle `_assign_*` (rimandato dal blocco 1).
 
 ---
 

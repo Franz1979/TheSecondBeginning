@@ -834,7 +834,7 @@ static func _find_building_by_id(world: World, building_id: int) -> Building:
 # tentativo", la catena Walk+Unload+ricerca si ripete finché find_best non trova più nessuno.
 # Consuma task.context[SearchHaulZoneAction.CONTEXT_PENDING] (2026-09-27, richiesta utente — work areas, passo 2):
 # sceglie la cella di raccolta dentro la zona del context (HaulZoneService.find_target_cell, stessa disponibilità del
-# PickUp) e accoda Walk + PickUp verso di lei, costruiti come li costruiva GameScene._build_pickup_task (stesso jitter
+# PickUp) e accoda Walk + PickUp verso di lei, costruiti come li costruiva TaskBuilderService.build_pickup_task (stesso jitter
 # sul punto d'arrivo, stessa PickUpAction con filtro e sorgente della zona, stesse descrizioni degli step). Nessuna
 # cella = nessuno step: la Task si chiude. I segnali del PickUp li collega chi ha creato la Task (step_appended).
 # Deposito con posto (2026-10-04, richiesta utente — bugfix del mucchio senza deposito): true se un edificio può

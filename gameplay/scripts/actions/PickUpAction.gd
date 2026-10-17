@@ -76,7 +76,7 @@ enum CriterionKind { NAME, CATEGORY, ALL }
 #     Quantità, deperimento e istanze degli attrezzi escono dal mucchio così come sono: gli attrezzi vanno nello
 #     zaino (mai in cintura) con i loro usi residui. Nessun gate required_idea_id: il mucchio contiene ciò che
 #     qualcuno ha lasciato cadere, non ciò che il terreno offre.
-# Scelta da chi crea la Task (GameScene._build_pickup_task) dopo TaskFactory, così haul_resource.tres resta
+# Scelta da chi crea la Task (TaskBuilderService.build_pickup_task) dopo TaskFactory, così haul_resource.tres resta
 # invariata; persistita in get_save_data e letta da TaskPersistenceService._build_step. Non riordinare.
 enum SourceKind { TERRAIN, GROUND_PILE }
 

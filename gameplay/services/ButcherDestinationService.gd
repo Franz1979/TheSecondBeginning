@@ -8,7 +8,7 @@ extends RefCounted
 #   - caccia (diretta: GameScene._try_assign_hunt_command_on_right_click, con l'ultima scelta; nelle zone: dalla serie
 #     di cacce, HuntZoneService.make_meat_series, scritta dal dialog) ->
 #   - richiesta di macellazione (HumanIndividualActionService._handle_pending_hunt_butcher la copia nella carcassa) ->
-#   - Task di macellazione (GameScene._build_butcher_task) -> ricerca della destinazione dopo ogni raccolta
+#   - Task di macellazione (TaskBuilderService.build_butcher_task) -> ricerca della destinazione dopo ogni raccolta
 #     (_search_warehouse_for_resource, _has_butcher_product_destination) e ritorno del carico (CargoReturnService).
 # Una Task senza la chiave ma con il vecchio HumanIndividualActionService.CONTEXT_PREFER_RECIPE_WORKSTATION (salvataggi
 # precedenti) vale CAMPFIRE; senza nessuna delle due, WAREHOUSE (nessuna preferenza, il comportamento di ogni altra

@@ -208,7 +208,7 @@ static func get_hunt_rejection(hunter: HumanIndividual) -> String:
 # --- Passo 2b (2026-10-01): serie fino a un limite di carne ---
 
 # `butcher_destination` (2026-10-03): destinazione dei prodotti della macellazione scelta nel dialog
-# (ButcherDestinationService), copiata nel context di ogni caccia della serie (GameScene._build_hunt_zone_task).
+# (ButcherDestinationService), copiata nel context di ogni caccia della serie (TaskBuilderService.build_hunt_zone_task).
 # `auto_zone` (2026-10-09): zona scelta in automatico, la serie può cambiare zona (SERIES_AUTO_ZONE_KEY).
 static func make_meat_series(area_id: int, target: int, butcher_destination: String = "", auto_zone: bool = false) -> Dictionary:
 	var series := {"work_area_id": area_id, "target": target, "delivered": 0}
