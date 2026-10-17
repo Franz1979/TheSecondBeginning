@@ -55,7 +55,7 @@ const TAB_ORDER: Array[int] = [
 # stock_min_food_days): arrivano da GameScene (set_min_levels, prima di _ready) e ogni cambio esce con min_level_changed /
 # min_food_days_changed. L'aggiornamento di ogni secondo tocca solo le quantità, mai i campi: niente testo né focus persi.
 # Dal 2026-10-11 (gestione scorte, primo passo) il livello dei materiali grezzi che si raccolgono, tagliano o estraggono
-# (StockRequestService.source_kind_for) fa nascere ordini nella coda dei lavori (GameScene._auto_request_stock), con il
+# (StockRequestService.source_kind_for) fa nascere ordini nella coda dei lavori (WarehouseManagerService.request_stock), con il
 # suo tooltip (warehouse_min_level_auto_tooltip); per le altre risorse e per i giorni del cibo resta solo indicativo.
 signal min_level_changed(resource_name: String, level: int)
 signal min_food_days_changed(days: int)

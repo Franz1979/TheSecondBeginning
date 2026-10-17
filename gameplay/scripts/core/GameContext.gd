@@ -17,6 +17,13 @@ var live_cells: Dictionary = {}
 
 # Fascia d'età di `member` con le durate EFFETTIVE dell'Era corrente (stessa formula di GameScene._resolve_age_band).
 func age_band_of(member: HumanIndividual) -> HumanTypes.AgeBand:
+	return age_band_for(member, game_data)
+
+
+# Stessa regola, statica: per chi si conserva la funzione oltre la vita di questo contesto (es. CoordinatorService, che se
+# la memorizza: una Callable su un GameContext temporaneo smetterebbe di valere appena il contesto viene liberato). Da
+# passare come GameContext.age_band_for.bind(game_data).
+static func age_band_for(member: HumanIndividual, game_data: GameData) -> HumanTypes.AgeBand:
 	return HumanCalculator.get_age_band(
 		game_data.era_effective_age_band_durations_male, game_data.era_effective_age_band_durations_female,
 		member.sex, float(game_data.year - member.birth_year_virtual)

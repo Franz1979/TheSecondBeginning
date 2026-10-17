@@ -6,13 +6,11 @@ extends RefCounted
 # edificio scelto al momento: DrawerOrderService.choose_produce_building), ordini di zona (taglio, estrazione, raccolta,
 # caccia) e ordini "transport" del gestore scorte. Qui la parte di regola (quali lavori, chi può prenderli, chi ci
 # lavora); presa, X e Rimetti in coda restano alla scena.
-#
-# Gli ordini "transport" sono del gestore scorte, che è ancora in scena (blocco 4 del refactoring): finché non si sposta,
-# la loro riga e la loro idoneità arrivano da chi chiama (`transport_job` / `transport_rejection`, Callable).
+# Gli ordini "transport" (essiccatoio, combustibile) li crea il gestore delle scorte (WarehouseManagerService): destinazione,
+# sorgente e quantità si scelgono al momento (WarehouseManagerService.transport_order_pick).
 
 
-# `transport_job`: Callable(provider, order) -> Dictionary, la riga di un ordine "transport".
-static func collect(ctx: GameContext, provider: Dictionary, assigned: Dictionary, transport_job: Callable) -> Array[Dictionary]:
+static func collect(ctx: GameContext, provider: Dictionary, assigned: Dictionary) -> Array[Dictionary]:
 	var jobs: Array[Dictionary] = []
 	if ctx.game_data.drawer_orders.is_empty():
 		return jobs
@@ -30,7 +28,7 @@ static func collect(ctx: GameContext, provider: Dictionary, assigned: Dictionary
 			jobs.append(_zone_job(ctx, provider, order, zone_claims))
 			continue
 		if order_type == DrawerOrderService.TYPE_TRANSPORT:
-			jobs.append(transport_job.call(provider, order))
+			jobs.append(_transport_job(ctx, provider, order))
 			continue
 		if order_type != DrawerOrderService.TYPE_PRODUCE:
 			continue
@@ -74,6 +72,47 @@ static func _produce_job(ctx: GameContext, provider: Dictionary, order: Dictiona
 		"blocked_reason": blocked_reason,
 		"target": building, "provider": provider, "order": order, "recipe": recipe, "quantity": quantity,
 	}
+
+
+# Riga di un ordine "transport" del magazzino: "Porta N <risorsa> all'essiccatoio" o "… combustibile a <edificio>", sulla
+# destinazione scelta adesso; non prendibile se nessuna destinazione con posto o nessuna sorgente.
+static func _transport_job(ctx: GameContext, provider: Dictionary, order: Dictionary) -> Dictionary:
+	var order_id := int(order["id"])
+	var pick := WarehouseManagerService.transport_order_pick(ctx.world, null, order)
+	var target: Building = pick.get("target", null)
+	var is_fuel := order.has(FuelStockService.FUEL_TARGET_KEY)
+	var resource_name := String(pick.get("resource", order.get("resource", "")))
+	var quantity := int(pick.get("quantity", order.get("quantity", 1)))
+	var row_name := GameContext.tr_text("drawer_order_dry_row").format({"quantity": quantity, "resource": IconRegistry.get_resource_display_name(resource_name)})
+	if is_fuel:
+		var fuel_target := WarehouseManagerService.find_building(ctx.world, int(order[FuelStockService.FUEL_TARGET_KEY]))
+		row_name = GameContext.tr_text("drawer_order_fuel_row").format({
+			"quantity": quantity, "resource": IconRegistry.get_resource_display_name(resource_name),
+			"building": fuel_target.get_display_name() if fuel_target != null else "",
+		})
+	return {
+		"key": JobBoardService.drawer_order_key(order_id), "kind": "pile", "name": row_name, "text": row_name,
+		"log_name": "ordine del cassetto #%d trasporto: %d %s" % [order_id, quantity, resource_name],
+		"icon": {"resource": resource_name},
+		"macro": Vector2i(target.macro_x, target.macro_y) if target != null else Vector2i(-1, -1),
+		"microcell": Vector2i(target.micro_x, target.micro_y) if target != null else Vector2i(-1, -1), "reach_target": target,
+		"entry_kind": "drawer_order", "id": order_id, "sort": float(order_id) + DrawerOrderService.PRODUCE_JOB_SORT_OFFSET,
+		"assigned": false, "hidden": false, "warehouse": order.has(StockRequestService.ORDER_KEY),
+		"blocked_reason": "" if not pick.is_empty() else GameContext.tr_text("pending_stock_fuel_blocked" if is_fuel else "pending_stock_dry_blocked"),
+		"target": target, "provider": provider, "order": order,
+	}
+
+
+# Idoneità di un ordine "transport": la Transport Task di prova (deposito → destinazione) passa il controllo di età/energia.
+static func transport_rejection(ctx: GameContext, worker: HumanIndividual, job: Dictionary) -> String:
+	var order: Dictionary = job["order"]
+	var pick := WarehouseManagerService.transport_order_pick(ctx.world, worker, order)
+	if pick.is_empty():
+		return "nessuna destinazione con posto o nessuna sorgente raggiungibile"
+	var task := WarehouseManagerService.transport_order_task(worker, order, pick)
+	if task == null:
+		return "nessun posto nella destinazione"
+	return worker.get_assign_rejection_reason(task, ctx.age_band_of(worker))
 
 
 # Riga di un ordine di zona: "Taglia N piante · …" / "Estrai N pietre · …" con "Zona automatica" o il nome della zona,
@@ -224,16 +263,15 @@ static func pick_zone_target(ctx: GameContext, worker: HumanIndividual, job: Dic
 	return {"area": area, "plant": plant}
 
 
-# Idoneità: ordine di zona (zone_rejection), "transport" (`transport_rejection`: Callable(worker, job) -> String, dal
-# gestore scorte), "Produci" come gli ordini dei pannelli — la Produce Task di prova sull'edificio scelto passa il
+# Idoneità: ordine di zona (zone_rejection), "transport" (transport_rejection), "Produci" come gli ordini dei pannelli — la Produce Task di prova sull'edificio scelto passa il
 # controllo di età/energia, e ogni attrezzo che l'Attrezzeria di quell'edificio non copre il pipottino ce l'ha o può
 # prenderlo in deposito.
-static func rejection(ctx: GameContext, worker: HumanIndividual, job: Dictionary, transport_rejection: Callable) -> String:
+static func rejection(ctx: GameContext, worker: HumanIndividual, job: Dictionary) -> String:
 	var order: Dictionary = job["order"]
 	if DrawerOrderService.is_zone_order_type(String(order.get("type", ""))):
 		return zone_rejection(ctx, worker, job)
 	if String(order.get("type", "")) == DrawerOrderService.TYPE_TRANSPORT:
-		return String(transport_rejection.call(worker, job))
+		return transport_rejection(ctx, worker, job)
 	var building: Building = job["target"]
 	if building == null:
 		return "nessun edificio libero"

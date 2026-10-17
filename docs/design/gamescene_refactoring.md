@@ -232,6 +232,20 @@ i fornitori non lasciano la scena (2b).
 - **`_refresh_pending_entries`**, oggi richiamata da dentro la logica, diventa un effetto "refresh In
   sospeso".
 
+**Stato blocco 4 (2026-10-17):** fatto.
+- 4a: `gameplay/stock/scripts/WarehouseManagerService.gd` (magazzino attivo, inventario: scadenza, inizio, fine; ordini
+  automatici: raccolta/taglio/estrazione, caccia, produzione con prenotazioni, essiccatoio e combustibile, giorni di cibo;
+  scelta e Transport Task degli ordini "transport"; consumo di calorie del villaggio; destinazione della carne in
+  eccesso); stato in `GameData.stock_runtime` (`simulation/scripts/game/StockRuntimeState.gd`).
+  `TaskBuilderService.transport_trip_target` (obiettivo di un viaggio, usato anche dal comando di trasporto).
+- 4b: `providers/InventoryJobProvider.gd`; ordini "transport" dentro `DrawerOrderJobProvider` (niente più Callable dalla
+  scena); voci della campanella del magazzino in `WarehouseManagerService.collect_*_entries`.
+- 4c: `gameplay/jobs/scripts/HuntOrderService.gd` (fine delle serie di caccia: cambio zona, ordine tolto o in coda,
+  avvisi "nessuna preda", pausa delle cacce del magazzino); avvisi in memoria in `JobBoardRuntimeState.hunt_no_prey_alerts`.
+- In scena restano il pannello delle scorte (numeri, testi dell'inventario, formattazione di date e durate), la presa
+  dell'inventario e dei trasporti del magazzino con icone e pannelli, i collegamenti `_on_inventory_started/_finished` e
+  `_on_hunt_zone_series_ended`.
+
 ### Blocco 5 — In coda, da decidere più avanti
 - Il ciclo per fotogramma degli individui (`_process`, 1307), `human_individuals` e `human_folk` passano
   dentro `GameSimulation`.

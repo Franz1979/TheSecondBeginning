@@ -265,7 +265,7 @@ var job_board_auto_clear_rubble: bool = false
 # Livelli minimi delle scorte (2026-10-10, cassetto "Gestione scorte"): nome risorsa -> livello (int > 0; assente =
 # nessun livello) e livello del cibo in giorni di autonomia (0 = nessuno). Salvati da GameSaveService
 # ("stock_min_levels", "stock_min_food_days"); partita nuova e salvataggi vecchi: nessun livello. Dal 2026-10-11 i
-# livelli dei materiali grezzi raccolti, tagliati o estratti fanno nascere ordini (GameScene._auto_request_stock, ordini
+# livelli dei materiali grezzi raccolti, tagliati o estratti fanno nascere ordini (WarehouseManagerService.request_stock, ordini
 # in drawer_orders con la chiave StockRequestService.ORDER_KEY); gli altri e i giorni del cibo restano solo visivi.
 var stock_min_levels: Dictionary = {}
 var stock_min_food_days: int = 0
@@ -282,7 +282,7 @@ var stock_fuel_min_by_type: Dictionary = {}
 # ordine della coda tornano in deposito quando l'individuo è libero (HumanIndividual.borrowed_tools). Salvata da
 # GameSaveService ("job_board_return_borrowed_tools"); partita nuova e salvataggi vecchi: accesa.
 var job_board_return_borrowed_tools: bool = true
-# Inventario del magazzino (2026-10-11, gestore del magazzino — GameScene._inventory_*): frequenza scelta dal giocatore
+# Inventario del magazzino (2026-10-11, gestore del magazzino — WarehouseManagerService): frequenza scelta dal giocatore
 # (ore di gioco tra la fine di un inventario e la richiesta del successivo), fine dell'ultimo inventario (giorni assoluti
 # con la frazione del giorno, -1 = mai), chi l'ha fatto, e la "foto" delle scorte presa all'inizio dell'ultimo
 # inventario (il cassetto Scorte mostra quella, non i valori in tempo reale): risorsa -> quantità, [occupato, capienza]
@@ -314,6 +314,9 @@ var job_board_runtime: JobBoardRuntimeState = JobBoardRuntimeState.new()
 # Stato della manutenzione degli edifici (danneggiati all'ultimo giro, controlli giornalieri di riparazione e sgombero
 # automatici). Mai salvato (2026-10-17, refactoring GameScene blocco 3a — vedi BuildingRuntimeState).
 var building_runtime: BuildingRuntimeState = BuildingRuntimeState.new()
+# Stato del gestore delle scorte (inventario in decisione, nomi da riempire, pausa delle cacce, avvisi dell'essiccatoio).
+# Mai salvato (2026-10-17, refactoring GameScene blocco 4 — vedi StockRuntimeState).
+var stock_runtime: StockRuntimeState = StockRuntimeState.new()
 # Anno dell'ultimo evento avvenuto per ogni CATEGORIA di eventi casuali (2026-09-27, richiesta utente —
 # raffreddamento condiviso, vedi RandomEventCategoryRules): id categoria (String) -> anno (int). Scritto da
 # RandomEventService.apply_event, letto dal sorteggio. Salvato da GameSaveService ("random_event_category_last_year").

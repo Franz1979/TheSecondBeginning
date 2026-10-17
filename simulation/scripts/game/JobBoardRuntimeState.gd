@@ -23,3 +23,7 @@ var open_job_keys: Dictionary = {}
 # finché chi porta il carico non l'ha consegnato (PileJobProvider). Chiave del mucchio -> {"id", "name", "macro",
 # "microcell"} dell'ultima volta che era elencato.
 var pile_job_memory: Dictionary = {}
+# Avvisi "Caccia: nessuna preda" degli ordini di caccia del cassetto già finiti (HuntOrderService): in memoria per
+# HuntOrderService.NO_PREY_ALERT_DAYS di gioco. {"order_id", "until", "zone", "area_id", "macro_x", "macro_y"
+# (+ HuntOrderService.ENDED_KEY)}.
+var hunt_no_prey_alerts: Array[Dictionary] = []

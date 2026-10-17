@@ -686,7 +686,7 @@ func _make_compact(button: Button) -> void:
 # {"building_command": BuildingCommandIcon.KIND_*} = icona disegnata del pannello edificio (la dinamite per la
 # demolizione); {"command": chiave di IconRegistry.COMMAND_ICON_NODES} = icona di comando; altrimenti
 # {"building_type": tipo} = l'edificio.
-# Ordine creato dal magazzino (2026-10-11, GameScene._auto_request_stock): l'icona del lavoro con un piccolo magazzino
+# Ordine creato dal magazzino (2026-10-11, WarehouseManagerService.request_stock): l'icona del lavoro con un piccolo magazzino
 # (WarehouseIcon) nell'angolo in basso a destra, su un riquadro scuro; il tooltip spiega da dove viene l'ordine.
 const WAREHOUSE_BADGE_RATIO: float = 0.6
 const WAREHOUSE_BADGE_BG := Color(0.08, 0.09, 0.11, 0.9)

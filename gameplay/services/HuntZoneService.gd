@@ -60,7 +60,7 @@ const CONTEXT_NO_PREY := "hunt_zone_no_prey"
 const SERIES_END_COMPLETE := "complete"
 const SERIES_END_NO_PREY := "no_prey"
 # Zona automatica (2026-10-09): la serie nata con la zona scelta in automatico (comando con l'interruttore acceso, ordine
-# del cassetto senza zona fissata) può cambiare zona dopo un'uscita a vuoto (GameScene._try_switch_hunt_zone). Zone già
+# del cassetto senza zona fissata) può cambiare zona dopo un'uscita a vuoto (HuntOrderService._try_switch_zone). Zone già
 # provate a vuoto in questo giro (Array di id, salvato con la serie): ognuna al massimo una volta; si azzera alla cattura
 # di una preda (la serie passa alla macellazione senza) e quando l'ordine torna in coda (la serie nuova nasce senza).
 const SERIES_AUTO_ZONE_KEY := "auto_zone"

@@ -36,8 +36,9 @@ static func tick_second(ctx: GameContext, now: float, effects: GameEffects) -> v
 	# Coordinatori ai punti di assegnazione (2026-10-09, CoordinatorService). Con la sola idea, anche senza punti
 	# (2026-10-10): così, quando l'ultimo punto sparisce, chi va al punto o è in fila smette e il turno del coordinatore
 	# finisce.
+	# La funzione dell'età la memorizza CoordinatorService: statica, legata alla partita (mai a questo contesto temporaneo).
 	if JobBoardService.is_idea_completed(ctx.folk):
-		CoordinatorService.tick(ctx.game_data, ctx.world, ctx.individuals, now, ctx.age_band_of)
+		CoordinatorService.tick(ctx.game_data, ctx.world, ctx.individuals, now, GameContext.age_band_for.bind(ctx.game_data))
 
 
 # Giro giornaliero (prima in GameScene._on_day_advanced, stesso ordine), dopo il calo giornaliero dell'Integrità

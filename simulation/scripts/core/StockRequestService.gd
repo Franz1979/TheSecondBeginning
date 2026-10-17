@@ -33,7 +33,7 @@ const SOURCE_GATHER := "gather"
 const SOURCE_CUT := "cut"
 const SOURCE_QUARRY := "quarry"
 # Caccia (2026-10-11): carne, pelle, tendini e ossa arrivano tutti dalla stessa preda macellata, quindi una sola domanda
-# per il gruppo, in carne (vedi GameScene._auto_request_hunt). Ordini da 5 a STOCK_HUNT_MAX_MEAT carne, a passi di
+# per il gruppo, in carne (vedi WarehouseManagerService._request_hunt). Ordini da 5 a STOCK_HUNT_MAX_MEAT carne, a passi di
 # HUNT_MEAT_STEP: il 20 del cassetto resta per la caccia lanciata a mano.
 const SOURCE_HUNT := "hunt"
 const HUNT_GROUP_KEY := "meat"
@@ -43,17 +43,17 @@ const STOCK_HUNT_MAX_MEAT: int = 10
 # NON procurano mai i propri ingredienti: la catena la organizza il giocatore con i livelli delle materie prime.
 const SOURCE_PRODUCE := "produce"
 # Essiccatoio (2026-10-11): prodotti ad avanzamento automatico (recipe_auto_progress_days > 0, carne e pelle essiccate):
-# il magazzino trasporta l'ingrediente crudo dal deposito all'essiccatoio (GameScene._auto_request_dry).
+# il magazzino trasporta l'ingrediente crudo dal deposito all'essiccatoio (WarehouseManagerService._request_dry).
 const SOURCE_DRY := "dry"
 # Nome del combustibile nel dizionario dei mancanti (missing_for_recipe).
 const FUEL_KEY := "__fuel__"
-# Giorni di autonomia del cibo (2026-10-11, GameScene._auto_request_food_days): ORDER_KEY degli ordini "Raccogli tutto il
+# Giorni di autonomia del cibo (2026-10-11, WarehouseManagerService._request_food_days): ORDER_KEY degli ordini "Raccogli tutto il
 # cibo" e marca (FOOD_DAYS_KEY) degli ordini "Produci carne cotta" nati per i giorni.
 const FOOD_DAYS_ORDER_KEY := "food_days"
 const FOOD_DAYS_KEY := "food_days_order"
 # Unica eccezione alla regola "la catena la organizza il giocatore" (2026-10-11, richiesta utente): il fabbisogno di queste
 # risorse nasce anche dai livelli dei prodotti che le usano (la carne cruda: carne cotta, affumicata ed essiccata —
-# GameScene._derived_meat_level). Dal 2026-10-16 hanno anche un livello proprio, che si somma: la riserva in più (es. per
+# WarehouseManagerService._derived_meat_breakdown). Dal 2026-10-16 hanno anche un livello proprio, che si somma: la riserva in più (es. per
 # i banchetti), riempita dopo le lavorazioni. Il cassetto Scorte le mostra in "Da cucinare o lavorare".
 const DERIVED_LEVEL_RESOURCES: Array[String] = ["meat"]
 

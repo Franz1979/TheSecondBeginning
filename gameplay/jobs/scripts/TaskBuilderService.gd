@@ -75,6 +75,25 @@ static func build_transport_task(
 	return TaskFactory.build_task(definition, context)
 
 
+# Obiettivo di UN viaggio di trasporto (2026-09-20; spostato qui da GameScene il 2026-10-17): min(quantità ancora da
+# portare, fabbisogno della destinazione) se la destinazione non è completa o è una produzione in corso (il fabbisogno è
+# BuildingStorageService.get_max_depositable: per un cantiere required - stored della fase in corso; per una produzione la
+# quantità esatta mancante) — altrimenti (edificio completo, magazzino) min(quantità ancora da portare, posto reale), 0 se
+# la categoria non è accettata (2026-09-25, bugfix "Transport verso chi non può ricevere"). Ricalcolato a ogni viaggio,
+# perché il fabbisogno può essere cambiato. Il controllo all'arrivo e il reinstradamento di UnloadAction restano per i
+# cambiamenti durante il viaggio.
+static func transport_trip_target(destination_building: Building, resource_name: String, remaining_quantity: int) -> int:
+	if remaining_quantity <= 0 or destination_building == null:
+		return 0
+	if destination_building.is_demolished:
+		return 0
+	if not destination_building.is_complete or ProductionService.is_production_demand(destination_building, resource_name):
+		return mini(remaining_quantity, BuildingStorageService.get_max_depositable(destination_building, resource_name))
+	if not BuildingStorageService.can_accept(destination_building, resource_name):
+		return 0
+	return mini(remaining_quantity, BuildingStorageService.get_max_depositable(destination_building, resource_name))
+
+
 # Task di caccia in zona (hunt_zone.tres, inizia con PatrolAreaAction) per la WorkArea `area_id`. La zona resta nel
 # context (HuntZoneService.CONTEXT_WORK_AREA_ID) per etichetta, scelta della preda e ritorno alla pattuglia.
 # `series` (2026-10-01, passo 2b): serie fino a un limite di carne ({} = una sola caccia).
