@@ -28,6 +28,20 @@ var cells_to_refresh: Dictionary = {}
 var panels_to_refresh: Dictionary = {}
 # Il riquadro "In sospeso" va ricalcolato.
 var pending_refresh: bool = false
+# Edifici (2026-10-17, blocco 3) le cui celle vicine vanno ridisegnate (fondi che si saldano, edifici lineari):
+# id edificio -> Building.
+var neighbor_refresh_buildings: Dictionary = {}
+# Edifici di cui ridisegnare solo la sagoma (stato "da demolire" e simili, senza ricalcolo di movimento e cammino): id -> Building.
+var marker_buildings: Dictionary = {}
+# Cantieri appena nati sul posto (miglioramento) che vogliono i rametti del cantiere: id -> Building.
+var site_placeholder_buildings: Dictionary = {}
+# Macrocelle (Vector2i) la cui vegetazione va ricalcolata da capo (spazio occupato cambiato) -> true.
+var vegetation_cells: Dictionary = {}
+# Edifici spariti dal mondo (id -> true): se uno è selezionato, la selezione si chiude.
+var removed_building_ids: Dictionary = {}
+# Task create da un servizio i cui step vanno collegati come quelli del trasporto (griglia del magazzino):
+# [{"task": Task, "owner": HumanIndividual}], in ordine.
+var storage_tasks_to_wire: Array[Dictionary] = []
 
 
 func notify(popup_type: NotificationTypes.NotificationPopupType, text: String, requires_ack: bool = false) -> void:
@@ -50,6 +64,30 @@ func refresh_pending() -> void:
 	pending_refresh = true
 
 
+func refresh_neighbors(building: Building) -> void:
+	neighbor_refresh_buildings[building.id] = building
+
+
+func refresh_marker(building: Building) -> void:
+	marker_buildings[building.id] = building
+
+
+func spawn_site_placeholders(building: Building) -> void:
+	site_placeholder_buildings[building.id] = building
+
+
+func refresh_vegetation(macro_coords: Vector2i) -> void:
+	vegetation_cells[macro_coords] = true
+
+
+func building_removed(building_id: int) -> void:
+	removed_building_ids[building_id] = true
+
+
+func wire_storage_task(task: Task, owner: HumanIndividual) -> void:
+	storage_tasks_to_wire.append({"task": task, "owner": owner})
+
+
 # Unisce gli effetti di `other` in questo (le notifiche in coda, dopo le proprie).
 func merge(other: GameEffects) -> void:
 	if other == null:
@@ -58,7 +96,13 @@ func merge(other: GameEffects) -> void:
 	cells_to_refresh.merge(other.cells_to_refresh)
 	panels_to_refresh.merge(other.panels_to_refresh)
 	pending_refresh = pending_refresh or other.pending_refresh
+	neighbor_refresh_buildings.merge(other.neighbor_refresh_buildings)
+	marker_buildings.merge(other.marker_buildings)
+	site_placeholder_buildings.merge(other.site_placeholder_buildings)
+	vegetation_cells.merge(other.vegetation_cells)
+	removed_building_ids.merge(other.removed_building_ids)
+	storage_tasks_to_wire.append_array(other.storage_tasks_to_wire)
 
 
 func is_empty() -> bool:
-	return notifications.is_empty() and cells_to_refresh.is_empty() and panels_to_refresh.is_empty() and not pending_refresh
+	return notifications.is_empty() and cells_to_refresh.is_empty() and panels_to_refresh.is_empty() and not pending_refresh 		and neighbor_refresh_buildings.is_empty() and marker_buildings.is_empty() and site_placeholder_buildings.is_empty() 		and vegetation_cells.is_empty() and removed_building_ids.is_empty() and storage_tasks_to_wire.is_empty()

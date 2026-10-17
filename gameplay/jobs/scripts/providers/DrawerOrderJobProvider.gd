@@ -12,7 +12,7 @@ extends RefCounted
 
 
 # `transport_job`: Callable(provider, order) -> Dictionary, la riga di un ordine "transport".
-static func collect(ctx: JobBoardContext, provider: Dictionary, assigned: Dictionary, transport_job: Callable) -> Array[Dictionary]:
+static func collect(ctx: GameContext, provider: Dictionary, assigned: Dictionary, transport_job: Callable) -> Array[Dictionary]:
 	var jobs: Array[Dictionary] = []
 	if ctx.game_data.drawer_orders.is_empty():
 		return jobs
@@ -38,12 +38,12 @@ static func collect(ctx: JobBoardContext, provider: Dictionary, assigned: Dictio
 	return jobs
 
 
-static func _produce_job(ctx: JobBoardContext, provider: Dictionary, order: Dictionary, busy_counts: Dictionary) -> Dictionary:
+static func _produce_job(ctx: GameContext, provider: Dictionary, order: Dictionary, busy_counts: Dictionary) -> Dictionary:
 	var order_id := int(order["id"])
 	var recipe := String(order.get("recipe", ""))
 	var quantity := maxi(int(order.get("quantity", 1)), 1)
 	var building := DrawerOrderService.choose_produce_building(ctx.world, recipe, quantity, busy_counts)
-	var blocked_reason := "" if building != null else JobBoardContext.tr_text("drawer_order_no_free_building")
+	var blocked_reason := "" if building != null else GameContext.tr_text("drawer_order_no_free_building")
 	# Attrezzo (2026-10-11, stessa regola degli ordini di zona): addosso a qualcuno, nell'Attrezzeria dell'edificio, o da
 	# prendere in deposito; altrimenti un edificio la cui Attrezzeria lo copra; nessuno = "Nessuno ha <attrezzo>".
 	if building != null:
@@ -61,7 +61,7 @@ static func _produce_job(ctx: JobBoardContext, provider: Dictionary, order: Dict
 	var from_warehouse := order.has(StockRequestService.ORDER_KEY)
 	if from_warehouse and blocked_reason == "" and building != null:
 		blocked_reason = String(order.get(StockRequestService.MISSING_KEY, ""))
-	var row_name := JobBoardContext.tr_text("drawer_order_produce_row").format({"recipe": IconRegistry.get_resource_display_name(recipe), "quantity": quantity})
+	var row_name := GameContext.tr_text("drawer_order_produce_row").format({"recipe": IconRegistry.get_resource_display_name(recipe), "quantity": quantity})
 	var building_text := (" @ %s #%d" % [building.building_type_name, building.id]) if building != null else ""
 	return {
 		"key": JobBoardService.drawer_order_key(order_id), "kind": "produce", "name": row_name, "text": row_name,
@@ -78,7 +78,7 @@ static func _produce_job(ctx: JobBoardContext, provider: Dictionary, order: Dict
 
 # Riga di un ordine di zona: "Taglia N piante · …" / "Estrai N pietre · …" con "Zona automatica" o il nome della zona,
 # icona del lavoro; 🎯 sulla zona fissata.
-static func _zone_job(ctx: JobBoardContext, provider: Dictionary, order: Dictionary, claims: Dictionary) -> Dictionary:
+static func _zone_job(ctx: GameContext, provider: Dictionary, order: Dictionary, claims: Dictionary) -> Dictionary:
 	var order_type := String(order.get("type", DrawerOrderService.TYPE_CUT))
 	var is_quarry := order_type == DrawerOrderService.TYPE_QUARRY
 	var order_id := int(order["id"])
@@ -112,10 +112,10 @@ static func _zone_job(ctx: JobBoardContext, provider: Dictionary, order: Diction
 		progress = "%d/%d" % [done, total]
 	elif total == 1:
 		row_key += "_one"
-	var row_name := JobBoardContext.tr_text(row_key).format(row_args)
+	var row_name := GameContext.tr_text(row_key).format(row_args)
 	if zone_id >= 0:
-		row_name = JobBoardContext.tr_text("drawer_order_zone_suffix").format({
-			"row": row_name, "zone": area.name if area != null else JobBoardContext.tr_text("drawer_cut_zone_gone"),
+		row_name = GameContext.tr_text("drawer_order_zone_suffix").format({
+			"row": row_name, "zone": area.name if area != null else GameContext.tr_text("drawer_cut_zone_gone"),
 		})
 	var macro := Vector2i(-1, -1)
 	var microcell := Vector2i(-1, -1)
@@ -127,7 +127,7 @@ static func _zone_job(ctx: JobBoardContext, provider: Dictionary, order: Diction
 	return {
 		"key": JobBoardService.drawer_order_key(order_id), "kind": order_type, "name": row_name,
 		"warehouse": from_warehouse, "progress": progress,
-		"text": (row_name + "\n" + JobBoardContext.tr_text("task_assignment_warehouse_tag_tooltip")) if from_warehouse else row_name,
+		"text": (row_name + "\n" + GameContext.tr_text("task_assignment_warehouse_tag_tooltip")) if from_warehouse else row_name,
 		"log_name": "ordine del cassetto #%d %s ×%d (%s)" % [order_id, order_type, remaining, "zona automatica" if zone_id < 0 else "zona #%d" % zone_id],
 		"icon": {"command": icon_key}, "macro": macro, "microcell": microcell,
 		# Raggiungibilità vera nel controllo di idoneità (zona e bersaglio per chi lo prende): qui un bersaglio fuori dalla
@@ -150,17 +150,17 @@ static func gather_target_text(order: Dictionary) -> String:
 		PickUpAction.CriterionKind.CATEGORY:
 			# "ogni cibo" (2026-10-11, richiesta utente) nella riga, al posto di "Tutto il cibo" del popup.
 			if int(order.get("criterion_category", -1)) == SecondaryResourceTypes.Category.FOOD:
-				return JobBoardContext.tr_text("drawer_order_gather_all_food")
+				return GameContext.tr_text("drawer_order_gather_all_food")
 			var keys: Array = PickupChoiceMenu.CATEGORY_TEXT_KEYS.get(int(order.get("criterion_category", -1)), ["", ""])
 			if String(keys[1]) != "":
-				return JobBoardContext.tr_text(String(keys[1]))
-	return JobBoardContext.tr_text("pickup_choice_all")
+				return GameContext.tr_text(String(keys[1]))
+	return GameContext.tr_text("pickup_choice_all")
 
 
 # Motivo per cui nessuno può prendere l'ordine di zona ora ("" = prendibile): nessuno in età da lavoro con l'attrezzo;
 # nessuna zona valida (zona fissata sparita, senza il lavoro o senza piante / rocce / risorse da raccogliere; con la zona
 # automatica nessuna zona adatta).
-static func zone_blocked_reason(ctx: JobBoardContext, order_type: String, zone_id: int, area: WorkArea, order: Dictionary = {}) -> String:
+static func zone_blocked_reason(ctx: GameContext, order_type: String, zone_id: int, area: WorkArea, order: Dictionary = {}) -> String:
 	var tool_reason := ToolFetchService.blocked_reason(ctx, DrawerOrderService.tool_categories(order_type), order_type)
 	if tool_reason != "":
 		return tool_reason
@@ -168,18 +168,18 @@ static func zone_blocked_reason(ctx: JobBoardContext, order_type: String, zone_i
 	var reserved := DrawerOrderService.zone_reserved(ctx.individuals, order_type)
 	if zone_id >= 0:
 		if area == null or not areas.has(area) or not DrawerOrderService.area_has_targets(ctx, order_type, area, null, reserved, order):
-			return JobBoardContext.tr_text("drawer_cut_no_valid_zone")
+			return GameContext.tr_text("drawer_cut_no_valid_zone")
 		return ""
 	for candidate in areas:
 		if DrawerOrderService.area_has_targets(ctx, order_type, candidate, null, reserved, order):
 			return ""
-	return JobBoardContext.tr_text("drawer_cut_no_valid_zone")
+	return GameContext.tr_text("drawer_cut_no_valid_zone")
 
 
 # Zona e bersaglio per `worker` ({"area", "plant"} per il taglio, {"area", "rock"} per l'estrazione, {"area"} per raccolta e
 # caccia; {} se nessuno): zona fissata (se ha ancora il lavoro) o automatica (choose_work_area per lui), poi il bersaglio
 # come il comando (choose_plant / choose_rock). Solo macrocelle vive.
-static func pick_zone_target(ctx: JobBoardContext, worker: HumanIndividual, job: Dictionary) -> Dictionary:
+static func pick_zone_target(ctx: GameContext, worker: HumanIndividual, job: Dictionary) -> Dictionary:
 	var order: Dictionary = job["order"]
 	var order_type := String(order.get("type", DrawerOrderService.TYPE_CUT))
 	var zone_id := int(order.get("zone_id", -1))
@@ -228,7 +228,7 @@ static func pick_zone_target(ctx: JobBoardContext, worker: HumanIndividual, job:
 # gestore scorte), "Produci" come gli ordini dei pannelli — la Produce Task di prova sull'edificio scelto passa il
 # controllo di età/energia, e ogni attrezzo che l'Attrezzeria di quell'edificio non copre il pipottino ce l'ha o può
 # prenderlo in deposito.
-static func rejection(ctx: JobBoardContext, worker: HumanIndividual, job: Dictionary, transport_rejection: Callable) -> String:
+static func rejection(ctx: GameContext, worker: HumanIndividual, job: Dictionary, transport_rejection: Callable) -> String:
 	var order: Dictionary = job["order"]
 	if DrawerOrderService.is_zone_order_type(String(order.get("type", ""))):
 		return zone_rejection(ctx, worker, job)
@@ -253,7 +253,7 @@ static func rejection(ctx: JobBoardContext, worker: HumanIndividual, job: Dictio
 # Idoneità per un ordine di zona, come il comando Taglia / Estrai / Raccogli / Caccia: età, attrezzi (addosso, oppure da
 # prendere in deposito se nessuno li ha), una zona e un bersaglio per lui, e la task di prova passa il controllo di
 # età/energia.
-static func zone_rejection(ctx: JobBoardContext, worker: HumanIndividual, job: Dictionary) -> String:
+static func zone_rejection(ctx: GameContext, worker: HumanIndividual, job: Dictionary) -> String:
 	var order: Dictionary = job["order"]
 	var order_type := String(order.get("type", DrawerOrderService.TYPE_CUT))
 	var age_band := ctx.age_band_of(worker)
@@ -293,7 +293,7 @@ static func zone_rejection(ctx: JobBoardContext, worker: HumanIndividual, job: D
 
 # "Produci": mai nessuno (alla presa l'ordine diventa un ordine dell'edificio ed esce dall'elenco). Ordini di zona: chi
 # porta la serie dell'ordine (lavoro o consegna, in corso o in coda).
-static func workers(ctx: JobBoardContext, job: Dictionary) -> Array[HumanIndividual]:
+static func workers(ctx: GameContext, job: Dictionary) -> Array[HumanIndividual]:
 	var result: Array[HumanIndividual] = []
 	var order: Dictionary = job["order"]
 	if DrawerOrderService.is_zone_order_type(String(order.get("type", ""))):

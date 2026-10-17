@@ -18,7 +18,7 @@ extends RefCounted
 const SORT_OFFSET: float = 2000000.0
 
 
-static func collect(ctx: JobBoardContext, provider: Dictionary, _assigned: Dictionary) -> Array[Dictionary]:
+static func collect(ctx: GameContext, provider: Dictionary, _assigned: Dictionary) -> Array[Dictionary]:
 	var jobs: Array[Dictionary] = []
 	if not UserOptions.job_board_empty_full_outputs or ctx.world == null:
 		return jobs
@@ -29,13 +29,13 @@ static func collect(ctx: JobBoardContext, provider: Dictionary, _assigned: Dicti
 			continue
 		var is_assigned := claims.has(building.id)
 		var resource_name := job_resource(building)
-		var building_name := JobBoardContext.tr_text(building.rules.building_name)
-		var job_name := JobBoardContext.tr_text("pending_output_delivery").format({
+		var building_name := GameContext.tr_text(building.rules.building_name)
+		var job_name := GameContext.tr_text("pending_output_delivery").format({
 			"building": building_name,
 			"used": ProductionService.get_output_used(building), "capacity": ProductionService.get_output_capacity(building),
 		})
 		if ProductionService.get_output_capacity(building) <= 0:
-			job_name = JobBoardContext.tr_text("pending_output_delivery_rack").format({"building": building_name})
+			job_name = GameContext.tr_text("pending_output_delivery_rack").format({"building": building_name})
 		jobs.append({
 			"key": "output:%d" % building.id, "kind": "output", "name": job_name, "text": job_name,
 			"log_name": "uscita di %s #%d" % [building.building_type_name, building.id],
@@ -43,7 +43,7 @@ static func collect(ctx: JobBoardContext, provider: Dictionary, _assigned: Dicti
 			"microcell": Vector2i(building.micro_x, building.micro_y), "reach_target": building,
 			"entry_kind": "building", "id": building.id, "sort": float(building.id) + SORT_OFFSET,
 			"assigned": is_assigned, "hidden": not is_assigned and self_delivering.has(building.id),
-			"blocked_reason": "" if is_assigned or _has_storage(ctx.world, building, resource_name) else JobBoardContext.tr_text("task_assignment_pile_no_storage"),
+			"blocked_reason": "" if is_assigned or _has_storage(ctx.world, building, resource_name) else GameContext.tr_text("task_assignment_pile_no_storage"),
 			"target": building, "provider": provider, "claimers": claims.get(building.id, []), "resource_name": resource_name,
 		})
 	return jobs
@@ -148,7 +148,7 @@ static func _collect_delivery_rounds(individuals: Array[HumanIndividual]) -> Dic
 
 # Idoneità alla presa: edificio in una macrocella viva, la consegna di prova passa il controllo di idoneità, e dal
 # pipottino un magazzino raggiungibile accetta la risorsa (lo stesso controllo dello step di consegna).
-static func rejection(ctx: JobBoardContext, worker: HumanIndividual, job: Dictionary) -> String:
+static func rejection(ctx: GameContext, worker: HumanIndividual, job: Dictionary) -> String:
 	var building: Building = job["target"]
 	var resource_name := String(job.get("resource_name", ""))
 	var task: Task = null
@@ -167,7 +167,7 @@ static func rejection(ctx: JobBoardContext, worker: HumanIndividual, job: Dictio
 	return HumanIndividual.ASSIGN_OK
 
 
-static func workers(_ctx: JobBoardContext, job: Dictionary) -> Array[HumanIndividual]:
+static func workers(_ctx: GameContext, job: Dictionary) -> Array[HumanIndividual]:
 	var result: Array[HumanIndividual] = []
 	for member in job.get("claimers", []):
 		result.append(member as HumanIndividual)

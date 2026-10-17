@@ -1,9 +1,10 @@
-class_name JobBoardContext
+class_name GameContext
 extends RefCounted
 
-# Quello che serve ai fornitori dei lavori della lista per decidere (2026-10-17, refactoring GameScene blocco 2b): dati
-# della partita, mondo, popolazione e quali macrocelle sono vive. Lo costruisce chi chiama i fornitori (oggi GameScene,
-# domani il driver della simulazione), così i fornitori in gameplay/jobs/scripts/providers/ non dipendono dalla scena.
+# Quello che serve ai servizi di gioco per decidere, in un oggetto solo (2026-10-17, refactoring GameScene — nato nel
+# blocco 2b per i fornitori della lista come JobBoardContext, generalizzato nel blocco 3 per gli edifici): dati della
+# partita, mondo, popolazione, Folk e quali macrocelle sono vive. Lo costruisce chi chiama (oggi GameScene, domani il
+# driver della simulazione), così i servizi non dipendono dalla scena. Solo riferimenti, nessuna copia.
 
 var game_data: GameData
 var world: World

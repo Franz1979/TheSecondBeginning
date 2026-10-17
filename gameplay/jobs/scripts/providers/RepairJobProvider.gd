@@ -7,15 +7,15 @@ extends RefCounted
 # restano alla scena.
 
 
-static func collect(ctx: JobBoardContext, provider: Dictionary, assigned: Dictionary) -> Array[Dictionary]:
+static func collect(ctx: GameContext, provider: Dictionary, assigned: Dictionary) -> Array[Dictionary]:
 	var jobs: Array[Dictionary] = []
 	for building in ctx.world.buildings:
 		if not building.repair_requested or not RepairAction.is_building_repairable(building):
 			continue
 		if building.current_durability >= float(building.rules.max_durability):
 			continue
-		var building_name := JobBoardContext.tr_text(building.rules.building_name)
-		var text := JobBoardContext.tr_text("pending_repair").format({"building": building_name})
+		var building_name := GameContext.tr_text(building.rules.building_name)
+		var text := GameContext.tr_text("pending_repair").format({"building": building_name})
 		jobs.append({
 			"key": "repair:%d" % building.id, "kind": "repair", "name": text, "text": text, "log_name": building_name,
 			"icon": {"building_command": BuildingCommandIcon.KIND_REPAIR},
@@ -36,12 +36,12 @@ static func job_keys(building: Building) -> Array[String]:
 
 
 # Motivo per cui `worker` non potrebbe ricevere la Repair Task (HumanIndividual.ASSIGN_OK se può), su una task di prova.
-static func rejection(ctx: JobBoardContext, worker: HumanIndividual, job: Dictionary) -> String:
+static func rejection(ctx: GameContext, worker: HumanIndividual, job: Dictionary) -> String:
 	var probe := TaskBuilderService.build_repair_task(worker, job["target"])
 	if probe == null:
 		return "definizione mancante"
 	return worker.get_assign_rejection_reason(probe, ctx.age_band_of(worker))
 
 
-static func workers(ctx: JobBoardContext, job: Dictionary) -> Array[HumanIndividual]:
+static func workers(ctx: GameContext, job: Dictionary) -> Array[HumanIndividual]:
 	return JobWorkScanService.workers_on_building(ctx.individuals, job["target"], JobWorkScanService.REPAIR_TASK_NAMES)

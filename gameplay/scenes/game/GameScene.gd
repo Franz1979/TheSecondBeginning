@@ -3580,7 +3580,7 @@ func _on_production_order_assign_requested(building: Building, order_key: String
 
 
 # X su una riga "In produzione" (2026-10-04, ordini separati): annulla SOLO quell'ordine — chiude la Task del suo
-# lavoratore (in corso o in coda, con lo stesso trattamento del carico di _close_individual_tasks_on_building) e
+# lavoratore (in corso o in coda, con lo stesso trattamento del carico di BuildingLifecycleService.close_individual_tasks) e
 # l'ordine diventa produzione sospesa della sua ricetta (ProductionService.cancel_order).
 func _on_production_order_cancel_requested(building: Building, order_key: String) -> void:
 	if building == null or not ProductionService.has_order(building, order_key):
@@ -6509,54 +6509,10 @@ func _count_other_individuals_claiming_build(target_building: Building, excludin
 	return count
 
 
-# Chiude, per UN individuo, le sole Task di `task_names` su `building` (2026-09-26 — estratta da
-# _close_tasks_working_on_building per l'annullo di un singolo lavoratore dal pannello edificio): la
-# current_task se lavora lì (stop), e le Task in coda che lavorano lì (rimosse). Tutte le altre sue
-# Task, in corso o in coda, restano intatte. Carico nello zaino (2026-09-29, regola unica — CargoReturnService.
-# release_cargo, chiamata PRIMA di chiudere ciascuna Task): se la Task chiusa lo possiede, al suo posto (corrente o in
-# coda) va il ritorno al magazzino più vicino; a terra solo se nessun magazzino lo accetta; un carico di un'altra Task
-# resta nello zaino. Ritorna true se la current_task è stata chiusa senza sostituirla: il chiamante rimette in moto
-# l'individuo con resolve_idle_individual, al momento giusto per lui.
-func _close_individual_tasks_on_building(member: HumanIndividual, building: Building, task_names: Array[String]) -> bool:
-	var current_closed := false
-	if JobWorkScanService.task_works_on_building(member.current_task, building, task_names):
-		if CargoReturnService.release_cargo(member, member.current_task, macro_world) != CargoReturnService.Outcome.RETURNING:
-			member.stop(false)
-			current_closed = true
-	for queued_task in member.task_queue.duplicate():
-		if not JobWorkScanService.task_works_on_building(queued_task, building, task_names):
-			continue
-		# RETURNING: il ritorno ha già preso il posto di questa Task nella coda.
-		if CargoReturnService.release_cargo(member, queued_task, macro_world) != CargoReturnService.Outcome.RETURNING:
-			member.task_queue.erase(queued_task)
-	return current_closed
-
-
-# Chiude le Task di `task_names` su `building` di tutti gli individui tranne `excluded` (RINOMINATA
-# 2026-09-26, era _close_tasks_claiming_building — logica invariata, estratta 2026-09-21 da
-# _demolish_building per riusarla al completamento). Ritorna gli individui la cui current_task è
-# stata chiusa, da rimettere in moto a cura del chiamante.
+# Chiude le Task di `task_names` su `building` di tutti tranne `excluded` (BuildingLifecycleService.close_tasks_on_building);
+# ritorna chi va rimesso in moto.
 func _close_tasks_working_on_building(building: Building, task_names: Array[String], excluded: HumanIndividual) -> Array[HumanIndividual]:
-	var freed: Array[HumanIndividual] = []
-	for other in human_individuals:
-		if other == excluded:
-			continue
-		if _close_individual_tasks_on_building(other, building, task_names):
-			freed.append(other)
-	return freed
-
-
-# L'individuo che sta completando `building` in questo istante (il cui BuildAction corrente sta
-# emettendo building_construction_completed, vedi BuildAction.completing_individual) — null se non
-# c'è (es. segnale emesso fuori da BuildAction.on_complete).
-func _find_completing_individual(building: Building) -> HumanIndividual:
-	for candidate in human_individuals:
-		if candidate.current_task == null:
-			continue
-		var action := candidate.current_task.get_current_action()
-		if action is BuildAction and (action as BuildAction).target_building == building 				and (action as BuildAction).completing_individual == candidate:
-			return candidate
-	return null
+	return BuildingLifecycleService.close_tasks_on_building(_game_context(), building, task_names, excluded)
 
 
 # Righe di avviso "attrezzi mancanti" per il pannello edificio (2026-09-25, richiesta utente — su una
@@ -7457,7 +7413,7 @@ func _report_command_rejection(worker: HumanIndividual, text: String) -> void:
 # Nome leggibile di un edificio per i messaggi (BuildingRules.building_name tradotto), stesso fallback sul
 # tipo usato altrove in questo file.
 func _building_display_name(building: Building) -> String:
-	return tr(building.rules.building_name) if building.rules != null else building.building_type_name
+	return building.get_display_name()
 
 
 # Motivo del rifiuto di un'assegnazione GIÀ tentata e fallita (assign_task ha restituito false, o la Task
@@ -9263,40 +9219,22 @@ func _refresh_pending_entries() -> void:
 	_pending_initialized = true
 
 
-# Passi di LOGICA del giro "al secondo" (2026-10-17, refactoring GameScene blocco 0 — docs/design/gamescene_refactoring.md),
-# in un punto solo e nell'ordine di sempre. Gira dentro _refresh_pending_entries, quindi ogni secondo E a ogni altro
-# refresh di "In sospeso" (stesso comportamento di prima della separazione). Man mano che i blocchi del refactoring li
-# estraggono, questi passi passano a GameSimulation; la raccolta dei lavori della bacheca, ancora mescolata alle righe
-# del cassetto in _refresh_pending_entries, si separa con il blocco 2.
+# Giro "al secondo" della simulazione (GameSimulation.tick_second, 2026-10-17, refactoring GameScene blocco 3): gira dentro
+# _refresh_pending_entries, quindi ogni secondo E a ogni altro refresh di "In sospeso" (comportamento di sempre). La
+# raccolta dei lavori della bacheca resta in _refresh_pending_entries, mescolata alle righe del cassetto.
 func _tick_simulation_second() -> void:
-	# Ordini "Taglia" del cassetto (2026-10-09): quelli presi che nessuno porta più tornano in coda (o spariscono a serie
-	# finita) prima di raccogliere i lavori.
-	DrawerOrderService.settle_zone_orders(_job_board_context())
-	# Edifici entrati o usciti dallo stato "Danneggiato" (2026-10-10): mappa del movimento della loro cella aggiornata.
-	_sync_damaged_buildings()
-	# Riparazioni richieste (2026-10-10): quelle non più valide si chiudono prima di raccogliere i lavori.
-	_settle_repair_requests()
-	_auto_request_repairs()
-	_auto_clear_rubble()
-	# Attrezzi presi in deposito per un lavoro (2026-10-11): riposti da chi è libero, se la regola è accesa.
-	_return_borrowed_tools()
-	# Coordinatori ai punti di assegnazione (2026-10-09, CoordinatorService): un giro al secondo. Con la sola idea, anche
-	# senza punti (2026-10-10): così, quando l'ultimo punto sparisce, chi va al punto o è in fila smette e il turno del
-	# coordinatore finisce.
-	if game_data != null and macro_world != null and JobBoardService.is_idea_completed(human_folk):
-		CoordinatorService.tick(game_data, macro_world, human_individuals, _job_board_now(), _resolve_age_band)
+	var effects := GameEffects.new()
+	GameSimulation.tick_second(_game_context(), _job_board_now(), effects)
+	_apply_effects(effects)
 
 
-# Passi di LOGICA del giro giornaliero (2026-10-17, refactoring GameScene blocco 0), in un punto solo e nell'ordine di
-# sempre; il resto di _on_day_advanced è interfaccia (calendario, pannelli, celle vive). Stesso destino di
-# _tick_simulation_second: i passi passano a GameSimulation con i blocchi che li estraggono.
+# Giro giornaliero della simulazione (GameSimulation.tick_day: crollo, sfratti), poi il riallineamento degli ordini di
+# produzione, ancora in scena: pezzi dovuti riallineati ogni giorno alle Task vive (copre anche le Task sparite senza
+# passare da un annullo, es. individuo morto). Il resto di _on_day_advanced è interfaccia.
 func _tick_simulation_day() -> void:
-	# Crollo a Integrità zero (2026-10-10): dopo il calo giornaliero dell'Integrità (WorldTimeService, già girato).
-	_collapse_ruined_buildings()
-	# Case danneggiate (2026-10-10, effetti passo 5): sfratto di chi è in più, poi riassegnazione.
-	_evict_damaged_house_overflow()
-	# Pezzi dovuti delle produzioni (2026-09-26, ordine intero): riallinea ogni giorno i record alle Task vive
-	# (copre anche le Task sparite senza passare da un annullo, es. individuo morto).
+	var effects := GameEffects.new()
+	GameSimulation.tick_day(_game_context(), effects)
+	_apply_effects(effects)
 	_reconcile_all_production_units()
 
 
@@ -9481,10 +9419,10 @@ func _on_pending_entry_activated(entry: Dictionary) -> void:
 var _job_board_provider_list: Array[Dictionary] = []
 
 
-# Contesto dei fornitori della lista (JobBoardContext, 2026-10-17, refactoring GameScene blocco 2b): partita, mondo,
-# popolazione e celle vive. Nuovo a ogni chiamata (solo riferimenti, nessuna copia).
-func _job_board_context() -> JobBoardContext:
-	var ctx := JobBoardContext.new()
+# Contesto dei servizi di gioco (GameContext, 2026-10-17, refactoring GameScene): partita, mondo, popolazione e celle vive.
+# Nuovo a ogni chiamata (solo riferimenti, nessuna copia).
+func _game_context() -> GameContext:
+	var ctx := GameContext.new()
 	ctx.game_data = game_data
 	ctx.world = macro_world
 	ctx.individuals = human_individuals
@@ -9496,75 +9434,75 @@ func _job_board_context() -> JobBoardContext:
 func _job_board_providers() -> Array[Dictionary]:
 	if _job_board_provider_list.is_empty():
 		_job_board_provider_list.append({
-			"collect": func(provider: Dictionary, assigned: Dictionary) -> Array[Dictionary]: return BuildingJobProvider.collect(_job_board_context(), provider, assigned),
+			"collect": func(provider: Dictionary, assigned: Dictionary) -> Array[Dictionary]: return BuildingJobProvider.collect(_game_context(), provider, assigned),
 			"probe_key": func(job: Dictionary) -> String: return (job["target"] as Building).get_resumable_task_definition_path(),
-			"rejection": func(worker: HumanIndividual, job: Dictionary) -> String: return BuildingJobProvider.rejection(_job_board_context(), worker, job),
+			"rejection": func(worker: HumanIndividual, job: Dictionary) -> String: return BuildingJobProvider.rejection(_game_context(), worker, job),
 			"assign": func(worker: HumanIndividual, job: Dictionary) -> void: _assign_resumable_building_task(worker, job["target"]),
-			"workers": func(job: Dictionary) -> Array[HumanIndividual]: return BuildingJobProvider.workers(_job_board_context(), job),
+			"workers": func(job: Dictionary) -> Array[HumanIndividual]: return BuildingJobProvider.workers(_game_context(), job),
 			"cancel_fields": _building_job_cancel_fields,
 			"cancel": _building_job_cancel,
 			"release": _building_job_release,
 		})
 		_job_board_provider_list.append({
-			"collect": func(provider: Dictionary, assigned: Dictionary) -> Array[Dictionary]: return BodyJobProvider.collect(_job_board_context(), provider, assigned),
+			"collect": func(provider: Dictionary, assigned: Dictionary) -> Array[Dictionary]: return BodyJobProvider.collect(_game_context(), provider, assigned),
 			"probe_key": func(_job: Dictionary) -> String: return BodyBurialService.BURY_TASK_DEFINITION_PATH,
-			"rejection": func(worker: HumanIndividual, job: Dictionary) -> String: return BodyJobProvider.rejection(_job_board_context(), worker, job),
+			"rejection": func(worker: HumanIndividual, job: Dictionary) -> String: return BodyJobProvider.rejection(_game_context(), worker, job),
 			"assign": func(worker: HumanIndividual, job: Dictionary) -> void: _assign_bury_task(worker, int(job["id"]), true),
-			"workers": func(job: Dictionary) -> Array[HumanIndividual]: return BodyJobProvider.workers(_job_board_context(), job),
+			"workers": func(job: Dictionary) -> Array[HumanIndividual]: return BodyJobProvider.workers(_game_context(), job),
 			"cancel_fields": _body_job_cancel_fields,
 			"cancel": func(_job: Dictionary) -> void: pass,
 			"release": _body_job_release,
 		})
 		_job_board_provider_list.append({
-			"collect": func(provider: Dictionary, assigned: Dictionary) -> Array[Dictionary]: return PileJobProvider.collect(_job_board_context(), provider, assigned),
+			"collect": func(provider: Dictionary, assigned: Dictionary) -> Array[Dictionary]: return PileJobProvider.collect(_game_context(), provider, assigned),
 			"probe_key": func(job: Dictionary) -> String: return "pile:%d" % int(job["id"]),
-			"rejection": func(worker: HumanIndividual, job: Dictionary) -> String: return PileJobProvider.rejection(_job_board_context(), worker, job),
+			"rejection": func(worker: HumanIndividual, job: Dictionary) -> String: return PileJobProvider.rejection(_game_context(), worker, job),
 			"assign": _assign_pile_job,
-			"workers": func(job: Dictionary) -> Array[HumanIndividual]: return PileJobProvider.workers(_job_board_context(), job),
+			"workers": func(job: Dictionary) -> Array[HumanIndividual]: return PileJobProvider.workers(_game_context(), job),
 			"cancel_fields": _pile_job_cancel_fields,
 			"cancel": func(_job: Dictionary) -> void: pass,
 			"release": _pile_job_release,
 		})
 		# Riparazioni richieste (2026-10-10): edifici con Building.repair_requested, vedi RepairJobProvider.
 		_job_board_provider_list.append({
-			"collect": func(provider: Dictionary, assigned: Dictionary) -> Array[Dictionary]: return RepairJobProvider.collect(_job_board_context(), provider, assigned),
+			"collect": func(provider: Dictionary, assigned: Dictionary) -> Array[Dictionary]: return RepairJobProvider.collect(_game_context(), provider, assigned),
 			"probe_key": func(_job: Dictionary) -> String: return TaskBuilderService.REPAIR_TASK_DEFINITION_PATH,
-			"rejection": func(worker: HumanIndividual, job: Dictionary) -> String: return RepairJobProvider.rejection(_job_board_context(), worker, job),
+			"rejection": func(worker: HumanIndividual, job: Dictionary) -> String: return RepairJobProvider.rejection(_game_context(), worker, job),
 			"assign": func(worker: HumanIndividual, job: Dictionary) -> void: _assign_repair_task(worker, job["target"]),
-			"workers": func(job: Dictionary) -> Array[HumanIndividual]: return RepairJobProvider.workers(_job_board_context(), job),
+			"workers": func(job: Dictionary) -> Array[HumanIndividual]: return RepairJobProvider.workers(_game_context(), job),
 			"cancel_fields": func(_job: Dictionary) -> Dictionary: return {"cancel_disabled": false, "cancel_tooltip": tr("repair_cancel_request_tooltip")},
 			"cancel": _repair_job_cancel,
 			"release": _repair_job_release,
 		})
 		# Riti ordinati dal pannello (2026-10-14): edifici con Building.requested_rite_id, vedi RiteJobProvider.
 		_job_board_provider_list.append({
-			"collect": func(provider: Dictionary, assigned: Dictionary) -> Array[Dictionary]: return RiteJobProvider.collect(_job_board_context(), provider, assigned),
+			"collect": func(provider: Dictionary, assigned: Dictionary) -> Array[Dictionary]: return RiteJobProvider.collect(_game_context(), provider, assigned),
 			"probe_key": func(job: Dictionary) -> String: return String(job["key"]),
-			"rejection": func(worker: HumanIndividual, job: Dictionary) -> String: return RiteJobProvider.rejection(_job_board_context(), worker, job),
+			"rejection": func(worker: HumanIndividual, job: Dictionary) -> String: return RiteJobProvider.rejection(_game_context(), worker, job),
 			"assign": func(worker: HumanIndividual, job: Dictionary) -> void: _assign_rite_task(worker, job["target"], String(job["rite_id"]), true),
-			"workers": func(job: Dictionary) -> Array[HumanIndividual]: return RiteJobProvider.workers(_job_board_context(), job),
+			"workers": func(job: Dictionary) -> Array[HumanIndividual]: return RiteJobProvider.workers(_game_context(), job),
 			"cancel_fields": func(_job: Dictionary) -> Dictionary: return {"cancel_disabled": false, "cancel_tooltip": tr("building_cancel_rite_order_tooltip")},
 			"cancel": func(job: Dictionary) -> void: _on_rite_order_cancel_requested(job["target"]),
 			"release": _rite_job_release,
 		})
 		# Uscite piene (2026-10-08): consegna dei Prodotti finiti a magazzino, vedi OutputJobProvider.
 		_job_board_provider_list.append({
-			"collect": func(provider: Dictionary, assigned: Dictionary) -> Array[Dictionary]: return OutputJobProvider.collect(_job_board_context(), provider, assigned),
+			"collect": func(provider: Dictionary, assigned: Dictionary) -> Array[Dictionary]: return OutputJobProvider.collect(_game_context(), provider, assigned),
 			"probe_key": func(job: Dictionary) -> String: return String(job["key"]),
-			"rejection": func(worker: HumanIndividual, job: Dictionary) -> String: return OutputJobProvider.rejection(_job_board_context(), worker, job),
+			"rejection": func(worker: HumanIndividual, job: Dictionary) -> String: return OutputJobProvider.rejection(_game_context(), worker, job),
 			"assign": _assign_output_job,
-			"workers": func(job: Dictionary) -> Array[HumanIndividual]: return OutputJobProvider.workers(_job_board_context(), job),
+			"workers": func(job: Dictionary) -> Array[HumanIndividual]: return OutputJobProvider.workers(_game_context(), job),
 			"cancel_fields": _output_job_cancel_fields,
 			"cancel": func(_job: Dictionary) -> void: pass,
 			"release": _output_job_release,
 		})
 		# Ordini di produzione (2026-10-09): ordini senza lavoratore delle workstation, vedi ProduceJobProvider.
 		_job_board_provider_list.append({
-			"collect": func(provider: Dictionary, assigned: Dictionary) -> Array[Dictionary]: return ProduceJobProvider.collect(_job_board_context(), provider, assigned),
+			"collect": func(provider: Dictionary, assigned: Dictionary) -> Array[Dictionary]: return ProduceJobProvider.collect(_game_context(), provider, assigned),
 			"probe_key": func(job: Dictionary) -> String: return String(job["key"]),
-			"rejection": func(worker: HumanIndividual, job: Dictionary) -> String: return ProduceJobProvider.rejection(_job_board_context(), worker, job),
+			"rejection": func(worker: HumanIndividual, job: Dictionary) -> String: return ProduceJobProvider.rejection(_game_context(), worker, job),
 			"assign": _assign_produce_job,
-			"workers": func(job: Dictionary) -> Array[HumanIndividual]: return ProduceJobProvider.workers(_job_board_context(), job),
+			"workers": func(job: Dictionary) -> Array[HumanIndividual]: return ProduceJobProvider.workers(_game_context(), job),
 			"cancel_fields": func(_job: Dictionary) -> Dictionary: return {"cancel_disabled": false, "cancel_tooltip": tr("building_cancel_production_order_tooltip")},
 			"cancel": func(job: Dictionary) -> void: _on_production_order_cancel_requested(job["target"], String(job["order_key"])),
 			"release": _produce_job_release,
@@ -9572,11 +9510,11 @@ func _job_board_providers() -> Array[Dictionary]:
 		# Ordini creati dal cassetto (2026-10-09): GameData.drawer_orders, vedi DrawerOrderJobProvider.
 		_job_board_provider_list.append({
 			# Ordini "transport" del gestore scorte: riga e idoneità ancora in scena fino al blocco 4.
-			"collect": func(provider: Dictionary, assigned: Dictionary) -> Array[Dictionary]: return DrawerOrderJobProvider.collect(_job_board_context(), provider, assigned, _drawer_transport_job),
+			"collect": func(provider: Dictionary, assigned: Dictionary) -> Array[Dictionary]: return DrawerOrderJobProvider.collect(_game_context(), provider, assigned, _drawer_transport_job),
 			"probe_key": func(job: Dictionary) -> String: return String(job["key"]),
-			"rejection": func(worker: HumanIndividual, job: Dictionary) -> String: return DrawerOrderJobProvider.rejection(_job_board_context(), worker, job, _drawer_transport_job_rejection),
+			"rejection": func(worker: HumanIndividual, job: Dictionary) -> String: return DrawerOrderJobProvider.rejection(_game_context(), worker, job, _drawer_transport_job_rejection),
 			"assign": _assign_drawer_order_job,
-			"workers": func(job: Dictionary) -> Array[HumanIndividual]: return DrawerOrderJobProvider.workers(_job_board_context(), job),
+			"workers": func(job: Dictionary) -> Array[HumanIndividual]: return DrawerOrderJobProvider.workers(_game_context(), job),
 			"cancel_fields": func(job: Dictionary) -> Dictionary: return {
 				"cancel_disabled": false,
 				"cancel_tooltip": tr("drawer_order_stock_cancel_tooltip") if (job["order"] as Dictionary).has(StockRequestService.ORDER_KEY) else tr("drawer_order_cancel_tooltip"),
@@ -9965,133 +9903,6 @@ func _repair_job_release(job: Dictionary) -> void:
 	_refresh_selected_building_panel()
 
 
-# Stato "Danneggiato" cambiato (2026-10-10, effetti passo 1): un giro al secondo confronta gli edifici danneggiati CHE
-# INCIDONO SUL MOVIMENTO (movement_stamina_multiplier diverso da 1) con quelli dell'ultimo giro; ogni cella viva toccata
-# si ricostruisce una volta sola per giro, anche se più edifici cambiano insieme (mappa del movimento e pesi del cammino,
-# _refresh_building_visuals), perché il risparmio di stamina di un edificio danneggiato vale 1.
-var _last_damaged_building_ids: Dictionary = {}
-
-
-func _sync_damaged_buildings() -> void:
-	if macro_world == null:
-		return
-	var damaged_ids: Dictionary = {}
-	var changed_cells: Dictionary = {}
-	# Edifici religiosi (2026-10-10, effetti passo 4): raggio e sacralità cambiano, quindi la copertura delle case e i
-	# layer (in memoria per GameData.buildings_revision) vanno ricalcolati — una sola volta per giro.
-	var religious_changed := false
-	for building in macro_world.buildings:
-		if building.rules == null:
-			continue
-		var affects_movement := not is_equal_approx(building.rules.movement_stamina_multiplier, 1.0)
-		var is_religious := building.rules.religious_radius > 0
-		if not affects_movement and not is_religious:
-			continue
-		var damaged := building.is_damaged()
-		if damaged:
-			damaged_ids[building.id] = true
-		if damaged != _last_damaged_building_ids.has(building.id):
-			if affects_movement:
-				changed_cells[Vector2i(building.macro_x, building.macro_y)] = true
-			if is_religious:
-				religious_changed = true
-	_last_damaged_building_ids = damaged_ids
-	if religious_changed and game_data != null:
-		game_data.buildings_revision += 1
-	for macro_coords in changed_cells.keys():
-		if live_cells.has(macro_coords):
-			_refresh_building_visuals(live_cells[macro_coords])
-
-
-# Chiude da sole le richieste di riparazione non più valide (2026-10-10): Integrità piena, edificio demolito, "da demolire"
-# o in miglioramento (non più completo). Un giro al secondo, prima di raccogliere i lavori (_refresh_pending_entries).
-func _settle_repair_requests() -> void:
-	if macro_world == null:
-		return
-	for building in macro_world.buildings:
-		var full := building.rules != null and building.current_durability >= float(building.rules.max_durability)
-		# Esclusione dalla riparazione automatica (2026-10-10): finisce a Integrità piena.
-		if building.repair_auto_excluded and full:
-			building.repair_auto_excluded = false
-		if not building.repair_requested:
-			continue
-		if RepairAction.is_building_repairable(building) and not full:
-			continue
-		building.repair_requested = false
-		if DebugLogging.ENABLED and DebugLogging.SHOW_JOB_BOARD_LOGS:
-			print("[JOB BOARD] Richiesta di riparazione dell'edificio #%d (%s) chiusa: %s." % [
-				building.id, _building_display_name(building), "Integrità piena" if full else "edificio demolito, da demolire o in miglioramento"
-			])
-
-
-# Riparazione automatica (2026-10-10, richiesta utente — soglia JobBoardService.get_auto_repair_percent, voce delle regole di
-# assegnazione): solo con l'idea dell'assegnazione, un edificio completo che deperisce (lifespan_years > 0), non da demolire
-# né in miglioramento, sotto la soglia, senza riparazione richiesta o in corso e non escluso (Building.repair_auto_excluded)
-# riceve la stessa richiesta del martello. Un controllo per giorno di gioco (il primo giro della coda del giorno, quindi dopo
-# il calo dell'Integrità), più subito a soglia cambiata e alla prima lettura dopo un caricamento (i due valori ripartono da -1).
-var _auto_repair_checked_day: int = -1
-var _auto_repair_checked_percent: int = -1
-
-
-func _auto_request_repairs() -> void:
-	if macro_world == null or game_data == null or not JobBoardService.is_enabled(human_folk):
-		_auto_repair_checked_day = -1
-		return
-	var day := game_data.get_absolute_day()
-	var percent := JobBoardService.get_auto_repair_percent(game_data)
-	if day == _auto_repair_checked_day and percent == _auto_repair_checked_percent:
-		return
-	_auto_repair_checked_day = day
-	_auto_repair_checked_percent = percent
-	if percent <= 0:
-		return
-	for building in macro_world.buildings:
-		if building.repair_requested or building.repair_auto_excluded or not RepairAction.is_building_repairable(building):
-			continue
-		if building.rules.lifespan_years <= 0:
-			continue
-		var integrity_percent: float = building.current_durability / float(building.rules.max_durability) * 100.0
-		if integrity_percent >= float(percent):
-			continue
-		if not JobWorkScanService.workers_on_building(human_individuals, building, JobWorkScanService.REPAIR_TASK_NAMES).is_empty():
-			continue
-		building.repair_requested = true
-		if DebugLogging.ENABLED and DebugLogging.SHOW_JOB_BOARD_LOGS:
-			print("[JOB BOARD] Riparazione richiesta in automatico per l'edificio #%d (%s), Integrità %.1f/%d (sotto il %d%%): in coda come repair:%d." % [
-				building.id, _building_display_name(building), building.current_durability, building.rules.max_durability, percent, building.id
-			])
-
-
-# Sgombero automatico delle macerie (2026-10-10, regola "Sgombera sempre le macerie", GameData.job_board_auto_clear_rubble):
-# con la coda attiva, ogni maceria non già da sgomberare e non esclusa (Building.rubble_auto_excluded) viene segnata come
-# col clic su "Sgombera" (_on_clear_rubble_requested). Un controllo per giorno di gioco, più subito a spunta cambiata, alla
-# prima lettura dopo un caricamento (i due valori ripartono da zero) e al crollo (_collapse_building azzera il giorno).
-var _auto_clear_checked_day: int = -1
-var _auto_clear_checked_enabled: bool = false
-
-
-func _auto_clear_rubble() -> void:
-	if macro_world == null or game_data == null or not JobBoardService.is_enabled(human_folk):
-		_auto_clear_checked_day = -1
-		return
-	var day := game_data.get_absolute_day()
-	var enabled := game_data.job_board_auto_clear_rubble
-	if day == _auto_clear_checked_day and enabled == _auto_clear_checked_enabled:
-		return
-	_auto_clear_checked_day = day
-	_auto_clear_checked_enabled = enabled
-	if not enabled:
-		return
-	for building in macro_world.buildings.duplicate():
-		if not building.is_rubble() or building.is_demolished or building.is_marked_for_demolition or building.rubble_auto_excluded:
-			continue
-		_mark_building_for_demolition(building)
-		if DebugLogging.ENABLED and DebugLogging.SHOW_JOB_BOARD_LOGS:
-			print("[JOB BOARD] Sgombero richiesto in automatico per le macerie #%d (crollo di %s): in coda come demolish:%d." % [
-				building.id, _rubble_source_display_name(building), building.id
-			])
-
-
 # ============================================================================================
 # Fornitore "corpi" della lista dei lavori (2026-10-07): corpi da seppellire (body:<id>). Quali lavori, chi può prenderli e
 # chi ci lavora: BodyJobProvider (2026-10-17, refactoring GameScene blocco 2b). Qui la X e Rimetti in coda; l'assegnazione
@@ -10355,7 +10166,7 @@ func _list_drawer_produce_recipes() -> Array[Dictionary]:
 		var recipe_rules := CaloricCalculator.get_caloric_source_rules(String(recipe))
 		var disabled_reason := ""
 		# Attrezzo (2026-10-11): addosso a qualcuno o da prendere in deposito = ricetta accesa (ToolFetchService.blocked_reason).
-		var nobody_has := ToolFetchService.categories_nobody_has(_job_board_context(), ToolFetchService.recipe_tool_categories(String(recipe))) 			if ToolFetchService.blocked_reason(_job_board_context(), ToolFetchService.recipe_tool_categories(String(recipe)), DrawerOrderService.TYPE_PRODUCE) != "" else []
+		var nobody_has := ToolFetchService.categories_nobody_has(_game_context(), ToolFetchService.recipe_tool_categories(String(recipe))) 			if ToolFetchService.blocked_reason(_game_context(), ToolFetchService.recipe_tool_categories(String(recipe)), DrawerOrderService.TYPE_PRODUCE) != "" else []
 		if not nobody_has.is_empty():
 			var covered := false
 			for building in buildings_by_recipe.get(recipe, []):
@@ -10456,7 +10267,7 @@ func _release_drawer_zone_order(order: Dictionary) -> void:
 	var order_id := int(order["id"])
 	var claim: Dictionary = DrawerOrderService.collect_zone_claims(human_individuals).get(order_id, {})
 	order["done_seen"] = maxi(int(order.get("done_seen", 0)), int(claim.get("done", 0)))
-	DrawerOrderService.return_order(_job_board_context(), order)
+	DrawerOrderService.return_order(_game_context(), order)
 	for member in human_individuals:
 		var current_closed := false
 		var current := member.current_task
@@ -10564,11 +10375,11 @@ func _zone_order_missing_categories(member: HumanIndividual, order_type: String)
 
 
 func _zone_order_tool_blocked_reason(order_type: String) -> String:
-	return ToolFetchService.blocked_reason(_job_board_context(), DrawerOrderService.tool_categories(order_type), order_type)
+	return ToolFetchService.blocked_reason(_game_context(), DrawerOrderService.tool_categories(order_type), order_type)
 
 
 func _zone_order_tool_rejection(worker: HumanIndividual, order_type: String) -> String:
-	return ToolFetchService.rejection(_job_board_context(), worker, DrawerOrderService.tool_categories(order_type), order_type)
+	return ToolFetchService.rejection(_game_context(), worker, DrawerOrderService.tool_categories(order_type), order_type)
 
 
 func _plan_zone_order_tool_fetch(worker: HumanIndividual, order_type: String) -> Array[Dictionary]:
@@ -10578,17 +10389,10 @@ func _plan_zone_order_tool_fetch(worker: HumanIndividual, order_type: String) ->
 # Prelievi in deposito prima del lavoro appena assegnato (ToolFetchService.start_fetch, 2026-10-17): qui i segnali delle
 # task di prelievo (griglia del magazzino) e il pannello.
 func _start_zone_order_tool_fetch(worker: HumanIndividual, plan: Array[Dictionary], work_label: Variant) -> void:
-	for task in ToolFetchService.start_fetch(_job_board_context(), worker, plan, work_label):
+	for task in ToolFetchService.start_fetch(_game_context(), worker, plan, work_label):
 		_wire_transport_task(task, worker)
 	if worker == individual:
 		_refresh_selected_individual_panel()
-
-
-# Regola "Riponi gli attrezzi presi per un lavoro" (2026-10-11; regola in ToolFetchService.return_borrowed_tools dal
-# 2026-10-17): una volta al secondo; qui i segnali delle task create (griglia del magazzino).
-func _return_borrowed_tools() -> void:
-	for created in ToolFetchService.return_borrowed_tools(_job_board_context()):
-		_wire_transport_task(created["task"], created["member"])
 
 
 # Bottone "Taglia" / "Estrai": lo strato dell'ordine con i limiti del popup del comando e il valore ricordato.
@@ -10641,7 +10445,7 @@ func _on_drawer_zone_pick_requested() -> void:
 	var gather_order := DrawerOrderService.gather_order_fields(_task_assignment_panel.get_gather_choice()) if kind == DrawerOrderService.TYPE_GATHER else {}
 	var valid_ids: Array[int] = []
 	for area in DrawerOrderService.zone_areas(game_data, kind):
-		if DrawerOrderService.area_has_targets(_job_board_context(), kind, area, null, reserved, gather_order):
+		if DrawerOrderService.area_has_targets(_game_context(), kind, area, null, reserved, gather_order):
 			valid_ids.append(area.id)
 	if valid_ids.is_empty():
 		if _task_assignment_panel != null and is_instance_valid(_task_assignment_panel):
@@ -10753,7 +10557,7 @@ func _on_hunt_zone_series_ended(hunter: HumanIndividual, series: Dictionary, rea
 		DrawerOrderService.remove(game_data, int(order["id"]))
 		return
 	order[DRAWER_HUNT_NO_PREY_KEY] = alert
-	DrawerOrderService.return_order(_job_board_context(), order)
+	DrawerOrderService.return_order(_game_context(), order)
 	if hunter != null:
 		hunter.skip_job_board_once = true
 
@@ -10849,7 +10653,7 @@ func _assign_drawer_cut_job(worker: HumanIndividual, job: Dictionary) -> void:
 	var order_id := int(order["id"])
 	if DrawerOrderService.find(game_data, order_id).is_empty() or bool(order.get("taken", false)):
 		return
-	var pick := DrawerOrderJobProvider.pick_zone_target(_job_board_context(), worker, job)
+	var pick := DrawerOrderJobProvider.pick_zone_target(_game_context(), worker, job)
 	if pick.is_empty():
 		return
 	var area: WorkArea = pick["area"]
@@ -15255,72 +15059,29 @@ func _on_demolish_confirmed(building: Variant) -> void:
 		_demolish_building(target_building)
 
 
-# Edificio completo segnato "da demolire" (2026-09-27, richiesta utente): da qui non funziona più (niente depositi,
-# prelievi o produzione — vedi Building.is_marked_for_demolition), resta un ostacolo finché non viene abbattuto. Le
-# Task di produzione su di esso vengono chiuse come con la X del pannello (zaino conservato); i residenti vengono
-# liberati e ricollocati come alla demolizione.
-# Demolizione pianificata (2026-10-14, richiesta utente): segnare l'edificio non lo ferma più. Funziona finché il
-# demolitore non comincia (_on_demolition_started, dove ora stanno i passi che prima si facevano qui).
+# Edificio segnato "da demolire" (BuildingLifecycleService.mark_for_demolition): funziona fino all'inizio del lavoro.
 func _mark_building_for_demolition(building: Building) -> void:
-	building.is_marked_for_demolition = true
-	_refresh_buildings_panel()
-	_refresh_selected_building_panel()
-	_refresh_selected_individual_panel()
-	_refresh_building_marker(building)
-	print("[DEMOLISH] Edificio #%d (%s) segnato da demolire (pianificata: funziona fino all'inizio del lavoro)." % [
-		building.id, tr(building.rules.building_name) if building.rules != null else building.building_type_name
-	])
+	var effects := GameEffects.new()
+	BuildingLifecycleService.mark_for_demolition(building, effects)
+	_apply_effects(effects)
 
 
-# Primo lavoro del demolitore (DemolishAction.demolition_started, 2026-10-14): da qui l'edificio è inagibile. Gli stessi
-# passi che prima si facevano alla marcatura.
+# Primo lavoro del demolitore (DemolishAction.demolition_started; regole in BuildingLifecycleService.start_demolition): da
+# qui l'edificio è inagibile. Poi gli ordini di produzione dell'edificio riallineati alle Task rimaste.
 func _on_demolition_started(building: Building) -> void:
 	if building == null or building.is_demolished:
 		return
-	# Materiali della riparazione a terra, piano e richiesta chiusi (2026-10-10, materiali della Ripara — passo 5).
-	GroundPileService.drop_repair_materials(game_data, building, macro_world)
-	# La casa si perde qui, non all'abbattimento (2026-10-10, evento di felicità).
-	_apply_home_lost_happiness(building)
-	var freed := _close_tasks_working_on_building(building, JobWorkScanService.PRODUCE_TASK_NAMES, null)
-	for member in freed:
-		HumanIndividualActionService.resolve_idle_individual(member, _resolve_age_band(member), macro_world)
+	var effects := GameEffects.new()
+	BuildingLifecycleService.start_demolition(_game_context(), building, effects)
 	_reconcile_production_units(building)
-	_release_building_residents(building)
-	_refresh_buildings_panel()
-	_refresh_selected_building_panel()
-	_refresh_selected_individual_panel()
-	print("[DEMOLISH] Demolizione dell'edificio #%d (%s) iniziata: inagibile." % [building.id, _building_display_name(building)])
+	_apply_effects(effects)
 
 
-# Casa persa per demolizione o crollo (2026-10-10, richiesta utente — evento di felicità): chi abita in `building` perde
-# HumanRules.home_lost_happiness_loss. Chiamata prima di azzerare house_id; mai dal miglioramento.
-func _apply_home_lost_happiness(building: Building) -> void:
-	var rules: HumanRules = human_folk.human_rules_ref if human_folk != null else null
-	if rules == null:
-		return
-	var residents: Array[HumanIndividual] = []
-	for occupant in human_individuals:
-		if occupant.house_id == building.id:
-			residents.append(occupant)
-	if residents.is_empty():
-		return
-	HumanVitalsInteractionService.apply_happiness_event(
-		residents, -rules.home_lost_happiness_loss, {}, 0.0, -1, "casa persa (%s #%d)" % [_building_display_name(building), building.id]
-	)
-
-
-# Residenti di `building` fuori casa (2026-10-03, estratto da _mark_building_for_demolition per il miglioramento): casa
-# azzerata per chi ci abita (solo per un edificio residenziale), poi AssignHouseService li ricolloca dove c'è posto e la
-# scheda popolazione si rinfresca. Le Task di riposo in casa non puntano all'edificio (solo a una posizione): finiscono
-# da sole come oggi.
-# Nessun controllo su max_residents (2026-10-03): nel miglioramento si chiama dopo il cambio di regole, e conta solo chi
-# ha davvero questa casa.
+# Residenti di `building` fuori casa e ricollocati (BuildingLifecycleService.release_residents).
 func _release_building_residents(building: Building) -> void:
-	for occupant in human_individuals:
-		if occupant.house_id == building.id:
-			occupant.house_id = -1
-	AssignHouseService.assign_pending_residents(macro_world, human_individuals, game_data.year)
-	_refresh_population_panel()
+	var effects := GameEffects.new()
+	BuildingLifecycleService.release_residents(_game_context(), building, effects)
+	_apply_effects(effects)
 
 
 # ============================================================================================
@@ -15466,343 +15227,49 @@ func _start_upgrade_without_builder(building: Building, chosen_rotation: int = -
 	_refresh_selected_building_panel()
 
 
-# Stesse condizioni del pulsante: destinazione valida, edificio completo e non "da demolire", idea della destinazione
-# scoperta. Le scorte non bloccano più (2026-10-04): finiscono a terra all'avvio (_start_building_upgrade).
 func _can_start_building_upgrade(building: Building) -> bool:
-	var target := BuildingUpgradeService.get_upgrade_rules(building)
-	if target == null or building.is_demolished or not building.is_complete or building.is_marked_for_demolition:
-		return false
-	if target.required_idea_id != "" and (human_folk == null or not human_folk.completed_ideas.has(target.required_idea_id)):
-		return false
-	return true
+	return BuildingLifecycleService.can_start_upgrade(_game_context(), building)
 
 
-# Trasforma l'edificio completo nel cantiere del tipo di destinazione: stesso id, posto e istanza (influenza conservata).
-#   - salva in construction_progress tipo di partenza, durabilità, anno di costruzione e lo sconto usato;
-#   - residenti fuori (stesso innesco della demolizione, _release_building_residents);
-#   - tipo e regole nuovi, cantiere senza allestimento (site_setup_complete) e con lo spazio già riservato (stesso
-#     required_space); lo sconto usato in stored_resources come materiale già consegnato;
-#   - materiale recuperato (sconto non usato) in un mucchio a terra con drop_entries dalla posizione dell'edificio: il
-#     cantiere occupa la sua cella, il mucchio va davanti alla porta o nella microcella libera più vicina;
-#   - viste e contatore degli edifici come dopo una costruzione.
+# L'edificio completo diventa il cantiere del tipo di destinazione (BuildingLifecycleService.start_upgrade).
 func _start_building_upgrade(building: Building, chosen_rotation: int = -1) -> void:
-	var target := BuildingUpgradeService.get_upgrade_rules(building)
-	if target == null:
-		return
-	var cost := BuildingUpgradeService.get_upgrade_cost(building.rules, target)
-	var from_type := building.building_type_name
-	var from_name := _building_display_name(building)
-	var freed := _close_tasks_working_on_building(building, JobWorkScanService.PRODUCE_TASK_NAMES, null)
-	for member in freed:
-		HumanIndividualActionService.resolve_idle_individual(member, _resolve_age_band(member), macro_world)
-	# Scorte a terra (2026-10-04, richiesta utente): PRIMA della trasformazione in cantiere e prima di caricare lo sconto
-	# come materiale consegnato, magazzino e prodotti finiti vanno in un mucchio con le regole di sempre
-	# (GroundPileService.drop_building_contents: davanti alla porta o nella microcella libera più vicina, mai sopra un
-	# edificio). Senza una microcella libera vengono persi, come per "Svuota tutto".
-	var contents_pile := GroundPileService.drop_building_contents(game_data, building, macro_world)
-	# Materiali della riparazione a terra, piano e richiesta chiusi (2026-10-10, materiali della Ripara — passo 5).
-	GroundPileService.drop_repair_materials(game_data, building, macro_world)
-	if contents_pile != null:
-		print("[UPGRADE] Edificio #%d: scorte a terra nel mucchio #%d, microcella %s." % [building.id, contents_pile.id, str(contents_pile.microcell)])
-	building.construction_progress = {
-		"space_reserved": true,
-		BuildingUpgradeService.UPGRADE_FROM_TYPE_KEY: from_type,
-		BuildingUpgradeService.UPGRADE_FROM_DURABILITY_KEY: building.current_durability,
-		BuildingUpgradeService.UPGRADE_FROM_BUILT_YEAR_KEY: building.built_year,
-		BuildingUpgradeService.UPGRADE_FROM_ROTATION_KEY: int(building.rotation),
-		BuildingUpgradeService.UPGRADE_CREDITED_KEY: (cost["credited"] as Dictionary).duplicate(),
-	}
-	# Orientamento scelto (2026-10-04, ogni destinazione con porta): vale per cantiere ed edificio finito
-	# (porta disegnata, punto di accesso, posizione dei mucchi). Le scorte sono già a terra, posate con l'orientamento di
-	# prima.
-	if chosen_rotation >= 0:
-		building.rotation = chosen_rotation as GameTypes.Direction
-	building.building_type_name = from_type if building.rules == null else building.rules.upgrades_to
-	building.rules = target
-	building.is_complete = false
-	building.site_setup_complete = true
-	building.is_awaiting_material = false
-	building.production_progress = {}
-	building.production_suspended = {}
-	for material_name in (cost["credited"] as Dictionary).keys():
-		building.stored_resources[String(material_name)] = {"quantity": int(cost["credited"][material_name]), "decay_fraction": 0.0}
-	# Residenti fuori DOPO il passaggio a cantiere (2026-10-03, bugfix): prima li si liberava con l'edificio ancora
-	# completo, e AssignHouseService li rimetteva subito nella stessa tenda (unica casa libera con posto).
-	_release_building_residents(building)
-	var recovered_entries: Dictionary = {}
-	for material_name in (cost["recovered"] as Dictionary).keys():
-		recovered_entries[String(material_name)] = {"quantity": int(cost["recovered"][material_name]), "decay_fraction": 0.0}
-	var pile := GroundPileService.drop_entries(
-		game_data, Vector2i(building.macro_x, building.macro_y),
-		Vector2(float(building.micro_x) + 0.5, float(building.micro_y) + 0.5), recovered_entries, macro_world
-	)
-	_refresh_upgraded_building_views(building)
-	_spawn_build_site_placeholders(building)
-	print("[UPGRADE] Edificio #%d: %s -> %s, materiale recuperato %s." % [
-		building.id, from_name, _building_display_name(building),
-		("a terra nel mucchio #%d" % pile.id) if pile != null else "nessuno"
-	])
+	var effects := GameEffects.new()
+	BuildingLifecycleService.start_upgrade(_game_context(), building, chosen_rotation, effects)
+	_apply_effects(effects)
 
 
-# Annullamento del cantiere di un miglioramento (ramo dedicato di "Annulla cantiere"): chiude le Build Task sul cantiere,
-# rimette tipo, regole, completezza, durabilità e anno salvati e li cancella; i materiali consegnati oltre lo sconto
-# cadono a terra con drop_entries; il lavoro fatto si perde. Poi residenti ricollocati e contatore degli edifici.
-# L'edificio non sparisce mai.
+# "Annulla cantiere" su un miglioramento: torna l'edificio di prima (BuildingLifecycleService.cancel_upgrade).
 func _cancel_building_upgrade(building: Building) -> void:
-	var progress := building.construction_progress
-	var from_type := String(progress.get(BuildingUpgradeService.UPGRADE_FROM_TYPE_KEY, ""))
-	var from_rules := BuildingCalculator.get_building_rules(from_type)
-	if from_rules == null:
-		push_warning("GameScene: annullamento del miglioramento dell'edificio #%d impossibile, tipo di partenza '%s' sconosciuto." % [building.id, from_type])
-		return
-	var freed := _close_tasks_working_on_building(building, JobWorkScanService.BUILD_TASK_NAMES, null)
-	var credited: Dictionary = progress.get(BuildingUpgradeService.UPGRADE_CREDITED_KEY, {})
-	var surplus: Dictionary = {}
-	for resource_name in building.stored_resources.keys():
-		var entry: Dictionary = building.stored_resources[resource_name]
-		var extra: int = int(entry.get("quantity", 0)) - int(credited.get(resource_name, 0))
-		if extra > 0:
-			surplus[String(resource_name)] = {"quantity": extra, "decay_fraction": float(entry.get("decay_fraction", 0.0))}
-	building.stored_resources.clear()
-	building.building_type_name = from_type
-	building.rules = from_rules
-	building.is_complete = true
-	building.site_setup_complete = true
-	building.is_awaiting_material = false
-	building.current_durability = int(progress.get(BuildingUpgradeService.UPGRADE_FROM_DURABILITY_KEY, from_rules.max_durability))
-	building.built_year = int(progress.get(BuildingUpgradeService.UPGRADE_FROM_BUILT_YEAR_KEY, building.built_year))
-	# Orientamento di prima (2026-10-04); assente nei salvataggi precedenti: resta quello attuale.
-	building.rotation = int(progress.get(BuildingUpgradeService.UPGRADE_FROM_ROTATION_KEY, int(building.rotation))) as GameTypes.Direction
-	building.construction_progress = {}
-	_remove_build_site_placeholders(building)
-	var pile := GroundPileService.drop_entries(
-		game_data, Vector2i(building.macro_x, building.macro_y),
-		Vector2(float(building.micro_x) + 0.5, float(building.micro_y) + 0.5), surplus, macro_world
-	)
-	for member in freed:
-		HumanIndividualActionService.resolve_idle_individual(member, _resolve_age_band(member), macro_world)
-	AssignHouseService.assign_pending_residents(macro_world, human_individuals, game_data.year)
-	_refresh_population_panel()
-	_refresh_upgraded_building_views(building)
-	_refresh_selected_individual_panel()
-	print("[UPGRADE] Miglioramento dell'edificio #%d annullato: torna %s, materiale %s." % [
-		building.id, _building_display_name(building), ("a terra nel mucchio #%d" % pile.id) if pile != null else "nessuno a terra"
-	])
+	var effects := GameEffects.new()
+	BuildingLifecycleService.cancel_upgrade(_game_context(), building, effects)
+	_apply_effects(effects)
 
 
-# Viste dopo un cambio di tipo sul posto (miglioramento avviato o annullato): disegno della cella, pannelli e contatore
-# degli edifici (_refresh_building_slots_buildable alza buildings_revision: copertura e layer di influenza).
-func _refresh_upgraded_building_views(building: Building) -> void:
-	var macro_coords := Vector2i(building.macro_x, building.macro_y)
-	if live_cells.has(macro_coords):
-		_refresh_building_visuals(live_cells[macro_coords])
-	_refresh_buildings_panel()
-	_refresh_building_slots_buildable()
-	_refresh_selected_building_panel()
-
-
-# Demolizione annullata (2026-09-27, richiesta utente; dal 2026-10-09 solo da "Annulla demolizione", il mirino del
-# demolitore non c'è più): il flag "da demolire" si toglie e l'edificio torna a funzionare (depositi, prelievi, produzione,
-# ricerche dei magazzini). I residenti liberati alla marcatura vengono ricollocati da AssignHouseService come al
-# solito (anche in altri edifici); le Produce Task chiuse alla marcatura non vengono ripristinate.
-func _cancel_building_demolition(building: Building) -> void:
-	if building == null or building.is_demolished or not building.is_marked_for_demolition:
-		return
-	building.is_marked_for_demolition = false
-	AssignHouseService.assign_pending_residents(macro_world, human_individuals, game_data.year)
-	_refresh_population_panel()
-	_refresh_buildings_panel()
-	_refresh_selected_building_panel()
-	_refresh_building_marker(building)
-	print("[DEMOLISH] Demolizione dell'edificio #%d (%s) annullata." % [building.id, _building_display_name(building)])
-
-
-# "Annulla demolizione" dal pannello (2026-09-27, richiesta utente): solo finché il lavoro non è iniziato. Chiude le
-# Demolish Task su questo edificio di tutti (correnti e in coda) con la stessa chiusura di _demolish_building, poi
-# toglie il flag "da demolire" (_cancel_building_demolition).
+# "Annulla demolizione" dal pannello o X del cassetto (BuildingLifecycleService.request_cancel_demolition): solo finché il
+# lavoro non è iniziato.
 func _on_demolition_cancel_requested(building: Building) -> void:
-	if building == null or building.is_demolished or not building.is_marked_for_demolition:
-		return
-	if float(building.construction_progress.get(DemolishAction.LABOR_KEY, 0.0)) > 0.0:
-		_refresh_selected_building_panel()
-		return
-	var freed := _close_tasks_working_on_building(building, JobWorkScanService.DEMOLISH_TASK_NAMES, null)
-	# Sgombero annullato dal giocatore (2026-10-10, X del cassetto o "Annulla sgombero"): niente più sgombero automatico.
-	if building.is_rubble():
-		building.rubble_auto_excluded = true
-	_cancel_building_demolition(building)
-	for member in freed:
-		HumanIndividualActionService.resolve_idle_individual(member, _resolve_age_band(member), macro_world)
-	_refresh_selected_individual_panel()
+	var effects := GameEffects.new()
+	BuildingLifecycleService.request_cancel_demolition(_game_context(), building, effects)
+	_apply_effects(effects)
 
 
-# Fine della Demolish Task (DemolishAction.demolition_completed, 2026-09-27): abbatte l'edificio con la logica di
-# _demolish_building, facendo cadere in un unico mucchio metà dei required_materials (per difetto; il materiale di
-# allestimento non si recupera), il deposito e il buffer di uscita. Se c'è un mucchio, chiede nel context della Task
-# di accodare allo stesso individuo il trasporto al magazzino (HumanIndividualActionService.
-# CONTEXT_PENDING_GROUND_PILE_HAUL, consumato subito dopo questo step).
+# Fine della Demolish Task (DemolishAction.demolition_completed): abbattimento con il recupero di metà dei materiali e il
+# mucchio da portare al magazzino (BuildingLifecycleService.complete_demolition).
 func _on_demolition_completed(building: Building, demolisher: Variant, context: Dictionary) -> void:
-	if building == null or building.is_demolished:
-		return
-	var salvaged: Dictionary = {}
-	if building.rules != null:
-		for material_name in building.rules.required_materials.keys():
-			var salvaged_quantity: int = floori(float(building.rules.required_materials[material_name]) / 2.0)
-			if salvaged_quantity > 0:
-				salvaged[material_name] = salvaged_quantity
-	var pile := _demolish_building(building, salvaged, demolisher as HumanIndividual)
-	if pile != null:
-		context[HumanIndividualActionService.CONTEXT_PENDING_GROUND_PILE_HAUL] = {
-			"macro_x": pile.macro_coords.x, "macro_y": pile.macro_coords.y,
-			"micro_x": pile.microcell.x, "micro_y": pile.microcell.y,
-		}
+	var effects := GameEffects.new()
+	BuildingLifecycleService.complete_demolition(_game_context(), building, demolisher as HumanIndividual, context, effects)
+	_apply_effects(effects)
 
 
 # ============================================================================================
-# Crollo degli edifici (2026-10-10, richiesta utente): quando il calo giornaliero (WorldTimeService.
-# _advance_building_durability_decay) porta a 0 l'Integrità di un edificio completo che deperisce, l'edificio crolla.
-# Persone come nella demolizione (_demolish_building: residenti liberati e ricollocati, lavori sull'edificio chiusi, ruoli
-# speciali come il punto di assegnazione trattati come oggi); in più si chiudono produzione, riparazione e riti sull'edificio
-# e la richiesta di riparazione. Contenuto (magazzino, prodotti finiti, Attrezzeria) e materiali: tutto perso, nessun
-# mucchio. Con BuildingRules.leaves_rubble al suo posto nasce un edificio "Macerie" (rubble), da sgomberare con la Demolish
-# ("Sgombera" nel pannello); senza, la cella torna libera. Avviso al giocatore e riga [COLLAPSE] nel log.
+# Crollo degli edifici (2026-10-10) e sfratti dalle case danneggiate: regole in BuildingLifecycleService (2026-10-17,
+# refactoring GameScene blocco 3b). Qui i collegamenti del giro giornaliero.
 # ============================================================================================
-
-const RUBBLE_BUILDING_TYPE := "rubble"
-# Task chiuse al crollo oltre a quelle che chiude già _demolish_building (costruzione e demolizione).
-const COLLAPSE_CLOSED_TASK_NAMES: Array[String] = ["task_produce_name", "task_repair_name", "task_rite_name", "task_leisure_rite_name"]
-
-
-# Sfratto dalle case danneggiate (2026-10-10, effetti dello stato "Danneggiato" — passo 5): una volta al giorno, dopo il
-# crollo. In ogni casa con più residenti dei posti effettivi (AssignHouseService.get_max_residents) quelli in più, scelti
-# a caso, perdono la casa: calo di felicità della casa persa (HumanRules.home_lost_happiness_loss), riga [EVICTION] e
-# avviso al giocatore. Poi, sempre, la normale riassegnazione delle case: riempie anche i posti tornati liberi dopo una
-# riparazione sopra la soglia (gli sfrattati non tornano apposta nella stessa casa).
-func _evict_damaged_house_overflow() -> void:
-	if macro_world == null or game_data == null:
-		return
-	var evicted_any := false
-	for building in macro_world.buildings:
-		if building.rules == null or building.rules.max_residents <= 0 or not building.is_complete or building.is_demolished:
-			continue
-		var residents: Array[HumanIndividual] = []
-		for member in human_individuals:
-			if member.house_id == building.id:
-				residents.append(member)
-		var overflow := residents.size() - AssignHouseService.get_max_residents(building)
-		if overflow <= 0:
-			continue
-		residents.shuffle()
-		var evicted: Array[HumanIndividual] = []
-		for i in range(overflow):
-			evicted.append(residents[i])
-		var rules: HumanRules = human_folk.human_rules_ref if human_folk != null else null
-		if rules != null:
-			HumanVitalsInteractionService.apply_happiness_event(
-				evicted, -rules.home_lost_happiness_loss, {}, 0.0, -1, "sfratto da %s #%d" % [_building_display_name(building), building.id]
-			)
-		for member in evicted:
-			member.house_id = -1
-			print("[EVICTION] #%d %s sfrattato da %s #%d: casa danneggiata, posti effettivi %d." % [
-				member.id, member.name, _building_display_name(building), building.id, AssignHouseService.get_max_residents(building)
-			])
-		evicted_any = true
-		if UserOptions.show_notification_popups:
-			notification_popup.enqueue(
-				NotificationTypes.NotificationPopupType.HOUSE_EVICTION,
-				tr("notification_house_eviction").format({"building": _building_display_name(building), "count": evicted.size()})
-			)
-	AssignHouseService.assign_pending_residents(macro_world, human_individuals, game_data.year)
-	if evicted_any:
-		_refresh_population_panel()
-		_refresh_selected_building_panel()
-
-
-func _collapse_ruined_buildings() -> void:
-	if macro_world == null:
-		return
-	for building in macro_world.buildings.duplicate():
-		if building.is_demolished or not building.is_complete or building.is_marked_for_demolition or building.rules == null:
-			continue
-		if building.rules.lifespan_years <= 0 or building.current_durability > 0.0:
-			continue
-		_collapse_building(building)
-
-
-func _collapse_building(building: Building) -> void:
-	var display_name := _building_display_name(building)
-	var leaves_rubble: bool = building.rules.leaves_rubble
-	var source_type := building.building_type_name
-	var macro_coords := Vector2i(building.macro_x, building.macro_y)
-	var microcell := Vector2i(building.micro_x, building.micro_y)
-	var freed := _close_tasks_working_on_building(building, COLLAPSE_CLOSED_TASK_NAMES, null)
-	building.repair_requested = false
-	# Tutto perso: _demolish_building non trova nulla da far cadere a terra.
-	building.stored_resources.clear()
-	building.production_output.clear()
-	building.toolkit.clear()
-	# Materiali della riparazione persi anche loro (2026-10-10, passo 5); piano chiuso (la richiesta è già chiusa sopra).
-	building.repair_materials.clear()
-	building.repair_plan = {}
-	_demolish_building(building)
-	for member in freed:
-		HumanIndividualActionService.resolve_idle_individual(member, _resolve_age_band(member), macro_world)
-	var rubble: Building = _spawn_rubble(source_type, macro_coords, microcell) if leaves_rubble else null
-	# Crollo con macerie (2026-10-10, evento di felicità): tutto il villaggio; chi ci abitava ha già perso la casa sopra.
-	if leaves_rubble:
-		var collapse_rules: HumanRules = human_folk.human_rules_ref if human_folk != null else null
-		if collapse_rules != null:
-			HumanVitalsInteractionService.apply_happiness_event(
-				human_individuals, -collapse_rules.collapse_village_happiness_loss, {}, 0.0, -1, "crollo di %s" % display_name
-			)
-	print("[COLLAPSE] Edificio #%d (%s) crollato a Integrità zero — %s." % [
-		building.id, display_name, ("macerie #%d nella stessa microcella" % rubble.id) if rubble != null else "nessuna maceria, cella libera"
-	])
-	if UserOptions.show_notification_popups:
-		notification_popup.enqueue(
-			NotificationTypes.NotificationPopupType.BUILDING_COLLAPSED,
-			tr("notification_building_collapsed" if leaves_rubble else "notification_building_lost").format({"building": display_name})
-		)
-	# Sgombero automatico (2026-10-10): le macerie appena nate si controllano subito.
-	_auto_clear_checked_day = -1
-	_refresh_pending_entries()
-	_refresh_selected_individual_panel()
-
-
-# Macerie al posto di un edificio crollato (`source_type` = suo building_type_name): edificio completo come il piazzamento
-# istantaneo (_place_building_at), stessa riserva di spazio della microcella (le piante non ricrescono lì), nessuna
-# pulizia della vegetazione (la cella era già occupata).
-func _spawn_rubble(source_type: String, macro_coords: Vector2i, microcell: Vector2i) -> Building:
-	var rules := BuildingCalculator.get_building_rules(RUBBLE_BUILDING_TYPE)
-	var state := macro_world.get_cell_state_at(macro_coords.x, macro_coords.y) if macro_world != null else null
-	if rules == null or state == null:
-		return null
-	var rubble := Building.new(rules, macro_coords.x, macro_coords.y, RUBBLE_BUILDING_TYPE)
-	rubble.id = macro_world.allocate_building_id()
-	rubble.micro_x = microcell.x
-	rubble.micro_y = microcell.y
-	_assign_building_village(rubble)
-	rubble.is_complete = true
-	rubble.site_setup_complete = true
-	rubble.current_durability = rules.max_durability
-	rubble.built_year = game_data.year
-	rubble.rubble_source_name = source_type
-	macro_world.buildings.append(rubble)
-	state.set_dedicated_space(GameTypes.WorldObjectType.BUILDING, state.get_dedicated_space(GameTypes.WorldObjectType.BUILDING) + rules.required_space)
-	if live_cells.has(macro_coords):
-		var cell: LiveMacroCell = live_cells[macro_coords]
-		_refresh_building_visuals(cell)
-		cell.needs_full_vegetation_recompute = true
-		_refresh_resource_visuals(cell, "edificio")
-	_refresh_buildings_panel()
-	_refresh_building_slots_buildable()
-	return rubble
 
 
 # Nome dell'edificio crollato da cui sono nate le macerie (tradotto), o il tipo grezzo se le regole non ci sono più.
 func _rubble_source_display_name(rubble: Building) -> String:
-	var source_rules := BuildingCalculator.get_building_rules(rubble.rubble_source_name) if rubble.rubble_source_name != "" else null
-	return tr(source_rules.building_name) if source_rules != null else rubble.rubble_source_name
+	return rubble.get_rubble_source_display_name()
 
 
 # "Sgombera" dal pannello delle macerie (2026-10-10): la Demolish esistente, senza conferma, con il suo lavoro di sempre
@@ -15936,129 +15403,11 @@ func _on_ground_pile_haul_requested(carrier: HumanIndividual, pile_ref: Dictiona
 		_refresh_selected_individual_panel()
 
 
-# Demolizione VERA (2026-09-12, richiesta utente, punto 2) — funzione unica, chiamata solo dopo
-# conferma esplicita nel dialog. Operazione one-shot: `building` viene rimosso da macro_world.
-# buildings all'ultima riga di mutazione qui sotto, quindi nessuna doppia chiamata è possibile per
-# lo STESSO Building (non resta più raggiungibile da nessun building_id/click successivo) — NESSUN
-# flag di idempotenza necessario, a differenza di ClearAction.space_reserved (che invece doveva
-# proteggersi da una ricostruzione ripetuta della STESSA Action per lo stesso edificio ancora vivo).
-# Chiamata anche a fine Demolish Task (2026-09-27, _on_demolition_completed): `salvaged` = materiali recuperati
-# (nome -> quantità) che cadono a terra insieme al contenuto; `completing` = chi ha appena finito di abbatterlo, la
-# cui Task (in pieno completamento) non va chiusa. Ritorna il mucchio a terra, o null.
+# Abbattimento vero (BuildingLifecycleService.demolish): ritorna il mucchio a terra, o null.
 func _demolish_building(building: Building, salvaged: Dictionary = {}, completing: HumanIndividual = null) -> GroundPile:
-	if building == null or macro_world == null:
-		return null
-
-	# 1) Interrompi qualunque Task il cui target sia questo edificio — sia una Build Task in corso
-	# (SetupSite/Clear/Build, context["target_building"]) sia una assegnata ma non ancora avviata
-	# (stesso context, nessuna distinzione: il primo step di qualunque Task del genere è sempre
-	# Walk, che non legge target_building affatto, ma il context è condiviso da TUTTI gli step della
-	# stessa Task fin dalla creazione via TaskFactory.build_task — vedi Task.context). Nessun
-	# riferimento diretto building->individuo esiste oggi (vedi il report): scansione lineare di
-	# human_individuals, stesso costo già accettato altrove nel progetto per questo stesso array
-	# (es. AssignHouseService sopra). (Storico: prima other.stop() qui era SENZA resolve_idle_individual,
-	# "fuori scope"; dal 2026-09-21 lo si richiama dopo la demolizione, vedi sotto.)
-	#
-	# BUGFIX (2026-09-21, richiesta utente): il controllo su context["target_building"] non scattava MAI
-	# (TaskFactory.build_task ripulisce quella chiave dal context, vedi JobWorkScanService.task_works_on_building) e
-	# ignorava la coda. Ora usa JobWorkScanService.task_works_on_building (legge il target dagli step) su current_task E su
-	# task_queue: le task che puntano a questo edificio vengono chiuse. Il carico dello zaino segue la regola
-	# unica di CargoReturnService (dal 2026-09-29: ritorno al magazzino se la task chiusa lo possiede, a terra
-	# solo senza magazzino). Gli individui la cui
-	# current_task è stata chiusa vengono rimessi in moto (bisogno/coda/perditempo) DOPO che l'edificio
-	# è demolito (step 6), così una task in coda per lo stesso edificio non può essere ripresa.
-	# Anche le Demolish Task di altri individui sullo stesso edificio (2026-09-27).
-	var individuals_to_resolve: Array[HumanIndividual] = _close_tasks_working_on_building(building, JobWorkScanService.BUILD_AND_DEMOLISH_TASK_NAMES, completing)
-
-	# 2) Residenti: libera gli slot (house_id torna a -1, stesso valore di default di HumanIndividual
-	# senza casa) — solo se l'edificio era residenziale, stesso guard già usato da AssignHouseService/
-	# dai tre trigger esistenti (max_residents > 0).
-	if building.rules != null and building.rules.max_residents > 0:
-		# Casa persa (2026-10-10, evento di felicità): crollo o cantiere annullato con residenti; per un edificio "da
-		# demolire" i residenti sono già usciti alla marcatura (_mark_building_for_demolition), qui non c'è nessuno.
-		_apply_home_lost_happiness(building)
-		for occupant in human_individuals:
-			if occupant.house_id == building.id:
-				occupant.house_id = -1
-
-	# 3) Produzione in corso persa (2026-09-23). Deposito e buffer di uscita non si perdono più (2026-09-27): cadono
-	# a terra con i materiali recuperati, dopo la rimozione dall'elenco (step 6), così il mucchio può posarsi anche
-	# sulla microcella liberata.
-	building.production_progress = {}
-	building.production_suspended = {}
-
-	# 4) Libera lo spazio dedicato SOLO se era stato davvero riservato — is_complete=true copre sia
-	# il percorso Build Task (ClearAction.on_complete lo riserva, poi BuildAction completa) sia il
-	# piazzamento istantaneo Sx+B (_place_building_at riserva lo spazio direttamente, MAI passando da
-	# construction_progress["space_reserved"] — quel campo resta vuoto per quel percorso, vedi
-	# Building.construction_progress) — building.is_complete da solo non basterebbe a coprire un
-	# cantiere ancora in corso il cui ClearAction è già completato ma BuildAction no (is_complete
-	# ancora false, spazio già riservato): construction_progress["space_reserved"] copre esattamente
-	# quel caso intermedio. Le due condizioni insieme coprono ESATTAMENTE gli stessi casi in cui lo
-	# spazio è stato incrementato in tutto il progetto (_place_building_at riga ~4929, ClearAction.
-	# on_complete riga ~212) — nessun altro punto lo incrementa mai.
-	var space_was_reserved: bool = building.is_complete or bool(building.construction_progress.get("space_reserved", false))
-	if space_was_reserved and building.rules != null:
-		var state := macro_world.get_cell_state_at(building.macro_x, building.macro_y)
-		if state != null:
-			var current_building_space := state.get_dedicated_space(GameTypes.WorldObjectType.BUILDING)
-			state.set_dedicated_space(GameTypes.WorldObjectType.BUILDING, max(0, current_building_space - building.rules.required_space))
-
-	# 5) Placeholder visivi residui (rametti) — no-op se l'edificio era già completo (mai spawnati, o
-	# già rimossi da _on_building_construction_completed), stesso guard get_node_or_null già dentro
-	# questa funzione.
-	_remove_build_site_placeholders(building)
-
-	# 6) Rimozione vera dall'unica fonte di verità (macro_world.buildings) — DOPO aver letto/mutato
-	# tutto ciò che sopra dipende ancora dall'oggetto vivo (rules/construction_progress/macro_x/
-	# macro_y), PRIMA dei refresh sotto (che rileggono macro_world.buildings da zero).
-	#
-	# is_demolished = true (2026-09-12, richiesta utente — bugfix "deposito nel vuoto") — SUBITO
-	# PRIMA dell'erase, sullo stesso oggetto: vedi Building.is_demolished per il perché questo flag
-	# serve (un individuo con una Task già in corso verso questo edificio tiene un riferimento
-	# diretto che resta valido anche dopo che l'edificio sparisce da questa lista).
-	building.is_demolished = true
-	macro_world.buildings.erase(building)
-	_on_village_center_removed(building)
-	# Contenuto e materiali recuperati a terra in un unico mucchio (GroundPileService.drop_building_contents).
-	var pile := GroundPileService.drop_building_contents(game_data, building, macro_world, salvaged)
-	# Individui rimasti senza task per la demolizione (step 1): riprendono dalla coda o vanno in
-	# perditempo — vedi il commento allo step 1.
-	for freed in individuals_to_resolve:
-		HumanIndividualActionService.resolve_idle_individual(freed, _resolve_age_band(freed), macro_world)
-
-	# Chiudi il pannello se era proprio questo l'edificio selezionato (stesso principio già seguito
-	# da _clear_building_selection altrove: nessun pannello che punti a un Building non più
-	# raggiungibile).
-	if not selected_building.is_empty() and int(selected_building.get("building_id", -1)) == building.id:
-		_clear_building_selection()
-
-	# Refresh visivo della cella (torna a mostrare il terreno/vegetazione sottostante — nessun
-	# intervento esplicito sul ciclo di crescita: ResourceGrowthService legge già get_empty_space()
-	# al bisogno, ora più ampio grazie al decremento al punto 4) e dei due pannelli coinvolti.
-	var macro_coords := Vector2i(building.macro_x, building.macro_y)
-	if live_cells.has(macro_coords):
-		_refresh_building_visuals(live_cells[macro_coords])
-		_refresh_dirt_ground_neighbor_cells(building)
-	_refresh_buildings_panel()
-	# Un edificio is_village_center appena demolito può riaprire lo slot Pebble Circle nella BuildBar
-	# (vedi _building_type_availability) — stesso ricalcolo completo/idempotente già usato altrove,
-	# non un caso speciale scritto qui.
-	_refresh_building_slots_buildable()
-
-	print("[DEMOLISH] Edificio #%d (%s) demolito — %s." % [
-		building.id, tr(building.rules.building_name) if building.rules != null else building.building_type_name,
-		("mucchio a terra #%d, microcella %s" % [pile.id, str(pile.microcell)]) if pile != null else "nulla a terra"
-	])
-
-	# 7) Ricolloca eventuali individui rimasti senza casa (punto 2/3) in altri posti liberi, poi
-	# rinfresca la scheda 👨‍👩‍👧 — stesso identico bugfix appena applicato al trigger "edificio
-	# completato" (2026-09-12): AssignHouseService non è mai seguito da un human_population_changed
-	# in questo percorso (il conteggio popolazione non cambia demolendo un edificio), quindi senza
-	# questa chiamata esplicita i nuovi house_id (sia i -1 del punto 2 sia le riassegnazioni qui)
-	# non si vedrebbero nella scheda fino al prossimo rollover d'anno.
-	AssignHouseService.assign_pending_residents(macro_world, human_individuals, game_data.year)
-	_refresh_population_panel()
+	var effects := GameEffects.new()
+	var pile := BuildingLifecycleService.demolish(_game_context(), building, effects, salvaged, completing)
+	_apply_effects(effects)
 	return pile
 
 
@@ -16681,7 +16030,7 @@ func _stock_order_blocked_reason(order_type: String, extra: Dictionary) -> Strin
 		return _stock_produce_static_reason(String(extra.get("recipe", "")))
 	var probe := {"type": order_type, "zone_id": -1}
 	probe.merge(extra)
-	return DrawerOrderJobProvider.zone_blocked_reason(_job_board_context(), order_type, -1, null, probe)
+	return DrawerOrderJobProvider.zone_blocked_reason(_game_context(), order_type, -1, null, probe)
 
 
 # Campanella (2026-10-11): una voce per ogni ordine del magazzino non preso e bloccato, "Magazzino · <risorsa>" con il
@@ -16701,7 +16050,7 @@ func _collect_stock_blocked_entries() -> Array[Dictionary]:
 		if order_type == DrawerOrderService.TYPE_PRODUCE:
 			reason = _stock_produce_order_reason(order)
 		else:
-			reason = DrawerOrderJobProvider.zone_blocked_reason(_job_board_context(), order_type, int(order.get("zone_id", -1)), null, order)
+			reason = DrawerOrderJobProvider.zone_blocked_reason(_game_context(), order_type, int(order.get("zone_id", -1)), null, order)
 		if reason == "":
 			continue
 		var row_name := tr("pending_stock_blocked").format({"resource": _stock_order_display_name(order)})
@@ -17360,7 +16709,7 @@ func _food_calories_per_trip(carry_capacity: float) -> float:
 		var probe := {"criterion_kind": PickUpAction.CriterionKind.NAME, "criterion_category": -1, "resource_name": resource_name}
 		var found := false
 		for area in areas:
-			if DrawerOrderService.area_has_targets(_job_board_context(), DrawerOrderService.TYPE_GATHER, area, null, {}, probe):
+			if DrawerOrderService.area_has_targets(_game_context(), DrawerOrderService.TYPE_GATHER, area, null, {}, probe):
 				found = true
 				break
 		if found:
@@ -17492,7 +16841,7 @@ func _stock_produce_static_reason(recipe: String) -> String:
 	var building := DrawerOrderService.choose_produce_building(macro_world, recipe, 1, {})
 	if building == null:
 		return tr("drawer_order_no_free_building")
-	var tool_reason := ToolFetchService.blocked_reason(_job_board_context(), BuildingToolkitService.filter_uncovered(building, ToolFetchService.recipe_tool_categories(recipe)), DrawerOrderService.TYPE_PRODUCE)
+	var tool_reason := ToolFetchService.blocked_reason(_game_context(), BuildingToolkitService.filter_uncovered(building, ToolFetchService.recipe_tool_categories(recipe)), DrawerOrderService.TYPE_PRODUCE)
 	if tool_reason != "" and DrawerOrderService.choose_produce_building(macro_world, recipe, 1, {}, true) == null:
 		return tool_reason
 	return ""
@@ -18970,137 +18319,28 @@ func _connect_storage_refresh_signals(step: Action) -> void:
 			deposit.resource_deposited.connect(_on_resource_deposited)
 
 
-# Reazione a BuildAction.building_construction_completed (2026-09-11, richiesta utente, quarto e
-# ultimo step della Build Task) — building.is_complete/current_durability sono già stati valorizzati
-# DENTRO BuildAction.on_complete PRIMA che questo segnale venga emesso (stesso principio di
-# ClearAction.on_complete/_on_site_cleared sopra: chi ha già i dati muta lo stato da sé, il segnale
-# serve solo a chi NON ce l'ha — qui GameScene). built_year INVECE è responsabilità di QUESTO
-# handler (vedi il commento esteso in BuildAction.on_complete per il perché: quella classe non ha
-# un riferimento a game_data, il cui valore può essere cambiato nel tempo intercorso tra la
-# creazione della Task e il completamento — qui invece game_data è sempre quello CORRENTE, letto
-# esattamente quando serve). STESSO valore/STESSA fonte di GameScene._place_building_at
-# (game_data.year), solo risolto nel momento giusto invece che al piazzamento istantaneo.
-#
-# NIENTE walk-away qui (richiesta esplicita utente, "resta per un prompt a parte") — a differenza
-# di UnloadAction.on_complete (ramo fisico), che scrive context["pending_walk_away_position"]
-# consumato da HumanIndividualActionService._handle_pending_walk_away: quel canale non viene
-# toccato da questa Task, l'individuo resta esattamente dov'è quando la Build Task finisce.
+# Costruzione completata (BuildAction.building_construction_completed; regole in
+# BuildingLifecycleService.complete_construction). Le scoperte BUILDING_COMPLETED partono a fine frame (_flush_discoveries,
+# deferred): questo handler gira in pieno tick di simulazione.
 func _on_building_construction_completed(building: Building) -> void:
 	if building == null:
 		return
-	# Altri individui con una task (corrente o in coda) su questo edificio (2026-09-21, richiesta
-	# utente): non hanno più nulla da costruire — BuildAction.on_complete ha appena cancellato i
-	# materiali di required_materials, quindi il loro step Build resterebbe bloccato. Stessa logica
-	# della demolizione (_close_tasks_working_on_building), ma lo zaino NON viene scartato. Chi ha
-	# completato è escluso: la sua task prosegue da sé (finish_current_step).
-	var other_freed := _close_tasks_working_on_building(building, JobWorkScanService.BUILD_TASK_NAMES, _find_completing_individual(building))
-	for freed in other_freed:
-		HumanIndividualActionService.resolve_idle_individual(freed, _resolve_age_band(freed), macro_world)
-	# Miglioramento completato (2026-10-03): durabilità e anno li ha già scritti BuildAction (nuovo tipo, anno di oggi),
-	# i punti di influenza restano sull'istanza; i valori salvati per l'annullamento non servono più.
-	for upgrade_key in BuildingUpgradeService.UPGRADE_KEYS:
-		building.construction_progress.erase(upgrade_key)
-	# built_year NON più scritto qui (2026-09-19, richiesta utente): lo scrive BuildAction.on_complete
-	# insieme a is_complete, così non può restare indietro se questo listener non è collegato.
-	# Log spostato QUI (2026-09-12, richiesta utente — riordino cosmetico, nessuna modifica di
-	# logica): prima appariva DOPO assign_pending_residents sotto, facendo comparire "[ASSIGN
-	# HOUSE]" nei log prima di "completato!" anche se is_complete/built_year erano già impostati a
-	# quel punto — ora l'ordine dei print rispecchia l'ordine logico reale.
-	if DebugLogging.ENABLED and DebugLogging.SHOW_TRANSPORT_BUILD_LOGS:
-		print("[BUILD] Edificio #%d completato! (anno=%d)" % [building.id, building.built_year])
-	# Rinfresca la scheda 🏠 (2026-09-12, richiesta utente) — lo stato passa da "in costruzione" a
-	# "completo" proprio qui, la lista deve rifletterlo subito, non aspettare il rollover d'anno.
-	_refresh_buildings_panel()
-	# Il primo deposito completo sblocca gli altri edifici nella BuildBar (2026-09-29, _building_type_availability).
-	_refresh_building_slots_buildable()
-	_on_village_center_completed(building)
-	# Scoperte BUILDING_COMPLETED (2026-09-28 — sostituisce il vecchio "primo edificio con accepts_thoughts apre
-	# l'albero idee", ora il .tres first_thought_building con azione OPEN_TECH_TREE). Popup e azioni partono a
-	# fine frame (_flush_discoveries, deferred): questo handler gira in pieno tick di simulazione.
+	var effects := GameEffects.new()
+	BuildingLifecycleService.complete_construction(_game_context(), building, effects)
 	_trigger_discoveries(DiscoveryTypes.TriggerType.BUILDING_COMPLETED, {"building": building})
-	# AssignHouseService (2026-09-12, richiesta utente — trigger 4a: "quando un edificio
-	# residenziale completa la costruzione") — SOLO se max_residents > 0 (un edificio non
-	# residenziale, es. Pebble Circle/Deposit Site, non ha senso farlo passare da qui: nessun posto
-	# da riempire, la funzione stessa sarebbe comunque un no-op per quell'edificio dato che nessun
-	# building con max_residents<=0 viene mai considerato candidato lì dentro, ma il controllo qui
-	# evita il giro a vuoto). Chiamata PRIMA del guard "cella viva" sotto — l'assegnazione non ha
-	# nulla a che fare col rendering, deve funzionare anche per una macrocella fuori dal LOD corrente.
-	if building.rules != null and building.rules.max_residents > 0:
-		AssignHouseService.assign_pending_residents(macro_world, human_individuals, game_data.year)
-		# BUGFIX (2026-09-12, richiesta utente — "dopo assign house non si aggiorna il pop tab con
-		# il simbolino di house a chi ne riceve una, restano solo i primi assignatari"): a
-		# differenza dei due ALTRI trigger di AssignHouseService (morte/nascita, vedi
-		# _on_human_individual_died/_on_human_individual_born), che sono comunque sempre seguiti a
-		# ruota da un human_population_changed (vedi GameTimeService, e _on_human_population_changed
-		# sotto che rinfresca la scheda 👨‍👩‍👧) perché il conteggio popolazione cambia per forza in
-		# quei due casi, il completamento di un edificio NON cambia il conteggio popolazione — nessun
-		# segnale lo segue mai, quindi senza questa chiamata esplicita la scheda popolazione restava
-		# con l'icona 🏠 vecchia (mostrando solo chi l'aveva già da un refresh precedente) fino al
-		# prossimo rollover d'anno.
-		_refresh_population_panel()
-	_remove_build_site_placeholders(building)
-	# Celle vive accanto (fondi che si saldano, edifici lineari) ridisegnate anche se quella dell'edificio non è viva
-	# (2026-10-04): la loro forma dipende da questo edificio appena completato.
-	_refresh_dirt_ground_neighbor_cells(building)
-	var macro_coords := Vector2i(building.macro_x, building.macro_y)
-	if not live_cells.has(macro_coords):
-		return
-	var cell: LiveMacroCell = live_cells[macro_coords]
-	# Refresh ESPLICITO necessario (2026-09-11, richiesta utente — "verifica se serve esplicito o se
-	# il renderer lo fa già automaticamente") — CONFERMATO: serve. MicroCellRenderer._draw_buildings
-	# legge is_complete/site_setup_complete dalla COPIA che gli è stata passata da set_buildings
-	# (vedi _buildings_for_cell/_refresh_building_visuals), non dall'oggetto Building live stesso —
-	# scrivere building.is_complete=true (già fatto in BuildAction.on_complete) non fa scattare da
-	# solo alcun queue_redraw(): senza questa chiamata la sagoma vera dell'edificio (capanna/Stone
-	# Circle/Deposit Site, finalmente disegnabile ora che is_complete=true) resterebbe invisibile
-	# fino al prossimo trigger di refresh casuale (es. il player che si muove).
-	_refresh_building_visuals(cell)
+	_apply_effects(effects)
 
 
-# Village center completato (2026-10-12, passo 2 Folk/Village): fonda un villaggio o ricollega quello rimasto senza
-# centro (VillageService), poi avviso e scheda popolazione. No-op per edifici che non sono centri.
+# Centro del villaggio completato (BuildingLifecycleService.village_center_completed).
 func _on_village_center_completed(building: Building) -> void:
-	if building.rules == null or not building.rules.is_village_center:
-		return
-	var result := VillageService.on_village_center_completed(human_folk, macro_world, building, human_individuals)
-	var village: Village = result["village"]
-	match result["outcome"]:
-		VillageService.CenterOutcome.FOUNDED:
-			# Primo villaggio (2026-10-12): la nascita la racconta già la scoperta del Cerchio di sassi
-			# (first_thought_building.tres, paragrafo discovery_first_thought_building_village), niente avviso doppio.
-			if human_folk.villages.size() == 1:
-				_refresh_population_panel()
-				return
-			_notify_village_center_changed(tr("notification_village_founded").format({
-				"village": village.get_display_name(), "building": _building_display_name(building),
-			}))
-		VillageService.CenterOutcome.RECONNECTED:
-			_notify_village_center_changed(tr("notification_village_center_restored").format({"village": village.get_display_name()}))
-		_:
-			return
-	_refresh_population_panel()
+	var effects := GameEffects.new()
+	BuildingLifecycleService.village_center_completed(_game_context(), building, effects)
+	_apply_effects(effects)
 
 
-# Villaggio di un edificio appena piazzato (2026-10-12, passo 3 Folk/Village): quello del centro più vicino; nessuno
-# (-1) se non esiste ancora un villaggio — lo adotterà il primo centro completato (VillageService.adopt_orphan_buildings).
+# Villaggio di un edificio appena piazzato (BuildingLifecycleService.assign_village).
 func _assign_building_village(building: Building) -> void:
-	var village := VillageService.find_village_for_building(human_folk, macro_world, building)
-	building.village_id = village.id if village != null else -1
-
-
-# Village center demolito o crollato: il villaggio resta in vita senza centro (VillageService).
-func _on_village_center_removed(building: Building) -> void:
-	if building.rules == null or not building.rules.is_village_center:
-		return
-	var village := VillageService.on_village_center_removed(human_folk, building)
-	if village != null:
-		_notify_village_center_changed(tr("notification_village_center_lost").format({"village": village.get_display_name()}))
-
-
-func _notify_village_center_changed(text: String) -> void:
-	print("[VILLAGE] %s" % text)
-	if UserOptions.show_notification_popups:
-		notification_popup.enqueue(NotificationTypes.NotificationPopupType.VILLAGE_CENTER_CHANGED, text)
+	BuildingLifecycleService.assign_village(_game_context(), building)
 
 
 # Rimuove il gruppo dei 4 rametti spawnati da _spawn_build_site_placeholders per QUESTO edificio
@@ -19501,14 +18741,30 @@ func _live_macro_state(macro_coords: Vector2i) -> MacroCellState:
 
 
 # Esegue gli effetti di presentazione restituiti da un servizio (2026-10-17, refactoring GameScene blocco 0 — vedi
-# GameEffects): prima i ridisegni delle celle vive, poi i pannelli, poi le notifiche (rispettando l'opzione dei popup,
-# che è solo della presentazione), infine "In sospeso". Qui nessuna regola di gioco: solo tradurre in nodi.
+# GameEffects): segnali delle task create, ridisegni delle celle vive (edifici, vicini, sagome, vegetazione), rametti dei
+# nuovi cantieri, selezione di un edificio sparito, poi i pannelli, le notifiche (rispettando l'opzione dei popup, che è
+# solo della presentazione), infine "In sospeso". Qui nessuna regola di gioco: solo tradurre in nodi.
 func _apply_effects(effects: GameEffects) -> void:
 	if effects == null or effects.is_empty():
 		return
+	for entry in effects.storage_tasks_to_wire:
+		_wire_transport_task(entry["task"], entry["owner"])
 	for macro_coords in effects.cells_to_refresh.keys():
 		if live_cells.has(macro_coords):
 			_refresh_building_visuals(live_cells[macro_coords])
+	for building in effects.neighbor_refresh_buildings.values():
+		_refresh_dirt_ground_neighbor_cells(building)
+	for building in effects.marker_buildings.values():
+		_refresh_building_marker(building)
+	for macro_coords in effects.vegetation_cells.keys():
+		if live_cells.has(macro_coords):
+			var vegetation_cell: LiveMacroCell = live_cells[macro_coords]
+			vegetation_cell.needs_full_vegetation_recompute = true
+			_refresh_resource_visuals(vegetation_cell, "edificio")
+	for building in effects.site_placeholder_buildings.values():
+		_spawn_build_site_placeholders(building)
+	if not selected_building.is_empty() and effects.removed_building_ids.has(int(selected_building.get("building_id", -1))):
+		_clear_building_selection()
 	for panel in effects.panels_to_refresh.keys():
 		match panel:
 			GameEffects.PanelKind.POPULATION:

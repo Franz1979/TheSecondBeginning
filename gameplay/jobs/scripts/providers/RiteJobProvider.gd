@@ -8,7 +8,7 @@ extends RefCounted
 # Rimetti in coda restano alla scena.
 
 
-static func collect(ctx: JobBoardContext, provider: Dictionary, assigned: Dictionary) -> Array[Dictionary]:
+static func collect(ctx: GameContext, provider: Dictionary, assigned: Dictionary) -> Array[Dictionary]:
 	var jobs: Array[Dictionary] = []
 	for building in ctx.world.buildings:
 		if building.requested_rite_id == "":
@@ -16,8 +16,8 @@ static func collect(ctx: JobBoardContext, provider: Dictionary, assigned: Dictio
 		var rules := RiteService.get_rules(building.requested_rite_id)
 		if rules == null or not RiteService.get_rites_for_building(building).has(rules):
 			continue
-		var building_name := JobBoardContext.tr_text(building.rules.building_name)
-		var text := JobBoardContext.tr_text("pending_rite").format({"rite": JobBoardContext.tr_text(rules.display_name), "building": building_name})
+		var building_name := GameContext.tr_text(building.rules.building_name)
+		var text := GameContext.tr_text("pending_rite").format({"rite": GameContext.tr_text(rules.display_name), "building": building_name})
 		jobs.append({
 			"key": "rite:%d" % building.id, "kind": "rite", "name": text, "text": text, "log_name": building_name,
 			"icon": {"text": IconRegistry.get_command_icon(rules.command_icon_key)}, "map_icon_key": rules.command_icon_key,
@@ -32,7 +32,7 @@ static func collect(ctx: JobBoardContext, provider: Dictionary, assigned: Dictio
 
 # Motivo per cui `worker` non potrebbe celebrare il rito (HumanIndividual.ASSIGN_OK se può): età e skill del rito, poi la
 # task di prova come le altre (il banchetto ha le sue condizioni e nessuna task di prova).
-static func rejection(ctx: JobBoardContext, worker: HumanIndividual, job: Dictionary) -> String:
+static func rejection(ctx: GameContext, worker: HumanIndividual, job: Dictionary) -> String:
 	var building: Building = job["target"]
 	var rules := RiteService.get_rules(String(job["rite_id"]))
 	var age_band := ctx.age_band_of(worker)
@@ -50,5 +50,5 @@ static func rejection(ctx: JobBoardContext, worker: HumanIndividual, job: Dictio
 	return worker.get_assign_rejection_reason(probe, age_band)
 
 
-static func workers(ctx: JobBoardContext, job: Dictionary) -> Array[HumanIndividual]:
+static func workers(ctx: GameContext, job: Dictionary) -> Array[HumanIndividual]:
 	return RiteService.get_ordered_rite_workers(job["target"], ctx.individuals)

@@ -13,7 +13,7 @@ extends RefCounted
 const SORT_OFFSET: float = 1000000.0
 
 
-static func collect(ctx: JobBoardContext, provider: Dictionary, _assigned: Dictionary) -> Array[Dictionary]:
+static func collect(ctx: GameContext, provider: Dictionary, _assigned: Dictionary) -> Array[Dictionary]:
 	var jobs: Array[Dictionary] = []
 	if not UserOptions.job_board_collect_piles:
 		return jobs
@@ -43,7 +43,7 @@ static func collect(ctx: JobBoardContext, provider: Dictionary, _assigned: Dicti
 			},
 			"entry_kind": "ground_pile", "id": pile.id, "sort": float(pile.id) + SORT_OFFSET,
 			"assigned": is_assigned, "hidden": false,
-			"blocked_reason": "" if is_assigned or has_storage(ctx.world, pile) else JobBoardContext.tr_text("task_assignment_pile_no_storage"),
+			"blocked_reason": "" if is_assigned or has_storage(ctx.world, pile) else GameContext.tr_text("task_assignment_pile_no_storage"),
 			"target": pile, "provider": provider, "claimers": claims.get(key, []),
 		})
 	jobs.append_array(_emptied_pile_jobs(ctx, provider, listed_keys))
@@ -53,7 +53,7 @@ static func collect(ctx: JobBoardContext, provider: Dictionary, _assigned: Dicti
 # Mucchio svuotato dall'ultima raccolta con la consegna ancora in corso (2026-10-09): la riga "Mucchio" resta in "In corso"
 # (stessa chiave e stesso testo di quando era elencato, stesso individuo) finché chi porta il carico non l'ha consegnato;
 # poi sparisce. Vale per i mucchi presi dalla coda e per la consegna dopo una demolizione (is_board_pile_task).
-static func _emptied_pile_jobs(ctx: JobBoardContext, provider: Dictionary, listed_keys: Dictionary) -> Array[Dictionary]:
+static func _emptied_pile_jobs(ctx: GameContext, provider: Dictionary, listed_keys: Dictionary) -> Array[Dictionary]:
 	var jobs: Array[Dictionary] = []
 	var memory := ctx.game_data.job_board_runtime.pile_job_memory
 	var existing: Dictionary = {}
@@ -96,7 +96,7 @@ static func _emptied_pile_jobs(ctx: JobBoardContext, provider: Dictionary, liste
 # Idoneità alla presa: la consegna di prova (TaskBuilderService.build_pile_job_task, mai assegnata) passa il controllo di
 # idoneità, e dal pipottino un magazzino raggiungibile accetta almeno una risorsa che gli entra a carico vuoto (lo stesso
 # controllo della consegna automatica). Mucchio in una macrocella non viva: non raggiungibile.
-static func rejection(ctx: JobBoardContext, worker: HumanIndividual, job: Dictionary) -> String:
+static func rejection(ctx: GameContext, worker: HumanIndividual, job: Dictionary) -> String:
 	if not (job["target"] is GroundPile):
 		return "mucchio svuotato"
 	var pile: GroundPile = job["target"]
@@ -117,7 +117,7 @@ static func rejection(ctx: JobBoardContext, worker: HumanIndividual, job: Dictio
 	return "nessun magazzino raggiungibile"
 
 
-static func workers(_ctx: JobBoardContext, job: Dictionary) -> Array[HumanIndividual]:
+static func workers(_ctx: GameContext, job: Dictionary) -> Array[HumanIndividual]:
 	var result: Array[HumanIndividual] = []
 	for member in job.get("claimers", []):
 		result.append(member as HumanIndividual)
@@ -159,7 +159,7 @@ static func job_name(pile: GroundPile) -> String:
 	var shown: Array[String] = []
 	for resource_name in names.slice(0, 2):
 		shown.append(IconRegistry.get_resource_display_name(resource_name))
-	return JobBoardContext.tr_text("pending_pile").format({"resources": ", ".join(shown) + ("…" if names.size() > 2 else "")})
+	return GameContext.tr_text("pending_pile").format({"resources": ", ".join(shown) + ("…" if names.size() > 2 else "")})
 
 
 static func claim_key(macro_coords: Vector2i, microcell: Vector2i) -> String:

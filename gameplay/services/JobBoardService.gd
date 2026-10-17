@@ -37,7 +37,7 @@ const MANUAL_ASSIGN_WINDOW_MAX_SECONDS := 30.0
 
 # Riparazione automatica (2026-10-10, regole di assegnazione del cassetto; dato della partita, GameData.
 # job_board_auto_repair_percent): sotto questa Integrità (%) un edificio che deperisce riceve da solo la richiesta di
-# riparazione (GameScene._auto_request_repairs). 0 = mai. Da 0 a 70 (la soglia del martello, Building.
+# riparazione (BuildingMaintenanceService.auto_request_repairs). 0 = mai. Da 0 a 70 (la soglia del martello, Building.
 # DURABILITY_REPAIRABLE_RATIO) a passi di 10. Partita nuova e salvataggi vecchi: AUTO_REPAIR_DEFAULT_PERCENT.
 const AUTO_REPAIR_DEFAULT_PERCENT := 50
 const AUTO_REPAIR_MIN_PERCENT := 0

@@ -13,7 +13,7 @@ extends RefCounted
 const SORT_OFFSET: float = 3000000.0
 
 
-static func collect(ctx: JobBoardContext, provider: Dictionary, assigned: Dictionary) -> Array[Dictionary]:
+static func collect(ctx: GameContext, provider: Dictionary, assigned: Dictionary) -> Array[Dictionary]:
 	var jobs: Array[Dictionary] = []
 	# Ordini con un lavoratore per edificio (id -> quanti), dalle chiavi "id:ordine" di JobWorkScanService.collect_assignments.
 	var busy_counts: Dictionary = {}
@@ -25,7 +25,7 @@ static func collect(ctx: JobBoardContext, provider: Dictionary, assigned: Dictio
 			continue
 		if not building.is_complete or not building.rules.is_workstation or building.production_progress.is_empty():
 			continue
-		var building_name := JobBoardContext.tr_text(building.rules.building_name)
+		var building_name := GameContext.tr_text(building.rules.building_name)
 		var is_full := ProductionService.has_max_concurrent_orders(building, int(busy_counts.get(building.id, 0)))
 		var order_index := 0
 		for order_key in ProductionService.get_order_keys(building):
@@ -43,7 +43,7 @@ static func collect(ctx: JobBoardContext, provider: Dictionary, assigned: Dictio
 			var blocked_reason := ""
 			if not is_assigned:
 				if is_full:
-					blocked_reason = JobBoardContext.tr_text("task_assignment_produce_building_busy")
+					blocked_reason = GameContext.tr_text("task_assignment_produce_building_busy")
 				else:
 					# Attrezzo che l'Attrezzeria non copre (2026-10-11, stessa regola degli ordini di zona): addosso a qualcuno o
 					# da prendere in deposito; altrimenti visibile ma non prendibile.
@@ -52,8 +52,8 @@ static func collect(ctx: JobBoardContext, provider: Dictionary, assigned: Dictio
 					)
 			jobs.append({
 				"key": "produce:%d:%s" % [building.id, order_key], "kind": "produce",
-				"name": JobBoardContext.tr_text("task_assignment_produce_row").format({"recipe": recipe_name, "quantity": units, "building": building_name}),
-				"text": JobBoardContext.tr_text("pending_produce").format({"building": building_name, "product": recipe_name}),
+				"name": GameContext.tr_text("task_assignment_produce_row").format({"recipe": recipe_name, "quantity": units, "building": building_name}),
+				"text": GameContext.tr_text("pending_produce").format({"building": building_name, "product": recipe_name}),
 				"log_name": "%s ×%d @ %s #%d" % [recipe, units, building.building_type_name, building.id],
 				"icon": {"resource": recipe}, "macro": Vector2i(building.macro_x, building.macro_y),
 				"microcell": Vector2i(building.micro_x, building.micro_y), "reach_target": building,
@@ -72,7 +72,7 @@ static func collect(ctx: JobBoardContext, provider: Dictionary, assigned: Dictio
 # Idoneità alla presa, in silenzio: la stessa Produce Task dell'assegnazione (mai assegnata) passa il controllo di
 # idoneità, e ogni categoria di attrezzo che l'Attrezzeria dell'edificio non copre il pipottino ce l'ha già o può
 # prenderla in deposito (ToolFetchService.rejection). Senza l'attrezzo il lavoro resta in coda per un altro pipottino.
-static func rejection(ctx: JobBoardContext, worker: HumanIndividual, job: Dictionary) -> String:
+static func rejection(ctx: GameContext, worker: HumanIndividual, job: Dictionary) -> String:
 	var building: Building = job["target"]
 	var order_key := String(job["order_key"])
 	var task := TaskBuilderService.build_produce_task(
@@ -90,7 +90,7 @@ static func rejection(ctx: JobBoardContext, worker: HumanIndividual, job: Dictio
 	return tool_rejection if tool_rejection != "" else HumanIndividual.ASSIGN_OK
 
 
-static func workers(ctx: JobBoardContext, job: Dictionary) -> Array[HumanIndividual]:
+static func workers(ctx: GameContext, job: Dictionary) -> Array[HumanIndividual]:
 	var result: Array[HumanIndividual] = []
 	var worker: Variant = JobWorkScanService.production_order_workers(ctx.individuals, job["target"]).get(String(job["order_key"]))
 	if worker != null:

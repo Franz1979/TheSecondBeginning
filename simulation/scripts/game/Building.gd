@@ -70,7 +70,7 @@ func is_out_of_service() -> bool:
 
 # Riparazione richiesta dal giocatore con l'idea dell'assegnazione (2026-10-10, richiesta utente): il lavoro "repair:<id>"
 # entra nella coda dei lavori (RepairJobProvider.collect). Si chiude da sola a Integrità piena, o se l'edificio va in
-# demolizione o in miglioramento (GameScene._settle_repair_requests); la X del cassetto la toglie. Salvata con l'edificio.
+# demolizione o in miglioramento (BuildingMaintenanceService.settle_repair_requests); la X del cassetto la toglie. Salvata con l'edificio.
 var repair_requested: bool = false
 # Escluso dalla riparazione automatica (2026-10-10): la X del cassetto su una riga di riparazione lo accende; si spegne
 # con il martello (riparazione chiesta a mano) o a Integrità piena. Salvato con l'edificio.
@@ -136,6 +136,18 @@ const DURABILITY_DAMAGED_RATIO: float = 0.3
 # Macerie di un edificio crollato (2026-10-10): tipo della categoria RUINS ("rubble"), da sgomberare con la Demolish.
 func is_rubble() -> bool:
 	return rules != null and rules.category == BuildingTypes.Category.RUINS
+
+
+# Nome leggibile per i messaggi (BuildingRules.building_name tradotto), o il tipo grezzo senza regole (2026-10-17, spostato
+# qui da GameScene._building_display_name per i servizi degli edifici).
+func get_display_name() -> String:
+	return String(TranslationServer.translate(rules.building_name)) if rules != null else building_type_name
+
+
+# Macerie: nome dell'edificio crollato da cui sono nate (tradotto), o il tipo grezzo se le regole non ci sono più.
+func get_rubble_source_display_name() -> String:
+	var source_rules := BuildingCalculator.get_building_rules(rubble_source_name) if rubble_source_name != "" else null
+	return String(TranslationServer.translate(source_rules.building_name)) if source_rules != null else rubble_source_name
 
 
 # Effetti dello stato "Danneggiato" (2026-10-10, richiesta utente — passo 1): regola unica, capienze a metà per difetto e

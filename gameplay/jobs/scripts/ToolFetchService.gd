@@ -27,7 +27,7 @@ const ZONE_ORDER_TOOL_BLOCK_KEYS := {
 
 # Età giusta per il lavoro: caccia (`age_kind` DrawerOrderService.TYPE_HUNT) = età della task hunt_zone.tres; gli altri =
 # niente neonati né bambini.
-static func age_ok(ctx: JobBoardContext, member: HumanIndividual, age_kind: String) -> bool:
+static func age_ok(ctx: GameContext, member: HumanIndividual, age_kind: String) -> bool:
 	var age_band := ctx.age_band_of(member)
 	if age_kind == DrawerOrderService.TYPE_HUNT:
 		var definition := load(HuntZoneService.TASK_DEFINITION_PATH) as TaskDefinition
@@ -61,7 +61,7 @@ static func member_missing_categories(member: HumanIndividual, categories: Array
 
 
 # true se qualcuno in età (per `age_kind`, vedi age_ok) ha (o sta prendendo) tutte le `categories`.
-static func has_equipped_member(ctx: JobBoardContext, categories: Array, age_kind: String) -> bool:
+static func has_equipped_member(ctx: GameContext, categories: Array, age_kind: String) -> bool:
 	for member in ctx.individuals:
 		if age_ok(ctx, member, age_kind) and member_missing_categories(member, categories).is_empty():
 			return true
@@ -113,7 +113,7 @@ static func find_storage_tool(world: World, worker: HumanIndividual, category: i
 
 # Motivo per cui nessuno può fare un lavoro che richiede `categories` ("" = qualcuno può): una categoria che nessuno ha
 # addosso e nessun deposito ha; oppure nessuno in età con abbastanza posto in cintura per prenderle.
-static func blocked_reason(ctx: JobBoardContext, categories: Array, age_kind: String) -> String:
+static func blocked_reason(ctx: GameContext, categories: Array, age_kind: String) -> String:
 	if categories.is_empty() or ctx.world == null or has_equipped_member(ctx, categories, age_kind):
 		return ""
 	var nowhere: Array = []
@@ -127,8 +127,8 @@ static func blocked_reason(ctx: JobBoardContext, categories: Array, age_kind: St
 			nowhere.append(int(category))
 	if not nowhere.is_empty():
 		if nowhere.size() == 1 and ZONE_ORDER_TOOL_BLOCK_KEYS.has(nowhere[0]):
-			return JobBoardContext.tr_text(String(ZONE_ORDER_TOOL_BLOCK_KEYS[nowhere[0]]))
-		return JobBoardContext.tr_text("task_assignment_nobody_has_tool").format({"tools": describe_missing_categories(nowhere)})
+			return GameContext.tr_text(String(ZONE_ORDER_TOOL_BLOCK_KEYS[nowhere[0]]))
+		return GameContext.tr_text("task_assignment_nobody_has_tool").format({"tools": describe_missing_categories(nowhere)})
 	var needed: Array = []
 	for member in ctx.individuals:
 		if not age_ok(ctx, member, age_kind):
@@ -139,7 +139,7 @@ static func blocked_reason(ctx: JobBoardContext, categories: Array, age_kind: St
 		for category in missing:
 			if not needed.has(category):
 				needed.append(category)
-	return JobBoardContext.tr_text("drawer_order_nobody_has_belt_room").format({"tools": describe_missing_categories(needed)})
+	return GameContext.tr_text("drawer_order_nobody_has_belt_room").format({"tools": describe_missing_categories(needed)})
 
 
 static func missing_tools_in_storage(world: World, member: HumanIndividual, missing: Array) -> bool:
@@ -151,7 +151,7 @@ static func missing_tools_in_storage(world: World, member: HumanIndividual, miss
 
 # Idoneità di `worker` per gli attrezzi ("" = può): tutto addosso; oppure, se nessuno in età ha l'equipaggiamento, posti
 # liberi in cintura e un deposito raggiungibile per ogni categoria che gli manca.
-static func rejection(ctx: JobBoardContext, worker: HumanIndividual, categories: Array, age_kind: String) -> String:
+static func rejection(ctx: GameContext, worker: HumanIndividual, categories: Array, age_kind: String) -> String:
 	var missing := member_missing_categories(worker, categories)
 	if missing.is_empty():
 		return ""
@@ -183,7 +183,7 @@ static func plan_fetch(world: World, worker: HumanIndividual, categories: Array)
 # è sospendibile e va in coda personale, riprendendo a prelievo finito). Prelievo fallito (attrezzo sparito): il lavoro
 # riparte lo stesso e aspetta l'attrezzo come ogni altro passo senza attrezzo. Ogni attrezzo preso è "in prestito".
 # `work_label` = cosa fa dopo, per il log. Ritorna le task assegnate (chi chiama ne collega i segnali).
-static func start_fetch(ctx: JobBoardContext, worker: HumanIndividual, plan: Array[Dictionary], work_label: Variant) -> Array[Task]:
+static func start_fetch(ctx: GameContext, worker: HumanIndividual, plan: Array[Dictionary], work_label: Variant) -> Array[Task]:
 	var assigned: Array[Task] = []
 	for fetch in plan:
 		var building: Building = fetch["building"]
@@ -210,7 +210,7 @@ static func start_fetch(ctx: JobBoardContext, worker: HumanIndividual, plan: Arr
 # altrimenti il deposito migliore. Le voci non più in cintura (rotte, spostate a mano) si tolgono; senza destinazione si
 # riprova al giro dopo. Una volta al secondo. Ritorna {"member": HumanIndividual, "task": Task} per ogni task creata (chi
 # chiama ne collega i segnali).
-static func return_borrowed_tools(ctx: JobBoardContext) -> Array[Dictionary]:
+static func return_borrowed_tools(ctx: GameContext) -> Array[Dictionary]:
 	var created: Array[Dictionary] = []
 	if ctx.game_data == null or ctx.world == null:
 		return created
@@ -293,7 +293,7 @@ static func recipe_tool_categories(recipe: String) -> Array[TaskTypes.ToolCatego
 
 # Categorie di `categories` che nessun pipottino adulto (non neonato né bambino, le fasce escluse dalla Produce) ha in
 # cintura o nello zaino (ToolGateService.has_tool_for, sola lettura) — 2026-10-09, ordini di produzione in coda.
-static func categories_nobody_has(ctx: JobBoardContext, categories: Array) -> Array:
+static func categories_nobody_has(ctx: GameContext, categories: Array) -> Array:
 	var missing: Array = []
 	for category in categories:
 		var owned := false
@@ -315,14 +315,14 @@ static func categories_nobody_has(ctx: JobBoardContext, categories: Array) -> Ar
 static func describe_missing_categories(categories: Array) -> String:
 	var parts: PackedStringArray = []
 	for category in categories:
-		var category_name := JobBoardContext.tr_text("tool_category_" + String(TaskTypes.ToolCategory.keys()[category]).to_lower())
+		var category_name := GameContext.tr_text("tool_category_" + String(TaskTypes.ToolCategory.keys()[category]).to_lower())
 		var examples: PackedStringArray = []
 		for tool_name in ToolGateService.get_tools_covering(category):
 			examples.append(IconRegistry.get_resource_display_name(tool_name))
 		if examples.is_empty():
 			parts.append(category_name)
 		else:
-			parts.append(JobBoardContext.tr_text("tool_gate_category_with_examples").format({
+			parts.append(GameContext.tr_text("tool_gate_category_with_examples").format({
 				"category": category_name, "examples": ", ".join(examples),
 			}))
 	return "; ".join(parts)

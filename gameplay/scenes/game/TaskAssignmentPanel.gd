@@ -946,7 +946,7 @@ func _build_auto_clear_rubble_setting_row() -> Control:
 # Regola "Riponi gli attrezzi presi per un lavoro" (2026-10-11): spunta, accesa all'inizio. Dato della partita come lo
 # sgombero delle macerie: il valore arriva da GameScene (set_return_borrowed_tools, prima di _ready), ogni cambio esce con
 # return_borrowed_tools_changed. Accesa: gli attrezzi presi in deposito per un ordine della coda tornano in deposito
-# quando chi li ha preso è libero (GameScene._return_borrowed_tools).
+# quando chi li ha preso è libero (ToolFetchService.return_borrowed_tools).
 func set_return_borrowed_tools(enabled: bool) -> void:
 	_return_borrowed_tools = enabled
 

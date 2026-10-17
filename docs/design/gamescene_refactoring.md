@@ -207,6 +207,21 @@ i fornitori non lasciano la scena (2b).
   - i placeholder dei cantieri;
   - `_refresh_building_visuals` e il refresh dei vicini (terra battuta), pilotati dagli effetti.
 
+**Stato blocco 3 (2026-10-17):** fatto.
+- 3a: `gameplay/buildings/scripts/BuildingMaintenanceService.gd` (danneggiati, chiusura delle richieste, riparazioni e
+  sgombero automatici); stato in `GameData.building_runtime` (`simulation/scripts/game/BuildingRuntimeState.gd`).
+- 3b: `gameplay/buildings/scripts/BuildingLifecycleService.gd` (chiusura dei lavori sull'edificio, residenti e casa
+  persa, marcatura/inizio/annullo della demolizione, abbattimento, crollo e macerie, sfratti, miglioramento,
+  completamento, villaggio). In scena restano collegamenti sottili (creano il `GameEffects`, chiamano il servizio, lo
+  eseguono), i dialoghi, la scelta dell'orientamento, le scoperte e il riallineamento della produzione.
+  `Building.get_display_name()` / `get_rubble_source_display_name()` per i nomi nei messaggi.
+- `JobBoardContext` è diventato `GameContext` (`gameplay/scripts/core/`), contesto generale dei servizi.
+- `GameEffects` ha nuovi effetti: vicini, sagome, rametti dei cantieri, vegetazione, edificio sparito dalla selezione,
+  task da collegare come il trasporto.
+- 3c: **`GameSimulation`** (`gameplay/scripts/core/GameSimulation.gd`) è nato: `tick_second` (ordini di zona,
+  manutenzione, sgombero automatico, restituzione attrezzi, coordinatore) e `tick_day` (crollo, sfratti). La scena chiama
+  solo lui e poi `_apply_effects`; dopo `tick_day` resta in scena il riallineamento della produzione.
+
 ### Blocco 4 — Gestore scorte → `gameplay/stock/`
 - **Si sposta** (18206–19456): `_auto_request_stock` → hunt → produce → dry → food_days, nello stesso
   ordine, con i loro helper.

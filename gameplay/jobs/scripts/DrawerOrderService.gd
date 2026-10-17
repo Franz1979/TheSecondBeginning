@@ -214,7 +214,7 @@ static func note_progress(game_data: GameData, series: Dictionary) -> void:
 
 
 # Ordini di zona presi che nessuno porta più: tornano in coda con quello che resta, o spariscono se finiti.
-static func settle_zone_orders(ctx: JobBoardContext) -> void:
+static func settle_zone_orders(ctx: GameContext) -> void:
 	if ctx.game_data == null:
 		return
 	var claims := collect_zone_claims(ctx.individuals)
@@ -231,7 +231,7 @@ static func settle_zone_orders(ctx: JobBoardContext) -> void:
 # L'ordine di zona torna in coda con quello che resta (o sparisce se finito). `end_if_zone_exhausted` (serie chiusa da
 # sola, 2026-10-09): con la zona scelta dal giocatore senza più risorse (o sparita) l'ordine finisce, come il comando
 # diretto; con la zona automatica torna in coda (un'altra zona può averla).
-static func return_order(ctx: JobBoardContext, order: Dictionary, end_if_zone_exhausted: bool = false) -> void:
+static func return_order(ctx: GameContext, order: Dictionary, end_if_zone_exhausted: bool = false) -> void:
 	var remaining := int(order.get("count", 1)) - int(order.get("done_seen", 0))
 	if remaining <= 0 or (end_if_zone_exhausted and fixed_zone_exhausted(ctx, order)):
 		remove(ctx.game_data, int(order["id"]))
@@ -272,7 +272,7 @@ static func zone_reserved(individuals: Array[HumanIndividual], order_type: Strin
 # dell'ordine `order` (raccolta: criterion_kind/criterion_category/resource_name; senza, "Tutto"); con `individual`,
 # raggiungibili da lui. Solo macrocelle vive.
 static func area_has_targets(
-	ctx: JobBoardContext, order_type: String, area: WorkArea, individual: HumanIndividual, reserved: Dictionary, order: Dictionary = {}
+	ctx: GameContext, order_type: String, area: WorkArea, individual: HumanIndividual, reserved: Dictionary, order: Dictionary = {}
 ) -> bool:
 	if area == null:
 		return false
@@ -306,7 +306,7 @@ static func order_cut_yield(order: Dictionary) -> String:
 
 # Zona fissata dell'ordine sparita, senza più il lavoro o senza più risorse (non prenotate, per la scelta dell'ordine);
 # macrocella non viva = non si sa, non esaurita.
-static func fixed_zone_exhausted(ctx: JobBoardContext, order: Dictionary) -> bool:
+static func fixed_zone_exhausted(ctx: GameContext, order: Dictionary) -> bool:
 	var zone_id := int(order.get("zone_id", -1))
 	if zone_id < 0:
 		return false

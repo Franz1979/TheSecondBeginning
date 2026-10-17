@@ -9,24 +9,24 @@ extends RefCounted
 # Un lavoro per edificio che ne ha uno: da demolire -> demolish (lavoratori: le task Demolisci); cantiere -> upgrade se è
 # un miglioramento, altrimenti build (lavoratori: le task Costruisci). Nome della riga: quello dell'edificio per un
 # cantiere nuovo, la voce di "In sospeso" ("Miglioramento · …", "Demolizione · …") per gli altri, così si distinguono.
-static func collect(ctx: JobBoardContext, provider: Dictionary, assigned: Dictionary) -> Array[Dictionary]:
+static func collect(ctx: GameContext, provider: Dictionary, assigned: Dictionary) -> Array[Dictionary]:
 	var jobs: Array[Dictionary] = []
 	for building in ctx.world.buildings:
 		if building.is_demolished or building.rules == null:
 			continue
-		var building_name := JobBoardContext.tr_text(building.rules.building_name)
+		var building_name := GameContext.tr_text(building.rules.building_name)
 		var kind := ""
 		var text := ""
 		var is_assigned := false
 		if building.is_marked_for_demolition:
 			kind = "demolish"
 			# Sgombero delle macerie (2026-10-10): stesso tipo delle demolizioni, "Sgombero (Macerie)".
-			text = JobBoardContext.tr_text("pending_clear_rubble" if building.is_rubble() else "pending_demolish").format({"building": building_name})
+			text = GameContext.tr_text("pending_clear_rubble" if building.is_rubble() else "pending_demolish").format({"building": building_name})
 			is_assigned = assigned["demolish"].has(building.id)
 		elif not building.is_complete:
 			var is_upgrade := BuildingUpgradeService.get_upgrade_from_rules(building) != null
 			kind = "upgrade" if is_upgrade else "build"
-			text = JobBoardContext.tr_text("pending_upgrade" if is_upgrade else "pending_build").format({"building": building_name})
+			text = GameContext.tr_text("pending_upgrade" if is_upgrade else "pending_build").format({"building": building_name})
 			is_assigned = assigned["build"].has(building.id)
 		else:
 			continue
@@ -61,7 +61,7 @@ static func task_names(job: Dictionary) -> Array[String]:
 # Motivo per cui `worker` non potrebbe ricevere la task del lavoro (HumanIndividual.ASSIGN_OK se può): task di prova
 # costruita con lo stesso contesto dell'assegnazione vera (per la Costruisci anche macro_state ed erba, per la Demolisci il
 # solo contesto dell'edificio), mai assegnata.
-static func rejection(ctx: JobBoardContext, worker: HumanIndividual, job: Dictionary) -> String:
+static func rejection(ctx: GameContext, worker: HumanIndividual, job: Dictionary) -> String:
 	var building: Building = job["target"]
 	var definition := load(building.get_resumable_task_definition_path()) as TaskDefinition
 	if definition == null:
@@ -75,5 +75,5 @@ static func rejection(ctx: JobBoardContext, worker: HumanIndividual, job: Dictio
 
 
 # Chi ci lavora: task Costruisci o Demolisci sull'edificio, in corso o in coda.
-static func workers(ctx: JobBoardContext, job: Dictionary) -> Array[HumanIndividual]:
+static func workers(ctx: GameContext, job: Dictionary) -> Array[HumanIndividual]:
 	return JobWorkScanService.workers_on_building(ctx.individuals, job["target"], task_names(job))

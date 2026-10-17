@@ -311,6 +311,9 @@ var coordinator_posts_checked: bool = false
 # Stato della lista dei lavori che vive solo durante la partita (attese per l'assegnazione a mano, lavori aperti all'ultimo
 # giro). Mai salvato (2026-10-17, refactoring GameScene blocco 2a — vedi JobBoardRuntimeState).
 var job_board_runtime: JobBoardRuntimeState = JobBoardRuntimeState.new()
+# Stato della manutenzione degli edifici (danneggiati all'ultimo giro, controlli giornalieri di riparazione e sgombero
+# automatici). Mai salvato (2026-10-17, refactoring GameScene blocco 3a — vedi BuildingRuntimeState).
+var building_runtime: BuildingRuntimeState = BuildingRuntimeState.new()
 # Anno dell'ultimo evento avvenuto per ogni CATEGORIA di eventi casuali (2026-09-27, richiesta utente —
 # raffreddamento condiviso, vedi RandomEventCategoryRules): id categoria (String) -> anno (int). Scritto da
 # RandomEventService.apply_event, letto dal sorteggio. Salvato da GameSaveService ("random_event_category_last_year").
