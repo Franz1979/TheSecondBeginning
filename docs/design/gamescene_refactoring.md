@@ -72,8 +72,8 @@ Il piano è un refactoring puro: **nessuna regola di gioco cambia**.
   - `AssignHouseService.release_building_residents` ed `evict_overflow` sostituiscono le 6 copie di
     "libera i residenti e riassegna".
   - Una sola funzione "chiudi le task sull'edificio" sostituisce le circa 7 copie.
-- **`gameplay/core/GameSimulation.gd`** è il driver del tempo.
-- **`gameplay/core/GameEffects.gd`** contiene gli effetti per la presentazione.
+- **`gameplay/scripts/core/GameSimulation.gd`** è il driver del tempo (nasce con il primo passo del tick estratto).
+- **`gameplay/scripts/core/GameEffects.gd`** contiene gli effetti per la presentazione.
 
 ---
 
@@ -85,11 +85,19 @@ Il piano è un refactoring puro: **nessuna regola di gioco cambia**.
   (o nel servizio della loro meccanica) con il blocco che tocca la meccanica: bacheca → 2, edifici → 3, scorte → 4.
 
 ### Blocco 0 — Fondamenta (piccolo)
-- Creare `GameEffects`: un elenco tipizzato di effetti più `_apply_effects(effects)` in GameScene, che
-  traduce ogni effetto in popup, suono o refresh.
-- Creare `GameSimulation`, con `tick_second(now)` e `tick_day()`. All'inizio contiene esattamente l'ordine
-  attuale:
-  - **al secondo** (oggi `_refresh_pending_entries` in [GameScene.gd:9347](gameplay/scenes/game/GameScene.gd:9347)):
+Corretto il 2026-10-17: creare subito `GameSimulation` con l'ordine completo non regge, perché quasi tutti i
+passi del tick sono ancora funzioni di GameScene e il driver dovrebbe richiamare la scena. Quindi:
+1. Creare `GameEffects`: un elenco di effetti (notifica, ridisegno cella, refresh pannelli, refresh "In
+   sospeso") più `_apply_effects(effects)` in GameScene, che li traduce in popup e refresh. Nessuno lo usa
+   ancora: comportamento invariato.
+2. Separare in GameScene logica e interfaccia: `_tick_simulation_second()` (oggi dentro
+   `_refresh_pending_entries`) e `_tick_simulation_day()` (oggi dentro `_on_day_advanced`). L'ordine dei passi
+   sta scritto in un punto solo.
+3. `GameSimulation` nasce quando si estrae il primo passo del tick (manutenzione edifici o bacheca); da lì
+   ogni blocco gli sposta dentro i suoi passi, finché la scena non chiama solo lui.
+
+Ordine attuale dei tick:
+  - **al secondo** (oggi `_refresh_pending_entries`):
     1. cut orders
     2. danneggiati
     3. chiusura delle richieste di riparazione
@@ -98,11 +106,10 @@ Il piano è un refactoring puro: **nessuna regola di gioco cambia**.
     6. restituzione attrezzi
     7. `CoordinatorService.tick`
     8. bacheca lavori
-  - **al giorno** (oggi `_on_day_advanced` in [GameScene.gd:21643](gameplay/scenes/game/GameScene.gd:21643)):
+  - **al giorno** (oggi `_on_day_advanced`):
     1. crollo
     2. sfratti
     3. riconciliazione della produzione
-- Separare in `_refresh_pending_entries` il tick di logica dal refresh della UI.
 
 ### Blocco 1 — Costruzione delle task → `TaskBuilderService`
 - Esistono già `TaskFactory.build_task`, i `TaskDefinition` e circa 90 `.tres`. Si spostano solo le

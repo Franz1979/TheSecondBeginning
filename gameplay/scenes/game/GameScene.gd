@@ -9577,22 +9577,7 @@ func _refresh_pending_entries() -> void:
 	# Lavori gestiti dalla lista ancora da fare, assegnati o no (JobBoardService.forget_missing).
 	var board_job_keys: Dictionary = {}
 	var board_enabled := JobBoardService.is_enabled(human_folk)
-	# Ordini "Taglia" del cassetto (2026-10-09): quelli presi che nessuno porta più tornano in coda (o spariscono a serie
-	# finita) prima di raccogliere i lavori.
-	_settle_drawer_cut_orders()
-	# Edifici entrati o usciti dallo stato "Danneggiato" (2026-10-10): mappa del movimento della loro cella aggiornata.
-	_sync_damaged_buildings()
-	# Riparazioni richieste (2026-10-10): quelle non più valide si chiudono prima di raccogliere i lavori.
-	_settle_repair_requests()
-	_auto_request_repairs()
-	_auto_clear_rubble()
-	# Attrezzi presi in deposito per un lavoro (2026-10-11): riposti da chi è libero, se la regola è accesa.
-	_return_borrowed_tools()
-	# Coordinatori ai punti di assegnazione (2026-10-09, CoordinatorService): un giro al secondo. Con la sola idea, anche
-	# senza punti (2026-10-10): così, quando l'ultimo punto sparisce, chi va al punto o è in fila smette e il turno del
-	# coordinatore finisce.
-	if game_data != null and macro_world != null and JobBoardService.is_idea_completed(human_folk):
-		CoordinatorService.tick(game_data, macro_world, human_individuals, _job_board_now(), _resolve_age_band)
+	_tick_simulation_second()
 	# Coda attivata o spenta (2026-10-10: comparsa o sparizione dell'ultimo punto di assegnazione): bottone del cassetto.
 	if _last_job_board_enabled != board_enabled:
 		_last_job_board_enabled = board_enabled
@@ -9743,6 +9728,43 @@ func _refresh_pending_entries() -> void:
 		pending_entry_added.emit()
 	_pending_previous_keys = keys
 	_pending_initialized = true
+
+
+# Passi di LOGICA del giro "al secondo" (2026-10-17, refactoring GameScene blocco 0 — docs/design/gamescene_refactoring.md),
+# in un punto solo e nell'ordine di sempre. Gira dentro _refresh_pending_entries, quindi ogni secondo E a ogni altro
+# refresh di "In sospeso" (stesso comportamento di prima della separazione). Man mano che i blocchi del refactoring li
+# estraggono, questi passi passano a GameSimulation; la raccolta dei lavori della bacheca, ancora mescolata alle righe
+# del cassetto in _refresh_pending_entries, si separa con il blocco 2.
+func _tick_simulation_second() -> void:
+	# Ordini "Taglia" del cassetto (2026-10-09): quelli presi che nessuno porta più tornano in coda (o spariscono a serie
+	# finita) prima di raccogliere i lavori.
+	_settle_drawer_cut_orders()
+	# Edifici entrati o usciti dallo stato "Danneggiato" (2026-10-10): mappa del movimento della loro cella aggiornata.
+	_sync_damaged_buildings()
+	# Riparazioni richieste (2026-10-10): quelle non più valide si chiudono prima di raccogliere i lavori.
+	_settle_repair_requests()
+	_auto_request_repairs()
+	_auto_clear_rubble()
+	# Attrezzi presi in deposito per un lavoro (2026-10-11): riposti da chi è libero, se la regola è accesa.
+	_return_borrowed_tools()
+	# Coordinatori ai punti di assegnazione (2026-10-09, CoordinatorService): un giro al secondo. Con la sola idea, anche
+	# senza punti (2026-10-10): così, quando l'ultimo punto sparisce, chi va al punto o è in fila smette e il turno del
+	# coordinatore finisce.
+	if game_data != null and macro_world != null and JobBoardService.is_idea_completed(human_folk):
+		CoordinatorService.tick(game_data, macro_world, human_individuals, _job_board_now(), _resolve_age_band)
+
+
+# Passi di LOGICA del giro giornaliero (2026-10-17, refactoring GameScene blocco 0), in un punto solo e nell'ordine di
+# sempre; il resto di _on_day_advanced è interfaccia (calendario, pannelli, celle vive). Stesso destino di
+# _tick_simulation_second: i passi passano a GameSimulation con i blocchi che li estraggono.
+func _tick_simulation_day() -> void:
+	# Crollo a Integrità zero (2026-10-10): dopo il calo giornaliero dell'Integrità (WorldTimeService, già girato).
+	_collapse_ruined_buildings()
+	# Case danneggiate (2026-10-10, effetti passo 5): sfratto di chi è in più, poi riassegnazione.
+	_evict_damaged_house_overflow()
+	# Pezzi dovuti delle produzioni (2026-09-26, ordine intero): riallinea ogni giorno i record alle Task vive
+	# (copre anche le Task sparite senza passare da un annullo, es. individuo morto).
+	_reconcile_all_production_units()
 
 
 # Scadenza dei messaggi del pannello dell'abitante (2026-10-05, regola unica — vedi HumanIndividual.tool_gate_warning),
@@ -21854,6 +21876,36 @@ func _refresh_building_visuals(cell: LiveMacroCell) -> void:
 	_sync_build_site_placeholders(cell)
 
 
+# Esegue gli effetti di presentazione restituiti da un servizio (2026-10-17, refactoring GameScene blocco 0 — vedi
+# GameEffects): prima i ridisegni delle celle vive, poi i pannelli, poi le notifiche (rispettando l'opzione dei popup,
+# che è solo della presentazione), infine "In sospeso". Qui nessuna regola di gioco: solo tradurre in nodi.
+func _apply_effects(effects: GameEffects) -> void:
+	if effects == null or effects.is_empty():
+		return
+	for macro_coords in effects.cells_to_refresh.keys():
+		if live_cells.has(macro_coords):
+			_refresh_building_visuals(live_cells[macro_coords])
+	for panel in effects.panels_to_refresh.keys():
+		match panel:
+			GameEffects.PanelKind.POPULATION:
+				_refresh_population_panel()
+			GameEffects.PanelKind.BUILDINGS:
+				_refresh_buildings_panel()
+			GameEffects.PanelKind.SELECTED_INDIVIDUAL:
+				_refresh_selected_individual_panel()
+			GameEffects.PanelKind.SELECTED_BUILDING:
+				_refresh_selected_building_panel()
+			GameEffects.PanelKind.WAREHOUSE:
+				_refresh_warehouse_panel()
+			GameEffects.PanelKind.BUILD_BAR:
+				_refresh_building_slots_buildable()
+	if UserOptions.show_notification_popups:
+		for entry in effects.notifications:
+			notification_popup.enqueue(entry["type"], entry["text"], entry["requires_ack"])
+	if effects.pending_refresh:
+		_refresh_pending_entries()
+
+
 # Riconcilia i rametti del cantiere di questa cella con lo STATO degli edifici (2026-09-19,
 # richiesta utente): un gruppo BuildSitePlaceholders_<id> esiste solo per un edificio ancora nel
 # mondo, non completo e non demolito — qualunque altro gruppo (edificio completato, demolito o non
@@ -22166,13 +22218,7 @@ func _update_play_pause_button() -> void:
 		play_pause_button.tooltip_text = tr("play")
 
 func _on_day_advanced(checkpoint_ran: bool, animals_changed: bool) -> void:
-	# Crollo a Integrità zero (2026-10-10): dopo il calo giornaliero dell'Integrità (WorldTimeService, già girato).
-	_collapse_ruined_buildings()
-	# Case danneggiate (2026-10-10, effetti passo 5): sfratto di chi è in più, poi riassegnazione.
-	_evict_damaged_house_overflow()
-	# Pezzi dovuti delle produzioni (2026-09-26, ordine intero): riallinea ogni giorno i record alle Task vive
-	# (copre anche le Task sparite senza passare da un annullo, es. individuo morto).
-	_reconcile_all_production_units()
+	_tick_simulation_day()
 	# TEMPORANEO (diagnostica lentezza, vedi GameClockController._process/[DAY TOTAL]) — questo
 	# intero handler gira SINCRONO dentro day_advanced.emit(), quindi dentro il cronometro di
 	# [DAY TOTAL]: il ramo sotto (rebuild vegetazione per cella viva, "come individui" — posizioni/
