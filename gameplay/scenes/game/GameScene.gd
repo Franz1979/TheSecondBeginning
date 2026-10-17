@@ -1328,8 +1328,8 @@ func _process(delta: float) -> void:
 	# chiusa (numero e lampeggio della linguetta).
 	_pending_clock += clock.get_game_day_delta(delta) if clock != null else 0.0
 	# Attesa per l'assegnazione a mano della lista dei lavori (2026-10-07): secondi reali, solo a gioco in corso.
-	if clock != null and clock.is_playing:
-		_job_board_clock += delta
+	if clock != null and clock.is_playing and game_data != null:
+		JobBoardService.advance_clock(game_data, delta)
 	_pending_refresh_timer += delta
 	if _pending_refresh_timer >= PENDING_REFRESH_INTERVAL_SEC:
 		_pending_refresh_timer = 0.0
@@ -2078,8 +2078,8 @@ func _stop_member_task(member: HumanIndividual) -> void:
 	# Ordine di zona del cassetto (2026-10-09, richiesta utente): H su chi lo porta fa come "Rimetti in coda" — carico
 	# riportato con la regola di sempre, ma l'ordine non resta nella coda personale (ripetizioni dei viaggi, consegne,
 	# tagli successivi): torna subito in "In coda" con quello che resta, la stessa scelta e la stessa zona.
-	var zone_order := _find_drawer_order(_drawer_cut_order_of(member.current_task))
-	if _is_zone_order_type(String(zone_order.get("type", ""))) and bool(zone_order.get("taken", false)):
+	var zone_order := DrawerOrderService.find(game_data, DrawerOrderService.order_of_task(member.current_task))
+	if DrawerOrderService.is_zone_order_type(String(zone_order.get("type", ""))) and bool(zone_order.get("taken", false)):
 		_release_drawer_zone_order(zone_order)
 		return
 	if HuntService.is_hunt_task(member.current_task):
@@ -2100,7 +2100,7 @@ func _stop_member_task(member: HumanIndividual) -> void:
 	# il pipottino lo riporta al magazzino più vicino (a terra solo se nessun magazzino lo accetta); H su una Task di
 	# ritorno la ferma davvero, con il carico a terra. Con un carico di un'altra Task lo zaino resta com'è.
 	# Ritiro di un mucchio della coda (2026-10-09): il ritorno del carico che lo sostituisce non è una riga "Diretto".
-	var stopped_board_pile := member.current_task != null and _is_board_pile_task(member.current_task)
+	var stopped_board_pile := member.current_task != null and PileJobProvider.is_board_pile_task(member.current_task)
 	var cargo_outcome := CargoReturnService.release_cargo(member, member.current_task, macro_world)
 	if cargo_outcome != CargoReturnService.Outcome.RETURNING:
 		member.stop(false)
@@ -3380,7 +3380,7 @@ func _refresh_building_panel() -> void:
 	# Fabbisogno dell'ordine intero aggiornato prima di mostrarlo (2026-09-26).
 	_reconcile_production_units(building)
 	_sync_production_queue_mode(building)
-	building_info_panel.show_building(building, _resolve_building_residents_display_data(building), _resolve_names_working_on_building(building, BUILD_TASK_NAMES), _resolve_production_claimant_names(building), _resolve_production_orders(building), _resolve_production_tool_wait_lines(building), _resolve_names_working_on_building(building, DEMOLISH_TASK_NAMES), _resolve_names_working_on_building(building, REPAIR_TASK_NAMES))
+	building_info_panel.show_building(building, _resolve_building_residents_display_data(building), _resolve_names_working_on_building(building, JobWorkScanService.BUILD_TASK_NAMES), _resolve_production_claimant_names(building), _resolve_production_orders(building), _resolve_production_tool_wait_lines(building), _resolve_names_working_on_building(building, JobWorkScanService.DEMOLISH_TASK_NAMES), _resolve_names_working_on_building(building, JobWorkScanService.REPAIR_TASK_NAMES))
 	building_info_panel.show_ground_pile(_ground_pile_lines_at(Vector2i(building.macro_x, building.macro_y), Vector2i(building.micro_x, building.micro_y)))
 	# Titolo (Step 6, richiesta utente 2026-09-04) — stessa formula già in BuildingInfoPanel. Dal 2026-09-27 (richiesta
 	# utente, riorganizzazione del pannello edificio) sulla riga del titolo c'è anche l'ID, prima in fondo al pannello.
@@ -3475,7 +3475,7 @@ func _on_empty_all_requested(building: Building) -> void:
 func _empty_building_contents(building: Building) -> void:
 	var pile := GroundPileService.drop_building_contents(game_data, building, macro_world)
 	_sync_production_queue_mode(building)
-	building_info_panel.show_building(building, _resolve_building_residents_display_data(building), _resolve_names_working_on_building(building, BUILD_TASK_NAMES), _resolve_production_claimant_names(building), _resolve_production_orders(building), _resolve_production_tool_wait_lines(building), _resolve_names_working_on_building(building, DEMOLISH_TASK_NAMES), _resolve_names_working_on_building(building, REPAIR_TASK_NAMES))
+	building_info_panel.show_building(building, _resolve_building_residents_display_data(building), _resolve_names_working_on_building(building, JobWorkScanService.BUILD_TASK_NAMES), _resolve_production_claimant_names(building), _resolve_production_orders(building), _resolve_production_tool_wait_lines(building), _resolve_names_working_on_building(building, JobWorkScanService.DEMOLISH_TASK_NAMES), _resolve_names_working_on_building(building, JobWorkScanService.REPAIR_TASK_NAMES))
 	building_info_panel.show_ground_pile(_ground_pile_lines_at(Vector2i(building.macro_x, building.macro_y), Vector2i(building.micro_x, building.micro_y)))
 	var macro_coords := Vector2i(building.macro_x, building.macro_y)
 	if live_cells.has(macro_coords):
@@ -3567,7 +3567,7 @@ func _on_production_order_assign_requested(building: Building, order_key: String
 		return
 	var resource_name := ProductionService.get_order_recipe(building, order_key)
 	var on_pick := func(worker: HumanIndividual) -> void:
-		if not ProductionService.has_order(building, order_key) or _production_order_workers(building).has(order_key):
+		if not ProductionService.has_order(building, order_key) or JobWorkScanService.production_order_workers(human_individuals, building).has(order_key):
 			_refresh_selected_building_panel()
 			return
 		var units := maxi(ProductionService.get_order_units(building, order_key), 1)
@@ -3614,7 +3614,7 @@ func _task_has_production_order(task: Task, order_key: String, building: Buildin
 func _on_building_work_cancel_requested(building: Building) -> void:
 	if building == null:
 		return
-	var freed := _close_tasks_working_on_building(building, BUILDING_WORK_TASK_NAMES, null)
+	var freed := _close_tasks_working_on_building(building, JobWorkScanService.BUILDING_WORK_TASK_NAMES, null)
 	for member in freed:
 		HumanIndividualActionService.resolve_idle_individual(member, _resolve_age_band(member), macro_world)
 	# Ordine intero (2026-09-26): le Task annullate non contano più nel fabbisogno.
@@ -4229,9 +4229,9 @@ func _on_hunt_zone_series_continue_requested(hunter: HumanIndividual, series: Di
 		return
 	# Ordine di caccia del cassetto (2026-10-09): carne consegnata annotata sull'ordine; ordine tolto o rimesso in coda nel
 	# frattempo = niente seguito.
-	var drawer_order_id := int(series.get(DRAWER_ORDER_SERIES_KEY, -1))
+	var drawer_order_id := int(series.get(DrawerOrderService.SERIES_KEY, -1))
 	if drawer_order_id >= 0:
-		var order := _find_drawer_order(drawer_order_id)
+		var order := DrawerOrderService.find(game_data, drawer_order_id)
 		if order.is_empty() or not bool(order.get("taken", false)):
 			return
 		order["done_seen"] = maxi(int(order.get("done_seen", 0)), int(series.get("delivered", 0)))
@@ -4321,7 +4321,7 @@ func _command_tool_rejection(member: HumanIndividual, action_id: StringName) -> 
 	var tooltip_key := String(action.get("tool_missing_tooltip_key", ""))
 	if tooltip_key != "":
 		return tr(tooltip_key).format({"name": member.name})
-	return tr("tool_gate_missing_tools").format({"name": member.name, "tools": _describe_missing_tool_categories(missing)})
+	return tr("tool_gate_missing_tools").format({"name": member.name, "tools": ToolFetchService.describe_missing_categories(missing)})
 
 
 # Sblocco del lavoro e zona del comando (2026-10-05, regola unica per barra e lista degli abitanti): "" se il lavoro
@@ -4545,8 +4545,8 @@ func _assign_work_area_quarry(worker: HumanIndividual, area: WorkArea, count: in
 # <motivo>" (HumanIndividualActionService.series_stopped_message) sul canale dei messaggi dell'abitante.
 func _report_series_stopped(worker: HumanIndividual, series: Dictionary, reason: String) -> void:
 	# Ordine "Estrai" del cassetto (2026-10-09): estrazioni fatte annotate; senza più chi lo porta torna in coda con le
-	# pietre che restano (_settle_drawer_cut_orders).
-	_note_drawer_cut_progress(series)
+	# pietre che restano (DrawerOrderService.settle_zone_orders).
+	DrawerOrderService.note_progress(game_data, series)
 	_report_command_rejection(worker, HumanIndividualActionService.series_stopped_message(worker, QuarryZoneService.SERIES_STOPPED_KEY, series, reason))
 
 
@@ -4570,9 +4570,9 @@ func _report_quarry_series_stopped(worker: HumanIndividual, pile_ref: Dictionary
 func _on_quarry_zone_series_continue_requested(worker: HumanIndividual, series: Dictionary) -> void:
 	# Ordine "Estrai" del cassetto (2026-10-09, come "Taglia"): estrazioni fatte annotate, serie finita = ordine tolto;
 	# ordine rimesso in coda o annullato nel frattempo = la serie si ferma qui, senza messaggi.
-	if series.has(DRAWER_ORDER_SERIES_KEY):
-		_note_drawer_cut_progress(series)
-		var drawer_order := _find_drawer_order(int(series[DRAWER_ORDER_SERIES_KEY]))
+	if series.has(DrawerOrderService.SERIES_KEY):
+		DrawerOrderService.note_progress(game_data, series)
+		var drawer_order := DrawerOrderService.find(game_data, int(series[DrawerOrderService.SERIES_KEY]))
 		if drawer_order.is_empty() or not bool(drawer_order.get("taken", false)):
 			return
 	if worker == null or not human_individuals.has(worker) or QuarryZoneService.is_series_complete(series):
@@ -4583,7 +4583,7 @@ func _on_quarry_zone_series_continue_requested(worker: HumanIndividual, series: 
 		return
 	if not ToolGateService.has_tool_for(worker, TaskTypes.ToolCategory.DIGGING):
 		_report_series_stopped(worker, series, tr("series_stop_no_tool").format({
-			"tools": _describe_missing_tool_categories([TaskTypes.ToolCategory.DIGGING]),
+			"tools": ToolFetchService.describe_missing_categories([TaskTypes.ToolCategory.DIGGING]),
 		}))
 		return
 	var macro_state := macro_world.get_cell_state_at(area.macro_coords.x, area.macro_coords.y)
@@ -4690,8 +4690,8 @@ func _assign_work_area_cut(worker: HumanIndividual, area: WorkArea, count: int =
 # (HumanIndividualActionService.series_stopped_message) sul canale dei messaggi dell'abitante.
 func _report_cut_series_stopped(worker: HumanIndividual, series: Dictionary, reason: String) -> void:
 	# Ordine "Taglia" del cassetto (2026-10-09): tagli fatti annotati; senza più chi lo porta torna in coda con le piante
-	# che restano (_settle_drawer_cut_orders).
-	_note_drawer_cut_progress(series)
+	# che restano (DrawerOrderService.settle_zone_orders).
+	DrawerOrderService.note_progress(game_data, series)
 	_report_command_rejection(worker, HumanIndividualActionService.series_stopped_message(worker, CutZoneService.SERIES_STOPPED_KEY, series, reason))
 
 
@@ -4715,9 +4715,9 @@ func _report_cut_pile_series_stopped(worker: HumanIndividual, pile_ref: Dictiona
 func _on_cut_zone_series_continue_requested(worker: HumanIndividual, series: Dictionary) -> void:
 	# Ordine "Taglia" del cassetto (2026-10-09): tagli fatti annotati, serie finita = ordine tolto; ordine rimesso in coda
 	# (Rimetti in coda) o annullato nel frattempo = la serie si ferma qui, senza messaggi.
-	if series.has(DRAWER_ORDER_SERIES_KEY):
-		_note_drawer_cut_progress(series)
-		var drawer_order := _find_drawer_order(int(series[DRAWER_ORDER_SERIES_KEY]))
+	if series.has(DrawerOrderService.SERIES_KEY):
+		DrawerOrderService.note_progress(game_data, series)
+		var drawer_order := DrawerOrderService.find(game_data, int(series[DrawerOrderService.SERIES_KEY]))
 		if drawer_order.is_empty() or not bool(drawer_order.get("taken", false)):
 			return
 	if worker == null or not human_individuals.has(worker) or CutZoneService.is_series_complete(series):
@@ -4732,7 +4732,7 @@ func _on_cut_zone_series_continue_requested(worker: HumanIndividual, series: Dic
 		return
 	if not ToolGateService.has_tool_for(worker, TaskTypes.ToolCategory.CHOPPING):
 		_report_cut_series_stopped(worker, series, tr("series_stop_no_tool").format({
-			"tools": _describe_missing_tool_categories([TaskTypes.ToolCategory.CHOPPING]),
+			"tools": ToolFetchService.describe_missing_categories([TaskTypes.ToolCategory.CHOPPING]),
 		}))
 		return
 	var plant := CutZoneService.choose_plant(
@@ -4764,7 +4764,7 @@ func _continue_cut_cell_series(worker: HumanIndividual, series: Dictionary) -> v
 		return
 	if not ToolGateService.has_tool_for(worker, TaskTypes.ToolCategory.CHOPPING):
 		_report_cut_series_stopped(worker, series, tr("series_stop_no_tool").format({
-			"tools": _describe_missing_tool_categories([TaskTypes.ToolCategory.CHOPPING]),
+			"tools": ToolFetchService.describe_missing_categories([TaskTypes.ToolCategory.CHOPPING]),
 		}))
 		return
 	var task := TaskBuilderService.build_cut_task(worker, plant, -1, series)
@@ -4853,7 +4853,7 @@ func _on_work_area_gather_choice(workers: Array[HumanIndividual], kind: int, cat
 # icona del clic su una cella (sul centro della zona, se la sua macrocella è viva).
 # `silent` (2026-10-09, presa dalla lista dei lavori — ordini "Raccogli" del cassetto): nessun avviso, popup né X.
 # `drawer_order_id` (stesso giorno): ordine del cassetto, scritto nella zona (viaggia con le ripetizioni) per sapere chi ci
-# lavora (GameScene._task_drawer_zone_info); -1 = comando.
+# lavora (DrawerOrderService.task_zone_info); -1 = comando.
 func _assign_work_area_gather(worker: HumanIndividual, area: WorkArea, order: Dictionary, silent: bool = false, drawer_order_id: int = -1) -> void:
 	if worker == null or area == null or not human_individuals.has(worker):
 		return
@@ -4865,7 +4865,7 @@ func _assign_work_area_gather(worker: HumanIndividual, area: WorkArea, order: Di
 	var trips := int(order.get("trips", HaulZoneService.WORK_AREA_MAX_REPEATS + 1))
 	var zone := HaulZoneService.make_work_area_zone(area.id, kind, order_category, order_resource, maxi(trips - 1, 0))
 	if drawer_order_id >= 0:
-		zone[DRAWER_ORDER_SERIES_KEY] = drawer_order_id
+		zone[DrawerOrderService.SERIES_KEY] = drawer_order_id
 	# Raccolta del magazzino (2026-10-11): lo zaino si riempie con quello che serve (HaulZoneService.STOCK_FILL_KEY).
 	if bool(order.get("stock_fill", false)):
 		zone[HaulZoneService.STOCK_FILL_KEY] = true
@@ -6388,23 +6388,12 @@ func _refresh_microcell_panel() -> void:
 # avrebbe toccato le regole "zaino occupato" di HumanIndividual.assign_task. Lo scarico resta automatico (ricerca
 # del magazzino dopo raccolta/macellazione) o via comando Transport.
 
-# Costruzione (SetupSite/Clear/Build): usata da conteggio costruttori, demolizione e completamento.
-const BUILD_TASK_NAMES: Array[String] = ["task_build_name"]
-# Produzione presso una workstation.
-const PRODUCE_TASK_NAMES: Array[String] = ["task_produce_name"]
-# "Lavoro sull'edificio" annullabile dal pannello edificio (X accanto al lavoratore).
-const BUILDING_WORK_TASK_NAMES: Array[String] = ["task_build_name", "task_produce_name"]
-# Demolizione (2026-09-27, demolish.tres).
-const DEMOLISH_TASK_NAMES: Array[String] = ["task_demolish_name"]
-# Task chiuse quando un edificio viene abbattuto (_demolish_building).
-const BUILD_AND_DEMOLISH_TASK_NAMES: Array[String] = ["task_build_name", "task_demolish_name"]
-# Riparazione (2026-10-10, repair.tres) — vedi _on_repair_requested.
-const REPAIR_TASK_NAMES: Array[String] = ["task_repair_name"]
+# Nomi delle task di lavoro sugli edifici: JobWorkScanService.*_TASK_NAMES (2026-10-17, refactoring GameScene blocco 2b).
 
 
 # "Ripara" dal pannello edificio (2026-10-10, richiesta utente). Senza l'idea dell'assegnazione: mirino rosso per scegliere
 # chi ripara (clic nel vuoto, Esc o destro annullano). Con l'idea: niente mirino, l'edificio diventa "riparazione
-# richiesta" (Building.repair_requested) e il lavoro "repair:<id>" entra nella coda (_repair_jobs_collect), con l'attesa per
+# richiesta" (Building.repair_requested) e il lavoro "repair:<id>" entra nella coda (RepairJobProvider.collect), con l'attesa per
 # l'assegnazione a mano come demolizione e miglioramento (clic destro sull'edificio con un individuo selezionato).
 func _on_repair_requested(building: Building) -> void:
 	if not _can_start_repair(building):
@@ -6434,7 +6423,7 @@ func _can_start_repair(building: Building) -> bool:
 		return false
 	if building.current_durability / float(building.rules.max_durability) >= Building.DURABILITY_REPAIRABLE_RATIO:
 		return false
-	return _resolve_individuals_working_on_building(building, REPAIR_TASK_NAMES).is_empty()
+	return JobWorkScanService.workers_on_building(human_individuals, building, JobWorkScanService.REPAIR_TASK_NAMES).is_empty()
 
 
 # Si può dare la Repair Task su `building` adesso: riparabile, Integrità non piena, nessun altro riparatore, e sotto la
@@ -6447,7 +6436,7 @@ func _can_assign_repair(building: Building) -> bool:
 		return false
 	if not building.repair_requested and building.current_durability / float(building.rules.max_durability) >= Building.DURABILITY_REPAIRABLE_RATIO:
 		return false
-	return _resolve_individuals_working_on_building(building, REPAIR_TASK_NAMES).is_empty()
+	return JobWorkScanService.workers_on_building(human_individuals, building, JobWorkScanService.REPAIR_TASK_NAMES).is_empty()
 
 
 # Repair Task (Walk -> Repair) per `worker` su `building`: un solo riparatore per edificio; rifiuti con la X sul
@@ -6458,7 +6447,7 @@ func _assign_repair_task(worker: HumanIndividual, building: Building) -> void:
 	var microcell := Vector2i(building.micro_x, building.micro_y)
 	var macro_coords := Vector2i(building.macro_x, building.macro_y)
 	if not _can_assign_repair(building):
-		if RepairAction.is_building_repairable(building) and not _resolve_individuals_working_on_building(building, REPAIR_TASK_NAMES).is_empty():
+		if RepairAction.is_building_repairable(building) and not JobWorkScanService.workers_on_building(human_individuals, building, JobWorkScanService.REPAIR_TASK_NAMES).is_empty():
 			_report_command_rejection(worker, tr("repair_reject_already_repairing").format({"building": _building_display_name(building)}))
 			if live_cells.has(macro_coords):
 				_spawn_command_icon_at_microcell(live_cells[macro_coords], microcell, "task_rejected")
@@ -6482,7 +6471,7 @@ func _assign_repair_task(worker: HumanIndividual, building: Building) -> void:
 		_refresh_selected_building_panel()
 		return
 	# Lavoro assegnato: esce dalla coda; se ci tornerà, l'attesa per l'assegnazione a mano ripartirà da capo.
-	_forget_job_board_wait(_repair_job_keys(building))
+	_forget_job_board_wait(RepairJobProvider.job_keys(building))
 	if live_cells.has(macro_coords):
 		_spawn_command_icon_at_microcell(live_cells[macro_coords], microcell, "build")
 	if DebugLogging.ENABLED and DebugLogging.SHOW_TRANSPORT_BUILD_LOGS:
@@ -6492,46 +6481,11 @@ func _assign_repair_task(worker: HumanIndividual, building: Building) -> void:
 	_refresh_selected_building_panel()
 
 
-# true se `task` è una Task NON conclusa, con task_name in `task_names`, e almeno uno dei suoi step ha
-# `target_building` == `building`. Letto dagli step (non da task.context, ripulito da TaskFactory
-# subito dopo la costruzione — BUGFIX 2026-09-14), su TUTTI gli step, non solo quello corrente.
-# "target_building" in step (duck typing): gli step senza quel campo (WalkAction, ...) si escludono da soli.
-# Una Task conclusa non conta mai (prima il controllo della sola costruzione non lo verificava).
-func _task_works_on_building(task: Task, building: Building, task_names: Array[String]) -> bool:
-	if task == null or task.is_finished() or not task_names.has(task.task_name):
-		return false
-	# Solo gli step ancora da fare (2026-09-26, consegna dopo la produzione): a ordine finito il produttore che
-	# porta il prodotto al magazzino non occupa più la postazione (nuovi ordini, annullo dal pannello). Lo step di
-	# consegna (RetrieveAction.deliver_to_warehouse) non conta come lavoro sull'edificio.
-	for step_index in range(task.current_step_index, task.steps.size()):
-		var step: Action = task.steps[step_index]
-		if step is RetrieveAction and (step as RetrieveAction).deliver_to_warehouse:
-			continue
-		if "target_building" in step and step.target_building == building:
-			return true
-	return false
-
-
-# Individui (in ordine di human_individuals) con una Task di `task_names` su `building`, attiva
-# (current_task) o sospesa in coda (task_queue) — un individuo compare una volta sola.
-func _resolve_individuals_working_on_building(building: Building, task_names: Array[String]) -> Array[HumanIndividual]:
-	var workers: Array[HumanIndividual] = []
-	for member in human_individuals:
-		if _task_works_on_building(member.current_task, building, task_names):
-			workers.append(member)
-			continue
-		for queued_task in member.task_queue:
-			if _task_works_on_building(queued_task, building, task_names):
-				workers.append(member)
-				break
-	return workers
-
-
-# "Nome (#id)" di ciascun individuo di _resolve_individuals_working_on_building — sostituisce
+# "Nome (#id)" di ciascun individuo di JobWorkScanService.workers_on_building — sostituisce
 # _resolve_assigned_builder_names/_resolve_production_claimant_names (stesso scan, stesso formato).
 func _resolve_names_working_on_building(building: Building, task_names: Array[String]) -> Array[String]:
 	var names: Array[String] = []
-	for member in _resolve_individuals_working_on_building(building, task_names):
+	for member in JobWorkScanService.workers_on_building(human_individuals, building, task_names):
 		names.append(_format_worker_name(member))
 	return names
 
@@ -6546,10 +6500,10 @@ func _format_worker_name(member: HumanIndividual) -> String:
 # (esclude `excluding_individual`, che può sempre riprendere il PROPRIO cantiere) hanno già la
 # Build Task di `target_building`, attiva o sospesa in coda: un builder mandato temporaneamente a
 # fare un'altra commissione deve continuare a "occupare" il proprio posto.
-# task_names (2026-09-27): BUILD_TASK_NAMES per la costruzione, DEMOLISH_TASK_NAMES per la demolizione.
-func _count_other_individuals_claiming_build(target_building: Building, excluding_individual: HumanIndividual, task_names: Array[String] = BUILD_TASK_NAMES) -> int:
+# task_names (2026-09-27): JobWorkScanService.BUILD_TASK_NAMES per la costruzione, JobWorkScanService.DEMOLISH_TASK_NAMES per la demolizione.
+func _count_other_individuals_claiming_build(target_building: Building, excluding_individual: HumanIndividual, task_names: Array[String] = JobWorkScanService.BUILD_TASK_NAMES) -> int:
 	var count := 0
-	for other in _resolve_individuals_working_on_building(target_building, task_names):
+	for other in JobWorkScanService.workers_on_building(human_individuals, target_building, task_names):
 		if other != excluding_individual:
 			count += 1
 	return count
@@ -6565,12 +6519,12 @@ func _count_other_individuals_claiming_build(target_building: Building, excludin
 # l'individuo con resolve_idle_individual, al momento giusto per lui.
 func _close_individual_tasks_on_building(member: HumanIndividual, building: Building, task_names: Array[String]) -> bool:
 	var current_closed := false
-	if _task_works_on_building(member.current_task, building, task_names):
+	if JobWorkScanService.task_works_on_building(member.current_task, building, task_names):
 		if CargoReturnService.release_cargo(member, member.current_task, macro_world) != CargoReturnService.Outcome.RETURNING:
 			member.stop(false)
 			current_closed = true
 	for queued_task in member.task_queue.duplicate():
-		if not _task_works_on_building(queued_task, building, task_names):
+		if not JobWorkScanService.task_works_on_building(queued_task, building, task_names):
 			continue
 		# RETURNING: il ritorno ha già preso il posto di questa Task nella coda.
 		if CargoReturnService.release_cargo(member, queued_task, macro_world) != CargoReturnService.Outcome.RETURNING:
@@ -6613,7 +6567,7 @@ func _find_completing_individual(building: Building) -> HumanIndividual:
 func _resolve_production_tool_wait_lines(target_building: Building) -> Array[String]:
 	var waits: Array[Dictionary] = []
 	for individual in human_individuals:
-		if not _task_works_on_building(individual.current_task, target_building, PRODUCE_TASK_NAMES):
+		if not JobWorkScanService.task_works_on_building(individual.current_task, target_building, JobWorkScanService.PRODUCE_TASK_NAMES):
 			continue
 		var tool_wait_text := _describe_tool_wait(individual.current_task)
 		if tool_wait_text != "":
@@ -6650,7 +6604,7 @@ func _live_produce_steps(target_building: Building) -> Array[ProduceAction]:
 		var tasks: Array = [member.current_task]
 		tasks.append_array(member.task_queue)
 		for task in tasks:
-			if task == null or task.is_finished() or not PRODUCE_TASK_NAMES.has(task.task_name):
+			if task == null or task.is_finished() or not JobWorkScanService.PRODUCE_TASK_NAMES.has(task.task_name):
 				continue
 			for step_index in range(task.current_step_index, task.steps.size()):
 				var step: Action = task.steps[step_index]
@@ -6659,28 +6613,11 @@ func _live_produce_steps(target_building: Building) -> Array[ProduceAction]:
 	return steps
 
 
-# Ordini dell'edificio con un pipottino che ci lavora (Task in corso o in coda): chiave d'ordine -> HumanIndividual.
-func _production_order_workers(target_building: Building) -> Dictionary:
-	var workers: Dictionary = {}
-	for member in human_individuals:
-		var tasks: Array = [member.current_task]
-		tasks.append_array(member.task_queue)
-		for task in tasks:
-			if task == null or task.is_finished() or not PRODUCE_TASK_NAMES.has(task.task_name):
-				continue
-			for step_index in range(task.current_step_index, task.steps.size()):
-				var step: Action = task.steps[step_index]
-				if step is ProduceAction and (step as ProduceAction).target_building == target_building \
-						and (step as ProduceAction).order_key != "":
-					workers[(step as ProduceAction).order_key] = member
-	return workers
-
-
 # Un nome "Nome (#id)" per ogni ordine con un lavoratore (lo stesso nome due volte se ha due ordini): il pannello conta
 # gli ordini occupati (ricette spente a ordini al completo) e li elenca nel motivo.
 func _resolve_production_claimant_names(target_building: Building) -> Array[String]:
 	var names: Array[String] = []
-	var workers := _production_order_workers(target_building)
+	var workers := JobWorkScanService.production_order_workers(human_individuals, target_building)
 	for key in ProductionService.get_order_keys(target_building):
 		if workers.has(key):
 			names.append(_format_worker_name(workers[key]))
@@ -6690,7 +6627,7 @@ func _resolve_production_claimant_names(target_building: Building) -> Array[Stri
 # Righe "In produzione" del pannello: una per ordine, {"key", "recipe", "units", "percent", "worker_name" ("" = mancante)}.
 func _resolve_production_orders(target_building: Building) -> Array[Dictionary]:
 	var orders: Array[Dictionary] = []
-	var workers := _production_order_workers(target_building)
+	var workers := JobWorkScanService.production_order_workers(human_individuals, target_building)
 	for key in ProductionService.get_order_keys(target_building):
 		# Cottura di un rito sociale (2026-10-14): il pannello mostra già la riga del rito.
 		if ProductionService.is_order_reserved(target_building, key):
@@ -6784,7 +6721,7 @@ func _try_assign_build_command_on_right_click(event: InputEvent) -> bool:
 #
 # Dal 2026-10-14 (richiesta utente) il rito si ordina dal pannello dell'edificio, come un ordine di produzione: sezione
 # "Riti" di BuildingInfoPanel. Senza l'idea dell'assegnazione il clic apre il mirino per scegliere chi celebra; con l'idea
-# il rito diventa Building.requested_rite_id e il lavoro "rite:<id>" entra in coda (_rite_jobs_collect), con "Assegna"
+# il rito diventa Building.requested_rite_id e il lavoro "rite:<id>" entra in coda (RiteJobProvider.collect), con "Assegna"
 # (mirino) e X sulla riga del rito nel pannello. Il destro su edificio con un pipottino selezionato non avvia più riti
 # (sul focolare è il trasporto). Un rito alla volta per edificio (_building_has_active_rite / requested_rite_id).
 # Task rite.tres [Walk → Rite]: TaskBuilderService.build_rite_task; il funerale resta nella task Seppellisci.
@@ -7085,7 +7022,7 @@ func _assign_resumable_building_task(worker: HumanIndividual, hit_building: Buil
 	# (silenzioso lato notifica, solo la X), qui l'utente ha chiesto ESPLICITAMENTE anche un avviso
 	# testuale con {current}/{max}.
 	var max_builders: int = hit_building.rules.max_builders if hit_building.rules != null else 1
-	var other_builders_count := _count_other_individuals_claiming_build(hit_building, worker, DEMOLISH_TASK_NAMES if is_demolition else BUILD_TASK_NAMES)
+	var other_builders_count := _count_other_individuals_claiming_build(hit_building, worker, JobWorkScanService.DEMOLISH_TASK_NAMES if is_demolition else JobWorkScanService.BUILD_TASK_NAMES)
 	if other_builders_count >= max_builders:
 		if live_cells.has(build_macro_coords):
 			_spawn_command_icon_at_microcell(
@@ -7149,7 +7086,7 @@ func _assign_resumable_building_task(worker: HumanIndividual, hit_building: Buil
 		return true
 
 	# Lavoro assegnato: esce dalla lista; se ci tornerà, l'attesa per l'assegnazione a mano ripartirà da capo.
-	_forget_job_board_wait(_building_job_keys(hit_building))
+	_forget_job_board_wait(BuildingJobProvider.job_keys(hit_building))
 
 	# Collegamento signal SetupSiteAction.site_setup_completed / ClearAction.site_cleared (vedi
 	# _reconnect_build_task_signals) — STESSO principio già in uso da _start_building_task_at prima
@@ -7207,7 +7144,7 @@ var worker_pick_banner_label: Label
 # l'idea dell'assegnazione, dal 2026-10-09, mai: restano in coda).
 # true se `task` è una Produce Task non conclusa con un passo di produzione su `building`.
 func _works_on_production_at(task: Task, building: Building) -> bool:
-	if task == null or task.is_finished() or not PRODUCE_TASK_NAMES.has(task.task_name):
+	if task == null or task.is_finished() or not JobWorkScanService.PRODUCE_TASK_NAMES.has(task.task_name):
 		return false
 	for step_index in range(task.current_step_index, task.steps.size()):
 		if task.steps[step_index] is ProduceAction and (task.steps[step_index] as ProduceAction).target_building == building:
@@ -7216,7 +7153,7 @@ func _works_on_production_at(task: Task, building: Building) -> bool:
 
 
 func _has_max_concurrent_orders(building: Building) -> bool:
-	return ProductionService.has_max_concurrent_orders(building, _production_order_workers(building).size())
+	return ProductionService.has_max_concurrent_orders(building, JobWorkScanService.production_order_workers(human_individuals, building).size())
 
 
 # Avviso di ordine in più rifiutato (2026-10-04): l'edificio ha già tutti gli ordini che può tenere.
@@ -7279,7 +7216,7 @@ func _on_production_order_changed(building: Building, resource_name: String, qua
 
 # Ordini in coda (2026-10-09, richiesta utente — con l'idea dell'assegnazione): il clic sulla ricetta non apre il mirino,
 # crea subito l'ordine sull'edificio senza lavoratore (lo stesso stato di un ordine con "Assegna") ed entra nella lista dei
-# lavori ("produce:<id>:<ordine>", _produce_jobs_collect: attesa, icona, Blocca/Sblocca, priorità...). Finché nessuno lo
+# lavori ("produce:<id>:<ordine>", ProduceJobProvider.collect: attesa, icona, Blocca/Sblocca, priorità...). Finché nessuno lo
 # prende, l'ultimo ordine creato dal pannello resta "in preparazione" (_production_queue_draft): altri clic sulla stessa
 # ricetta ne cambiano la quantità (0 = annullato, come la X), le spunte ne cambiano la consegna. Preso da un pipottino,
 # annullato o cambiata ricetta, il clic successivo crea un ordine nuovo. Gli ordini oltre production_concurrent_orders
@@ -7323,7 +7260,7 @@ func _get_production_queue_draft_key(building: Building) -> String:
 	if building == null or _production_queue_draft.is_empty() or int(_production_queue_draft["building_id"]) != building.id:
 		return ""
 	var order_key := String(_production_queue_draft["order_key"])
-	if not ProductionService.has_order(building, order_key) or _production_order_workers(building).has(order_key):
+	if not ProductionService.has_order(building, order_key) or JobWorkScanService.production_order_workers(human_individuals, building).has(order_key):
 		_production_queue_draft = {}
 		return ""
 	return order_key
@@ -7332,7 +7269,7 @@ func _get_production_queue_draft_key(building: Building) -> String:
 # Prima di ogni show_building (2026-10-09): il pannello sa se l'idea c'è e mostra nella griglia l'ordine in preparazione.
 func _sync_production_queue_mode(building: Building) -> void:
 	# Suggerimento "come assegnarlo" del pannello (2026-10-09): idea dell'assegnazione e stato del lavoro dell'edificio
-	# nella coda (cantiere build/upgrade o demolizione, chiavi di _building_jobs_collect).
+	# nella coda (cantiere build/upgrade o demolizione, chiavi di BuildingJobProvider.collect).
 	var job_kind := "demolish" if building.is_marked_for_demolition else (
 		"upgrade" if BuildingUpgradeService.get_upgrade_from_rules(building) != null else "build"
 	)
@@ -7471,7 +7408,7 @@ func _report_tool_gate_failure(worker: HumanIndividual, tool_gate: Dictionary) -
 	match tool_gate["result"]:
 		ToolGateService.Result.MISSING_TOOLS:
 			text = tr("tool_gate_missing_tools").format({
-				"name": worker.name, "tools": _describe_missing_tool_categories(tool_gate["missing_categories"]),
+				"name": worker.name, "tools": ToolFetchService.describe_missing_categories(tool_gate["missing_categories"]),
 			})
 		ToolGateService.Result.BELT_FULL:
 			text = tr("tool_gate_belt_full").format({
@@ -7532,25 +7469,6 @@ func _report_failed_assignment(worker: HumanIndividual, task: Task, activity_key
 	_report_assign_rejection(worker, reason, activity_key)
 
 
-# Categorie mancanti con esempi di attrezzi che le coprono (2026-09-25, richiesta utente — il
-# messaggio deve dire QUALI attrezzi servono): "taglio (es. Coltello di pietra); caccia (es. Lancia
-# di legno)". Una categoria senza alcun attrezzo noto compare col solo nome.
-func _describe_missing_tool_categories(categories: Array) -> String:
-	var parts: PackedStringArray = []
-	for category in categories:
-		var category_name := tr("tool_category_" + String(TaskTypes.ToolCategory.keys()[category]).to_lower())
-		var examples: PackedStringArray = []
-		for tool_name in ToolGateService.get_tools_covering(category):
-			examples.append(IconRegistry.get_resource_display_name(tool_name))
-		if examples.is_empty():
-			parts.append(category_name)
-		else:
-			parts.append(tr("tool_gate_category_with_examples").format({
-				"category": category_name, "examples": ", ".join(examples),
-			}))
-	return "; ".join(parts)
-
-
 # Testo di attesa attrezzi per la Task (vuoto se non è in attesa): guarda lo step CORRENTE, l'unico
 # che ricontrolla gli attrezzi (stato tool_wait_* della classe base Action, dal 2026-09-26 comune a
 # produzione e caccia). Usato dal pannello individuo (riga attività) e dal pannello edificio.
@@ -7562,7 +7480,7 @@ func _describe_tool_wait(task: Task) -> String:
 		return ""
 	match step.tool_wait_result:
 		ToolGateService.Result.MISSING_TOOLS:
-			return tr("tool_gate_waiting_tools").format({"tools": _describe_missing_tool_categories(step.tool_wait_missing_categories)})
+			return tr("tool_gate_waiting_tools").format({"tools": ToolFetchService.describe_missing_categories(step.tool_wait_missing_categories)})
 		ToolGateService.Result.BELT_FULL:
 			return tr("tool_gate_waiting_belt_full").format({"tool": IconRegistry.get_resource_display_name(step.tool_wait_tool_name)})
 		ToolGateService.Result.CANNOT_EQUIP:
@@ -7576,7 +7494,7 @@ func _describe_tool_wait(task: Task) -> String:
 # controllo dei posti né nuovo ordine; la produzione si lega a quell'ordine, con i pezzi che gli mancano.
 # Dal 2026-10-09 (ordini in coda) la riassegnazione usa la consegna salvata nell'ordine e, con l'edificio al completo
 # (ordini con un lavoratore = production_concurrent_orders), viene rifiutata come un ordine nuovo. `silent` (2026-10-09,
-# presa dalla lista dei lavori): nessun avviso, popup né X; i controlli li ha già fatti _produce_job_rejection.
+# presa dalla lista dei lavori): nessun avviso, popup né X; i controlli li ha già fatti ProduceJobProvider.rejection.
 func _assign_produce_task(worker: HumanIndividual, target_building: Building, resource_name: String, quantity: int = 1, deliver_to_warehouse: bool = true, existing_order_key: String = "", keep_for_building: bool = false, silent: bool = false) -> void:
 	if existing_order_key != "":
 		deliver_to_warehouse = ProductionService.get_order_deliver_to_warehouse(target_building, existing_order_key)
@@ -7640,7 +7558,7 @@ func _assign_produce_task(worker: HumanIndividual, target_building: Building, re
 				NotificationTypes.NotificationPopupType.TOOL_REQUIRED,
 				tr("tool_gate_assigned_waiting").format({
 					"name": worker.name,
-					"tools": _describe_missing_tool_categories(tool_gate["missing_categories"]),
+					"tools": ToolFetchService.describe_missing_categories(tool_gate["missing_categories"]),
 				})
 			)
 	elif tool_gate["result"] != ToolGateService.Result.OK:
@@ -7673,7 +7591,7 @@ func _assign_produce_task(worker: HumanIndividual, target_building: Building, re
 		# il limite vale per gli ordini con un lavoratore, già controllato sopra.
 		order_key = ProductionService.create_order(target_building, resource_name, quantity, worker.id, keep_for_building, deliver_to_warehouse, true)
 	else:
-		ProductionService.free_slot_from_unclaimed(target_building, _production_order_workers(target_building))
+		ProductionService.free_slot_from_unclaimed(target_building, JobWorkScanService.production_order_workers(human_individuals, target_building))
 		order_key = ProductionService.create_order(target_building, resource_name, quantity, worker.id, keep_for_building, deliver_to_warehouse)
 	if order_key == "":
 		# Con l'idea il limite toccato è quello degli ordini in tutto (coda dell'edificio piena, 2026-10-09).
@@ -7937,7 +7855,7 @@ func _collect_damaged_building_entries() -> Array[Dictionary]:
 			continue
 		# A che punto è la riparazione (2026-10-10): in corso (qualcuno ci lavora), in coda (richiesta senza nessuno) o da fare.
 		var text_key := "pending_building_damaged_to_repair"
-		if not _resolve_individuals_working_on_building(building, REPAIR_TASK_NAMES).is_empty():
+		if not JobWorkScanService.workers_on_building(human_individuals, building, JobWorkScanService.REPAIR_TASK_NAMES).is_empty():
 			text_key = "pending_building_damaged_repair_in_progress"
 		elif building.repair_requested:
 			text_key = "pending_building_damaged_repair_queued"
@@ -8989,7 +8907,7 @@ func _assign_bury_task(worker: HumanIndividual, body_id: int, silent: bool = fal
 			_spawn_bury_command_icon(record, "task_rejected")
 			_report_command_rejection(worker, tr("bury_reject_already_assigned").format({"body": body_name, "assignee": assignee.name}))
 		return
-	var mound := _resolve_bury_mound(record, body_id)
+	var mound := BodyBurialService.resolve_mound(record, body_id, human_individuals)
 	if mound == null:
 		if not silent:
 			_spawn_bury_command_icon(record, "task_rejected")
@@ -9018,17 +8936,6 @@ func _assign_bury_task(worker: HumanIndividual, body_id: int, silent: bool = fal
 	_refresh_selected_individual_panel()
 	if selected_dead_body_individual_id == body_id:
 		_refresh_dead_body_panel()
-
-
-# Cumulo di destinazione della sepoltura di `record` (estratto il 2026-10-07 da _assign_bury_task, condiviso con la lista
-# dei lavori): un corpo già sulla lastra resta su quel cumulo, se ancora utilizzabile (la task passa subito al rito);
-# altrimenti il cumulo utilizzabile più vicino al corpo. null se nessuno.
-func _resolve_bury_mound(record: Dictionary, body_id: int) -> Building:
-	if BodyBurialService.is_on_slab(record):
-		var slab_mound := BodyBurialService.find_building(int(record.get("mound_id", -1)))
-		if BodyBurialService.is_mound_usable(slab_mound, body_id, human_individuals):
-			return slab_mound
-	return BodyBurialService.find_nearest_mound(Vector2(record["position"]), Vector2i(record["home_macro_coords"]), body_id, human_individuals)
 
 
 # Icona di comando sul corpo (esito del comando Seppellisci), nel punto esatto in cui è disegnato. Comando accettato:
@@ -9157,7 +9064,7 @@ func _free_dead_body_view(body_id: int) -> void:
 #   b. lavori senza nessuno assegnato, né in corso né in coda, dal più vecchio: cantieri, miglioramenti, demolizioni,
 #      ordini di produzione (escluse le ricette ad avanzamento automatico). Entrano solo dopo PENDING_JOB_WAIT_DAYS di
 #      gioco interi senza nessuno; il conto si azzera appena qualcuno li prende (in memoria, non salvato).
-# Chi lavora su cosa: un solo giro sui pipottini (_collect_pending_assignments). Ricalcolo una volta al secondo reale.
+# Chi lavora su cosa: un solo giro sui pipottini (JobWorkScanService.collect_assignments). Ricalcolo una volta al secondo reale.
 # Lista dei lavori (2026-10-07, assegnazione compiti passo A — JobBoardService): con l'idea dell'assegnazione completata,
 # lo stesso giro prepara anche le righe "In coda" e "In corso" del cassetto (se è aperto), dai lavori generici della lista
 # (_collect_job_board_jobs: oggi cantieri nuovi "build:<id>", di miglioramento "upgrade:<id>", demolizioni
@@ -9168,7 +9075,7 @@ func _free_dead_body_view(body_id: int) -> void:
 func _refresh_pending_entries() -> void:
 	if pending_panel == null or game_data == null:
 		return
-	var assigned := _collect_pending_assignments()
+	var assigned := JobWorkScanService.collect_assignments(human_individuals)
 	var entries: Array[Dictionary] = []
 	var body_entries: Array[Dictionary] = []
 	for record in game_data.expired_objects:
@@ -9213,7 +9120,7 @@ func _refresh_pending_entries() -> void:
 	_update_job_board_waits(board_jobs)
 	# Richiamo del coordinatore (2026-10-09): un lavoro diventato prendibile (nuovo in coda o finita la sua attesa) è
 	# un evento per i coordinatori che aspettano senza fila.
-	_notify_coordinator_new_open_jobs(board_jobs)
+	JobBoardService.notify_new_open_jobs(game_data, human_folk, board_jobs)
 	if macro_world != null:
 		for building in macro_world.buildings:
 			if building.is_demolished or building.rules == null:
@@ -9364,7 +9271,7 @@ func _refresh_pending_entries() -> void:
 func _tick_simulation_second() -> void:
 	# Ordini "Taglia" del cassetto (2026-10-09): quelli presi che nessuno porta più tornano in coda (o spariscono a serie
 	# finita) prima di raccogliere i lavori.
-	_settle_drawer_cut_orders()
+	DrawerOrderService.settle_zone_orders(_job_board_context())
 	# Edifici entrati o usciti dallo stato "Danneggiato" (2026-10-10): mappa del movimento della loro cella aggiornata.
 	_sync_damaged_buildings()
 	# Riparazioni richieste (2026-10-10): quelle non più valide si chiudono prima di raccogliere i lavori.
@@ -9459,7 +9366,7 @@ func _collect_tool_wait_entries() -> Array[Dictionary]:
 			work = tr(task.task_name)
 		# Due livelli (2026-10-09): "<nome> · <lavoro>", sotto "In attesa di <attrezzo>".
 		var row_name := tr("pending_worker_work").format({"name": member.name, "work": work})
-		var detail := tr("pending_reason_tool").format({"tools": _describe_missing_tool_categories(step.tool_wait_missing_categories)})
+		var detail := tr("pending_reason_tool").format({"tools": ToolFetchService.describe_missing_categories(step.tool_wait_missing_categories)})
 		var entry := _pending_entry("tool_wait:%d" % member.id, "%s\n%s" % [row_name, detail], {
 			"kind": "individual", "id": member.id, "macro": member.home_macro_coords, "sort": float(member.id),
 			"name": row_name, "detail": detail,
@@ -9533,69 +9440,6 @@ func _pending_entry(key: String, text: String, data: Dictionary) -> Dictionary:
 	return PendingEntryService.make_entry(key, text, data, live_cells.has(Vector2i(data["macro"])))
 
 
-# Un solo giro sui pipottini (task in corso e in coda): edifici con un costruttore o un demolitore, ordini di produzione
-# con un lavoratore ("id:ricetta"), corpi con una task Seppellisci. Stessi criteri di _task_works_on_building (step dal
-# corrente in poi, esclusa la consegna al magazzino); gli ordini di produzione per chiave d'ordine.
-func _collect_pending_assignments() -> Dictionary:
-	# "postponed" (2026-10-16): cantieri rimandati per materiale nella coda personale, edificio -> pipottino; "build_active":
-	# cantieri con un costruttore che non li ha rimandati. Un cantiere solo rimandato resta assegnato ma va in "In coda".
-	# Produce e riparazioni (2026-10-17): stesse coppie "rimandato" / "attivo" dei cantieri, per chiave d'ordine e per edificio.
-	var result := {
-		"build": {}, "demolish": {}, "produce": {}, "bodies": {}, "repair": {}, "rite": {}, "postponed": {}, "build_active": {},
-		"postponed_produce": {}, "produce_active": {}, "postponed_repair": {}, "repair_active": {},
-	}
-	for member in human_individuals:
-		var tasks: Array = []
-		if member.current_task != null and not member.current_task.is_finished():
-			tasks.append(member.current_task)
-		tasks.append_array(member.task_queue)
-		for task in tasks:
-			var queued := task as Task
-			if queued == null or queued.is_finished():
-				continue
-			if BodyBurialService.is_bury_task(queued):
-				result["bodies"][BodyBurialService.get_task_body_id(queued)] = true
-				continue
-			# Rito ordinato (2026-10-14): per edificio.
-			if bool(queued.context.get(RiteService.CONTEXT_ORDERED, false)):
-				for step in queued.steps:
-					if step is RiteAction and (step as RiteAction).target_building != null:
-						result["rite"][(step as RiteAction).target_building.id] = true
-				continue
-			var bucket := ""
-			if BUILD_TASK_NAMES.has(queued.task_name):
-				bucket = "build"
-			elif DEMOLISH_TASK_NAMES.has(queued.task_name):
-				bucket = "demolish"
-			elif REPAIR_TASK_NAMES.has(queued.task_name):
-				bucket = "repair"
-			elif PRODUCE_TASK_NAMES.has(queued.task_name):
-				# Ordini separati (2026-10-04): per chiave d'ordine.
-				var produce_postponed := queued != member.current_task and queued.context.has(HumanIndividualActionService.CONTEXT_MATERIAL_POSTPONED)
-				for step in queued.steps:
-					if step is ProduceAction and step.target_building != null and (step as ProduceAction).order_key != "":
-						var produce_key := "%d:%s" % [step.target_building.id, (step as ProduceAction).order_key]
-						result["produce"][produce_key] = true
-						result["postponed_produce" if produce_postponed else "produce_active"][produce_key] = member if produce_postponed else true
-				continue
-			else:
-				continue
-			for step_index in range(queued.current_step_index, queued.steps.size()):
-				var step: Action = queued.steps[step_index]
-				if step is RetrieveAction and (step as RetrieveAction).deliver_to_warehouse:
-					continue
-				if "target_building" in step and step.target_building != null:
-					result[bucket][step.target_building.id] = true
-					if bucket == "build" or bucket == "repair":
-						var postponed_key := "postponed" if bucket == "build" else "postponed_repair"
-						var active_key := "build_active" if bucket == "build" else "repair_active"
-						if queued != member.current_task and queued.context.has(HumanIndividualActionService.CONTEXT_MATERIAL_POSTPONED):
-							result[postponed_key][step.target_building.id] = member
-						else:
-							result[active_key][step.target_building.id] = true
-	return result
-
-
 # Clic su una voce (riga o 🎯): seleziona l'oggetto sulla mappa e centra la visuale, restando nella scheda "In sospeso".
 func _on_pending_entry_activated(entry: Dictionary) -> void:
 	# Nessuna idea in sviluppo (2026-10-16): il clic apre l'albero delle idee.
@@ -9637,89 +9481,102 @@ func _on_pending_entry_activated(entry: Dictionary) -> void:
 var _job_board_provider_list: Array[Dictionary] = []
 
 
+# Contesto dei fornitori della lista (JobBoardContext, 2026-10-17, refactoring GameScene blocco 2b): partita, mondo,
+# popolazione e celle vive. Nuovo a ogni chiamata (solo riferimenti, nessuna copia).
+func _job_board_context() -> JobBoardContext:
+	var ctx := JobBoardContext.new()
+	ctx.game_data = game_data
+	ctx.world = macro_world
+	ctx.individuals = human_individuals
+	ctx.folk = human_folk
+	ctx.live_cells = live_cells
+	return ctx
+
+
 func _job_board_providers() -> Array[Dictionary]:
 	if _job_board_provider_list.is_empty():
 		_job_board_provider_list.append({
-			"collect": _building_jobs_collect,
+			"collect": func(provider: Dictionary, assigned: Dictionary) -> Array[Dictionary]: return BuildingJobProvider.collect(_job_board_context(), provider, assigned),
 			"probe_key": func(job: Dictionary) -> String: return (job["target"] as Building).get_resumable_task_definition_path(),
-			"rejection": _building_job_rejection,
+			"rejection": func(worker: HumanIndividual, job: Dictionary) -> String: return BuildingJobProvider.rejection(_job_board_context(), worker, job),
 			"assign": func(worker: HumanIndividual, job: Dictionary) -> void: _assign_resumable_building_task(worker, job["target"]),
-			"workers": _building_job_workers,
+			"workers": func(job: Dictionary) -> Array[HumanIndividual]: return BuildingJobProvider.workers(_job_board_context(), job),
 			"cancel_fields": _building_job_cancel_fields,
 			"cancel": _building_job_cancel,
 			"release": _building_job_release,
 		})
 		_job_board_provider_list.append({
-			"collect": _body_jobs_collect,
+			"collect": func(provider: Dictionary, assigned: Dictionary) -> Array[Dictionary]: return BodyJobProvider.collect(_job_board_context(), provider, assigned),
 			"probe_key": func(_job: Dictionary) -> String: return BodyBurialService.BURY_TASK_DEFINITION_PATH,
-			"rejection": _body_job_rejection,
+			"rejection": func(worker: HumanIndividual, job: Dictionary) -> String: return BodyJobProvider.rejection(_job_board_context(), worker, job),
 			"assign": func(worker: HumanIndividual, job: Dictionary) -> void: _assign_bury_task(worker, int(job["id"]), true),
-			"workers": _body_job_workers,
+			"workers": func(job: Dictionary) -> Array[HumanIndividual]: return BodyJobProvider.workers(_job_board_context(), job),
 			"cancel_fields": _body_job_cancel_fields,
 			"cancel": func(_job: Dictionary) -> void: pass,
 			"release": _body_job_release,
 		})
 		_job_board_provider_list.append({
-			"collect": _pile_jobs_collect,
+			"collect": func(provider: Dictionary, assigned: Dictionary) -> Array[Dictionary]: return PileJobProvider.collect(_job_board_context(), provider, assigned),
 			"probe_key": func(job: Dictionary) -> String: return "pile:%d" % int(job["id"]),
-			"rejection": _pile_job_rejection,
+			"rejection": func(worker: HumanIndividual, job: Dictionary) -> String: return PileJobProvider.rejection(_job_board_context(), worker, job),
 			"assign": _assign_pile_job,
-			"workers": _pile_job_workers,
+			"workers": func(job: Dictionary) -> Array[HumanIndividual]: return PileJobProvider.workers(_job_board_context(), job),
 			"cancel_fields": _pile_job_cancel_fields,
 			"cancel": func(_job: Dictionary) -> void: pass,
 			"release": _pile_job_release,
 		})
-		# Riparazioni richieste (2026-10-10): edifici con Building.repair_requested, vedi _repair_jobs_collect.
+		# Riparazioni richieste (2026-10-10): edifici con Building.repair_requested, vedi RepairJobProvider.
 		_job_board_provider_list.append({
-			"collect": _repair_jobs_collect,
+			"collect": func(provider: Dictionary, assigned: Dictionary) -> Array[Dictionary]: return RepairJobProvider.collect(_job_board_context(), provider, assigned),
 			"probe_key": func(_job: Dictionary) -> String: return TaskBuilderService.REPAIR_TASK_DEFINITION_PATH,
-			"rejection": _repair_job_rejection,
+			"rejection": func(worker: HumanIndividual, job: Dictionary) -> String: return RepairJobProvider.rejection(_job_board_context(), worker, job),
 			"assign": func(worker: HumanIndividual, job: Dictionary) -> void: _assign_repair_task(worker, job["target"]),
-			"workers": func(job: Dictionary) -> Array[HumanIndividual]: return _resolve_individuals_working_on_building(job["target"], REPAIR_TASK_NAMES),
+			"workers": func(job: Dictionary) -> Array[HumanIndividual]: return RepairJobProvider.workers(_job_board_context(), job),
 			"cancel_fields": func(_job: Dictionary) -> Dictionary: return {"cancel_disabled": false, "cancel_tooltip": tr("repair_cancel_request_tooltip")},
 			"cancel": _repair_job_cancel,
 			"release": _repair_job_release,
 		})
-		# Riti ordinati dal pannello (2026-10-14): edifici con Building.requested_rite_id, vedi _rite_jobs_collect.
+		# Riti ordinati dal pannello (2026-10-14): edifici con Building.requested_rite_id, vedi RiteJobProvider.
 		_job_board_provider_list.append({
-			"collect": _rite_jobs_collect,
+			"collect": func(provider: Dictionary, assigned: Dictionary) -> Array[Dictionary]: return RiteJobProvider.collect(_job_board_context(), provider, assigned),
 			"probe_key": func(job: Dictionary) -> String: return String(job["key"]),
-			"rejection": _rite_job_rejection,
+			"rejection": func(worker: HumanIndividual, job: Dictionary) -> String: return RiteJobProvider.rejection(_job_board_context(), worker, job),
 			"assign": func(worker: HumanIndividual, job: Dictionary) -> void: _assign_rite_task(worker, job["target"], String(job["rite_id"]), true),
-			"workers": func(job: Dictionary) -> Array[HumanIndividual]: return RiteService.get_ordered_rite_workers(job["target"], human_individuals),
+			"workers": func(job: Dictionary) -> Array[HumanIndividual]: return RiteJobProvider.workers(_job_board_context(), job),
 			"cancel_fields": func(_job: Dictionary) -> Dictionary: return {"cancel_disabled": false, "cancel_tooltip": tr("building_cancel_rite_order_tooltip")},
 			"cancel": func(job: Dictionary) -> void: _on_rite_order_cancel_requested(job["target"]),
 			"release": _rite_job_release,
 		})
-		# Uscite piene (2026-10-08): consegna dei Prodotti finiti a magazzino, vedi _output_jobs_collect.
+		# Uscite piene (2026-10-08): consegna dei Prodotti finiti a magazzino, vedi OutputJobProvider.
 		_job_board_provider_list.append({
-			"collect": _output_jobs_collect,
+			"collect": func(provider: Dictionary, assigned: Dictionary) -> Array[Dictionary]: return OutputJobProvider.collect(_job_board_context(), provider, assigned),
 			"probe_key": func(job: Dictionary) -> String: return String(job["key"]),
-			"rejection": _output_job_rejection,
+			"rejection": func(worker: HumanIndividual, job: Dictionary) -> String: return OutputJobProvider.rejection(_job_board_context(), worker, job),
 			"assign": _assign_output_job,
-			"workers": _output_job_workers,
+			"workers": func(job: Dictionary) -> Array[HumanIndividual]: return OutputJobProvider.workers(_job_board_context(), job),
 			"cancel_fields": _output_job_cancel_fields,
 			"cancel": func(_job: Dictionary) -> void: pass,
 			"release": _output_job_release,
 		})
-		# Ordini di produzione (2026-10-09): ordini senza lavoratore delle workstation, vedi _produce_jobs_collect.
+		# Ordini di produzione (2026-10-09): ordini senza lavoratore delle workstation, vedi ProduceJobProvider.
 		_job_board_provider_list.append({
-			"collect": _produce_jobs_collect,
+			"collect": func(provider: Dictionary, assigned: Dictionary) -> Array[Dictionary]: return ProduceJobProvider.collect(_job_board_context(), provider, assigned),
 			"probe_key": func(job: Dictionary) -> String: return String(job["key"]),
-			"rejection": _produce_job_rejection,
+			"rejection": func(worker: HumanIndividual, job: Dictionary) -> String: return ProduceJobProvider.rejection(_job_board_context(), worker, job),
 			"assign": _assign_produce_job,
-			"workers": _produce_job_workers,
+			"workers": func(job: Dictionary) -> Array[HumanIndividual]: return ProduceJobProvider.workers(_job_board_context(), job),
 			"cancel_fields": func(_job: Dictionary) -> Dictionary: return {"cancel_disabled": false, "cancel_tooltip": tr("building_cancel_production_order_tooltip")},
 			"cancel": func(job: Dictionary) -> void: _on_production_order_cancel_requested(job["target"], String(job["order_key"])),
 			"release": _produce_job_release,
 		})
-		# Ordini creati dal cassetto (2026-10-09): GameData.drawer_orders, vedi _drawer_order_jobs_collect.
+		# Ordini creati dal cassetto (2026-10-09): GameData.drawer_orders, vedi DrawerOrderJobProvider.
 		_job_board_provider_list.append({
-			"collect": _drawer_order_jobs_collect,
+			# Ordini "transport" del gestore scorte: riga e idoneità ancora in scena fino al blocco 4.
+			"collect": func(provider: Dictionary, assigned: Dictionary) -> Array[Dictionary]: return DrawerOrderJobProvider.collect(_job_board_context(), provider, assigned, _drawer_transport_job),
 			"probe_key": func(job: Dictionary) -> String: return String(job["key"]),
-			"rejection": _drawer_order_job_rejection,
+			"rejection": func(worker: HumanIndividual, job: Dictionary) -> String: return DrawerOrderJobProvider.rejection(_job_board_context(), worker, job, _drawer_transport_job_rejection),
 			"assign": _assign_drawer_order_job,
-			"workers": _drawer_order_job_workers,
+			"workers": func(job: Dictionary) -> Array[HumanIndividual]: return DrawerOrderJobProvider.workers(_job_board_context(), job),
 			"cancel_fields": func(job: Dictionary) -> Dictionary: return {
 				"cancel_disabled": false,
 				"cancel_tooltip": tr("drawer_order_stock_cancel_tooltip") if (job["order"] as Dictionary).has(StockRequestService.ORDER_KEY) else tr("drawer_order_cancel_tooltip"),
@@ -9751,20 +9608,9 @@ func _collect_job_board_jobs(assigned: Dictionary) -> Array[Dictionary]:
 	return jobs
 
 
-# Lavori gestiti dalla lista senza nessuno assegnato e non nascosti, bloccati compresi: chiave -> voce. Fuori i lavori
-# impossibili per ora ("blocked_reason", es. un mucchio che nessun magazzino accetta): restano visibili nel cassetto ma
-# non entrano nell'attesa né si prendono; quando tornano possibili entrano come un lavoro nuovo (parte l'attesa).
-func _collect_job_board_candidates(jobs: Array[Dictionary]) -> Dictionary:
-	var candidates: Dictionary = {}
-	for job in jobs:
-		if not bool(job["assigned"]) and not bool(job["hidden"]) and String(job.get("blocked_reason", "")) == "":
-			candidates[String(job["key"])] = job
-	return candidates
-
-
 # La voce con chiave `job_key`, {} se il lavoro non c'è più.
 func _find_job_board_job(job_key: String) -> Dictionary:
-	for job in _collect_job_board_jobs(_collect_pending_assignments()):
+	for job in _collect_job_board_jobs(JobWorkScanService.collect_assignments(human_individuals)):
 		if String(job["key"]) == job_key:
 			return job
 	return {}
@@ -9809,7 +9655,7 @@ func _job_board_drawer_entry(job: Dictionary, in_progress: bool) -> Dictionary:
 			# In attesa di assegnazione (2026-10-07): ogni riga non assegnata; secondi interi rimasti dell'attesa per
 			# l'assegnazione a mano (0 = finita).
 			data["waiting"] = true
-			data["wait_seconds"] = ceili(_get_job_board_wait_seconds(key))
+			data["wait_seconds"] = ceili(JobBoardService.get_wait_seconds(game_data, key))
 	var entry := _pending_entry(key, String(job["text"]), data).merged(job["provider"]["cancel_fields"].call(job))
 	# Lavoro in coda senza un posto ("Produci" dal cassetto, "Taglia" con la zona automatica, 2026-10-09): non cliccabile,
 	# con il motivo vero invece di "Fuori dalla zona caricata".
@@ -9842,8 +9688,8 @@ func _on_job_board_state_requested(entry: Dictionary, state: String) -> void:
 		if not locked_job.is_empty():
 			locked_job["provider"]["release"].call(locked_job)
 	# Sblocca: subito prendibile, nessuna attesa (2026-10-07).
-	if state == JobBoardService.STATE_LISTED and _job_board_waiting_since.has(key):
-		_job_board_waiting_since[key] = _job_board_clock - JobBoardService.get_manual_assign_window_seconds()
+	if state == JobBoardService.STATE_LISTED:
+		JobBoardService.end_wait(game_data, key)
 	_refresh_pending_entries()
 
 
@@ -9875,35 +9721,17 @@ func _on_job_board_requeue_requested(entry: Dictionary) -> void:
 	_refresh_pending_entries()
 
 
-# Lista dei lavori, passo B (2026-10-07, JobBoardService.job_taker, chiamato SOLO da resolve_idle_individual tra una
-# task e l'altra): con l'idea dell'assegnazione completata, `worker` prende il lavoro attivo più adatto. Candidati: i
-# lavori senza nessuno assegnato, in corso o in coda (_collect_job_board_candidates), non bloccati e fuori dall'attesa
-# per l'assegnazione a mano. Controlli dell'assegnazione a mano fatti PRIMA, in silenzio, su una task di prova per tipo
-# di task ("rejection" del fornitore: età, energia sopra la soglia del riposo d'emergenza) e la raggiungibilità
-# (PathfindingService.reachability_for); poi la scelta secondo il modo di priorità del giocatore (JobBoardService.pick_job,
-# 2026-10-08: la distanza non conta più) e la stessa funzione dell'assegnazione a mano ("assign" del fornitore). true = preso. Un rifiuto non viene ritentato: resolve_idle_individual
-# passa alle attività di ripiego. Due pipottini liberati insieme non prendono lo stesso lavoro: le chiamate sono una dopo
-# l'altra e il primo ha già la task quando il secondo rifà il giro.
+# Presa dalla lista per `worker` libero (2026-10-07, passo B; logica in JobBoardService.find_takeable_jobs/take_job dal
+# 2026-10-17, refactoring GameScene blocco 2a): chiamata solo da resolve_idle_individual tra una task e l'altra, tramite
+# JobBoardService.job_taker. true = preso. Due pipottini liberati insieme non prendono lo stesso lavoro: le chiamate sono
+# una dopo l'altra e il primo ha già la task quando il secondo rifà il giro.
 func _take_listed_job_for(worker: HumanIndividual) -> bool:
 	var found := _takeable_jobs_for(worker, true)
-	var takeable_jobs: Array[Dictionary] = []
-	takeable_jobs.assign(found.get("jobs", []))
-	if takeable_jobs.is_empty():
+	if (found.get("jobs", []) as Array).is_empty():
 		return false
-	var found_text := String(found["found_text"])
-	# Scelta secondo il modo di priorità del giocatore (2026-10-08): {"job", "reason"} (motivo per il log).
-	var pick := JobBoardService.pick_job(game_data, worker, takeable_jobs)
-	var best: Dictionary = pick["job"]
-	var task_before := worker.current_task
-	var queue_size_before := worker.task_queue.size()
-	best["provider"]["assign"].call(worker, best)
-	var taken := (worker.current_task != null and worker.current_task != task_before) or worker.task_queue.size() > queue_size_before
-	var job_text := "%s %s" % [String(best["key"]), String(best["log_name"])]
-	if taken:
-		_log_job_board(worker, "%s — preso %s — %s." % [found_text, job_text, String(pick["reason"])])
-	else:
-		_log_job_board(worker, "%s — scelto %s — %s, ma rifiutato: passa alle attività di ripiego." % [found_text, job_text, String(pick["reason"])])
-	return taken
+	var result := JobBoardService.take_job(worker, game_data, found)
+	_log_job_board(worker, String(result["log"]))
+	return bool(result["taken"])
 
 
 # C'è almeno un lavoro della lista che `worker` può prendere adesso (2026-10-09, "Cerca lavoro"): stessi filtri della
@@ -9917,42 +9745,11 @@ func _is_coordinator_scene_ready() -> bool:
 	return _coordinator_frames >= 2 and is_inside_tree() and macro_world != null and game_data != null
 
 
-# Lavori prendibili all'ultimo giro della lista (chiave -> true), per accorgersi di quelli nuovi (2026-10-09).
-var _coordinator_open_job_keys: Dictionary = {}
-
-
-# Chiavi dei lavori della lista prendibili adesso: senza nessuno, non bloccati, fuori dall'attesa per l'assegnazione a mano.
-func _open_job_keys(candidates: Dictionary) -> Dictionary:
-	var keys: Dictionary = {}
-	for job_key in candidates.keys():
-		if JobBoardService.get_state(game_data, job_key) == JobBoardService.STATE_LOCKED:
-			continue
-		if _get_job_board_wait_seconds(job_key) > 0.0:
-			continue
-		keys[job_key] = true
-	return keys
-
-
-func _notify_coordinator_new_open_jobs(board_jobs: Array[Dictionary]) -> void:
-	if game_data == null or not JobBoardService.is_enabled(human_folk):
-		_coordinator_open_job_keys.clear()
-		return
-	var open_keys := _open_job_keys(_collect_job_board_candidates(board_jobs))
-	var has_new := false
-	for job_key in open_keys.keys():
-		if not _coordinator_open_job_keys.has(job_key):
-			has_new = true
-			break
-	_coordinator_open_job_keys = open_keys
-	if has_new:
-		CoordinatorService.on_jobs_available()
-
-
 # Quanti lavori della lista sono prendibili adesso (CoordinatorService, richiamo).
 func _job_board_open_job_count() -> int:
 	if game_data == null or macro_world == null or not JobBoardService.is_enabled(human_folk):
 		return 0
-	return _open_job_keys(_collect_job_board_candidates(_collect_job_board_jobs(_collect_pending_assignments()))).size()
+	return JobBoardService.open_job_keys(game_data, _current_job_board_candidates()).size()
 
 
 # Suono del richiamo alla posizione del coordinatore (solo se la sua macrocella è attiva).
@@ -9967,90 +9764,30 @@ func _emit_coordinator_called(member: HumanIndividual) -> void:
 func _job_board_has_open_jobs() -> bool:
 	if game_data == null or macro_world == null or not JobBoardService.is_enabled(human_folk):
 		return false
-	var candidates := _collect_job_board_candidates(_collect_job_board_jobs(_collect_pending_assignments()))
-	for job_key in candidates.keys():
-		if JobBoardService.get_state(game_data, job_key) != JobBoardService.STATE_LOCKED:
-			return true
-	return false
+	return JobBoardService.has_open_jobs(game_data, _current_job_board_candidates())
+
+
+# Candidati della lista adesso (JobBoardService.collect_candidates su tutti i lavori dei fornitori).
+func _current_job_board_candidates() -> Dictionary:
+	return JobBoardService.collect_candidates(_collect_job_board_jobs(JobWorkScanService.collect_assignments(human_individuals)))
 
 
 func _has_listed_job_for(worker: HumanIndividual) -> bool:
 	return not (_takeable_jobs_for(worker, false).get("jobs", []) as Array).is_empty()
 
 
-# Lavori della lista che `worker` può prendere adesso (2026-10-09, estratto da _take_listed_job_for, invariato):
-# {"jobs": Array[Dictionary], "found_text": testo per il log}; "jobs" vuoto = nessuno. Filtri: bloccati, attesa per
-# l'assegnazione a mano, idoneità con la task di prova ("rejection" del fornitore), raggiungibilità. `log_reasons`: le
-# righe [JOB BOARD] del "nessuno preso".
+# Lavori della lista che `worker` può prendere adesso (2026-10-09; filtri in JobBoardService.find_takeable_jobs dal
+# 2026-10-17): {"jobs", "found_text", "log"}, {} senza l'idea o senza partita. Qui solo le icone dell'attesa e, con
+# `log_reasons`, le righe [JOB BOARD] del "nessuno preso".
 func _takeable_jobs_for(worker: HumanIndividual, log_reasons: bool) -> Dictionary:
 	if worker == null or game_data == null or macro_world == null or not JobBoardService.is_enabled(human_folk):
 		return {}
-	var candidates := _collect_job_board_candidates(_collect_job_board_jobs(_collect_pending_assignments()))
-	_sync_job_board_waits(candidates)
-	# Età (2026-10-08): un lavoro comparso dopo l'ultimo giro del cassetto viene segnato qui, prima della scelta.
-	JobBoardService.stamp_entered(game_data, candidates.values(), _job_board_now())
-	var open_jobs: Array[Dictionary] = []
-	var locked_count := 0
-	# Lavori ancora nell'attesa per l'assegnazione a mano (2026-10-07): non prendibili dalla lista.
-	var waiting_count := 0
-	for job_key in candidates.keys():
-		if JobBoardService.get_state(game_data, job_key) == JobBoardService.STATE_LOCKED:
-			locked_count += 1
-			continue
-		if _get_job_board_wait_seconds(job_key) > 0.0:
-			waiting_count += 1
-			continue
-		open_jobs.append(candidates[job_key])
-	var found_text := "%d in lista (%d bloccati, %d in attesa)" % [open_jobs.size() + locked_count + waiting_count, locked_count, waiting_count]
-	if open_jobs.is_empty():
-		# Lista vuota: nessuna riga (2026-10-07, riempiva la console senza dire niente).
-		if waiting_count > 0:
-			if log_reasons:
-				_log_job_board(worker, "%s — nessuno preso: solo lavori in attesa di assegnazione." % found_text)
-		elif locked_count > 0:
-			if log_reasons:
-				_log_job_board(worker, "%s — nessuno preso: tutti bloccati." % found_text)
-		return {}
-	# Idoneità con una task di prova (mai assegnata) per tipo di task (2026-10-07): età ed energia dipendono dal pipottino
-	# e dalla task, non dal singolo lavoro. I lavori di una task rifiutata vengono scartati.
-	var rejection_by_probe: Dictionary = {}
-	var suitable_jobs: Array[Dictionary] = []
-	for job in open_jobs:
-		var probe_key := String(job["provider"]["probe_key"].call(job))
-		if not rejection_by_probe.has(probe_key):
-			rejection_by_probe[probe_key] = String(job["provider"]["rejection"].call(worker, job))
-		if String(rejection_by_probe[probe_key]) == HumanIndividual.ASSIGN_OK:
-			suitable_jobs.append(job)
-	if suitable_jobs.is_empty():
-		var reasons: Array[String] = []
-		for probe_key in rejection_by_probe.keys():
-			reasons.append(String(rejection_by_probe[probe_key]))
-		if log_reasons:
-			_log_job_board(worker, "%s — nessuno preso: non adatto (%s)." % [found_text, ", ".join(reasons)])
-		return {}
-	var reachable := PathfindingService.reachability_for(worker)
-	var takeable_jobs: Array[Dictionary] = []
-	# Materiali troppo pesanti (2026-10-16): costruzione e riparazione solo a chi porta almeno un'unità di ogni
-	# materiale ancora mancante (MaterialSupplyService.get_uncarryable_materials, cintura attuale).
-	var too_heavy: Array[String] = []
-	for job in suitable_jobs:
-		if not reachable.call(job["reach_target"]):
-			continue
-		var kind := String(job["kind"])
-		if kind == "build" or kind == "upgrade" or kind == "repair":
-			var heavy := MaterialSupplyService.get_uncarryable_materials(worker, job["target"], kind == "repair")
-			if not heavy.is_empty():
-				too_heavy.append("%s: %s" % [String(job["log_name"]), ", ".join(heavy)])
-				continue
-		takeable_jobs.append(job)
-	if takeable_jobs.is_empty():
-		if log_reasons:
-			if too_heavy.is_empty():
-				_log_job_board(worker, "%s — nessuno preso: non adatto (nessun lavoro raggiungibile)." % found_text)
-			else:
-				_log_job_board(worker, "%s — nessuno preso: non adatto (non può trasportare %s)." % [found_text, "; ".join(too_heavy)])
-		return {}
-	return {"jobs": takeable_jobs, "found_text": found_text}
+	var candidates := _current_job_board_candidates()
+	var found := JobBoardService.find_takeable_jobs(worker, game_data, candidates, _job_board_now())
+	_sync_job_board_wait_icons(candidates)
+	if log_reasons and String(found["log"]) != "":
+		_log_job_board(worker, String(found["log"]))
+	return found
 
 
 # Momento di gioco per l'età dei lavori della lista (2026-10-08): giorni assoluti più la frazione del giorno in corso.
@@ -10060,18 +9797,11 @@ func _job_board_now() -> float:
 	return float(game_data.get_absolute_day()) + (clock.get_day_progress() if clock != null else 0.0)
 
 
-# --- Attesa per l'assegnazione a mano (2026-10-07, richiesta utente — JobBoardService.get_manual_assign_window_seconds()) ---
-# Ogni lavoro della lista senza nessuno assegnato (bloccato o no) ha in _job_board_waiting_since il momento
-# (_job_board_clock: secondi reali a gioco in corso) in cui è entrato in lista. Entra quando compare tra i candidati
-# (nato senza lavoratore o tornato in lista); esce quando non c'è più (assegnato, finito,
-# sparito) o subito all'assegnazione (_forget_job_board_wait), così un ritorno in lista fa ripartire l'attesa. Durante
-# l'attesa la lista non lo dà a nessuno e, se non è bloccato, sul bersaglio lampeggia l'icona del tipo di lavoro. Mai
-# salvato: alla prima lettura (anche dopo un caricamento o all'arrivo dell'idea) i lavori già in lista sono subito
-# prendibili. Solo con l'idea dell'assegnazione.
-var _job_board_clock: float = 0.0
-var _job_board_waiting_since: Dictionary = {}  # chiave del lavoro -> _job_board_clock all'ingresso in lista
+# --- Icone dell'attesa per l'assegnazione a mano (2026-10-07; l'attesa vera è in JobBoardService/JobBoardRuntimeState
+# dal 2026-10-17, refactoring GameScene blocco 2a) ---
+# Durante l'attesa di un lavoro non bloccato, sul bersaglio (se la sua macrocella è viva) lampeggia l'icona del tipo di
+# lavoro. Solo con l'idea dell'assegnazione.
 var _job_board_wait_icons: Dictionary = {}  # chiave del lavoro -> icona lampeggiante sul bersaglio
-var _job_board_waits_initialized: bool = false
 
 
 # Aggiornamento una volta al secondo (_refresh_pending_entries): senza l'idea niente attese né icone.
@@ -10079,30 +9809,22 @@ func _update_job_board_waits(jobs: Array[Dictionary]) -> void:
 	if not JobBoardService.is_enabled(human_folk):
 		for key in _job_board_wait_icons.keys():
 			_free_job_board_wait_icon(key)
-		_job_board_waiting_since.clear()
-		_job_board_waits_initialized = false
+		JobBoardService.reset_waits(game_data)
 		return
-	_sync_job_board_waits(_collect_job_board_candidates(jobs))
+	var candidates := JobBoardService.collect_candidates(jobs)
+	JobBoardService.sync_waits(game_data, candidates)
+	_sync_job_board_wait_icons(candidates)
 
 
-# Ingressi e uscite dalla lista rispetto all'ultima lettura, poi le icone lampeggianti. `candidates`: chiave -> voce.
-func _sync_job_board_waits(candidates: Dictionary) -> void:
-	for key in _job_board_waiting_since.keys():
-		if not candidates.has(key):
-			_job_board_waiting_since.erase(key)
-	for key in candidates.keys():
-		if not _job_board_waiting_since.has(key):
-			# Inventario (2026-10-11, richiesta utente): niente attesa per l'assegnazione a mano, subito prendibile.
-			var no_wait := not _job_board_waits_initialized or String(candidates[key].get("kind", "")) == "inventory"
-			_job_board_waiting_since[key] = _job_board_clock - JobBoardService.get_manual_assign_window_seconds() if no_wait else _job_board_clock
-	_job_board_waits_initialized = true
+# Icone lampeggianti dei `candidates` (chiave -> voce) secondo l'attesa già aggiornata (JobBoardService.sync_waits).
+func _sync_job_board_wait_icons(candidates: Dictionary) -> void:
 	for key in _job_board_wait_icons.keys():
 		if not candidates.has(key):
 			_free_job_board_wait_icon(key)
 	for key in candidates.keys():
 		var job: Dictionary = candidates[key]
 		var macro_coords: Vector2i = job["macro"]
-		var show_icon := _get_job_board_wait_seconds(key) > 0.0 \
+		var show_icon := JobBoardService.get_wait_seconds(game_data, key) > 0.0 \
 			and JobBoardService.get_state(game_data, key) != JobBoardService.STATE_LOCKED and live_cells.has(macro_coords)
 		var icon: Variant = _job_board_wait_icons.get(key)
 		var has_icon := icon != null and is_instance_valid(icon)
@@ -10116,17 +9838,11 @@ func _sync_job_board_waits(candidates: Dictionary) -> void:
 			_free_job_board_wait_icon(key)
 
 
-# Secondi reali che mancano alla fine dell'attesa di `job_key`; 0 se finita o se il lavoro non è in lista.
-func _get_job_board_wait_seconds(job_key: String) -> float:
-	if not _job_board_waiting_since.has(job_key):
-		return 0.0
-	return maxf(0.0, JobBoardService.get_manual_assign_window_seconds() - (_job_board_clock - float(_job_board_waiting_since[job_key])))
-
-
-# Lavoro appena assegnato (`job_keys`: tutte le sue chiavi possibili): fuori dal conto e niente icona.
+# Lavoro appena assegnato (`job_keys`: tutte le sue chiavi possibili): fuori dal conto dell'attesa e niente icona.
 func _forget_job_board_wait(job_keys: Array[String]) -> void:
+	if game_data != null:
+		JobBoardService.forget_waits(game_data, job_keys)
 	for key in job_keys:
-		_job_board_waiting_since.erase(key)
 		_free_job_board_wait_icon(key)
 
 
@@ -10139,81 +9855,9 @@ func _free_job_board_wait_icon(job_key: String) -> void:
 
 # ============================================================================================
 # Fornitore "edifici" della lista dei lavori (2026-10-07): cantieri nuovi (build:<id>), cantieri di miglioramento
-# (upgrade:<id>) ed edifici da demolire (demolish:<id>). Tutto ciò che è specifico degli edifici sta qui.
+# (upgrade:<id>) ed edifici da demolire (demolish:<id>). Quali lavori, chi può prenderli e chi ci lavora:
+# BuildingJobProvider (2026-10-17, refactoring GameScene blocco 2b). Qui la X e Rimetti in coda.
 # ============================================================================================
-
-# Un lavoro per edificio che ne ha uno: da demolire -> demolish (lavoratori: le task Demolisci); cantiere -> upgrade se è
-# un miglioramento, altrimenti build (lavoratori: le task Costruisci). Nome della riga: quello dell'edificio per un
-# cantiere nuovo, la voce di "In sospeso" ("Miglioramento · …", "Demolizione · …") per gli altri, così si distinguono.
-func _building_jobs_collect(provider: Dictionary, assigned: Dictionary) -> Array[Dictionary]:
-	var jobs: Array[Dictionary] = []
-	for building in macro_world.buildings:
-		if building.is_demolished or building.rules == null:
-			continue
-		var building_name: String = tr(building.rules.building_name)
-		var kind := ""
-		var text := ""
-		var is_assigned := false
-		if building.is_marked_for_demolition:
-			kind = "demolish"
-			# Sgombero delle macerie (2026-10-10): stesso tipo delle demolizioni, "Sgombero (Macerie)".
-			text = tr("pending_clear_rubble" if building.is_rubble() else "pending_demolish").format({"building": building_name})
-			is_assigned = assigned["demolish"].has(building.id)
-		elif not building.is_complete:
-			var is_upgrade := BuildingUpgradeService.get_upgrade_from_rules(building) != null
-			kind = "upgrade" if is_upgrade else "build"
-			text = tr("pending_upgrade" if is_upgrade else "pending_build").format({"building": building_name})
-			is_assigned = assigned["build"].has(building.id)
-		else:
-			continue
-		jobs.append({
-			"key": "%s:%d" % [kind, building.id], "kind": kind,
-			"name": building_name if kind == "build" else text, "text": text, "log_name": building_name,
-			"icon": {"building_command": BuildingCommandIcon.KIND_CLEAR_RUBBLE if building.is_rubble() else BuildingCommandIcon.KIND_DEMOLISH} if kind == "demolish" else {"building_type": building.building_type_name},
-			"map_icon_key": "clear_rubble" if building.is_rubble() else String(JobBoardService.ICON_KEY_BY_KIND.get(kind, "")),
-			"macro": Vector2i(building.macro_x, building.macro_y), "microcell": Vector2i(building.micro_x, building.micro_y),
-			"reach_target": building, "entry_kind": "building", "id": building.id, "sort": float(building.id),
-			"assigned": is_assigned, "hidden": false,
-			"target": building, "provider": provider,
-		})
-		# Rimandato per materiale (2026-10-16): resta assegnato (nessun altro ci va) ma la riga va in "In coda" col motivo.
-		if (kind == "build" or kind == "upgrade") and assigned["postponed"].has(building.id) and not assigned["build_active"].has(building.id):
-			jobs[jobs.size() - 1]["postponed_by"] = assigned["postponed"][building.id]
-	return jobs
-
-
-# Tutte le chiavi possibili dei lavori di `building` (per _forget_job_board_wait all'assegnazione).
-func _building_job_keys(building: Building) -> Array[String]:
-	var keys: Array[String] = []
-	for kind in ["build", "upgrade", "demolish"]:
-		keys.append("%s:%d" % [kind, building.id])
-	return keys
-
-
-func _building_job_task_names(job: Dictionary) -> Array[String]:
-	return DEMOLISH_TASK_NAMES if String(job["kind"]) == "demolish" else BUILD_TASK_NAMES
-
-
-# Motivo per cui `worker` non potrebbe ricevere la task del lavoro (HumanIndividual.ASSIGN_OK se può): task di prova
-# costruita con lo stesso contesto dell'assegnazione vera (_assign_resumable_building_task — per la Costruisci anche
-# macro_state ed erba, per la Demolisci il solo contesto dell'edificio), mai assegnata.
-func _building_job_rejection(worker: HumanIndividual, job: Dictionary) -> String:
-	var building: Building = job["target"]
-	var definition := load(building.get_resumable_task_definition_path()) as TaskDefinition
-	if definition == null:
-		return "definizione mancante"
-	var probe_context := building.get_resumable_task_context()
-	if not building.is_marked_for_demolition:
-		probe_context["macro_state"] = macro_world.get_cell_state_at(building.macro_x, building.macro_y)
-		probe_context["is_currently_grass"] = false
-	var probe := TaskFactory.build_task(definition, probe_context)
-	return worker.get_assign_rejection_reason(probe, _resolve_age_band(worker))
-
-
-# Chi ci lavora: task Costruisci o Demolisci sull'edificio, in corso o in coda.
-func _building_job_workers(job: Dictionary) -> Array[HumanIndividual]:
-	return _resolve_individuals_working_on_building(job["target"], _building_job_task_names(job))
-
 
 # X: stato e tooltip del comando del pannello edificio che cancella quel lavoro, con le stesse condizioni
 # (BuildingInfoPanel._refresh_command_icon_row): da demolire -> "Annulla demolizione", spenta a demolizione iniziata;
@@ -10262,9 +9906,9 @@ func _building_job_release(job: Dictionary) -> void:
 	var building: Building = job["target"]
 	if building.is_demolished:
 		return
-	var task_names := _building_job_task_names(job)
-	for member in _resolve_individuals_working_on_building(building, task_names):
-		if _task_works_on_building(member.current_task, building, task_names):
+	var task_names := BuildingJobProvider.task_names(job)
+	for member in JobWorkScanService.workers_on_building(human_individuals, building, task_names):
+		if JobWorkScanService.task_works_on_building(member.current_task, building, task_names):
 			member.skip_job_board_once = true
 	var freed := _close_tasks_working_on_building(building, task_names, null)
 	for member in freed:
@@ -10274,82 +9918,11 @@ func _building_job_release(job: Dictionary) -> void:
 
 
 # ============================================================================================
-# Fornitore "riparazioni" della lista dei lavori (2026-10-10, richiesta utente): edifici con la riparazione richiesta dal
-# pannello (Building.repair_requested, "repair:<id>"). La task è la Repair esistente (_assign_repair_task), un solo
-# riparatore per edificio. La X toglie solo la richiesta: l'Integrità già recuperata resta.
+# Fornitori "riparazioni" (2026-10-10, "repair:<id>") e "riti" (2026-10-14, "rite:<id>") della lista dei lavori. Quali
+# lavori, chi può prenderli e chi ci lavora: RepairJobProvider e RiteJobProvider (2026-10-17, refactoring GameScene blocco
+# 2b). Qui la X e Rimetti in coda; l'assegnazione è quella del comando (_assign_repair_task, _assign_rite_task). La X
+# della riparazione toglie solo la richiesta: l'Integrità già recuperata resta.
 # ============================================================================================
-
-func _repair_jobs_collect(provider: Dictionary, assigned: Dictionary) -> Array[Dictionary]:
-	var jobs: Array[Dictionary] = []
-	for building in macro_world.buildings:
-		if not building.repair_requested or not RepairAction.is_building_repairable(building):
-			continue
-		if building.current_durability >= float(building.rules.max_durability):
-			continue
-		var building_name: String = tr(building.rules.building_name)
-		var text: String = tr("pending_repair").format({"building": building_name})
-		jobs.append({
-			"key": "repair:%d" % building.id, "kind": "repair", "name": text, "text": text, "log_name": building_name,
-			"icon": {"building_command": BuildingCommandIcon.KIND_REPAIR},
-			"macro": Vector2i(building.macro_x, building.macro_y), "microcell": Vector2i(building.micro_x, building.micro_y),
-			"reach_target": building, "entry_kind": "building", "id": building.id, "sort": float(building.id),
-			"assigned": assigned["repair"].has(building.id), "hidden": false,
-			"target": building, "provider": provider,
-		})
-		# Rimandata per materiale (2026-10-17): resta assegnata, riga in "In coda" col motivo.
-		if assigned["postponed_repair"].has(building.id) and not assigned["repair_active"].has(building.id):
-			jobs[jobs.size() - 1]["postponed_by"] = assigned["postponed_repair"][building.id]
-	return jobs
-
-
-# ============================================================================================
-# Fornitore "riti" della lista dei lavori (2026-10-14, richiesta utente): edifici con un rito ordinato dal pannello
-# (Building.requested_rite_id, "rite:<id>"). La task è la Rite esistente (_assign_rite_task), un celebrante per edificio.
-# Lo prende il primo libero idoneo (età, skill minima: RiteService.can_celebrate) con le regole di sempre della coda.
-# ============================================================================================
-
-func _rite_jobs_collect(provider: Dictionary, assigned: Dictionary) -> Array[Dictionary]:
-	var jobs: Array[Dictionary] = []
-	for building in macro_world.buildings:
-		if building.requested_rite_id == "":
-			continue
-		var rules := RiteService.get_rules(building.requested_rite_id)
-		if rules == null or not RiteService.get_rites_for_building(building).has(rules):
-			continue
-		var building_name: String = tr(building.rules.building_name)
-		var text: String = tr("pending_rite").format({"rite": tr(rules.display_name), "building": building_name})
-		jobs.append({
-			"key": "rite:%d" % building.id, "kind": "rite", "name": text, "text": text, "log_name": building_name,
-			"icon": {"text": IconRegistry.get_command_icon(rules.command_icon_key)}, "map_icon_key": rules.command_icon_key,
-			"macro": Vector2i(building.macro_x, building.macro_y), "microcell": Vector2i(building.micro_x, building.micro_y),
-			"reach_target": building, "entry_kind": "building", "id": building.id, "sort": float(building.id),
-			# Banchetto in corso (2026-10-14): preso anche se l'organizzatore se n'è andato.
-			"assigned": assigned["rite"].has(building.id) or not SocialRiteService.find_rite(game_data, building.id).is_empty(),
-			"hidden": false, "target": building, "rite_id": rules.id, "provider": provider,
-		})
-	return jobs
-
-
-# Motivo per cui `worker` non potrebbe celebrare il rito (HumanIndividual.ASSIGN_OK se può): età e skill del rito, poi la
-# task di prova come le altre.
-func _rite_job_rejection(worker: HumanIndividual, job: Dictionary) -> String:
-	var building: Building = job["target"]
-	var rules := RiteService.get_rules(String(job["rite_id"]))
-	var age_band := _resolve_age_band(worker)
-	if rules == null or not RiteService.can_celebrate(rules, worker, age_band):
-		return HumanIndividual.ASSIGN_REJECT_AGE_NOT_ALLOWED
-	# Banchetto (2026-10-14): le sue condizioni, poi l'età come le altre task (nessuna task di prova).
-	if rules is SocialRiteRules:
-		var social_rejection := SocialRiteService.get_start_rejection(building, rules as SocialRiteRules, human_individuals, game_data)
-		return social_rejection if social_rejection != "" else HumanIndividual.ASSIGN_OK
-	var definition := load(TaskBuilderService.RITE_TASK_DEFINITION_PATH) as TaskDefinition
-	if definition == null:
-		return "definizione mancante"
-	var probe := TaskFactory.build_task(definition, {
-		"target_position": Vector2(building.micro_x, building.micro_y), "rite_target_building": building, "rite_id": rules.id,
-	})
-	return worker.get_assign_rejection_reason(probe, age_band)
-
 
 # Rimetti in coda / Blocca: chiude le Task del rito ordinato; l'ordine resta, quindi il lavoro torna in coda.
 func _rite_job_release(job: Dictionary) -> void:
@@ -10362,19 +9935,6 @@ func _rite_job_release(job: Dictionary) -> void:
 		HumanIndividualActionService.resolve_idle_individual(member, _resolve_age_band(member), macro_world)
 	_refresh_selected_individual_panel()
 	_refresh_selected_building_panel()
-
-
-func _repair_job_keys(building: Building) -> Array[String]:
-	var keys: Array[String] = ["repair:%d" % building.id]
-	return keys
-
-
-# Motivo per cui `worker` non potrebbe ricevere la Repair Task (HumanIndividual.ASSIGN_OK se può), su una task di prova.
-func _repair_job_rejection(worker: HumanIndividual, job: Dictionary) -> String:
-	var probe := TaskBuilderService.build_repair_task(worker, job["target"])
-	if probe == null:
-		return "definizione mancante"
-	return worker.get_assign_rejection_reason(probe, _resolve_age_band(worker))
 
 
 # X in "In coda": toglie la richiesta e basta (l'Integrità recuperata resta).
@@ -10395,10 +9955,10 @@ func _repair_job_release(job: Dictionary) -> void:
 	var building: Building = job["target"]
 	if building.is_demolished:
 		return
-	for member in _resolve_individuals_working_on_building(building, REPAIR_TASK_NAMES):
-		if _task_works_on_building(member.current_task, building, REPAIR_TASK_NAMES):
+	for member in JobWorkScanService.workers_on_building(human_individuals, building, JobWorkScanService.REPAIR_TASK_NAMES):
+		if JobWorkScanService.task_works_on_building(member.current_task, building, JobWorkScanService.REPAIR_TASK_NAMES):
 			member.skip_job_board_once = true
-	var freed := _close_tasks_working_on_building(building, REPAIR_TASK_NAMES, null)
+	var freed := _close_tasks_working_on_building(building, JobWorkScanService.REPAIR_TASK_NAMES, null)
 	for member in freed:
 		HumanIndividualActionService.resolve_idle_individual(member, _resolve_age_band(member), macro_world)
 	_refresh_selected_individual_panel()
@@ -10493,7 +10053,7 @@ func _auto_request_repairs() -> void:
 		var integrity_percent: float = building.current_durability / float(building.rules.max_durability) * 100.0
 		if integrity_percent >= float(percent):
 			continue
-		if not _resolve_individuals_working_on_building(building, REPAIR_TASK_NAMES).is_empty():
+		if not JobWorkScanService.workers_on_building(human_individuals, building, JobWorkScanService.REPAIR_TASK_NAMES).is_empty():
 			continue
 		building.repair_requested = true
 		if DebugLogging.ENABLED and DebugLogging.SHOW_JOB_BOARD_LOGS:
@@ -10533,69 +10093,10 @@ func _auto_clear_rubble() -> void:
 
 
 # ============================================================================================
-# Fornitore "corpi" della lista dei lavori (2026-10-07, richiesta utente): corpi da seppellire (body:<id>). Tutto ciò che
-# è specifico della sepoltura sta qui; la task e l'assegnazione sono quelle del clic destro sul corpo (_assign_bury_task).
+# Fornitore "corpi" della lista dei lavori (2026-10-07): corpi da seppellire (body:<id>). Quali lavori, chi può prenderli e
+# chi ci lavora: BodyJobProvider (2026-10-17, refactoring GameScene blocco 2b). Qui la X e Rimetti in coda; l'assegnazione
+# è quella del clic destro sul corpo (_assign_bury_task).
 # ============================================================================================
-
-# Corpi prima degli edifici nelle righe del cassetto, i più vicini alla scadenza in cima (come in "In sospeso").
-const BODY_JOB_SORT_OFFSET: float = 1000000.0
-
-
-# Un lavoro per corpo non ancora sepolto e non scaduto (a terra, sulla lastra, o in spalla se qualcuno lo sta già
-# portando). Riga: il nome del morto e, accanto più in piccolo, "restano N gg per la sepoltura"; tooltip: la voce di
-# "In sospeso". Nascosto (fuori dalla coda, solo "In sospeso"): nessun cumulo
-# sepolcrale finito con un posto libero (_resolve_bury_mound), lavoro impossibile.
-func _body_jobs_collect(provider: Dictionary, assigned: Dictionary) -> Array[Dictionary]:
-	var jobs: Array[Dictionary] = []
-	var rules := ExpiredObjectCalculator.get_object_rules(ExpiredObjectTypes.ExpiredObjectType.DEAD_BODY)
-	for record in game_data.expired_objects:
-		if record["object_type"] != ExpiredObjectTypes.ExpiredObjectType.DEAD_BODY or BodyBurialService.is_expired(record):
-			continue
-		var body_id := int(record["individual_id"])
-		var is_assigned: bool = assigned["bodies"].has(body_id)
-		if ExpiredObjectCalculator.is_carried(record) and not is_assigned:
-			continue
-		var days := ExpiredObjectCalculator.get_days_remaining(record, rules, game_data.year, game_data.current_day) if rules != null else 0
-		var body_name := BodyBurialService.get_body_name(record)
-		var days_text := tr("pending_body_days").format({"days": days})
-		var text := tr("pending_body").format({"name": body_name, "days": days})
-		var macro: Vector2i = record["home_macro_coords"]
-		var position := Vector2(record["position"])
-		var microcell := Vector2i(floori(position.x), floori(position.y))
-		jobs.append({
-			"key": "body:%d" % body_id, "kind": "body", "name": body_name, "name_detail": days_text, "text": text, "log_name": body_name,
-			# Icona della riga: il 💀 del bottone del riquadro "Famiglia" del pannello dell'abitante (2026-10-07).
-			"icon": {"text": IconRegistry.get_command_icon("bury")}, "macro": macro, "microcell": microcell,
-			"reach_target": {"macro_x": macro.x, "macro_y": macro.y, "micro_x": microcell.x, "micro_y": microcell.y},
-			"entry_kind": "body", "id": body_id, "sort": float(days) - BODY_JOB_SORT_OFFSET,
-			"assigned": is_assigned, "hidden": not is_assigned and _resolve_bury_mound(record, body_id) == null,
-			"target": record, "provider": provider,
-		})
-	return jobs
-
-
-# Motivo per cui `worker` non potrebbe ricevere la sepoltura (HumanIndividual.ASSIGN_OK se può): la stessa task del clic
-# destro (BodyBurialService.build_bury_task), mai assegnata.
-func _body_job_rejection(worker: HumanIndividual, job: Dictionary) -> String:
-	var record: Dictionary = job["target"]
-	var body_id := int(job["id"])
-	var mound := _resolve_bury_mound(record, body_id)
-	if mound == null:
-		return "nessun cumulo"
-	var task := BodyBurialService.build_bury_task(worker, record, body_id, mound)
-	if task == null:
-		return "definizione mancante"
-	return worker.get_assign_rejection_reason(task, _resolve_age_band(worker))
-
-
-# Lavoratore: solo chi ha la task Seppellisci del corpo (i partecipanti al corteo no).
-func _body_job_workers(job: Dictionary) -> Array[HumanIndividual]:
-	var workers: Array[HumanIndividual] = []
-	var assignee := BodyBurialService.get_bury_assignee(int(job["id"]), human_individuals)
-	if assignee != null:
-		workers.append(assignee)
-	return workers
-
 
 # X: sempre spenta, una sepoltura non si cancella.
 func _body_job_cancel_fields(_job: Dictionary) -> Dictionary:
@@ -10627,240 +10128,10 @@ func _body_job_release(job: Dictionary) -> void:
 
 
 # ============================================================================================
-# Fornitore "mucchi" della lista dei lavori (2026-10-07, richiesta utente): mucchi a terra abbandonati (pile:<id>).
-# Conta lo stato, non l'origine: un mucchio è "di qualcuno" (assegnato) se un pipottino ha, come task in corso o in coda,
-# una task che lo porta via (_collect_pile_claims). Fuori dalla lista: i mucchi con una carcassa (lavoro della
-# macellazione) e quelli senza risorse. Tutta la lista dei mucchi si spegne con la regola "Ritira i mucchi abbandonati"
-# (UserOptions.job_board_collect_piles). Mucchio che nessun magazzino accetta (_pile_has_storage, dalla posizione del
-# mucchio, indipendente dal pipottino): visibile in coda ma non prendibile ("blocked_reason"), senza attesa né icona.
+# Fornitore "mucchi" della lista dei lavori (2026-10-07): mucchi a terra abbandonati (pile:<id>). Quali lavori, chi può
+# prenderli e chi ci lavora: PileJobProvider (2026-10-17, refactoring GameScene blocco 2b). Qui l'assegnazione, la X e
+# Rimetti in coda.
 # ============================================================================================
-
-# Mucchi dopo corpi ed edifici nelle righe del cassetto.
-const PILE_JOB_SORT_OFFSET: float = 1000000.0
-
-
-func _pile_jobs_collect(provider: Dictionary, _assigned: Dictionary) -> Array[Dictionary]:
-	var jobs: Array[Dictionary] = []
-	if not UserOptions.job_board_collect_piles:
-		return jobs
-	var claims := _collect_pile_claims()
-	var job_delivery_keys := _collect_job_delivery_pile_keys()
-	var listed_keys: Dictionary = {}
-	for pile in game_data.ground_piles:
-		if pile.resources.is_empty() or not pile.carcasses.is_empty():
-			continue
-		var claim_key := _pile_claim_key(pile.macro_coords, pile.microcell)
-		# Mucchio consegnato come parte di un taglio o di un'estrazione in corso, o che una demolizione appena finita deve
-		# ancora accodare (2026-10-09, richiesta utente): non è un lavoro "Mucchio", resta solo la riga del lavoro vero.
-		# Interrotto quel lavoro, torna qui. La consegna dopo una demolizione, una volta accodata, è un lavoro "Mucchio"
-		# (la demolizione è finita, non ha più una riga).
-		if job_delivery_keys.has(claim_key):
-			continue
-		var is_assigned := claims.has(claim_key)
-		var pile_name := _pile_job_name(pile)
-		listed_keys[claim_key] = true
-		_pile_job_memory[claim_key] = {"id": pile.id, "name": pile_name, "macro": pile.macro_coords, "microcell": pile.microcell}
-		jobs.append({
-			"key": "pile:%d" % pile.id, "kind": "pile", "name": pile_name, "text": pile_name, "log_name": "mucchio #%d" % pile.id,
-			"icon": {"command": "pickup"}, "macro": pile.macro_coords, "microcell": pile.microcell,
-			"reach_target": {
-				"macro_x": pile.macro_coords.x, "macro_y": pile.macro_coords.y, "micro_x": pile.microcell.x, "micro_y": pile.microcell.y,
-			},
-			"entry_kind": "ground_pile", "id": pile.id, "sort": float(pile.id) + PILE_JOB_SORT_OFFSET,
-			"assigned": is_assigned, "hidden": false,
-			"blocked_reason": "" if is_assigned or _pile_has_storage(pile) else tr("task_assignment_pile_no_storage"),
-			"target": pile, "provider": provider, "claimers": claims.get(claim_key, []),
-		})
-	jobs.append_array(_emptied_pile_jobs(provider, listed_keys))
-	return jobs
-
-
-# Mucchio svuotato dall'ultima raccolta con la consegna ancora in corso (2026-10-09, richiesta utente): la riga "Mucchio"
-# resta in "In corso" (stessa chiave e stesso testo di quando era elencato, stesso individuo) finché chi porta il carico
-# non l'ha consegnato; poi sparisce. Vale per i mucchi presi dalla coda e per la consegna dopo una demolizione
-# (_is_board_pile_task). Chiave del mucchio -> {"id", "name", "macro", "microcell"} dell'ultima volta che era elencato.
-var _pile_job_memory: Dictionary = {}
-
-
-func _emptied_pile_jobs(provider: Dictionary, listed_keys: Dictionary) -> Array[Dictionary]:
-	var jobs: Array[Dictionary] = []
-	var existing: Dictionary = {}
-	for pile in game_data.ground_piles:
-		if not pile.resources.is_empty():
-			existing[_pile_claim_key(pile.macro_coords, pile.microcell)] = true
-	var carriers: Dictionary = {}
-	for member in human_individuals:
-		for task in _member_open_tasks(member):
-			if not _is_board_pile_task(task):
-				continue
-			var key := _board_pile_task_claim_key(task)
-			if key == "" or listed_keys.has(key) or existing.has(key) or not _pile_job_memory.has(key):
-				continue
-			if not carriers.has(key):
-				carriers[key] = []
-			if not (carriers[key] as Array).has(member):
-				(carriers[key] as Array).append(member)
-	for key in _pile_job_memory.keys():
-		if not listed_keys.has(key) and not carriers.has(key):
-			_pile_job_memory.erase(key)
-	for key in carriers:
-		var memory: Dictionary = _pile_job_memory[key]
-		var macro: Vector2i = memory["macro"]
-		var microcell: Vector2i = memory["microcell"]
-		var first_carrier := (carriers[key] as Array)[0] as HumanIndividual
-		jobs.append({
-			"key": "pile:%d" % int(memory["id"]), "kind": "pile", "name": String(memory["name"]), "text": String(memory["name"]),
-			"log_name": "mucchio #%d (svuotato, consegna in corso)" % int(memory["id"]),
-			"icon": {"command": "pickup"}, "macro": macro, "microcell": microcell,
-			"reach_target": {"macro_x": macro.x, "macro_y": macro.y, "micro_x": microcell.x, "micro_y": microcell.y},
-			# Clic sulla riga: il mucchio non c'è più, si seleziona chi porta il carico.
-			"entry_kind": "individual", "id": first_carrier.id, "sort": float(int(memory["id"])) + PILE_JOB_SORT_OFFSET,
-			"assigned": true, "hidden": false, "blocked_reason": "",
-			"target": null, "emptied_pile_key": key, "provider": provider, "claimers": carriers[key],
-		})
-	return jobs
-
-
-# Chiave del mucchio di un ritiro della coda (_is_board_pile_task), anche a mucchio sparito: la zona 1×1 sul mucchio, o
-# lo step di raccolta dal mucchio (anche già fatto). "" se nessuna.
-func _board_pile_task_claim_key(task: Task) -> String:
-	var zone := HaulZoneService.get_zone(task.context)
-	if not zone.is_empty():
-		return _pile_claim_key(
-			Vector2i(int(zone.get("macro_x", 0)), int(zone.get("macro_y", 0))), Vector2i(int(zone.get("rect_x", 0)), int(zone.get("rect_y", 0)))
-		)
-	for step in task.steps:
-		if step is PickUpAction and (step as PickUpAction).source_kind == PickUpAction.SourceKind.GROUND_PILE:
-			var pickup := step as PickUpAction
-			var macro := Vector2i(pickup.macro_state.x, pickup.macro_state.y) if pickup.macro_state != null else Vector2i.ZERO
-			return _pile_claim_key(macro, pickup.target_position)
-	return ""
-
-
-# "Mucchio · Rametti, Pietre…": le prime due risorse contenute, con i puntini se ce ne sono altre.
-func _pile_job_name(pile: GroundPile) -> String:
-	var names := pile.get_resource_names()
-	var shown: Array[String] = []
-	for resource_name in names.slice(0, 2):
-		shown.append(IconRegistry.get_resource_display_name(resource_name))
-	return tr("pending_pile").format({"resources": ", ".join(shown) + ("…" if names.size() > 2 else "")})
-
-
-func _pile_claim_key(macro_coords: Vector2i, microcell: Vector2i) -> String:
-	return "%d:%d:%d:%d" % [macro_coords.x, macro_coords.y, microcell.x, microcell.y]
-
-
-# Chi ha in carico quale mucchio: microcella del mucchio (_pile_claim_key) -> Array[HumanIndividual]. Un pipottino ha in
-# carico un mucchio se una sua task, in corso o in coda e non conclusa:
-#   - ha ancora da fare (dal passo corrente in poi) un raccogli (PickUpAction) con sorgente "mucchio" su quella
-#     microcella (clic destro, consegna dopo una demolizione, consegna presa dalla lista);
-#   - porta nel context una zona di raccolta con sorgente "mucchio" che la contiene (HaulZoneService.CONTEXT_KEY): è il
-#     caso delle consegne "fino a mucchio vuoto" e delle serie di taglio o estrazione — tra uno scarico e il viaggio
-#     successivo il viaggio dopo è già in coda con la stessa zona, quindi il mucchio resta suo;
-#   - ha nel context la consegna ancora da accodare (HumanIndividualActionService.CONTEXT_PENDING_GROUND_PILE_HAUL),
-#     chiesta da un taglio/estrazione/demolizione appena finiti.
-func _collect_pile_claims() -> Dictionary:
-	var claims: Dictionary = {}
-	for member in human_individuals:
-		var tasks: Array = []
-		if member.current_task != null and not member.current_task.is_finished():
-			tasks.append(member.current_task)
-		tasks.append_array(member.task_queue)
-		for raw_task in tasks:
-			var task := raw_task as Task
-			if task == null or task.is_finished():
-				continue
-			for key in _task_pile_claim_keys(task):
-				if not claims.has(key):
-					claims[key] = []
-				if not (claims[key] as Array).has(member):
-					(claims[key] as Array).append(member)
-	return claims
-
-
-# Mucchi (chiavi di _pile_claim_key) portati via come parte di un lavoro in corso: una task, in corso o in coda, che ha
-# ancora da accodare la consegna (taglio, estrazione o demolizione appena finiti, CONTEXT_PENDING_GROUND_PILE_HAUL),
-# oppure è la consegna di un taglio o di un'estrazione (zona con l'etichetta del lavoro). La consegna dopo una
-# demolizione (HaulZoneService.JOB_DELIVERY_KEY senza etichetta, 2026-10-09) no: la demolizione è già finita e senza riga,
-# il mucchio resta un lavoro "Mucchio" con il portatore tra chi lo fa (mai una riga "Diretto").
-func _collect_job_delivery_pile_keys() -> Dictionary:
-	var keys: Dictionary = {}
-	for member in human_individuals:
-		for task in _member_open_tasks(member):
-			var is_job_delivery := false
-			var zone := HaulZoneService.get_zone(task.context)
-			if not zone.is_empty() and HaulZoneService.get_label_task_name(zone) != "":
-				is_job_delivery = true
-			var pending: Variant = task.context.get(HumanIndividualActionService.CONTEXT_PENDING_GROUND_PILE_HAUL, null)
-			if pending is Dictionary:
-				var pending_ref := pending as Dictionary
-				keys[_pile_claim_key(
-					Vector2i(int(pending_ref.get("macro_x", 0)), int(pending_ref.get("macro_y", 0))),
-					Vector2i(int(pending_ref.get("micro_x", 0)), int(pending_ref.get("micro_y", 0)))
-				)] = true
-			if is_job_delivery:
-				for key in _task_pile_claim_keys(task):
-					keys[key] = true
-	return keys
-
-
-func _task_pile_claim_keys(task: Task) -> Array[String]:
-	var keys: Array[String] = []
-	for step_index in range(task.current_step_index, task.steps.size()):
-		var step: Action = task.steps[step_index]
-		if step is PickUpAction and (step as PickUpAction).source_kind == PickUpAction.SourceKind.GROUND_PILE:
-			var pickup := step as PickUpAction
-			var macro := Vector2i(pickup.macro_state.x, pickup.macro_state.y) if pickup.macro_state != null else Vector2i.ZERO
-			keys.append(_pile_claim_key(macro, pickup.target_position))
-	var zone := HaulZoneService.get_zone(task.context)
-	if not zone.is_empty() and int(zone.get("source_kind", -1)) == PickUpAction.SourceKind.GROUND_PILE:
-		var zone_macro := Vector2i(int(zone.get("macro_x", 0)), int(zone.get("macro_y", 0)))
-		var rect := Rect2i(int(zone.get("rect_x", 0)), int(zone.get("rect_y", 0)), int(zone.get("rect_w", 0)), int(zone.get("rect_h", 0)))
-		for pile in game_data.ground_piles:
-			if pile.macro_coords == zone_macro and rect.has_point(pile.microcell):
-				keys.append(_pile_claim_key(pile.macro_coords, pile.microcell))
-	var pending: Variant = task.context.get(HumanIndividualActionService.CONTEXT_PENDING_GROUND_PILE_HAUL)
-	if pending is Dictionary:
-		var pile_ref := pending as Dictionary
-		keys.append(_pile_claim_key(
-			Vector2i(int(pile_ref.get("macro_x", 0)), int(pile_ref.get("macro_y", 0))),
-			Vector2i(int(pile_ref.get("micro_x", 0)), int(pile_ref.get("micro_y", 0)))
-		))
-	return keys
-
-
-# Almeno una risorsa del mucchio ha un magazzino che la accetta, cercato dalla posizione del mucchio (nessun pipottino,
-# nessun controllo di raggiungibilità: quello si rifà alla presa, _pile_job_rejection).
-func _pile_has_storage(pile: GroundPile) -> bool:
-	var origin := Vector2(pile.microcell) + Vector2(0.5, 0.5)
-	for resource_name in pile.get_resource_names():
-		if pile.get_quantity(resource_name) > 0 and WarehouseSelectionService.find_best(
-			macro_world, origin, pile.macro_coords, resource_name, 1, []
-		) != null:
-			return true
-	return false
-
-
-# Idoneità alla presa: la consegna di prova (TaskBuilderService.build_pile_job_task, mai assegnata) passa il controllo di idoneità, e dal
-# pipottino un magazzino raggiungibile accetta almeno una risorsa che gli entra a carico vuoto (lo stesso controllo
-# della consegna automatica, _on_ground_pile_haul_requested).
-func _pile_job_rejection(worker: HumanIndividual, job: Dictionary) -> String:
-	if not (job["target"] is GroundPile):
-		return "mucchio svuotato"
-	var pile: GroundPile = job["target"]
-	var task := TaskBuilderService.build_pile_job_task(worker, pile, _live_macro_state(pile.macro_coords))
-	if task == null:
-		return "mucchio non raggiungibile"
-	var rejection := worker.get_assign_rejection_reason(task, _resolve_age_band(worker))
-	if rejection != HumanIndividual.ASSIGN_OK:
-		return rejection
-	var reachable := PathfindingService.reachability_for(worker)
-	for resource_name in pile.get_resource_names():
-		if pile.get_quantity(resource_name) > 0 and worker.can_carry_one_unit_when_empty(resource_name) \
-				and WarehouseSelectionService.find_best(macro_world, worker.position, worker.home_macro_coords, resource_name, 1, [], reachable) != null:
-			return HumanIndividual.ASSIGN_OK
-	return "nessun magazzino raggiungibile"
-
 
 # Assegnazione dalla lista: la consegna come task corrente del pipottino libero, in silenzio (nessuna icona di rifiuto
 # né messaggio). Riuscita: la manina sul mucchio, come per l'ordine a mano, e il mucchio esce dall'attesa.
@@ -10884,13 +10155,6 @@ func _assign_pile_job(worker: HumanIndividual, job: Dictionary) -> void:
 		_refresh_selected_individual_panel()
 
 
-func _pile_job_workers(job: Dictionary) -> Array[HumanIndividual]:
-	var workers: Array[HumanIndividual] = []
-	for member in job.get("claimers", []):
-		workers.append(member as HumanIndividual)
-	return workers
-
-
 # X: sempre spenta, un mucchio non si cancella.
 func _pile_job_cancel_fields(_job: Dictionary) -> Dictionary:
 	return {"cancel_disabled": true, "cancel_tooltip": tr("task_assignment_pile_cannot_cancel")}
@@ -10904,17 +10168,17 @@ func _pile_job_release(job: Dictionary) -> void:
 		_emptied_pile_job_release(String(job["emptied_pile_key"]))
 		return
 	var pile: GroundPile = job["target"]
-	var claim_key := _pile_claim_key(pile.macro_coords, pile.microcell)
+	var claim_key := PileJobProvider.claim_key(pile.macro_coords, pile.microcell)
 	for member in human_individuals:
 		var current_closed := false
 		var current := member.current_task
-		if current != null and not current.is_finished() and _task_pile_claim_keys(current).has(claim_key):
+		if current != null and not current.is_finished() and PileJobProvider.task_claim_keys(current, game_data).has(claim_key):
 			member.skip_job_board_once = true
 			if CargoReturnService.release_cargo(member, current, macro_world) != CargoReturnService.Outcome.RETURNING:
 				member.stop(false)
 				current_closed = true
 		for queued in member.task_queue.duplicate():
-			if _task_pile_claim_keys(queued).has(claim_key):
+			if PileJobProvider.task_claim_keys(queued, game_data).has(claim_key):
 				if CargoReturnService.release_cargo(member, queued, macro_world) != CargoReturnService.Outcome.RETURNING:
 					member.task_queue.erase(queued)
 		if current_closed:
@@ -10929,7 +10193,7 @@ func _emptied_pile_job_release(claim_key: String) -> void:
 	for member in human_individuals:
 		var current_closed := false
 		var current := member.current_task
-		if current != null and not current.is_finished() and _is_board_pile_task(current) and _board_pile_task_claim_key(current) == claim_key:
+		if current != null and not current.is_finished() and PileJobProvider.is_board_pile_task(current) and PileJobProvider.board_pile_task_claim_key(current) == claim_key:
 			member.skip_job_board_once = true
 			if CargoReturnService.release_cargo(member, current, macro_world) != CargoReturnService.Outcome.RETURNING:
 				member.stop(false)
@@ -10938,7 +10202,7 @@ func _emptied_pile_job_release(claim_key: String) -> void:
 				_mark_board_cargo_return(member.current_task)
 		for queued in member.task_queue.duplicate():
 			var queued_task := queued as Task
-			if queued_task != null and _is_board_pile_task(queued_task) and _board_pile_task_claim_key(queued_task) == claim_key:
+			if queued_task != null and PileJobProvider.is_board_pile_task(queued_task) and PileJobProvider.board_pile_task_claim_key(queued_task) == claim_key:
 				var queue_index := member.task_queue.find(queued)
 				if CargoReturnService.release_cargo(member, queued_task, macro_world) != CargoReturnService.Outcome.RETURNING:
 					member.task_queue.erase(queued)
@@ -10950,190 +10214,17 @@ func _emptied_pile_job_release(claim_key: String) -> void:
 
 
 # Ritorno del carico nato fermando un lavoro della coda (ordine di zona tolto, mucchio svuotato): niente riga "Diretto"
-# (DRAWER_ORDER_CARGO_KEY, letto da _collect_direct_command_entries).
+# (DrawerOrderService.CARGO_KEY, letto da _collect_direct_command_entries).
 func _mark_board_cargo_return(task: Task) -> void:
 	if task != null and CargoReturnService.is_cargo_return_task(task):
-		task.context[DRAWER_ORDER_CARGO_KEY] = true
+		task.context[DrawerOrderService.CARGO_KEY] = true
 
 
 # ============================================================================================
-# Fornitore "uscite piene" della lista dei lavori (2026-10-08, richiesta utente): consegna dei Prodotti finiti a
-# magazzino (output:<id edificio>). In coda quando una workstation con Prodotti finiti (posti > 0) ha un ordine fermo
-# perché non c'è posto per il prossimo pezzo (ProductionService.is_output_blocking, lo stesso blocco dell'avviso "Prodotti
-# finiti pieni"); esce appena l'ordine può ripartire o sparisce. Tutta la lista si spegne con la regola "Svuota le uscite
-# piene" (UserOptions.job_board_empty_full_outputs). Chi lo prende (un pipottino libero qualunque) fa la task
-# deliver_output.tres: cammino all'edificio e lo stesso step di consegna di "Porta al deposito" (RetrieveAction in
-# modalità deliver_to_warehouse: solo dai Prodotti finiti, un carico pieno di UNA risorsa, quella con più pezzi), poi
-# la ricerca del magazzino di sempre accoda cammino e scarico. Se dopo il viaggio l'ordine è ancora fermo, il lavoro
-# rientra in coda da solo (ricalcolo a ogni giro). Assegnato = una task, in corso o in coda, con
-# TaskBuilderService.CONTEXT_OUTPUT_JOB_BUILDING_ID di quell'edificio. Nascosto mentre il pipottino dell'ordine fa
-# già la sua consegna a metà ordine (ProduceAction.CONTEXT_OUTPUT_DELIVERY_ROUND). Nessun magazzino che accetta il
-# prodotto (cercato dalla posizione dell'edificio): visibile ma non prendibile, come i mucchi.
+# Fornitore "uscite piene" della lista dei lavori (2026-10-08): consegna dei Prodotti finiti a magazzino (output:<id
+# edificio>). Quali lavori, chi può prenderli e chi ci lavora: OutputJobProvider (2026-10-17, refactoring GameScene blocco
+# 2b). Qui l'assegnazione, la X e Rimetti in coda.
 # ============================================================================================
-
-# Uscite piene dopo corpi, edifici e mucchi nelle righe del cassetto.
-const OUTPUT_JOB_SORT_OFFSET: float = 2000000.0
-
-
-func _output_jobs_collect(provider: Dictionary, _assigned: Dictionary) -> Array[Dictionary]:
-	var jobs: Array[Dictionary] = []
-	if not UserOptions.job_board_empty_full_outputs or macro_world == null:
-		return jobs
-	var claims := _collect_output_job_claims()
-	var self_delivering := _collect_output_delivery_rounds()
-	for building in macro_world.buildings:
-		if not _is_output_job_needed(building):
-			continue
-		var is_assigned := claims.has(building.id)
-		var resource_name := _output_job_resource(building)
-		var job_name := tr("pending_output_delivery").format({
-			"building": tr(building.rules.building_name),
-			"used": ProductionService.get_output_used(building), "capacity": ProductionService.get_output_capacity(building),
-		})
-		if ProductionService.get_output_capacity(building) <= 0:
-			job_name = tr("pending_output_delivery_rack").format({"building": tr(building.rules.building_name)})
-		jobs.append({
-			"key": "output:%d" % building.id, "kind": "output", "name": job_name, "text": job_name,
-			"log_name": "uscita di %s #%d" % [building.building_type_name, building.id],
-			"icon": {"command": "transport"}, "macro": Vector2i(building.macro_x, building.macro_y),
-			"microcell": Vector2i(building.micro_x, building.micro_y), "reach_target": building,
-			"entry_kind": "building", "id": building.id, "sort": float(building.id) + OUTPUT_JOB_SORT_OFFSET,
-			"assigned": is_assigned, "hidden": not is_assigned and self_delivering.has(building.id),
-			"blocked_reason": "" if is_assigned or _output_has_storage(building, resource_name) else tr("task_assignment_pile_no_storage"),
-			"target": building, "provider": provider, "claimers": claims.get(building.id, []), "resource_name": resource_name,
-		})
-	return jobs
-
-
-# Workstation completa con Prodotti finiti (posti > 0), un ordine in corso e nessun posto per il prossimo pezzo. Dal
-# 2026-10-11 anche una postazione senza uscita (l'essiccatoio) piena: nessun posto per i suoi ingredienti e prodotti pronti
-# nel suo magazzino (_rack_full_with_products).
-func _is_output_job_needed(building: Building) -> bool:
-	if building == null or building.rules == null or building.is_demolished or building.is_out_of_service():
-		return false
-	if not building.is_complete or not building.rules.is_workstation:
-		return false
-	if ProductionService.get_output_capacity(building) <= 0:
-		return _rack_full_with_products(building)
-	return ProductionService.has_active_production(building) and ProductionService.is_output_blocking(building)
-
-
-# Postazione senza uscita piena: almeno un ingrediente delle sue ricette ad avanzamento automatico non ha più posto (ogni
-# tipo occupa un posto suo: un prodotto pronto può togliere il posto alla pelle mentre la carne ha ancora il suo), e
-# almeno un prodotto pronto (risorsa del suo magazzino che non è suo ingrediente né combustibile) da portare via.
-func _rack_full_with_products(building: Building) -> bool:
-	if _rack_ready_product(building) == "":
-		return false
-	for recipe_name in CaloricCalculator.list_secondary_resource_names():
-		var rules := CaloricCalculator.get_caloric_source_rules(recipe_name)
-		if rules == null or rules.recipe_auto_progress_days <= 0 or not rules.recipe_workstation_types.has(building.building_type_name):
-			continue
-		for input_name in rules.recipe_inputs.keys():
-			if BuildingStorageService.get_max_depositable(building, String(input_name)) <= 0:
-				return true
-	return false
-
-
-# Prodotto pronto più numeroso nel magazzino di una postazione senza uscita (non ingrediente né combustibile), "" se nessuno.
-func _rack_ready_product(building: Building) -> String:
-	var best_name := ""
-	var best_count := 0
-	for raw_name in building.stored_resources.keys():
-		var name := String(raw_name)
-		if ProductionService.is_workstation_ingredient(building, name):
-			continue
-		var count := int((building.stored_resources[raw_name] as Dictionary).get("quantity", 0))
-		if count > best_count or (count == best_count and count > 0 and name < best_name):
-			best_count = count
-			best_name = name
-	return best_name
-
-
-# Risorsa da portare via: quella con più pezzi nei Prodotti finiti (a parità, in ordine di nome); per una postazione senza
-# uscita, il prodotto pronto più numeroso nel suo magazzino.
-func _output_job_resource(building: Building) -> String:
-	if ProductionService.get_output_capacity(building) <= 0:
-		return _rack_ready_product(building)
-	var best_name := ""
-	var best_count := 0
-	for raw_name in building.production_output.keys():
-		var count := int(building.production_output[raw_name])
-		if count > best_count or (count == best_count and count > 0 and String(raw_name) < best_name):
-			best_count = count
-			best_name = String(raw_name)
-	return best_name
-
-
-# Un magazzino (diverso dall'edificio) accetta almeno un pezzo della risorsa, cercato dalla posizione dell'edificio
-# (nessun pipottino né raggiungibilità: quelli si rifanno alla presa, _output_job_rejection).
-func _output_has_storage(building: Building, resource_name: String) -> bool:
-	if resource_name == "":
-		return false
-	var excluded_ids: Array[int] = [building.id]
-	return WarehouseSelectionService.find_best(
-		macro_world, Vector2(building.micro_x, building.micro_y) + Vector2(0.5, 0.5), Vector2i(building.macro_x, building.macro_y),
-		resource_name, 1, excluded_ids
-	) != null
-
-
-# Chi ha in carico quale uscita: id edificio -> Array[HumanIndividual], dalle task (in corso o in coda, non concluse)
-# con TaskBuilderService.CONTEXT_OUTPUT_JOB_BUILDING_ID.
-func _collect_output_job_claims() -> Dictionary:
-	var claims: Dictionary = {}
-	for member in human_individuals:
-		for task in _member_open_tasks(member):
-			if not task.context.has(TaskBuilderService.CONTEXT_OUTPUT_JOB_BUILDING_ID):
-				continue
-			var building_id := int(task.context[TaskBuilderService.CONTEXT_OUTPUT_JOB_BUILDING_ID])
-			if not claims.has(building_id):
-				claims[building_id] = []
-			if not (claims[building_id] as Array).has(member):
-				(claims[building_id] as Array).append(member)
-	return claims
-
-
-# Edifici la cui uscita sta già venendo svuotata dal pipottino dell'ordine (consegna a metà ordine): id -> true.
-func _collect_output_delivery_rounds() -> Dictionary:
-	var rounds: Dictionary = {}
-	for member in human_individuals:
-		for task in _member_open_tasks(member):
-			if task.context.has(ProduceAction.CONTEXT_OUTPUT_DELIVERY_ROUND):
-				rounds[int(task.context[ProduceAction.CONTEXT_OUTPUT_DELIVERY_ROUND])] = true
-	return rounds
-
-
-# Task in corso e in coda non concluse di `member`.
-func _member_open_tasks(member: HumanIndividual) -> Array[Task]:
-	var tasks: Array[Task] = []
-	if member.current_task != null and not member.current_task.is_finished():
-		tasks.append(member.current_task)
-	for queued in member.task_queue:
-		var task := queued as Task
-		if task != null and not task.is_finished():
-			tasks.append(task)
-	return tasks
-
-
-# Idoneità alla presa: edificio in una macrocella attiva, la consegna di prova passa il controllo di idoneità, e dal
-# pipottino un magazzino raggiungibile accetta la risorsa (lo stesso controllo dello step di consegna).
-func _output_job_rejection(worker: HumanIndividual, job: Dictionary) -> String:
-	var building: Building = job["target"]
-	var resource_name := String(job.get("resource_name", ""))
-	var task: Task = null
-	if live_cells.has(Vector2i(building.macro_x, building.macro_y)):
-		task = TaskBuilderService.build_output_job_task(worker, building, resource_name)
-	if task == null:
-		return "edificio non in una macrocella attiva"
-	var rejection := worker.get_assign_rejection_reason(task, _resolve_age_band(worker))
-	if rejection != HumanIndividual.ASSIGN_OK:
-		return rejection
-	var excluded_ids: Array[int] = [building.id]
-	if not worker.can_carry_one_unit_when_empty(resource_name) or WarehouseSelectionService.find_best(
-		macro_world, worker.position, worker.home_macro_coords, resource_name, 1, excluded_ids, PathfindingService.reachability_for(worker)
-	) == null:
-		return "nessun magazzino raggiungibile"
-	return HumanIndividual.ASSIGN_OK
-
 
 # Assegnazione dalla lista: la consegna come task del pipottino libero, in silenzio. Riuscita: l'icona del trasporto
 # sull'edificio e il lavoro esce dall'attesa.
@@ -11154,13 +10245,6 @@ func _assign_output_job(worker: HumanIndividual, job: Dictionary) -> void:
 		_spawn_command_icon_at_microcell(cell, Vector2i(building.micro_x, building.micro_y), "transport")
 	if worker == individual:
 		_refresh_selected_individual_panel()
-
-
-func _output_job_workers(job: Dictionary) -> Array[HumanIndividual]:
-	var workers: Array[HumanIndividual] = []
-	for member in job.get("claimers", []):
-		workers.append(member as HumanIndividual)
-	return workers
 
 
 # X: sempre spenta, non c'è niente da annullare.
@@ -11191,113 +10275,20 @@ func _output_job_release(job: Dictionary) -> void:
 
 
 # ============================================================================================
-# Fornitore "ordini di produzione" della lista dei lavori (2026-10-09, richiesta utente): un lavoro per ogni ordine di una
-# workstation (produce:<id edificio>:<chiave ordine>), "In coda" se nessuno lo lavora, "In corso" altrimenti. Escluse le
-# ricette ad avanzamento automatico (come la scheda "In sospeso"). Con l'edificio al completo (ordini con un lavoratore =
-# production_concurrent_orders) gli ordini senza lavoratore restano visibili ma non prendibili ("Edificio occupato"),
-# finché un ordine dell'edificio non finisce. Chi lo prende: la stessa riassegnazione del bottone "Assegna" del pannello
-# (_assign_produce_task con la chiave dell'ordine), in silenzio. Attrezzi controllati prima e in sola lettura
-# (_produce_job_rejection); il materiale mancante no (c'è già l'avviso nella campanella).
+# Fornitore "ordini di produzione" della lista dei lavori (2026-10-09): un lavoro per ogni ordine di una workstation
+# (produce:<id edificio>:<chiave ordine>). Quali lavori, chi può prenderli e chi ci lavora: ProduceJobProvider (2026-10-17,
+# refactoring GameScene blocco 2d). Qui l'assegnazione (la riassegnazione del bottone "Assegna", in silenzio) e Rimetti
+# in coda.
 # ============================================================================================
-
-# Ordini di produzione dopo corpi, edifici, mucchi e uscite piene nelle righe del cassetto.
-const PRODUCE_JOB_SORT_OFFSET: float = 3000000.0
-
-
-func _produce_jobs_collect(provider: Dictionary, assigned: Dictionary) -> Array[Dictionary]:
-	var jobs: Array[Dictionary] = []
-	# Ordini con un lavoratore per edificio (id -> quanti), dalle stesse chiavi "id:ordine" di _collect_pending_assignments.
-	var busy_counts: Dictionary = {}
-	for claimed_key in assigned["produce"].keys():
-		var building_id := int(String(claimed_key).get_slice(":", 0))
-		busy_counts[building_id] = int(busy_counts.get(building_id, 0)) + 1
-	for building in macro_world.buildings:
-		if building.is_demolished or building.rules == null or building.is_out_of_service():
-			continue
-		if not building.is_complete or not building.rules.is_workstation or building.production_progress.is_empty():
-			continue
-		var building_name: String = tr(building.rules.building_name)
-		var is_full := ProductionService.has_max_concurrent_orders(building, int(busy_counts.get(building.id, 0)))
-		var order_index := 0
-		for order_key in ProductionService.get_order_keys(building):
-			order_index += 1
-			# Cottura di un rito sociale (2026-10-14): la fa il rito, non è un lavoro della coda.
-			if ProductionService.is_order_reserved(building, order_key):
-				continue
-			var recipe := ProductionService.get_order_recipe(building, order_key)
-			var recipe_rules := CaloricCalculator.get_caloric_source_rules(recipe)
-			if recipe_rules != null and recipe_rules.recipe_auto_progress_days > 0:
-				continue
-			var units := maxi(ProductionService.get_order_units(building, order_key), 1)
-			var is_assigned: bool = assigned["produce"].has("%d:%s" % [building.id, order_key])
-			var recipe_name := IconRegistry.get_resource_display_name(recipe)
-			var blocked_reason := ""
-			if not is_assigned:
-				if is_full:
-					blocked_reason = tr("task_assignment_produce_building_busy")
-				else:
-					# Attrezzo che l'Attrezzeria non copre (2026-10-11, stessa regola degli ordini di zona): addosso a qualcuno o
-					# da prendere in deposito; altrimenti visibile ma non prendibile.
-					blocked_reason = _tools_blocked_reason(
-						BuildingToolkitService.filter_uncovered(building, _recipe_tool_categories(recipe)), DRAWER_ORDER_TYPE_PRODUCE
-					)
-			jobs.append({
-				"key": "produce:%d:%s" % [building.id, order_key], "kind": "produce",
-				"name": tr("task_assignment_produce_row").format({"recipe": recipe_name, "quantity": units, "building": building_name}),
-				"text": tr("pending_produce").format({"building": building_name, "product": recipe_name}),
-				"log_name": "%s ×%d @ %s #%d" % [recipe, units, building.building_type_name, building.id],
-				"icon": {"resource": recipe}, "macro": Vector2i(building.macro_x, building.macro_y),
-				"microcell": Vector2i(building.micro_x, building.micro_y), "reach_target": building,
-				"entry_kind": "building", "id": building.id, "sort": float(building.id) + PRODUCE_JOB_SORT_OFFSET + order_index * 0.001,
-				"assigned": is_assigned, "hidden": false,
-				"blocked_reason": blocked_reason,
-				"target": building, "provider": provider, "order_key": order_key, "recipe": recipe,
-			})
-			# Rimandato per materiale (2026-10-17): resta assegnato, riga in "In coda" col motivo.
-			var produce_key := "%d:%s" % [building.id, order_key]
-			if assigned["postponed_produce"].has(produce_key) and not assigned["produce_active"].has(produce_key):
-				jobs[jobs.size() - 1]["postponed_by"] = assigned["postponed_produce"][produce_key]
-	return jobs
-
-
-# Idoneità alla presa, in silenzio: la stessa Produce Task dell'assegnazione (mai assegnata) passa il controllo di
-# idoneità, e ogni categoria di attrezzo che l'Attrezzeria dell'edificio non copre il pipottino ce l'ha già, in cintura o
-# nello zaino (ToolGateService.has_tool_for: sola lettura, nessuno spostamento). Senza l'attrezzo il lavoro resta in coda
-# per un altro pipottino.
-func _produce_job_rejection(worker: HumanIndividual, job: Dictionary) -> String:
-	var building: Building = job["target"]
-	var order_key := String(job["order_key"])
-	var task := TaskBuilderService.build_produce_task(
-		worker, building, String(job["recipe"]), maxi(ProductionService.get_order_units(building, order_key), 1),
-		ProductionService.get_order_deliver_to_warehouse(building, order_key)
-	)
-	if task == null:
-		return "definizione mancante"
-	var rejection := worker.get_assign_rejection_reason(task, _resolve_age_band(worker))
-	if rejection != HumanIndividual.ASSIGN_OK:
-		return rejection
-	var tool_rejection := _tools_rejection(
-		worker, BuildingToolkitService.filter_uncovered(building, ToolGateService.get_required_categories(task)), DRAWER_ORDER_TYPE_PRODUCE
-	)
-	return tool_rejection if tool_rejection != "" else HumanIndividual.ASSIGN_OK
-
 
 # Assegnazione dalla lista: la riassegnazione dell'ordine (la stessa del bottone "Assegna"), in silenzio.
 func _assign_produce_job(worker: HumanIndividual, job: Dictionary) -> void:
 	var building: Building = job["target"]
 	var order_key := String(job["order_key"])
-	var fetch_plan := _plan_tool_fetch(worker, BuildingToolkitService.filter_uncovered(building, _recipe_tool_categories(String(job["recipe"]))))
+	var fetch_plan := ToolFetchService.plan_fetch(macro_world, worker, BuildingToolkitService.filter_uncovered(building, ToolFetchService.recipe_tool_categories(String(job["recipe"]))))
 	_assign_produce_task(worker, building, String(job["recipe"]), maxi(ProductionService.get_order_units(building, order_key), 1), true, order_key, false, true)
-	if _production_order_workers(building).get(order_key) == worker:
+	if JobWorkScanService.production_order_workers(human_individuals, building).get(order_key) == worker:
 		_start_zone_order_tool_fetch(worker, fetch_plan, "produrre %s" % String(job["recipe"]))
-
-
-func _produce_job_workers(job: Dictionary) -> Array[HumanIndividual]:
-	var workers: Array[HumanIndividual] = []
-	var worker: Variant = _production_order_workers(job["target"]).get(String(job["order_key"]))
-	if worker != null:
-		workers.append(worker as HumanIndividual)
-	return workers
 
 
 # Rimetti in coda / Blocca: toglie l'ordine a chi lo fa senza annullarlo, con l'effetto di H (regola del carico come la X
@@ -11336,15 +10327,11 @@ func _produce_job_release(job: Dictionary) -> void:
 # ricetta preparata (_on_drawer_produce_submitted). Dopo l'invio l'ordine non si modifica più dallo strato: si toglie solo
 # con la X della sua riga. L'ordine sta in GameData.drawer_orders ed entra nella lista dei lavori con chiave "order:<id>"
 # (JobBoardService.drawer_order_key), tipo "produce" (priorità "Ordini di produzione", skill produce). Nessun posto sulla
-# mappa: niente icona lampeggiante, 🎯 spento. L'edificio si sceglie al momento della presa (_choose_drawer_produce_building,
+# mappa: niente icona lampeggiante, 🎯 spento. L'edificio si sceglie al momento della presa (DrawerOrderService.choose_produce_building,
 # lo stesso per ogni pipottino): la presa crea l'ordine sull'edificio e lo assegna in silenzio con la riassegnazione di
 # sempre (_assign_produce_task con la chiave dell'ordine), poi toglie la voce dall'elenco del cassetto; se l'assegnazione
 # fallisce l'ordine creato sull'edificio viene tolto e la voce resta. Da lì è un ordine normale dell'edificio.
 # ============================================================================================
-
-const DRAWER_ORDER_TYPE_PRODUCE := "produce"
-# Ordini del cassetto dopo tutti gli altri lavori nell'ordine delle righe.
-const DRAWER_ORDER_JOB_SORT_OFFSET: float = 4000000.0
 
 
 # Ricette producibili in almeno un edificio esistente: {"name", "category" (SecondaryResourceRules.category, per i gruppi
@@ -11367,8 +10354,8 @@ func _list_drawer_produce_recipes() -> Array[Dictionary]:
 	for recipe in max_by_recipe.keys():
 		var recipe_rules := CaloricCalculator.get_caloric_source_rules(String(recipe))
 		var disabled_reason := ""
-		# Attrezzo (2026-10-11): addosso a qualcuno o da prendere in deposito = ricetta accesa (_tools_blocked_reason).
-		var nobody_has := _tool_categories_nobody_has(_recipe_tool_categories(String(recipe))) 			if _tools_blocked_reason(_recipe_tool_categories(String(recipe)), DRAWER_ORDER_TYPE_PRODUCE) != "" else []
+		# Attrezzo (2026-10-11): addosso a qualcuno o da prendere in deposito = ricetta accesa (ToolFetchService.blocked_reason).
+		var nobody_has := ToolFetchService.categories_nobody_has(_job_board_context(), ToolFetchService.recipe_tool_categories(String(recipe))) 			if ToolFetchService.blocked_reason(_job_board_context(), ToolFetchService.recipe_tool_categories(String(recipe)), DrawerOrderService.TYPE_PRODUCE) != "" else []
 		if not nobody_has.is_empty():
 			var covered := false
 			for building in buildings_by_recipe.get(recipe, []):
@@ -11378,7 +10365,7 @@ func _list_drawer_produce_recipes() -> Array[Dictionary]:
 					covered = true
 					break
 			if not covered:
-				disabled_reason = tr("task_assignment_nobody_has_tool").format({"tools": _describe_missing_tool_categories(nobody_has)})
+				disabled_reason = tr("task_assignment_nobody_has_tool").format({"tools": ToolFetchService.describe_missing_categories(nobody_has)})
 		recipes.append({
 			"name": String(recipe), "category": int(recipe_rules.category) if recipe_rules != null else -1,
 			"max_quantity": int(max_by_recipe[recipe]), "disabled_reason": disabled_reason,
@@ -11428,173 +10415,27 @@ func _on_drawer_produce_submitted(orders: Array[Dictionary], deliver_to_warehous
 	_refresh_pending_entries()
 
 
-# Nuovo ordine "Produci" nell'elenco del cassetto; ritorna il suo id.
+# Nuovo ordine "Produci" nell'elenco del cassetto (DrawerOrderService.add_produce_order); ritorna il suo id.
 func _create_drawer_produce_order(recipe: String, quantity: int, deliver_to_warehouse: bool, extra: Dictionary = {}) -> int:
-	var order_id := game_data.next_drawer_order_id
-	game_data.next_drawer_order_id += 1
-	var new_order := {
-		"id": order_id, "type": DRAWER_ORDER_TYPE_PRODUCE, "recipe": recipe, "quantity": maxi(quantity, 1),
-		"deliver_to_warehouse": deliver_to_warehouse,
-	}
-	new_order.merge(extra)
-	if extra.has(StockRequestService.ORDER_KEY):
-		new_order[STOCK_CREATED_AT_KEY] = _job_board_now()
-		_mark_inventory_pending(new_order)
-	game_data.drawer_orders.append(new_order)
-	if DebugLogging.ENABLED and DebugLogging.SHOW_JOB_BOARD_LOGS:
-		print("[JOB BOARD] Ordine del cassetto #%d: produci '%s' x%d (porta al deposito: %s)." % [order_id, recipe, quantity, str(deliver_to_warehouse)])
-	return order_id
+	var order := DrawerOrderService.add_produce_order(game_data, recipe, quantity, deliver_to_warehouse, extra)
+	_mark_new_stock_order(order)
+	return int(order["id"])
 
 
-func _find_drawer_order(order_id: int) -> Dictionary:
-	if game_data == null:
-		return {}
-	for order in game_data.drawer_orders:
-		if int(order["id"]) == order_id:
-			return order
-	return {}
-
-
-func _remove_drawer_order(order_id: int) -> void:
-	if game_data == null:
-		return
-	for index in range(game_data.drawer_orders.size()):
-		if int(game_data.drawer_orders[index]["id"]) == order_id:
-			game_data.drawer_orders.remove_at(index)
-			return
-
-
-# Edificio per un ordine "Produci" del cassetto (lo stesso per ogni pipottino; la vicinanza non conta): tra quelli dove
-# ProductionService.can_produce_at vale, che fanno tutta la `quantity` in un ordine (production_max_quantity, 2026-10-09:
-# niente più riduzione), non occupati (ordini in lavorazione < production_concurrent_orders), con la
-# coda non piena (production_max_orders) e posto in uscita per un ciclo: 1) il più libero (meno ordini, in corso + in
-# coda); 2) a parità, se la ricetta chiede un attrezzo, quello la cui Attrezzeria lo copre; 3) a parità, il primo.
-# `busy_counts`: id edificio -> ordini in lavorazione (dalle chiavi "id:ordine" di _collect_pending_assignments). null se
-# nessuno. `covering_only` (2026-10-09): solo gli edifici la cui Attrezzeria copre tutti gli attrezzi della ricetta (quando
-# nessun pipottino adulto li ha: altrimenti nessuno potrebbe prendere l'ordine).
-func _choose_drawer_produce_building(recipe: String, quantity: int, busy_counts: Dictionary, covering_only: bool = false) -> Building:
-	var categories := _recipe_tool_categories(recipe)
-	var best: Building = null
-	var best_orders := 0
-	var best_covered := false
-	for building in macro_world.buildings:
-		if not ProductionService.can_produce_at(building, recipe) or ProductionService.get_max_order_quantity(building) < quantity:
-			continue
-		if ProductionService.has_max_concurrent_orders(building, int(busy_counts.get(building.id, 0))):
-			continue
-		if ProductionService.has_max_orders(building) or not ProductionService.has_output_room(building, recipe):
-			continue
-		var orders := building.production_progress.size()
-		var covered := not categories.is_empty() and BuildingToolkitService.filter_uncovered(building, categories).is_empty()
-		if covering_only and not covered:
-			continue
-		if best == null or orders < best_orders or (orders == best_orders and covered and not best_covered):
-			best = building
-			best_orders = orders
-			best_covered = covered
-	return best
-
-
-func _drawer_order_jobs_collect(provider: Dictionary, assigned: Dictionary) -> Array[Dictionary]:
-	var jobs: Array[Dictionary] = []
-	if game_data.drawer_orders.is_empty():
-		return jobs
-	var busy_counts: Dictionary = {}
-	for claimed_key in assigned["produce"].keys():
-		var building_id := int(String(claimed_key).get_slice(":", 0))
-		busy_counts[building_id] = int(busy_counts.get(building_id, 0)) + 1
-	var cut_claims := _collect_drawer_cut_claims()
-	for order in game_data.drawer_orders:
-		# Ordini decisi da un inventario ancora in corso (2026-10-11): escono alla fine del conteggio.
-		if bool(order.get(INVENTORY_PENDING_KEY, false)):
-			continue
-		if _is_zone_order_type(String(order.get("type", ""))):
-			jobs.append(_drawer_cut_job(provider, order, cut_claims))
-			continue
-		if String(order.get("type", "")) == DRAWER_ORDER_TYPE_TRANSPORT:
-			jobs.append(_drawer_transport_job(provider, order))
-			continue
-		if String(order.get("type", "")) != DRAWER_ORDER_TYPE_PRODUCE:
-			continue
-		var order_id := int(order["id"])
-		var recipe := String(order.get("recipe", ""))
-		var quantity := maxi(int(order.get("quantity", 1)), 1)
-		var building := _choose_drawer_produce_building(recipe, quantity, busy_counts)
-		var blocked_reason := "" if building != null else tr("drawer_order_no_free_building")
-		# Attrezzo (2026-10-11, stessa regola degli ordini di zona): addosso a qualcuno, nell'Attrezzeria dell'edificio, o da
-		# prendere in deposito; altrimenti un edificio la cui Attrezzeria lo copra; nessuno = "Nessuno ha <attrezzo>".
-		if building != null:
-			var tool_reason := _tools_blocked_reason(BuildingToolkitService.filter_uncovered(building, _recipe_tool_categories(recipe)), DRAWER_ORDER_TYPE_PRODUCE)
-			if tool_reason != "":
-				var covering := _choose_drawer_produce_building(recipe, quantity, busy_counts, true)
-				if covering != null:
-					building = covering
-				else:
-					blocked_reason = tool_reason
-		# Ordine del magazzino (2026-10-11): fermo finché gli ingredienti (e il combustibile) non sono in deposito; nessuno
-		# va a procurarli. Gli ordini fatti a mano restano come prima.
-		var from_warehouse := order.has(StockRequestService.ORDER_KEY)
-		if from_warehouse and blocked_reason == "" and building != null:
-			blocked_reason = String(order.get(STOCK_MISSING_KEY, ""))
-		var row_name := tr("drawer_order_produce_row").format({"recipe": IconRegistry.get_resource_display_name(recipe), "quantity": quantity})
-		var building_text := (" @ %s #%d" % [building.building_type_name, building.id]) if building != null else ""
-		jobs.append({
-			"key": JobBoardService.drawer_order_key(order_id), "kind": "produce", "name": row_name, "text": row_name,
-			"log_name": "ordine del cassetto #%d %s ×%d%s" % [order_id, recipe, quantity, building_text],
-			"icon": {"resource": recipe},
-			# Nessun posto sulla mappa: macrocella fuori dal mondo = 🎯 spento e nessuna icona lampeggiante.
-			"macro": Vector2i(-1, -1), "microcell": Vector2i(-1, -1), "reach_target": building,
-			"entry_kind": "drawer_order", "id": order_id, "sort": float(order_id) + DRAWER_ORDER_JOB_SORT_OFFSET,
-			"assigned": false, "hidden": false, "warehouse": from_warehouse,
-			"blocked_reason": blocked_reason,
-			"target": building, "provider": provider, "order": order, "recipe": recipe, "quantity": quantity,
-		})
-	return jobs
-
-
-# Attrezzi richiesti dalla ricetta (SecondaryResourceRules.recipe_required_tool_categories), vuoto se nessuno.
-func _recipe_tool_categories(recipe: String) -> Array[TaskTypes.ToolCategory]:
-	var categories: Array[TaskTypes.ToolCategory] = []
-	var recipe_rules := CaloricCalculator.get_caloric_source_rules(recipe)
-	if recipe_rules != null:
-		categories.assign(recipe_rules.recipe_required_tool_categories)
-	return categories
-
-
-# Categorie di `categories` che nessun pipottino adulto (non neonato né bambino, le fasce escluse dalla Produce) ha in
-# cintura o nello zaino (ToolGateService.has_tool_for, sola lettura) — 2026-10-09, ordini di produzione in coda.
-func _tool_categories_nobody_has(categories: Array) -> Array:
-	var missing: Array = []
-	for category in categories:
-		var owned := false
-		for member in human_individuals:
-			var age_band := _resolve_age_band(member)
-			if age_band == HumanTypes.AgeBand.INFANT or age_band == HumanTypes.AgeBand.CHILD:
-				continue
-			if ToolGateService.has_tool_for(member, category):
-				owned = true
-				break
-		if not owned:
-			missing.append(category)
-	return missing
-
-
-# "Produci": mai nessuno (alla presa l'ordine diventa un ordine dell'edificio ed esce dall'elenco). "Taglia": chi porta
-# la serie dell'ordine (taglio o consegna, in corso o in coda).
-func _drawer_order_job_workers(job: Dictionary) -> Array[HumanIndividual]:
-	var workers: Array[HumanIndividual] = []
-	if _is_zone_order_type(String((job["order"] as Dictionary).get("type", ""))):
-		for member in _collect_drawer_cut_claims().get(int((job["order"] as Dictionary)["id"]), {}).get("members", []):
-			workers.append(member as HumanIndividual)
-	return workers
+# Ordine appena creato dal magazzino (StockRequestService.ORDER_KEY): momento di nascita e, durante un inventario,
+# nascosto finché il conteggio non finisce.
+func _mark_new_stock_order(order: Dictionary) -> void:
+	if order.has(StockRequestService.ORDER_KEY):
+		order[StockRequestService.CREATED_AT_KEY] = _job_board_now()
+		_mark_inventory_pending(order)
 
 
 # X: toglie l'ordine dall'elenco; un "Taglia" preso viene prima tolto a chi lo fa (come Rimetti in coda).
 func _drawer_order_job_cancel(job: Dictionary) -> void:
 	var order: Dictionary = job["order"]
-	if _is_zone_order_type(String(order.get("type", ""))) and bool(order.get("taken", false)):
+	if DrawerOrderService.is_zone_order_type(String(order.get("type", ""))) and bool(order.get("taken", false)):
 		_drawer_order_job_release(job)
-	_remove_drawer_order(int(order["id"]))
+	DrawerOrderService.remove(game_data, int(order["id"]))
 
 
 # Rimetti in coda / Blocca su un "Taglia" preso: la serie viene tolta a chi la porta con l'effetto di H (regola del
@@ -11602,7 +10443,7 @@ func _drawer_order_job_cancel(job: Dictionary) -> void:
 # restano e la stessa zona. "Produci": niente da togliere.
 func _drawer_order_job_release(job: Dictionary) -> void:
 	var order: Dictionary = job["order"]
-	if not _is_zone_order_type(String(order.get("type", ""))) or not bool(order.get("taken", false)):
+	if not DrawerOrderService.is_zone_order_type(String(order.get("type", ""))) or not bool(order.get("taken", false)):
 		return
 	_release_drawer_zone_order(order)
 
@@ -11610,58 +10451,33 @@ func _drawer_order_job_release(job: Dictionary) -> void:
 # Toglie un ordine di zona preso a chi lo porta (Rimetti in coda, Blocca, X, H): la Task in corso con
 # l'effetto di H (regola del carico, "salta la lista una volta", ripresa con resolve_idle_individual), quelle in coda
 # tolte (o sostituite dal ritorno del carico, se lo possiedono); l'ordine torna in coda con quello che resta, la stessa
-# scelta e la stessa zona. I ritorni del carico nati qui sono marcati (DRAWER_ORDER_CARGO_KEY): niente riga "Diretto".
+# scelta e la stessa zona. I ritorni del carico nati qui sono marcati (DrawerOrderService.CARGO_KEY): niente riga "Diretto".
 func _release_drawer_zone_order(order: Dictionary) -> void:
 	var order_id := int(order["id"])
-	var claim: Dictionary = _collect_drawer_cut_claims().get(order_id, {})
+	var claim: Dictionary = DrawerOrderService.collect_zone_claims(human_individuals).get(order_id, {})
 	order["done_seen"] = maxi(int(order.get("done_seen", 0)), int(claim.get("done", 0)))
-	_return_drawer_cut_order(order)
+	DrawerOrderService.return_order(_job_board_context(), order)
 	for member in human_individuals:
 		var current_closed := false
 		var current := member.current_task
-		if current != null and not current.is_finished() and _drawer_cut_order_of(current) == order_id:
+		if current != null and not current.is_finished() and DrawerOrderService.order_of_task(current) == order_id:
 			member.skip_job_board_once = true
 			if CargoReturnService.release_cargo(member, current, macro_world) != CargoReturnService.Outcome.RETURNING:
 				member.stop(false)
 				current_closed = true
 			elif member.current_task != null:
-				member.current_task.context[DRAWER_ORDER_CARGO_KEY] = true
+				member.current_task.context[DrawerOrderService.CARGO_KEY] = true
 		for queued in member.task_queue.duplicate():
 			var queued_task := queued as Task
-			if queued_task != null and _drawer_cut_order_of(queued_task) == order_id:
+			if queued_task != null and DrawerOrderService.order_of_task(queued_task) == order_id:
 				var queue_index := member.task_queue.find(queued)
 				if CargoReturnService.release_cargo(member, queued_task, macro_world) != CargoReturnService.Outcome.RETURNING:
 					member.task_queue.erase(queued)
 				elif queue_index >= 0 and queue_index < member.task_queue.size() and member.task_queue[queue_index] != null:
-					(member.task_queue[queue_index] as Task).context[DRAWER_ORDER_CARGO_KEY] = true
+					(member.task_queue[queue_index] as Task).context[DrawerOrderService.CARGO_KEY] = true
 		if current_closed:
 			HumanIndividualActionService.resolve_idle_individual(member, _resolve_age_band(member), macro_world)
 	_refresh_selected_individual_panel()
-
-
-# Idoneità come gli ordini dei pannelli (_produce_job_rejection): la Produce Task di prova sull'edificio scelto passa il
-# controllo di età/energia, e ogni attrezzo che l'Attrezzeria di quell'edificio non copre il pipottino ce l'ha in
-# cintura o nello zaino (sola lettura).
-func _drawer_order_job_rejection(worker: HumanIndividual, job: Dictionary) -> String:
-	if _is_zone_order_type(String((job["order"] as Dictionary).get("type", ""))):
-		return _drawer_cut_job_rejection(worker, job)
-	if String((job["order"] as Dictionary).get("type", "")) == DRAWER_ORDER_TYPE_TRANSPORT:
-		return _drawer_transport_job_rejection(worker, job)
-	var building: Building = job["target"]
-	if building == null:
-		return "nessun edificio libero"
-	var quantity := int(job["quantity"])
-	var task := TaskBuilderService.build_produce_task(worker, building, String(job["recipe"]), quantity, bool((job["order"] as Dictionary).get("deliver_to_warehouse", true)))
-	if task == null:
-		return "definizione mancante"
-	var rejection := worker.get_assign_rejection_reason(task, _resolve_age_band(worker))
-	if rejection != HumanIndividual.ASSIGN_OK:
-		return rejection
-	# Attrezzi (2026-10-11): addosso, o da prendere in deposito se nessuno li ha (_tools_rejection).
-	var tool_rejection := _tools_rejection(
-		worker, BuildingToolkitService.filter_uncovered(building, ToolGateService.get_required_categories(task)), DRAWER_ORDER_TYPE_PRODUCE
-	)
-	return tool_rejection if tool_rejection != "" else HumanIndividual.ASSIGN_OK
 
 
 # Presa: ordine creato sull'edificio scelto (tutta la quantità, "Porta al deposito" dell'ordine del
@@ -11669,19 +10485,19 @@ func _drawer_order_job_rejection(worker: HumanIndividual, job: Dictionary) -> St
 # del cassetto. Assegnazione fallita: l'ordine creato sull'edificio viene tolto (il lavoro sospeso preso da create_order
 # torna sospeso) e la voce resta in coda.
 func _assign_drawer_order_job(worker: HumanIndividual, job: Dictionary) -> void:
-	if _is_zone_order_type(String((job["order"] as Dictionary).get("type", ""))):
+	if DrawerOrderService.is_zone_order_type(String((job["order"] as Dictionary).get("type", ""))):
 		_assign_drawer_cut_job(worker, job)
 		return
-	if String((job["order"] as Dictionary).get("type", "")) == DRAWER_ORDER_TYPE_TRANSPORT:
+	if String((job["order"] as Dictionary).get("type", "")) == DrawerOrderService.TYPE_TRANSPORT:
 		_assign_drawer_transport_job(worker, job)
 		return
 	var building: Building = job["target"]
 	var order_id := int((job["order"] as Dictionary)["id"])
-	if building == null or _find_drawer_order(order_id).is_empty():
+	if building == null or DrawerOrderService.find(game_data, order_id).is_empty():
 		return
 	var recipe := String(job["recipe"])
 	var deliver := bool((job["order"] as Dictionary).get("deliver_to_warehouse", true))
-	# Tutta la quantità (2026-10-09): l'edificio scelto la copre (_choose_drawer_produce_building), mai ridotta.
+	# Tutta la quantità (2026-10-09): l'edificio scelto la copre (DrawerOrderService.choose_produce_building), mai ridotta.
 	var quantity := int(job["quantity"])
 	if quantity > ProductionService.get_max_order_quantity(building):
 		return
@@ -11689,11 +10505,11 @@ func _assign_drawer_order_job(worker: HumanIndividual, job: Dictionary) -> void:
 	if order_key == "":
 		return
 	# Attrezzi da prendere in deposito prima di produrre (2026-10-11): decisi ora, partono dopo l'assegnazione.
-	var fetch_plan := _plan_tool_fetch(worker, BuildingToolkitService.filter_uncovered(building, _recipe_tool_categories(recipe)))
+	var fetch_plan := ToolFetchService.plan_fetch(macro_world, worker, BuildingToolkitService.filter_uncovered(building, ToolFetchService.recipe_tool_categories(recipe)))
 	_assign_produce_task(worker, building, recipe, quantity, deliver, order_key, false, true)
-	if _production_order_workers(building).get(order_key) == worker:
+	if JobWorkScanService.production_order_workers(human_individuals, building).get(order_key) == worker:
 		_start_zone_order_tool_fetch(worker, fetch_plan, "produrre %s" % recipe)
-		_remove_drawer_order(order_id)
+		DrawerOrderService.remove(game_data, order_id)
 		var job_keys: Array[String] = [String(job["key"])]
 		_forget_job_board_wait(job_keys)
 	else:
@@ -11703,115 +10519,10 @@ func _assign_drawer_order_job(worker: HumanIndividual, job: Dictionary) -> void:
 
 
 # ============================================================================================
-# Ordini di zona del cassetto (2026-10-09, richiesta utente): "Taglia" (secondo tipo di ordine del cassetto) ed "Estrai"
-# (terzo tipo, stesso codice): taglio o estrazione nelle zone di lavoro "a chiunque". Voce di GameData.drawer_orders:
-# {"id", "type": "cut" | "quarry", "count": piante / pietre (quelle che restano, se l'ordine è tornato in coda),
-# "zone_id": zona fissata (-1 = zona automatica), "taken": preso da qualcuno, "done_seen": tagli / estrazioni già fatti
-# della serie in corso}. Stessa chiave "order:<id>" e stesso fornitore di "Produci"; tipo "cut" / "quarry" (priorità
-# "Taglio" / "Estrazione", skill cut / quarry). Presa: il comando Taglia / Estrai di oggi in silenzio (zona automatica =
-# CutZoneService / QuarryZoneService.choose_work_area per chi lo prende, poi choose_plant / choose_rock e make_series con
-# la chiave dell'ordine nella serie, DRAWER_ORDER_SERIES_KEY); riuscita = ordine "preso" (resta nell'elenco, riga "In
-# corso"). La serie viaggia nel lavoro e nella consegna come sempre (la consegna non è un lavoro "Mucchio"): chi la porta
-# è al lavoro sull'ordine (_collect_drawer_cut_claims). Serie finita = ordine tolto (prosecuzione della serie). Nessuno la
-# porta più (H, interruzione senza ripresa, serie fermata) o "Rimetti in coda" = l'ordine torna in coda con quello che
-# resta e la stessa zona (_settle_drawer_cut_orders, _drawer_order_job_release).
+# Ordini di zona del cassetto (2026-10-09): "Taglia", "Estrai", "Raccogli", "Caccia". Voci, regole, zone e ritorno in coda:
+# DrawerOrderService (2026-10-17, refactoring GameScene blocco 2c). Qui i popup di scelta, la presa con icone e messaggi,
+# e lo stato dei bottoni del cassetto.
 # ============================================================================================
-
-const DRAWER_ORDER_TYPE_CUT := "cut"
-const DRAWER_ORDER_TYPE_QUARRY := "quarry"
-# "Raccogli" (2026-10-09, quarto tipo): campi in più nella voce "criterion_kind", "criterion_category", "resource_name"
-# (cosa raccogliere, come il popup) e "count" = viaggi. L'id dell'ordine sta nella zona della raccolta (si duplica a ogni
-# viaggio); fatti = viaggi conclusi (ripetizioni già fatte, più quello in corso se la raccolta è avvenuta).
-const DRAWER_ORDER_TYPE_GATHER := "gather"
-# "Caccia" (2026-10-09, quinto tipo): "count" = carne da portare a casa (quella che manca, se l'ordine è tornato in
-# coda), "butcher_destination" = destinazione dei prodotti scelta alla creazione. L'id dell'ordine sta nella serie di
-# carne (HuntZoneService.CONTEXT_MEAT_SERIES), che passa da caccia a macellazione a caccia successiva; fatti = carne
-# consegnata ("delivered", può superare l'obiettivo). Fine: carne consegnata fino all'obiettivo
-# (HumanIndividualActionService.hunt_zone_series_ended). Uscita senza prede (PatrolAreaAction.PATROL_DAYS_WITHOUT_PREY_LIMIT giorni): zona automatica = si cambia zona e, senza più zone da
-# provare, l'ordine finisce con l'avviso "Caccia finita: nessuna preda catturata (N/M carne portate)" (2026-10-10; prima
-# tornava in coda); zona scelta = l'ordine finisce, con l'avviso "Caccia: nessuna preda in <zona>" nella campanella.
-const DRAWER_ORDER_TYPE_HUNT := "hunt"
-# Id dell'ordine del cassetto nella serie (salvato con lei) o nella zona della raccolta.
-const DRAWER_ORDER_SERIES_KEY := "drawer_order_id"
-# Marca nel context del ritorno del carico nato togliendo un ordine di zona (_release_drawer_zone_order): fuori dalle
-# righe "Diretto" di "In corso".
-const DRAWER_ORDER_CARGO_KEY := "drawer_order_cargo"
-# Interruzione da bisogno (2026-10-09, decisione presa): l'ordine resta a chi lo porta, nella sua coda personale, e lo
-# riprende dopo il bisogno come gli altri lavori della lista. In coda tornano solo con H e "Rimetti in coda".
-# Righe dei tagli, delle estrazioni e delle raccolte dopo quelle di "Produci".
-const DRAWER_ZONE_JOB_SORT_OFFSET := {
-	DRAWER_ORDER_TYPE_CUT: 4500000.0, DRAWER_ORDER_TYPE_QUARRY: 4700000.0, DRAWER_ORDER_TYPE_GATHER: 4300000.0,
-	DRAWER_ORDER_TYPE_HUNT: 4900000.0,
-}
-
-
-func _is_zone_order_type(order_type: String) -> bool:
-	return order_type == DRAWER_ORDER_TYPE_CUT or order_type == DRAWER_ORDER_TYPE_QUARRY or order_type == DRAWER_ORDER_TYPE_GATHER \
-		or order_type == DRAWER_ORDER_TYPE_HUNT
-
-
-func _zone_order_action(order_type: String) -> StringName:
-	match order_type:
-		DRAWER_ORDER_TYPE_QUARRY:
-			return CommandBar.QUARRY_ACTION
-		DRAWER_ORDER_TYPE_GATHER:
-			return CommandBar.GATHER_ACTION
-		DRAWER_ORDER_TYPE_HUNT:
-			return CommandBar.HUNT_ACTION
-	return CommandBar.CUT_ACTION
-
-
-func _zone_order_tool_categories(order_type: String) -> Array:
-	return CommandBar.get_action(_zone_order_action(order_type)).get("tool_categories", [])
-
-
-func _zone_order_areas(order_type: String) -> Array[WorkArea]:
-	if order_type == DRAWER_ORDER_TYPE_HUNT:
-		return HuntZoneService.list_hunt_work_areas(game_data)
-	if order_type == DRAWER_ORDER_TYPE_QUARRY:
-		return QuarryZoneService.list_quarry_work_areas(game_data)
-	if order_type == DRAWER_ORDER_TYPE_GATHER:
-		var areas: Array[WorkArea] = []
-		if game_data != null:
-			for area in game_data.work_areas:
-				if area.enabled_jobs.has(HaulZoneService.HAUL_JOB):
-					areas.append(area)
-		return areas
-	return CutZoneService.list_cut_work_areas(game_data)
-
-
-func _zone_order_reserved(order_type: String) -> Dictionary:
-	if order_type == DRAWER_ORDER_TYPE_QUARRY:
-		return QuarryZoneService.collect_reserved_rocks(human_individuals)
-	if order_type == DRAWER_ORDER_TYPE_GATHER or order_type == DRAWER_ORDER_TYPE_HUNT:
-		return {}
-	return CutZoneService.collect_reserved_plants(human_individuals)
-
-
-# La zona ha ancora piante (taglio) o rocce con pietra (estrazione) non prenotate, o risorse da raccogliere per la scelta
-# dell'ordine `order` (raccolta: criterion_kind/criterion_category/resource_name; senza, "Tutto"); con `individual`,
-# raggiungibili da lui. Solo macrocelle attive.
-func _zone_order_area_has_targets(order_type: String, area: WorkArea, individual: HumanIndividual, reserved: Dictionary, order: Dictionary = {}) -> bool:
-	if area == null:
-		return false
-	# Caccia: basta la macrocella attiva (le prede si cercano pattugliando, fino a PatrolAreaAction.PATROL_DAYS_WITHOUT_PREY_LIMIT giorni).
-	if order_type == DRAWER_ORDER_TYPE_HUNT:
-		return live_cells.has(area.macro_coords)
-	if order_type == DRAWER_ORDER_TYPE_GATHER:
-		if not live_cells.has(area.macro_coords):
-			return false
-		var names := HaulZoneService.allowed_names_for(
-			area, int(order.get("criterion_kind", PickUpAction.CriterionKind.ALL)), int(order.get("criterion_category", -1)),
-			String(order.get("resource_name", ""))
-		)
-		var gather_state := macro_world.get_cell_state_at(area.macro_coords.x, area.macro_coords.y)
-		return HaulZoneService.count_available(area, gather_state, names, individual) > 0
-	if order_type == DRAWER_ORDER_TYPE_QUARRY:
-		if not live_cells.has(area.macro_coords):
-			return false
-		var macro_state := macro_world.get_cell_state_at(area.macro_coords.x, area.macro_coords.y)
-		return not QuarryZoneService.list_available_rocks(area, macro_state, individual, reserved).is_empty()
-	return not CutZoneService.list_available_plants(area, live_cells, individual, reserved, _drawer_order_cut_yield(order)).is_empty()
 
 
 # Stato dei bottoni "Taglia" ed "Estrai" del cassetto: almeno una zona con il lavoro e un individuo in età da lavoro con
@@ -11819,19 +10530,19 @@ func _zone_order_area_has_targets(order_type: String, area: WorkArea, individual
 func _sync_drawer_cut_available() -> void:
 	if _task_assignment_panel == null or not is_instance_valid(_task_assignment_panel):
 		return
-	for order_type in [DRAWER_ORDER_TYPE_CUT, DRAWER_ORDER_TYPE_QUARRY, DRAWER_ORDER_TYPE_GATHER, DRAWER_ORDER_TYPE_HUNT]:
-		var is_quarry: bool = order_type == DRAWER_ORDER_TYPE_QUARRY
+	for order_type in [DrawerOrderService.TYPE_CUT, DrawerOrderService.TYPE_QUARRY, DrawerOrderService.TYPE_GATHER, DrawerOrderService.TYPE_HUNT]:
+		var is_quarry: bool = order_type == DrawerOrderService.TYPE_QUARRY
 		# Caccia (2026-10-09): una zona con la caccia attiva e qualcuno in età da caccia con il coltello (cintura o zaino).
-		if order_type == DRAWER_ORDER_TYPE_HUNT:
-			if _zone_order_areas(order_type).is_empty():
+		if order_type == DrawerOrderService.TYPE_HUNT:
+			if DrawerOrderService.zone_areas(game_data, order_type).is_empty():
 				_task_assignment_panel.set_zone_order_available(order_type, false, tr("drawer_hunt_no_zone"))
 			elif _zone_order_tool_blocked_reason(order_type) != "":
 				_task_assignment_panel.set_zone_order_available(order_type, false, _zone_order_tool_blocked_reason(order_type))
 			else:
 				_task_assignment_panel.set_zone_order_available(order_type, true)
 			continue
-		if _zone_order_areas(order_type).is_empty():
-			var no_zone_key := "drawer_gather_no_zone" if order_type == DRAWER_ORDER_TYPE_GATHER else ("drawer_quarry_no_zone" if is_quarry else "drawer_cut_no_zone")
+		if DrawerOrderService.zone_areas(game_data, order_type).is_empty():
+			var no_zone_key := "drawer_gather_no_zone" if order_type == DrawerOrderService.TYPE_GATHER else ("drawer_quarry_no_zone" if is_quarry else "drawer_cut_no_zone")
 			_task_assignment_panel.set_zone_order_available(order_type, false, tr(no_zone_key))
 		elif _zone_order_tool_blocked_reason(order_type) != "":
 			_task_assignment_panel.set_zone_order_available(order_type, false, _zone_order_tool_blocked_reason(order_type))
@@ -11842,294 +10553,46 @@ func _sync_drawer_cut_available() -> void:
 
 
 # ============================================================================================
-# Attrezzi per gli ordini di zona della coda (2026-10-11, richiesta utente). Categorie richieste: quelle del comando
-# (CommandBar.ACTIONS "tool_categories": Taglia CHOPPING, Estrai DIGGING, Caccia BUTCHERING + HUNTING). Regola:
-#   - qualcuno in età ha addosso tutte le categorie (o le sta andando a prendere, task con ZONE_ORDER_TOOL_FETCH_KEY):
-#     l'ordine lo prende solo chi ce le ha; gli altri non lo vedono come prendibile (nemmeno si incamminano);
-#   - nessuno: il primo che arriva dal coordinatore, con posti liberi in cintura per ciò che gli manca, prende l'ordine e
-#     prima va a prendere in deposito gli attrezzi mancanti (equip_tool.tres, in cintura), poi lavora;
-#   - una categoria che nessuno ha e nessun deposito ha, o nessuno con abbastanza posto in cintura: ordine bloccato.
-# Le armi da caccia si prendono in deposito solo se non usano munizioni (le lance). Gli attrezzi restano in cintura dopo
-# il lavoro; il gioco non ripone mai attrezzi da solo. Comandi diretti e produzione non passano da qui.
+# Attrezzi per gli ordini di zona della coda (2026-10-11): regole in ToolFetchService (2026-10-17, refactoring GameScene
+# blocco 2d); categorie per tipo d'ordine in DrawerOrderService.tool_categories. Qui restano i segnali delle task di
+# prelievo e riposizione.
 # ============================================================================================
-const ZONE_ORDER_TOOL_FETCH_KEY := "zone_order_tool_fetch"
-# Riposizione automatica di un attrezzo in prestito (_return_borrowed_tools): riga "Automatico" in "In corso".
-const BORROWED_TOOL_RETURN_KEY := "borrowed_tool_return"
-const ZONE_ORDER_TOOL_BLOCK_KEYS := {
-	TaskTypes.ToolCategory.BUTCHERING: "drawer_hunt_nobody_has_knife",
-	TaskTypes.ToolCategory.HUNTING: "drawer_hunt_nobody_has_weapon",
-	TaskTypes.ToolCategory.CHOPPING: "drawer_cut_nobody_has_axe",
-	TaskTypes.ToolCategory.DIGGING: "drawer_quarry_nobody_has_pickaxe",
-}
-
-
-# Età giusta per l'ordine: caccia = età della task hunt_zone.tres; gli altri = niente neonati né bambini.
-func _zone_order_age_ok(member: HumanIndividual, order_type: String) -> bool:
-	var age_band := _resolve_age_band(member)
-	if order_type == DRAWER_ORDER_TYPE_HUNT:
-		var definition := load(HuntZoneService.TASK_DEFINITION_PATH) as TaskDefinition
-		return definition == null or definition.allowed_age_bands.is_empty() or definition.allowed_age_bands.has(int(age_band))
-	return age_band != HumanTypes.AgeBand.INFANT and age_band != HumanTypes.AgeBand.CHILD
-
-
-# `member` copre `category` addosso: armi da caccia con le munizioni se servono (HuntService), il resto in cintura o zaino.
-func _member_covers_tool(member: HumanIndividual, category: int) -> bool:
-	if category == TaskTypes.ToolCategory.HUNTING:
-		return HuntService.has_hunting_weapon_available(member)
-	return ToolGateService.has_tool_for(member, category)
-
-
-# `member` sta andando a prendere un attrezzo di `category` per un ordine (task in corso o in coda).
-func _member_fetching_tool(member: HumanIndividual, category: int) -> bool:
-	for task in _member_open_tasks(member):
-		var fetching: Variant = task.context.get(ZONE_ORDER_TOOL_FETCH_KEY, null)
-		if fetching != null and int(fetching) == category:
-			return true
-	return false
-
-
-# Categorie tra `categories` che `member` non ha addosso e non sta già andando a prendere.
-func _member_missing_categories(member: HumanIndividual, categories: Array) -> Array:
-	var missing: Array = []
-	for category in categories:
-		if not _member_covers_tool(member, int(category)) and not _member_fetching_tool(member, int(category)):
-			missing.append(int(category))
-	return missing
 
 
 func _zone_order_missing_categories(member: HumanIndividual, order_type: String) -> Array:
-	return _member_missing_categories(member, _zone_order_tool_categories(order_type))
-
-
-# true se qualcuno in età (per `age_kind`, vedi _zone_order_age_ok) ha (o sta prendendo) tutte le `categories`.
-func _has_equipped_member(categories: Array, age_kind: String) -> bool:
-	for member in human_individuals:
-		if _zone_order_age_ok(member, age_kind) and _member_missing_categories(member, categories).is_empty():
-			return true
-	return false
-
-
-# Posti liberi della cintura di `member`, in ordine.
-func _free_belt_slots(member: HumanIndividual) -> Array[int]:
-	var slots: Array[int] = []
-	for slot in range(member.get_tool_slot_count()):
-		if member.get_equipped_tool(slot) == "":
-			slots.append(slot)
-	return slots
-
-
-# Attrezzi che coprono `category` e si possono prendere in deposito per un ordine (armi: solo senza munizioni).
-func _fetchable_tool_names(category: int) -> Array[String]:
-	var names: Array[String] = []
-	for tool_name in ToolGateService.get_tools_covering(category):
-		if category == TaskTypes.ToolCategory.HUNTING:
-			var rules := CaloricCalculator.get_caloric_source_rules(tool_name)
-			if rules == null or rules.required_ammo_category >= 0:
-				continue
-		names.append(tool_name)
-	return names
-
-
-# Deposito e attrezzo che copre `category` per `worker` (raggiungibile; tra i nomi, il deposito più vicino); con `worker`
-# null basta che un deposito ne abbia uno. {} se nessuno.
-func _find_storage_tool(worker: HumanIndividual, category: int) -> Dictionary:
-	var best: Dictionary = {}
-	var best_distance := INF
-	for tool_name in _fetchable_tool_names(category):
-		var origin := worker.position if worker != null else Vector2.ZERO
-		var origin_macro := worker.home_macro_coords if worker != null else Vector2i.ZERO
-		var reachability := PathfindingService.reachability_for(worker) if worker != null else Callable()
-		var source := WarehouseSelectionService.find_source_for_retrieval(macro_world, origin, origin_macro, tool_name, [], 1, -1, reachability)
-		if source == null:
-			continue
-		if worker == null:
-			return {"building": source, "tool_name": tool_name}
-		var offset := Vector2(Vector2i(source.macro_x, source.macro_y) - worker.home_macro_coords) * World.WIDTH
-		var distance := worker.position.distance_to(Vector2(source.micro_x, source.micro_y) + offset)
-		if distance < best_distance:
-			best_distance = distance
-			best = {"building": source, "tool_name": tool_name}
-	return best
-
-
-# Motivo per cui nessuno può fare un lavoro che richiede `categories` ("" = qualcuno può): una categoria che nessuno ha
-# addosso e nessun deposito ha; oppure nessuno in età con abbastanza posto in cintura per prenderle.
-func _tools_blocked_reason(categories: Array, age_kind: String) -> String:
-	if categories.is_empty() or macro_world == null or _has_equipped_member(categories, age_kind):
-		return ""
-	var nowhere: Array = []
-	for category in categories:
-		var someone_has := false
-		for member in human_individuals:
-			if _zone_order_age_ok(member, age_kind) and _member_covers_tool(member, int(category)):
-				someone_has = true
-				break
-		if not someone_has and _find_storage_tool(null, int(category)).is_empty():
-			nowhere.append(int(category))
-	if not nowhere.is_empty():
-		if nowhere.size() == 1 and ZONE_ORDER_TOOL_BLOCK_KEYS.has(nowhere[0]):
-			return tr(String(ZONE_ORDER_TOOL_BLOCK_KEYS[nowhere[0]]))
-		return tr("task_assignment_nobody_has_tool").format({"tools": _describe_missing_tool_categories(nowhere)})
-	var needed: Array = []
-	for member in human_individuals:
-		if not _zone_order_age_ok(member, age_kind):
-			continue
-		var missing := _member_missing_categories(member, categories)
-		if _free_belt_slots(member).size() >= missing.size() and _missing_tools_in_storage(member, missing):
-			return ""
-		for category in missing:
-			if not needed.has(category):
-				needed.append(category)
-	return tr("drawer_order_nobody_has_belt_room").format({"tools": _describe_missing_tool_categories(needed)})
+	return ToolFetchService.member_missing_categories(member, DrawerOrderService.tool_categories(order_type))
 
 
 func _zone_order_tool_blocked_reason(order_type: String) -> String:
-	return _tools_blocked_reason(_zone_order_tool_categories(order_type), order_type)
-
-
-func _missing_tools_in_storage(member: HumanIndividual, missing: Array) -> bool:
-	for category in missing:
-		if _find_storage_tool(member, int(category)).is_empty():
-			return false
-	return true
-
-
-# Idoneità di `worker` per gli attrezzi ("" = può): tutto addosso; oppure, se nessuno in età ha l'equipaggiamento, posti
-# liberi in cintura e un deposito raggiungibile per ogni categoria che gli manca.
-func _tools_rejection(worker: HumanIndividual, categories: Array, age_kind: String) -> String:
-	var missing := _member_missing_categories(worker, categories)
-	if missing.is_empty():
-		return ""
-	if _has_equipped_member(categories, age_kind):
-		return "attrezzo mancante: lo ha già un altro"
-	if _free_belt_slots(worker).size() < missing.size():
-		return "cintura piena per gli attrezzi da prendere"
-	if not _missing_tools_in_storage(worker, missing):
-		return "attrezzo mancante e non raggiungibile in deposito"
-	return ""
+	return ToolFetchService.blocked_reason(_job_board_context(), DrawerOrderService.tool_categories(order_type), order_type)
 
 
 func _zone_order_tool_rejection(worker: HumanIndividual, order_type: String) -> String:
-	return _tools_rejection(worker, _zone_order_tool_categories(order_type), order_type)
-
-
-# Attrezzi da prendere prima del lavoro: [{"category", "building", "tool_name", "slot"}], vuoto se ha già tutto.
-func _plan_tool_fetch(worker: HumanIndividual, categories: Array) -> Array[Dictionary]:
-	var plan: Array[Dictionary] = []
-	var missing := _member_missing_categories(worker, categories)
-	var slots := _free_belt_slots(worker)
-	for index in range(mini(missing.size(), slots.size())):
-		var found := _find_storage_tool(worker, int(missing[index]))
-		if found.is_empty():
-			continue
-		found["category"] = int(missing[index])
-		found["slot"] = slots[index]
-		plan.append(found)
-	return plan
+	return ToolFetchService.rejection(_job_board_context(), worker, DrawerOrderService.tool_categories(order_type), order_type)
 
 
 func _plan_zone_order_tool_fetch(worker: HumanIndividual, order_type: String) -> Array[Dictionary]:
-	return _plan_tool_fetch(worker, _zone_order_tool_categories(order_type))
+	return ToolFetchService.plan_fetch(macro_world, worker, DrawerOrderService.tool_categories(order_type))
 
 
-# Prelievi in deposito prima del lavoro appena assegnato: una task equip_tool per attrezzo, assegnata dopo il lavoro (che è
-# sospendibile e va in coda personale, riprendendo a prelievo finito). Prelievo fallito (attrezzo sparito): il lavoro
-# riparte lo stesso e aspetta l'attrezzo come ogni altro passo senza attrezzo. Ogni attrezzo è "in prestito"
-# (HumanIndividual.borrowed_tools): con la regola "Riponi gli attrezzi presi per un lavoro" torna al deposito quando
-# l'individuo è libero (_return_borrowed_tools). `work_label` = cosa fa dopo, per il log.
+# Prelievi in deposito prima del lavoro appena assegnato (ToolFetchService.start_fetch, 2026-10-17): qui i segnali delle
+# task di prelievo (griglia del magazzino) e il pannello.
 func _start_zone_order_tool_fetch(worker: HumanIndividual, plan: Array[Dictionary], work_label: Variant) -> void:
-	for fetch in plan:
-		var building: Building = fetch["building"]
-		var tool_name := String(fetch["tool_name"])
-		var task := TaskBuilderService.build_equip_tool_task(worker, building, tool_name, int(fetch["slot"]))
-		if task == null:
-			continue
-		task.context[ZONE_ORDER_TOOL_FETCH_KEY] = int(fetch["category"])
+	for task in ToolFetchService.start_fetch(_job_board_context(), worker, plan, work_label):
 		_wire_transport_task(task, worker)
-		if not worker.assign_task(task, _resolve_age_band(worker)):
-			continue
-		worker.borrowed_tools.append({"tool_name": tool_name, "building_id": building.id})
-		if DebugLogging.ENABLED and DebugLogging.SHOW_JOB_BOARD_LOGS:
-			print("[JOB BOARD] #%d %s: va a prendere %s in %s #%d prima di %s." % [
-				worker.id, worker.name, tool_name, building.building_type_name, building.id,
-				("ordine del cassetto #%d" % int(work_label)) if work_label is int else str(work_label)
-			])
 	if worker == individual:
 		_refresh_selected_individual_panel()
 
 
-# Regola "Riponi gli attrezzi presi per un lavoro" (2026-10-11, GameData.job_board_return_borrowed_tools): ogni individuo
-# libero (nessuna task in corso né in coda, non in cerca di lavoro) con attrezzi in prestito li riporta: per ciascuno
-# ancora in cintura una task store_tool (come "Riponi attrezzo" del pannello) verso l'edificio da cui l'ha preso, se c'è
-# ancora e lo accetta, altrimenti il deposito migliore. Le voci non più in cintura (rotte, spostate a mano) si tolgono;
-# senza destinazione si riprova al giro dopo. Una volta al secondo, con il controllo del magazzino.
+# Regola "Riponi gli attrezzi presi per un lavoro" (2026-10-11; regola in ToolFetchService.return_borrowed_tools dal
+# 2026-10-17): una volta al secondo; qui i segnali delle task create (griglia del magazzino).
 func _return_borrowed_tools() -> void:
-	if game_data == null or macro_world == null:
-		return
-	for member in human_individuals:
-		if member.borrowed_tools.is_empty():
-			continue
-		var still_equipped: Array = []
-		for entry in member.borrowed_tools:
-			if _find_belt_slot_by_name(member, String(entry.get("tool_name", ""))) != -1:
-				still_equipped.append(entry)
-		member.borrowed_tools = still_equipped
-		if member.borrowed_tools.is_empty() or not game_data.job_board_return_borrowed_tools:
-			continue
-		if member.current_task != null and not member.current_task.is_finished():
-			continue
-		if not member.task_queue.is_empty():
-			continue
-		var remaining: Array = []
-		for entry in member.borrowed_tools:
-			var tool_name := String(entry.get("tool_name", ""))
-			var slot := _find_belt_slot_by_name(member, tool_name)
-			var destination := _borrowed_tool_destination(member, tool_name, int(entry.get("building_id", -1)))
-			if slot == -1 or destination == null:
-				remaining.append(entry)
-				continue
-			var task := TaskBuilderService.build_tool_task(member, TaskBuilderService.STORE_TOOL_TASK_DEFINITION_PATH, tool_name, destination, slot)
-			if task == null:
-				remaining.append(entry)
-				continue
-			task.context[BORROWED_TOOL_RETURN_KEY] = true
-			_wire_transport_task(task, member)
-			if member.current_task == null or member.current_task.is_finished():
-				if not member.assign_task(task, _resolve_age_band(member)):
-					remaining.append(entry)
-					continue
-			else:
-				TaskQueueService.push_follow_up_task(member, task)
-			if DebugLogging.ENABLED and DebugLogging.SHOW_JOB_BOARD_LOGS:
-				print("[JOB BOARD] #%d %s: ripone %s in %s #%d (preso per un lavoro)." % [
-					member.id, member.name, tool_name, destination.building_type_name, destination.id
-				])
-		member.borrowed_tools = remaining
-
-
-# Primo slot della cintura con l'attrezzo `tool_name`, -1 se nessuno.
-func _find_belt_slot_by_name(member: HumanIndividual, tool_name: String) -> int:
-	if tool_name == "":
-		return -1
-	for slot in range(member.get_tool_slot_count()):
-		if member.get_equipped_tool(slot) == tool_name:
-			return slot
-	return -1
-
-
-# Dove riporre un attrezzo in prestito: l'edificio da cui è stato preso, se esiste ancora e lo accetta; altrimenti il
-# deposito migliore (WarehouseSelectionService.find_best). null se nessuno.
-func _borrowed_tool_destination(member: HumanIndividual, tool_name: String, building_id: int) -> Building:
-	var origin := _find_building_by_id(building_id) if building_id >= 0 else null
-	if origin != null and not origin.is_demolished and origin.is_complete and BuildingStorageService.can_accept(origin, tool_name):
-		return origin
-	return WarehouseSelectionService.find_best(
-		macro_world, member.position, member.home_macro_coords, tool_name, 1, [], PathfindingService.reachability_for(member)
-	)
+	for created in ToolFetchService.return_borrowed_tools(_job_board_context()):
+		_wire_transport_task(created["task"], created["member"])
 
 
 # Bottone "Taglia" / "Estrai": lo strato dell'ordine con i limiti del popup del comando e il valore ricordato.
-var _drawer_zone_order_kind: String = DRAWER_ORDER_TYPE_CUT
+var _drawer_zone_order_kind: String = DrawerOrderService.TYPE_CUT
 # Passo della carne nello strato "Caccia" (i valori del popup, HuntZoneService.MEAT_TARGET_OPTIONS: 5, 10, 15, 20).
 const DRAWER_HUNT_MEAT_STEP := 5
 
@@ -12139,7 +10602,7 @@ func _on_drawer_zone_order_requested(kind: String) -> void:
 		return
 	_cancel_map_picks()
 	_drawer_zone_order_kind = kind
-	if kind == DRAWER_ORDER_TYPE_HUNT:
+	if kind == DrawerOrderService.TYPE_HUNT:
 		# Carne da portare a casa come nel popup (valori fissi, passo 5, stesso valore ricordato) e la destinazione.
 		_sync_butcher_destination_button()
 		_task_assignment_panel.open_zone_order_overlay(
@@ -12147,14 +10610,14 @@ func _on_drawer_zone_order_requested(kind: String) -> void:
 			int(HuntZoneService.MEAT_TARGET_OPTIONS.max()), UserOptions.hunt_zone_meat_target, UserOptions.work_area_auto_zone,
 			[], {}, DRAWER_HUNT_MEAT_STEP
 		)
-	elif kind == DRAWER_ORDER_TYPE_GATHER:
+	elif kind == DrawerOrderService.TYPE_GATHER:
 		# La stessa scelta del popup "Raccogli nelle zone di lavoro" (risorse presenti nelle zone con la raccolta), poi i viaggi.
 		_task_assignment_panel.open_zone_order_overlay(
 			kind, tr("drawer_gather_title"), tr("work_area_gather_trips_label"), 1, HaulZoneService.WORK_AREA_MAX_TRIPS,
 			UserOptions.work_area_gather_trips, UserOptions.work_area_auto_zone,
 			HaulZoneService.list_work_area_resources(game_data, macro_world), UserOptions.get_pickup_default_choice()
 		)
-	elif kind == DRAWER_ORDER_TYPE_QUARRY:
+	elif kind == DrawerOrderService.TYPE_QUARRY:
 		_task_assignment_panel.open_zone_order_overlay(
 			kind, tr("drawer_quarry_title"), tr("quarry_order_dialog_count"), QuarryZoneService.COUNT_MIN,
 			QuarryZoneService.COUNT_MAX, UserOptions.work_area_quarry_count, UserOptions.work_area_auto_zone
@@ -12173,12 +10636,12 @@ var _drawer_cut_zone_picking: bool = false
 
 func _on_drawer_zone_pick_requested() -> void:
 	var kind := _drawer_zone_order_kind
-	var reserved := _zone_order_reserved(kind)
+	var reserved := DrawerOrderService.zone_reserved(human_individuals, kind)
 	# Raccolta: le zone con qualcosa per la scelta fatta nello strato (o per "Tutto", se non ancora scelta).
-	var gather_order := _drawer_gather_order_fields(_task_assignment_panel.get_gather_choice()) if kind == DRAWER_ORDER_TYPE_GATHER else {}
+	var gather_order := DrawerOrderService.gather_order_fields(_task_assignment_panel.get_gather_choice()) if kind == DrawerOrderService.TYPE_GATHER else {}
 	var valid_ids: Array[int] = []
-	for area in _zone_order_areas(kind):
-		if _zone_order_area_has_targets(kind, area, null, reserved, gather_order):
+	for area in DrawerOrderService.zone_areas(game_data, kind):
+		if DrawerOrderService.area_has_targets(_job_board_context(), kind, area, null, reserved, gather_order):
 			valid_ids.append(area.id)
 	if valid_ids.is_empty():
 		if _task_assignment_panel != null and is_instance_valid(_task_assignment_panel):
@@ -12194,25 +10657,25 @@ func _on_drawer_zone_pick_requested() -> void:
 
 # "Invia in coda" dello strato: nuovo ordine di zona (valore ricordato come nel popup del comando).
 func _on_drawer_zone_order_submitted(kind: String, count: int, zone_id: int) -> void:
-	if game_data == null or not JobBoardService.is_enabled(human_folk) or not _is_zone_order_type(kind):
+	if game_data == null or not JobBoardService.is_enabled(human_folk) or not DrawerOrderService.is_zone_order_type(kind):
 		return
 	var clamped := 0
 	var extra: Dictionary = {}
-	if kind == DRAWER_ORDER_TYPE_HUNT:
+	if kind == DrawerOrderService.TYPE_HUNT:
 		# Uno dei valori del popup; destinazione quella condivisa di adesso (salvata nell'ordine).
 		clamped = clampi(
 			snappedi(count, DRAWER_HUNT_MEAT_STEP), int(HuntZoneService.MEAT_TARGET_OPTIONS.min()), int(HuntZoneService.MEAT_TARGET_OPTIONS.max())
 		)
 		UserOptions.hunt_zone_meat_target = clamped
 		extra = {"butcher_destination": ButcherDestinationService.resolve_default(game_data.last_butcher_destination, macro_world, human_folk)}
-	elif kind == DRAWER_ORDER_TYPE_GATHER:
+	elif kind == DrawerOrderService.TYPE_GATHER:
 		var choice: Dictionary = _task_assignment_panel.get_gather_choice() if _task_assignment_panel != null and is_instance_valid(_task_assignment_panel) else {}
 		if choice.is_empty():
 			return
-		extra = _drawer_gather_order_fields(choice)
+		extra = DrawerOrderService.gather_order_fields(choice)
 		clamped = clampi(count, 1, HaulZoneService.WORK_AREA_MAX_TRIPS)
 		UserOptions.work_area_gather_trips = clamped
-	elif kind == DRAWER_ORDER_TYPE_QUARRY:
+	elif kind == DrawerOrderService.TYPE_QUARRY:
 		clamped = clampi(count, QuarryZoneService.COUNT_MIN, QuarryZoneService.COUNT_MAX)
 		UserOptions.work_area_quarry_count = clamped
 	else:
@@ -12223,112 +10686,11 @@ func _on_drawer_zone_order_submitted(kind: String, count: int, zone_id: int) -> 
 	_refresh_pending_entries()
 
 
-# Nuovo ordine di zona in coda (dal cassetto o dal magazzino, _auto_request_stock); `extra` = campi del tipo. Ritorna l'id.
+# Nuovo ordine di zona in coda (dal cassetto o dal magazzino, DrawerOrderService.add_zone_order); ritorna l'id.
 func _create_drawer_zone_order(kind: String, count: int, zone_id: int, extra: Dictionary = {}) -> int:
-	var order_id := game_data.next_drawer_order_id
-	game_data.next_drawer_order_id += 1
-	# "total": quanto chiesto all'inizio; "done_before": fatto nelle prese precedenti (interruzioni, riprese da altri);
-	# "started": preso almeno una volta (2026-10-09, avanzamento dell'ordine intero nella riga).
-	var new_order := {
-		"id": order_id, "type": kind, "count": count, "zone_id": zone_id, "taken": false, "done_seen": 0,
-		"total": count, "done_before": 0, "started": false,
-	}
-	new_order.merge(extra)
-	if extra.has(StockRequestService.ORDER_KEY):
-		new_order[STOCK_CREATED_AT_KEY] = _job_board_now()
-		_mark_inventory_pending(new_order)
-	game_data.drawer_orders.append(new_order)
-	if DebugLogging.ENABLED and DebugLogging.SHOW_JOB_BOARD_LOGS:
-		print("[JOB BOARD] Ordine del cassetto #%d: %s ×%d (zona %s)%s." % [
-			order_id, kind, count, "automatica" if zone_id < 0 else "#%d" % zone_id,
-			(" dal magazzino per %s" % String(extra[StockRequestService.ORDER_KEY])) if extra.has(StockRequestService.ORDER_KEY) else "",
-		])
-	return order_id
-
-
-# Campi della voce "Raccogli" dalla scelta del menu (PickupChoiceMenu.get_selected()); vuota = "Tutto".
-func _drawer_gather_order_fields(choice: Dictionary) -> Dictionary:
-	return {
-		"criterion_kind": int(choice.get("kind", PickUpAction.CriterionKind.ALL)),
-		"criterion_category": int(choice.get("category", -1)),
-		"resource_name": String(choice.get("resource_name", "")),
-	}
-
-
-# Ordine di zona del cassetto portato da `task` e lavoro fatto: {"order_id", "done"}; {} se nessuno. Taglio ed
-# estrazione: dalla serie (il lavoro o la sua consegna). Raccolta: dalla zona della raccolta (viaggi conclusi =
-# ripetizioni già fatte, più questo se la raccolta del viaggio è già avvenuta).
-func _task_drawer_zone_info(task: Task) -> Dictionary:
-	if task == null:
-		return {}
-	var series := _task_zone_series(task)
-	if not series.is_empty() and series.has(DRAWER_ORDER_SERIES_KEY):
-		# Caccia: fatti = carne consegnata ("delivered").
-		return {
-			"order_id": int(series[DRAWER_ORDER_SERIES_KEY]), "done": int(series.get("done", series.get("delivered", 0))),
-			"series_id": String(series.get("id", "")),
-		}
-	var zone := HaulZoneService.get_zone(task.context)
-	if not zone.is_empty() and zone.has(DRAWER_ORDER_SERIES_KEY):
-		var done := TaskRepeatRules.get_count(task.context)
-		for step_index in range(mini(task.current_step_index, task.steps.size())):
-			if task.steps[step_index] is PickUpAction:
-				done += 1
-				break
-		return {"order_id": int(zone[DRAWER_ORDER_SERIES_KEY]), "done": done}
-	return {}
-
-
-# Serie di taglio o di estrazione portata da `task` (il lavoro o la sua consegna), o serie di carne della caccia (la caccia
-# o la macellazione nata da lei, 2026-10-09); {} se nessuna.
-func _task_zone_series(task: Task) -> Dictionary:
-	if task == null:
-		return {}
-	var series := CutZoneService.get_series(task.context)
-	if series.is_empty():
-		series = CutZoneService.get_delivery_series(task)
-	if series.is_empty():
-		series = QuarryZoneService.get_series(task.context)
-	if series.is_empty():
-		series = QuarryZoneService.get_delivery_series(task)
-	if series.is_empty():
-		series = HuntZoneService.get_meat_series(task.context)
-	return series
-
-
-# Id dell'ordine di zona del cassetto portato da `task`; -1 se nessuno.
-func _drawer_cut_order_of(task: Task) -> int:
-	return int(_task_drawer_zone_info(task).get("order_id", -1))
-
-
-# Chi porta le serie degli ordini di zona: id ordine -> {"members": [HumanIndividual], "done": fatti (il più alto)}.
-func _collect_drawer_cut_claims() -> Dictionary:
-	var claims: Dictionary = {}
-	for member in human_individuals:
-		for task in _member_open_tasks(member):
-			var info := _task_drawer_zone_info(task)
-			if info.is_empty():
-				continue
-			var order_id := int(info["order_id"])
-			if not claims.has(order_id):
-				claims[order_id] = {"members": [], "done": 0}
-			var claim: Dictionary = claims[order_id]
-			if not (claim["members"] as Array).has(member):
-				(claim["members"] as Array).append(member)
-			claim["done"] = maxi(int(claim["done"]), int(info["done"]))
-	return claims
-
-
-# Fatti di una serie con ordine del cassetto: annotati sull'ordine; serie finita = ordine tolto.
-func _note_drawer_cut_progress(series: Dictionary) -> void:
-	if not series.has(DRAWER_ORDER_SERIES_KEY):
-		return
-	var order := _find_drawer_order(int(series[DRAWER_ORDER_SERIES_KEY]))
-	if order.is_empty() or not bool(order.get("taken", false)):
-		return
-	order["done_seen"] = maxi(int(order.get("done_seen", 0)), int(series.get("done", 0)))
-	if int(series.get("done", 0)) >= int(series.get("target", 0)):
-		_remove_drawer_order(int(order["id"]))
+	var order := DrawerOrderService.add_zone_order(game_data, kind, count, zone_id, extra)
+	_mark_new_stock_order(order)
+	return int(order["id"])
 
 
 # --- Ordini di caccia del cassetto: fine della serie (2026-10-09) ---
@@ -12351,14 +10713,14 @@ func _on_hunt_zone_series_ended(hunter: HumanIndividual, series: Dictionary, rea
 	# Zona automatica (2026-10-09): dopo un'uscita a vuoto si prova un'altra zona con prede, prima di arrendersi.
 	if reason == HuntZoneService.SERIES_END_NO_PREY and _try_switch_hunt_zone(hunter, series):
 		return
-	if not series.has(DRAWER_ORDER_SERIES_KEY) or game_data == null:
+	if not series.has(DrawerOrderService.SERIES_KEY) or game_data == null:
 		return
-	var order := _find_drawer_order(int(series[DRAWER_ORDER_SERIES_KEY]))
+	var order := DrawerOrderService.find(game_data, int(series[DrawerOrderService.SERIES_KEY]))
 	if order.is_empty() or not bool(order.get("taken", false)):
 		return
 	order["done_seen"] = maxi(int(order.get("done_seen", 0)), int(series.get("delivered", 0)))
 	if reason == HuntZoneService.SERIES_END_COMPLETE:
-		_remove_drawer_order(int(order["id"]))
+		DrawerOrderService.remove(game_data, int(order["id"]))
 		return
 	var area := WorkAreaService.find_by_id(game_data, int(series.get("work_area_id", -1)))
 	var alert := {
@@ -12370,14 +10732,14 @@ func _on_hunt_zone_series_ended(hunter: HumanIndividual, series: Dictionary, rea
 		alert["order_id"] = int(order["id"])
 		alert["until"] = _job_board_now() + DRAWER_HUNT_NO_PREY_ALERT_DAYS
 		_drawer_hunt_no_prey_alerts.append(alert)
-		_remove_drawer_order(int(order["id"]))
+		DrawerOrderService.remove(game_data, int(order["id"]))
 		return
 	# Zona automatica senza più zone da provare (2026-10-10, contro il loop: prima tornava in coda e veniva ripreso con le
 	# zone provate azzerate, all'infinito): l'ordine finisce come quello a zona fissata, con l'avviso "Caccia finita".
 	# Già all'obiettivo: tolto come completato, senza avviso.
 	if hunter != null and human_individuals.has(hunter) and _hunt_zones_exhausted(hunter, series):
 		var done := int(order.get("done_before", 0)) + int(order.get("done_seen", 0))
-		var total := _drawer_order_total(order)
+		var total := DrawerOrderService.order_total(order)
 		if done < total:
 			alert["order_id"] = int(order["id"])
 			alert["until"] = _job_board_now() + DRAWER_HUNT_NO_PREY_ALERT_DAYS
@@ -12388,10 +10750,10 @@ func _on_hunt_zone_series_ended(hunter: HumanIndividual, series: Dictionary, rea
 		# Ordine del magazzino (2026-10-11): niente nuove cacce automatiche per un giorno, invece di ricrearne una al secondo.
 		if order.has(StockRequestService.ORDER_KEY):
 			_stock_hunt_pause_until = _job_board_now() + DRAWER_HUNT_NO_PREY_ALERT_DAYS
-		_remove_drawer_order(int(order["id"]))
+		DrawerOrderService.remove(game_data, int(order["id"]))
 		return
 	order[DRAWER_HUNT_NO_PREY_KEY] = alert
-	_return_drawer_cut_order(order)
+	DrawerOrderService.return_order(_job_board_context(), order)
 	if hunter != null:
 		hunter.skip_job_board_once = true
 
@@ -12406,8 +10768,8 @@ func _try_switch_hunt_zone(hunter: HumanIndividual, series: Dictionary) -> bool:
 		return false
 	if not bool(series.get(HuntZoneService.SERIES_AUTO_ZONE_KEY, false)):
 		return false
-	if series.has(DRAWER_ORDER_SERIES_KEY):
-		var order := _find_drawer_order(int(series[DRAWER_ORDER_SERIES_KEY]))
+	if series.has(DrawerOrderService.SERIES_KEY):
+		var order := DrawerOrderService.find(game_data, int(series[DrawerOrderService.SERIES_KEY]))
 		if order.is_empty() or not bool(order.get("taken", false)) or int(order.get("zone_id", -1)) >= 0:
 			return false
 	var tried := HuntZoneService.get_tried_zone_ids(series)
@@ -12452,7 +10814,7 @@ func _collect_hunt_no_prey_entries() -> Array[Dictionary]:
 	if game_data == null:
 		return entries
 	for order in game_data.drawer_orders:
-		if String(order.get("type", "")) != DRAWER_ORDER_TYPE_HUNT or bool(order.get("taken", false)):
+		if String(order.get("type", "")) != DrawerOrderService.TYPE_HUNT or bool(order.get("taken", false)):
 			continue
 		var alert: Variant = order.get(DRAWER_HUNT_NO_PREY_KEY, null)
 		if alert is Dictionary:
@@ -12479,292 +10841,47 @@ func _hunt_no_prey_entry(order_id: int, alert: Dictionary) -> Dictionary:
 	})
 
 
-# Ordini di zona presi che nessuno porta più: tornano in coda con quello che resta, o spariscono se finiti.
-func _settle_drawer_cut_orders() -> void:
-	if game_data == null:
-		return
-	var claims := _collect_drawer_cut_claims()
-	for order in game_data.drawer_orders.duplicate():
-		if not _is_zone_order_type(String(order.get("type", ""))) or not bool(order.get("taken", false)):
-			continue
-		var order_id := int(order["id"])
-		if claims.has(order_id):
-			order["done_seen"] = maxi(int(order.get("done_seen", 0)), int(claims[order_id]["done"]))
-			continue
-		_return_drawer_cut_order(order, true)
-
-
-# `end_if_zone_exhausted` (serie chiusa da sola, 2026-10-09): con la zona scelta dal giocatore senza più risorse (o
-# sparita) l'ordine finisce, come il comando diretto; con la zona automatica torna in coda (un'altra zona può averla).
-func _return_drawer_cut_order(order: Dictionary, end_if_zone_exhausted: bool = false) -> void:
-	var remaining := int(order.get("count", 1)) - int(order.get("done_seen", 0))
-	if remaining <= 0 or (end_if_zone_exhausted and _drawer_order_fixed_zone_exhausted(order)):
-		_remove_drawer_order(int(order["id"]))
-		return
-	order["total"] = _drawer_order_total(order)
-	order["done_before"] = int(order.get("done_before", 0)) + int(order.get("done_seen", 0))
-	order["count"] = remaining
-	order["taken"] = false
-	order["done_seen"] = 0
-
-
-# Totale chiesto all'inizio (ordini salvati prima di "total": quello che resta più quello già fatto).
-func _drawer_order_total(order: Dictionary) -> int:
-	return int(order.get("total", int(order.get("count", 1)) + int(order.get("done_before", 0))))
-
-
-# Zona fissata dell'ordine sparita, senza più il lavoro o senza più risorse (non prenotate, per la scelta dell'ordine);
-# macrocella non attiva = non si sa, non esaurita.
-func _drawer_order_fixed_zone_exhausted(order: Dictionary) -> bool:
-	var zone_id := int(order.get("zone_id", -1))
-	if zone_id < 0:
-		return false
-	var order_type := String(order.get("type", DRAWER_ORDER_TYPE_CUT))
-	var area: WorkArea = WorkAreaService.find_by_id(game_data, zone_id)
-	if area == null or not _zone_order_areas(order_type).has(area):
-		return true
-	if not live_cells.has(area.macro_coords):
-		return false
-	return not _zone_order_area_has_targets(order_type, area, null, _zone_order_reserved(order_type), order)
-
-
-# Riga di un ordine di zona: "Taglia N piante · …" / "Estrai N pietre · …" con "Zona automatica" o il nome della zona,
-# icona del lavoro; 🎯 sulla zona fissata.
-func _drawer_cut_job(provider: Dictionary, order: Dictionary, claims: Dictionary) -> Dictionary:
-	var order_type := String(order.get("type", DRAWER_ORDER_TYPE_CUT))
-	var is_quarry := order_type == DRAWER_ORDER_TYPE_QUARRY
-	var order_id := int(order["id"])
-	var zone_id := int(order.get("zone_id", -1))
-	var area: WorkArea = WorkAreaService.find_by_id(game_data, zone_id) if zone_id >= 0 else null
-	var claim: Dictionary = claims.get(order_id, {})
-	var is_assigned := bool(order.get("taken", false)) and not claim.is_empty()
-	var remaining := maxi(int(order.get("count", 1)) - (int(claim.get("done", 0)) if is_assigned else 0), 1)
-	# Riga (2026-10-09): appena creato "<quanti>"; una volta preso, l'avanzamento dell'ordine intero "fatti/totale" (anche
-	# attraverso interruzioni e riprese da altri). Zona: solo quella scelta dal giocatore.
-	var total := _drawer_order_total(order)
-	var done := int(order.get("done_before", 0)) + (int(claim.get("done", 0)) if is_assigned else 0)
-	# La carne consegnata può superare l'obiettivo (l'ultima preda porta tutta la sua); gli altri tipi no.
-	if order_type != DRAWER_ORDER_TYPE_HUNT:
-		done = mini(done, total)
-	var started := bool(order.get("started", false)) or is_assigned or done > 0
-	var row_key := "drawer_order_quarry_row" if is_quarry else "drawer_order_cut_row"
-	var icon_key := "quarry" if is_quarry else "cut"
-	var row_args := {"count": total, "done": done, "total": total}
-	if order_type == DRAWER_ORDER_TYPE_GATHER:
-		row_key = "drawer_order_gather_row"
-		row_args["target"] = _drawer_gather_target_text(order)
-		icon_key = "pickup"
-	elif order_type == DRAWER_ORDER_TYPE_HUNT:
-		row_key = "drawer_order_hunt_row"
-		icon_key = "hunt"
-	# Avviato (2026-10-11): il nome senza conto, "fatti/totale" va nella seconda riga della voce ("progress").
-	var progress := ""
-	if started:
-		row_key = row_key.replace("_row", "_started_row")
-		progress = "%d/%d" % [done, total]
-	elif total == 1:
-		row_key += "_one"
-	var row_name := tr(row_key).format(row_args)
-	if zone_id >= 0:
-		row_name = tr("drawer_order_zone_suffix").format({
-			"row": row_name, "zone": area.name if area != null else tr("drawer_cut_zone_gone"),
-		})
-	var macro := Vector2i(-1, -1)
-	var microcell := Vector2i(-1, -1)
-	if area != null:
-		macro = area.macro_coords
-		microcell = area.rect.position + area.rect.size / 2
-	# Ordine creato dal magazzino (2026-10-11, _auto_request_stock): magazzino nell'angolo dell'icona della riga.
-	var from_warehouse := order.has(StockRequestService.ORDER_KEY)
-	return {
-		"key": JobBoardService.drawer_order_key(order_id), "kind": order_type, "name": row_name,
-		"warehouse": from_warehouse, "progress": progress,
-		"text": (row_name + "\n" + tr("task_assignment_warehouse_tag_tooltip")) if from_warehouse else row_name,
-		"log_name": "ordine del cassetto #%d %s ×%d (%s)" % [order_id, order_type, remaining, "zona automatica" if zone_id < 0 else "zona #%d" % zone_id],
-		"icon": {"command": icon_key}, "macro": macro, "microcell": microcell,
-		# Raggiungibilità vera nel controllo di idoneità (zona e bersaglio per chi lo prende): qui un bersaglio fuori dalla
-		# macrocella, che PathfindingService.reachability_for dà sempre per raggiungibile.
-		"reach_target": {"macro_x": -1, "macro_y": -1, "micro_x": 0, "micro_y": 0},
-		"entry_kind": "work_area" if area != null else "drawer_order", "id": area.id if area != null else order_id,
-		"sort": float(order_id) + float(DRAWER_ZONE_JOB_SORT_OFFSET.get(order_type, 4500000.0)),
-		"assigned": is_assigned, "hidden": false,
-		"blocked_reason": "" if is_assigned else _drawer_cut_blocked_reason(order_type, zone_id, area, order),
-		"target": area, "provider": provider, "order": order,
-	}
-
-
-# Cosa raccogliere, per la riga di "Raccogli": la risorsa, "Tutto il cibo" / "Tutti i materiali" o "Tutto" (gli stessi
-# testi del popup).
-func _drawer_gather_target_text(order: Dictionary) -> String:
-	match int(order.get("criterion_kind", PickUpAction.CriterionKind.ALL)):
-		PickUpAction.CriterionKind.NAME:
-			return IconRegistry.get_resource_display_name(String(order.get("resource_name", "")))
-		PickUpAction.CriterionKind.CATEGORY:
-			# "ogni cibo" (2026-10-11, richiesta utente) nella riga, al posto di "Tutto il cibo" del popup.
-			if int(order.get("criterion_category", -1)) == SecondaryResourceTypes.Category.FOOD:
-				return tr("drawer_order_gather_all_food")
-			var keys: Array = PickupChoiceMenu.CATEGORY_TEXT_KEYS.get(int(order.get("criterion_category", -1)), ["", ""])
-			if String(keys[1]) != "":
-				return tr(String(keys[1]))
-	return tr("pickup_choice_all")
-
-
-# Motivo per cui nessuno può prendere l'ordine ora ("" = prendibile): nessuno in età da lavoro con l'attrezzo; nessuna
-# zona valida (zona fissata sparita, senza il lavoro o senza piante / rocce / risorse da raccogliere; con la zona
-# automatica nessuna zona adatta).
-func _drawer_cut_blocked_reason(order_type: String, zone_id: int, area: WorkArea, order: Dictionary = {}) -> String:
-	var tool_reason := _zone_order_tool_blocked_reason(order_type)
-	if tool_reason != "":
-		return tool_reason
-	var areas := _zone_order_areas(order_type)
-	var reserved := _zone_order_reserved(order_type)
-	if zone_id >= 0:
-		if area == null or not areas.has(area) or not _zone_order_area_has_targets(order_type, area, null, reserved, order):
-			return tr("drawer_cut_no_valid_zone")
-		return ""
-	for candidate in areas:
-		if _zone_order_area_has_targets(order_type, candidate, null, reserved, order):
-			return ""
-	return tr("drawer_cut_no_valid_zone")
-
-
-# Zona e bersaglio per `worker` ({"area", "plant"} per il taglio, {"area", "rock"} per l'estrazione; {} se nessuno): zona
-# fissata (se ha ancora il lavoro) o automatica (choose_work_area per lui), poi il bersaglio come il comando
-# (choose_plant / choose_rock). Solo macrocelle attive.
-func _drawer_cut_pick(worker: HumanIndividual, job: Dictionary) -> Dictionary:
-	var order: Dictionary = job["order"]
-	var order_type := String(order.get("type", DRAWER_ORDER_TYPE_CUT))
-	var zone_id := int(order.get("zone_id", -1))
-	var reserved := _zone_order_reserved(order_type)
-	var area: WorkArea = null
-	if zone_id >= 0:
-		area = WorkAreaService.find_by_id(game_data, zone_id)
-		if area == null or not _zone_order_areas(order_type).has(area):
-			return {}
-	elif order_type == DRAWER_ORDER_TYPE_HUNT:
-		area = HuntZoneService.choose_work_area(game_data, worker, live_cells)
-	elif order_type == DRAWER_ORDER_TYPE_QUARRY:
-		area = QuarryZoneService.choose_work_area(game_data, macro_world, worker, reserved)
-	elif order_type == DRAWER_ORDER_TYPE_GATHER:
-		area = HaulZoneService.choose_work_area(
-			game_data, macro_world, worker, int(order.get("criterion_kind", PickUpAction.CriterionKind.ALL)),
-			int(order.get("criterion_category", -1)), String(order.get("resource_name", ""))
-		)
-	else:
-		area = CutZoneService.choose_work_area(game_data, live_cells, worker, reserved, _drawer_order_cut_yield(order))
-	if area == null:
-		return {}
-	# Caccia: la zona, in una macrocella attiva.
-	if order_type == DRAWER_ORDER_TYPE_HUNT:
-		return {"area": area} if live_cells.has(area.macro_coords) else {}
-	if order_type == DRAWER_ORDER_TYPE_GATHER:
-		# Zona con qualcosa per la scelta, raggiungibile da lui, in una macrocella attiva.
-		if not _zone_order_area_has_targets(order_type, area, worker, reserved, order):
-			return {}
-		return {"area": area}
-	if order_type == DRAWER_ORDER_TYPE_QUARRY:
-		if not live_cells.has(area.macro_coords):
-			return {}
-		var macro_state := macro_world.get_cell_state_at(area.macro_coords.x, area.macro_coords.y)
-		var rock: Variant = QuarryZoneService.choose_rock(area, macro_state, worker, reserved)
-		if rock == null:
-			return {}
-		return {"area": area, "rock": {"macro_coords": area.macro_coords, "position": rock}}
-	var plant := CutZoneService.choose_plant(area, live_cells, worker, reserved, _drawer_order_cut_yield(order))
-	if plant.is_empty():
-		return {}
-	return {"area": area, "plant": plant}
-
-
-# Risorsa voluta da un ordine di taglio del magazzino (solo le piante che la danno, CutZoneService.SERIES_YIELD_KEY); ""
-# per gli ordini del giocatore (qualunque pianta ammessa dalla zona).
-func _drawer_order_cut_yield(order: Dictionary) -> String:
-	if String(order.get("type", "")) != DRAWER_ORDER_TYPE_CUT:
-		return ""
-	return String(order.get(StockRequestService.ORDER_KEY, ""))
-
-
-# Idoneità come il comando Taglia / Estrai: età, attrezzo (in cintura o nello zaino, _command_tool_rejection), una zona e
-# un bersaglio per lui, e la task di prova passa il controllo di età/energia.
-func _drawer_cut_job_rejection(worker: HumanIndividual, job: Dictionary) -> String:
-	var order_type := String((job["order"] as Dictionary).get("type", DRAWER_ORDER_TYPE_CUT))
-	var age_band := _resolve_age_band(worker)
-	if age_band == HumanTypes.AgeBand.INFANT or age_band == HumanTypes.AgeBand.CHILD:
-		return HumanIndividual.ASSIGN_REJECT_TOO_YOUNG
-	# Attrezzi (2026-10-11): addosso, oppure da prendere in deposito se nessuno li ha (_zone_order_tool_rejection).
-	var tool_rejection := _zone_order_tool_rejection(worker, order_type)
-	if tool_rejection != "":
-		return tool_rejection
-	# Caccia con l'equipaggiamento già addosso: coltello in cintura, o nello zaino con posto in cintura.
-	if order_type == DRAWER_ORDER_TYPE_HUNT and _zone_order_missing_categories(worker, order_type).is_empty() \
-			and HuntZoneService.get_hunt_rejection(worker) != "":
-		return "coltello o arma mancanti, o cintura piena"
-	var pick := _drawer_cut_pick(worker, job)
-	if pick.is_empty():
-		return "nessuna zona valida"
-	var area: WorkArea = pick["area"]
-	var task: Task = null
-	if order_type == DRAWER_ORDER_TYPE_GATHER:
-		var order: Dictionary = job["order"]
-		var trips := maxi(int(order.get("count", 1)), 1)
-		var zone := HaulZoneService.make_work_area_zone(
-			area.id, int(order.get("criterion_kind", PickUpAction.CriterionKind.ALL)), int(order.get("criterion_category", -1)),
-			String(order.get("resource_name", "")), maxi(trips - 1, 0)
-		)
-		task = TaskBuilderService.build_haul_zone_task(zone, trips > 1, 0)
-	elif order_type == DRAWER_ORDER_TYPE_HUNT:
-		task = TaskBuilderService.build_hunt_zone_task(area.id)
-	elif order_type == DRAWER_ORDER_TYPE_QUARRY:
-		var rock: Dictionary = pick["rock"]
-		task = TaskBuilderService.build_quarry_task(worker, rock["macro_coords"], rock["position"], area.id)
-	else:
-		task = TaskBuilderService.build_cut_task(worker, pick["plant"], area.id)
-	if task == null:
-		return "definizione mancante"
-	return worker.get_assign_rejection_reason(task, age_band)
-
-
 # Presa: la serie del comando di oggi, in silenzio, con l'id dell'ordine nella serie; solo se il pipottino ha davvero la
 # task l'ordine diventa "preso".
 func _assign_drawer_cut_job(worker: HumanIndividual, job: Dictionary) -> void:
 	var order: Dictionary = job["order"]
-	var order_type := String(order.get("type", DRAWER_ORDER_TYPE_CUT))
+	var order_type := String(order.get("type", DrawerOrderService.TYPE_CUT))
 	var order_id := int(order["id"])
-	if _find_drawer_order(order_id).is_empty() or bool(order.get("taken", false)):
+	if DrawerOrderService.find(game_data, order_id).is_empty() or bool(order.get("taken", false)):
 		return
-	var pick := _drawer_cut_pick(worker, job)
+	var pick := DrawerOrderJobProvider.pick_zone_target(_job_board_context(), worker, job)
 	if pick.is_empty():
 		return
 	var area: WorkArea = pick["area"]
 	# Attrezzi da prendere in deposito prima del lavoro (2026-10-11): deciso ora, partono dopo l'assegnazione.
 	var fetch_plan := _plan_zone_order_tool_fetch(worker, order_type)
 	var series: Dictionary = {}
-	if order_type == DRAWER_ORDER_TYPE_GATHER:
+	if order_type == DrawerOrderService.TYPE_GATHER:
 		var trips := maxi(int(order.get("count", 1)), 1)
 		_assign_work_area_gather(worker, area, {
 			"kind": int(order.get("criterion_kind", PickUpAction.CriterionKind.ALL)),
 			"category": int(order.get("criterion_category", -1)), "resource_name": String(order.get("resource_name", "")),
 			"repeat": trips > 1, "trips": trips, "stock_fill": order.has(StockRequestService.ORDER_KEY),
 		}, true, order_id)
-	elif order_type == DRAWER_ORDER_TYPE_HUNT:
+	elif order_type == DrawerOrderService.TYPE_HUNT:
 		series = HuntZoneService.make_meat_series(
 			area.id, maxi(int(order.get("count", 1)), 1), String(order.get("butcher_destination", "")),
 			int(order.get("zone_id", -1)) < 0
 		)
-		series[DRAWER_ORDER_SERIES_KEY] = order_id
+		series[DrawerOrderService.SERIES_KEY] = order_id
 		_assign_work_area_hunt(worker, area, series, true, not fetch_plan.is_empty())
-	elif order_type == DRAWER_ORDER_TYPE_QUARRY:
+	elif order_type == DrawerOrderService.TYPE_QUARRY:
 		series = QuarryZoneService.make_series(area.id, maxi(int(order.get("count", 1)), 1))
-		series[DRAWER_ORDER_SERIES_KEY] = order_id
+		series[DrawerOrderService.SERIES_KEY] = order_id
 		_assign_quarry_task(worker, pick["rock"], area.id, series, true)
 	else:
 		series = CutZoneService.make_series(area.id, maxi(int(order.get("count", 1)), 1))
-		series[DRAWER_ORDER_SERIES_KEY] = order_id
-		if _drawer_order_cut_yield(order) != "":
-			series[CutZoneService.SERIES_YIELD_KEY] = _drawer_order_cut_yield(order)
+		series[DrawerOrderService.SERIES_KEY] = order_id
+		if DrawerOrderService.order_cut_yield(order) != "":
+			series[CutZoneService.SERIES_YIELD_KEY] = DrawerOrderService.order_cut_yield(order)
 		_assign_cut_task(worker, pick["plant"], area.id, series, true)
-	for task in _member_open_tasks(worker):
-		if _drawer_cut_order_of(task) == order_id:
+	for task in JobWorkScanService.open_tasks(worker):
+		if DrawerOrderService.order_of_task(task) == order_id:
 			order["taken"] = true
 			order["started"] = true
 			order["done_seen"] = 0
@@ -12811,7 +10928,7 @@ func _collect_direct_command_entries(board_jobs: Array[Dictionary]) -> Array[Dic
 	for job in board_jobs:
 		if String(job["kind"]) == "pile" and job["target"] is GroundPile:
 			var pile: GroundPile = job["target"]
-			pile_job_keys[_pile_claim_key(pile.macro_coords, pile.microcell)] = true
+			pile_job_keys[PileJobProvider.claim_key(pile.macro_coords, pile.microcell)] = true
 	if DebugLogging.ENABLED and DebugLogging.SHOW_IN_PROGRESS_LOGS:
 		_log_in_progress_rows(board_jobs, pile_job_keys)
 	for member in human_individuals:
@@ -12822,9 +10939,9 @@ func _collect_direct_command_entries(board_jobs: Array[Dictionary]) -> Array[Dic
 		if task.task_name == SocialRiteService.TASK_NAME and not bool(task.context.get(SocialRiteService.CONTEXT_ORGANIZER, false)):
 			continue
 		# Carico riportato al magazzino (2026-10-10, CargoReturnService — anche il ritorno nato togliendo un ordine di zona,
-		# DRAWER_ORDER_CARGO_KEY): riga come la task annullata che il carico sta chiudendo (scritta e icona salvate nel
+		# DrawerOrderService.CARGO_KEY): riga come la task annullata che il carico sta chiudendo (scritta e icona salvate nel
 		# context del ritorno; "Carico" se mancano), "Riporta il carico" al posto del bottone, nessuna X; conta "al lavoro".
-		if CargoReturnService.is_cargo_return_task(task) or bool(task.context.get(DRAWER_ORDER_CARGO_KEY, false)):
+		if CargoReturnService.is_cargo_return_task(task) or bool(task.context.get(DrawerOrderService.CARGO_KEY, false)):
 			var origin_text := String(task.context.get(CargoReturnService.CONTEXT_ORIGIN_TEXT, ""))
 			var cargo_text := origin_text if origin_text != "" else tr("task_assignment_cargo_generic")
 			var origin_icon := String(DIRECT_COMMAND_ICON_BY_TASK.get(String(task.context.get(CargoReturnService.CONTEXT_ORIGIN_TASK_NAME, "")), ""))
@@ -12843,7 +10960,7 @@ func _collect_direct_command_entries(board_jobs: Array[Dictionary]) -> Array[Dic
 		# "Cerca lavoro" (2026-10-09, coordinatore passo 2) e "Coordina" (passo 3): riga "Automatico" (partita da sola,
 		# nessuna X), in fondo.
 		if task.task_name == JobBoardService.SEEK_JOB_TASK_NAME or CoordinatorService.is_coordinate_task(task) \
-				or bool(task.context.get(BORROWED_TOOL_RETURN_KEY, false)) or task.context.has(STOCK_DRY_KEY):
+				or bool(task.context.get(ToolFetchService.BORROWED_TOOL_RETURN_KEY, false)) or task.context.has(STOCK_DRY_KEY):
 			entries.append(_pending_entry("%s%d" % [DIRECT_COMMAND_KEY_PREFIX, member.id], text, {
 				"kind": "individual", "id": member.id, "macro": member.home_macro_coords,
 				"sort": float(member.id) + DIRECT_COMMAND_SORT_OFFSET,
@@ -12873,42 +10990,29 @@ func _is_task_on_board(task: Task, pile_job_keys: Dictionary) -> bool:
 # anche dopo l'ultima raccolta (2026-10-09): il mucchio vuoto sparisce con la sua riga, e il cammino fino al magazzino
 # non diventa una riga "Diretto".
 func _task_board_reason(task: Task, pile_job_keys: Dictionary) -> String:
-	if BUILD_TASK_NAMES.has(task.task_name) or DEMOLISH_TASK_NAMES.has(task.task_name) or PRODUCE_TASK_NAMES.has(task.task_name):
+	if JobWorkScanService.BUILD_TASK_NAMES.has(task.task_name) or JobWorkScanService.DEMOLISH_TASK_NAMES.has(task.task_name) or JobWorkScanService.PRODUCE_TASK_NAMES.has(task.task_name):
 		return "costruzione, demolizione o produzione"
 	if BodyBurialService.is_bury_task(task):
 		return "sepoltura"
 	# Riparazione (2026-10-10): della coda solo se l'edificio ha la riparazione richiesta (col mirino è un comando diretto).
-	if REPAIR_TASK_NAMES.has(task.task_name):
+	if JobWorkScanService.REPAIR_TASK_NAMES.has(task.task_name):
 		for step in task.steps:
 			if step is RepairAction and (step as RepairAction).target_building != null and (step as RepairAction).target_building.repair_requested:
 				return "riparazione richiesta"
 	if task.context.has(TaskBuilderService.CONTEXT_OUTPUT_JOB_BUILDING_ID):
 		return "uscita piena"
-	if _drawer_cut_order_of(task) >= 0:
+	if DrawerOrderService.order_of_task(task) >= 0:
 		return "ordine del cassetto"
-	if task.context.has(ZONE_ORDER_TOOL_FETCH_KEY):
+	if task.context.has(ToolFetchService.ZONE_ORDER_TOOL_FETCH_KEY):
 		return "attrezzo per un ordine della coda"
 	if task.task_name == INVENTORY_TASK_NAME:
 		return "inventario del magazzino"
-	for key in _task_pile_claim_keys(task):
+	for key in PileJobProvider.task_claim_keys(task, game_data):
 		if pile_job_keys.has(key):
 			return "mucchio della coda"
-	if _is_board_pile_task(task):
+	if PileJobProvider.is_board_pile_task(task):
 		return "ritiro di un mucchio della coda (mucchio vuoto o fuori elenco)"
 	return ""
-
-
-# Ritiro di un mucchio come lavoro della coda: lavoro "Mucchio" preso dalla lista (zona "fino a vuoto" sul mucchio senza
-# etichetta di lavoro) o consegna dopo una demolizione (HaulZoneService.JOB_DELIVERY_KEY senza etichetta di lavoro). Le
-# consegne di taglio ed estrazione hanno l'etichetta: fanno parte del loro lavoro (ordine del cassetto o comando diretto).
-func _is_board_pile_task(task: Task) -> bool:
-	var zone := HaulZoneService.get_zone(task.context)
-	if not zone.is_empty() and HaulZoneService.get_label_task_name(zone) != "":
-		return false
-	if bool(task.context.get(HaulZoneService.JOB_DELIVERY_KEY, false)):
-		return true
-	return not zone.is_empty() and HaulZoneService.get_source_kind(zone) == PickUpAction.SourceKind.GROUND_PILE \
-			and HaulZoneService.is_until_empty(zone)
 
 
 # Log [IN CORSO] (2026-10-09, solo con il debug attivo): una riga per individuo quando la sua riga in "In corso" compare
@@ -12925,7 +11029,7 @@ func _log_in_progress_rows(board_jobs: Array[Dictionary], pile_job_keys: Diction
 		var origin := "diretto"
 		var why := "nessun lavoro della coda la riconosce"
 		var shown := task.get_activity_description()
-		if bool(task.context.get(DRAWER_ORDER_CARGO_KEY, false)):
+		if bool(task.context.get(DrawerOrderService.CARGO_KEY, false)):
 			origin = "riporta il carico"
 			why = "ritorno del carico di un lavoro della coda fermato"
 		elif CargoReturnService.is_cargo_return_task(task):
@@ -12945,7 +11049,7 @@ func _log_in_progress_rows(board_jobs: Array[Dictionary], pile_job_keys: Diction
 						break
 		var zone := HaulZoneService.get_zone(task.context)
 		var keys := "ordine cassetto=%d, mucchio=%s, consegna lavoro=%s, etichetta=%s, ritorno carico=%s, crea=%s" % [
-			_drawer_cut_order_of(task), str(_task_pile_claim_keys(task)),
+			DrawerOrderService.order_of_task(task), str(PileJobProvider.task_claim_keys(task, game_data)),
 			str(bool(task.context.get(HaulZoneService.JOB_DELIVERY_KEY, false))),
 			HaulZoneService.get_label_task_name(zone) if not zone.is_empty() else "",
 			str(CargoReturnService.is_cargo_return_task(task)), _task_creator_text(task),
@@ -12967,12 +11071,12 @@ func _log_in_progress_rows(board_jobs: Array[Dictionary], pile_job_keys: Diction
 func _task_creator_text(task: Task) -> String:
 	if CargoReturnService.is_cargo_return_task(task):
 		return "regola del carico"
-	if _drawer_cut_order_of(task) >= 0:
+	if DrawerOrderService.order_of_task(task) >= 0:
 		return "ordine del cassetto"
 	var zone := HaulZoneService.get_zone(task.context)
 	if bool(task.context.get(HaulZoneService.JOB_DELIVERY_KEY, false)):
 		return "consegna di un lavoro (%s)" % (HaulZoneService.get_label_task_name(zone) if not zone.is_empty() and HaulZoneService.get_label_task_name(zone) != "" else "demolizione")
-	if _is_board_pile_task(task):
+	if PileJobProvider.is_board_pile_task(task):
 		return "lavoro Mucchio della lista"
 	if task.context.has(TaskBuilderService.CONTEXT_OUTPUT_JOB_BUILDING_ID):
 		return "lavoro uscita piena della lista"
@@ -13976,9 +12080,9 @@ func _on_material_too_heavy(individual: HumanIndividual, building: Building, nam
 func _release_too_heavy_job(individual: HumanIndividual, building: Building) -> void:
 	if individual == null or building == null or not human_individuals.has(individual):
 		return
-	if _task_works_on_building(individual.current_task, building, REPAIR_TASK_NAMES):
+	if JobWorkScanService.task_works_on_building(individual.current_task, building, JobWorkScanService.REPAIR_TASK_NAMES):
 		_repair_job_release({"target": building})
-	elif _task_works_on_building(individual.current_task, building, BUILD_TASK_NAMES):
+	elif JobWorkScanService.task_works_on_building(individual.current_task, building, JobWorkScanService.BUILD_TASK_NAMES):
 		_building_job_release({"target": building, "kind": "build"})
 	_refresh_pending_entries()
 
@@ -17177,7 +15281,7 @@ func _on_demolition_started(building: Building) -> void:
 	GroundPileService.drop_repair_materials(game_data, building, macro_world)
 	# La casa si perde qui, non all'abbattimento (2026-10-10, evento di felicità).
 	_apply_home_lost_happiness(building)
-	var freed := _close_tasks_working_on_building(building, PRODUCE_TASK_NAMES, null)
+	var freed := _close_tasks_working_on_building(building, JobWorkScanService.PRODUCE_TASK_NAMES, null)
 	for member in freed:
 		HumanIndividualActionService.resolve_idle_individual(member, _resolve_age_band(member), macro_world)
 	_reconcile_production_units(building)
@@ -17388,7 +15492,7 @@ func _start_building_upgrade(building: Building, chosen_rotation: int = -1) -> v
 	var cost := BuildingUpgradeService.get_upgrade_cost(building.rules, target)
 	var from_type := building.building_type_name
 	var from_name := _building_display_name(building)
-	var freed := _close_tasks_working_on_building(building, PRODUCE_TASK_NAMES, null)
+	var freed := _close_tasks_working_on_building(building, JobWorkScanService.PRODUCE_TASK_NAMES, null)
 	for member in freed:
 		HumanIndividualActionService.resolve_idle_individual(member, _resolve_age_band(member), macro_world)
 	# Scorte a terra (2026-10-04, richiesta utente): PRIMA della trasformazione in cantiere e prima di caricare lo sconto
@@ -17451,7 +15555,7 @@ func _cancel_building_upgrade(building: Building) -> void:
 	if from_rules == null:
 		push_warning("GameScene: annullamento del miglioramento dell'edificio #%d impossibile, tipo di partenza '%s' sconosciuto." % [building.id, from_type])
 		return
-	var freed := _close_tasks_working_on_building(building, BUILD_TASK_NAMES, null)
+	var freed := _close_tasks_working_on_building(building, JobWorkScanService.BUILD_TASK_NAMES, null)
 	var credited: Dictionary = progress.get(BuildingUpgradeService.UPGRADE_CREDITED_KEY, {})
 	var surplus: Dictionary = {}
 	for resource_name in building.stored_resources.keys():
@@ -17522,7 +15626,7 @@ func _on_demolition_cancel_requested(building: Building) -> void:
 	if float(building.construction_progress.get(DemolishAction.LABOR_KEY, 0.0)) > 0.0:
 		_refresh_selected_building_panel()
 		return
-	var freed := _close_tasks_working_on_building(building, DEMOLISH_TASK_NAMES, null)
+	var freed := _close_tasks_working_on_building(building, JobWorkScanService.DEMOLISH_TASK_NAMES, null)
 	# Sgombero annullato dal giocatore (2026-10-10, X del cassetto o "Annulla sgombero"): niente più sgombero automatico.
 	if building.is_rubble():
 		building.rubble_auto_excluded = true
@@ -17811,7 +15915,7 @@ func _on_ground_pile_haul_requested(carrier: HumanIndividual, pile_ref: Dictiona
 			until_empty_zone[HaulZoneService.LABEL_TASK_KEY] = pile_ref[HaulZoneService.LABEL_TASK_KEY]
 		task.context[HaulZoneService.CONTEXT_KEY] = until_empty_zone
 	# Consegna di un lavoro (2026-10-09): il mucchio non è un lavoro "Mucchio" della lista mentre questa task esiste
-	# (_collect_job_delivery_pile_keys); dopo una demolizione la riga dell'individuo dice "Ritiro mucchio (<risorsa>)".
+	# (PileJobProvider.collect_job_delivery_keys); dopo una demolizione la riga dell'individuo dice "Ritiro mucchio (<risorsa>)".
 	task.context[HaulZoneService.JOB_DELIVERY_KEY] = true
 	task.context[HaulZoneService.PILE_RESOURCE_KEY] = resource_names[0] if resource_names.size() == 1 else ""
 	var carrier_age_band := _resolve_age_band(carrier)
@@ -17856,15 +15960,15 @@ func _demolish_building(building: Building, salvaged: Dictionary = {}, completin
 	# "fuori scope"; dal 2026-09-21 lo si richiama dopo la demolizione, vedi sotto.)
 	#
 	# BUGFIX (2026-09-21, richiesta utente): il controllo su context["target_building"] non scattava MAI
-	# (TaskFactory.build_task ripulisce quella chiave dal context, vedi _task_works_on_building) e
-	# ignorava la coda. Ora usa _task_works_on_building (legge il target dagli step) su current_task E su
+	# (TaskFactory.build_task ripulisce quella chiave dal context, vedi JobWorkScanService.task_works_on_building) e
+	# ignorava la coda. Ora usa JobWorkScanService.task_works_on_building (legge il target dagli step) su current_task E su
 	# task_queue: le task che puntano a questo edificio vengono chiuse. Il carico dello zaino segue la regola
 	# unica di CargoReturnService (dal 2026-09-29: ritorno al magazzino se la task chiusa lo possiede, a terra
 	# solo senza magazzino). Gli individui la cui
 	# current_task è stata chiusa vengono rimessi in moto (bisogno/coda/perditempo) DOPO che l'edificio
 	# è demolito (step 6), così una task in coda per lo stesso edificio non può essere ripresa.
 	# Anche le Demolish Task di altri individui sullo stesso edificio (2026-09-27).
-	var individuals_to_resolve: Array[HumanIndividual] = _close_tasks_working_on_building(building, BUILD_AND_DEMOLISH_TASK_NAMES, completing)
+	var individuals_to_resolve: Array[HumanIndividual] = _close_tasks_working_on_building(building, JobWorkScanService.BUILD_AND_DEMOLISH_TASK_NAMES, completing)
 
 	# 2) Residenti: libera gli slot (house_id torna a -1, stesso valore di default di HumanIndividual
 	# senza casa) — solo se l'edificio era residenziale, stesso guard già usato da AssignHouseService/
@@ -18160,7 +16264,7 @@ func _village_daily_calorie_need() -> float:
 # finiscono la loro serie. Nessun dato nuovo da salvare: gli ordini stanno in GameData.drawer_orders.
 #
 # Cadenza (2026-10-11): il controllo gira SOLO all'inizio di un inventario (_on_inventory_started, InventoryAction): gli
-# ordini decisi lì restano nascosti (INVENTORY_PENDING_KEY) ed escono in coda alla fine del conteggio.
+# ordini decisi lì restano nascosti (StockRequestService.INVENTORY_PENDING_KEY) ed escono in coda alla fine del conteggio.
 # ============================================================================================
 
 
@@ -18172,11 +16276,10 @@ func _village_daily_calorie_need() -> float:
 # (uno alla volta), assegnato come gli altri (Più adatto = skill Gestione). Chi lo prende va al deposito più vicino
 # (InventoryAction): all'arrivo il magazzino conta (foto delle scorte in GameData.stock_snapshot, mostrata dal cassetto
 # Scorte) e decide gli ordini (_auto_request_stock, gli annullamenti subito e gratis, i nuovi nascosti con
-# INVENTORY_PENDING_KEY); durata (1 h + 1 h per ordine nuovo) / fattore della Gestione; alla fine gli ordini escono in coda
+# StockRequestService.INVENTORY_PENDING_KEY); durata (1 h + 1 h per ordine nuovo) / fattore della Gestione; alla fine gli ordini escono in coda
 # e parte l'intervallo per il prossimo. La Gestione cresce a ogni inventario (task_completion_effects.tres).
 # ============================================================================================
 const INVENTORY_TASK_NAME := "task_inventory_name"
-const INVENTORY_PENDING_KEY := "inventory_pending"
 const INVENTORY_INTERVAL_OPTIONS: Array[int] = [6, 12, 24, 48, 72, 120]
 # Ritardo dell'inventario (2026-10-11, richiesta utente): campanella e "in ritardo" nel cassetto solo dopo un intero
 # intervallo in coda (ogni 3 g → dopo 3 g), vedi _inventory_overdue_hours.
@@ -18225,7 +16328,7 @@ func _next_inventory_time() -> float:
 func _inventory_workers() -> Array[HumanIndividual]:
 	var workers: Array[HumanIndividual] = []
 	for member in human_individuals:
-		for task in _member_open_tasks(member):
+		for task in JobWorkScanService.open_tasks(member):
 			if task.task_name == INVENTORY_TASK_NAME:
 				workers.append(member)
 				break
@@ -18234,7 +16337,7 @@ func _inventory_workers() -> Array[HumanIndividual]:
 
 func _mark_inventory_pending(order: Dictionary) -> void:
 	if _stock_inventory_pending:
-		order[INVENTORY_PENDING_KEY] = true
+		order[StockRequestService.INVENTORY_PENDING_KEY] = true
 		_stock_inventory_new_orders += 1
 
 
@@ -18317,8 +16420,8 @@ func _on_inventory_finished(worker: Variant, _depot: Variant) -> void:
 		return
 	var released := 0
 	for order in game_data.drawer_orders:
-		if order.has(INVENTORY_PENDING_KEY):
-			order.erase(INVENTORY_PENDING_KEY)
+		if order.has(StockRequestService.INVENTORY_PENDING_KEY):
+			order.erase(StockRequestService.INVENTORY_PENDING_KEY)
 			released += 1
 	game_data.last_inventory_end = _job_board_now()
 	game_data.last_inventory_by = (worker as HumanIndividual).name if worker is HumanIndividual else ""
@@ -18382,7 +16485,7 @@ func _auto_request_stock() -> void:
 	if not _stock_manager_enabled():
 		return
 	var stock := VillageStockService.get_village_stock(macro_world)
-	var claims := _collect_drawer_cut_claims()
+	var claims := DrawerOrderService.collect_zone_claims(human_individuals)
 	var carry_capacity := _stock_average_carry_capacity()
 	# Ordini del magazzino ancora aperti, per risorsa.
 	var open_by_resource: Dictionary = {}
@@ -18430,7 +16533,7 @@ func _auto_request_stock() -> void:
 			if StockRequestService.is_order_surplus(level, quantity, total_coverage, coverage, int(_stock_margin(unit_yield))) \
 					and not _stock_order_too_young(order, level):
 				total_coverage -= coverage
-				_remove_drawer_order(int(order["id"]))
+				DrawerOrderService.remove(game_data, int(order["id"]))
 				orders.remove_at(index)
 				changed = true
 				if DebugLogging.ENABLED and DebugLogging.SHOW_JOB_BOARD_LOGS:
@@ -18448,7 +16551,7 @@ func _auto_request_stock() -> void:
 		if _is_food(String(resource_name)) and _stock_order_blocked_reason(source_kind, extra) != "":
 			for order in orders:
 				if not bool(order.get("taken", false)):
-					_remove_drawer_order(int(order["id"]))
+					DrawerOrderService.remove(game_data, int(order["id"]))
 					changed = true
 			continue
 		counts = _stock_limit_if_blocked(counts, orders.size(), source_kind, extra)
@@ -18520,7 +16623,7 @@ func _auto_request_hunt(stock: Dictionary, claims: Dictionary, orders: Array) ->
 		if StockRequestService.is_order_surplus(demand, 0, total_coverage, coverage, int(_stock_margin(StockRequestService.HUNT_MEAT_STEP))) \
 				and not _stock_order_too_young(order, demand):
 			total_coverage -= coverage
-			_remove_drawer_order(int(order["id"]))
+			DrawerOrderService.remove(game_data, int(order["id"]))
 			orders.remove_at(index)
 			changed = true
 			if DebugLogging.ENABLED and DebugLogging.SHOW_JOB_BOARD_LOGS:
@@ -18531,7 +16634,7 @@ func _auto_request_hunt(stock: Dictionary, claims: Dictionary, orders: Array) ->
 		demand, 0, total_coverage, orders.size(), 1, StockRequestService.STOCK_HUNT_MAX_MEAT
 	)
 	counts = _stock_limit_if_blocked(
-		counts, orders.size(), DRAWER_ORDER_TYPE_HUNT, {StockRequestService.ORDER_KEY: StockRequestService.HUNT_GROUP_KEY}
+		counts, orders.size(), DrawerOrderService.TYPE_HUNT, {StockRequestService.ORDER_KEY: StockRequestService.HUNT_GROUP_KEY}
 	)
 	if counts.is_empty():
 		return changed
@@ -18552,7 +16655,7 @@ func _auto_request_hunt(stock: Dictionary, claims: Dictionary, orders: Array) ->
 				and ButcherDestinationService.is_available(ButcherDestinationService.DRYING_RACK_MEAT, macro_world, human_folk):
 			destination = ButcherDestinationService.DRYING_RACK_MEAT
 	for count in counts:
-		_create_drawer_zone_order(DRAWER_ORDER_TYPE_HUNT, StockRequestService.snap_hunt_count(count), -1, {
+		_create_drawer_zone_order(DrawerOrderService.TYPE_HUNT, StockRequestService.snap_hunt_count(count), -1, {
 			StockRequestService.ORDER_KEY: StockRequestService.HUNT_GROUP_KEY, "butcher_destination": destination,
 		})
 		changed = true
@@ -18572,13 +16675,13 @@ func _stock_limit_if_blocked(counts: Array[int], open_orders: int, order_type: S
 
 
 # Motivo per cui un ordine del magazzino di tipo `order_type` sarebbe bloccato adesso ("" = prendibile): lo stesso della
-# riga del cassetto (_drawer_cut_blocked_reason), su un ordine di prova in zona automatica.
+# riga del cassetto (DrawerOrderJobProvider.zone_blocked_reason), su un ordine di prova in zona automatica.
 func _stock_order_blocked_reason(order_type: String, extra: Dictionary) -> String:
-	if order_type == DRAWER_ORDER_TYPE_PRODUCE:
+	if order_type == DrawerOrderService.TYPE_PRODUCE:
 		return _stock_produce_static_reason(String(extra.get("recipe", "")))
 	var probe := {"type": order_type, "zone_id": -1}
 	probe.merge(extra)
-	return _drawer_cut_blocked_reason(order_type, -1, null, probe)
+	return DrawerOrderJobProvider.zone_blocked_reason(_job_board_context(), order_type, -1, null, probe)
 
 
 # Campanella (2026-10-11): una voce per ogni ordine del magazzino non preso e bloccato, "Magazzino · <risorsa>" con il
@@ -18592,13 +16695,13 @@ func _collect_stock_blocked_entries() -> Array[Dictionary]:
 			continue
 		var order_type := String(order.get("type", ""))
 		# L'essiccatoio ha i suoi avvisi (_collect_stock_dry_entries); gli ordini dell'inventario in corso non sono ancora usciti.
-		if order_type == DRAWER_ORDER_TYPE_TRANSPORT or bool(order.get(INVENTORY_PENDING_KEY, false)):
+		if order_type == DrawerOrderService.TYPE_TRANSPORT or bool(order.get(StockRequestService.INVENTORY_PENDING_KEY, false)):
 			continue
 		var reason := ""
-		if order_type == DRAWER_ORDER_TYPE_PRODUCE:
+		if order_type == DrawerOrderService.TYPE_PRODUCE:
 			reason = _stock_produce_order_reason(order)
 		else:
-			reason = _drawer_cut_blocked_reason(order_type, int(order.get("zone_id", -1)), null, order)
+			reason = DrawerOrderJobProvider.zone_blocked_reason(_job_board_context(), order_type, int(order.get("zone_id", -1)), null, order)
 		if reason == "":
 			continue
 		var row_name := tr("pending_stock_blocked").format({"resource": _stock_order_display_name(order)})
@@ -18621,13 +16724,11 @@ func _collect_stock_blocked_entries() -> Array[Dictionary]:
 #   - riduzione: un ordine fermo del magazzino che può fare almeno 1 pezzo si riduce a quella quantità e parte; il resto
 #     torna, al giro dopo, un solo ordine fermo;
 #   - mai più di un ordine fermo per prodotto (anche per postazione o attrezzo mancanti). Gli ordini a mano non si toccano.
-# Il motivo "Mancano: …" dell'ordine fermo (calcolato con le prenotazioni) resta nell'ordine (STOCK_MISSING_KEY), letto
+# Il motivo "Mancano: …" dell'ordine fermo (calcolato con le prenotazioni) resta nell'ordine (StockRequestService.MISSING_KEY), letto
 # dalla riga della coda e dalla campanella. true se ha creato, ridotto o tolto ordini.
-const STOCK_MISSING_KEY := "stock_missing"
 # Ordini del magazzino appena nati (2026-10-11, contro l'oscillazione): un ordine non preso si toglie come "di troppo" solo
-# dopo STOCK_ORDER_MIN_AGE_DAYS di gioco dalla nascita (STOCK_CREATED_AT_KEY, salvato con l'ordine); con il livello tolto
+# dopo STOCK_ORDER_MIN_AGE_DAYS di gioco dalla nascita (StockRequestService.CREATED_AT_KEY, salvato con l'ordine); con il livello tolto
 # si toglie subito. Chi mangia dal deposito e chi consegna fanno salire e scendere la scorta di continuo.
-const STOCK_CREATED_AT_KEY := "stock_created_at"
 const STOCK_ORDER_MIN_AGE_DAYS: float = 1.0
 # Interruttore delle difese contro l'oscillazione (2026-10-11, prova): con gli ordini decisi solo all'inventario non c'è
 # più il ricalcolo continuo che le rendeva necessarie, quindi spente — età minima (_stock_order_too_young) e margine di
@@ -18641,16 +16742,16 @@ func _stock_margin(value: float) -> float:
 
 
 func _stock_order_too_young(order: Dictionary, level: float) -> bool:
-	if not STOCK_ANTI_OSCILLATION or level <= 0 or not order.has(STOCK_CREATED_AT_KEY):
+	if not STOCK_ANTI_OSCILLATION or level <= 0 or not order.has(StockRequestService.CREATED_AT_KEY):
 		return false
-	return _job_board_now() - float(order[STOCK_CREATED_AT_KEY]) < STOCK_ORDER_MIN_AGE_DAYS
+	return _job_board_now() - float(order[StockRequestService.CREATED_AT_KEY]) < STOCK_ORDER_MIN_AGE_DAYS
 
 
 func _auto_request_produce(stock: Dictionary) -> bool:
 	var changed := false
 	var available := _workstation_free_stock(stock)
 	for order in game_data.drawer_orders:
-		if String(order.get("type", "")) != DRAWER_ORDER_TYPE_PRODUCE:
+		if String(order.get("type", "")) != DrawerOrderService.TYPE_PRODUCE:
 			continue
 		var order_recipe := String(order.get("recipe", ""))
 		var order_quantity := maxi(int(order.get("quantity", 1)), 1)
@@ -18666,9 +16767,9 @@ func _auto_request_produce(stock: Dictionary) -> bool:
 				if DebugLogging.ENABLED and DebugLogging.SHOW_JOB_BOARD_LOGS:
 					print("[JOB BOARD] Magazzino: ordine #%d %s ridotto a ×%d (la parte fattibile)." % [int(order["id"]), order_recipe, makeable])
 			_reserve_recipe(available, order_recipe, makeable, order_fuel)
-			order[STOCK_MISSING_KEY] = ""
+			order[StockRequestService.MISSING_KEY] = ""
 		else:
-			order[STOCK_MISSING_KEY] = _produce_missing_text(order_recipe, order_quantity, available, order_fuel)
+			order[StockRequestService.MISSING_KEY] = _produce_missing_text(order_recipe, order_quantity, available, order_fuel)
 	var in_production := _units_in_production()
 	for resource_name in game_data.stock_min_levels.keys():
 		var recipe := String(resource_name)
@@ -18678,7 +16779,7 @@ func _auto_request_produce(stock: Dictionary) -> bool:
 		var quantity := int(stock.get(recipe, 0))
 		var wm_orders: Array = []
 		for order in game_data.drawer_orders:
-			if String(order.get("type", "")) == DRAWER_ORDER_TYPE_PRODUCE and String(order.get("recipe", "")) == recipe \
+			if String(order.get("type", "")) == DrawerOrderService.TYPE_PRODUCE and String(order.get("recipe", "")) == recipe \
 					and order.has(StockRequestService.ORDER_KEY):
 				wm_orders.append(order)
 		var coverage := int(in_production.get(recipe, 0))
@@ -18688,7 +16789,7 @@ func _auto_request_produce(stock: Dictionary) -> bool:
 			if StockRequestService.is_order_surplus(level, quantity, coverage, order_quantity, int(_stock_margin(1))) \
 					and not _stock_order_too_young(order, level):
 				coverage -= order_quantity
-				_remove_drawer_order(int(order["id"]))
+				DrawerOrderService.remove(game_data, int(order["id"]))
 				wm_orders.remove_at(index)
 				changed = true
 		var uncovered := level - quantity - coverage
@@ -18697,7 +16798,7 @@ func _auto_request_produce(stock: Dictionary) -> bool:
 		var max_quantity := maxi(_best_produce_quantity(recipe), 1)
 		var has_waiting := false
 		for order in wm_orders:
-			if String(order.get(STOCK_MISSING_KEY, "")) != "":
+			if String(order.get(StockRequestService.MISSING_KEY, "")) != "":
 				has_waiting = true
 		# Postazione o attrezzo che mancano: un solo ordine fermo, nessuno se ce n'è già uno.
 		if _stock_produce_static_reason(recipe) != "":
@@ -18712,7 +16813,7 @@ func _auto_request_produce(stock: Dictionary) -> bool:
 			if makeable <= 0:
 				break
 			_reserve_recipe(available, recipe, makeable, fuel_per_cycle)
-			_create_drawer_produce_order(recipe, makeable, true, {StockRequestService.ORDER_KEY: recipe, STOCK_MISSING_KEY: ""})
+			_create_drawer_produce_order(recipe, makeable, true, {StockRequestService.ORDER_KEY: recipe, StockRequestService.MISSING_KEY: ""})
 			uncovered -= makeable
 			order_count += 1
 			changed = true
@@ -18720,7 +16821,7 @@ func _auto_request_produce(stock: Dictionary) -> bool:
 			var waiting_quantity := mini(uncovered, max_quantity)
 			_create_drawer_produce_order(recipe, waiting_quantity, true, {
 				StockRequestService.ORDER_KEY: recipe,
-				STOCK_MISSING_KEY: _produce_missing_text(recipe, waiting_quantity, available, fuel_per_cycle),
+				StockRequestService.MISSING_KEY: _produce_missing_text(recipe, waiting_quantity, available, fuel_per_cycle),
 			})
 			changed = true
 	return changed
@@ -18743,9 +16844,9 @@ func _workstation_free_stock(stock: Dictionary) -> Dictionary:
 func _production_available(stock: Dictionary) -> Dictionary:
 	var available := _workstation_free_stock(stock)
 	for order in game_data.drawer_orders:
-		if String(order.get("type", "")) != DRAWER_ORDER_TYPE_PRODUCE:
+		if String(order.get("type", "")) != DrawerOrderService.TYPE_PRODUCE:
 			continue
-		if order.has(StockRequestService.ORDER_KEY) and String(order.get(STOCK_MISSING_KEY, "")) != "":
+		if order.has(StockRequestService.ORDER_KEY) and String(order.get(StockRequestService.MISSING_KEY, "")) != "":
 			continue
 		var recipe := String(order.get("recipe", ""))
 		_reserve_recipe(available, recipe, maxi(int(order.get("quantity", 1)), 1), _recipe_fuel_per_cycle(recipe))
@@ -18754,7 +16855,7 @@ func _production_available(stock: Dictionary) -> Dictionary:
 
 # Combustibile per ciclo di `recipe` sulla postazione che la farebbe adesso (0 se nessuna o se non ne serve).
 func _recipe_fuel_per_cycle(recipe: String) -> float:
-	var building := _choose_drawer_produce_building(recipe, 1, {})
+	var building := DrawerOrderService.choose_produce_building(macro_world, recipe, 1, {})
 	return ProductionService.get_required_fuel(building, recipe) if building != null else 0.0
 
 
@@ -18805,9 +16906,6 @@ func _reserve_recipe(available: Dictionary, recipe: String, units: int, fuel_per
 # ordine, una voce in campanella (_stock_dry_warnings, ricalcolata a ogni giro). I prodotti pronti restano
 # nell'essiccatoio (contano nelle scorte, VillageStockService). La presa toglie l'ordine dal cassetto, come la produzione.
 # ============================================================================================
-# Ordine "transport" del cassetto (2026-10-16, rinominato da "dry"): il gestore chiede di portare una risorsa dal
-# magazzino a un edificio. Lo usano l'essiccatoio (qui sopra) e la regola del combustibile (_auto_request_fuel).
-const DRAWER_ORDER_TYPE_TRANSPORT := "transport"
 const STOCK_DRY_KEY := "stock_dry_recipe"
 var _stock_dry_warnings: Dictionary = {}
 
@@ -18826,7 +16924,7 @@ func _auto_request_dry(stock: Dictionary) -> bool:
 		var open_orders: Array = []
 		var pending := 0
 		for order in game_data.drawer_orders:
-			if String(order.get("type", "")) == DRAWER_ORDER_TYPE_TRANSPORT and String(order.get("recipe", "")) == recipe:
+			if String(order.get("type", "")) == DrawerOrderService.TYPE_TRANSPORT and String(order.get("recipe", "")) == recipe:
 				open_orders.append(order)
 				pending += int(order.get("quantity", 0))
 		# Coperto senza gli ordini aperti (la loro quantità non deve far sembrare il livello raggiunto e farli togliere).
@@ -18839,7 +16937,7 @@ func _auto_request_dry(stock: Dictionary) -> bool:
 				continue
 			var surplus := covered_without >= level + _stock_margin(1) and not _stock_order_too_young(order, level)
 			if surplus or _transport_order_pick(null, order).is_empty():
-				_remove_drawer_order(int(order["id"]))
+				DrawerOrderService.remove(game_data, int(order["id"]))
 				open_orders.erase(order)
 				covered -= int(order.get("quantity", 0))
 				changed = true
@@ -18863,8 +16961,8 @@ func _auto_request_dry(stock: Dictionary) -> bool:
 		var order_id := game_data.next_drawer_order_id
 		game_data.next_drawer_order_id += 1
 		var dry_order := {
-			"id": order_id, "type": DRAWER_ORDER_TYPE_TRANSPORT, "recipe": recipe, "resource": ingredient, "quantity": quantity,
-			StockRequestService.ORDER_KEY: recipe, STOCK_CREATED_AT_KEY: _job_board_now(),
+			"id": order_id, "type": DrawerOrderService.TYPE_TRANSPORT, "recipe": recipe, "resource": ingredient, "quantity": quantity,
+			StockRequestService.ORDER_KEY: recipe, StockRequestService.CREATED_AT_KEY: _job_board_now(),
 		}
 		_mark_inventory_pending(dry_order)
 		game_data.drawer_orders.append(dry_order)
@@ -18881,13 +16979,13 @@ func _auto_request_fuel() -> bool:
 	var open_orders: Array = game_data.drawer_orders.filter(func(order: Dictionary) -> bool: return order.has(FuelStockService.FUEL_TARGET_KEY))
 	var plan := FuelStockService.plan_orders(macro_world, game_data, open_orders, FuelStockService.traveling_fuel(human_individuals))
 	for order_id in plan["remove"]:
-		_remove_drawer_order(int(order_id))
+		DrawerOrderService.remove(game_data, int(order_id))
 	for need in plan["create"]:
 		var order_id := game_data.next_drawer_order_id
 		game_data.next_drawer_order_id += 1
 		var fuel_order := {
-			"id": order_id, "type": DRAWER_ORDER_TYPE_TRANSPORT, FuelStockService.FUEL_TARGET_KEY: int(need[FuelStockService.FUEL_TARGET_KEY]),
-			FuelStockService.FUEL_AMOUNT_KEY: float(need[FuelStockService.FUEL_AMOUNT_KEY]), STOCK_CREATED_AT_KEY: _job_board_now(),
+			"id": order_id, "type": DrawerOrderService.TYPE_TRANSPORT, FuelStockService.FUEL_TARGET_KEY: int(need[FuelStockService.FUEL_TARGET_KEY]),
+			FuelStockService.FUEL_AMOUNT_KEY: float(need[FuelStockService.FUEL_AMOUNT_KEY]), StockRequestService.CREATED_AT_KEY: _job_board_now(),
 		}
 		_mark_inventory_pending(fuel_order)
 		game_data.drawer_orders.append(fuel_order)
@@ -18937,7 +17035,7 @@ func _dry_traveling(recipe: String) -> int:
 	var total := 0
 	for member in human_individuals:
 		var best := 0
-		for task in _member_open_tasks(member):
+		for task in JobWorkScanService.open_tasks(member):
 			if String(task.context.get(STOCK_DRY_KEY, "")) == recipe:
 				best = maxi(best, int(task.context.get("transport_requested_remaining", 0)))
 		total += best
@@ -18997,7 +17095,7 @@ func _drawer_transport_job(provider: Dictionary, order: Dictionary) -> Dictionar
 		"icon": {"resource": resource_name},
 		"macro": Vector2i(target.macro_x, target.macro_y) if target != null else Vector2i(-1, -1),
 		"microcell": Vector2i(target.micro_x, target.micro_y) if target != null else Vector2i(-1, -1), "reach_target": target,
-		"entry_kind": "drawer_order", "id": order_id, "sort": float(order_id) + DRAWER_ORDER_JOB_SORT_OFFSET,
+		"entry_kind": "drawer_order", "id": order_id, "sort": float(order_id) + DrawerOrderService.PRODUCE_JOB_SORT_OFFSET,
 		"assigned": false, "hidden": false, "warehouse": order.has(StockRequestService.ORDER_KEY),
 		"blocked_reason": "" if not pick.is_empty() else tr("pending_stock_fuel_blocked" if is_fuel else "pending_stock_dry_blocked"),
 		"target": target, "provider": provider, "order": order,
@@ -19035,7 +17133,7 @@ func _transport_order_task(worker: HumanIndividual, order: Dictionary, pick: Dic
 func _assign_drawer_transport_job(worker: HumanIndividual, job: Dictionary) -> void:
 	var order: Dictionary = job["order"]
 	var order_id := int(order["id"])
-	if _find_drawer_order(order_id).is_empty():
+	if DrawerOrderService.find(game_data, order_id).is_empty():
 		return
 	var pick := _transport_order_pick(worker, order)
 	if pick.is_empty():
@@ -19046,7 +17144,7 @@ func _assign_drawer_transport_job(worker: HumanIndividual, job: Dictionary) -> v
 	_wire_transport_task(task, worker)
 	if not worker.assign_task(task, _resolve_age_band(worker)):
 		return
-	_remove_drawer_order(order_id)
+	DrawerOrderService.remove(game_data, order_id)
 	var job_keys: Array[String] = [String(job["key"])]
 	_forget_job_board_wait(job_keys)
 	if worker == individual:
@@ -19110,7 +17208,7 @@ func _is_food(resource_name: String) -> bool:
 func _auto_request_food_days(stock: Dictionary) -> bool:
 	var changed := false
 	var days := game_data.stock_min_food_days
-	var claims := _collect_drawer_cut_claims()
+	var claims := DrawerOrderService.collect_zone_claims(human_individuals)
 	var kcal_per_trip := _food_calories_per_trip(_stock_average_carry_capacity())
 	var days_orders: Array = []
 	var meat_orders: Array = []
@@ -19122,7 +17220,7 @@ func _auto_request_food_days(stock: Dictionary) -> bool:
 	if days <= 0:
 		for order in days_orders + meat_orders:
 			if not bool(order.get("taken", false)):
-				_remove_drawer_order(int(order["id"]))
+				DrawerOrderService.remove(game_data, int(order["id"]))
 				changed = true
 		return changed
 	var target := _food_days_target_calories(days)
@@ -19137,12 +17235,12 @@ func _auto_request_food_days(stock: Dictionary) -> bool:
 		var order_calories := _food_order_calories(order, claims, kcal_per_trip)
 		# Margine contro l'oscillazione: le calorie di un'unità dell'ordine (un viaggio, un pezzo da cuocere).
 		var unit_calories := kcal_per_trip
-		if String(order.get("type", "")) == DRAWER_ORDER_TYPE_PRODUCE:
+		if String(order.get("type", "")) == DrawerOrderService.TYPE_PRODUCE:
 			var unit_rules := CaloricCalculator.get_caloric_source_rules(String(order.get("recipe", "")))
 			unit_calories = unit_rules.calories_per_unit if unit_rules != null else 0.0
 		if covered - order_calories >= target + _stock_margin(unit_calories) and not _stock_order_too_young(order, days):
 			covered -= order_calories
-			_remove_drawer_order(int(order["id"]))
+			DrawerOrderService.remove(game_data, int(order["id"]))
 			days_orders.erase(order)
 			changed = true
 	var missing := target - covered
@@ -19167,7 +17265,7 @@ func _auto_request_food_days(stock: Dictionary) -> bool:
 			continue
 		_reserve_recipe(available, recipe, makeable, fuel_per_cycle)
 		_create_drawer_produce_order(recipe, makeable, true, {
-			StockRequestService.ORDER_KEY: recipe, StockRequestService.FOOD_DAYS_KEY: true, STOCK_MISSING_KEY: "",
+			StockRequestService.ORDER_KEY: recipe, StockRequestService.FOOD_DAYS_KEY: true, StockRequestService.MISSING_KEY: "",
 		})
 		missing -= float(makeable) * calories
 		changed = true
@@ -19181,16 +17279,16 @@ func _auto_request_food_days(stock: Dictionary) -> bool:
 	}
 	if kcal_per_trip <= 0.0:
 		if days_orders.is_empty():
-			_create_drawer_zone_order(DRAWER_ORDER_TYPE_GATHER, 1, -1, extra.duplicate())
+			_create_drawer_zone_order(DrawerOrderService.TYPE_GATHER, 1, -1, extra.duplicate())
 			changed = true
 		return changed
 	var trips_needed := ceili(missing / kcal_per_trip)
 	var counts := StockRequestService.compute_new_order_counts(
 		trips_needed, 0, 0, days_orders.size(), 1, HaulZoneService.WORK_AREA_MAX_TRIPS, StockRequestService.MAX_FOOD_DAYS_ORDERS
 	)
-	counts = _stock_limit_if_blocked(counts, days_orders.size(), DRAWER_ORDER_TYPE_GATHER, extra)
+	counts = _stock_limit_if_blocked(counts, days_orders.size(), DrawerOrderService.TYPE_GATHER, extra)
 	for count in counts:
-		_create_drawer_zone_order(DRAWER_ORDER_TYPE_GATHER, count, -1, extra.duplicate())
+		_create_drawer_zone_order(DrawerOrderService.TYPE_GATHER, count, -1, extra.duplicate())
 		changed = true
 	return changed
 
@@ -19202,7 +17300,7 @@ func _food_days_free_meat_cut(available: Dictionary) -> void:
 	var meat := HuntZoneService.MEAT_RESOURCE
 	var kept := int(game_data.stock_min_levels.get(meat, 0))
 	for order in game_data.drawer_orders:
-		if String(order.get("type", "")) == DRAWER_ORDER_TYPE_TRANSPORT and not order.has(FuelStockService.FUEL_TARGET_KEY) \
+		if String(order.get("type", "")) == DrawerOrderService.TYPE_TRANSPORT and not order.has(FuelStockService.FUEL_TARGET_KEY) \
 				and String(order.get("resource", "")) == meat:
 			kept += int(order.get("quantity", 0))
 	available[meat] = maxi(int(available.get(meat, 0)) - kept, 0)
@@ -19232,7 +17330,7 @@ func _food_processing_calories() -> float:
 			continue
 		var pieces := _dry_in_racks(recipe, ingredient) + _dry_traveling(recipe)
 		for order in game_data.drawer_orders:
-			if String(order.get("type", "")) == DRAWER_ORDER_TYPE_TRANSPORT and String(order.get("recipe", "")) == recipe:
+			if String(order.get("type", "")) == DrawerOrderService.TYPE_TRANSPORT and String(order.get("recipe", "")) == recipe:
 				pieces += int(order.get("quantity", 0))
 		total += float(pieces) * rules.calories_per_unit
 	return total
@@ -19250,7 +17348,7 @@ func _food_days_target_calories(days: int) -> float:
 # raccoglibili che adesso si trovano in almeno una zona di raccolta; 0 se nessuno.
 func _food_calories_per_trip(carry_capacity: float) -> float:
 	var lowest := INF
-	var areas := _zone_order_areas(DRAWER_ORDER_TYPE_GATHER)
+	var areas := DrawerOrderService.zone_areas(game_data, DrawerOrderService.TYPE_GATHER)
 	for resource_name in CaloricCalculator.list_secondary_resource_names():
 		if not _is_food(resource_name) or not TerrainScatteredResourceService.is_pickable(resource_name):
 			continue
@@ -19262,7 +17360,7 @@ func _food_calories_per_trip(carry_capacity: float) -> float:
 		var probe := {"criterion_kind": PickUpAction.CriterionKind.NAME, "criterion_category": -1, "resource_name": resource_name}
 		var found := false
 		for area in areas:
-			if _zone_order_area_has_targets(DRAWER_ORDER_TYPE_GATHER, area, null, {}, probe):
+			if DrawerOrderService.area_has_targets(_job_board_context(), DrawerOrderService.TYPE_GATHER, area, null, {}, probe):
 				found = true
 				break
 		if found:
@@ -19286,12 +17384,12 @@ func _food_order_calories(order: Dictionary, claims: Dictionary, kcal_per_trip: 
 		return 0.0
 	var key := String(order[StockRequestService.ORDER_KEY])
 	var order_type := String(order.get("type", ""))
-	if order_type == DRAWER_ORDER_TYPE_PRODUCE:
+	if order_type == DrawerOrderService.TYPE_PRODUCE:
 		var rules := CaloricCalculator.get_caloric_source_rules(key)
 		if rules == null or rules.category != SecondaryResourceTypes.Category.FOOD:
 			return 0.0
 		return float(maxi(int(order.get("quantity", 1)), 1)) * rules.calories_per_unit
-	if order_type != DRAWER_ORDER_TYPE_GATHER:
+	if order_type != DrawerOrderService.TYPE_GATHER:
 		return 0.0
 	var claim: Dictionary = claims.get(int(order["id"]), {})
 	var taken := bool(order.get("taken", false)) and not claim.is_empty()
@@ -19343,7 +17441,7 @@ func _derived_meat_breakdown(stock: Dictionary) -> Dictionary:
 		if rules.recipe_auto_progress_days > 0:
 			have += _dry_in_racks(String(resource_name), meat) + _dry_traveling(String(resource_name))
 			for order in game_data.drawer_orders:
-				if String(order.get("type", "")) == DRAWER_ORDER_TYPE_TRANSPORT and String(order.get("recipe", "")) == String(resource_name):
+				if String(order.get("type", "")) == DrawerOrderService.TYPE_TRANSPORT and String(order.get("recipe", "")) == String(resource_name):
 					have += int(order.get("quantity", 0))
 		var missing := int(game_data.stock_min_levels[resource_name]) - have
 		if missing > 0:
@@ -19354,7 +17452,7 @@ func _derived_meat_breakdown(stock: Dictionary) -> Dictionary:
 		return {"total": 0, "dry": 0, "other": 0}
 	var free := int(_production_available(stock).get(meat, 0))
 	for order in game_data.drawer_orders:
-		if String(order.get("type", "")) == DRAWER_ORDER_TYPE_TRANSPORT and not order.has(FuelStockService.FUEL_TARGET_KEY) \
+		if String(order.get("type", "")) == DrawerOrderService.TYPE_TRANSPORT and not order.has(FuelStockService.FUEL_TARGET_KEY) \
 				and String(order.get("resource", "")) == meat:
 			free -= int(order.get("quantity", 0))
 	free = maxi(free, 0)
@@ -19372,8 +17470,8 @@ func _units_in_production(ready_only: bool = false) -> Dictionary:
 			var recipe := ProductionService.get_order_recipe(building, order_key)
 			units[recipe] = int(units.get(recipe, 0)) + ProductionService.get_order_units(building, order_key)
 	for order in game_data.drawer_orders:
-		if String(order.get("type", "")) == DRAWER_ORDER_TYPE_PRODUCE:
-			if ready_only and String(order.get(STOCK_MISSING_KEY, "")) != "":
+		if String(order.get("type", "")) == DrawerOrderService.TYPE_PRODUCE:
+			if ready_only and String(order.get(StockRequestService.MISSING_KEY, "")) != "":
 				continue
 			var recipe := String(order.get("recipe", ""))
 			units[recipe] = int(units.get(recipe, 0)) + maxi(int(order.get("quantity", 1)), 1)
@@ -19391,22 +17489,22 @@ func _best_produce_quantity(recipe: String) -> int:
 
 # Motivo per cui un ordine "Produci" del magazzino di `recipe` sarebbe fermo per la postazione o l'attrezzo ("" = no).
 func _stock_produce_static_reason(recipe: String) -> String:
-	var building := _choose_drawer_produce_building(recipe, 1, {})
+	var building := DrawerOrderService.choose_produce_building(macro_world, recipe, 1, {})
 	if building == null:
 		return tr("drawer_order_no_free_building")
-	var tool_reason := _tools_blocked_reason(BuildingToolkitService.filter_uncovered(building, _recipe_tool_categories(recipe)), DRAWER_ORDER_TYPE_PRODUCE)
-	if tool_reason != "" and _choose_drawer_produce_building(recipe, 1, {}, true) == null:
+	var tool_reason := ToolFetchService.blocked_reason(_job_board_context(), BuildingToolkitService.filter_uncovered(building, ToolFetchService.recipe_tool_categories(recipe)), DrawerOrderService.TYPE_PRODUCE)
+	if tool_reason != "" and DrawerOrderService.choose_produce_building(macro_world, recipe, 1, {}, true) == null:
 		return tool_reason
 	return ""
 
 
 # Motivo per cui l'ordine "Produci" del magazzino `order` è fermo ("" = no): postazione o attrezzo, altrimenti i materiali
-# calcolati dall'ultimo giro del magazzino con le prenotazioni (STOCK_MISSING_KEY).
+# calcolati dall'ultimo giro del magazzino con le prenotazioni (StockRequestService.MISSING_KEY).
 func _stock_produce_order_reason(order: Dictionary) -> String:
 	var static_reason := _stock_produce_static_reason(String(order.get("recipe", "")))
 	if static_reason != "":
 		return static_reason
-	return String(order.get(STOCK_MISSING_KEY, ""))
+	return String(order.get(StockRequestService.MISSING_KEY, ""))
 
 
 # "Mancano: 6 Fibre vegetali, combustibile 3" per `recipe` × `quantity` con le scorte `available`; "" se c'è tutto.
@@ -20838,7 +18936,7 @@ func _on_prey_killed(prey_id: int, prey_species: String, prey_age_band: int, pre
 # Retrieve/Unload appena nati — stesso principio dei listener step_appended di raccolta e pensiero. Solo Build Task.
 func _connect_material_supply_step_appended(task: Task, owner: HumanIndividual) -> void:
 	# Build e, dal 2026-09-29, Produce (rifornimento automatico della workstation).
-	if task == null or not BUILDING_WORK_TASK_NAMES.has(task.task_name):
+	if task == null or not JobWorkScanService.BUILDING_WORK_TASK_NAMES.has(task.task_name):
 		return
 	task.step_appended.connect(func(action: Action) -> void:
 		if action is UnloadAction:
@@ -20895,7 +18993,7 @@ func _on_building_construction_completed(building: Building) -> void:
 	# materiali di required_materials, quindi il loro step Build resterebbe bloccato. Stessa logica
 	# della demolizione (_close_tasks_working_on_building), ma lo zaino NON viene scartato. Chi ha
 	# completato è escluso: la sua task prosegue da sé (finish_current_step).
-	var other_freed := _close_tasks_working_on_building(building, BUILD_TASK_NAMES, _find_completing_individual(building))
+	var other_freed := _close_tasks_working_on_building(building, JobWorkScanService.BUILD_TASK_NAMES, _find_completing_individual(building))
 	for freed in other_freed:
 		HumanIndividualActionService.resolve_idle_individual(freed, _resolve_age_band(freed), macro_world)
 	# Miglioramento completato (2026-10-03): durabilità e anno li ha già scritti BuildAction (nuovo tipo, anno di oggi),

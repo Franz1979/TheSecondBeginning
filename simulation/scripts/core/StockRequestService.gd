@@ -17,6 +17,13 @@ extends RefCounted
 
 # Chiave nell'ordine del cassetto: nome della risorsa per cui il magazzino l'ha creato.
 const ORDER_KEY := "stock_resource"
+# Altre chiavi di un ordine del cassetto creato dal magazzino (2026-10-11; spostate da GameScene il 2026-10-17, refactoring
+# GameScene blocco 2c): motivo "Mancano: …" dell'ordine fermo, letto dalla riga della coda e dalla campanella; momento di
+# nascita (giorni di gioco, salvato con l'ordine) per non togliere subito come "di troppo" un ordine appena nato; ordine
+# deciso da un inventario ancora in corso, nascosto finché il conteggio non finisce.
+const MISSING_KEY := "stock_missing"
+const CREATED_AT_KEY := "stock_created_at"
+const INVENTORY_PENDING_KEY := "inventory_pending"
 const MAX_ORDERS_PER_RESOURCE: int = 3
 # Tetto degli ordini "Raccogli ogni cibo" per i giorni di autonomia (2026-10-11, richiesta utente): più alto, il cibo
 # serve a tutti e con l'inventario gli ordini nascono una volta per giro.

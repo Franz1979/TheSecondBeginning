@@ -34,7 +34,8 @@ const CUT_ACTION := &"command_cut"
 # da barra e lista): "tool_categories" = categorie che il pipottino deve possedere (vuoto/assente = nessun attrezzo),
 # "tool_belt_only" = conta solo la cintura (altrimenti cintura o zaino, ToolGateService.has_tool_for),
 # "tool_missing_tooltip_key" = testo proprio del motivo (altrimenti quello generico con gli attrezzi che coprono le
-# categorie mancanti). Un nuovo comando con attrezzo (taglio: CHOPPING, estrazione: DIGGING) basta dichiararlo qui.
+# categorie mancanti). Le categorie dei comandi di zona vivono in DrawerOrderService (*_TOOL_CATEGORIES, 2026-10-17),
+# condivise con gli ordini del cassetto.
 # Zona e sblocco (2026-10-05): "job" = lavoro della zona (WorkAreaTypes.JOBS) che il comando usa — il suo sblocco
 # (WorkAreaTypes.is_job_unlocked) e l'esistenza di una zona con quel lavoro decidono se il bottone è acceso; senza una
 # zona il tooltip è "no_zone_tooltip_key". I posti della barra e i bottoni delle righe degli abitanti nascono da questo
@@ -51,18 +52,18 @@ const ACTIONS: Array[Dictionary] = [
 		# Coltello per la macellazione, in cintura o nello zaino (2026-10-09, regola generale degli attrezzi: dallo zaino
 		# va in cintura alla partenza; cintura piena = rifiuto del comando, HuntZoneService.get_hunt_rejection). Dal
 		# 2026-10-11 anche un'arma da caccia (HUNTING): il coltello non lo è più, serve solo a macellare.
-		"tool_categories": [TaskTypes.ToolCategory.BUTCHERING, TaskTypes.ToolCategory.HUNTING],
+		"tool_categories": DrawerOrderService.HUNT_TOOL_CATEGORIES,
 	},
 	# Taglio nelle zone (2026-10-06, passo 2): accetta (CHOPPING), lavoro "cut".
 	{
 		"id": CUT_ACTION, "icon": "cut", "tooltip_key": "command_bar_cut_tooltip", "key": CUT_KEY,
 		"job": "cut", "no_zone_tooltip_key": "command_bar_cut_no_zone_tooltip",
-		"tool_categories": [TaskTypes.ToolCategory.CHOPPING],
+		"tool_categories": DrawerOrderService.CUT_TOOL_CATEGORIES,
 	},
 	{
 		"id": QUARRY_ACTION, "icon": "quarry", "tooltip_key": "command_bar_quarry_tooltip", "key": QUARRY_KEY,
 		"job": "quarry", "no_zone_tooltip_key": "command_bar_quarry_no_zone_tooltip",
-		"tool_categories": [TaskTypes.ToolCategory.DIGGING],
+		"tool_categories": DrawerOrderService.QUARRY_TOOL_CATEGORIES,
 	},
 ]
 

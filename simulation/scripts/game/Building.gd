@@ -69,7 +69,7 @@ func is_out_of_service() -> bool:
 	return is_demolition_started()
 
 # Riparazione richiesta dal giocatore con l'idea dell'assegnazione (2026-10-10, richiesta utente): il lavoro "repair:<id>"
-# entra nella coda dei lavori (GameScene._repair_jobs_collect). Si chiude da sola a Integrità piena, o se l'edificio va in
+# entra nella coda dei lavori (RepairJobProvider.collect). Si chiude da sola a Integrità piena, o se l'edificio va in
 # demolizione o in miglioramento (GameScene._settle_repair_requests); la X del cassetto la toglie. Salvata con l'edificio.
 var repair_requested: bool = false
 # Escluso dalla riparazione automatica (2026-10-10): la X del cassetto su una riga di riparazione lo accende; si spegne

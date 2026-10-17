@@ -432,6 +432,18 @@ static func bury_body(record: Dictionary, building: Building) -> void:
 		])
 
 
+# Cumulo di destinazione della sepoltura di `record` (2026-10-07, condiviso tra comando e lista dei lavori; spostato qui da
+# GameScene._resolve_bury_mound il 2026-10-17, refactoring GameScene blocco 2b): un corpo già sulla lastra resta su quel
+# cumulo, se ancora utilizzabile (la task passa subito al rito); altrimenti il cumulo utilizzabile più vicino al corpo.
+# null se nessuno.
+static func resolve_mound(record: Dictionary, body_id: int, individuals: Array) -> Building:
+	if is_on_slab(record):
+		var slab_mound := find_building(int(record.get("mound_id", -1)))
+		if is_mound_usable(slab_mound, body_id, individuals):
+			return slab_mound
+	return find_nearest_mound(Vector2(record["position"]), Vector2i(record["home_macro_coords"]), body_id, individuals)
+
+
 # Task Seppellisci di `worker` per il corpo `record` verso `mound`, mai assegnata qui (2026-10-07, estratta da
 # GameScene._assign_bury_task e usata anche come task di prova dalla lista dei lavori; spostata qui da
 # GameScene._make_bury_task il 2026-10-17, refactoring GameScene blocco 1). null se bury.tres non si carica.

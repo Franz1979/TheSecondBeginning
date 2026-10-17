@@ -152,7 +152,42 @@ resource (dote dei visitatori, nuovo `unload_resource.tres`) e rite; bury è in
 - **Decisione da prendere:** se salvare `_drawer_hunt_no_prey_alerts` e `_unbutchered_carcass_alerts`, che
   oggi si perdono al caricamento, forse senza volerlo.
 - **Lo stato statico di `CoordinatorService`** (`_actions`, `_log_info`) va spostato nello stesso oggetto di
-  stato, e gli hook Callable diventano parametri.
+  stato, e gli hook Callable diventano parametri. **Rimandato (2026-10-17)** a quando esisterà `GameSimulation`:
+  gli hook (età, momento di gioco, scena pronta, suono del richiamo) sono chiamati anche dalle Action, che non
+  hanno accesso alla scena; li fornirà il driver della simulazione.
+
+**Stato 2c (2026-10-17):** fatto. `DrawerOrderService`: voci (creazione, ricerca, rimozione), chi porta gli ordini di
+zona (`collect_zone_claims`, `task_zone_info`), avanzamento e ritorno in coda (`note_progress`, `settle_zone_orders`,
+`return_order`), zone e bersagli (`zone_areas`, `zone_reserved`, `area_has_targets`, `fixed_zone_exhausted`), scelta
+dell'edificio di "Produci", categorie di attrezzi per tipo (lette anche da `CommandBar.ACTIONS`). Fornitore
+`providers/DrawerOrderJobProvider.gd` (righe, idoneità, scelta di zona e bersaglio, lavoratori). Chiavi degli ordini del
+magazzino (`MISSING_KEY`, `CREATED_AT_KEY`, `INVENTORY_PENDING_KEY`) in `StockRequestService`. `JobBoardContext.live_cells`
+è ora il dizionario delle celle vive per riferimento (i servizi delle zone lo ricevono così). Rimandati al blocco 4: righe e
+idoneità degli ordini "transport" (passate al fornitore come Callable dalla scena), fine delle serie di caccia (cambio
+zona, avvisi "nessuna preda", pausa delle cacce del magazzino: toccano lo stato del gestore scorte). In scena: popup di
+scelta, presa con icone e messaggi, X e Rimetti in coda, stato dei bottoni del cassetto.
+
+**Stato 2d (2026-10-17, fatta prima della 2c perché il cassetto ordini dipende dagli attrezzi):** regole degli attrezzi
+in `gameplay/jobs/scripts/ToolFetchService.gd` (chi ha cosa, motivo di blocco, idoneità, piano di prelievo, avvio dei
+prelievi, restituzione degli attrezzi in prestito: le task create tornano alla scena che ne collega i segnali);
+fornitore della produzione in `providers/ProduceJobProvider.gd`; `JobWorkScanService.production_order_workers`; tipi
+degli ordini del cassetto in `DrawerOrderService.TYPE_*`. In scena restano i collegamenti con le categorie dei comandi
+della barra (`_zone_order_tool_categories`, legge `CommandBar`) e i segnali delle task di prelievo e riposizione.
+
+**Stato 2b (2026-10-17):** fatto per edifici, riparazioni, riti, corpi, mucchi, uscite piene: un fornitore per tipo in
+`gameplay/jobs/scripts/providers/` (`collect`, `rejection`, `workers`, statici) con `JobBoardContext` (partita,
+mondo, popolazione, celle vive, età); scansione "chi lavora a cosa" in `JobWorkScanService` (nomi delle task,
+`workers_on_building`, `collect_assignments`, `open_tasks`); `BodyBurialService.resolve_mound`; memoria dei mucchi
+svuotati in `JobBoardRuntimeState.pile_job_memory`. In scena restano per ogni fornitore assegnazione, X (testo e
+comando) e Rimetti in coda (comandi: blocco 5). Rimandati: produzione → 2d (dipende dagli helper degli attrezzi),
+inventario → blocco 4 (regole del gestore scorte), ordini del cassetto → 2c.
+
+**Stato 2a (2026-10-17):** fatto. Nucleo in `JobBoardService` (candidati, attese, lavori aperti, richiamo del
+coordinatore, filtro dei prendibili, presa); stato non salvato in `GameData.job_board_runtime`
+(`simulation/scripts/game/JobBoardRuntimeState.gd`). In scena restano la raccolta dai fornitori
+(`_collect_job_board_jobs`, si sposta con la 2b), le icone lampeggianti dell'attesa, `_job_board_now` (legge
+l'orologio) e la stampa del log. Gli hook `JobBoardService.job_taker`/`job_available_checker`/... restano finché
+i fornitori non lasciano la scena (2b).
 
 ### Blocco 3 — Ciclo di vita degli edifici → `gameplay/buildings/`
 - **Manutenzione** (10434–10555): edifici danneggiati, chiusura delle richieste, riparazioni automatiche,

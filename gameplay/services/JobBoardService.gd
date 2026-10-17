@@ -10,7 +10,7 @@ extends RefCounted
 # in futuro "upgrade:", "demolish:", "produce:", "body:"). Oggi il solo tipo gestito è il cantiere di un edificio nuovo
 # ("build"), dal 2026-10-07 il cantiere di un miglioramento ("upgrade", stesse regole: è un cantiere normale) e
 # l'edificio "da demolire" senza demolitore ("demolish", fuori lista finché è aperto il suo mirino), dal 2026-10-09 gli
-# ordini di produzione senza lavoratore ("produce:<id>:<ordine>", GameScene._produce_jobs_collect): un tipo
+# ordini di produzione senza lavoratore ("produce:<id>:<ordine>", ProduceJobProvider.collect): un tipo
 # nuovo si aggiunge a DEFAULT_STATE_BY_KIND (e a SKILL_KEY_BY_KIND per "Più adatto", KIND_NAME_KEYS per il nome).
 #
 # Passo B (2026-10-07): un pipottino libero prende da solo il lavoro attivo più adatto (try_take_job), chiamato SOLO da
@@ -51,7 +51,7 @@ const STATE_LOCKED := "locked"
 # "output" (2026-10-08): Prodotti finiti pieni che fermano un ordine, da consegnare a magazzino.
 # "produce" (2026-10-09): ordini di produzione senza lavoratore ("produce:<id edificio>:<chiave ordine>").
 # "cut" / "quarry" / "gather" (2026-10-09): ordini di taglio / estrazione / raccolta del cassetto ("order:<id>", tipo della voce;
-# GameScene._drawer_cut_job).
+# DrawerOrderJobProvider._zone_job).
 # "repair" (2026-10-10): riparazioni richieste dal pannello edificio ("repair:<id edificio>", Building.repair_requested).
 # "inventory" (2026-10-11): inventario del magazzino ("inventory:0", uno alla volta; GameScene._inventory_jobs_collect).
 # "rite" (2026-10-14): riti ordinati dal pannello edificio ("rite:<id edificio>", Building.requested_rite_id).
@@ -441,3 +441,194 @@ static func forget_missing(game_data: GameData, existing_keys: Dictionary) -> vo
 	for job_key in game_data.job_board_entered_at.keys():
 		if not existing_keys.has(job_key):
 			game_data.job_board_entered_at.erase(job_key)
+
+
+# ============================================================================================
+# Nucleo della lista (2026-10-17, refactoring GameScene blocco 2a — estratto da GameScene, regole invariate): candidati,
+# attese per l'assegnazione a mano, lavori aperti, scelta e presa. Lo stato che vive solo in partita sta in
+# GameData.job_board_runtime (JobBoardRuntimeState). Le voci dei lavori arrivano dai fornitori ("collect"), e la task di
+# prova, l'idoneità e l'assegnazione vera sono le Callable del fornitore nella voce (job["provider"]). Le icone
+# lampeggianti dell'attesa e la stampa del log restano alla scena.
+# ============================================================================================
+
+# Fa avanzare l'orologio delle attese: secondi reali, solo a gioco in corso (lo decide chi chiama).
+static func advance_clock(game_data: GameData, delta: float) -> void:
+	game_data.job_board_runtime.clock += delta
+
+
+# Lavori gestiti dalla lista senza nessuno assegnato e non nascosti, bloccati compresi: chiave -> voce. Fuori i lavori
+# impossibili per ora ("blocked_reason", es. un mucchio che nessun magazzino accetta): restano visibili nel cassetto ma
+# non entrano nell'attesa né si prendono; quando tornano possibili entrano come un lavoro nuovo (parte l'attesa).
+static func collect_candidates(jobs: Array[Dictionary]) -> Dictionary:
+	var candidates: Dictionary = {}
+	for job in jobs:
+		if not bool(job["assigned"]) and not bool(job["hidden"]) and String(job.get("blocked_reason", "")) == "":
+			candidates[String(job["key"])] = job
+	return candidates
+
+
+# Secondi reali che mancano alla fine dell'attesa di `job_key`; 0 se finita o se il lavoro non è in lista.
+static func get_wait_seconds(game_data: GameData, job_key: String) -> float:
+	var runtime := game_data.job_board_runtime
+	if not runtime.waiting_since.has(job_key):
+		return 0.0
+	return maxf(0.0, get_manual_assign_window_seconds() - (runtime.clock - float(runtime.waiting_since[job_key])))
+
+
+# Ingressi e uscite dalla lista rispetto all'ultima lettura. `candidates`: chiave -> voce (collect_candidates).
+static func sync_waits(game_data: GameData, candidates: Dictionary) -> void:
+	var runtime := game_data.job_board_runtime
+	for key in runtime.waiting_since.keys():
+		if not candidates.has(key):
+			runtime.waiting_since.erase(key)
+	for key in candidates.keys():
+		if not runtime.waiting_since.has(key):
+			# Inventario (2026-10-11, richiesta utente): niente attesa per l'assegnazione a mano, subito prendibile.
+			var no_wait := not runtime.waits_initialized or String(candidates[key].get("kind", "")) == "inventory"
+			runtime.waiting_since[key] = runtime.clock - get_manual_assign_window_seconds() if no_wait else runtime.clock
+	runtime.waits_initialized = true
+
+
+# Senza l'idea dell'assegnazione: niente attese; alla prossima lettura i lavori già in lista sono subito prendibili.
+static func reset_waits(game_data: GameData) -> void:
+	game_data.job_board_runtime.waiting_since.clear()
+	game_data.job_board_runtime.waits_initialized = false
+
+
+# Lavoro appena assegnato (`job_keys`: tutte le sue chiavi possibili): fuori dal conto dell'attesa.
+static func forget_waits(game_data: GameData, job_keys: Array[String]) -> void:
+	for key in job_keys:
+		game_data.job_board_runtime.waiting_since.erase(key)
+
+
+# Lavoro sbloccato dal giocatore (2026-10-07): subito prendibile, nessuna attesa.
+static func end_wait(game_data: GameData, job_key: String) -> void:
+	var runtime := game_data.job_board_runtime
+	if runtime.waiting_since.has(job_key):
+		runtime.waiting_since[job_key] = runtime.clock - get_manual_assign_window_seconds()
+
+
+# Chiavi dei lavori prendibili adesso: senza nessuno, non bloccati, fuori dall'attesa per l'assegnazione a mano.
+static func open_job_keys(game_data: GameData, candidates: Dictionary) -> Dictionary:
+	var keys: Dictionary = {}
+	for job_key in candidates.keys():
+		if get_state(game_data, job_key) == STATE_LOCKED:
+			continue
+		if get_wait_seconds(game_data, job_key) > 0.0:
+			continue
+		keys[job_key] = true
+	return keys
+
+
+# Richiamo del coordinatore (2026-10-09): un lavoro diventato prendibile (nuovo in coda o finita la sua attesa) è un
+# evento per i coordinatori che aspettano senza fila (CoordinatorService.on_jobs_available).
+static func notify_new_open_jobs(game_data: GameData, folk: Folk, jobs: Array[Dictionary]) -> void:
+	var runtime := game_data.job_board_runtime
+	if not is_enabled(folk):
+		runtime.open_job_keys.clear()
+		return
+	var open_keys := open_job_keys(game_data, collect_candidates(jobs))
+	var has_new := false
+	for job_key in open_keys.keys():
+		if not runtime.open_job_keys.has(job_key):
+			has_new = true
+			break
+	runtime.open_job_keys = open_keys
+	if has_new:
+		CoordinatorService.on_jobs_available()
+
+
+# La coda ha almeno un lavoro senza nessuno, non bloccato (CoordinatorService: fine del turno).
+static func has_open_jobs(game_data: GameData, candidates: Dictionary) -> bool:
+	for job_key in candidates.keys():
+		if get_state(game_data, job_key) != STATE_LOCKED:
+			return true
+	return false
+
+
+# Lavori della lista che `worker` può prendere adesso tra i `candidates`: {"jobs": Array[Dictionary], "found_text": testo
+# per il log, "log": riga del "nessuno preso" ("" = nessuna)}; "jobs" vuoto = nessuno. Filtri: bloccati, attesa per
+# l'assegnazione a mano, idoneità con una task di prova per tipo di task ("rejection" del fornitore: età ed energia
+# dipendono dal pipottino e dalla task, non dal singolo lavoro), raggiungibilità, materiali troppo pesanti.
+# `now`: momento di gioco per l'età dei lavori (stamp_entered).
+static func find_takeable_jobs(worker: HumanIndividual, game_data: GameData, candidates: Dictionary, now: float) -> Dictionary:
+	sync_waits(game_data, candidates)
+	# Età (2026-10-08): un lavoro comparso dopo l'ultimo giro del cassetto viene segnato qui, prima della scelta.
+	stamp_entered(game_data, candidates.values(), now)
+	var open_jobs: Array[Dictionary] = []
+	var locked_count := 0
+	var waiting_count := 0
+	for job_key in candidates.keys():
+		if get_state(game_data, job_key) == STATE_LOCKED:
+			locked_count += 1
+			continue
+		if get_wait_seconds(game_data, job_key) > 0.0:
+			waiting_count += 1
+			continue
+		open_jobs.append(candidates[job_key])
+	var found_text := "%d in lista (%d bloccati, %d in attesa)" % [open_jobs.size() + locked_count + waiting_count, locked_count, waiting_count]
+	var no_jobs: Array[Dictionary] = []
+	var none := {"jobs": no_jobs, "found_text": found_text, "log": ""}
+	if open_jobs.is_empty():
+		# Lista vuota: nessuna riga (2026-10-07, riempiva la console senza dire niente).
+		if waiting_count > 0:
+			none["log"] = "%s — nessuno preso: solo lavori in attesa di assegnazione." % found_text
+		elif locked_count > 0:
+			none["log"] = "%s — nessuno preso: tutti bloccati." % found_text
+		return none
+	var rejection_by_probe: Dictionary = {}
+	var suitable_jobs: Array[Dictionary] = []
+	for job in open_jobs:
+		var probe_key := String(job["provider"]["probe_key"].call(job))
+		if not rejection_by_probe.has(probe_key):
+			rejection_by_probe[probe_key] = String(job["provider"]["rejection"].call(worker, job))
+		if String(rejection_by_probe[probe_key]) == HumanIndividual.ASSIGN_OK:
+			suitable_jobs.append(job)
+	if suitable_jobs.is_empty():
+		var reasons: Array[String] = []
+		for probe_key in rejection_by_probe.keys():
+			reasons.append(String(rejection_by_probe[probe_key]))
+		none["log"] = "%s — nessuno preso: non adatto (%s)." % [found_text, ", ".join(reasons)]
+		return none
+	var reachable := PathfindingService.reachability_for(worker)
+	var takeable_jobs: Array[Dictionary] = []
+	# Materiali troppo pesanti (2026-10-16): costruzione e riparazione solo a chi porta almeno un'unità di ogni
+	# materiale ancora mancante (MaterialSupplyService.get_uncarryable_materials, cintura attuale).
+	var too_heavy: Array[String] = []
+	for job in suitable_jobs:
+		if not reachable.call(job["reach_target"]):
+			continue
+		var kind := String(job["kind"])
+		if kind == "build" or kind == "upgrade" or kind == "repair":
+			var heavy := MaterialSupplyService.get_uncarryable_materials(worker, job["target"], kind == "repair")
+			if not heavy.is_empty():
+				too_heavy.append("%s: %s" % [String(job["log_name"]), ", ".join(heavy)])
+				continue
+		takeable_jobs.append(job)
+	if takeable_jobs.is_empty():
+		if too_heavy.is_empty():
+			none["log"] = "%s — nessuno preso: non adatto (nessun lavoro raggiungibile)." % found_text
+		else:
+			none["log"] = "%s — nessuno preso: non adatto (non può trasportare %s)." % [found_text, "; ".join(too_heavy)]
+		return none
+	return {"jobs": takeable_jobs, "found_text": found_text, "log": ""}
+
+
+# Presa di un lavoro tra quelli di find_takeable_jobs (`found`, con "jobs" non vuoto): scelta secondo il modo di priorità
+# del giocatore (pick_job, 2026-10-08: la distanza non conta) e la stessa funzione dell'assegnazione a mano ("assign"
+# del fornitore). {"taken": bool, "log": riga per il log}. Un rifiuto non viene ritentato: resolve_idle_individual passa
+# alle attività di ripiego.
+static func take_job(worker: HumanIndividual, game_data: GameData, found: Dictionary) -> Dictionary:
+	var takeable_jobs: Array[Dictionary] = []
+	takeable_jobs.assign(found.get("jobs", []))
+	var found_text := String(found.get("found_text", ""))
+	var pick := pick_job(game_data, worker, takeable_jobs)
+	var best: Dictionary = pick["job"]
+	var task_before := worker.current_task
+	var queue_size_before := worker.task_queue.size()
+	best["provider"]["assign"].call(worker, best)
+	var taken := (worker.current_task != null and worker.current_task != task_before) or worker.task_queue.size() > queue_size_before
+	var job_text := "%s %s" % [String(best["key"]), String(best["log_name"])]
+	if taken:
+		return {"taken": true, "log": "%s — preso %s — %s." % [found_text, job_text, String(pick["reason"])]}
+	return {"taken": false, "log": "%s — scelto %s — %s, ma rifiutato: passa alle attività di ripiego." % [found_text, job_text, String(pick["reason"])]}

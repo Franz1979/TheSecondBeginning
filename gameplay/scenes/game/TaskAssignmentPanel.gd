@@ -969,7 +969,7 @@ func _build_return_borrowed_tools_setting_row() -> Control:
 
 
 # Regola "Ritira i mucchi abbandonati" (2026-10-07): spunta, accesa all'inizio; salvata in UserOptions appena cambia.
-# Spenta: i mucchi non entrano in coda e le loro righe spariscono (GameScene._pile_jobs_collect).
+# Spenta: i mucchi non entrano in coda e le loro righe spariscono (PileJobProvider.collect).
 func _build_collect_piles_setting_row() -> Control:
 	var check := CheckBox.new()
 	check.text = tr("task_assignment_setting_collect_piles")
@@ -987,7 +987,7 @@ func _build_collect_piles_setting_row() -> Control:
 
 
 # Regola "Svuota le uscite piene" (2026-10-08): spunta, accesa all'inizio; salvata in UserOptions appena cambia. Spenta:
-# i lavori di consegna dei Prodotti finiti non entrano in coda e le loro righe spariscono (GameScene._output_jobs_collect).
+# i lavori di consegna dei Prodotti finiti non entrano in coda e le loro righe spariscono (OutputJobProvider.collect).
 func _build_empty_outputs_setting_row() -> Control:
 	var check := CheckBox.new()
 	check.text = tr("task_assignment_setting_empty_outputs")

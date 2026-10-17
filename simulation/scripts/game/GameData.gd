@@ -294,7 +294,7 @@ var stock_snapshot: Dictionary = {}
 var stock_snapshot_fill: Array = []
 var stock_snapshot_time: float = -1.0
 # Ordini creati dal cassetto "Assegnazione compiti" (2026-10-09, richiesta utente): lavori in coda senza destinatario,
-# chi li prende lo decide la coda (chiave della lista "order:<id>", GameScene._drawer_order_jobs_collect). Una voce per
+# chi li prende lo decide la coda (chiave della lista "order:<id>", DrawerOrderJobProvider.collect). Una voce per
 # ordine, solo tipi JSON-nativi: {"id": int stabile, "type": String, ...campi del tipo}. Oggi il solo tipo "produce":
 # "recipe" (String), "quantity" (int), "deliver_to_warehouse" (bool); senza edificio, scelto alla presa. Pensato
 # generico: i lavori di zona entreranno qui con un "type" loro. Salvati da GameSaveService ("drawer_orders",
@@ -308,6 +308,9 @@ var next_drawer_order_id: int = 1
 var coordinator_posts: Dictionary = {}
 # Primo giro di CoordinatorService su questa partita già fatto (posti caricati controllati). Mai salvato.
 var coordinator_posts_checked: bool = false
+# Stato della lista dei lavori che vive solo durante la partita (attese per l'assegnazione a mano, lavori aperti all'ultimo
+# giro). Mai salvato (2026-10-17, refactoring GameScene blocco 2a — vedi JobBoardRuntimeState).
+var job_board_runtime: JobBoardRuntimeState = JobBoardRuntimeState.new()
 # Anno dell'ultimo evento avvenuto per ogni CATEGORIA di eventi casuali (2026-09-27, richiesta utente —
 # raffreddamento condiviso, vedi RandomEventCategoryRules): id categoria (String) -> anno (int). Scritto da
 # RandomEventService.apply_event, letto dal sorteggio. Salvato da GameSaveService ("random_event_category_last_year").

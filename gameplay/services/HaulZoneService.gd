@@ -25,7 +25,7 @@ const UNTIL_EMPTY_KEY := "until_empty"
 const LABEL_TASK_KEY := "label_task_name"
 # Consegna di un lavoro (2026-10-09, richiesta utente): chiave nel context della raccolta che porta via il mucchio lasciato
 # da un taglio, un'estrazione o una demolizione (GameScene._on_ground_pile_haul_requested). Quel mucchio non è un lavoro
-# "Mucchio" della lista finché la consegna esiste (GameScene._pile_jobs_collect).
+# "Mucchio" della lista finché la consegna esiste (PileJobProvider.collect).
 const JOB_DELIVERY_KEY := "job_pile_delivery"
 # Risorsa del mucchio da ritirare (2026-10-09): nome della risorsa se il mucchio ne ha una sola, "" se più d'una. Nella zona
 # del ritiro "fino a vuoto" preso dalla lista (duplicata a ogni viaggio) o nel context della consegna dopo una demolizione;
