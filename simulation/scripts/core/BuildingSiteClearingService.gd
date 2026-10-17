@@ -31,6 +31,23 @@ static func has_woody_vegetation(macro_state: MacroCellState, pos: Vector2i) -> 
 	return false
 
 
+# Ceppi d'albero sulla microcella `pos` (2026-10-16, da ClearAction): tagli d'albero ancora nella finestra di rientro
+# (dopo, lo slot non mostra più il ceppo). Sola lettura. Lo usano la durata della pulizia (ClearAction) e la regola
+# BuildingRules.requires_tree_stump (BuildingVerificationService).
+static func count_tree_stumps(macro_state: MacroCellState, pos: Vector2i, current_year: int) -> int:
+	if macro_state == null:
+		return 0
+	var reentry_years: int = int(IndividualVegetationService.REENTRY_YEARS_BY_TYPE.get(GameTypes.WorldObjectType.TREE, 0))
+	var count := 0
+	for key in macro_state.vegetation_cut_exceptions.keys():
+		if key.x != pos.x or key.y != pos.y:
+			continue
+		var entry: Dictionary = macro_state.vegetation_cut_exceptions[key]
+		if int(entry.get("origin_type", -1)) == GameTypes.WorldObjectType.TREE and current_year - int(entry.get("cut_year", 0)) < reentry_years:
+			count += 1
+	return count
+
+
 static func clear_microcell(macro_state: MacroCellState, pos: Vector2i, is_currently_grass: bool) -> void:
 	_clear_type(macro_state, GameTypes.WorldObjectType.TREE, pos)
 	_clear_type(macro_state, GameTypes.WorldObjectType.SHRUB, pos)

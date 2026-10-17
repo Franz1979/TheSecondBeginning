@@ -34,7 +34,9 @@ const CLICK_RADIUS_PX: float = 7.0
 # con MOUSE_BUTTON_RIGHT per il comando "vai e raccogli" (stesso hit-test, nessuna duplicazione),
 # separato per costruzione dalla selezione sinistro-click — nessun altro cambiamento alla logica di
 # hit-test sotto.
-func try_select(event: InputEvent, live_cells: Dictionary, required_button: int = MOUSE_BUTTON_LEFT) -> Dictionary:
+# `include_depleted` (2026-10-17, bugfix "sassi visibili ma non raccoglibili"): true per raccolta e ispezione, che
+# cercano i sassi di scarto anche di una roccia esaurita; false (selezione, Estrai) la salta come prima.
+func try_select(event: InputEvent, live_cells: Dictionary, required_button: int = MOUSE_BUTTON_LEFT, include_depleted: bool = false) -> Dictionary:
 	if not (event is InputEventMouseButton) or not event.pressed or event.button_index != required_button:
 		return {}
 
@@ -59,7 +61,7 @@ func try_select(event: InputEvent, live_cells: Dictionary, required_button: int 
 			if abs(pos.x - click_lot.x) > 1 or abs(pos.y - click_lot.y) > 1:
 				continue
 			# Roccia esaurita (2026-10-08): non c'è più, il clic passa ai sassi rimasti e al resto.
-			if RockStoneService.is_depleted(cell.macro_state, pos):
+			if not include_depleted and RockStoneService.is_depleted(cell.macro_state, pos):
 				continue
 
 			var screen_pos: Vector2 = cell.renderer.get_stone_screen_position(pos)

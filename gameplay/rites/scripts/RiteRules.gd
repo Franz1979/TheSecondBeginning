@@ -15,6 +15,9 @@ enum RiteType { RELIGIOUS, POLITICAL, CULTURAL, SOCIAL }
 @export var rite_type: RiteType = RiteType.RELIGIOUS
 # Chiave tr() del nome mostrato nel popup di scelta (es. "rite_simple_name").
 @export var display_name: String = ""
+# Icona del comando del rito (2026-10-17, chiave di IconRegistry.COMMAND_ICONS/COMMAND_ICON_NODES): ordine, riga della coda,
+# fine del rito. "rite" = la falce di luna dei riti religiosi; la lezione ha "lesson" (il ceppo).
+@export var command_icon_key: String = "rite"
 # BuildingRules/building_type_name degli edifici presso cui il rito si può celebrare (es. "stacked_stones").
 @export var building_types: Array[String] = []
 # Durata della celebrazione in giorni di gioco (RiteAction).

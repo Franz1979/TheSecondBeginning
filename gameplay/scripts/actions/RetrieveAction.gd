@@ -154,7 +154,7 @@ func activate(individual: Variant, context: Dictionary) -> void:
 
 	_quantity_to_retrieve = 0
 	if individual.carried_resources.is_empty() and space_per_unit > 0.0:
-		_quantity_to_retrieve = max(0, min(quantity_requested, min(int(floor(free_space / space_per_unit)), available)))
+		_quantity_to_retrieve = max(0, min(quantity_requested, min(int(floor(free_space / space_per_unit + FoodSelectionService.UNIT_FIT_EPSILON)), available)))
 
 	var space_retrieved: float = float(_quantity_to_retrieve) * space_per_unit
 	_duration = 0.0

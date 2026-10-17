@@ -96,7 +96,7 @@ static func put_down_carried_body(individual: HumanIndividual, mound_id: int = -
 	var mound := find_building(mound_id)
 	if mound != null:
 		record["home_macro_coords"] = Vector2i(mound.macro_x, mound.macro_y)
-		record["position"] = Vector2(mound.micro_x, mound.micro_y) + PlaceholderBuildingShapes.burial_slab_center_microcell()
+		record["position"] = Vector2(mound.micro_x, mound.micro_y) + PlaceholderBuildingShapes.burial_slab_center_microcell(mound.rotation)
 	record["mound_id"] = mound_id
 	record["view_dirty"] = true
 	if DebugLogging.ENABLED and DebugLogging.SHOW_TASK_LIFECYCLE_LOGS:

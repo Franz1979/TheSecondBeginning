@@ -14,6 +14,7 @@ min_village_adults = 5
 min_participants = 5
 wait_days = 2.0
 feast_days = 1.0
+organizer_stamina_per_day = 150.0
 happiness_gain = 20.0
 social_gain_participant = 0.5
 social_gain_organizer = 1.0

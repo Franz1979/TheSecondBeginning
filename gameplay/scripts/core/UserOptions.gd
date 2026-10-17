@@ -91,6 +91,9 @@ var job_board_empty_full_outputs: bool = true
 # panel, il default), true = "Sopra" (sopra l'info panel, allineato al bordo destro dello schermo). Si cambia dal bottone
 # nella barra del titolo del cassetto. Chiave in options.cfg con lo stesso nome.
 var side_drawer_overlay: bool = false
+# Spunta "Nascondi superati" della BuildBar (2026-10-16, richiesta utente): accesa, un edificio il cui miglioramento
+# (BuildingRules.upgrades_to) si può già costruire non compare tra gli edifici. Chiave in options.cfg con lo stesso nome.
+var build_bar_hide_superseded: bool = true
 
 # Volumi audio (2026-09-21, richiesta utente): lineari 0-1, default 0.8, uno per bus (vedi
 # audio/buses/default_bus_layout.tres). Applicati ai bus con apply_volumes(), al load e ad ogni modifica.
@@ -148,6 +151,7 @@ func load_from_disk() -> void:
 	job_board_collect_piles = bool(config.get_value(SECTION, "job_board_collect_piles", true))
 	job_board_empty_full_outputs = bool(config.get_value(SECTION, "job_board_empty_full_outputs", true))
 	side_drawer_overlay = bool(config.get_value(SECTION, "side_drawer_overlay", false))
+	build_bar_hide_superseded = bool(config.get_value(SECTION, "build_bar_hide_superseded", true))
 	for field in VOLUME_BUSES.keys():
 		set(field, clampf(float(config.get_value(SECTION, field, DEFAULT_VOLUME)), 0.0, 1.0))
 
@@ -175,6 +179,7 @@ func save_to_disk() -> void:
 	config.set_value(SECTION, "job_board_collect_piles", job_board_collect_piles)
 	config.set_value(SECTION, "job_board_empty_full_outputs", job_board_empty_full_outputs)
 	config.set_value(SECTION, "side_drawer_overlay", side_drawer_overlay)
+	config.set_value(SECTION, "build_bar_hide_superseded", build_bar_hide_superseded)
 	for field in VOLUME_BUSES.keys():
 		config.set_value(SECTION, field, get(field))
 	config.save(OPTIONS_FILE_PATH)

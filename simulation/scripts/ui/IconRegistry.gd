@@ -45,6 +45,8 @@ const RESOURCE_ICONS := {
 	# "fiber_rope" (2026-09-23, richiesta utente - corda di fibre, primo prodotto del sistema di produzione): emoji
 	# nodo provvisorio.
 	"fiber_rope": "🪢",
+	# Legna da ardere (2026-10-16, legnaia): ciocchi spaccati da un tronco.
+	"firewood": "🪵",
 }
 
 
@@ -186,6 +188,8 @@ const BUILDING_ICON_NODES := {
 	"smokehouse": preload("res://simulation/scripts/ui/SmokehouseIcon.gd"),
 	"burial": preload("res://simulation/scripts/ui/BurialIcon.gd"),
 	"earthwork": preload("res://simulation/scripts/ui/EarthworkIcon.gd"),
+	# Sentiero di ciottoli (2026-10-16, richiesta utente): tratto dritto del disegno della mappa (LinearShapes).
+	"pebble_path": preload("res://simulation/scripts/ui/PebblePathIcon.gd"),
 	# Pietre impilate (2026-10-02, richiesta utente): pila verticale di sassi, stesso disegno della mappa.
 	"stacked_stones": preload("res://simulation/scripts/ui/StackedStonesIcon.gd"),
 	# Capanna di stoccaggio (2026-10-03, richiesta utente): stesso disegno della mappa (StorageHutShape).
@@ -198,6 +202,8 @@ const BUILDING_ICON_NODES := {
 	"clothing_hut": preload("res://simulation/scripts/ui/ClothingHutIcon.gd"),
 	# Macerie (2026-10-10, richiesta utente — crollo): stesso disegno della mappa (PlaceholderBuildingShapes).
 	"rubble": preload("res://simulation/scripts/ui/RubbleIcon.gd"),
+	# Ceppo dell'insegnamento (2026-10-16, richiesta utente): stesso disegno della mappa (PlaceholderBuildingShapes).
+	"teaching_stump": preload("res://simulation/scripts/ui/TeachingStumpIcon.gd"),
 }
 
 
@@ -246,6 +252,8 @@ const COMMAND_ICONS := {
 	# "rite" (2026-10-02, task Rite): sulla mappa vale l'icona disegnata (COMMAND_ICON_NODES, CommandMoonIcon); questa
 	# emoji resta solo per le righe del popup di scelta del rito (interfaccia, non mappa).
 	"rite": "🌙",
+	# "lesson" (2026-10-17, lezione al Ceppo dell'insegnamento): sulla mappa il ceppo disegnato (CommandLessonIcon).
+	"lesson": "📜",
 	# "bury" (2026-10-07, sepoltura — prima usava la luna del rito): sulla mappa vale l'icona disegnata (CommandSkullIcon).
 	"bury": "💀",
 	# "cut" (2026-10-04, task Cut): sulla mappa vale l'icona disegnata (CommandAxeIcon); questa per le righe del popup.
@@ -350,6 +358,8 @@ const COMMAND_ICON_NODES := {
 	"clear_rubble": preload("res://simulation/scripts/ui/CommandShovelIcon.gd"),
 	# "rite" (2026-10-02, task Rite): falce di luna, vedi CommandMoonIcon.gd.
 	"rite": preload("res://simulation/scripts/ui/CommandMoonIcon.gd"),
+	# "lesson" (2026-10-17): il ceppo dell'insegnamento, vedi CommandLessonIcon.gd.
+	"lesson": preload("res://simulation/scripts/ui/CommandLessonIcon.gd"),
 	# "bury" (2026-10-07, sepoltura): teschio, vedi CommandSkullIcon.gd.
 	"bury": preload("res://simulation/scripts/ui/CommandSkullIcon.gd"),
 	# "cut" (2026-10-04, task Cut): accetta, vedi CommandAxeIcon.gd.

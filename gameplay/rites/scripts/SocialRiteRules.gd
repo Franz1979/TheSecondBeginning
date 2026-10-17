@@ -8,6 +8,18 @@ extends RiteRules
 @export var min_village_adults: int = 5
 # Partecipanti necessari per cominciare (da ragazzo in su; per il banchetto: arrivati con il cibo).
 @export var min_participants: int = 5
+# Chi si convoca e chi conta per cominciare (2026-10-16, lezione: solo i bambini). Fasce d'età (HumanTypes.AgeBand);
+# vuoto = di sempre (convocati tutti; contano da ragazzo in su). L'organizzatore conta sempre.
+@export var convoked_age_bands: Array[int] = []
+@export var counted_age_bands: Array[int] = []
+# Convocati al massimo, organizzatore escluso (0 = nessun limite).
+@export var max_participants: int = 0
+# Nome della task mostrato al giocatore (chiave tr, 2026-10-17 — lezione: "Insegnamento orale"); vuoto = "Rito sociale".
+# Solo l'etichetta (Task.ACTIVITY_LABEL_KEY): task_name resta SocialRiteService.TASK_NAME per la logica.
+@export var task_label_key: String = ""
+# Stamina consumata al giorno dall'organizzatore mentre il raduno è in corso (2026-10-17, richiesta utente: banchetto 150
+# come la Produce, lezione 100 come chi celebra un rito). Gli altri partecipanti non consumano stamina.
+@export var organizer_stamina_per_day: float = 0.0
 # Attesa massima dei partecipanti (giorni di gioco): scaduta con meno di min_participants, il rito salta.
 @export var wait_days: float = 1.0
 # Durata del raduno vero e proprio (giorni di gioco).

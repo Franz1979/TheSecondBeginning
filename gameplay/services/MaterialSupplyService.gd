@@ -96,12 +96,14 @@ static func get_missing_materials(target_building: Building) -> Dictionary:
 # Combustibile (FUEL_KEY): sorgente = magazzino più vicino con almeno una risorsa con fuel_value > 0
 # (WarehouseSelectionService.FUEL_CRITERION); risorsa = quella con fuel_value più alto in quel magazzino; quantità =
 # combustibile mancante / fuel_value arrotondato per eccesso, limitata da get_max_depositable.
+# `carrier` (2026-10-16, materiali troppo pesanti): se c'è, le risorse di cui non porta nemmeno un'unità a zaino vuoto
+# (get_uncarryable_materials) sono saltate, così porta prima quelle che può.
 # `for_repair` (2026-10-10, materiali della riparazione): fabbisogno = RepairAction.get_supply_missing (piano meno
 # consumato meno contenitore), nessuna sorgente esclusa (chi ripara un deposito può prendere dalle sue stesse scorte) e
 # quantità non limitata dal magazzino del bersaglio (si scarica nel contenitore della riparazione).
 static func get_supply_need(
 	world: World, target_building: Building, origin_position: Vector2, origin_macro_coords: Vector2i,
-	reachable: Callable = Callable(), for_repair: bool = false
+	reachable: Callable = Callable(), for_repair: bool = false, carrier: HumanIndividual = null
 ) -> Dictionary:
 	var missing := RepairAction.get_supply_missing(target_building) if for_repair else get_missing_materials(target_building)
 	if missing.is_empty() or world == null:
@@ -112,6 +114,8 @@ static func get_supply_need(
 		excluded = _get_excluded_source_ids(world, target_building)
 	var first_need: Dictionary = {}
 	for resource_name in missing.keys():
+		if carrier != null and resource_name != FUEL_KEY and not carrier.can_carry_one_unit_when_empty(String(resource_name)):
+			continue
 		var need: Dictionary
 		if resource_name == FUEL_KEY:
 			need = _get_fuel_need(world, target_building, float(missing[resource_name]), origin_position, origin_macro_coords, excluded, reachable)
@@ -131,6 +135,37 @@ static func get_supply_need(
 		if first_need.is_empty():
 			first_need = need
 	return first_need
+
+
+# Materiali troppo pesanti (2026-10-16, richiesta utente — pietra da 50 con capacità 49): risorse ancora mancanti a
+# `target_building` di cui `individual` non porta nemmeno un'unità a zaino vuoto, con la cintura attuale
+# (HumanIndividual.can_carry_one_unit_when_empty). Il combustibile è escluso: sceglie da sé la risorsa al prelievo.
+static func get_uncarryable_materials(individual: HumanIndividual, target_building: Building, for_repair: bool = false) -> Array[String]:
+	var names: Array[String] = []
+	if individual == null or target_building == null:
+		return names
+	var missing := RepairAction.get_supply_missing(target_building) if for_repair else get_missing_materials(target_building)
+	for resource_name in missing.keys():
+		if resource_name != FUEL_KEY and not individual.can_carry_one_unit_when_empty(String(resource_name)):
+			names.append(String(resource_name))
+	return names
+
+
+# Risorse mancanti a `target_building` che nessuno di `individuals` porta (stesso controllo di get_uncarryable_materials):
+# l'avviso "nessuno può trasportare" della campanella. Vuoto se nessuno è nel gruppo.
+static func get_materials_nobody_can_carry(individuals: Array[HumanIndividual], target_building: Building, for_repair: bool = false) -> Array[String]:
+	var names: Array[String] = []
+	if individuals.is_empty():
+		return names
+	for resource_name in get_uncarryable_materials(individuals[0], target_building, for_repair):
+		var someone_can := false
+		for member in individuals:
+			if member.can_carry_one_unit_when_empty(resource_name):
+				someone_can = true
+				break
+		if not someone_can:
+			names.append(resource_name)
+	return names
 
 
 # Fabbisogno di combustibile (vedi get_supply_need). {} se nulla è depositabile; source null se nessun magazzino ha
@@ -185,7 +220,7 @@ static func _get_excluded_source_ids(_world: World, target_building: Building) -
 # rifornimento possibile, il chiamante ricade nell'attesa di oggi (_resolve_material_shortage). Casi:
 #   - l'ultimo Retrieve di rifornimento non ha portato nulla (CONTEXT_SUPPLY_FAILED) → false, niente nuovo giro;
 #   - lo zaino contiene già una risorsa mancante → Walk → Unload al bersaglio (anche senza sorgente);
-#   - nessuna sorgente → false;
+#   - nessuna sorgente → false (le risorse che l'individuo non porta sono saltate: vedi get_supply_need `carrier`);
 #   - zaino con altro → prima Walk → Unload al magazzino più vicino che lo accetta (nessuno → false), poi il giro;
 #   - zaino vuoto → Walk → Retrieve → Walk → Unload.
 static func try_supply_at_level_zero(individual: HumanIndividual, task: Task, world: World, target_building: Building) -> bool:
@@ -213,7 +248,7 @@ static func try_supply_at_level_zero(individual: HumanIndividual, task: Task, wo
 			return true
 
 	var reachable := PathfindingService.reachability_for(individual)
-	var need := get_supply_need(world, target_building, individual.position, individual.home_macro_coords, reachable, for_repair)
+	var need := get_supply_need(world, target_building, individual.position, individual.home_macro_coords, reachable, for_repair, individual)
 	if need.is_empty() or need["source"] == null:
 		_log(individual, target_building, "nessun magazzino ha %s — attesa." % str(missing))
 		return false

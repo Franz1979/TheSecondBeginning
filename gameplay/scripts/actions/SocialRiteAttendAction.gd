@@ -50,8 +50,15 @@ func get_stamina_delta(individual: Variant, context: Dictionary, delta: float) -
 			return 0.0
 		SocialRiteService.on_prepared(target_building, individual as HumanIndividual, GameSettings.active_human_individuals, GameSettings.active_game_data)
 	SocialRiteService.advance(target_building, delta, GameSettings.active_human_individuals, GameSettings.active_game_data)
-	if SocialRiteService.find_rite(GameSettings.active_game_data, target_building.id).is_empty():
+	var record := SocialRiteService.find_rite(GameSettings.active_game_data, target_building.id)
+	if record.is_empty():
 		_done = true
+		return 0.0
+	# Organizzatore al lavoro (2026-10-17): consuma stamina solo durante il raduno vero e proprio.
+	if bool(context.get(SocialRiteService.CONTEXT_ORGANIZER, false)) and String(record.get("phase", "")) == SocialRiteService.PHASE_FEASTING:
+		var rules := RiteService.get_rules(String(record.get("rite_id", ""))) as SocialRiteRules
+		if rules != null and rules.organizer_stamina_per_day > 0.0:
+			return -rules.organizer_stamina_per_day * delta
 	return 0.0
 
 

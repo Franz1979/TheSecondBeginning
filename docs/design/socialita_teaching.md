@@ -91,6 +91,17 @@ Solo il passo corrente si dettaglia fino in fondo; gli altri si rivedono quando 
 - Sbloccato da **Insegnamento orale** (`oral_teaching`, 30 pensieri, prereq. Costruzioni paleolitiche), che sblocca
   anche l'edificio **pietre dell'insegnamento**; filone a sé che più avanti porterà alla scuola.
 - Convocazione sullo schema di `ProcessionService`.
+- **Edificio (fatto 2026-10-16): Ceppo dell'insegnamento** (`teaching_stump`, categoria nuova **Culturale**,
+  cartella `buildings/cultural/`). Si costruisce solo su una microcella con almeno un ceppo d'albero
+  (`BuildingRules.requires_tree_stump`, criterio 11 di `BuildingVerificationService`); la pulizia toglie i ceppi veri,
+  l'edificio si disegna come aula all'aperto (ceppo-cattedra e 6 pietre-banco). 12 pietre, 2 giorni, lavoro 1200,
+  durabilità 150, 50 anni, raggio culturale 6 (fino a 12 con i livelli d'influenza; punti dalle lezioni, passo 2).
+- **Lezione (fatta 2026-10-16)**: rito culturale `oral_lesson` (`TeachingRiteRules`, calcoli in `TeachingRiteService`,
+  raduno di `SocialRiteService`), ordinato dal pannello del Ceppo. Insegnano MATURE_ADULT e OLD con una skill
+  insegnabile ≥ 100 (tutte tranne socialità e ritualità); materia = la migliore. Convoca fino a 6 CHILD, parte con 1
+  allievo arrivato, attesa 1 giorno, durata mezza giornata. Allievi: materia + (insegnante − allievo) × 2% × (1 +
+  cognizione insegnante/1000), intero 1–10; cognizione +1, socialità +0.5, felicità +10. Insegnante: socialità +1,
+  felicità +10. Edificio: 5 + 1 per allievo punti culturali; coesione +0.05.
 - **Punti aperti:**
   - la percentuale si *aggiunge* alla skill del bambino o la skill *sale fino* a quella soglia?
   - frequenza (una volta per stagione/anno?) per evitare abusi;

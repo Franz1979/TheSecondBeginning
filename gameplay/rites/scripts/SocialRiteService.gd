@@ -60,6 +60,15 @@ static func get_start_rejection(building: Building, rules: SocialRiteRules, indi
 			adults += 1
 	if adults < rules.min_village_adults:
 		return TranslationServer.translate("social_rite_reject_adults").format({"n": rules.min_village_adults})
+	# Convocati solo di alcune età (2026-10-16, lezione: i bambini): senza nessuno di loro nel villaggio non si fa.
+	if not rules.convoked_age_bands.is_empty():
+		var any_convocable := false
+		for member in _village_members(building, individuals):
+			if rules.convoked_age_bands.has(_age_band(member, game_data)):
+				any_convocable = true
+				break
+		if not any_convocable:
+			return TranslationServer.translate("social_rite_reject_no_convocable")
 	# Carne e combustibile non bloccano più l'ordine (2026-10-16): li porta l'organizzatore in preparazione.
 	return ""
 
@@ -77,9 +86,12 @@ static func start(
 		"elapsed": 0.0, "participants": {}, "convoked": [],
 		"order_key": "", "meat_units": 0, "pot_calories": 0.0, "pot_space": 0.0, "cooked": 0,
 	}
+	# Lezione (2026-10-16): la materia è la skill insegnabile migliore dell'insegnante, fissata adesso.
+	if rules is TeachingRiteRules:
+		record[TeachingRiteService.RECORD_SUBJECT_KEY] = TeachingRiteService.best_skill(rules as TeachingRiteRules, organizer)
 	game_data.active_social_rites.append(record)
 	# Prima solo l'organizzatore (2026-10-16): se manca materiale lo porta lui (preparazione), poi la convocazione.
-	var task := build_attend_task(organizer, building, true)
+	var task := build_attend_task(organizer, building, true, rules.task_label_key)
 	var age_band := _age_band(organizer, game_data)
 	if organizer.get_assign_rejection_reason(task, age_band as HumanTypes.AgeBand) == HumanIndividual.ASSIGN_OK:
 		organizer.assign_task(task, age_band as HumanTypes.AgeBand)
@@ -148,11 +160,16 @@ static func _convoke(
 	for member in _village_members(building, individuals):
 		if member == organizer:
 			continue
+		# Età convocate e posti (2026-10-16, SocialRiteRules.convoked_age_bands / max_participants).
+		if not rules.convoked_age_bands.is_empty() and not rules.convoked_age_bands.has(_age_band(member, game_data)):
+			continue
+		if rules.max_participants > 0 and called.size() - 1 >= rules.max_participants:
+			break
 		var skip := _skip_reason(member, game_data)
 		if skip != "":
 			log_event("  #%d %s non convocato: %s." % [member.id, member.name, skip])
 			continue
-		var task := build_attend_task(member, building, false)
+		var task := build_attend_task(member, building, false, rules.task_label_key)
 		var age_band := _age_band(member, game_data)
 		if member.get_assign_rejection_reason(task, age_band as HumanTypes.AgeBand) != HumanIndividual.ASSIGN_OK:
 			continue
@@ -178,7 +195,7 @@ static func _begin(record: Dictionary, building: Building, rules: SocialRiteRule
 
 
 # Task del rito per `member`: [cammina all'edificio, al rito].
-static func build_attend_task(member: HumanIndividual, building: Building, is_organizer: bool) -> Task:
+static func build_attend_task(member: HumanIndividual, building: Building, is_organizer: bool, label_key: String = "") -> Task:
 	var steps: Array[Action] = []
 	var descriptions: Array[String] = []
 	steps.append(WalkAction.new(MaterialSupplyService.building_point(member, building)))
@@ -193,6 +210,8 @@ static func build_attend_task(member: HumanIndividual, building: Building, is_or
 	# is_target_valid, HumanIndividualActionService.is_task_valid).
 	task.is_suspendable = true
 	task.context[CONTEXT_BUILDING_ID] = building.id
+	if label_key != "":
+		task.context[Task.ACTIVITY_LABEL_KEY] = label_key
 	if is_organizer:
 		task.context[CONTEXT_ORGANIZER] = true
 		task.context[RiteService.CONTEXT_ORDERED] = true
@@ -210,11 +229,18 @@ static func on_arrival(building: Building, individual: HumanIndividual, game_dat
 	var key := str(individual.id)
 	if participants.has(key):
 		return false
-	# Contano i partecipanti da ragazzo in su; i bambini partecipano ma non contano.
-	var counts := _age_band(individual, game_data) != HumanTypes.AgeBand.CHILD
+	# Contano i partecipanti da ragazzo in su (o le età di counted_age_bands, 2026-10-16) e sempre l'organizzatore; gli
+	# altri partecipano ma non contano.
+	var age_band := _age_band(individual, game_data)
+	var counts := individual.id == int(record["organizer_id"])
+	if not counts:
+		counts = rules.counted_age_bands.has(age_band) if not rules.counted_age_bands.is_empty() else age_band != HumanTypes.AgeBand.CHILD
 	participants[key] = {"counts": counts}
-	log_event("#%d %s arriva all'edificio #%d%s." % [individual.id, individual.name, building.id, "" if counts else " (bambino, non conta)"])
+	log_event("#%d %s arriva all'edificio #%d%s." % [individual.id, individual.name, building.id, "" if counts else " (non conta)"])
 	if String(record["phase"]) != PHASE_WAITING or _count_counting(record) < rules.min_participants:
+		return false
+	# Senza l'organizzatore non si comincia (2026-10-17, bugfix: la lezione partiva con due bambini e l'insegnante per strada).
+	if not participants.has(str(int(record["organizer_id"]))):
 		return false
 	_begin(record, building, rules)
 	return true
@@ -337,6 +363,16 @@ static func _finish(record: Dictionary, building: Building, rules: SocialRiteRul
 		individual.current_happiness = clampf(individual.current_happiness + rules.happiness_gain, 0.0, maxf(individual.max_happiness, individual.current_happiness))
 		var social_gain := rules.social_gain_organizer if is_organizer else rules.social_gain_participant
 		individual.skill_social = minf(individual.skill_social + social_gain, HumanIndividual.SKILL_MAX)
+	# Lezione (2026-10-16): materia e cognizione agli allievi presenti, punti culturali all'edificio.
+	if rules is TeachingRiteRules:
+		var teacher: HumanIndividual = null
+		var students: Array[HumanIndividual] = []
+		for individual in present:
+			if individual.id == int(record["organizer_id"]):
+				teacher = individual
+			else:
+				students.append(individual)
+		TeachingRiteService.apply_lesson(record, building, rules as TeachingRiteRules, teacher, students, game_data)
 	# Coesione (2026-10-14): fissa per il rito, più — per il banchetto — una quota per ogni carne cotta (quanto si festeggia).
 	var village := _village_of(building)
 	var cohesion_gain := rules.cohesion_gain

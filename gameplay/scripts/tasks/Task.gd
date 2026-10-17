@@ -410,7 +410,14 @@ func print_cost_summary(individual: Variant) -> void:
 # identica sia per la Task ATTIVA (current_task) sia per una Task SOSPESA in coda (task_queue) —
 # gli step restano gli stessi oggetti in entrambi i casi, un solo punto invece di due formule
 # diverse (vedi GameScene._update_individual_panel_content, unico chiamante).
+# Etichetta propria di una task (2026-10-17, chiave tr nel context): sostituisce quella del task_name nel testo mostrato
+# (es. la lezione, che usa la task dei riti sociali). Assente = comportamento di sempre.
+const ACTIVITY_LABEL_KEY := "activity_label_key"
+
+
 func get_activity_description() -> String:
+	if context.has(ACTIVITY_LABEL_KEY):
+		return tr(String(context[ACTIVITY_LABEL_KEY]))
 	var base_text: String = tr(task_name) if task_name != "" else tr("task_debug_panel_unnamed_task")
 	var resource_name: String = ""
 	# Progresso dei viaggi (2026-10-01 per le work areas, dal 2026-10-05 anche per click diretto e trasporto): " 2/3",

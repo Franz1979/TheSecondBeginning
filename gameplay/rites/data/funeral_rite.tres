@@ -18,6 +18,6 @@ faith_relatives = 200.0
 procession_max_distance = 40.0
 procession_full_leadership = 1000.0
 procession_recall_interval_days = 0.25
-influence_gain = 20.0
+influence_gain = 10.0
 village_religion_gain = 2.0
 completion_sound_id = &"funeral_paleolithic"

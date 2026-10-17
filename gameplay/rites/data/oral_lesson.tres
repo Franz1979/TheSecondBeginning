@@ -1,0 +1,38 @@
+[gd_resource type="Resource" script_class="TeachingRiteRules" format=3]
+
+[ext_resource type="Script" path="res://gameplay/rites/scripts/TeachingRiteRules.gd" id="1_lesson"]
+
+[resource]
+script = ExtResource("1_lesson")
+id = "oral_lesson"
+rite_type = 2
+display_name = "rite_oral_lesson_name"
+building_types = Array[String](["teaching_stump"])
+allowed_age_bands = Array[int]([4, 5])
+spontaneous = false
+convoked_age_bands = Array[int]([1])
+counted_age_bands = Array[int]([1])
+max_participants = 6
+min_village_adults = 0
+min_participants = 2
+wait_days = 1.0
+feast_days = 0.5
+organizer_stamina_per_day = 100.0
+happiness_gain = 10.0
+social_gain_participant = 0.5
+social_gain_organizer = 1.0
+cohesion_gain = 0.05
+start_icon = "🗣"
+command_icon_key = "lesson"
+start_sound_id = &"lesson"
+min_teach_skill = 100.0
+excluded_subjects = Array[String](["skill_social", "skill_ritual"])
+gain_fraction = 0.02
+min_gain = 1
+max_gain = 10
+cognition_gain = 1.0
+influence_points_base = 1.0
+influence_points_per_student = 0.2
+village_culture_gain = 1.0
+village_culture_gain_per_student = 0.2
+task_label_key = "task_oral_lesson_name"

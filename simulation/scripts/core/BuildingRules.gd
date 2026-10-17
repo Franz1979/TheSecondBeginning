@@ -155,6 +155,10 @@ extends Resource
 @export var buildable_on_water: bool = false
 @export var buildable_on_river: bool = false
 @export var buildable_on_stone: bool = false
+# Serve un ceppo d'albero sulla microcella (2026-10-16, richiesta utente — Ceppo dell'insegnamento): si costruisce solo dove
+# è stato tagliato almeno un albero di recente (BuildingSiteClearingService.count_tree_stumps). Le piante vive bloccano
+# come sempre; la pulizia del cantiere toglie i ceppi veri, il ceppo dell'edificio è solo disegno.
+@export var requires_tree_stump: bool = false
 
 # Controlla SOLO il Criterio 7 di BuildingVerificationService (la porta non può affacciarsi su
 # terreno ostacolato/ignoto) — un edificio senza porta (es. una futura fontana) semplicemente non
@@ -306,6 +310,10 @@ extends Resource
 # accepted_categories e gli slot; senza il vincolo "quantità esatta mancante" di una workstation senza storage,
 # così si può portare una scorta per più cicli.
 @export var storage_accepts_recipe_materials_only: bool = false
+# Risorse ammesse nello storage (2026-10-16, richiesta utente — legnaia: solo tronchi, rametti e legna da ardere): elenco
+# esplicito di nomi che si somma ai filtri di categoria; vuoto = nessun filtro per nome. Vale per lo stoccaggio libero
+# (BuildingStorageService._free_storage_allows), non per il fabbisogno di un ordine in produzione.
+@export var storage_accepted_resources: Array[String] = []
 # Quanti ordini di produzione possono essere ATTIVI INSIEME su questo edificio (2026-09-24, richiesta utente; rinominato
 # da production_queue_slots il 2026-10-03: non è una coda) — ogni ordine è una Produce Task assegnata, anche con
 # l'individuo ancora in cammino; raggiunto il limite i pulsanti ricetta si spengono ("postazione già impegnata"). 1 =

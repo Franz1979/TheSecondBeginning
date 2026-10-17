@@ -1,0 +1,22 @@
+[gd_resource type="Resource" script_class="BuildingRules" format=3 uid="uid://oqinrakc0s3c"]
+
+[ext_resource type="Script" uid="uid://b8pl3yflicmtn" path="res://simulation/scripts/core/BuildingRules.gd" id="1_teaching_stump"]
+
+[resource]
+script = ExtResource("1_teaching_stump")
+building_name = "building_teaching_stump"
+category = 8
+required_idea_id = "oral_teaching"
+min_construction_days = 3
+required_labor = 2000
+lifespan_years = 100
+required_materials = {
+"stone": 12
+}
+max_durability = 150
+defense = 20
+required_space = 1
+requires_tree_stump = true
+has_door = false
+visibility_radius = 3
+cultural_radius = 6

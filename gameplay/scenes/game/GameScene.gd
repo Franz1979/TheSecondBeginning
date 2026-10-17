@@ -3027,7 +3027,10 @@ func _spawn_rite_completed_effect(building: Building, rite_id: String = "") -> v
 	if not live_cells.has(macro_coords):
 		return
 	# Funerale (rito della task Seppellisci, 2026-10-07): il teschio della sepoltura; ogni altro rito la luna.
-	var icon_node := IconRegistry.get_command_icon_node("bury" if rite_id == BodyBurialService.FUNERAL_RITE_ID else "rite")
+	var completed_rules := RiteService.get_rules(rite_id)
+	var icon_node := IconRegistry.get_command_icon_node(
+		"bury" if rite_id == BodyBurialService.FUNERAL_RITE_ID else (completed_rules.command_icon_key if completed_rules != null else "rite")
+	)
 	if icon_node == null:
 		return
 	var local_position := (Vector2(building.micro_x, building.micro_y) + Vector2(0.5, 0.5)) * MicroCellRenderer.CELL_SIZE
@@ -6250,7 +6253,8 @@ func _resolve_pickup_candidates(event: InputEvent, current_absolute_day: int, re
 	# blocco per NOME risorsa scritto a mano; ora un loop su LotCapacityService.
 	# get_resource_names_for_lot_source, una risorsa STONE_POSITION nuova compare qui da sola) —
 	# stesso hit-test di sempre (StoneSelectorController, su stone_positions/lot_registry["pebble"]).
-	var stone_hit := stone_selector_controller.try_select(event, live_cells, required_button)
+	# Anche le rocce esaurite (2026-10-17): i loro sassi di scarto restano raccoglibili.
+	var stone_hit := stone_selector_controller.try_select(event, live_cells, required_button, true)
 	if not stone_hit.is_empty():
 		if FogOfWarVerificationService.is_detail_visible(live_cells, stone_hit["macro_coords"], stone_hit["position"], current_absolute_day):
 			for resource_name in LotCapacityService.get_resource_names_for_lot_source(SecondaryResourceTypes.LotSource.STONE_POSITION):
@@ -7095,7 +7099,7 @@ func _assign_rite_task(worker: HumanIndividual, target_building: Building, rite_
 		target_building.requested_rite_id = rite_id
 		_forget_job_board_wait(["rite:%d" % target_building.id])
 		if not silent:
-			_spawn_rite_command_icon(target_building, "rite")
+			_spawn_rite_command_icon(target_building, rules.command_icon_key)
 			_refresh_selected_individual_panel()
 		_refresh_selected_building_panel()
 		return
@@ -7125,7 +7129,7 @@ func _assign_rite_task(worker: HumanIndividual, target_building: Building, rite_
 	elif not silent:
 		_report_failed_assignment(worker, task, "task_activity_rite")
 	if not silent:
-		_spawn_rite_command_icon(target_building, "rite" if assigned else "task_rejected")
+		_spawn_rite_command_icon(target_building, rules.command_icon_key if assigned else "task_rejected")
 		_refresh_selected_individual_panel()
 	_refresh_selected_building_panel()
 
@@ -8295,6 +8299,36 @@ func _collect_damaged_building_entries() -> Array[Dictionary]:
 	return entries
 
 
+# Voci "<edificio>: nessuno può trasportare <risorse>" della campanella (2026-10-16, richiesta utente): cantieri e
+# riparazioni richieste con un materiale mancante di cui nessuno del gruppo porta un'unità a zaino vuoto, con la cintura
+# attuale. Sparisce da sola quando qualcuno può (attrezzo tolto, sacca) o il materiale non manca più.
+func _collect_too_heavy_material_entries() -> Array[Dictionary]:
+	var entries: Array[Dictionary] = []
+	if macro_world == null:
+		return entries
+	for building in macro_world.buildings:
+		if building.is_demolished or building.rules == null or building.is_marked_for_demolition:
+			continue
+		var names: Array[String] = []
+		if not building.is_complete:
+			names = MaterialSupplyService.get_materials_nobody_can_carry(human_individuals, building)
+		elif building.repair_requested and RepairAction.is_building_repairable(building):
+			names = MaterialSupplyService.get_materials_nobody_can_carry(human_individuals, building, true)
+		if names.is_empty():
+			continue
+		var display_names: PackedStringArray = []
+		for resource_name in names:
+			display_names.append(IconRegistry.get_resource_display_name(resource_name))
+		var text := tr("pending_material_nobody_can_carry").format({
+			"building": _building_display_name(building), "resource": ", ".join(display_names),
+		})
+		entries.append(_pending_entry("material_too_heavy:%d" % building.id, text, {
+			"kind": "building", "id": building.id, "macro": Vector2i(building.macro_x, building.macro_y),
+			"sort": float(building.id), "name": text,
+		}))
+	return entries
+
+
 # Voci "Macerie: crollo di <edificio>" della campanella (2026-10-10): una per maceria, centra sulla maceria. Sparisce
 # quando la maceria viene sgomberata (la lista è ricostruita ogni secondo).
 func _collect_rubble_entries() -> Array[Dictionary]:
@@ -8309,25 +8343,6 @@ func _collect_rubble_entries() -> Array[Dictionary]:
 			"kind": "building", "id": building.id, "macro": Vector2i(building.macro_x, building.macro_y),
 			"sort": float(building.id), "name": text,
 		}))
-	return entries
-
-
-# Voci "<villaggio>: senza centro" della campanella (2026-10-12, passo 2 Folk/Village): una per villaggio con
-# center_building_id -1 (centro demolito o crollato). Nessun posto da centrare, come "nessun punto di assegnazione":
-# 🎯 spento con il suggerimento. Sparisce quando un nuovo centro completato ricollega il villaggio.
-func _collect_village_without_center_entries() -> Array[Dictionary]:
-	var entries: Array[Dictionary] = []
-	if human_folk == null:
-		return entries
-	for village in human_folk.villages:
-		if village.center_building_id != -1:
-			continue
-		var text := tr("pending_village_without_center").format({"village": village.get_display_name()})
-		var entry := _pending_entry("village_without_center:%d" % village.id, text, {
-			"kind": "none", "id": -1, "macro": Vector2i(-1, -1), "sort": float(village.id), "name": text,
-		})
-		entry["disabled_reason"] = tr("pending_village_without_center_detail")
-		entries.append(entry)
 	return entries
 
 
@@ -9547,6 +9562,8 @@ func _refresh_pending_entries() -> void:
 				"detail": tr("pending_reason_body").format({"days": days})}
 		))
 	body_entries.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return int(a["sort"]) < int(b["sort"]))
+	# Nessuna idea in sviluppo (2026-10-16): in cima, i pensieri depositati si stanno perdendo.
+	entries.append_array(PendingEntryService.collect_idea_entries(human_folk, _is_tech_tree_available()))
 	entries.append_array(body_entries)
 
 	var job_entries: Array[Dictionary] = []
@@ -9659,6 +9676,8 @@ func _refresh_pending_entries() -> void:
 	entries.append_array(_collect_unbutchered_carcass_entries())
 	# Edifici danneggiati (2026-10-10, Building.is_damaged).
 	entries.append_array(_collect_damaged_building_entries())
+	# Materiali che nessuno riesce a portare (2026-10-16, MaterialSupplyService.get_materials_nobody_can_carry).
+	entries.append_array(_collect_too_heavy_material_entries())
 	# Idea dell'assegnazione senza punto di assegnazione (2026-10-10): la coda non è attiva.
 	if JobBoardService.is_idea_completed(human_folk) and not board_enabled:
 		var no_point_text := tr("pending_no_assignment_point")
@@ -9670,8 +9689,8 @@ func _refresh_pending_entries() -> void:
 		entries.append(no_point_entry)
 	# Macerie da sgomberare (2026-10-10, crollo).
 	entries.append_array(_collect_rubble_entries())
-	# Villaggi rimasti senza centro (2026-10-12, passo 2 Folk/Village).
-	entries.append_array(_collect_village_without_center_entries())
+	# Villaggi rimasti senza centro (2026-10-12, passo 2 Folk/Village; voci in PendingEntryService dal 2026-10-16).
+	entries.append_array(PendingEntryService.collect_village_without_center_entries(human_folk))
 	# Righe del cassetto (2026-10-07), solo con l'idea: "In coda" i lavori senza nessuno (subito, attivi o bloccati, non
 	# nascosti), "In corso" quelli con almeno un lavoratore (solo a cassetto aperto, i nomi costano un giro).
 	var listed_jobs: Array[Dictionary] = []
@@ -9679,7 +9698,7 @@ func _refresh_pending_entries() -> void:
 		board_job_keys[String(job["key"])] = true
 		if not board_enabled:
 			continue
-		if not bool(job["assigned"]):
+		if not bool(job["assigned"]) or job.has("postponed_by"):
 			if not bool(job["hidden"]):
 				listed_jobs.append(job)
 		elif drawer_open:
@@ -9863,19 +9882,20 @@ func _material_wait_of(task: Task) -> Dictionary:
 
 # Voce dell'elenco con lo stato "si può centrare" (macrocella viva).
 func _pending_entry(key: String, text: String, data: Dictionary) -> Dictionary:
-	var entry := data.duplicate()
-	entry["key"] = key
-	entry["text"] = text
-	entry["enabled"] = live_cells.has(Vector2i(data["macro"]))
-	entry["disabled_reason"] = "" if entry["enabled"] else tr("pending_not_centerable")
-	return entry
+	return PendingEntryService.make_entry(key, text, data, live_cells.has(Vector2i(data["macro"])))
 
 
 # Un solo giro sui pipottini (task in corso e in coda): edifici con un costruttore o un demolitore, ordini di produzione
 # con un lavoratore ("id:ricetta"), corpi con una task Seppellisci. Stessi criteri di _task_works_on_building (step dal
 # corrente in poi, esclusa la consegna al magazzino); gli ordini di produzione per chiave d'ordine.
 func _collect_pending_assignments() -> Dictionary:
-	var result := {"build": {}, "demolish": {}, "produce": {}, "bodies": {}, "repair": {}, "rite": {}}
+	# "postponed" (2026-10-16): cantieri rimandati per materiale nella coda personale, edificio -> pipottino; "build_active":
+	# cantieri con un costruttore che non li ha rimandati. Un cantiere solo rimandato resta assegnato ma va in "In coda".
+	# Produce e riparazioni (2026-10-17): stesse coppie "rimandato" / "attivo" dei cantieri, per chiave d'ordine e per edificio.
+	var result := {
+		"build": {}, "demolish": {}, "produce": {}, "bodies": {}, "repair": {}, "rite": {}, "postponed": {}, "build_active": {},
+		"postponed_produce": {}, "produce_active": {}, "postponed_repair": {}, "repair_active": {},
+	}
 	for member in human_individuals:
 		var tasks: Array = []
 		if member.current_task != null and not member.current_task.is_finished():
@@ -9903,9 +9923,12 @@ func _collect_pending_assignments() -> Dictionary:
 				bucket = "repair"
 			elif PRODUCE_TASK_NAMES.has(queued.task_name):
 				# Ordini separati (2026-10-04): per chiave d'ordine.
+				var produce_postponed := queued != member.current_task and queued.context.has(HumanIndividualActionService.CONTEXT_MATERIAL_POSTPONED)
 				for step in queued.steps:
 					if step is ProduceAction and step.target_building != null and (step as ProduceAction).order_key != "":
-						result["produce"]["%d:%s" % [step.target_building.id, (step as ProduceAction).order_key]] = true
+						var produce_key := "%d:%s" % [step.target_building.id, (step as ProduceAction).order_key]
+						result["produce"][produce_key] = true
+						result["postponed_produce" if produce_postponed else "produce_active"][produce_key] = member if produce_postponed else true
 				continue
 			else:
 				continue
@@ -9915,11 +9938,23 @@ func _collect_pending_assignments() -> Dictionary:
 					continue
 				if "target_building" in step and step.target_building != null:
 					result[bucket][step.target_building.id] = true
+					if bucket == "build" or bucket == "repair":
+						var postponed_key := "postponed" if bucket == "build" else "postponed_repair"
+						var active_key := "build_active" if bucket == "build" else "repair_active"
+						if queued != member.current_task and queued.context.has(HumanIndividualActionService.CONTEXT_MATERIAL_POSTPONED):
+							result[postponed_key][step.target_building.id] = member
+						else:
+							result[active_key][step.target_building.id] = true
 	return result
 
 
 # Clic su una voce (riga o 🎯): seleziona l'oggetto sulla mappa e centra la visuale, restando nella scheda "In sospeso".
 func _on_pending_entry_activated(entry: Dictionary) -> void:
+	# Nessuna idea in sviluppo (2026-10-16): il clic apre l'albero delle idee.
+	if String(entry.get("kind", "")) == PendingEntryService.KIND_IDEA:
+		if _is_tech_tree_available() and not tech_tree_panel.visible:
+			tech_tree_panel.open_dialog(human_folk, game_data)
+		return
 	if _activate_job_entry(entry):
 		game_info_tabs.current_tab = GameInfoTabs.TAB_PENDING
 
@@ -10112,6 +10147,12 @@ func _job_board_drawer_entry(job: Dictionary, in_progress: bool) -> Dictionary:
 	else:
 		data["locked"] = JobBoardService.get_state(game_data, key) == JobBoardService.STATE_LOCKED
 		var blocked_reason := String(job.get("blocked_reason", ""))
+		# Cantiere rimandato per materiale (2026-10-16): chi lo ha e cosa manca, al posto dell'attesa.
+		if job.has("postponed_by"):
+			blocked_reason = tr("job_postponed_material").format({
+				"name": (job["postponed_by"] as HumanIndividual).name,
+				"materials": _missing_materials_text(job["target"] as Building, String(job["kind"]) == "repair"),
+			})
 		if blocked_reason != "":
 			# Lavoro impossibile per ora: il motivo al posto di "In attesa di assegnazione", senza conto alla rovescia.
 			data["waiting"] = false
@@ -10128,6 +10169,17 @@ func _job_board_drawer_entry(job: Dictionary, in_progress: bool) -> Dictionary:
 		entry["enabled"] = false
 		entry["disabled_reason"] = tr("task_assignment_place_decided_later")
 	return entry
+
+
+# "20 Ciottoli, 2 Rametti": materiale che manca a un cantiere (MaterialSupplyService.get_missing_materials).
+func _missing_materials_text(building: Building, for_repair: bool = false) -> String:
+	var parts: Array[String] = []
+	var missing := RepairAction.get_supply_missing(building) if for_repair else MaterialSupplyService.get_missing_materials(building)
+	for resource_name in missing.keys():
+		# Combustibile (MaterialSupplyService.FUEL_KEY): una quantità di fuoco, non una risorsa.
+		var material_name := tr("material_fuel_label") if String(resource_name) == MaterialSupplyService.FUEL_KEY 			else IconRegistry.get_resource_display_name(String(resource_name))
+		parts.append("%d %s" % [ceili(float(missing[resource_name])), material_name])
+	return ", ".join(parts)
 
 
 # "Blocca" / "Sblocca" su un lavoro della lista del cassetto (2026-10-07, JobBoardService): cambia lo stato e ricalcola
@@ -10330,12 +10382,25 @@ func _takeable_jobs_for(worker: HumanIndividual, log_reasons: bool) -> Dictionar
 		return {}
 	var reachable := PathfindingService.reachability_for(worker)
 	var takeable_jobs: Array[Dictionary] = []
+	# Materiali troppo pesanti (2026-10-16): costruzione e riparazione solo a chi porta almeno un'unità di ogni
+	# materiale ancora mancante (MaterialSupplyService.get_uncarryable_materials, cintura attuale).
+	var too_heavy: Array[String] = []
 	for job in suitable_jobs:
-		if reachable.call(job["reach_target"]):
-			takeable_jobs.append(job)
+		if not reachable.call(job["reach_target"]):
+			continue
+		var kind := String(job["kind"])
+		if kind == "build" or kind == "upgrade" or kind == "repair":
+			var heavy := MaterialSupplyService.get_uncarryable_materials(worker, job["target"], kind == "repair")
+			if not heavy.is_empty():
+				too_heavy.append("%s: %s" % [String(job["log_name"]), ", ".join(heavy)])
+				continue
+		takeable_jobs.append(job)
 	if takeable_jobs.is_empty():
 		if log_reasons:
-			_log_job_board(worker, "%s — nessuno preso: non adatto (nessun lavoro raggiungibile)." % found_text)
+			if too_heavy.is_empty():
+				_log_job_board(worker, "%s — nessuno preso: non adatto (nessun lavoro raggiungibile)." % found_text)
+			else:
+				_log_job_board(worker, "%s — nessuno preso: non adatto (non può trasportare %s)." % [found_text, "; ".join(too_heavy)])
 		return {}
 	return {"jobs": takeable_jobs, "found_text": found_text}
 
@@ -10463,6 +10528,9 @@ func _building_jobs_collect(provider: Dictionary, assigned: Dictionary) -> Array
 			"assigned": is_assigned, "hidden": false,
 			"target": building, "provider": provider,
 		})
+		# Rimandato per materiale (2026-10-16): resta assegnato (nessun altro ci va) ma la riga va in "In coda" col motivo.
+		if (kind == "build" or kind == "upgrade") and assigned["postponed"].has(building.id) and not assigned["build_active"].has(building.id):
+			jobs[jobs.size() - 1]["postponed_by"] = assigned["postponed"][building.id]
 	return jobs
 
 
@@ -10580,6 +10648,9 @@ func _repair_jobs_collect(provider: Dictionary, assigned: Dictionary) -> Array[D
 			"assigned": assigned["repair"].has(building.id), "hidden": false,
 			"target": building, "provider": provider,
 		})
+		# Rimandata per materiale (2026-10-17): resta assegnata, riga in "In coda" col motivo.
+		if assigned["postponed_repair"].has(building.id) and not assigned["repair_active"].has(building.id):
+			jobs[jobs.size() - 1]["postponed_by"] = assigned["postponed_repair"][building.id]
 	return jobs
 
 
@@ -10601,7 +10672,7 @@ func _rite_jobs_collect(provider: Dictionary, assigned: Dictionary) -> Array[Dic
 		var text: String = tr("pending_rite").format({"rite": tr(rules.display_name), "building": building_name})
 		jobs.append({
 			"key": "rite:%d" % building.id, "kind": "rite", "name": text, "text": text, "log_name": building_name,
-			"icon": {"text": IconRegistry.get_command_icon("rite")},
+			"icon": {"text": IconRegistry.get_command_icon(rules.command_icon_key)}, "map_icon_key": rules.command_icon_key,
 			"macro": Vector2i(building.macro_x, building.macro_y), "microcell": Vector2i(building.micro_x, building.micro_y),
 			"reach_target": building, "entry_kind": "building", "id": building.id, "sort": float(building.id),
 			# Banchetto in corso (2026-10-14): preso anche se l'organizzatore se n'è andato.
@@ -11589,6 +11660,10 @@ func _produce_jobs_collect(provider: Dictionary, assigned: Dictionary) -> Array[
 				"blocked_reason": blocked_reason,
 				"target": building, "provider": provider, "order_key": order_key, "recipe": recipe,
 			})
+			# Rimandato per materiale (2026-10-17): resta assegnato, riga in "In coda" col motivo.
+			var produce_key := "%d:%s" % [building.id, order_key]
+			if assigned["postponed_produce"].has(produce_key) and not assigned["produce_active"].has(produce_key):
+				jobs[jobs.size() - 1]["postponed_by"] = assigned["postponed_produce"][produce_key]
 	return jobs
 
 
@@ -13150,6 +13225,9 @@ func _collect_direct_command_entries(board_jobs: Array[Dictionary]) -> Array[Dic
 		var task := member.current_task
 		if task == null or task.is_finished() or task.is_idle_activity or DIRECT_COMMAND_EXCLUDED_TASK_NAMES.has(task.task_name):
 			continue
+		# Riti sociali e lezione (2026-10-17): solo chi li organizza è "al lavoro", non i convocati (bambini compresi).
+		if task.task_name == SocialRiteService.TASK_NAME and not bool(task.context.get(SocialRiteService.CONTEXT_ORGANIZER, false)):
+			continue
 		# Carico riportato al magazzino (2026-10-10, CargoReturnService — anche il ritorno nato togliendo un ordine di zona,
 		# DRAWER_ORDER_CARGO_KEY): riga come la task annullata che il carico sta chiudendo (scritta e icona salvate nel
 		# context del ritorno; "Carico" se mancano), "Riporta il carico" al posto del bottone, nessuna X; conta "al lavoro".
@@ -14292,6 +14370,24 @@ func _on_building_resources_decayed(events: Array) -> void:
 				"id": building.id,
 			})
 		)
+
+
+# Materiali troppo pesanti (2026-10-16, HumanIndividualActionService.material_too_heavy): messaggio "non ha spazio per
+# trasportare" e lavoro rimesso in coda come "Rimetti in coda" (stessa release dei fornitori della lista), differito
+# perché il segnale arriva mentre il servizio sta ancora lavorando sulla Task.
+func _on_material_too_heavy(individual: HumanIndividual, building: Building, names: Array[String]) -> void:
+	_report_command_rejection(individual, HumanIndividualActionService.no_room_message(individual, names))
+	_release_too_heavy_job.call_deferred(individual, building)
+
+
+func _release_too_heavy_job(individual: HumanIndividual, building: Building) -> void:
+	if individual == null or building == null or not human_individuals.has(individual):
+		return
+	if _task_works_on_building(individual.current_task, building, REPAIR_TASK_NAMES):
+		_repair_job_release({"target": building})
+	elif _task_works_on_building(individual.current_task, building, BUILD_TASK_NAMES):
+		_building_job_release({"target": building, "kind": "build"})
+	_refresh_pending_entries()
 
 
 # Cantiere bloccato per mancanza di materiale (2026-09-14, richiesta utente) — collegata a
@@ -17451,6 +17547,12 @@ func _building_type_name_for_action(action_id: StringName) -> String:
 		# Capanna del vestiario (2026-10-11, richiesta utente — segnaposto) — azione cablata in BuildBar._ready.
 		&"build_clothing_hut":
 			return "clothing_hut"
+		# Ceppo dell'insegnamento (2026-10-16, richiesta utente) — azione cablata in BuildBar._ready.
+		&"build_teaching_stump":
+			return "teaching_stump"
+		# Sentiero di ciottoli (2026-10-16, richiesta utente) — azione cablata in BuildBar._ready.
+		&"build_pebble_path":
+			return "pebble_path"
 		_:
 			return ""
 
@@ -17642,7 +17744,8 @@ func _enter_upgrade_orientation_mode(building: Building) -> void:
 	var ghost := BuildingGhost.new()
 	ghost.building_type_name = building.rules.upgrades_to
 	ghost.is_buildable = true
-	ghost.rotation_dir = building.rotation if building.rules.has_door else GameTypes.Direction.SOUTH
+	# Direzione conservata anche per gli edifici senza porta (2026-10-17: ora tutti ruotano).
+	ghost.rotation_dir = building.rotation
 	ghost.position = (Vector2(building.micro_x, building.micro_y) + Vector2(0.5, 0.5)) * MicroCellRenderer.CELL_SIZE
 	ghost.z_index = 5
 	# Anteprima, non edificio finito (2026-10-04, richiesta utente): ferma sopra l'edificio di partenza la semitrasparenza
@@ -20391,6 +20494,24 @@ func _is_placement_buildable_or_report(world_position: Vector2, rules: BuildingR
 		game_data.get_absolute_day(), macro_world, _building_ghost.rotation_dir, rules, false
 	):
 		return true
+	# Ceppo dell'insegnamento (2026-10-16): senza un ceppo d'albero sulla microcella, il motivo con lo stesso canale.
+	if rules.requires_tree_stump:
+		var stump_placement := _live_cell_and_micro_position_at(world_position)
+		if not stump_placement.is_empty() and not BuildingVerificationService.has_required_tree_stump(
+			(stump_placement["cell"] as LiveMacroCell).macro_state, stump_placement["micro_pos"]
+		):
+			var stump_selected := _get_selected_individuals()
+			_report_command_rejection(stump_selected[0] if not stump_selected.is_empty() else null, tr("build_blocked_needs_tree_stump"))
+			_spawn_command_icon_at_microcell(stump_placement["cell"], stump_placement["micro_pos"], "task_rejected")
+			return false
+	# Porta su un ostacolo (2026-10-17): prima non c'era nessun messaggio.
+	if BuildingVerificationService.is_door_blocked(
+		live_cells, MACRO_CELL_PIXELS, MicroCellRenderer.CELL_SIZE, world_position,
+		game_data.get_absolute_day(), macro_world, _building_ghost.rotation_dir, rules
+	):
+		var door_selected := _get_selected_individuals()
+		_report_command_rejection(door_selected[0] if not door_selected.is_empty() else null, tr("build_blocked_door_obstacle"))
+		return false
 	# Mucchio a terra (2026-10-07, richiesta utente): stesso canale e stesso stile, "Libera prima il mucchio a terra".
 	# Rifiuto che dipende solo da piante vive e/o mucchio: un messaggio per ciascuno dei due presenti.
 	if BuildingVerificationService.is_position_buildable(
@@ -20402,15 +20523,19 @@ func _is_placement_buildable_or_report(world_position: Vector2, rules: BuildingR
 		var placement := _live_cell_and_micro_position_at(world_position)
 		var has_woody := true
 		var has_pile := false
+		var has_waste_pebbles := false
 		if not placement.is_empty():
 			var placement_cell: LiveMacroCell = placement["cell"]
 			var micro_pos: Vector2i = placement["micro_pos"]
 			has_woody = BuildingSiteClearingService.has_woody_vegetation(placement_cell.macro_state, micro_pos)
 			has_pile = GroundPileService.find_at(game_data, Vector2i(placement_cell.macro_x, placement_cell.macro_y), micro_pos) != null
+			has_waste_pebbles = RockStoneService.has_waste_pebbles(placement_cell.macro_state, micro_pos)
 		if has_woody:
 			_report_command_rejection(reporter, tr("build_blocked_cut_trees_first"))
 		if has_pile:
 			_report_command_rejection(reporter, tr("build_blocked_clear_ground_pile_first"))
+		if has_waste_pebbles:
+			_report_command_rejection(reporter, tr("build_blocked_collect_pebbles_first"))
 		if not placement.is_empty():
 			_spawn_command_icon_at_microcell(placement["cell"], placement["micro_pos"], "task_rejected")
 	return false
@@ -22015,6 +22140,7 @@ func _setup_clock() -> void:
 	# Essiccatoio pieno durante una macellazione (2026-10-03, essiccazione passo 5).
 	individual_action_service.processing_station_full.connect(_on_processing_station_full)
 	individual_action_service.building_material_blocked.connect(_on_building_material_blocked)
+	individual_action_service.material_too_heavy.connect(_on_material_too_heavy)
 	play_pause_button.pressed.connect(_on_play_pause_pressed)
 	for speed in speed_buttons.keys():
 		speed_buttons[speed].pressed.connect(_on_speed_button_pressed.bind(speed))

@@ -69,6 +69,17 @@ static func get_depleted_positions(macro_state: MacroCellState) -> Dictionary:
 	return result
 
 
+# true se in `position` c'è una roccia esaurita con ancora sassi di scarto nel suo lotto (2026-10-17, richiesta utente:
+# prima di costruirci vanno raccolti, BuildingVerificationService). Raccolti tutti, la roccia non conta più.
+static func has_waste_pebbles(macro_state: MacroCellState, position: Vector2i) -> bool:
+	if not is_depleted(macro_state, position):
+		return false
+	var rules := ResourceCalculator.get_density_rules(GameTypes.WorldObjectType.ROCK)
+	if rules == null or rules.extraction_waste_resource_name == "":
+		return false
+	return LotCapacityService.get_available(macro_state, rules.extraction_waste_resource_name, position) > 0
+
+
 # true se in `position` c'è una roccia ancora in piedi (in stone_positions e non esaurita).
 static func is_standing_rock(macro_state: MacroCellState, position: Vector2i) -> bool:
 	return macro_state != null and macro_state.stone_positions.has(position) and not is_depleted(macro_state, position)

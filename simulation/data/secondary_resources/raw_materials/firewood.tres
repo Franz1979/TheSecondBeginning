@@ -1,0 +1,20 @@
+[gd_resource type="Resource" script_class="SecondaryResourceRules" format=3]
+
+[ext_resource type="Script" uid="uid://cu4cyua5y4n1m" path="res://simulation/scripts/core/SecondaryResourceRules.gd" id="1_firewood"]
+
+[resource]
+script = ExtResource("1_firewood")
+secondary_resource_name = "firewood"
+calories_per_unit = 0.0
+category = 1
+generation_source = 2
+day_durability = 400
+space_per_unit = 3.0
+fuel_value = 1.0
+recipe_inputs = {
+"wood": 1
+}
+recipe_output_quantity = 10
+recipe_labor = 70.0
+recipe_workstation_types = Array[String](["woodshed"])
+recipe_required_tool_categories = Array[int]([8])

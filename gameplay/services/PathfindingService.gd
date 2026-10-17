@@ -10,7 +10,12 @@ extends RefCounted
 #     rocce, edifici non calpestabili (anche da cantiere, dal piazzamento), l'intera macrocella se è acqua, il fiume
 #     tranne i guadi (MacroCellState.ford_positions, per ora sempre vuoto).
 #   - Attraversabili: edifici MOVEMENT (anche da cantiere), mucchi a terra, alberi e vegetazione.
-#   - Peso: moltiplicatore di stamina del terreno (LiveMacroCell.movement_modifiers, default 1); i guadi FORD_WEIGHT_SCALE.
+#   - Peso (2026-10-16, richiesta utente — perché terra battuta e sentieri vengano scelti davvero): costo di una
+#     microcella = fatica / velocità (LiveMacroCell.movement_modifiers), con il vantaggio sul terreno normale amplificato
+#     da ROAD_PREFERENCE; poi NORMALIZZATO così che la microcella più conveniente (il miglior edificio MOVEMENT dei dati)
+#     pesi 1 e le altre di più (terreno normale = terrain_weight()). Pesi tutti >= 1 tengono ammissibile l'euristica
+#     OCTILE di AStarGrid2D (che stima 1 per microcella): prima, con pesi < 1, A* non trovava le strade. Solo la scelta
+#     del percorso: fatica e velocità vere restano quelle di MovementTerrainService. I guadi: FORD_WEIGHT_SCALE × terreno.
 # Specchio: LiveMacroCell.path_solid (PackedByteArray) riflette i blocchi della griglia, per il flood fill.
 # Regioni: ogni microcella libera riceve l'id della sua regione connessa (flood fill a 4 vicini: con le diagonali
 # ammesse solo senza ostacoli ai lati, la connettività a 8 coincide con quella a 4). Ricalcolo PIGRO: un cambio di
@@ -23,6 +28,14 @@ extends RefCounted
 
 # Peso dei guadi (per ora costante): attraversarli costa più del terreno normale.
 const FORD_WEIGHT_SCALE: float = 3.0
+# Preferenza per le strade (2026-10-16, richiesta utente): il vantaggio sul terreno normale (1 − costo) moltiplicato, solo
+# nella scelta del percorso. 2 = sentiero di ciottoli visto a ~0.71 invece di ~0.86, terra battuta a 0.90 invece di 0.95.
+const ROAD_PREFERENCE: float = 2.0
+# Costo minimo ammesso dopo la preferenza (difensivo: un costo <= 0 romperebbe la normalizzazione).
+const MIN_PATH_COST: float = 0.05
+# Costo (dopo la preferenza) della microcella più conveniente possibile: il miglior edificio MOVEMENT dei dati, 1.0 se
+# nessuno è migliore del terreno. Calcolato una volta (i .tres non cambiano in partita).
+static var _best_cost: float = -1.0
 # Righe di regioni stampate al massimo nel log (le più grandi per prime).
 const MAX_LOGGED_REGIONS: int = 20
 
@@ -155,6 +168,8 @@ static func rebuild(cell: LiveMacroCell, macro_world: World) -> void:
 					blocked_count += 1
 	cell.path_solid = solid
 	cell.path_weights = _compute_weights(cell)
+	# Terreno normale prima di tutto (pesi normalizzati, vedi in cima), poi le microcelle che deviano.
+	grid.fill_weight_scale_region(grid.region, terrain_weight())
 	for position in cell.path_weights.keys():
 		if _in_bounds(position):
 			grid.set_point_weight_scale(position, float(cell.path_weights[position]))
@@ -186,7 +201,7 @@ static func sync_buildings(cell: LiveMacroCell, macro_world: World) -> void:
 			changed[position] = true
 	var new_weights := _compute_weights(cell)
 	for position in cell.path_weights.keys():
-		if float(new_weights.get(position, 1.0)) != float(cell.path_weights[position]):
+		if float(new_weights.get(position, terrain_weight())) != float(cell.path_weights[position]):
 			changed[position] = true
 	for position in new_weights.keys():
 		if not cell.path_weights.has(position):
@@ -206,7 +221,7 @@ static func sync_buildings(cell: LiveMacroCell, macro_world: World) -> void:
 			blocking_changed = true
 			solid[index] = 1 if blocked else 0
 			cell.path_grid.set_point_solid(position, blocked)
-		cell.path_grid.set_point_weight_scale(position, float(new_weights.get(position, 1.0)))
+		cell.path_grid.set_point_weight_scale(position, float(new_weights.get(position, terrain_weight())))
 	cell.path_solid = solid
 	if blocking_changed:
 		cell.path_regions_dirty = true
@@ -330,7 +345,7 @@ static func simplify_path(cell: LiveMacroCell, path: Array[Vector2i]) -> Array[V
 
 
 static func _weight_of(cell: LiveMacroCell, microcell: Vector2i) -> float:
-	return float(cell.path_weights.get(microcell, 1.0))
+	return float(cell.path_weights.get(microcell, terrain_weight()))
 
 
 # true se il segmento dal centro di `a` al centro di `b` attraversa solo microcelle libere e di peso <= max_weight
@@ -400,16 +415,50 @@ static func _is_blocked_by_rule(cell: LiveMacroCell, position: Vector2i) -> bool
 	return not cell.path_obstacles.is_free(position, false, cell.path_fords.has(position), false, true)
 
 
-# Pesi diversi da 1: moltiplicatore di stamina del terreno (movement_modifiers.x), i guadi FORD_WEIGHT_SCALE.
+# Pesi diversi da quello del terreno normale: le microcelle con modificatori di movimento (path_weight) e i guadi.
 static func _compute_weights(cell: LiveMacroCell) -> Dictionary:
 	var weights: Dictionary = {}
+	var terrain := terrain_weight()
 	for position in cell.movement_modifiers.keys():
-		var stamina_multiplier: float = (cell.movement_modifiers[position] as Vector2).x
-		if stamina_multiplier != 1.0:
-			weights[position] = stamina_multiplier
+		var modifier: Vector2 = cell.movement_modifiers[position]
+		var weight := path_weight(modifier.x, modifier.y)
+		if not is_equal_approx(weight, terrain):
+			weights[position] = weight
 	for position in cell.path_fords.keys():
-		weights[position] = FORD_WEIGHT_SCALE
+		weights[position] = FORD_WEIGHT_SCALE * terrain
 	return weights
+
+
+# Costo di una microcella per la scelta del percorso: fatica / velocità, con il vantaggio sul terreno normale (costo < 1)
+# moltiplicato per ROAD_PREFERENCE; uno svantaggio (> 1) resta com'è.
+static func path_cost(stamina_multiplier: float, speed_multiplier: float) -> float:
+	var cost := stamina_multiplier / maxf(speed_multiplier, 0.01)
+	if cost < 1.0:
+		cost = 1.0 - (1.0 - cost) * ROAD_PREFERENCE
+	return maxf(cost, MIN_PATH_COST)
+
+
+# Peso nella griglia: costo / costo della microcella più conveniente (sempre >= 1 per i modificatori dei dati).
+static func path_weight(stamina_multiplier: float, speed_multiplier: float) -> float:
+	return path_cost(stamina_multiplier, speed_multiplier) / _get_best_cost()
+
+
+# Peso del terreno normale (fatica e velocità 1): 1 / costo della microcella più conveniente (es. ~1.4 col sentiero).
+static func terrain_weight() -> float:
+	return 1.0 / _get_best_cost()
+
+
+static func _get_best_cost() -> float:
+	if _best_cost > 0.0:
+		return _best_cost
+	var best := 1.0
+	for type_name in BuildingCalculator.list_building_type_names():
+		var rules := BuildingCalculator.get_building_rules(type_name)
+		if rules == null or rules.category != BuildingTypes.Category.MOVEMENT:
+			continue
+		best = minf(best, path_cost(rules.movement_stamina_multiplier, rules.movement_speed_multiplier))
+	_best_cost = best
+	return _best_cost
 
 
 # Regioni delle microcelle libere tra `position` stessa (se libera) e, se bloccata, i suoi 4 vicini liberi.

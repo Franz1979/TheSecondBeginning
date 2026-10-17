@@ -584,6 +584,9 @@ static func _production_quota(building: Building, resource_name: String) -> int:
 #   - poi i filtri di categoria: il TIPO (BuildingRules.accepted_categories, vuoto = tutte) e l'ISTANZA
 #     (Building.enabled_categories con restricts_categories, salvo categories_locked).
 static func _free_storage_allows(building: Building, resource_name: String, resource_rules: SecondaryResourceRules) -> bool:
+	# Risorse ammesse per nome (2026-10-16, BuildingRules.storage_accepted_resources — legnaia).
+	if not building.rules.storage_accepted_resources.is_empty() and not building.rules.storage_accepted_resources.has(resource_name):
+		return false
 	if building.rules.storage_accepts_recipe_materials_only:
 		# Anche gli ingredienti delle ricette ad avanzamento automatico (2026-10-03, essiccazione passo 2): escluse da
 		# is_recipe_material (che segue le ricette ordinabili con la Produce), valgono qui per lo storage riservato.

@@ -221,6 +221,9 @@ command_bar_group_work_areas,Work areas
 command_bar_group_hunting,Hunting
 build_bar_title_build,Build
 build_bar_title_buildings,Buildings
+build_bar_hide_superseded,Hide superseded
+build_bar_hide_superseded_tooltip,Hides buildings whose upgrade can already be built (e.g. the stick tent once the hide tent can be built). Untick to see and build them.
+build_bar_category_none_available,No building available in this category
 build_bar_title_work_areas,Work areas
 building_auto_progress_line,"Drying: {resource} ×{quantity}, ready in {days} days"
 building_auto_progress_line_ready,"Drying: {resource} ×{quantity}, ready (waiting for space)"
@@ -772,8 +775,8 @@ task_bury_step_funeral,Celebrating the funeral
 task_bury_activity_funeral,Funeral of {name}
 building_info_burial_capacity,Capacity: {max} buried
 building_buried_entry,{name} · year {year}
-building_sacredness,Sacredness: {points} / {next}
-building_sacredness_max,Sacredness: {points}
+building_sacredness,Sacredness {points} / {next} · radius {radius} (+{bonus})
+building_sacredness_max,Sacredness {points} · radius {radius} (+{bonus})
 building_sacredness_radius,Radius: {radius} (+{bonus})
 building_info_religious_radius_range,"Religious radius: base {base}, max {max}"
 task_procession_name,Procession
@@ -1121,6 +1124,7 @@ task_assignment_setting_auto_clear_rubble_tooltip,"When checked, rubble enters t
 pending_building_damaged_to_repair,"{building}: damaged, needs repair"
 pending_building_damaged_repair_queued,"{building}: damaged, repair queued"
 pending_building_damaged_repair_in_progress,"{building}: damaged, repair in progress"
+pending_material_nobody_can_carry,{building}: nobody can carry {resource}
 building_repair_materials_caption,Materials for the repair
 building_repair_waiting_material_label,Repair stopped: no {materials} in any storage
 building_damaged_effects_label,"Capacities halved, bonuses cancelled"
@@ -1232,3 +1236,26 @@ warehouse_rule_fuel_tooltip,"Keep fuel in the storage of every building that bur
 warehouse_rule_fuel_type_tooltip,"Minimum fuel for each building of this type (in fuel value: a stick is worth 1). 0 = this type is not supplied."
 drawer_order_fuel_row,{building}: bring {quantity} {resource}
 pending_stock_fuel_blocked,Building not available or no fuel to bring
+building_teaching_stump,Teaching stump
+build_bar_teaching_stump_tooltip,"Teaching stump: built where a tree has been cut down, the stump becomes the elder's seat"
+building_category_cultural,Cultural
+build_blocked_needs_tree_stump,Needs a microcell with at least one cut tree (a stump)
+rite_oral_lesson_name,Lesson
+social_rite_reject_no_convocable,Nobody to call in the village (a lesson needs children)
+building_pebble_path,Pebble path
+build_bar_pebble_path_tooltip,"Pebble path: walking is less tiring (−10%) and a bit faster (+5%), better than packed earth"
+pending_no_active_idea,No idea in development
+pending_no_active_idea_detail,Deposited thoughts are lost: choose an idea
+carried_resource_tooltip_firewood,Firewood
+resource_plural_firewood,Firewood
+job_postponed_material,"Postponed by {name}: missing {materials}"
+build_blocked_collect_pebbles_first,Collect the pebbles on the ground first
+build_blocked_door_obstacle,There is an obstacle in front of the door: rotate the building
+building_tradition,Tradition {points} / {next} · radius {radius} (+{bonus})
+building_tradition_max,Tradition {points} · radius {radius} (+{bonus})
+building_authority,Authority {points} / {next} · radius {radius} (+{bonus})
+building_authority_max,Authority {points} · radius {radius} (+{bonus})
+building_influence_no_lesson_tooltip,No lesson for over a year: −{loss} tradition per year
+building_influence_no_meeting_tooltip,No meeting for over a year: −{loss} authority per year
+task_oral_lesson_name,Oral teaching
+material_fuel_label,fuel

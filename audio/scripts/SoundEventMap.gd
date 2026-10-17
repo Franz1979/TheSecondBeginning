@@ -27,6 +27,8 @@ const EVENTS: Dictionary = {
 	&"talk_partner": &"talk_2",
 	# Inizio di un rito sociale (2026-10-14, SocialRiteRules.start_sound_id): evento "social_rite_started:<id>".
 	&"social_rite_started:paleolithic_banquet": &"paleolithic_banquet",
+	# Lezione al Ceppo dell'insegnamento (2026-10-16).
+	&"social_rite_started:oral_lesson": &"lesson",
 	# Suono predefinito dei riti completati (2026-10-04, richiesta utente — prima church_bell, che resta nel banco per
 	# usi futuri): quello di una ricetta con RiteRules.completion_sound_id vuoto.
 	&"rite_completed": &"rite_paleolithic",

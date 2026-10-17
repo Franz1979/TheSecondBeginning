@@ -35,4 +35,6 @@ enum Category {
 	# Macerie di un edificio crollato (2026-10-10, richiesta utente — crollo a Integrità zero): tipo non costruibile, senza
 	# funzioni, da sgomberare. Aggiunto IN FONDO come gli altri.
 	RUINS,
+	# Culturale (2026-10-16, richiesta utente — Ceppo dell'insegnamento, poi feste e scuola): aggiunta IN FONDO come le altre.
+	CULTURAL,
 }

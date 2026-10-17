@@ -411,6 +411,11 @@ var _stone_multimeshes: Array = [] # MultiMesh, indicizzato per variante — un 
 var pebble_availability: Dictionary = {}
 var _pebble_variant_meshes: Array = []
 var _pebble_multimeshes: Array = []
+# Ciottoli del sentiero di ciottoli (2026-10-17, richiesta utente — prima un draw_circle per ciottolo): stesse sagome dei
+# sassolini (_pebble_variant_meshes), un MultiMesh per variante, ricostruiti in set_buildings.
+var _path_pebble_multimeshes: Array = []
+# Corpo del sentiero (2026-10-17): macchie irregolari color sabbia (PebblePathShape.blob_polygon), un MultiMesh per sagoma.
+var _path_body_multimeshes: Array = []
 
 # Bastoni/stick (2026-09-08, richiesta utente) — Vector2i (lotto TREE) -> int, disponibilità GIÀ
 # RISOLTA dal chiamante (2026-09-19, refactor lot_source — RINOMINATO da stick_quantities: prima
@@ -619,6 +624,7 @@ func scattered_availability_tier(kind: String, quantity: int) -> int:
 func set_buildings(buildings_data: Array) -> void:
 	buildings = buildings_data
 	_rebuild_dirt_ground_mesh()
+	_rebuild_path_pebble_multimeshes()
 	queue_redraw()
 
 
@@ -1399,12 +1405,12 @@ func _draw_buildings() -> void:
 		# Edifici segnaposto (2026-09-26, richiesta utente) — disegno provvisorio condiviso, senza porta.
 		# Vallo difensivo a pezzi uniti (2026-10-04, richiesta utente): cumulo più un braccio verso ogni lato con un altro
 		# pezzo di vallo, finito o cantiere ("linear_neighbors"/"linear_clip", calcolate da GameScene._buildings_for_cell
-		# per ogni edificio lineare; un futuro edificio lineare aggiunge qui il proprio ramo con il proprio stile).
-		if building_type_name == "earthwork":
-			EarthworkShape.draw(self, ground, int(entry.get("linear_neighbors", 0)), false, 1.0, 1.0, int(entry.get("linear_clip", 0)))
+		# per ogni edificio lineare). Dal 2026-10-16 ogni tipo lineare passa da LinearShapes (vallo, sentiero di ciottoli).
+		if LinearShapes.has_shape(building_type_name):
+			LinearShapes.draw(self, building_type_name, ground, int(entry.get("linear_neighbors", 0)), false, 1.0, 1.0, int(entry.get("linear_clip", 0)), false)
 			continue
 		if PlaceholderBuildingShapes.TYPES.has(building_type_name):
-			PlaceholderBuildingShapes.draw(self, building_type_name, ground)
+			PlaceholderBuildingShapes.draw(self, building_type_name, ground, false, 1.0, entry.get("rotation", GameTypes.Direction.SOUTH))
 			continue
 		var direction: GameTypes.Direction = entry["rotation"]
 		# Tende (2026-10-03, scambio di aspetto — TentShapes): la tenda di pelli ha il disco liscio che prima avevano
@@ -1440,6 +1446,72 @@ func _draw_buildings() -> void:
 		draw_polyline(outline_points, BUILDING_OUTLINE_COLOR, BUILDING_OUTLINE_WIDTH)
 		if is_toolmaker_hut:
 			_draw_toolmaker_hut_mark(ground)
+	# Sentieri (2026-10-17): corpo e poi ciottoli, in MultiMesh.
+	for mm in _path_body_multimeshes:
+		if (mm as MultiMesh).instance_count > 0:
+			draw_multimesh(mm, null)
+			_debug_draw_primitive_count += 1
+	for mm in _path_pebble_multimeshes:
+		if (mm as MultiMesh).instance_count > 0:
+			draw_multimesh(mm, null)
+			_debug_draw_primitive_count += 1
+
+
+# Ciottoli dei pezzi di sentiero completi (PebblePathShape.pebble_points), variante per hash di posizione e indice.
+func _rebuild_path_pebble_multimeshes() -> void:
+	_ensure_pebble_multimeshes()
+	if _path_pebble_multimeshes.is_empty():
+		for variant in range(PEBBLE_VARIANT_COUNT):
+			var mm := MultiMesh.new()
+			mm.transform_format = MultiMesh.TRANSFORM_2D
+			mm.mesh = _pebble_variant_meshes[variant]
+			mm.instance_count = 0
+			_path_pebble_multimeshes.append(mm)
+	if _path_body_multimeshes.is_empty():
+		for variant in range(PebblePathShape.BLOB_VARIANTS):
+			var body_mm := MultiMesh.new()
+			body_mm.transform_format = MultiMesh.TRANSFORM_2D
+			body_mm.mesh = _build_fan_mesh(PebblePathShape.blob_polygon(variant), PebblePathShape.BODY)
+			body_mm.instance_count = 0
+			_path_body_multimeshes.append(body_mm)
+	var body_buckets: Array = []
+	for i in range(PebblePathShape.BLOB_VARIANTS):
+		body_buckets.append([])
+	var buckets: Array = []
+	for i in range(PEBBLE_VARIANT_COUNT):
+		buckets.append([])
+	var half: float = CELL_SIZE / 2.0
+	for entry in buildings:
+		if String(entry.get("building_type_name", "")) != "pebble_path" or not entry.get("is_complete", true):
+			continue
+		var pos: Vector2i = entry["position"]
+		var center := Vector2(pos.x * CELL_SIZE + half, pos.y * CELL_SIZE + half)
+		var body := PebblePathShape.body_points(int(entry.get("linear_neighbors", 0)))
+		for i in range(body.size()):
+			var body_seed: Vector2i = pos * 37 + Vector2i(i * 3 + 1, i * 17 + 2)
+			var body_transform := Transform2D((float(posmod(hash(body_seed), 1000)) / 1000.0) * TAU, Vector2.ZERO)
+			body_transform.origin = center + body[i]
+			body_buckets[posmod(hash(body_seed + Vector2i(7, 1)), PebblePathShape.BLOB_VARIANTS)].append(body_transform)
+		var points := PebblePathShape.pebble_points(int(entry.get("linear_neighbors", 0)))
+		for i in range(points.size()):
+			var seed_base: Vector2i = pos * 31 + Vector2i(i * 5 + 2, i * 11 + 7)
+			var variant: int = posmod(hash(seed_base), PEBBLE_VARIANT_COUNT)
+			var rotation: float = (float(hash(seed_base + Vector2i(3, 9)) % 1000) / 1000.0) * TAU
+			var transform := Transform2D(rotation, Vector2.ZERO)
+			transform.origin = center + points[i]
+			buckets[variant].append(transform)
+	for variant in range(PebblePathShape.BLOB_VARIANTS):
+		var body_transforms: Array = body_buckets[variant]
+		var body_mm: MultiMesh = _path_body_multimeshes[variant]
+		body_mm.instance_count = body_transforms.size()
+		for i in range(body_transforms.size()):
+			body_mm.set_instance_transform_2d(i, body_transforms[i])
+	for variant in range(PEBBLE_VARIANT_COUNT):
+		var transforms: Array = buckets[variant]
+		var mm: MultiMesh = _path_pebble_multimeshes[variant]
+		mm.instance_count = transforms.size()
+		for i in range(transforms.size()):
+			mm.set_instance_transform_2d(i, transforms[i])
 
 
 # Capanna dell'attrezzista (2026-09-24, richiesta utente) — forma provvisoria: riempimento della
@@ -1667,6 +1739,8 @@ const GROUND_UNDER_BUILDING_TYPES: Array[String] = [
 	"woodshed",
 	# Capanna del vestiario (2026-10-11, segnaposto).
 	"clothing_hut",
+	# Ceppo dell'insegnamento (2026-10-16).
+	"teaching_stump",
 ]
 
 
@@ -1676,10 +1750,28 @@ const GROUND_UNDER_BUILDING_TYPES: Array[String] = [
 func _rebuild_dirt_ground_mesh() -> void:
 	var vertices := PackedVector2Array()
 	var colors := PackedColorArray()
+	# Sentiero di ciottoli (2026-10-17, richiesta utente): tile di terra battuta, con macchie e bordi irregolari, solo sotto
+	# i pezzi che confinano con un fondo ("linear_ground_fill"); bordi dritti verso quel fondo e verso i pezzi di sentiero
+	# accanto che hanno anche loro il tile.
+	var grounded_paths: Dictionary = {}
+	for entry in buildings:
+		if String(entry.get("building_type_name", "")) == "pebble_path" and entry.get("is_complete", true) \
+				and int(entry.get("linear_ground_fill", 0)) != 0:
+			grounded_paths[entry["position"]] = true
 	for entry in buildings:
 		if not entry.get("is_complete", true):
 			continue
 		var building_type_name: String = entry.get("building_type_name", "")
+		if building_type_name == "pebble_path":
+			var path_pos: Vector2i = entry["position"]
+			if grounded_paths.has(path_pos):
+				var mask := int(entry.get("linear_ground_fill", 0))
+				var path_neighbors := int(entry.get("linear_neighbors", 0))
+				for side in range(4):
+					if path_neighbors & (1 << side) and grounded_paths.has(path_pos + Vector2i(LinearShape.SIDE_DIRECTIONS[side])):
+						mask |= 1 << side
+				_append_dirt_ground_tile(path_pos, mask, vertices, colors)
+			continue
 		# Edifici lineari (2026-10-04): niente quadrato pieno, il fondo è la striscia lungo il tracciato
 		# (_draw_linear_grounds).
 		if bool(entry.get("is_linear", false)):
@@ -1772,12 +1864,10 @@ func _draw_linear_grounds() -> void:
 			continue
 		var pos: Vector2i = entry["position"]
 		var ground := Vector2(pos.x * CELL_SIZE + half, pos.y * CELL_SIZE + half)
-		match String(entry.get("building_type_name", "")):
-			"earthwork":
-				EarthworkShape.draw_ground(
-					self, ground, int(entry.get("linear_neighbors", 0)), int(entry.get("linear_clip", 0)),
-					int(entry.get("linear_ground_fill", 0)), DirtGroundPattern.BASE_COLOR
-				)
+		LinearShapes.draw_ground(
+			self, String(entry.get("building_type_name", "")), ground, int(entry.get("linear_neighbors", 0)),
+			int(entry.get("linear_clip", 0)), int(entry.get("linear_ground_fill", 0)), DirtGroundPattern.BASE_COLOR
+		)
 
 
 func _draw_dirt_ground_tiles() -> void:

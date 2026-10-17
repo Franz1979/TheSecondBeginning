@@ -11,7 +11,18 @@ extends RefCounted
 # `scale` = pixel per unità di disegno (1.0 sulla mappa: una microcella = 10 px); `invalid` = anteprima su una
 # posizione non edificabile (tinta rossastra semitrasparente, come le altre sagome di BuildingGhost).
 
-const TYPES: Array[String] = ["drying_rack", "smokehouse", "burial", "earthwork", "stacked_stones", "woodshed", "clothing_hut", "rubble"]
+const TYPES: Array[String] = ["drying_rack", "smokehouse", "burial", "earthwork", "stacked_stones", "woodshed", "clothing_hut", "rubble", "teaching_stump"]
+
+# Ceppo dell'insegnamento (teaching_stump, 2026-10-16, richiesta utente): aula all'aperto vista dall'alto — il ceppo in
+# alto come cattedra (corteccia, sezione chiara con gli anelli) e davanti due file curve di pietre piatte come banchi
+# (3 + 3), rivolte al ceppo. Sagome delle pietre con _blob_polygon (seed fissi), stessi grigi del cumulo delle pietre.
+const TEACHING_STUMP_CENTER := Vector2(0.0, -2.6)
+const TEACHING_STUMP_RADIUS: float = 1.6
+# Banchi: centro (x, y) e raggio (z); due file ad arco attorno al ceppo.
+const TEACHING_STUMP_SEATS: Array[Vector3] = [
+	Vector3(-2.7, 0.3, 0.95), Vector3(0.0, 0.9, 0.95), Vector3(2.7, 0.3, 0.95),
+	Vector3(-3.3, 2.9, 0.95), Vector3(0.0, 3.6, 0.95), Vector3(3.3, 2.9, 0.95),
+]
 
 # Macerie (rubble, 2026-10-10, richiesta utente — crollo): mucchio basso di detriti visto dall'alto, sagome irregolari di
 # terra e pietre (stessa _blob_polygon delle pietre rituali, seed fissi) con qualche trave spezzata sopra.
@@ -96,12 +107,35 @@ const SLAB_CRACK := Color(0.42, 0.41, 0.39, 1.0)
 const SLAB_CRACK_WIDTH: float = 0.18
 
 
-# Centro della lastra in microcelle, relativo all'angolo della microcella del cumulo (0..1): dove si posa il corpo.
-static func burial_slab_center_microcell() -> Vector2:
-	return Vector2(0.5, 0.5) + BURIAL_SLAB_RECT.get_center() / 10.0
+# Direzione dell'edificio (2026-10-17, richiesta utente — tutti gli edifici ruotabili): i disegni sono fatti verso SUD;
+# gli altri ruotano di 90° per passo (orario, N-E-S-W), tranne quelli visti di fronte, che a OVEST si specchiano soltanto
+# (ruotati sembrerebbero coricati). Una sola draw_set_transform per edificio: nessun costo di disegno in più.
+const FRONT_VIEW_TYPES: Array[String] = ["drying_rack", "smokehouse", "woodshed", "clothing_hut", "earthwork"]
 
 
-static func draw(canvas: CanvasItem, building_type: String, center: Vector2, invalid: bool = false, scale: float = 1.0) -> void:
+static func _direction_angle(building_type: String, direction: GameTypes.Direction) -> float:
+	if FRONT_VIEW_TYPES.has(building_type):
+		return 0.0
+	return float(int(direction) - int(GameTypes.Direction.SOUTH)) * PI / 2.0
+
+
+static func _direction_mirror(building_type: String, direction: GameTypes.Direction) -> float:
+	return -1.0 if FRONT_VIEW_TYPES.has(building_type) and direction == GameTypes.Direction.WEST else 1.0
+
+
+# Centro della lastra in microcelle, relativo all'angolo della microcella del cumulo (0..1): dove si posa il corpo. Ruota
+# con la direzione del cumulo (2026-10-17).
+static func burial_slab_center_microcell(direction: GameTypes.Direction = GameTypes.Direction.SOUTH) -> Vector2:
+	return Vector2(0.5, 0.5) + (BURIAL_SLAB_RECT.get_center() / 10.0).rotated(_direction_angle("burial", direction))
+
+
+static func draw(
+	canvas: CanvasItem, building_type: String, canvas_center: Vector2, invalid: bool = false, scale: float = 1.0,
+	direction: GameTypes.Direction = GameTypes.Direction.SOUTH
+) -> void:
+	# Tutto si disegna attorno all'origine dentro la trasformazione della direzione, ripristinata alla fine.
+	canvas.draw_set_transform(canvas_center, _direction_angle(building_type, direction), Vector2(_direction_mirror(building_type, direction), 1.0))
+	var center := Vector2.ZERO
 	var tint := func(color: Color) -> Color: return INVALID_TINT if invalid else color
 	var p := func(x: float, y: float) -> Vector2: return center + Vector2(x, y) * scale
 	var w := func(width: float) -> float: return width * scale
@@ -127,9 +161,12 @@ static func draw(canvas: CanvasItem, building_type: String, center: Vector2, inv
 				canvas.draw_circle(p.call(1.3, -4.4), w.call(0.6), SMOKE)
 		"burial":
 			# Tumulo ovale di terra con un cerchio di pietre e una pietra ritta.
-			canvas.draw_set_transform(center, 0.0, Vector2(1.0, 0.6))
-			canvas.draw_circle(Vector2.ZERO, w.call(3.6), tint.call(EARTH))
-			canvas.draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+			# Ovale come poligono (2026-10-17: prima una draw_set_transform propria, che annullerebbe quella della direzione).
+			var mound := PackedVector2Array()
+			for i in range(24):
+				var mound_angle := TAU * float(i) / 24.0
+				mound.append(p.call(cos(mound_angle) * 3.6, sin(mound_angle) * 3.6 * 0.6))
+			canvas.draw_colored_polygon(mound, tint.call(EARTH))
 			for i in range(8):
 				var angle := TAU * float(i) / 8.0
 				canvas.draw_circle(p.call(cos(angle) * 3.6, sin(angle) * 2.2), w.call(0.45), tint.call(STONE))
@@ -197,6 +234,22 @@ static func draw(canvas: CanvasItem, building_type: String, center: Vector2, inv
 			for beam in RUBBLE_BEAMS:
 				canvas.draw_line(p.call(beam.x, beam.y), p.call(beam.z, beam.w), tint.call(OUTLINE), w.call(RUBBLE_BEAM_WIDTH + 0.3), true)
 				canvas.draw_line(p.call(beam.x, beam.y), p.call(beam.z, beam.w), tint.call(WOOD), w.call(RUBBLE_BEAM_WIDTH), true)
+		"teaching_stump":
+			# Ceppo: corteccia scura, sezione chiara, due anelli. Poi i banchi, ognuno col suo bordo scuro sotto.
+			var stump_center: Vector2 = p.call(TEACHING_STUMP_CENTER.x, TEACHING_STUMP_CENTER.y)
+			canvas.draw_circle(stump_center, w.call(TEACHING_STUMP_RADIUS), tint.call(LOG_BARK))
+			canvas.draw_circle(stump_center, w.call(TEACHING_STUMP_RADIUS * 0.8), tint.call(LOG_END))
+			canvas.draw_arc(stump_center, w.call(TEACHING_STUMP_RADIUS * 0.5), 0.0, TAU, 16, tint.call(LOG_RING), w.call(0.18), true)
+			canvas.draw_arc(stump_center, w.call(TEACHING_STUMP_RADIUS * 0.22), 0.0, TAU, 12, tint.call(LOG_RING), w.call(0.15), true)
+			for i in range(TEACHING_STUMP_SEATS.size()):
+				var seat: Vector3 = TEACHING_STUMP_SEATS[i]
+				canvas.draw_colored_polygon(
+					_blob_polygon(p.call(seat.x, seat.y + 0.2), w.call(seat.z), 400 + i, 8, 0.85, 1.1), tint.call(SLAB_EDGE)
+				)
+				canvas.draw_colored_polygon(
+					_blob_polygon(p.call(seat.x, seat.y), w.call(seat.z), 400 + i, 8, 0.85, 1.1),
+					tint.call(STACKED_STONES_PILE_COLORS[i % STACKED_STONES_PILE_COLORS.size()])
+				)
 		"stacked_stones":
 			# Dal basso in alto: pelle, cumulo, ossa (assi cardinali), rametti (diagonali). Sagome irregolari
 			# deterministiche (seed fisso), stabili tra un ridisegno e l'altro; disposizione regolare a raggiera.
@@ -226,6 +279,7 @@ static func draw(canvas: CanvasItem, building_type: String, center: Vector2, inv
 					p.call(stick_dir.x * STACKED_STONES_STICK_OUTER, stick_dir.y * STACKED_STONES_STICK_OUTER),
 					tint.call(StickIcon.STICK_COLOR_DARK), w.call(STACKED_STONES_STICK_WIDTH), true
 				)
+	canvas.draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 
 
 # Sagoma irregolare vista dall'alto (pietre e pelle delle pietre rituali): `vertices` vertici con raggio jittered attorno a

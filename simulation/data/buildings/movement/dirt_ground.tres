@@ -17,3 +17,4 @@ has_door = false
 leaves_rubble = false
 visibility_radius = 1
 movement_stamina_multiplier = 0.95
+upgrades_to = "pebble_path"

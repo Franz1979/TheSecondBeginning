@@ -158,15 +158,7 @@ func _compute_duration() -> float:
 # Ceppi d'albero in _position: tagli d'albero ancora nella finestra di rientro (dopo, lo slot non mostra più il ceppo).
 func _count_tree_stumps_at() -> int:
 	var current_year: int = GameSettings.active_game_data.year if GameSettings.active_game_data != null else 0
-	var reentry_years: int = int(IndividualVegetationService.REENTRY_YEARS_BY_TYPE.get(GameTypes.WorldObjectType.TREE, 0))
-	var count := 0
-	for key in _macro_state.vegetation_cut_exceptions.keys():
-		if key.x != _position.x or key.y != _position.y:
-			continue
-		var entry: Dictionary = _macro_state.vegetation_cut_exceptions[key]
-		if int(entry.get("origin_type", -1)) == GameTypes.WorldObjectType.TREE and current_year - int(entry.get("cut_year", 0)) < reentry_years:
-			count += 1
-	return count
+	return BuildingSiteClearingService.count_tree_stumps(_macro_state, _position, current_year)
 
 
 # Alberi o arbusti vivi nel lotto del cantiere (2026-10-04): la pulizia non parte finché ci sono, il pannello del

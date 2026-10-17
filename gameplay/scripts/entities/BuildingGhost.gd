@@ -274,11 +274,12 @@ func _draw_shape() -> void:
 	# Edifici segnaposto (2026-09-26, richiesta utente) — stesso disegno provvisorio della mappa.
 	# Vallo difensivo (2026-10-04): lo stesso disegno a pezzi della mappa, con i collegamenti ai pezzi esistenti e
 	# centrato sulla microcella sotto il mouse (set_linear_preview, da GameScene._sync_linear_ghost).
-	if building_type_name == "earthwork":
-		EarthworkShape.draw(self, _linear_offset, _linear_mask, not is_buildable, COLOR.a, 1.0, _linear_clip)
+	# Dal 2026-10-16 ogni tipo lineare (vallo, sentiero di ciottoli) passa da LinearShapes.
+	if LinearShapes.has_shape(building_type_name):
+		LinearShapes.draw(self, building_type_name, _linear_offset, _linear_mask, not is_buildable, COLOR.a, 1.0, _linear_clip)
 		return
 	if PlaceholderBuildingShapes.TYPES.has(building_type_name):
-		PlaceholderBuildingShapes.draw(self, building_type_name, Vector2.ZERO, not is_buildable)
+		PlaceholderBuildingShapes.draw(self, building_type_name, Vector2.ZERO, not is_buildable, 1.0, rotation_dir)
 		return
 
 	# Capanna dell'attrezzista (2026-09-24, richiesta utente): sagoma della capanna con riempimento

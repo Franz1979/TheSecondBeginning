@@ -248,6 +248,9 @@ static func can_celebrate(rules: RiteRules, individual: HumanIndividual, age_ban
 		return false
 	if not rules.allowed_age_bands.is_empty() and not rules.allowed_age_bands.has(age_band):
 		return false
+	# Lezione (2026-10-16): insegna chi ha una skill insegnabile abbastanza alta (TeachingRiteService.can_teach).
+	if rules is TeachingRiteRules:
+		return TeachingRiteService.can_teach(rules as TeachingRiteRules, individual)
 	# Skill del tipo del rito (2026-10-14, richiesta utente): religioso → ritualità, sociale → socialità, politico →
 	# leadership, culturale → cognizione (per ora).
 	return float(individual.get(get_skill_property(rules))) >= rules.min_skill

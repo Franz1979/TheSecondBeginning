@@ -12,4 +12,4 @@ func _ready() -> void:
 
 func _draw() -> void:
 	# Il disegno occupa circa una microcella (10 unità): lo si scala al lato minore del rettangolo.
-	EarthworkShape.draw(self, size * 0.5, EarthworkShape.STRAIGHT_MASK, false, 1.0, minf(size.x, size.y) / 10.0)
+	LinearShapes.draw(self, "earthwork", size * 0.5, LinearShapes.STRAIGHT_MASK, false, 1.0, minf(size.x, size.y) / 10.0)

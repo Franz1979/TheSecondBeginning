@@ -430,6 +430,9 @@ command_bar_group_work_areas,Aree di lavoro
 command_bar_group_hunting,Caccia
 build_bar_title_build,Costruzione
 build_bar_title_buildings,Edifici
+build_bar_hide_superseded,Nascondi superati
+build_bar_hide_superseded_tooltip,Nasconde gli edifici di cui si può già costruire il miglioramento (es. la tenda di bastoni quando si può costruire la tenda di pelli). Togli la spunta per vederli e costruirli.
+build_bar_category_none_available,Nessun edificio disponibile in questa categoria
 build_bar_title_work_areas,Aree di lavoro
 building_auto_progress_line,"In essiccazione: {resource} ×{quantity}, pronta tra {days} giorni"
 building_auto_progress_line_ready,"In essiccazione: {resource} ×{quantity}, pronta (in attesa di spazio)"
@@ -830,8 +833,8 @@ task_bury_step_funeral,Celebrando il funerale
 task_bury_activity_funeral,Funerale di {name}
 building_info_burial_capacity,Capienza: {max} sepolti
 building_buried_entry,{name} · anno {year}
-building_sacredness,Sacralità: {points} / {next}
-building_sacredness_max,Sacralità: {points}
+building_sacredness,Sacralità {points} / {next} · raggio {radius} (+{bonus})
+building_sacredness_max,Sacralità {points} · raggio {radius} (+{bonus})
 building_sacredness_radius,Raggio: {radius} (+{bonus})
 building_info_religious_radius_range,"Raggio religioso: base {base}, massimo {max}"
 task_procession_name,Corteo
@@ -1175,6 +1178,7 @@ task_assignment_setting_auto_clear_rubble_tooltip,Con la spunta le macerie entra
 pending_building_damaged_to_repair,"{building}: danneggiato, da riparare"
 pending_building_damaged_repair_queued,"{building}: danneggiato, riparazione in coda"
 pending_building_damaged_repair_in_progress,"{building}: danneggiato, riparazione in corso"
+pending_material_nobody_can_carry,{building}: nessuno può trasportare {resource}
 building_repair_materials_caption,Materiali per la riparazione
 building_repair_waiting_material_label,Riparazione ferma: manca {materials} in un magazzino
 building_damaged_effects_label,"Capienze a metà, bonus annullati"
@@ -1286,3 +1290,26 @@ warehouse_rule_fuel_tooltip,"Tieni del combustibile nel deposito di ogni edifici
 warehouse_rule_fuel_type_tooltip,"Combustibile minimo per ogni edificio di questo tipo (in valore di combustibile: un rametto vale 1). 0 = questo tipo non viene rifornito."
 drawer_order_fuel_row,{building}: porta {quantity} {resource}
 pending_stock_fuel_blocked,Edificio non disponibile o niente combustibile da portare
+building_teaching_stump,Ceppo dell'insegnamento
+build_bar_teaching_stump_tooltip,"Ceppo dell'insegnamento: si costruisce dove è stato tagliato un albero, il ceppo diventa il posto dell'anziano"
+building_category_cultural,Culturale
+build_blocked_needs_tree_stump,Serve una microcella con almeno un albero tagliato (un ceppo)
+rite_oral_lesson_name,Lezione
+social_rite_reject_no_convocable,Nessuno da convocare nel villaggio (per la lezione servono bambini)
+building_pebble_path,Sentiero di ciottoli
+build_bar_pebble_path_tooltip,"Sentiero di ciottoli: si cammina meno affaticati (−10%) e un po' più veloci (+5%) della terra battuta"
+pending_no_active_idea,Nessuna idea in sviluppo
+pending_no_active_idea_detail,I pensieri depositati vanno persi: scegli un'idea
+carried_resource_tooltip_firewood,Legna da ardere
+resource_plural_firewood,Legna da ardere
+job_postponed_material,"Rimandato da {name}: manca {materials}"
+build_blocked_collect_pebbles_first,Raccogli prima i sassi a terra
+build_blocked_door_obstacle,Davanti alla porta c'è un ostacolo: ruota l'edificio
+building_tradition,Tradizione {points} / {next} · raggio {radius} (+{bonus})
+building_tradition_max,Tradizione {points} · raggio {radius} (+{bonus})
+building_authority,Autorità {points} / {next} · raggio {radius} (+{bonus})
+building_authority_max,Autorità {points} · raggio {radius} (+{bonus})
+building_influence_no_lesson_tooltip,Nessuna lezione da oltre un anno: −{loss} tradizione all'anno
+building_influence_no_meeting_tooltip,Nessuna riunione da oltre un anno: −{loss} autorità all'anno
+task_oral_lesson_name,Insegnamento orale
+material_fuel_label,combustibile

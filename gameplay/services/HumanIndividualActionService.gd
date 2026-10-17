@@ -67,6 +67,12 @@ const CONTEXT_PENDING_PLAYER_MESSAGE := "pending_player_message"
 # Messaggio per il giocatore da una Task chiusa (2026-10-04, CONTEXT_PENDING_PLAYER_MESSAGE): GameScene lo mostra come i
 # rifiuti dei comandi.
 signal task_message_requested(individual: HumanIndividual, message: String)
+# Materiali troppo pesanti (2026-10-16, richiesta utente): chi costruisce o ripara `building` non porta nemmeno un'unità
+# di `names` (MaterialSupplyService.get_uncarryable_materials) e non ha altro da portare. GameScene rimette il lavoro in
+# coda (lo prenderà solo chi può portarli) e mostra il messaggio "non ha spazio per trasportare". Una volta per Task
+# (CONTEXT_TOO_HEAVY_RELEASED).
+signal material_too_heavy(individual: HumanIndividual, building: Building, names: Array[String])
+const CONTEXT_TOO_HEAVY_RELEASED := "material_too_heavy_released"
 
 # Servizio single-responsibility (stesso pattern di HumanIndividualMovementService, stesso
 # livello/cartella): applica lo step ATTIVO della Task corrente di un HumanIndividual
@@ -427,6 +433,61 @@ func finish_current_step(individual: HumanIndividual, task: Task, world: World, 
 # l'ordine (l'ultimo accodato, LIFO). Un eventuale resto del giro (dopo uno scarico di "zaino occupato") viene
 # ripianificato alla ripresa (activate_resumed_task → MaterialSupplyService.drop_pending_supply_round). Stessa
 # sequenza di resolve_idle_individual per la Task ripresa; se l'ordine non si attiva, risoluzione dell'idle normale.
+# Cantiere rimandato per materiale (2026-10-16, richiesta utente — sentiero lungo: i costruttori restavano fermi ai
+# cantieri senza materiale e nessuno raccoglieva cibo): nel context della task di costruzione rimessa in coda, l'id
+# dell'edificio. Alla ripresa (resolve_idle_individual) la task resta in coda finché nessun magazzino ha il materiale
+# (_is_waiting_for_material), così non si cammina a vuoto fino al cantiere.
+const CONTEXT_MATERIAL_POSTPONED := "material_postponed_building_id"
+# Tipo di lavoro rimandato (2026-10-17, esteso a Produce e riparazione): "build" (default), "produce", "repair" — decide
+# quale fabbisogno si ricontrolla alla ripresa.
+const CONTEXT_MATERIAL_POSTPONED_KIND := "material_postponed_kind"
+const POSTPONED_KIND_BUILD := "build"
+const POSTPONED_KIND_PRODUCE := "produce"
+const POSTPONED_KIND_REPAIR := "repair"
+
+
+# Costruttore senza materiale in nessun magazzino: la task di costruzione va in coda (marcata) e il pipottino torna
+# libero. Il cantiere resta suo (la task in coda lo tiene assegnato per la coda dei lavori).
+func _postpone_for_material(
+	individual: HumanIndividual, task: Task, target_building: Building, world: World, game_data: GameData,
+	kind: String = POSTPONED_KIND_BUILD
+) -> void:
+	task.context[CONTEXT_MATERIAL_POSTPONED] = target_building.id
+	task.context[CONTEXT_MATERIAL_POSTPONED_KIND] = kind
+	task.context.erase(MaterialSupplyService.CONTEXT_YIELD_AFTER_DELIVERY)
+	TaskDebugRegistry.on_task_closed(task)
+	TaskQueueService.push_suspended_task(individual, task, true)
+	individual.current_task = null
+	individual.is_moving = false
+	individual.clear_path()
+	if DebugLogging.ENABLED and DebugLogging.SHOW_TRANSPORT_BUILD_LOGS:
+		print("[BUILD MATERIAL NEEDED] #%d %s: nessun materiale per l'edificio #%d — '%s' rimandata in coda, passa ad altro." % [
+			individual.id, individual.name, target_building.id, task.task_name
+		])
+	if game_data == null:
+		individual.stop(false)
+		return
+	resolve_idle_individual(individual, _resolve_age_band(individual, game_data), world)
+
+
+# true se `task` è un cantiere rimandato per materiale e nessun magazzino ha ancora quello che manca.
+static func _is_waiting_for_material(task: Task, world: World) -> bool:
+	if task == null or world == null or not task.context.has(CONTEXT_MATERIAL_POSTPONED):
+		return false
+	var building := _find_building_by_id(world, int(task.context[CONTEXT_MATERIAL_POSTPONED]))
+	if building == null or building.is_demolished:
+		return false
+	var kind := String(task.context.get(CONTEXT_MATERIAL_POSTPONED_KIND, POSTPONED_KIND_BUILD))
+	if kind == POSTPONED_KIND_BUILD and building.is_complete:
+		return false
+	var is_repair := kind == POSTPONED_KIND_REPAIR
+	var missing := RepairAction.get_supply_missing(building) if is_repair else MaterialSupplyService.get_missing_materials(building)
+	if missing.is_empty():
+		return false
+	var need := MaterialSupplyService.get_supply_need(world, building, Vector2.ZERO, Vector2i.ZERO, Callable(), is_repair)
+	return need.is_empty() or need.get("source", null) == null
+
+
 func _yield_after_supply_delivery(individual: HumanIndividual, task: Task, world: World, game_data: GameData) -> void:
 	task.context.erase(MaterialSupplyService.CONTEXT_YIELD_AFTER_DELIVERY)
 	var order := TaskQueueService.pop_suspended_task(individual)
@@ -475,14 +536,26 @@ func _handle_pending_material_shortage(individual: HumanIndividual, task: Task, 
 	# step corrente); se non è possibile, comportamento di prima (bonus deposit_site, attesa, popup).
 	if MaterialSupplyService.is_supplied_step(task.get_current_action()) and MaterialSupplyService.try_supply_at_level_zero(individual, task, world, target_building):
 		return
+	if _release_if_too_heavy(individual, task, target_building):
+		return
 	# Riparazione senza sorgente (2026-10-10, materiali della riparazione — passo 3): resta in attesa, ferma dove finiscono
 	# i materiali, senza il percorso dei cantieri (bonus, avviso). Avviso e ritentativi arrivano nel passo 4.
+	# Dal 2026-10-17 (richiesta utente): niente attesa ferma, la riparazione va in coda e il pipottino fa altro.
 	if task.get_current_action() is RepairAction:
 		_mark_repair_awaiting_material(target_building, missing)
-		if task.context.has(MaterialSupplyService.CONTEXT_YIELD_AFTER_DELIVERY):
-			_yield_after_supply_delivery(individual, task, world, game_data)
+		_postpone_for_material(individual, task, target_building, world, game_data, POSTPONED_KIND_REPAIR)
 		return
 	_resolve_material_shortage(world, target_building, missing)
+	# Cantiere senza materiale in nessun magazzino (2026-10-16): la costruzione va in coda e il pipottino fa altro.
+	var current_step := task.get_current_action()
+	if target_building.is_awaiting_material and (current_step is SetupSiteAction or current_step is BuildAction):
+		_postpone_for_material(individual, task, target_building, world, game_data)
+		return
+	# Produce senza ingredienti o combustibile in nessun magazzino (2026-10-17, richiesta utente): stessa regola; l'ordine
+	# di produzione resta suo.
+	if target_building.is_awaiting_material and current_step is ProduceAction:
+		_postpone_for_material(individual, task, target_building, world, game_data, POSTPONED_KIND_PRODUCE)
+		return
 	# Ordine del giocatore in attesa di una consegna (CONTEXT_YIELD_AFTER_DELIVERY) ma nessun nuovo giro possibile:
 	# la Build resterebbe ferma in attesa con l'ordine bloccato in coda — va in coda subito e parte l'ordine.
 	if task.context.has(MaterialSupplyService.CONTEXT_YIELD_AFTER_DELIVERY):
@@ -680,6 +753,8 @@ func retry_blocked_material_shortages(world: World, all_individuals: Array[Human
 				continue
 			if MaterialSupplyService.try_supply_at_level_zero(individual, task, world, repair_building):
 				repair_building.repair_awaiting_material = false
+			else:
+				_release_if_too_heavy(individual, task, repair_building)
 			continue
 		if target_building == null:
 			continue
@@ -695,7 +770,32 @@ func retry_blocked_material_shortages(world: World, all_individuals: Array[Human
 		# pipottino riparte da sé invece di restare in attesa.
 		if MaterialSupplyService.is_supplied_step(action) and MaterialSupplyService.try_supply_at_level_zero(individual, task, world, target_building):
 			continue
+		if _release_if_too_heavy(individual, task, target_building):
+			continue
 		_resolve_material_shortage(world, target_building, missing)
+
+
+# Materiali troppo pesanti (2026-10-16, richiesta utente): costruzione (SetupSite/Build) o riparazione ferma per
+# materiale, nessun giro possibile e almeno una risorsa mancante che `individual` non porta nemmeno a zaino vuoto —
+# invece dell'attesa (che il retry giornaliero ritenterebbe a vuoto per sempre) chiede a GameScene di rimettere il
+# lavoro in coda (material_too_heavy). true = richiesta fatta (anche in un giro precedente della stessa Task).
+func _release_if_too_heavy(individual: HumanIndividual, task: Task, target_building: Building) -> bool:
+	var action := task.get_current_action()
+	var for_repair := action is RepairAction
+	if not (for_repair or action is SetupSiteAction or action is BuildAction):
+		return false
+	if task.context.has(CONTEXT_TOO_HEAVY_RELEASED):
+		return true
+	var names := MaterialSupplyService.get_uncarryable_materials(individual, target_building, for_repair)
+	if names.is_empty():
+		return false
+	task.context[CONTEXT_TOO_HEAVY_RELEASED] = true
+	if DebugLogging.ENABLED and DebugLogging.SHOW_TRANSPORT_BUILD_LOGS:
+		print("[BUILD MATERIAL TOO HEAVY] #%d %s: non porta nemmeno un'unità di %s per Building #%d (capacità %.1f) — lavoro rimesso in coda." % [
+			individual.id, individual.name, str(names), target_building.id, individual.max_carry_capacity
+		])
+	material_too_heavy.emit(individual, target_building, names)
+	return true
 
 
 # Riparazione ferma per materiale (2026-10-10, passo 4): stato letto da campanella e pannello, con un log alla transizione.
@@ -2076,13 +2176,20 @@ static func resolve_idle_individual(individual: HumanIndividual, age_band: Human
 			return
 
 	var resumed_task := TaskQueueService.pop_suspended_task(individual)
+	# Cantieri rimandati per materiale (2026-10-16): restano in coda finché il materiale non c'è, si passa alla successiva.
+	var held_for_material: Array[Task] = []
 	# ZOMBIE GUARD (2026-09-16, richiesta utente, fix "task zombie") — scarta ogni task già
 	# conclusa estratta dalla coda (residuo possibile da un salvataggio precedente a questo fix, o
 	# difesa in profondità rispetto alla guardia in HumanIndividual.assign_task che oggi impedisce
 	# di accodarne di nuove) e passa alla successiva, finché non se ne trova una valida o la coda si
 	# svuota — MAI impostare current_task su una task già finita: activate_resumed_task la
 	# troverebbe già conclusa e non farebbe nulla, lasciando l'individuo bloccato per sempre.
-	while resumed_task != null and (resumed_task.is_finished() or not is_task_valid(resumed_task) or is_empty_cargo_delivery(individual, resumed_task)):
+	while resumed_task != null and (resumed_task.is_finished() or not is_task_valid(resumed_task) or is_empty_cargo_delivery(individual, resumed_task) \
+			or _is_waiting_for_material(resumed_task, world)):
+		if not resumed_task.is_finished() and is_task_valid(resumed_task) and _is_waiting_for_material(resumed_task, world):
+			held_for_material.append(resumed_task)
+			resumed_task = TaskQueueService.pop_suspended_task(individual)
+			continue
 		if is_empty_cargo_delivery(individual, resumed_task) and DebugLogging.ENABLED and DebugLogging.SHOW_TASK_LIFECYCLE_LOGS:
 			print("[EMPTY CARGO] Individuo #%d %s: task '%s' scartata dalla coda — restava solo da consegnare un carico che non c'è più." % [
 				individual.id, individual.name, resumed_task.task_name
@@ -2103,6 +2210,12 @@ static func resolve_idle_individual(individual: HumanIndividual, age_band: Human
 				"già conclusa" if resumed_task.is_finished() else HuntService.describe_task_prey_loss(resumed_task)
 			])
 		resumed_task = TaskQueueService.pop_suspended_task(individual)
+	# Rimessi in coda nello stesso ordine; quello che riparte non è più "rimandato".
+	for i in range(held_for_material.size() - 1, -1, -1):
+		individual.task_queue.append(held_for_material[i])
+	if resumed_task != null:
+		resumed_task.context.erase(CONTEXT_MATERIAL_POSTPONED)
+		resumed_task.context.erase(CONTEXT_MATERIAL_POSTPONED_KIND)
 	if resumed_task != null:
 		individual.skip_job_board_once = false
 		if DebugLogging.ENABLED and DebugLogging.SHOW_TASK_LIFECYCLE_LOGS:

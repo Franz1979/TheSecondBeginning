@@ -79,6 +79,11 @@ Il piano è un refactoring puro: **nessuna regola di gioco cambia**.
 
 ## 2. Blocchi
 
+### Campanella (2026-10-16)
+- Ha casa in `gameplay/pending/scripts/PendingEntryService.gd`: costruzione comune delle voci (`make_entry`), voce
+  "nessuna idea in sviluppo", villaggi senza centro. Le altre raccolte `_collect_*_entries` di GameScene si spostano lì
+  (o nel servizio della loro meccanica) con il blocco che tocca la meccanica: bacheca → 2, edifici → 3, scorte → 4.
+
 ### Blocco 0 — Fondamenta (piccolo)
 - Creare `GameEffects`: un elenco tipizzato di effetti più `_apply_effects(effects)` in GameScene, che
   traduce ogni effetto in popup, suono o refresh.

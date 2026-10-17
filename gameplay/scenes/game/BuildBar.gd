@@ -5,8 +5,9 @@ extends CenterContainer
 # il sottomenu dei tipi di edificio (oggi capanna/stone circle/deposit site/stick tent, più
 # placeholder vuoti), SOSTITUENDO la riga principale invece di affiancarla. UN SOLO bottone di
 # controllo (niente back separato, deciso con l'utente) il cui significato/icona cambia in base al
-# livello corrente: ▼ minimizza (da livello 1), ▲ riespande (da minimizzato), ← torna indietro (da
-# livello 2) — sempre "un passo indietro nella gerarchia", mai un secondo bottone dedicato.
+# livello corrente: ▼ minimizza (da livello 1), ▲ riespande (da minimizzato), ← torna indietro (dalle
+# categorie o dagli edifici) — sempre "un passo indietro nella gerarchia", mai un secondo bottone dedicato.
+# Dal 2026-10-16 il martello apre prima le categorie (category_row), poi gli edifici della categoria scelta.
 # (Il bottone 🧨 Demolisci di main_row, tolto il 2026-09-27, è tornato il 2026-10-14 accanto al martello: scegli
 # l'edificio sulla mappa, confermi, l'edificio resta "da demolire" finché non assegni un demolitore. Resta anche il
 # pulsante nel pannello edificio.)
@@ -27,6 +28,10 @@ extends CenterContainer
 @onready var control_separator: VSeparator = $Panel/MarginContainer/HBoxContainer/VSeparator
 @onready var main_row: IconButtonRow = $Panel/MarginContainer/HBoxContainer/ContentContainer/MainRow
 @onready var submenu_row: IconButtonRow = $Panel/MarginContainer/HBoxContainer/ContentContainer/SubmenuRow
+# Categorie degli edifici (2026-10-16, richiesta utente — "il costruisci comincia a essere complicato"): il martello apre
+# questa riga; il clic su una categoria mostra submenu_row con i soli edifici di quella categoria (set_slot_visible: gli
+# slot, le azioni "build_*" e il collegamento con GameScene restano quelli di prima). Gestita tutta qui dentro.
+@onready var category_row: IconButtonRow = $Panel/MarginContainer/HBoxContainer/ContentContainer/CategoryRow
 # I comandi del pipottino (CommandBar) non stanno più qui (2026-10-01, richiesta utente): pannello a sé alla sinistra di
 # questa barra, sulla stessa riga in basso (GameScene._setup_command_bar, che sposta anche questa barra dentro la riga
 # centrata a sinistra della sidebar). Questa barra resta per ciò che si piazza nel mondo (edifici, zone).
@@ -88,12 +93,45 @@ const BUILDING_SLOT_INDEX_BY_TYPE := {
 	# Capanna del vestiario (2026-10-11, richiesta utente — segnaposto) — slot 15, submenu_row.slot_count portato a 17 in
 	# BuildBar.tscn; Hut resta l'ultimo a destra (slot 16).
 	"clothing_hut": 15,
-	"hut": 16,
+	# Ceppo dell'insegnamento (2026-10-16, richiesta utente) — slot 16, submenu_row.slot_count portato a 18 in
+	# BuildBar.tscn; Hut resta l'ultimo a destra (slot 17).
+	"teaching_stump": 16,
+	# Sentiero di ciottoli (2026-10-16, richiesta utente) — slot 17, submenu_row.slot_count portato a 19 in
+	# BuildBar.tscn; Hut resta l'ultimo a destra (slot 18).
+	"pebble_path": 17,
+	"hut": 18,
 }
 
-enum _ViewState { MINIMIZED, LEVEL_1, LEVEL_2 }
+# Ordine delle categorie in category_row, uno slot ciascuna (BuildBar.tscn: CategoryRow.slot_count = 8). RUINS esclusa:
+# le macerie non si costruiscono. Una categoria nuova va aggiunta qui e allo slot_count.
+const CATEGORY_ORDER: Array[int] = [
+	BuildingTypes.Category.RESIDENTIAL,
+	BuildingTypes.Category.STORAGE,
+	BuildingTypes.Category.PRODUCTION,
+	BuildingTypes.Category.CULTURAL,
+	BuildingTypes.Category.RELIGIOUS,
+	BuildingTypes.Category.POLITICAL,
+	BuildingTypes.Category.MILITARY,
+	BuildingTypes.Category.MOVEMENT,
+]
+const CATEGORY_ICON_SIDE: float = 32.0
+
+# LEVEL_1 = martello/Demolisci/Zone; CATEGORIES = category_row (titolo "Edifici"); BUILDINGS = submenu_row filtrata sulla
+# categoria scelta (titolo = nome della categoria).
+enum _ViewState { MINIMIZED, LEVEL_1, CATEGORIES, BUILDINGS }
 
 var _state: _ViewState = _ViewState.LEVEL_1
+# Categoria (BuildingTypes.Category) di ogni tipo in BUILDING_SLOT_INDEX_BY_TYPE, letta dalle regole in _ready.
+var _category_by_type: Dictionary = {}
+# Categoria aperta in BUILDINGS (-1 = nessuna).
+var _current_category: int = -1
+# Per ogni slot di category_row: il contenitore dell'icona (sostituita quando cambia l'edificio rappresentativo) e il
+# tipo che mostra adesso ("" = ancora nessuno).
+var _category_icon_holders: Array[Control] = []
+var _category_icon_types: Array[String] = []
+# Spunta "Nascondi superati" nella riga del titolo (UserOptions.build_bar_hide_superseded), visibile con le categorie e
+# con gli edifici.
+var _hide_superseded_check: Button = null
 # Riga di titolo (2026-10-03, richiesta utente — stessa altezza della barra dei comandi): etichetta piccola sopra i
 # pulsanti, stesso stile di "Azioni"/"Opzioni" (CommandBar.make_group_label). "Costruzione" a barra chiusa o al primo
 # livello, "Edifici" nel sottomenu, "Zone di lavoro" mentre si disegna una zona (set_work_areas_mode, da GameScene).
@@ -190,7 +228,7 @@ func _ready() -> void:
 	# Hut, ora slot 6 e sempre ULTIMA a destra (richiesta utente 2026-09-19; slot 6 dal 2026-09-24).
 	# Legnaia (2026-10-08): richiede advanced_paleolithic_constructions, disabilitata da _refresh_building_slots_buildable.
 	# Capanna del vestiario (2026-10-11): richiede advanced_paleolithic_constructions, come la legnaia.
-	for placeholder_type in ["drying_rack", "smokehouse", "burial", "earthwork", "stacked_stones", "woodshed", "clothing_hut"]:
+	for placeholder_type in ["drying_rack", "smokehouse", "burial", "earthwork", "stacked_stones", "woodshed", "clothing_hut", "teaching_stump", "pebble_path"]:
 		submenu_row.configure_slot(
 			BUILDING_SLOT_INDEX_BY_TYPE[placeholder_type], "", tr("build_bar_%s_tooltip" % placeholder_type),
 			StringName("build_%s" % placeholder_type), "", true, IconRegistry.get_building_icon_node(placeholder_type)
@@ -221,9 +259,104 @@ func _ready() -> void:
 			slot_button.tooltip_builder = _building_tooltip.bind(String(building_type_name), slot_button)
 	main_row.action_pressed.connect(_on_main_row_action_pressed)
 	control_button.pressed.connect(_on_control_button_pressed)
+	_build_category_row()
 	_build_title_row()
 	_build_orientation_hint_row()
+	_refresh_building_filter()
 	_apply_state()
+
+
+# Slot delle categorie: icona in un contenitore (riempito da _refresh_building_filter), tooltip = nome della categoria.
+func _build_category_row() -> void:
+	for building_type_name in BUILDING_SLOT_INDEX_BY_TYPE.keys():
+		var rules := BuildingCalculator.get_building_rules(String(building_type_name))
+		_category_by_type[building_type_name] = int(rules.category) if rules != null else -1
+	for i in range(CATEGORY_ORDER.size()):
+		var holder := Control.new()
+		holder.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		_category_icon_holders.append(holder)
+		_category_icon_types.append("")
+		category_row.configure_slot(
+			i, "", _category_name(CATEGORY_ORDER[i]), StringName("build_category_%d" % i), "", true, holder
+		)
+	category_row.action_pressed.connect(_on_category_action_pressed)
+
+
+func _category_name(category: int) -> String:
+	return tr("building_category_" + String(BuildingTypes.Category.keys()[category]).to_lower())
+
+
+# Abilitazione di un tipo = quella dello slot (set_building_buildable, decisa da GameScene): un'unica fonte.
+func _is_type_buildable(building_type_name: String) -> bool:
+	var slot := submenu_row.get_slot_button(int(BUILDING_SLOT_INDEX_BY_TYPE.get(building_type_name, -1))) as Button
+	return slot != null and not slot.disabled
+
+
+# Superato (2026-10-16, richiesta utente): con la spunta accesa, un edificio il cui miglioramento si può già costruire
+# (non solo sbloccato: così non sparisce mai l'unica scelta, es. il sito di deposito finché il deposito coperto è spento).
+func _is_type_hidden_as_superseded(building_type_name: String) -> bool:
+	if not UserOptions.build_bar_hide_superseded:
+		return false
+	var rules := BuildingCalculator.get_building_rules(building_type_name)
+	return rules != null and rules.upgrades_to != "" and _is_type_buildable(rules.upgrades_to)
+
+
+# Edifici della categoria non nascosti, in ordine di slot.
+func _visible_types_of_category(category: int) -> Array[String]:
+	var result: Array[String] = []
+	for building_type_name in BUILDING_SLOT_INDEX_BY_TYPE.keys():
+		if int(_category_by_type.get(building_type_name, -1)) == category and not _is_type_hidden_as_superseded(building_type_name):
+			result.append(String(building_type_name))
+	result.sort_custom(func(a: String, b: String) -> bool: return int(BUILDING_SLOT_INDEX_BY_TYPE[a]) < int(BUILDING_SLOT_INDEX_BY_TYPE[b]))
+	return result
+
+
+# Ricalcola cosa si vede: slot degli edifici (categoria aperta, superati nascosti) e slot delle categorie (icona
+# dell'edificio rappresentativo = l'ultimo costruibile in ordine di slot, altrimenti il primo; spenta se nessuno è
+# costruibile; nascosta se la categoria non ha edifici nella barra).
+func _refresh_building_filter() -> void:
+	for building_type_name in BUILDING_SLOT_INDEX_BY_TYPE.keys():
+		var shown := int(_category_by_type.get(building_type_name, -1)) == _current_category \
+			and not _is_type_hidden_as_superseded(building_type_name)
+		submenu_row.set_slot_visible(int(BUILDING_SLOT_INDEX_BY_TYPE[building_type_name]), shown)
+	for i in range(CATEGORY_ORDER.size()):
+		var types := _visible_types_of_category(CATEGORY_ORDER[i])
+		category_row.set_slot_visible(i, not types.is_empty())
+		if types.is_empty():
+			continue
+		var representative := types[0]
+		var any_buildable := false
+		for building_type_name in types:
+			if _is_type_buildable(building_type_name):
+				representative = building_type_name
+				any_buildable = true
+		category_row.set_slot_disabled(i, not any_buildable, tr("build_bar_category_none_available"))
+		if representative != _category_icon_types[i]:
+			_category_icon_types[i] = representative
+			for child in _category_icon_holders[i].get_children():
+				child.queue_free()
+			_category_icon_holders[i].add_child(IconRegistry.build_building_icon_box(representative, CATEGORY_ICON_SIDE))
+
+
+func _on_category_action_pressed(action_id: StringName) -> void:
+	var index := int(String(action_id).trim_prefix("build_category_"))
+	if index < 0 or index >= CATEGORY_ORDER.size():
+		return
+	_current_category = CATEGORY_ORDER[index]
+	_state = _ViewState.BUILDINGS
+	_refresh_building_filter()
+	_apply_state()
+
+
+func _on_hide_superseded_toggled(pressed: bool) -> void:
+	UserOptions.build_bar_hide_superseded = pressed
+	UserOptions.save_to_disk()
+	_refresh_hide_superseded_text()
+	_refresh_building_filter()
+
+
+func _refresh_hide_superseded_text() -> void:
+	_hide_superseded_check.text = ("☑ " if _hide_superseded_check.button_pressed else "☐ ") + tr("build_bar_hide_superseded")
 
 
 # Tooltip di un bottone edificio (BuildingCostTooltip): nome, descrizione breve, materiali (allestimento + costruzione),
@@ -247,9 +380,29 @@ func _build_title_row() -> void:
 	var column := VBoxContainer.new()
 	column.add_theme_constant_override("separation", CommandBar.GROUP_LABEL_SEPARATION)
 	_title_label = CommandBar.make_group_label("")
+	_title_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	# Titolo a sinistra, "Nascondi superati" a destra (2026-10-16): pulsante piatto a due stati con ☑/☐ nel testo, stesso
+	# carattere piccolo del titolo e senza margini, così la riga del titolo non si alza (una CheckBox vera, con la sua
+	# casella, la renderebbe più alta di quella della barra dei comandi).
+	var title_row := HBoxContainer.new()
+	title_row.add_child(_title_label)
+	_hide_superseded_check = Button.new()
+	_hide_superseded_check.toggle_mode = true
+	_hide_superseded_check.flat = true
+	_hide_superseded_check.focus_mode = Control.FOCUS_NONE
+	_hide_superseded_check.tooltip_text = tr("build_bar_hide_superseded_tooltip")
+	_hide_superseded_check.add_theme_font_size_override("font_size", CommandBar.GROUP_LABEL_FONT_SIZE)
+	for color_name in ["font_color", "font_pressed_color", "font_hover_color", "font_hover_pressed_color"]:
+		_hide_superseded_check.add_theme_color_override(color_name, CommandBar.GROUP_LABEL_COLOR)
+	for style_name in ["normal", "hover", "pressed", "hover_pressed", "focus"]:
+		_hide_superseded_check.add_theme_stylebox_override(style_name, StyleBoxEmpty.new())
+	_hide_superseded_check.set_pressed_no_signal(UserOptions.build_bar_hide_superseded)
+	_refresh_hide_superseded_text()
+	_hide_superseded_check.toggled.connect(_on_hide_superseded_toggled)
+	title_row.add_child(_hide_superseded_check)
 	margin.remove_child(buttons_row)
 	margin.add_child(column)
-	column.add_child(_title_label)
+	column.add_child(title_row)
 	column.add_child(buttons_row)
 
 
@@ -326,16 +479,18 @@ func _refresh_title() -> void:
 		_title_label.text = tr("build_bar_title_upgrade_orientation").format({"building": _orientation_building_name})
 	elif _work_areas_mode:
 		_title_label.text = tr("build_bar_title_work_areas")
-	elif _state == _ViewState.LEVEL_2:
+	elif _state == _ViewState.CATEGORIES:
 		_title_label.text = tr("build_bar_title_buildings")
+	elif _state == _ViewState.BUILDINGS:
+		_title_label.text = _category_name(_current_category)
 	else:
 		_title_label.text = tr("build_bar_title_build")
 
 
-# true se la barra è aperta sugli edifici (livello 2). Dal 2026-10-03 i comandi del pipottino restano visibili anche
-# così (GameScene._sync_command_bar).
+# true se la barra è aperta sugli edifici (categorie o edifici di una categoria). Dal 2026-10-03 i comandi del pipottino
+# restano visibili anche così (GameScene._sync_command_bar).
 func is_build_menu_open() -> bool:
-	return _state == _ViewState.LEVEL_2
+	return _state == _ViewState.CATEGORIES or _state == _ViewState.BUILDINGS
 
 
 # Stile del pannello (stesso StyleBoxFlat del .tscn), riusato dal pannello dei comandi (GameScene._setup_command_bar).
@@ -366,6 +521,8 @@ func set_building_buildable(building_type_name: String, is_buildable: bool, disa
 		BUILDING_SLOT_INDEX_BY_TYPE[building_type_name], not is_buildable,
 		disabled_tooltip if not is_buildable else ""
 	)
+	# Categorie e superati dipendono dall'abilitazione (2026-10-16).
+	_refresh_building_filter()
 
 
 # Bottone "Zone di lavoro" acceso o spento (2026-09-27): stesso schema di set_building_buildable, disabled_tooltip
@@ -381,20 +538,24 @@ func set_work_areas_available(is_available: bool, disabled_tooltip: String = "")
 # collegamento, corretto qui.
 func _on_main_row_action_pressed(action_id: StringName) -> void:
 	if action_id == OPEN_BUILD_MENU_ACTION:
-		_state = _ViewState.LEVEL_2
+		_state = _ViewState.CATEGORIES
 		_apply_state()
 
 
-# Comportamento contestuale, sempre "un passo indietro": minimizzato -> livello 1 -> livello 2 ->
-# livello 1 -> minimizzato, mai un salto diretto da livello 2 a minimizzato in un solo click.
+# Comportamento contestuale, sempre "un passo indietro": edifici -> categorie -> livello 1 -> minimizzato, e ▲ da
+# minimizzato al livello 1; mai un salto di più livelli in un solo click.
 func _on_control_button_pressed() -> void:
 	match _state:
 		_ViewState.MINIMIZED:
 			_state = _ViewState.LEVEL_1
 		_ViewState.LEVEL_1:
 			_state = _ViewState.MINIMIZED
-		_ViewState.LEVEL_2:
+		_ViewState.CATEGORIES:
 			_state = _ViewState.LEVEL_1
+		_ViewState.BUILDINGS:
+			_state = _ViewState.CATEGORIES
+			_current_category = -1
+			_refresh_building_filter()
 	_apply_state()
 
 
@@ -406,12 +567,15 @@ func _apply_state() -> void:
 		_orientation_hint_row.visible = _orientation_mode
 	content_container.visible = _state != _ViewState.MINIMIZED and not _orientation_mode
 	main_row.visible = _state == _ViewState.LEVEL_1
-	submenu_row.visible = _state == _ViewState.LEVEL_2
+	category_row.visible = _state == _ViewState.CATEGORIES
+	submenu_row.visible = _state == _ViewState.BUILDINGS
+	if _hide_superseded_check != null:
+		_hide_superseded_check.visible = is_build_menu_open() and not _orientation_mode
 	match _state:
 		_ViewState.MINIMIZED:
 			control_button.text = "▲"
 		_ViewState.LEVEL_1:
 			control_button.text = "▼"
-		_ViewState.LEVEL_2:
+		_ViewState.CATEGORIES, _ViewState.BUILDINGS:
 			control_button.text = "←"
 	_refresh_title()

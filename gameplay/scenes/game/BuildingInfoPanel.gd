@@ -327,11 +327,25 @@ var _buried_box: VBoxContainer = null
 # l'elenco dei sepolti, per gli edifici completi con raggio religioso — "Sacralità: 20 / 100" (punti e soglia
 # successiva), una barra sottile dalla soglia precedente alla successiva, "Raggio: 5 (+0)" (base più bonus delle soglie).
 # Oltre l'ultima soglia: solo il valore, senza barra. Il tooltip dell'icona dell'influenza religiosa resta com'è.
+# Dal 2026-10-17 (richiesta utente) un blocco per ogni tipo d'influenza con raggio di base: Autorità (politica),
+# Tradizione (cultura), Sacralità (religione), nello stesso stile; _sacredness_box li contiene tutti.
 const SACREDNESS_BAR_HEIGHT: float = 4.0
+const INFLUENCE_POINT_KEYS := {
+	InfluenceService.InfluenceType.POLITICAL: "building_authority",
+	InfluenceService.InfluenceType.CULTURAL: "building_tradition",
+	InfluenceService.InfluenceType.RELIGIOUS: "building_sacredness",
+}
+# Calo annuo senza guadagni, per tipo (tooltip dell'icona dell'influenza).
+const INFLUENCE_NEGLECT_KEYS := {
+	InfluenceService.InfluenceType.POLITICAL: "building_influence_no_meeting_tooltip",
+	InfluenceService.InfluenceType.CULTURAL: "building_influence_no_lesson_tooltip",
+	InfluenceService.InfluenceType.RELIGIOUS: "building_influence_no_rite_tooltip",
+}
 var _sacredness_box: VBoxContainer = null
-var _sacredness_label: Label = null
-var _sacredness_bar: ProgressBar = null
-var _sacredness_radius_label: Label = null
+# InfluenceService.InfluenceType -> {"box", "separator", "label", "bar"}. Dal 2026-10-17 una riga sola per tipo
+# ("Autorità 0 / 100 · raggio 5 (+0)"), barra del colore del tipo (InfluenceFootprintOverlay.COLORS, come l'icona) e una
+# riga sottile tra un tipo e l'altro.
+var _influence_blocks: Dictionary = {}
 
 # Integrità (2026-10-10, richiesta utente): solo per un edificio completo, sotto "Costruito: anno N" — "Integrità: 90%"
 # e una barra con lo stile e le dimensioni di quella della costruzione, colorata per soglie (Building.DURABILITY_*_RATIO).
@@ -1022,8 +1036,21 @@ func _influence_tooltip(building: Building, entry: Dictionary, radius: int) -> S
 	if radius <= 0:
 		return tr(String(entry["none_key"]))
 	var influence_type: int = entry["type"]
+	# Cultura e politica (2026-10-17): raggio, poi i punti (Tradizione/Autorità) e l'eventuale calo annuo.
 	if influence_type != InfluenceService.InfluenceType.RELIGIOUS:
-		return tr(String(entry["tooltip_key"])).format({"radius": radius})
+		var type_text := tr(String(entry["tooltip_key"])).format({"radius": radius})
+		var type_points := InfluenceService.get_effective_points(building, influence_type)
+		var type_next := InfluenceService.get_next_threshold(building, influence_type, type_points)
+		var points_key := String(INFLUENCE_POINT_KEYS[influence_type])
+		var type_values := {
+			"points": floori(type_points), "next": floori(type_next), "radius": radius,
+			"bonus": radius - InfluenceService.get_base_radius(building, influence_type),
+		}
+		type_text += "\n" + tr(points_key + ("_max" if type_next < 0.0 else "")).format(type_values)
+		var type_game_data: GameData = GameSettings.active_game_data
+		if type_game_data != null and InfluenceService.has_neglected_rites(building, influence_type, type_game_data.get_absolute_day()):
+			type_text += "\n" + tr(String(INFLUENCE_NEGLECT_KEYS[influence_type])).format({"loss": roundi(InfluenceService.get_neglected_rites_loss(building, influence_type))})
+		return type_text
 	# Valori effettivi (2026-10-10): sacralità a metà su un edificio danneggiato.
 	var effective_points := InfluenceService.get_effective_points(building, influence_type)
 	var points := floori(effective_points)
@@ -1099,17 +1126,31 @@ func _build_info_lines(rules: BuildingRules) -> Array[Dictionary]:
 
 func _build_sacredness_box() -> void:
 	_sacredness_box = VBoxContainer.new()
-	_sacredness_box.add_theme_constant_override("separation", 1)
+	_sacredness_box.add_theme_constant_override("separation", 4)
 	_sacredness_box.visible = false
-	_sacredness_label = _build_sacredness_label()
-	_sacredness_box.add_child(_sacredness_label)
-	_sacredness_bar = ProgressBar.new()
-	_sacredness_bar.show_percentage = false
-	_sacredness_bar.custom_minimum_size = Vector2(0, SACREDNESS_BAR_HEIGHT)
-	_sacredness_bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_sacredness_box.add_child(_sacredness_bar)
-	_sacredness_radius_label = _build_sacredness_label()
-	_sacredness_box.add_child(_sacredness_radius_label)
+	for influence_type in [InfluenceService.InfluenceType.POLITICAL, InfluenceService.InfluenceType.CULTURAL, InfluenceService.InfluenceType.RELIGIOUS]:
+		var block := VBoxContainer.new()
+		block.add_theme_constant_override("separation", 1)
+		var separator := HSeparator.new()
+		separator.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		block.add_child(separator)
+		var label := _build_sacredness_label()
+		block.add_child(label)
+		var bar := ProgressBar.new()
+		bar.show_percentage = false
+		bar.custom_minimum_size = Vector2(0, SACREDNESS_BAR_HEIGHT)
+		bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		var fill := StyleBoxFlat.new()
+		fill.bg_color = InfluenceFootprintOverlay.COLORS.get(influence_type, Color.WHITE)
+		fill.bg_color.a = 1.0
+		bar.add_theme_stylebox_override("fill", fill)
+		block.add_child(bar)
+		_sacredness_box.add_child(block)
+		_influence_blocks[influence_type] = {"box": block, "separator": separator, "label": label, "bar": bar}
+	# Riga sotto l'ultimo blocco (2026-10-17, richiesta utente): divide l'influenza da "Costruito: anno N" e il resto.
+	var bottom_separator := HSeparator.new()
+	bottom_separator.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_sacredness_box.add_child(bottom_separator)
 
 
 func _build_sacredness_label() -> Label:
@@ -1227,31 +1268,44 @@ func _refresh_durability(building: Building) -> void:
 
 # Sacralità e raggio religioso attuali (vedi _sacredness_box): solo edifici completi con raggio religioso di base.
 func _refresh_sacredness(building: Building) -> void:
-	var religious := InfluenceService.InfluenceType.RELIGIOUS
-	var base := InfluenceService.get_base_radius(building, religious)
-	_sacredness_box.visible = building != null and building.is_complete and not building.is_demolished and base > 0
-	if not _sacredness_box.visible:
-		return
+	var usable := building != null and building.is_complete and not building.is_demolished
+	var any_shown := false
+	for influence_type in _influence_blocks.keys():
+		var block: Dictionary = _influence_blocks[influence_type]
+		var base := InfluenceService.get_base_radius(building, influence_type) if usable else 0
+		(block["box"] as Control).visible = base > 0
+		if base <= 0:
+			continue
+		(block["separator"] as Control).visible = any_shown
+		any_shown = true
+		_refresh_influence_block(building, influence_type, block, base)
+	_sacredness_box.visible = any_shown
+
+
+# Un blocco d'influenza: "<Punti>: N / soglia" (o solo N oltre l'ultima soglia), barra dalla soglia precedente, raggio.
+func _refresh_influence_block(building: Building, influence_type: int, block: Dictionary, base: int) -> void:
+	var label: Label = block["label"]
+	var bar: ProgressBar = block["bar"]
+	var key := String(INFLUENCE_POINT_KEYS[influence_type])
 	# Valori effettivi (2026-10-10): sacralità a metà su un edificio danneggiato (i punti salvati restano interi).
-	var points := InfluenceService.get_effective_points(building, religious)
-	var next_threshold := InfluenceService.get_next_threshold(building, religious, points)
+	var points := InfluenceService.get_effective_points(building, influence_type)
+	var next_threshold := InfluenceService.get_next_threshold(building, influence_type, points)
+	var radius := InfluenceService.get_effective_radius(building, influence_type)
+	var values := {"points": floori(points), "next": floori(next_threshold), "radius": radius, "bonus": radius - base}
 	if next_threshold < 0.0:
-		_sacredness_label.text = tr("building_sacredness_max").format({"points": floori(points)})
-		_sacredness_bar.visible = false
+		label.text = tr(key + "_max").format(values)
+		bar.visible = false
 	else:
-		_sacredness_label.text = tr("building_sacredness").format({"points": floori(points), "next": floori(next_threshold)})
+		label.text = tr(key).format(values)
 		var previous_threshold := 0.0
 		for threshold in InfluenceService.get_thresholds(building):
 			if threshold <= points:
 				previous_threshold = threshold
-		_sacredness_bar.visible = true
-		_sacredness_bar.min_value = 0.0
-		_sacredness_bar.max_value = maxf(next_threshold - previous_threshold, 0.001)
-		_sacredness_bar.value = clampf(points - previous_threshold, 0.0, _sacredness_bar.max_value)
-	_sacredness_label.tooltip_text = _sacredness_label.text
-	var radius := InfluenceService.get_effective_radius(building, religious)
-	_sacredness_radius_label.text = tr("building_sacredness_radius").format({"radius": radius, "bonus": radius - base})
-	_sacredness_radius_label.tooltip_text = _sacredness_radius_label.text
+		bar.visible = true
+		bar.min_value = 0.0
+		bar.max_value = maxf(next_threshold - previous_threshold, 0.001)
+		bar.value = clampf(points - previous_threshold, 0.0, bar.max_value)
+	label.tooltip_text = label.text
 
 
 # Elenco dei sepolti (vedi _buried_box): solo per un cumulo (BuildingRules.max_buried > 0).
@@ -2496,7 +2550,11 @@ func _refresh_rite_section(building: Building) -> void:
 	if SocialRiteService.is_preparing(building):
 		rite_label.text += " — " + tr("building_rite_awaiting_material" if building.is_awaiting_material else "building_rite_preparing")
 	rite_label.add_theme_font_size_override("font_size", 10)
-	row.add_child(rite_label)
+	# Su una riga sua, a capo se serve (2026-10-17, bugfix: con "in attesa di materiale" il testo spingeva fuori dal
+	# pannello Assegna e la X); sotto, nome di chi lo fa, Assegna e X.
+	rite_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	rite_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_rite_section.add_child(rite_label)
 	var workers := RiteService.get_ordered_rite_workers(building, GameSettings.active_human_individuals)
 	var names: Array[String] = []
 	for worker in workers:

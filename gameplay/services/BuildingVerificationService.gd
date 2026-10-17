@@ -95,6 +95,10 @@ static func is_position_buildable(
 	if not can_cut and BuildingSiteClearingService.has_woody_vegetation(resolved["cell"].macro_state, resolved["microcell"]):
 		return false
 
+	# Criterio 11 (2026-10-16, Ceppo dell'insegnamento): serve almeno un ceppo d'albero sulla microcella.
+	if rules.requires_tree_stump and not has_required_tree_stump(resolved["cell"].macro_state, resolved["microcell"]):
+		return false
+
 	# Criterio 9 (2026-09-26, ground drop): non si costruisce sopra un mucchio a terra. Vale solo per la
 	# microcella dell'edificio: davanti alla porta un mucchio non è un ostacolo (ci si cammina sopra).
 	# `ignore_ground_pile` (2026-10-07): solo per sapere se il rifiuto dipende da piante e mucchio (messaggio al giocatore,
@@ -103,15 +107,13 @@ static func is_position_buildable(
 		GameSettings.active_game_data, Vector2i(resolved["cell"].macro_x, resolved["cell"].macro_y), resolved["microcell"]
 	) != null:
 		return false
+	# Criterio 12 (2026-10-17): roccia esaurita con ancora sassi di scarto, da raccogliere prima (come un mucchio).
+	if not ignore_ground_pile and RockStoneService.has_waste_pebbles(resolved["cell"].macro_state, resolved["microcell"]):
+		return false
 
 	# Criterio 7
-	if rules.has_door:
-		var door_front_position: Vector2 = world_position + _direction_vector(direction) * cell_size
-		var door_front_resolved := _resolve_cell_and_microcell(live_cells, macro_cell_pixels, cell_size, door_front_position)
-		if door_front_resolved.is_empty():
-			return false
-		if not _is_position_clear(door_front_resolved["cell"], door_front_resolved["microcell"], current_absolute_day, macro_world, rules, true):
-			return false
+	if is_door_blocked(live_cells, macro_cell_pixels, cell_size, world_position, current_absolute_day, macro_world, direction, rules):
+		return false
 
 	# Criterio 8 — un edificio MOVEMENT (calpestabile, es. terra battuta) può stare davanti alla porta
 	# di un edificio esistente: non la blocca, ci si cammina sopra (2026-09-19, richiesta utente).
@@ -268,3 +270,24 @@ static func _direction_vector(direction: GameTypes.Direction) -> Vector2:
 # sopra, mai duplicare la parte visiva.
 static func set_buildable_appearance(ghost: BuildingGhost, is_buildable: bool) -> void:
 	ghost.is_buildable = is_buildable
+
+
+# true se sulla microcella c'è almeno un ceppo d'albero (BuildingRules.requires_tree_stump; anno della partita attiva).
+static func has_required_tree_stump(macro_state: MacroCellState, microcell: Vector2i) -> bool:
+	var current_year: int = GameSettings.active_game_data.year if GameSettings.active_game_data != null else 0
+	return BuildingSiteClearingService.count_tree_stumps(macro_state, microcell, current_year) > 0
+
+
+# Criterio 7 (estratto il 2026-10-17 per il messaggio al giocatore): true se l'edificio ha la porta e la microcella
+# davanti non è libera (o non è caricata).
+static func is_door_blocked(
+	live_cells: Dictionary, macro_cell_pixels: int, cell_size: int, world_position: Vector2,
+	current_absolute_day: int, macro_world: World, direction: GameTypes.Direction, rules: BuildingRules
+) -> bool:
+	if rules == null or not rules.has_door:
+		return false
+	var door_front_position: Vector2 = world_position + _direction_vector(direction) * cell_size
+	var door_front_resolved := _resolve_cell_and_microcell(live_cells, macro_cell_pixels, cell_size, door_front_position)
+	if door_front_resolved.is_empty():
+		return true
+	return not _is_position_clear(door_front_resolved["cell"], door_front_resolved["microcell"], current_absolute_day, macro_world, rules, true)
