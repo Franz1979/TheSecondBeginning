@@ -80,7 +80,7 @@ func _ready() -> void:
 	# corrente invece della label statica "calendar_label", aggiornata da _update_calendar_display
 	# così resta viva anche quando un futuro trigger tech→era chiamerà GameData.set_current_era.
 	advance_year_button.text = "+1"
-	advance_year_button.tooltip_text = tr("advance_year_tooltip")
+	advance_year_button.tooltip_text = TooltipText.wrap(tr("advance_year_tooltip"))
 	advance_year_button.pressed.connect(_on_advance_year_pressed)
 	save_game_file_dialog.access = FileDialog.ACCESS_USERDATA
 	save_game_file_dialog.current_dir = GameSettings.SAVES_DIR
@@ -855,10 +855,10 @@ func _on_speed_button_pressed(speed: GameClockController.Speed) -> void:
 func _update_play_pause_button() -> void:
 	if clock.is_playing:
 		play_pause_button.text = "❚❚"
-		play_pause_button.tooltip_text = tr("pause")
+		play_pause_button.tooltip_text = TooltipText.wrap(tr("pause"))
 	else:
 		play_pause_button.text = "▶"
-		play_pause_button.tooltip_text = tr("play")
+		play_pause_button.tooltip_text = TooltipText.wrap(tr("play"))
 
 func _on_day_advanced(checkpoint_ran: bool, animals_changed: bool) -> void:
 	_update_calendar_display()

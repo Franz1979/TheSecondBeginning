@@ -253,7 +253,7 @@ func _on_toggle_pressed() -> void:
 func _update_toggle_button() -> void:
 	map_area.visible = not _collapsed
 	toggle_button.text = "🗺 ▲" if _collapsed else "▼"
-	toggle_button.tooltip_text = tr("minimap_show_tooltip") if _collapsed else tr("minimap_hide_tooltip")
+	toggle_button.tooltip_text = TooltipText.wrap(tr("minimap_show_tooltip") if _collapsed else tr("minimap_hide_tooltip"))
 
 
 func _on_zoom_in_pressed() -> void:

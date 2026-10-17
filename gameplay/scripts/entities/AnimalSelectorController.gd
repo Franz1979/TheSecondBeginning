@@ -31,8 +31,9 @@ func try_select(event: InputEvent, live_cells: Dictionary, required_button: int 
 	for coords in live_cells:
 		var cell: LiveMacroCell = live_cells[coords]
 		for species in cell.animal_renderers:
-			var renderer_node: AnimalGroupRenderer = cell.animal_renderers[species]
-			if renderer_node == null or not renderer_node.are_animals_shown():
+			# Non tipizzata: un renderer già liberato (es. subito dopo un caricamento) darebbe errore all'assegnazione.
+			var renderer_node = cell.animal_renderers[species]
+			if not is_instance_valid(renderer_node) or not renderer_node.are_animals_shown():
 				continue
 			var local_mouse: Vector2 = renderer_node.get_local_mouse_position()
 			for individual in renderer_node.get_individuals():

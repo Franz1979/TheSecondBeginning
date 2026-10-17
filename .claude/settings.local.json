@@ -1,4 +1,10 @@
 {
+  "permissions": {
+    "allow": [
+      "Bash(python \"C:/Users/crfra/AppData/Local/Temp/claude/C--Users-crfra-GodotProjects-Project-TheSecondBeginning-game/d1adb6cf-2d51-40b9-9a0e-54d0b59d2746/scratchpad/patch5.py\")",
+      "Bash(python -)"
+    ]
+  },
   "worktree": {
     "bgIsolation": "none"
   }

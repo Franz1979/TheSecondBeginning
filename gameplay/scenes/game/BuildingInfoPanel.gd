@@ -409,10 +409,10 @@ func _ready() -> void:
 	# cut_requested, un solo collegamento in _ready() che resta valido per tutta la vita del
 	# pannello, indipendentemente da quale edificio sia mostrato in un dato momento.
 	empty_all_button.pressed.connect(func(): empty_all_requested.emit(_current_building))
-	cancel_work_button.tooltip_text = tr("building_cancel_work_tooltip")
+	cancel_work_button.tooltip_text = TooltipText.wrap(tr("building_cancel_work_tooltip"))
 	cancel_work_button.pressed.connect(func(): work_cancel_requested.emit(_current_building))
 	# X della produzione in corso (2026-09-27): stessa azione di annullamento della X accanto allo stato.
-	production_cancel_button.tooltip_text = tr("building_cancel_work_tooltip")
+	production_cancel_button.tooltip_text = TooltipText.wrap(tr("building_cancel_work_tooltip"))
 	production_cancel_button.pressed.connect(func(): work_cancel_requested.emit(_current_building))
 	production_separator.visible = false
 	_build_influence_buttons()
@@ -636,17 +636,17 @@ func _refresh_command_icon_row(building: Building, demolition_started: bool) -> 
 	# Macerie (2026-10-10): niente Demolisci, al suo posto "Sgombera" a sinistra.
 	demolish_button.visible = not building.is_marked_for_demolition and not building.is_rubble()
 	clear_rubble_button.visible = building.is_rubble() and not building.is_marked_for_demolition
-	clear_rubble_button.tooltip_text = "%s\n%s" % [tr("building_clear_rubble_button"), tr("building_command_clear_rubble_detail").format({
+	clear_rubble_button.tooltip_text = TooltipText.wrap("%s\n%s" % [tr("building_clear_rubble_button"), tr("building_command_clear_rubble_detail").format({
 		"labor": roundi(float(building.rules.required_labor) * DemolishAction.LABOR_FRACTION_OF_BUILD) if building.rules != null else 0,
-	})]
+	})])
 	if building.is_complete:
 		(_command_icons[demolish_button] as BuildingCommandIcon).kind = BuildingCommandIcon.KIND_DEMOLISH
-		demolish_button.tooltip_text = "%s\n%s" % [tr("building_demolish_button"), tr("building_command_demolish_detail")]
+		demolish_button.tooltip_text = TooltipText.wrap("%s\n%s" % [tr("building_demolish_button"), tr("building_command_demolish_detail")])
 	else:
 		var is_upgrade_site := BuildingUpgradeService.is_upgrade_site(building)
 		(_command_icons[demolish_button] as BuildingCommandIcon).kind = BuildingCommandIcon.KIND_CANCEL_UPGRADE if is_upgrade_site else BuildingCommandIcon.KIND_CANCEL_SITE
 		var detail_key := "building_command_cancel_upgrade_detail" if is_upgrade_site else "building_command_cancel_site_detail"
-		demolish_button.tooltip_text = "%s\n%s" % [tr("building_cancel_site_button"), tr(detail_key)]
+		demolish_button.tooltip_text = TooltipText.wrap("%s\n%s" % [tr("building_cancel_site_button"), tr(detail_key)])
 	# Annulla demolizione: visibile per tutto il tempo in cui l'edificio è "da demolire"; spento, con il motivo, a
 	# demolizione iniziata (non più annullabile).
 	cancel_demolition_button.visible = building.is_marked_for_demolition
@@ -654,16 +654,16 @@ func _refresh_command_icon_row(building: Building, demolition_started: bool) -> 
 	(_command_icons[cancel_demolition_button] as BuildingCommandIcon).kind = \
 		BuildingCommandIcon.KIND_CANCEL_CLEAR_RUBBLE if building.is_rubble() else BuildingCommandIcon.KIND_CANCEL_DEMOLITION
 	cancel_demolition_button.disabled = demolition_started
-	cancel_demolition_button.tooltip_text = "%s\n%s" % [
+	cancel_demolition_button.tooltip_text = TooltipText.wrap("%s\n%s" % [
 		tr("building_cancel_demolition_button"),
 		tr("building_command_cancel_demolition_started") if demolition_started else tr("building_command_cancel_demolition_detail"),
-	]
+	])
 	# Sgombero delle macerie (2026-10-10): stesso bottone, testi dello sgombero.
 	if building.is_rubble():
-		cancel_demolition_button.tooltip_text = "%s\n%s" % [
+		cancel_demolition_button.tooltip_text = TooltipText.wrap("%s\n%s" % [
 			tr("building_cancel_clear_rubble_button"),
 			tr("building_command_cancel_clear_rubble_started") if demolition_started else tr("building_command_cancel_clear_rubble_detail"),
-		]
+		])
 	# Demolisci da solo a destra (2026-10-10): dopo lo spaziatore elastico; come "Annulla cantiere"/"Annulla miglioramento"
 	# lo stesso bottone torna a sinistra con gli altri comandi.
 	var spacer_index := _command_icon_spacer.get_index()
@@ -786,7 +786,7 @@ func _refresh_repair_button(building: Building) -> void:
 		reason = tr("building_command_repair_threshold").format({"percent": roundi(Building.DURABILITY_REPAIRABLE_RATIO * 100.0)})
 	repair_button.disabled = reason != ""
 	var detail := reason if reason != "" else tr("building_command_repair_labor").format({"labor": ceili(RepairAction.get_labor_to_full(building))})
-	repair_button.tooltip_text = "%s\n%s" % [tr("building_repair_button"), detail]
+	repair_button.tooltip_text = TooltipText.wrap("%s\n%s" % [tr("building_repair_button"), detail])
 	# Acceso (2026-10-10): tooltip con i materiali che servirebbero adesso (icone come nei tooltip di costruzione) e il
 	# lavoro; spento: il testo semplice sopra, con il motivo.
 	repair_button.tooltip_builder = _repair_tooltip if reason == "" else Callable()
@@ -805,7 +805,9 @@ func _repair_tooltip(_for_text: String) -> Control:
 # storage (storage_slot_count > 0), non solo sui depositi. Spento con il motivo se non c'è nulla da svuotare (né
 # magazzino né prodotti finiti: GroundPileService.drop_building_contents svuota entrambi).
 func _refresh_empty_all_button(building: Building) -> void:
-	empty_all_button.visible = building.rules != null and building.rules.storage_slot_count > 0 and building.is_complete
+	# Deposito riservato agli eventi (2026-10-17, lo spiazzo): non si svuota, lo consuma solo il rito.
+	empty_all_button.visible = building.rules != null and building.rules.storage_slot_count > 0 and building.is_complete \
+		and not building.rules.storage_event_only
 	if not empty_all_button.visible:
 		return
 	var has_contents := BuildingUpgradeService.has_stored_resources(building)
@@ -813,10 +815,10 @@ func _refresh_empty_all_button(building: Building) -> void:
 		if int(building.production_output[output_name]) > 0:
 			has_contents = true
 	empty_all_button.disabled = not has_contents
-	empty_all_button.tooltip_text = "%s\n%s" % [
+	empty_all_button.tooltip_text = TooltipText.wrap("%s\n%s" % [
 		tr("building_settings_empty_all_button"),
 		tr("building_command_empty_all_detail") if has_contents else tr("building_command_empty_all_nothing"),
-	]
+	])
 
 
 # Pulsanti della riga comandi: grandi quanto il 🎯 "centra" (misurato col tema di base), ciascuno con la sua icona
@@ -880,7 +882,7 @@ func _refresh_upgrade_button(building: Building) -> void:
 		return
 	upgrade_button.disabled = _get_upgrade_missing_idea_line(target) != ""
 	# Testo semplice di riserva (e perché il tooltip compaia): il nome del comando.
-	upgrade_button.tooltip_text = tr("building_upgrade_button").format({"building": tr(target.building_name)})
+	upgrade_button.tooltip_text = TooltipText.wrap(tr("building_upgrade_button").format({"building": tr(target.building_name)}))
 	if not upgrade_button.tooltip_builder.is_valid():
 		upgrade_button.tooltip_builder = _upgrade_tooltip
 
@@ -1019,7 +1021,7 @@ func _refresh_influence_buttons(building: Building) -> void:
 		var button: Button = _influence_buttons[influence_type]
 		var radius := InfluenceService.get_effective_radius(building, influence_type)
 		button.disabled = radius <= 0
-		button.tooltip_text = _influence_tooltip(building, entry, radius)
+		button.tooltip_text = TooltipText.wrap(_influence_tooltip(building, entry, radius))
 		_style_influence_button(button, InfluenceFootprintOverlay.COLORS.get(influence_type, Color.WHITE), radius > 0)
 	if _previewed_influence_type >= 0:
 		var previewed_button: Button = _influence_buttons[_previewed_influence_type]
@@ -1112,7 +1114,7 @@ func _refresh_info(building: Building) -> void:
 	if _info_block == null:
 		return
 	var rows := _build_info_lines(building.rules)
-	_info_button.tooltip_text = _info_block.set_rows(rows)
+	_info_button.tooltip_text = TooltipText.wrap(_info_block.set_rows(rows))
 	_info_button.set_pressed_no_signal(_info_open)
 	_info_block.visible = _info_open
 	info_button_box.visible = visible
@@ -1254,8 +1256,8 @@ func _refresh_durability(building: Building) -> void:
 	var percent: int = floori(ratio * 100.0 + 0.000001)
 	_durability_label.text = tr("building_integrity_percent_label").format({"percent": percent})
 	var points_text: String = "%d/%d" % [roundi(building.current_durability), max_durability]
-	_durability_label.tooltip_text = points_text
-	_durability_bar.tooltip_text = points_text
+	_durability_label.tooltip_text = TooltipText.wrap(points_text)
+	_durability_bar.tooltip_text = TooltipText.wrap(points_text)
 	_durability_bar.value = percent
 	if _durability_fill_style != null:
 		var fill_color := DURABILITY_FILL_COLOR_GOOD
@@ -1305,7 +1307,7 @@ func _refresh_influence_block(building: Building, influence_type: int, block: Di
 		bar.min_value = 0.0
 		bar.max_value = maxf(next_threshold - previous_threshold, 0.001)
 		bar.value = clampf(points - previous_threshold, 0.0, bar.max_value)
-	label.tooltip_text = label.text
+	label.tooltip_text = TooltipText.wrap(label.text)
 
 
 # Elenco dei sepolti (vedi _buried_box): solo per un cumulo (BuildingRules.max_buried > 0).
@@ -1330,7 +1332,7 @@ func _refresh_buried_list(building: Building) -> void:
 func _build_buried_label(text: String, indent: int) -> Control:
 	var label := Label.new()
 	label.text = text
-	label.tooltip_text = text
+	label.tooltip_text = TooltipText.wrap(text)
 	label.mouse_filter = Control.MOUSE_FILTER_PASS
 	label.add_theme_font_size_override("font_size", BURIED_FONT_SIZE)
 	label.clip_text = true
@@ -1430,7 +1432,7 @@ func _refresh_construction_progress(building: Building) -> void:
 		"setup_site":
 			phase_name_key = "building_construction_phase_setup_site"
 			progress_days = float(building.construction_progress.get("site_setup_days_done", 0.0))
-			duration_days = SetupSiteAction.DURATION_DAYS
+			duration_days = SetupSiteAction.get_duration_days(building)
 		"clear_site":
 			phase_name_key = "building_construction_phase_clear_site"
 			progress_days = float(building.construction_progress.get("clear_days_done", 0.0))
@@ -1491,14 +1493,14 @@ func _build_production_order_row(building: Building, order: Dictionary, is_full:
 	var recipe := String(order["recipe"])
 	var units := int(order["units"])
 	var chip := _build_missing_material_chip(recipe, units)
-	chip.tooltip_text = tr("building_production_status_item_tooltip").format({
+	chip.tooltip_text = TooltipText.wrap(tr("building_production_status_item_tooltip").format({
 		"resource": IconRegistry.get_resource_display_name(recipe), "quantity": units, "percent": int(order["percent"]),
-	})
+	}))
 	row.add_child(chip)
 	var worker_name := String(order["worker_name"])
 	var name_label := Label.new()
 	name_label.text = worker_name if worker_name != "" else tr("building_assigned_worker_missing")
-	name_label.tooltip_text = name_label.text
+	name_label.tooltip_text = TooltipText.wrap(name_label.text)
 	name_label.mouse_filter = Control.MOUSE_FILTER_PASS
 	name_label.add_theme_font_size_override("font_size", 10)
 	name_label.clip_text = true
@@ -1512,10 +1514,10 @@ func _build_production_order_row(building: Building, order: Dictionary, is_full:
 	if worker_name == "":
 		var assign_button := Button.new()
 		assign_button.text = tr("building_assign_production_worker_button")
-		assign_button.tooltip_text = tr("building_assign_production_worker_tooltip")
+		assign_button.tooltip_text = TooltipText.wrap(tr("building_assign_production_worker_tooltip"))
 		if is_full:
 			assign_button.disabled = true
-			assign_button.tooltip_text = tr("building_assign_production_worker_busy")
+			assign_button.tooltip_text = TooltipText.wrap(tr("building_assign_production_worker_busy"))
 		assign_button.focus_mode = Control.FOCUS_NONE
 		assign_button.add_theme_font_size_override("font_size", 10)
 		assign_button.size_flags_vertical = Control.SIZE_SHRINK_CENTER
@@ -1525,7 +1527,7 @@ func _build_production_order_row(building: Building, order: Dictionary, is_full:
 	# collegamenti, così non annulla tutto il lavoro dell'edificio).
 	var cancel_button := production_cancel_button.duplicate(0) as Button
 	cancel_button.visible = true
-	cancel_button.tooltip_text = tr("building_cancel_production_order_tooltip")
+	cancel_button.tooltip_text = TooltipText.wrap(tr("building_cancel_production_order_tooltip"))
 	cancel_button.pressed.connect(func(): production_order_cancel_requested.emit(building, order_key))
 	row.add_child(cancel_button)
 	return row
@@ -1621,10 +1623,10 @@ func _build_fuel_chip(missing_fuel: float, amount_text: String = "") -> Control:
 	for resource_name in CaloricCalculator.list_secondary_resource_names():
 		if ProductionService.get_fuel_value(resource_name) > 0.0:
 			fuel_names.append(IconRegistry.get_resource_display_name(resource_name))
-	box.tooltip_text = tr("building_awaiting_fuel_production_label").format({
+	box.tooltip_text = TooltipText.wrap(tr("building_awaiting_fuel_production_label").format({
 		"amount": "%.1f" % missing_fuel,
 		"fuels": ", ".join(fuel_names),
-	})
+	}))
 	var icon_label := Label.new()
 	icon_label.text = "🔥"
 	icon_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -1755,7 +1757,7 @@ func _build_missing_material_chip(
 	box.color = IconRegistry.get_resource_color(resource_name)
 	# "%s (%s)" — STESSO formato già in uso in OptionChoiceDialog.gd per le voci dell'OptionButton,
 	# non una nuova convenzione per il solo tooltip di questa chip.
-	box.tooltip_text = "%s (%s)" % [IconRegistry.get_resource_display_name(resource_name), shown_text]
+	box.tooltip_text = TooltipText.wrap("%s (%s)" % [IconRegistry.get_resource_display_name(resource_name), shown_text])
 
 	var icon_node: Control = IconRegistry.get_resource_icon_node(resource_name)
 	if icon_node != null:
@@ -1882,7 +1884,7 @@ func _refresh_production_recipes(building: Building, production_claimant_names: 
 	# nascosta = spenta, "Porta al deposito" resta com'è.
 	keep_check_box.visible = BuildingToolkitService.can_add(building, _order_recipe)
 	keep_check_box.text = tr("produce_keep_for_building_checkbox")
-	keep_check_box.tooltip_text = tr("produce_keep_for_building_tooltip")
+	keep_check_box.tooltip_text = TooltipText.wrap(tr("produce_keep_for_building_tooltip"))
 	keep_check_box.add_theme_font_size_override("font_size", 10)
 	if not keep_check_box.visible:
 		_order_keep_for_building = false
@@ -1982,7 +1984,7 @@ func _build_recipe_icon(
 	var tooltip_lines: Array[String] = [_describe_recipe(building, resource_name)]
 	if not disabled_reasons.is_empty():
 		tooltip_lines.append("\n".join(disabled_reasons))
-	box.tooltip_text = "\n".join(tooltip_lines)
+	box.tooltip_text = TooltipText.wrap("\n".join(tooltip_lines))
 	if not disabled_reasons.is_empty():
 		box.modulate = Color(1, 1, 1, 0.4)
 		return box
@@ -2109,6 +2111,7 @@ func _refresh_storage_grid(building: Building) -> void:
 	if slot_count <= 0 or not building.is_complete:
 		storage_caption.visible = false
 		storage_grid.visible = false
+		_refresh_banquet_storage_summary(null)
 		return
 
 	storage_caption.visible = true
@@ -2129,6 +2132,31 @@ func _refresh_storage_grid(building: Building) -> void:
 		if i >= effective_slots:
 			_mark_slot_over_capacity(slot)
 		storage_grid.add_child(slot)
+	_refresh_banquet_storage_summary(building)
+
+
+# Sotto la griglia del deposito di un edificio con banchetto (2026-10-17, lo spiazzo): calorie raccolte sulla soglia e
+# combustibile sul falò (SocialRiteService.get_banquet_storage_summary). Etichetta creata alla prima volta.
+var _banquet_storage_summary: Label = null
+
+
+func _refresh_banquet_storage_summary(building: Building) -> void:
+	var summary := SocialRiteService.get_banquet_storage_summary(building)
+	if summary.is_empty():
+		if _banquet_storage_summary != null:
+			_banquet_storage_summary.visible = false
+		return
+	if _banquet_storage_summary == null:
+		_banquet_storage_summary = Label.new()
+		_banquet_storage_summary.add_theme_font_size_override("font_size", 10)
+		_banquet_storage_summary.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		add_child(_banquet_storage_summary)
+		move_child(_banquet_storage_summary, storage_grid.get_index() + 1)
+	_banquet_storage_summary.visible = true
+	_banquet_storage_summary.text = tr("building_feast_storage_summary").format({
+		"calories": roundi(float(summary["calories"])), "threshold": int(summary["threshold"]),
+		"fuel": roundi(float(summary["fuel"])), "fuel_needed": roundi(float(summary["fuel_needed"])),
+	})
 
 
 # slot_data vuoto ({}) = slot libero — riquadro grigio spento, nessuna icona/testo/tooltip. Slot
@@ -2151,8 +2179,8 @@ func _refresh_storage_grid(building: Building) -> void:
 # Slot oltre la capienza effettiva (edificio danneggiato): tinta rossastra e motivo nel tooltip.
 func _mark_slot_over_capacity(slot: Control) -> void:
 	slot.modulate = STORAGE_SLOT_OVER_CAPACITY_MODULATE
-	slot.tooltip_text = ("%s\n%s" % [slot.tooltip_text, tr("storage_slot_over_capacity_tooltip")]) if slot.tooltip_text != "" \
-		else tr("storage_slot_over_capacity_tooltip")
+	slot.tooltip_text = TooltipText.wrap(("%s\n%s" % [slot.tooltip_text, tr("storage_slot_over_capacity_tooltip")]) if slot.tooltip_text != "" \
+		else tr("storage_slot_over_capacity_tooltip"))
 
 
 func _build_storage_slot(slot_data: Dictionary) -> Control:
@@ -2170,7 +2198,7 @@ func _build_storage_slot(slot_data: Dictionary) -> Control:
 	# Tooltip TORNATO al solo nome risorsa (2026-09-10, richiesta utente — "tooltip togli 80/100,
 	# lascia solo il nome della risorsa": lo spazio occupato/capacità restano leggibili dalla barra
 	# di riempimento sotto, non serve più ripeterli anche qui).
-	box.tooltip_text = IconRegistry.get_resource_display_name(resource_name)
+	box.tooltip_text = TooltipText.wrap(IconRegistry.get_resource_display_name(resource_name))
 	# Avanzamento automatico (2026-10-03, essiccazione passo 2): giorni mancanti alla trasformazione.
 	if slot_data.has("auto_days_left"):
 		box.tooltip_text += "\n" + tr("storage_slot_auto_progress_tooltip").format({"days": int(slot_data["auto_days_left"])})
@@ -2362,7 +2390,7 @@ func _refresh_toolkit(building: Building) -> void:
 		var chip := _build_missing_material_chip(tool_name, quantity)
 		var uses_list := BuildingToolkitService.get_remaining_uses_list(building, tool_name)
 		var max_uses := ToolInstance.get_max_uses(tool_name)
-		chip.tooltip_text = _toolkit_tooltip(tool_name, quantity, uses_list, max_uses)
+		chip.tooltip_text = TooltipText.wrap(_toolkit_tooltip(tool_name, quantity, uses_list, max_uses))
 		# Barra degli usi del pezzo in uso (il più consumato), come in cintura al pipottino.
 		if max_uses > 0 and not uses_list.is_empty():
 			chip.add_child(_build_uses_bar(float(uses_list[0]) / float(max_uses)))
@@ -2446,10 +2474,10 @@ func _build_resident_slot(resident_data: Dictionary) -> Control:
 		return box
 
 	box.color = OCCUPIED_RESIDENT_SLOT_COLOR
-	box.tooltip_text = tr("building_resident_tooltip").format({
+	box.tooltip_text = TooltipText.wrap(tr("building_resident_tooltip").format({
 		"name": String(resident_data.get("name", "")),
 		"age": int(resident_data.get("age", 0)),
-	})
+	}))
 
 	# Click -> resident_center_requested (2026-09-12, richiesta utente) — gui_input invece di un
 	# vero Button (che avrebbe portato con sé lo stile/padding di default del tema, da annullare
@@ -2507,6 +2535,37 @@ func _resident_icon(sex: int, is_child: bool) -> String:
 var _rite_section: VBoxContainer = null
 
 
+const FEAST_THRESHOLD_STEP: int = 100
+
+
+func _add_feast_threshold_row(building: Building, rules: BanquetRiteRules) -> void:
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 4)
+	var label := Label.new()
+	label.text = tr("building_feast_calorie_threshold").format({"calories": SocialRiteService.get_calorie_threshold(building, rules)})
+	label.tooltip_text = TooltipText.wrap(tr("building_feast_calorie_threshold_tooltip").format({"min": rules.min_calorie_threshold}))
+	label.mouse_filter = Control.MOUSE_FILTER_PASS
+	label.add_theme_font_size_override("font_size", 10)
+	label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	row.add_child(label)
+	for step in [-FEAST_THRESHOLD_STEP, FEAST_THRESHOLD_STEP]:
+		var step_button := Button.new()
+		step_button.text = "−" if step < 0 else "+"
+		step_button.focus_mode = Control.FOCUS_NONE
+		step_button.add_theme_font_size_override("font_size", 10)
+		# Congelata mentre c'è un banchetto in corso (2026-10-17): la soglia è fissata all'avvio, vale per il prossimo.
+		var locked := not SocialRiteService.find_rite(GameSettings.active_game_data, building.id).is_empty()
+		step_button.disabled = locked or (step < 0 and SocialRiteService.get_calorie_threshold(building, rules) <= rules.min_calorie_threshold)
+		if locked:
+			step_button.tooltip_text = TooltipText.wrap(tr("building_feast_calorie_threshold_locked_tooltip"))
+		step_button.pressed.connect(func():
+			building.feast_calorie_threshold = maxi(SocialRiteService.get_calorie_threshold(building, rules) + step, rules.min_calorie_threshold)
+			_refresh_rite_section(building)
+		)
+		row.add_child(step_button)
+	_rite_section.add_child(row)
+
+
 func _refresh_rite_section(building: Building) -> void:
 	if _rite_section == null:
 		_rite_section = VBoxContainer.new()
@@ -2535,10 +2594,14 @@ func _refresh_rite_section(building: Building) -> void:
 		button.add_theme_font_size_override("font_size", 10)
 		var rejection_key := RiteService.get_order_rejection_key(building, rules.id, busy)
 		button.disabled = rejection_key != ""
-		button.tooltip_text = tr(rejection_key) if rejection_key != "" else tr("building_rite_button_tooltip")
+		button.tooltip_text = TooltipText.wrap(tr(rejection_key) if rejection_key != "" else tr("building_rite_button_tooltip"))
 		var rite_id := rules.id
 		button.pressed.connect(func(): rite_requested.emit(building, rite_id))
 		buttons.add_child(button)
+		# Banchetto (2026-10-17, Spiazzo delle feste): soglia di calorie di questo edificio, a passi di 100 (mai sotto il
+		# minimo dei dati). Bottoni invece di un campo numerico: la sezione si ricostruisce a ogni aggiornamento.
+		if rules is BanquetRiteRules:
+			_add_feast_threshold_row(building, rules as BanquetRiteRules)
 	if building.requested_rite_id == "":
 		return
 	var row := HBoxContainer.new()
@@ -2561,7 +2624,7 @@ func _refresh_rite_section(building: Building) -> void:
 		names.append(worker.name)
 	var name_label := Label.new()
 	name_label.text = ", ".join(names) if not names.is_empty() else tr("building_assigned_worker_missing")
-	name_label.tooltip_text = name_label.text
+	name_label.tooltip_text = TooltipText.wrap(name_label.text)
 	name_label.mouse_filter = Control.MOUSE_FILTER_PASS
 	name_label.add_theme_font_size_override("font_size", 10)
 	name_label.clip_text = true
@@ -2572,7 +2635,7 @@ func _refresh_rite_section(building: Building) -> void:
 	if workers.is_empty():
 		var assign_button := Button.new()
 		assign_button.text = tr("building_assign_production_worker_button")
-		assign_button.tooltip_text = tr("building_assign_rite_tooltip")
+		assign_button.tooltip_text = TooltipText.wrap(tr("building_assign_rite_tooltip"))
 		assign_button.focus_mode = Control.FOCUS_NONE
 		assign_button.add_theme_font_size_override("font_size", 10)
 		assign_button.size_flags_vertical = Control.SIZE_SHRINK_CENTER
@@ -2580,7 +2643,7 @@ func _refresh_rite_section(building: Building) -> void:
 		row.add_child(assign_button)
 	var cancel_button := production_cancel_button.duplicate(0) as Button
 	cancel_button.visible = true
-	cancel_button.tooltip_text = tr("building_cancel_rite_order_tooltip")
+	cancel_button.tooltip_text = TooltipText.wrap(tr("building_cancel_rite_order_tooltip"))
 	cancel_button.pressed.connect(func(): rite_order_cancel_requested.emit(building))
 	row.add_child(cancel_button)
 	_rite_section.add_child(row)
@@ -2589,7 +2652,9 @@ func _refresh_rite_section(building: Building) -> void:
 func _refresh_settings_section(building: Building) -> void:
 	# Solo a edificio completo (2026-09-27, richiesta utente): su un cantiere "Svuota tutto" e le categorie
 	# accettate non hanno senso (stored_resources contiene solo il materiale da costruzione).
-	var has_storage: bool = building.rules != null and building.rules.storage_slot_count > 0 and building.is_complete
+	# Deposito riservato agli eventi (2026-10-17): niente categorie da scegliere, entra solo ciò che chiede il rito.
+	var has_storage: bool = building.rules != null and building.rules.storage_slot_count > 0 and building.is_complete \
+		and not building.rules.storage_event_only
 	_refresh_accepted_categories_toggles(building, has_storage)
 
 	# Almeno un blocco visibile -> mostra la "chrome" condivisa (separatore/titolo). Oggi has_storage è l'unica

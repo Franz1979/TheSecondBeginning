@@ -8,11 +8,16 @@ extends SocialRiteRules
 
 # Skill insegnabile migliore minima dell'insegnante (scala 0-1000): sotto, non ha niente da insegnare.
 @export var min_teach_skill: float = 100.0
+# Materia della lezione (2026-10-17, richiesta utente — tradizione orale, non si sceglie): a caso, con probabilità uguali,
+# tra le subject_choices skill insegnabili migliori dell'insegnante che arrivano almeno a min_teach_skill
+# (TeachingRiteService.pick_subject).
+@export var subject_choices: int = 3
 # Skill che non si insegnano (si imparano vivendo: talk, feste, riti).
 @export var excluded_subjects: Array[String] = ["skill_social", "skill_ritual"]
-# Guadagno nella materia per ogni allievo: (insegnante − allievo) × gain_fraction × (1 + cognizione dell'insegnante /
-# SKILL_MAX), intero, tra min_gain e max_gain; nessuno se l'allievo ne sa già quanto l'insegnante.
-@export var gain_fraction: float = 0.02
+# Guadagno nella materia per ogni allievo, uguale per tutti (2026-10-17): insegnante × gain_fraction × fattore della
+# cognizione dell'insegnante (chiave "teach" di skill_action_effects.tres), intero, tra min_gain e max_gain; nessuno se
+# l'allievo ne sa già quanto l'insegnante.
+@export var gain_fraction: float = 0.01
 @export var min_gain: int = 1
 @export var max_gain: int = 10
 # Cognizione in più per ogni allievo presente a fine lezione (non per l'insegnante).

@@ -155,7 +155,7 @@ func _ready() -> void:
 
 	folk_name_header_label.text = tr("folk_name_label")
 	folk_name_edit.placeholder_text = tr("folk_name_placeholder")
-	random_folk_name_button.tooltip_text = tr("folk_name_random_tooltip")
+	random_folk_name_button.tooltip_text = TooltipText.wrap(tr("folk_name_random_tooltip"))
 	random_folk_name_button.pressed.connect(_on_random_folk_name_pressed)
 
 	density_header_label.text = tr("animal_density_label")

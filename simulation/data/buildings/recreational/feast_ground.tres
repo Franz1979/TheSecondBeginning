@@ -1,0 +1,29 @@
+[gd_resource type="Resource" script_class="BuildingRules" format=3]
+
+[ext_resource type="Script" uid="uid://b8pl3yflicmtn" path="res://simulation/scripts/core/BuildingRules.gd" id="1_feast_ground"]
+
+[resource]
+script = ExtResource("1_feast_ground")
+building_name = "building_feast_ground"
+category = 9
+required_idea_id = "paleolithic_constructions"
+lifespan_years = 20
+max_durability = 120
+defense = 20
+min_construction_days = 3
+required_labor = 3200
+required_materials = {
+"pebble": 60,
+"wood": 10
+}
+required_space = 4
+footprint = Vector2i(2, 2)
+has_door = false
+walkable = true
+storage_slot_count = 10
+storage_space_per_slot = 100
+storage_event_only = true
+accepted_categories = Array[int]([0, 1])
+categories_locked = true
+leaves_rubble = false
+visibility_radius = 1

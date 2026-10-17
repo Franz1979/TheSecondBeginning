@@ -101,7 +101,7 @@ const INACTIVE_MODULATE := Color(1, 1, 1, 0.35)
 # non cliccabili.
 func update_from(individual: HumanIndividual, active: bool = true) -> void:
 	modulate = Color.WHITE if active else INACTIVE_MODULATE
-	tooltip_text = "" if active else tr("apparel_children_tooltip")
+	tooltip_text = TooltipText.wrap("" if active else tr("apparel_children_tooltip"))
 	for slot in _slot_boxes:
 		(_slot_boxes[slot] as Control).mouse_filter = Control.MOUSE_FILTER_STOP if active else Control.MOUSE_FILTER_IGNORE
 		var box: Panel = _slot_boxes[slot]
@@ -111,11 +111,11 @@ func update_from(individual: HumanIndividual, active: bool = true) -> void:
 		var apparel_name: String = individual.get_equipped_apparel(slot) if individual != null else ""
 		var slot_name: String = tr(String(SLOT_NAME_KEYS[slot]))
 		if apparel_name == "":
-			box.tooltip_text = tr("apparel_slot_empty_tooltip").format({"slot": slot_name})
+			box.tooltip_text = TooltipText.wrap(tr("apparel_slot_empty_tooltip").format({"slot": slot_name}))
 			_update_uses_bar(slot, 0, 0)
 			continue
 		var display_name := IconRegistry.get_resource_display_name(apparel_name)
-		box.tooltip_text = tr("apparel_slot_full_tooltip").format({"slot": slot_name, "apparel": display_name})
+		box.tooltip_text = TooltipText.wrap(tr("apparel_slot_full_tooltip").format({"slot": slot_name, "apparel": display_name}))
 		var instance: Dictionary = individual.get_equipped_apparel_instance(slot)
 		var max_days: int = ToolInstance.get_max_uses(apparel_name)
 		var remaining_days: int = ToolInstance.get_remaining_uses(instance)

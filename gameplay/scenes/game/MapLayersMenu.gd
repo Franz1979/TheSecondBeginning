@@ -90,7 +90,7 @@ func _build_row(layer_id: String, text: String, is_active: bool, is_available: b
 		button.add_theme_stylebox_override("hover", active_style)
 	if not is_available:
 		button.disabled = true
-		button.tooltip_text = tr("map_layer_coming_soon")
+		button.tooltip_text = TooltipText.wrap(tr("map_layer_coming_soon"))
 		# Il tooltip deve comparire anche sul bottone disabilitato.
 		button.mouse_filter = Control.MOUSE_FILTER_PASS
 		return button

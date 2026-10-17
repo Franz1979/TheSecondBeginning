@@ -12,7 +12,8 @@ extends RefCounted
 #   - "produce": ProduceAction (lavoro richiesto diviso per il fattore, minimo 40% del lavoro base della ricetta);
 #   - "build": BuildAction e DemolishAction (lavoro richiesto diviso per il fattore);
 #   - "butcher": ButcherAction, "pickup": PickUpAction (durata divisa per il fattore);
-#   - "walk_loaded": WalkAction a zaino carico (costo di stamina per microcella diviso per il fattore).
+#   - "walk_loaded": WalkAction a zaino carico (costo di stamina per microcella diviso per il fattore);
+#   - "teach": lezione (TeachingRiteService.student_gain, guadagno degli allievi moltiplicato per il fattore).
 
 const EFFECTS_PATH := "res://gameplay/data/skill_effects/skill_action_effects.tres"
 

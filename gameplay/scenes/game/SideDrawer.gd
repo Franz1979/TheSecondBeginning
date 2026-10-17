@@ -141,7 +141,7 @@ func _apply_mode_button() -> void:
 	if _mode_button == null:
 		return
 	_mode_button.text = SIDE_ICON if _overlay_mode else OVERLAY_ICON
-	_mode_button.tooltip_text = tr("side_drawer_mode_side_tooltip") if _overlay_mode else tr("side_drawer_mode_overlay_tooltip")
+	_mode_button.tooltip_text = TooltipText.wrap(tr("side_drawer_mode_side_tooltip") if _overlay_mode else tr("side_drawer_mode_overlay_tooltip"))
 
 
 func close() -> void:

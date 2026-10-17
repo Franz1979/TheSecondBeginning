@@ -190,6 +190,8 @@ const BUILDING_ICON_NODES := {
 	"earthwork": preload("res://simulation/scripts/ui/EarthworkIcon.gd"),
 	# Sentiero di ciottoli (2026-10-16, richiesta utente): tratto dritto del disegno della mappa (LinearShapes).
 	"pebble_path": preload("res://simulation/scripts/ui/PebblePathIcon.gd"),
+	# Spiazzo delle feste (2026-10-17): stesso disegno della mappa (FeastGroundShape).
+	"feast_ground": preload("res://simulation/scripts/ui/FeastGroundIcon.gd"),
 	# Pietre impilate (2026-10-02, richiesta utente): pila verticale di sassi, stesso disegno della mappa.
 	"stacked_stones": preload("res://simulation/scripts/ui/StackedStonesIcon.gd"),
 	# Capanna di stoccaggio (2026-10-03, richiesta utente): stesso disegno della mappa (StorageHutShape).
@@ -254,6 +256,10 @@ const COMMAND_ICONS := {
 	"rite": "🌙",
 	# "lesson" (2026-10-17, lezione al Ceppo dell'insegnamento): sulla mappa il ceppo disegnato (CommandLessonIcon).
 	"lesson": "📜",
+	# "banquet" (2026-10-17, banchetto sullo Spiazzo delle feste): un cosciotto, al comando e a inizio festa (la stessa icona,
+	# come la luna dei riti religiosi). Solo emoji, nessuna icona disegnata: GameScene usa questa quando manca in
+	# COMMAND_ICON_NODES.
+	"banquet": "🍖",
 	# "bury" (2026-10-07, sepoltura — prima usava la luna del rito): sulla mappa vale l'icona disegnata (CommandSkullIcon).
 	"bury": "💀",
 	# "cut" (2026-10-04, task Cut): sulla mappa vale l'icona disegnata (CommandAxeIcon); questa per le righe del popup.

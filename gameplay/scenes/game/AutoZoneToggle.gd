@@ -21,7 +21,7 @@ func _init() -> void:
 	custom_minimum_size = BUTTON_SIZE
 	toggle_mode = true
 	focus_mode = Control.FOCUS_NONE
-	tooltip_text = "%s (%s)" % [tr("command_bar_auto_zone"), OS.get_keycode_string(CommandBar.AUTO_ZONE_KEY)]
+	tooltip_text = TooltipText.wrap("%s (%s)" % [tr("command_bar_auto_zone"), OS.get_keycode_string(CommandBar.AUTO_ZONE_KEY)])
 	_icon = AutoZoneIcon.new()
 	add_child(_icon)
 	_icon.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)

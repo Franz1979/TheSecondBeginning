@@ -264,10 +264,8 @@ static func _ensure_coverage(world: World, game_data: GameData) -> void:
 
 # Centro della microcella di `building` in microcelle ASSOLUTE del mondo (macrocella × World.WIDTH/HEIGHT + microcella).
 static func building_absolute_center(building: Building) -> Vector2:
-	return Vector2(
-		building.macro_x * World.WIDTH + building.micro_x + 0.5,
-		building.macro_y * World.HEIGHT + building.micro_y + 0.5
-	)
+	# Ingombro (2026-10-17): centro del rettangolo (1x1: centro della microcella, come prima).
+	return Vector2(building.macro_x * World.WIDTH, building.macro_y * World.HEIGHT) + BuildingFootprint.center_micro(building)
 
 
 # true se `building` ha almeno un raggio di influenza effettivo > 0.

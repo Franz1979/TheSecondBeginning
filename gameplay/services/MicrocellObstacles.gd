@@ -18,9 +18,9 @@ var cell_known: bool = false
 var water_cell: bool = false
 var river: Dictionary = {}
 var stones: Dictionary = {}
-# Edifici che bloccano (tutti tranne la categoria MOVEMENT): microcella -> id edificio.
+# Edifici che bloccano (tutti tranne i calpestabili, BuildingRules.walkable): microcella -> id edificio.
 var blocking_buildings: Dictionary = {}
-# Edifici calpestabili (categoria MOVEMENT, es. terra battuta): microcella -> id edificio.
+# Edifici calpestabili (BuildingRules.walkable, es. terra battuta, spiazzo): microcella -> id edificio.
 var movement_buildings: Dictionary = {}
 
 
@@ -59,11 +59,14 @@ func refresh_buildings(macro_coords: Vector2i, macro_world: World) -> void:
 	for building in macro_world.buildings:
 		if building.macro_x != macro_coords.x or building.macro_y != macro_coords.y:
 			continue
-		var microcell := Vector2i(building.micro_x, building.micro_y)
-		if building.rules != null and building.rules.category == BuildingTypes.Category.MOVEMENT:
-			movement_buildings[microcell] = building.id
-		else:
-			blocking_buildings[microcell] = building.id
+		# Ingombro (2026-10-17): tutte le microcelle del rettangolo (BuildingFootprint; 1x1 = la sola microcella).
+		# Calpestabili (2026-10-17): dal flag BuildingRules.walkable, non più dalla categoria MOVEMENT.
+		var is_walkable: bool = building.rules != null and building.rules.walkable
+		for microcell in BuildingFootprint.cells_of(building):
+			if is_walkable:
+				movement_buildings[microcell] = building.id
+			else:
+				blocking_buildings[microcell] = building.id
 
 
 # Regola dei Criteri 3-6 (vedi in testa). I flag allow_* corrispondono a BuildingRules.buildable_on_water/_river/

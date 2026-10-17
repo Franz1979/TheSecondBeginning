@@ -48,7 +48,7 @@ func try_select(event: InputEvent, live_cells: Dictionary, required_button: int 
 
 static func _is_occupied_by_building(buildings: Array, macro_coords: Vector2i, lot: Vector2i) -> bool:
 	for building in buildings:
-		if building.macro_x == macro_coords.x and building.macro_y == macro_coords.y \
-				and building.micro_x == lot.x and building.micro_y == lot.y:
+		# Ingombro (2026-10-17): qualunque microcella del rettangolo.
+		if BuildingFootprint.covers(building, macro_coords, lot):
 			return true
 	return false

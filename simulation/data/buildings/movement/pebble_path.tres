@@ -15,6 +15,7 @@ required_materials = {
 }
 leaves_rubble = false
 is_linear = true
+walkable = true
 required_space = 1
 has_door = false
 visibility_radius = 1

@@ -507,7 +507,7 @@ func _add_species_summary_row(
 		var toggle_button := Button.new()
 		toggle_button.flat = true
 		toggle_button.text = "-" if expanded else "+"
-		toggle_button.tooltip_text = "Espandi/comprimi"
+		toggle_button.tooltip_text = TooltipText.wrap("Espandi/comprimi")
 		toggle_button.custom_minimum_size = Vector2(20, 0)
 		toggle_button.add_theme_font_size_override("font_size", 13)
 		toggle_button.pressed.connect(_on_species_expand_toggled.bind(species_name))
@@ -544,7 +544,7 @@ func _add_species_summary_row(
 		show_all_button.flat = true
 		show_all_button.text = "Mostra tutti"
 		show_all_button.add_theme_font_size_override("font_size", 10)
-		show_all_button.tooltip_text = "Evidenzia sulla mappa i territori di tutti i gruppi di questa specie"
+		show_all_button.tooltip_text = TooltipText.wrap("Evidenzia sulla mappa i territori di tutti i gruppi di questa specie")
 		show_all_button.pressed.connect(_on_show_all_territories_pressed.bind(groups))
 		row.add_child(show_all_button)
 
@@ -588,7 +588,7 @@ func _add_population_group_detail_row(group: PopulationGroup) -> void:
 	var locate_button := Button.new()
 	locate_button.flat = true
 	locate_button.text = "⌖"
-	locate_button.tooltip_text = "Highlight cells on map"
+	locate_button.tooltip_text = TooltipText.wrap("Highlight cells on map")
 	locate_button.custom_minimum_size = Vector2(28, 0)
 	locate_button.add_theme_font_size_override("font_size", 18)
 	locate_button.add_theme_color_override("font_color", COLOR_LOCATE_BUTTON)
@@ -676,7 +676,7 @@ func _rebuild_species_filter_row(world: World) -> void:
 		button.toggle_mode = true
 		button.button_group = button_group
 		button.button_pressed = _fauna_species_filter == species_name
-		button.tooltip_text = species_name
+		button.tooltip_text = TooltipText.wrap(species_name)
 		button.custom_minimum_size = FILTER_BUTTON_SIZE
 		button.pressed.connect(_on_species_filter_pressed.bind(species_name))
 
@@ -772,7 +772,7 @@ func _add_predator_group_block(group: PopulationGroup) -> void:
 	var locate_button := Button.new()
 	locate_button.flat = true
 	locate_button.text = "⌖"
-	locate_button.tooltip_text = "Highlight cells on map"
+	locate_button.tooltip_text = TooltipText.wrap("Highlight cells on map")
 	locate_button.custom_minimum_size = Vector2(28, 0)
 	locate_button.add_theme_font_size_override("font_size", 14)
 	locate_button.add_theme_color_override("font_color", COLOR_LOCATE_BUTTON)

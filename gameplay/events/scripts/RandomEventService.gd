@@ -304,4 +304,3 @@ static func _get_ineligibility_reason(rules: RandomEventRules, context: RandomEv
 	if rules.required_idea_id != "" and (context.human_folk == null or not context.human_folk.completed_ideas.has(rules.required_idea_id)):
 		return "idea '%s' non completata" % rules.required_idea_id
 	return ""
-

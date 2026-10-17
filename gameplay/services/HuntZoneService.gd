@@ -122,7 +122,9 @@ static func list_prey_in_area(area: WorkArea, live_cells: Dictionary) -> Array:
 	for species in cell.animal_renderers:
 		if not work_area_accepts_species(area, String(species)):
 			continue
-		var renderer: AnimalGroupRenderer = cell.animal_renderers[species]
+		# Non tipizzata: subito dopo un caricamento il dizionario può ancora avere un renderer già liberato, e assegnarlo a
+		# una variabile tipizzata dà errore prima del controllo.
+		var renderer = cell.animal_renderers[species]
 		if not is_instance_valid(renderer):
 			continue
 		for animal in renderer.get_individuals():

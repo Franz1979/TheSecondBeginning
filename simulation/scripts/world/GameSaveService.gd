@@ -126,6 +126,8 @@ func save_game_to_json(
 			"stock_excess_meat_destination": game_data.stock_excess_meat_destination,
 			"stock_fuel_rule_enabled": game_data.stock_fuel_rule_enabled,
 			"stock_fuel_min_by_type": game_data.stock_fuel_min_by_type,
+			"stock_banquet_calories": game_data.stock_banquet_calories,
+			"stock_banquet_safe_only": game_data.stock_banquet_safe_only,
 			"job_board_return_borrowed_tools": game_data.job_board_return_borrowed_tools,
 			"inventory_interval_hours": game_data.inventory_interval_hours,
 			"last_inventory_end": game_data.last_inventory_end,
@@ -443,6 +445,8 @@ func save_game_to_json(
 			"repair_auto_excluded": building.repair_auto_excluded,
 			# Rito ordinato dal pannello (2026-10-14), vedi Building.requested_rite_id.
 			"requested_rite_id": building.requested_rite_id,
+			# Soglia di calorie del banchetto (2026-10-17), vedi Building.feast_calorie_threshold.
+			"feast_calorie_threshold": building.feast_calorie_threshold,
 			# Macerie (2026-10-10): tipo dell'edificio crollato.
 			"rubble_source_name": building.rubble_source_name,
 			"rubble_auto_excluded": building.rubble_auto_excluded,

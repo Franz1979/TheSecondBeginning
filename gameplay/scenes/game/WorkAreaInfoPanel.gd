@@ -91,7 +91,7 @@ func _build_header() -> void:
 	name_edit.text = _area.name
 	name_edit.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	name_edit.add_theme_font_size_override("font_size", CAPTION_FONT_SIZE)
-	name_edit.tooltip_text = tr("work_area_name_tooltip")
+	name_edit.tooltip_text = TooltipText.wrap(tr("work_area_name_tooltip"))
 	var commit_name := func(new_text: String) -> void:
 		# focus_exited può arrivare mentre il pannello si svuota (clear/_rebuild): zona già tolta.
 		if _area == null:
@@ -106,7 +106,7 @@ func _build_header() -> void:
 	row.add_child(name_edit)
 	var center_button := Button.new()
 	center_button.text = "🎯"
-	center_button.tooltip_text = tr("work_area_center_tooltip")
+	center_button.tooltip_text = TooltipText.wrap(tr("work_area_center_tooltip"))
 	center_button.add_theme_font_size_override("font_size", FONT_SIZE)
 	center_button.pressed.connect(func() -> void: center_requested.emit(_area))
 	row.add_child(center_button)

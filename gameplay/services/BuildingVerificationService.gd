@@ -63,7 +63,7 @@ extends RefCounted
 # esistente risulterebbe bloccata dal nuovo edificio, anche se la posizione del nuovo edificio di
 # per sé è libera (Criteri 1-6 passerebbero). Calcolo puramente aritmetico su macro_x/macro_y/
 # micro_x/micro_y (stesso attraversamento di bordo del Criterio 7, qui in coordinate invece che in
-# pixel — vedi _door_target_macro_micro sotto): non richiede che la macrocella dell'edificio
+# pixel — vedi BuildingFootprint.door_front): non richiede che la macrocella dell'edificio
 # esistente sia viva, l'edificio è comunque un dato reale in macro_world.buildings. UNIVERSALE
 # rispetto al NUOVO edificio (SEMPRE attivo, anche se il NUOVO edificio non ha porta propria —
 # has_door riguarda solo se l'edificio che si sta piazzando ha una porta da tenere sgombra, non se
@@ -85,44 +85,65 @@ static func is_position_buildable(
 	current_absolute_day: int, macro_world: World, direction: GameTypes.Direction, rules: BuildingRules,
 	can_cut: bool = true, ignore_ground_pile: bool = false
 ) -> bool:
-	var resolved := _resolve_cell_and_microcell(live_cells, macro_cell_pixels, cell_size, world_position)
-	if resolved.is_empty():
+	# Ingombro (2026-10-17): i criteri 2-6 e 9-12 valgono per ogni microcella del rettangolo, il bordo di macrocella è
+	# dentro resolve_placement (un 1x1 ha la sola microcella sotto il mouse, come prima).
+	var placement := resolve_placement(live_cells, macro_cell_pixels, cell_size, world_position, direction, rules)
+	if placement.is_empty():
 		return false
-	if not _is_position_clear(resolved["cell"], resolved["microcell"], current_absolute_day, macro_world, rules):
-		return false
+	var cell: LiveMacroCell = placement["cell"]
+	var macro_coords := Vector2i(cell.macro_x, cell.macro_y)
+	for microcell: Vector2i in placement["cells"]:
+		if not _is_position_clear(cell, microcell, current_absolute_day, macro_world, rules):
+			return false
 
-	# Criterio 10
-	if not can_cut and BuildingSiteClearingService.has_woody_vegetation(resolved["cell"].macro_state, resolved["microcell"]):
-		return false
+		# Criterio 10
+		if not can_cut and BuildingSiteClearingService.has_woody_vegetation(cell.macro_state, microcell):
+			return false
 
-	# Criterio 11 (2026-10-16, Ceppo dell'insegnamento): serve almeno un ceppo d'albero sulla microcella.
-	if rules.requires_tree_stump and not has_required_tree_stump(resolved["cell"].macro_state, resolved["microcell"]):
-		return false
+		# Criterio 11 (2026-10-16, Ceppo dell'insegnamento): serve almeno un ceppo d'albero sulla microcella.
+		if rules.requires_tree_stump and not has_required_tree_stump(cell.macro_state, microcell):
+			return false
 
-	# Criterio 9 (2026-09-26, ground drop): non si costruisce sopra un mucchio a terra. Vale solo per la
-	# microcella dell'edificio: davanti alla porta un mucchio non è un ostacolo (ci si cammina sopra).
-	# `ignore_ground_pile` (2026-10-07): solo per sapere se il rifiuto dipende da piante e mucchio (messaggio al giocatore,
-	# GameScene._is_placement_buildable_or_report); il piazzamento lo passa sempre false.
-	if not ignore_ground_pile and GroundPileService.find_at(
-		GameSettings.active_game_data, Vector2i(resolved["cell"].macro_x, resolved["cell"].macro_y), resolved["microcell"]
-	) != null:
-		return false
-	# Criterio 12 (2026-10-17): roccia esaurita con ancora sassi di scarto, da raccogliere prima (come un mucchio).
-	if not ignore_ground_pile and RockStoneService.has_waste_pebbles(resolved["cell"].macro_state, resolved["microcell"]):
-		return false
+		# Criterio 9 (2026-09-26, ground drop): non si costruisce sopra un mucchio a terra. Vale solo per la
+		# microcella dell'edificio: davanti alla porta un mucchio non è un ostacolo (ci si cammina sopra).
+		# `ignore_ground_pile` (2026-10-07): solo per sapere se il rifiuto dipende da piante e mucchio (messaggio al giocatore,
+		# GameScene._is_placement_buildable_or_report); il piazzamento lo passa sempre false.
+		if not ignore_ground_pile and GroundPileService.find_at(GameSettings.active_game_data, macro_coords, microcell) != null:
+			return false
+		# Criterio 12 (2026-10-17): roccia esaurita con ancora sassi di scarto, da raccogliere prima (come un mucchio).
+		if not ignore_ground_pile and RockStoneService.has_waste_pebbles(cell.macro_state, microcell):
+			return false
+
+		# Criterio 8 — un edificio MOVEMENT (calpestabile, es. terra battuta) può stare davanti alla porta
+		# di un edificio esistente: non la blocca, ci si cammina sopra (2026-09-19, richiesta utente).
+		if not rules.walkable and _blocks_existing_building_door(
+			cell.macro_x, cell.macro_y, microcell, macro_world
+		):
+			return false
 
 	# Criterio 7
 	if is_door_blocked(live_cells, macro_cell_pixels, cell_size, world_position, current_absolute_day, macro_world, direction, rules):
 		return false
 
-	# Criterio 8 — un edificio MOVEMENT (calpestabile, es. terra battuta) può stare davanti alla porta
-	# di un edificio esistente: non la blocca, ci si cammina sopra (2026-09-19, richiesta utente).
-	if rules.category != BuildingTypes.Category.MOVEMENT and _blocks_existing_building_door(
-		resolved["cell"].macro_x, resolved["cell"].macro_y, resolved["microcell"], macro_world
-	):
-		return false
-
 	return true
+
+
+# Rettangolo dell'edificio col mouse al centro (2026-10-17, ingombro): {"cell": LiveMacroCell, "anchor": Vector2i,
+# "cells": Array[Vector2i]}, {} se il punto non è in una cella viva o il rettangolo esce dalla macrocella. Per un 1x1
+# l'ancora è la microcella sotto il mouse, come prima. Un solo punto che traduce il mouse in rettangolo, usato anche da
+# GameScene per il piazzamento.
+static func resolve_placement(
+	live_cells: Dictionary, macro_cell_pixels: int, cell_size: int, world_position: Vector2,
+	direction: GameTypes.Direction, rules: BuildingRules
+) -> Dictionary:
+	var resolved := _resolve_cell_and_microcell(live_cells, macro_cell_pixels, cell_size, world_position)
+	if resolved.is_empty():
+		return {}
+	var rect_size := BuildingFootprint.size(rules, direction)
+	var anchor := BuildingFootprint.anchor_from_center(resolved["microcell"], rules, direction)
+	if not BuildingFootprint.fits_in_macrocell(anchor, rect_size):
+		return {}
+	return {"cell": resolved["cell"], "anchor": anchor, "cells": BuildingFootprint.cells(anchor, rect_size)}
 
 
 # Risolve world_position nella cella viva/microcella che lo contiene, o {} se nessuna cella viva
@@ -202,7 +223,7 @@ static func get_river_lookup(macro_cell: MacroCellData, macro_state: MacroCellSt
 static func get_door_front(building: Building) -> Dictionary:
 	if building == null or building.rules == null or not building.rules.has_door:
 		return {}
-	return _door_target_macro_micro(building.macro_x, building.macro_y, building.micro_x, building.micro_y, building.rotation)
+	return BuildingFootprint.door_front_of(building)
 
 
 # Criterio 8 (vedi commento in testa al file): true se un edificio esistente CON PORTA ha la porta
@@ -218,50 +239,40 @@ static func _blocks_existing_building_door(
 	for building in macro_world.buildings:
 		if building.rules == null or not building.rules.has_door:
 			continue
-		var door := _door_target_macro_micro(building.macro_x, building.macro_y, building.micro_x, building.micro_y, building.rotation)
+		var door := BuildingFootprint.door_front_of(building)
 		if door["macro"] == Vector2i(target_macro_x, target_macro_y) and door["micro"] == target_microcell:
 			return true
 	return false
 
 
-# Microcella (macro+micro) verso cui punta la porta di un edificio in (macro_x, macro_y, micro_x,
-# micro_y) con orientamento `direction` — stesso attraversamento di bordo di macrocella del
-# Criterio 7, qui in coordinate intere invece che in pixel (nessuna cella viva necessaria: pura
-# aritmetica su World.WIDTH/HEIGHT).
-static func _door_target_macro_micro(macro_x: int, macro_y: int, micro_x: int, micro_y: int, direction: GameTypes.Direction) -> Dictionary:
-	var dir_vector := _direction_vector(direction)
-	var target_micro_x: int = micro_x + int(dir_vector.x)
-	var target_micro_y: int = micro_y + int(dir_vector.y)
-	var target_macro_x: int = macro_x
-	var target_macro_y: int = macro_y
-	if target_micro_x < 0:
-		target_macro_x -= 1
-		target_micro_x = World.WIDTH - 1
-	elif target_micro_x >= World.WIDTH:
-		target_macro_x += 1
-		target_micro_x = 0
-	if target_micro_y < 0:
-		target_macro_y -= 1
-		target_micro_y = World.HEIGHT - 1
-	elif target_micro_y >= World.HEIGHT:
-		target_macro_y += 1
-		target_micro_y = 0
-	return {"macro": Vector2i(target_macro_x, target_macro_y), "micro": Vector2i(target_micro_x, target_micro_y)}
+# Ingombro (2026-10-17), per il messaggio al giocatore: prima microcella del rettangolo (`placement` da resolve_placement)
+# senza il ceppo richiesto, Vector2i(-1, -1) se non manca o il tipo non lo richiede.
+static func find_cell_missing_tree_stump(placement: Dictionary, rules: BuildingRules) -> Vector2i:
+	if placement.is_empty() or rules == null or not rules.requires_tree_stump:
+		return Vector2i(-1, -1)
+	var cell: LiveMacroCell = placement["cell"]
+	for microcell: Vector2i in placement["cells"]:
+		if not has_required_tree_stump(cell.macro_state, microcell):
+			return microcell
+	return Vector2i(-1, -1)
 
 
-# Vettore unitario (in microcelle) della direzione indicata — stessa funzione (duplicata apposta,
-# stesso principio già in uso tra MicroCellRenderer/BuildingGhost per la geometria della porta)
-# di MicroCellRenderer._direction_vector/BuildingGhost._direction_vector.
-static func _direction_vector(direction: GameTypes.Direction) -> Vector2:
-	match direction:
-		GameTypes.Direction.NORTH:
-			return Vector2(0, -1)
-		GameTypes.Direction.EAST:
-			return Vector2(1, 0)
-		GameTypes.Direction.WEST:
-			return Vector2(-1, 0)
-		_: # SOUTH, anche default
-			return Vector2(0, 1)
+# Ingombro (2026-10-17), per i messaggi al giocatore: ostacoli rimovibili su una qualunque microcella del rettangolo —
+# {"woody", "pile", "waste_pebbles"}. Senza rettangolo (`placement` vuoto) "woody" resta vero, come prima.
+static func get_removable_blocks(placement: Dictionary) -> Dictionary:
+	var blocks := {"woody": placement.is_empty(), "pile": false, "waste_pebbles": false}
+	if placement.is_empty():
+		return blocks
+	var cell: LiveMacroCell = placement["cell"]
+	var macro_coords := Vector2i(cell.macro_x, cell.macro_y)
+	for microcell: Vector2i in placement["cells"]:
+		if BuildingSiteClearingService.has_woody_vegetation(cell.macro_state, microcell):
+			blocks["woody"] = true
+		if GroundPileService.find_at(GameSettings.active_game_data, macro_coords, microcell) != null:
+			blocks["pile"] = true
+		if RockStoneService.has_waste_pebbles(cell.macro_state, microcell):
+			blocks["waste_pebbles"] = true
+	return blocks
 
 
 # Applica il feedback visivo di edificabilità a un BuildingGhost — un solo punto che decide "come
@@ -286,8 +297,14 @@ static func is_door_blocked(
 ) -> bool:
 	if rules == null or not rules.has_door:
 		return false
-	var door_front_position: Vector2 = world_position + _direction_vector(direction) * cell_size
-	var door_front_resolved := _resolve_cell_and_microcell(live_cells, macro_cell_pixels, cell_size, door_front_position)
-	if door_front_resolved.is_empty():
+	# Ingombro (2026-10-17): la cella davanti alla porta del rettangolo (BuildingFootprint.door_front), anche nella
+	# macrocella accanto; se quella non è viva la porta conta come bloccata, come prima.
+	var placement := resolve_placement(live_cells, macro_cell_pixels, cell_size, world_position, direction, rules)
+	if placement.is_empty():
+		return false
+	var cell: LiveMacroCell = placement["cell"]
+	var door := BuildingFootprint.door_front(Vector2i(cell.macro_x, cell.macro_y), placement["anchor"], rules, direction)
+	var door_cell: LiveMacroCell = live_cells.get(door["macro"])
+	if door_cell == null:
 		return true
-	return not _is_position_clear(door_front_resolved["cell"], door_front_resolved["microcell"], current_absolute_day, macro_world, rules, true)
+	return not _is_position_clear(door_cell, door["micro"], current_absolute_day, macro_world, rules, true)

@@ -47,7 +47,7 @@ func configure_slot(
 ) -> void:
 	var slot := _slots[index]
 	slot.text = "" if icon_node != null else icon_text
-	slot.tooltip_text = tooltip
+	slot.tooltip_text = TooltipText.wrap(tooltip)
 	_slot_enabled_tooltips[index] = tooltip
 	slot.tooltip_description = description
 	slot.disabled = not enabled
@@ -165,6 +165,6 @@ func set_slot_disabled(index: int, disabled: bool, disabled_tooltip: String = ""
 	slot.disabled = disabled
 	slot.modulate = Color(1, 1, 1, 0.4) if disabled else Color(1, 1, 1, 1)
 	if disabled and disabled_tooltip != "":
-		slot.tooltip_text = disabled_tooltip
+		slot.tooltip_text = TooltipText.wrap(disabled_tooltip)
 	elif not disabled:
-		slot.tooltip_text = _slot_enabled_tooltips[index]
+		slot.tooltip_text = TooltipText.wrap(_slot_enabled_tooltips[index])

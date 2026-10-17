@@ -966,10 +966,10 @@ task_assignment_kind_move_up,Move up
 task_assignment_kind_move_down,Move down
 produce_output_full_warning,Output full: will stop after {count}
 toolkit_reject_not_used,{tool} is not used by this building's recipes: it does not go in the toolkit.
-pending_output_delivery,Delivery · {building} ({used}/{capacity})
+pending_output_delivery,Empty output · {building} ({used}/{capacity})
 task_assignment_kind_output,Deliver finished goods to storage
-task_assignment_setting_empty_outputs,Deliver finished goods to storage when production or a drying rack stops
-task_assignment_setting_empty_outputs_tooltip,"When an order stops because the finished products are full, or a drying rack is full with ready products, a free individual carries a load of them to storage."
+task_assignment_setting_empty_outputs,Deliver finished goods to storage when the output is full or a drying rack stops
+task_assignment_setting_empty_outputs_tooltip,"When the finished products are full (an order stops, or no new one can start), or a drying rack is full with ready products, a free individual carries a load of them to storage."
 task_assignment_output_cannot_cancel,Nothing to cancel: only the finished products are emptied.
 task_deliver_output_name,Deliver finished goods
 pending_material_fuel,fuel
@@ -1239,6 +1239,7 @@ pending_stock_fuel_blocked,Building not available or no fuel to bring
 building_teaching_stump,Teaching stump
 build_bar_teaching_stump_tooltip,"Teaching stump: built where a tree has been cut down, the stump becomes the elder's seat"
 building_category_cultural,Cultural
+building_category_recreational,Recreational
 build_blocked_needs_tree_stump,Needs a microcell with at least one cut tree (a stump)
 rite_oral_lesson_name,Lesson
 social_rite_reject_no_convocable,Nobody to call in the village (a lesson needs children)
@@ -1259,3 +1260,15 @@ building_influence_no_lesson_tooltip,No lesson for over a year: −{loss} tradit
 building_influence_no_meeting_tooltip,No meeting for over a year: −{loss} authority per year
 task_oral_lesson_name,Oral teaching
 material_fuel_label,fuel
+building_feast_ground,Feast ground
+build_bar_feast_ground_tooltip,"Feast ground: packed earth with a stone ring for the bonfire, where the village gathers for banquets"
+building_feast_calorie_threshold,Calorie threshold: {calories}
+building_feast_calorie_threshold_tooltip,"Food calories the organizer gathers at the feast ground before calling the village (minimum {min})"
+social_rite_reject_wrong_building,This rite is not held in this building
+building_feast_storage_summary,"Food: {calories} / {threshold} calories · Fuel: {fuel} / {fuel_needed}"
+building_feast_calorie_threshold_locked_tooltip,"Banquet in progress: the threshold is set, changes apply to the next one"
+warehouse_rule_banquet,Spontaneous banquets
+warehouse_rule_banquet_calories,Up to calories
+warehouse_rule_banquet_tooltip,"Food calories up to which a spontaneous banquet is gathered at the feast ground (minimum 500)"
+warehouse_rule_banquet_safe_only,Only if they use less than a third of the stock
+warehouse_rule_banquet_safe_only_tooltip,"A spontaneous banquet starts only if the storehouses hold at least three times the food it uses"

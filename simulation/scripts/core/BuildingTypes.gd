@@ -37,4 +37,7 @@ enum Category {
 	RUINS,
 	# Culturale (2026-10-16, richiesta utente — Ceppo dell'insegnamento, poi feste e scuola): aggiunta IN FONDO come le altre.
 	CULTURAL,
+	# Ricreativo (2026-10-17, richiesta utente — Spiazzo delle feste, poi altri luoghi di gioia e unione): aggiunta IN FONDO.
+	# Nessun raggio di influenza proprio: l'effetto dei suoi riti va a chi partecipa.
+	RECREATIONAL,
 }

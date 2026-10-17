@@ -278,6 +278,13 @@ var stock_excess_meat_destination: String = "warehouse"
 # Salvati da GameSaveService ("stock_fuel_rule_enabled", "stock_fuel_min_by_type"); partita nuova: spenta, nessun cambio.
 var stock_fuel_rule_enabled: bool = false
 var stock_fuel_min_by_type: Dictionary = {}
+# Regola "Banchetti spontanei" (2026-10-17, richiesta utente — il gestore scorte non ordina banchetti, autorizza quelli
+# spontanei): calorie fino a cui un banchetto spontaneo si organizza (al posto di BanquetRiteRules.idle_calorie_threshold) e
+# la casella "solo se consumano meno di un terzo delle scorte". Valgono solo con il gestore scorte sbloccato
+# (SocialRiteService.get_idle_calorie_threshold / _has_idle_food_stock). Salvate da GameSaveService ("stock_banquet_calories",
+# "stock_banquet_safe_only"); partita nuova e salvataggi vecchi: 500, accesa.
+var stock_banquet_calories: int = 500
+var stock_banquet_safe_only: bool = true
 # Regola di assegnazione "Riponi gli attrezzi presi per un lavoro" (2026-10-11): gli attrezzi presi in deposito per un
 # ordine della coda tornano in deposito quando l'individuo è libero (HumanIndividual.borrowed_tools). Salvata da
 # GameSaveService ("job_board_return_borrowed_tools"); partita nuova e salvataggi vecchi: accesa.

@@ -7,6 +7,14 @@ extends RefCounted
 
 # Nel record del rito (GameData.active_social_rites): la skill insegnata, fissata all'avvio.
 const RECORD_SUBJECT_KEY := "subject"
+const LESSON_RITE_ID := "oral_lesson"
+# Fattore della cognizione dell'insegnante sul guadagno degli allievi (skill_action_effects.tres).
+const TEACH_SKILL_EFFECT_KEY := "teach"
+
+
+# Regole della lezione (null se il file manca).
+static func get_lesson_rules() -> TeachingRiteRules:
+	return RiteService.get_rules(LESSON_RITE_ID) as TeachingRiteRules
 
 
 # Skill insegnabile migliore di `individual` ("" se nessuna): la più alta tra le skill_* non escluse; a parità la prima
@@ -26,6 +34,21 @@ static func best_skill(rules: TeachingRiteRules, individual: HumanIndividual) ->
 	return best
 
 
+# Materia di una lezione di `individual` (2026-10-17, richiesta utente): a caso, con probabilità uguali, tra le
+# rules.subject_choices skill insegnabili più alte che arrivano almeno a min_teach_skill; "" se nessuna (can_teach falso).
+static func pick_subject(rules: TeachingRiteRules, individual: HumanIndividual) -> String:
+	if rules == null or individual == null:
+		return ""
+	var candidates: Array[String] = []
+	for skill_name in individual.get_skill_property_names():
+		if not rules.excluded_subjects.has(skill_name) and float(individual.get(skill_name)) >= rules.min_teach_skill:
+			candidates.append(skill_name)
+	if candidates.is_empty():
+		return ""
+	candidates.sort_custom(func(a: String, b: String) -> bool: return float(individual.get(a)) > float(individual.get(b)))
+	return candidates.slice(0, maxi(1, rules.subject_choices)).pick_random()
+
+
 # true se `individual` ha qualcosa da insegnare: skill insegnabile migliore almeno min_teach_skill (l'età la controlla
 # RiteService.can_celebrate con allowed_age_bands).
 static func can_teach(rules: TeachingRiteRules, individual: HumanIndividual) -> bool:
@@ -33,13 +56,14 @@ static func can_teach(rules: TeachingRiteRules, individual: HumanIndividual) -> 
 	return subject != "" and float(individual.get(subject)) >= rules.min_teach_skill
 
 
-# Guadagno nella materia di un allievo: (insegnante − allievo) × gain_fraction × (1 + cognizione/SKILL_MAX), intero tra
-# min_gain e max_gain; 0 se l'allievo ne sa già quanto l'insegnante.
-static func student_gain(rules: TeachingRiteRules, teacher_value: float, student_value: float, teacher_cognition: float) -> int:
-	var difference := teacher_value - student_value
-	if difference <= 0.0:
+# Guadagno nella materia di un allievo (2026-10-17, richiesta utente — uguale per tutti gli allievi, non più in base alla
+# differenza): insegnante × gain_fraction × fattore della cognizione dell'insegnante (SkillEffectService, chiave
+# TEACH_SKILL_EFFECT_KEY, come le altre skill), intero tra min_gain e max_gain; 0 se l'allievo ne sa già quanto
+# l'insegnante.
+static func student_gain(rules: TeachingRiteRules, teacher_value: float, student_value: float, teacher_factor: float) -> int:
+	if student_value >= teacher_value:
 		return 0
-	var raw := difference * rules.gain_fraction * (1.0 + teacher_cognition / HumanIndividual.SKILL_MAX)
+	var raw := teacher_value * rules.gain_fraction * teacher_factor
 	return clampi(floori(raw), rules.min_gain, rules.max_gain)
 
 
@@ -54,9 +78,10 @@ static func apply_lesson(
 		SocialRiteService.log_event("lezione all'edificio #%d: insegnante assente, nessun insegnamento." % building.id)
 		return
 	var teacher_value := float(teacher.get(subject))
+	var teacher_factor := SkillEffectService.get_factor(TEACH_SKILL_EFFECT_KEY, teacher)
 	var parts: Array[String] = []
 	for student in students:
-		var gain := student_gain(rules, teacher_value, float(student.get(subject)), teacher.skill_cognition)
+		var gain := student_gain(rules, teacher_value, float(student.get(subject)), teacher_factor)
 		if gain > 0:
 			student.set(subject, minf(float(student.get(subject)) + float(gain), HumanIndividual.SKILL_MAX))
 		student.skill_cognition = minf(student.skill_cognition + rules.cognition_gain, HumanIndividual.SKILL_MAX)

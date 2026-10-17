@@ -77,6 +77,16 @@ signal fuel_rule_toggled(enabled: bool)
 signal fuel_min_changed(type_name: String, level: int)
 var _fuel_rule_enabled: bool = false
 var _fuel_rows: Array[Dictionary] = []
+# Regola "Banchetti spontanei" (2026-10-17): calorie fino a cui si organizzano (− [N] +, passi di 100, minimo
+# BANQUET_CALORIES_MIN) e casella "solo se consumano meno di un terzo delle scorte" (GameData.stock_banquet_calories /
+# stock_banquet_safe_only). Stato da GameScene (set_banquet_rule, prima di _ready); i cambi escono con
+# banquet_calories_changed / banquet_safe_only_toggled.
+signal banquet_calories_changed(calories: int)
+signal banquet_safe_only_toggled(enabled: bool)
+const BANQUET_CALORIES_STEP: int = 100
+const BANQUET_CALORIES_MIN: int = 500
+var _banquet_calories: int = 500
+var _banquet_safe_only: bool = true
 const INVENTORY_INTERVAL_OPTIONS: Array[int] = [6, 12, 24, 48, 72, 120]
 var _inventory_label: Label = null
 var _inventory_info: Array = []
@@ -174,7 +184,7 @@ func set_inventory_info(text: String, tooltip: String) -> void:
 	_inventory_info = [text, tooltip]
 	if _inventory_label != null:
 		_inventory_label.text = text
-		_inventory_label.tooltip_text = tooltip
+		_inventory_label.tooltip_text = TooltipText.wrap(tooltip)
 
 
 # Frequenza dell'inventario della partita (GameScene, prima di _ready).
@@ -194,13 +204,57 @@ func set_fuel_rule(enabled: bool, rows: Array[Dictionary]) -> void:
 	_fuel_rows = rows.duplicate()
 
 
+func set_banquet_rule(calories: int, safe_only: bool) -> void:
+	_banquet_calories = maxi(calories, BANQUET_CALORIES_MIN)
+	_banquet_safe_only = safe_only
+
+
+# Regola dei banchetti spontanei: titolo, riga "fino a − [N] + calorie" e la casella del terzo delle scorte.
+func _build_banquet_rule_rows() -> Control:
+	var box := VBoxContainer.new()
+	box.add_theme_constant_override("separation", 2)
+	var title := Label.new()
+	title.text = tr("warehouse_rule_banquet")
+	title.tooltip_text = TooltipText.wrap(tr("warehouse_rule_banquet_tooltip"))
+	title.mouse_filter = Control.MOUSE_FILTER_PASS
+	title.add_theme_font_size_override("font_size", LIST_FONT_SIZE)
+	box.add_child(title)
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 6)
+	var label := Label.new()
+	label.text = tr("warehouse_rule_banquet_calories")
+	label.tooltip_text = TooltipText.wrap(tr("warehouse_rule_banquet_tooltip"))
+	label.mouse_filter = Control.MOUSE_FILTER_PASS
+	label.add_theme_font_size_override("font_size", LIST_FONT_SIZE)
+	label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	row.add_child(label)
+	row.add_child(_build_level_field(_banquet_calories, func(calories: int) -> void:
+		_banquet_calories = calories
+		banquet_calories_changed.emit(calories)
+	, "warehouse_rule_banquet_tooltip", BANQUET_CALORIES_STEP, BANQUET_CALORIES_MIN))
+	box.add_child(row)
+	var safe_toggle := CheckBox.new()
+	safe_toggle.text = tr("warehouse_rule_banquet_safe_only")
+	safe_toggle.tooltip_text = TooltipText.wrap(tr("warehouse_rule_banquet_safe_only_tooltip"))
+	safe_toggle.button_pressed = _banquet_safe_only
+	safe_toggle.focus_mode = Control.FOCUS_NONE
+	safe_toggle.add_theme_font_size_override("font_size", LIST_FONT_SIZE)
+	safe_toggle.toggled.connect(func(pressed: bool) -> void:
+		_banquet_safe_only = pressed
+		banquet_safe_only_toggled.emit(pressed)
+	)
+	box.add_child(safe_toggle)
+	return box
+
+
 # Regola del combustibile: casella accesa/spenta, poi per ogni tipo icona, nome e campo − [N] + (spenti con la regola).
 func _build_fuel_rule_rows() -> Control:
 	var box := VBoxContainer.new()
 	box.add_theme_constant_override("separation", 2)
 	var toggle := CheckBox.new()
 	toggle.text = tr("warehouse_rule_fuel")
-	toggle.tooltip_text = tr("warehouse_rule_fuel_tooltip")
+	toggle.tooltip_text = TooltipText.wrap(tr("warehouse_rule_fuel_tooltip"))
 	toggle.button_pressed = _fuel_rule_enabled
 	toggle.focus_mode = Control.FOCUS_NONE
 	toggle.add_theme_font_size_override("font_size", LIST_FONT_SIZE)
@@ -218,11 +272,11 @@ func _build_fuel_rule_rows() -> Control:
 		var type_name := String(entry.get("type", ""))
 		var row := HBoxContainer.new()
 		row.add_theme_constant_override("separation", 6)
-		row.tooltip_text = tr("warehouse_rule_fuel_type_tooltip")
+		row.tooltip_text = TooltipText.wrap(tr("warehouse_rule_fuel_type_tooltip"))
 		row.add_child(IconRegistry.build_building_icon_box(type_name, LIST_ICON_SIDE))
 		var label := Label.new()
 		label.text = tr(String(entry.get("name", type_name)))
-		label.tooltip_text = row.tooltip_text
+		label.tooltip_text = TooltipText.wrap(row.tooltip_text)
 		label.mouse_filter = Control.MOUSE_FILTER_PASS
 		label.add_theme_font_size_override("font_size", LIST_FONT_SIZE)
 		label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -247,10 +301,10 @@ func set_excess_meat_destination(is_shown: bool, current: Dictionary, options: A
 func _build_inventory_interval_row() -> Control:
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 6)
-	row.tooltip_text = tr("warehouse_rule_inventory_interval_tooltip")
+	row.tooltip_text = TooltipText.wrap(tr("warehouse_rule_inventory_interval_tooltip"))
 	var label := Label.new()
 	label.text = tr("warehouse_rule_inventory_interval")
-	label.tooltip_text = row.tooltip_text
+	label.tooltip_text = TooltipText.wrap(row.tooltip_text)
 	label.mouse_filter = Control.MOUSE_FILTER_PASS
 	label.add_theme_font_size_override("font_size", LIST_FONT_SIZE)
 	label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -260,7 +314,7 @@ func _build_inventory_interval_row() -> Control:
 	var picker := OptionButton.new()
 	picker.focus_mode = Control.FOCUS_NONE
 	picker.add_theme_font_size_override("font_size", LIST_FONT_SIZE)
-	picker.tooltip_text = row.tooltip_text
+	picker.tooltip_text = TooltipText.wrap(row.tooltip_text)
 	for hours in INVENTORY_INTERVAL_OPTIONS:
 		var text := tr("warehouse_inventory_every_hours").format({"hours": hours}) if hours < 24 \
 			else tr("warehouse_inventory_every_days").format({"days": hours / 24})
@@ -295,10 +349,10 @@ func _build_rules_section() -> void:
 	)
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 6)
-	row.tooltip_text = tr("warehouse_rule_excess_meat_tooltip")
+	row.tooltip_text = TooltipText.wrap(tr("warehouse_rule_excess_meat_tooltip"))
 	var label := Label.new()
 	label.text = tr("warehouse_rule_excess_meat")
-	label.tooltip_text = row.tooltip_text
+	label.tooltip_text = TooltipText.wrap(row.tooltip_text)
 	label.mouse_filter = Control.MOUSE_FILTER_PASS
 	label.add_theme_font_size_override("font_size", LIST_FONT_SIZE)
 	label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -312,6 +366,7 @@ func _build_rules_section() -> void:
 	row.add_child(_excess_meat_button)
 	_rules_box.add_child(row)
 	_rules_box.add_child(_build_fuel_rule_rows())
+	_rules_box.add_child(_build_banquet_rule_rows())
 	_rules_box.add_child(_build_inventory_interval_row())
 	if _excess_meat_state.size() == 3:
 		var options: Array[Dictionary] = []
@@ -340,11 +395,14 @@ func _apply_quantities() -> void:
 # --- Campo del livello minimo: − [numero] + ---
 
 # `on_change(value)` alla conferma di un valore nuovo (bottoni, Invio o uscita dal campo).
-func _build_level_field(initial: int, on_change: Callable, tooltip_key: String = "warehouse_min_level_tooltip") -> Control:
+# `step` e `min_value` (2026-10-17, calorie dei banchetti: passi di 100, minimo 500); di base 1 e 0, come prima.
+func _build_level_field(
+	initial: int, on_change: Callable, tooltip_key: String = "warehouse_min_level_tooltip", step: int = 1, min_value: int = 0
+) -> Control:
 	var tooltip := tr(tooltip_key)
 	var field := HBoxContainer.new()
 	field.add_theme_constant_override("separation", 0)
-	field.tooltip_text = tooltip
+	field.tooltip_text = TooltipText.wrap(tooltip)
 	field.mouse_filter = Control.MOUSE_FILTER_PASS
 	var edit := LineEdit.new()
 	var minus := _level_button("−", tooltip)
@@ -352,19 +410,19 @@ func _build_level_field(initial: int, on_change: Callable, tooltip_key: String =
 	edit.custom_minimum_size = Vector2(LEVEL_EDIT_WIDTH, 0.0)
 	edit.alignment = HORIZONTAL_ALIGNMENT_CENTER
 	edit.add_theme_font_size_override("font_size", LIST_FONT_SIZE)
-	edit.tooltip_text = tooltip
+	edit.tooltip_text = TooltipText.wrap(tooltip)
 	edit.context_menu_enabled = false
 	edit.set_meta("level", initial)
 	edit.text = _level_text(initial)
 	var commit := func(value: int) -> void:
-		var clamped := clampi(value, 0, LEVEL_MAX)
+		var clamped := clampi(value, min_value, LEVEL_MAX)
 		edit.text = _level_text(clamped)
 		if clamped == int(edit.get_meta("level")):
 			return
 		edit.set_meta("level", clamped)
 		on_change.call(clamped)
-	minus.pressed.connect(func() -> void: commit.call(int(edit.get_meta("level")) - 1))
-	plus.pressed.connect(func() -> void: commit.call(int(edit.get_meta("level")) + 1))
+	minus.pressed.connect(func() -> void: commit.call(int(edit.get_meta("level")) - step))
+	plus.pressed.connect(func() -> void: commit.call(int(edit.get_meta("level")) + step))
 	edit.focus_entered.connect(func() -> void:
 		if int(edit.get_meta("level")) <= 0:
 			edit.text = ""
@@ -390,7 +448,7 @@ func _level_button(text: String, tooltip: String) -> Button:
 	button.focus_mode = Control.FOCUS_NONE
 	button.custom_minimum_size = Vector2(LEVEL_BUTTON_WIDTH, 0.0)
 	button.add_theme_font_size_override("font_size", LIST_FONT_SIZE)
-	button.tooltip_text = tooltip
+	button.tooltip_text = TooltipText.wrap(tooltip)
 	return button
 
 
@@ -707,8 +765,8 @@ func _set_fill(used: float, capacity: float) -> void:
 	var percent: int = clampi(roundi(100.0 * used / capacity), 0, 100) if capacity > 0.0 else 0
 	_fill_percent.text = "%d%%" % percent
 	var tooltip := tr("warehouse_storage_fill_tooltip").format({"used": roundi(used), "capacity": roundi(capacity)})
-	_fill_bar.tooltip_text = tooltip
-	_fill_percent.tooltip_text = tooltip
+	_fill_bar.tooltip_text = TooltipText.wrap(tooltip)
+	_fill_percent.tooltip_text = TooltipText.wrap(tooltip)
 	_fill.visible = percent > 0
 	_fill_empty.visible = percent < 100
 	_fill.size_flags_stretch_ratio = maxf(float(percent), 0.001)

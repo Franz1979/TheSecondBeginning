@@ -273,7 +273,7 @@ static func find_drop_microcell(game_data: GameData, world: World, macro_coords:
 	for building in world.buildings:
 		if building.macro_x != macro_coords.x or building.macro_y != macro_coords.y:
 			continue
-		if building.micro_x != start.x or building.micro_y != start.y:
+		if not BuildingFootprint.covers(building, macro_coords, start):
 			continue
 		var door := BuildingVerificationService.get_door_front(building)
 		if not door.is_empty() and door["macro"] == macro_coords and is_free.call(door["micro"]):

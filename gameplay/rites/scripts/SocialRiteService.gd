@@ -2,36 +2,41 @@ class_name SocialRiteService
 extends RefCounted
 
 # Riti sociali (2026-10-14, richiesta utente — da BanquetService, generalizzato: base + specializzazione, vedi
-# docs/design/socialita_teaching.md). Servizio senza stato: il raduno è generico (SocialRiteRules), la cottura vale solo
-# per il banchetto (BanquetRiteRules). Lo stato di un rito in corso vive in GameData.active_social_rites (salvato), un
-# record per edificio:
-#   {"building_id", "rite_id", "organizer_id", "phase": PHASE_WAITING/PHASE_FEASTING, "elapsed" (giorni della fase),
-#    "participants": {"<id>": {"counts"}}, "convoked": [id],
-#    solo banchetto: "order_key" (ordine di cottura), "meat_units", "pot_calories", "pot_space", "cooked"}
+# docs/design/socialita_teaching.md). Servizio senza stato: il raduno è generico (SocialRiteRules), falò e cibo valgono
+# solo per il banchetto (BanquetRiteRules, dal 2026-10-17 sullo Spiazzo delle feste, docs/design/feast_ground.md). Lo
+# stato di un rito in corso vive in GameData.active_social_rites (salvato), un record per edificio:
+#   {"building_id", "rite_id", "organizer_id", "phase": PHASE_PREPARING/PHASE_WAITING/PHASE_FEASTING, "elapsed" (giorni
+#    della fase), "participants": {"<id>": {"counts"}}, "convoked": [id],
+#    solo banchetto: "pot_calories", "pot_space", "calorie_threshold", in preparazione "material_quota"}
 # Svolgimento:
 #   1. start: verifiche, record e convocazione di tutto il villaggio come per il corteo funebre (tranne neonati, bisogni
 #      di sopravvivenza, chi porta un corpo): ognuno riceve la task del rito (build_attend_task), che interrompe qualunque
 #      altra cosa e si fa anche con lo zaino carico (HumanIndividual.assign_task, come il corteo).
 #   2. on_arrival (SocialRiteAttendAction.activate): con min_participants arrivati da ragazzo in su comincia il raduno
-#      (PHASE_FEASTING); banchetto: si apre l'ordine di cottura di tutta la carne cruda del focolare.
-#   3. advance (una volta per fotogramma, da una qualunque SocialRiteAttendAction): attesa scaduta = rito saltato;
-#      banchetto: l'organizzatore, se presente, cuoce tutta la carne entro la durata; a fine durata _finish.
-#   4. _finish: ai presenti felicità e socialità, coesione al villaggio; banchetto: le calorie della carne cotta divise tra
-#      i presenti nelle provviste (eccedenza persa) e il bonus della Produce all'organizzatore. L'ordine dell'edificio
-#      (Building.requested_rite_id) è evaso.
-# Presenza: la task corrente è ancora il rito su quell'edificio (is_attending). Chi se ne va perde effetti e carne.
-# Dal 2026-10-14 (richiesta utente) il banchetto non chiede più cibo portato dai partecipanti: solo la carne del focolare.
+#      (PHASE_FEASTING); banchetto: il falò brucia il suo combustibile e tutto il cibo dello spiazzo va nel piatto comune.
+#   3. advance (una volta per fotogramma, da una qualunque SocialRiteAttendAction): attesa scaduta = rito saltato; a fine
+#      durata _finish.
+#   4. _finish: ai presenti felicità e socialità, coesione al villaggio; banchetto: le calorie del piatto comune divise tra
+#      i presenti nelle provviste (eccedenza persa) e coesione in più per le calorie servite. L'ordine
+#      dell'edificio (Building.requested_rite_id) è evaso.
+# Presenza: la task corrente è ancora il rito su quell'edificio (is_attending). Chi se ne va perde effetti e cibo.
+# Banchetto annullato o saltato: niente si consuma prima dell'inizio, cibo e combustibile restano nello spiazzo per il
+# prossimo (intanto il cibo deperisce).
 
 const TASK_NAME := "task_social_rite_name"
-# Preparazione (2026-10-16, banchetto come la Produce): solo l'organizzatore, che porta prima il combustibile e poi la
-# carne nel focolare (MaterialSupplyService, get_preparation_missing); a minimo raggiunto la convocazione (on_prepared).
+# Preparazione (2026-10-16, banchetto come la Produce): solo l'organizzatore, che porta prima il combustibile e poi il
+# cibo nello spiazzo (MaterialSupplyService, get_preparation_missing); a soglia raggiunta la convocazione (on_prepared).
 const PHASE_PREPARING := "preparing"
 const PHASE_WAITING := "waiting"
 const PHASE_FEASTING := "feasting"
 # Nel context della task: id dell'edificio e organizzatore.
 const CONTEXT_BUILDING_ID := "social_rite_building_id"
 const CONTEXT_ORGANIZER := "social_rite_organizer"
-const PRODUCE_SKILL_KEY := "produce"
+# Nel record del banchetto in preparazione (2026-10-17): quanto lo spiazzo accetta ancora {risorsa: pezzi}, più il
+# combustibile mancante sotto MaterialSupplyService.FUEL_KEY (in unità di fuel_value, vale per qualunque combustibile).
+const MATERIAL_QUOTA_KEY := "material_quota"
+# Nel record del banchetto (2026-10-17): soglia di calorie fissata all'avvio.
+const CALORIE_THRESHOLD_KEY := "calorie_threshold"
 
 
 static func log_event(text: String) -> void:
@@ -52,6 +57,10 @@ static func find_rite(game_data: GameData, building_id: int) -> Dictionary:
 static func get_start_rejection(building: Building, rules: SocialRiteRules, individuals: Array, game_data: GameData) -> String:
 	if building == null or rules == null or game_data == null:
 		return TranslationServer.translate("rite_reject_none_available_panel")
+	# Solo negli edifici del rito (2026-10-17): un vecchio ordine rimasto su un altro tipo (il banchetto sul focolare) non
+	# riparte là.
+	if not rules.building_types.is_empty() and not rules.building_types.has(building.building_type_name):
+		return TranslationServer.translate("social_rite_reject_wrong_building")
 	if not find_rite(game_data, building.id).is_empty():
 		return TranslationServer.translate("rite_reject_building_busy")
 	var adults := 0
@@ -69,14 +78,15 @@ static func get_start_rejection(building: Building, rules: SocialRiteRules, indi
 				break
 		if not any_convocable:
 			return TranslationServer.translate("social_rite_reject_no_convocable")
-	# Carne e combustibile non bloccano più l'ordine (2026-10-16): li porta l'organizzatore in preparazione.
+	# Cibo e combustibile non bloccano l'ordine (2026-10-16): li porta l'organizzatore in preparazione.
 	return ""
 
 
 # Avvia il rito con `organizer`: record e convocazione. Ritorna "" o il motivo del rifiuto (già tradotto).
+# `calorie_threshold` (2026-10-17, banchetto spontaneo): soglia del banchetto se > 0, altrimenti quella dello spiazzo.
 static func start(
 	organizer: HumanIndividual, building: Building, rules: SocialRiteRules, individuals: Array, game_data: GameData,
-	world: World
+	world: World, calorie_threshold: int = -1
 ) -> String:
 	var rejection := get_start_rejection(building, rules, individuals, game_data)
 	if rejection != "":
@@ -84,11 +94,20 @@ static func start(
 	var record := {
 		"building_id": building.id, "rite_id": rules.id, "organizer_id": organizer.id, "phase": PHASE_PREPARING,
 		"elapsed": 0.0, "participants": {}, "convoked": [],
-		"order_key": "", "meat_units": 0, "pot_calories": 0.0, "pot_space": 0.0, "cooked": 0,
+		"pot_calories": 0.0, "pot_space": 0.0,
 	}
-	# Lezione (2026-10-16): la materia è la skill insegnabile migliore dell'insegnante, fissata adesso.
+	# Lezione (2026-10-16): la materia si fissa adesso — dal 2026-10-17 a caso tra le skill insegnabili migliori
+	# dell'insegnante (TeachingRiteService.pick_subject), non più sempre la migliore.
 	if rules is TeachingRiteRules:
-		record[TeachingRiteService.RECORD_SUBJECT_KEY] = TeachingRiteService.best_skill(rules as TeachingRiteRules, organizer)
+		var subject := TeachingRiteService.pick_subject(rules as TeachingRiteRules, organizer)
+		record[TeachingRiteService.RECORD_SUBJECT_KEY] = subject
+		log_event("lezione di #%d %s all'edificio #%d: materia %s (%d)." % [
+			organizer.id, organizer.name, building.id, subject, int(organizer.get(subject)) if subject != "" else 0
+		])
+	# Banchetto (2026-10-17): la soglia di calorie si fissa adesso, cambiarla nel pannello vale per il prossimo.
+	if rules is BanquetRiteRules:
+		record[CALORIE_THRESHOLD_KEY] = calorie_threshold if calorie_threshold > 0 \
+			else get_calorie_threshold(building, rules as BanquetRiteRules)
 	game_data.active_social_rites.append(record)
 	# Prima solo l'organizzatore (2026-10-16): se manca materiale lo porta lui (preparazione), poi la convocazione.
 	var task := build_attend_task(organizer, building, true, rules.task_label_key)
@@ -109,8 +128,13 @@ static func start(
 
 
 # Fabbisogno della preparazione di un rito sociale in corso a `building` (2026-10-16): {} se non è in preparazione o non
-# manca nulla. Banchetto: prima SOLO il combustibile per i pezzi minimi (MaterialSupplyService.FUEL_KEY), poi la carne
-# cruda mancante — la carne arriva per ultima e non aspetta deperendo. Letto da MaterialSupplyService.get_missing_materials.
+# manca nulla. Banchetto sullo spiazzo (2026-10-17), un fabbisogno alla volta:
+#   1. il combustibile del falò (BanquetRiteRules.bonfire_fuel) per primo, perché non deperisce: voce FUEL_KEY;
+#   2. poi il cibo fino alla soglia di calorie dello spiazzo (get_calorie_threshold): dalle calorie mancanti si sceglie il
+#      cibo più deperibile che ha una fonte (_food_to_fetch) e se ne chiedono i pezzi che le coprono.
+# Ricalcolato a ogni richiesta. Quello che si porta va in record["material_quota"]: lo spiazzo, che ha il deposito
+# riservato agli eventi, lo accetta solo fino a lì (BuildingStorageService._production_quota). Letto da
+# MaterialSupplyService.get_missing_materials.
 static func get_preparation_missing(building: Building) -> Dictionary:
 	var missing: Dictionary = {}
 	var record := find_rite(GameSettings.active_game_data, building.id) if building != null else {}
@@ -119,16 +143,127 @@ static func get_preparation_missing(building: Building) -> Dictionary:
 	var rules := RiteService.get_rules(String(record.get("rite_id", ""))) as BanquetRiteRules
 	if rules == null:
 		return missing
-	var raw_meat := _stored_quantity(building, rules.raw_meat_resource)
-	var fuel_per_piece := ProductionService.get_required_fuel(building, rules.cooked_resource)
-	var reserved := {rules.raw_meat_resource: raw_meat}
-	var missing_fuel := fuel_per_piece * float(rules.min_raw_meat) - ProductionService.get_available_fuel(building, reserved)
+	var quota: Dictionary = {}
+	record[MATERIAL_QUOTA_KEY] = quota
+	var missing_fuel := rules.bonfire_fuel - _stored_fuel(building)
 	if missing_fuel > ProductionService.FUEL_EPSILON:
 		missing[MaterialSupplyService.FUEL_KEY] = missing_fuel
+		quota[MaterialSupplyService.FUEL_KEY] = missing_fuel
 		return missing
-	if raw_meat < rules.min_raw_meat:
-		missing[rules.raw_meat_resource] = rules.min_raw_meat - raw_meat
+	var missing_calories := float(_rite_calorie_threshold(record, building, rules)) - _stored_food_calories(building)
+	if missing_calories <= 0.0:
+		return missing
+	var food_name := _food_to_fetch(building)
+	var food_rules := CaloricCalculator.get_caloric_source_rules(food_name)
+	if food_rules == null or food_rules.calories_per_unit <= 0.0:
+		return missing
+	var units := int(ceil(missing_calories / food_rules.calories_per_unit - 0.0001))
+	missing[food_name] = units
+	quota[food_name] = units
 	return missing
+
+
+# Soglia di calorie del banchetto a `building`: quella scelta nel pannello (Building.feast_calorie_threshold) o il valore
+# di partenza dei dati, mai sotto il minimo.
+static func get_calorie_threshold(building: Building, rules: BanquetRiteRules) -> int:
+	if rules == null:
+		return 0
+	var threshold := building.feast_calorie_threshold if building != null and building.feast_calorie_threshold > 0 \
+		else rules.default_calorie_threshold
+	return maxi(threshold, rules.min_calorie_threshold)
+
+
+# Soglia del banchetto in corso: quella fissata all'avvio (salvataggi senza: quella dello spiazzo).
+static func _rite_calorie_threshold(record: Dictionary, building: Building, rules: BanquetRiteRules) -> int:
+	return int(record.get(CALORIE_THRESHOLD_KEY, get_calorie_threshold(building, rules)))
+
+
+# Riepilogo del deposito per il pannello (2026-10-17, richiesta utente): {} se l'edificio non ospita un banchetto;
+# altrimenti {"calories", "threshold", "fuel", "fuel_needed"} — calorie e combustibile nel deposito, soglia del banchetto
+# in corso (o quella dello spiazzo) e combustibile del falò.
+static func get_banquet_storage_summary(building: Building) -> Dictionary:
+	if building == null:
+		return {}
+	for type_rules in RiteService.get_type_rites(building):
+		if type_rules is BanquetRiteRules:
+			var rules := type_rules as BanquetRiteRules
+			var record := find_rite(GameSettings.active_game_data, building.id)
+			return {
+				"calories": _stored_food_calories(building), "threshold": _rite_calorie_threshold(record, building, rules),
+				"fuel": _stored_fuel(building), "fuel_needed": rules.bonfire_fuel,
+			}
+	return {}
+
+
+# Combustibile nel deposito di `building` (somma di quantità × fuel_value).
+static func _stored_fuel(building: Building) -> float:
+	var total := 0.0
+	for resource_name in building.stored_resources.keys():
+		total += float(_stored_quantity(building, String(resource_name))) * ProductionService.get_fuel_value(String(resource_name))
+	return total
+
+
+# Calorie del cibo (categoria FOOD) nel deposito di `building`.
+static func _stored_food_calories(building: Building) -> float:
+	var total := 0.0
+	for resource_name in building.stored_resources.keys():
+		var resource_rules := CaloricCalculator.get_caloric_source_rules(String(resource_name))
+		if resource_rules != null and resource_rules.category == SecondaryResourceTypes.Category.FOOD:
+			total += float(_stored_quantity(building, String(resource_name))) * resource_rules.calories_per_unit
+	return total
+
+
+# Cibi in ordine di deperibilità (day_durability crescente; -1 = non deperisce, in fondo), calcolato una volta.
+static var _foods_by_perishability: Array[String] = []
+
+
+static func _get_foods_by_perishability() -> Array[String]:
+	if not _foods_by_perishability.is_empty():
+		return _foods_by_perishability
+	var foods: Array[String] = []
+	for resource_name in CaloricCalculator.list_secondary_resource_names():
+		var resource_rules := CaloricCalculator.get_caloric_source_rules(resource_name)
+		if resource_rules != null and resource_rules.category == SecondaryResourceTypes.Category.FOOD and resource_rules.calories_per_unit > 0.0:
+			foods.append(resource_name)
+	var durability := func(resource_name: String) -> int:
+		var days := CaloricCalculator.get_caloric_source_rules(resource_name).day_durability
+		return days if days > 0 else 1 << 30
+	foods.sort_custom(func(a: String, b: String) -> bool:
+		var days_a: int = durability.call(a)
+		var days_b: int = durability.call(b)
+		return days_a < days_b if days_a != days_b else a < b
+	)
+	_foods_by_perishability = foods
+	return foods
+
+
+# Cibo da portare per il banchetto di `building`: il più deperibile che un altro edificio può dare (stesse fonti dei
+# rifornimenti, WarehouseSelectionService.has_retrieval_source); se nessuno ne ha, il più deperibile in assoluto (il
+# rifornimento resta in attesa di materiale).
+static func _food_to_fetch(building: Building) -> String:
+	var world := GameSettings.active_world
+	var excluded: Array[int] = [building.id]
+	var foods := _get_foods_by_perishability()
+	for food_name in foods:
+		if WarehouseSelectionService.has_retrieval_source(world, food_name, excluded):
+			return food_name
+	return foods[0] if not foods.is_empty() else ""
+
+
+# Quanto di `resource_name` lo spiazzo di un banchetto in preparazione accetta ancora (record["material_quota"]): il cibo
+# per nome, qualunque combustibile per i pezzi che coprono il combustibile mancante; 0 altrimenti.
+static func get_material_quota(game_data: GameData, building_id: int, resource_name: String) -> int:
+	var record := find_rite(game_data, building_id)
+	if record.is_empty() or String(record.get("phase", "")) != PHASE_PREPARING:
+		return 0
+	var quota: Dictionary = record.get(MATERIAL_QUOTA_KEY, {})
+	if quota.has(resource_name):
+		return int(quota[resource_name])
+	if quota.has(MaterialSupplyService.FUEL_KEY):
+		var fuel_value := ProductionService.get_fuel_value(resource_name)
+		if fuel_value > 0.0:
+			return int(ceil(float(quota[MaterialSupplyService.FUEL_KEY]) / fuel_value - ProductionService.FUEL_EPSILON))
+	return 0
 
 
 # true se a `building` c'è un rito sociale in preparazione.
@@ -137,7 +272,68 @@ static func is_preparing(building: Building) -> bool:
 	return not record.is_empty() and String(record.get("phase", "")) == PHASE_PREPARING
 
 
-# Preparazione finita (SocialRiteAttendAction dell'organizzatore, 2026-10-16): materiale minimo nel focolare, si convoca
+# --- riti spontanei (attività idle) ---
+
+# Edificio per un rito sociale spontaneo di `individual` (2026-10-17, generalizzato dalla lezione al ceppo): il più vicino
+# raggiungibile che ammette il rito, senza riti in corso né ordini in attesa, che get_start_rejection lascia partire e con
+# l'attesa SocialRiteRules.idle_cooldown_days dall'ultimo rito sociale lì trascorsa. Banchetto: anche il freno sulle scorte
+# (_has_idle_food_stock). null se l'individuo non può celebrarlo o nessun edificio va bene.
+static func find_idle_target(
+	rules: SocialRiteRules, individual: HumanIndividual, age_band: int, world: World, individuals: Array, game_data: GameData
+) -> Building:
+	if rules == null or individual == null or world == null or game_data == null:
+		return null
+	if not RiteService.can_celebrate(rules, individual, age_band):
+		return null
+	var busy := RiteService.get_active_rite_buildings(individuals)
+	var today := game_data.get_absolute_day()
+	var last_end: Dictionary = game_data.building_runtime.last_social_rite_end_day
+	var predicate := func(candidate: Variant) -> bool:
+		var building := candidate as Building
+		if building == null or busy.has(building.id) or building.requested_rite_id != "":
+			return false
+		if not RiteService.get_rites_for_building(building).has(rules):
+			return false
+		if last_end.has(building.id) and float(today - int(last_end[building.id])) < rules.idle_cooldown_days:
+			return false
+		if rules is BanquetRiteRules and not _has_idle_food_stock(building, rules as BanquetRiteRules, world):
+			return false
+		return get_start_rejection(building, rules, individuals, game_data) == ""
+	return SpatialSelectionService.find_nearest(
+		world.buildings, individual.position, individual.home_macro_coords, predicate, [],
+		PathfindingService.reachability_for(individual)
+	) as Building
+
+
+# Soglia di calorie di un banchetto spontaneo (2026-10-17): fissa nei dati (BanquetRiteRules.idle_calorie_threshold); col
+# gestore scorte sbloccato quella della regola "Banchetti spontanei" (GameData.stock_banquet_calories). Mai sotto il minimo.
+static func get_idle_calorie_threshold(rules: BanquetRiteRules) -> int:
+	if rules == null:
+		return 0
+	var threshold := rules.idle_calorie_threshold
+	if _is_stock_manager_unlocked():
+		threshold = GameSettings.active_game_data.stock_banquet_calories
+	return maxi(threshold, rules.min_calorie_threshold)
+
+
+# Gestore scorte sbloccato: la stessa idea che apre il cassetto Gestione scorte (WarehousePanel.REQUIRED_IDEA_ID).
+static func _is_stock_manager_unlocked() -> bool:
+	var folk := GameSettings.active_human_folk
+	return GameSettings.active_game_data != null and folk != null and folk.completed_ideas.has(WarehousePanel.REQUIRED_IDEA_ID)
+
+
+# Freno del banchetto spontaneo: cibo nei magazzini del villaggio (VillageStockService, lo spiazzo non conta) almeno
+# idle_min_stock_ratio × la soglia spontanea. Col gestore scorte sbloccato vale solo se la casella "solo se consumano meno
+# di un terzo delle scorte" è accesa (GameData.stock_banquet_safe_only). Oggi le scorte sono di tutto il mondo
+# (VillageStockService non distingue i villaggi).
+static func _has_idle_food_stock(_building: Building, rules: BanquetRiteRules, world: World) -> bool:
+	if _is_stock_manager_unlocked() and not GameSettings.active_game_data.stock_banquet_safe_only:
+		return true
+	var food_calories := VillageStockService.get_food_calories(VillageStockService.get_village_stock(world))
+	return food_calories >= rules.idle_min_stock_ratio * float(get_idle_calorie_threshold(rules))
+
+
+# Preparazione finita (SocialRiteAttendAction dell'organizzatore, 2026-10-16): materiale minimo nell'edificio, si convoca
 # il villaggio e comincia l'attesa dei partecipanti.
 static func on_prepared(building: Building, organizer: HumanIndividual, individuals: Array, game_data: GameData) -> void:
 	var record := find_rite(game_data, building.id)
@@ -190,7 +386,9 @@ static func _begin(record: Dictionary, building: Building, rules: SocialRiteRule
 	record["phase"] = PHASE_FEASTING
 	record["elapsed"] = 0.0
 	if rules is BanquetRiteRules:
-		_banquet_open_cooking(record, building, rules as BanquetRiteRules)
+		record.erase(MATERIAL_QUOTA_KEY)
+		_banquet_light_bonfire(building, rules as BanquetRiteRules)
+		_banquet_serve_food(record, building)
 	log_event("all'edificio #%d comincia '%s' (%d partecipanti che contano)." % [building.id, rules.id, _count_counting(record)])
 
 
@@ -269,14 +467,12 @@ static func advance(building: Building, delta: float, individuals: Array, game_d
 			_log_missing(record, individuals)
 			cancel(building, individuals, game_data, false)
 		return
-	if rules is BanquetRiteRules:
-		_banquet_cook(record, building, rules as BanquetRiteRules, delta, individuals)
 	if float(record["elapsed"]) >= rules.feast_days:
 		_finish(record, building, rules, individuals, game_data)
 
 
-# Annulla il rito di `building` (X del rito, attesa scaduta, organizzatore non convocabile): l'ordine di cottura si
-# annulla, la carne cruda non cotta resta nel focolare. `stop_tasks` (X del giocatore): le task si chiudono subito
+# Annulla il rito di `building` (X del rito, attesa scaduta, organizzatore non convocabile): banchetto, cibo e
+# combustibile già portati restano nello spiazzo per il prossimo. `stop_tasks` (X del giocatore): le task si chiudono subito
 # e i pipottini fermati vengono restituiti, da rimettere in attività; false (attesa scaduta, chiamato da dentro un'azione
 # del rito): le task finiscono da sole, perché SocialRiteAttendAction vede il rito sparito.
 static func cancel(building: Building, individuals: Array, game_data: GameData, stop_tasks: bool = true) -> Array[HumanIndividual]:
@@ -285,8 +481,6 @@ static func cancel(building: Building, individuals: Array, game_data: GameData, 
 	if record.is_empty():
 		return freed
 	game_data.active_social_rites.erase(record)
-	if String(record.get("order_key", "")) != "":
-		ProductionService.cancel_order(building, String(record["order_key"]))
 	for member in individuals:
 		var individual := member as HumanIndividual
 		if individual == null:
@@ -339,8 +533,6 @@ static func _log_missing(record: Dictionary, individuals: Array) -> void:
 
 static func _finish(record: Dictionary, building: Building, rules: SocialRiteRules, individuals: Array, game_data: GameData) -> void:
 	game_data.active_social_rites.erase(record)
-	if String(record.get("order_key", "")) != "":
-		ProductionService.cancel_order(building, String(record["order_key"]))
 	var participants: Dictionary = record["participants"]
 	var present: Array[HumanIndividual] = []
 	var pot_calories := float(record.get("pot_calories", 0.0))
@@ -354,12 +546,10 @@ static func _finish(record: Dictionary, building: Building, rules: SocialRiteRul
 	for individual in present:
 		var is_organizer := individual.id == int(record["organizer_id"])
 		if banquet != null:
-			# Calorie della carne cotta divise tra i presenti (eccedenza oltre la capienza persa).
+			# Calorie del piatto comune divise tra i presenti (eccedenza oltre la capienza persa).
 			individual.food_calories_held += pot_calories / share if share > 0.0 else 0.0
 			individual.food_space_used += pot_space / share if share > 0.0 else 0.0
 			HumanFoodPouchService.clamp_to_capacity(individual)
-			if is_organizer and int(record.get("cooked", 0)) > 0:
-				individual.skill_crafting = minf(individual.skill_crafting + banquet.crafting_gain_organizer, HumanIndividual.SKILL_MAX)
 		individual.current_happiness = clampf(individual.current_happiness + rules.happiness_gain, 0.0, maxf(individual.max_happiness, individual.current_happiness))
 		var social_gain := rules.social_gain_organizer if is_organizer else rules.social_gain_participant
 		individual.skill_social = minf(individual.skill_social + social_gain, HumanIndividual.SKILL_MAX)
@@ -373,80 +563,59 @@ static func _finish(record: Dictionary, building: Building, rules: SocialRiteRul
 			else:
 				students.append(individual)
 		TeachingRiteService.apply_lesson(record, building, rules as TeachingRiteRules, teacher, students, game_data)
-	# Coesione (2026-10-14): fissa per il rito, più — per il banchetto — una quota per ogni carne cotta (quanto si festeggia).
+	# Fine per l'attesa dei riti spontanei sullo stesso edificio (2026-10-17, ogni rito sociale).
+	game_data.building_runtime.last_social_rite_end_day[building.id] = game_data.get_absolute_day()
+	# Coesione (2026-10-14): fissa per il rito, più — per il banchetto — una quota per le calorie servite (2026-10-17).
 	var village := _village_of(building)
 	var cohesion_gain := rules.cohesion_gain
 	if banquet != null:
-		cohesion_gain += banquet.cohesion_gain_per_meat * float(int(record.get("cooked", 0)))
+		cohesion_gain += banquet.cohesion_gain_per_1000_calories * pot_calories / 1000.0
 	var cohesion_before := village.cohesion if village != null else 0.0
 	VillageCohesionService.add(village, cohesion_gain, "rito sociale '%s'" % rules.id)
 	if building.requested_rite_id == rules.id:
 		building.requested_rite_id = ""
 	log_event("all'edificio #%d '%s' finisce: %d presenti%s; coesione %s." % [
 		building.id, rules.id, present.size(),
-		", %d carni cotte, %d calorie divise" % [int(record.get("cooked", 0)), roundi(pot_calories)] if banquet != null else "",
+		", %d calorie divise" % roundi(pot_calories) \
+			if banquet != null else "",
 		"%.2f -> %.2f (+%.2f)" % [cohesion_before, village.cohesion, cohesion_gain] if village != null else "nessun villaggio",
 	])
 
 
-# --- banchetto: cottura ---
+# --- banchetto: falò e piatto comune ---
 
-# Pezzi che si possono cuocere adesso (2026-10-15): il minimo tra la carne cruda nel focolare e i pezzi che il
-# combustibile copre (combustibile disponibile senza contare la carne / combustibile di un pezzo).
-static func _banquet_cookable_units(building: Building, rules: BanquetRiteRules) -> int:
-	var raw_meat := _stored_quantity(building, rules.raw_meat_resource)
-	var fuel_per_piece := ProductionService.get_required_fuel(building, rules.cooked_resource)
-	if fuel_per_piece <= 0.0:
-		return raw_meat
-	var recipe := CaloricCalculator.get_caloric_source_rules(rules.cooked_resource)
-	var reserved: Dictionary = {}
-	if recipe != null:
-		for input_name in recipe.recipe_inputs.keys():
-			reserved[input_name] = int(recipe.recipe_inputs[input_name]) * raw_meat
-	var fuel_units := floori((ProductionService.get_available_fuel(building, reserved) + ProductionService.FUEL_EPSILON) / fuel_per_piece)
-	return mini(raw_meat, fuel_units)
-
-
-static func _banquet_open_cooking(record: Dictionary, building: Building, rules: BanquetRiteRules) -> void:
-	# Tanti pezzi quanti ne coprono insieme carne e combustibile (2026-10-15): il resto della carne resta cruda.
-	var units := _banquet_cookable_units(building, rules)
-	record["meat_units"] = units
-	record["order_key"] = ProductionService.create_order(
-		building, rules.cooked_resource, units, int(record["organizer_id"]), false, false, true
-	)
-	# Riservato al rito: niente coda dei lavori né riga "Assegna" nel pannello (2026-10-14).
-	ProductionService.mark_order_reserved(building, String(record["order_key"]), rules.id)
-	log_event("all'edificio #%d si cuociono %d %s entro %.1f giorni." % [building.id, units, rules.raw_meat_resource, rules.feast_days])
+# Falò (2026-10-17): brucia dal deposito dell'edificio combustibile fino a coprire bonfire_fuel (risorse in ordine di
+# nome, come ProductionService._consume_fuel); il resto resta.
+static func _banquet_light_bonfire(building: Building, rules: BanquetRiteRules) -> void:
+	var remaining := rules.bonfire_fuel
+	var names: Array = building.stored_resources.keys()
+	names.sort()
+	for raw_name in names:
+		if remaining <= ProductionService.FUEL_EPSILON:
+			break
+		var resource_name := String(raw_name)
+		var fuel_value := ProductionService.get_fuel_value(resource_name)
+		if fuel_value <= 0.0:
+			continue
+		var wanted := mini(int(ceil(remaining / fuel_value - ProductionService.FUEL_EPSILON)), _stored_quantity(building, resource_name))
+		var burned := BuildingStorageService.withdraw_stored(building, resource_name, wanted)
+		remaining -= float(burned) * fuel_value
+		log_event("all'edificio #%d il falò brucia %d %s." % [building.id, burned, resource_name])
 
 
-# Cottura dell'organizzatore presente: tutta la carne entro la durata della festa (lavoro di tutti i pezzi / durata),
-# più in fretta con la skill della Produce (fattore minimo 1). Ogni pezzo pronto va subito nel piatto comune.
-static func _banquet_cook(record: Dictionary, building: Building, rules: BanquetRiteRules, delta: float, individuals: Array) -> void:
-	var order_key := String(record.get("order_key", ""))
-	if order_key == "" or not ProductionService.has_order(building, order_key):
-		return
-	var organizer := _find(individuals, int(record["organizer_id"]))
-	if organizer == null or not is_attending(organizer, building.id):
-		return
-	var unit_labor := ProductionService.get_required_labor(building, rules.cooked_resource)
-	var labor_per_day := float(int(record.get("meat_units", 0))) * unit_labor / maxf(rules.feast_days, 0.001)
-	ProductionService.add_labor(building, order_key, labor_per_day * delta * maxf(SkillEffectService.get_factor(PRODUCE_SKILL_KEY, organizer), 1.0))
-	var cooked_rules := CaloricCalculator.get_caloric_source_rules(rules.cooked_resource)
-	while ProductionService.has_order(building, order_key) and ProductionService.get_labor_accumulated(building, order_key) >= unit_labor:
-		var leftover := ProductionService.get_labor_accumulated(building, order_key) - unit_labor
-		var produced := ProductionService.complete_production(building, order_key)
-		if produced <= 0:
-			return
-		# complete_production azzera il lavoro dell'ordine: il lavoro in più di questo fotogramma resta per il pezzo dopo.
-		ProductionService.add_labor(building, order_key, leftover)
-		var taken := ProductionService.withdraw_output(building, rules.cooked_resource, produced)
-		if cooked_rules != null:
-			record["pot_calories"] = float(record["pot_calories"]) + float(taken) * cooked_rules.calories_per_unit
-			record["pot_space"] = float(record["pot_space"]) + float(taken) * cooked_rules.space_per_unit
-		record["cooked"] = int(record["cooked"]) + taken
-		log_event("#%d %s cuoce %d %s all'edificio #%d (%d/%d)." % [
-			organizer.id, organizer.name, taken, rules.cooked_resource, building.id, int(record["cooked"]), int(record["meat_units"])
-		])
+# Piatto comune (2026-10-17): tutto il cibo del deposito dell'edificio.
+static func _banquet_serve_food(record: Dictionary, building: Building) -> void:
+	for raw_name in building.stored_resources.keys().duplicate():
+		var resource_name := String(raw_name)
+		var resource_rules := CaloricCalculator.get_caloric_source_rules(resource_name)
+		if resource_rules == null or resource_rules.category != SecondaryResourceTypes.Category.FOOD:
+			continue
+		var taken := BuildingStorageService.withdraw_stored(building, resource_name, _stored_quantity(building, resource_name))
+		if taken <= 0:
+			continue
+		record["pot_calories"] = float(record["pot_calories"]) + float(taken) * resource_rules.calories_per_unit
+		record["pot_space"] = float(record["pot_space"]) + float(taken) * resource_rules.space_per_unit
+		log_event("all'edificio #%d nel piatto comune %d %s." % [building.id, taken, resource_name])
 
 
 # --- interni ---
@@ -479,6 +648,15 @@ static func _skip_reason(individual: HumanIndividual, game_data: GameData) -> St
 	var task := individual.current_task
 	if task != null and not task.is_finished() and task.interrupt_priority != -1:
 		return "bisogno urgente"
+	# Già chiamato a un altro rito sociale ancora in corso (2026-10-17, bugfix: la seconda lezione rubava i bambini alla
+	# prima). Una task di un rito già sparito non conta: verrà scartata.
+	var tasks: Array[Task] = []
+	if task != null and not task.is_finished():
+		tasks.append(task)
+	tasks.append_array(individual.task_queue)
+	for other in tasks:
+		if other.task_name == TASK_NAME and not find_rite(game_data, int(other.context.get(CONTEXT_BUILDING_ID, -1))).is_empty():
+			return "a un altro rito"
 	return ""
 
 

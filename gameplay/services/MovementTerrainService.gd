@@ -49,9 +49,10 @@ static func rebuild(cell: LiveMacroCell, macro_world: World) -> void:
 			var speed: float = building.rules.movement_speed_multiplier
 			if is_equal_approx(stamina, 1.0) and is_equal_approx(speed, 1.0):
 				continue
-			var key := Vector2i(building.micro_x, building.micro_y)
-			var existing: Vector2 = modifiers.get(key, Vector2.ONE)
-			modifiers[key] = Vector2(existing.x * stamina, existing.y * speed)
+			# Ingombro (2026-10-17): su tutte le microcelle del rettangolo.
+			for key in BuildingFootprint.cells_of(building):
+				var existing: Vector2 = modifiers.get(key, Vector2.ONE)
+				modifiers[key] = Vector2(existing.x * stamina, existing.y * speed)
 	cell.movement_modifiers = modifiers
 	cell.movement_version = _next_version
 	_next_version += 1

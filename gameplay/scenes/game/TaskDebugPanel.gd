@@ -53,7 +53,7 @@ func _ready() -> void:
 	header_label.text = "🐞 " + tr("task_debug_panel_header")
 	header_label.add_theme_color_override("font_color", DEBUG_LABEL_COLOR)
 	refresh_button.text = REFRESH_BUTTON_TEXT
-	refresh_button.tooltip_text = tr("task_debug_panel_refresh_button_tooltip")
+	refresh_button.tooltip_text = TooltipText.wrap(tr("task_debug_panel_refresh_button_tooltip"))
 	refresh_button.pressed.connect(refresh)
 	clear_button.text = tr("task_debug_panel_clear_button")
 	clear_button.pressed.connect(_on_clear_pressed)

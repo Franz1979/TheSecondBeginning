@@ -168,8 +168,8 @@ func load_game_from_json(file_path: String) -> LoadedGame:
 	for raw_rite in data["game"].get("active_social_rites", []):
 		var social_rite: Dictionary = (raw_rite as Dictionary).duplicate(true)
 		social_rite.erase("_frame")
-		for int_key in ["building_id", "organizer_id", "cooked", "meat_units"]:
-			social_rite[int_key] = int(social_rite.get(int_key, 0 if int_key in ["cooked", "meat_units"] else -1))
+		for int_key in ["building_id", "organizer_id"]:
+			social_rite[int_key] = int(social_rite.get(int_key, -1))
 		var convoked: Array = []
 		for raw_id in social_rite.get("convoked", []):
 			convoked.append(int(raw_id))
@@ -240,6 +240,9 @@ func load_game_from_json(file_path: String) -> LoadedGame:
 	game_data.stock_excess_meat_destination = String(data["game"].get("stock_excess_meat_destination", "warehouse"))
 	# Regola del combustibile: il primo salvataggio (un solo N per tutti, "stock_fuel_min_per_building") la accende soltanto.
 	game_data.stock_fuel_rule_enabled = bool(data["game"].get("stock_fuel_rule_enabled", int(data["game"].get("stock_fuel_min_per_building", 0)) > 0))
+	# Regola dei banchetti spontanei (2026-10-17) — 500 e accesa per i salvataggi precedenti.
+	game_data.stock_banquet_calories = int(data["game"].get("stock_banquet_calories", 500))
+	game_data.stock_banquet_safe_only = bool(data["game"].get("stock_banquet_safe_only", true))
 	game_data.stock_fuel_min_by_type.clear()
 	var raw_fuel_mins = data["game"].get("stock_fuel_min_by_type", {})
 	if raw_fuel_mins is Dictionary:
@@ -685,6 +688,8 @@ func load_game_from_json(file_path: String) -> LoadedGame:
 			building.repair_auto_excluded = bool(building_data.get("repair_auto_excluded", false))
 			# Rito ordinato dal pannello (2026-10-14) — "" per i salvataggi precedenti.
 			building.requested_rite_id = String(building_data.get("requested_rite_id", ""))
+			# Soglia di calorie del banchetto (2026-10-17) — -1 (valore dei dati) per i salvataggi precedenti.
+			building.feast_calorie_threshold = int(building_data.get("feast_calorie_threshold", -1))
 			# Macerie (2026-10-10) — "" per i salvataggi precedenti.
 			building.rubble_source_name = String(building_data.get("rubble_source_name", ""))
 			building.rubble_auto_excluded = bool(building_data.get("rubble_auto_excluded", false))

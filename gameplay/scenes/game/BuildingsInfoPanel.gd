@@ -138,7 +138,7 @@ func _build_linear_group_row(pieces: Array) -> Control:
 	label.clip_text = true
 	label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	label.text = "%s (%d) — %s" % [type_name, pieces.size(), status_text]
-	label.tooltip_text = label.text
+	label.tooltip_text = TooltipText.wrap(label.text)
 	label.mouse_filter = Control.MOUSE_FILTER_PASS
 	var row := HBoxContainer.new()
 	row.add_child(_make_center_button(target))
@@ -150,7 +150,7 @@ func _build_linear_group_row(pieces: Array) -> Control:
 func _make_center_button(building: Building) -> Button:
 	var center_button := Button.new()
 	center_button.text = CENTER_BUTTON_TEXT
-	center_button.tooltip_text = tr("buildings_panel_center_button_tooltip")
+	center_button.tooltip_text = TooltipText.wrap(tr("buildings_panel_center_button_tooltip"))
 	center_button.flat = true
 	center_button.add_theme_font_size_override("font_size", 10)
 	center_button.custom_minimum_size = Vector2(20, 0)

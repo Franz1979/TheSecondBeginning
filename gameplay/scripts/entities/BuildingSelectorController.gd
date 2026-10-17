@@ -20,6 +20,8 @@ const CELL_SIZE: int = 10 # stesso fattore pixel/microcella di MicroCellRenderer
 # il recinto seleziona l'edificio, coerente col suo vero ingombro visivo invece di una tolleranza
 # arbitraria scollegata da cosa si vede a schermo.
 const CLICK_RADIUS_PX: float = MicroCellRenderer.BUILDING_FENCE_RADIUS
+# Distanza di un click dentro un edificio grande (vedi try_select): appena sotto CLICK_RADIUS_PX.
+const LARGE_BUILDING_HIT_DISTANCE_PX: float = CLICK_RADIUS_PX * 0.99
 
 
 # Ritorna {"macro_coords": Vector2i, "building_id": int, "distance": float (px, spazio locale
@@ -45,6 +47,12 @@ func try_select(event: InputEvent, live_cells: Dictionary, buildings: Array, req
 				continue
 			var screen_pos := Vector2(building.micro_x * CELL_SIZE + half, building.micro_y * CELL_SIZE + half)
 			var distance: float = local_mouse.distance_to(screen_pos)
+			# Edifici grandi (2026-10-17): si selezionano cliccando dentro il rettangolo, con una distanza "debole" appena sotto
+			# CLICK_RADIUS_PX invece di 0 — un individuo, un mucchio o un altro oggetto sotto il click (entro il raggio) vince
+			# sempre, altrimenti dentro lo spiazzo non si selezionerebbe nient'altro. 1x1: dal centro, come prima.
+			if building.rules != null and BuildingFootprint.is_large(building.rules):
+				var rect := Rect2(Vector2(building.micro_x, building.micro_y) * CELL_SIZE, Vector2(BuildingFootprint.size_of(building)) * CELL_SIZE)
+				distance = LARGE_BUILDING_HIT_DISTANCE_PX if rect.has_point(local_mouse) else INF
 			if distance < best_distance:
 				best_distance = distance
 				best = {"macro_coords": coords, "building_id": building.id, "distance": distance}

@@ -253,7 +253,7 @@ var _current_individual: HumanIndividual
 
 
 func _ready() -> void:
-	cancel_task_button.tooltip_text = tr("individual_cancel_task_tooltip")
+	cancel_task_button.tooltip_text = TooltipText.wrap(tr("individual_cancel_task_tooltip"))
 	cancel_task_button.pressed.connect(func(): cancel_task_requested.emit(_current_individual))
 	_build_kill_debug_button()
 	# Layout riga tool (2026-09-08, semplificata 2026-09-13 quando il quadratino trasporto è
@@ -335,7 +335,7 @@ func _build_header_buttons() -> void:
 	header_buttons_box.add_child(_house_button)
 	_info_button = Button.new()
 	_info_button.text = FAMILY_BUTTON_TEXT
-	_info_button.tooltip_text = tr("individual_family_tooltip")
+	_info_button.tooltip_text = TooltipText.wrap(tr("individual_family_tooltip"))
 	_info_button.focus_mode = Control.FOCUS_NONE
 	_info_button.toggle_mode = true
 	_info_button.toggled.connect(_on_info_toggled)
@@ -378,7 +378,7 @@ func _build_kill_debug_button() -> void:
 	kill_button.flat = true
 	kill_button.focus_mode = Control.FOCUS_NONE
 	kill_button.add_theme_font_size_override("font_size", 9)
-	kill_button.tooltip_text = tr("individual_kill_debug_button")
+	kill_button.tooltip_text = TooltipText.wrap(tr("individual_kill_debug_button"))
 	kill_button.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
 	id_label.add_child(kill_button)
 	kill_button.set_anchors_preset(Control.PRESET_TOP_RIGHT)
@@ -414,7 +414,7 @@ func _on_type_toggled(pressed: bool) -> void:
 # Scheda del tipo (2026-10-05): righe già risolte da GameScene (HumanTypeInfoService), stesso tooltip delle righe come
 # la ℹ degli edifici.
 func set_type_info(rows: Array[Dictionary]) -> void:
-	_type_button.tooltip_text = _type_block.set_rows(rows)
+	_type_button.tooltip_text = TooltipText.wrap(_type_block.set_rows(rows))
 	_type_button.set_pressed_no_signal(_type_open)
 	_type_block.visible = _type_open
 
@@ -449,9 +449,9 @@ func set_identity_details(details: Dictionary) -> void:
 	var house: Dictionary = details.get("house", {})
 	_house_building_id = int(house.get("id", -1)) if not house.is_empty() else -1
 	_house_button.disabled = _house_building_id == -1
-	_house_button.tooltip_text = tr("individual_no_house") if _house_building_id == -1 else tr("individual_house_tooltip").format({
+	_house_button.tooltip_text = TooltipText.wrap(tr("individual_no_house") if _house_building_id == -1 else tr("individual_house_tooltip").format({
 		"name": String(house.get("name", "")), "id": _house_building_id
-	})
+	}))
 	header_buttons_box.visible = visible
 
 
@@ -557,7 +557,7 @@ func show_individual(
 	stamina_label.text = tr("individual_stamina_label")
 	stamina_bar.max_value = max_stamina
 	stamina_bar.value = current_stamina
-	stamina_bar.tooltip_text = "%d/%d" % [int(current_stamina), int(max_stamina)]
+	stamina_bar.tooltip_text = TooltipText.wrap("%d/%d" % [int(current_stamina), int(max_stamina)])
 
 	# 5 nuovi parametri vitali (2026-09-13) — 5 blocchi identici al blocco stamina sopra, copiati
 	# uno per uno (stessa forma esatta, nessuna astrazione condivisa: coerente con lo stile già
@@ -583,44 +583,44 @@ func show_individual(
 		food_space_bar.add_theme_stylebox_override("fill", _food_bar_fill_body_reserve)
 		food_space_bar.max_value = body_calories_capacity
 		food_space_bar.value = body_calories
-		food_space_bar.tooltip_text = tr("individual_supplies_tooltip_body").format({
+		food_space_bar.tooltip_text = TooltipText.wrap(tr("individual_supplies_tooltip_body").format({
 			"current": int(round(body_calories)), "max": int(round(body_calories_capacity))
-		})
+		}))
 	else:
 		food_space_bar.add_theme_stylebox_override("fill", _food_bar_fill_normal)
 		food_space_bar.max_value = food_space_capacity
 		food_space_bar.value = food_space_used
-		food_space_bar.tooltip_text = "%s - %s" % [
+		food_space_bar.tooltip_text = TooltipText.wrap("%s - %s" % [
 			tr("individual_supplies_tooltip_pouch").format({"used": int(food_space_used), "capacity": int(food_space_capacity)}),
 			tr("individual_food_calories_value").format({"calories": int(round(food_calories_held))})
-		]
+		])
 
 	thirst_label.text = tr("individual_thirst_label")
 	thirst_bar.max_value = max_thirst
 	thirst_bar.value = current_thirst
-	thirst_bar.tooltip_text = "%d/%d" % [int(current_thirst), int(max_thirst)]
+	thirst_bar.tooltip_text = TooltipText.wrap("%d/%d" % [int(current_thirst), int(max_thirst)])
 
 	health_label.text = tr("individual_health_label")
 	health_bar.max_value = max_health
 	health_bar.value = current_health
-	health_bar.tooltip_text = "%d/%d" % [int(current_health), int(max_health)]
+	health_bar.tooltip_text = TooltipText.wrap("%d/%d" % [int(current_health), int(max_health)])
 
 	mind_section_label.text = tr("individual_mind_section_label")
 
 	happiness_label.text = tr("individual_happiness_label")
 	happiness_bar.max_value = max_happiness
 	happiness_bar.value = current_happiness
-	happiness_bar.tooltip_text = "%d/%d" % [int(current_happiness), int(max_happiness)]
+	happiness_bar.tooltip_text = TooltipText.wrap("%d/%d" % [int(current_happiness), int(max_happiness)])
 
 	loyalty_label.text = tr("individual_loyalty_label")
 	loyalty_bar.max_value = max_loyalty
 	loyalty_bar.value = current_loyalty
-	loyalty_bar.tooltip_text = "%d/%d" % [int(current_loyalty), int(max_loyalty)]
+	loyalty_bar.tooltip_text = TooltipText.wrap("%d/%d" % [int(current_loyalty), int(max_loyalty)])
 
 	faith_label.text = tr("individual_faith_label")
 	faith_bar.max_value = max_faith
 	faith_bar.value = current_faith
-	faith_bar.tooltip_text = "%d/%d" % [int(current_faith), int(max_faith)]
+	faith_bar.tooltip_text = TooltipText.wrap("%d/%d" % [int(current_faith), int(max_faith)])
 
 	# Sezione Skills (2026-09-13, richiesta utente) — 6 blocchi identici, stessa forma esatta dei
 	# blocchi vitali sopra (nessuna astrazione condivisa, coerente con lo stile del file). max_value
@@ -632,52 +632,52 @@ func show_individual(
 
 	skill_leadership_bar.max_value = HumanIndividual.SKILL_MAX
 	skill_leadership_bar.value = skill_leadership
-	skill_leadership_bar.tooltip_text = "%d/%d" % [int(skill_leadership), int(HumanIndividual.SKILL_MAX)]
+	skill_leadership_bar.tooltip_text = TooltipText.wrap("%d/%d" % [int(skill_leadership), int(HumanIndividual.SKILL_MAX)])
 	skill_leadership_caption.text = tr("skill_leadership_label")
 
 	skill_builder_bar.max_value = HumanIndividual.SKILL_MAX
 	skill_builder_bar.value = skill_builder
-	skill_builder_bar.tooltip_text = "%d/%d" % [int(skill_builder), int(HumanIndividual.SKILL_MAX)]
+	skill_builder_bar.tooltip_text = TooltipText.wrap("%d/%d" % [int(skill_builder), int(HumanIndividual.SKILL_MAX)])
 	skill_builder_caption.text = tr("skill_builder_label")
 
 	skill_management_bar.max_value = HumanIndividual.SKILL_MAX
 	skill_management_bar.value = skill_management
-	skill_management_bar.tooltip_text = "%d/%d" % [int(skill_management), int(HumanIndividual.SKILL_MAX)]
+	skill_management_bar.tooltip_text = TooltipText.wrap("%d/%d" % [int(skill_management), int(HumanIndividual.SKILL_MAX)])
 	skill_management_caption.text = tr("skill_management_label")
 
 	skill_transporter_bar.max_value = HumanIndividual.SKILL_MAX
 	skill_transporter_bar.value = skill_transporter
-	skill_transporter_bar.tooltip_text = "%d/%d" % [int(skill_transporter), int(HumanIndividual.SKILL_MAX)]
+	skill_transporter_bar.tooltip_text = TooltipText.wrap("%d/%d" % [int(skill_transporter), int(HumanIndividual.SKILL_MAX)])
 	skill_transporter_caption.text = tr("skill_transporter_label")
 
 	skill_gathering_bar.max_value = HumanIndividual.SKILL_MAX
 	skill_gathering_bar.value = skill_gathering
-	skill_gathering_bar.tooltip_text = "%d/%d" % [int(skill_gathering), int(HumanIndividual.SKILL_MAX)]
+	skill_gathering_bar.tooltip_text = TooltipText.wrap("%d/%d" % [int(skill_gathering), int(HumanIndividual.SKILL_MAX)])
 	skill_gathering_caption.text = tr("skill_gathering_label")
 
 	skill_cognition_bar.max_value = HumanIndividual.SKILL_MAX
 	skill_cognition_bar.value = skill_cognition
-	skill_cognition_bar.tooltip_text = "%d/%d" % [int(skill_cognition), int(HumanIndividual.SKILL_MAX)]
+	skill_cognition_bar.tooltip_text = TooltipText.wrap("%d/%d" % [int(skill_cognition), int(HumanIndividual.SKILL_MAX)])
 	skill_cognition_caption.text = tr("skill_cognition_label")
 
 	skill_hunting_bar.max_value = HumanIndividual.SKILL_MAX
 	skill_hunting_bar.value = skill_hunting
-	skill_hunting_bar.tooltip_text = "%d/%d" % [int(skill_hunting), int(HumanIndividual.SKILL_MAX)]
+	skill_hunting_bar.tooltip_text = TooltipText.wrap("%d/%d" % [int(skill_hunting), int(HumanIndividual.SKILL_MAX)])
 	skill_hunting_caption.text = tr("skill_hunting_label")
 
 	skill_crafting_bar.max_value = HumanIndividual.SKILL_MAX
 	skill_crafting_bar.value = skill_crafting
-	skill_crafting_bar.tooltip_text = "%d/%d" % [int(skill_crafting), int(HumanIndividual.SKILL_MAX)]
+	skill_crafting_bar.tooltip_text = TooltipText.wrap("%d/%d" % [int(skill_crafting), int(HumanIndividual.SKILL_MAX)])
 	skill_crafting_caption.text = tr("skill_crafting_label")
 
 	skill_ritual_bar.max_value = HumanIndividual.SKILL_MAX
 	skill_ritual_bar.value = skill_ritual
-	skill_ritual_bar.tooltip_text = "%d/%d" % [int(skill_ritual), int(HumanIndividual.SKILL_MAX)]
+	skill_ritual_bar.tooltip_text = TooltipText.wrap("%d/%d" % [int(skill_ritual), int(HumanIndividual.SKILL_MAX)])
 	skill_ritual_caption.text = tr("skill_ritual_label")
 
 	skill_social_bar.max_value = HumanIndividual.SKILL_MAX
 	skill_social_bar.value = skill_social
-	skill_social_bar.tooltip_text = "%d/%d" % [int(skill_social), int(HumanIndividual.SKILL_MAX)]
+	skill_social_bar.tooltip_text = TooltipText.wrap("%d/%d" % [int(skill_social), int(HumanIndividual.SKILL_MAX)])
 	skill_social_caption.text = tr("skill_social_label")
 
 	# Capacità di trasporto (2026-09-13, richiesta utente — spostata in FONDO alle barre, dopo i 5
@@ -690,7 +690,7 @@ func show_individual(
 	# ricevuti dal chiamante (used_carry_space/max_carry_capacity) non vengono toccati.
 	carry_bar.max_value = roundf(max_carry_capacity)
 	carry_bar.value = roundf(used_carry_space)
-	carry_bar.tooltip_text = "%s/%s" % [_format_space(used_carry_space), _format_space(max_carry_capacity)]
+	carry_bar.tooltip_text = TooltipText.wrap("%s/%s" % [_format_space(used_carry_space), _format_space(max_carry_capacity)])
 
 	_update_carried_resource_boxes(individual.carried_resources)
 	_update_tool_slots(individual)
@@ -781,7 +781,7 @@ func _update_carried_resource_box(slot: int, resource_name: String, quantity: in
 		return
 
 	slot_box.color = IconRegistry.get_resource_color(resource_name)
-	slot_box.tooltip_text = IconRegistry.get_resource_display_name(resource_name)
+	slot_box.tooltip_text = TooltipText.wrap(IconRegistry.get_resource_display_name(resource_name))
 
 	var icon_node: Control = IconRegistry.get_resource_icon_node(resource_name)
 	if icon_node != null:
@@ -909,13 +909,13 @@ func _update_tool_slots(individual: HumanIndividual) -> void:
 			label.visible = true
 			label.text = "T"
 			label.add_theme_color_override("font_color", EMPTY_TOOL_SLOT_TEXT_COLOR)
-			box.tooltip_text = tr("tool_slot_empty_tooltip")
+			box.tooltip_text = TooltipText.wrap(tr("tool_slot_empty_tooltip"))
 			box.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
 			_update_tool_uses_bar(slot, 0, 0)
 			continue
 
 		label.add_theme_color_override("font_color", Color.WHITE)
-		box.tooltip_text = tr("tool_slot_full_tooltip").format({"tool": IconRegistry.get_resource_display_name(tool_name)})
+		box.tooltip_text = TooltipText.wrap(tr("tool_slot_full_tooltip").format({"tool": IconRegistry.get_resource_display_name(tool_name)}))
 		# Usi residui (2026-09-26, attrezzi come istanze — step 3): riga in più nel tooltip e barra in basso
 		# nel riquadro. Un attrezzo che non si usura (max_uses <= 0) non mostra né l'una né l'altra.
 		var max_uses: int = ToolInstance.get_max_uses(tool_name)

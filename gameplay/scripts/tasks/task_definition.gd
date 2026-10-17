@@ -86,3 +86,18 @@ extends Resource
 # valorizza esplicitamente (nessuna diversa da wander.tres/play.tres/leisure_rest.tres lo fa oggi,
 # dato che solo queste tre sono task perditempo — vedi is_idle_activity sopra).
 @export var idle_weight: float = 1.0
+
+# Peso idle per fascia d'età (2026-10-17, richiesta utente — lezione idle: maturi e anziani con pesi diversi): fascia
+# (HumanTypes.AgeBand, intero) -> peso. Facoltativo: una fascia assente usa idle_weight, quindi le voci che non lo
+# valorizzano restano come prima. Letto tramite idle_weight_for.
+@export var idle_weight_by_age_band: Dictionary = {}
+
+# Rito sociale spontaneo (2026-10-17 — lezione, banchetto): id del rito (RiteRules.id) se questa voce idle, estratta, avvia
+# quel rito (SocialRiteService.start) all'edificio trovato da SocialRiteService.find_idle_target, senza step propri; esclusa
+# a monte se nessun edificio va bene. "" = voce normale.
+@export var idle_social_rite_id: String = ""
+
+
+# Peso idle di questa voce per un individuo della fascia `age_band`.
+func idle_weight_for(age_band: int) -> float:
+	return float(idle_weight_by_age_band.get(age_band, idle_weight))

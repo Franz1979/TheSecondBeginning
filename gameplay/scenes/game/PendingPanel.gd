@@ -90,7 +90,7 @@ func _build_row(entry: Dictionary) -> Control:
 	center_button.custom_minimum_size = Vector2(20, 0)
 	center_button.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
 	center_button.disabled = not enabled
-	center_button.tooltip_text = tr("pending_center_tooltip") if enabled else String(entry.get("disabled_reason", ""))
+	center_button.tooltip_text = TooltipText.wrap(tr("pending_center_tooltip") if enabled else String(entry.get("disabled_reason", "")))
 	center_button.pressed.connect(func(): entry_activated.emit(entry))
 	row.add_child(center_button)
 	# Il testo non è cliccabile (2026-10-07, richiesta utente): il gesto è solo il 🎯. Resta il tooltip.
@@ -99,7 +99,7 @@ func _build_row(entry: Dictionary) -> Control:
 	text_box.add_theme_constant_override("separation", 0)
 	row.add_child(text_box)
 	var name_label := _make_label(String(entry.get("name", entry["text"])), FONT_SIZE)
-	name_label.tooltip_text = tooltip
+	name_label.tooltip_text = TooltipText.wrap(tooltip)
 	name_label.mouse_filter = Control.MOUSE_FILTER_PASS
 	if not enabled:
 		name_label.modulate = DISABLED_MODULATE
@@ -107,7 +107,7 @@ func _build_row(entry: Dictionary) -> Control:
 	var detail := String(entry.get("detail", ""))
 	if detail != "":
 		var detail_label := _make_label(detail, DETAIL_FONT_SIZE)
-		detail_label.tooltip_text = tooltip
+		detail_label.tooltip_text = TooltipText.wrap(tooltip)
 		detail_label.mouse_filter = Control.MOUSE_FILTER_PASS
 		detail_label.modulate = DETAIL_MODULATE if enabled else DISABLED_MODULATE
 		text_box.add_child(detail_label)

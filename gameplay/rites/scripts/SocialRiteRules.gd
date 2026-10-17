@@ -22,6 +22,10 @@ extends RiteRules
 @export var organizer_stamina_per_day: float = 0.0
 # Attesa massima dei partecipanti (giorni di gioco): scaduta con meno di min_participants, il rito salta.
 @export var wait_days: float = 1.0
+# Rito spontaneo (2026-10-17 — lezione, poi banchetto; prima TeachingRiteRules.idle_cooldown_days): giorni minimi tra la
+# fine di un rito sociale su un edificio e il successivo partito da solo sullo stesso edificio (attività idle,
+# SocialRiteService.find_idle_target). L'ordine del giocatore non ne tiene conto.
+@export var idle_cooldown_days: float = 0.0
 # Durata del raduno vero e proprio (giorni di gioco).
 @export var feast_days: float = 1.0
 # Effetti a fine rito per ogni partecipante presente (bambini compresi).
@@ -30,7 +34,6 @@ extends RiteRules
 @export var social_gain_organizer: float = 1.0
 # Coesione del villaggio (VillageCohesionService).
 @export var cohesion_gain: float = 0.1
-# Inizio del raduno (2026-10-14): icona che sale sopra l'edificio (emoji) e suono (id di un banco audio, evento
-# "social_rite_started:<id>" di SoundEventMap). Vuoti = niente.
-@export var start_icon: String = ""
+# Inizio del raduno (2026-10-14): suono (id di un banco audio, evento "social_rite_started:<id>" di SoundEventMap); vuoto =
+# niente. L'icona che sale è quella del comando (RiteRules.command_icon_key, 2026-10-17 — prima un campo start_icon a parte).
 @export var start_sound_id: StringName = &""

@@ -26,6 +26,12 @@ extends RefCounted
 # l'edificio che accetta pensieri.
 const LEISURE_RITE_TASK_DEFINITION_PATH := "res://gameplay/scripts/tasks/definitions/leisure_rite.tres"
 
+# Riti sociali spontanei (2026-10-17 — lezione, poi banchetto): voci senza step con TaskDefinition.idle_social_rite_id —
+# se estratte avviano il rito vero (SocialRiteService.start, come l'ordine dal pannello) all'edificio trovato da
+# SocialRiteService.find_idle_target. Escluse a monte senza un edificio adatto.
+const LEISURE_LESSON_TASK_DEFINITION_PATH := "res://gameplay/scripts/tasks/definitions/leisure_lesson.tres"
+const LEISURE_BANQUET_TASK_DEFINITION_PATH := "res://gameplay/scripts/tasks/definitions/leisure_banquet.tres"
+
 # Elenco CENTRALIZZATO delle Task "perditempo" (2026-09-13, richiesta utente) — pensato per
 # crescere in futuro (nuove Task "per passare il tempo") senza toccare la logica di scelta in
 # assign_idle_fallback sotto: aggiungere un path qui basta perché entri nel tiro a sorte, filtrato
@@ -46,6 +52,8 @@ const IDLE_FALLBACK_TASK_PATHS: Array[String] = [
 	# Talk (2026-10-13, socialità): non passa da _build_idle_task — la costruisce e la assegna TalkService.start_talk
 	# insieme a quella del partner (vedi assign_idle_fallback). Senza partner nel raggio si ripesca.
 	TalkService.TALK_TASK_DEFINITION_PATH,
+	LEISURE_LESSON_TASK_DEFINITION_PATH,
+	LEISURE_BANQUET_TASK_DEFINITION_PATH,
 ]
 
 # Guard di eleggibilita' di leisure_restock nel sorteggio idle (2026-09-19, richiesta utente): la Task e'
@@ -485,7 +493,16 @@ static func assign_idle_fallback(individual: HumanIndividual, age_band: HumanTyp
 			individual, world, age_band, GameSettings.active_human_individuals
 		).is_empty():
 			continue
-		remaining.append({"path": path, "definition": definition})
+		# Rito sociale spontaneo escluso a monte senza un edificio adatto (vedi LEISURE_LESSON_TASK_DEFINITION_PATH).
+		var rite_building: Building = null
+		if definition.idle_social_rite_id != "":
+			rite_building = SocialRiteService.find_idle_target(
+				RiteService.get_rules(definition.idle_social_rite_id) as SocialRiteRules, individual, age_band, world,
+				GameSettings.active_human_individuals, GameSettings.active_game_data
+			)
+			if rite_building == null:
+				continue
+		remaining.append({"path": path, "definition": definition, "weight": definition.idle_weight_for(age_band), "building": rite_building})
 
 	while not remaining.is_empty():
 		var drawn_index := _pick_weighted_index(remaining)
@@ -493,6 +510,14 @@ static func assign_idle_fallback(individual: HumanIndividual, age_band: HumanTyp
 		var assigned := false
 		if path == TalkService.TALK_TASK_DEFINITION_PATH:
 			assigned = bool(TalkService.start_talk(individual, age_band)["ok"])
+		elif (remaining[drawn_index]["definition"] as TaskDefinition).idle_social_rite_id != "":
+			var rite_rules := RiteService.get_rules((remaining[drawn_index]["definition"] as TaskDefinition).idle_social_rite_id) as SocialRiteRules
+			# Banchetto spontaneo: soglia fissa (SocialRiteService.get_idle_calorie_threshold), non quella del pannello.
+			var idle_threshold := SocialRiteService.get_idle_calorie_threshold(rite_rules as BanquetRiteRules) if rite_rules is BanquetRiteRules else -1
+			assigned = SocialRiteService.start(
+				individual, remaining[drawn_index]["building"], rite_rules, GameSettings.active_human_individuals,
+				GameSettings.active_game_data, world, idle_threshold
+			) == ""
 		else:
 			var candidate_task := _build_idle_task(path, individual, world, age_band)
 			assigned = candidate_task != null and individual.assign_task(candidate_task, age_band)
@@ -508,7 +533,8 @@ static func assign_idle_fallback(individual: HumanIndividual, age_band: HumanTyp
 
 # Tiro PESATO su indice tra le entry di `remaining` (2026-09-16, richiesta utente — sostituisce
 # _pick_weighted_task/IDLE_FALLBACK_TASK_WEIGHTS: il peso vive ora su TaskDefinition.idle_weight,
-# letto qui direttamente dall'entry — vedi assign_idle_fallback sopra). Nessuna normalizzazione
+# letto qui direttamente dall'entry — vedi assign_idle_fallback sopra). Dal 2026-10-17 l'entry porta il peso già
+# risolto per l'età dell'individuo ("weight", TaskDefinition.idle_weight_for). Nessuna normalizzazione
 # esplicita a somma 1.0: il tiro (`randf() * total_weight`) avviene già sul solo totale delle entry
 # ANCORA in gioco in questa chiamata — via via che una entry fallita viene rimossa da `remaining`
 # dal chiamante, il rapporto relativo tra i pesi restanti resta quello dichiarato.
@@ -523,13 +549,13 @@ static func assign_idle_fallback(individual: HumanIndividual, age_band: HumanTyp
 static func _pick_weighted_index(remaining: Array[Dictionary]) -> int:
 	var total_weight: float = 0.0
 	for entry in remaining:
-		total_weight += float((entry["definition"] as TaskDefinition).idle_weight)
+		total_weight += float(entry["weight"])
 	if total_weight <= 0.0:
 		return randi() % remaining.size()
 	var roll: float = randf() * total_weight
 	var cumulative: float = 0.0
 	for i in range(remaining.size()):
-		cumulative += float((remaining[i]["definition"] as TaskDefinition).idle_weight)
+		cumulative += float(remaining[i]["weight"])
 		if roll < cumulative:
 			return i
 	return remaining.size() - 1

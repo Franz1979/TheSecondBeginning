@@ -16,6 +16,7 @@ const BUILDING_FOLDER_CATEGORIES := {
 	"religious": BuildingTypes.Category.RELIGIOUS,
 	"ruins": BuildingTypes.Category.RUINS,
 	"cultural": BuildingTypes.Category.CULTURAL,
+	"recreational": BuildingTypes.Category.RECREATIONAL,
 }
 
 # Cache in-memory (2026-09-19, richiesta utente — correzione prestazioni: get_building_rules è
@@ -36,6 +37,14 @@ static func get_building_rules(building_type_name: String) -> BuildingRules:
 	var rules: BuildingRules = null
 	if path != "" and ResourceLoader.exists(path):
 		rules = load(path) as BuildingRules
+	# Spazio della macrocella = area dell'ingombro (2026-10-17, docs/design/building_footprint.md, decisione 6).
+	if rules != null:
+		var area := BuildingFootprint.area(rules)
+		if rules.required_space != area:
+			push_warning("[BuildingCalculator] %s: required_space %d diverso dall'area dell'ingombro %d, uso l'area." % [
+				building_type_name, rules.required_space, area
+			])
+			rules.required_space = area
 	_rules_cache[building_type_name] = rules
 	return rules
 

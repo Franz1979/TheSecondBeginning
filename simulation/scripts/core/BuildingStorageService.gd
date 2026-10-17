@@ -572,9 +572,17 @@ static func get_max_depositable(building: Building, resource_name: String) -> in
 # ricetta in corso, ProductionService.get_production_demand); 0 se non è un fabbisogno. Accettato sempre, senza filtri
 # di categoria (2026-10-02) — regola unica per can_accept e get_max_depositable.
 static func _production_quota(building: Building, resource_name: String) -> int:
+	# Carne pronta per un banchetto in preparazione (2026-10-17): accettata fino a quella che manca, anche se non è un
+	# ingrediente del focolare.
+	var rite_quota := SocialRiteService.get_material_quota(GameSettings.active_game_data, building.id, resource_name)
+	# Deposito riservato agli eventi (2026-10-17, BuildingRules.storage_event_only): solo la quota del rito, e solo nelle
+	# categorie accettate dal tipo (vuoto = tutte) — lo spiazzo: cibo e materiali grezzi (il combustibile); un futuro
+	# altare: le sue offerte.
+	if is_event_only(building):
+		return rite_quota if _type_accepts_category(building, resource_name) else 0
 	if not ProductionService.is_production_demand(building, resource_name):
-		return 0
-	return maxi(ProductionService.get_production_demand(building, resource_name), 0)
+		return rite_quota
+	return maxi(ProductionService.get_production_demand(building, resource_name), 0) + rite_quota
 
 
 # Stoccaggio libero (oltre il fabbisogno degli ordini) di un edificio completo — regola unica per can_accept e
@@ -584,6 +592,9 @@ static func _production_quota(building: Building, resource_name: String) -> int:
 #   - poi i filtri di categoria: il TIPO (BuildingRules.accepted_categories, vuoto = tutte) e l'ISTANZA
 #     (Building.enabled_categories con restricts_categories, salvo categories_locked).
 static func _free_storage_allows(building: Building, resource_name: String, resource_rules: SecondaryResourceRules) -> bool:
+	# Deposito riservato agli eventi (2026-10-17): niente stoccaggio libero, entra solo la quota del rito.
+	if building.rules.storage_event_only:
+		return false
 	# Risorse ammesse per nome (2026-10-16, BuildingRules.storage_accepted_resources — legnaia).
 	if not building.rules.storage_accepted_resources.is_empty() and not building.rules.storage_accepted_resources.has(resource_name):
 		return false
@@ -633,7 +644,8 @@ static func _free_storage_allows(building: Building, resource_name: String, reso
 # il travaso del buffer nello storage (ProductionService.flush_output_to_storage).
 static func withdraw(building: Building, resource_name: String, quantity_requested: int) -> int:
 	# Edificio "da demolire" (2026-09-27): niente prelievi, il contenuto cade a terra alla demolizione.
-	if building == null or quantity_requested <= 0 or building.is_out_of_service():
+	# Deposito riservato agli eventi (2026-10-17): niente prelievi, lo consuma solo il rito (withdraw_stored).
+	if building == null or quantity_requested <= 0 or building.is_out_of_service() or is_event_only(building):
 		return 0
 	var withdrawn := withdraw_stored(building, resource_name, quantity_requested)
 	withdrawn += ProductionService.withdraw_output(building, resource_name, quantity_requested - withdrawn)
@@ -646,7 +658,8 @@ static func withdraw(building: Building, resource_name: String, quantity_request
 # produzione (2026-09-23) — stessa somma che withdraw() sopra può davvero prelevare. 0 per un edificio
 # "da demolire" (2026-09-27): niente prelievi, quindi nemmeno sorgente di ricerche e comandi di prelievo.
 static func get_available_quantity(building: Building, resource_name: String) -> int:
-	if building == null or building.is_out_of_service():
+	# Deposito riservato agli eventi (2026-10-17): mai una sorgente di prelievo (pasti, rifornimenti, trasporti, a mano).
+	if building == null or building.is_out_of_service() or is_event_only(building):
 		return 0
 	var stored_entry: Dictionary = building.stored_resources.get(resource_name, {})
 	return int(stored_entry.get("quantity", 0)) + int(building.production_output.get(resource_name, 0))
@@ -665,6 +678,18 @@ static func get_available_quantity(building: Building, resource_name: String) ->
 # sorgente automatica, ma solo per le risorse che NON sono ingredienti né combustibile delle sue ricette
 # (ProductionService.is_workstation_ingredient, il criterio per nome di prima, usato solo qui). Decide il numero di posti
 # in uscita, mai il tipo di edificio.
+
+# true se il deposito di `building` è riservato agli eventi dell'edificio (BuildingRules.storage_event_only).
+static func is_event_only(building: Building) -> bool:
+	return building != null and building.rules != null and building.rules.storage_event_only
+
+
+static func _type_accepts_category(building: Building, resource_name: String) -> bool:
+	var rules := CaloricCalculator.get_caloric_source_rules(resource_name)
+	if rules == null:
+		return false
+	return building.rules.accepted_categories.is_empty() or building.rules.accepted_categories.has(rules.category)
+
 
 # true se `building` è una workstation: i suoi prelievi automatici seguono le regole sopra.
 static func is_workstation_source(building: Building) -> bool:

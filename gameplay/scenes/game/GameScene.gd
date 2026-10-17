@@ -1472,19 +1472,24 @@ func _process(delta: float) -> void:
 				_refresh_resource_visuals(center_cell, "movimento/nebbia")
 
 	if _building_ghost != null:
-		_building_ghost.global_position = _building_ghost.get_global_mouse_position()
+		# Aggancio alla griglia (2026-10-17, per ogni edificio): il fantasma sta al centro del rettangolo che si piazzerebbe
+		# (_sync_footprint_ghost); verifica e piazzamento usano sempre il punto vero del mouse, perché con un lato pari il
+		# centro cade sul confine tra due microcelle.
+		var ghost_mouse_position := _building_ghost.get_global_mouse_position()
+		_building_ghost.global_position = ghost_mouse_position
 		# Ricollegato (2026-08-30, vedi BuildingVerificationService per la cronologia): aggiorna
 		# l'aspetto del fantasma ogni frame in base ai criteri di edificabilità via
 		# set_buildable_appearance (verde/rosso, invariato) — ricostruiti da zero passo per passo,
 		# vedi il service per lo stato attuale dei criteri. `rules` risolte qui (non passate da
 		# _on_build_submenu_action_pressed) perché il tipo selezionato non cambia mai mentre il
 		# fantasma è attivo — coerente con come _place_building_at le risolve al momento del click.
-		_sync_linear_ghost()
+		_sync_footprint_ghost(ghost_mouse_position)
+		_sync_linear_ghost(ghost_mouse_position)
 		var ghost_rules := BuildingCalculator.get_building_rules(_selected_building_type_name)
 		BuildingVerificationService.set_buildable_appearance(
 			_building_ghost,
 			ghost_rules != null and BuildingVerificationService.is_position_buildable(
-				live_cells, MACRO_CELL_PIXELS, MicroCellRenderer.CELL_SIZE, _building_ghost.global_position,
+				live_cells, MACRO_CELL_PIXELS, MicroCellRenderer.CELL_SIZE, ghost_mouse_position,
 				game_data.get_absolute_day(), macro_world, _building_ghost.rotation_dir, ghost_rules, false
 			)
 		)
@@ -1519,9 +1524,9 @@ func _unhandled_input(event: InputEvent) -> void:
 				return
 			if event.button_index == MOUSE_BUTTON_LEFT:
 				if Input.is_key_pressed(KEY_B):
-					_place_building_at(_building_ghost.global_position)
+					_place_building_at(_building_ghost.get_global_mouse_position())
 				else:
-					_start_building_task_at(_building_ghost.global_position)
+					_start_building_task_at(_building_ghost.get_global_mouse_position())
 				return
 		if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_R:
 			_building_ghost.rotate_clockwise()
@@ -3057,6 +3062,13 @@ func _center_camera_on_selection(animated: bool = true) -> void:
 func _animate_camera_to(target_position: Vector2, animated: bool) -> void:
 	if _center_camera_tween != null:
 		_center_camera_tween.kill()
+	# Al centro della parte di mappa visibile (2026-10-17, richiesta utente), non della finestra intera: barra laterale e
+	# cassetti aperti coprono il lato destro. Con la telecamera centrata, un punto a d pixel dal centro dello schermo sta a
+	# d / zoom nel mondo.
+	if camera.has_method("get_visible_map_rect"):
+		var visible_rect: Rect2 = camera.call("get_visible_map_rect")
+		var screen_offset: Vector2 = get_viewport().get_visible_rect().size / 2.0 - visible_rect.get_center()
+		target_position += screen_offset / camera.zoom
 	if not animated:
 		camera.position = target_position
 		return
@@ -6868,8 +6880,9 @@ func _track_social_rite_tasks() -> void:
 				(step as SocialRiteAttendAction).rite_started.connect(_spawn_social_rite_started_effect)
 
 
-# Inizio del raduno: l'icona della ricetta (SocialRiteRules.start_icon) sale e svanisce sopra l'edificio con i tempi della
-# luna del rito (_spawn_rite_completed_effect), poi il suono.
+# Inizio del raduno: l'icona del comando del rito (RiteRules.command_icon_key — disegnata se c'è, altrimenti l'emoji; dal
+# 2026-10-17 la stessa che lampeggia al comando, come la luna dei riti religiosi) sale e svanisce sopra l'edificio con i
+# tempi della luna del rito (_spawn_rite_completed_effect), poi il suono.
 func _spawn_social_rite_started_effect(building: Building, rite_id: String) -> void:
 	var rules := RiteService.get_rules(rite_id) as SocialRiteRules
 	if building == null or rules == null:
@@ -6878,19 +6891,24 @@ func _spawn_social_rite_started_effect(building: Building, rite_id: String) -> v
 	if not live_cells.has(macro_coords):
 		return
 	var cell_container: Node2D = live_cells[macro_coords].container
-	var local_position := (Vector2(building.micro_x, building.micro_y) + Vector2(0.5, 0.5)) * MicroCellRenderer.CELL_SIZE
-	if rules.start_icon != "":
+	var local_position := BuildingFootprint.center_micro(building) * MicroCellRenderer.CELL_SIZE
+	var icon: Variant = IconRegistry.get_command_icon_node(rules.command_icon_key)
+	if icon != null:
+		(icon as Node2D).position = local_position
+	elif IconRegistry.get_command_icon(rules.command_icon_key) != "":
 		var label := Label.new()
-		label.text = rules.start_icon
-		label.z_index = 2
+		label.text = IconRegistry.get_command_icon(rules.command_icon_key)
 		label.add_theme_font_size_override("font_size", 8)
 		label.position = local_position + Vector2(-5, -14)
-		cell_container.add_child(label)
+		icon = label
+	if icon != null:
+		icon.z_index = 2
+		cell_container.add_child(icon)
 		var tween := create_tween()
 		tween.set_parallel(true)
-		tween.tween_property(label, "position:y", label.position.y - 40.0, 0.9)
-		tween.tween_property(label, "modulate:a", 0.0, 3.0)
-		tween.chain().tween_callback(label.queue_free)
+		tween.tween_property(icon, "position:y", icon.position.y - 40.0, 0.9)
+		tween.tween_property(icon, "modulate:a", 0.0, 3.0)
+		tween.chain().tween_callback(icon.queue_free)
 	if rules.start_sound_id != &"":
 		social_rite_effect_shown.emit(cell_container.to_global(local_position), rules.start_sound_id)
 
@@ -6910,7 +6928,8 @@ func _reject_rite_command(worker: HumanIndividual, target_building: Building, te
 func _spawn_rite_command_icon(target_building: Building, command_icon_key: String) -> void:
 	var macro_coords := Vector2i(target_building.macro_x, target_building.macro_y)
 	if live_cells.has(macro_coords):
-		_spawn_command_icon_at_microcell(live_cells[macro_coords], Vector2i(target_building.micro_x, target_building.micro_y), command_icon_key)
+		# Al centro dell'edificio (2026-10-17, edifici grandi: il centro del rettangolo; 1x1 come prima).
+		_spawn_command_icon(live_cells[macro_coords], BuildingFootprint.center_micro(target_building), command_icon_key)
 
 
 # true se un pipottino ha una Task con un RiteAction su `building`, in corso o in coda (non ancora conclusa).
@@ -6963,10 +6982,13 @@ func _assign_resumable_building_task(worker: HumanIndividual, hit_building: Buil
 	var extra_context: Dictionary = {}
 	if not is_demolition:
 		var macro_state := macro_world.get_cell_state_at(hit_building.macro_x, hit_building.macro_y) if macro_world != null else null
-		var is_currently_grass := false
+		var is_currently_grass: Variant = false
 		if live_cells.has(build_macro_coords):
 			var current_grass_positions: Array = live_cells[build_macro_coords].renderer.vegetation_positions.get(GameTypes.WorldObjectType.GRASS, [])
 			is_currently_grass = current_grass_positions.has(Vector2i(hit_building.micro_x, hit_building.micro_y))
+			# Ingombro (2026-10-17): per un edificio grande, il numero di microcelle del rettangolo con l'erba (ClearAction).
+			if hit_building.rules != null and BuildingFootprint.is_large(hit_building.rules):
+				is_currently_grass = BuildingFootprint.count_cells_in(hit_building, current_grass_positions)
 		extra_context = {
 			"macro_state": macro_state,
 			"is_currently_grass": is_currently_grass,
@@ -8155,7 +8177,7 @@ func _refresh_ground_pile_panel(force: bool = false) -> void:
 # true se l'edificio con questo id è percorribile (categoria MOVEMENT, es. sentiero): un mucchio ci può stare sopra.
 func _is_walkable_building_id(building_id: int) -> bool:
 	var building := _find_building_by_id(building_id)
-	return building != null and building.rules != null and building.rules.category == BuildingTypes.Category.MOVEMENT
+	return building != null and building.rules != null and building.rules.walkable
 
 
 # Righe del contenuto del mucchio a terra in una microcella (pannello dell'edificio), [] se lì non c'è un mucchio.
@@ -10824,8 +10846,8 @@ func _find_building_at_microcell(macro_coords: Vector2i, lot: Vector2i) -> Build
 	if macro_world == null:
 		return null
 	for building in macro_world.buildings:
-		if building.macro_x == macro_coords.x and building.macro_y == macro_coords.y \
-				and building.micro_x == lot.x and building.micro_y == lot.y:
+		# Ingombro (2026-10-17): qualunque microcella del rettangolo.
+		if BuildingFootprint.covers(building, macro_coords, lot):
 			return building
 	return null
 
@@ -12686,7 +12708,10 @@ func _refresh_debug_animal_summary() -> void:
 			var quota: int = int(group.get_population_by_cell().get(center_macro_coords, 0))
 			if quota <= 0:
 				continue
-			var renderer_node: AnimalGroupRenderer = cell.animal_renderers[species]
+			# Non tipizzata: un renderer già liberato (es. subito dopo un caricamento) darebbe errore all'assegnazione.
+			var renderer_node = cell.animal_renderers[species]
+			if not is_instance_valid(renderer_node):
+				continue
 			entries.append({
 				"species": species,
 				"quota": quota,
@@ -14824,6 +14849,9 @@ func _building_type_name_for_action(action_id: StringName) -> String:
 		# Sentiero di ciottoli (2026-10-16, richiesta utente) — azione cablata in BuildBar._ready.
 		&"build_pebble_path":
 			return "pebble_path"
+		# Spiazzo delle feste (2026-10-17) — azione cablata in BuildBar._ready.
+		&"build_feast_ground":
+			return "feast_ground"
 		_:
 			return ""
 
@@ -15351,6 +15379,10 @@ func _toggle_warehouse_drawer() -> void:
 		_warehouse_panel.set_fuel_rule(game_data.stock_fuel_rule_enabled, FuelStockService.get_rule_rows(game_data, human_folk.completed_ideas))
 		_warehouse_panel.fuel_rule_toggled.connect(func(enabled: bool) -> void: game_data.stock_fuel_rule_enabled = enabled)
 		_warehouse_panel.fuel_min_changed.connect(func(type_name: String, level: int) -> void: game_data.stock_fuel_min_by_type[type_name] = level)
+		# Regola dei banchetti spontanei (2026-10-17): dati della partita, letti da SocialRiteService.
+		_warehouse_panel.set_banquet_rule(game_data.stock_banquet_calories, game_data.stock_banquet_safe_only)
+		_warehouse_panel.banquet_calories_changed.connect(func(calories: int) -> void: game_data.stock_banquet_calories = calories)
+		_warehouse_panel.banquet_safe_only_toggled.connect(func(enabled: bool) -> void: game_data.stock_banquet_safe_only = enabled)
 		# Frequenza dell'inventario (2026-10-11): dato della partita.
 		_warehouse_panel.set_inventory_interval(game_data.inventory_interval_hours)
 		_warehouse_panel.inventory_interval_changed.connect(func(hours: int) -> void:
@@ -16042,15 +16074,16 @@ func _is_placement_buildable_or_report(world_position: Vector2, rules: BuildingR
 	):
 		return true
 	# Ceppo dell'insegnamento (2026-10-16): senza un ceppo d'albero sulla microcella, il motivo con lo stesso canale.
-	if rules.requires_tree_stump:
-		var stump_placement := _live_cell_and_micro_position_at(world_position)
-		if not stump_placement.is_empty() and not BuildingVerificationService.has_required_tree_stump(
-			(stump_placement["cell"] as LiveMacroCell).macro_state, stump_placement["micro_pos"]
-		):
-			var stump_selected := _get_selected_individuals()
-			_report_command_rejection(stump_selected[0] if not stump_selected.is_empty() else null, tr("build_blocked_needs_tree_stump"))
-			_spawn_command_icon_at_microcell(stump_placement["cell"], stump_placement["micro_pos"], "task_rejected")
-			return false
+	# Ingombro (2026-10-17): i controlli dei messaggi guardano tutte le microcelle del rettangolo.
+	var footprint_placement := BuildingVerificationService.resolve_placement(
+		live_cells, MACRO_CELL_PIXELS, MicroCellRenderer.CELL_SIZE, world_position, _building_ghost.rotation_dir, rules
+	)
+	var stump_micro := BuildingVerificationService.find_cell_missing_tree_stump(footprint_placement, rules)
+	if stump_micro != Vector2i(-1, -1):
+		var stump_selected := _get_selected_individuals()
+		_report_command_rejection(stump_selected[0] if not stump_selected.is_empty() else null, tr("build_blocked_needs_tree_stump"))
+		_spawn_command_icon_at_microcell(footprint_placement["cell"], stump_micro, "task_rejected")
+		return false
 	# Porta su un ostacolo (2026-10-17): prima non c'era nessun messaggio.
 	if BuildingVerificationService.is_door_blocked(
 		live_cells, MACRO_CELL_PIXELS, MicroCellRenderer.CELL_SIZE, world_position,
@@ -16067,22 +16100,14 @@ func _is_placement_buildable_or_report(world_position: Vector2, rules: BuildingR
 	):
 		var selected := _get_selected_individuals()
 		var reporter: HumanIndividual = selected[0] if not selected.is_empty() else null
-		var placement := _live_cell_and_micro_position_at(world_position)
-		var has_woody := true
-		var has_pile := false
-		var has_waste_pebbles := false
-		if not placement.is_empty():
-			var placement_cell: LiveMacroCell = placement["cell"]
-			var micro_pos: Vector2i = placement["micro_pos"]
-			has_woody = BuildingSiteClearingService.has_woody_vegetation(placement_cell.macro_state, micro_pos)
-			has_pile = GroundPileService.find_at(game_data, Vector2i(placement_cell.macro_x, placement_cell.macro_y), micro_pos) != null
-			has_waste_pebbles = RockStoneService.has_waste_pebbles(placement_cell.macro_state, micro_pos)
-		if has_woody:
+		var blocks := BuildingVerificationService.get_removable_blocks(footprint_placement)
+		if blocks["woody"]:
 			_report_command_rejection(reporter, tr("build_blocked_cut_trees_first"))
-		if has_pile:
+		if blocks["pile"]:
 			_report_command_rejection(reporter, tr("build_blocked_clear_ground_pile_first"))
-		if has_waste_pebbles:
+		if blocks["waste_pebbles"]:
 			_report_command_rejection(reporter, tr("build_blocked_collect_pebbles_first"))
+		var placement := _live_cell_and_micro_position_at(world_position)
 		if not placement.is_empty():
 			_spawn_command_icon_at_microcell(placement["cell"], placement["micro_pos"], "task_rejected")
 	return false
@@ -16131,17 +16156,21 @@ func _place_building_at(world_position: Vector2) -> void:
 		game_data.get_absolute_day(), macro_world, _building_ghost.rotation_dir, rules
 	):
 		return
-	var placement := _live_cell_and_micro_position_at(world_position)
+	# Ingombro (2026-10-17): ancora = angolo in alto a sinistra del rettangolo col mouse al centro (1x1: la microcella).
+	var placement := BuildingVerificationService.resolve_placement(
+		live_cells, MACRO_CELL_PIXELS, MicroCellRenderer.CELL_SIZE, world_position, _building_ghost.rotation_dir, rules
+	)
 	if placement.is_empty():
 		return
 	var target_cell: LiveMacroCell = placement["cell"]
-	var micro_pos: Vector2i = placement["micro_pos"]
+	var micro_pos: Vector2i = placement["anchor"]
 	var state := macro_world.get_cell_state_at(target_cell.macro_x, target_cell.macro_y)
 	if state == null:
 		return
 
 	var current_grass_positions: Array = target_cell.renderer.vegetation_positions.get(GameTypes.WorldObjectType.GRASS, [])
-	BuildingSiteClearingService.clear_microcell(state, micro_pos, current_grass_positions.has(micro_pos))
+	for footprint_cell: Vector2i in placement["cells"]:
+		BuildingSiteClearingService.clear_microcell(state, footprint_cell, current_grass_positions.has(footprint_cell))
 
 	var building := Building.new(rules, target_cell.macro_x, target_cell.macro_y, _selected_building_type_name)
 	building.id = macro_world.allocate_building_id()
@@ -16264,11 +16293,14 @@ func _start_building_task_at(world_position: Vector2) -> void:
 		return
 	if not _is_placement_buildable_or_report(world_position, rules):
 		return
-	var placement := _live_cell_and_micro_position_at(world_position)
+	# Ingombro (2026-10-17): ancora del rettangolo col mouse al centro (1x1: la microcella sotto il mouse).
+	var placement := BuildingVerificationService.resolve_placement(
+		live_cells, MACRO_CELL_PIXELS, MicroCellRenderer.CELL_SIZE, world_position, _building_ghost.rotation_dir, rules
+	)
 	if placement.is_empty():
 		return
 	var target_cell: LiveMacroCell = placement["cell"]
-	var micro_pos: Vector2i = placement["micro_pos"]
+	var micro_pos: Vector2i = placement["anchor"]
 	# LOG DEBUG TEMPORANEO — vedi nota sopra.
 	if DebugLogging.ENABLED and DebugLogging.SHOW_TRANSPORT_BUILD_LOGS:
 		print("[BUILD DEBUG] _start_building_task_at: risolto in macro=(%d,%d) micro=%s" % [
@@ -16413,11 +16445,13 @@ func _create_build_site_placeholder_nodes(building: Building, cell: LiveMacroCel
 			and not BuildingUpgradeService.is_upgrade_site(building):
 		return
 	var cell_origin := Vector2(building.micro_x, building.micro_y) * MicroCellRenderer.CELL_SIZE
+	# Ingombro (2026-10-17): angoli del rettangolo (1x1: la microcella, come prima).
+	var rect_px := Vector2(BuildingFootprint.size_of(building)) * MicroCellRenderer.CELL_SIZE
 	var corner_offsets: Array[Vector2] = [
 		Vector2(_BUILD_SITE_PLACEHOLDER_MARGIN, _BUILD_SITE_PLACEHOLDER_MARGIN),
-		Vector2(MicroCellRenderer.CELL_SIZE - _BUILD_SITE_PLACEHOLDER_MARGIN, _BUILD_SITE_PLACEHOLDER_MARGIN),
-		Vector2(_BUILD_SITE_PLACEHOLDER_MARGIN, MicroCellRenderer.CELL_SIZE - _BUILD_SITE_PLACEHOLDER_MARGIN),
-		Vector2(MicroCellRenderer.CELL_SIZE - _BUILD_SITE_PLACEHOLDER_MARGIN, MicroCellRenderer.CELL_SIZE - _BUILD_SITE_PLACEHOLDER_MARGIN),
+		Vector2(rect_px.x - _BUILD_SITE_PLACEHOLDER_MARGIN, _BUILD_SITE_PLACEHOLDER_MARGIN),
+		Vector2(_BUILD_SITE_PLACEHOLDER_MARGIN, rect_px.y - _BUILD_SITE_PLACEHOLDER_MARGIN),
+		Vector2(rect_px.x - _BUILD_SITE_PLACEHOLDER_MARGIN, rect_px.y - _BUILD_SITE_PLACEHOLDER_MARGIN),
 	]
 	# Contenitore (2026-09-11) — vedi _BUILD_SITE_PLACEHOLDER_GROUP_NAME_PREFIX sopra: nome
 	# deterministico da building.id, unico per edificio (due cantieri non possono mai collidere sullo
@@ -16948,7 +16982,8 @@ func _building_positions_for_cell(cell: LiveMacroCell) -> Array:
 		return positions
 	for building in macro_world.buildings:
 		if building.macro_x == cell.macro_x and building.macro_y == cell.macro_y:
-			positions.append(Vector2i(building.micro_x, building.micro_y))
+			# Ingombro (2026-10-17): tutte le microcelle del rettangolo, altrimenti la vegetazione ci ricresce.
+			positions.append_array(BuildingFootprint.cells_of(building))
 	return positions
 
 
@@ -16985,6 +17020,8 @@ func _buildings_for_cell(cell: LiveMacroCell) -> Array:
 			var drawn_type_name := BuildingUpgradeService.get_drawn_type_name(building)
 			var entry: Dictionary = {
 				"position": Vector2i(building.micro_x, building.micro_y),
+				# Ingombro (2026-10-17): misura ruotata; "position" resta l'angolo in alto a sinistra.
+				"size": BuildingFootprint.size_of(building),
 				"rotation": building.rotation,
 				"id": building.id,
 				# "building_type_name" (2026-09-07, richiesta utente, Pebble Circle) — prima di
@@ -17033,6 +17070,9 @@ func _buildings_for_cell(cell: LiveMacroCell) -> Array:
 					dirt_tiles = _collect_complete_dirt_tiles()
 					dirt_tiles_built = true
 				entry["dirt_neighbors"] = _dirt_ground_neighbor_mask(building, dirt_tiles)
+				# Edifici grandi (2026-10-17): un tile per microcella, con i lati interni dritti (BuildingFootprint).
+				if BuildingFootprint.is_large(building.rules):
+					entry["dirt_cells"] = BuildingFootprint.ground_tile_masks(building, dirt_tiles)
 			# Edifici lineari a pezzi uniti (2026-10-04, richiesta utente — dal vallo difensivo, generalizzato): lati che
 			# confinano con un altro pezzo dello stesso gruppo (BuildingRules.is_linear/linear_link_group), finito o
 			# cantiere, e quelli verso un vicino ad angolo (_linear_shape_at). Il cantiere resta disegnato come cantiere;
@@ -17055,6 +17095,9 @@ func _buildings_for_cell(cell: LiveMacroCell) -> Array:
 				entry["linear_ground_fill"] = _linear_neighbor_mask_at(
 					Vector4i(building.macro_x, building.macro_y, building.micro_x, building.micro_y), ground_tiles
 				) & ~linear_shape.x
+			# Porta degli edifici grandi (2026-10-17): punto a metà del lato della porta rispetto al centro, in microcelle.
+			if building.rules != null and building.rules.has_door and BuildingFootprint.is_large(building.rules):
+				entry["door_edge"] = BuildingFootprint.door_edge_offset(building.rules, building.rotation)
 			result.append(entry)
 	return result
 
@@ -17071,7 +17114,8 @@ func _collect_ground_tiles() -> Dictionary:
 		if drawn_type == "dirt_ground" or MicroCellRenderer.GROUND_UNDER_BUILDING_TYPES.has(drawn_type) \
 				or other.building_type_name == "storage_hut" or other.building_type_name == "covered_depot" \
 				or (other.rules != null and other.rules.is_linear):
-			tiles[Vector4i(other.macro_x, other.macro_y, other.micro_x, other.micro_y)] = true
+			for micro: Vector2i in BuildingFootprint.cells_of(other):
+				tiles[Vector4i(other.macro_x, other.macro_y, micro.x, micro.y)] = true
 	return tiles
 
 
@@ -17150,7 +17194,7 @@ var _ghost_linear_tiles_revision: int = -1
 var _ghost_linear_tiles_type: String = ""
 
 
-func _sync_linear_ghost() -> void:
+func _sync_linear_ghost(mouse_position: Vector2) -> void:
 	if _building_ghost == null or macro_world == null:
 		return
 	var rules := BuildingCalculator.get_building_rules(_selected_building_type_name)
@@ -17160,7 +17204,7 @@ func _sync_linear_ghost() -> void:
 		_ghost_linear_tiles = _collect_linear_tiles(_linear_link_group(rules, _selected_building_type_name))
 		_ghost_linear_tiles_revision = game_data.buildings_revision
 		_ghost_linear_tiles_type = _selected_building_type_name
-	var placement := _live_cell_and_micro_position_at(_building_ghost.global_position)
+	var placement := _live_cell_and_micro_position_at(mouse_position)
 	if placement.is_empty():
 		_building_ghost.set_linear_preview(LinearShape.STRAIGHT_MASK, 0, Vector2.ZERO)
 		return
@@ -17171,6 +17215,20 @@ func _sync_linear_ghost() -> void:
 	_building_ghost.set_linear_preview(shape.x, shape.y, _building_ghost.to_local(microcell_center))
 
 
+# Fantasma agganciato alla griglia (2026-10-17, ogni edificio): al centro del rettangolo col mouse al centro
+# (BuildingFootprint; 1x1 = la microcella del mouse), anche se esce dalla macrocella (allora è rosso). Fuori dalle celle
+# vive resta sul mouse.
+func _sync_footprint_ghost(mouse_position: Vector2) -> void:
+	if _building_ghost == null:
+		return
+	var rules := BuildingCalculator.get_building_rules(_selected_building_type_name)
+	if rules == null:
+		return
+	var placement := _live_cell_and_micro_position_at(mouse_position)
+	if not placement.is_empty():
+		_building_ghost.sync_footprint_preview((placement["cell"] as LiveMacroCell).container, placement["micro_pos"], rules)
+
+
 # Insieme delle microcelle occupate da un edificio COMPLETO del mondo (2026-09-19, esteso a ogni tipo
 # di edificio il 2026-09-24): chiave Vector4i(macro_x, macro_y, micro_x, micro_y). Un edificio non
 # ancora completo non conta come vicino (il lato che lo tocca resta irregolare).
@@ -17179,7 +17237,9 @@ func _collect_complete_dirt_tiles() -> Dictionary:
 	for other in macro_world.buildings:
 		# Un cantiere di miglioramento conta come completo: è disegnato come l'edificio di partenza (2026-10-03).
 		if (other.is_complete or BuildingUpgradeService.is_upgrade_site(other)) and not other.is_demolished:
-			tiles[Vector4i(other.macro_x, other.macro_y, other.micro_x, other.micro_y)] = true
+			# Ingombro (2026-10-17): tutte le microcelle del rettangolo.
+			for micro: Vector2i in BuildingFootprint.cells_of(other):
+				tiles[Vector4i(other.macro_x, other.macro_y, micro.x, micro.y)] = true
 	return tiles
 
 
@@ -17255,8 +17315,10 @@ func _building_visible_positions_for_cell(cell: LiveMacroCell) -> Dictionary:
 		var radius: int = 0
 		if building.is_complete and building.rules != null:
 			radius = building.rules.visibility_radius
-		for dx in range(-radius, radius + 1):
-			for dy in range(-radius, radius + 1):
+		# Ingombro (2026-10-17): il quadrato si allarga attorno a tutto il rettangolo.
+		var rect_size := BuildingFootprint.size_of(building)
+		for dx in range(-radius, rect_size.x + radius):
+			for dy in range(-radius, rect_size.y + radius):
 				var pos := Vector2i(building.micro_x + dx, building.micro_y + dy)
 				if pos.x < 0 or pos.x >= World.WIDTH or pos.y < 0 or pos.y >= World.HEIGHT:
 					continue
@@ -17651,10 +17713,10 @@ func _on_speed_button_pressed(speed: GameClockController.Speed) -> void:
 func _update_play_pause_button() -> void:
 	if clock.is_playing:
 		play_pause_button.text = "❚❚"
-		play_pause_button.tooltip_text = tr("pause")
+		play_pause_button.tooltip_text = TooltipText.wrap(tr("pause"))
 	else:
 		play_pause_button.text = "▶"
-		play_pause_button.tooltip_text = tr("play")
+		play_pause_button.tooltip_text = TooltipText.wrap(tr("play"))
 
 func _on_day_advanced(checkpoint_ran: bool, animals_changed: bool) -> void:
 	_tick_simulation_day()

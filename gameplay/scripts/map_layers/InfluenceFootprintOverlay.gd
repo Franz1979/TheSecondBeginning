@@ -35,7 +35,8 @@ var persistent: bool = false
 # `origin_macro_coords` (macrocelle diverse: offset di World.WIDTH microcelle per macrocella).
 static func building_center_px(building: Building, origin_macro_coords: Vector2i) -> Vector2:
 	var macro_offset := Vector2(Vector2i(building.macro_x, building.macro_y) - origin_macro_coords) * World.WIDTH
-	return (Vector2(building.micro_x, building.micro_y) + Vector2(0.5, 0.5) + macro_offset) * float(MicroCellRenderer.CELL_SIZE)
+	# Ingombro (2026-10-17): centro del rettangolo (1x1: centro della microcella, come prima).
+	return (BuildingFootprint.center_micro(building) + macro_offset) * float(MicroCellRenderer.CELL_SIZE)
 
 
 # Raggio effettivo in pixel dell'influenza `influence_type` di `building` (0 = nessuna).

@@ -31,7 +31,7 @@ func show_dead_body(
 	sex: HumanTypes.Sex, age_at_death: int, cause: DeathTypes.DeathCause, days_remaining: int, bury_status: String = ""
 ) -> void:
 	bury_status_label.text = bury_status
-	bury_status_label.tooltip_text = bury_status
+	bury_status_label.tooltip_text = TooltipText.wrap(bury_status)
 	visible = true
 	# Nome NON mostrato qui — vive nel titolo condiviso di GameInfoTabs.SelectionTab
 	# ("Name: ..."), stesso posto/convenzione già usata per gli individui vivi (vedi GameScene.

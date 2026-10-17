@@ -186,7 +186,7 @@ func _refresh_sort_button() -> void:
 	var popup := _sort_button.get_popup()
 	for i in SORT_OPTIONS.size():
 		popup.set_item_checked(popup.get_item_index(i), i == active)
-	_sort_button.tooltip_text = tr("population_sort_tooltip").format({"option": tr(String(SORT_OPTIONS[active]["label_key"]))})
+	_sort_button.tooltip_text = TooltipText.wrap(tr("population_sort_tooltip").format({"option": tr(String(SORT_OPTIONS[active]["label_key"]))}))
 
 
 func _on_sort_option_pressed(option_id: int) -> void:
@@ -284,10 +284,10 @@ func show_population(
 		housing_label.add_theme_color_override("font_color", COLOR_HOUSING_ALERT)
 	else:
 		housing_label.remove_theme_color_override("font_color")
-	housing_label.tooltip_text = "%d pipottini vivi su %d posti letto totali (edifici residenziali completi)%s" % [
+	housing_label.tooltip_text = TooltipText.wrap("%d pipottini vivi su %d posti letto totali (edifici residenziali completi)%s" % [
 		total_count, housing_capacity,
 		" — non bastano per tutti!" if total_count > housing_capacity else ""
-	]
+	])
 
 	for child in list_container.get_children():
 		child.queue_free()
@@ -315,7 +315,7 @@ func show_population(
 		# larghezza al minimo utile per l'emoji invece di lasciarla al default del tema.
 		var center_button := Button.new()
 		center_button.text = CENTER_BUTTON_TEXT
-		center_button.tooltip_text = "Centra e seleziona"
+		center_button.tooltip_text = TooltipText.wrap("Centra e seleziona")
 		center_button.flat = true
 		center_button.add_theme_font_size_override("font_size", 10)
 		center_button.custom_minimum_size = Vector2(20, 0)
@@ -350,7 +350,7 @@ func show_population(
 			var house_icon := Label.new()
 			house_icon.text = HOUSE_ICON_TEXT
 			house_icon.add_theme_font_size_override("font_size", 10)
-			house_icon.tooltip_text = "ID Casa: %d" % member.house_id
+			house_icon.tooltip_text = TooltipText.wrap("ID Casa: %d" % member.house_id)
 			# Tiene il suo clic (2026-10-07): un clic sulla casa non seleziona la riga.
 			house_icon.mouse_filter = Control.MOUSE_FILTER_STOP
 			row.add_child(house_icon)
@@ -388,7 +388,7 @@ func show_population(
 		task_label.text = "↳ " + (
 			member.current_task.get_activity_description() if member.current_task != null else IDLE_TASK_TEXT
 		)
-		task_label.tooltip_text = task_label.text
+		task_label.tooltip_text = TooltipText.wrap(task_label.text)
 		task_label.mouse_filter = Control.MOUSE_FILTER_PASS
 		task_line.add_child(task_label)
 		var task_spacer := Control.new()
@@ -424,7 +424,7 @@ func refresh_task_texts() -> void:
 		var text := "↳ " + (member.current_task.get_activity_description() if member.current_task != null else IDLE_TASK_TEXT)
 		if task_label.text != text:
 			task_label.text = text
-			task_label.tooltip_text = text
+			task_label.tooltip_text = TooltipText.wrap(text)
 
 
 # Riga sotto il mouse (2026-10-04): solo lei mostra i pulsanti delle azioni. Controllo per posizione, non con i segnali
@@ -532,7 +532,7 @@ func _build_command_button(member: HumanIndividual, action: Dictionary, state: D
 	button.flat = true
 	button.focus_mode = Control.FOCUS_NONE
 	button.custom_minimum_size = Vector2(side, side)
-	button.tooltip_text = String(state.get("tooltip", ""))
+	button.tooltip_text = TooltipText.wrap(String(state.get("tooltip", "")))
 	var enabled := bool(state.get("enabled", false))
 	button.disabled = not enabled
 	var icon := IconRegistry.get_command_button_icon_node(String(action["icon"]))

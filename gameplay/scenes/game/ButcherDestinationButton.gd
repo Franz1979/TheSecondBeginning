@@ -76,7 +76,7 @@ func set_destination(is_shown: bool, current: Dictionary, options: Array[Diction
 	for child in _icon_holder.get_children():
 		child.queue_free()
 	_icon_holder.add_child(_build_destination_icon(current))
-	tooltip_text = tr(tooltip_key).format({"name": String(current.get("name", ""))})
+	tooltip_text = TooltipText.wrap(tr(tooltip_key).format({"name": String(current.get("name", ""))}))
 	return visibility_changed
 
 
@@ -95,14 +95,14 @@ func _open_popup() -> void:
 	for option in _options:
 		var reason := String(option.get("disabled_reason", ""))
 		var row := HBoxContainer.new()
-		row.tooltip_text = reason
+		row.tooltip_text = TooltipText.wrap(reason)
 		row.add_child(_build_destination_icon(option))
 		var choice := Button.new()
 		choice.text = String(option.get("name", ""))
 		if bool(option.get("locked", false)):
 			choice.text = "%s %s" % [choice.text, LOCK_ICON]
 		choice.disabled = reason != ""
-		choice.tooltip_text = reason
+		choice.tooltip_text = TooltipText.wrap(reason)
 		choice.flat = true
 		choice.alignment = HORIZONTAL_ALIGNMENT_LEFT
 		choice.size_flags_horizontal = Control.SIZE_EXPAND_FILL

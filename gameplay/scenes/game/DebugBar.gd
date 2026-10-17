@@ -85,14 +85,14 @@ func _ready() -> void:
 	# questo pur non passando da IconButtonRow. Tooltip statico (non cambia con lo stato, a
 	# differenza del testo del bottone — vedi set_idle_fallback_label sotto): spiega COSA fa il
 	# bottone, non lo stato attuale, che è già leggibile direttamente nel testo.
-	idle_fallback_button.tooltip_text = tr("debug_idle_fallback_button_tooltip")
-	animal_summary_label.tooltip_text = "Animali della macrocella del giocatore: quota della cella / individui istanziati (≠ = discrepanza)"
+	idle_fallback_button.tooltip_text = TooltipText.wrap(tr("debug_idle_fallback_button_tooltip"))
+	animal_summary_label.tooltip_text = TooltipText.wrap("Animali della macrocella del giocatore: quota della cella / individui istanziati (≠ = discrepanza)")
 	idle_fallback_button.pressed.connect(func() -> void: action_pressed.emit(&"toggle_idle_fallback"))
 	_fill_random_events()
 	random_event_apply_button.text = tr("debug_random_event_apply")
-	random_event_apply_button.tooltip_text = tr("debug_random_event_apply_tooltip")
+	random_event_apply_button.tooltip_text = TooltipText.wrap(tr("debug_random_event_apply_tooltip"))
 	random_event_apply_button.pressed.connect(_on_random_event_apply_pressed)
-	visitor_spawn_button.tooltip_text = tr("debug_visitor_spawn_tooltip")
+	visitor_spawn_button.tooltip_text = TooltipText.wrap(tr("debug_visitor_spawn_tooltip"))
 	visitor_spawn_button.pressed.connect(func() -> void: action_pressed.emit(&"visitor_spawn"))
 	_apply_state()
 
@@ -159,7 +159,7 @@ func set_coords(x: int, y: int) -> void:
 # se il numero cambia (il tooltip non occupa spazio).
 func set_live_cells(lines: PackedStringArray) -> void:
 	var text := "Celle vive: %d" % lines.size()
-	live_cells_label.tooltip_text = "Celle vive e motivo di attivazione:\n" + "\n".join(lines)
+	live_cells_label.tooltip_text = TooltipText.wrap("Celle vive e motivo di attivazione:\n" + "\n".join(lines))
 	if live_cells_label.text == text:
 		return
 	live_cells_label.text = text

@@ -860,6 +860,16 @@ static func is_output_blocking(building: Building) -> bool:
 	return false
 
 
+# true se il buffer di uscita impedisce di avviare un ordine nuovo: almeno una ricetta che l'edificio sa fare non ci starebbe
+# per un ciclo intero (has_output_room falso — la stessa condizione che spegne il suo pulsante nel pannello). 2026-10-17:
+# letto da OutputJobProvider per la consegna dei Prodotti finiti anche senza un ordine attivo.
+static func blocks_new_orders(building: Building) -> bool:
+	for recipe_name in get_producible_resources(building):
+		if not has_output_room(building, recipe_name):
+			return true
+	return false
+
+
 # Travasa il buffer di uscita nello storage normale dell'edificio, per quanto c'è posto
 # (BuildingStorageService.store: slot, filtri di categoria). Il prodotto entra a decay_fraction 0.0.
 # No-op per un edificio senza storage o con buffer vuoto (il buffer resta pieno finché non lo si svuota). Chiamata al completamento di un ciclo, dopo ogni prelievo (BuildingStorageService.

@@ -54,5 +54,10 @@ effects_by_action_key = {
 "bonus": 0.5,
 "skill": "skill_management",
 "skill_max": 1000.0
+},
+"teach": {
+"bonus": 0.5,
+"skill": "skill_cognition",
+"skill_max": 1000.0
 }
 }

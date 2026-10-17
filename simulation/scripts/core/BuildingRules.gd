@@ -146,6 +146,15 @@ extends Resource
 # l'edificio è completo. Non ancora sottratto da nessuna logica reale (nessuna integrazione con
 # MacroCellState scritta qui): solo il dato, per ora.
 @export var required_space: int = 0
+# Ingombro (2026-10-17, docs/design/building_footprint.md): `required_space` vale sempre l'area di `footprint`, la
+# impone BuildingCalculator al caricamento (avviso se il .tres dice altro).
+
+# Ingombro in microcelle (2026-10-17, docs/design/building_footprint.md): larghezza (lungo il lato della porta) ×
+# profondità, descritto con la porta verso sud; la rotazione lo gira tutto (BuildingFootprint). 1x1 = gli edifici di sempre.
+@export var footprint: Vector2i = Vector2i(1, 1)
+# Cella della porta sul lato della larghezza (porta a sud), contando da sinistra da 0; -1 = al centro (lato pari: la cella
+# a sinistra del centro). Conta solo con has_door.
+@export var door_offset: int = -1
 
 # Flag per BuildingVerificationService (2026-08-30) — i criteri "questa cella è di un terreno
 # proibito" NON sono universali come "non sconosciuta"/"non già occupata": variano da tipo a
@@ -279,6 +288,11 @@ extends Resource
 # Nessuna percorribilità per ora (rocce/edifici non attraversabili): solo stamina e velocità.
 @export var movement_stamina_multiplier: float = 1.0
 @export var movement_speed_multiplier: float = 1.0
+# Calpestabile (2026-10-17, richiesta utente — separato dalla categoria per lo Spiazzo delle feste, che è Ricreativo): true
+# = l'edificio non blocca le sue microcelle (ci si cammina sopra, ci si posa un mucchio) e può stare davanti alla porta di
+# un altro edificio. Prima lo decideva la categoria MOVEMENT, che resta il "tappeto/strada" (elenco, conteggi, preferenza
+# del pathfinding); oggi true per terra battuta, sentiero di ciottoli e spiazzo.
+@export var walkable: bool = false
 
 @export_group("Production")
 # Sistema di produzione (2026-09-23, richiesta utente) — letti da ProductionService/ProduceAction e
@@ -314,6 +328,12 @@ extends Resource
 # esplicito di nomi che si somma ai filtri di categoria; vuoto = nessun filtro per nome. Vale per lo stoccaggio libero
 # (BuildingStorageService._free_storage_allows), non per il fabbisogno di un ordine in produzione.
 @export var storage_accepted_resources: Array[String] = []
+# Deposito riservato agli eventi dell'edificio (2026-10-17, richiesta utente — Spiazzo delle feste, docs/design/
+# feast_ground.md): nessuno ci deposita di sua iniziativa (lo stoccaggio libero rifiuta tutto) e nessuno ci preleva
+# (né pasti, né rifornimenti, né trasporti, né a mano: BuildingStorageService.get_available_quantity/withdraw danno 0).
+# Entra solo ciò che chiede il rito in preparazione (quota del rito, dentro accepted_categories) e lo consuma solo il rito
+# (BuildingStorageService.withdraw_stored). Non conta nelle scorte del villaggio (VillageStockService).
+@export var storage_event_only: bool = false
 # Quanti ordini di produzione possono essere ATTIVI INSIEME su questo edificio (2026-09-24, richiesta utente; rinominato
 # da production_queue_slots il 2026-10-03: non è una coda) — ogni ordine è una Produce Task assegnata, anche con
 # l'individuo ancora in cammino; raggiunto il limite i pulsanti ricetta si spengono ("postazione già impegnata"). 1 =

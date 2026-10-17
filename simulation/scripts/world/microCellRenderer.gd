@@ -973,12 +973,18 @@ func clear_selected_building() -> void:
 # (stesso ruolo di get_individual_screen_position per la vegetazione). Vector2(-1,-1) sentinel se
 # l'edificio non è (più) tra quelli di questa cella.
 func get_building_screen_position(building_id: int) -> Vector2:
-	var half: float = CELL_SIZE / 2.0
 	for entry in buildings:
 		if entry.get("id", -1) == building_id:
-			var pos: Vector2i = entry["position"]
-			return Vector2(pos.x * CELL_SIZE + half, pos.y * CELL_SIZE + half)
+			return _building_entry_center(entry)
 	return Vector2(-1, -1)
+
+
+# Centro del rettangolo dell'edificio (2026-10-17, ingombro): "position" è l'angolo in alto a sinistra, "size" la misura
+# già ruotata in microcelle (assente = 1x1, il centro della microcella di sempre).
+static func _building_entry_center(entry: Dictionary) -> Vector2:
+	var pos: Vector2i = entry["position"]
+	var rect_size: Vector2i = entry.get("size", Vector2i(1, 1))
+	return (Vector2(pos) + Vector2(rect_size) / 2.0) * CELL_SIZE
 
 
 # Stesso colore/spessore del contorno vegetazione (SELECTION_HIGHLIGHT_COLOR/WIDTH sopra) — coerenza
@@ -993,6 +999,13 @@ func _draw_selected_building_highlight() -> void:
 	if center == Vector2(-1, -1):
 		return
 	var radius: float = BUILDING_FENCE_RADIUS * SELECTION_OUTLINE_PADDING_RATIO
+	# Edifici grandi (2026-10-17): l'anello racchiude il rettangolo (mezza diagonale), mai più piccolo di quello di sempre.
+	for entry in buildings:
+		if entry.get("id", -1) == _selected_building_id:
+			var rect_size: Vector2i = entry.get("size", Vector2i(1, 1))
+			if rect_size != Vector2i(1, 1):
+				radius = maxf(radius, (Vector2(rect_size) * CELL_SIZE).length() / 2.0 * SELECTION_OUTLINE_PADDING_RATIO)
+			break
 	draw_arc(center, radius, 0, TAU, 24, SELECTION_HIGHLIGHT_COLOR, SELECTION_HIGHLIGHT_WIDTH)
 
 
@@ -1346,14 +1359,13 @@ func _draw_uniform_terrain() -> void:
 # Ancoraggio al centro della microcella (base+half), nessun jitter/dispersione come per la
 # vegetazione — un edificio occupa una posizione precisa, non un lotto condiviso da più individui.
 func _draw_buildings() -> void:
-	var half: float = CELL_SIZE / 2.0
 	# Terra battuta PRIMA di ogni altro edificio (2026-09-19): è una superficie piatta a livello
 	# del terreno, mai sopra la sagoma di un altro edificio — vedi _rebuild_dirt_ground_mesh.
 	_draw_dirt_ground_tiles()
 	_draw_linear_grounds()
 	for entry in buildings:
-		var pos: Vector2i = entry["position"]
-		var ground := Vector2(pos.x * CELL_SIZE + half, pos.y * CELL_SIZE + half)
+		# Centro del rettangolo (2026-10-17, ingombro): per un 1x1 è il centro della microcella di sempre.
+		var ground := _building_entry_center(entry)
 		# "Cantiere in attesa" (2026-09-11, richiesta utente, REVISIONATA lo stesso giorno — primo
 		# tentativo era una variante grayscale della sagoma vera, scartato appena visto in-game) —
 		# finché Building.is_complete resta false, la sagoma vera dell'edificio (capanna/Stone
@@ -1411,6 +1423,11 @@ func _draw_buildings() -> void:
 			continue
 		if PlaceholderBuildingShapes.TYPES.has(building_type_name):
 			PlaceholderBuildingShapes.draw(self, building_type_name, ground, false, 1.0, entry.get("rotation", GameTypes.Direction.SOUTH))
+			continue
+		# Spiazzo delle feste (2026-10-17, 2x2): terra battuta e cerchio di sassi, sul rettangolo intero.
+		if building_type_name == FeastGroundShape.TYPE:
+			# Il fondo è quello dei tile di terra battuta (_rebuild_dirt_ground_mesh): qui solo il cerchio di sassi.
+			FeastGroundShape.draw(self, ground, Vector2(entry.get("size", Vector2i(1, 1))) * CELL_SIZE, false, 1.0, false)
 			continue
 		var direction: GameTypes.Direction = entry["rotation"]
 		# Tende (2026-10-03, scambio di aspetto — TentShapes): la tenda di pelli ha il disco liscio che prima avevano
@@ -1546,14 +1563,12 @@ const JOB_MARKER_OFFSET := Vector2(3.2, 1.0)
 
 
 func _draw_job_markers() -> void:
-	var half: float = CELL_SIZE / 2.0
 	for entry in buildings:
 		var demolish: bool = bool(entry.get("marked_for_demolition", false))
 		var upgrade: bool = bool(entry.get("upgrading", false))
 		if not demolish and not upgrade:
 			continue
-		var pos: Vector2i = entry["position"]
-		var ground := Vector2(pos.x * CELL_SIZE + half, pos.y * CELL_SIZE + half) + JOB_MARKER_OFFSET
+		var ground := _building_entry_center(entry) + JOB_MARKER_OFFSET
 		var post_top: Vector2 = ground + Vector2(0, -WIP_SIGN_POST_HEIGHT)
 		draw_line(ground, post_top, WIP_SIGN_POST_COLOR, WIP_SIGN_POST_WIDTH)
 		var plate_center: Vector2 = post_top + Vector2(0, -WIP_SIGN_PLATE_RADIUS * 0.3)
@@ -1741,6 +1756,8 @@ const GROUND_UNDER_BUILDING_TYPES: Array[String] = [
 	"clothing_hut",
 	# Ceppo dell'insegnamento (2026-10-16).
 	"teaching_stump",
+	# Spiazzo delle feste (2026-10-17): un tile per microcella del rettangolo ("dirt_cells"), sotto il cerchio di sassi.
+	"feast_ground",
 ]
 
 
@@ -1781,7 +1798,12 @@ func _rebuild_dirt_ground_mesh() -> void:
 		elif GROUND_UNDER_BUILDING_TYPES.has(building_type_name) or bool(entry.get("dirt_ground_under", false)):
 			# "dirt_ground_under" (2026-10-04): fondo chiesto dalla voce stessa (oggi solo la capanna di stoccaggio, vedi
 			# GameScene._buildings_for_cell), fuori dalla lista per tipo.
-			_append_dirt_ground_tile(entry["position"], int(entry.get("dirt_neighbors", 0)), vertices, colors)
+			# Edifici grandi (2026-10-17): "dirt_cells" = [microcella, maschera] per ogni cella del rettangolo.
+			if entry.has("dirt_cells"):
+				for dirt_cell in entry["dirt_cells"]:
+					_append_dirt_ground_tile(dirt_cell[0], int(dirt_cell[1]), vertices, colors)
+			else:
+				_append_dirt_ground_tile(entry["position"], int(entry.get("dirt_neighbors", 0)), vertices, colors)
 	if _dirt_ground_mesh != null:
 		_dirt_ground_mesh.clear_surfaces()
 	if vertices.is_empty():

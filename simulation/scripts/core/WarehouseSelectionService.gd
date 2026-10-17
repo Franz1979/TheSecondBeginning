@@ -209,6 +209,20 @@ static func prefers_recipe_workstation(resource_name: String) -> bool:
 	return rules != null and rules.prefers_recipe_workstation
 
 
+# true se almeno un edificio (esclusi `excluded_building_ids`) può dare `resource_name` a un rifornimento automatico (stessa
+# regola di find_source_for_retrieval con workstation_products_only), senza guardare distanza né raggiungibilità.
+# 2026-10-17: scelta della carne da portare al banchetto (SocialRiteService).
+static func has_retrieval_source(world: World, resource_name: String, excluded_building_ids: Array[int] = []) -> bool:
+	if world == null:
+		return false
+	for building in world.buildings:
+		if excluded_building_ids.has(building.id) or not building.is_complete or building.is_demolished or building.is_out_of_service():
+			continue
+		if not _get_matching_stock(building, resource_name, 1, true).is_empty():
+			return true
+	return false
+
+
 static func find_source_for_retrieval(
 	world: World,
 	origin_position: Vector2,

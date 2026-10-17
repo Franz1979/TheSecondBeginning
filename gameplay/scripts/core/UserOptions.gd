@@ -84,8 +84,9 @@ var job_board_manual_assign_seconds: int = -1
 # Regola "Ritira i mucchi abbandonati" (2026-10-07, regole di assegnazione del cassetto): accesa, i mucchi a terra che
 # nessuno porta via entrano nella lista dei lavori. Chiave in options.cfg con lo stesso nome.
 var job_board_collect_piles: bool = true
-# Regola "Svuota le uscite piene" (2026-10-08): Prodotti finiti pieni che fermano un ordine entrano in coda come lavoro di
-# consegna a magazzino (OutputJobProvider.collect). Spenta: niente lavori di questo tipo.
+# Regola "Svuota le uscite piene" (2026-10-08): Prodotti finiti pieni che fermano un ordine, o (2026-10-17) che senza
+# ordini impediscono di avviarne uno nuovo, entrano in coda come lavoro di consegna a magazzino (OutputJobProvider.collect).
+# Spenta: niente lavori di questo tipo.
 var job_board_empty_full_outputs: bool = true
 # Posizione del cassetto laterale (2026-10-09, richiesta utente — SideDrawer): false = "Affiancato" (a sinistra dell'info
 # panel, il default), true = "Sopra" (sopra l'info panel, allineato al bordo destro dello schermo). Si cambia dal bottone

@@ -79,6 +79,10 @@ var repair_auto_excluded: bool = false
 # (RiteRules.id), "" = nessuno. Resta finché il rito non è celebrato davvero (RiteAction.on_complete) o annullato con la X;
 # se chi lo celebra lo abbandona torna "mancante" (e in coda con l'idea dell'assegnazione). Salvato con l'edificio.
 var requested_rite_id: String = ""
+# Soglia di calorie del banchetto di questo spiazzo (2026-10-17, richiesta utente — pannello edificio): -1 = valore di
+# partenza dei dati (BanquetRiteRules.default_calorie_threshold). Letta solo da SocialRiteService.get_calorie_threshold.
+# Salvata con l'edificio.
+var feast_calorie_threshold: int = -1
 # Macerie (2026-10-10, crollo): building_type_name dell'edificio crollato da cui sono nate ("" per ogni altro edificio).
 # Salvato con l'edificio.
 var rubble_source_name: String = ""

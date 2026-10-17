@@ -1020,10 +1020,10 @@ task_assignment_kind_move_up,Sposta su
 task_assignment_kind_move_down,Sposta giù
 produce_output_full_warning,Uscita piena: si fermerà dopo {count}
 toolkit_reject_not_used,{tool} non serve alle ricette di questo edificio: non entra nell'Attrezzeria.
-pending_output_delivery,Consegna · {building} ({used}/{capacity})
+pending_output_delivery,Svuota uscita · {building} ({used}/{capacity})
 task_assignment_kind_output,Consegna finiti a magazzino
-task_assignment_setting_empty_outputs,Consegna finiti a magazzino quando la produzione o l'essiccatoio si fermano
-task_assignment_setting_empty_outputs_tooltip,"Quando un ordine si ferma perché i Prodotti finiti sono pieni, o un essiccatoio è pieno con prodotti pronti, un individuo libero ne porta un carico al magazzino."
+task_assignment_setting_empty_outputs,Consegna finiti a magazzino quando l'uscita è piena o l'essiccatoio si ferma
+task_assignment_setting_empty_outputs_tooltip,"Quando i Prodotti finiti sono pieni (un ordine si ferma, o non se ne può avviare uno nuovo), o un essiccatoio è pieno con prodotti pronti, un individuo libero ne porta un carico al magazzino."
 task_assignment_output_cannot_cancel,Niente da annullare: si svuotano solo i Prodotti finiti.
 task_deliver_output_name,Consegna finiti
 pending_material_fuel,combustibile
@@ -1293,6 +1293,7 @@ pending_stock_fuel_blocked,Edificio non disponibile o niente combustibile da por
 building_teaching_stump,Ceppo dell'insegnamento
 build_bar_teaching_stump_tooltip,"Ceppo dell'insegnamento: si costruisce dove è stato tagliato un albero, il ceppo diventa il posto dell'anziano"
 building_category_cultural,Culturale
+building_category_recreational,Ricreativo
 build_blocked_needs_tree_stump,Serve una microcella con almeno un albero tagliato (un ceppo)
 rite_oral_lesson_name,Lezione
 social_rite_reject_no_convocable,Nessuno da convocare nel villaggio (per la lezione servono bambini)
@@ -1313,3 +1314,15 @@ building_influence_no_lesson_tooltip,Nessuna lezione da oltre un anno: −{loss}
 building_influence_no_meeting_tooltip,Nessuna riunione da oltre un anno: −{loss} autorità all'anno
 task_oral_lesson_name,Insegnamento orale
 material_fuel_label,combustibile
+building_feast_ground,Spiazzo delle feste
+build_bar_feast_ground_tooltip,"Spiazzo delle feste: terra battuta con un cerchio di sassi per il falò, dove il villaggio si riunisce per i banchetti"
+building_feast_calorie_threshold,Soglia calorie: {calories}
+building_feast_calorie_threshold_tooltip,"Calorie di cibo che l'organizzatore raduna nello spiazzo prima di convocare il villaggio (minimo {min})"
+social_rite_reject_wrong_building,Questo rito non si tiene in questo edificio
+building_feast_storage_summary,"Cibo: {calories} / {threshold} calorie · Combustibile: {fuel} / {fuel_needed}"
+building_feast_calorie_threshold_locked_tooltip,"Banchetto in corso: la soglia è fissata, la modifica vale per il prossimo"
+warehouse_rule_banquet,Banchetti spontanei
+warehouse_rule_banquet_calories,Fino a calorie
+warehouse_rule_banquet_tooltip,"Calorie di cibo fino a cui un banchetto spontaneo si organizza sullo spiazzo (minimo 500)"
+warehouse_rule_banquet_safe_only,Solo se consumano meno di un terzo delle scorte
+warehouse_rule_banquet_safe_only_tooltip,"Un banchetto spontaneo parte solo se nei magazzini c'è almeno il triplo del cibo che consuma"

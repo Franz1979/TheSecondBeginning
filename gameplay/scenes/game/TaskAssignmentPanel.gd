@@ -278,7 +278,7 @@ func _apply_zone_available(kind: String) -> void:
 	var available := bool(_zone_available.get(kind, false))
 	button.disabled = not available
 	var button_tooltip_key: String = String({ZONE_KIND_QUARRY: "drawer_quarry_button_tooltip", ZONE_KIND_GATHER: "drawer_gather_button_tooltip", ZONE_KIND_HUNT: "drawer_hunt_button_tooltip"}.get(kind, "drawer_cut_button_tooltip"))
-	button.tooltip_text = tr(button_tooltip_key) if available else String(_zone_unavailable_reason.get(kind, ""))
+	button.tooltip_text = TooltipText.wrap(tr(button_tooltip_key) if available else String(_zone_unavailable_reason.get(kind, "")))
 	if not available and _cut_overlay != null and _cut_overlay.visible and _zone_kind == kind:
 		close_cut_overlay()
 
@@ -295,7 +295,7 @@ func _apply_produce_available() -> void:
 	_produce_button.disabled = not _produce_available
 	if not _produce_available:
 		close_produce_overlay()
-	_produce_button.tooltip_text = tr("drawer_produce_button_tooltip") if _produce_available else tr("drawer_produce_no_building")
+	_produce_button.tooltip_text = TooltipText.wrap(tr("drawer_produce_button_tooltip") if _produce_available else tr("drawer_produce_no_building"))
 
 
 # Bottone di un comando: icona disegnata in alto, nome sotto. Senza effetto per ora (2026-10-07).
@@ -304,7 +304,7 @@ func _build_command_button(action: Dictionary) -> Button:
 	button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	button.custom_minimum_size = Vector2(0.0, BUTTON_HEIGHT)
 	button.focus_mode = Control.FOCUS_NONE
-	button.tooltip_text = tr("task_assignment_coming_soon")
+	button.tooltip_text = TooltipText.wrap(tr("task_assignment_coming_soon"))
 	var box := VBoxContainer.new()
 	box.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	box.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -387,7 +387,7 @@ func _build_section(parent: Control, title: String, stretch: float, title_toolti
 	parent.add_child(section)
 	var title_label := _section_title(title)
 	if title_tooltip != "":
-		title_label.tooltip_text = title_tooltip
+		title_label.tooltip_text = TooltipText.wrap(title_tooltip)
 		title_label.mouse_filter = Control.MOUSE_FILTER_STOP
 	section.add_child(title_label)
 	var scroll := ScrollContainer.new()
@@ -525,7 +525,7 @@ func _build_list_row(entry: Dictionary, in_progress: bool) -> Control:
 	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	# PASS (2026-10-07): il tooltip resta, il clic arriva alla riga intera (ClickableRow in fondo).
 	label.mouse_filter = Control.MOUSE_FILTER_PASS
-	label.tooltip_text = String(entry.get("text", "")) if enabled else "%s\n%s" % [entry.get("text", ""), entry.get("disabled_reason", "")]
+	label.tooltip_text = TooltipText.wrap(String(entry.get("text", "")) if enabled else "%s\n%s" % [entry.get("text", ""), entry.get("disabled_reason", "")])
 	if not enabled:
 		label.modulate = DISABLED_MODULATE
 	if locked and enabled:
@@ -575,7 +575,7 @@ func _build_list_row(entry: Dictionary, in_progress: bool) -> Control:
 	if status_text != "":
 		var status_label := Label.new()
 		status_label.text = status_text
-		status_label.tooltip_text = status_text
+		status_label.tooltip_text = TooltipText.wrap(status_text)
 		status_label.mouse_filter = Control.MOUSE_FILTER_PASS
 		status_label.add_theme_font_size_override("font_size", LIST_FONT_SIZE - 2)
 		status_label.clip_text = true
@@ -609,11 +609,11 @@ func _build_list_row(entry: Dictionary, in_progress: bool) -> Control:
 		# "Automatico" (2026-10-09, "Cerca lavoro"): partito da solo, stesso stile di "Diretto".
 		var automatic := bool(entry.get("automatic", false))
 		direct_label.text = tr("task_assignment_automatic") if automatic else tr("task_assignment_direct")
-		direct_label.tooltip_text = tr("task_assignment_automatic_tooltip") if automatic else tr("task_assignment_direct_tooltip")
+		direct_label.tooltip_text = TooltipText.wrap(tr("task_assignment_automatic_tooltip") if automatic else tr("task_assignment_direct_tooltip"))
 		# "Riporta il carico" (2026-10-10): carico della task annullata riportato al magazzino, stesso stile.
 		if bool(entry.get("cargo_return", false)):
 			direct_label.text = tr("task_assignment_cargo_return")
-			direct_label.tooltip_text = tr("task_assignment_cargo_return_tooltip")
+			direct_label.tooltip_text = TooltipText.wrap(tr("task_assignment_cargo_return_tooltip"))
 		direct_label.mouse_filter = Control.MOUSE_FILTER_STOP
 		direct_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		direct_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
@@ -623,7 +623,7 @@ func _build_list_row(entry: Dictionary, in_progress: bool) -> Control:
 		row.add_child(direct_holder)
 	elif in_progress:
 		state_button.text = tr("task_assignment_requeue")
-		state_button.tooltip_text = tr("task_assignment_requeue_tooltip")
+		state_button.tooltip_text = TooltipText.wrap(tr("task_assignment_requeue_tooltip"))
 		state_button.pressed.connect(func() -> void: requeue_requested.emit(entry))
 	else:
 		state_button.text = tr("task_assignment_unlock") if locked else tr("task_assignment_lock")
@@ -646,7 +646,7 @@ func _build_list_row(entry: Dictionary, in_progress: bool) -> Control:
 	cancel_button.add_theme_font_size_override("font_size", LIST_FONT_SIZE - 2)
 	cancel_button.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	cancel_button.disabled = bool(entry.get("cancel_disabled", false))
-	cancel_button.tooltip_text = String(entry.get("cancel_tooltip", ""))
+	cancel_button.tooltip_text = TooltipText.wrap(String(entry.get("cancel_tooltip", "")))
 	cancel_button.pressed.connect(func() -> void: cancel_requested.emit(entry))
 	# Riga "Automatico" (2026-10-09): niente X — resta solo il suo posto, invisibile, per l'allineamento delle colonne.
 	if bool(entry.get("automatic", false)) or bool(entry.get("cargo_return", false)):
@@ -697,7 +697,7 @@ func _with_warehouse_badge(icon: Control) -> Control:
 	holder.custom_minimum_size = Vector2(LIST_ICON_SIDE, LIST_ICON_SIDE)
 	holder.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	holder.mouse_filter = Control.MOUSE_FILTER_PASS
-	holder.tooltip_text = tr("task_assignment_warehouse_tag_tooltip")
+	holder.tooltip_text = TooltipText.wrap(tr("task_assignment_warehouse_tag_tooltip"))
 	icon.set_anchors_preset(Control.PRESET_FULL_RECT)
 	icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	holder.add_child(icon)
@@ -849,7 +849,7 @@ func _build_wait_setting_row() -> Control:
 	row.add_theme_constant_override("separation", 6)
 	var label := Label.new()
 	label.text = tr("task_assignment_setting_wait")
-	label.tooltip_text = tr("task_assignment_setting_wait_tooltip")
+	label.tooltip_text = TooltipText.wrap(tr("task_assignment_setting_wait_tooltip"))
 	label.mouse_filter = Control.MOUSE_FILTER_STOP
 	label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -862,7 +862,7 @@ func _build_wait_setting_row() -> Control:
 	spin.step = 1
 	spin.rounded = true
 	spin.value = JobBoardService.get_manual_assign_window_seconds()
-	spin.tooltip_text = tr("task_assignment_setting_wait_tooltip")
+	spin.tooltip_text = TooltipText.wrap(tr("task_assignment_setting_wait_tooltip"))
 	spin.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	row.add_child(spin)
 	_wait_spin = spin
@@ -886,7 +886,7 @@ func _build_auto_repair_setting_row() -> Control:
 	row.add_theme_constant_override("separation", 6)
 	var label := Label.new()
 	label.text = tr("task_assignment_setting_auto_repair")
-	label.tooltip_text = tr("task_assignment_setting_auto_repair_tooltip")
+	label.tooltip_text = TooltipText.wrap(tr("task_assignment_setting_auto_repair_tooltip"))
 	label.mouse_filter = Control.MOUSE_FILTER_STOP
 	label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -900,7 +900,7 @@ func _build_auto_repair_setting_row() -> Control:
 	spin.rounded = true
 	spin.suffix = "%"
 	spin.value = _auto_repair_percent
-	spin.tooltip_text = tr("task_assignment_setting_auto_repair_tooltip")
+	spin.tooltip_text = TooltipText.wrap(tr("task_assignment_setting_auto_repair_tooltip"))
 	spin.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	row.add_child(spin)
 	_auto_repair_spin = spin
@@ -929,7 +929,7 @@ func set_auto_clear_rubble(enabled: bool) -> void:
 func _build_auto_clear_rubble_setting_row() -> Control:
 	var check := CheckBox.new()
 	check.text = tr("task_assignment_setting_auto_clear_rubble")
-	check.tooltip_text = tr("task_assignment_setting_auto_clear_rubble_tooltip")
+	check.tooltip_text = TooltipText.wrap(tr("task_assignment_setting_auto_clear_rubble_tooltip"))
 	check.focus_mode = Control.FOCUS_NONE
 	check.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	check.add_theme_font_size_override("font_size", LIST_FONT_SIZE)
@@ -954,7 +954,7 @@ func set_return_borrowed_tools(enabled: bool) -> void:
 func _build_return_borrowed_tools_setting_row() -> Control:
 	var check := CheckBox.new()
 	check.text = tr("task_assignment_setting_return_borrowed_tools")
-	check.tooltip_text = tr("task_assignment_setting_return_borrowed_tools_tooltip")
+	check.tooltip_text = TooltipText.wrap(tr("task_assignment_setting_return_borrowed_tools_tooltip"))
 	check.focus_mode = Control.FOCUS_NONE
 	check.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	check.add_theme_font_size_override("font_size", LIST_FONT_SIZE)
@@ -973,7 +973,7 @@ func _build_return_borrowed_tools_setting_row() -> Control:
 func _build_collect_piles_setting_row() -> Control:
 	var check := CheckBox.new()
 	check.text = tr("task_assignment_setting_collect_piles")
-	check.tooltip_text = tr("task_assignment_setting_collect_piles_tooltip")
+	check.tooltip_text = TooltipText.wrap(tr("task_assignment_setting_collect_piles_tooltip"))
 	check.focus_mode = Control.FOCUS_NONE
 	check.add_theme_font_size_override("font_size", LIST_FONT_SIZE)
 	check.button_pressed = UserOptions.job_board_collect_piles
@@ -991,7 +991,7 @@ func _build_collect_piles_setting_row() -> Control:
 func _build_empty_outputs_setting_row() -> Control:
 	var check := CheckBox.new()
 	check.text = tr("task_assignment_setting_empty_outputs")
-	check.tooltip_text = tr("task_assignment_setting_empty_outputs_tooltip")
+	check.tooltip_text = TooltipText.wrap(tr("task_assignment_setting_empty_outputs_tooltip"))
 	# Testo lungo (2026-10-08): va a capo, il cassetto resta largo SideDrawer.WIDTH.
 	check.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	check.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -1028,7 +1028,7 @@ func _build_priority_setting(parent: VBoxContainer) -> void:
 		var option := CheckBox.new()
 		option.button_group = group
 		option.text = tr(name_key)
-		option.tooltip_text = tr(name_key + "_tooltip")
+		option.tooltip_text = TooltipText.wrap(tr(name_key + "_tooltip"))
 		option.focus_mode = Control.FOCUS_NONE
 		option.add_theme_font_size_override("font_size", LIST_FONT_SIZE)
 		option.button_pressed = mode == _priority_mode
@@ -1082,7 +1082,7 @@ func _rebuild_kind_order_rows() -> void:
 func _build_kind_move_button(text: String, tooltip: String, index: int, direction: int) -> Button:
 	var button := Button.new()
 	button.text = text
-	button.tooltip_text = tooltip
+	button.tooltip_text = TooltipText.wrap(tooltip)
 	button.focus_mode = Control.FOCUS_NONE
 	button.add_theme_font_size_override("font_size", LIST_FONT_SIZE - 2)
 	var target := index + direction
@@ -1281,7 +1281,7 @@ func _build_produce_recipe_row(index: int) -> Control:
 	button.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	button.add_theme_font_size_override("font_size", LIST_FONT_SIZE)
-	button.tooltip_text = "%s\n%s" % [IconRegistry.get_resource_display_name(recipe_name), tr("drawer_produce_overlay_hint")]
+	button.tooltip_text = TooltipText.wrap("%s\n%s" % [IconRegistry.get_resource_display_name(recipe_name), tr("drawer_produce_overlay_hint")])
 	_apply_produce_selected_style(button)
 	button.set_meta(&"recipe_name", recipe_name)
 	# Ricetta che nessuno può fare (2026-10-09: attrezzo che nessun adulto ha e nessuna Attrezzeria copre): spenta, motivo
@@ -1289,7 +1289,7 @@ func _build_produce_recipe_row(index: int) -> Control:
 	var disabled_reason := String(_produce_recipes[index].get("disabled_reason", ""))
 	if disabled_reason != "":
 		button.disabled = true
-		button.tooltip_text = "%s\n%s" % [IconRegistry.get_resource_display_name(recipe_name), disabled_reason]
+		button.tooltip_text = TooltipText.wrap("%s\n%s" % [IconRegistry.get_resource_display_name(recipe_name), disabled_reason])
 		row.modulate = MODAL_DIM_MODULATE
 		_produce_buttons.append(button)
 		row.add_child(button)
@@ -1587,7 +1587,7 @@ func _compact_gather_rows(node: Node) -> void:
 		if child is Button:
 			(child as Button).clip_text = true
 			(child as Button).text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
-			(child as Button).tooltip_text = (child as Button).text
+			(child as Button).tooltip_text = TooltipText.wrap((child as Button).text)
 			(child as Control).add_theme_font_size_override("font_size", LIST_FONT_SIZE)
 		elif child is Label:
 			(child as Control).add_theme_font_size_override("font_size", LIST_FONT_SIZE)
@@ -1751,9 +1751,9 @@ func set_workload(at_work: int, needs: int, leisure: int, extra_rows: Array[Dict
 	tooltip_lines.append(tr("task_assignment_workload_leisure").format({"count": leisure}))
 	tooltip_lines.append(tr("task_assignment_workload_needs").format({"count": needs}))
 	var tooltip := "\n".join(tooltip_lines)
-	_in_progress_title.tooltip_text = tooltip
-	_workload_bar.tooltip_text = tooltip
-	_workload_percent.tooltip_text = tooltip
+	_in_progress_title.tooltip_text = TooltipText.wrap(tooltip)
+	_workload_bar.tooltip_text = TooltipText.wrap(tooltip)
+	_workload_percent.tooltip_text = TooltipText.wrap(tooltip)
 	_workload_fill.visible = percent > 0
 	_workload_empty.visible = percent < 100
 	_workload_fill.size_flags_stretch_ratio = maxf(float(percent), 0.001)

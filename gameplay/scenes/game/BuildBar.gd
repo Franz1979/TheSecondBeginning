@@ -99,16 +99,21 @@ const BUILDING_SLOT_INDEX_BY_TYPE := {
 	# Sentiero di ciottoli (2026-10-16, richiesta utente) — slot 17, submenu_row.slot_count portato a 19 in
 	# BuildBar.tscn; Hut resta l'ultimo a destra (slot 18).
 	"pebble_path": 17,
-	"hut": 18,
+	# Spiazzo delle feste (2026-10-17, docs/design/feast_ground.md) — slot 18, submenu_row.slot_count portato a 20 in
+	# BuildBar.tscn; Hut resta l'ultimo a destra (slot 19). Richiede paleolithic_constructions.
+	"feast_ground": 18,
+	"hut": 19,
 }
 
-# Ordine delle categorie in category_row, uno slot ciascuna (BuildBar.tscn: CategoryRow.slot_count = 8). RUINS esclusa:
+# Ordine delle categorie in category_row, uno slot ciascuna (BuildBar.tscn: CategoryRow.slot_count = 9). RUINS esclusa:
 # le macerie non si costruiscono. Una categoria nuova va aggiunta qui e allo slot_count.
 const CATEGORY_ORDER: Array[int] = [
 	BuildingTypes.Category.RESIDENTIAL,
 	BuildingTypes.Category.STORAGE,
 	BuildingTypes.Category.PRODUCTION,
 	BuildingTypes.Category.CULTURAL,
+	# Ricreativo (2026-10-17): CategoryRow.slot_count portato a 9.
+	BuildingTypes.Category.RECREATIONAL,
 	BuildingTypes.Category.RELIGIOUS,
 	BuildingTypes.Category.POLITICAL,
 	BuildingTypes.Category.MILITARY,
@@ -251,6 +256,10 @@ func _ready() -> void:
 		BUILDING_SLOT_INDEX_BY_TYPE["storage_hut"], "", tr("build_bar_storage_hut_tooltip"), &"build_storage_hut", "", true,
 		IconRegistry.get_building_icon_node("storage_hut")
 	)
+	submenu_row.configure_slot(
+		BUILDING_SLOT_INDEX_BY_TYPE["feast_ground"], "", tr("build_bar_feast_ground_tooltip"), &"build_feast_ground", "", true,
+		IconRegistry.get_building_icon_node("feast_ground")
+	)
 	submenu_row.configure_slot(BUILDING_SLOT_INDEX_BY_TYPE["hut"], IconRegistry.get_building_icon("hut"), tr("build_bar_hut_tooltip"), &"build_hut")
 	# Tooltip degli edifici (2026-10-07, richiesta utente): formato unico di BuildingCostTooltip, uguale a "Migliora".
 	for building_type_name in BUILDING_SLOT_INDEX_BY_TYPE.keys():
@@ -390,7 +399,7 @@ func _build_title_row() -> void:
 	_hide_superseded_check.toggle_mode = true
 	_hide_superseded_check.flat = true
 	_hide_superseded_check.focus_mode = Control.FOCUS_NONE
-	_hide_superseded_check.tooltip_text = tr("build_bar_hide_superseded_tooltip")
+	_hide_superseded_check.tooltip_text = TooltipText.wrap(tr("build_bar_hide_superseded_tooltip"))
 	_hide_superseded_check.add_theme_font_size_override("font_size", CommandBar.GROUP_LABEL_FONT_SIZE)
 	for color_name in ["font_color", "font_pressed_color", "font_hover_color", "font_hover_pressed_color"]:
 		_hide_superseded_check.add_theme_color_override(color_name, CommandBar.GROUP_LABEL_COLOR)

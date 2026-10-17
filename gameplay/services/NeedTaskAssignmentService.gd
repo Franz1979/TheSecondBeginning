@@ -387,9 +387,11 @@ const FOOD_SOURCE_MIN_EXTRA_CELLS: float = 15.0
 # resta quella di FoodSelectionService. null se nessun magazzino ha cibo.
 static func find_restock_source(individual: HumanIndividual, world: World) -> Building:
 	var reachable := PathfindingService.reachability_for(individual)
+	# Nessuna esclusione per i banchetti (2026-10-17): lo spiazzo ha il deposito riservato agli eventi, mai una fonte.
+	var excluded: Array[int] = []
 	var nearest := WarehouseSelectionService.find_source_for_retrieval(
 		world, individual.position, individual.home_macro_coords, SecondaryResourceTypes.Category.FOOD,
-		[], 1, individual.id, reachable
+		excluded, 1, individual.id, reachable
 	)
 	if nearest == null:
 		return null
@@ -400,7 +402,7 @@ static func find_restock_source(individual: HumanIndividual, world: World) -> Bu
 	var best_ratio := _best_food_ratio(nearest)
 	var best_distance := nearest_distance
 	for building in world.buildings:
-		if building == nearest or not building.is_complete or building.is_demolished or building.is_out_of_service():
+		if building == nearest or excluded.has(building.id) or not building.is_complete or building.is_demolished or building.is_out_of_service():
 			continue
 		var stock := WarehouseSelectionService.get_matching_stock(building, SecondaryResourceTypes.Category.FOOD, 1)
 		if stock.is_empty():

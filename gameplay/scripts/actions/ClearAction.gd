@@ -46,6 +46,10 @@ const STAMINA_DRAIN_PER_DAY: float = 200.0
 var target_building: Building = null
 var _macro_state: MacroCellState = null
 var _is_currently_grass: bool = false
+# Ingombro (2026-10-17): quante microcelle del rettangolo hanno l'erba (un giorno ciascuna, e un _clear_grass ciascuna) e
+# tutte le microcelle del rettangolo. Per un 1x1: 0 o 1, e la sola _position — come prima.
+var _grass_cells: int = 0
+var _cells: Array[Vector2i] = []
 
 var _position: Vector2i = Vector2i.ZERO
 var _duration: float = 0.0
@@ -79,7 +83,7 @@ signal site_cleared(building: Building)
 func _init(
 	p_target_building: Building = null,
 	p_macro_state: MacroCellState = null,
-	p_is_currently_grass: bool = false
+	p_is_currently_grass: Variant = false
 ) -> void:
 	target = null
 	target_building = p_target_building
@@ -88,8 +92,11 @@ func _init(
 	# utente).
 	disallowed_age_bands = [HumanTypes.AgeBand.INFANT, HumanTypes.AgeBand.CHILD]
 	_macro_state = p_macro_state
-	_is_currently_grass = p_is_currently_grass
+	# Bool (1x1, salvataggi vecchi) o numero di microcelle con l'erba (edifici grandi, 2026-10-17).
+	_grass_cells = int(p_is_currently_grass)
+	_is_currently_grass = _grass_cells > 0
 	_position = Vector2i(p_target_building.micro_x, p_target_building.micro_y) if p_target_building != null else Vector2i.ZERO
+	_cells = BuildingFootprint.cells_of(p_target_building) if p_target_building != null else [_position]
 	_duration = _compute_duration()
 	# Nessun attrezzo e nessuna pianta viva abbattuta (2026-10-04, richiesta utente — task Cut): qui si tolgono solo erba,
 	# ceppi e piante morte. Una pianta viva nel lotto (nata dopo il piazzamento, o cantiere di un salvataggio piazzato su
@@ -147,9 +154,7 @@ const TREE_STUMP_CLEAR_DAYS: float = 0.5
 
 
 func _compute_duration() -> float:
-	var duration: float = 0.0
-	if _is_currently_grass:
-		duration += 1.0
+	var duration: float = float(_grass_cells)
 	if _macro_state != null:
 		duration += float(_count_tree_stumps_at()) * TREE_STUMP_CLEAR_DAYS
 	return duration
@@ -158,13 +163,19 @@ func _compute_duration() -> float:
 # Ceppi d'albero in _position: tagli d'albero ancora nella finestra di rientro (dopo, lo slot non mostra più il ceppo).
 func _count_tree_stumps_at() -> int:
 	var current_year: int = GameSettings.active_game_data.year if GameSettings.active_game_data != null else 0
-	return BuildingSiteClearingService.count_tree_stumps(_macro_state, _position, current_year)
+	var count := 0
+	for cell in _cells:
+		count += BuildingSiteClearingService.count_tree_stumps(_macro_state, cell, current_year)
+	return count
 
 
 # Alberi o arbusti vivi nel lotto del cantiere (2026-10-04): la pulizia non parte finché ci sono, il pannello del
 # cantiere lo dice (BuildingInfoPanel, "Taglia prima alberi e arbusti").
 func has_live_plants() -> bool:
-	return BuildingSiteClearingService.has_woody_vegetation(_macro_state, _position)
+	for cell in _cells:
+		if BuildingSiteClearingService.has_woody_vegetation(_macro_state, cell):
+			return true
+	return false
 
 
 # _duration<=0.0 (microcella già completamente sgombra: nessuna grass/tree/shrub) ritorna 0.0 SENZA
@@ -244,7 +255,10 @@ func on_complete(individual: Variant, context: Dictionary) -> void:
 		_log_clear_end(individual)
 
 	# Solo erba, ceppi e piante morte (2026-10-04): is_complete garantisce che non ci siano piante vive.
-	BuildingSiteClearingService.clear_ground(_macro_state, _position, _is_currently_grass)
+	# Ingombro (2026-10-17): ogni microcella del rettangolo; l'erba non ha posizione, se ne toglie una microcella per
+	# ognuna che l'aveva.
+	for i in range(_cells.size()):
+		BuildingSiteClearingService.clear_ground(_macro_state, _cells[i], i < _grass_cells)
 
 	# Spazio riservato (2026-09-11, richiesta utente, punto 2) — STESSA formula di GameScene.
 	# _place_building_at, spostata QUI così la microcella non risulta mai libera per la crescita
@@ -323,7 +337,7 @@ func _log_clear_start(individual: Variant) -> void:
 		return
 	var game_data: GameData = GameSettings.active_game_data
 	target_building.construction_progress[CLEAR_LOG_START_DAY_KEY] = game_data.get_absolute_day() if game_data != null else 0
-	var grass_days: float = 1.0 if _is_currently_grass else 0.0
+	var grass_days: float = float(_grass_cells)
 	var tree_stumps := _count_tree_stumps_at()
 	var shrub_stumps := _count_exceptions_at(_macro_state.vegetation_cut_exceptions, GameTypes.WorldObjectType.SHRUB, true)
 	var dead_plants := _count_exceptions_at(_macro_state.vegetation_death_exceptions, -1, false)
@@ -366,7 +380,7 @@ func _log_clear_end(individual: Variant) -> void:
 # classe da ripristinare qui.
 func get_save_data() -> Dictionary:
 	var data := {
-		"is_currently_grass": _is_currently_grass,
+		"is_currently_grass": _grass_cells,
 	}
 	if target_building != null:
 		data["target_building_id"] = target_building.id

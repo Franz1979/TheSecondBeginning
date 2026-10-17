@@ -64,6 +64,12 @@ func _process(delta: float) -> void:
 			position += edge_pan * EDGE_PAN_MAX_SPEED * delta
 
 
+# Parte della finestra in cui la mappa si vede davvero (senza barra laterale e pannelli aperti sul bordo destro), in pixel
+# dello schermo: per centrare un oggetto dove il giocatore lo vede (GameScene._animate_camera_to, 2026-10-17).
+func get_visible_map_rect() -> Rect2:
+	return _get_map_rect()
+
+
 func _get_map_rect() -> Rect2:
 	var rect := Rect2(Vector2.ZERO, get_viewport().get_visible_rect().size)
 

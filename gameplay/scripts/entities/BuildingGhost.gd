@@ -173,6 +173,36 @@ func set_linear_preview(neighbor_mask: int, clip_mask: int, offset: Vector2) -> 
 	queue_redraw()
 
 
+# Rettangolo dell'edificio (2026-10-17, docs/design/building_footprint.md): il fantasma sta già al suo centro
+# (sync_footprint_preview, per ogni edificio); qui misura in pixel e punto a metà del lato della porta rispetto al
+# centro (Vector2.INF = nessuna porta), usati dalle sagome dei grandi. `_footprint_offset` resta a zero.
+var _footprint_offset: Vector2 = Vector2.ZERO
+var _footprint_rect_px: Vector2 = Vector2.ZERO
+var _footprint_door_px: Vector2 = Vector2.INF
+
+
+# Aggancio alla griglia (2026-10-17, ogni edificio): sposta il fantasma al centro del rettangolo col mouse (microcella
+# `mouse_micro` nello spazio di `cell_container`) al centro — per un 1x1 il centro della microcella — porta compresa.
+func sync_footprint_preview(cell_container: Node2D, mouse_micro: Vector2i, rules: BuildingRules) -> void:
+	var rect_size := BuildingFootprint.size(rules, rotation_dir)
+	var anchor := BuildingFootprint.anchor_from_center(mouse_micro, rules, rotation_dir)
+	var center: Vector2 = cell_container.to_global((Vector2(anchor) + Vector2(rect_size) / 2.0) * MicroCellRenderer.CELL_SIZE)
+	var door_px: Vector2 = Vector2.INF
+	if rules.has_door:
+		door_px = BuildingFootprint.door_edge_offset(rules, rotation_dir) * MicroCellRenderer.CELL_SIZE
+	global_position = center
+	set_footprint_preview(Vector2.ZERO, Vector2(rect_size) * MicroCellRenderer.CELL_SIZE, door_px)
+
+
+func set_footprint_preview(offset: Vector2, rect_px: Vector2, door_px: Vector2) -> void:
+	if offset.is_equal_approx(_footprint_offset) and rect_px.is_equal_approx(_footprint_rect_px) and door_px == _footprint_door_px:
+		return
+	_footprint_offset = offset
+	_footprint_rect_px = rect_px
+	_footprint_door_px = door_px
+	queue_redraw()
+
+
 func rotate_clockwise() -> void:
 	rotation_dir = (rotation_dir + 1) % 4
 
@@ -280,6 +310,10 @@ func _draw_shape() -> void:
 		return
 	if PlaceholderBuildingShapes.TYPES.has(building_type_name):
 		PlaceholderBuildingShapes.draw(self, building_type_name, Vector2.ZERO, not is_buildable, 1.0, rotation_dir)
+		return
+	# Spiazzo delle feste (2026-10-17): lo stesso disegno della mappa sul rettangolo, semitrasparente.
+	if building_type_name == FeastGroundShape.TYPE:
+		FeastGroundShape.draw(self, _footprint_offset, _footprint_rect_px, not is_buildable, COLOR.a)
 		return
 
 	# Capanna dell'attrezzista (2026-09-24, richiesta utente): sagoma della capanna con riempimento

@@ -1,0 +1,15 @@
+[gd_resource type="Resource" script_class="TaskDefinition" format=3]
+
+[ext_resource type="Script" uid="uid://1t46mu8mn6hq" path="res://gameplay/scripts/tasks/task_definition.gd" id="1_def"]
+
+[resource]
+script = ExtResource("1_def")
+task_name = "task_oral_lesson_name"
+allowed_age_bands = Array[int]([4, 5])
+is_idle_activity = true
+idle_weight = 0.5
+idle_social_rite_id = "oral_lesson"
+idle_weight_by_age_band = {
+4: 0.5,
+5: 2.0
+}

@@ -55,6 +55,11 @@ const STAMINA_DRAIN_PER_DAY: float = 100.0
 # ThinkAction.duration.
 const DURATION_DAYS: float = 1.0
 
+
+# Ingombro (2026-10-17, docs/design/building_footprint.md): un giorno per microcella, senza tetto (1x1: DURATION_DAYS).
+static func get_duration_days(building: Building) -> float:
+	return DURATION_DAYS * float(BuildingFootprint.area(building.rules if building != null else null))
+
 # Fabbisogno materiale (2026-09-13, richiesta utente — Build Task collegata a un vero fabbisogno
 # di materiale, SOLO per questo step, BuildAction resta bypassata; RICALIBRATO 2026-09-14, richiesta
 # utente — la quantità NON va confusa con required_materials, che descrive il fabbisogno della
@@ -173,7 +178,7 @@ func get_stamina_delta(individual: Variant, context: Dictionary, delta: float) -
 		return 0.0
 	if get_missing_material_quantity() > 0:
 		return 0.0
-	if _get_site_setup_days_done() >= DURATION_DAYS:
+	if _get_site_setup_days_done() >= get_duration_days(target_building):
 		return 0.0
 	target_building.construction_progress["site_setup_days_done"] = _get_site_setup_days_done() + delta
 	return -STAMINA_DRAIN_PER_DAY * delta
@@ -187,7 +192,7 @@ func is_complete(individual: Variant, context: Dictionary) -> bool:
 		return true
 	if get_missing_material_quantity() > 0:
 		return false
-	return _get_site_setup_days_done() >= DURATION_DAYS
+	return _get_site_setup_days_done() >= get_duration_days(target_building)
 
 
 # get_required_position (2026-09-13, richiesta utente — fix "Walk di ritorno alla ripresa", vedi

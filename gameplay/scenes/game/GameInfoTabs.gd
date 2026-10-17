@@ -171,7 +171,7 @@ func _ready() -> void:
 	empty_selection_label.text = tr("game_info_selection_empty")
 	_lock_content_width()
 
-	center_button.tooltip_text = tr("center_on_selection_tooltip")
+	center_button.tooltip_text = TooltipText.wrap(tr("center_on_selection_tooltip"))
 	center_button.pressed.connect(func() -> void: center_requested.emit())
 	# 🎯 a sinistra dei pulsanti del pannello (2026-10-05, richiesta utente): da destra a sinistra ℹ, poi gli altri pulsanti
 	# del pannello (abitante: famiglia, casa), poi 🎯.

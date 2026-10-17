@@ -444,6 +444,9 @@ const CONTEXT_MATERIAL_POSTPONED_KIND := "material_postponed_kind"
 const POSTPONED_KIND_BUILD := "build"
 const POSTPONED_KIND_PRODUCE := "produce"
 const POSTPONED_KIND_REPAIR := "repair"
+# Rito sociale in preparazione (2026-10-17, banchetto sullo spiazzo): l'organizzatore senza cibo o combustibile in nessun
+# magazzino va in coda come un costruttore; il fabbisogno si ricontrolla con MaterialSupplyService.get_missing_materials.
+const POSTPONED_KIND_RITE := "rite"
 
 
 # Costruttore senza materiale in nessun magazzino: la task di costruzione va in coda (marcata) e il pipottino torna
@@ -555,6 +558,11 @@ func _handle_pending_material_shortage(individual: HumanIndividual, task: Task, 
 	# di produzione resta suo.
 	if target_building.is_awaiting_material and current_step is ProduceAction:
 		_postpone_for_material(individual, task, target_building, world, game_data, POSTPONED_KIND_PRODUCE)
+		return
+	# Organizzatore di un banchetto senza cibo o combustibile in nessun magazzino (2026-10-17, richiesta utente): stessa
+	# regola, il rito resta in preparazione e suo; riparte da solo quando un magazzino ha il materiale.
+	if target_building.is_awaiting_material and current_step is SocialRiteAttendAction:
+		_postpone_for_material(individual, task, target_building, world, game_data, POSTPONED_KIND_RITE)
 		return
 	# Ordine del giocatore in attesa di una consegna (CONTEXT_YIELD_AFTER_DELIVERY) ma nessun nuovo giro possibile:
 	# la Build resterebbe ferma in attesa con l'ordine bloccato in coda — va in coda subito e parte l'ordine.

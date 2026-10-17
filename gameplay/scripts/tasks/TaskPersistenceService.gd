@@ -383,7 +383,7 @@ static func _build_step(action_type: int, step_data: Dictionary, macro_state: Ma
 			if clear_target_building != null and world != null:
 				clear_macro_state = world.get_cell_state_at(clear_target_building.macro_x, clear_target_building.macro_y)
 			step = ClearAction.new(
-				clear_target_building, clear_macro_state, bool(step_data.get("is_currently_grass", false))
+				clear_target_building, clear_macro_state, step_data.get("is_currently_grass", false)
 			)
 		TaskTypes.ActionType.BUILD:
 			# 2 argomenti (target_building, tool_multiplier), stesso schema di

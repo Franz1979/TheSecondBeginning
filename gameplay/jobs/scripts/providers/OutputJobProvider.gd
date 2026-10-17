@@ -4,7 +4,9 @@ extends RefCounted
 # Fornitore "uscite piene" della lista dei lavori (2026-10-08; spostato da GameScene il 2026-10-17, refactoring GameScene
 # blocco 2b): consegna dei Prodotti finiti a magazzino (output:<id edificio>). In coda quando una workstation con Prodotti
 # finiti (posti > 0) ha un ordine fermo perché non c'è posto per il prossimo pezzo (ProductionService.is_output_blocking,
-# lo stesso blocco dell'avviso "Prodotti finiti pieni"); esce appena l'ordine può ripartire o sparisce. Tutta la lista si
+# lo stesso blocco dell'avviso "Prodotti finiti pieni"), oppure (2026-10-17) senza ordini attivi quando l'uscita è così
+# piena che almeno una ricetta non ci starebbe (ProductionService.blocks_new_orders: altrimenti non si potrebbe ordinare
+# niente e nessuno la svuoterebbe); esce appena l'uscita ha di nuovo posto o l'ordine può ripartire. Tutta la lista si
 # spegne con la regola "Svuota le uscite piene" (UserOptions.job_board_empty_full_outputs). Chi lo prende (un pipottino
 # libero qualunque) fa la task deliver_output.tres (TaskBuilderService.build_output_job_task): cammino all'edificio e lo
 # stesso step di consegna di "Porta al deposito", poi la ricerca del magazzino di sempre accoda cammino e scarico. Se dopo
@@ -49,9 +51,10 @@ static func collect(ctx: GameContext, provider: Dictionary, _assigned: Dictionar
 	return jobs
 
 
-# Workstation completa con Prodotti finiti (posti > 0), un ordine in corso e nessun posto per il prossimo pezzo. Dal
-# 2026-10-11 anche una postazione senza uscita (l'essiccatoio) piena: nessun posto per i suoi ingredienti e prodotti pronti
-# nel suo magazzino (_rack_full_with_products).
+# Workstation completa con Prodotti finiti (posti > 0) e uscita che blocca: un ordine in corso senza posto per il prossimo
+# pezzo, oppure (2026-10-17) nessun ordine e almeno una ricetta che non ci starebbe. Dal 2026-10-11 anche una postazione
+# senza uscita (l'essiccatoio) piena: nessun posto per i suoi ingredienti e prodotti pronti nel suo magazzino
+# (_rack_full_with_products).
 static func is_job_needed(building: Building) -> bool:
 	if building == null or building.rules == null or building.is_demolished or building.is_out_of_service():
 		return false
@@ -59,7 +62,9 @@ static func is_job_needed(building: Building) -> bool:
 		return false
 	if ProductionService.get_output_capacity(building) <= 0:
 		return _rack_full_with_products(building)
-	return ProductionService.has_active_production(building) and ProductionService.is_output_blocking(building)
+	if ProductionService.has_active_production(building):
+		return ProductionService.is_output_blocking(building)
+	return ProductionService.blocks_new_orders(building)
 
 
 # Postazione senza uscita piena: almeno un ingrediente delle sue ricette ad avanzamento automatico non ha più posto (ogni

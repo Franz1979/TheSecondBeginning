@@ -66,6 +66,9 @@ static func select_food(building: Building, free_space: float, calorie_target: f
 # Voci resource_name -> {"quantity"} prelevabili da `building`: stored_resources sommato al buffer di uscita
 # (stessa quantita' di BuildingStorageService.get_available_quantity). Copia: non tocca l'edificio.
 static func _get_withdrawable_entries(building: Building) -> Dictionary:
+	# Deposito riservato agli eventi (2026-10-17): niente da prelevare per mangiare.
+	if BuildingStorageService.is_event_only(building):
+		return {}
 	if building.production_output.is_empty():
 		return building.stored_resources
 	var entries: Dictionary = {}
