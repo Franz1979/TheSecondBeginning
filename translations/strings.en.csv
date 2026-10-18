@@ -1252,6 +1252,7 @@ pending_no_active_idea_detail,Deposited thoughts are lost: choose an idea
 carried_resource_tooltip_firewood,Firewood
 resource_plural_firewood,Firewood
 job_postponed_material,"Postponed by {name}: missing {materials}"
+job_held_in_queue,"In {name}'s queue: next up"
 build_blocked_collect_pebbles_first,Collect the pebbles on the ground first
 build_blocked_door_obstacle,There is an obstacle in front of the door: rotate the building
 building_tradition,Tradition {points} / {next} · radius {radius} (+{bonus})

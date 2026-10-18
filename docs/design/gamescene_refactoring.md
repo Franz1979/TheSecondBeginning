@@ -246,11 +246,74 @@ i fornitori non lasciano la scena (2b).
   dell'inventario e dei trasporti del magazzino con icone e pannelli, i collegamenti `_on_inventory_started/_finished` e
   `_on_hunt_zone_series_ended`.
 
-### Blocco 5 — In coda, da decidere più avanti
-- Il ciclo per fotogramma degli individui (`_process`, 1307), `human_individuals` e `human_folk` passano
-  dentro `GameSimulation`.
-- La risoluzione dei comandi da clic destro (`_try_assign_*`) passa in servizi di comando, insieme allo
-  schema ripetuto delle `_assign_*` (rimandato dal blocco 1).
+### Blocco 5 — Ciclo degli individui e comandi (avviato il 2026-10-18)
+Partenza: GameScene a 18.035 righe e 621 funzioni. Decisioni dell'utente:
+- `GameSimulation` diventa un'istanza che possiede la popolazione;
+- le viste degli individui passano all'abbinamento per id prima del passo 5c;
+- prima 5A, poi 5B.
+
+Regola: l'array degli individui non va mai riassegnato, perché la stessa istanza la tengono GameSettings,
+GameTimeService, CoordinatorService e i contesti.
+
+**5A — Ciclo degli individui in `GameSimulation`**
+- **5a — FATTO (2026-10-18).** `GameSimulation` è anche un'istanza (`sim` in GameScene), con questo contenuto:
+  - `game_data`, `world`, `live_cells` per riferimento;
+  - `individuals`, `folk`, `movement_service`, `action_service`, `time_service`;
+  - `context()`, `setup_population()`, `find_focus_individual()`, `initialize_population()`, `publish_to_settings()`,
+    `start_time()`.
+
+  In GameScene, `human_individuals`, `human_folk`, `individual_movement_service` e `individual_action_service` sono
+  proprietà in sola lettura su `sim`. GameScene: 17.877 righe.
+- **5b — FATTO (2026-10-18).** `sim.tick_frame(real_delta, game_delta, is_playing, focus, effects)` contiene:
+  orologio della bacheca, movimento e azioni di chi ha una Task attiva, visitatori, corpi in spalla, cortei.
+  - Il passaggio di macrocella e il figlio al seguito sono in `gameplay/services/IndividualBorderService.gd`.
+  - L'effetto `GameEffects.individual_moved` passa alla scena il lavoro di cella viva, vista, telecamera e LOD
+    (`_apply_individual_moves`).
+  - In scena restano i collegamenti dei segnali degli step, prima del tick.
+
+  GameScene: 17.414 righe.
+- **5c — FATTO (2026-10-18).**
+  - Viste degli individui per id: `human_individual_views` è un dizionario id → vista. Prima, una nascita o un arrivo
+    in una cella non viva sfasava le viste successive.
+  - Case dopo nascite e morti assegnate in `GameTimeService`.
+  - Accoglienza dei visitatori e dote in `GameSimulation.welcome_visitor_party`, con gli effetti `individual_added` e
+    `wire_unload_task`.
+  - La scadenza dei messaggi del pannello resta in scena: usa l'orologio della scheda "In sospeso".
+
+  GameScene: 17.322 righe.
+- **5d — FATTO (2026-10-18).** I seguiti dei lavori sono in `gameplay/jobs/scripts/WorkFollowUpService.gd`:
+  macellazione dopo la caccia, trasporto dei mucchi a terra, serie di zona di caccia, cava e taglio (con "serie
+  interrotta"), ripetizioni di trasporto e raccolta.
+  - Avvisi in `gameplay/commands/scripts/CommandFeedback.gd` (`reject`, `tool_gate_failure`), primo pezzo del 5B.0.
+  - Perdita della preda in `HuntService.apply_prey_kill`.
+  - Nuovi effetti: `wire_task(kind)` (BUILD_STEPS, PICKUP, BUTCHER, HAUL_ZONE) e `command_icon_at_microcell`.
+  - Gli avvisi delle carcasse lasciate a terra vanno in `JobBoardRuntimeState.unbutchered_carcass_alerts`.
+  - In scena i gestori restano collegati agli stessi segnali e delegano, applicando subito gli effetti.
+
+  GameScene: 16.913 righe.
+- **5e — FATTO (2026-10-18).** `tick_day` riallinea i pezzi degli ordini di produzione
+  (`JobWorkScanService.reconcile_*`) e completa i cantieri maturati (effetto `building_completed`). Il nuovo
+  `GameSimulation.tick_year` gestisce influenze dei villaggi, storia e istantanee degli edifici.
+
+  GameScene: 16.833 righe. **Gruppo 5A chiuso**: da 18.035 a 16.833 righe (−1.202).
+
+**5B — Comandi e schema delle assegnazioni**
+- **5B.0** `CommandFeedback` e nuovi effetti (icone di comando, attese della bacheca).
+- **5B.1** `worker` esplicito nelle assegnazioni di trasporto e raccolta.
+- **5B.2** `AssignService` + `AssignResult`, la coda comune delle assegnazioni, con i casi uniformi.
+- **5B.3** Taglio e cava.
+- **5B.4** Costruzione, demolizione e riparazione.
+- **5B.5** Produzione e riti.
+- **5B.6** Caccia, macellazione, sepoltura, trasporto, ordini di zona.
+- **5B.7** `RightClickCommandService`: bersagli del clic raccolti una volta, il servizio sceglie il comando.
+
+Incoerenze esistenti da conservare nello spostamento, annotate per dopo:
+- riparazione da bacheca senza `silent`;
+- rito `silent` che mostra comunque "occupato";
+- icona della sepoltura anche silenziosa;
+- inventario che non guarda l'esito;
+- controllo dell'età duplicato in 4 punti;
+- caccia costruita con `TaskFactory` nella scena.
 
 ---
 

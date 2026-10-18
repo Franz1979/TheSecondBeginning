@@ -165,3 +165,41 @@ static func collect_assignments(individuals: Array[HumanIndividual]) -> Dictiona
 						else:
 							result[active_key][step.target_building.id] = true
 	return result
+
+
+# Pezzi ancora dovuti per ogni ordine di produzione dell'edificio, riallineati alle Task VIVE (in corso e in coda) di tutti
+# gli individui (2026-10-18, refactoring GameScene blocco 5e — prima GameScene._reconcile_production_units): per ogni
+# ProduceAction sull'edificio non ancora conclusa, quantità ordinata - pezzi già prodotti. Ordini separati (2026-10-04):
+# ogni ordine ha i suoi pezzi; un ordine senza Task resta com'è (lavoratore mancante). Chiamata all'assegnazione,
+# all'annullo, al refresh del pannello e ogni giorno (reconcile_all_production_units).
+static func reconcile_production_units(individuals: Array, target_building: Building) -> void:
+	if target_building == null or target_building.production_progress.is_empty():
+		return
+	for step in _live_produce_steps(individuals, target_building):
+		if ProductionService.has_order(target_building, step.order_key):
+			ProductionService.set_order_units(target_building, step.order_key, maxi(step.quantity - step.produced_count, 0))
+
+
+# Riallineamento giornaliero di tutti gli edifici con produzioni in corso (GameSimulation.tick_day).
+static func reconcile_all_production_units(world: World, individuals: Array) -> void:
+	if world == null:
+		return
+	for building in world.buildings:
+		if not building.production_progress.is_empty():
+			reconcile_production_units(individuals, building)
+
+
+# ProduceAction ancora da concludere su `target_building`, nelle Task di produzione (in corso e in coda) di tutti.
+static func _live_produce_steps(individuals: Array, target_building: Building) -> Array[ProduceAction]:
+	var steps: Array[ProduceAction] = []
+	for member in individuals:
+		var tasks: Array = [member.current_task]
+		tasks.append_array(member.task_queue)
+		for task in tasks:
+			if task == null or task.is_finished() or not PRODUCE_TASK_NAMES.has(task.task_name):
+				continue
+			for step_index in range(task.current_step_index, task.steps.size()):
+				var step: Action = task.steps[step_index]
+				if step is ProduceAction and (step as ProduceAction).target_building == target_building:
+					steps.append(step as ProduceAction)
+	return steps

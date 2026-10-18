@@ -42,6 +42,19 @@ var removed_building_ids: Dictionary = {}
 # Task create da un servizio i cui step vanno collegati come quelli del trasporto (griglia del magazzino):
 # [{"task": Task, "owner": HumanIndividual}], in ordine.
 var storage_tasks_to_wire: Array[Dictionary] = []
+# Task nuove da collegare ai segnali della scena (2026-10-18, blocco 5d — wire_task), in ordine.
+var tasks_to_wire: Array[Dictionary] = []
+# Icone di comando su una microcella (2026-10-18, blocco 5d): {macro, microcell, key}, solo se la cella è viva.
+var command_icons: Array[Dictionary] = []
+# Cantieri completati dalla simulazione (2026-10-18, blocco 5e — giorni minimi di costruzione maturati): la scena esegue
+# lo stesso percorso del completamento da parte di un costruttore (GameScene._on_building_construction_completed).
+var buildings_completed: Array[Building] = []
+# Passaggi di macrocella degli individui, in ordine (individual_moved).
+var individual_moves: Array[Dictionary] = []
+# Individui appena entrati nella popolazione (visitatori accolti): la scena crea le viste, in ordine.
+var individuals_added: Array[HumanIndividual] = []
+# Task di scarico da collegare (UnloadAction: re-routing, avvisi) — GameScene._reconnect_unload_action_signals.
+var unload_tasks_to_wire: Array[Dictionary] = []
 
 
 func notify(popup_type: NotificationTypes.NotificationPopupType, text: String, requires_ack: bool = false) -> void:
@@ -88,6 +101,46 @@ func wire_storage_task(task: Task, owner: HumanIndividual) -> void:
 	storage_tasks_to_wire.append({"task": task, "owner": owner})
 
 
+# Collegamenti dei segnali di una task nuova (2026-10-18, blocco 5d), per tipo:
+#   BUILD_STEPS: GameScene._reconnect_build_task_signals su ogni step (allestimento, sgombero, costruzione, taglio, cava...);
+#   PICKUP: _wire_pickup_task (raccolta e scarico aggiunto dopo);
+#   BUTCHER: _wire_butcher_task;
+#   HAUL_ZONE: _connect_haul_zone_step_appended (raccolta di zona: step aggiunti strada facendo).
+# Le task arrivano già accodate (le code non attivano nulla): collegarle subito dopo equivale a prima.
+enum WireKind { BUILD_STEPS, PICKUP, BUTCHER, HAUL_ZONE }
+
+
+func wire_task(kind: WireKind, task: Task, owner: HumanIndividual) -> void:
+	if task != null:
+		tasks_to_wire.append({"kind": kind, "task": task, "owner": owner})
+
+
+func building_completed(building: Building) -> void:
+	buildings_completed.append(building)
+
+
+# Icona di comando sulla microcella `microcell` della macrocella `macro` (2026-10-18, blocco 5d).
+func command_icon_at_microcell(macro: Vector2i, microcell: Vector2i, key: String) -> void:
+	command_icons.append({"macro": macro, "microcell": microcell, "key": key})
+
+
+# Individuo passato in un'altra macrocella (2026-10-18, blocco 5b — IndividualBorderService): la scena sposta la vista
+# sotto la cella `macro` (attivandola se serve, come rete di sicurezza) e, se `is_focus`, ri-ancora centro, telecamera e
+# LOD di (dx, dy). `is_child`: figlio a carico che segue la madre (solo la vista, e solo se la cella è viva). In ordine.
+func individual_moved(member: HumanIndividual, macro: Vector2i, step: Vector2i, is_focus: bool, is_child: bool) -> void:
+	individual_moves.append({"member": member, "macro": macro, "step": step, "is_focus": is_focus, "is_child": is_child})
+
+
+# Individuo appena entrato nella popolazione (2026-10-18, blocco 5c): la scena ne crea la vista.
+func individual_added(member: HumanIndividual) -> void:
+	individuals_added.append(member)
+
+
+# Task con UnloadAction da collegare ai segnali della scena (2026-10-18, blocco 5c: la dote dei visitatori).
+func wire_unload_task(task: Task, owner: HumanIndividual) -> void:
+	unload_tasks_to_wire.append({"task": task, "owner": owner})
+
+
 # Unisce gli effetti di `other` in questo (le notifiche in coda, dopo le proprie).
 func merge(other: GameEffects) -> void:
 	if other == null:
@@ -102,7 +155,15 @@ func merge(other: GameEffects) -> void:
 	vegetation_cells.merge(other.vegetation_cells)
 	removed_building_ids.merge(other.removed_building_ids)
 	storage_tasks_to_wire.append_array(other.storage_tasks_to_wire)
+	tasks_to_wire.append_array(other.tasks_to_wire)
+	command_icons.append_array(other.command_icons)
+	buildings_completed.append_array(other.buildings_completed)
+	individual_moves.append_array(other.individual_moves)
+	individuals_added.append_array(other.individuals_added)
+	unload_tasks_to_wire.append_array(other.unload_tasks_to_wire)
 
 
 func is_empty() -> bool:
-	return notifications.is_empty() and cells_to_refresh.is_empty() and panels_to_refresh.is_empty() and not pending_refresh 		and neighbor_refresh_buildings.is_empty() and marker_buildings.is_empty() and site_placeholder_buildings.is_empty() 		and vegetation_cells.is_empty() and removed_building_ids.is_empty() and storage_tasks_to_wire.is_empty()
+	return notifications.is_empty() and cells_to_refresh.is_empty() and panels_to_refresh.is_empty() and not pending_refresh 		and neighbor_refresh_buildings.is_empty() and marker_buildings.is_empty() and site_placeholder_buildings.is_empty() 		and vegetation_cells.is_empty() and removed_building_ids.is_empty() and storage_tasks_to_wire.is_empty() \
+		and individual_moves.is_empty() and individuals_added.is_empty() and unload_tasks_to_wire.is_empty() \
+		and tasks_to_wire.is_empty() and command_icons.is_empty() and buildings_completed.is_empty()

@@ -1306,6 +1306,7 @@ pending_no_active_idea_detail,I pensieri depositati vanno persi: scegli un'idea
 carried_resource_tooltip_firewood,Legna da ardere
 resource_plural_firewood,Legna da ardere
 job_postponed_material,"Rimandato da {name}: manca {materials}"
+job_held_in_queue,"In coda di {name}: lo fa dopo"
 build_blocked_collect_pebbles_first,Raccogli prima i sassi a terra
 build_blocked_door_obstacle,Davanti alla porta c'è un ostacolo: ruota l'edificio
 building_tradition,Tradizione {points} / {next} · raggio {radius} (+{bonus})

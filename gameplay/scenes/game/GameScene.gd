@@ -50,7 +50,6 @@ signal world_object_selected(global_pos: Vector2)
 
 # Margine di clamp quando un attraversamento bordo viene bloccato (vedi _block_border_crossing):
 # tiene l'individuo appena dentro il bordo attuale invece che un'intera microcella indietro.
-const BORDER_CLAMP_EPSILON: float = 0.01
 
 # Pixel per macrocella nello spazio condiviso di GameScene (stesso CELL_SIZE=10 di
 # MicroCellRenderer/HumanIndividualView, World.WIDTH=100 microcelle per lato) — usato per posizionare
@@ -75,6 +74,9 @@ const LIVE_NEIGHBOR_DEACTIVATE_MARGIN: float = 35.0
 
 var macro_world: World
 var game_data: GameData
+# Simulazione del villaggio (blocco 5a, 2026-10-18): possiede popolazione e servizi; riceve game_data, mondo e celle vive
+# in _ready, per riferimento.
+var sim := GameSimulation.new()
 
 # Vector2i (coordinate macro ASSOLUTE) -> LiveMacroCell — vedi LiveMacroCell.gd. Al più 2 chiavi
 # in questo step: center_macro_coords sempre presente, più al più un vicino cardinale vivo.
@@ -179,12 +181,17 @@ var transport_selection_banner_label: Label
 # bersaglio alla volta, mai più di un individuo in movimento nello stesso momento.
 var individual: HumanIndividual
 var individual_controller: HumanIndividualController
-var individual_movement_service := HumanIndividualMovementService.new()
+# Blocco 5a (2026-10-18): i servizi vivono nella simulazione (sim), qui solo un alias.
+var individual_movement_service: HumanIndividualMovementService:
+	get:
+		return sim.movement_service
 # Cablaggio Walk/Action/Task (2026-09-06/07, richiesta utente) — stesso identico pattern di
 # individual_movement_service sopra: stateless rispetto all'identità, un solo service condiviso,
 # mai un'istanza per individuo (l'unico stato per-azione vive su HumanIndividual.current_task,
 # non qui). Girato ogni frame in _process, DOPO individual_movement_service.advance_movement.
-var individual_action_service := HumanIndividualActionService.new()
+var individual_action_service: HumanIndividualActionService:
+	get:
+		return sim.action_service
 
 # TEMPORANEO (debug, richiesta utente — indagine "pipottini che ondeggiano fermi"): il pannello
 # individuo normalmente si aggiorna solo al cambio giorno di gioco (_on_day_advanced) o al click di
@@ -228,8 +235,8 @@ var human_individual_selector_controller := HumanIndividualSelectorController.ne
 # ugualmente selezionabili/muovibili: nessuno ha più uno status speciale (Step 2, 2026-09-02 —
 # completa lo smontaggio del concetto di "leader" iniziato allo Step 1 rimuovendo la formazione
 # rigida). "individual" sopra è solo il bersaglio CORRENTE, non un ruolo fisso su un membro
-# specifico — vedi il commento su quel campo. human_individual_views è parallelo per indice a
-# human_individuals (UNA sola collezione, non più individual_view+extra_individual_views separati
+# specifico — vedi il commento su quel campo. human_individual_views: una vista per individuo, per id (2026-10-18, blocco
+# 5c — prima parallelo per indice a human_individuals) (UNA sola collezione, non più individual_view+extra_individual_views separati
 # — unificati nel bugfix del 2026-09-02, vedi Bug 2: la riparentazione sotto il container giusto,
 # vedi sotto, richiede di trovare la view di UN individuo qualsiasi per indice, la vecchia
 # distinzione "indice 0 a parte" era solo un residuo del vecchio concetto di leader e rendeva quel
@@ -278,12 +285,20 @@ const PLAY_TASK_DEFINITION_PATH := "res://gameplay/scripts/tasks/definitions/pla
 # (is_complete=false), _try_assign_build_command_on_right_click costruisce la Task da zero via
 # TaskReassignmentService al momento del click destro, identico sia alla primissima assegnazione
 # sia a una riassegnazione dopo interruzione (vedi quella funzione sotto).
-var human_folk: Folk
-var human_individuals: Array[HumanIndividual] = []
+# Blocco 5a (2026-10-18): popolo e individui sono della simulazione (sim); qui in sola lettura, stessi oggetti.
+var human_folk: Folk:
+	get:
+		return sim.folk
+var human_individuals: Array[HumanIndividual]:
+	get:
+		return sim.individuals
 # Segnaposto delle armi scagliate a terra in attesa di recupero (2026-09-26): id del cacciatore ->
 # DroppedWeaponMarker. Allineato ogni frame da _sync_dropped_weapon_markers.
 var _dropped_weapon_markers: Dictionary = {}
-var human_individual_views: Array[HumanIndividualView] = []
+# Viste degli individui per id (2026-10-18, blocco 5c): id individuo -> HumanIndividualView. Prima era un array parallelo
+# per indice a human_individuals, che si sfasava se un individuo nasceva o arrivava in una macrocella non viva (nessuna
+# vista aggiunta).
+var human_individual_views: Dictionary = {}
 # Autorità di selezione unica — Step 1 (richiesta utente, 2026-09-04) del piano "centra
 # generalizzato + selezione edifici" discusso con l'utente: PRIMA esistevano due meccanismi
 # paralleli e indipendenti (HumanIndividual.is_selected sull'entità + selected_vegetation sotto),
@@ -900,6 +915,9 @@ func _ready() -> void:
 	if game_data == null:
 		push_warning("Nessun game_data condiviso: creo un anno locale di riserva.")
 		game_data = GameData.new()
+	sim.game_data = game_data
+	sim.world = macro_world
+	sim.live_cells = live_cells
 	# Pavimento delle zone (2026-10-01) su tutte le memorie con zone, anche di macrocelle non vive: prune_stale gira su
 	# tutte e non deve potare celle di una zona. Una sola passata all'avvio.
 	_refresh_all_work_area_fog_floors()
@@ -943,187 +961,22 @@ func _ready() -> void:
 					macro_world, chosen, AnimalSeedingService.population_size_from_string(game_data.starting_population_size)
 				)
 
-	# Semina Folk + HumanIndividual (coppie fondatrici + figli) — vedi
-	# HumanSeedingService per l'algoritmo di composizione/eta'/nomi — OPPURE ricostruisce un popolo
-	# già persistito (richiesta utente, 2026-09-02): GameSettings.active_human_individuals non
-	# vuoto significa che esiste già un popolo, sia perché si ritorna da un giro debug verso
-	# WorldScene/MacroCellScene sia perché questo è un salvataggio appena caricato (in entrambi i
-	# casi WorldScene/GameScene stesso lo hanno già propagato lì — vedi GameSettings.active_human_*)
-	# — in quel caso NON si semina nulla, si riusano gli STESSI oggetti (stessi id, stesse
-	# posizioni, stessa storia), mai una copia. human_rules caricato qui via load() diretto in
-	# ENTRAMBI i rami (nessun HumanCalculator-per-convenzione ancora, un solo Folk esiste per ora):
-	# un domani con piu' Folk questo path fisso andra' sostituito da una vera risoluzione per Folk.
+	# Popolo: seminato per una partita nuova, oppure riusato così com'è (salvataggio appena caricato o ritorno da
+	# WorldScene/MacroCellScene) — GameSimulation.setup_population. human_rules a path fisso: un solo Folk per ora.
 	var human_rules := load(PLAYER_HUMAN_RULES_PATH) as HumanRules
 	var start_macro_coords := Vector2i(game_data.player_macro_cell_x, game_data.player_macro_cell_y)
-	if not GameSettings.active_human_individuals.is_empty():
-		# FIX CRITICO DI PERSISTENZA (2026-09-12, richiesta utente, contestuale all'introduzione di
-		# HumanTypes.AgeBand.INFANT) — set_current_era() PRIMA di qualunque lettura di game_data.
-		# era_effective_age_band_durations_male/female in questo ramo (ricostruzione popolo esistente:
-		# sia "salvataggio appena caricato" sia "ritorno da WorldScene/MacroCellScene"), non solo nel
-		# ramo di semina qui sotto. Motivo: quei due array SONO persistiti in JSON (GameSaveService/
-		# GameLoadService) ma erano ricalcolati via set_current_era SOLO al bootstrap di una partita
-		# nuova (vedi sotto) — un salvataggio scritto PRIMA di un cambio nel numero/ordine delle fasce
-		# di HumanTypes.AgeBand (es. questa stessa introduzione di INFANT) verrebbe altrimenti riletto
-		# con l'array VECCHIO (lunghezza/ordine pre-cambio) fidandosi ciecamente del JSON, classificando
-		# silenziosamente ogni individuo in una fascia d'età sbagliata finché non fosse scattato un
-		# cambio Era vero. Ricalcolo SEMPRE fresco da HumanRules/EraRules invece di fidarsi del dato
-		# persistito — idempotente (set_current_era non ha guardie su "già impostata", ricalcola e
-		# basta), quindi innocuo anche nel ramo "ritorno" dove il valore era già corretto in questa
-		# stessa sessione. L'array persistito in JSON resta scritto (nessuna modifica a GameSaveService/
-		# GameLoadService: restano lì per compatibilità/debug) ma non viene più letto come fonte di
-		# verità in nessun punto di ingresso.
-		game_data.set_current_era(game_data.current_era_name, human_rules)
-		human_folk = GameSettings.active_human_folk
-		human_individuals = GameSettings.active_human_individuals
-		# human_rules_ref (Resource) non è mai serializzato/propagato dentro il popolo stesso —
-		# path fisso di competenza di GameScene, vedi sopra — va ri-assegnato qui ad ogni
-		# ricostruzione, stesso motivo per cui HumanSeedingService non lo tocca da sé nel ramo
-		# seeding sotto.
-		human_folk.human_rules_ref = human_rules
-		# Bersaglio corrente ripristinato sullo STESSO individuo che lo era all'uscita/salvataggio
-		# (game_data.player_individual_id, vedi GameData) — mai più sempre human_individuals[0].
-		# Scansione lineare accettabile (pochi individui, stesso principio già discusso per
-		# _macro_cell_has_individuals). null trovato (non dovrebbe succedere per dati coerenti, rete
-		# di sicurezza) ripiega sul primo membro invece di lasciare `individual` null.
-		individual = null
-		for member in human_individuals:
-			if member.id == game_data.player_individual_id:
-				individual = member
-				break
-		if individual == null:
-			individual = human_individuals[0]
-		# Ricollegamento signal dopo un caricamento da salvataggio (2026-09-11, richiesta utente —
-		# chiude il gap segnalato in una sessione precedente: "dopo un reload i signal site_setup_
-		# completed/site_cleared non vengono ricollegati") — SOLO `not returning`: questo stesso
-		# ramo `if` è condiviso da DUE casi (vedi commento sopra) — un salvataggio appena caricato
-		# (human_individuals qui sono istanze FRESCHE, appena ricostruite da TaskPersistenceService.
-		# deserialize_task via GameLoadService, i cui segnali non sono MAI stati collegati) e un
-		# ritorno da WorldScene/MacroCellScene via 🧍 (returning=true, GLI STESSI oggetti vivi di
-		# questa sessione, già connessi quando le loro Task furono create — ricollegare qui li
-		# duplicherebbe, ogni listener scatterebbe due volte). `returning` catturato PRIMA di questo
-		# punto (vedi inizio funzione) distingue esattamente i due casi.
+	if sim.setup_population(human_rules, start_macro_coords):
+		# Bersaglio ripristinato sullo stesso individuo di prima (game_data.player_individual_id).
+		individual = sim.find_focus_individual()
+		# Segnali delle Task ricollegati solo per un salvataggio appena caricato (istanze fresche, mai collegate): al
+		# ritorno da WorldScene/MacroCellScene sono gli stessi oggetti già collegati e ricollegarli li duplicherebbe.
 		if not returning:
 			_reconnect_loaded_task_signals()
 	else:
-		# set_current_era (richiesta utente, 2026-09-04 — bugfix): PRIMO punto reale in cui viene
-		# chiamato — prima esisteva solo come infrastruttura mai collegata (nessun trigger tech→era
-		# ancora implementato, vedi GameData), quindi game_data.era_effective_age_band_durations_
-		# male/female restava sempre vuoto e la semina leggeva le durate BASE di HumanRules, mai
-		# scalate per l'Era (game_data.current_era_name di default = "paleolithic"). Questo non è
-		# un trigger di avanzamento — è il bootstrap iniziale per una partita NUOVA, chiamato una
-		# sola volta qui (2026-09-12: NON più l'unico punto di chiamata — vedi la stessa chiamata
-		# nel ramo `if` sopra, per popolo già esistente/caricato/di ritorno), per
-		# l'Era di partenza della partita.
-		game_data.set_current_era(game_data.current_era_name, human_rules)
-		var seeding_result := HumanSeedingService.new().seed_player_start(
-			start_macro_coords, game_data.starting_group_size_preference, human_rules,
-			game_data.starting_folk_name if game_data.starting_folk_name != "" else Folk.pick_random_name(), game_data.year,
-			game_data.era_effective_age_band_durations_male, game_data.era_effective_age_band_durations_female, game_data
-		)
-		human_folk = seeding_result.folk
-		human_individuals = seeding_result.individuals
-		# Pubblicati subito anche in GameSettings (2026-10-01): i servizi statici li leggono da lì
-		# (HaulZoneService.is_food_only_limit_active, TerrainScatteredResourceService.is_resource_locked,
-		# HaulZoneService con active_human_individuals). Prima restavano null/[] per tutta la prima sessione di una
-		# partita nuova, fino al primo cambio scena: stessi oggetti, nessuna copia.
-		GameSettings.active_human_folk = human_folk
-		GameSettings.active_human_individuals = human_individuals
-		# Tutto il gruppo nasce nella stessa macrocella (vedi HumanIndividual.home_macro_coords) —
-		# valorizzato qui, prima di qualunque view (vedi sotto, dopo l'attivazione della cella
-		# centrale): è il dato che dice a GameScene sotto quale LiveMacroCell.container parentare
-		# la view di ciascuno. Posizioni già assolute (HumanSeedingService._grid_spawn_position è
-		# già centrata su World.WIDTH/HEIGHT/2.0) — nessun ricentraggio da fare qui, a differenza di
-		# prima: quella danza esisteva solo per ripristinare GameData.player_micro_x/y (RIMOSSO,
-		# vedi GameData — ogni salvataggio/ritorno passa ora dal ramo sopra, mai più da qui).
-		for member in human_individuals:
-			member.home_macro_coords = start_macro_coords
-		# Solo valore INIZIALE del bersaglio di movimento/streaming (Step 2, 2026-09-02) —
-		# human_individuals[0] non ha altro status speciale da qui in poi, vedi il commento sul
-		# campo "individual" sopra: il giocatore può spostare il bersaglio su un membro qualsiasi
-		# selezionandolo (_set_movement_target).
+		# Valore iniziale del bersaglio: il primo fondatore (nessuno status speciale, si cambia selezionando).
 		individual = human_individuals[0]
-		# Snapshot popolazione all'anno 0 (Step 3 piano statistiche, richiesta utente 2026-09-06) —
-		# GameTimeService._on_year_rolled_over registra uno snapshot ad ogni cambio anno, ma l'anno
-		# 0 non "rotola" mai (è l'anno di partenza, non un rollover) — senza questa riga il grafico
-		# popolazione/anno partirebbe dall'anno 1, saltando il conteggio dei fondatori (2/5/10 a
-		# seconda di COUPLE/FAMILY/GROUP). Qui, non in GameTimeService: questo ramo è IL bootstrap
-		# di una partita nuova (mai eseguito per una partita caricata/ripristinata, vedi il ramo
-		# `if` sopra), stesso principio già seguito per set_current_era poco più in alto.
-		game_data.population_snapshots[0] = human_individuals.size()
-		# Snapshot edifici all'anno 0 (2026-09-12, richiesta utente — tab Statistiche/Edifici) —
-		# stesso identico principio della riga sopra: una partita nuova parte sempre con 0 edifici
-		# (nessuno piazzato prima che il player possa farlo), scritto qui esplicitamente per lo
-		# stesso motivo (_on_year_rolled_over non gira mai per l'anno 0, che non "rotola").
-		game_data.building_snapshots[0] = 0
-
-	# Villaggi (2026-10-12): centri completi senza villaggio collegati in silenzio — partite salvate prima dei villaggi
-	# e, in futuro, partite che iniziano con un centro già costruito. Idempotente, nessun avviso.
-	VillageService.sync_with_existing_centers(human_folk, macro_world, human_individuals)
-
-	# Bugfix (richiesta utente, 2026-09-07): current_stamina/max_stamina di OGNI individuo restavano
-	# al fallback HumanIndividual.FALLBACK_MAX_STAMINA (5000.0 — coincide col default di HumanRules.
-	# base_max_stamina, quindi per un FERTILE_ADULT maschio il numero sembra "giusto per caso": il
-	# sintomo reale, riportato dall'utente, era current_stamina bloccata a 5000 mentre il pannello
-	# mostrava il max_stamina corretto — vedi _update_individual_panel_content, che lo ricalcola
-	# sempre al volo, MAI dal campo) fino al primo ricalcolo giornaliero (HumanStaminaIndividualService,
-	# agganciato a GameTimeService._on_day_advanced). Causa: HumanIndividual._init() (che chiama
-	# _resolve_initial_max_stamina) gira SEMPRE prima che folk_ref sia assegnato — sia in
-	# HumanSeedingService (nuova partita) sia in GameLoadService (caricamento salvataggio), per
-	# costruzione (l'oggetto va creato prima di poter puntare al gruppo che lo contiene) — quindi la
-	# catena folk_ref->human_rules_ref non è mai risolvibile a quel punto, e
-	# individual.max_stamina/current_stamina restano al fallback fino a quando non passa un giorno
-	# di gioco intero. Corretto qui in UN SOLO passaggio, sulla STESSA funzione già usata dal
-	# ricalcolo giornaliero (nessuna logica duplicata): a questo punto human_individuals è già
-	# finalizzato ED ha già folk_ref valorizzato in ENTRAMBI i rami sopra (seeding nuovo o
-	# ripristino/caricamento), quindi copre entrambi i casi in un colpo solo, subito all'ingresso in
-	# scena invece che al primo avanzamento giorno.
-	var era_rules := EraCalculator.get_era_rules(game_data.current_era_name)
-	for member in human_individuals:
-		HumanStaminaIndividualService.recalculate_max_stamina(member, game_data, era_rules)
-		# Stesso identico bug/fix di max_stamina sopra, stessa causa (folk_ref non ancora
-		# assegnato quando HumanIndividual._init() chiama _resolve_initial_max_carry_capacity) —
-		# richiesta utente 2026-09-08, riscontrato dopo l'introduzione della capacità di trasporto:
-		# la barra "Capacità di trasporto" restava al fallback (30.0, HumanIndividual.
-		# FALLBACK_MAX_CARRY_CAPACITY) fino al primo avanzamento giorno. Mancava questa stessa riga.
-		HumanCarryCapacityIndividualService.recalculate_max_carry_capacity(member, game_data)
-		# Stesso identico bug/fix di max_stamina/max_carry_capacity sopra, stessa causa — 2026-09-13,
-		# richiesta utente, 5 nuovi parametri vitali (hunger/thirst/health/happiness/loyalty): senza
-		# questa riga resterebbero tutti al fallback HumanIndividual.FALLBACK_MAX_VITAL fino al primo
-		# avanzamento giorno, esattamente come stamina/carry capacity prima di questo fix.
-		HumanVitalsIndividualService.recalculate_vitals(member, game_data)
-		# Bugfix (2026-09-13, richiesta utente) — STESSO principio/STESSA causa dei tre fix sopra:
-		# un individuo con current_task == null a questo punto (fondatore appena seminato, MAI
-		# passato da apply_action — oppure un individuo caricato da salvataggio che era già libero
-		# al momento del salvataggio) non riceveva MAI il controllo bisogno/coda/fallback
-		# perditempo, perché quella logica viveva SOLO dentro HumanIndividualActionService.
-		# _handle_task_completion_need_and_queue, raggiungibile solo al completamento naturale di
-		# una Task PREESISTENTE — mai per chi una Task non l'ha mai avuta. Risolta qui, non dentro
-		# HumanSeedingService (position/home_macro_coords NON sono ancora finalizzati quando gli
-		# individui vengono creati lì — la griglia di spawn e il ricentraggio sul fondatore reale
-		# girano DOPO, vedi seed_player_start/il codice sopra in questo stesso _ready — un Wander/
-		# Rest calcolato in quel momento userebbe una posizione sbagliata, subito superata):
-		# esattamente come i tre ricalcoli sopra, questo punto copre in un colpo solo SIA il
-		# seeding di una partita nuova SIA il caricamento di un salvataggio (stesso commento di
-		# testa al blocco: "a questo punto human_individuals è già finalizzato... posizioni di
-		# spawn comprese"), senza dover duplicare la chiamata in due punti diversi. Un individuo
-		# caricato con una current_task già in corso non viene toccato (guardia esplicita sotto) —
-		# resolve_idle_individual presume un individuo LIBERO, mai chiamata altrimenti.
-		#
-		# ZOMBIE GUARD — recupero da salvataggio (2026-09-16, richiesta utente, fix "task zombie") —
-		# un salvataggio fatto PRIMA di questo fix può contenere una current_task già conclusa
-		# (current_step_index >= steps.size(), il bug ora corretto alla radice in
-		# HumanIndividualActionService._handle_task_completion_need_and_queue) o task_queue con
-		# voci concluse: PRIMA di decidere "è libero?" tramite il solo confronto con null sotto,
-		# ripulisce entrambe — TaskQueueService.purge_finished_tasks/HumanIndividualActionService.
-		# recover_zombie_current_task, le stesse due funzioni usate come difesa in profondità
-		# altrove. Un individuo il cui current_task era già finito (mai un caso reale per un
-		# salvataggio fatto DOPO questo fix, solo per uno precedente) si ritrova quindi trattato
-		# come libero dal controllo esistente subito sotto, invece di restare bloccato per sempre
-		# (prima "Solo H lo sbloccava").
-		TaskQueueService.purge_finished_tasks(member)
-		HumanIndividualActionService.recover_zombie_current_task(member)
-		if member.current_task == null:
-			HumanIndividualActionService.resolve_idle_individual(member, _resolve_age_band(member), macro_world)
+	# Villaggi, ricalcoli di stamina / trasporto / vitali, task zombie, idle per chi è libero.
+	sim.initialize_population()
 
 	# Popola la scheda 🧍 (richiesta utente, 2026-09-01) — human_individuals/human_folk sono
 	# finalizzati solo qui (posizioni di spawn comprese), stesso motivo per cui l'istanza del
@@ -1188,7 +1041,7 @@ func _ready() -> void:
 		# view individuo): tiene la view sopra terreno/animali (z_index=0 di default) del container
 		# di cui ora è figlia, sotto la fog of war di quello stesso container.
 		view.z_index = 1
-		human_individual_views.append(view)
+		human_individual_views[member.id] = view
 
 	_reposition_live_cells()
 	# Niente _rebind_fog_bindings()/secondo refresh qui (RIMOSSI, Step 4 FoW multi-sorgente,
@@ -1328,8 +1181,6 @@ func _process(delta: float) -> void:
 	# chiusa (numero e lampeggio della linguetta).
 	_pending_clock += clock.get_game_day_delta(delta) if clock != null else 0.0
 	# Attesa per l'assegnazione a mano della lista dei lavori (2026-10-07): secondi reali, solo a gioco in corso.
-	if clock != null and clock.is_playing and game_data != null:
-		JobBoardService.advance_clock(game_data, delta)
 	_pending_refresh_timer += delta
 	if _pending_refresh_timer >= PENDING_REFRESH_INTERVAL_SEC:
 		_pending_refresh_timer = 0.0
@@ -1353,66 +1204,16 @@ func _process(delta: float) -> void:
 		if _debug_summary_refresh_timer >= DEBUG_SUMMARY_REFRESH_INTERVAL_SEC:
 			_refresh_debug_summaries()
 
-	# Ciclo su TUTTI gli individui con una Task attiva (2026-09-12, richiesta utente — piano
-	# multi-individuo, Step 2: GENERALIZZA il refactor "loop-readiness" del 2026-09-10 — quello
-	# costruiva già questa stessa Array[HumanIndividual] tipizzata con l'idiom append-esplicito
-	# invece di un ternario (che a runtime produceva un Array generico, non Array[HumanIndividual] —
-	# vedi commit 2026-09-10), ma la popolava sempre e solo con l'unico `individual` selezionato/
-	# controllato dal player, mai con altri membri di human_individuals: stesso identico
-	# comportamento visibile di prima, in attesa di questo passo). "Task attiva" = current_task non
-	# nullo e non concluso — STESSO filtro che HumanIndividualActionService.apply_action applica già
-	# da sé in testa (current_task == null or is_finished() -> no-op immediato, CONFERMATO leggendo
-	# quel file: già sicuro se chiamato per un individuo senza Task valida), quindi filtrare qui è
-	# solo un'ottimizzazione (evita N chiamate a vuoto ogni frame), mai un requisito di correttezza.
-	# Un individuo entra/esce da questa lista da solo, frame per frame, in base al proprio
-	# current_task — nessuna gestione esplicita di aggiunta/rimozione necessaria qui.
-	#
-	# ATTENZIONE (invariata dal 2026-09-10, ora concreta) — questo ciclo resta agganciato a
-	# _process (framerate di rendering, ~60 chiamate/s indipendentemente da quanto serva davvero),
-	# non a un tick di simulazione indipendente: con la popolazione odierna (poche decine) il costo
-	# resta trascurabile, ma se la popolazione crescerà molto oltre andrà rivalutato (scala come
-	# FPS × N, non più O(1) come quando un solo individuo poteva mai essere in questa lista).
-	var active_individuals: Array[HumanIndividual] = []
+	# Simulazione del fotogramma (2026-10-18, blocco 5b — GameSimulation.tick_frame): orologio della lista dei lavori,
+	# movimento e azioni di chi ha una Task attiva, passaggi di macrocella e figli al seguito, visitatori, corpi in spalla,
+	# cortei. Prima i segnali degli step della Task corrente di ciascuno (prelievi/depositi ecc.), qualunque sia chi l'ha
+	# creata — vedi _ensure_step_signals. Poi gli effetti verso la scena (viste, celle, telecamera).
 	for member in human_individuals:
 		if member.current_task != null and not member.current_task.is_finished():
-			active_individuals.append(member)
-
-	for active_individual in active_individuals:
-		# Refresh del disegno del magazzino (2026-09-26): collega i segnali di prelievo/deposito degli
-		# step della Task corrente, qualunque sia chi l'ha creata (NeedTaskAssignmentService/
-		# IdleTaskAssignmentService per il rifornimento, GameScene, caricamento da salvataggio, ripresa
-		# dalla coda) — vedi _ensure_step_signals.
-		_ensure_step_signals(active_individual.current_task)
-		# advance_movement PRIMA di apply_action, per QUESTO individuo (2026-09-12, Step 3 — prima
-		# advance_movement viveva FUORI da questo ciclo, chiamata una sola volta sul solo
-		# `individual` selezionato) — stesso ordine/stesso motivo di sempre (invariato dal
-		# 2026-09-06): WalkAction.get_stamina_delta calcola la distanza confrontando position con
-		# l'ultima nota, quindi deve leggere la position GIÀ aggiornata da advance_movement in
-		# questo stesso frame, per QUESTO individuo specifico.
-		individual_movement_service.advance_movement(active_individual, game_delta, live_cells)
-		# macro_world (2026-09-09, richiesta utente — re-routing UnloadAction su magazzino pieno) —
-		# apply_action ne ha bisogno per WarehouseSelectionService.find_best (world.buildings), vedi
-		# HumanIndividualActionService.apply_action. game_data (2026-09-13, richiesta utente —
-		# sistema di interrupt/coda da stamina critica) — apply_action ne ha bisogno per risolvere
-		# l'age_band dell'individuo quando assegna da sé una Task-bisogno (stesso identico bisogno
-		# di _resolve_age_band qui sotto, duplicato lì perché quel service non ha accesso a questo
-		# Node — vedi HumanIndividualActionService._resolve_age_band).
-		individual_action_service.apply_action(active_individual, game_delta, macro_world, game_data)
-		# Attraversamento bordo/figlio a carico generalizzati (2026-09-12, Step 4/6 — prima
-		# operavano solo su `individual`) — vedi _check_macro_cell_border_crossing/
-		# _sync_dependent_child_position per il dettaglio: senza questo, un individuo non
-		# selezionato che cammina oltre il bordo della propria macrocella (es. Task haul_resource/
-		# Build con un target in una macrocella adiacente) non verrebbe mai rilevato, lasciando
-		# home_macro_coords/posizione disallineate. DOPO apply_action/prima di
-		# _sync_dependent_child_position, stesso ordine di sempre: se QUESTO individuo ha appena
-		# attraversato un bordo, la sua home_macro_coords/position sono già quelle nuove quando si
-		# sincronizza un suo eventuale figlio a carico, nello stesso frame.
-		_check_macro_cell_border_crossing(active_individual)
-		_sync_dependent_child_position(active_individual)
-
-	# Gruppi di visitatori (2026-09-27): ciclo dedicato, separato da quello degli individui — i visitatori non
-	# sono in human_individuals e non passano da movimento/azioni/bisogni del villaggio.
-	_advance_visitor_parties(game_delta)
+			_ensure_step_signals(member.current_task)
+	var frame_effects := GameEffects.new()
+	sim.tick_frame(delta, game_delta, clock != null and clock.is_playing, individual, frame_effects)
+	_apply_effects(frame_effects)
 	_sync_visitor_party_views()
 	if _active_map_layer_id != MapLayerRegistry.NONE_ID or _map_layer_overlay != null:
 		_sync_map_layer_overlay()
@@ -1427,8 +1228,6 @@ func _process(delta: float) -> void:
 	_sync_ground_pile_views()
 	# Corpi in spalla e loro viste (2026-10-04, cumulo sepolcrale passo 2).
 	_sync_body_burial()
-	# Cortei in corso: chiusura, uscite e richiamo periodico (2026-10-04, ProcessionService).
-	ProcessionService.tick(game_delta)
 
 	if individual != null:
 		_update_live_neighbor()
@@ -2581,54 +2380,11 @@ func _wire_transport_task(task: Task, owner: HumanIndividual) -> void:
 			_connect_storage_refresh_signals(step)
 
 
-# Ripetizione automatica della Transport (2026-09-20, richiesta utente): UnloadAction.transport_delivered, cioe' al
-# deposito EFFETTIVO nella destinazione. Regola: il primo viaggio piu' al massimo TaskRepeatRules.MAX_REPEATS
-# ripetizioni (TaskRepeatRules.MAX_TRIPS viaggi in tutto); si ripete finche' l'obiettivo non e' raggiunto o la sorgente non ha piu' scorta. Il residuo da portare
-# e' transport_requested_remaining meno `delivered`; il nuovo obiettivo e' il minimo tra quel residuo e il
-# fabbisogno ATTUALE della destinazione (_transport_trip_target). Niente ripetizione se: casella spenta, tetto
-# raggiunto, `delivered` 0 (la destinazione non accetta niente), residuo esaurito, obiettivo 0, sorgente/destinazione
-# sparite o sorgente senza scorta, coda dell'individuo piena (push_suspended_task scarterebbe la Task piu' vecchia E
-# lo zaino).
+# Ripetizione del trasporto dopo una consegna (2026-10-18, blocco 5d — WorkFollowUpService.repeat_transport).
 func _on_transport_delivered(owner: HumanIndividual, context: Dictionary, delivered: int) -> void:
-	if owner == null or not TaskRepeatRules.is_enabled(context) or delivered <= 0:
-		return
-	var repeats_done: int = TaskRepeatRules.get_count(context)
-	if repeats_done >= TaskRepeatRules.MAX_REPEATS:
-		return
-	var resource_name: String = String(context.get("transport_delivery_resource", ""))
-	var remaining: int = int(context.get("transport_requested_remaining", 0)) - delivered
-	if resource_name == "" or remaining <= 0:
-		return
-	var source_building := _find_building_by_id(int(context.get("transport_source_id", -1)))
-	var destination_building := _find_building_by_id(int(context.get("transport_destination_id", -1)))
-	# Un cantiere non completo non è una sorgente (2026-09-27, richiesta utente): il suo materiale si recupera
-	# annullandolo, che lo fa cadere a terra.
-	if source_building == null or destination_building == null or source_building.is_demolished or not source_building.is_complete:
-		return
-	# Include il buffer di uscita della produzione (2026-09-23): è una normale sorgente di Retrieve.
-	if BuildingStorageService.get_available_quantity(source_building, resource_name) <= 0:
-		return
-	var trip_target: int = TaskBuilderService.transport_trip_target(destination_building, resource_name, remaining)
-	if trip_target <= 0:
-		return
-	if owner.task_queue.size() >= TaskQueueService.MAX_QUEUE_SIZE:
-		if DebugLogging.ENABLED and DebugLogging.SHOW_TRANSPORT_BUILD_LOGS:
-			print("[TRANSPORT] #%d %s: ripetizione %d non accodata - coda piena (%d)." % [
-				owner.id, owner.name, repeats_done + 1, TaskQueueService.MAX_QUEUE_SIZE
-			])
-		return
-	var repeat_task := TaskBuilderService.build_transport_task(
-		owner, source_building, destination_building, resource_name, trip_target, remaining, true, repeats_done + 1
-	)
-	# Trasporto del magazzino verso l'essiccatoio (2026-10-11): la marca passa al viaggio successivo.
-	if context.has(WarehouseManagerService.STOCK_DRY_KEY):
-		repeat_task.context[WarehouseManagerService.STOCK_DRY_KEY] = context[WarehouseManagerService.STOCK_DRY_KEY]
-	_wire_transport_task(repeat_task, owner)
-	TaskQueueService.push_suspended_task(owner, repeat_task)
-	if DebugLogging.ENABLED and DebugLogging.SHOW_TRANSPORT_BUILD_LOGS:
-		print("[TRANSPORT] #%d %s: ripetizione %d/%d accodata - consegnate %d, residuo %d, obiettivo del viaggio %d." % [
-			owner.id, owner.name, repeats_done + 1, TaskRepeatRules.MAX_REPEATS, delivered, remaining, trip_target
-		])
+	var effects := GameEffects.new()
+	WorkFollowUpService.repeat_transport(_game_context(), owner, context, delivered, effects)
+	_apply_effects(effects)
 
 
 # Stato del trigger a due click (2026-09-12, richiesta utente) — `_transport_source_building`
@@ -3903,30 +3659,11 @@ func _wire_pickup_task(task: Task, owner: HumanIndividual) -> void:
 			break
 
 
-# Ripetizione automatica della raccolta (2026-09-20, richiesta utente): PickUpAction.repeat_requested. Genera una
-# nuova Task di raccolta sulla STESSA ZONA (2026-09-27, work areas passo 2: rifà la ricerca nella zona invece di
-# tornare alla stessa cella; con la zona 1×1 del clic è la stessa cella di sempre) con il contatore di ripetizioni
-# aggiornato e la ACCODA all'individuo (TaskQueueService.push_suspended_task, coda LIFO): parte
-# quando la Task in corso (il trasporto al magazzino) finisce. Nessun controllo sulla cella prima di partire.
-# Se la coda dell'individuo e' gia' piena non si accoda nulla: push_suspended_task in quel caso scarterebbe la
-# Task piu' vecchia E lo zaino (vedi TaskQueueService), e qui lo zaino e' appena stato riempito.
+# Ripetizione della raccolta (2026-10-18, blocco 5d — WorkFollowUpService.repeat_pickup).
 func _queue_pickup_repeat(owner: HumanIndividual, next_repeat_count: int, zone: Dictionary) -> void:
-	if owner == null or zone.is_empty():
-		return
-	# Zona 1×1 del clic: la sua macrocella deve essere viva. Una WorkArea (2026-09-27) si rilegge alla ricerca.
-	if not HaulZoneService.is_work_area_zone(zone):
-		var repeat_cell: LiveMacroCell = live_cells.get(HaulZoneService.get_macro_coords(zone))
-		if repeat_cell == null or repeat_cell.macro_state == null:
-			return
-	if owner.task_queue.size() >= TaskQueueService.MAX_QUEUE_SIZE:
-		if DebugLogging.ENABLED and DebugLogging.SHOW_PICKUP_LOGS:
-			print("[PICKUP] #%d %s: ripetizione %d non accodata — coda piena (%d)." % [
-				owner.id, owner.name, next_repeat_count, TaskQueueService.MAX_QUEUE_SIZE
-			])
-		return
-	var repeat_task := TaskBuilderService.build_haul_zone_task(zone, true, next_repeat_count)
-	_connect_haul_zone_step_appended(repeat_task, owner)
-	TaskQueueService.push_suspended_task(owner, repeat_task)
+	var effects := GameEffects.new()
+	WorkFollowUpService.repeat_pickup(_game_context(), owner, next_repeat_count, zone, effects)
+	_apply_effects(effects)
 
 
 # --- Comandi del pipottino (2026-09-27, richiesta utente — work areas passo 3b) ---
@@ -4187,17 +3924,12 @@ func _assign_work_area_hunt(hunter: HumanIndividual, area: WorkArea, series: Dic
 	])
 
 
-# Coltello per la caccia in zona (2026-10-09, regola generale degli attrezzi, ToolGateService.try_satisfy): in cintura va
-# bene; nello zaino viene spostato in cintura; cintura piena o nessun coltello = false, con il messaggio di sempre se non
-# `silent`. Così la macellazione accodata dopo l'uccisione lo trova in cintura.
+# Coltello per la caccia di zona (2026-10-18, blocco 5d — WorkFollowUpService.prepare_hunt_knife).
 func _prepare_hunt_knife(hunter: HumanIndividual, silent: bool) -> bool:
-	var required: Array[TaskTypes.ToolCategory] = [TaskTypes.ToolCategory.BUTCHERING]
-	var gate := ToolGateService.try_satisfy(hunter, required, game_data)
-	if gate["result"] == ToolGateService.Result.OK:
-		return true
-	if not silent:
-		_report_tool_gate_failure(hunter, gate)
-	return false
+	var effects := GameEffects.new()
+	var ok := WorkFollowUpService.prepare_hunt_knife(_game_context(), hunter, silent, effects)
+	_apply_effects(effects)
+	return ok
 
 
 # Caccia interrotta con un messaggio, per esempio senza più armi (HumanIndividualActionService.hunt_ended_with_message).
@@ -4205,43 +3937,11 @@ func _on_hunt_ended_with_message(hunter: HumanIndividual, message: String) -> vo
 	_report_command_rejection(hunter, message)
 
 
-# Serie di cacce sotto il limite di carne dopo una macellazione (HumanIndividualActionService.
-# hunt_zone_series_continue_requested): nuova caccia nella stessa zona, accodata (parte appena il pipottino è libero,
-# dopo eventuali bisogni). La serie finisce se la zona non esiste più o non ha più la caccia attiva, o se manca il
-# coltello (messaggio).
+# Prossima caccia della serie di zona (2026-10-18, blocco 5d — WorkFollowUpService.continue_hunt_series).
 func _on_hunt_zone_series_continue_requested(hunter: HumanIndividual, series: Dictionary) -> void:
-	if hunter == null or not human_individuals.has(hunter):
-		return
-	# Ordine di caccia del cassetto (2026-10-09): carne consegnata annotata sull'ordine; ordine tolto o rimesso in coda nel
-	# frattempo = niente seguito.
-	var drawer_order_id := int(series.get(DrawerOrderService.SERIES_KEY, -1))
-	if drawer_order_id >= 0:
-		var order := DrawerOrderService.find(game_data, drawer_order_id)
-		if order.is_empty() or not bool(order.get("taken", false)):
-			return
-		order["done_seen"] = maxi(int(order.get("done_seen", 0)), int(series.get("delivered", 0)))
-	var area := WorkAreaService.find_by_id(game_data, int(series.get("work_area_id", -1)))
-	if area == null or not HuntZoneService.list_hunt_work_areas(game_data).has(area):
-		HuntZoneService.log_event(hunter, "serie di caccia chiusa: zona non più disponibile per la caccia.")
-		return
-	var knife_rejection := HuntZoneService.get_hunt_rejection(hunter)
-	if knife_rejection != "":
-		HuntZoneService.log_event(hunter, "serie di caccia chiusa: %s" % knife_rejection)
-		_report_command_rejection(hunter, knife_rejection)
-		return
-	var task := TaskBuilderService.build_hunt_zone_task(area.id, series)
-	if task == null:
-		return
-	# Coltello dallo zaino in cintura (2026-10-09, regola generale degli attrezzi).
-	if not _prepare_hunt_knife(hunter, false):
-		return
-	# Seguito della catena (2026-10-10): fuori dal tetto della coda, ripresa per prima (TaskQueueService.push_follow_up_task).
-	TaskQueueService.push_follow_up_task(hunter, task)
-	HuntZoneService.log_event(hunter, "nuova caccia della serie accodata in %s #%d (%d/%d carne)." % [
-		area.name, area.id, int(series.get("delivered", 0)), int(series.get("target", 0))
-	])
-	if hunter == individual:
-		_refresh_selected_individual_panel()
+	var effects := GameEffects.new()
+	WorkFollowUpService.continue_hunt_series(_game_context(), hunter, series, effects)
+	_apply_effects(effects)
 
 
 func _get_selected_individuals() -> Array[HumanIndividual]:
@@ -4517,67 +4217,26 @@ func _assign_work_area_quarry(worker: HumanIndividual, area: WorkArea, count: in
 	_assign_quarry_task(worker, {"macro_coords": area.macro_coords, "position": rock}, area.id, QuarryZoneService.make_series(area.id, count))
 
 
-# Serie di estrazioni interrotta (2026-10-05, passo 3): messaggio "<nome>: estrazione interrotta a <fatte>/<totale>:
-# <motivo>" (HumanIndividualActionService.series_stopped_message) sul canale dei messaggi dell'abitante.
+# Serie di cava interrotta (2026-10-18, blocco 5d — WorkFollowUpService.series_stopped).
 func _report_series_stopped(worker: HumanIndividual, series: Dictionary, reason: String) -> void:
-	# Ordine "Estrai" del cassetto (2026-10-09): estrazioni fatte annotate; senza più chi lo porta torna in coda con le
-	# pietre che restano (DrawerOrderService.settle_zone_orders).
-	DrawerOrderService.note_progress(game_data, series)
-	_report_command_rejection(worker, HumanIndividualActionService.series_stopped_message(worker, QuarryZoneService.SERIES_STOPPED_KEY, series, reason))
+	var effects := GameEffects.new()
+	WorkFollowUpService.series_stopped(game_data, worker, QuarryZoneService.SERIES_STOPPED_KEY, series, reason, effects)
+	_apply_effects(effects)
 
 
-# Consegna non accodata per una serie in zona: messaggio della serie al posto di quello normale. false se il mucchio non
-# viene da una serie (nessun messaggio scritto qui).
+# Mucchio di una serie di cava non finita (2026-10-18, blocco 5d — WorkFollowUpService.quarry_pile_series_stopped).
 func _report_quarry_series_stopped(worker: HumanIndividual, pile_ref: Dictionary, reason: String) -> bool:
-	var series: Variant = pile_ref.get(QuarryZoneService.SERIES_ZONE_KEY, {})
-	if not (series is Dictionary) or (series as Dictionary).is_empty():
-		return false
-	if not QuarryZoneService.is_series_complete(series):
-		_report_series_stopped(worker, series, reason)
-		return true
-	return false
+	var effects := GameEffects.new()
+	var stopped := WorkFollowUpService.quarry_pile_series_stopped(game_data, worker, pile_ref, reason, effects)
+	_apply_effects(effects)
+	return stopped
 
 
-# Estrazione successiva della serie (QuarryZoneService, HumanIndividualActionService.quarry_zone_series_continue_requested:
-# consegna finita a mucchio vuoto). Stessa roccia finché ha pietra e nessun altro la prenota, altrimenti un'altra della
-# zona (QuarryZoneService.choose_rock). Accodata come la caccia successiva (parte appena il pipottino è libero, dopo
-# eventuali bisogni). La serie si chiude senza attese se la zona non è più valida, il piccone non c'è più o non resta una
-# roccia con pietra (messaggi nel passo 3).
+# Prossimo sasso della serie di cava (2026-10-18, blocco 5d — WorkFollowUpService.continue_quarry_series).
 func _on_quarry_zone_series_continue_requested(worker: HumanIndividual, series: Dictionary) -> void:
-	# Ordine "Estrai" del cassetto (2026-10-09, come "Taglia"): estrazioni fatte annotate, serie finita = ordine tolto;
-	# ordine rimesso in coda o annullato nel frattempo = la serie si ferma qui, senza messaggi.
-	if series.has(DrawerOrderService.SERIES_KEY):
-		DrawerOrderService.note_progress(game_data, series)
-		var drawer_order := DrawerOrderService.find(game_data, int(series[DrawerOrderService.SERIES_KEY]))
-		if drawer_order.is_empty() or not bool(drawer_order.get("taken", false)):
-			return
-	if worker == null or not human_individuals.has(worker) or QuarryZoneService.is_series_complete(series):
-		return
-	var area := WorkAreaService.find_by_id(game_data, int(series.get("work_area_id", -1)))
-	if area == null or not QuarryZoneService.list_quarry_work_areas(game_data).has(area):
-		_report_series_stopped(worker, series, tr("series_stop_zone_gone"))
-		return
-	if not ToolGateService.has_tool_for(worker, TaskTypes.ToolCategory.DIGGING):
-		_report_series_stopped(worker, series, tr("series_stop_no_tool").format({
-			"tools": ToolFetchService.describe_missing_categories([TaskTypes.ToolCategory.DIGGING]),
-		}))
-		return
-	var macro_state := macro_world.get_cell_state_at(area.macro_coords.x, area.macro_coords.y)
-	var reserved := QuarryZoneService.collect_reserved_rocks(human_individuals)
-	var available := QuarryZoneService.list_available_rocks(area, macro_state, worker, reserved)
-	var last_rock := Vector2i(int(series.get("rock_x", -1)), int(series.get("rock_y", -1)))
-	var rock: Variant = last_rock if available.has(last_rock) else QuarryZoneService.choose_rock(area, macro_state, worker, reserved)
-	if rock == null:
-		_report_series_stopped(worker, series, tr("series_stop_no_rock"))
-		return
-	var task := TaskBuilderService.build_quarry_task(worker, area.macro_coords, rock, area.id, series)
-	if task == null:
-		return
-	for step in task.steps:
-		_reconnect_build_task_signals(step)
-	TaskQueueService.push_suspended_task(worker, task)
-	if worker == individual:
-		_refresh_selected_individual_panel()
+	var effects := GameEffects.new()
+	WorkFollowUpService.continue_quarry_series(_game_context(), worker, series, effects)
+	_apply_effects(effects)
 
 
 # --- Taglio nelle zone (2026-10-06, Cut in zona passi 2-3) ---
@@ -4662,95 +4321,33 @@ func _assign_work_area_cut(worker: HumanIndividual, area: WorkArea, count: int =
 	_assign_cut_task(worker, plant, area.id, CutZoneService.make_series(area.id, count))
 
 
-# Serie di tagli interrotta (2026-10-06, passo 3): "<nome>: taglio interrotto a <fatte>/<totale>: <motivo>"
-# (HumanIndividualActionService.series_stopped_message) sul canale dei messaggi dell'abitante.
+# Serie di taglio interrotta (2026-10-18, blocco 5d — WorkFollowUpService.series_stopped).
 func _report_cut_series_stopped(worker: HumanIndividual, series: Dictionary, reason: String) -> void:
-	# Ordine "Taglia" del cassetto (2026-10-09): tagli fatti annotati; senza più chi lo porta torna in coda con le piante
-	# che restano (DrawerOrderService.settle_zone_orders).
-	DrawerOrderService.note_progress(game_data, series)
-	_report_command_rejection(worker, HumanIndividualActionService.series_stopped_message(worker, CutZoneService.SERIES_STOPPED_KEY, series, reason))
+	var effects := GameEffects.new()
+	WorkFollowUpService.series_stopped(game_data, worker, CutZoneService.SERIES_STOPPED_KEY, series, reason, effects)
+	_apply_effects(effects)
 
 
-# Consegna non accodata per una serie di tagli: messaggio della serie al posto di quello normale. false se il mucchio
-# non viene da una serie di tagli (nessun messaggio scritto qui).
+# Mucchio di una serie di taglio non finita (2026-10-18, blocco 5d — WorkFollowUpService.cut_pile_series_stopped).
 func _report_cut_pile_series_stopped(worker: HumanIndividual, pile_ref: Dictionary, reason: String) -> bool:
-	var series: Variant = pile_ref.get(CutZoneService.SERIES_ZONE_KEY, {})
-	if not (series is Dictionary) or (series as Dictionary).is_empty():
-		return false
-	if not CutZoneService.is_series_complete(series):
-		_report_cut_series_stopped(worker, series, reason)
-		return true
-	return false
+	var effects := GameEffects.new()
+	var stopped := WorkFollowUpService.cut_pile_series_stopped(game_data, worker, pile_ref, reason, effects)
+	_apply_effects(effects)
+	return stopped
 
 
-# Taglio successivo della serie (CutZoneService, HumanIndividualActionService.cut_zone_series_continue_requested:
-# consegna finita a mucchio vuoto). Pianta scelta ogni volta con CutZoneService.choose_plant (la più vicina tra quelle
-# ammesse e non prenotate). Accodato come l'estrazione successiva (parte appena il pipottino è libero, dopo eventuali
-# bisogni). La serie si chiude con un messaggio se la zona non è più valida, l'accetta non c'è più o non resta una
-# pianta da tagliare.
+# Prossima pianta della serie di taglio (2026-10-18, blocco 5d — WorkFollowUpService.continue_cut_series).
 func _on_cut_zone_series_continue_requested(worker: HumanIndividual, series: Dictionary) -> void:
-	# Ordine "Taglia" del cassetto (2026-10-09): tagli fatti annotati, serie finita = ordine tolto; ordine rimesso in coda
-	# (Rimetti in coda) o annullato nel frattempo = la serie si ferma qui, senza messaggi.
-	if series.has(DrawerOrderService.SERIES_KEY):
-		DrawerOrderService.note_progress(game_data, series)
-		var drawer_order := DrawerOrderService.find(game_data, int(series[DrawerOrderService.SERIES_KEY]))
-		if drawer_order.is_empty() or not bool(drawer_order.get("taken", false)):
-			return
-	if worker == null or not human_individuals.has(worker) or CutZoneService.is_series_complete(series):
-		return
-	# Serie su una microcella ("Tutte le piante", 2026-10-07): stessa prosecuzione, senza zona.
-	if CutZoneService.is_cell_series(series):
-		_continue_cut_cell_series(worker, series)
-		return
-	var area := WorkAreaService.find_by_id(game_data, int(series.get("work_area_id", -1)))
-	if area == null or not CutZoneService.list_cut_work_areas(game_data).has(area):
-		_report_cut_series_stopped(worker, series, tr("series_stop_zone_gone"))
-		return
-	if not ToolGateService.has_tool_for(worker, TaskTypes.ToolCategory.CHOPPING):
-		_report_cut_series_stopped(worker, series, tr("series_stop_no_tool").format({
-			"tools": ToolFetchService.describe_missing_categories([TaskTypes.ToolCategory.CHOPPING]),
-		}))
-		return
-	var plant := CutZoneService.choose_plant(
-		area, live_cells, worker, CutZoneService.collect_reserved_plants(human_individuals),
-		String(series.get(CutZoneService.SERIES_YIELD_KEY, ""))
-	)
-	if plant.is_empty():
-		_report_cut_series_stopped(worker, series, tr("series_stop_no_plant"))
-		return
-	var task := TaskBuilderService.build_cut_task(worker, plant, area.id, series)
-	if task == null:
-		return
-	for step in task.steps:
-		_reconnect_build_task_signals(step)
-	TaskQueueService.push_suspended_task(worker, task)
-	if worker == individual:
-		_refresh_selected_individual_panel()
+	var effects := GameEffects.new()
+	WorkFollowUpService.continue_cut_series(_game_context(), worker, series, effects)
+	_apply_effects(effects)
 
 
-# Taglio successivo di una serie su microcella ("Tutte le piante", 2026-10-07): la pianta viva e libera della stessa
-# microcella (CutZoneService.choose_plant_in_lot); nessuna = cella libera, serie completata senza messaggi (anche se il
-# conteggio non arriva al totale perché altri ne hanno tagliate). Accetta mancante: messaggio della serie.
+# Serie "taglia tutto qui" su una cella (2026-10-18, blocco 5d — WorkFollowUpService.continue_cut_cell_series).
 func _continue_cut_cell_series(worker: HumanIndividual, series: Dictionary) -> void:
-	var plant := CutZoneService.choose_plant_in_lot(
-		live_cells, CutZoneService.get_cell_series_macro_coords(series), CutZoneService.get_cell_series_lot(series),
-		worker, CutZoneService.collect_reserved_plants(human_individuals)
-	)
-	if plant.is_empty():
-		return
-	if not ToolGateService.has_tool_for(worker, TaskTypes.ToolCategory.CHOPPING):
-		_report_cut_series_stopped(worker, series, tr("series_stop_no_tool").format({
-			"tools": ToolFetchService.describe_missing_categories([TaskTypes.ToolCategory.CHOPPING]),
-		}))
-		return
-	var task := TaskBuilderService.build_cut_task(worker, plant, -1, series)
-	if task == null:
-		return
-	for step in task.steps:
-		_reconnect_build_task_signals(step)
-	TaskQueueService.push_suspended_task(worker, task)
-	if worker == individual:
-		_refresh_selected_individual_panel()
+	var effects := GameEffects.new()
+	WorkFollowUpService.continue_cut_cell_series(_game_context(), worker, series, effects)
+	_apply_effects(effects)
 
 
 # Raccogli per `candidates` (2026-10-04: estratto dal comando della barra, usato anche dai pulsanti sulle righe della
@@ -6510,39 +6107,10 @@ func _resolve_production_tool_wait_lines(target_building: Building) -> Array[Str
 	return lines
 
 
-# Ricette con almeno una Produce Task NON conclusa (attiva o in coda) su `target_building` (2026-09-24,
-# richiesta utente — un record per ricetta): i record di queste ricette non vanno mai liberati da
-# ProductionService.make_room_for. Stesso scan di _resolve_names_working_on_building.
-# Pezzi ancora dovuti per ricetta sull'edificio (2026-09-26, richiesta utente — materiale per l'ordine intero),
-# ricalcolati dalle Task VIVE (in corso e in coda) di tutti gli individui: per ogni Produce Task sull'edificio il
-# cui step di produzione non è ancora concluso, quantità ordinata - pezzi già prodotti. Scritti sui record esistenti
-# (ProductionService.set_units_remaining): più individui sulla stessa ricetta si sommano, una Task annullata,
-# scartata o di un individuo morto non conta più e la sua parte sparisce. Un record senza Task torna a 0 (un ciclo).
-# Chiamata all'assegnazione, all'annullo, al refresh del pannello e ogni giorno (_reconcile_all_production_units).
-# ORDINI SEPARATI (2026-10-04): ogni ordine ha i suoi pezzi dovuti; qui solo riallineati alla sua ProduceAction viva
-# (quantità ordinata - pezzi già prodotti). Un ordine senza Task resta com'è (lavoratore mancante).
+# Pezzi dovuti degli ordini di produzione riallineati alle Task vive (2026-10-18, blocco 5e —
+# JobWorkScanService.reconcile_production_units).
 func _reconcile_production_units(target_building: Building) -> void:
-	if target_building == null or target_building.production_progress.is_empty():
-		return
-	for step in _live_produce_steps(target_building):
-		if ProductionService.has_order(target_building, step.order_key):
-			ProductionService.set_order_units(target_building, step.order_key, maxi(step.quantity - step.produced_count, 0))
-
-
-# ProduceAction ancora da concludere (Task in corso o in coda, step dal corrente in poi) su `target_building`.
-func _live_produce_steps(target_building: Building) -> Array[ProduceAction]:
-	var steps: Array[ProduceAction] = []
-	for member in human_individuals:
-		var tasks: Array = [member.current_task]
-		tasks.append_array(member.task_queue)
-		for task in tasks:
-			if task == null or task.is_finished() or not JobWorkScanService.PRODUCE_TASK_NAMES.has(task.task_name):
-				continue
-			for step_index in range(task.current_step_index, task.steps.size()):
-				var step: Action = task.steps[step_index]
-				if step is ProduceAction and (step as ProduceAction).target_building == target_building:
-					steps.append(step as ProduceAction)
-	return steps
+	JobWorkScanService.reconcile_production_units(human_individuals, target_building)
 
 
 # Un nome "Nome (#id)" per ogni ordine con un lavoratore (lo stesso nome due volte se ha due ordini): il pannello conta
@@ -6572,14 +6140,6 @@ func _resolve_production_orders(target_building: Building) -> Array[Dictionary]:
 			"worker_name": _format_worker_name(workers[key]) if workers.has(key) else "",
 		})
 	return orders
-
-
-func _reconcile_all_production_units() -> void:
-	if macro_world == null:
-		return
-	for building in macro_world.buildings:
-		if not building.production_progress.is_empty():
-			_reconcile_production_units(building)
 
 
 # Comando "vai e costruisci" via DESTRO su un edificio non ancora completo (2026-09-10, richiesta
@@ -7355,27 +6915,11 @@ func _handle_worker_pick_input(event: InputEvent) -> bool:
 	return true
 
 
-# Avviso di un'assegnazione rifiutata dal controllo attrezzi (ToolGateService, 2026-09-25): testo
-# salvato sull'individuo (mostrato nel suo pannello) e popup giallo, stesso gate UserOptions degli altri.
+# Attrezzo mancante o non indossabile (2026-10-18, blocco 5d — CommandFeedback.tool_gate_failure).
 func _report_tool_gate_failure(worker: HumanIndividual, tool_gate: Dictionary) -> void:
-	var text := ""
-	match tool_gate["result"]:
-		ToolGateService.Result.MISSING_TOOLS:
-			text = tr("tool_gate_missing_tools").format({
-				"name": worker.name, "tools": ToolFetchService.describe_missing_categories(tool_gate["missing_categories"]),
-			})
-		ToolGateService.Result.BELT_FULL:
-			text = tr("tool_gate_belt_full").format({
-				"name": worker.name, "tool": IconRegistry.get_resource_display_name(tool_gate["tool_name"]),
-			})
-		ToolGateService.Result.CANNOT_EQUIP:
-			text = tr("tool_gate_cannot_equip").format({
-				"name": worker.name, "tool": IconRegistry.get_resource_display_name(tool_gate["tool_name"]),
-			})
-	worker.tool_gate_warning = text
-	if UserOptions.show_notification_popups and text != "":
-		notification_popup.enqueue(NotificationTypes.NotificationPopupType.TOOL_REQUIRED, text)
-	_refresh_selected_individual_panel()
+	var effects := GameEffects.new()
+	CommandFeedback.tool_gate_failure(worker, tool_gate, effects)
+	_apply_effects(effects)
 
 
 # Avviso di un comando rifiutato perché l'individuo non è idoneo (2026-09-26, richiesta utente): motivo
@@ -7394,18 +6938,12 @@ func _report_assign_rejection(worker: HumanIndividual, reason: String, activity_
 	_report_command_rejection(worker, tr(reason_key).format({"name": worker.name, "activity": tr(activity_key)}))
 
 
-# Mostra un motivo di rifiuto già tradotto (2026-09-26, richiesta utente — il giocatore deve sapere sempre
-# perché un ordine non è stato accettato, per QUALUNQUE comando): testo nel pannello dell'individuo
-# (stesso canale degli avvisi del gate attrezzi) e popup giallo TASK_REJECTED. Usata da
-# _report_assign_rejection (idoneità) e direttamente per i motivi propri di un comando (destinazione che
-# non ha bisogno della risorsa, cantiere al completo, nessun magazzino con l'attrezzo...). La X rossa sul
-# bersaglio resta a cura del chiamante (_spawn_command_icon*).
+# Rifiuto di un comando con un testo già tradotto (2026-10-18, blocco 5d — CommandFeedback.reject): avviso sull'individuo,
+# popup (se attivi) e pannello dell'individuo selezionato.
 func _report_command_rejection(worker: HumanIndividual, text: String) -> void:
-	if worker != null:
-		worker.tool_gate_warning = text
-	if UserOptions.show_notification_popups:
-		notification_popup.enqueue(NotificationTypes.NotificationPopupType.TASK_REJECTED, text)
-	_refresh_selected_individual_panel()
+	var effects := GameEffects.new()
+	CommandFeedback.reject(worker, text, effects)
+	_apply_effects(effects)
 
 
 # Nome leggibile di un edificio per i messaggi (BuildingRules.building_name tradotto), stesso fallback sul
@@ -7668,116 +7206,33 @@ func _connect_butcher_step_appended(task: Task, owner: HumanIndividual) -> void:
 	)
 
 
-# Macellazione automatica dopo la caccia (2026-09-26, richiesta utente — HumanIndividualActionService.
-# butcher_after_hunt_requested): la caccia si è conclusa con la preda uccisa. Si accoda la task di macellazione
-# sulla carcassa appena creata SOLO se:
-#   - il cacciatore ha in CINTURA un attrezzo che copre BUTCHERING (niente spostamenti dallo zaino: senza lama
-#     pronta non si accoda nulla e la carcassa resta lì);
-#   - la carcassa c'è ancora e la sua cella è viva;
-#   - la carcassa non ha già una macellazione in corso o in coda, di nessun individuo (2026-09-27);
-#   - l'individuo può fare la task (età, get_assign_rejection_reason).
-# Dal 2026-10-10 la macellazione è il seguito della caccia, non un ordine nuovo: entra in coda con
-# TaskQueueService.push_follow_up_task, senza il tetto MAX_QUEUE_SIZE (prima, a coda piena, non nasceva e la serie si
-# perdeva senza avvisi). È in fondo alla coda, quindi la caccia, finendo subito dopo, la riprende per prima (dopo un
-# bisogno, se ce n'è uno attivo); le task già in coda restano dove sono. Se non può nascere per un altro motivo (lama,
-# età, cella o mucchio), la carcassa resta a terra con l'avviso "Carcassa non macellata" in "In sospeso"
-# (_note_unbutchered_carcass). Icona del coltello sulla carcassa, come per il comando.
+# Macellazione dopo la caccia (2026-10-18, blocco 5d — WorkFollowUpService.butcher_after_hunt).
 func _on_butcher_after_hunt_requested(hunter: HumanIndividual, carcass: Dictionary) -> void:
-	var macro_coords := Vector2i(int(carcass.get("macro_x", 0)), int(carcass.get("macro_y", 0)))
-	var microcell := Vector2i(int(carcass.get("micro_x", 0)), int(carcass.get("micro_y", 0)))
-	var carcass_id: int = int(carcass.get("id", -1))
-	HuntService.log_event(hunter, "richiesta macellazione ricevuta: carcassa #%d, da %s (%s)." % [
-		carcass_id, String(carcass.get("requested_by", "origine sconosciuta")), HuntService.describe_now()
-	])
-	# Niente doppioni (2026-09-27, richiesta utente): se la carcassa ha già una macellazione in corso o in coda, di
-	# qualunque individuo, la richiesta non ne accoda un'altra.
-	for member in human_individuals:
-		var where := _describe_butcher_task_for_carcass(member, carcass_id)
-		if where != "":
-			HuntService.log_event(hunter, "macellazione non accodata: la carcassa #%d ha già una macellazione — #%d %s, %s." % [
-				carcass_id, member.id, member.name, where
-			])
-			return
-	if ToolGateService.find_belt_slot_for(hunter, TaskTypes.ToolCategory.BUTCHERING) == -1:
-		HuntService.log_event(hunter, "macellazione non accodata: nessuna lama in cintura, la carcassa resta a terra.")
-		# Sempre un messaggio (2026-10-01, regole delle armi): caccia diretta o in zona.
-		_report_command_rejection(hunter, tr("hunt_no_knife_carcass_left").format({"name": hunter.name}))
-		_note_unbutchered_carcass(macro_coords, microcell, carcass_id)
-		return
-	if GroundPileService.find_carcass(game_data, macro_coords, microcell, carcass_id).is_empty():
-		return
-	var cell: LiveMacroCell = live_cells.get(macro_coords)
-	var pile := GroundPileService.find_at(game_data, macro_coords, microcell)
-	if cell == null or cell.macro_state == null or pile == null:
-		HuntService.log_event(hunter, "macellazione non accodata: cella o mucchio della carcassa #%d non disponibili, la carcassa resta a terra." % carcass_id)
-		_note_unbutchered_carcass(macro_coords, microcell, carcass_id)
-		return
-	# Destinazione scelta nell'ordine di caccia (2026-10-03), passata dalla caccia con la carcassa; senza, il focolare.
-	var task := TaskBuilderService.build_butcher_task(
-		hunter, pile, carcass_id, cell.macro_state, String(carcass.get("butcher_destination", ButcherDestinationService.CAMPFIRE))
-	)
-	_wire_butcher_task(task, hunter)
-	if task == null:
-		HuntService.log_event(hunter, "macellazione non accodata: task non creata, la carcassa #%d resta a terra." % carcass_id)
-		_note_unbutchered_carcass(macro_coords, microcell, carcass_id)
-		return
-	# Serie di cacce fino a un limite di carne (2026-10-01): la macellazione conta la carne che consegna.
-	if carcass.has("hunt_zone_series"):
-		task.context[HuntZoneService.CONTEXT_MEAT_SERIES] = carcass["hunt_zone_series"]
-	# Solo l'età: la stamina bassa non impedisce di mettere la task in coda (partirà a stamina recuperata).
-	var hunter_age_band := _resolve_age_band(hunter)
-	for step in task.steps:
-		if step.disallowed_age_bands.has(hunter_age_band):
-			HuntService.log_event(hunter, "macellazione non accodata: età non ammessa, la carcassa #%d resta a terra." % carcass_id)
-			_note_unbutchered_carcass(macro_coords, microcell, carcass_id)
-			return
-	if hunter.task_queue.size() >= TaskQueueService.MAX_QUEUE_SIZE:
-		HuntService.log_event(hunter, "macellazione avviata con la coda piena (%d/%d): seguito della caccia, fuori dal limite." % [
-			hunter.task_queue.size(), TaskQueueService.MAX_QUEUE_SIZE
-		])
-	TaskQueueService.push_follow_up_task(hunter, task)
-	_spawn_command_icon_at_microcell(cell, microcell, "butcher")
-	HuntService.log_event(hunter, "macellazione accodata sulla carcassa #%d (Task istanza %d, coda ora %d)." % [
-		carcass_id, task.get_instance_id(), hunter.task_queue.size()
-	])
-	if hunter == individual:
-		_refresh_selected_individual_panel()
+	var effects := GameEffects.new()
+	WorkFollowUpService.butcher_after_hunt(_game_context(), hunter, carcass, effects)
+	_apply_effects(effects)
 
 
-# Controllo dei doppioni di macellazione (2026-09-27, _on_butcher_after_hunt_requested): dove `member` ha una Task
-# non conclusa con un ButcherAction sulla carcassa `carcass_id` — "task in
-# corso (istanza N)", "in coda posizione P (istanza N)" — o "" se nessuna. Più voci unite da "; ".
 func _describe_butcher_task_for_carcass(member: HumanIndividual, carcass_id: int) -> String:
-	var places := PackedStringArray()
-	if _task_butchers_carcass(member.current_task, carcass_id):
-		places.append("task in corso (istanza %d)" % member.current_task.get_instance_id())
-	for i in range(member.task_queue.size()):
-		if _task_butchers_carcass(member.task_queue[i], carcass_id):
-			places.append("in coda posizione %d (istanza %d)" % [i + 1, member.task_queue[i].get_instance_id()])
-	return "; ".join(places)
+	return WorkFollowUpService.describe_butcher_task_for_carcass(member, carcass_id)
 
 
 # --- Avviso "Carcassa non macellata" (2026-10-10) ---
 # Carcasse uccise in caccia la cui macellazione non è potuta nascere (_on_butcher_after_hunt_requested): {"id",
 # "macro_x", "macro_y", "micro_x", "micro_y"}, in memoria (non salvate, come gli avvisi "nessuna preda"). La riga resta in
 # "In sospeso" finché la carcassa è a terra e nessuno la sta macellando; clic = il mucchio selezionato e centrato.
-var _unbutchered_carcass_alerts: Array[Dictionary] = []
 
 
 func _note_unbutchered_carcass(macro_coords: Vector2i, microcell: Vector2i, carcass_id: int) -> void:
-	for alert in _unbutchered_carcass_alerts:
-		if int(alert["id"]) == carcass_id:
-			return
-	_unbutchered_carcass_alerts.append({
-		"id": carcass_id, "macro_x": macro_coords.x, "macro_y": macro_coords.y, "micro_x": microcell.x, "micro_y": microcell.y,
-	})
+	WorkFollowUpService.note_unbutchered_carcass(game_data, macro_coords, microcell, carcass_id)
 
 
 func _collect_unbutchered_carcass_entries() -> Array[Dictionary]:
 	var entries: Array[Dictionary] = []
 	if game_data == null:
 		return entries
-	for alert in _unbutchered_carcass_alerts.duplicate():
+	var unbutchered_alerts: Array[Dictionary] = game_data.job_board_runtime.unbutchered_carcass_alerts
+	for alert in unbutchered_alerts.duplicate():
 		var carcass_id := int(alert["id"])
 		var macro_coords := Vector2i(int(alert["macro_x"]), int(alert["macro_y"]))
 		var microcell := Vector2i(int(alert["micro_x"]), int(alert["micro_y"]))
@@ -7788,7 +7243,7 @@ func _collect_unbutchered_carcass_entries() -> Array[Dictionary]:
 				being_butchered = true
 				break
 		if pile == null or being_butchered or GroundPileService.find_carcass(game_data, macro_coords, microcell, carcass_id).is_empty():
-			_unbutchered_carcass_alerts.erase(alert)
+			unbutchered_alerts.erase(alert)
 			continue
 		var text := tr("pending_carcass_not_butchered")
 		entries.append(_pending_entry("carcass_not_butchered:%d" % carcass_id, text, {
@@ -7869,12 +7324,7 @@ func _collect_rubble_entries() -> Array[Dictionary]:
 
 
 func _task_butchers_carcass(task: Task, carcass_id: int) -> bool:
-	if task == null or task.is_finished():
-		return false
-	for step in task.steps:
-		if step is ButcherAction and (step as ButcherAction).carcass_id == carcass_id:
-			return true
-	return false
+	return WorkFollowUpService._task_butchers_carcass(task, carcass_id)
 
 
 # Mucchio con almeno una carcassa sotto il click (cella viva, entro GROUND_PILE_SELECT_RADIUS_PX dal suo centro,
@@ -8278,17 +7728,6 @@ func _sync_ground_pile_views() -> void:
 # Gruppi di visitatori (2026-09-27, richiesta utente — gameplay/visitors/, vedi VisitorService)
 # ============================================================================================
 
-# Ciclo dedicato: fa camminare ogni gruppo (game_delta 0 in pausa) e toglie quelli usciti dalla mappa.
-func _advance_visitor_parties(game_delta: float) -> void:
-	if game_data == null or game_data.visitor_parties.is_empty():
-		return
-	var departed: Array[VisitorParty] = []
-	for party in game_data.visitor_parties:
-		if VisitorService.advance(party, game_delta):
-			departed.append(party)
-	for party in departed:
-		game_data.visitor_parties.erase(party)
-
 
 # Una VisitorPartyView per gruppo, sotto il container della sua macrocella se è viva; ricreata quando la
 # cella viene riattivata, liberata quando il gruppo sparisce (stesso schema di _sync_ground_pile_views).
@@ -8513,98 +7952,18 @@ func _on_event_decision_chosen(option_index: int, context: Variant) -> void:
 		push_warning("[VISITORS] Decisione su un gruppo non più in attesa (id %s): ignorata." % str(context.get("party_id", -1)))
 		return
 	if option_index == _VISITOR_DECISION_ACCEPT:
-		_welcome_visitor_party(party)
+		# Accoglienza nella simulazione (2026-10-18, blocco 5c — GameSimulation.welcome_visitor_party), viste dagli effetti.
+		var welcome_effects := GameEffects.new()
+		sim.welcome_visitor_party(party, welcome_effects)
+		_apply_effects(welcome_effects)
 	else:
 		VisitorService.dismiss(party, macro_world)
 		if DebugLogging.ENABLED:
 			print("[VISITORS] Gruppo #%d rifiutato: se ne va verso %s." % [party.id, str(party.exit_point)])
 
 
-# Accoglienza: i membri diventano HumanIndividual veri del Folk del player, con lo stesso percorso delle
-# nascite (assegnazione casa, vista) e stamina, provviste e riserva piene. Le provviste
-# e la riserva si riempiono al primo ricalcolo della capacità da regole vere (HumanCarryCapacityIndividualService),
-# come per ogni individuo appena creato; la stamina viene portata al massimo qui. Chi porta una dote la riceve
-# nello zaino e va prima a depositarla (_give_visitor_dowry); gli altri passano subito dall'idle.
-func _welcome_visitor_party(party: VisitorParty) -> void:
-	var used_names: Array[String] = []
-	for member in human_individuals:
-		used_names.append(member.name)
-	# Entrano nel villaggio del centro che li ha attirati (2026-10-12, passo 2 Folk/Village).
-	var center := VisitorService.find_village_center(macro_world)
-	var village := VillageService.find_village_by_center(human_folk, center.id if center != null else -1)
-	var newcomers := VisitorService.materialize_members(party, game_data, human_folk, village, used_names)
-	var era_rules := EraCalculator.get_era_rules(game_data.current_era_name)
-	for newcomer in newcomers:
-		HumanStaminaIndividualService.recalculate_max_stamina(newcomer, game_data, era_rules, macro_world)
-		HumanCarryCapacityIndividualService.recalculate_max_carry_capacity(newcomer, game_data)
-		HumanVitalsIndividualService.recalculate_vitals(newcomer, game_data)
-		newcomer.current_stamina = newcomer.max_stamina
-		human_individuals.append(newcomer)
-	game_data.visitor_parties.erase(party)
-	# Valore politico del villaggio che li accoglie (2026-10-12, passo 4 Folk/Village): + per ogni adulto.
-	var adult_count := 0
-	for newcomer in newcomers:
-		if _resolve_age_band(newcomer) >= HumanTypes.AgeBand.FERTILE_ADULT:
-			adult_count += 1
-	VillageInfluenceService.add_accepted_adults(human_folk, village, adult_count)
-	AssignHouseService.assign_pending_residents(macro_world, human_individuals, game_data.year)
-	# newcomers è nello stesso ordine di party.members (VisitorService.materialize_members): l'indice serve alla dote.
-	for i in range(newcomers.size()):
-		var newcomer := newcomers[i]
-		_add_human_individual_view(newcomer)
-		if not _give_visitor_dowry(party, i, newcomer):
-			HumanIndividualActionService.resolve_idle_individual(newcomer, _resolve_age_band(newcomer), macro_world)
-	_refresh_population_panel()
-	if DebugLogging.ENABLED:
-		var labels := PackedStringArray()
-		for newcomer in newcomers:
-			labels.append("#%d %s" % [newcomer.id, newcomer.name])
-		print("[VISITORS] Gruppo #%d accolto: %s entrano nel villaggio." % [party.id, ", ".join(labels)])
 
 
-# Dote del nuovo arrivato (2026-09-27, richiesta utente — VisitorPartyRules del tipo di gruppo, es. ghiande per i
-# migranti adulti): zaino riempito in proporzione alla capacità di trasporto, e deposito al magazzino come prima
-# attività. true = Task di deposito assegnata (il chiamante NON deve risolvere l'idle).
-#
-# Ordine voluto: la Task si assegna PRIMA di riempire lo zaino. HumanIndividual.assign_task, per chi non ha una
-# Task in corso, scarta a terra il carico (ramo "discard_carried_resource"): con lo zaino ancora vuoto non c'è
-# nulla da scartare, e l'UnloadAction legge lo zaino solo quando si attiva, all'arrivo al magazzino. Per lo
-# stesso motivo non si passa dall'idle con lo zaino pieno: la prima perditempo lo lascerebbe cadere come mucchio.
-# La Task è sospendibile (come haul/transport): un bisogno (riposo, rifornimento) la mette in coda con il carico
-# invece di perderla, e riprende dopo. Se nessun magazzino accetta la dote (o non c'è posto) la dote viene data
-# lo stesso e si torna all'idle: il carico finisce a terra vicino all'individuo come mucchio, raccoglibile.
-func _give_visitor_dowry(party: VisitorParty, member_index: int, newcomer: HumanIndividual) -> bool:
-	var dowry := VisitorService.get_member_dowry(party, member_index, newcomer)
-	var resource_name: String = dowry["resource_name"]
-	var quantity: int = dowry["quantity"]
-	if quantity <= 0:
-		return false
-	# Prima un magazzino con posto per tutta la dote; altrimenti uno che ne accetti almeno un'unità (il residuo lo
-	# ricolloca UnloadAction.on_complete con il re-routing già esistente).
-	var warehouse := WarehouseSelectionService.find_best(
-		macro_world, newcomer.position, newcomer.home_macro_coords, resource_name, quantity, [],
-		PathfindingService.reachability_for(newcomer)
-	)
-	if warehouse == null:
-		warehouse = WarehouseSelectionService.find_best(
-			macro_world, newcomer.position, newcomer.home_macro_coords, resource_name, 1, [],
-			PathfindingService.reachability_for(newcomer)
-		)
-	var assigned := false
-	if warehouse != null:
-		var task := TaskBuilderService.build_unload_resource_task(newcomer, warehouse)
-		if task != null:
-			for step in task.steps:
-				if step is UnloadAction:
-					_reconnect_unload_action_signals(step as UnloadAction, newcomer)
-			assigned = newcomer.assign_task(task, _resolve_age_band(newcomer))
-	var added := newcomer.add_carried_resource(resource_name, quantity)
-	if DebugLogging.ENABLED:
-		print("[VISITORS] Dote di #%d %s: %d %s nello zaino, %s." % [
-			newcomer.id, newcomer.name, added, resource_name,
-			("deposito accodato al magazzino #%d" % warehouse.id) if assigned else "nessun magazzino disponibile (finirà a terra)"
-		])
-	return assigned
 
 
 # Candidati di raccolta dal mucchio nella microcella del click (click destro): una voce per risorsa del mucchio,
@@ -8911,9 +8270,7 @@ func _on_burial_aborted(worker: HumanIndividual, body_name: String) -> void:
 # (_drag_carried_body_view; la selezione si chiude se era lui), un corpo appena posato ("view_dirty") ha la vista rifatta
 # a terra se la sua macrocella è viva — disteso dritto se è sulla lastra di un cumulo.
 func _sync_body_burial() -> void:
-	for member in human_individuals:
-		if member.carried_body_id != -1:
-			BodyBurialService.enforce_carrier(member)
+	# L'invariante del corpo in spalla (BodyBurialService.enforce_carrier) gira in GameSimulation.tick_frame (2026-10-18).
 	# Corpi consumati dal funerale (2026-10-04, BodyBurialService.bury_body): record sparito -> via la vista.
 	for body_id in dead_body_views.keys():
 		if _find_dead_body_record(int(body_id)).is_empty():
@@ -8961,11 +8318,9 @@ func _drag_carried_body_view(record: Dictionary) -> void:
 	var carrier: HumanIndividual = null
 	var carrier_view: HumanIndividualView = null
 	var carrier_id := int(record.get("carried_by_id", -1))
-	for i in range(mini(human_individuals.size(), human_individual_views.size())):
-		if human_individuals[i].id == carrier_id:
-			carrier = human_individuals[i]
-			carrier_view = human_individual_views[i]
-			break
+	carrier = _find_human_individual_by_id(carrier_id)
+	if carrier != null:
+		carrier_view = human_individual_views.get(carrier_id)
 	if carrier_view == null or not is_instance_valid(carrier_view) or carrier_view.get_parent() == null:
 		_free_dead_body_view(body_id)
 		return
@@ -9166,15 +8521,19 @@ func _refresh_pending_entries() -> void:
 	# Righe del cassetto (2026-10-07), solo con l'idea: "In coda" i lavori senza nessuno (subito, attivi o bloccati, non
 	# nascosti), "In corso" quelli con almeno un lavoratore (solo a cassetto aperto, i nomi costano un giro).
 	var listed_jobs: Array[Dictionary] = []
+	# "In corso" solo con chi ci lavora ADESSO (2026-10-18, richiesta utente — _current_job_workers): un lavoro assegnato
+	# che nessuno sta svolgendo (solo in coda personale) resta in "In coda" con chi lo tiene.
+	var current_workers: Dictionary = _current_job_workers(board_jobs) if board_enabled else {}
 	for job in board_jobs:
 		board_job_keys[String(job["key"])] = true
 		if not board_enabled:
 			continue
-		if not bool(job["assigned"]) or job.has("postponed_by"):
+		var job_current_workers: Array = current_workers.get(String(job["key"]), [])
+		if not bool(job["assigned"]) or job.has("postponed_by") or job_current_workers.is_empty():
 			if not bool(job["hidden"]):
 				listed_jobs.append(job)
 		elif drawer_open:
-			in_progress_entries.append(_job_board_drawer_entry(job, true))
+			in_progress_entries.append(_job_board_drawer_entry(job, true, job_current_workers))
 	# Età dei lavori (2026-10-08, JobBoardService.stamp_entered): segnata al primo ingresso in coda, mai azzerata.
 	JobBoardService.stamp_entered(game_data, listed_jobs, _job_board_now())
 	JobBoardService.forget_missing(game_data, board_job_keys)
@@ -9233,7 +8592,6 @@ func _tick_simulation_day() -> void:
 	var effects := GameEffects.new()
 	GameSimulation.tick_day(_game_context(), effects)
 	_apply_effects(effects)
-	_reconcile_all_production_units()
 
 
 # Scadenza dei messaggi del pannello dell'abitante (2026-10-05, regola unica — vedi HumanIndividual.tool_gate_warning),
@@ -9420,13 +8778,7 @@ var _job_board_provider_list: Array[Dictionary] = []
 # Contesto dei servizi di gioco (GameContext, 2026-10-17, refactoring GameScene): partita, mondo, popolazione e celle vive.
 # Nuovo a ogni chiamata (solo riferimenti, nessuna copia).
 func _game_context() -> GameContext:
-	var ctx := GameContext.new()
-	ctx.game_data = game_data
-	ctx.world = macro_world
-	ctx.individuals = human_individuals
-	ctx.folk = human_folk
-	ctx.live_cells = live_cells
-	return ctx
+	return sim.context()
 
 
 # Lavoro "edificio" preso dalla coda (2026-10-17, più costruttori): il lavoro resta libero finché ci sono posti, quindi chi
@@ -9559,7 +8911,8 @@ func _find_job_board_job(job_key: String) -> Dictionary:
 
 
 # Riga del cassetto di un lavoro: "In coda" (stato, attesa) o "In corso" (nomi di chi lo fa), più i campi della X.
-func _job_board_drawer_entry(job: Dictionary, in_progress: bool) -> Dictionary:
+# `current_workers` (2026-10-18): chi lo sta svolgendo adesso (_current_job_workers), per "In corso".
+func _job_board_drawer_entry(job: Dictionary, in_progress: bool, current_workers: Array = []) -> Dictionary:
 	var key := String(job["key"])
 	var data := {
 		"kind": job["entry_kind"], "id": job["id"], "macro": job["macro"], "sort": job["sort"],
@@ -9568,12 +8921,16 @@ func _job_board_drawer_entry(job: Dictionary, in_progress: bool) -> Dictionary:
 	}
 	if in_progress:
 		var names: Array[String] = []
+		var worker_ids: Array[int] = []
 		var first_worker: HumanIndividual = null
-		for member in job["provider"]["workers"].call(job):
+		for member in current_workers:
 			names.append((member as HumanIndividual).name)
+			worker_ids.append((member as HumanIndividual).id)
 			if first_worker == null:
 				first_worker = member as HumanIndividual
 		data["workers"] = ", ".join(names)
+		# Per il conteggio "al lavoro" (_sync_drawer_workload): le persone di questa riga.
+		data["worker_ids"] = worker_ids
 		# Clic su una riga "In corso" (2026-10-09, richiesta utente): seleziona e centra chi fa il lavoro (il primo se più
 		# d'uno), non il bersaglio.
 		if first_worker != null:
@@ -9589,6 +8946,13 @@ func _job_board_drawer_entry(job: Dictionary, in_progress: bool) -> Dictionary:
 				"name": (job["postponed_by"] as HumanIndividual).name,
 				"materials": _missing_materials_text(job["target"] as Building, String(job["kind"]) == "repair"),
 			})
+		# Assegnato ma nessuno lo sta svolgendo adesso (2026-10-18): è nella coda personale di chi lo tiene.
+		elif bool(job["assigned"]):
+			var holders: Array[String] = []
+			for member in job["provider"]["workers"].call(job):
+				holders.append((member as HumanIndividual).name)
+			if not holders.is_empty():
+				blocked_reason = tr("job_held_in_queue").format({"name": ", ".join(holders)})
 		if blocked_reason != "":
 			# Lavoro impossibile per ora: il motivo al posto di "In attesa di assegnazione", senza conto alla rovescia.
 			data["waiting"] = false
@@ -10747,51 +10111,80 @@ func _task_creator_text(task: Task) -> String:
 
 # Carico di lavoro del villaggio (2026-10-09, richiesta utente — titolo e barra di "In corso"), sugli individui in età da
 # lavoro (_is_working_age). Ognuno conta in una sola voce, in quest'ordine:
-#   - al lavoro: ha una riga in "In corso" (lavoro della coda di cui è tra chi lo fa, o comando diretto);
-#   - in cerca di lavoro (2026-10-09): task "Cerca lavoro" (riga "Automatico", non conta tra "al lavoro");
-#   - coordina (2026-10-09): task "Coordina" (riga "Automatico", non conta tra "al lavoro");
+#   - al lavoro: è in una riga di "In corso" (2026-10-18, richiesta utente — contato dalle righe stesse, così titolo e
+#     righe tornano sempre): lavoro della coda che sta svolgendo adesso (_current_job_workers), comando diretto, e anche
+#     "Cerca lavoro" e "Coordina" (righe "Automatico", prima fuori dal conto);
 #   - bisogni: la task attiva è un bisogno (riposo, riposo d'emergenza, rifornimento urgente);
 #   - svago: tutti gli altri — task di svago (is_idle_activity, o oziare, rifornirsi, rito spontaneo, passeggiata, gioco,
 #     sogni a occhi aperti, esplorazione) e, se capita, nessuna task (2026-10-09: niente più voce "Liberi").
 const WORKLOAD_NEED_TASK_NAMES: Array[String] = ["task_rest_name", "task_emergency_rest_name", "task_emergency_restock_name"]
 
 
-func _sync_drawer_workload(board_jobs: Array[Dictionary], in_progress_entries: Array[Dictionary]) -> void:
+func _sync_drawer_workload(_board_jobs: Array[Dictionary], in_progress_entries: Array[Dictionary]) -> void:
 	var at_work_ids: Dictionary = {}
-	for job in board_jobs:
-		if not bool(job["assigned"]) or bool(job["hidden"]):
-			continue
-		for member in job["provider"]["workers"].call(job):
-			at_work_ids[(member as HumanIndividual).id] = true
 	for entry in in_progress_entries:
-		if bool(entry.get("direct", false)) and not bool(entry.get("automatic", false)):
+		if entry.has("worker_ids"):
+			for worker_id in entry["worker_ids"]:
+				at_work_ids[int(worker_id)] = true
+		elif bool(entry.get("direct", false)):
 			at_work_ids[int(entry["id"])] = true
 	var at_work := 0
 	var needs := 0
 	var leisure := 0
-	var seeking := 0
-	var coordinating := 0
 	for member in human_individuals:
 		if not _is_working_age(member):
 			continue
 		var task := member.current_task
 		if at_work_ids.has(member.id):
 			at_work += 1
-		elif task != null and not task.is_finished() and task.task_name == JobBoardService.SEEK_JOB_TASK_NAME:
-			seeking += 1
-		elif task != null and not task.is_finished() and CoordinatorService.is_coordinate_task(task):
-			coordinating += 1
 		elif task != null and not task.is_finished() and WORKLOAD_NEED_TASK_NAMES.has(task.task_name):
 			needs += 1
 		else:
 			leisure += 1
-	# Righe in più del tooltip, dopo "Al lavoro" (2026-10-09): "In cerca di lavoro"; allo step dopo "Coordina" allo stesso
-	# modo (una voce in più qui, contata nel totale ma non tra "al lavoro").
-	var extra_rows: Array[Dictionary] = [
-		{"key": "task_assignment_workload_seeking", "count": seeking},
-		{"key": "task_assignment_workload_coordinating", "count": coordinating},
-	]
-	_task_assignment_panel.set_workload(at_work, needs, leisure, extra_rows)
+	_task_assignment_panel.set_workload(at_work, needs, leisure)
+
+
+# Lavoro che `member` sta svolgendo (2026-10-18, richiesta utente — "In corso" solo i lavori in essere): la task attiva
+# se è un lavoro; se è fermo per un bisogno, la task che riprenderà subito dopo (l'ultima della coda, LIFO), purché non
+# sia rimandata per materiale; altrimenti null (svago, cerca lavoro, coordina, niente).
+func _current_work_task(member: HumanIndividual) -> Task:
+	var task := member.current_task
+	if task == null or task.is_finished():
+		return null
+	if WORKLOAD_NEED_TASK_NAMES.has(task.task_name):
+		if member.task_queue.is_empty():
+			return null
+		var resumed: Task = member.task_queue.back()
+		if resumed == null or resumed.is_finished() or resumed.context.has(HumanIndividualActionService.CONTEXT_MATERIAL_POSTPONED):
+			return null
+		return resumed
+	if task.is_idle_activity or DIRECT_COMMAND_EXCLUDED_TASK_NAMES.has(task.task_name):
+		return null
+	if task.task_name == JobBoardService.SEEK_JOB_TASK_NAME or CoordinatorService.is_coordinate_task(task):
+		return null
+	return task
+
+
+# Lavori assegnati della coda -> chi li sta svolgendo adesso (_current_work_task): chiave del lavoro -> Array di
+# HumanIndividual. Per non riscrivere i "workers" di ogni fornitore (che guardano task in corso e in coda), per il tempo
+# del calcolo ogni pipottino mostra solo il suo lavoro attuale; tutto torna com'era subito dopo (nessun effetto, nessun
+# segnale: current_task e task_queue sono campi semplici).
+func _current_job_workers(board_jobs: Array[Dictionary]) -> Dictionary:
+	var result: Dictionary = {}
+	var saved: Array = []
+	for member in human_individuals:
+		saved.append([member, member.current_task, member.task_queue])
+		var empty_queue: Array[Task] = []
+		member.current_task = _current_work_task(member)
+		member.task_queue = empty_queue
+	for job in board_jobs:
+		if bool(job["assigned"]) and not job.has("postponed_by"):
+			result[String(job["key"])] = job["provider"]["workers"].call(job)
+	for entry in saved:
+		var member: HumanIndividual = entry[0]
+		member.current_task = entry[1]
+		member.task_queue = entry[2]
+	return result
 
 
 # In età da lavoro: chi può fare almeno un lavoro. Neonati e bambini (INFANT, CHILD) sono esclusi da tutte le action di
@@ -11263,11 +10656,9 @@ func _refresh_selected_building_panel() -> void:
 	_refresh_building_panel()
 
 
-# Step 6 piano mortalità (2026-09-05): rimuove/libera la HumanIndividualView corrispondente
-# all'individuo appena morto, ALLO STESSO indice che aveva in human_individuals nel momento in
-# cui GameTimeService ha emesso il segnale (vedi commento alla connessione in _setup_clock) —
-# human_individual_views è parallelo per indice a human_individuals, quindi va tenuto allineato
-# qui, un solo punto, ogni volta che quest'ultimo perde un elemento.
+# Step 6 piano mortalità (2026-09-05): rimuove/libera la HumanIndividualView dell'individuo appena morto (per id dal
+# 2026-10-18, blocco 5c: l'indice del segnale non serve più alla scena). Le case dei vivi le riassegna GameTimeService
+# subito dopo la rimozione (2026-10-18).
 #
 # Se il morto era anche l'individuo selezionato (bugfix, richiesta utente, 2026-09-05: cliccare
 # il suo nome ancora elencato nel pannello riportava su un posto vuoto E mostrava ancora i suoi
@@ -11295,10 +10686,8 @@ func _on_human_individual_died(
 	individual: HumanIndividual, index: int, age_at_death: int, partner_freed: bool,
 	cause: DeathTypes.DeathCause, day: int
 ) -> void:
-	if index < 0 or index >= human_individual_views.size():
-		return
-	var view := human_individual_views[index]
-	human_individual_views.remove_at(index)
+	var view: HumanIndividualView = human_individual_views.get(individual.id)
+	human_individual_views.erase(individual.id)
 	if view != null and is_instance_valid(view):
 		view.queue_free()
 	if individual.is_selected:
@@ -11347,28 +10736,21 @@ func _on_human_individual_died(
 	# quello che aveva). Se `individual` occupava davvero uno slot residenziale, questo lo libera
 	# automaticamente per il prossimo in coda per anzianità — se nessuno è in attesa, nessun effetto
 	# (nessun turnover forzato di chi ha già casa, come richiesto).
-	var living_individuals: Array[HumanIndividual] = []
-	for other in human_individuals:
-		if other != individual:
-			living_individuals.append(other)
-	AssignHouseService.assign_pending_residents(macro_world, living_individuals, game_data.year)
 
 
 # Step 4 del piano riproduzione (2026-09-06) — schema simmetrico di _on_human_individual_died
 # sopra: HumanBirthIndividualService aggiunge SEMPRE in coda a human_individuals (stesso array per
 # riferimento di GameTimeService._human_individuals, mai a metà array), un append per volta, PRIMA
 # di emettere individual_born una volta per ciascun neonato (anche con più nascite nello stesso
-# giorno) — quindi human_individual_views.append(view) qui, chiamato una volta per segnale nello
-# stesso ordine, mantiene il parallelismo per indice tra le due collezioni una volta processati
-# tutti i segnali di questo giorno, nessun indice esplicito da gestire come per la rimozione.
+# giorno) — una vista per segnale, registrata per id (2026-10-18, blocco 5c).
 # Stesso identico pattern di
 # creazione view già usato in _ready() per il seeding iniziale (HumanIndividualView.new() ->
 # parenta sotto il container della cella giusta -> setup() -> z_index -> append). Nessuna view se
 # home_macro_coords non è (più) una cella viva — stesso principio già applicato a DeadBodyView in
 # _on_human_individual_died: niente si disegna fuori dal focus LOD.
-# Vista di un individuo appena entrato in human_individuals (nascita o visitatore accolto), in coda a
+# Vista di un individuo appena entrato in human_individuals (nascita o visitatore accolto), registrata per id in
 # human_individual_views. Estratta da _on_human_individual_born (2026-09-27) per condividerla con
-# _welcome_visitor_party. false (nessuna vista) se la macrocella dell'individuo non è viva — stesso
+# GameSimulation.welcome_visitor_party (effetto individual_added). false (nessuna vista) se la macrocella dell'individuo non è viva — stesso
 # comportamento di prima per le nascite.
 func _add_human_individual_view(individual: HumanIndividual) -> bool:
 	if not live_cells.has(individual.home_macro_coords):
@@ -11378,19 +10760,13 @@ func _add_human_individual_view(individual: HumanIndividual) -> bool:
 	view.setup(individual, game_data, human_folk.human_rules_ref if human_folk != null else null)
 	view.clock = clock
 	view.z_index = 1
-	human_individual_views.append(view)
+	human_individual_views[individual.id] = view
 	return true
 
 
 func _on_human_individual_born(individual: HumanIndividual) -> void:
-	# AssignHouseService (2026-09-12, richiesta utente — trigger 4b: "quando nasce un nuovo
-	# individuo") — chiamata PRIMA del guard "cella viva" sotto (l'assegnazione non ha nulla a che
-	# fare col rendering, deve funzionare anche per una nascita fuori dal LOD corrente). Il neonato
-	# è già presente in human_individuals a questo punto (HumanBirthIndividualService.gd lo aggiunge
-	# SEMPRE in coda PRIMA di emettere individual_born, vedi il commento sotto su human_individual_
-	# views) con house_id == -1 di default (HumanIndividual.gd) — è quindi già candidato "senza
-	# casa" per questa stessa chiamata.
-	AssignHouseService.assign_pending_residents(macro_world, human_individuals, game_data.year)
+	# La casa (anche per una nascita fuori dal LOD) la assegna GameTimeService prima di emettere il segnale (2026-10-18,
+	# refactoring GameScene blocco 5c).
 	if not _add_human_individual_view(individual):
 		return
 	# Sistema notifiche, effetto nato-morto (2026-09-06) — stesso gate/schema di
@@ -11779,54 +11155,12 @@ func _on_human_population_changed() -> void:
 	_refresh_population_panel()
 
 
-# Bugfix (richiesta utente, 2026-09-05 — vedi commento alla connessione in _setup_clock): tiene
-# sincronizzati i due pannelli umani col passare degli anni, non solo su un nuovo popolamento/una
-# nuova selezione manuale.
+# Giro annuale (2026-10-18, blocco 5e — GameSimulation.tick_year): valori e storia delle influenze dei villaggi, istantanee
+# degli edifici, pannelli rinfrescati dagli effetti.
 func _on_year_rolled_over() -> void:
-	# Valori assoluti R/C/P dei villaggi (2026-10-12, passo 4 — regola 1): + somma dei raggi effettivi di questo momento.
-	VillageInfluenceService.apply_annual_growth(human_folk, macro_world)
-	# Storia dei valori per la scheda Influenza delle statistiche (2026-10-12): un punto per villaggio, tipo e anno.
-	if human_folk != null:
-		for village in human_folk.villages:
-			if not game_data.village_influence_snapshots.has(village.id):
-				game_data.village_influence_snapshots[village.id] = {}
-			var by_type: Dictionary = game_data.village_influence_snapshots[village.id]
-			for influence_type in InfluenceService.InfluenceType.values():
-				if not by_type.has(influence_type):
-					by_type[influence_type] = {}
-				by_type[influence_type][game_data.year] = village.get_influence_value(influence_type)
-	_refresh_population_panel()
-	_refresh_selected_individual_panel()
-	# Rete di sicurezza periodica per la scheda 🏠 (2026-09-12, richiesta utente) — stesso principio
-	# di _refresh_population_panel sopra.
-	_refresh_buildings_panel()
-	# Snapshot edifici/anno (2026-09-12, richiesta utente — tab Statistiche/Edifici, vedi GameData.
-	# building_snapshots) — STESSO schema di GameTimeService._on_year_rolled_over per
-	# population_snapshots, ma scritto QUI (non lì): GameTimeService non possiede macro_world/
-	# buildings (vedi i suoi campi, solo human_individuals/folk/population_group), mentre GameScene
-	# li ha già a portata di mano per _refresh_buildings_panel appena sopra.
-	# Esclusi gli edifici di categoria MOVEMENT (2026-10-04, richiesta utente — stesso criterio di "Edifici totali"
-	# in StatisticsPanel): i salvataggi precedenti restano con totali che li comprendono, accettato dall'utente.
-	var building_count := 0
-	# Stessa serie per villaggio (2026-10-12, statistiche filtrabili per villaggio): Village.id -> conteggio.
-	var village_building_counts: Dictionary = {}
-	if human_folk != null:
-		for village in human_folk.villages:
-			village_building_counts[village.id] = 0
-	if macro_world != null:
-		for building in macro_world.buildings:
-			# Solo edifici completi, macerie escluse (2026-10-12): stesso criterio di "Edifici totali" in StatisticsPanel.
-			if not building.is_complete or building.is_demolished or building.is_rubble():
-				continue
-			if building.rules == null or building.rules.category != BuildingTypes.Category.MOVEMENT:
-				building_count += 1
-				if village_building_counts.has(building.village_id):
-					village_building_counts[building.village_id] += 1
-	game_data.building_snapshots[game_data.year] = building_count
-	for village_id in village_building_counts:
-		if not game_data.village_building_snapshots.has(village_id):
-			game_data.village_building_snapshots[village_id] = {}
-		game_data.village_building_snapshots[village_id][game_data.year] = village_building_counts[village_id]
+	var effects := GameEffects.new()
+	GameSimulation.tick_year(_game_context(), effects)
+	_apply_effects(effects)
 
 
 # Sposta il bersaglio di movimento/streaming (il campo "individual", vedi il commento lì) su
@@ -12969,444 +12303,48 @@ func _update_live_neighbor() -> void:
 # (vedi _update_live_neighbor sopra) — il salto al bordo vero è già invisibile.
 # ============================================================================================
 
-# Punto di intercettazione dell'uscita dal bordo della griglia micro — richiamato ogni frame da
-# _process per OGNI individuo attivo (2026-09-12, richiesta utente — piano multi-individuo, Step 4:
-# PRIMA operava solo sul singolo `individual` selezionato/controllato dal player, letto da un campo
-# di GameScene invece che da un parametro — senza questa generalizzazione un individuo non
-# selezionato che cammina fuori dal bordo della propria macrocella, es. una Task haul_resource/Build
-# con un target in una macrocella adiacente, non verrebbe mai rilevato: home_macro_coords/posizione
-# resterebbero disallineate per sempre). Un controllo per asse, non un unico controllo combinato:
-# in caso di uscita diagonale (entrambi gli assi fuori range nello stesso frame) i due controlli
-# vengono comunque eseguiti in sequenza nella stessa chiamata, gestendo il caso come due
-# attraversamenti 4-connessi consecutivi (es. prima verso est, poi verso nord) invece di
-# richiedere un vicino diagonale non previsto (sempre e solo N/S/E/O).
-func _check_macro_cell_border_crossing(target_individual: HumanIndividual) -> void:
-	if macro_world == null:
-		return
 
-	if target_individual.position.x < 0.0:
-		_attempt_macro_cell_transition(target_individual, -1, 0)
-	elif target_individual.position.x >= float(World.WIDTH):
-		_attempt_macro_cell_transition(target_individual, 1, 0)
+# Passaggi di macrocella dell'effetto GameEffects.individual_moved (2026-10-18, blocco 5b — il modello lo aggiorna
+# IndividualBorderService; prima tutto in _attempt_macro_cell_transition). Per ogni individuo: vista spostata sotto la
+# cella di arrivo, attivata qui se non è ancora viva (rete di sicurezza: di norma _update_live_neighbor l'ha già caricata,
+# ma solo per l'individuo seguito). Per l'individuo seguito (`is_focus`) si ri-ancorano centro, controller, telecamera
+# (spostata di una macrocella al contrario, dopo aver fermato un eventuale tween "centra" che altrimenti continuerebbe
+# verso il vecchio riferimento), LOD e pannello del centro. Il figlio al seguito sposta solo la vista, se la cella è viva.
+func _apply_individual_moves(moves: Array[Dictionary]) -> void:
+	for move in moves:
+		var member: HumanIndividual = move["member"]
+		var target_macro_coords: Vector2i = move["macro"]
+		var view: HumanIndividualView = human_individual_views.get(member.id)
+		if bool(move["is_child"]):
+			if view != null and live_cells.has(target_macro_coords):
+				view.reparent(live_cells[target_macro_coords].container)
+			continue
+		var is_focus := bool(move["is_focus"])
+		if is_focus:
+			center_macro_coords = target_macro_coords
+		var safety_net_activated_cell := false
+		if not live_cells.has(target_macro_coords):
+			if DebugLogging.ENABLED and DebugLogging.SHOW_FOW_DIAG_LOGS:
+				print("[FOW DIAG] passaggio di macrocella: cella di arrivo %s non ancora viva, creo ORA (rete di sicurezza) per individuo #%d %s (is_focus=%s)." % [
+					str(target_macro_coords), member.id, member.name, str(is_focus)
+				])
+			_activate_live_cell(target_macro_coords.x, target_macro_coords.y, "passaggio di macrocella (rete di sicurezza)")
+			safety_net_activated_cell = true
+		if view != null:
+			view.reparent(live_cells[target_macro_coords].container)
+		if not is_focus:
+			if safety_net_activated_cell:
+				_reposition_live_cells()
+			continue
+		var step: Vector2i = move["step"]
+		individual_controller.setup(individual, live_cells[center_macro_coords].renderer, game_data)
+		_reposition_live_cells()
+		if _center_camera_tween != null:
+			_center_camera_tween.kill()
+		camera.position -= Vector2(step) * MACRO_CELL_PIXELS
+		_refresh_lod_focus_region()
+		_update_center_info_panel()
 
-	if target_individual.position.y < 0.0:
-		_attempt_macro_cell_transition(target_individual, 0, -1)
-	elif target_individual.position.y >= float(World.HEIGHT):
-		_attempt_macro_cell_transition(target_individual, 0, 1)
-
-
-# Gestisce un tentativo di uscita in direzione (dx, dy) per `target_individual` — sempre un solo
-# asse alla volta, l'altro è sempre 0 (vedi _check_macro_cell_border_crossing sopra). Se la
-# macrocella adiacente non esiste (bordo del mondo) o la microcella di ingresso è acqua,
-# l'individuo resta all'ultima posizione valida (_block_border_crossing, nessun attraversamento).
-# Altrimenti conferma subito il cambio macrocella riusando lo stesso percorso di caricamento di
-# _ready() (_activate_live_cell, di norma già eseguito in anticipo da _update_live_neighbor SOLO
-# per il bersaglio della camera — vedi la rete di sicurezza sotto per il caso raro/per chiunque
-# altro in cui non lo sia ancora).
-#
-# GENERALIZZATA (2026-09-12, richiesta utente — piano multi-individuo, Step 4) — origin_macro_coords
-# ora letta da `target_individual.home_macro_coords` (PRIMA: da `center_macro_coords`, che coincide
-# con la macrocella del bersaglio SOLO perché prima esisteva un solo bersaglio possibile, quello
-# della camera): usare ancora center_macro_coords qui per un individuo qualunque avrebbe calcolato
-# la macrocella di destinazione partendo dal posto SBAGLIATO ogni volta che target_individual non è
-# quello selezionato. Il resto della funzione si divide ora in due parti — vedi `is_camera_focus`
-# sotto: (1) aggiornamento posizione/home_macro_coords/view, SEMPRE eseguito per QUALUNQUE
-# individuo (serve al modello di simulazione, indipendente da chi è selezionato); (2) ri-ancoraggio
-# di camera/streaming/LOD (center_macro_coords, camera.position, _reposition_live_cells,
-# _refresh_lod_focus_region, _update_center_info_panel, individual_controller.setup),
-# ESEGUITO SOLO quando target_individual è il bersaglio della camera — quella macchina esiste UNA
-# volta sola per l'intera scena (una sola camera), non ha senso ri-ancorarla su un individuo che il
-# player non sta nemmeno guardando.
-func _attempt_macro_cell_transition(target_individual: HumanIndividual, dx: int, dy: int) -> void:
-	var origin_macro_coords := target_individual.home_macro_coords
-	var target_x := origin_macro_coords.x + dx
-	var target_y := origin_macro_coords.y + dy
-	var target_cell := macro_world.get_cell_at(target_x, target_y)
-
-	if target_cell == null:
-		_block_border_crossing(target_individual, dx, dy)
-		return
-
-	# Posizione di ingresso nella macrocella adiacente: la posizione "avvolge" dal lato opposto,
-	# preservando la parte frazionaria per continuità visiva (uscire a x=100.3 verso est entra a
-	# x=0.3 nella macrocella a est, non uno snap secco a 0.0). Solo l'asse attraversato cambia.
-	var entry_position := target_individual.position
-	if dx == 1:
-		entry_position.x -= float(World.WIDTH)
-	elif dx == -1:
-		entry_position.x += float(World.WIDTH)
-	if dy == 1:
-		entry_position.y -= float(World.HEIGHT)
-	elif dy == -1:
-		entry_position.y += float(World.HEIGHT)
-
-	if _is_entry_microcell_water(target_cell, entry_position):
-		_block_border_crossing(target_individual, dx, dy)
-		return
-
-	# Ribasamento GENERALIZZATO a ogni step posizionale non ancora completato, current_task E
-	# task_queue (2026-09-16, richiesta utente, fix bordo macrocella per le task perditempo, CAUSA
-	# A) — PRIMA di questo passo veniva ribasato SOLO il WalkAction ATTIVO: una Task multi-Walk che
-	# risolve TUTTI i propri target assoluti in un colpo solo all'assegnazione (Wander/Play/Leisure
-	# Rest, ma il meccanismo è generico, vale per qualunque Task con lo stesso schema — es. il Walk
-	# di haul_resource/transport verso una posizione fissa) lasciava le gambe FUTURE e le Task
-	# sospese in coda nel vecchio sistema di riferimento, puntando a un target sbagliato quando
-	# diventavano attive. Task.rebase_positional_targets (Task.gd) fa il lavoro vero: ribasa
-	# Action.target per ogni step da current_step_index in poi la cui `target` sia un Vector2 (solo
-	# WalkAction/RunAction lo valorizzano così — ogni altra Action, es. quelle basate su
-	# target_building, si ri-deriva da sola da home_macro_coords, già aggiornato più sotto, quindi
-	# non ha bisogno di alcun ribasamento esplicito qui).
-	# Ribasamento del WalkAction attivo, NON un semplice arresto (2026-09-12, richiesta utente —
-	# CORREZIONE di un bug gemello a quello risolto in _set_movement_target: qui viveva prima
-	# `target_individual.is_moving = false` e basta — corretto per NON azzerare più current_task/
-	# TaskDebugRegistry come il vecchio `.stop()` pieno, ma comunque distruttivo in un modo più
-	# sottile: un WalkAction realmente in corso lasciato con is_moving=false non riparte mai da
-	# solo, perché nessun altro punto del codice lo rimette a true per QUESTO stesso step — la Task
-	# risultava "in corso" per sempre senza mai avanzare, stesso identico sintomo del bug in
-	# _set_movement_target, innescato però da un attraversamento di bordo invece che da un cambio di
-	# selezione). A differenza del caso _set_movement_target — dove rimuovere l'azione basta, perché
-	# lì non cambia nulla nel riferimento spaziale dell'individuo — QUI il motivo per cui il vecchio
-	# codice toccava lo stato di movimento resta legittimo: `target` di una WalkAction è un Vector2
-	# scritto UNA SOLA VOLTA al costruttore (vedi WalkAction.gd, _init) e mai più aggiornato da
-	# nessun altro punto del codice — dopo un attraversamento bordo, position viene ri-basata sulla
-	# NUOVA macrocella (entry_position sopra) ma `target` resterebbe espresso nel riferimento della
-	# VECCHIA, rendendo WalkAction.is_complete() (position == target) non più vero per costruzione:
-	# la destinazione ASSOLUTA non è cambiata, solo il sistema di riferimento locale in cui va
-	# espressa — quindi la correzione giusta è ribasare `target` con lo STESSO offset appena
-	# applicato a position (non azzerare nulla), poi far ripartire lo step con activate() più sotto,
-	# una volta che home_macro_coords/position sono già quelli nuovi.
-	#
-	# `frame_offset` è lo stesso spostamento già usato per entry_position sopra, ricavato per
-	# differenza (position non è ancora stata sovrascritta a questo punto della funzione) invece di
-	# ricalcolarlo una seconda volta. `current_action is WalkAction` come guardia (non un controllo
-	# su is_moving) — è l'UNICA Action che porta mai is_moving a true (vedi Action.gd/WalkAction.gd),
-	# quindi se questo ramo è stato raggiunto (position uscita dal range, possibile solo per un
-	# movimento reale) lo step attivo è per costruzione sempre una WalkAction; difensivo comunque —
-	# nessun effetto se non lo fosse.
-	var frame_offset := entry_position - target_individual.position
-	var current_action: Action = null
-	if target_individual.current_task != null:
-		current_action = target_individual.current_task.get_current_action()
-		var rebased_current := target_individual.current_task.rebase_positional_targets(frame_offset)
-		if rebased_current > 0 and DebugLogging.ENABLED and DebugLogging.SHOW_SAFETY_LOGS:
-			print("[BORDER] Individuo #%d %s: ribasati %d step posizionali di current_task '%s' (offset=%s)." % [
-				target_individual.id, target_individual.name, rebased_current,
-				target_individual.current_task.task_name, str(frame_offset)
-			])
-	# Task sospese in coda (2026-09-16) — STESSA ribasatura, stesso motivo: una Task ferma in
-	# task_queue (es. haul_resource interrotta da un bisogno stamina mentre l'individuo è poi
-	# tornato a Wander) può restare sospesa attraverso più attraversamenti di bordo prima di essere
-	# ripresa — se il suo primo step futuro fosse un target assoluto già risolto, lo ritroverebbe
-	# nel riferimento sbagliato al momento della ripresa.
-	for queued_task in target_individual.task_queue:
-		var rebased_queued := queued_task.rebase_positional_targets(frame_offset)
-		if rebased_queued > 0 and DebugLogging.ENABLED and DebugLogging.SHOW_SAFETY_LOGS:
-			print("[BORDER] Individuo #%d %s: ribasati %d step posizionali di una task in coda '%s' (offset=%s)." % [
-				target_individual.id, target_individual.name, rebased_queued, queued_task.task_name, str(frame_offset)
-			])
-
-	var target_macro_coords := Vector2i(target_x, target_y)
-	# is_camera_focus (2026-09-12) — vedi commento di testa alla funzione: separa l'aggiornamento
-	# di simulazione (sempre) dal ri-ancoraggio di camera/streaming/LOD (solo per il bersaglio della
-	# camera, che oggi coincide sempre con `individual`, il campo selezionato/controllato).
-	var is_camera_focus := target_individual == individual
-
-	if is_camera_focus:
-		game_data.player_macro_cell_x = target_x
-		game_data.player_macro_cell_y = target_y
-		center_macro_coords = target_macro_coords
-
-	# position/home_macro_coords aggiornati QUI, PRIMA della "rete di sicurezza" sotto (2026-09-17,
-	# richiesta utente, bugfix Fog of War "mappa nera dopo un attraversamento di bordo") — SPOSTATI
-	# da dopo _activate_live_cell a prima: quella funzione, se la cella di destinazione non è ancora
-	# viva, costruisce il FogOfWarRenderer e gli fa subito il primo update_visibility() (vedi
-	# _activate_live_cell/_relevant_source_positions_for_cell) — se a quel punto target_individual
-	# avesse ancora la posizione/home_macro_coords VECCHI (della cella di partenza), quella prima
-	# chiamata tradurrebbe la sua posizione nel sistema di riferimento SBAGLIATO (offset calcolato
-	# sulla macrocella di partenza invece che su quella di arrivo), risultando fuori da
-	# visibility_radius per costruzione — il primo flush pieno della cella nuova marcherebbe quindi
-	# l'intera macrocella nera (nessuna posizione vista), un buco che nessun redraw successivo
-	# ripara da solo per l'area già scritta nera dal flush pieno (solo il delta in-radio dei giri
-	# successivi viene ricalcolato, vedi FogOfWarRenderer._update_in_radius_dirty_delta). Nessuna
-	# altra riga tra qui e frame_offset/rebase_positional_targets sopra dipende dall'ordine
-	# (verificato: frame_offset è già stato calcolato per differenza PRIMA di questo punto, usando
-	# ancora la vecchia position — l'unico punto sensibile all'ordine, invariato).
-	# DEBUG TEMPORANEO [FOW DIAG] — rimuovere (requisito 3: "individuo, macrocella di partenza e di
-	# arrivo, e l'ordine effettivo in cui avvengono aggiornamento posizione, aggiornamento
-	# home_macro_coords e creazione/aggiornamento dei renderer"). Snapshot PRIMA di toccare
-	# position/home_macro_coords, così il log seguente ("AGGIORNATO") mostra il vero prima/dopo.
-	if DebugLogging.ENABLED and DebugLogging.SHOW_FOW_DIAG_LOGS:
-		print("[FOW DIAG] _attempt_macro_cell_transition: individuo #%d %s attraversa %s -> %s (dx=%d dy=%d). PRIMA: position=%s home_macro_coords=%s, cella di arrivo già viva=%s" % [
-			target_individual.id, target_individual.name, str(origin_macro_coords), str(target_macro_coords),
-			dx, dy, str(target_individual.position), str(target_individual.home_macro_coords), str(live_cells.has(target_macro_coords))
-		])
-
-	target_individual.position = entry_position
-	target_individual.home_macro_coords = target_macro_coords
-
-	# DEBUG TEMPORANEO [FOW DIAG] — rimuovere. Log gemello del blocco "PRIMA" sopra, SUBITO DOPO
-	# l'aggiornamento di position/home_macro_coords e PRIMA della rete di sicurezza sotto — mostra
-	# quindi esattamente cosa succede tra i due: se la cella di arrivo è già viva qui, il renderer è
-	# stato creato/aggiornato PRIMA di questo attraversamento (pre-caricamento per prossimità,
-	# _update_live_neighbor); se non lo è, verrà creato ORA dalla rete di sicurezza sotto, con
-	# position/home_macro_coords già quelli nuovi (l'ordine corretto, vedi commento sopra sul
-	# bugfix 2026-09-17).
-	if DebugLogging.ENABLED and DebugLogging.SHOW_FOW_DIAG_LOGS:
-		print("[FOW DIAG] _attempt_macro_cell_transition: individuo #%d %s AGGIORNATO: position=%s home_macro_coords=%s. Cella di arrivo %s già viva=%s" % [
-			target_individual.id, target_individual.name, str(target_individual.position), str(target_individual.home_macro_coords),
-			str(target_macro_coords), str(live_cells.has(target_macro_coords))
-		])
-
-	# Rete di sicurezza — SEMPRE valutata, non solo per il bersaglio della camera (2026-09-12): non
-	# dovrebbe capitare quasi mai per il bersaglio della camera stesso, dato il pre-caricamento per
-	# prossimità (_update_live_neighbor gira ogni frame, ben prima che raggiunga davvero il bordo
-	# vero, vedi LIVE_NEIGHBOR_ACTIVATE_MARGIN — ma quel pre-caricamento resta legato SOLO a lui);
-	# per chiunque altro non c'è alcun pre-caricamento equivalente in corsa (_activate_all_
-	# individual_cells gira una sola volta, in _ready() — vedi commento lì), quindi questa è
-	# l'unica rete che garantisce che la cella di destinazione esista prima di riparentarvi la view.
-	var safety_net_activated_cell := false
-	if not live_cells.has(target_macro_coords):
-		# DEBUG TEMPORANEO [FOW DIAG] — rimuovere. Se questo scatta per il bersaglio della camera
-		# (is_camera_focus=true), il pre-caricamento per prossimità di _update_live_neighbor NON ha
-		# fatto in tempo — il renderer viene creato ORA, con position/home_macro_coords GIÀ quelli
-		# nuovi (vedi log "AGGIORNATO" appena sopra), lo stesso ordine che il bugfix 2026-09-17
-		# intendeva garantire.
-		if DebugLogging.ENABLED and DebugLogging.SHOW_FOW_DIAG_LOGS:
-			print("[FOW DIAG] _attempt_macro_cell_transition: cella di arrivo %s non ancora viva, creo ORA (rete di sicurezza) per individuo #%d %s (is_camera_focus=%s)." % [
-				str(target_macro_coords), target_individual.id, target_individual.name, str(is_camera_focus)
-			])
-		_activate_live_cell(target_x, target_y, "_attempt_macro_cell_transition (rete di sicurezza)")
-		safety_net_activated_cell = true
-
-	# Riparenta la HumanIndividualView sotto il nuovo container, esattamente come farebbe
-	# _activate_live_cell per un renderer qualsiasi — GENERALIZZATO (2026-09-12): PRIMA questo
-	# commento diceva "il bersaglio è l'UNICO individuo la cui macrocella fisica cambia davvero
-	# (chiunque altro resta dov'era, mai mosso da nulla)", vero SOLO perché prima nessun altro
-	# individuo veniva mai avanzato in autonomia — ora qualunque individuo attivo può attraversare un
-	# bordo, quindi questo aggiornamento vale per `target_individual` chiunque esso sia, non più solo
-	# per il bersaglio della camera. reparent() invece di remove_child+add_child manuali: nessuna
-	# differenza pratica qui (HumanIndividualView._process sovrascrive comunque position da zero
-	# subito dopo, ad ogni frame), ma è l'API dedicata di Godot per lo scopo. DOPO la rete di
-	# sicurezza sopra (invariato): richiede che live_cells[target_macro_coords] esista già.
-	var target_view_index := human_individuals.find(target_individual)
-	if target_view_index != -1:
-		human_individual_views[target_view_index].reparent(live_cells[target_macro_coords].container)
-
-	# Fa RIPARTIRE lo step (2026-09-12) — ORA che position/home_macro_coords sono già quelli nuovi:
-	# activate() su WalkAction/RunAction (vedi rispettivi .gd) scrive target_position dal `target`
-	# GIÀ ribasato sopra e rimette is_moving a true, quindi il movimento prosegue nello stesso frame
-	# verso la STESSA destinazione assoluta di prima, solo espressa nel riferimento locale corretto
-	# — nessun frame "fermo" in mezzo, stesso principio già seguito da HumanIndividualActionService.
-	# apply_action quando una Task avanza da uno step al successivo. Sempre eseguito (non solo per
-	# il bersaglio della camera): il movimento di simulazione di un individuo non dipende da chi il
-	# player sta guardando.
-	#
-	# GENERALIZZATO a `current_action.target is Vector2` (2026-09-16, richiesta utente, fix bordo
-	# macrocella) — PRIMA il guard era `current_action is WalkAction`, quindi RunAction (l'unica
-	# altra Action con un target posizionale, usata dalla Play Task) non veniva MAI riattivata dopo
-	# un attraversamento: il target veniva comunque ribasato (Task.rebase_positional_targets sopra
-	# lo copre già, essendo generico su Action.target), ma individual.target_position/is_moving
-	# restavano quelli VECCHI finché quello step non fosse ridiventato attivo da capo — bug gemello
-	# a quello di WalkAction, mai notato perché Play è CHILD-only e oggi comunque disattivata
-	# insieme a Wander/Leisure Rest (WANDER_ENABLED/LEISURE_REST_ENABLED). Stesso guard generico già
-	# usato da Task.rebase_positional_targets, nessun secondo elenco di classi da tenere allineato.
-	if current_action != null and current_action.target is Vector2:
-		current_action.activate(target_individual, target_individual.current_task.context)
-
-	if not is_camera_focus:
-		# Nessun ri-ancoraggio di camera/streaming/LOD per un individuo che il player non sta
-		# guardando (vedi commento di testa alla funzione) — la sua cella è comunque già viva
-		# (attivata sopra se mancante), quindi la sua HumanIndividualView continua a disegnarsi
-		# correttamente senza che nulla della "vista" cambi.
-		#
-		# BUGFIX (richiesta utente): se la rete di sicurezza sopra ha appena creato un nuovo
-		# container per la cella di arrivo, quel container resta a position (0,0) di default
-		# finché nessuno chiama _reposition_live_cells() — per un individuo che NON è il
-		# bersaglio della camera, il ramo is_camera_focus sotto (che la chiamerebbe altrimenti)
-		# non viene mai raggiunto, quindi (0,0) coincide con lo slot schermo della cella
-		# centrale: terreno/animali/Fog della cella appena attivata finiscono disegnati sopra la
-		# cella inquadrata dal player. Chiamata SOLO se una cella è stata davvero creata ora
-		# (safety_net_activated_cell) — nessun costo per il caso comune in cui la cella di arrivo
-		# era già viva.
-		if safety_net_activated_cell:
-			_reposition_live_cells()
-		return
-
-	individual_controller.setup(individual, live_cells[center_macro_coords].renderer, game_data)
-	_reposition_live_cells()
-	# Bugfix (Passo 1 del piano bug camera/extra, 2026-09-02 — CORREGGE una rimozione sbagliata
-	# nello Step 3: qui NON viveva solo una compensazione per il follow automatico, ma anche una
-	# correzione di una discontinuità strutturale del sistema di coordinate ri-basate per
-	# macrocella, indipendente dal follow — rimuovendo tutto insieme avevo tolto anche questa
-	# seconda cosa). _reposition_live_cells() appena sopra ha spostato OGNI container di
-	# -Vector2(dx,dy)*MACRO_CELL_PIXELS (ri-basamento su center_macro_coords, vedi quella funzione):
-	# camera.position vive nello stesso spazio canvas ma non è dentro nessun container, quindi senza
-	# questa riga resterebbe fermo al vecchio valore assoluto mentre l'intero mondo si è appena
-	# ri-basato sotto di lui — visivamente indistinguibile da "la camera è saltata". Traslare
-	# camera.position dello STESSO delta (mai ricentrare sul bersaglio, che reintrodurrebbe un
-	# follow mascherato) mantiene la camera puntata sullo stesso punto fisico del mondo: se era già
-	# centrata sul bersaglio, resta centrata su di lui (anche lui trasla della stessa quantità, per
-	# definizione sempre al centro); se era altrove, resta su quell'altrove esatto. Un eventuale
-	# tween "centra" ancora in corso (vedi _center_camera_tween) va killato PRIMA di toccare
-	# camera.position qui — altrimenti al frame successivo il tween continuerebbe a interpolare
-	# verso il proprio target salvato nel vecchio spazio di coordinate, vanificando/confliggendo
-	# con questa correzione.
-	if _center_camera_tween != null:
-		_center_camera_tween.kill()
-	camera.position -= Vector2(dx, dy) * MACRO_CELL_PIXELS
-	_refresh_lod_focus_region()
-	_update_center_info_panel()
-
-
-# Piano "trasporto neonati" (2026-09-06) — sincronizza la posizione (e, se serve, la macrocella/
-# view) del figlio a carico di `mother`, se ce n'è uno. Vedi HumanIndividual.dependent_child_id per
-# il ciclo di vita completo del campo: questa QUERY fa da sola la propria manutenzione (lo riporta a
-# -1 quando il figlio non si trova più — morto — o ha superato la soglia d'età), nessun altro punto
-# del codice lo tocca mai in scrittura a parte HumanBirthIndividualService (che lo valorizza una
-# volta alla nascita). Funzione già generica fin dall'origine (prende `mother` come parametro, non
-# legge mai `individual`/`center_macro_coords` di GameScene) — GENERALIZZATO IL CHIAMANTE (2026-09-12,
-# richiesta utente, piano multi-individuo, Step 6): PRIMA veniva invocata una sola volta per frame,
-# solo sul bersaglio selezionato/controllato dal player; ora _process la chiama per OGNI individuo
-# attivo (con una Task in corso, vedi active_individuals lì), DOPO _check_macro_cell_border_crossing
-# per QUELLO STESSO individuo (stesso ordine di sempre — se ha appena attraversato un bordo,
-# home_macro_coords/position sono già quelli nuovi quando si sincronizza un suo eventuale figlio a
-# carico, nello stesso frame). Costo O(1) nel caso comune (dependent_child_id == -1, la stragrande
-# maggioranza delle madri in ogni momento), una ricerca lineare mirata SOLO quando c'è davvero un
-# figlio da trasportare (mai una scansione generale "chi ha un figlio piccolo" ad ogni frame — è
-# esattamente il costo che volevamo evitare).
-func _sync_dependent_child_position(mother: HumanIndividual) -> void:
-	if mother.dependent_child_id == -1:
-		return
-	var child: HumanIndividual = null
-	for candidate in human_individuals:
-		if candidate.id == mother.dependent_child_id:
-			child = candidate
-			break
-	if child == null:
-		# Non trovato (morto) — auto-manutenzione: pulisce il riferimento, mai più cercato nei
-		# prossimi frame finché questa madre non avrà un nuovo figlio a carico.
-		mother.dependent_child_id = -1
-		return
-	# age_band != INFANT (2026-09-12, richiesta utente — collegamento di HumanTypes.AgeBand.INFANT
-	# al gameplay) SOSTITUISCE il precedente confronto numerico "child_age >= individual_controller.
-	# min_movement_age_years()" (funzione rimossa, vedi HumanIndividualController.gd) — stessa
-	# identica formula già in uso ovunque nel progetto, qui via _resolve_age_band.
-	var child_age_band := _resolve_age_band(child)
-	if child_age_band != HumanTypes.AgeBand.INFANT:
-		# Cresciuto abbastanza — auto-manutenzione: pulisce il riferimento e smette di muoverlo;
-		# resta semplicemente fermo dov'era, come chiunque altro non sia il bersaglio corrente,
-		# finché non diventa lui stesso il bersaglio (a quel punto risponde ai comandi come tutti).
-		mother.dependent_child_id = -1
-		return
-	# "Sempre a lato" (richiesta utente) — perpendicolare a facing_direction, STESSA identica
-	# formula usata alla nascita (vedi HumanBirthIndividualService.DEPENDENT_CHILD_SIDE_OFFSET):
-	# nessun "salto" percettibile la prima volta che la madre si muove dopo il parto.
-	child.position = mother.position + mother.facing_direction.orthogonal() * HumanBirthIndividualService.DEPENDENT_CHILD_SIDE_OFFSET
-	if child.home_macro_coords != mother.home_macro_coords:
-		# La madre ha appena attraversato un bordo (_check_macro_cell_border_crossing è già girato
-		# questo stesso frame, PRIMA di questa chiamata — vedi _process) — il figlio la segue nella
-		# stessa nuova macrocella: stesso trattamento già applicato a lei in
-		# _attempt_macro_cell_transition (home_macro_coords + riparentaggio della view), qui
-		# ripetuto per lui. Guardie difensive (indice valido, cella viva): una nascita avvenuta
-		# fuori da qualunque cella viva non avrebbe mai ricevuto una view (stesso principio "niente
-		# si disegna fuori dal focus LOD" di DeadBodyView) — qui semplicemente non c'è nulla da
-		# riparentare in quel caso, non un errore.
-		child.home_macro_coords = mother.home_macro_coords
-		var child_view_index := human_individuals.find(child)
-		if child_view_index != -1 and child_view_index < human_individual_views.size() and live_cells.has(mother.home_macro_coords):
-			human_individual_views[child_view_index].reparent(live_cells[mother.home_macro_coords].container)
-
-
-# Ferma `target_individual` esattamente al bordo della macrocella ATTUALE (mai un'intera microcella
-# indietro) sull'asse (dx, dy) che ha tentato l'uscita — usato sia per il bordo del mondo
-# (nessuna macrocella adiacente) sia per un'acqua di destinazione (_is_entry_microcell_water).
-# GENERALIZZATA (2026-09-12, richiesta utente — piano multi-individuo, Step 4): parametro esplicito
-# invece del campo `individual` di GameScene, stesso motivo di _attempt_macro_cell_transition sopra.
-# `individual.stop()` (pieno) SOSTITUITO con is_moving/path (stesso bugfix/stesso principio di
-# _attempt_macro_cell_transition sopra — vedi quel commento per il dettaglio): un blocco al bordo
-# non deve cancellare la Task di `target_individual`, solo il tragitto che l'ha portato lì.
-#
-# CASO DIVERSO da _attempt_macro_cell_transition (verificato esplicitamente, richiesta utente,
-# 2026-09-12) — lì "far ripartire lo step" era possibile perché la destinazione ASSOLUTA restava
-# raggiungibile, solo espressa nel riferimento sbagliato (ribasata con successo, vedi quella
-# funzione). QUI non c'è alcuna macrocella nuova in cui ribasare `target`: il motivo per cui questa
-# funzione viene chiamata è proprio che non esiste una macrocella adiacente (bordo del mondo) o che
-# la destinazione è acqua — la destinazione del WalkAction è quindi GENUINAMENTE irraggiungibile in
-# questa direzione, non solo espressa nel riferimento sbagliato. `is_moving = false` qui resta
-# quindi legittimo (l'individuo non può proseguire, punto), ma la Task ATTIVA in questo caso
-# specifico non riparte da sola (nessun altro punto la fa avanzare/interrompere quando il target
-# resta semplicemente irraggiungibile) — GAP NOTO, non risolto in questo passo (fuori scope: servirebbe
-# un meccanismo di "fallimento Task"/target irraggiungibile che oggi non esiste per nessuna Action,
-# non solo per Walk), segnalato qui per quando servirà davvero risolverlo. Caso raro in pratica: un
-# target di Task calcolato oltre il bordo del mondo o dentro l'acqua (es. WarehouseSelectionService/
-# ThoughtTargetSelectionService già filtrano per edifici validi, ma un futuro target non filtrato
-# allo stesso modo potrebbe incapparci).
-func _block_border_crossing(target_individual: HumanIndividual, dx: int, dy: int) -> void:
-	if dx == 1:
-		target_individual.position.x = float(World.WIDTH) - BORDER_CLAMP_EPSILON
-	elif dx == -1:
-		target_individual.position.x = 0.0
-	if dy == 1:
-		target_individual.position.y = float(World.HEIGHT) - BORDER_CLAMP_EPSILON
-	elif dy == -1:
-		target_individual.position.y = 0.0
-	target_individual.is_moving = false
-	target_individual.path.clear()
-
-	# CAUSA B (2026-09-16, richiesta utente, fix bordo macrocella) — PRIMA di questo passo, il
-	# blocco sopra (clamp + is_moving=false) bastava a se stesso per QUALUNQUE Task: nessun altro
-	# punto del codice rimette mai is_moving a true per LO STESSO step, e WalkAction/RunAction.
-	# is_complete() confrontava position con target — bloccata sul bordo, mai più uguale al target
-	# oltre il bordo — quindi quello step (e la Task intera) restava bloccato PER SEMPRE, l'unico
-	# sblocco era il tasto H (individual.stop()).
-	#
-	# Da qui in poi: SOLO per le task perditempo (Task.is_idle_activity, vedi Task.gd/
-	# task_definition.gd — oggi wander.tres/play.tres/leisure_rest.tres) una gamba bloccata al
-	# bordo viene considerata CONCLUSA invece che bloccata — non hanno una destinazione "vera" da
-	# raggiungere per forza (il punto è "passare il tempo", non arrivare esattamente lì), quindi
-	# saltare alla gamba successiva è un compromesso ragionevole e invisibile al giocatore. Il
-	# criterio è ESPLICITO (il campo Task.is_idle_activity), MAI un confronto su task_name.
-	#
-	# PER OGNI ALTRA TASK (haul_resource/build/transport/Rest/Emergency Rest/qualunque futura Task
-	# di lavoro) il comportamento resta ESATTAMENTE quello di prima — richiesta esplicita
-	# dell'utente ("per tutte le altre task NON cambiare il comportamento sul bordo bloccato"): uno
-	# step bloccato al bordo per una di queste resta bloccato per sempre, stesso sintomo di sempre,
-	# nessuna chiamata a finish_current_step per loro. Non essendo mai stato isolato un caso reale
-	# in cui una Task di LAVORO arrivi a un bordo bloccato durante il normale gameplay (i target di
-	# haul_resource/transport/build sono sempre risorse/edifici già dentro la macrocella
-	# dell'individuo o raggiunti tramite Building.macro_x/y, mai un punto arbitrario che potrebbe
-	# cadere fuori mappa), questo resta un rischio noto ma non affrontato in questo passo.
-	var blocked_task := target_individual.current_task
-	var is_idle_task := blocked_task != null and blocked_task.is_idle_activity
-	if DebugLogging.ENABLED and DebugLogging.SHOW_SAFETY_LOGS:
-		print("[BORDER] Individuo #%d %s: movimento bloccato al bordo (dx=%d dy=%d — macrocella inesistente o ingresso in acqua) — task=%s is_idle_activity=%s." % [
-			target_individual.id, target_individual.name, dx, dy,
-			("'%s'" % blocked_task.task_name if blocked_task != null else "(nessuna)"), str(is_idle_task)
-		])
-	if not is_idle_task:
-		return
-	var blocked_action := blocked_task.get_current_action()
-	if not (blocked_action is WalkAction or blocked_action is RunAction):
-		return
-	if DebugLogging.ENABLED and DebugLogging.SHOW_SAFETY_LOGS:
-		print("[BORDER] Individuo #%d %s: gamba di '%s' (task perditempo) considerata conclusa — avanzo allo step successivo." % [
-			target_individual.id, target_individual.name, blocked_task.task_name
-		])
-	individual_action_service.finish_current_step(target_individual, blocked_task, macro_world, game_data)
-
-
-# Il micro-livello di ogni macrocella è terreno UNIFORME (vedi World.generate_uniform_terrain,
-# usato anche da _activate_live_cell per ogni cella): "il tipo di terreno della microcella di
-# destinazione" si riduce quasi sempre a un controllo sulla macrocella intera (terrain_base ==
-# WATER copre SEA/LAKE, sempre completamente acqua), con l'unica eccezione di una macrocella-
-# fiume (terra con una fascia fluviale locale) — lì la posizione di ingresso va confrontata con
-# RiverMicrocellService.get_river_positions, lo stesso servizio già usato da _activate_live_cell,
-# cosi il test di occupazione non può mai disallinearsi da cosa viene davvero disegnato.
-# Corpo spostato in RiverMicrocellService.is_water_microcell (2026-09-27), condiviso con VisitorService.
-func _is_entry_microcell_water(target_cell: MacroCellData, entry_position: Vector2) -> bool:
-	return RiverMicrocellService.is_water_microcell(
-		macro_world, target_cell, Vector2i(int(entry_position.x), int(entry_position.y))
-	)
 
 
 func _compute_river_exterior_occupied(positions: Array) -> Dictionary:
@@ -14674,7 +13612,7 @@ func _assign_clock_to_all_live_cells() -> void:
 	# Human_individual_views (2026-09-07, stesso bugfix di animal_renderers sopra): create durante
 	# il seeding iniziale in _ready(), PRIMA che questa funzione giri, quindi il loro view.clock =
 	# clock fatto lì è ancora null — corretto qui una volta che clock esiste davvero.
-	for view in human_individual_views:
+	for view in human_individual_views.values():
 		view.clock = clock
 
 
@@ -15154,121 +14092,11 @@ func _on_clear_rubble_requested(building: Building) -> void:
 	_refresh_pending_entries()
 
 
-# "Porta il mucchio al magazzino" (2026-09-27, richiesta utente — generico, HumanIndividualActionService.
-# ground_pile_haul_requested): accoda a `carrier` la raccolta di tutto il mucchio (haul_resource.tres con sorgente
-# GROUND_PILE e criterio ALL, TaskBuilderService.build_pickup_task) — dopo il PickUp la catena di sempre cerca il magazzino e accoda
-# Walk + Unload. Non si accoda nulla (il mucchio resta a terra) se il mucchio non c'è più, la sua cella non è viva,
-# la coda è piena, l'età non lo consente o nessun magazzino raggiungibile accetta almeno una delle sue risorse.
-# Icona "pickup" sul mucchio, come per il comando di raccolta; nessuna icona per la consegna di un taglio o di
-# un'estrazione (mucchio con l'etichetta del lavoro, HaulZoneService.LABEL_TASK_KEY).
+# Trasporto del mucchio a terra (2026-10-18, blocco 5d — WorkFollowUpService.ground_pile_haul).
 func _on_ground_pile_haul_requested(carrier: HumanIndividual, pile_ref: Dictionary) -> void:
-	var macro_coords := Vector2i(int(pile_ref.get("macro_x", 0)), int(pile_ref.get("macro_y", 0)))
-	var microcell := Vector2i(int(pile_ref.get("micro_x", 0)), int(pile_ref.get("micro_y", 0)))
-	var pile := GroundPileService.find_at(game_data, macro_coords, microcell)
-	var cell: LiveMacroCell = live_cells.get(macro_coords)
-	# Serie di tagli (2026-10-06): mucchio già vuoto o sparito (portato via da altri) = consegna riuscita, il taglio
-	# successivo parte subito, senza messaggi.
-	if (pile == null or pile.resources.is_empty()) and pile_ref.has(CutZoneService.SERIES_ZONE_KEY):
-		var emptied_series: Variant = pile_ref[CutZoneService.SERIES_ZONE_KEY]
-		if emptied_series is Dictionary:
-			_on_cut_zone_series_continue_requested(carrier, (emptied_series as Dictionary).duplicate())
-		return
-	if pile == null or pile.resources.is_empty() or cell == null or cell.macro_state == null:
-		return
-	if carrier.task_queue.size() >= TaskQueueService.MAX_QUEUE_SIZE:
-		if DebugLogging.ENABLED and DebugLogging.SHOW_TRANSPORT_BUILD_LOGS:
-			print("[GROUND PILE HAUL] #%d %s: coda piena, il mucchio #%d resta a terra." % [carrier.id, carrier.name, pile.id])
-		return
-	var resource_names := pile.get_resource_names()
-	# Risorse del mucchio con un magazzino raggiungibile che le accetta (prima bastava sapere se ce n'era almeno una; dal
-	# 2026-10-05 servono per il controllo dello spazio sotto).
-	var with_destination: Array[String] = []
-	for resource_name in resource_names:
-		if pile.get_quantity(resource_name) > 0 and WarehouseSelectionService.find_best(
-			macro_world, carrier.position, carrier.home_macro_coords, resource_name, 1, [],
-			PathfindingService.reachability_for(carrier)
-		) != null:
-			with_destination.append(resource_name)
-	if with_destination.is_empty():
-		if DebugLogging.ENABLED and DebugLogging.SHOW_TRANSPORT_BUILD_LOGS:
-			print("[GROUND PILE HAUL] #%d %s: nessun magazzino raggiungibile accetta il contenuto del mucchio #%d, resta a terra." % [
-				carrier.id, carrier.name, pile.id
-			])
-		# Consegna della Cut (2026-10-04, richiesta utente): il mucchio resta accanto al ceppo e il giocatore lo sa. La
-		# demolizione resta silenziosa come prima.
-		if bool(pile_ref.get("until_empty", false)):
-			# Serie di estrazioni in zona (2026-10-05): un solo messaggio, quello della serie interrotta.
-			var no_storage_reason := HumanIndividualActionService.series_stop_reason_no_storage(resource_names)
-			if not _report_quarry_series_stopped(carrier, pile_ref, no_storage_reason) \
-					and not _report_cut_pile_series_stopped(carrier, pile_ref, no_storage_reason):
-				_report_command_rejection(carrier, HumanIndividualActionService.no_storage_message(carrier, resource_names))
-		return
-	# Spazio (2026-10-05, solo consegna di taglio ed estrazione, come l'avviso del deposito): se nessuna di quelle risorse
-	# ha un'unità che entra a carico vuoto, la consegna non parte e il giocatore lo sa. La demolizione resta com'era.
-	if bool(pile_ref.get("until_empty", false)):
-		var carriable := false
-		for resource_name in with_destination:
-			if carrier.can_carry_one_unit_when_empty(resource_name):
-				carriable = true
-				break
-		if not carriable:
-			var no_room_reason := HumanIndividualActionService.series_stop_reason_no_room(with_destination)
-			if not _report_quarry_series_stopped(carrier, pile_ref, no_room_reason) \
-					and not _report_cut_pile_series_stopped(carrier, pile_ref, no_room_reason):
-				_report_command_rejection(carrier, HumanIndividualActionService.no_room_message(carrier, with_destination))
-			return
-	# "until_empty" (2026-10-04, task Cut): la consegna continua con la ripetizione automatica della raccolta finché il
-	# mucchio è vuoto — zona 1×1 sul mucchio con tante ripetizioni quante le unità (ogni viaggio ne porta almeno una; la
-	# ripetizione si ferma da sola quando il mucchio non ha più nulla, PickUpAction._request_repeat_if_needed). Senza la
-	# chiave (demolizione) un solo viaggio, come prima.
-	var until_empty: bool = bool(pile_ref.get("until_empty", false))
-	var task := TaskBuilderService.build_pickup_task(
-		cell.macro_state, microcell, resource_names[0], -1, PickUpAction.CriterionKind.ALL, -1, until_empty, 0,
-		PickUpAction.SourceKind.GROUND_PILE
-	)
-	_wire_pickup_task(task, carrier)
-	if until_empty:
-		var pile_units := 0
-		for resource_name in resource_names:
-			pile_units += pile.get_quantity(resource_name)
-		var until_empty_zone := HaulZoneService.make_zone(
-			macro_coords, Rect2i(microcell, Vector2i.ONE), PickUpAction.CriterionKind.ALL, -1, resource_names[0], -1,
-			PickUpAction.SourceKind.GROUND_PILE, maxi(pile_units, 1)
-		)
-		until_empty_zone[HaulZoneService.UNTIL_EMPTY_KEY] = true
-		# Serie di estrazioni in zona (2026-10-05): viaggia con la zona, duplicata a ogni ripetizione della consegna.
-		if pile_ref.has(QuarryZoneService.SERIES_ZONE_KEY):
-			until_empty_zone[QuarryZoneService.SERIES_ZONE_KEY] = pile_ref[QuarryZoneService.SERIES_ZONE_KEY]
-		# Serie di tagli in zona (2026-10-06): come quella dell'estrazione, viaggia con la zona.
-		if pile_ref.has(CutZoneService.SERIES_ZONE_KEY):
-			until_empty_zone[CutZoneService.SERIES_ZONE_KEY] = pile_ref[CutZoneService.SERIES_ZONE_KEY]
-		# Zona del taglio (2026-10-06): "Taglio (Zona 1)" anche durante la consegna (Task._delivery_activity_label).
-		if pile_ref.has(CutZoneService.CONTEXT_WORK_AREA_ID):
-			until_empty_zone[CutZoneService.CONTEXT_WORK_AREA_ID] = pile_ref[CutZoneService.CONTEXT_WORK_AREA_ID]
-		# Etichetta del lavoro (taglio, estrazione) anche durante la consegna.
-		if pile_ref.has(HaulZoneService.LABEL_TASK_KEY):
-			until_empty_zone[HaulZoneService.LABEL_TASK_KEY] = pile_ref[HaulZoneService.LABEL_TASK_KEY]
-		task.context[HaulZoneService.CONTEXT_KEY] = until_empty_zone
-	# Consegna di un lavoro (2026-10-09): il mucchio non è un lavoro "Mucchio" della lista mentre questa task esiste
-	# (PileJobProvider.collect_job_delivery_keys); dopo una demolizione la riga dell'individuo dice "Ritiro mucchio (<risorsa>)".
-	task.context[HaulZoneService.JOB_DELIVERY_KEY] = true
-	task.context[HaulZoneService.PILE_RESOURCE_KEY] = resource_names[0] if resource_names.size() == 1 else ""
-	var carrier_age_band := _resolve_age_band(carrier)
-	for step in task.steps:
-		if step.disallowed_age_bands.has(carrier_age_band):
-			return
-	TaskQueueService.push_suspended_task(carrier, task)
-	# Nessuna icona per la consegna di un taglio o di un'estrazione (2026-10-07, richiesta utente): l'icona conferma solo
-	# un ordine dato con un clic sulla mappa, e questa consegna parte da sola. La manina resta per gli altri mucchi
-	# (demolizione), com'era.
-	if not pile_ref.has(HaulZoneService.LABEL_TASK_KEY):
-		_spawn_command_icon_at_microcell(cell, microcell, "pickup")
-	if DebugLogging.ENABLED and DebugLogging.SHOW_TRANSPORT_BUILD_LOGS:
-		print("[GROUND PILE HAUL] #%d %s: trasporto del mucchio #%d al magazzino accodato (coda ora %d)." % [
-			carrier.id, carrier.name, pile.id, carrier.task_queue.size()
-		])
-	if carrier == individual:
-		_refresh_selected_individual_panel()
+	var effects := GameEffects.new()
+	WorkFollowUpService.ground_pile_haul(_game_context(), carrier, pile_ref, effects)
+	_apply_effects(effects)
 
 
 # Abbattimento vero (BuildingLifecycleService.demolish): ritorna il mucchio a terra, o null.
@@ -16792,16 +15620,14 @@ func _reconnect_jump_action_signals(step: JumpAction, individual_ref: HumanIndiv
 	step.jumped.connect(_on_individual_jumped.bind(individual_ref))
 
 
-# Reazione a JumpAction.jumped — risolve la HumanIndividualView dell'individuo (stessa ricerca
-# per-indice parallela human_individuals/human_individual_views già in uso altrove, es.
-# _sync_dependent_child_position) e le chiede il piccolo scatto verticale, vedi
+# Reazione a JumpAction.jumped — risolve la HumanIndividualView dell'individuo (per id) e le chiede il piccolo scatto verticale, vedi
 # HumanIndividualView.trigger_jump_bounce. No-op silenzioso se la view non è (più) risolvibile
 # (individuo morto/rimosso tra l'emissione del segnale e la sua ricezione — non dovrebbe succedere
 # nello stesso frame, ma resta una guardia difensiva economica coerente con lo stile del progetto).
 func _on_individual_jumped(individual_ref: HumanIndividual) -> void:
-	var view_index := human_individuals.find(individual_ref)
-	if view_index != -1 and view_index < human_individual_views.size():
-		human_individual_views[view_index].trigger_jump_bounce()
+	var view: HumanIndividualView = human_individual_views.get(individual_ref.id)
+	if view != null:
+		view.trigger_jump_bounce()
 
 
 # Reazione a ClearAction.site_cleared (2026-09-11, richiesta utente, terzo step della Build Task)
@@ -16899,10 +15725,7 @@ func _on_prey_killed(prey_id: int, prey_species: String, prey_age_band: int, pre
 	var cell: LiveMacroCell = live_cells.get(prey_macro_coords)
 	if cell != null and cell.animal_renderers.has(prey_species):
 		cell.animal_renderers[prey_species].remove_individual(prey_id)
-	if macro_world != null:
-		var group := macro_world.find_population_group(prey_species, prey_macro_coords)
-		if group != null:
-			group.apply_predation_loss(prey_age_band as GameTypes.AgeBand, 1)
+	HuntService.apply_prey_kill(macro_world, prey_species, prey_age_band, prey_macro_coords)
 	if not selected_animal.is_empty() and int(selected_animal["individual_id"]) == prey_id:
 		_clear_animal_selection()
 
@@ -17402,8 +16225,33 @@ func _live_macro_state(macro_coords: Vector2i) -> MacroCellState:
 func _apply_effects(effects: GameEffects) -> void:
 	if effects == null or effects.is_empty():
 		return
+	_apply_individual_moves(effects.individual_moves)
+	for member in effects.individuals_added:
+		_add_human_individual_view(member)
+	for entry in effects.unload_tasks_to_wire:
+		for step in (entry["task"] as Task).steps:
+			if step is UnloadAction:
+				_reconnect_unload_action_signals(step as UnloadAction, entry["owner"])
 	for entry in effects.storage_tasks_to_wire:
 		_wire_transport_task(entry["task"], entry["owner"])
+	for entry in effects.tasks_to_wire:
+		var wire_task: Task = entry["task"]
+		match int(entry["kind"]):
+			GameEffects.WireKind.BUILD_STEPS:
+				for step in wire_task.steps:
+					_reconnect_build_task_signals(step)
+			GameEffects.WireKind.PICKUP:
+				_wire_pickup_task(wire_task, entry["owner"])
+			GameEffects.WireKind.BUTCHER:
+				_wire_butcher_task(wire_task, entry["owner"])
+			GameEffects.WireKind.HAUL_ZONE:
+				_connect_haul_zone_step_appended(wire_task, entry["owner"])
+	for completed_building in effects.buildings_completed:
+		_on_building_construction_completed(completed_building)
+	for entry in effects.command_icons:
+		var icon_cell: LiveMacroCell = live_cells.get(entry["macro"])
+		if icon_cell != null:
+			_spawn_command_icon_at_microcell(icon_cell, entry["microcell"], String(entry["key"]))
 	for macro_coords in effects.cells_to_refresh.keys():
 		if live_cells.has(macro_coords):
 			_refresh_building_visuals(live_cells[macro_coords])
@@ -17667,8 +16515,7 @@ func _setup_clock() -> void:
 	# mortalità, 2026-09-05): GameTimeService li usa per agganciare HumanMortalityIndividualService.
 	# check_mortality a year_rolled_over e la rimozione reale a day_advanced — sempre gli STESSI
 	# oggetti di GameScene, mai una copia.
-	game_time_service = GameTimeService.new()
-	game_time_service.connect_to_clock(clock, game_data, human_individuals, human_folk, macro_world, individual_action_service)
+	game_time_service = sim.start_time(clock)
 	# Step 6 piano mortalità (2026-09-05): GameTimeService rimuove l'individuo morto da
 	# human_individuals (stesso array, per riferimento) ma non sa nulla di human_individual_views
 	# (rendering, di competenza esclusiva di GameScene) — questo segnale, emesso PRIMA della
@@ -17753,10 +16600,8 @@ func _update_play_pause_button() -> void:
 		play_pause_button.tooltip_text = TooltipText.wrap(tr("play"))
 
 func _on_day_advanced(checkpoint_ran: bool, animals_changed: bool) -> void:
+	# Giro giornaliero della simulazione: anche riallineamento della produzione e cantieri maturati (blocco 5e).
 	_tick_simulation_day()
-	# Giorni minimi di costruzione (2026-10-17): edifici in finitura arrivati allo scadere.
-	for matured_building in BuildingLifecycleService.complete_matured_constructions(macro_world):
-		_on_building_construction_completed(matured_building)
 	# TEMPORANEO (diagnostica lentezza, vedi GameClockController._process/[DAY TOTAL]) — questo
 	# intero handler gira SINCRONO dentro day_advanced.emit(), quindi dentro il cronometro di
 	# [DAY TOTAL]: il ramo sotto (rebuild vegetazione per cella viva, "come individui" — posizioni/
@@ -18006,8 +16851,7 @@ func _update_calendar_display() -> void:
 func _on_world_debug_pressed() -> void:
 	_sync_individual_state_to_game_data()
 	GameSettings.active_fog_of_war_memories = fog_of_war_memories
-	GameSettings.active_human_folk = human_folk
-	GameSettings.active_human_individuals = human_individuals
+	sim.publish_to_settings()
 	GameSettings.returning_to_world_scene = true
 	if clock != null and macro_world != null:
 		GameSettings.active_clock_is_playing = clock.is_playing
@@ -18023,8 +16867,7 @@ func _on_world_debug_pressed() -> void:
 func _on_macro_cell_debug_pressed() -> void:
 	_sync_individual_state_to_game_data()
 	GameSettings.active_fog_of_war_memories = fog_of_war_memories
-	GameSettings.active_human_folk = human_folk
-	GameSettings.active_human_individuals = human_individuals
+	sim.publish_to_settings()
 	GameSettings.selected_macro_cell_x = game_data.player_macro_cell_x
 	GameSettings.selected_macro_cell_y = game_data.player_macro_cell_y
 	GameSettings.active_world = macro_world

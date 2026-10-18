@@ -818,6 +818,9 @@ func _run_annual_human_births() -> void:
 					_human_individuals, birth_rules.birth_village_happiness_gain, parent_ids,
 					birth_rules.birth_parent_happiness_gain, newborn.id, "nascita di %s" % newborn.name
 				)
+			# Casa per chi ne è senza (2026-10-18, refactoring GameScene blocco 5c — prima in GameScene, subito prima della
+			# vista del neonato).
+			AssignHouseService.assign_pending_residents(_world, _human_individuals, _game_data.year)
 			individual_born.emit(newborn)
 		else:
 			human_stillbirth.emit(mother)
@@ -1140,10 +1143,11 @@ func _kill_individual(
 			-death_rules.death_relative_happiness_loss, individual.id, "morte di %s" % individual.name
 		)
 	var partner_freed := _free_partner_if_any(individual)
-	# EMESSO PRIMA della rimozione sotto, con l'indice ancora valido — vedi commento sul signal
-	# per il perché (GameScene.human_individual_views parallelo per indice).
+	# EMESSO PRIMA della rimozione sotto, con l'indice ancora valido (la scena oggi toglie la vista per id).
 	individual_died.emit(individual, index, age_at_death, partner_freed, cause, day)
 	_human_individuals.remove_at(index)
+	# Case dei vivi riassegnate (2026-10-18, refactoring GameScene blocco 5c — prima in GameScene._on_human_individual_died).
+	AssignHouseService.assign_pending_residents(_world, _human_individuals, _game_data.year)
 	return partner_freed
 
 

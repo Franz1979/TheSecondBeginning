@@ -370,3 +370,13 @@ static func describe_task_prey_loss(task: Task) -> String:
 			if step is ApproachPreyAction:
 				return CombatTarget.describe_status(ApproachPreyAction.get_prey_status((step as ApproachPreyAction).prey_id))
 	return "bersaglio non valido"
+
+
+# Preda uccisa (2026-10-18, refactoring GameScene blocco 5d — prima in GameScene._on_prey_killed): un individuo in meno
+# nella popolazione animale della sua macrocella, nella sua fascia d'età. La figura dell'animale la toglie la scena.
+static func apply_prey_kill(world: World, prey_species: String, prey_age_band: int, prey_macro_coords: Vector2i) -> void:
+	if world == null:
+		return
+	var group := world.find_population_group(prey_species, prey_macro_coords)
+	if group != null:
+		group.apply_predation_loss(prey_age_band as GameTypes.AgeBand, 1)

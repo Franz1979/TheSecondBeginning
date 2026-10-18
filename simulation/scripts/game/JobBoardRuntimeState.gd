@@ -27,3 +27,6 @@ var pile_job_memory: Dictionary = {}
 # HuntOrderService.NO_PREY_ALERT_DAYS di gioco. {"order_id", "until", "zone", "area_id", "macro_x", "macro_y"
 # (+ HuntOrderService.ENDED_KEY)}.
 var hunt_no_prey_alerts: Array[Dictionary] = []
+# Carcasse lasciate a terra senza macellazione (2026-10-18, blocco 5d — prima GameScene._unbutchered_carcass_alerts):
+# {id, macro_x, macro_y, micro_x, micro_y}, una per carcassa; righe di "In sospeso" finché nessuno la macella.
+var unbutchered_carcass_alerts: Array[Dictionary] = []

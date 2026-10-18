@@ -120,6 +120,7 @@ var _kind_order_panel: Control = null
 var _kind_order_box: VBoxContainer = null
 var _kind_order_summary: Label = null
 var _kind_order_popup: PopupPanel = null
+var _kind_order_anchor: Control = null
 const KIND_ORDER_SUMMARY_COUNT: int = 3
 const KIND_ORDER_POPUP_INSET: int = 8
 # Bottone "Produci" (2026-10-09): acceso solo se esiste un edificio completo dove si può fare almeno una ricetta
@@ -1110,24 +1111,33 @@ func _build_kind_order_popup() -> void:
 	box.add_child(_kind_order_box)
 
 
-# Popup largo quanto il cassetto, con il fondo appena sopra il pulsante (mai oltre il bordo alto dello schermo).
-# Le voci vanno a capo, quindi l'altezza giusta si conosce solo con la larghezza vera: la si sistema a frame successivo.
+# Popup largo quanto il cassetto, alto quanto le voci (una riga ciascuna, niente a capo: l'altezza non dipende dalla
+# larghezza), con il fondo appena sopra il pulsante e sempre dentro lo schermo.
 func _open_kind_order_popup(anchor: Control) -> void:
-	var width := int(get_global_rect().size.x) - 2 * KIND_ORDER_POPUP_INSET
-	var x := int(get_global_rect().position.x) + KIND_ORDER_POPUP_INSET
+	_kind_order_anchor = anchor
 	# Fondo pieno e bordo come gli strati del cassetto (2026-10-18: quello di base del tema era trasparente). All'apertura,
 	# quando il pannello è già dentro il cassetto da cui il fondo prende il colore.
 	_kind_order_popup.add_theme_stylebox_override("panel", _make_settings_overlay_style())
-	_kind_order_popup.popup(Rect2i(Vector2i(x, int(anchor.get_global_rect().position.y)), Vector2i(width, 1)))
-	_fit_kind_order_popup.call_deferred(anchor)
+	_kind_order_popup.popup(_kind_order_popup_rect())
 
 
-func _fit_kind_order_popup(anchor: Control) -> void:
-	if not _kind_order_popup.visible:
-		return
+# Rettangolo del popup dalle voci di adesso: anche dopo ogni ▲▼, così non cresce (2026-10-18, prima si allungava).
+func _kind_order_popup_rect() -> Rect2i:
+	var width := int(get_global_rect().size.x) - 2 * KIND_ORDER_POPUP_INSET
 	var height := int(ceilf(_kind_order_popup.get_contents_minimum_size().y))
-	_kind_order_popup.size.y = height
-	_kind_order_popup.position.y = maxi(int(anchor.get_global_rect().position.y) - height - 4, 0)
+	var x := int(get_global_rect().position.x) + KIND_ORDER_POPUP_INSET
+	var anchor_top := int(_kind_order_anchor.get_global_rect().position.y) if _kind_order_anchor != null else 0
+	var screen_height := int(get_viewport().get_visible_rect().size.y)
+	var y := clampi(anchor_top - height - 4, 0, maxi(screen_height - height, 0))
+	return Rect2i(Vector2i(x, y), Vector2i(width, height))
+
+
+func _fit_kind_order_popup() -> void:
+	if _kind_order_popup == null or not _kind_order_popup.visible:
+		return
+	var rect := _kind_order_popup_rect()
+	_kind_order_popup.position = rect.position
+	_kind_order_popup.size = rect.size
 
 
 # Testo del riepilogo: i primi tipi in ordine ("Riti › Inventario › Raccolta › …"), nel tooltip l'elenco numerato.
@@ -1168,12 +1178,16 @@ func _rebuild_kind_order_rows() -> void:
 		label.add_theme_font_size_override("font_size", LIST_FONT_SIZE)
 		label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-		# A capo se il nome non ci sta (2026-10-10, "Demolizioni e sgomberi"): il cassetto resta largo SideDrawer.WIDTH.
-		label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		# Una riga sola, con i puntini se il nome non ci sta (2026-10-18, nel popup — prima andava a capo e il popup, a ogni
+		# ricostruzione, si allungava).
+		label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+		label.tooltip_text = label.text
+		label.mouse_filter = Control.MOUSE_FILTER_PASS
 		row.add_child(label)
 		row.add_child(_build_kind_move_button("▲", tr("task_assignment_kind_move_up"), index, -1))
 		row.add_child(_build_kind_move_button("▼", tr("task_assignment_kind_move_down"), index, 1))
 		_kind_order_box.add_child(row)
+	_fit_kind_order_popup.call_deferred()
 	_refresh_kind_order_summary()
 
 
