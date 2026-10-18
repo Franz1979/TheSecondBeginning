@@ -204,7 +204,8 @@ func get_required_position(individual: Variant, context: Dictionary) -> Variant:
 		return null
 	var macro_offset: Vector2 = Vector2(Vector2i(target_building.macro_x, target_building.macro_y) - individual.home_macro_coords) * World.WIDTH
 	# Punto casuale dentro la microcella, mai l'angolo esatto (2026-09-27, PathfindingService.random_point_in_microcell).
-	return PathfindingService.random_point_in_microcell(Vector2(target_building.micro_x, target_building.micro_y) + macro_offset)
+	# Cella di lavoro tra quelle del rettangolo (2026-10-17, più costruttori: ognuno la sua; 1x1 la cella di sempre).
+	return PathfindingService.random_point_in_microcell(Vector2(JobWorkScanService.build_work_cell(target_building, individual)) + macro_offset)
 
 
 # Consumo del materiale di setup site (2026-09-14, richiesta utente — BUG CONFERMATO: nessun punto

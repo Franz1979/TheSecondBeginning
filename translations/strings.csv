@@ -1018,6 +1018,8 @@ task_assignment_kind_demolish,Demolizioni e sgomberi
 task_assignment_kind_pile,Mucchi
 task_assignment_kind_move_up,Sposta su
 task_assignment_kind_move_down,Sposta giù
+task_assignment_kind_order_edit,Modifica ordine…
+task_assignment_kind_order_title,Ordine dei lavori
 produce_output_full_warning,Uscita piena: si fermerà dopo {count}
 toolkit_reject_not_used,{tool} non serve alle ricette di questo edificio: non entra nell'Attrezzeria.
 pending_output_delivery,Svuota uscita · {building} ({used}/{capacity})
@@ -1322,7 +1324,10 @@ social_rite_reject_wrong_building,Questo rito non si tiene in questo edificio
 building_feast_storage_summary,"Cibo: {calories} / {threshold} calorie · Combustibile: {fuel} / {fuel_needed}"
 building_feast_calorie_threshold_locked_tooltip,"Banchetto in corso: la soglia è fissata, la modifica vale per il prossimo"
 warehouse_rule_banquet,Banchetti spontanei
-warehouse_rule_banquet_calories,Fino a calorie
-warehouse_rule_banquet_tooltip,"Calorie di cibo fino a cui un banchetto spontaneo si organizza sullo spiazzo (minimo 500)"
+warehouse_rule_banquet_calories,Calorie per banchetto
+warehouse_rule_banquet_tooltip,"Quanto è grande ogni banchetto spontaneo: prima di chiamare il villaggio si porta sullo spiazzo cibo fino a queste calorie (minimo 500)"
 warehouse_rule_banquet_safe_only,Solo se consumano meno di un terzo delle scorte
 warehouse_rule_banquet_safe_only_tooltip,"Un banchetto spontaneo parte solo se nei magazzini c'è almeno il triplo del cibo che consuma"
+task_assignment_setting_single_builder,Un solo costruttore per cantiere
+task_assignment_setting_single_builder_tooltip,"La coda dei lavori manda al massimo un costruttore per cantiere, anche dove ne servirebbero di più. A mano puoi sempre mandarne fino al massimo dell'edificio."
+building_construction_phase_finishing,"In finitura: ancora {days} giorni"

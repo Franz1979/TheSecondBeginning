@@ -964,6 +964,8 @@ task_assignment_kind_demolish,Demolitions and clearing
 task_assignment_kind_pile,Piles
 task_assignment_kind_move_up,Move up
 task_assignment_kind_move_down,Move down
+task_assignment_kind_order_edit,Edit order…
+task_assignment_kind_order_title,Job order
 produce_output_full_warning,Output full: will stop after {count}
 toolkit_reject_not_used,{tool} is not used by this building's recipes: it does not go in the toolkit.
 pending_output_delivery,Empty output · {building} ({used}/{capacity})
@@ -1268,7 +1270,10 @@ social_rite_reject_wrong_building,This rite is not held in this building
 building_feast_storage_summary,"Food: {calories} / {threshold} calories · Fuel: {fuel} / {fuel_needed}"
 building_feast_calorie_threshold_locked_tooltip,"Banquet in progress: the threshold is set, changes apply to the next one"
 warehouse_rule_banquet,Spontaneous banquets
-warehouse_rule_banquet_calories,Up to calories
-warehouse_rule_banquet_tooltip,"Food calories up to which a spontaneous banquet is gathered at the feast ground (minimum 500)"
+warehouse_rule_banquet_calories,Calories per banquet
+warehouse_rule_banquet_tooltip,"How big each spontaneous banquet is: before the village is called, food is brought to the feast ground up to these calories (minimum 500)"
 warehouse_rule_banquet_safe_only,Only if they use less than a third of the stock
 warehouse_rule_banquet_safe_only_tooltip,"A spontaneous banquet starts only if the storehouses hold at least three times the food it uses"
+task_assignment_setting_single_builder,One builder per site
+task_assignment_setting_single_builder_tooltip,"The job queue sends at most one builder per site, even where more could work. By hand you can still send up to the building's maximum."
+building_construction_phase_finishing,"Finishing: {days} more days"

@@ -103,6 +103,9 @@ func _get_labor_accumulated() -> float:
 func get_missing_materials() -> Dictionary:
 	if target_building == null or target_building.rules == null:
 		return {}
+	# In finitura (2026-10-17): i materiali sono già stati consumati, non manca nulla.
+	if BuildingLifecycleService.is_finishing(target_building):
+		return {}
 	var missing: Dictionary = {}
 	for resource_name in target_building.rules.required_materials.keys():
 		var required: int = int(target_building.rules.required_materials[resource_name])
@@ -169,6 +172,8 @@ func get_stamina_delta(individual: Variant, context: Dictionary, delta: float) -
 	# il lavoro aggiunto (stesso tempo; il progresso sull'edificio resta misurato su required_labor).
 	var skill_factor := SkillEffectService.get_factor_for_action(self, individual, context)
 	var effective_work_this_day: float = stamina_spent_this_day * skill_factor * tool_multiplier
+	# Giorni minimi (2026-10-17): il conto parte dal primo lavoro vero.
+	BuildingLifecycleService.mark_build_started(target_building)
 	target_building.construction_progress["labor_accumulated"] = _get_labor_accumulated() + effective_work_this_day
 	return -stamina_spent_this_day
 
@@ -182,6 +187,8 @@ func get_stamina_delta(individual: Variant, context: Dictionary, delta: float) -
 func is_complete(individual: Variant, context: Dictionary) -> bool:
 	if target_building == null or target_building.rules == null:
 		return false
+	if BuildingLifecycleService.is_finishing(target_building):
+		return true
 	if not get_missing_materials().is_empty():
 		return false
 	return _get_labor_accumulated() >= float(target_building.rules.required_labor)
@@ -198,7 +205,8 @@ func get_required_position(individual: Variant, context: Dictionary) -> Variant:
 		return null
 	var macro_offset: Vector2 = Vector2(Vector2i(target_building.macro_x, target_building.macro_y) - individual.home_macro_coords) * World.WIDTH
 	# Punto casuale dentro la microcella, mai l'angolo esatto (2026-09-27, PathfindingService.random_point_in_microcell).
-	return PathfindingService.random_point_in_microcell(Vector2(target_building.micro_x, target_building.micro_y) + macro_offset)
+	# Cella di lavoro tra quelle del rettangolo (2026-10-17, più costruttori: ognuno la sua; 1x1 la cella di sempre).
+	return PathfindingService.random_point_in_microcell(Vector2(JobWorkScanService.build_work_cell(target_building, individual)) + macro_offset)
 
 
 # is_complete/current_durability risolti QUI (nessun dato esterno necessario, solo target_building.
@@ -216,31 +224,19 @@ func get_required_position(individual: Variant, context: Dictionary) -> Variant:
 func on_complete(individual: Variant, context: Dictionary) -> void:
 	if target_building == null:
 		return
-	target_building.is_complete = true
-	# built_year scritto QUI, nello stesso punto di is_complete (2026-09-19, richiesta utente —
-	# prima lo scriveva solo il listener GameScene._on_building_construction_completed: se il
-	# segnale partiva senza listener collegato, l'edificio risultava completo con built_year=-1).
-	# Letto ADESSO da GameSettings.active_game_data (stessa istanza di GameScene.game_data, vedi
-	# GameScene, dove viene assegnata) invece che iniettato al costruttore: l'anno può cambiare tra
-	# la creazione della Task e questo step (vedi il commento sopra), un valore iniettato sarebbe
-	# stantio. Nessuna partita attiva (null) -> resta -1, il pannello lo mostra come "anno non noto".
-	if GameSettings.active_game_data != null:
-		target_building.built_year = GameSettings.active_game_data.year
-	if target_building.rules != null:
-		target_building.current_durability = target_building.rules.max_durability
-		# Consumo dei materiali di costruzione (2026-09-14, richiesta utente) — STESSO bugfix già
-		# applicato a SetupSiteAction.on_complete (vedi quel file per il commento esteso, "BUG
-		# CONFERMATO": il materiale restava per sempre in stored_resources anche a costruzione
-		# completa, occupando slot di storage veri su un edificio con storage_slot_count>0):
-		# erase() di ciascuna voce di required_materials, non un decremento — consumato per intero,
-		# non "ancora in giacenza parziale".
-		for resource_name in target_building.rules.required_materials.keys():
-			target_building.stored_resources.erase(resource_name)
-	# is_awaiting_material -> false (2026-09-14, richiesta utente — STESSO bugfix di
-	# SetupSiteAction.on_complete: senza questo, un cantiere bloccato per il fabbisogno di Build
-	# restava "in attesa" per sempre nel pannello anche a costruzione DAVVERO completa, dato che
-	# nessun punto lo azzerava più una volta risolto il blocco senza passare da una riattivazione).
-	target_building.is_awaiting_material = false
+	# Giorni minimi (2026-10-17, BuildingLifecycleService): già in finitura (un altro costruttore ha finito il lavoro) →
+	# niente da fare; lavoro finito prima dei giorni minimi → in finitura, il costruttore è libero e l'edificio si completa
+	# da solo allo scadere (complete_matured_constructions); altrimenti completo subito, come prima.
+	if BuildingLifecycleService.is_finishing(target_building):
+		return
+	if BuildingLifecycleService.get_min_days_left(target_building) > 0:
+		BuildingLifecycleService.enter_finishing(target_building)
+		if DebugLogging.ENABLED and (DebugLogging.SHOW_TRANSPORT_BUILD_LOGS or DebugLogging.SHOW_BUILDERS_LOGS):
+			print("[BUILD] Edificio #%d: lavoro finito, in finitura ancora %d giorni." % [
+				target_building.id, BuildingLifecycleService.get_min_days_left(target_building)
+			])
+		return
+	BuildingLifecycleService.finish_building(target_building)
 	completing_individual = individual
 	building_construction_completed.emit(target_building)
 	completing_individual = null

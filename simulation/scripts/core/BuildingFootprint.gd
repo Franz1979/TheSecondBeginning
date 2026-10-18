@@ -50,6 +50,18 @@ static func cells_of(building: Building) -> Array[Vector2i]:
 	return cells(Vector2i(building.micro_x, building.micro_y), size_of(building))
 
 
+# Cella di lavoro del costruttore numero `worker_index` su `worker_count` (2026-10-17, più costruttori): le celle del
+# rettangolo divise in gruppi contigui, uno per costruttore, e una cella a caso del suo gruppo (2 costruttori su un 2x2:
+# 2 celle ciascuno). 1x1: la cella di sempre.
+static func work_cell(building: Building, worker_index: int, worker_count: int) -> Vector2i:
+	var all_cells := cells_of(building)
+	var count := clampi(worker_count, 1, all_cells.size())
+	var index := clampi(worker_index, 0, count - 1)
+	var start := index * all_cells.size() / count
+	var end := (index + 1) * all_cells.size() / count
+	return all_cells[start + randi() % maxi(end - start, 1)]
+
+
 # Quante microcelle del rettangolo stanno in `positions` (Array o Dictionary di Vector2i: basta .has()).
 static func count_cells_in(building: Building, positions: Variant) -> int:
 	var count := 0

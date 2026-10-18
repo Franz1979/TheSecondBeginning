@@ -266,6 +266,12 @@ static func get_material_quota(game_data: GameData, building_id: int, resource_n
 	return 0
 
 
+# true se a `building` c'è un banchetto nella festa vera (falò acceso, FeastFireNode — 2026-10-17).
+static func has_lit_bonfire(building: Building) -> bool:
+	var record := find_rite(GameSettings.active_game_data, building.id) if building != null else {}
+	return not record.is_empty() and String(record.get("phase", "")) == PHASE_FEASTING 		and RiteService.get_rules(String(record.get("rite_id", ""))) is BanquetRiteRules
+
+
 # true se a `building` c'è un rito sociale in preparazione.
 static func is_preparing(building: Building) -> bool:
 	var record := find_rite(GameSettings.active_game_data, building.id) if building != null else {}

@@ -493,10 +493,101 @@ static func _refresh_upgraded_building_views(building: Building, effects: GameEf
 # conservato; chi ha completato prosegue da sé. Valori salvati per l'annullo di un miglioramento cancellati; centro del
 # villaggio, residenti di un edificio residenziale (anche fuori dalle celle vive), rametti tolti col ridisegno, vicine
 # ridisegnate. Le scoperte BUILDING_COMPLETED le fa partire chi chiama.
+# --- Giorni minimi di costruzione (2026-10-17, BuildingRules.min_construction_days) ---
+# Il conto parte dal primo lavoro vero (BuildAction, BUILD_STARTED_DAY_KEY). Se il lavoro finisce prima dei giorni minimi
+# l'edificio va "in finitura" (LABOR_DONE_KEY: materiali consumati, costruttori liberi, niente più fabbisogno né lavoro
+# in coda) e si completa da solo allo scadere (complete_matured_constructions, una volta al giorno). Chiavi in
+# Building.construction_progress, salvate con l'edificio.
+const BUILD_STARTED_DAY_KEY := "build_started_day"
+const LABOR_DONE_KEY := "labor_done"
+
+
+# Segna il giorno del primo lavoro vero, se non c'è già.
+static func mark_build_started(building: Building) -> void:
+	if building == null or building.construction_progress.has(BUILD_STARTED_DAY_KEY) or GameSettings.active_game_data == null:
+		return
+	building.construction_progress[BUILD_STARTED_DAY_KEY] = GameSettings.active_game_data.get_absolute_day()
+
+
+# Giorni che mancano ai giorni minimi (0 = passati; senza giorno d'inizio si conta da oggi).
+static func get_min_days_left(building: Building) -> int:
+	if building == null or building.rules == null or GameSettings.active_game_data == null:
+		return 0
+	var today := GameSettings.active_game_data.get_absolute_day()
+	var started := int(building.construction_progress.get(BUILD_STARTED_DAY_KEY, today))
+	return maxi(building.rules.min_construction_days - (today - started), 0)
+
+
+# true se il lavoro è finito ma l'edificio aspetta i giorni minimi.
+static func is_finishing(building: Building) -> bool:
+	return building != null and not building.is_complete and bool(building.construction_progress.get(LABOR_DONE_KEY, false))
+
+
+# Lavoro finito prima dei giorni minimi: materiali consumati, edificio in finitura.
+static func enter_finishing(building: Building) -> void:
+	_consume_build_materials(building)
+	building.construction_progress[LABOR_DONE_KEY] = true
+	building.is_awaiting_material = false
+
+
+# Corpo del completamento (estratto da BuildAction.on_complete il 2026-10-17): completo, anno di costruzione, Integrità
+# piena, materiali consumati, niente più attesa di materiale. Il chiamante poi avvisa la scena (segnale o chiamata
+# diretta) per complete_construction.
+static func finish_building(building: Building) -> void:
+	building.is_complete = true
+	# built_year scritto QUI, nello stesso punto di is_complete (2026-09-19): letto adesso da GameSettings.active_game_data,
+	# non iniettato prima (l'anno può cambiare tra la creazione della Task e il completamento). Senza partita resta -1.
+	if GameSettings.active_game_data != null:
+		building.built_year = GameSettings.active_game_data.year
+	if building.rules != null:
+		building.current_durability = building.rules.max_durability
+	_consume_build_materials(building)
+	building.is_awaiting_material = false
+
+
+# Consumo dei materiali di costruzione (2026-09-14): erase() di ogni voce di required_materials, non un decremento.
+static func _consume_build_materials(building: Building) -> void:
+	if building.rules == null:
+		return
+	for resource_name in building.rules.required_materials.keys():
+		building.stored_resources.erase(resource_name)
+
+
+# Controllo giornaliero: completa gli edifici in finitura con i giorni minimi passati. Ritorna quelli completati, per cui
+# la scena chiama il suo gestore di fine costruzione (come il segnale di BuildAction).
+static func complete_matured_constructions(world: World) -> Array[Building]:
+	var matured: Array[Building] = []
+	if world == null:
+		return matured
+	for building in world.buildings:
+		if building.is_demolished or not is_finishing(building) or get_min_days_left(building) > 0:
+			continue
+		finish_building(building)
+		matured.append(building)
+		if DebugLogging.ENABLED and (DebugLogging.SHOW_TRANSPORT_BUILD_LOGS or DebugLogging.SHOW_BUILDERS_LOGS):
+			print("[BUILD] Edificio #%d (%s): finitura terminata, edificio completo." % [building.id, building.building_type_name])
+	return matured
+
+
 static func complete_construction(ctx: GameContext, building: Building, effects: GameEffects) -> void:
 	if building == null:
 		return
-	resolve_freed(ctx, close_tasks_on_building(ctx, building, JobWorkScanService.BUILD_TASK_NAMES, find_completing_individual(ctx, building)))
+	var completing := find_completing_individual(ctx, building)
+	# Più costruttori (2026-10-17): chi stava costruendo lì riceve gli effetti di fine costruzione come chi la completa
+	# (task_completion_effects.tres), prima che la sua task venga chiusa.
+	for other in ctx.individuals:
+		var other_task := other.current_task
+		if other == completing or other_task == null or other_task.is_finished():
+			continue
+		var other_step := other_task.get_current_action()
+		if JobWorkScanService.BUILD_TASK_NAMES.has(other_task.task_name) and other_step is BuildAction \
+				and (other_step as BuildAction).target_building == building:
+			TaskCompletionEffectService.apply_effects(other, other_task)
+			if DebugLogging.ENABLED and (DebugLogging.SHOW_TRANSPORT_BUILD_LOGS or DebugLogging.SHOW_BUILDERS_LOGS):
+				print("[BUILD] Edificio #%d completato da #%d: effetti di fine costruzione anche a #%d %s (skill_builder ora %.1f)." % [
+					building.id, completing.id if completing != null else -1, other.id, other.name, float(other.skill_builder)
+				])
+	resolve_freed(ctx, close_tasks_on_building(ctx, building, JobWorkScanService.BUILD_TASK_NAMES, completing))
 	for upgrade_key in BuildingUpgradeService.UPGRADE_KEYS:
 		building.construction_progress.erase(upgrade_key)
 	if DebugLogging.ENABLED and DebugLogging.SHOW_TRANSPORT_BUILD_LOGS:

@@ -6763,6 +6763,7 @@ func _on_rite_order_cancel_requested(building: Building) -> void:
 	for member in SocialRiteService.cancel(building, human_individuals, game_data):
 		if not freed.has(member):
 			freed.append(member)
+	_put_out_feast_fire(building)
 	building.requested_rite_id = ""
 	_forget_job_board_wait(["rite:%d" % building.id])
 	for member in freed:
@@ -6878,6 +6879,7 @@ func _track_social_rite_tasks() -> void:
 		for step in task.steps:
 			if step is SocialRiteAttendAction and not (step as SocialRiteAttendAction).rite_started.is_connected(_spawn_social_rite_started_effect):
 				(step as SocialRiteAttendAction).rite_started.connect(_spawn_social_rite_started_effect)
+				(step as SocialRiteAttendAction).rite_ended.connect(_put_out_feast_fire)
 
 
 # Inizio del raduno: l'icona del comando del rito (RiteRules.command_icon_key — disegnata se c'è, altrimenti l'emoji; dal
@@ -6911,6 +6913,16 @@ func _spawn_social_rite_started_effect(building: Building, rite_id: String) -> v
 		tween.chain().tween_callback(icon.queue_free)
 	if rules.start_sound_id != &"":
 		social_rite_effect_shown.emit(cell_container.to_global(local_position), rules.start_sound_id)
+	# Falò del banchetto (2026-10-17): fiamma accesa nel cerchio di sassi per tutta la festa.
+	if SocialRiteService.has_lit_bonfire(building):
+		FeastFireNode.light(cell_container, building)
+
+
+# Fine o annullo di un rito sociale (2026-10-17): spegne il falò del banchetto, se c'era.
+func _put_out_feast_fire(building: Building) -> void:
+	var macro_coords := Vector2i(building.macro_x, building.macro_y) if building != null else Vector2i.ZERO
+	if building != null and live_cells.has(macro_coords):
+		FeastFireNode.put_out(live_cells[macro_coords].container, building)
 
 
 func _rite_action_of(task: Task) -> RiteAction:
@@ -7051,7 +7063,7 @@ func _assign_resumable_building_task(worker: HumanIndividual, hit_building: Buil
 			Vector2i(hit_building.micro_x, hit_building.micro_y),
 			("clear_rubble" if hit_building.is_rubble() else "demolish") if is_demolition else "build"
 		)
-	if DebugLogging.ENABLED and DebugLogging.SHOW_TRANSPORT_BUILD_LOGS:
+	if DebugLogging.ENABLED and (DebugLogging.SHOW_TRANSPORT_BUILD_LOGS or DebugLogging.SHOW_BUILDERS_LOGS):
 		print("[BUILD] Task di %s assegnata a #%d %s per l'edificio #%d." % [
 			"demolizione" if is_demolition else "costruzione", worker.id, worker.name, hit_building.id
 		])
@@ -9417,13 +9429,20 @@ func _game_context() -> GameContext:
 	return ctx
 
 
+# Lavoro "edificio" preso dalla coda (2026-10-17, più costruttori): il lavoro resta libero finché ci sono posti, quindi chi
+# ci lavora già (anche con la task rimandata in coda) non ne riceve una seconda.
+func _assign_building_job(worker: HumanIndividual, job: Dictionary) -> void:
+	if not BuildingJobProvider.workers(_game_context(), job).has(worker):
+		_assign_resumable_building_task(worker, job["target"])
+
+
 func _job_board_providers() -> Array[Dictionary]:
 	if _job_board_provider_list.is_empty():
 		_job_board_provider_list.append({
 			"collect": func(provider: Dictionary, assigned: Dictionary) -> Array[Dictionary]: return BuildingJobProvider.collect(_game_context(), provider, assigned),
 			"probe_key": func(job: Dictionary) -> String: return (job["target"] as Building).get_resumable_task_definition_path(),
 			"rejection": func(worker: HumanIndividual, job: Dictionary) -> String: return BuildingJobProvider.rejection(_game_context(), worker, job),
-			"assign": func(worker: HumanIndividual, job: Dictionary) -> void: _assign_resumable_building_task(worker, job["target"]),
+			"assign": _assign_building_job,
 			"workers": func(job: Dictionary) -> Array[HumanIndividual]: return BuildingJobProvider.workers(_game_context(), job),
 			"cancel_fields": _building_job_cancel_fields,
 			"cancel": _building_job_cancel,
@@ -10595,8 +10614,9 @@ func _collect_direct_command_entries(board_jobs: Array[Dictionary]) -> Array[Dic
 		var text := task.get_activity_description()
 		var icon_key := String(DIRECT_COMMAND_ICON_BY_TASK.get(task.task_name, ""))
 		# "Cerca lavoro" (2026-10-09, coordinatore passo 2) e "Coordina" (passo 3): riga "Automatico" (partita da sola,
-		# nessuna X), in fondo.
+		# nessuna X), in fondo. Anche l'organizzatore di un rito sociale spontaneo (2026-10-17): quello ordinato è della coda.
 		if task.task_name == JobBoardService.SEEK_JOB_TASK_NAME or CoordinatorService.is_coordinate_task(task) \
+				or task.task_name == SocialRiteService.TASK_NAME \
 				or bool(task.context.get(ToolFetchService.BORROWED_TOOL_RETURN_KEY, false)) or task.context.has(WarehouseManagerService.STOCK_DRY_KEY):
 			entries.append(_pending_entry("%s%d" % [DIRECT_COMMAND_KEY_PREFIX, member.id], text, {
 				"kind": "individual", "id": member.id, "macro": member.home_macro_coords,
@@ -10644,6 +10664,11 @@ func _task_board_reason(task: Task, pile_job_keys: Dictionary) -> String:
 		return "attrezzo per un ordine della coda"
 	if task.task_name == WarehouseManagerService.INVENTORY_TASK_NAME:
 		return "inventario del magazzino"
+	# Organizzatore di un rito sociale ordinato dal pannello (2026-10-17): è già nella riga "rite:" della coda.
+	if task.task_name == SocialRiteService.TASK_NAME:
+		var rite_building := _find_building_by_id(int(task.context.get(SocialRiteService.CONTEXT_BUILDING_ID, -1)))
+		if rite_building != null and rite_building.requested_rite_id != "":
+			return "rito ordinato"
 	for key in PileJobProvider.task_claim_keys(task, game_data):
 		if pile_job_keys.has(key):
 			return "mucchio della coda"
@@ -12477,6 +12502,10 @@ func _activate_live_cell(mx: int, my: int, p_debug_source: String = "unknown") -
 			# Bugfix reload "bastoncini agli angoli spariti" (2026-09-15) — vedi il commento esteso su
 			# _create_build_site_placeholder_nodes/_restore_build_site_placeholders_for_cell.
 			_restore_build_site_placeholders_for_cell(cell)
+			# Falò di un banchetto in corso (2026-10-17): riacceso alla riattivazione della cella o dopo un caricamento.
+			for feast_building in macro_world.buildings:
+				if feast_building.macro_x == cell.macro_x and feast_building.macro_y == cell.macro_y and SocialRiteService.has_lit_bonfire(feast_building):
+					FeastFireNode.light(cell.container, feast_building)
 
 	live_cells[Vector2i(mx, my)] = cell
 	return cell
@@ -15627,6 +15656,11 @@ func _toggle_task_assignment_drawer() -> void:
 		_task_assignment_panel.return_borrowed_tools_changed.connect(func(enabled: bool) -> void:
 			game_data.job_board_return_borrowed_tools = enabled
 		)
+		# Un solo costruttore per cantiere (2026-10-17): dato della partita, letto da BuildingJobProvider.build_limit.
+		_task_assignment_panel.set_single_builder(game_data.job_board_single_builder)
+		_task_assignment_panel.single_builder_changed.connect(func(enabled: bool) -> void:
+			game_data.job_board_single_builder = enabled
+		)
 		_task_assignment_panel.auto_clear_rubble_changed.connect(func(enabled: bool) -> void:
 			game_data.job_board_auto_clear_rubble = enabled
 			_refresh_pending_entries()
@@ -17720,6 +17754,9 @@ func _update_play_pause_button() -> void:
 
 func _on_day_advanced(checkpoint_ran: bool, animals_changed: bool) -> void:
 	_tick_simulation_day()
+	# Giorni minimi di costruzione (2026-10-17): edifici in finitura arrivati allo scadere.
+	for matured_building in BuildingLifecycleService.complete_matured_constructions(macro_world):
+		_on_building_construction_completed(matured_building)
 	# TEMPORANEO (diagnostica lentezza, vedi GameClockController._process/[DAY TOTAL]) — questo
 	# intero handler gira SINCRONO dentro day_advanced.emit(), quindi dentro il cronometro di
 	# [DAY TOTAL]: il ramo sotto (rebuild vegetazione per cella viva, "come individui" — posizioni/

@@ -287,7 +287,7 @@ static func _get_probability_multiplier(rules: RandomEventRules, context: Random
 		return 1.0
 	var center := VisitorService.find_village_center(context.world)
 	var village := VillageService.find_village_by_center(context.human_folk, center.id if center != null else -1)
-	return VillageAttractivenessService.get_probability_multiplier(village, rules)
+	return VillageAttractivenessService.get_probability_multiplier(village, rules, context.human_individuals)
 
 
 # Vincoli del sorteggio automatico (RandomEventRules gruppo Constraints): "" se l'evento è idoneo, altrimenti il

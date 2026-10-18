@@ -12,6 +12,7 @@ max_durability = 120
 defense = 20
 min_construction_days = 3
 required_labor = 3200
+max_builders = 2
 required_materials = {
 "pebble": 60,
 "wood": 10

@@ -289,6 +289,11 @@ var stock_banquet_safe_only: bool = true
 # ordine della coda tornano in deposito quando l'individuo è libero (HumanIndividual.borrowed_tools). Salvata da
 # GameSaveService ("job_board_return_borrowed_tools"); partita nuova e salvataggi vecchi: accesa.
 var job_board_return_borrowed_tools: bool = true
+# Regola di assegnazione "Un solo costruttore per cantiere" (2026-10-17, più costruttori): accesa, la coda dei lavori manda
+# al più un costruttore per cantiere invece che fino a BuildingRules.max_builders (BuildingJobProvider.build_limit). Il
+# comando manuale non ne tiene conto. Salvata da GameSaveService ("job_board_single_builder"); partita nuova e salvataggi
+# vecchi: spenta.
+var job_board_single_builder: bool = false
 # Inventario del magazzino (2026-10-11, gestore del magazzino — WarehouseManagerService): frequenza scelta dal giocatore
 # (ore di gioco tra la fine di un inventario e la richiesta del successivo), fine dell'ultimo inventario (giorni assoluti
 # con la frazione del giorno, -1 = mai), chi l'ha fatto, e la "foto" delle scorte presa all'inizio dell'ultimo

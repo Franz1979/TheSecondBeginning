@@ -456,13 +456,15 @@ static func advance_clock(game_data: GameData, delta: float) -> void:
 	game_data.job_board_runtime.clock += delta
 
 
-# Lavori gestiti dalla lista senza nessuno assegnato e non nascosti, bloccati compresi: chiave -> voce. Fuori i lavori
+# Lavori gestiti dalla lista senza nessuno assegnato (o con posti liberi, "open_slots" — 2026-10-17, cantieri con più
+# costruttori) e non nascosti, bloccati compresi: chiave -> voce. Fuori i lavori
 # impossibili per ora ("blocked_reason", es. un mucchio che nessun magazzino accetta): restano visibili nel cassetto ma
 # non entrano nell'attesa né si prendono; quando tornano possibili entrano come un lavoro nuovo (parte l'attesa).
 static func collect_candidates(jobs: Array[Dictionary]) -> Dictionary:
 	var candidates: Dictionary = {}
 	for job in jobs:
-		if not bool(job["assigned"]) and not bool(job["hidden"]) and String(job.get("blocked_reason", "")) == "":
+		var takeable := not bool(job["assigned"]) or int(job.get("open_slots", 0)) > 0
+		if takeable and not bool(job["hidden"]) and String(job.get("blocked_reason", "")) == "":
 			candidates[String(job["key"])] = job
 	return candidates
 

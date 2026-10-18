@@ -50,6 +50,20 @@ static func open_tasks(member: HumanIndividual) -> Array[Task]:
 	return tasks
 
 
+# Cella dove `individual` lavora al cantiere `building` (2026-10-17, più costruttori — BuildingFootprint.work_cell): i
+# costruttori in ordine di id si dividono le celle del rettangolo. Usata da SetupSite, Clear e Build.
+static func build_work_cell(building: Building, individual: HumanIndividual) -> Vector2i:
+	var builders := workers_on_building(GameSettings.active_human_individuals, building, BUILD_TASK_NAMES)
+	builders.sort_custom(func(a: HumanIndividual, b: HumanIndividual) -> bool: return a.id < b.id)
+	var index := maxi(builders.find(individual), 0)
+	var cell := BuildingFootprint.work_cell(building, index, builders.size())
+	if DebugLogging.ENABLED and (DebugLogging.SHOW_TRANSPORT_BUILD_LOGS or DebugLogging.SHOW_BUILDERS_LOGS):
+		print("[BUILD] #%d %s lavora alla cella %s del cantiere #%d (costruttore %d di %d)." % [
+			individual.id, individual.name, str(cell), building.id, index + 1, builders.size()
+		])
+	return cell
+
+
 # Individui (nell'ordine di `individuals`) con una Task di `task_names` su `building`, attiva (current_task) o sospesa in
 # coda (task_queue) — un individuo compare una volta sola.
 static func workers_on_building(individuals: Array[HumanIndividual], building: Building, task_names: Array[String]) -> Array[HumanIndividual]:
@@ -90,10 +104,12 @@ static func production_order_workers(individuals: Array[HumanIndividual], target
 # "postponed" (2026-10-16): cantieri rimandati per materiale nella coda personale, edificio -> pipottino; "build_active":
 # cantieri con un costruttore che non li ha rimandati. Un cantiere solo rimandato resta assegnato ma va in "In coda".
 # Produce e riparazioni (2026-10-17): stesse coppie "rimandato" / "attivo" dei cantieri, per chiave d'ordine e per edificio.
+# "builders" (2026-10-17, più costruttori): cantiere -> {id pipottino: true}, chi ha una task Costruisci su di lui (in corso,
+# in coda o rimandata), per confrontarlo con BuildingRules.max_builders.
 static func collect_assignments(individuals: Array[HumanIndividual]) -> Dictionary:
 	var result := {
 		"build": {}, "demolish": {}, "produce": {}, "bodies": {}, "repair": {}, "rite": {}, "postponed": {}, "build_active": {},
-		"postponed_produce": {}, "produce_active": {}, "postponed_repair": {}, "repair_active": {},
+		"postponed_produce": {}, "produce_active": {}, "postponed_repair": {}, "repair_active": {}, "builders": {},
 	}
 	for member in individuals:
 		var tasks: Array = []
@@ -137,6 +153,10 @@ static func collect_assignments(individuals: Array[HumanIndividual]) -> Dictiona
 					continue
 				if "target_building" in step and step.target_building != null:
 					result[bucket][step.target_building.id] = true
+					if bucket == "build":
+						if not result["builders"].has(step.target_building.id):
+							result["builders"][step.target_building.id] = {}
+						result["builders"][step.target_building.id][member.id] = true
 					if bucket == "build" or bucket == "repair":
 						var postponed_key := "postponed" if bucket == "build" else "postponed_repair"
 						var active_key := "build_active" if bucket == "build" else "repair_active"

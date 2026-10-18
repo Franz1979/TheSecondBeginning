@@ -51,6 +51,8 @@ signal auto_repair_percent_changed(percent: int)
 signal auto_clear_rubble_changed(enabled: bool)
 # Regola "Riponi gli attrezzi presi per un lavoro" (2026-10-11, GameData.job_board_return_borrowed_tools).
 signal return_borrowed_tools_changed(enabled: bool)
+# Regola "Un solo costruttore per cantiere" (2026-10-17, GameData.job_board_single_builder).
+signal single_builder_changed(enabled: bool)
 # Bottone "Produci" (2026-10-09, ordini creati dal cassetto): GameScene risponde con open_produce_overlay (le ricette).
 # "Invia in coda" nello strato = produce_orders_submitted: `orders` = [{"recipe", "quantity"}] delle ricette preparate,
 # `deliver_to_warehouse` = la spunta "Porta al deposito" al momento dell'invio.
@@ -109,12 +111,17 @@ var _auto_repair_spin: SpinBox = null
 var _auto_repair_percent: int = JobBoardService.AUTO_REPAIR_DEFAULT_PERCENT
 var _auto_clear_rubble: bool = false
 var _return_borrowed_tools: bool = true
+var _single_builder: bool = false
 # Priorità (2026-10-08): valori passati da GameScene prima di _ready (set_priority_settings), elenco dei tipi visibile solo
 # con "Personalizzata".
 var _priority_mode: String = JobBoardService.DEFAULT_PRIORITY_MODE
 var _kind_order: Array[String] = []
 var _kind_order_panel: Control = null
 var _kind_order_box: VBoxContainer = null
+var _kind_order_summary: Label = null
+var _kind_order_popup: PopupPanel = null
+const KIND_ORDER_SUMMARY_COUNT: int = 3
+const KIND_ORDER_POPUP_INSET: int = 8
 # Bottone "Produci" (2026-10-09): acceso solo se esiste un edificio completo dove si può fare almeno una ricetta
 # (set_produce_available, da GameScene; valore tenuto qui se arriva prima di _ready).
 var _produce_button: Button = null
@@ -792,12 +799,14 @@ func _build_settings_section() -> void:
 	_settings_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_settings_box.add_theme_constant_override("separation", 4)
 	scroll.add_child(_settings_box)
-	_settings_box.add_child(_build_wait_setting_row())
-	_settings_box.add_child(_build_auto_repair_setting_row())
-	_settings_box.add_child(_build_auto_clear_rubble_setting_row())
-	_settings_box.add_child(_build_return_borrowed_tools_setting_row())
-	_settings_box.add_child(_build_collect_piles_setting_row())
-	_settings_box.add_child(_build_empty_outputs_setting_row())
+	# Voci divise da un tratteggio (2026-10-17, richiesta utente).
+	DashedSeparator.add_item(_settings_box, _build_wait_setting_row())
+	DashedSeparator.add_item(_settings_box, _build_auto_repair_setting_row())
+	DashedSeparator.add_item(_settings_box, _build_auto_clear_rubble_setting_row())
+	DashedSeparator.add_item(_settings_box, _build_return_borrowed_tools_setting_row())
+	DashedSeparator.add_item(_settings_box, _build_single_builder_setting_row())
+	DashedSeparator.add_item(_settings_box, _build_collect_piles_setting_row())
+	DashedSeparator.add_item(_settings_box, _build_empty_outputs_setting_row())
 	_build_priority_setting(_settings_box)
 	toggle.toggled.connect(_on_settings_toggled)
 	_sections_area.resized.connect(_fit_settings_overlay)
@@ -951,6 +960,29 @@ func set_return_borrowed_tools(enabled: bool) -> void:
 	_return_borrowed_tools = enabled
 
 
+func set_single_builder(enabled: bool) -> void:
+	_single_builder = enabled
+
+
+# Regola "Un solo costruttore per cantiere" (2026-10-17): valore da GameScene (set_single_builder, prima di _ready), ogni
+# cambio esce con single_builder_changed. Accesa: la coda dei lavori manda al più un costruttore per cantiere.
+func _build_single_builder_setting_row() -> Control:
+	var check := CheckBox.new()
+	check.text = tr("task_assignment_setting_single_builder")
+	check.tooltip_text = TooltipText.wrap(tr("task_assignment_setting_single_builder_tooltip"))
+	check.focus_mode = Control.FOCUS_NONE
+	check.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	check.add_theme_font_size_override("font_size", LIST_FONT_SIZE)
+	check.button_pressed = _single_builder
+	check.toggled.connect(func(pressed: bool) -> void:
+		if _single_builder == pressed:
+			return
+		_single_builder = pressed
+		single_builder_changed.emit(pressed)
+	)
+	return check
+
+
 func _build_return_borrowed_tools_setting_row() -> Control:
 	var check := CheckBox.new()
 	check.text = tr("task_assignment_setting_return_borrowed_tools")
@@ -1037,17 +1069,82 @@ func _build_priority_setting(parent: VBoxContainer) -> void:
 				_on_priority_mode_selected(mode)
 		)
 		parent.add_child(option)
-	# Elenco dei tipi, rientrato sotto i modi.
+	# Riepilogo dell'ordine e "Modifica ordine…", rientrati sotto i modi (2026-10-17, richiesta utente: l'elenco intero
+	# occupava quasi tutto lo strato). L'elenco con ▲▼ vive nel popup _kind_order_popup.
 	var margin := MarginContainer.new()
 	margin.add_theme_constant_override("margin_left", 20)
 	parent.add_child(margin)
 	_kind_order_panel = margin
+	var summary_box := VBoxContainer.new()
+	summary_box.add_theme_constant_override("separation", 2)
+	margin.add_child(summary_box)
+	_kind_order_summary = Label.new()
+	_kind_order_summary.add_theme_font_size_override("font_size", LIST_FONT_SIZE)
+	_kind_order_summary.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_kind_order_summary.mouse_filter = Control.MOUSE_FILTER_STOP
+	summary_box.add_child(_kind_order_summary)
+	var edit_button := Button.new()
+	edit_button.text = tr("task_assignment_kind_order_edit")
+	edit_button.focus_mode = Control.FOCUS_NONE
+	edit_button.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
+	edit_button.add_theme_font_size_override("font_size", LIST_FONT_SIZE)
+	summary_box.add_child(edit_button)
+	_build_kind_order_popup()
+	edit_button.pressed.connect(func() -> void: _open_kind_order_popup(edit_button))
+	_rebuild_kind_order_rows()
+	_kind_order_panel.visible = _priority_mode == JobBoardService.PRIORITY_CUSTOM
+
+
+# Popup dell'ordine dei tipi: titolo e l'elenco con ▲▼ (_kind_order_box). Ogni spostamento vale subito; si chiude con un
+# clic fuori o con Esc (lo gestisce il popup, che ha il fuoco: lo strato delle regole resta aperto).
+func _build_kind_order_popup() -> void:
+	_kind_order_popup = PopupPanel.new()
+	add_child(_kind_order_popup)
+	var box := VBoxContainer.new()
+	box.add_theme_constant_override("separation", 4)
+	_kind_order_popup.add_child(box)
+	box.add_child(_section_title(tr("task_assignment_kind_order_title")))
 	_kind_order_box = VBoxContainer.new()
 	_kind_order_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_kind_order_box.add_theme_constant_override("separation", 2)
-	margin.add_child(_kind_order_box)
-	_rebuild_kind_order_rows()
-	_kind_order_panel.visible = _priority_mode == JobBoardService.PRIORITY_CUSTOM
+	box.add_child(_kind_order_box)
+
+
+# Popup largo quanto il cassetto, con il fondo appena sopra il pulsante (mai oltre il bordo alto dello schermo).
+# Le voci vanno a capo, quindi l'altezza giusta si conosce solo con la larghezza vera: la si sistema a frame successivo.
+func _open_kind_order_popup(anchor: Control) -> void:
+	var width := int(get_global_rect().size.x) - 2 * KIND_ORDER_POPUP_INSET
+	var x := int(get_global_rect().position.x) + KIND_ORDER_POPUP_INSET
+	# Fondo pieno e bordo come gli strati del cassetto (2026-10-18: quello di base del tema era trasparente). All'apertura,
+	# quando il pannello è già dentro il cassetto da cui il fondo prende il colore.
+	_kind_order_popup.add_theme_stylebox_override("panel", _make_settings_overlay_style())
+	_kind_order_popup.popup(Rect2i(Vector2i(x, int(anchor.get_global_rect().position.y)), Vector2i(width, 1)))
+	_fit_kind_order_popup.call_deferred(anchor)
+
+
+func _fit_kind_order_popup(anchor: Control) -> void:
+	if not _kind_order_popup.visible:
+		return
+	var height := int(ceilf(_kind_order_popup.get_contents_minimum_size().y))
+	_kind_order_popup.size.y = height
+	_kind_order_popup.position.y = maxi(int(anchor.get_global_rect().position.y) - height - 4, 0)
+
+
+# Testo del riepilogo: i primi tipi in ordine ("Riti › Inventario › Raccolta › …"), nel tooltip l'elenco numerato.
+func _refresh_kind_order_summary() -> void:
+	if _kind_order_summary == null:
+		return
+	var names: Array[String] = []
+	for kind in _kind_order:
+		names.append(JobBoardService.get_kind_name(kind))
+	var shown := names.slice(0, KIND_ORDER_SUMMARY_COUNT)
+	if names.size() > KIND_ORDER_SUMMARY_COUNT:
+		shown.append("…")
+	_kind_order_summary.text = " › ".join(PackedStringArray(shown))
+	var lines := PackedStringArray()
+	for index in names.size():
+		lines.append("%d. %s" % [index + 1, names[index]])
+	_kind_order_summary.tooltip_text = "\n".join(lines)
 
 
 func _on_priority_mode_selected(mode: String) -> void:
@@ -1077,6 +1174,7 @@ func _rebuild_kind_order_rows() -> void:
 		row.add_child(_build_kind_move_button("▲", tr("task_assignment_kind_move_up"), index, -1))
 		row.add_child(_build_kind_move_button("▼", tr("task_assignment_kind_move_down"), index, 1))
 		_kind_order_box.add_child(row)
+	_refresh_kind_order_summary()
 
 
 func _build_kind_move_button(text: String, tooltip: String, index: int, direction: int) -> Button:

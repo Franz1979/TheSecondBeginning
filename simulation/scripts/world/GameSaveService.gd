@@ -129,6 +129,7 @@ func save_game_to_json(
 			"stock_banquet_calories": game_data.stock_banquet_calories,
 			"stock_banquet_safe_only": game_data.stock_banquet_safe_only,
 			"job_board_return_borrowed_tools": game_data.job_board_return_borrowed_tools,
+			"job_board_single_builder": game_data.job_board_single_builder,
 			"inventory_interval_hours": game_data.inventory_interval_hours,
 			"last_inventory_end": game_data.last_inventory_end,
 			"last_inventory_by": game_data.last_inventory_by,

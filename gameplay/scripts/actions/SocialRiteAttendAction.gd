@@ -9,6 +9,9 @@ extends Action
 # Emesso da chi, arrivando, fa cominciare il raduno (2026-10-14 — icona e suono d'inizio). Collegato da
 # GameScene._track_social_rite_tasks.
 signal rite_started(building: Building, rite_id: String)
+# Emesso una volta quando lo step vede il rito sparito, finito o annullato (2026-10-17 — spegne il falò del banchetto).
+# Collegato da GameScene._track_social_rite_tasks.
+signal rite_ended(building: Building)
 
 var target_building: Building = null
 var _done: bool = false
@@ -53,6 +56,7 @@ func get_stamina_delta(individual: Variant, context: Dictionary, delta: float) -
 	var record := SocialRiteService.find_rite(GameSettings.active_game_data, target_building.id)
 	if record.is_empty():
 		_done = true
+		rite_ended.emit(target_building)
 		return 0.0
 	# Organizzatore al lavoro (2026-10-17): consuma stamina solo durante il raduno vero e proprio.
 	if bool(context.get(SocialRiteService.CONTEXT_ORGANIZER, false)) and String(record.get("phase", "")) == SocialRiteService.PHASE_FEASTING:

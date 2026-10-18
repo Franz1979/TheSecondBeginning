@@ -52,6 +52,9 @@ static func get_missing_materials(target_building: Building) -> Dictionary:
 		return missing
 	if target_building.is_demolished or target_building.is_out_of_service():
 		return missing
+	# In finitura (2026-10-17, giorni minimi): materiali già consumati, nessun fabbisogno.
+	if BuildingLifecycleService.is_finishing(target_building):
+		return missing
 	# Rito sociale in preparazione (2026-10-16, banchetto): prima il combustibile, poi la carne (SocialRiteService).
 	if SocialRiteService.is_preparing(target_building):
 		return SocialRiteService.get_preparation_missing(target_building)
@@ -108,6 +111,11 @@ static func get_supply_need(
 	var missing := RepairAction.get_supply_missing(target_building) if for_repair else get_missing_materials(target_building)
 	if missing.is_empty() or world == null:
 		return {}
+	# Più costruttori (2026-10-17): via quello che altri stanno già portando a questo cantiere (niente viaggi doppi).
+	if not for_repair:
+		missing = subtract_in_transit(target_building, missing, carrier)
+		if missing.is_empty():
+			return {}
 	# Mai un'espressione ternaria con [] qui: il letterale non è tipizzato e l'assegnazione a Array[int] fallisce a runtime.
 	var excluded: Array[int] = []
 	if not for_repair:
@@ -135,6 +143,52 @@ static func get_supply_need(
 		if first_need.is_empty():
 			first_need = need
 	return first_need
+
+
+# Materiale in viaggio verso `building` (2026-10-17, più costruttori): `resource_name` che gli altri pipottini (non
+# `excluded`) stanno portando con un rifornimento — Retrieve di rifornimento non ancora fatto (quantità chiesta) oppure
+# carico nello zaino con lo scarico al cantiere ancora da fare.
+static func get_in_transit(building: Building, resource_name: String, excluded: HumanIndividual = null) -> int:
+	var total := 0
+	for member in GameSettings.active_human_individuals:
+		if member == excluded:
+			continue
+		for task in JobWorkScanService.open_tasks(member):
+			var unload_pending := false
+			var retrieve_pending := 0
+			for step_index in range(task.current_step_index, task.steps.size()):
+				var step: Action = task.steps[step_index]
+				if step is RetrieveAction:
+					var retrieve := step as RetrieveAction
+					if retrieve.material_supply and retrieve.supply_target_building == building and retrieve.resource_name == resource_name:
+						retrieve_pending += retrieve.quantity_requested
+				elif step is UnloadAction and (step as UnloadAction).target_building == building:
+					unload_pending = true
+			if retrieve_pending > 0:
+				total += retrieve_pending
+			elif unload_pending and task == member.current_task:
+				total += member.get_carried_quantity(resource_name)
+	return total
+
+
+# `missing` meno il materiale in viaggio verso `building` (get_in_transit), per nome; le voci coperte spariscono. Il
+# combustibile (FUEL_KEY) resta com'è (lo porta un solo lavoratore per volta).
+static func subtract_in_transit(building: Building, missing: Dictionary, excluded: HumanIndividual = null) -> Dictionary:
+	var result: Dictionary = {}
+	for resource_name in missing.keys():
+		if String(resource_name) == FUEL_KEY:
+			result[resource_name] = missing[resource_name]
+			continue
+		var left := int(missing[resource_name]) - get_in_transit(building, String(resource_name), excluded)
+		if left > 0:
+			result[resource_name] = left
+	return result
+
+
+# true se tutto quello che manca a `building` sta già arrivando con altri pipottini: chi è fermo aspetta sul posto.
+static func is_fully_in_transit(building: Building, excluded: HumanIndividual = null) -> bool:
+	var missing := get_missing_materials(building)
+	return not missing.is_empty() and subtract_in_transit(building, missing, excluded).is_empty()
 
 
 # Materiali troppo pesanti (2026-10-16, richiesta utente — pietra da 50 con capacità 49): risorse ancora mancanti a

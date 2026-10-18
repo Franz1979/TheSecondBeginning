@@ -364,10 +364,11 @@ func _build_rules_section() -> void:
 	_excess_meat_button.tooltip_key = "warehouse_rule_excess_meat_button_tooltip"
 	_excess_meat_button.destination_chosen.connect(func(destination: String) -> void: excess_meat_destination_changed.emit(destination))
 	row.add_child(_excess_meat_button)
-	_rules_box.add_child(row)
-	_rules_box.add_child(_build_fuel_rule_rows())
-	_rules_box.add_child(_build_banquet_rule_rows())
-	_rules_box.add_child(_build_inventory_interval_row())
+	# Frequenza dell'inventario per prima (2026-10-17, richiesta utente), voci divise da un tratteggio.
+	DashedSeparator.add_item(_rules_box, _build_inventory_interval_row())
+	DashedSeparator.add_item(_rules_box, row)
+	DashedSeparator.add_item(_rules_box, _build_fuel_rule_rows())
+	DashedSeparator.add_item(_rules_box, _build_banquet_rule_rows())
 	if _excess_meat_state.size() == 3:
 		var options: Array[Dictionary] = []
 		options.assign(_excess_meat_state[2])

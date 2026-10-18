@@ -375,7 +375,9 @@ func is_complete(individual: Variant, context: Dictionary) -> bool:
 	# in corso: col solo ENABLED produrrebbe decine di righe per un singolo Unload. Default false:
 	# chi vuole vederlo accende la categoria TRANSPORT_BUILD, stesso principio degli altri filtri
 	# dedicati in DebugLogging.gd.
-	if DebugLogging.ENABLED and DebugLogging.SHOW_TRANSPORT_BUILD_LOGS and _elapsed < _duration:
+	# Dal 2026-10-17 una categoria sua (SHOW_UNLOAD_PROGRESS_LOGS): con TRANSPORT_BUILD acceso per le prove dei cantieri
+	# riempiva il log.
+	if DebugLogging.ENABLED and DebugLogging.SHOW_UNLOAD_PROGRESS_LOGS and _elapsed < _duration:
 		print("[UNLOAD] is_complete: false (in corso) — elapsed=%.3f/%.3fgg, target_building=%s" % [
 			_elapsed, _duration, str(target_building.id) if target_building != null else "null"
 		])

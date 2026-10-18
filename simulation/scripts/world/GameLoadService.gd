@@ -249,6 +249,7 @@ func load_game_from_json(file_path: String) -> LoadedGame:
 		for type_name in raw_fuel_mins.keys():
 			game_data.stock_fuel_min_by_type[String(type_name)] = maxi(int(raw_fuel_mins[type_name]), 0)
 	game_data.job_board_return_borrowed_tools = bool(data["game"].get("job_board_return_borrowed_tools", true))
+	game_data.job_board_single_builder = bool(data["game"].get("job_board_single_builder", false))
 	# Inventario del magazzino (2026-10-11): salvataggi precedenti = mai fatto (il primo entra subito in coda).
 	game_data.inventory_interval_hours = maxi(int(data["game"].get("inventory_interval_hours", 24)), 1)
 	game_data.last_inventory_end = float(data["game"].get("last_inventory_end", -1.0))

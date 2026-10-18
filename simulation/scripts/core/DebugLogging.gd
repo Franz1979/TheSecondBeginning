@@ -293,6 +293,13 @@ const SHOW_REST_CHOICE_LOGS := false
 # [BUILD PROGRESS DEBUG]/[OCCUPIED SPACE DEBUG] (SetupSiteAction/ClearAction/BuildAction),
 # [ASSIGN HOUSE] (AssignHouseService).
 const SHOW_TRANSPORT_BUILD_LOGS := false
+# BUILDERS — solo le righe dei costruttori (2026-10-17, prove dei più costruttori): assegnazione della task di costruzione
+# (o demolizione), cella di lavoro di ciascuno, attesa del materiale già in arrivo con altri, effetti di fine costruzione
+# agli altri costruttori. Le stesse righe escono anche con TRANSPORT_BUILD.
+const SHOW_BUILDERS_LOGS := true
+# UNLOAD_PROGRESS — [UNLOAD] is_complete: false (in corso) (2026-10-17, staccato da TRANSPORT_BUILD): una riga per frame
+# per tutta la durata di uno scarico fisico. Solo per indagini sullo scarico.
+const SHOW_UNLOAD_PROGRESS_LOGS := false
 
 # HUNT — [HUNT] (2026-09-26, richiesta utente — log di debug della caccia): assegnazione (chi, quale
 # preda, quale arma e gittata; rifiuto), avvicinamento (distanza dalla preda ogni
@@ -349,7 +356,7 @@ const SHOW_RESOURCE_DECAY_LOGS := false
 # (giorno RandomEventService.ROLL_DAY_OF_YEAR), una riga per evento: probabilità base (fascia di popolazione),
 # moltiplicatori del villaggio e dell'evento, probabilità risultante, tiro, se è stato estratto e per quale giorno;
 # per un evento non idoneo, il motivo. Solo stampa, nessun effetto sul sorteggio.
-const SHOW_RANDOM_EVENT_ROLL_LOGS := true
+const SHOW_RANDOM_EVENT_ROLL_LOGS := false
 
 # PATHFINDING — [PATHFINDING] (2026-09-27, pathfinding step 1, PathfindingService): tempo di costruzione della griglia di
 # una macrocella (con microcelle bloccate e numero di regioni connesse) e, a ogni costruzione/demolizione di edificio,
@@ -407,7 +414,7 @@ const SHOW_CLEAR_LOGS := false
 
 # Lista dei lavori (2026-10-07, assegnazione compiti passo B — JobBoardService): una riga ogni volta che un pipottino
 # libero guarda la lista (lavori trovati, scelto con il punteggio, o perché nessuno). Solo log.
-const SHOW_JOB_BOARD_LOGS := false
+const SHOW_JOB_BOARD_LOGS := true
 
 # "In corso" del cassetto (2026-10-09, richiesta utente — righe "Diretto" non attese): una riga [IN CORSO] per individuo
 # quando la sua riga compare o cambia (task attiva, testo, coda o diretto e perché, chiavi del context). Solo log.
@@ -425,11 +432,11 @@ const SHOW_COORDINATOR_LOGS := false
 # Talk (2026-10-13, socialità — TalkService/TalkAction): una riga [TALK] per chiamata (partner, raggio, punti
 # d'incontro), nessun partner, inizio e fine della conversazione, chiusura senza effetti con il motivo. Acceso su
 # richiesta per le prime prove.
-const SHOW_TALK_LOGS := true
+const SHOW_TALK_LOGS := false
 
 # Coesione (2026-10-14, VillageCohesionService): una riga [COESIONE] a ogni variazione — talk, idea, nuovi arrivati,
 # calo annuale — con valore prima e dopo. Acceso per le prime prove.
-const SHOW_COHESION_LOGS := true
+const SHOW_COHESION_LOGS := false
 
 # Riti sociali (2026-10-14, SocialRiteService — es. il banchetto): una riga [RITO SOCIALE] per organizzazione, arrivi,
 # inizio, cottura, fine o annullo. Acceso per le prime prove.

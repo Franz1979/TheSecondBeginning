@@ -217,7 +217,8 @@ func get_required_position(individual: Variant, context: Dictionary) -> Variant:
 		return null
 	var macro_offset: Vector2 = Vector2(Vector2i(target_building.macro_x, target_building.macro_y) - individual.home_macro_coords) * World.WIDTH
 	# Punto casuale dentro la microcella, mai l'angolo esatto (2026-09-27, PathfindingService.random_point_in_microcell).
-	return PathfindingService.random_point_in_microcell(Vector2(target_building.micro_x, target_building.micro_y) + macro_offset)
+	# Cella di lavoro tra quelle del rettangolo (2026-10-17, più costruttori: ognuno la sua; 1x1 la cella di sempre).
+	return PathfindingService.random_point_in_microcell(Vector2(JobWorkScanService.build_work_cell(target_building, individual)) + macro_offset)
 
 
 # LOG DEBUG VERIFICA SPAZIO OCCUPATO (2026-09-11, richiesta utente — validare che la microcella del
@@ -257,8 +258,11 @@ func on_complete(individual: Variant, context: Dictionary) -> void:
 	# Solo erba, ceppi e piante morte (2026-10-04): is_complete garantisce che non ci siano piante vive.
 	# Ingombro (2026-10-17): ogni microcella del rettangolo; l'erba non ha posizione, se ne toglie una microcella per
 	# ognuna che l'aveva.
-	for i in range(_cells.size()):
-		BuildingSiteClearingService.clear_ground(_macro_state, _cells[i], i < _grass_cells)
+	# Una volta sola (2026-10-17, più costruttori: chi finisce dopo non toglie di nuovo l'erba dal bilancio della macrocella).
+	if not bool(target_building.construction_progress.get("ground_cleared", false)):
+		for i in range(_cells.size()):
+			BuildingSiteClearingService.clear_ground(_macro_state, _cells[i], i < _grass_cells)
+		target_building.construction_progress["ground_cleared"] = true
 
 	# Spazio riservato (2026-09-11, richiesta utente, punto 2) — STESSA formula di GameScene.
 	# _place_building_at, spostata QUI così la microcella non risulta mai libera per la crescita

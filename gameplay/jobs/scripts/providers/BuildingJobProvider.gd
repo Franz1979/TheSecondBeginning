@@ -18,16 +18,29 @@ static func collect(ctx: GameContext, provider: Dictionary, assigned: Dictionary
 		var kind := ""
 		var text := ""
 		var is_assigned := false
+		var open_slots := 0
 		if building.is_marked_for_demolition:
 			kind = "demolish"
 			# Sgombero delle macerie (2026-10-10): stesso tipo delle demolizioni, "Sgombero (Macerie)".
 			text = GameContext.tr_text("pending_clear_rubble" if building.is_rubble() else "pending_demolish").format({"building": building_name})
 			is_assigned = assigned["demolish"].has(building.id)
 		elif not building.is_complete:
+			# In finitura (2026-10-17, giorni minimi): il lavoro è finito, nessuno ci deve andare.
+			if BuildingLifecycleService.is_finishing(building):
+				continue
 			var is_upgrade := BuildingUpgradeService.get_upgrade_from_rules(building) != null
 			kind = "upgrade" if is_upgrade else "build"
 			text = GameContext.tr_text("pending_upgrade" if is_upgrade else "pending_build").format({"building": building_name})
-			is_assigned = assigned["build"].has(building.id)
+			# Più costruttori (2026-10-17): "assigned" = almeno un costruttore (riga in "In corso"); finché i costruttori sono
+			# sotto il limite (build_limit) il lavoro resta prendibile ("open_slots", JobBoardService.collect_candidates) e il
+			# nome dice i posti, "Spiazzo delle feste · 1/2".
+			var builders := (assigned["builders"].get(building.id, {}) as Dictionary).size()
+			var limit := build_limit(ctx, building)
+			is_assigned = builders > 0
+			open_slots = maxi(limit - builders, 0) if is_assigned else 0
+			if is_assigned and limit > 1:
+				text = "%s · %d/%d" % [text, builders, limit]
+				building_name = "%s · %d/%d" % [building_name, builders, limit]
 		else:
 			continue
 		jobs.append({
@@ -37,13 +50,22 @@ static func collect(ctx: GameContext, provider: Dictionary, assigned: Dictionary
 			"map_icon_key": "clear_rubble" if building.is_rubble() else String(JobBoardService.ICON_KEY_BY_KIND.get(kind, "")),
 			"macro": Vector2i(building.macro_x, building.macro_y), "microcell": Vector2i(building.micro_x, building.micro_y),
 			"reach_target": building, "entry_kind": "building", "id": building.id, "sort": float(building.id),
-			"assigned": is_assigned, "hidden": false,
+			"assigned": is_assigned, "open_slots": open_slots, "hidden": false,
 			"target": building, "provider": provider,
 		})
 		# Rimandato per materiale (2026-10-16): resta assegnato (nessun altro ci va) ma la riga va in "In coda" col motivo.
 		if (kind == "build" or kind == "upgrade") and assigned["postponed"].has(building.id) and not assigned["build_active"].has(building.id):
 			jobs[jobs.size() - 1]["postponed_by"] = assigned["postponed"][building.id]
 	return jobs
+
+
+# Costruttori al massimo per la coda dei lavori (2026-10-17): BuildingRules.max_builders, oppure 1 con la regola di
+# assegnazione "Un solo costruttore per cantiere" (GameData.job_board_single_builder). Il comando manuale usa sempre
+# max_builders.
+static func build_limit(ctx: GameContext, building: Building) -> int:
+	if ctx.game_data != null and ctx.game_data.job_board_single_builder:
+		return 1
+	return maxi(building.rules.max_builders if building.rules != null else 1, 1)
 
 
 # Tutte le chiavi possibili dei lavori di `building` (per dimenticarne l'attesa all'assegnazione).

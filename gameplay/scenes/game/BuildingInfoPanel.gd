@@ -1392,6 +1392,9 @@ func _resolve_active_construction_phase(building: Building) -> String:
 		return "setup_site"
 	if not bool(building.construction_progress.get("space_reserved", false)):
 		return "clear_site"
+	# Giorni minimi (2026-10-17): lavoro finito, l'edificio aspetta lo scadere.
+	if BuildingLifecycleService.is_finishing(building):
+		return "finishing"
 	return "build"
 
 
@@ -1437,6 +1440,16 @@ func _refresh_construction_progress(building: Building) -> void:
 			phase_name_key = "building_construction_phase_clear_site"
 			progress_days = float(building.construction_progress.get("clear_days_done", 0.0))
 			duration_days = float(building.construction_progress.get("clear_duration_days", 0.0))
+		"finishing":
+			# In finitura (2026-10-17): giorni passati sui giorni minimi, con quelli che mancano.
+			var min_days: int = building.rules.min_construction_days if building.rules != null else 0
+			var days_left := BuildingLifecycleService.get_min_days_left(building)
+			var finishing_percent: float = (clampf(float(min_days - days_left) / float(min_days), 0.0, 1.0) * 100.0) if min_days > 0 else 100.0
+			construction_phase_label.visible = true
+			construction_progress_bar_margin.visible = true
+			construction_phase_label.text = tr("building_construction_phase_finishing").format({"days": days_left})
+			construction_progress_bar.value = finishing_percent
+			return
 		_:
 			phase_name_key = "building_construction_phase_build"
 			progress_days = float(building.construction_progress.get("labor_accumulated", 0.0))

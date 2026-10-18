@@ -539,6 +539,14 @@ func _handle_pending_material_shortage(individual: HumanIndividual, task: Task, 
 	# step corrente); se non è possibile, comportamento di prima (bonus deposit_site, attesa, popup).
 	if MaterialSupplyService.is_supplied_step(task.get_current_action()) and MaterialSupplyService.try_supply_at_level_zero(individual, task, world, target_building):
 		return
+	# Più costruttori (2026-10-17): se tutto quello che manca lo stanno già portando altri, aspetta sul posto (niente
+	# viaggio doppio, niente "in attesa di materiale", niente rinvio in coda).
+	if not (task.get_current_action() is RepairAction) and MaterialSupplyService.is_fully_in_transit(target_building, individual):
+		if DebugLogging.ENABLED and (DebugLogging.SHOW_TRANSPORT_BUILD_LOGS or DebugLogging.SHOW_BUILDERS_LOGS):
+			print("[BUILD MATERIAL NEEDED] #%d %s aspetta al cantiere #%d: %s già in arrivo con altri, nessun viaggio." % [
+				individual.id, individual.name, target_building.id, str(missing)
+			])
+		return
 	if _release_if_too_heavy(individual, task, target_building):
 		return
 	# Riparazione senza sorgente (2026-10-10, materiali della riparazione — passo 3): resta in attesa, ferma dove finiscono
