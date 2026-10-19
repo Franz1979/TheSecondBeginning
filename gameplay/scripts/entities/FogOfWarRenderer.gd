@@ -855,16 +855,22 @@ func compute_visible_positions_cached(current_absolute_day: int, allow_increment
 	return visible
 
 
+# Solo le microcelle che possono entrarci (2026-10-19, scatti al movimento: ~18 ms a scorrere tutte le 10.000): quelle in
+# raggio e quelle in memoria. Una microcella mai vista non è né fresca né pavimento (FogOfWarMemory._is_floor vuole
+# last_seen_by_position), quindi lo stesso insieme di is_resource_fresh su tutta la griglia.
 func compute_visible_positions(current_absolute_day: int) -> Dictionary:
 	var visible: Dictionary = {}
-	for y in range(World.HEIGHT):
-		for x in range(World.WIDTH):
-			var pos := Vector2i(x, y)
-			var in_radius := _source_visible_positions.has(pos) or _building_visible_positions.has(pos)
-			if in_radius:
+	for positions in [_source_visible_positions, _building_visible_positions]:
+		for pos in positions:
+			if pos.x >= 0 and pos.y >= 0 and pos.x < World.WIDTH and pos.y < World.HEIGHT:
 				visible[pos] = true
+	if fog_of_war_memory != null:
+		var last_seen: Dictionary = fog_of_war_memory.last_seen_by_position
+		var floor_positions: Dictionary = fog_of_war_memory.floor_positions
+		for pos in last_seen:
+			if visible.has(pos) or pos.x < 0 or pos.y < 0 or pos.x >= World.WIDTH or pos.y >= World.HEIGHT:
 				continue
-			if fog_of_war_memory != null and fog_of_war_memory.is_resource_fresh(pos, current_absolute_day, resource_memory_days):
+			if current_absolute_day - int(last_seen[pos]) <= resource_memory_days or floor_positions.has(pos):
 				visible[pos] = true
 	return visible
 

@@ -2321,6 +2321,13 @@ static func resolve_idle_individual(individual: HumanIndividual, age_band: Human
 		# Senza punto di assegnazione nessuno prende lavori dalla coda (2026-10-10, richiesta utente — tolto il ripiego della
 		# presa diretta): la coda non è attiva (JobBoardService.is_enabled).
 
+	# Regola "Indossa i capi disponibili" (2026-10-19, richiesta utente): prima dei vestiti, poi della sacca.
+	if ToolFetchService.try_wear_apparel(individual, age_band, world):
+		return
+	# Regola "Prendi la sacca se disponibile" (2026-10-19, richiesta utente): niente lavoro dalla coda, al posto del ripiego.
+	if ToolFetchService.try_take_bag(individual, age_band, world):
+		return
+
 	if IdleTaskAssignmentService.assign_idle_fallback(individual, age_band, world):
 		return
 	individual.stop()

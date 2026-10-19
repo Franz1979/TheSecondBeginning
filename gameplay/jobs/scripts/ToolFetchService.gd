@@ -17,6 +17,19 @@ extends RefCounted
 const ZONE_ORDER_TOOL_FETCH_KEY := "zone_order_tool_fetch"
 # Riposizione automatica di un attrezzo in prestito (return_borrowed_tools): riga "Automatico" in "In corso".
 const BORROWED_TOOL_RETURN_KEY := "borrowed_tool_return"
+# Sacca presa con la regola "Prendi la sacca se disponibile" (try_take_bag): "id edificio:nome" nel context, la prenotazione.
+const BAG_FETCH_KEY := "bag_fetch"
+# Capo preso con la regola "Indossa i capi disponibili" (try_wear_apparel): "id edificio:nome" nel context, la prenotazione.
+const APPAREL_FETCH_KEY := "apparel_fetch"
+# Ordine degli slot del vestiario per la regola: prima il corpo, poi calzari, testa, collo, polsi.
+const APPAREL_FETCH_ORDER: Array[int] = [
+	HumanIndividual.ApparelSlot.BODY, HumanIndividual.ApparelSlot.FEET, HumanIndividual.ApparelSlot.HEAD,
+	HumanIndividual.ApparelSlot.NECK, HumanIndividual.ApparelSlot.WRIST_LEFT, HumanIndividual.ApparelSlot.WRIST_RIGHT,
+]
+
+# Collegamento dei segnali di deposito della task della sacca (refresh di griglia e pannelli), registrato da GameScene in
+# _ready — stesso schema di CargoReturnService.unload_signal_connector. Callable(task: Task, owner: HumanIndividual).
+static var storage_signal_connector: Callable = Callable()
 const ZONE_ORDER_TOOL_BLOCK_KEYS := {
 	TaskTypes.ToolCategory.BUTCHERING: "drawer_hunt_nobody_has_knife",
 	TaskTypes.ToolCategory.HUNTING: "drawer_hunt_nobody_has_weapon",
@@ -278,6 +291,184 @@ static func return_borrowed_tools(ctx: GameContext) -> Array[Dictionary]:
 				])
 		member.borrowed_tools = remaining
 	return created
+
+
+# Regola "Prendi la sacca se disponibile" (2026-10-19, richiesta utente — GameData.job_board_take_bag): chiamata da
+# HumanIndividualActionService.resolve_idle_individual quando `individual` si libera e non ha preso lavori dalla coda, al
+# posto dell'attività di ripiego. Senza sacca in cintura e con un posto libero va a prendere in deposito la sacca col bonus
+# di capacità più alto (equip_tool.tres, in cintura). La sacca resta sua: niente borrowed_tools. Le sacche che altri stanno
+# già andando a prendere (BAG_FETCH_KEY) non contano, così una sacca manda una persona sola. true = task assegnata.
+static func try_take_bag(individual: HumanIndividual, age_band: HumanTypes.AgeBand, world: World) -> bool:
+	var game_data: GameData = GameSettings.active_game_data
+	if game_data == null or world == null or not game_data.job_board_take_bag:
+		return false
+	if age_band == HumanTypes.AgeBand.INFANT or age_band == HumanTypes.AgeBand.CHILD:
+		return false
+	if HumanCalculator.get_equipped_carry_bonus(individual.equipped_tools) > 0.0:
+		return false
+	var slots := free_belt_slots(individual)
+	if slots.is_empty() or not JobBoardService.is_enabled(GameSettings.active_human_folk):
+		return false
+	var reserved := _reserved_fetches(individual, BAG_FETCH_KEY)
+	var bag_names := fetchable_tool_names(TaskTypes.ToolCategory.CARRYING)
+	bag_names.sort_custom(func(a: String, b: String) -> bool:
+		return _carry_bonus_of(a) > _carry_bonus_of(b)
+	)
+	var reachability := PathfindingService.reachability_for(individual)
+	for bag_name in bag_names:
+		var source := _find_free_source(individual, world, bag_name, reserved, reachability)
+		if source == null:
+			continue
+		var task := TaskBuilderService.build_equip_tool_task(individual, source, bag_name, slots[0])
+		if task == null:
+			return false
+		task.context[BAG_FETCH_KEY] = _fetch_key(source, bag_name)
+		if not individual.assign_task(task, age_band):
+			return false
+		if storage_signal_connector.is_valid():
+			storage_signal_connector.call(task, individual)
+		if DebugLogging.ENABLED and DebugLogging.SHOW_JOB_BOARD_LOGS:
+			print("[JOB BOARD] #%d %s: va a prendere %s in %s #%d (regola della sacca)." % [
+				individual.id, individual.name, bag_name, source.building_type_name, source.id
+			])
+		return true
+	return false
+
+
+# Regola "Indossa i capi disponibili" (2026-10-19, richiesta utente — GameData.job_board_wear_apparel): chiamata da
+# resolve_idle_individual prima della sacca. Il primo slot vuoto in ordine APPAREL_FETCH_ORDER sceglie il deposito (il più
+# vicino con un capo del suo tipo); nello STESSO deposito si prendono anche i capi per gli altri slot vuoti, così è un
+# viaggio solo: prima task assegnata, le altre accodate subito dopo. Quelli che lì mancano, a un momento libero successivo.
+# Il capo si prende anche se sfavorevole per la stagione (la hut gestirà il cambio). Tra più capi dello stesso tipo, quello
+# con più pezzi disponibili; l'unità prelevata è la più consumata (BuildingStorageService.withdraw_tool_units). I capi che
+# altri stanno già andando a prendere (APPAREL_FETCH_KEY) non contano. Il capo resta suo. true = task assegnata.
+static func try_wear_apparel(individual: HumanIndividual, age_band: HumanTypes.AgeBand, world: World) -> bool:
+	var game_data: GameData = GameSettings.active_game_data
+	if game_data == null or world == null or not game_data.job_board_wear_apparel:
+		return false
+	if not HumanIndividual.is_apparel_age_band(age_band):
+		return false
+	var empty_slots: Array[int] = []
+	for slot in APPAREL_FETCH_ORDER:
+		if individual.get_equipped_apparel(slot) == "":
+			empty_slots.append(slot)
+	if empty_slots.is_empty() or not JobBoardService.is_enabled(GameSettings.active_human_folk):
+		return false
+	var reserved := _reserved_fetches(individual, APPAREL_FETCH_KEY)
+	var reachability := PathfindingService.reachability_for(individual)
+	var depot: Building = null
+	var plan: Array[Dictionary] = []
+	for slot in empty_slots:
+		var chosen := ""
+		if depot == null:
+			var best_distance := INF
+			for apparel_name in apparel_names_for_slot(slot):
+				var source := _find_free_source(individual, world, apparel_name, reserved, reachability)
+				if source == null:
+					continue
+				var distance := _distance_to(individual, source)
+				if distance < best_distance:
+					best_distance = distance
+					depot = source
+					chosen = apparel_name
+		else:
+			var chosen_free := 0
+			for apparel_name in apparel_names_for_slot(slot):
+				var free := BuildingStorageService.get_available_quantity(depot, apparel_name) - int(reserved.get(_fetch_key(depot, apparel_name), 0))
+				if free > chosen_free:
+					chosen = apparel_name
+					chosen_free = free
+		if chosen == "":
+			continue
+		plan.append({"slot": slot, "name": chosen})
+		var key := _fetch_key(depot, chosen)
+		reserved[key] = int(reserved.get(key, 0)) + 1
+	if plan.is_empty():
+		return false
+	var tasks: Array[Task] = []
+	for entry in plan:
+		var task := TaskBuilderService.build_tool_task(
+			individual, TaskBuilderService.EQUIP_TOOL_TASK_DEFINITION_PATH, String(entry["name"]), depot, int(entry["slot"]), true
+		)
+		if task == null:
+			continue
+		task.context[APPAREL_FETCH_KEY] = _fetch_key(depot, String(entry["name"]))
+		tasks.append(task)
+	if tasks.is_empty() or not individual.assign_task(tasks[0], age_band):
+		return false
+	# La coda riprende dall'ultima (pop_back): i seguiti entrano al contrario, così escono nell'ordine degli slot.
+	for index in range(tasks.size() - 1, 0, -1):
+		TaskQueueService.push_follow_up_task(individual, tasks[index])
+	for task in tasks:
+		if storage_signal_connector.is_valid():
+			storage_signal_connector.call(task, individual)
+	if DebugLogging.ENABLED and DebugLogging.SHOW_JOB_BOARD_LOGS:
+		var names: Array[String] = []
+		for entry in plan:
+			names.append(String(entry["name"]))
+		print("[JOB BOARD] #%d %s: va a prendere %s in %s #%d (regola del vestiario)." % [
+			individual.id, individual.name, ", ".join(names), depot.building_type_name, depot.id
+		])
+	return true
+
+
+# Capi (categoria APPAREL) che vanno nello slot del vestiario `slot` (HumanIndividual.can_wear_in_slot).
+static func apparel_names_for_slot(slot: int) -> Array[String]:
+	var names: Array[String] = []
+	for resource_name in CaloricCalculator.list_secondary_resource_names():
+		if HumanIndividual.can_wear_in_slot(resource_name, slot):
+			names.append(resource_name)
+	return names
+
+
+# true se un edificio qualsiasi ha un capo per lo slot `slot` (riga "Senza vestito" della campanella).
+static func has_apparel_in_storage(world: World, slot: int) -> bool:
+	for apparel_name in apparel_names_for_slot(slot):
+		if WarehouseSelectionService.has_retrieval_source(world, apparel_name):
+			return true
+	return false
+
+
+# Deposito raggiungibile più vicino con almeno un `resource_name` non prenotato (`reserved`: chiave _fetch_key -> quanti).
+static func _find_free_source(individual: HumanIndividual, world: World, resource_name: String, reserved: Dictionary, reachability: Callable) -> Building:
+	var excluded: Array[int] = []
+	while true:
+		var source := WarehouseSelectionService.find_source_for_retrieval(
+			world, individual.position, individual.home_macro_coords, resource_name, excluded, 1, -1, reachability
+		)
+		if source == null:
+			return null
+		if BuildingStorageService.get_available_quantity(source, resource_name) > int(reserved.get(_fetch_key(source, resource_name), 0)):
+			return source
+		excluded.append(source.id)
+	return null
+
+
+static func _fetch_key(building: Building, resource_name: String) -> String:
+	return "%d:%s" % [building.id, resource_name]
+
+
+static func _distance_to(individual: HumanIndividual, building: Building) -> float:
+	var offset := Vector2(Vector2i(building.macro_x, building.macro_y) - individual.home_macro_coords) * World.WIDTH
+	return individual.position.distance_to(Vector2(building.micro_x, building.micro_y) + offset)
+
+
+# Prelievi già prenotati da altri (task aperte con `context_key` nel context): "id edificio:nome" -> quanti.
+static func _reserved_fetches(except: HumanIndividual, context_key: String) -> Dictionary:
+	var reserved: Dictionary = {}
+	for member in GameSettings.active_human_individuals:
+		if member == except:
+			continue
+		for task in JobWorkScanService.open_tasks(member):
+			var key: Variant = task.context.get(context_key, null)
+			if key != null:
+				reserved[key] = int(reserved.get(key, 0)) + 1
+	return reserved
+
+
+static func _carry_bonus_of(tool_name: String) -> float:
+	var rules := CaloricCalculator.get_caloric_source_rules(tool_name)
+	return rules.carry_capacity_bonus if rules != null else 0.0
 
 
 # Primo slot della cintura con l'attrezzo `tool_name`, -1 se nessuno.

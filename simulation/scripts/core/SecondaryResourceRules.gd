@@ -314,6 +314,6 @@ extends Resource
 # Delta GIORNALIERI additivi, stessa scala di HumanVitalsInteractionService (casa +10 salute / +5 felicità al giorno),
 # indicizzati da GameTypes.Season (WINTER, SPRING, SUMMER, AUTUMN). 0 = nessun effetto. Vestiti e scarpe agiranno
 # soprattutto sulla salute, i monili anche sulla felicità. Valgono SOLO mentre il capo è indossato (riposto in zaino o
-# magazzino non dà nulla). Solo il dato per ora: nessuna logica li legge ancora.
+# magazzino non dà nulla). Applicati ogni giorno da HumanVitalsInteractionService._apply_apparel_bonuses.
 @export var health_delta_by_season: Array[float] = [0.0, 0.0, 0.0, 0.0]
 @export var happiness_delta_by_season: Array[float] = [0.0, 0.0, 0.0, 0.0]

@@ -272,6 +272,8 @@ func load_game_from_json(file_path: String) -> LoadedGame:
 			if not by_tool.is_empty():
 				game_data.stock_toolkit_targets[String(type_name)] = by_tool
 	game_data.job_board_return_borrowed_tools = bool(data["game"].get("job_board_return_borrowed_tools", true))
+	game_data.job_board_take_bag = bool(data["game"].get("job_board_take_bag", false))
+	game_data.job_board_wear_apparel = bool(data["game"].get("job_board_wear_apparel", false))
 	game_data.job_board_single_builder = bool(data["game"].get("job_board_single_builder", false))
 	# Inventario del magazzino (2026-10-11): salvataggi precedenti = mai fatto (il primo entra subito in coda).
 	game_data.inventory_interval_hours = maxi(int(data["game"].get("inventory_interval_hours", 24)), 1)

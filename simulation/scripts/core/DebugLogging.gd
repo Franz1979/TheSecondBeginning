@@ -296,7 +296,7 @@ const SHOW_TRANSPORT_BUILD_LOGS := false
 # BUILDERS — solo le righe dei costruttori (2026-10-17, prove dei più costruttori): assegnazione della task di costruzione
 # (o demolizione), cella di lavoro di ciascuno, attesa del materiale già in arrivo con altri, effetti di fine costruzione
 # agli altri costruttori. Le stesse righe escono anche con TRANSPORT_BUILD.
-const SHOW_BUILDERS_LOGS := true
+const SHOW_BUILDERS_LOGS := false
 # UNLOAD_PROGRESS — [UNLOAD] is_complete: false (in corso) (2026-10-17, staccato da TRANSPORT_BUILD): una riga per frame
 # per tutta la durata di uno scarico fisico. Solo per indagini sullo scarico.
 const SHOW_UNLOAD_PROGRESS_LOGS := false
@@ -440,4 +440,4 @@ const SHOW_COHESION_LOGS := false
 
 # Riti sociali (2026-10-14, SocialRiteService — es. il banchetto): una riga [RITO SOCIALE] per organizzazione, arrivi,
 # inizio, cottura, fine o annullo. Acceso per le prime prove.
-const SHOW_SOCIAL_RITE_LOGS := true
+const SHOW_SOCIAL_RITE_LOGS := false

@@ -51,6 +51,10 @@ signal auto_repair_percent_changed(percent: int)
 signal auto_clear_rubble_changed(enabled: bool)
 # Regola "Riponi gli attrezzi presi per un lavoro" (2026-10-11, GameData.job_board_return_borrowed_tools).
 signal return_borrowed_tools_changed(enabled: bool)
+# Regola "Prendi la sacca se disponibile" (2026-10-19, GameData.job_board_take_bag).
+signal take_bag_changed(enabled: bool)
+# Regola "Indossa i capi disponibili" (2026-10-19, GameData.job_board_wear_apparel).
+signal wear_apparel_changed(enabled: bool)
 # Regola "Un solo costruttore per cantiere" (2026-10-17, GameData.job_board_single_builder).
 signal single_builder_changed(enabled: bool)
 # Bottone "Produci" (2026-10-09, ordini creati dal cassetto): GameScene risponde con open_produce_overlay (le ricette).
@@ -111,6 +115,8 @@ var _auto_repair_spin: SpinBox = null
 var _auto_repair_percent: int = JobBoardService.AUTO_REPAIR_DEFAULT_PERCENT
 var _auto_clear_rubble: bool = false
 var _return_borrowed_tools: bool = true
+var _take_bag: bool = false
+var _wear_apparel: bool = false
 var _single_builder: bool = false
 # Priorità (2026-10-08): valori passati da GameScene prima di _ready (set_priority_settings), elenco dei tipi visibile solo
 # con "Personalizzata".
@@ -805,6 +811,8 @@ func _build_settings_section() -> void:
 	DashedSeparator.add_item(_settings_box, _build_auto_repair_setting_row())
 	DashedSeparator.add_item(_settings_box, _build_auto_clear_rubble_setting_row())
 	DashedSeparator.add_item(_settings_box, _build_return_borrowed_tools_setting_row())
+	DashedSeparator.add_item(_settings_box, _build_take_bag_setting_row())
+	DashedSeparator.add_item(_settings_box, _build_wear_apparel_setting_row())
 	DashedSeparator.add_item(_settings_box, _build_single_builder_setting_row())
 	DashedSeparator.add_item(_settings_box, _build_collect_piles_setting_row())
 	DashedSeparator.add_item(_settings_box, _build_empty_outputs_setting_row())
@@ -997,6 +1005,54 @@ func _build_return_borrowed_tools_setting_row() -> Control:
 			return
 		_return_borrowed_tools = pressed
 		return_borrowed_tools_changed.emit(pressed)
+	)
+	return check
+
+
+# Regola "Prendi la sacca se disponibile" (2026-10-19): spunta, spenta all'inizio. Valore da GameScene (set_take_bag, prima
+# di _ready), ogni cambio esce con take_bag_changed. Accesa: chi si libera senza sacca va a prenderne una in deposito
+# (ToolFetchService.try_take_bag).
+func set_take_bag(enabled: bool) -> void:
+	_take_bag = enabled
+
+
+func _build_take_bag_setting_row() -> Control:
+	var check := CheckBox.new()
+	check.text = tr("task_assignment_setting_take_bag")
+	check.tooltip_text = TooltipText.wrap(tr("task_assignment_setting_take_bag_tooltip"))
+	check.focus_mode = Control.FOCUS_NONE
+	check.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	check.add_theme_font_size_override("font_size", LIST_FONT_SIZE)
+	check.button_pressed = _take_bag
+	check.toggled.connect(func(pressed: bool) -> void:
+		if _take_bag == pressed:
+			return
+		_take_bag = pressed
+		take_bag_changed.emit(pressed)
+	)
+	return check
+
+
+# Regola "Indossa i capi disponibili" (2026-10-19): spunta, spenta all'inizio, per tutti i capi del vestiario. Valore da
+# GameScene (set_wear_apparel, prima di _ready), ogni cambio esce con wear_apparel_changed. Accesa: chi si libera con uno
+# slot vuoto va a prendere in deposito i capi che gli mancano (ToolFetchService.try_wear_apparel).
+func set_wear_apparel(enabled: bool) -> void:
+	_wear_apparel = enabled
+
+
+func _build_wear_apparel_setting_row() -> Control:
+	var check := CheckBox.new()
+	check.text = tr("task_assignment_setting_wear_apparel")
+	check.tooltip_text = TooltipText.wrap(tr("task_assignment_setting_wear_apparel_tooltip"))
+	check.focus_mode = Control.FOCUS_NONE
+	check.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	check.add_theme_font_size_override("font_size", LIST_FONT_SIZE)
+	check.button_pressed = _wear_apparel
+	check.toggled.connect(func(pressed: bool) -> void:
+		if _wear_apparel == pressed:
+			return
+		_wear_apparel = pressed
+		wear_apparel_changed.emit(pressed)
 	)
 	return check
 

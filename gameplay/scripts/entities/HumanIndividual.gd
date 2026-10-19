@@ -1546,6 +1546,29 @@ func get_equipped_tool_instance(slot_index: int) -> Dictionary:
 	return ToolInstance.create(equipped_tool_uses[slot_index])
 
 
+# Svuota la cintura e ne ritorna gli attrezzi come voci formato magazzino (2026-10-19, richiesta utente — attrezzi a
+# terra alla morte, GameTimeService._kill_individual): pezzo a usi pieni = nuovo, pezzo usato = istanza con i suoi usi.
+# Nessun ricalcolo della capacità: chi la chiama sta per togliere l'individuo dal roster.
+func take_equipped_tools_as_entries() -> Dictionary:
+	_ensure_tool_slots()
+	var entries: Dictionary = {}
+	for slot_index in equipped_tools.size():
+		var tool_name: String = equipped_tools[slot_index]
+		if tool_name == "":
+			continue
+		var instance := get_equipped_tool_instance(slot_index)
+		_set_tool_slot(slot_index, "")
+		if not ToolInstance.is_usable(instance):
+			continue
+		var entry: Dictionary = entries.get(tool_name, {"quantity": 0, "decay_fraction": 0.0})
+		if ToolInstance.is_full(instance, ToolInstance.get_max_uses(tool_name)):
+			entry["quantity"] = int(entry["quantity"]) + 1
+		else:
+			ToolInstance.add_instance_to_entry(entry, instance)
+		entries[tool_name] = entry
+	return entries
+
+
 # Unico punto che scrive uno slot della cintura (nome + usi insieme, mai uno senza l'altro). `instance`
 # vuota = pezzo nuovo (usi pieni). resource_name "" = svuota lo slot (usi 0). Chiamare dopo
 # _ensure_tool_slots, con slot_index già validato dal chiamante.

@@ -96,16 +96,25 @@ static func _transport_job(ctx: GameContext, provider: Dictionary, order: Dictio
 	# Eccedenza da buttare (2026-10-18): "Buttare · 70 Rametti".
 	if is_waste:
 		row_name = GameContext.tr_text("drawer_order_waste_row").format({"quantity": quantity, "resource": IconRegistry.get_resource_display_name(resource_name)})
+	var icon: Dictionary = {"resource": resource_name}
 	if is_fuel:
 		var fuel_target := WarehouseManagerService.find_building(ctx.world, int(order[FuelStockService.FUEL_TARGET_KEY]))
+		var fuel_quantity: Variant = quantity
+		var fuel_resource := IconRegistry.get_resource_display_name(resource_name)
+		# Bloccato (2026-10-19, richiesta utente): nessun combustibile scelto, quindi la quantità vera dell'ordine (in
+		# fuel_value) e "combustibile" con il fuoco, invece di una risorsa vuota con quantità 1.
+		if pick.is_empty():
+			fuel_quantity = String.num(snappedf(float(order.get(FuelStockService.FUEL_AMOUNT_KEY, 0.0)), 0.1))
+			fuel_resource = GameContext.tr_text("pending_material_fuel")
+			icon = {"text": "🔥"}
 		row_name = GameContext.tr_text("drawer_order_fuel_row").format({
-			"quantity": quantity, "resource": IconRegistry.get_resource_display_name(resource_name),
+			"quantity": fuel_quantity, "resource": fuel_resource,
 			"building": fuel_target.get_display_name() if fuel_target != null else "",
 		})
 	return {
 		"key": JobBoardService.drawer_order_key(order_id), "kind": "pile", "name": row_name, "text": row_name,
 		"log_name": "ordine del cassetto #%d trasporto: %d %s" % [order_id, quantity, resource_name],
-		"icon": {"resource": resource_name},
+		"icon": icon,
 		"macro": Vector2i(target.macro_x, target.macro_y) if target != null else Vector2i(-1, -1),
 		"microcell": Vector2i(target.micro_x, target.micro_y) if target != null else Vector2i(-1, -1), "reach_target": target,
 		"entry_kind": "drawer_order", "id": order_id, "sort": float(order_id) + DrawerOrderService.PRODUCE_JOB_SORT_OFFSET,

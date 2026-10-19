@@ -297,6 +297,14 @@ var stock_banquet_safe_only: bool = true
 # ordine della coda tornano in deposito quando l'individuo è libero (HumanIndividual.borrowed_tools). Salvata da
 # GameSaveService ("job_board_return_borrowed_tools"); partita nuova e salvataggi vecchi: accesa.
 var job_board_return_borrowed_tools: bool = true
+# Regola di assegnazione "Prendi la sacca se disponibile" (2026-10-19, richiesta utente — ToolFetchService.try_take_bag): chi
+# si libera senza sacca in cintura e con un posto libero va a prendere in deposito la sacca migliore e la tiene. Salvata da
+# GameSaveService ("job_board_take_bag"); partita nuova e salvataggi vecchi: spenta.
+var job_board_take_bag: bool = false
+# Regola di assegnazione "Indossa i capi disponibili" (2026-10-19, richiesta utente — ToolFetchService.try_wear_apparel):
+# chi si libera con uno slot del vestiario vuoto va a prendere in deposito i capi che gli mancano e li indossa. Separata
+# dalla sacca. Salvata da GameSaveService ("job_board_wear_apparel"); partita nuova e salvataggi vecchi: spenta.
+var job_board_wear_apparel: bool = false
 # Regola di assegnazione "Un solo costruttore per cantiere" (2026-10-17, più costruttori): accesa, la coda dei lavori manda
 # al più un costruttore per cantiere invece che fino a BuildingRules.max_builders (BuildingJobProvider.build_limit). Il
 # comando manuale non ne tiene conto. Salvata da GameSaveService ("job_board_single_builder"); partita nuova e salvataggi

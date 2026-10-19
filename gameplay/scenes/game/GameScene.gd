@@ -606,6 +606,8 @@ func _ready() -> void:
 	IdleTaskAssignmentService.daydream_step_appended_connector = Callable(self, "_connect_daydream_step_appended_listener")
 	# Ritorno del carico al magazzino (2026-09-29, CargoReturnService): segnali degli Unload delle Task di ritorno.
 	CargoReturnService.unload_signal_connector = Callable(self, "_reconnect_unload_action_signals")
+	# Sacca presa con la regola "Prendi la sacca se disponibile" (2026-10-19): segnali di deposito della task.
+	ToolFetchService.storage_signal_connector = Callable(self, "_wire_transport_task")
 	debug_bar.action_pressed.connect(_on_debug_action_pressed)
 	debug_bar.expanded_changed.connect(_on_debug_bar_expanded_changed)
 	# Eventi casuali scatenati a mano dalla barra di debug (2026-09-26) — stesso percorso dell'applicazione programmata.
@@ -8733,8 +8735,11 @@ func _collect_tool_wait_entries() -> Array[Dictionary]:
 # Senza vestito (2026-10-11, richiesta utente — vestiario): un pipottino con lo slot Corpo vuoto, perché il vestito si è
 # consumato o perché non ne ha mai avuto uno, esclusi i bambini (INFANT e CHILD). Solo il corpo: copricapo e altri slot
 # vuoti non danno righe. La riga sparisce da sola appena indossa un vestito. Due livelli come l'attesa di attrezzi.
+# Con la regola "Indossa i capi disponibili" accesa e nessun vestito in nessun deposito (2026-10-19) il motivo lo dice.
 func _collect_naked_entries() -> Array[Dictionary]:
 	var entries: Array[Dictionary] = []
+	var no_stock_known := false
+	var no_stock := false
 	for member in human_individuals:
 		if member.get_equipped_apparel(HumanIndividual.ApparelSlot.BODY) != "":
 			continue
@@ -8742,6 +8747,12 @@ func _collect_naked_entries() -> Array[Dictionary]:
 		if not HumanIndividual.is_apparel_age_band(_resolve_age_band(member)):
 			continue
 		var detail := tr("pending_reason_naked")
+		if game_data != null and game_data.job_board_wear_apparel:
+			if not no_stock_known:
+				no_stock = not ToolFetchService.has_apparel_in_storage(macro_world, HumanIndividual.ApparelSlot.BODY)
+				no_stock_known = true
+			if no_stock:
+				detail = tr("pending_reason_naked_no_stock")
 		entries.append(_pending_entry("naked:%d" % member.id, "%s\n%s" % [member.name, detail], {
 			"kind": "individual", "id": member.id, "macro": member.home_macro_coords, "sort": float(member.id),
 			"name": member.name, "detail": detail,
@@ -9150,8 +9161,28 @@ func _job_board_has_open_jobs() -> bool:
 
 
 # Candidati della lista adesso (JobBoardService.collect_candidates su tutti i lavori dei fornitori).
+# Tenuti per il fotogramma in corso finché le assegnazioni restano le stesse (2026-10-19, scatti: il coordinatore li
+# ricostruiva da capo per ogni pipottino, fino a 9 volte per fotogramma); un lavoro preso cambia le assegnazioni o le
+# task di qualcuno (non tutti i lavori compaiono nelle assegnazioni, es. gli ordini del cassetto) e la lista si rifà.
+# Sola lettura per chi la riceve.
+var _job_board_candidates_cache: Dictionary = {}
+var _job_board_candidates_frame: int = -1
+var _job_board_candidates_assigned_hash: int = 0
+
+
 func _current_job_board_candidates() -> Dictionary:
-	return JobBoardService.collect_candidates(_collect_job_board_jobs(JobWorkScanService.collect_assignments(human_individuals)))
+	var assigned := JobWorkScanService.collect_assignments(human_individuals)
+	var frame := Engine.get_process_frames()
+	var task_signature: Array = [assigned.hash(), game_data.drawer_orders.hash() if game_data != null else 0]
+	for member in human_individuals:
+		task_signature.append([member.id, member.current_task.get_instance_id() if member.current_task != null else 0, member.task_queue.size()])
+	var assigned_hash := task_signature.hash()
+	if frame == _job_board_candidates_frame and assigned_hash == _job_board_candidates_assigned_hash:
+		return _job_board_candidates_cache
+	_job_board_candidates_cache = JobBoardService.collect_candidates(_collect_job_board_jobs(assigned))
+	_job_board_candidates_frame = frame
+	_job_board_candidates_assigned_hash = assigned_hash
+	return _job_board_candidates_cache
 
 
 func _has_listed_job_for(worker: HumanIndividual) -> bool:
@@ -14716,6 +14747,16 @@ func _toggle_task_assignment_drawer() -> void:
 		_task_assignment_panel.set_return_borrowed_tools(game_data.job_board_return_borrowed_tools)
 		_task_assignment_panel.return_borrowed_tools_changed.connect(func(enabled: bool) -> void:
 			game_data.job_board_return_borrowed_tools = enabled
+		)
+		# Prendi la sacca se disponibile (2026-10-19): dato della partita, letto da ToolFetchService.try_take_bag.
+		_task_assignment_panel.set_take_bag(game_data.job_board_take_bag)
+		_task_assignment_panel.take_bag_changed.connect(func(enabled: bool) -> void:
+			game_data.job_board_take_bag = enabled
+		)
+		# Indossa i capi disponibili (2026-10-19): dato della partita, letto da ToolFetchService.try_wear_apparel.
+		_task_assignment_panel.set_wear_apparel(game_data.job_board_wear_apparel)
+		_task_assignment_panel.wear_apparel_changed.connect(func(enabled: bool) -> void:
+			game_data.job_board_wear_apparel = enabled
 		)
 		# Un solo costruttore per cantiere (2026-10-17): dato della partita, letto da BuildingJobProvider.build_limit.
 		_task_assignment_panel.set_single_builder(game_data.job_board_single_builder)

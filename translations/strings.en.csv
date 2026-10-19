@@ -1155,6 +1155,10 @@ drawer_order_nobody_has_belt_room,Nobody has belt room for {tools}
 work_area_hunt_needs_weapon,"{name} can't hunt in work areas: a hunting weapon is needed (spear, or bow with arrows)."
 task_assignment_setting_return_borrowed_tools,Return tools taken for a job
 task_assignment_setting_return_borrowed_tools_tooltip,"Whoever takes a tool from storage for a queued job brings it back when free (where it came from, if there is room). Tools they already had or that you gave them stay on the belt."
+task_assignment_setting_take_bag,Take a bag if available
+task_assignment_setting_take_bag_tooltip,"Whoever is free with no queued job, no bag on the belt and a free belt slot fetches the best bag from storage and keeps it."
+task_assignment_setting_wear_apparel,Wear available apparel
+task_assignment_setting_wear_apparel_tooltip,"Whoever is free with no queued job and a missing item (clothes, headwear, footwear, jewelry) fetches what they need from storage and wears it. Several items from the same storage in one trip."
 drawer_order_missing_materials,Missing: {materials}
 drawer_order_dry_row,Drying rack: bring {quantity} {resource}
 pending_stock_dry_no_rack,No drying rack
@@ -1221,6 +1225,7 @@ apparel_store_no_storage,No storage building can accept {apparel}
 apparel_storage_dialog_title,Fetch an item to wear
 apparel_storage_dialog_message,Choose the item to fetch from the nearest storage and wear:
 pending_reason_naked,No clothes
+pending_reason_naked_no_stock,No clothes — none in storage
 apparel_children_tooltip,Hand-me-downs: children do not use the village clothing
 folk_name_label,Your people
 folk_name_placeholder,Leave empty for a random name

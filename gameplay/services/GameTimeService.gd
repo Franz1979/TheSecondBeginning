@@ -1048,6 +1048,11 @@ func _kill_individual(
 	# Corpo in spalla (2026-10-04, cumulo sepolcrale passo 2): chi muore mentre porta un corpo lo posa dove si trova,
 	# prima di diventare a sua volta un corpo.
 	BodyBurialService.put_down_carried_body(individual)
+	# Attrezzi della cintura (2026-10-19, richiesta utente): non finiscono nella tomba, cadono in un mucchio accanto al
+	# corpo con i loro usi residui e tornano in magazzino come ogni mucchio (PileJobProvider). Zaino e vestiario no.
+	GroundPileService.drop_entries(
+		_game_data, individual.home_macro_coords, individual.position, individual.take_equipped_tools_as_entries(), _world
+	)
 	_game_data.death_events.append({
 		"individual_id": individual.id,
 		"name": individual.name,

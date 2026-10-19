@@ -348,14 +348,9 @@ static func count_available(area: WorkArea, macro_state: MacroCellState, names: 
 	if area == null or macro_state == null or names.is_empty():
 		return 0
 	var total := 0
-	for y in range(area.rect.position.y, area.rect.end.y):
-		for x in range(area.rect.position.x, area.rect.end.x):
-			var cell := Vector2i(x, y)
-			var cell_total := 0
-			for candidate_name in names:
-				cell_total += maxi(PickUpAction.get_source_available_at(macro_state, cell, PickUpAction.SourceKind.TERRAIN, candidate_name), 0)
-			if cell_total > 0 and (individual == null or is_cell_reachable(individual, area.macro_coords, cell)):
-				total += cell_total
+	for entry in _area_cell_totals(area, macro_state, names):
+		if individual == null or is_cell_reachable(individual, area.macro_coords, entry[0]):
+			total += int(entry[1])
 	return total
 
 
@@ -364,15 +359,38 @@ static func count_available(area: WorkArea, macro_state: MacroCellState, names: 
 static func has_available_in_area(area: WorkArea, macro_state: MacroCellState, names: Array[String], individual: HumanIndividual = null) -> bool:
 	if area == null or macro_state == null or names.is_empty():
 		return false
+	for entry in _area_cell_totals(area, macro_state, names):
+		if individual == null or is_cell_reachable(individual, area.macro_coords, entry[0]):
+			return true
+	return false
+
+
+# Celle della WorkArea con qualcosa tra `names`: [[cell, unità], ...]. Tenute per il solo fotogramma in corso
+# (2026-10-19, scatti: la lista dei lavori rifaceva la stessa scansione per ogni pipottino e ogni ordine di raccolta,
+# ~30.000 letture per fotogramma); la raggiungibilità, che dipende dal pipottino, resta fuori.
+static var _cell_totals_cache: Dictionary = {}
+static var _cell_totals_frame: int = -1
+
+
+static func _area_cell_totals(area: WorkArea, macro_state: MacroCellState, names: Array[String]) -> Array:
+	var frame := Engine.get_process_frames()
+	if frame != _cell_totals_frame:
+		_cell_totals_cache.clear()
+		_cell_totals_frame = frame
+	var cache_key := [area.id, area.macro_coords, area.rect, names]
+	if _cell_totals_cache.has(cache_key):
+		return _cell_totals_cache[cache_key]
+	var result: Array = []
 	for y in range(area.rect.position.y, area.rect.end.y):
 		for x in range(area.rect.position.x, area.rect.end.x):
 			var cell := Vector2i(x, y)
+			var cell_total := 0
 			for candidate_name in names:
-				if PickUpAction.get_source_available_at(macro_state, cell, PickUpAction.SourceKind.TERRAIN, candidate_name) > 0:
-					if individual == null or is_cell_reachable(individual, area.macro_coords, cell):
-						return true
-					break
-	return false
+				cell_total += maxi(PickUpAction.get_source_available_at(macro_state, cell, PickUpAction.SourceKind.TERRAIN, candidate_name), 0)
+			if cell_total > 0:
+				result.append([cell, cell_total])
+	_cell_totals_cache[cache_key] = result
+	return result
 
 
 # true se nella WorkArea c'è ancora qualcosa tra `names` (controllo della ripetizione).
